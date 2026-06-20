@@ -1,7 +1,11 @@
 import type { AppState } from './state';
 import { upcomingText } from './state';
 
-const MODEL = 'gemini-2.0-flash';
+const MODELS = [
+  'gemini-2.5-flash',
+  'gemini-2.0-flash',
+  'gemini-1.5-flash',
+];
 
 const LANG_INSTRUCTIONS: Record<string, string> = {
   en: 'ALWAYS reply in fluent, natural, warm English. Short, conversational sentences like a person speaking aloud.',
@@ -30,10 +34,9 @@ Control the app via tags at the END of your reply when relevant (never mention t
 User's calendar: ${upcomingText()}.`;
 }
 
-export async function askGemini(state: AppState, text: string): Promise<string> {
-  state.history.push({ role: 'user', parts: [{ text }] });
+async function tryModel(model: string, state: AppState): Promise<{ ok: true; reply: string } | { ok: false; quota: boolean; msg: string }> {
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': state.key },
@@ -47,25 +50,44 @@ export async function askGemini(state: AppState, text: string): Promise<string> 
   if (!res.ok) {
     const code = res.status;
     let msg = '';
+    let quota = false;
     try {
       const e = await res.json();
       const errMsg = e?.error?.message || '';
-      if (code === 429 || errMsg.toLowerCase().includes('quota') || errMsg.toLowerCase().includes('rate'))
-        msg = 'API quota exceeded. Wait a minute and try again.';
-      else if (code === 400) msg = 'Bad request — check your API key.';
+      if (code === 429 || errMsg.toLowerCase().includes('quota') || errMsg.toLowerCase().includes('rate')) {
+        quota = true;
+        msg = `${model} quota exceeded`;
+      } else if (code === 400) msg = 'Bad request — check your API key.';
       else if (code === 403) msg = 'API key invalid or unauthorized.';
       else msg = errMsg || `Error ${code}`;
     } catch { msg = `Error ${code}`; }
-    state.history.pop();
-    throw new Error(msg);
+    return { ok: false, quota, msg };
   }
   const data = await res.json();
   const reply: string = (data.candidates?.[0]?.content?.parts || [])
     .map((p: any) => p.text || '')
     .join('')
     .trim() || '…';
-  state.history.push({ role: 'model', parts: [{ text: reply }] });
-  return reply;
+  return { ok: true, reply };
+}
+
+export async function askGemini(state: AppState, text: string): Promise<string> {
+  state.history.push({ role: 'user', parts: [{ text }] });
+
+  for (const model of MODELS) {
+    const result = await tryModel(model, state);
+    if (result.ok) {
+      state.history.push({ role: 'model', parts: [{ text: result.reply }] });
+      return result.reply;
+    }
+    if (!result.quota) {
+      state.history.pop();
+      throw new Error(result.msg);
+    }
+  }
+
+  state.history.pop();
+  throw new Error('All models quota exceeded. Try again later or check your API key at aistudio.google.com.');
 }
 
 export function runTags(
