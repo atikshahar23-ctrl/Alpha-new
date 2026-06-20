@@ -17,6 +17,60 @@ export function mountApp(root: HTMLElement) {
       </div>
       <div class="stage" id="stage"></div>
 
+      <aside class="left-panel" id="leftPanel">
+        <div class="lp-head">
+          <span class="lp-title">SYSTEM</span>
+          <span class="lp-status" id="lpStatus">● ONLINE</span>
+        </div>
+        <div class="lp-section">
+          <div class="lp-label">NEURAL ACTIVITY</div>
+          <canvas id="neuralCanvas" class="neural-canvas"></canvas>
+        </div>
+        <div class="lp-section">
+          <div class="lp-label">PERFORMANCE</div>
+          <div class="metric-grid">
+            <div class="metric">
+              <span class="metric-label">CPU</span>
+              <div class="metric-bar"><div class="metric-fill" id="cpuBar" style="width:42%"></div></div>
+              <span class="metric-val" id="cpuVal">42%</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">MEM</span>
+              <div class="metric-bar"><div class="metric-fill" id="memBar" style="width:67%"></div></div>
+              <span class="metric-val" id="memVal">67%</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">NET</span>
+              <div class="metric-bar"><div class="metric-fill net" id="netBar" style="width:23%"></div></div>
+              <span class="metric-val" id="netVal">23ms</span>
+            </div>
+          </div>
+        </div>
+        <div class="lp-section">
+          <div class="lp-label">AI ENGINE</div>
+          <div class="ai-status">
+            <div class="ai-model" id="aiModelDisplay">GPT-4O MINI</div>
+            <div class="ai-provider" id="aiProviderDisplay">VIA PUTER</div>
+            <div class="ai-latency">
+              <span class="latency-dot"></span>
+              <span id="aiLatency">Ready</span>
+            </div>
+          </div>
+        </div>
+        <div class="lp-section">
+          <div class="lp-label">AUDIO SPECTRUM</div>
+          <canvas id="waveCanvas" class="wave-canvas"></canvas>
+        </div>
+        <div class="lp-section">
+          <div class="lp-label">SESSION</div>
+          <div class="quick-stats">
+            <div class="qs"><span class="qs-val" id="msgCount">0</span><span class="qs-label">MSGS</span></div>
+            <div class="qs"><span class="qs-val" id="tokenCount">0</span><span class="qs-label">TOKENS</span></div>
+            <div class="qs"><span class="qs-val" id="uptimeVal">00:00</span><span class="qs-label">UPTIME</span></div>
+          </div>
+        </div>
+      </aside>
+
       <aside class="right-panel" id="rightPanel">
         <div class="rp-head">
           <span class="rp-title">OUTPUT</span>
@@ -193,6 +247,9 @@ export function mountApp(root: HTMLElement) {
 
   const voice = new VoiceEngine(state, (text) => { addMsg(text, 'me'); ask(text); }, setStatus);
 
+  let lpMsgCount = 0;
+  let lpTokenCount = 0;
+
   function addMsg(text: string, who: 'me' | 'al' | 'sys') {
     const label = { me: 'YOU', al: state.name, sys: 'SYSTEM' }[who];
     // Chat log (bottom)
@@ -225,6 +282,14 @@ export function mountApp(root: HTMLElement) {
       tick();
     } else rpTxt.textContent = text;
     rp.scrollTop = rp.scrollHeight;
+    // Left panel counters
+    lpMsgCount++;
+    const mcEl = document.getElementById('msgCount');
+    if (mcEl) mcEl.textContent = String(lpMsgCount);
+    const words = text.split(/\s+/).filter(w => w.length > 0).length;
+    lpTokenCount += Math.round(words * 1.3);
+    const tcEl = document.getElementById('tokenCount');
+    if (tcEl) tcEl.textContent = String(lpTokenCount);
   }
 
   function openWin(title: string) { $('winTitle').textContent = title; $('win').classList.add('show'); audio.open(); }
@@ -429,12 +494,160 @@ export function mountApp(root: HTMLElement) {
     localStorage.setItem('alpha_social_fb', socials.fb);
     updateConnIndicators();
     saveState(state);
+    updateAIDisplay();
     $('overlay').classList.remove('show');
     if (state.history.length === 0) addMsg(state.name + ' online. Talk to me or type.', 'al');
   };
 
   function pad(n: number) { return String(n).padStart(2, '0'); }
   setInterval(() => { const d = new Date(); $('clock').textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}`; }, 1000);
+
+  // ===== LEFT PANEL ANIMATIONS =====
+
+  // --- Neural Canvas ---
+  const neuralCanvas = $<HTMLCanvasElement>('neuralCanvas');
+  const nCtx = neuralCanvas.getContext('2d');
+  interface NeuralNode { x: number; y: number; vx: number; vy: number; r: number; pulse: number; }
+  const neuralNodes: NeuralNode[] = [];
+  function initNeural() {
+    const rect = neuralCanvas.getBoundingClientRect();
+    neuralCanvas.width = rect.width * 2;
+    neuralCanvas.height = rect.height * 2;
+    neuralNodes.length = 0;
+    for (let i = 0; i < 14; i++) {
+      neuralNodes.push({
+        x: Math.random() * neuralCanvas.width,
+        y: Math.random() * neuralCanvas.height,
+        vx: (Math.random() - 0.5) * 0.6,
+        vy: (Math.random() - 0.5) * 0.6,
+        r: 2 + Math.random() * 3,
+        pulse: Math.random() * Math.PI * 2,
+      });
+    }
+  }
+  function drawNeural() {
+    if (!nCtx) return;
+    const w = neuralCanvas.width, h = neuralCanvas.height;
+    nCtx.clearRect(0, 0, w, h);
+    const time = Date.now() * 0.001;
+    // Update positions
+    for (const n of neuralNodes) {
+      n.x += n.vx; n.y += n.vy;
+      if (n.x < 0 || n.x > w) n.vx *= -1;
+      if (n.y < 0 || n.y > h) n.vy *= -1;
+      n.pulse += 0.02;
+    }
+    // Draw connections
+    for (let i = 0; i < neuralNodes.length; i++) {
+      for (let j = i + 1; j < neuralNodes.length; j++) {
+        const a = neuralNodes[i], b = neuralNodes[j];
+        const dist = Math.hypot(a.x - b.x, a.y - b.y);
+        if (dist < 160) {
+          const alpha = (1 - dist / 160) * 0.25;
+          nCtx.strokeStyle = `rgba(95, 230, 255, ${alpha})`;
+          nCtx.lineWidth = 0.8;
+          nCtx.beginPath(); nCtx.moveTo(a.x, a.y); nCtx.lineTo(b.x, b.y); nCtx.stroke();
+          // Pulse traveling along the line
+          const pulsePos = (Math.sin(time * 2 + i + j) + 1) / 2;
+          const px = a.x + (b.x - a.x) * pulsePos;
+          const py = a.y + (b.y - a.y) * pulsePos;
+          nCtx.fillStyle = `rgba(255, 194, 77, ${alpha * 1.5})`;
+          nCtx.beginPath(); nCtx.arc(px, py, 1.5, 0, Math.PI * 2); nCtx.fill();
+        }
+      }
+    }
+    // Draw nodes
+    for (const n of neuralNodes) {
+      const glow = 0.5 + Math.sin(n.pulse) * 0.3;
+      nCtx.fillStyle = `rgba(95, 230, 255, ${glow})`;
+      nCtx.shadowColor = 'rgba(95, 230, 255, 0.4)';
+      nCtx.shadowBlur = 8;
+      nCtx.beginPath(); nCtx.arc(n.x, n.y, n.r, 0, Math.PI * 2); nCtx.fill();
+      nCtx.shadowBlur = 0;
+    }
+    requestAnimationFrame(drawNeural);
+  }
+  initNeural();
+  drawNeural();
+
+  // --- Wave Canvas ---
+  const waveCanvas = $<HTMLCanvasElement>('waveCanvas');
+  const wCtx = waveCanvas.getContext('2d');
+  const waveBars = 32;
+  const waveHeights: number[] = Array(waveBars).fill(0).map(() => Math.random() * 0.5);
+  const waveTargets: number[] = Array(waveBars).fill(0).map(() => Math.random() * 0.5);
+  function initWave() {
+    const rect = waveCanvas.getBoundingClientRect();
+    waveCanvas.width = rect.width * 2;
+    waveCanvas.height = rect.height * 2;
+  }
+  function drawWave() {
+    if (!wCtx) return;
+    const w = waveCanvas.width, h = waveCanvas.height;
+    wCtx.clearRect(0, 0, w, h);
+    const barW = w / waveBars;
+    for (let i = 0; i < waveBars; i++) {
+      waveHeights[i] += (waveTargets[i] - waveHeights[i]) * 0.08;
+      if (Math.random() < 0.02) waveTargets[i] = 0.1 + Math.random() * 0.8;
+      const barH = waveHeights[i] * h * 0.85;
+      const cyanToGold = i / waveBars;
+      const r = Math.round(95 + cyanToGold * 160);
+      const g = Math.round(230 - cyanToGold * 36);
+      const b = Math.round(255 - cyanToGold * 178);
+      wCtx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.7)`;
+      const x = i * barW + 1;
+      wCtx.fillRect(x, h - barH, barW - 2, barH);
+      // Glow cap
+      wCtx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.3)`;
+      wCtx.fillRect(x, h - barH - 2, barW - 2, 2);
+    }
+    requestAnimationFrame(drawWave);
+  }
+  initWave();
+  drawWave();
+
+  // --- Metric Bars Animation ---
+  setInterval(() => {
+    const cpu = 30 + Math.random() * 55;
+    const mem = 50 + Math.random() * 30;
+    const net = 10 + Math.random() * 40;
+    $('cpuBar').style.width = cpu + '%';
+    $('cpuVal').textContent = Math.round(cpu) + '%';
+    $('memBar').style.width = mem + '%';
+    $('memVal').textContent = Math.round(mem) + '%';
+    $('netBar').style.width = (net / 50 * 100) + '%';
+    $('netVal').textContent = Math.round(net) + 'ms';
+  }, 2000);
+
+  // --- Uptime Timer ---
+  const startTime = Date.now();
+  setInterval(() => {
+    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+    const mins = Math.floor(elapsed / 60);
+    const secs = elapsed % 60;
+    $('uptimeVal').textContent = pad(mins) + ':' + pad(secs);
+  }, 1000);
+
+  // --- AI Model Display ---
+  function updateAIDisplay() {
+    const modelNames: Record<string, string> = {
+      'gpt-4o-mini': 'GPT-4O MINI',
+      'gpt-4o': 'GPT-4O',
+      'o4-mini': 'O4-MINI',
+      'claude-sonnet-4': 'CLAUDE SONNET 4',
+      'gemini-2.0-flash': 'GEMINI 2.0 FLASH',
+    };
+    const providerNames: Record<string, string> = {
+      'puter': 'VIA PUTER',
+      'gemini': 'VIA GOOGLE',
+      'grok': 'VIA XAI',
+      'openai': 'VIA OPENAI',
+    };
+    const pm = (state as any).puterModel as string || 'gpt-4o-mini';
+    $('aiModelDisplay').textContent = modelNames[pm] || pm.toUpperCase();
+    $('aiProviderDisplay').textContent = providerNames[state.provider] || state.provider.toUpperCase();
+  }
+  updateAIDisplay();
 
   updateConnIndicators();
   const puterAvailable = typeof (window as any).puter !== 'undefined';
