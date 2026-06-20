@@ -12,15 +12,13 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 100);
-  camera.position.set(0, 1.6, 5.8);
-  camera.lookAt(0, 1.4, 0);
+  const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
+  camera.position.set(0, 1.8, 6.0);
+  camera.lookAt(0, 1.5, 0);
 
-  function size() { return container.clientWidth || 240; }
-  function getH() { return container.clientHeight || size(); }
   function resize() {
-    const w = size();
-    const h = getH();
+    const w = container.clientWidth || 240;
+    const h = container.clientHeight || w;
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
@@ -30,264 +28,340 @@ export function mountOrb(container: HTMLElement): OrbHandle {
 
   function makeGlow(r: number, g: number, b: number) {
     const c = document.createElement('canvas');
-    c.width = c.height = 128;
+    c.width = c.height = 64;
     const ctx = c.getContext('2d')!;
-    const grd = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+    const grd = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
     grd.addColorStop(0, `rgba(${r},${g},${b},1)`);
-    grd.addColorStop(0.3, `rgba(${r},${g},${b},.6)`);
-    grd.addColorStop(0.6, `rgba(${r},${g},${b},.15)`);
+    grd.addColorStop(0.25, `rgba(${r},${g},${b},.7)`);
+    grd.addColorStop(0.5, `rgba(${r},${g},${b},.2)`);
     grd.addColorStop(1, `rgba(${r},${g},${b},0)`);
     ctx.fillStyle = grd;
-    ctx.fillRect(0, 0, 128, 128);
+    ctx.fillRect(0, 0, 64, 64);
     return new THREE.CanvasTexture(c);
   }
   const glowCyan = makeGlow(95, 230, 255);
-  const glowGold = makeGlow(255, 200, 80);
+  const glowGold = makeGlow(255, 194, 77);
+  const glowWhite = makeGlow(255, 250, 240);
 
   const group = new THREE.Group();
   scene.add(group);
 
-  const S = 2.8;
-  const BY = -2.0;
+  const S = 2.5;
+  const BY = -1.8;
 
-  // --- HUMANOID PARTICLE FIGURE ---
-  const figurePoints: number[] = [];
+  // --- HIGH-DETAIL HUMANOID ---
+  const bodyPts: number[] = [];
+  const skelPts: number[] = [];
 
-  // Head (sphere)
-  for (let i = 0; i < 800; i++) {
-    const phi = Math.acos(2 * Math.random() - 1);
-    const theta = Math.random() * Math.PI * 2;
-    const r = 0.22 * S;
-    figurePoints.push(
-      r * Math.sin(phi) * Math.cos(theta),
-      BY + 2.1 * S + r * Math.cos(phi),
-      r * Math.sin(phi) * Math.sin(theta)
-    );
+  function addSphere(cx: number, cy: number, cz: number, r: number, n: number) {
+    for (let i = 0; i < n; i++) {
+      const phi = Math.acos(2 * Math.random() - 1);
+      const theta = Math.random() * Math.PI * 2;
+      const sr = r * (0.85 + Math.random() * 0.15);
+      bodyPts.push(
+        cx + sr * Math.sin(phi) * Math.cos(theta),
+        cy + sr * Math.cos(phi),
+        cz + sr * Math.sin(phi) * Math.sin(theta)
+      );
+    }
   }
+
+  function addCylinder(x: number, y1: number, y2: number, z: number, r1: number, r2: number, n: number) {
+    for (let i = 0; i < n; i++) {
+      const t = Math.random();
+      const y = y1 + (y2 - y1) * t;
+      const r = r1 + (r2 - r1) * t;
+      const a = Math.random() * Math.PI * 2;
+      const rr = r * (0.9 + Math.random() * 0.1);
+      bodyPts.push(x + rr * Math.cos(a), y, z + rr * Math.sin(a));
+    }
+  }
+
+  function addLine(x1: number, y1: number, z1: number, x2: number, y2: number, z2: number, n: number) {
+    for (let i = 0; i < n; i++) {
+      const t = i / (n - 1);
+      skelPts.push(
+        x1 + (x2 - x1) * t, y1 + (y2 - y1) * t, z1 + (z2 - z1) * t
+      );
+    }
+  }
+
+  // Head
+  addSphere(0, BY + 2.15 * S, 0, 0.2 * S, 1200);
+  // Eyes (bright spots)
+  const eyeY = BY + 2.18 * S;
+  const eyeZ = 0.15 * S;
+  addSphere(-0.07 * S, eyeY, eyeZ, 0.025 * S, 80);
+  addSphere(0.07 * S, eyeY, eyeZ, 0.025 * S, 80);
 
   // Neck
-  for (let i = 0; i < 150; i++) {
-    const a = Math.random() * Math.PI * 2;
-    const r = 0.08 * S;
-    figurePoints.push(r * Math.cos(a), BY + (1.85 + Math.random() * 0.15) * S, r * Math.sin(a));
-  }
+  addCylinder(0, BY + 1.92 * S, BY + 2.0 * S, 0, 0.07 * S, 0.09 * S, 200);
 
-  // Torso (tapered cylinder)
-  for (let i = 0; i < 1800; i++) {
-    const y = Math.random();
-    const rTop = 0.32 * S, rBot = 0.22 * S;
-    const r = rTop + (rBot - rTop) * y;
-    const a = Math.random() * Math.PI * 2;
-    figurePoints.push(r * Math.cos(a), BY + (1.85 - y * 0.9) * S, r * Math.sin(a));
-  }
+  // Torso (chest wider, waist narrower)
+  addCylinder(0, BY + 1.4 * S, BY + 1.92 * S, 0, 0.2 * S, 0.32 * S, 2500);
 
-  // Shoulders & arms
+  // Chest definition (pectoral area)
+  addSphere(-0.12 * S, BY + 1.78 * S, 0.08 * S, 0.1 * S, 300);
+  addSphere(0.12 * S, BY + 1.78 * S, 0.08 * S, 0.1 * S, 300);
+
+  // Shoulders & Arms
   for (let side = -1; side <= 1; side += 2) {
-    for (let i = 0; i < 300; i++) {
+    // Shoulder sphere
+    addSphere(side * 0.38 * S, BY + 1.85 * S, 0, 0.1 * S, 400);
+    // Upper arm
+    addCylinder(side * 0.5 * S, BY + 1.55 * S, BY + 1.85 * S, 0, 0.055 * S, 0.07 * S, 500);
+    // Elbow
+    addSphere(side * 0.55 * S, BY + 1.5 * S, 0.05 * S, 0.06 * S, 200);
+    // Forearm (reaching outward and slightly up)
+    for (let i = 0; i < 500; i++) {
       const t = Math.random();
-      const x = side * (0.28 + t * 0.45) * S;
-      const y = BY + (1.75 - t * 0.15) * S;
-      const z = (Math.random() - 0.5) * 0.12 * S;
-      figurePoints.push(x, y, z);
-    }
-    for (let i = 0; i < 450; i++) {
-      const t = Math.random();
-      const x = side * (0.73 + t * 0.55) * S;
-      const y = BY + (1.6 - t * 0.4) * S;
-      const z = (Math.random() - 0.5) * 0.1 * S;
+      const x = side * (0.55 + t * 0.55) * S;
+      const y = BY + (1.5 - t * 0.15 + t * t * 0.35) * S;
+      const z = (0.05 + t * 0.2) * S;
       const a = Math.random() * Math.PI * 2;
-      const r = 0.06 * S;
-      figurePoints.push(x + r * Math.cos(a), y, z + r * Math.sin(a));
+      const r = (0.045 - t * 0.015) * S;
+      bodyPts.push(x + r * Math.cos(a), y, z + r * Math.sin(a));
     }
-    for (let i = 0; i < 350; i++) {
-      const t = Math.random();
-      const x = side * (1.28 + t * 0.4) * S;
-      const y = BY + (1.2 + t * 0.25) * S;
-      const z = (0.1 + t * 0.15 + (Math.random() - 0.5) * 0.06) * S;
-      figurePoints.push(x, y, z);
-    }
+    // Hand (open, welcoming)
+    addSphere(side * 1.1 * S, BY + 1.7 * S, 0.25 * S, 0.05 * S, 200);
+    // Fingers
     for (let f = 0; f < 5; f++) {
       for (let i = 0; i < 40; i++) {
-        const t = Math.random() * 0.15 * S;
-        const angle = (f / 5) * 0.7 - 0.35;
-        figurePoints.push(
-          side * (1.68 * S + t * Math.cos(angle) * side),
-          BY + (1.45 + f * 0.02) * S + t * Math.sin(angle),
-          0.28 * S + t * 0.1
+        const t = Math.random() * 0.12 * S;
+        const fa = ((f - 2) / 5) * 0.8;
+        bodyPts.push(
+          side * (1.15 * S + t * Math.cos(fa) * side),
+          BY + (1.72 + f * 0.015) * S + t * Math.sin(fa),
+          0.28 * S + t * 0.08
         );
       }
     }
+
+    // Skeleton lines: shoulder → elbow → hand
+    addLine(side * 0.38 * S, BY + 1.85 * S, 0, side * 0.55 * S, BY + 1.5 * S, 0.05 * S, 20);
+    addLine(side * 0.55 * S, BY + 1.5 * S, 0.05 * S, side * 1.1 * S, BY + 1.7 * S, 0.25 * S, 25);
   }
 
-  const figArr = new Float32Array(figurePoints);
-  const figGeo = new THREE.BufferGeometry();
-  figGeo.setAttribute('position', new THREE.BufferAttribute(figArr, 3));
-  const figMat = new THREE.PointsMaterial({
-    size: 0.03, map: glowCyan, color: 0x44ccff,
+  // Skeleton lines: spine
+  addLine(0, BY + 1.4 * S, 0, 0, BY + 2.15 * S, 0, 30);
+  // Collarbone
+  addLine(-0.38 * S, BY + 1.85 * S, 0, 0.38 * S, BY + 1.85 * S, 0, 20);
+
+  // --- BODY PARTICLES ---
+  const bodyGeo = new THREE.BufferGeometry();
+  bodyGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(bodyPts), 3));
+  const bodyMat = new THREE.PointsMaterial({
+    size: 0.022, map: glowCyan, color: 0x55ddff,
     transparent: true, opacity: 0.85,
     blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
   });
-  const figure = new THREE.Points(figGeo, figMat);
-  group.add(figure);
+  const body = new THREE.Points(bodyGeo, bodyMat);
+  group.add(body);
 
-  // --- Gold edge highlights ---
+  // --- SKELETON WIREFRAME ---
+  const skelGeo = new THREE.BufferGeometry();
+  skelGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(skelPts), 3));
+  const skelMat = new THREE.PointsMaterial({
+    size: 0.015, map: glowWhite, color: 0xaaeeff,
+    transparent: true, opacity: 0.5,
+    blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
+  });
+  const skeleton = new THREE.Points(skelGeo, skelMat);
+  group.add(skeleton);
+
+  // --- GOLD HIGHLIGHTS ---
   const goldPts: number[] = [];
-  for (let i = 0; i < 600; i++) {
-    const idx = Math.floor(Math.random() * (figurePoints.length / 3)) * 3;
+  for (let i = 0; i < 800; i++) {
+    const idx = Math.floor(Math.random() * (bodyPts.length / 3)) * 3;
     goldPts.push(
-      figurePoints[idx] + (Math.random() - 0.5) * 0.04,
-      figurePoints[idx + 1] + (Math.random() - 0.5) * 0.04,
-      figurePoints[idx + 2] + (Math.random() - 0.5) * 0.04
+      bodyPts[idx] + (Math.random() - 0.5) * 0.03,
+      bodyPts[idx + 1] + (Math.random() - 0.5) * 0.03,
+      bodyPts[idx + 2] + (Math.random() - 0.5) * 0.03
     );
   }
   const goldGeo = new THREE.BufferGeometry();
   goldGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(goldPts), 3));
   const goldMat = new THREE.PointsMaterial({
-    size: 0.045, map: glowGold, color: 0xffcc44,
-    transparent: true, opacity: 0.7,
+    size: 0.035, map: glowGold, color: 0xffc24d,
+    transparent: true, opacity: 0.6,
     blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
   });
   const goldParticles = new THREE.Points(goldGeo, goldMat);
   group.add(goldParticles);
 
-  // --- FLOWING ENERGY RIBBONS ---
-  const ribbonCount = 4;
-  const ribbonSegs = 80;
-  const ribbons: { line: THREE.Line; geo: THREE.BufferGeometry; baseY: number[]; baseX: number[]; baseZ: number[] }[] = [];
-  const ribbonColors = [0x44ddff, 0xffcc44, 0x44ddff, 0xffaa22];
+  // --- EYE GLOW ---
+  function makeEye(x: number) {
+    const m = new THREE.SpriteMaterial({
+      map: glowCyan, color: 0x88ffff, transparent: true, opacity: 0.7,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    const s = new THREE.Sprite(m);
+    s.scale.setScalar(0.12 * S);
+    s.position.set(x, eyeY, eyeZ + 0.02 * S);
+    group.add(s);
+    return m;
+  }
+  const eyeL = makeEye(-0.07 * S);
+  const eyeR = makeEye(0.07 * S);
+
+  // --- HEART CORE (chest glow) ---
+  const heartGeo = new THREE.IcosahedronGeometry(0.12 * S, 2);
+  const heartMat = new THREE.MeshBasicMaterial({
+    color: 0x66eeff, transparent: true, opacity: 0.4,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  });
+  const heart = new THREE.Mesh(heartGeo, heartMat);
+  heart.position.set(0, BY + 1.7 * S, 0.05 * S);
+  group.add(heart);
+
+  const heartWireGeo = new THREE.IcosahedronGeometry(0.15 * S, 1);
+  const heartWireMat = new THREE.MeshBasicMaterial({
+    color: 0x44aacc, wireframe: true, transparent: true, opacity: 0.25,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  });
+  const heartWire = new THREE.Mesh(heartWireGeo, heartWireMat);
+  heartWire.position.copy(heart.position);
+  group.add(heartWire);
+
+  // --- HEAD HALO ---
+  const haloMat = new THREE.SpriteMaterial({
+    map: glowCyan, color: 0x66eeff, transparent: true, opacity: 0.18,
+    blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
+  });
+  const halo = new THREE.Sprite(haloMat);
+  halo.scale.setScalar(3 * S);
+  halo.position.set(0, BY + 2.15 * S, -0.4);
+  group.add(halo);
+
+  // --- ENERGY RIBBONS ---
+  const ribbonCount = 6;
+  const ribbonSegs = 60;
+  const ribbons: { geo: THREE.BufferGeometry; baseX: number[]; baseY: number[]; baseZ: number[]; mat: THREE.LineBasicMaterial }[] = [];
+  const rColors = [0x44ddff, 0xffc24d, 0x44ddff, 0xffc24d, 0x88bbff, 0xffa844];
 
   for (let r = 0; r < ribbonCount; r++) {
     const pts: number[] = [];
-    const baseY: number[] = [];
-    const baseX: number[] = [];
-    const baseZ: number[] = [];
-    const side = r < 2 ? -1 : 1;
-    const offset = r % 2 === 0 ? 0 : 0.3;
+    const bx: number[] = [], by: number[] = [], bz: number[] = [];
+    const side = r % 2 === 0 ? -1 : 1;
+    const yOff = (r % 3) * 0.2;
 
     for (let i = 0; i <= ribbonSegs; i++) {
       const t = i / ribbonSegs;
-      const x = (side * (0.3 + t * 1.6) + Math.sin(t * 4 + offset) * 0.2) * S;
-      const y = BY + (1.7 - t * 0.8 + Math.sin(t * 3 + offset) * 0.25) * S;
-      const z = Math.sin(t * 5 + offset + r) * 0.3 * S;
+      const x = (side * (0.2 + t * 1.5) + Math.sin(t * 5 + r) * 0.12) * S;
+      const y = BY + (1.8 - yOff - t * 0.6 + Math.sin(t * 4 + r * 0.7) * 0.15) * S;
+      const z = Math.sin(t * 6 + r * 1.2) * 0.2 * S;
       pts.push(x, y, z);
-      baseX.push(x);
-      baseY.push(y);
-      baseZ.push(z);
+      bx.push(x); by.push(y); bz.push(z);
     }
 
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pts), 3));
     const mat = new THREE.LineBasicMaterial({
-      color: ribbonColors[r], transparent: true, opacity: 0.4,
+      color: rColors[r], transparent: true, opacity: 0.35,
       blending: THREE.AdditiveBlending, depthWrite: false,
     });
     const line = new THREE.Line(geo, mat);
     group.add(line);
-    ribbons.push({ line, geo, baseY, baseX, baseZ });
+    ribbons.push({ geo, baseX: bx, baseY: by, baseZ: bz, mat });
   }
 
-  // --- Ribbon glow particles ---
-  const ribbonGlowN = 80;
-  const ribbonGlowArr = new Float32Array(ribbonGlowN * 3);
-  const ribbonGlowGeo = new THREE.BufferGeometry();
-  ribbonGlowGeo.setAttribute('position', new THREE.BufferAttribute(ribbonGlowArr, 3));
-  const ribbonGlowMat = new THREE.PointsMaterial({
-    size: 0.06, map: glowCyan, color: 0x66eeff,
-    transparent: true, opacity: 0.6,
-    blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
-  });
-  const ribbonGlow = new THREE.Points(ribbonGlowGeo, ribbonGlowMat);
-  group.add(ribbonGlow);
+  // --- SCAN LINES (horizontal holographic effect) ---
+  const scanCount = 12;
+  const scans: { geo: THREE.BufferGeometry; y: number }[] = [];
+  for (let i = 0; i < scanCount; i++) {
+    const y = BY + (0.8 + i * 0.13) * S;
+    const pts = [];
+    for (let j = 0; j <= 40; j++) {
+      const t = j / 40;
+      pts.push((t - 0.5) * 1.2 * S, y, 0);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pts), 3));
+    const mat = new THREE.LineBasicMaterial({
+      color: 0x44ddff, transparent: true, opacity: 0.06,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    group.add(new THREE.Line(geo, mat));
+    scans.push({ geo, y });
+  }
 
-  // --- BRAIN CORE (glowing icosahedron in chest) ---
-  const brainGeo = new THREE.IcosahedronGeometry(0.3 * S, 1);
-  const brainMat = new THREE.MeshBasicMaterial({
-    color: 0x66eeff, transparent: true, opacity: 0.5,
-    blending: THREE.AdditiveBlending, depthWrite: false,
-  });
-  const brain = new THREE.Mesh(brainGeo, brainMat);
-  brain.position.set(0, BY + 1.5 * S, 0);
-  group.add(brain);
-
-  const brainWireGeo = new THREE.IcosahedronGeometry(0.36 * S, 1);
-  const brainWireMat = new THREE.MeshBasicMaterial({
-    color: 0x44aacc, wireframe: true, transparent: true, opacity: 0.3,
-    blending: THREE.AdditiveBlending, depthWrite: false,
-  });
-  const brainWire = new THREE.Mesh(brainWireGeo, brainWireMat);
-  brainWire.position.set(0, BY + 1.5 * S, 0);
-  group.add(brainWire);
-
-  // --- CONCENTRIC BASE RINGS ---
+  // --- BASE RINGS ---
   const baseRings: THREE.Mesh[] = [];
-  const ringRadii = [0.8, 1.15, 1.5, 1.85, 2.2];
-  const ringColors = [0x44ddff, 0xffcc44, 0x44ddff, 0xffcc44, 0x44ddff];
-  for (let i = 0; i < ringRadii.length; i++) {
-    const rGeo = new THREE.TorusGeometry(ringRadii[i] * S, 0.012, 8, 120);
+  const ringR = [0.7, 1.0, 1.3, 1.6, 1.9];
+  const ringC = [0x44ddff, 0xffc24d, 0x44ddff, 0xffc24d, 0x44ddff];
+  for (let i = 0; i < ringR.length; i++) {
+    const rGeo = new THREE.TorusGeometry(ringR[i] * S, 0.01, 8, 120);
     const rMat = new THREE.MeshBasicMaterial({
-      color: ringColors[i], transparent: true, opacity: 0.45 - i * 0.06,
+      color: ringC[i], transparent: true, opacity: 0.4 - i * 0.06,
       blending: THREE.AdditiveBlending, depthWrite: false,
     });
     const ring = new THREE.Mesh(rGeo, rMat);
     ring.rotation.x = Math.PI * 0.5;
-    ring.position.y = BY + 0.7 * S;
+    ring.position.y = BY + 0.8 * S;
     group.add(ring);
     baseRings.push(ring);
   }
 
-  // --- Base glow sprite ---
+  // Base glow
   const baseGlowMat = new THREE.SpriteMaterial({
-    map: glowCyan, color: 0x44ddff, transparent: true, opacity: 0.3,
+    map: glowCyan, color: 0x44ddff, transparent: true, opacity: 0.2,
     blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
   });
   const baseGlow = new THREE.Sprite(baseGlowMat);
-  baseGlow.scale.set(6 * S, 1.5 * S, 1);
-  baseGlow.position.y = BY + 0.7 * S;
+  baseGlow.scale.set(5 * S, 1.2 * S, 1);
+  baseGlow.position.y = BY + 0.8 * S;
   group.add(baseGlow);
-
-  // --- Figure halo (behind head) ---
-  const haloMat = new THREE.SpriteMaterial({
-    map: glowCyan, color: 0x66eeff, transparent: true, opacity: 0.2,
-    blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
-  });
-  const halo = new THREE.Sprite(haloMat);
-  halo.scale.setScalar(4 * S);
-  halo.position.set(0, BY + 2.1 * S, -0.5);
-  group.add(halo);
 
   // --- 6 ORBITING DOTS ---
   const ORBIT_DOTS = 6;
-  const dotColors = [0x5fe6ff, 0xffb833, 0xff5d73, 0xb06aff, 0x4dff91, 0xff9f43];
+  const dotColors = [0x5fe6ff, 0xffc24d, 0xff5d73, 0xb06aff, 0x4dff91, 0xff9f43];
   const dotMeshes: THREE.Mesh[] = [];
   const dotGlows: THREE.Sprite[] = [];
   const dotOrbits: { angle: number; radius: number; speed: number; tilt: number; phase: number }[] = [];
 
   for (let i = 0; i < ORBIT_DOTS; i++) {
-    const dGeo = new THREE.SphereGeometry(0.07, 12, 12);
+    const dGeo = new THREE.SphereGeometry(0.05, 12, 12);
     const dMat = new THREE.MeshBasicMaterial({ color: dotColors[i] });
     const dot = new THREE.Mesh(dGeo, dMat);
-    group.add(dot);
-    dotMeshes.push(dot);
+    group.add(dot); dotMeshes.push(dot);
 
-    const isGold = dotColors[i] === 0xffb833 || dotColors[i] === 0xff9f43;
+    const isGold = i === 1 || i === 5;
     const spMat = new THREE.SpriteMaterial({
       map: isGold ? glowGold : glowCyan, color: dotColors[i],
-      transparent: true, opacity: 0.6,
+      transparent: true, opacity: 0.55,
       blending: THREE.AdditiveBlending, depthWrite: false,
     });
     const sp = new THREE.Sprite(spMat);
-    sp.scale.setScalar(0.5);
-    group.add(sp);
-    dotGlows.push(sp);
+    sp.scale.setScalar(0.4);
+    group.add(sp); dotGlows.push(sp);
 
     dotOrbits.push({
       angle: (i / ORBIT_DOTS) * Math.PI * 2,
-      radius: (2.0 + (i % 2) * 0.3) * S,
-      speed: 0.4 + i * 0.07,
+      radius: (1.8 + (i % 2) * 0.3) * S,
+      speed: 0.35 + i * 0.06,
       tilt: (Math.PI / 5) * (i % 3 - 1),
       phase: i * 1.1,
     });
   }
+
+  // --- FLOATING DATA PARTICLES ---
+  const dataN = 40;
+  const dataArr = new Float32Array(dataN * 3);
+  const dataVel = new Float32Array(dataN);
+  for (let i = 0; i < dataN; i++) {
+    dataArr[i * 3] = (Math.random() - 0.5) * 3 * S;
+    dataArr[i * 3 + 1] = BY + (0.5 + Math.random() * 2) * S;
+    dataArr[i * 3 + 2] = (Math.random() - 0.5) * 2 * S;
+    dataVel[i] = 0.002 + Math.random() * 0.005;
+  }
+  const dataGeo = new THREE.BufferGeometry();
+  dataGeo.setAttribute('position', new THREE.BufferAttribute(dataArr, 3));
+  const dataMat = new THREE.PointsMaterial({
+    size: 0.03, map: glowGold, color: 0xffd080, transparent: true, opacity: 0.4,
+    blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
+  });
+  const dataParticles = new THREE.Points(dataGeo, dataMat);
+  group.add(dataParticles);
 
   let amp = 0.06, ampTarget = 0.06;
   let time = 0;
@@ -298,78 +372,90 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     time += 0.016;
     amp += (ampTarget - amp) * 0.08;
 
-    // Figure breathing
-    const breathe = 1 + Math.sin(time * 1.2) * 0.008 + amp * 0.02;
-    figure.scale.set(breathe, breathe, breathe);
+    // Breathing
+    const breathe = 1 + Math.sin(time * 1.0) * 0.006 + amp * 0.015;
+    body.scale.set(breathe, breathe, breathe);
     goldParticles.scale.set(breathe, breathe, breathe);
+    skeleton.scale.set(breathe, breathe, breathe);
 
-    // Brain pulse
-    const brainPulse = 1 + Math.sin(time * 2.5) * 0.1 + amp * 0.3;
-    brain.scale.setScalar(brainPulse);
-    brainWire.scale.setScalar(brainPulse * 1.1);
-    brainMat.opacity = 0.4 + amp * 0.4 + Math.sin(time * 3) * 0.1;
-    brainWireMat.opacity = 0.2 + amp * 0.3;
-    brain.rotation.y = time * 0.8;
-    brainWire.rotation.y = -time * 0.5;
+    // Heart pulse
+    const hp = 1 + Math.sin(time * 2.5) * 0.12 + amp * 0.35;
+    heart.scale.setScalar(hp);
+    heartWire.scale.setScalar(hp * 1.15);
+    heartMat.opacity = 0.3 + amp * 0.5 + Math.sin(time * 3) * 0.08;
+    heartWireMat.opacity = 0.15 + amp * 0.3;
+    heart.rotation.y = time * 0.7;
+    heartWire.rotation.y = -time * 0.4;
 
-    // Ribbon animation
+    // Eyes
+    const eyeGlow = 0.5 + amp * 0.4 + Math.sin(time * 2) * 0.1;
+    eyeL.opacity = eyeGlow;
+    eyeR.opacity = eyeGlow;
+
+    // Scan lines animate upward
+    for (const sc of scans) {
+      const pos = sc.geo.attributes.position as THREE.BufferAttribute;
+      const newY = BY + ((sc.y - BY + time * 0.3 * S) % (2.0 * S));
+      for (let j = 0; j <= 40; j++) pos.setY(j, newY);
+      pos.needsUpdate = true;
+    }
+
+    // Ribbons
     for (const rb of ribbons) {
       const pos = rb.geo.attributes.position as THREE.BufferAttribute;
       for (let i = 0; i <= ribbonSegs; i++) {
         const t = i / ribbonSegs;
-        pos.setX(i, rb.baseX[i] + Math.sin(time * 2 + t * 6) * 0.08 * S * (1 + amp * 2));
-        pos.setY(i, rb.baseY[i] + Math.sin(time * 1.5 + t * 4) * 0.06 * S * (1 + amp));
-        pos.setZ(i, rb.baseZ[i] + Math.cos(time * 1.8 + t * 5) * 0.07 * S * (1 + amp));
+        pos.setX(i, rb.baseX[i] + Math.sin(time * 1.8 + t * 5) * 0.08 * S * (1 + amp * 2));
+        pos.setY(i, rb.baseY[i] + Math.sin(time * 1.3 + t * 4) * 0.05 * S * (1 + amp));
+        pos.setZ(i, rb.baseZ[i] + Math.cos(time * 1.5 + t * 5) * 0.06 * S * (1 + amp));
       }
       pos.needsUpdate = true;
-      (rb.line.material as THREE.LineBasicMaterial).opacity = 0.3 + amp * 0.4;
+      rb.mat.opacity = 0.25 + amp * 0.4;
     }
-
-    // Ribbon glow particles
-    for (let i = 0; i < ribbonGlowN; i++) {
-      const rIdx = i % ribbonCount;
-      const rb = ribbons[rIdx];
-      const trav = ((time * (0.8 + amp * 2) + i * 0.4) % 1);
-      const seg = Math.floor(trav * ribbonSegs);
-      const pos = rb.geo.attributes.position as THREE.BufferAttribute;
-      ribbonGlowArr[i * 3] = pos.getX(seg);
-      ribbonGlowArr[i * 3 + 1] = pos.getY(seg);
-      ribbonGlowArr[i * 3 + 2] = pos.getZ(seg);
-    }
-    ribbonGlowGeo.attributes.position.needsUpdate = true;
-    ribbonGlowMat.opacity = 0.4 + amp * 0.4;
 
     // Base rings
     for (let i = 0; i < baseRings.length; i++) {
-      baseRings[i].rotation.z = time * (0.08 + i * 0.04) * (i % 2 === 0 ? 1 : -1);
-      (baseRings[i].material as THREE.MeshBasicMaterial).opacity = (0.4 - i * 0.05) + amp * 0.2;
+      baseRings[i].rotation.z = time * (0.06 + i * 0.03) * (i % 2 === 0 ? 1 : -1);
+      (baseRings[i].material as THREE.MeshBasicMaterial).opacity = (0.35 - i * 0.05) + amp * 0.2;
     }
-    baseGlowMat.opacity = 0.25 + amp * 0.25;
 
     // Halo
-    haloMat.opacity = 0.15 + amp * 0.2 + Math.sin(time * 1.5) * 0.03;
-    halo.scale.setScalar((2.5 + amp * 0.8) * S);
+    haloMat.opacity = 0.12 + amp * 0.2 + Math.sin(time * 1.2) * 0.02;
+    halo.scale.setScalar((2.5 + amp * 0.6) * S);
 
-    // Figure shimmer
-    figMat.opacity = 0.75 + amp * 0.2 + Math.sin(time * 2) * 0.03;
-    goldMat.opacity = 0.5 + amp * 0.3 + Math.sin(time * 1.8) * 0.05;
+    // Shimmer
+    bodyMat.opacity = 0.75 + amp * 0.2 + Math.sin(time * 1.8) * 0.03;
+    goldMat.opacity = 0.45 + amp * 0.3 + Math.sin(time * 1.5) * 0.05;
+    skelMat.opacity = 0.35 + amp * 0.25;
 
     // Orbiting dots
     const speedMult = 1 + amp * 4;
     for (let i = 0; i < ORBIT_DOTS; i++) {
       const d = dotOrbits[i];
       d.angle += d.speed * 0.016 * speedMult;
-      const r = d.radius + Math.sin(time * 0.5 + d.phase) * 0.12 + amp * 0.4 * Math.sin(time * 2 + d.phase);
+      const r = d.radius + Math.sin(time * 0.4 + d.phase) * 0.1 + amp * 0.35 * Math.sin(time * 2 + d.phase);
       const x = Math.cos(d.angle) * r;
       const z = Math.sin(d.angle) * r;
-      const y = BY + 1.5 * S + Math.sin(d.angle + d.tilt) * 0.8 * S + Math.sin(time * 0.3 + d.phase) * 0.15;
+      const y = BY + 1.5 * S + Math.sin(d.angle + d.tilt) * 0.6 * S + Math.sin(time * 0.3 + d.phase) * 0.1;
       dotMeshes[i].position.set(x, y, z);
       dotGlows[i].position.set(x, y, z);
-      dotGlows[i].scale.setScalar(0.4 + amp * 0.2 + Math.sin(time * 1.5 + d.phase) * 0.06);
+      dotGlows[i].scale.setScalar(0.35 + amp * 0.15 + Math.sin(time * 1.2 + d.phase) * 0.05);
     }
 
-    // Slow group sway
-    group.rotation.y = Math.sin(time * 0.15) * 0.1;
+    // Floating data particles rise
+    for (let i = 0; i < dataN; i++) {
+      dataArr[i * 3 + 1] += dataVel[i] * S;
+      if (dataArr[i * 3 + 1] > BY + 2.8 * S) {
+        dataArr[i * 3 + 1] = BY + 0.5 * S;
+        dataArr[i * 3] = (Math.random() - 0.5) * 3 * S;
+        dataArr[i * 3 + 2] = (Math.random() - 0.5) * 2 * S;
+      }
+    }
+    dataGeo.attributes.position.needsUpdate = true;
+    dataMat.opacity = 0.3 + amp * 0.3;
+
+    // Slow sway
+    group.rotation.y = Math.sin(time * 0.12) * 0.08;
 
     renderer.render(scene, camera);
   }

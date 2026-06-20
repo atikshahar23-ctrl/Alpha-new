@@ -27,7 +27,7 @@ export class VoiceEngine {
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SR) {
       this.rec = new SR();
-      this.rec.lang = state.micLang === 'he' ? 'he-IL' : 'en-US';
+      this.rec.lang = state.micLang === 'he' ? 'he-IL' : state.micLang === 'es' ? 'es-ES' : 'en-US';
       this.rec.continuous = true;
       this.rec.interimResults = true;
       this.rec.maxAlternatives = 1;
@@ -129,6 +129,7 @@ export class VoiceEngine {
     if (/natural|neural|online|enhanced|premium/.test(n)) s += 6;
     if (L === 'en' && /aria|jenny|jane|michelle|sonia|libby|samantha|female|zira|eva|joanna|amy|emma|salli/.test(n)) s += 5;
     if (L === 'he' && /carmit|hebrew|female/.test(n)) s += 5;
+    if (L === 'es' && /lucia|elena|spanish|female|conchita|lupe|penelope/.test(n)) s += 5;
     if (/male|david|mark|guy|james|ryan/.test(n)) s -= 4;
     if (L === 'en') { if (v.lang === 'en-US') s += 2; else if (v.lang === 'en-GB') s += 1; }
     if (/google/.test(n)) s += 1;
@@ -161,7 +162,7 @@ export class VoiceEngine {
     speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
     if (this.chosenVoice) { u.voice = this.chosenVoice; u.lang = this.chosenVoice.lang; }
-    else u.lang = this.state.replyLang === 'he' ? 'he-IL' : 'en-US';
+    else u.lang = this.state.replyLang === 'he' ? 'he-IL' : this.state.replyLang === 'es' ? 'es-ES' : 'en-US';
     u.rate = this.state.replyLang === 'he' ? 0.98 : 0.97;
     u.pitch = 1.05;
     u.onstart = () => { this.suppress = true; this.stopRec(); this.onStateChange('speaking'); };
@@ -175,7 +176,7 @@ export class VoiceEngine {
     speechSynthesis.speak(u);
   }
 
-  setMicLang(lang: 'he' | 'en') {
-    if (this.rec) this.rec.lang = lang === 'he' ? 'he-IL' : 'en-US';
+  setMicLang(lang: 'he' | 'en' | 'es') {
+    if (this.rec) this.rec.lang = lang === 'he' ? 'he-IL' : lang === 'es' ? 'es-ES' : 'en-US';
   }
 }

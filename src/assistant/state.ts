@@ -1,5 +1,5 @@
-export type ReplyLang = 'en' | 'he';
-export type MicLang = 'he' | 'en';
+export type ReplyLang = 'en' | 'he' | 'es';
+export type MicLang = 'he' | 'en' | 'es';
 export type TextLang = 'en' | 'he' | 'ar' | 'ru' | 'fr' | 'es' | 'de' | 'auto';
 
 export interface AppState {
