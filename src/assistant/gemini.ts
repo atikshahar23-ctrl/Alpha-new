@@ -2,9 +2,9 @@ import type { AppState } from './state';
 import { upcomingText } from './state';
 
 const MODELS = [
-  'gemini-2.5-flash',
   'gemini-2.0-flash',
   'gemini-1.5-flash',
+  'gemini-1.5-flash-8b',
 ];
 
 const LANG_INSTRUCTIONS: Record<string, string> = {
@@ -34,7 +34,7 @@ Control the app via tags at the END of your reply when relevant (never mention t
 User's calendar: ${upcomingText()}.`;
 }
 
-async function tryModel(model: string, state: AppState): Promise<{ ok: true; reply: string } | { ok: false; quota: boolean; msg: string }> {
+async function tryModel(model: string, state: AppState): Promise<{ ok: true; reply: string } | { ok: false; canFallback: boolean; msg: string }> {
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
     {
@@ -50,18 +50,21 @@ async function tryModel(model: string, state: AppState): Promise<{ ok: true; rep
   if (!res.ok) {
     const code = res.status;
     let msg = '';
-    let quota = false;
+    let canFallback = false;
     try {
       const e = await res.json();
       const errMsg = e?.error?.message || '';
-      if (code === 429 || errMsg.toLowerCase().includes('quota') || errMsg.toLowerCase().includes('rate')) {
-        quota = true;
+      const lower = errMsg.toLowerCase();
+      if (code === 429 || lower.includes('quota') || lower.includes('rate')) {
+        canFallback = true;
         msg = `${model} quota exceeded`;
+      } else if (code === 401 || code === 403 || lower.includes('credential') || lower.includes('not found') || lower.includes('not supported')) {
+        canFallback = true;
+        msg = `${model} not available`;
       } else if (code === 400) msg = 'Bad request — check your API key.';
-      else if (code === 403) msg = 'API key invalid or unauthorized.';
       else msg = errMsg || `Error ${code}`;
     } catch { msg = `Error ${code}`; }
-    return { ok: false, quota, msg };
+    return { ok: false, canFallback, msg };
   }
   const data = await res.json();
   const reply: string = (data.candidates?.[0]?.content?.parts || [])
@@ -80,7 +83,7 @@ export async function askGemini(state: AppState, text: string): Promise<string> 
       state.history.push({ role: 'model', parts: [{ text: result.reply }] });
       return result.reply;
     }
-    if (!result.quota) {
+    if (!result.canFallback) {
       state.history.pop();
       throw new Error(result.msg);
     }
