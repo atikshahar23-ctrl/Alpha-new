@@ -8,8 +8,6 @@ export class VoiceEngine {
   private suppress = false;
   private commandMode = false;
   private cmdTimer: number | undefined;
-  private finalBuffer = '';
-  private sendTimer: number | undefined;
   private voices: SpeechSynthesisVoice[] = [];
   private chosenVoice: SpeechSynthesisVoice | null = null;
   private state: AppState;
@@ -29,7 +27,7 @@ export class VoiceEngine {
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SR) {
       this.rec = new SR();
-      this.rec.lang = state.micLang === 'he' ? 'he-IL' : 'en-US';
+      this.rec.lang = state.micLang === 'he' ? 'he-IL' : state.micLang === 'es' ? 'es-ES' : 'en-US';
       this.rec.continuous = true;
       this.rec.interimResults = true;
       this.rec.maxAlternatives = 1;
@@ -99,39 +97,19 @@ export class VoiceEngine {
       .replace(/^[\s,.:!?-]+/, '')
       .trim();
   }
-  private flushBuffer() {
-    const text = this.finalBuffer.trim();
-    this.finalBuffer = '';
-    clearTimeout(this.sendTimer);
-    if (!text) return;
-    this.commandMode = false;
-    clearTimeout(this.cmdTimer);
-    this.onTranscript(text);
-  }
-
   private handleSpeech(final: string) {
     const raw = final.trim();
     if (!raw) return;
     if (this.commandMode) {
-      this.finalBuffer += ' ' + raw;
-      clearTimeout(this.sendTimer);
+      this.commandMode = false;
       clearTimeout(this.cmdTimer);
-      this.cmdTimer = window.setTimeout(() => {
-        this.commandMode = false;
-        if (this.wakeOn) this.onStateChange('armed');
-      }, 15000);
-      this.sendTimer = window.setTimeout(() => this.flushBuffer(), 700);
+      this.onTranscript(raw);
       return;
     }
     if (this.hasWake(raw)) {
       const cmd = this.stripWake(raw);
-      if (cmd.length > 1) {
-        this.finalBuffer = cmd;
-        clearTimeout(this.sendTimer);
-        this.sendTimer = window.setTimeout(() => this.flushBuffer(), 700);
-      } else {
-        this.listenNow();
-      }
+      if (cmd.length > 1) this.onTranscript(cmd);
+      else this.listenNow();
     }
   }
 
@@ -151,6 +129,7 @@ export class VoiceEngine {
     if (/natural|neural|online|enhanced|premium/.test(n)) s += 6;
     if (L === 'en' && /aria|jenny|jane|michelle|sonia|libby|samantha|female|zira|eva|joanna|amy|emma|salli/.test(n)) s += 5;
     if (L === 'he' && /carmit|hebrew|female/.test(n)) s += 5;
+    if (L === 'es' && /lucia|elena|spanish|female|conchita|lupe|penelope/.test(n)) s += 5;
     if (/male|david|mark|guy|james|ryan/.test(n)) s -= 4;
     if (L === 'en') { if (v.lang === 'en-US') s += 2; else if (v.lang === 'en-GB') s += 1; }
     if (/google/.test(n)) s += 1;
@@ -183,24 +162,21 @@ export class VoiceEngine {
     speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
     if (this.chosenVoice) { u.voice = this.chosenVoice; u.lang = this.chosenVoice.lang; }
-    else u.lang = this.state.replyLang === 'he' ? 'he-IL' : 'en-US';
+    else u.lang = this.state.replyLang === 'he' ? 'he-IL' : this.state.replyLang === 'es' ? 'es-ES' : 'en-US';
     u.rate = this.state.replyLang === 'he' ? 0.98 : 0.97;
     u.pitch = 1.05;
     u.onstart = () => { this.suppress = true; this.stopRec(); this.onStateChange('speaking'); };
     const done = () => {
       this.suppress = false;
-      if (this.wakeOn) {
-        setTimeout(() => { this.startRec(); this.listenNow(); }, 300);
-      } else {
-        this.onStateChange('');
-      }
+      if (this.wakeOn) { this.onStateChange('armed'); setTimeout(() => this.startRec(), 250); }
+      else this.onStateChange('');
     };
     u.onend = done;
     u.onerror = done;
     speechSynthesis.speak(u);
   }
 
-  setMicLang(lang: 'he' | 'en') {
-    if (this.rec) this.rec.lang = lang === 'he' ? 'he-IL' : 'en-US';
+  setMicLang(lang: 'he' | 'en' | 'es') {
+    if (this.rec) this.rec.lang = lang === 'he' ? 'he-IL' : lang === 'es' ? 'es-ES' : 'en-US';
   }
 }

@@ -1,7 +1,8 @@
 import { mountOrb } from '../orb/OrbScene';
 import { mountFlowLines } from '../bg/flowLines';
-import { loadState, saveState, addEvent, loadEvents, saveEvents, type AppState, type TextLang } from '../assistant/state';
-import { askGemini, runTags } from '../assistant/gemini';
+import { loadState, saveState, addEvent, loadEvents, saveEvents, type AppState, type TextLang, type AIProvider } from '../assistant/state';
+import { askAI, runTags } from '../assistant/gemini';
+import { tryLocalCommand } from '../assistant/local';
 import { VoiceEngine } from '../assistant/voice';
 import { AudioEngine } from '../assistant/audio';
 
@@ -10,26 +11,68 @@ export function mountApp(root: HTMLElement) {
     <div class="app">
       <div class="chrome topL"><div class="wm">ALPHA ASSISTANT</div><div class="clk" id="clock">--:--</div></div>
       <div class="chrome topR">
-        <button class="chip ghost" id="muteBtn">🔊</button>
-        <button class="chip" id="settingsBtn">⚙ SETTINGS</button>
-        <button class="chip ghost" id="newChat">+ NEW</button>
+        <button class="chip ghost" id="muteBtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg></button>
+        <button class="chip" id="settingsBtn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg> SETTINGS</button>
+        <button class="chip ghost" id="newChat"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> NEW</button>
       </div>
       <div class="stage" id="stage"></div>
+
+      <aside class="right-panel" id="rightPanel">
+        <div class="rp-head">
+          <span class="rp-title">OUTPUT</span>
+          <div class="rp-connections" id="connections">
+            <span class="conn-dot active" title="API"></span>
+            <span class="conn-dot" id="connSpotify" title="Spotify"></span>
+            <span class="conn-dot" id="connSocial" title="Social"></span>
+          </div>
+        </div>
+        <div class="rp-body" id="rpBody"></div>
+      </aside>
+
       <div class="dock">
         <div class="state" id="state">STANDBY</div>
-        <div class="log" id="chat"></div>
-        <div class="quick-actions" id="quickActions">
-          <button class="qa-chip" data-q="What's the weather today?">Weather</button>
-          <button class="qa-chip" data-q="Tell me a fun fact">Fun Fact</button>
-          <button class="qa-chip" data-q="Play some music">Music</button>
-          <button class="qa-chip" data-q="Search the web">Search</button>
-          <button class="qa-chip" data-q="Open my calendar">Calendar</button>
-          <button class="qa-chip" data-q="Tell me a joke">Joke</button>
+        <div class="mac-dock" id="macDock">
+          <button class="dock-item" data-q="What's the weather today?">
+            <span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg></span>
+            <span class="dl">Weather</span>
+          </button>
+          <button class="dock-item" data-q="Tell me a fun fact">
+            <span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 18h6M10 22h4M12 2a7 7 0 017 7c0 2.38-1.19 4.47-3 5.74V17H8v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 017-7z"/></svg></span>
+            <span class="dl">Fun Fact</span>
+          </button>
+          <button class="dock-item" data-q="Play some music on Spotify">
+            <span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M8 15s1.5-1 4-1 4 1 4 1M7 12s2-1.5 5-1.5 5 1.5 5 1.5M6.5 9S9 7 12 7s5.5 2 5.5 2"/></svg></span>
+            <span class="dl">Music</span>
+          </button>
+          <button class="dock-item" data-q="Search the web">
+            <span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
+            <span class="dl">Search</span>
+          </button>
+          <button class="dock-item" data-q="Open my calendar">
+            <span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
+            <span class="dl">Calendar</span>
+          </button>
+          <button class="dock-item" data-q="Tell me a joke">
+            <span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg></span>
+            <span class="dl">Joke</span>
+          </button>
+          <button class="dock-item" data-q="Play a video on YouTube">
+            <span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="20" height="16" rx="2"/><polygon points="10,8 16,12 10,16"/></svg></span>
+            <span class="dl">Video</span>
+          </button>
+          <button class="dock-item" data-q="Translate to Hebrew">
+            <span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg></span>
+            <span class="dl">Translate</span>
+          </button>
+          <button class="dock-item" id="detectBtn">
+            <span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 8V6a2 2 0 012-2h2M4 16v2a2 2 0 002 2h2M16 4h2a2 2 0 012 2v2M16 20h2a2 2 0 002-2v-2"/><circle cx="12" cy="10" r="3"/><path d="M7 18c0-2.8 2.2-5 5-5s5 2.2 5 5"/></svg></span>
+            <span class="dl">Detect</span>
+          </button>
         </div>
         <div class="bar">
-          <button class="ic mic" id="micBtn" title="Hey Alpha">🎙</button>
+          <button class="ic mic" id="micBtn" title="Hey Alpha"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></button>
           <div class="pill"><input id="input" type="text" placeholder="Type or speak to Alpha…" /></div>
-          <button class="ic send" id="sendBtn">↑</button>
+          <button class="ic send" id="sendBtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></button>
         </div>
       </div>
       <div class="win" id="win"><div class="winbox">
@@ -41,9 +84,9 @@ export function mountApp(root: HTMLElement) {
         <p>Enter your free Gemini API key to activate. Stored locally only.</p>
         <label>Assistant name</label><input id="nameInput" value="ALPHA" />
         <label>Mic language</label>
-        <select id="micSel"><option value="he">Hebrew</option><option value="en">English</option></select>
+        <select id="micSel"><option value="he">Hebrew</option><option value="en">English</option><option value="es">Español</option></select>
         <label>Voice language</label>
-        <select id="replySel"><option value="en">English</option><option value="he">Hebrew</option></select>
+        <select id="replySel"><option value="en">English</option><option value="he">Hebrew</option><option value="es">Español</option></select>
         <label>Text reply language</label>
         <select id="textLangSel">
           <option value="auto">Same as voice</option>
@@ -57,7 +100,46 @@ export function mountApp(root: HTMLElement) {
         </select>
         <label>Voice</label><select id="voiceSel"></select>
         <label>Background music</label><input type="range" id="ambSlider" min="0" max="100" value="40" />
+        <label>AI Provider</label>
+        <select id="providerSel">
+          <option value="gemini">Gemini (Google)</option>
+          <option value="grok">Grok (xAI)</option>
+          <option value="openai">ChatGPT (OpenAI)</option>
+        </select>
         <label>Gemini API key</label><input id="keyInput" type="password" placeholder="AIza..." />
+        <label>Grok API key</label><input id="grokKeyInput" type="password" placeholder="xai-..." />
+        <label>OpenAI API key</label><input id="openaiKeyInput" type="password" placeholder="sk-..." />
+
+        <div class="settings-section">
+          <div class="ss-title">CONNECTED SERVICES</div>
+          <div class="social-grid">
+            <div class="social-item" id="socialSpotify">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M8 15s1.5-1 4-1 4 1 4 1M7 12s2-1.5 5-1.5 5 1.5 5 1.5M6.5 9S9 7 12 7s5.5 2 5.5 2"/></svg>
+              <span>Spotify</span>
+              <input type="text" id="spotifyId" placeholder="Username or URI" />
+              <span class="social-status" id="spotifyStatus"></span>
+            </div>
+            <div class="social-item" id="socialTiktok">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 12a4 4 0 104 4V4a5 5 0 005 5"/></svg>
+              <span>TikTok</span>
+              <input type="text" id="tiktokId" placeholder="@username" />
+              <span class="social-status" id="tiktokStatus"></span>
+            </div>
+            <div class="social-item" id="socialInsta">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="5"/><circle cx="17.5" cy="6.5" r="1.5" fill="currentColor"/></svg>
+              <span>Instagram</span>
+              <input type="text" id="instaId" placeholder="@username" />
+              <span class="social-status" id="instaStatus"></span>
+            </div>
+            <div class="social-item" id="socialFb">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z"/></svg>
+              <span>Facebook</span>
+              <input type="text" id="fbId" placeholder="Profile URL" />
+              <span class="social-status" id="fbStatus"></span>
+            </div>
+          </div>
+        </div>
+
         <button class="go" id="saveBtn">Activate</button>
         <p style="margin-top:14px">Free key: <a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com/apikey</a></p>
       </div></div>
@@ -73,6 +155,26 @@ export function mountApp(root: HTMLElement) {
   const orb = mountOrb($('stage'));
   mountFlowLines(root.querySelector('.app')!);
 
+  // Load social connections
+  const socials = {
+    spotify: localStorage.getItem('alpha_social_spotify') || '',
+    tiktok: localStorage.getItem('alpha_social_tiktok') || '',
+    insta: localStorage.getItem('alpha_social_insta') || '',
+    fb: localStorage.getItem('alpha_social_fb') || '',
+  };
+  function updateConnIndicators() {
+    $('connSpotify').classList.toggle('active', !!socials.spotify);
+    $('connSocial').classList.toggle('active', !!(socials.tiktok || socials.insta || socials.fb));
+    $('spotifyStatus').textContent = socials.spotify ? '● Connected' : '';
+    $('spotifyStatus').className = 'social-status' + (socials.spotify ? ' on' : '');
+    $('tiktokStatus').textContent = socials.tiktok ? '● Connected' : '';
+    $('tiktokStatus').className = 'social-status' + (socials.tiktok ? ' on' : '');
+    $('instaStatus').textContent = socials.insta ? '● Connected' : '';
+    $('instaStatus').className = 'social-status' + (socials.insta ? ' on' : '');
+    $('fbStatus').textContent = socials.fb ? '● Connected' : '';
+    $('fbStatus').className = 'social-status' + (socials.fb ? ' on' : '');
+  }
+
   function setStatus(s: 'armed' | 'listening' | 'thinking' | 'speaking' | '') {
     const label = { armed: 'SAY "HEY ALPHA"', listening: 'LISTENING', thinking: 'THINKING', speaking: 'SPEAKING', '': 'STANDBY' }[s];
     $('state').textContent = label;
@@ -83,17 +185,36 @@ export function mountApp(root: HTMLElement) {
 
   function addMsg(text: string, who: 'me' | 'al' | 'sys') {
     const label = { me: 'YOU', al: state.name, sys: 'SYSTEM' }[who];
+    // Chat log (bottom)
     const div = document.createElement('div');
     div.className = 'turn ' + who;
     div.innerHTML = `<span class="who">${label}</span><div class="txt"></div>`;
-    $('chat').appendChild(div);
-    const txt = div.querySelector('.txt')!;
+    const chatEl = $('chat');
+    if (chatEl) {
+      chatEl.appendChild(div);
+      const txt = div.querySelector('.txt')!;
+      if (who === 'al') {
+        let i = 0;
+        const tick = () => { txt.textContent = text.slice(0, i++); chatEl.scrollTop = chatEl.scrollHeight; if (i <= text.length) setTimeout(tick, 12); };
+        tick();
+      } else txt.textContent = text;
+      chatEl.scrollTop = chatEl.scrollHeight;
+    }
+    // Right panel output
+    const rp = $('rpBody');
+    const rpDiv = document.createElement('div');
+    rpDiv.className = 'rp-msg ' + who;
+    const time = new Date();
+    const ts = `${String(time.getHours()).padStart(2,'0')}:${String(time.getMinutes()).padStart(2,'0')}`;
+    rpDiv.innerHTML = `<div class="rp-meta"><span class="rp-who">${label}</span><span class="rp-time">${ts}</span></div><div class="rp-text"></div>`;
+    rp.appendChild(rpDiv);
+    const rpTxt = rpDiv.querySelector('.rp-text')!;
     if (who === 'al') {
       let i = 0;
-      const tick = () => { txt.textContent = text.slice(0, i++); $('chat').scrollTop = $('chat').scrollHeight; if (i <= text.length) setTimeout(tick, 12); };
+      const tick = () => { rpTxt.textContent = text.slice(0, i++); rp.scrollTop = rp.scrollHeight; if (i <= text.length) setTimeout(tick, 12); };
       tick();
-    } else txt.textContent = text;
-    $('chat').scrollTop = $('chat').scrollHeight;
+    } else rpTxt.textContent = text;
+    rp.scrollTop = rp.scrollHeight;
   }
 
   function openWin(title: string) { $('winTitle').textContent = title; $('win').classList.add('show'); audio.open(); }
@@ -147,10 +268,10 @@ export function mountApp(root: HTMLElement) {
       '<input id="evT" placeholder="Title" style="flex:1;min-width:140px;background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:10px;padding:10px;color:var(--ink)">' +
       '<input type="date" id="evD" style="background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:10px;padding:10px;color:var(--ink)">' +
       '<input type="time" id="evTime" style="background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:10px;padding:10px;color:var(--ink)">' +
-      '<button id="evAdd" style="background:linear-gradient(135deg,var(--cyan),var(--purple));border:none;border-radius:10px;padding:10px 18px;cursor:pointer;color:#fff;font-weight:600">Add</button></div>';
+      '<button id="evAdd" style="background:linear-gradient(135deg,var(--gold),#fff);border:none;border-radius:10px;padding:10px 18px;cursor:pointer;color:#04060d;font-weight:600">Add</button></div>';
     if (!ev.length) html += '<div style="color:var(--dim);font-style:italic">Calendar is empty.</div>';
     for (const e of ev)
-      html += `<div style="display:flex;gap:12px;align-items:center;padding:12px;background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:12px;margin-bottom:8px"><span style="color:var(--cyan);min-width:100px;font-size:13px">${e.date}${e.time ? ' · ' + e.time : ''}</span><span style="flex:1">${e.title}</span><button data-id="${e.id}" class="del" style="background:none;border:none;color:var(--dim);cursor:pointer;font-size:16px">🗑</button></div>`;
+      html += `<div style="display:flex;gap:12px;align-items:center;padding:12px;background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:12px;margin-bottom:8px"><span style="color:var(--cyan);min-width:100px;font-size:13px">${e.date}${e.time ? ' · ' + e.time : ''}</span><span style="flex:1">${e.title}</span><button data-id="${e.id}" class="del" style="background:none;border:none;color:var(--dim);cursor:pointer;font-size:16px">✕</button></div>`;
     html += '</div>';
     $('winBody').innerHTML = html;
     $('evAdd').onclick = () => { const t = $<HTMLInputElement>('evT').value.trim(), d = $<HTMLInputElement>('evD').value; if (!t || !d) return; addEvent(t, d, $<HTMLInputElement>('evTime').value); renderCalendar(); };
@@ -158,11 +279,22 @@ export function mountApp(root: HTMLElement) {
   }
   function openCalendar() { openWin('Calendar'); renderCalendar(); }
 
+  let asking = false;
   async function ask(text: string) {
-    if (!state.key) { openSetup(); return; }
+    const localReply = tryLocalCommand(text);
+    if (localReply) {
+      audio.receive();
+      addMsg(localReply, 'al');
+      voice.speak(localReply);
+      return;
+    }
+    const hasAnyKey = state.key || state.grokKey || state.openaiKey;
+    if (!hasAnyKey) { openSetup(); return; }
+    if (asking) return;
+    asking = true;
     setStatus('thinking');
     try {
-      const reply = await askGemini(state, text);
+      const reply = await askAI(state, text);
       const clean = runTags(reply, { onVideo: openVideo, onSearch: openSearch, onCalendar: openCalendar, onEvent: addEvent, onSpotify: openSpotify }) || 'Done.';
       audio.receive();
       addMsg(clean, 'al');
@@ -171,6 +303,8 @@ export function mountApp(root: HTMLElement) {
       if (voice.wakeOn) setTimeout(() => voice.setWake(true), 500);
       else setStatus('');
       addMsg(err.message || 'Connection error', 'sys');
+    } finally {
+      asking = false;
     }
   }
 
@@ -192,10 +326,19 @@ export function mountApp(root: HTMLElement) {
     $('micBtn').classList.toggle('on', turningOn);
     if (turningOn) audio.micOn(); else audio.micOff();
   };
-  $('muteBtn').onclick = () => { audio.toggleMute(); $('muteBtn').textContent = audio.muted ? '🔇' : '🔊'; };
-  $('newChat').onclick = () => { state.history = []; $('chat').innerHTML = ''; addMsg(state.name + ' ready.', 'al'); };
+  $('muteBtn').onclick = () => { audio.toggleMute(); };
+  $('newChat').onclick = () => { state.history = []; $('rpBody').innerHTML = ''; addMsg(state.name + ' ready.', 'al'); };
 
-  $('quickActions').querySelectorAll<HTMLButtonElement>('.qa-chip').forEach(btn => {
+  // Detect button
+  let detecting = false;
+  $('detectBtn').onclick = () => {
+    detecting = !detecting;
+    if (detecting) { orb.startBodyDetection(); $('detectBtn').classList.add('active'); }
+    else { orb.stopBodyDetection(); $('detectBtn').classList.remove('active'); }
+  };
+
+  // Dock items click
+  document.querySelectorAll<HTMLButtonElement>('.dock-item[data-q]').forEach(btn => {
     btn.onclick = () => {
       const q = btn.dataset.q || '';
       if (!q) return;
@@ -205,13 +348,38 @@ export function mountApp(root: HTMLElement) {
     };
   });
 
+  // Mac dock magnification
+  const dock = $('macDock');
+  const dockItems = dock.querySelectorAll<HTMLButtonElement>('.dock-item');
+  dock.addEventListener('mousemove', (e: MouseEvent) => {
+    dockItems.forEach(item => {
+      const rect = item.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const dist = Math.abs(e.clientX - cx);
+      const maxDist = 100;
+      const scale = dist < maxDist ? 1 + (1 - dist / maxDist) * 0.5 : 1;
+      const ty = dist < maxDist ? -(1 - dist / maxDist) * 14 : 0;
+      item.style.transform = `scale(${scale}) translateY(${ty}px)`;
+    });
+  });
+  dock.addEventListener('mouseleave', () => {
+    dockItems.forEach(item => { item.style.transform = ''; });
+  });
+
   function openSetup() {
     $<HTMLInputElement>('nameInput').value = state.name;
     $<HTMLInputElement>('keyInput').value = state.key;
+    $<HTMLInputElement>('grokKeyInput').value = state.grokKey;
+    $<HTMLInputElement>('openaiKeyInput').value = state.openaiKey;
+    $<HTMLSelectElement>('providerSel').value = state.provider;
     $<HTMLSelectElement>('micSel').value = state.micLang;
     $<HTMLSelectElement>('replySel').value = state.replyLang;
     $<HTMLSelectElement>('textLangSel').value = state.textLang;
     $<HTMLInputElement>('ambSlider').value = String(Math.round(audio.ambLevel * 100));
+    $<HTMLInputElement>('spotifyId').value = socials.spotify;
+    $<HTMLInputElement>('tiktokId').value = socials.tiktok;
+    $<HTMLInputElement>('instaId').value = socials.insta;
+    $<HTMLInputElement>('fbId').value = socials.fb;
     refreshVoiceList();
     $('overlay').classList.add('show');
   }
@@ -227,6 +395,9 @@ export function mountApp(root: HTMLElement) {
   $('saveBtn').onclick = () => {
     state.name = $<HTMLInputElement>('nameInput').value.trim() || 'ALPHA';
     state.key = $<HTMLInputElement>('keyInput').value.trim();
+    state.grokKey = $<HTMLInputElement>('grokKeyInput').value.trim();
+    state.openaiKey = $<HTMLInputElement>('openaiKeyInput').value.trim();
+    state.provider = $<HTMLSelectElement>('providerSel').value as AIProvider;
     state.micLang = $<HTMLSelectElement>('micSel').value as any;
     state.replyLang = $<HTMLSelectElement>('replySel').value as any;
     state.textLang = $<HTMLSelectElement>('textLangSel').value as TextLang;
@@ -234,6 +405,16 @@ export function mountApp(root: HTMLElement) {
     voice.setMicLang(state.micLang);
     const vsel = $<HTMLSelectElement>('voiceSel').value;
     if (vsel) voice.setVoice(vsel);
+    // Save social connections
+    socials.spotify = $<HTMLInputElement>('spotifyId').value.trim();
+    socials.tiktok = $<HTMLInputElement>('tiktokId').value.trim();
+    socials.insta = $<HTMLInputElement>('instaId').value.trim();
+    socials.fb = $<HTMLInputElement>('fbId').value.trim();
+    localStorage.setItem('alpha_social_spotify', socials.spotify);
+    localStorage.setItem('alpha_social_tiktok', socials.tiktok);
+    localStorage.setItem('alpha_social_insta', socials.insta);
+    localStorage.setItem('alpha_social_fb', socials.fb);
+    updateConnIndicators();
     saveState(state);
     $('overlay').classList.remove('show');
     if (state.history.length === 0) addMsg(state.name + ' online. Talk to me or type.', 'al');
@@ -242,6 +423,8 @@ export function mountApp(root: HTMLElement) {
   function pad(n: number) { return String(n).padStart(2, '0'); }
   setInterval(() => { const d = new Date(); $('clock').textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}`; }, 1000);
 
-  if (!state.key) openSetup();
+  updateConnIndicators();
+  const hasAnyApiKey = state.key || state.grokKey || state.openaiKey;
+  if (!hasAnyApiKey) openSetup();
   else addMsg(state.name + ' online. Talk to me or type.', 'al');
 }

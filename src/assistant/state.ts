@@ -1,9 +1,14 @@
-export type ReplyLang = 'en' | 'he';
-export type MicLang = 'he' | 'en';
+export type ReplyLang = 'en' | 'he' | 'es';
+export type MicLang = 'he' | 'en' | 'es';
 export type TextLang = 'en' | 'he' | 'ar' | 'ru' | 'fr' | 'es' | 'de' | 'auto';
+
+export type AIProvider = 'gemini' | 'grok' | 'openai';
 
 export interface AppState {
   key: string;
+  grokKey: string;
+  openaiKey: string;
+  provider: AIProvider;
   name: string;
   micLang: MicLang;
   replyLang: ReplyLang;
@@ -15,7 +20,8 @@ export interface AppState {
   wakeOn: boolean;
 }
 
-const KEY = 'alpha_key', NAME = 'alpha_name', MICLANG = 'alpha_micLang', REPLYLANG = 'alpha_replyLang',
+const KEY = 'alpha_key', GROK = 'alpha_grok', OPENAI = 'alpha_openai', PROV = 'alpha_provider',
+  NAME = 'alpha_name', MICLANG = 'alpha_micLang', REPLYLANG = 'alpha_replyLang',
   TEXTLANG = 'alpha_textLang', AMB = 'alpha_amb', SFX = 'alpha_sfx', WAKE = 'alpha_wake';
 
 export function loadState(): AppState {
@@ -23,6 +29,9 @@ export function loadState(): AppState {
   if (isNaN(amb)) amb = 0.4;
   return {
     key: localStorage.getItem(KEY) || '',
+    grokKey: localStorage.getItem(GROK) || '',
+    openaiKey: localStorage.getItem(OPENAI) || '',
+    provider: (localStorage.getItem(PROV) as AIProvider) || 'gemini',
     name: localStorage.getItem(NAME) || 'ALPHA',
     micLang: (localStorage.getItem(MICLANG) as MicLang) || 'he',
     replyLang: (localStorage.getItem(REPLYLANG) as ReplyLang) || 'en',
@@ -37,6 +46,9 @@ export function loadState(): AppState {
 
 export function saveState(s: AppState) {
   localStorage.setItem(KEY, s.key);
+  localStorage.setItem(GROK, s.grokKey);
+  localStorage.setItem(OPENAI, s.openaiKey);
+  localStorage.setItem(PROV, s.provider);
   localStorage.setItem(NAME, s.name);
   localStorage.setItem(MICLANG, s.micLang);
   localStorage.setItem(REPLYLANG, s.replyLang);
@@ -66,3 +78,41 @@ export function upcomingText(): string {
   const ev = loadEvents().filter(e => e.date >= today).slice(0, 10);
   return ev.length ? ev.map(e => `${e.date} ${e.time} ${e.title}`).join(' ; ') : 'empty';
 }
+
+// --- TASKS ---
+export interface Task { id: string; text: string; done: boolean; created: string; priority: 'low' | 'med' | 'high' }
+
+export function loadTasks(): Task[] {
+  try { return JSON.parse(localStorage.getItem('alpha_tasks') || '[]'); } catch { return []; }
+}
+export function saveTasks(t: Task[]) { localStorage.setItem('alpha_tasks', JSON.stringify(t)); }
+export function addTask(text: string, priority: 'low' | 'med' | 'high' = 'med'): Task[] {
+  const tasks = loadTasks();
+  tasks.push({ id: Date.now() + '_' + Math.random(), text, done: false, created: new Date().toISOString().slice(0, 10), priority });
+  saveTasks(tasks);
+  return tasks;
+}
+export function toggleTask(id: string): Task[] {
+  const tasks = loadTasks();
+  const t = tasks.find(x => x.id === id);
+  if (t) t.done = !t.done;
+  saveTasks(tasks);
+  return tasks;
+}
+export function removeTask(id: string): Task[] {
+  const tasks = loadTasks().filter(x => x.id !== id);
+  saveTasks(tasks);
+  return tasks;
+}
+
+// --- NOTES ---
+export function loadNotes(): string[] {
+  try { return JSON.parse(localStorage.getItem('alpha_notes') || '[]'); } catch { return []; }
+}
+export function saveNote(note: string) {
+  const notes = loadNotes();
+  notes.unshift(note);
+  if (notes.length > 50) notes.length = 50;
+  localStorage.setItem('alpha_notes', JSON.stringify(notes));
+}
+export function clearNotes() { localStorage.setItem('alpha_notes', '[]'); }
