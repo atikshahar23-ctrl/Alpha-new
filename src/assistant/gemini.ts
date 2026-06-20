@@ -1,7 +1,7 @@
 import type { AppState } from './state';
 import { upcomingText } from './state';
 
-const MODEL = 'gemini-3.5-flash';
+const MODEL = 'gemini-2.0-flash';
 
 const LANG_INSTRUCTIONS: Record<string, string> = {
   en: 'ALWAYS reply in fluent, natural, warm English. Short, conversational sentences like a person speaking aloud.',
@@ -45,8 +45,19 @@ export async function askGemini(state: AppState, text: string): Promise<string> 
     }
   );
   if (!res.ok) {
-    const e = await res.text();
-    throw new Error(`${res.status} ${e}`);
+    const code = res.status;
+    let msg = '';
+    try {
+      const e = await res.json();
+      const errMsg = e?.error?.message || '';
+      if (code === 429 || errMsg.toLowerCase().includes('quota') || errMsg.toLowerCase().includes('rate'))
+        msg = 'API quota exceeded. Wait a minute and try again.';
+      else if (code === 400) msg = 'Bad request — check your API key.';
+      else if (code === 403) msg = 'API key invalid or unauthorized.';
+      else msg = errMsg || `Error ${code}`;
+    } catch { msg = `Error ${code}`; }
+    state.history.pop();
+    throw new Error(msg);
   }
   const data = await res.json();
   const reply: string = (data.candidates?.[0]?.content?.parts || [])
