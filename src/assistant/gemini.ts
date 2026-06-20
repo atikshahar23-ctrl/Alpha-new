@@ -3,14 +3,22 @@ import { upcomingText } from './state';
 
 const MODEL = 'gemini-3.5-flash';
 
+const LANG_INSTRUCTIONS: Record<string, string> = {
+  en: 'ALWAYS reply in fluent, natural, warm English. Short, conversational sentences like a person speaking aloud.',
+  he: 'ענה תמיד בעברית טבעית, רהוטה ונקייה — דיבור אנושי וזורם, לא מילולי ולא רובוטי. משפטים קצרים כמו בשיחה.',
+  ar: 'أجب دائماً بالعربية الفصحى السلسة والطبيعية. جمل قصيرة وحوارية.',
+  ru: 'Всегда отвечай на естественном, тёплом русском языке. Короткие, разговорные предложения.',
+  fr: 'Réponds toujours en français naturel, chaleureux et fluide. Phrases courtes et conversationnelles.',
+  es: 'Responde siempre en español natural, cálido y fluido. Frases cortas y conversacionales.',
+  de: 'Antworte immer auf natürlichem, warmem Deutsch. Kurze, gesprächige Sätze.',
+};
+
 export function systemPrompt(state: AppState): string {
   const d = new Date();
   const today = d.toISOString().slice(0, 10);
   const wd = d.toLocaleDateString('en-US', { weekday: 'long' });
-  const langLine =
-    state.replyLang === 'he'
-      ? 'ענה תמיד בעברית טבעית, רהוטה ונקייה — דיבור אנושי וזורם, לא מילולי ולא רובוטי. משפטים קצרים כמו בשיחה.'
-      : 'ALWAYS reply in fluent, natural, warm English. Short, conversational sentences like a person speaking aloud.';
+  const textLang = state.textLang === 'auto' ? state.replyLang : state.textLang;
+  const langLine = LANG_INSTRUCTIONS[textLang] || LANG_INSTRUCTIONS['en'];
   return `You are ${state.name}, an advanced personal assistant with a calm, warm, confident presence. ${langLine} No long lists or tables.
 Today is ${wd}, ${today}.
 Control the app via tags at the END of your reply when relevant (never mention them in your spoken text):
@@ -18,6 +26,7 @@ Control the app via tags at the END of your reply when relevant (never mention t
 - web search: [[SEARCH: query]]
 - add a calendar event: [[EVENT: title | YYYY-MM-DD | HH:MM]]
 - open the calendar: [[CALENDAR]]
+- play music on Spotify: [[SPOTIFY: song or artist name]]
 User's calendar: ${upcomingText()}.`;
 }
 
@@ -55,15 +64,17 @@ export function runTags(
     onSearch: (q: string) => void;
     onCalendar: () => void;
     onEvent: (title: string, date: string, time: string) => void;
+    onSpotify: (q: string) => void;
   }
 ): string {
-  const re = /\[\[(VIDEO|SEARCH|EVENT|CALENDAR)\s*:?\s*([^\]]*)\]\]/g;
+  const re = /\[\[(VIDEO|SEARCH|EVENT|CALENDAR|SPOTIFY)\s*:?\s*([^\]]*)\]\]/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
     const type = m[1], arg = m[2].trim();
     if (type === 'VIDEO') hooks.onVideo(arg);
     else if (type === 'SEARCH') hooks.onSearch(arg);
     else if (type === 'CALENDAR') hooks.onCalendar();
+    else if (type === 'SPOTIFY') hooks.onSpotify(arg);
     else if (type === 'EVENT') {
       const p = arg.split('|').map(s => s.trim());
       if (p[0] && p[1]) hooks.onEvent(p[0], p[1], p[2] || '');
