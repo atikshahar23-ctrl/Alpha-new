@@ -9,6 +9,8 @@ const MODELS = [
 
 let activeModel = 0;
 let busy = false;
+const modelCooldowns: number[] = [0, 0, 0];
+const COOLDOWN_MS = 5000;
 
 const LANG_INSTRUCTIONS: Record<string, string> = {
   en: 'ALWAYS reply in fluent, natural, warm English. Short, conversational sentences like a person speaking aloud.',
@@ -45,8 +47,8 @@ async function tryModel(model: string, state: AppState): Promise<{ ok: true; rep
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': state.key },
       body: JSON.stringify({
         system_instruction: { parts: [{ text: systemPrompt(state) }] },
-        contents: state.history.slice(-16),
-        generationConfig: { temperature: 0.8, maxOutputTokens: 800 },
+        contents: state.history.slice(-8),
+        generationConfig: { temperature: 0.8, maxOutputTokens: 500 },
       }),
     }
   );
@@ -84,10 +86,12 @@ export async function askGemini(state: AppState, text: string): Promise<string> 
   state.history.push({ role: 'user', parts: [{ text }] });
 
   try {
-    // Try the last working model first, then fall back to others
+    const now = Date.now();
+    // Try the last working model first, then fall back to others — skip models on cooldown
     const order = [activeModel, ...MODELS.map((_, i) => i).filter(i => i !== activeModel)];
 
     for (const idx of order) {
+      if (now < modelCooldowns[idx]) continue;
       const model = MODELS[idx];
       const result = await tryModel(model, state);
       if (result.ok) {
@@ -99,10 +103,11 @@ export async function askGemini(state: AppState, text: string): Promise<string> 
         state.history.pop();
         throw new Error(result.msg);
       }
+      modelCooldowns[idx] = Date.now() + COOLDOWN_MS;
     }
 
     state.history.pop();
-    throw new Error('All models quota exceeded. Try again later or check your API key at aistudio.google.com.');
+    throw new Error('Quota exceeded. Please wait a few seconds and try again.');
   } finally {
     busy = false;
   }
