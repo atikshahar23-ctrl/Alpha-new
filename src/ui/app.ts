@@ -15,16 +15,29 @@ export function mountApp(root: HTMLElement) {
         <button class="chip ghost" id="newChat">+ NEW</button>
       </div>
       <div class="stage" id="stage"></div>
+      <nav class="side-panel" id="sidePanel">
+        <div class="sp-title">COMMANDS</div>
+        <button class="sp-item" data-q="What's the weather today?"><span class="sp-icon">🌤</span><span class="sp-label">Weather</span></button>
+        <button class="sp-item" data-q="Tell me a fun fact"><span class="sp-icon">💡</span><span class="sp-label">Fun Fact</span></button>
+        <button class="sp-item" data-q="Play some music on Spotify"><span class="sp-icon">🎵</span><span class="sp-label">Music</span></button>
+        <button class="sp-item" data-q="Search the web"><span class="sp-icon">🔍</span><span class="sp-label">Search</span></button>
+        <button class="sp-item" data-q="Open my calendar"><span class="sp-icon">📅</span><span class="sp-label">Calendar</span></button>
+        <button class="sp-item" data-q="Tell me a joke"><span class="sp-icon">😂</span><span class="sp-label">Joke</span></button>
+        <button class="sp-item" data-q="Play a video on YouTube"><span class="sp-icon">▶️</span><span class="sp-label">Video</span></button>
+        <button class="sp-item" data-q="What time is it?"><span class="sp-icon">⏰</span><span class="sp-label">Time</span></button>
+        <button class="sp-item" data-q="Translate to Hebrew"><span class="sp-icon">🌐</span><span class="sp-label">Translate</span></button>
+      </nav>
       <div class="dock">
         <div class="state" id="state">STANDBY</div>
         <div class="log" id="chat"></div>
-        <div class="quick-actions" id="quickActions">
-          <button class="qa-chip" data-q="What's the weather today?">Weather</button>
-          <button class="qa-chip" data-q="Tell me a fun fact">Fun Fact</button>
-          <button class="qa-chip" data-q="Play some music">Music</button>
-          <button class="qa-chip" data-q="Search the web">Search</button>
-          <button class="qa-chip" data-q="Open my calendar">Calendar</button>
-          <button class="qa-chip" data-q="Tell me a joke">Joke</button>
+        <div class="mac-dock" id="macDock">
+          <button class="dock-item" data-q="What's the weather today?"><span class="dock-icon">🌤</span><span class="dock-label">Weather</span></button>
+          <button class="dock-item" data-q="Tell me a fun fact"><span class="dock-icon">💡</span><span class="dock-label">Fun Fact</span></button>
+          <button class="dock-item" data-q="Play some music on Spotify"><span class="dock-icon">🎵</span><span class="dock-label">Music</span></button>
+          <button class="dock-item" data-q="Search the web"><span class="dock-icon">🔍</span><span class="dock-label">Search</span></button>
+          <button class="dock-item" data-q="Open my calendar"><span class="dock-icon">📅</span><span class="dock-label">Calendar</span></button>
+          <button class="dock-item" data-q="Tell me a joke"><span class="dock-icon">😂</span><span class="dock-label">Joke</span></button>
+          <button class="dock-item" data-q="Play a video on YouTube"><span class="dock-icon">▶️</span><span class="dock-label">Video</span></button>
         </div>
         <div class="bar">
           <button class="ic mic" id="micBtn" title="Hey Alpha">🎙</button>
@@ -168,9 +181,9 @@ export function mountApp(root: HTMLElement) {
       addMsg(clean, 'al');
       voice.speak(clean);
     } catch (err: any) {
-      setStatus(voice.wakeOn ? 'armed' : '');
-      const s = String(err);
-      addMsg(s.includes('400') || s.includes('403') ? 'Invalid Gemini key — check Settings.' : 'Connection error: ' + err.message, 'sys');
+      if (voice.wakeOn) setTimeout(() => voice.setWake(true), 500);
+      else setStatus('');
+      addMsg(err.message || 'Connection error', 'sys');
     }
   }
 
@@ -195,7 +208,8 @@ export function mountApp(root: HTMLElement) {
   $('muteBtn').onclick = () => { audio.toggleMute(); $('muteBtn').textContent = audio.muted ? '🔇' : '🔊'; };
   $('newChat').onclick = () => { state.history = []; $('chat').innerHTML = ''; addMsg(state.name + ' ready.', 'al'); };
 
-  $('quickActions').querySelectorAll<HTMLButtonElement>('.qa-chip').forEach(btn => {
+  // Mac dock + side panel click handlers
+  document.querySelectorAll<HTMLButtonElement>('.dock-item, .sp-item').forEach(btn => {
     btn.onclick = () => {
       const q = btn.dataset.q || '';
       if (!q) return;
@@ -203,6 +217,24 @@ export function mountApp(root: HTMLElement) {
       addMsg(q, 'me');
       ask(q);
     };
+  });
+
+  // Mac dock magnification effect
+  const dock = $('macDock');
+  const dockItems = dock.querySelectorAll<HTMLButtonElement>('.dock-item');
+  dock.addEventListener('mousemove', (e: MouseEvent) => {
+    dockItems.forEach(item => {
+      const rect = item.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const dist = Math.abs(e.clientX - cx);
+      const maxDist = 120;
+      const scale = dist < maxDist ? 1 + (1 - dist / maxDist) * 0.55 : 1;
+      const ty = dist < maxDist ? -(1 - dist / maxDist) * 16 : 0;
+      item.style.transform = `scale(${scale}) translateY(${ty}px)`;
+    });
+  });
+  dock.addEventListener('mouseleave', () => {
+    dockItems.forEach(item => { item.style.transform = ''; });
   });
 
   function openSetup() {

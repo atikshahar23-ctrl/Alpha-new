@@ -12,9 +12,9 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
-  camera.position.set(0, 2.2, 6.5);
-  camera.lookAt(0, 1.8, 0);
+  const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 100);
+  camera.position.set(0, 1.6, 5.8);
+  camera.lookAt(0, 1.4, 0);
 
   function size() { return container.clientWidth || 240; }
   function getH() { return container.clientHeight || size(); }
@@ -47,8 +47,8 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   const group = new THREE.Group();
   scene.add(group);
 
-  const S = 2.2;
-  const BY = -1.2;
+  const S = 2.8;
+  const BY = -2.0;
 
   // --- HUMANOID PARTICLE FIGURE ---
   const figurePoints: number[] = [];
