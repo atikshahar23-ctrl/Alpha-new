@@ -88,12 +88,13 @@ body {
 .chip.ghost { color: var(--dim); border-color: var(--line) }
 .chip.ghost:hover { color: var(--gold); border-color: var(--glass-border) }
 
-/* 3D stage — transparent background, no box */
+/* 3D stage — full viewport, figure rises from bottom */
 .stage {
-  position: fixed; left: 50%; top: 30%;
-  transform: translate(-50%, -50%);
-  width: var(--orb); height: var(--orb);
+  position: fixed; left: 50%; bottom: 0;
+  transform: translateX(-50%);
+  width: min(800px, 100vw); height: 85vh;
   z-index: 1;
+  pointer-events: none;
 }
 .stage canvas {
   display: block; width: 100% !important; height: 100% !important;
@@ -342,7 +343,7 @@ body {
   .topL .wm { font-size: 14px; letter-spacing: 3px }
   .topR { top: 12px; right: 12px; gap: 6px }
   .chip { font-size: 9px; padding: 6px 10px; border-radius: 8px }
-  .stage { top: 26% }
+  .stage { width: 100vw; height: 80vh }
   .dock { width: 96vw }
   .log { max-height: 22vh }
   .turn .txt { font-size: 14px }

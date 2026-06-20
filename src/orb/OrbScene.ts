@@ -12,15 +12,17 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
-  camera.position.set(0, 0.8, 5.5);
-  camera.lookAt(0, 0.2, 0);
+  const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
+  camera.position.set(0, 2.2, 6.5);
+  camera.lookAt(0, 1.8, 0);
 
   function size() { return container.clientWidth || 240; }
+  function getH() { return container.clientHeight || size(); }
   function resize() {
-    const s = size();
-    renderer.setSize(s, s, false);
-    camera.aspect = 1;
+    const w = size();
+    const h = getH();
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
     camera.updateProjectionMatrix();
   }
   resize();
@@ -45,70 +47,73 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   const group = new THREE.Group();
   scene.add(group);
 
+  const S = 2.2;
+  const BY = -1.2;
+
   // --- HUMANOID PARTICLE FIGURE ---
   const figurePoints: number[] = [];
 
   // Head (sphere)
-  for (let i = 0; i < 600; i++) {
+  for (let i = 0; i < 800; i++) {
     const phi = Math.acos(2 * Math.random() - 1);
     const theta = Math.random() * Math.PI * 2;
-    const r = 0.22;
+    const r = 0.22 * S;
     figurePoints.push(
       r * Math.sin(phi) * Math.cos(theta),
-      2.1 + r * Math.cos(phi),
+      BY + 2.1 * S + r * Math.cos(phi),
       r * Math.sin(phi) * Math.sin(theta)
     );
   }
 
   // Neck
-  for (let i = 0; i < 100; i++) {
+  for (let i = 0; i < 150; i++) {
     const a = Math.random() * Math.PI * 2;
-    const r = 0.08;
-    figurePoints.push(r * Math.cos(a), 1.85 + Math.random() * 0.15, r * Math.sin(a));
+    const r = 0.08 * S;
+    figurePoints.push(r * Math.cos(a), BY + (1.85 + Math.random() * 0.15) * S, r * Math.sin(a));
   }
 
   // Torso (tapered cylinder)
-  for (let i = 0; i < 1200; i++) {
+  for (let i = 0; i < 1800; i++) {
     const y = Math.random();
-    const rTop = 0.28, rBot = 0.2;
+    const rTop = 0.32 * S, rBot = 0.22 * S;
     const r = rTop + (rBot - rTop) * y;
     const a = Math.random() * Math.PI * 2;
-    figurePoints.push(r * Math.cos(a), 1.85 - y * 0.9, r * Math.sin(a));
+    figurePoints.push(r * Math.cos(a), BY + (1.85 - y * 0.9) * S, r * Math.sin(a));
   }
 
-  // Shoulders & arms (spread outward like reference image)
+  // Shoulders & arms
   for (let side = -1; side <= 1; side += 2) {
-    for (let i = 0; i < 200; i++) {
-      const t = Math.random();
-      const x = side * (0.28 + t * 0.4);
-      const y = 1.75 - t * 0.15;
-      const z = (Math.random() - 0.5) * 0.1;
-      figurePoints.push(x, y, z);
-    }
     for (let i = 0; i < 300; i++) {
       const t = Math.random();
-      const x = side * (0.68 + t * 0.5);
-      const y = 1.6 - t * 0.4;
-      const z = (Math.random() - 0.5) * 0.08;
-      const a = Math.random() * Math.PI * 2;
-      const r = 0.05;
-      figurePoints.push(x + r * Math.cos(a), y, z + r * Math.sin(a));
-    }
-    for (let i = 0; i < 250; i++) {
-      const t = Math.random();
-      const x = side * (1.18 + t * 0.35);
-      const y = 1.2 + t * 0.25;
-      const z = 0.1 + t * 0.15 + (Math.random() - 0.5) * 0.06;
+      const x = side * (0.28 + t * 0.45) * S;
+      const y = BY + (1.75 - t * 0.15) * S;
+      const z = (Math.random() - 0.5) * 0.12 * S;
       figurePoints.push(x, y, z);
     }
-    for (let f = 0; f < 4; f++) {
-      for (let i = 0; i < 30; i++) {
-        const t = Math.random() * 0.12;
-        const angle = (f / 4) * 0.6 - 0.3;
+    for (let i = 0; i < 450; i++) {
+      const t = Math.random();
+      const x = side * (0.73 + t * 0.55) * S;
+      const y = BY + (1.6 - t * 0.4) * S;
+      const z = (Math.random() - 0.5) * 0.1 * S;
+      const a = Math.random() * Math.PI * 2;
+      const r = 0.06 * S;
+      figurePoints.push(x + r * Math.cos(a), y, z + r * Math.sin(a));
+    }
+    for (let i = 0; i < 350; i++) {
+      const t = Math.random();
+      const x = side * (1.28 + t * 0.4) * S;
+      const y = BY + (1.2 + t * 0.25) * S;
+      const z = (0.1 + t * 0.15 + (Math.random() - 0.5) * 0.06) * S;
+      figurePoints.push(x, y, z);
+    }
+    for (let f = 0; f < 5; f++) {
+      for (let i = 0; i < 40; i++) {
+        const t = Math.random() * 0.15 * S;
+        const angle = (f / 5) * 0.7 - 0.35;
         figurePoints.push(
-          side * (1.53 + t * Math.cos(angle) * side),
-          1.45 + t * Math.sin(angle) + f * 0.02,
-          0.25 + t * 0.1
+          side * (1.68 * S + t * Math.cos(angle) * side),
+          BY + (1.45 + f * 0.02) * S + t * Math.sin(angle),
+          0.28 * S + t * 0.1
         );
       }
     }
@@ -118,7 +123,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   const figGeo = new THREE.BufferGeometry();
   figGeo.setAttribute('position', new THREE.BufferAttribute(figArr, 3));
   const figMat = new THREE.PointsMaterial({
-    size: 0.018, map: glowCyan, color: 0x44ccff,
+    size: 0.03, map: glowCyan, color: 0x44ccff,
     transparent: true, opacity: 0.85,
     blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
   });
@@ -127,18 +132,18 @@ export function mountOrb(container: HTMLElement): OrbHandle {
 
   // --- Gold edge highlights ---
   const goldPts: number[] = [];
-  for (let i = 0; i < 400; i++) {
+  for (let i = 0; i < 600; i++) {
     const idx = Math.floor(Math.random() * (figurePoints.length / 3)) * 3;
     goldPts.push(
-      figurePoints[idx] + (Math.random() - 0.5) * 0.02,
-      figurePoints[idx + 1] + (Math.random() - 0.5) * 0.02,
-      figurePoints[idx + 2] + (Math.random() - 0.5) * 0.02
+      figurePoints[idx] + (Math.random() - 0.5) * 0.04,
+      figurePoints[idx + 1] + (Math.random() - 0.5) * 0.04,
+      figurePoints[idx + 2] + (Math.random() - 0.5) * 0.04
     );
   }
   const goldGeo = new THREE.BufferGeometry();
   goldGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(goldPts), 3));
   const goldMat = new THREE.PointsMaterial({
-    size: 0.025, map: glowGold, color: 0xffcc44,
+    size: 0.045, map: glowGold, color: 0xffcc44,
     transparent: true, opacity: 0.7,
     blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
   });
@@ -148,7 +153,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   // --- FLOWING ENERGY RIBBONS ---
   const ribbonCount = 4;
   const ribbonSegs = 80;
-  const ribbons: { line: THREE.Line; geo: THREE.BufferGeometry; baseY: number[]; baseX: number[]; baseZ: number[]; color: number }[] = [];
+  const ribbons: { line: THREE.Line; geo: THREE.BufferGeometry; baseY: number[]; baseX: number[]; baseZ: number[] }[] = [];
   const ribbonColors = [0x44ddff, 0xffcc44, 0x44ddff, 0xffaa22];
 
   for (let r = 0; r < ribbonCount; r++) {
@@ -161,9 +166,9 @@ export function mountOrb(container: HTMLElement): OrbHandle {
 
     for (let i = 0; i <= ribbonSegs; i++) {
       const t = i / ribbonSegs;
-      const x = side * (0.3 + t * 1.4) + Math.sin(t * 4 + offset) * 0.15;
-      const y = 1.7 - t * 0.8 + Math.sin(t * 3 + offset) * 0.2;
-      const z = Math.sin(t * 5 + offset + r) * 0.2;
+      const x = (side * (0.3 + t * 1.6) + Math.sin(t * 4 + offset) * 0.2) * S;
+      const y = BY + (1.7 - t * 0.8 + Math.sin(t * 3 + offset) * 0.25) * S;
+      const z = Math.sin(t * 5 + offset + r) * 0.3 * S;
       pts.push(x, y, z);
       baseX.push(x);
       baseY.push(y);
@@ -178,66 +183,66 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     });
     const line = new THREE.Line(geo, mat);
     group.add(line);
-    ribbons.push({ line, geo, baseY, baseX, baseZ, color: ribbonColors[r] });
+    ribbons.push({ line, geo, baseY, baseX, baseZ });
   }
 
   // --- Ribbon glow particles ---
-  const ribbonGlowN = 60;
+  const ribbonGlowN = 80;
   const ribbonGlowArr = new Float32Array(ribbonGlowN * 3);
   const ribbonGlowGeo = new THREE.BufferGeometry();
   ribbonGlowGeo.setAttribute('position', new THREE.BufferAttribute(ribbonGlowArr, 3));
   const ribbonGlowMat = new THREE.PointsMaterial({
-    size: 0.04, map: glowCyan, color: 0x66eeff,
+    size: 0.06, map: glowCyan, color: 0x66eeff,
     transparent: true, opacity: 0.6,
     blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
   });
   const ribbonGlow = new THREE.Points(ribbonGlowGeo, ribbonGlowMat);
   group.add(ribbonGlow);
 
-  // --- BRAIN CORE (glowing icosahedron at center-bottom) ---
-  const brainGeo = new THREE.IcosahedronGeometry(0.18, 1);
+  // --- BRAIN CORE (glowing icosahedron in chest) ---
+  const brainGeo = new THREE.IcosahedronGeometry(0.3 * S, 1);
   const brainMat = new THREE.MeshBasicMaterial({
     color: 0x66eeff, transparent: true, opacity: 0.5,
     blending: THREE.AdditiveBlending, depthWrite: false,
   });
   const brain = new THREE.Mesh(brainGeo, brainMat);
-  brain.position.set(0, 1.5, 0);
+  brain.position.set(0, BY + 1.5 * S, 0);
   group.add(brain);
 
-  const brainWireGeo = new THREE.IcosahedronGeometry(0.22, 1);
+  const brainWireGeo = new THREE.IcosahedronGeometry(0.36 * S, 1);
   const brainWireMat = new THREE.MeshBasicMaterial({
     color: 0x44aacc, wireframe: true, transparent: true, opacity: 0.3,
     blending: THREE.AdditiveBlending, depthWrite: false,
   });
   const brainWire = new THREE.Mesh(brainWireGeo, brainWireMat);
-  brainWire.position.set(0, 1.5, 0);
+  brainWire.position.set(0, BY + 1.5 * S, 0);
   group.add(brainWire);
 
   // --- CONCENTRIC BASE RINGS ---
   const baseRings: THREE.Mesh[] = [];
-  const ringRadii = [0.6, 0.85, 1.1, 1.35];
-  const ringColors = [0x44ddff, 0xffcc44, 0x44ddff, 0xffcc44];
+  const ringRadii = [0.8, 1.15, 1.5, 1.85, 2.2];
+  const ringColors = [0x44ddff, 0xffcc44, 0x44ddff, 0xffcc44, 0x44ddff];
   for (let i = 0; i < ringRadii.length; i++) {
-    const rGeo = new THREE.TorusGeometry(ringRadii[i], 0.008, 8, 100);
+    const rGeo = new THREE.TorusGeometry(ringRadii[i] * S, 0.012, 8, 120);
     const rMat = new THREE.MeshBasicMaterial({
-      color: ringColors[i], transparent: true, opacity: 0.4 - i * 0.07,
+      color: ringColors[i], transparent: true, opacity: 0.45 - i * 0.06,
       blending: THREE.AdditiveBlending, depthWrite: false,
     });
     const ring = new THREE.Mesh(rGeo, rMat);
     ring.rotation.x = Math.PI * 0.5;
-    ring.position.y = 0.7;
+    ring.position.y = BY + 0.7 * S;
     group.add(ring);
     baseRings.push(ring);
   }
 
   // --- Base glow sprite ---
   const baseGlowMat = new THREE.SpriteMaterial({
-    map: glowCyan, color: 0x44ddff, transparent: true, opacity: 0.25,
+    map: glowCyan, color: 0x44ddff, transparent: true, opacity: 0.3,
     blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
   });
   const baseGlow = new THREE.Sprite(baseGlowMat);
-  baseGlow.scale.set(3.5, 1.0, 1);
-  baseGlow.position.y = 0.7;
+  baseGlow.scale.set(6 * S, 1.5 * S, 1);
+  baseGlow.position.y = BY + 0.7 * S;
   group.add(baseGlow);
 
   // --- Figure halo (behind head) ---
@@ -246,8 +251,8 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
   });
   const halo = new THREE.Sprite(haloMat);
-  halo.scale.setScalar(2.5);
-  halo.position.set(0, 2.1, -0.3);
+  halo.scale.setScalar(4 * S);
+  halo.position.set(0, BY + 2.1 * S, -0.5);
   group.add(halo);
 
   // --- 6 ORBITING DOTS ---
@@ -258,7 +263,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   const dotOrbits: { angle: number; radius: number; speed: number; tilt: number; phase: number }[] = [];
 
   for (let i = 0; i < ORBIT_DOTS; i++) {
-    const dGeo = new THREE.SphereGeometry(0.04, 12, 12);
+    const dGeo = new THREE.SphereGeometry(0.07, 12, 12);
     const dMat = new THREE.MeshBasicMaterial({ color: dotColors[i] });
     const dot = new THREE.Mesh(dGeo, dMat);
     group.add(dot);
@@ -271,13 +276,13 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       blending: THREE.AdditiveBlending, depthWrite: false,
     });
     const sp = new THREE.Sprite(spMat);
-    sp.scale.setScalar(0.3);
+    sp.scale.setScalar(0.5);
     group.add(sp);
     dotGlows.push(sp);
 
     dotOrbits.push({
       angle: (i / ORBIT_DOTS) * Math.PI * 2,
-      radius: 1.8 + (i % 2) * 0.25,
+      radius: (2.0 + (i % 2) * 0.3) * S,
       speed: 0.4 + i * 0.07,
       tilt: (Math.PI / 5) * (i % 3 - 1),
       phase: i * 1.1,
@@ -312,15 +317,15 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       const pos = rb.geo.attributes.position as THREE.BufferAttribute;
       for (let i = 0; i <= ribbonSegs; i++) {
         const t = i / ribbonSegs;
-        pos.setX(i, rb.baseX[i] + Math.sin(time * 2 + t * 6) * 0.06 * (1 + amp * 2));
-        pos.setY(i, rb.baseY[i] + Math.sin(time * 1.5 + t * 4) * 0.04 * (1 + amp));
-        pos.setZ(i, rb.baseZ[i] + Math.cos(time * 1.8 + t * 5) * 0.05 * (1 + amp));
+        pos.setX(i, rb.baseX[i] + Math.sin(time * 2 + t * 6) * 0.08 * S * (1 + amp * 2));
+        pos.setY(i, rb.baseY[i] + Math.sin(time * 1.5 + t * 4) * 0.06 * S * (1 + amp));
+        pos.setZ(i, rb.baseZ[i] + Math.cos(time * 1.8 + t * 5) * 0.07 * S * (1 + amp));
       }
       pos.needsUpdate = true;
       (rb.line.material as THREE.LineBasicMaterial).opacity = 0.3 + amp * 0.4;
     }
 
-    // Ribbon glow particles travel along ribbon curves
+    // Ribbon glow particles
     for (let i = 0; i < ribbonGlowN; i++) {
       const rIdx = i % ribbonCount;
       const rb = ribbons[rIdx];
@@ -334,18 +339,18 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     ribbonGlowGeo.attributes.position.needsUpdate = true;
     ribbonGlowMat.opacity = 0.4 + amp * 0.4;
 
-    // Base rings rotation
+    // Base rings
     for (let i = 0; i < baseRings.length; i++) {
-      baseRings[i].rotation.z = time * (0.1 + i * 0.05) * (i % 2 === 0 ? 1 : -1);
-      (baseRings[i].material as THREE.MeshBasicMaterial).opacity = (0.35 - i * 0.06) + amp * 0.2;
+      baseRings[i].rotation.z = time * (0.08 + i * 0.04) * (i % 2 === 0 ? 1 : -1);
+      (baseRings[i].material as THREE.MeshBasicMaterial).opacity = (0.4 - i * 0.05) + amp * 0.2;
     }
-    baseGlowMat.opacity = 0.2 + amp * 0.25;
+    baseGlowMat.opacity = 0.25 + amp * 0.25;
 
     // Halo
     haloMat.opacity = 0.15 + amp * 0.2 + Math.sin(time * 1.5) * 0.03;
-    halo.scale.setScalar(2.5 + amp * 0.8);
+    halo.scale.setScalar((2.5 + amp * 0.8) * S);
 
-    // Figure particle shimmer
+    // Figure shimmer
     figMat.opacity = 0.75 + amp * 0.2 + Math.sin(time * 2) * 0.03;
     goldMat.opacity = 0.5 + amp * 0.3 + Math.sin(time * 1.8) * 0.05;
 
@@ -354,17 +359,17 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     for (let i = 0; i < ORBIT_DOTS; i++) {
       const d = dotOrbits[i];
       d.angle += d.speed * 0.016 * speedMult;
-      const r = d.radius + Math.sin(time * 0.5 + d.phase) * 0.08 + amp * 0.3 * Math.sin(time * 2 + d.phase);
+      const r = d.radius + Math.sin(time * 0.5 + d.phase) * 0.12 + amp * 0.4 * Math.sin(time * 2 + d.phase);
       const x = Math.cos(d.angle) * r;
       const z = Math.sin(d.angle) * r;
-      const y = 1.4 + Math.sin(d.angle + d.tilt) * 0.5 + Math.sin(time * 0.3 + d.phase) * 0.1;
+      const y = BY + 1.5 * S + Math.sin(d.angle + d.tilt) * 0.8 * S + Math.sin(time * 0.3 + d.phase) * 0.15;
       dotMeshes[i].position.set(x, y, z);
       dotGlows[i].position.set(x, y, z);
-      dotGlows[i].scale.setScalar(0.25 + amp * 0.15 + Math.sin(time * 1.5 + d.phase) * 0.04);
+      dotGlows[i].scale.setScalar(0.4 + amp * 0.2 + Math.sin(time * 1.5 + d.phase) * 0.06);
     }
 
-    // Slow group rotation
-    group.rotation.y = Math.sin(time * 0.15) * 0.12;
+    // Slow group sway
+    group.rotation.y = Math.sin(time * 0.15) * 0.1;
 
     renderer.render(scene, camera);
   }
