@@ -8,6 +8,8 @@ export class VoiceEngine {
   private suppress = false;
   private commandMode = false;
   private cmdTimer: number | undefined;
+  private finalBuffer = '';
+  private sendTimer: number | undefined;
   private voices: SpeechSynthesisVoice[] = [];
   private chosenVoice: SpeechSynthesisVoice | null = null;
   private state: AppState;
@@ -97,19 +99,39 @@ export class VoiceEngine {
       .replace(/^[\s,.:!?-]+/, '')
       .trim();
   }
+  private flushBuffer() {
+    const text = this.finalBuffer.trim();
+    this.finalBuffer = '';
+    clearTimeout(this.sendTimer);
+    if (!text) return;
+    this.commandMode = false;
+    clearTimeout(this.cmdTimer);
+    this.onTranscript(text);
+  }
+
   private handleSpeech(final: string) {
     const raw = final.trim();
     if (!raw) return;
     if (this.commandMode) {
-      this.commandMode = false;
+      this.finalBuffer += ' ' + raw;
+      clearTimeout(this.sendTimer);
       clearTimeout(this.cmdTimer);
-      this.onTranscript(raw);
+      this.cmdTimer = window.setTimeout(() => {
+        this.commandMode = false;
+        if (this.wakeOn) this.onStateChange('armed');
+      }, 15000);
+      this.sendTimer = window.setTimeout(() => this.flushBuffer(), 1500);
       return;
     }
     if (this.hasWake(raw)) {
       const cmd = this.stripWake(raw);
-      if (cmd.length > 1) this.onTranscript(cmd);
-      else this.listenNow();
+      if (cmd.length > 1) {
+        this.finalBuffer = cmd;
+        clearTimeout(this.sendTimer);
+        this.sendTimer = window.setTimeout(() => this.flushBuffer(), 1500);
+      } else {
+        this.listenNow();
+      }
     }
   }
 
