@@ -1,19 +1,17 @@
 import * as THREE from 'three';
 import { vertexShader, fragmentShader } from './fireWaterShader';
 
-const PAGE_BG = 0x04060d;
-
 export interface OrbHandle {
   setEnergy(v: number): void;
   dispose(): void;
 }
 
 export function mountOrb(container: HTMLElement): OrbHandle {
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-  renderer.setClearColor(PAGE_BG, 1);
+  renderer.setClearColor(0x000000, 0);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.3;
+  renderer.toneMappingExposure = 1.4;
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
@@ -33,13 +31,13 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   resize();
   window.addEventListener('resize', resize);
 
-  // --- glow texture (128px) ---
+  // --- glow texture ---
   const sc = document.createElement('canvas');
   sc.width = sc.height = 128;
   const sctx = sc.getContext('2d')!;
   const gr = sctx.createRadialGradient(64, 64, 0, 64, 64, 64);
   gr.addColorStop(0, 'rgba(255,255,255,1)');
-  gr.addColorStop(0.15, 'rgba(180,245,255,.95)');
+  gr.addColorStop(0.15, 'rgba(200,250,255,.95)');
   gr.addColorStop(0.5, 'rgba(95,230,255,.35)');
   gr.addColorStop(1, 'rgba(95,230,255,0)');
   sctx.fillStyle = gr;
@@ -61,23 +59,23 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   );
   group.add(occluder);
 
-  // --- GOLDEN RING (prominent, like reference image) ---
-  const goldRingGeo = new THREE.TorusGeometry(0.82, 0.025, 16, 100);
+  // --- GOLDEN RING (thick and prominent like reference) ---
+  const goldRingGeo = new THREE.TorusGeometry(0.88, 0.045, 24, 120);
   const goldRingMat = new THREE.MeshBasicMaterial({
     color: 0xffb833,
     transparent: true,
-    opacity: 0.9,
+    opacity: 0.95,
   });
   const goldRing = new THREE.Mesh(goldRingGeo, goldRingMat);
   goldRing.rotation.x = Math.PI * 0.5;
   group.add(goldRing);
 
-  // Gold ring glow (wider, softer)
-  const goldGlowGeo = new THREE.TorusGeometry(0.82, 0.08, 16, 100);
+  // Gold ring inner glow
+  const goldGlowGeo = new THREE.TorusGeometry(0.88, 0.13, 24, 120);
   const goldGlowMat = new THREE.MeshBasicMaterial({
     color: 0xffc040,
     transparent: true,
-    opacity: 0.25,
+    opacity: 0.35,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
   });
@@ -85,21 +83,20 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   goldGlow.rotation.x = Math.PI * 0.5;
   group.add(goldGlow);
 
-  // Second subtle ring
-  const ring2Geo = new THREE.TorusGeometry(1.05, 0.012, 12, 80);
-  const ring2Mat = new THREE.MeshBasicMaterial({
-    color: 0x5fe6ff,
+  // Gold ring outer glow (wider)
+  const goldGlow2Geo = new THREE.TorusGeometry(0.88, 0.22, 16, 100);
+  const goldGlow2Mat = new THREE.MeshBasicMaterial({
+    color: 0xffa020,
     transparent: true,
-    opacity: 0.3,
+    opacity: 0.12,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
   });
-  const ring2 = new THREE.Mesh(ring2Geo, ring2Mat);
-  ring2.rotation.x = Math.PI * 0.55;
-  ring2.rotation.z = 0.3;
-  group.add(ring2);
+  const goldGlow2 = new THREE.Mesh(goldGlow2Geo, goldGlow2Mat);
+  goldGlow2.rotation.x = Math.PI * 0.5;
+  group.add(goldGlow2);
 
-  // --- multi-layer halos ---
+  // --- multi-layer halos (glow around sphere) ---
   function haloSprite(hex: number, scale: number, op: number) {
     const m = new THREE.SpriteMaterial({
       map: glowTex, color: hex, transparent: true, opacity: op,
@@ -110,118 +107,41 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     group.add(s);
     return { sprite: s, mat: m };
   }
-  const haloCyan = haloSprite(0x40d8ff, 4.0, 0.3);
-  const haloWhite = haloSprite(0xffffff, 2.5, 0.15);
-  const haloOuter = haloSprite(0x2080ff, 6.0, 0.06);
+  const haloCyan = haloSprite(0x40d8ff, 4.5, 0.35);
+  const haloWhite = haloSprite(0xffffff, 2.8, 0.18);
+  const haloOuter = haloSprite(0x2080ff, 6.5, 0.06);
 
-  // --- holographic network shell ---
-  const NN = 180;
-  const shellR = 1.3;
-  const nodePos: THREE.Vector3[] = [];
-  for (let i = 0; i < NN; i++) {
-    const y = 1 - (i / (NN - 1)) * 2;
-    const rad = Math.sqrt(1 - y * y);
-    const theta = Math.PI * (1 + Math.sqrt(5)) * i;
-    nodePos.push(
-      new THREE.Vector3(Math.cos(theta) * rad, y, Math.sin(theta) * rad).multiplyScalar(
-        shellR * (0.95 + Math.random() * 0.1)
-      )
-    );
-  }
-  const ACCENT = 0xffb833, MAIN = 0x5fe6ff, MAIN2 = 0xa0eeff;
-  const nodeColors = nodePos.map(() => {
-    const r = Math.random();
-    return r < 0.1 ? ACCENT : r < 0.55 ? MAIN : MAIN2;
-  });
-  const nodeArr = new Float32Array(NN * 3);
-  const nodeColArr = new Float32Array(NN * 3);
-  nodePos.forEach((p, i) => {
-    nodeArr[i * 3] = p.x; nodeArr[i * 3 + 1] = p.y; nodeArr[i * 3 + 2] = p.z;
-    const c = new THREE.Color(nodeColors[i]);
-    nodeColArr[i * 3] = c.r; nodeColArr[i * 3 + 1] = c.g; nodeColArr[i * 3 + 2] = c.b;
-  });
-  const nodeGeo = new THREE.BufferGeometry();
-  nodeGeo.setAttribute('position', new THREE.BufferAttribute(nodeArr, 3));
-  nodeGeo.setAttribute('color', new THREE.BufferAttribute(nodeColArr, 3));
-  const nodeMat = new THREE.PointsMaterial({
-    size: 0.045, map: glowTex, vertexColors: true, transparent: true, opacity: 0.9,
-    depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true,
-  });
-  const nodeCloud = new THREE.Points(nodeGeo, nodeMat);
-  group.add(nodeCloud);
+  // --- 6 ORBITING COLORED DOTS (key feature from reference) ---
+  const ORBIT_DOTS = 6;
+  const dotColors = [0x5fe6ff, 0xffb833, 0xff5d73, 0xb06aff, 0x4dff91, 0xff9f43];
+  const dotMeshes: THREE.Mesh[] = [];
+  const dotGlows: THREE.Sprite[] = [];
+  const dotOrbits: { angle: number; radius: number; speed: number; tilt: number; phase: number }[] = [];
 
-  // connections
-  const linePos: number[] = [], lineCol: number[] = [];
-  const seen = new Set<string>();
-  for (let i = 0; i < NN; i++) {
-    const nearest = nodePos
-      .map((p, j) => ({ j, d: i === j ? 1e9 : p.distanceTo(nodePos[i]) }))
-      .sort((a, b) => a.d - b.d)
-      .slice(0, 2);
-    for (const { j } of nearest) {
-      const key = i < j ? `${i}_${j}` : `${j}_${i}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const a = nodePos[i], b = nodePos[j];
-      const ca = new THREE.Color(nodeColors[i]), cb = new THREE.Color(nodeColors[j]);
-      linePos.push(a.x, a.y, a.z, b.x, b.y, b.z);
-      lineCol.push(ca.r, ca.g, ca.b, cb.r, cb.g, cb.b);
-    }
-  }
-  const lineGeo = new THREE.BufferGeometry();
-  lineGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(linePos), 3));
-  lineGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(lineCol), 3));
-  const lineMat = new THREE.LineBasicMaterial({
-    vertexColors: true, transparent: true, opacity: 0.3, depthWrite: false, blending: THREE.AdditiveBlending,
-  });
-  const lines = new THREE.LineSegments(lineGeo, lineMat);
-  group.add(lines);
+  for (let i = 0; i < ORBIT_DOTS; i++) {
+    const dotGeo = new THREE.SphereGeometry(0.04, 16, 16);
+    const dotMat = new THREE.MeshBasicMaterial({ color: dotColors[i] });
+    const dot = new THREE.Mesh(dotGeo, dotMat);
+    group.add(dot);
+    dotMeshes.push(dot);
 
-  // --- orbiting energy particles ---
-  const orbitN = 30;
-  const orbitData: { angle: number; radius: number; speed: number; y: number; phase: number }[] = [];
-  const orbitArr = new Float32Array(orbitN * 3);
-  const orbitColArr = new Float32Array(orbitN * 3);
-  for (let i = 0; i < orbitN; i++) {
-    orbitData.push({
-      angle: Math.random() * Math.PI * 2,
-      radius: 0.85 + Math.random() * 0.5,
-      speed: (0.3 + Math.random() * 0.6) * (Math.random() < 0.5 ? 1 : -1),
-      y: (Math.random() - 0.5) * 1.4,
-      phase: Math.random() * Math.PI * 2,
+    const glowMat = new THREE.SpriteMaterial({
+      map: glowTex, color: dotColors[i], transparent: true, opacity: 0.6,
+      blending: THREE.AdditiveBlending, depthWrite: false,
     });
-    const c = new THREE.Color(Math.random() < 0.6 ? 0x5fe6ff : 0xffb833);
-    orbitColArr[i * 3] = c.r; orbitColArr[i * 3 + 1] = c.g; orbitColArr[i * 3 + 2] = c.b;
-  }
-  const orbitGeo = new THREE.BufferGeometry();
-  orbitGeo.setAttribute('position', new THREE.BufferAttribute(orbitArr, 3));
-  orbitGeo.setAttribute('color', new THREE.BufferAttribute(orbitColArr, 3));
-  const orbitMat = new THREE.PointsMaterial({
-    size: 0.04, map: glowTex, vertexColors: true, transparent: true, opacity: 0.7,
-    depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true,
-  });
-  const orbitCloud = new THREE.Points(orbitGeo, orbitMat);
-  group.add(orbitCloud);
+    const glow = new THREE.Sprite(glowMat);
+    glow.scale.setScalar(0.25);
+    group.add(glow);
+    dotGlows.push(glow);
 
-  // --- ambient dust ---
-  const dustN = 40;
-  const dustArr = new Float32Array(dustN * 3);
-  for (let i = 0; i < dustN; i++) {
-    const r = shellR * (1.2 + Math.random() * 0.7);
-    const th = Math.random() * Math.PI * 2;
-    const ph = Math.acos(2 * Math.random() - 1);
-    dustArr[i * 3] = r * Math.sin(ph) * Math.cos(th);
-    dustArr[i * 3 + 1] = r * Math.sin(ph) * Math.sin(th);
-    dustArr[i * 3 + 2] = r * Math.cos(ph);
+    dotOrbits.push({
+      angle: (i / ORBIT_DOTS) * Math.PI * 2,
+      radius: 1.15 + (i % 2) * 0.15,
+      speed: 0.5 + i * 0.08,
+      tilt: (Math.PI / 6) * (i % 3 - 1),
+      phase: i * 1.2,
+    });
   }
-  const dustGeo = new THREE.BufferGeometry();
-  dustGeo.setAttribute('position', new THREE.BufferAttribute(dustArr, 3));
-  const dustMat = new THREE.PointsMaterial({
-    size: 0.02, map: glowTex, color: 0xa0eeff, transparent: true, opacity: 0.4,
-    depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true,
-  });
-  const dust = new THREE.Points(dustGeo, dustMat);
-  group.add(dust);
 
   let amp = 0.06, ampTarget = 0.06;
   let raf = 0;
@@ -239,51 +159,44 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     core.scale.setScalar((1 + amp * 0.15) * breathe);
     occluder.scale.setScalar((1 + amp * 0.13) * breathe);
 
-    group.rotation.y = t * 0.08;
+    group.rotation.y = t * 0.06;
 
     // golden ring animation
-    goldRing.rotation.x = Math.PI * 0.5 + Math.sin(t * 0.3) * 0.1;
-    goldRing.rotation.z = t * 0.15;
-    goldRingMat.opacity = 0.8 + amp * 0.2;
+    goldRing.rotation.x = Math.PI * 0.5 + Math.sin(t * 0.3) * 0.08;
+    goldRing.rotation.z = t * 0.12;
+    goldRingMat.opacity = 0.85 + amp * 0.15;
     goldGlow.rotation.copy(goldRing.rotation);
-    goldGlowMat.opacity = 0.2 + amp * 0.3 + Math.sin(t * 1.5) * 0.05;
-    const ringScale = 1 + amp * 0.15;
+    goldGlowMat.opacity = 0.25 + amp * 0.35 + Math.sin(t * 1.5) * 0.05;
+    goldGlow2.rotation.copy(goldRing.rotation);
+    goldGlow2Mat.opacity = 0.1 + amp * 0.15;
+    const ringScale = 1 + amp * 0.12;
     goldRing.scale.setScalar(ringScale);
     goldGlow.scale.setScalar(ringScale);
-
-    // second ring
-    ring2.rotation.z += 0.003;
-    ring2Mat.opacity = 0.15 + amp * 0.25;
+    goldGlow2.scale.setScalar(ringScale);
 
     // halos
-    haloCyan.mat.opacity = 0.25 + amp * 0.25 + Math.sin(t * 0.9) * 0.03;
-    haloWhite.mat.opacity = 0.1 + amp * 0.15;
-    haloOuter.mat.opacity = 0.04 + amp * 0.06;
-    haloCyan.sprite.scale.setScalar(4.0 + amp * 0.8);
-    haloWhite.sprite.scale.setScalar(2.5 + amp * 0.5);
+    haloCyan.mat.opacity = 0.3 + amp * 0.3 + Math.sin(t * 0.9) * 0.03;
+    haloWhite.mat.opacity = 0.12 + amp * 0.2;
+    haloOuter.mat.opacity = 0.04 + amp * 0.08;
+    haloCyan.sprite.scale.setScalar(4.5 + amp * 1.0);
+    haloWhite.sprite.scale.setScalar(2.8 + amp * 0.6);
 
-    // shell
-    nodeCloud.rotation.y = t * 0.04;
-    lines.rotation.y = t * 0.04;
-    nodeMat.opacity = 0.8 + amp * 0.2;
-    lineMat.opacity = 0.22 + amp * 0.2;
+    // 6 orbiting dots - speed up when speaking/thinking
+    const speedMult = 1 + amp * 4;
+    const bounceAmp = amp * 0.3;
+    for (let i = 0; i < ORBIT_DOTS; i++) {
+      const d = dotOrbits[i];
+      d.angle += d.speed * 0.016 * speedMult;
+      const r = d.radius + Math.sin(t * 0.6 + d.phase) * 0.06 + bounceAmp * Math.sin(t * 3 + d.phase);
+      const x = Math.cos(d.angle) * r;
+      const z = Math.sin(d.angle) * r;
+      const y = Math.sin(d.angle + d.tilt) * 0.3 + Math.sin(t * 0.4 + d.phase) * 0.08;
+      dotMeshes[i].position.set(x, y, z);
+      dotGlows[i].position.set(x, y, z);
 
-    // orbiting particles
-    const posAttr = orbitGeo.getAttribute('position') as THREE.BufferAttribute;
-    for (let i = 0; i < orbitN; i++) {
-      const d = orbitData[i];
-      d.angle += d.speed * 0.016 * (1 + amp * 2);
-      const r = d.radius + Math.sin(t * 0.5 + d.phase) * 0.08 * (1 + amp);
-      posAttr.setXYZ(i,
-        Math.cos(d.angle) * r,
-        d.y + Math.sin(t * 0.3 + d.phase) * 0.12,
-        Math.sin(d.angle) * r
-      );
+      const scale = 0.2 + amp * 0.15 + Math.sin(t * 2 + d.phase) * 0.04;
+      dotGlows[i].scale.setScalar(scale);
     }
-    posAttr.needsUpdate = true;
-    orbitMat.opacity = 0.5 + amp * 0.4;
-
-    dust.rotation.y = -t * 0.015;
 
     renderer.render(scene, camera);
   }

@@ -8,7 +8,7 @@ import { AudioEngine } from '../assistant/audio';
 export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
-      <div class="chrome topL"><div class="wm">ALPHA ASSISTANT</div><div class="clk" id="clock">--:--</div><div style="font-size:9px;color:#333;margin-top:2px" id="ver">v3</div></div>
+      <div class="chrome topL"><div class="wm">ALPHA ASSISTANT</div><div class="clk" id="clock">--:--</div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="muteBtn">🔊</button>
         <button class="chip" id="settingsBtn">⚙ SETTINGS</button>
@@ -18,6 +18,14 @@ export function mountApp(root: HTMLElement) {
       <div class="dock">
         <div class="state" id="state">STANDBY</div>
         <div class="log" id="chat"></div>
+        <div class="quick-actions" id="quickActions">
+          <button class="qa-chip" data-q="What's the weather today?">Weather</button>
+          <button class="qa-chip" data-q="Tell me a fun fact">Fun Fact</button>
+          <button class="qa-chip" data-q="Play some music">Music</button>
+          <button class="qa-chip" data-q="Search the web">Search</button>
+          <button class="qa-chip" data-q="Open my calendar">Calendar</button>
+          <button class="qa-chip" data-q="Tell me a joke">Joke</button>
+        </div>
         <div class="bar">
           <button class="ic mic" id="micBtn" title="Hey Alpha">🎙</button>
           <div class="pill"><input id="input" type="text" placeholder="Type or speak to Alpha…" /></div>
@@ -186,6 +194,16 @@ export function mountApp(root: HTMLElement) {
   };
   $('muteBtn').onclick = () => { audio.toggleMute(); $('muteBtn').textContent = audio.muted ? '🔇' : '🔊'; };
   $('newChat').onclick = () => { state.history = []; $('chat').innerHTML = ''; addMsg(state.name + ' ready.', 'al'); };
+
+  $('quickActions').querySelectorAll<HTMLButtonElement>('.qa-chip').forEach(btn => {
+    btn.onclick = () => {
+      const q = btn.dataset.q || '';
+      if (!q) return;
+      audio.send();
+      addMsg(q, 'me');
+      ask(q);
+    };
+  });
 
   function openSetup() {
     $<HTMLInputElement>('nameInput').value = state.name;
