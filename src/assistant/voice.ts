@@ -29,19 +29,22 @@ export class VoiceEngine {
       this.rec = new SR();
       this.rec.lang = state.micLang === 'he' ? 'he-IL' : 'en-US';
       this.rec.continuous = true;
-      this.rec.interimResults = false;
+      this.rec.interimResults = true;
       this.rec.maxAlternatives = 1;
       this.rec.onresult = (e: any) => {
         if (this.suppress) return;
         let final = '';
+        let interim = '';
         for (let i = e.resultIndex; i < e.results.length; i++) {
           if (e.results[i].isFinal) final += e.results[i][0].transcript + ' ';
+          else interim += e.results[i][0].transcript;
         }
+        if (interim && this.commandMode) this.onStateChange('listening');
         if (final) this.handleSpeech(final);
       };
       this.rec.onend = () => {
         this.recRunning = false;
-        if (this.wakeOn && !this.suppress && window.isSecureContext) {
+        if (this.wakeOn && !this.suppress) {
           setTimeout(() => this.startRec(), 250);
         }
       };
@@ -50,6 +53,8 @@ export class VoiceEngine {
         if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
           this.wakeOn = false;
           this.onStateChange('');
+        } else if (this.wakeOn && !this.suppress) {
+          setTimeout(() => this.startRec(), 500);
         }
       };
     }
@@ -76,7 +81,7 @@ export class VoiceEngine {
     this.cmdTimer = window.setTimeout(() => {
       this.commandMode = false;
       if (this.wakeOn) this.onStateChange('armed');
-    }, 10000);
+    }, 15000);
   }
   private hasWake(t: string) {
     const s = t.toLowerCase();
@@ -110,7 +115,6 @@ export class VoiceEngine {
 
   setWake(on: boolean) {
     if (on && !this.rec) return;
-    if (on && !window.isSecureContext) return;
     this.wakeOn = on;
     this.state.wakeOn = on;
     if (on) { this.startRec(); this.listenNow(); }

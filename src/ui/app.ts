@@ -1,4 +1,5 @@
 import { mountOrb } from '../orb/OrbScene';
+import { mountFlowLines } from '../bg/flowLines';
 import { loadState, saveState, addEvent, loadEvents, saveEvents, type AppState, type TextLang } from '../assistant/state';
 import { askGemini, runTags } from '../assistant/gemini';
 import { VoiceEngine } from '../assistant/voice';
@@ -62,6 +63,7 @@ export function mountApp(root: HTMLElement) {
   audio.sfxOn = state.sfxOn;
 
   const orb = mountOrb($('stage'));
+  mountFlowLines(root.querySelector('.app')!);
 
   function setStatus(s: 'armed' | 'listening' | 'thinking' | 'speaking' | '') {
     const label = { armed: 'SAY "HEY ALPHA"', listening: 'LISTENING', thinking: 'THINKING', speaking: 'SPEAKING', '': 'STANDBY' }[s];

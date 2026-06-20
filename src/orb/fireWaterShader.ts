@@ -75,58 +75,45 @@ export const fragmentShader = /* glsl */ `
   void main(){
     vec3 p = normalize(vPos);
 
-    float boundaryNoise = fbm(p * 1.8 + vec3(0.0, uTime * 0.06, 0.0)) * 0.5;
-    float side = p.y + boundaryNoise;
-    float mixT = smoothstep(-0.4, 0.4, side);
+    // Animated energy field
+    vec3 energyPos = p * 3.5 + vec3(uTime * 0.15, uTime * 0.1, -uTime * 0.12);
+    float energyN = fbm(energyPos) * 0.5 + fbm(energyPos * 2.0 + 3.0) * 0.5;
 
-    // Fire hemisphere — intense plasma
-    vec3 firePos = p * 3.0 + vec3(0.0, -uTime * (1.4 + uAmp * 1.2), 0.0);
-    float fireN = fbm(firePos) * 0.5 + fbm(firePos * 2.5 + 5.0) * 0.5;
-    fireN = pow(max(fireN + 0.5, 0.0), 1.5 - uAmp * 0.5);
-    vec3 fireDark = vec3(0.4, 0.02, 0.08);
-    vec3 fireMid  = vec3(1.0, 0.25, 0.05);
-    vec3 fireHot  = vec3(1.0, 0.85, 0.4);
-    vec3 fireWhite = vec3(1.0, 0.98, 0.95);
-    vec3 fireCol = mix(fireDark, fireMid, clamp(fireN * 1.4, 0.0, 1.0));
-    fireCol = mix(fireCol, fireHot, clamp((fireN - 0.45) * 2.5, 0.0, 1.0));
-    fireCol = mix(fireCol, fireWhite, clamp((fireN - 0.75) * 4.0, 0.0, 1.0));
+    // Cellular crystalline structure
+    float cell = pow(abs(sin((energyN * 4.0 + uTime * 0.5) * 3.14159)), 2.0);
+    float cell2 = pow(abs(sin((energyN * 2.5 - uTime * 0.3) * 3.14159)), 2.5);
 
-    // Water hemisphere — deep ocean caustics
-    vec3 waterPos = p * 3.5 + vec3(uTime * 0.2, uTime * 0.08, -uTime * 0.15);
-    float waterN = fbm(waterPos) * 0.5 + fbm(waterPos * 1.8 - 3.0) * 0.5;
-    float caustic = pow(abs(sin((waterN * 3.5 + uTime * 0.7) * 3.14159)), 2.5);
-    float caustic2 = pow(abs(sin((waterN * 2.1 - uTime * 0.5) * 3.14159)), 3.0);
-    vec3 waterDeep = vec3(0.005, 0.04, 0.18);
-    vec3 waterMid  = vec3(0.02, 0.35, 0.7);
-    vec3 waterLit  = vec3(0.5, 0.92, 1.0);
-    vec3 waterBright = vec3(0.85, 1.0, 1.0);
-    vec3 waterCol = mix(waterDeep, waterMid, clamp(waterN * 1.3 + 0.4, 0.0, 1.0));
-    waterCol = mix(waterCol, waterLit, caustic * (0.6 + uAmp * 0.5));
-    waterCol = mix(waterCol, waterBright, caustic2 * 0.3);
+    // Cyan-turquoise energy core palette
+    vec3 deep = vec3(0.01, 0.08, 0.2);
+    vec3 mid  = vec3(0.05, 0.45, 0.65);
+    vec3 bright = vec3(0.3, 0.85, 1.0);
+    vec3 hot = vec3(0.7, 1.0, 1.0);
+    vec3 white = vec3(0.95, 1.0, 1.0);
 
-    vec3 col = mix(waterCol, fireCol, mixT);
+    vec3 col = mix(deep, mid, clamp(energyN * 1.3 + 0.5, 0.0, 1.0));
+    col = mix(col, bright, cell * (0.6 + uAmp * 0.5));
+    col = mix(col, hot, cell2 * 0.4);
+    col = mix(col, white, clamp((energyN - 0.4) * 1.5, 0.0, 1.0) * cell * 0.5);
 
-    // Energetic seam where fire meets water
-    float seam = 1.0 - smoothstep(0.0, 0.4, abs(side));
-    float seamPulse = 0.6 + 0.4 * sin(uTime * 2.0 + snoise(p * 4.0) * 3.0);
-    col += vec3(1.0, 0.95, 0.85) * seam * (0.7 + uAmp * 0.8) * seamPulse;
+    // Inner glow concentration
+    float core = pow(max(1.0 - length(vPos) * 1.4, 0.0), 1.5);
+    col += vec3(0.2, 0.8, 1.0) * core * (0.4 + uAmp * 0.6);
 
-    // Electric arcs along seam
-    float arc = pow(seam, 3.0) * pow(abs(snoise(p * 8.0 + uTime * 2.0)), 6.0) * 4.0;
-    col += vec3(0.7, 0.9, 1.0) * arc * (1.0 + uAmp * 2.0);
+    // Subtle warm accents
+    float warmZone = smoothstep(0.0, 0.8, p.y) * 0.12;
+    col += vec3(0.8, 0.5, 0.1) * warmZone * (energyN * 0.5 + 0.5);
+
+    // Energy pulse waves
+    float pulse = sin(length(vPos) * 12.0 - uTime * 3.0) * 0.5 + 0.5;
+    col += vec3(0.1, 0.6, 0.8) * pulse * 0.08 * (1.0 + uAmp * 2.0);
 
     // Fresnel rim glow
     float fresnel = pow(1.0 - max(dot(normalize(vNormal), vec3(0.0, 0.0, 1.0)), 0.0), 2.5);
-    vec3 rimCol = mix(vec3(0.2, 0.5, 1.0), vec3(1.0, 0.4, 0.2), mixT);
-    col += fresnel * rimCol * (0.4 + uAmp * 0.6);
+    col += fresnel * vec3(0.3, 0.8, 1.0) * (0.5 + uAmp * 0.8);
 
-    // Subsurface scattering simulation
-    float sss = pow(max(dot(normalize(vNormal), vec3(0.0, 1.0, 0.5)), 0.0), 3.0);
-    col += sss * vec3(1.0, 0.6, 0.3) * 0.15 * (1.0 + uAmp);
-
-    // HDR bloom contribution
+    // HDR bloom
     float lum = dot(col, vec3(0.299, 0.587, 0.114));
-    col += col * max(lum - 0.8, 0.0) * 1.5;
+    col += col * max(lum - 0.7, 0.0) * 1.8;
 
     gl_FragColor = vec4(col, 1.0);
   }
