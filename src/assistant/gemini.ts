@@ -152,17 +152,56 @@ async function askOpenAIProvider(state: AppState): Promise<string> {
   return data.choices?.[0]?.message?.content?.trim() || '…';
 }
 
+// ─── Puter.js (free, keyless — user-pays model) ───
+
+function extractPuterText(r: any): string {
+  if (!r) return '';
+  if (typeof r === 'string') return r.trim();
+  const c = r.message?.content ?? r.content ?? r.text;
+  if (typeof c === 'string') return c.trim();
+  if (Array.isArray(c)) return c.map((p: any) => (typeof p === 'string' ? p : p?.text || '')).join('').trim();
+  if (typeof r.toString === 'function') {
+    const s = r.toString();
+    if (s && s !== '[object Object]') return s.trim();
+  }
+  return '';
+}
+
+async function askPuterProvider(state: AppState): Promise<string> {
+  const puter = (window as any).puter;
+  if (!puter?.ai?.chat) throw new Error('PROVIDER_EXHAUSTED');
+  const messages = [
+    { role: 'system', content: systemPrompt(state) },
+    ...state.history.slice(-8).map(h => ({
+      role: h.role === 'user' ? 'user' : 'assistant',
+      content: h.parts.map(p => p.text).join(''),
+    })),
+  ];
+  try {
+    const r = await puter.ai.chat(messages, { model: state.puterModel || 'gpt-4o-mini' });
+    const text = extractPuterText(r);
+    if (!text) throw new Error('PROVIDER_EXHAUSTED');
+    return text;
+  } catch (err: any) {
+    if (err?.message === 'PROVIDER_EXHAUSTED') throw err;
+    // auth popup dismissed, network, or rate issue — let the chain fall through
+    throw new Error('PROVIDER_EXHAUSTED');
+  }
+}
+
 // ─── Unified ask with auto-fallback ───
 
-const PROVIDER_ORDER: AIProvider[] = ['gemini', 'grok', 'openai'];
+const PROVIDER_ORDER: AIProvider[] = ['puter', 'gemini', 'grok', 'openai'];
 
 async function askProvider(provider: AIProvider, state: AppState): Promise<string> {
+  if (provider === 'puter') return askPuterProvider(state);
   if (provider === 'gemini') return askGeminiProvider(state);
   if (provider === 'grok') return askGrokProvider(state);
   return askOpenAIProvider(state);
 }
 
 function hasKey(provider: AIProvider, state: AppState): boolean {
+  if (provider === 'puter') return typeof (window as any).puter !== 'undefined';
   if (provider === 'gemini') return !!state.key;
   if (provider === 'grok') return !!state.grokKey;
   return !!state.openaiKey;

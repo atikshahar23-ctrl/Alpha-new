@@ -81,7 +81,7 @@ export function mountApp(root: HTMLElement) {
       </div></div>
       <div class="overlay" id="overlay"><div class="card">
         <h2>Alpha Assistant</h2>
-        <p>Enter your free Gemini API key to activate. Stored locally only.</p>
+        <p>Works free out of the box via Puter — no API key required. Settings stored locally only.</p>
         <label>Assistant name</label><input id="nameInput" value="ALPHA" />
         <label>Mic language</label>
         <select id="micSel"><option value="he">Hebrew</option><option value="en">English</option><option value="es">Español</option></select>
@@ -102,13 +102,23 @@ export function mountApp(root: HTMLElement) {
         <label>Background music</label><input type="range" id="ambSlider" min="0" max="100" value="40" />
         <label>AI Provider</label>
         <select id="providerSel">
+          <option value="puter">Puter — Free, no key ✨</option>
           <option value="gemini">Gemini (Google)</option>
           <option value="grok">Grok (xAI)</option>
           <option value="openai">ChatGPT (OpenAI)</option>
         </select>
-        <label>Gemini API key</label><input id="keyInput" type="password" placeholder="AIza..." />
-        <label>Grok API key</label><input id="grokKeyInput" type="password" placeholder="xai-..." />
-        <label>OpenAI API key</label><input id="openaiKeyInput" type="password" placeholder="sk-..." />
+        <label>Puter model (free)</label>
+        <select id="puterModelSel">
+          <option value="gpt-4o-mini">GPT-4o mini (fast)</option>
+          <option value="gpt-4o">GPT-4o (smartest)</option>
+          <option value="o4-mini">o4-mini (reasoning)</option>
+          <option value="claude-sonnet-4">Claude Sonnet 4</option>
+          <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+        </select>
+        <p style="margin:2px 0 10px;font-size:12px;color:var(--dim)">Puter is free and needs no API key — a one-time Puter sign-in popup appears on first use. Keys below are optional fallbacks.</p>
+        <label>Gemini API key (optional)</label><input id="keyInput" type="password" placeholder="AIza..." />
+        <label>Grok API key (optional)</label><input id="grokKeyInput" type="password" placeholder="xai-..." />
+        <label>OpenAI API key (optional)</label><input id="openaiKeyInput" type="password" placeholder="sk-..." />
 
         <div class="settings-section">
           <div class="ss-title">CONNECTED SERVICES</div>
@@ -288,8 +298,9 @@ export function mountApp(root: HTMLElement) {
       voice.speak(localReply);
       return;
     }
-    const hasAnyKey = state.key || state.grokKey || state.openaiKey;
-    if (!hasAnyKey) { openSetup(); return; }
+    const puterReady = typeof (window as any).puter !== 'undefined';
+    const canAI = puterReady || state.key || state.grokKey || state.openaiKey;
+    if (!canAI) { openSetup(); return; }
     if (asking) return;
     asking = true;
     setStatus('thinking');
@@ -372,6 +383,7 @@ export function mountApp(root: HTMLElement) {
     $<HTMLInputElement>('grokKeyInput').value = state.grokKey;
     $<HTMLInputElement>('openaiKeyInput').value = state.openaiKey;
     $<HTMLSelectElement>('providerSel').value = state.provider;
+    $<HTMLSelectElement>('puterModelSel').value = state.puterModel;
     $<HTMLSelectElement>('micSel').value = state.micLang;
     $<HTMLSelectElement>('replySel').value = state.replyLang;
     $<HTMLSelectElement>('textLangSel').value = state.textLang;
@@ -398,6 +410,7 @@ export function mountApp(root: HTMLElement) {
     state.grokKey = $<HTMLInputElement>('grokKeyInput').value.trim();
     state.openaiKey = $<HTMLInputElement>('openaiKeyInput').value.trim();
     state.provider = $<HTMLSelectElement>('providerSel').value as AIProvider;
+    state.puterModel = $<HTMLSelectElement>('puterModelSel').value;
     state.micLang = $<HTMLSelectElement>('micSel').value as any;
     state.replyLang = $<HTMLSelectElement>('replySel').value as any;
     state.textLang = $<HTMLSelectElement>('textLangSel').value as TextLang;
@@ -424,7 +437,8 @@ export function mountApp(root: HTMLElement) {
   setInterval(() => { const d = new Date(); $('clock').textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}`; }, 1000);
 
   updateConnIndicators();
-  const hasAnyApiKey = state.key || state.grokKey || state.openaiKey;
-  if (!hasAnyApiKey) openSetup();
+  const puterAvailable = typeof (window as any).puter !== 'undefined';
+  const canUseAI = puterAvailable || state.key || state.grokKey || state.openaiKey;
+  if (!canUseAI) openSetup();
   else addMsg(state.name + ' online. Talk to me or type.', 'al');
 }

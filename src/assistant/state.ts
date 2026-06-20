@@ -2,13 +2,14 @@ export type ReplyLang = 'en' | 'he' | 'es';
 export type MicLang = 'he' | 'en' | 'es';
 export type TextLang = 'en' | 'he' | 'ar' | 'ru' | 'fr' | 'es' | 'de' | 'auto';
 
-export type AIProvider = 'gemini' | 'grok' | 'openai';
+export type AIProvider = 'puter' | 'gemini' | 'grok' | 'openai';
 
 export interface AppState {
   key: string;
   grokKey: string;
   openaiKey: string;
   provider: AIProvider;
+  puterModel: string;
   name: string;
   micLang: MicLang;
   replyLang: ReplyLang;
@@ -21,6 +22,7 @@ export interface AppState {
 }
 
 const KEY = 'alpha_key', GROK = 'alpha_grok', OPENAI = 'alpha_openai', PROV = 'alpha_provider',
+  PUTERMODEL = 'alpha_putermodel',
   NAME = 'alpha_name', MICLANG = 'alpha_micLang', REPLYLANG = 'alpha_replyLang',
   TEXTLANG = 'alpha_textLang', AMB = 'alpha_amb', SFX = 'alpha_sfx', WAKE = 'alpha_wake';
 
@@ -31,7 +33,8 @@ export function loadState(): AppState {
     key: localStorage.getItem(KEY) || '',
     grokKey: localStorage.getItem(GROK) || '',
     openaiKey: localStorage.getItem(OPENAI) || '',
-    provider: (localStorage.getItem(PROV) as AIProvider) || 'gemini',
+    provider: (localStorage.getItem(PROV) as AIProvider) || 'puter',
+    puterModel: localStorage.getItem(PUTERMODEL) || 'gpt-4o-mini',
     name: localStorage.getItem(NAME) || 'ALPHA',
     micLang: (localStorage.getItem(MICLANG) as MicLang) || 'he',
     replyLang: (localStorage.getItem(REPLYLANG) as ReplyLang) || 'en',
@@ -49,6 +52,7 @@ export function saveState(s: AppState) {
   localStorage.setItem(GROK, s.grokKey);
   localStorage.setItem(OPENAI, s.openaiKey);
   localStorage.setItem(PROV, s.provider);
+  localStorage.setItem(PUTERMODEL, s.puterModel);
   localStorage.setItem(NAME, s.name);
   localStorage.setItem(MICLANG, s.micLang);
   localStorage.setItem(REPLYLANG, s.replyLang);
