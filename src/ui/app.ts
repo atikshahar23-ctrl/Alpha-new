@@ -8,7 +8,7 @@ import { AudioEngine } from '../assistant/audio';
 export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
-      <div class="chrome topL"><div class="wm">ALPHA ASSISTANT</div><div class="clk" id="clock">--:--</div></div>
+      <div class="chrome topL"><div class="wm">ALPHA ASSISTANT</div><div class="clk" id="clock">--:--</div><div style="font-size:9px;color:#333;margin-top:2px" id="ver">v3</div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="muteBtn">🔊</button>
         <button class="chip" id="settingsBtn">⚙ SETTINGS</button>
