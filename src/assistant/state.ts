@@ -1,11 +1,13 @@
 export type ReplyLang = 'en' | 'he';
 export type MicLang = 'he' | 'en';
+export type TextLang = 'en' | 'he' | 'ar' | 'ru' | 'fr' | 'es' | 'de' | 'auto';
 
 export interface AppState {
   key: string;
   name: string;
   micLang: MicLang;
   replyLang: ReplyLang;
+  textLang: TextLang;
   history: { role: 'user' | 'model'; parts: { text: string }[] }[];
   voiceOn: boolean;
   ambLevel: number;
@@ -14,7 +16,7 @@ export interface AppState {
 }
 
 const KEY = 'alpha_key', NAME = 'alpha_name', MICLANG = 'alpha_micLang', REPLYLANG = 'alpha_replyLang',
-  AMB = 'alpha_amb', SFX = 'alpha_sfx', WAKE = 'alpha_wake';
+  TEXTLANG = 'alpha_textLang', AMB = 'alpha_amb', SFX = 'alpha_sfx', WAKE = 'alpha_wake';
 
 export function loadState(): AppState {
   let amb = parseFloat(localStorage.getItem(AMB) || '');
@@ -24,6 +26,7 @@ export function loadState(): AppState {
     name: localStorage.getItem(NAME) || 'ALPHA',
     micLang: (localStorage.getItem(MICLANG) as MicLang) || 'he',
     replyLang: (localStorage.getItem(REPLYLANG) as ReplyLang) || 'en',
+    textLang: (localStorage.getItem(TEXTLANG) as TextLang) || 'auto',
     history: [],
     voiceOn: true,
     ambLevel: amb,
@@ -37,6 +40,7 @@ export function saveState(s: AppState) {
   localStorage.setItem(NAME, s.name);
   localStorage.setItem(MICLANG, s.micLang);
   localStorage.setItem(REPLYLANG, s.replyLang);
+  localStorage.setItem(TEXTLANG, s.textLang);
   localStorage.setItem(AMB, s.ambLevel.toFixed(2));
   localStorage.setItem(SFX, s.sfxOn ? '1' : '0');
   localStorage.setItem(WAKE, s.wakeOn ? '1' : '0');

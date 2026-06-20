@@ -1,14 +1,11 @@
-// Procedural fire+water shader for the orb core.
-// Fire (warm, rising turbulent flicker) and water (cool, rippling caustics)
-// occupy opposite hemispheres of the sphere and blend across a noisy,
-// constantly-shifting boundary rather than a hard seam.
-
 export const vertexShader = /* glsl */ `
   varying vec3 vPos;
   varying vec3 vNormal;
+  varying vec2 vUv;
   void main() {
     vPos = position;
     vNormal = normalize(normalMatrix * normal);
+    vUv = uv;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
 `;
@@ -17,10 +14,10 @@ export const fragmentShader = /* glsl */ `
   precision highp float;
   varying vec3 vPos;
   varying vec3 vNormal;
+  varying vec2 vUv;
   uniform float uTime;
-  uniform float uAmp; // 0..1 reactive amplitude (listening/speaking energy)
+  uniform float uAmp;
 
-  // --- simplex-style 3D noise (Ashima/McEwan, public-domain reference implementation) ---
   vec3 mod289(vec3 x){ return x - floor(x * (1.0/289.0)) * 289.0; }
   vec4 mod289(vec4 x){ return x - floor(x * (1.0/289.0)) * 289.0; }
   vec4 permute(vec4 x){ return mod289(((x*34.0)+1.0)*x); }
@@ -70,49 +67,66 @@ export const fragmentShader = /* glsl */ `
   }
 
   float fbm(vec3 p){
-    float v = 0.0, amp = 0.5;
-    for (int i = 0; i < 4; i++) { v += amp * snoise(p); p *= 2.02; amp *= 0.5; }
+    float v = 0.0, a = 0.5;
+    for (int i = 0; i < 5; i++) { v += a * snoise(p); p *= 2.03; a *= 0.48; }
     return v;
   }
 
   void main(){
     vec3 p = normalize(vPos);
 
-    // Boundary between fire (upper) and water (lower) hemispheres, perturbed by noise
-    // so it ripples and interlocks instead of forming a flat seam.
-    float boundaryNoise = fbm(p * 1.6 + vec3(0.0, uTime * 0.05, 0.0)) * 0.45;
-    float side = p.y + boundaryNoise; // >0 fire-leaning, <0 water-leaning
-    float mixT = smoothstep(-0.35, 0.35, side);
+    float boundaryNoise = fbm(p * 1.8 + vec3(0.0, uTime * 0.06, 0.0)) * 0.5;
+    float side = p.y + boundaryNoise;
+    float mixT = smoothstep(-0.4, 0.4, side);
 
-    // Fire: fast upward-scrolling turbulent noise, warm palette
-    vec3 firePos = p * 2.6 + vec3(0.0, -uTime * (1.1 + uAmp * 0.8), 0.0);
-    float fireN = fbm(firePos) * 0.5 + fbm(firePos * 2.3 + 4.0) * 0.5;
-    fireN = pow(max(fireN + 0.5, 0.0), 1.6 - uAmp * 0.4);
-    vec3 fireDark = vec3(0.55, 0.06, 0.02);
-    vec3 fireMid  = vec3(1.0, 0.42, 0.05);
-    vec3 fireHot  = vec3(1.0, 0.92, 0.55);
-    vec3 fireCol = mix(fireDark, fireMid, clamp(fireN*1.3,0.0,1.0));
-    fireCol = mix(fireCol, fireHot, clamp((fireN-0.55)*2.2,0.0,1.0));
+    // Fire hemisphere — intense plasma
+    vec3 firePos = p * 3.0 + vec3(0.0, -uTime * (1.4 + uAmp * 1.2), 0.0);
+    float fireN = fbm(firePos) * 0.5 + fbm(firePos * 2.5 + 5.0) * 0.5;
+    fireN = pow(max(fireN + 0.5, 0.0), 1.5 - uAmp * 0.5);
+    vec3 fireDark = vec3(0.4, 0.02, 0.08);
+    vec3 fireMid  = vec3(1.0, 0.25, 0.05);
+    vec3 fireHot  = vec3(1.0, 0.85, 0.4);
+    vec3 fireWhite = vec3(1.0, 0.98, 0.95);
+    vec3 fireCol = mix(fireDark, fireMid, clamp(fireN * 1.4, 0.0, 1.0));
+    fireCol = mix(fireCol, fireHot, clamp((fireN - 0.45) * 2.5, 0.0, 1.0));
+    fireCol = mix(fireCol, fireWhite, clamp((fireN - 0.75) * 4.0, 0.0, 1.0));
 
-    // Water: slow rippling caustic-like noise, cool palette
-    vec3 waterPos = p * 3.2 + vec3(uTime * 0.18, uTime * 0.07, -uTime * 0.12);
-    float waterN = fbm(waterPos) * 0.5 + fbm(waterPos * 1.7 - 2.0) * 0.5;
-    float caustic = pow(abs(sin((waterN*3.0 + uTime*0.6) * 3.14159)), 3.0);
-    vec3 waterDeep = vec3(0.01, 0.07, 0.20);
-    vec3 waterMid  = vec3(0.05, 0.45, 0.75);
-    vec3 waterLit  = vec3(0.65, 0.96, 1.0);
-    vec3 waterCol = mix(waterDeep, waterMid, clamp(waterN*1.2+0.4,0.0,1.0));
-    waterCol = mix(waterCol, waterLit, caustic * (0.5 + uAmp*0.4));
+    // Water hemisphere — deep ocean caustics
+    vec3 waterPos = p * 3.5 + vec3(uTime * 0.2, uTime * 0.08, -uTime * 0.15);
+    float waterN = fbm(waterPos) * 0.5 + fbm(waterPos * 1.8 - 3.0) * 0.5;
+    float caustic = pow(abs(sin((waterN * 3.5 + uTime * 0.7) * 3.14159)), 2.5);
+    float caustic2 = pow(abs(sin((waterN * 2.1 - uTime * 0.5) * 3.14159)), 3.0);
+    vec3 waterDeep = vec3(0.005, 0.04, 0.18);
+    vec3 waterMid  = vec3(0.02, 0.35, 0.7);
+    vec3 waterLit  = vec3(0.5, 0.92, 1.0);
+    vec3 waterBright = vec3(0.85, 1.0, 1.0);
+    vec3 waterCol = mix(waterDeep, waterMid, clamp(waterN * 1.3 + 0.4, 0.0, 1.0));
+    waterCol = mix(waterCol, waterLit, caustic * (0.6 + uAmp * 0.5));
+    waterCol = mix(waterCol, waterBright, caustic2 * 0.3);
 
     vec3 col = mix(waterCol, fireCol, mixT);
 
-    // Bright steam/light seam exactly where fire and water meet
-    float seam = 1.0 - smoothstep(0.0, 0.5, abs(side));
-    col += vec3(1.0, 0.97, 0.9) * seam * (0.55 + uAmp*0.5);
+    // Energetic seam where fire meets water
+    float seam = 1.0 - smoothstep(0.0, 0.4, abs(side));
+    float seamPulse = 0.6 + 0.4 * sin(uTime * 2.0 + snoise(p * 4.0) * 3.0);
+    col += vec3(1.0, 0.95, 0.85) * seam * (0.7 + uAmp * 0.8) * seamPulse;
 
-    // Rim light for sphere readability
-    float rim = pow(1.0 - max(dot(normalize(vNormal), vec3(0.0,0.0,1.0)), 0.0), 2.0);
-    col += rim * 0.18;
+    // Electric arcs along seam
+    float arc = pow(seam, 3.0) * pow(abs(snoise(p * 8.0 + uTime * 2.0)), 6.0) * 4.0;
+    col += vec3(0.7, 0.9, 1.0) * arc * (1.0 + uAmp * 2.0);
+
+    // Fresnel rim glow
+    float fresnel = pow(1.0 - max(dot(normalize(vNormal), vec3(0.0, 0.0, 1.0)), 0.0), 2.5);
+    vec3 rimCol = mix(vec3(0.2, 0.5, 1.0), vec3(1.0, 0.4, 0.2), mixT);
+    col += fresnel * rimCol * (0.4 + uAmp * 0.6);
+
+    // Subsurface scattering simulation
+    float sss = pow(max(dot(normalize(vNormal), vec3(0.0, 1.0, 0.5)), 0.0), 3.0);
+    col += sss * vec3(1.0, 0.6, 0.3) * 0.15 * (1.0 + uAmp);
+
+    // HDR bloom contribution
+    float lum = dot(col, vec3(0.299, 0.587, 0.114));
+    col += col * max(lum - 0.8, 0.0) * 1.5;
 
     gl_FragColor = vec4(col, 1.0);
   }
