@@ -120,7 +120,7 @@ export class VoiceEngine {
         this.commandMode = false;
         if (this.wakeOn) this.onStateChange('armed');
       }, 15000);
-      this.sendTimer = window.setTimeout(() => this.flushBuffer(), 1500);
+      this.sendTimer = window.setTimeout(() => this.flushBuffer(), 700);
       return;
     }
     if (this.hasWake(raw)) {
@@ -128,7 +128,7 @@ export class VoiceEngine {
       if (cmd.length > 1) {
         this.finalBuffer = cmd;
         clearTimeout(this.sendTimer);
-        this.sendTimer = window.setTimeout(() => this.flushBuffer(), 1500);
+        this.sendTimer = window.setTimeout(() => this.flushBuffer(), 700);
       } else {
         this.listenNow();
       }

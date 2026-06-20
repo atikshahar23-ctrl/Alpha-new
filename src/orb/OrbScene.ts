@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { vertexShader, fragmentShader } from './fireWaterShader';
 
 export interface OrbHandle {
   setEnergy(v: number): void;
@@ -10,17 +9,12 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setClearColor(0x000000, 0);
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.4;
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 20);
-  camera.position.set(0, 3.5, 5.0);
+  const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
+  camera.position.set(0, 1.8, 2.2);
   camera.lookAt(0, 0, 0);
-
-  const group = new THREE.Group();
-  scene.add(group);
 
   function size() { return container.clientWidth || 240; }
   function resize() {
@@ -32,87 +26,74 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   resize();
   window.addEventListener('resize', resize);
 
-  // --- glow texture ---
-  const sc = document.createElement('canvas');
-  sc.width = sc.height = 128;
-  const sctx = sc.getContext('2d')!;
-  const gr = sctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  // --- glow texture for sprites ---
+  const gc = document.createElement('canvas');
+  gc.width = gc.height = 128;
+  const gctx = gc.getContext('2d')!;
+  const gr = gctx.createRadialGradient(64, 64, 0, 64, 64, 64);
   gr.addColorStop(0, 'rgba(255,255,255,1)');
-  gr.addColorStop(0.15, 'rgba(200,250,255,.95)');
-  gr.addColorStop(0.5, 'rgba(95,230,255,.35)');
+  gr.addColorStop(0.2, 'rgba(200,250,255,.9)');
+  gr.addColorStop(0.5, 'rgba(95,230,255,.3)');
   gr.addColorStop(1, 'rgba(95,230,255,0)');
-  sctx.fillStyle = gr;
-  sctx.fillRect(0, 0, 128, 128);
-  const glowTex = new THREE.CanvasTexture(sc);
+  gctx.fillStyle = gr;
+  gctx.fillRect(0, 0, 128, 128);
+  const glowTex = new THREE.CanvasTexture(gc);
 
-  // --- shader core sphere ---
-  const uniforms = { uTime: { value: 0 }, uAmp: { value: 0.06 } };
-  const core = new THREE.Mesh(
-    new THREE.SphereGeometry(0.62, 96, 96),
-    new THREE.ShaderMaterial({ uniforms, vertexShader, fragmentShader })
-  );
-  group.add(core);
+  // --- CORE: Icosahedron wireframe (from user's code) ---
+  const coreGeo = new THREE.IcosahedronGeometry(1, 12);
+  const coreMat = new THREE.MeshPhongMaterial({
+    color: 0x00d4ff,
+    wireframe: true,
+    emissive: 0x003366,
+    transparent: true,
+    opacity: 0.7,
+  });
+  const core = new THREE.Mesh(coreGeo, coreMat);
+  scene.add(core);
 
-  // depth occluder
-  const occluder = new THREE.Mesh(
-    new THREE.SphereGeometry(0.6, 32, 32),
-    new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: true })
-  );
-  group.add(occluder);
+  // --- Lighting ---
+  const pointLight = new THREE.PointLight(0xffffff, 1.5, 100);
+  pointLight.position.set(2, 2, 5);
+  scene.add(pointLight);
+  scene.add(new THREE.AmbientLight(0x202020));
 
-  // --- GOLDEN RING (thick and prominent like reference) ---
-  const goldRingGeo = new THREE.TorusGeometry(0.88, 0.045, 24, 120);
+  const cyanLight = new THREE.PointLight(0x00d4ff, 0.8, 50);
+  cyanLight.position.set(-2, -1, 3);
+  scene.add(cyanLight);
+
+  // --- GOLDEN RING ---
+  const goldRingGeo = new THREE.TorusGeometry(1.35, 0.04, 24, 120);
   const goldRingMat = new THREE.MeshBasicMaterial({
     color: 0xffb833,
     transparent: true,
-    opacity: 0.95,
+    opacity: 0.9,
   });
   const goldRing = new THREE.Mesh(goldRingGeo, goldRingMat);
   goldRing.rotation.x = Math.PI * 0.5;
-  group.add(goldRing);
+  scene.add(goldRing);
 
-  // Gold ring inner glow
-  const goldGlowGeo = new THREE.TorusGeometry(0.88, 0.13, 24, 120);
+  const goldGlowGeo = new THREE.TorusGeometry(1.35, 0.12, 24, 120);
   const goldGlowMat = new THREE.MeshBasicMaterial({
     color: 0xffc040,
     transparent: true,
-    opacity: 0.35,
+    opacity: 0.3,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
   });
   const goldGlow = new THREE.Mesh(goldGlowGeo, goldGlowMat);
   goldGlow.rotation.x = Math.PI * 0.5;
-  group.add(goldGlow);
+  scene.add(goldGlow);
 
-  // Gold ring outer glow (wider)
-  const goldGlow2Geo = new THREE.TorusGeometry(0.88, 0.22, 16, 100);
-  const goldGlow2Mat = new THREE.MeshBasicMaterial({
-    color: 0xffa020,
-    transparent: true,
-    opacity: 0.12,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
+  // --- Center glow sprite ---
+  const haloMat = new THREE.SpriteMaterial({
+    map: glowTex, color: 0x00d4ff, transparent: true, opacity: 0.35,
+    blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
   });
-  const goldGlow2 = new THREE.Mesh(goldGlow2Geo, goldGlow2Mat);
-  goldGlow2.rotation.x = Math.PI * 0.5;
-  group.add(goldGlow2);
+  const halo = new THREE.Sprite(haloMat);
+  halo.scale.setScalar(4.5);
+  scene.add(halo);
 
-  // --- multi-layer halos (glow around sphere) ---
-  function haloSprite(hex: number, scale: number, op: number) {
-    const m = new THREE.SpriteMaterial({
-      map: glowTex, color: hex, transparent: true, opacity: op,
-      blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
-    });
-    const s = new THREE.Sprite(m);
-    s.scale.setScalar(scale);
-    group.add(s);
-    return { sprite: s, mat: m };
-  }
-  const haloCyan = haloSprite(0x40d8ff, 4.5, 0.35);
-  const haloWhite = haloSprite(0xffffff, 2.8, 0.18);
-  const haloOuter = haloSprite(0x2080ff, 6.5, 0.06);
-
-  // --- 6 ORBITING COLORED DOTS (key feature from reference) ---
+  // --- 6 ORBITING COLORED DOTS ---
   const ORBIT_DOTS = 6;
   const dotColors = [0x5fe6ff, 0xffb833, 0xff5d73, 0xb06aff, 0x4dff91, 0xff9f43];
   const dotMeshes: THREE.Mesh[] = [];
@@ -120,24 +101,24 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   const dotOrbits: { angle: number; radius: number; speed: number; tilt: number; phase: number }[] = [];
 
   for (let i = 0; i < ORBIT_DOTS; i++) {
-    const dotGeo = new THREE.SphereGeometry(0.04, 16, 16);
+    const dotGeo = new THREE.SphereGeometry(0.045, 16, 16);
     const dotMat = new THREE.MeshBasicMaterial({ color: dotColors[i] });
     const dot = new THREE.Mesh(dotGeo, dotMat);
-    group.add(dot);
+    scene.add(dot);
     dotMeshes.push(dot);
 
-    const glowMat = new THREE.SpriteMaterial({
+    const spMat = new THREE.SpriteMaterial({
       map: glowTex, color: dotColors[i], transparent: true, opacity: 0.6,
       blending: THREE.AdditiveBlending, depthWrite: false,
     });
-    const glow = new THREE.Sprite(glowMat);
-    glow.scale.setScalar(0.25);
-    group.add(glow);
-    dotGlows.push(glow);
+    const sp = new THREE.Sprite(spMat);
+    sp.scale.setScalar(0.28);
+    scene.add(sp);
+    dotGlows.push(sp);
 
     dotOrbits.push({
       angle: (i / ORBIT_DOTS) * Math.PI * 2,
-      radius: 1.15 + (i % 2) * 0.15,
+      radius: 1.7 + (i % 2) * 0.2,
       speed: 0.5 + i * 0.08,
       tilt: (Math.PI / 6) * (i % 3 - 1),
       phase: i * 1.2,
@@ -145,58 +126,55 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   }
 
   let amp = 0.06, ampTarget = 0.06;
+  let time = 0;
   let raf = 0;
-  const clock = new THREE.Clock();
 
   function frame() {
     raf = requestAnimationFrame(frame);
-    const t = clock.getElapsedTime();
-    amp += (ampTarget - amp) * 0.07;
+    time += 0.05;
+    amp += (ampTarget - amp) * 0.1;
 
-    uniforms.uTime.value = t;
-    uniforms.uAmp.value = amp;
+    // Core rotation (from user's code)
+    core.rotation.x += 0.005 + amp * 0.02;
+    core.rotation.y += 0.008 + amp * 0.03;
 
-    const breathe = 1 + Math.sin(t * 0.8) * 0.015;
-    core.scale.setScalar((1 + amp * 0.15) * breathe);
-    occluder.scale.setScalar((1 + amp * 0.13) * breathe);
+    // Core pulse
+    const pulse = 1 + Math.sin(time) * (0.05 + amp * 0.15);
+    core.scale.set(pulse, pulse, pulse);
 
-    group.rotation.y = t * 0.06;
+    // Core reactivity
+    coreMat.opacity = 0.6 + amp * 0.4;
+    coreMat.emissive.setHex(amp > 0.3 ? 0x005588 : 0x003366);
 
-    // golden ring animation
-    goldRing.rotation.x = Math.PI * 0.5 + Math.sin(t * 0.3) * 0.08;
-    goldRing.rotation.z = t * 0.12;
+    // Golden ring
+    goldRing.rotation.x = Math.PI * 0.5 + Math.sin(time * 0.06) * 0.08;
+    goldRing.rotation.z = time * 0.024;
     goldRingMat.opacity = 0.85 + amp * 0.15;
     goldGlow.rotation.copy(goldRing.rotation);
-    goldGlowMat.opacity = 0.25 + amp * 0.35 + Math.sin(t * 1.5) * 0.05;
-    goldGlow2.rotation.copy(goldRing.rotation);
-    goldGlow2Mat.opacity = 0.1 + amp * 0.15;
-    const ringScale = 1 + amp * 0.12;
-    goldRing.scale.setScalar(ringScale);
-    goldGlow.scale.setScalar(ringScale);
-    goldGlow2.scale.setScalar(ringScale);
+    goldGlowMat.opacity = 0.2 + amp * 0.35 + Math.sin(time * 0.3) * 0.05;
+    const rs = 1 + amp * 0.1;
+    goldRing.scale.setScalar(rs);
+    goldGlow.scale.setScalar(rs);
 
-    // halos
-    haloCyan.mat.opacity = 0.3 + amp * 0.3 + Math.sin(t * 0.9) * 0.03;
-    haloWhite.mat.opacity = 0.12 + amp * 0.2;
-    haloOuter.mat.opacity = 0.04 + amp * 0.08;
-    haloCyan.sprite.scale.setScalar(4.5 + amp * 1.0);
-    haloWhite.sprite.scale.setScalar(2.8 + amp * 0.6);
+    // Center glow
+    haloMat.opacity = 0.3 + amp * 0.3;
+    halo.scale.setScalar(4.5 + amp * 1.5);
 
-    // 6 orbiting dots - speed up when speaking/thinking
+    // Cyan light intensity follows energy
+    cyanLight.intensity = 0.8 + amp * 2;
+
+    // 6 orbiting dots
     const speedMult = 1 + amp * 4;
-    const bounceAmp = amp * 0.3;
     for (let i = 0; i < ORBIT_DOTS; i++) {
       const d = dotOrbits[i];
       d.angle += d.speed * 0.016 * speedMult;
-      const r = d.radius + Math.sin(t * 0.6 + d.phase) * 0.06 + bounceAmp * Math.sin(t * 3 + d.phase);
+      const r = d.radius + Math.sin(time * 0.12 + d.phase) * 0.06 + amp * 0.3 * Math.sin(time * 0.6 + d.phase);
       const x = Math.cos(d.angle) * r;
       const z = Math.sin(d.angle) * r;
-      const y = Math.sin(d.angle + d.tilt) * 0.3 + Math.sin(t * 0.4 + d.phase) * 0.08;
+      const y = Math.sin(d.angle + d.tilt) * 0.35 + Math.sin(time * 0.08 + d.phase) * 0.08;
       dotMeshes[i].position.set(x, y, z);
       dotGlows[i].position.set(x, y, z);
-
-      const scale = 0.2 + amp * 0.15 + Math.sin(t * 2 + d.phase) * 0.04;
-      dotGlows[i].scale.setScalar(scale);
+      dotGlows[i].scale.setScalar(0.22 + amp * 0.18 + Math.sin(time * 0.4 + d.phase) * 0.04);
     }
 
     renderer.render(scene, camera);
