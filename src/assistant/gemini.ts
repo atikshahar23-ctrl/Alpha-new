@@ -7,6 +7,9 @@ const MODELS = [
   'gemini-1.5-flash-8b',
 ];
 
+let activeModel = 0;
+let busy = false;
+
 const LANG_INSTRUCTIONS: Record<string, string> = {
   en: 'ALWAYS reply in fluent, natural, warm English. Short, conversational sentences like a person speaking aloud.',
   he: 'ענה תמיד בעברית טבעית, רהוטה ונקייה — דיבור אנושי וזורם, לא מילולי ולא רובוטי. משפטים קצרים כמו בשיחה.',
@@ -75,22 +78,34 @@ async function tryModel(model: string, state: AppState): Promise<{ ok: true; rep
 }
 
 export async function askGemini(state: AppState, text: string): Promise<string> {
+  if (busy) throw new Error('Please wait for the current request to finish.');
+  busy = true;
+
   state.history.push({ role: 'user', parts: [{ text }] });
 
-  for (const model of MODELS) {
-    const result = await tryModel(model, state);
-    if (result.ok) {
-      state.history.push({ role: 'model', parts: [{ text: result.reply }] });
-      return result.reply;
-    }
-    if (!result.canFallback) {
-      state.history.pop();
-      throw new Error(result.msg);
-    }
-  }
+  try {
+    // Try the last working model first, then fall back to others
+    const order = [activeModel, ...MODELS.map((_, i) => i).filter(i => i !== activeModel)];
 
-  state.history.pop();
-  throw new Error('All models quota exceeded. Try again later or check your API key at aistudio.google.com.');
+    for (const idx of order) {
+      const model = MODELS[idx];
+      const result = await tryModel(model, state);
+      if (result.ok) {
+        activeModel = idx;
+        state.history.push({ role: 'model', parts: [{ text: result.reply }] });
+        return result.reply;
+      }
+      if (!result.canFallback) {
+        state.history.pop();
+        throw new Error(result.msg);
+      }
+    }
+
+    state.history.pop();
+    throw new Error('All models quota exceeded. Try again later or check your API key at aistudio.google.com.');
+  } finally {
+    busy = false;
+  }
 }
 
 export function runTags(

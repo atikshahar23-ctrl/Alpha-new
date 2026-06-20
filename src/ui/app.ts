@@ -270,8 +270,11 @@ export function mountApp(root: HTMLElement) {
   }
   function openCalendar() { openWin('Calendar'); renderCalendar(); }
 
+  let asking = false;
   async function ask(text: string) {
     if (!state.key) { openSetup(); return; }
+    if (asking) return;
+    asking = true;
     setStatus('thinking');
     try {
       const reply = await askGemini(state, text);
@@ -283,6 +286,8 @@ export function mountApp(root: HTMLElement) {
       if (voice.wakeOn) setTimeout(() => voice.setWake(true), 500);
       else setStatus('');
       addMsg(err.message || 'Connection error', 'sys');
+    } finally {
+      asking = false;
     }
   }
 
