@@ -1,7 +1,8 @@
 import { mountOrb } from '../orb/OrbScene';
 import { mountFlowLines } from '../bg/flowLines';
-import { loadState, saveState, addEvent, loadEvents, saveEvents, type AppState, type TextLang } from '../assistant/state';
-import { askGemini, runTags } from '../assistant/gemini';
+import { loadState, saveState, addEvent, loadEvents, saveEvents, type AppState, type TextLang, type AIProvider } from '../assistant/state';
+import { askAI, runTags } from '../assistant/gemini';
+import { tryLocalCommand } from '../assistant/local';
 import { VoiceEngine } from '../assistant/voice';
 import { AudioEngine } from '../assistant/audio';
 
@@ -99,7 +100,15 @@ export function mountApp(root: HTMLElement) {
         </select>
         <label>Voice</label><select id="voiceSel"></select>
         <label>Background music</label><input type="range" id="ambSlider" min="0" max="100" value="40" />
+        <label>AI Provider</label>
+        <select id="providerSel">
+          <option value="gemini">Gemini (Google)</option>
+          <option value="grok">Grok (xAI)</option>
+          <option value="openai">ChatGPT (OpenAI)</option>
+        </select>
         <label>Gemini API key</label><input id="keyInput" type="password" placeholder="AIza..." />
+        <label>Grok API key</label><input id="grokKeyInput" type="password" placeholder="xai-..." />
+        <label>OpenAI API key</label><input id="openaiKeyInput" type="password" placeholder="sk-..." />
 
         <div class="settings-section">
           <div class="ss-title">CONNECTED SERVICES</div>
@@ -272,12 +281,20 @@ export function mountApp(root: HTMLElement) {
 
   let asking = false;
   async function ask(text: string) {
-    if (!state.key) { openSetup(); return; }
+    const localReply = tryLocalCommand(text);
+    if (localReply) {
+      audio.receive();
+      addMsg(localReply, 'al');
+      voice.speak(localReply);
+      return;
+    }
+    const hasAnyKey = state.key || state.grokKey || state.openaiKey;
+    if (!hasAnyKey) { openSetup(); return; }
     if (asking) return;
     asking = true;
     setStatus('thinking');
     try {
-      const reply = await askGemini(state, text);
+      const reply = await askAI(state, text);
       const clean = runTags(reply, { onVideo: openVideo, onSearch: openSearch, onCalendar: openCalendar, onEvent: addEvent, onSpotify: openSpotify }) || 'Done.';
       audio.receive();
       addMsg(clean, 'al');
@@ -352,6 +369,9 @@ export function mountApp(root: HTMLElement) {
   function openSetup() {
     $<HTMLInputElement>('nameInput').value = state.name;
     $<HTMLInputElement>('keyInput').value = state.key;
+    $<HTMLInputElement>('grokKeyInput').value = state.grokKey;
+    $<HTMLInputElement>('openaiKeyInput').value = state.openaiKey;
+    $<HTMLSelectElement>('providerSel').value = state.provider;
     $<HTMLSelectElement>('micSel').value = state.micLang;
     $<HTMLSelectElement>('replySel').value = state.replyLang;
     $<HTMLSelectElement>('textLangSel').value = state.textLang;
@@ -375,6 +395,9 @@ export function mountApp(root: HTMLElement) {
   $('saveBtn').onclick = () => {
     state.name = $<HTMLInputElement>('nameInput').value.trim() || 'ALPHA';
     state.key = $<HTMLInputElement>('keyInput').value.trim();
+    state.grokKey = $<HTMLInputElement>('grokKeyInput').value.trim();
+    state.openaiKey = $<HTMLInputElement>('openaiKeyInput').value.trim();
+    state.provider = $<HTMLSelectElement>('providerSel').value as AIProvider;
     state.micLang = $<HTMLSelectElement>('micSel').value as any;
     state.replyLang = $<HTMLSelectElement>('replySel').value as any;
     state.textLang = $<HTMLSelectElement>('textLangSel').value as TextLang;
@@ -401,6 +424,7 @@ export function mountApp(root: HTMLElement) {
   setInterval(() => { const d = new Date(); $('clock').textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}`; }, 1000);
 
   updateConnIndicators();
-  if (!state.key) openSetup();
+  const hasAnyApiKey = state.key || state.grokKey || state.openaiKey;
+  if (!hasAnyApiKey) openSetup();
   else addMsg(state.name + ' online. Talk to me or type.', 'al');
 }

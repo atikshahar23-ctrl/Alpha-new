@@ -1,15 +1,15 @@
-import type { AppState } from './state';
+import type { AppState, AIProvider } from './state';
 import { upcomingText } from './state';
 
-const MODELS = [
+const GEMINI_MODELS = [
   'gemini-2.0-flash',
   'gemini-1.5-flash',
   'gemini-1.5-flash-8b',
 ];
 
-let activeModel = 0;
+let activeGeminiModel = 0;
 let busy = false;
-const modelCooldowns: number[] = [0, 0, 0];
+const geminiCooldowns: number[] = [0, 0, 0];
 const COOLDOWN_MS = 5000;
 
 const LANG_INSTRUCTIONS: Record<string, string> = {
@@ -39,7 +39,9 @@ Control the app via tags at the END of your reply when relevant (never mention t
 User's calendar: ${upcomingText()}.`;
 }
 
-async function tryModel(model: string, state: AppState): Promise<{ ok: true; reply: string } | { ok: false; canFallback: boolean; msg: string }> {
+// ─── Gemini ───
+
+async function tryGeminiModel(model: string, state: AppState): Promise<{ ok: true; reply: string } | { ok: false; canFallback: boolean; msg: string }> {
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
     {
@@ -66,7 +68,7 @@ async function tryModel(model: string, state: AppState): Promise<{ ok: true; rep
       } else if (code === 401 || code === 403 || lower.includes('credential') || lower.includes('not found') || lower.includes('not supported')) {
         canFallback = true;
         msg = `${model} not available`;
-      } else if (code === 400) msg = 'Bad request — check your API key.';
+      } else if (code === 400) msg = 'Bad request — check your Gemini API key.';
       else msg = errMsg || `Error ${code}`;
     } catch { msg = `Error ${code}`; }
     return { ok: false, canFallback, msg };
@@ -79,39 +81,125 @@ async function tryModel(model: string, state: AppState): Promise<{ ok: true; rep
   return { ok: true, reply };
 }
 
-export async function askGemini(state: AppState, text: string): Promise<string> {
+async function askGeminiProvider(state: AppState): Promise<string> {
+  const now = Date.now();
+  const order = [activeGeminiModel, ...GEMINI_MODELS.map((_, i) => i).filter(i => i !== activeGeminiModel)];
+  for (const idx of order) {
+    if (now < geminiCooldowns[idx]) continue;
+    const result = await tryGeminiModel(GEMINI_MODELS[idx], state);
+    if (result.ok) { activeGeminiModel = idx; return result.reply; }
+    if (!result.canFallback) throw new Error(result.msg);
+    geminiCooldowns[idx] = Date.now() + COOLDOWN_MS;
+  }
+  throw new Error('GEMINI_EXHAUSTED');
+}
+
+// ─── Grok (xAI) ───
+
+async function askGrokProvider(state: AppState): Promise<string> {
+  if (!state.grokKey) throw new Error('PROVIDER_NO_KEY');
+  const sys = systemPrompt(state);
+  const messages = [
+    { role: 'system' as const, content: sys },
+    ...state.history.slice(-8).map(h => ({
+      role: h.role === 'user' ? 'user' as const : 'assistant' as const,
+      content: h.parts.map(p => p.text).join(''),
+    })),
+  ];
+  const res = await fetch('https://api.x.ai/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${state.grokKey}` },
+    body: JSON.stringify({ model: 'grok-3-mini', messages, temperature: 0.8, max_tokens: 500 }),
+  });
+  if (!res.ok) {
+    const code = res.status;
+    if (code === 429) throw new Error('PROVIDER_EXHAUSTED');
+    let msg = `Grok error ${code}`;
+    try { const e = await res.json(); msg = e?.error?.message || msg; } catch {}
+    if (code === 401 || code === 403) throw new Error('PROVIDER_EXHAUSTED');
+    throw new Error(msg);
+  }
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content?.trim() || '…';
+}
+
+// ─── OpenAI (ChatGPT) ───
+
+async function askOpenAIProvider(state: AppState): Promise<string> {
+  if (!state.openaiKey) throw new Error('PROVIDER_NO_KEY');
+  const sys = systemPrompt(state);
+  const messages = [
+    { role: 'system' as const, content: sys },
+    ...state.history.slice(-8).map(h => ({
+      role: h.role === 'user' ? 'user' as const : 'assistant' as const,
+      content: h.parts.map(p => p.text).join(''),
+    })),
+  ];
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${state.openaiKey}` },
+    body: JSON.stringify({ model: 'gpt-4o-mini', messages, temperature: 0.8, max_tokens: 500 }),
+  });
+  if (!res.ok) {
+    const code = res.status;
+    if (code === 429) throw new Error('PROVIDER_EXHAUSTED');
+    let msg = `OpenAI error ${code}`;
+    try { const e = await res.json(); msg = e?.error?.message || msg; } catch {}
+    if (code === 401 || code === 403) throw new Error('PROVIDER_EXHAUSTED');
+    throw new Error(msg);
+  }
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content?.trim() || '…';
+}
+
+// ─── Unified ask with auto-fallback ───
+
+const PROVIDER_ORDER: AIProvider[] = ['gemini', 'grok', 'openai'];
+
+async function askProvider(provider: AIProvider, state: AppState): Promise<string> {
+  if (provider === 'gemini') return askGeminiProvider(state);
+  if (provider === 'grok') return askGrokProvider(state);
+  return askOpenAIProvider(state);
+}
+
+function hasKey(provider: AIProvider, state: AppState): boolean {
+  if (provider === 'gemini') return !!state.key;
+  if (provider === 'grok') return !!state.grokKey;
+  return !!state.openaiKey;
+}
+
+export async function askAI(state: AppState, text: string): Promise<string> {
   if (busy) throw new Error('Please wait for the current request to finish.');
   busy = true;
-
   state.history.push({ role: 'user', parts: [{ text }] });
 
   try {
-    const now = Date.now();
-    // Try the last working model first, then fall back to others — skip models on cooldown
-    const order = [activeModel, ...MODELS.map((_, i) => i).filter(i => i !== activeModel)];
+    const primary = state.provider;
+    const fallbacks = PROVIDER_ORDER.filter(p => p !== primary && hasKey(p, state));
+    const chain = [primary, ...fallbacks];
 
-    for (const idx of order) {
-      if (now < modelCooldowns[idx]) continue;
-      const model = MODELS[idx];
-      const result = await tryModel(model, state);
-      if (result.ok) {
-        activeModel = idx;
-        state.history.push({ role: 'model', parts: [{ text: result.reply }] });
-        return result.reply;
-      }
-      if (!result.canFallback) {
+    for (const provider of chain) {
+      if (!hasKey(provider, state)) continue;
+      try {
+        const reply = await askProvider(provider, state);
+        state.history.push({ role: 'model', parts: [{ text: reply }] });
+        return reply;
+      } catch (err: any) {
+        if (err.message === 'GEMINI_EXHAUSTED' || err.message === 'PROVIDER_EXHAUSTED') continue;
+        if (err.message === 'PROVIDER_NO_KEY') continue;
         state.history.pop();
-        throw new Error(result.msg);
+        throw err;
       }
-      modelCooldowns[idx] = Date.now() + COOLDOWN_MS;
     }
 
     state.history.pop();
-    throw new Error('Quota exceeded. Please wait a few seconds and try again.');
+    throw new Error('All providers exhausted. Try again later or add more API keys in settings.');
   } finally {
     busy = false;
   }
 }
+
+export { askAI as askGemini };
 
 export function runTags(
   text: string,
