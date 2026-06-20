@@ -189,8 +189,11 @@ export class VoiceEngine {
     u.onstart = () => { this.suppress = true; this.stopRec(); this.onStateChange('speaking'); };
     const done = () => {
       this.suppress = false;
-      if (this.wakeOn) { this.onStateChange('armed'); setTimeout(() => this.startRec(), 250); }
-      else this.onStateChange('');
+      if (this.wakeOn) {
+        setTimeout(() => { this.startRec(); this.listenNow(); }, 300);
+      } else {
+        this.onStateChange('');
+      }
     };
     u.onend = done;
     u.onerror = done;

@@ -168,9 +168,9 @@ export function mountApp(root: HTMLElement) {
       addMsg(clean, 'al');
       voice.speak(clean);
     } catch (err: any) {
-      setStatus(voice.wakeOn ? 'armed' : '');
-      const s = String(err);
-      addMsg(s.includes('400') || s.includes('403') ? 'Invalid Gemini key — check Settings.' : 'Connection error: ' + err.message, 'sys');
+      if (voice.wakeOn) setTimeout(() => voice.setWake(true), 500);
+      else setStatus('');
+      addMsg(err.message || 'Connection error', 'sys');
     }
   }
 

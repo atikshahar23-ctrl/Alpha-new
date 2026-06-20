@@ -26,7 +26,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   resize();
   window.addEventListener('resize', resize);
 
-  // --- glow texture for sprites ---
+  // --- glow texture ---
   const gc = document.createElement('canvas');
   gc.width = gc.height = 128;
   const gctx = gc.getContext('2d')!;
@@ -39,7 +39,20 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   gctx.fillRect(0, 0, 128, 128);
   const glowTex = new THREE.CanvasTexture(gc);
 
-  // --- CORE: Icosahedron wireframe (from user's code) ---
+  // --- gold glow texture ---
+  const ggc = document.createElement('canvas');
+  ggc.width = ggc.height = 128;
+  const ggctx = ggc.getContext('2d')!;
+  const ggr = ggctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  ggr.addColorStop(0, 'rgba(255,220,120,1)');
+  ggr.addColorStop(0.3, 'rgba(255,184,51,.7)');
+  ggr.addColorStop(0.6, 'rgba(255,160,32,.2)');
+  ggr.addColorStop(1, 'rgba(255,140,0,0)');
+  ggctx.fillStyle = ggr;
+  ggctx.fillRect(0, 0, 128, 128);
+  const goldGlowTex = new THREE.CanvasTexture(ggc);
+
+  // --- CORE: Icosahedron wireframe ---
   const coreGeo = new THREE.IcosahedronGeometry(1, 12);
   const coreMat = new THREE.MeshPhongMaterial({
     color: 0x00d4ff,
@@ -51,47 +64,86 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   const core = new THREE.Mesh(coreGeo, coreMat);
   scene.add(core);
 
+  // --- Inner solid sphere (white-cyan glow core) ---
+  const innerGeo = new THREE.SphereGeometry(0.55, 32, 32);
+  const innerMat = new THREE.MeshBasicMaterial({
+    color: 0x88ddff,
+    transparent: true,
+    opacity: 0.15,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  const innerCore = new THREE.Mesh(innerGeo, innerMat);
+  scene.add(innerCore);
+
   // --- Lighting ---
   const pointLight = new THREE.PointLight(0xffffff, 1.5, 100);
   pointLight.position.set(2, 2, 5);
   scene.add(pointLight);
-  scene.add(new THREE.AmbientLight(0x202020));
+  scene.add(new THREE.AmbientLight(0x303030));
 
   const cyanLight = new THREE.PointLight(0x00d4ff, 0.8, 50);
   cyanLight.position.set(-2, -1, 3);
   scene.add(cyanLight);
 
-  // --- GOLDEN RING ---
-  const goldRingGeo = new THREE.TorusGeometry(1.35, 0.04, 24, 120);
-  const goldRingMat = new THREE.MeshBasicMaterial({
-    color: 0xffb833,
-    transparent: true,
-    opacity: 0.9,
-  });
-  const goldRing = new THREE.Mesh(goldRingGeo, goldRingMat);
-  goldRing.rotation.x = Math.PI * 0.5;
-  scene.add(goldRing);
+  const goldLight = new THREE.PointLight(0xffb833, 0.4, 30);
+  goldLight.position.set(1, -2, 2);
+  scene.add(goldLight);
 
-  const goldGlowGeo = new THREE.TorusGeometry(1.35, 0.12, 24, 120);
-  const goldGlowMat = new THREE.MeshBasicMaterial({
-    color: 0xffc040,
-    transparent: true,
-    opacity: 0.3,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
+  // --- GOLDEN RING 1 (main, horizontal) ---
+  const goldRing1Geo = new THREE.TorusGeometry(1.35, 0.045, 24, 120);
+  const goldRing1Mat = new THREE.MeshBasicMaterial({
+    color: 0xffb833, transparent: true, opacity: 0.95,
   });
-  const goldGlow = new THREE.Mesh(goldGlowGeo, goldGlowMat);
-  goldGlow.rotation.x = Math.PI * 0.5;
-  scene.add(goldGlow);
+  const goldRing1 = new THREE.Mesh(goldRing1Geo, goldRing1Mat);
+  goldRing1.rotation.x = Math.PI * 0.5;
+  scene.add(goldRing1);
 
-  // --- Center glow sprite ---
-  const haloMat = new THREE.SpriteMaterial({
-    map: glowTex, color: 0x00d4ff, transparent: true, opacity: 0.35,
-    blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
+  const goldGlow1Geo = new THREE.TorusGeometry(1.35, 0.14, 24, 120);
+  const goldGlow1Mat = new THREE.MeshBasicMaterial({
+    color: 0xffc040, transparent: true, opacity: 0.3,
+    blending: THREE.AdditiveBlending, depthWrite: false,
   });
-  const halo = new THREE.Sprite(haloMat);
-  halo.scale.setScalar(4.5);
-  scene.add(halo);
+  const goldGlow1 = new THREE.Mesh(goldGlow1Geo, goldGlow1Mat);
+  goldGlow1.rotation.x = Math.PI * 0.5;
+  scene.add(goldGlow1);
+
+  // --- GOLDEN RING 2 (tilted, thinner) ---
+  const goldRing2Geo = new THREE.TorusGeometry(1.55, 0.02, 16, 100);
+  const goldRing2Mat = new THREE.MeshBasicMaterial({
+    color: 0xffd060, transparent: true, opacity: 0.5,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  });
+  const goldRing2 = new THREE.Mesh(goldRing2Geo, goldRing2Mat);
+  goldRing2.rotation.x = Math.PI * 0.42;
+  goldRing2.rotation.z = 0.4;
+  scene.add(goldRing2);
+
+  // --- WHITE RING (outer, subtle) ---
+  const whiteRingGeo = new THREE.TorusGeometry(1.75, 0.015, 12, 80);
+  const whiteRingMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff, transparent: true, opacity: 0.2,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  });
+  const whiteRing = new THREE.Mesh(whiteRingGeo, whiteRingMat);
+  whiteRing.rotation.x = Math.PI * 0.55;
+  whiteRing.rotation.z = -0.3;
+  scene.add(whiteRing);
+
+  // --- Center halos ---
+  function makeHalo(tex: THREE.Texture, color: number, scale: number, op: number) {
+    const m = new THREE.SpriteMaterial({
+      map: tex, color, transparent: true, opacity: op,
+      blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
+    });
+    const s = new THREE.Sprite(m);
+    s.scale.setScalar(scale);
+    scene.add(s);
+    return { sprite: s, mat: m };
+  }
+  const haloCyan = makeHalo(glowTex, 0x00d4ff, 4.5, 0.3);
+  const haloGold = makeHalo(goldGlowTex, 0xffb833, 3.0, 0.12);
+  const haloWhite = makeHalo(glowTex, 0xffffff, 2.0, 0.1);
 
   // --- 6 ORBITING COLORED DOTS ---
   const ORBIT_DOTS = 6;
@@ -101,18 +153,19 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   const dotOrbits: { angle: number; radius: number; speed: number; tilt: number; phase: number }[] = [];
 
   for (let i = 0; i < ORBIT_DOTS; i++) {
-    const dotGeo = new THREE.SphereGeometry(0.045, 16, 16);
+    const dotGeo = new THREE.SphereGeometry(0.05, 16, 16);
     const dotMat = new THREE.MeshBasicMaterial({ color: dotColors[i] });
     const dot = new THREE.Mesh(dotGeo, dotMat);
     scene.add(dot);
     dotMeshes.push(dot);
 
+    const isGold = dotColors[i] === 0xffb833 || dotColors[i] === 0xff9f43;
     const spMat = new THREE.SpriteMaterial({
-      map: glowTex, color: dotColors[i], transparent: true, opacity: 0.6,
+      map: isGold ? goldGlowTex : glowTex, color: dotColors[i], transparent: true, opacity: 0.7,
       blending: THREE.AdditiveBlending, depthWrite: false,
     });
     const sp = new THREE.Sprite(spMat);
-    sp.scale.setScalar(0.28);
+    sp.scale.setScalar(0.35);
     scene.add(sp);
     dotGlows.push(sp);
 
@@ -125,6 +178,26 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     });
   }
 
+  // --- Gold dust particles ---
+  const dustN = 25;
+  const dustArr = new Float32Array(dustN * 3);
+  for (let i = 0; i < dustN; i++) {
+    const r = 1.5 + Math.random() * 1.0;
+    const th = Math.random() * Math.PI * 2;
+    const ph = Math.acos(2 * Math.random() - 1);
+    dustArr[i * 3] = r * Math.sin(ph) * Math.cos(th);
+    dustArr[i * 3 + 1] = r * Math.sin(ph) * Math.sin(th);
+    dustArr[i * 3 + 2] = r * Math.cos(ph);
+  }
+  const dustGeo = new THREE.BufferGeometry();
+  dustGeo.setAttribute('position', new THREE.BufferAttribute(dustArr, 3));
+  const dustMat = new THREE.PointsMaterial({
+    size: 0.04, map: goldGlowTex, color: 0xffd080, transparent: true, opacity: 0.5,
+    depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true,
+  });
+  const dust = new THREE.Points(dustGeo, dustMat);
+  scene.add(dust);
+
   let amp = 0.06, ampTarget = 0.06;
   let time = 0;
   let raf = 0;
@@ -134,34 +207,47 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     time += 0.05;
     amp += (ampTarget - amp) * 0.1;
 
-    // Core rotation (from user's code)
+    // Core rotation & pulse
     core.rotation.x += 0.005 + amp * 0.02;
     core.rotation.y += 0.008 + amp * 0.03;
-
-    // Core pulse
     const pulse = 1 + Math.sin(time) * (0.05 + amp * 0.15);
     core.scale.set(pulse, pulse, pulse);
-
-    // Core reactivity
     coreMat.opacity = 0.6 + amp * 0.4;
     coreMat.emissive.setHex(amp > 0.3 ? 0x005588 : 0x003366);
 
-    // Golden ring
-    goldRing.rotation.x = Math.PI * 0.5 + Math.sin(time * 0.06) * 0.08;
-    goldRing.rotation.z = time * 0.024;
-    goldRingMat.opacity = 0.85 + amp * 0.15;
-    goldGlow.rotation.copy(goldRing.rotation);
-    goldGlowMat.opacity = 0.2 + amp * 0.35 + Math.sin(time * 0.3) * 0.05;
-    const rs = 1 + amp * 0.1;
-    goldRing.scale.setScalar(rs);
-    goldGlow.scale.setScalar(rs);
+    // Inner core glow
+    innerMat.opacity = 0.1 + amp * 0.25 + Math.sin(time * 0.4) * 0.03;
+    innerCore.scale.setScalar(0.55 + amp * 0.15);
 
-    // Center glow
-    haloMat.opacity = 0.3 + amp * 0.3;
-    halo.scale.setScalar(4.5 + amp * 1.5);
+    // Golden ring 1
+    goldRing1.rotation.x = Math.PI * 0.5 + Math.sin(time * 0.06) * 0.08;
+    goldRing1.rotation.z = time * 0.024;
+    goldRing1Mat.opacity = 0.85 + amp * 0.15;
+    goldGlow1.rotation.copy(goldRing1.rotation);
+    goldGlow1Mat.opacity = 0.2 + amp * 0.35 + Math.sin(time * 0.3) * 0.05;
+    const rs1 = 1 + amp * 0.1;
+    goldRing1.scale.setScalar(rs1);
+    goldGlow1.scale.setScalar(rs1);
 
-    // Cyan light intensity follows energy
+    // Golden ring 2
+    goldRing2.rotation.z = 0.4 + time * 0.015;
+    goldRing2Mat.opacity = 0.35 + amp * 0.3;
+
+    // White ring
+    whiteRing.rotation.z = -0.3 - time * 0.01;
+    whiteRingMat.opacity = 0.15 + amp * 0.2;
+
+    // Halos
+    haloCyan.mat.opacity = 0.25 + amp * 0.3 + Math.sin(time * 0.18) * 0.03;
+    haloCyan.sprite.scale.setScalar(4.5 + amp * 1.5);
+    haloGold.mat.opacity = 0.08 + amp * 0.2;
+    haloGold.sprite.scale.setScalar(3.0 + amp * 1.0);
+    haloWhite.mat.opacity = 0.06 + amp * 0.15;
+    haloWhite.sprite.scale.setScalar(2.0 + amp * 0.8);
+
+    // Lights
     cyanLight.intensity = 0.8 + amp * 2;
+    goldLight.intensity = 0.4 + amp * 1.5;
 
     // 6 orbiting dots
     const speedMult = 1 + amp * 4;
@@ -174,8 +260,13 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       const y = Math.sin(d.angle + d.tilt) * 0.35 + Math.sin(time * 0.08 + d.phase) * 0.08;
       dotMeshes[i].position.set(x, y, z);
       dotGlows[i].position.set(x, y, z);
-      dotGlows[i].scale.setScalar(0.22 + amp * 0.18 + Math.sin(time * 0.4 + d.phase) * 0.04);
+      dotGlows[i].scale.setScalar(0.28 + amp * 0.2 + Math.sin(time * 0.4 + d.phase) * 0.05);
     }
+
+    // Gold dust rotation
+    dust.rotation.y = -time * 0.008;
+    dust.rotation.x = Math.sin(time * 0.04) * 0.1;
+    dustMat.opacity = 0.35 + amp * 0.3;
 
     renderer.render(scene, camera);
   }
