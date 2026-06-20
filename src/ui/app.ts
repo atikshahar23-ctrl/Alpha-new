@@ -63,6 +63,10 @@ export function mountApp(root: HTMLElement) {
             <span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg></span>
             <span class="dl">Translate</span>
           </button>
+          <button class="dock-item" id="detectBtn">
+            <span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 8V6a2 2 0 012-2h2M4 16v2a2 2 0 002 2h2M16 4h2a2 2 0 012 2v2M16 20h2a2 2 0 002-2v-2"/><circle cx="12" cy="10" r="3"/><path d="M7 18c0-2.8 2.2-5 5-5s5 2.2 5 5"/></svg></span>
+            <span class="dl">Detect</span>
+          </button>
         </div>
         <div class="bar">
           <button class="ic mic" id="micBtn" title="Hey Alpha"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></button>
@@ -303,8 +307,16 @@ export function mountApp(root: HTMLElement) {
   $('muteBtn').onclick = () => { audio.toggleMute(); };
   $('newChat').onclick = () => { state.history = []; $('rpBody').innerHTML = ''; addMsg(state.name + ' ready.', 'al'); };
 
+  // Detect button
+  let detecting = false;
+  $('detectBtn').onclick = () => {
+    detecting = !detecting;
+    if (detecting) { orb.startBodyDetection(); $('detectBtn').classList.add('active'); }
+    else { orb.stopBodyDetection(); $('detectBtn').classList.remove('active'); }
+  };
+
   // Dock items click
-  document.querySelectorAll<HTMLButtonElement>('.dock-item').forEach(btn => {
+  document.querySelectorAll<HTMLButtonElement>('.dock-item[data-q]').forEach(btn => {
     btn.onclick = () => {
       const q = btn.dataset.q || '';
       if (!q) return;

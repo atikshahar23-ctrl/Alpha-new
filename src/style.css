@@ -238,6 +238,9 @@ body {
 }
 .dock-item:hover { background: rgba(255, 194, 77, .1) }
 .dock-item:active { background: rgba(255, 194, 77, .2) }
+.dock-item.active { background: rgba(95, 230, 255, .15); border: 1px solid rgba(95, 230, 255, .3) }
+.dock-item.active .di svg { stroke: #39e75f }
+.dock-item.active .dl { color: #39e75f }
 
 /* SVG dock icon container */
 .di {

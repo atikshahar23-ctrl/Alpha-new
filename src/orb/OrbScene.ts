@@ -3,6 +3,8 @@ import * as THREE from 'three';
 export interface OrbHandle {
   setEnergy(v: number): void;
   dispose(): void;
+  startBodyDetection(): void;
+  stopBodyDetection(): void;
 }
 
 export function mountOrb(container: HTMLElement): OrbHandle {
@@ -367,10 +369,226 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   let time = 0;
   let raf = 0;
 
+  // --- SPATIAL DRIFT: figure moves organically in 3D space ---
+  const drift = {
+    x: 0, y: 0, z: 0,
+    tx: 0, ty: 0, tz: 0,
+    timer: 0,
+    interval: 3 + Math.random() * 2,
+  };
+
+  function pickDriftTarget() {
+    drift.tx = (Math.random() - 0.5) * 1.8;
+    drift.ty = (Math.random() - 0.5) * 0.6;
+    drift.tz = (Math.random() - 0.5) * 1.2;
+    drift.interval = 3 + Math.random() * 4;
+    drift.timer = 0;
+  }
+
+  // --- BODY DETECTION (MediaPipe Holistic) ---
+  let holisticActive = false;
+  let holisticVideo: HTMLVideoElement | null = null;
+  let holisticCanvas: HTMLCanvasElement | null = null;
+  let holisticCtx: CanvasRenderingContext2D | null = null;
+  let holisticInstance: any = null;
+  let holisticCamera: any = null;
+  let holisticOverlay: HTMLDivElement | null = null;
+
+  function createHolisticOverlay() {
+    const overlay = document.createElement('div');
+    overlay.id = 'holisticOverlay';
+    overlay.style.cssText = `
+      position:fixed; inset:0; z-index:3;
+      display:flex; align-items:center; justify-content:center;
+      pointer-events:none;
+    `;
+
+    const cvs = document.createElement('canvas');
+    cvs.style.cssText = `
+      width:60%; height:70%;
+      max-width:640px; max-height:480px;
+      border-radius:16px;
+      border:1px solid rgba(95,230,255,.2);
+      box-shadow:0 0 40px rgba(95,230,255,.1);
+      background:transparent;
+    `;
+    overlay.appendChild(cvs);
+
+    const closeBtn = document.createElement('button');
+    closeBtn.textContent = '✕';
+    closeBtn.style.cssText = `
+      position:absolute; top:20px; right:20px;
+      width:36px; height:36px; border-radius:10px;
+      background:rgba(8,12,24,.7); border:1px solid rgba(255,194,77,.2);
+      color:#ffc24d; font-size:16px; cursor:pointer;
+      pointer-events:all; z-index:10;
+      backdrop-filter:blur(10px);
+    `;
+    closeBtn.onclick = () => stopBodyDetection();
+    overlay.appendChild(closeBtn);
+
+    const label = document.createElement('div');
+    label.style.cssText = `
+      position:absolute; top:20px; left:50%; transform:translateX(-50%);
+      font-family:"Space Grotesk",sans-serif; font-size:10px;
+      letter-spacing:4px; text-transform:uppercase;
+      color:#5fe6ff; opacity:.7;
+      background:rgba(8,12,24,.6); padding:6px 16px;
+      border-radius:8px; border:1px solid rgba(95,230,255,.15);
+      backdrop-filter:blur(10px);
+    `;
+    label.textContent = 'BODY DETECTION';
+    overlay.appendChild(label);
+
+    const status = document.createElement('div');
+    status.id = 'holisticStatus';
+    status.style.cssText = `
+      position:absolute; bottom:20px; left:50%; transform:translateX(-50%);
+      font-family:"Space Grotesk",sans-serif; font-size:9px;
+      letter-spacing:3px; text-transform:uppercase;
+      color:#ffc24d; opacity:.6;
+      background:rgba(8,12,24,.6); padding:5px 14px;
+      border-radius:8px; border:1px solid rgba(255,194,77,.15);
+      backdrop-filter:blur(10px);
+    `;
+    status.textContent = 'INITIALIZING...';
+    overlay.appendChild(status);
+
+    document.body.appendChild(overlay);
+    holisticOverlay = overlay;
+    holisticCanvas = cvs;
+    holisticCtx = cvs.getContext('2d');
+    return { cvs, status };
+  }
+
+  async function loadHolisticScripts(): Promise<boolean> {
+    const scripts = [
+      'https://cdn.jsdelivr.net/npm/@mediapipe/holistic/holistic.js',
+      'https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js',
+      'https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js',
+    ];
+    for (const src of scripts) {
+      if (document.querySelector(`script[src="${src}"]`)) continue;
+      await new Promise<void>((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = src;
+        s.crossOrigin = 'anonymous';
+        s.onload = () => resolve();
+        s.onerror = () => reject(new Error('Failed to load: ' + src));
+        document.head.appendChild(s);
+      });
+    }
+    return true;
+  }
+
+  async function startBodyDetection() {
+    if (holisticActive) return;
+    holisticActive = true;
+
+    const { cvs, status } = createHolisticOverlay();
+
+    try {
+      await loadHolisticScripts();
+      status.textContent = 'LOADING MODEL...';
+
+      const W = window as any;
+      const vid = document.createElement('video');
+      vid.style.display = 'none';
+      document.body.appendChild(vid);
+      holisticVideo = vid;
+
+      const holistic = new W.Holistic({
+        locateFile: (file: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${file}`,
+      });
+      holisticInstance = holistic;
+
+      holistic.setOptions({
+        modelComplexity: 1,
+        smoothLandmarks: true,
+        refineFaceLandmarks: true,
+      });
+
+      holistic.onResults((results: any) => {
+        if (!holisticCtx || !holisticCanvas) return;
+        const cw = cvs.width = cvs.clientWidth * (window.devicePixelRatio || 1);
+        const ch = cvs.height = cvs.clientHeight * (window.devicePixelRatio || 1);
+        const ctx = holisticCtx;
+        ctx.clearRect(0, 0, cw, ch);
+
+        ctx.save();
+        ctx.globalAlpha = 0.15;
+        if (results.image) {
+          ctx.drawImage(results.image, 0, 0, cw, ch);
+        }
+        ctx.restore();
+
+        if (results.poseLandmarks) {
+          W.drawConnectors(ctx, results.poseLandmarks, W.POSE_CONNECTIONS, {
+            color: '#5fe6ff', lineWidth: 2,
+          });
+          W.drawLandmarks(ctx, results.poseLandmarks, {
+            color: '#ffc24d', fillColor: '#ffc24d', lineWidth: 1, radius: 3,
+          });
+        }
+        if (results.faceLandmarks) {
+          W.drawConnectors(ctx, results.faceLandmarks, W.FACEMESH_TESSELATION, {
+            color: 'rgba(95,230,255,0.3)', lineWidth: 0.5,
+          });
+        }
+        if (results.leftHandLandmarks) {
+          W.drawConnectors(ctx, results.leftHandLandmarks, W.HAND_CONNECTIONS, {
+            color: '#b06aff', lineWidth: 1.5,
+          });
+        }
+        if (results.rightHandLandmarks) {
+          W.drawConnectors(ctx, results.rightHandLandmarks, W.HAND_CONNECTIONS, {
+            color: '#ff7a2e', lineWidth: 1.5,
+          });
+        }
+
+        status.textContent = 'TRACKING ACTIVE';
+        status.style.color = '#39e75f';
+      });
+
+      const cam = new W.Camera(vid, {
+        onFrame: async () => { await holistic.send({ image: vid }); },
+        width: 640,
+        height: 480,
+      });
+      holisticCamera = cam;
+      await cam.start();
+      status.textContent = 'CAMERA READY';
+    } catch (err: any) {
+      status.textContent = 'ERROR: ' + (err.message || 'Camera failed');
+      status.style.color = '#ff5d73';
+    }
+  }
+
+  function stopBodyDetection() {
+    holisticActive = false;
+    if (holisticCamera) { try { holisticCamera.stop(); } catch {} holisticCamera = null; }
+    if (holisticInstance) { try { holisticInstance.close(); } catch {} holisticInstance = null; }
+    if (holisticVideo) { holisticVideo.remove(); holisticVideo = null; }
+    if (holisticOverlay) { holisticOverlay.remove(); holisticOverlay = null; }
+    holisticCanvas = null;
+    holisticCtx = null;
+  }
+
   function frame() {
     raf = requestAnimationFrame(frame);
     time += 0.016;
     amp += (ampTarget - amp) * 0.08;
+
+    // --- SPATIAL DRIFT ---
+    drift.timer += 0.016;
+    if (drift.timer >= drift.interval) pickDriftTarget();
+    const driftEase = 0.012;
+    drift.x += (drift.tx - drift.x) * driftEase;
+    drift.y += (drift.ty - drift.y) * driftEase;
+    drift.z += (drift.tz - drift.z) * driftEase;
+    group.position.x = drift.x + Math.sin(time * 0.15) * 0.3;
+    group.position.y = drift.y + Math.sin(time * 0.22) * 0.15;
+    group.position.z = drift.z + Math.sin(time * 0.18) * 0.2;
 
     // Breathing
     const breathe = 1 + Math.sin(time * 1.0) * 0.006 + amp * 0.015;
@@ -454,8 +672,8 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     dataGeo.attributes.position.needsUpdate = true;
     dataMat.opacity = 0.3 + amp * 0.3;
 
-    // Slow sway
-    group.rotation.y = Math.sin(time * 0.12) * 0.08;
+    // Slow sway + gentle rotation
+    group.rotation.y = Math.sin(time * 0.12) * 0.12 + time * 0.02;
 
     renderer.render(scene, camera);
   }
@@ -465,9 +683,12 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     setEnergy(v: number) { ampTarget = Math.max(0, Math.min(1, v)); },
     dispose() {
       cancelAnimationFrame(raf);
+      stopBodyDetection();
       window.removeEventListener('resize', resize);
       renderer.dispose();
       container.removeChild(renderer.domElement);
     },
+    startBodyDetection,
+    stopBodyDetection,
   };
 }
