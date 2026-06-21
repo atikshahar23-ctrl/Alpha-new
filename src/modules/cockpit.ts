@@ -47,6 +47,14 @@ import {
   revenueTrend, expenseTrend, taskCompletionRate,
   expenseByCategory, leadsByStatus, dailyBriefing,
 } from './analytics';
+import {
+  loadSmartNotes, addSmartNote, removeSmartNote, togglePin,
+  NOTE_CATEGORIES,
+} from './smartNotes';
+import {
+  loadRecurring, addRecurring, removeRecurring, toggleRecurring,
+  type RecurFreq,
+} from './recurring';
 
 export interface CockpitHooks {
   ask: (q: string) => void;
@@ -1098,6 +1106,95 @@ function renderPersonal(root: HTMLElement, hooks: CockpitHooks, close: () => voi
   vt.appendChild(sort);
   vt.appendChild(result);
   root.appendChild(vt);
+
+  // ── Smart Notes ──
+  const snc = card('Smart Notes', 'Categorized notes with pinning');
+  const snText = textarea('Quick note…', 3);
+  const snCat = el('select', 'cp-input') as HTMLSelectElement;
+  NOTE_CATEGORIES.forEach(c => { const o = el('option') as HTMLOptionElement; o.value = c; o.textContent = c; snCat.appendChild(o); });
+  const addSN = btn('Save note', true);
+  const snList = el('div', 'cp-list');
+  const drawNotes = () => {
+    snList.innerHTML = '';
+    const notes = loadSmartNotes();
+    const pinned = notes.filter(n => n.pinned);
+    const unpinned = notes.filter(n => !n.pinned);
+    [...pinned, ...unpinned].slice(0, 15).forEach(n => {
+      const r = el('div', 'cp-row');
+      r.style.flexWrap = 'wrap';
+      r.innerHTML =
+        `<span class="cp-row-main" style="flex:1;min-width:100px">${n.pinned ? '📌 ' : ''}${esc(n.text.slice(0, 60))}</span>` +
+        `<span class="cp-row-tag">${esc(n.category)}</span>` +
+        `<span class="cp-row-sub">${n.created}</span>`;
+      const pin = el('button', 'cp-x', n.pinned ? '★' : '☆');
+      pin.title = 'Pin/unpin';
+      pin.onclick = () => { togglePin(n.id); drawNotes(); };
+      r.appendChild(pin);
+      const x = el('button', 'cp-x', '✕');
+      x.onclick = () => { removeSmartNote(n.id); drawNotes(); };
+      r.appendChild(x);
+      snList.appendChild(r);
+    });
+    if (!notes.length) snList.appendChild(el('div', 'cp-empty', 'No notes yet.'));
+  };
+  addSN.onclick = () => {
+    if (!snText.value.trim()) return;
+    addSmartNote(snText.value.trim(), snCat.value);
+    snText.value = '';
+    drawNotes();
+  };
+  snc.appendChild(snText);
+  snc.appendChild(snCat);
+  snc.appendChild(addSN);
+  snc.appendChild(snList);
+  drawNotes();
+  root.appendChild(snc);
+
+  // ── Recurring Tasks ──
+  const rc = card('Recurring Tasks', 'Auto-generate tasks on schedule');
+  const rtText = input('Task name');
+  const rtFreq = el('select', 'cp-input') as HTMLSelectElement;
+  (['daily', 'weekly', 'monthly'] as RecurFreq[]).forEach(f => {
+    const o = el('option') as HTMLOptionElement; o.value = f; o.textContent = f.charAt(0).toUpperCase() + f.slice(1); rtFreq.appendChild(o);
+  });
+  const rtPrio = el('select', 'cp-input') as HTMLSelectElement;
+  ([['med', 'Medium'], ['high', 'High'], ['low', 'Low']] as const).forEach(([v, l]) => {
+    const o = el('option') as HTMLOptionElement; o.value = v; o.textContent = l; rtPrio.appendChild(o);
+  });
+  const addRT = btn('Add recurring', true);
+  const rtList = el('div', 'cp-list');
+  const drawRecurring = () => {
+    rtList.innerHTML = '';
+    const tasks = loadRecurring();
+    if (!tasks.length) { rtList.appendChild(el('div', 'cp-empty', 'No recurring tasks.')); return; }
+    tasks.forEach(t => {
+      const r = el('div', 'cp-row');
+      r.innerHTML =
+        `<span class="cp-row-main">${esc(t.text)}</span>` +
+        `<span class="cp-row-tag">${t.frequency}</span>` +
+        `<span class="cp-row-sub" style="opacity:${t.active ? 1 : 0.4}">${t.active ? 'Active' : 'Paused'}</span>`;
+      const toggle = el('button', 'cp-x', t.active ? '⏸' : '▶');
+      toggle.onclick = () => { toggleRecurring(t.id); drawRecurring(); };
+      r.appendChild(toggle);
+      const x = el('button', 'cp-x', '✕');
+      x.onclick = () => { removeRecurring(t.id); drawRecurring(); };
+      r.appendChild(x);
+      rtList.appendChild(r);
+    });
+  };
+  addRT.onclick = () => {
+    if (!rtText.value.trim()) return;
+    addRecurring(rtText.value.trim(), rtFreq.value as RecurFreq, rtPrio.value as any);
+    rtText.value = '';
+    drawRecurring();
+  };
+  rc.appendChild(field('Task', rtText));
+  const rtRow = el('div', 'cp-inline'); rtRow.append(rtFreq, rtPrio);
+  rc.appendChild(rtRow);
+  rc.appendChild(addRT);
+  rc.appendChild(rtList);
+  drawRecurring();
+  root.appendChild(rc);
 }
 
 // ============================================================

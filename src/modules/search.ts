@@ -10,6 +10,7 @@ import { loadTasks, loadEvents, loadNotes } from '../assistant/state';
 import { loadGoals } from './goals';
 import { loadInvoices } from './invoices';
 import { loadContacts } from './contacts';
+import { loadSmartNotes } from './smartNotes';
 
 export interface SearchResult {
   type: 'lead' | 'task' | 'event' | 'habit' | 'expense' | 'invoice' | 'goal' | 'note' | 'quote' | 'contact';
@@ -90,6 +91,10 @@ export function universalSearch(query: string, limit = 20): SearchResult[] {
     for (const n of loadNotes()) {
       const s = matchScore(n, query);
       if (s > 0) results.push({ type: 'note', title: n.slice(0, 80), subtitle: 'note', score: s, data: n });
+    }
+    for (const sn of loadSmartNotes()) {
+      const s = matchScore(`${sn.text} ${sn.category}`, query);
+      if (s > 0) results.push({ type: 'note', title: sn.text.slice(0, 80), subtitle: `${sn.category}${sn.pinned ? ' · 📌' : ''} · ${sn.created}`, score: s + (sn.pinned ? 1 : 0), data: sn });
     }
   } catch {}
 

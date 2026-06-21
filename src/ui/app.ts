@@ -8,6 +8,7 @@ import { AudioEngine, type AmbientPreset } from '../assistant/audio';
 import { orchestrate, refreshSummary, moduleById, loadMemory, updateProfile } from '../brain';
 import { mountCockpit, type CockpitHandle } from '../modules/cockpit';
 import { runProactive } from '../modules/proactive';
+import { processRecurring } from '../modules/recurring';
 import * as driveSync from '../modules/driveSync';
 import { universalSearch, TYPE_ICONS } from '../modules/search';
 import { registerShortcut, initShortcuts, shortcutsHTML } from '../modules/shortcuts';
@@ -422,6 +423,11 @@ export function mountApp(root: HTMLElement) {
   // ── Proactive background alerts (installs, trading thresholds, trends) ──
   try {
     runProactive((title: string, body: string) => addMsg(`🔔 ${title} — ${body}`, 'sys'));
+  } catch {}
+  // ── Process recurring tasks ──
+  try {
+    const generated = processRecurring();
+    if (generated > 0) addMsg(`📋 Generated ${generated} recurring task(s) for today.`, 'sys');
   } catch {}
 
   // AI capability nodes overlay
