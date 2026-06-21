@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Alpha Tasks</title>
+  <title>Alpha — יומן ומשימות</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;600;700&display=swap" rel="stylesheet" />
@@ -222,6 +222,10 @@
       return d.toISOString().slice(0, 10);
     }
 
+    function loadCalendarEvents() {
+      try { return JSON.parse(localStorage.getItem('alpha_events') || '[]'); } catch { return []; }
+    }
+
     function loadAllTasks() {
       let alphaTasks = [];
       try { alphaTasks = JSON.parse(localStorage.getItem('alpha_tasks') || '[]'); } catch {}
@@ -265,13 +269,36 @@
       const monthName = MONTHS_HE[today.getMonth()];
       const dateDisplay = `יום ${dayName}, ${today.getDate()} ${monthName} ${today.getFullYear()}`;
 
+      const events = loadCalendarEvents();
+      const todayStr = dateStr(today);
+      const upcomingEvents = events.filter(e => e.date >= todayStr).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 5);
+
       let html = `
         <div class="widget-header">
-          <h1>ALPHA — משימות</h1>
+          <h1>ALPHA — יומן ומשימות</h1>
           <div class="logo">α</div>
         </div>
         <div class="widget-date">${dateDisplay}</div>
       `;
+
+      if (upcomingEvents.length > 0) {
+        html += '<div class="section-label">אירועים קרובים</div>';
+        html += '<div class="task-list">';
+        upcomingEvents.forEach(e => {
+          const isToday = e.date === todayStr;
+          const isHg = (e.id || '').startsWith('hg:');
+          html += `
+            <div class="task-item" style="${isToday ? 'background:rgba(200,168,78,0.08);border-radius:8px' : ''}">
+              <div style="width:20px;height:20px;border-radius:6px;background:${isHg ? 'linear-gradient(135deg,#c8a84e,#b8942e)' : 'linear-gradient(135deg,#d4b85a,#e8d48b)'};flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:10px;color:#fff">${isToday ? '★' : '◆'}</div>
+              <div class="task-content">
+                <div class="task-text">${esc(e.title)}${isHg ? ' <span style="font-size:9px;color:#b8942e;background:rgba(200,168,78,0.15);padding:1px 5px;border-radius:3px">HG</span>' : ''}</div>
+                <div class="task-date">${e.date}${e.time ? ' · ' + e.time : ''}${isToday ? ' — היום' : ''}</div>
+              </div>
+            </div>
+          `;
+        });
+        html += '</div>';
+      }
 
       html += '<div class="section-label">משימות השבוע</div>';
       if (weekTasks.length === 0) {

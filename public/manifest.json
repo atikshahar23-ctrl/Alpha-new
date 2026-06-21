@@ -3,8 +3,8 @@
   "short_name": "Alpha",
   "start_url": "/Alpha-new/",
   "display": "standalone",
-  "background_color": "#04060d",
-  "theme_color": "#5fe6ff",
+  "background_color": "#0a0806",
+  "theme_color": "#daa520",
   "orientation": "portrait",
   "icons": [
     { "src": "/Alpha-new/favicon.svg", "sizes": "any", "type": "image/svg+xml" }
