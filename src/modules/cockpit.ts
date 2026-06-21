@@ -60,6 +60,9 @@ import {
   formatDuration, removeTimeEntry, loadTimeEntries,
 } from './timeTracker';
 import { downloadReport, businessReport, personalReport } from './reports';
+import { sparkline, progressRing } from './sparkline';
+import { fillTemplate, addCustomTemplate, removeCustomTemplate, templatesByCategory, type Template } from './templates';
+import { sentimentTrend, averageSentiment } from './sentiment';
 
 export interface CockpitHooks {
   ask: (q: string) => void;
@@ -183,6 +186,14 @@ function renderBusiness(root: HTMLElement, hooks: CockpitHooks, close: () => voi
     `<div class="cp-kpi"><span class="cp-kpi-val">${Math.round(stats.winRate * 100)}%</span><span class="cp-kpi-lbl">Win rate</span></div>` +
     `<div class="cp-kpi"><span class="cp-kpi-val">${stats.openLeads}</span><span class="cp-kpi-lbl">Open leads</span></div>`;
   dash.appendChild(kpis);
+  // sparkline of revenue trend
+  const revValues = stats.byMonth.map(m => m.total);
+  if (revValues.some(v => v > 0)) {
+    const sparkEl = el('div', '');
+    sparkEl.style.cssText = 'margin:8px 0;display:flex;align-items:center;gap:12px';
+    sparkEl.innerHTML = `<span style="font-size:11px;color:var(--dim)">6-month trend</span>${sparkline(revValues, { width: 160, height: 36, showDots: true })}`;
+    dash.appendChild(sparkEl);
+  }
   // mini bar chart of last 6 months
   const maxM = Math.max(1, ...stats.byMonth.map(m => m.total));
   const chart = el('div', 'cp-chart');
@@ -535,11 +546,80 @@ function renderBusiness(root: HTMLElement, hooks: CockpitHooks, close: () => voi
     analyticsHtml += `<div class="cp-kpi"><span class="cp-kpi-val">${lStatuses.map(s => `${s.count} ${s.status}`).join(', ')}</span><span class="cp-kpi-lbl">Leads by status</span></div>`;
   }
   analyticsHtml += '</div>';
+  // inline sparklines for trends
+  const revSparkData = revTrend.map(p => p.value);
+  const expSparkData = expTrend.map(p => p.value);
+  if (revSparkData.some(v => v > 0) || expSparkData.some(v => v > 0)) {
+    analyticsHtml += `<div style="display:flex;gap:16px;margin-top:12px;align-items:center">`;
+    if (revSparkData.some(v => v > 0)) {
+      analyticsHtml += `<div style="display:flex;align-items:center;gap:6px"><span style="font-size:11px;color:var(--dim)">Rev</span>${sparkline(revSparkData, { width: 80, height: 24 })}</div>`;
+    }
+    if (expSparkData.some(v => v > 0)) {
+      analyticsHtml += `<div style="display:flex;align-items:center;gap:6px"><span style="font-size:11px;color:var(--dim)">Exp</span>${sparkline(expSparkData, { width: 80, height: 24, stroke: '#ff5d73', fill: 'rgba(255,93,115,.15)' })}</div>`;
+    }
+    analyticsHtml += `<div>${progressRing(taskRate.rate, { size: 36 })}</div>`;
+    analyticsHtml += `</div>`;
+  }
   an.innerHTML += analyticsHtml;
   const aiBrief = btn('AI Daily Briefing');
   aiBrief.onclick = () => { hooks.ask(dailyBriefing()); close(); };
   an.appendChild(aiBrief);
   root.appendChild(an);
+
+  // ── Templates ──
+  const tpl = card('Templates', 'Pre-built messages for follow-ups and emails');
+  const tplCat = el('select', 'cp-input') as HTMLSelectElement;
+  (['follow-up', 'email', 'quote', 'general'] as const).forEach(c => {
+    const o = el('option') as HTMLOptionElement; o.value = c; o.textContent = c.charAt(0).toUpperCase() + c.slice(1); tplCat.appendChild(o);
+  });
+  const tplList = el('div', 'cp-list');
+  const drawTemplates = () => {
+    tplList.innerHTML = '';
+    const templates = templatesByCategory(tplCat.value as Template['category']);
+    if (!templates.length) { tplList.appendChild(el('div', 'cp-empty', 'No templates in this category.')); return; }
+    templates.forEach(t => {
+      const r = el('div', 'cp-row');
+      r.style.cursor = 'pointer';
+      r.innerHTML = `<span class="cp-row-main">${esc(t.name)}</span><span class="cp-row-sub">${t.variables.length} fields</span>`;
+      const use = el('button', 'cp-x', '▶'); use.title = 'Use template';
+      use.onclick = (e) => {
+        e.stopPropagation();
+        const values: Record<string, string> = {};
+        for (const v of t.variables) {
+          const val = prompt(`${v}:`);
+          if (val === null) return;
+          values[v] = val;
+        }
+        const filled = fillTemplate(t.id, values);
+        hooks.ask(`Here's a message I need you to review, improve, and format nicely:\n\n${filled}`);
+        close();
+      };
+      r.appendChild(use);
+      if (t.id.startsWith('tpl_')) {
+        const del = el('button', 'cp-x', '✕');
+        del.onclick = (e) => { e.stopPropagation(); removeCustomTemplate(t.id); drawTemplates(); };
+        r.appendChild(del);
+      }
+      tplList.appendChild(r);
+    });
+  };
+  tplCat.onchange = () => drawTemplates();
+  tpl.appendChild(field('Category', tplCat));
+  tpl.appendChild(tplList);
+  drawTemplates();
+  const tplName = input('Template name');
+  const tplBody = textarea('Template body — use {{variable}} for fields', 3);
+  const addTpl = btn('Save custom template');
+  addTpl.onclick = () => {
+    if (!tplName.value.trim() || !tplBody.value.trim()) return;
+    addCustomTemplate(tplName.value.trim(), tplCat.value as Template['category'], tplBody.value);
+    tplName.value = ''; tplBody.value = '';
+    drawTemplates();
+  };
+  tpl.appendChild(field('New template', tplName));
+  tpl.appendChild(tplBody);
+  tpl.appendChild(addTpl);
+  root.appendChild(tpl);
 }
 
 // ============================================================
@@ -1409,6 +1489,21 @@ function renderAdvanced(root: HTMLElement, hooks: CockpitHooks, close: () => voi
   dz.appendChild(parse);
   dz.appendChild(dOut);
   root.appendChild(dz);
+
+  // ── Sentiment Analysis ──
+  const sa = card('Conversation Mood', 'Sentiment tracking from your conversations');
+  const sent = averageSentiment();
+  const sentTrend = sentimentTrend(7);
+  const sentIcon = sent.score > 0.3 ? '😊' : sent.score < -0.3 ? '😟' : '😐';
+  sa.innerHTML += `<div style="display:flex;align-items:center;gap:16px;margin:8px 0">
+    <span style="font-size:28px">${sentIcon}</span>
+    <div>
+      <div style="font-size:14px;color:var(--ink)">${sent.label}</div>
+      <div style="font-size:11px;color:var(--dim)">Score: ${sent.score.toFixed(2)} (7-day avg)</div>
+    </div>
+    <div style="margin-left:auto">${sparkline(sentTrend.map(v => (v + 1) * 50), { width: 100, height: 28, stroke: sent.score > 0 ? '#4dff91' : '#ff5d73', fill: sent.score > 0 ? 'rgba(77,255,145,.15)' : 'rgba(255,93,115,.15)', showDots: true })}</div>
+  </div>`;
+  root.appendChild(sa);
 
   // ── Reports ──
   const rp = card('Reports', 'Generate and download formatted reports');

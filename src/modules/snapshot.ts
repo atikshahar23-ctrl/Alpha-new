@@ -13,6 +13,7 @@ import { activeGoalsSummary } from './goals';
 import { invoiceStats } from './invoices';
 import { contactStats } from './contacts';
 import { todayTime, formatDuration } from './timeTracker';
+import { averageSentiment } from './sentiment';
 
 export function liveSnapshot(module: string): string {
   const parts: string[] = [];
@@ -61,6 +62,10 @@ export function liveSnapshot(module: string): string {
       if (goals.total) bits.push(`${goals.total} goals (${goals.avgProgress}% avg progress)`);
       const tt = todayTime();
       if (tt.total) bits.push(`${formatDuration(tt.total)} tracked today`);
+      try {
+        const sent = averageSentiment();
+        if (sent.label !== 'Neutral') bits.push(`conversation mood: ${sent.label}`);
+      } catch {}
       if (bits.length) parts.push('PERSONAL STATE — ' + bits.join('; ') + '.');
     } catch {}
   }

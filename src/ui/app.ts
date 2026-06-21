@@ -15,6 +15,7 @@ import { registerShortcut, initShortcuts, shortcutsHTML } from '../modules/short
 import { dailyBriefing } from '../modules/analytics';
 import { startTimer, stopTimer, formatDuration, getActiveTimer } from '../modules/timeTracker';
 import { saveChatMessage, loadChatHistory, clearChatHistory } from '../modules/chatHistory';
+import { trackSentiment, averageSentiment } from '../modules/sentiment';
 
 export function mountApp(root: HTMLElement) {
   root.innerHTML = `
@@ -594,6 +595,7 @@ export function mountApp(root: HTMLElement) {
     const tcEl = document.getElementById('tokenCount');
     if (tcEl) tcEl.textContent = String(lpTokenCount);
     saveChatMessage(text, who);
+    if (who === 'me') trackSentiment(text);
   }
 
   function openWin(title: string) { $('winTitle').textContent = title; $('win').classList.add('show'); audio.open(); }
@@ -2390,10 +2392,16 @@ export function mountApp(root: HTMLElement) {
           timerLine = `<div class="lw-item"><span class="lw-icon">⏱</span><span class="lw-val">${elapsed}m</span><span class="lw-lbl">${at.project}</span></div>`;
         }
       } catch {}
+      let moodLine = '';
+      try {
+        const s = averageSentiment();
+        const icon = s.score > 0.3 ? '😊' : s.score < -0.3 ? '😟' : '😐';
+        moodLine = `<div class="lw-item"><span class="lw-icon">${icon}</span><span class="lw-val">${s.label}</span><span class="lw-lbl">Mood</span></div>`;
+      } catch {}
       w.innerHTML =
         `<div class="lw-item"><span class="lw-icon">✓</span><span class="lw-val">${openTasks}</span><span class="lw-lbl">Tasks</span></div>` +
         `<div class="lw-item"><span class="lw-icon">📅</span><span class="lw-val">${todayEvents}</span><span class="lw-lbl">Today</span></div>` +
-        timerLine;
+        timerLine + moodLine;
     } catch {}
   }
   updateLiveWidgets();
