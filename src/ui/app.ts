@@ -8,6 +8,7 @@ import { AudioEngine, type AmbientPreset } from '../assistant/audio';
 import { orchestrate, refreshSummary, moduleById, loadMemory, updateProfile } from '../brain';
 import { mountCockpit, type CockpitHandle } from '../modules/cockpit';
 import { runProactive } from '../modules/proactive';
+import * as driveSync from '../modules/driveSync';
 
 export function mountApp(root: HTMLElement) {
   root.innerHTML = `
@@ -246,6 +247,26 @@ export function mountApp(root: HTMLElement) {
         </div>
 
         <div class="settings-section">
+          <div class="ss-title">CLOUD SYNC</div>
+          <p style="margin:0 0 10px;font-size:11px;color:var(--dim);line-height:1.5">Sync all your data to Google Drive. Requires a Google OAuth Client ID from <a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color:var(--gold)">Google Cloud Console</a>.</p>
+          <label>Google OAuth Client ID</label>
+          <input id="driveClientId" type="text" placeholder="xxxx.apps.googleusercontent.com" style="font-size:11px" />
+          <div style="display:flex;gap:8px;margin:10px 0;flex-wrap:wrap">
+            <button class="cloud-btn" id="driveConnectBtn">Connect Google Drive</button>
+            <button class="cloud-btn" id="driveUploadBtn" disabled>Backup to Drive</button>
+            <button class="cloud-btn" id="driveDownloadBtn" disabled>Restore from Drive</button>
+          </div>
+          <div class="cloud-status" id="driveStatus"></div>
+          <div style="border-top:1px solid rgba(218,165,32,.08);margin:12px 0;padding-top:10px">
+            <p style="font-size:11px;color:var(--dim);margin-bottom:8px">No Google account? Export/import a backup file directly:</p>
+            <div style="display:flex;gap:8px">
+              <button class="cloud-btn" id="localExportBtn">Export JSON</button>
+              <button class="cloud-btn" id="localImportBtn">Import JSON</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section">
           <div class="ss-title">CONNECTED SERVICES</div>
           <div class="social-grid">
             <div class="social-item" id="socialSpotify">
@@ -295,11 +316,15 @@ export function mountApp(root: HTMLElement) {
               <button class="ar-tool-btn" id="arAddCube" title="קוביה">🔲</button>
               <button class="ar-tool-btn" id="arAddStar" title="כוכב">⭐</button>
               <button class="ar-tool-btn" id="arAddDiamond" title="יהלום">💎</button>
+              <button class="ar-tool-btn" id="arAddCoin" title="מטבע">🪙</button>
+              <button class="ar-tool-btn" id="arAddPortal" title="פורטל">🌀</button>
               <button class="ar-tool-btn ar-fx-btn" id="arFxFire" title="אש">🔥</button>
               <button class="ar-tool-btn ar-fx-btn" id="arFxWater" title="מים">💧</button>
               <button class="ar-tool-btn ar-fx-btn" id="arFxLaser" title="לייזר">⚡</button>
               <button class="ar-tool-btn ar-fx-btn" id="arFxSparkle" title="ניצוצות">✨</button>
               <button class="ar-tool-btn ar-fx-btn" id="arFxRainbow" title="קשת">🌈</button>
+              <button class="ar-tool-btn" id="arAddGravity" title="כוח משיכה">🌑</button>
+              <button class="ar-tool-btn" id="arAddTrampoline" title="טרמפולינה">🔼</button>
               <button class="ar-tool-btn" id="arClearObjs" title="נקה הכל">🗑️</button>
             </div>
             <button class="ar-close" id="arClose">✕</button>
@@ -312,6 +337,11 @@ export function mountApp(root: HTMLElement) {
             <div class="ar-hud" id="arHud">
               <div class="ar-status" id="arStatus">Initializing camera…</div>
               <div class="ar-hand-indicator" id="arHandIndicator"></div>
+            </div>
+            <div class="ar-game-bar" id="arGameBar">
+              <button class="ar-game-btn" id="arGameCatch" title="Catch coins!">🎮 Catch</button>
+              <button class="ar-game-btn" id="arGameTarget" title="Hit targets!">🎯 Target</button>
+              <button class="ar-game-btn" id="arGameZen" title="Zen mode">🧘 Zen</button>
             </div>
             <div class="ar-buttons" id="arButtons"></div>
           </div>
@@ -922,20 +952,35 @@ export function mountApp(root: HTMLElement) {
     addMsg(`הצעת מחיר נוצרה עבור ${customer || 'לקוח'}`, 'sys');
   }
 
-  // AR Camera with object placement, hand physics, and effects
+  // AR Camera — game-like interactive experience with hand tracking
   let arStream: MediaStream | null = null;
   let arAnimFrame = 0;
 
   interface ArObj {
     x: number; y: number; vx: number; vy: number;
-    r: number; type: 'ball' | 'cube' | 'star' | 'diamond';
+    r: number; type: 'ball' | 'cube' | 'star' | 'diamond' | 'coin' | 'bomb' | 'portal';
     color: string; rotation: number; rotSpd: number;
-    grabbed: boolean;
+    grabbed: boolean; hp: number; age: number; points: number;
+    glow: number; trail: { x: number; y: number; t: number }[];
   }
   let arObjects: ArObj[] = [];
   let arHandPos = { x: -1, y: -1, pinching: false };
+  let arHand2Pos = { x: -1, y: -1, pinching: false };
   let arGrabbed: ArObj | null = null;
   let arObjCtx: CanvasRenderingContext2D | null = null;
+
+  // Game state
+  let arScore = 0;
+  let arCombo = 0;
+  let arComboTimer = 0;
+  let arGameMode: 'sandbox' | 'catch' | 'target' | 'zen' = 'sandbox';
+  let arGameActive = false;
+  let arGameTimer = 0;
+  let arGameSpawnTimer = 0;
+  let arFloatingTexts: { x: number; y: number; text: string; life: number; color: string }[] = [];
+  let arGesture: 'none' | 'peace' | 'fist' | 'palm' | 'thumbsUp' | 'pointUp' = 'none';
+  let arGravityZones: { x: number; y: number; r: number; strength: number; hue: number }[] = [];
+  let arTrampoline: { x: number; y: number; w: number; active: boolean } | null = null;
 
   type ArEffect = 'none' | 'fire' | 'water' | 'laser' | 'sparkle' | 'rainbow';
   let arCurrentFx: ArEffect = 'none';
@@ -1087,19 +1132,67 @@ export function mountApp(root: HTMLElement) {
   }
 
   function addArObject(type: ArObj['type']) {
-    const colors = ['#daa520', '#f5e6c8', '#e8a040', '#c8956a', '#f0d090', '#d4a84d'];
+    const colors: Record<string, string[]> = {
+      ball: ['#daa520', '#f5e6c8', '#e8a040', '#c8956a', '#f0d090'],
+      cube: ['#daa520', '#c8956a', '#d4a84d', '#e8a040', '#f0d090'],
+      star: ['#ffd700', '#fff', '#ff69b4', '#44ff44', '#00ffff'],
+      diamond: ['#00ffff', '#ff69b4', '#ffd700', '#a855f7', '#44ff44'],
+      coin: ['#ffd700', '#ffaa00', '#daa520'],
+      bomb: ['#333', '#555', '#222'],
+      portal: ['#a855f7', '#7c3aed', '#6d28d9'],
+    };
+    const pts: Record<string, number> = { ball: 0, cube: 0, star: 0, diamond: 0, coin: 10, bomb: -20, portal: 0 };
+    const c = colors[type] || colors.ball;
     arObjects.push({
       x: 0.3 + Math.random() * 0.4,
-      y: 0.15 + Math.random() * 0.3,
+      y: type === 'coin' ? -0.05 : 0.15 + Math.random() * 0.3,
       vx: (Math.random() - 0.5) * 0.003,
-      vy: 0,
-      r: type === 'star' || type === 'diamond' ? 0.035 : 0.04,
+      vy: type === 'coin' ? 0.002 : 0,
+      r: type === 'coin' ? 0.025 : type === 'bomb' ? 0.03 : type === 'star' || type === 'diamond' ? 0.035 : 0.04,
       type,
-      color: colors[Math.floor(Math.random() * colors.length)],
+      color: c[Math.floor(Math.random() * c.length)],
       rotation: 0,
       rotSpd: (Math.random() - 0.5) * 0.05,
       grabbed: false,
+      hp: type === 'bomb' ? 1 : 3,
+      age: 0,
+      points: pts[type] || 0,
+      glow: 0,
+      trail: [],
     });
+  }
+
+  function spawnGameObject() {
+    if (arGameMode === 'catch') {
+      const r = Math.random();
+      if (r < 0.6) addArObject('coin');
+      else if (r < 0.85) addArObject('star');
+      else addArObject('bomb');
+    } else if (arGameMode === 'target') {
+      const r = Math.random();
+      if (r < 0.5) addArObject('diamond');
+      else if (r < 0.8) addArObject('star');
+      else addArObject('coin');
+    }
+  }
+
+  function addFloatingText(x: number, y: number, text: string, color: string) {
+    arFloatingTexts.push({ x, y, text, life: 1, color });
+  }
+
+  function triggerExplosion(cx: number, cy: number, w: number, h: number) {
+    for (let i = 0; i < 20; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 2 + Math.random() * 6;
+      arFxParticles.push({
+        x: cx * w, y: cy * h,
+        vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+        life: 1, maxLife: 0.4 + Math.random() * 0.3,
+        size: 4 + Math.random() * 8,
+        color: ['#ff4400', '#ff7700', '#ffaa00', '#ff2200'][Math.floor(Math.random() * 4)],
+        alpha: 1,
+      });
+    }
   }
 
   function drawArObjects() {
@@ -1107,27 +1200,139 @@ export function mountApp(root: HTMLElement) {
     const cvs = arObjCtx.canvas;
     arObjCtx.clearRect(0, 0, cvs.width, cvs.height);
     const w = cvs.width, h = cvs.height;
+    const dt = 1 / 60;
 
-    for (const obj of arObjects) {
+    // Game timer & spawning
+    if (arGameActive) {
+      arGameTimer -= dt;
+      arGameSpawnTimer -= dt;
+      if (arGameSpawnTimer <= 0) {
+        spawnGameObject();
+        arGameSpawnTimer = arGameMode === 'catch' ? 0.8 + Math.random() * 0.6 : 1.5 + Math.random();
+      }
+      if (arGameTimer <= 0) {
+        arGameActive = false;
+        addFloatingText(0.5, 0.4, `GAME OVER! Score: ${arScore}`, '#ffd700');
+      }
+      arComboTimer -= dt;
+      if (arComboTimer <= 0) arCombo = 0;
+    }
+
+    // Gravity zones
+    for (const gz of arGravityZones) {
+      const ctx = arObjCtx;
+      ctx.save();
+      const grad = ctx.createRadialGradient(gz.x * w, gz.y * h, 0, gz.x * w, gz.y * h, gz.r * Math.min(w, h));
+      grad.addColorStop(0, `hsla(${gz.hue}, 100%, 60%, 0.15)`);
+      grad.addColorStop(0.7, `hsla(${gz.hue}, 100%, 60%, 0.05)`);
+      grad.addColorStop(1, 'transparent');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(gz.x * w, gz.y * h, gz.r * Math.min(w, h), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Trampoline
+    if (arTrampoline) {
+      const ctx = arObjCtx;
+      const tx = arTrampoline.x * w, ty = arTrampoline.y * h, tw = arTrampoline.w * w;
+      ctx.save();
+      const tg = ctx.createLinearGradient(tx - tw / 2, ty, tx + tw / 2, ty);
+      tg.addColorStop(0, 'rgba(218,165,32,0.1)');
+      tg.addColorStop(0.5, 'rgba(218,165,32,0.4)');
+      tg.addColorStop(1, 'rgba(218,165,32,0.1)');
+      ctx.fillStyle = tg;
+      ctx.fillRect(tx - tw / 2, ty - 3, tw, 6);
+      ctx.shadowColor = '#daa520';
+      ctx.shadowBlur = arTrampoline.active ? 20 : 8;
+      ctx.strokeStyle = '#daa520';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(tx - tw / 2, ty);
+      ctx.quadraticCurveTo(tx, arTrampoline.active ? ty - 12 : ty + 4, tx + tw / 2, ty);
+      ctx.stroke();
+      ctx.restore();
+      arTrampoline.active = false;
+    }
+
+    for (let oi = arObjects.length - 1; oi >= 0; oi--) {
+      const obj = arObjects[oi];
+      obj.age += dt;
+      obj.glow = Math.sin(obj.age * 4) * 0.3 + 0.7;
+
       if (!obj.grabbed) {
         obj.vy += 0.00015;
         obj.x += obj.vx;
         obj.y += obj.vy;
         obj.rotation += obj.rotSpd;
 
+        // Gravity zones
+        for (const gz of arGravityZones) {
+          const dx = gz.x - obj.x, dy = gz.y - obj.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist < gz.r && dist > 0.01) {
+            const f = gz.strength * 0.0003 / dist;
+            obj.vx += dx * f;
+            obj.vy += dy * f;
+          }
+        }
+
+        // Trampoline bounce
+        if (arTrampoline) {
+          const ty = arTrampoline.y, tx = arTrampoline.x, tw = arTrampoline.w / 2;
+          if (obj.y + obj.r > ty - 0.01 && obj.y + obj.r < ty + 0.02 && obj.x > tx - tw && obj.x < tx + tw && obj.vy > 0) {
+            obj.vy = -Math.abs(obj.vy) * 1.8 - 0.008;
+            arTrampoline.active = true;
+          }
+        }
+
         if (obj.x - obj.r < 0) { obj.x = obj.r; obj.vx = Math.abs(obj.vx) * 0.7; }
         if (obj.x + obj.r > 1) { obj.x = 1 - obj.r; obj.vx = -Math.abs(obj.vx) * 0.7; }
         if (obj.y + obj.r > 0.95) { obj.y = 0.95 - obj.r; obj.vy = -Math.abs(obj.vy) * 0.6; obj.vx *= 0.95; }
         if (obj.y - obj.r < 0) { obj.y = obj.r; obj.vy = Math.abs(obj.vy) * 0.7; }
+
+        // Remove coins that fell off screen in game mode
+        if (arGameActive && obj.type === 'coin' && obj.y > 0.98) {
+          arObjects.splice(oi, 1); continue;
+        }
       }
 
-      // Hand collision
-      if (arHandPos.x >= 0) {
-        const dx = obj.x - arHandPos.x;
-        const dy = obj.y - arHandPos.y;
+      // Trail for fast-moving or special objects
+      if (obj.type === 'star' || obj.type === 'coin' || obj.type === 'diamond') {
+        obj.trail.push({ x: obj.x, y: obj.y, t: Date.now() });
+        if (obj.trail.length > 8) obj.trail.shift();
+      }
+
+      // Hand collision — primary hand
+      const hands = [arHandPos, arHand2Pos];
+      for (const hand of hands) {
+        if (hand.x < 0) continue;
+        const dx = obj.x - hand.x;
+        const dy = obj.y - hand.y;
         const dist = Math.hypot(dx, dy);
-        if (dist < obj.r + 0.03) {
-          if (arHandPos.pinching && !arGrabbed) {
+        if (dist < obj.r + 0.04) {
+          // Game mode: collecting
+          if (arGameActive && (obj.type === 'coin' || obj.type === 'star' || obj.type === 'diamond')) {
+            const pts = obj.type === 'coin' ? 10 : obj.type === 'star' ? 25 : 50;
+            arCombo++;
+            arComboTimer = 2;
+            const bonus = Math.min(arCombo, 10);
+            arScore += pts * bonus;
+            addFloatingText(obj.x, obj.y, `+${pts * bonus}`, obj.type === 'coin' ? '#ffd700' : '#00ffff');
+            if (arCombo >= 5) addFloatingText(obj.x, obj.y - 0.05, `${arCombo}x COMBO!`, '#ff69b4');
+            triggerExplosion(obj.x, obj.y, w, h);
+            arObjects.splice(oi, 1); continue;
+          }
+          if (arGameActive && obj.type === 'bomb') {
+            arScore = Math.max(0, arScore - 20);
+            arCombo = 0;
+            addFloatingText(obj.x, obj.y, '-20', '#ff4444');
+            triggerExplosion(obj.x, obj.y, w, h);
+            arObjects.splice(oi, 1); continue;
+          }
+
+          if (hand === arHandPos && hand.pinching && !arGrabbed) {
             arGrabbed = obj;
             obj.grabbed = true;
           }
@@ -1143,9 +1348,11 @@ export function mountApp(root: HTMLElement) {
       if (obj.grabbed && arGrabbed === obj) {
         if (!arHandPos.pinching) {
           obj.grabbed = false;
+          const throwVx = (arHandPos.x - obj.x) * 0.5;
+          const throwVy = (arHandPos.y - obj.y) * 0.5;
           arGrabbed = null;
-          obj.vx = (Math.random() - 0.5) * 0.005;
-          obj.vy = -0.002;
+          obj.vx = throwVx || (Math.random() - 0.5) * 0.005;
+          obj.vy = throwVy || -0.002;
         } else {
           obj.x += (arHandPos.x - obj.x) * 0.3;
           obj.y += (arHandPos.y - obj.y) * 0.3;
@@ -1160,6 +1367,17 @@ export function mountApp(root: HTMLElement) {
         const dd = Math.hypot(ddx, ddy);
         const minD = obj.r + other.r;
         if (dd < minD && dd > 0) {
+          // Portal teleport
+          if ((obj.type === 'portal' || other.type === 'portal') && obj.type !== other.type) {
+            const teleported = obj.type === 'portal' ? other : obj;
+            const portal = obj.type === 'portal' ? obj : other;
+            teleported.x = Math.random() * 0.6 + 0.2;
+            teleported.y = Math.random() * 0.4 + 0.1;
+            teleported.vx *= 0.5;
+            teleported.vy *= 0.5;
+            triggerExplosion(portal.x, portal.y, w, h);
+            continue;
+          }
           const nx = ddx / dd, ny = ddy / dd;
           const overlap = (minD - dd) * 0.5;
           obj.x += nx * overlap; obj.y += ny * overlap;
@@ -1172,6 +1390,22 @@ export function mountApp(root: HTMLElement) {
         }
       }
 
+      // Draw trail
+      if (obj.trail.length > 1) {
+        const ctx = arObjCtx;
+        ctx.save();
+        for (let ti = 0; ti < obj.trail.length - 1; ti++) {
+          const t = obj.trail[ti];
+          const alpha = (ti / obj.trail.length) * 0.3;
+          ctx.beginPath();
+          ctx.arc(t.x * w, t.y * h, obj.r * Math.min(w, h) * 0.3 * (ti / obj.trail.length), 0, Math.PI * 2);
+          ctx.fillStyle = obj.color.replace(')', `,${alpha})`).replace('rgb', 'rgba');
+          if (obj.color.startsWith('#')) ctx.fillStyle = `rgba(218,165,32,${alpha})`;
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+
       const px = obj.x * w, py = obj.y * h, pr = obj.r * Math.min(w, h);
       const ctx = arObjCtx;
       ctx.save();
@@ -1179,7 +1413,7 @@ export function mountApp(root: HTMLElement) {
       ctx.rotate(obj.rotation);
 
       ctx.shadowColor = obj.color;
-      ctx.shadowBlur = obj.grabbed ? 25 : 12;
+      ctx.shadowBlur = obj.grabbed ? 25 : 12 * obj.glow;
 
       switch (obj.type) {
         case 'ball': {
@@ -1229,8 +1463,111 @@ export function mountApp(root: HTMLElement) {
           ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.stroke();
           break;
         }
+        case 'coin': {
+          const coinPulse = Math.sin(obj.age * 6) * 0.2 + 0.8;
+          ctx.shadowColor = '#ffd700';
+          ctx.shadowBlur = 20 * coinPulse;
+          const cg = ctx.createRadialGradient(-pr * 0.2, -pr * 0.2, 0, 0, 0, pr);
+          cg.addColorStop(0, '#fff8dc');
+          cg.addColorStop(0.3, '#ffd700');
+          cg.addColorStop(1, '#b8860b');
+          ctx.beginPath(); ctx.arc(0, 0, pr, 0, Math.PI * 2);
+          ctx.fillStyle = cg; ctx.fill();
+          ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 2; ctx.stroke();
+          ctx.fillStyle = '#b8860b'; ctx.font = `bold ${pr}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText('₪', 0, 1);
+          break;
+        }
+        case 'bomb': {
+          ctx.shadowColor = '#ff4400';
+          ctx.shadowBlur = 10 + Math.sin(obj.age * 8) * 8;
+          const bg = ctx.createRadialGradient(-pr * 0.2, -pr * 0.2, 0, 0, 0, pr);
+          bg.addColorStop(0, '#666');
+          bg.addColorStop(0.5, '#333');
+          bg.addColorStop(1, '#111');
+          ctx.beginPath(); ctx.arc(0, 0, pr, 0, Math.PI * 2);
+          ctx.fillStyle = bg; ctx.fill();
+          ctx.strokeStyle = '#ff4400'; ctx.lineWidth = 2; ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(0, -pr); ctx.lineTo(pr * 0.15, -pr * 1.4);
+          ctx.strokeStyle = '#aaa'; ctx.lineWidth = 3; ctx.stroke();
+          if (Math.sin(obj.age * 12) > 0) {
+            ctx.beginPath(); ctx.arc(pr * 0.15, -pr * 1.5, 4, 0, Math.PI * 2);
+            ctx.fillStyle = '#ff4400'; ctx.fill();
+          }
+          break;
+        }
+        case 'portal': {
+          const portalAngle = obj.age * 3;
+          for (let ring = 3; ring >= 0; ring--) {
+            const rr = pr * (0.4 + ring * 0.25);
+            ctx.beginPath(); ctx.arc(0, 0, rr, 0, Math.PI * 2);
+            const hue = (portalAngle * 30 + ring * 40) % 360;
+            ctx.strokeStyle = `hsla(${hue}, 80%, 60%, ${0.3 + ring * 0.15})`;
+            ctx.lineWidth = 3 - ring * 0.5;
+            ctx.setLineDash([4 + ring * 2, 4 + ring * 2]);
+            ctx.lineDashOffset = portalAngle * 20 * (ring % 2 === 0 ? 1 : -1);
+            ctx.stroke();
+            ctx.setLineDash([]);
+          }
+          ctx.shadowColor = '#a855f7';
+          ctx.shadowBlur = 25;
+          ctx.beginPath(); ctx.arc(0, 0, pr * 0.2, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(168,85,247,0.6)'; ctx.fill();
+          break;
+        }
       }
       ctx.restore();
+    }
+
+    // Floating texts
+    const ftCtx = arObjCtx;
+    for (let i = arFloatingTexts.length - 1; i >= 0; i--) {
+      const ft = arFloatingTexts[i];
+      ft.life -= dt * 1.5;
+      ft.y -= 0.001;
+      if (ft.life <= 0) { arFloatingTexts.splice(i, 1); continue; }
+      ftCtx.save();
+      ftCtx.globalAlpha = ft.life;
+      ftCtx.font = `bold ${Math.round(18 + ft.life * 14)}px "Space Grotesk", sans-serif`;
+      ftCtx.textAlign = 'center';
+      ftCtx.fillStyle = ft.color;
+      ftCtx.shadowColor = ft.color;
+      ftCtx.shadowBlur = 12;
+      ftCtx.fillText(ft.text, ft.x * w, ft.y * h);
+      ftCtx.restore();
+    }
+
+    // Game HUD
+    if (arGameActive || arScore > 0) {
+      ftCtx.save();
+      ftCtx.font = 'bold 28px "Space Grotesk", sans-serif';
+      ftCtx.fillStyle = '#ffd700';
+      ftCtx.shadowColor = '#ffd700';
+      ftCtx.shadowBlur = 12;
+      ftCtx.textAlign = 'left';
+      ftCtx.fillText(`Score: ${arScore}`, 20, 40);
+      if (arCombo > 1) {
+        ftCtx.font = 'bold 18px "Space Grotesk", sans-serif';
+        ftCtx.fillStyle = '#ff69b4';
+        ftCtx.fillText(`${arCombo}x Combo`, 20, 65);
+      }
+      if (arGameActive) {
+        ftCtx.textAlign = 'right';
+        ftCtx.font = 'bold 24px "Space Grotesk", sans-serif';
+        ftCtx.fillStyle = arGameTimer < 5 ? '#ff4444' : '#fff';
+        ftCtx.fillText(`${Math.ceil(arGameTimer)}s`, w - 20, 40);
+      }
+      ftCtx.restore();
+    }
+
+    // Gesture indicator
+    if (arGesture !== 'none') {
+      const gestureIcons: Record<string, string> = { peace: '✌️', fist: '✊', palm: '🖐️', thumbsUp: '👍', pointUp: '☝️' };
+      ftCtx.save();
+      ftCtx.font = '32px sans-serif';
+      ftCtx.textAlign = 'right';
+      ftCtx.fillText(gestureIcons[arGesture] || '', w - 20, h - 20);
+      ftCtx.restore();
     }
 
     drawFxParticles();
@@ -1300,13 +1637,11 @@ export function mountApp(root: HTMLElement) {
     $('arOverlay').classList.remove('show');
     if (arStream) { arStream.getTracks().forEach(t => t.stop()); arStream = null; }
     cancelAnimationFrame(arAnimFrame);
-    arObjects = [];
-    arGrabbed = null;
-    arObjCtx = null;
-    arFxCtx = null;
-    arFxParticles = [];
-    arLaserTrail = [];
-    arCurrentFx = 'none';
+    arObjects = []; arGrabbed = null; arObjCtx = null; arFxCtx = null;
+    arFxParticles = []; arLaserTrail = []; arCurrentFx = 'none';
+    arGravityZones = []; arTrampoline = null; arFloatingTexts = [];
+    arScore = 0; arCombo = 0; arGameActive = false; arGesture = 'none';
+    arHand2Pos = { x: -1, y: -1, pinching: false };
     document.querySelectorAll('.ar-fx-btn').forEach(b => b.classList.remove('ar-fx-active'));
     $('arStatus').style.opacity = '1';
   }
@@ -1316,7 +1651,37 @@ export function mountApp(root: HTMLElement) {
   $('arAddCube').onclick = () => addArObject('cube');
   $('arAddStar').onclick = () => addArObject('star');
   $('arAddDiamond').onclick = () => addArObject('diamond');
-  $('arClearObjs').onclick = () => { arObjects = []; arGrabbed = null; arFxParticles = []; arLaserTrail = []; };
+  $('arAddCoin').onclick = () => addArObject('coin');
+  $('arAddPortal').onclick = () => addArObject('portal');
+  $('arAddGravity').onclick = () => {
+    arGravityZones.push({
+      x: 0.3 + Math.random() * 0.4, y: 0.3 + Math.random() * 0.3,
+      r: 0.12 + Math.random() * 0.08, strength: 1 + Math.random(),
+      hue: Math.random() * 360,
+    });
+  };
+  $('arAddTrampoline').onclick = () => {
+    arTrampoline = { x: 0.5, y: 0.85, w: 0.3, active: false };
+  };
+  $('arClearObjs').onclick = () => {
+    arObjects = []; arGrabbed = null; arFxParticles = []; arLaserTrail = [];
+    arGravityZones = []; arTrampoline = null; arFloatingTexts = [];
+    arScore = 0; arCombo = 0; arGameActive = false;
+  };
+  function startArGame(mode: 'catch' | 'target' | 'zen') {
+    arObjects = []; arGrabbed = null; arFxParticles = []; arLaserTrail = [];
+    arGravityZones = []; arTrampoline = null; arFloatingTexts = [];
+    arScore = 0; arCombo = 0; arComboTimer = 0;
+    arGameMode = mode;
+    arGameActive = true;
+    arGameTimer = mode === 'zen' ? 999 : 30;
+    arGameSpawnTimer = 0.5;
+    if (mode === 'catch') arTrampoline = { x: 0.5, y: 0.88, w: 0.35, active: false };
+    addFloatingText(0.5, 0.4, mode === 'catch' ? 'CATCH THE COINS!' : mode === 'target' ? 'HIT THE TARGETS!' : 'ZEN MODE', '#ffd700');
+  }
+  $('arGameCatch').onclick = () => startArGame('catch');
+  $('arGameTarget').onclick = () => startArGame('target');
+  $('arGameZen').onclick = () => startArGame('zen');
 
   function setArEffect(fx: ArEffect) {
     arCurrentFx = arCurrentFx === fx ? 'none' : fx;
@@ -1420,6 +1785,10 @@ export function mountApp(root: HTMLElement) {
             if (h === 0) {
               const indexTip = landmarks[8];
               const thumbTip = landmarks[4];
+              const middleTip = landmarks[12];
+              const ringTip = landmarks[16];
+              const pinkyTip = landmarks[20];
+              const wrist = landmarks[0];
               const viewRect = $('arViewport').getBoundingClientRect();
               const hx = indexTip.x;
               const hy = indexTip.y;
@@ -1430,6 +1799,46 @@ export function mountApp(root: HTMLElement) {
               const pinchDist = Math.hypot(indexTip.x - thumbTip.x, indexTip.y - thumbTip.y);
               const pinching = pinchDist < 0.05;
               arHandPos = { x: hx, y: hy, pinching };
+
+              // Gesture recognition
+              const indexUp = indexTip.y < landmarks[6].y;
+              const middleUp = middleTip.y < landmarks[10].y;
+              const ringUp = ringTip.y < landmarks[14].y;
+              const pinkyUp = pinkyTip.y < landmarks[18].y;
+              const thumbUp = thumbTip.y < landmarks[3].y && Math.abs(thumbTip.x - wrist.x) > 0.04;
+
+              if (indexUp && middleUp && !ringUp && !pinkyUp) arGesture = 'peace';
+              else if (!indexUp && !middleUp && !ringUp && !pinkyUp && !thumbUp) arGesture = 'fist';
+              else if (indexUp && middleUp && ringUp && pinkyUp) arGesture = 'palm';
+              else if (thumbUp && !indexUp && !middleUp) arGesture = 'thumbsUp';
+              else if (indexUp && !middleUp && !ringUp && !pinkyUp) arGesture = 'pointUp';
+              else arGesture = 'none';
+
+              // Gesture-triggered actions
+              if (arGesture === 'palm' && arCurrentFx === 'none') {
+                for (const obj of arObjects) {
+                  if (!obj.grabbed) {
+                    const dx = obj.x - hx, dy = obj.y - hy;
+                    const dist = Math.hypot(dx, dy);
+                    if (dist < 0.3 && dist > 0.01) {
+                      obj.vx += (dx / dist) * 0.003;
+                      obj.vy += (dy / dist) * 0.003;
+                    }
+                  }
+                }
+              }
+              if (arGesture === 'fist') {
+                for (const obj of arObjects) {
+                  if (!obj.grabbed) {
+                    const dx = hx - obj.x, dy = hy - obj.y;
+                    const dist = Math.hypot(dx, dy);
+                    if (dist < 0.25 && dist > 0.01) {
+                      obj.vx += (dx / dist) * 0.002;
+                      obj.vy += (dy / dist) * 0.002;
+                    }
+                  }
+                }
+              }
 
               if (pinching) {
                 ptr.classList.add('pinch');
@@ -1454,9 +1863,12 @@ export function mountApp(root: HTMLElement) {
               }
             }
 
-            // Second hand also pushes objects
+            // Second hand — full tracking
             if (h === 1) {
               const idx2 = landmarks[8];
+              const thumb2 = landmarks[4];
+              const pinch2 = Math.hypot(idx2.x - thumb2.x, idx2.y - thumb2.y) < 0.05;
+              arHand2Pos = { x: idx2.x, y: idx2.y, pinching: pinch2 };
               for (const obj of arObjects) {
                 const dx = obj.x - idx2.x, dy = obj.y - idx2.y;
                 const dist = Math.hypot(dx, dy);
@@ -1534,6 +1946,9 @@ export function mountApp(root: HTMLElement) {
     $<HTMLInputElement>('sfxCheck').checked = state.sfxOn;
     $<HTMLInputElement>('hapticsCheck').checked = state.haptics;
     $<HTMLInputElement>('autoSpeakCheck').checked = state.autoSpeak;
+    // Cloud sync state
+    $<HTMLInputElement>('driveClientId').value = driveSync.getClientId();
+    updateDriveUI();
     $<HTMLInputElement>('spotifyId').value = socials.spotify;
     $<HTMLInputElement>('tiktokId').value = socials.tiktok;
     $<HTMLInputElement>('instaId').value = socials.insta;
@@ -1556,6 +1971,49 @@ export function mountApp(root: HTMLElement) {
     }).join('') || '<option value="">No voice available</option>';
   }
   $('settingsBtn').onclick = openSetup;
+
+  // ── Cloud Sync handlers ──
+  function updateDriveUI() {
+    const connected = driveSync.isConnected();
+    const btn = $('driveConnectBtn');
+    btn.textContent = connected ? '✓ Connected' : 'Connect Google Drive';
+    btn.classList.toggle('cloud-connected', connected);
+    ($('driveUploadBtn') as HTMLButtonElement).disabled = !connected;
+    ($('driveDownloadBtn') as HTMLButtonElement).disabled = !connected;
+    const last = driveSync.lastSyncTime();
+    $('driveStatus').textContent = last ? `Last sync: ${new Date(last).toLocaleString()}` : '';
+  }
+  $('driveConnectBtn').onclick = async () => {
+    const id = $<HTMLInputElement>('driveClientId').value.trim();
+    if (!id) { $('driveStatus').textContent = 'Enter a Client ID first'; return; }
+    driveSync.setClientId(id);
+    $('driveStatus').textContent = 'Connecting…';
+    try {
+      const ok = await driveSync.signIn();
+      $('driveStatus').textContent = ok ? 'Connected ✓' : 'Connection cancelled';
+      updateDriveUI();
+    } catch (e: any) {
+      $('driveStatus').textContent = e.message === 'NO_CLIENT_ID' ? 'Enter a Client ID' : 'Connection failed: ' + e.message;
+    }
+  };
+  $('driveUploadBtn').onclick = async () => {
+    const r = await driveSync.syncToCloud(m => { $('driveStatus').textContent = m; });
+    if (!r.ok) $('driveStatus').textContent = 'Error: ' + r.error;
+    updateDriveUI();
+  };
+  $('driveDownloadBtn').onclick = async () => {
+    if (!confirm('This will overwrite your local data with the cloud backup. Continue?')) return;
+    const r = await driveSync.syncFromCloud(m => { $('driveStatus').textContent = m; });
+    if (!r.ok) $('driveStatus').textContent = 'Error: ' + r.error;
+    else setTimeout(() => location.reload(), 1500);
+  };
+  $('localExportBtn').onclick = () => driveSync.downloadAsFile();
+  $('localImportBtn').onclick = async () => {
+    const r = await driveSync.uploadFromFile();
+    if (r.ok) { alert(`Restored ${r.tables} tables. Reloading…`); location.reload(); }
+    else alert('Import failed: ' + r.error);
+  };
+
   $<HTMLSelectElement>('replySel').onchange = () => { state.replyLang = $<HTMLSelectElement>('replySel').value as any; refreshVoiceList(); };
   $<HTMLSelectElement>('ambPresetSel').onchange = () => {
     audio.ensure();
@@ -1617,6 +2075,7 @@ export function mountApp(root: HTMLElement) {
     voice.setMicLang(state.micLang);
     const vsel = $<HTMLSelectElement>('voiceSel').value;
     if (vsel) voice.setVoice(vsel);
+    driveSync.setClientId($<HTMLInputElement>('driveClientId').value.trim());
     socials.spotify = $<HTMLInputElement>('spotifyId').value.trim();
     socials.tiktok = $<HTMLInputElement>('tiktokId').value.trim();
     socials.insta = $<HTMLInputElement>('instaId').value.trim();
