@@ -1843,6 +1843,92 @@ select.cp-input option { background: #14120c; color: var(--ink); }
   margin: 10px 0; border: 1px solid rgba(218,165,32,.12);
 }
 
+/* ── KPI grid ── */
+.cp-kpis {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
+  gap: 8px; margin: 4px 0 14px;
+}
+.cp-kpi {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 12px 8px; border-radius: 12px;
+  background: rgba(255,255,255,.025);
+  border: 1px solid rgba(218,165,32,.07);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
+}
+.cp-kpi-val {
+  font-family: "Space Grotesk", sans-serif; font-weight: 700;
+  font-size: 17px; color: var(--ink);
+  text-shadow: 0 0 14px rgba(218,165,32,.18);
+}
+.cp-kpi-lbl {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 8px; letter-spacing: 1.5px; text-transform: uppercase;
+  color: var(--dim); opacity: .6; text-align: center;
+}
+
+/* ── mini bar chart ── */
+.cp-chart {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 6px; height: 90px; margin: 6px 0 14px;
+  padding: 8px 4px 0;
+}
+.cp-bar {
+  flex: 1; display: flex; flex-direction: column; align-items: center;
+  height: 100%; justify-content: flex-end; gap: 4px;
+}
+.cp-bar-fill {
+  width: 100%; max-width: 28px; border-radius: 6px 6px 2px 2px;
+  background: linear-gradient(180deg, var(--gold), rgba(218,165,32,.25));
+  box-shadow: 0 0 10px rgba(218,165,32,.2), inset 0 1px 0 rgba(255,255,255,.15);
+  transition: height .6s cubic-bezier(.22,1,.36,1);
+  min-height: 3px;
+}
+.cp-bar-lbl {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 8px; letter-spacing: .5px; color: var(--dim); opacity: .5;
+}
+
+/* ── category bars ── */
+.cp-catbars { display: flex; flex-direction: column; gap: 8px; margin: 8px 0 14px; }
+.cp-catbar { display: grid; grid-template-columns: 70px 1fr 60px; align-items: center; gap: 8px; }
+.cp-catbar-lbl { font-size: 11px; color: var(--dim); }
+.cp-catbar-track {
+  height: 6px; border-radius: 4px; overflow: hidden;
+  background: rgba(255,255,255,.05); box-shadow: inset 0 1px 2px rgba(0,0,0,.2);
+}
+.cp-catbar-fill {
+  height: 100%; border-radius: 4px;
+  background: linear-gradient(90deg, var(--gold), var(--cyan));
+  box-shadow: 0 0 6px rgba(218,165,32,.2);
+  transition: width .6s cubic-bezier(.22,1,.36,1);
+}
+.cp-catbar-val {
+  font-family: "Space Grotesk", sans-serif; font-size: 11px;
+  color: var(--cyan); text-align: right;
+}
+
+/* ── checkbox toggle (tasks / habits) ── */
+.cp-check {
+  flex: 0 0 auto; width: 22px; height: 22px; border-radius: 7px;
+  border: 1.5px solid rgba(218,165,32,.3); background: rgba(255,255,255,.02);
+  color: #0a0806; font-size: 12px; font-weight: 700; cursor: pointer;
+  display: grid; place-items: center; transition: var(--transition);
+}
+.cp-check:hover { border-color: rgba(218,165,32,.6); }
+.cp-check.on {
+  background: linear-gradient(135deg, var(--gold), #f5e6c8);
+  border-color: transparent;
+  box-shadow: 0 0 10px rgba(218,165,32,.35), inset 0 1px 0 rgba(255,255,255,.3);
+}
+
+/* ── inline mini status select ── */
+.cp-mini-sel {
+  background: rgba(255,255,255,.03); border: 1px solid rgba(218,165,32,.12);
+  border-radius: 8px; padding: 4px 6px; font-size: 11px;
+  font-family: "Space Grotesk", sans-serif; cursor: pointer; outline: none;
+}
+.cp-mini-sel option { background: #14120c; color: var(--ink); }
+
 @media (max-width: 560px) {
   .cockpit { width: 100vw; height: 100vh; border-radius: 0; }
   .cockpit-overlay { padding: 0; }

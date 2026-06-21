@@ -8,6 +8,7 @@
 import { route, getActiveModule } from './router';
 import { buildMemoryContext, autoCapture, setSummary, loadMemory, type ModuleId } from './memory';
 import { moduleById } from './modules';
+import { liveSnapshot } from '../modules/snapshot';
 
 export * from './memory';
 export * from './modules';
@@ -26,8 +27,9 @@ export function orchestrate(userText: string): { module: ModuleId; switched: boo
 
   // Assemble the brain block injected into the system prompt.
   const memBlock = buildMemoryContext(userText, r.module);
+  const snapshot = liveSnapshot(r.module);
   const fragment = mod ? mod.systemFragment : '';
-  injectedContext = [fragment, memBlock].filter(Boolean).join('\n\n');
+  injectedContext = [fragment, snapshot, memBlock].filter(Boolean).join('\n\n');
 
   return { module: r.module, switched: r.switched, confidence: r.confidence };
 }

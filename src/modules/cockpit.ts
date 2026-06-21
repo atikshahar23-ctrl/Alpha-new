@@ -12,7 +12,19 @@ import {
 } from '../brain/memory';
 import { route } from '../brain/router';
 import { loadPriceAlerts, savePriceAlerts, type PriceAlert } from './proactive';
-import { addEvent, loadEvents, addTask } from '../assistant/state';
+import {
+  addEvent, loadEvents, addTask, loadTasks, toggleTask, removeTask,
+} from '../assistant/state';
+import {
+  loadLeads, addLead, updateLead, removeLead, advanceLead,
+  loadQuotes, setQuoteStatus, removeQuote,
+  revenueStats, dueFollowUps, statusLabel, statusHue,
+  type LeadStatus,
+} from './business';
+import {
+  loadHabits, addHabit, removeHabit, toggleHabitToday, isHabitDoneToday, habitStreak,
+  loadExpenses, addExpense, removeExpense, expenseSummary, EXPENSE_CATEGORIES,
+} from './personal';
 
 export interface CockpitHooks {
   ask: (q: string) => void;
@@ -122,28 +134,154 @@ function textarea(placeholder = '', rows = 4): HTMLTextAreaElement {
 }
 
 // ============================================================
-// BUSINESS — CRM, marketing engine, quoting
+// BUSINESS — revenue dashboard, sales pipeline (CRM), quotes,
+//           follow-ups, marketing engine, quick quote
 // ============================================================
 function renderBusiness(root: HTMLElement, hooks: CockpitHooks, close: () => void) {
-  // ── CRM snapshot from HeavyGuard records ──
-  let records: any[] = [];
-  try { records = JSON.parse(localStorage.getItem('hg2:index') || '[]'); } catch {}
-  const crm = card('CRM · HeavyGuard', `${records.length} installation records`);
-  const list = el('div', 'cp-list');
-  if (!records.length) {
-    list.appendChild(el('div', 'cp-empty', 'No records yet. Add installations in HeavyGuard.'));
-  } else {
-    records.slice(0, 12).forEach(r => {
-      const row = el('div', 'cp-row');
-      row.innerHTML =
-        `<span class="cp-row-main">${esc(r.idNumber || '—')}</span>` +
-        `<span class="cp-row-sub">${esc([r.vehicleType, r.manufacturer].filter(Boolean).join(' '))}</span>` +
-        `<span class="cp-row-tag">${esc(r.date || '')}</span>`;
-      list.appendChild(row);
+  // ── Revenue dashboard ──
+  const dash = card('Revenue Dashboard', 'Realised vs. pipeline · last 6 months');
+  const stats = revenueStats();
+  const kpis = el('div', 'cp-kpis');
+  kpis.innerHTML =
+    `<div class="cp-kpi"><span class="cp-kpi-val">₪${stats.realised.toLocaleString()}</span><span class="cp-kpi-lbl">Realised</span></div>` +
+    `<div class="cp-kpi"><span class="cp-kpi-val">₪${stats.pipeline.toLocaleString()}</span><span class="cp-kpi-lbl">Pipeline</span></div>` +
+    `<div class="cp-kpi"><span class="cp-kpi-val">${Math.round(stats.winRate * 100)}%</span><span class="cp-kpi-lbl">Win rate</span></div>` +
+    `<div class="cp-kpi"><span class="cp-kpi-val">${stats.openLeads}</span><span class="cp-kpi-lbl">Open leads</span></div>`;
+  dash.appendChild(kpis);
+  // mini bar chart of last 6 months
+  const maxM = Math.max(1, ...stats.byMonth.map(m => m.total));
+  const chart = el('div', 'cp-chart');
+  stats.byMonth.forEach(m => {
+    const bar = el('div', 'cp-bar');
+    const fill = el('div', 'cp-bar-fill');
+    fill.style.height = `${Math.max(3, (m.total / maxM) * 100)}%`;
+    bar.appendChild(fill);
+    bar.appendChild(el('span', 'cp-bar-lbl', m.month.slice(5)));
+    bar.title = `${m.month}: ₪${m.total.toLocaleString()}`;
+    chart.appendChild(bar);
+  });
+  dash.appendChild(chart);
+  const aiRev = btn('AI revenue insights');
+  aiRev.onclick = () => {
+    hooks.ask(`Act as my business CFO. Here are my numbers: realised revenue ₪${stats.realised.toLocaleString()}, ` +
+      `open pipeline ₪${stats.pipeline.toLocaleString()}, win rate ${Math.round(stats.winRate * 100)}%, ` +
+      `${stats.openLeads} open leads, last 6 months: ${stats.byMonth.map(m => m.month + '=₪' + m.total).join(', ')}. ` +
+      `Give me 3 concrete actions to grow revenue this month.`);
+    close();
+  };
+  dash.appendChild(aiRev);
+  root.appendChild(dash);
+
+  // ── Follow-ups due ──
+  const due = dueFollowUps();
+  if (due.length) {
+    const fu = card('⏰ Follow-ups due', `${due.length} lead(s) need a touch`);
+    const fuList = el('div', 'cp-list');
+    due.forEach(l => {
+      const r = el('div', 'cp-row');
+      r.innerHTML = `<span class="cp-row-main">${esc(l.name || 'Lead')}</span>` +
+        `<span class="cp-row-sub">${esc(l.vehicle || l.service || '')}</span>` +
+        `<span class="cp-row-tag" style="color:#ff5d73">${esc(l.followUp)}</span>`;
+      if (l.phone) {
+        const callA = el('a', 'cp-x') as HTMLAnchorElement;
+        callA.textContent = '📞'; callA.href = `tel:${l.phone}`;
+        r.appendChild(callA);
+      }
+      fuList.appendChild(r);
     });
+    fu.appendChild(fuList);
+    root.appendChild(fu);
   }
-  crm.appendChild(list);
-  root.appendChild(crm);
+
+  // ── Sales pipeline (CRM) ──
+  const pipe = card('Sales Pipeline', 'Track every lead from first call to win');
+  const lName = input('Customer / company');
+  const lPhone = input('Phone');
+  const lVeh = input('Vehicle — e.g. Scania R450');
+  const lSvc = input('Service — e.g. 360° camera + tracker');
+  const lVal = input('Deal value (₪)');
+  const lFollow = el('input', 'cp-input') as HTMLInputElement; lFollow.type = 'date';
+  const addL = btn('Add lead', true);
+  const pipeList = el('div', 'cp-list');
+  const STATUS_NEXT_LABEL: Record<LeadStatus, string> = {
+    lead: '→ Contacted', contacted: '→ Quoted', quoted: '→ Won', won: 'Won ✓', lost: 'Lost',
+  };
+  const drawPipe = () => {
+    pipeList.innerHTML = '';
+    const leads = loadLeads();
+    if (!leads.length) { pipeList.appendChild(el('div', 'cp-empty', 'No leads yet. Add your first above.')); return; }
+    leads.forEach(l => {
+      const r = el('div', 'cp-row');
+      const hue = statusHue(l.status);
+      r.innerHTML =
+        `<span class="cp-row-main">${esc(l.name || 'Lead')}` +
+        (l.value ? ` <span class="cp-row-sub">₪${l.value.toLocaleString()}</span>` : '') + `</span>` +
+        `<span class="cp-row-tag" style="color:hsl(${hue},70%,60%)">${esc(statusLabel(l.status))}</span>`;
+      if (l.status !== 'won' && l.status !== 'lost') {
+        const adv = el('button', 'cp-x') as HTMLButtonElement;
+        adv.textContent = STATUS_NEXT_LABEL[l.status];
+        adv.style.color = 'var(--cyan)'; adv.style.fontSize = '11px';
+        adv.onclick = () => { advanceLead(l.id); drawPipe(); root.replaceChildren(); renderBusiness(root, hooks, close); };
+        r.appendChild(adv);
+      }
+      if (l.status !== 'lost' && l.status !== 'won') {
+        const lost = el('button', 'cp-x', '✕'); lost.title = 'Mark lost';
+        lost.onclick = () => { updateLead(l.id, { status: 'lost' }); drawPipe(); };
+        r.appendChild(lost);
+      }
+      const del = el('button', 'cp-x', '🗑'); del.title = 'Delete';
+      del.onclick = () => { removeLead(l.id); drawPipe(); };
+      r.appendChild(del);
+      pipeList.appendChild(r);
+    });
+  };
+  addL.onclick = () => {
+    if (!lName.value.trim() && !lPhone.value.trim()) return;
+    addLead({
+      name: lName.value.trim(), phone: lPhone.value.trim(), vehicle: lVeh.value.trim(),
+      service: lSvc.value.trim(), value: parseFloat(lVal.value) || 0, followUp: lFollow.value,
+    });
+    [lName, lPhone, lVeh, lSvc, lVal].forEach(i => i.value = ''); lFollow.value = '';
+    root.replaceChildren(); renderBusiness(root, hooks, close);
+  };
+  pipe.appendChild(field('Customer', lName));
+  const pr1 = el('div', 'cp-inline'); pr1.append(lPhone, lVal);
+  pipe.appendChild(pr1);
+  pipe.appendChild(field('Vehicle', lVeh));
+  pipe.appendChild(field('Service', lSvc));
+  pipe.appendChild(field('Next follow-up', lFollow));
+  pipe.appendChild(addL);
+  pipe.appendChild(pipeList);
+  drawPipe();
+  root.appendChild(pipe);
+
+  // ── Quotes manager ──
+  const qm = card('Quotes', 'Saved quotes · update status to feed revenue');
+  const qList = el('div', 'cp-list');
+  const drawQuotes = () => {
+    qList.innerHTML = '';
+    const quotes = loadQuotes();
+    if (!quotes.length) { qList.appendChild(el('div', 'cp-empty', 'No quotes yet. Create one below.')); return; }
+    quotes.slice(0, 15).forEach(q => {
+      const r = el('div', 'cp-row');
+      const stHue = { draft: 200, sent: 45, accepted: 140, rejected: 0 }[q.status] ?? 200;
+      r.innerHTML = `<span class="cp-row-main">${esc(q.customer || 'Customer')} <span class="cp-row-sub">₪${(q.total || 0).toLocaleString()}</span></span>`;
+      const sel = el('select', 'cp-mini-sel') as HTMLSelectElement;
+      (['draft', 'sent', 'accepted', 'rejected'] as const).forEach(s => {
+        const o = el('option') as HTMLOptionElement; o.value = s; o.textContent = s; if (q.status === s) o.selected = true; sel.appendChild(o);
+      });
+      sel.style.color = `hsl(${stHue},70%,60%)`;
+      sel.onchange = () => { setQuoteStatus(q.id, sel.value as any); root.replaceChildren(); renderBusiness(root, hooks, close); };
+      r.appendChild(sel);
+      const del = el('button', 'cp-x', '✕');
+      del.onclick = () => { removeQuote(q.id); drawQuotes(); };
+      r.appendChild(del);
+      qList.appendChild(r);
+    });
+  };
+  qm.appendChild(qList);
+  drawQuotes();
+  root.appendChild(qm);
 
   // ── Marketing engine ──
   const mk = card('Marketing Engine', 'AI viral content for TikTok / Facebook');
@@ -367,9 +505,154 @@ function renderCreative(root: HTMLElement, hooks: CockpitHooks, close: () => voi
 }
 
 // ============================================================
-// PERSONAL — family calendar + voice-to-task auto-tagging
+// PERSONAL — daily briefing, tasks, habits, expenses,
+//            family calendar, brain-dump auto-tagging
 // ============================================================
-function renderPersonal(root: HTMLElement, hooks: CockpitHooks, _close: () => void) {
+function renderPersonal(root: HTMLElement, hooks: CockpitHooks, close: () => void) {
+  // ── Daily briefing ──
+  const brief = card('Daily Briefing', 'Your day at a glance');
+  const today = new Date().toISOString().slice(0, 10);
+  const todayEv = loadEvents().filter(e => e.date === today);
+  const openTasks = loadTasks().filter(t => !t.done);
+  const habitsToday = loadHabits();
+  const habitsDone = habitsToday.filter(isHabitDoneToday).length;
+  const sum = el('div', 'cp-kpis');
+  sum.innerHTML =
+    `<div class="cp-kpi"><span class="cp-kpi-val">${todayEv.length}</span><span class="cp-kpi-lbl">Events today</span></div>` +
+    `<div class="cp-kpi"><span class="cp-kpi-val">${openTasks.length}</span><span class="cp-kpi-lbl">Open tasks</span></div>` +
+    `<div class="cp-kpi"><span class="cp-kpi-val">${habitsDone}/${habitsToday.length}</span><span class="cp-kpi-lbl">Habits</span></div>`;
+  brief.appendChild(sum);
+  const briefBtn = btn('Brief me on my day', true);
+  briefBtn.onclick = () => {
+    const ev = todayEv.map(e => `${e.time || ''} ${e.title}`).join('; ') || 'none';
+    const tk = openTasks.slice(0, 8).map(t => t.text).join('; ') || 'none';
+    hooks.ask(`Act as my chief of staff. Give me a short, motivating morning briefing for today. ` +
+      `Events: ${ev}. Open tasks: ${tk}. Habits done: ${habitsDone}/${habitsToday.length}. ` +
+      `Prioritise what matters and suggest the single most important focus for today.`);
+    close();
+  };
+  brief.appendChild(briefBtn);
+  root.appendChild(brief);
+
+  // ── Tasks ──
+  const tc = card('Tasks', 'Quick to-dos with priority');
+  const tText = input('What needs doing?');
+  const tPrio = el('select', 'cp-input') as HTMLSelectElement;
+  ([['med', 'Medium'], ['high', 'High'], ['low', 'Low']] as const).forEach(([v, l]) => {
+    const o = el('option') as HTMLOptionElement; o.value = v; o.textContent = l; tPrio.appendChild(o);
+  });
+  const addT = btn('Add task', true);
+  const tList = el('div', 'cp-list');
+  const drawTasks = () => {
+    tList.innerHTML = '';
+    const tasks = loadTasks().sort((a, b) => Number(a.done) - Number(b.done));
+    if (!tasks.length) { tList.appendChild(el('div', 'cp-empty', 'No tasks. Add one above.')); return; }
+    tasks.slice(0, 20).forEach(t => {
+      const r = el('div', 'cp-row');
+      const pHue = { high: 0, med: 45, low: 200 }[t.priority] ?? 45;
+      const box = el('button', 'cp-check' + (t.done ? ' on' : ''), t.done ? '✓' : '');
+      box.onclick = () => { toggleTask(t.id); drawTasks(); };
+      r.appendChild(box);
+      const main = el('span', 'cp-row-main', esc(t.text));
+      if (t.done) main.style.opacity = '.45', main.style.textDecoration = 'line-through';
+      r.appendChild(main);
+      r.appendChild(el('span', 'cp-row-tag', t.priority) as HTMLElement).setAttribute('style', `color:hsl(${pHue},70%,60%)`);
+      const x = el('button', 'cp-x', '✕');
+      x.onclick = () => { removeTask(t.id); drawTasks(); };
+      r.appendChild(x);
+      tList.appendChild(r);
+    });
+  };
+  addT.onclick = () => { if (tText.value.trim()) { addTask(tText.value.trim(), tPrio.value as any); tText.value = ''; drawTasks(); } };
+  tText.addEventListener('keydown', e => { if (e.key === 'Enter') addT.click(); });
+  const tRow = el('div', 'cp-inline'); tRow.append(tText, tPrio);
+  tc.appendChild(tRow);
+  tc.appendChild(addT);
+  tc.appendChild(tList);
+  drawTasks();
+  root.appendChild(tc);
+
+  // ── Habit tracker ──
+  const hc = card('Habits', 'Build streaks · tap to mark done today');
+  const hName = input('New habit — e.g. Gym, Read, No sugar');
+  const addH = btn('Add habit', true);
+  const hList = el('div', 'cp-list');
+  const drawHabits = () => {
+    hList.innerHTML = '';
+    const habits = loadHabits();
+    if (!habits.length) { hList.appendChild(el('div', 'cp-empty', 'No habits yet.')); return; }
+    habits.forEach(h => {
+      const r = el('div', 'cp-row');
+      const doneToday = isHabitDoneToday(h);
+      const box = el('button', 'cp-check' + (doneToday ? ' on' : ''), doneToday ? '✓' : '');
+      box.onclick = () => { toggleHabitToday(h.id); drawHabits(); };
+      r.appendChild(box);
+      r.appendChild(el('span', 'cp-row-main', esc(h.name)));
+      const streak = habitStreak(h);
+      r.appendChild(el('span', 'cp-row-tag', streak > 0 ? `🔥 ${streak}d` : '—'));
+      const x = el('button', 'cp-x', '✕');
+      x.onclick = () => { removeHabit(h.id); drawHabits(); };
+      r.appendChild(x);
+      hList.appendChild(r);
+    });
+  };
+  addH.onclick = () => { if (hName.value.trim()) { addHabit(hName.value.trim()); hName.value = ''; drawHabits(); } };
+  hName.addEventListener('keydown', e => { if (e.key === 'Enter') addH.click(); });
+  hc.appendChild(field('Habit', hName));
+  hc.appendChild(addH);
+  hc.appendChild(hList);
+  drawHabits();
+  root.appendChild(hc);
+
+  // ── Expense tracker ──
+  const ec = card('Expenses', 'This month · by category');
+  const eSummary = expenseSummary();
+  ec.appendChild(el('div', 'cp-bignum', `₪${eSummary.monthTotal.toLocaleString()}`));
+  if (eSummary.byCategory.length) {
+    const maxC = Math.max(1, ...eSummary.byCategory.map(c => c.total));
+    const catWrap = el('div', 'cp-catbars');
+    eSummary.byCategory.forEach(c => {
+      const row = el('div', 'cp-catbar');
+      row.innerHTML = `<span class="cp-catbar-lbl">${esc(c.category)}</span>` +
+        `<div class="cp-catbar-track"><div class="cp-catbar-fill" style="width:${(c.total / maxC) * 100}%"></div></div>` +
+        `<span class="cp-catbar-val">₪${c.total.toLocaleString()}</span>`;
+      catWrap.appendChild(row);
+    });
+    ec.appendChild(catWrap);
+  }
+  const exLabel = input('What — e.g. Diesel');
+  const exAmt = input('Amount (₪)');
+  const exCat = el('select', 'cp-input') as HTMLSelectElement;
+  EXPENSE_CATEGORIES.forEach(c => { const o = el('option') as HTMLOptionElement; o.value = c; o.textContent = c; exCat.appendChild(o); });
+  const addE = btn('Log expense', true);
+  const exList = el('div', 'cp-list');
+  const drawExp = () => {
+    exList.innerHTML = '';
+    const list = loadExpenses().slice(0, 8);
+    list.forEach(e => {
+      const r = el('div', 'cp-row');
+      r.innerHTML = `<span class="cp-row-main">${esc(e.label)} <span class="cp-row-sub">${esc(e.category)}</span></span>` +
+        `<span class="cp-row-tag">₪${e.amount.toLocaleString()}</span>`;
+      const x = el('button', 'cp-x', '✕');
+      x.onclick = () => { removeExpense(e.id); root.replaceChildren(); renderPersonal(root, hooks, close); };
+      r.appendChild(x);
+      exList.appendChild(r);
+    });
+  };
+  addE.onclick = () => {
+    const amt = parseFloat(exAmt.value);
+    if (!exLabel.value.trim() || isNaN(amt)) return;
+    addExpense(exLabel.value.trim(), amt, exCat.value);
+    root.replaceChildren(); renderPersonal(root, hooks, close);
+  };
+  const exRow = el('div', 'cp-inline'); exRow.append(exLabel, exAmt);
+  ec.appendChild(exRow);
+  ec.appendChild(exCat);
+  ec.appendChild(addE);
+  ec.appendChild(exList);
+  drawExp();
+  root.appendChild(ec);
+
   // ── Family calendar ──
   const cal = card('Family & Life', 'Shared calendar');
   const title = input('Event — e.g. Maya swimming class');

@@ -52,6 +52,25 @@ async function fetchPrice(symbol: string): Promise<number | null> {
   } catch { return null; }
 }
 
+function checkFollowUps(notify: Notify, s: Record<string, number>) {
+  // Sales leads whose follow-up date is today or overdue.
+  const today = new Date().toISOString().slice(0, 10);
+  let leads: any[] = [];
+  try { leads = JSON.parse(localStorage.getItem('alpha_leads_v1') || '[]'); } catch {}
+  for (const l of leads) {
+    if (!l.followUp || l.status === 'won' || l.status === 'lost') continue;
+    if (l.followUp <= today) {
+      const key = 'followup:' + l.id + ':' + l.followUp;
+      if (!s[key]) {
+        s[key] = Date.now();
+        const who = l.name || l.phone || 'lead';
+        notify('Follow-up due', `${who}${l.vehicle ? ' · ' + l.vehicle : ''}`);
+        pushNotification('📋 Follow-up due', who);
+      }
+    }
+  }
+}
+
 function checkInstalls(notify: Notify, s: Record<string, number>) {
   // Upcoming HeavyGuard installs / calendar events for tomorrow.
   const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
@@ -98,6 +117,7 @@ export function runProactive(notify: Notify) {
   const tick = async () => {
     const s = seen();
     try { checkInstalls(notify, s); } catch {}
+    try { checkFollowUps(notify, s); } catch {}
     try { await checkPrices(notify); } catch {}
     markSeen(s);
   };
