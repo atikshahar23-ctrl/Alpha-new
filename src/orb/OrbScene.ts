@@ -81,10 +81,13 @@ const MOBILE_ORB_VERT = /* glsl */`
   void main() {
     vec3 pos = position;
 
-    // Organic surface displacement
-    float disp = sin(pos.x * 8.0 + uTime * 1.5) * sin(pos.y * 6.0 + uTime * 1.2) * sin(pos.z * 7.0 + uTime) * 0.02;
-    disp += sin(pos.x * 15.0 - uTime * 2.0) * sin(pos.z * 12.0 + uTime * 1.5) * 0.01 * (1.0 + uEnergy * 3.0);
-    pos += normal * disp;
+    // Multi-octave organic surface displacement
+    float disp = sin(pos.x * 8.0 + uTime * 1.5) * sin(pos.y * 6.0 + uTime * 1.2) * sin(pos.z * 7.0 + uTime) * 0.025;
+    disp += sin(pos.x * 15.0 - uTime * 2.0) * sin(pos.z * 12.0 + uTime * 1.5) * 0.012 * (1.0 + uEnergy * 3.0);
+    disp += sin(pos.y * 20.0 + uTime * 0.7) * sin(pos.x * 18.0 - uTime * 1.0) * 0.006;
+    // Breathing pulse
+    float breathe = sin(uTime * 0.8) * 0.008 + sin(uTime * 1.5) * 0.004;
+    pos += normal * (disp + breathe);
 
     vNormal = normalize(normalMatrix * normal);
     vWorldPos = (modelMatrix * vec4(pos, 1.0)).xyz;
@@ -142,35 +145,38 @@ const MOBILE_ORB_FRAG = /* glsl */`
     float s3 = smoothstep(0.48, 0.5, fract(-vWorldPos.y*25.0 - uTime*1.2)) * 0.08;
     float sc = s1 + s2 + s3;
 
-    vec3 black = vec3(0.04, 0.03, 0.02);
-    vec3 warmGold = vec3(0.55, 0.42, 0.15);
-    vec3 gold = vec3(0.85, 0.68, 0.22);
-    vec3 white = vec3(0.95, 0.93, 0.88);
+    vec3 obsidian = vec3(0.06, 0.04, 0.02);
+    vec3 warmGold = vec3(0.65, 0.48, 0.16);
+    vec3 gold = vec3(0.95, 0.75, 0.25);
+    vec3 brightGold = vec3(1.0, 0.85, 0.35);
+    vec3 pearl = vec3(1.0, 0.97, 0.92);
+    vec3 champagne = vec3(0.80, 0.68, 0.40);
 
     float cs = sin(uTime*0.3 + vWorldPos.y*2.0)*0.5+0.5;
-    vec3 col = mix(black, warmGold * 0.4, ep * 0.7);
-    col = mix(col, warmGold * 0.6, ep * ep * 0.5);
-    col = mix(col, gold, fresnel * cs * 0.15 + uEnergy * 0.08);
+    vec3 col = mix(obsidian, warmGold * 0.5, ep * 0.8);
+    col = mix(col, champagne * 0.6, ep * ep * 0.6);
+    col = mix(col, gold, fresnel * cs * 0.2 + uEnergy * 0.12);
 
-    col += gold * fresnel * 0.2;
-    col += white * fresnel * 0.1;
+    col += gold * fresnel * 0.3;
+    col += pearl * fresnel * 0.15;
+    col += brightGold * pow(fresnel, 2.0) * 0.2;
 
-    col += warmGold * 0.15 * hex * 0.25;
-    col += gold * sc * 0.15;
+    col += warmGold * 0.2 * hex * 0.3;
+    col += gold * sc * 0.2;
 
-    float hotSpot = pow(ep, 3.0) * 1.0;
-    col += white * hotSpot * 0.08;
-    col += gold * hotSpot * 0.05;
+    float hotSpot = pow(ep, 3.0) * 1.2;
+    col += pearl * hotSpot * 0.12;
+    col += brightGold * hotSpot * 0.08;
 
     float gl = step(0.98, fract(sin(floor(vWorldPos.y*50.0 + uTime*3.0)) * 43758.5));
-    col += white * 0.3 * gl * (uGlitch * 0.5 + uEnergy * 0.2);
+    col += pearl * 0.4 * gl * (uGlitch * 0.5 + uEnergy * 0.25);
 
-    float pulse = 0.88 + sin(uTime*1.2)*0.05 + uEnergy*0.15;
+    float pulse = 0.92 + sin(uTime*1.2)*0.05 + uEnergy*0.15;
     col *= pulse;
 
-    float alpha = 0.5 + fresnel*0.35 + ep*0.1 + sc*0.04 + hex*0.03;
+    float alpha = 0.55 + fresnel*0.35 + ep*0.12 + sc*0.05 + hex*0.04;
     alpha *= pulse;
-    gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.9));
+    gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.92));
   }
 `;
 
@@ -434,11 +440,13 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   const renderer = new THREE.WebGLRenderer({
     antialias: true,
     alpha: false,
-    powerPreference: 'default',
+    powerPreference: 'high-performance',
     failIfMajorPerformanceCaveat: false,
   });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setClearColor(0x0a0806, 1);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 0.9;
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
@@ -446,10 +454,19 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   camera.position.set(0, 0, 6);
   camera.lookAt(0, 0, 0);
 
+  const composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+  composer.addPass(new UnrealBloomPass(
+    new THREE.Vector2(window.innerWidth, window.innerHeight),
+    0.35, 0.4, 0.55,
+  ));
+  composer.addPass(new OutputPass());
+
   function resize() {
     const w = container.clientWidth || 240;
     const h = container.clientHeight || w;
     renderer.setSize(w, h, false);
+    composer.setSize(w, h);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
   }
@@ -462,7 +479,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   // ────────────────────────────────────────────
   // CENTRAL ORB — shader sphere with 3D noise, hex grid, scan lines
   // ────────────────────────────────────────────
-  const orbGeo = new THREE.IcosahedronGeometry(0.9, 5);
+  const orbGeo = new THREE.IcosahedronGeometry(1.0, 5);
   const orbMat = new THREE.ShaderMaterial({
     uniforms: { uTime: { value: 0 }, uEnergy: { value: 0 }, uGlitch: { value: 0 } },
     vertexShader: MOBILE_ORB_VERT,
@@ -474,26 +491,35 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   const orb = new THREE.Mesh(orbGeo, orbMat);
   group.add(orb);
 
-  // ── Inner bright core ──
-  const coreGeo = new THREE.IcosahedronGeometry(0.3, 3);
+  // ── Inner bright core — hot golden center ──
+  const coreGeo = new THREE.IcosahedronGeometry(0.35, 4);
   const coreMat = new THREE.MeshBasicMaterial({
-    color: 0x3d2a10, transparent: true, opacity: 0.3, depthWrite: false,
+    color: 0x6b4a18, transparent: true, opacity: 0.45, depthWrite: false,
   });
   const core = new THREE.Mesh(coreGeo, coreMat);
   group.add(core);
 
+  // ── Inner core glow — bright center light ──
+  const coreGlowMat = new THREE.SpriteMaterial({
+    map: glowTexture(), color: 0xdaa520, transparent: true, opacity: 0.2,
+    depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+  const coreGlow = new THREE.Sprite(coreGlowMat);
+  coreGlow.scale.setScalar(1.8);
+  group.add(coreGlow);
+
   // ── Wireframe cage A — fine grid ──
-  const wireAGeo = new THREE.IcosahedronGeometry(0.94, 2);
+  const wireAGeo = new THREE.IcosahedronGeometry(1.04, 2);
   const wireAMat = new THREE.MeshBasicMaterial({
-    color: 0xd4a84d, wireframe: true, transparent: true, opacity: 0.06, depthWrite: false,
+    color: 0xd4a84d, wireframe: true, transparent: true, opacity: 0.08, depthWrite: false,
   });
   const wireA = new THREE.Mesh(wireAGeo, wireAMat);
   group.add(wireA);
 
   // ── Wireframe cage B — coarse grid, opposite rotation ──
-  const wireBGeo = new THREE.IcosahedronGeometry(0.97, 1);
+  const wireBGeo = new THREE.IcosahedronGeometry(1.07, 1);
   const wireBMat = new THREE.MeshBasicMaterial({
-    color: 0xf0e0c0, wireframe: true, transparent: true, opacity: 0.04, depthWrite: false,
+    color: 0xf0e0c0, wireframe: true, transparent: true, opacity: 0.05, depthWrite: false,
   });
   const wireB = new THREE.Mesh(wireBGeo, wireBMat);
   group.add(wireB);
@@ -501,32 +527,42 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   // ────────────────────────────────────────────
   // ORBITAL RINGS — gold, cyan, purple
   // ────────────────────────────────────────────
-  const goldRGeo = new THREE.TorusGeometry(1.35, 0.025, 16, 140);
+  const goldRGeo = new THREE.TorusGeometry(1.45, 0.035, 20, 160);
   const goldRMat = new THREE.MeshBasicMaterial({
-    color: 0xdaa520, transparent: true, opacity: 0.7, depthWrite: false,
+    color: 0xdaa520, transparent: true, opacity: 0.8, depthWrite: false,
   });
   const goldRing = new THREE.Mesh(goldRGeo, goldRMat);
   goldRing.rotation.x = PI * 0.5;
   goldRing.rotation.z = 0.15;
   group.add(goldRing);
 
-  const cyanRGeo = new THREE.TorusGeometry(1.15, 0.01, 8, 100);
+  const cyanRGeo = new THREE.TorusGeometry(1.25, 0.015, 12, 120);
   const cyanRMat = new THREE.MeshBasicMaterial({
-    color: 0xf5e6c8, transparent: true, opacity: 0.3, depthWrite: false,
+    color: 0xf5e6c8, transparent: true, opacity: 0.4, depthWrite: false,
   });
   const cyanRing = new THREE.Mesh(cyanRGeo, cyanRMat);
   cyanRing.rotation.x = PI * 0.38;
   cyanRing.rotation.z = -0.3;
   group.add(cyanRing);
 
-  const purpRGeo = new THREE.TorusGeometry(1.5, 0.006, 6, 80);
+  const purpRGeo = new THREE.TorusGeometry(1.6, 0.01, 8, 100);
   const purpRMat = new THREE.MeshBasicMaterial({
-    color: 0xc8956a, transparent: true, opacity: 0.18, depthWrite: false,
+    color: 0xc8956a, transparent: true, opacity: 0.25, depthWrite: false,
   });
   const purpRing = new THREE.Mesh(purpRGeo, purpRMat);
   purpRing.rotation.x = PI * 0.62;
   purpRing.rotation.z = 0.5;
   group.add(purpRing);
+
+  // ── 4th ring — thin bright gold accent ──
+  const accentRGeo = new THREE.TorusGeometry(1.1, 0.008, 8, 100);
+  const accentRMat = new THREE.MeshBasicMaterial({
+    color: 0xffd700, transparent: true, opacity: 0.35, depthWrite: false,
+  });
+  const accentRing = new THREE.Mesh(accentRGeo, accentRMat);
+  accentRing.rotation.x = PI * 0.72;
+  accentRing.rotation.z = -0.8;
+  group.add(accentRing);
 
   // ────────────────────────────────────────────
   // EXPANDING PULSE RINGS — 3 rings cycling outward
@@ -589,20 +625,33 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   // ────────────────────────────────────────────
   // OUTER GLOW — layered sprites for depth
   // ────────────────────────────────────────────
+  // ── Atmosphere shell — subtle golden haze around the orb ──
+  const atmoGeo = new THREE.IcosahedronGeometry(1.2, 4);
+  const atmoMat = new THREE.ShaderMaterial({
+    uniforms: { uTime: { value: 0 }, uEnergy: { value: 0 } },
+    vertexShader: ATMOSPHERE_VERT,
+    fragmentShader: ATMOSPHERE_FRAG,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.BackSide,
+  });
+  const atmosphere = new THREE.Mesh(atmoGeo, atmoMat);
+  group.add(atmosphere);
+
   const glow1Mat = new THREE.SpriteMaterial({
-    map: glowTexture(), color: 0x3a2a10, transparent: true, opacity: 0.08,
+    map: glowTexture(), color: 0x5a4218, transparent: true, opacity: 0.14,
     depthWrite: false, blending: THREE.AdditiveBlending,
   });
   const glow1 = new THREE.Sprite(glow1Mat);
-  glow1.scale.setScalar(4.0);
+  glow1.scale.setScalar(4.5);
   group.add(glow1);
 
   const glow2Mat = new THREE.SpriteMaterial({
-    map: glowTexture(), color: 0x1a1208, transparent: true, opacity: 0.04,
+    map: glowTexture(), color: 0x2a1c0a, transparent: true, opacity: 0.07,
     depthWrite: false, blending: THREE.AdditiveBlending,
   });
   const glow2 = new THREE.Sprite(glow2Mat);
-  glow2.scale.setScalar(6.5);
+  glow2.scale.setScalar(7.0);
   group.add(glow2);
 
   // ────────────────────────────────────────────
@@ -724,29 +773,38 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     const breath = 1 + Math.sin(time * 1.2) * 0.025 + amp * 0.08;
     orb.scale.setScalar(breath);
 
-    // Core pulse
+    // Core pulse — bright golden center
     core.rotation.y = -time * 0.4;
     core.rotation.x = time * 0.25;
-    const cp = 0.8 + Math.sin(time * 2.5) * 0.2 + amp * 0.4;
-    core.scale.setScalar(0.3 * cp);
-    coreMat.opacity = 0.35 + Math.sin(time * 2.0) * 0.12 + amp * 0.2;
+    const cp = 0.9 + Math.sin(time * 2.5) * 0.15 + amp * 0.5;
+    core.scale.setScalar(0.35 * cp);
+    coreMat.opacity = 0.5 + Math.sin(time * 2.0) * 0.15 + amp * 0.25;
+    coreGlow.scale.setScalar(1.6 + Math.sin(time * 1.5) * 0.3 + amp * 0.4);
+    coreGlowMat.opacity = 0.18 + Math.sin(time * 1.8) * 0.06 + amp * 0.12;
 
     // Wireframe cages — counter-rotating
     wireA.rotation.y = time * 0.1;
     wireA.rotation.z = Math.sin(time * 0.12) * 0.12;
-    wireAMat.opacity = 0.05 + amp * 0.04 + Math.sin(time * 0.9) * 0.02;
+    wireAMat.opacity = 0.06 + amp * 0.05 + Math.sin(time * 0.9) * 0.025;
     wireB.rotation.y = -time * 0.07;
     wireB.rotation.x = time * 0.05;
-    wireBMat.opacity = 0.03 + amp * 0.03;
+    wireBMat.opacity = 0.04 + amp * 0.04;
 
     // Rings — smooth rotation
     goldRing.rotation.z = 0.15 + time * 0.1;
-    goldRMat.opacity = 0.65 + Math.sin(time * 0.8) * 0.1 + amp * 0.15;
+    goldRMat.opacity = 0.75 + Math.sin(time * 0.8) * 0.1 + amp * 0.15;
     cyanRing.rotation.z = -0.3 - time * 0.14;
-    cyanRMat.opacity = 0.3 + Math.sin(time * 0.7) * 0.08;
+    cyanRMat.opacity = 0.35 + Math.sin(time * 0.7) * 0.1;
     purpRing.rotation.z = 0.5 + time * 0.06;
     purpRing.rotation.x = PI * 0.62 + Math.sin(time * 0.2) * 0.1;
-    purpRMat.opacity = 0.15 + Math.sin(time * 0.6) * 0.06 + amp * 0.1;
+    purpRMat.opacity = 0.2 + Math.sin(time * 0.6) * 0.08 + amp * 0.12;
+    accentRing.rotation.z = -0.8 + time * 0.18;
+    accentRing.rotation.y = Math.sin(time * 0.15) * 0.2;
+    accentRMat.opacity = 0.3 + Math.sin(time * 1.0) * 0.1;
+
+    // Atmosphere
+    atmoMat.uniforms.uTime.value = time;
+    atmoMat.uniforms.uEnergy.value = amp;
 
     // Pulse rings — expanding wave
     for (let i = 0; i < PULSE_N; i++) {
@@ -769,11 +827,11 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
       s.mat.opacity = 0.03 + wave * 0.08 + amp * 0.04;
     }
 
-    // Glow
-    glow1.scale.setScalar(3.5 + Math.sin(time * 0.8) * 0.4 + amp * 0.6);
-    glow1Mat.opacity = 0.1 + amp * 0.1;
-    glow2.scale.setScalar(6.0 + Math.sin(time * 0.5) * 0.5);
-    glow2Mat.opacity = 0.04 + amp * 0.04;
+    // Glow — premium golden haze
+    glow1.scale.setScalar(4.0 + Math.sin(time * 0.8) * 0.5 + amp * 0.8);
+    glow1Mat.opacity = 0.15 + amp * 0.12 + Math.sin(time * 0.6) * 0.03;
+    glow2.scale.setScalar(6.5 + Math.sin(time * 0.5) * 0.6);
+    glow2Mat.opacity = 0.07 + amp * 0.05;
 
     // Network nodes
     for (let i = 0; i < NODE_N; i++) {
@@ -811,7 +869,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     group.position.x = Math.sin(time * 0.15 + 1) * 0.06;
     group.rotation.y = time * 0.018;
 
-    renderer.render(scene, camera);
+    composer.render();
   }
 
   raf = requestAnimationFrame(frame);
@@ -821,6 +879,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     dispose() {
       cancelAnimationFrame(raf);
       window.removeEventListener('resize', resize);
+      composer.dispose();
       renderer.dispose();
       container.removeChild(renderer.domElement);
     },
