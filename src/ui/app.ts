@@ -9,12 +9,14 @@ import { orchestrate, refreshSummary, moduleById, loadMemory, updateProfile } fr
 import { mountCockpit, type CockpitHandle } from '../modules/cockpit';
 import { runProactive } from '../modules/proactive';
 import * as driveSync from '../modules/driveSync';
+import { universalSearch, TYPE_ICONS } from '../modules/search';
 
 export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="chrome topL"><div class="wm">ALPHA ASSISTANT</div><div class="clk" id="clock">--:--</div></div>
       <div class="chrome topR">
+        <button class="chip ghost" id="searchBtn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
         <button class="chip ghost" id="muteBtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg></button>
         <button class="chip" id="settingsBtn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg> SETTINGS</button>
         <button class="chip ghost" id="newChat"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> NEW</button>
@@ -305,6 +307,16 @@ export function mountApp(root: HTMLElement) {
             <button class="hg-close" id="hgClose">✕</button>
           </div>
           <iframe id="hgIframe" class="hg-iframe" src="" allow="camera;microphone"></iframe>
+        </div>
+      </div>
+      <div class="search-overlay" id="searchOverlay">
+        <div class="search-card">
+          <div class="search-bar">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input id="searchInput" type="text" placeholder="Search everything…" autocomplete="off" />
+            <kbd class="search-esc">ESC</kbd>
+          </div>
+          <div class="search-results" id="searchResults"></div>
         </div>
       </div>
       <div class="ar-overlay" id="arOverlay">
@@ -627,7 +639,7 @@ export function mountApp(root: HTMLElement) {
     </div>`;
   }
 
-  async function openSearch(q: string) {
+  async function openWebSearch(q: string) {
     openWin('Search · ' + q);
     $('winBody').innerHTML = '<div class="pad">Searching…</div>';
     try {
@@ -690,7 +702,7 @@ export function mountApp(root: HTMLElement) {
     try {
       const reply = await askAI(state, text);
       const clean = runTags(reply, {
-        onVideo: openVideo, onSearch: openSearch, onCalendar: openCalendar,
+        onVideo: openVideo, onSearch: openWebSearch, onCalendar: openCalendar,
         onEvent: addEvent, onSpotify: openSpotify,
         onDiary: async (title: string, date: string) => {
           const tasks = await hgLoad('hg2:tasks');
@@ -2013,6 +2025,40 @@ export function mountApp(root: HTMLElement) {
     if (r.ok) { alert(`Restored ${r.tables} tables. Reloading…`); location.reload(); }
     else alert('Import failed: ' + r.error);
   };
+
+  // ── Universal Search ──
+  const searchOverlay = $('searchOverlay');
+  const searchInput = $<HTMLInputElement>('searchInput');
+  const searchResults = $('searchResults');
+  function openSearch() {
+    searchOverlay.classList.add('show');
+    searchInput.value = '';
+    searchResults.innerHTML = '<div class="search-hint">Search leads, tasks, events, invoices, goals, notes…</div>';
+    setTimeout(() => searchInput.focus(), 100);
+  }
+  function closeSearch() { searchOverlay.classList.remove('show'); }
+  $('searchBtn').onclick = openSearch;
+  searchOverlay.addEventListener('click', e => { if (e.target === searchOverlay) closeSearch(); });
+  document.addEventListener('keydown', e => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); openSearch(); }
+    if (e.key === 'Escape' && searchOverlay.classList.contains('show')) closeSearch();
+  });
+  let searchDebounce: any = null;
+  searchInput.addEventListener('input', () => {
+    clearTimeout(searchDebounce);
+    searchDebounce = setTimeout(() => {
+      const q = searchInput.value.trim();
+      if (!q) { searchResults.innerHTML = '<div class="search-hint">Type to search across all your data…</div>'; return; }
+      const results = universalSearch(q);
+      if (!results.length) { searchResults.innerHTML = '<div class="search-hint">No results found.</div>'; return; }
+      searchResults.innerHTML = results.map(r =>
+        `<div class="search-item" data-type="${r.type}">` +
+        `<span class="search-icon">${TYPE_ICONS[r.type]}</span>` +
+        `<div class="search-text"><span class="search-title">${r.title}</span><span class="search-sub">${r.subtitle}</span></div>` +
+        `<span class="search-type">${r.type}</span></div>`
+      ).join('');
+    }, 150);
+  });
 
   $<HTMLSelectElement>('replySel').onchange = () => { state.replyLang = $<HTMLSelectElement>('replySel').value as any; refreshVoiceList(); };
   $<HTMLSelectElement>('ambPresetSel').onchange = () => {
