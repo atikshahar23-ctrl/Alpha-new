@@ -1,4 +1,4 @@
-import { mountOrb } from '../orb/OrbScene';
+import { mountOrb, type OrbHandle } from '../orb/OrbScene';
 import { mountFlowLines } from '../bg/flowLines';
 import { loadState, saveState, addEvent, loadEvents, saveEvents, type AppState, type TextLang, type AIProvider } from '../assistant/state';
 import { askAI, runTags } from '../assistant/gemini';
@@ -229,7 +229,12 @@ export function mountApp(root: HTMLElement) {
   audio.ambLevel = state.ambLevel;
   audio.sfxOn = state.sfxOn;
 
-  const orb = mountOrb($('stage'));
+  let orb: OrbHandle;
+  try {
+    orb = mountOrb($('stage'));
+  } catch {
+    orb = { setEnergy() {}, dispose() {}, startBodyDetection() {}, stopBodyDetection() {} };
+  }
   mountFlowLines(root.querySelector('.app')!);
 
   // Load social connections

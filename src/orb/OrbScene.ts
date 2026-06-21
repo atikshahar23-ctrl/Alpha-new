@@ -640,18 +640,21 @@ function createShaderParticles(
 export function mountOrb(container: HTMLElement): OrbHandle {
   // ---------- Mobile detection ----------
   const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 768;
-  const quality = isMobile ? 0.3 : 1.0;
+  const quality = isMobile ? 0.08 : 1.0;
 
   // ---------- Renderer ----------
   const renderer = new THREE.WebGLRenderer({
-    antialias: !isMobile,
-    alpha: true,
+    antialias: false,
+    alpha: !isMobile,
     powerPreference: isMobile ? 'low-power' : 'high-performance',
+    failIfMajorPerformanceCaveat: false,
   });
   renderer.setPixelRatio(isMobile ? 1 : Math.min(window.devicePixelRatio || 1, 2));
   renderer.setClearColor(0x04060d, isMobile ? 1 : 0);
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.0;
+  if (!isMobile) {
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
+  }
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
@@ -699,7 +702,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   group.add(midVolume.points);
 
   // --- LAYER b) Energy flow --- animated upward
-  const FLOW_N = Math.floor(15000 * quality);
+  const FLOW_N = isMobile ? 0 : Math.floor(15000 * quality);
   const flowPositions: number[] = [];
   for (let i = 0; i < FLOW_N; i++) {
     const idx = Math.floor(Math.random() * innerCount) * 3;
@@ -709,23 +712,25 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       innerPts[idx + 2] * 1.04 + rng(-0.01, 0.01) * S,
     );
   }
-  const energyFlow = createShaderParticles(flowPositions, [0.68, 0.96, 1.0], 2.5, {
-    colorVariance: 0.1,
-    vertexShader: FLOW_VERTEX,
-    fragmentShader: FLOW_FRAGMENT,
-  });
-  // Store base positions for animation
   const flowBasePos = new Float32Array(flowPositions);
   const flowPhase = new Float32Array(FLOW_N);
   const flowSpeed = new Float32Array(FLOW_N);
-  for (let i = 0; i < FLOW_N; i++) {
-    flowPhase[i] = Math.random();
-    flowSpeed[i] = 0.3 + Math.random() * 0.5;
+  let energyFlow: ReturnType<typeof createShaderParticles> | null = null;
+  if (!isMobile) {
+    energyFlow = createShaderParticles(flowPositions, [0.68, 0.96, 1.0], 2.5, {
+      colorVariance: 0.1,
+      vertexShader: FLOW_VERTEX,
+      fragmentShader: FLOW_FRAGMENT,
+    });
+    for (let i = 0; i < FLOW_N; i++) {
+      flowPhase[i] = Math.random();
+      flowSpeed[i] = 0.3 + Math.random() * 0.5;
+    }
+    group.add(energyFlow.points);
   }
-  group.add(energyFlow.points);
 
   // --- LAYER c) Holographic interference --- purple/magenta
-  const HOLO_N = Math.floor(10000 * quality);
+  const HOLO_N = isMobile ? 0 : Math.floor(10000 * quality);
   const interferePts: number[] = [];
   for (let i = 0; i < HOLO_N; i++) {
     const idx = Math.floor(Math.random() * innerCount) * 3;
@@ -736,13 +741,16 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       innerPts[idx + 2] * scale + rng(-0.015, 0.015) * S,
     );
   }
-  const interference = createShaderParticles(interferePts, [0.69, 0.42, 1.0], 2.0, { colorVariance: 0.15 });
-  group.add(interference.points);
+  let interference: ReturnType<typeof createShaderParticles> | null = null;
+  if (!isMobile) {
+    interference = createShaderParticles(interferePts, [0.69, 0.42, 1.0], 2.0, { colorVariance: 0.15 });
+    group.add(interference.points);
+  }
 
-  // --- LAYER d) Data streams --- vertical flowing
+  // --- LAYER d) Data streams --- vertical flowing (desktop only)
   const dataStreamPts: number[] = [];
-  const DATA_STREAM_N = Math.floor(5000 * quality);
-  const streamColumns = isMobile ? 12 : 30;
+  const DATA_STREAM_N = isMobile ? 0 : Math.floor(5000 * quality);
+  const streamColumns = isMobile ? 0 : 30;
   for (let col = 0; col < streamColumns; col++) {
     const baseIdx = Math.floor(Math.random() * innerCount) * 3;
     const baseX = innerPts[baseIdx];
@@ -756,34 +764,46 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       );
     }
   }
-  const dataStreams = createShaderParticles(dataStreamPts, [0.3, 0.9, 0.6], 1.5, {
-    colorVariance: 0.15,
-    vertexShader: FLOW_VERTEX,
-    fragmentShader: FLOW_FRAGMENT,
-  });
   const dataStreamBase = new Float32Array(dataStreamPts);
   const dataStreamPhase = new Float32Array(DATA_STREAM_N);
   const dataStreamSpeed = new Float32Array(DATA_STREAM_N);
-  for (let i = 0; i < DATA_STREAM_N; i++) {
-    dataStreamPhase[i] = Math.random();
-    dataStreamSpeed[i] = 0.5 + Math.random() * 1.0;
+  let dataStreams: ReturnType<typeof createShaderParticles> | null = null;
+  if (!isMobile) {
+    dataStreams = createShaderParticles(dataStreamPts, [0.3, 0.9, 0.6], 1.5, {
+      colorVariance: 0.15,
+      vertexShader: FLOW_VERTEX,
+      fragmentShader: FLOW_FRAGMENT,
+    });
+    for (let i = 0; i < DATA_STREAM_N; i++) {
+      dataStreamPhase[i] = Math.random();
+      dataStreamSpeed[i] = 0.5 + Math.random() * 1.0;
+    }
+    group.add(dataStreams.points);
   }
-  group.add(dataStreams.points);
 
-  // --- LAYER e) Outer aura (5k particles) --- large, faint, atmospheric
-  const aura = createShaderParticles(outerPts, [0.18, 0.56, 0.78], 8.0, { colorVariance: 0.05 });
-  group.add(aura.points);
+  // --- LAYER e) Outer aura --- large, faint, atmospheric (desktop only)
+  let aura: ReturnType<typeof createShaderParticles> | null = null;
+  if (!isMobile) {
+    aura = createShaderParticles(outerPts, [0.18, 0.56, 0.78], 8.0, { colorVariance: 0.05 });
+    group.add(aura.points);
+  }
 
-  // --- Skeleton / neural lines ---
-  const neural = createShaderParticles(nervePts, [0.75, 0.91, 1.0], 1.4, { colorVariance: 0.04 });
-  group.add(neural.points);
+  // --- Skeleton / neural lines (desktop only) ---
+  let neural: ReturnType<typeof createShaderParticles> | null = null;
+  if (!isMobile) {
+    neural = createShaderParticles(nervePts, [0.75, 0.91, 1.0], 1.4, { colorVariance: 0.04 });
+    group.add(neural.points);
+  }
 
-  // --- Energy veins (gold) ---
-  const veins = createShaderParticles(veinPts, [1.0, 0.76, 0.3], 2.8, { colorVariance: 0.08 });
-  group.add(veins.points);
+  // --- Energy veins (desktop only) ---
+  let veins: ReturnType<typeof createShaderParticles> | null = null;
+  if (!isMobile) {
+    veins = createShaderParticles(veinPts, [1.0, 0.76, 0.3], 2.8, { colorVariance: 0.08 });
+    group.add(veins.points);
+  }
 
   // All shader layers for uniform updating
-  const allShaderLayers = [coreShell, midVolume, energyFlow, interference, dataStreams, aura, neural, veins];
+  const allShaderLayers = [coreShell, midVolume, energyFlow, interference, dataStreams, aura, neural, veins].filter((l): l is NonNullable<typeof l> => l !== null);
 
   // ============================================================
   // EYE SYSTEM — glowing rings with animated iris
@@ -1391,7 +1411,6 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     drift.y += (drift.ty - drift.y) * 0.01;
     drift.z += (drift.tz - drift.z) * 0.01;
 
-    // Noise-based idle sway
     const swayX = noise1D(time * 0.13) * 0.25 + noise1D(time * 0.31) * 0.08;
     const swayY = noise1D(time * 0.19 + 100) * 0.12 + noise1D(time * 0.43 + 100) * 0.05;
     const swayZ = noise1D(time * 0.16 + 200) * 0.15;
@@ -1406,14 +1425,11 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       glitchStrength = 0.5 + Math.random() * 0.5;
       nextGlitchAt = glitchTimer + 2 + Math.random() * 6;
     }
-    glitchStrength *= 0.92; // decay
+    glitchStrength *= 0.92;
     if (glitchStrength < 0.01) glitchStrength = 0;
 
-    // ---- Scan line sweep ----
     const scanRange = (Y.crown - Y.sole) * S;
     const scanYRaw = cy(Y.sole) + ((time * 0.5 * S) % scanRange);
-    scanLine.position.y = scanYRaw;
-    scanLineMat.opacity = 0.3 + amp * 0.4 + Math.sin(time * 8) * 0.1;
 
     // ---- Update all shader uniforms ----
     for (const layer of allShaderLayers) {
@@ -1423,184 +1439,169 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       layer.mat.uniforms.uGlitchStrength.value = glitchStrength;
     }
 
-    // Grid + cone uniforms
-    gridMat.uniforms.uTime.value = time;
-    gridMat.uniforms.uEnergy.value = amp;
-    coneMat.uniforms.uTime.value = time;
-    coneMat.uniforms.uEnergy.value = amp;
+    // ---- Desktop-only animations ----
+    if (!isMobile) {
+      scanLine.position.y = scanYRaw;
+      scanLineMat.opacity = 0.3 + amp * 0.4 + Math.sin(time * 8) * 0.1;
 
-    // ---- Energy flow animation ----
-    const flowPos = energyFlow.geo.attributes.position as THREE.BufferAttribute;
-    for (let i = 0; i < FLOW_N; i++) {
-      flowPhase[i] = (flowPhase[i] + flowSpeed[i] * 0.0016 * (1 + amp * 1.5)) % 1;
-      const rise = flowPhase[i] * 0.45 * S;
-      const fade = Math.sin(flowPhase[i] * PI);
-      const sway2 = Math.sin(time * 1.3 + i * 0.1) * 0.012 * S * fade;
-      flowPos.setXYZ(i,
-        flowBasePos[i * 3] + sway2,
-        flowBasePos[i * 3 + 1] + rise,
-        flowBasePos[i * 3 + 2] + Math.cos(time * 1.1 + i * 0.1) * 0.01 * S * fade,
-      );
-    }
-    flowPos.needsUpdate = true;
+      gridMat.uniforms.uTime.value = time;
+      gridMat.uniforms.uEnergy.value = amp;
+      coneMat.uniforms.uTime.value = time;
+      coneMat.uniforms.uEnergy.value = amp;
 
-    // ---- Data stream animation ----
-    const dsPos = dataStreams.geo.attributes.position as THREE.BufferAttribute;
-    for (let i = 0; i < DATA_STREAM_N; i++) {
-      dataStreamPhase[i] = (dataStreamPhase[i] + dataStreamSpeed[i] * 0.002 * (1 + amp)) % 1;
-      const rise = dataStreamPhase[i] * 0.6 * S;
-      dsPos.setXYZ(i,
-        dataStreamBase[i * 3] + Math.sin(time * 2 + i) * 0.005 * S,
-        dataStreamBase[i * 3 + 1] + rise,
-        dataStreamBase[i * 3 + 2],
-      );
-    }
-    dsPos.needsUpdate = true;
-
-    // ---- DNA helix rotation + color shift ----
-    helixGroup.rotation.y = time * 0.15;
-    const helixHue = Math.sin(time * 0.3) * 0.5 + 0.5; // 0-1
-    helixMatA.color.setHSL(0.52 + helixHue * 0.1, 0.8, 0.6);
-    helixMatB.color.setHSL(0.12 + helixHue * 0.05, 0.85, 0.55);
-    helixMatA.opacity = 0.25 + amp * 0.2 + Math.sin(time * 1.5) * 0.05;
-    helixMatB.opacity = 0.2 + amp * 0.18 + Math.sin(time * 1.5 + 1) * 0.05;
-
-    // ---- Heart / Core Reactor ----
-    const hp = 1 + Math.sin(time * 2.5) * 0.15 + amp * 0.4;
-    heartCore.scale.setScalar(hp);
-    heartCoreMat.opacity = 0.35 + amp * 0.5 + Math.sin(time * 3) * 0.1;
-    heartCore.rotation.y = time * 0.6;
-
-    for (let i = 0; i < cageFrames.length; i++) {
-      const cage = cageFrames[i];
-      cage.scale.setScalar(hp * (1 + i * 0.15));
-      cage.rotation.y = time * (0.4 - i * 0.15) * (i % 2 === 0 ? 1 : -1);
-      cage.rotation.x = time * (0.2 + i * 0.05);
-      cage.rotation.z = Math.sin(time * 0.3 + i) * 0.2;
-      cageFrameMats[i].opacity = (0.2 - i * 0.04) + amp * 0.2;
-    }
-
-    heartGlowMat.opacity = 0.2 + amp * 0.3 + Math.sin(time * 2.8) * 0.08;
-    heartGlow.scale.setScalar((0.5 + amp * 0.3 + Math.sin(time * 2.5) * 0.08) * S);
-
-    // Heart tendrils animation
-    for (let t = 0; t < tendrilCount; t++) {
-      const td = tendrilLines[t];
-      td.mat.opacity = 0.15 + amp * 0.25 + Math.sin(time * 2 + t) * 0.1;
-      const pos = td.geo.attributes.position as THREE.BufferAttribute;
-      const angle = (t / tendrilCount) * PI2 + time * 0.3;
-      for (let j = 0; j <= 20; j++) {
-        const frac = j / 20;
-        const r = frac * 0.25 * S * (1 + amp * 0.3);
-        pos.setXYZ(j,
-          Math.cos(angle) * r,
-          heartY + Math.sin(frac * PI * 2 + time * 2 + angle) * 0.04 * S,
-          heartZ + Math.sin(angle) * r,
+      // Energy flow animation
+      const flowPos = energyFlow!.geo.attributes.position as THREE.BufferAttribute;
+      for (let i = 0; i < FLOW_N; i++) {
+        flowPhase[i] = (flowPhase[i] + flowSpeed[i] * 0.0016 * (1 + amp * 1.5)) % 1;
+        const rise = flowPhase[i] * 0.45 * S;
+        const fade = Math.sin(flowPhase[i] * PI);
+        const sway2 = Math.sin(time * 1.3 + i * 0.1) * 0.012 * S * fade;
+        flowPos.setXYZ(i,
+          flowBasePos[i * 3] + sway2,
+          flowBasePos[i * 3 + 1] + rise,
+          flowBasePos[i * 3 + 2] + Math.cos(time * 1.1 + i * 0.1) * 0.01 * S * fade,
         );
       }
-      pos.needsUpdate = true;
-    }
+      flowPos.needsUpdate = true;
 
-    // ---- Eyes ----
-    const eg = 0.6 + amp * 0.35 + Math.sin(time * 2.2) * 0.1;
-    eyeLeft.irisMat.opacity = eg;
-    eyeRight.irisMat.opacity = eg;
-    eyeLeft.pupilMat.opacity = eg * 0.8;
-    eyeRight.pupilMat.opacity = eg * 0.8;
-    eyeLeft.glowMat.opacity = eg * 0.35;
-    eyeRight.glowMat.opacity = eg * 0.35;
-
-    // Eye scanning/tracking — subtle iris rotation
-    eyeLeft.iris.rotation.z = time * 0.5 + Math.sin(time * 0.7) * 0.3;
-    eyeRight.iris.rotation.z = time * 0.5 + Math.sin(time * 0.7 + 0.5) * 0.3;
-
-    // Head tilt/nod
-    const headNod = Math.sin(time * 0.35) * 0.02;
-    const headTilt = Math.sin(time * 0.23) * 0.015;
-    faceWire.rotation.x = headNod;
-    faceWire.rotation.z = headTilt;
-
-    // ---- Wireframe overlays ----
-    faceWireMat.opacity = 0.08 + amp * 0.12 + Math.sin(time * 1.6) * 0.04;
-    chestWireMat.opacity = 0.07 + amp * 0.14 + Math.sin(time * 1.9 + 1) * 0.04;
-    faceWire.rotation.y = Math.sin(time * 0.3) * 0.15;
-    chestWire.rotation.y = time * 0.2;
-    const breath = Math.sin(time * 0.9);
-    const brX = 1 + breath * 0.009 + amp * 0.016;
-    const br = 1 + breath * 0.006 + amp * 0.014;
-    chestWire.scale.set(1.05 * brX, 0.8 * br, 0.7 * brX);
-
-    // ---- Ambient scan lines ----
-    for (let i = 0; i < scanCount; i++) {
-      const sc = ambientScans[i];
-      const newY = cy(Y.sole) + ((sc.baseY - cy(Y.sole) + time * 0.3 * S) % scanRange);
-      sc.mesh.position.y = newY;
-      sc.mat.opacity = 0.035 + amp * 0.05;
-    }
-
-    // ---- Ribbons ----
-    for (const rb of ribbons) {
-      const pos = rb.geo.attributes.position as THREE.BufferAttribute;
-      for (let i = 0; i <= ribbonSegs; i++) {
-        const t2 = i / ribbonSegs;
-        pos.setX(i, rb.bx[i] + Math.sin(time * 1.6 + t2 * 5) * 0.07 * S * (1 + amp * 2));
-        pos.setY(i, rb.by[i] + Math.sin(time * 1.2 + t2 * 4) * 0.04 * S * (1 + amp));
-        pos.setZ(i, rb.bz[i] + Math.cos(time * 1.4 + t2 * 5) * 0.05 * S * (1 + amp));
+      // Data stream animation
+      const dsPos = dataStreams!.geo.attributes.position as THREE.BufferAttribute;
+      for (let i = 0; i < DATA_STREAM_N; i++) {
+        dataStreamPhase[i] = (dataStreamPhase[i] + dataStreamSpeed[i] * 0.002 * (1 + amp)) % 1;
+        const rise = dataStreamPhase[i] * 0.6 * S;
+        dsPos.setXYZ(i,
+          dataStreamBase[i * 3] + Math.sin(time * 2 + i) * 0.005 * S,
+          dataStreamBase[i * 3 + 1] + rise,
+          dataStreamBase[i * 3 + 2],
+        );
       }
-      pos.needsUpdate = true;
-      rb.mat.opacity = 0.2 + amp * 0.35;
-    }
+      dsPos.needsUpdate = true;
 
-    // ---- Base rings ----
-    for (let i = 0; i < baseRings.length; i++) {
-      baseRings[i].rotation.z = time * (0.05 + i * 0.025) * (i % 2 === 0 ? 1 : -1);
-      baseRingMats[i].opacity = (0.3 - i * 0.04) + amp * 0.15;
-    }
+      // DNA helix
+      helixGroup.rotation.y = time * 0.15;
+      const helixHue = Math.sin(time * 0.3) * 0.5 + 0.5;
+      helixMatA.color.setHSL(0.52 + helixHue * 0.1, 0.8, 0.6);
+      helixMatB.color.setHSL(0.12 + helixHue * 0.05, 0.85, 0.55);
+      helixMatA.opacity = 0.25 + amp * 0.2 + Math.sin(time * 1.5) * 0.05;
+      helixMatB.opacity = 0.2 + amp * 0.18 + Math.sin(time * 1.5 + 1) * 0.05;
 
-    // Symbol ring rotation
-    symbolRing.rotation.z = time * 0.08;
-    for (let i = 0; i < symbolMarkers.length; i++) {
-      const a = (i / markerCount) * PI2 + time * 0.08;
-      symbolMarkers[i].position.set(
-        Math.cos(a) * 2.3 * S,
-        cy(Y.sole) + 0.05,
-        Math.sin(a) * 2.3 * S,
-      );
-      symbolMarkers[i].lookAt(0, cy(Y.sole) + 0.05, 0);
-    }
+      // Heart / Core Reactor
+      const hp = 1 + Math.sin(time * 2.5) * 0.15 + amp * 0.4;
+      heartCore.scale.setScalar(hp);
+      heartCoreMat.opacity = 0.35 + amp * 0.5 + Math.sin(time * 3) * 0.1;
+      heartCore.rotation.y = time * 0.6;
 
-    // ---- Halos ----
-    haloMat.opacity = 0.08 + amp * 0.15 + Math.sin(time * 1.1) * 0.02;
-    halo.scale.setScalar((2.5 + amp * 0.5) * S);
-    halo2Mat.opacity = 0.04 + amp * 0.06;
-    halo2.scale.setScalar((3.5 + amp * 0.4) * S);
+      for (let i = 0; i < cageFrames.length; i++) {
+        const cage = cageFrames[i];
+        cage.scale.setScalar(hp * (1 + i * 0.15));
+        cage.rotation.y = time * (0.4 - i * 0.15) * (i % 2 === 0 ? 1 : -1);
+        cage.rotation.x = time * (0.2 + i * 0.05);
+        cage.rotation.z = Math.sin(time * 0.3 + i) * 0.2;
+        cageFrameMats[i].opacity = (0.2 - i * 0.04) + amp * 0.2;
+      }
 
-    // ---- Orbiting nodes ----
-    const sm = 1 + amp * 3.5;
-    for (let i = 0; i < ORBIT_N; i++) {
-      const nd = orbitNodes[i];
-      const d = nd.orbit;
-      d.a += d.spd * dt * sm;
-      const rr = d.r + Math.sin(time * 0.35 + d.ph) * 0.08 + amp * 0.3 * Math.sin(time * 1.8 + d.ph);
-      const x = Math.cos(d.a) * rr;
-      const z = Math.sin(d.a) * rr;
-      const y = d.yBase + Math.sin(d.a + d.tilt) * 0.5 * S + Math.sin(time * 0.25 + d.ph) * 0.08;
+      heartGlowMat.opacity = 0.2 + amp * 0.3 + Math.sin(time * 2.8) * 0.08;
+      heartGlow.scale.setScalar((0.5 + amp * 0.3 + Math.sin(time * 2.5) * 0.08) * S);
 
-      nd.mesh.position.set(x, y, z);
-      nd.glow.position.set(x, y, z);
-      nd.glow.scale.setScalar(0.3 + amp * 0.12 + Math.sin(time * 1.1 + d.ph) * 0.04);
-      nd.mesh.rotation.y = time * 2;
-      nd.mesh.rotation.x = time * 1.3;
+      for (let t = 0; t < tendrilCount; t++) {
+        const td = tendrilLines[t];
+        td.mat.opacity = 0.15 + amp * 0.25 + Math.sin(time * 2 + t) * 0.1;
+        const pos = td.geo.attributes.position as THREE.BufferAttribute;
+        const angle = (t / tendrilCount) * PI2 + time * 0.3;
+        for (let j = 0; j <= 20; j++) {
+          const frac = j / 20;
+          const r = frac * 0.25 * S * (1 + amp * 0.3);
+          pos.setXYZ(j,
+            Math.cos(angle) * r,
+            heartY + Math.sin(frac * PI * 2 + time * 2 + angle) * 0.04 * S,
+            heartZ + Math.sin(angle) * r,
+          );
+        }
+        pos.needsUpdate = true;
+      }
 
-      // Update connection line
-      const lPos = nd.lineGeo.attributes.position as THREE.BufferAttribute;
-      lPos.setXYZ(0, x, y, z);
-      // Connect to nearest body point (approximate — aim at body center at same height)
-      lPos.setXYZ(1, 0, y, 0);
-      lPos.needsUpdate = true;
-    }
+      // Eyes
+      const eg = 0.6 + amp * 0.35 + Math.sin(time * 2.2) * 0.1;
+      eyeLeft.irisMat.opacity = eg;
+      eyeRight.irisMat.opacity = eg;
+      eyeLeft.pupilMat.opacity = eg * 0.8;
+      eyeRight.pupilMat.opacity = eg * 0.8;
+      eyeLeft.glowMat.opacity = eg * 0.35;
+      eyeRight.glowMat.opacity = eg * 0.35;
+      eyeLeft.iris.rotation.z = time * 0.5 + Math.sin(time * 0.7) * 0.3;
+      eyeRight.iris.rotation.z = time * 0.5 + Math.sin(time * 0.7 + 0.5) * 0.3;
 
-    // ---- Rotation with parallax ----
+      const headNod = Math.sin(time * 0.35) * 0.02;
+      const headTilt = Math.sin(time * 0.23) * 0.015;
+      faceWire.rotation.x = headNod;
+      faceWire.rotation.z = headTilt;
+
+      faceWireMat.opacity = 0.08 + amp * 0.12 + Math.sin(time * 1.6) * 0.04;
+      chestWireMat.opacity = 0.07 + amp * 0.14 + Math.sin(time * 1.9 + 1) * 0.04;
+      faceWire.rotation.y = Math.sin(time * 0.3) * 0.15;
+      chestWire.rotation.y = time * 0.2;
+      const breath = Math.sin(time * 0.9);
+      const brX = 1 + breath * 0.009 + amp * 0.016;
+      const br = 1 + breath * 0.006 + amp * 0.014;
+      chestWire.scale.set(1.05 * brX, 0.8 * br, 0.7 * brX);
+
+      for (let i = 0; i < scanCount; i++) {
+        const sc = ambientScans[i];
+        const newY = cy(Y.sole) + ((sc.baseY - cy(Y.sole) + time * 0.3 * S) % scanRange);
+        sc.mesh.position.y = newY;
+        sc.mat.opacity = 0.035 + amp * 0.05;
+      }
+
+      for (const rb of ribbons) {
+        const pos = rb.geo.attributes.position as THREE.BufferAttribute;
+        for (let i = 0; i <= ribbonSegs; i++) {
+          const t2 = i / ribbonSegs;
+          pos.setX(i, rb.bx[i] + Math.sin(time * 1.6 + t2 * 5) * 0.07 * S * (1 + amp * 2));
+          pos.setY(i, rb.by[i] + Math.sin(time * 1.2 + t2 * 4) * 0.04 * S * (1 + amp));
+          pos.setZ(i, rb.bz[i] + Math.cos(time * 1.4 + t2 * 5) * 0.05 * S * (1 + amp));
+        }
+        pos.needsUpdate = true;
+        rb.mat.opacity = 0.2 + amp * 0.35;
+      }
+
+      for (let i = 0; i < baseRings.length; i++) {
+        baseRings[i].rotation.z = time * (0.05 + i * 0.025) * (i % 2 === 0 ? 1 : -1);
+        baseRingMats[i].opacity = (0.3 - i * 0.04) + amp * 0.15;
+      }
+
+      symbolRing.rotation.z = time * 0.08;
+      for (let i = 0; i < symbolMarkers.length; i++) {
+        const a = (i / markerCount) * PI2 + time * 0.08;
+        symbolMarkers[i].position.set(Math.cos(a) * 2.3 * S, cy(Y.sole) + 0.05, Math.sin(a) * 2.3 * S);
+        symbolMarkers[i].lookAt(0, cy(Y.sole) + 0.05, 0);
+      }
+
+      haloMat.opacity = 0.08 + amp * 0.15 + Math.sin(time * 1.1) * 0.02;
+      halo.scale.setScalar((2.5 + amp * 0.5) * S);
+      halo2Mat.opacity = 0.04 + amp * 0.06;
+      halo2.scale.setScalar((3.5 + amp * 0.4) * S);
+
+      const sm = 1 + amp * 3.5;
+      for (let i = 0; i < ORBIT_N; i++) {
+        const nd = orbitNodes[i];
+        const d = nd.orbit;
+        d.a += d.spd * dt * sm;
+        const rr = d.r + Math.sin(time * 0.35 + d.ph) * 0.08 + amp * 0.3 * Math.sin(time * 1.8 + d.ph);
+        const x = Math.cos(d.a) * rr;
+        const z = Math.sin(d.a) * rr;
+        const y = d.yBase + Math.sin(d.a + d.tilt) * 0.5 * S + Math.sin(time * 0.25 + d.ph) * 0.08;
+        nd.mesh.position.set(x, y, z);
+        nd.glow.position.set(x, y, z);
+        nd.glow.scale.setScalar(0.3 + amp * 0.12 + Math.sin(time * 1.1 + d.ph) * 0.04);
+        nd.mesh.rotation.y = time * 2;
+        nd.mesh.rotation.x = time * 1.3;
+        const lPos = nd.lineGeo.attributes.position as THREE.BufferAttribute;
+        lPos.setXYZ(0, x, y, z);
+        lPos.setXYZ(1, 0, y, 0);
+        lPos.needsUpdate = true;
+      }
+    } // end desktop-only
+
     group.rotation.y = Math.sin(time * 0.1) * 0.1 + time * 0.015;
 
     // ---- Render ----
