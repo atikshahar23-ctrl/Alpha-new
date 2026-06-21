@@ -1,5 +1,6 @@
 import type { AppState, AIProvider } from './state';
 import { upcomingText } from './state';
+import { getBrainContext } from '../brain';
 
 const GEMINI_MODELS = [
   'gemini-2.0-flash',
@@ -49,7 +50,15 @@ When the user asks about a license plate number, installation, earnings from a c
 When user asks "כמה הרווחתי" or about earnings/income, use [[HG_EARNINGS:]]. Example: [[HG_EARNINGS: קובי | ${currentMonth}]] or [[HG_EARNINGS: | ${currentMonth}]] for all contractors.
 When user asks about a specific license/registration number (מספר רישוי, לוחית), use [[HG_SEARCH: the number]].
 When user wants a price quote (הצעת מחיר), use [[HG_QUOTE:]].
-User's calendar: ${upcomingText()}.`;
+User's calendar: ${upcomingText()}.${brainBlock()}`;
+}
+
+// Master Brain context: active module persona + long-term memory.
+function brainBlock(): string {
+  try {
+    const ctx = getBrainContext();
+    return ctx ? `\n\n=== MASTER BRAIN CONTEXT ===\n${ctx}` : '';
+  } catch { return ''; }
 }
 
 // ─── Gemini ───

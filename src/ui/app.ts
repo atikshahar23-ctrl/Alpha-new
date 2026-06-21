@@ -5,6 +5,9 @@ import { askAI, runTags } from '../assistant/gemini';
 import { tryLocalCommand } from '../assistant/local';
 import { VoiceEngine } from '../assistant/voice';
 import { AudioEngine, type AmbientPreset } from '../assistant/audio';
+import { orchestrate, refreshSummary, moduleById, loadMemory, updateProfile } from '../brain';
+import { mountCockpit, type CockpitHandle } from '../modules/cockpit';
+import { runProactive } from '../modules/proactive';
 
 export function mountApp(root: HTMLElement) {
   root.innerHTML = `
@@ -332,6 +335,46 @@ export function mountApp(root: HTMLElement) {
   }
   mountFlowLines(root.querySelector('.app')!);
 
+  // ── Master Brain cockpit (Business / Trading / Creative / Personal) ──
+  let cockpit: CockpitHandle | null = null;
+  try {
+    cockpit = mountCockpit(root.querySelector('.app')!, {
+      ask: (q: string) => { addMsg(q, 'me'); ask(q); },
+      addMsgSys: (m: string) => addMsg(m, 'sys'),
+    });
+  } catch (e) { console.error('cockpit mount failed', e); }
+
+  // Module indicator chip in the top-right cluster.
+  const moduleChip = document.createElement('button');
+  moduleChip.className = 'chip module-chip';
+  moduleChip.id = 'moduleChip';
+  moduleChip.innerHTML = '<span class="mc-dot"></span><span class="mc-label">BRAIN</span>';
+  moduleChip.title = 'Open Master Brain cockpit';
+  moduleChip.onclick = () => cockpit?.open();
+  const topR = root.querySelector('.topR');
+  if (topR) topR.insertBefore(moduleChip, topR.firstChild);
+
+  function updateModuleIndicator(moduleId: string) {
+    const mod = moduleById(moduleId as any);
+    const label = moduleChip.querySelector('.mc-label') as HTMLElement;
+    const dot = moduleChip.querySelector('.mc-dot') as HTMLElement;
+    if (mod) {
+      label.textContent = mod.label.toUpperCase();
+      dot.style.background = `hsl(${mod.hue}, 70%, 55%)`;
+      dot.style.boxShadow = `0 0 8px hsla(${mod.hue}, 70%, 55%, .6)`;
+      moduleChip.classList.add('active');
+    } else {
+      label.textContent = 'BRAIN';
+      dot.style.background = 'var(--gold)';
+      dot.style.boxShadow = '0 0 8px rgba(218,165,32,.5)';
+    }
+  }
+
+  // ── Proactive background alerts (installs, trading thresholds, trends) ──
+  try {
+    runProactive((title: string, body: string) => addMsg(`🔔 ${title} — ${body}`, 'sys'));
+  } catch {}
+
   // AI capability nodes overlay
   {
     const isMob = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 768;
@@ -605,6 +648,15 @@ export function mountApp(root: HTMLElement) {
     if (asking) return;
     asking = true;
     setStatus('thinking');
+    // Master Brain: route intent, activate module, inject long-term memory.
+    try {
+      const r = orchestrate(text);
+      updateModuleIndicator(r.module);
+      if (r.switched && r.module !== 'general') {
+        const mod = moduleById(r.module);
+        if (mod) addMsg(`▸ ${mod.label} module`, 'sys');
+      }
+    } catch {}
     try {
       const reply = await askAI(state, text);
       const clean = runTags(reply, {
@@ -627,6 +679,7 @@ export function mountApp(root: HTMLElement) {
       audio.receive();
       addMsg(clean, 'al');
       voice.speak(clean);
+      try { refreshSummary(state.history); } catch {}
     } catch (err: any) {
       if (voice.wakeOn) setTimeout(() => voice.setWake(true), 500);
       else setStatus('');
@@ -1743,8 +1796,55 @@ export function mountApp(root: HTMLElement) {
   updateAIDisplay();
 
   updateConnIndicators();
+
+  // ── Personalized greeting ──
+  function greetingPrefix(): string {
+    const h = new Date().getHours();
+    return h < 5 ? 'Good night' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+  }
+  function personalGreeting(): string {
+    const nm = loadMemory().profile.name;
+    return nm
+      ? `${greetingPrefix()}, ${nm}. ${state.name} is online — how can I help?`
+      : `${state.name} online. Talk to me or type.`;
+  }
+
+  // ── First-run welcome: ask the user's name so the AI can address them ──
+  function showWelcome() {
+    const ov = document.createElement('div');
+    ov.className = 'welcome-overlay show';
+    ov.innerHTML = `
+      <div class="welcome-card">
+        <div class="welcome-orb">◆</div>
+        <h2 class="welcome-title">${greetingPrefix()} 👋</h2>
+        <p class="welcome-sub">I'm <b>${state.name}</b>, your personal AI. What should I call you?</p>
+        <input class="welcome-input" id="welcomeName" placeholder="Your name / השם שלך" autocomplete="off" />
+        <button class="welcome-go" id="welcomeGo">Let's begin</button>
+        <button class="welcome-skip" id="welcomeSkip">Skip for now</button>
+      </div>`;
+    root.querySelector('.app')!.appendChild(ov);
+    const nameInput = ov.querySelector('#welcomeName') as HTMLInputElement;
+    setTimeout(() => nameInput.focus(), 350);
+    const finish = (name: string) => {
+      const clean = name.trim();
+      if (clean) updateProfile({ name: clean });
+      ov.classList.remove('show');
+      setTimeout(() => ov.remove(), 400);
+      const msg = clean
+        ? `${greetingPrefix()}, ${clean}! Great to meet you. I'm ${state.name} — ask me anything, or open the Brain for your modules.`
+        : personalGreeting();
+      addMsg(msg, 'al');
+      voice.speak(msg);
+    };
+    (ov.querySelector('#welcomeGo') as HTMLElement).onclick = () => finish(nameInput.value);
+    (ov.querySelector('#welcomeSkip') as HTMLElement).onclick = () => finish('');
+    nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') finish(nameInput.value); });
+  }
+
   const puterAvailable = typeof (window as any).puter !== 'undefined';
   const canUseAI = puterAvailable || state.key || state.grokKey || state.openaiKey;
+  const knownName = loadMemory().profile.name;
   if (!canUseAI) openSetup();
-  else addMsg(state.name + ' online. Talk to me or type.', 'al');
+  if (!knownName) showWelcome();
+  else if (canUseAI) addMsg(personalGreeting(), 'al');
 }
