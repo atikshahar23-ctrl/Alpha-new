@@ -287,11 +287,19 @@ export function mountApp(root: HTMLElement) {
         <div class="ar-frame">
           <div class="ar-topbar">
             <span class="ar-topbar-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8V6a2 2 0 012-2h2M4 16v2a2 2 0 002 2h2M16 4h2a2 2 0 012 2v2M16 20h2a2 2 0 002-2v-2"/><circle cx="12" cy="12" r="3"/></svg> AR CAMERA</span>
+            <div class="ar-topbar-tools">
+              <button class="ar-tool-btn" id="arAddBall" title="Add Ball">⚽</button>
+              <button class="ar-tool-btn" id="arAddCube" title="Add Cube">🔲</button>
+              <button class="ar-tool-btn" id="arAddStar" title="Add Star">⭐</button>
+              <button class="ar-tool-btn" id="arAddDiamond" title="Add Diamond">💎</button>
+              <button class="ar-tool-btn" id="arClearObjs" title="Clear All">🗑️</button>
+            </div>
             <button class="ar-close" id="arClose">✕</button>
           </div>
           <div class="ar-viewport" id="arViewport">
             <video id="arVideo" autoplay playsinline></video>
             <canvas id="arCanvas"></canvas>
+            <canvas id="arObjCanvas"></canvas>
             <div class="ar-hud" id="arHud">
               <div class="ar-status" id="arStatus">Initializing camera…</div>
               <div class="ar-hand-indicator" id="arHandIndicator"></div>
@@ -729,14 +737,178 @@ export function mountApp(root: HTMLElement) {
     addMsg(`הצעת מחיר נוצרה עבור ${customer || 'לקוח'}`, 'sys');
   }
 
-  // AR Camera
+  // AR Camera with object placement and hand physics
   let arStream: MediaStream | null = null;
   let arAnimFrame = 0;
+
+  interface ArObj {
+    x: number; y: number; vx: number; vy: number;
+    r: number; type: 'ball' | 'cube' | 'star' | 'diamond';
+    color: string; rotation: number; rotSpd: number;
+    grabbed: boolean;
+  }
+  let arObjects: ArObj[] = [];
+  let arHandPos = { x: -1, y: -1, pinching: false };
+  let arGrabbed: ArObj | null = null;
+  let arObjCtx: CanvasRenderingContext2D | null = null;
+
+  function addArObject(type: ArObj['type']) {
+    const colors = ['#5fe6ff', '#ffc24d', '#ff5d73', '#4dff91', '#b06aff', '#ff9f43'];
+    arObjects.push({
+      x: 0.3 + Math.random() * 0.4,
+      y: 0.15 + Math.random() * 0.3,
+      vx: (Math.random() - 0.5) * 0.003,
+      vy: 0,
+      r: type === 'star' || type === 'diamond' ? 0.035 : 0.04,
+      type,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      rotation: 0,
+      rotSpd: (Math.random() - 0.5) * 0.05,
+      grabbed: false,
+    });
+  }
+
+  function drawArObjects() {
+    if (!arObjCtx) return;
+    const cvs = arObjCtx.canvas;
+    arObjCtx.clearRect(0, 0, cvs.width, cvs.height);
+    const w = cvs.width, h = cvs.height;
+
+    for (const obj of arObjects) {
+      if (!obj.grabbed) {
+        obj.vy += 0.00015;
+        obj.x += obj.vx;
+        obj.y += obj.vy;
+        obj.rotation += obj.rotSpd;
+
+        if (obj.x - obj.r < 0) { obj.x = obj.r; obj.vx = Math.abs(obj.vx) * 0.7; }
+        if (obj.x + obj.r > 1) { obj.x = 1 - obj.r; obj.vx = -Math.abs(obj.vx) * 0.7; }
+        if (obj.y + obj.r > 0.95) { obj.y = 0.95 - obj.r; obj.vy = -Math.abs(obj.vy) * 0.6; obj.vx *= 0.95; }
+        if (obj.y - obj.r < 0) { obj.y = obj.r; obj.vy = Math.abs(obj.vy) * 0.7; }
+      }
+
+      // Hand collision
+      if (arHandPos.x >= 0) {
+        const dx = obj.x - arHandPos.x;
+        const dy = obj.y - arHandPos.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < obj.r + 0.03) {
+          if (arHandPos.pinching && !arGrabbed) {
+            arGrabbed = obj;
+            obj.grabbed = true;
+          }
+          if (!obj.grabbed && dist > 0) {
+            const force = 0.008 / Math.max(dist, 0.01);
+            obj.vx += dx * force;
+            obj.vy += dy * force;
+            obj.rotSpd += (Math.random() - 0.5) * 0.03;
+          }
+        }
+      }
+
+      if (obj.grabbed && arGrabbed === obj) {
+        if (!arHandPos.pinching) {
+          obj.grabbed = false;
+          arGrabbed = null;
+          obj.vx = (Math.random() - 0.5) * 0.005;
+          obj.vy = -0.002;
+        } else {
+          obj.x += (arHandPos.x - obj.x) * 0.3;
+          obj.y += (arHandPos.y - obj.y) * 0.3;
+          obj.vx = 0; obj.vy = 0;
+        }
+      }
+
+      // Object-to-object collision
+      for (const other of arObjects) {
+        if (other === obj) continue;
+        const ddx = obj.x - other.x, ddy = obj.y - other.y;
+        const dd = Math.hypot(ddx, ddy);
+        const minD = obj.r + other.r;
+        if (dd < minD && dd > 0) {
+          const nx = ddx / dd, ny = ddy / dd;
+          const overlap = (minD - dd) * 0.5;
+          obj.x += nx * overlap; obj.y += ny * overlap;
+          other.x -= nx * overlap; other.y -= ny * overlap;
+          const rel = (obj.vx - other.vx) * nx + (obj.vy - other.vy) * ny;
+          if (rel < 0) {
+            obj.vx -= rel * nx * 0.5; obj.vy -= rel * ny * 0.5;
+            other.vx += rel * nx * 0.5; other.vy += rel * ny * 0.5;
+          }
+        }
+      }
+
+      const px = obj.x * w, py = obj.y * h, pr = obj.r * Math.min(w, h);
+      const ctx = arObjCtx;
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.rotate(obj.rotation);
+
+      ctx.shadowColor = obj.color;
+      ctx.shadowBlur = obj.grabbed ? 25 : 12;
+
+      switch (obj.type) {
+        case 'ball': {
+          const grad = ctx.createRadialGradient(-pr * 0.3, -pr * 0.3, pr * 0.1, 0, 0, pr);
+          grad.addColorStop(0, '#fff');
+          grad.addColorStop(0.3, obj.color);
+          grad.addColorStop(1, 'rgba(0,0,0,0.3)');
+          ctx.beginPath(); ctx.arc(0, 0, pr, 0, Math.PI * 2);
+          ctx.fillStyle = grad; ctx.fill();
+          ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 1.5; ctx.stroke();
+          break;
+        }
+        case 'cube': {
+          ctx.fillStyle = obj.color;
+          ctx.globalAlpha = 0.85;
+          ctx.fillRect(-pr, -pr, pr * 2, pr * 2);
+          ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 2;
+          ctx.strokeRect(-pr, -pr, pr * 2, pr * 2);
+          ctx.fillStyle = 'rgba(255,255,255,0.15)';
+          ctx.fillRect(-pr, -pr, pr * 2, pr);
+          ctx.globalAlpha = 1;
+          break;
+        }
+        case 'star': {
+          ctx.fillStyle = obj.color;
+          ctx.beginPath();
+          for (let i = 0; i < 10; i++) {
+            const a = (i * Math.PI * 2) / 10 - Math.PI / 2;
+            const sr = i % 2 === 0 ? pr : pr * 0.45;
+            ctx.lineTo(Math.cos(a) * sr, Math.sin(a) * sr);
+          }
+          ctx.closePath(); ctx.fill();
+          ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 1.5; ctx.stroke();
+          break;
+        }
+        case 'diamond': {
+          ctx.fillStyle = obj.color;
+          ctx.beginPath();
+          ctx.moveTo(0, -pr * 1.2);
+          ctx.lineTo(pr * 0.8, 0);
+          ctx.lineTo(0, pr * 1.2);
+          ctx.lineTo(-pr * 0.8, 0);
+          ctx.closePath(); ctx.fill();
+          ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 1.5; ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(-pr * 0.8, 0); ctx.lineTo(pr * 0.8, 0);
+          ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.stroke();
+          break;
+        }
+      }
+      ctx.restore();
+    }
+
+    arAnimFrame = requestAnimationFrame(drawArObjects);
+  }
+
   function openArCamera() {
     $('arOverlay').classList.add('show');
     const video = $<HTMLVideoElement>('arVideo');
     const canvas = $<HTMLCanvasElement>('arCanvas');
+    const objCanvas = $<HTMLCanvasElement>('arObjCanvas');
     const ctx = canvas.getContext('2d')!;
+    arObjCtx = objCanvas.getContext('2d')!;
     const statusEl = $('arStatus');
     const handIndicator = $('arHandIndicator');
     const buttonsEl = $('arButtons');
@@ -744,7 +916,7 @@ export function mountApp(root: HTMLElement) {
     const arBtns = [
       { label: 'חיפוש רכב', icon: '🔍', action: () => { const q = prompt('מספר רישוי:'); if (q) hgSearchLicense(q); } },
       { label: 'הכנסות', icon: '💰', action: () => hgShowEarnings('', new Date().toISOString().slice(0, 7)) },
-      { label: 'צלם', icon: '📸', action: () => captureArPhoto(video) },
+      { label: 'צלם', icon: '📸', action: () => captureArPhoto() },
       { label: 'סגור', icon: '✕', action: closeArCamera },
     ];
     buttonsEl.innerHTML = '';
@@ -758,6 +930,8 @@ export function mountApp(root: HTMLElement) {
     });
 
     statusEl.textContent = 'מאתחל מצלמה…';
+    statusEl.style.opacity = '1';
+
     navigator.mediaDevices.getUserMedia({
       video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
     }).then(stream => {
@@ -766,26 +940,44 @@ export function mountApp(root: HTMLElement) {
       video.onloadedmetadata = () => {
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
+        objCanvas.width = video.videoWidth;
+        objCanvas.height = video.videoHeight;
         statusEl.textContent = 'מצלמה פעילה';
         setTimeout(() => { statusEl.style.opacity = '0'; }, 2000);
+        drawArObjects();
         startHandTracking(video, canvas, ctx, handIndicator, arBtns);
       };
     }).catch(() => {
       statusEl.textContent = 'שגיאה: לא ניתן לגשת למצלמה';
     });
   }
+
   function closeArCamera() {
     $('arOverlay').classList.remove('show');
     if (arStream) { arStream.getTracks().forEach(t => t.stop()); arStream = null; }
     cancelAnimationFrame(arAnimFrame);
+    arObjects = [];
+    arGrabbed = null;
+    arObjCtx = null;
     $('arStatus').style.opacity = '1';
   }
   $('arClose').onclick = closeArCamera;
+  $('arAddBall').onclick = () => addArObject('ball');
+  $('arAddCube').onclick = () => addArObject('cube');
+  $('arAddStar').onclick = () => addArObject('star');
+  $('arAddDiamond').onclick = () => addArObject('diamond');
+  $('arClearObjs').onclick = () => { arObjects = []; arGrabbed = null; };
 
-  function captureArPhoto(video: HTMLVideoElement) {
+  function captureArPhoto() {
+    const video = $<HTMLVideoElement>('arVideo');
     const c = document.createElement('canvas');
     c.width = video.videoWidth; c.height = video.videoHeight;
-    c.getContext('2d')!.drawImage(video, 0, 0);
+    const cx = c.getContext('2d')!;
+    cx.drawImage(video, 0, 0);
+    const objC = $<HTMLCanvasElement>('arObjCanvas');
+    cx.drawImage(objC, 0, 0);
+    const handC = $<HTMLCanvasElement>('arCanvas');
+    cx.drawImage(handC, 0, 0);
     const link = document.createElement('a');
     link.download = `AR_capture_${Date.now()}.png`;
     link.href = c.toDataURL('image/png');
@@ -796,7 +988,6 @@ export function mountApp(root: HTMLElement) {
     video: HTMLVideoElement, canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D,
     handIndicator: HTMLElement, arBtns: { label: string; action: () => void }[]
   ) {
-    let handX = -1, handY = -1;
     let lastTapTime = 0;
     const pointerEl = document.createElement('div');
     pointerEl.className = 'ar-pointer';
@@ -823,71 +1014,95 @@ export function mountApp(root: HTMLElement) {
         return;
       }
       const hands = new Hands({ locateFile: (f: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/${f}` });
-      hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.6 });
+      hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.6 });
 
       hands.onResults((results: any) => {
         c.clearRect(0, 0, cvs.width, cvs.height);
         if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-          const landmarks = results.multiHandLandmarks[0];
-          indicator.textContent = '✋ יד מזוהה';
-          indicator.style.color = '#5fe6ff';
+          for (let h = 0; h < results.multiHandLandmarks.length; h++) {
+            const landmarks = results.multiHandLandmarks[h];
+            const isRight = h === 0;
+            indicator.textContent = results.multiHandLandmarks.length > 1 ? '✋✋ שתי ידיים' : '✋ יד מזוהה';
+            indicator.style.color = '#5fe6ff';
 
-          c.strokeStyle = 'rgba(95,230,255,0.6)';
-          c.lineWidth = 2;
-          const connections = [
-            [0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],
-            [5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],
-            [13,17],[17,18],[18,19],[19,20],[0,17]
-          ];
-          for (const [a, b] of connections) {
-            c.beginPath();
-            c.moveTo(landmarks[a].x * cvs.width, landmarks[a].y * cvs.height);
-            c.lineTo(landmarks[b].x * cvs.width, landmarks[b].y * cvs.height);
-            c.stroke();
-          }
-          for (let i = 0; i < landmarks.length; i++) {
-            const lm = landmarks[i];
-            c.beginPath();
-            c.arc(lm.x * cvs.width, lm.y * cvs.height, i === 8 ? 8 : 4, 0, Math.PI * 2);
-            c.fillStyle = i === 8 ? 'rgba(255,194,77,0.9)' : 'rgba(95,230,255,0.7)';
-            c.fill();
-          }
+            c.strokeStyle = isRight ? 'rgba(95,230,255,0.6)' : 'rgba(176,106,255,0.6)';
+            c.lineWidth = 2;
+            const connections = [
+              [0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],
+              [5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],
+              [13,17],[17,18],[18,19],[19,20],[0,17]
+            ];
+            for (const [a, b] of connections) {
+              c.beginPath();
+              c.moveTo(landmarks[a].x * cvs.width, landmarks[a].y * cvs.height);
+              c.lineTo(landmarks[b].x * cvs.width, landmarks[b].y * cvs.height);
+              c.stroke();
+            }
+            for (let i = 0; i < landmarks.length; i++) {
+              const lm = landmarks[i];
+              c.beginPath();
+              c.arc(lm.x * cvs.width, lm.y * cvs.height, i === 8 || i === 4 ? 8 : 4, 0, Math.PI * 2);
+              c.fillStyle = i === 8 ? 'rgba(255,194,77,0.9)' : i === 4 ? 'rgba(255,93,115,0.9)' : (isRight ? 'rgba(95,230,255,0.7)' : 'rgba(176,106,255,0.7)');
+              c.fill();
+            }
 
-          const indexTip = landmarks[8];
-          const thumbTip = landmarks[4];
-          const viewRect = $('arViewport').getBoundingClientRect();
-          handX = indexTip.x * viewRect.width;
-          handY = indexTip.y * viewRect.height;
-          ptr.style.left = handX + 'px';
-          ptr.style.top = handY + 'px';
-          ptr.style.opacity = '1';
+            if (h === 0) {
+              const indexTip = landmarks[8];
+              const thumbTip = landmarks[4];
+              const viewRect = $('arViewport').getBoundingClientRect();
+              const hx = indexTip.x;
+              const hy = indexTip.y;
+              ptr.style.left = (hx * viewRect.width) + 'px';
+              ptr.style.top = (hy * viewRect.height) + 'px';
+              ptr.style.opacity = '1';
 
-          const pinchDist = Math.hypot(indexTip.x - thumbTip.x, indexTip.y - thumbTip.y);
-          if (pinchDist < 0.05) {
-            ptr.classList.add('pinch');
-            const now = Date.now();
-            if (now - lastTapTime > 600) {
-              lastTapTime = now;
-              const arBtnEls = $('arButtons').querySelectorAll<HTMLButtonElement>('.ar-btn');
-              for (let i = 0; i < arBtnEls.length; i++) {
-                const rect = arBtnEls[i].getBoundingClientRect();
-                const relX = handX + viewRect.left;
-                const relY = handY + viewRect.top;
-                if (relX >= rect.left && relX <= rect.right && relY >= rect.top && relY <= rect.bottom) {
-                  arBtnEls[i].classList.add('ar-btn-active');
-                  setTimeout(() => arBtnEls[i].classList.remove('ar-btn-active'), 300);
-                  btns[i].action();
-                  break;
+              const pinchDist = Math.hypot(indexTip.x - thumbTip.x, indexTip.y - thumbTip.y);
+              const pinching = pinchDist < 0.05;
+              arHandPos = { x: hx, y: hy, pinching };
+
+              if (pinching) {
+                ptr.classList.add('pinch');
+                const now = Date.now();
+                if (now - lastTapTime > 600 && !arGrabbed) {
+                  lastTapTime = now;
+                  const arBtnEls = $('arButtons').querySelectorAll<HTMLButtonElement>('.ar-btn');
+                  for (let i = 0; i < arBtnEls.length; i++) {
+                    const rect = arBtnEls[i].getBoundingClientRect();
+                    const relX = hx * viewRect.width + viewRect.left;
+                    const relY = hy * viewRect.height + viewRect.top;
+                    if (relX >= rect.left && relX <= rect.right && relY >= rect.top && relY <= rect.bottom) {
+                      arBtnEls[i].classList.add('ar-btn-active');
+                      setTimeout(() => arBtnEls[i].classList.remove('ar-btn-active'), 300);
+                      btns[i].action();
+                      break;
+                    }
+                  }
+                }
+              } else {
+                ptr.classList.remove('pinch');
+              }
+            }
+
+            // Second hand also pushes objects
+            if (h === 1) {
+              const idx2 = landmarks[8];
+              for (const obj of arObjects) {
+                const dx = obj.x - idx2.x, dy = obj.y - idx2.y;
+                const dist = Math.hypot(dx, dy);
+                if (dist < obj.r + 0.03 && dist > 0) {
+                  const force = 0.008 / Math.max(dist, 0.01);
+                  obj.vx += dx * force;
+                  obj.vy += dy * force;
                 }
               }
             }
-          } else {
-            ptr.classList.remove('pinch');
           }
         } else {
           indicator.textContent = '👋 הראה יד למצלמה';
           indicator.style.color = 'var(--dim)';
           ptr.style.opacity = '0';
+          arHandPos = { x: -1, y: -1, pinching: false };
+          if (arGrabbed) { arGrabbed.grabbed = false; arGrabbed = null; }
         }
       });
 

@@ -63,7 +63,7 @@ const GRID_FRAGMENT = /* glsl */`
     color = mix(color, vec3(1.0, 0.75, 0.3), radialLine * 0.3);
 
     float alpha = combined * smoothstep(1.0, 0.6, dist);
-    gl_FragColor = vec4(color, alpha * 0.4);
+    gl_FragColor = vec4(color, alpha * 0.15);
   }
 `;
 
@@ -1160,7 +1160,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   // ────────────────────────────────────────────
   // ATMOSPHERIC GLOW — shader-based volumetric rim
   // ────────────────────────────────────────────
-  const atmosGeo = new THREE.SphereGeometry(2.2, 32, 32);
+  const atmosGeo = new THREE.SphereGeometry(1.8, 32, 32);
   const atmosMat = new THREE.ShaderMaterial({
     uniforms: { uTime: { value: 0 }, uEnergy: { value: 0 } },
     vertexShader: ATMOSPHERE_VERT,
@@ -1206,7 +1206,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     fragmentShader: MOBILE_PART_FRAG,
     transparent: true,
     depthWrite: false,
-    blending: THREE.AdditiveBlending,
+    blending: THREE.NormalBlending,
   });
   const surfaceParticles = new THREE.Points(spGeo, spMat);
   group.add(surfaceParticles);
@@ -1361,26 +1361,26 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     core.rotation.x = time * 0.2;
     const cp = 0.8 + Math.sin(time * 2.2) * 0.18 + amp * 0.35;
     core.scale.setScalar(0.45 * cp);
-    coreMat.opacity = 0.15 + Math.sin(time * 1.8) * 0.05 + amp * 0.1;
+    coreMat.opacity = 0.08 + Math.sin(time * 1.8) * 0.03 + amp * 0.05;
 
     // Wireframe cages
     for (let i = 0; i < wireframes.length; i++) {
       const wf = wireframes[i];
       wf.mesh.rotation.y = time * (0.08 - i * 0.025) * wf.dir;
       wf.mesh.rotation.z = Math.sin(time * 0.1 + i) * 0.1;
-      wf.mat.opacity = wOps[i] + amp * 0.03 + Math.sin(time * 0.8 + i) * 0.02;
+      wf.mat.opacity = wOps[i] * 0.6 + amp * 0.015 + Math.sin(time * 0.8 + i) * 0.01;
     }
 
     // Rings rotation
     rings[0].mesh.rotation.z = 0.15 + time * 0.07;
-    rings[0].mat.opacity = 0.75 + Math.sin(time * 0.6) * 0.1 + amp * 0.1;
+    rings[0].mat.opacity = 0.5 + Math.sin(time * 0.6) * 0.06 + amp * 0.06;
     rings[1].mesh.rotation.z = -0.3 - time * 0.1;
-    rings[1].mat.opacity = 0.35 + Math.sin(time * 0.5) * 0.06;
+    rings[1].mat.opacity = 0.2 + Math.sin(time * 0.5) * 0.03;
     rings[2].mesh.rotation.z = 0.5 + time * 0.04;
     rings[2].mesh.rotation.x = PI * 0.62 + Math.sin(time * 0.15) * 0.08;
-    rings[2].mat.opacity = 0.2 + Math.sin(time * 0.45) * 0.05 + amp * 0.08;
+    rings[2].mat.opacity = 0.12 + Math.sin(time * 0.45) * 0.03 + amp * 0.04;
     rings[3].mesh.rotation.z = -0.8 + time * 0.12;
-    rings[3].mat.opacity = 0.12 + Math.sin(time * 0.55) * 0.04;
+    rings[3].mat.opacity = 0.06 + Math.sin(time * 0.55) * 0.02;
 
     // Pulse rings
     for (let i = 0; i < PULSE_N; i++) {
@@ -1388,17 +1388,17 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       const t = ((time * 0.25 + pr.phase) % 1);
       const scale = 2.0 + t * 6.0;
       pr.mesh.scale.set(scale, scale, 1);
-      pr.mat.uniforms.uOpacity.value = (1 - t) * 0.12 * (0.5 + amp);
+      pr.mat.uniforms.uOpacity.value = (1 - t) * 0.06 * (0.5 + amp);
     }
 
     // Scan plane
     scanPlane.position.y = Math.sin(time * 0.4) * 3.0 * 0.5;
-    scanMat.opacity = 0.2 + amp * 0.25 + Math.sin(time * 2.5) * 0.08;
+    scanMat.opacity = 0.1 + amp * 0.12 + Math.sin(time * 2.5) * 0.04;
 
     // Data streams
     for (let i = 0; i < STREAM_N; i++) {
       const wave = Math.sin(time * 1.2 + i * 0.6) * 0.5 + 0.5;
-      streams[i].mat.opacity = 0.02 + wave * 0.06 + amp * 0.03;
+      streams[i].mat.opacity = 0.01 + wave * 0.03 + amp * 0.015;
     }
 
     // Glow
@@ -1438,7 +1438,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       nodeMeshes[i].rotation.y = time * 1.5;
       nodeMeshes[i].rotation.x = time * 1.0;
       nodeGlows[i].position.set(nx, ny, nz);
-      nodeGlows[i].scale.setScalar(0.28 + Math.sin(time * 1.0 + i) * 0.06 + amp * 0.05);
+      nodeGlows[i].scale.setScalar(0.18 + Math.sin(time * 1.0 + i) * 0.04 + amp * 0.03);
       const lp = nodeLines[i].geo.attributes.position as THREE.BufferAttribute;
       lp.setXYZ(0, 0, 0, 0);
       lp.setXYZ(1, nx, ny, nz);
@@ -1448,13 +1448,13 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     // Base rings
     for (let i = 0; i < baseRings.length; i++) {
       baseRings[i].mesh.rotation.z = time * (0.03 + i * 0.015) * (i % 2 === 0 ? 1 : -1);
-      baseRings[i].mat.opacity = (0.18 - i * 0.025) + amp * 0.08;
+      baseRings[i].mat.opacity = (0.09 - i * 0.0125) + amp * 0.04;
     }
 
     // Helix
     helixGroup.rotation.y = time * 0.1;
-    helixMatA.opacity = 0.15 + amp * 0.12 + Math.sin(time * 1.2) * 0.04;
-    helixMatB.opacity = 0.1 + amp * 0.1 + Math.sin(time * 1.2 + 1) * 0.03;
+    helixMatA.opacity = 0.09 + amp * 0.07 + Math.sin(time * 1.2) * 0.024;
+    helixMatB.opacity = 0.06 + amp * 0.06 + Math.sin(time * 1.2 + 1) * 0.018;
 
     // Particles
     const pp = pGeo.attributes.position as THREE.BufferAttribute;

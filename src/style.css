@@ -1210,6 +1210,25 @@ body::after {
   font-size: 12px; font-weight: 600; letter-spacing: 1.5px;
   color: var(--cyan);
 }
+.ar-topbar-tools {
+  display: flex; gap: 6px; align-items: center;
+}
+.ar-tool-btn {
+  background: rgba(95,230,255,.08); border: 1px solid rgba(95,230,255,.2);
+  color: var(--ink); font-size: 18px; cursor: pointer;
+  width: 38px; height: 38px; border-radius: 10px;
+  display: grid; place-items: center; transition: .2s;
+}
+.ar-tool-btn:hover {
+  background: rgba(95,230,255,.2); border-color: var(--cyan);
+  transform: scale(1.1);
+  box-shadow: 0 0 12px rgba(95,230,255,.3);
+}
+#arObjCanvas {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  pointer-events: none; z-index: 1;
+}
 .ar-close {
   background: none; border: 1px solid rgba(255,255,255,.15);
   color: var(--ink); font-size: 16px; cursor: pointer;
@@ -1287,4 +1306,5 @@ body::after {
   .hg-close { min-width: 40px; min-height: 40px; }
   .ar-close { min-width: 40px; min-height: 40px; }
   .ar-btn { min-width: 60px; padding: 10px 14px; }
+  .ar-tool-btn { min-width: 42px; min-height: 42px; }
 }
