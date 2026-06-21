@@ -102,7 +102,7 @@ export function mountApp(root: HTMLElement) {
             <span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
             <span class="dl">Search</span>
           </button>
-          <button class="dock-item" data-q="Open my calendar" id="calBtn">
+          <button class="dock-item" id="calBtn">
             <span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
             <span class="dl">Calendar</span>
             <span class="cal-badge" id="calBadge"></span>
@@ -565,7 +565,7 @@ export function mountApp(root: HTMLElement) {
       if (!items.length) html += '<div style="color:var(--dim)">No results found.</div>';
       for (const it of items)
         html += `<a href="https://en.wikipedia.org/?curid=${it.pageid}" target="_blank" style="display:block;color:var(--ink);padding:14px;background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:12px;margin-bottom:8px;text-decoration:none;transition:.2s"><b>${it.title}</b><br><span style="color:var(--dim);font-size:13px">${it.snippet}…</span></a>`;
-      html += `<a href="https://www.google.com/search?q=${encodeURIComponent(q)}" target="_blank" style="display:inline-block;margin-top:8px;color:var(--cyan);text-decoration:none;padding:8px 16px;border:1px solid rgba(95,230,255,.2);border-radius:8px">Continue on Google ↗</a></div>`;
+      html += `<a href="https://www.google.com/search?q=${encodeURIComponent(q)}" target="_blank" style="display:inline-block;margin-top:8px;color:var(--cyan);text-decoration:none;padding:8px 16px;border:1px solid rgba(218,165,32,.2);border-radius:8px">Continue on Google ↗</a></div>`;
       $('winBody').innerHTML = html;
     } catch { $('winBody').innerHTML = '<div class="pad" style="color:var(--dim)">Search error.</div>'; }
   }
@@ -576,7 +576,7 @@ export function mountApp(root: HTMLElement) {
       '<input id="evT" placeholder="Title" style="flex:1;min-width:140px;background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:10px;padding:10px;color:var(--ink)">' +
       '<input type="date" id="evD" style="background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:10px;padding:10px;color:var(--ink)">' +
       '<input type="time" id="evTime" style="background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:10px;padding:10px;color:var(--ink)">' +
-      '<button id="evAdd" style="background:linear-gradient(135deg,var(--gold),#fff);border:none;border-radius:10px;padding:10px 18px;cursor:pointer;color:#04060d;font-weight:600">Add</button></div>';
+      '<button id="evAdd" style="background:linear-gradient(135deg,var(--gold),#fff);border:none;border-radius:10px;padding:10px 18px;cursor:pointer;color:#0a0806;font-weight:600">Add</button></div>';
     if (!ev.length) html += '<div style="color:var(--dim);font-style:italic">Calendar is empty.</div>';
     for (const e of ev) {
       const isHg = e.id.startsWith('hg:');
@@ -711,9 +711,16 @@ export function mountApp(root: HTMLElement) {
   async function hgSearchLicense(query: string) {
     const q = query.replace(/[-\s]/g, '').toLowerCase();
     const index = await hgLoad('hg2:index');
+    if (!index.length) {
+      addMsg('אין נתונים ב-HeavyGuard. יש להוסיף רשומות תחילה.', 'sys');
+      return;
+    }
     const results = index.filter((r: any) => {
       const id = (r.idNumber || '').replace(/[-\s]/g, '').toLowerCase();
-      return id.includes(q) || q.includes(id);
+      const cust = (r.customer || '').toLowerCase();
+      const veh = (r.vehicleType || '').toLowerCase();
+      const mfr = (r.manufacturer || '').toLowerCase();
+      return id.includes(q) || q.includes(id) || cust.includes(q) || veh.includes(q) || mfr.includes(q);
     }).map((r: any) => ({
       id: r.id, idNumber: r.idNumber, idType: r.idType,
       contractor: cName(r.contractor), contractorId: r.contractor,
@@ -751,6 +758,12 @@ export function mountApp(root: HTMLElement) {
 
   async function hgShowEarnings(contractor: string, month: string) {
     const index = await hgLoad('hg2:index');
+    if (!index.length) {
+      addMsg('אין נתוני הכנסות ב-HeavyGuard.', 'sys');
+      return;
+    }
+    const curMonth = new Date().toISOString().slice(0, 7);
+    const effectiveMonth = month || curMonth;
     let filtered = index;
     if (contractor) {
       const cLow = contractor.toLowerCase();
@@ -760,49 +773,79 @@ export function mountApp(root: HTMLElement) {
         return cid.includes(cLow) || cn.includes(cLow) || cLow.includes(cid) || cLow.includes(cn);
       });
     }
-    if (month) {
-      filtered = filtered.filter((r: any) => (r.date || '').startsWith(month));
-    }
+    const monthFiltered = filtered.filter((r: any) => (r.date || '').startsWith(effectiveMonth));
+    const allTimeFiltered = filtered;
     const byContractor: Record<string, { total: number; count: number; jobs: any[] }> = {};
-    for (const r of filtered) {
+    for (const r of monthFiltered) {
       const cn = cName(r.contractor);
       if (!byContractor[cn]) byContractor[cn] = { total: 0, count: 0, jobs: [] };
       byContractor[cn].total += r.price || 0;
       byContractor[cn].count++;
-      byContractor[cn].jobs.push({ date: r.date, price: r.price, type: r.installType, vehicle: r.vehicleType });
+      byContractor[cn].jobs.push({ date: r.date, price: r.price, type: r.installType, vehicle: r.vehicleType, id: r.idNumber });
     }
-    const data = {
-      byContractor,
-      grandTotal: filtered.reduce((s: number, r: any) => s + (r.price || 0), 0),
-      totalJobs: filtered.length,
-      month: month || 'all',
-    };
-    if (!data) { addMsg('לא ניתן לטעון נתוני הכנסות', 'sys'); return; }
-    const monthLabel = data.month === 'all' ? 'כל התקופה' : data.month;
+    const byContractorAll: Record<string, { total: number; count: number }> = {};
+    for (const r of allTimeFiltered) {
+      const cn = cName(r.contractor);
+      if (!byContractorAll[cn]) byContractorAll[cn] = { total: 0, count: 0 };
+      byContractorAll[cn].total += r.price || 0;
+      byContractorAll[cn].count++;
+    }
+    const grandTotal = monthFiltered.reduce((s: number, r: any) => s + (r.price || 0), 0);
+    const totalJobs = monthFiltered.length;
+    const allTimeTotal = allTimeFiltered.reduce((s: number, r: any) => s + (r.price || 0), 0);
+    const hebrewMonths = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+    const [y, m] = effectiveMonth.split('-');
+    const monthLabel = `${hebrewMonths[parseInt(m) - 1]} ${y}`;
+
     openWin(`HeavyGuard · הכנסות · ${monthLabel}`);
-    let html = '<div class="pad">';
-    html += `<div style="text-align:center;margin-bottom:16px">
-      <div style="font-size:32px;font-weight:700;color:var(--gold)">₪${(data.grandTotal || 0).toLocaleString()}</div>
-      <div style="color:var(--dim);font-size:13px">${data.totalJobs || 0} עבודות · ${monthLabel}</div>
+    let html = '<div class="pad" style="direction:rtl">';
+    html += `<div style="text-align:center;margin-bottom:20px;padding:16px;background:rgba(218,165,32,.06);border-radius:16px;border:1px solid rgba(218,165,32,.15)">
+      <div style="font-size:11px;letter-spacing:2px;color:var(--dim);text-transform:uppercase;margin-bottom:4px">${monthLabel}</div>
+      <div style="font-size:36px;font-weight:700;color:var(--gold);direction:ltr">₪${grandTotal.toLocaleString()}</div>
+      <div style="color:var(--dim);font-size:13px;margin-top:4px">${totalJobs} עבודות החודש</div>
+      ${allTimeTotal !== grandTotal ? `<div style="color:var(--dim);font-size:11px;margin-top:2px;opacity:.6">סה"כ כללי: ₪${allTimeTotal.toLocaleString()}</div>` : ''}
     </div>`;
-    const entries = Object.entries(data.byContractor || {}) as [string, any][];
+    const entries = Object.entries(byContractor).sort((a, b) => (b[1] as any).total - (a[1] as any).total);
+    if (!entries.length) {
+      html += '<div style="text-align:center;color:var(--dim);padding:20px">אין עבודות לחודש זה</div>';
+    }
     for (const [name, info] of entries) {
-      const pct = data.grandTotal ? Math.round((info.total / data.grandTotal) * 100) : 0;
-      html += `<div style="background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:8px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-          <span style="font-weight:600">${name}</span>
-          <span style="color:var(--gold);font-weight:600">₪${info.total.toLocaleString()}</span>
+      const pct = grandTotal ? Math.round((info.total / grandTotal) * 100) : 0;
+      const allTime = byContractorAll[name];
+      const uid = 'ej_' + name.replace(/\s/g, '_');
+      html += `<div style="background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <span style="font-weight:600;font-size:15px">${name}</span>
+          <span style="color:var(--gold);font-weight:700;font-size:18px;direction:ltr">₪${info.total.toLocaleString()}</span>
         </div>
-        <div style="display:flex;align-items:center;gap:8px">
-          <div style="flex:1;background:rgba(255,255,255,.06);border-radius:4px;height:6px;overflow:hidden">
-            <div style="width:${pct}%;height:100%;background:linear-gradient(90deg,var(--cyan),var(--gold));border-radius:4px"></div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <div style="flex:1;background:rgba(255,255,255,.06);border-radius:4px;height:8px;overflow:hidden">
+            <div style="width:${pct}%;height:100%;background:linear-gradient(90deg,var(--gold),var(--cyan));border-radius:4px;transition:width .5s"></div>
           </div>
-          <span style="color:var(--dim);font-size:12px;min-width:40px">${pct}% · ${info.count} עבודות</span>
+          <span style="color:var(--dim);font-size:12px;min-width:60px;text-align:left">${pct}% · ${info.count} עבודות</span>
+        </div>
+        ${allTime ? `<div style="font-size:11px;color:var(--dim);opacity:.6">סה"כ כללי: ₪${allTime.total.toLocaleString()} (${allTime.count} עבודות)</div>` : ''}
+        <button data-target="${uid}" style="margin-top:8px;background:none;border:1px solid var(--line);color:var(--cyan);padding:6px 14px;border-radius:8px;cursor:pointer;font-size:12px;transition:.2s" class="earningsToggle">פרטי עבודות ▼</button>
+        <div id="${uid}" style="display:none;margin-top:8px">
+          ${info.jobs.map((j: any) => `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(218,165,32,.05);font-size:12px">
+            <span style="color:var(--dim)">${j.date || ''} · ${j.type || ''} · ${j.vehicle || ''}</span>
+            <span style="color:var(--gold);direction:ltr">₪${(j.price || 0).toLocaleString()}</span>
+          </div>`).join('')}
         </div>
       </div>`;
     }
     html += '</div>';
     $('winBody').innerHTML = html;
+    $('winBody').querySelectorAll<HTMLButtonElement>('.earningsToggle').forEach(btn => {
+      btn.onclick = () => {
+        const target = document.getElementById(btn.dataset.target || '');
+        if (target) {
+          const open = target.style.display !== 'none';
+          target.style.display = open ? 'none' : 'block';
+          btn.textContent = open ? 'פרטי עבודות ▼' : 'הסתר ▲';
+        }
+      };
+    });
   }
 
   async function hgCreateQuote(customer: string, phone: string, itemsStr: string) {
@@ -991,7 +1034,7 @@ export function mountApp(root: HTMLElement) {
   }
 
   function addArObject(type: ArObj['type']) {
-    const colors = ['#5fe6ff', '#ffc24d', '#ff5d73', '#4dff91', '#b06aff', '#ff9f43'];
+    const colors = ['#daa520', '#f5e6c8', '#e8a040', '#c8956a', '#f0d090', '#d4a84d'];
     arObjects.push({
       x: 0.3 + Math.random() * 0.4,
       y: 0.15 + Math.random() * 0.3,
@@ -1214,6 +1257,7 @@ export function mountApp(root: HTMLElement) {
     document.querySelectorAll('.ar-fx-btn').forEach(b => b.classList.remove('ar-fx-active'));
     $('arStatus').style.opacity = '1';
   }
+  $('calBtn').onclick = () => openCalendar();
   $('arClose').onclick = closeArCamera;
   $('arAddBall').onclick = () => addArObject('ball');
   $('arAddCube').onclick = () => addArObject('cube');
@@ -1297,9 +1341,9 @@ export function mountApp(root: HTMLElement) {
             const landmarks = results.multiHandLandmarks[h];
             const isRight = h === 0;
             indicator.textContent = results.multiHandLandmarks.length > 1 ? '✋✋ שתי ידיים' : '✋ יד מזוהה';
-            indicator.style.color = '#5fe6ff';
+            indicator.style.color = '#daa520';
 
-            c.strokeStyle = isRight ? 'rgba(95,230,255,0.6)' : 'rgba(176,106,255,0.6)';
+            c.strokeStyle = isRight ? 'rgba(218,165,32,0.6)' : 'rgba(200,149,106,0.6)';
             c.lineWidth = 2;
             const connections = [
               [0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],
@@ -1316,7 +1360,7 @@ export function mountApp(root: HTMLElement) {
               const lm = landmarks[i];
               c.beginPath();
               c.arc(lm.x * cvs.width, lm.y * cvs.height, i === 8 || i === 4 ? 8 : 4, 0, Math.PI * 2);
-              c.fillStyle = i === 8 ? 'rgba(255,194,77,0.9)' : i === 4 ? 'rgba(255,93,115,0.9)' : (isRight ? 'rgba(95,230,255,0.7)' : 'rgba(176,106,255,0.7)');
+              c.fillStyle = i === 8 ? 'rgba(245,230,200,0.9)' : i === 4 ? 'rgba(218,165,32,0.9)' : (isRight ? 'rgba(218,165,32,0.7)' : 'rgba(200,149,106,0.7)');
               c.fill();
             }
 
@@ -1593,7 +1637,7 @@ export function mountApp(root: HTMLElement) {
         const dist = Math.hypot(a.x - b.x, a.y - b.y);
         if (dist < 160) {
           const alpha = (1 - dist / 160) * 0.25;
-          nCtx.strokeStyle = `rgba(95, 230, 255, ${alpha})`;
+          nCtx.strokeStyle = `rgba(218, 165, 32, ${alpha})`;
           nCtx.lineWidth = 0.8;
           nCtx.beginPath(); nCtx.moveTo(a.x, a.y); nCtx.lineTo(b.x, b.y); nCtx.stroke();
           // Pulse traveling along the line
@@ -1608,8 +1652,8 @@ export function mountApp(root: HTMLElement) {
     // Draw nodes
     for (const n of neuralNodes) {
       const glow = 0.5 + Math.sin(n.pulse) * 0.3;
-      nCtx.fillStyle = `rgba(95, 230, 255, ${glow})`;
-      nCtx.shadowColor = 'rgba(95, 230, 255, 0.4)';
+      nCtx.fillStyle = `rgba(218, 165, 32, ${glow})`;
+      nCtx.shadowColor = 'rgba(218, 165, 32, 0.4)';
       nCtx.shadowBlur = 8;
       nCtx.beginPath(); nCtx.arc(n.x, n.y, n.r, 0, Math.PI * 2); nCtx.fill();
       nCtx.shadowBlur = 0;
@@ -1639,10 +1683,10 @@ export function mountApp(root: HTMLElement) {
       waveHeights[i] += (waveTargets[i] - waveHeights[i]) * 0.08;
       if (Math.random() < 0.02) waveTargets[i] = 0.1 + Math.random() * 0.8;
       const barH = waveHeights[i] * h * 0.85;
-      const cyanToGold = i / waveBars;
-      const r = Math.round(95 + cyanToGold * 160);
-      const g = Math.round(230 - cyanToGold * 36);
-      const b = Math.round(255 - cyanToGold * 178);
+      const goldToCream = i / waveBars;
+      const r = Math.round(218 + goldToCream * 37);
+      const g = Math.round(165 + goldToCream * 65);
+      const b = Math.round(32 + goldToCream * 112);
       wCtx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.7)`;
       const x = i * barW + 1;
       wCtx.fillRect(x, h - barH, barW - 2, barH);
