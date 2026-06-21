@@ -375,11 +375,11 @@ function buildHumanoidParticles(q = 1.0) {
   }
   // Cheekbones
   for (let side = -1; side <= 1; side += 2) {
-    spherePts(innerPts, side * 0.075 * S, cy(Y.eye) - 0.025 * S, faceZ - 0.01 * S, 0.022 * S, 90, 0.8);
+    spherePts(innerPts, side * 0.075 * S, cy(Y.eye) - 0.025 * S, faceZ - 0.01 * S, 0.022 * S, n(90), 0.8);
   }
   // Ears
   for (let side = -1; side <= 1; side += 2) {
-    spherePts(innerPts, side * headR * 0.98, cy(Y.eye) - 0.01 * S, -0.01 * S, 0.025 * S, 100, 0.6);
+    spherePts(innerPts, side * headR * 0.98, cy(Y.eye) - 0.01 * S, -0.01 * S, 0.025 * S, n(100), 0.6);
   }
   // Hair/crown shimmer
   for (let i = 0; i < n(800); i++) {
@@ -392,9 +392,9 @@ function buildHumanoidParticles(q = 1.0) {
   }
 
   // ---------- NECK ----------
-  segment(innerPts, 900, 0, cy(Y.neckBot), 0, 0, cy(Y.neckTop), 0, () => 0.06 * S, 0.9, 0.005 * S);
+  segment(innerPts, n(900), 0, cy(Y.neckBot), 0, 0, cy(Y.neckTop), 0, () => 0.06 * S, 0.9, 0.005 * S);
   for (let side = -1; side <= 1; side += 2) {
-    segment(innerPts, 300, side * 0.04 * S, cy(Y.shoulder + 0.04), 0,
+    segment(innerPts, n(300), side * 0.04 * S, cy(Y.shoulder + 0.04), 0,
       side * 0.18 * S, cy(Y.shoulder), 0, () => 0.03 * S, 0.9, 0.006 * S);
   }
 
@@ -411,7 +411,7 @@ function buildHumanoidParticles(q = 1.0) {
   }
   // Pectorals
   for (let side = -1; side <= 1; side += 2) {
-    spherePts(innerPts, side * 0.10 * S, cy(Y.pec), 0.115 * S, 0.075 * S, 640, 0.55);
+    spherePts(innerPts, side * 0.10 * S, cy(Y.pec), 0.115 * S, 0.075 * S, n(640), 0.55);
   }
   // Sternum
   for (let i = 0; i < n(180); i++) {
@@ -421,12 +421,12 @@ function buildHumanoidParticles(q = 1.0) {
   // Abs
   for (let row = 0; row < 3; row++) {
     for (let side = -1; side <= 1; side += 2) {
-      spherePts(innerPts, side * 0.045 * S, cy(Y.navel + 0.16) - row * 0.07 * S, 0.125 * S, 0.03 * S, 140, 0.5);
+      spherePts(innerPts, side * 0.045 * S, cy(Y.navel + 0.16) - row * 0.07 * S, 0.125 * S, 0.03 * S, n(140), 0.5);
     }
   }
   // Obliques
   for (let side = -1; side <= 1; side += 2) {
-    segment(innerPts, 450, side * 0.20 * S, cy(Y.rib), 0.06 * S,
+    segment(innerPts, n(450), side * 0.20 * S, cy(Y.rib), 0.06 * S,
       side * 0.15 * S, cy(Y.waist), 0.05 * S, (t) => (0.05 - t * 0.015) * S, 0.7, 0.006 * S);
   }
 
@@ -446,20 +446,20 @@ function buildHumanoidParticles(q = 1.0) {
     const kneeX = side * 0.105 * S;
     const ankX = side * 0.085 * S;
     // Thigh
-    segment(innerPts, 4000, hipX, cy(Y.crotch + 0.02), 0,
+    segment(innerPts, n(4000), hipX, cy(Y.crotch + 0.02), 0,
       kneeX, cy(Y.knee + 0.03), 0.01 * S,
       (t) => (0.115 - 0.045 * smooth(t)) * S, 0.8, 0.006 * S);
     // Knee
-    spherePts(innerPts, kneeX, cy(Y.knee), 0.02 * S, 0.058 * S, 540, 0.85);
+    spherePts(innerPts, kneeX, cy(Y.knee), 0.02 * S, 0.058 * S, n(540), 0.85);
     // Calf
-    segment(innerPts, 3000, kneeX, cy(Y.knee - 0.02), 0.01 * S,
+    segment(innerPts, n(3000), kneeX, cy(Y.knee - 0.02), 0.01 * S,
       ankX, cy(Y.ankle), 0,
       (t) => (0.07 + 0.022 * Math.sin(smooth(t) * PI) - 0.03 * t) * S, 0.78, 0.006 * S);
     // Shin
-    segment(innerPts, 450, kneeX, cy(Y.knee - 0.04), 0.05 * S,
+    segment(innerPts, n(450), kneeX, cy(Y.knee - 0.04), 0.05 * S,
       ankX, cy(Y.ankle + 0.02), 0.04 * S, () => 0.02 * S, 0.6, 0.005 * S);
     // Ankle
-    spherePts(innerPts, ankX, cy(Y.ankle), 0.01 * S, 0.04 * S, 300, 0.85);
+    spherePts(innerPts, ankX, cy(Y.ankle), 0.01 * S, 0.04 * S, n(300), 0.85);
     // Foot
     for (let i = 0; i < n(1000); i++) {
       const t = Math.random();
@@ -471,7 +471,7 @@ function buildHumanoidParticles(q = 1.0) {
       innerPts.push(x + w * Math.cos(a), yy, z + w * 0.5 * Math.sin(a));
     }
     // Heel
-    spherePts(innerPts, ankX, cy(Y.sole + 0.01), -0.02 * S, 0.035 * S, 220, 0.7);
+    spherePts(innerPts, ankX, cy(Y.sole + 0.01), -0.02 * S, 0.035 * S, n(220), 0.7);
   }
 
   // ---------- ARMS ----------
@@ -480,27 +480,27 @@ function buildHumanoidParticles(q = 1.0) {
     const elbowX = side * 0.36 * S;
     const wristX = side * 0.40 * S;
     // Deltoid
-    spherePts(innerPts, shX, cy(Y.shoulder), 0, 0.085 * S, 1000, 0.85);
+    spherePts(innerPts, shX, cy(Y.shoulder), 0, 0.085 * S, n(1000), 0.85);
     // Upper arm
-    segment(innerPts, 2000, shX, cy(Y.shoulder - 0.04), 0,
+    segment(innerPts, n(2000), shX, cy(Y.shoulder - 0.04), 0,
       elbowX, cy(Y.rib - 0.06), 0.03 * S,
       (t) => (0.055 - 0.01 * t + 0.012 * Math.sin(t * PI)) * S, 0.85, 0.006 * S);
     // Elbow
-    spherePts(innerPts, elbowX, cy(Y.rib - 0.06), 0.03 * S, 0.045 * S, 380, 0.85);
+    spherePts(innerPts, elbowX, cy(Y.rib - 0.06), 0.03 * S, 0.045 * S, n(380), 0.85);
     // Forearm
-    segment(innerPts, 1600, elbowX, cy(Y.rib - 0.08), 0.04 * S,
+    segment(innerPts, n(1600), elbowX, cy(Y.rib - 0.08), 0.04 * S,
       wristX, cy(Y.navel - 0.02), 0.10 * S,
       (t) => (0.05 - 0.02 * t) * S, 0.82, 0.006 * S);
     // Wrist
-    spherePts(innerPts, wristX, cy(Y.navel - 0.02), 0.10 * S, 0.03 * S, 240, 0.85);
+    spherePts(innerPts, wristX, cy(Y.navel - 0.02), 0.10 * S, 0.03 * S, n(240), 0.85);
     // Palm
-    spherePts(innerPts, wristX + side * 0.01 * S, cy(Y.navel - 0.07), 0.13 * S, 0.04 * S, 360, 0.5);
+    spherePts(innerPts, wristX + side * 0.01 * S, cy(Y.navel - 0.07), 0.13 * S, 0.04 * S, n(360), 0.5);
     // Fingers
     for (let f = 0; f < 5; f++) {
       const spread = ((f - 2) / 4) * 0.06 * S;
       const fx = wristX + side * 0.01 * S + spread;
       const len = (0.06 + (f === 0 ? -0.015 : f === 2 ? 0.01 : 0)) * S;
-      segment(innerPts, 100, fx, cy(Y.navel - 0.09), 0.14 * S,
+      segment(innerPts, n(100), fx, cy(Y.navel - 0.09), 0.14 * S,
         fx + spread * 0.4, cy(Y.navel - 0.09) - len, 0.16 * S,
         () => 0.012 * S, 0.7, 0.004 * S);
     }
@@ -643,7 +643,11 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   const quality = isMobile ? 0.3 : 1.0;
 
   // ---------- Renderer ----------
-  const renderer = new THREE.WebGLRenderer({ antialias: !isMobile, alpha: true });
+  const renderer = new THREE.WebGLRenderer({
+    antialias: !isMobile,
+    alpha: true,
+    powerPreference: isMobile ? 'low-power' : 'high-performance',
+  });
   renderer.setPixelRatio(isMobile ? 1 : Math.min(window.devicePixelRatio || 1, 2));
   renderer.setClearColor(0x000000, 0);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
