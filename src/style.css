@@ -1068,12 +1068,15 @@ body::after {
   .chip { font-size: 9px; padding: 7px 12px; border-radius: 10px; letter-spacing: 1.5px; }
   .chip svg { width: 12px; height: 12px; }
 
+  .ai-nodes { display: none !important; }
+
   .right-panel {
     position: fixed; right: 8px; left: 8px;
     top: auto; bottom: 160px;
-    width: auto; max-height: 28vh;
+    width: auto; max-height: 18vh;
     border-radius: 14px;
-    opacity: .96;
+    opacity: .92;
+    z-index: 6;
   }
 
   .dock { width: min(600px, 96vw); }
@@ -1103,8 +1106,16 @@ body::after {
 
   body::after { display: none; }
 
-  .fab-group { bottom: 170px; right: 12px; }
-  .hg-fab { padding: 10px 16px; font-size: 10px; letter-spacing: 1.5px; border-radius: 14px; }
+  .fab-group {
+    bottom: auto; top: calc(var(--safe-top) + 52px); right: 12px;
+    flex-direction: column; gap: 8px;
+  }
+  .hg-fab {
+    padding: 8px 14px; font-size: 9px; letter-spacing: 1.5px;
+    border-radius: 12px; gap: 6px;
+  }
+  .hg-fab svg { width: 18px; height: 18px; }
+  .hg-fab span { display: none; }
 }
 
 /* Phones */
@@ -1125,36 +1136,40 @@ body::after {
   .chip:last-child { font-size: 9px; gap: 5px; }
 
   .right-panel {
-    right: 8px; left: 8px;
-    bottom: 155px;
-    max-height: 24vh;
+    right: 10px; left: 10px;
+    bottom: 150px;
+    max-height: 16vh;
     border-radius: 14px;
     background: var(--glass-solid);
+    opacity: .9;
   }
-  .rp-head { padding: 10px 14px 8px; }
-  .rp-body { padding: 8px 10px; gap: 6px; }
-  .rp-msg { padding: 10px 12px; border-radius: 10px; }
-  .rp-text { font-size: 13px; line-height: 1.5; }
+  .rp-head { padding: 8px 14px 6px; }
+  .rp-body { padding: 6px 10px; gap: 4px; }
+  .rp-msg { padding: 8px 12px; border-radius: 10px; }
+  .rp-text { font-size: 13px; line-height: 1.45; }
   .rp-who { font-size: 8px; letter-spacing: 2px; }
 
-  .dock { width: 100vw; padding: 0 8px; }
-  .state { font-size: 9px; letter-spacing: 3px; margin-bottom: 8px; }
+  .dock { width: 100vw; padding: 0 6px; }
+  .state { font-size: 9px; letter-spacing: 4px; margin-bottom: 6px;
+    text-shadow: 0 0 10px rgba(218,165,32,.3); }
 
   .mac-dock {
-    gap: 2px; padding: 6px 10px 5px;
-    border-radius: 16px;
+    gap: 1px; padding: 7px 10px 5px;
+    border-radius: 18px;
     overflow-x: auto; overflow-y: hidden;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
     justify-content: flex-start;
     background: var(--glass-solid);
     border: 1px solid var(--glass-border);
+    box-shadow: 0 -4px 20px rgba(0,0,0,.3);
   }
   .mac-dock::-webkit-scrollbar { display: none; }
 
-  .dock-item { padding: 5px 8px; flex-shrink: 0; border-radius: 12px; }
-  .di { width: 22px; height: 22px; }
-  .dl { font-size: 8px; max-width: 48px; overflow: hidden; text-overflow: ellipsis; }
+  .dock-item { padding: 6px 9px; flex-shrink: 0; border-radius: 12px; }
+  .di { width: 24px; height: 24px; filter: drop-shadow(0 1px 4px rgba(218,165,32,.15)); }
+  .dl { font-size: 8px; max-width: 50px; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; }
 
   .bar { padding: 6px 8px calc(var(--safe-bottom) + 14px); gap: 8px; }
   .pill {
@@ -1213,14 +1228,17 @@ body::after {
   .hg-topbar-title { font-size: 11px; letter-spacing: 2px; }
   .hg-close { width: 34px; height: 34px; font-size: 15px; border-radius: 10px; }
 
-  .fab-group { bottom: 162px; right: 10px; }
+  .fab-group {
+    bottom: auto; top: calc(var(--safe-top) + 50px); right: 10px;
+    gap: 6px;
+  }
   .hg-fab {
-    padding: 10px 14px; gap: 8px; font-size: 10px; letter-spacing: 1.5px;
-    border-radius: 14px; min-height: 44px;
+    padding: 8px 12px; gap: 0; font-size: 0; letter-spacing: 0;
+    border-radius: 12px; min-height: 40px; min-width: 40px;
+    justify-content: center;
   }
   .hg-fab svg { width: 20px; height: 20px; }
-
-  .ai-nodes { display: none; }
+  .hg-fab span { display: none; }
 }
 
 /* Very small phones (iPhone SE, Galaxy S8) */
