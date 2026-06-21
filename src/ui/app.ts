@@ -576,7 +576,7 @@ export function mountApp(root: HTMLElement) {
       '<input id="evT" placeholder="Title" style="flex:1;min-width:140px;background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:10px;padding:10px;color:var(--ink)">' +
       '<input type="date" id="evD" style="background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:10px;padding:10px;color:var(--ink)">' +
       '<input type="time" id="evTime" style="background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:10px;padding:10px;color:var(--ink)">' +
-      '<button id="evAdd" style="background:linear-gradient(135deg,var(--gold),#fff);border:none;border-radius:10px;padding:10px 18px;cursor:pointer;color:#04060d;font-weight:600">Add</button></div>';
+      '<button id="evAdd" style="background:linear-gradient(135deg,var(--gold),#fff);border:none;border-radius:10px;padding:10px 18px;cursor:pointer;color:#0a0806;font-weight:600">Add</button></div>';
     if (!ev.length) html += '<div style="color:var(--dim);font-style:italic">Calendar is empty.</div>';
     for (const e of ev) {
       const isHg = e.id.startsWith('hg:');
@@ -711,9 +711,16 @@ export function mountApp(root: HTMLElement) {
   async function hgSearchLicense(query: string) {
     const q = query.replace(/[-\s]/g, '').toLowerCase();
     const index = await hgLoad('hg2:index');
+    if (!index.length) {
+      addMsg('אין נתונים ב-HeavyGuard. יש להוסיף רשומות תחילה.', 'sys');
+      return;
+    }
     const results = index.filter((r: any) => {
       const id = (r.idNumber || '').replace(/[-\s]/g, '').toLowerCase();
-      return id.includes(q) || q.includes(id);
+      const cust = (r.customer || '').toLowerCase();
+      const veh = (r.vehicleType || '').toLowerCase();
+      const mfr = (r.manufacturer || '').toLowerCase();
+      return id.includes(q) || q.includes(id) || cust.includes(q) || veh.includes(q) || mfr.includes(q);
     }).map((r: any) => ({
       id: r.id, idNumber: r.idNumber, idType: r.idType,
       contractor: cName(r.contractor), contractorId: r.contractor,

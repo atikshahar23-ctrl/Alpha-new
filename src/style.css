@@ -538,7 +538,7 @@ body::after {
 .ic svg { flex-shrink: 0 }
 .send {
   background: linear-gradient(135deg, var(--gold), #fff);
-  color: #04060d;
+  color: #0a0806;
   box-shadow: 0 0 16px rgba(255, 194, 77, .25);
 }
 .send:hover { box-shadow: 0 0 24px rgba(255, 194, 77, .4); transform: scale(1.05) }
@@ -593,7 +593,7 @@ body::after {
   font-family: "Space Grotesk", sans-serif; font-weight: 600;
   letter-spacing: 1px; font-size: 14px;
   background: linear-gradient(135deg, var(--gold), #fff);
-  color: #04060d;
+  color: #0a0806;
   box-shadow: 0 4px 20px rgba(255, 194, 77, .2);
   transition: var(--transition);
 }
@@ -769,7 +769,7 @@ body::after {
 /* window */
 .win {
   position: fixed; inset: 0; z-index: 40;
-  background: rgba(4, 6, 13, .75);
+  background: rgba(10, 8, 5, .75);
   backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
   display: none; place-items: center; padding: 24px;
 }
@@ -991,7 +991,7 @@ body::after {
   height: 16px;
   padding: 0 4px;
   background: var(--gold);
-  color: #04060d;
+  color: #0a0806;
   font-family: "Space Grotesk", sans-serif;
   font-size: 9px;
   font-weight: 700;
@@ -1024,7 +1024,7 @@ body::after {
 
 /* Tablets portrait */
 @media (max-width: 768px) {
-  .stage { background: #04060d; }
+  .stage { background: #0a0806; }
   .topL { top: 14px; left: 16px; }
   .topL .wm { font-size: 15px; letter-spacing: 3px; }
   .topL .clk { font-size: 11px; letter-spacing: 2px; }
