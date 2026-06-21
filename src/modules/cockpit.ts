@@ -25,6 +25,21 @@ import {
   loadHabits, addHabit, removeHabit, toggleHabitToday, isHabitDoneToday, habitStreak,
   loadExpenses, addExpense, removeExpense, expenseSummary, EXPENSE_CATEGORIES,
 } from './personal';
+import {
+  todayPomoStats, weekPomoStats, recordPomoSession,
+} from './pomodoro';
+import {
+  MOODS, MOOD_EMOJI, todayMood, logMood, moodStreak,
+  todayWater, addWater, sleepAvg, logSleep,
+} from './wellness';
+import {
+  loadGoals, addGoal, removeGoal, toggleMilestone, addMilestoneToGoal, goalProgress,
+  activeGoalsSummary, type GoalTimeframe,
+} from './goals';
+import {
+  loadInvoices, createInvoice, setInvoiceStatus, removeInvoice,
+  downloadInvoicePDF, invoiceStats, type InvoiceItem,
+} from './invoices';
 
 export interface CockpitHooks {
   ask: (q: string) => void;
@@ -282,6 +297,67 @@ function renderBusiness(root: HTMLElement, hooks: CockpitHooks, close: () => voi
   qm.appendChild(qList);
   drawQuotes();
   root.appendChild(qm);
+
+  // ── Invoices ──
+  const inv = card('Invoices', 'Professional invoices with VAT');
+  const invStats = invoiceStats();
+  if (invStats.total > 0) {
+    const invKpis = el('div', 'cp-kpis');
+    invKpis.innerHTML =
+      `<div class="cp-kpi"><span class="cp-kpi-val">${invStats.total}</span><span class="cp-kpi-lbl">Total</span></div>` +
+      `<div class="cp-kpi"><span class="cp-kpi-val">${invStats.paid}</span><span class="cp-kpi-lbl">Paid</span></div>` +
+      `<div class="cp-kpi"><span class="cp-kpi-val">${invStats.outstanding}</span><span class="cp-kpi-lbl">Outstanding</span></div>` +
+      `<div class="cp-kpi"><span class="cp-kpi-val">₪${invStats.revenue.toLocaleString()}</span><span class="cp-kpi-lbl">Revenue</span></div>`;
+    inv.appendChild(invKpis);
+  }
+  const invCust = input('Customer name');
+  const invItems = textarea('One per line: Description: Price x Qty\ne.g. 360 camera: 4500 x 1', 3);
+  const invNotes = input('Notes (optional)');
+  const createInv = btn('Create invoice', true);
+  const invList = el('div', 'cp-list');
+  const drawInvoices = () => {
+    invList.innerHTML = '';
+    const list = loadInvoices().slice(0, 10);
+    if (!list.length) { invList.appendChild(el('div', 'cp-empty', 'No invoices yet.')); return; }
+    list.forEach(i => {
+      const r = el('div', 'cp-row');
+      const stHue = { draft: 200, sent: 45, paid: 140, overdue: 0 }[i.status] ?? 200;
+      r.innerHTML = `<span class="cp-row-main">${esc(i.number)} — ${esc(i.customer)} <span class="cp-row-sub">₪${i.total.toLocaleString()}</span></span>`;
+      const sel = el('select', 'cp-mini-sel') as HTMLSelectElement;
+      (['draft', 'sent', 'paid', 'overdue'] as const).forEach(s => {
+        const o = el('option') as HTMLOptionElement; o.value = s; o.textContent = s; if (i.status === s) o.selected = true; sel.appendChild(o);
+      });
+      sel.style.color = `hsl(${stHue},70%,60%)`;
+      sel.onchange = () => { setInvoiceStatus(i.id, sel.value as any); root.replaceChildren(); renderBusiness(root, hooks, close); };
+      r.appendChild(sel);
+      const dl = el('button', 'cp-x', '📄'); dl.title = 'Print';
+      dl.onclick = () => downloadInvoicePDF(i);
+      r.appendChild(dl);
+      const del = el('button', 'cp-x', '✕');
+      del.onclick = () => { removeInvoice(i.id); drawInvoices(); };
+      r.appendChild(del);
+      invList.appendChild(r);
+    });
+  };
+  createInv.onclick = () => {
+    if (!invCust.value.trim()) return;
+    const items: InvoiceItem[] = invItems.value.split('\n').map(l => {
+      const [desc, rest] = l.split(':');
+      const parts = (rest || '').trim().split(/\s*x\s*/i);
+      return { description: (desc || '').trim(), price: parseFloat(parts[0]) || 0, qty: parseInt(parts[1]) || 1 };
+    }).filter(i => i.description);
+    if (!items.length) return;
+    createInvoice(invCust.value.trim(), items, { notes: invNotes.value.trim() });
+    invCust.value = ''; invItems.value = ''; invNotes.value = '';
+    root.replaceChildren(); renderBusiness(root, hooks, close);
+  };
+  inv.appendChild(field('Customer', invCust));
+  inv.appendChild(field('Items', invItems));
+  inv.appendChild(field('Notes', invNotes));
+  inv.appendChild(createInv);
+  inv.appendChild(invList);
+  drawInvoices();
+  root.appendChild(inv);
 
   // ── Marketing engine ──
   const mk = card('Marketing Engine', 'AI viral content for TikTok / Facebook');
@@ -683,6 +759,209 @@ function renderPersonal(root: HTMLElement, hooks: CockpitHooks, close: () => voi
   cal.appendChild(upcoming);
   draw();
   root.appendChild(cal);
+
+  // ── Pomodoro Timer ──
+  const pomo = card('Focus Timer', 'Pomodoro technique · 25 min work / 5 min break');
+  const pomoStats = todayPomoStats();
+  const weekPomo = weekPomoStats();
+  const pomoKpis = el('div', 'cp-kpis');
+  pomoKpis.innerHTML =
+    `<div class="cp-kpi"><span class="cp-kpi-val">${pomoStats.completed}</span><span class="cp-kpi-lbl">Today</span></div>` +
+    `<div class="cp-kpi"><span class="cp-kpi-val">${pomoStats.focusMin}m</span><span class="cp-kpi-lbl">Focus</span></div>` +
+    `<div class="cp-kpi"><span class="cp-kpi-val">${weekPomo.totalSessions}</span><span class="cp-kpi-lbl">This week</span></div>` +
+    `<div class="cp-kpi"><span class="cp-kpi-val">${weekPomo.streak}d</span><span class="cp-kpi-lbl">Streak</span></div>`;
+  pomo.appendChild(pomoKpis);
+  const pomoDisplay = el('div', 'cp-bignum', '25:00');
+  pomoDisplay.style.textAlign = 'center';
+  pomo.appendChild(pomoDisplay);
+  let pomoInterval: any = null;
+  let pomoTimeLeft = 25 * 60;
+  let pomoIsBreak = false;
+  const pomoBtns = el('div', 'cp-inline');
+  pomoBtns.style.justifyContent = 'center';
+  const pomoStart = btn('Start focus', true);
+  const pomoReset = btn('Reset');
+  const updatePomoDisplay = () => {
+    const m = Math.floor(pomoTimeLeft / 60);
+    const s = pomoTimeLeft % 60;
+    pomoDisplay.textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    if (pomoIsBreak) pomoDisplay.style.color = 'var(--cyan)';
+    else pomoDisplay.style.color = 'var(--ink)';
+  };
+  pomoStart.onclick = () => {
+    if (pomoInterval) { clearInterval(pomoInterval); pomoInterval = null; pomoStart.textContent = pomoIsBreak ? 'Start break' : 'Start focus'; return; }
+    pomoStart.textContent = 'Pause';
+    pomoInterval = setInterval(() => {
+      pomoTimeLeft--;
+      updatePomoDisplay();
+      if (pomoTimeLeft <= 0) {
+        clearInterval(pomoInterval); pomoInterval = null;
+        if (!pomoIsBreak) {
+          recordPomoSession();
+          hooks.addMsgSys('🍅 Focus session complete! Take a break.');
+          pomoIsBreak = true; pomoTimeLeft = 5 * 60;
+          pomoStart.textContent = 'Start break';
+        } else {
+          pomoIsBreak = false; pomoTimeLeft = 25 * 60;
+          pomoStart.textContent = 'Start focus';
+          hooks.addMsgSys('☕ Break over! Ready for another round?');
+        }
+        updatePomoDisplay();
+        root.replaceChildren(); renderPersonal(root, hooks, close);
+      }
+    }, 1000);
+  };
+  pomoReset.onclick = () => {
+    if (pomoInterval) { clearInterval(pomoInterval); pomoInterval = null; }
+    pomoIsBreak = false; pomoTimeLeft = 25 * 60;
+    pomoStart.textContent = 'Start focus';
+    updatePomoDisplay();
+  };
+  pomoBtns.append(pomoStart, pomoReset);
+  pomo.appendChild(pomoBtns);
+  root.appendChild(pomo);
+
+  // ── Wellness Tracker ──
+  const well = card('Wellness', 'Mood · Energy · Water · Sleep');
+  const currentMood = todayMood();
+  const ms = moodStreak();
+  const wellKpis = el('div', 'cp-kpis');
+  wellKpis.innerHTML =
+    `<div class="cp-kpi"><span class="cp-kpi-val">${currentMood ? MOOD_EMOJI[currentMood.mood] : '—'}</span><span class="cp-kpi-lbl">Mood</span></div>` +
+    `<div class="cp-kpi"><span class="cp-kpi-val">${todayWater()}</span><span class="cp-kpi-lbl">Water 💧</span></div>` +
+    `<div class="cp-kpi"><span class="cp-kpi-val">${sleepAvg().hours || '—'}h</span><span class="cp-kpi-lbl">Avg sleep</span></div>` +
+    `<div class="cp-kpi"><span class="cp-kpi-val">${ms.avg || '—'}</span><span class="cp-kpi-lbl">Week avg</span></div>`;
+  well.appendChild(wellKpis);
+  const moodRow = el('div', 'cp-inline');
+  moodRow.style.justifyContent = 'center';
+  moodRow.style.gap = '12px';
+  MOODS.forEach(m => {
+    const mb = el('button', 'cp-btn' + (currentMood?.mood === m ? ' primary' : ''));
+    mb.textContent = MOOD_EMOJI[m];
+    mb.style.fontSize = '20px'; mb.style.minWidth = '44px';
+    mb.onclick = () => { logMood(m); root.replaceChildren(); renderPersonal(root, hooks, close); };
+    moodRow.appendChild(mb);
+  });
+  well.appendChild(el('div', 'cp-label', 'How are you feeling?'));
+  well.appendChild(moodRow);
+  const waterBtn = btn('+ Water glass 💧');
+  waterBtn.onclick = () => { addWater(); root.replaceChildren(); renderPersonal(root, hooks, close); };
+  well.appendChild(waterBtn);
+  const sleepRow = el('div', 'cp-inline');
+  const sleepH = input('Hours slept');
+  sleepH.type = 'number'; sleepH.min = '0'; sleepH.max = '24'; sleepH.step = '0.5';
+  const sleepQ = el('select', 'cp-input') as HTMLSelectElement;
+  [[5, 'Great'], [4, 'Good'], [3, 'Okay'], [2, 'Poor'], [1, 'Bad']].forEach(([v, l]) => {
+    const o = el('option') as HTMLOptionElement; o.value = String(v); o.textContent = l as string; sleepQ.appendChild(o);
+  });
+  const logS = btn('Log sleep');
+  logS.onclick = () => {
+    const h = parseFloat(sleepH.value);
+    if (!h) return;
+    logSleep(h, parseInt(sleepQ.value) || 3);
+    root.replaceChildren(); renderPersonal(root, hooks, close);
+  };
+  sleepRow.append(sleepH, sleepQ, logS);
+  well.appendChild(el('div', 'cp-label', 'Sleep log'));
+  well.appendChild(sleepRow);
+  const wellnessAI = btn('AI wellness insights', true);
+  wellnessAI.onclick = () => {
+    const wData = `Mood: ${currentMood ? currentMood.mood + (currentMood.note ? ' - ' + currentMood.note : '') : 'not logged'}, Water: ${todayWater()} glasses, Sleep avg: ${sleepAvg().hours}h (quality ${sleepAvg().quality}/5), Week mood avg: ${ms.avg}/5`;
+    hooks.ask(`Act as a wellness coach. Here are my wellness stats: ${wData}. Give me 3 personalized tips to improve my wellbeing today. Be warm and actionable.`);
+    close();
+  };
+  well.appendChild(wellnessAI);
+  root.appendChild(well);
+
+  // ── Goals ──
+  const gc = card('Goals', 'Track quarterly & monthly objectives');
+  const gs = activeGoalsSummary();
+  if (gs.total > 0) {
+    const gKpis = el('div', 'cp-kpis');
+    gKpis.innerHTML =
+      `<div class="cp-kpi"><span class="cp-kpi-val">${gs.total}</span><span class="cp-kpi-lbl">Goals</span></div>` +
+      `<div class="cp-kpi"><span class="cp-kpi-val">${gs.completed}</span><span class="cp-kpi-lbl">Done</span></div>` +
+      `<div class="cp-kpi"><span class="cp-kpi-val">${gs.avgProgress}%</span><span class="cp-kpi-lbl">Progress</span></div>`;
+    gc.appendChild(gKpis);
+  }
+  const gTitle = input('Goal — e.g. Close 10 deals this quarter');
+  const gTimeframe = el('select', 'cp-input') as HTMLSelectElement;
+  (['week', 'month', 'quarter', 'year'] as GoalTimeframe[]).forEach(t => {
+    const o = el('option') as HTMLOptionElement; o.value = t; o.textContent = t.charAt(0).toUpperCase() + t.slice(1); gTimeframe.appendChild(o);
+  });
+  gTimeframe.value = 'month';
+  const gCat = el('select', 'cp-input') as HTMLSelectElement;
+  (['business', 'personal', 'health', 'creative', 'financial'] as const).forEach(c => {
+    const o = el('option') as HTMLOptionElement; o.value = c; o.textContent = c.charAt(0).toUpperCase() + c.slice(1); gCat.appendChild(o);
+  });
+  const gMilestones = input('Milestones (comma separated, optional)');
+  const addG = btn('Add goal', true);
+  const gList = el('div', 'cp-list');
+  const drawGoals = () => {
+    gList.innerHTML = '';
+    const goals = loadGoals();
+    if (!goals.length) { gList.appendChild(el('div', 'cp-empty', 'No goals yet. Set your first above.')); return; }
+    goals.forEach(g => {
+      const prog = goalProgress(g);
+      const r = el('div', 'cp-row');
+      r.style.flexWrap = 'wrap';
+      const catHue = { business: 38, personal: 200, health: 145, creative: 280, financial: 45 }[g.category] ?? 200;
+      r.innerHTML =
+        `<span class="cp-row-main" style="flex:1;min-width:120px">${esc(g.title)}</span>` +
+        `<span class="cp-row-tag" style="color:hsl(${catHue},70%,60%)">${g.category} · ${g.timeframe}</span>` +
+        `<span class="cp-row-sub">${Math.round(prog * 100)}%</span>`;
+      const progBar = el('div', 'cp-catbar-track');
+      progBar.style.width = '100%'; progBar.style.margin = '4px 0';
+      const progFill = el('div', 'cp-catbar-fill');
+      progFill.style.width = `${prog * 100}%`;
+      if (prog === 1) progFill.style.background = 'linear-gradient(90deg, #4dff91, #39e75f)';
+      progBar.appendChild(progFill);
+      r.appendChild(progBar);
+      if (g.milestones.length) {
+        const msWrap = el('div', '');
+        msWrap.style.cssText = 'width:100%;display:flex;flex-direction:column;gap:4px;margin-top:4px';
+        g.milestones.forEach((m, mi) => {
+          const mRow = el('div', 'cp-inline');
+          mRow.style.gap = '6px';
+          const mBox = el('button', 'cp-check' + (m.done ? ' on' : ''), m.done ? '✓' : '');
+          mBox.onclick = () => { toggleMilestone(g.id, mi); drawGoals(); };
+          mRow.appendChild(mBox);
+          const mText = el('span', '', esc(m.text));
+          mText.style.fontSize = '12px';
+          if (m.done) { mText.style.opacity = '.45'; mText.style.textDecoration = 'line-through'; }
+          mRow.appendChild(mText);
+          msWrap.appendChild(mRow);
+        });
+        r.appendChild(msWrap);
+      }
+      const addMs = el('button', 'cp-x', '+');
+      addMs.title = 'Add milestone';
+      addMs.onclick = () => {
+        const ms = prompt('New milestone:');
+        if (ms?.trim()) { addMilestoneToGoal(g.id, ms.trim()); drawGoals(); }
+      };
+      r.appendChild(addMs);
+      const del = el('button', 'cp-x', '✕');
+      del.onclick = () => { removeGoal(g.id); drawGoals(); };
+      r.appendChild(del);
+      gList.appendChild(r);
+    });
+  };
+  addG.onclick = () => {
+    if (!gTitle.value.trim()) return;
+    const ms = gMilestones.value.split(',').map(s => s.trim()).filter(Boolean);
+    addGoal(gTitle.value.trim(), gTimeframe.value as GoalTimeframe, gCat.value as any, ms);
+    gTitle.value = ''; gMilestones.value = '';
+    drawGoals();
+  };
+  gc.appendChild(field('Goal', gTitle));
+  const gRow = el('div', 'cp-inline'); gRow.append(gTimeframe, gCat);
+  gc.appendChild(gRow);
+  gc.appendChild(field('Milestones', gMilestones));
+  gc.appendChild(addG);
+  gc.appendChild(gList);
+  drawGoals();
+  root.appendChild(gc);
 
   // ── Voice-to-task: dump → auto-tag → categorize ──
   const vt = card('Brain Dump → Tasks', 'Auto-sorted into Business / Trading / Personal');
