@@ -122,6 +122,10 @@ export function mountApp(root: HTMLElement) {
             <span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 8V6a2 2 0 012-2h2M4 16v2a2 2 0 002 2h2M16 4h2a2 2 0 012 2v2M16 20h2a2 2 0 002-2v-2"/><circle cx="12" cy="10" r="3"/><path d="M7 18c0-2.8 2.2-5 5-5s5 2.2 5 5"/></svg></span>
             <span class="dl">Detect</span>
           </button>
+          <button class="dock-item" id="hgBtn">
+            <span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></span>
+            <span class="dl">HeavyGuard</span>
+          </button>
         </div>
         <div class="bar">
           <button class="ic mic" id="micBtn" title="Hey Alpha"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></button>
@@ -207,6 +211,15 @@ export function mountApp(root: HTMLElement) {
         <button class="go" id="saveBtn">Activate</button>
         <p style="margin-top:14px">Free key: <a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com/apikey</a></p>
       </div></div>
+      <div class="hg-overlay" id="hgOverlay">
+        <div class="hg-frame">
+          <div class="hg-topbar">
+            <span class="hg-topbar-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> HEAVYGUARD OS</span>
+            <button class="hg-close" id="hgClose">✕</button>
+          </div>
+          <iframe id="hgIframe" class="hg-iframe" src="" allow="camera;microphone"></iframe>
+        </div>
+      </div>
     </div>
   `;
 
@@ -371,7 +384,21 @@ export function mountApp(root: HTMLElement) {
     setStatus('thinking');
     try {
       const reply = await askAI(state, text);
-      const clean = runTags(reply, { onVideo: openVideo, onSearch: openSearch, onCalendar: openCalendar, onEvent: addEvent, onSpotify: openSpotify }) || 'Done.';
+      const clean = runTags(reply, {
+        onVideo: openVideo, onSearch: openSearch, onCalendar: openCalendar,
+        onEvent: addEvent, onSpotify: openSpotify,
+        onDiary: (title: string, date: string) => {
+          const iframe = $<HTMLIFrameElement>('hgIframe');
+          if (iframe.contentWindow) {
+            iframe.contentWindow.postMessage({ source: 'alpha-ai', action: 'addTask', payload: { title, date } }, '*');
+          } else {
+            const tasks = JSON.parse(localStorage.getItem('hg2:tasks') || '[]');
+            const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+            tasks.unshift({ id, title, date, done: false, ts: Date.now() });
+            localStorage.setItem('hg2:tasks', JSON.stringify(tasks));
+          }
+        },
+      }) || 'Done.';
       audio.receive();
       addMsg(clean, 'al');
       voice.speak(clean);
@@ -412,6 +439,23 @@ export function mountApp(root: HTMLElement) {
     if (detecting) { orb.startBodyDetection(); $('detectBtn').classList.add('active'); }
     else { orb.stopBodyDetection(); $('detectBtn').classList.remove('active'); }
   };
+
+  // HeavyGuard OS
+  const hgBase = import.meta.env.BASE_URL || '/';
+  $('hgBtn').onclick = () => {
+    const iframe = $<HTMLIFrameElement>('hgIframe');
+    if (!iframe.src || iframe.src === 'about:blank' || !iframe.src.includes('heavyguard')) {
+      iframe.src = hgBase + 'heavyguard.html';
+    }
+    $('hgOverlay').classList.add('show');
+  };
+  $('hgClose').onclick = () => { $('hgOverlay').classList.remove('show'); };
+  window.addEventListener('message', (e) => {
+    if (!e.data || e.data.source !== 'heavyguard') return;
+    if (e.data.action === 'taskAdded') {
+      addMsg(`נרשם ביומן: ${e.data.payload.title}`, 'sys');
+    }
+  });
 
   // Dock items click
   document.querySelectorAll<HTMLButtonElement>('.dock-item[data-q]').forEach(btn => {

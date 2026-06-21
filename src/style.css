@@ -753,54 +753,236 @@ body::after {
   width: 100%; height: 352px; border: 0; border-radius: 12px;
 }
 
-/* ========== MOBILE ========== */
+/* ========== HEAVYGUARD OVERLAY ========== */
+.hg-overlay {
+  position: fixed; inset: 0; z-index: 60;
+  background: rgba(4, 6, 13, .92);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  display: none; place-items: center; padding: 0;
+}
+.hg-overlay.show { display: grid; }
+
+.hg-frame {
+  width: 100%; height: 100%;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+
+.hg-topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 18px;
+  background: rgba(8, 12, 24, .9);
+  border-bottom: 1px solid rgba(228, 188, 99, .2);
+  flex-shrink: 0;
+}
+
+.hg-topbar-title {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 11px; letter-spacing: 3px; font-weight: 600;
+  color: var(--gold);
+  display: flex; align-items: center; gap: 8px;
+}
+.hg-topbar-title svg { stroke: var(--gold); }
+
+.hg-close {
+  background: rgba(255, 255, 255, .05);
+  border: 1px solid rgba(255, 93, 115, .3);
+  color: #ff5d73; width: 34px; height: 34px; border-radius: 10px;
+  cursor: pointer; font-size: 16px; font-weight: 600;
+  transition: var(--transition);
+  display: grid; place-items: center;
+}
+.hg-close:hover {
+  background: rgba(255, 93, 115, .15);
+  border-color: rgba(255, 93, 115, .5);
+  box-shadow: 0 0 16px rgba(255, 93, 115, .2);
+}
+
+.hg-iframe {
+  flex: 1; width: 100%; height: 100%;
+  border: 0; background: #080B10;
+}
+
+/* ========== MOBILE RESPONSIVE ========== */
+
+/* Tablets and small laptops */
 @media (max-width: 1100px) {
   .left-panel { display: none; }
 }
 
-@media (max-width: 768px) {
+/* Medium screens */
+@media (max-width: 900px) {
   .right-panel {
-    position: fixed; right: 8px; left: 8px;
-    top: auto; bottom: 140px;
-    width: auto; max-height: 30vh;
-    border-radius: 12px;
+    position: fixed; right: 8px; left: auto;
+    top: 60px; bottom: 130px;
+    width: 240px;
+    border-radius: 14px;
     opacity: .95;
   }
 }
 
-@media (max-width: 560px) {
-  .topL { top: 12px; left: 14px }
-  .topL .wm { font-size: 14px; letter-spacing: 3px }
-  .topR { top: 12px; right: 12px; gap: 6px }
-  .chip { font-size: 9px; padding: 6px 10px; border-radius: 8px }
+/* Tablets portrait */
+@media (max-width: 768px) {
+  .topL { top: 14px; left: 16px; }
+  .topL .wm { font-size: 15px; letter-spacing: 3px; }
+  .topL .clk { font-size: 11px; letter-spacing: 2px; }
+  .topR { top: 14px; right: 14px; gap: 6px; }
+  .chip { font-size: 9px; padding: 7px 12px; border-radius: 8px; letter-spacing: 1.5px; }
+  .chip svg { width: 11px; height: 11px; }
+
   .right-panel {
-    right: 6px; left: 6px;
-    bottom: 130px;
-    max-height: 25vh;
+    position: fixed; right: 8px; left: 8px;
+    top: auto; bottom: 150px;
+    width: auto; max-height: 28vh;
+    border-radius: 12px;
+    opacity: .95;
   }
-  .dock { width: 96vw }
-  .log { max-height: 22vh }
-  .turn .txt { font-size: 14px }
-  .bar { padding: 8px 4px 14px }
-  .pill { border-radius: 20px; padding: 3px 5px 3px 14px }
-  .pill input { font-size: 14px }
-  .ic { width: 38px; height: 38px }
-  .mac-dock { gap: 2px; padding: 6px 10px 4px }
-  .di { width: 22px; height: 22px }
-  .dl { font-size: 8px }
-  .dock-item { padding: 5px 7px }
-  .winbox { width: 100vw; height: 100vh; border-radius: 0 }
-  .card { padding: 22px; border-radius: 14px }
-  .social-item { grid-template-columns: 20px 60px 1fr auto; gap: 6px; padding: 8px 10px }
-  .social-item svg { width: 16px; height: 16px }
+
+  .dock { width: min(600px, 96vw); }
+
+  .mac-dock {
+    gap: 2px; padding: 6px 12px 5px;
+    overflow-x: auto; overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    justify-content: flex-start;
+    max-width: 100%;
+  }
+  .mac-dock::-webkit-scrollbar { display: none; }
+
+  .dock-item { padding: 5px 8px; flex-shrink: 0; }
+  .di { width: 24px; height: 24px; }
+  .dl { font-size: 8px; }
+
+  .bar { padding: 6px 2px 16px; }
+  .pill { border-radius: 20px; padding: 3px 5px 3px 14px; }
+  .pill input { font-size: 14px; }
+  .ic { width: 40px; height: 40px; }
+
+  .winbox { width: 96vw; height: 90vh; border-radius: 14px; }
+
+  body::after { display: none; }
 }
 
+/* Phones */
+@media (max-width: 560px) {
+  .topL { top: env(safe-area-inset-top, 10px); left: 12px; }
+  .topL .wm { font-size: 13px; letter-spacing: 2px; }
+  .topL .clk { font-size: 10px; letter-spacing: 2px; margin-top: 2px; }
+  .topR { top: env(safe-area-inset-top, 10px); right: 10px; gap: 4px; }
+  .chip { font-size: 0; padding: 7px 9px; border-radius: 8px; gap: 0; }
+  .chip svg { width: 13px; height: 13px; }
+  .chip:last-child { font-size: 8px; gap: 4px; }
+
+  .right-panel {
+    right: 6px; left: 6px;
+    bottom: 140px;
+    max-height: 22vh;
+    border-radius: 10px;
+  }
+  .rp-head { padding: 8px 12px 6px; }
+  .rp-body { padding: 6px 8px; gap: 6px; }
+  .rp-msg { padding: 8px 10px; border-radius: 8px; }
+  .rp-text { font-size: 12px; }
+  .rp-who { font-size: 7px; letter-spacing: 2px; }
+
+  .dock { width: 100vw; padding: 0 6px; }
+  .state { font-size: 8px; letter-spacing: 3px; margin-bottom: 6px; }
+
+  .mac-dock {
+    gap: 1px; padding: 5px 8px 4px;
+    border-radius: 14px;
+    overflow-x: auto; overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    justify-content: flex-start;
+  }
+  .mac-dock::-webkit-scrollbar { display: none; }
+
+  .dock-item { padding: 4px 6px; flex-shrink: 0; }
+  .di { width: 20px; height: 20px; }
+  .dl { font-size: 7px; max-width: 44px; overflow: hidden; text-overflow: ellipsis; }
+
+  .bar { padding: 4px 6px 12px; gap: 6px; }
+  .pill { border-radius: 18px; padding: 2px 4px 2px 12px; }
+  .pill input { font-size: 14px; padding: 8px 0; }
+  .ic { width: 36px; height: 36px; }
+  .ic svg { width: 14px; height: 14px; }
+
+  .log { max-height: 20vh; padding: 4px 6px; }
+  .turn .txt { font-size: 13px; }
+  .turn .who { font-size: 8px; letter-spacing: 2px; }
+
+  .winbox { width: 100vw; height: 100vh; border-radius: 0; }
+  .winhead { padding: 10px 14px; }
+
+  .overlay { padding: 12px; }
+  .card { padding: 18px; border-radius: 14px; max-height: 92vh; }
+  .card h2 { font-size: 18px; }
+  .card label { font-size: 10px; margin: 10px 0 4px; }
+  .card input, .card select { padding: 10px 12px; font-size: 13px; border-radius: 10px; }
+  .card .go { padding: 12px; font-size: 13px; margin-top: 14px; }
+  .social-item { grid-template-columns: 20px 55px 1fr; gap: 6px; padding: 8px 10px; border-radius: 10px; }
+  .social-item svg { width: 16px; height: 16px; }
+  .social-status { display: none; }
+
+  .hg-topbar { padding: 8px 14px; }
+  .hg-topbar-title { font-size: 10px; letter-spacing: 2px; }
+  .hg-close { width: 30px; height: 30px; font-size: 14px; border-radius: 8px; }
+}
+
+/* Very small phones */
 @media (max-width: 380px) {
-  .topR { flex-wrap: wrap }
-  .chip { font-size: 8px; padding: 5px 8px }
-  .topL .wm { font-size: 12px }
-  .di { width: 20px; height: 20px }
-  .dl { display: none }
-  .dock-item { padding: 4px 6px }
-  .right-panel { max-height: 20vh }
+  .topL .wm { font-size: 11px; letter-spacing: 1.5px; }
+  .topR { gap: 3px; }
+  .chip { padding: 6px 8px; }
+  .chip svg { width: 12px; height: 12px; }
+
+  .right-panel { max-height: 18vh; bottom: 135px; }
+  .rp-text { font-size: 11px; }
+
+  .dl { display: none; }
+  .dock-item { padding: 4px 5px; }
+  .di { width: 18px; height: 18px; }
+
+  .pill input { font-size: 13px; }
+  .ic { width: 34px; height: 34px; }
+
+  .card { padding: 14px; }
+  .card h2 { font-size: 16px; }
+}
+
+/* Landscape phones */
+@media (max-height: 500px) {
+  .topL { top: 6px; left: 10px; }
+  .topL .wm { font-size: 12px; }
+  .topL .clk { display: none; }
+  .topR { top: 6px; right: 10px; }
+
+  .right-panel {
+    top: 40px; bottom: 60px;
+    right: 6px; width: 200px;
+    max-height: none;
+    border-radius: 10px;
+  }
+
+  .dock { bottom: 0; }
+  .state { display: none; }
+  .mac-dock { padding: 4px 10px 3px; border-radius: 12px; }
+  .bar { padding: 2px 4px 8px; }
+  .ic { width: 32px; height: 32px; }
+  .pill input { padding: 6px 0; font-size: 13px; }
+
+  .winbox { width: 100vw; height: 100vh; border-radius: 0; }
+  .card { max-height: 95vh; padding: 14px; }
+}
+
+/* Touch device improvements */
+@media (hover: none) and (pointer: coarse) {
+  .dock-item { min-width: 44px; min-height: 44px; }
+  .chip { min-height: 36px; }
+  .ic { min-width: 40px; min-height: 40px; }
+  .pill input { font-size: 16px; }
+  .hg-close { min-width: 40px; min-height: 40px; }
 }

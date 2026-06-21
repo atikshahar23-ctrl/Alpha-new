@@ -1,12 +1,16 @@
 import { defineConfig } from 'vite';
+import { resolve } from 'path';
 
-// IMPORTANT for GitHub Pages:
-// If you deploy to https://<user>.github.io/<repo>/ set base to '/<repo>/'.
-// If you deploy to a custom domain or to https://<user>.github.io/ (user/org page), use '/'.
 export default defineConfig({
   base: '/Alpha-new/',
   build: {
     outDir: 'dist',
     sourcemap: false,
+    rollupOptions: {
+      input: {
+        main: resolve(__dirname, 'index.html'),
+        heavyguard: resolve(__dirname, 'heavyguard.html'),
+      },
+    },
   },
 });

@@ -36,6 +36,7 @@ Control the app via tags at the END of your reply when relevant (never mention t
 - add a calendar event: [[EVENT: title | YYYY-MM-DD | HH:MM]]
 - open the calendar: [[CALENDAR]]
 - play music on Spotify: [[SPOTIFY: song or artist name]]
+- add task to HeavyGuard diary: [[DIARY: task title | YYYY-MM-DD]]
 User's calendar: ${upcomingText()}.`;
 }
 
@@ -248,9 +249,10 @@ export function runTags(
     onCalendar: () => void;
     onEvent: (title: string, date: string, time: string) => void;
     onSpotify: (q: string) => void;
+    onDiary?: (title: string, date: string) => void;
   }
 ): string {
-  const re = /\[\[(VIDEO|SEARCH|EVENT|CALENDAR|SPOTIFY)\s*:?\s*([^\]]*)\]\]/g;
+  const re = /\[\[(VIDEO|SEARCH|EVENT|CALENDAR|SPOTIFY|DIARY)\s*:?\s*([^\]]*)\]\]/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
     const type = m[1], arg = m[2].trim();
@@ -258,6 +260,10 @@ export function runTags(
     else if (type === 'SEARCH') hooks.onSearch(arg);
     else if (type === 'CALENDAR') hooks.onCalendar();
     else if (type === 'SPOTIFY') hooks.onSpotify(arg);
+    else if (type === 'DIARY' && hooks.onDiary) {
+      const p = arg.split('|').map(s => s.trim());
+      if (p[0]) hooks.onDiary(p[0], p[1] || new Date().toISOString().slice(0, 10));
+    }
     else if (type === 'EVENT') {
       const p = arg.split('|').map(s => s.trim());
       if (p[0] && p[1]) hooks.onEvent(p[0], p[1], p[2] || '');
