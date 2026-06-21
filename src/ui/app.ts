@@ -565,7 +565,7 @@ export function mountApp(root: HTMLElement) {
       if (!items.length) html += '<div style="color:var(--dim)">No results found.</div>';
       for (const it of items)
         html += `<a href="https://en.wikipedia.org/?curid=${it.pageid}" target="_blank" style="display:block;color:var(--ink);padding:14px;background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:12px;margin-bottom:8px;text-decoration:none;transition:.2s"><b>${it.title}</b><br><span style="color:var(--dim);font-size:13px">${it.snippet}…</span></a>`;
-      html += `<a href="https://www.google.com/search?q=${encodeURIComponent(q)}" target="_blank" style="display:inline-block;margin-top:8px;color:var(--cyan);text-decoration:none;padding:8px 16px;border:1px solid rgba(95,230,255,.2);border-radius:8px">Continue on Google ↗</a></div>`;
+      html += `<a href="https://www.google.com/search?q=${encodeURIComponent(q)}" target="_blank" style="display:inline-block;margin-top:8px;color:var(--cyan);text-decoration:none;padding:8px 16px;border:1px solid rgba(218,165,32,.2);border-radius:8px">Continue on Google ↗</a></div>`;
       $('winBody').innerHTML = html;
     } catch { $('winBody').innerHTML = '<div class="pad" style="color:var(--dim)">Search error.</div>'; }
   }
@@ -991,7 +991,7 @@ export function mountApp(root: HTMLElement) {
   }
 
   function addArObject(type: ArObj['type']) {
-    const colors = ['#5fe6ff', '#ffc24d', '#ff5d73', '#4dff91', '#b06aff', '#ff9f43'];
+    const colors = ['#daa520', '#f5e6c8', '#e8a040', '#c8956a', '#f0d090', '#d4a84d'];
     arObjects.push({
       x: 0.3 + Math.random() * 0.4,
       y: 0.15 + Math.random() * 0.3,
@@ -1297,9 +1297,9 @@ export function mountApp(root: HTMLElement) {
             const landmarks = results.multiHandLandmarks[h];
             const isRight = h === 0;
             indicator.textContent = results.multiHandLandmarks.length > 1 ? '✋✋ שתי ידיים' : '✋ יד מזוהה';
-            indicator.style.color = '#5fe6ff';
+            indicator.style.color = '#daa520';
 
-            c.strokeStyle = isRight ? 'rgba(95,230,255,0.6)' : 'rgba(176,106,255,0.6)';
+            c.strokeStyle = isRight ? 'rgba(218,165,32,0.6)' : 'rgba(200,149,106,0.6)';
             c.lineWidth = 2;
             const connections = [
               [0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],
@@ -1316,7 +1316,7 @@ export function mountApp(root: HTMLElement) {
               const lm = landmarks[i];
               c.beginPath();
               c.arc(lm.x * cvs.width, lm.y * cvs.height, i === 8 || i === 4 ? 8 : 4, 0, Math.PI * 2);
-              c.fillStyle = i === 8 ? 'rgba(255,194,77,0.9)' : i === 4 ? 'rgba(255,93,115,0.9)' : (isRight ? 'rgba(95,230,255,0.7)' : 'rgba(176,106,255,0.7)');
+              c.fillStyle = i === 8 ? 'rgba(245,230,200,0.9)' : i === 4 ? 'rgba(218,165,32,0.9)' : (isRight ? 'rgba(218,165,32,0.7)' : 'rgba(200,149,106,0.7)');
               c.fill();
             }
 
