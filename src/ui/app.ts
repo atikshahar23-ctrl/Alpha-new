@@ -487,6 +487,10 @@ export function mountApp(root: HTMLElement) {
   $('sendBtn').onclick = send;
   $('input').addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
   $('micBtn').onclick = () => {
+    if (!voice.supported) {
+      addMsg('Speech recognition is not supported in this browser.', 'al');
+      return;
+    }
     audio.ensure();
     const turningOn = !voice.wakeOn;
     voice.setWake(turningOn);

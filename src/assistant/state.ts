@@ -24,7 +24,8 @@ export interface AppState {
 const KEY = 'alpha_key', GROK = 'alpha_grok', OPENAI = 'alpha_openai', PROV = 'alpha_provider',
   PUTERMODEL = 'alpha_putermodel',
   NAME = 'alpha_name', MICLANG = 'alpha_micLang', REPLYLANG = 'alpha_replyLang',
-  TEXTLANG = 'alpha_textLang', AMB = 'alpha_amb', SFX = 'alpha_sfx', WAKE = 'alpha_wake';
+  TEXTLANG = 'alpha_textLang', AMB = 'alpha_amb', SFX = 'alpha_sfx', WAKE = 'alpha_wake',
+  VOICE = 'alpha_voice';
 
 export function loadState(): AppState {
   let amb = parseFloat(localStorage.getItem(AMB) || '');
@@ -40,7 +41,7 @@ export function loadState(): AppState {
     replyLang: (localStorage.getItem(REPLYLANG) as ReplyLang) || 'en',
     textLang: (localStorage.getItem(TEXTLANG) as TextLang) || 'auto',
     history: [],
-    voiceOn: true,
+    voiceOn: localStorage.getItem(VOICE) !== '0',
     ambLevel: amb,
     sfxOn: localStorage.getItem(SFX) !== '0',
     wakeOn: localStorage.getItem(WAKE) === '1',
@@ -60,6 +61,7 @@ export function saveState(s: AppState) {
   localStorage.setItem(AMB, s.ambLevel.toFixed(2));
   localStorage.setItem(SFX, s.sfxOn ? '1' : '0');
   localStorage.setItem(WAKE, s.wakeOn ? '1' : '0');
+  localStorage.setItem(VOICE, s.voiceOn ? '1' : '0');
 }
 
 export interface CalEvent { id: string; title: string; date: string; time: string }

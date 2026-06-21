@@ -13,6 +13,7 @@ export class VoiceEngine {
   private state: AppState;
   private onTranscript: (text: string) => void;
   private onStateChange: (s: 'armed' | 'listening' | 'thinking' | 'speaking' | '') => void;
+  private recRetries = 0;
   wakeOn = false;
 
   constructor(
@@ -44,6 +45,7 @@ export class VoiceEngine {
       };
       this.rec.onend = () => {
         this.recRunning = false;
+        this.recRetries = 0;
         if (this.wakeOn && !this.suppress) {
           setTimeout(() => this.startRec(), 250);
         }
@@ -53,13 +55,16 @@ export class VoiceEngine {
         if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
           this.wakeOn = false;
           this.onStateChange('');
-        } else if (this.wakeOn && !this.suppress) {
-          setTimeout(() => this.startRec(), 500);
+        } else if (this.wakeOn && !this.suppress && this.recRetries < 5) {
+          this.recRetries++;
+          setTimeout(() => this.startRec(), 500 * this.recRetries);
         }
       };
     }
     this.loadVoices();
-    speechSynthesis.onvoiceschanged = () => this.loadVoices();
+    if ('speechSynthesis' in window) {
+      speechSynthesis.onvoiceschanged = () => this.loadVoices();
+    }
   }
 
   get supported() {
@@ -87,7 +92,7 @@ export class VoiceEngine {
     const s = t.toLowerCase();
     return (
       s.includes('alpha') || s.includes('alfa') || s.includes('elpha') ||
-      t.includes('אלפא') || t.includes('אלפה')
+      s.includes('אלפא') || s.includes('אלפה')
     );
   }
   private stripWake(raw: string) {
@@ -144,7 +149,7 @@ export class VoiceEngine {
     this.voices = speechSynthesis.getVoices();
     const saved = localStorage.getItem('alpha_voice_' + this.state.replyLang);
     const list = this.langVoices();
-    this.chosenVoice = (saved && this.voices.find(v => v.name === saved)) || list[0] || this.voices[0] || null;
+    this.chosenVoice = (saved && list.find(v => v.name === saved)) || list[0] || this.voices[0] || null;
   }
   availableVoices() {
     return this.langVoices();
@@ -160,20 +165,28 @@ export class VoiceEngine {
       return;
     }
     speechSynthesis.cancel();
+    if (!this.chosenVoice && this.voices.length === 0) {
+      this.loadVoices();
+    }
     const u = new SpeechSynthesisUtterance(text);
     if (this.chosenVoice) { u.voice = this.chosenVoice; u.lang = this.chosenVoice.lang; }
     else u.lang = this.state.replyLang === 'he' ? 'he-IL' : this.state.replyLang === 'es' ? 'es-ES' : 'en-US';
     u.rate = this.state.replyLang === 'he' ? 0.98 : 0.97;
     u.pitch = 1.05;
-    u.onstart = () => { this.suppress = true; this.stopRec(); this.onStateChange('speaking'); };
+    let finished = false;
     const done = () => {
+      if (finished) return;
+      finished = true;
       this.suppress = false;
       if (this.wakeOn) { this.onStateChange('armed'); setTimeout(() => this.startRec(), 250); }
       else this.onStateChange('');
     };
+    u.onstart = () => { this.suppress = true; this.stopRec(); this.onStateChange('speaking'); };
     u.onend = done;
-    u.onerror = done;
+    u.onerror = () => done();
     speechSynthesis.speak(u);
+    // Safety timeout: if TTS hangs, recover after 30s
+    setTimeout(() => { if (!finished) { speechSynthesis.cancel(); done(); } }, 30000);
   }
 
   setMicLang(lang: 'he' | 'en' | 'es') {

@@ -261,64 +261,110 @@ const CONE_FRAGMENT = /* glsl */`
 `;
 
 // ============================================================
-// Mobile holographic orb shaders
+// Mobile holographic orb shaders — MAXIMUM QUALITY
 // ============================================================
 const MOBILE_ORB_VERT = /* glsl */`
   varying vec3 vNormal;
   varying vec3 vWorldPos;
   varying vec2 vUv;
+  varying vec3 vLocalPos;
+  uniform float uTime;
+  uniform float uEnergy;
+
   void main() {
+    vec3 pos = position;
+
+    // Organic surface displacement
+    float disp = sin(pos.x * 8.0 + uTime * 1.5) * sin(pos.y * 6.0 + uTime * 1.2) * sin(pos.z * 7.0 + uTime) * 0.02;
+    disp += sin(pos.x * 15.0 - uTime * 2.0) * sin(pos.z * 12.0 + uTime * 1.5) * 0.01 * (1.0 + uEnergy * 3.0);
+    pos += normal * disp;
+
     vNormal = normalize(normalMatrix * normal);
-    vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+    vWorldPos = (modelMatrix * vec4(pos, 1.0)).xyz;
+    vLocalPos = position;
     vUv = uv;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
   }
 `;
 
 const MOBILE_ORB_FRAG = /* glsl */`
   uniform float uTime;
   uniform float uEnergy;
+  uniform float uGlitch;
   varying vec3 vNormal;
   varying vec3 vWorldPos;
   varying vec2 vUv;
+  varying vec3 vLocalPos;
 
-  float h21(vec2 p) { return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
-  float n2d(vec2 p) {
-    vec2 i = floor(p), f = fract(p);
-    f = f*f*(3.0-2.0*f);
-    return mix(mix(h21(i), h21(i+vec2(1,0)), f.x),
-               mix(h21(i+vec2(0,1)), h21(i+vec2(1,1)), f.x), f.y);
+  float h3(vec3 p) {
+    p = fract(p * vec3(443.897, 441.423, 437.195));
+    p += dot(p, p.yzx + 19.19);
+    return fract((p.x + p.y) * p.z);
   }
-  float fbm(vec2 p) {
-    float v = 0.0;
-    v += n2d(p) * 0.5; p *= 2.1;
-    v += n2d(p) * 0.25; p *= 2.3;
-    v += n2d(p) * 0.125;
+  float n3(vec3 p) {
+    vec3 i = floor(p), f = fract(p);
+    f = f*f*(3.0-2.0*f);
+    return mix(mix(mix(h3(i), h3(i+vec3(1,0,0)), f.x),
+                   mix(h3(i+vec3(0,1,0)), h3(i+vec3(1,1,0)), f.x), f.y),
+               mix(mix(h3(i+vec3(0,0,1)), h3(i+vec3(1,0,1)), f.x),
+                   mix(h3(i+vec3(0,1,1)), h3(i+vec3(1,1,1)), f.x), f.y), f.z);
+  }
+  float fbm3(vec3 p) {
+    float v = n3(p)*0.5; p *= 2.1;
+    v += n3(p)*0.25; p *= 2.3;
+    v += n3(p)*0.125;
     return v;
   }
 
   void main() {
-    vec3 viewDir = normalize(cameraPosition - vWorldPos);
+    vec3 vd = normalize(cameraPosition - vWorldPos);
     vec3 n = normalize(vNormal);
-    float fresnel = pow(1.0 - max(dot(n, viewDir), 0.0), 2.5);
+    float fresnel = pow(1.0 - max(dot(n, vd), 0.0), 2.8);
 
-    vec2 flow1 = vUv * 6.0 + vec2(uTime * 0.12, uTime * 0.08);
-    vec2 flow2 = vUv * 10.0 + vec2(-uTime * 0.08, uTime * 0.15);
-    float pattern = fbm(flow1) * 0.6 + n2d(flow2) * 0.4;
+    // Volumetric 3D energy patterns
+    vec3 fp = vLocalPos * 3.5 + vec3(uTime*0.15, uTime*0.1, uTime*0.12);
+    float e1 = fbm3(fp);
+    float e2 = fbm3(fp * 1.4 + vec3(0.0, uTime*0.08, 0.0));
+    float ep = e1 * 0.6 + e2 * 0.4;
 
-    float scan = smoothstep(0.42, 0.5, fract(vWorldPos.y * 12.0 - uTime * 0.5)) * 0.3;
+    // Hexagonal grid overlay
+    vec2 hu = vUv * 18.0;
+    vec2 hg = fract(hu) - 0.5;
+    float hex = smoothstep(0.03, 0.0, abs(abs(hg.x) + abs(hg.y)*0.577 - 0.5));
 
+    // Multi-speed scan lines
+    float s1 = smoothstep(0.42, 0.5, fract(vWorldPos.y*15.0 - uTime*0.6)) * 0.35;
+    float s2 = smoothstep(0.45, 0.5, fract(vWorldPos.y*8.0 + uTime*0.3)) * 0.2;
+    float s3 = smoothstep(0.48, 0.5, fract(-vWorldPos.y*25.0 - uTime*1.2)) * 0.12;
+    float sc = s1 + s2 + s3;
+
+    // Color palette
     vec3 teal = vec3(0.05, 0.55, 0.65);
     vec3 cyan = vec3(0.2, 0.9, 1.0);
-    vec3 col = mix(teal, cyan, pattern * 0.7 + fresnel * 0.3);
-    col += cyan * fresnel * 1.8;
-    col += vec3(0.1, 0.3, 0.35) * scan;
+    vec3 gold = vec3(1.0, 0.76, 0.3);
 
-    float pulse = 0.9 + sin(uTime * 1.2) * 0.06 + uEnergy * 0.2;
+    float cs = sin(uTime*0.3 + vWorldPos.y*2.0)*0.5+0.5;
+    vec3 col = mix(teal, cyan, ep*0.8);
+    col = mix(col, gold, fresnel*cs*0.2 + uEnergy*0.12);
+
+    // Chromatic fresnel edge
+    col.r += cyan.r * fresnel * 1.5;
+    col.g += cyan.g * fresnel * 2.0;
+    col.b += cyan.b * fresnel * 1.8;
+
+    col += vec3(0.12, 0.25, 0.3) * hex * 0.35;
+    col += vec3(0.2, 0.5, 0.6) * sc;
+
+    // Glitch bands
+    float gl = step(0.97, fract(sin(floor(vWorldPos.y*50.0 + uTime*4.0)) * 43758.5));
+    col += vec3(0.3, 0.7, 0.9) * gl * (uGlitch + uEnergy * 0.5);
+
+    float pulse = 0.85 + sin(uTime*1.2)*0.08 + uEnergy*0.25;
     col *= pulse;
 
-    float alpha = 0.35 + fresnel * 0.45 + pattern * 0.1;
-    gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.9));
+    float alpha = 0.32 + fresnel*0.5 + ep*0.12 + sc*0.06 + hex*0.04;
+    alpha *= pulse;
+    gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.92));
   }
 `;
 
@@ -345,19 +391,34 @@ const MOBILE_PART_FRAG = /* glsl */`
   void main() {
     float d = length(gl_PointCoord - vec2(0.5));
     if (d > 0.5) discard;
-    float a = smoothstep(0.5, 0.0, d);
-    gl_FragColor = vec4(vColor, a * vAlpha);
+    float core = smoothstep(0.15, 0.0, d);
+    float ring = smoothstep(0.5, 0.3, d) * smoothstep(0.15, 0.25, d) * 0.5;
+    float a = core + ring;
+    gl_FragColor = vec4(vColor * (1.0 + core * 0.5), a * vAlpha);
+  }
+`;
+
+// Pulse ring shader — expanding ring that fades
+const PULSE_RING_FRAG = /* glsl */`
+  uniform float uOpacity;
+  varying vec2 vUv;
+  void main() {
+    vec2 c = vUv - 0.5;
+    float d = length(c) * 2.0;
+    float ring = smoothstep(0.9, 0.95, d) * smoothstep(1.0, 0.97, d);
+    vec3 col = vec3(0.37, 0.9, 1.0);
+    gl_FragColor = vec4(col, ring * uOpacity);
   }
 `;
 
 // ============================================================
-// Mobile orb scene — holographic AI core
+// Mobile orb scene — holographic AI core (MAXIMUM QUALITY)
 // ============================================================
 function mountMobileOrb(container: HTMLElement): OrbHandle {
   const renderer = new THREE.WebGLRenderer({
     antialias: true,
     alpha: false,
-    powerPreference: 'low-power',
+    powerPreference: 'default',
     failIfMajorPerformanceCaveat: false,
   });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -382,10 +443,12 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   const group = new THREE.Group();
   scene.add(group);
 
-  // ── Central holographic sphere ──
+  // ────────────────────────────────────────────
+  // CENTRAL ORB — shader sphere with 3D noise, hex grid, scan lines
+  // ────────────────────────────────────────────
   const orbGeo = new THREE.IcosahedronGeometry(0.9, 5);
   const orbMat = new THREE.ShaderMaterial({
-    uniforms: { uTime: { value: 0 }, uEnergy: { value: 0 } },
+    uniforms: { uTime: { value: 0 }, uEnergy: { value: 0 }, uGlitch: { value: 0 } },
     vertexShader: MOBILE_ORB_VERT,
     fragmentShader: MOBILE_ORB_FRAG,
     transparent: true,
@@ -396,101 +459,202 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   group.add(orb);
 
   // ── Inner bright core ──
-  const coreGeo = new THREE.IcosahedronGeometry(0.35, 3);
+  const coreGeo = new THREE.IcosahedronGeometry(0.3, 3);
   const coreMat = new THREE.MeshBasicMaterial({
-    color: 0x44ddee, transparent: true, opacity: 0.4, depthWrite: false,
+    color: 0x55eeff, transparent: true, opacity: 0.5, depthWrite: false,
   });
   const core = new THREE.Mesh(coreGeo, coreMat);
   group.add(core);
 
-  // ── Wireframe cage ──
-  const wireGeo = new THREE.IcosahedronGeometry(0.93, 2);
-  const wireMat = new THREE.MeshBasicMaterial({
-    color: 0x5fe6ff, wireframe: true, transparent: true, opacity: 0.06, depthWrite: false,
+  // ── Wireframe cage A — fine grid ──
+  const wireAGeo = new THREE.IcosahedronGeometry(0.94, 2);
+  const wireAMat = new THREE.MeshBasicMaterial({
+    color: 0x5fe6ff, wireframe: true, transparent: true, opacity: 0.07, depthWrite: false,
   });
-  const wire = new THREE.Mesh(wireGeo, wireMat);
-  group.add(wire);
+  const wireA = new THREE.Mesh(wireAGeo, wireAMat);
+  group.add(wireA);
 
-  // ── Gold orbital ring (prominent) ──
-  const goldRGeo = new THREE.TorusGeometry(1.35, 0.022, 12, 120);
+  // ── Wireframe cage B — coarse grid, opposite rotation ──
+  const wireBGeo = new THREE.IcosahedronGeometry(0.97, 1);
+  const wireBMat = new THREE.MeshBasicMaterial({
+    color: 0xffc24d, wireframe: true, transparent: true, opacity: 0.04, depthWrite: false,
+  });
+  const wireB = new THREE.Mesh(wireBGeo, wireBMat);
+  group.add(wireB);
+
+  // ────────────────────────────────────────────
+  // ORBITAL RINGS — gold, cyan, purple
+  // ────────────────────────────────────────────
+  const goldRGeo = new THREE.TorusGeometry(1.35, 0.025, 16, 140);
   const goldRMat = new THREE.MeshBasicMaterial({
-    color: 0xffc24d, transparent: true, opacity: 0.7, depthWrite: false,
+    color: 0xffc24d, transparent: true, opacity: 0.75, depthWrite: false,
   });
   const goldRing = new THREE.Mesh(goldRGeo, goldRMat);
   goldRing.rotation.x = PI * 0.5;
   goldRing.rotation.z = 0.15;
   group.add(goldRing);
 
-  // ── Secondary cyan ring ──
-  const cyanRGeo = new THREE.TorusGeometry(1.15, 0.008, 8, 100);
+  const cyanRGeo = new THREE.TorusGeometry(1.15, 0.01, 8, 100);
   const cyanRMat = new THREE.MeshBasicMaterial({
-    color: 0x5fe6ff, transparent: true, opacity: 0.3, depthWrite: false,
+    color: 0x5fe6ff, transparent: true, opacity: 0.35, depthWrite: false,
   });
   const cyanRing = new THREE.Mesh(cyanRGeo, cyanRMat);
-  cyanRing.rotation.x = PI * 0.4;
-  cyanRing.rotation.z = -0.25;
+  cyanRing.rotation.x = PI * 0.38;
+  cyanRing.rotation.z = -0.3;
   group.add(cyanRing);
 
-  // ── Subtle outer glow ──
-  const glowMat = new THREE.SpriteMaterial({
+  const purpRGeo = new THREE.TorusGeometry(1.5, 0.006, 6, 80);
+  const purpRMat = new THREE.MeshBasicMaterial({
+    color: 0xb06aff, transparent: true, opacity: 0.2, depthWrite: false,
+  });
+  const purpRing = new THREE.Mesh(purpRGeo, purpRMat);
+  purpRing.rotation.x = PI * 0.62;
+  purpRing.rotation.z = 0.5;
+  group.add(purpRing);
+
+  // ────────────────────────────────────────────
+  // EXPANDING PULSE RINGS — 3 rings cycling outward
+  // ────────────────────────────────────────────
+  const PULSE_N = 3;
+  const pulseRings: { mesh: THREE.Mesh; mat: THREE.ShaderMaterial; phase: number }[] = [];
+  const pulseBaseGeo = new THREE.PlaneGeometry(1, 1);
+  for (let i = 0; i < PULSE_N; i++) {
+    const pm = new THREE.ShaderMaterial({
+      uniforms: { uOpacity: { value: 0 } },
+      vertexShader: 'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+      fragmentShader: PULSE_RING_FRAG,
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const pmesh = new THREE.Mesh(pulseBaseGeo, pm);
+    pmesh.rotation.x = -PI * 0.5;
+    pmesh.position.y = 0;
+    group.add(pmesh);
+    pulseRings.push({ mesh: pmesh, mat: pm, phase: i / PULSE_N });
+  }
+
+  // ────────────────────────────────────────────
+  // SCAN PLANE — horizontal sweep
+  // ────────────────────────────────────────────
+  const scanGeo = new THREE.PlaneGeometry(3.5, 0.025);
+  const scanMat = new THREE.MeshBasicMaterial({
+    color: 0x88eeff, transparent: true, opacity: 0.4, depthWrite: false, side: THREE.DoubleSide,
+  });
+  const scanPlane = new THREE.Mesh(scanGeo, scanMat);
+  scanPlane.position.z = 0.1;
+  group.add(scanPlane);
+
+  // ────────────────────────────────────────────
+  // DATA STREAM LINES — vertical flowing lines around the orb
+  // ────────────────────────────────────────────
+  const STREAM_N = 8;
+  const streams: { line: THREE.Line; mat: THREE.LineBasicMaterial; baseX: number; baseZ: number }[] = [];
+  for (let i = 0; i < STREAM_N; i++) {
+    const a = (i / STREAM_N) * PI2;
+    const r = 1.0 + (i % 3) * 0.15;
+    const pts: number[] = [];
+    const segs = 30;
+    for (let j = 0; j <= segs; j++) {
+      const t = j / segs;
+      pts.push(Math.cos(a) * r, -1.5 + t * 3.0, Math.sin(a) * r);
+    }
+    const sGeo = new THREE.BufferGeometry();
+    sGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pts), 3));
+    const sMat = new THREE.LineBasicMaterial({
+      color: i % 2 === 0 ? 0x5fe6ff : 0xffc24d,
+      transparent: true, opacity: 0.06, depthWrite: false,
+    });
+    const sLine = new THREE.Line(sGeo, sMat);
+    group.add(sLine);
+    streams.push({ line: sLine, mat: sMat, baseX: Math.cos(a) * r, baseZ: Math.sin(a) * r });
+  }
+
+  // ────────────────────────────────────────────
+  // OUTER GLOW — layered sprites for depth
+  // ────────────────────────────────────────────
+  const glow1Mat = new THREE.SpriteMaterial({
     color: 0x225566, transparent: true, opacity: 0.12, depthWrite: false,
   });
-  const glow = new THREE.Sprite(glowMat);
-  glow.scale.setScalar(4.0);
-  group.add(glow);
+  const glow1 = new THREE.Sprite(glow1Mat);
+  glow1.scale.setScalar(4.0);
+  group.add(glow1);
 
-  // ── Node dots orbiting (network endpoints) ──
+  const glow2Mat = new THREE.SpriteMaterial({
+    color: 0x112233, transparent: true, opacity: 0.06, depthWrite: false,
+  });
+  const glow2 = new THREE.Sprite(glow2Mat);
+  glow2.scale.setScalar(6.5);
+  group.add(glow2);
+
+  // ────────────────────────────────────────────
+  // ORBITING NETWORK NODES — 10 dots with connection lines
+  // ────────────────────────────────────────────
   const NODE_N = 10;
   const nodeOrbs: { angle: number; r: number; speed: number; y: number }[] = [];
   const nodeMeshes: THREE.Mesh[] = [];
-  const nodeLines: { geo: THREE.BufferGeometry; line: THREE.Line }[] = [];
+  const nodeGlows: THREE.Sprite[] = [];
+  const nodeLines: { geo: THREE.BufferGeometry }[] = [];
   const nColors = [0x5fe6ff, 0xffc24d, 0x5fe6ff, 0xb06aff, 0x5fe6ff,
                    0xffc24d, 0x4dff91, 0x5fe6ff, 0xff9f43, 0x5fe6ff];
 
   for (let i = 0; i < NODE_N; i++) {
     const angle = (i / NODE_N) * PI2;
-    const r = 2.0 + Math.random() * 0.5;
-    const nGeo = new THREE.SphereGeometry(0.04, 8, 8);
+    const r = 2.0 + (i % 3) * 0.3;
+    const nGeo = new THREE.IcosahedronGeometry(0.04, 1);
     const nMat = new THREE.MeshBasicMaterial({
-      color: nColors[i], transparent: true, opacity: 0.7, depthWrite: false,
+      color: nColors[i], transparent: true, opacity: 0.8, depthWrite: false,
     });
     const nd = new THREE.Mesh(nGeo, nMat);
     const yy = (Math.random() - 0.5) * 0.8;
     nd.position.set(Math.cos(angle) * r, yy, Math.sin(angle) * r);
     group.add(nd);
     nodeMeshes.push(nd);
-    nodeOrbs.push({ angle, r, speed: 0.03 + Math.random() * 0.05, y: yy });
+    nodeOrbs.push({ angle, r, speed: 0.02 + Math.random() * 0.04, y: yy });
 
+    // Node glow
+    const ngMat = new THREE.SpriteMaterial({
+      color: nColors[i], transparent: true, opacity: 0.25, depthWrite: false,
+    });
+    const ng = new THREE.Sprite(ngMat);
+    ng.scale.setScalar(0.25);
+    group.add(ng);
+    nodeGlows.push(ng);
+
+    // Connection line
     const lGeo = new THREE.BufferGeometry();
     lGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
     const lMat = new THREE.LineBasicMaterial({
-      color: nColors[i], transparent: true, opacity: 0.08, depthWrite: false,
+      color: nColors[i], transparent: true, opacity: 0.1, depthWrite: false,
     });
     const line = new THREE.Line(lGeo, lMat);
     group.add(line);
-    nodeLines.push({ geo: lGeo, line });
+    nodeLines.push({ geo: lGeo });
   }
 
-  // ── Floating micro-particles ──
-  const PN = 20;
+  // ────────────────────────────────────────────
+  // FLOATING PARTICLES — 35 glowing motes
+  // ────────────────────────────────────────────
+  const PN = 35;
   const pPos = new Float32Array(PN * 3);
   const pPh = new Float32Array(PN);
   const pSz = new Float32Array(PN);
   const pCl = new Float32Array(PN * 3);
-  const pOrbs: { a: number; r: number; spd: number; y0: number }[] = [];
+  const pOrbs: { a: number; r: number; spd: number; y0: number; tilt: number }[] = [];
   for (let i = 0; i < PN; i++) {
     const a = Math.random() * PI2;
-    const r2 = 1.5 + Math.random() * 2.0;
+    const r2 = 1.3 + Math.random() * 2.2;
+    const tilt = (Math.random() - 0.5) * 0.6;
     pPos[i * 3] = Math.cos(a) * r2;
-    pPos[i * 3 + 1] = (Math.random() - 0.5) * 2;
+    pPos[i * 3 + 1] = (Math.random() - 0.5) * 2.5;
     pPos[i * 3 + 2] = Math.sin(a) * r2;
     pPh[i] = Math.random();
-    pSz[i] = 1.0 + Math.random() * 1.5;
-    const gold = Math.random() > 0.7;
-    pCl[i * 3] = gold ? 1.0 : 0.37;
-    pCl[i * 3 + 1] = gold ? 0.76 : 0.9;
-    pCl[i * 3 + 2] = gold ? 0.3 : 1.0;
-    pOrbs.push({ a, r: r2, spd: 0.08 + Math.random() * 0.15, y0: pPos[i * 3 + 1] });
+    pSz[i] = 0.8 + Math.random() * 2.0;
+    const kind = Math.random();
+    if (kind > 0.8) { pCl[i*3]=1; pCl[i*3+1]=0.76; pCl[i*3+2]=0.3; }
+    else if (kind > 0.65) { pCl[i*3]=0.69; pCl[i*3+1]=0.42; pCl[i*3+2]=1; }
+    else { pCl[i*3]=0.37; pCl[i*3+1]=0.9; pCl[i*3+2]=1; }
+    pOrbs.push({ a, r: r2, spd: 0.05 + Math.random() * 0.12, y0: pPos[i*3+1], tilt });
   }
   const pGeo = new THREE.BufferGeometry();
   pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
@@ -507,67 +671,126 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   const particles = new THREE.Points(pGeo, pMat);
   group.add(particles);
 
-  // ── Animation ──
+  // ────────────────────────────────────────────
+  // ANIMATION — maximum flow
+  // ────────────────────────────────────────────
   let time = 0, raf = 0;
   let amp = 0.06, ampTarget = 0.06;
+  let glitchStr = 0, nextGlitch = 3 + Math.random() * 5, glitchTimer = 0;
 
   function frame() {
     raf = requestAnimationFrame(frame);
-    time += 0.016;
+    const dt = 0.016;
+    time += dt;
     amp += (ampTarget - amp) * 0.07;
 
+    // Holographic glitch
+    glitchTimer += dt;
+    if (glitchTimer >= nextGlitch) {
+      glitchStr = 0.4 + Math.random() * 0.6;
+      nextGlitch = glitchTimer + 2 + Math.random() * 6;
+    }
+    glitchStr *= 0.93;
+    if (glitchStr < 0.01) glitchStr = 0;
+
+    // Shader uniforms
     orbMat.uniforms.uTime.value = time;
     orbMat.uniforms.uEnergy.value = amp;
+    orbMat.uniforms.uGlitch.value = glitchStr;
     pMat.uniforms.uTime.value = time;
 
+    // Orb rotation + breathing
     orb.rotation.y = time * 0.12;
-    orb.rotation.x = Math.sin(time * 0.08) * 0.08;
-    const breath = 1 + Math.sin(time * 1.2) * 0.02 + amp * 0.06;
+    orb.rotation.x = Math.sin(time * 0.08) * 0.1;
+    const breath = 1 + Math.sin(time * 1.2) * 0.025 + amp * 0.08;
     orb.scale.setScalar(breath);
 
-    core.rotation.y = -time * 0.3;
-    const cp = 0.85 + Math.sin(time * 2.0) * 0.15 + amp * 0.3;
-    core.scale.setScalar(0.35 * cp);
-    coreMat.opacity = 0.3 + Math.sin(time * 1.8) * 0.1 + amp * 0.15;
+    // Core pulse
+    core.rotation.y = -time * 0.4;
+    core.rotation.x = time * 0.25;
+    const cp = 0.8 + Math.sin(time * 2.5) * 0.2 + amp * 0.4;
+    core.scale.setScalar(0.3 * cp);
+    coreMat.opacity = 0.35 + Math.sin(time * 2.0) * 0.12 + amp * 0.2;
 
-    wire.rotation.y = time * 0.08;
-    wire.rotation.z = Math.sin(time * 0.15) * 0.1;
+    // Wireframe cages — counter-rotating
+    wireA.rotation.y = time * 0.1;
+    wireA.rotation.z = Math.sin(time * 0.12) * 0.12;
+    wireAMat.opacity = 0.05 + amp * 0.04 + Math.sin(time * 0.9) * 0.02;
+    wireB.rotation.y = -time * 0.07;
+    wireB.rotation.x = time * 0.05;
+    wireBMat.opacity = 0.03 + amp * 0.03;
 
-    goldRing.rotation.z = 0.15 + time * 0.08;
-    goldRMat.opacity = 0.6 + Math.sin(time) * 0.1 + amp * 0.15;
-    cyanRing.rotation.z = -0.25 - time * 0.12;
-    cyanRMat.opacity = 0.25 + Math.sin(time * 0.8) * 0.08;
+    // Rings — smooth rotation
+    goldRing.rotation.z = 0.15 + time * 0.1;
+    goldRMat.opacity = 0.65 + Math.sin(time * 0.8) * 0.1 + amp * 0.15;
+    cyanRing.rotation.z = -0.3 - time * 0.14;
+    cyanRMat.opacity = 0.3 + Math.sin(time * 0.7) * 0.08;
+    purpRing.rotation.z = 0.5 + time * 0.06;
+    purpRing.rotation.x = PI * 0.62 + Math.sin(time * 0.2) * 0.1;
+    purpRMat.opacity = 0.15 + Math.sin(time * 0.6) * 0.06 + amp * 0.1;
 
-    glow.scale.setScalar(3.5 + Math.sin(time * 0.8) * 0.3 + amp * 0.5);
-    glowMat.opacity = 0.1 + amp * 0.08;
+    // Pulse rings — expanding wave
+    for (let i = 0; i < PULSE_N; i++) {
+      const pr = pulseRings[i];
+      const t = ((time * 0.3 + pr.phase) % 1);
+      const scale = 1.5 + t * 4.0;
+      pr.mesh.scale.set(scale, scale, 1);
+      pr.mat.uniforms.uOpacity.value = (1 - t) * 0.15 * (0.5 + amp);
+    }
 
+    // Scan plane sweep
+    const scanRange = 2.5;
+    scanPlane.position.y = Math.sin(time * 0.5) * scanRange * 0.5;
+    scanMat.opacity = 0.25 + amp * 0.3 + Math.sin(time * 3) * 0.1;
+
+    // Data streams — animated opacity wave
+    for (let i = 0; i < STREAM_N; i++) {
+      const s = streams[i];
+      const wave = Math.sin(time * 1.5 + i * 0.8) * 0.5 + 0.5;
+      s.mat.opacity = 0.03 + wave * 0.08 + amp * 0.04;
+    }
+
+    // Glow
+    glow1.scale.setScalar(3.5 + Math.sin(time * 0.8) * 0.4 + amp * 0.6);
+    glow1Mat.opacity = 0.1 + amp * 0.1;
+    glow2.scale.setScalar(6.0 + Math.sin(time * 0.5) * 0.5);
+    glow2Mat.opacity = 0.04 + amp * 0.04;
+
+    // Network nodes
     for (let i = 0; i < NODE_N; i++) {
       const o = nodeOrbs[i];
-      o.angle += o.speed * 0.016;
+      o.angle += o.speed * dt;
       const nx = Math.cos(o.angle) * o.r;
-      const ny = o.y + Math.sin(time * 0.3 + i) * 0.15;
+      const ny = o.y + Math.sin(time * 0.25 + i * 0.9) * 0.2;
       const nz = Math.sin(o.angle) * o.r;
       nodeMeshes[i].position.set(nx, ny, nz);
+      nodeMeshes[i].rotation.y = time * 2;
+      nodeMeshes[i].rotation.x = time * 1.5;
+      nodeGlows[i].position.set(nx, ny, nz);
+      nodeGlows[i].scale.setScalar(0.2 + Math.sin(time * 1.2 + i) * 0.05 + amp * 0.06);
       const lp = nodeLines[i].geo.attributes.position as THREE.BufferAttribute;
       lp.setXYZ(0, 0, 0, 0);
       lp.setXYZ(1, nx, ny, nz);
       lp.needsUpdate = true;
     }
 
+    // Particles
     const pp = pGeo.attributes.position as THREE.BufferAttribute;
     for (let i = 0; i < PN; i++) {
       const po = pOrbs[i];
-      po.a += po.spd * 0.016;
+      po.a += po.spd * dt;
       pp.setXYZ(i,
         Math.cos(po.a) * po.r,
-        po.y0 + Math.sin(time * 0.4 + i * 0.7) * 0.25,
+        po.y0 + Math.sin(time * 0.35 + i * 0.7) * 0.3 + Math.sin(po.a * 2) * po.tilt,
         Math.sin(po.a) * po.r,
       );
     }
     pp.needsUpdate = true;
 
-    group.position.y = Math.sin(time * 0.25) * 0.1;
-    group.rotation.y = time * 0.015;
+    // Group sway + drift
+    group.position.y = Math.sin(time * 0.2) * 0.12 + Math.sin(time * 0.07) * 0.05;
+    group.position.x = Math.sin(time * 0.15 + 1) * 0.06;
+    group.rotation.y = time * 0.018;
 
     renderer.render(scene, camera);
   }
