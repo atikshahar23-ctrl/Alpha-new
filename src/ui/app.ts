@@ -232,6 +232,23 @@ export function mountApp(root: HTMLElement) {
           <iframe id="hgIframe" class="hg-iframe" src="" allow="camera;microphone"></iframe>
         </div>
       </div>
+      <div class="ar-overlay" id="arOverlay">
+        <div class="ar-frame">
+          <div class="ar-topbar">
+            <span class="ar-topbar-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8V6a2 2 0 012-2h2M4 16v2a2 2 0 002 2h2M16 4h2a2 2 0 012 2v2M16 20h2a2 2 0 002-2v-2"/><circle cx="12" cy="12" r="3"/></svg> AR CAMERA</span>
+            <button class="ar-close" id="arClose">✕</button>
+          </div>
+          <div class="ar-viewport" id="arViewport">
+            <video id="arVideo" autoplay playsinline></video>
+            <canvas id="arCanvas"></canvas>
+            <div class="ar-hud" id="arHud">
+              <div class="ar-status" id="arStatus">Initializing camera…</div>
+              <div class="ar-hand-indicator" id="arHandIndicator"></div>
+            </div>
+            <div class="ar-buttons" id="arButtons"></div>
+          </div>
+        </div>
+      </div>
     </div>
   `;
 
@@ -496,6 +513,10 @@ export function mountApp(root: HTMLElement) {
             localStorage.setItem('hg2:tasks', JSON.stringify(tasks));
           }
         },
+        onHgSearch: hgSearchLicense,
+        onHgEarnings: hgShowEarnings,
+        onHgQuote: hgCreateQuote,
+        onArCamera: openArCamera,
       }) || 'Done.';
       audio.receive();
       addMsg(clean, 'al');
@@ -544,20 +565,287 @@ export function mountApp(root: HTMLElement) {
 
   // HeavyGuard OS
   const hgBase = import.meta.env.BASE_URL || '/';
-  $('hgBtn').onclick = () => {
+  function ensureHgIframe(): HTMLIFrameElement {
     const iframe = $<HTMLIFrameElement>('hgIframe');
     if (!iframe.src || iframe.src === 'about:blank' || !iframe.src.includes('heavyguard')) {
       iframe.src = hgBase + 'heavyguard.html';
     }
+    return iframe;
+  }
+  $('hgBtn').onclick = () => {
+    ensureHgIframe();
     $('hgOverlay').classList.add('show');
   };
   $('hgClose').onclick = () => { $('hgOverlay').classList.remove('show'); };
+
+  type HgCallback = (data: any) => void;
+  const hgCallbacks: Record<string, HgCallback[]> = {};
+  function hgSend(action: string, payload: any, responseAction: string): Promise<any> {
+    return new Promise((resolve) => {
+      if (!hgCallbacks[responseAction]) hgCallbacks[responseAction] = [];
+      hgCallbacks[responseAction].push(resolve);
+      const iframe = ensureHgIframe();
+      const trySend = () => {
+        if (iframe.contentWindow) {
+          iframe.contentWindow.postMessage({ source: 'alpha-ai', action, payload }, '*');
+        }
+      };
+      if (iframe.src && iframe.src.includes('heavyguard')) trySend();
+      else setTimeout(trySend, 1000);
+      setTimeout(() => resolve(null), 5000);
+    });
+  }
+
   window.addEventListener('message', (e) => {
     if (!e.data || e.data.source !== 'heavyguard') return;
     if (e.data.action === 'taskAdded') {
       addMsg(`נרשם ביומן: ${e.data.payload.title}`, 'sys');
     }
+    const cbs = hgCallbacks[e.data.action];
+    if (cbs && cbs.length) {
+      const cb = cbs.shift()!;
+      cb(e.data.payload);
+    }
   });
+
+  async function hgSearchLicense(query: string) {
+    const results = await hgSend('searchLicense', { query }, 'searchResults');
+    if (!results || !results.length) {
+      addMsg(`לא נמצאו תוצאות עבור: ${query}`, 'sys');
+      return;
+    }
+    openWin(`HeavyGuard · חיפוש: ${query}`);
+    let html = '<div class="pad">';
+    for (const r of results) {
+      html += `<div style="background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+          <span style="color:var(--cyan);font-weight:600;font-size:18px;direction:ltr">${r.idNumber || '—'}</span>
+          <span style="color:var(--dim);font-size:13px">${r.date || ''}</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:13px">
+          <span><span style="color:var(--dim)">סוג:</span> ${r.idType || ''}</span>
+          <span><span style="color:var(--dim)">קבלן:</span> ${r.contractor || ''}</span>
+          <span><span style="color:var(--dim)">רכב:</span> ${r.vehicleType || ''} ${r.manufacturer || ''}</span>
+          <span><span style="color:var(--dim)">התקנה:</span> ${r.installType || ''}</span>
+          <span><span style="color:var(--dim)">מחיר:</span> <span style="color:var(--gold)">₪${r.price || 0}</span></span>
+          <span><span style="color:var(--dim)">מיקום:</span> ${r.location || ''}</span>
+          ${r.customer ? `<span><span style="color:var(--dim)">לקוח:</span> ${r.customer}</span>` : ''}
+          ${r.phone ? `<span><span style="color:var(--dim)">טלפון:</span> <a href="tel:${r.phone}" style="color:var(--cyan)">${r.phone}</a></span>` : ''}
+        </div>
+      </div>`;
+    }
+    html += '</div>';
+    $('winBody').innerHTML = html;
+  }
+
+  async function hgShowEarnings(contractor: string, month: string) {
+    const data = await hgSend('getEarnings', { contractor, month }, 'earningsData');
+    if (!data) { addMsg('לא ניתן לטעון נתוני הכנסות', 'sys'); return; }
+    const monthLabel = data.month === 'all' ? 'כל התקופה' : data.month;
+    openWin(`HeavyGuard · הכנסות · ${monthLabel}`);
+    let html = '<div class="pad">';
+    html += `<div style="text-align:center;margin-bottom:16px">
+      <div style="font-size:32px;font-weight:700;color:var(--gold)">₪${(data.grandTotal || 0).toLocaleString()}</div>
+      <div style="color:var(--dim);font-size:13px">${data.totalJobs || 0} עבודות · ${monthLabel}</div>
+    </div>`;
+    const entries = Object.entries(data.byContractor || {}) as [string, any][];
+    for (const [name, info] of entries) {
+      const pct = data.grandTotal ? Math.round((info.total / data.grandTotal) * 100) : 0;
+      html += `<div style="background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <span style="font-weight:600">${name}</span>
+          <span style="color:var(--gold);font-weight:600">₪${info.total.toLocaleString()}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="flex:1;background:rgba(255,255,255,.06);border-radius:4px;height:6px;overflow:hidden">
+            <div style="width:${pct}%;height:100%;background:linear-gradient(90deg,var(--cyan),var(--gold));border-radius:4px"></div>
+          </div>
+          <span style="color:var(--dim);font-size:12px;min-width:40px">${pct}% · ${info.count} עבודות</span>
+        </div>
+      </div>`;
+    }
+    html += '</div>';
+    $('winBody').innerHTML = html;
+  }
+
+  async function hgCreateQuote(customer: string, phone: string, itemsStr: string) {
+    const items = itemsStr.split(',').map(s => {
+      const [desc, priceStr] = s.trim().split(':');
+      return { description: (desc || '').trim(), price: parseFloat(priceStr) || 0, qty: 1 };
+    }).filter(i => i.description);
+    await hgSend('addQuote', { customer, phone, items }, 'quoteAdded');
+    addMsg(`הצעת מחיר נוצרה עבור ${customer || 'לקוח'}`, 'sys');
+  }
+
+  // AR Camera
+  let arStream: MediaStream | null = null;
+  let arAnimFrame = 0;
+  function openArCamera() {
+    $('arOverlay').classList.add('show');
+    const video = $<HTMLVideoElement>('arVideo');
+    const canvas = $<HTMLCanvasElement>('arCanvas');
+    const ctx = canvas.getContext('2d')!;
+    const statusEl = $('arStatus');
+    const handIndicator = $('arHandIndicator');
+    const buttonsEl = $('arButtons');
+
+    const arBtns = [
+      { label: 'חיפוש רכב', icon: '🔍', action: () => { const q = prompt('מספר רישוי:'); if (q) hgSearchLicense(q); } },
+      { label: 'הכנסות', icon: '💰', action: () => hgShowEarnings('', new Date().toISOString().slice(0, 7)) },
+      { label: 'צלם', icon: '📸', action: () => captureArPhoto(video) },
+      { label: 'סגור', icon: '✕', action: closeArCamera },
+    ];
+    buttonsEl.innerHTML = '';
+    arBtns.forEach((b, i) => {
+      const btn = document.createElement('button');
+      btn.className = 'ar-btn';
+      btn.dataset.idx = String(i);
+      btn.innerHTML = `<span class="ar-btn-icon">${b.icon}</span><span class="ar-btn-label">${b.label}</span>`;
+      btn.onclick = b.action;
+      buttonsEl.appendChild(btn);
+    });
+
+    statusEl.textContent = 'מאתחל מצלמה…';
+    navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
+    }).then(stream => {
+      arStream = stream;
+      video.srcObject = stream;
+      video.onloadedmetadata = () => {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        statusEl.textContent = 'מצלמה פעילה';
+        setTimeout(() => { statusEl.style.opacity = '0'; }, 2000);
+        startHandTracking(video, canvas, ctx, handIndicator, arBtns);
+      };
+    }).catch(() => {
+      statusEl.textContent = 'שגיאה: לא ניתן לגשת למצלמה';
+    });
+  }
+  function closeArCamera() {
+    $('arOverlay').classList.remove('show');
+    if (arStream) { arStream.getTracks().forEach(t => t.stop()); arStream = null; }
+    cancelAnimationFrame(arAnimFrame);
+    $('arStatus').style.opacity = '1';
+  }
+  $('arClose').onclick = closeArCamera;
+
+  function captureArPhoto(video: HTMLVideoElement) {
+    const c = document.createElement('canvas');
+    c.width = video.videoWidth; c.height = video.videoHeight;
+    c.getContext('2d')!.drawImage(video, 0, 0);
+    const link = document.createElement('a');
+    link.download = `AR_capture_${Date.now()}.png`;
+    link.href = c.toDataURL('image/png');
+    link.click();
+  }
+
+  function startHandTracking(
+    video: HTMLVideoElement, canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D,
+    handIndicator: HTMLElement, arBtns: { label: string; action: () => void }[]
+  ) {
+    let handX = -1, handY = -1;
+    let lastTapTime = 0;
+    const pointerEl = document.createElement('div');
+    pointerEl.className = 'ar-pointer';
+    $('arViewport').appendChild(pointerEl);
+
+    const mpScript = document.createElement('script');
+    mpScript.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/hands.min.js';
+    mpScript.onload = () => {
+      const camScript = document.createElement('script');
+      camScript.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.min.js';
+      camScript.onload = () => initMediaPipeHands(video, canvas, ctx, pointerEl, handIndicator, arBtns);
+      document.head.appendChild(camScript);
+    };
+    document.head.appendChild(mpScript);
+
+    function initMediaPipeHands(
+      vid: HTMLVideoElement, cvs: HTMLCanvasElement, c: CanvasRenderingContext2D,
+      ptr: HTMLElement, indicator: HTMLElement, btns: { label: string; action: () => void }[]
+    ) {
+      const Hands = (window as any).Hands;
+      const Camera = (window as any).Camera;
+      if (!Hands || !Camera) {
+        indicator.textContent = 'Hand tracking unavailable';
+        return;
+      }
+      const hands = new Hands({ locateFile: (f: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/${f}` });
+      hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.6 });
+
+      hands.onResults((results: any) => {
+        c.clearRect(0, 0, cvs.width, cvs.height);
+        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+          const landmarks = results.multiHandLandmarks[0];
+          indicator.textContent = '✋ יד מזוהה';
+          indicator.style.color = '#5fe6ff';
+
+          c.strokeStyle = 'rgba(95,230,255,0.6)';
+          c.lineWidth = 2;
+          const connections = [
+            [0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],
+            [5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],
+            [13,17],[17,18],[18,19],[19,20],[0,17]
+          ];
+          for (const [a, b] of connections) {
+            c.beginPath();
+            c.moveTo(landmarks[a].x * cvs.width, landmarks[a].y * cvs.height);
+            c.lineTo(landmarks[b].x * cvs.width, landmarks[b].y * cvs.height);
+            c.stroke();
+          }
+          for (let i = 0; i < landmarks.length; i++) {
+            const lm = landmarks[i];
+            c.beginPath();
+            c.arc(lm.x * cvs.width, lm.y * cvs.height, i === 8 ? 8 : 4, 0, Math.PI * 2);
+            c.fillStyle = i === 8 ? 'rgba(255,194,77,0.9)' : 'rgba(95,230,255,0.7)';
+            c.fill();
+          }
+
+          const indexTip = landmarks[8];
+          const thumbTip = landmarks[4];
+          const viewRect = $('arViewport').getBoundingClientRect();
+          handX = indexTip.x * viewRect.width;
+          handY = indexTip.y * viewRect.height;
+          ptr.style.left = handX + 'px';
+          ptr.style.top = handY + 'px';
+          ptr.style.opacity = '1';
+
+          const pinchDist = Math.hypot(indexTip.x - thumbTip.x, indexTip.y - thumbTip.y);
+          if (pinchDist < 0.05) {
+            ptr.classList.add('pinch');
+            const now = Date.now();
+            if (now - lastTapTime > 600) {
+              lastTapTime = now;
+              const arBtnEls = $('arButtons').querySelectorAll<HTMLButtonElement>('.ar-btn');
+              for (let i = 0; i < arBtnEls.length; i++) {
+                const rect = arBtnEls[i].getBoundingClientRect();
+                const relX = handX + viewRect.left;
+                const relY = handY + viewRect.top;
+                if (relX >= rect.left && relX <= rect.right && relY >= rect.top && relY <= rect.bottom) {
+                  arBtnEls[i].classList.add('ar-btn-active');
+                  setTimeout(() => arBtnEls[i].classList.remove('ar-btn-active'), 300);
+                  btns[i].action();
+                  break;
+                }
+              }
+            }
+          } else {
+            ptr.classList.remove('pinch');
+          }
+        } else {
+          indicator.textContent = '👋 הראה יד למצלמה';
+          indicator.style.color = 'var(--dim)';
+          ptr.style.opacity = '0';
+        }
+      });
+
+      const cam = new Camera(vid, {
+        onFrame: async () => { await hands.send({ image: vid }); },
+        width: 1280, height: 720,
+      });
+      cam.start();
+    }
+  }
 
   // Dock items click
   document.querySelectorAll<HTMLButtonElement>('.dock-item[data-q]').forEach(btn => {

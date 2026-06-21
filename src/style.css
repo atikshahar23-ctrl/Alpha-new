@@ -1122,6 +1122,97 @@ body::after {
   .card { max-height: 95vh; padding: 14px; }
 }
 
+/* ─── AR Camera Overlay ─── */
+.ar-overlay {
+  position: fixed; inset: 0; z-index: 70;
+  background: rgba(0, 0, 0, .95);
+  display: none; place-items: center;
+}
+.ar-overlay.show { display: grid; }
+.ar-frame {
+  width: 100%; height: 100%;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.ar-topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 14px; background: rgba(4,6,13,.9);
+  border-bottom: 1px solid rgba(95,230,255,.15);
+  z-index: 2;
+}
+.ar-topbar-title {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 600; letter-spacing: 1.5px;
+  color: var(--cyan);
+}
+.ar-close {
+  background: none; border: 1px solid rgba(255,255,255,.15);
+  color: var(--ink); font-size: 16px; cursor: pointer;
+  width: 32px; height: 32px; border-radius: 50%;
+  display: grid; place-items: center;
+  transition: .2s;
+}
+.ar-close:hover { border-color: var(--cyan); color: var(--cyan); }
+.ar-viewport {
+  position: relative; flex: 1; overflow: hidden;
+  background: #000;
+}
+.ar-viewport video {
+  width: 100%; height: 100%; object-fit: cover;
+}
+.ar-viewport canvas {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+}
+.ar-hud {
+  position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  z-index: 3;
+}
+.ar-status {
+  font-size: 12px; letter-spacing: 1px; color: var(--cyan);
+  background: rgba(4,6,13,.7); padding: 6px 16px; border-radius: 20px;
+  border: 1px solid rgba(95,230,255,.2);
+  transition: opacity .4s;
+}
+.ar-hand-indicator {
+  font-size: 14px; font-weight: 600;
+  color: var(--dim); transition: color .3s;
+}
+.ar-buttons {
+  position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 14px; z-index: 3;
+}
+.ar-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  background: rgba(4,6,13,.75); border: 1px solid rgba(95,230,255,.25);
+  border-radius: 16px; padding: 12px 18px; cursor: pointer;
+  color: var(--ink); transition: .2s; min-width: 70px;
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+.ar-btn:hover, .ar-btn-active {
+  background: rgba(95,230,255,.15); border-color: var(--cyan);
+  transform: scale(1.08);
+  box-shadow: 0 0 20px rgba(95,230,255,.3);
+}
+.ar-btn-icon { font-size: 24px; }
+.ar-btn-label { font-size: 10px; letter-spacing: 0.5px; color: var(--dim); }
+.ar-pointer {
+  position: absolute; width: 24px; height: 24px;
+  border-radius: 50%; pointer-events: none; z-index: 4;
+  border: 2px solid var(--gold);
+  background: rgba(255,194,77,.15);
+  transform: translate(-50%, -50%);
+  transition: opacity .2s, width .15s, height .15s;
+  opacity: 0;
+}
+.ar-pointer.pinch {
+  width: 16px; height: 16px;
+  background: rgba(255,194,77,.5);
+  box-shadow: 0 0 16px rgba(255,194,77,.6);
+}
+
 /* Touch device improvements */
 @media (hover: none) and (pointer: coarse) {
   .dock-item { min-width: 44px; min-height: 44px; }
@@ -1129,4 +1220,6 @@ body::after {
   .ic { min-width: 40px; min-height: 40px; }
   .pill input { font-size: 16px; }
   .hg-close { min-width: 40px; min-height: 40px; }
+  .ar-close { min-width: 40px; min-height: 40px; }
+  .ar-btn { min-width: 60px; padding: 10px 14px; }
 }

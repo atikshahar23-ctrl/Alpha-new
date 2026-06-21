@@ -25,11 +25,12 @@ const LANG_INSTRUCTIONS: Record<string, string> = {
 export function systemPrompt(state: AppState): string {
   const d = new Date();
   const today = d.toISOString().slice(0, 10);
+  const currentMonth = today.slice(0, 7);
   const wd = d.toLocaleDateString('en-US', { weekday: 'long' });
   const textLang = state.textLang === 'auto' ? state.replyLang : state.textLang;
   const langLine = LANG_INSTRUCTIONS[textLang] || LANG_INSTRUCTIONS['en'];
   return `You are ${state.name}, an advanced personal assistant with a calm, warm, confident presence. ${langLine} No long lists or tables.
-Today is ${wd}, ${today}.
+Today is ${wd}, ${today}. Current month: ${currentMonth}.
 Control the app via tags at the END of your reply when relevant (never mention them in your spoken text):
 - video: [[VIDEO: search terms]]
 - web search: [[SEARCH: query]]
@@ -37,6 +38,16 @@ Control the app via tags at the END of your reply when relevant (never mention t
 - open the calendar: [[CALENDAR]]
 - play music on Spotify: [[SPOTIFY: song or artist name]]
 - add task to HeavyGuard diary: [[DIARY: task title | YYYY-MM-DD]]
+- search HeavyGuard by license plate or chassis number: [[HG_SEARCH: number]]
+- get earnings report (contractor is optional, month format YYYY-MM): [[HG_EARNINGS: contractor name | YYYY-MM]]
+- create a price quote: [[HG_QUOTE: customer name | phone | item1 description:price, item2 description:price]]
+- open the AR camera with hand tracking: [[AR_CAMERA]]
+
+You have deep integration with HeavyGuard — a field installation management system for vehicle security (trackers, cameras, radios). Contractors: קובי, אסי, שגיא מערכות, m.b מערכות, ס.ד מיגונים, Heavy Guard.
+When the user asks about a license plate number, installation, earnings from a contractor, or wants to create a quote — use the appropriate HG tag.
+When user asks "כמה הרווחתי" or about earnings/income, use [[HG_EARNINGS:]]. Example: [[HG_EARNINGS: קובי | ${currentMonth}]] or [[HG_EARNINGS: | ${currentMonth}]] for all contractors.
+When user asks about a specific license/registration number (מספר רישוי, לוחית), use [[HG_SEARCH: the number]].
+When user wants a price quote (הצעת מחיר), use [[HG_QUOTE:]].
 User's calendar: ${upcomingText()}.`;
 }
 
@@ -250,9 +261,13 @@ export function runTags(
     onEvent: (title: string, date: string, time: string) => void;
     onSpotify: (q: string) => void;
     onDiary?: (title: string, date: string) => void;
+    onHgSearch?: (query: string) => void;
+    onHgEarnings?: (contractor: string, month: string) => void;
+    onHgQuote?: (customer: string, phone: string, items: string) => void;
+    onArCamera?: () => void;
   }
 ): string {
-  const re = /\[\[(VIDEO|SEARCH|EVENT|CALENDAR|SPOTIFY|DIARY)\s*:?\s*([^\]]*)\]\]/g;
+  const re = /\[\[(VIDEO|SEARCH|EVENT|CALENDAR|SPOTIFY|DIARY|HG_SEARCH|HG_EARNINGS|HG_QUOTE|AR_CAMERA)\s*:?\s*([^\]]*)\]\]/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
     const type = m[1], arg = m[2].trim();
@@ -267,6 +282,20 @@ export function runTags(
     else if (type === 'EVENT') {
       const p = arg.split('|').map(s => s.trim());
       if (p[0] && p[1]) hooks.onEvent(p[0], p[1], p[2] || '');
+    }
+    else if (type === 'HG_SEARCH' && hooks.onHgSearch) {
+      hooks.onHgSearch(arg);
+    }
+    else if (type === 'HG_EARNINGS' && hooks.onHgEarnings) {
+      const p = arg.split('|').map(s => s.trim());
+      hooks.onHgEarnings(p[0] || '', p[1] || '');
+    }
+    else if (type === 'HG_QUOTE' && hooks.onHgQuote) {
+      const p = arg.split('|').map(s => s.trim());
+      hooks.onHgQuote(p[0] || '', p[1] || '', p[2] || '');
+    }
+    else if (type === 'AR_CAMERA' && hooks.onArCamera) {
+      hooks.onArCamera();
     }
   }
   return text.replace(re, '').trim();
