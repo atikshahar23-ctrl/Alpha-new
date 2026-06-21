@@ -8,6 +8,8 @@ export class VoiceEngine {
   private suppress = false;
   private commandMode = false;
   private cmdTimer: number | undefined;
+  private silenceTimer: number | undefined;
+  private speechBuffer = '';
   private voices: SpeechSynthesisVoice[] = [];
   private chosenVoice: SpeechSynthesisVoice | null = null;
   private state: AppState;
@@ -41,11 +43,15 @@ export class VoiceEngine {
           else interim += e.results[i][0].transcript;
         }
         if (interim && this.commandMode) this.onStateChange('listening');
+        if (interim) this.resetSilenceTimer();
         if (final) this.handleSpeech(final);
       };
       this.rec.onend = () => {
         this.recRunning = false;
         this.recRetries = 0;
+        if (this.commandMode && this.speechBuffer.trim()) {
+          this.flushBuffer();
+        }
         if (this.wakeOn && !this.suppress) {
           setTimeout(() => this.startRec(), 250);
         }
@@ -79,15 +85,42 @@ export class VoiceEngine {
     if (!this.rec) return;
     try { this.rec.stop(); } catch {}
   }
-  private listenNow() {
+
+  private enterCommandMode() {
     this.commandMode = true;
+    this.speechBuffer = '';
     this.onStateChange('listening');
     clearTimeout(this.cmdTimer);
     this.cmdTimer = window.setTimeout(() => {
-      this.commandMode = false;
-      if (this.wakeOn) this.onStateChange('armed');
-    }, 15000);
+      if (this.speechBuffer.trim()) {
+        this.flushBuffer();
+      } else {
+        this.commandMode = false;
+        if (this.wakeOn) this.onStateChange('armed');
+      }
+    }, 20000);
   }
+
+  private resetSilenceTimer() {
+    clearTimeout(this.silenceTimer);
+    if (this.commandMode) {
+      this.silenceTimer = window.setTimeout(() => {
+        if (this.speechBuffer.trim()) {
+          this.flushBuffer();
+        }
+      }, 2000);
+    }
+  }
+
+  private flushBuffer() {
+    const text = this.speechBuffer.trim();
+    this.speechBuffer = '';
+    this.commandMode = false;
+    clearTimeout(this.cmdTimer);
+    clearTimeout(this.silenceTimer);
+    if (text) this.onTranscript(text);
+  }
+
   private hasWake(t: string) {
     const s = t.toLowerCase();
     return (
@@ -102,19 +135,24 @@ export class VoiceEngine {
       .replace(/^[\s,.:!?-]+/, '')
       .trim();
   }
+
   private handleSpeech(final: string) {
     const raw = final.trim();
     if (!raw) return;
+
     if (this.commandMode) {
-      this.commandMode = false;
-      clearTimeout(this.cmdTimer);
-      this.onTranscript(raw);
+      this.speechBuffer += ' ' + raw;
+      this.resetSilenceTimer();
       return;
     }
+
     if (this.hasWake(raw)) {
       const cmd = this.stripWake(raw);
-      if (cmd.length > 1) this.onTranscript(cmd);
-      else this.listenNow();
+      this.enterCommandMode();
+      if (cmd.length > 1) {
+        this.speechBuffer = cmd;
+        this.resetSilenceTimer();
+      }
     }
   }
 
@@ -122,8 +160,17 @@ export class VoiceEngine {
     if (on && !this.rec) return;
     this.wakeOn = on;
     this.state.wakeOn = on;
-    if (on) { this.startRec(); this.listenNow(); }
-    else { this.commandMode = false; clearTimeout(this.cmdTimer); this.onStateChange(''); this.stopRec(); }
+    if (on) {
+      this.startRec();
+      this.enterCommandMode();
+    } else {
+      this.commandMode = false;
+      this.speechBuffer = '';
+      clearTimeout(this.cmdTimer);
+      clearTimeout(this.silenceTimer);
+      this.onStateChange('');
+      this.stopRec();
+    }
   }
 
   private scoreVoice(v: SpeechSynthesisVoice) {
@@ -161,7 +208,8 @@ export class VoiceEngine {
 
   speak(text: string) {
     if (!this.state.voiceOn || !('speechSynthesis' in window)) {
-      this.onStateChange(this.wakeOn ? 'armed' : '');
+      if (this.wakeOn) this.enterCommandMode();
+      else this.onStateChange('');
       return;
     }
     speechSynthesis.cancel();
@@ -178,14 +226,17 @@ export class VoiceEngine {
       if (finished) return;
       finished = true;
       this.suppress = false;
-      if (this.wakeOn) { this.onStateChange('armed'); setTimeout(() => this.startRec(), 250); }
-      else this.onStateChange('');
+      if (this.wakeOn) {
+        setTimeout(() => this.startRec(), 250);
+        this.enterCommandMode();
+      } else {
+        this.onStateChange('');
+      }
     };
     u.onstart = () => { this.suppress = true; this.stopRec(); this.onStateChange('speaking'); };
     u.onend = done;
     u.onerror = () => done();
     speechSynthesis.speak(u);
-    // Safety timeout: if TTS hangs, recover after 30s
     setTimeout(() => { if (!finished) { speechSynthesis.cancel(); done(); } }, 30000);
   }
 
