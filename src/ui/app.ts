@@ -16,6 +16,8 @@ import { dailyBriefing } from '../modules/analytics';
 import { startTimer, stopTimer, formatDuration, getActiveTimer } from '../modules/timeTracker';
 import { saveChatMessage, loadChatHistory, clearChatHistory } from '../modules/chatHistory';
 import { trackSentiment, averageSentiment } from '../modules/sentiment';
+import { calculateScore, scoreLabel } from '../modules/scoring';
+import { checkIntegrity, repairCorrupted } from '../modules/dataIntegrity';
 
 export function mountApp(root: HTMLElement) {
   root.innerHTML = `
@@ -443,6 +445,15 @@ export function mountApp(root: HTMLElement) {
   try {
     const generated = processRecurring();
     if (generated > 0) addMsg(`📋 Generated ${generated} recurring task(s) for today.`, 'sys');
+  } catch {}
+  // ── Data integrity check ──
+  try {
+    const integrity = checkIntegrity();
+    if (integrity.corrupted.length) {
+      let fixed = 0;
+      for (const key of integrity.corrupted) { if (repairCorrupted(key)) fixed++; }
+      addMsg(`⚠️ Data integrity: ${integrity.corrupted.length} store(s) were corrupted, ${fixed} auto-repaired.`, 'sys');
+    }
   } catch {}
 
   // AI capability nodes overlay
@@ -2417,7 +2428,13 @@ export function mountApp(root: HTMLElement) {
         const icon = s.score > 0.3 ? '😊' : s.score < -0.3 ? '😟' : '😐';
         moodLine = `<div class="lw-item"><span class="lw-icon">${icon}</span><span class="lw-val">${s.label}</span><span class="lw-lbl">Mood</span></div>`;
       } catch {}
+      let scoreLine = '';
+      try {
+        const sc = calculateScore();
+        scoreLine = `<div class="lw-item"><span class="lw-icon">⚡</span><span class="lw-val">${sc.total}</span><span class="lw-lbl">${scoreLabel(sc.total)}</span></div>`;
+      } catch {}
       w.innerHTML =
+        scoreLine +
         `<div class="lw-item"><span class="lw-icon">✓</span><span class="lw-val">${openTasks}</span><span class="lw-lbl">Tasks</span></div>` +
         `<div class="lw-item"><span class="lw-icon">📅</span><span class="lw-val">${todayEvents}</span><span class="lw-lbl">Today</span></div>` +
         timerLine + moodLine;

@@ -63,6 +63,8 @@ import { downloadReport, businessReport, personalReport } from './reports';
 import { sparkline, progressRing } from './sparkline';
 import { fillTemplate, addCustomTemplate, removeCustomTemplate, templatesByCategory, type Template } from './templates';
 import { sentimentTrend, averageSentiment } from './sentiment';
+import { calculateScore, scoreLabel, scoreColor } from './scoring';
+import { checkIntegrity, storageUsage, repairCorrupted } from './dataIntegrity';
 
 export interface CockpitHooks {
   ask: (q: string) => void;
@@ -786,6 +788,26 @@ function renderCreative(root: HTMLElement, hooks: CockpitHooks, close: () => voi
 //            family calendar, brain-dump auto-tagging
 // ============================================================
 function renderPersonal(root: HTMLElement, hooks: CockpitHooks, close: () => void) {
+  // ── Alpha Score ──
+  const sc = calculateScore();
+  const scCard = card('Alpha Score', scoreLabel(sc.total));
+  const scColor = scoreColor(sc.total);
+  scCard.innerHTML += `<div style="display:flex;align-items:center;gap:16px;margin:8px 0">
+    ${progressRing(sc.total, { size: 56, stroke: scColor, width: 4 })}
+    <div style="flex:1;display:grid;grid-template-columns:repeat(3,1fr);gap:4px">
+      <div style="font-size:11px;color:var(--dim)">Tasks <span style="color:${scColor}">${sc.tasks}/20</span></div>
+      <div style="font-size:11px;color:var(--dim)">Habits <span style="color:${scColor}">${sc.habits}/15</span></div>
+      <div style="font-size:11px;color:var(--dim)">Focus <span style="color:${scColor}">${sc.focus}/15</span></div>
+      <div style="font-size:11px;color:var(--dim)">Business <span style="color:${scColor}">${sc.business}/20</span></div>
+      <div style="font-size:11px;color:var(--dim)">Goals <span style="color:${scColor}">${sc.goals}/15</span></div>
+      <div style="font-size:11px;color:var(--dim)">Wellness <span style="color:${scColor}">${sc.wellness}/15</span></div>
+    </div>
+  </div>`;
+  if (sc.streak > 0) {
+    scCard.innerHTML += `<div style="font-size:12px;color:var(--gold);text-align:center">🔥 ${sc.streak}-day streak</div>`;
+  }
+  root.appendChild(scCard);
+
   // ── Daily briefing ──
   const brief = card('Daily Briefing', 'Your day at a glance');
   const today = new Date().toISOString().slice(0, 10);
@@ -1489,6 +1511,31 @@ function renderAdvanced(root: HTMLElement, hooks: CockpitHooks, close: () => voi
   dz.appendChild(parse);
   dz.appendChild(dOut);
   root.appendChild(dz);
+
+  // ── Data Health ──
+  const dh = card('Data Health', 'Storage integrity and usage');
+  const integrity = checkIntegrity();
+  const storage = storageUsage();
+  dh.innerHTML += `<div class="cp-kpis">
+    <div class="cp-kpi"><span class="cp-kpi-val" style="color:${integrity.corrupted.length ? '#ff5d73' : '#4dff91'}">${integrity.healthy}</span><span class="cp-kpi-lbl">Healthy</span></div>
+    <div class="cp-kpi"><span class="cp-kpi-val" style="color:${integrity.corrupted.length ? '#ff5d73' : 'var(--dim)'}">${integrity.corrupted.length}</span><span class="cp-kpi-lbl">Corrupted</span></div>
+    <div class="cp-kpi"><span class="cp-kpi-val">${integrity.empty.length}</span><span class="cp-kpi-lbl">Empty</span></div>
+    <div class="cp-kpi"><span class="cp-kpi-val">${storage.percent}%</span><span class="cp-kpi-lbl">Storage</span></div>
+  </div>`;
+  dh.innerHTML += `<div style="margin:8px 0"><div style="height:6px;background:rgba(255,255,255,.06);border-radius:3px"><div style="height:100%;width:${storage.percent}%;background:${storage.percent > 80 ? '#ff5d73' : 'var(--gold)'};border-radius:3px"></div></div><div style="font-size:11px;color:var(--dim);margin-top:4px">${(storage.used / 1024).toFixed(1)} KB / ${(storage.available / 1024).toFixed(0)} KB</div></div>`;
+  if (integrity.corrupted.length) {
+    const repairBtn = btn('Repair corrupted stores');
+    repairBtn.onclick = () => {
+      let fixed = 0;
+      for (const key of integrity.corrupted) {
+        if (repairCorrupted(key)) fixed++;
+      }
+      hooks.addMsgSys(`Data repair: ${fixed}/${integrity.corrupted.length} stores fixed.`);
+      root.replaceChildren(); renderAdvanced(root, hooks, close);
+    };
+    dh.appendChild(repairBtn);
+  }
+  root.appendChild(dh);
 
   // ── Sentiment Analysis ──
   const sa = card('Conversation Mood', 'Sentiment tracking from your conversations');
