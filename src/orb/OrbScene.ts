@@ -640,7 +640,7 @@ function createShaderParticles(
 export function mountOrb(container: HTMLElement): OrbHandle {
   // ---------- Mobile detection ----------
   const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 768;
-  const quality = isMobile ? 0.08 : 1.0;
+  const quality = isMobile ? 0.15 : 1.0;
 
   // ---------- Renderer ----------
   const renderer = new THREE.WebGLRenderer({
@@ -694,11 +694,11 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   const { innerPts, midPts, outerPts, nervePts, veinPts, innerCount } = buildHumanoidParticles(quality);
 
   // --- LAYER a) Core shell --- cyan, tiny, sharp
-  const coreShell = createShaderParticles(innerPts, [0.54, 0.95, 1.0], isMobile ? 2.5 : 1.8, { colorVariance: 0.08 });
+  const coreShell = createShaderParticles(innerPts, [0.54, 0.95, 1.0], isMobile ? 0.5 : 1.8, { colorVariance: 0.08 });
   group.add(coreShell.points);
 
   // --- Mid-volume fill ---
-  const midVolume = createShaderParticles(midPts, [0.29, 0.78, 0.91], isMobile ? 4.5 : 3.5, { colorVariance: 0.06 });
+  const midVolume = createShaderParticles(midPts, [0.29, 0.78, 0.91], isMobile ? 0.8 : 3.5, { colorVariance: 0.06 });
   group.add(midVolume.points);
 
   // --- LAYER b) Energy flow --- animated upward

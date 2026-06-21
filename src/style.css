@@ -803,6 +803,60 @@ body::after {
   border: 0; background: #080B10;
 }
 
+/* HeavyGuard floating action button */
+.hg-fab {
+  position: fixed;
+  right: 16px;
+  bottom: 180px;
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  background: linear-gradient(135deg, rgba(255,194,77,.15), rgba(255,194,77,.05));
+  border: 1px solid rgba(255,194,77,.3);
+  border-radius: 16px;
+  color: var(--gold);
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  cursor: pointer;
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  transition: var(--transition);
+  box-shadow: 0 4px 20px rgba(255,194,77,.1), inset 0 1px 0 rgba(255,255,255,.05);
+}
+.hg-fab:hover {
+  background: linear-gradient(135deg, rgba(255,194,77,.25), rgba(255,194,77,.1));
+  border-color: rgba(255,194,77,.5);
+  box-shadow: 0 6px 30px rgba(255,194,77,.2), inset 0 1px 0 rgba(255,255,255,.08);
+  transform: translateY(-2px);
+}
+.hg-fab svg { filter: drop-shadow(0 0 6px rgba(255,194,77,.4)); }
+
+/* Calendar event count badge */
+.cal-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  background: var(--gold);
+  color: #04060d;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 9px;
+  font-weight: 700;
+  border-radius: 8px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  box-shadow: 0 2px 8px rgba(255,194,77,.3);
+}
+.dock-item { position: relative; }
+
 /* ========== MOBILE RESPONSIVE ========== */
 
 /* Tablets and small laptops */
@@ -864,6 +918,8 @@ body::after {
   .winbox { width: 96vw; height: 90vh; border-radius: 14px; }
 
   body::after { display: none; }
+
+  .hg-fab { bottom: 155px; right: 10px; padding: 10px 14px; font-size: 10px; letter-spacing: 1.5px; border-radius: 12px; }
 }
 
 /* Phones */
@@ -931,6 +987,9 @@ body::after {
   .hg-topbar { padding: 8px 14px; }
   .hg-topbar-title { font-size: 10px; letter-spacing: 2px; }
   .hg-close { width: 30px; height: 30px; font-size: 14px; border-radius: 8px; }
+
+  .hg-fab { bottom: 145px; right: 8px; padding: 9px 12px; gap: 6px; font-size: 9px; }
+  .hg-fab svg { width: 18px; height: 18px; }
 }
 
 /* Very small phones */

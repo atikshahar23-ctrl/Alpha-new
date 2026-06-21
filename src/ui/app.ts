@@ -102,9 +102,10 @@ export function mountApp(root: HTMLElement) {
             <span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
             <span class="dl">Search</span>
           </button>
-          <button class="dock-item" data-q="Open my calendar">
+          <button class="dock-item" data-q="Open my calendar" id="calBtn">
             <span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
             <span class="dl">Calendar</span>
+            <span class="cal-badge" id="calBadge"></span>
           </button>
           <button class="dock-item" data-q="Tell me a joke">
             <span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg></span>
@@ -122,11 +123,14 @@ export function mountApp(root: HTMLElement) {
             <span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 8V6a2 2 0 012-2h2M4 16v2a2 2 0 002 2h2M16 4h2a2 2 0 012 2v2M16 20h2a2 2 0 002-2v-2"/><circle cx="12" cy="10" r="3"/><path d="M7 18c0-2.8 2.2-5 5-5s5 2.2 5 5"/></svg></span>
             <span class="dl">Detect</span>
           </button>
-          <button class="dock-item" id="hgBtn">
-            <span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></span>
-            <span class="dl">HeavyGuard</span>
-          </button>
         </div>
+        <button class="hg-fab" id="hgBtn" title="HeavyGuard OS">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="22" height="22">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            <path d="M9 12l2 2 4-4"/>
+          </svg>
+          <span>HeavyGuard</span>
+        </button>
         <div class="bar">
           <button class="ic mic" id="micBtn" title="Hey Alpha"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></button>
           <div class="pill"><input id="input" type="text" placeholder="Type or speak to Alpha…" /></div>
@@ -265,6 +269,18 @@ export function mountApp(root: HTMLElement) {
 
   const voice = new VoiceEngine(state, (text) => { addMsg(text, 'me'); ask(text); }, setStatus);
 
+  function updateCalBadge() {
+    const events = loadEvents();
+    const badge = $('calBadge');
+    if (events.length > 0) {
+      badge.textContent = String(events.length);
+      badge.style.display = 'flex';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+  updateCalBadge();
+
   let lpMsgCount = 0;
   let lpTokenCount = 0;
 
@@ -370,8 +386,8 @@ export function mountApp(root: HTMLElement) {
     }
     html += '</div>';
     $('winBody').innerHTML = html;
-    $('evAdd').onclick = () => { const t = $<HTMLInputElement>('evT').value.trim(), d = $<HTMLInputElement>('evD').value; if (!t || !d) return; addEvent(t, d, $<HTMLInputElement>('evTime').value); renderCalendar(); };
-    $('winBody').querySelectorAll<HTMLButtonElement>('.del').forEach(b => b.onclick = () => { removeEvent(b.dataset.id!); renderCalendar(); });
+    $('evAdd').onclick = () => { const t = $<HTMLInputElement>('evT').value.trim(), d = $<HTMLInputElement>('evD').value; if (!t || !d) return; addEvent(t, d, $<HTMLInputElement>('evTime').value); renderCalendar(); updateCalBadge(); };
+    $('winBody').querySelectorAll<HTMLButtonElement>('.del').forEach(b => b.onclick = () => { removeEvent(b.dataset.id!); renderCalendar(); updateCalBadge(); });
   }
   function openCalendar() { openWin('Calendar'); renderCalendar(); }
 
@@ -552,7 +568,20 @@ export function mountApp(root: HTMLElement) {
   };
 
   function pad(n: number) { return String(n).padStart(2, '0'); }
-  setInterval(() => { const d = new Date(); $('clock').textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}`; }, 1000);
+  function getGreeting(): string {
+    const h = new Date().getHours();
+    if (h < 6) return 'GOOD NIGHT';
+    if (h < 12) return 'GOOD MORNING';
+    if (h < 17) return 'GOOD AFTERNOON';
+    if (h < 21) return 'GOOD EVENING';
+    return 'GOOD NIGHT';
+  }
+  setInterval(() => {
+    const d = new Date();
+    $('clock').textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    const wmEl = document.querySelector('.wm');
+    if (wmEl) wmEl.textContent = getGreeting();
+  }, 1000);
 
   // ===== LEFT PANEL ANIMATIONS =====
 
