@@ -249,13 +249,17 @@ export function mountApp(root: HTMLElement) {
   }
   mountFlowLines(root.querySelector('.app')!);
 
-  // AI capability nodes overlay (mobile)
-  const isMob = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 768;
-  if (isMob) {
+  // AI capability nodes overlay
+  {
+    const isMob = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 768;
     const stage = $('stage');
     const nodesEl = document.createElement('div');
     nodesEl.className = 'ai-nodes';
-    const labels = ['Memory','Calendar','Tasks','Search','Translate','Analytics','Assistant','Weather','Music','Notes'];
+    const labels = isMob
+      ? ['Memory','Calendar','Tasks','Search','Translate','Analytics','Assistant','Weather','Music','Notes']
+      : ['Researcher','Strategist','Finance','Memory','Design','Calendar','Engineering','Social','Analytics','Ops','Developer','Sales','DM','Chief of Staff'];
+    const cx = 50, cy = isMob ? 40 : 50;
+    const rx = isMob ? 42 : 44, ry = isMob ? 28 : 40;
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('class', 'ai-nodes-svg');
     svg.setAttribute('viewBox', '0 0 100 100');
@@ -263,11 +267,10 @@ export function mountApp(root: HTMLElement) {
     nodesEl.appendChild(svg);
     labels.forEach((lbl, i) => {
       const a = (i / labels.length) * Math.PI * 2 - Math.PI / 2;
-      const rx = 42, ry = 38;
-      const x = 50 + Math.cos(a) * rx;
-      const y = 50 + Math.sin(a) * ry;
+      const x = cx + Math.cos(a) * rx;
+      const y = cy + Math.sin(a) * ry;
       const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      line.setAttribute('x1', '50'); line.setAttribute('y1', '50');
+      line.setAttribute('x1', String(cx)); line.setAttribute('y1', String(cy));
       line.setAttribute('x2', String(x)); line.setAttribute('y2', String(y));
       line.setAttribute('class', 'ai-node-line');
       svg.appendChild(line);
