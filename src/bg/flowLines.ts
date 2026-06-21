@@ -36,18 +36,27 @@ export function mountFlowLines(container: HTMLElement): { dispose: () => void } 
   const ctx = canvas.getContext('2d')!;
 
   let w = 0, h = 0;
+  let dpr = 1;
   let raf = 0;
   const lines: FlowLine[] = [];
   const particles: Particle[] = [];
   const hexes: HexGrid[] = [];
   const isMob = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 768;
-  const LINE_COUNT = isMob ? 6 : 14;
-  const PARTICLE_COUNT = isMob ? 20 : 60;
-  const HEX_COUNT = isMob ? 8 : 20;
+  const LINE_COUNT = isMob ? 8 : 16;
+  const PARTICLE_COUNT = isMob ? 28 : 80;
+  const HEX_COUNT = isMob ? 10 : 24;
 
   function resize() {
-    w = canvas.width = window.innerWidth;
-    h = canvas.height = window.innerHeight;
+    dpr = Math.min(window.devicePixelRatio || 1, 3);
+    const cw = window.innerWidth;
+    const ch = window.innerHeight;
+    canvas.width = cw * dpr;
+    canvas.height = ch * dpr;
+    canvas.style.width = cw + 'px';
+    canvas.style.height = ch + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    w = cw;
+    h = ch;
     if (lines.length === 0) init();
   }
 

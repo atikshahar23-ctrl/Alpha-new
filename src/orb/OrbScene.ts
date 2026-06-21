@@ -359,44 +359,44 @@ const DESKTOP_ORB_FRAG = /* glsl */`
     float s2 = smoothstep(0.45, 0.5, fract(vWorldPos.y * 10.0 + uTime * 0.2)) * 0.08;
     float sc = s1 + s2;
 
-    vec3 obsidian = vec3(0.04, 0.03, 0.02);
-    vec3 warmGold = vec3(0.55, 0.42, 0.15);
-    vec3 brightGold = vec3(0.85, 0.68, 0.22);
-    vec3 pearl = vec3(0.95, 0.93, 0.88);
-    vec3 champagne = vec3(0.72, 0.62, 0.42);
-    vec3 roseGold = vec3(0.72, 0.45, 0.35);
+    vec3 obsidian = vec3(0.06, 0.04, 0.02);
+    vec3 warmGold = vec3(0.65, 0.48, 0.16);
+    vec3 brightGold = vec3(0.95, 0.75, 0.25);
+    vec3 pearl = vec3(1.0, 0.97, 0.92);
+    vec3 champagne = vec3(0.80, 0.68, 0.40);
+    vec3 roseGold = vec3(0.78, 0.52, 0.38);
 
-    vec3 col = mix(obsidian, warmGold * 0.3, ep * 0.7);
-    col = mix(col, champagne * 0.4, ep * ep * 0.5);
-    col += brightGold * veins * 0.35;
-    col += pearl * veins * 0.1;
+    vec3 col = mix(obsidian, warmGold * 0.4, ep * 0.8);
+    col = mix(col, champagne * 0.5, ep * ep * 0.6);
+    col += brightGold * veins * 0.45;
+    col += pearl * veins * 0.15;
 
-    float sss = pow(max(dot(n, -vd), 0.0), 2.5) * 0.06;
+    float sss = pow(max(dot(n, -vd), 0.0), 2.5) * 0.1;
     col += warmGold * sss;
 
-    col += brightGold * fresnel * 0.15;
-    col += pearl * fresnel * 0.08;
-    col += roseGold * fresnel * 0.04;
+    col += brightGold * fresnel * 0.25;
+    col += pearl * fresnel * 0.12;
+    col += roseGold * fresnel * 0.06;
 
-    col += warmGold * 0.15 * hex * 0.2;
-    col += brightGold * sc * 0.1;
+    col += warmGold * 0.2 * hex * 0.25;
+    col += brightGold * sc * 0.15;
 
-    float hotSpot = pow(e1, 4.0) * 0.6;
-    col += pearl * hotSpot * 0.08;
-    col += brightGold * hotSpot * 0.05;
+    float hotSpot = pow(e1, 4.0) * 0.8;
+    col += pearl * hotSpot * 0.12;
+    col += brightGold * hotSpot * 0.08;
 
     float cs = sin(uTime * 0.2 + vWorldPos.y * 2.5) * 0.5 + 0.5;
-    col = mix(col, brightGold, fresnel * cs * 0.06 + uEnergy * 0.04);
+    col = mix(col, brightGold, fresnel * cs * 0.1 + uEnergy * 0.06);
 
     float gl = step(0.985, fract(sin(floor(vWorldPos.y * 50.0 + uTime * 3.0)) * 43758.5));
-    col += pearl * 0.3 * gl * (uGlitch * 0.5 + uEnergy * 0.15);
+    col += pearl * 0.4 * gl * (uGlitch * 0.5 + uEnergy * 0.2);
 
-    float pulse = 0.9 + sin(uTime * 0.8) * 0.03 + uEnergy * 0.06;
+    float pulse = 0.92 + sin(uTime * 0.8) * 0.04 + uEnergy * 0.08;
     col *= pulse;
 
-    float alpha = 0.5 + fresnel * 0.25 + ep * 0.1 + sc * 0.02 + hex * 0.01 + veins * 0.08;
+    float alpha = 0.55 + fresnel * 0.3 + ep * 0.12 + sc * 0.03 + hex * 0.02 + veins * 0.1;
     alpha *= pulse;
-    gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.85));
+    gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.9));
   }
 `;
 
@@ -420,14 +420,16 @@ const ATMOSPHERE_FRAG = /* glsl */`
   void main() {
     vec3 vd = normalize(cameraPosition - vWorldPos);
     vec3 n = normalize(vNormal);
-    float intensity = pow(max(0.6 - dot(n, vd), 0.0), 3.5);
+    float intensity = pow(max(0.6 - dot(n, vd), 0.0), 3.0);
 
-    vec3 deepGold = vec3(0.15, 0.1, 0.03);
-    vec3 lightGold = vec3(0.35, 0.28, 0.12);
-    float pulse = 0.6 + sin(uTime * 0.35) * 0.04 + uEnergy * 0.06;
+    vec3 deepGold = vec3(0.22, 0.15, 0.05);
+    vec3 lightGold = vec3(0.5, 0.38, 0.15);
+    vec3 pearl = vec3(0.6, 0.55, 0.45);
+    float pulse = 0.7 + sin(uTime * 0.35) * 0.06 + uEnergy * 0.1;
 
     vec3 col = mix(deepGold, lightGold, intensity) * pulse;
-    float alpha = intensity * 0.1 * pulse;
+    col += pearl * pow(intensity, 2.0) * 0.15;
+    float alpha = intensity * 0.18 * pulse;
 
     gl_FragColor = vec4(col, alpha);
   }
@@ -901,10 +903,10 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     powerPreference: 'high-performance',
     failIfMajorPerformanceCaveat: false,
   });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2.5));
   renderer.setClearColor(0x0a0806, 1);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 0.75;
+  renderer.toneMappingExposure = 0.95;
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
@@ -916,7 +918,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   composer.addPass(new RenderPass(scene, camera));
   composer.addPass(new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    0.25, 0.3, 0.6,
+    0.4, 0.35, 0.5,
   ));
   composer.addPass(new OutputPass());
 
@@ -949,13 +951,22 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   const orb = new THREE.Mesh(orbGeo, orbMat);
   group.add(orb);
 
-  // Inner bright core
-  const coreGeo = new THREE.IcosahedronGeometry(0.45, 4);
+  // Inner bright core — hot golden center
+  const coreGeo = new THREE.IcosahedronGeometry(0.5, 4);
   const coreMat = new THREE.MeshBasicMaterial({
-    color: 0x3d2a10, transparent: true, opacity: 0.15, depthWrite: false,
+    color: 0x6b4a18, transparent: true, opacity: 0.3, depthWrite: false,
   });
   const core = new THREE.Mesh(coreGeo, coreMat);
   group.add(core);
+
+  // Desktop core glow sprite
+  const dCoreGlowMat = new THREE.SpriteMaterial({
+    map: glowTexture(), color: 0xdaa520, transparent: true, opacity: 0.15,
+    depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+  const dCoreGlow = new THREE.Sprite(dCoreGlowMat);
+  dCoreGlow.scale.setScalar(2.5);
+  group.add(dCoreGlow);
 
   // Wireframe cages — 3 layers
   const wireframes: { mesh: THREE.Mesh; mat: THREE.MeshBasicMaterial; dir: number }[] = [];
@@ -1053,19 +1064,19 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   // OUTER GLOW — layered sprites
   // ────────────────────────────────────────────
   const glow1Mat = new THREE.SpriteMaterial({
-    map: glowTexture(), color: 0x2a1a08, transparent: true, opacity: 0.04,
+    map: glowTexture(), color: 0x4a3210, transparent: true, opacity: 0.1,
     depthWrite: false, blending: THREE.AdditiveBlending,
   });
   const glow1 = new THREE.Sprite(glow1Mat);
-  glow1.scale.setScalar(3.5);
+  glow1.scale.setScalar(4.5);
   group.add(glow1);
 
   const glow2Mat = new THREE.SpriteMaterial({
-    map: glowTexture(), color: 0x140c04, transparent: true, opacity: 0.02,
+    map: glowTexture(), color: 0x2a1c0a, transparent: true, opacity: 0.05,
     depthWrite: false, blending: THREE.AdditiveBlending,
   });
   const glow2 = new THREE.Sprite(glow2Mat);
-  glow2.scale.setScalar(5.5);
+  glow2.scale.setScalar(7.0);
   group.add(glow2);
 
   // ────────────────────────────────────────────
@@ -1414,31 +1425,33 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     const breath = 1 + Math.sin(time * 1.0) * 0.02 + amp * 0.06;
     orb.scale.setScalar(breath);
 
-    // Core pulse
+    // Core pulse — bright golden center
     core.rotation.y = -time * 0.35;
     core.rotation.x = time * 0.2;
-    const cp = 0.8 + Math.sin(time * 2.2) * 0.18 + amp * 0.35;
-    core.scale.setScalar(0.45 * cp);
-    coreMat.opacity = 0.08 + Math.sin(time * 1.8) * 0.03 + amp * 0.05;
+    const cp = 0.9 + Math.sin(time * 2.2) * 0.12 + amp * 0.4;
+    core.scale.setScalar(0.5 * cp);
+    coreMat.opacity = 0.25 + Math.sin(time * 1.8) * 0.08 + amp * 0.15;
+    dCoreGlow.scale.setScalar(2.2 + Math.sin(time * 1.5) * 0.4 + amp * 0.5);
+    dCoreGlowMat.opacity = 0.12 + Math.sin(time * 1.3) * 0.04 + amp * 0.08;
 
     // Wireframe cages
     for (let i = 0; i < wireframes.length; i++) {
       const wf = wireframes[i];
       wf.mesh.rotation.y = time * (0.08 - i * 0.025) * wf.dir;
       wf.mesh.rotation.z = Math.sin(time * 0.1 + i) * 0.1;
-      wf.mat.opacity = wOps[i] * 0.6 + amp * 0.015 + Math.sin(time * 0.8 + i) * 0.01;
+      wf.mat.opacity = wOps[i] * 0.8 + amp * 0.02 + Math.sin(time * 0.8 + i) * 0.015;
     }
 
-    // Rings rotation
+    // Rings rotation — more visible
     rings[0].mesh.rotation.z = 0.15 + time * 0.07;
-    rings[0].mat.opacity = 0.5 + Math.sin(time * 0.6) * 0.06 + amp * 0.06;
+    rings[0].mat.opacity = 0.65 + Math.sin(time * 0.6) * 0.08 + amp * 0.1;
     rings[1].mesh.rotation.z = -0.3 - time * 0.1;
-    rings[1].mat.opacity = 0.2 + Math.sin(time * 0.5) * 0.03;
+    rings[1].mat.opacity = 0.3 + Math.sin(time * 0.5) * 0.05;
     rings[2].mesh.rotation.z = 0.5 + time * 0.04;
     rings[2].mesh.rotation.x = PI * 0.62 + Math.sin(time * 0.15) * 0.08;
-    rings[2].mat.opacity = 0.12 + Math.sin(time * 0.45) * 0.03 + amp * 0.04;
+    rings[2].mat.opacity = 0.18 + Math.sin(time * 0.45) * 0.04 + amp * 0.06;
     rings[3].mesh.rotation.z = -0.8 + time * 0.12;
-    rings[3].mat.opacity = 0.06 + Math.sin(time * 0.55) * 0.02;
+    rings[3].mat.opacity = 0.12 + Math.sin(time * 0.55) * 0.03;
 
     // Pulse rings
     for (let i = 0; i < PULSE_N; i++) {
@@ -1459,11 +1472,11 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       streams[i].mat.opacity = 0.01 + wave * 0.03 + amp * 0.015;
     }
 
-    // Glow
-    glow1.scale.setScalar(3.5 + Math.sin(time * 0.6) * 0.3 + amp * 0.4);
-    glow1Mat.opacity = 0.03 + amp * 0.03;
-    glow2.scale.setScalar(5.5 + Math.sin(time * 0.4) * 0.3);
-    glow2Mat.opacity = 0.015 + amp * 0.02;
+    // Glow — premium golden haze
+    glow1.scale.setScalar(4.0 + Math.sin(time * 0.6) * 0.4 + amp * 0.6);
+    glow1Mat.opacity = 0.08 + amp * 0.06 + Math.sin(time * 0.5) * 0.02;
+    glow2.scale.setScalar(6.5 + Math.sin(time * 0.4) * 0.4);
+    glow2Mat.opacity = 0.04 + amp * 0.03;
 
     // Atmosphere glow
     atmosMat.uniforms.uTime.value = time;
