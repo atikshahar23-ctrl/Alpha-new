@@ -4,7 +4,7 @@ import { loadState, saveState, addEvent, loadEvents, removeEvent, type AppState,
 import { askAI, runTags } from '../assistant/gemini';
 import { tryLocalCommand } from '../assistant/local';
 import { VoiceEngine } from '../assistant/voice';
-import { AudioEngine } from '../assistant/audio';
+import { AudioEngine, type AmbientPreset } from '../assistant/audio';
 
 export function mountApp(root: HTMLElement) {
   root.innerHTML = `
@@ -203,7 +203,19 @@ export function mountApp(root: HTMLElement) {
 
         <div class="settings-section">
           <div class="ss-title">AUDIO</div>
-          <label>Background music <span id="ambVal" class="range-val">40%</span></label>
+          <label>Ambient sound</label>
+          <select id="ambPresetSel">
+            <option value="pad">Soft Pad — רקע רך</option>
+            <option value="rain">Rain — גשם</option>
+            <option value="ocean">Ocean Waves — גלי ים</option>
+            <option value="wind">Gentle Wind — רוח</option>
+            <option value="cafe">Café — בית קפה</option>
+            <option value="fireplace">Fireplace — אח</option>
+            <option value="night">Night Crickets — צרצרים</option>
+            <option value="stream">Forest Stream — נחל ביער</option>
+            <option value="off">Off — כבוי</option>
+          </select>
+          <label>Volume <span id="ambVal" class="range-val">40%</span></label>
           <input type="range" id="ambSlider" min="0" max="100" value="40" />
         </div>
 
@@ -295,6 +307,7 @@ export function mountApp(root: HTMLElement) {
   const state: AppState = loadState();
   const audio = new AudioEngine();
   audio.ambLevel = state.ambLevel;
+  audio.ambPreset = (state.ambPreset || 'pad') as AmbientPreset;
   audio.sfxOn = state.sfxOn;
 
   let orb: OrbHandle;
@@ -927,6 +940,7 @@ export function mountApp(root: HTMLElement) {
     $<HTMLSelectElement>('textLangSel').value = state.textLang;
     $<HTMLInputElement>('ambSlider').value = String(Math.round(audio.ambLevel * 100));
     $('ambVal').textContent = Math.round(audio.ambLevel * 100) + '%';
+    $<HTMLSelectElement>('ambPresetSel').value = audio.ambPreset;
     $<HTMLInputElement>('speedSlider').value = String(Math.round((state.voiceSpeed || 1) * 100));
     $('speedVal').textContent = (state.voiceSpeed || 1).toFixed(1) + 'x';
     $<HTMLInputElement>('pitchSlider').value = String(Math.round((state.voicePitch || 1) * 100));
@@ -957,6 +971,12 @@ export function mountApp(root: HTMLElement) {
   }
   $('settingsBtn').onclick = openSetup;
   $<HTMLSelectElement>('replySel').onchange = () => { state.replyLang = $<HTMLSelectElement>('replySel').value as any; refreshVoiceList(); };
+  $<HTMLSelectElement>('ambPresetSel').onchange = () => {
+    audio.ensure();
+    const preset = $<HTMLSelectElement>('ambPresetSel').value as AmbientPreset;
+    audio.setPreset(preset);
+    state.ambPreset = preset;
+  };
   $<HTMLInputElement>('ambSlider').oninput = () => {
     audio.ensure(); const v = +$<HTMLInputElement>('ambSlider').value;
     audio.setAmbient(v / 100); $('ambVal').textContent = v + '%';
@@ -1000,6 +1020,8 @@ export function mountApp(root: HTMLElement) {
     state.replyLang = $<HTMLSelectElement>('replySel').value as any;
     state.textLang = $<HTMLSelectElement>('textLangSel').value as TextLang;
     state.ambLevel = audio.ambLevel;
+    state.ambPreset = $<HTMLSelectElement>('ambPresetSel').value;
+    audio.setPreset(state.ambPreset as AmbientPreset);
     state.voiceSpeed = +$<HTMLInputElement>('speedSlider').value / 100;
     state.voicePitch = +$<HTMLInputElement>('pitchSlider').value / 100;
     state.sfxOn = $<HTMLInputElement>('sfxCheck').checked;

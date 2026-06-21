@@ -22,6 +22,7 @@ export interface AppState {
   voiceSpeed: number;
   voicePitch: number;
   ambLevel: number;
+  ambPreset: string;
   sfxOn: boolean;
   wakeOn: boolean;
   theme: 'dark' | 'light';
@@ -33,7 +34,8 @@ export interface AppState {
 const KEY = 'alpha_key', GROK = 'alpha_grok', OPENAI = 'alpha_openai', PROV = 'alpha_provider',
   PUTERMODEL = 'alpha_putermodel',
   NAME = 'alpha_name', MICLANG = 'alpha_micLang', REPLYLANG = 'alpha_replyLang',
-  TEXTLANG = 'alpha_textLang', AMB = 'alpha_amb', SFX = 'alpha_sfx', WAKE = 'alpha_wake',
+  TEXTLANG = 'alpha_textLang', AMB = 'alpha_amb', AMBPRESET = 'alpha_ambpreset',
+  SFX = 'alpha_sfx', WAKE = 'alpha_wake',
   VOICE = 'alpha_voice', VGENDER = 'alpha_vgender', VSPEED = 'alpha_vspeed',
   VPITCH = 'alpha_vpitch', THEME = 'alpha_theme', FONTSIZE = 'alpha_fontsize',
   HAPTICS = 'alpha_haptics', AUTOSPEAK = 'alpha_autospeak';
@@ -63,6 +65,7 @@ export function loadState(): AppState {
     voiceSpeed: vspeed,
     voicePitch: vpitch,
     ambLevel: amb,
+    ambPreset: localStorage.getItem(AMBPRESET) || 'pad',
     sfxOn: localStorage.getItem(SFX) !== '0',
     wakeOn: localStorage.getItem(WAKE) === '1',
     theme: (localStorage.getItem(THEME) as 'dark' | 'light') || 'dark',
@@ -83,6 +86,7 @@ export function saveState(s: AppState) {
   localStorage.setItem(REPLYLANG, s.replyLang);
   localStorage.setItem(TEXTLANG, s.textLang);
   localStorage.setItem(AMB, s.ambLevel.toFixed(2));
+  localStorage.setItem(AMBPRESET, s.ambPreset);
   localStorage.setItem(SFX, s.sfxOn ? '1' : '0');
   localStorage.setItem(WAKE, s.wakeOn ? '1' : '0');
   localStorage.setItem(VOICE, s.voiceOn ? '1' : '0');
