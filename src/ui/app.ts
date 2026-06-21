@@ -1,6 +1,6 @@
 import { mountOrb, type OrbHandle } from '../orb/OrbScene';
 import { mountFlowLines } from '../bg/flowLines';
-import { loadState, saveState, addEvent, loadEvents, saveEvents, type AppState, type TextLang, type AIProvider } from '../assistant/state';
+import { loadState, saveState, addEvent, loadEvents, removeEvent, type AppState, type TextLang, type AIProvider } from '../assistant/state';
 import { askAI, runTags } from '../assistant/gemini';
 import { tryLocalCommand } from '../assistant/local';
 import { VoiceEngine } from '../assistant/voice';
@@ -363,12 +363,15 @@ export function mountApp(root: HTMLElement) {
       '<input type="time" id="evTime" style="background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:10px;padding:10px;color:var(--ink)">' +
       '<button id="evAdd" style="background:linear-gradient(135deg,var(--gold),#fff);border:none;border-radius:10px;padding:10px 18px;cursor:pointer;color:#04060d;font-weight:600">Add</button></div>';
     if (!ev.length) html += '<div style="color:var(--dim);font-style:italic">Calendar is empty.</div>';
-    for (const e of ev)
-      html += `<div style="display:flex;gap:12px;align-items:center;padding:12px;background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:12px;margin-bottom:8px"><span style="color:var(--cyan);min-width:100px;font-size:13px">${e.date}${e.time ? ' · ' + e.time : ''}</span><span style="flex:1">${e.title}</span><button data-id="${e.id}" class="del" style="background:none;border:none;color:var(--dim);cursor:pointer;font-size:16px">✕</button></div>`;
+    for (const e of ev) {
+      const isHg = e.id.startsWith('hg:');
+      const badge = isHg ? '<span style="font-size:9px;letter-spacing:1px;color:var(--gold);background:rgba(255,194,77,.1);padding:2px 6px;border-radius:4px;margin-left:6px">HG</span>' : '';
+      html += `<div style="display:flex;gap:12px;align-items:center;padding:12px;background:rgba(255,255,255,.03);border:1px solid ${isHg ? 'rgba(255,194,77,.15)' : 'var(--line)'};border-radius:12px;margin-bottom:8px"><span style="color:var(--cyan);min-width:100px;font-size:13px">${e.date}${e.time ? ' · ' + e.time : ''}</span><span style="flex:1">${e.title}${badge}</span><button data-id="${e.id}" class="del" style="background:none;border:none;color:var(--dim);cursor:pointer;font-size:16px">✕</button></div>`;
+    }
     html += '</div>';
     $('winBody').innerHTML = html;
     $('evAdd').onclick = () => { const t = $<HTMLInputElement>('evT').value.trim(), d = $<HTMLInputElement>('evD').value; if (!t || !d) return; addEvent(t, d, $<HTMLInputElement>('evTime').value); renderCalendar(); };
-    $('winBody').querySelectorAll<HTMLButtonElement>('.del').forEach(b => b.onclick = () => { saveEvents(loadEvents().filter(x => x.id !== b.dataset.id)); renderCalendar(); });
+    $('winBody').querySelectorAll<HTMLButtonElement>('.del').forEach(b => b.onclick = () => { removeEvent(b.dataset.id!); renderCalendar(); });
   }
   function openCalendar() { openWin('Calendar'); renderCalendar(); }
 

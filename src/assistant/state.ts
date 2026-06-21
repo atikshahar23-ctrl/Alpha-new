@@ -64,19 +64,57 @@ export function saveState(s: AppState) {
 
 export interface CalEvent { id: string; title: string; date: string; time: string }
 
-export function loadEvents(): CalEvent[] {
+function loadAlphaEvents(): CalEvent[] {
   try { return JSON.parse(localStorage.getItem('alpha_events') || '[]'); } catch { return []; }
 }
-export function saveEvents(ev: CalEvent[]) {
-  localStorage.setItem('alpha_events', JSON.stringify(ev));
+
+export function loadEvents(): CalEvent[] {
+  const alpha = loadAlphaEvents();
+  let hg: CalEvent[] = [];
+  try {
+    const tasks: { id: string; title: string; date: string; done: boolean }[] = JSON.parse(localStorage.getItem('hg2:tasks') || '[]');
+    hg = tasks
+      .filter(t => t.date && !t.done)
+      .map(t => ({ id: 'hg:' + t.id, title: t.title, date: t.date, time: '' }));
+  } catch {}
+  const alphaKeys = new Set(alpha.map(e => e.title.toLowerCase() + '|' + e.date));
+  const unique = hg.filter(t => !alphaKeys.has(t.title.toLowerCase() + '|' + t.date));
+  return [...alpha, ...unique].sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
 }
+
+export function saveEvents(ev: CalEvent[]) {
+  localStorage.setItem('alpha_events', JSON.stringify(ev.filter(e => !e.id.startsWith('hg:'))));
+}
+
+export function removeEvent(id: string) {
+  if (id.startsWith('hg:')) {
+    const hgId = id.slice(3);
+    try {
+      const tasks = JSON.parse(localStorage.getItem('hg2:tasks') || '[]');
+      localStorage.setItem('hg2:tasks', JSON.stringify(tasks.filter((t: { id: string }) => t.id !== hgId)));
+    } catch {}
+  } else {
+    const ev = loadAlphaEvents();
+    saveEvents(ev.filter(e => e.id !== id));
+  }
+}
+
 export function addEvent(title: string, date: string, time: string) {
-  const ev = loadEvents();
+  const ev = loadAlphaEvents();
   ev.push({ id: Date.now() + '_' + Math.random(), title, date, time: time || '' });
   ev.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
-  saveEvents(ev);
-  return ev;
+  localStorage.setItem('alpha_events', JSON.stringify(ev));
+  try {
+    const tasks = JSON.parse(localStorage.getItem('hg2:tasks') || '[]');
+    if (!tasks.some((t: { title: string; date: string }) => t.title === title && t.date === date)) {
+      const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      tasks.unshift({ id, title, date, done: false, ts: Date.now() });
+      localStorage.setItem('hg2:tasks', JSON.stringify(tasks));
+    }
+  } catch {}
+  return loadEvents();
 }
+
 export function upcomingText(): string {
   const today = new Date().toISOString().slice(0, 10);
   const ev = loadEvents().filter(e => e.date >= today).slice(0, 10);
