@@ -910,9 +910,18 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
+  scene.fog = new THREE.FogExp2(0x0a0806, 0.025);
+
+  const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 200);
   camera.position.set(0, 0.4, 6);
   camera.lookAt(0, 0, 0);
+
+  let dMouseX = 0, dMouseY = 0;
+  const onDeskMouseMove = (e: MouseEvent) => {
+    dMouseX = (e.clientX / window.innerWidth - 0.5) * 2;
+    dMouseY = (e.clientY / window.innerHeight - 0.5) * 2;
+  };
+  window.addEventListener('mousemove', onDeskMouseMove);
 
   const composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
@@ -1281,6 +1290,77 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   group.add(surfaceParticles);
 
   // ────────────────────────────────────────────
+  // FAR-FIELD DEPTH STARS — independent layer for depth parallax
+  // ────────────────────────────────────────────
+  const starGroup = new THREE.Group();
+  scene.add(starGroup);
+
+  const STAR_N = 350;
+  const stPos = new Float32Array(STAR_N * 3);
+  const stPh = new Float32Array(STAR_N);
+  const stSz = new Float32Array(STAR_N);
+  const stCl = new Float32Array(STAR_N * 3);
+  for (let i = 0; i < STAR_N; i++) {
+    const theta = Math.random() * PI2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    const r = 14 + Math.random() * 20;
+    stPos[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+    stPos[i * 3 + 1] = r * Math.cos(phi);
+    stPos[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+    stPh[i] = Math.random();
+    stSz[i] = 0.3 + Math.random() * 1.4;
+    const k = Math.random();
+    if (k > 0.7) { stCl[i*3]=1; stCl[i*3+1]=0.9; stCl[i*3+2]=0.6; }
+    else if (k > 0.4) { stCl[i*3]=0.9; stCl[i*3+1]=0.8; stCl[i*3+2]=0.5; }
+    else { stCl[i*3]=0.7; stCl[i*3+1]=0.6; stCl[i*3+2]=0.35; }
+  }
+  const stGeo = new THREE.BufferGeometry();
+  stGeo.setAttribute('position', new THREE.BufferAttribute(stPos, 3));
+  stGeo.setAttribute('aPhase', new THREE.BufferAttribute(stPh, 1));
+  stGeo.setAttribute('aSize', new THREE.BufferAttribute(stSz, 1));
+  stGeo.setAttribute('aColor', new THREE.BufferAttribute(stCl, 3));
+  const stMat = new THREE.ShaderMaterial({
+    uniforms: { uTime: { value: 0 } },
+    vertexShader: MOBILE_PART_VERT,
+    fragmentShader: MOBILE_PART_FRAG,
+    transparent: true, depthWrite: false,
+  });
+  const farStars = new THREE.Points(stGeo, stMat);
+  starGroup.add(farStars);
+
+  // Mid-depth dust motes — between orb and far stars
+  const DUST_N = 120;
+  const dustPos = new Float32Array(DUST_N * 3);
+  const dustPh = new Float32Array(DUST_N);
+  const dustSz = new Float32Array(DUST_N);
+  const dustCl = new Float32Array(DUST_N * 3);
+  const dustOrbs: { a: number; r: number; spd: number; y0: number }[] = [];
+  for (let i = 0; i < DUST_N; i++) {
+    const a = Math.random() * PI2;
+    const r = 5 + Math.random() * 8;
+    dustPos[i * 3] = Math.cos(a) * r;
+    dustPos[i * 3 + 1] = (Math.random() - 0.5) * 8;
+    dustPos[i * 3 + 2] = Math.sin(a) * r;
+    dustPh[i] = Math.random();
+    dustSz[i] = 0.5 + Math.random() * 1.0;
+    dustCl[i*3] = 0.8; dustCl[i*3+1] = 0.65; dustCl[i*3+2] = 0.3;
+    dustOrbs.push({ a, r, spd: 0.01 + Math.random() * 0.03, y0: dustPos[i*3+1] });
+  }
+  const dustGeo = new THREE.BufferGeometry();
+  dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
+  dustGeo.setAttribute('aPhase', new THREE.BufferAttribute(dustPh, 1));
+  dustGeo.setAttribute('aSize', new THREE.BufferAttribute(dustSz, 1));
+  dustGeo.setAttribute('aColor', new THREE.BufferAttribute(dustCl, 3));
+  const dustMat = new THREE.ShaderMaterial({
+    uniforms: { uTime: { value: 0 } },
+    vertexShader: MOBILE_PART_VERT,
+    fragmentShader: MOBILE_PART_FRAG,
+    transparent: true, depthWrite: false,
+  });
+  const dustParticles = new THREE.Points(dustGeo, dustMat);
+  scene.add(dustParticles);
+
+  // ────────────────────────────────────────────
   // BODY DETECTION (MediaPipe)
   // ────────────────────────────────────────────
   let holisticActive = false;
@@ -1545,6 +1625,32 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     group.position.x = Math.sin(time * 0.12 + 1) * 0.05;
     group.rotation.y = time * 0.012;
 
+    // Mouse-driven camera parallax — real 3D depth sensation
+    const tCamX = dMouseX * 0.9;
+    const tCamY = 0.4 + dMouseY * -0.6;
+    camera.position.x += (tCamX - camera.position.x) * 0.035;
+    camera.position.y += (tCamY - camera.position.y) * 0.035;
+    camera.lookAt(0, 0, 0);
+
+    // Far-field stars — slow independent rotation for depth separation
+    stMat.uniforms.uTime.value = time;
+    starGroup.rotation.y = time * 0.004;
+    starGroup.rotation.x = Math.sin(time * 0.015) * 0.02;
+
+    // Mid-depth dust motes — orbit slowly between orb and stars
+    dustMat.uniforms.uTime.value = time;
+    const dp = dustGeo.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < DUST_N; i++) {
+      const d = dustOrbs[i];
+      d.a += d.spd * dt;
+      dp.setXYZ(i,
+        Math.cos(d.a) * d.r,
+        d.y0 + Math.sin(time * 0.12 + i * 0.3) * 0.6,
+        Math.sin(d.a) * d.r,
+      );
+    }
+    dp.needsUpdate = true;
+
     composer.render();
   }
 
@@ -1556,6 +1662,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       cancelAnimationFrame(raf);
       stopBodyDetection();
       window.removeEventListener('resize', resize);
+      window.removeEventListener('mousemove', onDeskMouseMove);
       renderer.dispose();
       composer.dispose();
       container.removeChild(renderer.domElement);

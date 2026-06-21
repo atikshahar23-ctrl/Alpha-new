@@ -7,6 +7,7 @@ interface FlowLine {
   hue: number;
   sat: number;
   light: number;
+  depth: number;
 }
 
 interface Particle {
@@ -38,6 +39,13 @@ export function mountFlowLines(container: HTMLElement): { dispose: () => void } 
   let w = 0, h = 0;
   let dpr = 1;
   let raf = 0;
+  let fMouseX = 0, fMouseY = 0;
+  const onFlowMouse = (e: MouseEvent) => {
+    fMouseX = (e.clientX / window.innerWidth - 0.5) * 2;
+    fMouseY = (e.clientY / window.innerHeight - 0.5) * 2;
+  };
+  window.addEventListener('mousemove', onFlowMouse);
+
   const lines: FlowLine[] = [];
   const particles: Particle[] = [];
   const hexes: HexGrid[] = [];
@@ -86,6 +94,7 @@ export function mountFlowLines(container: HTMLElement): { dispose: () => void } 
         hue: isRose ? 25 : isWhite ? 45 : 38 + Math.random() * 10,
         sat: isWhite ? 30 : 70,
         light: isWhite ? 85 : isRose ? 65 : 60,
+        depth: 0.3 + Math.random() * 1.4,
       });
     }
 
@@ -107,13 +116,14 @@ export function mountFlowLines(container: HTMLElement): { dispose: () => void } 
   function spawnParticle() {
     const maxLife = 200 + Math.random() * 400;
     const kind = Math.random();
+    const depth = 0.2 + Math.random() * 1.6;
     particles.push({
       x: Math.random() * w,
       y: Math.random() * h,
       vx: (Math.random() - 0.5) * 0.25,
       vy: -0.08 - Math.random() * 0.35,
-      size: 0.5 + Math.random() * 1.5,
-      opacity: 0.08 + Math.random() * 0.15,
+      size: (0.5 + Math.random() * 1.5) * (0.5 + depth * 0.4),
+      opacity: (0.08 + Math.random() * 0.15) * (0.4 + depth * 0.4),
       hue: kind > 0.7 ? 45 : 38,
       life: 0,
       maxLife,
@@ -138,9 +148,11 @@ export function mountFlowLines(container: HTMLElement): { dispose: () => void } 
     const wave2 = Math.cos(t * line.speed * 0.7 + line.offset + 1.5);
 
     ctx.beginPath();
-    const yOff = wave * 30 + wave2 * 15;
+    const parallaxX = fMouseX * line.depth * 25;
+    const parallaxY = fMouseY * line.depth * 18;
+    const yOff = wave * 30 + wave2 * 15 + parallaxY;
 
-    const startX = pts[0].x;
+    const startX = pts[0].x + parallaxX;
     const startY = pts[0].y + yOff;
     ctx.moveTo(startX, startY);
 
@@ -148,12 +160,12 @@ export function mountFlowLines(container: HTMLElement): { dispose: () => void } 
       const curr = pts[i];
       const next = pts[i + 1];
       const localWave = Math.sin(t * line.speed * 1.3 + line.offset + i * 0.8) * 20;
-      const cpx = (curr.x + next.x) / 2;
+      const cpx = (curr.x + next.x) / 2 + parallaxX;
       const cpy = (curr.y + next.y) / 2 + yOff + localWave;
-      ctx.quadraticCurveTo(curr.x, curr.y + yOff + localWave * 0.5, cpx, cpy);
+      ctx.quadraticCurveTo(curr.x + parallaxX, curr.y + yOff + localWave * 0.5, cpx, cpy);
     }
     const last = pts[pts.length - 1];
-    ctx.lineTo(last.x, last.y + yOff);
+    ctx.lineTo(last.x + parallaxX, last.y + yOff);
 
     const passes = isMob ? 2 : 4;
     for (let pass = 0; pass < passes; pass++) {
@@ -181,11 +193,13 @@ export function mountFlowLines(container: HTMLElement): { dispose: () => void } 
     ctx.fillStyle = grd;
     ctx.fillRect(0, 0, w, h);
 
-    for (const hex of hexes) {
+    for (let hi = 0; hi < hexes.length; hi++) {
+      const hex = hexes[hi];
+      const hDepth = 0.3 + (hi / hexes.length) * 0.8;
       const hop = hex.opacity * (0.5 + Math.sin(t * 0.4 + hex.phase) * 0.5);
       ctx.strokeStyle = `rgba(218, 165, 32, ${hop})`;
       ctx.lineWidth = 0.5;
-      drawHex(hex.x, hex.y, hex.size);
+      drawHex(hex.x + fMouseX * hDepth * 15, hex.y + fMouseY * hDepth * 10, hex.size);
       ctx.stroke();
     }
 
@@ -224,6 +238,7 @@ export function mountFlowLines(container: HTMLElement): { dispose: () => void } 
     dispose() {
       cancelAnimationFrame(raf);
       window.removeEventListener('resize', resize);
+      window.removeEventListener('mousemove', onFlowMouse);
       canvas.remove();
     },
   };

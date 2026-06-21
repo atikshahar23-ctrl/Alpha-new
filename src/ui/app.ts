@@ -1847,4 +1847,35 @@ export function mountApp(root: HTMLElement) {
   if (!canUseAI) openSetup();
   if (!knownName) showWelcome();
   else if (canUseAI) addMsg(personalGreeting(), 'al');
+
+  // ── 3D Depth — perspective-based UI panel transforms ──
+  {
+    const isMob = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 768;
+    if (!isMob) {
+      let uiMX = 0, uiMY = 0;
+      let uiSX = 0, uiSY = 0;
+      document.addEventListener('mousemove', (e) => {
+        uiMX = (e.clientX / window.innerWidth - 0.5) * 2;
+        uiMY = (e.clientY / window.innerHeight - 0.5) * 2;
+      });
+      const lp = root.querySelector('.left-panel') as HTMLElement;
+      const rp = root.querySelector('.right-panel') as HTMLElement;
+      const dk = root.querySelector('.dock') as HTMLElement;
+      const tl = root.querySelector('.topL') as HTMLElement;
+      const tr = root.querySelector('.topR') as HTMLElement;
+      function uiDepthTick() {
+        uiSX += (uiMX - uiSX) * 0.06;
+        uiSY += (uiMY - uiSY) * 0.06;
+        const rx = uiSY * -0.8;
+        const ry = uiSX * 1.2;
+        if (lp) lp.style.transform = `perspective(1200px) rotateY(${ry * 0.6}deg) rotateX(${rx * 0.5}deg) translateZ(8px)`;
+        if (rp) rp.style.transform = `perspective(1200px) rotateY(${ry * 0.5}deg) rotateX(${rx * 0.4}deg) translateZ(6px)`;
+        if (dk) dk.style.transform = `translateX(-50%) perspective(1200px) rotateX(${rx * -1.2}deg) translateZ(12px)`;
+        if (tl) tl.style.transform = `perspective(1200px) rotateY(${ry * 0.3}deg) translateZ(4px)`;
+        if (tr) tr.style.transform = `perspective(1200px) rotateY(${ry * 0.3}deg) translateZ(4px)`;
+        requestAnimationFrame(uiDepthTick);
+      }
+      requestAnimationFrame(uiDepthTick);
+    }
+  }
 }
