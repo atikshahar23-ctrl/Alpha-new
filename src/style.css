@@ -804,11 +804,16 @@ body::after {
 }
 
 /* HeavyGuard floating action button */
-.hg-fab {
+.fab-group {
   position: fixed;
   right: 16px;
   bottom: 180px;
   z-index: 12;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.hg-fab {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -826,6 +831,7 @@ body::after {
   backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
   transition: var(--transition);
   box-shadow: 0 4px 20px rgba(255,194,77,.1), inset 0 1px 0 rgba(255,255,255,.05);
+  text-decoration: none;
 }
 .hg-fab:hover {
   background: linear-gradient(135deg, rgba(255,194,77,.25), rgba(255,194,77,.1));
@@ -834,6 +840,18 @@ body::after {
   transform: translateY(-2px);
 }
 .hg-fab svg { filter: drop-shadow(0 0 6px rgba(255,194,77,.4)); }
+.trade-fab {
+  background: linear-gradient(135deg, rgba(77,255,145,.12), rgba(95,230,255,.06));
+  border-color: rgba(77,255,145,.3);
+  color: #4dff91;
+  box-shadow: 0 4px 20px rgba(77,255,145,.1), inset 0 1px 0 rgba(255,255,255,.05);
+}
+.trade-fab:hover {
+  background: linear-gradient(135deg, rgba(77,255,145,.22), rgba(95,230,255,.12));
+  border-color: rgba(77,255,145,.5);
+  box-shadow: 0 6px 30px rgba(77,255,145,.2), inset 0 1px 0 rgba(255,255,255,.08);
+}
+.trade-fab svg { filter: drop-shadow(0 0 6px rgba(77,255,145,.4)); }
 
 /* AI capability nodes overlay (mobile) */
 .ai-nodes {
@@ -966,7 +984,8 @@ body::after {
 
   body::after { display: none; }
 
-  .hg-fab { bottom: 155px; right: 10px; padding: 10px 14px; font-size: 10px; letter-spacing: 1.5px; border-radius: 12px; }
+  .fab-group { bottom: 155px; right: 10px; }
+  .hg-fab { padding: 10px 14px; font-size: 10px; letter-spacing: 1.5px; border-radius: 12px; }
 }
 
 /* Phones */
@@ -1035,7 +1054,8 @@ body::after {
   .hg-topbar-title { font-size: 10px; letter-spacing: 2px; }
   .hg-close { width: 30px; height: 30px; font-size: 14px; border-radius: 8px; }
 
-  .hg-fab { bottom: 145px; right: 8px; padding: 9px 12px; gap: 6px; font-size: 9px; }
+  .fab-group { bottom: 145px; right: 8px; }
+  .hg-fab { padding: 9px 12px; gap: 6px; font-size: 9px; }
   .hg-fab svg { width: 18px; height: 18px; }
 }
 
