@@ -241,6 +241,38 @@ export function mountApp(root: HTMLElement) {
   }
   mountFlowLines(root.querySelector('.app')!);
 
+  // AI capability nodes overlay (mobile)
+  const isMob = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 768;
+  if (isMob) {
+    const stage = $('stage');
+    const nodesEl = document.createElement('div');
+    nodesEl.className = 'ai-nodes';
+    const labels = ['Memory','Calendar','Tasks','Search','Translate','Analytics','Assistant','Weather','Music','Notes'];
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'ai-nodes-svg');
+    svg.setAttribute('viewBox', '0 0 100 100');
+    svg.setAttribute('preserveAspectRatio', 'none');
+    nodesEl.appendChild(svg);
+    labels.forEach((lbl, i) => {
+      const a = (i / labels.length) * Math.PI * 2 - Math.PI / 2;
+      const rx = 42, ry = 38;
+      const x = 50 + Math.cos(a) * rx;
+      const y = 50 + Math.sin(a) * ry;
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', '50'); line.setAttribute('y1', '50');
+      line.setAttribute('x2', String(x)); line.setAttribute('y2', String(y));
+      line.setAttribute('class', 'ai-node-line');
+      svg.appendChild(line);
+      const dot = document.createElement('div');
+      dot.className = 'ai-node';
+      dot.style.left = x + '%';
+      dot.style.top = y + '%';
+      dot.innerHTML = `<span class="ai-node-dot"></span><span class="ai-node-lbl">${lbl}</span>`;
+      nodesEl.appendChild(dot);
+    });
+    stage.appendChild(nodesEl);
+  }
+
   // Load social connections
   const socials = {
     spotify: localStorage.getItem('alpha_social_spotify') || '',

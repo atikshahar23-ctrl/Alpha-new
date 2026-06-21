@@ -835,6 +835,53 @@ body::after {
 }
 .hg-fab svg { filter: drop-shadow(0 0 6px rgba(255,194,77,.4)); }
 
+/* AI capability nodes overlay (mobile) */
+.ai-nodes {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+.ai-nodes-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.ai-node-line {
+  stroke: rgba(95,230,255,0.12);
+  stroke-width: 0.15;
+  stroke-dasharray: 1 0.8;
+}
+.ai-node {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.ai-node-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #5fe6ff;
+  box-shadow: 0 0 8px rgba(95,230,255,0.5);
+}
+.ai-node:nth-child(odd) .ai-node-dot {
+  background: #ffc24d;
+  box-shadow: 0 0 8px rgba(255,194,77,0.5);
+}
+.ai-node-lbl {
+  font-family: 'Space Grotesk', monospace;
+  font-size: 8px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: rgba(180,220,235,0.7);
+  white-space: nowrap;
+  text-shadow: 0 0 6px rgba(95,230,255,0.3);
+}
+
 /* Calendar event count badge */
 .cal-badge {
   position: absolute;

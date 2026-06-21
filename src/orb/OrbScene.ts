@@ -261,6 +261,333 @@ const CONE_FRAGMENT = /* glsl */`
 `;
 
 // ============================================================
+// Mobile holographic orb shaders
+// ============================================================
+const MOBILE_ORB_VERT = /* glsl */`
+  varying vec3 vNormal;
+  varying vec3 vWorldPos;
+  varying vec2 vUv;
+  void main() {
+    vNormal = normalize(normalMatrix * normal);
+    vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const MOBILE_ORB_FRAG = /* glsl */`
+  uniform float uTime;
+  uniform float uEnergy;
+  varying vec3 vNormal;
+  varying vec3 vWorldPos;
+  varying vec2 vUv;
+
+  float h21(vec2 p) { return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
+  float n2d(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    f = f*f*(3.0-2.0*f);
+    return mix(mix(h21(i), h21(i+vec2(1,0)), f.x),
+               mix(h21(i+vec2(0,1)), h21(i+vec2(1,1)), f.x), f.y);
+  }
+  float fbm(vec2 p) {
+    float v = 0.0;
+    v += n2d(p) * 0.5; p *= 2.1;
+    v += n2d(p) * 0.25; p *= 2.3;
+    v += n2d(p) * 0.125;
+    return v;
+  }
+
+  void main() {
+    vec3 viewDir = normalize(cameraPosition - vWorldPos);
+    vec3 n = normalize(vNormal);
+    float fresnel = pow(1.0 - max(dot(n, viewDir), 0.0), 2.5);
+
+    vec2 flow1 = vUv * 6.0 + vec2(uTime * 0.12, uTime * 0.08);
+    vec2 flow2 = vUv * 10.0 + vec2(-uTime * 0.08, uTime * 0.15);
+    float pattern = fbm(flow1) * 0.6 + n2d(flow2) * 0.4;
+
+    float scan = smoothstep(0.42, 0.5, fract(vWorldPos.y * 12.0 - uTime * 0.5)) * 0.3;
+
+    vec3 teal = vec3(0.05, 0.55, 0.65);
+    vec3 cyan = vec3(0.2, 0.9, 1.0);
+    vec3 col = mix(teal, cyan, pattern * 0.7 + fresnel * 0.3);
+    col += cyan * fresnel * 1.8;
+    col += vec3(0.1, 0.3, 0.35) * scan;
+
+    float pulse = 0.9 + sin(uTime * 1.2) * 0.06 + uEnergy * 0.2;
+    col *= pulse;
+
+    float alpha = 0.35 + fresnel * 0.45 + pattern * 0.1;
+    gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.9));
+  }
+`;
+
+const MOBILE_PART_VERT = /* glsl */`
+  attribute float aPhase;
+  attribute float aSize;
+  attribute vec3 aColor;
+  uniform float uTime;
+  varying vec3 vColor;
+  varying float vAlpha;
+  void main() {
+    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    float p = 0.7 + sin(uTime * 2.0 + aPhase * 6.28) * 0.3;
+    gl_PointSize = aSize * p * (120.0 / -mv.z);
+    gl_Position = projectionMatrix * mv;
+    vColor = aColor;
+    vAlpha = 0.35 + sin(uTime * 1.5 + aPhase * 3.14) * 0.15;
+  }
+`;
+
+const MOBILE_PART_FRAG = /* glsl */`
+  varying vec3 vColor;
+  varying float vAlpha;
+  void main() {
+    float d = length(gl_PointCoord - vec2(0.5));
+    if (d > 0.5) discard;
+    float a = smoothstep(0.5, 0.0, d);
+    gl_FragColor = vec4(vColor, a * vAlpha);
+  }
+`;
+
+// ============================================================
+// Mobile orb scene — holographic AI core
+// ============================================================
+function mountMobileOrb(container: HTMLElement): OrbHandle {
+  const renderer = new THREE.WebGLRenderer({
+    antialias: true,
+    alpha: false,
+    powerPreference: 'low-power',
+    failIfMajorPerformanceCaveat: false,
+  });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setClearColor(0x04060d, 1);
+  container.appendChild(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
+  camera.position.set(0, 0, 6);
+  camera.lookAt(0, 0, 0);
+
+  function resize() {
+    const w = container.clientWidth || 240;
+    const h = container.clientHeight || w;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  const group = new THREE.Group();
+  scene.add(group);
+
+  // ── Central holographic sphere ──
+  const orbGeo = new THREE.IcosahedronGeometry(0.9, 5);
+  const orbMat = new THREE.ShaderMaterial({
+    uniforms: { uTime: { value: 0 }, uEnergy: { value: 0 } },
+    vertexShader: MOBILE_ORB_VERT,
+    fragmentShader: MOBILE_ORB_FRAG,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  const orb = new THREE.Mesh(orbGeo, orbMat);
+  group.add(orb);
+
+  // ── Inner bright core ──
+  const coreGeo = new THREE.IcosahedronGeometry(0.35, 3);
+  const coreMat = new THREE.MeshBasicMaterial({
+    color: 0x44ddee, transparent: true, opacity: 0.4, depthWrite: false,
+  });
+  const core = new THREE.Mesh(coreGeo, coreMat);
+  group.add(core);
+
+  // ── Wireframe cage ──
+  const wireGeo = new THREE.IcosahedronGeometry(0.93, 2);
+  const wireMat = new THREE.MeshBasicMaterial({
+    color: 0x5fe6ff, wireframe: true, transparent: true, opacity: 0.06, depthWrite: false,
+  });
+  const wire = new THREE.Mesh(wireGeo, wireMat);
+  group.add(wire);
+
+  // ── Gold orbital ring (prominent) ──
+  const goldRGeo = new THREE.TorusGeometry(1.35, 0.022, 12, 120);
+  const goldRMat = new THREE.MeshBasicMaterial({
+    color: 0xffc24d, transparent: true, opacity: 0.7, depthWrite: false,
+  });
+  const goldRing = new THREE.Mesh(goldRGeo, goldRMat);
+  goldRing.rotation.x = PI * 0.5;
+  goldRing.rotation.z = 0.15;
+  group.add(goldRing);
+
+  // ── Secondary cyan ring ──
+  const cyanRGeo = new THREE.TorusGeometry(1.15, 0.008, 8, 100);
+  const cyanRMat = new THREE.MeshBasicMaterial({
+    color: 0x5fe6ff, transparent: true, opacity: 0.3, depthWrite: false,
+  });
+  const cyanRing = new THREE.Mesh(cyanRGeo, cyanRMat);
+  cyanRing.rotation.x = PI * 0.4;
+  cyanRing.rotation.z = -0.25;
+  group.add(cyanRing);
+
+  // ── Subtle outer glow ──
+  const glowMat = new THREE.SpriteMaterial({
+    color: 0x225566, transparent: true, opacity: 0.12, depthWrite: false,
+  });
+  const glow = new THREE.Sprite(glowMat);
+  glow.scale.setScalar(4.0);
+  group.add(glow);
+
+  // ── Node dots orbiting (network endpoints) ──
+  const NODE_N = 10;
+  const nodeOrbs: { angle: number; r: number; speed: number; y: number }[] = [];
+  const nodeMeshes: THREE.Mesh[] = [];
+  const nodeLines: { geo: THREE.BufferGeometry; line: THREE.Line }[] = [];
+  const nColors = [0x5fe6ff, 0xffc24d, 0x5fe6ff, 0xb06aff, 0x5fe6ff,
+                   0xffc24d, 0x4dff91, 0x5fe6ff, 0xff9f43, 0x5fe6ff];
+
+  for (let i = 0; i < NODE_N; i++) {
+    const angle = (i / NODE_N) * PI2;
+    const r = 2.0 + Math.random() * 0.5;
+    const nGeo = new THREE.SphereGeometry(0.04, 8, 8);
+    const nMat = new THREE.MeshBasicMaterial({
+      color: nColors[i], transparent: true, opacity: 0.7, depthWrite: false,
+    });
+    const nd = new THREE.Mesh(nGeo, nMat);
+    const yy = (Math.random() - 0.5) * 0.8;
+    nd.position.set(Math.cos(angle) * r, yy, Math.sin(angle) * r);
+    group.add(nd);
+    nodeMeshes.push(nd);
+    nodeOrbs.push({ angle, r, speed: 0.03 + Math.random() * 0.05, y: yy });
+
+    const lGeo = new THREE.BufferGeometry();
+    lGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+    const lMat = new THREE.LineBasicMaterial({
+      color: nColors[i], transparent: true, opacity: 0.08, depthWrite: false,
+    });
+    const line = new THREE.Line(lGeo, lMat);
+    group.add(line);
+    nodeLines.push({ geo: lGeo, line });
+  }
+
+  // ── Floating micro-particles ──
+  const PN = 20;
+  const pPos = new Float32Array(PN * 3);
+  const pPh = new Float32Array(PN);
+  const pSz = new Float32Array(PN);
+  const pCl = new Float32Array(PN * 3);
+  const pOrbs: { a: number; r: number; spd: number; y0: number }[] = [];
+  for (let i = 0; i < PN; i++) {
+    const a = Math.random() * PI2;
+    const r2 = 1.5 + Math.random() * 2.0;
+    pPos[i * 3] = Math.cos(a) * r2;
+    pPos[i * 3 + 1] = (Math.random() - 0.5) * 2;
+    pPos[i * 3 + 2] = Math.sin(a) * r2;
+    pPh[i] = Math.random();
+    pSz[i] = 1.0 + Math.random() * 1.5;
+    const gold = Math.random() > 0.7;
+    pCl[i * 3] = gold ? 1.0 : 0.37;
+    pCl[i * 3 + 1] = gold ? 0.76 : 0.9;
+    pCl[i * 3 + 2] = gold ? 0.3 : 1.0;
+    pOrbs.push({ a, r: r2, spd: 0.08 + Math.random() * 0.15, y0: pPos[i * 3 + 1] });
+  }
+  const pGeo = new THREE.BufferGeometry();
+  pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+  pGeo.setAttribute('aPhase', new THREE.BufferAttribute(pPh, 1));
+  pGeo.setAttribute('aSize', new THREE.BufferAttribute(pSz, 1));
+  pGeo.setAttribute('aColor', new THREE.BufferAttribute(pCl, 3));
+  const pMat = new THREE.ShaderMaterial({
+    uniforms: { uTime: { value: 0 } },
+    vertexShader: MOBILE_PART_VERT,
+    fragmentShader: MOBILE_PART_FRAG,
+    transparent: true,
+    depthWrite: false,
+  });
+  const particles = new THREE.Points(pGeo, pMat);
+  group.add(particles);
+
+  // ── Animation ──
+  let time = 0, raf = 0;
+  let amp = 0.06, ampTarget = 0.06;
+
+  function frame() {
+    raf = requestAnimationFrame(frame);
+    time += 0.016;
+    amp += (ampTarget - amp) * 0.07;
+
+    orbMat.uniforms.uTime.value = time;
+    orbMat.uniforms.uEnergy.value = amp;
+    pMat.uniforms.uTime.value = time;
+
+    orb.rotation.y = time * 0.12;
+    orb.rotation.x = Math.sin(time * 0.08) * 0.08;
+    const breath = 1 + Math.sin(time * 1.2) * 0.02 + amp * 0.06;
+    orb.scale.setScalar(breath);
+
+    core.rotation.y = -time * 0.3;
+    const cp = 0.85 + Math.sin(time * 2.0) * 0.15 + amp * 0.3;
+    core.scale.setScalar(0.35 * cp);
+    coreMat.opacity = 0.3 + Math.sin(time * 1.8) * 0.1 + amp * 0.15;
+
+    wire.rotation.y = time * 0.08;
+    wire.rotation.z = Math.sin(time * 0.15) * 0.1;
+
+    goldRing.rotation.z = 0.15 + time * 0.08;
+    goldRMat.opacity = 0.6 + Math.sin(time) * 0.1 + amp * 0.15;
+    cyanRing.rotation.z = -0.25 - time * 0.12;
+    cyanRMat.opacity = 0.25 + Math.sin(time * 0.8) * 0.08;
+
+    glow.scale.setScalar(3.5 + Math.sin(time * 0.8) * 0.3 + amp * 0.5);
+    glowMat.opacity = 0.1 + amp * 0.08;
+
+    for (let i = 0; i < NODE_N; i++) {
+      const o = nodeOrbs[i];
+      o.angle += o.speed * 0.016;
+      const nx = Math.cos(o.angle) * o.r;
+      const ny = o.y + Math.sin(time * 0.3 + i) * 0.15;
+      const nz = Math.sin(o.angle) * o.r;
+      nodeMeshes[i].position.set(nx, ny, nz);
+      const lp = nodeLines[i].geo.attributes.position as THREE.BufferAttribute;
+      lp.setXYZ(0, 0, 0, 0);
+      lp.setXYZ(1, nx, ny, nz);
+      lp.needsUpdate = true;
+    }
+
+    const pp = pGeo.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < PN; i++) {
+      const po = pOrbs[i];
+      po.a += po.spd * 0.016;
+      pp.setXYZ(i,
+        Math.cos(po.a) * po.r,
+        po.y0 + Math.sin(time * 0.4 + i * 0.7) * 0.25,
+        Math.sin(po.a) * po.r,
+      );
+    }
+    pp.needsUpdate = true;
+
+    group.position.y = Math.sin(time * 0.25) * 0.1;
+    group.rotation.y = time * 0.015;
+
+    renderer.render(scene, camera);
+  }
+
+  raf = requestAnimationFrame(frame);
+
+  return {
+    setEnergy(v: number) { ampTarget = Math.max(0, Math.min(1, v)); },
+    dispose() {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', resize);
+      renderer.dispose();
+      container.removeChild(renderer.domElement);
+    },
+    startBodyDetection() {},
+    stopBodyDetection() {},
+  };
+}
+
+// ============================================================
 // Particle generation — anatomy helpers
 // ============================================================
 
@@ -640,7 +967,8 @@ function createShaderParticles(
 export function mountOrb(container: HTMLElement): OrbHandle {
   // ---------- Mobile detection ----------
   const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 768;
-  const quality = isMobile ? 0.15 : 1.0;
+  if (isMobile) return mountMobileOrb(container);
+  const quality = 1.0;
 
   // ---------- Renderer ----------
   const renderer = new THREE.WebGLRenderer({
