@@ -312,7 +312,8 @@ function linePts(arr: number[], x1: number, y1: number, z1: number, x2: number, 
 // ============================================================
 // Build humanoid particle positions — anatomically accurate
 // ============================================================
-function buildHumanoidParticles() {
+function buildHumanoidParticles(q = 1.0) {
+  const n = (count: number) => Math.max(10, Math.floor(count * q));
   const innerPts: number[] = [];   // core shell
   const midPts: number[] = [];     // volume fill
   const outerPts: number[] = [];   // aura
@@ -323,7 +324,7 @@ function buildHumanoidParticles() {
   const eyeDX = 0.052 * S;
 
   // ---------- HEAD ----------
-  for (let i = 0; i < 4200; i++) {
+  for (let i = 0; i < n(4200); i++) {
     const u = Math.random();
     const yy = cy(Y.chin) + (cy(Y.crown) - cy(Y.chin)) * u;
     const ty = (yy - cy(Y.chin)) / (cy(Y.crown) - cy(Y.chin));
@@ -331,7 +332,7 @@ function buildHumanoidParticles() {
     ringScatter(innerPts, 0, yy, 0, w, 0.92, 0.006 * S);
   }
   // Jaw/chin
-  for (let i = 0; i < 1000; i++) {
+  for (let i = 0; i < n(1000); i++) {
     const t = Math.random();
     const yy = cy(Y.chin) + t * 0.07 * S;
     const w = (0.45 + 0.45 * t) * headR;
@@ -340,7 +341,7 @@ function buildHumanoidParticles() {
 
   // ---------- FACIAL FEATURES ----------
   // Brow ridge
-  for (let i = 0; i < 320; i++) {
+  for (let i = 0; i < n(320); i++) {
     const x = rng(-0.085, 0.085) * S;
     innerPts.push(x, cy(Y.brow) + Math.abs(x) * 0.15 + rng(-0.004, 0.004) * S, faceZ + rng(-0.004, 0.004) * S);
   }
@@ -348,24 +349,24 @@ function buildHumanoidParticles() {
   const eyeY = cy(Y.eye);
   const eyeZ = faceZ + 0.01 * S;
   for (let side = -1; side <= 1; side += 2) {
-    for (let i = 0; i < 240; i++) {
+    for (let i = 0; i < n(240); i++) {
       const a = Math.random() * PI2;
       const rr = 0.026 * S * (0.7 + Math.random() * 0.3);
       innerPts.push(side * eyeDX + rr * Math.cos(a), eyeY + rr * 0.7 * Math.sin(a), eyeZ + rng(-0.003, 0.003) * S);
     }
   }
   // Nose
-  for (let i = 0; i < 260; i++) {
+  for (let i = 0; i < n(260); i++) {
     const t = Math.random();
     const yy = cy(Y.eye) - t * (Y.eye - Y.nose) * S;
     innerPts.push(rng(-0.012, 0.012) * S, yy, faceZ + t * 0.03 * S);
   }
   // Nostrils
-  spherePts(innerPts, -0.018 * S, cy(Y.nose), faceZ + 0.02 * S, 0.012 * S, 60, 0.8);
-  spherePts(innerPts, 0.018 * S, cy(Y.nose), faceZ + 0.02 * S, 0.012 * S, 60, 0.8);
+  spherePts(innerPts, -0.018 * S, cy(Y.nose), faceZ + 0.02 * S, 0.012 * S, n(60), 0.8);
+  spherePts(innerPts, 0.018 * S, cy(Y.nose), faceZ + 0.02 * S, 0.012 * S, n(60), 0.8);
   // Lips
   for (let lip = 0; lip < 2; lip++) {
-    for (let i = 0; i < 120; i++) {
+    for (let i = 0; i < n(120); i++) {
       const t = i / 119;
       const x = (t - 0.5) * 0.07 * S;
       const yy = cy(Y.mouth) + (lip === 0 ? 0.006 : -0.006) * S - Math.abs(x) * 0.06;
@@ -381,7 +382,7 @@ function buildHumanoidParticles() {
     spherePts(innerPts, side * headR * 0.98, cy(Y.eye) - 0.01 * S, -0.01 * S, 0.025 * S, 100, 0.6);
   }
   // Hair/crown shimmer
-  for (let i = 0; i < 800; i++) {
+  for (let i = 0; i < n(800); i++) {
     const t = Math.random();
     const yy = cy(Y.brow) + t * (Y.crown - Y.brow) * S;
     const ty = (yy - cy(Y.brow)) / (cy(Y.crown) - cy(Y.brow));
@@ -400,7 +401,7 @@ function buildHumanoidParticles() {
   // ---------- TORSO ----------
   const torsoTopY = cy(Y.shoulder);
   const torsoBotY = cy(Y.waist);
-  for (let i = 0; i < 8000; i++) {
+  for (let i = 0; i < n(8000); i++) {
     const t = Math.random();
     const ty = smooth(t);
     const yy = torsoTopY + (torsoBotY - torsoTopY) * t;
@@ -413,7 +414,7 @@ function buildHumanoidParticles() {
     spherePts(innerPts, side * 0.10 * S, cy(Y.pec), 0.115 * S, 0.075 * S, 640, 0.55);
   }
   // Sternum
-  for (let i = 0; i < 180; i++) {
+  for (let i = 0; i < n(180); i++) {
     const t = i / 179;
     innerPts.push(0, cy(Y.pec) - t * (Y.pec - Y.navel) * S, (0.14 - t * 0.02) * S);
   }
@@ -432,7 +433,7 @@ function buildHumanoidParticles() {
   // ---------- HIPS / PELVIS ----------
   const hipTopY = cy(Y.waist);
   const hipBotY = cy(Y.crotch);
-  for (let i = 0; i < 2800; i++) {
+  for (let i = 0; i < n(2800); i++) {
     const t = Math.random();
     const yy = hipTopY + (hipBotY - hipTopY) * t;
     const w = (0.165 + 0.085 * smooth(t)) * S;
@@ -460,7 +461,7 @@ function buildHumanoidParticles() {
     // Ankle
     spherePts(innerPts, ankX, cy(Y.ankle), 0.01 * S, 0.04 * S, 300, 0.85);
     // Foot
-    for (let i = 0; i < 1000; i++) {
+    for (let i = 0; i < n(1000); i++) {
       const t = Math.random();
       const x = ankX + side * rng(-0.02, 0.02) * S;
       const yy = cy(Y.sole) + rng(0, 0.03) * S * (1 - t);
@@ -507,7 +508,7 @@ function buildHumanoidParticles() {
 
   // ---------- VOLUME LAYER (mid) ----------
   const innerCount = innerPts.length / 3;
-  for (let i = 0; i < 6000; i++) {
+  for (let i = 0; i < n(6000); i++) {
     const idx = Math.floor(Math.random() * innerCount) * 3;
     midPts.push(
       innerPts[idx] * 0.93 + rng(-0.02, 0.02) * S,
@@ -517,7 +518,7 @@ function buildHumanoidParticles() {
   }
 
   // ---------- AURA (outer) ----------
-  for (let i = 0; i < 5000; i++) {
+  for (let i = 0; i < n(5000); i++) {
     const idx = Math.floor(Math.random() * innerCount) * 3;
     outerPts.push(
       innerPts[idx] * 1.14 + rng(-0.05, 0.05) * S,
@@ -637,9 +638,13 @@ function createShaderParticles(
 // MAIN: mountOrb
 // ============================================================
 export function mountOrb(container: HTMLElement): OrbHandle {
+  // ---------- Mobile detection ----------
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 768;
+  const quality = isMobile ? 0.3 : 1.0;
+
   // ---------- Renderer ----------
-  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  const renderer = new THREE.WebGLRenderer({ antialias: !isMobile, alpha: true });
+  renderer.setPixelRatio(isMobile ? 1 : Math.min(window.devicePixelRatio || 1, 2));
   renderer.setClearColor(0x000000, 0);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.0;
@@ -650,27 +655,23 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   camera.position.set(0, 1.6, 6.5);
   camera.lookAt(0, 1.4, 0);
 
-  // ---------- Post-processing ----------
-  const composer = new EffectComposer(renderer);
-  const renderPass = new RenderPass(scene, camera);
-  composer.addPass(renderPass);
-
-  const bloomPass = new UnrealBloomPass(
-    new THREE.Vector2(window.innerWidth, window.innerHeight),
-    1.5,   // strength
-    0.8,   // radius
-    0.1,   // threshold
-  );
-  composer.addPass(bloomPass);
-
-  const outputPass = new OutputPass();
-  composer.addPass(outputPass);
+  // ---------- Post-processing (skip on mobile for GPU perf) ----------
+  let composer: EffectComposer | null = null;
+  if (!isMobile) {
+    composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+    composer.addPass(new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      1.5, 0.8, 0.1,
+    ));
+    composer.addPass(new OutputPass());
+  }
 
   function resize() {
     const w = container.clientWidth || 240;
     const h = container.clientHeight || w;
     renderer.setSize(w, h, false);
-    composer.setSize(w, h);
+    if (composer) composer.setSize(w, h);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
   }
@@ -683,18 +684,18 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   // ============================================================
   // Build all particle layers
   // ============================================================
-  const { innerPts, midPts, outerPts, nervePts, veinPts, innerCount } = buildHumanoidParticles();
+  const { innerPts, midPts, outerPts, nervePts, veinPts, innerCount } = buildHumanoidParticles(quality);
 
-  // --- LAYER a) Core shell (45k particles) --- cyan, tiny, sharp
-  const coreShell = createShaderParticles(innerPts, [0.54, 0.95, 1.0], 1.8, { colorVariance: 0.08 });
+  // --- LAYER a) Core shell --- cyan, tiny, sharp
+  const coreShell = createShaderParticles(innerPts, [0.54, 0.95, 1.0], isMobile ? 2.5 : 1.8, { colorVariance: 0.08 });
   group.add(coreShell.points);
 
-  // --- Mid-volume fill (part of core shell count) ---
-  const midVolume = createShaderParticles(midPts, [0.29, 0.78, 0.91], 3.5, { colorVariance: 0.06 });
+  // --- Mid-volume fill ---
+  const midVolume = createShaderParticles(midPts, [0.29, 0.78, 0.91], isMobile ? 4.5 : 3.5, { colorVariance: 0.06 });
   group.add(midVolume.points);
 
-  // --- LAYER b) Energy flow (15k particles) --- animated upward
-  const FLOW_N = 15000;
+  // --- LAYER b) Energy flow --- animated upward
+  const FLOW_N = Math.floor(15000 * quality);
   const flowPositions: number[] = [];
   for (let i = 0; i < FLOW_N; i++) {
     const idx = Math.floor(Math.random() * innerCount) * 3;
@@ -719,9 +720,10 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   }
   group.add(energyFlow.points);
 
-  // --- LAYER c) Holographic interference (10k particles) --- purple/magenta
+  // --- LAYER c) Holographic interference --- purple/magenta
+  const HOLO_N = Math.floor(10000 * quality);
   const interferePts: number[] = [];
-  for (let i = 0; i < 10000; i++) {
+  for (let i = 0; i < HOLO_N; i++) {
     const idx = Math.floor(Math.random() * innerCount) * 3;
     const scale = 1.02 + Math.random() * 0.06;
     interferePts.push(
@@ -733,10 +735,10 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   const interference = createShaderParticles(interferePts, [0.69, 0.42, 1.0], 2.0, { colorVariance: 0.15 });
   group.add(interference.points);
 
-  // --- LAYER d) Data streams (5k particles) --- vertical flowing
+  // --- LAYER d) Data streams --- vertical flowing
   const dataStreamPts: number[] = [];
-  const DATA_STREAM_N = 5000;
-  const streamColumns = 30;
+  const DATA_STREAM_N = Math.floor(5000 * quality);
+  const streamColumns = isMobile ? 12 : 30;
   for (let col = 0; col < streamColumns; col++) {
     const baseIdx = Math.floor(Math.random() * innerCount) * 3;
     const baseX = innerPts[baseIdx];
@@ -865,7 +867,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     });
     const cage = new THREE.Mesh(cGeo, cMat);
     cage.position.set(0, heartY, heartZ);
-    group.add(cage);
+    if (!isMobile) group.add(cage);
     cageFrames.push(cage);
     cageFrameMats.push(cMat);
   }
@@ -903,7 +905,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       blending: THREE.AdditiveBlending, depthWrite: false,
     });
     const line = new THREE.Line(tGeo, tMat);
-    group.add(line);
+    if (!isMobile) group.add(line);
     tendrilLines.push({ geo: tGeo, mat: tMat });
   }
 
@@ -927,7 +929,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   const gridFloor = new THREE.Mesh(gridGeo, gridMat);
   gridFloor.rotation.x = -PI / 2;
   gridFloor.position.y = cy(Y.sole) - 0.01;
-  group.add(gridFloor);
+  if (!isMobile) group.add(gridFloor);
 
   // Concentric rings
   const baseRings: THREE.Mesh[] = [];
@@ -943,7 +945,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     const ring = new THREE.Mesh(rGeo, rMat);
     ring.rotation.x = PI * 0.5;
     ring.position.y = cy(Y.sole);
-    group.add(ring);
+    if (!isMobile) group.add(ring);
     baseRings.push(ring);
     baseRingMats.push(rMat);
   }
@@ -957,7 +959,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   const symbolRing = new THREE.Mesh(symbolRingGeo, symbolRingMat);
   symbolRing.rotation.x = PI * 0.5;
   symbolRing.position.y = cy(Y.sole) + 0.05;
-  group.add(symbolRing);
+  if (!isMobile) group.add(symbolRing);
 
   // Small marker nodes on the symbol ring
   const symbolMarkers: THREE.Mesh[] = [];
@@ -973,7 +975,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     const marker = new THREE.Mesh(mGeo, mMat);
     marker.position.set(Math.cos(a) * 2.3 * S, cy(Y.sole) + 0.05, Math.sin(a) * 2.3 * S);
     marker.lookAt(0, cy(Y.sole) + 0.05, 0);
-    group.add(marker);
+    if (!isMobile) group.add(marker);
     symbolMarkers.push(marker);
   }
 
@@ -996,7 +998,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   const lightCone = new THREE.Mesh(coneGeo, coneMat);
   lightCone.position.set(0, cy(Y.crown) + 2.5 * S, 0);
   lightCone.rotation.x = PI; // point down
-  group.add(lightCone);
+  if (!isMobile) group.add(lightCone);
 
   // ============================================================
   // DNA / ENERGY HELIX
@@ -1060,7 +1062,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   helixGroup.add(helixLineA);
   helixGroup.add(helixLineB);
   helixGroup.add(helixBridgeParticles.points);
-  group.add(helixGroup);
+  if (!isMobile) group.add(helixGroup);
 
   // ============================================================
   // ORBITING DATA NODES
@@ -1086,7 +1088,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       blending: THREE.AdditiveBlending, depthWrite: false,
     });
     const node = new THREE.Mesh(nGeo, nMat);
-    group.add(node);
+    if (!isMobile) group.add(node);
 
     // Node glow
     const glMat = new THREE.SpriteMaterial({
@@ -1095,7 +1097,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     });
     const gl = new THREE.Sprite(glMat);
     gl.scale.setScalar(0.3);
-    group.add(gl);
+    if (!isMobile) group.add(gl);
 
     // Connection line to body
     const lGeo = new THREE.BufferGeometry();
@@ -1106,7 +1108,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       blending: THREE.AdditiveBlending, depthWrite: false,
     });
     const line = new THREE.Line(lGeo, lMat);
-    group.add(line);
+    if (!isMobile) group.add(line);
 
     orbitNodes.push({
       mesh: node,
@@ -1135,7 +1137,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   const faceWire = new THREE.Mesh(faceWireGeo, faceWireMat);
   faceWire.position.set(0, cy((Y.crown + Y.chin) / 2), 0);
   faceWire.scale.set(1, 1.1, 0.95);
-  group.add(faceWire);
+  if (!isMobile) group.add(faceWire);
 
   const chestWireGeo = new THREE.IcosahedronGeometry(0.26 * S, 1);
   const chestWireMat = new THREE.MeshBasicMaterial({
@@ -1145,7 +1147,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   const chestWire = new THREE.Mesh(chestWireGeo, chestWireMat);
   chestWire.position.set(0, cy(Y.pec - 0.05), 0);
   chestWire.scale.set(1.05, 0.8, 0.7);
-  group.add(chestWire);
+  if (!isMobile) group.add(chestWire);
 
   // ============================================================
   // SCAN LINE EFFECT — bright horizontal sweep
@@ -1158,7 +1160,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   });
   const scanLine = new THREE.Mesh(scanLineGeo, scanLineMat);
   scanLine.position.set(0, cy(Y.sole), 0.2);
-  group.add(scanLine);
+  if (!isMobile) group.add(scanLine);
 
   // Secondary ambient scan lines
   const scanCount = 16;
@@ -1174,7 +1176,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     const sm = new THREE.Mesh(sGeo, sMat);
     const baseY = cy(scanLo + (i / scanCount) * (scanHi - scanLo));
     sm.position.set(0, baseY, 0);
-    group.add(sm);
+    if (!isMobile) group.add(sm);
     ambientScans.push({ mesh: sm, mat: sMat, baseY });
   }
 
@@ -1235,7 +1237,8 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       color: rColors[r], transparent: true, opacity: 0.3,
       blending: THREE.AdditiveBlending, depthWrite: false,
     });
-    group.add(new THREE.Line(geo, mat));
+    const ribbonLine = new THREE.Line(geo, mat);
+    if (!isMobile) group.add(ribbonLine);
     ribbons.push({ geo, bx, by, bz, mat });
   }
 
@@ -1596,8 +1599,9 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     // ---- Rotation with parallax ----
     group.rotation.y = Math.sin(time * 0.1) * 0.1 + time * 0.015;
 
-    // ---- Render through post-processing pipeline ----
-    composer.render();
+    // ---- Render ----
+    if (composer) composer.render();
+    else renderer.render(scene, camera);
   }
 
   frame();
@@ -1612,7 +1616,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       stopBodyDetection();
       window.removeEventListener('resize', resize);
       renderer.dispose();
-      composer.dispose();
+      if (composer) composer.dispose();
       container.removeChild(renderer.domElement);
     },
     startBodyDetection,

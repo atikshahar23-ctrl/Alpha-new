@@ -40,9 +40,10 @@ export function mountFlowLines(container: HTMLElement): { dispose: () => void } 
   const lines: FlowLine[] = [];
   const particles: Particle[] = [];
   const hexes: HexGrid[] = [];
-  const LINE_COUNT = 14;
-  const PARTICLE_COUNT = 60;
-  const HEX_COUNT = 20;
+  const isMob = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 768;
+  const LINE_COUNT = isMob ? 6 : 14;
+  const PARTICLE_COUNT = isMob ? 20 : 60;
+  const HEX_COUNT = isMob ? 8 : 20;
 
   function resize() {
     w = canvas.width = window.innerWidth;
@@ -144,7 +145,8 @@ export function mountFlowLines(container: HTMLElement): { dispose: () => void } 
     const last = pts[pts.length - 1];
     ctx.lineTo(last.x, last.y + yOff);
 
-    for (let pass = 0; pass < 4; pass++) {
+    const passes = isMob ? 2 : 4;
+    for (let pass = 0; pass < passes; pass++) {
       const mult = [5, 3, 1.5, 0.5][pass];
       const opMult = [0.1, 0.25, 0.6, 1][pass];
       ctx.lineWidth = line.width * mult;
