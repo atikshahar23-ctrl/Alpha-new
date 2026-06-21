@@ -126,52 +126,52 @@ const MOBILE_ORB_FRAG = /* glsl */`
   void main() {
     vec3 vd = normalize(cameraPosition - vWorldPos);
     vec3 n = normalize(vNormal);
-    float fresnel = pow(1.0 - max(dot(n, vd), 0.0), 2.8);
+    float fresnel = pow(1.0 - max(dot(n, vd), 0.0), 3.2);
 
-    // Volumetric 3D energy patterns
     vec3 fp = vLocalPos * 3.5 + vec3(uTime*0.15, uTime*0.1, uTime*0.12);
     float e1 = fbm3(fp);
     float e2 = fbm3(fp * 1.4 + vec3(0.0, uTime*0.08, 0.0));
     float ep = e1 * 0.6 + e2 * 0.4;
 
-    // Hexagonal grid overlay
     vec2 hu = vUv * 18.0;
     vec2 hg = fract(hu) - 0.5;
     float hex = smoothstep(0.03, 0.0, abs(abs(hg.x) + abs(hg.y)*0.577 - 0.5));
 
-    // Multi-speed scan lines
-    float s1 = smoothstep(0.42, 0.5, fract(vWorldPos.y*15.0 - uTime*0.6)) * 0.35;
-    float s2 = smoothstep(0.45, 0.5, fract(vWorldPos.y*8.0 + uTime*0.3)) * 0.2;
-    float s3 = smoothstep(0.48, 0.5, fract(-vWorldPos.y*25.0 - uTime*1.2)) * 0.12;
+    float s1 = smoothstep(0.42, 0.5, fract(vWorldPos.y*15.0 - uTime*0.6)) * 0.25;
+    float s2 = smoothstep(0.45, 0.5, fract(vWorldPos.y*8.0 + uTime*0.3)) * 0.15;
+    float s3 = smoothstep(0.48, 0.5, fract(-vWorldPos.y*25.0 - uTime*1.2)) * 0.08;
     float sc = s1 + s2 + s3;
 
-    // Color palette
-    vec3 teal = vec3(0.05, 0.55, 0.65);
-    vec3 cyan = vec3(0.2, 0.9, 1.0);
-    vec3 gold = vec3(1.0, 0.76, 0.3);
+    vec3 black = vec3(0.02, 0.03, 0.04);
+    vec3 metalTeal = vec3(0.06, 0.42, 0.55);
+    vec3 gold = vec3(0.88, 0.7, 0.22);
+    vec3 white = vec3(0.9, 0.92, 0.95);
 
     float cs = sin(uTime*0.3 + vWorldPos.y*2.0)*0.5+0.5;
-    vec3 col = mix(teal, cyan, ep*0.8);
-    col = mix(col, gold, fresnel*cs*0.2 + uEnergy*0.12);
+    vec3 col = mix(black, metalTeal, ep * 0.7);
+    col = mix(col, metalTeal, ep * ep * 0.6);
+    col = mix(col, gold, fresnel * cs * 0.15 + uEnergy * 0.08);
 
-    // Chromatic fresnel edge
-    col.r += cyan.r * fresnel * 1.5;
-    col.g += cyan.g * fresnel * 2.0;
-    col.b += cyan.b * fresnel * 1.8;
+    col.r += gold.r * fresnel * 0.25;
+    col.g += metalTeal.g * fresnel * 0.5;
+    col.b += metalTeal.b * fresnel * 0.6;
 
-    col += vec3(0.12, 0.25, 0.3) * hex * 0.35;
-    col += vec3(0.2, 0.5, 0.6) * sc;
+    col += vec3(0.05, 0.12, 0.16) * hex * 0.25;
+    col += metalTeal * sc * 0.2;
 
-    // Glitch bands
-    float gl = step(0.97, fract(sin(floor(vWorldPos.y*50.0 + uTime*4.0)) * 43758.5));
-    col += vec3(0.3, 0.7, 0.9) * gl * (uGlitch + uEnergy * 0.5);
+    float hotSpot = pow(ep, 3.0) * 1.2;
+    col += white * hotSpot * 0.06;
+    col += gold * hotSpot * 0.04;
 
-    float pulse = 0.85 + sin(uTime*1.2)*0.08 + uEnergy*0.25;
+    float gl = step(0.98, fract(sin(floor(vWorldPos.y*50.0 + uTime*4.0)) * 43758.5));
+    col += vec3(0.1, 0.35, 0.45) * gl * (uGlitch + uEnergy * 0.3);
+
+    float pulse = 0.88 + sin(uTime*1.2)*0.05 + uEnergy*0.15;
     col *= pulse;
 
-    float alpha = 0.32 + fresnel*0.5 + ep*0.12 + sc*0.06 + hex*0.04;
+    float alpha = 0.5 + fresnel*0.35 + ep*0.1 + sc*0.04 + hex*0.03;
     alpha *= pulse;
-    gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.92));
+    gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.9));
   }
 `;
 
@@ -333,7 +333,7 @@ const DESKTOP_ORB_FRAG = /* glsl */`
   void main() {
     vec3 vd = normalize(cameraPosition - vWorldPos);
     vec3 n = normalize(vNormal);
-    float fresnel = pow(1.0 - max(dot(n, vd), 0.0), 3.0);
+    float fresnel = pow(1.0 - max(dot(n, vd), 0.0), 3.5);
 
     vec3 fp = vLocalPos * 4.0 + vec3(uTime * 0.12, uTime * 0.08, uTime * 0.1);
     float e1 = dfbm(fp);
@@ -342,7 +342,7 @@ const DESKTOP_ORB_FRAG = /* glsl */`
     float ep = e1 * 0.45 + e2 * 0.35 + e3 * 0.2;
 
     vec2 vor = dVoronoi(vLocalPos * 6.0 + uTime * 0.08);
-    float veins = smoothstep(0.08, 0.0, vor.y - vor.x) * 0.6;
+    float veins = smoothstep(0.08, 0.0, vor.y - vor.x) * 0.5;
 
     vec2 hu = vUv * 22.0;
     vec2 hg = fract(hu) - 0.5;
@@ -350,46 +350,48 @@ const DESKTOP_ORB_FRAG = /* glsl */`
     float hexP = sin(uTime * 0.4 + hu.x * 0.5 + hu.y * 0.7) * 0.5 + 0.5;
     hex *= 0.3 + hexP * 0.7;
 
-    float s1 = smoothstep(0.42, 0.5, fract(vWorldPos.y * 18.0 - uTime * 0.5)) * 0.3;
-    float s2 = smoothstep(0.45, 0.5, fract(vWorldPos.y * 10.0 + uTime * 0.25)) * 0.18;
-    float s3 = smoothstep(0.48, 0.5, fract(-vWorldPos.y * 30.0 - uTime * 1.0)) * 0.1;
+    float s1 = smoothstep(0.42, 0.5, fract(vWorldPos.y * 18.0 - uTime * 0.5)) * 0.2;
+    float s2 = smoothstep(0.45, 0.5, fract(vWorldPos.y * 10.0 + uTime * 0.25)) * 0.12;
+    float s3 = smoothstep(0.48, 0.5, fract(-vWorldPos.y * 30.0 - uTime * 1.0)) * 0.06;
     float sc = s1 + s2 + s3;
 
-    vec3 deepTeal = vec3(0.02, 0.35, 0.45);
-    vec3 cyan = vec3(0.15, 0.85, 1.0);
-    vec3 gold = vec3(1.0, 0.78, 0.32);
-    vec3 white = vec3(0.95, 0.97, 1.0);
+    vec3 deepTeal = vec3(0.01, 0.18, 0.25);
+    vec3 metalCyan = vec3(0.08, 0.55, 0.7);
+    vec3 gold = vec3(0.9, 0.72, 0.25);
+    vec3 white = vec3(0.92, 0.94, 0.96);
+    vec3 black = vec3(0.02, 0.03, 0.05);
 
-    vec3 col = mix(deepTeal, cyan, ep * 0.9);
-    col += cyan * veins * 1.5;
-    col += gold * veins * 0.3;
+    vec3 col = mix(black, deepTeal, ep * 0.7);
+    col = mix(col, metalCyan, ep * ep * 0.8);
+    col += metalCyan * veins * 0.8;
+    col += gold * veins * 0.25;
 
-    float sss = pow(max(dot(n, -vd), 0.0), 2.0) * 0.15;
-    col += cyan * sss;
+    float sss = pow(max(dot(n, -vd), 0.0), 2.0) * 0.08;
+    col += metalCyan * sss;
 
-    col.r += gold.r * fresnel * 0.4 + cyan.r * fresnel * 1.2;
-    col.g += cyan.g * fresnel * 1.8;
-    col.b += cyan.b * fresnel * 2.0;
+    col.r += gold.r * fresnel * 0.2;
+    col.g += metalCyan.g * fresnel * 0.5;
+    col.b += metalCyan.b * fresnel * 0.7;
 
-    col += vec3(0.1, 0.22, 0.28) * hex * 0.4;
-    col += cyan * sc * 0.5;
+    col += vec3(0.05, 0.12, 0.15) * hex * 0.3;
+    col += metalCyan * sc * 0.25;
 
-    float hotSpot = pow(e1, 3.0) * 2.0;
-    col += white * hotSpot * 0.15;
-    col += gold * hotSpot * 0.08;
+    float hotSpot = pow(e1, 4.0) * 1.5;
+    col += white * hotSpot * 0.08;
+    col += gold * hotSpot * 0.05;
 
     float cs = sin(uTime * 0.25 + vWorldPos.y * 2.5) * 0.5 + 0.5;
-    col = mix(col, gold, fresnel * cs * 0.12 + uEnergy * 0.08);
+    col = mix(col, gold, fresnel * cs * 0.08 + uEnergy * 0.05);
 
-    float gl = step(0.97, fract(sin(floor(vWorldPos.y * 50.0 + uTime * 4.0)) * 43758.5));
-    col += vec3(0.3, 0.7, 0.9) * gl * (uGlitch + uEnergy * 0.4);
+    float gl = step(0.98, fract(sin(floor(vWorldPos.y * 50.0 + uTime * 4.0)) * 43758.5));
+    col += vec3(0.15, 0.4, 0.5) * gl * (uGlitch + uEnergy * 0.3);
 
-    float pulse = 0.88 + sin(uTime * 1.0) * 0.06 + uEnergy * 0.2;
+    float pulse = 0.9 + sin(uTime * 1.0) * 0.04 + uEnergy * 0.12;
     col *= pulse;
 
-    float alpha = 0.38 + fresnel * 0.45 + ep * 0.15 + sc * 0.05 + hex * 0.03 + veins * 0.15;
+    float alpha = 0.55 + fresnel * 0.3 + ep * 0.1 + sc * 0.03 + hex * 0.02 + veins * 0.1;
     alpha *= pulse;
-    gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.95));
+    gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.92));
   }
 `;
 
@@ -413,14 +415,14 @@ const ATMOSPHERE_FRAG = /* glsl */`
   void main() {
     vec3 vd = normalize(cameraPosition - vWorldPos);
     vec3 n = normalize(vNormal);
-    float intensity = pow(max(0.65 - dot(n, vd), 0.0), 3.0);
+    float intensity = pow(max(0.6 - dot(n, vd), 0.0), 4.0);
 
-    vec3 teal = vec3(0.08, 0.5, 0.6);
-    vec3 cyan = vec3(0.2, 0.75, 0.9);
-    float pulse = 0.8 + sin(uTime * 0.4) * 0.12 + uEnergy * 0.25;
+    vec3 teal = vec3(0.04, 0.25, 0.35);
+    vec3 cyan = vec3(0.08, 0.45, 0.55);
+    float pulse = 0.7 + sin(uTime * 0.4) * 0.08 + uEnergy * 0.15;
 
     vec3 col = mix(teal, cyan, intensity) * pulse;
-    float alpha = intensity * 0.4 * pulse;
+    float alpha = intensity * 0.2 * pulse;
 
     gl_FragColor = vec4(col, alpha);
   }
@@ -476,7 +478,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   // ── Inner bright core ──
   const coreGeo = new THREE.IcosahedronGeometry(0.3, 3);
   const coreMat = new THREE.MeshBasicMaterial({
-    color: 0x55eeff, transparent: true, opacity: 0.5, depthWrite: false,
+    color: 0x1a3d4d, transparent: true, opacity: 0.35, depthWrite: false,
   });
   const core = new THREE.Mesh(coreGeo, coreMat);
   group.add(core);
@@ -856,7 +858,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   composer.addPass(new RenderPass(scene, camera));
   composer.addPass(new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    1.5, 0.7, 0.12,
+    0.6, 0.4, 0.35,
   ));
   composer.addPass(new OutputPass());
 
@@ -892,7 +894,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   // Inner bright core
   const coreGeo = new THREE.IcosahedronGeometry(0.45, 4);
   const coreMat = new THREE.MeshBasicMaterial({
-    color: 0x55eeff, transparent: true, opacity: 0.45, depthWrite: false,
+    color: 0x225566, transparent: true, opacity: 0.25, depthWrite: false,
   });
   const core = new THREE.Mesh(coreGeo, coreMat);
   group.add(core);
@@ -993,19 +995,19 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   // OUTER GLOW — layered sprites
   // ────────────────────────────────────────────
   const glow1Mat = new THREE.SpriteMaterial({
-    map: glowTexture(), color: 0x225566, transparent: true, opacity: 0.12,
-    depthWrite: false, blending: THREE.AdditiveBlending,
-  });
-  const glow1 = new THREE.Sprite(glow1Mat);
-  glow1.scale.setScalar(5.5);
-  group.add(glow1);
-
-  const glow2Mat = new THREE.SpriteMaterial({
     map: glowTexture(), color: 0x112233, transparent: true, opacity: 0.06,
     depthWrite: false, blending: THREE.AdditiveBlending,
   });
+  const glow1 = new THREE.Sprite(glow1Mat);
+  glow1.scale.setScalar(4.5);
+  group.add(glow1);
+
+  const glow2Mat = new THREE.SpriteMaterial({
+    map: glowTexture(), color: 0x0a1520, transparent: true, opacity: 0.03,
+    depthWrite: false, blending: THREE.AdditiveBlending,
+  });
   const glow2 = new THREE.Sprite(glow2Mat);
-  glow2.scale.setScalar(9.0);
+  glow2.scale.setScalar(7.0);
   group.add(glow2);
 
   // ────────────────────────────────────────────

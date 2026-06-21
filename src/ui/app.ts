@@ -1,6 +1,6 @@
 import { mountOrb, type OrbHandle } from '../orb/OrbScene';
 import { mountFlowLines } from '../bg/flowLines';
-import { loadState, saveState, addEvent, loadEvents, removeEvent, type AppState, type TextLang, type AIProvider } from '../assistant/state';
+import { loadState, saveState, addEvent, loadEvents, removeEvent, type AppState, type TextLang, type AIProvider, type VoiceGender } from '../assistant/state';
 import { askAI, runTags } from '../assistant/gemini';
 import { tryLocalCommand } from '../assistant/local';
 import { VoiceEngine } from '../assistant/voice';
@@ -151,44 +151,84 @@ export function mountApp(root: HTMLElement) {
       </div></div>
       <div class="overlay" id="overlay"><div class="card">
         <h2>Alpha Assistant</h2>
-        <p>Works free out of the box via Puter — no API key required. Settings stored locally only.</p>
-        <label>Assistant name</label><input id="nameInput" value="ALPHA" />
-        <label>Mic language</label>
-        <select id="micSel"><option value="he">Hebrew</option><option value="en">English</option><option value="es">Español</option></select>
-        <label>Voice language</label>
-        <select id="replySel"><option value="en">English</option><option value="he">Hebrew</option><option value="es">Español</option></select>
-        <label>Text reply language</label>
-        <select id="textLangSel">
-          <option value="auto">Same as voice</option>
-          <option value="en">English</option>
-          <option value="he">עברית</option>
-          <option value="ar">العربية</option>
-          <option value="ru">Русский</option>
-          <option value="fr">Français</option>
-          <option value="es">Español</option>
-          <option value="de">Deutsch</option>
-        </select>
-        <label>Voice</label><select id="voiceSel"></select>
-        <label>Background music</label><input type="range" id="ambSlider" min="0" max="100" value="40" />
-        <label>AI Provider</label>
-        <select id="providerSel">
-          <option value="puter">Puter — Free, no key ✨</option>
-          <option value="gemini">Gemini (Google)</option>
-          <option value="grok">Grok (xAI)</option>
-          <option value="openai">ChatGPT (OpenAI)</option>
-        </select>
-        <label>Puter model (free)</label>
-        <select id="puterModelSel">
-          <option value="gpt-4o-mini">GPT-4o mini (fast)</option>
-          <option value="gpt-4o">GPT-4o (smartest)</option>
-          <option value="o4-mini">o4-mini (reasoning)</option>
-          <option value="claude-sonnet-4">Claude Sonnet 4</option>
-          <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
-        </select>
-        <p style="margin:2px 0 10px;font-size:12px;color:var(--dim)">Puter is free and needs no API key — a one-time Puter sign-in popup appears on first use. Keys below are optional fallbacks.</p>
-        <label>Gemini API key (optional)</label><input id="keyInput" type="password" placeholder="AIza..." />
-        <label>Grok API key (optional)</label><input id="grokKeyInput" type="password" placeholder="xai-..." />
-        <label>OpenAI API key (optional)</label><input id="openaiKeyInput" type="password" placeholder="sk-..." />
+        <p>Works free out of the box via Puter — no API key required.</p>
+
+        <div class="settings-section">
+          <div class="ss-title">GENERAL</div>
+          <label>Assistant name</label><input id="nameInput" value="ALPHA" />
+          <div class="setting-row">
+            <label>Sound effects</label>
+            <label class="toggle"><input type="checkbox" id="sfxCheck" /><span class="toggle-slider"></span></label>
+          </div>
+          <div class="setting-row">
+            <label>Haptic feedback</label>
+            <label class="toggle"><input type="checkbox" id="hapticsCheck" /><span class="toggle-slider"></span></label>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="ss-title">VOICE & LANGUAGE</div>
+          <label>Mic language</label>
+          <select id="micSel"><option value="he">Hebrew</option><option value="en">English</option><option value="es">Español</option></select>
+          <label>Voice language</label>
+          <select id="replySel"><option value="en">English</option><option value="he">Hebrew</option><option value="es">Español</option></select>
+          <label>Text reply language</label>
+          <select id="textLangSel">
+            <option value="auto">Same as voice</option>
+            <option value="en">English</option>
+            <option value="he">Hebrew</option>
+            <option value="ar">Arabic</option>
+            <option value="ru">Russian</option>
+            <option value="fr">French</option>
+            <option value="es">Spanish</option>
+            <option value="de">German</option>
+          </select>
+          <label>Voice gender</label>
+          <div class="gender-picker" id="genderPicker">
+            <button class="gender-btn" data-g="female"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="5"/><path d="M12 13v8M9 18h6"/></svg> Female</button>
+            <button class="gender-btn" data-g="male"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="10" cy="14" r="5"/><path d="M21 3l-6.5 6.5M21 3h-5M21 3v5"/></svg> Male</button>
+            <button class="gender-btn" data-g="auto">Auto</button>
+          </div>
+          <label>Voice</label><select id="voiceSel"></select>
+          <label>Speed <span id="speedVal" class="range-val">1.0x</span></label>
+          <input type="range" id="speedSlider" min="50" max="200" value="100" step="5" />
+          <label>Pitch <span id="pitchVal" class="range-val">1.0</span></label>
+          <input type="range" id="pitchSlider" min="50" max="200" value="100" step="5" />
+          <div class="setting-row">
+            <label>Auto speak responses</label>
+            <label class="toggle"><input type="checkbox" id="autoSpeakCheck" checked /><span class="toggle-slider"></span></label>
+          </div>
+          <button class="test-voice-btn" id="testVoiceBtn">Test voice</button>
+        </div>
+
+        <div class="settings-section">
+          <div class="ss-title">AUDIO</div>
+          <label>Background music <span id="ambVal" class="range-val">40%</span></label>
+          <input type="range" id="ambSlider" min="0" max="100" value="40" />
+        </div>
+
+        <div class="settings-section">
+          <div class="ss-title">AI ENGINE</div>
+          <label>AI Provider</label>
+          <select id="providerSel">
+            <option value="puter">Puter — Free, no key</option>
+            <option value="gemini">Gemini (Google)</option>
+            <option value="grok">Grok (xAI)</option>
+            <option value="openai">ChatGPT (OpenAI)</option>
+          </select>
+          <label>Puter model (free)</label>
+          <select id="puterModelSel">
+            <option value="gpt-4o-mini">GPT-4o mini (fast)</option>
+            <option value="gpt-4o">GPT-4o (smartest)</option>
+            <option value="o4-mini">o4-mini (reasoning)</option>
+            <option value="claude-sonnet-4">Claude Sonnet 4</option>
+            <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+          </select>
+          <p style="margin:2px 0 10px;font-size:11px;color:var(--dim)">Puter is free — a one-time sign-in popup appears on first use. Keys below are optional fallbacks.</p>
+          <label>Gemini API key</label><input id="keyInput" type="password" placeholder="AIza..." />
+          <label>Grok API key</label><input id="grokKeyInput" type="password" placeholder="xai-..." />
+          <label>OpenAI API key</label><input id="openaiKeyInput" type="password" placeholder="sk-..." />
+        </div>
 
         <div class="settings-section">
           <div class="ss-title">CONNECTED SERVICES</div>
@@ -220,8 +260,7 @@ export function mountApp(root: HTMLElement) {
           </div>
         </div>
 
-        <button class="go" id="saveBtn">Activate</button>
-        <p style="margin-top:14px">Free key: <a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com/apikey</a></p>
+        <button class="go" id="saveBtn">Save</button>
       </div></div>
       <div class="hg-overlay" id="hgOverlay">
         <div class="hg-frame">
@@ -887,10 +926,22 @@ export function mountApp(root: HTMLElement) {
     $<HTMLSelectElement>('replySel').value = state.replyLang;
     $<HTMLSelectElement>('textLangSel').value = state.textLang;
     $<HTMLInputElement>('ambSlider').value = String(Math.round(audio.ambLevel * 100));
+    $('ambVal').textContent = Math.round(audio.ambLevel * 100) + '%';
+    $<HTMLInputElement>('speedSlider').value = String(Math.round((state.voiceSpeed || 1) * 100));
+    $('speedVal').textContent = (state.voiceSpeed || 1).toFixed(1) + 'x';
+    $<HTMLInputElement>('pitchSlider').value = String(Math.round((state.voicePitch || 1) * 100));
+    $('pitchVal').textContent = (state.voicePitch || 1).toFixed(1);
+    $<HTMLInputElement>('sfxCheck').checked = state.sfxOn;
+    $<HTMLInputElement>('hapticsCheck').checked = state.haptics;
+    $<HTMLInputElement>('autoSpeakCheck').checked = state.autoSpeak;
     $<HTMLInputElement>('spotifyId').value = socials.spotify;
     $<HTMLInputElement>('tiktokId').value = socials.tiktok;
     $<HTMLInputElement>('instaId').value = socials.insta;
     $<HTMLInputElement>('fbId').value = socials.fb;
+    // Gender picker
+    $('genderPicker').querySelectorAll('.gender-btn').forEach(b => {
+      b.classList.toggle('active', (b as HTMLElement).dataset.g === state.voiceGender);
+    });
     refreshVoiceList();
     $('overlay').classList.add('show');
   }
@@ -898,11 +949,46 @@ export function mountApp(root: HTMLElement) {
     voice.loadVoices();
     const sel = $<HTMLSelectElement>('voiceSel');
     const list = voice.availableVoices();
-    sel.innerHTML = list.map(v => `<option value="${v.name}">${v.name} (${v.lang})</option>`).join('') || '<option value="">No voice installed</option>';
+    sel.innerHTML = list.map(v => {
+      const g = voice.voiceGenderLabel(v);
+      const quality = /natural|neural|enhanced|premium|wavenet|studio/i.test(v.name) ? ' HD' : '';
+      return `<option value="${v.name}">[${g}]${quality} ${v.name} (${v.lang})</option>`;
+    }).join('') || '<option value="">No voice available</option>';
   }
   $('settingsBtn').onclick = openSetup;
   $<HTMLSelectElement>('replySel').onchange = () => { state.replyLang = $<HTMLSelectElement>('replySel').value as any; refreshVoiceList(); };
-  $<HTMLInputElement>('ambSlider').oninput = () => { audio.ensure(); audio.setAmbient(+$<HTMLInputElement>('ambSlider').value / 100); };
+  $<HTMLInputElement>('ambSlider').oninput = () => {
+    audio.ensure(); const v = +$<HTMLInputElement>('ambSlider').value;
+    audio.setAmbient(v / 100); $('ambVal').textContent = v + '%';
+  };
+  $<HTMLInputElement>('speedSlider').oninput = () => {
+    const v = +$<HTMLInputElement>('speedSlider').value / 100;
+    $('speedVal').textContent = v.toFixed(1) + 'x';
+  };
+  $<HTMLInputElement>('pitchSlider').oninput = () => {
+    const v = +$<HTMLInputElement>('pitchSlider').value / 100;
+    $('pitchVal').textContent = v.toFixed(1);
+  };
+  $('genderPicker').addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest('.gender-btn') as HTMLElement;
+    if (!btn) return;
+    state.voiceGender = btn.dataset.g as VoiceGender;
+    $('genderPicker').querySelectorAll('.gender-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    refreshVoiceList();
+  });
+  $('testVoiceBtn').onclick = () => {
+    const vsel = $<HTMLSelectElement>('voiceSel').value;
+    if (vsel) voice.setVoice(vsel);
+    state.voiceSpeed = +$<HTMLInputElement>('speedSlider').value / 100;
+    state.voicePitch = +$<HTMLInputElement>('pitchSlider').value / 100;
+    const testTexts: Record<string, string> = {
+      he: 'שלום, אני אלפא, העוזר האישי שלך',
+      en: 'Hello, I am Alpha, your personal assistant',
+      es: 'Hola, soy Alpha, tu asistente personal',
+    };
+    voice.speak(testTexts[state.replyLang] || testTexts.en);
+  };
   $('saveBtn').onclick = () => {
     state.name = $<HTMLInputElement>('nameInput').value.trim() || 'ALPHA';
     state.key = $<HTMLInputElement>('keyInput').value.trim();
@@ -914,10 +1000,15 @@ export function mountApp(root: HTMLElement) {
     state.replyLang = $<HTMLSelectElement>('replySel').value as any;
     state.textLang = $<HTMLSelectElement>('textLangSel').value as TextLang;
     state.ambLevel = audio.ambLevel;
+    state.voiceSpeed = +$<HTMLInputElement>('speedSlider').value / 100;
+    state.voicePitch = +$<HTMLInputElement>('pitchSlider').value / 100;
+    state.sfxOn = $<HTMLInputElement>('sfxCheck').checked;
+    state.haptics = $<HTMLInputElement>('hapticsCheck').checked;
+    state.autoSpeak = $<HTMLInputElement>('autoSpeakCheck').checked;
+    audio.sfxOn = state.sfxOn;
     voice.setMicLang(state.micLang);
     const vsel = $<HTMLSelectElement>('voiceSel').value;
     if (vsel) voice.setVoice(vsel);
-    // Save social connections
     socials.spotify = $<HTMLInputElement>('spotifyId').value.trim();
     socials.tiktok = $<HTMLInputElement>('tiktokId').value.trim();
     socials.insta = $<HTMLInputElement>('instaId').value.trim();

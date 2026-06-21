@@ -173,18 +173,42 @@ export class VoiceEngine {
     }
   }
 
+  private isFemaleVoice(name: string): boolean {
+    const n = name.toLowerCase();
+    return /female|woman|aria|jenny|jane|michelle|sonia|libby|samantha|zira|eva|joanna|amy|emma|salli|carmit|lucia|elena|conchita|lupe|penelope|paulina|monica|tessa|karen|moira|fiona|veena|ioana|sara|laura|alice|amelie|anna|catarina|damayanti|kanya|kyoko|mei-jia|melina|milena|nora|o-ren|sin-ji|tian-tian|ting-ting|yuna|zosia/.test(n);
+  }
+  private isMaleVoice(name: string): boolean {
+    const n = name.toLowerCase();
+    return /\bmale\b|david|mark|guy|james|ryan|daniel|thomas|oliver|jorge|diego|enrique|rishi|alex|fred|junior|liam/.test(n);
+  }
   private scoreVoice(v: SpeechSynthesisVoice) {
     let s = 0;
     const n = v.name.toLowerCase();
     const L = this.state.replyLang;
-    if (!v.lang.toLowerCase().startsWith(L)) return -1;
-    if (/natural|neural|online|enhanced|premium/.test(n)) s += 6;
-    if (L === 'en' && /aria|jenny|jane|michelle|sonia|libby|samantha|female|zira|eva|joanna|amy|emma|salli/.test(n)) s += 5;
-    if (L === 'he' && /carmit|hebrew|female/.test(n)) s += 5;
-    if (L === 'es' && /lucia|elena|spanish|female|conchita|lupe|penelope/.test(n)) s += 5;
-    if (/male|david|mark|guy|james|ryan/.test(n)) s -= 4;
-    if (L === 'en') { if (v.lang === 'en-US') s += 2; else if (v.lang === 'en-GB') s += 1; }
-    if (/google/.test(n)) s += 1;
+    if (!v.lang.toLowerCase().startsWith(L)) return -100;
+
+    if (/natural|neural|online|enhanced|premium|wavenet|studio/.test(n)) s += 10;
+    if (/compact|espeak/.test(n)) s -= 5;
+    if (/google/.test(n)) s += 3;
+    if (/microsoft/.test(n)) s += 2;
+
+    const gender = this.state.voiceGender;
+    if (gender === 'female') {
+      if (this.isFemaleVoice(n)) s += 8;
+      if (this.isMaleVoice(n)) s -= 8;
+    } else if (gender === 'male') {
+      if (this.isMaleVoice(n)) s += 8;
+      if (this.isFemaleVoice(n)) s -= 8;
+    }
+
+    if (L === 'en') {
+      if (/aria|jenny|michelle/.test(n)) s += 4;
+      if (/david|mark|ryan/.test(n)) s += 4;
+      if (v.lang === 'en-US') s += 2; else if (v.lang === 'en-GB') s += 1;
+    }
+    if (L === 'he' && /carmit|hebrew/.test(n)) s += 4;
+    if (L === 'es' && /lucia|elena|jorge|paulina|monica/.test(n)) s += 4;
+
     return s;
   }
   private langVoices() {
@@ -194,20 +218,27 @@ export class VoiceEngine {
   }
   loadVoices() {
     this.voices = speechSynthesis.getVoices();
-    const saved = localStorage.getItem('alpha_voice_' + this.state.replyLang);
+    const genderKey = this.state.voiceGender || 'auto';
+    const saved = localStorage.getItem('alpha_voice_' + this.state.replyLang + '_' + genderKey);
     const list = this.langVoices();
     this.chosenVoice = (saved && list.find(v => v.name === saved)) || list[0] || this.voices[0] || null;
   }
   availableVoices() {
     return this.langVoices();
   }
+  voiceGenderLabel(v: SpeechSynthesisVoice): string {
+    if (this.isFemaleVoice(v.name)) return 'F';
+    if (this.isMaleVoice(v.name)) return 'M';
+    return '?';
+  }
   setVoice(name: string) {
-    localStorage.setItem('alpha_voice_' + this.state.replyLang, name);
+    const genderKey = this.state.voiceGender || 'auto';
+    localStorage.setItem('alpha_voice_' + this.state.replyLang + '_' + genderKey, name);
     this.chosenVoice = this.voices.find(v => v.name === name) || this.chosenVoice;
   }
 
   speak(text: string) {
-    if (!this.state.voiceOn || !('speechSynthesis' in window)) {
+    if (!this.state.voiceOn || !this.state.autoSpeak || !('speechSynthesis' in window)) {
       if (this.wakeOn) this.enterCommandMode();
       else this.onStateChange('');
       return;
@@ -219,8 +250,8 @@ export class VoiceEngine {
     const u = new SpeechSynthesisUtterance(text);
     if (this.chosenVoice) { u.voice = this.chosenVoice; u.lang = this.chosenVoice.lang; }
     else u.lang = this.state.replyLang === 'he' ? 'he-IL' : this.state.replyLang === 'es' ? 'es-ES' : 'en-US';
-    u.rate = this.state.replyLang === 'he' ? 0.98 : 0.97;
-    u.pitch = 1.05;
+    u.rate = this.state.voiceSpeed || 1.0;
+    u.pitch = this.state.voicePitch || 1.0;
     let finished = false;
     const done = () => {
       if (finished) return;

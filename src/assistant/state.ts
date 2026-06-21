@@ -4,6 +4,8 @@ export type TextLang = 'en' | 'he' | 'ar' | 'ru' | 'fr' | 'es' | 'de' | 'auto';
 
 export type AIProvider = 'puter' | 'gemini' | 'grok' | 'openai';
 
+export type VoiceGender = 'female' | 'male' | 'auto';
+
 export interface AppState {
   key: string;
   grokKey: string;
@@ -16,20 +18,35 @@ export interface AppState {
   textLang: TextLang;
   history: { role: 'user' | 'model'; parts: { text: string }[] }[];
   voiceOn: boolean;
+  voiceGender: VoiceGender;
+  voiceSpeed: number;
+  voicePitch: number;
   ambLevel: number;
   sfxOn: boolean;
   wakeOn: boolean;
+  theme: 'dark' | 'light';
+  fontSize: number;
+  haptics: boolean;
+  autoSpeak: boolean;
 }
 
 const KEY = 'alpha_key', GROK = 'alpha_grok', OPENAI = 'alpha_openai', PROV = 'alpha_provider',
   PUTERMODEL = 'alpha_putermodel',
   NAME = 'alpha_name', MICLANG = 'alpha_micLang', REPLYLANG = 'alpha_replyLang',
   TEXTLANG = 'alpha_textLang', AMB = 'alpha_amb', SFX = 'alpha_sfx', WAKE = 'alpha_wake',
-  VOICE = 'alpha_voice';
+  VOICE = 'alpha_voice', VGENDER = 'alpha_vgender', VSPEED = 'alpha_vspeed',
+  VPITCH = 'alpha_vpitch', THEME = 'alpha_theme', FONTSIZE = 'alpha_fontsize',
+  HAPTICS = 'alpha_haptics', AUTOSPEAK = 'alpha_autospeak';
 
 export function loadState(): AppState {
   let amb = parseFloat(localStorage.getItem(AMB) || '');
   if (isNaN(amb)) amb = 0.4;
+  let vspeed = parseFloat(localStorage.getItem(VSPEED) || '');
+  if (isNaN(vspeed)) vspeed = 1.0;
+  let vpitch = parseFloat(localStorage.getItem(VPITCH) || '');
+  if (isNaN(vpitch)) vpitch = 1.0;
+  let fontSize = parseInt(localStorage.getItem(FONTSIZE) || '');
+  if (isNaN(fontSize)) fontSize = 14;
   return {
     key: localStorage.getItem(KEY) || '',
     grokKey: localStorage.getItem(GROK) || '',
@@ -42,9 +59,16 @@ export function loadState(): AppState {
     textLang: (localStorage.getItem(TEXTLANG) as TextLang) || 'auto',
     history: [],
     voiceOn: localStorage.getItem(VOICE) !== '0',
+    voiceGender: (localStorage.getItem(VGENDER) as VoiceGender) || 'female',
+    voiceSpeed: vspeed,
+    voicePitch: vpitch,
     ambLevel: amb,
     sfxOn: localStorage.getItem(SFX) !== '0',
     wakeOn: localStorage.getItem(WAKE) === '1',
+    theme: (localStorage.getItem(THEME) as 'dark' | 'light') || 'dark',
+    fontSize,
+    haptics: localStorage.getItem(HAPTICS) !== '0',
+    autoSpeak: localStorage.getItem(AUTOSPEAK) !== '0',
   };
 }
 
@@ -62,6 +86,13 @@ export function saveState(s: AppState) {
   localStorage.setItem(SFX, s.sfxOn ? '1' : '0');
   localStorage.setItem(WAKE, s.wakeOn ? '1' : '0');
   localStorage.setItem(VOICE, s.voiceOn ? '1' : '0');
+  localStorage.setItem(VGENDER, s.voiceGender);
+  localStorage.setItem(VSPEED, s.voiceSpeed.toFixed(2));
+  localStorage.setItem(VPITCH, s.voicePitch.toFixed(2));
+  localStorage.setItem(THEME, s.theme);
+  localStorage.setItem(FONTSIZE, String(s.fontSize));
+  localStorage.setItem(HAPTICS, s.haptics ? '1' : '0');
+  localStorage.setItem(AUTOSPEAK, s.autoSpeak ? '1' : '0');
 }
 
 export interface CalEvent { id: string; title: string; date: string; time: string }

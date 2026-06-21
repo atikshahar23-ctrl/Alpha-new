@@ -623,8 +623,8 @@ body::after {
 
 /* ========== SETTINGS: SOCIAL CONNECTIONS ========== */
 .settings-section {
-  margin-top: 20px;
-  padding-top: 16px;
+  margin-top: 18px;
+  padding-top: 14px;
   border-top: 1px solid var(--line);
 }
 
@@ -632,7 +632,72 @@ body::after {
   font-family: "Space Grotesk", sans-serif;
   font-size: 9px; letter-spacing: 3px; text-transform: uppercase;
   color: var(--gold); opacity: .6;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
+}
+
+.setting-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 6px 0;
+}
+.setting-row label { margin: 0; flex: 1; }
+
+.toggle {
+  position: relative; display: inline-block;
+  width: 42px; height: 22px; cursor: pointer;
+}
+.toggle input { opacity: 0; width: 0; height: 0; }
+.toggle-slider {
+  position: absolute; inset: 0;
+  background: rgba(255,255,255,.08); border-radius: 22px;
+  transition: .3s;
+}
+.toggle-slider::before {
+  content: ''; position: absolute;
+  width: 16px; height: 16px; border-radius: 50%;
+  left: 3px; bottom: 3px;
+  background: var(--dim); transition: .3s;
+}
+.toggle input:checked + .toggle-slider {
+  background: rgba(95,230,255,.25);
+}
+.toggle input:checked + .toggle-slider::before {
+  transform: translateX(20px);
+  background: var(--cyan);
+}
+
+.gender-picker {
+  display: flex; gap: 6px; margin: 4px 0 8px;
+}
+.gender-btn {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  gap: 4px; padding: 8px;
+  background: rgba(255,255,255,.03);
+  border: 1px solid var(--line); border-radius: 10px;
+  color: var(--dim); font-size: 12px; cursor: pointer;
+  transition: .2s;
+}
+.gender-btn:hover { border-color: rgba(95,230,255,.3); color: var(--ink); }
+.gender-btn.active {
+  border-color: var(--cyan); color: var(--cyan);
+  background: rgba(95,230,255,.08);
+}
+.gender-btn svg { stroke: currentColor; }
+
+.range-val {
+  float: right; font-size: 11px; color: var(--cyan); font-weight: 600;
+}
+
+.test-voice-btn {
+  width: 100%; padding: 8px;
+  background: rgba(255,255,255,.03);
+  border: 1px solid rgba(95,230,255,.2);
+  border-radius: 10px; color: var(--cyan);
+  font-size: 12px; cursor: pointer; transition: .2s;
+  margin-top: 4px;
+}
+.test-voice-btn:hover {
+  background: rgba(95,230,255,.1);
+  border-color: var(--cyan);
 }
 
 .social-grid {
