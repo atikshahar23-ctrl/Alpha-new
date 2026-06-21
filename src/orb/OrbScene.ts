@@ -374,16 +374,16 @@ const DESKTOP_ORB_FRAG = /* glsl */`
     float sss = pow(max(dot(n, -vd), 0.0), 2.5) * 0.1;
     col += warmGold * sss;
 
-    col += brightGold * fresnel * 0.25;
-    col += pearl * fresnel * 0.12;
-    col += roseGold * fresnel * 0.06;
+    col += brightGold * fresnel * 0.15;
+    col += pearl * fresnel * 0.06;
+    col += roseGold * fresnel * 0.04;
 
-    col += warmGold * 0.2 * hex * 0.25;
-    col += brightGold * sc * 0.15;
+    col += warmGold * 0.2 * hex * 0.18;
+    col += brightGold * sc * 0.1;
 
-    float hotSpot = pow(e1, 4.0) * 0.8;
-    col += pearl * hotSpot * 0.12;
-    col += brightGold * hotSpot * 0.08;
+    float hotSpot = pow(e1, 4.0) * 0.5;
+    col += pearl * hotSpot * 0.06;
+    col += brightGold * hotSpot * 0.04;
 
     float cs = sin(uTime * 0.2 + vWorldPos.y * 2.5) * 0.5 + 0.5;
     col = mix(col, brightGold, fresnel * cs * 0.1 + uEnergy * 0.06);
@@ -422,14 +422,14 @@ const ATMOSPHERE_FRAG = /* glsl */`
     vec3 n = normalize(vNormal);
     float intensity = pow(max(0.6 - dot(n, vd), 0.0), 3.0);
 
-    vec3 deepGold = vec3(0.22, 0.15, 0.05);
-    vec3 lightGold = vec3(0.5, 0.38, 0.15);
-    vec3 pearl = vec3(0.6, 0.55, 0.45);
-    float pulse = 0.7 + sin(uTime * 0.35) * 0.06 + uEnergy * 0.1;
+    vec3 deepGold = vec3(0.15, 0.10, 0.04);
+    vec3 lightGold = vec3(0.35, 0.26, 0.10);
+    vec3 pearl = vec3(0.45, 0.40, 0.32);
+    float pulse = 0.65 + sin(uTime * 0.35) * 0.04 + uEnergy * 0.08;
 
     vec3 col = mix(deepGold, lightGold, intensity) * pulse;
-    col += pearl * pow(intensity, 2.0) * 0.15;
-    float alpha = intensity * 0.18 * pulse;
+    col += pearl * pow(intensity, 2.5) * 0.08;
+    float alpha = intensity * 0.12 * pulse;
 
     gl_FragColor = vec4(col, alpha);
   }
@@ -906,7 +906,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2.5));
   renderer.setClearColor(0x0a0806, 1);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 0.95;
+  renderer.toneMappingExposure = 0.62;
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
@@ -918,7 +918,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   composer.addPass(new RenderPass(scene, camera));
   composer.addPass(new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    0.4, 0.35, 0.5,
+    0.18, 0.4, 0.7,
   ));
   composer.addPass(new OutputPass());
 
@@ -954,18 +954,18 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   // Inner bright core — hot golden center
   const coreGeo = new THREE.IcosahedronGeometry(0.5, 4);
   const coreMat = new THREE.MeshBasicMaterial({
-    color: 0x6b4a18, transparent: true, opacity: 0.3, depthWrite: false,
+    color: 0x6b4a18, transparent: true, opacity: 0.18, depthWrite: false,
   });
   const core = new THREE.Mesh(coreGeo, coreMat);
   group.add(core);
 
   // Desktop core glow sprite
   const dCoreGlowMat = new THREE.SpriteMaterial({
-    map: glowTexture(), color: 0xdaa520, transparent: true, opacity: 0.15,
+    map: glowTexture(), color: 0xdaa520, transparent: true, opacity: 0.07,
     depthWrite: false, blending: THREE.AdditiveBlending,
   });
   const dCoreGlow = new THREE.Sprite(dCoreGlowMat);
-  dCoreGlow.scale.setScalar(2.5);
+  dCoreGlow.scale.setScalar(2.0);
   group.add(dCoreGlow);
 
   // Wireframe cages — 3 layers
@@ -1064,19 +1064,19 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   // OUTER GLOW — layered sprites
   // ────────────────────────────────────────────
   const glow1Mat = new THREE.SpriteMaterial({
-    map: glowTexture(), color: 0x4a3210, transparent: true, opacity: 0.1,
+    map: glowTexture(), color: 0x4a3210, transparent: true, opacity: 0.05,
     depthWrite: false, blending: THREE.AdditiveBlending,
   });
   const glow1 = new THREE.Sprite(glow1Mat);
-  glow1.scale.setScalar(4.5);
+  glow1.scale.setScalar(4.0);
   group.add(glow1);
 
   const glow2Mat = new THREE.SpriteMaterial({
-    map: glowTexture(), color: 0x2a1c0a, transparent: true, opacity: 0.05,
+    map: glowTexture(), color: 0x2a1c0a, transparent: true, opacity: 0.025,
     depthWrite: false, blending: THREE.AdditiveBlending,
   });
   const glow2 = new THREE.Sprite(glow2Mat);
-  glow2.scale.setScalar(7.0);
+  glow2.scale.setScalar(6.0);
   group.add(glow2);
 
   // ────────────────────────────────────────────
@@ -1425,14 +1425,14 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     const breath = 1 + Math.sin(time * 1.0) * 0.02 + amp * 0.06;
     orb.scale.setScalar(breath);
 
-    // Core pulse — bright golden center
+    // Core pulse — warm golden center (comfortable)
     core.rotation.y = -time * 0.35;
     core.rotation.x = time * 0.2;
-    const cp = 0.9 + Math.sin(time * 2.2) * 0.12 + amp * 0.4;
+    const cp = 0.85 + Math.sin(time * 2.2) * 0.08 + amp * 0.25;
     core.scale.setScalar(0.5 * cp);
-    coreMat.opacity = 0.25 + Math.sin(time * 1.8) * 0.08 + amp * 0.15;
-    dCoreGlow.scale.setScalar(2.2 + Math.sin(time * 1.5) * 0.4 + amp * 0.5);
-    dCoreGlowMat.opacity = 0.12 + Math.sin(time * 1.3) * 0.04 + amp * 0.08;
+    coreMat.opacity = 0.15 + Math.sin(time * 1.8) * 0.05 + amp * 0.1;
+    dCoreGlow.scale.setScalar(1.8 + Math.sin(time * 1.5) * 0.25 + amp * 0.3);
+    dCoreGlowMat.opacity = 0.06 + Math.sin(time * 1.3) * 0.02 + amp * 0.04;
 
     // Wireframe cages
     for (let i = 0; i < wireframes.length; i++) {
@@ -1442,16 +1442,16 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       wf.mat.opacity = wOps[i] * 0.8 + amp * 0.02 + Math.sin(time * 0.8 + i) * 0.015;
     }
 
-    // Rings rotation — more visible
+    // Rings rotation
     rings[0].mesh.rotation.z = 0.15 + time * 0.07;
-    rings[0].mat.opacity = 0.65 + Math.sin(time * 0.6) * 0.08 + amp * 0.1;
+    rings[0].mat.opacity = 0.45 + Math.sin(time * 0.6) * 0.06 + amp * 0.08;
     rings[1].mesh.rotation.z = -0.3 - time * 0.1;
-    rings[1].mat.opacity = 0.3 + Math.sin(time * 0.5) * 0.05;
+    rings[1].mat.opacity = 0.22 + Math.sin(time * 0.5) * 0.04;
     rings[2].mesh.rotation.z = 0.5 + time * 0.04;
     rings[2].mesh.rotation.x = PI * 0.62 + Math.sin(time * 0.15) * 0.08;
-    rings[2].mat.opacity = 0.18 + Math.sin(time * 0.45) * 0.04 + amp * 0.06;
+    rings[2].mat.opacity = 0.12 + Math.sin(time * 0.45) * 0.03 + amp * 0.04;
     rings[3].mesh.rotation.z = -0.8 + time * 0.12;
-    rings[3].mat.opacity = 0.12 + Math.sin(time * 0.55) * 0.03;
+    rings[3].mat.opacity = 0.08 + Math.sin(time * 0.55) * 0.02;
 
     // Pulse rings
     for (let i = 0; i < PULSE_N; i++) {
@@ -1472,11 +1472,11 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       streams[i].mat.opacity = 0.01 + wave * 0.03 + amp * 0.015;
     }
 
-    // Glow — premium golden haze
-    glow1.scale.setScalar(4.0 + Math.sin(time * 0.6) * 0.4 + amp * 0.6);
-    glow1Mat.opacity = 0.08 + amp * 0.06 + Math.sin(time * 0.5) * 0.02;
-    glow2.scale.setScalar(6.5 + Math.sin(time * 0.4) * 0.4);
-    glow2Mat.opacity = 0.04 + amp * 0.03;
+    // Glow — refined golden haze (comfortable for prolonged use)
+    glow1.scale.setScalar(3.5 + Math.sin(time * 0.6) * 0.3 + amp * 0.4);
+    glow1Mat.opacity = 0.04 + amp * 0.03 + Math.sin(time * 0.5) * 0.01;
+    glow2.scale.setScalar(5.5 + Math.sin(time * 0.4) * 0.3);
+    glow2Mat.opacity = 0.02 + amp * 0.015;
 
     // Atmosphere glow
     atmosMat.uniforms.uTime.value = time;
