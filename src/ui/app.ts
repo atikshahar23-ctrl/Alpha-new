@@ -1,6 +1,6 @@
 import { mountOrb, type OrbHandle } from '../orb/OrbScene';
 import { mountFlowLines } from '../bg/flowLines';
-import { loadState, saveState, addEvent, loadEvents, removeEvent, type AppState, type TextLang, type AIProvider, type VoiceGender } from '../assistant/state';
+import { loadState, saveState, addEvent, addTask, saveNote, loadEvents, removeEvent, type AppState, type TextLang, type AIProvider, type VoiceGender } from '../assistant/state';
 import { askAI, runTags } from '../assistant/gemini';
 import { tryLocalCommand } from '../assistant/local';
 import { VoiceEngine } from '../assistant/voice';
@@ -13,6 +13,7 @@ import * as driveSync from '../modules/driveSync';
 import { universalSearch, TYPE_ICONS } from '../modules/search';
 import { registerShortcut, initShortcuts, shortcutsHTML } from '../modules/shortcuts';
 import { dailyBriefing } from '../modules/analytics';
+import { startTimer, stopTimer, formatDuration } from '../modules/timeTracker';
 
 export function mountApp(root: HTMLElement) {
   root.innerHTML = `
@@ -730,6 +731,20 @@ export function mountApp(root: HTMLElement) {
         onHgQuote: hgCreateQuote,
         onArCamera: openArCamera,
         onGDoc: openGDoc,
+        onTask: (text: string, priority: string) => {
+          if (text) { addTask(text, (priority as 'low' | 'med' | 'high') || 'med'); addMsg(`✅ Task added: "${text}"`, 'sys'); }
+        },
+        onNote: (text: string) => {
+          if (text) { saveNote(text); addMsg(`📝 Note saved.`, 'sys'); }
+        },
+        onTimerStart: (project: string) => {
+          startTimer(project);
+          addMsg(`⏱️ Timer started: ${project}`, 'sys');
+        },
+        onTimerStop: () => {
+          const entry = stopTimer();
+          if (entry) addMsg(`⏱️ Stopped: ${entry.project} — ${formatDuration(entry.duration)}`, 'sys');
+        },
       }) || 'Done.';
       audio.receive();
       addMsg(clean, 'al');

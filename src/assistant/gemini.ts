@@ -36,7 +36,9 @@ Today is ${wd}, ${today}. Current month: ${currentMonth}.
 CAPABILITIES — Control the app via tags at the END of your reply (never mention them in spoken text):
 [[VIDEO: search terms]] · [[SEARCH: query]] · [[SPOTIFY: song or artist name]]
 [[EVENT: title | YYYY-MM-DD | HH:MM]] · [[CALENDAR]]
+[[TASK: task text | priority(low/med/high)]] · [[NOTE: text to save]]
 [[DIARY: task title | YYYY-MM-DD]] · [[AR_CAMERA]] · [[GDOC: full URL]]
+[[TIMER_START: project name]] · [[TIMER_STOP]]
 [[HG_SEARCH: plate/chassis number]] · [[HG_EARNINGS: contractor | YYYY-MM]] · [[HG_QUOTE: customer | phone | item:price, item:price]]
 
 HEAVYGUARD INTEGRATION — Field installation management for vehicle security (trackers, cameras, radios for Scania/Volvo etc.). Contractors: קובי, אסי, שגיא מערכות, m.b מערכות, ס.ד מיגונים, Heavy Guard.
@@ -284,9 +286,13 @@ export function runTags(
     onHgQuote?: (customer: string, phone: string, items: string) => void;
     onArCamera?: () => void;
     onGDoc?: (url: string) => void;
+    onTask?: (text: string, priority: string) => void;
+    onNote?: (text: string) => void;
+    onTimerStart?: (project: string) => void;
+    onTimerStop?: () => void;
   }
 ): string {
-  const re = /\[\[(VIDEO|SEARCH|EVENT|CALENDAR|SPOTIFY|DIARY|HG_SEARCH|HG_EARNINGS|HG_QUOTE|AR_CAMERA|GDOC)\s*:?\s*([^\]]*)\]\]/g;
+  const re = /\[\[(VIDEO|SEARCH|EVENT|CALENDAR|SPOTIFY|DIARY|HG_SEARCH|HG_EARNINGS|HG_QUOTE|AR_CAMERA|GDOC|TASK|NOTE|TIMER_START|TIMER_STOP)\s*:?\s*([^\]]*)\]\]/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
     const type = m[1], arg = m[2].trim();
@@ -318,6 +324,19 @@ export function runTags(
     }
     else if (type === 'GDOC' && hooks.onGDoc) {
       hooks.onGDoc(arg);
+    }
+    else if (type === 'TASK' && hooks.onTask) {
+      const p = arg.split('|').map(s => s.trim());
+      hooks.onTask(p[0] || '', p[1] || 'med');
+    }
+    else if (type === 'NOTE' && hooks.onNote) {
+      hooks.onNote(arg);
+    }
+    else if (type === 'TIMER_START' && hooks.onTimerStart) {
+      hooks.onTimerStart(arg || 'General');
+    }
+    else if (type === 'TIMER_STOP' && hooks.onTimerStop) {
+      hooks.onTimerStop();
     }
   }
   return text.replace(re, '').trim();

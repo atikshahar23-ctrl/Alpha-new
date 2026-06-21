@@ -31,6 +31,7 @@ const SYNC_TABLES = [
   'alpha_contacts_v1',
   'alpha_smart_notes_v1',
   'alpha_recurring_v1',
+  'alpha_timetracker_v1',
 ];
 
 interface DriveToken {

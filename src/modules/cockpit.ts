@@ -55,6 +55,10 @@ import {
   loadRecurring, addRecurring, removeRecurring, toggleRecurring,
   type RecurFreq,
 } from './recurring';
+import {
+  getActiveTimer, startTimer, stopTimer, todayTime, weekTime,
+  formatDuration, removeTimeEntry, loadTimeEntries,
+} from './timeTracker';
 
 export interface CockpitHooks {
   ask: (q: string) => void;
@@ -936,6 +940,55 @@ function renderPersonal(root: HTMLElement, hooks: CockpitHooks, close: () => voi
   pomoBtns.append(pomoStart, pomoReset);
   pomo.appendChild(pomoBtns);
   root.appendChild(pomo);
+
+  // ── Time Tracker ──
+  const ttc = card('Time Tracker', 'Track hours on projects');
+  const ttToday = todayTime();
+  const ttWeek = weekTime();
+  const ttKpis = el('div', 'cp-kpis');
+  ttKpis.innerHTML =
+    `<div class="cp-kpi"><span class="cp-kpi-val">${formatDuration(ttToday.total)}</span><span class="cp-kpi-lbl">Today</span></div>` +
+    `<div class="cp-kpi"><span class="cp-kpi-val">${formatDuration(ttWeek.total)}</span><span class="cp-kpi-lbl">This week</span></div>` +
+    `<div class="cp-kpi"><span class="cp-kpi-val">${ttToday.byProject.length}</span><span class="cp-kpi-lbl">Projects</span></div>`;
+  ttc.appendChild(ttKpis);
+  const activeT = getActiveTimer();
+  const ttProject = input(activeT ? activeT.project : 'Project name');
+  const ttDesc = input('Description (optional)');
+  const ttStartBtn = btn(activeT ? 'Stop tracking' : 'Start tracking', true);
+  if (activeT) {
+    const elapsed = Math.round((Date.now() - activeT.startTime) / 60000);
+    ttc.appendChild(el('div', 'cp-bignum', `${formatDuration(elapsed)} running`));
+    ttProject.value = activeT.project;
+    ttProject.disabled = true;
+  }
+  ttStartBtn.onclick = () => {
+    if (getActiveTimer()) {
+      const entry = stopTimer();
+      if (entry) hooks.addMsgSys(`⏱️ Tracked ${formatDuration(entry.duration)} on ${entry.project}`);
+    } else {
+      if (!ttProject.value.trim()) return;
+      startTimer(ttProject.value.trim(), ttDesc.value.trim());
+    }
+    root.replaceChildren(); renderPersonal(root, hooks, close);
+  };
+  ttc.appendChild(field('Project', ttProject));
+  ttc.appendChild(field('Description', ttDesc));
+  ttc.appendChild(ttStartBtn);
+  const ttList = el('div', 'cp-list');
+  const entries = loadTimeEntries().slice(0, 10);
+  entries.forEach(e => {
+    const r = el('div', 'cp-row');
+    r.innerHTML = `<span class="cp-row-main">${esc(e.project)}</span>` +
+      `<span class="cp-row-sub">${e.description || e.date}</span>` +
+      `<span class="cp-row-tag">${formatDuration(e.duration)}</span>`;
+    const x = el('button', 'cp-x', '✕');
+    x.onclick = () => { removeTimeEntry(e.id); root.replaceChildren(); renderPersonal(root, hooks, close); };
+    r.appendChild(x);
+    ttList.appendChild(r);
+  });
+  if (!entries.length && !activeT) ttList.appendChild(el('div', 'cp-empty', 'No time entries yet.'));
+  ttc.appendChild(ttList);
+  root.appendChild(ttc);
 
   // ── Wellness Tracker ──
   const well = card('Wellness', 'Mood · Energy · Water · Sleep');

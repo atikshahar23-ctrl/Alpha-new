@@ -1,4 +1,6 @@
 import { loadEvents, addEvent, loadTasks, addTask, toggleTask, removeTask, saveNote, loadNotes, clearNotes, type Task } from './state';
+import { dailyBriefing, weeklyReport } from '../modules/analytics';
+import { startTimer, stopTimer, getActiveTimer, formatDuration, todayTime } from '../modules/timeTracker';
 
 const GREETINGS_EN = ['Hey! How can I help?', 'Hello! What can I do for you?', 'Hi there! Ready to help.'];
 const GREETINGS_HE = ['היי! איך אפשר לעזור?', 'שלום! מה אפשר לעשות בשבילך?', 'אהלן! מוכן לעזור.'];
@@ -235,6 +237,39 @@ export function tryLocalCommand(text: string): string | null {
       if (Notification.permission === 'default') Notification.requestPermission();
       return he ? `⏱️ טיימר הוגדר ל-${n} ${isSec ? 'שניות' : 'דקות'}. תקבל התראה.` : `⏱️ Timer set for ${n} ${isSec ? 'seconds' : 'minutes'}. You'll be notified.`;
     }
+  }
+
+  // --- DAILY BRIEFING ---
+  if (/\b(briefing|brief me|daily brief|תדריך|סיכום יומי|morning brief)\b/i.test(low)) {
+    return dailyBriefing();
+  }
+
+  // --- WEEKLY REPORT ---
+  if (/\b(weekly report|week report|דוח שבועי|סיכום שבועי)\b/i.test(low)) {
+    return weeklyReport();
+  }
+
+  // --- TIME TRACKER ---
+  if (/^(start timer|track time|start tracking|התחל מעקב|התחל טיימר)\s*/i.test(t)) {
+    const project = t.replace(/^(start timer|track time|start tracking|התחל מעקב|התחל טיימר)\s*/i, '').trim() || 'General';
+    if (getActiveTimer()) {
+      return he ? '⏱️ כבר יש טיימר פעיל. עצור אותו קודם.' : '⏱️ A timer is already running. Stop it first.';
+    }
+    startTimer(project);
+    return he ? `⏱️ מעקב זמן התחיל: ${project}` : `⏱️ Time tracking started: ${project}`;
+  }
+
+  if (/\b(stop timer|stop tracking|עצור טיימר|עצור מעקב)\b/i.test(low)) {
+    const entry = stopTimer();
+    if (!entry) return he ? 'אין טיימר פעיל.' : 'No active timer.';
+    return he ? `⏱️ נעצר! ${entry.project} — ${formatDuration(entry.duration)}` : `⏱️ Stopped! ${entry.project} — ${formatDuration(entry.duration)}`;
+  }
+
+  if (/\b(time today|tracked time|זמן היום|מעקב זמן)\b/i.test(low)) {
+    const td = todayTime();
+    if (!td.total) return he ? '⏱️ לא נרשם זמן היום.' : '⏱️ No time tracked today.';
+    const lines = td.byProject.map(p => `• ${p.project}: ${formatDuration(p.minutes)}`).join('\n');
+    return he ? `⏱️ סה"כ היום: ${formatDuration(td.total)}\n${lines}` : `⏱️ Today total: ${formatDuration(td.total)}\n${lines}`;
   }
 
   // --- HELP ---

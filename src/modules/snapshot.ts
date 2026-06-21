@@ -12,6 +12,7 @@ import { todayMood, todayWater, sleepAvg, MOOD_EMOJI } from './wellness';
 import { activeGoalsSummary } from './goals';
 import { invoiceStats } from './invoices';
 import { contactStats } from './contacts';
+import { todayTime, formatDuration } from './timeTracker';
 
 export function liveSnapshot(module: string): string {
   const parts: string[] = [];
@@ -58,6 +59,8 @@ export function liveSnapshot(module: string): string {
       if (water) bits.push(`${water} glasses of water`);
       if (sleep.hours) bits.push(`sleep avg: ${sleep.hours}h`);
       if (goals.total) bits.push(`${goals.total} goals (${goals.avgProgress}% avg progress)`);
+      const tt = todayTime();
+      if (tt.total) bits.push(`${formatDuration(tt.total)} tracked today`);
       if (bits.length) parts.push('PERSONAL STATE — ' + bits.join('; ') + '.');
     } catch {}
   }
