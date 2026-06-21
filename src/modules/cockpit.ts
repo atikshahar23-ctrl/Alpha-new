@@ -59,6 +59,7 @@ import {
   getActiveTimer, startTimer, stopTimer, todayTime, weekTime,
   formatDuration, removeTimeEntry, loadTimeEntries,
 } from './timeTracker';
+import { downloadReport, businessReport, personalReport } from './reports';
 
 export interface CockpitHooks {
   ask: (q: string) => void;
@@ -1408,6 +1409,25 @@ function renderAdvanced(root: HTMLElement, hooks: CockpitHooks, close: () => voi
   dz.appendChild(parse);
   dz.appendChild(dOut);
   root.appendChild(dz);
+
+  // ── Reports ──
+  const rp = card('Reports', 'Generate and download formatted reports');
+  const rpBiz = btn('Business Report');
+  rpBiz.onclick = () => downloadReport('business');
+  const rpPers = btn('Personal Report');
+  rpPers.onclick = () => downloadReport('personal');
+  const rpFull = btn('Full Report', true);
+  rpFull.onclick = () => downloadReport('full');
+  const rpAI = btn('AI analysis of my data');
+  rpAI.onclick = () => {
+    hooks.ask(`Act as my strategic advisor. Analyze these metrics:\n\n${businessReport()}\n\n${personalReport()}\n\nGive me 5 actionable recommendations for this week. Be specific and data-driven.`);
+    close();
+  };
+  const rpRow = el('div', 'cp-inline');
+  rpRow.append(rpBiz, rpPers, rpFull);
+  rp.appendChild(rpRow);
+  rp.appendChild(rpAI);
+  root.appendChild(rp);
 }
 
 // Lazy-load pdf.js from CDN only when a PDF is actually parsed.

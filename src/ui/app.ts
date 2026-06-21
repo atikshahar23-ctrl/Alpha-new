@@ -20,7 +20,7 @@ export function mountApp(root: HTMLElement) {
     <div class="app">
       <div class="chrome topL"><div class="wm">ALPHA ASSISTANT</div><div class="clk" id="clock">--:--</div></div>
       <div class="chrome topR">
-        <button class="chip ghost" id="searchBtn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
+        <button class="chip ghost" id="searchBtn" aria-label="Search (Ctrl+K)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
         <button class="chip ghost" id="muteBtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg></button>
         <button class="chip" id="settingsBtn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg> SETTINGS</button>
         <button class="chip ghost" id="newChat"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> NEW</button>
@@ -327,6 +327,14 @@ export function mountApp(root: HTMLElement) {
           </div>
           <div class="search-results" id="searchResults"></div>
         </div>
+      </div>
+      <button class="fab" id="fabBtn" title="Quick Actions">+</button>
+      <div class="fab-menu" id="fabMenu">
+        <button class="fab-item" data-action="task">✓ Quick Task</button>
+        <button class="fab-item" data-action="note">📝 Quick Note</button>
+        <button class="fab-item" data-action="timer">⏱ Start Timer</button>
+        <button class="fab-item" data-action="briefing">📊 Briefing</button>
+        <button class="fab-item" data-action="search">🔍 Search</button>
       </div>
       <div class="ar-overlay" id="arOverlay">
         <div class="ar-frame">
@@ -2086,6 +2094,42 @@ export function mountApp(root: HTMLElement) {
         `<span class="search-type">${r.type}</span></div>`
       ).join('');
     }, 150);
+  });
+
+  // ── Quick Actions FAB ──
+  const fabBtn = $('fabBtn');
+  const fabMenu = $('fabMenu');
+  let fabOpen = false;
+  fabBtn.onclick = () => {
+    fabOpen = !fabOpen;
+    fabMenu.classList.toggle('show', fabOpen);
+    fabBtn.textContent = fabOpen ? '✕' : '+';
+    fabBtn.style.transform = fabOpen ? 'rotate(45deg)' : '';
+  };
+  fabMenu.addEventListener('click', (e) => {
+    const item = (e.target as HTMLElement).closest('.fab-item') as HTMLElement;
+    if (!item) return;
+    const action = item.dataset.action;
+    fabOpen = false; fabMenu.classList.remove('show'); fabBtn.textContent = '+'; fabBtn.style.transform = '';
+    if (action === 'task') {
+      const text = prompt('Quick task:');
+      if (text?.trim()) { addTask(text.trim()); addMsg(`✅ Task added: "${text.trim()}"`, 'sys'); }
+    } else if (action === 'note') {
+      const text = prompt('Quick note:');
+      if (text?.trim()) { saveNote(text.trim()); addMsg(`📝 Note saved.`, 'sys'); }
+    } else if (action === 'timer') {
+      const project = prompt('Project name:');
+      if (project?.trim()) { startTimer(project.trim()); addMsg(`⏱️ Timer started: ${project.trim()}`, 'sys'); }
+    } else if (action === 'briefing') {
+      addMsg(dailyBriefing(), 'sys');
+    } else if (action === 'search') {
+      openSearch();
+    }
+  });
+  document.addEventListener('click', (e) => {
+    if (fabOpen && !(e.target as HTMLElement).closest('.fab, .fab-menu, #fabBtn, #fabMenu')) {
+      fabOpen = false; fabMenu.classList.remove('show'); fabBtn.textContent = '+'; fabBtn.style.transform = '';
+    }
   });
 
   // ── Keyboard Shortcuts ──
