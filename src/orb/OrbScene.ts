@@ -649,7 +649,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     powerPreference: isMobile ? 'low-power' : 'high-performance',
   });
   renderer.setPixelRatio(isMobile ? 1 : Math.min(window.devicePixelRatio || 1, 2));
-  renderer.setClearColor(0x000000, 0);
+  renderer.setClearColor(0x04060d, isMobile ? 1 : 0);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.0;
   container.appendChild(renderer.domElement);

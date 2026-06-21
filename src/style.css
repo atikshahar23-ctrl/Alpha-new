@@ -823,6 +823,7 @@ body::after {
 
 /* Tablets portrait */
 @media (max-width: 768px) {
+  .stage { background: #04060d; }
   .topL { top: 14px; left: 16px; }
   .topL .wm { font-size: 15px; letter-spacing: 3px; }
   .topL .clk { font-size: 11px; letter-spacing: 2px; }
