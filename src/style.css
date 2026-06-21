@@ -997,7 +997,7 @@ body::after {
   font-size: 11px;
   letter-spacing: 2px;
   text-transform: uppercase;
-  color: rgba(200,230,245,0.8);
+  color: rgba(240,235,224,0.8);
   white-space: nowrap;
   text-shadow: 0 0 8px rgba(218,165,32,0.4);
   transition: color 0.2s, text-shadow 0.2s;
