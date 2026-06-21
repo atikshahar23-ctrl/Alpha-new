@@ -218,6 +218,214 @@ const PULSE_RING_FRAG = /* glsl */`
   }
 `;
 
+// Radial glow texture for sprites — eliminates square artifacts
+let _glowTex: THREE.Texture | null = null;
+function glowTexture(): THREE.Texture {
+  if (_glowTex) return _glowTex;
+  const s = 128;
+  const c = document.createElement('canvas');
+  c.width = s; c.height = s;
+  const ctx = c.getContext('2d')!;
+  const g = ctx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.2, 'rgba(255,255,255,0.8)');
+  g.addColorStop(0.5, 'rgba(255,255,255,0.25)');
+  g.addColorStop(0.8, 'rgba(255,255,255,0.04)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, s, s);
+  _glowTex = new THREE.CanvasTexture(c);
+  return _glowTex;
+}
+
+// ============================================================
+// Desktop enhanced vertex shader — multi-octave displacement
+// ============================================================
+const DESKTOP_ORB_VERT = /* glsl */`
+  varying vec3 vNormal;
+  varying vec3 vWorldPos;
+  varying vec2 vUv;
+  varying vec3 vLocalPos;
+  uniform float uTime;
+  uniform float uEnergy;
+
+  float dHash(vec3 p) {
+    p = fract(p * vec3(443.897, 441.423, 437.195));
+    p += dot(p, p.yzx + 19.19);
+    return fract((p.x + p.y) * p.z);
+  }
+  float dNoise(vec3 p) {
+    vec3 i = floor(p), f = fract(p);
+    f = f*f*f*(f*(f*6.0-15.0)+10.0);
+    return mix(mix(mix(dHash(i), dHash(i+vec3(1,0,0)), f.x),
+                   mix(dHash(i+vec3(0,1,0)), dHash(i+vec3(1,1,0)), f.x), f.y),
+               mix(mix(dHash(i+vec3(0,0,1)), dHash(i+vec3(1,0,1)), f.x),
+                   mix(dHash(i+vec3(0,1,1)), dHash(i+vec3(1,1,1)), f.x), f.y), f.z);
+  }
+
+  void main() {
+    vec3 pos = position;
+    float n1 = dNoise(pos * 5.0 + uTime * 0.8) * 0.025;
+    float n2 = dNoise(pos * 10.0 - uTime * 1.2) * 0.012;
+    float n3 = dNoise(pos * 20.0 + uTime * 0.5) * 0.005;
+    float disp = n1 + n2 + n3;
+    disp += dNoise(pos * 3.0 + uTime * 2.0) * 0.015 * uEnergy;
+    float breathe = sin(uTime * 0.8) * 0.008 + sin(uTime * 1.5) * 0.004;
+    pos += normal * (disp + breathe);
+
+    vNormal = normalize(normalMatrix * normal);
+    vWorldPos = (modelMatrix * vec4(pos, 1.0)).xyz;
+    vLocalPos = position;
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+  }
+`;
+
+// ============================================================
+// Desktop enhanced fragment shader — 5-octave FBM, voronoi veins, SSS
+// ============================================================
+const DESKTOP_ORB_FRAG = /* glsl */`
+  uniform float uTime;
+  uniform float uEnergy;
+  uniform float uGlitch;
+  varying vec3 vNormal;
+  varying vec3 vWorldPos;
+  varying vec2 vUv;
+  varying vec3 vLocalPos;
+
+  float dh3(vec3 p) {
+    p = fract(p * vec3(443.897, 441.423, 437.195));
+    p += dot(p, p.yzx + 19.19);
+    return fract((p.x + p.y) * p.z);
+  }
+  float dn3(vec3 p) {
+    vec3 i = floor(p), f = fract(p);
+    f = f*f*f*(f*(f*6.0-15.0)+10.0);
+    return mix(mix(mix(dh3(i), dh3(i+vec3(1,0,0)), f.x),
+                   mix(dh3(i+vec3(0,1,0)), dh3(i+vec3(1,1,0)), f.x), f.y),
+               mix(mix(dh3(i+vec3(0,0,1)), dh3(i+vec3(1,0,1)), f.x),
+                   mix(dh3(i+vec3(0,1,1)), dh3(i+vec3(1,1,1)), f.x), f.y), f.z);
+  }
+  float dfbm(vec3 p) {
+    float v = 0.0, a = 0.5;
+    for (int i = 0; i < 5; i++) {
+      v += dn3(p) * a;
+      p = p * 2.1 + vec3(0.13, 0.27, 0.08);
+      a *= 0.5;
+    }
+    return v;
+  }
+  vec2 dVoronoi(vec3 p) {
+    vec3 i = floor(p), f = fract(p);
+    float d1 = 1.0, d2 = 1.0;
+    for (int x = -1; x <= 1; x++)
+    for (int y = -1; y <= 1; y++)
+    for (int z = -1; z <= 1; z++) {
+      vec3 nb = vec3(x, y, z);
+      vec3 r = nb + fract(sin(dot(i + nb, vec3(127.1, 311.7, 74.7))) * 43758.5) - f;
+      float d = dot(r, r);
+      if (d < d1) { d2 = d1; d1 = d; }
+      else if (d < d2) { d2 = d; }
+    }
+    return vec2(sqrt(d1), sqrt(d2));
+  }
+
+  void main() {
+    vec3 vd = normalize(cameraPosition - vWorldPos);
+    vec3 n = normalize(vNormal);
+    float fresnel = pow(1.0 - max(dot(n, vd), 0.0), 3.0);
+
+    vec3 fp = vLocalPos * 4.0 + vec3(uTime * 0.12, uTime * 0.08, uTime * 0.1);
+    float e1 = dfbm(fp);
+    float e2 = dfbm(fp * 1.3 + vec3(0.0, uTime * 0.06, uTime * 0.04));
+    float e3 = dfbm(fp * 0.7 - vec3(uTime * 0.03, 0.0, uTime * 0.05));
+    float ep = e1 * 0.45 + e2 * 0.35 + e3 * 0.2;
+
+    vec2 vor = dVoronoi(vLocalPos * 6.0 + uTime * 0.08);
+    float veins = smoothstep(0.08, 0.0, vor.y - vor.x) * 0.6;
+
+    vec2 hu = vUv * 22.0;
+    vec2 hg = fract(hu) - 0.5;
+    float hex = smoothstep(0.03, 0.0, abs(abs(hg.x) + abs(hg.y) * 0.577 - 0.5));
+    float hexP = sin(uTime * 0.4 + hu.x * 0.5 + hu.y * 0.7) * 0.5 + 0.5;
+    hex *= 0.3 + hexP * 0.7;
+
+    float s1 = smoothstep(0.42, 0.5, fract(vWorldPos.y * 18.0 - uTime * 0.5)) * 0.3;
+    float s2 = smoothstep(0.45, 0.5, fract(vWorldPos.y * 10.0 + uTime * 0.25)) * 0.18;
+    float s3 = smoothstep(0.48, 0.5, fract(-vWorldPos.y * 30.0 - uTime * 1.0)) * 0.1;
+    float sc = s1 + s2 + s3;
+
+    vec3 deepTeal = vec3(0.02, 0.35, 0.45);
+    vec3 cyan = vec3(0.15, 0.85, 1.0);
+    vec3 gold = vec3(1.0, 0.78, 0.32);
+    vec3 white = vec3(0.95, 0.97, 1.0);
+
+    vec3 col = mix(deepTeal, cyan, ep * 0.9);
+    col += cyan * veins * 1.5;
+    col += gold * veins * 0.3;
+
+    float sss = pow(max(dot(n, -vd), 0.0), 2.0) * 0.15;
+    col += cyan * sss;
+
+    col.r += gold.r * fresnel * 0.4 + cyan.r * fresnel * 1.2;
+    col.g += cyan.g * fresnel * 1.8;
+    col.b += cyan.b * fresnel * 2.0;
+
+    col += vec3(0.1, 0.22, 0.28) * hex * 0.4;
+    col += cyan * sc * 0.5;
+
+    float hotSpot = pow(e1, 3.0) * 2.0;
+    col += white * hotSpot * 0.15;
+    col += gold * hotSpot * 0.08;
+
+    float cs = sin(uTime * 0.25 + vWorldPos.y * 2.5) * 0.5 + 0.5;
+    col = mix(col, gold, fresnel * cs * 0.12 + uEnergy * 0.08);
+
+    float gl = step(0.97, fract(sin(floor(vWorldPos.y * 50.0 + uTime * 4.0)) * 43758.5));
+    col += vec3(0.3, 0.7, 0.9) * gl * (uGlitch + uEnergy * 0.4);
+
+    float pulse = 0.88 + sin(uTime * 1.0) * 0.06 + uEnergy * 0.2;
+    col *= pulse;
+
+    float alpha = 0.38 + fresnel * 0.45 + ep * 0.15 + sc * 0.05 + hex * 0.03 + veins * 0.15;
+    alpha *= pulse;
+    gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.95));
+  }
+`;
+
+// Atmosphere glow shaders
+const ATMOSPHERE_VERT = /* glsl */`
+  varying vec3 vNormal;
+  varying vec3 vWorldPos;
+  void main() {
+    vNormal = normalize(normalMatrix * normal);
+    vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const ATMOSPHERE_FRAG = /* glsl */`
+  uniform float uTime;
+  uniform float uEnergy;
+  varying vec3 vNormal;
+  varying vec3 vWorldPos;
+
+  void main() {
+    vec3 vd = normalize(cameraPosition - vWorldPos);
+    vec3 n = normalize(vNormal);
+    float intensity = pow(max(0.65 - dot(n, vd), 0.0), 3.0);
+
+    vec3 teal = vec3(0.08, 0.5, 0.6);
+    vec3 cyan = vec3(0.2, 0.75, 0.9);
+    float pulse = 0.8 + sin(uTime * 0.4) * 0.12 + uEnergy * 0.25;
+
+    vec3 col = mix(teal, cyan, intensity) * pulse;
+    float alpha = intensity * 0.4 * pulse;
+
+    gl_FragColor = vec4(col, alpha);
+  }
+`;
+
 // ============================================================
 // Mobile orb scene — holographic AI core (MAXIMUM QUALITY)
 // ============================================================
@@ -381,14 +589,16 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   // OUTER GLOW — layered sprites for depth
   // ────────────────────────────────────────────
   const glow1Mat = new THREE.SpriteMaterial({
-    color: 0x225566, transparent: true, opacity: 0.12, depthWrite: false,
+    map: glowTexture(), color: 0x225566, transparent: true, opacity: 0.1,
+    depthWrite: false, blending: THREE.AdditiveBlending,
   });
   const glow1 = new THREE.Sprite(glow1Mat);
   glow1.scale.setScalar(4.0);
   group.add(glow1);
 
   const glow2Mat = new THREE.SpriteMaterial({
-    color: 0x112233, transparent: true, opacity: 0.06, depthWrite: false,
+    map: glowTexture(), color: 0x112233, transparent: true, opacity: 0.05,
+    depthWrite: false, blending: THREE.AdditiveBlending,
   });
   const glow2 = new THREE.Sprite(glow2Mat);
   glow2.scale.setScalar(6.5);
@@ -421,7 +631,8 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
 
     // Node glow
     const ngMat = new THREE.SpriteMaterial({
-      color: nColors[i], transparent: true, opacity: 0.25, depthWrite: false,
+      map: glowTexture(), color: nColors[i], transparent: true, opacity: 0.25,
+      depthWrite: false, blending: THREE.AdditiveBlending,
     });
     const ng = new THREE.Sprite(ngMat);
     ng.scale.setScalar(0.25);
@@ -645,7 +856,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   composer.addPass(new RenderPass(scene, camera));
   composer.addPass(new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    1.2, 0.6, 0.15,
+    1.5, 0.7, 0.12,
   ));
   composer.addPass(new OutputPass());
 
@@ -669,8 +880,8 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   const orbGeo = new THREE.IcosahedronGeometry(1.3, 6);
   const orbMat = new THREE.ShaderMaterial({
     uniforms: { uTime: { value: 0 }, uEnergy: { value: 0 }, uGlitch: { value: 0 } },
-    vertexShader: MOBILE_ORB_VERT,
-    fragmentShader: MOBILE_ORB_FRAG,
+    vertexShader: DESKTOP_ORB_VERT,
+    fragmentShader: DESKTOP_ORB_FRAG,
     transparent: true,
     depthWrite: false,
     side: THREE.DoubleSide,
@@ -782,14 +993,16 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   // OUTER GLOW — layered sprites
   // ────────────────────────────────────────────
   const glow1Mat = new THREE.SpriteMaterial({
-    color: 0x225566, transparent: true, opacity: 0.15, depthWrite: false,
+    map: glowTexture(), color: 0x225566, transparent: true, opacity: 0.12,
+    depthWrite: false, blending: THREE.AdditiveBlending,
   });
   const glow1 = new THREE.Sprite(glow1Mat);
   glow1.scale.setScalar(5.5);
   group.add(glow1);
 
   const glow2Mat = new THREE.SpriteMaterial({
-    color: 0x112233, transparent: true, opacity: 0.08, depthWrite: false,
+    map: glowTexture(), color: 0x112233, transparent: true, opacity: 0.06,
+    depthWrite: false, blending: THREE.AdditiveBlending,
   });
   const glow2 = new THREE.Sprite(glow2Mat);
   glow2.scale.setScalar(9.0);
@@ -822,7 +1035,8 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     nodeOrbs.push({ angle, r, speed: 0.015 + Math.random() * 0.03, y: yy });
 
     const ngMat = new THREE.SpriteMaterial({
-      color: nColors[i], transparent: true, opacity: 0.3, depthWrite: false,
+      map: glowTexture(), color: nColors[i], transparent: true, opacity: 0.3,
+      depthWrite: false, blending: THREE.AdditiveBlending,
     });
     const ng = new THREE.Sprite(ngMat);
     ng.scale.setScalar(0.35);
@@ -940,6 +1154,60 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   });
   const particles = new THREE.Points(pGeo, pMat);
   group.add(particles);
+
+  // ────────────────────────────────────────────
+  // ATMOSPHERIC GLOW — shader-based volumetric rim
+  // ────────────────────────────────────────────
+  const atmosGeo = new THREE.SphereGeometry(2.2, 32, 32);
+  const atmosMat = new THREE.ShaderMaterial({
+    uniforms: { uTime: { value: 0 }, uEnergy: { value: 0 } },
+    vertexShader: ATMOSPHERE_VERT,
+    fragmentShader: ATMOSPHERE_FRAG,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.BackSide,
+    blending: THREE.AdditiveBlending,
+  });
+  const atmosphere = new THREE.Mesh(atmosGeo, atmosMat);
+  group.add(atmosphere);
+
+  // ────────────────────────────────────────────
+  // SURFACE PARTICLES — dense cloud orbiting the orb surface
+  // ────────────────────────────────────────────
+  const SPN = 200;
+  const spPos = new Float32Array(SPN * 3);
+  const spPh = new Float32Array(SPN);
+  const spSz = new Float32Array(SPN);
+  const spCl = new Float32Array(SPN * 3);
+  const spOrbs: { theta: number; phi: number; r: number; thetaSpd: number; phiSpd: number }[] = [];
+  for (let i = 0; i < SPN; i++) {
+    const theta = Math.random() * PI2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    const r = 1.38 + Math.random() * 0.12;
+    spPos[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+    spPos[i * 3 + 1] = r * Math.cos(phi);
+    spPos[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+    spPh[i] = Math.random();
+    spSz[i] = 0.3 + Math.random() * 1.0;
+    if (Math.random() > 0.85) { spCl[i*3]=1; spCl[i*3+1]=0.76; spCl[i*3+2]=0.3; }
+    else { spCl[i*3]=0.37; spCl[i*3+1]=0.9; spCl[i*3+2]=1; }
+    spOrbs.push({ theta, phi, r, thetaSpd: (Math.random() - 0.5) * 0.3, phiSpd: (Math.random() - 0.5) * 0.12 });
+  }
+  const spGeo = new THREE.BufferGeometry();
+  spGeo.setAttribute('position', new THREE.BufferAttribute(spPos, 3));
+  spGeo.setAttribute('aPhase', new THREE.BufferAttribute(spPh, 1));
+  spGeo.setAttribute('aSize', new THREE.BufferAttribute(spSz, 1));
+  spGeo.setAttribute('aColor', new THREE.BufferAttribute(spCl, 3));
+  const spMat = new THREE.ShaderMaterial({
+    uniforms: { uTime: { value: 0 } },
+    vertexShader: MOBILE_PART_VERT,
+    fragmentShader: MOBILE_PART_FRAG,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const surfaceParticles = new THREE.Points(spGeo, spMat);
+  group.add(surfaceParticles);
 
   // ────────────────────────────────────────────
   // BODY DETECTION (MediaPipe)
@@ -1136,6 +1404,26 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     glow1Mat.opacity = 0.12 + amp * 0.1;
     glow2.scale.setScalar(8.0 + Math.sin(time * 0.4) * 0.6);
     glow2Mat.opacity = 0.05 + amp * 0.05;
+
+    // Atmosphere glow
+    atmosMat.uniforms.uTime.value = time;
+    atmosMat.uniforms.uEnergy.value = amp;
+    atmosphere.rotation.y = time * 0.03;
+
+    // Surface particles
+    spMat.uniforms.uTime.value = time;
+    const spp = spGeo.attributes.position as THREE.BufferAttribute;
+    for (let j = 0; j < SPN; j++) {
+      const so = spOrbs[j];
+      so.theta += so.thetaSpd * dt;
+      so.phi += so.phiSpd * dt * 0.5;
+      spp.setXYZ(j,
+        so.r * Math.sin(so.phi) * Math.cos(so.theta),
+        so.r * Math.cos(so.phi),
+        so.r * Math.sin(so.phi) * Math.sin(so.theta),
+      );
+    }
+    spp.needsUpdate = true;
 
     // Network nodes
     for (let i = 0; i < NODE_N; i++) {

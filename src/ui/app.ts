@@ -265,6 +265,28 @@ export function mountApp(root: HTMLElement) {
     svg.setAttribute('viewBox', '0 0 100 100');
     svg.setAttribute('preserveAspectRatio', 'none');
     nodesEl.appendChild(svg);
+    const nodeQueries: Record<string, string> = {
+      'Researcher': 'Help me research a topic',
+      'Strategist': 'Help me plan a strategy',
+      'Finance': 'Help me with financial analysis',
+      'Memory': 'What do you remember about me?',
+      'Design': 'Help me with design',
+      'Engineering': 'Help me with engineering',
+      'Social': 'Check my social media',
+      'Analytics': 'Show me analytics and insights',
+      'Ops': 'Help me with operations',
+      'Developer': 'Help me write code',
+      'Sales': 'Help me with sales strategy',
+      'DM': 'Help me draft a message',
+      'Chief of Staff': 'What are my priorities today?',
+      'Tasks': 'Show me my tasks',
+      'Search': 'Search the web for me',
+      'Translate': 'Translate something for me',
+      'Assistant': 'How can you help me?',
+      'Weather': "What's the weather today?",
+      'Music': 'Play some music',
+      'Notes': 'Help me take notes',
+    };
     labels.forEach((lbl, i) => {
       const a = (i / labels.length) * Math.PI * 2 - Math.PI / 2;
       const x = cx + Math.cos(a) * rx;
@@ -278,7 +300,16 @@ export function mountApp(root: HTMLElement) {
       dot.className = 'ai-node';
       dot.style.left = x + '%';
       dot.style.top = y + '%';
+      dot.style.pointerEvents = 'all';
+      dot.style.cursor = 'pointer';
       dot.innerHTML = `<span class="ai-node-dot"></span><span class="ai-node-lbl">${lbl}</span>`;
+      dot.onclick = () => {
+        if (lbl === 'Calendar') { openCalendar(); return; }
+        const q = nodeQueries[lbl] || `Help me with ${lbl}`;
+        audio.send();
+        addMsg(q, 'me');
+        ask(q);
+      };
       nodesEl.appendChild(dot);
     });
     stage.appendChild(nodesEl);

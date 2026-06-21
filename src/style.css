@@ -885,6 +885,7 @@ body::after {
   border-radius: 50%;
   background: #5fe6ff;
   box-shadow: 0 0 10px rgba(95,230,255,0.6);
+  transition: transform 0.2s, box-shadow 0.2s;
 }
 .ai-node:nth-child(odd) .ai-node-dot {
   background: #ffc24d;
@@ -898,6 +899,18 @@ body::after {
   color: rgba(200,230,245,0.8);
   white-space: nowrap;
   text-shadow: 0 0 8px rgba(95,230,255,0.4);
+  transition: color 0.2s, text-shadow 0.2s;
+}
+.ai-node:hover .ai-node-dot {
+  transform: scale(1.6);
+  box-shadow: 0 0 18px rgba(95,230,255,0.9);
+}
+.ai-node:nth-child(odd):hover .ai-node-dot {
+  box-shadow: 0 0 18px rgba(255,194,77,0.9);
+}
+.ai-node:hover .ai-node-lbl {
+  color: rgba(255,255,255,0.95);
+  text-shadow: 0 0 14px rgba(95,230,255,0.8);
 }
 @media (max-width: 768px) {
   .ai-node-dot { width: 6px; height: 6px; }
