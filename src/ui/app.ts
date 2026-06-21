@@ -10,7 +10,7 @@ import { mountCockpit, type CockpitHandle } from '../modules/cockpit';
 import { runProactive } from '../modules/proactive';
 import { processRecurring } from '../modules/recurring';
 import * as driveSync from '../modules/driveSync';
-import { universalSearch, TYPE_ICONS } from '../modules/search';
+import { universalSearch, TYPE_ICONS, addRecentSearch, recentSearches, quickSuggestions } from '../modules/search';
 import { registerShortcut, initShortcuts, shortcutsHTML } from '../modules/shortcuts';
 import { dailyBriefing } from '../modules/analytics';
 import { startTimer, stopTimer, formatDuration, getActiveTimer } from '../modules/timeTracker';
@@ -2077,7 +2077,25 @@ export function mountApp(root: HTMLElement) {
   function openSearch() {
     searchOverlay.classList.add('show');
     searchInput.value = '';
-    searchResults.innerHTML = '<div class="search-hint">Search leads, tasks, events, invoices, goals, notes…</div>';
+    let hintHtml = '';
+    const recent = recentSearches();
+    if (recent.length) {
+      hintHtml += '<div class="search-hint">Recent</div>';
+      hintHtml += recent.slice(0, 5).map(r => `<div class="search-item search-recent" data-query="${r}"><span class="search-icon">🕐</span><div class="search-text"><span class="search-title">${r}</span></div></div>`).join('');
+    }
+    const suggestions = quickSuggestions();
+    if (suggestions.length) {
+      hintHtml += '<div class="search-hint">Quick access</div>';
+      hintHtml += suggestions.map(s => `<div class="search-item" data-type="${s.type}"><span class="search-icon">${TYPE_ICONS[s.type]}</span><div class="search-text"><span class="search-title">${s.title}</span><span class="search-sub">${s.subtitle}</span></div><span class="search-type">${s.type}</span></div>`).join('');
+    }
+    if (!hintHtml) hintHtml = '<div class="search-hint">Search leads, tasks, events, invoices, goals, notes…</div>';
+    searchResults.innerHTML = hintHtml;
+    searchResults.querySelectorAll('.search-recent').forEach(el => {
+      (el as HTMLElement).onclick = () => {
+        searchInput.value = (el as HTMLElement).dataset.query || '';
+        searchInput.dispatchEvent(new Event('input'));
+      };
+    });
     setTimeout(() => searchInput.focus(), 100);
   }
   function closeSearch() { searchOverlay.classList.remove('show'); }
@@ -2093,6 +2111,7 @@ export function mountApp(root: HTMLElement) {
     searchDebounce = setTimeout(() => {
       const q = searchInput.value.trim();
       if (!q) { searchResults.innerHTML = '<div class="search-hint">Type to search across all your data…</div>'; return; }
+      addRecentSearch(q);
       const results = universalSearch(q);
       if (!results.length) { searchResults.innerHTML = '<div class="search-hint">No results found.</div>'; return; }
       searchResults.innerHTML = results.map(r =>

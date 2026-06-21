@@ -1,6 +1,7 @@
 import type { AppState, AIProvider } from './state';
 import { upcomingText } from './state';
 import { getBrainContext } from '../brain';
+import { conversationSummaryForAI } from '../modules/conversationContext';
 
 const GEMINI_MODELS = [
   'gemini-2.0-flash',
@@ -60,10 +61,16 @@ USER'S ECOSYSTEM — You manage:
 
 When briefing the user, be proactive: mention overdue follow-ups, upcoming events, pending tasks, and actionable insights. Think like a chief of staff who anticipates needs.
 
-Calendar: ${upcomingText()}.${brainBlock()}`;
+Calendar: ${upcomingText()}.${conversationBlock()}${brainBlock()}`;
 }
 
-// Master Brain context: active module persona + long-term memory.
+function conversationBlock(): string {
+  try {
+    const ctx = conversationSummaryForAI();
+    return ctx ? `\nConversation context: ${ctx}` : '';
+  } catch { return ''; }
+}
+
 function brainBlock(): string {
   try {
     const ctx = getBrainContext();

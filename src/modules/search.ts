@@ -122,3 +122,46 @@ export const TYPE_ICONS: Record<SearchResult['type'], string> = {
   lead: '👤', task: '✓', event: '📅', habit: '🔥', expense: '💰',
   invoice: '📄', goal: '🎯', note: '📝', quote: '💼', contact: '📇',
 };
+
+const RECENT_KEY = 'alpha_recent_searches';
+const MAX_RECENT = 10;
+
+export function addRecentSearch(query: string) {
+  const q = query.trim();
+  if (!q || q.length < 2) return;
+  let recent: string[] = [];
+  try { recent = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); } catch {}
+  recent = recent.filter(r => r !== q);
+  recent.unshift(q);
+  if (recent.length > MAX_RECENT) recent.length = MAX_RECENT;
+  localStorage.setItem(RECENT_KEY, JSON.stringify(recent));
+}
+
+export function recentSearches(): string[] {
+  try { return JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); } catch { return []; }
+}
+
+export function quickSuggestions(): SearchResult[] {
+  const suggestions: SearchResult[] = [];
+  try {
+    const tasks = loadTasks().filter(t => !t.done && t.priority === 'high');
+    for (const t of tasks.slice(0, 3)) {
+      suggestions.push({ type: 'task', title: t.text, subtitle: 'High priority', score: 10, data: t });
+    }
+  } catch {}
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const events = loadEvents().filter(e => e.date === today);
+    for (const e of events.slice(0, 2)) {
+      suggestions.push({ type: 'event', title: e.title, subtitle: `Today ${e.time || ''}`, score: 9, data: e });
+    }
+  } catch {}
+  try {
+    const leads = loadLeads();
+    const overdue = leads.filter(l => l.followUp && l.followUp <= new Date().toISOString().slice(0, 10) && l.status !== 'won' && l.status !== 'lost');
+    for (const l of overdue.slice(0, 2)) {
+      suggestions.push({ type: 'lead', title: l.name || l.phone, subtitle: 'Follow-up due', score: 8, data: l });
+    }
+  } catch {}
+  return suggestions;
+}
