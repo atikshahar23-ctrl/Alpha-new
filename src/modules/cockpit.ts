@@ -40,6 +40,13 @@ import {
   loadInvoices, createInvoice, setInvoiceStatus, removeInvoice,
   downloadInvoicePDF, invoiceStats, type InvoiceItem,
 } from './invoices';
+import {
+  loadContacts, addContact, removeContact,
+} from './contacts';
+import {
+  revenueTrend, expenseTrend, taskCompletionRate,
+  expenseByCategory, leadsByStatus, dailyBriefing,
+} from './analytics';
 
 export interface CockpitHooks {
   ask: (q: string) => void;
@@ -419,6 +426,107 @@ function renderBusiness(root: HTMLElement, hooks: CockpitHooks, close: () => voi
   q.appendChild(save);
   q.appendChild(out);
   root.appendChild(q);
+
+  // ── Contacts CRM ──
+  const cc = card('Contacts', 'People & companies you work with');
+  const renderContacts = () => {
+    const contacts = loadContacts();
+    let listHtml = '';
+    if (!contacts.length) {
+      listHtml = '<div class="cp-note" style="text-align:center;padding:16px;color:var(--dim)">No contacts yet. Add your first one below.</div>';
+    } else {
+      listHtml = contacts.slice(0, 20).map(c => {
+        const tagStr = c.tags.length ? c.tags.map(t => `<span class="cp-row-tag">${esc(t)}</span>`).join(' ') : '';
+        return `<div class="cp-row" data-cid="${c.id}">
+          <span class="cp-row-main">${c.starred ? '★ ' : ''}${esc(c.name || 'Unnamed')}</span>
+          <span class="cp-row-sub">${esc(c.phone)}${c.company ? ' · ' + esc(c.company) : ''}</span>
+          ${tagStr}
+          <button class="cp-row-del" data-del="${c.id}">✕</button>
+        </div>`;
+      }).join('');
+    }
+    ccList.innerHTML = listHtml;
+    ccList.querySelectorAll('[data-del]').forEach(b => {
+      (b as HTMLElement).onclick = (e) => {
+        e.stopPropagation();
+        removeContact((b as HTMLElement).dataset.del!);
+        renderContacts();
+      };
+    });
+  };
+  const ccList = el('div', 'cp-list');
+  cc.appendChild(ccList);
+  const ccName = input('Name');
+  const ccPhone = input('Phone');
+  const ccCompany = input('Company');
+  const ccTags = input('Tags (comma separated)');
+  const ccAdd = btn('Add contact', true);
+  ccAdd.onclick = () => {
+    if (!ccName.value.trim() && !ccPhone.value.trim()) return;
+    addContact({
+      name: ccName.value.trim(),
+      phone: ccPhone.value.trim(),
+      company: ccCompany.value.trim(),
+      tags: ccTags.value.split(',').map(t => t.trim()).filter(Boolean),
+    });
+    ccName.value = ''; ccPhone.value = ''; ccCompany.value = ''; ccTags.value = '';
+    renderContacts();
+    hooks.addMsgSys(`Contact added: ${ccName.value || ccPhone.value}`);
+  };
+  cc.appendChild(field('Name', ccName));
+  cc.appendChild(field('Phone', ccPhone));
+  cc.appendChild(field('Company', ccCompany));
+  cc.appendChild(field('Tags', ccTags));
+  cc.appendChild(ccAdd);
+  renderContacts();
+  root.appendChild(cc);
+
+  // ── Business Analytics ──
+  const an = card('Analytics', 'Trends and insights');
+  const revTrend = revenueTrend();
+  const expTrend = expenseTrend();
+  const maxRev = Math.max(1, ...revTrend.map(p => p.value));
+  const maxExp = Math.max(1, ...expTrend.map(p => p.value));
+  let analyticsHtml = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">';
+  analyticsHtml += '<div><div class="cp-card-sub" style="margin-bottom:8px">Revenue trend</div><div class="cp-chart">';
+  revTrend.forEach(p => {
+    const h = Math.max(3, (p.value / maxRev) * 100);
+    analyticsHtml += `<div class="cp-bar"><div class="cp-bar-fill" style="height:${h}%"></div><span class="cp-bar-lbl">${p.label}</span></div>`;
+  });
+  analyticsHtml += '</div></div>';
+  analyticsHtml += '<div><div class="cp-card-sub" style="margin-bottom:8px">Expense trend</div><div class="cp-chart">';
+  expTrend.forEach(p => {
+    const h = Math.max(3, (p.value / maxExp) * 100);
+    analyticsHtml += `<div class="cp-bar"><div class="cp-bar-fill" style="height:${h}%;background:linear-gradient(180deg,#ff5d73,#c94455)"></div><span class="cp-bar-lbl">${p.label}</span></div>`;
+  });
+  analyticsHtml += '</div></div></div>';
+  const catBreakdown = expenseByCategory();
+  if (catBreakdown.length) {
+    analyticsHtml += '<div style="margin-top:12px"><div class="cp-card-sub" style="margin-bottom:8px">Expenses by category</div>';
+    const catMax = Math.max(1, catBreakdown[0]?.total || 1);
+    catBreakdown.slice(0, 6).forEach(c => {
+      const pct = Math.round((c.total / catMax) * 100);
+      analyticsHtml += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <span style="width:80px;font-size:12px;color:var(--dim)">${esc(c.category)}</span>
+        <div style="flex:1;height:6px;background:rgba(255,255,255,.06);border-radius:3px"><div style="height:100%;width:${pct}%;background:var(--gold);border-radius:3px"></div></div>
+        <span style="font-size:12px;color:var(--ink)">₪${c.total.toLocaleString()}</span>
+      </div>`;
+    });
+    analyticsHtml += '</div>';
+  }
+  const taskRate = taskCompletionRate();
+  const lStatuses = leadsByStatus();
+  analyticsHtml += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:12px">`;
+  analyticsHtml += `<div class="cp-kpi"><span class="cp-kpi-val">${taskRate.rate}%</span><span class="cp-kpi-lbl">Task completion</span></div>`;
+  if (lStatuses.length) {
+    analyticsHtml += `<div class="cp-kpi"><span class="cp-kpi-val">${lStatuses.map(s => `${s.count} ${s.status}`).join(', ')}</span><span class="cp-kpi-lbl">Leads by status</span></div>`;
+  }
+  analyticsHtml += '</div>';
+  an.innerHTML += analyticsHtml;
+  const aiBrief = btn('AI Daily Briefing');
+  aiBrief.onclick = () => { hooks.ask(dailyBriefing()); close(); };
+  an.appendChild(aiBrief);
+  root.appendChild(an);
 }
 
 // ============================================================

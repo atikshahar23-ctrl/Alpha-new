@@ -9,9 +9,10 @@ import { loadHabits, loadExpenses } from './personal';
 import { loadTasks, loadEvents, loadNotes } from '../assistant/state';
 import { loadGoals } from './goals';
 import { loadInvoices } from './invoices';
+import { loadContacts } from './contacts';
 
 export interface SearchResult {
-  type: 'lead' | 'task' | 'event' | 'habit' | 'expense' | 'invoice' | 'goal' | 'note' | 'quote';
+  type: 'lead' | 'task' | 'event' | 'habit' | 'expense' | 'invoice' | 'goal' | 'note' | 'quote' | 'contact';
   title: string;
   subtitle: string;
   score: number;
@@ -93,6 +94,14 @@ export function universalSearch(query: string, limit = 20): SearchResult[] {
   } catch {}
 
   try {
+    for (const c of loadContacts()) {
+      const text = `${c.name} ${c.phone} ${c.email} ${c.company} ${c.tags.join(' ')}`;
+      const s = matchScore(text, query);
+      if (s > 0) results.push({ type: 'contact', title: c.name || c.phone, subtitle: `${c.company || ''}${c.tags.length ? ' · ' + c.tags.join(', ') : ''}`.trim() || 'contact', score: s, data: c });
+    }
+  } catch {}
+
+  try {
     const quotes = JSON.parse(localStorage.getItem('hg2:quotes') || '[]');
     for (const q of quotes) {
       const text = `${q.customer || ''} ${(q.items || []).map((i: any) => i.description).join(' ')}`;
@@ -106,5 +115,5 @@ export function universalSearch(query: string, limit = 20): SearchResult[] {
 
 export const TYPE_ICONS: Record<SearchResult['type'], string> = {
   lead: '👤', task: '✓', event: '📅', habit: '🔥', expense: '💰',
-  invoice: '📄', goal: '🎯', note: '📝', quote: '💼',
+  invoice: '📄', goal: '🎯', note: '📝', quote: '💼', contact: '📇',
 };

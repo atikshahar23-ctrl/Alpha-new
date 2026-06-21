@@ -28,6 +28,7 @@ const SYNC_TABLES = [
   'alpha_sleep_v1',
   'alpha_goals_v1',
   'alpha_invoices_v1',
+  'alpha_contacts_v1',
 ];
 
 interface DriveToken {

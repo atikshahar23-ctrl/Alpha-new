@@ -11,6 +11,7 @@ import { todayPomoStats } from './pomodoro';
 import { todayMood, todayWater, sleepAvg, MOOD_EMOJI } from './wellness';
 import { activeGoalsSummary } from './goals';
 import { invoiceStats } from './invoices';
+import { contactStats } from './contacts';
 
 export function liveSnapshot(module: string): string {
   const parts: string[] = [];
@@ -29,6 +30,8 @@ export function liveSnapshot(module: string): string {
         (inv.total ? `, ${inv.total} invoices (${inv.paid} paid, ${inv.outstanding} outstanding, ₪${inv.revenue.toLocaleString()} collected)` : '') +
         '.',
       );
+      const cs = contactStats();
+      if (cs.total) parts.push(`CRM: ${cs.total} contacts (${cs.starred} starred).`);
     } catch {}
   }
 

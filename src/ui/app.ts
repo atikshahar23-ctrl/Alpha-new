@@ -10,6 +10,8 @@ import { mountCockpit, type CockpitHandle } from '../modules/cockpit';
 import { runProactive } from '../modules/proactive';
 import * as driveSync from '../modules/driveSync';
 import { universalSearch, TYPE_ICONS } from '../modules/search';
+import { registerShortcut, initShortcuts, shortcutsHTML } from '../modules/shortcuts';
+import { dailyBriefing } from '../modules/analytics';
 
 export function mountApp(root: HTMLElement) {
   root.innerHTML = `
@@ -296,6 +298,11 @@ export function mountApp(root: HTMLElement) {
               <span class="social-status" id="fbStatus"></span>
             </div>
           </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="ss-title">KEYBOARD SHORTCUTS</div>
+          <div id="shortcutsList" style="font-size:13px"></div>
         </div>
 
         <button class="go" id="saveBtn">Save</button>
@@ -2059,6 +2066,21 @@ export function mountApp(root: HTMLElement) {
       ).join('');
     }, 150);
   });
+
+  // ── Keyboard Shortcuts ──
+  registerShortcut('Ctrl+K', 'Search', openSearch);
+  registerShortcut('Ctrl+B', 'Daily Briefing', () => {
+    const brief = dailyBriefing();
+    addMsg(brief, 'sys');
+  });
+  registerShortcut('Ctrl+.', 'Settings', openSetup);
+  initShortcuts();
+
+  // ── Shortcuts panel in settings ──
+  try {
+    const shortcutsDiv = document.getElementById('shortcutsList');
+    if (shortcutsDiv) shortcutsDiv.innerHTML = shortcutsHTML();
+  } catch {}
 
   $<HTMLSelectElement>('replySel').onchange = () => { state.replyLang = $<HTMLSelectElement>('replySel').value as any; refreshVoiceList(); };
   $<HTMLSelectElement>('ambPresetSel').onchange = () => {
