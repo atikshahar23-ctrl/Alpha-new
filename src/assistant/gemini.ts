@@ -42,6 +42,7 @@ Control the app via tags at the END of your reply when relevant (never mention t
 - get earnings report (contractor is optional, month format YYYY-MM): [[HG_EARNINGS: contractor name | YYYY-MM]]
 - create a price quote: [[HG_QUOTE: customer name | phone | item1 description:price, item2 description:price]]
 - open the AR camera with hand tracking: [[AR_CAMERA]]
+- open a Google Doc/Sheet/Slide link: [[GDOC: full URL]]
 
 You have deep integration with HeavyGuard — a field installation management system for vehicle security (trackers, cameras, radios). Contractors: קובי, אסי, שגיא מערכות, m.b מערכות, ס.ד מיגונים, Heavy Guard.
 When the user asks about a license plate number, installation, earnings from a contractor, or wants to create a quote — use the appropriate HG tag.
@@ -265,9 +266,10 @@ export function runTags(
     onHgEarnings?: (contractor: string, month: string) => void;
     onHgQuote?: (customer: string, phone: string, items: string) => void;
     onArCamera?: () => void;
+    onGDoc?: (url: string) => void;
   }
 ): string {
-  const re = /\[\[(VIDEO|SEARCH|EVENT|CALENDAR|SPOTIFY|DIARY|HG_SEARCH|HG_EARNINGS|HG_QUOTE|AR_CAMERA)\s*:?\s*([^\]]*)\]\]/g;
+  const re = /\[\[(VIDEO|SEARCH|EVENT|CALENDAR|SPOTIFY|DIARY|HG_SEARCH|HG_EARNINGS|HG_QUOTE|AR_CAMERA|GDOC)\s*:?\s*([^\]]*)\]\]/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
     const type = m[1], arg = m[2].trim();
@@ -296,6 +298,9 @@ export function runTags(
     }
     else if (type === 'AR_CAMERA' && hooks.onArCamera) {
       hooks.onArCamera();
+    }
+    else if (type === 'GDOC' && hooks.onGDoc) {
+      hooks.onGDoc(arg);
     }
   }
   return text.replace(re, '').trim();

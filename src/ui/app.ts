@@ -288,17 +288,23 @@ export function mountApp(root: HTMLElement) {
           <div class="ar-topbar">
             <span class="ar-topbar-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8V6a2 2 0 012-2h2M4 16v2a2 2 0 002 2h2M16 4h2a2 2 0 012 2v2M16 20h2a2 2 0 002-2v-2"/><circle cx="12" cy="12" r="3"/></svg> AR CAMERA</span>
             <div class="ar-topbar-tools">
-              <button class="ar-tool-btn" id="arAddBall" title="Add Ball">⚽</button>
-              <button class="ar-tool-btn" id="arAddCube" title="Add Cube">🔲</button>
-              <button class="ar-tool-btn" id="arAddStar" title="Add Star">⭐</button>
-              <button class="ar-tool-btn" id="arAddDiamond" title="Add Diamond">💎</button>
-              <button class="ar-tool-btn" id="arClearObjs" title="Clear All">🗑️</button>
+              <button class="ar-tool-btn" id="arAddBall" title="כדור">⚽</button>
+              <button class="ar-tool-btn" id="arAddCube" title="קוביה">🔲</button>
+              <button class="ar-tool-btn" id="arAddStar" title="כוכב">⭐</button>
+              <button class="ar-tool-btn" id="arAddDiamond" title="יהלום">💎</button>
+              <button class="ar-tool-btn ar-fx-btn" id="arFxFire" title="אש">🔥</button>
+              <button class="ar-tool-btn ar-fx-btn" id="arFxWater" title="מים">💧</button>
+              <button class="ar-tool-btn ar-fx-btn" id="arFxLaser" title="לייזר">⚡</button>
+              <button class="ar-tool-btn ar-fx-btn" id="arFxSparkle" title="ניצוצות">✨</button>
+              <button class="ar-tool-btn ar-fx-btn" id="arFxRainbow" title="קשת">🌈</button>
+              <button class="ar-tool-btn" id="arClearObjs" title="נקה הכל">🗑️</button>
             </div>
             <button class="ar-close" id="arClose">✕</button>
           </div>
           <div class="ar-viewport" id="arViewport">
-            <video id="arVideo" autoplay playsinline></video>
+            <video id="arVideo" autoplay playsinline muted></video>
             <canvas id="arCanvas"></canvas>
+            <canvas id="arFxCanvas"></canvas>
             <canvas id="arObjCanvas"></canvas>
             <div class="ar-hud" id="arHud">
               <div class="ar-status" id="arStatus">Initializing camera…</div>
@@ -483,27 +489,69 @@ export function mountApp(root: HTMLElement) {
   function openVideo(q: string) {
     openWin('Video · ' + q);
     const ytSearchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`;
-    const embedUrl = `https://www.youtube-nocookie.com/embed?listType=search&list=${encodeURIComponent(q)}`;
-    $('winBody').innerHTML =
-      `<div class="yt-fallback">Can't see the video? <a href="${ytSearchUrl}" target="_blank" rel="noopener">Open in YouTube ↗</a></div>` +
-      `<iframe src="${embedUrl}" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-popups allow-presentation"></iframe>`;
-    const iframe = $('winBody').querySelector('iframe')!;
-    iframe.onerror = () => {
-      $('winBody').innerHTML =
-        `<div class="pad" style="text-align:center;padding-top:60px">` +
-        `<p style="margin-bottom:20px;color:var(--dim)">YouTube embedding is restricted.</p>` +
-        `<a href="${ytSearchUrl}" target="_blank" rel="noopener" style="color:var(--cyan);font-size:16px;text-decoration:none;padding:12px 24px;border:1px solid rgba(95,230,255,.3);border-radius:12px">Open YouTube Search ↗</a></div>`;
-    };
+    $('winBody').innerHTML = `<div class="pad" style="text-align:center">
+      <div style="color:var(--dim);margin-bottom:12px;font-size:13px">Searching YouTube…</div>
+    </div>`;
+    fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(q)}&type=video&maxResults=4&key=AIzaSyDummyKeyForFallback`)
+      .then(() => {})
+      .catch(() => {});
+    const piped = `https://pipedapi.kavin.rocks/search?q=${encodeURIComponent(q)}&filter=videos`;
+    fetch(piped).then(r => r.json()).then(d => {
+      const items = (d.items || []).slice(0, 6);
+      if (!items.length) throw new Error('no results');
+      let html = '';
+      for (const v of items) {
+        const vid = (v.url || '').replace('/watch?v=', '');
+        const embedUrl = `https://www.youtube-nocookie.com/embed${vid}`;
+        const thumbUrl = v.thumbnail || `https://i.ytimg.com/vi${vid}/hqdefault.jpg`;
+        html += `<div class="media-card" data-embed="${embedUrl}">
+          <img src="${thumbUrl}" style="width:100%;border-radius:8px;cursor:pointer" onerror="this.style.display='none'" />
+          <div style="padding:8px 0 4px;font-size:13px;font-weight:600;color:var(--ink)">${v.title || q}</div>
+          <div style="font-size:11px;color:var(--dim)">${v.uploaderName || ''} · ${v.duration ? Math.floor(v.duration/60)+':'+String(v.duration%60).padStart(2,'0') : ''}</div>
+        </div>`;
+      }
+      html += `<div style="text-align:center;margin-top:12px"><a href="${ytSearchUrl}" target="_blank" rel="noopener" style="color:var(--cyan);font-size:12px">חפש עוד ב-YouTube ↗</a></div>`;
+      $('winBody').innerHTML = `<div class="pad media-grid">${html}</div>`;
+      $('winBody').querySelectorAll<HTMLElement>('.media-card').forEach(card => {
+        card.style.cursor = 'pointer';
+        card.onclick = () => {
+          const embed = card.dataset.embed || '';
+          $('winBody').innerHTML = `<iframe src="${embed}" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen style="width:100%;height:100%;border:none"></iframe>`;
+        };
+      });
+    }).catch(() => {
+      $('winBody').innerHTML = `<div class="pad" style="text-align:center;padding-top:30px">
+        <div style="font-size:40px;margin-bottom:16px">🎬</div>
+        <div style="font-size:18px;font-weight:600;color:var(--ink);margin-bottom:8px">${q}</div>
+        <div style="color:var(--dim);font-size:13px;margin-bottom:20px">לחץ לפתיחה ב-YouTube</div>
+        <a href="${ytSearchUrl}" target="_blank" rel="noopener" class="media-link-btn">▶ YouTube</a>
+      </div>`;
+    });
   }
 
   function openSpotify(q: string) {
     openWin('Spotify · ' + q);
     const searchUrl = `https://open.spotify.com/search/${encodeURIComponent(q)}`;
-    $('winBody').innerHTML =
-      `<div class="spotify-embed">` +
-      `<iframe src="https://open.spotify.com/embed/search/${encodeURIComponent(q)}" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>` +
-      `</div>` +
-      `<div class="yt-fallback"><a href="${searchUrl}" target="_blank" rel="noopener">Open in Spotify ↗</a></div>`;
+    $('winBody').innerHTML = `<div class="pad" style="text-align:center;padding-top:20px">
+      <div style="font-size:40px;margin-bottom:16px">🎵</div>
+      <div style="font-size:18px;font-weight:600;color:var(--ink);margin-bottom:8px">${q}</div>
+      <div style="color:var(--dim);font-size:13px;margin-bottom:20px">Open in Spotify to listen</div>
+      <a href="${searchUrl}" target="_blank" rel="noopener" class="media-link-btn" style="background:rgba(30,215,96,.15);border-color:rgba(30,215,96,.4);color:#1db954">▶ Spotify</a>
+      <div style="margin-top:16px">
+        <iframe src="https://open.spotify.com/embed/search/${encodeURIComponent(q)}" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy" style="width:100%;height:160px;border:none;border-radius:12px" onerror="this.style.display='none'"></iframe>
+      </div>
+    </div>`;
+  }
+
+  function openGDoc(url: string) {
+    openWin('Google Doc');
+    const embedUrl = url.replace(/\/edit.*$/, '/preview').replace(/\/view.*$/, '/preview');
+    $('winBody').innerHTML = `<div style="display:flex;flex-direction:column;height:100%">
+      <iframe src="${embedUrl}" style="flex:1;width:100%;border:none;border-radius:8px" allow="autoplay" sandbox="allow-scripts allow-same-origin allow-popups allow-forms"></iframe>
+      <div style="text-align:center;padding:8px">
+        <a href="${url}" target="_blank" rel="noopener" class="media-link-btn">פתח ב-Google ↗</a>
+      </div>
+    </div>`;
   }
 
   async function openSearch(q: string) {
@@ -562,21 +610,19 @@ export function mountApp(root: HTMLElement) {
       const clean = runTags(reply, {
         onVideo: openVideo, onSearch: openSearch, onCalendar: openCalendar,
         onEvent: addEvent, onSpotify: openSpotify,
-        onDiary: (title: string, date: string) => {
-          const iframe = $<HTMLIFrameElement>('hgIframe');
-          if (iframe.contentWindow) {
-            iframe.contentWindow.postMessage({ source: 'alpha-ai', action: 'addTask', payload: { title, date } }, '*');
-          } else {
-            const tasks = JSON.parse(localStorage.getItem('hg2:tasks') || '[]');
-            const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-            tasks.unshift({ id, title, date, done: false, ts: Date.now() });
-            localStorage.setItem('hg2:tasks', JSON.stringify(tasks));
-          }
+        onDiary: async (title: string, date: string) => {
+          const tasks = await hgLoad('hg2:tasks');
+          const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+          tasks.unshift({ id, title, date, done: false, ts: Date.now() });
+          const storage = (window as any).storage || (window as any).puter?.kv;
+          if (storage) { try { await storage.set('hg2:tasks', JSON.stringify(tasks)); } catch {} }
+          localStorage.setItem('hg2:tasks', JSON.stringify(tasks));
         },
         onHgSearch: hgSearchLicense,
         onHgEarnings: hgShowEarnings,
         onHgQuote: hgCreateQuote,
         onArCamera: openArCamera,
+        onGDoc: openGDoc,
       }) || 'Done.';
       audio.receive();
       addMsg(clean, 'al');
@@ -638,39 +684,44 @@ export function mountApp(root: HTMLElement) {
   };
   $('hgClose').onclick = () => { $('hgOverlay').classList.remove('show'); };
 
-  type HgCallback = (data: any) => void;
-  const hgCallbacks: Record<string, HgCallback[]> = {};
-  function hgSend(action: string, payload: any, responseAction: string): Promise<any> {
-    return new Promise((resolve) => {
-      if (!hgCallbacks[responseAction]) hgCallbacks[responseAction] = [];
-      hgCallbacks[responseAction].push(resolve);
-      const iframe = ensureHgIframe();
-      const trySend = () => {
-        if (iframe.contentWindow) {
-          iframe.contentWindow.postMessage({ source: 'alpha-ai', action, payload }, '*');
-        }
-      };
-      if (iframe.src && iframe.src.includes('heavyguard')) trySend();
-      else setTimeout(trySend, 1000);
-      setTimeout(() => resolve(null), 5000);
-    });
-  }
-
   window.addEventListener('message', (e) => {
     if (!e.data || e.data.source !== 'heavyguard') return;
     if (e.data.action === 'taskAdded') {
       addMsg(`נרשם ביומן: ${e.data.payload.title}`, 'sys');
     }
-    const cbs = hgCallbacks[e.data.action];
-    if (cbs && cbs.length) {
-      const cb = cbs.shift()!;
-      cb(e.data.payload);
-    }
   });
 
+  async function hgLoad(key: string): Promise<any[]> {
+    const storage = (window as any).storage || (window as any).puter?.kv;
+    if (storage) {
+      try {
+        const r = await storage.get(key);
+        if (r && r.value != null) return JSON.parse(r.value);
+      } catch {}
+    }
+    try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch { return []; }
+  }
+
+  const CONTRACTORS: Record<string, string> = {
+    kobi: 'קובי', asi: 'אסי', sagi: 'שגיא מערכות',
+    mb: 'm.b מערכות', sd: 'ס.ד מיגונים', hg: 'Heavy Guard',
+  };
+  function cName(id: string) { return CONTRACTORS[id] || id; }
+
   async function hgSearchLicense(query: string) {
-    const results = await hgSend('searchLicense', { query }, 'searchResults');
-    if (!results || !results.length) {
+    const q = query.replace(/[-\s]/g, '').toLowerCase();
+    const index = await hgLoad('hg2:index');
+    const results = index.filter((r: any) => {
+      const id = (r.idNumber || '').replace(/[-\s]/g, '').toLowerCase();
+      return id.includes(q) || q.includes(id);
+    }).map((r: any) => ({
+      id: r.id, idNumber: r.idNumber, idType: r.idType,
+      contractor: cName(r.contractor), contractorId: r.contractor,
+      date: r.date, price: r.price, vehicleType: r.vehicleType,
+      manufacturer: r.manufacturer, installType: r.installType,
+      location: r.location, customer: r.customer, phone: r.phone,
+    }));
+    if (!results.length) {
       addMsg(`לא נמצאו תוצאות עבור: ${query}`, 'sys');
       return;
     }
@@ -699,7 +750,33 @@ export function mountApp(root: HTMLElement) {
   }
 
   async function hgShowEarnings(contractor: string, month: string) {
-    const data = await hgSend('getEarnings', { contractor, month }, 'earningsData');
+    const index = await hgLoad('hg2:index');
+    let filtered = index;
+    if (contractor) {
+      const cLow = contractor.toLowerCase();
+      filtered = filtered.filter((r: any) => {
+        const cid = (r.contractor || '').toLowerCase();
+        const cn = cName(r.contractor).toLowerCase();
+        return cid.includes(cLow) || cn.includes(cLow) || cLow.includes(cid) || cLow.includes(cn);
+      });
+    }
+    if (month) {
+      filtered = filtered.filter((r: any) => (r.date || '').startsWith(month));
+    }
+    const byContractor: Record<string, { total: number; count: number; jobs: any[] }> = {};
+    for (const r of filtered) {
+      const cn = cName(r.contractor);
+      if (!byContractor[cn]) byContractor[cn] = { total: 0, count: 0, jobs: [] };
+      byContractor[cn].total += r.price || 0;
+      byContractor[cn].count++;
+      byContractor[cn].jobs.push({ date: r.date, price: r.price, type: r.installType, vehicle: r.vehicleType });
+    }
+    const data = {
+      byContractor,
+      grandTotal: filtered.reduce((s: number, r: any) => s + (r.price || 0), 0),
+      totalJobs: filtered.length,
+      month: month || 'all',
+    };
     if (!data) { addMsg('לא ניתן לטעון נתוני הכנסות', 'sys'); return; }
     const monthLabel = data.month === 'all' ? 'כל התקופה' : data.month;
     openWin(`HeavyGuard · הכנסות · ${monthLabel}`);
@@ -733,11 +810,23 @@ export function mountApp(root: HTMLElement) {
       const [desc, priceStr] = s.trim().split(':');
       return { description: (desc || '').trim(), price: parseFloat(priceStr) || 0, qty: 1 };
     }).filter(i => i.description);
-    await hgSend('addQuote', { customer, phone, items }, 'quoteAdded');
+    const uid = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const newQuote = {
+      id: uid, customer: customer || '', phone: phone || '', items,
+      total: items.reduce((s, i) => s + (i.price || 0) * (i.qty || 1), 0),
+      date: new Date().toISOString().slice(0, 10), status: 'draft', ts: Date.now(),
+    };
+    const quotes = await hgLoad('hg2:quotes');
+    quotes.unshift(newQuote);
+    const storage = (window as any).storage || (window as any).puter?.kv;
+    if (storage) {
+      try { await storage.set('hg2:quotes', JSON.stringify(quotes)); } catch {}
+    }
+    localStorage.setItem('hg2:quotes', JSON.stringify(quotes));
     addMsg(`הצעת מחיר נוצרה עבור ${customer || 'לקוח'}`, 'sys');
   }
 
-  // AR Camera with object placement and hand physics
+  // AR Camera with object placement, hand physics, and effects
   let arStream: MediaStream | null = null;
   let arAnimFrame = 0;
 
@@ -751,6 +840,155 @@ export function mountApp(root: HTMLElement) {
   let arHandPos = { x: -1, y: -1, pinching: false };
   let arGrabbed: ArObj | null = null;
   let arObjCtx: CanvasRenderingContext2D | null = null;
+
+  type ArEffect = 'none' | 'fire' | 'water' | 'laser' | 'sparkle' | 'rainbow';
+  let arCurrentFx: ArEffect = 'none';
+  let arFxCtx: CanvasRenderingContext2D | null = null;
+
+  interface FxParticle {
+    x: number; y: number; vx: number; vy: number;
+    life: number; maxLife: number; size: number;
+    color: string; alpha: number;
+  }
+  let arFxParticles: FxParticle[] = [];
+  let arLaserTrail: { x: number; y: number; t: number }[] = [];
+
+  function spawnFxParticles(hx: number, hy: number, w: number, h: number) {
+    const px = hx * w, py = hy * h;
+    const count = arCurrentFx === 'laser' ? 1 : 4;
+    for (let i = 0; i < count; i++) {
+      const spread = 20 + Math.random() * 15;
+      switch (arCurrentFx) {
+        case 'fire': {
+          arFxParticles.push({
+            x: px + (Math.random() - 0.5) * spread, y: py + (Math.random() - 0.5) * spread,
+            vx: (Math.random() - 0.5) * 3, vy: -2 - Math.random() * 5,
+            life: 1, maxLife: 0.6 + Math.random() * 0.5, size: 6 + Math.random() * 10,
+            color: ['#ff4400', '#ff7700', '#ffaa00', '#ffdd44', '#ff2200'][Math.floor(Math.random() * 5)],
+            alpha: 0.9,
+          });
+          break;
+        }
+        case 'water': {
+          arFxParticles.push({
+            x: px + (Math.random() - 0.5) * spread, y: py,
+            vx: (Math.random() - 0.5) * 2, vy: 2 + Math.random() * 4,
+            life: 1, maxLife: 0.8 + Math.random() * 0.4, size: 4 + Math.random() * 6,
+            color: ['#00aaff', '#44ccff', '#0088dd', '#66ddff', '#0066cc'][Math.floor(Math.random() * 5)],
+            alpha: 0.7,
+          });
+          break;
+        }
+        case 'laser': {
+          arLaserTrail.push({ x: px, y: py, t: Date.now() });
+          if (arLaserTrail.length > 30) arLaserTrail.shift();
+          break;
+        }
+        case 'sparkle': {
+          arFxParticles.push({
+            x: px + (Math.random() - 0.5) * spread * 2, y: py + (Math.random() - 0.5) * spread * 2,
+            vx: (Math.random() - 0.5) * 4, vy: (Math.random() - 0.5) * 4,
+            life: 1, maxLife: 0.5 + Math.random() * 0.5, size: 2 + Math.random() * 5,
+            color: ['#fff', '#ffd700', '#ff69b4', '#00ffff', '#ff4444', '#44ff44'][Math.floor(Math.random() * 6)],
+            alpha: 1,
+          });
+          break;
+        }
+        case 'rainbow': {
+          const angle = Math.random() * Math.PI * 2;
+          const speed = 1 + Math.random() * 3;
+          const hue = (Date.now() / 10 + i * 60) % 360;
+          arFxParticles.push({
+            x: px + (Math.random() - 0.5) * spread, y: py + (Math.random() - 0.5) * spread,
+            vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+            life: 1, maxLife: 0.7 + Math.random() * 0.5, size: 5 + Math.random() * 7,
+            color: `hsl(${hue},100%,60%)`,
+            alpha: 0.85,
+          });
+          break;
+        }
+      }
+    }
+  }
+
+  function drawFxParticles() {
+    if (!arFxCtx) return;
+    const cvs = arFxCtx.canvas;
+    const ctx = arFxCtx;
+    ctx.clearRect(0, 0, cvs.width, cvs.height);
+
+    if (arCurrentFx === 'laser' && arLaserTrail.length > 1) {
+      const now = Date.now();
+      arLaserTrail = arLaserTrail.filter(p => now - p.t < 500);
+      if (arLaserTrail.length > 1) {
+        ctx.save();
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        for (let w = 3; w >= 0; w--) {
+          ctx.beginPath();
+          const alpha = w === 3 ? 0.1 : w === 2 ? 0.2 : w === 1 ? 0.5 : 1;
+          const width = w === 3 ? 20 : w === 2 ? 12 : w === 1 ? 6 : 2;
+          ctx.strokeStyle = w === 0 ? '#fff' : `rgba(255,40,40,${alpha})`;
+          ctx.lineWidth = width;
+          ctx.shadowColor = '#ff0000';
+          ctx.shadowBlur = w === 3 ? 30 : 0;
+          ctx.moveTo(arLaserTrail[0].x, arLaserTrail[0].y);
+          for (let i = 1; i < arLaserTrail.length; i++) {
+            ctx.lineTo(arLaserTrail[i].x, arLaserTrail[i].y);
+          }
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+    }
+
+    const dt = 1 / 60;
+    for (let i = arFxParticles.length - 1; i >= 0; i--) {
+      const p = arFxParticles[i];
+      p.x += p.vx;
+      p.y += p.vy;
+      p.life -= dt / p.maxLife;
+
+      if (arCurrentFx === 'fire') p.vy -= 0.15;
+      if (arCurrentFx === 'water') p.vy += 0.1;
+
+      if (p.life <= 0) {
+        arFxParticles.splice(i, 1);
+        continue;
+      }
+
+      const a = p.life * p.alpha;
+      ctx.save();
+      ctx.globalAlpha = a;
+
+      if (arCurrentFx === 'sparkle') {
+        ctx.translate(p.x, p.y);
+        ctx.rotate(Date.now() / 200 + i);
+        ctx.fillStyle = p.color;
+        ctx.shadowColor = p.color;
+        ctx.shadowBlur = 8;
+        for (let s = 0; s < 4; s++) {
+          ctx.fillRect(-p.size * 0.15, -p.size, p.size * 0.3, p.size * 2);
+          ctx.rotate(Math.PI / 4);
+        }
+      } else {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size * (arCurrentFx === 'fire' ? (0.5 + p.life * 0.5) : 1), 0, Math.PI * 2);
+        ctx.fillStyle = p.color;
+        if (arCurrentFx === 'fire') {
+          ctx.shadowColor = p.color;
+          ctx.shadowBlur = 15;
+        }
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    if (arHandPos.x >= 0 && arCurrentFx !== 'none') {
+      const cvs2 = arFxCtx.canvas;
+      spawnFxParticles(arHandPos.x, arHandPos.y, cvs2.width, cvs2.height);
+    }
+  }
 
   function addArObject(type: ArObj['type']) {
     const colors = ['#5fe6ff', '#ffc24d', '#ff5d73', '#4dff91', '#b06aff', '#ff9f43'];
@@ -899,6 +1137,7 @@ export function mountApp(root: HTMLElement) {
       ctx.restore();
     }
 
+    drawFxParticles();
     arAnimFrame = requestAnimationFrame(drawArObjects);
   }
 
@@ -907,8 +1146,10 @@ export function mountApp(root: HTMLElement) {
     const video = $<HTMLVideoElement>('arVideo');
     const canvas = $<HTMLCanvasElement>('arCanvas');
     const objCanvas = $<HTMLCanvasElement>('arObjCanvas');
+    const fxCanvas = $<HTMLCanvasElement>('arFxCanvas');
     const ctx = canvas.getContext('2d')!;
     arObjCtx = objCanvas.getContext('2d')!;
+    arFxCtx = fxCanvas.getContext('2d')!;
     const statusEl = $('arStatus');
     const handIndicator = $('arHandIndicator');
     const buttonsEl = $('arButtons');
@@ -933,7 +1174,12 @@ export function mountApp(root: HTMLElement) {
     statusEl.style.opacity = '1';
 
     navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
+      video: {
+        facingMode: 'user',
+        width: { ideal: 1920, min: 1280 },
+        height: { ideal: 1080, min: 720 },
+        frameRate: { ideal: 30 },
+      }
     }).then(stream => {
       arStream = stream;
       video.srcObject = stream;
@@ -942,6 +1188,8 @@ export function mountApp(root: HTMLElement) {
         canvas.height = video.videoHeight;
         objCanvas.width = video.videoWidth;
         objCanvas.height = video.videoHeight;
+        fxCanvas.width = video.videoWidth;
+        fxCanvas.height = video.videoHeight;
         statusEl.textContent = 'מצלמה פעילה';
         setTimeout(() => { statusEl.style.opacity = '0'; }, 2000);
         drawArObjects();
@@ -959,6 +1207,11 @@ export function mountApp(root: HTMLElement) {
     arObjects = [];
     arGrabbed = null;
     arObjCtx = null;
+    arFxCtx = null;
+    arFxParticles = [];
+    arLaserTrail = [];
+    arCurrentFx = 'none';
+    document.querySelectorAll('.ar-fx-btn').forEach(b => b.classList.remove('ar-fx-active'));
     $('arStatus').style.opacity = '1';
   }
   $('arClose').onclick = closeArCamera;
@@ -966,14 +1219,35 @@ export function mountApp(root: HTMLElement) {
   $('arAddCube').onclick = () => addArObject('cube');
   $('arAddStar').onclick = () => addArObject('star');
   $('arAddDiamond').onclick = () => addArObject('diamond');
-  $('arClearObjs').onclick = () => { arObjects = []; arGrabbed = null; };
+  $('arClearObjs').onclick = () => { arObjects = []; arGrabbed = null; arFxParticles = []; arLaserTrail = []; };
+
+  function setArEffect(fx: ArEffect) {
+    arCurrentFx = arCurrentFx === fx ? 'none' : fx;
+    arFxParticles = [];
+    arLaserTrail = [];
+    document.querySelectorAll('.ar-fx-btn').forEach(b => b.classList.remove('ar-fx-active'));
+    if (arCurrentFx !== 'none') {
+      document.getElementById(`arFx${fx.charAt(0).toUpperCase() + fx.slice(1)}`)?.classList.add('ar-fx-active');
+    }
+  }
+  $('arFxFire').onclick = () => setArEffect('fire');
+  $('arFxWater').onclick = () => setArEffect('water');
+  $('arFxLaser').onclick = () => setArEffect('laser');
+  $('arFxSparkle').onclick = () => setArEffect('sparkle');
+  $('arFxRainbow').onclick = () => setArEffect('rainbow');
 
   function captureArPhoto() {
     const video = $<HTMLVideoElement>('arVideo');
     const c = document.createElement('canvas');
     c.width = video.videoWidth; c.height = video.videoHeight;
     const cx = c.getContext('2d')!;
+    cx.save();
+    cx.translate(c.width, 0);
+    cx.scale(-1, 1);
     cx.drawImage(video, 0, 0);
+    cx.restore();
+    const fxC = $<HTMLCanvasElement>('arFxCanvas');
+    cx.drawImage(fxC, 0, 0);
     const objC = $<HTMLCanvasElement>('arObjCanvas');
     cx.drawImage(objC, 0, 0);
     const handC = $<HTMLCanvasElement>('arCanvas');
@@ -1108,7 +1382,7 @@ export function mountApp(root: HTMLElement) {
 
       const cam = new Camera(vid, {
         onFrame: async () => { await hands.send({ image: vid }); },
-        width: 1280, height: 720,
+        width: vid.videoWidth || 1920, height: vid.videoHeight || 1080,
       });
       cam.start();
     }
