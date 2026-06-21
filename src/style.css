@@ -2102,6 +2102,18 @@ select.cp-input option { background: #14120c; color: var(--ink); }
 }
 .welcome-skip:hover { color: var(--gold); }
 
+/* ── Live Widgets ── */
+.live-widgets { display: flex; flex-direction: column; gap: 6px; }
+.lw-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px; border-radius: 8px;
+  background: rgba(255,255,255,.02);
+  border: 1px solid rgba(218,165,32,.06);
+}
+.lw-icon { font-size: 12px; width: 18px; text-align: center; }
+.lw-val { font-weight: 600; font-size: 13px; color: var(--gold); min-width: 24px; }
+.lw-lbl { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .5px; }
+
 /* ── Quick Actions FAB ── */
 .fab {
   position: fixed; bottom: 100px; right: 24px; z-index: 900;

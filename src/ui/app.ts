@@ -1,6 +1,6 @@
 import { mountOrb, type OrbHandle } from '../orb/OrbScene';
 import { mountFlowLines } from '../bg/flowLines';
-import { loadState, saveState, addEvent, addTask, saveNote, loadEvents, removeEvent, type AppState, type TextLang, type AIProvider, type VoiceGender } from '../assistant/state';
+import { loadState, saveState, addEvent, addTask, saveNote, loadEvents, loadTasks, removeEvent, type AppState, type TextLang, type AIProvider, type VoiceGender } from '../assistant/state';
 import { askAI, runTags } from '../assistant/gemini';
 import { tryLocalCommand } from '../assistant/local';
 import { VoiceEngine } from '../assistant/voice';
@@ -13,7 +13,8 @@ import * as driveSync from '../modules/driveSync';
 import { universalSearch, TYPE_ICONS } from '../modules/search';
 import { registerShortcut, initShortcuts, shortcutsHTML } from '../modules/shortcuts';
 import { dailyBriefing } from '../modules/analytics';
-import { startTimer, stopTimer, formatDuration } from '../modules/timeTracker';
+import { startTimer, stopTimer, formatDuration, getActiveTimer } from '../modules/timeTracker';
+import { saveChatMessage, loadChatHistory, clearChatHistory } from '../modules/chatHistory';
 
 export function mountApp(root: HTMLElement) {
   root.innerHTML = `
@@ -78,6 +79,10 @@ export function mountApp(root: HTMLElement) {
             <div class="qs"><span class="qs-val" id="tokenCount">0</span><span class="qs-label">TOKENS</span></div>
             <div class="qs"><span class="qs-val" id="uptimeVal">00:00</span><span class="qs-label">UPTIME</span></div>
           </div>
+        </div>
+        <div class="lp-section">
+          <div class="lp-label">LIVE STATUS</div>
+          <div class="live-widgets" id="liveWidgets"></div>
         </div>
       </aside>
 
@@ -588,6 +593,7 @@ export function mountApp(root: HTMLElement) {
     lpTokenCount += Math.round(words * 1.3);
     const tcEl = document.getElementById('tokenCount');
     if (tcEl) tcEl.textContent = String(lpTokenCount);
+    saveChatMessage(text, who);
   }
 
   function openWin(title: string) { $('winTitle').textContent = title; $('win').classList.add('show'); audio.open(); }
@@ -790,7 +796,7 @@ export function mountApp(root: HTMLElement) {
     if (turningOn) audio.micOn(); else audio.micOff();
   };
   $('muteBtn').onclick = () => { audio.toggleMute(); };
-  $('newChat').onclick = () => { state.history = []; $('rpBody').innerHTML = ''; addMsg(state.name + ' ready.', 'al'); };
+  $('newChat').onclick = () => { state.history = []; $('rpBody').innerHTML = ''; $('chat').innerHTML = ''; clearChatHistory(); addMsg(state.name + ' ready.', 'al'); };
 
   // Detect button
   let detecting = false;
@@ -2366,6 +2372,33 @@ export function mountApp(root: HTMLElement) {
     $('uptimeVal').textContent = pad(mins) + ':' + pad(secs);
   }, 1000);
 
+  // --- Live Widgets ---
+  function updateLiveWidgets() {
+    const w = $('liveWidgets');
+    if (!w) return;
+    try {
+      const tasks = loadTasks();
+      const openTasks = tasks.filter(t => !t.done).length;
+      const events = loadEvents();
+      const today = new Date().toISOString().slice(0, 10);
+      const todayEvents = events.filter(e => e.date === today).length;
+      let timerLine = '';
+      try {
+        const at = getActiveTimer();
+        if (at) {
+          const elapsed = Math.round((Date.now() - at.startTime) / 60000);
+          timerLine = `<div class="lw-item"><span class="lw-icon">⏱</span><span class="lw-val">${elapsed}m</span><span class="lw-lbl">${at.project}</span></div>`;
+        }
+      } catch {}
+      w.innerHTML =
+        `<div class="lw-item"><span class="lw-icon">✓</span><span class="lw-val">${openTasks}</span><span class="lw-lbl">Tasks</span></div>` +
+        `<div class="lw-item"><span class="lw-icon">📅</span><span class="lw-val">${todayEvents}</span><span class="lw-lbl">Today</span></div>` +
+        timerLine;
+    } catch {}
+  }
+  updateLiveWidgets();
+  setInterval(updateLiveWidgets, 30000);
+
   // --- AI Model Display ---
   function updateAIDisplay() {
     const modelNames: Record<string, string> = {
@@ -2396,9 +2429,20 @@ export function mountApp(root: HTMLElement) {
   }
   function personalGreeting(): string {
     const nm = loadMemory().profile.name;
-    return nm
-      ? `${greetingPrefix()}, ${nm}. ${state.name} is online — how can I help?`
-      : `${state.name} online. Talk to me or type.`;
+    if (!nm) return `${state.name} online. Talk to me or type.`;
+    const tasks = loadTasks();
+    const openCount = tasks.filter(t => !t.done).length;
+    const today = new Date().toISOString().slice(0, 10);
+    const todayEvents = loadEvents().filter(e => e.date === today).length;
+    const bits: string[] = [`${greetingPrefix()}, ${nm}.`];
+    if (openCount > 0 || todayEvents > 0) {
+      const parts: string[] = [];
+      if (todayEvents) parts.push(`${todayEvents} event${todayEvents > 1 ? 's' : ''} today`);
+      if (openCount) parts.push(`${openCount} open task${openCount > 1 ? 's' : ''}`);
+      bits.push(`You have ${parts.join(' and ')}.`);
+    }
+    bits.push('How can I help?');
+    return bits.join(' ');
   }
 
   // ── First-run welcome: ask the user's name so the AI can address them ──
@@ -2434,11 +2478,27 @@ export function mountApp(root: HTMLElement) {
   }
 
   const puterAvailable = typeof (window as any).puter !== 'undefined';
+  // ── Restore chat history ──
+  const prevHistory = loadChatHistory();
+  if (prevHistory.length > 0) {
+    const recent = prevHistory.slice(-20);
+    for (const msg of recent) {
+      const label = { me: 'YOU', al: state.name, sys: 'SYSTEM' }[msg.who];
+      const chatEl = $('chat');
+      const div = document.createElement('div');
+      div.className = 'turn ' + msg.who;
+      div.innerHTML = `<span class="who">${label}</span><div class="txt">${msg.text}</div>`;
+      if (chatEl) chatEl.appendChild(div);
+    }
+    const chatEl = $('chat');
+    if (chatEl) chatEl.scrollTop = chatEl.scrollHeight;
+  }
+
   const canUseAI = puterAvailable || state.key || state.grokKey || state.openaiKey;
   const knownName = loadMemory().profile.name;
   if (!canUseAI) openSetup();
   if (!knownName) showWelcome();
-  else if (canUseAI) addMsg(personalGreeting(), 'al');
+  else if (canUseAI && prevHistory.length === 0) addMsg(personalGreeting(), 'al');
 
   // ── 3D Depth — perspective-based UI panel transforms ──
   {
