@@ -666,7 +666,7 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
     headGroup.add(brow);
   }
 
-  // ── Red Cheeks — signature round red patches with glow ──
+  // ── Red Cheeks — signature round red patches with outer glow ring ──
   const cheekMatL = mats.red.clone();
   const cheekMatR = mats.red.clone();
   const cheekGeo = new THREE.SphereGeometry(0.14, seg(24), seg(24));
@@ -680,6 +680,30 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   cheekR.scale.set(1.0, 0.85, 0.4);
   cheekR.position.set(0.5, -0.06, 0.44);
   headGroup.add(cheekR);
+
+  // Cheek glow halos — soft outer rings for electric glow effect
+  const cheekGlowMat = new THREE.MeshBasicMaterial({
+    color: 0xFF6644, transparent: true, opacity: 0.08,
+    depthWrite: false, side: THREE.DoubleSide,
+  });
+  for (const sx of [-1, 1]) {
+    const halo = new THREE.Mesh(
+      new THREE.RingGeometry(0.1, 0.18, seg(20)),
+      cheekGlowMat,
+    );
+    halo.position.set(sx * 0.5, -0.06, 0.45);
+    halo.rotation.y = sx * 0.3;
+    headGroup.add(halo);
+  }
+
+  // ── Chin — subtle definition under the mouth ──
+  const chin = new THREE.Mesh(
+    new THREE.SphereGeometry(0.15, seg(16), seg(16)),
+    mats.yellow,
+  );
+  chin.scale.set(1.0, 0.45, 0.5);
+  chin.position.set(0, -0.18, 0.6);
+  headGroup.add(chin);
 
   headGroup.position.set(0, 0.55, 0.0);
   group.add(headGroup);
@@ -747,39 +771,48 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
     group.add(sole);
   }
 
-  // ── Tail — lightning bolt shape, thicker with better beveling ──
+  // ── Tail — iconic zigzag lightning bolt, wider and more dramatic ──
   const tail = new THREE.Group();
   const shape = new THREE.Shape();
+  // Wider bolt pattern for more dramatic silhouette
   shape.moveTo(0, 0);
-  shape.lineTo(0.14, 0.32);
-  shape.lineTo(-0.04, 0.36);
-  shape.lineTo(0.2, 0.72);
-  shape.lineTo(-0.06, 0.76);
-  shape.lineTo(0.24, 1.2);
-  shape.lineTo(0.38, 1.14);
-  shape.lineTo(0.06, 0.74);
-  shape.lineTo(0.3, 0.69);
-  shape.lineTo(-0.01, 0.3);
-  shape.lineTo(0.22, 0.26);
+  shape.lineTo(0.16, 0.28);
+  shape.lineTo(-0.08, 0.34);
+  shape.lineTo(0.22, 0.68);
+  shape.lineTo(-0.1, 0.74);
+  shape.lineTo(0.28, 1.22);
+  shape.lineTo(0.44, 1.14);
+  shape.lineTo(0.08, 0.72);
+  shape.lineTo(0.36, 0.66);
+  shape.lineTo(0.02, 0.28);
+  shape.lineTo(0.26, 0.24);
   shape.lineTo(0.0, 0.0);
-  const extSettings = { depth: 0.1, bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.03, bevelSegments: seg(4) };
+  const extSettings = { depth: 0.12, bevelEnabled: true, bevelThickness: 0.035, bevelSize: 0.035, bevelSegments: seg(4) };
   const tailMesh = new THREE.Mesh(
     new THREE.ExtrudeGeometry(shape, extSettings),
     mats.yellow,
   );
-  tailMesh.position.set(-0.12, 0, -0.05);
+  tailMesh.position.set(-0.14, 0, -0.06);
   tail.add(tailMesh);
 
-  // Brown base connector
+  // Dark yellow edge highlight on tail (backside)
+  const tailEdge = new THREE.Mesh(
+    new THREE.ExtrudeGeometry(shape, { depth: 0.005, bevelEnabled: false }),
+    mats.darkYellow,
+  );
+  tailEdge.position.set(-0.14, 0, -0.065);
+  tail.add(tailEdge);
+
+  // Brown base connector — smooth transition to body
   const tailBase = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.07, 0.18, seg(4), seg(8)),
+    new THREE.CapsuleGeometry(0.08, 0.2, seg(6), seg(10)),
     mats.brown,
   );
   tailBase.position.set(0.04, -0.04, 0.01);
   tail.add(tailBase);
-  tail.position.set(0, -0.08, -0.62);
-  tail.rotation.x = -0.45;
-  tail.rotation.y = 0.15;
+  tail.position.set(0, -0.06, -0.6);
+  tail.rotation.x = -0.42;
+  tail.rotation.y = 0.12;
   group.add(tail);
 
   // ── Electric sparks — yellow lightning arcs around Pikachu ──
