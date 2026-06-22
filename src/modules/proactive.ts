@@ -113,15 +113,66 @@ async function checkPrices(notify: Notify) {
   if (changed) savePriceAlerts(loadPriceAlerts().map(a => alerts.find(x => x.id === a.id) || a));
 }
 
+function checkHighPriorityTasks(notify: Notify, s: Record<string, number>) {
+  try {
+    const tasks: { id: string; text: string; done: boolean; priority: string }[] = JSON.parse(localStorage.getItem('alpha_tasks') || '[]');
+    const high = tasks.filter(t => !t.done && t.priority === 'high');
+    if (high.length >= 3) {
+      const key = 'hightasks:' + new Date().toISOString().slice(0, 10);
+      if (!s[key]) {
+        s[key] = Date.now();
+        notify('High priority tasks', `${high.length} high-priority tasks need attention`);
+        pushNotification('⚡ High Priority', `${high.length} tasks need your attention`);
+      }
+    }
+  } catch {}
+}
+
+function checkGoalDeadlines(notify: Notify, s: Record<string, number>) {
+  try {
+    const goals: { id: string; title: string; deadline?: string }[] = JSON.parse(localStorage.getItem('alpha_goals_v1') || '[]');
+    const soon = new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10);
+    for (const g of goals) {
+      if (g.deadline && g.deadline <= soon) {
+        const key = 'goal:' + g.id;
+        if (!s[key]) {
+          s[key] = Date.now();
+          notify('Goal deadline approaching', g.title);
+          pushNotification('🎯 Goal deadline', g.title);
+        }
+      }
+    }
+  } catch {}
+}
+
+function checkInvoiceDue(notify: Notify, s: Record<string, number>) {
+  try {
+    const invoices: { id: string; number: string; customer: string; dueDate: string; status: string }[] = JSON.parse(localStorage.getItem('alpha_invoices_v1') || '[]');
+    const today = new Date().toISOString().slice(0, 10);
+    for (const inv of invoices) {
+      if (inv.status !== 'paid' && inv.dueDate && inv.dueDate <= today) {
+        const key = 'invdue:' + inv.id;
+        if (!s[key]) {
+          s[key] = Date.now();
+          notify('Invoice overdue', `${inv.number} — ${inv.customer}`);
+          pushNotification('📄 Invoice overdue', `${inv.number} — ${inv.customer}`);
+        }
+      }
+    }
+  } catch {}
+}
+
 export function runProactive(notify: Notify) {
   const tick = async () => {
     const s = seen();
     try { checkInstalls(notify, s); } catch {}
     try { checkFollowUps(notify, s); } catch {}
+    try { checkHighPriorityTasks(notify, s); } catch {}
+    try { checkGoalDeadlines(notify, s); } catch {}
+    try { checkInvoiceDue(notify, s); } catch {}
     try { await checkPrices(notify); } catch {}
     markSeen(s);
   };
-  // first pass shortly after load, then on an interval
   setTimeout(tick, 8000);
   setInterval(tick, CHECK_MS);
 }

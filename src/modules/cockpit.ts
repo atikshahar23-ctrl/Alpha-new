@@ -25,6 +25,46 @@ import {
   loadHabits, addHabit, removeHabit, toggleHabitToday, isHabitDoneToday, habitStreak,
   loadExpenses, addExpense, removeExpense, expenseSummary, EXPENSE_CATEGORIES,
 } from './personal';
+import {
+  todayPomoStats, weekPomoStats, recordPomoSession,
+} from './pomodoro';
+import {
+  MOODS, MOOD_EMOJI, todayMood, logMood, moodStreak,
+  todayWater, addWater, sleepAvg, logSleep,
+} from './wellness';
+import {
+  loadGoals, addGoal, removeGoal, toggleMilestone, addMilestoneToGoal, goalProgress,
+  activeGoalsSummary, type GoalTimeframe,
+} from './goals';
+import {
+  loadInvoices, createInvoice, setInvoiceStatus, removeInvoice,
+  downloadInvoicePDF, invoiceStats, type InvoiceItem,
+} from './invoices';
+import {
+  loadContacts, addContact, removeContact,
+} from './contacts';
+import {
+  revenueTrend, expenseTrend, taskCompletionRate,
+  expenseByCategory, leadsByStatus, dailyBriefing,
+} from './analytics';
+import {
+  loadSmartNotes, addSmartNote, removeSmartNote, togglePin,
+  NOTE_CATEGORIES,
+} from './smartNotes';
+import {
+  loadRecurring, addRecurring, removeRecurring, toggleRecurring,
+  type RecurFreq,
+} from './recurring';
+import {
+  getActiveTimer, startTimer, stopTimer, todayTime, weekTime,
+  formatDuration, removeTimeEntry, loadTimeEntries,
+} from './timeTracker';
+import { downloadReport, businessReport, personalReport } from './reports';
+import { sparkline, progressRing } from './sparkline';
+import { fillTemplate, addCustomTemplate, removeCustomTemplate, templatesByCategory, type Template } from './templates';
+import { sentimentTrend, averageSentiment } from './sentiment';
+import { calculateScore, scoreLabel, scoreColor } from './scoring';
+import { checkIntegrity, storageUsage, repairCorrupted } from './dataIntegrity';
 
 export interface CockpitHooks {
   ask: (q: string) => void;
@@ -148,6 +188,14 @@ function renderBusiness(root: HTMLElement, hooks: CockpitHooks, close: () => voi
     `<div class="cp-kpi"><span class="cp-kpi-val">${Math.round(stats.winRate * 100)}%</span><span class="cp-kpi-lbl">Win rate</span></div>` +
     `<div class="cp-kpi"><span class="cp-kpi-val">${stats.openLeads}</span><span class="cp-kpi-lbl">Open leads</span></div>`;
   dash.appendChild(kpis);
+  // sparkline of revenue trend
+  const revValues = stats.byMonth.map(m => m.total);
+  if (revValues.some(v => v > 0)) {
+    const sparkEl = el('div', '');
+    sparkEl.style.cssText = 'margin:8px 0;display:flex;align-items:center;gap:12px';
+    sparkEl.innerHTML = `<span style="font-size:11px;color:var(--dim)">6-month trend</span>${sparkline(revValues, { width: 160, height: 36, showDots: true })}`;
+    dash.appendChild(sparkEl);
+  }
   // mini bar chart of last 6 months
   const maxM = Math.max(1, ...stats.byMonth.map(m => m.total));
   const chart = el('div', 'cp-chart');
@@ -283,6 +331,84 @@ function renderBusiness(root: HTMLElement, hooks: CockpitHooks, close: () => voi
   drawQuotes();
   root.appendChild(qm);
 
+  // ── Invoices ──
+  const inv = card('Invoices', 'Professional invoices with VAT');
+  const invStats = invoiceStats();
+  if (invStats.total > 0) {
+    const invKpis = el('div', 'cp-kpis');
+    invKpis.innerHTML =
+      `<div class="cp-kpi"><span class="cp-kpi-val">${invStats.total}</span><span class="cp-kpi-lbl">Total</span></div>` +
+      `<div class="cp-kpi"><span class="cp-kpi-val">${invStats.paid}</span><span class="cp-kpi-lbl">Paid</span></div>` +
+      `<div class="cp-kpi"><span class="cp-kpi-val">${invStats.outstanding}</span><span class="cp-kpi-lbl">Outstanding</span></div>` +
+      `<div class="cp-kpi"><span class="cp-kpi-val">₪${invStats.revenue.toLocaleString()}</span><span class="cp-kpi-lbl">Revenue</span></div>`;
+    inv.appendChild(invKpis);
+  }
+  const invCust = input('Customer name');
+  const invItems = textarea('One item per line, e.g.:\n360 camera: 4500\nInstallation: 800 x 2', 3);
+  const invNotes = input('Notes (optional)');
+  const createInv = btn('Create invoice', true);
+  const invError = el('div', 'cp-note');
+  invError.style.color = '#ff5d73';
+  const invList = el('div', 'cp-list');
+  const drawInvoices = () => {
+    invList.innerHTML = '';
+    const list = loadInvoices().slice(0, 10);
+    if (!list.length) { invList.appendChild(el('div', 'cp-empty', 'No invoices yet.')); return; }
+    list.forEach(i => {
+      const r = el('div', 'cp-row');
+      const stHue = { draft: 200, sent: 45, paid: 140, overdue: 0 }[i.status] ?? 200;
+      r.innerHTML = `<span class="cp-row-main">${esc(i.number)} — ${esc(i.customer)} <span class="cp-row-sub">₪${i.total.toLocaleString()}</span></span>`;
+      const sel = el('select', 'cp-mini-sel') as HTMLSelectElement;
+      (['draft', 'sent', 'paid', 'overdue'] as const).forEach(s => {
+        const o = el('option') as HTMLOptionElement; o.value = s; o.textContent = s; if (i.status === s) o.selected = true; sel.appendChild(o);
+      });
+      sel.style.color = `hsl(${stHue},70%,60%)`;
+      sel.onchange = () => { setInvoiceStatus(i.id, sel.value as any); root.replaceChildren(); renderBusiness(root, hooks, close); };
+      r.appendChild(sel);
+      const dl = el('button', 'cp-x', '📄'); dl.title = 'Print';
+      dl.onclick = () => downloadInvoicePDF(i);
+      r.appendChild(dl);
+      const del = el('button', 'cp-x', '✕');
+      del.onclick = () => { removeInvoice(i.id); drawInvoices(); };
+      r.appendChild(del);
+      invList.appendChild(r);
+    });
+  };
+  createInv.onclick = () => {
+    invError.textContent = '';
+    if (!invCust.value.trim()) { invError.textContent = 'Enter a customer name.'; return; }
+    const lines = invItems.value.split('\n').map(s => s.trim()).filter(Boolean);
+    if (!lines.length) { invError.textContent = 'Add at least one item. Format: Description: Price'; return; }
+    const items: InvoiceItem[] = lines.map(l => {
+      if (l.includes(':')) {
+        const colonIdx = l.lastIndexOf(':');
+        const desc = l.slice(0, colonIdx).trim();
+        const rest = l.slice(colonIdx + 1).trim();
+        const parts = rest.split(/\s*x\s*/i);
+        return { description: desc, price: parseFloat(parts[0]) || 0, qty: parseInt(parts[1]) || 1 };
+      }
+      const numMatch = l.match(/(\d[\d,.]*)\s*(?:x\s*(\d+))?\s*$/);
+      if (numMatch) {
+        const desc = l.slice(0, numMatch.index).trim();
+        return { description: desc || l, price: parseFloat(numMatch[1].replace(/,/g, '')) || 0, qty: parseInt(numMatch[2]) || 1 };
+      }
+      return { description: l, price: 0, qty: 1 };
+    }).filter(i => i.description);
+    if (!items.length) { invError.textContent = 'Could not parse items. Use format: Description: Price'; return; }
+    if (items.every(i => i.price === 0)) { invError.textContent = 'All items have price 0. Use format: Description: Price (e.g. Camera: 4500)'; return; }
+    createInvoice(invCust.value.trim(), items, { notes: invNotes.value.trim() });
+    invCust.value = ''; invItems.value = ''; invNotes.value = '';
+    root.replaceChildren(); renderBusiness(root, hooks, close);
+  };
+  inv.appendChild(field('Customer', invCust));
+  inv.appendChild(field('Items', invItems));
+  inv.appendChild(field('Notes', invNotes));
+  inv.appendChild(createInv);
+  inv.appendChild(invError);
+  inv.appendChild(invList);
+  drawInvoices();
+  root.appendChild(inv);
+
   // ── Marketing engine ──
   const mk = card('Marketing Engine', 'AI viral content for TikTok / Facebook');
   const topic = input('Topic — e.g. 360° camera install on a Scania');
@@ -343,6 +469,176 @@ function renderBusiness(root: HTMLElement, hooks: CockpitHooks, close: () => voi
   q.appendChild(save);
   q.appendChild(out);
   root.appendChild(q);
+
+  // ── Contacts CRM ──
+  const cc = card('Contacts', 'People & companies you work with');
+  const renderContacts = () => {
+    const contacts = loadContacts();
+    let listHtml = '';
+    if (!contacts.length) {
+      listHtml = '<div class="cp-note" style="text-align:center;padding:16px;color:var(--dim)">No contacts yet. Add your first one below.</div>';
+    } else {
+      listHtml = contacts.slice(0, 20).map(c => {
+        const tagStr = c.tags.length ? c.tags.map(t => `<span class="cp-row-tag">${esc(t)}</span>`).join(' ') : '';
+        return `<div class="cp-row" data-cid="${c.id}">
+          <span class="cp-row-main">${c.starred ? '★ ' : ''}${esc(c.name || 'Unnamed')}</span>
+          <span class="cp-row-sub">${esc(c.phone)}${c.company ? ' · ' + esc(c.company) : ''}</span>
+          ${tagStr}
+          <button class="cp-row-del" data-del="${c.id}">✕</button>
+        </div>`;
+      }).join('');
+    }
+    ccList.innerHTML = listHtml;
+    ccList.querySelectorAll('[data-del]').forEach(b => {
+      (b as HTMLElement).onclick = (e) => {
+        e.stopPropagation();
+        removeContact((b as HTMLElement).dataset.del!);
+        renderContacts();
+      };
+    });
+  };
+  const ccList = el('div', 'cp-list');
+  cc.appendChild(ccList);
+  const ccName = input('Name');
+  const ccPhone = input('Phone');
+  const ccCompany = input('Company');
+  const ccTags = input('Tags (comma separated)');
+  const ccAdd = btn('Add contact', true);
+  ccAdd.onclick = () => {
+    if (!ccName.value.trim() && !ccPhone.value.trim()) return;
+    addContact({
+      name: ccName.value.trim(),
+      phone: ccPhone.value.trim(),
+      company: ccCompany.value.trim(),
+      tags: ccTags.value.split(',').map(t => t.trim()).filter(Boolean),
+    });
+    ccName.value = ''; ccPhone.value = ''; ccCompany.value = ''; ccTags.value = '';
+    renderContacts();
+    hooks.addMsgSys(`Contact added: ${ccName.value || ccPhone.value}`);
+  };
+  cc.appendChild(field('Name', ccName));
+  cc.appendChild(field('Phone', ccPhone));
+  cc.appendChild(field('Company', ccCompany));
+  cc.appendChild(field('Tags', ccTags));
+  cc.appendChild(ccAdd);
+  renderContacts();
+  root.appendChild(cc);
+
+  // ── Business Analytics ──
+  const an = card('Analytics', 'Trends and insights');
+  const revTrend = revenueTrend();
+  const expTrend = expenseTrend();
+  const maxRev = Math.max(1, ...revTrend.map(p => p.value));
+  const maxExp = Math.max(1, ...expTrend.map(p => p.value));
+  let analyticsHtml = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">';
+  analyticsHtml += '<div><div class="cp-card-sub" style="margin-bottom:8px">Revenue trend</div><div class="cp-chart">';
+  revTrend.forEach(p => {
+    const h = Math.max(3, (p.value / maxRev) * 100);
+    analyticsHtml += `<div class="cp-bar"><div class="cp-bar-fill" style="height:${h}%"></div><span class="cp-bar-lbl">${p.label}</span></div>`;
+  });
+  analyticsHtml += '</div></div>';
+  analyticsHtml += '<div><div class="cp-card-sub" style="margin-bottom:8px">Expense trend</div><div class="cp-chart">';
+  expTrend.forEach(p => {
+    const h = Math.max(3, (p.value / maxExp) * 100);
+    analyticsHtml += `<div class="cp-bar"><div class="cp-bar-fill" style="height:${h}%;background:linear-gradient(180deg,#ff5d73,#c94455)"></div><span class="cp-bar-lbl">${p.label}</span></div>`;
+  });
+  analyticsHtml += '</div></div></div>';
+  const catBreakdown = expenseByCategory();
+  if (catBreakdown.length) {
+    analyticsHtml += '<div style="margin-top:12px"><div class="cp-card-sub" style="margin-bottom:8px">Expenses by category</div>';
+    const catMax = Math.max(1, catBreakdown[0]?.total || 1);
+    catBreakdown.slice(0, 6).forEach(c => {
+      const pct = Math.round((c.total / catMax) * 100);
+      analyticsHtml += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <span style="width:80px;font-size:12px;color:var(--dim)">${esc(c.category)}</span>
+        <div style="flex:1;height:6px;background:rgba(255,255,255,.06);border-radius:3px"><div style="height:100%;width:${pct}%;background:var(--gold);border-radius:3px"></div></div>
+        <span style="font-size:12px;color:var(--ink)">₪${c.total.toLocaleString()}</span>
+      </div>`;
+    });
+    analyticsHtml += '</div>';
+  }
+  const taskRate = taskCompletionRate();
+  const lStatuses = leadsByStatus();
+  analyticsHtml += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:12px">`;
+  analyticsHtml += `<div class="cp-kpi"><span class="cp-kpi-val">${taskRate.rate}%</span><span class="cp-kpi-lbl">Task completion</span></div>`;
+  if (lStatuses.length) {
+    analyticsHtml += `<div class="cp-kpi"><span class="cp-kpi-val">${lStatuses.map(s => `${s.count} ${s.status}`).join(', ')}</span><span class="cp-kpi-lbl">Leads by status</span></div>`;
+  }
+  analyticsHtml += '</div>';
+  // inline sparklines for trends
+  const revSparkData = revTrend.map(p => p.value);
+  const expSparkData = expTrend.map(p => p.value);
+  if (revSparkData.some(v => v > 0) || expSparkData.some(v => v > 0)) {
+    analyticsHtml += `<div style="display:flex;gap:16px;margin-top:12px;align-items:center">`;
+    if (revSparkData.some(v => v > 0)) {
+      analyticsHtml += `<div style="display:flex;align-items:center;gap:6px"><span style="font-size:11px;color:var(--dim)">Rev</span>${sparkline(revSparkData, { width: 80, height: 24 })}</div>`;
+    }
+    if (expSparkData.some(v => v > 0)) {
+      analyticsHtml += `<div style="display:flex;align-items:center;gap:6px"><span style="font-size:11px;color:var(--dim)">Exp</span>${sparkline(expSparkData, { width: 80, height: 24, stroke: '#ff5d73', fill: 'rgba(255,93,115,.15)' })}</div>`;
+    }
+    analyticsHtml += `<div>${progressRing(taskRate.rate, { size: 36 })}</div>`;
+    analyticsHtml += `</div>`;
+  }
+  an.innerHTML += analyticsHtml;
+  const aiBrief = btn('AI Daily Briefing');
+  aiBrief.onclick = () => { hooks.ask(dailyBriefing()); close(); };
+  an.appendChild(aiBrief);
+  root.appendChild(an);
+
+  // ── Templates ──
+  const tpl = card('Templates', 'Pre-built messages for follow-ups and emails');
+  const tplCat = el('select', 'cp-input') as HTMLSelectElement;
+  (['follow-up', 'email', 'quote', 'general'] as const).forEach(c => {
+    const o = el('option') as HTMLOptionElement; o.value = c; o.textContent = c.charAt(0).toUpperCase() + c.slice(1); tplCat.appendChild(o);
+  });
+  const tplList = el('div', 'cp-list');
+  const drawTemplates = () => {
+    tplList.innerHTML = '';
+    const templates = templatesByCategory(tplCat.value as Template['category']);
+    if (!templates.length) { tplList.appendChild(el('div', 'cp-empty', 'No templates in this category.')); return; }
+    templates.forEach(t => {
+      const r = el('div', 'cp-row');
+      r.style.cursor = 'pointer';
+      r.innerHTML = `<span class="cp-row-main">${esc(t.name)}</span><span class="cp-row-sub">${t.variables.length} fields</span>`;
+      const use = el('button', 'cp-x', '▶'); use.title = 'Use template';
+      use.onclick = (e) => {
+        e.stopPropagation();
+        const values: Record<string, string> = {};
+        for (const v of t.variables) {
+          const val = prompt(`${v}:`);
+          if (val === null) return;
+          values[v] = val;
+        }
+        const filled = fillTemplate(t.id, values);
+        hooks.ask(`Here's a message I need you to review, improve, and format nicely:\n\n${filled}`);
+        close();
+      };
+      r.appendChild(use);
+      if (t.id.startsWith('tpl_')) {
+        const del = el('button', 'cp-x', '✕');
+        del.onclick = (e) => { e.stopPropagation(); removeCustomTemplate(t.id); drawTemplates(); };
+        r.appendChild(del);
+      }
+      tplList.appendChild(r);
+    });
+  };
+  tplCat.onchange = () => drawTemplates();
+  tpl.appendChild(field('Category', tplCat));
+  tpl.appendChild(tplList);
+  drawTemplates();
+  const tplName = input('Template name');
+  const tplBody = textarea('Template body — use {{variable}} for fields', 3);
+  const addTpl = btn('Save custom template');
+  addTpl.onclick = () => {
+    if (!tplName.value.trim() || !tplBody.value.trim()) return;
+    addCustomTemplate(tplName.value.trim(), tplCat.value as Template['category'], tplBody.value);
+    tplName.value = ''; tplBody.value = '';
+    drawTemplates();
+  };
+  tpl.appendChild(field('New template', tplName));
+  tpl.appendChild(tplBody);
+  tpl.appendChild(addTpl);
+  root.appendChild(tpl);
 }
 
 // ============================================================
@@ -509,6 +805,26 @@ function renderCreative(root: HTMLElement, hooks: CockpitHooks, close: () => voi
 //            family calendar, brain-dump auto-tagging
 // ============================================================
 function renderPersonal(root: HTMLElement, hooks: CockpitHooks, close: () => void) {
+  // ── Alpha Score ──
+  const sc = calculateScore();
+  const scCard = card('Alpha Score', scoreLabel(sc.total));
+  const scColor = scoreColor(sc.total);
+  scCard.innerHTML += `<div style="display:flex;align-items:center;gap:16px;margin:8px 0">
+    ${progressRing(sc.total, { size: 56, stroke: scColor, width: 4 })}
+    <div style="flex:1;display:grid;grid-template-columns:repeat(3,1fr);gap:4px">
+      <div style="font-size:11px;color:var(--dim)">Tasks <span style="color:${scColor}">${sc.tasks}/20</span></div>
+      <div style="font-size:11px;color:var(--dim)">Habits <span style="color:${scColor}">${sc.habits}/15</span></div>
+      <div style="font-size:11px;color:var(--dim)">Focus <span style="color:${scColor}">${sc.focus}/15</span></div>
+      <div style="font-size:11px;color:var(--dim)">Business <span style="color:${scColor}">${sc.business}/20</span></div>
+      <div style="font-size:11px;color:var(--dim)">Goals <span style="color:${scColor}">${sc.goals}/15</span></div>
+      <div style="font-size:11px;color:var(--dim)">Wellness <span style="color:${scColor}">${sc.wellness}/15</span></div>
+    </div>
+  </div>`;
+  if (sc.streak > 0) {
+    scCard.innerHTML += `<div style="font-size:12px;color:var(--gold);text-align:center">🔥 ${sc.streak}-day streak</div>`;
+  }
+  root.appendChild(scCard);
+
   // ── Daily briefing ──
   const brief = card('Daily Briefing', 'Your day at a glance');
   const today = new Date().toISOString().slice(0, 10);
@@ -684,6 +1000,258 @@ function renderPersonal(root: HTMLElement, hooks: CockpitHooks, close: () => voi
   draw();
   root.appendChild(cal);
 
+  // ── Pomodoro Timer ──
+  const pomo = card('Focus Timer', 'Pomodoro technique · 25 min work / 5 min break');
+  const pomoStats = todayPomoStats();
+  const weekPomo = weekPomoStats();
+  const pomoKpis = el('div', 'cp-kpis');
+  pomoKpis.innerHTML =
+    `<div class="cp-kpi"><span class="cp-kpi-val">${pomoStats.completed}</span><span class="cp-kpi-lbl">Today</span></div>` +
+    `<div class="cp-kpi"><span class="cp-kpi-val">${pomoStats.focusMin}m</span><span class="cp-kpi-lbl">Focus</span></div>` +
+    `<div class="cp-kpi"><span class="cp-kpi-val">${weekPomo.totalSessions}</span><span class="cp-kpi-lbl">This week</span></div>` +
+    `<div class="cp-kpi"><span class="cp-kpi-val">${weekPomo.streak}d</span><span class="cp-kpi-lbl">Streak</span></div>`;
+  pomo.appendChild(pomoKpis);
+  const pomoDisplay = el('div', 'cp-bignum', '25:00');
+  pomoDisplay.style.textAlign = 'center';
+  pomo.appendChild(pomoDisplay);
+  let pomoInterval: any = null;
+  let pomoTimeLeft = 25 * 60;
+  let pomoIsBreak = false;
+  const pomoBtns = el('div', 'cp-inline');
+  pomoBtns.style.justifyContent = 'center';
+  const pomoStart = btn('Start focus', true);
+  const pomoReset = btn('Reset');
+  const updatePomoDisplay = () => {
+    const m = Math.floor(pomoTimeLeft / 60);
+    const s = pomoTimeLeft % 60;
+    pomoDisplay.textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    if (pomoIsBreak) pomoDisplay.style.color = 'var(--cyan)';
+    else pomoDisplay.style.color = 'var(--ink)';
+  };
+  pomoStart.onclick = () => {
+    if (pomoInterval) { clearInterval(pomoInterval); pomoInterval = null; pomoStart.textContent = pomoIsBreak ? 'Start break' : 'Start focus'; return; }
+    pomoStart.textContent = 'Pause';
+    pomoInterval = setInterval(() => {
+      pomoTimeLeft--;
+      updatePomoDisplay();
+      if (pomoTimeLeft <= 0) {
+        clearInterval(pomoInterval); pomoInterval = null;
+        if (!pomoIsBreak) {
+          recordPomoSession();
+          hooks.addMsgSys('🍅 Focus session complete! Take a break.');
+          pomoIsBreak = true; pomoTimeLeft = 5 * 60;
+          pomoStart.textContent = 'Start break';
+        } else {
+          pomoIsBreak = false; pomoTimeLeft = 25 * 60;
+          pomoStart.textContent = 'Start focus';
+          hooks.addMsgSys('☕ Break over! Ready for another round?');
+        }
+        updatePomoDisplay();
+        root.replaceChildren(); renderPersonal(root, hooks, close);
+      }
+    }, 1000);
+  };
+  pomoReset.onclick = () => {
+    if (pomoInterval) { clearInterval(pomoInterval); pomoInterval = null; }
+    pomoIsBreak = false; pomoTimeLeft = 25 * 60;
+    pomoStart.textContent = 'Start focus';
+    updatePomoDisplay();
+  };
+  pomoBtns.append(pomoStart, pomoReset);
+  pomo.appendChild(pomoBtns);
+  root.appendChild(pomo);
+
+  // ── Time Tracker ──
+  const ttc = card('Time Tracker', 'Track hours on projects');
+  const ttToday = todayTime();
+  const ttWeek = weekTime();
+  const ttKpis = el('div', 'cp-kpis');
+  ttKpis.innerHTML =
+    `<div class="cp-kpi"><span class="cp-kpi-val">${formatDuration(ttToday.total)}</span><span class="cp-kpi-lbl">Today</span></div>` +
+    `<div class="cp-kpi"><span class="cp-kpi-val">${formatDuration(ttWeek.total)}</span><span class="cp-kpi-lbl">This week</span></div>` +
+    `<div class="cp-kpi"><span class="cp-kpi-val">${ttToday.byProject.length}</span><span class="cp-kpi-lbl">Projects</span></div>`;
+  ttc.appendChild(ttKpis);
+  const activeT = getActiveTimer();
+  const ttProject = input(activeT ? activeT.project : 'Project name');
+  const ttDesc = input('Description (optional)');
+  const ttStartBtn = btn(activeT ? 'Stop tracking' : 'Start tracking', true);
+  if (activeT) {
+    const elapsed = Math.round((Date.now() - activeT.startTime) / 60000);
+    ttc.appendChild(el('div', 'cp-bignum', `${formatDuration(elapsed)} running`));
+    ttProject.value = activeT.project;
+    ttProject.disabled = true;
+  }
+  ttStartBtn.onclick = () => {
+    if (getActiveTimer()) {
+      const entry = stopTimer();
+      if (entry) hooks.addMsgSys(`⏱️ Tracked ${formatDuration(entry.duration)} on ${entry.project}`);
+    } else {
+      if (!ttProject.value.trim()) return;
+      startTimer(ttProject.value.trim(), ttDesc.value.trim());
+    }
+    root.replaceChildren(); renderPersonal(root, hooks, close);
+  };
+  ttc.appendChild(field('Project', ttProject));
+  ttc.appendChild(field('Description', ttDesc));
+  ttc.appendChild(ttStartBtn);
+  const ttList = el('div', 'cp-list');
+  const entries = loadTimeEntries().slice(0, 10);
+  entries.forEach(e => {
+    const r = el('div', 'cp-row');
+    r.innerHTML = `<span class="cp-row-main">${esc(e.project)}</span>` +
+      `<span class="cp-row-sub">${e.description || e.date}</span>` +
+      `<span class="cp-row-tag">${formatDuration(e.duration)}</span>`;
+    const x = el('button', 'cp-x', '✕');
+    x.onclick = () => { removeTimeEntry(e.id); root.replaceChildren(); renderPersonal(root, hooks, close); };
+    r.appendChild(x);
+    ttList.appendChild(r);
+  });
+  if (!entries.length && !activeT) ttList.appendChild(el('div', 'cp-empty', 'No time entries yet.'));
+  ttc.appendChild(ttList);
+  root.appendChild(ttc);
+
+  // ── Wellness Tracker ──
+  const well = card('Wellness', 'Mood · Energy · Water · Sleep');
+  const currentMood = todayMood();
+  const ms = moodStreak();
+  const wellKpis = el('div', 'cp-kpis');
+  wellKpis.innerHTML =
+    `<div class="cp-kpi"><span class="cp-kpi-val">${currentMood ? MOOD_EMOJI[currentMood.mood] : '—'}</span><span class="cp-kpi-lbl">Mood</span></div>` +
+    `<div class="cp-kpi"><span class="cp-kpi-val">${todayWater()}</span><span class="cp-kpi-lbl">Water 💧</span></div>` +
+    `<div class="cp-kpi"><span class="cp-kpi-val">${sleepAvg().hours || '—'}h</span><span class="cp-kpi-lbl">Avg sleep</span></div>` +
+    `<div class="cp-kpi"><span class="cp-kpi-val">${ms.avg || '—'}</span><span class="cp-kpi-lbl">Week avg</span></div>`;
+  well.appendChild(wellKpis);
+  const moodRow = el('div', 'cp-inline');
+  moodRow.style.justifyContent = 'center';
+  moodRow.style.gap = '12px';
+  MOODS.forEach(m => {
+    const mb = el('button', 'cp-btn' + (currentMood?.mood === m ? ' primary' : ''));
+    mb.textContent = MOOD_EMOJI[m];
+    mb.style.fontSize = '20px'; mb.style.minWidth = '44px';
+    mb.onclick = () => { logMood(m); root.replaceChildren(); renderPersonal(root, hooks, close); };
+    moodRow.appendChild(mb);
+  });
+  well.appendChild(el('div', 'cp-label', 'How are you feeling?'));
+  well.appendChild(moodRow);
+  const waterBtn = btn('+ Water glass 💧');
+  waterBtn.onclick = () => { addWater(); root.replaceChildren(); renderPersonal(root, hooks, close); };
+  well.appendChild(waterBtn);
+  const sleepRow = el('div', 'cp-inline');
+  const sleepH = input('Hours slept');
+  sleepH.type = 'number'; sleepH.min = '0'; sleepH.max = '24'; sleepH.step = '0.5';
+  const sleepQ = el('select', 'cp-input') as HTMLSelectElement;
+  [[5, 'Great'], [4, 'Good'], [3, 'Okay'], [2, 'Poor'], [1, 'Bad']].forEach(([v, l]) => {
+    const o = el('option') as HTMLOptionElement; o.value = String(v); o.textContent = l as string; sleepQ.appendChild(o);
+  });
+  const logS = btn('Log sleep');
+  logS.onclick = () => {
+    const h = parseFloat(sleepH.value);
+    if (!h) return;
+    logSleep(h, parseInt(sleepQ.value) || 3);
+    root.replaceChildren(); renderPersonal(root, hooks, close);
+  };
+  sleepRow.append(sleepH, sleepQ, logS);
+  well.appendChild(el('div', 'cp-label', 'Sleep log'));
+  well.appendChild(sleepRow);
+  const wellnessAI = btn('AI wellness insights', true);
+  wellnessAI.onclick = () => {
+    const wData = `Mood: ${currentMood ? currentMood.mood + (currentMood.note ? ' - ' + currentMood.note : '') : 'not logged'}, Water: ${todayWater()} glasses, Sleep avg: ${sleepAvg().hours}h (quality ${sleepAvg().quality}/5), Week mood avg: ${ms.avg}/5`;
+    hooks.ask(`Act as a wellness coach. Here are my wellness stats: ${wData}. Give me 3 personalized tips to improve my wellbeing today. Be warm and actionable.`);
+    close();
+  };
+  well.appendChild(wellnessAI);
+  root.appendChild(well);
+
+  // ── Goals ──
+  const gc = card('Goals', 'Track quarterly & monthly objectives');
+  const gs = activeGoalsSummary();
+  if (gs.total > 0) {
+    const gKpis = el('div', 'cp-kpis');
+    gKpis.innerHTML =
+      `<div class="cp-kpi"><span class="cp-kpi-val">${gs.total}</span><span class="cp-kpi-lbl">Goals</span></div>` +
+      `<div class="cp-kpi"><span class="cp-kpi-val">${gs.completed}</span><span class="cp-kpi-lbl">Done</span></div>` +
+      `<div class="cp-kpi"><span class="cp-kpi-val">${gs.avgProgress}%</span><span class="cp-kpi-lbl">Progress</span></div>`;
+    gc.appendChild(gKpis);
+  }
+  const gTitle = input('Goal — e.g. Close 10 deals this quarter');
+  const gTimeframe = el('select', 'cp-input') as HTMLSelectElement;
+  (['week', 'month', 'quarter', 'year'] as GoalTimeframe[]).forEach(t => {
+    const o = el('option') as HTMLOptionElement; o.value = t; o.textContent = t.charAt(0).toUpperCase() + t.slice(1); gTimeframe.appendChild(o);
+  });
+  gTimeframe.value = 'month';
+  const gCat = el('select', 'cp-input') as HTMLSelectElement;
+  (['business', 'personal', 'health', 'creative', 'financial'] as const).forEach(c => {
+    const o = el('option') as HTMLOptionElement; o.value = c; o.textContent = c.charAt(0).toUpperCase() + c.slice(1); gCat.appendChild(o);
+  });
+  const gMilestones = input('Milestones (comma separated, optional)');
+  const addG = btn('Add goal', true);
+  const gList = el('div', 'cp-list');
+  const drawGoals = () => {
+    gList.innerHTML = '';
+    const goals = loadGoals();
+    if (!goals.length) { gList.appendChild(el('div', 'cp-empty', 'No goals yet. Set your first above.')); return; }
+    goals.forEach(g => {
+      const prog = goalProgress(g);
+      const r = el('div', 'cp-row');
+      r.style.flexWrap = 'wrap';
+      const catHue = { business: 38, personal: 200, health: 145, creative: 280, financial: 45 }[g.category] ?? 200;
+      r.innerHTML =
+        `<span class="cp-row-main" style="flex:1;min-width:120px">${esc(g.title)}</span>` +
+        `<span class="cp-row-tag" style="color:hsl(${catHue},70%,60%)">${g.category} · ${g.timeframe}</span>` +
+        `<span class="cp-row-sub">${Math.round(prog * 100)}%</span>`;
+      const progBar = el('div', 'cp-catbar-track');
+      progBar.style.width = '100%'; progBar.style.margin = '4px 0';
+      const progFill = el('div', 'cp-catbar-fill');
+      progFill.style.width = `${prog * 100}%`;
+      if (prog === 1) progFill.style.background = 'linear-gradient(90deg, #4dff91, #39e75f)';
+      progBar.appendChild(progFill);
+      r.appendChild(progBar);
+      if (g.milestones.length) {
+        const msWrap = el('div', '');
+        msWrap.style.cssText = 'width:100%;display:flex;flex-direction:column;gap:4px;margin-top:4px';
+        g.milestones.forEach((m, mi) => {
+          const mRow = el('div', 'cp-inline');
+          mRow.style.gap = '6px';
+          const mBox = el('button', 'cp-check' + (m.done ? ' on' : ''), m.done ? '✓' : '');
+          mBox.onclick = () => { toggleMilestone(g.id, mi); drawGoals(); };
+          mRow.appendChild(mBox);
+          const mText = el('span', '', esc(m.text));
+          mText.style.fontSize = '12px';
+          if (m.done) { mText.style.opacity = '.45'; mText.style.textDecoration = 'line-through'; }
+          mRow.appendChild(mText);
+          msWrap.appendChild(mRow);
+        });
+        r.appendChild(msWrap);
+      }
+      const addMs = el('button', 'cp-x', '+');
+      addMs.title = 'Add milestone';
+      addMs.onclick = () => {
+        const ms = prompt('New milestone:');
+        if (ms?.trim()) { addMilestoneToGoal(g.id, ms.trim()); drawGoals(); }
+      };
+      r.appendChild(addMs);
+      const del = el('button', 'cp-x', '✕');
+      del.onclick = () => { removeGoal(g.id); drawGoals(); };
+      r.appendChild(del);
+      gList.appendChild(r);
+    });
+  };
+  addG.onclick = () => {
+    if (!gTitle.value.trim()) return;
+    const ms = gMilestones.value.split(',').map(s => s.trim()).filter(Boolean);
+    addGoal(gTitle.value.trim(), gTimeframe.value as GoalTimeframe, gCat.value as any, ms);
+    gTitle.value = ''; gMilestones.value = '';
+    drawGoals();
+  };
+  gc.appendChild(field('Goal', gTitle));
+  const gRow = el('div', 'cp-inline'); gRow.append(gTimeframe, gCat);
+  gc.appendChild(gRow);
+  gc.appendChild(field('Milestones', gMilestones));
+  gc.appendChild(addG);
+  gc.appendChild(gList);
+  drawGoals();
+  root.appendChild(gc);
+
   // ── Voice-to-task: dump → auto-tag → categorize ──
   const vt = card('Brain Dump → Tasks', 'Auto-sorted into Business / Trading / Personal');
   const dump = textarea('One idea per line. I’ll tag each as Business, Trading, Creative or Personal…', 5);
@@ -711,6 +1279,95 @@ function renderPersonal(root: HTMLElement, hooks: CockpitHooks, close: () => voi
   vt.appendChild(sort);
   vt.appendChild(result);
   root.appendChild(vt);
+
+  // ── Smart Notes ──
+  const snc = card('Smart Notes', 'Categorized notes with pinning');
+  const snText = textarea('Quick note…', 3);
+  const snCat = el('select', 'cp-input') as HTMLSelectElement;
+  NOTE_CATEGORIES.forEach(c => { const o = el('option') as HTMLOptionElement; o.value = c; o.textContent = c; snCat.appendChild(o); });
+  const addSN = btn('Save note', true);
+  const snList = el('div', 'cp-list');
+  const drawNotes = () => {
+    snList.innerHTML = '';
+    const notes = loadSmartNotes();
+    const pinned = notes.filter(n => n.pinned);
+    const unpinned = notes.filter(n => !n.pinned);
+    [...pinned, ...unpinned].slice(0, 15).forEach(n => {
+      const r = el('div', 'cp-row');
+      r.style.flexWrap = 'wrap';
+      r.innerHTML =
+        `<span class="cp-row-main" style="flex:1;min-width:100px">${n.pinned ? '📌 ' : ''}${esc(n.text.slice(0, 60))}</span>` +
+        `<span class="cp-row-tag">${esc(n.category)}</span>` +
+        `<span class="cp-row-sub">${n.created}</span>`;
+      const pin = el('button', 'cp-x', n.pinned ? '★' : '☆');
+      pin.title = 'Pin/unpin';
+      pin.onclick = () => { togglePin(n.id); drawNotes(); };
+      r.appendChild(pin);
+      const x = el('button', 'cp-x', '✕');
+      x.onclick = () => { removeSmartNote(n.id); drawNotes(); };
+      r.appendChild(x);
+      snList.appendChild(r);
+    });
+    if (!notes.length) snList.appendChild(el('div', 'cp-empty', 'No notes yet.'));
+  };
+  addSN.onclick = () => {
+    if (!snText.value.trim()) return;
+    addSmartNote(snText.value.trim(), snCat.value);
+    snText.value = '';
+    drawNotes();
+  };
+  snc.appendChild(snText);
+  snc.appendChild(snCat);
+  snc.appendChild(addSN);
+  snc.appendChild(snList);
+  drawNotes();
+  root.appendChild(snc);
+
+  // ── Recurring Tasks ──
+  const rc = card('Recurring Tasks', 'Auto-generate tasks on schedule');
+  const rtText = input('Task name');
+  const rtFreq = el('select', 'cp-input') as HTMLSelectElement;
+  (['daily', 'weekly', 'monthly'] as RecurFreq[]).forEach(f => {
+    const o = el('option') as HTMLOptionElement; o.value = f; o.textContent = f.charAt(0).toUpperCase() + f.slice(1); rtFreq.appendChild(o);
+  });
+  const rtPrio = el('select', 'cp-input') as HTMLSelectElement;
+  ([['med', 'Medium'], ['high', 'High'], ['low', 'Low']] as const).forEach(([v, l]) => {
+    const o = el('option') as HTMLOptionElement; o.value = v; o.textContent = l; rtPrio.appendChild(o);
+  });
+  const addRT = btn('Add recurring', true);
+  const rtList = el('div', 'cp-list');
+  const drawRecurring = () => {
+    rtList.innerHTML = '';
+    const tasks = loadRecurring();
+    if (!tasks.length) { rtList.appendChild(el('div', 'cp-empty', 'No recurring tasks.')); return; }
+    tasks.forEach(t => {
+      const r = el('div', 'cp-row');
+      r.innerHTML =
+        `<span class="cp-row-main">${esc(t.text)}</span>` +
+        `<span class="cp-row-tag">${t.frequency}</span>` +
+        `<span class="cp-row-sub" style="opacity:${t.active ? 1 : 0.4}">${t.active ? 'Active' : 'Paused'}</span>`;
+      const toggle = el('button', 'cp-x', t.active ? '⏸' : '▶');
+      toggle.onclick = () => { toggleRecurring(t.id); drawRecurring(); };
+      r.appendChild(toggle);
+      const x = el('button', 'cp-x', '✕');
+      x.onclick = () => { removeRecurring(t.id); drawRecurring(); };
+      r.appendChild(x);
+      rtList.appendChild(r);
+    });
+  };
+  addRT.onclick = () => {
+    if (!rtText.value.trim()) return;
+    addRecurring(rtText.value.trim(), rtFreq.value as RecurFreq, rtPrio.value as any);
+    rtText.value = '';
+    drawRecurring();
+  };
+  rc.appendChild(field('Task', rtText));
+  const rtRow = el('div', 'cp-inline'); rtRow.append(rtFreq, rtPrio);
+  rc.appendChild(rtRow);
+  rc.appendChild(addRT);
+  rc.appendChild(rtList);
+  drawRecurring();
+  root.appendChild(rc);
 }
 
 // ============================================================
@@ -871,6 +1528,65 @@ function renderAdvanced(root: HTMLElement, hooks: CockpitHooks, close: () => voi
   dz.appendChild(parse);
   dz.appendChild(dOut);
   root.appendChild(dz);
+
+  // ── Data Health ──
+  const dh = card('Data Health', 'Storage integrity and usage');
+  const integrity = checkIntegrity();
+  const storage = storageUsage();
+  dh.innerHTML += `<div class="cp-kpis">
+    <div class="cp-kpi"><span class="cp-kpi-val" style="color:${integrity.corrupted.length ? '#ff5d73' : '#4dff91'}">${integrity.healthy}</span><span class="cp-kpi-lbl">Healthy</span></div>
+    <div class="cp-kpi"><span class="cp-kpi-val" style="color:${integrity.corrupted.length ? '#ff5d73' : 'var(--dim)'}">${integrity.corrupted.length}</span><span class="cp-kpi-lbl">Corrupted</span></div>
+    <div class="cp-kpi"><span class="cp-kpi-val">${integrity.empty.length}</span><span class="cp-kpi-lbl">Empty</span></div>
+    <div class="cp-kpi"><span class="cp-kpi-val">${storage.percent}%</span><span class="cp-kpi-lbl">Storage</span></div>
+  </div>`;
+  dh.innerHTML += `<div style="margin:8px 0"><div style="height:6px;background:rgba(255,255,255,.06);border-radius:3px"><div style="height:100%;width:${storage.percent}%;background:${storage.percent > 80 ? '#ff5d73' : 'var(--gold)'};border-radius:3px"></div></div><div style="font-size:11px;color:var(--dim);margin-top:4px">${(storage.used / 1024).toFixed(1)} KB / ${(storage.available / 1024).toFixed(0)} KB</div></div>`;
+  if (integrity.corrupted.length) {
+    const repairBtn = btn('Repair corrupted stores');
+    repairBtn.onclick = () => {
+      let fixed = 0;
+      for (const key of integrity.corrupted) {
+        if (repairCorrupted(key)) fixed++;
+      }
+      hooks.addMsgSys(`Data repair: ${fixed}/${integrity.corrupted.length} stores fixed.`);
+      root.replaceChildren(); renderAdvanced(root, hooks, close);
+    };
+    dh.appendChild(repairBtn);
+  }
+  root.appendChild(dh);
+
+  // ── Sentiment Analysis ──
+  const sa = card('Conversation Mood', 'Sentiment tracking from your conversations');
+  const sent = averageSentiment();
+  const sentTrend = sentimentTrend(7);
+  const sentIcon = sent.score > 0.3 ? '😊' : sent.score < -0.3 ? '😟' : '😐';
+  sa.innerHTML += `<div style="display:flex;align-items:center;gap:16px;margin:8px 0">
+    <span style="font-size:28px">${sentIcon}</span>
+    <div>
+      <div style="font-size:14px;color:var(--ink)">${sent.label}</div>
+      <div style="font-size:11px;color:var(--dim)">Score: ${sent.score.toFixed(2)} (7-day avg)</div>
+    </div>
+    <div style="margin-left:auto">${sparkline(sentTrend.map(v => (v + 1) * 50), { width: 100, height: 28, stroke: sent.score > 0 ? '#4dff91' : '#ff5d73', fill: sent.score > 0 ? 'rgba(77,255,145,.15)' : 'rgba(255,93,115,.15)', showDots: true })}</div>
+  </div>`;
+  root.appendChild(sa);
+
+  // ── Reports ──
+  const rp = card('Reports', 'Generate and download formatted reports');
+  const rpBiz = btn('Business Report');
+  rpBiz.onclick = () => downloadReport('business');
+  const rpPers = btn('Personal Report');
+  rpPers.onclick = () => downloadReport('personal');
+  const rpFull = btn('Full Report', true);
+  rpFull.onclick = () => downloadReport('full');
+  const rpAI = btn('AI analysis of my data');
+  rpAI.onclick = () => {
+    hooks.ask(`Act as my strategic advisor. Analyze these metrics:\n\n${businessReport()}\n\n${personalReport()}\n\nGive me 5 actionable recommendations for this week. Be specific and data-driven.`);
+    close();
+  };
+  const rpRow = el('div', 'cp-inline');
+  rpRow.append(rpBiz, rpPers, rpFull);
+  rp.appendChild(rpRow);
+  rp.appendChild(rpAI);
+  root.appendChild(rp);
 }
 
 // Lazy-load pdf.js from CDN only when a PDF is actually parsed.

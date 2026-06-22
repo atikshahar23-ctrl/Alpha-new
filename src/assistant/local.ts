@@ -1,4 +1,11 @@
 import { loadEvents, addEvent, loadTasks, addTask, toggleTask, removeTask, saveNote, loadNotes, clearNotes, type Task } from './state';
+import { dailyBriefing, weeklyReport } from '../modules/analytics';
+import { startTimer, stopTimer, getActiveTimer, formatDuration, todayTime } from '../modules/timeTracker';
+import { calculateScore, scoreLabel } from '../modules/scoring';
+import { loadLeads, revenueStats } from '../modules/business';
+import { expenseSummary } from '../modules/personal';
+import { searchContacts } from '../modules/contacts';
+import { loadGoals, activeGoalsSummary } from '../modules/goals';
 
 const GREETINGS_EN = ['Hey! How can I help?', 'Hello! What can I do for you?', 'Hi there! Ready to help.'];
 const GREETINGS_HE = ['היי! איך אפשר לעזור?', 'שלום! מה אפשר לעשות בשבילך?', 'אהלן! מוכן לעזור.'];
@@ -237,6 +244,118 @@ export function tryLocalCommand(text: string): string | null {
     }
   }
 
+  // --- DAILY BRIEFING ---
+  if (/\b(briefing|brief me|daily brief|תדריך|סיכום יומי|morning brief)\b/i.test(low)) {
+    return dailyBriefing();
+  }
+
+  // --- WEEKLY REPORT ---
+  if (/\b(weekly report|week report|דוח שבועי|סיכום שבועי)\b/i.test(low)) {
+    return weeklyReport();
+  }
+
+  // --- TIME TRACKER ---
+  if (/^(start timer|track time|start tracking|התחל מעקב|התחל טיימר)\s*/i.test(t)) {
+    const project = t.replace(/^(start timer|track time|start tracking|התחל מעקב|התחל טיימר)\s*/i, '').trim() || 'General';
+    if (getActiveTimer()) {
+      return he ? '⏱️ כבר יש טיימר פעיל. עצור אותו קודם.' : '⏱️ A timer is already running. Stop it first.';
+    }
+    startTimer(project);
+    return he ? `⏱️ מעקב זמן התחיל: ${project}` : `⏱️ Time tracking started: ${project}`;
+  }
+
+  if (/\b(stop timer|stop tracking|עצור טיימר|עצור מעקב)\b/i.test(low)) {
+    const entry = stopTimer();
+    if (!entry) return he ? 'אין טיימר פעיל.' : 'No active timer.';
+    return he ? `⏱️ נעצר! ${entry.project} — ${formatDuration(entry.duration)}` : `⏱️ Stopped! ${entry.project} — ${formatDuration(entry.duration)}`;
+  }
+
+  if (/\b(time today|tracked time|זמן היום|מעקב זמן)\b/i.test(low)) {
+    const td = todayTime();
+    if (!td.total) return he ? '⏱️ לא נרשם זמן היום.' : '⏱️ No time tracked today.';
+    const lines = td.byProject.map(p => `• ${p.project}: ${formatDuration(p.minutes)}`).join('\n');
+    return he ? `⏱️ סה"כ היום: ${formatDuration(td.total)}\n${lines}` : `⏱️ Today total: ${formatDuration(td.total)}\n${lines}`;
+  }
+
+  // --- ALPHA SCORE ---
+  if (/\b(my score|alpha score|הציון שלי|ביצועים|score)\b/i.test(low)) {
+    const sc = calculateScore();
+    const label = scoreLabel(sc.total);
+    return he
+      ? `⚡ ציון אלפא: ${sc.total}/100 (${label})\nמשימות: ${sc.tasks}/20 | הרגלים: ${sc.habits}/15 | מיקוד: ${sc.focus}/15\nעסקי: ${sc.business}/20 | יעדים: ${sc.goals}/15 | בריאות: ${sc.wellness}/15${sc.streak ? `\n🔥 רצף: ${sc.streak} ימים` : ''}`
+      : `⚡ Alpha Score: ${sc.total}/100 (${label})\nTasks: ${sc.tasks}/20 | Habits: ${sc.habits}/15 | Focus: ${sc.focus}/15\nBusiness: ${sc.business}/20 | Goals: ${sc.goals}/15 | Wellness: ${sc.wellness}/15${sc.streak ? `\n🔥 Streak: ${sc.streak} days` : ''}`;
+  }
+
+  // --- REVENUE / BUSINESS SUMMARY ---
+  if (/\b(revenue|sales|income|הכנסות|מכירות|pipeline|פייפליין)\b/i.test(low)) {
+    try {
+      const rev = revenueStats();
+      const leads = loadLeads();
+      const open = leads.filter(l => l.status !== 'won' && l.status !== 'lost').length;
+      return he
+        ? `💰 סיכום עסקי:\nהכנסות: ₪${rev.realised.toLocaleString()}\nפייפליין: ₪${rev.pipeline.toLocaleString()}\nשיעור סגירה: ${Math.round(rev.winRate * 100)}%\nלידים פתוחים: ${open}`
+        : `💰 Business summary:\nRevenue: ₪${rev.realised.toLocaleString()}\nPipeline: ₪${rev.pipeline.toLocaleString()}\nWin rate: ${Math.round(rev.winRate * 100)}%\nOpen leads: ${open}`;
+    } catch { return he ? 'אין נתונים עסקיים עדיין.' : 'No business data yet.'; }
+  }
+
+  // --- EXPENSES ---
+  if (/\b(expenses|spending|my spending|הוצאות|כמה הוצאתי)\b/i.test(low)) {
+    try {
+      const exp = expenseSummary();
+      let out = he ? `💸 הוצאות החודש: ₪${exp.monthTotal.toLocaleString()}\n` : `💸 This month: ₪${exp.monthTotal.toLocaleString()}\n`;
+      if (exp.byCategory.length) {
+        out += exp.byCategory.slice(0, 5).map(c => `• ${c.category}: ₪${c.total.toLocaleString()}`).join('\n');
+      }
+      return out;
+    } catch { return he ? 'אין הוצאות.' : 'No expenses recorded.'; }
+  }
+
+  // --- GOALS ---
+  if (/\b(my goals|goals|יעדים|המטרות שלי)\b/i.test(low)) {
+    try {
+      const gs = activeGoalsSummary();
+      const goals = loadGoals();
+      if (!goals.length) return he ? '🎯 אין יעדים. הוסף ביעדים בלוח הבקרה.' : '🎯 No goals set. Add goals in the cockpit.';
+      let out = he ? `🎯 יעדים: ${gs.total} (${gs.completed} הושלמו, ${gs.avgProgress}% ממוצע)\n` : `🎯 Goals: ${gs.total} (${gs.completed} done, ${gs.avgProgress}% avg)\n`;
+      out += goals.slice(0, 5).map(g => {
+        const done = g.milestones.filter(m => m.done).length;
+        const total = g.milestones.length;
+        return `• ${g.title} [${total ? Math.round((done / total) * 100) : 0}%]`;
+      }).join('\n');
+      return out;
+    } catch { return he ? 'שגיאה בטעינת יעדים.' : 'Error loading goals.'; }
+  }
+
+  // --- CONTACTS SEARCH ---
+  if (/^(find contact|search contact|חפש איש קשר|מצא)\s+/i.test(t)) {
+    const query = t.replace(/^(find contact|search contact|חפש איש קשר|מצא)\s*/i, '').trim();
+    if (!query) return he ? 'מה לחפש?' : 'Who to find?';
+    const results = searchContacts(query);
+    if (!results.length) return he ? 'לא נמצאו תוצאות.' : 'No contacts found.';
+    return (he ? '📇 נמצאו:\n' : '📇 Found:\n') + results.slice(0, 5).map(c =>
+      `• ${c.name || 'Unnamed'}${c.phone ? ' · ' + c.phone : ''}${c.company ? ' · ' + c.company : ''}`
+    ).join('\n');
+  }
+
+  // --- STATUS / QUICK SUMMARY ---
+  if (/\b(status|my status|סטטוס|מה המצב)\b/i.test(low)) {
+    const tasks = loadTasks();
+    const open = tasks.filter(t => !t.done).length;
+    const today = new Date().toISOString().slice(0, 10);
+    const events = loadEvents().filter(e => e.date === today);
+    const sc = calculateScore();
+    const timer = getActiveTimer();
+    let out = he ? '📊 סטטוס נוכחי:\n' : '📊 Current status:\n';
+    out += he ? `• משימות פתוחות: ${open}\n` : `• Open tasks: ${open}\n`;
+    out += he ? `• אירועים היום: ${events.length}\n` : `• Events today: ${events.length}\n`;
+    out += he ? `• ציון אלפא: ${sc.total}/100\n` : `• Alpha Score: ${sc.total}/100\n`;
+    if (timer) {
+      const elapsed = Math.round((Date.now() - timer.startTime) / 60000);
+      out += he ? `• טיימר פעיל: ${timer.project} (${elapsed}d)\n` : `• Active timer: ${timer.project} (${elapsed}m)\n`;
+    }
+    return out.trim();
+  }
+
   // --- HELP ---
   if (/\b(help|what can you do|מה אתה יכול|עזרה|יכולות)\b/i.test(low)) {
     return he
@@ -244,31 +363,29 @@ export function tryLocalCommand(text: string): string | null {
 • "הוסף משימה ..." — ניהול משימות
 • "המשימות שלי" — הצג משימות
 • "סיימתי ..." — סמן משימה כהושלמה
-• "שמור ..." — שמור הערה
-• "ההערות שלי" — הצג הערות
+• "שמור ..." — שמור הערה / "ההערות שלי"
 • "הוסף אירוע ... 2026-07-01 14:00" — יומן
 • "היומן שלי" — הצג אירועים
-• "מה השעה" / "מה התאריך"
-• "חשב 15*3+7" — מחשבון
-• "הטל מטבע" / "הטל קובייה"
-• "מספר אקראי 1 100"
-• "טיימר 5 דקות" — טיימר
-• "בדיחה" / "עובדה"
-ולשאלות מורכבות יותר — אשתמש ב-AI.`
+• "הכנסות" / "הוצאות" — סיכום פיננסי
+• "יעדים" — הצג יעדים
+• "חפש איש קשר ..." — חיפוש
+• "סטטוס" — סיכום מהיר
+• "הציון שלי" — ציון אלפא
+• "תדריך" — סיכום יומי
+• "מה השעה" / "חשב ..." / "טיימר 5 דקות"
+ולשאלות מורכבות — AI.`
       : `🤖 Here's what I can do offline:
-• "add task ..." — task management
-• "my tasks" — show tasks
-• "done ..." — complete a task
-• "note ..." — save a note
-• "my notes" — show notes
-• "add event ... 2026-07-01 14:00" — calendar
-• "my calendar" — show events
-• "what time" / "what date"
-• "calculate 15*3+7" — calculator
-• "flip a coin" / "roll a dice"
-• "random number 1 100"
-• "timer 5 minutes" — timer
-• "joke" / "fun fact"
+• "add task ..." / "my tasks" / "done ..."
+• "note ..." / "my notes"
+• "add event ... 2026-07-01 14:00" / "my calendar"
+• "revenue" / "expenses" — financial summary
+• "my goals" — goal progress
+• "find contact ..." — contact search
+• "status" — quick overview
+• "my score" — Alpha Score
+• "briefing" — daily brief
+• "what time" / "calculate ..." / "timer 5 min"
+• "joke" / "fun fact" / "flip coin" / "roll dice"
 For complex questions — I'll use AI.`;
   }
 

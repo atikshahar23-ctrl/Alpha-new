@@ -1,6 +1,6 @@
 import { mountOrb, type OrbHandle } from '../orb/OrbScene';
 import { mountFlowLines } from '../bg/flowLines';
-import { loadState, saveState, addEvent, loadEvents, removeEvent, type AppState, type TextLang, type AIProvider, type VoiceGender } from '../assistant/state';
+import { loadState, saveState, addEvent, addTask, saveNote, loadEvents, loadTasks, removeEvent, type AppState, type TextLang, type AIProvider, type VoiceGender } from '../assistant/state';
 import { askAI, runTags } from '../assistant/gemini';
 import { tryLocalCommand } from '../assistant/local';
 import { VoiceEngine } from '../assistant/voice';
@@ -8,13 +8,23 @@ import { AudioEngine, type AmbientPreset } from '../assistant/audio';
 import { orchestrate, refreshSummary, moduleById, loadMemory, updateProfile } from '../brain';
 import { mountCockpit, type CockpitHandle } from '../modules/cockpit';
 import { runProactive } from '../modules/proactive';
+import { processRecurring } from '../modules/recurring';
 import * as driveSync from '../modules/driveSync';
+import { universalSearch, TYPE_ICONS, addRecentSearch, recentSearches, quickSuggestions } from '../modules/search';
+import { registerShortcut, initShortcuts, shortcutsHTML } from '../modules/shortcuts';
+import { dailyBriefing } from '../modules/analytics';
+import { startTimer, stopTimer, formatDuration, getActiveTimer } from '../modules/timeTracker';
+import { saveChatMessage, loadChatHistory, clearChatHistory } from '../modules/chatHistory';
+import { trackSentiment, averageSentiment } from '../modules/sentiment';
+import { calculateScore, scoreLabel } from '../modules/scoring';
+import { checkIntegrity, repairCorrupted } from '../modules/dataIntegrity';
 
 export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="chrome topL"><div class="wm">ALPHA ASSISTANT</div><div class="clk" id="clock">--:--</div></div>
       <div class="chrome topR">
+        <button class="chip ghost" id="searchBtn" aria-label="Search (Ctrl+K)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
         <button class="chip ghost" id="muteBtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg></button>
         <button class="chip" id="settingsBtn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg> SETTINGS</button>
         <button class="chip ghost" id="newChat"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> NEW</button>
@@ -72,6 +82,10 @@ export function mountApp(root: HTMLElement) {
             <div class="qs"><span class="qs-val" id="tokenCount">0</span><span class="qs-label">TOKENS</span></div>
             <div class="qs"><span class="qs-val" id="uptimeVal">00:00</span><span class="qs-label">UPTIME</span></div>
           </div>
+        </div>
+        <div class="lp-section">
+          <div class="lp-label">LIVE STATUS</div>
+          <div class="live-widgets" id="liveWidgets"></div>
         </div>
       </aside>
 
@@ -296,6 +310,11 @@ export function mountApp(root: HTMLElement) {
           </div>
         </div>
 
+        <div class="settings-section">
+          <div class="ss-title">KEYBOARD SHORTCUTS</div>
+          <div id="shortcutsList" style="font-size:13px"></div>
+        </div>
+
         <button class="go" id="saveBtn">Save</button>
       </div></div>
       <div class="hg-overlay" id="hgOverlay">
@@ -306,6 +325,24 @@ export function mountApp(root: HTMLElement) {
           </div>
           <iframe id="hgIframe" class="hg-iframe" src="" allow="camera;microphone"></iframe>
         </div>
+      </div>
+      <div class="search-overlay" id="searchOverlay">
+        <div class="search-card">
+          <div class="search-bar">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input id="searchInput" type="text" placeholder="Search everything…" autocomplete="off" />
+            <kbd class="search-esc">ESC</kbd>
+          </div>
+          <div class="search-results" id="searchResults"></div>
+        </div>
+      </div>
+      <button class="fab" id="fabBtn" title="Quick Actions">+</button>
+      <div class="fab-menu" id="fabMenu">
+        <button class="fab-item" data-action="task">✓ Quick Task</button>
+        <button class="fab-item" data-action="note">📝 Quick Note</button>
+        <button class="fab-item" data-action="timer">⏱ Start Timer</button>
+        <button class="fab-item" data-action="briefing">📊 Briefing</button>
+        <button class="fab-item" data-action="search">🔍 Search</button>
       </div>
       <div class="ar-overlay" id="arOverlay">
         <div class="ar-frame">
@@ -403,6 +440,20 @@ export function mountApp(root: HTMLElement) {
   // ── Proactive background alerts (installs, trading thresholds, trends) ──
   try {
     runProactive((title: string, body: string) => addMsg(`🔔 ${title} — ${body}`, 'sys'));
+  } catch {}
+  // ── Process recurring tasks ──
+  try {
+    const generated = processRecurring();
+    if (generated > 0) addMsg(`📋 Generated ${generated} recurring task(s) for today.`, 'sys');
+  } catch {}
+  // ── Data integrity check ──
+  try {
+    const integrity = checkIntegrity();
+    if (integrity.corrupted.length) {
+      let fixed = 0;
+      for (const key of integrity.corrupted) { if (repairCorrupted(key)) fixed++; }
+      addMsg(`⚠️ Data integrity: ${integrity.corrupted.length} store(s) were corrupted, ${fixed} auto-repaired.`, 'sys');
+    }
   } catch {}
 
   // AI capability nodes overlay
@@ -554,6 +605,8 @@ export function mountApp(root: HTMLElement) {
     lpTokenCount += Math.round(words * 1.3);
     const tcEl = document.getElementById('tokenCount');
     if (tcEl) tcEl.textContent = String(lpTokenCount);
+    saveChatMessage(text, who);
+    if (who === 'me') trackSentiment(text);
   }
 
   function openWin(title: string) { $('winTitle').textContent = title; $('win').classList.add('show'); audio.open(); }
@@ -627,7 +680,7 @@ export function mountApp(root: HTMLElement) {
     </div>`;
   }
 
-  async function openSearch(q: string) {
+  async function openWebSearch(q: string) {
     openWin('Search · ' + q);
     $('winBody').innerHTML = '<div class="pad">Searching…</div>';
     try {
@@ -690,7 +743,7 @@ export function mountApp(root: HTMLElement) {
     try {
       const reply = await askAI(state, text);
       const clean = runTags(reply, {
-        onVideo: openVideo, onSearch: openSearch, onCalendar: openCalendar,
+        onVideo: openVideo, onSearch: openWebSearch, onCalendar: openCalendar,
         onEvent: addEvent, onSpotify: openSpotify,
         onDiary: async (title: string, date: string) => {
           const tasks = await hgLoad('hg2:tasks');
@@ -705,6 +758,20 @@ export function mountApp(root: HTMLElement) {
         onHgQuote: hgCreateQuote,
         onArCamera: openArCamera,
         onGDoc: openGDoc,
+        onTask: (text: string, priority: string) => {
+          if (text) { addTask(text, (priority as 'low' | 'med' | 'high') || 'med'); addMsg(`✅ Task added: "${text}"`, 'sys'); }
+        },
+        onNote: (text: string) => {
+          if (text) { saveNote(text); addMsg(`📝 Note saved.`, 'sys'); }
+        },
+        onTimerStart: (project: string) => {
+          startTimer(project);
+          addMsg(`⏱️ Timer started: ${project}`, 'sys');
+        },
+        onTimerStop: () => {
+          const entry = stopTimer();
+          if (entry) addMsg(`⏱️ Stopped: ${entry.project} — ${formatDuration(entry.duration)}`, 'sys');
+        },
       }) || 'Done.';
       audio.receive();
       addMsg(clean, 'al');
@@ -742,7 +809,7 @@ export function mountApp(root: HTMLElement) {
     if (turningOn) audio.micOn(); else audio.micOff();
   };
   $('muteBtn').onclick = () => { audio.toggleMute(); };
-  $('newChat').onclick = () => { state.history = []; $('rpBody').innerHTML = ''; addMsg(state.name + ' ready.', 'al'); };
+  $('newChat').onclick = () => { state.history = []; $('rpBody').innerHTML = ''; $('chat').innerHTML = ''; clearChatHistory(); addMsg(state.name + ' ready.', 'al'); };
 
   // Detect button
   let detecting = false;
@@ -2014,6 +2081,110 @@ export function mountApp(root: HTMLElement) {
     else alert('Import failed: ' + r.error);
   };
 
+  // ── Universal Search ──
+  const searchOverlay = $('searchOverlay');
+  const searchInput = $<HTMLInputElement>('searchInput');
+  const searchResults = $('searchResults');
+  function openSearch() {
+    searchOverlay.classList.add('show');
+    searchInput.value = '';
+    let hintHtml = '';
+    const recent = recentSearches();
+    if (recent.length) {
+      hintHtml += '<div class="search-hint">Recent</div>';
+      hintHtml += recent.slice(0, 5).map(r => `<div class="search-item search-recent" data-query="${r}"><span class="search-icon">🕐</span><div class="search-text"><span class="search-title">${r}</span></div></div>`).join('');
+    }
+    const suggestions = quickSuggestions();
+    if (suggestions.length) {
+      hintHtml += '<div class="search-hint">Quick access</div>';
+      hintHtml += suggestions.map(s => `<div class="search-item" data-type="${s.type}"><span class="search-icon">${TYPE_ICONS[s.type]}</span><div class="search-text"><span class="search-title">${s.title}</span><span class="search-sub">${s.subtitle}</span></div><span class="search-type">${s.type}</span></div>`).join('');
+    }
+    if (!hintHtml) hintHtml = '<div class="search-hint">Search leads, tasks, events, invoices, goals, notes…</div>';
+    searchResults.innerHTML = hintHtml;
+    searchResults.querySelectorAll('.search-recent').forEach(el => {
+      (el as HTMLElement).onclick = () => {
+        searchInput.value = (el as HTMLElement).dataset.query || '';
+        searchInput.dispatchEvent(new Event('input'));
+      };
+    });
+    setTimeout(() => searchInput.focus(), 100);
+  }
+  function closeSearch() { searchOverlay.classList.remove('show'); }
+  $('searchBtn').onclick = openSearch;
+  searchOverlay.addEventListener('click', e => { if (e.target === searchOverlay) closeSearch(); });
+  document.addEventListener('keydown', e => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); openSearch(); }
+    if (e.key === 'Escape' && searchOverlay.classList.contains('show')) closeSearch();
+  });
+  let searchDebounce: any = null;
+  searchInput.addEventListener('input', () => {
+    clearTimeout(searchDebounce);
+    searchDebounce = setTimeout(() => {
+      const q = searchInput.value.trim();
+      if (!q) { searchResults.innerHTML = '<div class="search-hint">Type to search across all your data…</div>'; return; }
+      addRecentSearch(q);
+      const results = universalSearch(q);
+      if (!results.length) { searchResults.innerHTML = '<div class="search-hint">No results found.</div>'; return; }
+      searchResults.innerHTML = results.map(r =>
+        `<div class="search-item" data-type="${r.type}">` +
+        `<span class="search-icon">${TYPE_ICONS[r.type]}</span>` +
+        `<div class="search-text"><span class="search-title">${r.title}</span><span class="search-sub">${r.subtitle}</span></div>` +
+        `<span class="search-type">${r.type}</span></div>`
+      ).join('');
+    }, 150);
+  });
+
+  // ── Quick Actions FAB ──
+  const fabBtn = $('fabBtn');
+  const fabMenu = $('fabMenu');
+  let fabOpen = false;
+  fabBtn.onclick = () => {
+    fabOpen = !fabOpen;
+    fabMenu.classList.toggle('show', fabOpen);
+    fabBtn.textContent = fabOpen ? '✕' : '+';
+    fabBtn.style.transform = fabOpen ? 'rotate(45deg)' : '';
+  };
+  fabMenu.addEventListener('click', (e) => {
+    const item = (e.target as HTMLElement).closest('.fab-item') as HTMLElement;
+    if (!item) return;
+    const action = item.dataset.action;
+    fabOpen = false; fabMenu.classList.remove('show'); fabBtn.textContent = '+'; fabBtn.style.transform = '';
+    if (action === 'task') {
+      const text = prompt('Quick task:');
+      if (text?.trim()) { addTask(text.trim()); addMsg(`✅ Task added: "${text.trim()}"`, 'sys'); }
+    } else if (action === 'note') {
+      const text = prompt('Quick note:');
+      if (text?.trim()) { saveNote(text.trim()); addMsg(`📝 Note saved.`, 'sys'); }
+    } else if (action === 'timer') {
+      const project = prompt('Project name:');
+      if (project?.trim()) { startTimer(project.trim()); addMsg(`⏱️ Timer started: ${project.trim()}`, 'sys'); }
+    } else if (action === 'briefing') {
+      addMsg(dailyBriefing(), 'sys');
+    } else if (action === 'search') {
+      openSearch();
+    }
+  });
+  document.addEventListener('click', (e) => {
+    if (fabOpen && !(e.target as HTMLElement).closest('.fab, .fab-menu, #fabBtn, #fabMenu')) {
+      fabOpen = false; fabMenu.classList.remove('show'); fabBtn.textContent = '+'; fabBtn.style.transform = '';
+    }
+  });
+
+  // ── Keyboard Shortcuts ──
+  registerShortcut('Ctrl+K', 'Search', openSearch);
+  registerShortcut('Ctrl+B', 'Daily Briefing', () => {
+    const brief = dailyBriefing();
+    addMsg(brief, 'sys');
+  });
+  registerShortcut('Ctrl+.', 'Settings', openSetup);
+  initShortcuts();
+
+  // ── Shortcuts panel in settings ──
+  try {
+    const shortcutsDiv = document.getElementById('shortcutsList');
+    if (shortcutsDiv) shortcutsDiv.innerHTML = shortcutsHTML();
+  } catch {}
+
   $<HTMLSelectElement>('replySel').onchange = () => { state.replyLang = $<HTMLSelectElement>('replySel').value as any; refreshVoiceList(); };
   $<HTMLSelectElement>('ambPresetSel').onchange = () => {
     audio.ensure();
@@ -2233,6 +2404,45 @@ export function mountApp(root: HTMLElement) {
     $('uptimeVal').textContent = pad(mins) + ':' + pad(secs);
   }, 1000);
 
+  // --- Live Widgets ---
+  function updateLiveWidgets() {
+    const w = $('liveWidgets');
+    if (!w) return;
+    try {
+      const tasks = loadTasks();
+      const openTasks = tasks.filter(t => !t.done).length;
+      const events = loadEvents();
+      const today = new Date().toISOString().slice(0, 10);
+      const todayEvents = events.filter(e => e.date === today).length;
+      let timerLine = '';
+      try {
+        const at = getActiveTimer();
+        if (at) {
+          const elapsed = Math.round((Date.now() - at.startTime) / 60000);
+          timerLine = `<div class="lw-item"><span class="lw-icon">⏱</span><span class="lw-val">${elapsed}m</span><span class="lw-lbl">${at.project}</span></div>`;
+        }
+      } catch {}
+      let moodLine = '';
+      try {
+        const s = averageSentiment();
+        const icon = s.score > 0.3 ? '😊' : s.score < -0.3 ? '😟' : '😐';
+        moodLine = `<div class="lw-item"><span class="lw-icon">${icon}</span><span class="lw-val">${s.label}</span><span class="lw-lbl">Mood</span></div>`;
+      } catch {}
+      let scoreLine = '';
+      try {
+        const sc = calculateScore();
+        scoreLine = `<div class="lw-item"><span class="lw-icon">⚡</span><span class="lw-val">${sc.total}</span><span class="lw-lbl">${scoreLabel(sc.total)}</span></div>`;
+      } catch {}
+      w.innerHTML =
+        scoreLine +
+        `<div class="lw-item"><span class="lw-icon">✓</span><span class="lw-val">${openTasks}</span><span class="lw-lbl">Tasks</span></div>` +
+        `<div class="lw-item"><span class="lw-icon">📅</span><span class="lw-val">${todayEvents}</span><span class="lw-lbl">Today</span></div>` +
+        timerLine + moodLine;
+    } catch {}
+  }
+  updateLiveWidgets();
+  setInterval(updateLiveWidgets, 30000);
+
   // --- AI Model Display ---
   function updateAIDisplay() {
     const modelNames: Record<string, string> = {
@@ -2263,9 +2473,20 @@ export function mountApp(root: HTMLElement) {
   }
   function personalGreeting(): string {
     const nm = loadMemory().profile.name;
-    return nm
-      ? `${greetingPrefix()}, ${nm}. ${state.name} is online — how can I help?`
-      : `${state.name} online. Talk to me or type.`;
+    if (!nm) return `${state.name} online. Talk to me or type.`;
+    const tasks = loadTasks();
+    const openCount = tasks.filter(t => !t.done).length;
+    const today = new Date().toISOString().slice(0, 10);
+    const todayEvents = loadEvents().filter(e => e.date === today).length;
+    const bits: string[] = [`${greetingPrefix()}, ${nm}.`];
+    if (openCount > 0 || todayEvents > 0) {
+      const parts: string[] = [];
+      if (todayEvents) parts.push(`${todayEvents} event${todayEvents > 1 ? 's' : ''} today`);
+      if (openCount) parts.push(`${openCount} open task${openCount > 1 ? 's' : ''}`);
+      bits.push(`You have ${parts.join(' and ')}.`);
+    }
+    bits.push('How can I help?');
+    return bits.join(' ');
   }
 
   // ── First-run welcome: ask the user's name so the AI can address them ──
@@ -2301,11 +2522,27 @@ export function mountApp(root: HTMLElement) {
   }
 
   const puterAvailable = typeof (window as any).puter !== 'undefined';
+  // ── Restore chat history ──
+  const prevHistory = loadChatHistory();
+  if (prevHistory.length > 0) {
+    const recent = prevHistory.slice(-20);
+    for (const msg of recent) {
+      const label = { me: 'YOU', al: state.name, sys: 'SYSTEM' }[msg.who];
+      const chatEl = $('chat');
+      const div = document.createElement('div');
+      div.className = 'turn ' + msg.who;
+      div.innerHTML = `<span class="who">${label}</span><div class="txt">${msg.text}</div>`;
+      if (chatEl) chatEl.appendChild(div);
+    }
+    const chatEl = $('chat');
+    if (chatEl) chatEl.scrollTop = chatEl.scrollHeight;
+  }
+
   const canUseAI = puterAvailable || state.key || state.grokKey || state.openaiKey;
   const knownName = loadMemory().profile.name;
   if (!canUseAI) openSetup();
   if (!knownName) showWelcome();
-  else if (canUseAI) addMsg(personalGreeting(), 'al');
+  else if (canUseAI && prevHistory.length === 0) addMsg(personalGreeting(), 'al');
 
   // ── 3D Depth — perspective-based UI panel transforms ──
   {

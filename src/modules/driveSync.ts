@@ -22,6 +22,19 @@ const SYNC_TABLES = [
   'hg2:quotes',
   'hg2:tasks',
   'alpha_brain_memory_v1',
+  'alpha_pomodoro_v1',
+  'alpha_mood_v1',
+  'alpha_water_v1',
+  'alpha_sleep_v1',
+  'alpha_goals_v1',
+  'alpha_invoices_v1',
+  'alpha_contacts_v1',
+  'alpha_smart_notes_v1',
+  'alpha_recurring_v1',
+  'alpha_timetracker_v1',
+  'alpha_chat_history_v1',
+  'alpha_sentiment_v1',
+  'alpha_templates_v1',
 ];
 
 interface DriveToken {
