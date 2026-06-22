@@ -635,6 +635,30 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   smileR.rotation.x = 0.08;
   headGroup.add(smileR);
 
+  // ── Tongue — small pink bump visible inside open smile ──
+  const tongueMat = new THREE.MeshPhysicalMaterial({
+    color: 0xE87070, metalness: 0.0, roughness: 0.5,
+  });
+  const tongue = new THREE.Mesh(
+    new THREE.SphereGeometry(0.04, seg(10), seg(10)),
+    tongueMat,
+  );
+  tongue.scale.set(1.2, 0.5, 0.8);
+  tongue.position.set(0, -0.12, 0.67);
+  headGroup.add(tongue);
+
+  // ── Brow ridges — subtle yellow bumps above eyes ──
+  for (const sx of [-1, 1]) {
+    const brow = new THREE.Mesh(
+      new THREE.SphereGeometry(0.06, seg(10), seg(10)),
+      mats.yellow,
+    );
+    brow.scale.set(1.8, 0.4, 0.5);
+    brow.position.set(sx * 0.27, 0.2, 0.62);
+    brow.rotation.z = sx * -0.1;
+    headGroup.add(brow);
+  }
+
   // ── Red Cheeks — signature round red patches with glow ──
   const cheekMatL = mats.red.clone();
   const cheekMatR = mats.red.clone();
@@ -814,6 +838,19 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
     }),
   );
   group.add(glassOrb);
+
+  // Warm yellow point light inside Pikachu for self-illumination
+  const pikaLight = new THREE.PointLight(0xFCD534, 0.4, 3.0, 1.5);
+  pikaLight.position.set(0, 0.0, 0.2);
+  group.add(pikaLight);
+
+  // Cheek glow lights — subtle red point lights at cheek positions
+  const cheekLightL = new THREE.PointLight(0xCC2828, 0.15, 1.2, 2);
+  cheekLightL.position.set(-0.5, 0.5, 0.44);
+  group.add(cheekLightL);
+  const cheekLightR = new THREE.PointLight(0xCC2828, 0.15, 1.2, 2);
+  cheekLightR.position.set(0.5, 0.5, 0.44);
+  group.add(cheekLightR);
 
   return { group, head: headGroup, leftEye, rightEye, leftEyelid, rightEyelid, leftEarGroup, rightEarGroup, cheekMatL, cheekMatR, tail, leftArm, rightArm, mouthMesh, sparks, sparkMats };
 }
