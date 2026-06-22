@@ -421,6 +421,14 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   shoulders.position.set(0, 0.2, 0.02);
   group.add(shoulders);
 
+  // Neck — subtle cylinder connecting head and body
+  const neck = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.28, 0.35, 0.2, seg(16)),
+    mats.yellow,
+  );
+  neck.position.set(0, 0.42, 0.02);
+  group.add(neck);
+
   // Belly — lighter cream patch on the front
   const belly = new THREE.Mesh(
     new THREE.SphereGeometry(0.5, seg(32), seg(32)),
@@ -786,7 +794,44 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
     sole.position.set(sx * 0.32, -1.22, 0.22);
     sole.rotation.x = -PI / 2;
     group.add(sole);
+
+    // Paw pads — small darker circles on soles
+    for (let pi = 0; pi < 3; pi++) {
+      const pad = new THREE.Mesh(
+        new THREE.CircleGeometry(0.025, seg(8)),
+        mats.darkYellow,
+      );
+      pad.position.set(
+        sx * 0.32 + (pi - 1) * 0.04,
+        -1.225,
+        0.3 + Math.abs(pi - 1) * -0.01,
+      );
+      pad.rotation.x = -PI / 2;
+      group.add(pad);
+    }
+    // Center pad — larger oval
+    const centerPad = new THREE.Mesh(
+      new THREE.CircleGeometry(0.035, seg(8)),
+      mats.darkYellow,
+    );
+    centerPad.scale.set(1.2, 1, 1);
+    centerPad.position.set(sx * 0.32, -1.225, 0.22);
+    centerPad.rotation.x = -PI / 2;
+    group.add(centerPad);
   }
+
+  // ── Ground shadow — soft disc beneath Pikachu ──
+  const shadowMat = new THREE.MeshBasicMaterial({
+    color: 0x000000, transparent: true, opacity: 0.12,
+    depthWrite: false, side: THREE.DoubleSide,
+  });
+  const shadow = new THREE.Mesh(
+    new THREE.CircleGeometry(0.6, seg(24)),
+    shadowMat,
+  );
+  shadow.position.set(0, -1.25, 0.15);
+  shadow.rotation.x = -PI / 2;
+  group.add(shadow);
 
   // ── Tail — iconic zigzag lightning bolt, wider and more dramatic ──
   const tail = new THREE.Group();
