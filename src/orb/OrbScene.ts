@@ -195,7 +195,7 @@ const GRID_FRAGMENT = /* glsl */`
     // Better radial falloff — softer outer edge
     float fall = smoothstep(1.0, 0.55, dist) * smoothstep(0.0, 0.08, dist);
     float alpha = combined * fall;
-    gl_FragColor = vec4(color, alpha * 0.16);
+    gl_FragColor = vec4(color, alpha * 0.05);
   }
 `;
 
@@ -874,8 +874,18 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   const group = new THREE.Group();
   scene.add(group);
 
+  // ── Three-point lighting (shader reads directions, but lights add ACES baseline) ──
+  const mKey = new THREE.DirectionalLight(0xffeedd, 2.5);
+  mKey.position.set(3, 4, 2);
+  scene.add(mKey);
+  const mFill = new THREE.DirectionalLight(0xdaa520, 0.8);
+  mFill.position.set(-3, 1, 3);
+  scene.add(mFill);
+  const mAmbient = new THREE.AmbientLight(0x1a1408, 0.3);
+  scene.add(mAmbient);
+
   // ────────────────────────────────────────────
-  // CENTRAL ORB — shader sphere (subdivision 7)
+  // CENTRAL ORB — solid gold metal (subdivision 7)
   // ────────────────────────────────────────────
   const orbGeo = new THREE.IcosahedronGeometry(1.0, 7);
   const orbMat = new THREE.ShaderMaterial({
@@ -978,42 +988,6 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     pmesh.position.y = 0;
     group.add(pmesh);
     pulseRings.push({ mesh: pmesh, mat: pm, phase: i / PULSE_N });
-  }
-
-  // ────────────────────────────────────────────
-  // SCAN PLANE — horizontal sweep
-  // ────────────────────────────────────────────
-  const scanGeo = new THREE.PlaneGeometry(3.5, 0.025);
-  const scanMat = new THREE.MeshBasicMaterial({
-    color: 0xdaa520, transparent: true, opacity: 0.25, depthWrite: false, side: THREE.DoubleSide,
-  });
-  const scanPlane = new THREE.Mesh(scanGeo, scanMat);
-  scanPlane.position.z = 0.1;
-  group.add(scanPlane);
-
-  // ────────────────────────────────────────────
-  // DATA STREAM LINES — vertical flowing lines around the orb
-  // ────────────────────────────────────────────
-  const STREAM_N = 8;
-  const streams: { line: THREE.Line; mat: THREE.LineBasicMaterial; baseX: number; baseZ: number }[] = [];
-  for (let i = 0; i < STREAM_N; i++) {
-    const a = (i / STREAM_N) * PI2;
-    const r = 1.0 + (i % 3) * 0.15;
-    const pts: number[] = [];
-    const segs = 30;
-    for (let j = 0; j <= segs; j++) {
-      const t = j / segs;
-      pts.push(Math.cos(a) * r, -1.5 + t * 3.0, Math.sin(a) * r);
-    }
-    const sGeo = new THREE.BufferGeometry();
-    sGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pts), 3));
-    const sMat = new THREE.LineBasicMaterial({
-      color: i % 2 === 0 ? 0xdaa520 : 0xf5e6c8,
-      transparent: true, opacity: 0.06, depthWrite: false,
-    });
-    const sLine = new THREE.Line(sGeo, sMat);
-    group.add(sLine);
-    streams.push({ line: sLine, mat: sMat, baseX: Math.cos(a) * r, baseZ: Math.sin(a) * r });
   }
 
   // ────────────────────────────────────────────
@@ -1169,15 +1143,10 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     coreGlow.scale.setScalar(1.6 + Math.sin(time * 1.5) * 0.3 + amp * 0.4);
     coreGlowMat.opacity = 0.18 + Math.sin(time * 1.8) * 0.06 + amp * 0.12;
 
-    wireA.rotation.y = time * 0.1;
-    wireA.rotation.z = Math.sin(time * 0.12) * 0.12;
-    wireAMat.opacity = 0.06 + amp * 0.05 + Math.sin(time * 0.9) * 0.025;
-    wireB.rotation.y = -time * 0.07;
-    wireB.rotation.x = time * 0.05;
-    wireBMat.opacity = 0.04 + amp * 0.04;
-
     goldRing.rotation.z = 0.15 + time * 0.1;
-    goldRMat.opacity = 0.75 + Math.sin(time * 0.8) * 0.1 + amp * 0.15;
+    goldRMat.opacity = 0.9 + Math.sin(time * 0.8) * 0.08 + amp * 0.1;
+    haloGlow.rotation.z = goldRing.rotation.z;
+    haloGlowMat.opacity = 0.16 + Math.sin(time * 0.8) * 0.05 + amp * 0.1;
     cyanRing.rotation.z = -0.3 - time * 0.14;
     cyanRMat.opacity = 0.35 + Math.sin(time * 0.7) * 0.1;
     purpRing.rotation.z = 0.5 + time * 0.06;
@@ -1196,16 +1165,6 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
       const scale = 1.5 + t * 4.0;
       pr.mesh.scale.set(scale, scale, 1);
       pr.mat.uniforms.uOpacity.value = (1 - t) * 0.15 * (0.5 + amp);
-    }
-
-    const scanRange = 2.5;
-    scanPlane.position.y = Math.sin(time * 0.5) * scanRange * 0.5;
-    scanMat.opacity = 0.25 + amp * 0.3 + Math.sin(time * 3) * 0.1;
-
-    for (let i = 0; i < STREAM_N; i++) {
-      const s = streams[i];
-      const wave = Math.sin(time * 1.5 + i * 0.8) * 0.5 + 0.5;
-      s.mat.opacity = 0.03 + wave * 0.08 + amp * 0.04;
     }
 
     glow1.scale.setScalar(4.0 + Math.sin(time * 0.8) * 0.5 + amp * 0.8);
@@ -1308,7 +1267,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
 
   const bloom = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    0.35, 0.4, 0.5,
+    0.5, 0.4, 0.3,
   );
   composer.addPass(bloom);
 
@@ -1355,8 +1314,21 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   const group = new THREE.Group();
   scene.add(group);
 
+  // ── Dramatic three-point lighting ──
+  const keyLight = new THREE.DirectionalLight(0xffeedd, 2.5);
+  keyLight.position.set(3, 4, 2);
+  scene.add(keyLight);
+  const fillLight = new THREE.DirectionalLight(0xdaa520, 0.8);
+  fillLight.position.set(-3, 1, 3);
+  scene.add(fillLight);
+  const rimLight = new THREE.DirectionalLight(0xffe8c0, 1.8);
+  rimLight.position.set(0, 2, -4);
+  scene.add(rimLight);
+  const ambientLight = new THREE.AmbientLight(0x1a1408, 0.3);
+  scene.add(ambientLight);
+
   // ────────────────────────────────────────────
-  // CENTRAL ORB — high-quality shader sphere (subdivision 8)
+  // CENTRAL ORB — solid gold metal (subdivision 8)
   // ────────────────────────────────────────────
   const orbGeo = new THREE.IcosahedronGeometry(1.3, 8);
   const orbMat = new THREE.ShaderMaterial({
@@ -1387,31 +1359,15 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   dCoreGlow.scale.setScalar(2.0);
   group.add(dCoreGlow);
 
-  // Wireframe cages — 4 layers, higher subdivision
-  const wireframes: { mesh: THREE.Mesh; mat: THREE.MeshBasicMaterial; dir: number }[] = [];
-  const wSizes = [1.36, 1.42, 1.48, 1.54];
-  const wSubs = [4, 3, 2, 1];
-  const wColors = [0xd4a84d, 0xf0e0c0, 0xc8956a, 0xf0d090];
-  const wOps = [0.05, 0.035, 0.025, 0.018];
-  for (let i = 0; i < 4; i++) {
-    const wGeo = new THREE.IcosahedronGeometry(wSizes[i], wSubs[i]);
-    const wMat = new THREE.MeshBasicMaterial({
-      color: wColors[i], wireframe: true, transparent: true, opacity: wOps[i], depthWrite: false,
-    });
-    const wMesh = new THREE.Mesh(wGeo, wMat);
-    group.add(wMesh);
-    wireframes.push({ mesh: wMesh, mat: wMat, dir: i % 2 === 0 ? 1 : -1 });
-  }
-
   // ────────────────────────────────────────────
-  // ORBITAL RINGS — gold (thick), champagne, rose, extra thin
+  // ORBITAL RINGS — prominent gold halo, champagne, rose
   // ────────────────────────────────────────────
   const rings: { mesh: THREE.Mesh; mat: THREE.MeshBasicMaterial }[] = [];
   const rData = [
-    { r: 2.0, thick: 0.04, segs: 240, color: 0xdaa520, op: 0.75, rx: PI * 0.5, rz: 0.15 },
-    { r: 1.7, thick: 0.015, segs: 200, color: 0xf5e6c8, op: 0.35, rx: PI * 0.38, rz: -0.3 },
-    { r: 2.3, thick: 0.008, segs: 160, color: 0xc8956a, op: 0.22, rx: PI * 0.62, rz: 0.5 },
-    { r: 1.5, thick: 0.006, segs: 140, color: 0xf0d090, op: 0.15, rx: PI * 0.7, rz: -0.8 },
+    { r: 2.3, thick: 0.07, segs: 260, color: 0xdaa520, op: 0.95, rx: PI * 0.5, rz: 0.15 },
+    { r: 1.9, thick: 0.015, segs: 200, color: 0xf5e6c8, op: 0.35, rx: PI * 0.38, rz: -0.3 },
+    { r: 2.7, thick: 0.008, segs: 160, color: 0xc8956a, op: 0.22, rx: PI * 0.62, rz: 0.5 },
+    { r: 1.7, thick: 0.006, segs: 140, color: 0xf0d090, op: 0.15, rx: PI * 0.7, rz: -0.8 },
   ];
   for (const rd of rData) {
     const rGeo = new THREE.TorusGeometry(rd.r, rd.thick, 24, rd.segs);
@@ -1424,6 +1380,17 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     group.add(rMesh);
     rings.push({ mesh: rMesh, mat: rMat });
   }
+
+  // Glow halo behind the primary gold ring — circular halo like the reference
+  const dHaloGlowGeo = new THREE.TorusGeometry(2.3, 0.2, 24, 220);
+  const dHaloGlowMat = new THREE.MeshBasicMaterial({
+    color: 0xdaa520, transparent: true, opacity: 0.16, depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const dHaloGlow = new THREE.Mesh(dHaloGlowGeo, dHaloGlowMat);
+  dHaloGlow.rotation.x = PI * 0.5;
+  dHaloGlow.rotation.z = 0.15;
+  group.add(dHaloGlow);
 
   // ────────────────────────────────────────────
   // PULSE RINGS — 4 expanding waves
@@ -1442,41 +1409,6 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     pmesh.rotation.x = -PI * 0.5;
     group.add(pmesh);
     pulseRings.push({ mesh: pmesh, mat: pm, phase: i / PULSE_N });
-  }
-
-  // ────────────────────────────────────────────
-  // SCAN PLANE — horizontal sweep
-  // ────────────────────────────────────────────
-  const scanGeo = new THREE.PlaneGeometry(5, 0.03);
-  const scanMat = new THREE.MeshBasicMaterial({
-    color: 0xdaa520, transparent: true, opacity: 0.2, depthWrite: false, side: THREE.DoubleSide,
-  });
-  const scanPlane = new THREE.Mesh(scanGeo, scanMat);
-  scanPlane.position.z = 0.1;
-  group.add(scanPlane);
-
-  // ────────────────────────────────────────────
-  // DATA STREAM LINES — 12 vertical lines
-  // ────────────────────────────────────────────
-  const STREAM_N = 12;
-  const streams: { line: THREE.Line; mat: THREE.LineBasicMaterial }[] = [];
-  for (let i = 0; i < STREAM_N; i++) {
-    const a = (i / STREAM_N) * PI2;
-    const r = 1.5 + (i % 3) * 0.2;
-    const pts: number[] = [];
-    for (let j = 0; j <= 40; j++) {
-      const t = j / 40;
-      pts.push(Math.cos(a) * r, -2.5 + t * 5.0, Math.sin(a) * r);
-    }
-    const sGeo = new THREE.BufferGeometry();
-    sGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pts), 3));
-    const sMat = new THREE.LineBasicMaterial({
-      color: i % 2 === 0 ? 0xdaa520 : 0xf5e6c8,
-      transparent: true, opacity: 0.05, depthWrite: false,
-    });
-    const sLine = new THREE.Line(sGeo, sMat);
-    group.add(sLine);
-    streams.push({ line: sLine, mat: sMat });
   }
 
   // ────────────────────────────────────────────
@@ -1985,9 +1917,9 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     gridMat.uniforms.uTime.value = time;
     gridMat.uniforms.uEnergy.value = amp;
 
-    orb.rotation.y = time * 0.08;
-    orb.rotation.x = Math.sin(time * 0.06) * 0.08;
-    const breath = 1 + Math.sin(time * 1.0) * 0.02 + amp * 0.06;
+    orb.rotation.y = time * 0.05;
+    orb.rotation.x = Math.sin(time * 0.04) * 0.06;
+    const breath = 1 + Math.sin(time * 0.6) * 0.025 + amp * 0.06;
     orb.scale.setScalar(breath);
 
     core.rotation.y = -time * 0.35;
@@ -1998,15 +1930,10 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     dCoreGlow.scale.setScalar(1.8 + Math.sin(time * 1.5) * 0.25 + amp * 0.3);
     dCoreGlowMat.opacity = 0.06 + Math.sin(time * 1.3) * 0.02 + amp * 0.04;
 
-    for (let i = 0; i < wireframes.length; i++) {
-      const wf = wireframes[i];
-      wf.mesh.rotation.y = time * (0.08 - i * 0.02) * wf.dir;
-      wf.mesh.rotation.z = Math.sin(time * 0.1 + i) * 0.1;
-      wf.mat.opacity = wOps[i] * 0.8 + amp * 0.02 + Math.sin(time * 0.8 + i) * 0.015;
-    }
-
     rings[0].mesh.rotation.z = 0.15 + time * 0.07;
-    rings[0].mat.opacity = 0.45 + Math.sin(time * 0.6) * 0.06 + amp * 0.08;
+    rings[0].mat.opacity = 0.9 + Math.sin(time * 0.6) * 0.06 + amp * 0.04;
+    dHaloGlow.rotation.z = rings[0].mesh.rotation.z;
+    dHaloGlowMat.opacity = 0.14 + Math.sin(time * 0.6) * 0.04 + amp * 0.08;
     rings[1].mesh.rotation.z = -0.3 - time * 0.1;
     rings[1].mat.opacity = 0.22 + Math.sin(time * 0.5) * 0.04;
     rings[2].mesh.rotation.z = 0.5 + time * 0.04;
@@ -2021,14 +1948,6 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       const scale = 2.0 + t * 6.0;
       pr.mesh.scale.set(scale, scale, 1);
       pr.mat.uniforms.uOpacity.value = (1 - t) * 0.06 * (0.5 + amp);
-    }
-
-    scanPlane.position.y = Math.sin(time * 0.4) * 3.0 * 0.5;
-    scanMat.opacity = 0.1 + amp * 0.12 + Math.sin(time * 2.5) * 0.04;
-
-    for (let i = 0; i < STREAM_N; i++) {
-      const wave = Math.sin(time * 1.2 + i * 0.6) * 0.5 + 0.5;
-      streams[i].mat.opacity = 0.01 + wave * 0.03 + amp * 0.015;
     }
 
     // Energy tendrils — animate pulse + opacity
