@@ -10,7 +10,7 @@ import { mountCockpit, type CockpitHandle } from '../modules/cockpit';
 import { runProactive } from '../modules/proactive';
 import { processRecurring } from '../modules/recurring';
 import * as driveSync from '../modules/driveSync';
-import { startPikaVoice, stopPikaVoice, setPikaVolume, setPikaEnabled, pikaSpeak } from '../assistant/pikaVoice';
+import { setPikaVolume, setPikaEnabled, pikaSpeak } from '../assistant/pikaVoice';
 import { universalSearch, TYPE_ICONS, addRecentSearch, recentSearches, quickSuggestions } from '../modules/search';
 import { registerShortcut, initShortcuts, shortcutsHTML } from '../modules/shortcuts';
 import { dailyBriefing } from '../modules/analytics';
@@ -586,8 +586,8 @@ export function mountApp(root: HTMLElement) {
   const moduleChip = document.createElement('button');
   moduleChip.className = 'chip module-chip';
   moduleChip.id = 'moduleChip';
-  moduleChip.innerHTML = '<span class="mc-dot"></span><span class="mc-label">BRAIN</span>';
-  moduleChip.title = 'Open Master Brain cockpit';
+  moduleChip.innerHTML = `<span class="mc-dot"></span><span class="mc-label">${state.uiLang === 'he' ? 'מוח' : 'BRAIN'}</span>`;
+  moduleChip.title = state.uiLang === 'he' ? 'פתח לוח בקרה ראשי' : 'Open Master Brain cockpit';
   moduleChip.onclick = () => cockpit?.open();
   const topR = root.querySelector('.topR');
   if (topR) topR.insertBefore(moduleChip, topR.firstChild);
@@ -602,7 +602,7 @@ export function mountApp(root: HTMLElement) {
       dot.style.boxShadow = `0 0 8px hsla(${mod.hue}, 70%, 55%, .6)`;
       moduleChip.classList.add('active');
     } else {
-      label.textContent = 'BRAIN';
+      label.textContent = state.uiLang === 'he' ? 'מוח' : 'BRAIN';
       dot.style.background = 'var(--gold)';
       dot.style.boxShadow = '0 0 8px rgba(218,165,32,.5)';
     }
