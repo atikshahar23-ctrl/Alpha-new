@@ -381,6 +381,8 @@ interface PikachuParts {
   head: THREE.Group;
   leftEye: THREE.Mesh;
   rightEye: THREE.Mesh;
+  leftPupil: THREE.Mesh;
+  rightPupil: THREE.Mesh;
   leftEyelid: THREE.Mesh;
   rightEyelid: THREE.Mesh;
   leftEarGroup: THREE.Group;
@@ -391,6 +393,7 @@ interface PikachuParts {
   leftArm: THREE.Mesh;
   rightArm: THREE.Mesh;
   mouthMesh: THREE.Mesh;
+  tongue: THREE.Mesh;
   sparks: THREE.Group;
   sparkMats: THREE.MeshBasicMaterial[];
 }
@@ -509,6 +512,8 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   // ── Eyes — large, expressive, anime-style with full detail ──
   let leftEyelid!: THREE.Mesh;
   let rightEyelid!: THREE.Mesh;
+  let leftPupil!: THREE.Mesh;
+  let rightPupil!: THREE.Mesh;
   for (const sx of [-1, 1]) {
     // Eye socket — subtle indent
     const eyeSocket = new THREE.Mesh(
@@ -541,7 +546,7 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
     iris.position.set(sx * 0.27, 0.06, 0.65);
     headGroup.add(iris);
 
-    // Pupil — large black
+    // Pupil — large black (tracked for eye-look animation)
     const pupil = new THREE.Mesh(
       new THREE.SphereGeometry(0.1, seg(24), seg(24)),
       mats.black,
@@ -549,6 +554,8 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
     pupil.scale.set(0.82, 1.0, 0.5);
     pupil.position.set(sx * 0.27, 0.055, 0.68);
     headGroup.add(pupil);
+    if (sx === -1) leftPupil = pupil;
+    else rightPupil = pupil;
 
     // Primary highlight — large white dot upper area
     const hl1 = new THREE.Mesh(
@@ -852,7 +859,7 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   cheekLightR.position.set(0.5, 0.5, 0.44);
   group.add(cheekLightR);
 
-  return { group, head: headGroup, leftEye, rightEye, leftEyelid, rightEyelid, leftEarGroup, rightEarGroup, cheekMatL, cheekMatR, tail, leftArm, rightArm, mouthMesh, sparks, sparkMats };
+  return { group, head: headGroup, leftEye, rightEye, leftPupil, rightPupil, leftEyelid, rightEyelid, leftEarGroup, rightEarGroup, cheekMatL, cheekMatR, tail, leftArm, rightArm, mouthMesh, tongue, sparks, sparkMats };
 }
 
 // Atmosphere glow shaders — volumetric, animated, multi-fresnel
@@ -1278,6 +1285,13 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
       pika.sparkMats[si].opacity = phase > 0.55 ? (0.4 + phase * 0.6) * (0.7 + amp * 0.3) : 0;
     }
     pika.sparks.rotation.y = time * 0.35;
+    // Eye tracking — pupils drift to look around
+    const lookX = Math.sin(time * 0.18) * 0.015;
+    const lookY = Math.sin(time * 0.13 + 0.7) * 0.01;
+    if (pika.leftPupil) { pika.leftPupil.position.x = -0.27 + lookX; pika.leftPupil.position.y = 0.055 + lookY; }
+    if (pika.rightPupil) { pika.rightPupil.position.x = 0.27 + lookX; pika.rightPupil.position.y = 0.055 + lookY; }
+    // Tongue subtle wiggle
+    if (pika.tongue) pika.tongue.position.y = -0.12 + Math.sin(time * 2.0) * 0.003;
 
     goldRing.rotation.z = 0.15 + time * 0.1;
     goldRMat.opacity = 0.9 + Math.sin(time * 0.8) * 0.08 + amp * 0.1;
@@ -2079,6 +2093,13 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       pika.sparkMats[si].opacity = phase > 0.55 ? (0.4 + phase * 0.6) * (0.7 + amp * 0.3) : 0;
     }
     pika.sparks.rotation.y = time * 0.35;
+    // Eye tracking — pupils drift to look around
+    const lookX = Math.sin(time * 0.18) * 0.015;
+    const lookY = Math.sin(time * 0.13 + 0.7) * 0.01;
+    if (pika.leftPupil) { pika.leftPupil.position.x = -0.27 + lookX; pika.leftPupil.position.y = 0.055 + lookY; }
+    if (pika.rightPupil) { pika.rightPupil.position.x = 0.27 + lookX; pika.rightPupil.position.y = 0.055 + lookY; }
+    // Tongue subtle wiggle
+    if (pika.tongue) pika.tongue.position.y = -0.12 + Math.sin(time * 2.0) * 0.003;
 
     rings[0].mesh.rotation.z = 0.15 + time * 0.07;
     rings[0].mat.opacity = 0.9 + Math.sin(time * 0.6) * 0.06 + amp * 0.04;
