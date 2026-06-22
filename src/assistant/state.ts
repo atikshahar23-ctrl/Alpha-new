@@ -32,6 +32,8 @@ export interface AppState {
   haptics: boolean;
   autoSpeak: boolean;
   uiLang: UILang;
+  pikaVoiceOn: boolean;
+  pikaVolume: number;
 }
 
 const KEY = 'alpha_key', GROK = 'alpha_grok', OPENAI = 'alpha_openai', PROV = 'alpha_provider',
@@ -41,7 +43,8 @@ const KEY = 'alpha_key', GROK = 'alpha_grok', OPENAI = 'alpha_openai', PROV = 'a
   SFX = 'alpha_sfx', WAKE = 'alpha_wake',
   VOICE = 'alpha_voice', VGENDER = 'alpha_vgender', VSPEED = 'alpha_vspeed',
   VPITCH = 'alpha_vpitch', THEME = 'alpha_theme', FONTSIZE = 'alpha_fontsize',
-  HAPTICS = 'alpha_haptics', AUTOSPEAK = 'alpha_autospeak', UILANG = 'alpha_uilang';
+  HAPTICS = 'alpha_haptics', AUTOSPEAK = 'alpha_autospeak', UILANG = 'alpha_uilang',
+  PIKAVOICE = 'alpha_pikavoice', PIKAVOL = 'alpha_pikavol';
 
 export function loadState(): AppState {
   let amb = parseFloat(localStorage.getItem(AMB) || '');
@@ -76,6 +79,8 @@ export function loadState(): AppState {
     haptics: localStorage.getItem(HAPTICS) !== '0',
     autoSpeak: localStorage.getItem(AUTOSPEAK) !== '0',
     uiLang: (localStorage.getItem(UILANG) as UILang) || 'he',
+    pikaVoiceOn: localStorage.getItem(PIKAVOICE) !== '0',
+    pikaVolume: (() => { const v = parseFloat(localStorage.getItem(PIKAVOL) || ''); return isNaN(v) ? 0.6 : v; })(),
   };
 }
 
@@ -102,6 +107,8 @@ export function saveState(s: AppState) {
   localStorage.setItem(HAPTICS, s.haptics ? '1' : '0');
   localStorage.setItem(AUTOSPEAK, s.autoSpeak ? '1' : '0');
   localStorage.setItem(UILANG, s.uiLang);
+  localStorage.setItem(PIKAVOICE, s.pikaVoiceOn ? '1' : '0');
+  localStorage.setItem(PIKAVOL, s.pikaVolume.toFixed(2));
 }
 
 export interface CalEvent { id: string; title: string; date: string; time: string }

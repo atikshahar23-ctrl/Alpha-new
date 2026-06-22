@@ -10,6 +10,7 @@ import { mountCockpit, type CockpitHandle } from '../modules/cockpit';
 import { runProactive } from '../modules/proactive';
 import { processRecurring } from '../modules/recurring';
 import * as driveSync from '../modules/driveSync';
+import { startPikaVoice, stopPikaVoice, setPikaVolume, setPikaEnabled, pikaSpeak } from '../assistant/pikaVoice';
 import { universalSearch, TYPE_ICONS, addRecentSearch, recentSearches, quickSuggestions } from '../modules/search';
 import { registerShortcut, initShortcuts, shortcutsHTML } from '../modules/shortcuts';
 import { dailyBriefing } from '../modules/analytics';
@@ -102,6 +103,10 @@ const UI_STRINGS: Record<string, Record<UILang, string>> = {
   arCamera: { he: 'מצלמת AR', en: 'AR CAMERA' },
   initCamera: { he: 'מאתחל מצלמה…', en: 'Initializing camera…' },
   uiLanguage: { he: 'שפת מערכת', en: 'System language' },
+  pikachuVoice: { he: 'פיקאצ\'ו', en: 'PIKACHU' },
+  pikaVoiceOn: { he: 'קול פיקאצ\'ו', en: 'Pikachu voice' },
+  pikaVolume: { he: 'עוצמת קול פיקאצ\'ו', en: 'Pikachu volume' },
+  pikaSpeakNow: { he: 'פיקה פיקה!', en: 'Pika Pika!' },
   armed: { he: 'אמור "היי אלפא"', en: 'SAY "HEY ALPHA"' },
   listening: { he: 'מקשיב', en: 'LISTENING' },
   thinking: { he: 'חושב', en: 'THINKING' },
@@ -365,6 +370,17 @@ export function mountApp(root: HTMLElement) {
         </div>
 
         <div class="settings-section">
+          <div class="ss-title" data-i18n="pikachuVoice">פיקאצ'ו</div>
+          <div class="setting-row">
+            <label data-i18n="pikaVoiceOn">קול פיקאצ'ו</label>
+            <label class="toggle"><input type="checkbox" id="pikaVoiceCheck" checked /><span class="toggle-slider"></span></label>
+          </div>
+          <label><span data-i18n="pikaVolume">עוצמת קול פיקאצ'ו</span> <span id="pikaVolVal" class="range-val">60%</span></label>
+          <input type="range" id="pikaVolSlider" min="0" max="100" value="60" />
+          <button class="test-voice-btn" id="pikaSpeakBtn" data-i18n="pikaSpeakNow">פיקה פיקה!</button>
+        </div>
+
+        <div class="settings-section">
           <div class="ss-title" data-i18n="aiEngineTitle">מנוע AI</div>
           <label data-i18n="aiProvider">ספק AI</label>
           <select id="providerSel">
@@ -520,6 +536,9 @@ export function mountApp(root: HTMLElement) {
   audio.ambLevel = state.ambLevel;
   audio.ambPreset = (state.ambPreset || 'pad') as AmbientPreset;
   audio.sfxOn = state.sfxOn;
+
+  setPikaVolume(state.pikaVolume);
+  setPikaEnabled(state.pikaVoiceOn);
 
   let orb: OrbHandle;
   try {
@@ -2165,6 +2184,9 @@ export function mountApp(root: HTMLElement) {
     $<HTMLInputElement>('sfxCheck').checked = state.sfxOn;
     $<HTMLInputElement>('hapticsCheck').checked = state.haptics;
     $<HTMLInputElement>('autoSpeakCheck').checked = state.autoSpeak;
+    $<HTMLInputElement>('pikaVoiceCheck').checked = state.pikaVoiceOn;
+    $<HTMLInputElement>('pikaVolSlider').value = String(Math.round(state.pikaVolume * 100));
+    $('pikaVolVal').textContent = Math.round(state.pikaVolume * 100) + '%';
     // Cloud sync state
     $<HTMLInputElement>('driveClientId').value = driveSync.getClientId();
     updateDriveUI();
@@ -2356,6 +2378,13 @@ export function mountApp(root: HTMLElement) {
     const v = +$<HTMLInputElement>('pitchSlider').value / 100;
     $('pitchVal').textContent = v.toFixed(1);
   };
+  $<HTMLInputElement>('pikaVolSlider').oninput = () => {
+    const v = +$<HTMLInputElement>('pikaVolSlider').value;
+    $('pikaVolVal').textContent = v + '%';
+    setPikaVolume(v / 100);
+    state.pikaVolume = v / 100;
+  };
+  $('pikaSpeakBtn').onclick = () => { pikaSpeak(); };
   $('genderPicker').addEventListener('click', (e) => {
     const btn = (e.target as HTMLElement).closest('.gender-btn') as HTMLElement;
     if (!btn) return;
@@ -2395,6 +2424,10 @@ export function mountApp(root: HTMLElement) {
     state.haptics = $<HTMLInputElement>('hapticsCheck').checked;
     state.autoSpeak = $<HTMLInputElement>('autoSpeakCheck').checked;
     audio.sfxOn = state.sfxOn;
+    state.pikaVoiceOn = $<HTMLInputElement>('pikaVoiceCheck').checked;
+    state.pikaVolume = +$<HTMLInputElement>('pikaVolSlider').value / 100;
+    setPikaEnabled(state.pikaVoiceOn);
+    setPikaVolume(state.pikaVolume);
     voice.setMicLang(state.micLang);
     const vsel = $<HTMLSelectElement>('voiceSel').value;
     if (vsel) voice.setVoice(vsel);
