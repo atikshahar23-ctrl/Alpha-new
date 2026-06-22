@@ -630,6 +630,15 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   nose.position.set(0, -0.05, 0.72);
   headGroup.add(nose);
 
+  // ── Mouth interior — dark area behind the smile for depth ──
+  const mouthInterior = new THREE.Mesh(
+    new THREE.SphereGeometry(0.08, seg(16), seg(16)),
+    mats.mouth,
+  );
+  mouthInterior.scale.set(1.4, 0.5, 0.35);
+  mouthInterior.position.set(0, -0.105, 0.65);
+  headGroup.add(mouthInterior);
+
   // ── Mouth — w-shaped smile (Pikachu's signature ω mouth) ──
   const mouthMesh = new THREE.Mesh(
     new THREE.TorusGeometry(0.065, 0.018, seg(8), seg(16), PI * 0.75),
@@ -919,6 +928,23 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
       );
       b2Mesh.rotation.set(Math.random() * PI, Math.random() * PI, Math.random() * PI);
       sparks.add(b2Mesh);
+    }
+    // Spark glow — small additive sphere at junction point
+    if (i % 2 === 0) {
+      const glowMat = new THREE.MeshBasicMaterial({
+        color: 0xFFEE66,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
+      sparkMats.push(glowMat);
+      const glowSphere = new THREE.Mesh(
+        new THREE.SphereGeometry(0.06, 6, 6),
+        glowMat,
+      );
+      glowSphere.position.copy(sMesh.position);
+      sparks.add(glowSphere);
     }
   }
   group.add(sparks);
