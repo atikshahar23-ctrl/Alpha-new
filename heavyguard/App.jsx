@@ -222,7 +222,7 @@ export default function App() {
     delete entry.photoFull;
     const next = [entry, ...index];
     setIndex(next); await saveIndex(next);
-    setView("home");
+    setView("logger");
     showToast("ההתקנה נשמרה · " + cName(data.contractor));
   };
   const removeInstall = async (id) => {
@@ -230,7 +230,7 @@ export default function App() {
     const next = index.filter((x) => x.id !== id);
     setIndex(next); await saveIndex(next);
     await store.del("hg2:photo:" + id); await store.del("hg2:gallery:" + id); await store.del("hg2:video:" + id);
-    setView("home"); showToast("נמחק");
+    setView("logger"); showToast("נמחק");
   };
   const updateInstall = async (id, data, ops = {}) => {
     if (ops.galleryChanged) {
@@ -1909,7 +1909,11 @@ function NewInstall({ onCancel, onSave, showToast }) {
 
       <div className="hg2-flow-foot">
         <button className="hg2-btn ghost" onClick={onCancel}>ביטול</button>
-        <button className="hg2-btn primary big" onClick={() => { if (phase === "running") finish(); save(); }}>
+        <button className="hg2-btn primary big" onClick={() => {
+          if (phase === "running") { const end = Date.now(); setEndTs(end); setPhase("done"); const durationSec = startTs ? Math.round((end - startTs) / 1000) : 0;
+            if (!f.vehicleType && !f.idNumber && !f.location) { showToast("מלא לפחות מיקום או רישוי", "warn"); return; }
+            onSave({ contractor, location: f.location.trim(), idType: f.idType, idNumber: f.idNumber.trim(), installType: f.installType.trim(), manufacturer: f.manufacturer.trim(), vehicleType: f.vehicleType.trim(), price: Number(f.price) || 0, phone: f.phone.trim(), customer: f.customer.trim(), date: f.date, startTs, endTs: end, durationSec, thumb, withItai: f.withItai }, photoFull, { galleryFull: gallery.map((g) => g.full), galleryThumbs: gallery.map((g) => g.thumb), video: video ? { dataUrl: video.dataUrl, poster: video.poster, stored: video.stored } : null });
+          } else { save(); } }}>
           <CheckCircle2 size={20} /> {phase === "running" ? "סיים ושמור" : "שמור התקנה"}
         </button>
       </div>
