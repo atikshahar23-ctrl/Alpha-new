@@ -451,6 +451,14 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   head.position.set(0, 0.0, 0.04);
   headGroup.add(head);
 
+  // Top-of-head tuft — subtle point on the crown
+  const headTuft = new THREE.Mesh(
+    new THREE.ConeGeometry(0.08, 0.12, seg(8)),
+    mats.yellow,
+  );
+  headTuft.position.set(0, 0.7, -0.05);
+  headGroup.add(headTuft);
+
   // Cheek bulges — subtle geometry to make face rounder
   for (const sx of [-1, 1]) {
     const cheekBulge = new THREE.Mesh(
@@ -461,6 +469,15 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
     cheekBulge.position.set(sx * 0.42, -0.08, 0.42);
     headGroup.add(cheekBulge);
   }
+
+  // Back of head — smooth continuation
+  const backHead = new THREE.Mesh(
+    new THREE.SphereGeometry(0.4, seg(24), seg(24)),
+    mats.yellow,
+  );
+  backHead.scale.set(1.2, 0.8, 0.7);
+  backHead.position.set(0, -0.05, -0.42);
+  headGroup.add(backHead);
 
   // ── Ears — long pointed with wider base, black tips, inner detail ──
   let leftEarGroup!: THREE.Group;
@@ -821,11 +838,12 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   const sparkCount = Math.round(10 * detail);
   for (let i = 0; i < sparkCount; i++) {
     const sMat = new THREE.MeshBasicMaterial({
-      color: i % 3 === 0 ? 0xFFFFAA : 0xFFE44D,
+      color: i % 3 === 0 ? 0xFFFFDD : i % 5 === 0 ? 0xFFFFFF : 0xFFE44D,
       transparent: true,
       opacity: 0,
       depthWrite: false,
       side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
     });
     sparkMats.push(sMat);
     const sGeo = new THREE.BoxGeometry(0.012, 0.35 + Math.random() * 0.35, 0.004);
@@ -1304,18 +1322,21 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     const doubleBlink = blinkPhase > 0.35 && blinkPhase < 0.65;
     const blinkActive = blinkPhase < 0.15 || doubleBlink;
     const blinkT = blinkActive ? (doubleBlink ? (blinkPhase - 0.35) / 0.3 : blinkPhase / 0.15) : 0;
-    const blinkY = blinkActive ? Math.max(0.01, 1.0 - Math.sin(blinkT * PI) * 0.99) : 0.01;
+    const squintAmount = sparkBurst > 0 ? 0.4 : 0;
+    const blinkY = blinkActive ? Math.max(0.01, 1.0 - Math.sin(blinkT * PI) * 0.99) : Math.max(0.01, squintAmount);
     if (pika.leftEyelid) pika.leftEyelid.scale.y = blinkY;
     if (pika.rightEyelid) pika.rightEyelid.scale.y = blinkY;
-    // Ear twitching — independent, occasional
-    const earTwitchL = Math.sin(time * 2.5) * 0.05 + (Math.sin(time * 7.3) > 0.95 ? 0.12 : 0);
-    const earTwitchR = Math.sin(time * 2.5 + 0.6) * 0.05 + (Math.sin(time * 8.1 + 1.0) > 0.95 ? 0.12 : 0);
+    // Ear twitching — independent, occasional + perk up during sparks
+    const earPerk = sparkBurst > 0 ? -0.08 : 0;
+    const earTwitchL = Math.sin(time * 2.5) * 0.05 + (Math.sin(time * 7.3) > 0.95 ? 0.12 : 0) + earPerk;
+    const earTwitchR = Math.sin(time * 2.5 + 0.6) * 0.05 + (Math.sin(time * 8.1 + 1.0) > 0.95 ? 0.12 : 0) + earPerk;
     if (pika.leftEarGroup) pika.leftEarGroup.rotation.x = -0.12 + earTwitchL;
     if (pika.rightEarGroup) pika.rightEarGroup.rotation.x = -0.12 + earTwitchR;
     // Electric sparks — random flash pattern with bursts
     for (let si = 0; si < pika.sparkMats.length; si++) {
       const phase = Math.sin(time * 8.0 + si * 2.7) * Math.sin(time * 3.1 + si * 1.3);
-      pika.sparkMats[si].opacity = phase > 0.55 ? (0.4 + phase * 0.6) * (0.7 + amp * 0.3) : 0;
+      const burstBoost = sparkBurst > 0 ? 0.3 : 0;
+      pika.sparkMats[si].opacity = phase > 0.5 ? (0.4 + phase * 0.6 + burstBoost) * (0.7 + amp * 0.3) : 0;
     }
     pika.sparks.rotation.y = time * 0.35;
     // Eye tracking — pupils drift to look around
@@ -2112,18 +2133,21 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     const doubleBlink = blinkPhase > 0.35 && blinkPhase < 0.65;
     const blinkActive = blinkPhase < 0.15 || doubleBlink;
     const blinkT = blinkActive ? (doubleBlink ? (blinkPhase - 0.35) / 0.3 : blinkPhase / 0.15) : 0;
-    const blinkY = blinkActive ? Math.max(0.01, 1.0 - Math.sin(blinkT * PI) * 0.99) : 0.01;
+    const squintAmount = sparkBurst > 0 ? 0.4 : 0;
+    const blinkY = blinkActive ? Math.max(0.01, 1.0 - Math.sin(blinkT * PI) * 0.99) : Math.max(0.01, squintAmount);
     if (pika.leftEyelid) pika.leftEyelid.scale.y = blinkY;
     if (pika.rightEyelid) pika.rightEyelid.scale.y = blinkY;
-    // Ear twitching — independent, occasional
-    const earTwitchL = Math.sin(time * 2.5) * 0.05 + (Math.sin(time * 7.3) > 0.95 ? 0.12 : 0);
-    const earTwitchR = Math.sin(time * 2.5 + 0.6) * 0.05 + (Math.sin(time * 8.1 + 1.0) > 0.95 ? 0.12 : 0);
+    // Ear twitching — independent, occasional + perk up during sparks
+    const earPerk = sparkBurst > 0 ? -0.08 : 0;
+    const earTwitchL = Math.sin(time * 2.5) * 0.05 + (Math.sin(time * 7.3) > 0.95 ? 0.12 : 0) + earPerk;
+    const earTwitchR = Math.sin(time * 2.5 + 0.6) * 0.05 + (Math.sin(time * 8.1 + 1.0) > 0.95 ? 0.12 : 0) + earPerk;
     if (pika.leftEarGroup) pika.leftEarGroup.rotation.x = -0.12 + earTwitchL;
     if (pika.rightEarGroup) pika.rightEarGroup.rotation.x = -0.12 + earTwitchR;
     // Electric sparks — random flash pattern with bursts
     for (let si = 0; si < pika.sparkMats.length; si++) {
       const phase = Math.sin(time * 8.0 + si * 2.7) * Math.sin(time * 3.1 + si * 1.3);
-      pika.sparkMats[si].opacity = phase > 0.55 ? (0.4 + phase * 0.6) * (0.7 + amp * 0.3) : 0;
+      const burstBoost = sparkBurst > 0 ? 0.3 : 0;
+      pika.sparkMats[si].opacity = phase > 0.5 ? (0.4 + phase * 0.6 + burstBoost) * (0.7 + amp * 0.3) : 0;
     }
     pika.sparks.rotation.y = time * 0.35;
     // Eye tracking — pupils drift to look around
