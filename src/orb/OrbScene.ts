@@ -337,34 +337,41 @@ interface PikachuMaterials {
 function createPikachuMaterials(envMap: THREE.Texture): PikachuMaterials {
   return {
     yellow: new THREE.MeshPhysicalMaterial({
-      color: 0xFCD534, metalness: 0.0, roughness: 0.55, envMap, envMapIntensity: 0.4,
-      clearcoat: 0.15, clearcoatRoughness: 0.3,
+      color: 0xFCD534, metalness: 0.0, roughness: 0.45, envMap, envMapIntensity: 0.5,
+      clearcoat: 0.25, clearcoatRoughness: 0.2,
+      sheen: 0.3, sheenRoughness: 0.4, sheenColor: new THREE.Color(0xFFE87C),
     }),
     darkYellow: new THREE.MeshPhysicalMaterial({
-      color: 0xD4A817, metalness: 0.0, roughness: 0.6, envMap, envMapIntensity: 0.35,
+      color: 0xC89B12, metalness: 0.0, roughness: 0.5, envMap, envMapIntensity: 0.4,
+      clearcoat: 0.1, clearcoatRoughness: 0.3,
     }),
     cream: new THREE.MeshPhysicalMaterial({
-      color: 0xFFF5D4, metalness: 0.0, roughness: 0.6, envMap, envMapIntensity: 0.3,
+      color: 0xFFF8E1, metalness: 0.0, roughness: 0.5, envMap, envMapIntensity: 0.35,
+      sheen: 0.2, sheenRoughness: 0.5, sheenColor: new THREE.Color(0xFFFAE8),
     }),
     red: new THREE.MeshPhysicalMaterial({
-      color: 0xE03030, metalness: 0.0, roughness: 0.4, envMap, envMapIntensity: 0.3,
-      emissive: 0xE03030, emissiveIntensity: 0.25,
+      color: 0xCC2828, metalness: 0.0, roughness: 0.35, envMap, envMapIntensity: 0.35,
+      emissive: 0xCC2828, emissiveIntensity: 0.3,
+      clearcoat: 0.3, clearcoatRoughness: 0.2,
     }),
     brown: new THREE.MeshPhysicalMaterial({
       color: 0x5C3A1E, metalness: 0.0, roughness: 0.5, envMap, envMapIntensity: 0.3,
     }),
     white: new THREE.MeshPhysicalMaterial({
-      color: 0xffffff, metalness: 0.0, roughness: 0.15, envMap, envMapIntensity: 0.2,
-      emissive: 0xffffff, emissiveIntensity: 0.5,
+      color: 0xffffff, metalness: 0.0, roughness: 0.1, envMap, envMapIntensity: 0.25,
+      emissive: 0xffffff, emissiveIntensity: 0.6,
+      clearcoat: 0.5, clearcoatRoughness: 0.1,
     }),
     black: new THREE.MeshPhysicalMaterial({
-      color: 0x1a1a1a, metalness: 0.1, roughness: 0.25, envMap, envMapIntensity: 0.2,
+      color: 0x111111, metalness: 0.05, roughness: 0.2, envMap, envMapIntensity: 0.3,
+      clearcoat: 0.4, clearcoatRoughness: 0.15,
     }),
     mouth: new THREE.MeshPhysicalMaterial({
-      color: 0x8B2020, metalness: 0.0, roughness: 0.6, envMap, envMapIntensity: 0.15,
+      color: 0x7B1818, metalness: 0.0, roughness: 0.55, envMap, envMapIntensity: 0.15,
     }),
     nose: new THREE.MeshPhysicalMaterial({
-      color: 0x2a2a2a, metalness: 0.1, roughness: 0.3, envMap, envMapIntensity: 0.2,
+      color: 0x222222, metalness: 0.05, roughness: 0.25, envMap, envMapIntensity: 0.25,
+      clearcoat: 0.3, clearcoatRoughness: 0.2,
     }),
   };
 }
@@ -393,310 +400,355 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   const headGroup = new THREE.Group();
   const seg = (n: number) => Math.max(8, Math.round(n * detail));
 
-  // ── Body — round chubby torso, pear-shaped with subtle taper ──
+  // ── Body — round chubby torso, pear-shaped ──
   const body = new THREE.Mesh(
-    new THREE.SphereGeometry(0.75, seg(48), seg(48)),
-    mats.yellow,
-  );
-  body.scale.set(1.0, 1.15, 0.9);
-  body.position.set(0, -0.35, 0);
-  group.add(body);
-
-  // Upper body narrower — second sphere for pear shape
-  const upperBody = new THREE.Mesh(
-    new THREE.SphereGeometry(0.55, seg(32), seg(32)),
-    mats.yellow,
-  );
-  upperBody.scale.set(0.95, 0.7, 0.85);
-  upperBody.position.set(0, 0.15, 0);
-  group.add(upperBody);
-
-  // Belly — lighter cream patch on the front
-  const belly = new THREE.Mesh(
-    new THREE.SphereGeometry(0.52, seg(32), seg(32)),
-    mats.cream,
-  );
-  belly.scale.set(0.85, 0.9, 0.4);
-  belly.position.set(0, -0.35, 0.32);
-  group.add(belly);
-
-  // Back stripes — two brown horizontal stripes with rounded edges
-  for (const sy of [0.0, -0.22]) {
-    const stripe = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.03, 0.5, seg(4), seg(8)),
-      mats.brown,
-    );
-    stripe.rotation.z = PI / 2;
-    stripe.position.set(0, -0.15 + sy, -0.62);
-    stripe.rotation.x = 0.3;
-    group.add(stripe);
-  }
-
-  // ── Head — larger proportional to body (iconic big head) ──
-  const head = new THREE.Mesh(
     new THREE.SphereGeometry(0.72, seg(48), seg(48)),
     mats.yellow,
   );
-  head.scale.set(1.05, 0.95, 0.95);
-  head.position.set(0, 0.0, 0.05);
+  body.scale.set(1.0, 1.2, 0.88);
+  body.position.set(0, -0.3, 0);
+  group.add(body);
+
+  // Shoulder area — smoother transition to head
+  const shoulders = new THREE.Mesh(
+    new THREE.SphereGeometry(0.5, seg(32), seg(32)),
+    mats.yellow,
+  );
+  shoulders.scale.set(1.05, 0.6, 0.9);
+  shoulders.position.set(0, 0.2, 0.02);
+  group.add(shoulders);
+
+  // Belly — lighter cream patch on the front
+  const belly = new THREE.Mesh(
+    new THREE.SphereGeometry(0.5, seg(32), seg(32)),
+    mats.cream,
+  );
+  belly.scale.set(0.82, 0.88, 0.38);
+  belly.position.set(0, -0.32, 0.34);
+  group.add(belly);
+
+  // Back stripes — two brown horizontal stripes
+  for (const sy of [0.0, -0.24]) {
+    const stripe = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.028, 0.48, seg(4), seg(8)),
+      mats.brown,
+    );
+    stripe.rotation.z = PI / 2;
+    stripe.position.set(0, -0.12 + sy, -0.6);
+    stripe.rotation.x = 0.25;
+    group.add(stripe);
+  }
+
+  // ── Head — big round head, Pikachu's signature look ──
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(0.74, seg(48), seg(48)),
+    mats.yellow,
+  );
+  head.scale.set(1.08, 0.98, 0.96);
+  head.position.set(0, 0.0, 0.04);
   headGroup.add(head);
 
-  // ── Ears — long, pointed, angled outward with black tips and inner pink ──
+  // Cheek bulges — subtle geometry to make face rounder
+  for (const sx of [-1, 1]) {
+    const cheekBulge = new THREE.Mesh(
+      new THREE.SphereGeometry(0.28, seg(20), seg(20)),
+      mats.yellow,
+    );
+    cheekBulge.scale.set(0.6, 0.5, 0.35);
+    cheekBulge.position.set(sx * 0.42, -0.08, 0.42);
+    headGroup.add(cheekBulge);
+  }
+
+  // ── Ears — long pointed with wider base, black tips, inner detail ──
   let leftEarGroup!: THREE.Group;
   let rightEarGroup!: THREE.Group;
   for (const sx of [-1, 1]) {
     const earGroup = new THREE.Group();
-    // Main ear body — wider base, tapered top
-    const ear = new THREE.Mesh(
-      new THREE.ConeGeometry(0.14, 0.9, seg(16)),
+
+    // Ear base — wider for natural attachment
+    const earBase = new THREE.Mesh(
+      new THREE.SphereGeometry(0.12, seg(12), seg(12)),
       mats.yellow,
     );
-    ear.position.set(0, 0.44, 0);
+    earBase.scale.set(1.0, 0.5, 0.7);
+    earBase.position.set(0, 0.12, 0);
+    earGroup.add(earBase);
+
+    // Main ear body — elongated cone with wider base
+    const ear = new THREE.Mesh(
+      new THREE.ConeGeometry(0.15, 0.95, seg(16)),
+      mats.yellow,
+    );
+    ear.position.set(0, 0.48, 0);
     earGroup.add(ear);
 
-    // Inner ear — subtle darker yellow
+    // Inner ear — darker yellow
     const innerEar = new THREE.Mesh(
-      new THREE.ConeGeometry(0.07, 0.55, seg(12)),
+      new THREE.ConeGeometry(0.065, 0.5, seg(12)),
       mats.darkYellow,
     );
-    innerEar.position.set(0, 0.38, 0.03);
+    innerEar.position.set(0, 0.42, 0.04);
     earGroup.add(innerEar);
 
-    // Black tip (top ~30%)
+    // Black tip (top ~25%)
     const earTip = new THREE.Mesh(
-      new THREE.ConeGeometry(0.065, 0.3, seg(12)),
+      new THREE.ConeGeometry(0.055, 0.28, seg(12)),
       mats.black,
     );
-    earTip.position.set(0, 0.76, 0);
+    earTip.position.set(0, 0.82, 0);
     earGroup.add(earTip);
 
-    earGroup.position.set(sx * 0.38, 0.55, -0.05);
-    earGroup.rotation.z = sx * 0.45;
-    earGroup.rotation.x = -0.1;
+    earGroup.position.set(sx * 0.4, 0.52, -0.08);
+    earGroup.rotation.z = sx * 0.4;
+    earGroup.rotation.x = -0.12;
     headGroup.add(earGroup);
     if (sx === -1) leftEarGroup = earGroup;
     else rightEarGroup = earGroup;
   }
 
-  // ── Eyes — large, oval, with iris, pupil, and anime highlights ──
+  // ── Eyes — large, expressive, anime-style with full detail ──
   let leftEyelid!: THREE.Mesh;
   let rightEyelid!: THREE.Mesh;
   for (const sx of [-1, 1]) {
+    // Eye socket — subtle indent
+    const eyeSocket = new THREE.Mesh(
+      new THREE.SphereGeometry(0.18, seg(20), seg(20)),
+      mats.yellow,
+    );
+    eyeSocket.scale.set(0.8, 1.05, 0.3);
+    eyeSocket.position.set(sx * 0.27, 0.06, 0.62);
+    headGroup.add(eyeSocket);
+
     // White of eye (large oval)
     const eyeWhite = new THREE.Mesh(
-      new THREE.SphereGeometry(0.16, seg(24), seg(24)),
+      new THREE.SphereGeometry(0.165, seg(24), seg(24)),
       mats.white,
     );
-    eyeWhite.scale.set(0.75, 1.0, 0.5);
-    eyeWhite.position.set(sx * 0.26, 0.08, 0.6);
+    eyeWhite.scale.set(0.78, 1.05, 0.5);
+    eyeWhite.position.set(sx * 0.27, 0.07, 0.62);
     headGroup.add(eyeWhite);
 
-    // Iris — dark brown ring
+    // Iris — dark brown
     const irisMat = new THREE.MeshPhysicalMaterial({
-      color: 0x3D2B1F, metalness: 0.0, roughness: 0.3,
+      color: 0x3D2B1F, metalness: 0.0, roughness: 0.25,
+      clearcoat: 0.3, clearcoatRoughness: 0.15,
     });
     const iris = new THREE.Mesh(
-      new THREE.SphereGeometry(0.13, seg(24), seg(24)),
+      new THREE.SphereGeometry(0.135, seg(24), seg(24)),
       irisMat,
     );
-    iris.scale.set(0.8, 1.0, 0.5);
-    iris.position.set(sx * 0.26, 0.07, 0.63);
+    iris.scale.set(0.82, 1.02, 0.5);
+    iris.position.set(sx * 0.27, 0.06, 0.65);
     headGroup.add(iris);
 
-    // Pupil — large black circle
+    // Pupil — large black
     const pupil = new THREE.Mesh(
       new THREE.SphereGeometry(0.1, seg(24), seg(24)),
       mats.black,
     );
-    pupil.scale.set(0.8, 1.0, 0.5);
-    pupil.position.set(sx * 0.26, 0.06, 0.66);
+    pupil.scale.set(0.82, 1.0, 0.5);
+    pupil.position.set(sx * 0.27, 0.055, 0.68);
     headGroup.add(pupil);
 
-    // Primary highlight — large white dot upper-right
+    // Primary highlight — large white dot upper area
     const hl1 = new THREE.Mesh(
-      new THREE.SphereGeometry(0.042, seg(12), seg(12)),
+      new THREE.SphereGeometry(0.045, seg(12), seg(12)),
       mats.white,
     );
-    hl1.position.set(sx * 0.26 + sx * 0.04, 0.12, 0.72);
+    hl1.position.set(sx * 0.27 + sx * 0.04, 0.12, 0.73);
     headGroup.add(hl1);
 
-    // Secondary highlight — smaller white dot lower-left
+    // Secondary highlight — smaller lower
     const hl2 = new THREE.Mesh(
-      new THREE.SphereGeometry(0.024, seg(8), seg(8)),
+      new THREE.SphereGeometry(0.025, seg(8), seg(8)),
       mats.white,
     );
-    hl2.position.set(sx * 0.26 - sx * 0.03, 0.01, 0.72);
+    hl2.position.set(sx * 0.27 - sx * 0.03, 0.0, 0.73);
     headGroup.add(hl2);
 
-    // Eyelid — yellow half-sphere that scales down to reveal eye (blink)
+    // Third tiny highlight — adds life
+    const hl3 = new THREE.Mesh(
+      new THREE.SphereGeometry(0.015, seg(6), seg(6)),
+      mats.white,
+    );
+    hl3.position.set(sx * 0.27 + sx * 0.02, 0.04, 0.73);
+    headGroup.add(hl3);
+
+    // Eyelid — yellow half-sphere for blinking
     const eyelid = new THREE.Mesh(
-      new THREE.SphereGeometry(0.17, seg(24), seg(12), 0, PI2, 0, PI * 0.5),
+      new THREE.SphereGeometry(0.18, seg(24), seg(12), 0, PI2, 0, PI * 0.5),
       mats.yellow,
     );
-    eyelid.scale.set(0.76, 0.01, 0.52);
-    eyelid.position.set(sx * 0.26, 0.14, 0.61);
-    eyelid.rotation.x = -0.1;
+    eyelid.scale.set(0.79, 0.01, 0.54);
+    eyelid.position.set(sx * 0.27, 0.14, 0.63);
+    eyelid.rotation.x = -0.08;
     headGroup.add(eyelid);
     if (sx === -1) leftEyelid = eyelid;
     else rightEyelid = eyelid;
   }
-  const leftEye = headGroup.children[headGroup.children.length - 8] as THREE.Mesh;
+  const leftEye = headGroup.children[headGroup.children.length - 10] as THREE.Mesh;
   const rightEye = headGroup.children[headGroup.children.length - 2] as THREE.Mesh;
 
-  // ── Nose — tiny rounded triangle ──
+  // ── Nose — small rounded inverted-triangle ──
   const nose = new THREE.Mesh(
-    new THREE.SphereGeometry(0.03, seg(10), seg(10)),
+    new THREE.SphereGeometry(0.032, seg(12), seg(12)),
     mats.nose,
   );
-  nose.scale.set(1.3, 0.65, 0.6);
-  nose.position.set(0, -0.04, 0.7);
+  nose.scale.set(1.4, 0.6, 0.55);
+  nose.position.set(0, -0.05, 0.72);
   headGroup.add(nose);
 
-  // ── Mouth — visible happy smile with upturned corners ──
+  // ── Mouth — w-shaped smile (Pikachu's signature ω mouth) ──
   const mouthMesh = new THREE.Mesh(
-    new THREE.TorusGeometry(0.1, 0.02, seg(8), seg(20), PI * 0.85),
+    new THREE.TorusGeometry(0.065, 0.018, seg(8), seg(16), PI * 0.75),
     mats.mouth,
   );
-  mouthMesh.position.set(0, -0.09, 0.66);
+  mouthMesh.position.set(-0.035, -0.1, 0.68);
   mouthMesh.rotation.z = PI;
-  mouthMesh.rotation.x = 0.12;
+  mouthMesh.rotation.x = 0.1;
   headGroup.add(mouthMesh);
-  // Left smile corner
+  // Right half of the ω
+  const mouthR = new THREE.Mesh(
+    new THREE.TorusGeometry(0.065, 0.018, seg(8), seg(16), PI * 0.75),
+    mats.mouth,
+  );
+  mouthR.position.set(0.035, -0.1, 0.68);
+  mouthR.rotation.z = PI;
+  mouthR.rotation.x = 0.1;
+  headGroup.add(mouthR);
+  // Left smile corner upturn
   const smileL = new THREE.Mesh(
-    new THREE.TorusGeometry(0.035, 0.016, seg(6), seg(8), PI * 0.55),
+    new THREE.TorusGeometry(0.03, 0.014, seg(6), seg(8), PI * 0.5),
     mats.mouth,
   );
-  smileL.position.set(-0.088, -0.062, 0.67);
-  smileL.rotation.z = PI * 0.3;
-  smileL.rotation.x = 0.1;
+  smileL.position.set(-0.095, -0.072, 0.69);
+  smileL.rotation.z = PI * 0.25;
+  smileL.rotation.x = 0.08;
   headGroup.add(smileL);
-  // Right smile corner
+  // Right smile corner upturn
   const smileR = new THREE.Mesh(
-    new THREE.TorusGeometry(0.035, 0.016, seg(6), seg(8), PI * 0.55),
+    new THREE.TorusGeometry(0.03, 0.014, seg(6), seg(8), PI * 0.5),
     mats.mouth,
   );
-  smileR.position.set(0.088, -0.062, 0.67);
-  smileR.rotation.z = PI * 0.7;
-  smileR.rotation.x = 0.1;
+  smileR.position.set(0.095, -0.072, 0.69);
+  smileR.rotation.z = PI * 0.75;
+  smileR.rotation.x = 0.08;
   headGroup.add(smileR);
 
-  // ── Red Cheeks — signature oval red patches ──
+  // ── Red Cheeks — signature round red patches with glow ──
   const cheekMatL = mats.red.clone();
   const cheekMatR = mats.red.clone();
-  const cheekGeo = new THREE.SphereGeometry(0.13, seg(20), seg(20));
+  const cheekGeo = new THREE.SphereGeometry(0.14, seg(24), seg(24));
 
   const cheekL = new THREE.Mesh(cheekGeo, cheekMatL);
-  cheekL.scale.set(1.1, 0.8, 0.45);
-  cheekL.position.set(-0.48, -0.04, 0.42);
+  cheekL.scale.set(1.0, 0.85, 0.4);
+  cheekL.position.set(-0.5, -0.06, 0.44);
   headGroup.add(cheekL);
 
   const cheekR = new THREE.Mesh(cheekGeo, cheekMatR);
-  cheekR.scale.set(1.1, 0.8, 0.45);
-  cheekR.position.set(0.48, -0.04, 0.42);
+  cheekR.scale.set(1.0, 0.85, 0.4);
+  cheekR.position.set(0.5, -0.06, 0.44);
   headGroup.add(cheekR);
 
   headGroup.position.set(0, 0.55, 0.0);
   group.add(headGroup);
 
-  // ── Arms — short stubby with paw fingers ──
-  const armGeo = new THREE.CapsuleGeometry(0.1, 0.22, seg(8), seg(12));
+  // ── Arms — short stubby with rounded paw tips ──
+  const armGeo = new THREE.CapsuleGeometry(0.11, 0.24, seg(8), seg(12));
   const leftArm = new THREE.Mesh(armGeo, mats.yellow);
-  leftArm.position.set(-0.62, -0.15, 0.15);
-  leftArm.rotation.z = 0.6;
-  leftArm.rotation.x = -0.2;
+  leftArm.position.set(-0.6, -0.12, 0.12);
+  leftArm.rotation.z = 0.55;
+  leftArm.rotation.x = -0.15;
   group.add(leftArm);
 
   const rightArm = new THREE.Mesh(armGeo, mats.yellow);
-  rightArm.position.set(0.62, -0.15, 0.15);
-  rightArm.rotation.z = -0.6;
-  rightArm.rotation.x = -0.2;
+  rightArm.position.set(0.6, -0.12, 0.12);
+  rightArm.rotation.z = -0.55;
+  rightArm.rotation.x = -0.15;
   group.add(rightArm);
 
-  // Paw fingers — 3 small bumps at each arm tip
+  // Paw tips — rounded end caps
   for (const sx of [-1, 1]) {
-    const armRef = sx === -1 ? leftArm : rightArm;
-    for (let fi = 0; fi < 3; fi++) {
-      const finger = new THREE.Mesh(
-        new THREE.SphereGeometry(0.035, seg(8), seg(8)),
-        mats.yellow,
-      );
-      const fa = ((fi - 1) * 0.3) + sx * 0.2;
-      finger.position.set(
-        armRef.position.x + Math.cos(fa) * 0.06,
-        armRef.position.y - 0.16,
-        armRef.position.z + Math.sin(fa) * 0.06 + 0.05,
-      );
-      group.add(finger);
-    }
+    const pawTip = new THREE.Mesh(
+      new THREE.SphereGeometry(0.08, seg(12), seg(12)),
+      mats.yellow,
+    );
+    pawTip.scale.set(1.0, 0.8, 0.9);
+    pawTip.position.set(
+      sx * 0.6 + sx * Math.cos(0.55) * 0.18,
+      -0.12 - Math.sin(0.55) * 0.18 - 0.04,
+      0.12 + 0.08,
+    );
+    group.add(pawTip);
   }
 
-  // ── Feet — larger oval yellow with toes and brown soles ──
-  const footGeo = new THREE.CapsuleGeometry(0.14, 0.18, seg(8), seg(12));
+  // ── Feet — large oval with toes and soles ──
+  const footGeo = new THREE.CapsuleGeometry(0.15, 0.2, seg(8), seg(12));
   for (const sx of [-1, 1]) {
     const foot = new THREE.Mesh(footGeo, mats.yellow);
     foot.rotation.x = PI / 2;
-    foot.rotation.z = sx * 0.12;
-    foot.position.set(sx * 0.3, -1.1, 0.2);
+    foot.rotation.z = sx * 0.1;
+    foot.position.set(sx * 0.32, -1.08, 0.22);
     group.add(foot);
 
-    // Toes — 3 small bumps at front of each foot
+    // Toes — 3 bumps
     for (let ti = 0; ti < 3; ti++) {
       const toe = new THREE.Mesh(
-        new THREE.SphereGeometry(0.04, seg(8), seg(8)),
+        new THREE.SphereGeometry(0.042, seg(8), seg(8)),
         mats.yellow,
       );
       toe.position.set(
-        sx * 0.3 + (ti - 1) * 0.055 * sx,
-        -1.18,
-        0.36 + Math.abs(ti - 1) * -0.02,
+        sx * 0.32 + (ti - 1) * 0.06,
+        -1.16,
+        0.38 + Math.abs(ti - 1) * -0.015,
       );
-      toe.scale.set(1, 0.7, 1.2);
+      toe.scale.set(0.9, 0.65, 1.15);
       group.add(toe);
     }
 
     // Sole
     const sole = new THREE.Mesh(
-      new THREE.CircleGeometry(0.12, seg(12)),
+      new THREE.CircleGeometry(0.13, seg(12)),
       mats.darkYellow,
     );
-    sole.position.set(sx * 0.3, -1.24, 0.2);
+    sole.position.set(sx * 0.32, -1.22, 0.22);
     sole.rotation.x = -PI / 2;
     group.add(sole);
   }
 
-  // ── Tail — flat zigzag lightning bolt with more definition ──
+  // ── Tail — lightning bolt shape, thicker with better beveling ──
   const tail = new THREE.Group();
   const shape = new THREE.Shape();
   shape.moveTo(0, 0);
-  shape.lineTo(0.12, 0.3);
-  shape.lineTo(-0.05, 0.35);
-  shape.lineTo(0.18, 0.7);
-  shape.lineTo(-0.08, 0.75);
-  shape.lineTo(0.22, 1.15);
-  shape.lineTo(0.35, 1.1);
-  shape.lineTo(0.05, 0.72);
-  shape.lineTo(0.28, 0.67);
-  shape.lineTo(-0.02, 0.28);
-  shape.lineTo(0.2, 0.25);
+  shape.lineTo(0.14, 0.32);
+  shape.lineTo(-0.04, 0.36);
+  shape.lineTo(0.2, 0.72);
+  shape.lineTo(-0.06, 0.76);
+  shape.lineTo(0.24, 1.2);
+  shape.lineTo(0.38, 1.14);
+  shape.lineTo(0.06, 0.74);
+  shape.lineTo(0.3, 0.69);
+  shape.lineTo(-0.01, 0.3);
+  shape.lineTo(0.22, 0.26);
   shape.lineTo(0.0, 0.0);
-  const extSettings = { depth: 0.08, bevelEnabled: true, bevelThickness: 0.025, bevelSize: 0.025, bevelSegments: seg(4) };
+  const extSettings = { depth: 0.1, bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.03, bevelSegments: seg(4) };
   const tailMesh = new THREE.Mesh(
     new THREE.ExtrudeGeometry(shape, extSettings),
     mats.yellow,
   );
-  tailMesh.position.set(-0.1, 0, -0.04);
+  tailMesh.position.set(-0.12, 0, -0.05);
   tail.add(tailMesh);
 
-  // Brown base segment
+  // Brown base connector
   const tailBase = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.06, 0.16, seg(4), seg(8)),
+    new THREE.CapsuleGeometry(0.07, 0.18, seg(4), seg(8)),
     mats.brown,
   );
-  tailBase.position.set(0.05, -0.02, 0.01);
+  tailBase.position.set(0.04, -0.04, 0.01);
   tail.add(tailBase);
-  tail.position.set(0, -0.1, -0.65);
-  tail.rotation.x = -0.5;
-  tail.rotation.y = 0.2;
+  tail.position.set(0, -0.08, -0.62);
+  tail.rotation.x = -0.45;
+  tail.rotation.y = 0.15;
   group.add(tail);
 
   // ── Electric sparks — yellow lightning arcs around Pikachu ──
@@ -1150,36 +1202,45 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     // ── Pikachu "life" animation ──
     pikaGroup.rotation.y = Math.sin(time * 0.35) * 0.35;
     pikaGroup.position.y = Math.sin(time * 0.7) * 0.06;
-    const breath = 1.0 + Math.sin(time * 1.2) * 0.018;
-    pikaGroup.scale.setScalar(0.95 * breath);
+    const breath = 1.0 + Math.sin(time * 1.2) * 0.02;
+    const bounce = 1.0 + Math.max(0, Math.sin(time * 3.0)) * 0.008;
+    pikaGroup.scale.set(0.95 * breath * (1.0 / bounce), 0.95 * breath * bounce, 0.95 * breath);
     if (pika.head) {
-      pika.head.rotation.y = Math.sin(time * 0.5 + 0.5) * 0.12;
-      pika.head.rotation.z = Math.sin(time * 0.3) * 0.04;
-      pika.head.rotation.x = Math.sin(time * 0.25) * 0.03;
+      pika.head.rotation.y = Math.sin(time * 0.5 + 0.5) * 0.14;
+      pika.head.rotation.z = Math.sin(time * 0.3) * 0.05;
+      pika.head.rotation.x = Math.sin(time * 0.25) * 0.04;
     }
-    const cheekPulse = 0.25 + Math.sin(time * 1.8) * 0.2 + amp * 0.3;
+    const sparkBurst = Math.max(0, Math.sin(time * 6.0)) > 0.92 ? 0.5 : 0;
+    const cheekPulse = 0.3 + Math.sin(time * 1.8) * 0.2 + amp * 0.3 + sparkBurst;
     pika.cheekMatL.emissiveIntensity = cheekPulse;
     pika.cheekMatR.emissiveIntensity = cheekPulse;
     if (pika.tail) {
-      pika.tail.rotation.z = Math.sin(time * 1.8) * 0.15;
-      pika.tail.rotation.y = 0.2 + Math.sin(time * 2.5) * 0.1;
+      pika.tail.rotation.z = Math.sin(time * 1.8) * 0.18;
+      pika.tail.rotation.y = 0.15 + Math.sin(time * 2.5) * 0.12;
+      pika.tail.rotation.x = -0.45 + Math.sin(time * 1.2) * 0.05;
     }
-    if (pika.leftArm) pika.leftArm.rotation.z = 0.6 + Math.sin(time * 1.0) * 0.15;
-    if (pika.rightArm) pika.rightArm.rotation.z = -0.6 + Math.sin(time * 1.0 + 1.0) * 0.15;
-    // Blinking — periodic eyelid close/open
-    const blinkCycle = time % 4.0;
-    const blinkY = blinkCycle < 0.15 ? 1.0 : blinkCycle < 0.3 ? Math.max(0.01, 1.0 - (blinkCycle - 0.15) / 0.15) : 0.01;
+    if (pika.leftArm) pika.leftArm.rotation.z = 0.55 + Math.sin(time * 1.2) * 0.18;
+    if (pika.rightArm) pika.rightArm.rotation.z = -0.55 + Math.sin(time * 1.2 + 1.0) * 0.18;
+    // Blinking — natural blink pattern with double-blink
+    const blinkPeriod = 3.5 + Math.sin(time * 0.1) * 0.5;
+    const blinkPhase = time % blinkPeriod;
+    const doubleBlink = blinkPhase > 0.35 && blinkPhase < 0.65;
+    const blinkActive = blinkPhase < 0.15 || doubleBlink;
+    const blinkT = blinkActive ? (doubleBlink ? (blinkPhase - 0.35) / 0.3 : blinkPhase / 0.15) : 0;
+    const blinkY = blinkActive ? Math.max(0.01, 1.0 - Math.sin(blinkT * PI) * 0.99) : 0.01;
     if (pika.leftEyelid) pika.leftEyelid.scale.y = blinkY;
     if (pika.rightEyelid) pika.rightEyelid.scale.y = blinkY;
-    // Ear twitching
-    if (pika.leftEarGroup) pika.leftEarGroup.rotation.x = -0.1 + Math.sin(time * 2.2) * 0.06;
-    if (pika.rightEarGroup) pika.rightEarGroup.rotation.x = -0.1 + Math.sin(time * 2.2 + 0.5) * 0.06;
-    // Electric sparks — random flash pattern
+    // Ear twitching — independent, occasional
+    const earTwitchL = Math.sin(time * 2.5) * 0.05 + (Math.sin(time * 7.3) > 0.95 ? 0.12 : 0);
+    const earTwitchR = Math.sin(time * 2.5 + 0.6) * 0.05 + (Math.sin(time * 8.1 + 1.0) > 0.95 ? 0.12 : 0);
+    if (pika.leftEarGroup) pika.leftEarGroup.rotation.x = -0.12 + earTwitchL;
+    if (pika.rightEarGroup) pika.rightEarGroup.rotation.x = -0.12 + earTwitchR;
+    // Electric sparks — random flash pattern with bursts
     for (let si = 0; si < pika.sparkMats.length; si++) {
       const phase = Math.sin(time * 8.0 + si * 2.7) * Math.sin(time * 3.1 + si * 1.3);
-      pika.sparkMats[si].opacity = phase > 0.6 ? (0.5 + phase * 0.5) * (0.7 + amp * 0.3) : 0;
+      pika.sparkMats[si].opacity = phase > 0.55 ? (0.4 + phase * 0.6) * (0.7 + amp * 0.3) : 0;
     }
-    pika.sparks.rotation.y = time * 0.3;
+    pika.sparks.rotation.y = time * 0.35;
 
     goldRing.rotation.z = 0.15 + time * 0.1;
     goldRMat.opacity = 0.9 + Math.sin(time * 0.8) * 0.08 + amp * 0.1;
@@ -1942,36 +2003,45 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     // ── Pikachu "life" animation ──
     pikaGroup.rotation.y = Math.sin(time * 0.35) * 0.35;
     pikaGroup.position.y = Math.sin(time * 0.7) * 0.06;
-    const breath = 1.0 + Math.sin(time * 1.2) * 0.018;
-    pikaGroup.scale.setScalar(breath);
+    const breath = 1.0 + Math.sin(time * 1.2) * 0.02;
+    const bounce = 1.0 + Math.max(0, Math.sin(time * 3.0)) * 0.008;
+    pikaGroup.scale.set(breath * (1.0 / bounce), breath * bounce, breath);
     if (pika.head) {
-      pika.head.rotation.y = Math.sin(time * 0.5 + 0.5) * 0.12;
-      pika.head.rotation.z = Math.sin(time * 0.3) * 0.04;
-      pika.head.rotation.x = Math.sin(time * 0.25) * 0.03;
+      pika.head.rotation.y = Math.sin(time * 0.5 + 0.5) * 0.14;
+      pika.head.rotation.z = Math.sin(time * 0.3) * 0.05;
+      pika.head.rotation.x = Math.sin(time * 0.25) * 0.04;
     }
-    const cheekPulse = 0.25 + Math.sin(time * 1.8) * 0.2 + amp * 0.3;
+    const sparkBurst = Math.max(0, Math.sin(time * 6.0)) > 0.92 ? 0.5 : 0;
+    const cheekPulse = 0.3 + Math.sin(time * 1.8) * 0.2 + amp * 0.3 + sparkBurst;
     pika.cheekMatL.emissiveIntensity = cheekPulse;
     pika.cheekMatR.emissiveIntensity = cheekPulse;
     if (pika.tail) {
-      pika.tail.rotation.z = Math.sin(time * 1.8) * 0.15;
-      pika.tail.rotation.y = 0.2 + Math.sin(time * 2.5) * 0.1;
+      pika.tail.rotation.z = Math.sin(time * 1.8) * 0.18;
+      pika.tail.rotation.y = 0.15 + Math.sin(time * 2.5) * 0.12;
+      pika.tail.rotation.x = -0.45 + Math.sin(time * 1.2) * 0.05;
     }
-    if (pika.leftArm) pika.leftArm.rotation.z = 0.6 + Math.sin(time * 1.0) * 0.15;
-    if (pika.rightArm) pika.rightArm.rotation.z = -0.6 + Math.sin(time * 1.0 + 1.0) * 0.15;
-    // Blinking — periodic eyelid close/open
-    const blinkCycle = time % 4.0;
-    const blinkY = blinkCycle < 0.15 ? 1.0 : blinkCycle < 0.3 ? Math.max(0.01, 1.0 - (blinkCycle - 0.15) / 0.15) : 0.01;
+    if (pika.leftArm) pika.leftArm.rotation.z = 0.55 + Math.sin(time * 1.2) * 0.18;
+    if (pika.rightArm) pika.rightArm.rotation.z = -0.55 + Math.sin(time * 1.2 + 1.0) * 0.18;
+    // Blinking — natural blink pattern with double-blink
+    const blinkPeriod = 3.5 + Math.sin(time * 0.1) * 0.5;
+    const blinkPhase = time % blinkPeriod;
+    const doubleBlink = blinkPhase > 0.35 && blinkPhase < 0.65;
+    const blinkActive = blinkPhase < 0.15 || doubleBlink;
+    const blinkT = blinkActive ? (doubleBlink ? (blinkPhase - 0.35) / 0.3 : blinkPhase / 0.15) : 0;
+    const blinkY = blinkActive ? Math.max(0.01, 1.0 - Math.sin(blinkT * PI) * 0.99) : 0.01;
     if (pika.leftEyelid) pika.leftEyelid.scale.y = blinkY;
     if (pika.rightEyelid) pika.rightEyelid.scale.y = blinkY;
-    // Ear twitching
-    if (pika.leftEarGroup) pika.leftEarGroup.rotation.x = -0.1 + Math.sin(time * 2.2) * 0.06;
-    if (pika.rightEarGroup) pika.rightEarGroup.rotation.x = -0.1 + Math.sin(time * 2.2 + 0.5) * 0.06;
-    // Electric sparks — random flash pattern
+    // Ear twitching — independent, occasional
+    const earTwitchL = Math.sin(time * 2.5) * 0.05 + (Math.sin(time * 7.3) > 0.95 ? 0.12 : 0);
+    const earTwitchR = Math.sin(time * 2.5 + 0.6) * 0.05 + (Math.sin(time * 8.1 + 1.0) > 0.95 ? 0.12 : 0);
+    if (pika.leftEarGroup) pika.leftEarGroup.rotation.x = -0.12 + earTwitchL;
+    if (pika.rightEarGroup) pika.rightEarGroup.rotation.x = -0.12 + earTwitchR;
+    // Electric sparks — random flash pattern with bursts
     for (let si = 0; si < pika.sparkMats.length; si++) {
       const phase = Math.sin(time * 8.0 + si * 2.7) * Math.sin(time * 3.1 + si * 1.3);
-      pika.sparkMats[si].opacity = phase > 0.6 ? (0.5 + phase * 0.5) * (0.7 + amp * 0.3) : 0;
+      pika.sparkMats[si].opacity = phase > 0.55 ? (0.4 + phase * 0.6) * (0.7 + amp * 0.3) : 0;
     }
-    pika.sparks.rotation.y = time * 0.3;
+    pika.sparks.rotation.y = time * 0.35;
 
     rings[0].mesh.rotation.z = 0.15 + time * 0.07;
     rings[0].mat.opacity = 0.9 + Math.sin(time * 0.6) * 0.06 + amp * 0.04;
