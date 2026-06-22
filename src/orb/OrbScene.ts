@@ -299,7 +299,7 @@ function flareTexture(): THREE.Texture {
 }
 
 // ============================================================
-// CYBERNETIC BULL HEAD — builder helpers
+// PIKACHU CHARACTER — builder helpers
 // ============================================================
 
 // Procedural environment map for the metallic PBR materials.
@@ -322,237 +322,221 @@ function createEnvMap(renderer: THREE.WebGLRenderer): THREE.Texture {
   return envMap;
 }
 
-// Gear / cog shape (THREE.Shape -> ExtrudeGeometry) for the ring behind the head.
-function createGearGeometry(
-  outerR: number,
-  innerR: number,
-  teeth: number,
-  toothDepth: number,
-  thickness: number,
-): THREE.ExtrudeGeometry {
-  const shape = new THREE.Shape();
-  const steps = teeth * 2;
-  for (let i = 0; i <= steps; i++) {
-    const angle = (i / steps) * Math.PI * 2;
-    const isOuter = i % 2 === 0;
-    const r = isOuter ? outerR : outerR - toothDepth;
-    const x = Math.cos(angle) * r;
-    const y = Math.sin(angle) * r;
-    if (i === 0) shape.moveTo(x, y);
-    else shape.lineTo(x, y);
-  }
-  const hole = new THREE.Path();
-  for (let i = 0; i <= 64; i++) {
-    const a = (i / 64) * Math.PI * 2;
-    const x = Math.cos(a) * innerR;
-    const y = Math.sin(a) * innerR;
-    if (i === 0) hole.moveTo(x, y);
-    else hole.lineTo(x, y);
-  }
-  shape.holes.push(hole);
-  return new THREE.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false });
+interface PikachuMaterials {
+  yellow: THREE.MeshPhysicalMaterial;
+  darkYellow: THREE.MeshPhysicalMaterial;
+  red: THREE.MeshPhysicalMaterial;
+  brown: THREE.MeshPhysicalMaterial;
+  white: THREE.MeshPhysicalMaterial;
+  black: THREE.MeshPhysicalMaterial;
+  mouth: THREE.MeshPhysicalMaterial;
 }
 
-interface BullMaterials {
-  silver: THREE.MeshPhysicalMaterial;
-  gold: THREE.MeshPhysicalMaterial;
-  dark: THREE.MeshPhysicalMaterial;
-  eye: THREE.MeshPhysicalMaterial;
-  gear: THREE.MeshPhysicalMaterial;
-  gem: THREE.MeshPhysicalMaterial;
-}
-
-function createBullMaterials(envMap: THREE.Texture): BullMaterials {
+function createPikachuMaterials(envMap: THREE.Texture): PikachuMaterials {
   return {
-    silver: new THREE.MeshPhysicalMaterial({
-      color: 0x8a8a8a, metalness: 0.95, roughness: 0.2, envMap, envMapIntensity: 1.5,
+    yellow: new THREE.MeshPhysicalMaterial({
+      color: 0xFFD21E, metalness: 0.1, roughness: 0.35, envMap, envMapIntensity: 0.6,
     }),
-    gold: new THREE.MeshPhysicalMaterial({
-      color: 0xdaa520, metalness: 1.0, roughness: 0.15, envMap, envMapIntensity: 2.0,
+    darkYellow: new THREE.MeshPhysicalMaterial({
+      color: 0xF5B400, metalness: 0.12, roughness: 0.4, envMap, envMapIntensity: 0.5,
     }),
-    dark: new THREE.MeshPhysicalMaterial({
-      color: 0x1a1a1a, metalness: 0.9, roughness: 0.3, envMap,
+    red: new THREE.MeshPhysicalMaterial({
+      color: 0xE83A2E, metalness: 0.1, roughness: 0.3, envMap, envMapIntensity: 0.4,
+      emissive: 0xE83A2E, emissiveIntensity: 0.3,
     }),
-    eye: new THREE.MeshPhysicalMaterial({
-      color: 0x44aaff, emissive: 0x2288ff, emissiveIntensity: 2.0, metalness: 0.3, roughness: 0.1,
+    brown: new THREE.MeshPhysicalMaterial({
+      color: 0x3a2a00, metalness: 0.15, roughness: 0.4, envMap, envMapIntensity: 0.4,
     }),
-    gear: new THREE.MeshPhysicalMaterial({
-      color: 0x666666, metalness: 0.9, roughness: 0.25, envMap, envMapIntensity: 1.2,
+    white: new THREE.MeshPhysicalMaterial({
+      color: 0xffffff, metalness: 0.05, roughness: 0.2, envMap, envMapIntensity: 0.3,
+      emissive: 0xffffff, emissiveIntensity: 0.4,
     }),
-    gem: new THREE.MeshPhysicalMaterial({
-      color: 0x55bbff, emissive: 0x3399ff, emissiveIntensity: 2.5, metalness: 0.2, roughness: 0.05,
+    black: new THREE.MeshPhysicalMaterial({
+      color: 0x111111, metalness: 0.2, roughness: 0.3, envMap, envMapIntensity: 0.3,
+    }),
+    mouth: new THREE.MeshPhysicalMaterial({
+      color: 0xaa3333, metalness: 0.1, roughness: 0.5, envMap, envMapIntensity: 0.2,
     }),
   };
 }
 
-interface BullParts {
+interface PikachuParts {
   group: THREE.Group;
-  gear: THREE.Mesh;
   leftEye: THREE.Mesh;
   rightEye: THREE.Mesh;
-  eyeMat: THREE.MeshPhysicalMaterial;
-  gem: THREE.Mesh;
-  gemMat: THREE.MeshPhysicalMaterial;
-  eyeGlows: THREE.Sprite[];
+  cheekMatL: THREE.MeshPhysicalMaterial;
+  cheekMatR: THREE.MeshPhysicalMaterial;
+  tail: THREE.Group;
 }
 
-// Build a complete cybernetic bull head from primitive geometries.
+// Build a complete Pikachu character from primitive geometries inside a glass orb.
 // `detail` scales subdivision counts (1 = desktop, 0.5 = mobile-ish).
-function buildBullHead(mats: BullMaterials, detail: number): BullParts {
+function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   const group = new THREE.Group();
   const seg = (n: number) => Math.max(8, Math.round(n * detail));
 
-  // ── Main skull — wider than tall, flattened front-to-back ──
-  const skull = new THREE.Mesh(
+  // ── Body — chubby egg shape ──
+  const body = new THREE.Mesh(
     new THREE.SphereGeometry(1, seg(48), seg(48)),
-    mats.silver,
+    mats.yellow,
   );
-  skull.scale.set(1.2, 1.0, 0.9);
-  group.add(skull);
+  body.scale.set(1.0, 1.1, 0.85);
+  body.position.set(0, -0.5, 0);
+  group.add(body);
 
-  // ── Forehead plate — flattened sphere, top-front, slightly protruding ──
-  const forehead = new THREE.Mesh(
-    new THREE.SphereGeometry(0.55, seg(32), seg(32)),
-    mats.silver,
+  // ── Head — large round ──
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(0.85, seg(48), seg(48)),
+    mats.yellow,
   );
-  forehead.scale.set(1.0, 0.5, 0.5);
-  forehead.position.set(0, 0.5, 0.72);
-  group.add(forehead);
+  head.position.set(0, 0.65, 0.1);
+  group.add(head);
 
-  // ── Snout / muzzle — forward and down ──
-  const snout = new THREE.Mesh(
-    new THREE.SphereGeometry(0.5, seg(32), seg(32)),
-    mats.silver,
-  );
-  snout.scale.set(1.2, 0.65, 0.85);
-  snout.position.set(0, -0.42, 0.78);
-  group.add(snout);
-
-  // ── Jaw — flattened sphere below the snout ──
-  const jaw = new THREE.Mesh(
-    new THREE.SphereGeometry(0.45, seg(28), seg(28)),
-    mats.dark,
-  );
-  jaw.scale.set(1.0, 0.45, 0.8);
-  jaw.position.set(0, -0.72, 0.6);
-  group.add(jaw);
-
-  // ── Nose bridge — cylinder connecting head to snout ──
-  const bridge = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.22, 0.32, 0.5, seg(20)),
-    mats.silver,
-  );
-  bridge.rotation.x = Math.PI * 0.5;
-  bridge.position.set(0, -0.1, 0.7);
-  group.add(bridge);
-
-  // ── Nostrils — two small dark spheres on the snout front ──
-  for (const sx of [-1, 1]) {
-    const nostril = new THREE.Mesh(
-      new THREE.SphereGeometry(0.08, seg(14), seg(14)),
-      mats.dark,
-    );
-    nostril.scale.set(1.0, 1.3, 0.7);
-    nostril.position.set(sx * 0.18, -0.42, 1.15);
-    group.add(nostril);
-  }
-
-  // ── Horns (GOLD) — TubeGeometry along CatmullRom curves ──
-  const leftHornPts = [
-    new THREE.Vector3(-0.7, 0.55, -0.1),
-    new THREE.Vector3(-1.1, 1.0, -0.15),
-    new THREE.Vector3(-0.85, 1.5, -0.1),
-    new THREE.Vector3(-0.5, 1.75, 0.0),
-  ];
-  const makeHorn = (pts: THREE.Vector3[]) => {
-    const curve = new THREE.CatmullRomCurve3(pts);
-    const tubular = seg(24);
-    const geo = new THREE.TubeGeometry(curve, tubular, 0.09, seg(10), false);
-    // Manual taper: scale each ring's cross-section from base (0.09) to tip (0.03).
-    const pos = geo.attributes.position as THREE.BufferAttribute;
-    const radial = (geo.parameters as any).radialSegments + 1;
-    const baseR = 0.09;
-    const tipR = 0.03;
-    for (let i = 0; i <= tubular; i++) {
-      const t = i / tubular;
-      const scale = THREE.MathUtils.lerp(baseR, tipR, t) / baseR;
-      const center = curve.getPointAt(Math.min(t, 1));
-      for (let j = 0; j < radial; j++) {
-        const idx = i * radial + j;
-        const vx = pos.getX(idx);
-        const vy = pos.getY(idx);
-        const vz = pos.getZ(idx);
-        pos.setXYZ(
-          idx,
-          center.x + (vx - center.x) * scale,
-          center.y + (vy - center.y) * scale,
-          center.z + (vz - center.z) * scale,
-        );
-      }
-    }
-    pos.needsUpdate = true;
-    geo.computeVertexNormals();
-    return new THREE.Mesh(geo, mats.gold);
-  };
-  group.add(makeHorn(leftHornPts));
-  group.add(makeHorn(leftHornPts.map((p) => new THREE.Vector3(-p.x, p.y, p.z))));
-
-  // ── Ears — elongated spheres at sides of head, angled outward ──
+  // ── Ears — long pointed with black tips ──
   for (const sx of [-1, 1]) {
     const ear = new THREE.Mesh(
-      new THREE.SphereGeometry(1, seg(20), seg(16)),
-      mats.silver,
+      new THREE.ConeGeometry(0.15, 1.0, seg(16)),
+      mats.yellow,
     );
-    ear.scale.set(0.3, 0.2, 0.15);
-    ear.position.set(sx * 0.85, 0.3, -0.2);
-    ear.rotation.z = sx * 0.6;
-    ear.rotation.y = sx * -0.5;
+    ear.position.set(sx * 0.4, 1.45, -0.05);
+    ear.rotation.z = sx * 0.35;
     group.add(ear);
+
+    // Black/brown tips
+    const earTip = new THREE.Mesh(
+      new THREE.ConeGeometry(0.1, 0.35, seg(12)),
+      mats.brown,
+    );
+    earTip.position.set(sx * 0.4 + sx * 0.12, 1.85, -0.05);
+    earTip.rotation.z = sx * 0.35;
+    group.add(earTip);
   }
 
-  // ── Eyes (BLUE EMISSIVE) ──
-  const eyeGeo = new THREE.SphereGeometry(0.11, seg(16), seg(16));
-  const leftEye = new THREE.Mesh(eyeGeo, mats.eye);
-  leftEye.position.set(-0.42, 0.15, 0.72);
+  // ── Eyes — large round cute (black with white highlights) ──
+  const eyeGeo = new THREE.SphereGeometry(0.14, seg(24), seg(24));
+  const leftEye = new THREE.Mesh(eyeGeo, mats.black);
+  leftEye.position.set(-0.28, 0.72, 0.7);
   group.add(leftEye);
-  const rightEye = new THREE.Mesh(eyeGeo, mats.eye);
-  rightEye.position.set(0.42, 0.15, 0.72);
+  const rightEye = new THREE.Mesh(eyeGeo, mats.black);
+  rightEye.position.set(0.28, 0.72, 0.7);
   group.add(rightEye);
 
-  // Glow sprites behind each eye
-  const eyeGlows: THREE.Sprite[] = [];
-  for (const e of [leftEye, rightEye]) {
-    const gm = new THREE.SpriteMaterial({
-      map: glowTexture(), color: 0x44aaff, transparent: true, opacity: 0.6,
-      depthWrite: false, blending: THREE.AdditiveBlending,
-    });
-    const gs = new THREE.Sprite(gm);
-    gs.scale.setScalar(0.45);
-    gs.position.copy(e.position).z -= 0.05;
-    group.add(gs);
-    eyeGlows.push(gs);
+  // Brown iris layer (slightly larger, behind the black)
+  for (const sx of [-1, 1]) {
+    const iris = new THREE.Mesh(
+      new THREE.SphereGeometry(0.145, seg(20), seg(20)),
+      mats.brown,
+    );
+    iris.position.set(sx * 0.28, 0.72, 0.69);
+    group.add(iris);
   }
 
-  // ── Forehead gem / light (BLUE) — like the blue diamond in the logo ──
-  const gem = new THREE.Mesh(new THREE.SphereGeometry(0.1, seg(16), seg(16)), mats.gem);
-  gem.position.set(0, 0.55, 0.7);
-  group.add(gem);
-  const gemGlowMat = new THREE.SpriteMaterial({
-    map: glowTexture(), color: 0x55bbff, transparent: true, opacity: 0.5,
-    depthWrite: false, blending: THREE.AdditiveBlending,
-  });
-  const gemGlow = new THREE.Sprite(gemGlowMat);
-  gemGlow.scale.setScalar(0.5);
-  gemGlow.position.copy(gem.position);
-  group.add(gemGlow);
+  // White highlights
+  const hlGeo = new THREE.SphereGeometry(0.05, seg(12), seg(12));
+  for (const sx of [-1, 1]) {
+    const hl = new THREE.Mesh(hlGeo, mats.white);
+    hl.position.set(sx * 0.28 + 0.05, 0.78, 0.82);
+    group.add(hl);
+    // Smaller secondary highlight
+    const hl2 = new THREE.Mesh(
+      new THREE.SphereGeometry(0.025, seg(8), seg(8)),
+      mats.white,
+    );
+    hl2.position.set(sx * 0.28 - 0.04, 0.68, 0.82);
+    group.add(hl2);
+  }
 
-  // ── Gear / cog ring behind the head ──
-  const gearGeo = createGearGeometry(2.0, 1.3, 16, 0.18, 0.12);
-  const gear = new THREE.Mesh(gearGeo, mats.gear);
-  gear.position.set(0, 0.1, -0.5);
-  group.add(gear);
+  // ── Nose — tiny black sphere ──
+  const nose = new THREE.Mesh(
+    new THREE.SphereGeometry(0.04, seg(12), seg(12)),
+    mats.black,
+  );
+  nose.position.set(0, 0.58, 0.82);
+  group.add(nose);
 
-  return { group, gear, leftEye, rightEye, eyeMat: mats.eye, gem, gemMat: mats.gem, eyeGlows };
+  // ── Mouth — small curved torus ──
+  const mouthGeo = new THREE.TorusGeometry(0.12, 0.02, seg(8), seg(16), Math.PI);
+  const mouth = new THREE.Mesh(mouthGeo, mats.brown);
+  mouth.position.set(0, 0.5, 0.78);
+  mouth.rotation.x = -0.2;
+  mouth.rotation.z = Math.PI;
+  group.add(mouth);
+
+  // ── Cheeks — red circles with emissive glow ──
+  const cheekMatL = mats.red.clone();
+  const cheekMatR = mats.red.clone();
+  const cheekGeo = new THREE.SphereGeometry(0.17, seg(20), seg(20));
+
+  const cheekL = new THREE.Mesh(cheekGeo, cheekMatL);
+  cheekL.scale.set(1, 0.7, 0.5);
+  cheekL.position.set(-0.55, 0.55, 0.55);
+  group.add(cheekL);
+
+  const cheekR = new THREE.Mesh(cheekGeo, cheekMatR);
+  cheekR.scale.set(1, 0.7, 0.5);
+  cheekR.position.set(0.55, 0.55, 0.55);
+  group.add(cheekR);
+
+  // ── Arms — short stubby ──
+  const armGeo = new THREE.SphereGeometry(0.2, seg(16), seg(16));
+  for (const sx of [-1, 1]) {
+    const arm = new THREE.Mesh(armGeo, mats.yellow);
+    arm.scale.set(0.6, 0.8, 0.5);
+    arm.position.set(sx * 0.7, -0.2, 0.2);
+    group.add(arm);
+  }
+
+  // ── Feet — small ovals ──
+  const footGeo = new THREE.SphereGeometry(0.22, seg(16), seg(16));
+  for (const sx of [-1, 1]) {
+    const foot = new THREE.Mesh(footGeo, mats.darkYellow);
+    foot.scale.set(1.0, 0.5, 1.2);
+    foot.position.set(sx * 0.35, -1.35, 0.15);
+    group.add(foot);
+  }
+
+  // ── Tail — lightning bolt shape from box segments ──
+  const tail = new THREE.Group();
+  const tailSegments = [
+    { w: 0.18, h: 0.5, d: 0.08, x: 0, y: 0, z: 0, ry: 0, rz: 0.3 },
+    { w: 0.35, h: 0.12, d: 0.08, x: 0.15, y: 0.25, z: 0, ry: 0, rz: 0 },
+    { w: 0.18, h: 0.5, d: 0.08, x: 0.25, y: 0.55, z: 0, ry: 0, rz: -0.3 },
+    { w: 0.35, h: 0.12, d: 0.08, x: 0.1, y: 0.8, z: 0, ry: 0, rz: 0 },
+    { w: 0.16, h: 0.4, d: 0.08, x: 0, y: 1.05, z: 0, ry: 0, rz: 0.2 },
+  ];
+  for (let i = 0; i < tailSegments.length; i++) {
+    const ts = tailSegments[i];
+    const tsMat = i === 0 ? mats.brown : mats.yellow;
+    const tsMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(ts.w, ts.h, ts.d),
+      tsMat,
+    );
+    tsMesh.position.set(ts.x, ts.y, ts.z);
+    tsMesh.rotation.y = ts.ry;
+    tsMesh.rotation.z = ts.rz;
+    tail.add(tsMesh);
+  }
+  tail.position.set(0, -0.2, -0.7);
+  tail.rotation.x = -0.3;
+  group.add(tail);
+
+  // ── Glass orb — subtle transparent sphere surrounding Pikachu ──
+  const glassOrb = new THREE.Mesh(
+    new THREE.SphereGeometry(2.2, seg(64), seg(64)),
+    new THREE.MeshPhysicalMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.08,
+      metalness: 0.0,
+      roughness: 0.05,
+      envMapIntensity: 0.5,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    }),
+  );
+  group.add(glassOrb);
+
+  return { group, leftEye, rightEye, cheekMatL, cheekMatR, tail };
 }
 
 // Atmosphere glow shaders — volumetric, animated, multi-fresnel
@@ -704,26 +688,26 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   const group = new THREE.Group();
   scene.add(group);
 
-  // ── Simpler lighting for mobile (2 lights + ambient) ──
-  const mKey = new THREE.DirectionalLight(0xffeedd, 3.0);
+  // ── Brighter cheerful lighting for mobile (2 lights + ambient) ──
+  const mKey = new THREE.DirectionalLight(0xffffff, 3.5);
   mKey.position.set(3, 4, 4);
   scene.add(mKey);
-  const mFill = new THREE.DirectionalLight(0xdaa520, 1.2);
+  const mFill = new THREE.DirectionalLight(0xFFE45C, 1.5);
   mFill.position.set(-4, 1, 3);
   scene.add(mFill);
   const mAmbient = new THREE.AmbientLight(0x1a1408, 0.4);
   scene.add(mAmbient);
 
   // ────────────────────────────────────────────
-  // CENTRAL OBJECT — CYBERNETIC BULL HEAD (mobile, lower detail)
+  // CENTRAL OBJECT — PIKACHU (mobile, lower detail)
   // ────────────────────────────────────────────
   const envMap = createEnvMap(renderer);
   scene.environment = envMap;
-  const bullMats = createBullMaterials(envMap);
-  const bull = buildBullHead(bullMats, 0.6);
-  const bullGroup = bull.group;
-  bullGroup.scale.setScalar(0.95);
-  group.add(bullGroup);
+  const pikaMats = createPikachuMaterials(envMap);
+  const pika = buildPikachu(pikaMats, 0.6);
+  const pikaGroup = pika.group;
+  pikaGroup.scale.setScalar(0.95);
+  group.add(pikaGroup);
 
   // ────────────────────────────────────────────
   // ORBITAL RINGS — gold halo, champagne, rose
@@ -936,18 +920,17 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
 
     pMat.uniforms.uTime.value = time;
 
-    // ── Bull head "life" — rotation, breathing, eye/gem glow, gear spin ──
-    bullGroup.rotation.y = time * 0.06;
-    bullGroup.rotation.x = Math.sin(time * 0.3) * 0.03;
-    const breath = 0.95 * (1.0 + Math.sin(time * 0.8) * 0.015 + amp * 0.04);
-    bullGroup.scale.setScalar(breath);
-    bull.gear.rotation.z = -time * 0.15;
-    const eyePulse = 1.6 + Math.sin(time * 2.0) * 0.6 + amp * 1.0;
-    bull.eyeMat.emissiveIntensity = eyePulse;
-    bull.gemMat.emissiveIntensity = 2.0 + Math.sin(time * 1.4 + 1.0) * 0.6;
-    for (const g of bull.eyeGlows) {
-      (g.material as THREE.SpriteMaterial).opacity = 0.45 + Math.sin(time * 2.0) * 0.18 + amp * 0.2;
-    }
+    // ── Pikachu "life" animation ──
+    pikaGroup.rotation.y = Math.sin(time * 0.4) * 0.3;
+    pikaGroup.position.y = Math.sin(time * 0.8) * 0.08;
+    const breath = 1.0 + Math.sin(time * 1.2) * 0.02;
+    pikaGroup.scale.setScalar(0.95 * breath);
+    // Cheek glow pulse
+    const cheekPulse = 0.3 + Math.sin(time * 1.5) * 0.15;
+    pika.cheekMatL.emissiveIntensity = cheekPulse;
+    pika.cheekMatR.emissiveIntensity = cheekPulse;
+    // Tail wiggle
+    if (pika.tail) pika.tail.rotation.z = Math.sin(time * 2.0) * 0.1;
 
     goldRing.rotation.z = 0.15 + time * 0.1;
     goldRMat.opacity = 0.9 + Math.sin(time * 0.8) * 0.08 + amp * 0.1;
@@ -1121,17 +1104,17 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   const group = new THREE.Group();
   scene.add(group);
 
-  // ── Cinematic lighting for the metallic bull (MeshPhysicalMaterial) ──
-  // Key light — warm, upper right
-  const keyLight = new THREE.DirectionalLight(0xffeedd, 3.0);
+  // ── Bright cheerful lighting for Pikachu (MeshPhysicalMaterial) ──
+  // Key light — warm white, upper right
+  const keyLight = new THREE.DirectionalLight(0xffffff, 3.5);
   keyLight.position.set(3, 4, 4);
   scene.add(keyLight);
-  // Fill light — golden, from left
-  const fillLight = new THREE.DirectionalLight(0xdaa520, 1.2);
+  // Fill light — warm yellow, from left
+  const fillLight = new THREE.DirectionalLight(0xFFE45C, 1.5);
   fillLight.position.set(-4, 1, 3);
   scene.add(fillLight);
-  // Rim light — bright, from behind for dramatic edge
-  const rimLight = new THREE.DirectionalLight(0xffe8c0, 2.0);
+  // Rim light — soft white, from behind
+  const rimLight = new THREE.DirectionalLight(0xffeedd, 2.0);
   rimLight.position.set(0, 2, -5);
   scene.add(rimLight);
   // Bottom fill — subtle warm
@@ -1143,14 +1126,14 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   scene.add(ambientLight);
 
   // ────────────────────────────────────────────
-  // CENTRAL OBJECT — CYBERNETIC BULL HEAD
+  // CENTRAL OBJECT — PIKACHU IN GLASS ORB
   // ────────────────────────────────────────────
   const envMap = createEnvMap(renderer);
   scene.environment = envMap;
-  const bullMats = createBullMaterials(envMap);
-  const bull = buildBullHead(bullMats, 1.0);
-  const bullGroup = bull.group;
-  group.add(bullGroup);
+  const pikaMats = createPikachuMaterials(envMap);
+  const pika = buildPikachu(pikaMats, 1.0);
+  const pikaGroup = pika.group;
+  group.add(pikaGroup);
 
   // ────────────────────────────────────────────
   // ORBITAL RINGS — prominent gold halo, champagne, rose
@@ -1707,21 +1690,18 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     gridMat.uniforms.uTime.value = time;
     gridMat.uniforms.uEnergy.value = amp;
 
-    // ── Bull head "life" — gentle rotation, breathing, head nod ──
-    bullGroup.rotation.y = time * 0.06;
-    bullGroup.rotation.x = Math.sin(time * 0.3) * 0.03;
-    const breath = 1.0 + Math.sin(time * 0.8) * 0.015 + amp * 0.05;
-    bullGroup.scale.setScalar(breath);
+    // ── Pikachu "life" animation ──
+    pikaGroup.rotation.y = Math.sin(time * 0.4) * 0.3;
+    pikaGroup.position.y = Math.sin(time * 0.8) * 0.08;
+    const breath = 1.0 + Math.sin(time * 1.2) * 0.02;
+    pikaGroup.scale.setScalar(breath);
 
-    // Gear slow counter-rotation
-    bull.gear.rotation.z = -time * 0.15;
-
-    // Eye glow pulsing
-    bull.eyeMat.emissiveIntensity = 1.8 + Math.sin(time * 2.0) * 0.7 + amp * 1.2;
-    bull.gemMat.emissiveIntensity = 2.2 + Math.sin(time * 1.4 + 1.0) * 0.7 + amp * 0.8;
-    for (const g of bull.eyeGlows) {
-      (g.material as THREE.SpriteMaterial).opacity = 0.45 + Math.sin(time * 2.0) * 0.2 + amp * 0.25;
-    }
+    // Cheek glow pulse
+    const cheekPulse = 0.3 + Math.sin(time * 1.5) * 0.15;
+    pika.cheekMatL.emissiveIntensity = cheekPulse;
+    pika.cheekMatR.emissiveIntensity = cheekPulse;
+    // Tail wiggle
+    if (pika.tail) pika.tail.rotation.z = Math.sin(time * 2.0) * 0.1;
 
     rings[0].mesh.rotation.z = 0.15 + time * 0.07;
     rings[0].mat.opacity = 0.9 + Math.sin(time * 0.6) * 0.06 + amp * 0.04;
