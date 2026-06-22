@@ -207,19 +207,55 @@ const MOBILE_ORB_VERT = /* glsl */`
   varying vec3 vWorldPos;
   varying vec2 vUv;
   varying vec3 vLocalPos;
+  varying float vDisp;
   uniform float uTime;
   uniform float uEnergy;
+
+  float mh(vec3 p) {
+    p = fract(p * vec3(443.897, 441.423, 437.195));
+    p += dot(p, p.yzx + 19.19);
+    return fract((p.x + p.y) * p.z);
+  }
+  float mn(vec3 p) {
+    vec3 i = floor(p), f = fract(p);
+    f = f*f*(3.0-2.0*f);
+    return mix(mix(mix(mh(i), mh(i+vec3(1,0,0)), f.x),
+                   mix(mh(i+vec3(0,1,0)), mh(i+vec3(1,1,0)), f.x), f.y),
+               mix(mix(mh(i+vec3(0,0,1)), mh(i+vec3(1,0,1)), f.x),
+                   mix(mh(i+vec3(0,1,1)), mh(i+vec3(1,1,1)), f.x), f.y), f.z);
+  }
+  float mfbm(vec3 p) {
+    float v = 0.0, a = 0.5;
+    for (int i = 0; i < 3; i++) { v += mn(p) * a; p = p * 2.05 + vec3(0.13, 0.27, 0.08); a *= 0.5; }
+    return v;
+  }
 
   void main() {
     vec3 pos = position;
 
-    // Multi-octave organic surface displacement
-    float disp = sin(pos.x * 8.0 + uTime * 1.5) * sin(pos.y * 6.0 + uTime * 1.2) * sin(pos.z * 7.0 + uTime) * 0.025;
-    disp += sin(pos.x * 15.0 - uTime * 2.0) * sin(pos.z * 12.0 + uTime * 1.5) * 0.012 * (1.0 + uEnergy * 3.0);
-    disp += sin(pos.y * 20.0 + uTime * 0.7) * sin(pos.x * 18.0 - uTime * 1.0) * 0.006;
-    // Breathing pulse
-    float breathe = sin(uTime * 0.8) * 0.008 + sin(uTime * 1.5) * 0.004;
-    pos += normal * (disp + breathe);
+    // Organic creature-like protrusions
+    vec3 dir1 = normalize(vec3(-0.6, 0.5, 0.4));
+    vec3 dir2 = normalize(vec3(0.0, 0.9, 0.3));
+    vec3 dir3 = normalize(vec3(0.6, 0.4, 0.3));
+    vec3 nPos = normalize(position);
+    float align1 = pow(max(dot(nPos, dir1), 0.0), 3.0);
+    float align2 = pow(max(dot(nPos, dir2), 0.0), 4.0);
+    float align3 = pow(max(dot(nPos, dir3), 0.0), 3.0);
+
+    float morph = 0.7 + 0.3 * sin(uTime * 0.4);
+    float baseDisp = mfbm(pos * 3.0 + uTime * 0.12) * 0.1;
+    float p1 = align1 * 0.4 * morph + pow(align1, 5.0) * mfbm(pos * 8.0 + uTime * 0.2) * 0.25;
+    float p2 = align2 * 0.3 + pow(align2, 6.0) * 0.18;
+    float p3 = align3 * 0.35 * (1.7 - morph);
+    float totalDisp = baseDisp + p1 + p2 + p3;
+    totalDisp += mfbm(pos * 15.0 + uTime * 0.05) * 0.025;
+    totalDisp += mn(pos * 6.0 + uTime * 2.0) * 0.025 * uEnergy;
+
+    float breathe = sin(uTime * 0.6) * 0.012 + sin(uTime * 1.2) * 0.006;
+    totalDisp += breathe;
+
+    vDisp = totalDisp;
+    pos += normal * totalDisp;
 
     vNormal = normalize(normalMatrix * normal);
     vWorldPos = (modelMatrix * vec4(pos, 1.0)).xyz;
@@ -237,6 +273,7 @@ const MOBILE_ORB_FRAG = /* glsl */`
   varying vec3 vWorldPos;
   varying vec2 vUv;
   varying vec3 vLocalPos;
+  varying float vDisp;
 
   float h3(vec3 p) {
     p = fract(p * vec3(443.897, 441.423, 437.195));
@@ -251,85 +288,86 @@ const MOBILE_ORB_FRAG = /* glsl */`
                mix(mix(h3(i+vec3(0,0,1)), h3(i+vec3(1,0,1)), f.x),
                    mix(h3(i+vec3(0,1,1)), h3(i+vec3(1,1,1)), f.x), f.y), f.z);
   }
-  // 5-octave FBM
   float fbm3(vec3 p) {
     float v = 0.0, a = 0.5;
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 4; i++) {
       v += n3(p) * a;
       p = p * 2.1 + vec3(0.11, 0.23, 0.07);
       a *= 0.5;
     }
     return v;
   }
+  float ggxM(float ndh, float rough) {
+    float a = rough * rough;
+    float a2 = a * a;
+    float d = (ndh * ndh) * (a2 - 1.0) + 1.0;
+    return a2 / (3.14159265 * d * d);
+  }
+  vec3 fresnelM(float cosT, vec3 F0) {
+    return F0 + (1.0 - F0) * pow(1.0 - cosT, 5.0);
+  }
 
   void main() {
     vec3 vd = normalize(cameraPosition - vWorldPos);
     vec3 n = normalize(vNormal);
-    float nd = max(dot(n, vd), 0.0);
-    float fresnel = pow(1.0 - nd, 3.2);
-    // Chromatic fresnel — separate exponents per channel
-    float fr = pow(1.0 - nd, 2.6);
-    float fg = pow(1.0 - nd, 3.2);
-    float fb = pow(1.0 - nd, 4.0);
-    vec3 chromaFres = vec3(fr, fg, fb);
+    float ndv = max(dot(n, vd), 0.0);
 
-    vec3 fp = vLocalPos * 3.5 + vec3(uTime*0.15, uTime*0.1, uTime*0.12);
-    float e1 = fbm3(fp);
-    float e2 = fbm3(fp * 1.4 + vec3(0.0, uTime*0.08, 0.0));
-    float ep = e1 * 0.6 + e2 * 0.4;
+    vec3 fp = vLocalPos * 3.5 + vec3(uTime*0.08, uTime*0.06, uTime*0.07);
+    float ep = fbm3(fp);
 
-    // Animated energy veins
-    float veins = smoothstep(0.45, 0.55, fbm3(vLocalPos * 6.0 + vec3(0.0, uTime * 0.4, 0.0)));
+    float micro = n3(vLocalPos * 50.0) * 0.5;
+    float roughness = clamp(0.18 + micro * 0.18 + abs(vDisp) * 1.5, 0.15, 0.35);
+    float ao = clamp(0.55 + vDisp * 2.5 + ep * 0.3, 0.35, 1.0);
 
-    vec2 hu = vUv * 18.0;
-    vec2 hg = fract(hu) - 0.5;
-    float hex = smoothstep(0.03, 0.0, abs(abs(hg.x) + abs(hg.y)*0.577 - 0.5));
+    // ── GOLD PBR ──
+    vec3 goldAlbedo = vec3(0.83, 0.69, 0.22);
+    vec3 F0 = vec3(1.0, 0.71, 0.29);
 
-    // Improved scan lines — sharper, multi-frequency
-    float s1 = smoothstep(0.42, 0.5, fract(vWorldPos.y*15.0 - uTime*0.6)) * 0.25;
-    float s2 = smoothstep(0.45, 0.5, fract(vWorldPos.y*8.0 + uTime*0.3)) * 0.15;
-    float s3 = smoothstep(0.48, 0.5, fract(-vWorldPos.y*25.0 - uTime*1.2)) * 0.08;
-    float sc = s1 + s2 + s3;
+    // Fake environment reflection
+    vec3 reflDir = reflect(-vd, n);
+    vec3 envColor = mix(vec3(0.02, 0.015, 0.005), vec3(0.15, 0.12, 0.06), smoothstep(-0.3, 0.8, reflDir.y));
+    envColor = mix(envColor, vec3(0.4, 0.3, 0.12), pow(max(reflDir.y, 0.0), 4.0));
+    envColor *= mix(1.0, 0.6, roughness);
 
-    vec3 obsidian = vec3(0.06, 0.04, 0.02);
-    vec3 warmGold = vec3(0.65, 0.48, 0.16);
-    vec3 gold = vec3(0.95, 0.75, 0.25);
-    vec3 brightGold = vec3(1.0, 0.85, 0.35);
-    vec3 pearl = vec3(1.0, 0.97, 0.92);
-    vec3 champagne = vec3(0.80, 0.68, 0.40);
+    // 2-point lighting
+    vec3 keyLightDir = normalize(vec3(0.5, 0.7, 0.4));
+    vec3 fillLightDir = normalize(vec3(-0.5, 0.2, 0.6));
+    vec3 keyColor = vec3(1.0, 0.93, 0.85) * 2.2;
+    vec3 fillColor = vec3(0.85, 0.65, 0.2) * 0.7;
 
-    float cs = sin(uTime*0.3 + vWorldPos.y*2.0)*0.5+0.5;
-    vec3 col = mix(obsidian, warmGold * 0.5, ep * 0.8);
-    col = mix(col, champagne * 0.6, ep * ep * 0.6);
-    col = mix(col, gold, fresnel * cs * 0.2 + uEnergy * 0.12);
+    float keyNdl = max(dot(n, keyLightDir), 0.0);
+    float fillNdl = max(dot(n, fillLightDir), 0.0);
+    vec3 diffuse = goldAlbedo * (keyColor * keyNdl * 0.18 + fillColor * fillNdl * 0.22);
 
-    // Subsurface scattering approximation — warm light through the shell
-    float sss = pow(max(dot(n, -vd), 0.0), 2.5) * 0.18;
-    col += warmGold * sss;
-    col += champagne * sss * 0.5;
+    vec3 hk = normalize(keyLightDir + vd);
+    vec3 hf = normalize(fillLightDir + vd);
+    vec3 spec = keyColor * ggxM(max(dot(n, hk), 0.0), roughness) * keyNdl * fresnelM(max(dot(vd, hk), 0.0), F0);
+    spec += fillColor * ggxM(max(dot(n, hf), 0.0), roughness * 1.4) * fillNdl * fresnelM(max(dot(vd, hf), 0.0), F0);
 
-    // Chromatic fresnel rim
-    col += gold * chromaFres * 0.32;
-    col += pearl * fresnel * 0.15;
-    col += brightGold * pow(fresnel, 2.0) * 0.2;
+    vec3 Fenv = fresnelM(ndv, F0);
+    vec3 reflection = Fenv * envColor;
 
-    col += brightGold * veins * 0.25;
-    col += warmGold * 0.2 * hex * 0.3;
-    col += gold * sc * 0.2;
+    float rimTerm = pow(1.0 - ndv, 2.5);
+    vec3 rim = vec3(1.0, 0.78, 0.4) * rimTerm * 0.7;
 
-    float hotSpot = pow(ep, 3.0) * 1.2;
-    col += pearl * hotSpot * 0.12;
-    col += brightGold * hotSpot * 0.08;
+    vec3 ambient = goldAlbedo * vec3(0.18, 0.14, 0.07) * 0.6;
 
-    float gl = step(0.98, fract(sin(floor(vWorldPos.y*50.0 + uTime*3.0)) * 43758.5));
-    col += pearl * 0.4 * gl * (uGlitch * 0.5 + uEnergy * 0.25);
+    vec3 col = (diffuse + ambient) * ao;
+    col += reflection;
+    col += spec;
+    col += rim;
 
-    float pulse = 0.92 + sin(uTime*1.2)*0.05 + uEnergy*0.15;
+    // Inner warm glow pulse
+    float glowPulse = 0.5 + 0.5 * sin(uTime * 1.1);
+    col += vec3(0.55, 0.4, 0.16) * pow(ep, 2.0) * (0.15 + glowPulse * 0.15) * ao;
+
+    col += vec3(1.0, 0.9, 0.6) * pow(max(max(spec.r, spec.g), spec.b), 1.5) * 0.5;
+    col += goldAlbedo * uEnergy * 0.1;
+
+    float pulse = 0.95 + sin(uTime*0.6)*0.04 + uEnergy*0.1;
     col *= pulse;
 
-    float alpha = 0.55 + fresnel*0.35 + ep*0.12 + sc*0.05 + hex*0.04 + veins*0.06;
-    alpha *= pulse;
-    gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.92));
+    gl_FragColor = vec4(col, 1.0);
   }
 `;
 
@@ -458,17 +496,53 @@ const DESKTOP_ORB_VERT = /* glsl */`
                    mix(dHash(i+vec3(0,1,1)), dHash(i+vec3(1,1,1)), f.x), f.y), f.z);
   }
 
+  // 4-octave FBM for organic displacement
+  float dfbmV(vec3 p) {
+    float v = 0.0, a = 0.5;
+    for (int i = 0; i < 4; i++) { v += dNoise(p) * a; p = p * 2.05 + vec3(0.13, 0.27, 0.08); a *= 0.5; }
+    return v;
+  }
+
   void main() {
     vec3 pos = position;
-    float n1 = dNoise(pos * 5.0 + uTime * 0.8) * 0.025;
-    float n2 = dNoise(pos * 10.0 - uTime * 1.2) * 0.012;
-    float n3 = dNoise(pos * 20.0 + uTime * 0.5) * 0.005;
-    float n4 = dNoise(pos * 35.0 - uTime * 0.3) * 0.0025;
-    float disp = n1 + n2 + n3 + n4;
-    disp += dNoise(pos * 3.0 + uTime * 2.0) * 0.015 * uEnergy;
-    float breathe = sin(uTime * 0.8) * 0.008 + sin(uTime * 1.5) * 0.004;
-    float total = disp + breathe;
-    pos += normal * total;
+
+    // Direction vectors for organic creature-like protrusions
+    vec3 dir1 = normalize(vec3(-0.6, 0.5, 0.4));  // left-up
+    vec3 dir2 = normalize(vec3(0.0, 0.9, 0.3));   // top
+    vec3 dir3 = normalize(vec3(0.6, 0.4, 0.3));   // right-up
+    vec3 dir4 = normalize(vec3(0.0, -0.5, 0.6));  // front-bottom
+
+    vec3 nPos = normalize(position);
+    float align1 = pow(max(dot(nPos, dir1), 0.0), 3.0);
+    float align2 = pow(max(dot(nPos, dir2), 0.0), 4.0);
+    float align3 = pow(max(dot(nPos, dir3), 0.0), 3.0);
+    float align4 = pow(max(dot(nPos, dir4), 0.0), 2.5);
+
+    // Base organic displacement
+    float baseDisp = dfbmV(pos * 3.0 + uTime * 0.12) * 0.12;
+
+    // Protrusions — animated so they grow and shrink (life)
+    float morph = 0.7 + 0.3 * sin(uTime * 0.4);
+    float p1 = align1 * 0.45 * morph + pow(align1, 5.0) * dfbmV(pos * 8.0 + uTime * 0.2) * 0.3;
+    float p2 = align2 * 0.35 + pow(align2, 6.0) * 0.2;
+    float p3 = align3 * 0.4 * (1.7 - morph) + pow(align3, 5.0) * dfbmV(pos * 10.0 - uTime * 0.15) * 0.25;
+    float p4 = align4 * 0.2;
+
+    float totalDisp = baseDisp + p1 + p2 + p3 + p4;
+
+    // Fine detail ridges and organic texture
+    totalDisp += dfbmV(pos * 15.0 + uTime * 0.05) * 0.03;
+    totalDisp += dfbmV(pos * 30.0) * 0.015;
+
+    // Energy-driven extra turbulence
+    totalDisp += dNoise(pos * 6.0 + uTime * 2.0) * 0.03 * uEnergy;
+
+    // Animated breathing
+    float breathe = sin(uTime * 0.6) * 0.015 + sin(uTime * 1.2) * 0.008;
+    totalDisp += breathe;
+
+    float disp = totalDisp;
+    pos += normal * totalDisp;
 
     vDisp = disp;
     vNormal = normalize(normalMatrix * normal);
@@ -540,130 +614,114 @@ const DESKTOP_ORB_FRAG = /* glsl */`
     return a2 / (3.14159265 * d * d);
   }
 
+  // Schlick fresnel (vec3 for colored metallic F0)
+  vec3 fresnelSchlick(float cosT, vec3 F0) {
+    return F0 + (1.0 - F0) * pow(1.0 - cosT, 5.0);
+  }
+
+  // GGX specular contribution for one light
+  vec3 ggxLight(vec3 n, vec3 vd, vec3 ldir, vec3 lcol, float rough, vec3 F0) {
+    vec3 h = normalize(ldir + vd);
+    float ndl = max(dot(n, ldir), 0.0);
+    float ndh = max(dot(n, h), 0.0);
+    float vdh = max(dot(vd, h), 0.0);
+    float spec = ggx(ndh, rough);
+    vec3 F = fresnelSchlick(vdh, F0);
+    return lcol * spec * ndl * F;
+  }
+
   void main() {
     vec3 vd = normalize(cameraPosition - vWorldPos);
     vec3 n = normalize(vNormal);
     float ndv = max(dot(n, vd), 0.0);
 
-    // Chromatic fresnel — different exponent per channel for color separation
-    float frR = pow(1.0 - ndv, 2.4);
-    float frG = pow(1.0 - ndv, 3.0);
-    float frB = pow(1.0 - ndv, 3.8);
-    vec3 chromaFres = vec3(frR, frG, frB);
-    float fresnel = frG;
-
-    // 7-octave triple-domain FBM
-    vec3 fp = vLocalPos * 4.0 + vec3(uTime * 0.1, uTime * 0.07, uTime * 0.08);
+    // Surface detail FBM — drives roughness + ambient occlusion (cavities)
+    vec3 fp = vLocalPos * 4.0 + vec3(uTime * 0.06, uTime * 0.04, uTime * 0.05);
     float e1 = dfbm(fp);
-    float e2 = dfbm(fp * 1.3 + vec3(0.0, uTime * 0.05, uTime * 0.03));
-    float e3 = dfbm(fp * 0.7 - vec3(uTime * 0.025, 0.0, uTime * 0.04));
-    float ep = e1 * 0.45 + e2 * 0.35 + e3 * 0.2;
+    float e2 = dfbm(fp * 1.3 + vec3(0.0, uTime * 0.03, 0.0));
+    float ep = e1 * 0.6 + e2 * 0.4;
 
-    // Voronoi veins
-    vec2 vor = dVoronoi(vLocalPos * 5.0 + uTime * 0.06);
-    float veins = smoothstep(0.08, 0.0, vor.y - vor.x) * 0.5;
+    // Micro-detail for roughness variation
+    float micro = dn3(vLocalPos * 60.0 + uTime * 0.15) * 0.5 + dn3(vLocalPos * 120.0) * 0.25;
+    float roughness = clamp(0.15 + micro * 0.2 + abs(vDisp) * 1.5, 0.15, 0.35);
 
-    // Heat distortion / lava flow inside the veins — animated turbulence
-    float lavaFlow = dfbm(vLocalPos * 8.0 + vec3(0.0, -uTime * 0.6, uTime * 0.2));
-    float lava = veins * (0.5 + 0.5 * sin(lavaFlow * 12.0 - uTime * 3.0));
+    // Ambient occlusion from displacement cavities (concave = darker)
+    float ao = clamp(0.55 + vDisp * 2.5 + ep * 0.35, 0.35, 1.0);
 
-    // Animated caustic patterns — interfering wave fronts on the surface
-    float ca = sin(vLocalPos.x * 14.0 + uTime * 1.3 + ep * 6.0);
-    float cb = sin(vLocalPos.y * 16.0 - uTime * 1.0 + ep * 5.0);
-    float cc = sin(vLocalPos.z * 12.0 + uTime * 0.8 + ep * 7.0);
-    float caustic = pow(max((ca + cb + cc) / 3.0 * 0.5 + 0.5, 0.0), 4.0);
+    // ── GOLD PBR ──
+    vec3 goldAlbedo = vec3(0.83, 0.69, 0.22); // real gold, linear-ish
+    vec3 F0 = vec3(1.0, 0.71, 0.29);          // gold IOR fresnel
 
-    // Energy crackling / lightning — sharp animated filaments
-    float crackBase = dfbm(vLocalPos * 10.0 + vec3(uTime * 0.9, uTime * 0.5, -uTime * 0.7));
-    float crackle = smoothstep(0.78, 0.83, crackBase) * (0.6 + 0.4 * sin(uTime * 14.0));
-    crackle *= (0.4 + uEnergy * 0.8);
+    // Fake environment reflection (no cubemap)
+    vec3 reflDir = reflect(-vd, n);
+    vec3 envColor = mix(
+      vec3(0.02, 0.015, 0.005),  // dark floor reflection
+      vec3(0.15, 0.12, 0.06),    // warm ambient
+      smoothstep(-0.3, 0.8, reflDir.y)
+    );
+    // warm sky reflection from above
+    envColor = mix(envColor, vec3(0.4, 0.3, 0.12), pow(max(reflDir.y, 0.0), 4.0));
+    // roughness blurs/darkens the reflection a touch
+    envColor *= mix(1.0, 0.6, roughness);
 
-    // Micro-detail noise layer for surface roughness
-    float micro = dn3(vLocalPos * 60.0 + uTime * 0.2) * 0.5 + dn3(vLocalPos * 120.0) * 0.25;
-    float roughness = clamp(0.35 + micro * 0.4 + vDisp * 4.0, 0.12, 0.85);
+    // Three-point lighting (directions + warm colors)
+    vec3 keyLightDir  = normalize(vec3(0.5, 0.7, 0.4));
+    vec3 fillLightDir = normalize(vec3(-0.5, 0.2, 0.6));
+    vec3 rimLightDir  = normalize(vec3(0.0, 0.3, -0.8));
+    vec3 keyColor  = vec3(1.0, 0.93, 0.85) * 2.2;
+    vec3 fillColor = vec3(0.85, 0.65, 0.2) * 0.7;
+    vec3 rimColor  = vec3(1.0, 0.9, 0.75) * 1.6;
 
-    // Hex grid
-    vec2 hu = vUv * 22.0;
-    vec2 hg = fract(hu) - 0.5;
-    float hex = smoothstep(0.03, 0.0, abs(abs(hg.x) + abs(hg.y) * 0.577 - 0.5));
-    float hexP = sin(uTime * 0.3 + hu.x * 0.5 + hu.y * 0.7) * 0.5 + 0.5;
-    hex *= 0.3 + hexP * 0.7;
+    // Diffuse term — gold is metallic so diffuse is tinted by albedo, kept low
+    float keyNdl  = max(dot(n, keyLightDir), 0.0);
+    float fillNdl = max(dot(n, fillLightDir), 0.0);
+    vec3 diffuse = goldAlbedo * (keyColor * keyNdl * 0.18 + fillColor * fillNdl * 0.22);
 
-    // Scan lines
-    float s1 = smoothstep(0.42, 0.5, fract(vWorldPos.y * 18.0 - uTime * 0.4)) * 0.15;
-    float s2 = smoothstep(0.45, 0.5, fract(vWorldPos.y * 10.0 + uTime * 0.2)) * 0.08;
-    float sc = s1 + s2;
+    // Specular from three lights (GGX + colored fresnel)
+    vec3 spec = vec3(0.0);
+    spec += ggxLight(n, vd, keyLightDir,  keyColor,  roughness, F0);
+    spec += ggxLight(n, vd, fillLightDir, fillColor, roughness * 1.4, F0);
+    spec += ggxLight(n, vd, rimLightDir,  rimColor,  roughness, F0);
 
-    // Palette (gold / warm obsidian / pearl / champagne / rose gold)
-    vec3 obsidian = vec3(0.06, 0.04, 0.02);
-    vec3 warmGold = vec3(0.65, 0.48, 0.16);
-    vec3 brightGold = vec3(0.95, 0.75, 0.25);
-    vec3 pearl = vec3(1.0, 0.97, 0.92);
-    vec3 champagne = vec3(0.80, 0.68, 0.40);
-    vec3 roseGold = vec3(0.78, 0.52, 0.38);
-    vec3 lavaHot = vec3(1.0, 0.62, 0.18);
+    // Environment / reflection term modulated by fresnel
+    vec3 Fenv = fresnelSchlick(ndv, F0);
+    vec3 reflection = Fenv * envColor;
 
-    vec3 col = mix(obsidian, warmGold * 0.4, ep * 0.8);
-    col = mix(col, champagne * 0.5, ep * ep * 0.6);
+    // Rim light — dramatic bright golden edge (back-lit silhouette)
+    float rimNdl = max(dot(n, rimLightDir), 0.0);
+    float rimTerm = pow(1.0 - ndv, 2.5) * (0.4 + rimNdl * 0.9);
+    vec3 rim = rimColor * vec3(1.0, 0.78, 0.4) * rimTerm * 0.6;
 
-    // Veins + lava flow
-    col += brightGold * veins * 0.45;
-    col += pearl * veins * 0.15;
-    col += lavaHot * lava * 0.35;
+    // Ambient — warm baseline so shadows stay golden, never pure black
+    vec3 ambient = goldAlbedo * vec3(0.18, 0.14, 0.07) * 0.6;
 
-    // Caustics shimmer
-    col += champagne * caustic * 0.18;
-    col += pearl * caustic * caustic * 0.1;
+    // Compose metallic gold
+    vec3 col = (diffuse + ambient) * ao;
+    col += reflection;
+    col += spec;
+    col += rim;
 
-    // Volumetric subsurface scattering — depth-dependent color (warm core,
-    // cooler-pearl shallow), driven by back-facing transmission
-    float back = pow(max(dot(n, -vd), 0.0), 2.2);
-    float depthMix = clamp(ep + back, 0.0, 1.0);
-    vec3 sssColor = mix(roseGold, warmGold, depthMix);
-    sssColor = mix(sssColor, champagne, caustic * 0.5);
-    col += sssColor * back * 0.22;
+    // Inner warm glow pulsing through the cavities (life)
+    float glowPulse = 0.5 + 0.5 * sin(uTime * 1.1);
+    col += vec3(0.55, 0.4, 0.16) * pow(ep, 2.0) * (0.15 + glowPulse * 0.15) * ao;
 
-    // GGX-style specular highlight (key light from upper-right)
-    vec3 lightDir = normalize(vec3(0.6, 0.8, 0.5));
-    vec3 hvec = normalize(lightDir + vd);
-    float ndh = max(dot(n, hvec), 0.0);
-    float spec = ggx(ndh, roughness);
-    float ndl = max(dot(n, lightDir), 0.0);
-    col += pearl * spec * ndl * 0.5;
-    col += brightGold * spec * ndl * 0.25;
+    // Occasional energy pulse traveling across the surface
+    float wave = sin(vWorldPos.y * 2.5 - uTime * 1.6 + ep * 4.0);
+    float surge = smoothstep(0.85, 1.0, wave) * (0.5 + 0.5 * sin(uTime * 0.7));
+    col += vec3(1.0, 0.85, 0.45) * surge * (0.12 + uEnergy * 0.4);
 
-    // Chromatic fresnel rim
-    col += brightGold * chromaFres * 0.16;
-    col += pearl * fresnel * 0.06;
-    col += roseGold * frR * 0.05;
+    // Hot specular bloom catch
+    col += vec3(1.0, 0.9, 0.6) * pow(max(max(spec.r, spec.g), spec.b), 1.5) * 0.5;
 
-    col += warmGold * 0.2 * hex * 0.18;
-    col += brightGold * sc * 0.1;
+    // Energy boost
+    col += goldAlbedo * uEnergy * 0.1;
 
-    // Energy crackling / lightning
-    col += pearl * crackle * 0.35;
-    col += brightGold * crackle * 0.2;
-
-    float hotSpot = pow(e1, 4.0) * 0.5;
-    col += pearl * hotSpot * 0.06;
-    col += brightGold * hotSpot * 0.04;
-
-    float cs = sin(uTime * 0.2 + vWorldPos.y * 2.5) * 0.5 + 0.5;
-    col = mix(col, brightGold, fresnel * cs * 0.1 + uEnergy * 0.06);
-
-    float gl = step(0.985, fract(sin(floor(vWorldPos.y * 50.0 + uTime * 3.0)) * 43758.5));
-    col += pearl * 0.4 * gl * (uGlitch * 0.5 + uEnergy * 0.2);
-
-    float pulse = 0.92 + sin(uTime * 0.8) * 0.04 + uEnergy * 0.08;
+    // Subtle global breathing in brightness
+    float pulse = 0.95 + sin(uTime * 0.6) * 0.04 + uEnergy * 0.08;
     col *= pulse;
 
-    // Higher dynamic range — let bloom catch the hottest points
-    col += brightGold * pow(max(spec * ndl, caustic) , 2.0) * 0.4;
-
-    float alpha = 0.55 + fresnel * 0.3 + ep * 0.12 + sc * 0.03 + hex * 0.02
-                + veins * 0.1 + caustic * 0.04 + crackle * 0.06;
-    alpha *= pulse;
-    gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.92));
+    // SOLID OPAQUE GOLD
+    gl_FragColor = vec4(col, 1.0);
   }
 `;
 
@@ -824,9 +882,9 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     uniforms: { uTime: { value: 0 }, uEnergy: { value: 0 }, uGlitch: { value: 0 } },
     vertexShader: MOBILE_ORB_VERT,
     fragmentShader: MOBILE_ORB_FRAG,
-    transparent: true,
-    depthWrite: false,
-    side: THREE.DoubleSide,
+    transparent: false,
+    depthWrite: true,
+    side: THREE.FrontSide,
   });
   const orb = new THREE.Mesh(orbGeo, orbMat);
   group.add(orb);
@@ -848,33 +906,29 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   coreGlow.scale.setScalar(1.8);
   group.add(coreGlow);
 
-  // ── Wireframe cage A — fine grid ──
-  const wireAGeo = new THREE.IcosahedronGeometry(1.04, 3);
-  const wireAMat = new THREE.MeshBasicMaterial({
-    color: 0xd4a84d, wireframe: true, transparent: true, opacity: 0.08, depthWrite: false,
-  });
-  const wireA = new THREE.Mesh(wireAGeo, wireAMat);
-  group.add(wireA);
-
-  // ── Wireframe cage B — coarse grid, opposite rotation ──
-  const wireBGeo = new THREE.IcosahedronGeometry(1.07, 2);
-  const wireBMat = new THREE.MeshBasicMaterial({
-    color: 0xf0e0c0, wireframe: true, transparent: true, opacity: 0.05, depthWrite: false,
-  });
-  const wireB = new THREE.Mesh(wireBGeo, wireBMat);
-  group.add(wireB);
-
   // ────────────────────────────────────────────
-  // ORBITAL RINGS — gold, champagne, rose
+  // ORBITAL RINGS — gold halo, champagne, rose
   // ────────────────────────────────────────────
-  const goldRGeo = new THREE.TorusGeometry(1.45, 0.035, 24, 200);
+  // Primary gold halo — thicker, brighter, larger than the protrusions
+  const goldRGeo = new THREE.TorusGeometry(1.75, 0.06, 28, 220);
   const goldRMat = new THREE.MeshBasicMaterial({
-    color: 0xdaa520, transparent: true, opacity: 0.8, depthWrite: false,
+    color: 0xdaa520, transparent: true, opacity: 0.95, depthWrite: false,
   });
   const goldRing = new THREE.Mesh(goldRGeo, goldRMat);
   goldRing.rotation.x = PI * 0.5;
   goldRing.rotation.z = 0.15;
   group.add(goldRing);
+
+  // Glow ring behind the primary halo
+  const haloGlowGeo = new THREE.TorusGeometry(1.75, 0.16, 24, 200);
+  const haloGlowMat = new THREE.MeshBasicMaterial({
+    color: 0xdaa520, transparent: true, opacity: 0.18, depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const haloGlow = new THREE.Mesh(haloGlowGeo, haloGlowMat);
+  haloGlow.rotation.x = PI * 0.5;
+  haloGlow.rotation.z = 0.15;
+  group.add(haloGlow);
 
   const cyanRGeo = new THREE.TorusGeometry(1.25, 0.015, 16, 160);
   const cyanRMat = new THREE.MeshBasicMaterial({
@@ -1309,9 +1363,9 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     uniforms: { uTime: { value: 0 }, uEnergy: { value: 0 }, uGlitch: { value: 0 } },
     vertexShader: DESKTOP_ORB_VERT,
     fragmentShader: DESKTOP_ORB_FRAG,
-    transparent: true,
-    depthWrite: false,
-    side: THREE.DoubleSide,
+    transparent: false,
+    depthWrite: true,
+    side: THREE.FrontSide,
   });
   const orb = new THREE.Mesh(orbGeo, orbMat);
   group.add(orb);
