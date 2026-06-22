@@ -200,178 +200,6 @@ const GRID_FRAGMENT = /* glsl */`
 `;
 
 // ============================================================
-// Mobile holographic orb shaders — 5-octave FBM, chromatic fresnel, SSS
-// ============================================================
-const MOBILE_ORB_VERT = /* glsl */`
-  varying vec3 vNormal;
-  varying vec3 vWorldPos;
-  varying vec2 vUv;
-  varying vec3 vLocalPos;
-  varying float vDisp;
-  uniform float uTime;
-  uniform float uEnergy;
-
-  float mh(vec3 p) {
-    p = fract(p * vec3(443.897, 441.423, 437.195));
-    p += dot(p, p.yzx + 19.19);
-    return fract((p.x + p.y) * p.z);
-  }
-  float mn(vec3 p) {
-    vec3 i = floor(p), f = fract(p);
-    f = f*f*(3.0-2.0*f);
-    return mix(mix(mix(mh(i), mh(i+vec3(1,0,0)), f.x),
-                   mix(mh(i+vec3(0,1,0)), mh(i+vec3(1,1,0)), f.x), f.y),
-               mix(mix(mh(i+vec3(0,0,1)), mh(i+vec3(1,0,1)), f.x),
-                   mix(mh(i+vec3(0,1,1)), mh(i+vec3(1,1,1)), f.x), f.y), f.z);
-  }
-  float mfbm(vec3 p) {
-    float v = 0.0, a = 0.5;
-    for (int i = 0; i < 3; i++) { v += mn(p) * a; p = p * 2.05 + vec3(0.13, 0.27, 0.08); a *= 0.5; }
-    return v;
-  }
-
-  void main() {
-    vec3 pos = position;
-
-    // Organic creature-like protrusions
-    vec3 dir1 = normalize(vec3(-0.6, 0.5, 0.4));
-    vec3 dir2 = normalize(vec3(0.0, 0.9, 0.3));
-    vec3 dir3 = normalize(vec3(0.6, 0.4, 0.3));
-    vec3 nPos = normalize(position);
-    float align1 = pow(max(dot(nPos, dir1), 0.0), 3.0);
-    float align2 = pow(max(dot(nPos, dir2), 0.0), 4.0);
-    float align3 = pow(max(dot(nPos, dir3), 0.0), 3.0);
-
-    float morph = 0.7 + 0.3 * sin(uTime * 0.4);
-    float baseDisp = mfbm(pos * 3.0 + uTime * 0.12) * 0.1;
-    float p1 = align1 * 0.4 * morph + pow(align1, 5.0) * mfbm(pos * 8.0 + uTime * 0.2) * 0.25;
-    float p2 = align2 * 0.3 + pow(align2, 6.0) * 0.18;
-    float p3 = align3 * 0.35 * (1.7 - morph);
-    float totalDisp = baseDisp + p1 + p2 + p3;
-    totalDisp += mfbm(pos * 15.0 + uTime * 0.05) * 0.025;
-    totalDisp += mn(pos * 6.0 + uTime * 2.0) * 0.025 * uEnergy;
-
-    float breathe = sin(uTime * 0.6) * 0.012 + sin(uTime * 1.2) * 0.006;
-    totalDisp += breathe;
-
-    vDisp = totalDisp;
-    pos += normal * totalDisp;
-
-    vNormal = normalize(normalMatrix * normal);
-    vWorldPos = (modelMatrix * vec4(pos, 1.0)).xyz;
-    vLocalPos = position;
-    vUv = uv;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
-  }
-`;
-
-const MOBILE_ORB_FRAG = /* glsl */`
-  uniform float uTime;
-  uniform float uEnergy;
-  uniform float uGlitch;
-  varying vec3 vNormal;
-  varying vec3 vWorldPos;
-  varying vec2 vUv;
-  varying vec3 vLocalPos;
-  varying float vDisp;
-
-  float h3(vec3 p) {
-    p = fract(p * vec3(443.897, 441.423, 437.195));
-    p += dot(p, p.yzx + 19.19);
-    return fract((p.x + p.y) * p.z);
-  }
-  float n3(vec3 p) {
-    vec3 i = floor(p), f = fract(p);
-    f = f*f*(3.0-2.0*f);
-    return mix(mix(mix(h3(i), h3(i+vec3(1,0,0)), f.x),
-                   mix(h3(i+vec3(0,1,0)), h3(i+vec3(1,1,0)), f.x), f.y),
-               mix(mix(h3(i+vec3(0,0,1)), h3(i+vec3(1,0,1)), f.x),
-                   mix(h3(i+vec3(0,1,1)), h3(i+vec3(1,1,1)), f.x), f.y), f.z);
-  }
-  float fbm3(vec3 p) {
-    float v = 0.0, a = 0.5;
-    for (int i = 0; i < 4; i++) {
-      v += n3(p) * a;
-      p = p * 2.1 + vec3(0.11, 0.23, 0.07);
-      a *= 0.5;
-    }
-    return v;
-  }
-  float ggxM(float ndh, float rough) {
-    float a = rough * rough;
-    float a2 = a * a;
-    float d = (ndh * ndh) * (a2 - 1.0) + 1.0;
-    return a2 / (3.14159265 * d * d);
-  }
-  vec3 fresnelM(float cosT, vec3 F0) {
-    return F0 + (1.0 - F0) * pow(1.0 - cosT, 5.0);
-  }
-
-  void main() {
-    vec3 vd = normalize(cameraPosition - vWorldPos);
-    vec3 n = normalize(vNormal);
-    float ndv = max(dot(n, vd), 0.0);
-
-    vec3 fp = vLocalPos * 3.5 + vec3(uTime*0.08, uTime*0.06, uTime*0.07);
-    float ep = fbm3(fp);
-
-    float micro = n3(vLocalPos * 50.0) * 0.5;
-    float roughness = clamp(0.18 + micro * 0.18 + abs(vDisp) * 1.5, 0.15, 0.35);
-    float ao = clamp(0.55 + vDisp * 2.5 + ep * 0.3, 0.35, 1.0);
-
-    // ── GOLD PBR ──
-    vec3 goldAlbedo = vec3(0.83, 0.69, 0.22);
-    vec3 F0 = vec3(1.0, 0.71, 0.29);
-
-    // Fake environment reflection
-    vec3 reflDir = reflect(-vd, n);
-    vec3 envColor = mix(vec3(0.02, 0.015, 0.005), vec3(0.15, 0.12, 0.06), smoothstep(-0.3, 0.8, reflDir.y));
-    envColor = mix(envColor, vec3(0.4, 0.3, 0.12), pow(max(reflDir.y, 0.0), 4.0));
-    envColor *= mix(1.0, 0.6, roughness);
-
-    // 2-point lighting
-    vec3 keyLightDir = normalize(vec3(0.5, 0.7, 0.4));
-    vec3 fillLightDir = normalize(vec3(-0.5, 0.2, 0.6));
-    vec3 keyColor = vec3(1.0, 0.93, 0.85) * 2.2;
-    vec3 fillColor = vec3(0.85, 0.65, 0.2) * 0.7;
-
-    float keyNdl = max(dot(n, keyLightDir), 0.0);
-    float fillNdl = max(dot(n, fillLightDir), 0.0);
-    vec3 diffuse = goldAlbedo * (keyColor * keyNdl * 0.18 + fillColor * fillNdl * 0.22);
-
-    vec3 hk = normalize(keyLightDir + vd);
-    vec3 hf = normalize(fillLightDir + vd);
-    vec3 spec = keyColor * ggxM(max(dot(n, hk), 0.0), roughness) * keyNdl * fresnelM(max(dot(vd, hk), 0.0), F0);
-    spec += fillColor * ggxM(max(dot(n, hf), 0.0), roughness * 1.4) * fillNdl * fresnelM(max(dot(vd, hf), 0.0), F0);
-
-    vec3 Fenv = fresnelM(ndv, F0);
-    vec3 reflection = Fenv * envColor;
-
-    float rimTerm = pow(1.0 - ndv, 2.5);
-    vec3 rim = vec3(1.0, 0.78, 0.4) * rimTerm * 0.7;
-
-    vec3 ambient = goldAlbedo * vec3(0.18, 0.14, 0.07) * 0.6;
-
-    vec3 col = (diffuse + ambient) * ao;
-    col += reflection;
-    col += spec;
-    col += rim;
-
-    // Inner warm glow pulse
-    float glowPulse = 0.5 + 0.5 * sin(uTime * 1.1);
-    col += vec3(0.55, 0.4, 0.16) * pow(ep, 2.0) * (0.15 + glowPulse * 0.15) * ao;
-
-    col += vec3(1.0, 0.9, 0.6) * pow(max(max(spec.r, spec.g), spec.b), 1.5) * 0.5;
-    col += goldAlbedo * uEnergy * 0.1;
-
-    float pulse = 0.95 + sin(uTime*0.6)*0.04 + uEnergy*0.1;
-    col *= pulse;
-
-    gl_FragColor = vec4(col, 1.0);
-  }
-`;
-
-// ============================================================
 // Enhanced particle shaders — multi-layer glow with depth falloff
 // ============================================================
 const PART_VERT = /* glsl */`
@@ -471,259 +299,261 @@ function flareTexture(): THREE.Texture {
 }
 
 // ============================================================
-// Desktop enhanced vertex shader — 7-octave displacement, quintic noise
+// CYBERNETIC BULL HEAD — builder helpers
 // ============================================================
-const DESKTOP_ORB_VERT = /* glsl */`
-  varying vec3 vNormal;
-  varying vec3 vWorldPos;
-  varying vec2 vUv;
-  varying vec3 vLocalPos;
-  varying float vDisp;
-  uniform float uTime;
-  uniform float uEnergy;
 
-  float dHash(vec3 p) {
-    p = fract(p * vec3(443.897, 441.423, 437.195));
-    p += dot(p, p.yzx + 19.19);
-    return fract((p.x + p.y) * p.z);
+// Procedural environment map for the metallic PBR materials.
+function createEnvMap(renderer: THREE.WebGLRenderer): THREE.Texture {
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const envScene = new THREE.Scene();
+  envScene.background = new THREE.Color(0x0a0806);
+  envScene.add(new THREE.HemisphereLight(0xffeedd, 0x0a0806, 0.8));
+  const p1 = new THREE.PointLight(0xffeedd, 15, 30);
+  p1.position.set(5, 5, 5);
+  envScene.add(p1);
+  const p2 = new THREE.PointLight(0xdaa520, 10, 30);
+  p2.position.set(-5, 3, -3);
+  envScene.add(p2);
+  const p3 = new THREE.PointLight(0xffe8c0, 8, 30);
+  p3.position.set(0, -2, 6);
+  envScene.add(p3);
+  const envMap = pmrem.fromScene(envScene, 0, 0.1, 100).texture;
+  pmrem.dispose();
+  return envMap;
+}
+
+// Gear / cog shape (THREE.Shape -> ExtrudeGeometry) for the ring behind the head.
+function createGearGeometry(
+  outerR: number,
+  innerR: number,
+  teeth: number,
+  toothDepth: number,
+  thickness: number,
+): THREE.ExtrudeGeometry {
+  const shape = new THREE.Shape();
+  const steps = teeth * 2;
+  for (let i = 0; i <= steps; i++) {
+    const angle = (i / steps) * Math.PI * 2;
+    const isOuter = i % 2 === 0;
+    const r = isOuter ? outerR : outerR - toothDepth;
+    const x = Math.cos(angle) * r;
+    const y = Math.sin(angle) * r;
+    if (i === 0) shape.moveTo(x, y);
+    else shape.lineTo(x, y);
   }
-  float dNoise(vec3 p) {
-    vec3 i = floor(p), f = fract(p);
-    f = f*f*f*(f*(f*6.0-15.0)+10.0); // quintic
-    return mix(mix(mix(dHash(i), dHash(i+vec3(1,0,0)), f.x),
-                   mix(dHash(i+vec3(0,1,0)), dHash(i+vec3(1,1,0)), f.x), f.y),
-               mix(mix(dHash(i+vec3(0,0,1)), dHash(i+vec3(1,0,1)), f.x),
-                   mix(dHash(i+vec3(0,1,1)), dHash(i+vec3(1,1,1)), f.x), f.y), f.z);
+  const hole = new THREE.Path();
+  for (let i = 0; i <= 64; i++) {
+    const a = (i / 64) * Math.PI * 2;
+    const x = Math.cos(a) * innerR;
+    const y = Math.sin(a) * innerR;
+    if (i === 0) hole.moveTo(x, y);
+    else hole.lineTo(x, y);
   }
+  shape.holes.push(hole);
+  return new THREE.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false });
+}
 
-  // 4-octave FBM for organic displacement
-  float dfbmV(vec3 p) {
-    float v = 0.0, a = 0.5;
-    for (int i = 0; i < 4; i++) { v += dNoise(p) * a; p = p * 2.05 + vec3(0.13, 0.27, 0.08); a *= 0.5; }
-    return v;
-  }
+interface BullMaterials {
+  silver: THREE.MeshPhysicalMaterial;
+  gold: THREE.MeshPhysicalMaterial;
+  dark: THREE.MeshPhysicalMaterial;
+  eye: THREE.MeshPhysicalMaterial;
+  gear: THREE.MeshPhysicalMaterial;
+  gem: THREE.MeshPhysicalMaterial;
+}
 
-  void main() {
-    vec3 pos = position;
+function createBullMaterials(envMap: THREE.Texture): BullMaterials {
+  return {
+    silver: new THREE.MeshPhysicalMaterial({
+      color: 0x8a8a8a, metalness: 0.95, roughness: 0.2, envMap, envMapIntensity: 1.5,
+    }),
+    gold: new THREE.MeshPhysicalMaterial({
+      color: 0xdaa520, metalness: 1.0, roughness: 0.15, envMap, envMapIntensity: 2.0,
+    }),
+    dark: new THREE.MeshPhysicalMaterial({
+      color: 0x1a1a1a, metalness: 0.9, roughness: 0.3, envMap,
+    }),
+    eye: new THREE.MeshPhysicalMaterial({
+      color: 0x44aaff, emissive: 0x2288ff, emissiveIntensity: 2.0, metalness: 0.3, roughness: 0.1,
+    }),
+    gear: new THREE.MeshPhysicalMaterial({
+      color: 0x666666, metalness: 0.9, roughness: 0.25, envMap, envMapIntensity: 1.2,
+    }),
+    gem: new THREE.MeshPhysicalMaterial({
+      color: 0x55bbff, emissive: 0x3399ff, emissiveIntensity: 2.5, metalness: 0.2, roughness: 0.05,
+    }),
+  };
+}
 
-    // Direction vectors for organic creature-like protrusions
-    vec3 dir1 = normalize(vec3(-0.6, 0.5, 0.4));  // left-up
-    vec3 dir2 = normalize(vec3(0.0, 0.9, 0.3));   // top
-    vec3 dir3 = normalize(vec3(0.6, 0.4, 0.3));   // right-up
-    vec3 dir4 = normalize(vec3(0.0, -0.5, 0.6));  // front-bottom
+interface BullParts {
+  group: THREE.Group;
+  gear: THREE.Mesh;
+  leftEye: THREE.Mesh;
+  rightEye: THREE.Mesh;
+  eyeMat: THREE.MeshPhysicalMaterial;
+  gem: THREE.Mesh;
+  gemMat: THREE.MeshPhysicalMaterial;
+  eyeGlows: THREE.Sprite[];
+}
 
-    vec3 nPos = normalize(position);
-    float align1 = pow(max(dot(nPos, dir1), 0.0), 3.0);
-    float align2 = pow(max(dot(nPos, dir2), 0.0), 4.0);
-    float align3 = pow(max(dot(nPos, dir3), 0.0), 3.0);
-    float align4 = pow(max(dot(nPos, dir4), 0.0), 2.5);
+// Build a complete cybernetic bull head from primitive geometries.
+// `detail` scales subdivision counts (1 = desktop, 0.5 = mobile-ish).
+function buildBullHead(mats: BullMaterials, detail: number): BullParts {
+  const group = new THREE.Group();
+  const seg = (n: number) => Math.max(8, Math.round(n * detail));
 
-    // Base organic displacement
-    float baseDisp = dfbmV(pos * 3.0 + uTime * 0.12) * 0.12;
+  // ── Main skull — wider than tall, flattened front-to-back ──
+  const skull = new THREE.Mesh(
+    new THREE.SphereGeometry(1, seg(48), seg(48)),
+    mats.silver,
+  );
+  skull.scale.set(1.2, 1.0, 0.9);
+  group.add(skull);
 
-    // Protrusions — animated so they grow and shrink (life)
-    float morph = 0.7 + 0.3 * sin(uTime * 0.4);
-    float p1 = align1 * 0.45 * morph + pow(align1, 5.0) * dfbmV(pos * 8.0 + uTime * 0.2) * 0.3;
-    float p2 = align2 * 0.35 + pow(align2, 6.0) * 0.2;
-    float p3 = align3 * 0.4 * (1.7 - morph) + pow(align3, 5.0) * dfbmV(pos * 10.0 - uTime * 0.15) * 0.25;
-    float p4 = align4 * 0.2;
+  // ── Forehead plate — flattened sphere, top-front, slightly protruding ──
+  const forehead = new THREE.Mesh(
+    new THREE.SphereGeometry(0.55, seg(32), seg(32)),
+    mats.silver,
+  );
+  forehead.scale.set(1.0, 0.5, 0.5);
+  forehead.position.set(0, 0.5, 0.72);
+  group.add(forehead);
 
-    float totalDisp = baseDisp + p1 + p2 + p3 + p4;
+  // ── Snout / muzzle — forward and down ──
+  const snout = new THREE.Mesh(
+    new THREE.SphereGeometry(0.5, seg(32), seg(32)),
+    mats.silver,
+  );
+  snout.scale.set(1.2, 0.65, 0.85);
+  snout.position.set(0, -0.42, 0.78);
+  group.add(snout);
 
-    // Fine detail ridges and organic texture
-    totalDisp += dfbmV(pos * 15.0 + uTime * 0.05) * 0.03;
-    totalDisp += dfbmV(pos * 30.0) * 0.015;
+  // ── Jaw — flattened sphere below the snout ──
+  const jaw = new THREE.Mesh(
+    new THREE.SphereGeometry(0.45, seg(28), seg(28)),
+    mats.dark,
+  );
+  jaw.scale.set(1.0, 0.45, 0.8);
+  jaw.position.set(0, -0.72, 0.6);
+  group.add(jaw);
 
-    // Energy-driven extra turbulence
-    totalDisp += dNoise(pos * 6.0 + uTime * 2.0) * 0.03 * uEnergy;
+  // ── Nose bridge — cylinder connecting head to snout ──
+  const bridge = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.22, 0.32, 0.5, seg(20)),
+    mats.silver,
+  );
+  bridge.rotation.x = Math.PI * 0.5;
+  bridge.position.set(0, -0.1, 0.7);
+  group.add(bridge);
 
-    // Animated breathing
-    float breathe = sin(uTime * 0.6) * 0.015 + sin(uTime * 1.2) * 0.008;
-    totalDisp += breathe;
-
-    float disp = totalDisp;
-    pos += normal * totalDisp;
-
-    vDisp = disp;
-    vNormal = normalize(normalMatrix * normal);
-    vWorldPos = (modelMatrix * vec4(pos, 1.0)).xyz;
-    vLocalPos = position;
-    vUv = uv;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
-  }
-`;
-
-// ============================================================
-// Desktop enhanced fragment shader — 7-octave FBM, GGX specular,
-// volumetric SSS, caustics, micro-detail, chromatic fresnel, lava veins,
-// energy crackling
-// ============================================================
-const DESKTOP_ORB_FRAG = /* glsl */`
-  uniform float uTime;
-  uniform float uEnergy;
-  uniform float uGlitch;
-  varying vec3 vNormal;
-  varying vec3 vWorldPos;
-  varying vec2 vUv;
-  varying vec3 vLocalPos;
-  varying float vDisp;
-
-  float dh3(vec3 p) {
-    p = fract(p * vec3(443.897, 441.423, 437.195));
-    p += dot(p, p.yzx + 19.19);
-    return fract((p.x + p.y) * p.z);
-  }
-  float dn3(vec3 p) {
-    vec3 i = floor(p), f = fract(p);
-    f = f*f*f*(f*(f*6.0-15.0)+10.0); // quintic interpolation
-    return mix(mix(mix(dh3(i), dh3(i+vec3(1,0,0)), f.x),
-                   mix(dh3(i+vec3(0,1,0)), dh3(i+vec3(1,1,0)), f.x), f.y),
-               mix(mix(dh3(i+vec3(0,0,1)), dh3(i+vec3(1,0,1)), f.x),
-                   mix(dh3(i+vec3(0,1,1)), dh3(i+vec3(1,1,1)), f.x), f.y), f.z);
-  }
-  // 7-octave FBM
-  float dfbm(vec3 p) {
-    float v = 0.0, a = 0.5;
-    for (int i = 0; i < 7; i++) {
-      v += dn3(p) * a;
-      p = p * 2.05 + vec3(0.13, 0.27, 0.08);
-      a *= 0.52;
-    }
-    return v;
-  }
-  vec2 dVoronoi(vec3 p) {
-    vec3 i = floor(p), f = fract(p);
-    float d1 = 1.0, d2 = 1.0;
-    for (int x = -1; x <= 1; x++)
-    for (int y = -1; y <= 1; y++)
-    for (int z = -1; z <= 1; z++) {
-      vec3 nb = vec3(x, y, z);
-      vec3 r = nb + fract(sin(dot(i + nb, vec3(127.1, 311.7, 74.7))) * 43758.5) - f;
-      float d = dot(r, r);
-      if (d < d1) { d2 = d1; d1 = d; }
-      else if (d < d2) { d2 = d; }
-    }
-    return vec2(sqrt(d1), sqrt(d2));
-  }
-
-  // GGX/Trowbridge-Reitz normal distribution for specular highlight
-  float ggx(float ndh, float rough) {
-    float a = rough * rough;
-    float a2 = a * a;
-    float d = (ndh * ndh) * (a2 - 1.0) + 1.0;
-    return a2 / (3.14159265 * d * d);
-  }
-
-  // Schlick fresnel (vec3 for colored metallic F0)
-  vec3 fresnelSchlick(float cosT, vec3 F0) {
-    return F0 + (1.0 - F0) * pow(1.0 - cosT, 5.0);
-  }
-
-  // GGX specular contribution for one light
-  vec3 ggxLight(vec3 n, vec3 vd, vec3 ldir, vec3 lcol, float rough, vec3 F0) {
-    vec3 h = normalize(ldir + vd);
-    float ndl = max(dot(n, ldir), 0.0);
-    float ndh = max(dot(n, h), 0.0);
-    float vdh = max(dot(vd, h), 0.0);
-    float spec = ggx(ndh, rough);
-    vec3 F = fresnelSchlick(vdh, F0);
-    return lcol * spec * ndl * F;
-  }
-
-  void main() {
-    vec3 vd = normalize(cameraPosition - vWorldPos);
-    vec3 n = normalize(vNormal);
-    float ndv = max(dot(n, vd), 0.0);
-
-    // Surface detail FBM — drives roughness + ambient occlusion (cavities)
-    vec3 fp = vLocalPos * 4.0 + vec3(uTime * 0.06, uTime * 0.04, uTime * 0.05);
-    float e1 = dfbm(fp);
-    float e2 = dfbm(fp * 1.3 + vec3(0.0, uTime * 0.03, 0.0));
-    float ep = e1 * 0.6 + e2 * 0.4;
-
-    // Micro-detail for roughness variation
-    float micro = dn3(vLocalPos * 60.0 + uTime * 0.15) * 0.5 + dn3(vLocalPos * 120.0) * 0.25;
-    float roughness = clamp(0.15 + micro * 0.2 + abs(vDisp) * 1.5, 0.15, 0.35);
-
-    // Ambient occlusion from displacement cavities (concave = darker)
-    float ao = clamp(0.55 + vDisp * 2.5 + ep * 0.35, 0.35, 1.0);
-
-    // ── GOLD PBR ──
-    vec3 goldAlbedo = vec3(0.83, 0.69, 0.22); // real gold, linear-ish
-    vec3 F0 = vec3(1.0, 0.71, 0.29);          // gold IOR fresnel
-
-    // Fake environment reflection (no cubemap)
-    vec3 reflDir = reflect(-vd, n);
-    vec3 envColor = mix(
-      vec3(0.02, 0.015, 0.005),  // dark floor reflection
-      vec3(0.15, 0.12, 0.06),    // warm ambient
-      smoothstep(-0.3, 0.8, reflDir.y)
+  // ── Nostrils — two small dark spheres on the snout front ──
+  for (const sx of [-1, 1]) {
+    const nostril = new THREE.Mesh(
+      new THREE.SphereGeometry(0.08, seg(14), seg(14)),
+      mats.dark,
     );
-    // warm sky reflection from above
-    envColor = mix(envColor, vec3(0.4, 0.3, 0.12), pow(max(reflDir.y, 0.0), 4.0));
-    // roughness blurs/darkens the reflection a touch
-    envColor *= mix(1.0, 0.6, roughness);
-
-    // Three-point lighting (directions + warm colors)
-    vec3 keyLightDir  = normalize(vec3(0.5, 0.7, 0.4));
-    vec3 fillLightDir = normalize(vec3(-0.5, 0.2, 0.6));
-    vec3 rimLightDir  = normalize(vec3(0.0, 0.3, -0.8));
-    vec3 keyColor  = vec3(1.0, 0.93, 0.85) * 2.2;
-    vec3 fillColor = vec3(0.85, 0.65, 0.2) * 0.7;
-    vec3 rimColor  = vec3(1.0, 0.9, 0.75) * 1.6;
-
-    // Diffuse term — gold is metallic so diffuse is tinted by albedo, kept low
-    float keyNdl  = max(dot(n, keyLightDir), 0.0);
-    float fillNdl = max(dot(n, fillLightDir), 0.0);
-    vec3 diffuse = goldAlbedo * (keyColor * keyNdl * 0.18 + fillColor * fillNdl * 0.22);
-
-    // Specular from three lights (GGX + colored fresnel)
-    vec3 spec = vec3(0.0);
-    spec += ggxLight(n, vd, keyLightDir,  keyColor,  roughness, F0);
-    spec += ggxLight(n, vd, fillLightDir, fillColor, roughness * 1.4, F0);
-    spec += ggxLight(n, vd, rimLightDir,  rimColor,  roughness, F0);
-
-    // Environment / reflection term modulated by fresnel
-    vec3 Fenv = fresnelSchlick(ndv, F0);
-    vec3 reflection = Fenv * envColor;
-
-    // Rim light — dramatic bright golden edge (back-lit silhouette)
-    float rimNdl = max(dot(n, rimLightDir), 0.0);
-    float rimTerm = pow(1.0 - ndv, 2.5) * (0.4 + rimNdl * 0.9);
-    vec3 rim = rimColor * vec3(1.0, 0.78, 0.4) * rimTerm * 0.6;
-
-    // Ambient — warm baseline so shadows stay golden, never pure black
-    vec3 ambient = goldAlbedo * vec3(0.18, 0.14, 0.07) * 0.6;
-
-    // Compose metallic gold
-    vec3 col = (diffuse + ambient) * ao;
-    col += reflection;
-    col += spec;
-    col += rim;
-
-    // Inner warm glow pulsing through the cavities (life)
-    float glowPulse = 0.5 + 0.5 * sin(uTime * 1.1);
-    col += vec3(0.55, 0.4, 0.16) * pow(ep, 2.0) * (0.15 + glowPulse * 0.15) * ao;
-
-    // Occasional energy pulse traveling across the surface
-    float wave = sin(vWorldPos.y * 2.5 - uTime * 1.6 + ep * 4.0);
-    float surge = smoothstep(0.85, 1.0, wave) * (0.5 + 0.5 * sin(uTime * 0.7));
-    col += vec3(1.0, 0.85, 0.45) * surge * (0.12 + uEnergy * 0.4);
-
-    // Hot specular bloom catch
-    col += vec3(1.0, 0.9, 0.6) * pow(max(max(spec.r, spec.g), spec.b), 1.5) * 0.5;
-
-    // Energy boost
-    col += goldAlbedo * uEnergy * 0.1;
-
-    // Subtle global breathing in brightness
-    float pulse = 0.95 + sin(uTime * 0.6) * 0.04 + uEnergy * 0.08;
-    col *= pulse;
-
-    // SOLID OPAQUE GOLD
-    gl_FragColor = vec4(col, 1.0);
+    nostril.scale.set(1.0, 1.3, 0.7);
+    nostril.position.set(sx * 0.18, -0.42, 1.15);
+    group.add(nostril);
   }
-`;
+
+  // ── Horns (GOLD) — TubeGeometry along CatmullRom curves ──
+  const leftHornPts = [
+    new THREE.Vector3(-0.7, 0.55, -0.1),
+    new THREE.Vector3(-1.1, 1.0, -0.15),
+    new THREE.Vector3(-0.85, 1.5, -0.1),
+    new THREE.Vector3(-0.5, 1.75, 0.0),
+  ];
+  const makeHorn = (pts: THREE.Vector3[]) => {
+    const curve = new THREE.CatmullRomCurve3(pts);
+    const tubular = seg(24);
+    const geo = new THREE.TubeGeometry(curve, tubular, 0.09, seg(10), false);
+    // Manual taper: scale each ring's cross-section from base (0.09) to tip (0.03).
+    const pos = geo.attributes.position as THREE.BufferAttribute;
+    const radial = (geo.parameters as any).radialSegments + 1;
+    const baseR = 0.09;
+    const tipR = 0.03;
+    for (let i = 0; i <= tubular; i++) {
+      const t = i / tubular;
+      const scale = THREE.MathUtils.lerp(baseR, tipR, t) / baseR;
+      const center = curve.getPointAt(Math.min(t, 1));
+      for (let j = 0; j < radial; j++) {
+        const idx = i * radial + j;
+        const vx = pos.getX(idx);
+        const vy = pos.getY(idx);
+        const vz = pos.getZ(idx);
+        pos.setXYZ(
+          idx,
+          center.x + (vx - center.x) * scale,
+          center.y + (vy - center.y) * scale,
+          center.z + (vz - center.z) * scale,
+        );
+      }
+    }
+    pos.needsUpdate = true;
+    geo.computeVertexNormals();
+    return new THREE.Mesh(geo, mats.gold);
+  };
+  group.add(makeHorn(leftHornPts));
+  group.add(makeHorn(leftHornPts.map((p) => new THREE.Vector3(-p.x, p.y, p.z))));
+
+  // ── Ears — elongated spheres at sides of head, angled outward ──
+  for (const sx of [-1, 1]) {
+    const ear = new THREE.Mesh(
+      new THREE.SphereGeometry(1, seg(20), seg(16)),
+      mats.silver,
+    );
+    ear.scale.set(0.3, 0.2, 0.15);
+    ear.position.set(sx * 0.85, 0.3, -0.2);
+    ear.rotation.z = sx * 0.6;
+    ear.rotation.y = sx * -0.5;
+    group.add(ear);
+  }
+
+  // ── Eyes (BLUE EMISSIVE) ──
+  const eyeGeo = new THREE.SphereGeometry(0.11, seg(16), seg(16));
+  const leftEye = new THREE.Mesh(eyeGeo, mats.eye);
+  leftEye.position.set(-0.42, 0.15, 0.72);
+  group.add(leftEye);
+  const rightEye = new THREE.Mesh(eyeGeo, mats.eye);
+  rightEye.position.set(0.42, 0.15, 0.72);
+  group.add(rightEye);
+
+  // Glow sprites behind each eye
+  const eyeGlows: THREE.Sprite[] = [];
+  for (const e of [leftEye, rightEye]) {
+    const gm = new THREE.SpriteMaterial({
+      map: glowTexture(), color: 0x44aaff, transparent: true, opacity: 0.6,
+      depthWrite: false, blending: THREE.AdditiveBlending,
+    });
+    const gs = new THREE.Sprite(gm);
+    gs.scale.setScalar(0.45);
+    gs.position.copy(e.position).z -= 0.05;
+    group.add(gs);
+    eyeGlows.push(gs);
+  }
+
+  // ── Forehead gem / light (BLUE) — like the blue diamond in the logo ──
+  const gem = new THREE.Mesh(new THREE.SphereGeometry(0.1, seg(16), seg(16)), mats.gem);
+  gem.position.set(0, 0.55, 0.7);
+  group.add(gem);
+  const gemGlowMat = new THREE.SpriteMaterial({
+    map: glowTexture(), color: 0x55bbff, transparent: true, opacity: 0.5,
+    depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+  const gemGlow = new THREE.Sprite(gemGlowMat);
+  gemGlow.scale.setScalar(0.5);
+  gemGlow.position.copy(gem.position);
+  group.add(gemGlow);
+
+  // ── Gear / cog ring behind the head ──
+  const gearGeo = createGearGeometry(2.0, 1.3, 16, 0.18, 0.12);
+  const gear = new THREE.Mesh(gearGeo, mats.gear);
+  gear.position.set(0, 0.1, -0.5);
+  group.add(gear);
+
+  return { group, gear, leftEye, rightEye, eyeMat: mats.eye, gem, gemMat: mats.gem, eyeGlows };
+}
 
 // Atmosphere glow shaders — volumetric, animated, multi-fresnel
 const ATMOSPHERE_VERT = /* glsl */`
@@ -852,7 +682,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   composer.addPass(new RenderPass(scene, camera));
   composer.addPass(new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    0.5, 0.4, 0.55,
+    0.22, 0.4, 0.65,
   ));
   // Gold vignette
   const mVignette = new ShaderPass(GOLD_VIGNETTE_SHADER);
@@ -874,47 +704,26 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   const group = new THREE.Group();
   scene.add(group);
 
-  // ── Three-point lighting (shader reads directions, but lights add ACES baseline) ──
-  const mKey = new THREE.DirectionalLight(0xffeedd, 2.5);
-  mKey.position.set(3, 4, 2);
+  // ── Simpler lighting for mobile (2 lights + ambient) ──
+  const mKey = new THREE.DirectionalLight(0xffeedd, 3.0);
+  mKey.position.set(3, 4, 4);
   scene.add(mKey);
-  const mFill = new THREE.DirectionalLight(0xdaa520, 0.8);
-  mFill.position.set(-3, 1, 3);
+  const mFill = new THREE.DirectionalLight(0xdaa520, 1.2);
+  mFill.position.set(-4, 1, 3);
   scene.add(mFill);
-  const mAmbient = new THREE.AmbientLight(0x1a1408, 0.3);
+  const mAmbient = new THREE.AmbientLight(0x1a1408, 0.4);
   scene.add(mAmbient);
 
   // ────────────────────────────────────────────
-  // CENTRAL ORB — solid gold metal (subdivision 7)
+  // CENTRAL OBJECT — CYBERNETIC BULL HEAD (mobile, lower detail)
   // ────────────────────────────────────────────
-  const orbGeo = new THREE.IcosahedronGeometry(1.0, 7);
-  const orbMat = new THREE.ShaderMaterial({
-    uniforms: { uTime: { value: 0 }, uEnergy: { value: 0 }, uGlitch: { value: 0 } },
-    vertexShader: MOBILE_ORB_VERT,
-    fragmentShader: MOBILE_ORB_FRAG,
-    transparent: false,
-    depthWrite: true,
-    side: THREE.FrontSide,
-  });
-  const orb = new THREE.Mesh(orbGeo, orbMat);
-  group.add(orb);
-
-  // ── Inner bright core — hot golden center ──
-  const coreGeo = new THREE.IcosahedronGeometry(0.35, 5);
-  const coreMat = new THREE.MeshBasicMaterial({
-    color: 0x6b4a18, transparent: true, opacity: 0.45, depthWrite: false,
-  });
-  const core = new THREE.Mesh(coreGeo, coreMat);
-  group.add(core);
-
-  // ── Inner core glow — bright center light ──
-  const coreGlowMat = new THREE.SpriteMaterial({
-    map: glowTexture(), color: 0xdaa520, transparent: true, opacity: 0.2,
-    depthWrite: false, blending: THREE.AdditiveBlending,
-  });
-  const coreGlow = new THREE.Sprite(coreGlowMat);
-  coreGlow.scale.setScalar(1.8);
-  group.add(coreGlow);
+  const envMap = createEnvMap(renderer);
+  scene.environment = envMap;
+  const bullMats = createBullMaterials(envMap);
+  const bull = buildBullHead(bullMats, 0.6);
+  const bullGroup = bull.group;
+  bullGroup.scale.setScalar(0.95);
+  group.add(bullGroup);
 
   // ────────────────────────────────────────────
   // ORBITAL RINGS — gold halo, champagne, rose
@@ -1125,23 +934,20 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     glitchStr *= 0.93;
     if (glitchStr < 0.01) glitchStr = 0;
 
-    orbMat.uniforms.uTime.value = time;
-    orbMat.uniforms.uEnergy.value = amp;
-    orbMat.uniforms.uGlitch.value = glitchStr;
     pMat.uniforms.uTime.value = time;
 
-    orb.rotation.y = time * 0.12;
-    orb.rotation.x = Math.sin(time * 0.08) * 0.1;
-    const breath = 1 + Math.sin(time * 1.2) * 0.025 + amp * 0.08;
-    orb.scale.setScalar(breath);
-
-    core.rotation.y = -time * 0.4;
-    core.rotation.x = time * 0.25;
-    const cp = 0.9 + Math.sin(time * 2.5) * 0.15 + amp * 0.5;
-    core.scale.setScalar(0.35 * cp);
-    coreMat.opacity = 0.5 + Math.sin(time * 2.0) * 0.15 + amp * 0.25;
-    coreGlow.scale.setScalar(1.6 + Math.sin(time * 1.5) * 0.3 + amp * 0.4);
-    coreGlowMat.opacity = 0.18 + Math.sin(time * 1.8) * 0.06 + amp * 0.12;
+    // ── Bull head "life" — rotation, breathing, eye/gem glow, gear spin ──
+    bullGroup.rotation.y = time * 0.06;
+    bullGroup.rotation.x = Math.sin(time * 0.3) * 0.03;
+    const breath = 0.95 * (1.0 + Math.sin(time * 0.8) * 0.015 + amp * 0.04);
+    bullGroup.scale.setScalar(breath);
+    bull.gear.rotation.z = -time * 0.15;
+    const eyePulse = 1.6 + Math.sin(time * 2.0) * 0.6 + amp * 1.0;
+    bull.eyeMat.emissiveIntensity = eyePulse;
+    bull.gemMat.emissiveIntensity = 2.0 + Math.sin(time * 1.4 + 1.0) * 0.6;
+    for (const g of bull.eyeGlows) {
+      (g.material as THREE.SpriteMaterial).opacity = 0.45 + Math.sin(time * 2.0) * 0.18 + amp * 0.2;
+    }
 
     goldRing.rotation.z = 0.15 + time * 0.1;
     goldRMat.opacity = 0.9 + Math.sin(time * 0.8) * 0.08 + amp * 0.1;
@@ -1215,6 +1021,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     dispose() {
       cancelAnimationFrame(raf);
       window.removeEventListener('resize', resize);
+      envMap.dispose();
       composer.dispose();
       renderer.dispose();
       container.removeChild(renderer.domElement);
@@ -1267,7 +1074,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
 
   const bloom = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    0.5, 0.4, 0.3,
+    0.25, 0.4, 0.65,
   );
   composer.addPass(bloom);
 
@@ -1314,50 +1121,36 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   const group = new THREE.Group();
   scene.add(group);
 
-  // ── Dramatic three-point lighting ──
-  const keyLight = new THREE.DirectionalLight(0xffeedd, 2.5);
-  keyLight.position.set(3, 4, 2);
+  // ── Cinematic lighting for the metallic bull (MeshPhysicalMaterial) ──
+  // Key light — warm, upper right
+  const keyLight = new THREE.DirectionalLight(0xffeedd, 3.0);
+  keyLight.position.set(3, 4, 4);
   scene.add(keyLight);
-  const fillLight = new THREE.DirectionalLight(0xdaa520, 0.8);
-  fillLight.position.set(-3, 1, 3);
+  // Fill light — golden, from left
+  const fillLight = new THREE.DirectionalLight(0xdaa520, 1.2);
+  fillLight.position.set(-4, 1, 3);
   scene.add(fillLight);
-  const rimLight = new THREE.DirectionalLight(0xffe8c0, 1.8);
-  rimLight.position.set(0, 2, -4);
+  // Rim light — bright, from behind for dramatic edge
+  const rimLight = new THREE.DirectionalLight(0xffe8c0, 2.0);
+  rimLight.position.set(0, 2, -5);
   scene.add(rimLight);
-  const ambientLight = new THREE.AmbientLight(0x1a1408, 0.3);
+  // Bottom fill — subtle warm
+  const bottomLight = new THREE.DirectionalLight(0xdaa520, 0.5);
+  bottomLight.position.set(0, -3, 2);
+  scene.add(bottomLight);
+  // Ambient
+  const ambientLight = new THREE.AmbientLight(0x1a1408, 0.4);
   scene.add(ambientLight);
 
   // ────────────────────────────────────────────
-  // CENTRAL ORB — solid gold metal (subdivision 8)
+  // CENTRAL OBJECT — CYBERNETIC BULL HEAD
   // ────────────────────────────────────────────
-  const orbGeo = new THREE.IcosahedronGeometry(1.3, 8);
-  const orbMat = new THREE.ShaderMaterial({
-    uniforms: { uTime: { value: 0 }, uEnergy: { value: 0 }, uGlitch: { value: 0 } },
-    vertexShader: DESKTOP_ORB_VERT,
-    fragmentShader: DESKTOP_ORB_FRAG,
-    transparent: false,
-    depthWrite: true,
-    side: THREE.FrontSide,
-  });
-  const orb = new THREE.Mesh(orbGeo, orbMat);
-  group.add(orb);
-
-  // Inner bright core — hot golden center (subdivision 5)
-  const coreGeo = new THREE.IcosahedronGeometry(0.5, 5);
-  const coreMat = new THREE.MeshBasicMaterial({
-    color: 0x6b4a18, transparent: true, opacity: 0.18, depthWrite: false,
-  });
-  const core = new THREE.Mesh(coreGeo, coreMat);
-  group.add(core);
-
-  // Desktop core glow sprite
-  const dCoreGlowMat = new THREE.SpriteMaterial({
-    map: glowTexture(), color: 0xdaa520, transparent: true, opacity: 0.07,
-    depthWrite: false, blending: THREE.AdditiveBlending,
-  });
-  const dCoreGlow = new THREE.Sprite(dCoreGlowMat);
-  dCoreGlow.scale.setScalar(2.0);
-  group.add(dCoreGlow);
+  const envMap = createEnvMap(renderer);
+  scene.environment = envMap;
+  const bullMats = createBullMaterials(envMap);
+  const bull = buildBullHead(bullMats, 1.0);
+  const bullGroup = bull.group;
+  group.add(bullGroup);
 
   // ────────────────────────────────────────────
   // ORBITAL RINGS — prominent gold halo, champagne, rose
@@ -1910,25 +1703,25 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     glitchStr *= 0.93;
     if (glitchStr < 0.01) glitchStr = 0;
 
-    orbMat.uniforms.uTime.value = time;
-    orbMat.uniforms.uEnergy.value = amp;
-    orbMat.uniforms.uGlitch.value = glitchStr;
     pMat.uniforms.uTime.value = time;
     gridMat.uniforms.uTime.value = time;
     gridMat.uniforms.uEnergy.value = amp;
 
-    orb.rotation.y = time * 0.05;
-    orb.rotation.x = Math.sin(time * 0.04) * 0.06;
-    const breath = 1 + Math.sin(time * 0.6) * 0.025 + amp * 0.06;
-    orb.scale.setScalar(breath);
+    // ── Bull head "life" — gentle rotation, breathing, head nod ──
+    bullGroup.rotation.y = time * 0.06;
+    bullGroup.rotation.x = Math.sin(time * 0.3) * 0.03;
+    const breath = 1.0 + Math.sin(time * 0.8) * 0.015 + amp * 0.05;
+    bullGroup.scale.setScalar(breath);
 
-    core.rotation.y = -time * 0.35;
-    core.rotation.x = time * 0.2;
-    const cp = 0.85 + Math.sin(time * 2.2) * 0.08 + amp * 0.25;
-    core.scale.setScalar(0.5 * cp);
-    coreMat.opacity = 0.15 + Math.sin(time * 1.8) * 0.05 + amp * 0.1;
-    dCoreGlow.scale.setScalar(1.8 + Math.sin(time * 1.5) * 0.25 + amp * 0.3);
-    dCoreGlowMat.opacity = 0.06 + Math.sin(time * 1.3) * 0.02 + amp * 0.04;
+    // Gear slow counter-rotation
+    bull.gear.rotation.z = -time * 0.15;
+
+    // Eye glow pulsing
+    bull.eyeMat.emissiveIntensity = 1.8 + Math.sin(time * 2.0) * 0.7 + amp * 1.2;
+    bull.gemMat.emissiveIntensity = 2.2 + Math.sin(time * 1.4 + 1.0) * 0.7 + amp * 0.8;
+    for (const g of bull.eyeGlows) {
+      (g.material as THREE.SpriteMaterial).opacity = 0.45 + Math.sin(time * 2.0) * 0.2 + amp * 0.25;
+    }
 
     rings[0].mesh.rotation.z = 0.15 + time * 0.07;
     rings[0].mat.opacity = 0.9 + Math.sin(time * 0.6) * 0.06 + amp * 0.04;
@@ -2073,6 +1866,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       stopBodyDetection();
       window.removeEventListener('resize', resize);
       window.removeEventListener('mousemove', onDeskMouseMove);
+      envMap.dispose();
       renderer.dispose();
       composer.dispose();
       container.removeChild(renderer.domElement);
