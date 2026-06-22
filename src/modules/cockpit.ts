@@ -344,9 +344,11 @@ function renderBusiness(root: HTMLElement, hooks: CockpitHooks, close: () => voi
     inv.appendChild(invKpis);
   }
   const invCust = input('Customer name');
-  const invItems = textarea('One per line: Description: Price x Qty\ne.g. 360 camera: 4500 x 1', 3);
+  const invItems = textarea('One item per line, e.g.:\n360 camera: 4500\nInstallation: 800 x 2', 3);
   const invNotes = input('Notes (optional)');
   const createInv = btn('Create invoice', true);
+  const invError = el('div', 'cp-note');
+  invError.style.color = '#ff5d73';
   const invList = el('div', 'cp-list');
   const drawInvoices = () => {
     invList.innerHTML = '';
@@ -373,13 +375,27 @@ function renderBusiness(root: HTMLElement, hooks: CockpitHooks, close: () => voi
     });
   };
   createInv.onclick = () => {
-    if (!invCust.value.trim()) return;
-    const items: InvoiceItem[] = invItems.value.split('\n').map(l => {
-      const [desc, rest] = l.split(':');
-      const parts = (rest || '').trim().split(/\s*x\s*/i);
-      return { description: (desc || '').trim(), price: parseFloat(parts[0]) || 0, qty: parseInt(parts[1]) || 1 };
+    invError.textContent = '';
+    if (!invCust.value.trim()) { invError.textContent = 'Enter a customer name.'; return; }
+    const lines = invItems.value.split('\n').map(s => s.trim()).filter(Boolean);
+    if (!lines.length) { invError.textContent = 'Add at least one item. Format: Description: Price'; return; }
+    const items: InvoiceItem[] = lines.map(l => {
+      if (l.includes(':')) {
+        const colonIdx = l.lastIndexOf(':');
+        const desc = l.slice(0, colonIdx).trim();
+        const rest = l.slice(colonIdx + 1).trim();
+        const parts = rest.split(/\s*x\s*/i);
+        return { description: desc, price: parseFloat(parts[0]) || 0, qty: parseInt(parts[1]) || 1 };
+      }
+      const numMatch = l.match(/(\d[\d,.]*)\s*(?:x\s*(\d+))?\s*$/);
+      if (numMatch) {
+        const desc = l.slice(0, numMatch.index).trim();
+        return { description: desc || l, price: parseFloat(numMatch[1].replace(/,/g, '')) || 0, qty: parseInt(numMatch[2]) || 1 };
+      }
+      return { description: l, price: 0, qty: 1 };
     }).filter(i => i.description);
-    if (!items.length) return;
+    if (!items.length) { invError.textContent = 'Could not parse items. Use format: Description: Price'; return; }
+    if (items.every(i => i.price === 0)) { invError.textContent = 'All items have price 0. Use format: Description: Price (e.g. Camera: 4500)'; return; }
     createInvoice(invCust.value.trim(), items, { notes: invNotes.value.trim() });
     invCust.value = ''; invItems.value = ''; invNotes.value = '';
     root.replaceChildren(); renderBusiness(root, hooks, close);
@@ -388,6 +404,7 @@ function renderBusiness(root: HTMLElement, hooks: CockpitHooks, close: () => voi
   inv.appendChild(field('Items', invItems));
   inv.appendChild(field('Notes', invNotes));
   inv.appendChild(createInv);
+  inv.appendChild(invError);
   inv.appendChild(invList);
   drawInvoices();
   root.appendChild(inv);
