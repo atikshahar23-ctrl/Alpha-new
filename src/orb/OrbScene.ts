@@ -337,41 +337,44 @@ interface PikachuMaterials {
 function createPikachuMaterials(envMap: THREE.Texture): PikachuMaterials {
   return {
     yellow: new THREE.MeshPhysicalMaterial({
-      color: 0xFCD534, metalness: 0.0, roughness: 0.45, envMap, envMapIntensity: 0.5,
-      clearcoat: 0.25, clearcoatRoughness: 0.2,
-      sheen: 0.3, sheenRoughness: 0.4, sheenColor: new THREE.Color(0xFFE87C),
+      color: 0xFDD835, metalness: 0.0, roughness: 0.38, envMap, envMapIntensity: 0.55,
+      clearcoat: 0.35, clearcoatRoughness: 0.15,
+      sheen: 0.25, sheenRoughness: 0.35, sheenColor: new THREE.Color(0xFFEB3B),
     }),
     darkYellow: new THREE.MeshPhysicalMaterial({
-      color: 0xC89B12, metalness: 0.0, roughness: 0.5, envMap, envMapIntensity: 0.4,
-      clearcoat: 0.1, clearcoatRoughness: 0.3,
+      color: 0xC8A415, metalness: 0.0, roughness: 0.45, envMap, envMapIntensity: 0.4,
+      clearcoat: 0.2, clearcoatRoughness: 0.25,
     }),
     cream: new THREE.MeshPhysicalMaterial({
-      color: 0xFFF8E1, metalness: 0.0, roughness: 0.5, envMap, envMapIntensity: 0.35,
-      sheen: 0.2, sheenRoughness: 0.5, sheenColor: new THREE.Color(0xFFFAE8),
+      color: 0xFFFDE7, metalness: 0.0, roughness: 0.42, envMap, envMapIntensity: 0.38,
+      clearcoat: 0.2, clearcoatRoughness: 0.2,
+      sheen: 0.15, sheenRoughness: 0.45, sheenColor: new THREE.Color(0xFFFFF0),
     }),
     red: new THREE.MeshPhysicalMaterial({
-      color: 0xCC2828, metalness: 0.0, roughness: 0.35, envMap, envMapIntensity: 0.35,
-      emissive: 0xCC2828, emissiveIntensity: 0.3,
-      clearcoat: 0.3, clearcoatRoughness: 0.2,
-    }),
-    brown: new THREE.MeshPhysicalMaterial({
-      color: 0x5C3A1E, metalness: 0.0, roughness: 0.5, envMap, envMapIntensity: 0.3,
-    }),
-    white: new THREE.MeshPhysicalMaterial({
-      color: 0xffffff, metalness: 0.0, roughness: 0.1, envMap, envMapIntensity: 0.25,
-      emissive: 0xffffff, emissiveIntensity: 0.6,
-      clearcoat: 0.5, clearcoatRoughness: 0.1,
-    }),
-    black: new THREE.MeshPhysicalMaterial({
-      color: 0x111111, metalness: 0.05, roughness: 0.2, envMap, envMapIntensity: 0.3,
+      color: 0xD32F2F, metalness: 0.0, roughness: 0.3, envMap, envMapIntensity: 0.4,
+      emissive: 0xD32F2F, emissiveIntensity: 0.35,
       clearcoat: 0.4, clearcoatRoughness: 0.15,
     }),
+    brown: new THREE.MeshPhysicalMaterial({
+      color: 0x5D4037, metalness: 0.0, roughness: 0.45, envMap, envMapIntensity: 0.35,
+      clearcoat: 0.15, clearcoatRoughness: 0.3,
+    }),
+    white: new THREE.MeshPhysicalMaterial({
+      color: 0xffffff, metalness: 0.0, roughness: 0.08, envMap, envMapIntensity: 0.3,
+      emissive: 0xffffff, emissiveIntensity: 0.65,
+      clearcoat: 0.6, clearcoatRoughness: 0.08,
+    }),
+    black: new THREE.MeshPhysicalMaterial({
+      color: 0x0D0D0D, metalness: 0.05, roughness: 0.18, envMap, envMapIntensity: 0.35,
+      clearcoat: 0.5, clearcoatRoughness: 0.1,
+    }),
     mouth: new THREE.MeshPhysicalMaterial({
-      color: 0x7B1818, metalness: 0.0, roughness: 0.55, envMap, envMapIntensity: 0.15,
+      color: 0x6D1515, metalness: 0.0, roughness: 0.5, envMap, envMapIntensity: 0.18,
+      clearcoat: 0.1, clearcoatRoughness: 0.4,
     }),
     nose: new THREE.MeshPhysicalMaterial({
-      color: 0x222222, metalness: 0.05, roughness: 0.25, envMap, envMapIntensity: 0.25,
-      clearcoat: 0.3, clearcoatRoughness: 0.2,
+      color: 0x1A1A1A, metalness: 0.05, roughness: 0.2, envMap, envMapIntensity: 0.3,
+      clearcoat: 0.45, clearcoatRoughness: 0.12,
     }),
   };
 }
@@ -434,9 +437,18 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
     new THREE.SphereGeometry(0.5, seg(32), seg(32)),
     mats.cream,
   );
-  belly.scale.set(0.82, 0.88, 0.38);
-  belly.position.set(0, -0.32, 0.34);
+  belly.scale.set(0.82, 0.9, 0.38);
+  belly.position.set(0, -0.3, 0.34);
   group.add(belly);
+
+  // Belly border — subtle darkYellow ring at cream edge for definition
+  const bellyRing = new THREE.Mesh(
+    new THREE.TorusGeometry(0.42, 0.015, seg(8), seg(24)),
+    mats.darkYellow,
+  );
+  bellyRing.scale.set(0.82, 0.85, 0.15);
+  bellyRing.position.set(0, -0.3, 0.38);
+  group.add(bellyRing);
 
   // Back stripes — two brown horizontal stripes
   for (const sy of [0.0, -0.24]) {
