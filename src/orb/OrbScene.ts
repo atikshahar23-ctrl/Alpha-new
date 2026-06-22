@@ -380,6 +380,8 @@ interface PikachuParts {
   leftArm: THREE.Mesh;
   rightArm: THREE.Mesh;
   mouthMesh: THREE.Mesh;
+  sparks: THREE.Group;
+  sparkMats: THREE.MeshBasicMaterial[];
 }
 
 function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
@@ -498,15 +500,33 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   nose.position.set(0, -0.04, 0.7);
   headGroup.add(nose);
 
-  // ── Mouth — gentle W-shape (two small curved lines) ──
+  // ── Mouth — visible happy smile with upturned corners ──
   const mouthMesh = new THREE.Mesh(
-    new THREE.TorusGeometry(0.06, 0.012, seg(6), seg(12), PI * 0.8),
+    new THREE.TorusGeometry(0.1, 0.02, seg(8), seg(20), PI * 0.85),
     mats.mouth,
   );
-  mouthMesh.position.set(0, -0.1, 0.67);
+  mouthMesh.position.set(0, -0.09, 0.66);
   mouthMesh.rotation.z = PI;
-  mouthMesh.rotation.x = 0.1;
+  mouthMesh.rotation.x = 0.12;
   headGroup.add(mouthMesh);
+  // Left smile corner
+  const smileL = new THREE.Mesh(
+    new THREE.TorusGeometry(0.035, 0.016, seg(6), seg(8), PI * 0.55),
+    mats.mouth,
+  );
+  smileL.position.set(-0.088, -0.062, 0.67);
+  smileL.rotation.z = PI * 0.3;
+  smileL.rotation.x = 0.1;
+  headGroup.add(smileL);
+  // Right smile corner
+  const smileR = new THREE.Mesh(
+    new THREE.TorusGeometry(0.035, 0.016, seg(6), seg(8), PI * 0.55),
+    mats.mouth,
+  );
+  smileR.position.set(0.088, -0.062, 0.67);
+  smileR.rotation.z = PI * 0.7;
+  smileR.rotation.x = 0.1;
+  headGroup.add(smileR);
 
   // ── Red Cheeks — signature oval red patches ──
   const cheekMatL = mats.red.clone();
@@ -592,6 +612,40 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   tail.rotation.y = 0.2;
   group.add(tail);
 
+  // ── Electric sparks — yellow lightning arcs around Pikachu ──
+  const sparks = new THREE.Group();
+  const sparkMats: THREE.MeshBasicMaterial[] = [];
+  const sparkCount = Math.round(8 * detail);
+  for (let i = 0; i < sparkCount; i++) {
+    const sMat = new THREE.MeshBasicMaterial({
+      color: 0xFFE44D,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    sparkMats.push(sMat);
+    // Each spark is a thin stretched box acting as a lightning arc segment
+    const sGeo = new THREE.BoxGeometry(0.015, 0.4 + Math.random() * 0.3, 0.005);
+    const sMesh = new THREE.Mesh(sGeo, sMat);
+    const angle = (i / sparkCount) * PI2;
+    const r = 1.3 + Math.random() * 0.5;
+    sMesh.position.set(Math.cos(angle) * r, -0.3 + Math.random() * 1.2, Math.sin(angle) * r);
+    sMesh.rotation.set(Math.random() * PI, Math.random() * PI, Math.random() * PI);
+    sparks.add(sMesh);
+    // Branch segment for each spark
+    const bGeo = new THREE.BoxGeometry(0.01, 0.15 + Math.random() * 0.15, 0.004);
+    const bMesh = new THREE.Mesh(bGeo, sMat);
+    bMesh.position.set(
+      sMesh.position.x + (Math.random() - 0.5) * 0.2,
+      sMesh.position.y + (Math.random() - 0.5) * 0.2,
+      sMesh.position.z + (Math.random() - 0.5) * 0.2,
+    );
+    bMesh.rotation.set(Math.random() * PI, Math.random() * PI, Math.random() * PI);
+    sparks.add(bMesh);
+  }
+  group.add(sparks);
+
   // ── Glass orb — subtle transparent sphere ──
   const glassOrb = new THREE.Mesh(
     new THREE.SphereGeometry(2.0, seg(64), seg(64)),
@@ -611,7 +665,7 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   );
   group.add(glassOrb);
 
-  return { group, head: headGroup, leftEye, rightEye, cheekMatL, cheekMatR, tail, leftArm, rightArm, mouthMesh };
+  return { group, head: headGroup, leftEye, rightEye, cheekMatL, cheekMatR, tail, leftArm, rightArm, mouthMesh, sparks, sparkMats };
 }
 
 // Atmosphere glow shaders — volumetric, animated, multi-fresnel
@@ -1013,6 +1067,12 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     }
     if (pika.leftArm) pika.leftArm.rotation.z = 0.6 + Math.sin(time * 1.0) * 0.15;
     if (pika.rightArm) pika.rightArm.rotation.z = -0.6 + Math.sin(time * 1.0 + 1.0) * 0.15;
+    // Electric sparks — random flash pattern
+    for (let si = 0; si < pika.sparkMats.length; si++) {
+      const phase = Math.sin(time * 8.0 + si * 2.7) * Math.sin(time * 3.1 + si * 1.3);
+      pika.sparkMats[si].opacity = phase > 0.6 ? (0.5 + phase * 0.5) * (0.7 + amp * 0.3) : 0;
+    }
+    pika.sparks.rotation.y = time * 0.3;
 
     goldRing.rotation.z = 0.15 + time * 0.1;
     goldRMat.opacity = 0.9 + Math.sin(time * 0.8) * 0.08 + amp * 0.1;
@@ -1790,6 +1850,12 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     }
     if (pika.leftArm) pika.leftArm.rotation.z = 0.6 + Math.sin(time * 1.0) * 0.15;
     if (pika.rightArm) pika.rightArm.rotation.z = -0.6 + Math.sin(time * 1.0 + 1.0) * 0.15;
+    // Electric sparks — random flash pattern
+    for (let si = 0; si < pika.sparkMats.length; si++) {
+      const phase = Math.sin(time * 8.0 + si * 2.7) * Math.sin(time * 3.1 + si * 1.3);
+      pika.sparkMats[si].opacity = phase > 0.6 ? (0.5 + phase * 0.5) * (0.7 + amp * 0.3) : 0;
+    }
+    pika.sparks.rotation.y = time * 0.3;
 
     rings[0].mesh.rotation.z = 0.15 + time * 0.07;
     rings[0].mat.opacity = 0.9 + Math.sin(time * 0.6) * 0.06 + amp * 0.04;

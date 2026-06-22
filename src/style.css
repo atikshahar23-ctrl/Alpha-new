@@ -2142,8 +2142,8 @@ select.cp-input option { background: #14120c; color: var(--ink); }
 }
 .fab-item:hover { background: rgba(218,165,32,.12); border-color: rgba(218,165,32,.3); }
 @media (max-width: 767px) {
-  .fab { bottom: 80px; left: 16px; right: auto; width: 48px; height: 48px; font-size: 24px; }
-  .fab-menu { bottom: 136px; left: 16px; right: auto; }
+  .fab { bottom: 140px; left: 12px; right: auto; width: 44px; height: 44px; font-size: 22px; z-index: 900; }
+  .fab-menu { bottom: 192px; left: 12px; right: auto; z-index: 899; }
 }
 
 /* ── Toast Notifications ── */
@@ -2225,7 +2225,7 @@ select.cp-input option { background: #14120c; color: var(--ink); }
 
 /* ── Enhanced Mobile Responsive ── */
 @media (max-width: 767px) {
-  .toast-container { top: auto; bottom: 80px; right: 12px; left: 12px; max-width: none; }
+  .toast-container { top: auto; bottom: 145px; right: 12px; left: 60px; max-width: none; }
   .toast { padding: 10px 12px; font-size: 12px; }
   .search-overlay .search-box { width: 95vw; max-height: 70vh; }
   .cp-kpis { grid-template-columns: repeat(2, 1fr); }
