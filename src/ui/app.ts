@@ -22,26 +22,26 @@ import { checkIntegrity, repairCorrupted } from '../modules/dataIntegrity';
 export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
-      <div class="chrome topL"><div class="wm">ALPHA ASSISTANT</div><div class="clk" id="clock">--:--</div></div>
+      <div class="chrome topL"><div class="wm">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="searchBtn" aria-label="Search (Ctrl+K)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
         <button class="chip ghost" id="muteBtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg></button>
-        <button class="chip" id="settingsBtn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg> SETTINGS</button>
-        <button class="chip ghost" id="newChat"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> NEW</button>
+        <button class="chip" id="settingsBtn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg> הגדרות</button>
+        <button class="chip ghost" id="newChat"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> חדש</button>
       </div>
       <div class="stage" id="stage"></div>
 
       <aside class="left-panel" id="leftPanel">
         <div class="lp-head">
-          <span class="lp-title">SYSTEM</span>
-          <span class="lp-status" id="lpStatus">● ONLINE</span>
+          <span class="lp-title">מערכת</span>
+          <span class="lp-status" id="lpStatus">● מחובר</span>
         </div>
         <div class="lp-section">
-          <div class="lp-label">NEURAL ACTIVITY</div>
+          <div class="lp-label">פעילות עצבית</div>
           <canvas id="neuralCanvas" class="neural-canvas"></canvas>
         </div>
         <div class="lp-section">
-          <div class="lp-label">PERFORMANCE</div>
+          <div class="lp-label">ביצועים</div>
           <div class="metric-grid">
             <div class="metric">
               <span class="metric-label">CPU</span>
@@ -61,37 +61,37 @@ export function mountApp(root: HTMLElement) {
           </div>
         </div>
         <div class="lp-section">
-          <div class="lp-label">AI ENGINE</div>
+          <div class="lp-label">מנוע AI</div>
           <div class="ai-status">
             <div class="ai-model" id="aiModelDisplay">GPT-4O MINI</div>
-            <div class="ai-provider" id="aiProviderDisplay">VIA PUTER</div>
+            <div class="ai-provider" id="aiProviderDisplay">דרך PUTER</div>
             <div class="ai-latency">
               <span class="latency-dot"></span>
-              <span id="aiLatency">Ready</span>
+              <span id="aiLatency">מוכן</span>
             </div>
           </div>
         </div>
         <div class="lp-section">
-          <div class="lp-label">AUDIO SPECTRUM</div>
+          <div class="lp-label">ספקטרום שמע</div>
           <canvas id="waveCanvas" class="wave-canvas"></canvas>
         </div>
         <div class="lp-section">
-          <div class="lp-label">SESSION</div>
+          <div class="lp-label">סשן</div>
           <div class="quick-stats">
-            <div class="qs"><span class="qs-val" id="msgCount">0</span><span class="qs-label">MSGS</span></div>
-            <div class="qs"><span class="qs-val" id="tokenCount">0</span><span class="qs-label">TOKENS</span></div>
-            <div class="qs"><span class="qs-val" id="uptimeVal">00:00</span><span class="qs-label">UPTIME</span></div>
+            <div class="qs"><span class="qs-val" id="msgCount">0</span><span class="qs-label">הודעות</span></div>
+            <div class="qs"><span class="qs-val" id="tokenCount">0</span><span class="qs-label">טוקנים</span></div>
+            <div class="qs"><span class="qs-val" id="uptimeVal">00:00</span><span class="qs-label">זמן פעיל</span></div>
           </div>
         </div>
         <div class="lp-section">
-          <div class="lp-label">LIVE STATUS</div>
+          <div class="lp-label">סטטוס חי</div>
           <div class="live-widgets" id="liveWidgets"></div>
         </div>
       </aside>
 
       <aside class="right-panel" id="rightPanel">
         <div class="rp-head">
-          <span class="rp-title">OUTPUT</span>
+          <span class="rp-title">פלט</span>
           <div class="rp-connections" id="connections">
             <span class="conn-dot active" title="API"></span>
             <span class="conn-dot" id="connSpotify" title="Spotify"></span>
@@ -102,44 +102,44 @@ export function mountApp(root: HTMLElement) {
       </aside>
 
       <div class="dock">
-        <div class="state" id="state">STANDBY</div>
+        <div class="state" id="state">המתנה</div>
         <div class="mac-dock" id="macDock">
           <button class="dock-item" data-q="What's the weather today?">
             <span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg></span>
-            <span class="dl">Weather</span>
+            <span class="dl">מזג אוויר</span>
           </button>
           <button class="dock-item" data-q="Tell me a fun fact">
             <span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 18h6M10 22h4M12 2a7 7 0 017 7c0 2.38-1.19 4.47-3 5.74V17H8v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 017-7z"/></svg></span>
-            <span class="dl">Fun Fact</span>
+            <span class="dl">עובדה</span>
           </button>
           <button class="dock-item" data-q="Play some music on Spotify">
             <span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M8 15s1.5-1 4-1 4 1 4 1M7 12s2-1.5 5-1.5 5 1.5 5 1.5M6.5 9S9 7 12 7s5.5 2 5.5 2"/></svg></span>
-            <span class="dl">Music</span>
+            <span class="dl">מוזיקה</span>
           </button>
           <button class="dock-item" data-q="Search the web">
             <span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
-            <span class="dl">Search</span>
+            <span class="dl">חיפוש</span>
           </button>
           <button class="dock-item" id="calBtn">
             <span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
-            <span class="dl">Calendar</span>
+            <span class="dl">יומן</span>
             <span class="cal-badge" id="calBadge"></span>
           </button>
           <button class="dock-item" data-q="Tell me a joke">
             <span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg></span>
-            <span class="dl">Joke</span>
+            <span class="dl">בדיחה</span>
           </button>
           <button class="dock-item" data-q="Play a video on YouTube">
             <span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="20" height="16" rx="2"/><polygon points="10,8 16,12 10,16"/></svg></span>
-            <span class="dl">Video</span>
+            <span class="dl">וידאו</span>
           </button>
           <button class="dock-item" data-q="Translate to Hebrew">
             <span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg></span>
-            <span class="dl">Translate</span>
+            <span class="dl">תרגום</span>
           </button>
           <button class="dock-item" id="detectBtn">
             <span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 8V6a2 2 0 012-2h2M4 16v2a2 2 0 002 2h2M16 4h2a2 2 0 012 2v2M16 20h2a2 2 0 002-2v-2"/><circle cx="12" cy="10" r="3"/><path d="M7 18c0-2.8 2.2-5 5-5s5 2.2 5 5"/></svg></span>
-            <span class="dl">Detect</span>
+            <span class="dl">זיהוי</span>
           </button>
         </div>
         <div class="fab-group">
@@ -148,18 +148,18 @@ export function mountApp(root: HTMLElement) {
               <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
               <path d="M9 12l2 2 4-4"/>
             </svg>
-            <span>HeavyGuard</span>
+            <span>הביגארד</span>
           </button>
-          <a class="hg-fab trade-fab" id="tradeBtn" href="https://heavt-guard-simulator-1.onrender.com/" target="_blank" rel="noopener" title="Trading System">
+          <a class="hg-fab trade-fab" id="tradeBtn" href="https://heavt-guard-simulator-1.onrender.com/" target="_blank" rel="noopener" title="מערכת מסחר">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="22" height="22">
               <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>
             </svg>
-            <span>Trading</span>
+            <span>מסחר</span>
           </a>
         </div>
         <div class="bar">
           <button class="ic mic" id="micBtn" title="Hey Alpha"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></button>
-          <div class="pill"><input id="input" type="text" placeholder="Type or speak to Alpha…" /></div>
+          <div class="pill"><input id="input" type="text" placeholder="הקלד או דבר עם אלפא…" /></div>
           <button class="ic send" id="sendBtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></button>
         </div>
       </div>
@@ -168,31 +168,31 @@ export function mountApp(root: HTMLElement) {
         <div class="winbody" id="winBody"></div>
       </div></div>
       <div class="overlay" id="overlay"><div class="card">
-        <h2>Alpha Assistant</h2>
-        <p>Works free out of the box via Puter — no API key required.</p>
+        <h2>אלפא עוזר אישי</h2>
+        <p>עובד בחינם מהקופסה דרך Puter — לא צריך מפתח API.</p>
 
         <div class="settings-section">
-          <div class="ss-title">GENERAL</div>
-          <label>Assistant name</label><input id="nameInput" value="ALPHA" />
+          <div class="ss-title">כללי</div>
+          <label>שם העוזר</label><input id="nameInput" value="ALPHA" />
           <div class="setting-row">
-            <label>Sound effects</label>
+            <label>אפקטי סאונד</label>
             <label class="toggle"><input type="checkbox" id="sfxCheck" /><span class="toggle-slider"></span></label>
           </div>
           <div class="setting-row">
-            <label>Haptic feedback</label>
+            <label>משוב רטט</label>
             <label class="toggle"><input type="checkbox" id="hapticsCheck" /><span class="toggle-slider"></span></label>
           </div>
         </div>
 
         <div class="settings-section">
-          <div class="ss-title">VOICE & LANGUAGE</div>
-          <label>Mic language</label>
+          <div class="ss-title">קול ושפה</div>
+          <label>שפת מיקרופון</label>
           <select id="micSel"><option value="he">Hebrew</option><option value="en">English</option><option value="es">Español</option></select>
-          <label>Voice language</label>
+          <label>שפת דיבור</label>
           <select id="replySel"><option value="en">English</option><option value="he">Hebrew</option><option value="es">Español</option></select>
-          <label>Text reply language</label>
+          <label>שפת תשובת טקסט</label>
           <select id="textLangSel">
-            <option value="auto">Same as voice</option>
+            <option value="auto">כמו הקול</option>
             <option value="en">English</option>
             <option value="he">Hebrew</option>
             <option value="ar">Arabic</option>
@@ -201,27 +201,27 @@ export function mountApp(root: HTMLElement) {
             <option value="es">Spanish</option>
             <option value="de">German</option>
           </select>
-          <label>Voice gender</label>
+          <label>מגדר קול</label>
           <div class="gender-picker" id="genderPicker">
-            <button class="gender-btn" data-g="female"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="5"/><path d="M12 13v8M9 18h6"/></svg> Female</button>
-            <button class="gender-btn" data-g="male"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="10" cy="14" r="5"/><path d="M21 3l-6.5 6.5M21 3h-5M21 3v5"/></svg> Male</button>
-            <button class="gender-btn" data-g="auto">Auto</button>
+            <button class="gender-btn" data-g="female"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="5"/><path d="M12 13v8M9 18h6"/></svg> נקבה</button>
+            <button class="gender-btn" data-g="male"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="10" cy="14" r="5"/><path d="M21 3l-6.5 6.5M21 3h-5M21 3v5"/></svg> זכר</button>
+            <button class="gender-btn" data-g="auto">אוטומטי</button>
           </div>
-          <label>Voice</label><select id="voiceSel"></select>
-          <label>Speed <span id="speedVal" class="range-val">1.0x</span></label>
+          <label>קול</label><select id="voiceSel"></select>
+          <label>מהירות <span id="speedVal" class="range-val">1.0x</span></label>
           <input type="range" id="speedSlider" min="50" max="200" value="100" step="5" />
-          <label>Pitch <span id="pitchVal" class="range-val">1.0</span></label>
+          <label>גובה צליל <span id="pitchVal" class="range-val">1.0</span></label>
           <input type="range" id="pitchSlider" min="50" max="200" value="100" step="5" />
           <div class="setting-row">
-            <label>Auto speak responses</label>
+            <label>דיבור אוטומטי</label>
             <label class="toggle"><input type="checkbox" id="autoSpeakCheck" checked /><span class="toggle-slider"></span></label>
           </div>
-          <button class="test-voice-btn" id="testVoiceBtn">Test voice</button>
+          <button class="test-voice-btn" id="testVoiceBtn">בדוק קול</button>
         </div>
 
         <div class="settings-section">
-          <div class="ss-title">AUDIO</div>
-          <label>Ambient sound</label>
+          <div class="ss-title">שמע</div>
+          <label>צליל סביבה</label>
           <select id="ambPresetSel">
             <option value="pad">Soft Pad — רקע רך</option>
             <option value="rain">Rain — גשם</option>
@@ -233,20 +233,20 @@ export function mountApp(root: HTMLElement) {
             <option value="stream">Forest Stream — נחל ביער</option>
             <option value="off">Off — כבוי</option>
           </select>
-          <label>Volume <span id="ambVal" class="range-val">40%</span></label>
+          <label>עוצמה <span id="ambVal" class="range-val">40%</span></label>
           <input type="range" id="ambSlider" min="0" max="100" value="40" />
         </div>
 
         <div class="settings-section">
-          <div class="ss-title">AI ENGINE</div>
-          <label>AI Provider</label>
+          <div class="ss-title">מנוע AI</div>
+          <label>ספק AI</label>
           <select id="providerSel">
-            <option value="puter">Puter — Free, no key</option>
+            <option value="puter">Puter — חינם, בלי מפתח</option>
             <option value="gemini">Gemini (Google)</option>
             <option value="grok">Grok (xAI)</option>
             <option value="openai">ChatGPT (OpenAI)</option>
           </select>
-          <label>Puter model (free)</label>
+          <label>מודל Puter (חינם)</label>
           <select id="puterModelSel">
             <option value="gpt-4o-mini">GPT-4o mini (fast)</option>
             <option value="gpt-4o">GPT-4o (smartest)</option>
@@ -254,34 +254,34 @@ export function mountApp(root: HTMLElement) {
             <option value="claude-sonnet-4">Claude Sonnet 4</option>
             <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
           </select>
-          <p style="margin:2px 0 10px;font-size:11px;color:var(--dim)">Puter is free — a one-time sign-in popup appears on first use. Keys below are optional fallbacks.</p>
-          <label>Gemini API key</label><input id="keyInput" type="password" placeholder="AIza..." />
-          <label>Grok API key</label><input id="grokKeyInput" type="password" placeholder="xai-..." />
-          <label>OpenAI API key</label><input id="openaiKeyInput" type="password" placeholder="sk-..." />
+          <p style="margin:2px 0 10px;font-size:11px;color:var(--dim)">Puter בחינם — חלון התחברות חד-פעמי יופיע בשימוש ראשון. מפתחות למטה הם אופציונליים.</p>
+          <label>מפתח Gemini API</label><input id="keyInput" type="password" placeholder="AIza..." />
+          <label>מפתח Grok API</label><input id="grokKeyInput" type="password" placeholder="xai-..." />
+          <label>מפתח OpenAI API</label><input id="openaiKeyInput" type="password" placeholder="sk-..." />
         </div>
 
         <div class="settings-section">
-          <div class="ss-title">CLOUD SYNC</div>
-          <p style="margin:0 0 10px;font-size:11px;color:var(--dim);line-height:1.5">Sync all your data to Google Drive. Requires a Google OAuth Client ID from <a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color:var(--gold)">Google Cloud Console</a>.</p>
+          <div class="ss-title">סנכרון ענן</div>
+          <p style="margin:0 0 10px;font-size:11px;color:var(--dim);line-height:1.5">סנכרן את כל הנתונים ל-Google Drive. דורש Google OAuth Client ID מ-<a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color:var(--gold)">Google Cloud Console</a>.</p>
           <label>Google OAuth Client ID</label>
           <input id="driveClientId" type="text" placeholder="xxxx.apps.googleusercontent.com" style="font-size:11px" />
           <div style="display:flex;gap:8px;margin:10px 0;flex-wrap:wrap">
-            <button class="cloud-btn" id="driveConnectBtn">Connect Google Drive</button>
-            <button class="cloud-btn" id="driveUploadBtn" disabled>Backup to Drive</button>
-            <button class="cloud-btn" id="driveDownloadBtn" disabled>Restore from Drive</button>
+            <button class="cloud-btn" id="driveConnectBtn">חבר Google Drive</button>
+            <button class="cloud-btn" id="driveUploadBtn" disabled>גיבוי ל-Drive</button>
+            <button class="cloud-btn" id="driveDownloadBtn" disabled>שחזור מ-Drive</button>
           </div>
           <div class="cloud-status" id="driveStatus"></div>
           <div style="border-top:1px solid rgba(218,165,32,.08);margin:12px 0;padding-top:10px">
-            <p style="font-size:11px;color:var(--dim);margin-bottom:8px">No Google account? Export/import a backup file directly:</p>
+            <p style="font-size:11px;color:var(--dim);margin-bottom:8px">אין חשבון Google? ייצא/ייבא קובץ גיבוי ישירות:</p>
             <div style="display:flex;gap:8px">
-              <button class="cloud-btn" id="localExportBtn">Export JSON</button>
-              <button class="cloud-btn" id="localImportBtn">Import JSON</button>
+              <button class="cloud-btn" id="localExportBtn">ייצוא JSON</button>
+              <button class="cloud-btn" id="localImportBtn">ייבוא JSON</button>
             </div>
           </div>
         </div>
 
         <div class="settings-section">
-          <div class="ss-title">CONNECTED SERVICES</div>
+          <div class="ss-title">שירותים מחוברים</div>
           <div class="social-grid">
             <div class="social-item" id="socialSpotify">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M8 15s1.5-1 4-1 4 1 4 1M7 12s2-1.5 5-1.5 5 1.5 5 1.5M6.5 9S9 7 12 7s5.5 2 5.5 2"/></svg>
@@ -311,16 +311,16 @@ export function mountApp(root: HTMLElement) {
         </div>
 
         <div class="settings-section">
-          <div class="ss-title">KEYBOARD SHORTCUTS</div>
+          <div class="ss-title">קיצורי מקלדת</div>
           <div id="shortcutsList" style="font-size:13px"></div>
         </div>
 
-        <button class="go" id="saveBtn">Save</button>
+        <button class="go" id="saveBtn">שמור</button>
       </div></div>
       <div class="hg-overlay" id="hgOverlay">
         <div class="hg-frame">
           <div class="hg-topbar">
-            <span class="hg-topbar-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> HEAVYGUARD OS</span>
+            <span class="hg-topbar-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> הביגארד OS</span>
             <button class="hg-close" id="hgClose">✕</button>
           </div>
           <iframe id="hgIframe" class="hg-iframe" src="" allow="camera;microphone"></iframe>
@@ -330,24 +330,24 @@ export function mountApp(root: HTMLElement) {
         <div class="search-card">
           <div class="search-bar">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input id="searchInput" type="text" placeholder="Search everything…" autocomplete="off" />
+            <input id="searchInput" type="text" placeholder="חפש הכל…" autocomplete="off" />
             <kbd class="search-esc">ESC</kbd>
           </div>
           <div class="search-results" id="searchResults"></div>
         </div>
       </div>
-      <button class="fab" id="fabBtn" title="Quick Actions">+</button>
+      <button class="fab" id="fabBtn" title="פעולות מהירות">+</button>
       <div class="fab-menu" id="fabMenu">
-        <button class="fab-item" data-action="task">✓ Quick Task</button>
-        <button class="fab-item" data-action="note">📝 Quick Note</button>
-        <button class="fab-item" data-action="timer">⏱ Start Timer</button>
-        <button class="fab-item" data-action="briefing">📊 Briefing</button>
-        <button class="fab-item" data-action="search">🔍 Search</button>
+        <button class="fab-item" data-action="task">✓ משימה מהירה</button>
+        <button class="fab-item" data-action="note">📝 הערה מהירה</button>
+        <button class="fab-item" data-action="timer">⏱ התחל טיימר</button>
+        <button class="fab-item" data-action="briefing">📊 תדריך</button>
+        <button class="fab-item" data-action="search">🔍 חיפוש</button>
       </div>
       <div class="ar-overlay" id="arOverlay">
         <div class="ar-frame">
           <div class="ar-topbar">
-            <span class="ar-topbar-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8V6a2 2 0 012-2h2M4 16v2a2 2 0 002 2h2M16 4h2a2 2 0 012 2v2M16 20h2a2 2 0 002-2v-2"/><circle cx="12" cy="12" r="3"/></svg> AR CAMERA</span>
+            <span class="ar-topbar-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8V6a2 2 0 012-2h2M4 16v2a2 2 0 002 2h2M16 4h2a2 2 0 012 2v2M16 20h2a2 2 0 002-2v-2"/><circle cx="12" cy="12" r="3"/></svg> מצלמת AR</span>
             <div class="ar-topbar-tools">
               <button class="ar-tool-btn" id="arAddBall" title="כדור">⚽</button>
               <button class="ar-tool-btn" id="arAddCube" title="קוביה">🔲</button>
@@ -372,7 +372,7 @@ export function mountApp(root: HTMLElement) {
             <canvas id="arFxCanvas"></canvas>
             <canvas id="arObjCanvas"></canvas>
             <div class="ar-hud" id="arHud">
-              <div class="ar-status" id="arStatus">Initializing camera…</div>
+              <div class="ar-status" id="arStatus">מאתחל מצלמה…</div>
               <div class="ar-hand-indicator" id="arHandIndicator"></div>
             </div>
             <div class="ar-game-bar" id="arGameBar">
@@ -444,7 +444,7 @@ export function mountApp(root: HTMLElement) {
   // ── Process recurring tasks ──
   try {
     const generated = processRecurring();
-    if (generated > 0) addMsg(`📋 Generated ${generated} recurring task(s) for today.`, 'sys');
+    if (generated > 0) addMsg(`📋 נוצרו ${generated} משימות חוזרות להיום.`, 'sys');
   } catch {}
   // ── Data integrity check ──
   try {
@@ -452,7 +452,7 @@ export function mountApp(root: HTMLElement) {
     if (integrity.corrupted.length) {
       let fixed = 0;
       for (const key of integrity.corrupted) { if (repairCorrupted(key)) fixed++; }
-      addMsg(`⚠️ Data integrity: ${integrity.corrupted.length} store(s) were corrupted, ${fixed} auto-repaired.`, 'sys');
+      addMsg(`⚠️ שלמות נתונים: ${integrity.corrupted.length} מאגרים היו פגומים, ${fixed} תוקנו אוטומטית.`, 'sys');
     }
   } catch {}
 
@@ -532,18 +532,18 @@ export function mountApp(root: HTMLElement) {
   function updateConnIndicators() {
     $('connSpotify').classList.toggle('active', !!socials.spotify);
     $('connSocial').classList.toggle('active', !!(socials.tiktok || socials.insta || socials.fb));
-    $('spotifyStatus').textContent = socials.spotify ? '● Connected' : '';
+    $('spotifyStatus').textContent = socials.spotify ? '● מחובר' : '';
     $('spotifyStatus').className = 'social-status' + (socials.spotify ? ' on' : '');
-    $('tiktokStatus').textContent = socials.tiktok ? '● Connected' : '';
+    $('tiktokStatus').textContent = socials.tiktok ? '● מחובר' : '';
     $('tiktokStatus').className = 'social-status' + (socials.tiktok ? ' on' : '');
-    $('instaStatus').textContent = socials.insta ? '● Connected' : '';
+    $('instaStatus').textContent = socials.insta ? '● מחובר' : '';
     $('instaStatus').className = 'social-status' + (socials.insta ? ' on' : '');
-    $('fbStatus').textContent = socials.fb ? '● Connected' : '';
+    $('fbStatus').textContent = socials.fb ? '● מחובר' : '';
     $('fbStatus').className = 'social-status' + (socials.fb ? ' on' : '');
   }
 
   function setStatus(s: 'armed' | 'listening' | 'thinking' | 'speaking' | '') {
-    const label = { armed: 'SAY "HEY ALPHA"', listening: 'LISTENING', thinking: 'THINKING', speaking: 'SPEAKING', '': 'STANDBY' }[s];
+    const label = { armed: 'אמור "היי אלפא"', listening: 'מקשיב', thinking: 'חושב', speaking: 'מדבר', '': 'המתנה' }[s];
     $('state').textContent = label;
     orb.setEnergy(s === 'speaking' ? 0.95 : s === 'listening' ? 0.5 : s === 'armed' ? 0.2 : 0.06);
   }
@@ -566,7 +566,7 @@ export function mountApp(root: HTMLElement) {
   let lpTokenCount = 0;
 
   function addMsg(text: string, who: 'me' | 'al' | 'sys') {
-    const label = { me: 'YOU', al: state.name, sys: 'SYSTEM' }[who];
+    const label = { me: 'אתה', al: state.name, sys: 'מערכת' }[who];
     // Chat log (bottom)
     const div = document.createElement('div');
     div.className = 'turn ' + who;
@@ -688,12 +688,12 @@ export function mountApp(root: HTMLElement) {
       const d = await r.json();
       const items = d.query?.search || [];
       let html = '<div class="pad">';
-      if (!items.length) html += '<div style="color:var(--dim)">No results found.</div>';
+      if (!items.length) html += '<div style="color:var(--dim)">לא נמצאו תוצאות.</div>';
       for (const it of items)
         html += `<a href="https://en.wikipedia.org/?curid=${it.pageid}" target="_blank" style="display:block;color:var(--ink);padding:14px;background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:12px;margin-bottom:8px;text-decoration:none;transition:.2s"><b>${it.title}</b><br><span style="color:var(--dim);font-size:13px">${it.snippet}…</span></a>`;
-      html += `<a href="https://www.google.com/search?q=${encodeURIComponent(q)}" target="_blank" style="display:inline-block;margin-top:8px;color:var(--cyan);text-decoration:none;padding:8px 16px;border:1px solid rgba(218,165,32,.2);border-radius:8px">Continue on Google ↗</a></div>`;
+      html += `<a href="https://www.google.com/search?q=${encodeURIComponent(q)}" target="_blank" style="display:inline-block;margin-top:8px;color:var(--cyan);text-decoration:none;padding:8px 16px;border:1px solid rgba(218,165,32,.2);border-radius:8px">המשך בגוגל ↗</a></div>`;
       $('winBody').innerHTML = html;
-    } catch { $('winBody').innerHTML = '<div class="pad" style="color:var(--dim)">Search error.</div>'; }
+    } catch { $('winBody').innerHTML = '<div class="pad" style="color:var(--dim)">שגיאת חיפוש.</div>'; }
   }
 
   function renderCalendar() {
@@ -703,7 +703,7 @@ export function mountApp(root: HTMLElement) {
       '<input type="date" id="evD" style="background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:10px;padding:10px;color:var(--ink)">' +
       '<input type="time" id="evTime" style="background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:10px;padding:10px;color:var(--ink)">' +
       '<button id="evAdd" style="background:linear-gradient(135deg,var(--gold),#fff);border:none;border-radius:10px;padding:10px 18px;cursor:pointer;color:#0a0806;font-weight:600">Add</button></div>';
-    if (!ev.length) html += '<div style="color:var(--dim);font-style:italic">Calendar is empty.</div>';
+    if (!ev.length) html += '<div style="color:var(--dim);font-style:italic">היומן ריק.</div>';
     for (const e of ev) {
       const isHg = e.id.startsWith('hg:');
       const badge = isHg ? '<span style="font-size:9px;letter-spacing:1px;color:var(--gold);background:rgba(255,194,77,.1);padding:2px 6px;border-radius:4px;margin-left:6px">HG</span>' : '';
@@ -759,18 +759,18 @@ export function mountApp(root: HTMLElement) {
         onArCamera: openArCamera,
         onGDoc: openGDoc,
         onTask: (text: string, priority: string) => {
-          if (text) { addTask(text, (priority as 'low' | 'med' | 'high') || 'med'); addMsg(`✅ Task added: "${text}"`, 'sys'); }
+          if (text) { addTask(text, (priority as 'low' | 'med' | 'high') || 'med'); addMsg(`✅ משימה נוספה: "${text}"`, 'sys'); }
         },
         onNote: (text: string) => {
-          if (text) { saveNote(text); addMsg(`📝 Note saved.`, 'sys'); }
+          if (text) { saveNote(text); addMsg(`📝 הערה נשמרה.`, 'sys'); }
         },
         onTimerStart: (project: string) => {
           startTimer(project);
-          addMsg(`⏱️ Timer started: ${project}`, 'sys');
+          addMsg(`⏱️ טיימר התחיל: ${project}`, 'sys');
         },
         onTimerStop: () => {
           const entry = stopTimer();
-          if (entry) addMsg(`⏱️ Stopped: ${entry.project} — ${formatDuration(entry.duration)}`, 'sys');
+          if (entry) addMsg(`⏱️ הופסק: ${entry.project} — ${formatDuration(entry.duration)}`, 'sys');
         },
       }) || 'Done.';
       audio.receive();
@@ -780,7 +780,7 @@ export function mountApp(root: HTMLElement) {
     } catch (err: any) {
       if (voice.wakeOn) setTimeout(() => voice.setWake(true), 500);
       else setStatus('');
-      addMsg(err.message || 'Connection error', 'sys');
+      addMsg(err.message || 'שגיאת חיבור', 'sys');
     } finally {
       asking = false;
     }
@@ -799,7 +799,7 @@ export function mountApp(root: HTMLElement) {
   $('input').addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
   $('micBtn').onclick = () => {
     if (!voice.supported) {
-      addMsg('Speech recognition is not supported in this browser.', 'al');
+      addMsg('זיהוי דיבור לא נתמך בדפדפן זה.', 'al');
       return;
     }
     audio.ensure();
@@ -809,7 +809,7 @@ export function mountApp(root: HTMLElement) {
     if (turningOn) audio.micOn(); else audio.micOff();
   };
   $('muteBtn').onclick = () => { audio.toggleMute(); };
-  $('newChat').onclick = () => { state.history = []; $('rpBody').innerHTML = ''; $('chat').innerHTML = ''; clearChatHistory(); addMsg(state.name + ' ready.', 'al'); };
+  $('newChat').onclick = () => { state.history = []; $('rpBody').innerHTML = ''; $('chat').innerHTML = ''; clearChatHistory(); addMsg(state.name + ' מוכן.', 'al'); };
 
   // Detect button
   let detecting = false;
@@ -2154,7 +2154,7 @@ export function mountApp(root: HTMLElement) {
       if (text?.trim()) { addTask(text.trim()); addMsg(`✅ Task added: "${text.trim()}"`, 'sys'); }
     } else if (action === 'note') {
       const text = prompt('Quick note:');
-      if (text?.trim()) { saveNote(text.trim()); addMsg(`📝 Note saved.`, 'sys'); }
+      if (text?.trim()) { saveNote(text.trim()); addMsg(`📝 הערה נשמרה.`, 'sys'); }
     } else if (action === 'timer') {
       const project = prompt('Project name:');
       if (project?.trim()) { startTimer(project.trim()); addMsg(`⏱️ Timer started: ${project.trim()}`, 'sys'); }
@@ -2259,7 +2259,7 @@ export function mountApp(root: HTMLElement) {
     saveState(state);
     updateAIDisplay();
     $('overlay').classList.remove('show');
-    if (state.history.length === 0) addMsg(state.name + ' online. Talk to me or type.', 'al');
+    if (state.history.length === 0) addMsg(state.name + ' מחובר. דבר אליי או הקלד.', 'al');
   };
 
   function pad(n: number) { return String(n).padStart(2, '0'); }
@@ -2469,11 +2469,11 @@ export function mountApp(root: HTMLElement) {
   // ── Personalized greeting ──
   function greetingPrefix(): string {
     const h = new Date().getHours();
-    return h < 5 ? 'Good night' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+    return h < 5 ? 'לילה טוב' : h < 12 ? 'בוקר טוב' : h < 18 ? 'צהריים טובים' : 'ערב טוב';
   }
   function personalGreeting(): string {
     const nm = loadMemory().profile.name;
-    if (!nm) return `${state.name} online. Talk to me or type.`;
+    if (!nm) return `${state.name} מחובר. דבר אליי או הקלד.`;
     const tasks = loadTasks();
     const openCount = tasks.filter(t => !t.done).length;
     const today = new Date().toISOString().slice(0, 10);
@@ -2481,11 +2481,11 @@ export function mountApp(root: HTMLElement) {
     const bits: string[] = [`${greetingPrefix()}, ${nm}.`];
     if (openCount > 0 || todayEvents > 0) {
       const parts: string[] = [];
-      if (todayEvents) parts.push(`${todayEvents} event${todayEvents > 1 ? 's' : ''} today`);
-      if (openCount) parts.push(`${openCount} open task${openCount > 1 ? 's' : ''}`);
-      bits.push(`You have ${parts.join(' and ')}.`);
+      if (todayEvents) parts.push(`${todayEvents} אירועים היום`);
+      if (openCount) parts.push(`${openCount} משימות פתוחות`);
+      bits.push(`יש לך ${parts.join(' ו-')}.`);
     }
-    bits.push('How can I help?');
+    bits.push('איך אפשר לעזור?');
     return bits.join(' ');
   }
 
@@ -2497,10 +2497,10 @@ export function mountApp(root: HTMLElement) {
       <div class="welcome-card">
         <div class="welcome-orb">◆</div>
         <h2 class="welcome-title">${greetingPrefix()} 👋</h2>
-        <p class="welcome-sub">I'm <b>${state.name}</b>, your personal AI. What should I call you?</p>
-        <input class="welcome-input" id="welcomeName" placeholder="Your name / השם שלך" autocomplete="off" />
-        <button class="welcome-go" id="welcomeGo">Let's begin</button>
-        <button class="welcome-skip" id="welcomeSkip">Skip for now</button>
+        <p class="welcome-sub">אני <b>${state.name}</b>, ה-AI האישי שלך. איך לקרוא לך?</p>
+        <input class="welcome-input" id="welcomeName" placeholder="השם שלך" autocomplete="off" />
+        <button class="welcome-go" id="welcomeGo">בוא נתחיל</button>
+        <button class="welcome-skip" id="welcomeSkip">דלג לעת עתה</button>
       </div>`;
     root.querySelector('.app')!.appendChild(ov);
     const nameInput = ov.querySelector('#welcomeName') as HTMLInputElement;
@@ -2511,7 +2511,7 @@ export function mountApp(root: HTMLElement) {
       ov.classList.remove('show');
       setTimeout(() => ov.remove(), 400);
       const msg = clean
-        ? `${greetingPrefix()}, ${clean}! Great to meet you. I'm ${state.name} — ask me anything, or open the Brain for your modules.`
+        ? `${greetingPrefix()}, ${clean}! נעים להכיר. אני ${state.name} — שאל אותי הכל, או פתח את המוח למודולים שלך.`
         : personalGreeting();
       addMsg(msg, 'al');
       voice.speak(msg);
@@ -2527,7 +2527,7 @@ export function mountApp(root: HTMLElement) {
   if (prevHistory.length > 0) {
     const recent = prevHistory.slice(-20);
     for (const msg of recent) {
-      const label = { me: 'YOU', al: state.name, sys: 'SYSTEM' }[msg.who];
+      const label = { me: 'אתה', al: state.name, sys: 'מערכת' }[msg.who];
       const chatEl = $('chat');
       const div = document.createElement('div');
       div.className = 'turn ' + msg.who;
