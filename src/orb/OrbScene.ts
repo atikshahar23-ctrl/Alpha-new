@@ -374,6 +374,10 @@ interface PikachuParts {
   head: THREE.Group;
   leftEye: THREE.Mesh;
   rightEye: THREE.Mesh;
+  leftEyelid: THREE.Mesh;
+  rightEyelid: THREE.Mesh;
+  leftEarGroup: THREE.Group;
+  rightEarGroup: THREE.Group;
   cheekMatL: THREE.MeshPhysicalMaterial;
   cheekMatR: THREE.MeshPhysicalMaterial;
   tail: THREE.Group;
@@ -389,7 +393,7 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   const headGroup = new THREE.Group();
   const seg = (n: number) => Math.max(8, Math.round(n * detail));
 
-  // ── Body — round chubby torso, slightly pear-shaped ──
+  // ── Body — round chubby torso, pear-shaped with subtle taper ──
   const body = new THREE.Mesh(
     new THREE.SphereGeometry(0.75, seg(48), seg(48)),
     mats.yellow,
@@ -397,6 +401,15 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   body.scale.set(1.0, 1.15, 0.9);
   body.position.set(0, -0.35, 0);
   group.add(body);
+
+  // Upper body narrower — second sphere for pear shape
+  const upperBody = new THREE.Mesh(
+    new THREE.SphereGeometry(0.55, seg(32), seg(32)),
+    mats.yellow,
+  );
+  upperBody.scale.set(0.95, 0.7, 0.85);
+  upperBody.position.set(0, 0.15, 0);
+  group.add(upperBody);
 
   // Belly — lighter cream patch on the front
   const belly = new THREE.Mesh(
@@ -407,13 +420,14 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   belly.position.set(0, -0.35, 0.32);
   group.add(belly);
 
-  // Back stripes — two brown horizontal stripes
-  for (const sy of [0.0, -0.2]) {
+  // Back stripes — two brown horizontal stripes with rounded edges
+  for (const sy of [0.0, -0.22]) {
     const stripe = new THREE.Mesh(
-      new THREE.BoxGeometry(0.6, 0.06, 0.15),
+      new THREE.CapsuleGeometry(0.03, 0.5, seg(4), seg(8)),
       mats.brown,
     );
-    stripe.position.set(0, -0.15 + sy, -0.6);
+    stripe.rotation.z = PI / 2;
+    stripe.position.set(0, -0.15 + sy, -0.62);
     stripe.rotation.x = 0.3;
     group.add(stripe);
   }
@@ -427,54 +441,80 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   head.position.set(0, 0.0, 0.05);
   headGroup.add(head);
 
-  // ── Ears — long, pointed, angled outward with black tips ──
+  // ── Ears — long, pointed, angled outward with black tips and inner pink ──
+  let leftEarGroup!: THREE.Group;
+  let rightEarGroup!: THREE.Group;
   for (const sx of [-1, 1]) {
     const earGroup = new THREE.Group();
-    // Main ear body — elongated cone
+    // Main ear body — wider base, tapered top
     const ear = new THREE.Mesh(
-      new THREE.ConeGeometry(0.12, 0.85, seg(16)),
+      new THREE.ConeGeometry(0.14, 0.9, seg(16)),
       mats.yellow,
     );
-    ear.position.set(0, 0.42, 0);
+    ear.position.set(0, 0.44, 0);
     earGroup.add(ear);
 
-    // Black tip (top ~35%)
+    // Inner ear — subtle darker yellow
+    const innerEar = new THREE.Mesh(
+      new THREE.ConeGeometry(0.07, 0.55, seg(12)),
+      mats.darkYellow,
+    );
+    innerEar.position.set(0, 0.38, 0.03);
+    earGroup.add(innerEar);
+
+    // Black tip (top ~30%)
     const earTip = new THREE.Mesh(
-      new THREE.ConeGeometry(0.075, 0.32, seg(12)),
+      new THREE.ConeGeometry(0.065, 0.3, seg(12)),
       mats.black,
     );
-    earTip.position.set(0, 0.72, 0);
+    earTip.position.set(0, 0.76, 0);
     earGroup.add(earTip);
 
     earGroup.position.set(sx * 0.38, 0.55, -0.05);
     earGroup.rotation.z = sx * 0.45;
     earGroup.rotation.x = -0.1;
     headGroup.add(earGroup);
+    if (sx === -1) leftEarGroup = earGroup;
+    else rightEarGroup = earGroup;
   }
 
-  // ── Eyes — large, oval, with proper anime highlight structure ──
+  // ── Eyes — large, oval, with iris, pupil, and anime highlights ──
+  let leftEyelid!: THREE.Mesh;
+  let rightEyelid!: THREE.Mesh;
   for (const sx of [-1, 1]) {
     // White of eye (large oval)
     const eyeWhite = new THREE.Mesh(
-      new THREE.SphereGeometry(0.155, seg(24), seg(24)),
+      new THREE.SphereGeometry(0.16, seg(24), seg(24)),
       mats.white,
     );
     eyeWhite.scale.set(0.75, 1.0, 0.5);
     eyeWhite.position.set(sx * 0.26, 0.08, 0.6);
     headGroup.add(eyeWhite);
 
+    // Iris — dark brown ring
+    const irisMat = new THREE.MeshPhysicalMaterial({
+      color: 0x3D2B1F, metalness: 0.0, roughness: 0.3,
+    });
+    const iris = new THREE.Mesh(
+      new THREE.SphereGeometry(0.13, seg(24), seg(24)),
+      irisMat,
+    );
+    iris.scale.set(0.8, 1.0, 0.5);
+    iris.position.set(sx * 0.26, 0.07, 0.63);
+    headGroup.add(iris);
+
     // Pupil — large black circle
     const pupil = new THREE.Mesh(
-      new THREE.SphereGeometry(0.12, seg(24), seg(24)),
+      new THREE.SphereGeometry(0.1, seg(24), seg(24)),
       mats.black,
     );
     pupil.scale.set(0.8, 1.0, 0.5);
-    pupil.position.set(sx * 0.26, 0.06, 0.65);
+    pupil.position.set(sx * 0.26, 0.06, 0.66);
     headGroup.add(pupil);
 
     // Primary highlight — large white dot upper-right
     const hl1 = new THREE.Mesh(
-      new THREE.SphereGeometry(0.04, seg(12), seg(12)),
+      new THREE.SphereGeometry(0.042, seg(12), seg(12)),
       mats.white,
     );
     hl1.position.set(sx * 0.26 + sx * 0.04, 0.12, 0.72);
@@ -482,21 +522,33 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
 
     // Secondary highlight — smaller white dot lower-left
     const hl2 = new THREE.Mesh(
-      new THREE.SphereGeometry(0.022, seg(8), seg(8)),
+      new THREE.SphereGeometry(0.024, seg(8), seg(8)),
       mats.white,
     );
     hl2.position.set(sx * 0.26 - sx * 0.03, 0.01, 0.72);
     headGroup.add(hl2);
-  }
-  const leftEye = headGroup.children[headGroup.children.length - 6] as THREE.Mesh;
-  const rightEye = headGroup.children[headGroup.children.length - 3] as THREE.Mesh;
 
-  // ── Nose — tiny triangle/oval ──
+    // Eyelid — yellow half-sphere that scales down to reveal eye (blink)
+    const eyelid = new THREE.Mesh(
+      new THREE.SphereGeometry(0.17, seg(24), seg(12), 0, PI2, 0, PI * 0.5),
+      mats.yellow,
+    );
+    eyelid.scale.set(0.76, 0.01, 0.52);
+    eyelid.position.set(sx * 0.26, 0.14, 0.61);
+    eyelid.rotation.x = -0.1;
+    headGroup.add(eyelid);
+    if (sx === -1) leftEyelid = eyelid;
+    else rightEyelid = eyelid;
+  }
+  const leftEye = headGroup.children[headGroup.children.length - 8] as THREE.Mesh;
+  const rightEye = headGroup.children[headGroup.children.length - 2] as THREE.Mesh;
+
+  // ── Nose — tiny rounded triangle ──
   const nose = new THREE.Mesh(
-    new THREE.SphereGeometry(0.028, seg(10), seg(10)),
+    new THREE.SphereGeometry(0.03, seg(10), seg(10)),
     mats.nose,
   );
-  nose.scale.set(1.2, 0.7, 0.6);
+  nose.scale.set(1.3, 0.65, 0.6);
   nose.position.set(0, -0.04, 0.7);
   headGroup.add(nose);
 
@@ -546,7 +598,7 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   headGroup.position.set(0, 0.55, 0.0);
   group.add(headGroup);
 
-  // ── Arms — short stubby with rounded ends ──
+  // ── Arms — short stubby with paw fingers ──
   const armGeo = new THREE.CapsuleGeometry(0.1, 0.22, seg(8), seg(12));
   const leftArm = new THREE.Mesh(armGeo, mats.yellow);
   leftArm.position.set(-0.62, -0.15, 0.15);
@@ -560,25 +612,59 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   rightArm.rotation.x = -0.2;
   group.add(rightArm);
 
-  // ── Feet — oval yellow with brown soles ──
-  const footGeo = new THREE.CapsuleGeometry(0.12, 0.15, seg(8), seg(12));
+  // Paw fingers — 3 small bumps at each arm tip
+  for (const sx of [-1, 1]) {
+    const armRef = sx === -1 ? leftArm : rightArm;
+    for (let fi = 0; fi < 3; fi++) {
+      const finger = new THREE.Mesh(
+        new THREE.SphereGeometry(0.035, seg(8), seg(8)),
+        mats.yellow,
+      );
+      const fa = ((fi - 1) * 0.3) + sx * 0.2;
+      finger.position.set(
+        armRef.position.x + Math.cos(fa) * 0.06,
+        armRef.position.y - 0.16,
+        armRef.position.z + Math.sin(fa) * 0.06 + 0.05,
+      );
+      group.add(finger);
+    }
+  }
+
+  // ── Feet — larger oval yellow with toes and brown soles ──
+  const footGeo = new THREE.CapsuleGeometry(0.14, 0.18, seg(8), seg(12));
   for (const sx of [-1, 1]) {
     const foot = new THREE.Mesh(footGeo, mats.yellow);
     foot.rotation.x = PI / 2;
-    foot.rotation.z = sx * 0.15;
-    foot.position.set(sx * 0.28, -1.1, 0.18);
+    foot.rotation.z = sx * 0.12;
+    foot.position.set(sx * 0.3, -1.1, 0.2);
     group.add(foot);
+
+    // Toes — 3 small bumps at front of each foot
+    for (let ti = 0; ti < 3; ti++) {
+      const toe = new THREE.Mesh(
+        new THREE.SphereGeometry(0.04, seg(8), seg(8)),
+        mats.yellow,
+      );
+      toe.position.set(
+        sx * 0.3 + (ti - 1) * 0.055 * sx,
+        -1.18,
+        0.36 + Math.abs(ti - 1) * -0.02,
+      );
+      toe.scale.set(1, 0.7, 1.2);
+      group.add(toe);
+    }
+
     // Sole
     const sole = new THREE.Mesh(
-      new THREE.CircleGeometry(0.1, seg(12)),
+      new THREE.CircleGeometry(0.12, seg(12)),
       mats.darkYellow,
     );
-    sole.position.set(sx * 0.28, -1.22, 0.18);
+    sole.position.set(sx * 0.3, -1.24, 0.2);
     sole.rotation.x = -PI / 2;
     group.add(sole);
   }
 
-  // ── Tail — flat zigzag lightning bolt ──
+  // ── Tail — flat zigzag lightning bolt with more definition ──
   const tail = new THREE.Group();
   const shape = new THREE.Shape();
   shape.moveTo(0, 0);
@@ -593,19 +679,20 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   shape.lineTo(-0.02, 0.28);
   shape.lineTo(0.2, 0.25);
   shape.lineTo(0.0, 0.0);
-  const extSettings = { depth: 0.06, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.02, bevelSegments: seg(3) };
+  const extSettings = { depth: 0.08, bevelEnabled: true, bevelThickness: 0.025, bevelSize: 0.025, bevelSegments: seg(4) };
   const tailMesh = new THREE.Mesh(
     new THREE.ExtrudeGeometry(shape, extSettings),
     mats.yellow,
   );
-  tailMesh.position.set(-0.1, 0, -0.03);
+  tailMesh.position.set(-0.1, 0, -0.04);
   tail.add(tailMesh);
+
   // Brown base segment
   const tailBase = new THREE.Mesh(
-    new THREE.BoxGeometry(0.14, 0.2, 0.06),
+    new THREE.CapsuleGeometry(0.06, 0.16, seg(4), seg(8)),
     mats.brown,
   );
-  tailBase.position.set(0.05, -0.05, 0);
+  tailBase.position.set(0.05, -0.02, 0.01);
   tail.add(tailBase);
   tail.position.set(0, -0.1, -0.65);
   tail.rotation.x = -0.5;
@@ -615,34 +702,45 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   // ── Electric sparks — yellow lightning arcs around Pikachu ──
   const sparks = new THREE.Group();
   const sparkMats: THREE.MeshBasicMaterial[] = [];
-  const sparkCount = Math.round(8 * detail);
+  const sparkCount = Math.round(10 * detail);
   for (let i = 0; i < sparkCount; i++) {
     const sMat = new THREE.MeshBasicMaterial({
-      color: 0xFFE44D,
+      color: i % 3 === 0 ? 0xFFFFAA : 0xFFE44D,
       transparent: true,
       opacity: 0,
       depthWrite: false,
       side: THREE.DoubleSide,
     });
     sparkMats.push(sMat);
-    // Each spark is a thin stretched box acting as a lightning arc segment
-    const sGeo = new THREE.BoxGeometry(0.015, 0.4 + Math.random() * 0.3, 0.005);
+    const sGeo = new THREE.BoxGeometry(0.012, 0.35 + Math.random() * 0.35, 0.004);
     const sMesh = new THREE.Mesh(sGeo, sMat);
     const angle = (i / sparkCount) * PI2;
-    const r = 1.3 + Math.random() * 0.5;
+    const r = 1.2 + Math.random() * 0.6;
     sMesh.position.set(Math.cos(angle) * r, -0.3 + Math.random() * 1.2, Math.sin(angle) * r);
     sMesh.rotation.set(Math.random() * PI, Math.random() * PI, Math.random() * PI);
     sparks.add(sMesh);
-    // Branch segment for each spark
-    const bGeo = new THREE.BoxGeometry(0.01, 0.15 + Math.random() * 0.15, 0.004);
+    // Branch segment
+    const bGeo = new THREE.BoxGeometry(0.008, 0.12 + Math.random() * 0.18, 0.003);
     const bMesh = new THREE.Mesh(bGeo, sMat);
     bMesh.position.set(
-      sMesh.position.x + (Math.random() - 0.5) * 0.2,
-      sMesh.position.y + (Math.random() - 0.5) * 0.2,
-      sMesh.position.z + (Math.random() - 0.5) * 0.2,
+      sMesh.position.x + (Math.random() - 0.5) * 0.25,
+      sMesh.position.y + (Math.random() - 0.5) * 0.25,
+      sMesh.position.z + (Math.random() - 0.5) * 0.25,
     );
     bMesh.rotation.set(Math.random() * PI, Math.random() * PI, Math.random() * PI);
     sparks.add(bMesh);
+    // Second branch for denser look
+    if (i % 2 === 0) {
+      const b2Geo = new THREE.BoxGeometry(0.006, 0.08 + Math.random() * 0.1, 0.003);
+      const b2Mesh = new THREE.Mesh(b2Geo, sMat);
+      b2Mesh.position.set(
+        bMesh.position.x + (Math.random() - 0.5) * 0.15,
+        bMesh.position.y + (Math.random() - 0.5) * 0.15,
+        bMesh.position.z + (Math.random() - 0.5) * 0.15,
+      );
+      b2Mesh.rotation.set(Math.random() * PI, Math.random() * PI, Math.random() * PI);
+      sparks.add(b2Mesh);
+    }
   }
   group.add(sparks);
 
@@ -665,7 +763,7 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   );
   group.add(glassOrb);
 
-  return { group, head: headGroup, leftEye, rightEye, cheekMatL, cheekMatR, tail, leftArm, rightArm, mouthMesh, sparks, sparkMats };
+  return { group, head: headGroup, leftEye, rightEye, leftEyelid, rightEyelid, leftEarGroup, rightEarGroup, cheekMatL, cheekMatR, tail, leftArm, rightArm, mouthMesh, sparks, sparkMats };
 }
 
 // Atmosphere glow shaders — volumetric, animated, multi-fresnel
@@ -1057,6 +1155,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     if (pika.head) {
       pika.head.rotation.y = Math.sin(time * 0.5 + 0.5) * 0.12;
       pika.head.rotation.z = Math.sin(time * 0.3) * 0.04;
+      pika.head.rotation.x = Math.sin(time * 0.25) * 0.03;
     }
     const cheekPulse = 0.25 + Math.sin(time * 1.8) * 0.2 + amp * 0.3;
     pika.cheekMatL.emissiveIntensity = cheekPulse;
@@ -1067,6 +1166,14 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     }
     if (pika.leftArm) pika.leftArm.rotation.z = 0.6 + Math.sin(time * 1.0) * 0.15;
     if (pika.rightArm) pika.rightArm.rotation.z = -0.6 + Math.sin(time * 1.0 + 1.0) * 0.15;
+    // Blinking — periodic eyelid close/open
+    const blinkCycle = time % 4.0;
+    const blinkY = blinkCycle < 0.15 ? 1.0 : blinkCycle < 0.3 ? Math.max(0.01, 1.0 - (blinkCycle - 0.15) / 0.15) : 0.01;
+    if (pika.leftEyelid) pika.leftEyelid.scale.y = blinkY;
+    if (pika.rightEyelid) pika.rightEyelid.scale.y = blinkY;
+    // Ear twitching
+    if (pika.leftEarGroup) pika.leftEarGroup.rotation.x = -0.1 + Math.sin(time * 2.2) * 0.06;
+    if (pika.rightEarGroup) pika.rightEarGroup.rotation.x = -0.1 + Math.sin(time * 2.2 + 0.5) * 0.06;
     // Electric sparks — random flash pattern
     for (let si = 0; si < pika.sparkMats.length; si++) {
       const phase = Math.sin(time * 8.0 + si * 2.7) * Math.sin(time * 3.1 + si * 1.3);
@@ -1840,6 +1947,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     if (pika.head) {
       pika.head.rotation.y = Math.sin(time * 0.5 + 0.5) * 0.12;
       pika.head.rotation.z = Math.sin(time * 0.3) * 0.04;
+      pika.head.rotation.x = Math.sin(time * 0.25) * 0.03;
     }
     const cheekPulse = 0.25 + Math.sin(time * 1.8) * 0.2 + amp * 0.3;
     pika.cheekMatL.emissiveIntensity = cheekPulse;
@@ -1850,6 +1958,14 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     }
     if (pika.leftArm) pika.leftArm.rotation.z = 0.6 + Math.sin(time * 1.0) * 0.15;
     if (pika.rightArm) pika.rightArm.rotation.z = -0.6 + Math.sin(time * 1.0 + 1.0) * 0.15;
+    // Blinking — periodic eyelid close/open
+    const blinkCycle = time % 4.0;
+    const blinkY = blinkCycle < 0.15 ? 1.0 : blinkCycle < 0.3 ? Math.max(0.01, 1.0 - (blinkCycle - 0.15) / 0.15) : 0.01;
+    if (pika.leftEyelid) pika.leftEyelid.scale.y = blinkY;
+    if (pika.rightEyelid) pika.rightEyelid.scale.y = blinkY;
+    // Ear twitching
+    if (pika.leftEarGroup) pika.leftEarGroup.rotation.x = -0.1 + Math.sin(time * 2.2) * 0.06;
+    if (pika.rightEarGroup) pika.rightEarGroup.rotation.x = -0.1 + Math.sin(time * 2.2 + 0.5) * 0.06;
     // Electric sparks — random flash pattern
     for (let si = 0; si < pika.sparkMats.length; si++) {
       const phase = Math.sin(time * 8.0 + si * 2.7) * Math.sin(time * 3.1 + si * 1.3);
