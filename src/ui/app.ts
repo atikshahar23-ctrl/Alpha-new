@@ -10,7 +10,7 @@ import { mountCockpit, type CockpitHandle } from '../modules/cockpit';
 import { runProactive } from '../modules/proactive';
 import { processRecurring } from '../modules/recurring';
 import * as driveSync from '../modules/driveSync';
-import { setPikaVolume, setPikaEnabled, pikaSpeak } from '../assistant/pikaVoice';
+import { setPikaVolume, setPikaPitch, setPikaEnabled, pikaSpeak } from '../assistant/pikaVoice';
 import { universalSearch, TYPE_ICONS, addRecentSearch, recentSearches, quickSuggestions } from '../modules/search';
 import { registerShortcut, initShortcuts, shortcutsHTML } from '../modules/shortcuts';
 import { dailyBriefing } from '../modules/analytics';
@@ -106,6 +106,7 @@ const UI_STRINGS: Record<string, Record<UILang, string>> = {
   pikachuVoice: { he: 'פיקאצ\'ו', en: 'PIKACHU' },
   pikaVoiceOn: { he: 'קול פיקאצ\'ו', en: 'Pikachu voice' },
   pikaVolume: { he: 'עוצמת קול פיקאצ\'ו', en: 'Pikachu volume' },
+  pikaPitch: { he: 'גובה קול פיקאצ\'ו', en: 'Pikachu pitch' },
   pikaSpeakNow: { he: 'פיקה פיקה!', en: 'Pika Pika!' },
   armed: { he: 'אמור "היי אלפא"', en: 'SAY "HEY ALPHA"' },
   listening: { he: 'מקשיב', en: 'LISTENING' },
@@ -377,6 +378,8 @@ export function mountApp(root: HTMLElement) {
           </div>
           <label><span data-i18n="pikaVolume">עוצמת קול פיקאצ'ו</span> <span id="pikaVolVal" class="range-val">60%</span></label>
           <input type="range" id="pikaVolSlider" min="0" max="100" value="60" />
+          <label><span data-i18n="pikaPitch">גובה קול פיקאצ'ו</span> <span id="pikaPitchVal" class="range-val">1.4</span></label>
+          <input type="range" id="pikaPitchSlider" min="50" max="200" value="140" />
           <button class="test-voice-btn" id="pikaSpeakBtn" data-i18n="pikaSpeakNow">פיקה פיקה!</button>
         </div>
 
@@ -538,6 +541,7 @@ export function mountApp(root: HTMLElement) {
   audio.sfxOn = state.sfxOn;
 
   setPikaVolume(state.pikaVolume);
+  setPikaPitch(state.pikaPitch);
   setPikaEnabled(state.pikaVoiceOn);
 
   let orb: OrbHandle;
@@ -2187,6 +2191,8 @@ export function mountApp(root: HTMLElement) {
     $<HTMLInputElement>('pikaVoiceCheck').checked = state.pikaVoiceOn;
     $<HTMLInputElement>('pikaVolSlider').value = String(Math.round(state.pikaVolume * 100));
     $('pikaVolVal').textContent = Math.round(state.pikaVolume * 100) + '%';
+    $<HTMLInputElement>('pikaPitchSlider').value = String(Math.round(state.pikaPitch * 100));
+    $('pikaPitchVal').textContent = state.pikaPitch.toFixed(1);
     // Cloud sync state
     $<HTMLInputElement>('driveClientId').value = driveSync.getClientId();
     updateDriveUI();
@@ -2384,6 +2390,12 @@ export function mountApp(root: HTMLElement) {
     setPikaVolume(v / 100);
     state.pikaVolume = v / 100;
   };
+  $<HTMLInputElement>('pikaPitchSlider').oninput = () => {
+    const v = +$<HTMLInputElement>('pikaPitchSlider').value / 100;
+    $('pikaPitchVal').textContent = v.toFixed(1);
+    setPikaPitch(v);
+    state.pikaPitch = v;
+  };
   $('pikaSpeakBtn').onclick = () => { pikaSpeak(); };
   $('genderPicker').addEventListener('click', (e) => {
     const btn = (e.target as HTMLElement).closest('.gender-btn') as HTMLElement;
@@ -2426,8 +2438,10 @@ export function mountApp(root: HTMLElement) {
     audio.sfxOn = state.sfxOn;
     state.pikaVoiceOn = $<HTMLInputElement>('pikaVoiceCheck').checked;
     state.pikaVolume = +$<HTMLInputElement>('pikaVolSlider').value / 100;
+    state.pikaPitch = +$<HTMLInputElement>('pikaPitchSlider').value / 100;
     setPikaEnabled(state.pikaVoiceOn);
     setPikaVolume(state.pikaVolume);
+    setPikaPitch(state.pikaPitch);
     voice.setMicLang(state.micLang);
     const vsel = $<HTMLSelectElement>('voiceSel').value;
     if (vsel) voice.setVoice(vsel);

@@ -1,4 +1,5 @@
 let volume = 0.6;
+let pitch = 1.4;
 let enabled = true;
 let timer: ReturnType<typeof setTimeout> | null = null;
 
@@ -36,12 +37,13 @@ function playWebAudioPika() {
     master.gain.setValueAtTime(volume * 0.5, ac.currentTime);
     master.connect(ac.destination);
 
+    const baseMult = pitch / 1.4;
     const notes = [
-      { freq: 880, dur: 0.09, t: 0 },
-      { freq: 698, dur: 0.09, t: 0.11 },
-      { freq: 880, dur: 0.09, t: 0.28 },
-      { freq: 698, dur: 0.09, t: 0.39 },
-      { freq: 988, dur: 0.18, t: 0.56 },
+      { freq: 880 * baseMult, dur: 0.09, t: 0 },
+      { freq: 698 * baseMult, dur: 0.09, t: 0.11 },
+      { freq: 880 * baseMult, dur: 0.09, t: 0.28 },
+      { freq: 698 * baseMult, dur: 0.09, t: 0.39 },
+      { freq: 988 * baseMult, dur: 0.18, t: 0.56 },
     ];
 
     for (const n of notes) {
@@ -69,7 +71,7 @@ function speak(text: string) {
   if (typeof speechSynthesis !== 'undefined') {
     speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
-    u.pitch = 1.4;
+    u.pitch = pitch;
     u.rate = 1.0;
     u.volume = volume;
     const voice = findVoice();
@@ -126,6 +128,7 @@ function scheduleNext() {
 export function startPikaVoice() { scheduleNext(); }
 export function stopPikaVoice() { if (timer) { clearTimeout(timer); timer = null; } }
 export function setPikaVolume(v: number) { volume = Math.max(0, Math.min(1, v)); }
+export function setPikaPitch(v: number) { pitch = Math.max(0.5, Math.min(2.0, v)); }
 export function setPikaEnabled(on: boolean) {
   enabled = on;
   if (on) startPikaVoice(); else stopPikaVoice();
@@ -133,3 +136,4 @@ export function setPikaEnabled(on: boolean) {
 export function pikaSpeak() { playRandom(); }
 export function getPikaEnabled() { return enabled; }
 export function getPikaVolume() { return volume; }
+export function getPikaPitch() { return pitch; }

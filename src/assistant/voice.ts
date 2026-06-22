@@ -187,10 +187,13 @@ export class VoiceEngine {
     const L = this.state.replyLang;
     if (!v.lang.toLowerCase().startsWith(L)) return -100;
 
-    if (/natural|neural|online|enhanced|premium|wavenet|studio/.test(n)) s += 10;
-    if (/compact|espeak/.test(n)) s -= 5;
-    if (/google/.test(n)) s += 3;
-    if (/microsoft/.test(n)) s += 2;
+    if (/premium|studio/.test(n)) s += 20;
+    if (/natural|neural/.test(n)) s += 15;
+    if (/enhanced|online|wavenet/.test(n)) s += 12;
+    if (/compact|espeak/.test(n)) s -= 10;
+    if (/google/.test(n)) s += 5;
+    if (/microsoft/.test(n)) s += 4;
+    if (/apple/.test(n)) s += 3;
 
     const gender = this.state.voiceGender;
     if (gender === 'female') {
