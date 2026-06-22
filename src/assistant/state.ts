@@ -6,6 +6,8 @@ export type AIProvider = 'puter' | 'gemini' | 'grok' | 'openai';
 
 export type VoiceGender = 'female' | 'male' | 'auto';
 
+export type UILang = 'he' | 'en';
+
 export interface AppState {
   key: string;
   grokKey: string;
@@ -29,6 +31,7 @@ export interface AppState {
   fontSize: number;
   haptics: boolean;
   autoSpeak: boolean;
+  uiLang: UILang;
 }
 
 const KEY = 'alpha_key', GROK = 'alpha_grok', OPENAI = 'alpha_openai', PROV = 'alpha_provider',
@@ -38,7 +41,7 @@ const KEY = 'alpha_key', GROK = 'alpha_grok', OPENAI = 'alpha_openai', PROV = 'a
   SFX = 'alpha_sfx', WAKE = 'alpha_wake',
   VOICE = 'alpha_voice', VGENDER = 'alpha_vgender', VSPEED = 'alpha_vspeed',
   VPITCH = 'alpha_vpitch', THEME = 'alpha_theme', FONTSIZE = 'alpha_fontsize',
-  HAPTICS = 'alpha_haptics', AUTOSPEAK = 'alpha_autospeak';
+  HAPTICS = 'alpha_haptics', AUTOSPEAK = 'alpha_autospeak', UILANG = 'alpha_uilang';
 
 export function loadState(): AppState {
   let amb = parseFloat(localStorage.getItem(AMB) || '');
@@ -72,6 +75,7 @@ export function loadState(): AppState {
     fontSize,
     haptics: localStorage.getItem(HAPTICS) !== '0',
     autoSpeak: localStorage.getItem(AUTOSPEAK) !== '0',
+    uiLang: (localStorage.getItem(UILANG) as UILang) || 'he',
   };
 }
 
@@ -97,6 +101,7 @@ export function saveState(s: AppState) {
   localStorage.setItem(FONTSIZE, String(s.fontSize));
   localStorage.setItem(HAPTICS, s.haptics ? '1' : '0');
   localStorage.setItem(AUTOSPEAK, s.autoSpeak ? '1' : '0');
+  localStorage.setItem(UILANG, s.uiLang);
 }
 
 export interface CalEvent { id: string; title: string; date: string; time: string }
