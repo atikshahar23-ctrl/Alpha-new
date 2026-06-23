@@ -89,6 +89,26 @@ function playHappyChirp(ctx: AudioContext, dest: AudioNode) {
   playFMChirp(1320, 1980, 0.12, 0.20, ctx, dest);
 }
 
+// Curious questioning chirp — rises then falls
+function playCuriousChirp(ctx: AudioContext, dest: AudioNode) {
+  playFMChirp(1100, 1650, 0.10, 0,    ctx, dest);
+  playFMChirp(1650, 1050, 0.14, 0.15, ctx, dest);
+}
+
+// Short double-tap acknowledgment
+function playAckChirp(ctx: AudioContext, dest: AudioNode) {
+  playFMChirp(1320, 1320, 0.05, 0,    ctx, dest);
+  playFMChirp(1600, 1600, 0.05, 0.10, ctx, dest);
+}
+
+// Excited triple burst
+function playExcitedBurst(ctx: AudioContext, dest: AudioNode) {
+  playFMChirp(1175, 1500, 0.06, 0,    ctx, dest);
+  playFMChirp(1400, 1700, 0.06, 0.09, ctx, dest);
+  playFMChirp(1600, 2000, 0.06, 0.18, ctx, dest);
+  playFMChirp(1900, 2200, 0.10, 0.27, ctx, dest);
+}
+
 function playWebAudioPika() {
   onChirpStart?.();
   try {
@@ -98,9 +118,12 @@ function playWebAudioPika() {
     master.connect(ctx.destination);
 
     const pattern = Math.random();
-    if (pattern < 0.4) playPika(ctx, master);
-    else if (pattern < 0.75) playPikachu(ctx, master);
-    else playHappyChirp(ctx, master);
+    if      (pattern < 0.25) playPika(ctx, master);
+    else if (pattern < 0.50) playPikachu(ctx, master);
+    else if (pattern < 0.68) playHappyChirp(ctx, master);
+    else if (pattern < 0.82) playCuriousChirp(ctx, master);
+    else if (pattern < 0.92) playAckChirp(ctx, master);
+    else                     playExcitedBurst(ctx, master);
 
     setTimeout(() => { try { ctx.close(); } catch {} }, 2000);
   } catch {}

@@ -6,6 +6,7 @@ import { loadLeads, revenueStats } from '../modules/business';
 import { expenseSummary } from '../modules/personal';
 import { searchContacts } from '../modules/contacts';
 import { loadGoals, activeGoalsSummary } from '../modules/goals';
+import { logMood, todayMood, addWater, logSleep, sleepAvg, MOOD_EMOJI, type Mood } from '../modules/wellness';
 
 const GREETINGS_EN = ['Hey! How can I help?', 'Hello! What can I do for you?', 'Hi there! Ready to help.'];
 const GREETINGS_HE = ['היי! איך אפשר לעזור?', 'שלום! מה אפשר לעשות בשבילך?', 'אהלן! מוכן לעזור.'];
@@ -177,6 +178,26 @@ export function tryLocalCommand(text: string): string | null {
   if (/\b(clear notes|delete notes|מחק הערות|נקה הערות)\b/i.test(low)) {
     clearNotes();
     return he ? '🗑️ כל ההערות נמחקו.' : '🗑️ All notes cleared.';
+  }
+
+  // --- TODAY SUMMARY ---
+  if (/^(today|what's today|היום|מה יש היום|מה קורה היום)\b/i.test(low)) {
+    const today = new Date().toISOString().slice(0, 10);
+    const evs = loadEvents().filter(e => e.date === today);
+    const tasks = loadTasks().filter(t => !t.done);
+    let out = he ? `📅 ${formatDate(new Date(), he)}\n\n` : `📅 ${formatDate(new Date(), he)}\n\n`;
+    if (evs.length) {
+      out += he ? `🗓️ אירועים היום:\n` : `🗓️ Today's events:\n`;
+      evs.forEach(e => { out += `• ${e.time ? e.time + ' — ' : ''}${e.title}\n`; });
+      out += '\n';
+    }
+    if (tasks.length) {
+      out += he ? `📋 משימות פתוחות: ${tasks.length}\n` : `📋 Open tasks: ${tasks.length}\n`;
+      tasks.slice(0, 4).forEach(t => { out += `• ${t.text}\n`; });
+      if (tasks.length > 4) out += (he ? `  ועוד ${tasks.length - 4}...` : `  and ${tasks.length - 4} more...`) + '\n';
+    }
+    if (!evs.length && !tasks.length) out += he ? 'אין אירועים או משימות פתוחות היום 🌟' : 'No events or open tasks today 🌟';
+    return out.trim();
   }
 
   // --- CALENDAR ---
@@ -354,6 +375,63 @@ export function tryLocalCommand(text: string): string | null {
       out += he ? `• טיימר פעיל: ${timer.project} (${elapsed}d)\n` : `• Active timer: ${timer.project} (${elapsed}m)\n`;
     }
     return out.trim();
+  }
+
+  // --- WELLNESS COMMANDS ---
+  // Log mood
+  if (/\b(mood|מצב רוח|איך אני מרגיש|אני מרגיש)\b/i.test(low)) {
+    const moodMap: Record<string, Mood> = {
+      'great': 'great', 'מעולה': 'great', 'מצוין': 'great', 'נהדר': 'great',
+      'good': 'good', 'טוב': 'good', 'בסדר גמור': 'good',
+      'okay': 'okay', 'סבבה': 'okay', 'בסדר': 'okay',
+      'low': 'low', 'לא טוב': 'low', 'לא נהדר': 'low',
+      'bad': 'bad', 'רע': 'bad', 'גרוע': 'bad',
+    };
+    const found = Object.entries(moodMap).find(([k]) => low.includes(k));
+    if (found) {
+      logMood(found[1]);
+      const emoji = MOOD_EMOJI[found[1]];
+      return he ? `${emoji} מצב רוח נרשם: ${found[0]}` : `${emoji} Mood logged: ${found[0]}`;
+    }
+    const tm = todayMood();
+    return he
+      ? (tm ? `${MOOD_EMOJI[tm.mood]} מצב הרוח היום: ${tm.mood} | אנרגיה: ${tm.energy}/5` : 'לא נרשם מצב רוח היום. תגיד "מצב רוח טוב" לרישום.')
+      : (tm ? `${MOOD_EMOJI[tm.mood]} Today's mood: ${tm.mood} | Energy: ${tm.energy}/5` : 'No mood logged today. Say "mood good" to log it.');
+  }
+
+  // Water tracker
+  if (/\b(water|שתיתי מים|שתה מים|מים|כוס מים)\b/i.test(low)) {
+    const glasses = addWater(1);
+    const goal = 8;
+    const bar = '💧'.repeat(Math.min(glasses, goal)) + '○'.repeat(Math.max(0, goal - glasses));
+    return he
+      ? `💧 ${glasses} כוסות מים היום (יעד: ${goal})\n${bar}`
+      : `💧 ${glasses} glasses of water today (goal: ${goal})\n${bar}`;
+  }
+
+  // Sleep log
+  const sleepMatch = t.match(/\b(?:ישנתי|slept|sleep)\s+(\d+(?:\.\d+)?)\s*(?:שעות|hours?)?/i);
+  if (sleepMatch) {
+    const hours = parseFloat(sleepMatch[1]);
+    logSleep(hours, 3);
+    const avg = sleepAvg();
+    return he
+      ? `😴 ${hours} שעות שינה נרשמו. ממוצע שבועי: ${avg.hours} שעות`
+      : `😴 ${hours} hours of sleep logged. Weekly avg: ${avg.hours} hours`;
+  }
+
+  // --- QUICK HEBREW COMMANDS (short forms) ---
+  if (/^(מה יש מחר|מחר)\b/i.test(low)) {
+    const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+    const evs = loadEvents().filter(e => e.date === tomorrow);
+    if (!evs.length) return 'אין אירועים מתוכננים למחר.';
+    let out = '📅 מחר:\n';
+    evs.forEach(e => { out += `• ${e.time ? e.time + ' — ' : ''}${e.title}\n`; });
+    return out.trim();
+  }
+
+  if (/^(פיקאצ'ו|פיקצו|pikachu|pika)\b/i.test(low)) {
+    return he ? 'פיקה פיקה! ⚡' : 'Pika pika! ⚡';
   }
 
   // --- HELP ---

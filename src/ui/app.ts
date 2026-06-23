@@ -747,6 +747,16 @@ export function mountApp(root: HTMLElement) {
   let lpMsgCount = 0;
   let lpTokenCount = 0;
 
+  function renderMarkdown(raw: string): string {
+    return raw
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em>$1</em>')
+      .replace(/`(.+?)`/g, '<code style="background:rgba(255,255,255,.1);padding:1px 4px;border-radius:3px;font-family:monospace">$1</code>')
+      .replace(/^• /gm, '<span style="color:var(--gold,#e4bc63)">•</span> ')
+      .replace(/\n/g, '<br>');
+  }
+
   function addMsg(text: string, who: 'me' | 'al' | 'sys') {
     const label = { me: t('you', state.uiLang), al: state.name, sys: t('systemLabel', state.uiLang) }[who];
     // Chat log (bottom)
@@ -756,12 +766,13 @@ export function mountApp(root: HTMLElement) {
     const chatEl = $('chat');
     if (chatEl) {
       chatEl.appendChild(div);
-      const txt = div.querySelector('.txt')!;
+      const txt = div.querySelector<HTMLElement>('.txt')!;
       if (who === 'al') {
+        const speed = text.length > 180 ? 5 : 10;
         let i = 0;
-        const tick = () => { txt.textContent = text.slice(0, i++); chatEl.scrollTop = chatEl.scrollHeight; if (i <= text.length) setTimeout(tick, 12); };
+        const tick = () => { txt.innerHTML = renderMarkdown(text.slice(0, i++)); chatEl.scrollTop = chatEl.scrollHeight; if (i <= text.length) setTimeout(tick, speed); };
         tick();
-      } else txt.textContent = text;
+      } else txt.innerHTML = renderMarkdown(text);
       chatEl.scrollTop = chatEl.scrollHeight;
     }
     // Right panel output
@@ -772,12 +783,13 @@ export function mountApp(root: HTMLElement) {
     const ts = `${String(time.getHours()).padStart(2,'0')}:${String(time.getMinutes()).padStart(2,'0')}`;
     rpDiv.innerHTML = `<div class="rp-meta"><span class="rp-who">${label}</span><span class="rp-time">${ts}</span></div><div class="rp-text"></div>`;
     rp.appendChild(rpDiv);
-    const rpTxt = rpDiv.querySelector('.rp-text')!;
+    const rpTxt = rpDiv.querySelector<HTMLElement>('.rp-text')!;
     if (who === 'al') {
+      const speed = text.length > 180 ? 5 : 10;
       let i = 0;
-      const tick = () => { rpTxt.textContent = text.slice(0, i++); rp.scrollTop = rp.scrollHeight; if (i <= text.length) setTimeout(tick, 12); };
+      const tick = () => { rpTxt.innerHTML = renderMarkdown(text.slice(0, i++)); rp.scrollTop = rp.scrollHeight; if (i <= text.length) setTimeout(tick, speed); };
       tick();
-    } else rpTxt.textContent = text;
+    } else rpTxt.innerHTML = renderMarkdown(text);
     rp.scrollTop = rp.scrollHeight;
     // Left panel counters
     lpMsgCount++;
