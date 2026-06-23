@@ -38,7 +38,7 @@ import {
 } from './goals';
 import {
   loadInvoices, createInvoice, setInvoiceStatus, removeInvoice,
-  downloadInvoicePDF, invoiceStats, type InvoiceItem,
+  downloadInvoicePDF, invoiceStats, shareInvoiceWhatsApp, type InvoiceItem,
 } from './invoices';
 import {
   loadContacts, addContact, removeContact,
@@ -375,14 +375,8 @@ function renderBusiness(root: HTMLElement, hooks: CockpitHooks, close: () => voi
       dl.onclick = () => downloadInvoicePDF(i);
       r.appendChild(dl);
       if (i.phone) {
-        const wa = el('button', 'cp-x', '💬'); wa.title = 'שלח בוואטסאפ';
-        wa.onclick = () => {
-          const num = i.phone.replace(/\D/g, '').replace(/^0/, '972');
-          const msg = encodeURIComponent(
-            `שלום ${i.customer},\nמצורפת חשבונית ${i.number} על סך ₪${i.total.toLocaleString()}.\nתאריך: ${i.date}${i.dueDate ? `\nלתשלום עד: ${i.dueDate}` : ''}\n${i.notes ? `\n${i.notes}` : ''}`
-          );
-          window.open(`https://wa.me/${num}?text=${msg}`, '_blank');
-        };
+        const wa = el('button', 'cp-x', '💬'); wa.title = 'שלח תמונה בוואטסאפ';
+        wa.onclick = () => shareInvoiceWhatsApp(i);
         r.appendChild(wa);
       }
       const del = el('button', 'cp-x', '✕');

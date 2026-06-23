@@ -140,6 +140,167 @@ export function downloadInvoicePDF(inv: Invoice, businessName = 'HeavyGuard') {
   }
 }
 
+export function generateInvoiceImage(inv: Invoice, businessName = 'HeavyGuard'): Promise<Blob> {
+  return new Promise(resolve => {
+    const W = 800;
+    const GOLD = '#DAA520';
+    const BG = '#FFFFFF';
+    const TEXT = '#333333';
+    const DIM = '#888888';
+    const LINE = '#EEEEEE';
+    const PAD = 40;
+
+    // Estimate height: header + items + totals + footer
+    const rowH = 32;
+    const bodyH = 200 + inv.items.length * rowH + 160 + (inv.notes ? 60 : 0);
+    const H = Math.max(500, bodyH);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = W * 2; canvas.height = H * 2; // 2x for sharpness
+    const ctx = canvas.getContext('2d')!;
+    ctx.scale(2, 2);
+
+    // Background
+    ctx.fillStyle = BG;
+    ctx.fillRect(0, 0, W, H);
+
+    // Gold top bar
+    ctx.fillStyle = GOLD;
+    ctx.fillRect(0, 0, W, 6);
+
+    // Business name
+    ctx.fillStyle = GOLD;
+    ctx.font = 'bold 28px system-ui, sans-serif';
+    ctx.fillText(businessName, PAD, PAD + 30);
+
+    // Invoice number
+    ctx.fillStyle = DIM;
+    ctx.font = '13px system-ui, sans-serif';
+    ctx.fillText(inv.number, PAD, PAD + 50);
+
+    // Date / status (right side)
+    ctx.textAlign = 'right';
+    ctx.fillStyle = TEXT;
+    ctx.font = '13px system-ui, sans-serif';
+    ctx.fillText(`תאריך: ${inv.date}`, W - PAD, PAD + 30);
+    if (inv.dueDate) ctx.fillText(`לתשלום: ${inv.dueDate}`, W - PAD, PAD + 48);
+
+    // Status badge
+    const statusColor = inv.status === 'paid' ? '#4CAF50' : inv.status === 'overdue' ? '#F44336' : '#FFC107';
+    ctx.fillStyle = statusColor + '22';
+    ctx.beginPath();
+    ctx.roundRect(W - PAD - 80, PAD + 55, 80, 22, 4);
+    ctx.fill();
+    ctx.fillStyle = statusColor;
+    ctx.font = 'bold 11px system-ui, sans-serif';
+    ctx.fillText(inv.status.toUpperCase(), W - PAD - 40, PAD + 70);
+    ctx.textAlign = 'left';
+
+    // Divider
+    let y = PAD + 90;
+    ctx.strokeStyle = LINE;
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(PAD, y); ctx.lineTo(W - PAD, y); ctx.stroke();
+    y += 16;
+
+    // Customer
+    ctx.fillStyle = DIM;
+    ctx.font = '12px system-ui, sans-serif';
+    ctx.fillText('לקוח', PAD, y);
+    y += 18;
+    ctx.fillStyle = TEXT;
+    ctx.font = 'bold 15px system-ui, sans-serif';
+    ctx.fillText(inv.customer, PAD, y);
+    if (inv.phone) { ctx.fillStyle = DIM; ctx.font = '13px system-ui, sans-serif'; ctx.fillText(inv.phone, PAD + ctx.measureText(inv.customer).width + 12, y); }
+    y += 24;
+
+    // Table header
+    ctx.fillStyle = '#F8F6F0';
+    ctx.fillRect(PAD, y, W - PAD * 2, 30);
+    ctx.fillStyle = DIM;
+    ctx.font = 'bold 11px system-ui, sans-serif';
+    ctx.fillText('תיאור', PAD + 8, y + 20);
+    ctx.textAlign = 'center';
+    ctx.fillText('כמות', PAD + 420, y + 20);
+    ctx.textAlign = 'right';
+    ctx.fillText('מחיר', W - PAD - 120, y + 20);
+    ctx.fillText('סה"כ', W - PAD - 8, y + 20);
+    ctx.textAlign = 'left';
+
+    // Gold underline on header
+    ctx.strokeStyle = GOLD;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(PAD, y + 30); ctx.lineTo(W - PAD, y + 30); ctx.stroke();
+    y += 30;
+
+    // Items
+    ctx.font = '13px system-ui, sans-serif';
+    for (const item of inv.items) {
+      y += rowH;
+      ctx.fillStyle = TEXT;
+      ctx.fillText(item.description.slice(0, 40), PAD + 8, y);
+      ctx.textAlign = 'center';
+      ctx.fillText(String(item.qty), PAD + 420, y);
+      ctx.textAlign = 'right';
+      ctx.fillText(`₪${item.price.toLocaleString()}`, W - PAD - 120, y);
+      ctx.fillText(`₪${(item.price * item.qty).toLocaleString()}`, W - PAD - 8, y);
+      ctx.textAlign = 'left';
+      ctx.strokeStyle = LINE; ctx.lineWidth = 0.5;
+      ctx.beginPath(); ctx.moveTo(PAD, y + 8); ctx.lineTo(W - PAD, y + 8); ctx.stroke();
+    }
+    y += 24;
+
+    // Totals
+    ctx.textAlign = 'right';
+    ctx.fillStyle = DIM; ctx.font = '13px system-ui, sans-serif';
+    ctx.fillText(`לפני מע"מ: ₪${inv.subtotal.toLocaleString()}`, W - PAD, y); y += 20;
+    ctx.fillText(`מע"מ (17%): ₪${inv.tax.toLocaleString()}`, W - PAD, y); y += 24;
+
+    ctx.strokeStyle = GOLD; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(W - PAD - 200, y - 4); ctx.lineTo(W - PAD, y - 4); ctx.stroke();
+
+    ctx.fillStyle = GOLD; ctx.font = 'bold 20px system-ui, sans-serif';
+    ctx.fillText(`סה"כ לתשלום: ₪${inv.total.toLocaleString()}`, W - PAD, y + 18);
+    ctx.textAlign = 'left';
+    y += 40;
+
+    // Notes
+    if (inv.notes) {
+      ctx.fillStyle = '#F8F6F0';
+      ctx.fillRect(PAD, y, W - PAD * 2, 44);
+      ctx.fillStyle = TEXT; ctx.font = '12px system-ui, sans-serif';
+      ctx.fillText(inv.notes.slice(0, 90), PAD + 10, y + 26);
+      y += 52;
+    }
+
+    // Footer
+    y = H - 24;
+    ctx.strokeStyle = LINE; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(PAD, y - 8); ctx.lineTo(W - PAD, y - 8); ctx.stroke();
+    ctx.fillStyle = DIM; ctx.font = '11px system-ui, sans-serif';
+    ctx.fillText(`Generated by Alpha Assistant · ${businessName}`, PAD, y);
+
+    canvas.toBlob(b => resolve(b!), 'image/png');
+  });
+}
+
+export async function shareInvoiceWhatsApp(inv: Invoice, businessName = 'HeavyGuard') {
+  const blob = await generateInvoiceImage(inv, businessName);
+  const file = new File([blob], `${inv.number}.png`, { type: 'image/png' });
+  const num = inv.phone.replace(/\D/g, '').replace(/^0/, '972');
+
+  if (navigator.canShare?.({ files: [file] })) {
+    await navigator.share({ files: [file], title: `חשבונית ${inv.number}` });
+  } else {
+    // Fallback: download image + open WhatsApp
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `${inv.number}.png`; a.click();
+    URL.revokeObjectURL(url);
+    if (num.length >= 10) window.open(`https://wa.me/${num}`, '_blank');
+  }
+}
+
 export function invoiceStats(): { total: number; paid: number; outstanding: number; revenue: number } {
   const list = loadInvoices();
   const paid = list.filter(i => i.status === 'paid');
