@@ -334,13 +334,12 @@ interface PikachuParts {
   auraMat: THREE.MeshBasicMaterial;
 }
 
-function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
+function buildPikachu(_mats: PikachuMaterials, detail: number): PikachuParts {
   const group = new THREE.Group();
   const headGroup = new THREE.Group();
   const seg = (n: number) => Math.max(8, Math.round(n * detail));
 
   const yellowBasic = new THREE.MeshBasicMaterial({ color: 0xFDD835 });
-  const darkYellowBasic = new THREE.MeshBasicMaterial({ color: 0xD4A017 });
   const brownBasic = new THREE.MeshBasicMaterial({ color: 0x5D4037 });
   const blackBasic = new THREE.MeshBasicMaterial({ color: 0x111111 });
 
