@@ -1,7 +1,7 @@
 // Service Worker for Alpha Assistant PWA
 // Provides offline caching and app-shell strategy
 
-const CACHE_NAME = 'alpha-v5';
+const CACHE_NAME = 'alpha-v6';
 const SHELL_ASSETS = [
   '/Alpha-new/',
   '/Alpha-new/index.html',
