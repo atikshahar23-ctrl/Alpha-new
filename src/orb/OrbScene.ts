@@ -784,54 +784,77 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   tail.rotation.y = 0.12;
   group.add(tail);
 
-  // ── Sparks ──
+  // ── Sparks — zigzag lightning bolt lines ──
   const sparks = new THREE.Group();
   const sparkMats: THREE.MeshBasicMaterial[] = [];
   const sparkMeshes: THREE.Mesh[] = [];
   const sparkCount = Math.round(10 * detail);
+
+  // Helper: build a zigzag lightning bolt geometry
+  function makeLightningGeo(length: number, segs: number): THREE.BufferGeometry {
+    const pts: number[] = [];
+    for (let s = 0; s <= segs; s++) {
+      const t = s / segs;
+      const jitter = s === 0 || s === segs ? 0 : (Math.random() - 0.5) * length * 0.35;
+      const jitter2 = s === 0 || s === segs ? 0 : (Math.random() - 0.5) * length * 0.18;
+      pts.push(jitter, t * length - length * 0.5, jitter2);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    return geo;
+  }
+
   for (let i = 0; i < sparkCount; i++) {
     const sMat = new THREE.MeshBasicMaterial({
       color: i % 3 === 0 ? 0xFFFFDD : 0xFFE44D,
       transparent: true, opacity: 0,
-      depthWrite: false, side: THREE.DoubleSide,
-      blending: THREE.AdditiveBlending,
+      depthWrite: false, blending: THREE.AdditiveBlending,
     });
     sparkMats.push(sMat);
-    const sGeo = new THREE.BoxGeometry(0.01, 0.3 + Math.random() * 0.3, 0.003);
-    const sMesh = new THREE.Mesh(sGeo, sMat);
+    const boltLen = 0.28 + Math.random() * 0.28;
+    const boltGeo = makeLightningGeo(boltLen, Math.round(5 + Math.random() * 4));
+    const sMesh = new THREE.Line(boltGeo, sMat) as unknown as THREE.Mesh;
     const angle = (i / sparkCount) * PI2;
-    const r = 1.1 + Math.random() * 0.5;
-    sMesh.position.set(Math.cos(angle) * r, -0.3 + Math.random() * 1.0, Math.sin(angle) * r);
+    const r = 1.05 + Math.random() * 0.55;
+    sMesh.position.set(Math.cos(angle) * r, -0.35 + Math.random() * 1.1, Math.sin(angle) * r);
     sMesh.rotation.set(Math.random() * PI, Math.random() * PI, Math.random() * PI);
     sparks.add(sMesh);
     sparkMeshes.push(sMesh);
 
-    const bGeo = new THREE.BoxGeometry(0.007, 0.1 + Math.random() * 0.15, 0.003);
-    const bMesh = new THREE.Mesh(bGeo, sMat);
+    // Short secondary branch
+    const bMat = new THREE.MeshBasicMaterial({
+      color: 0xFFFFFF, transparent: true, opacity: 0,
+      depthWrite: false, blending: THREE.AdditiveBlending,
+    });
+    sparkMats.push(bMat);
+    const branchGeo = makeLightningGeo(boltLen * 0.45, 3);
+    const bMesh = new THREE.Line(branchGeo, bMat) as unknown as THREE.Mesh;
     bMesh.position.set(
-      sMesh.position.x + (Math.random() - 0.5) * 0.2,
-      sMesh.position.y + (Math.random() - 0.5) * 0.2,
-      sMesh.position.z + (Math.random() - 0.5) * 0.2,
+      sMesh.position.x + (Math.random() - 0.5) * 0.18,
+      sMesh.position.y + (Math.random() - 0.5) * 0.18,
+      sMesh.position.z + (Math.random() - 0.5) * 0.18,
     );
     bMesh.rotation.set(Math.random() * PI, Math.random() * PI, Math.random() * PI);
     sparks.add(bMesh);
     sparkMeshes.push(bMesh);
   }
+
+  // Cheek sparks — short bolts near the red cheeks
   for (const sx of [-1, 1]) {
-    for (let ci = 0; ci < 2; ci++) {
+    for (let ci = 0; ci < 3; ci++) {
       const csMat = new THREE.MeshBasicMaterial({
-        color: 0xFFDD44, transparent: true, opacity: 0,
+        color: ci === 0 ? 0xFFFFFF : 0xFFDD44, transparent: true, opacity: 0,
         depthWrite: false, blending: THREE.AdditiveBlending,
       });
       sparkMats.push(csMat);
-      const csGeo = new THREE.BoxGeometry(0.007, 0.12 + Math.random() * 0.1, 0.003);
-      const csMesh = new THREE.Mesh(csGeo, csMat);
+      const cBoltGeo = makeLightningGeo(0.10 + Math.random() * 0.08, 4);
+      const csMesh = new THREE.Line(cBoltGeo, csMat) as unknown as THREE.Mesh;
       csMesh.position.set(
-        sx * 0.48 + (Math.random() - 0.5) * 0.12,
-        0.42 + (Math.random() - 0.5) * 0.12,
-        0.5 + Math.random() * 0.12,
+        sx * 0.48 + (Math.random() - 0.5) * 0.10,
+        0.40 + (Math.random() - 0.5) * 0.10,
+        0.52 + Math.random() * 0.10,
       );
-      csMesh.rotation.set(Math.random() * PI, Math.random() * PI, sx * 0.5);
+      csMesh.rotation.set(Math.random() * PI * 0.5, Math.random() * PI, sx * 0.4);
       sparks.add(csMesh);
       sparkMeshes.push(csMesh);
     }

@@ -3,6 +3,10 @@ let pitch = 2.0;
 let enabled = true;
 let timer: ReturnType<typeof setTimeout> | null = null;
 
+// Callback wired by app.ts so the 3D orb reacts when Pikachu speaks
+let onChirpStart: (() => void) | null = null;
+export function setChirpCallback(fn: (() => void) | null) { onChirpStart = fn; }
+
 if (typeof speechSynthesis !== 'undefined') {
   speechSynthesis.getVoices();
   speechSynthesis.addEventListener('voiceschanged', () => { speechSynthesis.getVoices(); }, { once: true });
@@ -86,6 +90,7 @@ function playHappyChirp(ctx: AudioContext, dest: AudioNode) {
 }
 
 function playWebAudioPika() {
+  onChirpStart?.();
   try {
     const ctx = new (window.AudioContext || (window as any).webkitAudioContext)() as AudioContext;
     const master = ctx.createGain();
@@ -103,6 +108,7 @@ function playWebAudioPika() {
 
 function speak(text: string) {
   if (!enabled) return;
+  onChirpStart?.();
 
   if (typeof speechSynthesis !== 'undefined') {
     speechSynthesis.cancel();

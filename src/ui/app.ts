@@ -10,7 +10,7 @@ import { mountCockpit, type CockpitHandle } from '../modules/cockpit';
 import { runProactive } from '../modules/proactive';
 import { processRecurring } from '../modules/recurring';
 import * as driveSync from '../modules/driveSync';
-import { setPikaVolume, setPikaPitch, setPikaEnabled, pikaSpeak } from '../assistant/pikaVoice';
+import { setPikaVolume, setPikaPitch, setPikaEnabled, pikaSpeak, setChirpCallback } from '../assistant/pikaVoice';
 import { universalSearch, TYPE_ICONS, addRecentSearch, recentSearches, quickSuggestions } from '../modules/search';
 import { registerShortcut, initShortcuts, shortcutsHTML } from '../modules/shortcuts';
 import { dailyBriefing } from '../modules/analytics';
@@ -550,6 +550,13 @@ export function mountApp(root: HTMLElement) {
   } catch {
     orb = { setEnergy() {}, dispose() {}, startBodyDetection() {}, stopBodyDetection() {} };
   }
+
+  // When Pikachu chirps, trigger a brief energy burst in the 3D orb
+  setChirpCallback(() => {
+    orb.setEnergy(0.95);
+    setTimeout(() => orb.setEnergy(0.06), 900);
+  });
+
   mountFlowLines(root.querySelector('.app')!);
 
   function applyUILang(lang: UILang) {
@@ -2249,16 +2256,16 @@ export function mountApp(root: HTMLElement) {
     updateDriveUI();
   };
   $('driveDownloadBtn').onclick = async () => {
-    if (!confirm('This will overwrite your local data with the cloud backup. Continue?')) return;
+    if (!confirm('שים לב: פעולה זו תחליף את הנתונים המקומיים בגיבוי מהענן. להמשיך?')) return;
     const r = await driveSync.syncFromCloud(m => { $('driveStatus').textContent = m; });
-    if (!r.ok) $('driveStatus').textContent = 'Error: ' + r.error;
+    if (!r.ok) $('driveStatus').textContent = 'שגיאה: ' + r.error;
     else setTimeout(() => location.reload(), 1500);
   };
   $('localExportBtn').onclick = () => driveSync.downloadAsFile();
   $('localImportBtn').onclick = async () => {
     const r = await driveSync.uploadFromFile();
-    if (r.ok) { alert(`Restored ${r.tables} tables. Reloading…`); location.reload(); }
-    else alert('Import failed: ' + r.error);
+    if (r.ok) { alert(`שוחזרו ${r.tables} טבלאות. טוען מחדש…`); location.reload(); }
+    else alert('ייבוא נכשל: ' + r.error);
   };
 
   // ── Universal Search ──
