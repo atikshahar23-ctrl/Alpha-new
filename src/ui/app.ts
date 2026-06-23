@@ -548,7 +548,7 @@ export function mountApp(root: HTMLElement) {
   try {
     orb = mountOrb($('stage'));
   } catch {
-    orb = { setEnergy() {}, dispose() {}, startBodyDetection() {}, stopBodyDetection() {} };
+    orb = { setEnergy() {}, pikaEmote() {}, dispose() {}, startBodyDetection() {}, stopBodyDetection() {} };
   }
 
   // When Pikachu chirps, trigger a brief energy burst in the 3D orb
