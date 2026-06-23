@@ -5,14 +5,7 @@ let timer: ReturnType<typeof setTimeout> | null = null;
 
 const lines = [
   'pika pika',
-  'pikachu!',
-  'pika!',
-  'pika pika pikachu!',
-  'pikaaaa!',
-  'pika pi!',
-  'pikachu pika pika!',
-  'pika pika pika!',
-  'chuuuu!',
+  'pikachu',
 ];
 
 if (typeof speechSynthesis !== 'undefined') {

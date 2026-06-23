@@ -527,147 +527,150 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
     else rightEarGroup = earGroup;
   }
 
-  // ── Eyes ──
+  // ── Face — canvas-drawn for true anime look ──
+  const faceCanvas = document.createElement('canvas');
+  faceCanvas.width = 512;
+  faceCanvas.height = 512;
+  const fctx = faceCanvas.getContext('2d')!;
+  fctx.clearRect(0, 0, 512, 512);
+
+  const drawEllipse = (cx: number, cy: number, rx: number, ry: number, color: string) => {
+    fctx.fillStyle = color;
+    fctx.beginPath();
+    fctx.ellipse(cx, cy, rx, ry, 0, 0, PI2);
+    fctx.fill();
+  };
+
+  // Eyes — large dark ovals
+  drawEllipse(178, 225, 50, 68, '#0A0804');
+  drawEllipse(334, 225, 50, 68, '#0A0804');
+
+  // Nose — inverted triangle
+  fctx.fillStyle = '#111111';
+  fctx.beginPath();
+  fctx.moveTo(256, 292);
+  fctx.lineTo(247, 306);
+  fctx.lineTo(265, 306);
+  fctx.closePath();
+  fctx.fill();
+
+  // Lip line
+  fctx.strokeStyle = '#1A0505';
+  fctx.lineWidth = 3.5;
+  fctx.lineCap = 'round';
+  fctx.beginPath();
+  fctx.moveTo(256, 306);
+  fctx.lineTo(256, 328);
+  fctx.stroke();
+
+  // Mouth ω
+  fctx.lineWidth = 5;
+  fctx.lineJoin = 'round';
+  fctx.beginPath();
+  fctx.moveTo(192, 320);
+  fctx.quadraticCurveTo(210, 358, 249, 340);
+  fctx.quadraticCurveTo(256, 326, 263, 340);
+  fctx.quadraticCurveTo(302, 358, 320, 320);
+  fctx.stroke();
+
+  // Soft circular mask
+  fctx.globalCompositeOperation = 'destination-in';
+  const faceGrad = fctx.createRadialGradient(256, 256, 0, 256, 256, 256);
+  faceGrad.addColorStop(0, 'rgba(255,255,255,1)');
+  faceGrad.addColorStop(0.82, 'rgba(255,255,255,1)');
+  faceGrad.addColorStop(1, 'rgba(255,255,255,0)');
+  fctx.fillStyle = faceGrad;
+  fctx.fillRect(0, 0, 512, 512);
+  fctx.globalCompositeOperation = 'source-over';
+
+  const faceTexture = new THREE.CanvasTexture(faceCanvas);
+  faceTexture.colorSpace = THREE.SRGBColorSpace;
+
+  const faceDecal = new THREE.Mesh(
+    new THREE.CircleGeometry(0.64, seg(48)),
+    new THREE.MeshBasicMaterial({
+      map: faceTexture, transparent: true,
+      depthWrite: false, side: THREE.FrontSide,
+    }),
+  );
+  faceDecal.position.set(0, -0.02, 0.70);
+  headGroup.add(faceDecal);
+
+  // White eye highlights — 3D meshes for eye tracking animation
   let leftEyelid!: THREE.Mesh;
   let rightEyelid!: THREE.Mesh;
   let leftPupil!: THREE.Mesh;
   let rightPupil!: THREE.Mesh;
   let leftEye!: THREE.Mesh;
   let rightEye!: THREE.Mesh;
-  const eyeBlackMat = new THREE.MeshBasicMaterial({ color: 0x080604 });
   const eyeWhiteMat = new THREE.MeshBasicMaterial({ color: 0xFFFFFF });
 
   for (const sx of [-1, 1]) {
-    // Large dark oval eyes — anime Pikachu's defining feature
-    const eyeDark = new THREE.Mesh(
-      new THREE.SphereGeometry(0.22, seg(28), seg(28)),
-      eyeBlackMat,
-    );
-    eyeDark.scale.set(0.85, 1.15, 0.48);
-    eyeDark.position.set(sx * 0.3, 0.02, 0.58);
-    headGroup.add(eyeDark);
-    if (sx === -1) leftEye = eyeDark;
-    else rightEye = eyeDark;
-
-    const pupil = new THREE.Mesh(
-      new THREE.SphereGeometry(0.14, seg(24), seg(24)),
-      eyeBlackMat,
-    );
-    pupil.scale.set(0.85, 1.1, 0.42);
-    pupil.position.set(sx * 0.3, 0.0, 0.62);
-    headGroup.add(pupil);
-    if (sx === -1) leftPupil = pupil;
-    else rightPupil = pupil;
-
-    // Large white highlight — upper inner area
     const hl1 = new THREE.Mesh(
-      new THREE.SphereGeometry(0.075, seg(14), seg(14)),
+      new THREE.CircleGeometry(0.055, seg(16)),
       eyeWhiteMat,
     );
-    hl1.position.set(sx * 0.3 + sx * 0.04, 0.1, 0.72);
+    hl1.position.set(sx * 0.19 + sx * 0.035, 0.05, 0.72);
     headGroup.add(hl1);
+    if (sx === -1) leftEye = hl1;
+    else rightEye = hl1;
 
-    // Small white highlight — lower outer area
     const hl2 = new THREE.Mesh(
-      new THREE.SphereGeometry(0.04, seg(10), seg(10)),
+      new THREE.CircleGeometry(0.03, seg(12)),
       eyeWhiteMat,
     );
-    hl2.position.set(sx * 0.3 - sx * 0.035, -0.06, 0.72);
+    hl2.position.set(sx * 0.19 - sx * 0.025, -0.05, 0.72);
     headGroup.add(hl2);
+    if (sx === -1) leftPupil = hl2;
+    else rightPupil = hl2;
 
     const eyelid = new THREE.Mesh(
-      new THREE.SphereGeometry(0.25, seg(24), seg(12), 0, PI2, 0, PI * 0.5),
+      new THREE.SphereGeometry(0.22, seg(24), seg(12), 0, PI2, 0, PI * 0.5),
       yellowBasic,
     );
-    eyelid.scale.set(0.88, 0.01, 0.5);
-    eyelid.position.set(sx * 0.3, 0.18, 0.58);
+    eyelid.scale.set(0.85, 0.01, 0.45);
+    eyelid.position.set(sx * 0.19, 0.14, 0.69);
     eyelid.rotation.x = -0.08;
     headGroup.add(eyelid);
     if (sx === -1) leftEyelid = eyelid;
     else rightEyelid = eyelid;
   }
 
-  // ── Nose — tiny black triangle between the eyes ──
-  const noseMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
-  const nose = new THREE.Mesh(
-    new THREE.ConeGeometry(0.032, 0.028, seg(3)),
-    noseMat,
-  );
-  nose.rotation.x = PI / 2;
-  nose.rotation.z = PI;
-  nose.position.set(0, -0.1, 0.66);
-  headGroup.add(nose);
-
-  // ── Mouth ──
-  const mouthLineMat = new THREE.MeshBasicMaterial({ color: 0x1A0505 });
-
-  // ω mouth — left arc
+  // Mouth ref for animation
   const mouthMesh = new THREE.Mesh(
-    new THREE.TorusGeometry(0.065, 0.022, seg(12), seg(24), PI * 0.85),
-    mouthLineMat,
+    new THREE.SphereGeometry(0.001, 4, 4),
+    new THREE.MeshBasicMaterial({ visible: false }),
   );
-  mouthMesh.position.set(-0.04, -0.19, 0.63);
-  mouthMesh.rotation.z = PI;
-  mouthMesh.rotation.x = 0.05;
+  mouthMesh.position.set(0, -0.18, 0.70);
   headGroup.add(mouthMesh);
 
-  // ω mouth — right arc
-  const mouthR = new THREE.Mesh(
-    new THREE.TorusGeometry(0.065, 0.022, seg(12), seg(24), PI * 0.85),
-    mouthLineMat,
-  );
-  mouthR.position.set(0.04, -0.19, 0.63);
-  mouthR.rotation.z = PI;
-  mouthR.rotation.x = 0.05;
-  headGroup.add(mouthR);
-
-  // Smile corners
-  for (const sx of [-1, 1]) {
-    const smile = new THREE.Mesh(
-      new THREE.TorusGeometry(0.03, 0.018, seg(8), seg(12), PI * 0.5),
-      mouthLineMat,
-    );
-    smile.position.set(sx * 0.1, -0.15, 0.64);
-    smile.rotation.z = sx === -1 ? PI * 0.15 : PI * 0.85;
-    smile.rotation.x = 0.04;
-    headGroup.add(smile);
-  }
-
-  // Lip line from nose to mouth
-  const lipLine = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.009, 0.04, seg(4), seg(6)),
-    mouthLineMat,
-  );
-  lipLine.position.set(0, -0.14, 0.65);
-  headGroup.add(lipLine);
-
+  // Tongue
   const tongueMat = new THREE.MeshBasicMaterial({ color: 0xF06080 });
   const tongue = new THREE.Mesh(
-    new THREE.SphereGeometry(0.035, seg(10), seg(10)),
+    new THREE.SphereGeometry(0.03, seg(10), seg(10)),
     tongueMat,
   );
   tongue.scale.set(1.2, 0.5, 0.7);
-  tongue.position.set(0, -0.19, 0.58);
+  tongue.position.set(0, -0.2, 0.68);
   headGroup.add(tongue);
 
-  // ── Red Cheeks — bright red circles, Pikachu's signature ──
-  const cheekBasicRed = new THREE.MeshBasicMaterial({ color: 0xE53935 });
+  // Red cheeks — 3D for pulse animation
   const cheekMatL = new THREE.MeshPhysicalMaterial({
     color: 0xE53935, roughness: 0.5, emissive: 0xE53935, emissiveIntensity: 0.3,
   });
   const cheekMatR = new THREE.MeshPhysicalMaterial({
     color: 0xE53935, roughness: 0.5, emissive: 0xE53935, emissiveIntensity: 0.3,
   });
-  const cheekGeo = new THREE.SphereGeometry(0.18, seg(24), seg(24));
+  const cheekGeo = new THREE.CircleGeometry(0.14, seg(24));
 
   const cheekL = new THREE.Mesh(cheekGeo, cheekMatL);
-  cheekL.scale.set(1.1, 1.0, 0.45);
-  cheekL.position.set(-0.52, -0.1, 0.4);
+  cheekL.scale.set(1.15, 1.0, 1.0);
+  cheekL.position.set(-0.46, -0.1, 0.71);
   headGroup.add(cheekL);
 
   const cheekR = new THREE.Mesh(cheekGeo, cheekMatR);
-  cheekR.scale.set(1.1, 1.0, 0.45);
-  cheekR.position.set(0.52, -0.1, 0.4);
+  cheekR.scale.set(1.15, 1.0, 1.0);
+  cheekR.position.set(0.46, -0.1, 0.71);
   headGroup.add(cheekR);
 
   headGroup.position.set(0, 0.55, 0.0);
