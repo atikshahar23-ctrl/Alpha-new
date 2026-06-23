@@ -372,13 +372,13 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   body.position.set(0, -0.32, 0);
   group.add(body);
 
-  // Cream belly patch on the front
+  // Cream belly patch on the front — wider, slightly larger for iconic Pikachu look
   const belly = new THREE.Mesh(
-    new THREE.SphereGeometry(0.48, seg(32), seg(32)),
+    new THREE.SphereGeometry(0.52, seg(32), seg(32)),
     mCream,
   );
-  belly.scale.set(0.82, 0.8, 0.35);
-  belly.position.set(0, -0.3, 0.35);
+  belly.scale.set(0.88, 0.85, 0.32);
+  belly.position.set(0, -0.28, 0.38);
   group.add(belly);
 
   // Lower body — wider at the bottom for a pear/egg silhouette
@@ -399,15 +399,16 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   shoulders.position.set(0, 0.2, 0.0);
   group.add(shoulders);
 
-  // Back stripes
-  for (const sy of [0.0, -0.2]) {
+  // Back stripes — two horizontal brown bands across the back
+  for (const [sy, width, offset] of [[0.02, 0.60, 0], [-0.22, 0.52, 0.01]] as [number, number, number][]) {
     const stripe = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.04, 0.55, seg(4), seg(10)),
+      new THREE.CapsuleGeometry(0.048, width, seg(6), seg(12)),
       mBrown,
     );
     stripe.rotation.z = PI / 2;
-    stripe.position.set(0, -0.15 + sy, -0.58);
-    stripe.rotation.x = 0.15;
+    stripe.position.set(offset, -0.18 + sy, -0.56);
+    stripe.rotation.x = 0.14;
+    stripe.scale.set(1.0, 1.0, 0.62);
     group.add(stripe);
   }
 

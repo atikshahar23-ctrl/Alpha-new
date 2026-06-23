@@ -571,6 +571,21 @@ function Analytics({ index, onBack }) {
   }, [index]);
   const trend = useMemo(() => months.filter((m) => m.key !== "0000-00").slice().sort((a, b) => a.key.localeCompare(b.key)).map((m) => ({ label: m.label, short: (m.label.split(" ")[0] || "").slice(0, 3), revenue: m.revenue, count: m.count })), [months]);
 
+  const weekComparison = useMemo(() => {
+    const now = new Date();
+    const startOfWeek = (d) => { const dt = new Date(d); dt.setDate(dt.getDate() - dt.getDay()); dt.setHours(0,0,0,0); return dt; };
+    const thisWeekStart = startOfWeek(now).toISOString().slice(0, 10);
+    const lastWeekStart = new Date(startOfWeek(now).getTime() - 7 * 86400000).toISOString().slice(0, 10);
+    const thisWeekEnd = new Date(startOfWeek(now).getTime() + 7 * 86400000 - 1).toISOString().slice(0, 10);
+    const thisWeek = data.filter((x) => x.date >= thisWeekStart && x.date <= thisWeekEnd);
+    const lastWeek = data.filter((x) => x.date >= lastWeekStart && x.date < thisWeekStart);
+    const twRev = thisWeek.reduce((s, x) => s + (Number(x.price) || 0), 0);
+    const lwRev = lastWeek.reduce((s, x) => s + (Number(x.price) || 0), 0);
+    const revDelta = lwRev ? Math.round((twRev - lwRev) / lwRev * 100) : null;
+    const cntDelta = lastWeek.length ? Math.round((thisWeek.length - lastWeek.length) / lastWeek.length * 100) : null;
+    return { twRev, lwRev, twCount: thisWeek.length, lwCount: lastWeek.length, revDelta, cntDelta };
+  }, [data]);
+
   const valOf = (o) => metric === "revenue" ? o.revenue : o.count;
   const fmtMetric = (v) => metric === "revenue" ? ils(Math.round(v)) : Math.round(v) + "";
 
@@ -596,6 +611,39 @@ function Analytics({ index, onBack }) {
         <div className="hg2-kpi"><span>זמן ממוצע</span><b>{overall.avgDur ? fmtDur(overall.avgDur) : "—"}</b></div>
         <div className="hg2-kpi"><span>עם איתי</span><b><CountUp value={overall.withItai} /></b></div>
       </div>
+
+      {(weekComparison.twCount > 0 || weekComparison.lwCount > 0) && (
+        <div className="hg2-weekcmp">
+          <div className="hg2-weekcmp-ttl"><TrendingUp size={14} /> השבוע מול השבוע שעבר</div>
+          <div className="hg2-weekcmp-cols">
+            <div className="hg2-weekcmp-col">
+              <span>הכנסות השבוע</span>
+              <b>{ils(weekComparison.twRev)}</b>
+              {weekComparison.revDelta !== null && (
+                <em className={weekComparison.revDelta >= 0 ? "pos" : "neg"}>
+                  {weekComparison.revDelta >= 0 ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
+                  {Math.abs(weekComparison.revDelta)}% מהשבוע שעבר
+                </em>
+              )}
+            </div>
+            <div className="hg2-weekcmp-col">
+              <span>התקנות השבוע</span>
+              <b>{weekComparison.twCount}</b>
+              {weekComparison.cntDelta !== null && (
+                <em className={weekComparison.cntDelta >= 0 ? "pos" : "neg"}>
+                  {weekComparison.cntDelta >= 0 ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
+                  {Math.abs(weekComparison.cntDelta)}% שינוי
+                </em>
+              )}
+            </div>
+            <div className="hg2-weekcmp-col dim">
+              <span>שבוע שעבר</span>
+              <b>{ils(weekComparison.lwRev)}</b>
+              <em>{weekComparison.lwCount} עבודות</em>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="hg2-analysec">
         <div className="hg2-analyhead"><TrendingUp size={15} /> מגמה חודשית
@@ -2669,6 +2717,20 @@ function Styles() {
 .hg2-rstop.base .hg2-rdot{background:var(--cyan)}
 .hg2-rstop>div{order:3}
 .hg2-rleg{order:1;font-size:11px;color:var(--s4);background:var(--s8);border:1px solid var(--s7);border-radius:20px;padding:3px 9px;white-space:nowrap;flex-shrink:0}
+
+/* week comparison */
+.hg2-weekcmp{background:var(--s9);border:1px solid var(--s7);border-radius:14px;padding:14px 15px;margin-bottom:14px}
+.hg2-weekcmp-ttl{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--s4);font-weight:700;margin-bottom:12px}
+.hg2-weekcmp-ttl svg{color:var(--amber)}
+.hg2-weekcmp-cols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.hg2-weekcmp-col{display:flex;flex-direction:column;gap:3px}
+.hg2-weekcmp-col span{font-size:11px;color:var(--s4)}
+.hg2-weekcmp-col b{font-family:'Rubik';font-weight:900;font-size:16px;color:var(--silver)}
+.hg2-weekcmp-col.dim b{color:var(--s4)}
+.hg2-weekcmp-col em{font-style:normal;font-size:10.5px;display:flex;align-items:center;gap:3px;font-weight:700}
+.hg2-weekcmp-col em.pos{color:var(--ok)}
+.hg2-weekcmp-col em.neg{color:var(--red)}
+.hg2-weekcmp-col em.dim,.hg2-weekcmp-col.dim em{color:var(--s4);font-weight:400}
 
 /* hub today tasks */
 .hg2-today-tasks{background:linear-gradient(135deg,rgba(111,211,240,.06),var(--s9) 70%);border:1px solid rgba(111,211,240,.22);border-radius:14px;padding:14px 15px;margin-bottom:18px}
