@@ -473,43 +473,71 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
     fctx.fill();
   };
 
-  // Eyes — large dark ovals
-  drawEllipse(178, 225, 50, 68, '#0A0804');
-  drawEllipse(334, 225, 50, 68, '#0A0804');
-
-  // Nose — inverted triangle
-  fctx.fillStyle = '#111111';
+  // Eyes — large dark ovals with slight inward tilt
+  fctx.save();
+  fctx.translate(178, 218);
+  fctx.rotate(0.08);
+  fctx.fillStyle = '#0A0804';
   fctx.beginPath();
-  fctx.moveTo(256, 292);
-  fctx.lineTo(247, 306);
-  fctx.lineTo(265, 306);
+  fctx.ellipse(0, 0, 46, 62, 0, 0, PI2);
+  fctx.fill();
+  fctx.restore();
+
+  fctx.save();
+  fctx.translate(334, 218);
+  fctx.rotate(-0.08);
+  fctx.fillStyle = '#0A0804';
+  fctx.beginPath();
+  fctx.ellipse(0, 0, 46, 62, 0, 0, PI2);
+  fctx.fill();
+  fctx.restore();
+
+  // Eye highlights — large white circle upper-right + small lower-left (anime style)
+  drawEllipse(196, 196, 18, 22, '#FFFFFF');
+  drawEllipse(350, 196, 18, 22, '#FFFFFF');
+  drawEllipse(166, 232, 9, 11, '#FFFFFF');
+  drawEllipse(318, 232, 9, 11, '#FFFFFF');
+
+  // Red cheeks (drawn on canvas for smooth blending)
+  const drawCheek = (cx: number, cy: number) => {
+    const grad = fctx.createRadialGradient(cx, cy, 0, cx, cy, 52);
+    grad.addColorStop(0, 'rgba(229, 57, 53, 0.85)');
+    grad.addColorStop(0.6, 'rgba(229, 57, 53, 0.4)');
+    grad.addColorStop(1, 'rgba(229, 57, 53, 0)');
+    fctx.fillStyle = grad;
+    fctx.beginPath();
+    fctx.ellipse(cx, cy, 56, 48, 0, 0, PI2);
+    fctx.fill();
+  };
+  drawCheek(108, 298);
+  drawCheek(404, 298);
+
+  // Nose — small inverted triangle
+  fctx.fillStyle = '#1A1008';
+  fctx.beginPath();
+  fctx.moveTo(256, 286);
+  fctx.lineTo(249, 298);
+  fctx.lineTo(263, 298);
   fctx.closePath();
   fctx.fill();
 
-  // Lip line
+  // Mouth — ω shape
   fctx.strokeStyle = '#1A0505';
-  fctx.lineWidth = 3.5;
+  fctx.lineWidth = 4;
   fctx.lineCap = 'round';
-  fctx.beginPath();
-  fctx.moveTo(256, 306);
-  fctx.lineTo(256, 328);
-  fctx.stroke();
-
-  // Mouth ω
-  fctx.lineWidth = 5;
   fctx.lineJoin = 'round';
   fctx.beginPath();
-  fctx.moveTo(192, 320);
-  fctx.quadraticCurveTo(210, 358, 249, 340);
-  fctx.quadraticCurveTo(256, 326, 263, 340);
-  fctx.quadraticCurveTo(302, 358, 320, 320);
+  fctx.moveTo(198, 314);
+  fctx.quadraticCurveTo(215, 348, 249, 332);
+  fctx.quadraticCurveTo(256, 318, 263, 332);
+  fctx.quadraticCurveTo(297, 348, 314, 314);
   fctx.stroke();
 
   // Soft circular mask
   fctx.globalCompositeOperation = 'destination-in';
   const faceGrad = fctx.createRadialGradient(256, 256, 0, 256, 256, 256);
   faceGrad.addColorStop(0, 'rgba(255,255,255,1)');
-  faceGrad.addColorStop(0.82, 'rgba(255,255,255,1)');
+  faceGrad.addColorStop(0.85, 'rgba(255,255,255,1)');
   faceGrad.addColorStop(1, 'rgba(255,255,255,0)');
   fctx.fillStyle = faceGrad;
   fctx.fillRect(0, 0, 512, 512);
@@ -519,42 +547,36 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   faceTexture.colorSpace = THREE.SRGBColorSpace;
 
   const faceDecal = new THREE.Mesh(
-    new THREE.CircleGeometry(0.64, seg(48)),
+    new THREE.CircleGeometry(0.66, seg(48)),
     new THREE.MeshBasicMaterial({
       map: faceTexture, transparent: true,
       depthWrite: false, side: THREE.FrontSide,
     }),
   );
-  faceDecal.position.set(0, -0.02, 0.70);
+  faceDecal.position.set(0, -0.02, 0.68);
   headGroup.add(faceDecal);
 
-  // White eye highlights — 3D meshes for eye tracking animation
+  // Invisible eye tracking references (visuals are on canvas)
   let leftEyelid!: THREE.Mesh;
   let rightEyelid!: THREE.Mesh;
   let leftPupil!: THREE.Mesh;
   let rightPupil!: THREE.Mesh;
   let leftEye!: THREE.Mesh;
   let rightEye!: THREE.Mesh;
-  const eyeWhiteMat = new THREE.MeshBasicMaterial({ color: 0xFFFFFF });
+  const invisMat = new THREE.MeshBasicMaterial({ visible: false });
 
   for (const sx of [-1, 1]) {
-    const hl1 = new THREE.Mesh(
-      new THREE.CircleGeometry(0.055, seg(16)),
-      eyeWhiteMat,
-    );
-    hl1.position.set(sx * 0.19 + sx * 0.035, 0.05, 0.72);
-    headGroup.add(hl1);
-    if (sx === -1) leftEye = hl1;
-    else rightEye = hl1;
+    const eyeRef = new THREE.Mesh(new THREE.SphereGeometry(0.001, 4, 4), invisMat);
+    eyeRef.position.set(sx * 0.19, 0.02, 0.72);
+    headGroup.add(eyeRef);
+    if (sx === -1) leftEye = eyeRef;
+    else rightEye = eyeRef;
 
-    const hl2 = new THREE.Mesh(
-      new THREE.CircleGeometry(0.03, seg(12)),
-      eyeWhiteMat,
-    );
-    hl2.position.set(sx * 0.19 - sx * 0.025, -0.05, 0.72);
-    headGroup.add(hl2);
-    if (sx === -1) leftPupil = hl2;
-    else rightPupil = hl2;
+    const pupilRef = new THREE.Mesh(new THREE.SphereGeometry(0.001, 4, 4), invisMat);
+    pupilRef.position.set(sx * 0.19, -0.04, 0.72);
+    headGroup.add(pupilRef);
+    if (sx === -1) leftPupil = pupilRef;
+    else rightPupil = pupilRef;
 
     const eyelid = new THREE.Mesh(
       new THREE.SphereGeometry(0.22, seg(24), seg(12), 0, PI2, 0, PI * 0.5),
@@ -586,23 +608,23 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   tongue.position.set(0, -0.2, 0.68);
   headGroup.add(tongue);
 
-  // Red cheeks — 3D for pulse animation
+  // Cheek glow overlays (subtle additive glow over the canvas cheeks)
   const cheekMatL = new THREE.MeshPhysicalMaterial({
     color: 0xE53935, roughness: 0.5, emissive: 0xE53935, emissiveIntensity: 0.3,
+    transparent: true, opacity: 0.15, depthWrite: false,
   });
   const cheekMatR = new THREE.MeshPhysicalMaterial({
     color: 0xE53935, roughness: 0.5, emissive: 0xE53935, emissiveIntensity: 0.3,
+    transparent: true, opacity: 0.15, depthWrite: false,
   });
-  const cheekGeo = new THREE.CircleGeometry(0.14, seg(24));
+  const cheekGeo = new THREE.CircleGeometry(0.12, seg(24));
 
   const cheekL = new THREE.Mesh(cheekGeo, cheekMatL);
-  cheekL.scale.set(1.15, 1.0, 1.0);
-  cheekL.position.set(-0.46, -0.1, 0.71);
+  cheekL.position.set(-0.44, -0.1, 0.70);
   headGroup.add(cheekL);
 
   const cheekR = new THREE.Mesh(cheekGeo, cheekMatR);
-  cheekR.scale.set(1.15, 1.0, 1.0);
-  cheekR.position.set(0.46, -0.1, 0.71);
+  cheekR.position.set(0.44, -0.1, 0.70);
   headGroup.add(cheekR);
 
   headGroup.position.set(0, 0.55, 0.0);
