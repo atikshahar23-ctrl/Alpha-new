@@ -412,7 +412,9 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   const brownBasic = new THREE.MeshBasicMaterial({ color: 0x5D4037 });
   const blackBasic = new THREE.MeshBasicMaterial({ color: 0x111111 });
 
-  // ── Body — round and chubby, wider than tall ──
+  const creamBasic = new THREE.MeshBasicMaterial({ color: 0xFFF8DC });
+
+  // ── Body — round chubby torso ──
   const body = new THREE.Mesh(
     new THREE.SphereGeometry(0.68, seg(48), seg(48)),
     yellowBasic,
@@ -420,6 +422,24 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   body.scale.set(1.1, 1.0, 0.88);
   body.position.set(0, -0.32, 0);
   group.add(body);
+
+  // Cream belly patch on the front
+  const belly = new THREE.Mesh(
+    new THREE.SphereGeometry(0.48, seg(32), seg(32)),
+    creamBasic,
+  );
+  belly.scale.set(0.82, 0.8, 0.35);
+  belly.position.set(0, -0.3, 0.35);
+  group.add(belly);
+
+  // Lower body roundness
+  const hips = new THREE.Mesh(
+    new THREE.SphereGeometry(0.5, seg(24), seg(24)),
+    yellowBasic,
+  );
+  hips.scale.set(1.1, 0.5, 0.85);
+  hips.position.set(0, -0.7, 0.0);
+  group.add(hips);
 
   const shoulders = new THREE.Mesh(
     new THREE.SphereGeometry(0.45, seg(32), seg(32)),
@@ -429,13 +449,14 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   shoulders.position.set(0, 0.18, 0.0);
   group.add(shoulders);
 
+  // Back stripes
   for (const sy of [0.0, -0.2]) {
     const stripe = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.035, 0.5, seg(4), seg(10)),
+      new THREE.CapsuleGeometry(0.04, 0.55, seg(4), seg(10)),
       brownBasic,
     );
     stripe.rotation.z = PI / 2;
-    stripe.position.set(0, -0.15 + sy, -0.6);
+    stripe.position.set(0, -0.15 + sy, -0.58);
     stripe.rotation.x = 0.15;
     group.add(stripe);
   }
@@ -629,23 +650,24 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   tongue.position.set(0, -0.19, 0.58);
   headGroup.add(tongue);
 
-  // ── Red Cheeks ──
+  // ── Red Cheeks — bright red circles, Pikachu's signature ──
+  const cheekBasicRed = new THREE.MeshBasicMaterial({ color: 0xE53935 });
   const cheekMatL = new THREE.MeshPhysicalMaterial({
-    color: 0xE53935, roughness: 0.5, emissive: 0xCC2020, emissiveIntensity: 0.2,
+    color: 0xE53935, roughness: 0.5, emissive: 0xE53935, emissiveIntensity: 0.3,
   });
   const cheekMatR = new THREE.MeshPhysicalMaterial({
-    color: 0xE53935, roughness: 0.5, emissive: 0xCC2020, emissiveIntensity: 0.2,
+    color: 0xE53935, roughness: 0.5, emissive: 0xE53935, emissiveIntensity: 0.3,
   });
-  const cheekGeo = new THREE.SphereGeometry(0.19, seg(24), seg(24));
+  const cheekGeo = new THREE.SphereGeometry(0.18, seg(24), seg(24));
 
   const cheekL = new THREE.Mesh(cheekGeo, cheekMatL);
-  cheekL.scale.set(1.05, 1.0, 0.42);
-  cheekL.position.set(-0.5, -0.1, 0.42);
+  cheekL.scale.set(1.1, 1.0, 0.45);
+  cheekL.position.set(-0.52, -0.1, 0.4);
   headGroup.add(cheekL);
 
   const cheekR = new THREE.Mesh(cheekGeo, cheekMatR);
-  cheekR.scale.set(1.05, 1.0, 0.42);
-  cheekR.position.set(0.5, -0.1, 0.42);
+  cheekR.scale.set(1.1, 1.0, 0.45);
+  cheekR.position.set(0.52, -0.1, 0.4);
   headGroup.add(cheekR);
 
   headGroup.position.set(0, 0.55, 0.0);
@@ -684,15 +706,30 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
     }
   }
 
-  // ── Feet ──
-  const footGeo = new THREE.CapsuleGeometry(0.17, 0.18, seg(10), seg(14));
+  // ── Feet — big flat ovals with toes ──
+  const footGeo = new THREE.CapsuleGeometry(0.18, 0.2, seg(10), seg(14));
   for (const sx of [-1, 1]) {
     const foot = new THREE.Mesh(footGeo, yellowBasic);
     foot.rotation.x = PI / 2;
     foot.rotation.z = sx * 0.08;
-    foot.position.set(sx * 0.32, -0.95, 0.24);
-    foot.scale.set(1.0, 1.0, 0.8);
+    foot.position.set(sx * 0.32, -0.95, 0.26);
+    foot.scale.set(1.05, 1.0, 0.78);
     group.add(foot);
+
+    // Three toes
+    for (let ti = 0; ti < 3; ti++) {
+      const toe = new THREE.Mesh(
+        new THREE.SphereGeometry(0.04, seg(8), seg(8)),
+        yellowBasic,
+      );
+      toe.position.set(
+        sx * 0.32 + (ti - 1) * 0.06,
+        -1.05,
+        0.42,
+      );
+      toe.scale.set(0.85, 0.55, 1.1);
+      group.add(toe);
+    }
   }
 
   const shadowMat = new THREE.MeshBasicMaterial({
