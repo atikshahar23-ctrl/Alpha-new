@@ -364,21 +364,22 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   belly.position.set(0, -0.3, 0.35);
   group.add(belly);
 
-  // Lower body roundness
+  // Lower body — wider at the bottom for a pear/egg silhouette
   const hips = new THREE.Mesh(
     new THREE.SphereGeometry(0.5, seg(24), seg(24)),
     yellowBasic,
   );
-  hips.scale.set(1.1, 0.5, 0.85);
-  hips.position.set(0, -0.7, 0.0);
+  hips.scale.set(1.22, 0.62, 0.98);
+  hips.position.set(0, -0.66, 0.0);
   group.add(hips);
 
+  // Shoulders — narrower at the top so the body tapers up toward the head
   const shoulders = new THREE.Mesh(
     new THREE.SphereGeometry(0.45, seg(32), seg(32)),
     yellowBasic,
   );
-  shoulders.scale.set(1.1, 0.55, 0.88);
-  shoulders.position.set(0, 0.18, 0.0);
+  shoulders.scale.set(0.92, 0.5, 0.78);
+  shoulders.position.set(0, 0.2, 0.0);
   group.add(shoulders);
 
   // Back stripes
@@ -451,9 +452,9 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
     earBlackTip.scale.set(0.75, 1.0, 0.42);
     earGroup.add(earBlackTip);
 
-    earGroup.position.set(sx * 0.42, 0.5, -0.06);
-    earGroup.rotation.z = sx * 0.55;
-    earGroup.rotation.x = -0.1;
+    earGroup.position.set(sx * 0.44, 0.46, -0.06);
+    earGroup.rotation.z = sx * 0.72;
+    earGroup.rotation.x = -0.12;
     headGroup.add(earGroup);
     if (sx === -1) leftEarGroup = earGroup;
     else rightEarGroup = earGroup;
@@ -629,7 +630,7 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   cheekR.position.set(0.44, -0.1, 0.70);
   headGroup.add(cheekR);
 
-  headGroup.position.set(0, 0.55, 0.0);
+  headGroup.position.set(0, 0.48, 0.04);
   group.add(headGroup);
 
   // ── Arms ──
@@ -997,53 +998,46 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   // ────────────────────────────────────────────
   // ORBITAL RINGS — gold halo, champagne, rose
   // ────────────────────────────────────────────
-  // Primary gold halo — subtle ring
+  // Orbital rings — HIDDEN so Pikachu reads as a clean character (no saturn look)
   const goldRGeo = new THREE.TorusGeometry(1.85, 0.035, 28, 220);
   const goldRMat = new THREE.MeshBasicMaterial({
-    color: 0xdaa520, transparent: true, opacity: 0.45, depthWrite: false,
+    color: 0xdaa520, transparent: true, opacity: 0, depthWrite: false,
   });
   const goldRing = new THREE.Mesh(goldRGeo, goldRMat);
-  goldRing.rotation.x = PI * 0.5;
-  goldRing.rotation.z = 0.15;
+  goldRing.visible = false;
   group.add(goldRing);
 
-  // Glow ring behind the primary halo
   const haloGlowGeo = new THREE.TorusGeometry(1.85, 0.1, 24, 200);
   const haloGlowMat = new THREE.MeshBasicMaterial({
-    color: 0xdaa520, transparent: true, opacity: 0.06, depthWrite: false,
+    color: 0xdaa520, transparent: true, opacity: 0, depthWrite: false,
     blending: THREE.AdditiveBlending,
   });
   const haloGlow = new THREE.Mesh(haloGlowGeo, haloGlowMat);
-  haloGlow.rotation.x = PI * 0.5;
-  haloGlow.rotation.z = 0.15;
+  haloGlow.visible = false;
   group.add(haloGlow);
 
   const cyanRGeo = new THREE.TorusGeometry(1.35, 0.012, 16, 160);
   const cyanRMat = new THREE.MeshBasicMaterial({
-    color: 0xf5e6c8, transparent: true, opacity: 0.2, depthWrite: false,
+    color: 0xf5e6c8, transparent: true, opacity: 0, depthWrite: false,
   });
   const cyanRing = new THREE.Mesh(cyanRGeo, cyanRMat);
-  cyanRing.rotation.x = PI * 0.38;
-  cyanRing.rotation.z = -0.3;
+  cyanRing.visible = false;
   group.add(cyanRing);
 
   const purpRGeo = new THREE.TorusGeometry(1.6, 0.01, 12, 140);
   const purpRMat = new THREE.MeshBasicMaterial({
-    color: 0xc8956a, transparent: true, opacity: 0.25, depthWrite: false,
+    color: 0xc8956a, transparent: true, opacity: 0, depthWrite: false,
   });
   const purpRing = new THREE.Mesh(purpRGeo, purpRMat);
-  purpRing.rotation.x = PI * 0.62;
-  purpRing.rotation.z = 0.5;
+  purpRing.visible = false;
   group.add(purpRing);
 
-  // ── 4th ring — thin bright gold accent ──
   const accentRGeo = new THREE.TorusGeometry(1.1, 0.008, 10, 120);
   const accentRMat = new THREE.MeshBasicMaterial({
-    color: 0xffd700, transparent: true, opacity: 0.35, depthWrite: false,
+    color: 0xffd700, transparent: true, opacity: 0, depthWrite: false,
   });
   const accentRing = new THREE.Mesh(accentRGeo, accentRMat);
-  accentRing.rotation.x = PI * 0.72;
-  accentRing.rotation.z = -0.8;
+  accentRing.visible = false;
   group.add(accentRing);
 
   // ────────────────────────────────────────────
@@ -1120,6 +1114,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     const nd = new THREE.Mesh(nGeo, nMat);
     const yy = (Math.random() - 0.5) * 0.8;
     nd.position.set(Math.cos(angle) * r, yy, Math.sin(angle) * r);
+    nd.visible = false;
     group.add(nd);
     nodeMeshes.push(nd);
     nodeOrbs.push({ angle, r, speed: 0.02 + Math.random() * 0.04, y: yy });
@@ -1130,6 +1125,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     });
     const ng = new THREE.Sprite(ngMat);
     ng.scale.setScalar(0.25);
+    ng.visible = false;
     group.add(ng);
     nodeGlows.push(ng);
 
@@ -1139,6 +1135,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
       color: nColors[i], transparent: true, opacity: 0.1, depthWrite: false,
     });
     const line = new THREE.Line(lGeo, lMat);
+    line.visible = false;
     group.add(line);
     nodeLines.push({ geo: lGeo });
   }
@@ -1231,7 +1228,11 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
       pika.head.rotation.z = Math.sin(time * 0.3) * 0.05 + curiousTilt;
       pika.head.rotation.x = Math.sin(time * 0.25) * 0.04 + (curiousTilt > 0 ? -0.03 : 0);
     }
-    const sparkBurst = Math.max(0, Math.sin(time * 6.0)) > 0.92 ? 0.5 : 0;
+    // Periodic electric ZAP — strong lightning burst every ~5s
+    const zapCycle = time % 5.0;
+    const zapActive = zapCycle > 4.2;
+    const zapStrength = zapActive ? Math.sin((zapCycle - 4.2) / 0.8 * PI) : 0;
+    const sparkBurst = zapStrength > 0.25 ? 0.5 : 0;
     // Heartbeat cheek glow — "lub-dub" rhythm
     const hbPhase = (time * 1.2) % PI2;
     const lub = Math.max(0, Math.sin(hbPhase * 2.0)) > 0.85 ? 0.25 : 0;
@@ -1270,13 +1271,15 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     const earTwitchR = Math.sin(time * 2.5 + 0.6) * 0.05 + (Math.sin(time * 8.1 + 1.0) > 0.95 ? 0.12 : 0) + earPerk;
     if (pika.leftEarGroup) pika.leftEarGroup.rotation.x = -0.12 + earTwitchL;
     if (pika.rightEarGroup) pika.rightEarGroup.rotation.x = -0.12 + earTwitchR;
-    // Electric sparks — random flash pattern with bursts
+    // Electric sparks — subtle idle crackle + strong flicker during the ZAP
     for (let si = 0; si < pika.sparkMats.length; si++) {
-      const phase = Math.sin(time * 8.0 + si * 2.7) * Math.sin(time * 3.1 + si * 1.3);
-      const burstBoost = sparkBurst > 0 ? 0.3 : 0;
-      pika.sparkMats[si].opacity = phase > 0.5 ? (0.15 + phase * 0.25 + burstBoost) * (0.5 + amp * 0.2) : 0;
+      const idlePhase = Math.sin(time * 8.0 + si * 2.7) * Math.sin(time * 3.1 + si * 1.3);
+      const idle = idlePhase > 0.85 ? 0.12 : 0;
+      const flicker = Math.sin(time * 45 + si * 2.7) * 0.5 + 0.5;
+      pika.sparkMats[si].opacity = Math.max(idle, zapStrength * (0.55 + flicker * 0.45));
     }
-    pika.sparks.rotation.y = time * 0.35;
+    // Sparks spin fast during a zap for a crackling feel
+    pika.sparks.rotation.y += dt * (0.35 + zapStrength * 6.0);
     // Eye tracking — pupils occasionally look toward viewer, drift around
     const viewerLook = Math.sin(time * 0.08) > 0.7 ? 0.01 : 0;
     const lookX = Math.sin(time * 0.18) * 0.015 + viewerLook;
@@ -1291,8 +1294,8 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
       const mouthOpen = hopActive ? 0.03 : 0;
       pika.mouthMesh.position.y = -0.12 - mouthOpen;
     }
-    // Electricity aura — pulses during spark bursts
-    pika.auraMat.opacity = sparkBurst > 0 ? 0.02 + Math.sin(time * 12) * 0.01 : 0;
+    // Electricity aura — flares with the zap
+    pika.auraMat.opacity = zapStrength * (0.12 + Math.sin(time * 30) * 0.04);
     // Randomize spark rotations for more dynamic feel
     if (sparkBurst > 0) {
       for (let si = 0; si < Math.min(pika.sparkMeshes.length, 6); si++) {
@@ -1363,7 +1366,8 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
 
     group.position.y = Math.sin(time * 0.2) * 0.12 + Math.sin(time * 0.07) * 0.05;
     group.position.x = Math.sin(time * 0.15 + 1) * 0.06;
-    group.rotation.y = time * 0.018;
+    // Face the viewer at all times — only a tiny "looking around" sway, no full spin
+    group.rotation.y = Math.sin(time * 0.25) * 0.12;
 
     composer.render();
   }
@@ -2063,7 +2067,11 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       pika.head.rotation.z = Math.sin(time * 0.3) * 0.05 + curiousTilt;
       pika.head.rotation.x = Math.sin(time * 0.25) * 0.04 + (curiousTilt > 0 ? -0.03 : 0);
     }
-    const sparkBurst = Math.max(0, Math.sin(time * 6.0)) > 0.92 ? 0.5 : 0;
+    // Periodic electric ZAP — strong lightning burst every ~5s
+    const zapCycle = time % 5.0;
+    const zapActive = zapCycle > 4.2;
+    const zapStrength = zapActive ? Math.sin((zapCycle - 4.2) / 0.8 * PI) : 0;
+    const sparkBurst = zapStrength > 0.25 ? 0.5 : 0;
     // Heartbeat cheek glow — "lub-dub" rhythm
     const hbPhase = (time * 1.2) % PI2;
     const lub = Math.max(0, Math.sin(hbPhase * 2.0)) > 0.85 ? 0.25 : 0;
@@ -2102,13 +2110,15 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     const earTwitchR = Math.sin(time * 2.5 + 0.6) * 0.05 + (Math.sin(time * 8.1 + 1.0) > 0.95 ? 0.12 : 0) + earPerk;
     if (pika.leftEarGroup) pika.leftEarGroup.rotation.x = -0.12 + earTwitchL;
     if (pika.rightEarGroup) pika.rightEarGroup.rotation.x = -0.12 + earTwitchR;
-    // Electric sparks — random flash pattern with bursts
+    // Electric sparks — subtle idle crackle + strong flicker during the ZAP
     for (let si = 0; si < pika.sparkMats.length; si++) {
-      const phase = Math.sin(time * 8.0 + si * 2.7) * Math.sin(time * 3.1 + si * 1.3);
-      const burstBoost = sparkBurst > 0 ? 0.3 : 0;
-      pika.sparkMats[si].opacity = phase > 0.5 ? (0.15 + phase * 0.25 + burstBoost) * (0.5 + amp * 0.2) : 0;
+      const idlePhase = Math.sin(time * 8.0 + si * 2.7) * Math.sin(time * 3.1 + si * 1.3);
+      const idle = idlePhase > 0.85 ? 0.12 : 0;
+      const flicker = Math.sin(time * 45 + si * 2.7) * 0.5 + 0.5;
+      pika.sparkMats[si].opacity = Math.max(idle, zapStrength * (0.55 + flicker * 0.45));
     }
-    pika.sparks.rotation.y = time * 0.35;
+    // Sparks spin fast during a zap for a crackling feel
+    pika.sparks.rotation.y += dt * (0.35 + zapStrength * 6.0);
     // Eye tracking — pupils occasionally look toward viewer (mouse), drift around
     const viewerLookD = dMouseX * 0.008;
     const viewerLookYD = dMouseY * -0.005;
@@ -2124,8 +2134,8 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       const mouthOpen = hopActive ? 0.03 : 0;
       pika.mouthMesh.position.y = -0.12 - mouthOpen;
     }
-    // Electricity aura — pulses during spark bursts
-    pika.auraMat.opacity = sparkBurst > 0 ? 0.02 + Math.sin(time * 12) * 0.01 : 0;
+    // Electricity aura — flares with the zap
+    pika.auraMat.opacity = zapStrength * (0.12 + Math.sin(time * 30) * 0.04);
     // Randomize spark rotations for more dynamic feel
     if (sparkBurst > 0) {
       for (let si = 0; si < Math.min(pika.sparkMeshes.length, 6); si++) {
@@ -2242,7 +2252,8 @@ export function mountOrb(container: HTMLElement): OrbHandle {
 
     group.position.y = Math.sin(time * 0.15) * 0.1 + Math.sin(time * 0.06) * 0.04;
     group.position.x = Math.sin(time * 0.12 + 1) * 0.05;
-    group.rotation.y = time * 0.012;
+    // Face the viewer — gentle sway only, no continuous spin
+    group.rotation.y = Math.sin(time * 0.22) * 0.1;
 
     const tCamX = dMouseX * 0.9;
     const tCamY = 0.4 + dMouseY * -0.6;

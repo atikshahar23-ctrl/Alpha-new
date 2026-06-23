@@ -1,5 +1,5 @@
 let volume = 0.6;
-let pitch = 1.4;
+let pitch = 2.0;
 let enabled = true;
 let timer: ReturnType<typeof setTimeout> | null = null;
 
@@ -30,13 +30,14 @@ function playWebAudioPika() {
     master.gain.setValueAtTime(volume * 0.5, ac.currentTime);
     master.connect(ac.destination);
 
+    // Higher base frequencies for the classic squeaky-high Pikachu chirp
     const baseMult = pitch / 1.4;
     const notes = [
-      { freq: 880 * baseMult, dur: 0.09, t: 0 },
-      { freq: 698 * baseMult, dur: 0.09, t: 0.11 },
-      { freq: 880 * baseMult, dur: 0.09, t: 0.28 },
-      { freq: 698 * baseMult, dur: 0.09, t: 0.39 },
-      { freq: 988 * baseMult, dur: 0.18, t: 0.56 },
+      { freq: 1175 * baseMult, dur: 0.09, t: 0 },
+      { freq: 932 * baseMult, dur: 0.09, t: 0.11 },
+      { freq: 1175 * baseMult, dur: 0.09, t: 0.28 },
+      { freq: 932 * baseMult, dur: 0.09, t: 0.39 },
+      { freq: 1397 * baseMult, dur: 0.18, t: 0.56 },
     ];
 
     for (const n of notes) {

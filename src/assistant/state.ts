@@ -82,7 +82,7 @@ export function loadState(): AppState {
     uiLang: (localStorage.getItem(UILANG) as UILang) || 'he',
     pikaVoiceOn: localStorage.getItem(PIKAVOICE) !== '0',
     pikaVolume: (() => { const v = parseFloat(localStorage.getItem(PIKAVOL) || ''); return isNaN(v) ? 0.6 : v; })(),
-    pikaPitch: (() => { const v = parseFloat(localStorage.getItem(PIKAPITCH) || ''); return isNaN(v) ? 1.4 : v; })(),
+    pikaPitch: (() => { const v = parseFloat(localStorage.getItem(PIKAPITCH) || ''); return isNaN(v) ? 2.0 : v; })(),
   };
 }
 

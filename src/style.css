@@ -115,7 +115,12 @@ body::after {
   transform-origin: center center;
 }
 
-.topL { top: 20px; left: 24px }
+.topL { top: 20px; left: 24px; display: flex; align-items: center; gap: 11px; }
+.brand-logo {
+  width: 40px; height: 40px; flex: 0 0 auto;
+  border-radius: 9px; object-fit: cover;
+  box-shadow: 0 0 18px rgba(218,165,32,.35);
+}
 .topL .wm {
   font-size: 18px; font-weight: 600; letter-spacing: 5px;
   color: var(--ink); text-transform: uppercase;
@@ -133,6 +138,10 @@ body::after {
 .topL .clk {
   font-size: 12px; letter-spacing: 3px; margin-top: 4px;
   color: var(--gold); opacity: .5;
+}
+.build-ver {
+  font-size: 9px; letter-spacing: 1px; margin-top: 2px;
+  color: var(--gold); opacity: .4;
 }
 
 .topR { top: 22px; right: 24px; display: flex; gap: 8px }
@@ -1274,7 +1283,8 @@ body::after {
     background: radial-gradient(ellipse 120% 60% at 50% 45%, rgba(218,165,32,.06) 0%, rgba(14,12,8,1) 70%);
   }
 
-  .topL { top: calc(var(--safe-top) + 10px); left: 16px; }
+  .topL { top: calc(var(--safe-top) + 10px); left: 16px; gap: 8px; }
+  .brand-logo { width: 32px; height: 32px; border-radius: 7px; }
   .topL .wm {
     font-size: 15px; letter-spacing: 3px;
     filter: drop-shadow(0 0 16px rgba(218,165,32,.35));
