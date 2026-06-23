@@ -65,6 +65,7 @@ import { fillTemplate, addCustomTemplate, removeCustomTemplate, templatesByCateg
 import { sentimentTrend, averageSentiment } from './sentiment';
 import { calculateScore, scoreLabel, scoreColor } from './scoring';
 import { checkIntegrity, storageUsage, repairCorrupted } from './dataIntegrity';
+import { isCalConnected, calLastSync, calSignIn, calDisconnect, syncCalendar, googleCalendarLink } from './calSync';
 
 type CpLang = 'he' | 'en';
 function cpLang(): CpLang { return (localStorage.getItem('alpha_uilang') as CpLang) || 'he'; }
@@ -1041,20 +1042,85 @@ function renderPersonal(root: HTMLElement, hooks: CockpitHooks, close: () => voi
   root.appendChild(ec);
 
   // ── Family calendar ──
-  const cal = card(L('משפחה וחיים', 'Family & Life'), L('לוח שנה משותף', 'Shared calendar'));
+  const cal = card(L('משפחה וחיים', 'Family & Life'), L('לוח שנה משותף + Google Calendar', 'Shared calendar + Google Calendar'));
   const title = input(L('אירוע — למשל שיעור שחייה של מאיה', 'Event — e.g. Maya swimming class'));
   const date = el('input', 'cp-input') as HTMLInputElement; date.type = 'date';
   const time = el('input', 'cp-input') as HTMLInputElement; time.type = 'time';
-  const add = btn('Add to calendar', true);
+  const add = btn(L('➕ הוסף', 'Add to calendar'), true);
   const upcoming = el('div', 'cp-list');
+
+  // Google Calendar sync controls
+  const gcalBar = el('div', 'cp-inline'); gcalBar.style.cssText = 'gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center;';
+  const gcalStatus = el('span', '');
+  gcalStatus.style.cssText = 'font-size:11px;color:var(--dim);flex:1;min-width:120px;';
+  const gcalBtn = btn('', false);
+  gcalBtn.style.cssText += 'font-size:12px;padding:6px 12px;';
+  const gcalSyncBtn = btn(L('🔄 סנכרן', '🔄 Sync Now'), false);
+  gcalSyncBtn.style.cssText += 'font-size:12px;padding:6px 12px;';
+
+  const refreshGCalUI = () => {
+    const connected = isCalConnected();
+    gcalStatus.textContent = connected
+      ? L(`מחובר ✓${calLastSync() ? '  סונכרן: ' + calLastSync().slice(0, 10) : ''}`, `Connected ✓${calLastSync() ? '  last: ' + calLastSync().slice(0, 10) : ''}`)
+      : L('לא מחובר ל-Google Calendar', 'Not connected to Google Calendar');
+    gcalBtn.textContent = connected ? L('🔌 התנתק', '🔌 Disconnect') : L('🔗 חבר Google Calendar', '🔗 Connect Google Calendar');
+    gcalSyncBtn.style.display = connected ? '' : 'none';
+  };
+  refreshGCalUI();
+
+  gcalBtn.onclick = async () => {
+    if (isCalConnected()) { calDisconnect(); refreshGCalUI(); return; }
+    gcalBtn.textContent = L('מתחבר…', 'Connecting…');
+    try {
+      const ok = await calSignIn();
+      if (!ok) gcalStatus.textContent = L('חיבור נכשל', 'Connection failed');
+    } catch (e: any) {
+      gcalStatus.textContent = e.message === 'NO_CLIENT_ID'
+        ? L('הכנס Client ID של Google בהגדרות הסנכרון', 'Enter Google Client ID in sync settings')
+        : L('שגיאה: ' + e.message, 'Error: ' + e.message);
+    }
+    refreshGCalUI();
+  };
+
+  gcalSyncBtn.onclick = async () => {
+    gcalSyncBtn.textContent = L('מסנכרן…', 'Syncing…');
+    gcalSyncBtn.setAttribute('disabled', '');
+    const res = await syncCalendar((msg) => { gcalStatus.textContent = msg; });
+    gcalSyncBtn.textContent = L('🔄 סנכרן', '🔄 Sync Now');
+    gcalSyncBtn.removeAttribute('disabled');
+    if (res.ok) {
+      gcalStatus.textContent = L(`✓ סונכרן — ↑${res.pushed} ↓${res.pulled}`, `✓ Synced — ↑${res.pushed} pushed ↓${res.pulled} pulled`);
+      draw();
+    } else {
+      gcalStatus.textContent = L('שגיאה: ' + res.error, 'Error: ' + res.error);
+    }
+    refreshGCalUI();
+  };
+
+  gcalBar.append(gcalStatus, gcalBtn, gcalSyncBtn);
+  cal.appendChild(gcalBar);
+
   const draw = () => {
     upcoming.innerHTML = '';
     const today = new Date().toISOString().slice(0, 10);
-    const ev = loadEvents().filter(e => e.date >= today).slice(0, 8);
+    const ev = loadEvents().filter(e => e.date >= today).slice(0, 10);
     if (!ev.length) { upcoming.appendChild(el('div', 'cp-empty', L('אין אירועים קרובים.', 'Nothing upcoming.'))); return; }
     ev.forEach(e => {
       const r = el('div', 'cp-row');
-      r.innerHTML = `<span class="cp-row-main">${esc(e.title)}</span><span class="cp-row-tag">${esc(e.date)}${e.time ? ' ' + esc(e.time) : ''}</span>`;
+      r.style.gap = '6px';
+      const main = el('span', 'cp-row-main', esc(e.title));
+      const tag = el('span', 'cp-row-tag', esc(e.date) + (e.time ? ' ' + esc(e.time) : ''));
+      // Google Calendar quick-add link
+      const gcLink = el('a', '');
+      gcLink.setAttribute('href', googleCalendarLink(e.title, e.date, e.time));
+      gcLink.setAttribute('target', '_blank');
+      gcLink.setAttribute('rel', 'noopener');
+      gcLink.setAttribute('title', L('פתח ב-Google Calendar', 'Open in Google Calendar'));
+      gcLink.style.cssText = 'color:var(--dim);font-size:13px;text-decoration:none;opacity:.6;cursor:pointer;transition:opacity .2s;flex-shrink:0;';
+      gcLink.textContent = '📅';
+      gcLink.onmouseenter = () => { gcLink.style.opacity = '1'; };
+      gcLink.onmouseleave = () => { gcLink.style.opacity = '.6'; };
+      r.append(main, tag, gcLink);
       upcoming.appendChild(r);
     });
   };

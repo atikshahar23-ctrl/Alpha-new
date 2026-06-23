@@ -791,7 +791,7 @@ export function mountApp(root: HTMLElement) {
     openWin('Video · ' + q);
     const ytSearchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`;
     $('winBody').innerHTML = `<div class="pad" style="text-align:center">
-      <div style="color:var(--dim);margin-bottom:12px;font-size:13px">Searching YouTube…</div>
+      <div style="color:var(--dim);margin-bottom:12px;font-size:13px">מחפש ב-YouTube…</div>
     </div>`;
     fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(q)}&type=video&maxResults=4&key=AIzaSyDummyKeyForFallback`)
       .then(() => {})
@@ -836,7 +836,7 @@ export function mountApp(root: HTMLElement) {
     $('winBody').innerHTML = `<div class="pad" style="text-align:center;padding-top:20px">
       <div style="font-size:40px;margin-bottom:16px">🎵</div>
       <div style="font-size:18px;font-weight:600;color:var(--ink);margin-bottom:8px">${q}</div>
-      <div style="color:var(--dim);font-size:13px;margin-bottom:20px">Open in Spotify to listen</div>
+      <div style="color:var(--dim);font-size:13px;margin-bottom:20px">לחץ להאזנה ב-Spotify</div>
       <a href="${searchUrl}" target="_blank" rel="noopener" class="media-link-btn" style="background:rgba(30,215,96,.15);border-color:rgba(30,215,96,.4);color:#1db954">▶ Spotify</a>
       <div style="margin-top:16px">
         <iframe src="https://open.spotify.com/embed/search/${encodeURIComponent(q)}" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy" style="width:100%;height:160px;border:none;border-radius:12px" onerror="this.style.display='none'"></iframe>
@@ -857,7 +857,7 @@ export function mountApp(root: HTMLElement) {
 
   async function openWebSearch(q: string) {
     openWin('Search · ' + q);
-    $('winBody').innerHTML = '<div class="pad">Searching…</div>';
+    $('winBody').innerHTML = '<div class="pad">מחפש…</div>';
     try {
       const r = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(q)}&format=json&origin=*&srlimit=8`);
       const d = await r.json();

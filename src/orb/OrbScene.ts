@@ -270,43 +270,47 @@ interface PikachuMaterials {
 function createPikachuMaterials(envMap: THREE.Texture): PikachuMaterials {
   return {
     yellow: new THREE.MeshPhysicalMaterial({
-      color: 0xFDD835, metalness: 0.0, roughness: 0.55, envMap, envMapIntensity: 0.25,
-      clearcoat: 0.15, clearcoatRoughness: 0.3,
-      sheen: 0.1, sheenRoughness: 0.5, sheenColor: new THREE.Color(0xFFEB3B),
+      color: 0xFDD835, metalness: 0.0, roughness: 0.52, envMap, envMapIntensity: 0.35,
+      clearcoat: 0.18, clearcoatRoughness: 0.28,
+      sheen: 0.14, sheenRoughness: 0.45, sheenColor: new THREE.Color(0xFFEB3B),
+      // Slight self-emission keeps shadowed areas warm yellow, not muddy
+      emissive: new THREE.Color(0xFDD835), emissiveIntensity: 0.04,
     }),
     darkYellow: new THREE.MeshPhysicalMaterial({
-      color: 0xC8A415, metalness: 0.0, roughness: 0.55, envMap, envMapIntensity: 0.2,
+      color: 0xC8A415, metalness: 0.0, roughness: 0.55, envMap, envMapIntensity: 0.25,
       clearcoat: 0.1, clearcoatRoughness: 0.35,
+      emissive: new THREE.Color(0xC8A415), emissiveIntensity: 0.02,
     }),
     cream: new THREE.MeshPhysicalMaterial({
-      color: 0xFFFDE7, metalness: 0.0, roughness: 0.5, envMap, envMapIntensity: 0.2,
-      clearcoat: 0.1, clearcoatRoughness: 0.3,
+      color: 0xFFFDE7, metalness: 0.0, roughness: 0.48, envMap, envMapIntensity: 0.25,
+      clearcoat: 0.12, clearcoatRoughness: 0.28,
+      emissive: new THREE.Color(0xFFFDE7), emissiveIntensity: 0.03,
     }),
     red: new THREE.MeshPhysicalMaterial({
-      color: 0xE53935, metalness: 0.0, roughness: 0.45, envMap, envMapIntensity: 0.2,
-      emissive: 0xE53935, emissiveIntensity: 0.08,
-      clearcoat: 0.15, clearcoatRoughness: 0.2,
+      color: 0xE53935, metalness: 0.0, roughness: 0.42, envMap, envMapIntensity: 0.25,
+      emissive: new THREE.Color(0xE53935), emissiveIntensity: 0.12,
+      clearcoat: 0.18, clearcoatRoughness: 0.18,
     }),
     brown: new THREE.MeshPhysicalMaterial({
-      color: 0x5D4037, metalness: 0.0, roughness: 0.55, envMap, envMapIntensity: 0.2,
-      clearcoat: 0.1, clearcoatRoughness: 0.3,
+      color: 0x5D4037, metalness: 0.0, roughness: 0.6, envMap, envMapIntensity: 0.18,
+      clearcoat: 0.08, clearcoatRoughness: 0.4,
     }),
     white: new THREE.MeshPhysicalMaterial({
-      color: 0xffffff, metalness: 0.0, roughness: 0.15, envMap, envMapIntensity: 0.2,
-      emissive: 0xffffff, emissiveIntensity: 0.3,
-      clearcoat: 0.3, clearcoatRoughness: 0.1,
+      color: 0xffffff, metalness: 0.0, roughness: 0.12, envMap, envMapIntensity: 0.25,
+      emissive: new THREE.Color(0xffffff), emissiveIntensity: 0.35,
+      clearcoat: 0.35, clearcoatRoughness: 0.08,
     }),
     black: new THREE.MeshPhysicalMaterial({
-      color: 0x0A0A0A, metalness: 0.05, roughness: 0.25, envMap, envMapIntensity: 0.2,
-      clearcoat: 0.3, clearcoatRoughness: 0.15,
+      color: 0x0A0A0A, metalness: 0.06, roughness: 0.22, envMap, envMapIntensity: 0.25,
+      clearcoat: 0.35, clearcoatRoughness: 0.12,
     }),
     mouth: new THREE.MeshPhysicalMaterial({
-      color: 0x8B1A1A, metalness: 0.0, roughness: 0.5, envMap, envMapIntensity: 0.1,
+      color: 0x8B1A1A, metalness: 0.0, roughness: 0.5, envMap, envMapIntensity: 0.12,
       clearcoat: 0.1, clearcoatRoughness: 0.3,
     }),
     nose: new THREE.MeshPhysicalMaterial({
-      color: 0x151515, metalness: 0.05, roughness: 0.3, envMap, envMapIntensity: 0.2,
-      clearcoat: 0.25, clearcoatRoughness: 0.15,
+      color: 0x151515, metalness: 0.06, roughness: 0.28, envMap, envMapIntensity: 0.22,
+      clearcoat: 0.28, clearcoatRoughness: 0.12,
     }),
   };
 }
@@ -335,21 +339,21 @@ interface PikachuParts {
   auraMat: THREE.MeshBasicMaterial;
 }
 
-function buildPikachu(_mats: PikachuMaterials, detail: number): PikachuParts {
+function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   const group = new THREE.Group();
   const headGroup = new THREE.Group();
   const seg = (n: number) => Math.max(8, Math.round(n * detail));
 
-  const yellowBasic = new THREE.MeshBasicMaterial({ color: 0xFDD835 });
-  const brownBasic = new THREE.MeshBasicMaterial({ color: 0x5D4037 });
-  const blackBasic = new THREE.MeshBasicMaterial({ color: 0x111111 });
-
-  const creamBasic = new THREE.MeshBasicMaterial({ color: 0xFFF8DC });
+  // PBR materials — respond to scene lighting for true 3D depth
+  const mYellow = mats.yellow;
+  const mBrown = mats.brown;
+  const mBlack = mats.black;
+  const mCream = mats.cream;
 
   // ── Body — round chubby torso ──
   const body = new THREE.Mesh(
     new THREE.SphereGeometry(0.68, seg(48), seg(48)),
-    yellowBasic,
+    mYellow,
   );
   body.scale.set(1.1, 1.0, 0.88);
   body.position.set(0, -0.32, 0);
@@ -358,7 +362,7 @@ function buildPikachu(_mats: PikachuMaterials, detail: number): PikachuParts {
   // Cream belly patch on the front
   const belly = new THREE.Mesh(
     new THREE.SphereGeometry(0.48, seg(32), seg(32)),
-    creamBasic,
+    mCream,
   );
   belly.scale.set(0.82, 0.8, 0.35);
   belly.position.set(0, -0.3, 0.35);
@@ -367,7 +371,7 @@ function buildPikachu(_mats: PikachuMaterials, detail: number): PikachuParts {
   // Lower body — wider at the bottom for a pear/egg silhouette
   const hips = new THREE.Mesh(
     new THREE.SphereGeometry(0.5, seg(24), seg(24)),
-    yellowBasic,
+    mYellow,
   );
   hips.scale.set(1.22, 0.62, 0.98);
   hips.position.set(0, -0.66, 0.0);
@@ -376,7 +380,7 @@ function buildPikachu(_mats: PikachuMaterials, detail: number): PikachuParts {
   // Shoulders — narrower at the top so the body tapers up toward the head
   const shoulders = new THREE.Mesh(
     new THREE.SphereGeometry(0.45, seg(32), seg(32)),
-    yellowBasic,
+    mYellow,
   );
   shoulders.scale.set(0.92, 0.5, 0.78);
   shoulders.position.set(0, 0.2, 0.0);
@@ -386,7 +390,7 @@ function buildPikachu(_mats: PikachuMaterials, detail: number): PikachuParts {
   for (const sy of [0.0, -0.2]) {
     const stripe = new THREE.Mesh(
       new THREE.CapsuleGeometry(0.04, 0.55, seg(4), seg(10)),
-      brownBasic,
+      mBrown,
     );
     stripe.rotation.z = PI / 2;
     stripe.position.set(0, -0.15 + sy, -0.58);
@@ -397,7 +401,7 @@ function buildPikachu(_mats: PikachuMaterials, detail: number): PikachuParts {
   // ── Head — wide round, anime Pikachu's head is wider than tall ──
   const head = new THREE.Mesh(
     new THREE.SphereGeometry(0.72, seg(48), seg(48)),
-    yellowBasic,
+    mYellow,
   );
   head.scale.set(1.15, 0.95, 0.9);
   head.position.set(0, 0.0, 0.04);
@@ -407,7 +411,7 @@ function buildPikachu(_mats: PikachuMaterials, detail: number): PikachuParts {
   for (const sx of [-1, 1]) {
     const cheekBulge = new THREE.Mesh(
       new THREE.SphereGeometry(0.32, seg(20), seg(20)),
-      yellowBasic,
+      mYellow,
     );
     cheekBulge.scale.set(0.55, 0.48, 0.42);
     cheekBulge.position.set(sx * 0.52, -0.1, 0.32);
@@ -422,7 +426,7 @@ function buildPikachu(_mats: PikachuMaterials, detail: number): PikachuParts {
 
     const earBase = new THREE.Mesh(
       new THREE.SphereGeometry(0.16, seg(24), seg(24)),
-      yellowBasic,
+      mYellow,
     );
     earBase.scale.set(0.85, 4.2, 0.45);
     earBase.position.set(0, 0.5, 0);
@@ -430,7 +434,7 @@ function buildPikachu(_mats: PikachuMaterials, detail: number): PikachuParts {
 
     const earTip = new THREE.Mesh(
       new THREE.ConeGeometry(0.12, 0.7, seg(16)),
-      yellowBasic,
+      mYellow,
     );
     earTip.position.set(0, 1.08, 0);
     earTip.scale.set(0.85, 1.0, 0.45);
@@ -438,7 +442,7 @@ function buildPikachu(_mats: PikachuMaterials, detail: number): PikachuParts {
 
     const earBlackBase = new THREE.Mesh(
       new THREE.SphereGeometry(0.14, seg(16), seg(16)),
-      blackBasic,
+      mBlack,
     );
     earBlackBase.scale.set(0.75, 1.8, 0.42);
     earBlackBase.position.set(0, 1.15, 0);
@@ -446,7 +450,7 @@ function buildPikachu(_mats: PikachuMaterials, detail: number): PikachuParts {
 
     const earBlackTip = new THREE.Mesh(
       new THREE.ConeGeometry(0.1, 0.5, seg(14)),
-      blackBasic,
+      mBlack,
     );
     earBlackTip.position.set(0, 1.45, 0);
     earBlackTip.scale.set(0.75, 1.0, 0.42);
@@ -495,6 +499,24 @@ function buildPikachu(_mats: PikachuMaterials, detail: number): PikachuParts {
   fctx.fill();
   fctx.restore();
 
+  // Iris — amber/brown gradient ring to break up flat dark eyes
+  for (const [cx, cy, rot] of [[178, 218, 0.08], [334, 218, -0.08]] as [number, number, number][]) {
+    fctx.save();
+    fctx.translate(cx * S, cy * S);
+    fctx.rotate(rot);
+    const iGrad = fctx.createRadialGradient(0, 0, 10 * S, 0, 0, 37 * S);
+    iGrad.addColorStop(0, 'rgba(8,4,1,1)');
+    iGrad.addColorStop(0.36, 'rgba(52,26,6,0.95)');
+    iGrad.addColorStop(0.60, 'rgba(98,56,16,0.72)');
+    iGrad.addColorStop(0.82, 'rgba(42,20,4,0.5)');
+    iGrad.addColorStop(1, 'rgba(8,4,1,0)');
+    fctx.fillStyle = iGrad;
+    fctx.beginPath();
+    fctx.ellipse(0, 0, 40 * S, 54 * S, 0, 0, PI2);
+    fctx.fill();
+    fctx.restore();
+  }
+
   // Eye highlights — large white upper-right + small lower-left (anime style)
   drawEllipse(196, 196, 18, 22, '#FFFFFF');
   drawEllipse(350, 196, 18, 22, '#FFFFFF');
@@ -535,6 +557,29 @@ function buildPikachu(_mats: PikachuMaterials, detail: number): PikachuParts {
   fctx.quadraticCurveTo(256 * S, 318 * S, 263 * S, 332 * S);
   fctx.quadraticCurveTo(297 * S, 348 * S, 314 * S, 314 * S);
   fctx.stroke();
+
+  // Eyebrows — thick dark angled arcs, classic Pikachu look
+  fctx.save();
+  fctx.strokeStyle = '#0E0804';
+  fctx.lineWidth = 10 * S;
+  fctx.lineCap = 'round';
+  fctx.beginPath();
+  fctx.moveTo(136 * S, 179 * S);
+  fctx.quadraticCurveTo(176 * S, 158 * S, 222 * S, 173 * S);
+  fctx.stroke();
+  fctx.beginPath();
+  fctx.moveTo(292 * S, 173 * S);
+  fctx.quadraticCurveTo(336 * S, 158 * S, 376 * S, 179 * S);
+  fctx.stroke();
+  fctx.restore();
+
+  // Subtle depth shading — slight darkening at bottom of face for roundness
+  const depthShade = fctx.createRadialGradient(256 * S, 320 * S, 40 * S, 256 * S, 280 * S, 240 * S);
+  depthShade.addColorStop(0, 'rgba(20,10,2,0)');
+  depthShade.addColorStop(0.7, 'rgba(20,10,2,0)');
+  depthShade.addColorStop(1, 'rgba(20,10,2,0.18)');
+  fctx.fillStyle = depthShade;
+  fctx.fillRect(0, 0, 2048, 2048);
 
   // Soft circular mask
   fctx.globalCompositeOperation = 'destination-in';
@@ -583,7 +628,7 @@ function buildPikachu(_mats: PikachuMaterials, detail: number): PikachuParts {
 
     const eyelid = new THREE.Mesh(
       new THREE.SphereGeometry(0.22, seg(24), seg(12), 0, PI2, 0, PI * 0.5),
-      yellowBasic,
+      mYellow,
     );
     eyelid.scale.set(0.85, 0.01, 0.45);
     eyelid.position.set(sx * 0.19, 0.14, 0.69);
@@ -635,13 +680,13 @@ function buildPikachu(_mats: PikachuMaterials, detail: number): PikachuParts {
 
   // ── Arms ──
   const armGeo = new THREE.CapsuleGeometry(0.1, 0.22, seg(8), seg(12));
-  const leftArm = new THREE.Mesh(armGeo, yellowBasic);
+  const leftArm = new THREE.Mesh(armGeo, mYellow);
   leftArm.position.set(-0.55, -0.15, 0.1);
   leftArm.rotation.z = 0.6;
   leftArm.rotation.x = -0.12;
   group.add(leftArm);
 
-  const rightArm = new THREE.Mesh(armGeo, yellowBasic);
+  const rightArm = new THREE.Mesh(armGeo, mYellow);
   rightArm.position.set(0.55, -0.15, 0.1);
   rightArm.rotation.z = -0.6;
   rightArm.rotation.x = -0.12;
@@ -654,7 +699,7 @@ function buildPikachu(_mats: PikachuMaterials, detail: number): PikachuParts {
     for (let fi = 0; fi < 3; fi++) {
       const finger = new THREE.Mesh(
         new THREE.SphereGeometry(0.025, seg(6), seg(6)),
-        yellowBasic,
+        mYellow,
       );
       const fAngle = (fi - 1) * 0.4;
       finger.position.set(
@@ -669,7 +714,7 @@ function buildPikachu(_mats: PikachuMaterials, detail: number): PikachuParts {
   // ── Feet — big flat ovals with toes ──
   const footGeo = new THREE.CapsuleGeometry(0.18, 0.2, seg(10), seg(14));
   for (const sx of [-1, 1]) {
-    const foot = new THREE.Mesh(footGeo, yellowBasic);
+    const foot = new THREE.Mesh(footGeo, mYellow);
     foot.rotation.x = PI / 2;
     foot.rotation.z = sx * 0.08;
     foot.position.set(sx * 0.32, -0.95, 0.26);
@@ -680,7 +725,7 @@ function buildPikachu(_mats: PikachuMaterials, detail: number): PikachuParts {
     for (let ti = 0; ti < 3; ti++) {
       const toe = new THREE.Mesh(
         new THREE.SphereGeometry(0.04, seg(8), seg(8)),
-        yellowBasic,
+        mYellow,
       );
       toe.position.set(
         sx * 0.32 + (ti - 1) * 0.06,
@@ -722,14 +767,14 @@ function buildPikachu(_mats: PikachuMaterials, detail: number): PikachuParts {
   const extSettings = { depth: 0.14, bevelEnabled: true, bevelThickness: 0.04, bevelSize: 0.04, bevelSegments: seg(3) };
   const tailMesh = new THREE.Mesh(
     new THREE.ExtrudeGeometry(shape, extSettings),
-    yellowBasic,
+    mYellow,
   );
   tailMesh.position.set(-0.16, 0, -0.07);
   tail.add(tailMesh);
 
   const tailBase = new THREE.Mesh(
     new THREE.CapsuleGeometry(0.1, 0.2, seg(8), seg(12)),
-    brownBasic,
+    mBrown,
   );
   tailBase.position.set(0.04, -0.04, 0.01);
   tail.add(tailBase);
@@ -1124,17 +1169,20 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   const group = new THREE.Group();
   scene.add(group);
 
-  // ── Brighter cheerful lighting for mobile (2 lights + ambient) ──
-  const mKey = new THREE.DirectionalLight(0xffffff, 4.0);
+  // ── PBR lighting for mobile ──
+  const mKey = new THREE.DirectionalLight(0xffffff, 5.0);
   mKey.position.set(2, 4, 5);
   scene.add(mKey);
-  const mFill = new THREE.DirectionalLight(0xFFF0D0, 2.0);
+  const mFill = new THREE.DirectionalLight(0xFFE860, 2.5);
   mFill.position.set(-3, 2, 4);
   scene.add(mFill);
-  const mFront = new THREE.DirectionalLight(0xFFFAE8, 1.5);
+  const mFront = new THREE.DirectionalLight(0xFFFAE8, 2.0);
   mFront.position.set(0, 1, 6);
   scene.add(mFront);
-  const mAmbient = new THREE.AmbientLight(0x2a2010, 0.8);
+  const mRim = new THREE.DirectionalLight(0xfff8f0, 2.0);
+  mRim.position.set(0, 2, -4);
+  scene.add(mRim);
+  const mAmbient = new THREE.AmbientLight(0x2a1e08, 1.2);
   scene.add(mAmbient);
 
   // ────────────────────────────────────────────
@@ -1624,25 +1672,25 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   const group = new THREE.Group();
   scene.add(group);
 
-  // ── Bright cheerful lighting for Pikachu (MeshPhysicalMaterial) ──
+  // ── Lighting tuned for PBR MeshPhysicalMaterial ──
   // Key light — warm white, upper right
-  const keyLight = new THREE.DirectionalLight(0xffffff, 3.5);
-  keyLight.position.set(3, 4, 4);
+  const keyLight = new THREE.DirectionalLight(0xffffff, 4.5);
+  keyLight.position.set(3, 5, 4);
   scene.add(keyLight);
-  // Fill light — warm yellow, from left
-  const fillLight = new THREE.DirectionalLight(0xFFE45C, 1.5);
+  // Fill light — warm golden yellow from left
+  const fillLight = new THREE.DirectionalLight(0xFFE45C, 2.2);
   fillLight.position.set(-4, 1, 3);
   scene.add(fillLight);
-  // Rim light — soft white, from behind
-  const rimLight = new THREE.DirectionalLight(0xffeedd, 2.0);
+  // Rim light — crisp white backlight for silhouette pop
+  const rimLight = new THREE.DirectionalLight(0xfff8f0, 2.8);
   rimLight.position.set(0, 2, -5);
   scene.add(rimLight);
-  // Bottom fill — subtle warm
-  const bottomLight = new THREE.DirectionalLight(0xdaa520, 0.5);
+  // Under fill — subtle warm bounce off floor
+  const bottomLight = new THREE.DirectionalLight(0xdaa520, 0.8);
   bottomLight.position.set(0, -3, 2);
   scene.add(bottomLight);
-  // Ambient
-  const ambientLight = new THREE.AmbientLight(0x1a1408, 0.4);
+  // Ambient — slightly elevated so dark parts stay warm, not muddy
+  const ambientLight = new THREE.AmbientLight(0x2a1e08, 1.0);
   scene.add(ambientLight);
 
   // ────────────────────────────────────────────
