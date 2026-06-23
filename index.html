@@ -7,6 +7,21 @@
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
   <title>Alpha Assistant</title>
+  <script>
+    // Force-clear old service workers and caches on every load
+    (function(){
+      if('serviceWorker' in navigator){
+        navigator.serviceWorker.getRegistrations().then(function(regs){
+          regs.forEach(function(r){ r.unregister(); });
+        });
+      }
+      if('caches' in window){
+        caches.keys().then(function(keys){
+          keys.forEach(function(k){ caches.delete(k); });
+        });
+      }
+    })();
+  </script>
   <link rel="manifest" href="/Alpha-new/manifest.json" />
   <!-- Puter.js: free, keyless access to GPT-4o / Claude / Gemini (user-pays model) -->
   <script src="https://js.puter.com/v2/"></script>
