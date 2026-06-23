@@ -337,44 +337,49 @@ interface PikachuMaterials {
 function createPikachuMaterials(envMap: THREE.Texture): PikachuMaterials {
   return {
     yellow: new THREE.MeshPhysicalMaterial({
-      color: 0xFDD835, metalness: 0.0, roughness: 0.38, envMap, envMapIntensity: 0.55,
-      clearcoat: 0.35, clearcoatRoughness: 0.15,
-      sheen: 0.25, sheenRoughness: 0.35, sheenColor: new THREE.Color(0xFFEB3B),
+      color: 0xFDD835, metalness: 0.0, roughness: 0.35, envMap, envMapIntensity: 0.6,
+      clearcoat: 0.4, clearcoatRoughness: 0.12,
+      sheen: 0.35, sheenRoughness: 0.3, sheenColor: new THREE.Color(0xFFEB3B),
+      emissive: 0xFDD835, emissiveIntensity: 0.04,
     }),
     darkYellow: new THREE.MeshPhysicalMaterial({
-      color: 0xC8A415, metalness: 0.0, roughness: 0.45, envMap, envMapIntensity: 0.4,
-      clearcoat: 0.2, clearcoatRoughness: 0.25,
+      color: 0xC8A415, metalness: 0.0, roughness: 0.42, envMap, envMapIntensity: 0.45,
+      clearcoat: 0.25, clearcoatRoughness: 0.2,
+      sheen: 0.15, sheenRoughness: 0.4, sheenColor: new THREE.Color(0xD4A84D),
     }),
     cream: new THREE.MeshPhysicalMaterial({
-      color: 0xFFFDE7, metalness: 0.0, roughness: 0.42, envMap, envMapIntensity: 0.38,
-      clearcoat: 0.2, clearcoatRoughness: 0.2,
-      sheen: 0.15, sheenRoughness: 0.45, sheenColor: new THREE.Color(0xFFFFF0),
+      color: 0xFFFDE7, metalness: 0.0, roughness: 0.38, envMap, envMapIntensity: 0.42,
+      clearcoat: 0.25, clearcoatRoughness: 0.18,
+      sheen: 0.2, sheenRoughness: 0.4, sheenColor: new THREE.Color(0xFFFFF0),
+      emissive: 0xFFFDE7, emissiveIntensity: 0.03,
     }),
     red: new THREE.MeshPhysicalMaterial({
-      color: 0xD32F2F, metalness: 0.0, roughness: 0.3, envMap, envMapIntensity: 0.4,
-      emissive: 0xD32F2F, emissiveIntensity: 0.35,
-      clearcoat: 0.4, clearcoatRoughness: 0.15,
+      color: 0xE53935, metalness: 0.0, roughness: 0.28, envMap, envMapIntensity: 0.45,
+      emissive: 0xE53935, emissiveIntensity: 0.4,
+      clearcoat: 0.45, clearcoatRoughness: 0.12,
+      sheen: 0.1, sheenRoughness: 0.35, sheenColor: new THREE.Color(0xFF5252),
     }),
     brown: new THREE.MeshPhysicalMaterial({
-      color: 0x5D4037, metalness: 0.0, roughness: 0.45, envMap, envMapIntensity: 0.35,
-      clearcoat: 0.15, clearcoatRoughness: 0.3,
+      color: 0x5D4037, metalness: 0.0, roughness: 0.42, envMap, envMapIntensity: 0.38,
+      clearcoat: 0.2, clearcoatRoughness: 0.25,
     }),
     white: new THREE.MeshPhysicalMaterial({
-      color: 0xffffff, metalness: 0.0, roughness: 0.08, envMap, envMapIntensity: 0.3,
-      emissive: 0xffffff, emissiveIntensity: 0.65,
-      clearcoat: 0.6, clearcoatRoughness: 0.08,
+      color: 0xffffff, metalness: 0.0, roughness: 0.06, envMap, envMapIntensity: 0.35,
+      emissive: 0xffffff, emissiveIntensity: 0.7,
+      clearcoat: 0.7, clearcoatRoughness: 0.06,
     }),
     black: new THREE.MeshPhysicalMaterial({
-      color: 0x0D0D0D, metalness: 0.05, roughness: 0.18, envMap, envMapIntensity: 0.35,
-      clearcoat: 0.5, clearcoatRoughness: 0.1,
+      color: 0x0A0A0A, metalness: 0.08, roughness: 0.15, envMap, envMapIntensity: 0.4,
+      clearcoat: 0.6, clearcoatRoughness: 0.08,
     }),
     mouth: new THREE.MeshPhysicalMaterial({
-      color: 0x6D1515, metalness: 0.0, roughness: 0.5, envMap, envMapIntensity: 0.18,
-      clearcoat: 0.1, clearcoatRoughness: 0.4,
+      color: 0x8B1A1A, metalness: 0.0, roughness: 0.4, envMap, envMapIntensity: 0.2,
+      clearcoat: 0.2, clearcoatRoughness: 0.3,
+      emissive: 0x3D0808, emissiveIntensity: 0.15,
     }),
     nose: new THREE.MeshPhysicalMaterial({
-      color: 0x1A1A1A, metalness: 0.05, roughness: 0.2, envMap, envMapIntensity: 0.3,
-      clearcoat: 0.45, clearcoatRoughness: 0.12,
+      color: 0x151515, metalness: 0.08, roughness: 0.15, envMap, envMapIntensity: 0.35,
+      clearcoat: 0.55, clearcoatRoughness: 0.08,
     }),
   };
 }
@@ -583,20 +588,34 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
     eyeWhite.position.set(sx * 0.27, 0.07, 0.62);
     headGroup.add(eyeWhite);
 
-    // Iris — dark brown
-    const irisMat = new THREE.MeshPhysicalMaterial({
-      color: 0x3D2B1F, metalness: 0.0, roughness: 0.25,
-      clearcoat: 0.3, clearcoatRoughness: 0.15,
+    // Iris — dark brown outer ring
+    const irisOuterMat = new THREE.MeshPhysicalMaterial({
+      color: 0x2A1A10, metalness: 0.0, roughness: 0.22,
+      clearcoat: 0.35, clearcoatRoughness: 0.12,
     });
-    const iris = new THREE.Mesh(
-      new THREE.SphereGeometry(0.135, seg(24), seg(24)),
-      irisMat,
+    const irisOuter = new THREE.Mesh(
+      new THREE.SphereGeometry(0.14, seg(24), seg(24)),
+      irisOuterMat,
     );
-    iris.scale.set(0.82, 1.02, 0.5);
-    iris.position.set(sx * 0.27, 0.06, 0.65);
-    headGroup.add(iris);
+    irisOuter.scale.set(0.82, 1.02, 0.5);
+    irisOuter.position.set(sx * 0.27, 0.06, 0.65);
+    headGroup.add(irisOuter);
 
-    // Pupil — large black (tracked for eye-look animation)
+    // Iris — warm brown inner ring for gradient depth
+    const irisInnerMat = new THREE.MeshPhysicalMaterial({
+      color: 0x4A3520, metalness: 0.0, roughness: 0.2,
+      clearcoat: 0.4, clearcoatRoughness: 0.1,
+      emissive: 0x261508, emissiveIntensity: 0.15,
+    });
+    const irisInner = new THREE.Mesh(
+      new THREE.SphereGeometry(0.1, seg(20), seg(20)),
+      irisInnerMat,
+    );
+    irisInner.scale.set(0.82, 1.0, 0.5);
+    irisInner.position.set(sx * 0.27, 0.06, 0.67);
+    headGroup.add(irisInner);
+
+    // Pupil — large glossy black (tracked for eye-look animation)
     const pupil = new THREE.Mesh(
       new THREE.SphereGeometry(0.1, seg(24), seg(24)),
       mats.black,
@@ -609,26 +628,26 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
 
     // Primary highlight — large white dot upper area
     const hl1 = new THREE.Mesh(
-      new THREE.SphereGeometry(0.045, seg(12), seg(12)),
+      new THREE.SphereGeometry(0.048, seg(12), seg(12)),
       mats.white,
     );
-    hl1.position.set(sx * 0.27 + sx * 0.04, 0.12, 0.73);
+    hl1.position.set(sx * 0.27 + sx * 0.04, 0.12, 0.74);
     headGroup.add(hl1);
 
-    // Secondary highlight — smaller lower
+    // Secondary highlight — smaller lower opposite side
     const hl2 = new THREE.Mesh(
-      new THREE.SphereGeometry(0.025, seg(8), seg(8)),
+      new THREE.SphereGeometry(0.028, seg(8), seg(8)),
       mats.white,
     );
-    hl2.position.set(sx * 0.27 - sx * 0.03, 0.0, 0.73);
+    hl2.position.set(sx * 0.27 - sx * 0.035, -0.005, 0.74);
     headGroup.add(hl2);
 
-    // Third tiny highlight — adds life
+    // Third tiny highlight — adds sparkle
     const hl3 = new THREE.Mesh(
-      new THREE.SphereGeometry(0.015, seg(6), seg(6)),
+      new THREE.SphereGeometry(0.016, seg(6), seg(6)),
       mats.white,
     );
-    hl3.position.set(sx * 0.27 + sx * 0.02, 0.04, 0.73);
+    hl3.position.set(sx * 0.27 + sx * 0.015, 0.045, 0.74);
     headGroup.add(hl3);
 
     // Eyelid — yellow half-sphere for blinking
@@ -748,10 +767,15 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   cheekR.position.set(0.5, -0.06, 0.44);
   headGroup.add(cheekR);
 
-  // Cheek glow halos — soft outer rings for electric glow effect
+  // Cheek glow halos — dual-layer soft outer rings for electric glow effect
   const cheekGlowMat = new THREE.MeshBasicMaterial({
-    color: 0xFF6644, transparent: true, opacity: 0.08,
+    color: 0xFF6644, transparent: true, opacity: 0.1,
     depthWrite: false, side: THREE.DoubleSide,
+  });
+  const cheekGlowOuterMat = new THREE.MeshBasicMaterial({
+    color: 0xFF4422, transparent: true, opacity: 0.04,
+    depthWrite: false, side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending,
   });
   for (const sx of [-1, 1]) {
     const halo = new THREE.Mesh(
@@ -761,6 +785,14 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
     halo.position.set(sx * 0.5, -0.06, 0.45);
     halo.rotation.y = sx * 0.3;
     headGroup.add(halo);
+
+    const haloOuter = new THREE.Mesh(
+      new THREE.RingGeometry(0.16, 0.28, seg(20)),
+      cheekGlowOuterMat,
+    );
+    haloOuter.position.set(sx * 0.5, -0.06, 0.44);
+    haloOuter.rotation.y = sx * 0.3;
+    headGroup.add(haloOuter);
   }
 
   // ── Chin — subtle definition under the mouth ──
