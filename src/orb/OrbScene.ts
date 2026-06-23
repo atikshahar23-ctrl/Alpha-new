@@ -404,6 +404,8 @@ interface PikachuParts {
   tongue: THREE.Mesh;
   sparks: THREE.Group;
   sparkMats: THREE.MeshBasicMaterial[];
+  sparkMeshes: THREE.Mesh[];
+  auraMat: THREE.MeshBasicMaterial;
 }
 
 function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
@@ -979,7 +981,8 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   // ── Electric sparks — yellow lightning arcs around Pikachu ──
   const sparks = new THREE.Group();
   const sparkMats: THREE.MeshBasicMaterial[] = [];
-  const sparkCount = Math.round(10 * detail);
+  const sparkMeshes: THREE.Mesh[] = [];
+  const sparkCount = Math.round(12 * detail);
   for (let i = 0; i < sparkCount; i++) {
     const sMat = new THREE.MeshBasicMaterial({
       color: i % 3 === 0 ? 0xFFFFDD : i % 5 === 0 ? 0xFFFFFF : 0xFFE44D,
@@ -997,6 +1000,7 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
     sMesh.position.set(Math.cos(angle) * r, -0.3 + Math.random() * 1.2, Math.sin(angle) * r);
     sMesh.rotation.set(Math.random() * PI, Math.random() * PI, Math.random() * PI);
     sparks.add(sMesh);
+    sparkMeshes.push(sMesh);
     // Branch segment
     const bGeo = new THREE.BoxGeometry(0.008, 0.12 + Math.random() * 0.18, 0.003);
     const bMesh = new THREE.Mesh(bGeo, sMat);
@@ -1007,6 +1011,7 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
     );
     bMesh.rotation.set(Math.random() * PI, Math.random() * PI, Math.random() * PI);
     sparks.add(bMesh);
+    sparkMeshes.push(bMesh);
     // Second branch for denser look
     if (i % 2 === 0) {
       const b2Geo = new THREE.BoxGeometry(0.006, 0.08 + Math.random() * 0.1, 0.003);
@@ -1018,6 +1023,7 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
       );
       b2Mesh.rotation.set(Math.random() * PI, Math.random() * PI, Math.random() * PI);
       sparks.add(b2Mesh);
+      sparkMeshes.push(b2Mesh);
     }
     // Spark glow — small additive sphere at junction point
     if (i % 2 === 0) {
@@ -1035,9 +1041,41 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
       );
       glowSphere.position.copy(sMesh.position);
       sparks.add(glowSphere);
+      sparkMeshes.push(glowSphere);
+    }
+  }
+  // Cheek sparks — small bolts emanating from cheek positions
+  for (const sx of [-1, 1]) {
+    for (let ci = 0; ci < 3; ci++) {
+      const csMat = new THREE.MeshBasicMaterial({
+        color: 0xFFDD44, transparent: true, opacity: 0,
+        depthWrite: false, blending: THREE.AdditiveBlending,
+      });
+      sparkMats.push(csMat);
+      const csGeo = new THREE.BoxGeometry(0.008, 0.15 + Math.random() * 0.12, 0.003);
+      const csMesh = new THREE.Mesh(csGeo, csMat);
+      csMesh.position.set(
+        sx * 0.55 + (Math.random() - 0.5) * 0.15,
+        0.45 + (Math.random() - 0.5) * 0.15,
+        0.5 + Math.random() * 0.15,
+      );
+      csMesh.rotation.set(Math.random() * PI, Math.random() * PI, sx * 0.5 + Math.random() * 0.5);
+      sparks.add(csMesh);
+      sparkMeshes.push(csMesh);
     }
   }
   group.add(sparks);
+
+  // Electricity aura — wireframe sphere showing electric field
+  const auraMat = new THREE.MeshBasicMaterial({
+    color: 0xFFDD44, transparent: true, opacity: 0, wireframe: true,
+    depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+  const aura = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(1.5, 2),
+    auraMat,
+  );
+  group.add(aura);
 
   // ── Glass orb — subtle transparent sphere ──
   const glassOrb = new THREE.Mesh(
@@ -1071,7 +1109,7 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   cheekLightR.position.set(0.5, 0.5, 0.44);
   group.add(cheekLightR);
 
-  return { group, head: headGroup, leftEye, rightEye, leftPupil, rightPupil, leftEyelid, rightEyelid, leftEarGroup, rightEarGroup, cheekMatL, cheekMatR, tail, leftArm, rightArm, mouthMesh, tongue, sparks, sparkMats };
+  return { group, head: headGroup, leftEye, rightEye, leftPupil, rightPupil, leftEyelid, rightEyelid, leftEarGroup, rightEarGroup, cheekMatL, cheekMatR, tail, leftArm, rightArm, mouthMesh, tongue, sparks, sparkMats, sparkMeshes, auraMat };
 }
 
 // Atmosphere glow shaders — volumetric, animated, multi-fresnel
@@ -1533,6 +1571,22 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     // Tongue subtle wiggle — more active during hop
     const tongueWiggle = hopActive ? 0.008 : 0.003;
     if (pika.tongue) pika.tongue.position.y = -0.12 + Math.sin(time * 2.0) * tongueWiggle;
+    // Mouth expression — opens slightly during hop (happy face)
+    if (pika.mouthMesh) {
+      const mouthOpen = hopActive ? 0.03 : 0;
+      pika.mouthMesh.position.y = -0.1 - mouthOpen;
+    }
+    // Electricity aura — pulses during spark bursts
+    pika.auraMat.opacity = sparkBurst > 0 ? 0.06 + Math.sin(time * 12) * 0.03 : 0;
+    // Randomize spark rotations for more dynamic feel
+    if (sparkBurst > 0) {
+      for (let si = 0; si < Math.min(pika.sparkMeshes.length, 6); si++) {
+        const idx = Math.floor(Math.sin(time * 20 + si * 3.7) * 0.5 + 0.5) * 3;
+        if (idx < pika.sparkMeshes.length) {
+          pika.sparkMeshes[idx].rotation.z += 0.15;
+        }
+      }
+    }
 
     goldRing.rotation.z = 0.15 + time * 0.1;
     goldRMat.opacity = 0.9 + Math.sin(time * 0.8) * 0.08 + amp * 0.1;
@@ -2371,6 +2425,22 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     // Tongue subtle wiggle — more active during hop
     const tongueWiggle = hopActive ? 0.008 : 0.003;
     if (pika.tongue) pika.tongue.position.y = -0.12 + Math.sin(time * 2.0) * tongueWiggle;
+    // Mouth expression — opens slightly during hop (happy face)
+    if (pika.mouthMesh) {
+      const mouthOpen = hopActive ? 0.03 : 0;
+      pika.mouthMesh.position.y = -0.1 - mouthOpen;
+    }
+    // Electricity aura — pulses during spark bursts
+    pika.auraMat.opacity = sparkBurst > 0 ? 0.06 + Math.sin(time * 12) * 0.03 : 0;
+    // Randomize spark rotations for more dynamic feel
+    if (sparkBurst > 0) {
+      for (let si = 0; si < Math.min(pika.sparkMeshes.length, 6); si++) {
+        const idx = Math.floor(Math.sin(time * 20 + si * 3.7) * 0.5 + 0.5) * 3;
+        if (idx < pika.sparkMeshes.length) {
+          pika.sparkMeshes[idx].rotation.z += 0.15;
+        }
+      }
+    }
 
     rings[0].mesh.rotation.z = 0.15 + time * 0.07;
     rings[0].mat.opacity = 0.9 + Math.sin(time * 0.6) * 0.06 + amp * 0.04;
