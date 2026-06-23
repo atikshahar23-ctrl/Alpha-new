@@ -4,8 +4,6 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
-import { SMAAPass } from 'three/examples/jsm/postprocessing/SMAAPass.js';
-import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
 
 export interface OrbHandle {
   setEnergy(v: number): void;
@@ -51,72 +49,6 @@ const GOLD_VIGNETTE_SHADER = {
       // Gold-tinted vignette instead of black
       vec3 vigColor = mix(vec3(0.02, 0.015, 0.005), texel.rgb, vignette);
       gl_FragColor = vec4(vigColor, texel.a);
-    }
-  `,
-};
-
-// Subtle radial chromatic aberration
-const CHROMATIC_SHADER = {
-  uniforms: {
-    tDiffuse: { value: null as THREE.Texture | null },
-    amount: { value: 0.002 },
-  },
-  vertexShader: /* glsl */`
-    varying vec2 vUv;
-    void main() {
-      vUv = uv;
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    }
-  `,
-  fragmentShader: /* glsl */`
-    uniform sampler2D tDiffuse;
-    uniform float amount;
-    varying vec2 vUv;
-    void main() {
-      vec2 dir = vUv - 0.5;
-      float d = length(dir);
-      vec2 offset = dir * d * amount * 60.0;
-      float r = texture2D(tDiffuse, vUv + offset).r;
-      float g = texture2D(tDiffuse, vUv).g;
-      float b = texture2D(tDiffuse, vUv - offset).b;
-      float a = texture2D(tDiffuse, vUv).a;
-      gl_FragColor = vec4(r, g, b, a);
-    }
-  `,
-};
-
-// Warm color grading — slight contrast boost, warm tint in shadows
-const COLOR_GRADE_SHADER = {
-  uniforms: {
-    tDiffuse: { value: null as THREE.Texture | null },
-    contrast: { value: 1.08 },
-    brightness: { value: 0.01 },
-    tint: { value: new THREE.Color(1.06, 0.99, 0.9) },
-  },
-  vertexShader: /* glsl */`
-    varying vec2 vUv;
-    void main() {
-      vUv = uv;
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    }
-  `,
-  fragmentShader: /* glsl */`
-    uniform sampler2D tDiffuse;
-    uniform float contrast;
-    uniform float brightness;
-    uniform vec3 tint;
-    varying vec2 vUv;
-    void main() {
-      vec4 texel = texture2D(tDiffuse, vUv);
-      vec3 col = texel.rgb;
-      // Contrast
-      col = (col - 0.5) * contrast + 0.5;
-      // Brightness
-      col += brightness;
-      // Warm tint in shadows
-      float lum = dot(col, vec3(0.299, 0.587, 0.114));
-      col = mix(col * tint, col, smoothstep(0.0, 0.5, lum));
-      gl_FragColor = vec4(clamp(col, 0.0, 1.0), texel.a);
     }
   `,
 };
@@ -975,7 +907,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     powerPreference: 'high-performance',
     failIfMajorPerformanceCaveat: false,
   });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2.5));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setClearColor(0x0a0806, 1);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.9;
@@ -1230,9 +1162,12 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   let time = 0, raf = 0;
   let amp = 0.06, ampTarget = 0.06;
   let glitchStr = 0, nextGlitch = 3 + Math.random() * 5, glitchTimer = 0;
+  let lastFrame = 0;
 
-  function frame() {
+  function frame(now: number) {
     raf = requestAnimationFrame(frame);
+    if (now - lastFrame < 33) return;
+    lastFrame = now;
     const dt = 0.016;
     time += dt;
     amp += (ampTarget - amp) * 0.07;
@@ -1437,12 +1372,10 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     powerPreference: 'high-performance',
     failIfMajorPerformanceCaveat: false,
   });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 3));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setClearColor(0x0a0806, 1);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.75;
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
@@ -1467,44 +1400,21 @@ export function mountOrb(container: HTMLElement): OrbHandle {
 
   const bloom = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    0.25, 0.4, 0.65,
+    0.2, 0.4, 0.7,
   );
   composer.addPass(bloom);
 
-  // Subtle chromatic aberration
-  const chroma = new ShaderPass(CHROMATIC_SHADER);
-  chroma.uniforms.amount.value = 0.002;
-  composer.addPass(chroma);
-
-  // Warm color grading
-  const grade = new ShaderPass(COLOR_GRADE_SHADER);
-  composer.addPass(grade);
-
-  // Gold-tinted vignette
   const vignette = new ShaderPass(GOLD_VIGNETTE_SHADER);
-  vignette.uniforms.darkness.value = 0.6;
+  vignette.uniforms.darkness.value = 0.5;
   composer.addPass(vignette);
-
-  // SMAA anti-aliasing (with FXAA prepared as fallback)
-  const fxaa = new ShaderPass(FXAAShader);
-  let smaa: SMAAPass | null = null;
-  try {
-    smaa = new SMAAPass();
-    composer.addPass(smaa);
-  } catch {
-    composer.addPass(fxaa);
-  }
 
   composer.addPass(new OutputPass());
 
   function resize() {
     const w = container.clientWidth || 240;
     const h = container.clientHeight || w;
-    const pr = renderer.getPixelRatio();
     renderer.setSize(w, h, false);
     composer.setSize(w, h);
-    if (smaa) smaa.setSize(w, h);
-    fxaa.uniforms.resolution.value.set(1 / (w * pr), 1 / (h * pr));
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
   }
@@ -1901,7 +1811,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   const starGroup = new THREE.Group();
   scene.add(starGroup);
 
-  const STAR_N = 700;
+  const STAR_N = 300;
   const stPos = new Float32Array(STAR_N * 3);
   const stPh = new Float32Array(STAR_N);
   const stSz = new Float32Array(STAR_N);
@@ -1934,8 +1844,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   const farStars = new THREE.Points(stGeo, stMat);
   starGroup.add(farStars);
 
-  // Mid-depth dust motes — 250
-  const DUST_N = 250;
+  const DUST_N = 100;
   const dustPos = new Float32Array(DUST_N * 3);
   const dustPh = new Float32Array(DUST_N);
   const dustSz = new Float32Array(DUST_N);
@@ -2081,9 +1990,12 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   let time = 0, raf = 0;
   let amp = 0.06, ampTarget = 0.06;
   let glitchStr = 0, nextGlitch = 3 + Math.random() * 5, glitchTimer = 0;
+  let lastFrame = 0;
 
-  function frame() {
+  function frame(now: number) {
     raf = requestAnimationFrame(frame);
+    if (now - lastFrame < 33) return;
+    lastFrame = now;
     const dt = 0.016;
     time += dt;
     amp += (ampTarget - amp) * 0.07;

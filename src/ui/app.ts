@@ -2540,7 +2540,7 @@ export function mountApp(root: HTMLElement) {
       nCtx.beginPath(); nCtx.arc(n.x, n.y, n.r, 0, Math.PI * 2); nCtx.fill();
       nCtx.shadowBlur = 0;
     }
-    requestAnimationFrame(drawNeural);
+    setTimeout(drawNeural, 66);
   }
   initNeural();
   drawNeural();
@@ -2576,7 +2576,7 @@ export function mountApp(root: HTMLElement) {
       wCtx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.3)`;
       wCtx.fillRect(x, h - barH - 2, barW - 2, 2);
     }
-    requestAnimationFrame(drawWave);
+    setTimeout(drawWave, 66);
   }
   initWave();
   drawWave();
