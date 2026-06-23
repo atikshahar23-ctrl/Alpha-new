@@ -412,21 +412,21 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   const brownBasic = new THREE.MeshBasicMaterial({ color: 0x5D4037 });
   const blackBasic = new THREE.MeshBasicMaterial({ color: 0x111111 });
 
-  // ── Body ──
+  // ── Body — round and chubby, wider than tall ──
   const body = new THREE.Mesh(
-    new THREE.SphereGeometry(0.72, seg(48), seg(48)),
+    new THREE.SphereGeometry(0.68, seg(48), seg(48)),
     yellowBasic,
   );
-  body.scale.set(1.0, 1.05, 0.9);
-  body.position.set(0, -0.35, 0);
+  body.scale.set(1.1, 1.0, 0.88);
+  body.position.set(0, -0.32, 0);
   group.add(body);
 
   const shoulders = new THREE.Mesh(
-    new THREE.SphereGeometry(0.42, seg(32), seg(32)),
+    new THREE.SphereGeometry(0.45, seg(32), seg(32)),
     yellowBasic,
   );
-  shoulders.scale.set(1.15, 0.6, 0.9);
-  shoulders.position.set(0, 0.15, 0.0);
+  shoulders.scale.set(1.1, 0.55, 0.88);
+  shoulders.position.set(0, 0.18, 0.0);
   group.add(shoulders);
 
   for (const sy of [0.0, -0.2]) {
@@ -440,22 +440,23 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
     group.add(stripe);
   }
 
-  // ── Head ──
+  // ── Head — wide round, anime Pikachu's head is wider than tall ──
   const head = new THREE.Mesh(
-    new THREE.SphereGeometry(0.75, seg(48), seg(48)),
+    new THREE.SphereGeometry(0.72, seg(48), seg(48)),
     yellowBasic,
   );
-  head.scale.set(1.05, 1.0, 0.95);
-  head.position.set(0, 0.0, 0.02);
+  head.scale.set(1.15, 0.95, 0.9);
+  head.position.set(0, 0.0, 0.04);
   headGroup.add(head);
 
+  // Cheek bulges make the face wider at the bottom
   for (const sx of [-1, 1]) {
     const cheekBulge = new THREE.Mesh(
-      new THREE.SphereGeometry(0.28, seg(20), seg(20)),
+      new THREE.SphereGeometry(0.32, seg(20), seg(20)),
       yellowBasic,
     );
-    cheekBulge.scale.set(0.6, 0.5, 0.45);
-    cheekBulge.position.set(sx * 0.5, -0.12, 0.35);
+    cheekBulge.scale.set(0.55, 0.48, 0.42);
+    cheekBulge.position.set(sx * 0.52, -0.1, 0.32);
     headGroup.add(cheekBulge);
   }
 
@@ -497,9 +498,9 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
     earBlackTip.scale.set(0.75, 1.0, 0.42);
     earGroup.add(earBlackTip);
 
-    earGroup.position.set(sx * 0.38, 0.55, -0.05);
-    earGroup.rotation.z = sx * 0.45;
-    earGroup.rotation.x = -0.08;
+    earGroup.position.set(sx * 0.42, 0.5, -0.06);
+    earGroup.rotation.z = sx * 0.55;
+    earGroup.rotation.x = -0.1;
     headGroup.add(earGroup);
     if (sx === -1) leftEarGroup = earGroup;
     else rightEarGroup = earGroup;
@@ -516,109 +517,116 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   const eyeWhiteMat = new THREE.MeshBasicMaterial({ color: 0xFFFFFF });
 
   for (const sx of [-1, 1]) {
+    // Large dark oval eyes — anime Pikachu's defining feature
     const eyeDark = new THREE.Mesh(
-      new THREE.SphereGeometry(0.18, seg(28), seg(28)),
+      new THREE.SphereGeometry(0.22, seg(28), seg(28)),
       eyeBlackMat,
     );
-    eyeDark.scale.set(0.9, 1.2, 0.5);
-    eyeDark.position.set(sx * 0.28, 0.0, 0.62);
+    eyeDark.scale.set(0.85, 1.15, 0.48);
+    eyeDark.position.set(sx * 0.3, 0.02, 0.58);
     headGroup.add(eyeDark);
     if (sx === -1) leftEye = eyeDark;
     else rightEye = eyeDark;
 
     const pupil = new THREE.Mesh(
-      new THREE.SphereGeometry(0.11, seg(24), seg(24)),
+      new THREE.SphereGeometry(0.14, seg(24), seg(24)),
       eyeBlackMat,
     );
-    pupil.scale.set(0.9, 1.1, 0.45);
-    pupil.position.set(sx * 0.28, -0.01, 0.66);
+    pupil.scale.set(0.85, 1.1, 0.42);
+    pupil.position.set(sx * 0.3, 0.0, 0.62);
     headGroup.add(pupil);
     if (sx === -1) leftPupil = pupil;
     else rightPupil = pupil;
 
+    // Large white highlight — upper inner area
     const hl1 = new THREE.Mesh(
-      new THREE.SphereGeometry(0.065, seg(14), seg(14)),
+      new THREE.SphereGeometry(0.075, seg(14), seg(14)),
       eyeWhiteMat,
     );
-    hl1.position.set(sx * 0.28 + sx * 0.04, 0.08, 0.74);
+    hl1.position.set(sx * 0.3 + sx * 0.04, 0.1, 0.72);
     headGroup.add(hl1);
 
+    // Small white highlight — lower outer area
     const hl2 = new THREE.Mesh(
-      new THREE.SphereGeometry(0.035, seg(10), seg(10)),
+      new THREE.SphereGeometry(0.04, seg(10), seg(10)),
       eyeWhiteMat,
     );
-    hl2.position.set(sx * 0.28 - sx * 0.03, -0.05, 0.74);
+    hl2.position.set(sx * 0.3 - sx * 0.035, -0.06, 0.72);
     headGroup.add(hl2);
 
     const eyelid = new THREE.Mesh(
-      new THREE.SphereGeometry(0.21, seg(24), seg(12), 0, PI2, 0, PI * 0.5),
+      new THREE.SphereGeometry(0.25, seg(24), seg(12), 0, PI2, 0, PI * 0.5),
       yellowBasic,
     );
-    eyelid.scale.set(0.92, 0.01, 0.52);
-    eyelid.position.set(sx * 0.28, 0.16, 0.62);
+    eyelid.scale.set(0.88, 0.01, 0.5);
+    eyelid.position.set(sx * 0.3, 0.18, 0.58);
     eyelid.rotation.x = -0.08;
     headGroup.add(eyelid);
     if (sx === -1) leftEyelid = eyelid;
     else rightEyelid = eyelid;
   }
 
-  // ── Nose ──
+  // ── Nose — tiny black triangle between the eyes ──
   const noseMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
   const nose = new THREE.Mesh(
-    new THREE.ConeGeometry(0.035, 0.03, seg(3)),
+    new THREE.ConeGeometry(0.032, 0.028, seg(3)),
     noseMat,
   );
   nose.rotation.x = PI / 2;
   nose.rotation.z = PI;
-  nose.position.set(0, -0.08, 0.72);
+  nose.position.set(0, -0.1, 0.66);
   headGroup.add(nose);
 
   // ── Mouth ──
   const mouthLineMat = new THREE.MeshBasicMaterial({ color: 0x1A0505 });
 
+  // ω mouth — left arc
   const mouthMesh = new THREE.Mesh(
-    new THREE.TorusGeometry(0.07, 0.025, seg(12), seg(24), PI * 0.85),
+    new THREE.TorusGeometry(0.065, 0.022, seg(12), seg(24), PI * 0.85),
     mouthLineMat,
   );
-  mouthMesh.position.set(-0.045, -0.17, 0.68);
+  mouthMesh.position.set(-0.04, -0.19, 0.63);
   mouthMesh.rotation.z = PI;
   mouthMesh.rotation.x = 0.05;
   headGroup.add(mouthMesh);
 
+  // ω mouth — right arc
   const mouthR = new THREE.Mesh(
-    new THREE.TorusGeometry(0.07, 0.025, seg(12), seg(24), PI * 0.85),
+    new THREE.TorusGeometry(0.065, 0.022, seg(12), seg(24), PI * 0.85),
     mouthLineMat,
   );
-  mouthR.position.set(0.045, -0.17, 0.68);
+  mouthR.position.set(0.04, -0.19, 0.63);
   mouthR.rotation.z = PI;
   mouthR.rotation.x = 0.05;
   headGroup.add(mouthR);
 
+  // Smile corners
   for (const sx of [-1, 1]) {
     const smile = new THREE.Mesh(
-      new THREE.TorusGeometry(0.035, 0.02, seg(8), seg(12), PI * 0.5),
+      new THREE.TorusGeometry(0.03, 0.018, seg(8), seg(12), PI * 0.5),
       mouthLineMat,
     );
-    smile.position.set(sx * 0.11, -0.13, 0.69);
+    smile.position.set(sx * 0.1, -0.15, 0.64);
     smile.rotation.z = sx === -1 ? PI * 0.15 : PI * 0.85;
     smile.rotation.x = 0.04;
     headGroup.add(smile);
   }
 
+  // Lip line from nose to mouth
   const lipLine = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.01, 0.04, seg(4), seg(6)),
+    new THREE.CapsuleGeometry(0.009, 0.04, seg(4), seg(6)),
     mouthLineMat,
   );
-  lipLine.position.set(0, -0.12, 0.71);
+  lipLine.position.set(0, -0.14, 0.65);
   headGroup.add(lipLine);
 
   const tongueMat = new THREE.MeshBasicMaterial({ color: 0xF06080 });
   const tongue = new THREE.Mesh(
-    new THREE.SphereGeometry(0.04, seg(10), seg(10)),
+    new THREE.SphereGeometry(0.035, seg(10), seg(10)),
     tongueMat,
   );
   tongue.scale.set(1.2, 0.5, 0.7);
-  tongue.position.set(0, -0.17, 0.62);
+  tongue.position.set(0, -0.19, 0.58);
   headGroup.add(tongue);
 
   // ── Red Cheeks ──
@@ -628,16 +636,16 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   const cheekMatR = new THREE.MeshPhysicalMaterial({
     color: 0xE53935, roughness: 0.5, emissive: 0xCC2020, emissiveIntensity: 0.2,
   });
-  const cheekGeo = new THREE.SphereGeometry(0.17, seg(24), seg(24));
+  const cheekGeo = new THREE.SphereGeometry(0.19, seg(24), seg(24));
 
   const cheekL = new THREE.Mesh(cheekGeo, cheekMatL);
-  cheekL.scale.set(1.1, 1.0, 0.4);
-  cheekL.position.set(-0.48, -0.12, 0.48);
+  cheekL.scale.set(1.05, 1.0, 0.42);
+  cheekL.position.set(-0.5, -0.1, 0.42);
   headGroup.add(cheekL);
 
   const cheekR = new THREE.Mesh(cheekGeo, cheekMatR);
-  cheekR.scale.set(1.1, 1.0, 0.4);
-  cheekR.position.set(0.48, -0.12, 0.48);
+  cheekR.scale.set(1.05, 1.0, 0.42);
+  cheekR.position.set(0.5, -0.1, 0.42);
   headGroup.add(cheekR);
 
   headGroup.position.set(0, 0.55, 0.0);
