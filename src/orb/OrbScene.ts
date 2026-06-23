@@ -215,7 +215,7 @@ const PART_VERT = /* glsl */`
     gl_PointSize = aSize * p * (120.0 / -mv.z);
     gl_Position = projectionMatrix * mv;
     vColor = aColor;
-    vAlpha = 0.35 + sin(uTime * 1.5 + aPhase * 3.14) * 0.15;
+    vAlpha = 0.12 + sin(uTime * 1.5 + aPhase * 3.14) * 0.06;
   }
 `;
 
@@ -337,49 +337,43 @@ interface PikachuMaterials {
 function createPikachuMaterials(envMap: THREE.Texture): PikachuMaterials {
   return {
     yellow: new THREE.MeshPhysicalMaterial({
-      color: 0xFDD835, metalness: 0.0, roughness: 0.35, envMap, envMapIntensity: 0.6,
-      clearcoat: 0.4, clearcoatRoughness: 0.12,
-      sheen: 0.35, sheenRoughness: 0.3, sheenColor: new THREE.Color(0xFFEB3B),
-      emissive: 0xFDD835, emissiveIntensity: 0.04,
+      color: 0xFDD835, metalness: 0.0, roughness: 0.55, envMap, envMapIntensity: 0.25,
+      clearcoat: 0.15, clearcoatRoughness: 0.3,
+      sheen: 0.1, sheenRoughness: 0.5, sheenColor: new THREE.Color(0xFFEB3B),
     }),
     darkYellow: new THREE.MeshPhysicalMaterial({
-      color: 0xC8A415, metalness: 0.0, roughness: 0.42, envMap, envMapIntensity: 0.45,
-      clearcoat: 0.25, clearcoatRoughness: 0.2,
-      sheen: 0.15, sheenRoughness: 0.4, sheenColor: new THREE.Color(0xD4A84D),
+      color: 0xC8A415, metalness: 0.0, roughness: 0.55, envMap, envMapIntensity: 0.2,
+      clearcoat: 0.1, clearcoatRoughness: 0.35,
     }),
     cream: new THREE.MeshPhysicalMaterial({
-      color: 0xFFFDE7, metalness: 0.0, roughness: 0.38, envMap, envMapIntensity: 0.42,
-      clearcoat: 0.25, clearcoatRoughness: 0.18,
-      sheen: 0.2, sheenRoughness: 0.4, sheenColor: new THREE.Color(0xFFFFF0),
-      emissive: 0xFFFDE7, emissiveIntensity: 0.03,
+      color: 0xFFFDE7, metalness: 0.0, roughness: 0.5, envMap, envMapIntensity: 0.2,
+      clearcoat: 0.1, clearcoatRoughness: 0.3,
     }),
     red: new THREE.MeshPhysicalMaterial({
-      color: 0xE53935, metalness: 0.0, roughness: 0.28, envMap, envMapIntensity: 0.45,
-      emissive: 0xE53935, emissiveIntensity: 0.4,
-      clearcoat: 0.45, clearcoatRoughness: 0.12,
-      sheen: 0.1, sheenRoughness: 0.35, sheenColor: new THREE.Color(0xFF5252),
+      color: 0xE53935, metalness: 0.0, roughness: 0.45, envMap, envMapIntensity: 0.2,
+      emissive: 0xE53935, emissiveIntensity: 0.08,
+      clearcoat: 0.15, clearcoatRoughness: 0.2,
     }),
     brown: new THREE.MeshPhysicalMaterial({
-      color: 0x5D4037, metalness: 0.0, roughness: 0.42, envMap, envMapIntensity: 0.38,
-      clearcoat: 0.2, clearcoatRoughness: 0.25,
+      color: 0x5D4037, metalness: 0.0, roughness: 0.55, envMap, envMapIntensity: 0.2,
+      clearcoat: 0.1, clearcoatRoughness: 0.3,
     }),
     white: new THREE.MeshPhysicalMaterial({
-      color: 0xffffff, metalness: 0.0, roughness: 0.06, envMap, envMapIntensity: 0.35,
-      emissive: 0xffffff, emissiveIntensity: 0.7,
-      clearcoat: 0.7, clearcoatRoughness: 0.06,
+      color: 0xffffff, metalness: 0.0, roughness: 0.15, envMap, envMapIntensity: 0.2,
+      emissive: 0xffffff, emissiveIntensity: 0.3,
+      clearcoat: 0.3, clearcoatRoughness: 0.1,
     }),
     black: new THREE.MeshPhysicalMaterial({
-      color: 0x0A0A0A, metalness: 0.08, roughness: 0.15, envMap, envMapIntensity: 0.4,
-      clearcoat: 0.6, clearcoatRoughness: 0.08,
+      color: 0x0A0A0A, metalness: 0.05, roughness: 0.25, envMap, envMapIntensity: 0.2,
+      clearcoat: 0.3, clearcoatRoughness: 0.15,
     }),
     mouth: new THREE.MeshPhysicalMaterial({
-      color: 0x8B1A1A, metalness: 0.0, roughness: 0.4, envMap, envMapIntensity: 0.2,
-      clearcoat: 0.2, clearcoatRoughness: 0.3,
-      emissive: 0x3D0808, emissiveIntensity: 0.15,
+      color: 0x8B1A1A, metalness: 0.0, roughness: 0.5, envMap, envMapIntensity: 0.1,
+      clearcoat: 0.1, clearcoatRoughness: 0.3,
     }),
     nose: new THREE.MeshPhysicalMaterial({
-      color: 0x151515, metalness: 0.08, roughness: 0.15, envMap, envMapIntensity: 0.35,
-      clearcoat: 0.55, clearcoatRoughness: 0.08,
+      color: 0x151515, metalness: 0.05, roughness: 0.3, envMap, envMapIntensity: 0.2,
+      clearcoat: 0.25, clearcoatRoughness: 0.15,
     }),
   };
 }
@@ -632,9 +626,9 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
 
     // Main eye — large dark circle filling most of the eye area (anime-accurate)
     const eyeDarkMat = new THREE.MeshPhysicalMaterial({
-      color: 0x1A1008, metalness: 0.05, roughness: 0.12,
-      clearcoat: 0.7, clearcoatRoughness: 0.06,
-      envMap: mats.black.envMap, envMapIntensity: 0.35,
+      color: 0x1A1008, metalness: 0.02, roughness: 0.25,
+      clearcoat: 0.3, clearcoatRoughness: 0.12,
+      envMap: mats.black.envMap, envMapIntensity: 0.15,
     });
     const eyeDark = new THREE.Mesh(
       new THREE.SphereGeometry(0.18, seg(28), seg(28)),
@@ -828,13 +822,13 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
     headGroup.add(cheekEdge);
   }
 
-  // Cheek glow halos — dual-layer soft outer rings for electric glow effect
+  // Cheek glow halos — very subtle
   const cheekGlowMat = new THREE.MeshBasicMaterial({
-    color: 0xFF6644, transparent: true, opacity: 0.1,
+    color: 0xFF6644, transparent: true, opacity: 0.04,
     depthWrite: false, side: THREE.DoubleSide,
   });
   const cheekGlowOuterMat = new THREE.MeshBasicMaterial({
-    color: 0xFF4422, transparent: true, opacity: 0.04,
+    color: 0xFF4422, transparent: true, opacity: 0.015,
     depthWrite: false, side: THREE.DoubleSide,
     blending: THREE.AdditiveBlending,
   });
@@ -1125,46 +1119,51 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   }
   group.add(sparks);
 
-  // Electricity aura — wireframe sphere showing electric field
+  // Electricity aura — very subtle wireframe
   const auraMat = new THREE.MeshBasicMaterial({
     color: 0xFFDD44, transparent: true, opacity: 0, wireframe: true,
     depthWrite: false, blending: THREE.AdditiveBlending,
   });
   const aura = new THREE.Mesh(
-    new THREE.IcosahedronGeometry(1.5, 2),
+    new THREE.IcosahedronGeometry(1.8, 1),
     auraMat,
   );
   group.add(aura);
 
-  // ── Glass orb — subtle transparent sphere ──
+  // ── Glass orb — very faint, almost invisible ──
   const glassOrb = new THREE.Mesh(
     new THREE.SphereGeometry(2.0, seg(64), seg(64)),
     new THREE.MeshPhysicalMaterial({
       color: 0xffffff,
       transparent: true,
-      opacity: 0.06,
+      opacity: 0.015,
       metalness: 0.0,
-      roughness: 0.02,
-      envMapIntensity: 0.6,
+      roughness: 0.05,
+      envMapIntensity: 0.15,
       side: THREE.DoubleSide,
       depthWrite: false,
-      transmission: 0.95,
-      thickness: 0.5,
-      ior: 1.5,
+      transmission: 0.98,
+      thickness: 0.2,
+      ior: 1.3,
     }),
   );
   group.add(glassOrb);
 
-  // Warm yellow point light inside Pikachu for self-illumination
-  const pikaLight = new THREE.PointLight(0xFCD534, 0.4, 3.0, 1.5);
-  pikaLight.position.set(0, 0.0, 0.2);
+  // Soft fill light for Pikachu visibility
+  const pikaLight = new THREE.PointLight(0xFFF8E0, 0.6, 4.0, 1.2);
+  pikaLight.position.set(0, 0.3, 1.0);
   group.add(pikaLight);
 
-  // Cheek glow lights — subtle red point lights at cheek positions
-  const cheekLightL = new THREE.PointLight(0xCC2828, 0.18, 1.3, 2);
+  // Secondary fill from behind
+  const pikaBackLight = new THREE.PointLight(0xFFF0C0, 0.25, 3.0, 1.5);
+  pikaBackLight.position.set(0, 0.5, -1.0);
+  group.add(pikaBackLight);
+
+  // Cheek glow lights — subtle
+  const cheekLightL = new THREE.PointLight(0xCC2828, 0.08, 0.8, 2);
   cheekLightL.position.set(-0.56, 0.48, 0.48);
   group.add(cheekLightL);
-  const cheekLightR = new THREE.PointLight(0xCC2828, 0.18, 1.3, 2);
+  const cheekLightR = new THREE.PointLight(0xCC2828, 0.08, 0.8, 2);
   cheekLightR.position.set(0.56, 0.48, 0.48);
   group.add(cheekLightR);
 
@@ -1243,7 +1242,7 @@ const ATMOSPHERE_FRAG = /* glsl */`
     col += pearl * i3 * 0.08;
     col += vec3(0.5, 0.42, 0.22) * shaft * 0.06;
 
-    float alpha = (i2 * 0.12 + i3 * 0.04) * pulse * density;
+    float alpha = (i2 * 0.04 + i3 * 0.015) * pulse * density;
 
     gl_FragColor = vec4(col, alpha);
   }
@@ -1321,13 +1320,16 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   scene.add(group);
 
   // ── Brighter cheerful lighting for mobile (2 lights + ambient) ──
-  const mKey = new THREE.DirectionalLight(0xffffff, 3.5);
-  mKey.position.set(3, 4, 4);
+  const mKey = new THREE.DirectionalLight(0xffffff, 4.0);
+  mKey.position.set(2, 4, 5);
   scene.add(mKey);
-  const mFill = new THREE.DirectionalLight(0xFFE45C, 1.5);
-  mFill.position.set(-4, 1, 3);
+  const mFill = new THREE.DirectionalLight(0xFFF0D0, 2.0);
+  mFill.position.set(-3, 2, 4);
   scene.add(mFill);
-  const mAmbient = new THREE.AmbientLight(0x1a1408, 0.4);
+  const mFront = new THREE.DirectionalLight(0xFFFAE8, 1.5);
+  mFront.position.set(0, 1, 6);
+  scene.add(mFront);
+  const mAmbient = new THREE.AmbientLight(0x2a2010, 0.8);
   scene.add(mAmbient);
 
   // ────────────────────────────────────────────
@@ -1344,10 +1346,10 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   // ────────────────────────────────────────────
   // ORBITAL RINGS — gold halo, champagne, rose
   // ────────────────────────────────────────────
-  // Primary gold halo — thicker, brighter, larger than the protrusions
-  const goldRGeo = new THREE.TorusGeometry(1.75, 0.06, 28, 220);
+  // Primary gold halo — subtle ring
+  const goldRGeo = new THREE.TorusGeometry(1.85, 0.035, 28, 220);
   const goldRMat = new THREE.MeshBasicMaterial({
-    color: 0xdaa520, transparent: true, opacity: 0.95, depthWrite: false,
+    color: 0xdaa520, transparent: true, opacity: 0.45, depthWrite: false,
   });
   const goldRing = new THREE.Mesh(goldRGeo, goldRMat);
   goldRing.rotation.x = PI * 0.5;
@@ -1355,9 +1357,9 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   group.add(goldRing);
 
   // Glow ring behind the primary halo
-  const haloGlowGeo = new THREE.TorusGeometry(1.75, 0.16, 24, 200);
+  const haloGlowGeo = new THREE.TorusGeometry(1.85, 0.1, 24, 200);
   const haloGlowMat = new THREE.MeshBasicMaterial({
-    color: 0xdaa520, transparent: true, opacity: 0.18, depthWrite: false,
+    color: 0xdaa520, transparent: true, opacity: 0.06, depthWrite: false,
     blending: THREE.AdditiveBlending,
   });
   const haloGlow = new THREE.Mesh(haloGlowGeo, haloGlowMat);
@@ -1365,9 +1367,9 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   haloGlow.rotation.z = 0.15;
   group.add(haloGlow);
 
-  const cyanRGeo = new THREE.TorusGeometry(1.25, 0.015, 16, 160);
+  const cyanRGeo = new THREE.TorusGeometry(1.35, 0.012, 16, 160);
   const cyanRMat = new THREE.MeshBasicMaterial({
-    color: 0xf5e6c8, transparent: true, opacity: 0.4, depthWrite: false,
+    color: 0xf5e6c8, transparent: true, opacity: 0.2, depthWrite: false,
   });
   const cyanRing = new THREE.Mesh(cyanRGeo, cyanRMat);
   cyanRing.rotation.x = PI * 0.38;
@@ -1416,9 +1418,9 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   }
 
   // ────────────────────────────────────────────
-  // ATMOSPHERE SHELL + OUTER GLOW
+  // ATMOSPHERE SHELL + OUTER GLOW — subtle, not overwhelming
   // ────────────────────────────────────────────
-  const atmoGeo = new THREE.IcosahedronGeometry(1.2, 5);
+  const atmoGeo = new THREE.IcosahedronGeometry(1.4, 5);
   const atmoMat = new THREE.ShaderMaterial({
     uniforms: { uTime: { value: 0 }, uEnergy: { value: 0 } },
     vertexShader: ATMOSPHERE_VERT,
@@ -1431,7 +1433,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   group.add(atmosphere);
 
   const glow1Mat = new THREE.SpriteMaterial({
-    map: glowTexture(), color: 0x5a4218, transparent: true, opacity: 0.14,
+    map: glowTexture(), color: 0x5a4218, transparent: true, opacity: 0.04,
     depthWrite: false, blending: THREE.AdditiveBlending,
   });
   const glow1 = new THREE.Sprite(glow1Mat);
@@ -1439,7 +1441,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   group.add(glow1);
 
   const glow2Mat = new THREE.SpriteMaterial({
-    map: glowTexture(), color: 0x2a1c0a, transparent: true, opacity: 0.07,
+    map: glowTexture(), color: 0x2a1c0a, transparent: true, opacity: 0.02,
     depthWrite: false, blending: THREE.AdditiveBlending,
   });
   const glow2 = new THREE.Sprite(glow2Mat);
@@ -1580,7 +1582,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     const hbPhase = (time * 1.2) % PI2;
     const lub = Math.max(0, Math.sin(hbPhase * 2.0)) > 0.85 ? 0.25 : 0;
     const dub = Math.max(0, Math.sin(hbPhase * 2.0 + 1.2)) > 0.9 ? 0.18 : 0;
-    const cheekPulse = 0.25 + lub + dub + amp * 0.3 + sparkBurst;
+    const cheekPulse = 0.08 + lub * 0.3 + dub * 0.2 + amp * 0.1 + sparkBurst * 0.3;
     pika.cheekMatL.emissiveIntensity = cheekPulse;
     pika.cheekMatR.emissiveIntensity = cheekPulse;
     if (pika.tail) {
@@ -1618,25 +1620,25 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     for (let si = 0; si < pika.sparkMats.length; si++) {
       const phase = Math.sin(time * 8.0 + si * 2.7) * Math.sin(time * 3.1 + si * 1.3);
       const burstBoost = sparkBurst > 0 ? 0.3 : 0;
-      pika.sparkMats[si].opacity = phase > 0.5 ? (0.4 + phase * 0.6 + burstBoost) * (0.7 + amp * 0.3) : 0;
+      pika.sparkMats[si].opacity = phase > 0.5 ? (0.15 + phase * 0.25 + burstBoost) * (0.5 + amp * 0.2) : 0;
     }
     pika.sparks.rotation.y = time * 0.35;
     // Eye tracking — pupils occasionally look toward viewer, drift around
     const viewerLook = Math.sin(time * 0.08) > 0.7 ? 0.01 : 0;
     const lookX = Math.sin(time * 0.18) * 0.015 + viewerLook;
     const lookY = Math.sin(time * 0.13 + 0.7) * 0.01;
-    if (pika.leftPupil) { pika.leftPupil.position.x = -0.28 + lookX; pika.leftPupil.position.y = 0.055 + lookY; }
-    if (pika.rightPupil) { pika.rightPupil.position.x = 0.28 + lookX; pika.rightPupil.position.y = 0.055 + lookY; }
+    if (pika.leftPupil) { pika.leftPupil.position.x = -0.3 + lookX; pika.leftPupil.position.y = 0.055 + lookY; }
+    if (pika.rightPupil) { pika.rightPupil.position.x = 0.3 + lookX; pika.rightPupil.position.y = 0.055 + lookY; }
     // Tongue subtle wiggle — more active during hop
     const tongueWiggle = hopActive ? 0.008 : 0.003;
     if (pika.tongue) pika.tongue.position.y = -0.12 + Math.sin(time * 2.0) * tongueWiggle;
     // Mouth expression — opens slightly during hop (happy face)
     if (pika.mouthMesh) {
       const mouthOpen = hopActive ? 0.03 : 0;
-      pika.mouthMesh.position.y = -0.1 - mouthOpen;
+      pika.mouthMesh.position.y = -0.12 - mouthOpen;
     }
     // Electricity aura — pulses during spark bursts
-    pika.auraMat.opacity = sparkBurst > 0 ? 0.06 + Math.sin(time * 12) * 0.03 : 0;
+    pika.auraMat.opacity = sparkBurst > 0 ? 0.02 + Math.sin(time * 12) * 0.01 : 0;
     // Randomize spark rotations for more dynamic feel
     if (sparkBurst > 0) {
       for (let si = 0; si < Math.min(pika.sparkMeshes.length, 6); si++) {
@@ -1648,11 +1650,11 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     }
 
     goldRing.rotation.z = 0.15 + time * 0.1;
-    goldRMat.opacity = 0.9 + Math.sin(time * 0.8) * 0.08 + amp * 0.1;
+    goldRMat.opacity = 0.4 + Math.sin(time * 0.8) * 0.05 + amp * 0.05;
     haloGlow.rotation.z = goldRing.rotation.z;
-    haloGlowMat.opacity = 0.16 + Math.sin(time * 0.8) * 0.05 + amp * 0.1;
+    haloGlowMat.opacity = 0.05 + Math.sin(time * 0.8) * 0.02 + amp * 0.03;
     cyanRing.rotation.z = -0.3 - time * 0.14;
-    cyanRMat.opacity = 0.35 + Math.sin(time * 0.7) * 0.1;
+    cyanRMat.opacity = 0.15 + Math.sin(time * 0.7) * 0.05;
     purpRing.rotation.z = 0.5 + time * 0.06;
     purpRing.rotation.x = PI * 0.62 + Math.sin(time * 0.2) * 0.1;
     purpRMat.opacity = 0.2 + Math.sin(time * 0.6) * 0.08 + amp * 0.12;
@@ -2433,7 +2435,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     const hbPhase = (time * 1.2) % PI2;
     const lub = Math.max(0, Math.sin(hbPhase * 2.0)) > 0.85 ? 0.25 : 0;
     const dub = Math.max(0, Math.sin(hbPhase * 2.0 + 1.2)) > 0.9 ? 0.18 : 0;
-    const cheekPulse = 0.25 + lub + dub + amp * 0.3 + sparkBurst;
+    const cheekPulse = 0.08 + lub * 0.3 + dub * 0.2 + amp * 0.1 + sparkBurst * 0.3;
     pika.cheekMatL.emissiveIntensity = cheekPulse;
     pika.cheekMatR.emissiveIntensity = cheekPulse;
     if (pika.tail) {
@@ -2471,7 +2473,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     for (let si = 0; si < pika.sparkMats.length; si++) {
       const phase = Math.sin(time * 8.0 + si * 2.7) * Math.sin(time * 3.1 + si * 1.3);
       const burstBoost = sparkBurst > 0 ? 0.3 : 0;
-      pika.sparkMats[si].opacity = phase > 0.5 ? (0.4 + phase * 0.6 + burstBoost) * (0.7 + amp * 0.3) : 0;
+      pika.sparkMats[si].opacity = phase > 0.5 ? (0.15 + phase * 0.25 + burstBoost) * (0.5 + amp * 0.2) : 0;
     }
     pika.sparks.rotation.y = time * 0.35;
     // Eye tracking — pupils occasionally look toward viewer (mouse), drift around
@@ -2479,18 +2481,18 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     const viewerLookYD = dMouseY * -0.005;
     const lookX = Math.sin(time * 0.18) * 0.015 + viewerLookD;
     const lookY = Math.sin(time * 0.13 + 0.7) * 0.01 + viewerLookYD;
-    if (pika.leftPupil) { pika.leftPupil.position.x = -0.28 + lookX; pika.leftPupil.position.y = 0.055 + lookY; }
-    if (pika.rightPupil) { pika.rightPupil.position.x = 0.28 + lookX; pika.rightPupil.position.y = 0.055 + lookY; }
+    if (pika.leftPupil) { pika.leftPupil.position.x = -0.3 + lookX; pika.leftPupil.position.y = 0.055 + lookY; }
+    if (pika.rightPupil) { pika.rightPupil.position.x = 0.3 + lookX; pika.rightPupil.position.y = 0.055 + lookY; }
     // Tongue subtle wiggle — more active during hop
     const tongueWiggle = hopActive ? 0.008 : 0.003;
     if (pika.tongue) pika.tongue.position.y = -0.12 + Math.sin(time * 2.0) * tongueWiggle;
     // Mouth expression — opens slightly during hop (happy face)
     if (pika.mouthMesh) {
       const mouthOpen = hopActive ? 0.03 : 0;
-      pika.mouthMesh.position.y = -0.1 - mouthOpen;
+      pika.mouthMesh.position.y = -0.12 - mouthOpen;
     }
     // Electricity aura — pulses during spark bursts
-    pika.auraMat.opacity = sparkBurst > 0 ? 0.06 + Math.sin(time * 12) * 0.03 : 0;
+    pika.auraMat.opacity = sparkBurst > 0 ? 0.02 + Math.sin(time * 12) * 0.01 : 0;
     // Randomize spark rotations for more dynamic feel
     if (sparkBurst > 0) {
       for (let si = 0; si < Math.min(pika.sparkMeshes.length, 6); si++) {
