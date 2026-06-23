@@ -457,17 +457,26 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   bellyRing.position.set(0, -0.3, 0.38);
   group.add(bellyRing);
 
-  // Back stripes — two brown horizontal stripes
-  for (const sy of [0.0, -0.24]) {
+  // Back stripes — two brown horizontal stripes, wider and more visible
+  for (const sy of [0.0, -0.22]) {
     const stripe = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.028, 0.48, seg(4), seg(8)),
+      new THREE.CapsuleGeometry(0.035, 0.52, seg(4), seg(10)),
       mats.brown,
     );
     stripe.rotation.z = PI / 2;
-    stripe.position.set(0, -0.12 + sy, -0.6);
-    stripe.rotation.x = 0.25;
+    stripe.position.set(0, -0.1 + sy, -0.62);
+    stripe.rotation.x = 0.2;
     group.add(stripe);
   }
+
+  // Lower body roundness — hip/bottom area for chubbier look
+  const hips = new THREE.Mesh(
+    new THREE.SphereGeometry(0.52, seg(24), seg(24)),
+    mats.yellow,
+  );
+  hips.scale.set(1.1, 0.55, 0.85);
+  hips.position.set(0, -0.72, 0.02);
+  group.add(hips);
 
   // ── Head — big round head, Pikachu's signature look ──
   const head = new THREE.Mesh(
@@ -652,6 +661,19 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
     hl3.position.set(sx * 0.27 + sx * 0.015, 0.045, 0.74);
     headGroup.add(hl3);
 
+    // Eye outline — thin dark ring for definition
+    const eyeOutlineMat = new THREE.MeshBasicMaterial({
+      color: 0x1A1008, transparent: true, opacity: 0.35,
+      depthWrite: false, side: THREE.BackSide,
+    });
+    const eyeOutline = new THREE.Mesh(
+      new THREE.SphereGeometry(0.17, seg(20), seg(20)),
+      eyeOutlineMat,
+    );
+    eyeOutline.scale.set(0.82, 1.08, 0.52);
+    eyeOutline.position.set(sx * 0.27, 0.07, 0.61);
+    headGroup.add(eyeOutline);
+
     // Eyelid — yellow half-sphere for blinking
     const eyelid = new THREE.Mesh(
       new THREE.SphereGeometry(0.18, seg(24), seg(12), 0, PI2, 0, PI * 0.5),
@@ -754,20 +776,36 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
     headGroup.add(brow);
   }
 
-  // ── Red Cheeks — signature round red patches with outer glow ring ──
+  // ── Red Cheeks — signature round red patches with gradient edge ──
   const cheekMatL = mats.red.clone();
   const cheekMatR = mats.red.clone();
-  const cheekGeo = new THREE.SphereGeometry(0.14, seg(24), seg(24));
+  const cheekGeo = new THREE.SphereGeometry(0.15, seg(24), seg(24));
 
   const cheekL = new THREE.Mesh(cheekGeo, cheekMatL);
-  cheekL.scale.set(1.0, 0.85, 0.4);
+  cheekL.scale.set(1.0, 0.88, 0.42);
   cheekL.position.set(-0.5, -0.06, 0.44);
   headGroup.add(cheekL);
 
   const cheekR = new THREE.Mesh(cheekGeo, cheekMatR);
-  cheekR.scale.set(1.0, 0.85, 0.4);
+  cheekR.scale.set(1.0, 0.88, 0.42);
   cheekR.position.set(0.5, -0.06, 0.44);
   headGroup.add(cheekR);
+
+  // Cheek gradient edge — softer transition to yellow
+  const cheekEdgeMat = new THREE.MeshPhysicalMaterial({
+    color: 0xE8A020, metalness: 0.0, roughness: 0.4,
+    transparent: true, opacity: 0.45,
+    clearcoat: 0.2, clearcoatRoughness: 0.2,
+  });
+  for (const sx of [-1, 1]) {
+    const cheekEdge = new THREE.Mesh(
+      new THREE.SphereGeometry(0.18, seg(20), seg(20)),
+      cheekEdgeMat,
+    );
+    cheekEdge.scale.set(0.95, 0.82, 0.3);
+    cheekEdge.position.set(sx * 0.5, -0.06, 0.43);
+    headGroup.add(cheekEdge);
+  }
 
   // Cheek glow halos — dual-layer soft outer rings for electric glow effect
   const cheekGlowMat = new THREE.MeshBasicMaterial({
