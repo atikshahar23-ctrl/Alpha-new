@@ -1378,26 +1378,48 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     pMat.uniforms.uTime.value = time;
 
     // ── Pikachu "life" animation ──
+    // Body sway — gentle side-to-side idle tilting
+    const sway = Math.sin(time * 0.45) * 0.04;
     pikaGroup.rotation.y = Math.sin(time * 0.35) * 0.35;
-    pikaGroup.position.y = Math.sin(time * 0.7) * 0.06;
+    pikaGroup.rotation.z = sway;
+    // Periodic happy hop — quick bounce every ~8 seconds
+    const hopCycle = time % 8.0;
+    const hopActive = hopCycle > 7.4 && hopCycle < 7.8;
+    const hopHeight = hopActive ? Math.sin((hopCycle - 7.4) / 0.4 * PI) * 0.15 : 0;
+    pikaGroup.position.y = Math.sin(time * 0.7) * 0.06 + hopHeight;
     const breath = 1.0 + Math.sin(time * 1.2) * 0.02;
     const bounce = 1.0 + Math.max(0, Math.sin(time * 3.0)) * 0.008;
-    pikaGroup.scale.set(0.95 * breath * (1.0 / bounce), 0.95 * breath * bounce, 0.95 * breath);
+    const hopSquash = hopActive ? 1.0 + Math.sin((hopCycle - 7.4) / 0.4 * PI) * 0.04 : 1.0;
+    pikaGroup.scale.set(0.95 * breath * (1.0 / bounce) * (1.0 / hopSquash), 0.95 * breath * bounce * hopSquash, 0.95 * breath);
     if (pika.head) {
+      // Curious head tilt — cycles between looking around and tilting curiously
+      const curiousCycle = time % 12.0;
+      const curiousTilt = curiousCycle > 5.0 && curiousCycle < 7.0
+        ? Math.sin((curiousCycle - 5.0) / 2.0 * PI) * 0.12 : 0;
       pika.head.rotation.y = Math.sin(time * 0.5 + 0.5) * 0.14;
-      pika.head.rotation.z = Math.sin(time * 0.3) * 0.05;
-      pika.head.rotation.x = Math.sin(time * 0.25) * 0.04;
+      pika.head.rotation.z = Math.sin(time * 0.3) * 0.05 + curiousTilt;
+      pika.head.rotation.x = Math.sin(time * 0.25) * 0.04 + (curiousTilt > 0 ? -0.03 : 0);
     }
     const sparkBurst = Math.max(0, Math.sin(time * 6.0)) > 0.92 ? 0.5 : 0;
-    const cheekPulse = 0.3 + Math.sin(time * 1.8) * 0.2 + amp * 0.3 + sparkBurst;
+    // Heartbeat cheek glow — "lub-dub" rhythm
+    const hbPhase = (time * 1.2) % PI2;
+    const lub = Math.max(0, Math.sin(hbPhase * 2.0)) > 0.85 ? 0.25 : 0;
+    const dub = Math.max(0, Math.sin(hbPhase * 2.0 + 1.2)) > 0.9 ? 0.18 : 0;
+    const cheekPulse = 0.25 + lub + dub + amp * 0.3 + sparkBurst;
     pika.cheekMatL.emissiveIntensity = cheekPulse;
     pika.cheekMatR.emissiveIntensity = cheekPulse;
     if (pika.tail) {
-      pika.tail.rotation.z = Math.sin(time * 1.8) * 0.18;
-      pika.tail.rotation.y = 0.15 + Math.sin(time * 2.5) * 0.12;
+      // Multi-frequency wag with periodic wag bursts
+      const wagBurst = (time % 6.0) > 5.0 ? 2.5 : 1.0;
+      pika.tail.rotation.z = Math.sin(time * 1.8 * wagBurst) * 0.18 + Math.sin(time * 4.2) * 0.04;
+      pika.tail.rotation.y = 0.15 + Math.sin(time * 2.5) * 0.12 + Math.cos(time * 3.8) * 0.05;
       pika.tail.rotation.x = -0.45 + Math.sin(time * 1.2) * 0.05;
     }
-    if (pika.leftArm) pika.leftArm.rotation.z = 0.55 + Math.sin(time * 1.2) * 0.18;
+    // Arm wave gesture — one arm raises periodically as a greeting
+    const waveCycle = time % 10.0;
+    const waveActive = waveCycle > 8.5 && waveCycle < 10.0;
+    const waveAmount = waveActive ? Math.sin((waveCycle - 8.5) / 1.5 * PI) * 0.65 : 0;
+    if (pika.leftArm) pika.leftArm.rotation.z = 0.55 + Math.sin(time * 1.2) * 0.18 - waveAmount;
     if (pika.rightArm) pika.rightArm.rotation.z = -0.55 + Math.sin(time * 1.2 + 1.0) * 0.18;
     // Blinking — natural blink pattern with double-blink
     const blinkPeriod = 3.5 + Math.sin(time * 0.1) * 0.5;
@@ -1405,12 +1427,14 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     const doubleBlink = blinkPhase > 0.35 && blinkPhase < 0.65;
     const blinkActive = blinkPhase < 0.15 || doubleBlink;
     const blinkT = blinkActive ? (doubleBlink ? (blinkPhase - 0.35) / 0.3 : blinkPhase / 0.15) : 0;
-    const squintAmount = sparkBurst > 0 ? 0.4 : 0;
+    // Happy squint during hop
+    const happySquint = hopActive ? 0.35 : 0;
+    const squintAmount = sparkBurst > 0 ? 0.4 : happySquint;
     const blinkY = blinkActive ? Math.max(0.01, 1.0 - Math.sin(blinkT * PI) * 0.99) : Math.max(0.01, squintAmount);
     if (pika.leftEyelid) pika.leftEyelid.scale.y = blinkY;
     if (pika.rightEyelid) pika.rightEyelid.scale.y = blinkY;
-    // Ear twitching — independent, occasional + perk up during sparks
-    const earPerk = sparkBurst > 0 ? -0.08 : 0;
+    // Ear twitching — independent, occasional + perk up during sparks + hop
+    const earPerk = sparkBurst > 0 ? -0.08 : hopActive ? -0.06 : 0;
     const earTwitchL = Math.sin(time * 2.5) * 0.05 + (Math.sin(time * 7.3) > 0.95 ? 0.12 : 0) + earPerk;
     const earTwitchR = Math.sin(time * 2.5 + 0.6) * 0.05 + (Math.sin(time * 8.1 + 1.0) > 0.95 ? 0.12 : 0) + earPerk;
     if (pika.leftEarGroup) pika.leftEarGroup.rotation.x = -0.12 + earTwitchL;
@@ -1422,13 +1446,15 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
       pika.sparkMats[si].opacity = phase > 0.5 ? (0.4 + phase * 0.6 + burstBoost) * (0.7 + amp * 0.3) : 0;
     }
     pika.sparks.rotation.y = time * 0.35;
-    // Eye tracking — pupils drift to look around
-    const lookX = Math.sin(time * 0.18) * 0.015;
+    // Eye tracking — pupils occasionally look toward viewer, drift around
+    const viewerLook = Math.sin(time * 0.08) > 0.7 ? 0.01 : 0;
+    const lookX = Math.sin(time * 0.18) * 0.015 + viewerLook;
     const lookY = Math.sin(time * 0.13 + 0.7) * 0.01;
     if (pika.leftPupil) { pika.leftPupil.position.x = -0.27 + lookX; pika.leftPupil.position.y = 0.055 + lookY; }
     if (pika.rightPupil) { pika.rightPupil.position.x = 0.27 + lookX; pika.rightPupil.position.y = 0.055 + lookY; }
-    // Tongue subtle wiggle
-    if (pika.tongue) pika.tongue.position.y = -0.12 + Math.sin(time * 2.0) * 0.003;
+    // Tongue subtle wiggle — more active during hop
+    const tongueWiggle = hopActive ? 0.008 : 0.003;
+    if (pika.tongue) pika.tongue.position.y = -0.12 + Math.sin(time * 2.0) * tongueWiggle;
 
     goldRing.rotation.z = 0.15 + time * 0.1;
     goldRMat.opacity = 0.9 + Math.sin(time * 0.8) * 0.08 + amp * 0.1;
@@ -2189,26 +2215,48 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     gridMat.uniforms.uEnergy.value = amp;
 
     // ── Pikachu "life" animation ──
+    // Body sway — gentle side-to-side idle tilting
+    const sway = Math.sin(time * 0.45) * 0.04;
     pikaGroup.rotation.y = Math.sin(time * 0.35) * 0.35;
-    pikaGroup.position.y = Math.sin(time * 0.7) * 0.06;
+    pikaGroup.rotation.z = sway;
+    // Periodic happy hop — quick bounce every ~8 seconds
+    const hopCycle = time % 8.0;
+    const hopActive = hopCycle > 7.4 && hopCycle < 7.8;
+    const hopHeight = hopActive ? Math.sin((hopCycle - 7.4) / 0.4 * PI) * 0.15 : 0;
+    pikaGroup.position.y = Math.sin(time * 0.7) * 0.06 + hopHeight;
     const breath = 1.0 + Math.sin(time * 1.2) * 0.02;
     const bounce = 1.0 + Math.max(0, Math.sin(time * 3.0)) * 0.008;
-    pikaGroup.scale.set(breath * (1.0 / bounce), breath * bounce, breath);
+    const hopSquash = hopActive ? 1.0 + Math.sin((hopCycle - 7.4) / 0.4 * PI) * 0.04 : 1.0;
+    pikaGroup.scale.set(breath * (1.0 / bounce) * (1.0 / hopSquash), breath * bounce * hopSquash, breath);
     if (pika.head) {
+      // Curious head tilt — cycles between looking around and tilting curiously
+      const curiousCycle = time % 12.0;
+      const curiousTilt = curiousCycle > 5.0 && curiousCycle < 7.0
+        ? Math.sin((curiousCycle - 5.0) / 2.0 * PI) * 0.12 : 0;
       pika.head.rotation.y = Math.sin(time * 0.5 + 0.5) * 0.14;
-      pika.head.rotation.z = Math.sin(time * 0.3) * 0.05;
-      pika.head.rotation.x = Math.sin(time * 0.25) * 0.04;
+      pika.head.rotation.z = Math.sin(time * 0.3) * 0.05 + curiousTilt;
+      pika.head.rotation.x = Math.sin(time * 0.25) * 0.04 + (curiousTilt > 0 ? -0.03 : 0);
     }
     const sparkBurst = Math.max(0, Math.sin(time * 6.0)) > 0.92 ? 0.5 : 0;
-    const cheekPulse = 0.3 + Math.sin(time * 1.8) * 0.2 + amp * 0.3 + sparkBurst;
+    // Heartbeat cheek glow — "lub-dub" rhythm
+    const hbPhase = (time * 1.2) % PI2;
+    const lub = Math.max(0, Math.sin(hbPhase * 2.0)) > 0.85 ? 0.25 : 0;
+    const dub = Math.max(0, Math.sin(hbPhase * 2.0 + 1.2)) > 0.9 ? 0.18 : 0;
+    const cheekPulse = 0.25 + lub + dub + amp * 0.3 + sparkBurst;
     pika.cheekMatL.emissiveIntensity = cheekPulse;
     pika.cheekMatR.emissiveIntensity = cheekPulse;
     if (pika.tail) {
-      pika.tail.rotation.z = Math.sin(time * 1.8) * 0.18;
-      pika.tail.rotation.y = 0.15 + Math.sin(time * 2.5) * 0.12;
+      // Multi-frequency wag with periodic wag bursts
+      const wagBurst = (time % 6.0) > 5.0 ? 2.5 : 1.0;
+      pika.tail.rotation.z = Math.sin(time * 1.8 * wagBurst) * 0.18 + Math.sin(time * 4.2) * 0.04;
+      pika.tail.rotation.y = 0.15 + Math.sin(time * 2.5) * 0.12 + Math.cos(time * 3.8) * 0.05;
       pika.tail.rotation.x = -0.45 + Math.sin(time * 1.2) * 0.05;
     }
-    if (pika.leftArm) pika.leftArm.rotation.z = 0.55 + Math.sin(time * 1.2) * 0.18;
+    // Arm wave gesture — one arm raises periodically as a greeting
+    const waveCycle = time % 10.0;
+    const waveActive = waveCycle > 8.5 && waveCycle < 10.0;
+    const waveAmount = waveActive ? Math.sin((waveCycle - 8.5) / 1.5 * PI) * 0.65 : 0;
+    if (pika.leftArm) pika.leftArm.rotation.z = 0.55 + Math.sin(time * 1.2) * 0.18 - waveAmount;
     if (pika.rightArm) pika.rightArm.rotation.z = -0.55 + Math.sin(time * 1.2 + 1.0) * 0.18;
     // Blinking — natural blink pattern with double-blink
     const blinkPeriod = 3.5 + Math.sin(time * 0.1) * 0.5;
@@ -2216,12 +2264,14 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     const doubleBlink = blinkPhase > 0.35 && blinkPhase < 0.65;
     const blinkActive = blinkPhase < 0.15 || doubleBlink;
     const blinkT = blinkActive ? (doubleBlink ? (blinkPhase - 0.35) / 0.3 : blinkPhase / 0.15) : 0;
-    const squintAmount = sparkBurst > 0 ? 0.4 : 0;
+    // Happy squint during hop
+    const happySquint = hopActive ? 0.35 : 0;
+    const squintAmount = sparkBurst > 0 ? 0.4 : happySquint;
     const blinkY = blinkActive ? Math.max(0.01, 1.0 - Math.sin(blinkT * PI) * 0.99) : Math.max(0.01, squintAmount);
     if (pika.leftEyelid) pika.leftEyelid.scale.y = blinkY;
     if (pika.rightEyelid) pika.rightEyelid.scale.y = blinkY;
-    // Ear twitching — independent, occasional + perk up during sparks
-    const earPerk = sparkBurst > 0 ? -0.08 : 0;
+    // Ear twitching — independent, occasional + perk up during sparks + hop
+    const earPerk = sparkBurst > 0 ? -0.08 : hopActive ? -0.06 : 0;
     const earTwitchL = Math.sin(time * 2.5) * 0.05 + (Math.sin(time * 7.3) > 0.95 ? 0.12 : 0) + earPerk;
     const earTwitchR = Math.sin(time * 2.5 + 0.6) * 0.05 + (Math.sin(time * 8.1 + 1.0) > 0.95 ? 0.12 : 0) + earPerk;
     if (pika.leftEarGroup) pika.leftEarGroup.rotation.x = -0.12 + earTwitchL;
@@ -2233,13 +2283,16 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       pika.sparkMats[si].opacity = phase > 0.5 ? (0.4 + phase * 0.6 + burstBoost) * (0.7 + amp * 0.3) : 0;
     }
     pika.sparks.rotation.y = time * 0.35;
-    // Eye tracking — pupils drift to look around
-    const lookX = Math.sin(time * 0.18) * 0.015;
-    const lookY = Math.sin(time * 0.13 + 0.7) * 0.01;
+    // Eye tracking — pupils occasionally look toward viewer (mouse), drift around
+    const viewerLookD = dMouseX * 0.008;
+    const viewerLookYD = dMouseY * -0.005;
+    const lookX = Math.sin(time * 0.18) * 0.015 + viewerLookD;
+    const lookY = Math.sin(time * 0.13 + 0.7) * 0.01 + viewerLookYD;
     if (pika.leftPupil) { pika.leftPupil.position.x = -0.27 + lookX; pika.leftPupil.position.y = 0.055 + lookY; }
     if (pika.rightPupil) { pika.rightPupil.position.x = 0.27 + lookX; pika.rightPupil.position.y = 0.055 + lookY; }
-    // Tongue subtle wiggle
-    if (pika.tongue) pika.tongue.position.y = -0.12 + Math.sin(time * 2.0) * 0.003;
+    // Tongue subtle wiggle — more active during hop
+    const tongueWiggle = hopActive ? 0.008 : 0.003;
+    if (pika.tongue) pika.tongue.position.y = -0.12 + Math.sin(time * 2.0) * tongueWiggle;
 
     rings[0].mesh.rotation.z = 0.15 + time * 0.07;
     rings[0].mat.opacity = 0.9 + Math.sin(time * 0.6) * 0.06 + amp * 0.04;
