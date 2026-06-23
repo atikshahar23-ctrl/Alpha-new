@@ -413,109 +413,118 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   const headGroup = new THREE.Group();
   const seg = (n: number) => Math.max(8, Math.round(n * detail));
 
-  // ── Body — round chubby torso, wider and rounder ──
+  // ── Body — round chubby torso, squatter for anime proportions ──
   const body = new THREE.Mesh(
-    new THREE.SphereGeometry(0.74, seg(48), seg(48)),
+    new THREE.SphereGeometry(0.78, seg(48), seg(48)),
     mats.yellow,
   );
-  body.scale.set(1.05, 1.18, 0.92);
-  body.position.set(0, -0.3, 0);
+  body.scale.set(1.08, 1.02, 0.95);
+  body.position.set(0, -0.32, 0);
   group.add(body);
 
   // Shoulder area — smoother transition to head
   const shoulders = new THREE.Mesh(
-    new THREE.SphereGeometry(0.5, seg(32), seg(32)),
+    new THREE.SphereGeometry(0.52, seg(32), seg(32)),
     mats.yellow,
   );
-  shoulders.scale.set(1.05, 0.6, 0.9);
-  shoulders.position.set(0, 0.2, 0.02);
+  shoulders.scale.set(1.08, 0.55, 0.92);
+  shoulders.position.set(0, 0.18, 0.02);
   group.add(shoulders);
 
   // Neck — subtle cylinder connecting head and body
   const neck = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.28, 0.35, 0.2, seg(16)),
+    new THREE.CylinderGeometry(0.3, 0.38, 0.18, seg(16)),
     mats.yellow,
   );
-  neck.position.set(0, 0.42, 0.02);
+  neck.position.set(0, 0.4, 0.02);
   group.add(neck);
 
   // Belly — lighter cream patch on the front
   const belly = new THREE.Mesh(
-    new THREE.SphereGeometry(0.5, seg(32), seg(32)),
+    new THREE.SphereGeometry(0.52, seg(32), seg(32)),
     mats.cream,
   );
-  belly.scale.set(0.82, 0.9, 0.38);
-  belly.position.set(0, -0.3, 0.34);
+  belly.scale.set(0.85, 0.82, 0.38);
+  belly.position.set(0, -0.32, 0.38);
   group.add(belly);
 
   // Belly border — subtle darkYellow ring at cream edge for definition
   const bellyRing = new THREE.Mesh(
-    new THREE.TorusGeometry(0.42, 0.015, seg(8), seg(24)),
+    new THREE.TorusGeometry(0.44, 0.015, seg(8), seg(24)),
     mats.darkYellow,
   );
-  bellyRing.scale.set(0.82, 0.85, 0.15);
-  bellyRing.position.set(0, -0.3, 0.38);
+  bellyRing.scale.set(0.82, 0.78, 0.15);
+  bellyRing.position.set(0, -0.32, 0.42);
   group.add(bellyRing);
 
   // Back stripes — two brown horizontal stripes, wider and more visible
   for (const sy of [0.0, -0.22]) {
     const stripe = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.035, 0.52, seg(4), seg(10)),
+      new THREE.CapsuleGeometry(0.04, 0.58, seg(4), seg(10)),
       mats.brown,
     );
     stripe.rotation.z = PI / 2;
-    stripe.position.set(0, -0.1 + sy, -0.62);
+    stripe.position.set(0, -0.12 + sy, -0.68);
     stripe.rotation.x = 0.2;
     group.add(stripe);
   }
 
   // Lower body roundness — hip/bottom area for chubbier look
   const hips = new THREE.Mesh(
-    new THREE.SphereGeometry(0.52, seg(24), seg(24)),
+    new THREE.SphereGeometry(0.55, seg(24), seg(24)),
     mats.yellow,
   );
-  hips.scale.set(1.1, 0.55, 0.85);
+  hips.scale.set(1.12, 0.52, 0.88);
   hips.position.set(0, -0.72, 0.02);
   group.add(hips);
 
-  // ── Head — big round head, larger for anime proportions ──
+  // ── Head — big round head, anime-accurate large head relative to body ──
   const head = new THREE.Mesh(
-    new THREE.SphereGeometry(0.78, seg(48), seg(48)),
+    new THREE.SphereGeometry(0.84, seg(48), seg(48)),
     mats.yellow,
   );
-  head.scale.set(1.1, 1.0, 0.98);
-  head.position.set(0, 0.0, 0.04);
+  head.scale.set(1.12, 1.0, 0.92);
+  head.position.set(0, 0.0, 0.06);
   headGroup.add(head);
 
   // Top-of-head tuft — subtle point on the crown
   const headTuft = new THREE.Mesh(
-    new THREE.ConeGeometry(0.09, 0.14, seg(8)),
+    new THREE.ConeGeometry(0.1, 0.14, seg(8)),
     mats.yellow,
   );
-  headTuft.position.set(0, 0.74, -0.05);
+  headTuft.position.set(0, 0.8, -0.05);
   headGroup.add(headTuft);
 
-  // Cheek bulges — rounder face with prominent cheek area
+  // Cheek bulges — rounder face with prominent cheek area, wider for anime look
   for (const sx of [-1, 1]) {
     const cheekBulge = new THREE.Mesh(
-      new THREE.SphereGeometry(0.32, seg(20), seg(20)),
+      new THREE.SphereGeometry(0.35, seg(20), seg(20)),
       mats.yellow,
     );
-    cheekBulge.scale.set(0.55, 0.5, 0.38);
-    cheekBulge.position.set(sx * 0.44, -0.06, 0.44);
+    cheekBulge.scale.set(0.58, 0.52, 0.42);
+    cheekBulge.position.set(sx * 0.48, -0.06, 0.44);
     headGroup.add(cheekBulge);
   }
 
-  // Back of head — smooth continuation
-  const backHead = new THREE.Mesh(
-    new THREE.SphereGeometry(0.42, seg(24), seg(24)),
+  // Front face plate — flatter front for clearer facial features
+  const facePlate = new THREE.Mesh(
+    new THREE.SphereGeometry(0.72, seg(32), seg(32)),
     mats.yellow,
   );
-  backHead.scale.set(1.25, 0.82, 0.72);
-  backHead.position.set(0, -0.03, -0.44);
+  facePlate.scale.set(1.1, 1.0, 0.25);
+  facePlate.position.set(0, -0.02, 0.52);
+  headGroup.add(facePlate);
+
+  // Back of head — smooth continuation
+  const backHead = new THREE.Mesh(
+    new THREE.SphereGeometry(0.45, seg(24), seg(24)),
+    mats.yellow,
+  );
+  backHead.scale.set(1.3, 0.85, 0.72);
+  backHead.position.set(0, -0.03, -0.46);
   headGroup.add(backHead);
 
-  // ── Ears — LONG pointed, anime-accurate with black tips ──
+  // ── Ears — LONG pointed anime-accurate, sharp taper with black tips ──
   let leftEarGroup!: THREE.Group;
   let rightEarGroup!: THREE.Group;
   for (const sx of [-1, 1]) {
@@ -523,28 +532,38 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
 
     // Ear base — wide attachment to head
     const earBase = new THREE.Mesh(
-      new THREE.SphereGeometry(0.16, seg(14), seg(14)),
+      new THREE.SphereGeometry(0.18, seg(14), seg(14)),
       mats.yellow,
     );
-    earBase.scale.set(1.1, 0.5, 0.7);
+    earBase.scale.set(1.15, 0.45, 0.65);
     earBase.position.set(0, 0.08, 0);
     earGroup.add(earBase);
 
-    // Main ear body — long ellipsoid, wider in middle, tapers to point
+    // Main ear body — long pointed shape, wider at base tapering to sharp point
     const earBody = new THREE.Mesh(
-      new THREE.SphereGeometry(0.14, seg(20), seg(20)),
+      new THREE.ConeGeometry(0.15, 0.85, seg(20)),
       mats.yellow,
     );
-    earBody.scale.set(1.0, 2.8, 0.42);
-    earBody.position.set(0, 0.45, 0);
+    earBody.position.set(0, 0.52, 0);
+    earBody.scale.set(1.0, 1.0, 0.45);
     earGroup.add(earBody);
 
-    // Ear upper taper — cone narrowing to tip
-    const earUpper = new THREE.Mesh(
-      new THREE.ConeGeometry(0.1, 0.5, seg(16)),
+    // Ear mid section — fills out the lower/middle part
+    const earMid = new THREE.Mesh(
+      new THREE.SphereGeometry(0.13, seg(16), seg(16)),
       mats.yellow,
     );
-    earUpper.position.set(0, 0.78, 0);
+    earMid.scale.set(1.05, 2.2, 0.42);
+    earMid.position.set(0, 0.38, 0);
+    earGroup.add(earMid);
+
+    // Ear upper taper — sharper cone narrowing to fine point
+    const earUpper = new THREE.Mesh(
+      new THREE.ConeGeometry(0.08, 0.55, seg(16)),
+      mats.yellow,
+    );
+    earUpper.position.set(0, 0.82, 0);
+    earUpper.scale.set(1.0, 1.0, 0.4);
     earGroup.add(earUpper);
 
     // Inner ear — warm darker yellow stripe
@@ -553,214 +572,204 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
       clearcoat: 0.15, clearcoatRoughness: 0.3,
     });
     const innerEar = new THREE.Mesh(
-      new THREE.SphereGeometry(0.08, seg(12), seg(12)),
+      new THREE.SphereGeometry(0.07, seg(12), seg(12)),
       innerEarMat,
     );
-    innerEar.scale.set(0.75, 2.2, 0.2);
-    innerEar.position.set(0, 0.42, 0.06);
+    innerEar.scale.set(0.7, 2.0, 0.18);
+    innerEar.position.set(0, 0.38, 0.06);
     earGroup.add(innerEar);
 
-    // Black tip — top ~30% of ear
+    // Black tip — top ~35% of ear, larger and more prominent
     const earTip = new THREE.Mesh(
-      new THREE.ConeGeometry(0.065, 0.38, seg(12)),
+      new THREE.ConeGeometry(0.085, 0.48, seg(12)),
       mats.black,
     );
-    earTip.position.set(0, 0.95, 0);
+    earTip.position.set(0, 0.98, 0);
+    earTip.scale.set(1.0, 1.0, 0.42);
     earGroup.add(earTip);
 
-    earGroup.position.set(sx * 0.42, 0.55, -0.08);
-    earGroup.rotation.z = sx * 0.38;
-    earGroup.rotation.x = -0.1;
+    // Black tip accent — smooth sphere at very top for rounded point
+    const earTipBall = new THREE.Mesh(
+      new THREE.SphereGeometry(0.03, seg(8), seg(8)),
+      mats.black,
+    );
+    earTipBall.position.set(0, 1.2, 0);
+    earGroup.add(earTipBall);
+
+    earGroup.position.set(sx * 0.46, 0.58, -0.1);
+    earGroup.rotation.z = sx * 0.35;
+    earGroup.rotation.x = -0.08;
     headGroup.add(earGroup);
     if (sx === -1) leftEarGroup = earGroup;
     else rightEarGroup = earGroup;
   }
 
-  // ── Eyes — LARGE expressive anime-style, clearly visible ──
+  // ── Eyes — BIG anime-style, mostly dark with prominent white highlights ──
   let leftEyelid!: THREE.Mesh;
   let rightEyelid!: THREE.Mesh;
   let leftPupil!: THREE.Mesh;
   let rightPupil!: THREE.Mesh;
+  let leftEye!: THREE.Mesh;
+  let rightEye!: THREE.Mesh;
   for (const sx of [-1, 1]) {
     // Eye socket — indent for depth
     const eyeSocket = new THREE.Mesh(
-      new THREE.SphereGeometry(0.21, seg(20), seg(20)),
+      new THREE.SphereGeometry(0.24, seg(20), seg(20)),
       mats.yellow,
     );
-    eyeSocket.scale.set(0.82, 1.1, 0.3);
-    eyeSocket.position.set(sx * 0.28, 0.06, 0.64);
+    eyeSocket.scale.set(0.78, 1.12, 0.28);
+    eyeSocket.position.set(sx * 0.3, 0.06, 0.66);
     headGroup.add(eyeSocket);
 
-    // White of eye — larger for anime look
-    const eyeWhite = new THREE.Mesh(
-      new THREE.SphereGeometry(0.19, seg(28), seg(28)),
+    // White of eye — thin border visible around edges
+    const eyeWhiteMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.22, seg(28), seg(28)),
       mats.white,
     );
-    eyeWhite.scale.set(0.8, 1.1, 0.5);
-    eyeWhite.position.set(sx * 0.28, 0.07, 0.64);
-    headGroup.add(eyeWhite);
+    eyeWhiteMesh.scale.set(0.78, 1.12, 0.48);
+    eyeWhiteMesh.position.set(sx * 0.3, 0.07, 0.66);
+    headGroup.add(eyeWhiteMesh);
 
-    // Iris — dark brown outer ring
-    const irisOuterMat = new THREE.MeshPhysicalMaterial({
-      color: 0x2A1A10, metalness: 0.0, roughness: 0.2,
-      clearcoat: 0.4, clearcoatRoughness: 0.1,
+    // Main eye — large dark circle filling most of the eye area (anime-accurate)
+    const eyeDarkMat = new THREE.MeshPhysicalMaterial({
+      color: 0x1A1008, metalness: 0.05, roughness: 0.12,
+      clearcoat: 0.7, clearcoatRoughness: 0.06,
+      envMap: mats.black.envMap, envMapIntensity: 0.35,
     });
-    const irisOuter = new THREE.Mesh(
-      new THREE.SphereGeometry(0.155, seg(24), seg(24)),
-      irisOuterMat,
+    const eyeDark = new THREE.Mesh(
+      new THREE.SphereGeometry(0.18, seg(28), seg(28)),
+      eyeDarkMat,
     );
-    irisOuter.scale.set(0.82, 1.05, 0.5);
-    irisOuter.position.set(sx * 0.28, 0.06, 0.67);
-    headGroup.add(irisOuter);
+    eyeDark.scale.set(0.82, 1.1, 0.48);
+    eyeDark.position.set(sx * 0.3, 0.06, 0.69);
+    headGroup.add(eyeDark);
+    if (sx === -1) leftEye = eyeDark;
+    else rightEye = eyeDark;
 
-    // Iris — warm brown inner ring for gradient depth
-    const irisInnerMat = new THREE.MeshPhysicalMaterial({
-      color: 0x4A3520, metalness: 0.0, roughness: 0.18,
-      clearcoat: 0.45, clearcoatRoughness: 0.08,
-      emissive: 0x261508, emissiveIntensity: 0.15,
-    });
-    const irisInner = new THREE.Mesh(
-      new THREE.SphereGeometry(0.115, seg(20), seg(20)),
-      irisInnerMat,
-    );
-    irisInner.scale.set(0.82, 1.02, 0.5);
-    irisInner.position.set(sx * 0.28, 0.06, 0.69);
-    headGroup.add(irisInner);
-
-    // Pupil — large glossy black (tracked for eye-look animation)
+    // Pupil — slightly darker center (tracked for eye-look animation)
     const pupil = new THREE.Mesh(
-      new THREE.SphereGeometry(0.11, seg(24), seg(24)),
+      new THREE.SphereGeometry(0.12, seg(24), seg(24)),
       mats.black,
     );
-    pupil.scale.set(0.85, 1.05, 0.5);
-    pupil.position.set(sx * 0.28, 0.055, 0.71);
+    pupil.scale.set(0.82, 1.05, 0.48);
+    pupil.position.set(sx * 0.3, 0.055, 0.72);
     headGroup.add(pupil);
     if (sx === -1) leftPupil = pupil;
     else rightPupil = pupil;
 
-    // Primary highlight — big bright white dot
+    // Primary highlight — BIG bright white circle (anime signature)
     const hl1 = new THREE.Mesh(
-      new THREE.SphereGeometry(0.055, seg(12), seg(12)),
+      new THREE.SphereGeometry(0.065, seg(14), seg(14)),
       mats.white,
     );
-    hl1.position.set(sx * 0.28 + sx * 0.045, 0.13, 0.76);
+    hl1.position.set(sx * 0.3 + sx * 0.05, 0.14, 0.78);
     headGroup.add(hl1);
 
-    // Secondary highlight — lower opposite side
+    // Secondary highlight — smaller, lower opposite corner
     const hl2 = new THREE.Mesh(
-      new THREE.SphereGeometry(0.032, seg(8), seg(8)),
+      new THREE.SphereGeometry(0.04, seg(10), seg(10)),
       mats.white,
     );
-    hl2.position.set(sx * 0.28 - sx * 0.04, -0.01, 0.76);
+    hl2.position.set(sx * 0.3 - sx * 0.045, -0.01, 0.78);
     headGroup.add(hl2);
 
-    // Third tiny highlight — sparkle
-    const hl3 = new THREE.Mesh(
-      new THREE.SphereGeometry(0.018, seg(6), seg(6)),
-      mats.white,
-    );
-    hl3.position.set(sx * 0.28 + sx * 0.02, 0.05, 0.76);
-    headGroup.add(hl3);
-
-    // Eye outline — dark border for definition
+    // Eye outline — dark border for crisp definition
     const eyeOutlineMat = new THREE.MeshBasicMaterial({
-      color: 0x1A1008, transparent: true, opacity: 0.4,
+      color: 0x0A0804, transparent: true, opacity: 0.5,
       depthWrite: false, side: THREE.BackSide,
     });
     const eyeOutline = new THREE.Mesh(
-      new THREE.SphereGeometry(0.2, seg(20), seg(20)),
+      new THREE.SphereGeometry(0.23, seg(20), seg(20)),
       eyeOutlineMat,
     );
-    eyeOutline.scale.set(0.84, 1.12, 0.52);
-    eyeOutline.position.set(sx * 0.28, 0.07, 0.63);
+    eyeOutline.scale.set(0.8, 1.14, 0.5);
+    eyeOutline.position.set(sx * 0.3, 0.07, 0.65);
     headGroup.add(eyeOutline);
 
     // Eyelid — yellow half-sphere for blinking
     const eyelid = new THREE.Mesh(
-      new THREE.SphereGeometry(0.21, seg(24), seg(12), 0, PI2, 0, PI * 0.5),
+      new THREE.SphereGeometry(0.24, seg(24), seg(12), 0, PI2, 0, PI * 0.5),
       mats.yellow,
     );
-    eyelid.scale.set(0.82, 0.01, 0.55);
-    eyelid.position.set(sx * 0.28, 0.16, 0.65);
+    eyelid.scale.set(0.78, 0.01, 0.52);
+    eyelid.position.set(sx * 0.3, 0.18, 0.67);
     eyelid.rotation.x = -0.08;
     headGroup.add(eyelid);
     if (sx === -1) leftEyelid = eyelid;
     else rightEyelid = eyelid;
   }
-  const leftEye = headGroup.children[headGroup.children.length - 10] as THREE.Mesh;
-  const rightEye = headGroup.children[headGroup.children.length - 2] as THREE.Mesh;
 
-  // ── Nose — tiny inverted triangle, Pikachu's small cute nose ──
+  // ── Nose — small black triangle, anime-accurate ──
   const nose = new THREE.Mesh(
-    new THREE.SphereGeometry(0.032, seg(12), seg(12)),
+    new THREE.ConeGeometry(0.035, 0.03, seg(3)),
     mats.nose,
   );
-  nose.scale.set(1.3, 0.5, 0.5);
-  nose.position.set(0, -0.02, 0.74);
+  nose.rotation.x = PI / 2;
+  nose.rotation.z = PI;
+  nose.position.set(0, -0.02, 0.78);
   headGroup.add(nose);
 
-  // ── Mouth — BIG visible ω shape, Pikachu's signature smile ──
-  // Use thick lines so the mouth is clearly visible
+  // ── Mouth — clear ω shape, Pikachu's signature smile ──
   const mouthLineMat = new THREE.MeshPhysicalMaterial({
-    color: 0x1A0505, metalness: 0.0, roughness: 0.35,
+    color: 0x0C0202, metalness: 0.0, roughness: 0.3,
     clearcoat: 0.3, clearcoatRoughness: 0.2,
   });
 
-  // Left arc of the ω
+  // Left arc of the ω — wider, thicker for visibility
   const mouthMesh = new THREE.Mesh(
-    new THREE.TorusGeometry(0.075, 0.028, seg(10), seg(20), PI * 0.8),
+    new THREE.TorusGeometry(0.085, 0.032, seg(12), seg(24), PI * 0.82),
     mouthLineMat,
   );
-  mouthMesh.position.set(-0.04, -0.1, 0.7);
+  mouthMesh.position.set(-0.05, -0.12, 0.74);
   mouthMesh.rotation.z = PI;
-  mouthMesh.rotation.x = 0.08;
+  mouthMesh.rotation.x = 0.06;
   headGroup.add(mouthMesh);
 
   // Right arc of the ω
   const mouthR = new THREE.Mesh(
-    new THREE.TorusGeometry(0.075, 0.028, seg(10), seg(20), PI * 0.8),
+    new THREE.TorusGeometry(0.085, 0.032, seg(12), seg(24), PI * 0.82),
     mouthLineMat,
   );
-  mouthR.position.set(0.04, -0.1, 0.7);
+  mouthR.position.set(0.05, -0.12, 0.74);
   mouthR.rotation.z = PI;
-  mouthR.rotation.x = 0.08;
+  mouthR.rotation.x = 0.06;
   headGroup.add(mouthR);
 
   // Left smile corner — upward curve
   const smileL = new THREE.Mesh(
-    new THREE.TorusGeometry(0.035, 0.022, seg(8), seg(10), PI * 0.5),
+    new THREE.TorusGeometry(0.04, 0.025, seg(8), seg(12), PI * 0.5),
     mouthLineMat,
   );
-  smileL.position.set(-0.11, -0.068, 0.71);
-  smileL.rotation.z = PI * 0.2;
-  smileL.rotation.x = 0.06;
+  smileL.position.set(-0.13, -0.08, 0.75);
+  smileL.rotation.z = PI * 0.15;
+  smileL.rotation.x = 0.04;
   headGroup.add(smileL);
 
   // Right smile corner — upward curve
   const smileR = new THREE.Mesh(
-    new THREE.TorusGeometry(0.035, 0.022, seg(8), seg(10), PI * 0.5),
+    new THREE.TorusGeometry(0.04, 0.025, seg(8), seg(12), PI * 0.5),
     mouthLineMat,
   );
-  smileR.position.set(0.11, -0.068, 0.71);
-  smileR.rotation.z = PI * 0.8;
-  smileR.rotation.x = 0.06;
+  smileR.position.set(0.13, -0.08, 0.75);
+  smileR.rotation.z = PI * 0.85;
+  smileR.rotation.x = 0.04;
   headGroup.add(smileR);
 
   // Mouth interior — visible dark area behind the smile
   const mouthInterior = new THREE.Mesh(
-    new THREE.SphereGeometry(0.09, seg(16), seg(16)),
+    new THREE.SphereGeometry(0.1, seg(16), seg(16)),
     mats.mouth,
   );
   mouthInterior.scale.set(1.5, 0.5, 0.35);
-  mouthInterior.position.set(0, -0.11, 0.66);
+  mouthInterior.position.set(0, -0.13, 0.7);
   headGroup.add(mouthInterior);
 
   // Upper lip line — vertical groove from nose to mouth center
   const lipLine = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.01, 0.04, seg(4), seg(6)),
+    new THREE.CapsuleGeometry(0.012, 0.05, seg(4), seg(6)),
     mouthLineMat,
   );
-  lipLine.position.set(0, -0.065, 0.73);
+  lipLine.position.set(0, -0.07, 0.77);
   headGroup.add(lipLine);
 
   // ── Tongue — pink visible inside the smile ──
@@ -788,19 +797,19 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
     headGroup.add(brow);
   }
 
-  // ── Red Cheeks — BIG signature round red patches ──
+  // ── Red Cheeks — BIG signature round red patches, anime-accurate ──
   const cheekMatL = mats.red.clone();
   const cheekMatR = mats.red.clone();
-  const cheekGeo = new THREE.SphereGeometry(0.17, seg(24), seg(24));
+  const cheekGeo = new THREE.SphereGeometry(0.19, seg(24), seg(24));
 
   const cheekL = new THREE.Mesh(cheekGeo, cheekMatL);
-  cheekL.scale.set(1.0, 0.9, 0.42);
-  cheekL.position.set(-0.52, -0.04, 0.46);
+  cheekL.scale.set(1.0, 0.92, 0.4);
+  cheekL.position.set(-0.56, -0.06, 0.48);
   headGroup.add(cheekL);
 
   const cheekR = new THREE.Mesh(cheekGeo, cheekMatR);
-  cheekR.scale.set(1.0, 0.9, 0.42);
-  cheekR.position.set(0.52, -0.04, 0.46);
+  cheekR.scale.set(1.0, 0.92, 0.4);
+  cheekR.position.set(0.56, -0.06, 0.48);
   headGroup.add(cheekR);
 
   // Cheek gradient edge — softer transition to yellow
@@ -811,11 +820,11 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   });
   for (const sx of [-1, 1]) {
     const cheekEdge = new THREE.Mesh(
-      new THREE.SphereGeometry(0.2, seg(20), seg(20)),
+      new THREE.SphereGeometry(0.22, seg(20), seg(20)),
       cheekEdgeMat,
     );
     cheekEdge.scale.set(0.95, 0.85, 0.3);
-    cheekEdge.position.set(sx * 0.52, -0.04, 0.45);
+    cheekEdge.position.set(sx * 0.56, -0.06, 0.47);
     headGroup.add(cheekEdge);
   }
 
@@ -831,18 +840,18 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   });
   for (const sx of [-1, 1]) {
     const halo = new THREE.Mesh(
-      new THREE.RingGeometry(0.12, 0.2, seg(20)),
+      new THREE.RingGeometry(0.14, 0.22, seg(20)),
       cheekGlowMat,
     );
-    halo.position.set(sx * 0.52, -0.04, 0.47);
+    halo.position.set(sx * 0.56, -0.06, 0.49);
     halo.rotation.y = sx * 0.3;
     headGroup.add(halo);
 
     const haloOuter = new THREE.Mesh(
-      new THREE.RingGeometry(0.18, 0.3, seg(20)),
+      new THREE.RingGeometry(0.2, 0.32, seg(20)),
       cheekGlowOuterMat,
     );
-    haloOuter.position.set(sx * 0.52, -0.04, 0.46);
+    haloOuter.position.set(sx * 0.56, -0.06, 0.48);
     haloOuter.rotation.y = sx * 0.3;
     headGroup.add(haloOuter);
   }
@@ -902,100 +911,100 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
     }
   }
 
-  // ── Feet — large chunky oval with toes and soles ──
-  const footGeo = new THREE.CapsuleGeometry(0.17, 0.22, seg(10), seg(14));
+  // ── Feet — large chunky oval, anime-style (wider, cuter) ──
+  const footGeo = new THREE.CapsuleGeometry(0.19, 0.2, seg(10), seg(14));
   for (const sx of [-1, 1]) {
     const foot = new THREE.Mesh(footGeo, mats.yellow);
     foot.rotation.x = PI / 2;
-    foot.rotation.z = sx * 0.12;
-    foot.position.set(sx * 0.34, -1.06, 0.24);
-    foot.scale.set(1.05, 1.0, 0.9);
+    foot.rotation.z = sx * 0.1;
+    foot.position.set(sx * 0.36, -1.0, 0.26);
+    foot.scale.set(1.05, 1.0, 0.85);
     group.add(foot);
 
     // Toes — 3 bumps
     for (let ti = 0; ti < 3; ti++) {
       const toe = new THREE.Mesh(
-        new THREE.SphereGeometry(0.042, seg(8), seg(8)),
+        new THREE.SphereGeometry(0.045, seg(8), seg(8)),
         mats.yellow,
       );
       toe.position.set(
-        sx * 0.32 + (ti - 1) * 0.06,
-        -1.16,
-        0.38 + Math.abs(ti - 1) * -0.015,
+        sx * 0.34 + (ti - 1) * 0.065,
+        -1.1,
+        0.4 + Math.abs(ti - 1) * -0.015,
       );
-      toe.scale.set(0.9, 0.65, 1.15);
+      toe.scale.set(0.9, 0.6, 1.15);
       group.add(toe);
     }
 
     // Sole
     const sole = new THREE.Mesh(
-      new THREE.CircleGeometry(0.13, seg(12)),
+      new THREE.CircleGeometry(0.14, seg(12)),
       mats.darkYellow,
     );
-    sole.position.set(sx * 0.32, -1.22, 0.22);
+    sole.position.set(sx * 0.34, -1.16, 0.24);
     sole.rotation.x = -PI / 2;
     group.add(sole);
 
     // Paw pads — small darker circles on soles
     for (let pi = 0; pi < 3; pi++) {
       const pad = new THREE.Mesh(
-        new THREE.CircleGeometry(0.025, seg(8)),
+        new THREE.CircleGeometry(0.028, seg(8)),
         mats.darkYellow,
       );
       pad.position.set(
-        sx * 0.32 + (pi - 1) * 0.04,
-        -1.225,
-        0.3 + Math.abs(pi - 1) * -0.01,
+        sx * 0.34 + (pi - 1) * 0.042,
+        -1.165,
+        0.32 + Math.abs(pi - 1) * -0.01,
       );
       pad.rotation.x = -PI / 2;
       group.add(pad);
     }
     // Center pad — larger oval
     const centerPad = new THREE.Mesh(
-      new THREE.CircleGeometry(0.035, seg(8)),
+      new THREE.CircleGeometry(0.038, seg(8)),
       mats.darkYellow,
     );
     centerPad.scale.set(1.2, 1, 1);
-    centerPad.position.set(sx * 0.32, -1.225, 0.22);
+    centerPad.position.set(sx * 0.34, -1.165, 0.24);
     centerPad.rotation.x = -PI / 2;
     group.add(centerPad);
   }
 
   // ── Ground shadow — soft disc beneath Pikachu ──
   const shadowMat = new THREE.MeshBasicMaterial({
-    color: 0x000000, transparent: true, opacity: 0.12,
+    color: 0x000000, transparent: true, opacity: 0.14,
     depthWrite: false, side: THREE.DoubleSide,
   });
   const shadow = new THREE.Mesh(
-    new THREE.CircleGeometry(0.6, seg(24)),
+    new THREE.CircleGeometry(0.65, seg(24)),
     shadowMat,
   );
-  shadow.position.set(0, -1.25, 0.15);
+  shadow.position.set(0, -1.19, 0.18);
   shadow.rotation.x = -PI / 2;
   group.add(shadow);
 
-  // ── Tail — iconic zigzag lightning bolt, larger and more prominent ──
+  // ── Tail — iconic zigzag lightning bolt, large and prominent ──
   const tail = new THREE.Group();
   const shape = new THREE.Shape();
-  // Wider, taller bolt silhouette matching anime proportions
+  // Wider, taller bolt silhouette — scaled up for anime accuracy
   shape.moveTo(0, 0);
-  shape.lineTo(0.18, 0.32);
-  shape.lineTo(-0.1, 0.38);
-  shape.lineTo(0.24, 0.76);
-  shape.lineTo(-0.12, 0.84);
-  shape.lineTo(0.32, 1.4);
-  shape.lineTo(0.5, 1.3);
-  shape.lineTo(0.1, 0.82);
-  shape.lineTo(0.4, 0.74);
-  shape.lineTo(0.04, 0.32);
-  shape.lineTo(0.3, 0.28);
+  shape.lineTo(0.22, 0.36);
+  shape.lineTo(-0.12, 0.42);
+  shape.lineTo(0.28, 0.84);
+  shape.lineTo(-0.14, 0.92);
+  shape.lineTo(0.38, 1.6);
+  shape.lineTo(0.58, 1.48);
+  shape.lineTo(0.12, 0.9);
+  shape.lineTo(0.46, 0.82);
+  shape.lineTo(0.06, 0.36);
+  shape.lineTo(0.35, 0.3);
   shape.lineTo(0.0, 0.0);
-  const extSettings = { depth: 0.14, bevelEnabled: true, bevelThickness: 0.04, bevelSize: 0.04, bevelSegments: seg(4) };
+  const extSettings = { depth: 0.16, bevelEnabled: true, bevelThickness: 0.045, bevelSize: 0.045, bevelSegments: seg(4) };
   const tailMesh = new THREE.Mesh(
     new THREE.ExtrudeGeometry(shape, extSettings),
     mats.yellow,
   );
-  tailMesh.position.set(-0.16, 0, -0.07);
+  tailMesh.position.set(-0.18, 0, -0.08);
   tail.add(tailMesh);
 
   // Dark yellow edge highlight on tail (backside)
@@ -1003,12 +1012,12 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
     new THREE.ExtrudeGeometry(shape, { depth: 0.006, bevelEnabled: false }),
     mats.darkYellow,
   );
-  tailEdge.position.set(-0.16, 0, -0.076);
+  tailEdge.position.set(-0.18, 0, -0.086);
   tail.add(tailEdge);
 
   // Brown base connector — wider, smoother transition to body
   const tailBase = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.1, 0.22, seg(8), seg(12)),
+    new THREE.CapsuleGeometry(0.12, 0.24, seg(8), seg(12)),
     mats.brown,
   );
   tailBase.position.set(0.04, -0.06, 0.01);
@@ -1016,15 +1025,15 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
 
   // Yellow connector sphere — smooth transition from base to bolt
   const tailConn = new THREE.Mesh(
-    new THREE.SphereGeometry(0.1, seg(10), seg(10)),
+    new THREE.SphereGeometry(0.12, seg(10), seg(10)),
     mats.yellow,
   );
   tailConn.scale.set(1.0, 0.8, 0.8);
-  tailConn.position.set(0.04, 0.08, 0.0);
+  tailConn.position.set(0.04, 0.1, 0.0);
   tail.add(tailConn);
 
-  tail.position.set(0, -0.06, -0.6);
-  tail.rotation.x = -0.42;
+  tail.position.set(0, -0.08, -0.64);
+  tail.rotation.x = -0.4;
   tail.rotation.y = 0.12;
   group.add(tail);
 
@@ -1105,9 +1114,9 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
       const csGeo = new THREE.BoxGeometry(0.008, 0.15 + Math.random() * 0.12, 0.003);
       const csMesh = new THREE.Mesh(csGeo, csMat);
       csMesh.position.set(
-        sx * 0.55 + (Math.random() - 0.5) * 0.15,
-        0.45 + (Math.random() - 0.5) * 0.15,
-        0.5 + Math.random() * 0.15,
+        sx * 0.58 + (Math.random() - 0.5) * 0.15,
+        0.48 + (Math.random() - 0.5) * 0.15,
+        0.52 + Math.random() * 0.15,
       );
       csMesh.rotation.set(Math.random() * PI, Math.random() * PI, sx * 0.5 + Math.random() * 0.5);
       sparks.add(csMesh);
@@ -1152,11 +1161,11 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   group.add(pikaLight);
 
   // Cheek glow lights — subtle red point lights at cheek positions
-  const cheekLightL = new THREE.PointLight(0xCC2828, 0.15, 1.2, 2);
-  cheekLightL.position.set(-0.5, 0.5, 0.44);
+  const cheekLightL = new THREE.PointLight(0xCC2828, 0.18, 1.3, 2);
+  cheekLightL.position.set(-0.56, 0.48, 0.48);
   group.add(cheekLightL);
-  const cheekLightR = new THREE.PointLight(0xCC2828, 0.15, 1.2, 2);
-  cheekLightR.position.set(0.5, 0.5, 0.44);
+  const cheekLightR = new THREE.PointLight(0xCC2828, 0.18, 1.3, 2);
+  cheekLightR.position.set(0.56, 0.48, 0.48);
   group.add(cheekLightR);
 
   return { group, head: headGroup, leftEye, rightEye, leftPupil, rightPupil, leftEyelid, rightEyelid, leftEarGroup, rightEarGroup, cheekMatL, cheekMatR, tail, leftArm, rightArm, mouthMesh, tongue, sparks, sparkMats, sparkMeshes, auraMat };
