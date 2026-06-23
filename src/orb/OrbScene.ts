@@ -1504,6 +1504,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     const rMesh = new THREE.Mesh(rGeo, rMat);
     rMesh.rotation.x = rd.rx;
     rMesh.rotation.z = rd.rz;
+    rMesh.visible = false;
     group.add(rMesh);
     rings.push({ mesh: rMesh, mat: rMat });
   }
@@ -1517,6 +1518,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   const dHaloGlow = new THREE.Mesh(dHaloGlowGeo, dHaloGlowMat);
   dHaloGlow.rotation.x = PI * 0.5;
   dHaloGlow.rotation.z = 0.15;
+  dHaloGlow.visible = false;
   group.add(dHaloGlow);
 
   // ────────────────────────────────────────────
@@ -1644,6 +1646,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     const nd = new THREE.Mesh(nGeo, nMat);
     const yy = (Math.random() - 0.5) * 1.0;
     nd.position.set(Math.cos(angle) * r, yy, Math.sin(angle) * r);
+    nd.visible = false;
     group.add(nd);
     nodeMeshes.push(nd);
     nodeOrbs.push({ angle, r, speed: 0.015 + Math.random() * 0.03, y: yy });
@@ -1654,6 +1657,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     });
     const ng = new THREE.Sprite(ngMat);
     ng.scale.setScalar(0.35);
+    ng.visible = false;
     group.add(ng);
     nodeGlows.push(ng);
 
@@ -1663,6 +1667,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       color: nColors[i], transparent: true, opacity: 0.12, depthWrite: false,
     });
     const line = new THREE.Line(lGeo, lMat);
+    line.visible = false;
     group.add(line);
     nodeLines.push({ geo: lGeo });
   }
