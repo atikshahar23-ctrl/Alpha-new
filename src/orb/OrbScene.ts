@@ -461,52 +461,54 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
 
   // ── Face — canvas-drawn for true anime look ──
   const faceCanvas = document.createElement('canvas');
-  faceCanvas.width = 512;
-  faceCanvas.height = 512;
+  faceCanvas.width = 2048;
+  faceCanvas.height = 2048;
   const fctx = faceCanvas.getContext('2d')!;
-  fctx.clearRect(0, 0, 512, 512);
+  fctx.clearRect(0, 0, 2048, 2048);
 
+  // All coordinates are in 2048×2048 space (4× the old 512×512)
+  const S = 4;
   const drawEllipse = (cx: number, cy: number, rx: number, ry: number, color: string) => {
     fctx.fillStyle = color;
     fctx.beginPath();
-    fctx.ellipse(cx, cy, rx, ry, 0, 0, PI2);
+    fctx.ellipse(cx * S, cy * S, rx * S, ry * S, 0, 0, PI2);
     fctx.fill();
   };
 
   // Eyes — large dark ovals with slight inward tilt
   fctx.save();
-  fctx.translate(178, 218);
+  fctx.translate(178 * S, 218 * S);
   fctx.rotate(0.08);
   fctx.fillStyle = '#0A0804';
   fctx.beginPath();
-  fctx.ellipse(0, 0, 46, 62, 0, 0, PI2);
+  fctx.ellipse(0, 0, 46 * S, 62 * S, 0, 0, PI2);
   fctx.fill();
   fctx.restore();
 
   fctx.save();
-  fctx.translate(334, 218);
+  fctx.translate(334 * S, 218 * S);
   fctx.rotate(-0.08);
   fctx.fillStyle = '#0A0804';
   fctx.beginPath();
-  fctx.ellipse(0, 0, 46, 62, 0, 0, PI2);
+  fctx.ellipse(0, 0, 46 * S, 62 * S, 0, 0, PI2);
   fctx.fill();
   fctx.restore();
 
-  // Eye highlights — large white circle upper-right + small lower-left (anime style)
+  // Eye highlights — large white upper-right + small lower-left (anime style)
   drawEllipse(196, 196, 18, 22, '#FFFFFF');
   drawEllipse(350, 196, 18, 22, '#FFFFFF');
   drawEllipse(166, 232, 9, 11, '#FFFFFF');
   drawEllipse(318, 232, 9, 11, '#FFFFFF');
 
-  // Red cheeks (drawn on canvas for smooth blending)
+  // Red cheeks — radial gradient for smooth blending
   const drawCheek = (cx: number, cy: number) => {
-    const grad = fctx.createRadialGradient(cx, cy, 0, cx, cy, 52);
+    const grad = fctx.createRadialGradient(cx * S, cy * S, 0, cx * S, cy * S, 52 * S);
     grad.addColorStop(0, 'rgba(229, 57, 53, 0.85)');
     grad.addColorStop(0.6, 'rgba(229, 57, 53, 0.4)');
     grad.addColorStop(1, 'rgba(229, 57, 53, 0)');
     fctx.fillStyle = grad;
     fctx.beginPath();
-    fctx.ellipse(cx, cy, 56, 48, 0, 0, PI2);
+    fctx.ellipse(cx * S, cy * S, 56 * S, 48 * S, 0, 0, PI2);
     fctx.fill();
   };
   drawCheek(108, 298);
@@ -515,32 +517,32 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   // Nose — small inverted triangle
   fctx.fillStyle = '#1A1008';
   fctx.beginPath();
-  fctx.moveTo(256, 286);
-  fctx.lineTo(249, 298);
-  fctx.lineTo(263, 298);
+  fctx.moveTo(256 * S, 286 * S);
+  fctx.lineTo(249 * S, 298 * S);
+  fctx.lineTo(263 * S, 298 * S);
   fctx.closePath();
   fctx.fill();
 
   // Mouth — ω shape
   fctx.strokeStyle = '#1A0505';
-  fctx.lineWidth = 4;
+  fctx.lineWidth = 4 * S;
   fctx.lineCap = 'round';
   fctx.lineJoin = 'round';
   fctx.beginPath();
-  fctx.moveTo(198, 314);
-  fctx.quadraticCurveTo(215, 348, 249, 332);
-  fctx.quadraticCurveTo(256, 318, 263, 332);
-  fctx.quadraticCurveTo(297, 348, 314, 314);
+  fctx.moveTo(198 * S, 314 * S);
+  fctx.quadraticCurveTo(215 * S, 348 * S, 249 * S, 332 * S);
+  fctx.quadraticCurveTo(256 * S, 318 * S, 263 * S, 332 * S);
+  fctx.quadraticCurveTo(297 * S, 348 * S, 314 * S, 314 * S);
   fctx.stroke();
 
   // Soft circular mask
   fctx.globalCompositeOperation = 'destination-in';
-  const faceGrad = fctx.createRadialGradient(256, 256, 0, 256, 256, 256);
+  const faceGrad = fctx.createRadialGradient(1024, 1024, 0, 1024, 1024, 1024);
   faceGrad.addColorStop(0, 'rgba(255,255,255,1)');
   faceGrad.addColorStop(0.85, 'rgba(255,255,255,1)');
   faceGrad.addColorStop(1, 'rgba(255,255,255,0)');
   fctx.fillStyle = faceGrad;
-  fctx.fillRect(0, 0, 512, 512);
+  fctx.fillRect(0, 0, 2048, 2048);
   fctx.globalCompositeOperation = 'source-over';
 
   const faceTexture = new THREE.CanvasTexture(faceCanvas);
@@ -953,10 +955,12 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   composer.addPass(new OutputPass());
 
   function resize() {
-    const w = container.clientWidth || 240;
-    const h = container.clientHeight || w;
-    renderer.setSize(w, h, false);
-    composer.setSize(w, h);
+    const w = container.clientWidth || window.innerWidth;
+    const h = container.clientHeight || window.innerHeight;
+    const pr = window.devicePixelRatio || 1;
+    renderer.setPixelRatio(pr);
+    renderer.setSize(w, h, true);
+    composer.setSize(w * pr, h * pr);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
   }
@@ -1433,10 +1437,12 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   composer.addPass(new OutputPass());
 
   function resize() {
-    const w = container.clientWidth || 240;
-    const h = container.clientHeight || w;
-    renderer.setSize(w, h, false);
-    composer.setSize(w, h);
+    const w = container.clientWidth || window.innerWidth;
+    const h = container.clientHeight || window.innerHeight;
+    const pr = window.devicePixelRatio || 1;
+    renderer.setPixelRatio(pr);
+    renderer.setSize(w, h, true);
+    composer.setSize(w * pr, h * pr);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
   }
