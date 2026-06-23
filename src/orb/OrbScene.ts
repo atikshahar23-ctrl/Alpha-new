@@ -4,6 +4,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
 
 export interface OrbHandle {
   setEnergy(v: number): void;
@@ -922,6 +923,153 @@ const TENDRIL_FRAG = /* glsl */`
 `;
 
 // ============================================================
+// Pikachu long-press "Chuu!" electricity effect helpers
+// ============================================================
+function playPikachuCry() {
+  try {
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)() as AudioContext;
+    const t = ctx.currentTime;
+    const master = ctx.createGain();
+    master.gain.setValueAtTime(0.6, t);
+    master.connect(ctx.destination);
+
+    // FM carrier: "Pi-ka-CHU!" frequency contour
+    const carrier = ctx.createOscillator();
+    carrier.type = 'sine';
+    carrier.frequency.setValueAtTime(1320, t);
+    carrier.frequency.linearRampToValueAtTime(1480, t + 0.08);   // Pi
+    carrier.frequency.setValueAtTime(1100, t + 0.14);
+    carrier.frequency.linearRampToValueAtTime(980, t + 0.22);    // ka
+    carrier.frequency.setValueAtTime(1640, t + 0.26);            // CHU!
+    carrier.frequency.exponentialRampToValueAtTime(580, t + 0.54);
+
+    // Vibrato LFO — gives natural voice wobble
+    const vibrato = ctx.createOscillator();
+    vibrato.frequency.value = 8.0;
+    const vibratoG = ctx.createGain();
+    vibratoG.gain.setValueAtTime(0, t);
+    vibratoG.gain.linearRampToValueAtTime(28, t + 0.08);
+    vibrato.connect(vibratoG);
+    vibratoG.connect(carrier.frequency);
+
+    // FM modulator (sawtooth) — adds electric sparkle
+    const mod = ctx.createOscillator();
+    mod.type = 'sawtooth';
+    mod.frequency.setValueAtTime(220, t);
+    mod.frequency.linearRampToValueAtTime(440, t + 0.26);
+    const modG = ctx.createGain();
+    modG.gain.setValueAtTime(80, t);
+    modG.gain.linearRampToValueAtTime(640, t + 0.27); // peak at CHU!
+    modG.gain.exponentialRampToValueAtTime(18, t + 0.55);
+    mod.connect(modG);
+    modG.connect(carrier.frequency);
+
+    // Envelope
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0, t);
+    env.gain.linearRampToValueAtTime(0.9, t + 0.025);
+    env.gain.setValueAtTime(0.55, t + 0.13);
+    env.gain.setValueAtTime(0.50, t + 0.22);
+    env.gain.linearRampToValueAtTime(1.0, t + 0.28);  // CHU! peak
+    env.gain.exponentialRampToValueAtTime(0.001, t + 0.56);
+
+    // Formant filter — shapes vowel timbre "ee → ah → uu"
+    const formant = ctx.createBiquadFilter();
+    formant.type = 'bandpass';
+    formant.frequency.setValueAtTime(1400, t);
+    formant.frequency.linearRampToValueAtTime(2400, t + 0.26);
+    formant.frequency.exponentialRampToValueAtTime(750, t + 0.56);
+    formant.Q.value = 2.5;
+
+    carrier.connect(env);
+    env.connect(formant);
+    formant.connect(master);
+
+    // Electric noise burst at the CHU! peak
+    const noiseLen = Math.ceil(ctx.sampleRate * 0.28);
+    const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
+    const nd = noiseBuf.getChannelData(0);
+    for (let i = 0; i < noiseLen; i++) nd[i] = Math.random() * 2 - 1;
+    const noiseSrc = ctx.createBufferSource();
+    noiseSrc.buffer = noiseBuf;
+    const nf = ctx.createBiquadFilter();
+    nf.type = 'highpass'; nf.frequency.value = 2800; nf.Q.value = 0.4;
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0, t + 0.24);
+    ng.gain.linearRampToValueAtTime(0.22, t + 0.27);
+    ng.gain.exponentialRampToValueAtTime(0.001, t + 0.52);
+    noiseSrc.connect(nf); nf.connect(ng); ng.connect(master);
+
+    carrier.start(t); carrier.stop(t + 0.6);
+    vibrato.start(t); vibrato.stop(t + 0.6);
+    mod.start(t); mod.stop(t + 0.6);
+    noiseSrc.start(t + 0.24); noiseSrc.stop(t + 0.52);
+    setTimeout(() => { try { ctx.close(); } catch {} }, 2500);
+  } catch {}
+}
+
+function setupChuEffect(
+  container: HTMLElement,
+  canvas: HTMLElement,
+  onCharge: (level: number) => void,
+): () => void {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:9;';
+  if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
+  container.appendChild(overlay);
+
+  let charging = false, flashing = false, chargeStart = 0, chargeRAF = 0;
+  const CHARGE_MS = 2200;
+
+  function tick() {
+    if (!charging) return;
+    const lv = Math.min((performance.now() - chargeStart) / CHARGE_MS, 1);
+    onCharge(lv);
+    if (lv >= 1 && !flashing) {
+      flashing = true; charging = false;
+      playPikachuCry();
+      overlay.style.transition = 'opacity 0.08s ease-in';
+      overlay.style.opacity = '1';
+      setTimeout(() => {
+        overlay.style.transition = 'opacity 1.4s ease-out';
+        overlay.style.opacity = '0';
+        setTimeout(() => { flashing = false; onCharge(0); }, 1400);
+      }, 140);
+    } else if (lv < 1) {
+      chargeRAF = requestAnimationFrame(tick);
+    }
+  }
+
+  function start() {
+    if (flashing) return;
+    charging = true;
+    chargeStart = performance.now();
+    chargeRAF = requestAnimationFrame(tick);
+  }
+
+  function cancel() {
+    if (flashing) return;
+    charging = false;
+    cancelAnimationFrame(chargeRAF);
+    onCharge(0);
+  }
+
+  canvas.addEventListener('mousedown', start);
+  canvas.addEventListener('mouseup', cancel);
+  canvas.addEventListener('mouseleave', cancel);
+  canvas.addEventListener('touchstart', (e) => { e.preventDefault(); start(); }, { passive: false });
+  canvas.addEventListener('touchend', cancel);
+  canvas.addEventListener('touchcancel', cancel);
+
+  return () => {
+    canvas.removeEventListener('mousedown', start);
+    canvas.removeEventListener('mouseup', cancel);
+    canvas.removeEventListener('mouseleave', cancel);
+    if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+  };
+}
+
+// ============================================================
 // Mobile orb scene — holographic AI core (MAXIMUM QUALITY)
 // ============================================================
 function mountMobileOrb(container: HTMLElement): OrbHandle {
@@ -931,7 +1079,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     powerPreference: 'high-performance',
     failIfMajorPerformanceCaveat: false,
   });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setPixelRatio(window.devicePixelRatio || 1);
   renderer.setClearColor(0x0a0806, 1);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.9;
@@ -942,16 +1090,21 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   camera.position.set(0, 0, 6);
   camera.lookAt(0, 0, 0);
 
+  const pr0 = window.devicePixelRatio || 1;
   const composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
-  composer.addPass(new UnrealBloomPass(
-    new THREE.Vector2(window.innerWidth, window.innerHeight),
+  const mBloom = new UnrealBloomPass(
+    new THREE.Vector2(window.innerWidth * pr0, window.innerHeight * pr0),
     0.22, 0.4, 0.65,
-  ));
+  );
+  composer.addPass(mBloom);
   // Gold vignette
   const mVignette = new ShaderPass(GOLD_VIGNETTE_SHADER);
   mVignette.uniforms.darkness.value = 0.7;
   composer.addPass(mVignette);
+  // FXAA — screen-space AA needed because MSAA is lost in EffectComposer
+  const mFxaa = new ShaderPass(FXAAShader);
+  composer.addPass(mFxaa);
   composer.addPass(new OutputPass());
 
   function resize() {
@@ -961,6 +1114,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     renderer.setPixelRatio(pr);
     renderer.setSize(w, h, true);
     composer.setSize(w * pr, h * pr);
+    mFxaa.uniforms['resolution'].value.set(1 / (w * pr), 1 / (h * pr));
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
   }
@@ -1181,6 +1335,9 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   // ────────────────────────────────────────────
   // ANIMATION — maximum flow
   // ────────────────────────────────────────────
+  let chargeLevel = 0;
+  const disposeChu = setupChuEffect(container, renderer.domElement, (lv) => { chargeLevel = lv; });
+
   let time = 0, raf = 0;
   let amp = 0.06, ampTarget = 0.06;
   let glitchStr = 0, nextGlitch = 3 + Math.random() * 5, glitchTimer = 0;
@@ -1193,6 +1350,10 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     const dt = 0.016;
     time += dt;
     amp += (ampTarget - amp) * 0.07;
+
+    // Long-press charge: ramp up bloom and exposure
+    mBloom.strength = 0.22 + chargeLevel * 4.5;
+    renderer.toneMappingExposure = 0.9 + chargeLevel * 2.5;
 
     glitchTimer += dt;
     if (glitchTimer >= nextGlitch) {
@@ -1236,7 +1397,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     const hbPhase = (time * 1.2) % PI2;
     const lub = Math.max(0, Math.sin(hbPhase * 2.0)) > 0.85 ? 0.25 : 0;
     const dub = Math.max(0, Math.sin(hbPhase * 2.0 + 1.2)) > 0.9 ? 0.18 : 0;
-    const cheekPulse = 0.08 + lub * 0.3 + dub * 0.2 + amp * 0.1 + sparkBurst * 0.3;
+    const cheekPulse = 0.08 + lub * 0.3 + dub * 0.2 + amp * 0.1 + sparkBurst * 0.3 + chargeLevel * 1.5;
     pika.cheekMatL.emissiveIntensity = cheekPulse;
     pika.cheekMatR.emissiveIntensity = cheekPulse;
     if (pika.tail) {
@@ -1265,20 +1426,22 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     if (pika.leftEyelid) pika.leftEyelid.scale.y = blinkY;
     if (pika.rightEyelid) pika.rightEyelid.scale.y = blinkY;
     // Ear twitching — independent, occasional + perk up during sparks + hop
-    const earPerk = sparkBurst > 0 ? -0.08 : hopActive ? -0.06 : 0;
+    const chargeEarPerk = chargeLevel * -0.12;
+    const earPerk = sparkBurst > 0 ? -0.08 : hopActive ? -0.06 : chargeEarPerk;
     const earTwitchL = Math.sin(time * 2.5) * 0.05 + (Math.sin(time * 7.3) > 0.95 ? 0.12 : 0) + earPerk;
     const earTwitchR = Math.sin(time * 2.5 + 0.6) * 0.05 + (Math.sin(time * 8.1 + 1.0) > 0.95 ? 0.12 : 0) + earPerk;
     if (pika.leftEarGroup) pika.leftEarGroup.rotation.x = -0.12 + earTwitchL;
     if (pika.rightEarGroup) pika.rightEarGroup.rotation.x = -0.12 + earTwitchR;
-    // Electric sparks — subtle idle crackle + strong flicker during the ZAP
+    // Electric sparks — boosted during charge
+    const chargeSparkBoost = chargeLevel * 8.0;
     for (let si = 0; si < pika.sparkMats.length; si++) {
       const idlePhase = Math.sin(time * 8.0 + si * 2.7) * Math.sin(time * 3.1 + si * 1.3);
       const idle = idlePhase > 0.85 ? 0.12 : 0;
       const flicker = Math.sin(time * 45 + si * 2.7) * 0.5 + 0.5;
-      pika.sparkMats[si].opacity = Math.max(idle, zapStrength * (0.55 + flicker * 0.45));
+      pika.sparkMats[si].opacity = Math.min(1, Math.max(idle, zapStrength * (0.55 + flicker * 0.45)) + chargeLevel * (0.4 + flicker * chargeSparkBoost * 0.1));
     }
-    // Sparks spin fast during a zap for a crackling feel
-    pika.sparks.rotation.y += dt * (0.35 + zapStrength * 6.0);
+    // Sparks spin fast during a zap or charge
+    pika.sparks.rotation.y += dt * (0.35 + zapStrength * 6.0 + chargeLevel * 12.0);
     // Eye tracking — pupils occasionally look toward viewer, drift around
     const viewerLook = Math.sin(time * 0.08) > 0.7 ? 0.01 : 0;
     const lookX = Math.sin(time * 0.18) * 0.015 + viewerLook;
@@ -1293,10 +1456,10 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
       const mouthOpen = hopActive ? 0.03 : 0;
       pika.mouthMesh.position.y = -0.12 - mouthOpen;
     }
-    // Electricity aura — flares with the zap
-    pika.auraMat.opacity = zapStrength * (0.12 + Math.sin(time * 30) * 0.04);
+    // Electricity aura — flares with the zap or charge
+    pika.auraMat.opacity = Math.max(zapStrength * (0.12 + Math.sin(time * 30) * 0.04), chargeLevel * (0.3 + Math.sin(time * 40) * 0.1));
     // Randomize spark rotations for more dynamic feel
-    if (sparkBurst > 0) {
+    if (sparkBurst > 0 || chargeLevel > 0.1) {
       for (let si = 0; si < Math.min(pika.sparkMeshes.length, 6); si++) {
         const idx = Math.floor(Math.sin(time * 20 + si * 3.7) * 0.5 + 0.5) * 3;
         if (idx < pika.sparkMeshes.length) {
@@ -1377,6 +1540,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     setEnergy(v: number) { ampTarget = Math.max(0, Math.min(1, v)); },
     dispose() {
       cancelAnimationFrame(raf);
+      disposeChu();
       window.removeEventListener('resize', resize);
       envMap.dispose();
       composer.dispose();
@@ -1401,14 +1565,13 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     powerPreference: 'high-performance',
     failIfMajorPerformanceCaveat: false,
   });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setPixelRatio(window.devicePixelRatio || 1);
   renderer.setClearColor(0x0a0806, 1);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.75;
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0x0a0806, 0.025);
 
   const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 200);
   camera.position.set(0, 0.4, 6);
@@ -1424,11 +1587,12 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   // ────────────────────────────────────────────
   // POST-PROCESSING PIPELINE
   // ────────────────────────────────────────────
+  const dpr0 = window.devicePixelRatio || 1;
   const composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
 
   const bloom = new UnrealBloomPass(
-    new THREE.Vector2(window.innerWidth, window.innerHeight),
+    new THREE.Vector2(window.innerWidth * dpr0, window.innerHeight * dpr0),
     0.2, 0.4, 0.7,
   );
   composer.addPass(bloom);
@@ -1436,6 +1600,10 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   const vignette = new ShaderPass(GOLD_VIGNETTE_SHADER);
   vignette.uniforms.darkness.value = 0.5;
   composer.addPass(vignette);
+
+  // FXAA — screen-space AA needed because MSAA is lost in EffectComposer
+  const fxaa = new ShaderPass(FXAAShader);
+  composer.addPass(fxaa);
 
   composer.addPass(new OutputPass());
 
@@ -1446,6 +1614,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     renderer.setPixelRatio(pr);
     renderer.setSize(w, h, true);
     composer.setSize(w * pr, h * pr);
+    fxaa.uniforms['resolution'].value.set(1 / (w * pr), 1 / (h * pr));
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
   }
@@ -2023,6 +2192,9 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   // ────────────────────────────────────────────
   // ANIMATION
   // ────────────────────────────────────────────
+  let chargeLevel = 0;
+  const disposeChu = setupChuEffect(container, renderer.domElement, (lv) => { chargeLevel = lv; });
+
   let time = 0, raf = 0;
   let amp = 0.06, ampTarget = 0.06;
   let glitchStr = 0, nextGlitch = 3 + Math.random() * 5, glitchTimer = 0;
@@ -2035,6 +2207,10 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     const dt = 0.016;
     time += dt;
     amp += (ampTarget - amp) * 0.07;
+
+    // Long-press charge: ramp bloom and exposure
+    bloom.strength = 0.2 + chargeLevel * 4.5;
+    renderer.toneMappingExposure = 0.75 + chargeLevel * 2.5;
 
     glitchTimer += dt;
     if (glitchTimer >= nextGlitch) {
@@ -2080,7 +2256,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     const hbPhase = (time * 1.2) % PI2;
     const lub = Math.max(0, Math.sin(hbPhase * 2.0)) > 0.85 ? 0.25 : 0;
     const dub = Math.max(0, Math.sin(hbPhase * 2.0 + 1.2)) > 0.9 ? 0.18 : 0;
-    const cheekPulse = 0.08 + lub * 0.3 + dub * 0.2 + amp * 0.1 + sparkBurst * 0.3;
+    const cheekPulse = 0.08 + lub * 0.3 + dub * 0.2 + amp * 0.1 + sparkBurst * 0.3 + chargeLevel * 1.5;
     pika.cheekMatL.emissiveIntensity = cheekPulse;
     pika.cheekMatR.emissiveIntensity = cheekPulse;
     if (pika.tail) {
@@ -2108,21 +2284,23 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     const blinkY = blinkActive ? Math.max(0.01, 1.0 - Math.sin(blinkT * PI) * 0.99) : Math.max(0.01, squintAmount);
     if (pika.leftEyelid) pika.leftEyelid.scale.y = blinkY;
     if (pika.rightEyelid) pika.rightEyelid.scale.y = blinkY;
-    // Ear twitching — independent, occasional + perk up during sparks + hop
-    const earPerk = sparkBurst > 0 ? -0.08 : hopActive ? -0.06 : 0;
+    // Ear twitching — independent, occasional + perk up during sparks + charge
+    const chargeEarPerk = chargeLevel * -0.12;
+    const earPerk = sparkBurst > 0 ? -0.08 : hopActive ? -0.06 : chargeEarPerk;
     const earTwitchL = Math.sin(time * 2.5) * 0.05 + (Math.sin(time * 7.3) > 0.95 ? 0.12 : 0) + earPerk;
     const earTwitchR = Math.sin(time * 2.5 + 0.6) * 0.05 + (Math.sin(time * 8.1 + 1.0) > 0.95 ? 0.12 : 0) + earPerk;
     if (pika.leftEarGroup) pika.leftEarGroup.rotation.x = -0.12 + earTwitchL;
     if (pika.rightEarGroup) pika.rightEarGroup.rotation.x = -0.12 + earTwitchR;
-    // Electric sparks — subtle idle crackle + strong flicker during the ZAP
+    // Electric sparks — subtle idle crackle + strong flicker during ZAP or charge
+    const chargeSparkBoost = chargeLevel * 8.0;
     for (let si = 0; si < pika.sparkMats.length; si++) {
       const idlePhase = Math.sin(time * 8.0 + si * 2.7) * Math.sin(time * 3.1 + si * 1.3);
       const idle = idlePhase > 0.85 ? 0.12 : 0;
       const flicker = Math.sin(time * 45 + si * 2.7) * 0.5 + 0.5;
-      pika.sparkMats[si].opacity = Math.max(idle, zapStrength * (0.55 + flicker * 0.45));
+      pika.sparkMats[si].opacity = Math.min(1, Math.max(idle, zapStrength * (0.55 + flicker * 0.45)) + chargeLevel * (0.4 + flicker * chargeSparkBoost * 0.1));
     }
-    // Sparks spin fast during a zap for a crackling feel
-    pika.sparks.rotation.y += dt * (0.35 + zapStrength * 6.0);
+    // Sparks spin fast during a zap or charge
+    pika.sparks.rotation.y += dt * (0.35 + zapStrength * 6.0 + chargeLevel * 12.0);
     // Eye tracking — pupils occasionally look toward viewer (mouse), drift around
     const viewerLookD = dMouseX * 0.008;
     const viewerLookYD = dMouseY * -0.005;
@@ -2138,10 +2316,10 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       const mouthOpen = hopActive ? 0.03 : 0;
       pika.mouthMesh.position.y = -0.12 - mouthOpen;
     }
-    // Electricity aura — flares with the zap
-    pika.auraMat.opacity = zapStrength * (0.12 + Math.sin(time * 30) * 0.04);
+    // Electricity aura — flares with the zap or charge
+    pika.auraMat.opacity = Math.max(zapStrength * (0.12 + Math.sin(time * 30) * 0.04), chargeLevel * (0.3 + Math.sin(time * 40) * 0.1));
     // Randomize spark rotations for more dynamic feel
-    if (sparkBurst > 0) {
+    if (sparkBurst > 0 || chargeLevel > 0.1) {
       for (let si = 0; si < Math.min(pika.sparkMeshes.length, 6); si++) {
         const idx = Math.floor(Math.sin(time * 20 + si * 3.7) * 0.5 + 0.5) * 3;
         if (idx < pika.sparkMeshes.length) {
@@ -2291,6 +2469,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     setEnergy(v: number) { ampTarget = Math.max(0, Math.min(1, v)); },
     dispose() {
       cancelAnimationFrame(raf);
+      disposeChu();
       stopBodyDetection();
       window.removeEventListener('resize', resize);
       window.removeEventListener('mousemove', onDeskMouseMove);

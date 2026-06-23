@@ -338,85 +338,144 @@ function renderBusiness(root: HTMLElement, hooks: CockpitHooks, close: () => voi
   // ── Invoices ──
   const inv = card(L('חשבוניות', 'Invoices'), L('חשבוניות מקצועיות כולל מע"מ', 'Professional invoices with VAT'));
   const invStats = invoiceStats();
-  if (invStats.total > 0) {
-    const invKpis = el('div', 'cp-kpis');
-    invKpis.innerHTML =
-      `<div class="cp-kpi"><span class="cp-kpi-val">${invStats.total}</span><span class="cp-kpi-lbl">${L('סה"כ', 'Total')}</span></div>` +
-      `<div class="cp-kpi"><span class="cp-kpi-val">${invStats.paid}</span><span class="cp-kpi-lbl">${L('שולם', 'Paid')}</span></div>` +
-      `<div class="cp-kpi"><span class="cp-kpi-val">${invStats.outstanding}</span><span class="cp-kpi-lbl">${L('ממתין', 'Outstanding')}</span></div>` +
-      `<div class="cp-kpi"><span class="cp-kpi-val">₪${invStats.revenue.toLocaleString()}</span><span class="cp-kpi-lbl">${L('הכנסה', 'Revenue')}</span></div>`;
-    inv.appendChild(invKpis);
-  }
-  const invCust = input(L('שם לקוח', 'Customer name'));
-  const invPhone = input(L('טלפון (לשליחה בוואטסאפ)', 'Phone (for WhatsApp)'));
+  const invKpis = el('div', 'cp-kpis');
+  invKpis.innerHTML =
+    `<div class="cp-kpi"><span class="cp-kpi-val">${invStats.total}</span><span class="cp-kpi-lbl">${L('סה"כ', 'Total')}</span></div>` +
+    `<div class="cp-kpi"><span class="cp-kpi-val">${invStats.paid}</span><span class="cp-kpi-lbl">${L('שולם', 'Paid')}</span></div>` +
+    `<div class="cp-kpi"><span class="cp-kpi-val">${invStats.outstanding}</span><span class="cp-kpi-lbl">${L('ממתין', 'Outstanding')}</span></div>` +
+    `<div class="cp-kpi"><span class="cp-kpi-val">₪${invStats.revenue.toLocaleString()}</span><span class="cp-kpi-lbl">${L('הכנסה', 'Revenue')}</span></div>`;
+  inv.appendChild(invKpis);
+
+  const invCust = input(L('שם לקוח *', 'Customer name *'));
+  const invPhone = input(L('טלפון (לוואטסאפ)', 'Phone (WhatsApp)'));
   invPhone.type = 'tel';
-  const invItems = textarea(L('פריט בכל שורה, למשל:\nמצלמה 360: 4500\nהתקנה: 800 x 2', 'One item per line, e.g.:\n360 camera: 4500\nInstallation: 800 x 2'), 3);
+  const invItems = textarea(
+    L('פריט בכל שורה — פורמטים אפשריים:\nמצלמה 360° - 4500\nהתקנה 800\nשירות x2 - 350',
+      'One item per line — accepted formats:\n360° camera - 4500\nInstallation 800\nService x2 - 350'), 4);
   const invNotes = input(L('הערות (אופציונלי)', 'Notes (optional)'));
-  const createInv = btn(L('צור חשבונית', 'Create invoice'), true);
-  const invError = el('div', 'cp-note');
-  invError.style.color = '#ff5d73';
+  const createInv = btn(L('💾 שמור חשבונית', '💾 Save invoice'), true);
+  const invMsg = el('div', 'cp-note');
   const invList = el('div', 'cp-list');
+
+  // Flexible parser — accepts "desc: price", "desc - price", "desc price", "desc xQty price"
+  function parseInvoiceItem(line: string): InvoiceItem {
+    // Try "desc: price x qty" or "desc - price x qty"
+    const sepMatch = line.match(/^(.+?)[\-\:]\s*([\d,\.]+)\s*(?:x\s*(\d+))?$/i);
+    if (sepMatch) {
+      return {
+        description: sepMatch[1].trim(),
+        price: parseFloat(sepMatch[2].replace(/,/g, '')) || 0,
+        qty: parseInt(sepMatch[3] || '1') || 1,
+      };
+    }
+    // Try "desc x qty price" or "desc price" (number at end)
+    const numEnd = line.match(/^(.*?)\s*(?:x\s*(\d+))?\s*([\d,\.]+)\s*[₪$]?\s*$/i);
+    if (numEnd && numEnd[3]) {
+      return {
+        description: (numEnd[1] || line).trim(),
+        price: parseFloat(numEnd[3].replace(/,/g, '')) || 0,
+        qty: parseInt(numEnd[2] || '1') || 1,
+      };
+    }
+    return { description: line.trim(), price: 0, qty: 1 };
+  }
+
+  function buildWhatsAppText(i: ReturnType<typeof createInvoice>): string {
+    const rows = i.items.map(it => `• ${it.description}${it.qty > 1 ? ` x${it.qty}` : ''} — ₪${(it.price * it.qty).toLocaleString()}`).join('\n');
+    return encodeURIComponent(
+      `חשבונית ${i.number} — ${i.customer}\n` +
+      `תאריך: ${i.date}\n\n${rows}\n\n` +
+      `לפני מע"מ: ₪${i.subtotal.toLocaleString()}\n` +
+      `מע"מ (17%): ₪${i.tax.toLocaleString()}\n` +
+      `סה"כ לתשלום: ₪${i.total.toLocaleString()}` +
+      (i.notes ? `\n\n${i.notes}` : '')
+    );
+  }
+
   const drawInvoices = () => {
     invList.innerHTML = '';
-    const list = loadInvoices().slice(0, 10);
+    const list = loadInvoices();
     if (!list.length) { invList.appendChild(el('div', 'cp-empty', L('אין חשבוניות עדיין.', 'No invoices yet.'))); return; }
     list.forEach(i => {
-      const r = el('div', 'cp-row');
       const stHue = { draft: 200, sent: 45, paid: 140, overdue: 0 }[i.status] ?? 200;
-      r.innerHTML = `<span class="cp-row-main">${esc(i.number)} — ${esc(i.customer)} <span class="cp-row-sub">₪${i.total.toLocaleString()}</span></span>`;
+      const stLabel = { draft: L('טיוטה','Draft'), sent: L('נשלח','Sent'), paid: L('שולם','Paid'), overdue: L('באיחור','Overdue') }[i.status] ?? i.status;
+      const r = el('div', 'cp-row');
+      r.style.cssText = 'flex-direction:column;align-items:stretch;gap:6px;padding:12px';
+      r.innerHTML =
+        `<div style="display:flex;justify-content:space-between;align-items:center">` +
+          `<span style="font-weight:600;font-size:13px">${esc(i.number)} · ${esc(i.customer)}</span>` +
+          `<span style="font-size:18px;font-weight:700;color:var(--gold)">₪${i.total.toLocaleString()}</span>` +
+        `</div>` +
+        `<div style="display:flex;gap:8px;align-items:center;font-size:12px;color:var(--dim)">` +
+          `<span>${i.date}</span>` +
+          `<span style="padding:2px 8px;border-radius:20px;background:hsl(${stHue},60%,20%);color:hsl(${stHue},70%,65%)">${stLabel}</span>` +
+          (i.items.length ? `<span>${i.items.map(it => it.description.slice(0,18)).join(' · ')}</span>` : '') +
+        `</div>` +
+        `<div style="display:flex;gap:6px;flex-wrap:wrap">`;
+      const actRow = r.querySelector('div:last-child')!;
       const sel = el('select', 'cp-mini-sel') as HTMLSelectElement;
       (['draft', 'sent', 'paid', 'overdue'] as const).forEach(s => {
-        const o = el('option') as HTMLOptionElement; o.value = s; o.textContent = s; if (i.status === s) o.selected = true; sel.appendChild(o);
+        const o = el('option') as HTMLOptionElement;
+        o.value = s;
+        o.textContent = { draft: L('טיוטה','Draft'), sent: L('נשלח','Sent'), paid: L('שולם','Paid'), overdue: L('באיחור','Overdue') }[s];
+        if (i.status === s) o.selected = true;
+        sel.appendChild(o);
       });
       sel.style.color = `hsl(${stHue},70%,60%)`;
-      sel.onchange = () => { setInvoiceStatus(i.id, sel.value as any); root.replaceChildren(); renderBusiness(root, hooks, close); };
-      r.appendChild(sel);
-      const dl = el('button', 'cp-x', '📄'); dl.title = 'Print / PDF';
+      sel.onchange = () => { setInvoiceStatus(i.id, sel.value as any); drawInvoices(); };
+      actRow.appendChild(sel);
+      const dl = el('button', 'cp-x', '📄'); dl.title = L('הדפס / PDF', 'Print / PDF');
       dl.onclick = () => downloadInvoicePDF(i);
-      r.appendChild(dl);
-      if (i.phone) {
-        const wa = el('button', 'cp-x', '💬'); wa.title = 'שלח תמונה בוואטסאפ';
-        wa.onclick = () => shareInvoiceWhatsApp(i);
-        r.appendChild(wa);
-      }
+      actRow.appendChild(dl);
+      // WhatsApp — always available (phone = direct, no phone = choose recipient)
+      const waText = buildWhatsAppText(i);
+      const waHref = i.phone
+        ? `https://wa.me/${i.phone.replace(/\D/g, '').replace(/^0/, '972')}?text=${waText}`
+        : `https://wa.me/?text=${waText}`;
+      const wa = el('button', 'cp-x', '💬'); wa.title = L('שלח בוואטסאפ', 'Send via WhatsApp');
+      wa.onclick = () => { window.open(waHref, '_blank'); };
+      actRow.appendChild(wa);
+      const img = el('button', 'cp-x', '🖼'); img.title = L('שמור כתמונה + וואטסאפ', 'Save image + WhatsApp');
+      img.onclick = () => shareInvoiceWhatsApp(i);
+      actRow.appendChild(img);
       const del = el('button', 'cp-x', '✕');
-      del.onclick = () => { removeInvoice(i.id); drawInvoices(); };
-      r.appendChild(del);
+      del.onclick = () => { if (confirm(L('למחוק חשבונית זו?', 'Delete this invoice?'))) { removeInvoice(i.id); drawInvoices(); } };
+      actRow.appendChild(del);
       invList.appendChild(r);
     });
   };
+
   createInv.onclick = () => {
-    invError.textContent = '';
-    if (!invCust.value.trim()) { invError.textContent = L('הכנס שם לקוח.', 'Enter a customer name.'); return; }
+    invMsg.textContent = '';
+    invMsg.style.color = '#ff5d73';
+    if (!invCust.value.trim()) { invMsg.textContent = L('⚠ הכנס שם לקוח.', '⚠ Enter a customer name.'); return; }
     const lines = invItems.value.split('\n').map(s => s.trim()).filter(Boolean);
-    if (!lines.length) { invError.textContent = L('הוסף לפחות פריט אחד. פורמט: תיאור: מחיר', 'Add at least one item. Format: Description: Price'); return; }
-    const items: InvoiceItem[] = lines.map(l => {
-      if (l.includes(':')) {
-        const colonIdx = l.lastIndexOf(':');
-        const desc = l.slice(0, colonIdx).trim();
-        const rest = l.slice(colonIdx + 1).trim();
-        const parts = rest.split(/\s*x\s*/i);
-        return { description: desc, price: parseFloat(parts[0]) || 0, qty: parseInt(parts[1]) || 1 };
-      }
-      const numMatch = l.match(/(\d[\d,.]*)\s*(?:x\s*(\d+))?\s*$/);
-      if (numMatch) {
-        const desc = l.slice(0, numMatch.index).trim();
-        return { description: desc || l, price: parseFloat(numMatch[1].replace(/,/g, '')) || 0, qty: parseInt(numMatch[2]) || 1 };
-      }
-      return { description: l, price: 0, qty: 1 };
-    }).filter(i => i.description);
-    if (!items.length) { invError.textContent = L('לא ניתן לפרסר פריטים. פורמט: תיאור: מחיר', 'Could not parse items. Use format: Description: Price'); return; }
-    if (items.every(i => i.price === 0)) { invError.textContent = L('כל הפריטים במחיר 0. פורמט: תיאור: מחיר (למשל מצלמה: 4500)', 'All items have price 0. Use format: Description: Price (e.g. Camera: 4500)'); return; }
-    createInvoice(invCust.value.trim(), items, { notes: invNotes.value.trim(), phone: invPhone.value.trim() });
-    invCust.value = ''; invPhone.value = ''; invItems.value = ''; invNotes.value = '';
-    root.replaceChildren(); renderBusiness(root, hooks, close);
+    if (!lines.length) { invMsg.textContent = L('⚠ הוסף לפחות פריט אחד.', '⚠ Add at least one item.'); return; }
+    const items: InvoiceItem[] = lines.map(parseInvoiceItem).filter(i => i.description);
+    if (!items.length) { invMsg.textContent = L('⚠ לא ניתן לפרסר. דוגמה: מצלמה 360 - 4500', '⚠ Cannot parse. Example: Camera - 4500'); return; }
+    if (items.every(i => i.price === 0)) { invMsg.textContent = L('⚠ כל הפריטים במחיר 0. דוגמה: מצלמה 360 - 4500', '⚠ All items are ₪0. Example: Camera - 4500'); return; }
+    try {
+      const saved = createInvoice(invCust.value.trim(), items, { notes: invNotes.value.trim(), phone: invPhone.value.trim() });
+      invCust.value = ''; invPhone.value = ''; invItems.value = ''; invNotes.value = '';
+      invMsg.style.color = '#4caf50';
+      invMsg.textContent = L(`✓ חשבונית ${saved.number} נשמרה! (סה"כ ₪${saved.total.toLocaleString()})`,
+                              `✓ Invoice ${saved.number} saved! (Total ₪${saved.total.toLocaleString()})`);
+      drawInvoices();
+      // Open WhatsApp immediately so user can share right away
+      const txt = buildWhatsAppText(saved);
+      const phone = saved.phone.replace(/\D/g, '').replace(/^0/, '972');
+      const waUrl = phone.length >= 10 ? `https://wa.me/${phone}?text=${txt}` : `https://wa.me/?text=${txt}`;
+      setTimeout(() => { if (confirm(L('לשלוח את החשבונית בוואטסאפ עכשיו?', 'Send invoice via WhatsApp now?'))) window.open(waUrl, '_blank'); }, 200);
+    } catch (e) {
+      invMsg.textContent = L('שגיאה בשמירה — נסה שוב', 'Save error — try again');
+    }
   };
   inv.appendChild(field(L('לקוח', 'Customer'), invCust));
   inv.appendChild(field(L('טלפון', 'Phone'), invPhone));
   inv.appendChild(field(L('פריטים', 'Items'), invItems));
   inv.appendChild(field(L('הערות', 'Notes'), invNotes));
   inv.appendChild(createInv);
-  inv.appendChild(invError);
+  inv.appendChild(invMsg);
   inv.appendChild(invList);
   drawInvoices();
   root.appendChild(inv);
