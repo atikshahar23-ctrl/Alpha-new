@@ -2384,19 +2384,26 @@ export function mountApp(root: HTMLElement) {
     const v = +$<HTMLInputElement>('pitchSlider').value / 100;
     $('pitchVal').textContent = v.toFixed(1);
   };
-  $<HTMLInputElement>('pikaVolSlider').oninput = () => {
-    const v = +$<HTMLInputElement>('pikaVolSlider').value;
-    $('pikaVolVal').textContent = v + '%';
-    setPikaVolume(v / 100);
-    state.pikaVolume = v / 100;
+  $('pikaSpeakBtn').onclick = () => { pikaSpeak(); };
+  $<HTMLInputElement>('pikaVoiceCheck').onchange = (e) => {
+    state.pikaVoiceOn = (e.target as HTMLInputElement).checked;
+    setPikaEnabled(state.pikaVoiceOn);
+    localStorage.setItem('alpha_pikavoice', state.pikaVoiceOn ? '1' : '0');
   };
-  $<HTMLInputElement>('pikaPitchSlider').oninput = () => {
-    const v = +$<HTMLInputElement>('pikaPitchSlider').value / 100;
+  $<HTMLInputElement>('pikaVolSlider').oninput = (e) => {
+    const v = +((e.target as HTMLInputElement).value) / 100;
+    $('pikaVolVal').textContent = Math.round(v * 100) + '%';
+    setPikaVolume(v);
+    state.pikaVolume = v;
+    localStorage.setItem('alpha_pikavol', v.toFixed(2));
+  };
+  $<HTMLInputElement>('pikaPitchSlider').oninput = (e) => {
+    const v = +((e.target as HTMLInputElement).value) / 100;
     $('pikaPitchVal').textContent = v.toFixed(1);
     setPikaPitch(v);
     state.pikaPitch = v;
+    localStorage.setItem('alpha_pikapitch', v.toFixed(2));
   };
-  $('pikaSpeakBtn').onclick = () => { pikaSpeak(); };
   $('genderPicker').addEventListener('click', (e) => {
     const btn = (e.target as HTMLElement).closest('.gender-btn') as HTMLElement;
     if (!btn) return;

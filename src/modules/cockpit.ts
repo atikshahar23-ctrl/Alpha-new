@@ -348,6 +348,8 @@ function renderBusiness(root: HTMLElement, hooks: CockpitHooks, close: () => voi
     inv.appendChild(invKpis);
   }
   const invCust = input(L('שם לקוח', 'Customer name'));
+  const invPhone = input(L('טלפון (לשליחה בוואטסאפ)', 'Phone (for WhatsApp)'));
+  invPhone.type = 'tel';
   const invItems = textarea(L('פריט בכל שורה, למשל:\nמצלמה 360: 4500\nהתקנה: 800 x 2', 'One item per line, e.g.:\n360 camera: 4500\nInstallation: 800 x 2'), 3);
   const invNotes = input(L('הערות (אופציונלי)', 'Notes (optional)'));
   const createInv = btn(L('צור חשבונית', 'Create invoice'), true);
@@ -369,9 +371,20 @@ function renderBusiness(root: HTMLElement, hooks: CockpitHooks, close: () => voi
       sel.style.color = `hsl(${stHue},70%,60%)`;
       sel.onchange = () => { setInvoiceStatus(i.id, sel.value as any); root.replaceChildren(); renderBusiness(root, hooks, close); };
       r.appendChild(sel);
-      const dl = el('button', 'cp-x', '📄'); dl.title = 'Print';
+      const dl = el('button', 'cp-x', '📄'); dl.title = 'Print / PDF';
       dl.onclick = () => downloadInvoicePDF(i);
       r.appendChild(dl);
+      if (i.phone) {
+        const wa = el('button', 'cp-x', '💬'); wa.title = 'שלח בוואטסאפ';
+        wa.onclick = () => {
+          const num = i.phone.replace(/\D/g, '').replace(/^0/, '972');
+          const msg = encodeURIComponent(
+            `שלום ${i.customer},\nמצורפת חשבונית ${i.number} על סך ₪${i.total.toLocaleString()}.\nתאריך: ${i.date}${i.dueDate ? `\nלתשלום עד: ${i.dueDate}` : ''}\n${i.notes ? `\n${i.notes}` : ''}`
+          );
+          window.open(`https://wa.me/${num}?text=${msg}`, '_blank');
+        };
+        r.appendChild(wa);
+      }
       const del = el('button', 'cp-x', '✕');
       del.onclick = () => { removeInvoice(i.id); drawInvoices(); };
       r.appendChild(del);
@@ -400,11 +413,12 @@ function renderBusiness(root: HTMLElement, hooks: CockpitHooks, close: () => voi
     }).filter(i => i.description);
     if (!items.length) { invError.textContent = L('לא ניתן לפרסר פריטים. פורמט: תיאור: מחיר', 'Could not parse items. Use format: Description: Price'); return; }
     if (items.every(i => i.price === 0)) { invError.textContent = L('כל הפריטים במחיר 0. פורמט: תיאור: מחיר (למשל מצלמה: 4500)', 'All items have price 0. Use format: Description: Price (e.g. Camera: 4500)'); return; }
-    createInvoice(invCust.value.trim(), items, { notes: invNotes.value.trim() });
-    invCust.value = ''; invItems.value = ''; invNotes.value = '';
+    createInvoice(invCust.value.trim(), items, { notes: invNotes.value.trim(), phone: invPhone.value.trim() });
+    invCust.value = ''; invPhone.value = ''; invItems.value = ''; invNotes.value = '';
     root.replaceChildren(); renderBusiness(root, hooks, close);
   };
   inv.appendChild(field(L('לקוח', 'Customer'), invCust));
+  inv.appendChild(field(L('טלפון', 'Phone'), invPhone));
   inv.appendChild(field(L('פריטים', 'Items'), invItems));
   inv.appendChild(field(L('הערות', 'Notes'), invNotes));
   inv.appendChild(createInv);
