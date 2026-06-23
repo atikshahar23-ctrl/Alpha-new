@@ -265,26 +265,29 @@ interface PikachuMaterials {
   black: THREE.MeshPhysicalMaterial;
   mouth: THREE.MeshPhysicalMaterial;
   nose: THREE.MeshPhysicalMaterial;
+  pink: THREE.MeshPhysicalMaterial;
+  tongue: THREE.MeshPhysicalMaterial;
 }
 
 function createPikachuMaterials(envMap: THREE.Texture): PikachuMaterials {
   return {
     yellow: new THREE.MeshPhysicalMaterial({
-      color: 0xFDD835, metalness: 0.0, roughness: 0.52, envMap, envMapIntensity: 0.35,
-      clearcoat: 0.18, clearcoatRoughness: 0.28,
-      sheen: 0.14, sheenRoughness: 0.45, sheenColor: new THREE.Color(0xFFEB3B),
-      // Slight self-emission keeps shadowed areas warm yellow, not muddy
-      emissive: new THREE.Color(0xFDD835), emissiveIntensity: 0.04,
+      color: 0xFDD835, metalness: 0.0, roughness: 0.48, envMap, envMapIntensity: 0.40,
+      clearcoat: 0.22, clearcoatRoughness: 0.26,
+      sheen: 0.28, sheenRoughness: 0.38, sheenColor: new THREE.Color(0xFFE57A),
+      emissive: new THREE.Color(0xFDD835), emissiveIntensity: 0.05,
     }),
     darkYellow: new THREE.MeshPhysicalMaterial({
       color: 0xC8A415, metalness: 0.0, roughness: 0.55, envMap, envMapIntensity: 0.25,
       clearcoat: 0.1, clearcoatRoughness: 0.35,
+      sheen: 0.12, sheenRoughness: 0.5, sheenColor: new THREE.Color(0xD4AA22),
       emissive: new THREE.Color(0xC8A415), emissiveIntensity: 0.02,
     }),
     cream: new THREE.MeshPhysicalMaterial({
-      color: 0xFFFDE7, metalness: 0.0, roughness: 0.48, envMap, envMapIntensity: 0.25,
-      clearcoat: 0.12, clearcoatRoughness: 0.28,
-      emissive: new THREE.Color(0xFFFDE7), emissiveIntensity: 0.03,
+      color: 0xFFFDE7, metalness: 0.0, roughness: 0.44, envMap, envMapIntensity: 0.28,
+      clearcoat: 0.16, clearcoatRoughness: 0.26,
+      sheen: 0.18, sheenRoughness: 0.4, sheenColor: new THREE.Color(0xFFFACC),
+      emissive: new THREE.Color(0xFFFDE7), emissiveIntensity: 0.04,
     }),
     red: new THREE.MeshPhysicalMaterial({
       color: 0xE53935, metalness: 0.0, roughness: 0.42, envMap, envMapIntensity: 0.25,
@@ -311,6 +314,16 @@ function createPikachuMaterials(envMap: THREE.Texture): PikachuMaterials {
     nose: new THREE.MeshPhysicalMaterial({
       color: 0x151515, metalness: 0.06, roughness: 0.28, envMap, envMapIntensity: 0.22,
       clearcoat: 0.28, clearcoatRoughness: 0.12,
+    }),
+    pink: new THREE.MeshPhysicalMaterial({
+      color: 0xF48FB1, metalness: 0.0, roughness: 0.55, envMap, envMapIntensity: 0.18,
+      clearcoat: 0.08, clearcoatRoughness: 0.45,
+      emissive: new THREE.Color(0xF48FB1), emissiveIntensity: 0.06,
+    }),
+    tongue: new THREE.MeshPhysicalMaterial({
+      color: 0xF06080, metalness: 0.0, roughness: 0.38, envMap, envMapIntensity: 0.15,
+      clearcoat: 0.22, clearcoatRoughness: 0.22,
+      emissive: new THREE.Color(0xE84060), emissiveIntensity: 0.08,
     }),
   };
 }
@@ -456,6 +469,16 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
     earBlackTip.scale.set(0.75, 1.0, 0.42);
     earGroup.add(earBlackTip);
 
+    // Pink inner ear — flat ellipse on the front face of the ear
+    const innerEar = new THREE.Mesh(
+      new THREE.CircleGeometry(0.10, seg(16)),
+      mats.pink,
+    );
+    innerEar.scale.set(0.72, 3.2, 1.0);
+    innerEar.position.set(0, 0.52, 0.07);
+    innerEar.rotation.x = -0.12;
+    earGroup.add(innerEar);
+
     earGroup.position.set(sx * 0.44, 0.46, -0.06);
     earGroup.rotation.z = sx * 0.72;
     earGroup.rotation.x = -0.12;
@@ -517,21 +540,37 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
     fctx.restore();
   }
 
-  // Eye highlights — large white upper-right + small lower-left (anime style)
+  // Eye highlights — large white upper-right + small lower-left + tiny center sparkle (anime style)
   drawEllipse(196, 196, 18, 22, '#FFFFFF');
   drawEllipse(350, 196, 18, 22, '#FFFFFF');
   drawEllipse(166, 232, 9, 11, '#FFFFFF');
   drawEllipse(318, 232, 9, 11, '#FFFFFF');
+  // Center sparkle dot for liveliness ("catch-light" effect)
+  drawEllipse(185, 204, 5, 5, 'rgba(255,255,255,0.65)');
+  drawEllipse(339, 204, 5, 5, 'rgba(255,255,255,0.65)');
+  // Blue-grey lower catch-light
+  drawEllipse(174, 238, 4, 3, 'rgba(180,200,220,0.45)');
+  drawEllipse(328, 238, 4, 3, 'rgba(180,200,220,0.45)');
 
-  // Red cheeks — radial gradient for smooth blending
+  // Red cheeks — bright core fading outward, anime style
   const drawCheek = (cx: number, cy: number) => {
-    const grad = fctx.createRadialGradient(cx * S, cy * S, 0, cx * S, cy * S, 52 * S);
-    grad.addColorStop(0, 'rgba(229, 57, 53, 0.85)');
-    grad.addColorStop(0.6, 'rgba(229, 57, 53, 0.4)');
+    // Outer soft halo
+    const grad = fctx.createRadialGradient(cx * S, cy * S, 4 * S, cx * S, cy * S, 56 * S);
+    grad.addColorStop(0, 'rgba(245, 82, 78, 0.92)');
+    grad.addColorStop(0.40, 'rgba(229, 57, 53, 0.72)');
+    grad.addColorStop(0.72, 'rgba(229, 57, 53, 0.28)');
     grad.addColorStop(1, 'rgba(229, 57, 53, 0)');
     fctx.fillStyle = grad;
     fctx.beginPath();
-    fctx.ellipse(cx * S, cy * S, 56 * S, 48 * S, 0, 0, PI2);
+    fctx.ellipse(cx * S, cy * S, 58 * S, 50 * S, 0, 0, PI2);
+    fctx.fill();
+    // Bright center spot
+    const inner = fctx.createRadialGradient(cx * S, (cy - 6) * S, 0, cx * S, cy * S, 22 * S);
+    inner.addColorStop(0, 'rgba(255,160,140,0.55)');
+    inner.addColorStop(1, 'rgba(255,100,90,0)');
+    fctx.fillStyle = inner;
+    fctx.beginPath();
+    fctx.ellipse(cx * S, cy * S, 22 * S, 18 * S, 0, 0, PI2);
     fctx.fill();
   };
   drawCheek(108, 298);
@@ -573,11 +612,19 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   fctx.stroke();
   fctx.restore();
 
+  // Top forehead highlight — simulates the rounded 3D head shape
+  const foreheadLight = fctx.createRadialGradient(256 * S, 80 * S, 0, 256 * S, 140 * S, 200 * S);
+  foreheadLight.addColorStop(0, 'rgba(255,255,220,0.12)');
+  foreheadLight.addColorStop(0.6, 'rgba(255,240,180,0.04)');
+  foreheadLight.addColorStop(1, 'rgba(255,240,180,0)');
+  fctx.fillStyle = foreheadLight;
+  fctx.fillRect(0, 0, 2048, 2048);
+
   // Subtle depth shading — slight darkening at bottom of face for roundness
   const depthShade = fctx.createRadialGradient(256 * S, 320 * S, 40 * S, 256 * S, 280 * S, 240 * S);
   depthShade.addColorStop(0, 'rgba(20,10,2,0)');
   depthShade.addColorStop(0.7, 'rgba(20,10,2,0)');
-  depthShade.addColorStop(1, 'rgba(20,10,2,0.18)');
+  depthShade.addColorStop(1, 'rgba(20,10,2,0.22)');
   fctx.fillStyle = depthShade;
   fctx.fillRect(0, 0, 2048, 2048);
 
@@ -646,13 +693,12 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   mouthMesh.position.set(0, -0.18, 0.70);
   headGroup.add(mouthMesh);
 
-  // Tongue
-  const tongueMat = new THREE.MeshBasicMaterial({ color: 0xF06080 });
+  // Tongue — PBR material so it catches the keyLight
   const tongue = new THREE.Mesh(
-    new THREE.SphereGeometry(0.03, seg(10), seg(10)),
-    tongueMat,
+    new THREE.SphereGeometry(0.03, seg(12), seg(12)),
+    mats.tongue,
   );
-  tongue.scale.set(1.2, 0.5, 0.7);
+  tongue.scale.set(1.5, 0.55, 0.9);
   tongue.position.set(0, -0.2, 0.68);
   headGroup.add(tongue);
 
@@ -677,6 +723,14 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
 
   headGroup.position.set(0, 0.48, 0.04);
   group.add(headGroup);
+
+  // Neck — short cylinder blending head into body
+  const neck = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.28, 0.34, 0.22, seg(20)),
+    mYellow,
+  );
+  neck.position.set(0, 0.28, 0.04);
+  group.add(neck);
 
   // ── Arms ──
   const armGeo = new THREE.CapsuleGeometry(0.1, 0.22, seg(8), seg(12));
@@ -877,13 +931,20 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   );
   group.add(glassOrb);
 
-  const pikaLight = new THREE.PointLight(0xFFFFFF, 1.5, 5.0, 1.0);
+  // Front fill light — brings out face detail
+  const pikaLight = new THREE.PointLight(0xFFFDF0, 2.2, 5.0, 1.0);
   pikaLight.position.set(0, 0.5, 2.5);
   group.add(pikaLight);
 
-  const pikaTopLight = new THREE.PointLight(0xFFF8E0, 0.6, 4.0, 1.2);
-  pikaTopLight.position.set(0, 2.0, 0.5);
+  // Top warm overhead — makes the yellow fur glow nicely
+  const pikaTopLight = new THREE.PointLight(0xFFF8E0, 1.0, 4.5, 1.2);
+  pikaTopLight.position.set(0, 2.2, 0.5);
   group.add(pikaTopLight);
+
+  // Side rim light — creates fur-edge definition
+  const pikaSideLight = new THREE.PointLight(0xFFE0B0, 0.7, 3.5, 1.5);
+  pikaSideLight.position.set(1.8, 0.8, 0.8);
+  group.add(pikaSideLight);
 
   return { group, head: headGroup, leftEye, rightEye, leftPupil, rightPupil, leftEyelid, rightEyelid, leftEarGroup, rightEarGroup, cheekMatL, cheekMatR, tail, leftArm, rightArm, mouthMesh, tongue, sparks, sparkMats, sparkMeshes, auraMat };
 }

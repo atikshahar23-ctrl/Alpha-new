@@ -286,16 +286,29 @@ export default function App() {
 /* ============================ Hub ============================ */
 function Hub({ index, go, onNew }) {
   const [extra, setExtra] = useState({ tasks: 0, pending: 0, low: 0 });
+  const [todayTasks, setTodayTasks] = useState([]);
   const [backupDays, setBackupDays] = useState(null);
-  useEffect(() => { (async () => {
+  const today = todayISO();
+
+  const refreshTasks = async () => {
     const [tasks, inv, stock] = await Promise.all([loadArr("hg2:tasks"), loadArr("hg2:invoices"), loadArr("hg2:carstock")]);
     setExtra({
       tasks: tasks.filter((t) => !t.done).length,
       pending: inv.filter((x) => x.status !== "שולם").reduce((s, x) => s + (Number(x.amount) || 0), 0),
       low: stock.filter((i) => i.qty <= i.reorder).length,
     });
+    setTodayTasks(tasks.filter((t) => t.date === today).sort((a, b) => (a.done - b.done) || (b.ts - a.ts)));
     try { const r = await store.get("hg2:lastbackup"); const ts = r && r.value ? JSON.parse(r.value) : null; setBackupDays(ts ? Math.floor((Date.now() - ts) / 86400000) : 999); } catch { setBackupDays(999); }
-  })(); }, []);
+  };
+
+  useEffect(() => { refreshTasks(); }, []);
+
+  const toggleTask = async (id) => {
+    const tasks = await loadArr("hg2:tasks");
+    const updated = tasks.map((t) => t.id === id ? { ...t, done: !t.done } : t);
+    await saveArr("hg2:tasks", updated);
+    await refreshTasks();
+  };
   const month = todayISO().slice(0, 7);
   const mRows = index.filter((x) => (x.date || "").slice(0, 7) === month);
   const mRevenue = mRows.reduce((s, x) => s + (Number(x.price) || 0), 0);
@@ -343,6 +356,27 @@ function Hub({ index, go, onNew }) {
       )}
 
       <button className="hg2-add" onClick={onNew}><Plus size={22} /> הוספת התקנה</button>
+
+      {todayTasks.length > 0 && (
+        <div className="hg2-today-tasks">
+          <div className="hg2-secttl" style={{ marginBottom: 8 }}>
+            <CalendarDays size={14} /> משימות להיום
+            <button className="hg2-today-more" onClick={() => go("agenda")}>הכל <ChevronLeft size={12} /></button>
+          </div>
+          {todayTasks.slice(0, 4).map((t) => (
+            <div key={t.id} className={"hg2-hub-task" + (t.done ? " done" : "")} onClick={() => toggleTask(t.id)}>
+              <CheckCircle2 size={17} className={t.done ? "done-ic" : "open-ic"} />
+              <span>{t.title}</span>
+            </div>
+          ))}
+          {todayTasks.length > 4 && (
+            <button className="hg2-today-more-btn" onClick={() => go("agenda")}>
+              + עוד {todayTasks.length - 4} משימות
+            </button>
+          )}
+        </div>
+      )}
+
       <div className="hg2-hubgrid">
         {tiles.map((t) => {
           const I = t.icon;
@@ -2635,5 +2669,16 @@ function Styles() {
 .hg2-rstop.base .hg2-rdot{background:var(--cyan)}
 .hg2-rstop>div{order:3}
 .hg2-rleg{order:1;font-size:11px;color:var(--s4);background:var(--s8);border:1px solid var(--s7);border-radius:20px;padding:3px 9px;white-space:nowrap;flex-shrink:0}
+
+/* hub today tasks */
+.hg2-today-tasks{background:linear-gradient(135deg,rgba(111,211,240,.06),var(--s9) 70%);border:1px solid rgba(111,211,240,.22);border-radius:14px;padding:14px 15px;margin-bottom:18px}
+.hg2-hub-task{display:flex;align-items:center;gap:11px;padding:8px 0;border-bottom:1px solid rgba(43,53,67,.6);cursor:pointer;user-select:none}
+.hg2-hub-task:last-of-type{border-bottom:none}
+.hg2-hub-task.done span{text-decoration:line-through;opacity:.5}
+.hg2-hub-task .open-ic{color:var(--s7)}
+.hg2-hub-task.done .done-ic{color:var(--ok)}
+.hg2-hub-task span{flex:1;font-size:14px;line-height:1.4}
+.hg2-today-more{margin-right:auto;background:none;border:none;color:var(--cyan);font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:2px;padding:0}
+.hg2-today-more-btn{width:100%;background:none;border:none;color:var(--cyan);font-size:12.5px;font-weight:700;cursor:pointer;padding:8px 0 2px;text-align:center}
 `}</style>;
 }
