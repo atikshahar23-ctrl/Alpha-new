@@ -406,12 +406,12 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   const headGroup = new THREE.Group();
   const seg = (n: number) => Math.max(8, Math.round(n * detail));
 
-  // ── Body — round chubby torso, pear-shaped ──
+  // ── Body — round chubby torso, wider and rounder ──
   const body = new THREE.Mesh(
-    new THREE.SphereGeometry(0.72, seg(48), seg(48)),
+    new THREE.SphereGeometry(0.74, seg(48), seg(48)),
     mats.yellow,
   );
-  body.scale.set(1.0, 1.2, 0.88);
+  body.scale.set(1.05, 1.18, 0.92);
   body.position.set(0, -0.3, 0);
   group.add(body);
 
@@ -499,43 +499,56 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   backHead.position.set(0, -0.05, -0.42);
   headGroup.add(backHead);
 
-  // ── Ears — long pointed with wider base, black tips, inner detail ──
+  // ── Ears — leaf-shaped with wider middle, black tips, inner detail ──
   let leftEarGroup!: THREE.Group;
   let rightEarGroup!: THREE.Group;
   for (const sx of [-1, 1]) {
     const earGroup = new THREE.Group();
 
-    // Ear base — wider for natural attachment
+    // Ear base — wider bulge for natural attachment
     const earBase = new THREE.Mesh(
-      new THREE.SphereGeometry(0.12, seg(12), seg(12)),
+      new THREE.SphereGeometry(0.14, seg(14), seg(14)),
       mats.yellow,
     );
-    earBase.scale.set(1.0, 0.5, 0.7);
-    earBase.position.set(0, 0.12, 0);
+    earBase.scale.set(1.1, 0.5, 0.75);
+    earBase.position.set(0, 0.1, 0);
     earGroup.add(earBase);
 
-    // Main ear body — elongated cone with wider base
-    const ear = new THREE.Mesh(
-      new THREE.ConeGeometry(0.15, 0.95, seg(16)),
+    // Main ear body — wider leaf shape using ellipsoid + cone combo
+    const earLower = new THREE.Mesh(
+      new THREE.SphereGeometry(0.16, seg(16), seg(16)),
       mats.yellow,
     );
-    ear.position.set(0, 0.48, 0);
-    earGroup.add(ear);
+    earLower.scale.set(1.0, 1.8, 0.45);
+    earLower.position.set(0, 0.38, 0);
+    earGroup.add(earLower);
 
-    // Inner ear — darker yellow
-    const innerEar = new THREE.Mesh(
-      new THREE.ConeGeometry(0.065, 0.5, seg(12)),
-      mats.darkYellow,
+    const earUpper = new THREE.Mesh(
+      new THREE.ConeGeometry(0.12, 0.55, seg(16)),
+      mats.yellow,
     );
-    innerEar.position.set(0, 0.42, 0.04);
+    earUpper.position.set(0, 0.65, 0);
+    earGroup.add(earUpper);
+
+    // Inner ear — warm-tinted darker yellow
+    const innerEarMat = new THREE.MeshPhysicalMaterial({
+      color: 0xD4A017, metalness: 0.0, roughness: 0.48,
+      clearcoat: 0.15, clearcoatRoughness: 0.3,
+    });
+    const innerEar = new THREE.Mesh(
+      new THREE.SphereGeometry(0.09, seg(12), seg(12)),
+      innerEarMat,
+    );
+    innerEar.scale.set(0.8, 1.6, 0.25);
+    innerEar.position.set(0, 0.38, 0.06);
     earGroup.add(innerEar);
 
     // Black tip (top ~25%)
     const earTip = new THREE.Mesh(
-      new THREE.ConeGeometry(0.055, 0.28, seg(12)),
+      new THREE.ConeGeometry(0.06, 0.3, seg(12)),
       mats.black,
     );
-    earTip.position.set(0, 0.82, 0);
+    earTip.position.set(0, 0.85, 0);
     earGroup.add(earTip);
 
     earGroup.position.set(sx * 0.4, 0.52, -0.08);
@@ -633,14 +646,22 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   const leftEye = headGroup.children[headGroup.children.length - 10] as THREE.Mesh;
   const rightEye = headGroup.children[headGroup.children.length - 2] as THREE.Mesh;
 
-  // ── Nose — small rounded inverted-triangle ──
+  // ── Nose — tiny inverted triangle, Pikachu's small cute nose ──
   const nose = new THREE.Mesh(
-    new THREE.SphereGeometry(0.032, seg(12), seg(12)),
+    new THREE.SphereGeometry(0.028, seg(12), seg(12)),
     mats.nose,
   );
-  nose.scale.set(1.4, 0.6, 0.55);
-  nose.position.set(0, -0.05, 0.72);
+  nose.scale.set(1.5, 0.55, 0.5);
+  nose.position.set(0, -0.04, 0.73);
   headGroup.add(nose);
+
+  // Upper lip line — subtle vertical groove from nose to mouth
+  const lipLine = new THREE.Mesh(
+    new THREE.CapsuleGeometry(0.008, 0.04, seg(4), seg(6)),
+    mats.mouth,
+  );
+  lipLine.position.set(0, -0.07, 0.72);
+  headGroup.add(lipLine);
 
   // ── Mouth interior — dark area behind the smile for depth ──
   const mouthInterior = new THREE.Mesh(
@@ -754,8 +775,8 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   headGroup.position.set(0, 0.55, 0.0);
   group.add(headGroup);
 
-  // ── Arms — short stubby with rounded paw tips ──
-  const armGeo = new THREE.CapsuleGeometry(0.11, 0.24, seg(8), seg(12));
+  // ── Arms — short stubby with finger detail ──
+  const armGeo = new THREE.CapsuleGeometry(0.11, 0.26, seg(8), seg(12));
   const leftArm = new THREE.Mesh(armGeo, mats.yellow);
   leftArm.position.set(-0.6, -0.12, 0.12);
   leftArm.rotation.z = 0.55;
@@ -768,28 +789,43 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   rightArm.rotation.x = -0.15;
   group.add(rightArm);
 
-  // Paw tips — rounded end caps
+  // Paw hands with 3 fingers each
   for (const sx of [-1, 1]) {
-    const pawTip = new THREE.Mesh(
-      new THREE.SphereGeometry(0.08, seg(12), seg(12)),
+    const pawBase = new THREE.Mesh(
+      new THREE.SphereGeometry(0.09, seg(12), seg(12)),
       mats.yellow,
     );
-    pawTip.scale.set(1.0, 0.8, 0.9);
-    pawTip.position.set(
-      sx * 0.6 + sx * Math.cos(0.55) * 0.18,
-      -0.12 - Math.sin(0.55) * 0.18 - 0.04,
-      0.12 + 0.08,
-    );
-    group.add(pawTip);
+    pawBase.scale.set(1.1, 0.7, 0.95);
+    const pawX = sx * 0.6 + sx * Math.cos(0.55) * 0.2;
+    const pawY = -0.12 - Math.sin(0.55) * 0.2 - 0.03;
+    const pawZ = 0.12 + 0.08;
+    pawBase.position.set(pawX, pawY, pawZ);
+    group.add(pawBase);
+
+    for (let fi = 0; fi < 3; fi++) {
+      const finger = new THREE.Mesh(
+        new THREE.SphereGeometry(0.028, seg(6), seg(6)),
+        mats.yellow,
+      );
+      const fAngle = (fi - 1) * 0.35;
+      finger.position.set(
+        pawX + sx * Math.cos(fAngle) * 0.06,
+        pawY - 0.04 + Math.sin(fAngle) * 0.02,
+        pawZ + Math.abs(Math.cos(fAngle)) * 0.03,
+      );
+      finger.scale.set(0.9, 1.2, 0.85);
+      group.add(finger);
+    }
   }
 
-  // ── Feet — large oval with toes and soles ──
-  const footGeo = new THREE.CapsuleGeometry(0.15, 0.2, seg(8), seg(12));
+  // ── Feet — large chunky oval with toes and soles ──
+  const footGeo = new THREE.CapsuleGeometry(0.17, 0.22, seg(10), seg(14));
   for (const sx of [-1, 1]) {
     const foot = new THREE.Mesh(footGeo, mats.yellow);
     foot.rotation.x = PI / 2;
-    foot.rotation.z = sx * 0.1;
-    foot.position.set(sx * 0.32, -1.08, 0.22);
+    foot.rotation.z = sx * 0.12;
+    foot.position.set(sx * 0.34, -1.06, 0.24);
+    foot.scale.set(1.05, 1.0, 0.9);
     group.add(foot);
 
     // Toes — 3 bumps
@@ -854,45 +890,55 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   shadow.rotation.x = -PI / 2;
   group.add(shadow);
 
-  // ── Tail — iconic zigzag lightning bolt, wider and more dramatic ──
+  // ── Tail — iconic zigzag lightning bolt, larger and more prominent ──
   const tail = new THREE.Group();
   const shape = new THREE.Shape();
-  // Wider bolt pattern for more dramatic silhouette
+  // Wider, taller bolt silhouette matching anime proportions
   shape.moveTo(0, 0);
-  shape.lineTo(0.16, 0.28);
-  shape.lineTo(-0.08, 0.34);
-  shape.lineTo(0.22, 0.68);
-  shape.lineTo(-0.1, 0.74);
-  shape.lineTo(0.28, 1.22);
-  shape.lineTo(0.44, 1.14);
-  shape.lineTo(0.08, 0.72);
-  shape.lineTo(0.36, 0.66);
-  shape.lineTo(0.02, 0.28);
-  shape.lineTo(0.26, 0.24);
+  shape.lineTo(0.18, 0.32);
+  shape.lineTo(-0.1, 0.38);
+  shape.lineTo(0.24, 0.76);
+  shape.lineTo(-0.12, 0.84);
+  shape.lineTo(0.32, 1.4);
+  shape.lineTo(0.5, 1.3);
+  shape.lineTo(0.1, 0.82);
+  shape.lineTo(0.4, 0.74);
+  shape.lineTo(0.04, 0.32);
+  shape.lineTo(0.3, 0.28);
   shape.lineTo(0.0, 0.0);
-  const extSettings = { depth: 0.12, bevelEnabled: true, bevelThickness: 0.035, bevelSize: 0.035, bevelSegments: seg(4) };
+  const extSettings = { depth: 0.14, bevelEnabled: true, bevelThickness: 0.04, bevelSize: 0.04, bevelSegments: seg(4) };
   const tailMesh = new THREE.Mesh(
     new THREE.ExtrudeGeometry(shape, extSettings),
     mats.yellow,
   );
-  tailMesh.position.set(-0.14, 0, -0.06);
+  tailMesh.position.set(-0.16, 0, -0.07);
   tail.add(tailMesh);
 
   // Dark yellow edge highlight on tail (backside)
   const tailEdge = new THREE.Mesh(
-    new THREE.ExtrudeGeometry(shape, { depth: 0.005, bevelEnabled: false }),
+    new THREE.ExtrudeGeometry(shape, { depth: 0.006, bevelEnabled: false }),
     mats.darkYellow,
   );
-  tailEdge.position.set(-0.14, 0, -0.065);
+  tailEdge.position.set(-0.16, 0, -0.076);
   tail.add(tailEdge);
 
-  // Brown base connector — smooth transition to body
+  // Brown base connector — wider, smoother transition to body
   const tailBase = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.08, 0.2, seg(6), seg(10)),
+    new THREE.CapsuleGeometry(0.1, 0.22, seg(8), seg(12)),
     mats.brown,
   );
-  tailBase.position.set(0.04, -0.04, 0.01);
+  tailBase.position.set(0.04, -0.06, 0.01);
   tail.add(tailBase);
+
+  // Yellow connector sphere — smooth transition from base to bolt
+  const tailConn = new THREE.Mesh(
+    new THREE.SphereGeometry(0.1, seg(10), seg(10)),
+    mats.yellow,
+  );
+  tailConn.scale.set(1.0, 0.8, 0.8);
+  tailConn.position.set(0.04, 0.08, 0.0);
+  tail.add(tailConn);
+
   tail.position.set(0, -0.06, -0.6);
   tail.rotation.x = -0.42;
   tail.rotation.y = 0.12;
