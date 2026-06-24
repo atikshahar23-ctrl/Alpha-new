@@ -751,24 +751,24 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   neck.position.set(0, 0.28, 0.04);
   group.add(neck);
 
-  // ── Arms ──
-  const armGeo = new THREE.CapsuleGeometry(0.1, 0.22, seg(8), seg(12));
+  // ── Arms — positioned outside body sphere (body radius ~0.75 at shoulder) ──
+  const armGeo = new THREE.CapsuleGeometry(0.11, 0.30, seg(8), seg(12));
   const leftArm = new THREE.Mesh(armGeo, mYellow);
-  leftArm.position.set(-0.55, -0.15, 0.1);
-  leftArm.rotation.z = 0.6;
-  leftArm.rotation.x = -0.12;
+  leftArm.position.set(-0.82, 0.04, 0.26);
+  leftArm.rotation.z = 0.78;
+  leftArm.rotation.x = 0.14;
   group.add(leftArm);
 
   const rightArm = new THREE.Mesh(armGeo, mYellow);
-  rightArm.position.set(0.55, -0.15, 0.1);
-  rightArm.rotation.z = -0.6;
-  rightArm.rotation.x = -0.12;
+  rightArm.position.set(0.82, 0.04, 0.26);
+  rightArm.rotation.z = -0.78;
+  rightArm.rotation.x = 0.14;
   group.add(rightArm);
 
   for (const sx of [-1, 1]) {
-    const pawX = sx * 0.55 + sx * Math.cos(0.6) * 0.18;
-    const pawY = -0.15 - Math.sin(0.6) * 0.18 - 0.02;
-    const pawZ = 0.1 + 0.06;
+    const pawX = sx * 0.82 + sx * Math.cos(0.78) * 0.20;
+    const pawY = 0.04 - Math.sin(0.78) * 0.20 - 0.02;
+    const pawZ = 0.26 + 0.07;
     for (let fi = 0; fi < 3; fi++) {
       const finger = new THREE.Mesh(
         new THREE.SphereGeometry(0.025, seg(6), seg(6)),
