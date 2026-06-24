@@ -108,6 +108,22 @@ const UI_STRINGS: Record<string, Record<UILang, string>> = {
   pikaVolume: { he: 'עוצמת קול פיקאצ\'ו', en: 'Pikachu volume' },
   pikaPitch: { he: 'גובה קול פיקאצ\'ו', en: 'Pikachu pitch' },
   pikaSpeakNow: { he: 'פיקה פיקה!', en: 'Pika Pika!' },
+  voiceStudio: { he: '🎙️ אולפן קול', en: '🎙️ VOICE STUDIO' },
+  voiceStyle: { he: 'סגנון קול מהיר', en: 'Quick voice style' },
+  voiceVolume: { he: 'עוצמת קול', en: 'Voice volume' },
+  voiceTestLabel: { he: 'משפט לבדיקה', en: 'Test phrase' },
+  voiceTestPh: { he: 'כתוב טקסט לשמיעה…', en: 'Type text to hear…' },
+  playVoice: { he: '▶ השמע', en: '▶ Play' },
+  resetVoice: { he: '↺ אפס', en: '↺ Reset' },
+  vpNatural: { he: 'טבעי', en: 'Natural' },
+  vpCalm: { he: 'רגוע ועמוק', en: 'Calm & deep' },
+  vpEnergetic: { he: 'אנרגטי', en: 'Energetic' },
+  vpFast: { he: 'מהיר', en: 'Fast' },
+  vpClear: { he: 'איטי וברור', en: 'Slow & clear' },
+  vpDeep: { he: 'עמוק', en: 'Deep' },
+  vpRobot: { he: 'רובוט', en: 'Robot' },
+  vpChipmunk: { he: 'צ\'יפמאנק', en: 'Chipmunk' },
+  vpWhisper: { he: 'לחישה', en: 'Whisper' },
   armed: { he: 'אמור "היי אלפא"', en: 'SAY "HEY ALPHA"' },
   listening: { he: 'מקשיב', en: 'LISTENING' },
   thinking: { he: 'חושב', en: 'THINKING' },
@@ -334,22 +350,57 @@ export function mountApp(root: HTMLElement) {
             <option value="es">Spanish</option>
             <option value="de">German</option>
           </select>
+        </div>
+
+        <div class="settings-section voice-studio">
+          <div class="ss-title" data-i18n="voiceStudio">🎙️ אולפן קול</div>
+
+          <label data-i18n="voiceStyle">סגנון קול מהיר</label>
+          <div class="voice-presets" id="voicePresets">
+            <button class="vp-chip" data-preset="natural" data-i18n="vpNatural">טבעי</button>
+            <button class="vp-chip" data-preset="calm" data-i18n="vpCalm">רגוע ועמוק</button>
+            <button class="vp-chip" data-preset="energetic" data-i18n="vpEnergetic">אנרגטי</button>
+            <button class="vp-chip" data-preset="fast" data-i18n="vpFast">מהיר</button>
+            <button class="vp-chip" data-preset="clear" data-i18n="vpClear">איטי וברור</button>
+            <button class="vp-chip" data-preset="deep" data-i18n="vpDeep">עמוק</button>
+            <button class="vp-chip" data-preset="robot" data-i18n="vpRobot">רובוט</button>
+            <button class="vp-chip" data-preset="chipmunk" data-i18n="vpChipmunk">צ'יפמאנק</button>
+            <button class="vp-chip" data-preset="whisper" data-i18n="vpWhisper">לחישה</button>
+          </div>
+
           <label data-i18n="voiceGender">מגדר קול</label>
           <div class="gender-picker" id="genderPicker">
             <button class="gender-btn" data-g="female"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="5"/><path d="M12 13v8M9 18h6"/></svg> נקבה</button>
             <button class="gender-btn" data-g="male"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="10" cy="14" r="5"/><path d="M21 3l-6.5 6.5M21 3h-5M21 3v5"/></svg> זכר</button>
             <button class="gender-btn" data-g="auto">אוטומטי</button>
           </div>
-          <label data-i18n="voice">קול</label><select id="voiceSel"></select>
+
+          <label data-i18n="voice">קול</label>
+          <div class="voice-row">
+            <select id="voiceSel"></select>
+            <button class="voice-play-btn" id="voicePlayBtn" title="השמע">▶</button>
+          </div>
+
           <label><span data-i18n="speed">מהירות</span> <span id="speedVal" class="range-val">1.0x</span></label>
-          <input type="range" id="speedSlider" min="50" max="200" value="100" step="5" />
+          <input type="range" id="speedSlider" min="50" max="250" value="100" step="5" />
+
           <label><span data-i18n="pitch">גובה צליל</span> <span id="pitchVal" class="range-val">1.0</span></label>
-          <input type="range" id="pitchSlider" min="50" max="200" value="100" step="5" />
+          <input type="range" id="pitchSlider" min="0" max="200" value="100" step="5" />
+
+          <label><span data-i18n="voiceVolume">עוצמת קול</span> <span id="voiceVolVal" class="range-val">100%</span></label>
+          <input type="range" id="voiceVolSlider" min="0" max="100" value="100" />
+
           <div class="setting-row">
             <label data-i18n="autoSpeak">דיבור אוטומטי</label>
             <label class="toggle"><input type="checkbox" id="autoSpeakCheck" checked /><span class="toggle-slider"></span></label>
           </div>
-          <button class="test-voice-btn" id="testVoiceBtn" data-i18n="testVoice">בדוק קול</button>
+
+          <label data-i18n="voiceTestLabel">משפט לבדיקה</label>
+          <input id="voiceTestText" type="text" data-i18n-ph="voiceTestPh" placeholder="כתוב טקסט לשמיעה..." />
+          <div class="voice-btn-row">
+            <button class="test-voice-btn" id="testVoiceBtn" data-i18n="playVoice">▶ השמע</button>
+            <button class="test-voice-btn vstudio-reset" id="resetVoiceBtn" data-i18n="resetVoice">↺ אפס</button>
+          </div>
         </div>
 
         <div class="settings-section">
@@ -565,6 +616,9 @@ export function mountApp(root: HTMLElement) {
       const val = t(key, lang);
       if (el.tagName === 'INPUT') (el as HTMLInputElement).placeholder = val;
       else el.textContent = val;
+    });
+    root.querySelectorAll<HTMLInputElement>('[data-i18n-ph]').forEach(el => {
+      el.placeholder = t(el.dataset.i18nPh!, lang);
     });
     const input = $<HTMLInputElement>('input');
     if (input) input.placeholder = t('inputPlaceholder', lang);
@@ -2266,8 +2320,10 @@ export function mountApp(root: HTMLElement) {
     $<HTMLSelectElement>('ambPresetSel').value = audio.ambPreset;
     $<HTMLInputElement>('speedSlider').value = String(Math.round((state.voiceSpeed || 1) * 100));
     $('speedVal').textContent = (state.voiceSpeed || 1).toFixed(1) + 'x';
-    $<HTMLInputElement>('pitchSlider').value = String(Math.round((state.voicePitch || 1) * 100));
-    $('pitchVal').textContent = (state.voicePitch || 1).toFixed(1);
+    $<HTMLInputElement>('pitchSlider').value = String(Math.round((state.voicePitch != null ? state.voicePitch : 1) * 100));
+    $('pitchVal').textContent = (state.voicePitch != null ? state.voicePitch : 1).toFixed(1);
+    $<HTMLInputElement>('voiceVolSlider').value = String(Math.round((state.voiceVolume != null ? state.voiceVolume : 1) * 100));
+    $('voiceVolVal').textContent = Math.round((state.voiceVolume != null ? state.voiceVolume : 1) * 100) + '%';
     $<HTMLInputElement>('sfxCheck').checked = state.sfxOn;
     $<HTMLInputElement>('hapticsCheck').checked = state.haptics;
     $<HTMLInputElement>('autoSpeakCheck').checked = state.autoSpeak;
@@ -2462,10 +2518,73 @@ export function mountApp(root: HTMLElement) {
   $<HTMLInputElement>('speedSlider').oninput = () => {
     const v = +$<HTMLInputElement>('speedSlider').value / 100;
     $('speedVal').textContent = v.toFixed(1) + 'x';
+    state.voiceSpeed = v;
   };
   $<HTMLInputElement>('pitchSlider').oninput = () => {
     const v = +$<HTMLInputElement>('pitchSlider').value / 100;
     $('pitchVal').textContent = v.toFixed(1);
+    state.voicePitch = v;
+  };
+  $<HTMLInputElement>('voiceVolSlider').oninput = () => {
+    const v = +$<HTMLInputElement>('voiceVolSlider').value / 100;
+    $('voiceVolVal').textContent = Math.round(v * 100) + '%';
+    state.voiceVolume = v;
+  };
+
+  // ── Voice Studio: character presets [rate, pitch, volume] ──
+  const VOICE_PRESETS: Record<string, { rate: number; pitch: number; vol: number }> = {
+    natural:   { rate: 1.0, pitch: 1.0, vol: 1.0 },
+    calm:      { rate: 0.88, pitch: 0.8, vol: 0.95 },
+    energetic: { rate: 1.25, pitch: 1.25, vol: 1.0 },
+    fast:      { rate: 1.6, pitch: 1.05, vol: 1.0 },
+    clear:     { rate: 0.8, pitch: 1.0, vol: 1.0 },
+    deep:      { rate: 0.92, pitch: 0.55, vol: 1.0 },
+    robot:     { rate: 0.9, pitch: 0.4, vol: 1.0 },
+    chipmunk:  { rate: 1.4, pitch: 2.0, vol: 1.0 },
+    whisper:   { rate: 0.95, pitch: 1.15, vol: 0.4 },
+  };
+  function applyVoiceSliders(rate: number, pitch: number, vol: number) {
+    $<HTMLInputElement>('speedSlider').value = String(Math.round(rate * 100));
+    $('speedVal').textContent = rate.toFixed(1) + 'x';
+    $<HTMLInputElement>('pitchSlider').value = String(Math.round(pitch * 100));
+    $('pitchVal').textContent = pitch.toFixed(1);
+    $<HTMLInputElement>('voiceVolSlider').value = String(Math.round(vol * 100));
+    $('voiceVolVal').textContent = Math.round(vol * 100) + '%';
+    state.voiceSpeed = rate; state.voicePitch = pitch; state.voiceVolume = vol;
+  }
+  function voiceSampleText(): string {
+    const custom = $<HTMLInputElement>('voiceTestText').value.trim();
+    if (custom) return custom;
+    const samples: Record<string, string> = {
+      he: 'שלום, אני אלפא, העוזר האישי שלך. ככה אני נשמע.',
+      en: 'Hello, I am Alpha, your personal assistant. This is how I sound.',
+      es: 'Hola, soy Alpha, tu asistente personal. Así sueno.',
+    };
+    return samples[state.replyLang] || samples.en;
+  }
+  $('voicePresets').addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest('.vp-chip') as HTMLElement;
+    if (!btn) return;
+    const p = VOICE_PRESETS[btn.dataset.preset!];
+    if (!p) return;
+    $('voicePresets').querySelectorAll('.vp-chip').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    applyVoiceSliders(p.rate, p.pitch, p.vol);
+    const vsel = $<HTMLSelectElement>('voiceSel').value;
+    if (vsel) voice.setVoice(vsel);
+    voice.preview(voiceSampleText(), { rate: p.rate, pitch: p.pitch, volume: p.vol });
+  });
+  $('voicePlayBtn').onclick = () => {
+    const vsel = $<HTMLSelectElement>('voiceSel').value;
+    if (vsel) voice.setVoice(vsel);
+    voice.preview(voiceSampleText(), {
+      rate: state.voiceSpeed, pitch: state.voicePitch, volume: state.voiceVolume, voiceName: vsel,
+    });
+  };
+  $('resetVoiceBtn').onclick = () => {
+    $('voicePresets').querySelectorAll('.vp-chip').forEach(b => b.classList.remove('active'));
+    applyVoiceSliders(1.0, 1.0, 1.0);
+    voice.preview(voiceSampleText(), { rate: 1.0, pitch: 1.0, volume: 1.0 });
   };
   $('pikaSpeakBtn').onclick = () => { pikaSpeak(); };
   $<HTMLInputElement>('pikaVoiceCheck').onchange = (e) => {
@@ -2500,12 +2619,10 @@ export function mountApp(root: HTMLElement) {
     if (vsel) voice.setVoice(vsel);
     state.voiceSpeed = +$<HTMLInputElement>('speedSlider').value / 100;
     state.voicePitch = +$<HTMLInputElement>('pitchSlider').value / 100;
-    const testTexts: Record<string, string> = {
-      he: 'שלום, אני אלפא, העוזר האישי שלך',
-      en: 'Hello, I am Alpha, your personal assistant',
-      es: 'Hola, soy Alpha, tu asistente personal',
-    };
-    voice.speak(testTexts[state.replyLang] || testTexts.en);
+    state.voiceVolume = +$<HTMLInputElement>('voiceVolSlider').value / 100;
+    voice.preview(voiceSampleText(), {
+      rate: state.voiceSpeed, pitch: state.voicePitch, volume: state.voiceVolume, voiceName: vsel,
+    });
   };
   $('saveBtn').onclick = () => {
     state.name = $<HTMLInputElement>('nameInput').value.trim() || 'ALPHA';
@@ -2522,6 +2639,7 @@ export function mountApp(root: HTMLElement) {
     audio.setPreset(state.ambPreset as AmbientPreset);
     state.voiceSpeed = +$<HTMLInputElement>('speedSlider').value / 100;
     state.voicePitch = +$<HTMLInputElement>('pitchSlider').value / 100;
+    state.voiceVolume = +$<HTMLInputElement>('voiceVolSlider').value / 100;
     state.sfxOn = $<HTMLInputElement>('sfxCheck').checked;
     state.haptics = $<HTMLInputElement>('hapticsCheck').checked;
     state.autoSpeak = $<HTMLInputElement>('autoSpeakCheck').checked;

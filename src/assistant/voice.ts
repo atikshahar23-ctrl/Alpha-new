@@ -254,7 +254,8 @@ export class VoiceEngine {
     if (this.chosenVoice) { u.voice = this.chosenVoice; u.lang = this.chosenVoice.lang; }
     else u.lang = this.state.replyLang === 'he' ? 'he-IL' : this.state.replyLang === 'es' ? 'es-ES' : 'en-US';
     u.rate = this.state.voiceSpeed || 1.0;
-    u.pitch = this.state.voicePitch || 1.0;
+    u.pitch = this.state.voicePitch != null ? this.state.voicePitch : 1.0;
+    u.volume = this.state.voiceVolume != null ? this.state.voiceVolume : 1.0;
     let finished = false;
     const done = () => {
       if (finished) return;
@@ -272,6 +273,35 @@ export class VoiceEngine {
     u.onerror = () => done();
     speechSynthesis.speak(u);
     setTimeout(() => { if (!finished) { speechSynthesis.cancel(); done(); } }, 30000);
+  }
+
+  // Speak a sample immediately for previewing voice settings — bypasses the
+  // voiceOn/autoSpeak gates and accepts explicit rate/pitch/volume overrides so
+  // the Voice Studio can audition presets before they're saved.
+  preview(text: string, opts?: { rate?: number; pitch?: number; volume?: number; voiceName?: string }) {
+    if (!('speechSynthesis' in window)) return;
+    speechSynthesis.cancel();
+    if (!this.chosenVoice && this.voices.length === 0) this.loadVoices();
+    const u = new SpeechSynthesisUtterance(text);
+    let v = this.chosenVoice;
+    if (opts?.voiceName) v = this.voices.find(x => x.name === opts.voiceName) || v;
+    if (v) { u.voice = v; u.lang = v.lang; }
+    else u.lang = this.state.replyLang === 'he' ? 'he-IL' : this.state.replyLang === 'es' ? 'es-ES' : 'en-US';
+    u.rate = opts?.rate != null ? opts.rate : (this.state.voiceSpeed || 1.0);
+    u.pitch = opts?.pitch != null ? opts.pitch : (this.state.voicePitch != null ? this.state.voicePitch : 1.0);
+    u.volume = opts?.volume != null ? opts.volume : (this.state.voiceVolume != null ? this.state.voiceVolume : 1.0);
+    const wasSuppressed = this.suppress;
+    this.suppress = true;
+    this.stopRec();
+    u.onstart = () => { this.onStateChange('speaking'); };
+    const done = () => {
+      this.suppress = wasSuppressed;
+      if (this.wakeOn) { setTimeout(() => this.startRec(), 250); this.onStateChange('armed'); }
+      else this.onStateChange('');
+    };
+    u.onend = done;
+    u.onerror = () => done();
+    speechSynthesis.speak(u);
   }
 
   setMicLang(lang: 'he' | 'en' | 'es') {

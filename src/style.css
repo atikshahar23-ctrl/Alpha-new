@@ -122,7 +122,7 @@ body::after {
   box-shadow: 0 0 18px rgba(218,165,32,.35);
 }
 .topL .wm {
-  font-size: 18px; font-weight: 600; letter-spacing: 5px;
+  font-size: 22px; font-weight: 600; letter-spacing: 4px;
   color: var(--ink); text-transform: uppercase;
   background: linear-gradient(135deg, #daa520 0%, #fff 35%, #f0d090 55%, #daa520 100%);
   background-size: 300% 100%;
@@ -136,11 +136,11 @@ body::after {
   50% { background-position: 100% 50%; }
 }
 .topL .clk {
-  font-size: 12px; letter-spacing: 3px; margin-top: 4px;
+  font-size: 13px; letter-spacing: 2px; margin-top: 4px;
   color: var(--gold); opacity: .5;
 }
 .build-ver {
-  font-size: 9px; letter-spacing: 1px; margin-top: 2px;
+  font-size: 11px; letter-spacing: 1px; margin-top: 2px;
   color: var(--gold); opacity: .4;
 }
 
@@ -148,7 +148,7 @@ body::after {
 
 .chip {
   font-family: "Space Grotesk", sans-serif;
-  font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+  font-size: 13px; letter-spacing: 1.5px; text-transform: uppercase;
   color: var(--gold);
   border: 1px solid rgba(218, 165, 32, .14);
   background: rgba(14, 12, 8, .78);
@@ -215,13 +215,13 @@ body::after {
 
 .lp-title {
   font-family: "Space Grotesk", sans-serif;
-  font-size: 9px; letter-spacing: 4px; text-transform: uppercase;
+  font-size: 12px; letter-spacing: 3px; text-transform: uppercase;
   color: var(--cyan); opacity: .7;
 }
 
 .lp-status {
   font-family: "Space Grotesk", sans-serif;
-  font-size: 8px; letter-spacing: 2px;
+  font-size: 11px; letter-spacing: 2px;
   color: #39e75f;
   text-shadow: 0 0 8px rgba(57, 231, 95, .4);
   animation: statusPulse 2s ease-in-out infinite;
@@ -239,7 +239,7 @@ body::after {
 
 .lp-label {
   font-family: "Space Grotesk", sans-serif;
-  font-size: 7px; letter-spacing: 3px; text-transform: uppercase;
+  font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
   color: var(--cyan); opacity: .4;
   margin-bottom: 8px;
 }
@@ -267,7 +267,7 @@ body::after {
 
 .metric-label {
   font-family: "Space Grotesk", sans-serif;
-  font-size: 8px; letter-spacing: 2px;
+  font-size: 11px; letter-spacing: 1px;
   color: var(--dim); opacity: .6;
 }
 
@@ -292,7 +292,7 @@ body::after {
 
 .metric-val {
   font-family: "Space Grotesk", sans-serif;
-  font-size: 9px; letter-spacing: 1px;
+  font-size: 12px; letter-spacing: 1px;
   color: var(--cyan); opacity: .7;
   text-align: right;
 }
@@ -303,14 +303,14 @@ body::after {
 
 .ai-model {
   font-family: "Space Grotesk", sans-serif;
-  font-size: 11px; letter-spacing: 2px; font-weight: 600;
+  font-size: 14px; letter-spacing: 2px; font-weight: 600;
   color: var(--gold);
   text-shadow: 0 0 10px rgba(255, 194, 77, .3);
 }
 
 .ai-provider {
   font-family: "Space Grotesk", sans-serif;
-  font-size: 8px; letter-spacing: 3px;
+  font-size: 11px; letter-spacing: 2px;
   color: var(--dim); opacity: .5;
 }
 
@@ -328,7 +328,7 @@ body::after {
 
 .ai-latency span {
   font-family: "Space Grotesk", sans-serif;
-  font-size: 8px; letter-spacing: 1px;
+  font-size: 11px; letter-spacing: 1px;
   color: #39e75f; opacity: .7;
 }
 
@@ -342,14 +342,14 @@ body::after {
 
 .qs-val {
   font-family: "Space Grotesk", sans-serif;
-  font-size: 16px; font-weight: 600; letter-spacing: 1px;
+  font-size: 20px; font-weight: 600; letter-spacing: 1px;
   color: var(--ink);
   text-shadow: 0 0 8px rgba(233, 238, 251, .2);
 }
 
 .qs-label {
   font-family: "Space Grotesk", sans-serif;
-  font-size: 7px; letter-spacing: 2px;
+  font-size: 10px; letter-spacing: 1px;
   color: var(--dim); opacity: .4;
 }
 
@@ -402,7 +402,7 @@ body::after {
 
 .rp-title {
   font-family: "Space Grotesk", sans-serif;
-  font-size: 9px; letter-spacing: 4px; text-transform: uppercase;
+  font-size: 12px; letter-spacing: 3px; text-transform: uppercase;
   color: var(--gold); opacity: .7;
 }
 
@@ -459,23 +459,23 @@ body::after {
 
 .rp-who {
   font-family: "Space Grotesk", sans-serif;
-  font-size: 8px; letter-spacing: 3px; text-transform: uppercase;
+  font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
   color: var(--gold); opacity: .6;
 }
 
 .rp-time {
   font-family: "Space Grotesk", sans-serif;
-  font-size: 8px; letter-spacing: 1px;
+  font-size: 11px; letter-spacing: 1px;
   color: var(--dim); opacity: .5;
 }
 
 .rp-text {
-  font-size: 13px; line-height: 1.55; font-weight: 300;
+  font-size: 15px; line-height: 1.55; font-weight: 300;
   color: var(--ink); opacity: .9;
   word-break: break-word;
 }
 .rp-msg.me .rp-text { color: var(--dim) }
-.rp-msg.sys .rp-text { color: var(--dim); font-style: italic; font-size: 12px }
+.rp-msg.sys .rp-text { color: var(--dim); font-style: italic; font-size: 14px }
 
 /* ========== BOTTOM DOCK ========== */
 .dock {
@@ -491,8 +491,8 @@ body::after {
 
 .state {
   font-family: "Space Grotesk", sans-serif;
-  font-size: 10px; letter-spacing: 5px; text-transform: uppercase;
-  color: var(--gold); height: 16px; margin-bottom: 10px;
+  font-size: 13px; letter-spacing: 4px; text-transform: uppercase;
+  color: var(--gold); height: 20px; margin-bottom: 10px;
   opacity: .7;
   text-shadow: 0 0 12px rgba(255, 194, 77, .4);
 }
@@ -577,7 +577,7 @@ body::after {
 /* dock label */
 .dl {
   font-family: "Space Grotesk", sans-serif;
-  font-size: 9px; letter-spacing: 1px;
+  font-size: 12px; letter-spacing: 0.5px;
   color: var(--dim);
   transition: color .2s;
   white-space: nowrap;
@@ -605,13 +605,13 @@ body::after {
 
 .turn .who {
   font-family: "Space Grotesk", sans-serif;
-  font-size: 9px; letter-spacing: 3px; text-transform: uppercase;
+  font-size: 12px; letter-spacing: 2px; text-transform: uppercase;
   color: var(--gold); opacity: .5;
 }
-.turn .txt { font-size: 15px; line-height: 1.6; font-weight: 300 }
+.turn .txt { font-size: 17px; line-height: 1.6; font-weight: 300 }
 .turn.me .txt { color: var(--dim) }
 .turn.al .txt { color: var(--white-glow) }
-.turn.sys .txt { font-size: 13px; color: var(--dim); font-style: italic }
+.turn.sys .txt { font-size: 15px; color: var(--dim); font-style: italic }
 
 /* input bar */
 .bar {
@@ -638,7 +638,7 @@ body::after {
 .pill input {
   flex: 1; background: none; border: none; outline: none;
   color: var(--ink); font-family: "Assistant", sans-serif;
-  font-size: 15px; font-weight: 300;
+  font-size: 17px; font-weight: 300;
 }
 .pill input::placeholder { color: var(--dim); opacity: .5 }
 
@@ -782,7 +782,7 @@ body::after {
 
 .ss-title {
   font-family: "Space Grotesk", sans-serif;
-  font-size: 9px; letter-spacing: 3px; text-transform: uppercase;
+  font-size: 12px; letter-spacing: 2px; text-transform: uppercase;
   color: var(--gold); opacity: .6;
   margin-bottom: 12px;
 }
@@ -856,6 +856,73 @@ body::after {
   border-color: var(--cyan);
 }
 
+/* ========== VOICE STUDIO ========== */
+.voice-studio { position: relative; }
+.voice-studio .ss-title {
+  color: var(--gold);
+  text-shadow: 0 0 12px rgba(218,165,32,.25);
+}
+.voice-presets {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  margin: 4px 0 10px;
+}
+.vp-chip {
+  flex: 0 0 auto;
+  padding: 7px 13px;
+  background: rgba(255,255,255,.03);
+  border: 1px solid rgba(218,165,32,.14);
+  border-radius: 20px;
+  color: var(--dim);
+  font-family: "Assistant", sans-serif;
+  font-size: 12.5px; font-weight: 500;
+  cursor: pointer;
+  transition: transform var(--spring), background .2s, border-color .2s, color .2s, box-shadow .3s;
+}
+.vp-chip:hover {
+  color: var(--ink);
+  border-color: rgba(218,165,32,.35);
+  background: rgba(218,165,32,.06);
+  transform: translateY(-1px);
+}
+.vp-chip:active { transform: scale(.94); }
+.vp-chip.active {
+  color: #0a0806;
+  background: linear-gradient(135deg, #daa520, #f5e6c8);
+  border-color: transparent;
+  font-weight: 600;
+  box-shadow: 0 2px 12px rgba(218,165,32,.3), inset 0 1px 0 rgba(255,255,255,.25);
+}
+
+.voice-row { display: flex; gap: 8px; align-items: stretch; }
+.voice-row select { flex: 1; }
+.voice-play-btn {
+  flex: 0 0 auto;
+  width: 46px;
+  border-radius: 12px; border: 1px solid rgba(218,165,32,.2);
+  background: rgba(218,165,32,.08);
+  color: var(--cyan);
+  font-size: 15px; cursor: pointer;
+  transition: background .2s, border-color .2s, transform var(--spring);
+}
+.voice-play-btn:hover {
+  background: rgba(218,165,32,.18); border-color: var(--cyan);
+  transform: scale(1.05);
+}
+.voice-play-btn:active { transform: scale(.92); }
+
+.voice-btn-row { display: flex; gap: 8px; margin-top: 8px; }
+.voice-btn-row .test-voice-btn { margin-top: 0; flex: 1; }
+.vstudio-reset {
+  flex: 0 0 auto !important;
+  max-width: 90px;
+  color: var(--dim) !important;
+  border-color: var(--line) !important;
+}
+.vstudio-reset:hover {
+  color: var(--ink) !important;
+  border-color: rgba(218,165,32,.3) !important;
+}
+
 .social-grid {
   display: flex; flex-direction: column; gap: 10px;
 }
@@ -901,7 +968,7 @@ body::after {
 
 .social-status {
   font-family: "Space Grotesk", sans-serif;
-  font-size: 8px; letter-spacing: 1px;
+  font-size: 11px; letter-spacing: 1px;
   color: var(--dim); opacity: .5;
   white-space: nowrap;
   min-width: 60px;
@@ -1056,9 +1123,9 @@ body::after {
   border-radius: 16px;
   color: var(--gold);
   font-family: "Space Grotesk", system-ui, sans-serif;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
-  letter-spacing: 2px;
+  letter-spacing: 1.5px;
   text-transform: uppercase;
   cursor: pointer;
   backdrop-filter: blur(48px) saturate(1.5); -webkit-backdrop-filter: blur(48px) saturate(1.5);
@@ -1976,7 +2043,7 @@ select.cp-input option { background: #14120c; color: var(--ink); }
 }
 .cp-kpi-lbl {
   font-family: "Space Grotesk", sans-serif;
-  font-size: 8px; letter-spacing: 1.5px; text-transform: uppercase;
+  font-size: 11px; letter-spacing: 1px; text-transform: uppercase;
   color: var(--dim); opacity: .6; text-align: center;
 }
 
@@ -1999,7 +2066,7 @@ select.cp-input option { background: #14120c; color: var(--ink); }
 }
 .cp-bar-lbl {
   font-family: "Space Grotesk", sans-serif;
-  font-size: 8px; letter-spacing: .5px; color: var(--dim); opacity: .5;
+  font-size: 11px; letter-spacing: .5px; color: var(--dim); opacity: .5;
 }
 
 /* ── category bars ── */
