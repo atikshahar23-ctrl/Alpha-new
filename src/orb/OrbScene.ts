@@ -239,23 +239,27 @@ function flareTexture(): THREE.Texture {
 // ============================================================
 
 // Procedural environment map for the metallic PBR materials.
-function createEnvMap(renderer: THREE.WebGLRenderer): THREE.Texture {
-  const pmrem = new THREE.PMREMGenerator(renderer);
-  const envScene = new THREE.Scene();
-  envScene.background = new THREE.Color(0x0a0806);
-  envScene.add(new THREE.HemisphereLight(0xffeedd, 0x0a0806, 0.8));
-  const p1 = new THREE.PointLight(0xffeedd, 15, 30);
-  p1.position.set(5, 5, 5);
-  envScene.add(p1);
-  const p2 = new THREE.PointLight(0xdaa520, 10, 30);
-  p2.position.set(-5, 3, -3);
-  envScene.add(p2);
-  const p3 = new THREE.PointLight(0xffe8c0, 8, 30);
-  p3.position.set(0, -2, 6);
-  envScene.add(p3);
-  const envMap = pmrem.fromScene(envScene, 0, 0.1, 100).texture;
-  pmrem.dispose();
-  return envMap;
+function createEnvMap(renderer: THREE.WebGLRenderer): THREE.Texture | null {
+  try {
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    const envScene = new THREE.Scene();
+    envScene.background = new THREE.Color(0x0a0806);
+    envScene.add(new THREE.HemisphereLight(0xffeedd, 0x0a0806, 0.8));
+    const p1 = new THREE.PointLight(0xffeedd, 15, 30);
+    p1.position.set(5, 5, 5);
+    envScene.add(p1);
+    const p2 = new THREE.PointLight(0xdaa520, 10, 30);
+    p2.position.set(-5, 3, -3);
+    envScene.add(p2);
+    const p3 = new THREE.PointLight(0xffe8c0, 8, 30);
+    p3.position.set(0, -2, 6);
+    envScene.add(p3);
+    const envMap = pmrem.fromScene(envScene, 0, 0.1, 100).texture;
+    pmrem.dispose();
+    return envMap;
+  } catch {
+    return null;
+  }
 }
 
 interface PikachuMaterials {
@@ -272,61 +276,74 @@ interface PikachuMaterials {
   tongue: THREE.MeshPhysicalMaterial;
 }
 
-function createPikachuMaterials(envMap: THREE.Texture): PikachuMaterials {
+function createPikachuMaterials(envMap: THREE.Texture | null): PikachuMaterials {
+  const e = envMap ?? undefined;
+  const ei = envMap ? 1 : 0;
   return {
     yellow: new THREE.MeshPhysicalMaterial({
-      color: 0xFDD835, metalness: 0.0, roughness: 0.48, envMap, envMapIntensity: 0.40,
+      color: 0xFDD835, metalness: 0.0, roughness: 0.48,
+      ...(e ? { envMap: e, envMapIntensity: 0.40 * ei } : {}),
       clearcoat: 0.22, clearcoatRoughness: 0.26,
       sheen: 0.28, sheenRoughness: 0.38, sheenColor: new THREE.Color(0xFFE57A),
-      emissive: new THREE.Color(0xFDD835), emissiveIntensity: 0.05,
+      emissive: new THREE.Color(0xFDD835), emissiveIntensity: 0.08,
     }),
     darkYellow: new THREE.MeshPhysicalMaterial({
-      color: 0xC8A415, metalness: 0.0, roughness: 0.55, envMap, envMapIntensity: 0.25,
+      color: 0xC8A415, metalness: 0.0, roughness: 0.55,
+      ...(e ? { envMap: e, envMapIntensity: 0.25 * ei } : {}),
       clearcoat: 0.1, clearcoatRoughness: 0.35,
       sheen: 0.12, sheenRoughness: 0.5, sheenColor: new THREE.Color(0xD4AA22),
-      emissive: new THREE.Color(0xC8A415), emissiveIntensity: 0.02,
+      emissive: new THREE.Color(0xC8A415), emissiveIntensity: 0.03,
     }),
     cream: new THREE.MeshPhysicalMaterial({
-      color: 0xFFFDE7, metalness: 0.0, roughness: 0.44, envMap, envMapIntensity: 0.28,
+      color: 0xFFFDE7, metalness: 0.0, roughness: 0.44,
+      ...(e ? { envMap: e, envMapIntensity: 0.28 * ei } : {}),
       clearcoat: 0.16, clearcoatRoughness: 0.26,
       sheen: 0.18, sheenRoughness: 0.4, sheenColor: new THREE.Color(0xFFFACC),
-      emissive: new THREE.Color(0xFFFDE7), emissiveIntensity: 0.04,
+      emissive: new THREE.Color(0xFFFDE7), emissiveIntensity: 0.06,
     }),
     red: new THREE.MeshPhysicalMaterial({
-      color: 0xE53935, metalness: 0.0, roughness: 0.42, envMap, envMapIntensity: 0.25,
-      emissive: new THREE.Color(0xE53935), emissiveIntensity: 0.12,
+      color: 0xE53935, metalness: 0.0, roughness: 0.42,
+      ...(e ? { envMap: e, envMapIntensity: 0.25 * ei } : {}),
+      emissive: new THREE.Color(0xE53935), emissiveIntensity: 0.14,
       clearcoat: 0.18, clearcoatRoughness: 0.18,
     }),
     brown: new THREE.MeshPhysicalMaterial({
-      color: 0x5D4037, metalness: 0.0, roughness: 0.6, envMap, envMapIntensity: 0.18,
+      color: 0x5D4037, metalness: 0.0, roughness: 0.6,
+      ...(e ? { envMap: e, envMapIntensity: 0.18 * ei } : {}),
       clearcoat: 0.08, clearcoatRoughness: 0.4,
     }),
     white: new THREE.MeshPhysicalMaterial({
-      color: 0xffffff, metalness: 0.0, roughness: 0.12, envMap, envMapIntensity: 0.25,
+      color: 0xffffff, metalness: 0.0, roughness: 0.12,
+      ...(e ? { envMap: e, envMapIntensity: 0.25 * ei } : {}),
       emissive: new THREE.Color(0xffffff), emissiveIntensity: 0.35,
       clearcoat: 0.35, clearcoatRoughness: 0.08,
     }),
     black: new THREE.MeshPhysicalMaterial({
-      color: 0x0A0A0A, metalness: 0.06, roughness: 0.22, envMap, envMapIntensity: 0.25,
+      color: 0x0A0A0A, metalness: 0.06, roughness: 0.22,
+      ...(e ? { envMap: e, envMapIntensity: 0.25 * ei } : {}),
       clearcoat: 0.35, clearcoatRoughness: 0.12,
     }),
     mouth: new THREE.MeshPhysicalMaterial({
-      color: 0x8B1A1A, metalness: 0.0, roughness: 0.5, envMap, envMapIntensity: 0.12,
+      color: 0x8B1A1A, metalness: 0.0, roughness: 0.5,
+      ...(e ? { envMap: e, envMapIntensity: 0.12 * ei } : {}),
       clearcoat: 0.1, clearcoatRoughness: 0.3,
     }),
     nose: new THREE.MeshPhysicalMaterial({
-      color: 0x151515, metalness: 0.06, roughness: 0.28, envMap, envMapIntensity: 0.22,
+      color: 0x151515, metalness: 0.06, roughness: 0.28,
+      ...(e ? { envMap: e, envMapIntensity: 0.22 * ei } : {}),
       clearcoat: 0.28, clearcoatRoughness: 0.12,
     }),
     pink: new THREE.MeshPhysicalMaterial({
-      color: 0xF48FB1, metalness: 0.0, roughness: 0.55, envMap, envMapIntensity: 0.18,
+      color: 0xF48FB1, metalness: 0.0, roughness: 0.55,
+      ...(e ? { envMap: e, envMapIntensity: 0.18 * ei } : {}),
       clearcoat: 0.08, clearcoatRoughness: 0.45,
-      emissive: new THREE.Color(0xF48FB1), emissiveIntensity: 0.06,
+      emissive: new THREE.Color(0xF48FB1), emissiveIntensity: 0.08,
     }),
     tongue: new THREE.MeshPhysicalMaterial({
-      color: 0xF06080, metalness: 0.0, roughness: 0.38, envMap, envMapIntensity: 0.15,
+      color: 0xF06080, metalness: 0.0, roughness: 0.38,
+      ...(e ? { envMap: e, envMapIntensity: 0.15 * ei } : {}),
       clearcoat: 0.22, clearcoatRoughness: 0.22,
-      emissive: new THREE.Color(0xE84060), emissiveIntensity: 0.08,
+      emissive: new THREE.Color(0xE84060), emissiveIntensity: 0.10,
     }),
   };
 }
@@ -1207,15 +1224,15 @@ function setupChuEffect(
 // ============================================================
 function mountMobileOrb(container: HTMLElement): OrbHandle {
   const renderer = new THREE.WebGLRenderer({
-    antialias: true,
+    antialias: false,
     alpha: false,
-    powerPreference: 'high-performance',
+    powerPreference: 'default',
     failIfMajorPerformanceCaveat: false,
   });
-  renderer.setPixelRatio(window.devicePixelRatio || 1);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setClearColor(0x0a0806, 1);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 0.9;
+  renderer.toneMappingExposure = 1.1;
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
@@ -1223,31 +1240,41 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   camera.position.set(0, 0, 6);
   camera.lookAt(0, 0, 0);
 
-  const pr0 = window.devicePixelRatio || 1;
-  const composer = new EffectComposer(renderer);
-  composer.addPass(new RenderPass(scene, camera));
-  const mBloom = new UnrealBloomPass(
-    new THREE.Vector2(window.innerWidth * pr0, window.innerHeight * pr0),
-    0.22, 0.4, 0.65,
-  );
-  composer.addPass(mBloom);
-  // Gold vignette
-  const mVignette = new ShaderPass(GOLD_VIGNETTE_SHADER);
-  mVignette.uniforms.darkness.value = 0.7;
-  composer.addPass(mVignette);
-  // FXAA — screen-space AA needed because MSAA is lost in EffectComposer
-  const mFxaa = new ShaderPass(FXAAShader);
-  composer.addPass(mFxaa);
-  composer.addPass(new OutputPass());
+  // Try full post-processing pipeline; if it fails use direct render
+  let composer: EffectComposer | null = null;
+  let mBloom: UnrealBloomPass | null = null;
+  let useComposer = false;
+  try {
+    const pr0 = Math.min(window.devicePixelRatio || 1, 2);
+    composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+    mBloom = new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth * pr0, window.innerHeight * pr0),
+      0.22, 0.4, 0.65,
+    );
+    composer.addPass(mBloom);
+    const mVignette = new ShaderPass(GOLD_VIGNETTE_SHADER);
+    mVignette.uniforms.darkness.value = 0.7;
+    composer.addPass(mVignette);
+    const mFxaa = new ShaderPass(FXAAShader);
+    composer.addPass(mFxaa);
+    composer.addPass(new OutputPass());
+    // Test render to confirm pipeline works
+    composer.render();
+    useComposer = true;
+  } catch {
+    composer = null;
+    mBloom = null;
+    useComposer = false;
+  }
 
   function resize() {
     const w = container.clientWidth || window.innerWidth;
     const h = container.clientHeight || window.innerHeight;
-    const pr = window.devicePixelRatio || 1;
+    const pr = Math.min(window.devicePixelRatio || 1, 2);
     renderer.setPixelRatio(pr);
     renderer.setSize(w, h, true);
-    composer.setSize(w * pr, h * pr);
-    mFxaa.uniforms['resolution'].value.set(1 / (w * pr), 1 / (h * pr));
+    if (composer) composer.setSize(w * pr, h * pr);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
   }
@@ -1277,7 +1304,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   // CENTRAL OBJECT — PIKACHU (mobile, lower detail)
   // ────────────────────────────────────────────
   const envMap = createEnvMap(renderer);
-  scene.environment = envMap;
+  if (envMap) scene.environment = envMap;
   const pikaMats = createPikachuMaterials(envMap);
   const pika = buildPikachu(pikaMats, 0.6);
   const pikaGroup = pika.group;
@@ -1488,7 +1515,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     amp += (ampTarget - amp) * 0.07;
 
     // Long-press charge: ramp up bloom and exposure
-    mBloom.strength = 0.22 + chargeLevel * 4.5;
+    if (mBloom) mBloom.strength = 0.22 + chargeLevel * 4.5;
     renderer.toneMappingExposure = 0.9 + chargeLevel * 2.5;
 
     glitchTimer += dt;
@@ -1667,7 +1694,12 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     // Face the viewer at all times — only a tiny "looking around" sway, no full spin
     group.rotation.y = Math.sin(time * 0.25) * 0.12;
 
-    composer.render();
+    if (useComposer && composer) {
+      try { composer.render(); } catch { useComposer = false; }
+    }
+    if (!useComposer) {
+      renderer.render(scene, camera);
+    }
   }
 
   raf = requestAnimationFrame(frame);
@@ -1683,8 +1715,8 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
       cancelAnimationFrame(raf);
       disposeChu();
       window.removeEventListener('resize', resize);
-      envMap.dispose();
-      composer.dispose();
+      if (envMap) envMap.dispose();
+      if (composer) composer.dispose();
       renderer.dispose();
       container.removeChild(renderer.domElement);
     },
@@ -1790,7 +1822,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   // CENTRAL OBJECT — PIKACHU IN GLASS ORB
   // ────────────────────────────────────────────
   const envMap = createEnvMap(renderer);
-  scene.environment = envMap;
+  if (envMap) scene.environment = envMap;
   const pikaMats = createPikachuMaterials(envMap);
   const pika = buildPikachu(pikaMats, 1.0);
   const pikaGroup = pika.group;
@@ -2626,7 +2658,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       stopBodyDetection();
       window.removeEventListener('resize', resize);
       window.removeEventListener('mousemove', onDeskMouseMove);
-      envMap.dispose();
+      if (envMap) envMap.dispose();
       renderer.dispose();
       composer.dispose();
       container.removeChild(renderer.domElement);
