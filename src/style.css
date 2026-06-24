@@ -81,11 +81,6 @@ body::after {
 .app {
   position: relative; height: 100%;
   display: flex; flex-direction: column;
-  animation: appFadeIn .6s ease-out both;
-}
-@keyframes appFadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
 }
 
 .flow-bg {
@@ -2433,7 +2428,4 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
     scroll-behavior: auto !important;
   }
   body::after { display: none; } /* stop scanline animation */
-  /* Ensure the app shell is always visible — very short animation durations can
-     leave browsers in the 'from' (opacity:0) state without a final repaint. */
-  .app { animation: none !important; opacity: 1 !important; }
 }
