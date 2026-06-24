@@ -436,7 +436,7 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
     new THREE.SphereGeometry(0.72, seg(48), seg(48)),
     mYellow,
   );
-  head.scale.set(1.15, 0.95, 0.9);
+  head.scale.set(1.24, 1.04, 0.98);
   head.position.set(0, 0.0, 0.04);
   headGroup.add(head);
 
@@ -446,8 +446,8 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
       new THREE.SphereGeometry(0.32, seg(20), seg(20)),
       mYellow,
     );
-    cheekBulge.scale.set(0.55, 0.48, 0.42);
-    cheekBulge.position.set(sx * 0.52, -0.1, 0.32);
+    cheekBulge.scale.set(0.64, 0.58, 0.50);
+    cheekBulge.position.set(sx * 0.56, -0.13, 0.33);
     headGroup.add(cheekBulge);
   }
 
@@ -853,9 +853,10 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   tailBase.position.set(0.04, -0.04, 0.01);
   tail.add(tailBase);
 
-  tail.position.set(0, -0.1, -0.58);
-  tail.rotation.x = -0.4;
-  tail.rotation.y = 0.12;
+  tail.position.set(0.08, -0.06, -0.52);
+  tail.rotation.x = 0.72;   // tilt tip toward viewer so it arcs over the back
+  tail.rotation.y = 0.18;
+  tail.rotation.z = -0.38;  // lean to Pikachu's right — classic lightning bolt pose
   group.add(tail);
 
   // ── Sparks — zigzag lightning bolt lines ──
@@ -1099,81 +1100,72 @@ function playPikachuCry() {
     const ctx = new (window.AudioContext || (window as any).webkitAudioContext)() as AudioContext;
     const t = ctx.currentTime;
     const master = ctx.createGain();
-    master.gain.setValueAtTime(0.6, t);
+    master.gain.setValueAtTime(0.65, t);
     master.connect(ctx.destination);
 
-    // FM carrier: "Pi-ka-CHU!" frequency contour
+    // "CHU!" — single explosive syllable, sharp attack, falling pitch
     const carrier = ctx.createOscillator();
     carrier.type = 'sine';
-    carrier.frequency.setValueAtTime(1320, t);
-    carrier.frequency.linearRampToValueAtTime(1480, t + 0.08);   // Pi
-    carrier.frequency.setValueAtTime(1100, t + 0.14);
-    carrier.frequency.linearRampToValueAtTime(980, t + 0.22);    // ka
-    carrier.frequency.setValueAtTime(1640, t + 0.26);            // CHU!
-    carrier.frequency.exponentialRampToValueAtTime(580, t + 0.54);
+    carrier.frequency.setValueAtTime(1680, t);
+    carrier.frequency.exponentialRampToValueAtTime(560, t + 0.32);
 
-    // Vibrato LFO — gives natural voice wobble
-    const vibrato = ctx.createOscillator();
-    vibrato.frequency.value = 8.0;
-    const vibratoG = ctx.createGain();
-    vibratoG.gain.setValueAtTime(0, t);
-    vibratoG.gain.linearRampToValueAtTime(28, t + 0.08);
-    vibrato.connect(vibratoG);
-    vibratoG.connect(carrier.frequency);
-
-    // FM modulator (sawtooth) — adds electric sparkle
+    // Heavy FM sawtooth — electric crackle character
     const mod = ctx.createOscillator();
     mod.type = 'sawtooth';
-    mod.frequency.setValueAtTime(220, t);
-    mod.frequency.linearRampToValueAtTime(440, t + 0.26);
+    mod.frequency.setValueAtTime(420, t);
+    mod.frequency.exponentialRampToValueAtTime(90, t + 0.30);
     const modG = ctx.createGain();
-    modG.gain.setValueAtTime(80, t);
-    modG.gain.linearRampToValueAtTime(640, t + 0.27); // peak at CHU!
-    modG.gain.exponentialRampToValueAtTime(18, t + 0.55);
+    modG.gain.setValueAtTime(780, t);
+    modG.gain.exponentialRampToValueAtTime(12, t + 0.30);
     mod.connect(modG);
     modG.connect(carrier.frequency);
 
-    // Envelope
-    const env = ctx.createGain();
-    env.gain.setValueAtTime(0, t);
-    env.gain.linearRampToValueAtTime(0.9, t + 0.025);
-    env.gain.setValueAtTime(0.55, t + 0.13);
-    env.gain.setValueAtTime(0.50, t + 0.22);
-    env.gain.linearRampToValueAtTime(1.0, t + 0.28);  // CHU! peak
-    env.gain.exponentialRampToValueAtTime(0.001, t + 0.56);
+    // Vibrato — natural voice wobble
+    const vibrato = ctx.createOscillator();
+    vibrato.frequency.value = 9;
+    const vibG = ctx.createGain();
+    vibG.gain.setValueAtTime(0, t);
+    vibG.gain.linearRampToValueAtTime(22, t + 0.05);
+    vibG.gain.exponentialRampToValueAtTime(4, t + 0.30);
+    vibrato.connect(vibG);
+    vibG.connect(carrier.frequency);
 
-    // Formant filter — shapes vowel timbre "ee → ah → uu"
+    // Formant filter — "uu" vowel shaping
     const formant = ctx.createBiquadFilter();
     formant.type = 'bandpass';
-    formant.frequency.setValueAtTime(1400, t);
-    formant.frequency.linearRampToValueAtTime(2400, t + 0.26);
-    formant.frequency.exponentialRampToValueAtTime(750, t + 0.56);
-    formant.Q.value = 2.5;
+    formant.frequency.setValueAtTime(2200, t);
+    formant.frequency.exponentialRampToValueAtTime(680, t + 0.30);
+    formant.Q.value = 2.2;
+
+    // Envelope — explosive attack, quick decay
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0, t);
+    env.gain.linearRampToValueAtTime(1.0, t + 0.010);
+    env.gain.exponentialRampToValueAtTime(0.001, t + 0.34);
 
     carrier.connect(env);
     env.connect(formant);
     formant.connect(master);
 
-    // Electric noise burst at the CHU! peak
-    const noiseLen = Math.ceil(ctx.sampleRate * 0.28);
+    // Electric noise burst
+    const noiseLen = Math.ceil(ctx.sampleRate * 0.22);
     const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
     const nd = noiseBuf.getChannelData(0);
     for (let i = 0; i < noiseLen; i++) nd[i] = Math.random() * 2 - 1;
     const noiseSrc = ctx.createBufferSource();
     noiseSrc.buffer = noiseBuf;
     const nf = ctx.createBiquadFilter();
-    nf.type = 'highpass'; nf.frequency.value = 2800; nf.Q.value = 0.4;
+    nf.type = 'highpass'; nf.frequency.value = 3200; nf.Q.value = 0.35;
     const ng = ctx.createGain();
-    ng.gain.setValueAtTime(0, t + 0.24);
-    ng.gain.linearRampToValueAtTime(0.22, t + 0.27);
-    ng.gain.exponentialRampToValueAtTime(0.001, t + 0.52);
+    ng.gain.setValueAtTime(0.28, t);
+    ng.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
     noiseSrc.connect(nf); nf.connect(ng); ng.connect(master);
 
-    carrier.start(t); carrier.stop(t + 0.6);
-    vibrato.start(t); vibrato.stop(t + 0.6);
-    mod.start(t); mod.stop(t + 0.6);
-    noiseSrc.start(t + 0.24); noiseSrc.stop(t + 0.52);
-    setTimeout(() => { try { ctx.close(); } catch {} }, 2500);
+    carrier.start(t); carrier.stop(t + 0.36);
+    vibrato.start(t); vibrato.stop(t + 0.36);
+    mod.start(t); mod.stop(t + 0.36);
+    noiseSrc.start(t);
+    setTimeout(() => { try { ctx.close(); } catch {} }, 1500);
   } catch {}
 }
 
