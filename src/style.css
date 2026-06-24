@@ -617,6 +617,7 @@ body::after {
 .bar {
   width: 100%; display: flex; align-items: center; gap: 8px;
   padding: 8px 0 18px;
+  direction: ltr; /* lock LTR so mic stays left, send stays right in RTL pages */
 }
 .pill {
   flex: 1; display: flex; align-items: center;
