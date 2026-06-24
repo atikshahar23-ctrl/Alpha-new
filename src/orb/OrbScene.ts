@@ -436,7 +436,7 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
     new THREE.SphereGeometry(0.72, seg(48), seg(48)),
     mYellow,
   );
-  head.scale.set(1.24, 1.04, 0.98);
+  head.scale.set(1.18, 0.98, 0.92);
   head.position.set(0, 0.0, 0.04);
   headGroup.add(head);
 
@@ -446,8 +446,8 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
       new THREE.SphereGeometry(0.32, seg(20), seg(20)),
       mYellow,
     );
-    cheekBulge.scale.set(0.64, 0.58, 0.50);
-    cheekBulge.position.set(sx * 0.56, -0.13, 0.33);
+    cheekBulge.scale.set(0.62, 0.56, 0.48);
+    cheekBulge.position.set(sx * 0.54, -0.13, 0.33);
     headGroup.add(cheekBulge);
   }
 
@@ -461,32 +461,32 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
       new THREE.SphereGeometry(0.16, seg(24), seg(24)),
       mYellow,
     );
-    earBase.scale.set(0.85, 4.2, 0.45);
-    earBase.position.set(0, 0.5, 0);
+    earBase.scale.set(1.05, 3.4, 0.60);
+    earBase.position.set(0, 0.42, 0);
     earGroup.add(earBase);
 
     const earTip = new THREE.Mesh(
       new THREE.ConeGeometry(0.12, 0.7, seg(16)),
       mYellow,
     );
-    earTip.position.set(0, 1.08, 0);
-    earTip.scale.set(0.85, 1.0, 0.45);
+    earTip.position.set(0, 0.90, 0);
+    earTip.scale.set(1.05, 1.0, 0.60);
     earGroup.add(earTip);
 
     const earBlackBase = new THREE.Mesh(
       new THREE.SphereGeometry(0.14, seg(16), seg(16)),
       mBlack,
     );
-    earBlackBase.scale.set(0.75, 1.8, 0.42);
-    earBlackBase.position.set(0, 1.15, 0);
+    earBlackBase.scale.set(0.90, 1.5, 0.55);
+    earBlackBase.position.set(0, 0.96, 0);
     earGroup.add(earBlackBase);
 
     const earBlackTip = new THREE.Mesh(
       new THREE.ConeGeometry(0.1, 0.5, seg(14)),
       mBlack,
     );
-    earBlackTip.position.set(0, 1.45, 0);
-    earBlackTip.scale.set(0.75, 1.0, 0.42);
+    earBlackTip.position.set(0, 1.22, 0);
+    earBlackTip.scale.set(0.90, 1.0, 0.55);
     earGroup.add(earBlackTip);
 
     // Pink inner ear — flat ellipse on the front face of the ear
@@ -494,12 +494,12 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
       new THREE.CircleGeometry(0.10, seg(16)),
       mats.pink,
     );
-    innerEar.scale.set(0.72, 3.2, 1.0);
-    innerEar.position.set(0, 0.52, 0.07);
+    innerEar.scale.set(0.85, 2.6, 1.0);
+    innerEar.position.set(0, 0.44, 0.08);
     innerEar.rotation.x = -0.12;
     earGroup.add(innerEar);
 
-    earGroup.position.set(sx * 0.46, 0.54, -0.04);
+    earGroup.position.set(sx * 0.46, 0.52, -0.04);
     earGroup.rotation.z = -sx * 0.20;
     earGroup.rotation.x = -0.10;
     headGroup.add(earGroup);
@@ -662,13 +662,14 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   faceTexture.colorSpace = THREE.SRGBColorSpace;
 
   const faceDecal = new THREE.Mesh(
-    new THREE.CircleGeometry(0.66, seg(48)),
+    new THREE.CircleGeometry(0.72, seg(48)),
     new THREE.MeshBasicMaterial({
       map: faceTexture, transparent: true,
-      depthWrite: false, side: THREE.FrontSide,
+      depthWrite: false, depthTest: false, side: THREE.FrontSide,
     }),
   );
-  faceDecal.position.set(0, -0.02, 0.68);
+  faceDecal.renderOrder = 2;
+  faceDecal.position.set(0, -0.02, 0.715);
   headGroup.add(faceDecal);
 
   // Invisible eye tracking references (visuals are on canvas)
@@ -698,7 +699,7 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
       mYellow,
     );
     eyelid.scale.set(0.85, 0.01, 0.45);
-    eyelid.position.set(sx * 0.19, 0.14, 0.69);
+    eyelid.position.set(sx * 0.19, 0.14, 0.720);
     eyelid.rotation.x = -0.08;
     headGroup.add(eyelid);
     if (sx === -1) leftEyelid = eyelid;
@@ -710,7 +711,7 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
     new THREE.SphereGeometry(0.001, 4, 4),
     new THREE.MeshBasicMaterial({ visible: false }),
   );
-  mouthMesh.position.set(0, -0.18, 0.70);
+  mouthMesh.position.set(0, -0.18, 0.720);
   headGroup.add(mouthMesh);
 
   // Tongue — PBR material so it catches the keyLight
@@ -719,26 +720,28 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
     mats.tongue,
   );
   tongue.scale.set(1.5, 0.55, 0.9);
-  tongue.position.set(0, -0.2, 0.68);
+  tongue.position.set(0, -0.2, 0.715);
   headGroup.add(tongue);
 
   // Cheek glow overlays (subtle additive glow over the canvas cheeks)
   const cheekMatL = new THREE.MeshPhysicalMaterial({
     color: 0xE53935, roughness: 0.5, emissive: 0xE53935, emissiveIntensity: 0.3,
-    transparent: true, opacity: 0.15, depthWrite: false,
+    transparent: true, opacity: 0.18, depthWrite: false, depthTest: false,
   });
   const cheekMatR = new THREE.MeshPhysicalMaterial({
     color: 0xE53935, roughness: 0.5, emissive: 0xE53935, emissiveIntensity: 0.3,
-    transparent: true, opacity: 0.15, depthWrite: false,
+    transparent: true, opacity: 0.18, depthWrite: false, depthTest: false,
   });
   const cheekGeo = new THREE.CircleGeometry(0.12, seg(24));
 
   const cheekL = new THREE.Mesh(cheekGeo, cheekMatL);
-  cheekL.position.set(-0.44, -0.1, 0.70);
+  cheekL.renderOrder = 3;
+  cheekL.position.set(-0.44, -0.1, 0.722);
   headGroup.add(cheekL);
 
   const cheekR = new THREE.Mesh(cheekGeo, cheekMatR);
-  cheekR.position.set(0.44, -0.1, 0.70);
+  cheekR.renderOrder = 3;
+  cheekR.position.set(0.44, -0.1, 0.722);
   headGroup.add(cheekR);
 
   headGroup.position.set(0, 0.48, 0.04);
@@ -1100,72 +1103,102 @@ function playPikachuCry() {
     const ctx = new (window.AudioContext || (window as any).webkitAudioContext)() as AudioContext;
     const t = ctx.currentTime;
     const master = ctx.createGain();
-    master.gain.setValueAtTime(0.65, t);
+    master.gain.setValueAtTime(0.9, t);
     master.connect(ctx.destination);
 
-    // "CHU!" — single explosive syllable, sharp attack, falling pitch
+    // "CHOOOooooo!" — explosive start, held screaming vowel, long tail
     const carrier = ctx.createOscillator();
     carrier.type = 'sine';
-    carrier.frequency.setValueAtTime(1680, t);
-    carrier.frequency.exponentialRampToValueAtTime(560, t + 0.32);
+    carrier.frequency.setValueAtTime(1800, t);
+    carrier.frequency.exponentialRampToValueAtTime(1200, t + 0.08); // explosive "CH" attack
+    carrier.frequency.setValueAtTime(1100, t + 0.10);
+    carrier.frequency.linearRampToValueAtTime(1050, t + 0.55);      // held "OOooo" vowel
+    carrier.frequency.exponentialRampToValueAtTime(560, t + 0.88);  // fall at the end
 
-    // Heavy FM sawtooth — electric crackle character
+    // FM sawtooth — electric crackle, stays active through whole scream
     const mod = ctx.createOscillator();
     mod.type = 'sawtooth';
-    mod.frequency.setValueAtTime(420, t);
-    mod.frequency.exponentialRampToValueAtTime(90, t + 0.30);
+    mod.frequency.setValueAtTime(480, t);
+    mod.frequency.exponentialRampToValueAtTime(140, t + 0.85);
     const modG = ctx.createGain();
-    modG.gain.setValueAtTime(780, t);
-    modG.gain.exponentialRampToValueAtTime(12, t + 0.30);
+    modG.gain.setValueAtTime(920, t);        // huge depth at start
+    modG.gain.exponentialRampToValueAtTime(60, t + 0.88);
     mod.connect(modG);
     modG.connect(carrier.frequency);
 
-    // Vibrato — natural voice wobble
+    // Tremolo LFO — gives the screaming/yelling wobble
+    const tremolo = ctx.createOscillator();
+    tremolo.frequency.value = 11;
+    const tremG = ctx.createGain();
+    tremG.gain.setValueAtTime(0, t);
+    tremG.gain.linearRampToValueAtTime(0.35, t + 0.12); // tremolo kicks in after attack
+    tremG.gain.setValueAtTime(0.35, t + 0.55);
+    tremG.gain.linearRampToValueAtTime(0.0, t + 0.88);
+    tremolo.connect(tremG);
+    const tremoloMod = ctx.createGain();
+    tremoloMod.gain.value = 1;
+    tremG.connect(tremoloMod);
+
+    // Vibrato on pitch — screaming voice shake
     const vibrato = ctx.createOscillator();
-    vibrato.frequency.value = 9;
+    vibrato.frequency.value = 8.5;
     const vibG = ctx.createGain();
     vibG.gain.setValueAtTime(0, t);
-    vibG.gain.linearRampToValueAtTime(22, t + 0.05);
-    vibG.gain.exponentialRampToValueAtTime(4, t + 0.30);
+    vibG.gain.linearRampToValueAtTime(38, t + 0.10);
+    vibG.gain.setValueAtTime(38, t + 0.55);
+    vibG.gain.exponentialRampToValueAtTime(5, t + 0.88);
     vibrato.connect(vibG);
     vibG.connect(carrier.frequency);
 
-    // Formant filter — "uu" vowel shaping
+    // Formant — "oo" vowel, then opens to "ah"
     const formant = ctx.createBiquadFilter();
     formant.type = 'bandpass';
-    formant.frequency.setValueAtTime(2200, t);
-    formant.frequency.exponentialRampToValueAtTime(680, t + 0.30);
-    formant.Q.value = 2.2;
+    formant.frequency.setValueAtTime(2400, t);
+    formant.frequency.exponentialRampToValueAtTime(820, t + 0.12);
+    formant.frequency.setValueAtTime(820, t + 0.55);
+    formant.frequency.exponentialRampToValueAtTime(680, t + 0.88);
+    formant.Q.value = 2.8;
 
-    // Envelope — explosive attack, quick decay
+    // Envelope — very fast attack, loud sustained body, long tail
     const env = ctx.createGain();
     env.gain.setValueAtTime(0, t);
-    env.gain.linearRampToValueAtTime(1.0, t + 0.010);
-    env.gain.exponentialRampToValueAtTime(0.001, t + 0.34);
+    env.gain.linearRampToValueAtTime(1.0, t + 0.008); // explosive attack
+    env.gain.setValueAtTime(0.92, t + 0.04);
+    env.gain.setValueAtTime(0.90, t + 0.55);           // held loud through "OOooo"
+    env.gain.exponentialRampToValueAtTime(0.001, t + 0.90);
 
     carrier.connect(env);
     env.connect(formant);
-    formant.connect(master);
+    // Tremolo modulates the output amplitude
+    const ampMod = ctx.createGain();
+    ampMod.gain.value = 0;
+    tremG.connect(ampMod.gain);
+    formant.connect(ampMod);
+    ampMod.connect(master);
+    formant.connect(master); // direct path too for thickness
 
-    // Electric noise burst
-    const noiseLen = Math.ceil(ctx.sampleRate * 0.22);
+    // Electric noise burst — sustained through the whole scream
+    const noiseLen = Math.ceil(ctx.sampleRate * 0.90);
     const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
     const nd = noiseBuf.getChannelData(0);
     for (let i = 0; i < noiseLen; i++) nd[i] = Math.random() * 2 - 1;
     const noiseSrc = ctx.createBufferSource();
     noiseSrc.buffer = noiseBuf;
     const nf = ctx.createBiquadFilter();
-    nf.type = 'highpass'; nf.frequency.value = 3200; nf.Q.value = 0.35;
+    nf.type = 'highpass'; nf.frequency.value = 3000; nf.Q.value = 0.4;
     const ng = ctx.createGain();
-    ng.gain.setValueAtTime(0.28, t);
-    ng.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+    ng.gain.setValueAtTime(0.30, t);
+    ng.gain.setValueAtTime(0.18, t + 0.10);
+    ng.gain.setValueAtTime(0.12, t + 0.55);
+    ng.gain.exponentialRampToValueAtTime(0.001, t + 0.88);
     noiseSrc.connect(nf); nf.connect(ng); ng.connect(master);
 
-    carrier.start(t); carrier.stop(t + 0.36);
-    vibrato.start(t); vibrato.stop(t + 0.36);
-    mod.start(t); mod.stop(t + 0.36);
+    carrier.start(t); carrier.stop(t + 0.92);
+    vibrato.start(t); vibrato.stop(t + 0.92);
+    mod.start(t);     mod.stop(t + 0.92);
+    tremolo.start(t); tremolo.stop(t + 0.92);
     noiseSrc.start(t);
-    setTimeout(() => { try { ctx.close(); } catch {} }, 1500);
+    setTimeout(() => { try { ctx.close(); } catch {} }, 2500);
   } catch {}
 }
 
