@@ -6,7 +6,7 @@ import { tryLocalCommand } from '../assistant/local';
 import { VoiceEngine } from '../assistant/voice';
 import { AudioEngine, type AmbientPreset } from '../assistant/audio';
 import { orchestrate, refreshSummary, moduleById, loadMemory, updateProfile } from '../brain';
-import { mountCockpit, type CockpitHandle } from '../modules/cockpit';
+import { type CockpitHandle } from '../modules/cockpit';
 import { runProactive } from '../modules/proactive';
 import { processRecurring } from '../modules/recurring';
 import * as driveSync from '../modules/driveSync';
@@ -640,13 +640,27 @@ export function mountApp(root: HTMLElement) {
   });
 
   // ── Master Brain cockpit (Business / Trading / Creative / Personal) ──
+  // Lazy-loaded: the cockpit module (~1.7k lines) is only fetched + mounted the
+  // first time the user actually opens it, keeping it out of the initial bundle
+  // and off the startup critical path.
   let cockpit: CockpitHandle | null = null;
-  try {
-    cockpit = mountCockpit(root.querySelector('.app')!, {
-      ask: (q: string) => { addMsg(q, 'me'); ask(q); },
-      addMsgSys: (m: string) => addMsg(m, 'sys'),
-    });
-  } catch (e) { console.error('cockpit mount failed', e); }
+  let cockpitLoading: Promise<CockpitHandle | null> | null = null;
+  async function openCockpit() {
+    if (cockpit) { cockpit.open(); return; }
+    if (!cockpitLoading) {
+      cockpitLoading = import('../modules/cockpit')
+        .then(m => {
+          cockpit = m.mountCockpit(root.querySelector('.app')!, {
+            ask: (q: string) => { addMsg(q, 'me'); ask(q); },
+            addMsgSys: (msg: string) => addMsg(msg, 'sys'),
+          });
+          return cockpit;
+        })
+        .catch(e => { console.error('cockpit mount failed', e); return null; });
+    }
+    const cp = await cockpitLoading;
+    cp?.open();
+  }
 
   // ── Performance: pause the 3D orb + flow-lines background whenever a
   // fullscreen overlay covers them (HeavyGuard, cockpit, settings, AR, search,
@@ -685,7 +699,7 @@ export function mountApp(root: HTMLElement) {
   moduleChip.id = 'moduleChip';
   moduleChip.innerHTML = `<span class="mc-dot"></span><span class="mc-label">${state.uiLang === 'he' ? 'מוח' : 'BRAIN'}</span>`;
   moduleChip.title = state.uiLang === 'he' ? 'פתח לוח בקרה ראשי' : 'Open Master Brain cockpit';
-  moduleChip.onclick = () => cockpit?.open();
+  moduleChip.onclick = () => openCockpit();
   const topR = root.querySelector('.topR');
   if (topR) topR.insertBefore(moduleChip, topR.firstChild);
 

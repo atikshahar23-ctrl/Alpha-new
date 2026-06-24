@@ -152,7 +152,7 @@ body::after {
   color: var(--gold);
   border: 1px solid rgba(218, 165, 32, .14);
   background: rgba(14, 12, 8, .78);
-  backdrop-filter: blur(40px) saturate(1.4); -webkit-backdrop-filter: blur(40px) saturate(1.4);
+  backdrop-filter: blur(28px) saturate(1.4); -webkit-backdrop-filter: blur(28px) saturate(1.4);
   padding: 8px 14px; border-radius: 12px;
   cursor: pointer;
   transition: transform var(--spring), background var(--transition), border-color var(--transition), box-shadow .3s ease;
@@ -196,7 +196,7 @@ body::after {
   z-index: 4;
   display: flex; flex-direction: column; gap: 2px;
   background: linear-gradient(168deg, rgba(16, 14, 10, .9) 0%, rgba(10, 8, 6, .92) 100%);
-  backdrop-filter: blur(48px) saturate(1.5); -webkit-backdrop-filter: blur(48px) saturate(1.5);
+  backdrop-filter: blur(30px) saturate(1.5); -webkit-backdrop-filter: blur(30px) saturate(1.5);
   border: 1px solid rgba(218, 165, 32, .1);
   border-top: 1px solid rgba(255, 255, 255, .06);
   border-radius: 16px;
@@ -358,13 +358,11 @@ body::after {
   box-shadow: 0 1px 2px rgba(0,0,0,.4), 0 4px 16px rgba(0,0,0,.2), 0 12px 48px rgba(0,0,0,.15),
               0 0 0 0.5px rgba(218, 165, 32, .04),
               inset 0 1px 0 rgba(255,255,255,.04), inset 0 0 24px rgba(218, 165, 32, .015);
-  animation: panelGlow 8s ease-in-out infinite alternate;
 }
 .right-panel {
   box-shadow: 0 1px 2px rgba(0,0,0,.4), 0 4px 16px rgba(0,0,0,.2), 0 12px 48px rgba(0,0,0,.15),
               0 0 0 0.5px rgba(218, 165, 32, .04),
               inset 0 1px 0 rgba(255,255,255,.04), inset 0 0 24px rgba(218, 165, 32, .01);
-  animation: panelGlow 8s ease-in-out infinite alternate;
 }
 
 @keyframes panelGlow {
@@ -383,7 +381,7 @@ body::after {
   z-index: 4;
   display: flex; flex-direction: column;
   background: linear-gradient(168deg, rgba(16, 14, 10, .72) 0%, rgba(10, 8, 6, .78) 100%);
-  backdrop-filter: blur(48px) saturate(1.5); -webkit-backdrop-filter: blur(48px) saturate(1.5);
+  backdrop-filter: blur(30px) saturate(1.5); -webkit-backdrop-filter: blur(30px) saturate(1.5);
   border: 1px solid rgba(218,165,32,.1);
   border-top: 1px solid rgba(255, 255, 255, .05);
   border-radius: 16px;
@@ -506,7 +504,7 @@ body::after {
   gap: 4px;
   padding: 10px 18px 8px;
   background: linear-gradient(180deg, rgba(18, 16, 12, .72) 0%, rgba(10, 8, 6, .78) 100%);
-  backdrop-filter: blur(56px) saturate(1.5); -webkit-backdrop-filter: blur(56px) saturate(1.5);
+  backdrop-filter: blur(32px) saturate(1.5); -webkit-backdrop-filter: blur(32px) saturate(1.5);
   border: 1px solid rgba(218,165,32,.1);
   border-top: 1px solid rgba(255, 255, 255, .06);
   border-radius: 22px;
@@ -523,7 +521,7 @@ body::after {
   border-radius: 20px;
   background: linear-gradient(90deg, rgba(218, 165, 32, .08), rgba(255, 194, 77, .08), rgba(200, 149, 106, .08));
   z-index: -1;
-  animation: dockGlow 4s ease-in-out infinite alternate;
+  animation: dockGlow 10s ease-in-out infinite alternate;
 }
 
 @keyframes dockGlow {
@@ -660,7 +658,7 @@ body::after {
 .pill {
   flex: 1; display: flex; align-items: center;
   background: linear-gradient(180deg, rgba(16, 14, 10, .65) 0%, rgba(10, 8, 6, .72) 100%);
-  backdrop-filter: blur(48px) saturate(1.4); -webkit-backdrop-filter: blur(48px) saturate(1.4);
+  backdrop-filter: blur(30px) saturate(1.4); -webkit-backdrop-filter: blur(30px) saturate(1.4);
   border: 1px solid rgba(218, 165, 32, .1);
   border-top: 1px solid rgba(255, 255, 255, .04);
   border-radius: 24px; padding: 4px 6px 4px 18px;
@@ -730,7 +728,7 @@ body::after {
 .card {
   width: 100%; max-width: 440px;
   background: linear-gradient(170deg, rgba(18, 16, 12, .92) 0%, rgba(10, 8, 6, .95) 100%);
-  backdrop-filter: blur(56px) saturate(1.5); -webkit-backdrop-filter: blur(56px) saturate(1.5);
+  backdrop-filter: blur(32px) saturate(1.5); -webkit-backdrop-filter: blur(32px) saturate(1.5);
   border: 1px solid rgba(218,165,32,.1);
   border-top: 1px solid rgba(255, 255, 255, .06);
   border-radius: var(--radius); padding: 28px;
@@ -1056,7 +1054,7 @@ body::after {
 .winbox {
   width: min(920px, 94vw); height: min(640px, 86vh);
   background: linear-gradient(170deg, rgba(18, 16, 12, .94) 0%, rgba(10, 8, 6, .96) 100%);
-  backdrop-filter: blur(56px) saturate(1.5); -webkit-backdrop-filter: blur(56px) saturate(1.5);
+  backdrop-filter: blur(32px) saturate(1.5); -webkit-backdrop-filter: blur(32px) saturate(1.5);
   border: 1px solid rgba(218,165,32,.1);
   border-top: 1px solid rgba(255, 255, 255, .06);
   border-radius: var(--radius);
@@ -1125,7 +1123,7 @@ body::after {
   display: flex; align-items: center; justify-content: space-between;
   padding: 12px 20px;
   background: linear-gradient(180deg, rgba(16, 14, 10, .96) 0%, rgba(10, 8, 6, .98) 100%);
-  backdrop-filter: blur(48px) saturate(1.4); -webkit-backdrop-filter: blur(48px) saturate(1.4);
+  backdrop-filter: blur(30px) saturate(1.4); -webkit-backdrop-filter: blur(30px) saturate(1.4);
   border-bottom: 1px solid rgba(218, 165, 32, .1);
   flex-shrink: 0;
   box-shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.15);
@@ -1184,7 +1182,7 @@ body::after {
   letter-spacing: 1.5px;
   text-transform: uppercase;
   cursor: pointer;
-  backdrop-filter: blur(48px) saturate(1.5); -webkit-backdrop-filter: blur(48px) saturate(1.5);
+  backdrop-filter: blur(30px) saturate(1.5); -webkit-backdrop-filter: blur(30px) saturate(1.5);
   transition: transform var(--spring), box-shadow .3s ease, background .25s ease, border-color .25s ease;
   box-shadow: 0 1px 2px rgba(0,0,0,.4), 0 4px 16px rgba(0,0,0,.2),
               0 0 0 0.5px rgba(218,165,32,.04),
@@ -1927,7 +1925,7 @@ body::after {
   width: min(880px, 96vw); height: min(760px, 90vh);
   display: flex; flex-direction: column; overflow: hidden;
   background: linear-gradient(170deg, rgba(18, 16, 12, .94) 0%, rgba(10, 8, 6, .96) 100%);
-  backdrop-filter: blur(56px) saturate(1.5); -webkit-backdrop-filter: blur(56px) saturate(1.5);
+  backdrop-filter: blur(32px) saturate(1.5); -webkit-backdrop-filter: blur(32px) saturate(1.5);
   border: 1px solid rgba(218,165,32,.1);
   border-top: 1px solid rgba(255,255,255,.06);
   border-radius: 22px;

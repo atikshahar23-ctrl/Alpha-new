@@ -4,8 +4,9 @@ import {
   Clock, MapPin, Truck, ChevronLeft, CheckCircle2, AlertTriangle, FileSpreadsheet,
   Hash, Wrench, Factory, Tag, DollarSign, Calendar, Phone, User, Timer, Search, Film, Images, Pencil,
   BarChart3, ClipboardList, TrendingUp, Percent, Trophy,
-  Users, Car, Scale, Receipt, Boxes, Fuel, Copy, MessageSquare, Bell, CalendarDays, Circle, CalendarClock, ChevronRight, Minus, Shield, Upload, RotateCcw, Settings, Globe, Wallet, TrendingDown, Link2, Share2,
+  Users, Car, Scale, Receipt, Boxes, Fuel, Copy, MessageSquare, Bell, CalendarDays, Circle, CalendarClock, ChevronRight, Minus, Shield, Upload, RotateCcw, Settings, Globe, Wallet, TrendingDown, Link2, Share2, Mail, Target, Building2,
 } from "lucide-react";
+import BULL_LOGO from './heavyguard-logo.png';
 // xlsx is large (~400KB). Load it on demand only when the user actually
 // exports, so it stays out of the initial bundle and first paint is faster.
 
@@ -300,6 +301,7 @@ export default function App() {
         {view === "invoices" && <Invoices onBack={() => setView("hub")} showToast={showToast} />}
         {view === "backup" && <Backup onBack={() => setView("hub")} showToast={showToast} />}
         {view === "finance" && <Finance index={index} onBack={() => setView("hub")} />}
+        {view === "leads" && <Leads onBack={() => setView("hub")} showToast={showToast} />}
         {view === "settings" && <SettingsView onBack={() => setView("hub")} showToast={showToast} />}
         {view === "new" && <NewInstall onCancel={() => setView("logger")} onSave={addInstall} onStartDraft={startDraft} onDiscardDraft={discardDraft} resumeEntry={resumeId ? index.find((x) => x.id === resumeId) : null} showToast={showToast} />}
         {view === "detail" && <Detail entry={index.find((x) => x.id === detailId)} onBack={() => setView(prevTab)} onDelete={removeInstall} onUpdate={updateInstall} showToast={showToast} />}
@@ -351,13 +353,14 @@ function Hub({ index, go, onNew }) {
     { id: "suppliers", icon: Scale, title: "השוואת ספקים", sub: "מחירי רכש" },
     { id: "carstock", icon: Boxes, title: "מלאי ברכב", sub: "מלאי נייד" },
     { id: "invoices", icon: Receipt, title: "חשבוניות", sub: "חשבונות ותשלומים" },
+    { id: "leads", icon: Target, title: "ניהול לידים", sub: "6,452 לידים עסקיים", hot: true },
     { id: "backup", icon: Shield, title: "גיבוי ושחזור", sub: "שמירת הנתונים" },
     { id: "settings", icon: Settings, title: "הגדרות עסק", sub: "מיתוג וקישורים" },
   ];
   return (
     <>
       <header className="hg2-head hg2-head-lux">
-        <img src={LOGO} className="hg2-logo" alt="" />
+        <img src={BULL_LOGO} className="hg2-logo" alt="" />
         <div><div className="hg2-name">HEAVY GUARD</div><div className="hg2-tag">מערכת הניהול של העסק</div></div>
       </header>
 
@@ -430,6 +433,275 @@ function Stub({ onBack, icon: I, title, lines }) {
         <div className="hg2-stub-t">האזור הזה בדרך</div>
         <p className="hg2-stub-p">השלד מוכן. כשנגיע לבנות אותו במלואו, יהיה כאן:</p>
         <ul className="hg2-stub-list">{lines.map((l, i) => <li key={i}>{l}</li>)}</ul>
+      </div>
+    </div>
+  );
+}
+
+/* ============================ Leads CRM ============================ */
+const CRM_STATUSES = ['חדש','פנייה ראשונה','בתהליך','הצעה נשלחה','לקוח','אבד'];
+const CRM_COLOR = { 'חדש':'#6b7280','פנייה ראשונה':'#06b6d4','בתהליך':'#f59e0b','הצעה נשלחה':'#8b5cf6','לקוח':'#22c55e','אבד':'#ef4444' };
+const GEO_OPTS = ['צפון','מרכז','דרום','שרון','שפלה','ירושלים'];
+const OUTREACH_TYPES = ['שיחה','מייל','פגישה','הודעה','אחר'];
+const OUTREACH_RESULTS = ['חיובי','אין מענה','שלילי','מעניין','לחזור'];
+const CRM_KEY = 'hg2:crm_data';
+const loadCrm = () => { try { return JSON.parse(localStorage.getItem(CRM_KEY) || '{}'); } catch { return {}; } };
+const saveCrm = (d) => { try { localStorage.setItem(CRM_KEY, JSON.stringify(d)); } catch {} };
+
+function Leads({ onBack, showToast }) {
+  const [rawLeads, setRawLeads] = useState(null);
+  const [crmData, setCrmData] = useState({});
+  const [search, setSearch] = useState('');
+  const [geoFilter, setGeoFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [selectedId, setSelectedId] = useState(null);
+  const [page, setPage] = useState(0);
+  const PAGE = 60;
+
+  useEffect(() => {
+    setCrmData(loadCrm());
+    import('./leadsData.json').then(m => setRawLeads(m.default));
+  }, []);
+
+  const leads = useMemo(() => {
+    if (!rawLeads) return [];
+    return rawLeads.map(l => ({ ...l, crmStatus: crmData[l.id]?.crmStatus || 'חדש', crmNotes: crmData[l.id]?.crmNotes || '', outreach: crmData[l.id]?.outreach || [] }));
+  }, [rawLeads, crmData]);
+
+  const filtered = useMemo(() => leads.filter(l => {
+    if (geoFilter && l.geo !== geoFilter) return false;
+    if (statusFilter && l.crmStatus !== statusFilter) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      return (l.n||'').toLowerCase().includes(q) || (l.city||'').toLowerCase().includes(q) || (l.sector||'').toLowerCase().includes(q) || (l.phones||[]).some(p=>p.includes(q));
+    }
+    return true;
+  }), [leads, search, geoFilter, statusFilter]);
+
+  const paged = filtered.slice(0, (page + 1) * PAGE);
+  const stats = useMemo(() => ({
+    total: leads.length,
+    contacted: leads.filter(l=>l.crmStatus==='פנייה ראשונה').length,
+    active: leads.filter(l=>['בתהליך','הצעה נשלחה'].includes(l.crmStatus)).length,
+    won: leads.filter(l=>l.crmStatus==='לקוח').length,
+  }), [leads]);
+
+  const updateCrm = useCallback((id, changes) => {
+    setCrmData(prev => { const next={...prev, [id]:{...prev[id],...changes}}; saveCrm(next); return next; });
+  }, []);
+
+  const addOutreach = useCallback((id, entry) => {
+    setCrmData(prev => {
+      const cur=prev[id]||{};
+      const next={...prev, [id]:{...cur, outreach:[entry,...(cur.outreach||[])]}};
+      saveCrm(next); return next;
+    });
+  }, []);
+
+  const selectedLead = selectedId ? leads.find(l=>l.id===selectedId) : null;
+
+  if (selectedLead) return (
+    <LeadDetail lead={selectedLead} crmEntry={crmData[selectedLead.id]} onBack={()=>setSelectedId(null)}
+      onStatusChange={s=>updateCrm(selectedLead.id,{crmStatus:s})}
+      onNotesChange={n=>updateCrm(selectedLead.id,{crmNotes:n})}
+      onAddOutreach={e=>addOutreach(selectedLead.id,e)}
+      showToast={showToast} />
+  );
+
+  return (
+    <div className="hg2-flow">
+      <div className="hg2-flowhead">
+        <button className="hg2-back" onClick={onBack}><ChevronLeft size={22}/></button>
+        <img src={BULL_LOGO} className="crm-head-logo" alt=""/>
+        <div><div className="hg2-flowhead-title">ניהול לידים</div><div className="hg2-flowhead-sub">בסיס נתונים עסקי</div></div>
+      </div>
+
+      {!rawLeads ? (
+        <div className="hg2-busy">טוען {(6452).toLocaleString()} לידים…</div>
+      ) : <>
+        <div className="crm-stats">
+          <div className="crm-stat"><b>{stats.total.toLocaleString()}</b><span>לידים</span></div>
+          <div className="crm-stat"><b>{stats.contacted.toLocaleString()}</b><span>פנייה ראשונה</span></div>
+          <div className="crm-stat"><b>{stats.active.toLocaleString()}</b><span>בתהליך</span></div>
+          <div className="crm-stat won"><b>{stats.won.toLocaleString()}</b><span>לקוחות</span></div>
+        </div>
+
+        <div className="crm-search-row">
+          <div className="crm-searchbox">
+            <Search size={15}/>
+            <input value={search} onChange={e=>{setSearch(e.target.value);setPage(0);}} placeholder="חיפוש שם, עיר, תחום, טלפון…" dir="rtl"/>
+            {search && <button onClick={()=>setSearch('')}><X size={14}/></button>}
+          </div>
+        </div>
+
+        <div className="crm-chips-row">
+          <button className={!geoFilter?'on':''} onClick={()=>{setGeoFilter('');setPage(0);}}>הכל</button>
+          {GEO_OPTS.map(g=><button key={g} className={geoFilter===g?'on':''} onClick={()=>{setGeoFilter(g);setPage(0);}}>{g}</button>)}
+        </div>
+
+        <div className="crm-chips-row small">
+          <button className={!statusFilter?'on':''} onClick={()=>{setStatusFilter('');setPage(0);}}>כל הסטטוסים</button>
+          {CRM_STATUSES.map(s=><button key={s} className={statusFilter===s?'on':''} style={{'--sc':CRM_COLOR[s]}} onClick={()=>{setStatusFilter(s);setPage(0);}}>{s}</button>)}
+        </div>
+
+        <div className="crm-count">{filtered.length.toLocaleString()} תוצאות</div>
+
+        {paged.map(lead=><LeadCard key={lead.id} lead={lead} onClick={()=>setSelectedId(lead.id)}/>)}
+        {filtered.length > paged.length && (
+          <button className="crm-more-btn" onClick={()=>setPage(p=>p+1)}>
+            טען עוד · {(filtered.length - paged.length).toLocaleString()} נותרו
+          </button>
+        )}
+        {filtered.length === 0 && <div className="crm-empty-state"><Target size={36}/><div>אין תוצאות לחיפוש הזה</div></div>}
+      </>}
+    </div>
+  );
+}
+
+function LeadCard({ lead, onClick }) {
+  const color = CRM_COLOR[lead.crmStatus||'חדש'];
+  const hasActivity = lead.outreach?.length > 0;
+  return (
+    <button className="crm-card" onClick={onClick}>
+      <div className="crm-card-top">
+        <div className="crm-card-name">{lead.n}</div>
+        <span className="crm-badge" style={{background:color+'22',color,border:`1px solid ${color}55`}}>{lead.crmStatus||'חדש'}</span>
+      </div>
+      <div className="crm-card-meta">
+        {lead.city && <span><MapPin size={11}/>{lead.city}</span>}
+        {lead.geo && lead.geo !== lead.city && <span className="crm-geo-tag">{lead.geo}</span>}
+        {(lead.phones||[])[0] && <span><Phone size={11}/>{lead.phones[0]}</span>}
+      </div>
+      {lead.sector && <div className="crm-card-sector">{lead.sector}</div>}
+      <div className="crm-card-bottom">
+        {lead.score > 0 && (
+          <div className="crm-score-wrap">
+            <span>{lead.score}</span>
+            <div className="crm-score-bar"><div style={{width:lead.score+'%',background:lead.score>70?'#22c55e':lead.score>40?'#f59e0b':'#6b7280'}}/></div>
+          </div>
+        )}
+        {hasActivity && <span className="crm-log-badge"><Bell size={10}/>{lead.outreach.length}</span>}
+        {lead.mine && <span className="crm-mine-badge">לקוח שלי</span>}
+      </div>
+    </button>
+  );
+}
+
+function LeadDetail({ lead, crmEntry, onBack, onStatusChange, onNotesChange, onAddOutreach, showToast }) {
+  const [notesVal, setNotesVal] = useState(crmEntry?.crmNotes||'');
+  const [showAdd, setShowAdd] = useState(false);
+  const [outType, setOutType] = useState('שיחה');
+  const [outResult, setOutResult] = useState('חיובי');
+  const [outNotes, setOutNotes] = useState('');
+  const outreach = crmEntry?.outreach||[];
+
+  const saveNotes = () => { onNotesChange(notesVal); showToast('הערות נשמרו'); };
+  const submitOut = () => {
+    if (!outNotes.trim()) { showToast('הוסף פרטי פנייה','warn'); return; }
+    onAddOutreach({ id: Date.now().toString(), type:outType, result:outResult, notes:outNotes.trim(), date: new Date().toISOString().slice(0,10) });
+    setOutNotes(''); setShowAdd(false); showToast('פנייה נרשמה');
+  };
+
+  return (
+    <div className="hg2-flow">
+      <div className="hg2-flowhead">
+        <button className="hg2-back" onClick={onBack}><ChevronLeft size={22}/></button>
+        <div style={{flex:1,minWidth:0}}>
+          <div className="hg2-flowhead-title" style={{fontSize:15}}>{lead.n}</div>
+          <div className="hg2-flowhead-sub">{[lead.city,lead.geo].filter(Boolean).join(' · ')}</div>
+        </div>
+      </div>
+
+      {lead.score > 0 && (
+        <div className="crm-score-detail">
+          <span>ציון</span><b>{lead.score}</b>
+          <div className="crm-score-bar big"><div style={{width:lead.score+'%',background:lead.score>70?'#22c55e':lead.score>40?'#f59e0b':'#6b7280'}}/></div>
+        </div>
+      )}
+
+      <div className="crm-pipeline">
+        {CRM_STATUSES.map(s=>(
+          <button key={s} className={'crm-pipe-step'+(lead.crmStatus===s?' on':'')} style={{'--sc':CRM_COLOR[s]}} onClick={()=>onStatusChange(s)}>{s}</button>
+        ))}
+      </div>
+
+      <div className="crm-section">
+        <div className="crm-section-ttl">פרטי קשר</div>
+        {(lead.phones||[]).map((p,i)=>(
+          <a key={i} href={`tel:${p}`} className="crm-contact-row"><Phone size={13}/><span>{p}</span><span className="crm-contact-action">חייג</span></a>
+        ))}
+        {lead.e && <a href={`mailto:${lead.e}`} className="crm-contact-row"><Mail size={13}/><span className="crm-truncate">{lead.e}</span><span className="crm-contact-action">מייל</span></a>}
+        {lead.addr && <div className="crm-info-row"><MapPin size={13}/>{lead.addr}, {lead.city}</div>}
+        {lead.w && <div className="crm-info-row"><Globe size={13}/><span className="crm-truncate">{lead.w}</span></div>}
+      </div>
+
+      <div className="crm-section">
+        <div className="crm-section-ttl">פרטי עסק</div>
+        {lead.sector && <div className="crm-info-row"><Building2 size={13}/>{lead.sector}</div>}
+        {lead.emp && <div className="crm-info-row"><Users size={13}/>{lead.emp} מועסקים</div>}
+        {lead.rev && <div className="crm-info-row"><Wallet size={13}/>מחזור: ₪{Number(lead.rev).toLocaleString()} אלף</div>}
+        {lead.activity && <div className="crm-info-row"><Tag size={13}/>{lead.activity.replace(/;/g,' · ')}</div>}
+        {lead.group && <div className="crm-info-row"><Users size={13}/>{lead.group}</div>}
+      </div>
+
+      {(lead.mgrs||[]).length > 0 && (
+        <div className="crm-section">
+          <div className="crm-section-ttl">אנשי קשר</div>
+          {lead.mgrs.map((m,i)=>(
+            <div key={i} className="crm-mgr">
+              <div className="crm-mgr-top"><span className="crm-mgr-name">{m.n}</span>{m.r && <span className="crm-mgr-role">{m.r}</span>}</div>
+              {m.e && <a href={`mailto:${m.e}`} className="crm-mgr-email"><Mail size={11}/>{m.e}</a>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="crm-section">
+        <div className="crm-section-ttl">הערות CRM</div>
+        <textarea className="crm-notes-area" value={notesVal} onChange={e=>setNotesVal(e.target.value)} placeholder="הוסף הערות…" rows={3} dir="rtl"/>
+        <button className="crm-save-btn" onClick={saveNotes}>שמור הערות</button>
+      </div>
+
+      {lead.xNotes && (
+        <div className="crm-section">
+          <div className="crm-section-ttl">הערות מקוריות</div>
+          <div className="crm-orig-notes">{lead.xNotes}</div>
+        </div>
+      )}
+
+      <div className="crm-section">
+        <div className="crm-section-ttl-row">
+          <span className="crm-section-ttl">יומן פניות ({outreach.length})</span>
+          <button className="crm-add-btn" onClick={()=>setShowAdd(v=>!v)}>+ הוסף פנייה</button>
+        </div>
+        {showAdd && (
+          <div className="crm-add-form">
+            <div className="crm-form-row">
+              <select value={outType} onChange={e=>setOutType(e.target.value)} className="crm-select">
+                {OUTREACH_TYPES.map(t=><option key={t}>{t}</option>)}
+              </select>
+              <select value={outResult} onChange={e=>setOutResult(e.target.value)} className="crm-select">
+                {OUTREACH_RESULTS.map(r=><option key={r}>{r}</option>)}
+              </select>
+            </div>
+            <textarea value={outNotes} onChange={e=>setOutNotes(e.target.value)} placeholder="פרטי הפנייה…" rows={2} className="crm-notes-area" dir="rtl"/>
+            <div className="crm-form-row">
+              <button className="crm-save-btn" onClick={submitOut}>שמור</button>
+              <button className="crm-cancel-btn" onClick={()=>setShowAdd(false)}>ביטול</button>
+            </div>
+          </div>
+        )}
+        {outreach.length === 0 && !showAdd && <div className="crm-empty">אין פניות מתועדות עדיין</div>}
+        {outreach.map(e=>(
+          <div key={e.id} className="crm-out-entry">
+            <div className="crm-out-header">
+              <span className="crm-out-type">{e.type}</span>
+              <span className={"crm-out-result r-"+e.result.replace(/\s/g,'-')}>{e.result}</span>
+              <span className="crm-out-date">{e.date}</span>
+            </div>
+            <div className="crm-out-notes">{e.notes}</div>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -2767,6 +3039,91 @@ function Styles() {
 .hg2-mapfail div{font-weight:700;color:var(--silver)}
 .hg2-mapfail p{font-size:13px;margin-top:4px}
 .leaflet-popup-content-wrapper,.leaflet-popup-tip{background:var(--s8);color:var(--silver)}
+
+/* CRM Leads */
+.crm-head-logo{width:34px;height:34px;object-fit:contain;border-radius:8px;margin-left:4px;margin-right:-4px}
+.crm-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:14px 0 10px}
+.crm-stat{background:var(--s9);border:1px solid var(--s7);border-radius:11px;padding:10px 8px;text-align:center}
+.crm-stat b{display:block;font-family:'Rubik';font-weight:900;font-size:18px;color:var(--silver)}
+.crm-stat span{font-size:10px;color:var(--s4);margin-top:2px;display:block}
+.crm-stat.won b{color:var(--ok)}
+.crm-search-row{margin:10px 0 6px}
+.crm-searchbox{display:flex;align-items:center;gap:8px;background:var(--s9);border:1px solid var(--s7);border-radius:11px;padding:9px 12px}
+.crm-searchbox svg{color:var(--s4);flex-shrink:0}
+.crm-searchbox input{flex:1;background:none;border:none;outline:none;color:var(--silver);font-family:inherit;font-size:14px;text-align:right}
+.crm-searchbox input::placeholder{color:var(--s5)}
+.crm-searchbox button{background:none;border:none;color:var(--s4);padding:0;cursor:pointer}
+.crm-chips-row{display:flex;flex-wrap:nowrap;gap:6px;overflow-x:auto;margin-bottom:7px;padding-bottom:2px;scrollbar-width:none}
+.crm-chips-row::-webkit-scrollbar{display:none}
+.crm-chips-row button{flex-shrink:0;background:var(--s9);border:1px solid var(--s7);border-radius:20px;color:var(--s4);padding:5px 12px;font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap}
+.crm-chips-row button.on{background:rgba(228,188,99,.15);border-color:var(--amber);color:var(--amber)}
+.crm-chips-row.small button{font-size:11.5px;padding:4px 10px}
+.crm-chips-row.small button.on{background:color-mix(in srgb,var(--sc) 18%,transparent);border-color:var(--sc);color:var(--sc)}
+.crm-count{font-size:12px;color:var(--s4);margin-bottom:8px;text-align:right}
+.crm-card{width:100%;background:var(--s9);border:1px solid var(--s7);border-radius:13px;padding:12px 13px;margin-bottom:8px;text-align:right;font-family:inherit;color:var(--silver);cursor:pointer;display:block}
+.crm-card:active{border-color:var(--amber)}
+.crm-card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:6px}
+.crm-card-name{font-size:14px;font-weight:700;flex:1;min-width:0;line-height:1.35}
+.crm-badge{font-size:10.5px;font-weight:700;border-radius:20px;padding:2px 8px;white-space:nowrap;flex-shrink:0}
+.crm-card-meta{display:flex;flex-wrap:wrap;gap:6px;font-size:11.5px;color:var(--s4);margin-bottom:5px;align-items:center}
+.crm-card-meta svg{display:inline;vertical-align:middle;margin-left:2px}
+.crm-geo-tag{background:var(--s8);border:1px solid var(--s7);border-radius:8px;padding:1px 6px;font-size:10.5px}
+.crm-card-sector{font-size:11.5px;color:var(--s5);margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.crm-card-bottom{display:flex;align-items:center;gap:8px}
+.crm-score-wrap{display:flex;align-items:center;gap:5px;flex:1}
+.crm-score-wrap span{font-size:11px;color:var(--s4);flex-shrink:0}
+.crm-score-bar{flex:1;height:4px;background:var(--s7);border-radius:2px;overflow:hidden}
+.crm-score-bar div{height:100%;border-radius:2px;transition:width .3s}
+.crm-score-bar.big{height:6px;flex:1}
+.crm-log-badge{background:rgba(228,188,99,.15);border:1px solid rgba(228,188,99,.3);color:var(--amber);font-size:10px;font-weight:700;border-radius:20px;padding:2px 6px;display:flex;align-items:center;gap:3px}
+.crm-mine-badge{background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.3);color:#22c55e;font-size:10px;font-weight:700;border-radius:20px;padding:2px 6px}
+.crm-more-btn{width:100%;padding:12px;background:var(--s9);border:1px solid var(--s7);border-radius:11px;color:var(--cyan);font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;margin-top:4px}
+.crm-empty-state{text-align:center;padding:40px 20px;color:var(--s4)}
+.crm-empty-state svg{margin-bottom:10px;opacity:.4}
+.crm-score-detail{display:flex;align-items:center;gap:10px;background:var(--s9);border:1px solid var(--s7);border-radius:11px;padding:10px 14px;margin-bottom:12px}
+.crm-score-detail span{font-size:12px;color:var(--s4);flex-shrink:0}
+.crm-score-detail b{font-size:20px;font-weight:900;font-family:'Rubik';flex-shrink:0}
+.crm-pipeline{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
+.crm-pipe-step{flex:1;min-width:calc(33.33% - 4px);background:var(--s9);border:1px solid var(--s7);border-radius:20px;color:var(--s4);padding:6px 8px;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;text-align:center}
+.crm-pipe-step.on{background:color-mix(in srgb,var(--sc) 20%,transparent);border-color:var(--sc);color:var(--sc)}
+.crm-section{background:var(--s9);border:1px solid var(--s7);border-radius:13px;padding:12px 14px;margin-bottom:10px}
+.crm-section-ttl{font-size:11.5px;font-weight:700;color:var(--s4);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px}
+.crm-section-ttl-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.crm-contact-row{display:flex;align-items:center;gap:8px;width:100%;padding:7px 0;border-bottom:1px solid rgba(43,53,67,.5);text-decoration:none;color:var(--silver);background:none;border-left:none;border-right:none;border-top:none;font-family:inherit;font-size:13px;cursor:pointer;text-align:right}
+.crm-contact-row:last-child{border-bottom:none}
+.crm-contact-row svg{color:var(--s4);flex-shrink:0}
+.crm-contact-row span{flex:1;min-width:0}
+.crm-contact-action{color:var(--cyan);font-size:11.5px;font-weight:700;flex-shrink:0}
+.crm-info-row{display:flex;align-items:flex-start;gap:7px;font-size:12.5px;color:var(--s4);padding:4px 0;line-height:1.4}
+.crm-info-row svg{flex-shrink:0;margin-top:1px}
+.crm-truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+.crm-mgr{padding:7px 0;border-bottom:1px solid rgba(43,53,67,.5)}
+.crm-mgr:last-child{border-bottom:none}
+.crm-mgr-top{display:flex;align-items:center;gap:8px;margin-bottom:3px}
+.crm-mgr-name{font-size:13px;font-weight:700}
+.crm-mgr-role{font-size:11px;color:var(--s4);background:var(--s8);border:1px solid var(--s7);border-radius:8px;padding:2px 6px}
+.crm-mgr-email{display:flex;align-items:center;gap:5px;color:var(--cyan);font-size:11.5px;text-decoration:none}
+.crm-notes-area{width:100%;background:var(--s8);border:1px solid var(--s7);border-radius:9px;padding:9px 11px;color:var(--silver);font-family:inherit;font-size:13px;resize:none;outline:none;box-sizing:border-box;margin-bottom:8px}
+.crm-notes-area:focus{border-color:var(--cyan)}
+.crm-save-btn{background:var(--cyan);color:#0B0F14;border:none;border-radius:9px;padding:8px 18px;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer}
+.crm-cancel-btn{background:var(--s8);color:var(--s4);border:1px solid var(--s7);border-radius:9px;padding:8px 14px;font-family:inherit;font-size:13px;cursor:pointer}
+.crm-add-btn{background:rgba(228,188,99,.15);border:1px solid rgba(228,188,99,.3);color:var(--amber);border-radius:20px;padding:4px 12px;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer}
+.crm-add-form{background:var(--s8);border:1px solid var(--s7);border-radius:11px;padding:11px;margin-bottom:10px}
+.crm-form-row{display:flex;gap:8px;margin-bottom:8px}
+.crm-select{flex:1;background:var(--s9);border:1px solid var(--s7);border-radius:8px;padding:7px 9px;color:var(--silver);font-family:inherit;font-size:12.5px;outline:none}
+.crm-empty{font-size:12.5px;color:var(--s5);padding:8px 0}
+.crm-orig-notes{font-size:12px;color:var(--s4);line-height:1.6;white-space:pre-wrap}
+.crm-out-entry{padding:9px 0;border-bottom:1px solid rgba(43,53,67,.5)}
+.crm-out-entry:last-child{border-bottom:none}
+.crm-out-header{display:flex;align-items:center;gap:7px;margin-bottom:4px}
+.crm-out-type{background:rgba(111,211,240,.12);color:var(--cyan);border-radius:8px;padding:2px 7px;font-size:11px;font-weight:700}
+.crm-out-result{border-radius:8px;padding:2px 7px;font-size:11px;font-weight:700}
+.crm-out-result.r-חיובי{background:rgba(34,197,94,.12);color:#22c55e}
+.crm-out-result.r-שלילי{background:rgba(239,68,68,.12);color:#ef4444}
+.crm-out-result.r-מעניין{background:rgba(139,92,246,.12);color:#8b5cf6}
+.crm-out-result.r-אין-מענה,.crm-out-result.r-לחזור{background:rgba(107,114,128,.12);color:#9ca3af}
+.crm-out-date{font-size:11px;color:var(--s4);margin-right:auto}
+.crm-out-notes{font-size:12.5px;color:var(--silver);line-height:1.5}
 .leaflet-popup-content{font-family:'Heebo',sans-serif;direction:rtl}
 .hg2-tripday{display:flex;gap:11px;background:var(--s9);border:1px solid var(--s7);border-radius:11px;padding:11px 13px;width:100%;text-align:right;font-family:inherit;color:var(--silver);cursor:pointer;align-items:flex-start}
 .hg2-tripday:active{border-color:var(--cyan)}
