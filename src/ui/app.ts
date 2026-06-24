@@ -379,7 +379,7 @@ export function mountApp(root: HTMLElement) {
           <label><span data-i18n="pikaVolume">עוצמת קול פיקאצ'ו</span> <span id="pikaVolVal" class="range-val">60%</span></label>
           <input type="range" id="pikaVolSlider" min="0" max="100" value="60" />
           <label><span data-i18n="pikaPitch">גובה קול פיקאצ'ו</span> <span id="pikaPitchVal" class="range-val">1.4</span></label>
-          <input type="range" id="pikaPitchSlider" min="50" max="200" value="140" />
+          <input type="range" id="pikaPitchSlider" min="50" max="800" value="140" />
           <button class="test-voice-btn" id="pikaSpeakBtn" data-i18n="pikaSpeakNow">פיקה פיקה!</button>
         </div>
 
