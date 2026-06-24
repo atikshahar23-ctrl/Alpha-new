@@ -184,6 +184,9 @@ body::after {
 .stage canvas {
   display: block;
   background: transparent !important;
+  pointer-events: auto;
+  touch-action: none;
+  cursor: pointer;
 }
 
 /* ========== LEFT PANEL (SYSTEM HUD) ========== */

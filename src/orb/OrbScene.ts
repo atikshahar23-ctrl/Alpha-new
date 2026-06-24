@@ -368,6 +368,7 @@ interface PikachuParts {
   sparkMats: THREE.MeshBasicMaterial[];
   sparkMeshes: THREE.Mesh[];
   auraMat: THREE.MeshBasicMaterial;
+  coronaMats: THREE.SpriteMaterial[];
 }
 
 function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
@@ -965,7 +966,27 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   pikaSideLight.position.set(1.8, 0.8, 0.8);
   group.add(pikaSideLight);
 
-  return { group, head: headGroup, leftEye, rightEye, leftPupil, rightPupil, leftEyelid, rightEyelid, leftEarGroup, rightEarGroup, cheekMatL, cheekMatR, tail, leftArm, rightArm, mouthMesh, tongue, sparks, sparkMats, sparkMeshes, auraMat };
+  // Electric corona — sprite-based glowing bolts (visible on all devices, unlike Lines)
+  const coronaMats: THREE.SpriteMaterial[] = [];
+  const CORONA_N = Math.round(12 * detail);
+  for (let i = 0; i < CORONA_N; i++) {
+    const color = i % 3 === 0 ? 0xFFFFFF : (i % 3 === 1 ? 0xFFE030 : 0xFFCC00);
+    const cm = new THREE.SpriteMaterial({
+      map: glowTexture(), color,
+      transparent: true, opacity: 0.7,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    coronaMats.push(cm);
+    const cs = new THREE.Sprite(cm);
+    const angle = (i / CORONA_N) * PI2 + Math.random() * 0.5;
+    const r = 1.0 + Math.random() * 0.65;
+    const sz = 0.18 + Math.random() * 0.22;
+    cs.scale.setScalar(sz);
+    cs.position.set(Math.cos(angle) * r, -0.35 + Math.random() * 1.1, Math.sin(angle) * r);
+    sparks.add(cs);
+  }
+
+  return { group, head: headGroup, leftEye, rightEye, leftPupil, rightPupil, leftEyelid, rightEyelid, leftEarGroup, rightEarGroup, cheekMatL, cheekMatR, tail, leftArm, rightArm, mouthMesh, tongue, sparks, sparkMats, sparkMeshes, auraMat, coronaMats };
 }
 
 // Atmosphere glow shaders — volumetric, animated, multi-fresnel
@@ -1618,15 +1639,12 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
       pika.mouthMesh.position.y = -0.12 - mouthOpen;
     }
     // Electricity aura — always faintly visible, flares with zap or charge
-    pika.auraMat.opacity = Math.max(0.018 + Math.sin(time * 4.0) * 0.008, Math.max(zapStrength * (0.12 + Math.sin(time * 30) * 0.04), chargeLevel * (0.3 + Math.sin(time * 40) * 0.1)));
-    // Randomize spark rotations for more dynamic feel
-    if (sparkBurst > 0 || chargeLevel > 0.1) {
-      for (let si = 0; si < Math.min(pika.sparkMeshes.length, 6); si++) {
-        const idx = Math.floor(Math.sin(time * 20 + si * 3.7) * 0.5 + 0.5) * 3;
-        if (idx < pika.sparkMeshes.length) {
-          pika.sparkMeshes[idx].rotation.z += 0.15;
-        }
-      }
+    pika.auraMat.opacity = Math.max(0.04 + Math.sin(time * 4.0) * 0.02, Math.max(zapStrength * (0.15 + Math.sin(time * 30) * 0.05), chargeLevel * (0.4 + Math.sin(time * 40) * 0.1)));
+    // Corona sprites — always-on electric glow (visible on all devices)
+    for (let ci = 0; ci < pika.coronaMats.length; ci++) {
+      const phase = Math.sin(time * 5.5 + ci * 2.1) * Math.cos(time * 3.2 + ci * 1.4);
+      const base = 0.30 + Math.abs(phase) * 0.55;
+      pika.coronaMats[ci].opacity = Math.min(1, base + zapStrength * 0.9 + chargeLevel * 2.0);
     }
 
     goldRing.rotation.z = 0.15 + time * 0.1;
@@ -2488,15 +2506,12 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       pika.mouthMesh.position.y = -0.12 - mouthOpen;
     }
     // Electricity aura — always faintly visible, flares with zap or charge
-    pika.auraMat.opacity = Math.max(0.018 + Math.sin(time * 4.0) * 0.008, Math.max(zapStrength * (0.12 + Math.sin(time * 30) * 0.04), chargeLevel * (0.3 + Math.sin(time * 40) * 0.1)));
-    // Randomize spark rotations for more dynamic feel
-    if (sparkBurst > 0 || chargeLevel > 0.1) {
-      for (let si = 0; si < Math.min(pika.sparkMeshes.length, 6); si++) {
-        const idx = Math.floor(Math.sin(time * 20 + si * 3.7) * 0.5 + 0.5) * 3;
-        if (idx < pika.sparkMeshes.length) {
-          pika.sparkMeshes[idx].rotation.z += 0.15;
-        }
-      }
+    pika.auraMat.opacity = Math.max(0.04 + Math.sin(time * 4.0) * 0.02, Math.max(zapStrength * (0.15 + Math.sin(time * 30) * 0.05), chargeLevel * (0.4 + Math.sin(time * 40) * 0.1)));
+    // Corona sprites — always-on electric glow (visible on all devices)
+    for (let ci = 0; ci < pika.coronaMats.length; ci++) {
+      const phase = Math.sin(time * 5.5 + ci * 2.1) * Math.cos(time * 3.2 + ci * 1.4);
+      const base = 0.30 + Math.abs(phase) * 0.55;
+      pika.coronaMats[ci].opacity = Math.min(1, base + zapStrength * 0.9 + chargeLevel * 2.0);
     }
 
     rings[0].mesh.rotation.z = 0.15 + time * 0.07;
