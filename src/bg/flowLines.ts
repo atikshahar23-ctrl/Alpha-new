@@ -606,8 +606,15 @@ export function mountFlowLines(container: HTMLElement): { dispose: () => void } 
   }
 
   let startTime = 0;
+  let lastDraw = 0;
+  const FRAME_MS = 1000 / 30; // background only needs 30fps — half the CPU cost
   function frame(ts: number) {
     raf = requestAnimationFrame(frame);
+    // Skip all work when the page is hidden or a fullscreen overlay covers us.
+    if (document.hidden || document.body.classList.contains('bg-paused')) return;
+    // Throttle to 30fps — imperceptible for an ambient background, big CPU win.
+    if (ts - lastDraw < FRAME_MS) return;
+    lastDraw = ts;
     if (!startTime) startTime = ts;
     const t = (ts - startTime) / 1000;
 
