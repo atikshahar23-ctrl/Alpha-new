@@ -669,7 +669,7 @@ export function mountApp(root: HTMLElement) {
   // render loops check it and skip work. Also pause when the tab is hidden.
   (function setupBgPause() {
     const overlaySelectors = [
-      '#hgOverlay', '#overlay', '#win', '#arOverlay', '#searchOverlay', '.cockpit-overlay',
+      '#hgOverlay', '#arOverlay', '.cockpit-overlay',
     ];
     const update = () => {
       const anyOpen = overlaySelectors.some(sel => {
