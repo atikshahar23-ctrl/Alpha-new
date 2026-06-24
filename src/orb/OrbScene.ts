@@ -1562,7 +1562,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
 
   function frame(now: number) {
     raf = requestAnimationFrame(frame);
-    if (document.hidden) return;
+    if (document.hidden || document.body.classList.contains('bg-paused')) return;
     if (now - lastFrame < 33) return;
     lastFrame = now;
     const dt = 0.016;
@@ -2433,7 +2433,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
 
   function frame(now: number) {
     raf = requestAnimationFrame(frame);
-    if (document.hidden) return;
+    if (document.hidden || document.body.classList.contains('bg-paused')) return;
     if (now - lastFrame < 33) return;
     lastFrame = now;
     const dt = 0.016;
