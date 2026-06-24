@@ -18,6 +18,7 @@ import { startTimer, stopTimer, formatDuration, getActiveTimer } from '../module
 import { saveChatMessage, loadChatHistory, clearChatHistory } from '../modules/chatHistory';
 import { trackSentiment, averageSentiment } from '../modules/sentiment';
 import { calculateScore, scoreLabel } from '../modules/scoring';
+import { toastInfo } from '../modules/toast';
 import { checkIntegrity, repairCorrupted } from '../modules/dataIntegrity';
 
 const UI_STRINGS: Record<string, Record<UILang, string>> = {
@@ -986,6 +987,12 @@ export function mountApp(root: HTMLElement) {
       if (r.switched && r.module !== 'general') {
         const mod = moduleById(r.module);
         if (mod) addMsg(`▸ ${mod.label} module`, 'sys');
+      }
+      // Make long-term memory visible: confirm when the assistant learns
+      // something durable about the user.
+      if (r.captured) {
+        const c = r.captured.length > 70 ? r.captured.slice(0, 70) + '…' : r.captured;
+        toastInfo(state.uiLang === 'he' ? '💾 נשמר בזיכרון' : '💾 Saved to memory', c);
       }
     } catch {}
     try {

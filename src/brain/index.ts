@@ -18,12 +18,12 @@ let injectedContext = '';
 
 // Called by the app before askAI(). Returns the routing decision so the UI
 // can reflect the active module.
-export function orchestrate(userText: string): { module: ModuleId; switched: boolean; confidence: number } {
+export function orchestrate(userText: string): { module: ModuleId; switched: boolean; confidence: number; captured: string | null } {
   const r = route(userText);
   const mod = moduleById(r.module);
 
   // Auto-capture durable facts from the user's own words.
-  autoCapture(userText, r.module);
+  const captured = autoCapture(userText, r.module);
 
   // Assemble the brain block injected into the system prompt.
   const memBlock = buildMemoryContext(userText, r.module);
@@ -31,7 +31,7 @@ export function orchestrate(userText: string): { module: ModuleId; switched: boo
   const fragment = mod ? mod.systemFragment : '';
   injectedContext = [fragment, snapshot, memBlock].filter(Boolean).join('\n\n');
 
-  return { module: r.module, switched: r.switched, confidence: r.confidence };
+  return { module: r.module, switched: r.switched, confidence: r.confidence, captured };
 }
 
 // Read by gemini.systemPrompt() to extend the prompt without a circular dep.
