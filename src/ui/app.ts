@@ -648,6 +648,37 @@ export function mountApp(root: HTMLElement) {
     });
   } catch (e) { console.error('cockpit mount failed', e); }
 
+  // ── Performance: pause the 3D orb + flow-lines background whenever a
+  // fullscreen overlay covers them (HeavyGuard, cockpit, settings, AR, search,
+  // media window). The animations are invisible behind the overlay, so running
+  // them is pure wasted GPU/CPU. We flip a `bg-paused` class on <body>; the
+  // render loops check it and skip work. Also pause when the tab is hidden.
+  (function setupBgPause() {
+    const overlaySelectors = [
+      '#hgOverlay', '#overlay', '#win', '#arOverlay', '#searchOverlay', '.cockpit-overlay',
+    ];
+    const update = () => {
+      const anyOpen = overlaySelectors.some(sel => {
+        const el = document.querySelector(sel);
+        return el && el.classList.contains('show');
+      });
+      document.body.classList.toggle('bg-paused', anyOpen || document.hidden);
+    };
+    const obs = new MutationObserver(update);
+    overlaySelectors.forEach(sel => {
+      const el = document.querySelector(sel);
+      if (el) obs.observe(el, { attributes: true, attributeFilter: ['class'] });
+    });
+    document.addEventListener('visibilitychange', update);
+    // Late-mounted overlays (e.g. cockpit) — observe once present.
+    setTimeout(() => {
+      const cp = document.querySelector('.cockpit-overlay');
+      if (cp) obs.observe(cp, { attributes: true, attributeFilter: ['class'] });
+      update();
+    }, 0);
+    update();
+  })();
+
   // Module indicator chip in the top-right cluster.
   const moduleChip = document.createElement('button');
   moduleChip.className = 'chip module-chip';
