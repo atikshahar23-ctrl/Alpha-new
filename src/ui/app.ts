@@ -950,6 +950,26 @@ export function mountApp(root: HTMLElement) {
         onHgSearch: hgSearchLicense,
         onHgEarnings: hgShowEarnings,
         onHgQuote: hgCreateQuote,
+        onHgReport: async (f: string[]) => {
+          const [idNumber, idType, contractor, date, priceStr, vehicleType, manufacturer, installType, location, customer, phone] = f;
+          const record = {
+            id: Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+            idNumber: idNumber || '', idType: idType || '', contractor: contractor || '',
+            date: date || new Date().toISOString().slice(0, 10),
+            price: parseFloat(priceStr) || 0,
+            vehicleType: vehicleType || '', manufacturer: manufacturer || '',
+            installType: installType || '', location: location || '',
+            customer: customer || '', phone: phone || '',
+            reportedAt: new Date().toISOString(),
+          };
+          const index = await hgLoad('hg2:index');
+          index.unshift(record);
+          const storage = (window as any).storage || (window as any).puter?.kv;
+          if (storage) { try { await storage.set('hg2:index', JSON.stringify(index)); } catch {} }
+          localStorage.setItem('hg2:index', JSON.stringify(index));
+          const timeStr = new Date(record.reportedAt).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' });
+          addMsg(`✅ התקנה נשמרה — ${record.idNumber || 'ללא מספר'} · דווח ב-${timeStr}`, 'sys');
+        },
         onArCamera: openArCamera,
         onGDoc: openGDoc,
         onTask: (text: string, priority: string) => {
@@ -1071,6 +1091,7 @@ export function mountApp(root: HTMLElement) {
       date: r.date, price: r.price, vehicleType: r.vehicleType,
       manufacturer: r.manufacturer, installType: r.installType,
       location: r.location, customer: r.customer, phone: r.phone,
+      reportedAt: r.reportedAt || '',
     }));
     if (!results.length) {
       addMsg(`לא נמצאו תוצאות עבור: ${query}`, 'sys');
@@ -1079,6 +1100,9 @@ export function mountApp(root: HTMLElement) {
     openWin(`HeavyGuard · חיפוש: ${query}`);
     let html = '<div class="pad">';
     for (const r of results) {
+      const reportedAtStr = r.reportedAt
+        ? new Date(r.reportedAt).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' })
+        : '';
       html += `<div style="background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:10px">
         <div style="display:flex;justify-content:space-between;margin-bottom:8px">
           <span style="color:var(--cyan);font-weight:600;font-size:18px;direction:ltr">${r.idNumber || '—'}</span>
@@ -1093,6 +1117,7 @@ export function mountApp(root: HTMLElement) {
           <span><span style="color:var(--dim)">מיקום:</span> ${r.location || ''}</span>
           ${r.customer ? `<span><span style="color:var(--dim)">לקוח:</span> ${r.customer}</span>` : ''}
           ${r.phone ? `<span><span style="color:var(--dim)">טלפון:</span> <a href="tel:${r.phone}" style="color:var(--cyan)">${r.phone}</a></span>` : ''}
+          ${reportedAtStr ? `<span style="grid-column:1/-1;color:var(--dim);font-size:11px;margin-top:4px;border-top:1px solid var(--line);padding-top:4px">⏱ דווח: ${reportedAtStr}</span>` : ''}
         </div>
       </div>`;
     }
