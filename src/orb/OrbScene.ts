@@ -281,31 +281,29 @@ function createPikachuMaterials(envMap: THREE.Texture | null): PikachuMaterials 
   const ei = envMap ? 1 : 0;
   return {
     yellow: new THREE.MeshPhysicalMaterial({
-      color: 0xFDD835, metalness: 0.0, roughness: 0.48,
-      ...(e ? { envMap: e, envMapIntensity: 0.40 * ei } : {}),
-      clearcoat: 0.22, clearcoatRoughness: 0.26,
-      sheen: 0.28, sheenRoughness: 0.38, sheenColor: new THREE.Color(0xFFE57A),
-      emissive: new THREE.Color(0xFDD835), emissiveIntensity: 0.08,
+      color: 0xFDD835, metalness: 0.0, roughness: 0.52,
+      ...(e ? { envMap: e, envMapIntensity: 0.30 * ei } : {}),
+      clearcoat: 0.18, clearcoatRoughness: 0.30,
+      sheen: 0.20, sheenRoughness: 0.42, sheenColor: new THREE.Color(0xFFE57A),
+      emissive: new THREE.Color(0xFDD835), emissiveIntensity: 0.02,
     }),
     darkYellow: new THREE.MeshPhysicalMaterial({
-      color: 0xC8A415, metalness: 0.0, roughness: 0.55,
-      ...(e ? { envMap: e, envMapIntensity: 0.25 * ei } : {}),
-      clearcoat: 0.1, clearcoatRoughness: 0.35,
-      sheen: 0.12, sheenRoughness: 0.5, sheenColor: new THREE.Color(0xD4AA22),
-      emissive: new THREE.Color(0xC8A415), emissiveIntensity: 0.03,
+      color: 0xC8A415, metalness: 0.0, roughness: 0.58,
+      ...(e ? { envMap: e, envMapIntensity: 0.18 * ei } : {}),
+      clearcoat: 0.08, clearcoatRoughness: 0.38,
+      emissive: new THREE.Color(0xC8A415), emissiveIntensity: 0.01,
     }),
     cream: new THREE.MeshPhysicalMaterial({
-      color: 0xFFFDE7, metalness: 0.0, roughness: 0.44,
-      ...(e ? { envMap: e, envMapIntensity: 0.28 * ei } : {}),
-      clearcoat: 0.16, clearcoatRoughness: 0.26,
-      sheen: 0.18, sheenRoughness: 0.4, sheenColor: new THREE.Color(0xFFFACC),
-      emissive: new THREE.Color(0xFFFDE7), emissiveIntensity: 0.06,
+      color: 0xFFFDE7, metalness: 0.0, roughness: 0.48,
+      ...(e ? { envMap: e, envMapIntensity: 0.20 * ei } : {}),
+      clearcoat: 0.12, clearcoatRoughness: 0.30,
+      emissive: new THREE.Color(0xFFFDE7), emissiveIntensity: 0.02,
     }),
     red: new THREE.MeshPhysicalMaterial({
-      color: 0xE53935, metalness: 0.0, roughness: 0.42,
-      ...(e ? { envMap: e, envMapIntensity: 0.25 * ei } : {}),
-      emissive: new THREE.Color(0xE53935), emissiveIntensity: 0.14,
-      clearcoat: 0.18, clearcoatRoughness: 0.18,
+      color: 0xE53935, metalness: 0.0, roughness: 0.45,
+      ...(e ? { envMap: e, envMapIntensity: 0.20 * ei } : {}),
+      emissive: new THREE.Color(0xE53935), emissiveIntensity: 0.06,
+      clearcoat: 0.14, clearcoatRoughness: 0.20,
     }),
     brown: new THREE.MeshPhysicalMaterial({
       color: 0x5D4037, metalness: 0.0, roughness: 0.6,
@@ -313,10 +311,10 @@ function createPikachuMaterials(envMap: THREE.Texture | null): PikachuMaterials 
       clearcoat: 0.08, clearcoatRoughness: 0.4,
     }),
     white: new THREE.MeshPhysicalMaterial({
-      color: 0xffffff, metalness: 0.0, roughness: 0.12,
-      ...(e ? { envMap: e, envMapIntensity: 0.25 * ei } : {}),
-      emissive: new THREE.Color(0xffffff), emissiveIntensity: 0.35,
-      clearcoat: 0.35, clearcoatRoughness: 0.08,
+      color: 0xffffff, metalness: 0.0, roughness: 0.18,
+      ...(e ? { envMap: e, envMapIntensity: 0.20 * ei } : {}),
+      emissive: new THREE.Color(0xffffff), emissiveIntensity: 0.12,
+      clearcoat: 0.28, clearcoatRoughness: 0.10,
     }),
     black: new THREE.MeshPhysicalMaterial({
       color: 0x0A0A0A, metalness: 0.06, roughness: 0.22,
@@ -334,16 +332,16 @@ function createPikachuMaterials(envMap: THREE.Texture | null): PikachuMaterials 
       clearcoat: 0.28, clearcoatRoughness: 0.12,
     }),
     pink: new THREE.MeshPhysicalMaterial({
-      color: 0xF48FB1, metalness: 0.0, roughness: 0.55,
-      ...(e ? { envMap: e, envMapIntensity: 0.18 * ei } : {}),
-      clearcoat: 0.08, clearcoatRoughness: 0.45,
-      emissive: new THREE.Color(0xF48FB1), emissiveIntensity: 0.08,
+      color: 0xF48FB1, metalness: 0.0, roughness: 0.58,
+      ...(e ? { envMap: e, envMapIntensity: 0.12 * ei } : {}),
+      clearcoat: 0.06, clearcoatRoughness: 0.48,
+      emissive: new THREE.Color(0xF48FB1), emissiveIntensity: 0.03,
     }),
     tongue: new THREE.MeshPhysicalMaterial({
-      color: 0xF06080, metalness: 0.0, roughness: 0.38,
-      ...(e ? { envMap: e, envMapIntensity: 0.15 * ei } : {}),
-      clearcoat: 0.22, clearcoatRoughness: 0.22,
-      emissive: new THREE.Color(0xE84060), emissiveIntensity: 0.10,
+      color: 0xF06080, metalness: 0.0, roughness: 0.40,
+      ...(e ? { envMap: e, envMapIntensity: 0.10 * ei } : {}),
+      clearcoat: 0.16, clearcoatRoughness: 0.24,
+      emissive: new THREE.Color(0xE84060), emissiveIntensity: 0.04,
     }),
   };
 }
@@ -1232,7 +1230,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setClearColor(0x0a0806, 1);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.1;
+  renderer.toneMappingExposure = 0.65;
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
@@ -1250,7 +1248,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     composer.addPass(new RenderPass(scene, camera));
     mBloom = new UnrealBloomPass(
       new THREE.Vector2(window.innerWidth * pr0, window.innerHeight * pr0),
-      0.22, 0.4, 0.65,
+      0.08, 0.5, 0.78,
     );
     composer.addPass(mBloom);
     const mVignette = new ShaderPass(GOLD_VIGNETTE_SHADER);
@@ -1284,20 +1282,20 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   const group = new THREE.Group();
   scene.add(group);
 
-  // ── PBR lighting for mobile ──
-  const mKey = new THREE.DirectionalLight(0xffffff, 5.0);
-  mKey.position.set(2, 4, 5);
+  // ── Balanced lighting for mobile — expose Pikachu shape without blowout ──
+  const mKey = new THREE.DirectionalLight(0xfff8e0, 2.2);
+  mKey.position.set(2, 3, 5);
   scene.add(mKey);
-  const mFill = new THREE.DirectionalLight(0xFFE860, 2.5);
+  const mFill = new THREE.DirectionalLight(0xFFE860, 0.9);
   mFill.position.set(-3, 2, 4);
   scene.add(mFill);
-  const mFront = new THREE.DirectionalLight(0xFFFAE8, 2.0);
+  const mFront = new THREE.DirectionalLight(0xFFFAE8, 0.7);
   mFront.position.set(0, 1, 6);
   scene.add(mFront);
-  const mRim = new THREE.DirectionalLight(0xfff8f0, 2.0);
+  const mRim = new THREE.DirectionalLight(0xffe0b0, 0.5);
   mRim.position.set(0, 2, -4);
   scene.add(mRim);
-  const mAmbient = new THREE.AmbientLight(0x2a1e08, 1.2);
+  const mAmbient = new THREE.AmbientLight(0x1a1208, 0.6);
   scene.add(mAmbient);
 
   // ────────────────────────────────────────────
@@ -1515,7 +1513,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     amp += (ampTarget - amp) * 0.07;
 
     // Long-press charge: ramp up bloom and exposure
-    if (mBloom) mBloom.strength = 0.22 + chargeLevel * 4.5;
+    if (mBloom) mBloom.strength = 0.08 + chargeLevel * 2.0;
     renderer.toneMappingExposure = 0.9 + chargeLevel * 2.5;
 
     glitchTimer += dt;
