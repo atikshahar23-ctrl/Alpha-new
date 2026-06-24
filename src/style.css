@@ -856,6 +856,73 @@ body::after {
   border-color: var(--cyan);
 }
 
+/* ========== VOICE STUDIO ========== */
+.voice-studio { position: relative; }
+.voice-studio .ss-title {
+  color: var(--gold);
+  text-shadow: 0 0 12px rgba(218,165,32,.25);
+}
+.voice-presets {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  margin: 4px 0 10px;
+}
+.vp-chip {
+  flex: 0 0 auto;
+  padding: 7px 13px;
+  background: rgba(255,255,255,.03);
+  border: 1px solid rgba(218,165,32,.14);
+  border-radius: 20px;
+  color: var(--dim);
+  font-family: "Assistant", sans-serif;
+  font-size: 12.5px; font-weight: 500;
+  cursor: pointer;
+  transition: transform var(--spring), background .2s, border-color .2s, color .2s, box-shadow .3s;
+}
+.vp-chip:hover {
+  color: var(--ink);
+  border-color: rgba(218,165,32,.35);
+  background: rgba(218,165,32,.06);
+  transform: translateY(-1px);
+}
+.vp-chip:active { transform: scale(.94); }
+.vp-chip.active {
+  color: #0a0806;
+  background: linear-gradient(135deg, #daa520, #f5e6c8);
+  border-color: transparent;
+  font-weight: 600;
+  box-shadow: 0 2px 12px rgba(218,165,32,.3), inset 0 1px 0 rgba(255,255,255,.25);
+}
+
+.voice-row { display: flex; gap: 8px; align-items: stretch; }
+.voice-row select { flex: 1; }
+.voice-play-btn {
+  flex: 0 0 auto;
+  width: 46px;
+  border-radius: 12px; border: 1px solid rgba(218,165,32,.2);
+  background: rgba(218,165,32,.08);
+  color: var(--cyan);
+  font-size: 15px; cursor: pointer;
+  transition: background .2s, border-color .2s, transform var(--spring);
+}
+.voice-play-btn:hover {
+  background: rgba(218,165,32,.18); border-color: var(--cyan);
+  transform: scale(1.05);
+}
+.voice-play-btn:active { transform: scale(.92); }
+
+.voice-btn-row { display: flex; gap: 8px; margin-top: 8px; }
+.voice-btn-row .test-voice-btn { margin-top: 0; flex: 1; }
+.vstudio-reset {
+  flex: 0 0 auto !important;
+  max-width: 90px;
+  color: var(--dim) !important;
+  border-color: var(--line) !important;
+}
+.vstudio-reset:hover {
+  color: var(--ink) !important;
+  border-color: rgba(218,165,32,.3) !important;
+}
+
 .social-grid {
   display: flex; flex-direction: column; gap: 10px;
 }

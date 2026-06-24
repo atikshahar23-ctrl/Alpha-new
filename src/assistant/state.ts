@@ -23,6 +23,7 @@ export interface AppState {
   voiceGender: VoiceGender;
   voiceSpeed: number;
   voicePitch: number;
+  voiceVolume: number;
   ambLevel: number;
   ambPreset: string;
   sfxOn: boolean;
@@ -43,7 +44,7 @@ const KEY = 'alpha_key', GROK = 'alpha_grok', OPENAI = 'alpha_openai', PROV = 'a
   TEXTLANG = 'alpha_textLang', AMB = 'alpha_amb', AMBPRESET = 'alpha_ambpreset',
   SFX = 'alpha_sfx', WAKE = 'alpha_wake',
   VOICE = 'alpha_voice', VGENDER = 'alpha_vgender', VSPEED = 'alpha_vspeed',
-  VPITCH = 'alpha_vpitch', THEME = 'alpha_theme', FONTSIZE = 'alpha_fontsize',
+  VPITCH = 'alpha_vpitch', VVOLUME = 'alpha_vvolume', THEME = 'alpha_theme', FONTSIZE = 'alpha_fontsize',
   HAPTICS = 'alpha_haptics', AUTOSPEAK = 'alpha_autospeak', UILANG = 'alpha_uilang',
   PIKAVOICE = 'alpha_pikavoice', PIKAVOL = 'alpha_pikavol', PIKAPITCH = 'alpha_pikapitch';
 
@@ -54,6 +55,8 @@ export function loadState(): AppState {
   if (isNaN(vspeed)) vspeed = 1.0;
   let vpitch = parseFloat(localStorage.getItem(VPITCH) || '');
   if (isNaN(vpitch)) vpitch = 1.0;
+  let vvolume = parseFloat(localStorage.getItem(VVOLUME) || '');
+  if (isNaN(vvolume)) vvolume = 1.0;
   let fontSize = parseInt(localStorage.getItem(FONTSIZE) || '');
   if (isNaN(fontSize)) fontSize = 14;
   return {
@@ -71,6 +74,7 @@ export function loadState(): AppState {
     voiceGender: (localStorage.getItem(VGENDER) as VoiceGender) || 'female',
     voiceSpeed: vspeed,
     voicePitch: vpitch,
+    voiceVolume: vvolume,
     ambLevel: amb,
     ambPreset: localStorage.getItem(AMBPRESET) || 'pad',
     sfxOn: localStorage.getItem(SFX) !== '0',
@@ -104,6 +108,7 @@ export function saveState(s: AppState) {
   localStorage.setItem(VGENDER, s.voiceGender);
   localStorage.setItem(VSPEED, s.voiceSpeed.toFixed(2));
   localStorage.setItem(VPITCH, s.voicePitch.toFixed(2));
+  localStorage.setItem(VVOLUME, s.voiceVolume.toFixed(2));
   localStorage.setItem(THEME, s.theme);
   localStorage.setItem(FONTSIZE, String(s.fontSize));
   localStorage.setItem(HAPTICS, s.haptics ? '1' : '0');
