@@ -1269,9 +1269,9 @@ function setupChuEffect(
 // ============================================================
 function mountMobileOrb(container: HTMLElement): OrbHandle {
   const renderer = new THREE.WebGLRenderer({
-    antialias: false,
+    antialias: true,
     alpha: false,
-    powerPreference: 'default',
+    powerPreference: 'high-performance',
     failIfMajorPerformanceCaveat: false,
   });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -1288,10 +1288,17 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   // Try full post-processing pipeline; if it fails use direct render
   let composer: EffectComposer | null = null;
   let mBloom: UnrealBloomPass | null = null;
+  let mFxaa: ShaderPass | null = null;
   let useComposer = false;
   try {
     const pr0 = Math.min(window.devicePixelRatio || 1, 2);
-    composer = new EffectComposer(renderer);
+    // Multisampled (MSAA) render target — crisp edges instead of pixelated
+    const mRT = new THREE.WebGLRenderTarget(
+      Math.max(1, Math.floor((container.clientWidth || window.innerWidth) * pr0)),
+      Math.max(1, Math.floor((container.clientHeight || window.innerHeight) * pr0)),
+      { samples: 4 },
+    );
+    composer = new EffectComposer(renderer, mRT);
     composer.addPass(new RenderPass(scene, camera));
     mBloom = new UnrealBloomPass(
       new THREE.Vector2(window.innerWidth * pr0, window.innerHeight * pr0),
@@ -1301,7 +1308,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     const mVignette = new ShaderPass(GOLD_VIGNETTE_SHADER);
     mVignette.uniforms.darkness.value = 0.7;
     composer.addPass(mVignette);
-    const mFxaa = new ShaderPass(FXAAShader);
+    mFxaa = new ShaderPass(FXAAShader);
     composer.addPass(mFxaa);
     composer.addPass(new OutputPass());
     // Test render to confirm pipeline works
@@ -1310,6 +1317,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   } catch {
     composer = null;
     mBloom = null;
+    mFxaa = null;
     useComposer = false;
   }
 
@@ -1320,6 +1328,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     renderer.setPixelRatio(pr);
     renderer.setSize(w, h, true);
     if (composer) composer.setSize(w * pr, h * pr);
+    if (mFxaa) mFxaa.uniforms['resolution'].value.set(1 / (w * pr), 1 / (h * pr));
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
   }
@@ -1351,7 +1360,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   const envMap = createEnvMap(renderer);
   if (envMap) scene.environment = envMap;
   const pikaMats = createPikachuMaterials(envMap);
-  const pika = buildPikachu(pikaMats, 0.6);
+  const pika = buildPikachu(pikaMats, 1.0);
   const pikaGroup = pika.group;
   pikaGroup.scale.setScalar(0.95);
   group.add(pikaGroup);
@@ -1803,7 +1812,13 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   // POST-PROCESSING PIPELINE
   // ────────────────────────────────────────────
   const dpr0 = window.devicePixelRatio || 1;
-  const composer = new EffectComposer(renderer);
+  // Multisampled (MSAA) render target — crisp edges through the post pipeline
+  const deskRT = new THREE.WebGLRenderTarget(
+    Math.max(1, Math.floor((container.clientWidth || window.innerWidth) * dpr0)),
+    Math.max(1, Math.floor((container.clientHeight || window.innerHeight) * dpr0)),
+    { samples: 4 },
+  );
+  const composer = new EffectComposer(renderer, deskRT);
   composer.addPass(new RenderPass(scene, camera));
 
   const bloom = new UnrealBloomPass(
