@@ -1080,6 +1080,7 @@ export function mountApp(root: HTMLElement) {
       return;
     }
     const results = index.filter((r: any) => {
+      if (r.status === 'running') return false;
       const id = (r.idNumber || '').replace(/[-\s]/g, '').toLowerCase();
       const cust = (r.customer || '').toLowerCase();
       const veh = (r.vehicleType || '').toLowerCase();
@@ -1133,7 +1134,7 @@ export function mountApp(root: HTMLElement) {
     }
     const curMonth = new Date().toISOString().slice(0, 7);
     const effectiveMonth = month || curMonth;
-    let filtered = index;
+    let filtered = index.filter((r: any) => r.status !== 'running');
     if (contractor) {
       const cLow = contractor.toLowerCase();
       filtered = filtered.filter((r: any) => {
@@ -1194,7 +1195,10 @@ export function mountApp(root: HTMLElement) {
           <span style="color:var(--dim);font-size:12px;min-width:60px;text-align:left">${pct}% · ${info.count} עבודות</span>
         </div>
         ${allTime ? `<div style="font-size:11px;color:var(--dim);opacity:.6">סה"כ כללי: ₪${allTime.total.toLocaleString()} (${allTime.count} עבודות)</div>` : ''}
-        <button data-target="${uid}" style="margin-top:8px;background:none;border:1px solid var(--line);color:var(--cyan);padding:6px 14px;border-radius:8px;cursor:pointer;font-size:12px;transition:.2s" class="earningsToggle">פרטי עבודות ▼</button>
+        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+        <button data-target="${uid}" style="background:none;border:1px solid var(--line);color:var(--cyan);padding:6px 14px;border-radius:8px;cursor:pointer;font-size:12px;transition:.2s" class="earningsToggle">פרטי עבודות ▼</button>
+        <button data-send="${uid}" data-name="${name}" style="background:none;border:1px solid rgba(218,165,32,.4);color:var(--gold);padding:6px 14px;border-radius:8px;cursor:pointer;font-size:12px;transition:.2s" class="earningsSend">📤 שלח דוח לקבלן</button>
+        </div>
         <div id="${uid}" style="display:none;margin-top:8px">
           ${info.jobs.map((j: any) => `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(218,165,32,.05);font-size:12px">
             <span style="color:var(--dim)">${j.date || ''} · ${j.type || ''} · ${j.vehicle || ''}</span>
@@ -1212,6 +1216,41 @@ export function mountApp(root: HTMLElement) {
           const open = target.style.display !== 'none';
           target.style.display = open ? 'none' : 'block';
           btn.textContent = open ? 'פרטי עבודות ▼' : 'הסתר ▲';
+        }
+      };
+    });
+    $('winBody').querySelectorAll<HTMLButtonElement>('.earningsSend').forEach(btn => {
+      btn.onclick = async () => {
+        const cn = btn.dataset.name || '';
+        const info = byContractor[cn];
+        if (!info) return;
+        // Build a clean statement for this contractor + month
+        const lines: string[] = [];
+        lines.push(`דוח עבודות — ${cn}`);
+        lines.push(`חודש: ${monthLabel}`);
+        lines.push('────────────────────');
+        const jobs = [...info.jobs].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+        jobs.forEach((j: any, i: number) => {
+          const d = j.date ? new Date(j.date).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—';
+          const desc = [j.type, j.vehicle].filter(Boolean).join(' · ') || 'התקנה';
+          const idPart = j.id ? ` (${j.id})` : '';
+          lines.push(`${i + 1}. ${d} · ${desc}${idPart} — ₪${(j.price || 0).toLocaleString()}`);
+        });
+        lines.push('────────────────────');
+        lines.push(`סה"כ ${info.count} עבודות: ₪${info.total.toLocaleString()}`);
+        lines.push('');
+        lines.push('* לפני הוצאת חשבונית — נא לאשר את הנתונים.');
+        const text = lines.join('\n');
+        try {
+          if (navigator.share) {
+            await navigator.share({ title: `דוח ${cn} · ${monthLabel}`, text });
+          } else {
+            await navigator.clipboard.writeText(text);
+            addMsg(`📋 הדוח של ${cn} הועתק — אפשר להדביק בוואטסאפ`, 'sys');
+          }
+        } catch {
+          // Fallback: open WhatsApp with the report prefilled
+          window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
         }
       };
     });

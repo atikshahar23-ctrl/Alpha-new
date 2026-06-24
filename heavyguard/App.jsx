@@ -184,6 +184,7 @@ export default function App() {
   const [view, setView] = useState("hub"); // hub | logger | analytics | customers | pricing | vehicle | suppliers | carstock | invoices | new | detail
   const [prevTab, setPrevTab] = useState("logger");
   const [detailId, setDetailId] = useState(null);
+  const [resumeId, setResumeId] = useState(null);
   const [toast, setToast] = useState(null);
 
   useEffect(() => {
@@ -204,8 +205,30 @@ export default function App() {
     showToast("האפליקציה נוקתה — מוכן לתיעוד חדש");
   };
 
-  const addInstall = async (data, photoFull, media = {}) => {
+  // Save a draft the moment an installation is STARTED, so it persists even if
+  // the user leaves the screen mid-job. Returns the draft so the timer stays in sync.
+  const startDraft = async (contractor) => {
     const id = uid();
+    const entry = {
+      id, contractor, status: "running", startTs: Date.now(), date: todayISO(),
+      location: "", idType: "רישוי", idNumber: "", installType: "", manufacturer: "",
+      vehicleType: "", price: 0, phone: "", customer: "", withItai: false,
+      thumb: null, hasPhoto: false, photoThumbs: [], photoCount: 0,
+      hasVideo: false, videoStored: false, videoPoster: null, durationSec: 0,
+    };
+    const next = [entry, ...index];
+    setIndex(next); await saveIndex(next);
+    return entry;
+  };
+  // Remove a draft that was abandoned via "ביטול" before any real data was entered.
+  const discardDraft = async (id) => {
+    const next = index.filter((x) => x.id !== id);
+    setIndex(next); await saveIndex(next);
+    await store.del("hg2:photo:" + id); await store.del("hg2:gallery:" + id); await store.del("hg2:video:" + id);
+  };
+
+  const addInstall = async (data, photoFull, media = {}, existingId = null) => {
+    const id = existingId || uid();
     if (photoFull) { try { await store.set("hg2:photo:" + id, photoFull); } catch {} }
     const gf = media.galleryFull || [];
     if (gf.length) { try { await store.set("hg2:gallery:" + id, JSON.stringify(gf)); } catch {} }
@@ -214,14 +237,17 @@ export default function App() {
       try { await store.set("hg2:video:" + id, media.video.dataUrl); videoStored = true; } catch { videoStored = false; }
     }
     const entry = {
-      id, ...data, thumb: data.thumb || null, hasPhoto: !!photoFull,
+      id, ...data, status: undefined, thumb: data.thumb || null, hasPhoto: !!photoFull,
       photoThumbs: media.galleryThumbs || [], photoCount: gf.length,
       videoPoster: media.video ? media.video.poster || null : null,
       hasVideo: !!(media.video && (media.video.poster || videoStored)), videoStored,
     };
     delete entry.photoFull;
-    const next = [entry, ...index];
+    delete entry.status; // finalizing → no longer an in-progress draft
+    const exists = index.some((x) => x.id === id);
+    const next = exists ? index.map((x) => x.id === id ? entry : x) : [entry, ...index];
     setIndex(next); await saveIndex(next);
+    setResumeId(null);
     setView("logger");
     showToast("ההתקנה נשמרה · " + cName(data.contractor));
   };
@@ -262,7 +288,7 @@ export default function App() {
       <Styles />
       <div className="hg2-page">
         {view === "hub" && <Hub index={index} go={setView} onNew={() => setView("new")} />}
-        {view === "logger" && <Home index={index} onBack={() => setView("hub")} onNew={() => setView("new")} onOpen={(id) => { setDetailId(id); setPrevTab("logger"); setView("detail"); }} showToast={showToast} onReset={resetAll} />}
+        {view === "logger" && <Home index={index} onBack={() => setView("hub")} onNew={() => setView("new")} onOpen={(id) => { setDetailId(id); setPrevTab("logger"); setView("detail"); }} onResume={(id) => { setResumeId(id); setView("new"); }} showToast={showToast} onReset={resetAll} />}
         {view === "analytics" && <Analytics index={index} onBack={() => setView("hub")} />}
         {view === "customers" && <Customers index={index} onBack={() => setView("hub")} showToast={showToast} />}
         {view === "pricing" && <Pricing onBack={() => setView("hub")} showToast={showToast} />}
@@ -274,7 +300,7 @@ export default function App() {
         {view === "backup" && <Backup onBack={() => setView("hub")} showToast={showToast} />}
         {view === "finance" && <Finance index={index} onBack={() => setView("hub")} />}
         {view === "settings" && <SettingsView onBack={() => setView("hub")} showToast={showToast} />}
-        {view === "new" && <NewInstall onCancel={() => setView("logger")} onSave={addInstall} showToast={showToast} />}
+        {view === "new" && <NewInstall onCancel={() => setView("logger")} onSave={addInstall} onStartDraft={startDraft} onDiscardDraft={discardDraft} resumeEntry={resumeId ? index.find((x) => x.id === resumeId) : null} showToast={showToast} />}
         {view === "detail" && <Detail entry={index.find((x) => x.id === detailId)} onBack={() => setView(prevTab)} onDelete={removeInstall} onUpdate={updateInstall} showToast={showToast} />}
       </div>
       {toast && <div className={"hg2-toast " + toast.kind}>{toast.kind === "ok" ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}{toast.msg}</div>}
@@ -409,21 +435,25 @@ function Stub({ onBack, icon: I, title, lines }) {
 }
 
 /* ============================ Home / History ============================ */
-function Home({ index, onNew, onOpen, showToast, onReset, onBack }) {
+function Home({ index, onNew, onOpen, onResume, showToast, onReset, onBack }) {
   const [q, setQ] = useState("");
   const [filt, setFilt] = useState("all");
 
-  const activeContractors = useMemo(() => CONTRACTORS.filter((c) => index.some((x) => x.contractor === c.id)), [index]);
+  // In-progress drafts (started but not finished) — shown separately at the top
+  const drafts = useMemo(() => index.filter((x) => x.status === "running"), [index]);
+  const done = useMemo(() => index.filter((x) => x.status !== "running"), [index]);
+
+  const activeContractors = useMemo(() => CONTRACTORS.filter((c) => done.some((x) => x.contractor === c.id)), [done]);
 
   const filtered = useMemo(() => {
     const t = q.trim().toLowerCase();
-    return index.filter((x) => {
+    return done.filter((x) => {
       if (filt !== "all" && x.contractor !== filt) return false;
       if (!t) return true;
       return [x.idNumber, x.location, x.manufacturer, x.vehicleType, x.installType, cName(x.contractor)]
         .some((v) => (v || "").toString().toLowerCase().includes(t));
     });
-  }, [index, q, filt]);
+  }, [done, q, filt]);
 
   const stats = useMemo(() => {
     const total = filtered.length;
@@ -440,7 +470,7 @@ function Home({ index, onNew, onOpen, showToast, onReset, onBack }) {
       const wb = XLSX.utils.book_new();
       // per-contractor sheets matching the original column structure
       CONTRACTORS.forEach((c) => {
-        const rows = index.filter((x) => x.contractor === c.id).slice().reverse();
+        const rows = index.filter((x) => x.contractor === c.id && x.status !== "running").slice().reverse();
         if (!rows.length) return;
         const header = c.master
           ? ["תאריך התקנה", "מחיר להתקנה (ש\"ח)", "סוג רכב  ", "יצרן  ", "סוג התקנה", "מספר רישוי", "מיקום ההתקנה", "טלפון", "שם לקוח"]
@@ -456,7 +486,7 @@ function Home({ index, onNew, onOpen, showToast, onReset, onBack }) {
       });
       // analysis sheet with durations
       const aH = ["תאריך", "קבלן", "מיקום", "סוג כלי", "יצרן", "סוג התקנה", "רישוי/שלדה", "מחיר", "זמן התקנה (דק׳)", "תמונה"];
-      const aRows = index.slice().reverse().map((x) => [dmy(x.date), cName(x.contractor), x.location || "", x.vehicleType || "", x.manufacturer || "", x.installType || "", x.idNumber || "", Number(x.price) || 0, x.durationSec ? Math.round(x.durationSec / 60) : "", x.hasPhoto ? "כן" : "לא"]);
+      const aRows = index.filter((x) => x.status !== "running").slice().reverse().map((x) => [dmy(x.date), cName(x.contractor), x.location || "", x.vehicleType || "", x.manufacturer || "", x.installType || "", x.idNumber || "", Number(x.price) || 0, x.durationSec ? Math.round(x.durationSec / 60) : "", x.hasPhoto ? "כן" : "לא"]);
       const wsA = XLSX.utils.aoa_to_sheet([aH, ...aRows]);
       XLSX.utils.book_append_sheet(wb, wsA, "ניתוח והיסטוריה");
       XLSX.writeFile(wb, `HeavyGuard_התקנות_${todayISO()}.xlsx`);
@@ -502,9 +532,26 @@ function Home({ index, onNew, onOpen, showToast, onReset, onBack }) {
         )}
       </>}
 
+      {drafts.length > 0 && (
+        <div className="hg2-drafts">
+          <div className="hg2-listhead"><span>התקנות פעילות — ממתינות לסיום</span></div>
+          {drafts.map((x) => (
+            <button className="hg2-card hg2-card-draft" key={x.id} onClick={() => onResume && onResume(x.id)}>
+              <div className="hg2-card-thumb draft"><span className="hg2-rec" /></div>
+              <div className="hg2-card-mid">
+                <div className="hg2-card-top"><b>{x.vehicleType || "התקנה בתהליך"}</b><span className="hg2-chip">{cName(x.contractor)}</span></div>
+                <div className="hg2-card-sub">החל ב-{x.startTs ? new Date(x.startTs).toLocaleString("he-IL", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" }) : "—"}</div>
+                <div className="hg2-card-meta"><span><MapPin size={11} />{x.location || "ללא מיקום עדיין"}</span></div>
+              </div>
+              <div className="hg2-card-resume"><Play size={14} /> המשך</div>
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="hg2-list">
-        {index.length === 0 && <div className="hg2-empty"><Truck size={36} /><div>אין עדיין התקנות</div><p>לחץ "הוספת התקנה" כדי לתעד את הראשונה — עם טיימר וצילום רישוי</p></div>}
-        {index.length > 0 && filtered.length === 0 && <div className="hg2-empty"><Search size={32} /><div>אין תוצאות</div><p>לא נמצאה התקנה תואמת. נסה מונח חיפוש אחר או נקה את הסינון.</p></div>}
+        {done.length === 0 && drafts.length === 0 && <div className="hg2-empty"><Truck size={36} /><div>אין עדיין התקנות</div><p>לחץ "הוספת התקנה" כדי לתעד את הראשונה — עם טיימר וצילום רישוי</p></div>}
+        {done.length > 0 && filtered.length === 0 && <div className="hg2-empty"><Search size={32} /><div>אין תוצאות</div><p>לא נמצאה התקנה תואמת. נסה מונח חיפוש אחר או נקה את הסינון.</p></div>}
         {filtered.map((x) => (
           <button className="hg2-card" key={x.id} onClick={() => onOpen(x.id)}>
             <div className="hg2-card-thumb">{x.thumb ? <img src={x.thumb} alt="" /> : <Truck size={22} />}</div>
@@ -526,7 +573,8 @@ function Home({ index, onNew, onOpen, showToast, onReset, onBack }) {
 /* ============================ Analytics ============================ */
 const HE_MONTHS = ["ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני", "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר"];
 
-function Analytics({ index, onBack }) {
+function Analytics({ index: rawIndex, onBack }) {
+  const index = useMemo(() => rawIndex.filter((x) => x.status !== "running"), [rawIndex]);
   const [scope, setScope] = useState("all"); // contractor filter
   const [metric, setMetric] = useState("revenue"); // revenue | count
 
@@ -1799,14 +1847,16 @@ function Finance({ index, onBack }) {
 }
 
 /* ============================ New installation ============================ */
-function NewInstall({ onCancel, onSave, showToast }) {
-  const [contractor, setContractor] = useState(null);
-  const [phase, setPhase] = useState("pick"); // pick | running | done
-  const [startTs, setStartTs] = useState(null);
+function NewInstall({ onCancel, onSave, onStartDraft, onDiscardDraft, resumeEntry, showToast }) {
+  const r = resumeEntry || null;
+  const [contractor, setContractor] = useState(r ? r.contractor : null);
+  const [phase, setPhase] = useState(r ? "running" : "pick"); // pick | running | done
+  const [startTs, setStartTs] = useState(r ? r.startTs || Date.now() : null);
   const [endTs, setEndTs] = useState(null);
   const [now, setNow] = useState(Date.now());
+  const [draftId, setDraftId] = useState(r ? r.id : null);
   const [photoFull, setPhotoFull] = useState(null);
-  const [thumb, setThumb] = useState(null);
+  const [thumb, setThumb] = useState(r ? r.thumb || null : null);
   const [gallery, setGallery] = useState([]); // {full, thumb}
   const [video, setVideo] = useState(null);   // {dataUrl|null, poster, stored, sizeMB}
   const [busy, setBusy] = useState(false);
@@ -1815,7 +1865,9 @@ function NewInstall({ onCancel, onSave, showToast }) {
   const vidCamRef = useRef(null); const vidGalRef = useRef(null);
 
   const isMaster = CONTRACTORS.find((c) => c.id === contractor)?.master;
-  const [f, setF] = useState({ location: "", idType: "רישוי", idNumber: "", installType: "", manufacturer: "", vehicleType: "", price: "", phone: "", customer: "", date: todayISO(), withItai: false });
+  const [f, setF] = useState(r
+    ? { location: r.location || "", idType: r.idType || "רישוי", idNumber: r.idNumber || "", installType: r.installType || "", manufacturer: r.manufacturer || "", vehicleType: r.vehicleType || "", price: r.price ? String(r.price) : "", phone: r.phone || "", customer: r.customer || "", date: r.date || todayISO(), withItai: !!r.withItai }
+    : { location: "", idType: "רישוי", idNumber: "", installType: "", manufacturer: "", vehicleType: "", price: "", phone: "", customer: "", date: todayISO(), withItai: false });
 
   useEffect(() => {
     if (phase !== "running") return;
@@ -1825,8 +1877,23 @@ function NewInstall({ onCancel, onSave, showToast }) {
 
   const elapsed = phase === "running" ? (now - startTs) / 1000 : (endTs && startTs ? (endTs - startTs) / 1000 : 0);
 
-  const start = () => { setStartTs(Date.now()); setNow(Date.now()); setPhase("running"); };
+  const start = async () => {
+    // Persist immediately as an in-progress draft so the report is never lost
+    let entry = null;
+    if (onStartDraft) { try { entry = await onStartDraft(contractor); } catch {} }
+    const ts = entry ? entry.startTs : Date.now();
+    if (entry) setDraftId(entry.id);
+    setStartTs(ts); setNow(Date.now()); setPhase("running");
+    showToast && showToast("ההתקנה התחילה — נשמרה כטיוטה");
+  };
   const finish = () => { setEndTs(Date.now()); setPhase("done"); };
+  const cancel = async () => {
+    // Discard an empty draft on explicit cancel; keep it if real data was entered
+    if (draftId && onDiscardDraft && !f.vehicleType && !f.idNumber && !f.location && !(Number(f.price) > 0)) {
+      try { await onDiscardDraft(draftId); } catch {}
+    }
+    onCancel();
+  };
 
   const onPhoto = async (e) => {
     const file = e.target.files?.[0]; if (!file) return;
@@ -1880,14 +1947,14 @@ function NewInstall({ onCancel, onSave, showToast }) {
       galleryFull: gallery.map((g) => g.full),
       galleryThumbs: gallery.map((g) => g.thumb),
       video: video ? { dataUrl: video.dataUrl, poster: video.poster, stored: video.stored } : null,
-    });
+    }, draftId);
   };
 
   /* ---- pick contractor ---- */
   if (phase === "pick") {
     return (
       <div className="hg2-flow">
-        <FlowHead title="התקנה חדשה" sub="בחר קבלן / גיליון" onBack={onCancel} />
+        <FlowHead title="התקנה חדשה" sub="בחר קבלן / גיליון" onBack={cancel} />
         <div className="hg2-contractors">
           {CONTRACTORS.map((c) => (
             <button key={c.id} className={"hg2-cbtn" + (contractor === c.id ? " sel" : "")} onClick={() => setContractor(c.id)}>
@@ -1896,7 +1963,7 @@ function NewInstall({ onCancel, onSave, showToast }) {
           ))}
         </div>
         <div className="hg2-flow-foot">
-          <button className="hg2-btn ghost" onClick={onCancel}>ביטול</button>
+          <button className="hg2-btn ghost" onClick={cancel}>ביטול</button>
           <button className="hg2-btn primary big" disabled={!contractor} onClick={start}><Play size={20} /> התחל התקנה</button>
         </div>
       </div>
@@ -1906,7 +1973,7 @@ function NewInstall({ onCancel, onSave, showToast }) {
   /* ---- running / done : timer + form ---- */
   return (
     <div className="hg2-flow">
-      <FlowHead title={cName(contractor)} sub={phase === "running" ? "התקנה פעילה" : "התקנה הסתיימה"} onBack={onCancel} />
+      <FlowHead title={cName(contractor)} sub={phase === "running" ? "התקנה פעילה" : "התקנה הסתיימה"} onBack={cancel} />
 
       <div className={"hg2-timer " + phase}>
         <div className="hg2-timer-clock">{fmtClock(elapsed)}</div>
@@ -1990,11 +2057,11 @@ function NewInstall({ onCancel, onSave, showToast }) {
       </div>
 
       <div className="hg2-flow-foot">
-        <button className="hg2-btn ghost" onClick={onCancel}>ביטול</button>
+        <button className="hg2-btn ghost" onClick={cancel}>ביטול</button>
         <button className="hg2-btn primary big" onClick={() => {
           if (phase === "running") { const end = Date.now(); setEndTs(end); setPhase("done"); const durationSec = startTs ? Math.round((end - startTs) / 1000) : 0;
             if (!f.vehicleType && !f.idNumber && !f.location) { showToast("מלא לפחות מיקום או רישוי", "warn"); return; }
-            onSave({ contractor, location: f.location.trim(), idType: f.idType, idNumber: f.idNumber.trim(), installType: f.installType.trim(), manufacturer: f.manufacturer.trim(), vehicleType: f.vehicleType.trim(), price: Number(f.price) || 0, phone: f.phone.trim(), customer: f.customer.trim(), date: f.date, startTs, endTs: end, durationSec, thumb, withItai: f.withItai }, photoFull, { galleryFull: gallery.map((g) => g.full), galleryThumbs: gallery.map((g) => g.thumb), video: video ? { dataUrl: video.dataUrl, poster: video.poster, stored: video.stored } : null });
+            onSave({ contractor, location: f.location.trim(), idType: f.idType, idNumber: f.idNumber.trim(), installType: f.installType.trim(), manufacturer: f.manufacturer.trim(), vehicleType: f.vehicleType.trim(), price: Number(f.price) || 0, phone: f.phone.trim(), customer: f.customer.trim(), date: f.date, startTs, endTs: end, durationSec, thumb, withItai: f.withItai }, photoFull, { galleryFull: gallery.map((g) => g.full), galleryThumbs: gallery.map((g) => g.thumb), video: video ? { dataUrl: video.dataUrl, poster: video.poster, stored: video.stored } : null }, draftId);
           } else { save(); } }}>
           <CheckCircle2 size={20} /> {phase === "running" ? "סיים ושמור" : "שמור התקנה"}
         </button>
@@ -2235,6 +2302,10 @@ function Styles() {
 .hg2-card-meta span{display:flex;align-items:center;gap:3px}
 .hg2-card-meta .ti{color:var(--cyan)}
 .hg2-card-price{font-family:ui-monospace,monospace;font-weight:700;color:var(--silver);font-size:14px;align-self:center;white-space:nowrap}
+.hg2-drafts{margin-bottom:10px}
+.hg2-card-draft{border:1.5px solid rgba(228,99,99,.4)!important;background:linear-gradient(180deg,rgba(228,99,99,.07),rgba(228,99,99,.02))!important}
+.hg2-card-thumb.draft{display:flex;align-items:center;justify-content:center;background:rgba(228,99,99,.12)}
+.hg2-card-resume{align-self:center;display:flex;align-items:center;gap:5px;background:var(--cyan,#3fb8c4);color:#04141a;border-radius:9px;padding:8px 12px;font-weight:800;font-size:12.5px;white-space:nowrap}
 
 .hg2-empty{text-align:center;color:var(--s4);padding:46px 20px}
 .hg2-empty svg{opacity:.4;margin-bottom:10px}
