@@ -2396,6 +2396,30 @@ export function mountApp(root: HTMLElement) {
   }
   $('settingsBtn').onclick = openSetup;
 
+  // ── Collapsible settings sections (quality-of-life: tame the long scroll) ──
+  (function setupCollapsibleSettings() {
+    const CKEY = 'alpha_settings_collapsed_v1';
+    // Sections collapsed by default to reduce the initial wall of options.
+    const DEFAULT_COLLAPSED = ['audio', 'aiEngineTitle', 'cloudSync', 'connectedServices', 'shortcuts'];
+    let collapsed: string[];
+    try { collapsed = JSON.parse(localStorage.getItem(CKEY) || 'null') || DEFAULT_COLLAPSED; }
+    catch { collapsed = DEFAULT_COLLAPSED.slice(); }
+
+    $('overlay').querySelectorAll<HTMLElement>('.settings-section').forEach(section => {
+      const title = section.querySelector<HTMLElement>('.ss-title');
+      if (!title) return;
+      const id = title.dataset.i18n || title.textContent || '';
+      if (collapsed.includes(id)) section.classList.add('collapsed');
+      title.addEventListener('click', () => {
+        section.classList.toggle('collapsed');
+        const isCollapsed = section.classList.contains('collapsed');
+        collapsed = collapsed.filter(x => x !== id);
+        if (isCollapsed) collapsed.push(id);
+        try { localStorage.setItem(CKEY, JSON.stringify(collapsed)); } catch {}
+      });
+    });
+  })();
+
   // ── Cloud Sync handlers ──
   function updateDriveUI() {
     const connected = driveSync.isConnected();
