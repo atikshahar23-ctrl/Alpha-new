@@ -3035,7 +3035,6 @@ export function mountApp(root: HTMLElement) {
     nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') finish(nameInput.value); });
   }
 
-  const puterAvailable = typeof (window as any).puter !== 'undefined';
   // ── Restore chat history ──
   const prevHistory = loadChatHistory();
   if (prevHistory.length > 0) {
@@ -3052,11 +3051,19 @@ export function mountApp(root: HTMLElement) {
     if (chatEl) chatEl.scrollTop = chatEl.scrollHeight;
   }
 
-  const canUseAI = puterAvailable || state.key || state.grokKey || state.openaiKey;
   const knownName = loadMemory().profile.name;
-  if (!canUseAI) openSetup();
+  // Defer the canUseAI check so puter.js (loaded async) has time to initialize.
+  // Checking synchronously always sees window.puter as undefined and immediately
+  // opens the settings overlay, which pauses the orb render loop and shows a black screen.
   if (!knownName) showWelcome();
-  else if (canUseAI && prevHistory.length === 0) addMsg(personalGreeting(), 'al');
+  else if (prevHistory.length === 0) addMsg(personalGreeting(), 'al');
+  // Defer the canUseAI check so puter.js (loaded async) has time to initialize.
+  // Checking synchronously always sees window.puter as undefined and immediately
+  // opens the settings overlay, which pauses the orb render loop and shows a black screen.
+  setTimeout(() => {
+    const canUseAI = typeof (window as any).puter !== 'undefined' || state.key || state.grokKey || state.openaiKey;
+    if (!canUseAI) openSetup();
+  }, 1500);
 
   // ── 3D Depth — perspective-based UI panel transforms ──
   {
