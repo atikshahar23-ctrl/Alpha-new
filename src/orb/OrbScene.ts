@@ -436,8 +436,9 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
     new THREE.SphereGeometry(0.72, seg(48), seg(48)),
     mYellow,
   );
-  head.scale.set(1.18, 0.98, 0.92);
-  head.position.set(0, 0.0, 0.04);
+  // Anime Pikachu has a notably large, round head relative to the body
+  head.scale.set(1.24, 1.06, 0.94);
+  head.position.set(0, 0.02, 0.04);
   headGroup.add(head);
 
   // Cheek bulges make the face wider at the bottom
@@ -662,14 +663,14 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   faceTexture.colorSpace = THREE.SRGBColorSpace;
 
   const faceDecal = new THREE.Mesh(
-    new THREE.CircleGeometry(0.72, seg(48)),
+    new THREE.CircleGeometry(0.80, seg(48)),
     new THREE.MeshBasicMaterial({
       map: faceTexture, transparent: true,
       depthWrite: false, depthTest: false, side: THREE.FrontSide,
     }),
   );
   faceDecal.renderOrder = 2;
-  faceDecal.position.set(0, -0.02, 0.715);
+  faceDecal.position.set(0, 0.0, 0.72);
   headGroup.add(faceDecal);
 
   // Invisible eye tracking references (visuals are on canvas)
@@ -744,7 +745,7 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   cheekR.position.set(0.44, -0.1, 0.722);
   headGroup.add(cheekR);
 
-  headGroup.position.set(0, 0.48, 0.04);
+  headGroup.position.set(0, 0.50, 0.04);
   group.add(headGroup);
 
   // Neck — short cylinder blending head into body

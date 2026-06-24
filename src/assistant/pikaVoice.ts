@@ -1,5 +1,5 @@
 let volume = 0.6;
-let pitch = 2.0;
+let pitch = 1.25;
 let enabled = true;
 let timer: ReturnType<typeof setTimeout> | null = null;
 
@@ -15,25 +15,28 @@ function playFMChirp(
   dest: AudioNode,
 ) {
   const t = ctx.currentTime + when;
+  // Lower, clearer voice: divide by 1.9 so the chirp sits in a warmer register
+  const P = pitch / 1.9;
   const carrier = ctx.createOscillator();
   carrier.type = 'sine';
-  carrier.frequency.setValueAtTime(freqStart * (pitch / 1.4), t);
-  carrier.frequency.exponentialRampToValueAtTime(freqEnd * (pitch / 1.4), t + dur * 0.7);
+  carrier.frequency.setValueAtTime(freqStart * P, t);
+  carrier.frequency.exponentialRampToValueAtTime(freqEnd * P, t + dur * 0.7);
 
+  // Light FM — keeps a hint of "electric" character without muddying the pitch
   const mod = ctx.createOscillator();
-  mod.type = 'triangle';
-  mod.frequency.setValueAtTime(freqStart * 0.5 * (pitch / 1.4), t);
+  mod.type = 'sine';
+  mod.frequency.setValueAtTime(freqStart * 0.5 * P, t);
   const modG = ctx.createGain();
-  modG.gain.setValueAtTime(freqStart * 0.35, t);
-  modG.gain.exponentialRampToValueAtTime(freqStart * 0.06, t + dur);
+  modG.gain.setValueAtTime(freqStart * 0.10, t);
+  modG.gain.exponentialRampToValueAtTime(freqStart * 0.03, t + dur);
   mod.connect(modG);
   modG.connect(carrier.frequency);
 
   const vib = ctx.createOscillator();
-  vib.frequency.value = 10;
+  vib.frequency.value = 9;
   const vibG = ctx.createGain();
   vibG.gain.setValueAtTime(0, t);
-  vibG.gain.linearRampToValueAtTime(freqStart * 0.012, t + dur * 0.3);
+  vibG.gain.linearRampToValueAtTime(freqStart * 0.007, t + dur * 0.3);
   vib.connect(vibG);
   vibG.connect(carrier.frequency);
 
