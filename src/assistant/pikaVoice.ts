@@ -9,6 +9,7 @@
 // ──────────────────────────────────────────────────────────────────────────
 
 let volume = 0.6;
+let pitch = 1.25;
 let pitch = 1.25;          // user slider — multiplies the fundamental
 let enabled = true;
 let timer: ReturnType<typeof setTimeout> | null = null;
