@@ -188,7 +188,7 @@ function scheduleNext() {
 export function startPikaVoice() { scheduleNext(); }
 export function stopPikaVoice() { if (timer) { clearTimeout(timer); timer = null; } }
 export function setPikaVolume(v: number) { volume = Math.max(0, Math.min(1, v)); }
-export function setPikaPitch(v: number) { pitch = Math.max(0.5, Math.min(2.0, v)); }
+export function setPikaPitch(v: number) { pitch = Math.max(0.5, Math.min(8.0, v)); }
 export function setPikaEnabled(on: boolean) {
   enabled = on;
   if (on) startPikaVoice(); else stopPikaVoice();

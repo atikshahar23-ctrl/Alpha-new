@@ -498,9 +498,9 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
     innerEar.rotation.x = -0.12;
     earGroup.add(innerEar);
 
-    earGroup.position.set(sx * 0.44, 0.46, -0.06);
-    earGroup.rotation.z = sx * 0.72;
-    earGroup.rotation.x = -0.12;
+    earGroup.position.set(sx * 0.46, 0.54, -0.04);
+    earGroup.rotation.z = -sx * 0.20;
+    earGroup.rotation.x = -0.10;
     headGroup.add(earGroup);
     if (sx === -1) leftEarGroup = earGroup;
     else rightEarGroup = earGroup;
@@ -1593,11 +1593,11 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     const earTwitchR = Math.sin(time * 2.5 + 0.6) * 0.05 + (Math.sin(time * 8.1 + 1.0) > 0.95 ? 0.12 : 0) + earPerk;
     if (pika.leftEarGroup) pika.leftEarGroup.rotation.x = -0.12 + earTwitchL;
     if (pika.rightEarGroup) pika.rightEarGroup.rotation.x = -0.12 + earTwitchR;
-    // Electric sparks — boosted during charge
+    // Electric sparks — always crackling, stronger during zap/charge
     const chargeSparkBoost = chargeLevel * 8.0;
     for (let si = 0; si < pika.sparkMats.length; si++) {
       const idlePhase = Math.sin(time * 8.0 + si * 2.7) * Math.sin(time * 3.1 + si * 1.3);
-      const idle = idlePhase > 0.85 ? 0.12 : 0;
+      const idle = 0.12 + Math.abs(idlePhase) * 0.30;
       const flicker = Math.sin(time * 45 + si * 2.7) * 0.5 + 0.5;
       pika.sparkMats[si].opacity = Math.min(1, Math.max(idle, zapStrength * (0.55 + flicker * 0.45)) + chargeLevel * (0.4 + flicker * chargeSparkBoost * 0.1));
     }
@@ -1617,8 +1617,8 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
       const mouthOpen = hopActive ? 0.03 : 0;
       pika.mouthMesh.position.y = -0.12 - mouthOpen;
     }
-    // Electricity aura — flares with the zap or charge
-    pika.auraMat.opacity = Math.max(zapStrength * (0.12 + Math.sin(time * 30) * 0.04), chargeLevel * (0.3 + Math.sin(time * 40) * 0.1));
+    // Electricity aura — always faintly visible, flares with zap or charge
+    pika.auraMat.opacity = Math.max(0.018 + Math.sin(time * 4.0) * 0.008, Math.max(zapStrength * (0.12 + Math.sin(time * 30) * 0.04), chargeLevel * (0.3 + Math.sin(time * 40) * 0.1)));
     // Randomize spark rotations for more dynamic feel
     if (sparkBurst > 0 || chargeLevel > 0.1) {
       for (let si = 0; si < Math.min(pika.sparkMeshes.length, 6); si++) {
@@ -2462,11 +2462,11 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     const earTwitchR = Math.sin(time * 2.5 + 0.6) * 0.05 + (Math.sin(time * 8.1 + 1.0) > 0.95 ? 0.12 : 0) + earPerk;
     if (pika.leftEarGroup) pika.leftEarGroup.rotation.x = -0.12 + earTwitchL;
     if (pika.rightEarGroup) pika.rightEarGroup.rotation.x = -0.12 + earTwitchR;
-    // Electric sparks — subtle idle crackle + strong flicker during ZAP or charge
+    // Electric sparks — always crackling, stronger during ZAP or charge
     const chargeSparkBoost = chargeLevel * 8.0;
     for (let si = 0; si < pika.sparkMats.length; si++) {
       const idlePhase = Math.sin(time * 8.0 + si * 2.7) * Math.sin(time * 3.1 + si * 1.3);
-      const idle = idlePhase > 0.85 ? 0.12 : 0;
+      const idle = 0.12 + Math.abs(idlePhase) * 0.30;
       const flicker = Math.sin(time * 45 + si * 2.7) * 0.5 + 0.5;
       pika.sparkMats[si].opacity = Math.min(1, Math.max(idle, zapStrength * (0.55 + flicker * 0.45)) + chargeLevel * (0.4 + flicker * chargeSparkBoost * 0.1));
     }
@@ -2487,8 +2487,8 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       const mouthOpen = hopActive ? 0.03 : 0;
       pika.mouthMesh.position.y = -0.12 - mouthOpen;
     }
-    // Electricity aura — flares with the zap or charge
-    pika.auraMat.opacity = Math.max(zapStrength * (0.12 + Math.sin(time * 30) * 0.04), chargeLevel * (0.3 + Math.sin(time * 40) * 0.1));
+    // Electricity aura — always faintly visible, flares with zap or charge
+    pika.auraMat.opacity = Math.max(0.018 + Math.sin(time * 4.0) * 0.008, Math.max(zapStrength * (0.12 + Math.sin(time * 30) * 0.04), chargeLevel * (0.3 + Math.sin(time * 40) * 0.1)));
     // Randomize spark rotations for more dynamic feel
     if (sparkBurst > 0 || chargeLevel > 0.1) {
       for (let si = 0; si < Math.min(pika.sparkMeshes.length, 6); si++) {
