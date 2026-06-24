@@ -18,6 +18,7 @@ import { startTimer, stopTimer, formatDuration, getActiveTimer } from '../module
 import { saveChatMessage, loadChatHistory, clearChatHistory } from '../modules/chatHistory';
 import { trackSentiment, averageSentiment } from '../modules/sentiment';
 import { calculateScore, scoreLabel } from '../modules/scoring';
+import { toastInfo } from '../modules/toast';
 import { checkIntegrity, repairCorrupted } from '../modules/dataIntegrity';
 
 const UI_STRINGS: Record<string, Record<UILang, string>> = {
@@ -804,14 +805,43 @@ export function mountApp(root: HTMLElement) {
   function renderMarkdown(raw: string): string {
     return raw
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/^### (.+)$/gm, '<strong style="display:block;font-size:15px;color:var(--white-glow);margin:6px 0 2px">$1</strong>')
+      .replace(/^## (.+)$/gm,  '<strong style="display:block;font-size:16px;color:var(--gold);margin:8px 0 3px;letter-spacing:.3px">$1</strong>')
+      .replace(/^# (.+)$/gm,   '<strong style="display:block;font-size:17px;color:var(--gold);margin:10px 0 4px;letter-spacing:.4px">$1</strong>')
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
       .replace(/\*(.+?)\*/g, '<em>$1</em>')
-      .replace(/`(.+?)`/g, '<code style="background:rgba(255,255,255,.1);padding:1px 4px;border-radius:3px;font-family:monospace">$1</code>')
-      .replace(/^• /gm, '<span style="color:var(--gold,#e4bc63)">•</span> ')
+      .replace(/`(.+?)`/g, '<code style="background:rgba(255,255,255,.1);padding:1px 5px;border-radius:4px;font-family:monospace;font-size:.9em">$1</code>')
+      .replace(/^(\d+)\. (.+)$/gm, '<span style="display:block;padding-left:2px"><span style="color:var(--gold);font-weight:600;min-width:18px;display:inline-block">$1.</span> $2</span>')
+      .replace(/^[-•] (.+)$/gm, '<span style="display:block;padding-left:4px"><span style="color:var(--gold);margin-right:6px">•</span>$1</span>')
+      .replace(/^• (.+)$/gm, '<span style="display:block;padding-left:4px"><span style="color:var(--gold);margin-right:6px">•</span>$1</span>')
       .replace(/\n/g, '<br>');
   }
 
+  let typingTurn: HTMLElement | null = null;
+
+  function showTypingIndicator() {
+    const chatEl = $('chat');
+    if (!chatEl) return;
+    removeTypingIndicator();
+    typingTurn = document.createElement('div');
+    typingTurn.className = 'turn al typing-turn';
+    const label = state.name;
+    typingTurn.innerHTML = `<span class="who">${label}</span><div class="txt"><div class="typing-dots"><span></span><span></span><span></span></div></div>`;
+    chatEl.appendChild(typingTurn);
+    chatEl.scrollTop = chatEl.scrollHeight;
+  }
+
+  function removeTypingIndicator() {
+    if (typingTurn) {
+      typingTurn.remove();
+      typingTurn = null;
+    }
+    // also clean up any strays
+    $('chat')?.querySelectorAll('.typing-turn').forEach(el => el.remove());
+  }
+
   function addMsg(text: string, who: 'me' | 'al' | 'sys') {
+    if (who === 'al') removeTypingIndicator();
     const label = { me: t('you', state.uiLang), al: state.name, sys: t('systemLabel', state.uiLang) }[who];
     // Chat log (bottom)
     const div = document.createElement('div');
@@ -979,6 +1009,7 @@ export function mountApp(root: HTMLElement) {
     if (asking) return;
     asking = true;
     setStatus('thinking');
+    showTypingIndicator();
     // Master Brain: route intent, activate module, inject long-term memory.
     try {
       const r = orchestrate(text);
@@ -986,6 +1017,12 @@ export function mountApp(root: HTMLElement) {
       if (r.switched && r.module !== 'general') {
         const mod = moduleById(r.module);
         if (mod) addMsg(`▸ ${mod.label} module`, 'sys');
+      }
+      // Make long-term memory visible: confirm when the assistant learns
+      // something durable about the user.
+      if (r.captured) {
+        const c = r.captured.length > 70 ? r.captured.slice(0, 70) + '…' : r.captured;
+        toastInfo(state.uiLang === 'he' ? '💾 נשמר בזיכרון' : '💾 Saved to memory', c);
       }
     } catch {}
     try {
@@ -1046,6 +1083,7 @@ export function mountApp(root: HTMLElement) {
       voice.speak(clean);
       try { refreshSummary(state.history); } catch {}
     } catch (err: any) {
+      removeTypingIndicator();
       if (voice.wakeOn) setTimeout(() => voice.setWake(true), 500);
       else setStatus('');
       addMsg(err.message || t('connectionError', state.uiLang), 'sys');
@@ -2357,6 +2395,30 @@ export function mountApp(root: HTMLElement) {
     }).join('') || '<option value="">No voice available</option>';
   }
   $('settingsBtn').onclick = openSetup;
+
+  // ── Collapsible settings sections (quality-of-life: tame the long scroll) ──
+  (function setupCollapsibleSettings() {
+    const CKEY = 'alpha_settings_collapsed_v1';
+    // Sections collapsed by default to reduce the initial wall of options.
+    const DEFAULT_COLLAPSED = ['audio', 'aiEngineTitle', 'cloudSync', 'connectedServices', 'shortcuts'];
+    let collapsed: string[];
+    try { collapsed = JSON.parse(localStorage.getItem(CKEY) || 'null') || DEFAULT_COLLAPSED; }
+    catch { collapsed = DEFAULT_COLLAPSED.slice(); }
+
+    $('overlay').querySelectorAll<HTMLElement>('.settings-section').forEach(section => {
+      const title = section.querySelector<HTMLElement>('.ss-title');
+      if (!title) return;
+      const id = title.dataset.i18n || title.textContent || '';
+      if (collapsed.includes(id)) section.classList.add('collapsed');
+      title.addEventListener('click', () => {
+        section.classList.toggle('collapsed');
+        const isCollapsed = section.classList.contains('collapsed');
+        collapsed = collapsed.filter(x => x !== id);
+        if (isCollapsed) collapsed.push(id);
+        try { localStorage.setItem(CKEY, JSON.stringify(collapsed)); } catch {}
+      });
+    });
+  })();
 
   // ── Cloud Sync handlers ──
   function updateDriveUI() {

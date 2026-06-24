@@ -212,15 +212,18 @@ const FACT_TRIGGERS: RegExp[] = [
   /\b(?:אני|שלי|אני מעדיף|אני אוהב|אני עובד|אני נוהג)\b.+/,
 ];
 
-export function autoCapture(userText: string, module: ModuleId) {
+export function autoCapture(userText: string, module: ModuleId): string | null {
   const t = userText.trim();
-  if (t.length < 6 || t.length > 240) return;
+  if (t.length < 6 || t.length > 240) return null;
   for (const re of FACT_TRIGGERS) {
     const m = re.exec(t);
     if (m) {
       const captured = (m[1] || m[0]).trim();
+      const before = loadMemory().facts.length;
       remember(captured, module, 0.7);
-      return;
+      // Only report it as newly captured if it wasn't a duplicate.
+      return loadMemory().facts.length > before ? captured : null;
     }
   }
+  return null;
 }
