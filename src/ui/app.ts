@@ -168,7 +168,7 @@ function t(key: string, lang: UILang): string {
 export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v12 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v13 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="searchBtn" aria-label="Search (Ctrl+K)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
         <button class="chip ghost" id="muteBtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg></button>
@@ -1581,6 +1581,7 @@ export function mountApp(root: HTMLElement) {
   // AR Camera — game-like interactive experience with hand tracking
   let arStream: MediaStream | null = null;
   let arAnimFrame = 0;
+  let arHandLoop = 0;
 
   interface ArObj {
     x: number; y: number; vx: number; vy: number;
@@ -2729,35 +2730,67 @@ export function mountApp(root: HTMLElement) {
       buttonsEl.appendChild(btn);
     });
 
-    statusEl.textContent = 'מאתחל מצלמה…';
+    statusEl.textContent = 'מבקש הרשאה למצלמה…';
     statusEl.style.opacity = '1';
 
-    navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: 'user',
-        width: { ideal: 1920, min: 1280 },
-        height: { ideal: 1080, min: 720 },
-        frameRate: { ideal: 30 },
+    const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+
+    // On phones, ask for a lighter stream WITHOUT hard min-resolution
+    // constraints (many front cameras reject 1280×720 minimums and the
+    // whole request fails). We progressively fall back to the most basic
+    // request so the permission prompt always succeeds.
+    const constraintLevels: MediaStreamConstraints[] = isMobile
+      ? [
+          { video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } } },
+          { video: { facingMode: 'user' } },
+          { video: true },
+        ]
+      : [
+          { video: { facingMode: 'user', width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } } },
+          { video: { facingMode: 'user' } },
+          { video: true },
+        ];
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      statusEl.textContent = 'הדפדפן לא תומך במצלמה';
+      return;
+    }
+
+    const tryGetStream = async (): Promise<MediaStream | null> => {
+      for (const c of constraintLevels) {
+        try { return await navigator.mediaDevices.getUserMedia(c); }
+        catch (e: any) {
+          // Permission denied is final — stop trying other resolutions.
+          if (e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')) throw e;
+        }
       }
-    }).then(stream => {
+      return null;
+    };
+
+    tryGetStream().then(stream => {
+      if (!stream) { statusEl.textContent = 'לא נמצאה מצלמה זמינה'; return; }
       arStream = stream;
       video.srcObject = stream;
-      video.onloadedmetadata = () => {
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        objCanvas.width = video.videoWidth;
-        objCanvas.height = video.videoHeight;
-        fxCanvas.width = video.videoWidth;
-        fxCanvas.height = video.videoHeight;
-        charCanvas.width = video.videoWidth;
-        charCanvas.height = video.videoHeight;
-        statusEl.textContent = 'מצלמה פעילה';
+      // iOS Safari needs an explicit play() after metadata loads.
+      const onReady = () => {
+        const vw = video.videoWidth || 1280;
+        const vh = video.videoHeight || 720;
+        canvas.width = vw; canvas.height = vh;
+        objCanvas.width = vw; objCanvas.height = vh;
+        fxCanvas.width = vw; fxCanvas.height = vh;
+        charCanvas.width = vw; charCanvas.height = vh;
+        statusEl.textContent = 'מצלמה פעילה ✓';
         setTimeout(() => { statusEl.style.opacity = '0'; }, 2000);
         drawArObjects();
-        startHandTracking(video, canvas, ctx, handIndicator, arBtns);
+        startHandTracking(video, canvas, ctx, handIndicator, arBtns, isMobile);
       };
-    }).catch(() => {
-      statusEl.textContent = 'שגיאה: לא ניתן לגשת למצלמה';
+      video.onloadedmetadata = () => { video.play().catch(() => {}); onReady(); };
+    }).catch((e: any) => {
+      if (e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')) {
+        statusEl.textContent = 'נדחתה הרשאת מצלמה — אשר גישה בהגדרות הדפדפן';
+      } else {
+        statusEl.textContent = 'שגיאה: לא ניתן לגשת למצלמה';
+      }
     });
   }
 
@@ -2765,6 +2798,7 @@ export function mountApp(root: HTMLElement) {
     $('arOverlay').classList.remove('show');
     if (arStream) { arStream.getTracks().forEach(t => t.stop()); arStream = null; }
     cancelAnimationFrame(arAnimFrame);
+    cancelAnimationFrame(arHandLoop);
     arObjects = []; arGrabbed = null; arObjCtx = null; arFxCtx = null; arCharCtx = null;
     arFxParticles = []; arLaserTrail = []; arCurrentFx = 'none';
     arGravityZones = []; arTrampoline = null; arFloatingTexts = [];
@@ -2856,37 +2890,50 @@ export function mountApp(root: HTMLElement) {
 
   function startHandTracking(
     video: HTMLVideoElement, canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D,
-    handIndicator: HTMLElement, arBtns: { label: string; action: () => void }[]
+    handIndicator: HTMLElement, arBtns: { label: string; action: () => void }[],
+    isMobile = false
   ) {
     let lastTapTime = 0;
     const pointerEl = document.createElement('div');
     pointerEl.className = 'ar-pointer';
     $('arViewport').appendChild(pointerEl);
 
-    const mpScript = document.createElement('script');
-    mpScript.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/hands.min.js';
-    mpScript.onload = () => {
-      const camScript = document.createElement('script');
-      camScript.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.min.js';
-      camScript.onload = () => initMediaPipeHands(video, canvas, ctx, pointerEl, handIndicator, arBtns);
-      document.head.appendChild(camScript);
-    };
-    document.head.appendChild(mpScript);
+    handIndicator.textContent = 'טוען זיהוי יד…';
+    // Reuse the script if AR was opened before in this session.
+    if ((window as any).Hands) {
+      initMediaPipeHands(video, canvas, ctx, pointerEl, handIndicator, arBtns);
+    } else {
+      const mpScript = document.createElement('script');
+      mpScript.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/hands.min.js';
+      mpScript.onerror = () => { handIndicator.textContent = 'נכשלה טעינת זיהוי היד — בדוק חיבור'; };
+      mpScript.onload = () => initMediaPipeHands(video, canvas, ctx, pointerEl, handIndicator, arBtns);
+      document.head.appendChild(mpScript);
+    }
 
     function initMediaPipeHands(
       vid: HTMLVideoElement, cvs: HTMLCanvasElement, c: CanvasRenderingContext2D,
       ptr: HTMLElement, indicator: HTMLElement, btns: { label: string; action: () => void }[]
     ) {
       const Hands = (window as any).Hands;
-      const Camera = (window as any).Camera;
-      if (!Hands || !Camera) {
+      if (!Hands) {
         indicator.textContent = 'Hand tracking unavailable';
         return;
       }
       const hands = new Hands({ locateFile: (f: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/${f}` });
-      hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.6 });
+      // Lighter model + single hand on phones so it runs smoothly.
+      hands.setOptions({
+        maxNumHands: isMobile ? 1 : 2,
+        modelComplexity: isMobile ? 0 : 1,
+        minDetectionConfidence: 0.6,
+        minTrackingConfidence: 0.5,
+      });
+      // Frame-rate-independent gesture timing.
+      let lastFrameT = performance.now();
 
       hands.onResults((results: any) => {
+        const nowT = performance.now();
+        const frameDt = Math.min(0.2, (nowT - lastFrameT) / 1000); // seconds, capped
+        lastFrameT = nowT;
         c.clearRect(0, 0, cvs.width, cvs.height);
         if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
           for (let h = 0; h < results.multiHandLandmarks.length; h++) {
@@ -2951,7 +2998,7 @@ export function mountApp(root: HTMLElement) {
               // ── Dispel & Summon logic ──────────────────────────────
               // Palm held 0.7s → fire laser beam at orb
               if (arGesture === 'palm' && !arOrbDispelled && !arBeamFiring) {
-                arPalmHoldTime += 1 / 30;
+                arPalmHoldTime += frameDt;
                 if (arPalmHoldTime >= 0.7) {
                   arBeamFiring = true;
                   arBeamProgress = 0;
@@ -2980,7 +3027,7 @@ export function mountApp(root: HTMLElement) {
                 }
               }
               arPrevGesture = arGesture;
-              arThrowCooldown = Math.max(0, arThrowCooldown - 1 / 30);
+              arThrowCooldown = Math.max(0, arThrowCooldown - frameDt);
               // ──────────────────────────────────────────────────────
 
               // Gesture-triggered actions (objects in sandbox)
@@ -3058,11 +3105,21 @@ export function mountApp(root: HTMLElement) {
         }
       });
 
-      const cam = new Camera(vid, {
-        onFrame: async () => { await hands.send({ image: vid }); },
-        width: vid.videoWidth || 1920, height: vid.videoHeight || 1080,
-      });
-      cam.start();
+      // Drive MediaPipe from OUR existing camera stream via a manual frame
+      // loop instead of MediaPipe's Camera util — the util opens a *second*
+      // getUserMedia stream, which fails on phones that allow only one
+      // camera consumer at a time.
+      let sending = false;
+      const pump = async () => {
+        if (!arStream) return; // camera closed
+        if (!sending && vid.readyState >= 2 && vid.videoWidth > 0) {
+          sending = true;
+          try { await hands.send({ image: vid }); } catch {}
+          sending = false;
+        }
+        arHandLoop = requestAnimationFrame(pump);
+      };
+      pump();
     }
   }
 
