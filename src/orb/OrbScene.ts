@@ -1265,6 +1265,54 @@ function setupChuEffect(
 }
 
 // ============================================================
+// Replace procedural Pikachu body with a purchased GLB model.
+// Keeps all effects (sparks, aura, lights) from buildPikachu.
+// Body meshes use MeshPhysicalMaterial; face decal uses
+// MeshBasicMaterial with a canvas texture map — both are hidden.
+// ============================================================
+function loadAndReplaceBody(
+  pikaGroup: THREE.Group,
+  mats: PikachuMaterials,
+  base: string,
+): void {
+  import('three/examples/jsm/loaders/GLTFLoader.js').then(({ GLTFLoader }) => {
+    const loader = new GLTFLoader();
+    loader.load(
+      base + 'pikachu.glb',
+      (gltf) => {
+        // Hide all procedural body/head geometry
+        pikaGroup.traverse((child) => {
+          if (child instanceof THREE.Mesh) {
+            const mat = Array.isArray(child.material) ? child.material[0] : child.material;
+            if (mat instanceof THREE.MeshPhysicalMaterial) child.visible = false;
+            // Face decal + cheek overlays = MeshBasicMaterial with canvas/texture map
+            if (mat instanceof THREE.MeshBasicMaterial && (mat as THREE.MeshBasicMaterial).map) {
+              child.visible = false;
+            }
+          }
+        });
+
+        // Apply Pikachu yellow PBR material to all GLB meshes
+        const model = gltf.scene;
+        model.traverse((child) => {
+          if (child instanceof THREE.Mesh) {
+            child.material = mats.yellow;
+            child.castShadow = true;
+          }
+        });
+
+        // Scale + center to match procedural Pikachu proportions
+        model.scale.setScalar(1.3);
+        model.position.set(0, -0.1, 0);
+        pikaGroup.add(model);
+      },
+      undefined,
+      (err) => console.warn('[OrbScene] pikachu.glb load failed:', err),
+    );
+  });
+}
+
+// ============================================================
 // Mobile orb scene — holographic AI core (MAXIMUM QUALITY)
 // ============================================================
 function mountMobileOrb(container: HTMLElement): OrbHandle {
@@ -1364,6 +1412,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   const pikaGroup = pika.group;
   pikaGroup.scale.setScalar(0.95);
   group.add(pikaGroup);
+  loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/');
 
   // ────────────────────────────────────────────
   // ORBITAL RINGS — gold halo, champagne, rose
@@ -1885,6 +1934,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   const pika = buildPikachu(pikaMats, 1.0);
   const pikaGroup = pika.group;
   group.add(pikaGroup);
+  loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/');
 
   // ────────────────────────────────────────────
   // ORBITAL RINGS — prominent gold halo, champagne, rose
