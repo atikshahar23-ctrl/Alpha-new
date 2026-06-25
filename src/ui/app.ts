@@ -13,6 +13,7 @@ import * as driveSync from '../modules/driveSync';
 import * as puterSync from '../modules/puterSync';
 import { setPikaVolume, setPikaPitch, setPikaEnabled, pikaSpeak, setChirpCallback, unlockAudio } from '../assistant/pikaVoice';
 import { setActiveCharacter, playCharacterCry, stopCharacterVoice, setCharacterVolume, unlockCharacterAudio } from '../assistant/characterVoice';
+import { initPokeballFx, throwPokeball } from '../effects/pokeballFx';
 import { universalSearch, TYPE_ICONS, addRecentSearch, recentSearches, quickSuggestions } from '../modules/search';
 import { registerShortcut, initShortcuts, shortcutsHTML } from '../modules/shortcuts';
 import { dailyBriefing } from '../modules/analytics';
@@ -169,7 +170,8 @@ function t(key: string, lang: UILang): string {
 export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v18 ⚡</div></div></div>
+      <div class="char-ambient" id="charAmbient"></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v19 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="searchBtn" aria-label="Search (Ctrl+K)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
         <button class="chip ghost" id="muteBtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg></button>
@@ -1607,6 +1609,10 @@ export function mountApp(root: HTMLElement) {
   let arObjects: ArObj[] = [];
   let arHandPos = { x: -1, y: -1, pinching: false };
   let arHand2Pos = { x: -1, y: -1, pinching: false };
+  // Hand-zone for character switching: hold your hand in the dashed circle.
+  let arZoneDwell = 0;       // seconds the hand has been inside the zone
+  let arZoneCooldown = 0;    // seconds before the zone can fire again
+  const AR_ZONE = { x: 0.5, y: 0.74, r: 0.13 }; // normalized (lower-centre)
   let arGrabbed: ArObj | null = null;
   let arObjCtx: CanvasRenderingContext2D | null = null;
 
@@ -1939,6 +1945,7 @@ export function mountApp(root: HTMLElement) {
     const ch = MAIN_CHARACTERS.find(c => c.id === id) || MAIN_CHARACTERS[0];
     orb.setCharacter(ch.id);
     localStorage.setItem(MAIN_CHAR_KEY, ch.id);
+    document.body.dataset.char = ch.id;   // per-character ambient (fire/water/hypnosis)
     applyCharacterVoice(ch.id);
     orb.pikaEmote('excited');
     return ch.label;
@@ -1948,16 +1955,31 @@ export function mountApp(root: HTMLElement) {
   // Voice handoff: when the active character is NOT Pikachu, mute Pikachu's
   // voice and let that character do its own synthesized cries. Switching back
   // to Pikachu restores his voice (respecting the user's voice on/off setting).
+  // Per-character colouring of the assistant's spoken (TTS) voice. Meowth
+  // "talks", so when he's the avatar the assistant speaks in his deep raspy
+  // voice; Charmander/Squirtle get subtler tints; Pikachu = normal.
+  const CHAR_TTS: Record<string, { pitch?: number; rate?: number } | null> = {
+    pikachu: null,
+    charmander: { pitch: 0.7, rate: 0.97 },
+    squirtle: { pitch: 1.3, rate: 1.06 },
+    meowth: { pitch: 0.4, rate: 0.9 },
+  };
   function applyCharacterVoice(id: string) {
     unlockCharacterAudio();
     setCharacterVolume(state.pikaVolume);
+    voice.charVoice = CHAR_TTS[id] || null;   // colour the assistant's speech
     if (id === 'pikachu') {
       stopCharacterVoice();
       setActiveCharacter('pikachu');
-      setPikaEnabled(state.pikaVoiceOn); // restore Pikachu per user setting
+      setPikaEnabled(state.pikaVoiceOn);       // restore Pikachu per user setting
+    } else if (id === 'meowth') {
+      // Meowth talks (via the TTS voice above) rather than doing animal cries.
+      setPikaEnabled(false);
+      stopCharacterVoice();
+      if (state.pikaVoiceOn) setTimeout(() => playCharacterCry('meowth'), 200); // one greeting cry
     } else {
-      setPikaEnabled(false);             // mute Pikachu
-      setActiveCharacter(id);            // start this character's idle cries
+      setPikaEnabled(false);                   // mute Pikachu
+      setActiveCharacter(id);                  // start this character's idle cries
       if (state.pikaVoiceOn) setTimeout(() => playCharacterCry(id), 200);
     }
   }
@@ -1965,7 +1987,10 @@ export function mountApp(root: HTMLElement) {
   // Apply the saved character on startup (if not the default Pikachu).
   const savedChar = localStorage.getItem(MAIN_CHAR_KEY);
   if (savedChar && savedChar !== 'pikachu') {
+    document.body.dataset.char = savedChar;
     setTimeout(() => { orb.setCharacter(savedChar); applyCharacterVoice(savedChar); }, 1200);
+  } else {
+    document.body.dataset.char = 'pikachu';
   }
 
   // ── Animated main-character swap (red-laser dispel + pokeball summon) ──
@@ -1973,20 +1998,11 @@ export function mountApp(root: HTMLElement) {
   // character → it vanishes → a pokeball flies in, wobbles, cracks open with a
   // laser burst → the new character emerges (loaded into the orb).
   let charSwapBusy = false;
-  function drawMainPokeball(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, wob = 0) {
-    ctx.save(); ctx.translate(x, y); ctx.rotate(wob);
-    ctx.shadowColor = '#ff3322'; ctx.shadowBlur = r * 0.5;
-    ctx.beginPath(); ctx.arc(0, 0, r, Math.PI, 0); ctx.fillStyle = '#e63835'; ctx.fill();
-    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI); ctx.fillStyle = '#fff'; ctx.fill();
-    ctx.shadowBlur = 0;
-    ctx.strokeStyle = '#111'; ctx.lineWidth = r * 0.07;
-    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(-r, 0); ctx.lineTo(r, 0); ctx.stroke();
-    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(0, 0, r * 0.24, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = '#111'; ctx.lineWidth = r * 0.07; ctx.stroke();
-    ctx.beginPath(); ctx.arc(0, 0, r * 0.12, 0, Math.PI * 2); ctx.fillStyle = '#e8e8e8'; ctx.fill();
-    ctx.restore();
-  }
+  // Pre-warm the 3D pokeball renderer over the orb stage.
+  try { initPokeballFx(document.getElementById('stage')!); } catch {}
+
+  // Swap the main character with: red-laser dispel → real 3D Pokéball flies in,
+  // wobbles, opens with a burst → new character loads. Runs over the orb stage.
   function swapMainCharacterAnimated(nextId: string) {
     if (charSwapBusy) return;
     const cvs = $<HTMLCanvasElement>('charSwapFx');
@@ -1999,92 +2015,49 @@ export function mountApp(root: HTMLElement) {
     const rect = stage.getBoundingClientRect();
     cvs.width = rect.width; cvs.height = rect.height;
     const W = cvs.width, H = cvs.height;
-    const cx = W / 2, cy = H * 0.46;          // orb centre
-    const ballR = Math.min(W, H) * 0.07;
-    let t = 0;
-    let swapped = false;
+    const cx = W / 2, cy = H * 0.46;
     const start = performance.now();
-    function frame(now: number) {
-      t = (now - start) / 1000;
+    let handedOff = false;
+    function laser(now: number) {
+      const t = (now - start) / 1000;
       ctx!.clearRect(0, 0, W, H);
-
-      // Critical state transitions — driven by elapsed time, NOT by which
-      // render phase we land in, so a slow/dropped frame can never skip them.
-      if (t >= 0.4 && !swapped) stage!.classList.add('stage-dispelled');
-      if (t >= 1.45 && !swapped) {
-        swapped = true;
-        setMainCharacter(nextId);
-        stage!.classList.remove('stage-dispelled');
-      }
-
-      // Phase 1 (0–0.5s): red laser beam from bottom to orb, then dispel.
-      if (t < 0.5) {
-        const p = t / 0.5;
-        const x1 = cx, y1 = H, x2 = cx, y2 = cy;
-        const ex = x1 + (x2 - x1) * p, ey = y1 + (y2 - y1) * p;
+      if (t >= 0.35) stage!.classList.add('stage-dispelled');
+      if (t < 0.7) {
+        // red laser beam bottom → orb centre
+        const p = Math.min(1, t / 0.45);
+        const ex = cx, ey = H + (cy - H) * p;
         ctx!.save(); ctx!.lineCap = 'round';
         const layers = [[26, .08], [15, .2], [6, .5], [2, 1]] as const;
         const cols = ['rgba(255,40,40,1)','rgba(255,70,40,1)','rgba(255,130,60,1)','#fff'];
         layers.forEach((L, i) => {
-          ctx!.beginPath(); ctx!.moveTo(x1, y1); ctx!.lineTo(ex, ey);
+          ctx!.beginPath(); ctx!.moveTo(cx, H); ctx!.lineTo(ex, ey);
           ctx!.lineWidth = L[0]; ctx!.globalAlpha = L[1]; ctx!.strokeStyle = cols[i];
           ctx!.shadowColor = '#ff2200'; ctx!.shadowBlur = i === 3 ? 30 : 0; ctx!.stroke();
         });
+        // impact burst near the end
+        if (p >= 1) {
+          const bp = (t - 0.45) / 0.25, rr = Math.min(W, H) * 0.28 * bp;
+          const g = ctx!.createRadialGradient(cx, cy, 0, cx, cy, rr);
+          g.addColorStop(0, `rgba(255,255,255,${0.9 * (1 - bp)})`);
+          g.addColorStop(0.4, `rgba(255,60,30,${0.7 * (1 - bp)})`);
+          g.addColorStop(1, 'rgba(255,0,0,0)');
+          ctx!.globalAlpha = 1; ctx!.fillStyle = g;
+          ctx!.beginPath(); ctx!.arc(cx, cy, rr, 0, Math.PI * 2); ctx!.fill();
+        }
         ctx!.restore();
-      }
-      // Phase 2 (0.5–0.7s): red impact burst at orb centre.
-      else if (t < 0.7) {
-        const p = (t - 0.5) / 0.2;
-        const rr = ballR * 4 * p;
-        ctx!.save();
-        const g = ctx!.createRadialGradient(cx, cy, 0, cx, cy, rr);
-        g.addColorStop(0, `rgba(255,255,255,${0.9 * (1 - p)})`);
-        g.addColorStop(0.4, `rgba(255,60,30,${0.7 * (1 - p)})`);
-        g.addColorStop(1, 'rgba(255,0,0,0)');
-        ctx!.fillStyle = g; ctx!.beginPath(); ctx!.arc(cx, cy, rr, 0, Math.PI * 2); ctx!.fill();
-        ctx!.restore();
-      }
-      // Phase 3 (0.7–1.1s): pokeball flies in from bottom to centre.
-      else if (t < 1.1) {
-        const p = (t - 0.7) / 0.4, e = 1 - Math.pow(1 - p, 3);
-        const by = H * 0.95 + (cy - H * 0.95) * e;
-        drawMainPokeball(ctx!, cx, by, ballR * (0.5 + 0.5 * e));
-      }
-      // Phase 4 (1.1–1.5s): wobble.
-      else if (t < 1.5) {
-        const wob = Math.sin((t - 1.1) * 18) * 0.4 * Math.max(0, 1 - (t - 1.1) / 0.4);
-        drawMainPokeball(ctx!, cx, cy, ballR, wob);
-      }
-      // Phase 5 (1.5–1.95s): open with laser flash (character already loaded).
-      else if (t < 1.95) {
-        const p = (t - 1.5) / 0.45;
-        const off = ballR * 2 * p;
-        ctx!.save(); ctx!.globalAlpha = Math.max(0, 1 - p * 1.2);
-        ctx!.beginPath(); ctx!.arc(cx, cy - off, ballR, Math.PI, 0); ctx!.fillStyle = '#e63835'; ctx!.fill();
-        ctx!.strokeStyle = '#111'; ctx!.lineWidth = ballR * 0.07; ctx!.stroke();
-        ctx!.beginPath(); ctx!.arc(cx, cy + off, ballR, 0, Math.PI); ctx!.fillStyle = '#fff'; ctx!.fill();
-        ctx!.stroke(); ctx!.restore();
-        const fr = ballR * 3.4 * p;
-        ctx!.save(); ctx!.globalAlpha = Math.max(0, 0.85 - p);
-        const g = ctx!.createRadialGradient(cx, cy, 0, cx, cy, fr);
-        g.addColorStop(0, 'rgba(255,255,255,1)');
-        g.addColorStop(0.4, 'rgba(255,210,90,0.7)');
-        g.addColorStop(1, 'rgba(255,120,30,0)');
-        ctx!.fillStyle = g; ctx!.beginPath(); ctx!.arc(cx, cy, fr, 0, Math.PI * 2); ctx!.fill();
-        ctx!.restore();
-      }
-      else {
-        if (!swapped) { swapped = true; setMainCharacter(nextId); } // safety fallback
+        requestAnimationFrame(laser);
+      } else if (!handedOff) {
+        handedOff = true;
         ctx!.clearRect(0, 0, W, H);
         cvs.classList.remove('active');
-        stage!.classList.remove('stage-dispelled');
-        charSwapBusy = false;
-        $('charSwapBtn')?.classList.remove('busy');
-        return;
+        // Hand off to the real 3D pokeball over the orb.
+        throwPokeball(stage!, {
+          onOpen: () => { setMainCharacter(nextId); stage!.classList.remove('stage-dispelled'); },
+          onDone: () => { charSwapBusy = false; $('charSwapBtn')?.classList.remove('busy'); },
+        });
       }
-      requestAnimationFrame(frame);
     }
-    requestAnimationFrame(frame);
+    requestAnimationFrame(laser);
   }
   (window as any).swapMainCharacterAnimated = swapMainCharacterAnimated;
 
@@ -2897,9 +2870,60 @@ export function mountApp(root: HTMLElement) {
       ftCtx.restore();
     }
 
+    drawArCharSwitchZone(w, h, dt);
+
     drawFxParticles();
     drawArCharLayer();
     arAnimFrame = requestAnimationFrame(drawArObjects);
+  }
+
+  // Dashed "place your hand here" zone — hold your hand inside to switch the
+  // main character. Far more reliable than gesture classification.
+  function drawArCharSwitchZone(w: number, h: number, dt: number) {
+    if (!arObjCtx) return;
+    const ctx = arObjCtx;
+    const zx = AR_ZONE.x * w, zy = AR_ZONE.y * h, zr = AR_ZONE.r * Math.min(w, h);
+    arZoneCooldown = Math.max(0, arZoneCooldown - dt);
+
+    const hand = arHandPos.x >= 0;
+    const dist = hand ? Math.hypot(arHandPos.x * w - zx, arHandPos.y * h - zy) : Infinity;
+    const inside = hand && dist < zr && arZoneCooldown <= 0;
+    if (inside) arZoneDwell = Math.min(1, arZoneDwell + dt / 0.8); // 0.8s to fill
+    else arZoneDwell = Math.max(0, arZoneDwell - dt * 1.5);
+
+    ctx.save();
+    // dashed ring
+    ctx.setLineDash([12, 9]);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = inside ? 'rgba(255,210,90,0.95)' : 'rgba(218,165,32,0.6)';
+    ctx.shadowColor = '#daa520'; ctx.shadowBlur = inside ? 18 : 8;
+    ctx.beginPath(); ctx.arc(zx, zy, zr, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+    // dwell progress arc
+    if (arZoneDwell > 0.01) {
+      ctx.lineWidth = 6; ctx.strokeStyle = '#ffcc33'; ctx.shadowBlur = 22;
+      ctx.beginPath(); ctx.arc(zx, zy, zr, -Math.PI / 2, -Math.PI / 2 + arZoneDwell * Math.PI * 2); ctx.stroke();
+    }
+    // label
+    ctx.shadowBlur = 0;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `${Math.round(zr * 0.5)}px sans-serif`;
+    ctx.fillText('🖐️', zx, zy - zr * 0.1);
+    ctx.fillStyle = inside ? '#ffe08a' : 'rgba(245,230,200,0.9)';
+    ctx.font = `bold ${Math.round(zr * 0.2)}px "Space Grotesk", sans-serif`;
+    ctx.fillText('החלף דמות', zx, zy + zr * 0.45);
+    ctx.restore();
+
+    if (arZoneDwell >= 1 && arZoneCooldown <= 0) {
+      arZoneDwell = 0; arZoneCooldown = 4;
+      const cur = localStorage.getItem(MAIN_CHAR_KEY) || 'pikachu';
+      const idx = MAIN_CHARACTERS.findIndex(c => c.id === cur);
+      const next = MAIN_CHARACTERS[(idx + 1) % MAIN_CHARACTERS.length];
+      addFloatingText(AR_ZONE.x, AR_ZONE.y - 0.14, '⚡ ' + next.label, '#ffcc33');
+      const vp = document.getElementById('arViewport');
+      if (vp) throwPokeball(vp, { onOpen: () => setMainCharacter(next.id) });
+      else setMainCharacter(next.id);
+    }
   }
 
   function openArCamera() {

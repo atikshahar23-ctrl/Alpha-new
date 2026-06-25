@@ -1347,12 +1347,16 @@ function loadAndReplaceBody(
           });
         }
 
-        // Normalize to ~1.2 units on the largest axis so it fits the orb.
+        // Normalize so the model fits the orb and is centred. Use height/width
+        // (ignore depth) so wide bind-poses (e.g. T-pose arms) don't shrink it.
+        // Non-Pikachu models render a touch larger so they read clearly.
         const bb = new THREE.Box3().setFromObject(model);
         const bbSize = bb.getSize(new THREE.Vector3());
         const bbCenter = bb.getCenter(new THREE.Vector3());
-        const s = 1.2 / Math.max(bbSize.x, bbSize.y, bbSize.z);
+        const target = isPikachu ? 1.2 : 1.45;
+        const s = target / Math.max(bbSize.x, bbSize.y);
         model.scale.setScalar(s);
+        // Centre on the bounding box so it sits in the middle of the orb.
         model.position.set(-bbCenter.x * s, -bbCenter.y * s, -bbCenter.z * s);
         model.rotation.y = Math.PI;
         pikaGroup.add(model);

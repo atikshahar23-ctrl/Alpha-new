@@ -15,7 +15,10 @@ let raf = 0;
 let container: HTMLElement | null = null;
 
 function ensureRenderer(host: HTMLElement) {
-  if (renderer) return;
+  if (renderer) {
+    if (container !== host) { host.appendChild(renderer.domElement); container = host; resize(); }
+    return;
+  }
   container = host;
   renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
@@ -49,17 +52,18 @@ async function loadBall(): Promise<THREE.Object3D | null> {
   ballLoading = (async () => {
     const base = (import.meta as any).env.BASE_URL || '/';
     const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js');
-    const tex = await new Promise<THREE.Texture>((res) => {
-      new THREE.TextureLoader().load(base + 'ar-models/pokeball-tex.jpg', (t) => {
-        t.colorSpace = THREE.SRGBColorSpace; t.flipY = false; res(t);
-      }, undefined, () => res(null as any));
-    });
     const gltf: any = await new Promise((res, rej) =>
       new GLTFLoader().load(base + 'ar-models/pokeball.glb', res, undefined, rej)).catch(() => null);
     if (!gltf) return null;
     const model: THREE.Object3D = gltf.scene;
-    const mat = new THREE.MeshStandardMaterial({ map: tex || null, color: tex ? 0xffffff : 0xdddddd, roughness: 0.35, metalness: 0.1 });
-    model.traverse((o: any) => { if (o.isMesh) { o.material = mat; o.geometry.computeVertexNormals(); } });
+    // Keep the model's own materials (red top / black band / white bottom);
+    // just make them glossy plastic so it reads as a real pokeball, not flat.
+    model.traverse((o: any) => {
+      if (!o.isMesh) return;
+      o.geometry.computeVertexNormals();
+      const tune = (m: any) => { m.roughness = 0.28; m.metalness = 0.12; m.side = THREE.FrontSide; };
+      if (Array.isArray(o.material)) o.material.forEach(tune); else if (o.material) tune(o.material);
+    });
     // Normalise to ~2 units.
     const bb = new THREE.Box3().setFromObject(model);
     const size = bb.getSize(new THREE.Vector3());
@@ -84,10 +88,19 @@ export function initPokeballFx(host: HTMLElement) {
 export interface ThrowOpts { onOpen?: () => void; onDone?: () => void; }
 
 export function throwPokeball(host: HTMLElement, opts: ThrowOpts = {}) {
-  ensureRenderer(host);
-  resize();
+  // Guarantee callbacks fire exactly once, even if WebGL/model load fails — so
+  // the character swap ALWAYS completes regardless of render issues.
+  let openCalled = false, doneCalled = false;
+  const fireOpen = () => { if (!openCalled) { openCalled = true; try { opts.onOpen?.(); } catch {} } };
+  const fireDone = () => { if (!doneCalled) { doneCalled = true; try { opts.onDone?.(); } catch {} } };
+  // Watchdog: if the animation hasn't opened/finished in time, force it.
+  const wd1 = setTimeout(fireOpen, 1400);
+  const wd2 = setTimeout(() => { fireOpen(); fireDone(); }, 2600);
+
+  try { ensureRenderer(host); resize(); } catch { fireOpen(); fireDone(); clearTimeout(wd1); clearTimeout(wd2); return; }
+
   loadBall().then((b) => {
-    if (!b || !scene || !renderer || !camera) { opts.onOpen?.(); opts.onDone?.(); return; }
+    if (!b || !scene || !renderer || !camera) { fireOpen(); fireDone(); clearTimeout(wd1); clearTimeout(wd2); return; }
     if (!b.parent) scene.add(b);
     b.visible = true;
     cancelAnimationFrame(raf);
@@ -116,7 +129,7 @@ export function throwPokeball(host: HTMLElement, opts: ThrowOpts = {}) {
       }
       // Open burst (0.95–1.5): flash + ball spins away/shrinks
       else if (t < 1.5) {
-        if (!opened) { opened = true; opts.onOpen?.(); }
+        if (!opened) { opened = true; clearTimeout(wd1); fireOpen(); }
         const p = (t - 0.95) / 0.55;
         flashMat.opacity = Math.max(0, 0.9 - p);
         flash.scale.setScalar(0.5 + p * 6);
@@ -126,16 +139,16 @@ export function throwPokeball(host: HTMLElement, opts: ThrowOpts = {}) {
       else {
         flashMat.opacity = 0;
         b!.visible = false;
-        renderer!.render(scene!, camera!);
+        try { renderer!.render(scene!, camera!); } catch {}
         scene!.remove(flash); flashMat.dispose();
-        opts.onDone?.();
+        clearTimeout(wd2); fireDone();
         return; // stop loop
       }
-      renderer!.render(scene!, camera!);
+      try { renderer!.render(scene!, camera!); } catch { fireOpen(); fireDone(); clearTimeout(wd1); clearTimeout(wd2); return; }
       raf = requestAnimationFrame(frame);
     }
     raf = requestAnimationFrame(frame);
-  });
+  }).catch(() => { fireOpen(); fireDone(); clearTimeout(wd1); clearTimeout(wd2); });
 }
 
 export function disposePokeballFx() {

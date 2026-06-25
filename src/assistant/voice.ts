@@ -17,6 +17,10 @@ export class VoiceEngine {
   private onStateChange: (s: 'armed' | 'listening' | 'thinking' | 'speaking' | '') => void;
   private recRetries = 0;
   wakeOn = false;
+  // Per-character voice modifier — when a non-default main character is the
+  // assistant's avatar, its voice colours the spoken replies (e.g. Meowth =
+  // deep raspy). Multiplies the user's base pitch/rate. null = normal voice.
+  charVoice: { pitch?: number; rate?: number } | null = null;
 
   constructor(
     state: AppState,
@@ -253,8 +257,9 @@ export class VoiceEngine {
     const u = new SpeechSynthesisUtterance(text);
     if (this.chosenVoice) { u.voice = this.chosenVoice; u.lang = this.chosenVoice.lang; }
     else u.lang = this.state.replyLang === 'he' ? 'he-IL' : this.state.replyLang === 'es' ? 'es-ES' : 'en-US';
-    u.rate = this.state.voiceSpeed || 1.0;
-    u.pitch = this.state.voicePitch != null ? this.state.voicePitch : 1.0;
+    const cv = this.charVoice;
+    u.rate = (this.state.voiceSpeed || 1.0) * (cv?.rate ?? 1);
+    u.pitch = Math.max(0, Math.min(2, (this.state.voicePitch != null ? this.state.voicePitch : 1.0) * (cv?.pitch ?? 1)));
     u.volume = this.state.voiceVolume != null ? this.state.voiceVolume : 1.0;
     let finished = false;
     const done = () => {
