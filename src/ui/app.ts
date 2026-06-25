@@ -10,7 +10,7 @@ import { type CockpitHandle } from '../modules/cockpit';
 import { runProactive } from '../modules/proactive';
 import { processRecurring } from '../modules/recurring';
 import * as driveSync from '../modules/driveSync';
-import { setPikaVolume, setPikaPitch, setPikaEnabled, pikaSpeak, setChirpCallback } from '../assistant/pikaVoice';
+import { setPikaVolume, setPikaPitch, setPikaEnabled, pikaSpeak, setChirpCallback, unlockAudio } from '../assistant/pikaVoice';
 import { universalSearch, TYPE_ICONS, addRecentSearch, recentSearches, quickSuggestions } from '../modules/search';
 import { registerShortcut, initShortcuts, shortcutsHTML } from '../modules/shortcuts';
 import { dailyBriefing } from '../modules/analytics';
@@ -608,6 +608,10 @@ export function mountApp(root: HTMLElement) {
     orb.setEnergy(0.95);
     setTimeout(() => orb.setEnergy(0.06), 900);
   });
+
+  // Unlock Web Audio on first user interaction (iOS/Chrome autoplay policy)
+  const _unlockOnce = () => { unlockAudio(); document.removeEventListener('pointerdown', _unlockOnce); };
+  document.addEventListener('pointerdown', _unlockOnce);
 
   mountFlowLines(root.querySelector('.app')!);
 

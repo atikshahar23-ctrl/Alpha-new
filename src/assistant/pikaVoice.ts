@@ -9,9 +9,22 @@
 // ──────────────────────────────────────────────────────────────────────────
 
 let volume = 0.6;
-let pitch = 1.25;
+let pitch = 1.0;   // 1.0 = natural; UI sends pikaState.pikaPitch which defaults to 1.0 now
 let enabled = true;
 let timer: ReturnType<typeof setTimeout> | null = null;
+
+// Shared AudioContext — avoids suspended-on-create Chrome/iOS bug.
+// Resumed on any play call so it works both from user gestures and callbacks.
+let _sharedCtx: AudioContext | null = null;
+function getCtx(): AudioContext {
+  if (!_sharedCtx || _sharedCtx.state === 'closed') {
+    _sharedCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+  }
+  if (_sharedCtx.state === 'suspended') _sharedCtx.resume().catch(() => {});
+  return _sharedCtx;
+}
+// Call on any user interaction (mic button, keyboard, touch) to pre-unlock audio
+export function unlockAudio() { try { getCtx(); } catch {} }
 
 let onChirpStart: (() => void) | null = null;
 export function setChirpCallback(fn: (() => void) | null) { onChirpStart = fn; }
@@ -239,9 +252,9 @@ export function pikaEmoteSpeak(emote: string): void {
   if (now - _lastEmoteSpeakT < 1400) return;
   _lastEmoteSpeakT = now;
   try {
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)() as AudioContext;
+    const ctx = getCtx();
     const master = ctx.createGain();
-    master.gain.value = 1;
+    master.gain.value = volume;
     const soft = ctx.createBiquadFilter();
     soft.type = 'lowpass'; soft.frequency.value = 6500; soft.Q.value = 0.4;
     master.connect(soft); soft.connect(ctx.destination);
@@ -265,17 +278,15 @@ export function pikaEmoteSpeak(emote: string): void {
       default:
         sayPika(ctx, master);
     }
-    setTimeout(() => { try { ctx.close(); } catch {} }, 2500);
   } catch {}
 }
 
 function playWebAudioPika() {
   onChirpStart?.();
   try {
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)() as AudioContext;
+    const ctx = getCtx();
     const master = ctx.createGain();
-    master.gain.value = 1;
-    // gentle final lowpass to keep edges soft / non-harsh
+    master.gain.value = volume;
     const soft = ctx.createBiquadFilter();
     soft.type = 'lowpass'; soft.frequency.value = 6500; soft.Q.value = 0.4;
     master.connect(soft); soft.connect(ctx.destination);
@@ -285,8 +296,6 @@ function playWebAudioPika() {
     else if (r < 0.74) sayPikachu(ctx, master);
     else if (r < 0.90) sayPika(ctx, master);
     else               sayPikaExcited(ctx, master);
-
-    setTimeout(() => { try { ctx.close(); } catch {} }, 2500);
   } catch {}
 }
 
