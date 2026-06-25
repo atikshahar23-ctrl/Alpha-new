@@ -3258,18 +3258,23 @@ export function mountApp(root: HTMLElement) {
       'display:flex;align-items:center;gap:5px;transition:all .3s;letter-spacing:.5px',
     ].join(';');
     ind.innerHTML = '☁ <span id="cloudStatus">לא מחובר</span>';
-    ind.onclick = () => {
+    ind.onclick = async () => {
       if (!puterSync.isSignedIn()) {
         sessionStorage.removeItem(LOGIN_SKIP_KEY);
         showLoginScreen();
+        return;
+      }
+      (ind as HTMLElement).innerHTML = '🔄 <span id="cloudStatus">מסנכרן…</span>';
+      const action = await puterSync.smartSync();
+      if (action === 'downloaded') {
+        (ind as HTMLElement).innerHTML = '✓ <span id="cloudStatus">עודכן מהענן</span>';
+        setTimeout(() => location.reload(), 800);
+      } else if (action === 'uploaded') {
+        (ind as HTMLElement).innerHTML = '✓ <span id="cloudStatus">הועלה לענן</span>';
+        setTimeout(updateCloudIndicator, 2500);
       } else {
-        ind.innerHTML = '🔄 <span id="cloudStatus">מסנכרן…</span>';
-        puterSync.syncToCloud().then(r => {
-          ind.innerHTML = r.ok
-            ? '✓ <span id="cloudStatus">סונכרן</span>'
-            : '⚠ <span id="cloudStatus">שגיאה</span>';
-          setTimeout(updateCloudIndicator, 3000);
-        });
+        (ind as HTMLElement).innerHTML = '⚠ <span id="cloudStatus">שגיאה</span>';
+        setTimeout(updateCloudIndicator, 2500);
       }
     };
     document.body.appendChild(ind);
@@ -3397,20 +3402,19 @@ export function mountApp(root: HTMLElement) {
       }
 
       if (puterSync.isSignedIn()) {
-        // Restore from cloud if this device has no local data
-        const hasLocalData = localStorage.getItem('alpha_events') || localStorage.getItem('alpha_tasks') || localStorage.getItem('alpha_brain_memory_v1');
-        if (!hasLocalData) {
-          const r = await puterSync.syncFromCloud();
-          if (r.ok && (r.tables ?? 0) > 0) { setTimeout(() => location.reload(), 500); return; }
-        }
-        // Upload after 30s, then every 5 min
-        setTimeout(async () => {
-          await puterSync.syncToCloud();
+        // Smart sync: compare cloud timestamp vs local — pull if cloud is newer, push if local is newer
+        const action = await puterSync.smartSync();
+        if (action === 'downloaded') {
           updateCloudIndicator();
-        }, 30_000);
+          setTimeout(() => location.reload(), 600);
+          return;
+        }
+        updateCloudIndicator();
+
+        // Periodic sync every 5 min — always smartSync so we pick up changes from other devices
         setInterval(async () => {
           if (puterSync.isSignedIn()) {
-            await puterSync.syncToCloud();
+            await puterSync.smartSync();
             updateCloudIndicator();
           }
         }, 5 * 60 * 1000);

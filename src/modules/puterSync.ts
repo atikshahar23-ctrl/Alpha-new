@@ -138,3 +138,34 @@ export async function hasCloudBackup(): Promise<boolean> {
     return !!meta;
   } catch { return false; }
 }
+
+// Get cloud metadata (timestamp of last cloud upload)
+export async function getCloudMeta(): Promise<{ ts: string; tables: number } | null> {
+  try {
+    if (!isPuterAvailable() || !isSignedIn()) return null;
+    const raw = await puter().kv.get(KV_PREFIX + '__meta__');
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+// Smart startup sync: compare cloud vs local timestamps, pull or push accordingly.
+// Returns what action was taken.
+export async function smartSync(onProgress?: (msg: string) => void): Promise<'downloaded' | 'uploaded' | 'none'> {
+  if (!isPuterAvailable() || !isSignedIn()) return 'none';
+  try {
+    const cloudMeta = await getCloudMeta();
+    const localLastSync = localStorage.getItem(LAST_SYNC_KEY);
+
+    if (cloudMeta && (!localLastSync || cloudMeta.ts > localLastSync)) {
+      // Cloud has newer data → download (phone changes will appear on this device)
+      onProgress?.('מוריד נתונים חדשים מהענן…');
+      await syncFromCloud(onProgress);
+      return 'downloaded';
+    } else {
+      // Local is same or newer → upload this device's data to cloud
+      onProgress?.('מעלה נתונים לענן…');
+      await syncToCloud(onProgress);
+      return 'uploaded';
+    }
+  } catch { return 'none'; }
+}
