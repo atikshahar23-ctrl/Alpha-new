@@ -616,6 +616,7 @@ export function mountApp(root: HTMLElement) {
             <canvas id="arCanvas"></canvas>
             <canvas id="arFxCanvas"></canvas>
             <canvas id="arObjCanvas"></canvas>
+            <canvas id="arCharCanvas"></canvas>
             <div class="ar-hud" id="arHud">
               <div class="ar-status" id="arStatus">מאתחל מצלמה…</div>
               <div class="ar-hand-indicator" id="arHandIndicator"></div>
@@ -1609,6 +1610,37 @@ export function mountApp(root: HTMLElement) {
 
   type ArEffect = 'none' | 'fire' | 'water' | 'laser' | 'sparkle' | 'rainbow';
   let arCurrentFx: ArEffect = 'none';
+
+  // ── Dispel & Summon system ──────────────────────────────────
+  // Characters the user can summon via "throw" gesture.
+  // Start empty — user provides images via addArCharacter().
+  interface ArCharacter { name: string; url: string; img?: HTMLImageElement }
+  const arCharacters: ArCharacter[] = [];
+  let arCharIdx = -1;           // which character is summoned (-1 = none)
+  let arCharAnim = 0;           // 0→1 entry animation progress
+  let arCharFromDir = { x: 0, y: 0 }; // direction character flies in from
+  let arOrbDispelled = false;   // orb/stage hidden after beam hit
+  let arPalmHoldTime = 0;       // seconds palm is held (triggers beam at 0.7s)
+  let arPrevGesture: 'none' | 'peace' | 'fist' | 'palm' | 'thumbsUp' | 'pointUp' = 'none';
+  let arFistStartTime = 0;      // when fist gesture began
+  let arThrowCooldown = 0;      // seconds before another throw is accepted
+  // Laser beam that fires from hand → orb center
+  let arBeamFiring = false;
+  let arBeamOrigin = { x: 0.5, y: 0.5 };
+  let arBeamProgress = 0;       // 0→1 as beam travels toward orb
+  // Particle canvas (separate from arObjCtx) for beam/character effects
+  let arCharCtx: CanvasRenderingContext2D | null = null;
+
+  // Call this to register a character image (user adds their own images later)
+  function addArCharacter(name: string, url: string) {
+    const ch: ArCharacter = { name, url };
+    const img = new Image();
+    img.src = url;
+    img.onload = () => { ch.img = img; };
+    arCharacters.push(ch);
+  }
+  // Expose globally so the user can call it from the browser console
+  (window as any).addArCharacter = addArCharacter;
   let arFxCtx: CanvasRenderingContext2D | null = null;
 
   interface FxParticle {
@@ -1753,6 +1785,134 @@ export function mountApp(root: HTMLElement) {
     if (arHandPos.x >= 0 && arCurrentFx !== 'none') {
       const cvs2 = arFxCtx.canvas;
       spawnFxParticles(arHandPos.x, arHandPos.y, cvs2.width, cvs2.height);
+    }
+  }
+
+  // ── Beam + character canvas draw ─────────────────────────────
+  function drawArCharLayer() {
+    if (!arCharCtx) return;
+    const cvs = arCharCtx.canvas;
+    const ctx = arCharCtx;
+    const w = cvs.width, h = cvs.height;
+    ctx.clearRect(0, 0, w, h);
+
+    // Laser beam flying from hand toward orb center
+    if (arBeamFiring) {
+      arBeamProgress = Math.min(1, arBeamProgress + 0.045);
+      const bx1 = arBeamOrigin.x * w;
+      const by1 = arBeamOrigin.y * h;
+      const bx2 = 0.5 * w;
+      const by2 = 0.5 * h;
+      const endX = bx1 + (bx2 - bx1) * arBeamProgress;
+      const endY = by1 + (by2 - by1) * arBeamProgress;
+      ctx.save();
+      ctx.lineCap = 'round';
+      // Outer glow
+      for (let layer = 3; layer >= 0; layer--) {
+        const widths = [24, 14, 6, 2];
+        const alphas = [0.06, 0.15, 0.45, 1];
+        const colors = ['rgba(255,40,40,1)', 'rgba(255,80,40,1)', 'rgba(255,140,60,1)', '#fff'];
+        ctx.beginPath();
+        ctx.moveTo(bx1, by1);
+        ctx.lineTo(endX, endY);
+        ctx.lineWidth = widths[layer];
+        ctx.strokeStyle = colors[layer];
+        ctx.globalAlpha = alphas[layer];
+        ctx.shadowColor = '#ff2200';
+        ctx.shadowBlur = layer === 0 ? 40 : 0;
+        ctx.stroke();
+      }
+      // Tip flare
+      ctx.globalAlpha = 0.9;
+      const grad = ctx.createRadialGradient(endX, endY, 0, endX, endY, 30);
+      grad.addColorStop(0, 'rgba(255,200,100,0.9)');
+      grad.addColorStop(0.5, 'rgba(255,80,20,0.4)');
+      grad.addColorStop(1, 'rgba(255,0,0,0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(endX, endY, 30, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      // When beam reaches orb center — trigger dispel
+      if (arBeamProgress >= 1 && !arOrbDispelled) {
+        arBeamFiring = false;
+        arOrbDispelled = true;
+        // Disintegration burst at center
+        for (let i = 0; i < 60; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const spd = 3 + Math.random() * 10;
+          arFxParticles.push({
+            x: bx2, y: by2,
+            vx: Math.cos(angle) * spd, vy: Math.sin(angle) * spd,
+            life: 1, maxLife: 0.4 + Math.random() * 0.6,
+            size: 3 + Math.random() * 12,
+            color: ['#ff4400','#ff7700','#ffaa00','#daa520','#fff','#ff2288'][Math.floor(Math.random()*6)],
+            alpha: 1,
+          });
+        }
+        // Hide stage
+        const stageEl = document.getElementById('stage');
+        if (stageEl) stageEl.classList.add('stage-dispelled');
+      }
+    }
+
+    // Palm hold indicator — circular charge-up ring around hand
+    if (arHandPos.x >= 0 && !arOrbDispelled && !arBeamFiring && arPalmHoldTime > 0.1) {
+      const progress = Math.min(1, arPalmHoldTime / 0.7);
+      const hx = arHandPos.x * w, hy = arHandPos.y * h;
+      ctx.save();
+      ctx.globalAlpha = 0.8;
+      ctx.strokeStyle = `hsl(${10 + progress * 30},100%,${50 + progress * 20}%)`;
+      ctx.lineWidth = 3;
+      ctx.shadowColor = '#ff4400';
+      ctx.shadowBlur = 20;
+      ctx.beginPath();
+      ctx.arc(hx, hy, 48, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Character display after summon
+    if (arOrbDispelled && arCharIdx >= 0 && arCharacters[arCharIdx]) {
+      const ch = arCharacters[arCharIdx];
+      arCharAnim = Math.min(1, arCharAnim + 0.04);
+      const scale = 0.6 + arCharAnim * 0.4;
+      const alpha = arCharAnim;
+      const cx = w * 0.5;
+      const cy = h * 0.45;
+      const fromX = arCharFromDir.x * w * (1 - arCharAnim) * 0.4;
+      const fromY = arCharFromDir.y * h * (1 - arCharAnim) * 0.4;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.translate(cx + fromX, cy + fromY);
+      ctx.scale(scale, scale);
+      if (ch.img) {
+        const size = Math.min(w, h) * 0.55;
+        ctx.drawImage(ch.img, -size / 2, -size / 2, size, size);
+      } else {
+        // Placeholder — glowing "?" until image is loaded
+        ctx.font = `${Math.round(Math.min(w, h) * 0.18)}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.shadowColor = '#daa520';
+        ctx.shadowBlur = 40;
+        ctx.fillStyle = '#daa520';
+        ctx.fillText(ch.name || '?', 0, 0);
+      }
+      ctx.restore();
+      // Name label
+      if (ch.name && arCharAnim > 0.5) {
+        ctx.save();
+        ctx.globalAlpha = (arCharAnim - 0.5) * 2;
+        ctx.font = `bold ${Math.round(w * 0.025)}px "Space Grotesk", sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#daa520';
+        ctx.shadowColor = '#daa520';
+        ctx.shadowBlur = 12;
+        ctx.fillText(ch.name, w * 0.5, h * 0.78);
+        ctx.restore();
+      }
     }
   }
 
@@ -2196,6 +2356,7 @@ export function mountApp(root: HTMLElement) {
     }
 
     drawFxParticles();
+    drawArCharLayer();
     arAnimFrame = requestAnimationFrame(drawArObjects);
   }
 
@@ -2208,6 +2369,8 @@ export function mountApp(root: HTMLElement) {
     const ctx = canvas.getContext('2d')!;
     arObjCtx = objCanvas.getContext('2d')!;
     arFxCtx = fxCanvas.getContext('2d')!;
+    const charCanvas = $<HTMLCanvasElement>('arCharCanvas');
+    arCharCtx = charCanvas.getContext('2d')!;
     const statusEl = $('arStatus');
     const handIndicator = $('arHandIndicator');
     const buttonsEl = $('arButtons');
@@ -2248,6 +2411,8 @@ export function mountApp(root: HTMLElement) {
         objCanvas.height = video.videoHeight;
         fxCanvas.width = video.videoWidth;
         fxCanvas.height = video.videoHeight;
+        charCanvas.width = video.videoWidth;
+        charCanvas.height = video.videoHeight;
         statusEl.textContent = 'מצלמה פעילה';
         setTimeout(() => { statusEl.style.opacity = '0'; }, 2000);
         drawArObjects();
@@ -2262,11 +2427,16 @@ export function mountApp(root: HTMLElement) {
     $('arOverlay').classList.remove('show');
     if (arStream) { arStream.getTracks().forEach(t => t.stop()); arStream = null; }
     cancelAnimationFrame(arAnimFrame);
-    arObjects = []; arGrabbed = null; arObjCtx = null; arFxCtx = null;
+    arObjects = []; arGrabbed = null; arObjCtx = null; arFxCtx = null; arCharCtx = null;
     arFxParticles = []; arLaserTrail = []; arCurrentFx = 'none';
     arGravityZones = []; arTrampoline = null; arFloatingTexts = [];
     arScore = 0; arCombo = 0; arGameActive = false; arGesture = 'none';
     arHand2Pos = { x: -1, y: -1, pinching: false };
+    // Reset dispel/summon state
+    arOrbDispelled = false; arBeamFiring = false; arBeamProgress = 0;
+    arPalmHoldTime = 0; arCharAnim = 0; arThrowCooldown = 0;
+    arPrevGesture = 'none';
+    document.getElementById('stage')?.classList.remove('stage-dispelled');
     document.querySelectorAll('.ar-fx-btn').forEach(b => b.classList.remove('ar-fx-active'));
     $('arStatus').style.opacity = '1';
   }
@@ -2439,7 +2609,39 @@ export function mountApp(root: HTMLElement) {
               else if (indexUp && !middleUp && !ringUp && !pinkyUp) arGesture = 'pointUp';
               else arGesture = 'none';
 
-              // Gesture-triggered actions
+              // ── Dispel & Summon logic ──────────────────────────────
+              // Palm held 0.7s → fire laser beam at orb
+              if (arGesture === 'palm' && !arOrbDispelled && !arBeamFiring) {
+                arPalmHoldTime += 1 / 30;
+                if (arPalmHoldTime >= 0.7) {
+                  arBeamFiring = true;
+                  arBeamProgress = 0;
+                  arBeamOrigin = { x: hx, y: hy };
+                  arPalmHoldTime = 0;
+                }
+              } else if (arGesture !== 'palm') {
+                arPalmHoldTime = 0;
+              }
+
+              // Fist → open quickly = "throw" → summon next character
+              if (arGesture === 'fist' && arPrevGesture !== 'fist') {
+                arFistStartTime = Date.now();
+              }
+              if ((arGesture === 'palm' || arGesture === 'none') && arPrevGesture === 'fist') {
+                const fistDur = Date.now() - arFistStartTime;
+                if (fistDur < 400 && arOrbDispelled && arThrowCooldown <= 0 && arCharacters.length > 0) {
+                  arCharIdx = (arCharIdx + 1) % arCharacters.length;
+                  arCharAnim = 0;
+                  arCharFromDir = { x: hx - 0.5, y: hy - 0.5 };
+                  arThrowCooldown = 1.5;
+                  addFloatingText(hx, hy, '✨ ' + (arCharacters[arCharIdx]?.name || 'Character'), '#daa520');
+                }
+              }
+              arPrevGesture = arGesture;
+              arThrowCooldown = Math.max(0, arThrowCooldown - 1 / 30);
+              // ──────────────────────────────────────────────────────
+
+              // Gesture-triggered actions (objects in sandbox)
               if (arGesture === 'palm' && arCurrentFx === 'none') {
                 for (const obj of arObjects) {
                   if (!obj.grabbed) {
