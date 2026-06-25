@@ -156,69 +156,68 @@ function syllable(
 
 // "pi-ka pi-ka" — two bright rising/falling pairs
 function sayPikaPika(ctx: AudioContext, dest: AudioNode) {
-  let t = 0;
-  t = syllable(ctx, dest, 'p', 'i', 360, 430, 0.12, t);   // pi (rise)
-  t = syllable(ctx, dest, 'k', 'a', 430, 350, 0.15, t);   // ka (fall)
-  t += 0.10;                                               // small gap
-  t = syllable(ctx, dest, 'p', 'i', 370, 440, 0.12, t);   // pi
-  t = syllable(ctx, dest, 'k', 'a', 440, 360, 0.16, t);   // ka
+  let t = ctx.currentTime + 0.01;
+  t = syllable(ctx, dest, 'p', 'i', 360, 430, 0.12, t);
+  t = syllable(ctx, dest, 'k', 'a', 430, 350, 0.15, t);
+  t += 0.10;
+  t = syllable(ctx, dest, 'p', 'i', 370, 440, 0.12, t);
+  t = syllable(ctx, dest, 'k', 'a', 440, 360, 0.16, t);
 }
 
 // "pi-ka-chuu" — classic, with the long rising "chu"
 function sayPikachu(ctx: AudioContext, dest: AudioNode) {
-  let t = 0;
-  t = syllable(ctx, dest, 'p',  'i', 360, 420, 0.11, t);  // pi
-  t = syllable(ctx, dest, 'k',  'a', 420, 380, 0.12, t);  // ka
-  t = syllable(ctx, dest, 'ch', 'u', 360, 560, 0.30, t);  // chuuu (long rise)
+  let t = ctx.currentTime + 0.01;
+  t = syllable(ctx, dest, 'p',  'i', 360, 420, 0.11, t);
+  t = syllable(ctx, dest, 'k',  'a', 420, 380, 0.12, t);
+  t = syllable(ctx, dest, 'ch', 'u', 360, 560, 0.30, t);
 }
 
 // short single "pika"
 function sayPika(ctx: AudioContext, dest: AudioNode) {
-  let t = 0;
+  let t = ctx.currentTime + 0.01;
   t = syllable(ctx, dest, 'p', 'i', 380, 450, 0.12, t);
   t = syllable(ctx, dest, 'k', 'a', 450, 360, 0.15, t);
 }
 
 // excited "pika pika piiika!" — three pairs, last one stretched up
 function sayPikaExcited(ctx: AudioContext, dest: AudioNode) {
-  let t = 0;
+  let t = ctx.currentTime + 0.01;
   t = syllable(ctx, dest, 'p', 'i', 380, 450, 0.10, t);
   t = syllable(ctx, dest, 'k', 'a', 450, 380, 0.12, t);
   t += 0.07;
   t = syllable(ctx, dest, 'p', 'i', 400, 470, 0.10, t);
   t = syllable(ctx, dest, 'k', 'a', 470, 400, 0.12, t);
   t += 0.07;
-  t = syllable(ctx, dest, 'p', 'i', 420, 620, 0.26, t);   // piiii rising
+  t = syllable(ctx, dest, 'p', 'i', 420, 620, 0.26, t);
 }
 
 // ── Contextual emote utterances ────────────────────────────────────────────
 
 // "Pi-ka-pi!" — happy greeting (bright, bouncy, high ending)
 function sayPikaPi(ctx: AudioContext, dest: AudioNode) {
-  let t = 0;
-  t = syllable(ctx, dest, 'p', 'i', 370, 460, 0.10, t);   // Pi (rise)
-  t = syllable(ctx, dest, 'k', 'a', 460, 370, 0.12, t);   // ka (fall)
+  let t = ctx.currentTime + 0.01;
+  t = syllable(ctx, dest, 'p', 'i', 370, 460, 0.10, t);
+  t = syllable(ctx, dest, 'k', 'a', 460, 370, 0.12, t);
   t += 0.04;
-  t = syllable(ctx, dest, 'p', 'i', 440, 590, 0.16, t);   // pi! (bright high ending)
+  t = syllable(ctx, dest, 'p', 'i', 440, 590, 0.16, t);
 }
 
 // "Pi-ka-chu?" — curious question (soft, rises on last syllable)
 function sayPikachuQuestion(ctx: AudioContext, dest: AudioNode) {
-  let t = 0;
-  t = syllable(ctx, dest, 'p', 'i', 330, 350, 0.13, t);   // Pi (soft neutral)
-  t = syllable(ctx, dest, 'k', 'a', 350, 320, 0.13, t);   // ka (soft)
-  t = syllable(ctx, dest, 'ch', 'u', 280, 450, 0.32, t);  // chu? (rising = question)
+  let t = ctx.currentTime + 0.01;
+  t = syllable(ctx, dest, 'p', 'i', 330, 350, 0.13, t);
+  t = syllable(ctx, dest, 'k', 'a', 350, 320, 0.13, t);
+  t = syllable(ctx, dest, 'ch', 'u', 280, 450, 0.32, t);
 }
 
 // "Chuuuu..." — sad / tired (low, slow, drooping)
 function sayChuuu(ctx: AudioContext, dest: AudioNode) {
-  const t = 0;
-  syllable(ctx, dest, 'ch', 'u', 200, 148, 0.72, t);      // chuuuu... long slow droop
+  syllable(ctx, dest, 'ch', 'u', 200, 148, 0.72, ctx.currentTime + 0.01);
 }
 
 // "Pi-pi-pi!" — surprised (three quick high chirps)
 function sayPiPiPi(ctx: AudioContext, dest: AudioNode) {
-  let t = 0;
+  let t = ctx.currentTime + 0.01;
   for (let i = 0; i < 3; i++) {
     const f = 420 + i * 45;
     t = syllable(ctx, dest, 'p', 'i', f, f + 75, 0.07, t);
@@ -228,17 +227,17 @@ function sayPiPiPi(ctx: AudioContext, dest: AudioNode) {
 
 // "Piiiiika-chu!" — victory / self-intro (extended rising Pi, proud landing)
 function sayPikaVictory(ctx: AudioContext, dest: AudioNode) {
-  let t = 0;
-  t = syllable(ctx, dest, 'p', 'i', 340, 490, 0.34, t);   // Piiiii (extended rise)
-  t = syllable(ctx, dest, 'k', 'a', 490, 420, 0.12, t);   // ka
-  t = syllable(ctx, dest, 'ch', 'u', 420, 360, 0.22, t);  // chu! (proud, full landing)
+  let t = ctx.currentTime + 0.01;
+  t = syllable(ctx, dest, 'p', 'i', 340, 490, 0.34, t);
+  t = syllable(ctx, dest, 'k', 'a', 490, 420, 0.12, t);
+  t = syllable(ctx, dest, 'ch', 'u', 420, 360, 0.22, t);
 }
 
 // "Pikachu-Pi!" — calling / friendly greeting (rhythmic, bright finish)
 function sayPikachuPi(ctx: AudioContext, dest: AudioNode) {
-  let t = 0;
-  t = syllable(ctx, dest, 'p', 'i', 360, 410, 0.11, t);   // Pi
-  t = syllable(ctx, dest, 'k', 'a', 410, 370, 0.12, t);   // ka
+  let t = ctx.currentTime + 0.01;
+  t = syllable(ctx, dest, 'p', 'i', 360, 410, 0.11, t);
+  t = syllable(ctx, dest, 'k', 'a', 410, 370, 0.12, t);
   t = syllable(ctx, dest, 'ch', 'u', 350, 320, 0.14, t);  // chu
   t += 0.05;
   t = syllable(ctx, dest, 'p', 'i', 450, 560, 0.15, t);   // Pi! (bright ending)
@@ -254,7 +253,7 @@ export function pikaEmoteSpeak(emote: string): void {
   try {
     const ctx = getCtx();
     const master = ctx.createGain();
-    master.gain.value = volume;
+    master.gain.value = 1;
     const soft = ctx.createBiquadFilter();
     soft.type = 'lowpass'; soft.frequency.value = 6500; soft.Q.value = 0.4;
     master.connect(soft); soft.connect(ctx.destination);
@@ -286,7 +285,7 @@ function playWebAudioPika() {
   try {
     const ctx = getCtx();
     const master = ctx.createGain();
-    master.gain.value = volume;
+    master.gain.value = 1;
     const soft = ctx.createBiquadFilter();
     soft.type = 'lowpass'; soft.frequency.value = 6500; soft.Q.value = 0.4;
     master.connect(soft); soft.connect(ctx.destination);
