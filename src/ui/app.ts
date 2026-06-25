@@ -10,6 +10,7 @@ import { type CockpitHandle } from '../modules/cockpit';
 import { runProactive } from '../modules/proactive';
 import { processRecurring } from '../modules/recurring';
 import * as driveSync from '../modules/driveSync';
+import * as puterSync from '../modules/puterSync';
 import { setPikaVolume, setPikaPitch, setPikaEnabled, pikaSpeak, setChirpCallback, unlockAudio } from '../assistant/pikaVoice';
 import { universalSearch, TYPE_ICONS, addRecentSearch, recentSearches, quickSuggestions } from '../modules/search';
 import { registerShortcut, initShortcuts, shortcutsHTML } from '../modules/shortcuts';
@@ -460,22 +461,57 @@ export function mountApp(root: HTMLElement) {
 
         <div class="settings-section">
           <div class="ss-title" data-i18n="cloudSync">סנכרון ענן</div>
-          <p style="margin:0 0 10px;font-size:11px;color:var(--dim);line-height:1.5">סנכרן את כל הנתונים ל-Google Drive. דורש Google OAuth Client ID מ-<a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color:var(--gold)">Google Cloud Console</a>.</p>
-          <label>Google OAuth Client ID</label>
-          <input id="driveClientId" type="text" placeholder="xxxx.apps.googleusercontent.com" style="font-size:11px" />
-          <div style="display:flex;gap:8px;margin:10px 0;flex-wrap:wrap">
-            <button class="cloud-btn" id="driveConnectBtn" data-i18n="connectDrive">חבר Google Drive</button>
-            <button class="cloud-btn" id="driveUploadBtn" disabled data-i18n="backupDrive">גיבוי ל-Drive</button>
-            <button class="cloud-btn" id="driveDownloadBtn" disabled data-i18n="restoreDrive">שחזור מ-Drive</button>
-          </div>
-          <div class="cloud-status" id="driveStatus"></div>
-          <div style="border-top:1px solid rgba(218,165,32,.08);margin:12px 0;padding-top:10px">
-            <p style="font-size:11px;color:var(--dim);margin-bottom:8px" data-i18n="noGoogle">אין חשבון Google? ייצא/ייבא קובץ גיבוי ישירות:</p>
-            <div style="display:flex;gap:8px">
-              <button class="cloud-btn" id="localExportBtn" data-i18n="exportJson">ייצוא JSON</button>
-              <button class="cloud-btn" id="localImportBtn" data-i18n="importJson">ייבוא JSON</button>
+
+          <!-- ── Puter / Google sign-in (primary, zero-setup) ── -->
+          <div id="puterSyncBox" style="background:rgba(218,165,32,.06);border:1px solid rgba(218,165,32,.18);border-radius:10px;padding:14px;margin-bottom:14px">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+              <svg width="20" height="20" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+              <span style="font-weight:600;font-size:13px">סנכרון אוטומטי עם Google</span>
+            </div>
+            <p style="font-size:11px;color:var(--dim);margin:0 0 12px;line-height:1.6">התחבר עם חשבון Google שלך — הנתונים יישמרו בענן ויסתנכרנו בין הטלפון, המחשב והאייפד שלך אוטומטית.</p>
+            <div id="puterSignedOut" style="display:flex;flex-direction:column;gap:8px">
+              <button id="puterSignInBtn" style="display:flex;align-items:center;justify-content:center;gap:8px;background:#fff;color:#333;border:1px solid #ddd;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:500;cursor:pointer;width:100%">
+                <svg width="16" height="16" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84z"/></svg>
+                התחבר עם Google
+              </button>
+            </div>
+            <div id="puterSignedIn" style="display:none;flex-direction:column;gap:8px">
+              <div style="display:flex;align-items:center;gap:8px;font-size:12px">
+                <span style="width:8px;height:8px;background:#34A853;border-radius:50%;display:inline-block;flex-shrink:0"></span>
+                <span id="puterUserLabel" style="color:#34A853;font-weight:500">מחובר</span>
+              </div>
+              <div class="cloud-status" id="puterStatus"></div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button class="cloud-btn" id="puterSyncNowBtn">סנכרן עכשיו ☁️</button>
+                <button class="cloud-btn" id="puterRestoreBtn">שחזר מהענן ⬇️</button>
+                <button class="cloud-btn" id="puterSignOutBtn" style="background:rgba(255,60,60,.12);border-color:rgba(255,60,60,.3);color:#f87;">התנתק</button>
+              </div>
             </div>
           </div>
+
+          <!-- ── Fallback: local JSON export/import ── -->
+          <details style="margin-top:4px">
+            <summary style="font-size:11px;color:var(--dim);cursor:pointer;user-select:none">אפשרויות גיבוי ידניות</summary>
+            <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">
+              <div style="display:flex;gap:8px">
+                <button class="cloud-btn" id="localExportBtn" data-i18n="exportJson">ייצוא JSON</button>
+                <button class="cloud-btn" id="localImportBtn" data-i18n="importJson">ייבוא JSON</button>
+              </div>
+              <details style="margin-top:4px">
+                <summary style="font-size:10px;color:var(--dim);cursor:pointer">חיבור Google Drive ישיר (מתקדם)</summary>
+                <div style="margin-top:8px">
+                  <label style="font-size:11px">Google OAuth Client ID</label>
+                  <input id="driveClientId" type="text" placeholder="xxxx.apps.googleusercontent.com" style="font-size:11px;margin-top:4px" />
+                  <div style="display:flex;gap:8px;margin:8px 0;flex-wrap:wrap">
+                    <button class="cloud-btn" id="driveConnectBtn">חבר Drive</button>
+                    <button class="cloud-btn" id="driveUploadBtn" disabled>גיבוי</button>
+                    <button class="cloud-btn" id="driveDownloadBtn" disabled>שחזור</button>
+                  </div>
+                  <div class="cloud-status" id="driveStatus"></div>
+                </div>
+              </details>
+            </div>
+          </details>
         </div>
 
         <div class="settings-section">
@@ -2634,6 +2670,53 @@ export function mountApp(root: HTMLElement) {
     else alert('ייבוא נכשל: ' + r.error);
   };
 
+  // ── Puter / Google sync ──
+  function updatePuterUI() {
+    const signedIn = puterSync.isSignedIn();
+    $('puterSignedOut').style.display = signedIn ? 'none' : 'flex';
+    $('puterSignedIn').style.display = signedIn ? 'flex' : 'none';
+    if (signedIn) {
+      puterSync.getUser().then(u => {
+        if (u) $('puterUserLabel').textContent = `מחובר: ${u.username || u.email || 'Google'}`;
+      }).catch(() => {});
+      const last = puterSync.lastSyncTime();
+      $('puterStatus').textContent = last
+        ? `סנכרון אחרון: ${new Date(last).toLocaleTimeString('he-IL')} · אוטומטי כל 5 דקות`
+        : 'סנכרון אוטומטי כל 5 דקות';
+    }
+  }
+  $('puterSignInBtn').onclick = async () => {
+    $('puterSignInBtn').textContent = 'מתחבר…';
+    ($('puterSignInBtn') as HTMLButtonElement).disabled = true;
+    const ok = await puterSync.signIn();
+    ($('puterSignInBtn') as HTMLButtonElement).disabled = false;
+    $('puterSignInBtn').innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84z"/></svg> התחבר עם Google`;
+    if (ok) {
+      updatePuterUI();
+      puterSync.syncToCloud(m => { $('puterStatus').textContent = m; });
+    }
+  };
+  $('puterSyncNowBtn').onclick = async () => {
+    ($('puterSyncNowBtn') as HTMLButtonElement).disabled = true;
+    $('puterStatus').textContent = 'מסנכרן…';
+    const r = await puterSync.syncToCloud(m => { $('puterStatus').textContent = m; });
+    if (!r.ok) $('puterStatus').textContent = 'שגיאה: ' + r.error;
+    ($('puterSyncNowBtn') as HTMLButtonElement).disabled = false;
+    updatePuterUI();
+  };
+  $('puterRestoreBtn').onclick = async () => {
+    if (!confirm('שחזור יחליף את הנתונים המקומיים בגיבוי מהענן. להמשיך?')) return;
+    const r = await puterSync.syncFromCloud(m => { $('puterStatus').textContent = m; });
+    if (!r.ok) $('puterStatus').textContent = 'שגיאה: ' + r.error;
+    else setTimeout(() => location.reload(), 1500);
+  };
+  $('puterSignOutBtn').onclick = async () => {
+    await puterSync.signOut();
+    updatePuterUI();
+  };
+  // Refresh Puter UI when settings open
+  $('settingsBtn').addEventListener('click', () => setTimeout(updatePuterUI, 50));
+
   // ── Universal Search ──
   const searchOverlay = $('searchOverlay');
   const searchInput = $<HTMLInputElement>('searchInput');
@@ -3162,23 +3245,28 @@ export function mountApp(root: HTMLElement) {
     nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') finish(nameInput.value); });
   }
 
-  // ── Drive auto-restore on startup (if connected but localStorage is empty) ──
+  // ── Cloud auto-sync on startup ──
   (async () => {
-    if (!driveSync.isConnected()) return;
-    const hasLocalData = localStorage.getItem('alpha_events') || localStorage.getItem('alpha_tasks') || localStorage.getItem('alpha_brain_memory_v1');
-    if (!hasLocalData) {
-      const r = await driveSync.syncFromCloud();
-      if (r.ok && (r.tables ?? 0) > 0) {
-        setTimeout(() => location.reload(), 500);
-        return;
+    // Puter sync (primary — zero setup, Google sign-in)
+    if (puterSync.isPuterAvailable() && puterSync.isSignedIn()) {
+      const hasLocalData = localStorage.getItem('alpha_events') || localStorage.getItem('alpha_tasks') || localStorage.getItem('alpha_brain_memory_v1');
+      if (!hasLocalData) {
+        const r = await puterSync.syncFromCloud();
+        if (r.ok && (r.tables ?? 0) > 0) { setTimeout(() => location.reload(), 500); return; }
       }
+      setTimeout(() => puterSync.syncToCloud(), 30_000);
+      setInterval(() => { if (puterSync.isSignedIn()) puterSync.syncToCloud(); }, 5 * 60 * 1000);
     }
-    // Silent background upload every 5 minutes
-    setInterval(() => {
-      if (driveSync.isConnected()) driveSync.syncToCloud();
-    }, 5 * 60 * 1000);
-    // Initial sync after 30s so data is backed up after the app loads
-    setTimeout(() => { if (driveSync.isConnected()) driveSync.syncToCloud(); }, 30_000);
+    // Google Drive fallback
+    if (driveSync.isConnected()) {
+      const hasLocalData = localStorage.getItem('alpha_events') || localStorage.getItem('alpha_tasks') || localStorage.getItem('alpha_brain_memory_v1');
+      if (!hasLocalData) {
+        const r = await driveSync.syncFromCloud();
+        if (r.ok && (r.tables ?? 0) > 0) { setTimeout(() => location.reload(), 500); return; }
+      }
+      setTimeout(() => driveSync.syncToCloud(), 30_000);
+      setInterval(() => { if (driveSync.isConnected()) driveSync.syncToCloud(); }, 5 * 60 * 1000);
+    }
   })();
 
   // ── Restore chat history ──
