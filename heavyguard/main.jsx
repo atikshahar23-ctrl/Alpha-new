@@ -20,8 +20,10 @@ if (!window.storage) {
   };
 }
 
-const root = ReactDOM.createRoot(document.getElementById("root"));
-root.render(React.createElement(App));
+const rootEl = document.getElementById("root");
+if (rootEl) {
+  ReactDOM.createRoot(rootEl).render(React.createElement(App));
+}
 
 // Alpha AI integration via postMessage
 async function loadArr(key) {
