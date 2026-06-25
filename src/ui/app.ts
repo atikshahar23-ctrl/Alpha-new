@@ -1018,25 +1018,104 @@ export function mountApp(root: HTMLElement) {
     } catch { $('winBody').innerHTML = '<div class="pad" style="color:var(--dim)">שגיאת חיפוש.</div>'; }
   }
 
-  function renderCalendar() {
-    const ev = loadEvents();
-    let html = '<div class="pad"><div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">' +
-      '<input id="evT" placeholder="Title" style="flex:1;min-width:140px;background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:10px;padding:10px;color:var(--ink)">' +
-      '<input type="date" id="evD" style="background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:10px;padding:10px;color:var(--ink)">' +
-      '<input type="time" id="evTime" style="background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:10px;padding:10px;color:var(--ink)">' +
-      '<button id="evAdd" style="background:linear-gradient(135deg,var(--gold),#fff);border:none;border-radius:10px;padding:10px 18px;cursor:pointer;color:#0a0806;font-weight:600">Add</button></div>';
-    if (!ev.length) html += '<div style="color:var(--dim);font-style:italic">היומן ריק.</div>';
-    for (const e of ev) {
-      const isHg = e.id.startsWith('hg:');
-      const badge = isHg ? '<span style="font-size:9px;letter-spacing:1px;color:var(--gold);background:rgba(255,194,77,.1);padding:2px 6px;border-radius:4px;margin-left:6px">HG</span>' : '';
-      html += `<div style="display:flex;gap:12px;align-items:center;padding:12px;background:rgba(255,255,255,.03);border:1px solid ${isHg ? 'rgba(255,194,77,.15)' : 'var(--line)'};border-radius:12px;margin-bottom:8px"><span style="color:var(--cyan);min-width:100px;font-size:13px">${e.date}${e.time ? ' · ' + e.time : ''}</span><span style="flex:1">${e.title}${badge}</span><button data-id="${e.id}" class="del" style="background:none;border:none;color:var(--dim);cursor:pointer;font-size:16px">✕</button></div>`;
+  let calViewYear = new Date().getFullYear();
+  let calViewMonth = new Date().getMonth();
+
+  function renderCalendar(selectedDate?: string) {
+    const allEvents = loadEvents();
+    const today = new Date().toISOString().slice(0, 10);
+    const year = calViewYear;
+    const month = calViewMonth;
+    const monthNames = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+    const dayNames = ['א','ב','ג','ד','ה','ו','ש'];
+    const firstDay = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+    // Build set of dates that have events
+    const eventDates = new Set(allEvents.map(e => e.date));
+
+    // Month grid header
+    let html = `<div style="padding:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <button id="calPrev" style="background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:8px;color:var(--ink);padding:6px 12px;cursor:pointer;font-size:16px">‹</button>
+        <span style="font-size:17px;font-weight:600;color:var(--ink)">${monthNames[month]} ${year}</span>
+        <button id="calNext" style="background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:8px;color:var(--ink);padding:6px 12px;cursor:pointer;font-size:16px">›</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:8px;text-align:center">
+        ${dayNames.map(d => `<div style="color:var(--dim);font-size:11px;padding:4px">${d}</div>`).join('')}
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">
+        ${Array(firstDay).fill('<div></div>').join('')}`;
+
+    for (let d = 1; d <= daysInMonth; d++) {
+      const iso = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const isToday = iso === today;
+      const isSelected = iso === selectedDate;
+      const hasEvent = eventDates.has(iso);
+      const bg = isSelected ? 'var(--gold)' : isToday ? 'rgba(218,165,32,.18)' : 'rgba(255,255,255,.03)';
+      const color = isSelected ? '#0a0806' : 'var(--ink)';
+      const border = isToday && !isSelected ? '1px solid rgba(218,165,32,.5)' : '1px solid transparent';
+      html += `<button data-date="${iso}" style="aspect-ratio:1;background:${bg};border:${border};border-radius:8px;color:${color};cursor:pointer;font-size:13px;font-weight:${isToday || isSelected ? '700' : '400'};position:relative;padding:0">
+        ${d}${hasEvent ? `<span style="position:absolute;bottom:3px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:${isSelected ? '#0a0806' : 'var(--gold)'}"></span>` : ''}
+      </button>`;
     }
+    html += `</div>`;
+
+    // If a date is selected, show its events + add form below
+    if (selectedDate) {
+      const dayEvents = allEvents.filter(e => e.date === selectedDate);
+      html += `<div style="margin-top:16px;border-top:1px solid var(--line);padding-top:16px">
+        <div style="font-size:13px;color:var(--dim);margin-bottom:10px">${selectedDate}</div>
+        ${dayEvents.length === 0 ? '<div style="color:var(--dim);font-style:italic;margin-bottom:12px">אין אירועים</div>' : ''}
+        ${dayEvents.map(e => {
+          const isHg = e.id.startsWith('hg:');
+          return `<div style="display:flex;gap:10px;align-items:center;padding:10px;background:rgba(255,255,255,.03);border:1px solid ${isHg ? 'rgba(255,194,77,.15)' : 'var(--line)'};border-radius:10px;margin-bottom:6px">
+            ${e.time ? `<span style="color:var(--cyan);font-size:12px;min-width:40px">${e.time}</span>` : ''}
+            <span style="flex:1;font-size:14px">${e.title}</span>
+            <button data-id="${e.id}" class="del" style="background:none;border:none;color:var(--dim);cursor:pointer;font-size:15px">✕</button>
+          </div>`;
+        }).join('')}
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+          <input id="evT" placeholder="${state.uiLang === 'he' ? 'כותרת אירוע' : 'Event title'}" style="flex:1;min-width:120px;background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--ink);font-size:13px">
+          <input type="time" id="evTime" style="background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--ink);font-size:13px">
+          <button id="evAdd" style="background:linear-gradient(135deg,var(--gold),#c8953a);border:none;border-radius:8px;padding:8px 16px;cursor:pointer;color:#0a0806;font-weight:600;font-size:13px">+</button>
+        </div>
+      </div>`;
+    }
+
     html += '</div>';
     $('winBody').innerHTML = html;
-    $('evAdd').onclick = () => { const t = $<HTMLInputElement>('evT').value.trim(), d = $<HTMLInputElement>('evD').value; if (!t || !d) return; addEvent(t, d, $<HTMLInputElement>('evTime').value); renderCalendar(); updateCalBadge(); };
-    $('winBody').querySelectorAll<HTMLButtonElement>('.del').forEach(b => b.onclick = () => { removeEvent(b.dataset.id!); renderCalendar(); updateCalBadge(); });
+
+    $('calPrev').onclick = () => {
+      if (calViewMonth === 0) { calViewMonth = 11; calViewYear--; } else calViewMonth--;
+      renderCalendar(selectedDate);
+    };
+    $('calNext').onclick = () => {
+      if (calViewMonth === 11) { calViewMonth = 0; calViewYear++; } else calViewMonth++;
+      renderCalendar(selectedDate);
+    };
+    $('winBody').querySelectorAll<HTMLButtonElement>('[data-date]').forEach(btn => {
+      btn.onclick = () => renderCalendar(btn.dataset.date!);
+    });
+    const evAdd = document.getElementById('evAdd');
+    if (evAdd) evAdd.onclick = () => {
+      const title = ($('evT') as HTMLInputElement).value.trim();
+      const time = ($('evTime') as HTMLInputElement).value;
+      if (!title || !selectedDate) return;
+      addEvent(title, selectedDate, time);
+      updateCalBadge();
+      renderCalendar(selectedDate);
+    };
+    $('winBody').querySelectorAll<HTMLButtonElement>('.del').forEach(b => {
+      b.onclick = () => { removeEvent(b.dataset.id!); updateCalBadge(); renderCalendar(selectedDate); };
+    });
   }
-  function openCalendar() { openWin('Calendar'); renderCalendar(); }
+  function openCalendar() {
+    calViewYear = new Date().getFullYear();
+    calViewMonth = new Date().getMonth();
+    openWin(state.uiLang === 'he' ? 'לוח שנה' : 'Calendar');
+    renderCalendar(new Date().toISOString().slice(0, 10));
+  }
 
   let asking = false;
   async function ask(text: string) {
