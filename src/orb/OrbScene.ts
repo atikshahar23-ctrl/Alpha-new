@@ -1279,7 +1279,7 @@ function loadAndReplaceBody(
   import('three/examples/jsm/loaders/GLTFLoader.js').then(({ GLTFLoader }) => {
     const loader = new GLTFLoader();
     loader.load(
-      base + 'pikachu.glb?v=3',
+      base + 'pikachu.glb?v=4',
       (gltf) => {
         // Hide all procedural body/head geometry
         pikaGroup.traverse((child) => {
@@ -1293,11 +1293,13 @@ function loadAndReplaceBody(
           }
         });
 
-        // Apply Pikachu yellow PBR material to all GLB meshes.
-        // STL→GLB can have inverted/missing normals → recompute + DoubleSide.
+        // Use vertex colors from the GLB (color-transferred from the original STL).
+        // vertexColors=true + white base lets the baked RGB data show through.
         const model = gltf.scene;
         const bodyMat = (mats.yellow as THREE.MeshPhysicalMaterial).clone();
         bodyMat.side = THREE.DoubleSide;
+        bodyMat.vertexColors = true;
+        bodyMat.color.set(0xffffff);
         model.traverse((child) => {
           if (child instanceof THREE.Mesh) {
             child.geometry.computeVertexNormals();
@@ -1306,8 +1308,9 @@ function loadAndReplaceBody(
           }
         });
 
-        // scale.y=-1 stands upright; rotation.y=PI turns to face camera
-        model.scale.set(1.3, -1.3, 1.3);
+        // New GLB has head at +Y naturally — no Y-mirror needed.
+        // rotation.y=PI turns to face camera (front of model faces -Z).
+        model.scale.setScalar(1.3);
         model.rotation.y = Math.PI;
         model.position.set(0, -0.1, 0);
         pikaGroup.add(model);
@@ -1610,6 +1613,26 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   let chargeLevel = 0;
   const disposeChu = setupChuEffect(container, renderer.domElement, (lv) => { chargeLevel = lv; });
 
+  // Drag rotation state
+  let userRotY = 0, rotVel = 0;
+  let dragActive = false, dragLastX = 0;
+  const cvs = renderer.domElement;
+  function onDragStart(x: number) { dragActive = true; dragLastX = x; rotVel = 0; }
+  function onDragMove(x: number) {
+    if (!dragActive) return;
+    const dx = x - dragLastX; dragLastX = x;
+    rotVel = dx * 0.012;
+    userRotY += rotVel;
+  }
+  function onDragEnd() { dragActive = false; }
+  cvs.addEventListener('mousedown', (e) => onDragStart(e.clientX));
+  cvs.addEventListener('mousemove', (e) => onDragMove(e.clientX));
+  cvs.addEventListener('mouseup', onDragEnd);
+  cvs.addEventListener('mouseleave', onDragEnd);
+  cvs.addEventListener('touchstart', (e) => { if (e.touches[0]) onDragStart(e.touches[0].clientX); }, { passive: true });
+  cvs.addEventListener('touchmove', (e) => { if (e.touches[0]) onDragMove(e.touches[0].clientX); }, { passive: true });
+  cvs.addEventListener('touchend', onDragEnd);
+
   let time = 0, raf = 0;
   let amp = 0.06, ampTarget = 0.06;
   let glitchStr = 0, nextGlitch = 3 + Math.random() * 5, glitchTimer = 0;
@@ -1623,6 +1646,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     const dt = 0.016;
     time += dt;
     amp += (ampTarget - amp) * 0.07;
+    if (!dragActive) { rotVel *= 0.92; userRotY += rotVel; }
 
     // Long-press charge: ramp up bloom and exposure
     if (mBloom) mBloom.strength = 0.08 + chargeLevel * 2.0;
@@ -1641,7 +1665,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     // ── Pikachu "life" animation ──
     // Body sway — gentle side-to-side idle tilting
     const sway = Math.sin(time * 0.45) * 0.04;
-    pikaGroup.rotation.y = Math.sin(time * 0.35) * 0.35;
+    pikaGroup.rotation.y = Math.sin(time * 0.35) * 0.35 + userRotY;
     pikaGroup.rotation.z = sway;
     // Periodic happy hop — quick bounce every ~8 seconds
     const hopCycle = time % 8.0;
@@ -2484,6 +2508,26 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   let chargeLevel = 0;
   const disposeChu = setupChuEffect(container, renderer.domElement, (lv) => { chargeLevel = lv; });
 
+  // Drag rotation state
+  let userRotY = 0, rotVel = 0;
+  let dragActive = false, dragLastX = 0;
+  const deskCvs = renderer.domElement;
+  function onDragStart(x: number) { dragActive = true; dragLastX = x; rotVel = 0; }
+  function onDragMove(x: number) {
+    if (!dragActive) return;
+    const dx = x - dragLastX; dragLastX = x;
+    rotVel = dx * 0.012;
+    userRotY += rotVel;
+  }
+  function onDragEnd() { dragActive = false; }
+  deskCvs.addEventListener('mousedown', (e) => onDragStart(e.clientX));
+  deskCvs.addEventListener('mousemove', (e) => onDragMove(e.clientX));
+  deskCvs.addEventListener('mouseup', onDragEnd);
+  deskCvs.addEventListener('mouseleave', onDragEnd);
+  deskCvs.addEventListener('touchstart', (e) => { if (e.touches[0]) onDragStart(e.touches[0].clientX); }, { passive: true });
+  deskCvs.addEventListener('touchmove', (e) => { if (e.touches[0]) onDragMove(e.touches[0].clientX); }, { passive: true });
+  deskCvs.addEventListener('touchend', onDragEnd);
+
   let time = 0, raf = 0;
   let amp = 0.06, ampTarget = 0.06;
   let glitchStr = 0, nextGlitch = 3 + Math.random() * 5, glitchTimer = 0;
@@ -2497,6 +2541,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     const dt = 0.016;
     time += dt;
     amp += (ampTarget - amp) * 0.07;
+    if (!dragActive) { rotVel *= 0.92; userRotY += rotVel; }
 
     // Long-press charge: ramp bloom and exposure
     bloom.strength = 0.2 + chargeLevel * 4.5;
@@ -2517,7 +2562,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     // ── Pikachu "life" animation ──
     // Body sway — gentle side-to-side idle tilting
     const sway = Math.sin(time * 0.45) * 0.04;
-    pikaGroup.rotation.y = Math.sin(time * 0.35) * 0.35;
+    pikaGroup.rotation.y = Math.sin(time * 0.35) * 0.35 + userRotY;
     pikaGroup.rotation.z = sway;
     // Periodic happy hop — quick bounce every ~8 seconds
     const hopCycle = time % 8.0;
