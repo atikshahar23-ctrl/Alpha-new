@@ -71,6 +71,9 @@ const ils = (n) => "₪" + (Number(n) || 0).toLocaleString("he-IL");
 const dmy = (iso) => { if (!iso) return ""; const [y, m, d] = iso.split("-"); return `${d}.${m}.${y.slice(2)}`; };
 const daysFromNow = (iso) => { if (!iso) return 9999; return Math.round((new Date(iso) - new Date(todayISO())) / 86400000); };
 const waLink = (phone, text) => { let p = (phone || "").replace(/\D/g, ""); if (p.startsWith("0")) p = "972" + p.slice(1); return `https://wa.me/${p}?text=${encodeURIComponent(text || "")}`; };
+// Default WhatsApp number for forwarding invoices (Paperless accounting,
+// +972 4-374-8824) — used until the user sets their own.
+const DEFAULT_WA_NUMBER = "04-374-8824";
 const fmtClock = (s) => { s = Math.max(0, Math.floor(s)); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60; return (h ? String(h).padStart(2, "0") + ":" : "") + String(m).padStart(2, "0") + ":" + String(sec).padStart(2, "0"); };
 const fmtDur = (s) => { if (!s && s !== 0) return "—"; const m = Math.round(s / 60); if (m < 60) return m + " דק׳"; const h = Math.floor(m / 60); return `${h}ש׳ ${m % 60}ד׳`; };
 
@@ -1739,7 +1742,7 @@ function Invoices({ onBack, showToast }) {
   const [inv, setInv] = useState(null);
   const [num, setNum] = useState("");
   const [open, setOpen] = useState(false);
-  useEffect(() => { loadArr("hg2:invoices").then(setInv); store.get("hg2:wanumber").then((r) => setNum(r && r.value ? JSON.parse(r.value) : "")).catch(() => { }); }, []);
+  useEffect(() => { loadArr("hg2:invoices").then(setInv); store.get("hg2:wanumber").then((r) => setNum(r && r.value ? JSON.parse(r.value) : DEFAULT_WA_NUMBER)).catch(() => setNum(DEFAULT_WA_NUMBER)); }, []);
   const persist = (a) => { setInv(a); saveArr("hg2:invoices", a); };
   const saveNum = (v) => { setNum(v); store.set("hg2:wanumber", JSON.stringify(v)).catch(() => { }); };
   const add = async (data, photoFull) => { const id = uid(); if (photoFull) { try { await store.set("hg2:inv:" + id, photoFull); } catch { } } persist([{ ...data, id, hasPhoto: !!photoFull }, ...(inv || [])]); setOpen(false); showToast("החשבונית נשמרה"); };
