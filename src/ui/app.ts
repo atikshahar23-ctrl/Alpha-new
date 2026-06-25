@@ -1270,6 +1270,15 @@ export function mountApp(root: HTMLElement) {
     }
     const curMonth = new Date().toISOString().slice(0, 7);
     const effectiveMonth = month || curMonth;
+
+    // Compute prev / next month strings
+    const [ey, em] = effectiveMonth.split('-').map(Number);
+    const prevMonthDate = new Date(ey, em - 2, 1);
+    const nextMonthDate = new Date(ey, em, 1);
+    const prevMonth = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
+    const nextMonth = `${nextMonthDate.getFullYear()}-${String(nextMonthDate.getMonth() + 1).padStart(2, '0')}`;
+    const isCurrentMonth = effectiveMonth === curMonth;
+
     let filtered = index.filter((r: any) => r.status !== 'running');
     if (contractor) {
       const cLow = contractor.toLowerCase();
@@ -1280,7 +1289,9 @@ export function mountApp(root: HTMLElement) {
       });
     }
     const monthFiltered = filtered.filter((r: any) => (r.date || '').startsWith(effectiveMonth));
+    const curMonthFiltered = filtered.filter((r: any) => (r.date || '').startsWith(curMonth));
     const allTimeFiltered = filtered;
+
     const byContractor: Record<string, { total: number; count: number; jobs: any[] }> = {};
     for (const r of monthFiltered) {
       const cn = cName(r.contractor);
@@ -1288,6 +1299,14 @@ export function mountApp(root: HTMLElement) {
       byContractor[cn].total += r.price || 0;
       byContractor[cn].count++;
       byContractor[cn].jobs.push({ date: r.date, price: r.price, type: r.installType, vehicle: r.vehicleType, id: r.idNumber });
+    }
+    // Current month totals per contractor (for comparison when browsing past months)
+    const byContractorCur: Record<string, { total: number; count: number }> = {};
+    for (const r of curMonthFiltered) {
+      const cn = cName(r.contractor);
+      if (!byContractorCur[cn]) byContractorCur[cn] = { total: 0, count: 0 };
+      byContractorCur[cn].total += r.price || 0;
+      byContractorCur[cn].count++;
     }
     const byContractorAll: Record<string, { total: number; count: number }> = {};
     for (const r of allTimeFiltered) {
@@ -1297,20 +1316,34 @@ export function mountApp(root: HTMLElement) {
       byContractorAll[cn].count++;
     }
     const grandTotal = monthFiltered.reduce((s: number, r: any) => s + (r.price || 0), 0);
+    const curGrandTotal = curMonthFiltered.reduce((s: number, r: any) => s + (r.price || 0), 0);
     const totalJobs = monthFiltered.length;
     const allTimeTotal = allTimeFiltered.reduce((s: number, r: any) => s + (r.price || 0), 0);
     const hebrewMonths = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
     const [y, m] = effectiveMonth.split('-');
     const monthLabel = `${hebrewMonths[parseInt(m) - 1]} ${y}`;
+    const [cy, cm] = curMonth.split('-');
+    const curMonthLabel = `${hebrewMonths[parseInt(cm) - 1]} ${cy}`;
 
     openWin(`HeavyGuard · הכנסות · ${monthLabel}`);
     let html = '<div class="pad" style="direction:rtl">';
+
+    // Month navigation bar
+    html += `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:12px;padding:6px 10px">
+      <button id="earPrev" style="background:none;border:none;color:var(--cyan);font-size:22px;cursor:pointer;padding:4px 10px;border-radius:8px;line-height:1" title="חודש קודם">◀</button>
+      <span style="font-weight:600;font-size:15px">${monthLabel}</span>
+      <button id="earNext" style="background:none;border:none;color:${isCurrentMonth ? 'rgba(255,255,255,.15)' : 'var(--cyan)'};font-size:22px;cursor:pointer;padding:4px 10px;border-radius:8px;line-height:1" ${isCurrentMonth ? 'disabled' : ''} title="חודש הבא">▶</button>
+    </div>`;
+
+    // Grand total card
     html += `<div style="text-align:center;margin-bottom:20px;padding:16px;background:rgba(218,165,32,.06);border-radius:16px;border:1px solid rgba(218,165,32,.15)">
       <div style="font-size:11px;letter-spacing:2px;color:var(--dim);text-transform:uppercase;margin-bottom:4px">${monthLabel}</div>
       <div style="font-size:36px;font-weight:700;color:var(--gold);direction:ltr">₪${grandTotal.toLocaleString()}</div>
-      <div style="color:var(--dim);font-size:13px;margin-top:4px">${totalJobs} עבודות החודש</div>
-      ${allTimeTotal !== grandTotal ? `<div style="color:var(--dim);font-size:11px;margin-top:2px;opacity:.6">סה"כ כללי: ₪${allTimeTotal.toLocaleString()}</div>` : ''}
+      <div style="color:var(--dim);font-size:13px;margin-top:4px">${totalJobs} עבודות</div>
+      ${!isCurrentMonth ? `<div style="color:var(--cyan);font-size:12px;margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,.06)">${curMonthLabel} (החודש): ₪${curGrandTotal.toLocaleString()} · ${curMonthFiltered.length} עבודות</div>` : ''}
+      ${allTimeTotal !== grandTotal ? `<div style="color:var(--dim);font-size:11px;margin-top:4px;opacity:.6">סה"כ כללי: ₪${allTimeTotal.toLocaleString()}</div>` : ''}
     </div>`;
+
     const entries = Object.entries(byContractor).sort((a, b) => (b[1] as any).total - (a[1] as any).total);
     if (!entries.length) {
       html += '<div style="text-align:center;color:var(--dim);padding:20px">אין עבודות לחודש זה</div>';
@@ -1318,6 +1351,7 @@ export function mountApp(root: HTMLElement) {
     for (const [name, info] of entries) {
       const pct = grandTotal ? Math.round((info.total / grandTotal) * 100) : 0;
       const allTime = byContractorAll[name];
+      const curInfo = byContractorCur[name];
       const uid = 'ej_' + name.replace(/\s/g, '_');
       html += `<div style="background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:10px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
@@ -1330,6 +1364,7 @@ export function mountApp(root: HTMLElement) {
           </div>
           <span style="color:var(--dim);font-size:12px;min-width:60px;text-align:left">${pct}% · ${info.count} עבודות</span>
         </div>
+        ${!isCurrentMonth && curInfo ? `<div style="font-size:12px;color:var(--cyan);margin-bottom:6px;padding:5px 10px;background:rgba(0,212,255,.06);border-radius:8px;display:inline-block">${curMonthLabel}: ₪${curInfo.total.toLocaleString()} (${curInfo.count} עבודות)</div>` : ''}
         ${allTime ? `<div style="font-size:11px;color:var(--dim);opacity:.6">סה"כ כללי: ₪${allTime.total.toLocaleString()} (${allTime.count} עבודות)</div>` : ''}
         <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
         <button data-target="${uid}" style="background:none;border:1px solid var(--line);color:var(--cyan);padding:6px 14px;border-radius:8px;cursor:pointer;font-size:12px;transition:.2s" class="earningsToggle">פרטי עבודות ▼</button>
@@ -1345,6 +1380,13 @@ export function mountApp(root: HTMLElement) {
     }
     html += '</div>';
     $('winBody').innerHTML = html;
+
+    // Month navigation handlers
+    const prevBtn = document.getElementById('earPrev');
+    const nextBtn = document.getElementById('earNext');
+    if (prevBtn) prevBtn.onclick = () => hgShowEarnings(contractor, prevMonth);
+    if (nextBtn && !isCurrentMonth) nextBtn.onclick = () => hgShowEarnings(contractor, nextMonth);
+
     $('winBody').querySelectorAll<HTMLButtonElement>('.earningsToggle').forEach(btn => {
       btn.onclick = () => {
         const target = document.getElementById(btn.dataset.target || '');
@@ -1360,7 +1402,6 @@ export function mountApp(root: HTMLElement) {
         const cn = btn.dataset.name || '';
         const info = byContractor[cn];
         if (!info) return;
-        // Build a clean statement for this contractor + month
         const lines: string[] = [];
         lines.push(`דוח עבודות — ${cn}`);
         lines.push(`חודש: ${monthLabel}`);
@@ -1385,7 +1426,6 @@ export function mountApp(root: HTMLElement) {
             addMsg(`📋 הדוח של ${cn} הועתק — אפשר להדביק בוואטסאפ`, 'sys');
           }
         } catch {
-          // Fallback: open WhatsApp with the report prefilled
           window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
         }
       };
