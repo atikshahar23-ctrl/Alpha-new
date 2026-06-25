@@ -1612,26 +1612,267 @@ export function mountApp(root: HTMLElement) {
   let arCurrentFx: ArEffect = 'none';
 
   // ── Dispel & Summon system ──────────────────────────────────
-  // Characters the user can summon via "throw" gesture.
-  // Start empty — user provides images via addArCharacter().
-  interface ArCharacter { name: string; url: string; img?: HTMLImageElement }
+  interface ArCharacter {
+    name: string; url: string; img?: HTMLImageElement;
+    color?: string; // type glow color
+    drawFn?: (ctx: CanvasRenderingContext2D, size: number) => void;
+  }
   const arCharacters: ArCharacter[] = [];
   let arCharIdx = -1;           // which character is summoned (-1 = none)
   let arCharAnim = 0;           // 0→1 entry animation progress
-  let arCharFromDir = { x: 0, y: 0 }; // direction character flies in from
-  let arOrbDispelled = false;   // orb/stage hidden after beam hit
-  let arPalmHoldTime = 0;       // seconds palm is held (triggers beam at 0.7s)
+  let arCharFromDir = { x: 0, y: 0 };
+  let arOrbDispelled = false;
+  let arPalmHoldTime = 0;
   let arPrevGesture: 'none' | 'peace' | 'fist' | 'palm' | 'thumbsUp' | 'pointUp' = 'none';
-  let arFistStartTime = 0;      // when fist gesture began
-  let arThrowCooldown = 0;      // seconds before another throw is accepted
-  // Laser beam that fires from hand → orb center
+  let arFistStartTime = 0;
+  let arThrowCooldown = 0;
   let arBeamFiring = false;
   let arBeamOrigin = { x: 0.5, y: 0.5 };
-  let arBeamProgress = 0;       // 0→1 as beam travels toward orb
-  // Particle canvas (separate from arObjCtx) for beam/character effects
+  let arBeamProgress = 0;
+  // Pokeball animation state
+  let arPokeballPhase: 'idle' | 'fly' | 'wobble' | 'open' | 'done' = 'idle';
+  let arPokeballT = 0;
+  let arPokeballFrom = { x: 0.5, y: 0.8 };
   let arCharCtx: CanvasRenderingContext2D | null = null;
 
-  // Call this to register a character image (user adds their own images later)
+  // ── Pokeball canvas draw helper ──────────────────────────
+  function drawPokeballAt(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, wobble = 0) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(wobble);
+    ctx.shadowColor = '#ff3333';
+    ctx.shadowBlur = r * 0.4;
+    // Red top
+    ctx.beginPath();
+    ctx.arc(0, 0, r, Math.PI, 0);
+    ctx.fillStyle = '#e63835';
+    ctx.fill();
+    // White bottom
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI);
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    // Black outline + stripe
+    ctx.strokeStyle = '#111';
+    ctx.lineWidth = r * 0.06;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-r, 0);
+    ctx.lineTo(r, 0);
+    ctx.stroke();
+    // Center button
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.22, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#111';
+    ctx.lineWidth = r * 0.06;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ── Pokemon canvas draw functions ────────────────────────
+  function drawPikachu(ctx: CanvasRenderingContext2D, s: number) {
+    // Body
+    ctx.fillStyle = '#ffd700';
+    ctx.beginPath(); ctx.ellipse(0, s * 0.05, s * 0.28, s * 0.32, 0, 0, Math.PI * 2); ctx.fill();
+    // Ears
+    ctx.fillStyle = '#ffd700';
+    for (const sx of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(sx * s * 0.18, -s * 0.22);
+      ctx.lineTo(sx * s * 0.26, -s * 0.46);
+      ctx.lineTo(sx * s * 0.10, -s * 0.22);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#111';
+      ctx.beginPath();
+      ctx.moveTo(sx * s * 0.17, -s * 0.34);
+      ctx.lineTo(sx * s * 0.24, -s * 0.46);
+      ctx.lineTo(sx * s * 0.11, -s * 0.34);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#ffd700';
+    }
+    // Brown back stripes
+    ctx.strokeStyle = '#b8860b'; ctx.lineWidth = s * 0.04;
+    ctx.beginPath(); ctx.moveTo(-s * 0.13, -s * 0.16); ctx.lineTo(s * 0.13, -s * 0.16); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-s * 0.17, -s * 0.05); ctx.lineTo(s * 0.17, -s * 0.05); ctx.stroke();
+    // Red cheeks
+    ctx.fillStyle = 'rgba(220,50,50,0.85)';
+    ctx.beginPath(); ctx.ellipse(-s * 0.19, s * 0.04, s * 0.08, s * 0.055, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(s * 0.19, s * 0.04, s * 0.08, s * 0.055, 0, 0, Math.PI * 2); ctx.fill();
+    // Eyes
+    ctx.fillStyle = '#111';
+    ctx.beginPath(); ctx.arc(-s * 0.10, -s * 0.07, s * 0.055, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(s * 0.10, -s * 0.07, s * 0.055, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(-s * 0.09, -s * 0.09, s * 0.018, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(s * 0.11, -s * 0.09, s * 0.018, 0, Math.PI * 2); ctx.fill();
+    // Lightning bolt tail
+    ctx.strokeStyle = '#ffd700'; ctx.lineWidth = s * 0.065; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(s * 0.26, s * 0.10);
+    ctx.lineTo(s * 0.40, -s * 0.08);
+    ctx.lineTo(s * 0.30, -s * 0.08);
+    ctx.lineTo(s * 0.44, -s * 0.30);
+    ctx.stroke();
+    // Feet
+    ctx.fillStyle = '#ffd700';
+    ctx.beginPath(); ctx.ellipse(-s * 0.13, s * 0.33, s * 0.07, s * 0.05, -0.2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(s * 0.13, s * 0.33, s * 0.07, s * 0.05, 0.2, 0, Math.PI * 2); ctx.fill();
+  }
+
+  function drawCharizard(ctx: CanvasRenderingContext2D, s: number) {
+    ctx.fillStyle = '#3a8fb5';
+    for (const sx of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(sx * s * 0.12, -s * 0.05);
+      ctx.lineTo(sx * s * 0.52, -s * 0.38);
+      ctx.lineTo(sx * s * 0.48, s * 0.12);
+      ctx.lineTo(sx * s * 0.22, s * 0.06);
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.fillStyle = '#f08030';
+    ctx.beginPath(); ctx.ellipse(0, s * 0.06, s * 0.22, s * 0.30, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#f0e0b0';
+    ctx.beginPath(); ctx.ellipse(0, s * 0.10, s * 0.14, s * 0.22, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#f08030';
+    ctx.beginPath(); ctx.arc(0, -s * 0.20, s * 0.17, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#10c010';
+    ctx.beginPath(); ctx.arc(-s * 0.07, -s * 0.22, s * 0.05, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(s * 0.07, -s * 0.22, s * 0.05, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#111';
+    ctx.beginPath(); ctx.arc(-s * 0.07, -s * 0.22, s * 0.025, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(s * 0.07, -s * 0.22, s * 0.025, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#f08030';
+    ctx.beginPath();
+    ctx.moveTo(s * 0.15, s * 0.28);
+    ctx.quadraticCurveTo(s * 0.42, s * 0.44, s * 0.36, s * 0.56);
+    ctx.quadraticCurveTo(s * 0.28, s * 0.44, s * 0.20, s * 0.34);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#ff6600';
+    ctx.beginPath(); ctx.arc(s * 0.36, s * 0.57, s * 0.07, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffcc00';
+    ctx.beginPath(); ctx.arc(s * 0.37, s * 0.54, s * 0.04, 0, Math.PI * 2); ctx.fill();
+  }
+
+  function drawCharmander(ctx: CanvasRenderingContext2D, s: number) {
+    ctx.fillStyle = '#f08030';
+    ctx.beginPath(); ctx.ellipse(0, s * 0.08, s * 0.20, s * 0.26, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#f0e080';
+    ctx.beginPath(); ctx.ellipse(0, s * 0.12, s * 0.12, s * 0.18, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#f08030';
+    ctx.beginPath(); ctx.arc(0, -s * 0.18, s * 0.16, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#4090e0';
+    ctx.beginPath(); ctx.arc(-s * 0.06, -s * 0.20, s * 0.045, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(s * 0.06, -s * 0.20, s * 0.045, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#111';
+    ctx.beginPath(); ctx.arc(-s * 0.06, -s * 0.20, s * 0.022, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(s * 0.06, -s * 0.20, s * 0.022, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#f08030';
+    ctx.beginPath();
+    ctx.moveTo(s * 0.18, s * 0.25);
+    ctx.quadraticCurveTo(s * 0.40, s * 0.36, s * 0.36, s * 0.48);
+    ctx.quadraticCurveTo(s * 0.28, s * 0.38, s * 0.20, s * 0.32);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#ff8800';
+    ctx.beginPath(); ctx.arc(s * 0.37, s * 0.49, s * 0.055, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffdd00';
+    ctx.beginPath(); ctx.arc(s * 0.37, s * 0.47, s * 0.03, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#f08030'; ctx.lineWidth = s * 0.07; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-s * 0.16, s * 0.02); ctx.lineTo(-s * 0.28, s * 0.12); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(s * 0.16, s * 0.02); ctx.lineTo(s * 0.28, s * 0.12); ctx.stroke();
+  }
+
+  function drawSquirtle(ctx: CanvasRenderingContext2D, s: number) {
+    // Shell
+    ctx.fillStyle = '#7a5c14';
+    ctx.beginPath(); ctx.ellipse(0, s * 0.10, s * 0.23, s * 0.25, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#4a3808'; ctx.lineWidth = s * 0.025;
+    ctx.beginPath(); ctx.moveTo(0, -s * 0.14); ctx.lineTo(0, s * 0.32); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-s * 0.20, s * 0.10); ctx.lineTo(s * 0.20, s * 0.10); ctx.stroke();
+    // Body
+    ctx.fillStyle = '#4896c8';
+    ctx.beginPath(); ctx.ellipse(0, s * 0.08, s * 0.18, s * 0.20, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#c8e8f0';
+    ctx.beginPath(); ctx.ellipse(0, s * 0.12, s * 0.10, s * 0.14, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#4896c8';
+    ctx.beginPath(); ctx.arc(0, -s * 0.18, s * 0.16, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#111';
+    ctx.beginPath(); ctx.arc(-s * 0.06, -s * 0.20, s * 0.05, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(s * 0.06, -s * 0.20, s * 0.05, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(-s * 0.055, -s * 0.21, s * 0.018, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(s * 0.065, -s * 0.21, s * 0.018, 0, Math.PI * 2); ctx.fill();
+    // Curled tail
+    ctx.strokeStyle = '#4896c8'; ctx.lineWidth = s * 0.07; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(s * 0.16, s * 0.25);
+    ctx.bezierCurveTo(s * 0.42, s * 0.36, s * 0.46, s * 0.14, s * 0.32, s * 0.02);
+    ctx.stroke();
+  }
+
+  function drawMeowth(ctx: CanvasRenderingContext2D, s: number) {
+    ctx.fillStyle = '#d4b896';
+    ctx.beginPath(); ctx.ellipse(0, s * 0.10, s * 0.20, s * 0.26, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#f5e8d8';
+    ctx.beginPath(); ctx.ellipse(0, s * 0.12, s * 0.12, s * 0.18, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#d4b896';
+    ctx.beginPath(); ctx.arc(0, -s * 0.17, s * 0.18, 0, Math.PI * 2); ctx.fill();
+    // Ears
+    for (const sx of [-1, 1]) {
+      ctx.fillStyle = '#d4b896';
+      ctx.beginPath();
+      ctx.moveTo(sx * s * 0.14, -s * 0.28);
+      ctx.lineTo(sx * s * 0.22, -s * 0.42);
+      ctx.lineTo(sx * s * 0.06, -s * 0.30);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#f0a8b8';
+      ctx.beginPath();
+      ctx.moveTo(sx * s * 0.13, -s * 0.30);
+      ctx.lineTo(sx * s * 0.20, -s * 0.41);
+      ctx.lineTo(sx * s * 0.07, -s * 0.31);
+      ctx.closePath(); ctx.fill();
+    }
+    // Gold coin
+    ctx.fillStyle = '#ffd700';
+    ctx.beginPath(); ctx.arc(0, -s * 0.28, s * 0.065, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#b8860b'; ctx.lineWidth = s * 0.02; ctx.stroke();
+    // Eyes
+    ctx.fillStyle = '#111';
+    ctx.beginPath(); ctx.ellipse(-s * 0.07, -s * 0.17, s * 0.04, s * 0.055, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(s * 0.07, -s * 0.17, s * 0.04, s * 0.055, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(-s * 0.065, -s * 0.19, s * 0.015, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(s * 0.075, -s * 0.19, s * 0.015, 0, Math.PI * 2); ctx.fill();
+    // Whiskers
+    ctx.strokeStyle = '#888'; ctx.lineWidth = s * 0.015;
+    ctx.beginPath(); ctx.moveTo(-s * 0.08, -s * 0.12); ctx.lineTo(-s * 0.30, -s * 0.10); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-s * 0.08, -s * 0.09); ctx.lineTo(-s * 0.30, -s * 0.08); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(s * 0.08, -s * 0.12); ctx.lineTo(s * 0.30, -s * 0.10); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(s * 0.08, -s * 0.09); ctx.lineTo(s * 0.30, -s * 0.08); ctx.stroke();
+    // Curled tail
+    ctx.strokeStyle = '#d4b896'; ctx.lineWidth = s * 0.07; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(s * 0.16, s * 0.28);
+    ctx.bezierCurveTo(s * 0.44, s * 0.36, s * 0.46, s * 0.04, s * 0.30, -s * 0.06);
+    ctx.stroke();
+  }
+
+  // Register all built-in Pokemon
+  function registerBuiltinPokemon() {
+    arCharacters.length = 0;
+    arCharacters.push({ name: 'Pikachu', url: '', color: '#ffd700', drawFn: drawPikachu });
+    arCharacters.push({ name: 'Charizard', url: '', color: '#f08030', drawFn: drawCharizard });
+    arCharacters.push({ name: 'Charmander', url: '', color: '#ff8800', drawFn: drawCharmander });
+    arCharacters.push({ name: 'Squirtle', url: '', color: '#4896c8', drawFn: drawSquirtle });
+    arCharacters.push({ name: 'Meowth', url: '', color: '#d4b896', drawFn: drawMeowth });
+  }
+  registerBuiltinPokemon();
+
+  // Add image-based character (keeps built-ins in place)
   function addArCharacter(name: string, url: string) {
     const ch: ArCharacter = { name, url };
     const img = new Image();
@@ -1639,8 +1880,35 @@ export function mountApp(root: HTMLElement) {
     img.onload = () => { ch.img = img; };
     arCharacters.push(ch);
   }
-  // Expose globally so the user can call it from the browser console
   (window as any).addArCharacter = addArCharacter;
+
+  // Switch to a Pokemon by name or index (callable by AI assistant)
+  function switchArPokemon(nameOrIdx: string | number) {
+    if (arCharacters.length === 0) return;
+    if (typeof nameOrIdx === 'number') {
+      arCharIdx = ((nameOrIdx % arCharacters.length) + arCharacters.length) % arCharacters.length;
+    } else {
+      const lo = nameOrIdx.toLowerCase();
+      const idx = arCharacters.findIndex(c => c.name.toLowerCase().includes(lo));
+      arCharIdx = idx >= 0 ? idx : (arCharIdx + 1) % arCharacters.length;
+    }
+    arCharAnim = 0;
+    arPokeballPhase = 'fly';
+    arPokeballT = 0;
+    arPokeballFrom = { x: 0.5, y: 0.85 };
+    if (!arOrbDispelled) {
+      arOrbDispelled = true;
+      document.getElementById('stage')?.classList.add('stage-dispelled');
+    }
+  }
+  (window as any).switchArPokemon = switchArPokemon;
+  (window as any).dispelOrb = () => {
+    if (!arOrbDispelled) {
+      arOrbDispelled = true;
+      document.getElementById('stage')?.classList.add('stage-dispelled');
+    }
+  };
+
   let arFxCtx: CanvasRenderingContext2D | null = null;
 
   interface FxParticle {
@@ -1873,43 +2141,101 @@ export function mountApp(root: HTMLElement) {
       ctx.restore();
     }
 
-    // Character display after summon
-    if (arOrbDispelled && arCharIdx >= 0 && arCharacters[arCharIdx]) {
+    // ── Pokeball animation ────────────────────────────────────
+    const pbCX = w * 0.5, pbCY = h * 0.45;
+    const pbR = Math.min(w, h) * 0.08;
+
+    if (arPokeballPhase === 'fly') {
+      arPokeballT++;
+      const t = Math.min(1, arPokeballT / 28);
+      const ease = 1 - Math.pow(1 - t, 3);
+      const bx = arPokeballFrom.x * w + (pbCX - arPokeballFrom.x * w) * ease;
+      const by = arPokeballFrom.y * h + (pbCY - arPokeballFrom.y * h) * ease;
+      const r = pbR * (0.5 + 0.5 * ease);
+      drawPokeballAt(ctx, bx, by, r);
+      if (t >= 1) { arPokeballPhase = 'wobble'; arPokeballT = 0; }
+    } else if (arPokeballPhase === 'wobble') {
+      arPokeballT++;
+      const wobble = Math.sin(arPokeballT * 0.55) * 0.36 * Math.max(0, 1 - arPokeballT / 25);
+      drawPokeballAt(ctx, pbCX, pbCY, pbR, wobble);
+      if (arPokeballT >= 28) { arPokeballPhase = 'open'; arPokeballT = 0; }
+    } else if (arPokeballPhase === 'open') {
+      arPokeballT++;
+      const t = arPokeballT / 15;
+      // Two halves of pokeball flying apart
+      const halfOff = pbR * 2 * t;
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, 1 - t * 1.2);
+      // Top half flies up
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(pbCX, pbCY - halfOff, pbR, Math.PI, 0);
+      ctx.fillStyle = '#e63835'; ctx.fill();
+      ctx.strokeStyle = '#111'; ctx.lineWidth = pbR * 0.06; ctx.stroke();
+      ctx.restore();
+      // Bottom half flies down
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(pbCX, pbCY + halfOff, pbR, 0, Math.PI);
+      ctx.fillStyle = '#fff'; ctx.fill();
+      ctx.strokeStyle = '#111'; ctx.lineWidth = pbR * 0.06; ctx.stroke();
+      ctx.restore();
+      ctx.restore();
+      // White expansion flash
+      const flashR = pbR * 3 * t;
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, 0.8 - t);
+      const grad = ctx.createRadialGradient(pbCX, pbCY, 0, pbCX, pbCY, flashR);
+      grad.addColorStop(0, 'rgba(255,255,255,1)');
+      grad.addColorStop(0.4, 'rgba(255,230,120,0.7)');
+      grad.addColorStop(1, 'rgba(255,180,40,0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath(); ctx.arc(pbCX, pbCY, flashR, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      if (arPokeballT >= 15) { arPokeballPhase = 'done'; arPokeballT = 0; }
+    }
+
+    // ── Character display after pokeball opens ────────────────
+    if (arOrbDispelled && arCharIdx >= 0 && arCharacters[arCharIdx] && arPokeballPhase === 'done') {
       const ch = arCharacters[arCharIdx];
       arCharAnim = Math.min(1, arCharAnim + 0.04);
       const scale = 0.6 + arCharAnim * 0.4;
       const alpha = arCharAnim;
       const cx = w * 0.5;
       const cy = h * 0.45;
-      const fromX = arCharFromDir.x * w * (1 - arCharAnim) * 0.4;
-      const fromY = arCharFromDir.y * h * (1 - arCharAnim) * 0.4;
+      const fromX = arCharFromDir.x * w * (1 - arCharAnim) * 0.3;
+      const fromY = arCharFromDir.y * h * (1 - arCharAnim) * 0.3;
+      const size = Math.min(w, h) * 0.52;
       ctx.save();
       ctx.globalAlpha = alpha;
       ctx.translate(cx + fromX, cy + fromY);
       ctx.scale(scale, scale);
-      if (ch.img) {
-        const size = Math.min(w, h) * 0.55;
+      // Type glow
+      if (ch.color) {
+        ctx.shadowColor = ch.color;
+        ctx.shadowBlur = 60;
+      }
+      if (ch.drawFn) {
+        ch.drawFn(ctx, size * 0.5);
+      } else if (ch.img) {
         ctx.drawImage(ch.img, -size / 2, -size / 2, size, size);
       } else {
-        // Placeholder — glowing "?" until image is loaded
-        ctx.font = `${Math.round(Math.min(w, h) * 0.18)}px sans-serif`;
+        ctx.font = `${Math.round(size * 0.35)}px sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.shadowColor = '#daa520';
-        ctx.shadowBlur = 40;
-        ctx.fillStyle = '#daa520';
-        ctx.fillText(ch.name || '?', 0, 0);
+        ctx.fillStyle = ch.color || '#daa520';
+        ctx.fillText(ch.name[0] || '?', 0, 0);
       }
       ctx.restore();
       // Name label
       if (ch.name && arCharAnim > 0.5) {
         ctx.save();
         ctx.globalAlpha = (arCharAnim - 0.5) * 2;
-        ctx.font = `bold ${Math.round(w * 0.025)}px "Space Grotesk", sans-serif`;
+        ctx.font = `bold ${Math.round(w * 0.028)}px "Space Grotesk", sans-serif`;
         ctx.textAlign = 'center';
-        ctx.fillStyle = '#daa520';
-        ctx.shadowColor = '#daa520';
-        ctx.shadowBlur = 12;
+        ctx.fillStyle = ch.color || '#daa520';
+        ctx.shadowColor = ch.color || '#daa520';
+        ctx.shadowBlur = 18;
         ctx.fillText(ch.name, w * 0.5, h * 0.78);
         ctx.restore();
       }
@@ -2378,6 +2704,18 @@ export function mountApp(root: HTMLElement) {
     const arBtns = [
       { label: 'חיפוש רכב', icon: '🔍', action: () => { const q = prompt('מספר רישוי:'); if (q) hgSearchLicense(q); } },
       { label: 'הכנסות', icon: '💰', action: () => hgShowEarnings('', new Date().toISOString().slice(0, 7)) },
+      { label: 'פוקימון', icon: '⚡', action: () => {
+        if (!arOrbDispelled) {
+          arOrbDispelled = true;
+          document.getElementById('stage')?.classList.add('stage-dispelled');
+        } else if (arCharacters.length > 0 && arPokeballPhase === 'idle') {
+          arCharIdx = (arCharIdx + 1) % arCharacters.length;
+          arCharAnim = 0;
+          arPokeballPhase = 'fly'; arPokeballT = 0;
+          arPokeballFrom = { x: 0.5, y: 0.85 };
+          arThrowCooldown = 3.0;
+        }
+      }},
       { label: 'צלם', icon: '📸', action: () => captureArPhoto() },
       { label: 'סגור', icon: '✕', action: closeArCamera },
     ];
@@ -2436,6 +2774,7 @@ export function mountApp(root: HTMLElement) {
     arOrbDispelled = false; arBeamFiring = false; arBeamProgress = 0;
     arPalmHoldTime = 0; arCharAnim = 0; arThrowCooldown = 0;
     arPrevGesture = 'none';
+    arPokeballPhase = 'idle'; arPokeballT = 0;
     document.getElementById('stage')?.classList.remove('stage-dispelled');
     document.querySelectorAll('.ar-fx-btn').forEach(b => b.classList.remove('ar-fx-active'));
     $('arStatus').style.opacity = '1';
@@ -2623,7 +2962,7 @@ export function mountApp(root: HTMLElement) {
                 arPalmHoldTime = 0;
               }
 
-              // Fist → open quickly = "throw" → summon next character
+              // Fist → open quickly = "throw" → summon next character via pokeball
               if (arGesture === 'fist' && arPrevGesture !== 'fist') {
                 arFistStartTime = Date.now();
               }
@@ -2633,8 +2972,11 @@ export function mountApp(root: HTMLElement) {
                   arCharIdx = (arCharIdx + 1) % arCharacters.length;
                   arCharAnim = 0;
                   arCharFromDir = { x: hx - 0.5, y: hy - 0.5 };
-                  arThrowCooldown = 1.5;
-                  addFloatingText(hx, hy, '✨ ' + (arCharacters[arCharIdx]?.name || 'Character'), '#daa520');
+                  arThrowCooldown = 3.0;
+                  arPokeballPhase = 'fly';
+                  arPokeballT = 0;
+                  arPokeballFrom = { x: hx, y: hy };
+                  addFloatingText(hx, hy, '⚡ ' + (arCharacters[arCharIdx]?.name || 'Pokemon'), arCharacters[arCharIdx]?.color || '#daa520');
                 }
               }
               arPrevGesture = arGesture;
