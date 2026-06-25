@@ -35,6 +35,8 @@ const SYNC_TABLES = [
   // user settings
   'alpha_name',
   'alpha_brain_memory_v1',
+  // samsonix forms
+  'alpha_samsonix_forms_v1',
 ];
 
 function puter(): any {

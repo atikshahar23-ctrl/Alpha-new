@@ -12,6 +12,7 @@ import {
 } from '../brain/memory';
 import { route } from '../brain/router';
 import { loadPriceAlerts, savePriceAlerts, type PriceAlert } from './proactive';
+import { openSamsonixWizard, loadSamsonixForms, deleteSamsonixForm, printSamsonixForm } from './samsonixWizard';
 import {
   addEvent, loadEvents, addTask, loadTasks, toggleTask, removeTask,
 } from '../assistant/state';
@@ -480,6 +481,58 @@ function renderBusiness(root: HTMLElement, hooks: CockpitHooks, close: () => voi
   inv.appendChild(invList);
   drawInvoices();
   root.appendChild(inv);
+
+  // ── Samsonix DVR Contract (interactive wizard + saved list) ──
+  const sxCard = card(L('טופס מנוי DVR – Samsonix', 'Samsonix DVR Subscription Form'), L('אשף מילוי לקוח מאובטח · חתימה דיגיטלית · שמירה + הדפסה', 'Secure client wizard · digital signature · save & print'));
+
+  const sxOpenBtn = btn(L('🚀 פתח אשף מילוי לקוח חדש', '🚀 New Client Wizard'), true);
+  const sxList = el('div', 'cp-list');
+
+  function drawSxForms() {
+    sxList.innerHTML = '';
+    const forms = loadSamsonixForms();
+    if (!forms.length) {
+      sxList.appendChild(el('div', 'cp-empty', L('אין טפסים שמורים עדיין.', 'No saved forms yet.')));
+      return;
+    }
+    const PLAN_SHORT: Record<string,string> = { '2gb':'2GB–39₪', '4gb':'4GB–49₪', '10gb':'10GB–59₪' };
+    forms.forEach(f => {
+      const d = new Date(f.savedAt).toLocaleDateString('he-IL');
+      const masked = f.cardNum ? `****${f.cardNum.slice(-4)}` : '';
+      const r = el('div', 'cp-row');
+      r.style.cssText = 'flex-direction:column;align-items:stretch;gap:5px;padding:10px 12px';
+      r.innerHTML =
+        `<div style="display:flex;justify-content:space-between;align-items:center">` +
+          `<span style="font-weight:700;font-size:13px">${esc(f.fullName)}</span>` +
+          `<span style="font-size:11px;color:var(--dim)">${d}</span>` +
+        `</div>` +
+        `<div style="font-size:12px;color:var(--dim);display:flex;gap:8px;flex-wrap:wrap">` +
+          `<span>${PLAN_SHORT[f.plan]}</span>` +
+          (f.bsd ? `<span>· BSD ₪4,500</span>` : '') +
+          (f.veh1 ? `<span>· ${esc(f.veh1)}</span>` : '') +
+          (masked ? `<span>· ${masked}</span>` : '') +
+        `</div>` +
+        `<div style="display:flex;gap:6px;margin-top:4px">`;
+      const actRow = r.querySelector('div:last-child')!;
+      const reprnt = el('button', 'cp-x', L('🖨 הדפס','🖨 Print'));
+      (reprnt as HTMLButtonElement).onclick = () => printSamsonixForm(f);
+      actRow.appendChild(reprnt);
+      const del = el('button', 'cp-x', '✕');
+      (del as HTMLButtonElement).onclick = () => {
+        if (confirm(L(`למחוק את הטופס של ${f.fullName}?`, `Delete form for ${f.fullName}?`))) {
+          deleteSamsonixForm(f.id); drawSxForms();
+        }
+      };
+      actRow.appendChild(del);
+      sxList.appendChild(r);
+    });
+  }
+
+  sxOpenBtn.onclick = () => openSamsonixWizard(() => drawSxForms());
+  sxCard.appendChild(sxOpenBtn);
+  sxCard.appendChild(sxList);
+  drawSxForms();
+  root.appendChild(sxCard);
 
   // ── Marketing engine ──
   const mk = card(L('מנוע שיווק', 'Marketing Engine'), L('תוכן ויראלי AI לטיקטוק / פייסבוק', 'AI viral content for TikTok / Facebook'));
