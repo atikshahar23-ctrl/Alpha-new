@@ -663,10 +663,9 @@ export function mountApp(root: HTMLElement) {
   }
 
   // ── Performance: pause the 3D orb + flow-lines background whenever a
-  // fullscreen overlay covers them (HeavyGuard, cockpit, settings, AR, search,
-  // media window). The animations are invisible behind the overlay, so running
-  // them is pure wasted GPU/CPU. We flip a `bg-paused` class on <body>; the
-  // render loops check it and skip work. Also pause when the tab is hidden.
+  // fullscreen overlay covers them (HeavyGuard, cockpit, AR).
+  // We flip a `bg-paused` class on <body>; the render loops check it and skip
+  // work. Also pause when the tab is hidden.
   (function setupBgPause() {
     const overlaySelectors = [
       '#hgOverlay', '#arOverlay', '.cockpit-overlay',
@@ -3052,18 +3051,8 @@ export function mountApp(root: HTMLElement) {
   }
 
   const knownName = loadMemory().profile.name;
-  // Defer the canUseAI check so puter.js (loaded async) has time to initialize.
-  // Checking synchronously always sees window.puter as undefined and immediately
-  // opens the settings overlay, which pauses the orb render loop and shows a black screen.
   if (!knownName) showWelcome();
   else if (prevHistory.length === 0) addMsg(personalGreeting(), 'al');
-  // Defer the canUseAI check so puter.js (loaded async) has time to initialize.
-  // Checking synchronously always sees window.puter as undefined and immediately
-  // opens the settings overlay, which pauses the orb render loop and shows a black screen.
-  setTimeout(() => {
-    const canUseAI = typeof (window as any).puter !== 'undefined' || state.key || state.grokKey || state.openaiKey;
-    if (!canUseAI) openSetup();
-  }, 1500);
 
   // ── 3D Depth — perspective-based UI panel transforms ──
   {
