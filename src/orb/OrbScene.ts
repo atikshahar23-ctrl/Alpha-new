@@ -1306,9 +1306,9 @@ function loadAndReplaceBody(
           }
         });
 
-        // Scale Y negative = pure Y-mirror to stand upright without affecting Z (front-facing).
-        // DoubleSide material handles the flipped winding correctly.
+        // scale.y=-1 stands upright; rotation.y=PI turns to face camera
         model.scale.set(1.3, -1.3, 1.3);
+        model.rotation.y = Math.PI;
         model.position.set(0, -0.1, 0);
         pikaGroup.add(model);
       },
