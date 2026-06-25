@@ -1306,8 +1306,9 @@ function loadAndReplaceBody(
           }
         });
 
-        // Orientation baked into GLB geometry (Y-flip applied during export)
-        model.scale.setScalar(1.3);
+        // Scale Y negative = pure Y-mirror to stand upright without affecting Z (front-facing).
+        // DoubleSide material handles the flipped winding correctly.
+        model.scale.set(1.3, -1.3, 1.3);
         model.position.set(0, -0.1, 0);
         pikaGroup.add(model);
       },
