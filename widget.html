@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Alpha — יומן ומשימות</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;600;700&display=swap" rel="stylesheet" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Assistant', sans-serif;
+      background: linear-gradient(135deg, #c8a84e 0%, #e8d48b 30%, #ffffff 60%, #f5e6a3 100%);
+      min-height: 100vh;
+      color: #2a2010;
+      padding: 12px;
+    }
+
+    .widget-card {
+      background: linear-gradient(160deg, rgba(255,255,255,0.95) 0%, rgba(250,240,210,0.92) 100%);
+      border-radius: 20px;
+      border: 1.5px solid rgba(200,168,78,0.4);
+      box-shadow: 0 4px 24px rgba(180,150,60,0.15), 0 1px 3px rgba(0,0,0,0.06);
+      overflow: hidden;
+    }
+
+    .widget-header {
+      background: linear-gradient(135deg, #b8942e 0%, #d4b85a 50%, #c8a84e 100%);
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .widget-header h1 {
+      font-size: 16px;
+      font-weight: 700;
+      color: #fff;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+      letter-spacing: 0.5px;
+    }
+
+    .widget-header .logo {
+      width: 28px;
+      height: 28px;
+      background: rgba(255,255,255,0.2);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 12px;
+      color: #fff;
+    }
+
+    .widget-date {
+      padding: 10px 18px 6px;
+      font-size: 12px;
+      color: #9a8040;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+    }
+
+    .section-label {
+      padding: 8px 18px 4px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #b8942e;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      border-top: 1px solid rgba(200,168,78,0.15);
+      margin-top: 4px;
+    }
+
+    .section-label:first-of-type {
+      border-top: none;
+      margin-top: 0;
+    }
+
+    .task-list {
+      padding: 4px 14px 8px;
+    }
+
+    .task-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 8px 4px;
+      border-bottom: 1px solid rgba(200,168,78,0.1);
+      transition: background 0.15s;
+    }
+
+    .task-item:last-child {
+      border-bottom: none;
+    }
+
+    .task-check {
+      width: 20px;
+      height: 20px;
+      border-radius: 6px;
+      border: 2px solid #c8a84e;
+      background: rgba(255,255,255,0.8);
+      flex-shrink: 0;
+      margin-top: 1px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+    }
+
+    .task-check.done {
+      background: linear-gradient(135deg, #c8a84e, #d4b85a);
+      border-color: #b8942e;
+    }
+
+    .task-check.done::after {
+      content: '✓';
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .task-content {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .task-text {
+      font-size: 14px;
+      font-weight: 500;
+      color: #2a2010;
+      line-height: 1.3;
+    }
+
+    .task-item.done .task-text {
+      text-decoration: line-through;
+      opacity: 0.45;
+      color: #8a7a50;
+    }
+
+    .task-date {
+      font-size: 11px;
+      color: #a09060;
+      margin-top: 2px;
+    }
+
+    .task-priority {
+      font-size: 9px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    .task-priority.high {
+      background: rgba(220,80,60,0.12);
+      color: #c0432e;
+    }
+
+    .task-priority.med {
+      background: rgba(200,168,78,0.15);
+      color: #a08830;
+    }
+
+    .task-priority.low {
+      background: rgba(120,160,120,0.12);
+      color: #5a8a50;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 20px 18px;
+      color: #b0a070;
+      font-size: 13px;
+    }
+
+    .empty-state .icon {
+      font-size: 28px;
+      margin-bottom: 6px;
+      opacity: 0.5;
+    }
+
+    .widget-footer {
+      padding: 10px 18px;
+      text-align: center;
+      border-top: 1px solid rgba(200,168,78,0.15);
+    }
+
+    .widget-footer a {
+      font-size: 12px;
+      font-weight: 600;
+      color: #b8942e;
+      text-decoration: none;
+      letter-spacing: 0.3px;
+    }
+  </style>
+</head>
+<body>
+  <div class="widget-card" id="widget"></div>
+
+  <script>
+    const DAYS_HE = ['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'];
+    const MONTHS_HE = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+
+    function getWeekRange() {
+      const now = new Date();
+      const day = now.getDay();
+      const start = new Date(now);
+      start.setDate(now.getDate() - day);
+      start.setHours(0,0,0,0);
+      const end = new Date(start);
+      end.setDate(start.getDate() + 6);
+      end.setHours(23,59,59,999);
+      return { start, end };
+    }
+
+    function dateStr(d) {
+      return d.toISOString().slice(0, 10);
+    }
+
+    function loadCalendarEvents() {
+      try { return JSON.parse(localStorage.getItem('alpha_events') || '[]'); } catch { return []; }
+    }
+
+    function loadAllTasks() {
+      let alphaTasks = [];
+      try { alphaTasks = JSON.parse(localStorage.getItem('alpha_tasks') || '[]'); } catch {}
+
+      let hgTasks = [];
+      try {
+        const raw = JSON.parse(localStorage.getItem('hg2:tasks') || '[]');
+        hgTasks = raw.filter(t => !t.done).map(t => ({
+          id: 'hg:' + t.id,
+          text: t.title,
+          done: t.done || false,
+          created: t.date || '',
+          date: t.date || '',
+          priority: 'med'
+        }));
+      } catch {}
+
+      const alphaWithDate = alphaTasks.map(t => ({
+        ...t,
+        date: t.created || ''
+      }));
+
+      return [...alphaWithDate, ...hgTasks];
+    }
+
+    function render() {
+      const widget = document.getElementById('widget');
+      const { start, end } = getWeekRange();
+      const today = new Date();
+      const allTasks = loadAllTasks();
+
+      const weekTasks = allTasks.filter(t => {
+        if (!t.date) return false;
+        const d = new Date(t.date + 'T00:00:00');
+        return d >= start && d <= end;
+      });
+
+      const unassigned = allTasks.filter(t => !t.date || t.date === '');
+
+      const dayName = DAYS_HE[today.getDay()];
+      const monthName = MONTHS_HE[today.getMonth()];
+      const dateDisplay = `יום ${dayName}, ${today.getDate()} ${monthName} ${today.getFullYear()}`;
+
+      const events = loadCalendarEvents();
+      const todayStr = dateStr(today);
+      const upcomingEvents = events.filter(e => e.date >= todayStr).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 5);
+
+      let html = `
+        <div class="widget-header">
+          <h1>ALPHA — יומן ומשימות</h1>
+          <div class="logo">α</div>
+        </div>
+        <div class="widget-date">${dateDisplay}</div>
+      `;
+
+      if (upcomingEvents.length > 0) {
+        html += '<div class="section-label">אירועים קרובים</div>';
+        html += '<div class="task-list">';
+        upcomingEvents.forEach(e => {
+          const isToday = e.date === todayStr;
+          const isHg = (e.id || '').startsWith('hg:');
+          html += `
+            <div class="task-item" style="${isToday ? 'background:rgba(200,168,78,0.08);border-radius:8px' : ''}">
+              <div style="width:20px;height:20px;border-radius:6px;background:${isHg ? 'linear-gradient(135deg,#c8a84e,#b8942e)' : 'linear-gradient(135deg,#d4b85a,#e8d48b)'};flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:10px;color:#fff">${isToday ? '★' : '◆'}</div>
+              <div class="task-content">
+                <div class="task-text">${esc(e.title)}${isHg ? ' <span style="font-size:9px;color:#b8942e;background:rgba(200,168,78,0.15);padding:1px 5px;border-radius:3px">HG</span>' : ''}</div>
+                <div class="task-date">${e.date}${e.time ? ' · ' + e.time : ''}${isToday ? ' — היום' : ''}</div>
+              </div>
+            </div>
+          `;
+        });
+        html += '</div>';
+      }
+
+      html += '<div class="section-label">משימות השבוע</div>';
+      if (weekTasks.length === 0) {
+        html += '<div class="empty-state"><div class="icon">☀</div>אין משימות השבוע</div>';
+      } else {
+        html += '<div class="task-list">';
+        weekTasks.forEach(t => {
+          const doneClass = t.done ? 'done' : '';
+          const pLabel = t.priority === 'high' ? 'דחוף' : t.priority === 'low' ? 'נמוך' : 'רגיל';
+          html += `
+            <div class="task-item ${doneClass}" data-id="${t.id}">
+              <div class="task-check ${doneClass}" data-id="${t.id}"></div>
+              <div class="task-content">
+                <div class="task-text">${esc(t.text)}</div>
+                ${t.date ? '<div class="task-date">' + t.date + '</div>' : ''}
+              </div>
+              <span class="task-priority ${t.priority}">${pLabel}</span>
+            </div>
+          `;
+        });
+        html += '</div>';
+      }
+
+      html += '<div class="section-label">לא שובץ</div>';
+      if (unassigned.length === 0) {
+        html += '<div class="empty-state"><div class="icon">✓</div>הכל מתוזמן</div>';
+      } else {
+        html += '<div class="task-list">';
+        unassigned.forEach(t => {
+          const doneClass = t.done ? 'done' : '';
+          const pLabel = t.priority === 'high' ? 'דחוף' : t.priority === 'low' ? 'נמוך' : 'רגיל';
+          html += `
+            <div class="task-item ${doneClass}" data-id="${t.id}">
+              <div class="task-check ${doneClass}" data-id="${t.id}"></div>
+              <div class="task-content">
+                <div class="task-text">${esc(t.text)}</div>
+              </div>
+              <span class="task-priority ${t.priority}">${pLabel}</span>
+            </div>
+          `;
+        });
+        html += '</div>';
+      }
+
+      html += `
+        <div class="widget-footer">
+          <a href="/Alpha-new/">פתח את Alpha Assistant</a>
+        </div>
+      `;
+
+      widget.innerHTML = html;
+
+      widget.querySelectorAll('.task-check').forEach(el => {
+        el.addEventListener('click', () => {
+          const id = el.dataset.id;
+          toggleTask(id);
+          render();
+        });
+      });
+    }
+
+    function toggleTask(id) {
+      if (id.startsWith('hg:')) {
+        const hgId = id.slice(3);
+        try {
+          const tasks = JSON.parse(localStorage.getItem('hg2:tasks') || '[]');
+          const t = tasks.find(x => x.id === hgId);
+          if (t) t.done = !t.done;
+          localStorage.setItem('hg2:tasks', JSON.stringify(tasks));
+        } catch {}
+      } else {
+        try {
+          const tasks = JSON.parse(localStorage.getItem('alpha_tasks') || '[]');
+          const t = tasks.find(x => x.id === id);
+          if (t) t.done = !t.done;
+          localStorage.setItem('alpha_tasks', JSON.stringify(tasks));
+        } catch {}
+      }
+    }
+
+    function esc(s) {
+      const d = document.createElement('div');
+      d.textContent = s;
+      return d.innerHTML;
+    }
+
+    render();
+    setInterval(render, 60000);
+  </script>
+</body>
+</html>

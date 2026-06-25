@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <title>Alpha Assistant</title>
+  <script>
+    // Force-clear old service workers and caches on every load
+    (function(){
+      if('serviceWorker' in navigator){
+        navigator.serviceWorker.getRegistrations().then(function(regs){
+          regs.forEach(function(r){ r.unregister(); });
+        });
+      }
+      if('caches' in window){
+        caches.keys().then(function(keys){
+          keys.forEach(function(k){ caches.delete(k); });
+        });
+      }
+    })();
+  </script>
+  <link rel="manifest" href="/Alpha-new/manifest.json" />
+  <!-- Puter.js: free, keyless access to GPT-4o / Claude / Gemini (user-pays model) -->
+  <script async src="https://js.puter.com/v2/"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Assistant:wght@300;400;500;600&display=swap"
+    rel="stylesheet"
+  />
+  <script type="module" crossorigin src="/Alpha-new/assets/main-BQzqoi3k.js"></script>
+  <link rel="modulepreload" crossorigin href="/Alpha-new/assets/preload-helper-AjHucr8l.js">
+  <link rel="modulepreload" crossorigin href="/Alpha-new/assets/heavyguard-rGViojVG.js">
+  <link rel="stylesheet" crossorigin href="/Alpha-new/assets/main-DrPY66RT.css">
+</head>
+<body>
+  <div id="app"></div>
+</body>
+</html>

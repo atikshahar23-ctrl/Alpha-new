@@ -1,0 +1,39 @@
+{
+  "name": "Alpha Assistant",
+  "short_name": "Alpha",
+  "start_url": "/Alpha-new/",
+  "display": "standalone",
+  "background_color": "#0a0806",
+  "theme_color": "#daa520",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "/Alpha-new/favicon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Tasks Widget",
+      "url": "/Alpha-new/widget.html",
+      "description": "Weekly tasks overview"
+    },
+    {
+      "name": "HeavyGuard",
+      "url": "/Alpha-new/heavyguard.html",
+      "description": "HeavyGuard OS"
+    }
+  ],
+  "widgets": [
+    {
+      "name": "Weekly Tasks",
+      "description": "Shows this week's tasks and unassigned items",
+      "tag": "tasks",
+      "ms_ac_template": "widget.html",
+      "data": "/Alpha-new/widget.html",
+      "screenshots": [],
+      "icons": [
+        { "src": "/Alpha-new/favicon.svg", "sizes": "any" }
+      ],
+      "backgrounds": [],
+      "type": "application/json"
+    }
+  ]
+}
