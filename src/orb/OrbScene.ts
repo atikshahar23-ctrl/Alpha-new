@@ -1292,16 +1292,21 @@ function loadAndReplaceBody(
           }
         });
 
-        // Apply Pikachu yellow PBR material to all GLB meshes
+        // Apply Pikachu yellow PBR material to all GLB meshes.
+        // STL→GLB can have inverted/missing normals → recompute + DoubleSide.
         const model = gltf.scene;
+        const bodyMat = (mats.yellow as THREE.MeshPhysicalMaterial).clone();
+        bodyMat.side = THREE.DoubleSide;
         model.traverse((child) => {
           if (child instanceof THREE.Mesh) {
-            child.material = mats.yellow;
+            child.geometry.computeVertexNormals();
+            child.material = bodyMat;
             child.castShadow = true;
           }
         });
 
-        // Scale + center to match procedural Pikachu proportions
+        // STL had Z-up / upside-down orientation — flip to Y-up
+        model.rotation.x = Math.PI;
         model.scale.setScalar(1.3);
         model.position.set(0, -0.1, 0);
         pikaGroup.add(model);
