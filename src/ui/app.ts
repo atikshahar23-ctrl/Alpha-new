@@ -827,6 +827,7 @@ export function mountApp(root: HTMLElement) {
     const label = { armed: t('armed', state.uiLang), listening: t('listening', state.uiLang), thinking: t('thinking', state.uiLang), speaking: t('speaking', state.uiLang), '': t('standby', state.uiLang) }[s];
     $('state').textContent = label;
     orb.setEnergy(s === 'speaking' ? 0.95 : s === 'listening' ? 0.5 : s === 'armed' ? 0.2 : 0.06);
+    if (s === 'listening') orb.pikaEmote('curious');
   }
 
   const voice = new VoiceEngine(state, (text) => { addMsg(text, 'me'); ask(text); }, setStatus);
@@ -1122,6 +1123,7 @@ export function mountApp(root: HTMLElement) {
     const localReply = tryLocalCommand(text);
     if (localReply) {
       audio.receive();
+      orb.pikaEmote('excited');
       addMsg(localReply, 'al');
       voice.speak(localReply);
       return;
@@ -1202,11 +1204,13 @@ export function mountApp(root: HTMLElement) {
         },
       }) || 'Done.';
       audio.receive();
+      orb.pikaEmote(Math.random() < 0.65 ? 'happy' : 'excited');
       addMsg(clean, 'al');
       voice.speak(clean);
       try { refreshSummary(state.history); } catch {}
     } catch (err: any) {
       removeTypingIndicator();
+      orb.pikaEmote('sad');
       if (voice.wakeOn) setTimeout(() => voice.setWake(true), 500);
       else setStatus('');
       addMsg(err.message || t('connectionError', state.uiLang), 'sys');
