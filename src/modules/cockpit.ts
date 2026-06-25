@@ -530,6 +530,24 @@ function renderBusiness(root: HTMLElement, hooks: CockpitHooks, close: () => voi
 
   sxOpenBtn.onclick = () => openSamsonixWizard(() => drawSxForms());
   sxCard.appendChild(sxOpenBtn);
+
+  // Send the client a link to the self-sign form via WhatsApp (pre-written msg).
+  const sxSendBtn = btn(L('📲 שלח ללקוח לחתימה בוואטסאפ', '📲 Send to client to sign (WhatsApp)'), false);
+  sxSendBtn.onclick = () => {
+    const raw = prompt(L('מספר וואטסאפ של הלקוח (05X...):', 'Client WhatsApp number (05X...):'));
+    if (!raw) return;
+    let ph = raw.replace(/\D/g, '');
+    if (ph.startsWith('0')) ph = '972' + ph.slice(1);
+    const base = (import.meta as any).env.BASE_URL || '/';
+    const link = location.origin + base + 'sign.html?client=1';
+    const msg = L(
+      `שלום! לחתימה מהירה על טופס המנוי ל-DVR של Samsonix — היכנס/י לקישור, מלא/י פרטים וחתום/חתמי:\n${link}\nתודה 🙏`,
+      `Hi! To quickly sign the Samsonix DVR subscription form, open this link, fill in your details and sign:\n${link}\nThanks 🙏`
+    );
+    window.open(`https://wa.me/${ph}?text=${encodeURIComponent(msg)}`, '_blank');
+  };
+  sxCard.appendChild(sxSendBtn);
+
   sxCard.appendChild(sxList);
   drawSxForms();
   root.appendChild(sxCard);

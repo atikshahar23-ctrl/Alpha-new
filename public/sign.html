@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Samsonix DVR — טופס מנוי וחתימה</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:"Heebo","Segoe UI",Arial,sans-serif;background:#eef1f5;color:#1a1f26;line-height:1.5;padding:0 0 120px}
+  .sheet{max-width:760px;margin:14px auto;background:#fff;border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,.12);overflow:hidden}
+  .head{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:2px solid #e63946}
+  .logo{font-size:24px;font-weight:900;letter-spacing:.5px}
+  .logo em{color:#e63946;font-style:normal}
+  .logo small{display:block;font-size:10px;letter-spacing:3px;color:#888;font-weight:600}
+  .head .date{font-size:13px;color:#555}
+  .body{padding:20px 22px}
+  h1{font-size:18px;text-align:center;margin-bottom:10px;text-decoration:underline}
+  .intro{font-size:13px;color:#444;background:#f7f8fa;border:1px solid #e6e9ee;border-radius:10px;padding:12px;margin-bottom:16px}
+  .sec{font-weight:800;font-size:15px;margin:18px 0 8px;color:#0b2a4a;border-right:4px solid #e63946;padding-right:9px}
+  .pkg{display:flex;gap:10px;align-items:flex-start;border:1.5px solid #d7dde6;border-radius:11px;padding:12px;margin-bottom:9px;cursor:pointer;transition:.15s}
+  .pkg:hover{border-color:#9bb3cf}
+  .pkg.sel{border-color:#1f8a4c;background:#effaf2;box-shadow:0 0 0 2px rgba(31,138,76,.15)}
+  .pkg input{margin-top:4px;width:20px;height:20px;accent-color:#1f8a4c}
+  .pkg b{font-size:14px}.pkg span{font-size:12.5px;color:#555;display:block}
+  .opt-row{display:flex;gap:10px}.opt-row .pkg{flex:1}
+  .note{font-size:12px;color:#a23;background:#fff4f4;border:1px solid #f3d2d2;border-radius:8px;padding:9px;margin:6px 0 2px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;margin-top:6px}
+  .f{display:flex;flex-direction:column;gap:4px}
+  .f.full{grid-column:1/-1}
+  .f label{font-size:12.5px;font-weight:600;color:#33455a}
+  .f input{border:1.5px solid #cfd6e0;border-radius:9px;padding:11px 12px;font-size:15px;font-family:inherit;background:#fbfcfe}
+  .f input:focus{outline:none;border-color:#1f8a4c;background:#fff}
+  .card-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .secnote{font-size:11px;color:#777;margin-top:3px}
+  /* signature */
+  .sigwrap{border:1.5px dashed #b9c3d0;border-radius:11px;background:#fcfdff;position:relative}
+  canvas#sig{width:100%;height:170px;display:block;touch-action:none;border-radius:11px}
+  .sigph{position:absolute;inset:0;display:grid;place-items:center;color:#aab3c0;font-size:14px;pointer-events:none}
+  .sigph.hide{display:none}
+  .sigclear{position:absolute;top:8px;left:8px;background:#fff;border:1px solid #d7dde6;border-radius:8px;padding:5px 10px;font-size:12px;cursor:pointer}
+  .foot-info{font-size:11px;color:#777;text-align:center;margin-top:18px;border-top:1px solid #eee;padding-top:12px}
+  .foot-info a{color:#1f6fb5}
+  /* installer share bar */
+  .share-bar{max-width:760px;margin:14px auto;background:#0b2a4a;color:#fff;border-radius:14px;padding:14px 18px}
+  .share-bar h3{font-size:14px;margin-bottom:8px;display:flex;align-items:center;gap:7px}
+  .share-bar .row{display:flex;gap:8px}
+  .share-bar input{flex:1;border:0;border-radius:9px;padding:11px 12px;font-size:15px;font-family:inherit}
+  .share-bar button{background:#25d366;color:#063;border:0;border-radius:9px;padding:11px 16px;font-weight:800;cursor:pointer;font-size:14px;white-space:nowrap}
+  .share-bar small{display:block;color:#9db4ce;font-size:11.5px;margin-top:7px}
+  /* sticky actions */
+  .actions{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #e2e6ec;
+    display:flex;gap:10px;padding:12px 16px;box-shadow:0 -4px 20px rgba(0,0,0,.08);z-index:20}
+  .actions button{flex:1;border:0;border-radius:12px;padding:15px;font-size:16px;font-weight:800;cursor:pointer;font-family:inherit}
+  .btn-wa{background:#25d366;color:#053}
+  .btn-print{background:#0b2a4a;color:#fff}
+  @media print{
+    body{background:#fff;padding:0}.share-bar,.actions,.sigclear{display:none}
+    .sheet{box-shadow:none;margin:0;border-radius:0;max-width:100%}
+    .pkg{break-inside:avoid}
+  }
+</style>
+</head>
+<body>
+
+<!-- Installer: send the link to a client -->
+<div class="share-bar" id="shareBar">
+  <h3>📲 שליחת הטופס ללקוח לחתימה</h3>
+  <div class="row">
+    <input id="clientPhone" type="tel" inputmode="tel" placeholder="מספר וואטסאפ של הלקוח (05X...)" dir="ltr" />
+    <button id="sendLink">שלח קישור</button>
+  </div>
+  <small>הלקוח יקבל הודעה עם קישור לטופס הזה, ימלא, יחתום ויחזיר אליך. (אפשר להסתיר חלק זה בהדפסה.)</small>
+</div>
+
+<div class="sheet">
+  <div class="head">
+    <div class="logo">⚡ <em>samsonix</em><small>ENJOY YOUR DRIVE</small></div>
+    <div class="date">תאריך: <span id="today"></span></div>
+  </div>
+  <div class="body">
+    <h1>שימוש בשרת לצפייה ב‑DVR</h1>
+    <div class="intro">
+      הננו שמחים שבחרתם להתקין מערכת DVR עם מצלמות, צפייה מרחוק והקלטות online.
+      למערכת מסופק כרטיס גלישה. ניתן לבטל הוראה זו בהודעה בכתב של 7 ימים מראש.
+      נא לסמן ✓ את התשלום המבוקש.
+    </div>
+
+    <div class="sec">בחירת חבילה</div>
+    <label class="pkg" data-pkg="2gb"><input type="radio" name="pkg" value="2gb"><div><b>2GB לחודש — 39 ₪ + מע״מ</b><span>מומלץ עד 2 משתמשים ו/או עד 1T</span></div></label>
+    <label class="pkg" data-pkg="4gb"><input type="radio" name="pkg" value="4gb"><div><b>4GB לחודש — 49 ₪ + מע״מ</b><span>מומלץ עד 4 משתמשים ו/או עד 2T</span></div></label>
+    <label class="pkg" data-pkg="10gb"><input type="radio" name="pkg" value="10gb"><div><b>10GB לחודש — 59 ₪ + מע״מ</b><span>מומלץ מעל 5 משתמשים ו/או עד 4T</span></div></label>
+    <div class="note">*** שימוש חורג מהחבילה החודשית <u>לא</u> מאפשר צפייה מרחוק ו/או הקלטות ***</div>
+
+    <div class="sec">הקלטת קול</div>
+    <div class="opt-row">
+      <label class="pkg" data-pkg="audio-no"><input type="radio" name="audio" value="ללא הקלטת קול"><div><b>ללא הקלטת קול</b><span>כל המצלמות ללא מיקרופון</span></div></label>
+      <label class="pkg" data-pkg="audio-yes"><input type="radio" name="audio" value="עם הקלטת קול"><div><b>עם הקלטת קול</b><span>מיקרופון בחלל הרכב (בעלות נוספת)</span></div></label>
+    </div>
+
+    <div class="sec">פרטי בעל הכרטיס</div>
+    <div class="grid">
+      <div class="f full"><label>שם מלא של בעל הכרטיס</label><input id="fullName" /></div>
+      <div class="f"><label>מס׳ ת״ז של בעל הכרטיס</label><input id="idNum" inputmode="numeric" dir="ltr" /></div>
+      <div class="f"><label>שם המתקין</label><input id="installer" /></div>
+      <div class="f full"><label>מס׳ כרטיס אשראי</label><input id="card" inputmode="numeric" dir="ltr" placeholder="0000 0000 0000 0000" /></div>
+      <div class="f"><label>תוקף (חודש/שנה)</label><input id="exp" dir="ltr" placeholder="MM/YY" /></div>
+      <div class="f"><label>3 ספרות בגב הכרטיס (CVV)</label><input id="cvv" inputmode="numeric" dir="ltr" maxlength="4" /></div>
+      <div class="f full secnote">🔒 פרטי האשראי נשמרים רק במכשיר ומופיעים במסמך החתום בלבד — לא נשלחים בהודעה ולא נשמרים בשרת.</div>
+    </div>
+
+    <div class="sec">פרטי קשר וחיוב</div>
+    <div class="grid">
+      <div class="f full"><label>כתובת מייל</label><input id="email" type="email" dir="ltr" /></div>
+      <div class="f"><label>שם איש קשר</label><input id="contactName" /></div>
+      <div class="f"><label>מס׳ טלפון איש קשר</label><input id="phone" inputmode="tel" dir="ltr" /></div>
+      <div class="f"><label>שם החברה — לחשבונית</label><input id="company" /></div>
+      <div class="f"><label>ע.מ / ח.פ</label><input id="taxId" inputmode="numeric" dir="ltr" /></div>
+      <div class="f"><label>מספר רכב 1</label><input id="plate1" dir="ltr" /></div>
+      <div class="f"><label>סוג רכב 1</label><input id="vtype1" /></div>
+      <div class="f"><label>מספר רכב 2</label><input id="plate2" dir="ltr" /></div>
+      <div class="f"><label>סוג רכב 2</label><input id="vtype2" /></div>
+    </div>
+
+    <div class="sec">חתימת הלקוח</div>
+    <div class="sigwrap">
+      <canvas id="sig"></canvas>
+      <div class="sigph" id="sigPh">חתום/חתמי כאן באצבע ✍️</div>
+      <button class="sigclear" id="sigClear">נקה</button>
+    </div>
+
+    <div class="foot-info">
+      Samsonix · המצודה 31, אזור 5800174 · טל: 03-5662259 · פקס: 03-5568999<br>
+      <a href="https://www.samsonix.com">www.samsonix.com</a> · <a href="mailto:info@samsonix.com">info@samsonix.com</a>
+    </div>
+  </div>
+</div>
+
+<div class="actions">
+  <button class="btn-print" id="btnPrint">🖨️ הדפס / שמור PDF</button>
+  <button class="btn-wa" id="btnWa">📲 שלח אישור בוואטסאפ</button>
+</div>
+
+<script>
+  const $ = id => document.getElementById(id);
+  const params = new URLSearchParams(location.search);
+  $('today').textContent = new Date().toLocaleDateString('he-IL');
+  // Prefill from link params
+  const pf = (id,key)=>{ const v=params.get(key); if(v) $(id).value=v; };
+  pf('fullName','customer'); pf('installer','installer'); pf('phone','phone'); pf('company','company');
+  // Installer number to receive the signed-confirmation (default = installer's own)
+  const TO = (params.get('to')||'').replace(/\D/g,'');
+  // If opened via a client link, hide the installer share bar
+  if (params.get('client')==='1') $('shareBar').style.display='none';
+
+  // Package selection visual
+  document.querySelectorAll('.pkg').forEach(p=>{
+    const input=p.querySelector('input');
+    input.addEventListener('change',()=>{
+      document.querySelectorAll('input[name="'+input.name+'"]').forEach(i=>i.closest('.pkg').classList.remove('sel'));
+      if(input.checked) p.classList.add('sel');
+    });
+  });
+
+  // Signature pad
+  const c=$('sig'), ctx=c.getContext('2d'); let drawing=false, hasSig=false, lastW=0;
+  function fit(){ const r=c.getBoundingClientRect(); const dpr=window.devicePixelRatio||1;
+    c.width=r.width*dpr; c.height=r.height*dpr; ctx.scale(dpr,dpr); lastW=r.width;
+    ctx.lineWidth=2.4; ctx.lineCap='round'; ctx.lineJoin='round'; ctx.strokeStyle='#0b2a4a'; }
+  setTimeout(fit,50);
+  // Only refit on a real width change (ignore vertical changes like the mobile
+  // URL bar) so an in‑progress signature isn't wiped.
+  window.addEventListener('resize',()=>{ const r=c.getBoundingClientRect(); if(Math.abs(r.width-lastW)>2) fit(); });
+  function pos(e){ const r=c.getBoundingClientRect(); const t=e.touches?e.touches[0]:e; return {x:t.clientX-r.left,y:t.clientY-r.top}; }
+  function start(e){ drawing=true; hasSig=true; $('sigPh').classList.add('hide'); const p=pos(e); ctx.beginPath(); ctx.moveTo(p.x,p.y); e.preventDefault(); }
+  function move(e){ if(!drawing)return; const p=pos(e); ctx.lineTo(p.x,p.y); ctx.stroke(); e.preventDefault(); }
+  function end(){ drawing=false; }
+  c.addEventListener('mousedown',start); c.addEventListener('mousemove',move); window.addEventListener('mouseup',end);
+  c.addEventListener('touchstart',start,{passive:false}); c.addEventListener('touchmove',move,{passive:false}); c.addEventListener('touchend',end);
+  $('sigClear').onclick=()=>{ ctx.clearRect(0,0,c.width,c.height); hasSig=false; $('sigPh').classList.remove('hide'); };
+
+  // Send the blank form link to a client via WhatsApp
+  $('sendLink').onclick=()=>{
+    let ph=$('clientPhone').value.replace(/\D/g,''); if(!ph){ alert('הזן מספר וואטסאפ של הלקוח'); return; }
+    if(ph.startsWith('0')) ph='972'+ph.slice(1);
+    const link = location.origin+location.pathname+'?client=1'+(TO?('&to='+TO):'');
+    const msg = `שלום! לחתימה מהירה על טופס המנוי ל‑DVR של Samsonix, היכנס/י לקישור, מלא/י פרטים וחתום/חתמי:\n${link}\nתודה 🙏`;
+    window.open('https://wa.me/'+ph+'?text='+encodeURIComponent(msg),'_blank');
+  };
+
+  // Send a confirmation summary (NO card data) to the installer's WhatsApp
+  $('btnWa').onclick=()=>{
+    if(!hasSig){ alert('נא לחתום לפני השליחה'); return; }
+    const pkg=(document.querySelector('input[name=pkg]:checked')||{}).value||'—';
+    const audio=(document.querySelector('input[name=audio]:checked')||{}).value||'—';
+    const pkgLabel={'2gb':'2GB · 39₪','4gb':'4GB · 49₪','10gb':'10GB · 59₪'}[pkg]||pkg;
+    const lines=[
+      '*טופס מנוי Samsonix DVR — נחתם ✅*',
+      'שם: '+($('fullName').value||'—'),
+      'חברה: '+($('company').value||'—'),
+      'טלפון: '+($('phone').value||'—'),
+      'חבילה: '+pkgLabel+' · '+audio,
+      'רכב: '+([$('plate1').value,$('plate2').value].filter(Boolean).join(', ')||'—'),
+      '',
+      'הטופס החתום המלא (כולל פרטי חיוב) — מצורף כקובץ/הדפסה בנפרד.'
+    ];
+    let ph=TO; if(!ph){ ph=prompt('מספר וואטסאפ לקבלת האישור (05X...):')||''; ph=ph.replace(/\D/g,''); }
+    if(!ph){ return; } if(ph.startsWith('0')) ph='972'+ph.slice(1);
+    window.open('https://wa.me/'+ph+'?text='+encodeURIComponent(lines.join('\n')),'_blank');
+  };
+
+  $('btnPrint').onclick=()=>window.print();
+</script>
+</body>
+</html>
