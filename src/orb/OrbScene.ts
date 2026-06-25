@@ -1279,7 +1279,7 @@ function loadAndReplaceBody(
   import('three/examples/jsm/loaders/GLTFLoader.js').then(({ GLTFLoader }) => {
     const loader = new GLTFLoader();
     loader.load(
-      base + 'pikachu.glb',
+      base + 'pikachu.glb?v=3',
       (gltf) => {
         // Hide all procedural body/head geometry
         pikaGroup.traverse((child) => {
