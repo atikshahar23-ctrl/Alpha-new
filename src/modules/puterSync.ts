@@ -78,6 +78,38 @@ function collectHgMediaKeys(): string[] {
 }
 const HG_MEDIA_MANIFEST = '__hg_media__';
 
+// Media (photos/galleries/videos) are far larger than puter.kv's ~400KB value
+// limit, so they're stored in puter.fs (file storage) instead. One file per
+// media key under this directory.
+const FS_DIR = 'alpha_sync_media_v1';
+function fsName(key: string): string { return key.replace(/[:/\\]/g, '_'); }
+
+// Write one media value to puter.fs; falls back to kv for small values if fs
+// is unavailable. Returns true on success.
+async function putMedia(key: string, val: string): Promise<boolean> {
+  const p = puter();
+  if (p?.fs?.write) {
+    try {
+      await p.fs.write(`${FS_DIR}/${fsName(key)}`, val, { overwrite: true, createMissingParents: true });
+      return true;
+    } catch { /* fall through to kv */ }
+  }
+  try { await p.kv.set(KV_PREFIX + key, val); return true; } catch { return false; }
+}
+
+// Read one media value: try puter.fs first, then kv.
+async function getMedia(key: string): Promise<string | null> {
+  const p = puter();
+  if (p?.fs?.read) {
+    try {
+      const blob = await p.fs.read(`${FS_DIR}/${fsName(key)}`);
+      const text = typeof blob?.text === 'function' ? await blob.text() : String(blob ?? '');
+      if (text) return text;
+    } catch { /* fall through to kv */ }
+  }
+  try { const v = await p.kv.get(KV_PREFIX + key); return (v ?? null) as string | null; } catch { return null; }
+}
+
 export function isPuterAvailable(): boolean {
   return typeof (window as any).puter !== 'undefined';
 }
@@ -141,8 +173,7 @@ export async function syncToCloud(onProgress?: (msg: string) => void): Promise<{
     for (const key of mediaKeys) {
       const val = localStorage.getItem(key);
       if (val !== null) {
-        try { await puter().kv.set(KV_PREFIX + key, val); mediaDone++; }
-        catch { /* value likely exceeds kv size limit — skip this one */ }
+        if (await putMedia(key, val)) mediaDone++;
       }
       if (onProgress && mediaDone % 3 === 0 && mediaKeys.length) {
         onProgress(`מעלה תמונות… ${Math.round(mediaDone / mediaKeys.length * 100)}%`);
@@ -184,7 +215,7 @@ export async function syncFromCloud(onProgress?: (msg: string) => void): Promise
       const mediaKeys: string[] = manifestRaw ? JSON.parse(manifestRaw) : [];
       for (const key of mediaKeys) {
         try {
-          const val = await puter().kv.get(KV_PREFIX + key);
+          const val = await getMedia(key);
           if (val !== null && val !== undefined && val !== '') {
             localStorage.setItem(key, val);
             mediaCount++;
