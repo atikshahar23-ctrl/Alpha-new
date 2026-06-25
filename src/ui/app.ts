@@ -168,7 +168,7 @@ function t(key: string, lang: UILang): string {
 export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v15 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v16 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="searchBtn" aria-label="Search (Ctrl+K)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
         <button class="chip ghost" id="muteBtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg></button>
@@ -176,6 +176,10 @@ export function mountApp(root: HTMLElement) {
         <button class="chip ghost" id="newChat"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> <span data-i18n="newChat">חדש</span></button>
       </div>
       <div class="stage" id="stage"></div>
+      <canvas id="charSwapFx" class="char-swap-fx"></canvas>
+      <button id="charSwapBtn" class="char-swap-btn" title="החלף דמות ראשית">
+        <span class="csb-ball">⬤</span><span class="csb-label">החלף דמות</span>
+      </button>
 
       <aside class="left-panel" id="leftPanel">
         <div class="lp-brand">
@@ -1945,6 +1949,135 @@ export function mountApp(root: HTMLElement) {
     setTimeout(() => orb.setCharacter(savedChar), 1200);
   }
 
+  // ── Animated main-character swap (red-laser dispel + pokeball summon) ──
+  // Plays over the orb on the main screen: a red laser strikes the current
+  // character → it vanishes → a pokeball flies in, wobbles, cracks open with a
+  // laser burst → the new character emerges (loaded into the orb).
+  let charSwapBusy = false;
+  function drawMainPokeball(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, wob = 0) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(wob);
+    ctx.shadowColor = '#ff3322'; ctx.shadowBlur = r * 0.5;
+    ctx.beginPath(); ctx.arc(0, 0, r, Math.PI, 0); ctx.fillStyle = '#e63835'; ctx.fill();
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI); ctx.fillStyle = '#fff'; ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = '#111'; ctx.lineWidth = r * 0.07;
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-r, 0); ctx.lineTo(r, 0); ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(0, 0, r * 0.24, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#111'; ctx.lineWidth = r * 0.07; ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.12, 0, Math.PI * 2); ctx.fillStyle = '#e8e8e8'; ctx.fill();
+    ctx.restore();
+  }
+  function swapMainCharacterAnimated(nextId: string) {
+    if (charSwapBusy) return;
+    const cvs = $<HTMLCanvasElement>('charSwapFx');
+    const stage = document.getElementById('stage');
+    const ctx = cvs.getContext('2d');
+    if (!ctx || !stage) { setMainCharacter(nextId); return; }
+    charSwapBusy = true;
+    $('charSwapBtn')?.classList.add('busy');
+    cvs.classList.add('active');
+    const rect = stage.getBoundingClientRect();
+    cvs.width = rect.width; cvs.height = rect.height;
+    const W = cvs.width, H = cvs.height;
+    const cx = W / 2, cy = H * 0.46;          // orb centre
+    const ballR = Math.min(W, H) * 0.07;
+    let t = 0;
+    let swapped = false;
+    const start = performance.now();
+    function frame(now: number) {
+      t = (now - start) / 1000;
+      ctx!.clearRect(0, 0, W, H);
+
+      // Critical state transitions — driven by elapsed time, NOT by which
+      // render phase we land in, so a slow/dropped frame can never skip them.
+      if (t >= 0.4 && !swapped) stage!.classList.add('stage-dispelled');
+      if (t >= 1.45 && !swapped) {
+        swapped = true;
+        setMainCharacter(nextId);
+        stage!.classList.remove('stage-dispelled');
+      }
+
+      // Phase 1 (0–0.5s): red laser beam from bottom to orb, then dispel.
+      if (t < 0.5) {
+        const p = t / 0.5;
+        const x1 = cx, y1 = H, x2 = cx, y2 = cy;
+        const ex = x1 + (x2 - x1) * p, ey = y1 + (y2 - y1) * p;
+        ctx!.save(); ctx!.lineCap = 'round';
+        const layers = [[26, .08], [15, .2], [6, .5], [2, 1]] as const;
+        const cols = ['rgba(255,40,40,1)','rgba(255,70,40,1)','rgba(255,130,60,1)','#fff'];
+        layers.forEach((L, i) => {
+          ctx!.beginPath(); ctx!.moveTo(x1, y1); ctx!.lineTo(ex, ey);
+          ctx!.lineWidth = L[0]; ctx!.globalAlpha = L[1]; ctx!.strokeStyle = cols[i];
+          ctx!.shadowColor = '#ff2200'; ctx!.shadowBlur = i === 3 ? 30 : 0; ctx!.stroke();
+        });
+        ctx!.restore();
+      }
+      // Phase 2 (0.5–0.7s): red impact burst at orb centre.
+      else if (t < 0.7) {
+        const p = (t - 0.5) / 0.2;
+        const rr = ballR * 4 * p;
+        ctx!.save();
+        const g = ctx!.createRadialGradient(cx, cy, 0, cx, cy, rr);
+        g.addColorStop(0, `rgba(255,255,255,${0.9 * (1 - p)})`);
+        g.addColorStop(0.4, `rgba(255,60,30,${0.7 * (1 - p)})`);
+        g.addColorStop(1, 'rgba(255,0,0,0)');
+        ctx!.fillStyle = g; ctx!.beginPath(); ctx!.arc(cx, cy, rr, 0, Math.PI * 2); ctx!.fill();
+        ctx!.restore();
+      }
+      // Phase 3 (0.7–1.1s): pokeball flies in from bottom to centre.
+      else if (t < 1.1) {
+        const p = (t - 0.7) / 0.4, e = 1 - Math.pow(1 - p, 3);
+        const by = H * 0.95 + (cy - H * 0.95) * e;
+        drawMainPokeball(ctx!, cx, by, ballR * (0.5 + 0.5 * e));
+      }
+      // Phase 4 (1.1–1.5s): wobble.
+      else if (t < 1.5) {
+        const wob = Math.sin((t - 1.1) * 18) * 0.4 * Math.max(0, 1 - (t - 1.1) / 0.4);
+        drawMainPokeball(ctx!, cx, cy, ballR, wob);
+      }
+      // Phase 5 (1.5–1.95s): open with laser flash (character already loaded).
+      else if (t < 1.95) {
+        const p = (t - 1.5) / 0.45;
+        const off = ballR * 2 * p;
+        ctx!.save(); ctx!.globalAlpha = Math.max(0, 1 - p * 1.2);
+        ctx!.beginPath(); ctx!.arc(cx, cy - off, ballR, Math.PI, 0); ctx!.fillStyle = '#e63835'; ctx!.fill();
+        ctx!.strokeStyle = '#111'; ctx!.lineWidth = ballR * 0.07; ctx!.stroke();
+        ctx!.beginPath(); ctx!.arc(cx, cy + off, ballR, 0, Math.PI); ctx!.fillStyle = '#fff'; ctx!.fill();
+        ctx!.stroke(); ctx!.restore();
+        const fr = ballR * 3.4 * p;
+        ctx!.save(); ctx!.globalAlpha = Math.max(0, 0.85 - p);
+        const g = ctx!.createRadialGradient(cx, cy, 0, cx, cy, fr);
+        g.addColorStop(0, 'rgba(255,255,255,1)');
+        g.addColorStop(0.4, 'rgba(255,210,90,0.7)');
+        g.addColorStop(1, 'rgba(255,120,30,0)');
+        ctx!.fillStyle = g; ctx!.beginPath(); ctx!.arc(cx, cy, fr, 0, Math.PI * 2); ctx!.fill();
+        ctx!.restore();
+      }
+      else {
+        if (!swapped) { swapped = true; setMainCharacter(nextId); } // safety fallback
+        ctx!.clearRect(0, 0, W, H);
+        cvs.classList.remove('active');
+        stage!.classList.remove('stage-dispelled');
+        charSwapBusy = false;
+        $('charSwapBtn')?.classList.remove('busy');
+        return;
+      }
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
+  (window as any).swapMainCharacterAnimated = swapMainCharacterAnimated;
+
+  // Main-screen "switch character" button — cycles to the next character
+  // with the pokeball + red-laser animation.
+  $('charSwapBtn').onclick = () => {
+    const cur = localStorage.getItem(MAIN_CHAR_KEY) || 'pikachu';
+    const idx = MAIN_CHARACTERS.findIndex(c => c.id === cur);
+    const next = MAIN_CHARACTERS[(idx + 1) % MAIN_CHARACTERS.length];
+    swapMainCharacterAnimated(next.id);
+  };
+
   // Voice/chat command → swap the MAIN assistant character (the orb avatar).
   // Returns a reply string if it handled the command, else null.
   function tryArVoiceCommand(text: string): string | null {
@@ -1954,10 +2087,11 @@ export function mountApp(root: HTMLElement) {
     const hasSwitchVerb = /(החלף|תחליף|שנה|תשנה|הבא|הבאה|הראה|תראה|תביא|הצג|switch|change|next|show|bring|turn into|be)/i.test(low);
     const named = MAIN_CHARACTERS.find(c => c.words.test(low));
 
-    // Named character with a switch verb or "character" context → swap it.
+    // Named character with a switch verb or "character" context → swap it
+    // with the pokeball + red-laser animation.
     if (named && (hasSwitchVerb || mentionsChar)) {
-      const label = setMainCharacter(named.id);
-      return `הדמות הראשית הוחלפה ל${label} ✨`;
+      swapMainCharacterAnimated(named.id);
+      return `הדמות הראשית מתחלפת ל${named.label} ⚡`;
     }
 
     // Generic next/switch ("החלף דמות" / "הדמות הבאה") → cycle to next.
@@ -1965,8 +2099,8 @@ export function mountApp(root: HTMLElement) {
       const cur = localStorage.getItem(MAIN_CHAR_KEY) || 'pikachu';
       const idx = MAIN_CHARACTERS.findIndex(c => c.id === cur);
       const next = MAIN_CHARACTERS[(idx + 1) % MAIN_CHARACTERS.length];
-      const label = setMainCharacter(next.id);
-      return `הדמות הראשית הוחלפה ל${label} ✨`;
+      swapMainCharacterAnimated(next.id);
+      return `הדמות הראשית מתחלפת ל${next.label} ⚡`;
     }
 
     return null;
@@ -2853,7 +2987,7 @@ export function mountApp(root: HTMLElement) {
         statusEl.textContent = 'מצלמה פעילה ✓';
         setTimeout(() => { statusEl.style.opacity = '0'; }, 2000);
         drawArObjects();
-        startHandTracking(video, canvas, ctx, handIndicator, arBtns, isMobile);
+        startHandTracking(video, canvas, ctx, handIndicator, arBtns);
       };
       video.onloadedmetadata = () => { video.play().catch(() => {}); onReady(); };
     }).catch((e: any) => {
@@ -2963,8 +3097,7 @@ export function mountApp(root: HTMLElement) {
 
   function startHandTracking(
     video: HTMLVideoElement, canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D,
-    handIndicator: HTMLElement, arBtns: { label: string; action: () => void }[],
-    isMobile = false
+    handIndicator: HTMLElement, arBtns: { label: string; action: () => void }[]
   ) {
     let lastTapTime = 0;
     const pointerEl = document.createElement('div');
@@ -2995,11 +3128,14 @@ export function mountApp(root: HTMLElement) {
       }
       const hands = new Hands({ locateFile: (f: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/${f}` });
       // Lighter model + single hand on phones so it runs smoothly.
+      // Highest-quality detection on every device. Lower confidence
+      // thresholds so a hand is picked up readily even in poor lighting.
       hands.setOptions({
-        maxNumHands: isMobile ? 1 : 2,
-        modelComplexity: isMobile ? 0 : 1,
-        minDetectionConfidence: 0.6,
-        minTrackingConfidence: 0.5,
+        maxNumHands: 2,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.4,
+        minTrackingConfidence: 0.4,
+        selfieMode: true,
       });
       // Frame-rate-independent gesture timing.
       let lastFrameT = performance.now();

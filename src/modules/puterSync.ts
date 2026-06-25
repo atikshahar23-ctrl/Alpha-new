@@ -22,9 +22,23 @@ const SYNC_TABLES = [
   'alpha_events',
   'alpha_tasks',
   'alpha_notes',
+  // HeavyGuard — full dataset (everything is stored in localStorage).
+  // Photos/galleries/videos use dynamic per-record keys and are synced
+  // separately (see hg2 media handling in syncToCloud/syncFromCloud).
   'hg2:index',
   'hg2:quotes',
   'hg2:tasks',
+  'hg2:customers',
+  'hg2:pricelist',
+  'hg2:quoteseq',
+  'hg2:vehicle',
+  'hg2:carstock',
+  'hg2:suppliers',
+  'hg2:invoices',
+  'hg2:wanumber',
+  'hg2:init',
+  'hg2:lastbackup',
+  'hg2:crm',
   'alpha_brain_memory_v1',
   'alpha_pomodoro_v1',
   'alpha_mood_v1',
@@ -49,6 +63,20 @@ const SYNC_TABLES = [
 function puter(): any {
   return (window as any).puter;
 }
+
+// HeavyGuard stores photos/galleries/videos and per-invoice blobs under
+// dynamic per-record keys (hg2:photo:<id>, hg2:gallery:<id>, hg2:video:<id>,
+// hg2:inv:<id>). Collect them from localStorage so they can be synced too.
+const HG_MEDIA_RE = /^hg2:(photo|gallery|video|inv):/;
+function collectHgMediaKeys(): string[] {
+  const keys: string[] = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && HG_MEDIA_RE.test(k)) keys.push(k);
+  }
+  return keys;
+}
+const HG_MEDIA_MANIFEST = '__hg_media__';
 
 export function isPuterAvailable(): boolean {
   return typeof (window as any).puter !== 'undefined';
@@ -104,11 +132,29 @@ export async function syncToCloud(onProgress?: (msg: string) => void): Promise<{
       i++;
       if (onProgress && i % 5 === 0) onProgress(`מעלה נתונים… ${Math.round(i / tables.length * 100)}%`);
     }
+
+    // HeavyGuard media (photos / galleries / videos / invoice blobs) — dynamic
+    // per-record keys. Upload each, then store a manifest so download knows
+    // which keys to fetch. Each is wrapped so one oversized photo doesn't abort.
+    const mediaKeys = collectHgMediaKeys();
+    let mediaDone = 0;
+    for (const key of mediaKeys) {
+      const val = localStorage.getItem(key);
+      if (val !== null) {
+        try { await puter().kv.set(KV_PREFIX + key, val); mediaDone++; }
+        catch { /* value likely exceeds kv size limit — skip this one */ }
+      }
+      if (onProgress && mediaDone % 3 === 0 && mediaKeys.length) {
+        onProgress(`מעלה תמונות… ${Math.round(mediaDone / mediaKeys.length * 100)}%`);
+      }
+    }
+    await puter().kv.set(KV_PREFIX + HG_MEDIA_MANIFEST, JSON.stringify(mediaKeys));
+
     const ts = new Date().toISOString();
-    await puter().kv.set(KV_PREFIX + '__meta__', JSON.stringify({ ts, tables: tables.length }));
+    await puter().kv.set(KV_PREFIX + '__meta__', JSON.stringify({ ts, tables: tables.length, media: mediaDone }));
     localStorage.setItem(LAST_SYNC_KEY, ts);
     localStorage.removeItem(DIRTY_KEY);
-    onProgress?.('סנכרון הושלם ✓');
+    onProgress?.(`סנכרון הושלם ✓ (${mediaDone} תמונות)`);
     return { ok: true };
   } catch (e: any) {
     return { ok: false, error: e?.message || 'שגיאת ענן' };
@@ -130,10 +176,30 @@ export async function syncFromCloud(onProgress?: (msg: string) => void): Promise
         count++;
       }
     }
+
+    // HeavyGuard media — read the manifest, then download each photo/video.
+    let mediaCount = 0;
+    try {
+      const manifestRaw = await puter().kv.get(KV_PREFIX + HG_MEDIA_MANIFEST);
+      const mediaKeys: string[] = manifestRaw ? JSON.parse(manifestRaw) : [];
+      for (const key of mediaKeys) {
+        try {
+          const val = await puter().kv.get(KV_PREFIX + key);
+          if (val !== null && val !== undefined && val !== '') {
+            localStorage.setItem(key, val);
+            mediaCount++;
+          }
+        } catch { /* skip individual failures */ }
+        if (onProgress && mediaCount % 3 === 0 && mediaKeys.length) {
+          onProgress(`מוריד תמונות… ${Math.round(mediaCount / mediaKeys.length * 100)}%`);
+        }
+      }
+    } catch { /* no media manifest yet */ }
+
     const ts = new Date().toISOString();
     localStorage.setItem(LAST_SYNC_KEY, ts);
-    onProgress?.(`שוחזרו ${count} טבלאות ✓`);
-    return { ok: true, tables: count };
+    onProgress?.(`שוחזרו ${count} טבלאות + ${mediaCount} תמונות ✓`);
+    return { ok: true, tables: count + mediaCount };
   } catch (e: any) {
     return { ok: false, error: e?.message || 'שגיאת ענן' };
   }
