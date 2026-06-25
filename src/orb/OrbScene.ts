@@ -1305,8 +1305,7 @@ function loadAndReplaceBody(
           }
         });
 
-        // STL Y-axis points down — flip around Z to stand upright (preserves front-facing)
-        model.rotation.z = Math.PI;
+        // Orientation baked into GLB geometry (Y-flip applied during export)
         model.scale.setScalar(1.3);
         model.position.set(0, -0.1, 0);
         pikaGroup.add(model);
