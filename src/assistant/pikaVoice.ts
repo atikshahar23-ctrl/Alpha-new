@@ -178,6 +178,97 @@ function sayPikaExcited(ctx: AudioContext, dest: AudioNode) {
   t = syllable(ctx, dest, 'p', 'i', 420, 620, 0.26, t);   // piiii rising
 }
 
+// ── Contextual emote utterances ────────────────────────────────────────────
+
+// "Pi-ka-pi!" — happy greeting (bright, bouncy, high ending)
+function sayPikaPi(ctx: AudioContext, dest: AudioNode) {
+  let t = 0;
+  t = syllable(ctx, dest, 'p', 'i', 370, 460, 0.10, t);   // Pi (rise)
+  t = syllable(ctx, dest, 'k', 'a', 460, 370, 0.12, t);   // ka (fall)
+  t += 0.04;
+  t = syllable(ctx, dest, 'p', 'i', 440, 590, 0.16, t);   // pi! (bright high ending)
+}
+
+// "Pi-ka-chu?" — curious question (soft, rises on last syllable)
+function sayPikachuQuestion(ctx: AudioContext, dest: AudioNode) {
+  let t = 0;
+  t = syllable(ctx, dest, 'p', 'i', 330, 350, 0.13, t);   // Pi (soft neutral)
+  t = syllable(ctx, dest, 'k', 'a', 350, 320, 0.13, t);   // ka (soft)
+  t = syllable(ctx, dest, 'ch', 'u', 280, 450, 0.32, t);  // chu? (rising = question)
+}
+
+// "Chuuuu..." — sad / tired (low, slow, drooping)
+function sayChuuu(ctx: AudioContext, dest: AudioNode) {
+  const t = 0;
+  syllable(ctx, dest, 'ch', 'u', 200, 148, 0.72, t);      // chuuuu... long slow droop
+}
+
+// "Pi-pi-pi!" — surprised (three quick high chirps)
+function sayPiPiPi(ctx: AudioContext, dest: AudioNode) {
+  let t = 0;
+  for (let i = 0; i < 3; i++) {
+    const f = 420 + i * 45;
+    t = syllable(ctx, dest, 'p', 'i', f, f + 75, 0.07, t);
+    t += 0.04;
+  }
+}
+
+// "Piiiiika-chu!" — victory / self-intro (extended rising Pi, proud landing)
+function sayPikaVictory(ctx: AudioContext, dest: AudioNode) {
+  let t = 0;
+  t = syllable(ctx, dest, 'p', 'i', 340, 490, 0.34, t);   // Piiiii (extended rise)
+  t = syllable(ctx, dest, 'k', 'a', 490, 420, 0.12, t);   // ka
+  t = syllable(ctx, dest, 'ch', 'u', 420, 360, 0.22, t);  // chu! (proud, full landing)
+}
+
+// "Pikachu-Pi!" — calling / friendly greeting (rhythmic, bright finish)
+function sayPikachuPi(ctx: AudioContext, dest: AudioNode) {
+  let t = 0;
+  t = syllable(ctx, dest, 'p', 'i', 360, 410, 0.11, t);   // Pi
+  t = syllable(ctx, dest, 'k', 'a', 410, 370, 0.12, t);   // ka
+  t = syllable(ctx, dest, 'ch', 'u', 350, 320, 0.14, t);  // chu
+  t += 0.05;
+  t = syllable(ctx, dest, 'p', 'i', 450, 560, 0.15, t);   // Pi! (bright ending)
+}
+
+let _lastEmoteSpeakT = 0;
+
+export function pikaEmoteSpeak(emote: string): void {
+  if (!enabled) return;
+  const now = Date.now();
+  if (now - _lastEmoteSpeakT < 1400) return;
+  _lastEmoteSpeakT = now;
+  try {
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)() as AudioContext;
+    const master = ctx.createGain();
+    master.gain.value = 1;
+    const soft = ctx.createBiquadFilter();
+    soft.type = 'lowpass'; soft.frequency.value = 6500; soft.Q.value = 0.4;
+    master.connect(soft); soft.connect(ctx.destination);
+
+    switch (emote) {
+      case 'happy':
+        Math.random() < 0.6 ? sayPikaPi(ctx, master) : sayPikachuPi(ctx, master);
+        break;
+      case 'curious':
+        sayPikachuQuestion(ctx, master);
+        break;
+      case 'excited':
+        Math.random() < 0.55 ? sayPikaExcited(ctx, master) : sayPikaVictory(ctx, master);
+        break;
+      case 'sad':
+        sayChuuu(ctx, master);
+        break;
+      case 'surprised':
+        sayPiPiPi(ctx, master);
+        break;
+      default:
+        sayPika(ctx, master);
+    }
+    setTimeout(() => { try { ctx.close(); } catch {} }, 2500);
+  } catch {}
+}
+
 function playWebAudioPika() {
   onChirpStart?.();
   try {

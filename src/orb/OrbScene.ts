@@ -5,6 +5,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
+import { pikaEmoteSpeak } from '../assistant/pikaVoice';
 
 export type PikaEmote = 'happy' | 'curious' | 'excited' | 'sad' | 'surprised';
 
@@ -1812,9 +1813,11 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   return {
     setEnergy(v: number) { ampTarget = Math.max(0, Math.min(1, v)); },
     pikaEmote(emote: PikaEmote) {
+      pikaEmoteSpeak(emote);
       if (emote === 'excited' || emote === 'happy') { ampTarget = 0.85; setTimeout(() => { ampTarget = 0.06; }, 1200); }
       if (emote === 'surprised') { ampTarget = 0.7; setTimeout(() => { ampTarget = 0.06; }, 800); }
       if (emote === 'curious') { ampTarget = 0.45; setTimeout(() => { ampTarget = 0.06; }, 900); }
+      if (emote === 'sad') { ampTarget = 0.15; setTimeout(() => { ampTarget = 0.06; }, 1500); }
     },
     dispose() {
       cancelAnimationFrame(raf);
@@ -2751,6 +2754,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   return {
     setEnergy(v: number) { ampTarget = Math.max(0, Math.min(1, v)); },
     pikaEmote(emote: PikaEmote) {
+      pikaEmoteSpeak(emote);
       if (emote === 'excited' || emote === 'happy') {
         ampTarget = 0.85;
         setTimeout(() => { ampTarget = 0.06; }, 1200);
@@ -2760,6 +2764,9 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       } else if (emote === 'curious') {
         ampTarget = 0.45;
         setTimeout(() => { ampTarget = 0.06; }, 900);
+      } else if (emote === 'sad') {
+        ampTarget = 0.15;
+        setTimeout(() => { ampTarget = 0.06; }, 1500);
       }
     },
     dispose() {
