@@ -168,7 +168,7 @@ function t(key: string, lang: UILang): string {
 export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v11 ⚡</div></div><img class="brand-logo" src="${import.meta.env.BASE_URL}heavyguard-logo.png" alt="HeavyGuard" /></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v11 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="searchBtn" aria-label="Search (Ctrl+K)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
         <button class="chip ghost" id="muteBtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg></button>
@@ -178,6 +178,9 @@ export function mountApp(root: HTMLElement) {
       <div class="stage" id="stage"></div>
 
       <aside class="left-panel" id="leftPanel">
+        <div class="lp-brand">
+          <img class="brand-logo" src="${import.meta.env.BASE_URL}heavyguard-logo.png" alt="HeavyGuard" />
+        </div>
         <div class="lp-head">
           <span class="lp-title" data-i18n="system">מערכת</span>
           <span class="lp-status" id="lpStatus" data-i18n="online">● מחובר</span>
@@ -485,6 +488,14 @@ export function mountApp(root: HTMLElement) {
                 <button class="cloud-btn" id="puterSyncNowBtn">סנכרן עכשיו ☁️</button>
                 <button class="cloud-btn" id="puterRestoreBtn">שחזר מהענן ⬇️</button>
                 <button class="cloud-btn" id="puterSignOutBtn" style="background:rgba(255,60,60,.12);border-color:rgba(255,60,60,.3);color:#f87;">התנתק</button>
+              </div>
+              <div style="margin-top:8px">
+                <label style="font-size:11px;color:var(--dim);display:block;margin-bottom:4px">תפקיד מכשיר זה בסנכרון:</label>
+                <select id="syncRoleSel" style="font-size:12px;width:100%;background:rgba(255,255,255,.05);border:1px solid rgba(218,165,32,.2);border-radius:6px;color:var(--ink);padding:6px 8px">
+                  <option value="primary">📱 ראשי — הטלפון (תמיד מעלה, לא מוריד)</option>
+                  <option value="secondary">💻 משני — מחשב / אייפד (תמיד מוריד מהטלפון)</option>
+                  <option value="auto">🔄 אוטומטי (לפי זמן)</option>
+                </select>
               </div>
             </div>
           </div>
@@ -1199,9 +1210,9 @@ export function mountApp(root: HTMLElement) {
           const tasks = await hgLoad('hg2:tasks');
           const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
           tasks.unshift({ id, title, date, done: false, ts: Date.now() });
-          const storage = (window as any).storage || (window as any).puter?.kv;
-          if (storage) { try { await storage.set('hg2:tasks', JSON.stringify(tasks)); } catch {} }
           localStorage.setItem('hg2:tasks', JSON.stringify(tasks));
+          puterSync.markDirty();
+          if (puterSync.isSignedIn()) puterSync.syncToCloud().then(() => updateCloudIndicator());
         },
         onHgSearch: hgSearchLicense,
         onHgEarnings: hgShowEarnings,
@@ -1220,11 +1231,11 @@ export function mountApp(root: HTMLElement) {
           };
           const index = await hgLoad('hg2:index');
           index.unshift(record);
-          const storage = (window as any).storage || (window as any).puter?.kv;
-          if (storage) { try { await storage.set('hg2:index', JSON.stringify(index)); } catch {} }
           localStorage.setItem('hg2:index', JSON.stringify(index));
+          puterSync.markDirty();
           const timeStr = new Date(record.reportedAt).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' });
           addMsg(`✅ התקנה נשמרה — ${record.idNumber || 'ללא מספר'} · דווח ב-${timeStr}`, 'sys');
+          if (puterSync.isSignedIn()) puterSync.syncToCloud().then(() => updateCloudIndicator());
         },
         onArCamera: openArCamera,
         onGDoc: openGDoc,
@@ -1315,13 +1326,6 @@ export function mountApp(root: HTMLElement) {
   });
 
   async function hgLoad(key: string): Promise<any[]> {
-    const storage = (window as any).storage || (window as any).puter?.kv;
-    if (storage) {
-      try {
-        const r = await storage.get(key);
-        if (r && r.value != null) return JSON.parse(r.value);
-      } catch {}
-    }
     try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch { return []; }
   }
 
@@ -1568,12 +1572,9 @@ export function mountApp(root: HTMLElement) {
     };
     const quotes = await hgLoad('hg2:quotes');
     quotes.unshift(newQuote);
-    const storage = (window as any).storage || (window as any).puter?.kv;
-    if (storage) {
-      try { await storage.set('hg2:quotes', JSON.stringify(quotes)); } catch {}
-    }
     localStorage.setItem('hg2:quotes', JSON.stringify(quotes));
     addMsg(`הצעת מחיר נוצרה עבור ${customer || 'לקוח'}`, 'sys');
+    if (puterSync.isSignedIn()) puterSync.syncToCloud().then(() => updateCloudIndicator());
   }
 
   // AR Camera — game-like interactive experience with hand tracking
@@ -2714,8 +2715,21 @@ export function mountApp(root: HTMLElement) {
     await puterSync.signOut();
     updatePuterUI();
   };
+
+  // Sync role selector
+  const syncRoleSel = $<HTMLSelectElement>('syncRoleSel');
+  syncRoleSel.value = puterSync.getSyncRole();
+  syncRoleSel.addEventListener('change', () => {
+    puterSync.setSyncRole(syncRoleSel.value as 'primary' | 'secondary' | 'auto');
+  });
+
   // Refresh Puter UI when settings open
-  $('settingsBtn').addEventListener('click', () => setTimeout(updatePuterUI, 50));
+  $('settingsBtn').addEventListener('click', () => {
+    setTimeout(() => {
+      updatePuterUI();
+      syncRoleSel.value = puterSync.getSyncRole();
+    }, 50);
+  });
 
   // ── Universal Search ──
   const searchOverlay = $('searchOverlay');

@@ -7,6 +7,13 @@
 
 const KV_PREFIX = 'alpha_sync_v1:';
 const LAST_SYNC_KEY = 'alpha_puter_last_sync';
+const DIRTY_KEY = 'alpha_data_dirty';
+const SYNC_ROLE_KEY = 'alpha_sync_role'; // 'primary' | 'secondary' | 'auto'
+
+// Mark local data as changed so smartSync knows to upload rather than download
+export function markDirty() {
+  localStorage.setItem(DIRTY_KEY, Date.now().toString());
+}
 
 const SYNC_TABLES = [
   'alpha_leads_v1',
@@ -100,6 +107,7 @@ export async function syncToCloud(onProgress?: (msg: string) => void): Promise<{
     const ts = new Date().toISOString();
     await puter().kv.set(KV_PREFIX + '__meta__', JSON.stringify({ ts, tables: tables.length }));
     localStorage.setItem(LAST_SYNC_KEY, ts);
+    localStorage.removeItem(DIRTY_KEY);
     onProgress?.('סנכרון הושלם ✓');
     return { ok: true };
   } catch (e: any) {
@@ -148,21 +156,51 @@ export async function getCloudMeta(): Promise<{ ts: string; tables: number } | n
   } catch { return null; }
 }
 
-// Smart startup sync: compare cloud vs local timestamps, pull or push accordingly.
-// Returns what action was taken.
+export function getSyncRole(): string {
+  return localStorage.getItem(SYNC_ROLE_KEY) || 'auto';
+}
+export function setSyncRole(role: 'primary' | 'secondary' | 'auto') {
+  localStorage.setItem(SYNC_ROLE_KEY, role);
+}
+
+// Smart startup sync: respects device role and dirty flag.
+// primary (phone) → always upload, never overwrite local with cloud.
+// secondary (computer/tablet) → always download from cloud.
+// auto → compare timestamps, but prioritise dirty (unsaved local changes) over cloud.
 export async function smartSync(onProgress?: (msg: string) => void): Promise<'downloaded' | 'uploaded' | 'none'> {
   if (!isPuterAvailable() || !isSignedIn()) return 'none';
   try {
-    const cloudMeta = await getCloudMeta();
-    const localLastSync = localStorage.getItem(LAST_SYNC_KEY);
+    const role = getSyncRole();
 
+    if (role === 'primary') {
+      onProgress?.('מעלה נתונים לענן…');
+      const r = await syncToCloud(onProgress);
+      return r.ok ? 'uploaded' : 'none';
+    }
+
+    if (role === 'secondary') {
+      onProgress?.('מוריד נתונים מהענן…');
+      const r = await syncFromCloud(onProgress);
+      return r.ok ? 'downloaded' : 'none';
+    }
+
+    // auto mode — dirty local changes always win over cloud
+    const dirtyTs = localStorage.getItem(DIRTY_KEY);
+    const localLastSync = localStorage.getItem(LAST_SYNC_KEY);
+    const hasLocalChanges = dirtyTs && (!localLastSync || dirtyTs > localLastSync);
+
+    if (hasLocalChanges) {
+      onProgress?.('מעלה שינויים מקומיים לענן…');
+      await syncToCloud(onProgress);
+      return 'uploaded';
+    }
+
+    const cloudMeta = await getCloudMeta();
     if (cloudMeta && (!localLastSync || cloudMeta.ts > localLastSync)) {
-      // Cloud has newer data → download (phone changes will appear on this device)
       onProgress?.('מוריד נתונים חדשים מהענן…');
       await syncFromCloud(onProgress);
       return 'downloaded';
     } else {
-      // Local is same or newer → upload this device's data to cloud
       onProgress?.('מעלה נתונים לענן…');
       await syncToCloud(onProgress);
       return 'uploaded';
