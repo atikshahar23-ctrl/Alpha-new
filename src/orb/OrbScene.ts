@@ -1305,8 +1305,8 @@ function loadAndReplaceBody(
           }
         });
 
-        // STL had Z-up / upside-down orientation — flip to Y-up
-        model.rotation.x = Math.PI;
+        // STL Y-axis points down — flip around Z to stand upright (preserves front-facing)
+        model.rotation.z = Math.PI;
         model.scale.setScalar(1.3);
         model.position.set(0, -0.1, 0);
         pikaGroup.add(model);
