@@ -15,6 +15,7 @@ export interface OrbHandle {
   dispose(): void;
   startBodyDetection(): void;
   stopBodyDetection(): void;
+  setCharacter(name: string): void;
 }
 
 // ============================================================
@@ -1271,55 +1272,94 @@ function setupChuEffect(
 // Body meshes use MeshPhysicalMaterial; face decal uses
 // MeshBasicMaterial with a canvas texture map — both are hidden.
 // ============================================================
+// Registry of swappable main characters. Pikachu is the built-in (vertex-color
+// GLB); the others are textured GLBs the user provided (converted from FBX/DAE).
+const CHARACTER_FILES: Record<string, string> = {
+  pikachu: 'pikachu.glb?v=4',
+  charmander: 'ar-models/charmander.glb',
+  squirtle: 'ar-models/squirtle.glb',
+  meowth: 'ar-models/meowth.glb',
+};
+export const CHARACTER_NAMES = Object.keys(CHARACTER_FILES);
+
+// Holds the currently-loaded swappable model per pikaGroup so we can replace it.
+const loadedModels = new WeakMap<THREE.Group, THREE.Object3D>();
+
 function loadAndReplaceBody(
   pikaGroup: THREE.Group,
   mats: PikachuMaterials,
   base: string,
+  character = 'pikachu',
 ): void {
+  const file = CHARACTER_FILES[character] || CHARACTER_FILES.pikachu;
+  const isPikachu = character === 'pikachu';
   import('three/examples/jsm/loaders/GLTFLoader.js').then(({ GLTFLoader }) => {
     const loader = new GLTFLoader();
     loader.load(
-      base + 'pikachu.glb?v=4',
+      base + file,
       (gltf) => {
-        // Hide all procedural body/head geometry
+        // Hide all procedural body/head geometry (only needs doing once, but
+        // harmless to repeat on swaps).
         pikaGroup.traverse((child) => {
           if (child instanceof THREE.Mesh) {
             const mat = Array.isArray(child.material) ? child.material[0] : child.material;
             if (mat instanceof THREE.MeshPhysicalMaterial) child.visible = false;
-            // Face decal + cheek overlays = MeshBasicMaterial with canvas/texture map
             if (mat instanceof THREE.MeshBasicMaterial && (mat as THREE.MeshBasicMaterial).map) {
               child.visible = false;
             }
           }
         });
 
-        // Use vertex colors from the GLB (color-transferred from the original STL).
-        // vertexColors=true + white base lets the baked RGB data show through.
-        const model = gltf.scene;
-        const bodyMat = (mats.yellow as THREE.MeshPhysicalMaterial).clone();
-        bodyMat.side = THREE.DoubleSide;
-        bodyMat.vertexColors = true;
-        bodyMat.color.set(0xffffff);
-        model.traverse((child) => {
-          if (child instanceof THREE.Mesh) {
-            child.geometry.computeVertexNormals();
-            child.material = bodyMat;
-            child.castShadow = true;
-          }
-        });
+        // Remove a previously-swapped model if present.
+        const prev = loadedModels.get(pikaGroup);
+        if (prev) { pikaGroup.remove(prev); }
 
-        // Normalize to ~1.2 units on the largest axis so ears/cheeks don't clip.
+        const model = gltf.scene;
+        if (isPikachu) {
+          // Pikachu GLB carries vertex colors (baked from the original STL).
+          const bodyMat = (mats.yellow as THREE.MeshPhysicalMaterial).clone();
+          bodyMat.side = THREE.DoubleSide;
+          bodyMat.vertexColors = true;
+          bodyMat.color.set(0xffffff);
+          model.traverse((child) => {
+            if (child instanceof THREE.Mesh) {
+              child.geometry.computeVertexNormals();
+              child.material = bodyMat;
+              child.castShadow = true;
+            }
+          });
+        } else {
+          // Textured GLBs (charmander/squirtle/meowth): keep their own
+          // baseColorTexture materials, just make them double-sided and
+          // shadow-casting so they read well in the orb lighting.
+          model.traverse((child) => {
+            if (child instanceof THREE.Mesh) {
+              child.geometry.computeVertexNormals();
+              const apply = (m: THREE.Material) => {
+                (m as any).side = THREE.DoubleSide;
+                const sm = m as THREE.MeshStandardMaterial;
+                if (sm.map) sm.map.colorSpace = THREE.SRGBColorSpace;
+              };
+              if (Array.isArray(child.material)) child.material.forEach(apply);
+              else if (child.material) apply(child.material);
+              child.castShadow = true;
+            }
+          });
+        }
+
+        // Normalize to ~1.2 units on the largest axis so it fits the orb.
         const bb = new THREE.Box3().setFromObject(model);
         const bbSize = bb.getSize(new THREE.Vector3());
         const bbCenter = bb.getCenter(new THREE.Vector3());
-        const s = 1.2 / Math.max(bbSize.x, bbSize.y);
+        const s = 1.2 / Math.max(bbSize.x, bbSize.y, bbSize.z);
         model.scale.setScalar(s);
         model.position.set(-bbCenter.x * s, -bbCenter.y * s, -bbCenter.z * s);
         model.rotation.y = Math.PI;
         pikaGroup.add(model);
+        loadedModels.set(pikaGroup, model);
       },
       undefined,
-      (err) => console.warn('[OrbScene] pikachu.glb load failed:', err),
+      (err) => console.warn(`[OrbScene] ${file} load failed:`, err),
     );
   });
 }
@@ -1858,6 +1898,9 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     },
     startBodyDetection() {},
     stopBodyDetection() {},
+    setCharacter(name: string) {
+      loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/', name);
+    },
   };
 }
 
@@ -2831,5 +2874,8 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     },
     startBodyDetection,
     stopBodyDetection,
+    setCharacter(name: string) {
+      loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/', name);
+    },
   };
 }
