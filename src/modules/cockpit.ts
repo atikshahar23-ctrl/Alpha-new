@@ -481,6 +481,224 @@ function renderBusiness(root: HTMLElement, hooks: CockpitHooks, close: () => voi
   drawInvoices();
   root.appendChild(inv);
 
+  // ── Samsonix DVR Contract ──
+  const sxCard = card(L('טופס מנוי DVR – Samsonix', 'Samsonix DVR Subscription Form'), L('טופס חתימת לקוח למנוי שרת צפייה DVR', 'Client signature form for DVR viewing server subscription'));
+
+  // Plan selector
+  const planLabel = el('div', 'cp-note', L('בחר חבילה:', 'Select plan:'));
+  planLabel.style.cssText = 'font-size:13px;font-weight:600;margin-bottom:4px;color:var(--gold)';
+  sxCard.appendChild(planLabel);
+
+  const PLANS = [
+    { id: '2gb',  label: L('2GB – 39 ₪/חודש + מע"מ (עד 2 משתמשים / 1T)', '2GB – ₪39/mo + VAT (up to 2 users / 1T)') },
+    { id: '4gb',  label: L('4GB – 49 ₪/חודש + מע"מ (עד 4 משתמשים / 2T)', '4GB – ₪49/mo + VAT (up to 4 users / 2T)') },
+    { id: '10gb', label: L('10GB – 59 ₪/חודש + מע"מ (מעל 5 משתמשים / 4T)', '10GB – ₪59/mo + VAT (5+ users / 4T)') },
+  ];
+  let sxPlan = '4gb';
+  const planBtns: HTMLElement[] = [];
+  PLANS.forEach(p => {
+    const b = el('button', 'cp-x');
+    b.textContent = p.label;
+    b.style.cssText = 'width:100%;text-align:right;padding:7px 10px;margin-bottom:4px;border-radius:8px;font-size:12px;border:1px solid var(--border)';
+    b.onclick = () => { sxPlan = p.id; planBtns.forEach(x => x.style.background = ''); b.style.background = 'var(--gold20)'; };
+    if (p.id === '4gb') { b.style.background = 'var(--gold20)'; }
+    planBtns.push(b);
+    sxCard.appendChild(b);
+  });
+
+  // Audio option
+  const audioLabel = el('div', 'cp-note', L('הקלטת קול:', 'Audio recording:'));
+  audioLabel.style.cssText = 'font-size:13px;font-weight:600;margin:10px 0 4px;color:var(--gold)';
+  sxCard.appendChild(audioLabel);
+  let sxAudio = 'none';
+  const audioBtns: HTMLElement[] = [];
+  [
+    { id: 'none', label: L('ללא הקלטת קול – כל המצלמות ללא מיקרופון', 'No audio – all cameras without mic') },
+    { id: 'with', label: L('עם הקלטת קול + מיקרופון לחלל הפנימי (עלות נוספת)', 'With audio + interior microphone (extra cost)') },
+  ].forEach(a => {
+    const b = el('button', 'cp-x');
+    b.textContent = a.label;
+    b.style.cssText = 'width:100%;text-align:right;padding:7px 10px;margin-bottom:4px;border-radius:8px;font-size:12px;border:1px solid var(--border)';
+    b.onclick = () => { sxAudio = a.id; audioBtns.forEach(x => x.style.background = ''); b.style.background = 'var(--gold20)'; };
+    if (a.id === 'none') b.style.background = 'var(--gold20)';
+    audioBtns.push(b);
+    sxCard.appendChild(b);
+  });
+
+  // BSD Screen installation option
+  const bsdLabel = el('div', 'cp-note', L('מוצרים נוספים:', 'Additional products:'));
+  bsdLabel.style.cssText = 'font-size:13px;font-weight:600;margin:10px 0 4px;color:var(--gold)';
+  sxCard.appendChild(bsdLabel);
+  let sxBsd = false;
+  const bsdBtn = el('button', 'cp-x');
+  bsdBtn.textContent = L('✓ התקנת מסך BSD + 4 מצלמות – ₪4,500', '✓ BSD Screen Install + 4 Cameras – ₪4,500');
+  bsdBtn.style.cssText = 'width:100%;text-align:right;padding:7px 10px;margin-bottom:4px;border-radius:8px;font-size:12px;border:1px solid var(--gold)';
+  bsdBtn.onclick = () => { sxBsd = !sxBsd; bsdBtn.style.background = sxBsd ? 'var(--gold20)' : ''; bsdBtn.style.fontWeight = sxBsd ? '700' : '400'; };
+  sxCard.appendChild(bsdBtn);
+
+  // Client details
+  const clientLabel = el('div', 'cp-note', L('פרטי לקוח:', 'Client details:'));
+  clientLabel.style.cssText = 'font-size:13px;font-weight:600;margin:12px 0 4px;color:var(--gold)';
+  sxCard.appendChild(clientLabel);
+
+  const sxFullName = input(L('שם מלא של בעל הכרטיס *', 'Full name of cardholder *'));
+  const sxId = input(L('מס\' ת"ז של בעל הכרטיס *', 'ID number *'));
+  sxId.type = 'number';
+  const sxCard4 = input(L('מס\' כרטיס אשראי (16 ספרות) *', 'Credit card number (16 digits) *'));
+  sxCard4.type = 'number';
+  const sxExpiry = input(L('תוקף כרטיס (MM/YY) *', 'Expiry (MM/YY) *'));
+  sxExpiry.placeholder = 'MM/YY';
+  const sxCvv = input(L('CVV (3 ספרות) *', 'CVV (3 digits) *'));
+  sxCvv.type = 'number';
+  const sxEmail = input(L('כתובת מייל *', 'Email address *'));
+  sxEmail.type = 'email';
+  const sxContactPhone = input(L('טלפון איש קשר *', 'Contact phone *'));
+  sxContactPhone.type = 'tel';
+  const sxContactName = input(L('שם איש קשר', 'Contact name'));
+  const sxCompany = input(L('שם חברה (לחשבונות)', 'Company name (for accounting)'));
+  const sxBizNum = input(L('ע.מ / ח.פ (מספר עסק)', 'Business registration number'));
+  const sxVeh1 = input(L('מספר רכב 1', 'Vehicle 1 plate'));
+  const sxVeh1Type = input(L('סוג רכב 1', 'Vehicle 1 type'));
+  const sxVeh2 = input(L('מספר רכב 2 (אופציונלי)', 'Vehicle 2 plate (optional)'));
+  const sxVeh2Type = input(L('סוג רכב 2 (אופציונלי)', 'Vehicle 2 type (optional)'));
+
+  [
+    [L('שם מלא', 'Full name'), sxFullName],
+    [L('ת"ז', 'ID'), sxId],
+    [L('כרטיס אשראי', 'Credit card'), sxCard4],
+    [L('תוקף', 'Expiry'), sxExpiry],
+    [L('CVV', 'CVV'), sxCvv],
+    [L('מייל', 'Email'), sxEmail],
+    [L('טלפון', 'Phone'), sxContactPhone],
+    [L('איש קשר', 'Contact'), sxContactName],
+    [L('חברה', 'Company'), sxCompany],
+    [L('ע.מ/ח.פ', 'Biz No.'), sxBizNum],
+    [L('רכב 1', 'Vehicle 1'), sxVeh1],
+    [L('סוג 1', 'Type 1'), sxVeh1Type],
+    [L('רכב 2', 'Vehicle 2'), sxVeh2],
+    [L('סוג 2', 'Type 2'), sxVeh2Type],
+  ].forEach(([lbl, inp]) => sxCard.appendChild(field(lbl as string, inp as HTMLInputElement)));
+
+  const printSxBtn = btn(L('🖨 הדפס / צור PDF', '🖨 Print / Create PDF'), true);
+  const sxMsg = el('div', 'cp-note');
+
+  printSxBtn.onclick = () => {
+    if (!sxFullName.value.trim()) { sxMsg.textContent = L('⚠ הכנס שם מלא', '⚠ Enter full name'); sxMsg.style.color = '#ff5d73'; return; }
+    const today = new Date().toLocaleDateString('he-IL');
+    const win = window.open('', '_blank', 'width=800,height=900');
+    if (!win) { sxMsg.textContent = 'אפשר חלונות קופצים'; return; }
+    win.document.write(`<!DOCTYPE html><html dir="rtl" lang="he"><head>
+<meta charset="utf-8"><title>Samsonix DVR Contract</title>
+<style>
+  body{font-family:Arial,sans-serif;margin:0;padding:30px;color:#222;background:#fff;direction:rtl}
+  .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px}
+  .logo{font-size:22px;font-weight:900;letter-spacing:1px;color:#1a1a2e}
+  .logo span{color:#e63946}
+  .logo sub{font-size:10px;display:block;color:#555;letter-spacing:2px;font-weight:400}
+  h2{text-align:center;font-size:18px;text-decoration:underline;margin:16px 0 8px}
+  p{margin:4px 0;font-size:13px;line-height:1.7}
+  .section{margin:14px 0}
+  .checkbox-row{display:flex;align-items:flex-start;gap:8px;margin:6px 0;font-size:13px}
+  .box{width:14px;height:14px;border:1.5px solid #222;display:inline-block;flex-shrink:0;margin-top:1px}
+  .checked{background:#222}
+  .field-row{display:flex;gap:20px;margin:6px 0;font-size:13px}
+  .field-row label{min-width:120px;font-weight:600}
+  .field-val{flex:1;border-bottom:1px solid #555;min-width:120px;padding-bottom:1px}
+  .sig-box{width:180px;height:80px;border:1.5px solid #555;display:inline-block;margin-top:4px}
+  .footer{margin-top:30px;font-size:11px;color:#555;text-align:center;border-top:1px solid #ccc;padding-top:8px}
+  .product-highlight{background:#fffbea;border:1.5px solid #e6a817;border-radius:6px;padding:8px 12px;margin:8px 0;font-size:13px}
+  @media print{body{padding:15px}}
+</style></head><body>
+<div class="header">
+  <div class="logo">
+    <span>⚡ samsonix</span>
+    <sub>ENJOY YOUR DRIVE</sub>
+  </div>
+  <div style="font-size:12px;color:#555">תאריך: ${today}</div>
+</div>
+
+<h2>שימוש בשרת לצפייה ב DVR</h2>
+
+<p>הננו שמחים שבחרתם להתקין מערכת DVR עם מצלמות מרחוק ובהקלטות שהוקלטו לצפייה מרחוק.</p>
+<p>המערכת הינה המתקדמת ביותר כוללת זיכרון פנימי ומאפשרת צפייה מרחוק ובהקלטות online באזור קלוטרי תקין.</p>
+<p>על מנת לצפות מרחוק דרך אפליקציה בטלפון ו/או במחשב ביתי – נדרש תשלום חודשי לשרת – ענן · בהוראת קבע.</p>
+<p>למערכת מסופק כרטיס גלישה.* (אופציה בבחירתכם במערכת)</p>
+<p>ניתן לבטל הוראה זו בהודעה בכתב של 7 ימים מראש.</p>
+<p>נא לסמן ב <strong>✓</strong> את התשלום המבוקש.</p>
+
+<div class="section">
+  ${PLANS.map(p => `
+  <div class="checkbox-row">
+    <span class="box ${sxPlan === p.id ? 'checked' : ''}"></span>
+    <span>${p.id === '2gb' ? 'שימוש בשרת + גלישה 2GB לחודש 39 ש"ח + מע"מ (מומלץ-עד 2 משתמשים ו/או עד 1T)' : p.id === '4gb' ? 'שימוש בשרת + גלישה 4GB לחודש 49 ש"ח + מע"מ (מומלץ-עד 4 משתמשים ו/או עד 2T)' : 'שימוש בשרת + גלישה 10GB לחודש 59 ש"ח + מע"מ (מומלץ-מעל 5 משתמשים ו/או עד 4T)'}</span>
+  </div>`).join('')}
+  <p style="font-size:12px;color:#555;margin-top:6px">***שימוש חורג מהחבילה החודשית החודשית <u>לא</u> מאפשר צפייה מרחוק ו/או הקלטות***</p>
+
+  <div class="checkbox-row" style="margin-top:10px">
+    <span class="box ${sxAudio === 'none' ? 'checked' : ''}"></span>
+    <span><strong>ללא הקלטת קול</strong> – כל המצלמות ללא מיקרופון</span>
+  </div>
+  <div class="checkbox-row">
+    <span class="box ${sxAudio === 'with' ? 'checked' : ''}"></span>
+    <span><strong>עם הקלטת קול</strong> – הוספת מיקרופון לחלל הפנימי של הרכב <u>בעלות נוספת</u></span>
+  </div>
+</div>
+
+${sxBsd ? `<div class="product-highlight">
+  <strong>✓ התקנה נוספת:</strong> מסך BSD + 4 מצלמות – <strong>₪4,500</strong>
+</div>` : ''}
+
+<div class="section">
+  <div class="field-row"><label>שם מלא של בעל הכרטיס:</label><span class="field-val">${sxFullName.value}</span></div>
+  <div class="field-row"><label>מס ת"ז של בעל הכרטיס:</label><span class="field-val">${sxId.value}</span></div>
+  <div class="field-row">
+    <label>מס כרטיס אשראי:</label>
+    <span class="field-val" style="letter-spacing:2px">${sxCard4.value ? sxCard4.value.replace(/(.{4})/g,'$1 ').trim() : ''}</span>
+  </div>
+  <div class="field-row">
+    <label>תוקף:</label><span class="field-val" style="max-width:70px">${sxExpiry.value}</span>
+    &nbsp;&nbsp;<label>3 ספרות בגב הכרטיס (CVV):</label><span class="field-val" style="max-width:60px">${sxCvv.value}</span>
+  </div>
+  <div class="field-row"><label>כתובת המייל:</label><span class="field-val">${sxEmail.value}</span></div>
+  <div class="field-row">
+    <label>מס טלפון איש קשר:</label><span class="field-val">${sxContactPhone.value}</span>
+    &nbsp;&nbsp;<label>שם:</label><span class="field-val">${sxContactName.value}</span>
+  </div>
+  <div class="field-row"><label>שם החברה – לחשבונות:</label><span class="field-val">${sxCompany.value}</span></div>
+  <div class="field-row"><label>ע.מ/ח.פ:</label><span class="field-val">${sxBizNum.value}</span></div>
+  <div class="field-row">
+    <label>מספר רכב:</label><span class="field-val">${sxVeh1.value}</span>
+    &nbsp;&nbsp;<label>סוג רכב:</label><span class="field-val">${sxVeh1Type.value}</span>
+  </div>
+  <div class="field-row">
+    <label>מספר רכב:</label><span class="field-val">${sxVeh2.value}</span>
+    &nbsp;&nbsp;<label>סוג רכב:</label><span class="field-val">${sxVeh2Type.value}</span>
+  </div>
+</div>
+
+<div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:24px">
+  <div style="font-size:13px"><strong>בברכה,</strong><br><strong>קונטקט ליין</strong><br>שיווק ומכירות</div>
+  <div style="text-align:center">
+    <div class="sig-box"></div>
+    <div style="font-size:12px;margin-top:4px">חתימת הלקוח</div>
+  </div>
+</div>
+
+<div class="footer">
+  St. Hametzuda 31, Azur, 5800174, Israel · טל: 03-5662259 · פקס: 5568999<br>
+  Website: www.samsonix.com · Email: info@samsonix.com
+</div>
+<script>window.print();<\/script>
+</body></html>`);
+    win.document.close();
+    sxMsg.style.color = '#4caf50';
+    sxMsg.textContent = L('✓ הטופס נפתח לדפוס', '✓ Form opened for printing');
+  };
+
+  sxCard.appendChild(printSxBtn);
+  sxCard.appendChild(sxMsg);
+  root.appendChild(sxCard);
+
   // ── Marketing engine ──
   const mk = card(L('מנוע שיווק', 'Marketing Engine'), L('תוכן ויראלי AI לטיקטוק / פייסבוק', 'AI viral content for TikTok / Facebook'));
   const topic = input(L('נושא — למשל התקנת מצלמה 360° על סקאניה', 'Topic — e.g. 360° camera install on a Scania'));
