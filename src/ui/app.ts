@@ -3245,8 +3245,55 @@ export function mountApp(root: HTMLElement) {
     nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') finish(nameInput.value); });
   }
 
+  // ── Cloud sync status indicator ──
+  function addCloudIndicator() {
+    if ($('cloudIndicator')) return;
+    const ind = document.createElement('button');
+    ind.id = 'cloudIndicator';
+    ind.title = 'סנכרון ענן';
+    ind.style.cssText = [
+      'position:fixed;top:18px;right:220px;z-index:9000',
+      'background:rgba(10,8,6,.75);border:1px solid rgba(201,168,76,.25);border-radius:20px',
+      'padding:4px 10px;font-size:11px;color:rgba(201,168,76,.7);cursor:pointer',
+      'display:flex;align-items:center;gap:5px;transition:all .3s;letter-spacing:.5px',
+    ].join(';');
+    ind.innerHTML = '☁ <span id="cloudStatus">לא מחובר</span>';
+    ind.onclick = () => {
+      if (!puterSync.isSignedIn()) {
+        sessionStorage.removeItem(LOGIN_SKIP_KEY);
+        showLoginScreen();
+      } else {
+        ind.innerHTML = '🔄 <span id="cloudStatus">מסנכרן…</span>';
+        puterSync.syncToCloud().then(r => {
+          ind.innerHTML = r.ok
+            ? '✓ <span id="cloudStatus">סונכרן</span>'
+            : '⚠ <span id="cloudStatus">שגיאה</span>';
+          setTimeout(updateCloudIndicator, 3000);
+        });
+      }
+    };
+    document.body.appendChild(ind);
+  }
+
+  function updateCloudIndicator() {
+    const ind = $('cloudIndicator');
+    if (!ind) return;
+    if (puterSync.isSignedIn()) {
+      const ts = puterSync.lastSyncTime();
+      const ago = ts ? new Date(ts).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }) : '';
+      ind.innerHTML = `✓ <span id="cloudStatus">${ago || 'מחובר'}</span>`;
+      (ind as HTMLElement).style.borderColor = 'rgba(76,175,80,.4)';
+      (ind as HTMLElement).style.color = 'rgba(76,175,80,.85)';
+    } else {
+      ind.innerHTML = '☁ <span id="cloudStatus">לא מחובר</span>';
+      (ind as HTMLElement).style.borderColor = 'rgba(201,168,76,.25)';
+      (ind as HTMLElement).style.color = 'rgba(201,168,76,.7)';
+    }
+  }
+
   // ── Login screen — shown on first open or when signed out ──
-  const LOGIN_SKIP_KEY = 'alpha_login_skipped';
+  // Uses sessionStorage so "skip" only lasts for the current browser session.
+  const LOGIN_SKIP_KEY = 'alpha_login_skipped_session';
   async function showLoginScreen(): Promise<void> {
     return new Promise((resolve) => {
       const ov = document.createElement('div');
@@ -3296,8 +3343,8 @@ export function mountApp(root: HTMLElement) {
 
       const dismiss = (synced: boolean) => {
         ov.style.opacity = '0';
-        setTimeout(() => { ov.remove(); resolve(); }, 500);
-        if (synced) localStorage.removeItem(LOGIN_SKIP_KEY);
+        setTimeout(() => { ov.remove(); resolve(); updateCloudIndicator(); }, 500);
+        if (synced) sessionStorage.removeItem(LOGIN_SKIP_KEY);
       };
 
       (ov.querySelector('#loginGoogleBtn') as HTMLButtonElement).onclick = async () => {
@@ -3329,29 +3376,48 @@ export function mountApp(root: HTMLElement) {
       };
 
       (ov.querySelector('#loginSkipBtn') as HTMLButtonElement).onclick = () => {
-        localStorage.setItem(LOGIN_SKIP_KEY, '1');
+        sessionStorage.setItem(LOGIN_SKIP_KEY, '1');
         dismiss(false);
       };
     });
   }
 
-  // Show login screen if not signed in and user hasn't explicitly skipped
-  const skippedLogin = !!localStorage.getItem(LOGIN_SKIP_KEY);
-  if (puterSync.isPuterAvailable() && !puterSync.isSignedIn() && !skippedLogin) {
-    showLoginScreen();
-  }
-
-  // ── Cloud auto-sync on startup ──
+  // ── Cloud init — wait for puter.js async load, then login + sync ──
+  addCloudIndicator();
   (async () => {
-    if (puterSync.isPuterAvailable() && puterSync.isSignedIn()) {
-      const hasLocalData = localStorage.getItem('alpha_events') || localStorage.getItem('alpha_tasks') || localStorage.getItem('alpha_brain_memory_v1');
-      if (!hasLocalData) {
-        const r = await puterSync.syncFromCloud();
-        if (r.ok && (r.tables ?? 0) > 0) { setTimeout(() => location.reload(), 500); return; }
+    const puterReady = await puterSync.waitForPuter(10_000);
+    updateCloudIndicator();
+
+    if (puterReady) {
+      if (!puterSync.isSignedIn()) {
+        const skippedThisSession = !!sessionStorage.getItem(LOGIN_SKIP_KEY);
+        if (!skippedThisSession) {
+          await showLoginScreen();
+        }
       }
-      setTimeout(() => puterSync.syncToCloud(), 30_000);
-      setInterval(() => { if (puterSync.isSignedIn()) puterSync.syncToCloud(); }, 5 * 60 * 1000);
+
+      if (puterSync.isSignedIn()) {
+        // Restore from cloud if this device has no local data
+        const hasLocalData = localStorage.getItem('alpha_events') || localStorage.getItem('alpha_tasks') || localStorage.getItem('alpha_brain_memory_v1');
+        if (!hasLocalData) {
+          const r = await puterSync.syncFromCloud();
+          if (r.ok && (r.tables ?? 0) > 0) { setTimeout(() => location.reload(), 500); return; }
+        }
+        // Upload after 30s, then every 5 min
+        setTimeout(async () => {
+          await puterSync.syncToCloud();
+          updateCloudIndicator();
+        }, 30_000);
+        setInterval(async () => {
+          if (puterSync.isSignedIn()) {
+            await puterSync.syncToCloud();
+            updateCloudIndicator();
+          }
+        }, 5 * 60 * 1000);
+      }
     }
+
+    // Google Drive fallback
     if (driveSync.isConnected()) {
       const hasLocalData = localStorage.getItem('alpha_events') || localStorage.getItem('alpha_tasks') || localStorage.getItem('alpha_brain_memory_v1');
       if (!hasLocalData) {

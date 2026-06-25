@@ -47,6 +47,18 @@ export function isPuterAvailable(): boolean {
   return typeof (window as any).puter !== 'undefined';
 }
 
+// Wait for the async puter.js script to finish loading (up to timeoutMs)
+export function waitForPuter(timeoutMs = 10_000): Promise<boolean> {
+  return new Promise(resolve => {
+    if (isPuterAvailable()) { resolve(true); return; }
+    const deadline = Date.now() + timeoutMs;
+    const timer = setInterval(() => {
+      if (isPuterAvailable()) { clearInterval(timer); resolve(true); }
+      else if (Date.now() >= deadline) { clearInterval(timer); resolve(false); }
+    }, 150);
+  });
+}
+
 export function isSignedIn(): boolean {
   try { return puter()?.auth?.isSignedIn?.() ?? false; } catch { return false; }
 }
