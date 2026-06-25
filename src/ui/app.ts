@@ -168,7 +168,7 @@ function t(key: string, lang: UILang): string {
 export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v13 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v14 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="searchBtn" aria-label="Search (Ctrl+K)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
         <button class="chip ghost" id="muteBtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg></button>
@@ -1172,6 +1172,15 @@ export function mountApp(root: HTMLElement) {
 
   let asking = false;
   async function ask(text: string) {
+    // AR Pokemon voice control (switch / dispel) — handled instantly, offline.
+    const arReply = tryArVoiceCommand(text);
+    if (arReply) {
+      audio.receive();
+      orb.pikaEmote('excited');
+      addMsg(arReply, 'al');
+      voice.speak(arReply);
+      return;
+    }
     const localReply = tryLocalCommand(text);
     if (localReply) {
       audio.receive();
@@ -1296,12 +1305,11 @@ export function mountApp(root: HTMLElement) {
   $('muteBtn').onclick = () => { audio.toggleMute(); };
   $('newChat').onclick = () => { state.history = []; $('rpBody').innerHTML = ''; $('chat').innerHTML = ''; clearChatHistory(); addMsg(state.name + ' ' + t('readyMsg', state.uiLang), 'al'); };
 
-  // Detect button
-  let detecting = false;
+  // Detect button → opens the AR camera (gesture detection + Pokemon switch).
+  // getUserMedia is called synchronously inside openArCamera so the camera
+  // permission prompt fires on this tap — works on phones (iOS/Android) too.
   $('detectBtn').onclick = () => {
-    detecting = !detecting;
-    if (detecting) { orb.startBodyDetection(); $('detectBtn').classList.add('active'); }
-    else { orb.stopBodyDetection(); $('detectBtn').classList.remove('active'); }
+    openArCamera();
   };
 
   // HeavyGuard OS
@@ -1909,6 +1917,66 @@ export function mountApp(root: HTMLElement) {
       document.getElementById('stage')?.classList.add('stage-dispelled');
     }
   };
+
+  // Hebrew + English aliases → index in arCharacters (built-ins order)
+  const AR_POKEMON_ALIASES: { idx: number; words: RegExp }[] = [
+    { idx: 0, words: /(פיקאצ'?ו|פיקצ'?ו|פיקא|pikachu|pika)/i },
+    { idx: 1, words: /(צ'?ריזארד|צ'?ארי?זארד|charizard|chariza?r)/i },
+    { idx: 2, words: /(צ'?רמנדר|צ'?ארמנדר|charmander|charm)/i },
+    { idx: 3, words: /(סקווירטל|סקוירטל|squirtle|squirt)/i },
+    { idx: 4, words: /(מיאו?את'?|מיואו|meowth|meow)/i },
+  ];
+
+  // Voice/chat command → control the AR Pokemon scene.
+  // Returns a reply string if it handled the command, else null.
+  function tryArVoiceCommand(text: string): string | null {
+    const low = text.trim().toLowerCase();
+
+    // Must be an AR/pokemon-related request
+    const mentionsPoke = /(פוקימון|פוקמון|דמות|דמויות|pokemon|pokémon|character)/i.test(low);
+    const hasSwitchVerb = /(החלף|תחליף|שנה|תשנה|הבא|הבאה|הראה|תראה|תביא|הצג|switch|change|next|show|bring|summon)/i.test(low);
+    const hasDispelVerb = /(פזר|תפזר|העלם|תעלים|הסתר|תסתיר|שחרר|תשחרר|dispel|hide|vanish|remove orb)/i.test(low);
+    const namedPokemon = AR_POKEMON_ALIASES.find(a => a.words.test(low));
+
+    // Dispel the main orb ("פזר את הדמות הראשית")
+    if (hasDispelVerb && (mentionsPoke || /אורב|orb|כדור הראשי|דמות הראשית|main/i.test(low))) {
+      ensureArOpen();
+      if (!arOrbDispelled) {
+        arOrbDispelled = true;
+        document.getElementById('stage')?.classList.add('stage-dispelled');
+      }
+      return 'פיזרתי את הדמות הראשית ✨ עכשיו תוכל לזמן פוקימון.';
+    }
+
+    // Switch to a named Pokemon ("החלף לפיקאצ'ו" / "תביא צ'ריזארד")
+    if (namedPokemon && (hasSwitchVerb || mentionsPoke)) {
+      ensureArOpen();
+      switchArPokemon(namedPokemon.idx);
+      return `הזמנתי את ${arCharacters[namedPokemon.idx]?.name} ⚡`;
+    }
+
+    // Generic next/switch ("החלף פוקימון" / "הפוקימון הבא")
+    if (hasSwitchVerb && mentionsPoke) {
+      ensureArOpen();
+      const next = arCharacters.length ? (arCharIdx + 1) % arCharacters.length : 0;
+      switchArPokemon(next);
+      return `הנה ${arCharacters[next]?.name} ⚡`;
+    }
+
+    // A bare Pokemon name while the AR camera is already open → switch
+    if (namedPokemon && $('arOverlay').classList.contains('show')) {
+      switchArPokemon(namedPokemon.idx);
+      return `הזמנתי את ${arCharacters[namedPokemon.idx]?.name} ⚡`;
+    }
+
+    return null;
+  }
+
+  // Open the AR camera if it isn't already showing (so voice commands work
+  // even when the user hasn't opened it yet).
+  function ensureArOpen() {
+    if (!$('arOverlay').classList.contains('show')) openArCamera();
+  }
 
   let arFxCtx: CanvasRenderingContext2D | null = null;
 
@@ -2705,11 +2773,20 @@ export function mountApp(root: HTMLElement) {
     const arBtns = [
       { label: 'חיפוש רכב', icon: '🔍', action: () => { const q = prompt('מספר רישוי:'); if (q) hgSearchLicense(q); } },
       { label: 'הכנסות', icon: '💰', action: () => hgShowEarnings('', new Date().toISOString().slice(0, 7)) },
-      { label: 'פוקימון', icon: '⚡', action: () => {
+      { label: 'החלף דמות', icon: '⚡', action: () => {
         if (!arOrbDispelled) {
+          // First tap: dispel the main orb and summon the first Pokemon.
           arOrbDispelled = true;
           document.getElementById('stage')?.classList.add('stage-dispelled');
-        } else if (arCharacters.length > 0 && arPokeballPhase === 'idle') {
+          if (arCharacters.length > 0) {
+            arCharIdx = 0;
+            arCharAnim = 0;
+            arPokeballPhase = 'fly'; arPokeballT = 0;
+            arPokeballFrom = { x: 0.5, y: 0.85 };
+            arThrowCooldown = 3.0;
+          }
+        } else if (arCharacters.length > 0 && arPokeballPhase !== 'fly' && arPokeballPhase !== 'wobble' && arPokeballPhase !== 'open') {
+          // Subsequent taps: cycle to the next Pokemon.
           arCharIdx = (arCharIdx + 1) % arCharacters.length;
           arCharAnim = 0;
           arPokeballPhase = 'fly'; arPokeballT = 0;
@@ -2812,6 +2889,8 @@ export function mountApp(root: HTMLElement) {
     document.getElementById('stage')?.classList.remove('stage-dispelled');
     document.querySelectorAll('.ar-fx-btn').forEach(b => b.classList.remove('ar-fx-active'));
     $('arStatus').style.opacity = '1';
+    const hi = document.getElementById('arHandIndicator');
+    if (hi) { hi.classList.remove('ar-detecting', 'ar-searching'); hi.textContent = ''; }
   }
   $('calBtn').onclick = () => openCalendar();
   $('arClose').onclick = closeArCamera;
@@ -2898,7 +2977,8 @@ export function mountApp(root: HTMLElement) {
     pointerEl.className = 'ar-pointer';
     $('arViewport').appendChild(pointerEl);
 
-    handIndicator.textContent = 'טוען זיהוי יד…';
+    handIndicator.textContent = '⏳ טוען זיהוי…';
+    handIndicator.classList.add('ar-searching');
     // Reuse the script if AR was opened before in this session.
     if ((window as any).Hands) {
       initMediaPipeHands(video, canvas, ctx, pointerEl, handIndicator, arBtns);
@@ -2939,8 +3019,9 @@ export function mountApp(root: HTMLElement) {
           for (let h = 0; h < results.multiHandLandmarks.length; h++) {
             const landmarks = results.multiHandLandmarks[h];
             const isRight = h === 0;
-            indicator.textContent = results.multiHandLandmarks.length > 1 ? '✋✋ שתי ידיים' : '✋ יד מזוהה';
-            indicator.style.color = '#daa520';
+            indicator.textContent = results.multiHandLandmarks.length > 1 ? '🟢 מזהה אותך — שתי ידיים' : '🟢 מזהה אותך — יד אחת';
+            indicator.classList.add('ar-detecting');
+            indicator.classList.remove('ar-searching');
 
             c.strokeStyle = isRight ? 'rgba(218,165,32,0.6)' : 'rgba(200,149,106,0.6)';
             c.lineWidth = 2;
@@ -3097,8 +3178,9 @@ export function mountApp(root: HTMLElement) {
             }
           }
         } else {
-          indicator.textContent = '👋 הראה יד למצלמה';
-          indicator.style.color = 'var(--dim)';
+          indicator.textContent = '🟡 מחפש… הראה יד למצלמה';
+          indicator.classList.add('ar-searching');
+          indicator.classList.remove('ar-detecting');
           ptr.style.opacity = '0';
           arHandPos = { x: -1, y: -1, pinching: false };
           if (arGrabbed) { arGrabbed.grabbed = false; arGrabbed = null; }
@@ -4019,7 +4101,13 @@ export function mountApp(root: HTMLElement) {
       if (puterSync.isSignedIn()) {
         // Smart sync: compare cloud timestamp vs local — pull if cloud is newer, push if local is newer
         const action = await puterSync.smartSync();
-        if (action === 'downloaded') {
+        // Reload once after a cloud download so the UI picks up fresh data.
+        // Guard with sessionStorage: the "secondary" device role ALWAYS returns
+        // 'downloaded', so without this guard the page reloads in an infinite
+        // loop (download → reload → download → reload…).
+        const RELOAD_GUARD = 'alpha_synced_reload_done';
+        if (action === 'downloaded' && !sessionStorage.getItem(RELOAD_GUARD)) {
+          sessionStorage.setItem(RELOAD_GUARD, '1');
           updateCloudIndicator();
           setTimeout(() => location.reload(), 600);
           return;
