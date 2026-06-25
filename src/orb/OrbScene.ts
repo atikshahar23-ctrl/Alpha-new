@@ -1308,11 +1308,16 @@ function loadAndReplaceBody(
           }
         });
 
-        // New GLB has head at +Y naturally — no Y-mirror needed.
-        // rotation.y=PI turns to face camera (front of model faces -Z).
-        model.scale.setScalar(1.3);
+        // Normalize to ~1.5 units tall regardless of GLB coordinate scale.
+        // Bounding box is computed before applying scale (model still at identity).
+        const bb = new THREE.Box3().setFromObject(model);
+        const bbSize = bb.getSize(new THREE.Vector3());
+        const s = 1.5 / bbSize.y;
+        const bbCenter = bb.getCenter(new THREE.Vector3());
+        model.scale.setScalar(s);
+        // Center the model at origin after normalization
+        model.position.set(-bbCenter.x * s, -bbCenter.y * s, -bbCenter.z * s);
         model.rotation.y = Math.PI;
-        model.position.set(0, -0.1, 0);
         pikaGroup.add(model);
       },
       undefined,
