@@ -5,7 +5,7 @@
 }
 .char-swap-fx.active { display: block; }
 .char-swap-btn {
-  position: absolute; left: 50%; bottom: 92px; transform: translateX(-50%);
+  position: absolute; left: 50%; bottom: 150px; transform: translateX(-50%);
   z-index: 7; display: flex; align-items: center; gap: 8px;
   padding: 9px 18px; border-radius: 22px; cursor: pointer;
   background: linear-gradient(135deg, rgba(230,56,53,.22), rgba(218,165,32,.18));
@@ -29,7 +29,7 @@
   filter: drop-shadow(0 0 4px rgba(230,56,53,.6));
 }
 @media (max-width: 768px) {
-  .char-swap-btn { bottom: 108px; font-size: 12px; padding: 8px 15px; }
+  .char-swap-btn { bottom: 250px; font-size: 12px; padding: 8px 15px; }
 }
 
 :root {

@@ -12,6 +12,7 @@ import { processRecurring } from '../modules/recurring';
 import * as driveSync from '../modules/driveSync';
 import * as puterSync from '../modules/puterSync';
 import { setPikaVolume, setPikaPitch, setPikaEnabled, pikaSpeak, setChirpCallback, unlockAudio } from '../assistant/pikaVoice';
+import { setActiveCharacter, playCharacterCry, stopCharacterVoice, setCharacterVolume, unlockCharacterAudio } from '../assistant/characterVoice';
 import { universalSearch, TYPE_ICONS, addRecentSearch, recentSearches, quickSuggestions } from '../modules/search';
 import { registerShortcut, initShortcuts, shortcutsHTML } from '../modules/shortcuts';
 import { dailyBriefing } from '../modules/analytics';
@@ -168,7 +169,7 @@ function t(key: string, lang: UILang): string {
 export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v16 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v17 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="searchBtn" aria-label="Search (Ctrl+K)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
         <button class="chip ghost" id="muteBtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg></button>
@@ -1938,15 +1939,33 @@ export function mountApp(root: HTMLElement) {
     const ch = MAIN_CHARACTERS.find(c => c.id === id) || MAIN_CHARACTERS[0];
     orb.setCharacter(ch.id);
     localStorage.setItem(MAIN_CHAR_KEY, ch.id);
+    applyCharacterVoice(ch.id);
     orb.pikaEmote('excited');
     return ch.label;
   }
   (window as any).setMainCharacter = setMainCharacter;
 
+  // Voice handoff: when the active character is NOT Pikachu, mute Pikachu's
+  // voice and let that character do its own synthesized cries. Switching back
+  // to Pikachu restores his voice (respecting the user's voice on/off setting).
+  function applyCharacterVoice(id: string) {
+    unlockCharacterAudio();
+    setCharacterVolume(state.pikaVolume);
+    if (id === 'pikachu') {
+      stopCharacterVoice();
+      setActiveCharacter('pikachu');
+      setPikaEnabled(state.pikaVoiceOn); // restore Pikachu per user setting
+    } else {
+      setPikaEnabled(false);             // mute Pikachu
+      setActiveCharacter(id);            // start this character's idle cries
+      if (state.pikaVoiceOn) setTimeout(() => playCharacterCry(id), 200);
+    }
+  }
+
   // Apply the saved character on startup (if not the default Pikachu).
   const savedChar = localStorage.getItem(MAIN_CHAR_KEY);
   if (savedChar && savedChar !== 'pikachu') {
-    setTimeout(() => orb.setCharacter(savedChar), 1200);
+    setTimeout(() => { orb.setCharacter(savedChar); applyCharacterVoice(savedChar); }, 1200);
   }
 
   // ── Animated main-character swap (red-laser dispel + pokeball summon) ──
