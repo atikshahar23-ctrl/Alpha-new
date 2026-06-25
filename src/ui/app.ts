@@ -2591,12 +2591,13 @@ export function mountApp(root: HTMLElement) {
   function updateDriveUI() {
     const connected = driveSync.isConnected();
     const btn = $('driveConnectBtn');
-    btn.textContent = connected ? '✓ Connected' : 'Connect Google Drive';
+    btn.textContent = connected ? '✓ מחובר' : 'חבר Google Drive';
     btn.classList.toggle('cloud-connected', connected);
     ($('driveUploadBtn') as HTMLButtonElement).disabled = !connected;
     ($('driveDownloadBtn') as HTMLButtonElement).disabled = !connected;
     const last = driveSync.lastSyncTime();
-    $('driveStatus').textContent = last ? `Last sync: ${new Date(last).toLocaleString()}` : '';
+    const autoNote = connected ? ' · גיבוי אוטומטי כל 5 דקות' : '';
+    $('driveStatus').textContent = last ? `סנכרון אחרון: ${new Date(last).toLocaleTimeString('he-IL')}${autoNote}` : (connected ? autoNote.trim() : '');
   }
   $('driveConnectBtn').onclick = async () => {
     const id = $<HTMLInputElement>('driveClientId').value.trim();
@@ -3156,6 +3157,25 @@ export function mountApp(root: HTMLElement) {
     (ov.querySelector('#welcomeSkip') as HTMLElement).onclick = () => finish('');
     nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') finish(nameInput.value); });
   }
+
+  // ── Drive auto-restore on startup (if connected but localStorage is empty) ──
+  (async () => {
+    if (!driveSync.isConnected()) return;
+    const hasLocalData = localStorage.getItem('alpha_events') || localStorage.getItem('alpha_tasks') || localStorage.getItem('alpha_brain_memory_v1');
+    if (!hasLocalData) {
+      const r = await driveSync.syncFromCloud();
+      if (r.ok && (r.tables ?? 0) > 0) {
+        setTimeout(() => location.reload(), 500);
+        return;
+      }
+    }
+    // Silent background upload every 5 minutes
+    setInterval(() => {
+      if (driveSync.isConnected()) driveSync.syncToCloud();
+    }, 5 * 60 * 1000);
+    // Initial sync after 30s so data is backed up after the app loads
+    setTimeout(() => { if (driveSync.isConnected()) driveSync.syncToCloud(); }, 30_000);
+  })();
 
   // ── Restore chat history ──
   const prevHistory = loadChatHistory();
