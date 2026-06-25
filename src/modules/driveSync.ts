@@ -35,6 +35,7 @@ const SYNC_TABLES = [
   'alpha_chat_history_v1',
   'alpha_sentiment_v1',
   'alpha_templates_v1',
+  'alpha_samsonix_forms_v1',
 ];
 
 interface DriveToken {
