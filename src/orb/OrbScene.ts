@@ -1308,14 +1308,12 @@ function loadAndReplaceBody(
           }
         });
 
-        // Normalize to ~1.5 units tall regardless of GLB coordinate scale.
-        // Bounding box is computed before applying scale (model still at identity).
+        // Normalize to ~1.2 units on the largest axis so ears/cheeks don't clip.
         const bb = new THREE.Box3().setFromObject(model);
         const bbSize = bb.getSize(new THREE.Vector3());
-        const s = 1.5 / bbSize.y;
         const bbCenter = bb.getCenter(new THREE.Vector3());
+        const s = 1.2 / Math.max(bbSize.x, bbSize.y);
         model.scale.setScalar(s);
-        // Center the model at origin after normalization
         model.position.set(-bbCenter.x * s, -bbCenter.y * s, -bbCenter.z * s);
         model.rotation.y = Math.PI;
         pikaGroup.add(model);
