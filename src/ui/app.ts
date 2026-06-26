@@ -222,6 +222,12 @@ export function mountApp(root: HTMLElement) {
 
       <!-- Summon dock — macOS-style row of Pokéballs (image above, name below).
            Opens on summon; the mic listens and the user picks a Pokémon by name. -->
+      <!-- Spinning pokéball shown in the screen centre while the user is choosing
+           (by voice or tap) which Pokémon to summon. -->
+      <div id="summonOrb" class="summon-orb" hidden>
+        <div class="so-aura"></div>
+        <div class="so-ball"><span class="so-btn"></span></div>
+      </div>
       <div id="summonDock" class="summon-dock" hidden>
         <div class="sd-hint" id="summonDockHint"><span class="sd-mic">🎙️</span> אמור שם של פוקימון…</div>
         <div class="sd-row" id="summonDockRow"></div>
@@ -1433,7 +1439,9 @@ export function mountApp(root: HTMLElement) {
     let palmHoldMs = 0;
     let throwCooldownMs = 0;
     let suppressPalmMs = 0;   // after a throw, ignore the open hand for dispel
-    let fistActive = false;   // a fist is currently held (armed to throw on open)
+    let fistActive = false;   // a fist is currently held (armed to throw)
+    let fistMinScale = 0;     // smallest hand size seen during the current fist
+    let prevScale = 0;        // hand size last frame (for forward-thrust velocity)
     // Pinch-to-grab manipulation of the orb.
     let pinchActive = false;
     let pinchStartHX = 0, pinchStartHY = 0;
@@ -1507,7 +1515,7 @@ export function mountApp(root: HTMLElement) {
 
         if (!results.multiHandLandmarks?.length) {
           gestureStatus('מצלמה פעילה');
-          palmHoldMs = 0; fistActive = false;
+          palmHoldMs = 0; fistActive = false; fistMinScale = 0; prevScale = 0;
           return;
         }
 
@@ -1534,6 +1542,12 @@ export function mountApp(root: HTMLElement) {
         suppressPalmMs = Math.max(0, suppressPalmMs - dt);
 
         const cx2 = lm[9].x * 320, cy2 = lm[9].y * 240;
+
+        // Hand "size" — wrist(0)→middle-MCP(9) distance. Grows as the hand moves
+        // toward the camera, independent of fingers opening/closing. Drives the
+        // forward-thrust ("throw at the screen") detection.
+        const handScale = Math.hypot(lm[0].x - lm[9].x, lm[0].y - lm[9].y);
+        if (prevScale === 0) prevScale = handScale;
 
         // Pinch = thumb tip (4) close to index tip (8). Hysteresis (grab <0.06,
         // hold until >0.11) so the grip doesn't flicker. Pinch takes priority
@@ -1563,22 +1577,29 @@ export function mountApp(root: HTMLElement) {
         } else {
           if (pinchActive) { pinchActive = false; pinchStartXf = null; }
           if (fist) {
-            // Fist recognised — arm the throw. Open the hand to fire.
-            fistActive = true;
+            // Fist + THROW toward the screen: while the fist is held, watch its
+            // size. A quick forward thrust (hand moving toward the camera) makes
+            // the fist grow sharply → summon. Natural "throw a pokéball" motion.
+            if (!fistActive) { fistActive = true; fistMinScale = handScale; }
             palmHoldMs = 0;
-            gestureStatus('✊ אגרוף מזוהה — פתח כף יד לזריקה!');
-            ctx.beginPath(); ctx.arc(cx2, cy2, 26, 0, Math.PI*2);
-            ctx.strokeStyle = 'rgba(255,70,70,.9)'; ctx.lineWidth = 4; ctx.stroke();
-          } else if (open) {
-            if (fistActive && throwCooldownMs <= 0) {
-              // ✊ → 🖐️  THROW! Fire the moment the hand opens — no hold needed.
-              fistActive = false;
+            fistMinScale = Math.min(fistMinScale, handScale);
+            const growth = handScale / fistMinScale;      // how much it lunged forward
+            const vel = handScale - prevScale;            // moving forward this frame?
+            if (growth > 1.28 && vel > 0.004 && throwCooldownMs <= 0) {
+              fistActive = false; fistMinScale = 0;
               throwCooldownMs = THROW_COOLDOWN;
-              suppressPalmMs = 1100;   // this same open hand must not start a dispel
+              suppressPalmMs = 1100;
               gestureStatus('🚀 זריקה! בחר פוקימון');
               (window as any).openSummonDock?.();
               setTimeout(() => { if (gestureActive) gestureStatus('מצלמה פעילה'); }, 2500);
-            } else if (suppressPalmMs <= 0) {
+            } else {
+              gestureStatus('✊ אגרוף — זרוק לכיוון המסך לזימון!');
+              ctx.beginPath(); ctx.arc(cx2, cy2, 26, 0, Math.PI * 2);
+              ctx.strokeStyle = 'rgba(255,70,70,.9)'; ctx.lineWidth = 4; ctx.stroke();
+            }
+          } else if (open) {
+            fistActive = false; fistMinScale = 0;
+            if (suppressPalmMs <= 0) {
               // Open palm held a long, deliberate 4s → release the current Pokémon.
               palmHoldMs += dt;
               const progress = Math.min(1, palmHoldMs / PALM_HOLD_THRESHOLD);
@@ -1592,11 +1613,12 @@ export function mountApp(root: HTMLElement) {
               }
             }
           } else {
-            // Transitional (mid open/close) — keep the fist armed, reset dispel.
+            // Transitional — keep the fist armed (so a thrust still counts).
             palmHoldMs = 0;
-            gestureStatus(fistActive ? '✊ אגרוף מזוהה — פתח כף יד לזריקה!' : 'מצלמה פעילה');
+            gestureStatus(fistActive ? '✊ אגרוף — זרוק לכיוון המסך לזימון!' : 'מצלמה פעילה');
           }
         }
+        prevScale = handScale;
 
       });
 
@@ -2484,6 +2506,7 @@ export function mountApp(root: HTMLElement) {
       buildDock();
       resetMagnify();
       dock.removeAttribute('hidden');
+      document.getElementById('summonOrb')?.removeAttribute('hidden');  // spinning centre pokéball
       requestAnimationFrame(() => dock.classList.add('open'));
       dockOpen = true;
       hint.innerHTML = '<span class="sd-mic">🎙️</span> אמור שם של פוקימון…';
@@ -2499,6 +2522,7 @@ export function mountApp(root: HTMLElement) {
       dockOpen = false;
       clearTimeout(dockTimer);
       stopDockVoice();
+      document.getElementById('summonOrb')?.setAttribute('hidden', '');
       dock.classList.remove('open');
       setTimeout(() => dock.setAttribute('hidden', ''), 260);
       if (restoreWake) { restoreWake = false; setTimeout(() => voice.setWake(true), 350); }
