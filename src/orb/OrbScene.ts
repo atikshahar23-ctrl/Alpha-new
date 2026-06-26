@@ -16,6 +16,7 @@ export interface OrbHandle {
   startBodyDetection(): void;
   stopBodyDetection(): void;
   setCharacter(name: string): void;
+  throwPokeball(onOpen?: () => void, onDone?: () => void): void;
 }
 
 // ============================================================
@@ -1281,6 +1282,15 @@ const CHARACTER_FILES: Record<string, string> = {
   meowth: 'ar-models/meowth.glb',
 };
 export const CHARACTER_NAMES = Object.keys(CHARACTER_FILES);
+// Each model's "face the user" Y-rotation differs because they came from
+// different source formats (DAE / SMD / FBX). Squirtle (SMD) faces the
+// opposite way, so it needs 0 instead of π.
+const CHARACTER_ROT: Record<string, number> = {
+  pikachu: Math.PI,
+  charmander: Math.PI,
+  squirtle: 0,
+  meowth: Math.PI,
+};
 
 // Holds the currently-loaded swappable model per pikaGroup so we can replace it.
 const loadedModels = new WeakMap<THREE.Group, THREE.Object3D>();
@@ -1358,7 +1368,7 @@ function loadAndReplaceBody(
         model.scale.setScalar(s);
         // Centre on the bounding box so it sits in the middle of the orb.
         model.position.set(-bbCenter.x * s, -bbCenter.y * s, -bbCenter.z * s);
-        model.rotation.y = Math.PI;
+        model.rotation.y = CHARACTER_ROT[character] ?? Math.PI;
         pikaGroup.add(model);
         loadedModels.set(pikaGroup, model);
       },
@@ -1366,6 +1376,71 @@ function loadAndReplaceBody(
       (err) => console.warn(`[OrbScene] ${file} load failed:`, err),
     );
   });
+}
+
+// ============================================================
+// Pokeball throw — renders the real 3D Pokéball INSIDE the orb scene (same
+// proven WebGL context as the characters), so it's always visible. Hides the
+// character mesh during the throw and reveals the new one when it "opens".
+// Returns a throwPokeball(onOpen,onDone) bound to the given scene group.
+// ============================================================
+function makeThrowPokeball(group: THREE.Group, pikaGroup: THREE.Group, base: string) {
+  let ball: THREE.Object3D | null = null;
+  let loading: Promise<THREE.Object3D | null> | null = null;
+  let raf = 0;
+  function ensure(): Promise<THREE.Object3D | null> {
+    if (ball) return Promise.resolve(ball);
+    if (loading) return loading;
+    loading = import('three/examples/jsm/loaders/GLTFLoader.js').then(({ GLTFLoader }) =>
+      new Promise<THREE.Object3D | null>((res) => {
+        new GLTFLoader().load(base + 'ar-models/pokeball.glb', (g: any) => {
+          const m: THREE.Object3D = g.scene;
+          m.traverse((o: any) => {
+            if (!o.isMesh) return;
+            o.geometry.computeVertexNormals();
+            const t = (mm: any) => { mm.roughness = 0.3; mm.metalness = 0.18; mm.side = THREE.FrontSide; };
+            Array.isArray(o.material) ? o.material.forEach(t) : (o.material && t(o.material));
+          });
+          const bb = new THREE.Box3().setFromObject(m);
+          const sz = bb.getSize(new THREE.Vector3()); const ctr = bb.getCenter(new THREE.Vector3());
+          const s = 1.5 / Math.max(sz.x, sz.y, sz.z);
+          const wrap = new THREE.Group();
+          m.scale.setScalar(s); m.position.set(-ctr.x * s, -ctr.y * s, -ctr.z * s);
+          wrap.add(m); wrap.visible = false; group.add(wrap); ball = wrap; res(wrap);
+        }, undefined, () => res(null));
+      })).catch(() => null);
+    return loading;
+  }
+  return function throwPokeball(onOpen?: () => void, onDone?: () => void) {
+    let opened = false, doneF = false;
+    const fo = () => { if (!opened) { opened = true; pikaGroup.visible = true; try { onOpen && onOpen(); } catch {} } };
+    const fd = () => { if (!doneF) { doneF = true; if (ball) ball.visible = false; try { onDone && onDone(); } catch {} } };
+    const wd1 = setTimeout(fo, 1500), wd2 = setTimeout(() => { fo(); fd(); }, 2700);
+    pikaGroup.visible = false; // character vanishes (laser hit)
+    ensure().then((b) => {
+      if (!b) { clearTimeout(wd1); clearTimeout(wd2); fo(); fd(); return; }
+      b.visible = true; b.position.set(0, 0, 0); b.scale.setScalar(0.01); b.rotation.set(0, 0, 0);
+      const start = performance.now(); cancelAnimationFrame(raf);
+      const tick = (now: number) => {
+        const t = (now - start) / 1000;
+        if (t < 0.5) {                              // fly in from below, spin
+          const p = t / 0.5, e = 1 - Math.pow(1 - p, 3);
+          b.position.y = -2.4 + 2.4 * e; b.scale.setScalar(0.3 + 0.9 * e);
+          b.rotation.y = t * 16; b.rotation.x = 0.25;
+        } else if (t < 1.05) {                       // wobble
+          b.position.y = 0; b.scale.setScalar(1.2);
+          b.rotation.z = Math.sin((t - 0.5) * 22) * 0.42 * Math.max(0, 1 - (t - 0.5) / 0.55);
+          b.rotation.y += 0.05;
+        } else if (t < 1.5) {                        // open: reveal char, ball spins away
+          if (!opened) { clearTimeout(wd1); fo(); }
+          const p = (t - 1.05) / 0.45;
+          b.scale.setScalar(1.2 * (1 - p)); b.rotation.y += 0.3; b.position.y = p * 0.4;
+        } else { clearTimeout(wd2); fd(); return; }
+        raf = requestAnimationFrame(tick);
+      };
+      raf = requestAnimationFrame(tick);
+    });
+  };
 }
 
 // ============================================================
@@ -1469,6 +1544,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   pikaGroup.scale.setScalar(0.95);
   group.add(pikaGroup);
   loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/');
+  const mobileThrowPokeball = makeThrowPokeball(group, pikaGroup, import.meta.env.BASE_URL || '/');
 
   // ────────────────────────────────────────────
   // ORBITAL RINGS — gold halo, champagne, rose
@@ -1905,6 +1981,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     setCharacter(name: string) {
       loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/', name);
     },
+    throwPokeball: mobileThrowPokeball,
   };
 }
 
@@ -2017,6 +2094,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   const pikaGroup = pika.group;
   group.add(pikaGroup);
   loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/');
+  const deskThrowPokeball = makeThrowPokeball(group, pikaGroup, import.meta.env.BASE_URL || '/');
 
   // ────────────────────────────────────────────
   // ORBITAL RINGS — prominent gold halo, champagne, rose
@@ -2881,5 +2959,6 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     setCharacter(name: string) {
       loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/', name);
     },
+    throwPokeball: deskThrowPokeball,
   };
 }

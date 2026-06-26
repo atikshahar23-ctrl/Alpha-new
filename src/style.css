@@ -37,33 +37,21 @@ body[data-char="meowth"] .char-ambient {
   pointer-events: none; z-index: 6; display: none;
 }
 .char-swap-fx.active { display: block; }
-.char-swap-btn {
-  position: absolute; left: 50%; bottom: 150px; transform: translateX(-50%);
-  z-index: 7; display: flex; align-items: center; gap: 8px;
-  padding: 9px 18px; border-radius: 22px; cursor: pointer;
-  background: linear-gradient(135deg, rgba(230,56,53,.22), rgba(218,165,32,.18));
-  border: 1px solid rgba(218,165,32,.45);
-  color: #f5e6c8; font-family: "Space Grotesk", sans-serif;
-  font-size: 13px; font-weight: 700; letter-spacing: .5px;
-  backdrop-filter: blur(10px);
-  box-shadow: 0 4px 20px rgba(0,0,0,.35), 0 0 18px rgba(218,165,32,.2);
-  transition: transform .15s, box-shadow .25s, background .25s;
+/* Discreet pokeball chip in the top chrome row — switches the main character */
+#charSwapBtn{ padding:0; width:30px; height:30px; display:grid; place-items:center; }
+#charSwapBtn .csb-ball{
+  width:15px; height:15px; border-radius:50%;
+  background:linear-gradient(180deg,#e63835 0 50%,#fff 50% 100%);
+  border:1.5px solid #1a1a1a; position:relative;
+  box-shadow:0 0 6px rgba(230,56,53,.45); transition:box-shadow .2s;
 }
-.char-swap-btn:hover {
-  transform: translateX(-50%) translateY(-2px);
-  box-shadow: 0 6px 26px rgba(0,0,0,.4), 0 0 26px rgba(230,56,53,.4);
+#charSwapBtn .csb-ball::after{
+  content:""; position:absolute; top:50%; left:50%; width:4px; height:4px;
+  transform:translate(-50%,-50%); border-radius:50%;
+  background:#fff; border:1px solid #1a1a1a;
 }
-.char-swap-btn:active { transform: translateX(-50%) scale(.96); }
-.char-swap-btn.busy { opacity: .6; pointer-events: none; }
-.char-swap-btn .csb-ball {
-  font-size: 14px;
-  background: linear-gradient(180deg, #e63835 50%, #fff 50%);
-  -webkit-background-clip: text; background-clip: text; color: transparent;
-  filter: drop-shadow(0 0 4px rgba(230,56,53,.6));
-}
-@media (max-width: 768px) {
-  .char-swap-btn { bottom: 250px; font-size: 12px; padding: 8px 15px; }
-}
+#charSwapBtn:hover .csb-ball{ box-shadow:0 0 10px rgba(230,56,53,.85); }
+#charSwapBtn.busy{ opacity:.5; pointer-events:none; }
 
 :root {
   --ink: #f0ebe0;

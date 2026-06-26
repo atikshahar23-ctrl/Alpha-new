@@ -13,7 +13,7 @@ import * as driveSync from '../modules/driveSync';
 import * as puterSync from '../modules/puterSync';
 import { setPikaVolume, setPikaPitch, setPikaEnabled, pikaSpeak, setChirpCallback, unlockAudio } from '../assistant/pikaVoice';
 import { setActiveCharacter, playCharacterCry, stopCharacterVoice, setCharacterVolume, unlockCharacterAudio } from '../assistant/characterVoice';
-import { initPokeballFx, throwPokeball } from '../effects/pokeballFx';
+import { throwPokeball } from '../effects/pokeballFx';
 import { universalSearch, TYPE_ICONS, addRecentSearch, recentSearches, quickSuggestions } from '../modules/search';
 import { registerShortcut, initShortcuts, shortcutsHTML } from '../modules/shortcuts';
 import { dailyBriefing } from '../modules/analytics';
@@ -171,8 +171,11 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v19 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v20 ⚡</div></div></div>
       <div class="chrome topR">
+        <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
+          <span class="csb-ball" aria-hidden="true"></span>
+        </button>
         <button class="chip ghost" id="searchBtn" aria-label="Search (Ctrl+K)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
         <button class="chip ghost" id="muteBtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg></button>
         <button class="chip" id="settingsBtn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg> <span data-i18n="settings">הגדרות</span></button>
@@ -180,9 +183,6 @@ export function mountApp(root: HTMLElement) {
       </div>
       <div class="stage" id="stage"></div>
       <canvas id="charSwapFx" class="char-swap-fx"></canvas>
-      <button id="charSwapBtn" class="char-swap-btn" title="החלף דמות ראשית">
-        <span class="csb-ball">⬤</span><span class="csb-label">החלף דמות</span>
-      </button>
 
       <aside class="left-panel" id="leftPanel">
         <div class="lp-brand">
@@ -655,7 +655,7 @@ export function mountApp(root: HTMLElement) {
   try {
     orb = mountOrb($('stage'));
   } catch {
-    orb = { setEnergy() {}, pikaEmote() {}, dispose() {}, startBodyDetection() {}, stopBodyDetection() {}, setCharacter() {} };
+    orb = { setEnergy() {}, pikaEmote() {}, dispose() {}, startBodyDetection() {}, stopBodyDetection() {}, setCharacter() {}, throwPokeball(_o, d) { d && d(); } };
   }
 
   // When Pikachu chirps, trigger a brief energy burst in the 3D orb
@@ -1998,8 +1998,6 @@ export function mountApp(root: HTMLElement) {
   // character → it vanishes → a pokeball flies in, wobbles, cracks open with a
   // laser burst → the new character emerges (loaded into the orb).
   let charSwapBusy = false;
-  // Pre-warm the 3D pokeball renderer over the orb stage.
-  try { initPokeballFx(document.getElementById('stage')!); } catch {}
 
   // Swap the main character with: red-laser dispel → real 3D Pokéball flies in,
   // wobbles, opens with a burst → new character loads. Runs over the orb stage.
@@ -2021,7 +2019,9 @@ export function mountApp(root: HTMLElement) {
     function laser(now: number) {
       const t = (now - start) / 1000;
       ctx!.clearRect(0, 0, W, H);
-      if (t >= 0.35) stage!.classList.add('stage-dispelled');
+      // Note: we do NOT hide #stage — the 3D pokeball renders inside the orb
+      // scene, so the stage must stay visible. orb.throwPokeball hides just the
+      // character mesh at the right moment.
       if (t < 0.7) {
         // red laser beam bottom → orb centre
         const p = Math.min(1, t / 0.45);
@@ -2050,11 +2050,12 @@ export function mountApp(root: HTMLElement) {
         handedOff = true;
         ctx!.clearRect(0, 0, W, H);
         cvs.classList.remove('active');
-        // Hand off to the real 3D pokeball over the orb.
-        throwPokeball(stage!, {
-          onOpen: () => { setMainCharacter(nextId); stage!.classList.remove('stage-dispelled'); },
-          onDone: () => { charSwapBusy = false; $('charSwapBtn')?.classList.remove('busy'); },
-        });
+        // Hand off to the real 3D pokeball rendered INSIDE the orb scene
+        // (always visible — same context that renders the characters).
+        orb.throwPokeball(
+          () => { setMainCharacter(nextId); },
+          () => { charSwapBusy = false; $('charSwapBtn')?.classList.remove('busy'); },
+        );
       }
     }
     requestAnimationFrame(laser);

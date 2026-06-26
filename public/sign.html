@@ -187,9 +187,40 @@
     window.open('https://wa.me/'+ph+'?text='+encodeURIComponent(msg),'_blank');
   };
 
+  // Save the signed form to the HeavyGuard archive (same-origin localStorage,
+  // which the app syncs to the cloud). CVV is never saved.
+  let archivedId=null;
+  function saveToArchive(){
+    if(!hasSig) return;
+    try{
+      const KEY='alpha_samsonix_forms_v1';
+      const list=JSON.parse(localStorage.getItem(KEY)||'[]');
+      const rec={
+        id: archivedId || (Date.now().toString(36)+Math.random().toString(36).slice(2,6)),
+        savedAt:new Date().toISOString(),
+        plan:(document.querySelector('input[name=pkg]:checked')||{}).value||'2gb',
+        audio:((document.querySelector('input[name=audio]:checked')||{}).value==='עם הקלטת קול')?'with':'none',
+        bsd:false,
+        fullName:$('fullName').value||'', idNum:$('idNum').value||'',
+        email:$('email').value||'', phone:$('phone').value||'',
+        contactName:$('contactName').value||'', company:$('company').value||'',
+        bizNum:$('taxId').value||'',
+        veh1:$('plate1').value||'', veh1Type:$('vtype1').value||'',
+        veh2:$('plate2').value||'', veh2Type:$('vtype2').value||'',
+        cardNum:($('card').value||'').replace(/\s/g,''), expiry:$('exp').value||'',
+        sigDataUrl:(()=>{try{return c.toDataURL('image/png');}catch{return '';}})(),
+      };
+      if(archivedId){ const i=list.findIndex(x=>x.id===archivedId); if(i>=0) list[i]=rec; else list.unshift(rec); }
+      else { list.unshift(rec); archivedId=rec.id; }
+      localStorage.setItem(KEY,JSON.stringify(list));
+      localStorage.setItem('alpha_data_dirty',Date.now().toString()); // flag for cloud sync
+    }catch(e){}
+  }
+
   // Send a confirmation summary (NO card data) to the installer's WhatsApp
   $('btnWa').onclick=()=>{
     if(!hasSig){ alert('נא לחתום לפני השליחה'); return; }
+    saveToArchive();
     const pkg=(document.querySelector('input[name=pkg]:checked')||{}).value||'—';
     const audio=(document.querySelector('input[name=audio]:checked')||{}).value||'—';
     const pkgLabel={'2gb':'2GB · 39₪','4gb':'4GB · 49₪','10gb':'10GB · 59₪'}[pkg]||pkg;
@@ -208,7 +239,7 @@
     window.open('https://wa.me/'+ph+'?text='+encodeURIComponent(lines.join('\n')),'_blank');
   };
 
-  $('btnPrint').onclick=()=>window.print();
+  $('btnPrint').onclick=()=>{ saveToArchive(); window.print(); };
 </script>
 </body>
 </html>
