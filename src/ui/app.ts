@@ -986,6 +986,7 @@ export function mountApp(root: HTMLElement) {
   // plain JS is parsed with new Function (compiles, never executes). Module/top-
   // await snippets are skipped to avoid false positives.
   const JS_LANGS = ['js', 'javascript', 'jsx', 'mjs', 'cjs'];
+  const CHECK_LANGS = ['json', 'xml', 'svg', 'css', ...JS_LANGS];
   function extractCodeBlocks(text: string): { lang: string; code: string }[] {
     const out: { lang: string; code: string }[] = [];
     const re = /```(\w+)?\n([\s\S]*?)```/g;
@@ -1002,11 +1003,23 @@ export function mountApp(root: HTMLElement) {
         new Function(code);   // parses + throws on syntax error; does NOT run
         return null;
       }
+      if (lang === 'xml' || lang === 'svg') {
+        const doc = new DOMParser().parseFromString(code, 'application/xml');
+        const err = doc.querySelector('parsererror');
+        return err ? (err.textContent || 'XML parse error').replace(/\s+/g, ' ').trim().slice(0, 140) : null;
+      }
+      if (lang === 'css') {
+        // Brace balance — valid CSS is always balanced; catches the common break
+        // without false-positives on well-formed stylesheets.
+        let depth = 0;
+        for (const ch of code) { if (ch === '{') depth++; else if (ch === '}') { if (--depth < 0) return 'unbalanced "}" in CSS'; } }
+        return depth !== 0 ? 'unbalanced "{ }" in CSS' : null;
+      }
     } catch (e: any) { return e?.message || 'syntax error'; }
     return null; // unknown language → no claim
   }
   function reflectOnReply(text: string) {
-    const blocks = extractCodeBlocks(text).filter(b => b.lang === 'json' || JS_LANGS.includes(b.lang));
+    const blocks = extractCodeBlocks(text).filter(b => CHECK_LANGS.includes(b.lang));
     if (!blocks.length) return;
     const bad = blocks.map(b => ({ b, err: validateCode(b.lang, b.code) })).filter(x => x.err);
     if (bad.length) {
