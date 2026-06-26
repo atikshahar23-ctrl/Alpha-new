@@ -9,6 +9,8 @@ import { pikaEmoteSpeak } from '../assistant/pikaVoice';
 
 export type PikaEmote = 'happy' | 'curious' | 'excited' | 'sad' | 'surprised';
 
+export interface CharXform { x: number; y: number; z: number; s: number; px: number; py: number; pz: number; }
+
 export interface OrbHandle {
   setEnergy(v: number): void;
   pikaEmote(emote: PikaEmote): void;
@@ -17,9 +19,9 @@ export interface OrbHandle {
   stopBodyDetection(): void;
   setCharacter(name: string): void;
   throwPokeball(onOpen?: () => void, onDone?: () => void): void;
-  setCharacterRotation(x: number, y: number, z: number): void;
-  getCharacterRotation(): { x: number; y: number; z: number };
-  resetCharacterRotation(): void;
+  setCharacterTransform(x: number, y: number, z: number, s: number, px: number, py: number, pz: number): void;
+  getCharacterTransform(): CharXform;
+  resetCharacterTransform(): void;
 }
 
 // ============================================================
@@ -1297,60 +1299,67 @@ const CHARACTER_FILES: Record<string, string> = {
 };
 export const CHARACTER_NAMES = Object.keys(CHARACTER_FILES);
 
-type CharRot3 = { x: number; y: number; z: number };
+// CharXform — full per-character transform: rotation (radians), scale multiplier,
+// and position offset relative to auto-centered position. Exported via OrbHandle.
+const CHAR_XFORM_LS_KEY = 'char_xform_v1';
 
-// Per-character default orientations — differ because models come from different
-// source formats (DAE/SMD/FBX). Squirtle (SMD) needs X lifted 90° to stand upright.
-// ColladaMax DAE models from the Pokemon XY set are Y-up, face toward +Z → y:PI faces camera.
-const CHARACTER_ROT_DEFAULT: Record<string, CharRot3> = {
-  pikachu:    { x: 0,            y: Math.PI, z: 0 },
-  charmander: { x: 0,            y: Math.PI, z: 0 },
-  squirtle:   { x: -Math.PI / 2, y: 0,       z: Math.PI },
-  meowth:     { x: 0,            y: Math.PI, z: 0 },
-  bulbasaur:  { x: 0,            y: Math.PI, z: 0 },
-  eevee:      { x: 0,            y: Math.PI, z: 0 },
-  mewtwo:     { x: 0,            y: Math.PI, z: 0 },
-  articuno:   { x: 0,            y: Math.PI, z: 0 },
-  suicune:    { x: -Math.PI / 2, y: 0,       z: Math.PI },
-  raikou:     { x: 0,            y: Math.PI, z: 0 },
-  entei:      { x: 0,            y: Math.PI, z: 0 },
-  moltres:    { x: 0,            y: Math.PI, z: 0 },
-  zapdos:     { x: 0,            y: Math.PI, z: 0 },
-  lugia:      { x: 0,            y: Math.PI, z: 0 },
-  'ho-oh':    { x: 0,            y: Math.PI, z: 0 },
-};
+function defaultXform(character: string): CharXform {
+  // Rotation defaults vary by model source format; scale/position default to identity.
+  const ROT: Record<string, {x:number;y:number;z:number}> = {
+    pikachu:    { x: 0,            y: Math.PI, z: 0 },
+    charmander: { x: 0,            y: Math.PI, z: 0 },
+    squirtle:   { x: -Math.PI / 2, y: 0,       z: Math.PI },
+    meowth:     { x: 0,            y: Math.PI, z: 0 },
+    bulbasaur:  { x: 0,            y: Math.PI, z: 0 },
+    eevee:      { x: 0,            y: Math.PI, z: 0 },
+    mewtwo:     { x: 0,            y: Math.PI, z: 0 },
+    articuno:   { x: 0,            y: Math.PI, z: 0 },
+    suicune:    { x: -Math.PI / 2, y: 0,       z: Math.PI },
+    raikou:     { x: 0,            y: Math.PI, z: 0 },
+    entei:      { x: 0,            y: Math.PI, z: 0 },
+    moltres:    { x: 0,            y: Math.PI, z: 0 },
+    zapdos:     { x: 0,            y: Math.PI, z: 0 },
+    lugia:      { x: 0,            y: Math.PI, z: 0 },
+    'ho-oh':    { x: 0,            y: Math.PI, z: 0 },
+  };
+  const r = ROT[character] ?? { x: 0, y: Math.PI, z: 0 };
+  return { x: r.x, y: r.y, z: r.z, s: 1, px: 0, py: 0, pz: 0 };
+}
 
-const CHAR_ROT_LS_KEY = 'char_rot_v3';
-
-function getCharRot(character: string): CharRot3 {
+function getCharXform(character: string): CharXform {
   try {
-    const saved = localStorage.getItem(CHAR_ROT_LS_KEY);
+    const saved = localStorage.getItem(CHAR_XFORM_LS_KEY);
     if (saved) {
-      const all = JSON.parse(saved) as Record<string, CharRot3>;
+      const all = JSON.parse(saved) as Record<string, CharXform>;
       if (all[character]) return all[character];
     }
   } catch {}
-  return CHARACTER_ROT_DEFAULT[character] ?? { x: 0, y: Math.PI, z: 0 };
+  return defaultXform(character);
 }
 
-function saveCharRot(character: string, rot: CharRot3): void {
+function saveCharXform(character: string, xf: CharXform): void {
   try {
-    const saved = localStorage.getItem(CHAR_ROT_LS_KEY);
-    const all: Record<string, CharRot3> = saved ? JSON.parse(saved) : {};
-    all[character] = rot;
-    localStorage.setItem(CHAR_ROT_LS_KEY, JSON.stringify(all));
+    const saved = localStorage.getItem(CHAR_XFORM_LS_KEY);
+    const all: Record<string, CharXform> = saved ? JSON.parse(saved) : {};
+    all[character] = xf;
+    localStorage.setItem(CHAR_XFORM_LS_KEY, JSON.stringify(all));
   } catch {}
 }
 
-function clearCharRot(character: string): void {
+function clearCharXform(character: string): void {
   try {
-    const saved = localStorage.getItem(CHAR_ROT_LS_KEY);
+    const saved = localStorage.getItem(CHAR_XFORM_LS_KEY);
     if (!saved) return;
-    const all = JSON.parse(saved) as Record<string, CharRot3>;
+    const all = JSON.parse(saved) as Record<string, CharXform>;
     delete all[character];
-    localStorage.setItem(CHAR_ROT_LS_KEY, JSON.stringify(all));
+    localStorage.setItem(CHAR_XFORM_LS_KEY, JSON.stringify(all));
   } catch {}
 }
+
+// Stores auto-normalization values per model so real-time transform changes can
+// re-apply scale and offset without reloading.
+type BaseTransform = { s: number; cx: number; cy: number; cz: number };
+const modelBaseTransform = new WeakMap<THREE.Object3D, BaseTransform>();
 
 // Holds the currently-loaded swappable model per pikaGroup so we can replace it.
 const loadedModels = new WeakMap<THREE.Group, THREE.Object3D>();
@@ -1418,21 +1427,19 @@ function loadAndReplaceBody(
           });
         }
 
-        // Normalize so the model fits the orb and is centred. Use height/width
-        // (ignore depth) so wide bind-poses (e.g. T-pose arms) don't shrink it.
-        // Non-Pikachu models render a touch larger so they read clearly.
+        // Auto-normalize: scale to fit orb, then centre on bounding box.
         const bb = new THREE.Box3().setFromObject(model);
         const bbSize = bb.getSize(new THREE.Vector3());
         const bbCenter = bb.getCenter(new THREE.Vector3());
         const target = isPikachu ? 1.2 : 1.45;
         const s = target / Math.max(bbSize.x, bbSize.y);
-        model.scale.setScalar(s);
-        // Centre on the bounding box so it sits in the middle of the orb.
-        model.position.set(-bbCenter.x * s, -bbCenter.y * s, -bbCenter.z * s);
-        const rot = getCharRot(character);
-        model.rotation.x = rot.x;
-        model.rotation.y = rot.y;
-        model.rotation.z = rot.z;
+        // Store the base transform so real-time adjustments can re-apply without reload.
+        modelBaseTransform.set(model, { s, cx: -bbCenter.x * s, cy: -bbCenter.y * s, cz: -bbCenter.z * s });
+        // Apply stored user transform (rotation, scale multiplier, position offset).
+        const xf = getCharXform(character);
+        model.scale.setScalar(s * xf.s);
+        model.position.set(-bbCenter.x * s + xf.px, -bbCenter.y * s + xf.py, -bbCenter.z * s + xf.pz);
+        model.rotation.set(xf.x, xf.y, xf.z);
         pikaGroup.add(model);
         loadedModels.set(pikaGroup, model);
         onLoaded?.(model);
@@ -2050,15 +2057,29 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
       loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/', name, (m) => { mobileCurrentModel = m; });
     },
     throwPokeball: mobileThrowPokeball,
-    setCharacterRotation(x: number, y: number, z: number) {
-      if (mobileCurrentModel) { mobileCurrentModel.rotation.x = x; mobileCurrentModel.rotation.y = y; mobileCurrentModel.rotation.z = z; }
-      saveCharRot(mobileCurrentChar, { x, y, z });
+    getCharacterTransform() { return getCharXform(mobileCurrentChar); },
+    setCharacterTransform(x: number, y: number, z: number, s: number, px: number, py: number, pz: number) {
+      saveCharXform(mobileCurrentChar, { x, y, z, s, px, py, pz });
+      if (mobileCurrentModel) {
+        const bt = modelBaseTransform.get(mobileCurrentModel);
+        const as = bt ? bt.s : 1;
+        const acx = bt ? bt.cx : 0; const acy = bt ? bt.cy : 0; const acz = bt ? bt.cz : 0;
+        mobileCurrentModel.scale.setScalar(as * s);
+        mobileCurrentModel.position.set(acx + px, acy + py, acz + pz);
+        mobileCurrentModel.rotation.set(x, y, z);
+      }
     },
-    getCharacterRotation() { return getCharRot(mobileCurrentChar); },
-    resetCharacterRotation() {
-      clearCharRot(mobileCurrentChar);
-      const def = CHARACTER_ROT_DEFAULT[mobileCurrentChar] ?? { x: 0, y: Math.PI, z: 0 };
-      if (mobileCurrentModel) { mobileCurrentModel.rotation.x = def.x; mobileCurrentModel.rotation.y = def.y; mobileCurrentModel.rotation.z = def.z; }
+    resetCharacterTransform() {
+      clearCharXform(mobileCurrentChar);
+      const def = defaultXform(mobileCurrentChar);
+      if (mobileCurrentModel) {
+        const bt = modelBaseTransform.get(mobileCurrentModel);
+        const as = bt ? bt.s : 1;
+        const acx = bt ? bt.cx : 0; const acy = bt ? bt.cy : 0; const acz = bt ? bt.cz : 0;
+        mobileCurrentModel.scale.setScalar(as);
+        mobileCurrentModel.position.set(acx, acy, acz);
+        mobileCurrentModel.rotation.set(def.x, def.y, def.z);
+      }
     },
   };
 }
@@ -3041,15 +3062,29 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/', name, (m) => { deskCurrentModel = m; });
     },
     throwPokeball: deskThrowPokeball,
-    setCharacterRotation(x: number, y: number, z: number) {
-      if (deskCurrentModel) { deskCurrentModel.rotation.x = x; deskCurrentModel.rotation.y = y; deskCurrentModel.rotation.z = z; }
-      saveCharRot(deskCurrentChar, { x, y, z });
+    getCharacterTransform() { return getCharXform(deskCurrentChar); },
+    setCharacterTransform(x: number, y: number, z: number, s: number, px: number, py: number, pz: number) {
+      saveCharXform(deskCurrentChar, { x, y, z, s, px, py, pz });
+      if (deskCurrentModel) {
+        const bt = modelBaseTransform.get(deskCurrentModel);
+        const as = bt ? bt.s : 1;
+        const acx = bt ? bt.cx : 0; const acy = bt ? bt.cy : 0; const acz = bt ? bt.cz : 0;
+        deskCurrentModel.scale.setScalar(as * s);
+        deskCurrentModel.position.set(acx + px, acy + py, acz + pz);
+        deskCurrentModel.rotation.set(x, y, z);
+      }
     },
-    getCharacterRotation() { return getCharRot(deskCurrentChar); },
-    resetCharacterRotation() {
-      clearCharRot(deskCurrentChar);
-      const def = CHARACTER_ROT_DEFAULT[deskCurrentChar] ?? { x: 0, y: Math.PI, z: 0 };
-      if (deskCurrentModel) { deskCurrentModel.rotation.x = def.x; deskCurrentModel.rotation.y = def.y; deskCurrentModel.rotation.z = def.z; }
+    resetCharacterTransform() {
+      clearCharXform(deskCurrentChar);
+      const def = defaultXform(deskCurrentChar);
+      if (deskCurrentModel) {
+        const bt = modelBaseTransform.get(deskCurrentModel);
+        const as = bt ? bt.s : 1;
+        const acx = bt ? bt.cx : 0; const acy = bt ? bt.cy : 0; const acz = bt ? bt.cz : 0;
+        deskCurrentModel.scale.setScalar(as);
+        deskCurrentModel.position.set(acx, acy, acz);
+        deskCurrentModel.rotation.set(def.x, def.y, def.z);
+      }
     },
   };
 }
