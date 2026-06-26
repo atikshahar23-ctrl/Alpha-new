@@ -300,12 +300,17 @@
         html += '</div>';
       }
 
-      html += '<div class="section-label">משימות השבוע</div>';
-      if (weekTasks.length === 0) {
-        html += '<div class="empty-state"><div class="icon">☀</div>אין משימות השבוע</div>';
+      // Show ALL open tasks (any date or none) + a few recently-done — so
+      // nothing is missed regardless of when it was created.
+      const openTasks = allTasks.filter(t => !t.done);
+      const doneTasks = allTasks.filter(t => t.done).slice(0, 6);
+      const list = [...openTasks, ...doneTasks];
+      html += `<div class="section-label">משימות${openTasks.length ? ' (' + openTasks.length + ')' : ''}</div>`;
+      if (list.length === 0) {
+        html += '<div class="empty-state"><div class="icon">✓</div>אין משימות פתוחות</div>';
       } else {
         html += '<div class="task-list">';
-        weekTasks.forEach(t => {
+        list.forEach(t => {
           const doneClass = t.done ? 'done' : '';
           const pLabel = t.priority === 'high' ? 'דחוף' : t.priority === 'low' ? 'נמוך' : 'רגיל';
           html += `
@@ -314,27 +319,6 @@
               <div class="task-content">
                 <div class="task-text">${esc(t.text)}</div>
                 ${t.date ? '<div class="task-date">' + t.date + '</div>' : ''}
-              </div>
-              <span class="task-priority ${t.priority}">${pLabel}</span>
-            </div>
-          `;
-        });
-        html += '</div>';
-      }
-
-      html += '<div class="section-label">לא שובץ</div>';
-      if (unassigned.length === 0) {
-        html += '<div class="empty-state"><div class="icon">✓</div>הכל מתוזמן</div>';
-      } else {
-        html += '<div class="task-list">';
-        unassigned.forEach(t => {
-          const doneClass = t.done ? 'done' : '';
-          const pLabel = t.priority === 'high' ? 'דחוף' : t.priority === 'low' ? 'נמוך' : 'רגיל';
-          html += `
-            <div class="task-item ${doneClass}" data-id="${t.id}">
-              <div class="task-check ${doneClass}" data-id="${t.id}"></div>
-              <div class="task-content">
-                <div class="task-text">${esc(t.text)}</div>
               </div>
               <span class="task-priority ${t.priority}">${pLabel}</span>
             </div>
