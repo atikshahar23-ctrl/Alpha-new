@@ -4,7 +4,7 @@ import {
   Clock, MapPin, Truck, ChevronLeft, CheckCircle2, AlertTriangle, FileSpreadsheet,
   Hash, Wrench, Factory, Tag, DollarSign, Calendar, Phone, User, Timer, Search, Film, Images, Pencil,
   BarChart3, ClipboardList, TrendingUp, Percent, Trophy,
-  Users, Car, Scale, Receipt, Boxes, Fuel, Copy, MessageSquare, Bell, CalendarDays, Circle, CalendarClock, ChevronRight, Minus, Shield, Upload, RotateCcw, Settings, Globe, Wallet, TrendingDown, Link2, Share2, Mail, Target, Building2,
+  Users, Car, Scale, Receipt, Boxes, Fuel, Copy, MessageSquare, Bell, CalendarDays, Circle, CalendarClock, ChevronRight, Minus, Shield, Upload, RotateCcw, Settings, Globe, Wallet, TrendingDown, Link2, Share2, Mail, Target, Building2, FileText,
 } from "lucide-react";
 import BULL_LOGO from './heavyguard-logo.png';
 // xlsx is large (~400KB). Load it on demand only when the user actually
@@ -52,7 +52,7 @@ const loadPhoto = async (id) => { try { const r = await store.get("hg2:photo:" +
 const loadGallery = async (id) => { try { const r = await store.get("hg2:gallery:" + id); return r && r.value ? JSON.parse(r.value) : []; } catch { return []; } };
 const loadVideo = async (id) => { try { const r = await store.get("hg2:video:" + id); return r && r.value ? r.value : null; } catch { return null; } };
 const rawGet = async (k) => { try { const r = await store.get(k); return r && r.value != null ? r.value : null; } catch { return null; } };
-const BACKUP_KEYS = ["hg2:index", "hg2:customers", "hg2:pricelist", "hg2:quotes", "hg2:quoteseq", "hg2:vehicle", "hg2:carstock", "hg2:suppliers", "hg2:invoices", "hg2:tasks", "hg2:wanumber", "hg2:init"];
+const BACKUP_KEYS = ["hg2:index", "hg2:customers", "hg2:pricelist", "hg2:quotes", "hg2:quoteseq", "hg2:vehicle", "hg2:carstock", "hg2:suppliers", "hg2:invoices", "hg2:tasks", "hg2:samsonix", "hg2:wanumber", "hg2:init"];
 async function collectBackup() {
   const data = {};
   for (const k of BACKUP_KEYS) { const v = await rawGet(k); if (v != null) data[k] = v; }
@@ -186,7 +186,7 @@ function DateField({ value, onChange, placeholder, clearable }) {
 export default function App() {
   const [ready, setReady] = useState(false);
   const [index, setIndex] = useState([]);
-  const [view, setView] = useState("hub"); // hub | logger | analytics | customers | pricing | vehicle | suppliers | carstock | invoices | new | detail
+  const [view, setView] = useState("hub"); // hub | logger | analytics | customers | pricing | vehicle | suppliers | carstock | invoices | samsonix | new | detail
   const [prevTab, setPrevTab] = useState("logger");
   const [detailId, setDetailId] = useState(null);
   const [resumeId, setResumeId] = useState(null);
@@ -302,6 +302,7 @@ export default function App() {
         {view === "suppliers" && <Suppliers onBack={() => setView("hub")} showToast={showToast} />}
         {view === "carstock" && <CarStock onBack={() => setView("hub")} showToast={showToast} />}
         {view === "invoices" && <Invoices onBack={() => setView("hub")} showToast={showToast} />}
+        {view === "samsonix" && <Samsonix onBack={() => setView("hub")} showToast={showToast} />}
         {view === "backup" && <Backup onBack={() => setView("hub")} showToast={showToast} />}
         {view === "finance" && <Finance index={index} onBack={() => setView("hub")} />}
         {view === "leads" && <Leads onBack={() => setView("hub")} showToast={showToast} />}
@@ -356,6 +357,7 @@ function Hub({ index, go, onNew }) {
     { id: "suppliers", icon: Scale, title: "השוואת ספקים", sub: "מחירי רכש" },
     { id: "carstock", icon: Boxes, title: "מלאי ברכב", sub: "מלאי נייד" },
     { id: "invoices", icon: Receipt, title: "חשבוניות", sub: "חשבונות ותשלומים" },
+    { id: "samsonix", icon: ClipboardList, title: "טפסי סמסוניק", sub: "טופס DVR · שליחה ומעקב" },
     { id: "leads", icon: Target, title: "ניהול לידים", sub: "6,452 לידים עסקיים", hot: true },
     { id: "backup", icon: Shield, title: "גיבוי ושחזור", sub: "שמירת הנתונים" },
     { id: "settings", icon: Settings, title: "הגדרות עסק", sub: "מיתוג וקישורים" },
@@ -1825,6 +1827,369 @@ function InvoiceModal({ onClose, onSave, showToast }) {
           </div>
         </div>
         <div className="hg2-modal-foot"><button className="hg2-btn ghost" onClick={onClose}>ביטול</button><button className="hg2-btn primary" onClick={() => iv.title.trim() && onSave({ ...iv, title: iv.title.trim(), supplier: iv.supplier.trim(), amount: Number(iv.amount) || 0, thumb }, photoFull)}>שמירה</button></div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================ Samsonix DVR Forms ============================ */
+const SAMSONIX_PLANS = {
+  "2gb": 'שימוש בשרת + גלישה 2GB · 39 ₪ +מע״מ (עד 2 משתמשים / 1T)',
+  "4gb": 'שימוש בשרת + גלישה 4GB · 49 ₪ +מע״מ (עד 4 משתמשים / 2T)',
+  "10gb": 'שימוש בשרת + גלישה 10GB · 59 ₪ +מע״מ (מעל 5 משתמשים / 4T)',
+};
+const SX_STATUS = ["טיוטה", "נשלח ללקוח", "התקבל תשובה", "הושלם"];
+const SX_COLOR = { "טיוטה": "", "נשלח ללקוח": "pend", "התקבל תשובה": "cy", "הושלם": "paid" };
+
+// Escape helpers used inside the customer HTML template string
+function sxEsc(s) { return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function sxEscJs(s) { return String(s ?? "").replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/\r?\n/g,"\\n"); }
+
+// Generates a self-contained HTML file the admin sends to the customer.
+// Customer fills vehicle/ID details; on submit it encodes data as SX:{base64}
+// and opens WhatsApp addressed to the admin's number.
+function generateCustomerHTML(f, adminPhone) {
+  const planLabel = SAMSONIX_PLANS[f.plan] || f.plan || "";
+  const audioLabel = f.audio === "with" ? "כולל אודיו" : "ללא אודיו";
+  const bsdLabel = f.bsd ? " · ב.ס.ד" : "";
+  const safePhone = String(adminPhone || "").replace(/[^0-9]/g, "");
+  return `<!DOCTYPE html>
+<html dir="rtl" lang="he"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>טופס Samsonix DVR – ${sxEsc(f.fullName || "")}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;direction:rtl;background:#0d0d1a;color:#eee;min-height:100vh}
+.wrap{max-width:480px;margin:0 auto;padding:20px 16px 40px}
+.logo{font-size:28px;font-weight:900;color:#fff;letter-spacing:1px;text-align:center;padding:20px 0 4px}
+.logo em{color:#e63946;font-style:normal}
+.sub{font-size:11px;letter-spacing:4px;color:#888;text-align:center;margin-bottom:24px}
+h2{font-size:16px;text-align:center;color:#f7c800;margin-bottom:20px}
+.card{background:#161625;border:1px solid #2a2a3e;border-radius:10px;padding:16px;margin-bottom:14px}
+.card-title{font-size:11px;font-weight:700;color:#f7c800;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:12px;border-bottom:1px solid #2a2a3e;padding-bottom:8px}
+.info-row{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid #1e1e30;font-size:13px}
+.info-row:last-child{border-bottom:none}
+.info-row .lbl{color:#999}
+.info-row .val{font-weight:600;color:#fff;text-align:left}
+.plan-badge{background:#f7c800;color:#000;font-weight:800;border-radius:5px;padding:3px 10px;font-size:13px}
+.field{margin-bottom:12px}
+.field label{display:block;font-size:12px;color:#aaa;margin-bottom:4px}
+.field input{width:100%;background:#1e1e30;border:1px solid #2a2a3e;border-radius:7px;padding:11px 12px;color:#fff;font-size:14px;font-family:Arial,sans-serif}
+.field input:focus{outline:none;border-color:#f7c800}
+.field input::placeholder{color:#444}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.check-row{display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:10px 0;font-size:13px;line-height:1.5;color:#ccc}
+.check-row input[type=checkbox]{width:20px;height:20px;flex-shrink:0;accent-color:#f7c800;cursor:pointer;margin-top:1px}
+.submit-btn{width:100%;background:linear-gradient(135deg,#f7c800,#e8a000);color:#000;font-size:16px;font-weight:800;padding:15px;border:none;border-radius:10px;cursor:pointer;margin-top:8px}
+.submit-btn:active{opacity:.85}
+.note{font-size:11px;color:#555;text-align:center;margin-top:14px;line-height:1.7}
+.sent-msg{display:none;background:#0d1f0d;border:1.5px solid #2d7a2d;border-radius:10px;padding:20px;text-align:center;margin-top:16px}
+.sent-msg h3{color:#5fd65f;font-size:17px;margin-bottom:8px}
+.sent-msg p{font-size:13px;color:#aaa;line-height:1.6}
+</style></head>
+<body><div class="wrap">
+  <div class="logo">SAMS<em>O</em>NIX</div>
+  <div class="sub">DVR SECURITY</div>
+  <h2>טופס הזמנת שירות DVR</h2>
+
+  <div class="card">
+    <div class="card-title">פרטי ההזמנה שלך</div>
+    <div class="info-row"><span class="lbl">שם לקוח</span><span class="val">${sxEsc(f.fullName || "")}</span></div>
+    <div class="info-row"><span class="lbl">מסלול</span><span class="val"><span class="plan-badge">${sxEsc((f.plan || "").toUpperCase())}</span></span></div>
+    <div class="info-row"><span class="lbl">פירוט</span><span class="val" style="font-size:11px;max-width:240px;text-align:left">${sxEsc(planLabel)}</span></div>
+    <div class="info-row"><span class="lbl">אפשרויות</span><span class="val">${sxEsc(audioLabel + bsdLabel)}</span></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">פרטים אישיים</div>
+    <div class="field"><label>ת.ז. / ח.פ. *</label><input type="text" id="idNum" inputmode="numeric" placeholder="מספר זהות"></div>
+    <div class="field"><label>כתובת</label><input type="text" id="address" placeholder="רחוב, מספר, עיר" style="direction:rtl"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">פרטי הרכב/ים *</div>
+    <div class="row2">
+      <div class="field"><label>לוחית רישוי 1</label><input type="text" id="veh1" placeholder="12-345-67"></div>
+      <div class="field"><label>יצרן / דגם</label><input type="text" id="veh1Type" placeholder="טויוטה הייס" style="direction:rtl"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>לוחית רישוי 2</label><input type="text" id="veh2" placeholder="לא חובה"></div>
+      <div class="field"><label>יצרן / דגם</label><input type="text" id="veh2Type" placeholder="" style="direction:rtl"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">אישור ✍</div>
+    <label class="check-row">
+      <input type="checkbox" id="agree">
+      <span>קראתי ואני מאשר/ת את פרטי ההזמנה לעיל ומסכים/ה לתנאי השירות של Samsonix.</span>
+    </label>
+  </div>
+
+  <button class="submit-btn" onclick="doSubmit()">שלח לסמסוניקס ✓</button>
+
+  <div class="sent-msg" id="sentMsg">
+    <h3>נשלח בהצלחה! ✓</h3>
+    <p>הפרטים נשלחו לסמסוניקס דרך וואטסאפ.<br>נציג יחזור אליך בהקדם.</p>
+  </div>
+
+  <div class="note">🔒 הטופס אינו שומר מידע בשרתים. הנתונים מועברים ישירות דרך וואטסאפ.</div>
+</div>
+<script>
+const ADMIN_PHONE='${sxEscJs(safePhone)}';
+const FORM_ID='${sxEscJs(f.id||"")}';
+function doSubmit(){
+  var idNum=document.getElementById('idNum').value.trim();
+  var address=document.getElementById('address').value.trim();
+  var veh1=document.getElementById('veh1').value.trim();
+  var veh1Type=document.getElementById('veh1Type').value.trim();
+  var veh2=document.getElementById('veh2').value.trim();
+  var veh2Type=document.getElementById('veh2Type').value.trim();
+  var agree=document.getElementById('agree').checked;
+  if(!veh1){alert('נא למלא לפחות מספר רכב אחד');return;}
+  if(!agree){alert('נא לאשר את ההזמנה');return;}
+  var data={formId:FORM_ID,idNum:idNum,address:address,veh1:veh1,veh1Type:veh1Type,veh2:veh2,veh2Type:veh2Type,signedAt:new Date().toISOString()};
+  var encoded=btoa(unescape(encodeURIComponent(JSON.stringify(data))));
+  var text='SX:'+encoded;
+  window.open('https://wa.me/'+ADMIN_PHONE+'?text='+encodeURIComponent(text),'_blank');
+  document.getElementById('sentMsg').style.display='block';
+}
+</script></body></html>`;
+}
+
+// Downloads the customer HTML form as a file.
+function downloadCustomerForm(f, adminPhone) {
+  const html = generateCustomerHTML(f, adminPhone);
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `samsonix-${(f.fullName || "טופס").replace(/\s+/g, "-")}.html`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// Parses the customer's WhatsApp reply: "SX:{base64json}"
+function parseSXResponse(text) {
+  const m = String(text).match(/SX:([A-Za-z0-9+/=]+)/);
+  if (!m) return null;
+  try { return JSON.parse(decodeURIComponent(escape(atob(m[1])))); } catch { return null; }
+}
+
+// Printable final Samsonix DVR contract. CVV is NEVER persisted.
+function printSamsonix(f) {
+  const planLabel = SAMSONIX_PLANS[f.plan] || "";
+  const maskedCard = (f.cardNum || "").replace(/(.{4})(?=.)/g, "$1 ");
+  const today = dmy(f.savedAt ? f.savedAt.slice(0, 10) : todayISO());
+  const box = (on) => `<span style="display:inline-block;width:13px;height:13px;border:1.5px solid #222;text-align:center;line-height:12px;font-size:10px;font-weight:700;${on ? "background:#1a1a2e;color:#fff" : ""}">${on ? "✓" : ""}</span>`;
+  const fv = (l, v) => `<div style="border-bottom:1px solid #bbb;padding-bottom:3px"><div style="font-size:10px;color:#777">${l}</div><div style="font-size:13px;font-weight:600;min-height:16px">${v || ""}</div></div>`;
+  const win = window.open("", "_blank", "width=820,height=1000");
+  if (!win) { alert("אנא אפשר חלונות קופצים"); return; }
+  const signedStr = f.signedAt ? ` · נחתם: ${dmy(f.signedAt.slice(0,10))}` : "";
+  win.document.write(`<!DOCTYPE html><html dir="rtl" lang="he"><head><meta charset="utf-8"><title>Samsonix DVR – ${f.fullName || ""}</title>
+<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;direction:rtl;padding:28px 32px;color:#111;background:#fff;font-size:13px}
+.header{display:flex;justify-content:space-between;border-bottom:2px solid #1a1a2e;padding-bottom:14px;margin-bottom:14px}
+.logo{font-size:26px;font-weight:900;color:#1a1a2e;letter-spacing:1px}.logo em{color:#e63946;font-style:normal}
+h2{text-align:center;font-size:17px;text-decoration:underline;margin:12px 0 8px;color:#1a1a2e}
+.sec{margin-bottom:14px}.sectl{font-weight:700;margin-bottom:6px;color:#1a1a2e;border-bottom:1px solid #ddd;padding-bottom:4px}
+.row{display:flex;gap:8px;margin:5px 0;font-size:12.5px;align-items:center}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 20px}
+.prod{background:#fffbe6;border:1.5px solid #d4a017;border-radius:6px;padding:8px 12px;margin:8px 0;font-weight:600}
+.sig{display:flex;justify-content:space-between;margin-top:24px}.sigline{border-top:1.5px solid #555;width:220px;text-align:center;padding-top:4px;font-size:11px;color:#555}
+@media print{.noprint{display:none}}</style></head><body>
+<div class="header"><div><div class="logo">SAMS<em>O</em>NIX</div><div style="font-size:10px;color:#666;letter-spacing:3px">DVR SECURITY</div></div><div style="font-size:12px;color:#444;text-align:left">תאריך: ${today}${signedStr}</div></div>
+<h2>טופס הזמנת שירות Samsonix DVR</h2>
+<div class="sec"><div class="sectl">פרטי הלקוח</div><div class="grid">${fv("שם מלא",f.fullName)}${fv("ת.ז.",f.idNum)}${fv("כתובת",f.address)}${fv("טלפון",f.phone)}${fv("חברה",f.company)}${fv("ח.פ./עוסק",f.bizNum)}</div></div>
+<div class="sec"><div class="sectl">המסלול הנבחר</div><div class="prod">${planLabel}</div><div class="row">${box(f.audio==="with")} כולל אודיו &nbsp;&nbsp; ${box(!!f.bsd)} ב.ס.ד</div></div>
+<div class="sec"><div class="sectl">פרטי הרכב/ים</div><div class="grid">${fv("רכב 1",f.veh1)}${fv("סוג רכב 1",f.veh1Type)}${fv("רכב 2",f.veh2)}${fv("סוג רכב 2",f.veh2Type)}</div></div>
+${(f.cardNum||f.expiry)?`<div class="sec"><div class="sectl">פרטי תשלום</div><div class="grid">${fv("מספר כרטיס",maskedCard)}${fv("תוקף",f.expiry)}</div><div style="font-size:10px;color:#2d7a2d;margin-top:6px">🔒 קוד האבטחה (CVV) אינו נשמר במערכת.</div></div>`:""}
+<div class="sig"><div class="sigline">חתימת הלקוח</div><div class="sigline">חתימת נציג</div></div>
+<div class="noprint" style="text-align:center;margin-top:24px"><button onclick="window.print()" style="padding:10px 28px;font-size:14px;background:#1a1a2e;color:#fff;border:0;border-radius:6px;cursor:pointer">הדפסה / שמירה כ-PDF</button></div>
+</body></html>`);
+  win.document.close();
+}
+
+function Samsonix({ onBack, showToast }) {
+  const [forms, setForms] = useState(null);
+  const [num, setNum] = useState("");
+  const [open, setOpen] = useState(false);
+  const [edit, setEdit] = useState(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importText, setImportText] = useState("");
+  const [importErr, setImportErr] = useState("");
+
+  useEffect(() => {
+    loadArr("hg2:samsonix").then(setForms);
+    store.get("hg2:wanumber").then((r) => setNum(r && r.value ? JSON.parse(r.value) : DEFAULT_WA_NUMBER)).catch(() => setNum(DEFAULT_WA_NUMBER));
+  }, []);
+
+  const persist = (a) => { setForms(a); saveArr("hg2:samsonix", a); };
+  const save = (data) => {
+    if (edit) persist(forms.map((x) => x.id === edit.id ? { ...edit, ...data } : x));
+    else persist([{ ...data, id: uid(), savedAt: new Date().toISOString(), status: "טיוטה" }, ...(forms || [])]);
+    setOpen(false); setEdit(null); showToast("הטופס נשמר");
+  };
+  const remove = async (f) => { if (!(await askConfirm("למחוק טופס?"))) return; persist(forms.filter((x) => x.id !== f.id)); };
+  const setStatus = (f, status) => persist(forms.map((x) => x.id === f.id ? { ...x, status } : x));
+  const cycleStatus = (f) => { const i = SX_STATUS.indexOf(f.status); setStatus(f, SX_STATUS[(i + 1) % SX_STATUS.length]); };
+
+  // Generate the interactive customer HTML file + open WhatsApp to send it
+  const sendToCustomer = (f) => {
+    if (!f.phone) { showToast("אין מספר טלפון ללקוח בטופס", "warn"); return; }
+    downloadCustomerForm(f, num);
+    const msg = `שלום ${f.fullName || ""},\nמצורף קובץ טופס הזמנת שירות Samsonix DVR.\nפתח/י את הקובץ בדפדפן, מלא/י את הפרטים ולחץ/י "שלח".`;
+    window.open(waLink(f.phone, msg), "_blank");
+    if (f.status === "טיוטה") setStatus(f, "נשלח ללקוח");
+    showToast("קובץ הטופס הורד · נפתח וואטסאפ ללקוח");
+  };
+
+  // Parse the customer's SX:{base64} reply from WhatsApp
+  const handleImport = () => {
+    setImportErr("");
+    const parsed = parseSXResponse(importText);
+    if (!parsed) { setImportErr("לא נמצא קוד SX תקין. ודא שהעתקת את ההודעה המלאה."); return; }
+    const match = (forms || []).find((x) => x.id === parsed.formId);
+    const merged = match
+      ? { ...match, ...parsed, status: "התקבל תשובה" }
+      : { id: uid(), savedAt: new Date().toISOString(), status: "התקבל תשובה", plan: "4gb", audio: "none", bsd: false, fullName: "", phone: "", ...parsed };
+    persist((forms || []).map((x) => (x.id === merged.id ? merged : x)).concat(match ? [] : [merged]));
+    setImportOpen(false); setImportText(""); setImportErr("");
+    showToast(match ? `עודכן: ${match.fullName}` : "טופס חדש נוצר מהתשובה");
+  };
+
+  const counts = useMemo(() => {
+    const c = { sent: 0, received: 0, done: 0 };
+    (forms || []).forEach((f) => {
+      if (f.status === "נשלח ללקוח") c.sent++;
+      if (f.status === "התקבל תשובה") c.received++;
+      if (f.status === "הושלם") c.done++;
+    });
+    return c;
+  }, [forms]);
+
+  return (
+    <div className="hg2-flow">
+      <FlowHead title="טפסי Samsonix DVR" sub="שליחה ללקוח · קבלת תשובה · הפקת מסמך" onBack={onBack} />
+      <div className="hg2-stats" style={{ gridTemplateColumns: "1fr 1fr 1fr 1fr" }}>
+        <div className="hg2-stat"><span>סה״כ</span><b>{forms ? forms.length : 0}</b></div>
+        <div className="hg2-stat"><span>נשלחו</span><b style={{ color: "var(--amber)" }}>{counts.sent}</b></div>
+        <div className="hg2-stat"><span>התקבלו</span><b className="cy">{counts.received}</b></div>
+        <div className="hg2-stat"><span>הושלמו</span><b className="paid">{counts.done}</b></div>
+      </div>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+        <button className="hg2-mini" style={{ flex: 1 }} onClick={() => { setEdit(null); setOpen(true); }}><Plus size={14} /> טופס חדש ללקוח</button>
+        <button className="hg2-mini" style={{ flex: 1, background: "rgba(63,214,200,.15)", color: "var(--cyan)" }} onClick={() => setImportOpen(true)}><Download size={14} /> ייבא תשובת לקוח</button>
+      </div>
+
+      {forms === null ? <div className="hg2-busy">טוען…</div> : (
+        <div className="hg2-list">
+          {forms.length === 0 && (
+            <div className="hg2-empty">
+              <ClipboardList size={32} />
+              <div>אין טפסים עדיין</div>
+              <p>צור טופס → שלח ללקוח → לקוח ממלא ושולח חזרה → ייבא תשובה → הפק מסמך</p>
+            </div>
+          )}
+          {forms.map((f) => (
+            <div className="hg2-crow" key={f.id}>
+              <div className="hg2-crow-thumb"><ClipboardList size={18} /></div>
+              <div className="hg2-crow-mid">
+                <b>{f.fullName || "ללא שם"}</b>
+                <span>{[f.phone, f.plan ? f.plan.toUpperCase() : ""].filter(Boolean).join(" · ")}{f.veh1 ? ` · ${f.veh1}` : ""}</span>
+              </div>
+              <div className="hg2-inv-right">
+                <span className="hg2-crow-rev" style={{ fontSize: 11 }}>{dmy((f.savedAt || "").slice(0, 10))}</span>
+                <button className={`hg2-statuspill ${SX_COLOR[f.status] || ""}`} onClick={() => cycleStatus(f)}>{f.status}</button>
+              </div>
+              <div className="hg2-crow-acts">
+                <button className="hg2-wa" onClick={() => sendToCustomer(f)} title="שלח טופס ללקוח"><MessageSquare size={16} /></button>
+                <button className="hg2-icbtn2" onClick={() => printSamsonix(f)} title="הדפס מסמך סופי"><Download size={14} /></button>
+                <button className="hg2-icbtn2" onClick={() => { setEdit(f); setOpen(true); }} title="עריכה"><Pencil size={14} /></button>
+                <button className="hg2-icbtn2 d" onClick={() => remove(f)} title="מחק"><Trash2 size={14} /></button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* New form modal — admin fills only basic details */}
+      {open && <SamsonixModal initial={edit} onClose={() => { setOpen(false); setEdit(null); }} onSave={save} />}
+
+      {/* Import customer response dialog */}
+      {importOpen && (
+        <div className="hg2-overlay" onClick={() => setImportOpen(false)}>
+          <div className="hg2-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 440 }}>
+            <div className="hg2-modal-head"><h3>ייבוא תשובת לקוח</h3><button onClick={() => setImportOpen(false)}><X size={18} /></button></div>
+            <div className="hg2-form">
+              <p style={{ fontSize: 13, color: "#aaa", lineHeight: 1.6, marginBottom: 12 }}>
+                העתק את הודעת הוואטסאפ שקיבלת מהלקוח (ההודעה מתחילה ב-<code style={{ color: "var(--cyan)" }}>SX:</code>) והדבק כאן:
+              </p>
+              <textarea
+                value={importText}
+                onChange={(e) => { setImportText(e.target.value); setImportErr(""); }}
+                rows={5}
+                placeholder={"SX:eyJmb3JtSWQiOi..."}
+                style={{ width: "100%", background: "#1e1e30", border: "1px solid #2a2a3e", borderRadius: 7, padding: "10px 12px", color: "#fff", fontSize: 13, fontFamily: "monospace", direction: "ltr", resize: "vertical" }}
+              />
+              {importErr && <div style={{ color: "#e63946", fontSize: 12, marginTop: 6 }}>{importErr}</div>}
+            </div>
+            <div className="hg2-modal-foot">
+              <button className="hg2-btn ghost" onClick={() => setImportOpen(false)}>ביטול</button>
+              <button className="hg2-btn primary" onClick={handleImport} disabled={!importText.trim()}>ייבא ועדכן</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Admin-only modal: only the fields the admin knows before sending to customer.
+// Vehicle details, ID, address are filled by the customer in the HTML form.
+function SamsonixModal({ initial, onClose, onSave }) {
+  const [f, setF] = useState(initial || {
+    fullName: "", phone: "", company: "", bizNum: "",
+    plan: "4gb", audio: "none", bsd: false, notes: "",
+  });
+  const up = (k, v) => setF({ ...f, [k]: v });
+  return (
+    <div className="hg2-overlay" onClick={onClose}>
+      <div className="hg2-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="hg2-modal-head">
+          <h3>{initial ? "עריכת פרטי טופס" : "טופס Samsonix חדש"}</h3>
+          <button onClick={onClose}><X size={18} /></button>
+        </div>
+        <p style={{ fontSize: 12, color: "#888", padding: "0 16px 12px", lineHeight: 1.6 }}>
+          מלא את הפרטים הבסיסיים. לאחר שמירה — לחץ על כפתור הוואטסאפ בשורת הטופס כדי לשלוח ללקוח קובץ HTML למילוי.
+        </p>
+        <div className="hg2-form">
+          <Field icon={User} label="שם מלא הלקוח *"><input value={f.fullName} onChange={(e) => up("fullName", e.target.value)} placeholder="שם הלקוח" /></Field>
+          <Field icon={Phone} label="טלפון *"><input value={f.phone} onChange={(e) => up("phone", e.target.value)} dir="ltr" style={{ textAlign: "right" }} placeholder="05X-XXXXXXX" /></Field>
+          <div className="hg2-row2">
+            <Field icon={Building2} label="חברה"><input value={f.company} onChange={(e) => up("company", e.target.value)} /></Field>
+            <Field icon={Hash} label="ח.פ./עוסק"><input value={f.bizNum} onChange={(e) => up("bizNum", e.target.value)} dir="ltr" style={{ textAlign: "right" }} /></Field>
+          </div>
+          <div className="hg2-field"><div className="hg2-flabel"><Tag size={15} /> מסלול</div>
+            <div className="hg2-seg">
+              <button className={f.plan === "2gb" ? "on" : ""} onClick={() => up("plan", "2gb")}>2GB</button>
+              <button className={f.plan === "4gb" ? "on" : ""} onClick={() => up("plan", "4gb")}>4GB</button>
+              <button className={f.plan === "10gb" ? "on" : ""} onClick={() => up("plan", "10gb")}>10GB</button>
+            </div>
+          </div>
+          <div className="hg2-row2">
+            <div className="hg2-field"><div className="hg2-flabel">אודיו</div>
+              <div className="hg2-seg"><button className={f.audio === "none" ? "on" : ""} onClick={() => up("audio", "none")}>ללא</button><button className={f.audio === "with" ? "on" : ""} onClick={() => up("audio", "with")}>כולל</button></div>
+            </div>
+            <div className="hg2-field"><div className="hg2-flabel">ב.ס.ד</div>
+              <div className="hg2-seg"><button className={!f.bsd ? "on" : ""} onClick={() => up("bsd", false)}>לא</button><button className={f.bsd ? "on" : ""} onClick={() => up("bsd", true)}>כן</button></div>
+            </div>
+          </div>
+          <Field icon={FileText} label="הערות פנימיות"><input value={f.notes || ""} onChange={(e) => up("notes", e.target.value)} placeholder="לא גלוי ללקוח" /></Field>
+        </div>
+        <div className="hg2-modal-foot">
+          <button className="hg2-btn ghost" onClick={onClose}>ביטול</button>
+          <button className="hg2-btn primary" onClick={() => f.fullName.trim() && f.phone.trim() && onSave({ ...f, fullName: f.fullName.trim() })}>שמור ← שלח ללקוח</button>
+        </div>
       </div>
     </div>
   );
