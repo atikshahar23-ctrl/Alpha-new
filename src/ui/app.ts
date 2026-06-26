@@ -184,6 +184,7 @@ export function mountApp(root: HTMLElement) {
       </div>
       <div class="stage" id="stage"></div>
       <canvas id="charSwapFx" class="char-swap-fx"></canvas>
+      <canvas id="attackFx" class="attack-fx"></canvas>
 
       <div id="charRotPanel" class="char-rot-panel" hidden>
         <div class="crp-title" id="crpTitle">כיוון דמות</div>
@@ -706,7 +707,7 @@ export function mountApp(root: HTMLElement) {
   try {
     orb = mountOrb($('stage'));
   } catch {
-    orb = { setEnergy() {}, pikaEmote() {}, dispose() {}, startBodyDetection() {}, stopBodyDetection() {}, setCharacter() {}, throwPokeball(_o, d) { d && d(); }, setCharacterTransform() {}, getCharacterTransform() { return { x: 0, y: 0, z: 0, s: 1, px: 0, py: 0, pz: 0 }; }, resetCharacterTransform() {}, pinCharacterTransform() {}, hasPinnedTransform() { return false; } };
+    orb = { setEnergy() {}, pikaEmote() {}, dispose() {}, startBodyDetection() {}, stopBodyDetection() {}, setCharacter() {}, throwPokeball(_o, d) { d && d(); }, setCharacterTransform() {}, getCharacterTransform() { return { x: 0, y: 0, z: 0, s: 1, px: 0, py: 0, pz: 0 }; }, resetCharacterTransform() {}, pinCharacterTransform() {}, hasPinnedTransform() { return false; }, attackCharacter(_c: HTMLCanvasElement) {} };
   }
 
   // When Pikachu chirps, trigger a brief energy burst in the 3D orb
@@ -1529,6 +1530,21 @@ export function mountApp(root: HTMLElement) {
     document.getElementById('gesturePanelClose')!.onclick = () => {
       (window as any).__stopGestureRaf?.(); stopGesture();
     };
+  }
+
+  // Tap/click the orb stage to trigger the active Pokemon's attack
+  {
+    let attackCooldown = false;
+    document.getElementById('stage')!.addEventListener('click', () => {
+      if (attackCooldown) return;
+      attackCooldown = true;
+      const canvas = $<HTMLCanvasElement>('attackFx');
+      const rect = document.getElementById('stage')!.getBoundingClientRect();
+      canvas.style.width = rect.width + 'px';
+      canvas.style.height = rect.height + 'px';
+      orb.attackCharacter(canvas);
+      setTimeout(() => { attackCooldown = false; }, 1800);
+    });
   }
 
   // HeavyGuard OS

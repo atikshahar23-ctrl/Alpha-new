@@ -24,6 +24,7 @@ export interface OrbHandle {
   resetCharacterTransform(): void;
   pinCharacterTransform(): void;
   hasPinnedTransform(): boolean;
+  attackCharacter(canvas: HTMLCanvasElement): void;
 }
 
 // ============================================================
@@ -1391,6 +1392,36 @@ const POKEMON_PFX: Record<string, PFXCfg> = {
   'ho-oh':    { color: 0xff9922, count: 38, size: 0.05, speed: 0.013, upward: true  },
 };
 
+type AttackType = 'electric' | 'fire' | 'water' | 'grass' | 'psychic' | 'ice' | 'normal';
+
+const POKEMON_ATTACK_TYPE: Record<string, AttackType> = {
+  pikachu:    'electric',
+  charmander: 'fire',
+  squirtle:   'water',
+  meowth:     'normal',
+  bulbasaur:  'grass',
+  eevee:      'normal',
+  mewtwo:     'psychic',
+  articuno:   'ice',
+  suicune:    'water',
+  raikou:     'electric',
+  entei:      'fire',
+  moltres:    'fire',
+  zapdos:     'electric',
+  lugia:      'psychic',
+  'ho-oh':    'fire',
+};
+
+const ATTACK_COLORS: Record<AttackType, [number,number,number]> = {
+  electric: [255, 238, 34],
+  fire:     [255, 88, 20],
+  water:    [50, 180, 255],
+  grass:    [70, 210, 60],
+  psychic:  [210, 60, 255],
+  ice:      [160, 230, 255],
+  normal:   [220, 190, 80],
+};
+
 interface PFXState { pts: THREE.Points; pos: Float32Array; vel: Float32Array; count: number; }
 
 function createParticles(scene: THREE.Scene, name: string, isMobile: boolean): PFXState | null {
@@ -1460,6 +1491,318 @@ function applyAccentToMats(mats: AccentMat[], hex: number) {
     a.mat.color.setHSL(thsl.h, Math.min(1, a.baseS * 0.4 + thsl.s * 0.6), a.baseL);
   }
 }
+function flashAttack(model: THREE.Object3D, type: AttackType): void {
+  const [r, g, b] = ATTACK_COLORS[type];
+  const typeColor = new THREE.Color(r/255, g/255, b/255);
+  const mats: { m: any; oe: THREE.Color; oi: number }[] = [];
+  model.traverse((o: any) => {
+    if (!o.isMesh) return;
+    const ms = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
+    for (const m of ms) {
+      if (m && m.emissive) {
+        mats.push({ m, oe: m.emissive.clone(), oi: m.emissiveIntensity ?? 1 });
+        m.emissive.copy(typeColor);
+        m.emissiveIntensity = 2.2;
+      }
+    }
+  });
+  if (!mats.length) return;
+  const start = performance.now();
+  const dur = 500;
+  function step(now: number) {
+    const t = Math.min(1, (now - start) / dur);
+    for (const e of mats) {
+      e.m.emissive.copy(typeColor).lerp(e.oe, t);
+      e.m.emissiveIntensity = 2.2 * (1 - t) + e.oi * t;
+    }
+    if (t < 1) requestAnimationFrame(step);
+    else for (const e of mats) { e.m.emissive.copy(e.oe); e.m.emissiveIntensity = e.oi; }
+  }
+  requestAnimationFrame(step);
+}
+
+function runAttackFx(canvas: HTMLCanvasElement, charName: string): void {
+  const type: AttackType = POKEMON_ATTACK_TYPE[charName] || 'normal';
+  const [cr, cg, cb] = ATTACK_COLORS[type];
+  const ctxMaybe = canvas.getContext('2d');
+  if (!ctxMaybe) return;
+  const ctx: CanvasRenderingContext2D = ctxMaybe;
+
+  const W = canvas.width, H = canvas.height;
+  const CX = W / 2, CY = H * 0.44;
+  const R = Math.min(W, H) * 0.36;
+  const t0 = performance.now();
+  const DUR = 1500;
+
+  // Cancel any previous attack animation
+  if ((canvas as any).__atkRaf) { cancelAnimationFrame((canvas as any).__atkRaf); (canvas as any).__atkRaf = 0; }
+
+  // Pre-generate particles
+  interface P { x: number; y: number; vx: number; vy: number; r: number; a: number; life: number; }
+  const particles: P[] = [];
+  const COUNT = type === 'normal' ? 14 : 24;
+  for (let i = 0; i < COUNT; i++) {
+    const ang = (i / COUNT) * Math.PI * 2 + Math.random() * 0.4;
+    const spd = (R * 0.006) * (0.5 + Math.random());
+    particles.push({
+      x: CX + (Math.random() - 0.5) * R * 0.2,
+      y: CY + (Math.random() - 0.5) * R * 0.2,
+      vx: Math.cos(ang) * spd,
+      vy: Math.sin(ang) * spd + (type === 'fire' ? -spd * 1.2 : 0),
+      r: 3 + Math.random() * 5,
+      a: ang,
+      life: Math.random() * 0.4,
+    });
+  }
+
+  // Lightning bolt zigzag paths
+  interface Bolt { pts: [number,number][]; }
+  const bolts: Bolt[] = [];
+  if (type === 'electric') {
+    for (let b = 0; b < 5; b++) {
+      const startAng = (b / 5) * Math.PI * 2;
+      const pts: [number,number][] = [];
+      const steps = 7;
+      for (let s = 0; s <= steps; s++) {
+        const f = s / steps;
+        const jitter = (1 - f) * R * 0.35;
+        pts.push([
+          CX + Math.cos(startAng) * R * 1.5 * (1 - f) + (Math.random() - 0.5) * jitter,
+          CY + Math.sin(startAng) * R * 1.5 * (1 - f) + (Math.random() - 0.5) * jitter,
+        ]);
+      }
+      bolts.push({ pts });
+    }
+  }
+
+  // Ice shard directions
+  const shardAngles: number[] = [];
+  if (type === 'ice') {
+    for (let i = 0; i < 8; i++) shardAngles.push((i / 8) * Math.PI * 2);
+  }
+
+  // Leaf rotations for grass
+  const leafRots: number[] = [];
+  if (type === 'grass') {
+    for (let i = 0; i < 12; i++) leafRots.push(Math.random() * Math.PI * 2);
+  }
+
+  function frame(now: number) {
+    const t = Math.min(1, (now - t0) / DUR);
+    ctx.clearRect(0, 0, W, H);
+    const fade = t > 0.7 ? (1 - t) / 0.3 : 1;
+
+    // Update particle physics
+    for (const p of particles) {
+      p.life += 0.018;
+      if (p.life > 1) { p.life -= 1; p.x = CX + (Math.random()-0.5)*R*0.3; p.y = CY + (Math.random()-0.5)*R*0.3; }
+      if (t > 0.05) { p.x += p.vx; p.y += p.vy; }
+      if (type === 'water') p.vy += 0.15;
+      if (type === 'fire')  p.vy += 0.04;
+    }
+
+    // ELECTRIC
+    if (type === 'electric') {
+      // Center glow
+      const g0 = ctx.createRadialGradient(CX, CY, 0, CX, CY, R * 0.6);
+      g0.addColorStop(0, `rgba(${cr},${cg},${cb},${0.4 * fade})`);
+      g0.addColorStop(1, 'rgba(255,238,34,0)');
+      ctx.fillStyle = g0; ctx.beginPath(); ctx.arc(CX, CY, R * 0.6, 0, Math.PI*2); ctx.fill();
+
+      // Bolts — show in first 60% of animation
+      if (t < 0.6) {
+        const bAlpha = t < 0.1 ? t/0.1 : t > 0.4 ? (0.6-t)/0.2 : 1;
+        for (const bolt of bolts) {
+          ctx.shadowColor = `rgb(${cr},${cg},${cb})`; ctx.shadowBlur = 12;
+          ctx.strokeStyle = `rgba(255,255,255,${bAlpha * fade})`; ctx.lineWidth = 2.5;
+          ctx.beginPath(); ctx.moveTo(bolt.pts[0][0], bolt.pts[0][1]);
+          for (let i = 1; i < bolt.pts.length; i++) ctx.lineTo(bolt.pts[i][0], bolt.pts[i][1]);
+          ctx.stroke();
+          ctx.strokeStyle = `rgba(${cr},${cg},${cb},${0.5 * bAlpha * fade})`; ctx.lineWidth = 6;
+          ctx.beginPath(); ctx.moveTo(bolt.pts[0][0], bolt.pts[0][1]);
+          for (let i = 1; i < bolt.pts.length; i++) ctx.lineTo(bolt.pts[i][0], bolt.pts[i][1]);
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+        }
+      }
+      // Sparks
+      for (const p of particles) {
+        const a = Math.max(0, 1 - p.life) * fade;
+        ctx.fillStyle = `rgba(${cr},${cg},${cb},${a})`;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (1 - p.life * 0.6), 0, Math.PI*2); ctx.fill();
+      }
+    }
+
+    // FIRE
+    else if (type === 'fire') {
+      const burst = R * t * 1.3;
+      const g1 = ctx.createRadialGradient(CX, CY, 0, CX, CY, burst);
+      g1.addColorStop(0, `rgba(255,240,200,${0.9*fade})`);
+      g1.addColorStop(0.35, `rgba(${cr},${cg},${cb},${0.7*fade})`);
+      g1.addColorStop(0.7, `rgba(200,40,0,${0.3*fade})`);
+      g1.addColorStop(1, 'rgba(200,40,0,0)');
+      ctx.fillStyle = g1; ctx.beginPath(); ctx.arc(CX, CY, burst, 0, Math.PI*2); ctx.fill();
+      for (const p of particles) {
+        const a = Math.max(0, 1 - p.life * 1.2) * fade;
+        if (a <= 0) continue;
+        const frac = p.life;
+        const col = `rgba(${Math.round(255-frac*120)},${Math.round(cg*(1-frac*0.7))},${Math.round(frac<0.3?40:0)},${a})`;
+        ctx.fillStyle = col;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (1 - frac * 0.5), 0, Math.PI*2); ctx.fill();
+      }
+    }
+
+    // WATER
+    else if (type === 'water') {
+      for (let ring = 0; ring < 3; ring++) {
+        const rt = Math.max(0, t - ring * 0.2);
+        if (rt <= 0) continue;
+        const rad = R * rt * 1.6;
+        const rAlpha = rt < 0.3 ? rt/0.3 : (1 - rt) * fade;
+        ctx.strokeStyle = `rgba(${cr},${cg},${cb},${rAlpha * 0.8})`;
+        ctx.lineWidth = 3 - ring;
+        ctx.shadowColor = `rgba(${cr},${cg},${cb},0.6)`;
+        ctx.shadowBlur = 8;
+        ctx.beginPath(); ctx.arc(CX, CY, rad, 0, Math.PI*2); ctx.stroke();
+        ctx.shadowBlur = 0;
+      }
+      for (const p of particles) {
+        const a = Math.max(0, 1 - p.life) * fade;
+        ctx.fillStyle = `rgba(${cr},${cg},${cb},${a * 0.7})`;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r * 0.7, 0, Math.PI*2); ctx.fill();
+      }
+    }
+
+    // GRASS
+    else if (type === 'grass') {
+      const g2 = ctx.createRadialGradient(CX, CY, 0, CX, CY, R * 0.5);
+      g2.addColorStop(0, `rgba(${cr},${cg},${cb},${0.3*fade})`);
+      g2.addColorStop(1, 'rgba(70,210,60,0)');
+      ctx.fillStyle = g2; ctx.beginPath(); ctx.arc(CX, CY, R * 0.5, 0, Math.PI*2); ctx.fill();
+      leafRots.forEach((baseRot, i) => {
+        const ang = (i / leafRots.length) * Math.PI * 2;
+        const dist = R * 0.2 + R * t * 1.1;
+        const lx = CX + Math.cos(ang) * dist;
+        const ly = CY + Math.sin(ang) * dist;
+        const a = t < 0.7 ? Math.min(1, t/0.2) * fade : (1-t)/0.3 * fade;
+        ctx.save();
+        ctx.translate(lx, ly);
+        ctx.rotate(baseRot + t * Math.PI * 1.5);
+        ctx.fillStyle = `rgba(${cr},${cg},${cb},${a * 0.85})`;
+        ctx.beginPath();
+        ctx.moveTo(0, -(12 + R*0.025));
+        ctx.bezierCurveTo(8, -4, 8, 4, 0, 12 + R*0.025);
+        ctx.bezierCurveTo(-8, 4, -8, -4, 0, -(12 + R*0.025));
+        ctx.fill();
+        ctx.restore();
+      });
+    }
+
+    // PSYCHIC
+    else if (type === 'psychic') {
+      for (let ring = 0; ring < 2; ring++) {
+        const rt = Math.max(0, t - ring * 0.15);
+        const rad = R * 0.3 + R * rt * 1.2;
+        const rAlpha = (rt < 0.3 ? rt/0.3 : (1-rt)) * fade;
+        ctx.save();
+        ctx.translate(CX, CY); ctx.rotate(rt * Math.PI * (ring === 0 ? 2 : -1.5));
+        ctx.strokeStyle = `rgba(${cr},${cg},${cb},${rAlpha * 0.9})`;
+        ctx.lineWidth = 2.5; ctx.setLineDash([8, 6]);
+        ctx.shadowColor = `rgba(${cr},${cg},${cb},0.8)`;
+        ctx.shadowBlur = 14;
+        ctx.beginPath(); ctx.arc(0, 0, rad, 0, Math.PI*2); ctx.stroke();
+        ctx.shadowBlur = 0; ctx.setLineDash([]);
+        ctx.restore();
+      }
+      for (const p of particles) {
+        const orbitR = R * 0.7 * (1 - p.life * 0.4);
+        const ox = CX + Math.cos(p.a + t * Math.PI * 3) * orbitR;
+        const oy = CY + Math.sin(p.a + t * Math.PI * 3) * orbitR;
+        const a = Math.max(0, 1 - p.life * 1.5) * fade;
+        ctx.fillStyle = `rgba(${cr},${cg},${cb},${a * 0.8})`;
+        ctx.beginPath(); ctx.arc(ox, oy, p.r * 0.6, 0, Math.PI*2); ctx.fill();
+      }
+      const g3 = ctx.createRadialGradient(CX, CY, 0, CX, CY, R * 0.45);
+      g3.addColorStop(0, `rgba(255,200,255,${0.35*fade})`);
+      g3.addColorStop(1, 'rgba(210,60,255,0)');
+      ctx.fillStyle = g3; ctx.beginPath(); ctx.arc(CX, CY, R * 0.45, 0, Math.PI*2); ctx.fill();
+    }
+
+    // ICE
+    else if (type === 'ice') {
+      // Snowflake at center
+      const sfAlpha = (t < 0.4 ? t/0.4 : (1-t)/0.6) * fade;
+      for (let arm = 0; arm < 6; arm++) {
+        const ang = (arm / 6) * Math.PI * 2 + t * 0.5;
+        ctx.strokeStyle = `rgba(${cr},${cg},${cb},${sfAlpha * 0.9})`;
+        ctx.lineWidth = 2;
+        ctx.shadowColor = `rgba(${cr},${cg},${cb},0.7)`; ctx.shadowBlur = 8;
+        ctx.beginPath();
+        ctx.moveTo(CX, CY);
+        ctx.lineTo(CX + Math.cos(ang) * R * 0.4, CY + Math.sin(ang) * R * 0.4);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      }
+      // Crystal shards flying out
+      for (let s = 0; s < 8; s++) {
+        const sang = shardAngles[s] + t * 0.3;
+        const dist = R * 0.3 + R * t * 1.3;
+        const sx = CX + Math.cos(sang) * dist;
+        const sy = CY + Math.sin(sang) * dist;
+        const sAlpha = (t < 0.6 ? 1 : (1-t)/0.4) * fade;
+        ctx.save();
+        ctx.translate(sx, sy); ctx.rotate(sang + Math.PI/2);
+        ctx.fillStyle = `rgba(${cr},${cg},${cb},${sAlpha * 0.85})`;
+        ctx.beginPath();
+        ctx.moveTo(0, -(R*0.08)); ctx.lineTo(R*0.03, 0); ctx.lineTo(0, R*0.08); ctx.lineTo(-R*0.03, 0);
+        ctx.closePath(); ctx.fill();
+        ctx.restore();
+      }
+      for (const p of particles) {
+        const a = Math.max(0, 1 - p.life) * fade * 0.6;
+        ctx.fillStyle = `rgba(${cr},${cg},${cb},${a})`;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r * 0.5, 0, Math.PI*2); ctx.fill();
+      }
+    }
+
+    // NORMAL
+    else {
+      for (let ray = 0; ray < 8; ray++) {
+        const ang = (ray / 8) * Math.PI * 2;
+        const len = R * Math.min(1, t * 3) * 1.2;
+        const alpha = t < 0.3 ? t/0.3 : (1-t)/0.7;
+        ctx.strokeStyle = `rgba(${cr},${cg},${cb},${alpha * fade * 0.8})`;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(CX + Math.cos(ang) * R * 0.2, CY + Math.sin(ang) * R * 0.2);
+        ctx.lineTo(CX + Math.cos(ang) * len, CY + Math.sin(ang) * len);
+        ctx.stroke();
+      }
+      for (const p of particles) {
+        const a = Math.max(0, 1 - p.life * 1.4) * fade;
+        ctx.fillStyle = `rgba(${cr},${cg},${cb},${a * 0.7})`;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r * (1 - p.life * 0.5), 0, Math.PI * 2); ctx.fill();
+        // 4-pointed star
+        ctx.save();
+        ctx.translate(p.x, p.y); ctx.rotate(p.a + t * 3);
+        ctx.fillStyle = `rgba(255,255,200,${a * 0.6})`;
+        for (let sp = 0; sp < 4; sp++) {
+          const sa = (sp / 4) * Math.PI * 2;
+          ctx.beginPath();
+          ctx.moveTo(0,0); ctx.lineTo(Math.cos(sa)*p.r*1.5, Math.sin(sa)*p.r*1.5);
+          ctx.lineWidth=1.5; ctx.strokeStyle=`rgba(255,255,200,${a*0.5})`; ctx.stroke();
+        }
+        ctx.restore();
+      }
+    }
+
+    if (t < 1) (canvas as any).__atkRaf = requestAnimationFrame(frame);
+    else { ctx.clearRect(0, 0, W, H); (canvas as any).__atkRaf = 0; }
+  }
+  (canvas as any).__atkRaf = requestAnimationFrame(frame);
+}
+
 // Red-laser arrival flash: tint a freshly-loaded model bright red, then fade it
 // back to its natural colours over ~0.55s (matches the swap pokeball burst).
 function flashArrival(model: THREE.Object3D) {
@@ -2343,6 +2686,14 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     },
     hasPinnedTransform() {
       return hasPinnedXform(mobileCurrentChar);
+    },
+    attackCharacter(canvas: HTMLCanvasElement) {
+      playCry(mobileCurrentChar);
+      const type: AttackType = POKEMON_ATTACK_TYPE[mobileCurrentChar] || 'normal';
+      if (mobileCurrentModel) flashAttack(mobileCurrentModel, type);
+      canvas.width = canvas.offsetWidth || 300;
+      canvas.height = canvas.offsetHeight || 300;
+      runAttackFx(canvas, mobileCurrentChar);
     },
   };
 }
@@ -3378,6 +3729,14 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     },
     hasPinnedTransform() {
       return hasPinnedXform(deskCurrentChar);
+    },
+    attackCharacter(canvas: HTMLCanvasElement) {
+      playCry(deskCurrentChar);
+      const type: AttackType = POKEMON_ATTACK_TYPE[deskCurrentChar] || 'normal';
+      if (deskCurrentModel) flashAttack(deskCurrentModel, type);
+      canvas.width = canvas.offsetWidth || 400;
+      canvas.height = canvas.offsetHeight || 400;
+      runAttackFx(canvas, deskCurrentChar);
     },
   };
 }
