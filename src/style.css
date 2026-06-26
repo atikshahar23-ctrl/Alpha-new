@@ -245,14 +245,15 @@ body[data-char="ho-oh"] .char-ambient {
 }
 @keyframes gi-pulse{ 0%,100%{ opacity:1; transform:scale(1); } 50%{ opacity:.35; transform:scale(.7); } }
 .gi-text{ font-weight:600; }
-/* Hidden detector feed — kept in the DOM (and playing) so the hand detector
-   gets frames, but positioned off-screen so the user never sees themselves. */
+/* Hidden detector feed — kept IN the viewport (a 2px speck, near-invisible) so
+   the camera keeps producing frames. iOS Safari pauses off-screen / display:none
+   video, so we can't move it away — we shrink it to nothing instead. */
 .gp-camera-hidden{
-  position:absolute; left:-9999px; top:0; width:320px; height:240px;
-  opacity:0; pointer-events:none; overflow:hidden;
+  position:fixed; right:0; bottom:0; width:2px; height:2px;
+  opacity:0.012; pointer-events:none; overflow:hidden;
 }
 .gp-camera-hidden video,
-.gp-camera-hidden canvas{ width:320px; height:240px; }
+.gp-camera-hidden canvas{ width:2px; height:2px; object-fit:cover; }
 
 /* ── Finger-pointing laser cursor ──────────────────────────────────────── */
 .laser-cursor{
