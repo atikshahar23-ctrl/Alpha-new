@@ -2,10 +2,29 @@
    character (fire / water / hypnosis). Lightweight CSS only. */
 .char-ambient {
   position: fixed; inset: 0; pointer-events: none; z-index: 0;
-  mix-blend-mode: screen; opacity: .42;
-  background: radial-gradient(ellipse 80% 70% at 50% 45%, rgba(218,165,32,.18), transparent 70%);
+  mix-blend-mode: screen; opacity: .6;
+  background: radial-gradient(ellipse 120% 100% at 50% 42%, rgba(218,165,32,.20), transparent 78%);
   transition: background 1.1s ease, opacity 1.1s ease;
 }
+/* Per-character page-background tint — shifts the whole screen's hue to match
+   the active Pokemon (kept dark so the UI stays readable). Pairs with the
+   .char-ambient glow above for a clear, full-screen colour change on swap. */
+body { transition: background-color 1.1s ease; }
+body[data-char="pikachu"]   { background-color: #0c0a04; }
+body[data-char="charmander"]{ background-color: #140803; }
+body[data-char="squirtle"]  { background-color: #040a14; }
+body[data-char="meowth"]    { background-color: #0d0612; }
+body[data-char="bulbasaur"] { background-color: #05110a; }
+body[data-char="eevee"]     { background-color: #110b05; }
+body[data-char="mewtwo"]    { background-color: #0c0614; }
+body[data-char="articuno"]  { background-color: #04101a; }
+body[data-char="suicune"]   { background-color: #041014; }
+body[data-char="raikou"]    { background-color: #110d03; }
+body[data-char="entei"]     { background-color: #140603; }
+body[data-char="moltres"]   { background-color: #160803; }
+body[data-char="zapdos"]    { background-color: #100e02; }
+body[data-char="lugia"]     { background-color: #080d14; }
+body[data-char="ho-oh"]     { background-color: #140c03; }
 body[data-char="charmander"] .char-ambient {
   opacity: .5;
   background:

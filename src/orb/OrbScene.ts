@@ -1299,6 +1299,29 @@ const CHARACTER_FILES: Record<string, string> = {
 };
 export const CHARACTER_NAMES = Object.keys(CHARACTER_FILES);
 
+// Per-character scene background — the orb canvas is opaque and fills the whole
+// screen, so this clear colour IS the app background. Switching characters
+// recolours the entire backdrop to match the Pokemon (kept dark so the 3D model
+// and UI stay readable). Pairs with the CSS .char-ambient glow + body tint.
+const CHAR_BG: Record<string, number> = {
+  pikachu:    0x0c0a04, // electric warm
+  charmander: 0x140803, // ember red
+  squirtle:   0x04101c, // water blue
+  meowth:     0x100614, // hypnosis purple
+  bulbasaur:  0x05140c, // grass green
+  eevee:      0x140d06, // warm amber
+  mewtwo:     0x0e0618, // psychic violet
+  articuno:   0x041524, // ice blue
+  suicune:    0x04161c, // aurora teal
+  raikou:     0x141004, // electric amber
+  entei:      0x1a0703, // volcanic red
+  moltres:    0x1c0903, // fire orange
+  zapdos:     0x161202, // lightning yellow
+  lugia:      0x081020, // deep-sea silver
+  'ho-oh':    0x180e03, // sacred gold
+};
+function charBg(name: string): number { return CHAR_BG[name] ?? 0x0a0806; }
+
 // CharXform — full per-character transform: rotation (radians), scale multiplier,
 // and position offset relative to auto-centered position. Exported via OrbHandle.
 const CHAR_XFORM_LS_KEY = 'char_xform_v1';
@@ -1526,7 +1549,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     failIfMajorPerformanceCaveat: false,
   });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-  renderer.setClearColor(0x0a0806, 1);
+  renderer.setClearColor(charBg("pikachu"), 1);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.65;
   container.appendChild(renderer.domElement);
@@ -2054,6 +2077,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     stopBodyDetection() {},
     setCharacter(name: string) {
       mobileCurrentChar = name;
+      renderer.setClearColor(charBg(name), 1);   // recolour backdrop to match Pokemon
       loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/', name, (m) => { mobileCurrentModel = m; });
     },
     throwPokeball: mobileThrowPokeball,
@@ -2098,7 +2122,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     failIfMajorPerformanceCaveat: false,
   });
   renderer.setPixelRatio(window.devicePixelRatio || 1);
-  renderer.setClearColor(0x0a0806, 1);
+  renderer.setClearColor(charBg("pikachu"), 1);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.75;
   container.appendChild(renderer.domElement);
@@ -3059,6 +3083,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     stopBodyDetection,
     setCharacter(name: string) {
       deskCurrentChar = name;
+      renderer.setClearColor(charBg(name), 1);   // recolour backdrop to match Pokemon
       loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/', name, (m) => { deskCurrentModel = m; });
     },
     throwPokeball: deskThrowPokeball,
