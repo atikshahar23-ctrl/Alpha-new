@@ -218,22 +218,6 @@ export function mountApp(root: HTMLElement) {
           <canvas id="gestureCanvas"></canvas>
           <div class="gp-status" id="gestureStatus">⏳ מאתחל מצלמה…</div>
         </div>
-        <div class="gp-instructions">
-          <div class="gp-hint">
-            <span class="gp-gesture">🖐️</span>
-            <div>
-              <b>כף יד פתוחה</b>
-              <small>החזק 1.5 שניות → שחרר פוקימון</small>
-            </div>
-          </div>
-          <div class="gp-hint">
-            <span class="gp-gesture">👍</span>
-            <div>
-              <b>אגודל למעלה</b>
-              <small>החזק 0.6 שניות → זרוק פוקה-בול!</small>
-            </div>
-          </div>
-        </div>
       </div>
 
       <aside class="left-panel" id="leftPanel">
@@ -2246,6 +2230,11 @@ export function mountApp(root: HTMLElement) {
     const cvs = $<HTMLCanvasElement>('charSwapFx');
     const stage = document.getElementById('stage');
     const ctx = cvs.getContext('2d');
+    // If the orb was dispelled (e.g. via the palm gesture) the stage is faded
+    // to opacity:0 — restore it so the pokeball fly-in AND the summoned model
+    // are visible, not just the sound and ambient colors.
+    arOrbDispelled = false;
+    stage?.classList.remove('stage-dispelled');
     if (!ctx || !stage) { setMainCharacter(nextId); return; }
     charSwapBusy = true;
     $('charSwapBtn')?.classList.add('busy');
