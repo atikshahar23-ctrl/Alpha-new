@@ -220,6 +220,13 @@ export function mountApp(root: HTMLElement) {
         <span class="gi-text" id="gestureStatus">מצלמה פעילה</span>
       </div>
 
+      <!-- Summon dock — macOS-style row of Pokéballs (image above, name below).
+           Opens on summon; the mic listens and the user picks a Pokémon by name. -->
+      <div id="summonDock" class="summon-dock" hidden>
+        <div class="sd-hint" id="summonDockHint"><span class="sd-mic">🎙️</span> אמור שם של פוקימון…</div>
+        <div class="sd-row" id="summonDockRow"></div>
+      </div>
+
       <aside class="left-panel" id="leftPanel">
         <div class="lp-brand">
           <img class="brand-logo" src="${import.meta.env.BASE_URL}heavyguard-logo.png" alt="HeavyGuard" />
@@ -1480,11 +1487,10 @@ export function mountApp(root: HTMLElement) {
           if (thumbsUpMs >= THUMBSUP_HOLD_THRESHOLD && throwCooldownMs <= 0) {
             thumbsUpMs = 0;
             throwCooldownMs = THROW_COOLDOWN;
-            gestureStatus('🔴 זרוק פוקה-בול!');
-            const charIdx = MAIN_CHARACTERS.findIndex(c => c.id === (localStorage.getItem(MAIN_CHAR_KEY) || 'pikachu'));
-            const next = MAIN_CHARACTERS[(charIdx + 1) % MAIN_CHARACTERS.length];
-            swapMainCharacterAnimated(next.id);
-            setTimeout(() => { if (gestureActive) gestureStatus('מצלמה פעילה'); }, 2000);
+            gestureStatus('🎙️ בחר פוקימון בשמו');
+            // Open the macOS-style dock and let the user pick by voice/tap.
+            (window as any).openSummonDock?.();
+            setTimeout(() => { if (gestureActive) gestureStatus('מצלמה פעילה'); }, 2500);
           }
         } else {
           palmHoldMs = 0;
@@ -2288,58 +2294,140 @@ export function mountApp(root: HTMLElement) {
   }
   (window as any).swapMainCharacterAnimated = swapMainCharacterAnimated;
 
-  // Pokemon selection menu — opens when the pokeball button is clicked.
+  // Summon dock — a macOS-style row of Pokéballs (small artwork above the ball,
+  // name below). Opens on summon; the mic listens and the user picks a Pokémon
+  // by saying its name → it arrives with the wild swap animation.
   {
-    const menu = document.getElementById('pokemonMenu') as HTMLDivElement;
-    let menuOpen = false;
+    const dock = document.getElementById('summonDock') as HTMLDivElement;
+    const row = document.getElementById('summonDockRow') as HTMLDivElement;
+    const hint = document.getElementById('summonDockHint') as HTMLDivElement;
+    let dockOpen = false;
+    let dockTimer: number | undefined;
+    let dockRec: any = null;
+    let restoreWake = false;
 
-    const POKEMON_ICONS: Record<string, string> = {
-      pikachu: '⚡', charmander: '🔥', squirtle: '💧', meowth: '🪙',
-      bulbasaur: '🌿', eevee: '🦊', mewtwo: '🔮', articuno: '❄️',
-      suicune: '🌊', raikou: '⛈️', entei: '🌋', moltres: '🔥',
-      zapdos: '⚡', lugia: '🌙', 'ho-oh': '🌈',
+    // PokeAPI National-Dex numbers → official artwork sprites (via jsdelivr).
+    const DEX: Record<string, number> = {
+      pikachu: 25, charmander: 4, squirtle: 7, meowth: 52, bulbasaur: 1,
+      eevee: 133, mewtwo: 150, articuno: 144, suicune: 245, raikou: 243,
+      entei: 244, moltres: 146, zapdos: 145, lugia: 249, 'ho-oh': 250,
     };
+    const SPRITE = (id: string) =>
+      `https://cdn.jsdelivr.net/gh/PokeAPI/sprites@master/sprites/pokemon/other/official-artwork/${DEX[id]}.png`;
 
-    function buildMenu() {
+    function buildDock() {
       const cur = localStorage.getItem(MAIN_CHAR_KEY) || 'pikachu';
-      menu.innerHTML = `
-        <div class="pm-title">בחר פוקימון</div>
-        <div class="pm-grid">
-          ${MAIN_CHARACTERS.map(c => `
-            <button class="pm-item${c.id === cur ? ' pm-active' : ''}" data-id="${c.id}">
-              <span class="pm-icon">${POKEMON_ICONS[c.id] || '✨'}</span>
-              <span class="pm-label">${c.label}</span>
-            </button>
-          `).join('')}
-        </div>`;
-      menu.querySelectorAll<HTMLButtonElement>('.pm-item').forEach(btn => {
-        btn.onclick = () => {
-          const id = btn.dataset.id!;
-          closeMenu();
-          swapMainCharacterAnimated(id);
-        };
+      row.innerHTML = MAIN_CHARACTERS.map((c, i) => `
+        <button class="sd-item${c.id === cur ? ' sd-current' : ''}" data-id="${c.id}" style="--d:${i * 0.03}s">
+          <img class="sd-img" src="${SPRITE(c.id)}" alt="${c.label}" loading="eager"
+               onerror="this.style.visibility='hidden'" />
+          <span class="sd-ball"><span class="sd-ball-btn"></span></span>
+          <span class="sd-name">${c.label}</span>
+        </button>`).join('');
+      row.querySelectorAll<HTMLButtonElement>('.sd-item').forEach(btn => {
+        btn.addEventListener('click', () => selectPokemon(btn.dataset.id!));
       });
     }
 
-    function openMenu() {
-      buildMenu();
-      menu.removeAttribute('hidden');
-      menuOpen = true;
+    // macOS dock magnification — items swell toward the cursor.
+    function magnify(clientX: number) {
+      const items = Array.from(row.querySelectorAll<HTMLElement>('.sd-item'));
+      const MAX = 150;
+      items.forEach(it => {
+        const r = it.getBoundingClientRect();
+        const c = r.left + r.width / 2;
+        const d = Math.abs(clientX - c);
+        const scale = d > MAX ? 1 : 1 + 0.55 * (1 - d / MAX);
+        it.style.setProperty('--scale', scale.toFixed(3));
+      });
     }
-    function closeMenu() {
-      menu.setAttribute('hidden', '');
-      menuOpen = false;
+    function resetMagnify() {
+      row.querySelectorAll<HTMLElement>('.sd-item').forEach(it => it.style.setProperty('--scale', '1'));
     }
+    row.addEventListener('pointermove', e => magnify(e.clientX));
+    row.addEventListener('pointerleave', resetMagnify);
+
+    function startDockVoice() {
+      const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (!SR) { hint.innerHTML = '👆 בחר פוקימון מהשורה'; return; }
+      try {
+        dockRec = new SR();
+        dockRec.lang = state.micLang === 'he' ? 'he-IL' : state.micLang === 'es' ? 'es-ES' : 'en-US';
+        dockRec.continuous = true; dockRec.interimResults = true; dockRec.maxAlternatives = 3;
+        dockRec.onresult = (e: any) => {
+          for (let i = e.resultIndex; i < e.results.length; i++) {
+            const res = e.results[i];
+            for (let a = 0; a < res.length; a++) {
+              const t = (res[a].transcript || '').toLowerCase();
+              const match = MAIN_CHARACTERS.find(c => c.words.test(t));
+              if (match) { selectPokemon(match.id); return; }
+            }
+          }
+        };
+        dockRec.onerror = () => {};
+        dockRec.start();
+      } catch {}
+    }
+    function stopDockVoice() {
+      if (dockRec) { try { dockRec.stop(); } catch {} dockRec = null; }
+    }
+
+    function summonFlash() {
+      const f = document.createElement('div');
+      f.className = 'summon-flash';
+      document.body.appendChild(f);
+      setTimeout(() => f.remove(), 750);
+    }
+
+    function openSummonDock() {
+      if (dockOpen) return;
+      buildDock();
+      resetMagnify();
+      dock.removeAttribute('hidden');
+      requestAnimationFrame(() => dock.classList.add('open'));
+      dockOpen = true;
+      hint.innerHTML = '<span class="sd-mic">🎙️</span> אמור שם של פוקימון…';
+      // Pause the assistant mic so the two speech recognitions don't fight.
+      restoreWake = voice.wakeOn;
+      if (restoreWake) voice.setWake(false);
+      startDockVoice();
+      clearTimeout(dockTimer);
+      dockTimer = window.setTimeout(() => closeSummonDock(), 14000);
+    }
+    function closeSummonDock() {
+      if (!dockOpen) return;
+      dockOpen = false;
+      clearTimeout(dockTimer);
+      stopDockVoice();
+      dock.classList.remove('open');
+      setTimeout(() => dock.setAttribute('hidden', ''), 260);
+      if (restoreWake) { restoreWake = false; setTimeout(() => voice.setWake(true), 350); }
+    }
+    function selectPokemon(id: string) {
+      if (!dockOpen) return;
+      clearTimeout(dockTimer);
+      stopDockVoice();
+      const el = row.querySelector<HTMLElement>(`.sd-item[data-id="${id}"]`);
+      el?.classList.add('sd-chosen');
+      setTimeout(() => {
+        closeSummonDock();
+        summonFlash();
+        swapMainCharacterAnimated(id);
+      }, 420);
+    }
+
+    // The thumbs-up gesture (and the pokeball button) open this dock.
+    (window as any).openSummonDock = openSummonDock;
+    (window as any).closeSummonDock = closeSummonDock;
 
     $('charSwapBtn').onclick = (e) => {
       e.stopPropagation();
-      if (menuOpen) { closeMenu(); } else { openMenu(); }
+      if (dockOpen) closeSummonDock(); else openSummonDock();
     };
-
     document.addEventListener('click', (e) => {
-      if (menuOpen && !(e.target as Element).closest('#pokemonMenu, #charSwapBtn')) closeMenu();
+      if (dockOpen && !(e.target as Element).closest('#summonDock, #charSwapBtn')) closeSummonDock();
     });
-    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && menuOpen) closeMenu(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && dockOpen) closeSummonDock(); });
   }
 
   // Character transform panel — full rotation, scale and position control per model.
