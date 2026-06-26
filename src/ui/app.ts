@@ -1,7 +1,7 @@
 import { mountOrb, type OrbHandle } from '../orb/OrbScene';
 import { mountFlowLines } from '../bg/flowLines';
 import { loadState, saveState, addEvent, addTask, saveNote, loadEvents, loadTasks, removeEvent, type AppState, type TextLang, type AIProvider, type VoiceGender, type UILang } from '../assistant/state';
-import { askAIStream, askOnce, runTags } from '../assistant/gemini';
+import { askAIStream, askOnce, askVision, runTags } from '../assistant/gemini';
 import { tryLocalCommand } from '../assistant/local';
 import { VoiceEngine } from '../assistant/voice';
 import { AudioEngine, type AmbientPreset } from '../assistant/audio';
@@ -1040,6 +1040,56 @@ export function mountApp(root: HTMLElement) {
     } catch {} finally { autoFixing = false; }
   }
 
+  // ── Live screen vision ─────────────────────────────────────────────────────
+  // Capture one frame of the user's screen (getDisplayMedia) and ask a vision
+  // model about it. Free + client-side. The capture stops immediately (single
+  // snapshot), and the frame is downscaled to keep the payload small.
+  function isScreenVisionIntent(text: string): boolean {
+    const s = text.toLowerCase();
+    return /(מה.*(על|ב).*מסך|תראה.*מסך|ראה.*(את ה)?מסך|צלם.*מסך|המסך שלי|מסתכל.*מסך)/.test(s)
+      || /(see|look at|read|analyze|check).{0,12}(my )?screen|screen ?vision|share.{0,6}screen|what'?s on (my )?screen/.test(s);
+  }
+  async function captureScreenFrame(): Promise<string | null> {
+    try {
+      const stream = await (navigator.mediaDevices as any).getDisplayMedia({ video: { frameRate: 1 }, audio: false });
+      const video = document.createElement('video');
+      video.srcObject = stream; video.muted = true;
+      await video.play().catch(() => {});
+      await new Promise(r => setTimeout(r, 350));   // let a real frame arrive
+      const w = video.videoWidth || 1280, h = video.videoHeight || 720;
+      const scale = Math.min(1, 1280 / w);
+      const cw = Math.round(w * scale), ch = Math.round(h * scale);
+      const canvas = document.createElement('canvas'); canvas.width = cw; canvas.height = ch;
+      canvas.getContext('2d')!.drawImage(video, 0, 0, cw, ch);
+      stream.getTracks().forEach((t: MediaStreamTrack) => t.stop());
+      video.srcObject = null;
+      return canvas.toDataURL('image/jpeg', 0.7);
+    } catch { return null; }
+  }
+  async function runScreenVision(text: string) {
+    if (asking) return;
+    asking = true;
+    setStatus('thinking');
+    addMsg('👁️ בקש שיתוף מסך כדי שאוכל לראות…', 'sys');
+    try {
+      const img = await captureScreenFrame();
+      if (!img) { addMsg('לא הצלחתי לגשת למסך (השיתוף בוטל או נדחה).', 'sys'); return; }
+      showTypingIndicator();
+      const q = text.trim() || 'מה אתה רואה על המסך? עזור לי בהקשר.';
+      const reply = await askVision(state, `${q}\n\nReply in the user's language, concise and actionable.`, img);
+      removeTypingIndicator();
+      if (reply) { addMsg(reply, 'al'); voice.speak(reply); }
+      else addMsg('המודל לא החזיר תיאור של המסך. נסה שוב או בדוק שספק ה-AI תומך בתמונות.', 'sys');
+    } catch (e: any) {
+      removeTypingIndicator();
+      addMsg('שגיאה בראיית המסך: ' + (e?.message || ''), 'sys');
+    } finally {
+      asking = false;
+      setStatus('');
+    }
+  }
+  (window as any).runScreenVision = runScreenVision;
+
   let typingTurn: HTMLElement | null = null;
 
   function showTypingIndicator() {
@@ -1375,6 +1425,8 @@ export function mountApp(root: HTMLElement) {
       voice.speak(localReply);
       return;
     }
+    // Live screen vision — capture the screen and let the model see it.
+    if (isScreenVisionIntent(text)) { await runScreenVision(text); return; }
     const puterReady = typeof (window as any).puter !== 'undefined';
     const canAI = puterReady || state.key || state.grokKey || state.openaiKey;
     if (!canAI) { openSetup(); return; }

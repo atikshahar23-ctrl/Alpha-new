@@ -281,6 +281,60 @@ export async function askAI(state: AppState, text: string): Promise<string> {
 
 export { askAI as askGemini };
 
+// ─── Vision: ask about an image (screen capture) ──────────────────────────
+// Sends a prompt + image (data URL) to a multimodal model. Tries the provider
+// chain; returns '' if none can answer. Grok is skipped (image support varies).
+export async function askVision(state: AppState, prompt: string, imageDataUrl: string): Promise<string> {
+  const order = [state.provider, ...PROVIDER_ORDER.filter(p => p !== state.provider)];
+  for (const provider of order) {
+    try {
+      if (provider === 'puter') {
+        const puter = (window as any).puter;
+        if (!puter?.ai?.chat) continue;
+        const r = await puter.ai.chat(
+          [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: imageDataUrl } }] }],
+          { model: 'gpt-4o-mini' },
+        );
+        const t = extractPuterText(r);
+        if (t) return t;
+      } else if (provider === 'openai') {
+        if (!state.openaiKey) continue;
+        const res = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${state.openaiKey}` },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini', max_tokens: 600,
+            messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: imageDataUrl } }] }],
+          }),
+        });
+        if (!res.ok) continue;
+        const data = await res.json();
+        const t = data.choices?.[0]?.message?.content?.trim();
+        if (t) return t;
+      } else if (provider === 'gemini') {
+        if (!state.key) continue;
+        const b64 = imageDataUrl.split(',')[1] || '';
+        const res = await fetch(
+          'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-goog-api-key': state.key },
+            body: JSON.stringify({
+              contents: [{ role: 'user', parts: [{ text: prompt }, { inline_data: { mime_type: 'image/jpeg', data: b64 } }] }],
+              generationConfig: { temperature: 0.4, maxOutputTokens: 600 },
+            }),
+          },
+        );
+        if (!res.ok) continue;
+        const data = await res.json();
+        const t = (data.candidates?.[0]?.content?.parts || []).map((p: any) => p.text || '').join('').trim();
+        if (t) return t;
+      }
+    } catch {}
+  }
+  return '';
+}
+
 // ─── One-shot, history-free call ──────────────────────────────────────────
 // A single isolated request with a custom system+user prompt that does NOT
 // touch state.history — used for background tasks like auto-fixing code. Tries
