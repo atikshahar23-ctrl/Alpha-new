@@ -5,7 +5,7 @@ import { askAIStream, runTags } from '../assistant/gemini';
 import { tryLocalCommand } from '../assistant/local';
 import { VoiceEngine } from '../assistant/voice';
 import { AudioEngine, type AmbientPreset } from '../assistant/audio';
-import { orchestrate, refreshSummary, moduleById, loadMemory, updateProfile } from '../brain';
+import { orchestrate, refreshSummary, moduleById, loadMemory, updateProfile, prepareRecall } from '../brain';
 import { type CockpitHandle } from '../modules/cockpit';
 import { runProactive } from '../modules/proactive';
 import { processRecurring } from '../modules/recurring';
@@ -1307,6 +1307,9 @@ export function mountApp(root: HTMLElement) {
     setStatus('thinking');
     showTypingIndicator();
     // Master Brain: route intent, activate module, inject long-term memory.
+    // Compute the on-device query embedding first (free, falls back silently)
+    // so recall() can score memory semantically; never blocks the AI call long.
+    try { await prepareRecall(text); } catch {}
     try {
       const r = orchestrate(text);
       updateModuleIndicator(r.module);
