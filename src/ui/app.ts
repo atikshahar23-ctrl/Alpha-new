@@ -171,11 +171,12 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v20 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v21 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
         </button>
+        <button class="chip ghost" id="charPoseBtn" title="כיוון דמות" aria-label="כיוון דמות" style="font-size:11px;padding:0 5px;">⚙</button>
         <button class="chip ghost" id="searchBtn" aria-label="Search (Ctrl+K)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
         <button class="chip ghost" id="muteBtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg></button>
         <button class="chip" id="settingsBtn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg> <span data-i18n="settings">הגדרות</span></button>
@@ -183,6 +184,14 @@ export function mountApp(root: HTMLElement) {
       </div>
       <div class="stage" id="stage"></div>
       <canvas id="charSwapFx" class="char-swap-fx"></canvas>
+
+      <div id="charRotPanel" class="char-rot-panel" hidden>
+        <div class="crp-title">כיוון דמות</div>
+        <label class="crp-row">X <input type="range" id="crpX" min="-180" max="180" step="1" value="0"><span class="crp-val" id="crpXv">0°</span></label>
+        <label class="crp-row">Y <input type="range" id="crpY" min="-180" max="180" step="1" value="0"><span class="crp-val" id="crpYv">0°</span></label>
+        <label class="crp-row">Z <input type="range" id="crpZ" min="-180" max="180" step="1" value="0"><span class="crp-val" id="crpZv">0°</span></label>
+        <button class="crp-reset" id="crpReset">איפוס לברירת מחדל</button>
+      </div>
 
       <aside class="left-panel" id="leftPanel">
         <div class="lp-brand">
@@ -655,7 +664,7 @@ export function mountApp(root: HTMLElement) {
   try {
     orb = mountOrb($('stage'));
   } catch {
-    orb = { setEnergy() {}, pikaEmote() {}, dispose() {}, startBodyDetection() {}, stopBodyDetection() {}, setCharacter() {}, throwPokeball(_o, d) { d && d(); } };
+    orb = { setEnergy() {}, pikaEmote() {}, dispose() {}, startBodyDetection() {}, stopBodyDetection() {}, setCharacter() {}, throwPokeball(_o, d) { d && d(); }, setCharacterRotation() {}, getCharacterRotation() { return { x: 0, y: 0, z: 0 }; }, resetCharacterRotation() {} };
   }
 
   // When Pikachu chirps, trigger a brief energy burst in the 3D orb
@@ -1948,6 +1957,7 @@ export function mountApp(root: HTMLElement) {
     document.body.dataset.char = ch.id;   // per-character ambient (fire/water/hypnosis)
     applyCharacterVoice(ch.id);
     orb.pikaEmote('excited');
+    (window as any).__crpSyncIfOpen?.();
     return ch.label;
   }
   (window as any).setMainCharacter = setMainCharacter;
@@ -2070,6 +2080,51 @@ export function mountApp(root: HTMLElement) {
     const next = MAIN_CHARACTERS[(idx + 1) % MAIN_CHARACTERS.length];
     swapMainCharacterAnimated(next.id);
   };
+
+  // Character rotation panel — lets the user fine-tune X/Y/Z for any model.
+  {
+    const panel = document.getElementById('charRotPanel') as HTMLDivElement;
+    const crpX = $<HTMLInputElement>('crpX');
+    const crpY = $<HTMLInputElement>('crpY');
+    const crpZ = $<HTMLInputElement>('crpZ');
+    const toRad = (d: string) => parseFloat(d) * Math.PI / 180;
+    const toDeg = (r: number) => Math.round(r * 180 / Math.PI);
+
+    function crpSync() {
+      const rot = orb.getCharacterRotation();
+      crpX.value = String(toDeg(rot.x));
+      crpY.value = String(toDeg(rot.y));
+      crpZ.value = String(toDeg(rot.z));
+      $('crpXv').textContent = crpX.value + '°';
+      $('crpYv').textContent = crpY.value + '°';
+      $('crpZv').textContent = crpZ.value + '°';
+    }
+
+    $('charPoseBtn').onclick = (e) => {
+      e.stopPropagation();
+      if (panel.hasAttribute('hidden')) { crpSync(); panel.removeAttribute('hidden'); }
+      else panel.setAttribute('hidden', '');
+    };
+    document.addEventListener('click', (e) => {
+      if (!panel.contains(e.target as Node) && e.target !== $('charPoseBtn')) panel.setAttribute('hidden', '');
+    });
+
+    [crpX, crpY, crpZ].forEach((sl, i) => {
+      sl.oninput = () => {
+        const labels = ['crpXv', 'crpYv', 'crpZv'];
+        $(labels[i]).textContent = sl.value + '°';
+        orb.setCharacterRotation(toRad(crpX.value), toRad(crpY.value), toRad(crpZ.value));
+      };
+    });
+
+    $('crpReset').onclick = () => {
+      orb.resetCharacterRotation();
+      crpSync();
+    };
+
+    // Re-sync panel values after character swap (model loads async, so delay)
+    (window as any).__crpSyncIfOpen = () => { if (!panel.hasAttribute('hidden')) setTimeout(crpSync, 1400); };
+  }
 
   // Voice/chat command → swap the MAIN assistant character (the orb avatar).
   // Returns a reply string if it handled the command, else null.

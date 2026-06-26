@@ -53,6 +53,32 @@ body[data-char="meowth"] .char-ambient {
 #charSwapBtn:hover .csb-ball{ box-shadow:0 0 10px rgba(230,56,53,.85); }
 #charSwapBtn.busy{ opacity:.5; pointer-events:none; }
 
+/* Character orientation panel — fine-tune model rotation on all three axes */
+.char-rot-panel{
+  position:fixed; top:52px; right:12px; z-index:999;
+  background:rgba(10,8,4,.92); border:1px solid rgba(218,165,32,.35);
+  border-radius:12px; padding:14px 16px 12px; min-width:240px;
+  box-shadow:0 8px 32px rgba(0,0,0,.7), 0 0 16px rgba(218,165,32,.12);
+  backdrop-filter:blur(12px); direction:rtl;
+}
+.char-rot-panel[hidden]{ display:none; }
+.crp-title{ font-size:11px; color:rgba(218,165,32,.75); letter-spacing:.08em; margin-bottom:12px; text-align:center; }
+.crp-row{
+  display:flex; align-items:center; gap:8px; margin-bottom:8px;
+  font-size:11px; color:#c8b87a; white-space:nowrap;
+}
+.crp-row input[type=range]{
+  flex:1; height:4px; accent-color:#daa520;
+  cursor:pointer; min-width:0;
+}
+.crp-val{ width:36px; text-align:left; font-variant-numeric:tabular-nums; color:#f0ebe0; }
+.crp-reset{
+  width:100%; margin-top:4px; padding:6px; border:1px solid rgba(218,165,32,.25);
+  background:transparent; color:#9a8e7a; border-radius:6px; font-size:10px;
+  cursor:pointer; transition:border-color .2s,color .2s;
+}
+.crp-reset:hover{ border-color:rgba(218,165,32,.7); color:#daa520; }
+
 :root {
   --ink: #f0ebe0;
   --dim: #9a8e7a;

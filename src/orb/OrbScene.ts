@@ -17,6 +17,9 @@ export interface OrbHandle {
   stopBodyDetection(): void;
   setCharacter(name: string): void;
   throwPokeball(onOpen?: () => void, onDone?: () => void): void;
+  setCharacterRotation(x: number, y: number, z: number): void;
+  getCharacterRotation(): { x: number; y: number; z: number };
+  resetCharacterRotation(): void;
 }
 
 // ============================================================
@@ -1282,15 +1285,49 @@ const CHARACTER_FILES: Record<string, string> = {
   meowth: 'ar-models/meowth.glb',
 };
 export const CHARACTER_NAMES = Object.keys(CHARACTER_FILES);
-// Each model's "face the user" Y-rotation differs because they came from
-// different source formats (DAE / SMD / FBX). Squirtle (SMD) faces the
-// opposite way, so it needs 0 instead of π.
-const CHARACTER_ROT: Record<string, number> = {
-  pikachu: Math.PI,
-  charmander: Math.PI,
-  squirtle: 0,
-  meowth: Math.PI,
+
+type CharRot3 = { x: number; y: number; z: number };
+
+// Per-character default orientations — differ because models come from different
+// source formats (DAE/SMD/FBX). Squirtle (SMD) needs X lifted 90° to stand upright.
+const CHARACTER_ROT_DEFAULT: Record<string, CharRot3> = {
+  pikachu:    { x: 0,           y: Math.PI, z: 0 },
+  charmander: { x: 0,           y: Math.PI, z: 0 },
+  squirtle:   { x: Math.PI / 2, y: 0,       z: 0 },
+  meowth:     { x: 0,           y: Math.PI, z: 0 },
 };
+
+const CHAR_ROT_LS_KEY = 'char_rot_v1';
+
+function getCharRot(character: string): CharRot3 {
+  try {
+    const saved = localStorage.getItem(CHAR_ROT_LS_KEY);
+    if (saved) {
+      const all = JSON.parse(saved) as Record<string, CharRot3>;
+      if (all[character]) return all[character];
+    }
+  } catch {}
+  return CHARACTER_ROT_DEFAULT[character] ?? { x: 0, y: Math.PI, z: 0 };
+}
+
+function saveCharRot(character: string, rot: CharRot3): void {
+  try {
+    const saved = localStorage.getItem(CHAR_ROT_LS_KEY);
+    const all: Record<string, CharRot3> = saved ? JSON.parse(saved) : {};
+    all[character] = rot;
+    localStorage.setItem(CHAR_ROT_LS_KEY, JSON.stringify(all));
+  } catch {}
+}
+
+function clearCharRot(character: string): void {
+  try {
+    const saved = localStorage.getItem(CHAR_ROT_LS_KEY);
+    if (!saved) return;
+    const all = JSON.parse(saved) as Record<string, CharRot3>;
+    delete all[character];
+    localStorage.setItem(CHAR_ROT_LS_KEY, JSON.stringify(all));
+  } catch {}
+}
 
 // Holds the currently-loaded swappable model per pikaGroup so we can replace it.
 const loadedModels = new WeakMap<THREE.Group, THREE.Object3D>();
@@ -1300,6 +1337,7 @@ function loadAndReplaceBody(
   mats: PikachuMaterials,
   base: string,
   character = 'pikachu',
+  onLoaded?: (model: THREE.Object3D) => void,
 ): void {
   const file = CHARACTER_FILES[character] || CHARACTER_FILES.pikachu;
   const isPikachu = character === 'pikachu';
@@ -1368,9 +1406,13 @@ function loadAndReplaceBody(
         model.scale.setScalar(s);
         // Centre on the bounding box so it sits in the middle of the orb.
         model.position.set(-bbCenter.x * s, -bbCenter.y * s, -bbCenter.z * s);
-        model.rotation.y = CHARACTER_ROT[character] ?? Math.PI;
+        const rot = getCharRot(character);
+        model.rotation.x = rot.x;
+        model.rotation.y = rot.y;
+        model.rotation.z = rot.z;
         pikaGroup.add(model);
         loadedModels.set(pikaGroup, model);
+        onLoaded?.(model);
       },
       undefined,
       (err) => console.warn(`[OrbScene] ${file} load failed:`, err),
@@ -1543,7 +1585,9 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   const pikaGroup = pika.group;
   pikaGroup.scale.setScalar(0.95);
   group.add(pikaGroup);
-  loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/');
+  let mobileCurrentChar = 'pikachu';
+  let mobileCurrentModel: THREE.Object3D | null = null;
+  loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/', 'pikachu', (m) => { mobileCurrentModel = m; });
   const mobileThrowPokeball = makeThrowPokeball(group, pikaGroup, import.meta.env.BASE_URL || '/');
 
   // ────────────────────────────────────────────
@@ -1979,9 +2023,20 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     startBodyDetection() {},
     stopBodyDetection() {},
     setCharacter(name: string) {
-      loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/', name);
+      mobileCurrentChar = name;
+      loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/', name, (m) => { mobileCurrentModel = m; });
     },
     throwPokeball: mobileThrowPokeball,
+    setCharacterRotation(x: number, y: number, z: number) {
+      if (mobileCurrentModel) { mobileCurrentModel.rotation.x = x; mobileCurrentModel.rotation.y = y; mobileCurrentModel.rotation.z = z; }
+      saveCharRot(mobileCurrentChar, { x, y, z });
+    },
+    getCharacterRotation() { return getCharRot(mobileCurrentChar); },
+    resetCharacterRotation() {
+      clearCharRot(mobileCurrentChar);
+      const def = CHARACTER_ROT_DEFAULT[mobileCurrentChar] ?? { x: 0, y: Math.PI, z: 0 };
+      if (mobileCurrentModel) { mobileCurrentModel.rotation.x = def.x; mobileCurrentModel.rotation.y = def.y; mobileCurrentModel.rotation.z = def.z; }
+    },
   };
 }
 
@@ -2093,7 +2148,9 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   const pika = buildPikachu(pikaMats, 1.0);
   const pikaGroup = pika.group;
   group.add(pikaGroup);
-  loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/');
+  let deskCurrentChar = 'pikachu';
+  let deskCurrentModel: THREE.Object3D | null = null;
+  loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/', 'pikachu', (m) => { deskCurrentModel = m; });
   const deskThrowPokeball = makeThrowPokeball(group, pikaGroup, import.meta.env.BASE_URL || '/');
 
   // ────────────────────────────────────────────
@@ -2957,8 +3014,19 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     startBodyDetection,
     stopBodyDetection,
     setCharacter(name: string) {
-      loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/', name);
+      deskCurrentChar = name;
+      loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/', name, (m) => { deskCurrentModel = m; });
     },
     throwPokeball: deskThrowPokeball,
+    setCharacterRotation(x: number, y: number, z: number) {
+      if (deskCurrentModel) { deskCurrentModel.rotation.x = x; deskCurrentModel.rotation.y = y; deskCurrentModel.rotation.z = z; }
+      saveCharRot(deskCurrentChar, { x, y, z });
+    },
+    getCharacterRotation() { return getCharRot(deskCurrentChar); },
+    resetCharacterRotation() {
+      clearCharRot(deskCurrentChar);
+      const def = CHARACTER_ROT_DEFAULT[deskCurrentChar] ?? { x: 0, y: Math.PI, z: 0 };
+      if (deskCurrentModel) { deskCurrentModel.rotation.x = def.x; deskCurrentModel.rotation.y = def.y; deskCurrentModel.rotation.z = def.z; }
+    },
   };
 }
