@@ -171,7 +171,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v24 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v26 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -186,10 +186,17 @@ export function mountApp(root: HTMLElement) {
       <canvas id="charSwapFx" class="char-swap-fx"></canvas>
 
       <div id="charRotPanel" class="char-rot-panel" hidden>
-        <div class="crp-title">כיוון דמות</div>
+        <div class="crp-title" id="crpTitle">כיוון דמות</div>
+        <div class="crp-section-label">סיבוב</div>
         <label class="crp-row">X <input type="range" id="crpX" min="-180" max="180" step="1" value="0"><span class="crp-val" id="crpXv">0°</span></label>
         <label class="crp-row">Y <input type="range" id="crpY" min="-180" max="180" step="1" value="0"><span class="crp-val" id="crpYv">0°</span></label>
         <label class="crp-row">Z <input type="range" id="crpZ" min="-180" max="180" step="1" value="0"><span class="crp-val" id="crpZv">0°</span></label>
+        <div class="crp-section-label">גודל</div>
+        <label class="crp-row">⊕ <input type="range" id="crpS" min="10" max="300" step="1" value="100"><span class="crp-val" id="crpSv">1.00×</span></label>
+        <div class="crp-section-label">מיקום</div>
+        <label class="crp-row">↔ <input type="range" id="crpPX" min="-150" max="150" step="1" value="0"><span class="crp-val" id="crpPXv">0</span></label>
+        <label class="crp-row">↕ <input type="range" id="crpPY" min="-150" max="150" step="1" value="0"><span class="crp-val" id="crpPYv">0</span></label>
+        <label class="crp-row">⊙ <input type="range" id="crpPZ" min="-150" max="150" step="1" value="0"><span class="crp-val" id="crpPZv">0</span></label>
         <button class="crp-reset" id="crpReset">איפוס לברירת מחדל</button>
       </div>
 
@@ -666,7 +673,7 @@ export function mountApp(root: HTMLElement) {
   try {
     orb = mountOrb($('stage'));
   } catch {
-    orb = { setEnergy() {}, pikaEmote() {}, dispose() {}, startBodyDetection() {}, stopBodyDetection() {}, setCharacter() {}, throwPokeball(_o, d) { d && d(); }, setCharacterRotation() {}, getCharacterRotation() { return { x: 0, y: 0, z: 0 }; }, resetCharacterRotation() {} };
+    orb = { setEnergy() {}, pikaEmote() {}, dispose() {}, startBodyDetection() {}, stopBodyDetection() {}, setCharacter() {}, throwPokeball(_o, d) { d && d(); }, setCharacterTransform() {}, getCharacterTransform() { return { x: 0, y: 0, z: 0, s: 1, px: 0, py: 0, pz: 0 }; }, resetCharacterTransform() {} };
   }
 
   // When Pikachu chirps, trigger a brief energy burst in the 3D orb
@@ -2139,23 +2146,43 @@ export function mountApp(root: HTMLElement) {
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && menuOpen) closeMenu(); });
   }
 
-  // Character rotation panel — lets the user fine-tune X/Y/Z for any model.
+  // Character transform panel — full rotation, scale and position control per model.
   {
     const panel = document.getElementById('charRotPanel') as HTMLDivElement;
-    const crpX = $<HTMLInputElement>('crpX');
-    const crpY = $<HTMLInputElement>('crpY');
-    const crpZ = $<HTMLInputElement>('crpZ');
+    const crpX  = $<HTMLInputElement>('crpX');
+    const crpY  = $<HTMLInputElement>('crpY');
+    const crpZ  = $<HTMLInputElement>('crpZ');
+    const crpS  = $<HTMLInputElement>('crpS');
+    const crpPX = $<HTMLInputElement>('crpPX');
+    const crpPY = $<HTMLInputElement>('crpPY');
+    const crpPZ = $<HTMLInputElement>('crpPZ');
     const toRad = (d: string) => parseFloat(d) * Math.PI / 180;
     const toDeg = (r: number) => Math.round(r * 180 / Math.PI);
 
     function crpSync() {
-      const rot = orb.getCharacterRotation();
-      crpX.value = String(toDeg(rot.x));
-      crpY.value = String(toDeg(rot.y));
-      crpZ.value = String(toDeg(rot.z));
-      $('crpXv').textContent = crpX.value + '°';
-      $('crpYv').textContent = crpY.value + '°';
-      $('crpZv').textContent = crpZ.value + '°';
+      const xf = orb.getCharacterTransform();
+      crpX.value  = String(toDeg(xf.x));
+      crpY.value  = String(toDeg(xf.y));
+      crpZ.value  = String(toDeg(xf.z));
+      crpS.value  = String(Math.round(xf.s * 100));
+      crpPX.value = String(Math.round(xf.px * 100));
+      crpPY.value = String(Math.round(xf.py * 100));
+      crpPZ.value = String(Math.round(xf.pz * 100));
+      $('crpXv').textContent  = crpX.value + '°';
+      $('crpYv').textContent  = crpY.value + '°';
+      $('crpZv').textContent  = crpZ.value + '°';
+      $('crpSv').textContent  = (xf.s).toFixed(2) + '×';
+      $('crpPXv').textContent = crpPX.value;
+      $('crpPYv').textContent = crpPY.value;
+      $('crpPZv').textContent = crpPZ.value;
+    }
+
+    function crpApply() {
+      orb.setCharacterTransform(
+        toRad(crpX.value), toRad(crpY.value), toRad(crpZ.value),
+        parseFloat(crpS.value) / 100,
+        parseFloat(crpPX.value) / 100, parseFloat(crpPY.value) / 100, parseFloat(crpPZ.value) / 100
+      );
     }
 
     $('charPoseBtn').onclick = (e) => {
@@ -2167,16 +2194,16 @@ export function mountApp(root: HTMLElement) {
       if (!panel.contains(e.target as Node) && e.target !== $('charPoseBtn')) panel.setAttribute('hidden', '');
     });
 
-    [crpX, crpY, crpZ].forEach((sl, i) => {
-      sl.oninput = () => {
-        const labels = ['crpXv', 'crpYv', 'crpZv'];
-        $(labels[i]).textContent = sl.value + '°';
-        orb.setCharacterRotation(toRad(crpX.value), toRad(crpY.value), toRad(crpZ.value));
-      };
-    });
+    crpX.oninput  = () => { $('crpXv').textContent  = crpX.value + '°'; crpApply(); };
+    crpY.oninput  = () => { $('crpYv').textContent  = crpY.value + '°'; crpApply(); };
+    crpZ.oninput  = () => { $('crpZv').textContent  = crpZ.value + '°'; crpApply(); };
+    crpS.oninput  = () => { $('crpSv').textContent  = (parseFloat(crpS.value)/100).toFixed(2) + '×'; crpApply(); };
+    crpPX.oninput = () => { $('crpPXv').textContent = crpPX.value; crpApply(); };
+    crpPY.oninput = () => { $('crpPYv').textContent = crpPY.value; crpApply(); };
+    crpPZ.oninput = () => { $('crpPZv').textContent = crpPZ.value; crpApply(); };
 
     $('crpReset').onclick = () => {
-      orb.resetCharacterRotation();
+      orb.resetCharacterTransform();
       crpSync();
     };
 
