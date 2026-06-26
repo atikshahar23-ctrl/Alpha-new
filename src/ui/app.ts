@@ -207,16 +207,31 @@ export function mountApp(root: HTMLElement) {
 
       <div id="pokemonMenu" class="pokemon-menu" hidden></div>
 
-      <!-- Gesture control panel — camera hand detection for Pokemon swapping -->
+      <!-- Gesture control panel — camera hand detection for Pokemon swapping.
+           The live camera feed is NOT shown; it runs hidden off-screen and only
+           feeds the hand detector. The user just sees a small guide + status. -->
       <div id="gesturePanel" class="gesture-panel" hidden>
         <div class="gp-header">
           <span class="gp-title">זיהוי תנועות ✋</span>
           <button class="gp-close" id="gesturePanelClose">✕</button>
         </div>
-        <div class="gp-camera-wrap">
+        <!-- hidden detector feed — used for detection only, never displayed -->
+        <div class="gp-camera-hidden" aria-hidden="true">
           <video id="gestureVideo" autoplay playsinline muted></video>
           <canvas id="gestureCanvas"></canvas>
-          <div class="gp-status" id="gestureStatus">⏳ מאתחל מצלמה…</div>
+        </div>
+        <div class="gp-body">
+          <div class="gp-status-line" id="gestureStatus">⏳ מאתחל מצלמה…</div>
+          <div class="gp-guide">
+            <div class="gp-hint">
+              <span class="gp-gesture">🖐️</span>
+              <div><b>כף יד פתוחה</b><small>החזק 1.5 שניות → שחרר פוקימון</small></div>
+            </div>
+            <div class="gp-hint">
+              <span class="gp-gesture">👍</span>
+              <div><b>אגודל למעלה</b><small>החזק 0.6 שניות → זמן פוקימון</small></div>
+            </div>
+          </div>
         </div>
       </div>
 

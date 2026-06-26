@@ -243,20 +243,21 @@ body[data-char="ho-oh"] .char-ambient {
   padding:2px 4px; border-radius:4px; transition:color .15s;
 }
 .gp-close:hover{ color:#fff; }
-.gp-camera-wrap{
-  position:relative; width:100%; aspect-ratio:4/3; background:#000; overflow:hidden;
+/* Hidden detector feed — kept in the DOM (and playing) so the hand detector
+   gets frames, but positioned off-screen so the user never sees themselves. */
+.gp-camera-hidden{
+  position:absolute; left:-9999px; top:0; width:320px; height:240px;
+  opacity:0; pointer-events:none; overflow:hidden;
 }
-.gp-camera-wrap video{
-  width:100%; height:100%; object-fit:cover; transform:scaleX(-1);
+.gp-camera-hidden video,
+.gp-camera-hidden canvas{ width:320px; height:240px; }
+.gp-body{ padding:12px 14px 14px; display:flex; flex-direction:column; gap:10px; }
+.gp-status-line{
+  text-align:center; color:#daa520; font-size:13px; font-weight:600;
+  background:rgba(218,165,32,.08); border:1px solid rgba(218,165,32,.25);
+  padding:6px 12px; border-radius:10px; min-height:18px;
 }
-.gp-camera-wrap canvas{
-  position:absolute; inset:0; width:100%; height:100%; transform:scaleX(-1);
-}
-.gp-status{
-  position:absolute; bottom:6px; left:50%; transform:translateX(-50%);
-  background:rgba(0,0,0,.7); color:#daa520; font-size:11px;
-  padding:3px 10px; border-radius:20px; white-space:nowrap; pointer-events:none;
-}
+.gp-guide{ display:flex; flex-direction:column; gap:8px; }
 .gp-instructions{
   padding:12px 14px 14px; display:flex; flex-direction:column; gap:8px;
 }
