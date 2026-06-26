@@ -207,32 +207,17 @@ export function mountApp(root: HTMLElement) {
 
       <div id="pokemonMenu" class="pokemon-menu" hidden></div>
 
-      <!-- Gesture control panel — camera hand detection for Pokemon swapping.
-           The live camera feed is NOT shown; it runs hidden off-screen and only
-           feeds the hand detector. The user just sees a small guide + status. -->
-      <div id="gesturePanel" class="gesture-panel" hidden>
-        <div class="gp-header">
-          <span class="gp-title">זיהוי תנועות ✋</span>
-          <button class="gp-close" id="gesturePanelClose">✕</button>
-        </div>
+      <!-- Gesture detection: NO window. The camera runs hidden and only a small
+           "camera live" chip confirms it's on, so hand gestures work over the
+           main screen without covering the central character. -->
+      <div id="gesturePanel" class="gesture-indicator" hidden>
         <!-- hidden detector feed — used for detection only, never displayed -->
         <div class="gp-camera-hidden" aria-hidden="true">
           <video id="gestureVideo" autoplay playsinline muted></video>
           <canvas id="gestureCanvas"></canvas>
         </div>
-        <div class="gp-body">
-          <div class="gp-status-line" id="gestureStatus">⏳ מאתחל מצלמה…</div>
-          <div class="gp-guide">
-            <div class="gp-hint">
-              <span class="gp-gesture">🖐️</span>
-              <div><b>כף יד פתוחה</b><small>החזק 1.5 שניות → שחרר פוקימון</small></div>
-            </div>
-            <div class="gp-hint">
-              <span class="gp-gesture">👍</span>
-              <div><b>אגודל למעלה</b><small>החזק 0.6 שניות → זמן פוקימון</small></div>
-            </div>
-          </div>
-        </div>
+        <span class="gi-dot"></span>
+        <span class="gi-text" id="gestureStatus">מצלמה פעילה</span>
       </div>
 
       <aside class="left-panel" id="leftPanel">
@@ -1440,7 +1425,7 @@ export function mountApp(root: HTMLElement) {
         ctx.clearRect(0, 0, cvs.width, cvs.height);
 
         if (!results.multiHandLandmarks?.length) {
-          gestureStatus('🔍 מחפש יד…');
+          gestureStatus('מצלמה פעילה');
           palmHoldMs = 0; thumbsUpMs = 0;
           return;
         }
@@ -1499,12 +1484,12 @@ export function mountApp(root: HTMLElement) {
             const charIdx = MAIN_CHARACTERS.findIndex(c => c.id === (localStorage.getItem(MAIN_CHAR_KEY) || 'pikachu'));
             const next = MAIN_CHARACTERS[(charIdx + 1) % MAIN_CHARACTERS.length];
             swapMainCharacterAnimated(next.id);
-            setTimeout(() => { if (gestureActive) gestureStatus('🟢 מזוהה'); }, 2000);
+            setTimeout(() => { if (gestureActive) gestureStatus('מצלמה פעילה'); }, 2000);
           }
         } else {
           palmHoldMs = 0;
           thumbsUpMs = 0;
-          gestureStatus('🟢 מזוהה — ממתין לתנועה');
+          gestureStatus('מצלמה פעילה');
         }
 
       });
@@ -1519,16 +1504,13 @@ export function mountApp(root: HTMLElement) {
         rafId = requestAnimationFrame(tick);
       };
       (window as any).__stopGestureRaf = () => { cancelAnimationFrame(rafId); };
-      gestureStatus('🟢 מוכן — הצג יד מול המצלמה');
+      gestureStatus('מצלמה פעילה');
       tick();
     }
 
     $('detectBtn').onclick = () => {
       if (gestureActive) { (window as any).__stopGestureRaf?.(); stopGesture(); }
       else startGesture();
-    };
-    document.getElementById('gesturePanelClose')!.onclick = () => {
-      (window as any).__stopGestureRaf?.(); stopGesture();
     };
   }
 

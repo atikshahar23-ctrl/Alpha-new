@@ -224,25 +224,27 @@ body[data-char="ho-oh"] .char-ambient {
 .crp-pin-badge[hidden]{ display:none; }
 
 /* Gesture control panel */
-.gesture-panel{
-  position:fixed; bottom:90px; left:50%; transform:translateX(-50%);
-  z-index:1100; width:min(96vw,360px);
-  background:rgba(6,4,12,.96); border:1px solid rgba(218,165,32,.4);
-  border-radius:16px; overflow:hidden;
-  box-shadow:0 12px 48px rgba(0,0,0,.85), 0 0 24px rgba(218,165,32,.15);
-  backdrop-filter:blur(14px);
+/* Gesture detection indicator — a tiny "camera live" chip. No window, no
+   self-view: it only confirms the camera is on so hand gestures can be done
+   over the main screen without covering the central character. */
+.gesture-indicator{
+  position:fixed; top:10px; left:50%; transform:translateX(-50%);
+  z-index:1100; display:flex; align-items:center; gap:8px;
+  padding:5px 12px; border-radius:999px;
+  background:rgba(6,4,12,.7); border:1px solid rgba(218,165,32,.35);
+  box-shadow:0 4px 18px rgba(0,0,0,.5);
+  backdrop-filter:blur(8px);
+  font-size:12px; color:#daa520; white-space:nowrap;
+  pointer-events:none;   /* never blocks the main screen / gestures */
 }
-.gesture-panel[hidden]{ display:none; }
-.gp-header{
-  display:flex; align-items:center; justify-content:space-between;
-  padding:10px 14px 8px; border-bottom:1px solid rgba(218,165,32,.2);
+.gesture-indicator[hidden]{ display:none; }
+.gi-dot{
+  width:9px; height:9px; border-radius:50%; flex-shrink:0;
+  background:#ff3b3b; box-shadow:0 0 8px #ff3b3b;
+  animation:gi-pulse 1.2s ease-in-out infinite;
 }
-.gp-title{ font-size:13px; font-weight:700; color:#daa520; letter-spacing:.04em; }
-.gp-close{
-  background:none; border:none; color:#888; font-size:16px; cursor:pointer;
-  padding:2px 4px; border-radius:4px; transition:color .15s;
-}
-.gp-close:hover{ color:#fff; }
+@keyframes gi-pulse{ 0%,100%{ opacity:1; transform:scale(1); } 50%{ opacity:.35; transform:scale(.7); } }
+.gi-text{ font-weight:600; }
 /* Hidden detector feed — kept in the DOM (and playing) so the hand detector
    gets frames, but positioned off-screen so the user never sees themselves. */
 .gp-camera-hidden{
@@ -251,25 +253,6 @@ body[data-char="ho-oh"] .char-ambient {
 }
 .gp-camera-hidden video,
 .gp-camera-hidden canvas{ width:320px; height:240px; }
-.gp-body{ padding:12px 14px 14px; display:flex; flex-direction:column; gap:10px; }
-.gp-status-line{
-  text-align:center; color:#daa520; font-size:13px; font-weight:600;
-  background:rgba(218,165,32,.08); border:1px solid rgba(218,165,32,.25);
-  padding:6px 12px; border-radius:10px; min-height:18px;
-}
-.gp-guide{ display:flex; flex-direction:column; gap:8px; }
-.gp-instructions{
-  padding:12px 14px 14px; display:flex; flex-direction:column; gap:8px;
-}
-.gp-hint{
-  display:flex; align-items:center; gap:12px;
-  background:rgba(218,165,32,.06); border:1px solid rgba(218,165,32,.15);
-  border-radius:10px; padding:8px 12px;
-}
-.gp-gesture{ font-size:26px; flex-shrink:0; }
-.gp-hint div{ display:flex; flex-direction:column; gap:2px; }
-.gp-hint b{ font-size:13px; color:#f0ebe0; }
-.gp-hint small{ font-size:11px; color:#9a9080; }
 
 /* Pokemon selection menu */
 .pokemon-menu {
