@@ -31,6 +31,113 @@ body[data-char="meowth"] .char-ambient {
 @keyframes ambWater { 0%,100%{ background-position: 0% 0%, 0% 0%;} 50%{ background-position: 0% 8%, 0% -6%;} }
 @keyframes ambHypno { from{ transform: rotate(0deg) scale(1.05);} to{ transform: rotate(360deg) scale(1.05);} }
 
+/* Bulbasaur — deep green/poison vine */
+body[data-char="bulbasaur"] .char-ambient {
+  opacity:.5;
+  background:
+    radial-gradient(ellipse 70% 60% at 50% 50%, rgba(60,180,60,.42), transparent 68%),
+    radial-gradient(ellipse 90% 80% at 50% 100%, rgba(120,220,80,.26), transparent 70%);
+  animation: ambNature 5s ease-in-out infinite;
+}
+@keyframes ambNature { 0%,100%{ opacity:.44; filter:hue-rotate(0deg);} 50%{ opacity:.56; filter:hue-rotate(15deg);} }
+
+/* Eevee — warm amber/cream soft glow */
+body[data-char="eevee"] .char-ambient {
+  opacity:.48;
+  background:
+    radial-gradient(ellipse 75% 65% at 50% 45%, rgba(210,160,80,.38), transparent 70%),
+    radial-gradient(ellipse 60% 50% at 50% 80%, rgba(240,200,140,.20), transparent 60%);
+  animation: ambWarm 4s ease-in-out infinite;
+}
+@keyframes ambWarm { 0%,100%{ opacity:.44; filter:brightness(1);} 50%{ opacity:.56; filter:brightness(1.1);} }
+
+/* Mewtwo — psychic purple swirl */
+body[data-char="mewtwo"] .char-ambient {
+  opacity:.52;
+  background:
+    radial-gradient(ellipse 70% 60% at 50% 40%, rgba(180,60,240,.45), transparent 65%),
+    conic-gradient(from 0deg at 50% 40%, rgba(200,80,255,.20), transparent 20%, rgba(80,180,255,.15) 45%, transparent 65%, rgba(200,80,255,.20));
+  animation: ambPsychic 7s linear infinite;
+}
+@keyframes ambPsychic { from{ transform: rotate(0deg) scale(1.04);} to{ transform: rotate(360deg) scale(1.04);} }
+
+/* Articuno — ice blue/white crystalline */
+body[data-char="articuno"] .char-ambient {
+  opacity:.50;
+  background:
+    radial-gradient(ellipse 75% 65% at 50% 40%, rgba(100,200,255,.40), transparent 68%),
+    radial-gradient(ellipse 90% 70% at 50% 0%, rgba(220,240,255,.22), transparent 70%);
+  animation: ambIce 8s ease-in-out infinite;
+}
+@keyframes ambIce { 0%,100%{ opacity:.46; filter:hue-rotate(0deg) brightness(1);} 50%{ opacity:.56; filter:hue-rotate(-8deg) brightness(1.12);} }
+
+/* Suicune — aurora blue flowing */
+body[data-char="suicune"] .char-ambient {
+  opacity:.50;
+  background:
+    radial-gradient(ellipse 80% 70% at 50% 45%, rgba(40,160,220,.42), transparent 68%),
+    radial-gradient(ellipse 95% 75% at 50% 0%, rgba(80,240,210,.22), transparent 70%);
+  animation: ambAurora 9s ease-in-out infinite;
+}
+@keyframes ambAurora { 0%,100%{ background-position:0% 0%,0% 0%;} 50%{ background-position:0% 10%,0% -8%;} }
+
+/* Raikou — electric yellow/tiger */
+body[data-char="raikou"] .char-ambient {
+  opacity:.52;
+  background:
+    radial-gradient(ellipse 70% 60% at 50% 45%, rgba(255,220,40,.44), transparent 65%),
+    radial-gradient(ellipse 85% 70% at 50% 85%, rgba(220,160,20,.24), transparent 70%);
+  animation: ambElec 1.8s ease-in-out infinite;
+}
+@keyframes ambElec { 0%,100%{ opacity:.48; filter:brightness(1);} 25%{ opacity:.60; filter:brightness(1.15);} 75%{ opacity:.50; filter:brightness(1);} }
+
+/* Entei — volcanic red/brown */
+body[data-char="entei"] .char-ambient {
+  opacity:.52;
+  background:
+    radial-gradient(ellipse 70% 60% at 50% 60%, rgba(220,80,20,.46), transparent 66%),
+    radial-gradient(ellipse 90% 80% at 50% 100%, rgba(180,60,10,.30), transparent 70%);
+  animation: ambLava 3s ease-in-out infinite;
+}
+@keyframes ambLava { 0%,100%{ opacity:.46; filter:hue-rotate(0deg);} 50%{ opacity:.60; filter:hue-rotate(-18deg);} }
+
+/* Moltres — intense fire orange */
+body[data-char="moltres"] .char-ambient {
+  opacity:.54;
+  background:
+    radial-gradient(ellipse 72% 62% at 50% 55%, rgba(255,120,10,.48), transparent 66%),
+    radial-gradient(ellipse 92% 80% at 50% 100%, rgba(255,60,20,.32), transparent 70%);
+  animation: ambFire 2.2s ease-in-out infinite;
+}
+
+/* Zapdos — electric yellow/lightning */
+body[data-char="zapdos"] .char-ambient {
+  opacity:.50;
+  background:
+    radial-gradient(ellipse 70% 60% at 50% 42%, rgba(255,240,50,.44), transparent 64%),
+    radial-gradient(ellipse 90% 70% at 50% 80%, rgba(255,200,20,.24), transparent 68%);
+  animation: ambElec 1.4s ease-in-out infinite;
+}
+
+/* Lugia — silver/deep ocean */
+body[data-char="lugia"] .char-ambient {
+  opacity:.48;
+  background:
+    radial-gradient(ellipse 75% 65% at 50% 42%, rgba(140,180,220,.38), transparent 68%),
+    radial-gradient(ellipse 90% 75% at 50% 0%, rgba(200,220,255,.18), transparent 72%);
+  animation: ambIce 10s ease-in-out infinite;
+}
+
+/* Ho-Oh — rainbow/sacred gold */
+body[data-char="ho-oh"] .char-ambient {
+  opacity:.52;
+  background:
+    radial-gradient(ellipse 72% 62% at 50% 42%, rgba(255,180,20,.44), transparent 64%),
+    conic-gradient(from 0deg at 50% 42%, rgba(255,80,80,.16), rgba(255,180,20,.18) 30%, rgba(80,200,80,.14) 55%, rgba(80,160,255,.14) 75%, rgba(200,80,255,.12) 90%, rgba(255,80,80,.16));
+  animation: ambRainbow 6s linear infinite;
+}
+@keyframes ambRainbow { from{ filter:hue-rotate(0deg);} to{ filter:hue-rotate(360deg);} }
+
 /* Main-screen character swap — laser dispel + pokeball summon overlay */
 .char-swap-fx {
   position: absolute; inset: 0; width: 100%; height: 100%;
@@ -78,6 +185,33 @@ body[data-char="meowth"] .char-ambient {
   cursor:pointer; transition:border-color .2s,color .2s;
 }
 .crp-reset:hover{ border-color:rgba(218,165,32,.7); color:#daa520; }
+
+/* Pokemon selection menu */
+.pokemon-menu {
+  position: fixed; top: 48px; right: 8px; z-index: 998;
+  background: rgba(8,6,2,.96); border: 1px solid rgba(218,165,32,.35);
+  border-radius: 14px; padding: 12px 12px 10px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.8), 0 0 24px rgba(218,165,32,.12);
+  backdrop-filter: blur(16px); direction: rtl; min-width: 260px;
+}
+.pokemon-menu[hidden] { display: none; }
+.pm-title {
+  font-size: 10px; letter-spacing: .1em; color: rgba(218,165,32,.7);
+  text-align: center; margin-bottom: 10px; text-transform: uppercase;
+}
+.pm-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
+}
+.pm-item {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 8px 4px 6px; border-radius: 10px; border: 1px solid rgba(218,165,32,.15);
+  background: rgba(255,255,255,.03); cursor: pointer; transition: all .18s;
+  color: #c8b87a; font-size: 10px;
+}
+.pm-item:hover { background: rgba(218,165,32,.14); border-color: rgba(218,165,32,.5); color: #ffe080; }
+.pm-item.pm-active { background: rgba(218,165,32,.20); border-color: rgba(218,165,32,.65); color: #ffe080; box-shadow: 0 0 8px rgba(218,165,32,.30); }
+.pm-icon { font-size: 20px; line-height: 1; }
+.pm-label { font-size: 9px; text-align: center; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 70px; }
 
 :root {
   --ink: #f0ebe0;

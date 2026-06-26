@@ -171,7 +171,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v21 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v24 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -192,6 +192,8 @@ export function mountApp(root: HTMLElement) {
         <label class="crp-row">Z <input type="range" id="crpZ" min="-180" max="180" step="1" value="0"><span class="crp-val" id="crpZv">0°</span></label>
         <button class="crp-reset" id="crpReset">איפוס לברירת מחדל</button>
       </div>
+
+      <div id="pokemonMenu" class="pokemon-menu" hidden></div>
 
       <aside class="left-panel" id="leftPanel">
         <div class="lp-brand">
@@ -1944,10 +1946,21 @@ export function mountApp(root: HTMLElement) {
   // other models the user provided. Persisted so it survives reloads.
   const MAIN_CHAR_KEY = 'alpha_main_character';
   const MAIN_CHARACTERS = [
-    { id: 'pikachu',    label: 'פיקאצ\'ו',  words: /(פיקאצ'?ו|פיקצ'?ו|פיקא|pikachu|pika)/i },
-    { id: 'charmander', label: 'צ\'רמנדר',  words: /(צ'?רמנדר|צ'?ארמנדר|charmander|charm)/i },
-    { id: 'squirtle',   label: 'סקווירטל',  words: /(סקווירטל|סקוירטל|squirtle|squirt)/i },
-    { id: 'meowth',     label: 'מיאוט\'',   words: /(מיאו?את'?|מיואו|meowth|meow)/i },
+    { id: 'pikachu',    label: 'פיקאצ\'ו',   words: /(פיקאצ'?ו|פיקצ'?ו|פיקא|pikachu|pika)/i },
+    { id: 'charmander', label: 'צ\'רמנדר',   words: /(צ'?רמנדר|צ'?ארמנדר|charmander|charm)/i },
+    { id: 'squirtle',   label: 'סקווירטל',   words: /(סקווירטל|סקוירטל|squirtle|squirt)/i },
+    { id: 'meowth',     label: 'מיאוט\'',    words: /(מיאו?את'?|מיואו|meowth|meow)/i },
+    { id: 'bulbasaur',  label: 'בולבסאור',   words: /(בולב|bulbasaur|bulba)/i },
+    { id: 'eevee',      label: 'איווי',       words: /(איווי|אאיווי|eevee|evee)/i },
+    { id: 'mewtwo',     label: 'מיוטו',      words: /(מיוטו|mewtwo|mew\s?two)/i },
+    { id: 'articuno',   label: 'ארטיקונו',   words: /(ארטיקונו|articuno)/i },
+    { id: 'suicune',    label: 'סויקון',      words: /(סויקון|suicune)/i },
+    { id: 'raikou',     label: 'ריאיקו',     words: /(ריאיקו|raikou)/i },
+    { id: 'entei',      label: 'אנטיי',      words: /(אנטיי|entei)/i },
+    { id: 'moltres',    label: 'מולטרס',     words: /(מולטרס|moltres)/i },
+    { id: 'zapdos',     label: 'זאפדוס',     words: /(זאפדוס|zapdos)/i },
+    { id: 'lugia',      label: 'לוגיה',      words: /(לוגיה|lugia)/i },
+    { id: 'ho-oh',      label: 'הו-אוה',     words: /(הו.?אוה|ho.?oh)/i },
   ];
 
   function setMainCharacter(id: string): string {
@@ -2072,14 +2085,59 @@ export function mountApp(root: HTMLElement) {
   }
   (window as any).swapMainCharacterAnimated = swapMainCharacterAnimated;
 
-  // Main-screen "switch character" button — cycles to the next character
-  // with the pokeball + red-laser animation.
-  $('charSwapBtn').onclick = () => {
-    const cur = localStorage.getItem(MAIN_CHAR_KEY) || 'pikachu';
-    const idx = MAIN_CHARACTERS.findIndex(c => c.id === cur);
-    const next = MAIN_CHARACTERS[(idx + 1) % MAIN_CHARACTERS.length];
-    swapMainCharacterAnimated(next.id);
-  };
+  // Pokemon selection menu — opens when the pokeball button is clicked.
+  {
+    const menu = document.getElementById('pokemonMenu') as HTMLDivElement;
+    let menuOpen = false;
+
+    const POKEMON_ICONS: Record<string, string> = {
+      pikachu: '⚡', charmander: '🔥', squirtle: '💧', meowth: '🪙',
+      bulbasaur: '🌿', eevee: '🦊', mewtwo: '🔮', articuno: '❄️',
+      suicune: '🌊', raikou: '⛈️', entei: '🌋', moltres: '🔥',
+      zapdos: '⚡', lugia: '🌙', 'ho-oh': '🌈',
+    };
+
+    function buildMenu() {
+      const cur = localStorage.getItem(MAIN_CHAR_KEY) || 'pikachu';
+      menu.innerHTML = `
+        <div class="pm-title">בחר פוקימון</div>
+        <div class="pm-grid">
+          ${MAIN_CHARACTERS.map(c => `
+            <button class="pm-item${c.id === cur ? ' pm-active' : ''}" data-id="${c.id}">
+              <span class="pm-icon">${POKEMON_ICONS[c.id] || '✨'}</span>
+              <span class="pm-label">${c.label}</span>
+            </button>
+          `).join('')}
+        </div>`;
+      menu.querySelectorAll<HTMLButtonElement>('.pm-item').forEach(btn => {
+        btn.onclick = () => {
+          const id = btn.dataset.id!;
+          closeMenu();
+          swapMainCharacterAnimated(id);
+        };
+      });
+    }
+
+    function openMenu() {
+      buildMenu();
+      menu.removeAttribute('hidden');
+      menuOpen = true;
+    }
+    function closeMenu() {
+      menu.setAttribute('hidden', '');
+      menuOpen = false;
+    }
+
+    $('charSwapBtn').onclick = (e) => {
+      e.stopPropagation();
+      if (menuOpen) { closeMenu(); } else { openMenu(); }
+    };
+
+    document.addEventListener('click', (e) => {
+      if (menuOpen && !(e.target as Element).closest('#pokemonMenu, #charSwapBtn')) closeMenu();
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && menuOpen) closeMenu(); });
+  }
 
   // Character rotation panel — lets the user fine-tune X/Y/Z for any model.
   {

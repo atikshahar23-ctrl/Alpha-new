@@ -58,6 +58,8 @@ const SYNC_TABLES = [
   'alpha_brain_memory_v1',
   // samsonix forms
   'alpha_samsonix_forms_v1',
+  'char_rot_v3',
+  'alpha_main_character',
 ];
 
 function puter(): any {
