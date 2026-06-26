@@ -227,10 +227,10 @@ export function mountApp(root: HTMLElement) {
             </div>
           </div>
           <div class="gp-hint">
-            <span class="gp-gesture">✊→🖐️</span>
+            <span class="gp-gesture">👍</span>
             <div>
-              <b>אגרוף ← פתח</b>
-              <small>תנועה מהירה → זרוק פוקה-בול!</small>
+              <b>אגודל למעלה</b>
+              <small>החזק 0.6 שניות → זרוק פוקה-בול!</small>
             </div>
           </div>
         </div>
@@ -1372,11 +1372,10 @@ export function mountApp(root: HTMLElement) {
     let gestureHands: any = null;
     let gestureCamera: any = null;
     let palmHoldMs = 0;
-    let fistStartMs = 0;
-    let prevGesture = 'none';
+    let thumbsUpMs = 0;
     let throwCooldownMs = 0;
     const PALM_HOLD_THRESHOLD = 1500;
-    const THROW_WINDOW_MS = 500;
+    const THUMBSUP_HOLD_THRESHOLD = 600;
     const THROW_COOLDOWN = 3000;
 
     function gestureStatus(msg: string) {
@@ -1443,7 +1442,7 @@ export function mountApp(root: HTMLElement) {
 
         if (!results.multiHandLandmarks?.length) {
           gestureStatus('🔍 מחפש יד…');
-          palmHoldMs = 0; prevGesture = 'none';
+          palmHoldMs = 0; thumbsUpMs = 0;
           return;
         }
 
@@ -1458,24 +1457,25 @@ export function mountApp(root: HTMLElement) {
           ctx.fill();
         }
 
-        // Finger up/down detection
+        // Gesture detection — finger up = tip y < pip y (screen coords: smaller y = higher up)
         const fingerUp = (tip: number, pip: number) => lm[tip].y < lm[pip].y;
         const indexUp = fingerUp(8, 6), middleUp = fingerUp(12, 10), ringUp = fingerUp(16, 14), pinkyUp = fingerUp(20, 18);
-        const thumbOut = Math.abs(lm[4].x - lm[2].x) > 0.06;
         const allFingersUp = indexUp && middleUp && ringUp && pinkyUp;
-        const allFingersDown = !indexUp && !middleUp && !ringUp && !pinkyUp && !thumbOut;
+        // Thumbs up: thumb tip clearly above MCP joint AND all other fingers curled
+        const thumbsUp = lm[4].y < lm[2].y - 0.04 && !indexUp && !middleUp && !ringUp && !pinkyUp;
 
         let gesture = 'none';
         if (allFingersUp) gesture = 'palm';
-        else if (allFingersDown) gesture = 'fist';
+        else if (thumbsUp) gesture = 'thumbsup';
 
         throwCooldownMs = Math.max(0, throwCooldownMs - dt);
 
         if (gesture === 'palm') {
+          thumbsUpMs = 0;
           palmHoldMs += dt;
           const progress = Math.min(1, palmHoldMs / PALM_HOLD_THRESHOLD);
           gestureStatus(`🖐️ החזק… ${Math.round(progress * 100)}%`);
-          // Draw arc progress
+          // Draw arc progress at palm center
           const cx2 = lm[9].x * 320, cy2 = lm[9].y * 240;
           ctx.beginPath(); ctx.arc(cx2, cy2, 28, -Math.PI/2, -Math.PI/2 + progress * Math.PI*2);
           ctx.strokeStyle = `rgba(218,165,32,${0.4 + progress*0.6})`; ctx.lineWidth = 4; ctx.stroke();
@@ -1484,18 +1484,17 @@ export function mountApp(root: HTMLElement) {
             gestureStatus('⚡ שחרר פוקימון!');
             (window as any).dispelOrb?.();
           }
-        } else {
-          if (palmHoldMs > 0) palmHoldMs = 0;
-          if (gesture === 'none' && prevGesture === 'palm') {
-            gestureStatus('🟢 מזוהה');
-          }
-        }
-
-        // Fist → open = throw pokeball
-        if (gesture === 'fist' && prevGesture !== 'fist') fistStartMs = now;
-        if ((gesture === 'palm' || gesture === 'none') && prevGesture === 'fist') {
-          const dur = now - fistStartMs;
-          if (dur < THROW_WINDOW_MS && throwCooldownMs <= 0) {
+        } else if (gesture === 'thumbsup') {
+          palmHoldMs = 0;
+          thumbsUpMs += dt;
+          const progress = Math.min(1, thumbsUpMs / THUMBSUP_HOLD_THRESHOLD);
+          gestureStatus(`👍 החזק… ${Math.round(progress * 100)}%`);
+          // Draw arc progress at thumb tip
+          const tx = lm[4].x * 320, ty = lm[4].y * 240;
+          ctx.beginPath(); ctx.arc(tx, ty, 20, -Math.PI/2, -Math.PI/2 + progress * Math.PI*2);
+          ctx.strokeStyle = `rgba(100,220,255,${0.4 + progress*0.6})`; ctx.lineWidth = 4; ctx.stroke();
+          if (thumbsUpMs >= THUMBSUP_HOLD_THRESHOLD && throwCooldownMs <= 0) {
+            thumbsUpMs = 0;
             throwCooldownMs = THROW_COOLDOWN;
             gestureStatus('🔴 זרוק פוקה-בול!');
             const charIdx = MAIN_CHARACTERS.findIndex(c => c.id === (localStorage.getItem(MAIN_CHAR_KEY) || 'pikachu'));
@@ -1503,10 +1502,12 @@ export function mountApp(root: HTMLElement) {
             swapMainCharacterAnimated(next.id);
             setTimeout(() => { if (gestureActive) gestureStatus('🟢 מזוהה'); }, 2000);
           }
+        } else {
+          palmHoldMs = 0;
+          thumbsUpMs = 0;
+          gestureStatus('🟢 מזוהה — ממתין לתנועה');
         }
 
-        if (gesture !== 'palm' && gesture !== 'fist') gestureStatus('🟢 מזוהה — ממתין לתנועה');
-        prevGesture = gesture;
       });
 
       // Run hand detection via requestAnimationFrame loop
