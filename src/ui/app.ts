@@ -1532,6 +1532,7 @@ export function mountApp(root: HTMLElement) {
     const t = input.value.trim();
     if (!t) return;
     input.value = '';
+    voice.stopSpeaking();   // barge-in: silence any current speech immediately
     audio.send();
     addMsg(t, 'me');
     ask(t);
@@ -1545,6 +1546,7 @@ export function mountApp(root: HTMLElement) {
     }
     audio.ensure();
     const turningOn = !voice.wakeOn;
+    if (turningOn) voice.stopSpeaking();   // barge-in: stop talking when the user starts to listen/speak
     voice.setWake(turningOn);
     $('micBtn').classList.toggle('on', turningOn);
     if (turningOn) audio.micOn(); else audio.micOff();

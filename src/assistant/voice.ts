@@ -280,6 +280,14 @@ export class VoiceEngine {
     this.chosenVoice = this.voices.find(v => v.name === name) || this.chosenVoice;
   }
 
+  // Barge-in: cut off any in-progress speech immediately so the assistant stops
+  // talking the moment the user acts (sends a message / turns on the mic).
+  stopSpeaking() {
+    if (!('speechSynthesis' in window)) return;
+    speechSynthesis.cancel();
+    this.suppress = false;
+  }
+
   speak(text: string) {
     if (!this.state.voiceOn || !this.state.autoSpeak || !('speechSynthesis' in window)) {
       if (this.wakeOn) this.enterCommandMode();
