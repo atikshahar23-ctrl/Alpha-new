@@ -55,7 +55,7 @@ const SYNC_TABLES = [
   'alpha_templates_v1',
   'alpha_name',
   'alpha_samsonix_forms_v1',
-  'char_rot_v2',
+  'char_rot_v3',
   'alpha_main_character',
 ];
 

@@ -1279,10 +1279,21 @@ function setupChuEffect(
 // Registry of swappable main characters. Pikachu is the built-in (vertex-color
 // GLB); the others are textured GLBs the user provided (converted from FBX/DAE).
 const CHARACTER_FILES: Record<string, string> = {
-  pikachu: 'pikachu.glb?v=4',
+  pikachu:    'pikachu.glb?v=4',
   charmander: 'ar-models/charmander.glb',
-  squirtle: 'ar-models/squirtle.glb',
-  meowth: 'ar-models/meowth.glb',
+  squirtle:   'ar-models/squirtle.glb',
+  meowth:     'ar-models/meowth.glb',
+  bulbasaur:  'ar-models/bulbasaur.glb',
+  eevee:      'ar-models/eevee.glb',
+  mewtwo:     'ar-models/mewtwo.glb',
+  articuno:   'ar-models/articuno.glb',
+  suicune:    'ar-models/suicune.glb',
+  raikou:     'ar-models/raikou.glb',
+  entei:      'ar-models/entei.glb',
+  moltres:    'ar-models/moltres.glb',
+  zapdos:     'ar-models/zapdos.glb',
+  lugia:      'ar-models/lugia.glb',
+  'ho-oh':    'ar-models/ho-oh.glb',
 };
 export const CHARACTER_NAMES = Object.keys(CHARACTER_FILES);
 
@@ -1290,11 +1301,23 @@ type CharRot3 = { x: number; y: number; z: number };
 
 // Per-character default orientations — differ because models come from different
 // source formats (DAE/SMD/FBX). Squirtle (SMD) needs X lifted 90° to stand upright.
+// ColladaMax DAE models from the Pokemon XY set are Y-up, face toward +Z → y:PI faces camera.
 const CHARACTER_ROT_DEFAULT: Record<string, CharRot3> = {
-  pikachu:    { x: 0,           y: Math.PI, z: 0 },
-  charmander: { x: 0,           y: Math.PI, z: 0 },
+  pikachu:    { x: 0,            y: Math.PI, z: 0 },
+  charmander: { x: 0,            y: Math.PI, z: 0 },
   squirtle:   { x: -Math.PI / 2, y: 0,       z: Math.PI },
-  meowth:     { x: 0,           y: Math.PI, z: 0 },
+  meowth:     { x: 0,            y: Math.PI, z: 0 },
+  bulbasaur:  { x: 0,            y: Math.PI, z: 0 },
+  eevee:      { x: 0,            y: Math.PI, z: 0 },
+  mewtwo:     { x: 0,            y: Math.PI, z: 0 },
+  articuno:   { x: 0,            y: Math.PI, z: 0 },
+  suicune:    { x: -Math.PI / 2, y: 0,       z: Math.PI },
+  raikou:     { x: 0,            y: Math.PI, z: 0 },
+  entei:      { x: 0,            y: Math.PI, z: 0 },
+  moltres:    { x: 0,            y: Math.PI, z: 0 },
+  zapdos:     { x: 0,            y: Math.PI, z: 0 },
+  lugia:      { x: 0,            y: Math.PI, z: 0 },
+  'ho-oh':    { x: 0,            y: Math.PI, z: 0 },
 };
 
 const CHAR_ROT_LS_KEY = 'char_rot_v3';
