@@ -1322,6 +1322,85 @@ const CHAR_BG: Record<string, number> = {
 };
 function charBg(name: string): number { return CHAR_BG[name] ?? 0x0a0806; }
 
+// Per-character ACCENT — the bright colour for the orb's cage / rings / lines.
+// Swapping a Pokemon hue-shifts the whole gold framework to this colour so the
+// surrounding sphere matches the active Pokemon instead of always being gold.
+const CHAR_ACCENT: Record<string, number> = {
+  pikachu:    0xffd633, // electric yellow
+  charmander: 0xff7a2a, // ember orange
+  squirtle:   0x33b5ff, // water blue
+  meowth:     0xc26bff, // hypnosis purple
+  bulbasaur:  0x5fd64d, // grass green
+  eevee:      0xe0a85a, // warm amber
+  mewtwo:     0xb060ff, // psychic violet
+  articuno:   0x66ccff, // ice blue
+  suicune:    0x3fd6c8, // aurora teal
+  raikou:     0xffd633, // electric amber
+  entei:      0xff5a28, // volcanic red
+  moltres:    0xff7a18, // fire orange
+  zapdos:     0xfff04d, // lightning yellow
+  lugia:      0x8fb6ff, // deep-sea silver-blue
+  'ho-oh':    0xffb020, // sacred gold
+};
+function charAccent(name: string): number { return CHAR_ACCENT[name] ?? 0xdaa520; }
+
+// Recolour a collection of gold materials to an accent, preserving each one's
+// original lightness so the layered look survives the hue change.
+type AccentMat = { mat: any; baseL: number; baseS: number };
+function applyAccentToMats(mats: AccentMat[], hex: number) {
+  const tgt = new THREE.Color(hex);
+  const thsl = { h: 0, s: 0, l: 0 }; tgt.getHSL(thsl);
+  for (const a of mats) {
+    a.mat.color.setHSL(thsl.h, Math.min(1, a.baseS * 0.4 + thsl.s * 0.6), a.baseL);
+  }
+}
+// Red-laser arrival flash: tint a freshly-loaded model bright red, then fade it
+// back to its natural colours over ~0.55s (matches the swap pokeball burst).
+function flashArrival(model: THREE.Object3D) {
+  const RED = new THREE.Color(0xff2418);
+  const mats: { m: any; oe: THREE.Color; oi: number }[] = [];
+  model.traverse((o: any) => {
+    if (!o.isMesh) return;
+    const ms = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
+    for (const m of ms) {
+      if (m && m.emissive) {
+        mats.push({ m, oe: m.emissive.clone(), oi: m.emissiveIntensity ?? 1 });
+        m.emissive.copy(RED);
+        m.emissiveIntensity = 1.6;
+      }
+    }
+  });
+  if (!mats.length) return;
+  const start = performance.now();
+  const dur = 550;
+  function step(now: number) {
+    const t = Math.min(1, (now - start) / dur);
+    for (const e of mats) {
+      e.m.emissive.copy(RED).lerp(e.oe, t);
+      e.m.emissiveIntensity = 1.6 * (1 - t) + e.oi * t;
+    }
+    if (t < 1) requestAnimationFrame(step);
+    else for (const e of mats) { e.m.emissive.copy(e.oe); e.m.emissiveIntensity = e.oi; }
+  }
+  requestAnimationFrame(step);
+}
+
+function collectAccentMats(root: THREE.Object3D, skip: THREE.Object3D): AccentMat[] {
+  const out: AccentMat[] = [];
+  const underSkip = (o: THREE.Object3D | null) => { while (o) { if (o === skip) return true; o = o.parent; } return false; };
+  root.traverse((o: any) => {
+    if (underSkip(o)) return;
+    const ms = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
+    for (const m of ms) {
+      if (m && m.color && (m.isLineBasicMaterial || m.isMeshBasicMaterial)) {
+        const hsl = { h: 0, s: 0, l: 0 }; m.color.getHSL(hsl);
+        out.push({ mat: m, baseL: hsl.l, baseS: hsl.s });
+      }
+    }
+  });
+  return out;
+}
+
 // CharXform — full per-character transform: rotation (radians), scale multiplier,
 // and position offset relative to auto-centered position. Exported via OrbHandle.
 const CHAR_XFORM_LS_KEY = 'char_xform_v1';
@@ -1450,19 +1529,26 @@ function loadAndReplaceBody(
           });
         }
 
-        // Auto-normalize: scale to fit orb, then centre on bounding box.
+        // Auto-normalize so every Pokemon is roughly the SAME apparent size and
+        // fills the orb sphere. Rotation is applied FIRST, then the bounding box
+        // is measured in the rotated frame — otherwise rotated models (suicune,
+        // squirtle) end up off-centre. Normalise by the largest of all 3 dims so
+        // the model's full extent fits consistently regardless of its shape.
+        const xf = getCharXform(character);
+        model.rotation.set(xf.x, xf.y, xf.z);
+        model.scale.setScalar(1);
+        model.position.set(0, 0, 0);
+        model.updateMatrixWorld(true);
         const bb = new THREE.Box3().setFromObject(model);
         const bbSize = bb.getSize(new THREE.Vector3());
         const bbCenter = bb.getCenter(new THREE.Vector3());
-        const target = isPikachu ? 1.2 : 1.45;
-        const s = target / Math.max(bbSize.x, bbSize.y);
+        const target = isPikachu ? 2.2 : 2.5;   // fill the sphere (radius ~1.6)
+        const s = target / Math.max(bbSize.x, bbSize.y, bbSize.z);
         // Store the base transform so real-time adjustments can re-apply without reload.
         modelBaseTransform.set(model, { s, cx: -bbCenter.x * s, cy: -bbCenter.y * s, cz: -bbCenter.z * s });
-        // Apply stored user transform (rotation, scale multiplier, position offset).
-        const xf = getCharXform(character);
+        // Apply stored user transform (scale multiplier + position offset on top).
         model.scale.setScalar(s * xf.s);
         model.position.set(-bbCenter.x * s + xf.px, -bbCenter.y * s + xf.py, -bbCenter.z * s + xf.pz);
-        model.rotation.set(xf.x, xf.y, xf.z);
         pikaGroup.add(model);
         loadedModels.set(pikaGroup, model);
         onLoaded?.(model);
@@ -2055,6 +2141,12 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
 
   raf = requestAnimationFrame(frame);
 
+  // Collect the gold cage / ring / line materials so the framework recolours to
+  // match the active Pokemon (skips the character model itself).
+  const mobAccentMats = collectAccentMats(group, pikaGroup);
+  function mobApplyAccent(name: string) { applyAccentToMats(mobAccentMats, charAccent(name)); }
+  mobApplyAccent('pikachu');
+
   return {
     setEnergy(v: number) { ampTarget = Math.max(0, Math.min(1, v)); },
     pikaEmote(emote: PikaEmote) {
@@ -2078,7 +2170,11 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     setCharacter(name: string) {
       mobileCurrentChar = name;
       renderer.setClearColor(charBg(name), 1);   // recolour backdrop to match Pokemon
-      loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/', name, (m) => { mobileCurrentModel = m; });
+      mobApplyAccent(name);                       // recolour cage / rings / lines to match
+      loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/', name, (m) => {
+        mobileCurrentModel = m;
+        flashArrival(m);                          // red-laser arrival flash
+      });
     },
     throwPokeball: mobileThrowPokeball,
     getCharacterTransform() { return getCharXform(mobileCurrentChar); },
@@ -3050,6 +3146,12 @@ export function mountOrb(container: HTMLElement): OrbHandle {
 
   raf = requestAnimationFrame(frame);
 
+  // Collect the gold cage / ring / line materials so the whole framework can be
+  // recoloured to match the active Pokemon (skips the character model itself).
+  const deskAccentMats = collectAccentMats(group, pikaGroup);
+  function deskApplyAccent(name: string) { applyAccentToMats(deskAccentMats, charAccent(name)); }
+  deskApplyAccent('pikachu');
+
   return {
     setEnergy(v: number) { ampTarget = Math.max(0, Math.min(1, v)); },
     pikaEmote(emote: PikaEmote) {
@@ -3084,7 +3186,11 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     setCharacter(name: string) {
       deskCurrentChar = name;
       renderer.setClearColor(charBg(name), 1);   // recolour backdrop to match Pokemon
-      loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/', name, (m) => { deskCurrentModel = m; });
+      deskApplyAccent(name);                      // recolour cage / rings / lines to match
+      loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/', name, (m) => {
+        deskCurrentModel = m;
+        flashArrival(m);                          // red-laser arrival flash
+      });
     },
     throwPokeball: deskThrowPokeball,
     getCharacterTransform() { return getCharXform(deskCurrentChar); },
