@@ -10,6 +10,7 @@ export class VoiceEngine {
   private cmdTimer: number | undefined;
   private silenceTimer: number | undefined;
   private speechBuffer = '';
+  private lastFinalIndex = 0;   // guards against Chrome re-delivering final results
   private voices: SpeechSynthesisVoice[] = [];
   private chosenVoice: SpeechSynthesisVoice | null = null;
   private state: AppState;
@@ -40,15 +41,24 @@ export class VoiceEngine {
       this.rec.maxAlternatives = 1;
       this.rec.onresult = (e: any) => {
         if (this.suppress) return;
-        let final = '';
         let interim = '';
+        // Process each final result EXACTLY once. Chrome (continuous mode) can
+        // re-fire onresult and re-report results already marked final, which is
+        // what caused the same phrase to be appended several times. Tracking the
+        // highest consumed index stops the duplication.
         for (let i = e.resultIndex; i < e.results.length; i++) {
-          if (e.results[i].isFinal) final += e.results[i][0].transcript + ' ';
-          else interim += e.results[i][0].transcript;
+          const res = e.results[i];
+          if (res.isFinal) {
+            if (i >= this.lastFinalIndex) {
+              this.lastFinalIndex = i + 1;
+              this.handleSpeech(res[0].transcript);
+            }
+          } else {
+            interim += res[0].transcript;
+          }
         }
         if (interim && this.commandMode) this.onStateChange('listening');
         if (interim) this.resetSilenceTimer();
-        if (final) this.handleSpeech(final);
       };
       this.rec.onend = () => {
         this.recRunning = false;
@@ -83,6 +93,7 @@ export class VoiceEngine {
 
   private startRec() {
     if (!this.rec || this.recRunning || !this.wakeOn) return;
+    this.lastFinalIndex = 0;   // results list is per-session — reset the guard
     try { this.rec.start(); this.recRunning = true; } catch {}
   }
   private stopRec() {
@@ -116,8 +127,31 @@ export class VoiceEngine {
     }
   }
 
+  // Collapse repeated words and a wholly-duplicated phrase, e.g. the engine
+  // returning "מה השעה מה השעה" → "מה השעה".
+  private dedupe(text: string): string {
+    const words = text.split(/\s+/).filter(Boolean);
+    const out: string[] = [];
+    for (const w of words) {
+      if (out.length && out[out.length - 1].toLowerCase() === w.toLowerCase()) continue;
+      out.push(w);
+    }
+    // Collapse a whole phrase repeated k times ("מה השעה מה השעה מה השעה" → "מה השעה").
+    for (let unit = 1; unit <= Math.floor(out.length / 2); unit++) {
+      if (out.length % unit !== 0) continue;
+      const k = out.length / unit;
+      const base = out.slice(0, unit).join(' ').toLowerCase();
+      let allMatch = true;
+      for (let r = 1; r < k; r++) {
+        if (out.slice(r * unit, (r + 1) * unit).join(' ').toLowerCase() !== base) { allMatch = false; break; }
+      }
+      if (allMatch) return out.slice(0, unit).join(' ').trim();
+    }
+    return out.join(' ').trim();
+  }
+
   private flushBuffer() {
-    const text = this.speechBuffer.trim();
+    const text = this.dedupe(this.speechBuffer.trim());
     this.speechBuffer = '';
     this.commandMode = false;
     clearTimeout(this.cmdTimer);
@@ -145,7 +179,9 @@ export class VoiceEngine {
     if (!raw) return;
 
     if (this.commandMode) {
-      this.speechBuffer += ' ' + raw;
+      // Skip a final that merely repeats what we just appended (engine echo).
+      const tail = this.speechBuffer.trim().slice(-raw.length).toLowerCase();
+      if (tail !== raw.toLowerCase()) this.speechBuffer += ' ' + raw;
       this.resetSilenceTimer();
       return;
     }
