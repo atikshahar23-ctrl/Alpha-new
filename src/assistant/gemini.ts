@@ -281,6 +281,62 @@ export async function askAI(state: AppState, text: string): Promise<string> {
 
 export { askAI as askGemini };
 
+// ─── One-shot, history-free call ──────────────────────────────────────────
+// A single isolated request with a custom system+user prompt that does NOT
+// touch state.history — used for background tasks like auto-fixing code. Tries
+// the provider chain and returns '' if none answer (caller treats '' as no-op).
+export async function askOnce(state: AppState, system: string, user: string): Promise<string> {
+  const order = [state.provider, ...PROVIDER_ORDER.filter(p => p !== state.provider)];
+  for (const provider of order) {
+    if (!hasKey(provider, state)) continue;
+    try {
+      if (provider === 'puter') {
+        const puter = (window as any).puter;
+        if (!puter?.ai?.chat) continue;
+        const r = await puter.ai.chat(
+          [{ role: 'system', content: system }, { role: 'user', content: user }],
+          { model: state.puterModel || 'gpt-4o-mini' },
+        );
+        const t = extractPuterText(r);
+        if (t) return t;
+      } else if (provider === 'gemini') {
+        if (!state.key) continue;
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODELS[0]}:generateContent`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-goog-api-key': state.key },
+            body: JSON.stringify({
+              system_instruction: { parts: [{ text: system }] },
+              contents: [{ role: 'user', parts: [{ text: user }] }],
+              generationConfig: { temperature: 0.2, maxOutputTokens: 600 },
+            }),
+          },
+        );
+        if (!res.ok) continue;
+        const data = await res.json();
+        const t = (data.candidates?.[0]?.content?.parts || []).map((p: any) => p.text || '').join('').trim();
+        if (t) return t;
+      } else {
+        const key = provider === 'grok' ? state.grokKey : state.openaiKey;
+        if (!key) continue;
+        const url = provider === 'grok' ? 'https://api.x.ai/v1/chat/completions' : 'https://api.openai.com/v1/chat/completions';
+        const model = provider === 'grok' ? 'grok-3-mini' : 'gpt-4o-mini';
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+          body: JSON.stringify({ model, messages: [{ role: 'system', content: system }, { role: 'user', content: user }], temperature: 0.2, max_tokens: 600 }),
+        });
+        if (!res.ok) continue;
+        const data = await res.json();
+        const t = data.choices?.[0]?.message?.content?.trim();
+        if (t) return t;
+      }
+    } catch {}
+  }
+  return '';
+}
+
 // ─── Streaming (SSE / async-iterator) ─────────────────────────────────────
 // Same provider chain + fallback as askAI, but emits partial text as it
 // arrives so the UI can render tokens live (real time-to-first-token instead

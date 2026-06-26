@@ -1,7 +1,7 @@
 import { mountOrb, type OrbHandle } from '../orb/OrbScene';
 import { mountFlowLines } from '../bg/flowLines';
 import { loadState, saveState, addEvent, addTask, saveNote, loadEvents, loadTasks, removeEvent, type AppState, type TextLang, type AIProvider, type VoiceGender, type UILang } from '../assistant/state';
-import { askAIStream, runTags } from '../assistant/gemini';
+import { askAIStream, askOnce, runTags } from '../assistant/gemini';
 import { tryLocalCommand } from '../assistant/local';
 import { VoiceEngine } from '../assistant/voice';
 import { AudioEngine, type AmbientPreset } from '../assistant/audio';
@@ -1011,10 +1011,33 @@ export function mountApp(root: HTMLElement) {
     const bad = blocks.map(b => ({ b, err: validateCode(b.lang, b.code) })).filter(x => x.err);
     if (bad.length) {
       addMsg(`⚠️ בדיקה עצמית: שגיאת תחביר ב-${bad[0].b.lang} — ${bad[0].err}`, 'sys');
+      void autoFixCode(bad[0].b);   // background, non-blocking self-correction
     } else {
       const langs = [...new Set(blocks.map(b => b.lang))].join(', ');
       addMsg(`✓ בדיקה עצמית: התחביר של הקוד (${langs}) תקין`, 'sys');
     }
+  }
+
+  // Self-correction: one focused LLM call to repair a broken code block. The fix
+  // is only shown if it actually parses clean — otherwise we stay silent and the
+  // ⚠ note remains. Runs in the background; never blocks the original reply.
+  let autoFixing = false;
+  async function autoFixCode(block: { lang: string; code: string }) {
+    if (autoFixing) return;
+    autoFixing = true;
+    try {
+      const sys = 'You are a precise code fixer. Fix ONLY syntax errors. Reply with a single corrected code block and nothing else — no explanation.';
+      const user = `Fix the syntax error in this ${block.lang} code. Return only the corrected code inside one \`\`\`${block.lang} fenced block:\n\n\`\`\`${block.lang}\n${block.code}\n\`\`\``;
+      const out = await askOnce(state, sys, user);
+      if (!out) return;
+      const fixed = extractCodeBlocks(out).find(b => {
+        const lang = b.lang || block.lang;
+        return b.code.trim() && validateCode(lang, b.code) === null;
+      });
+      if (fixed) {
+        addMsg(`🔧 תיקון אוטומטי (${block.lang}):\n\`\`\`${block.lang}\n${fixed.code.trim()}\n\`\`\``, 'al');
+      }
+    } catch {} finally { autoFixing = false; }
   }
 
   let typingTurn: HTMLElement | null = null;
