@@ -2804,6 +2804,36 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/', 'pikachu', (m) => { deskCurrentModel = m; });
   const deskThrowPokeball = makeThrowPokeball(group, pikaGroup, import.meta.env.BASE_URL || '/');
 
+  // Deadpool Pikachu floats above the regular Pikachu when it's the active
+  // character. Parented to the scene root so it hovers in place (no orbiting).
+  let deskCompanion: THREE.Group | null = null;
+  let deskCompanionLoading = false;
+  function ensureDeskCompanion(show: boolean) {
+    if (deskCompanion) { deskCompanion.visible = show; return; }
+    if (!show || deskCompanionLoading) return;
+    deskCompanionLoading = true;
+    import('three/examples/jsm/loaders/GLTFLoader.js').then(({ GLTFLoader }) => {
+      new GLTFLoader().load((import.meta.env.BASE_URL || '/') + 'ar-models/pikachu-deadpool.glb', (g: any) => {
+        const m: THREE.Object3D = g.scene;
+        m.traverse((o: any) => {
+          if (!o.isMesh) return;
+          o.geometry.computeVertexNormals();
+          const t = (mm: any) => { mm.side = THREE.DoubleSide; if (mm.color) mm.color.multiplyScalar(0.55); mm.roughness = 1; mm.metalness = 0; };
+          Array.isArray(o.material) ? o.material.forEach(t) : (o.material && t(o.material));
+        });
+        const bb = new THREE.Box3().setFromObject(m);
+        const sz = bb.getSize(new THREE.Vector3()); const ctr = bb.getCenter(new THREE.Vector3());
+        const s = 1.25 / Math.max(sz.x, sz.y, sz.z);   // smaller than the main model
+        const wrap = new THREE.Group();
+        m.scale.setScalar(s); m.position.set(-ctr.x * s, -ctr.y * s, -ctr.z * s);
+        wrap.position.set(0, 2.35, 0);                  // hover above the orb
+        wrap.add(m); wrap.visible = show; group.add(wrap); deskCompanion = wrap;
+        deskCompanionLoading = false;
+      }, undefined, () => { deskCompanionLoading = false; });
+    });
+  }
+  ensureDeskCompanion(true);   // default character is Pikachu
+
   // ────────────────────────────────────────────
   // ORBITAL RINGS — prominent gold halo, champagne, rose
   // ────────────────────────────────────────────
@@ -3688,6 +3718,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
         flashArrival(m);
         playCry(name);
       });
+      ensureDeskCompanion(name === 'pikachu');   // Deadpool floats above only over regular Pikachu
     },
     throwPokeball: deskThrowPokeball,
     getCharacterTransform() { return getCharXform(deskCurrentChar); },
