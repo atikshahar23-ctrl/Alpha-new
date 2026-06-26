@@ -1697,9 +1697,9 @@ export function mountApp(root: HTMLElement) {
       gestureHands = new Hands({ locateFile: (f: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/${f}` });
       // Lower confidences + lightest model = the detector locks on and tracks
       // the hand almost instantly, so gestures register without a long wait.
-      // Highest-accuracy hand model — modelComplexity 1 tracks finger articulation
-      // (needed for precise pointing) far better than the lite model.
-      gestureHands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5, selfieMode: true });
+      // Lite model (complexity 0) — reliable on phones; complexity 1 stalls on
+      // mobile. Still tracks the fingertip well enough for pointing.
+      gestureHands.setOptions({ maxNumHands: 1, modelComplexity: 0, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5, selfieMode: true });
 
       let lastFrameMs = performance.now();
 
