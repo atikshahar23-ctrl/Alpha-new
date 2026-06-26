@@ -6,6 +6,7 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
 import { pikaEmoteSpeak } from '../assistant/pikaVoice';
+import { readObj, writeObj } from '../util/batchedStore';
 
 export type PikaEmote = 'happy' | 'curious' | 'excited' | 'sad' | 'surprised';
 
@@ -1877,34 +1878,24 @@ function defaultXform(character: string): CharXform {
   return { x: r.x, y: r.y, z: r.z, s: 1, px: 0, py: 0, pz: 0 };
 }
 
+// All transform reads/writes go through the batched store so dragging a slider
+// (which calls saveCharXform on every input) never blocks on synchronous IO.
 function getCharXform(character: string): CharXform {
-  try {
-    const saved = localStorage.getItem(CHAR_XFORM_LS_KEY);
-    if (saved) {
-      const all = JSON.parse(saved) as Record<string, CharXform>;
-      if (all[character]) return all[character];
-    }
-  } catch {}
-  return defaultXform(character);
+  const all = readObj<Record<string, CharXform>>(CHAR_XFORM_LS_KEY, {});
+  return all[character] ?? defaultXform(character);
 }
 
 function saveCharXform(character: string, xf: CharXform): void {
-  try {
-    const saved = localStorage.getItem(CHAR_XFORM_LS_KEY);
-    const all: Record<string, CharXform> = saved ? JSON.parse(saved) : {};
-    all[character] = xf;
-    localStorage.setItem(CHAR_XFORM_LS_KEY, JSON.stringify(all));
-  } catch {}
+  const all = readObj<Record<string, CharXform>>(CHAR_XFORM_LS_KEY, {});
+  all[character] = xf;
+  writeObj(CHAR_XFORM_LS_KEY, all);
 }
 
 function clearCharXform(character: string): void {
-  try {
-    const saved = localStorage.getItem(CHAR_XFORM_LS_KEY);
-    if (!saved) return;
-    const all = JSON.parse(saved) as Record<string, CharXform>;
-    delete all[character];
-    localStorage.setItem(CHAR_XFORM_LS_KEY, JSON.stringify(all));
-  } catch {}
+  const all = readObj<Record<string, CharXform>>(CHAR_XFORM_LS_KEY, {});
+  if (!(character in all)) return;
+  delete all[character];
+  writeObj(CHAR_XFORM_LS_KEY, all);
 }
 
 // Pinned transforms — user-chosen defaults per character. When reset is pressed,
@@ -1912,34 +1903,19 @@ function clearCharXform(character: string): void {
 const CHAR_XFORM_PIN_KEY = 'char_xform_pin_v1';
 
 function getPinnedXform(character: string): CharXform | null {
-  try {
-    const saved = localStorage.getItem(CHAR_XFORM_PIN_KEY);
-    if (saved) {
-      const all = JSON.parse(saved) as Record<string, CharXform>;
-      if (all[character]) return all[character];
-    }
-  } catch {}
-  return null;
+  const all = readObj<Record<string, CharXform>>(CHAR_XFORM_PIN_KEY, {});
+  return all[character] ?? null;
 }
 
 function savePinnedXform(character: string, xf: CharXform): void {
-  try {
-    const saved = localStorage.getItem(CHAR_XFORM_PIN_KEY);
-    const all: Record<string, CharXform> = saved ? JSON.parse(saved) : {};
-    all[character] = xf;
-    localStorage.setItem(CHAR_XFORM_PIN_KEY, JSON.stringify(all));
-  } catch {}
+  const all = readObj<Record<string, CharXform>>(CHAR_XFORM_PIN_KEY, {});
+  all[character] = xf;
+  writeObj(CHAR_XFORM_PIN_KEY, all);
 }
 
 function hasPinnedXform(character: string): boolean {
-  try {
-    const saved = localStorage.getItem(CHAR_XFORM_PIN_KEY);
-    if (saved) {
-      const all = JSON.parse(saved) as Record<string, CharXform>;
-      return !!all[character];
-    }
-  } catch {}
-  return false;
+  const all = readObj<Record<string, CharXform>>(CHAR_XFORM_PIN_KEY, {});
+  return !!all[character];
 }
 
 // Stores auto-normalization values per model so real-time transform changes can
