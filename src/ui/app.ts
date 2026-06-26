@@ -1434,7 +1434,11 @@ export function mountApp(root: HTMLElement) {
     let throwCooldownMs = 0;
     let suppressPalmMs = 0;   // after a throw, ignore the open hand for dispel
     let fistActive = false;   // a fist is currently held (armed to throw on open)
-    const PALM_HOLD_THRESHOLD = 550;   // snappy dispel
+    // Pinch-to-grab manipulation of the orb.
+    let pinchActive = false;
+    let pinchStartHX = 0, pinchStartHY = 0;
+    let pinchStartXf: { x: number; y: number; z: number; s: number; px: number; py: number; pz: number } | null = null;
+    const PALM_HOLD_THRESHOLD = 4000;  // long, deliberate hold (4s) to release a Pokémon
     const THROW_COOLDOWN = 2200;
 
     function gestureStatus(msg: string) {
@@ -1531,39 +1535,67 @@ export function mountApp(root: HTMLElement) {
 
         const cx2 = lm[9].x * 320, cy2 = lm[9].y * 240;
 
-        if (fist) {
-          // Fist recognised — arm the throw. Open the hand to fire.
-          fistActive = true;
-          palmHoldMs = 0;
-          gestureStatus('✊ אגרוף מזוהה — פתח כף יד לזריקה!');
-          ctx.beginPath(); ctx.arc(cx2, cy2, 26, 0, Math.PI*2);
-          ctx.strokeStyle = 'rgba(255,70,70,.9)'; ctx.lineWidth = 4; ctx.stroke();
-        } else if (open) {
-          if (fistActive && throwCooldownMs <= 0) {
-            // ✊ → 🖐️  THROW! Fire the moment the hand opens — no hold needed.
-            fistActive = false;
-            throwCooldownMs = THROW_COOLDOWN;
-            suppressPalmMs = 1100;   // this same open hand must not start a dispel
-            gestureStatus('🚀 זריקה! בחר פוקימון');
-            (window as any).openSummonDock?.();
-            setTimeout(() => { if (gestureActive) gestureStatus('מצלמה פעילה'); }, 2500);
-          } else if (suppressPalmMs <= 0) {
-            // Open palm held → dispel the current Pokémon.
-            palmHoldMs += dt;
-            const progress = Math.min(1, palmHoldMs / PALM_HOLD_THRESHOLD);
-            gestureStatus(`🖐️ החזק לשחרור… ${Math.round(progress * 100)}%`);
-            ctx.beginPath(); ctx.arc(cx2, cy2, 28, -Math.PI/2, -Math.PI/2 + progress * Math.PI*2);
-            ctx.strokeStyle = `rgba(218,165,32,${0.4 + progress*0.6})`; ctx.lineWidth = 4; ctx.stroke();
-            if (palmHoldMs >= PALM_HOLD_THRESHOLD) {
-              palmHoldMs = 0;
-              gestureStatus('⚡ שוחרר!');
-              (window as any).dispelOrb?.();
-            }
+        // Pinch = thumb tip (4) close to index tip (8). Hysteresis (grab <0.06,
+        // hold until >0.11) so the grip doesn't flicker. Pinch takes priority
+        // over every other gesture so grabbing never triggers throw/dispel.
+        const pinchD = Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y);
+        const pinching = pinchActive ? pinchD < 0.11 : pinchD < 0.06;
+
+        if (pinching) {
+          const hx = (lm[4].x + lm[8].x) / 2;   // pinch midpoint
+          const hy = (lm[4].y + lm[8].y) / 2;
+          if (!pinchActive) {
+            pinchActive = true;
+            pinchStartHX = hx; pinchStartHY = hy;
+            pinchStartXf = orb.getCharacterTransform();
           }
+          palmHoldMs = 0; fistActive = false;
+          const xf = pinchStartXf!;
+          const SENS = 5.0;                 // high sensitivity for precise control
+          const dx = hx - pinchStartHX;     // selfieMode → already mirrored
+          const dy = hy - pinchStartHY;
+          // Grab & turn the Pokémon inside the orb: horizontal drag spins around
+          // Y, vertical drag tilts around X. Relative to the grab-start pose.
+          orb.setCharacterTransform(xf.x + dy * SENS, xf.y + dx * SENS, xf.z, xf.s, xf.px, xf.py, xf.pz);
+          gestureStatus('🤏 אוחז בכדור — הזז יד כדי לסובב');
+          ctx.beginPath(); ctx.arc(hx * 320, hy * 240, 16, 0, Math.PI * 2);
+          ctx.strokeStyle = 'rgba(120,220,255,.95)'; ctx.lineWidth = 4; ctx.stroke();
         } else {
-          // Transitional (mid open/close) — keep the fist armed, reset dispel.
-          palmHoldMs = 0;
-          gestureStatus(fistActive ? '✊ אגרוף מזוהה — פתח כף יד לזריקה!' : 'מצלמה פעילה');
+          if (pinchActive) { pinchActive = false; pinchStartXf = null; }
+          if (fist) {
+            // Fist recognised — arm the throw. Open the hand to fire.
+            fistActive = true;
+            palmHoldMs = 0;
+            gestureStatus('✊ אגרוף מזוהה — פתח כף יד לזריקה!');
+            ctx.beginPath(); ctx.arc(cx2, cy2, 26, 0, Math.PI*2);
+            ctx.strokeStyle = 'rgba(255,70,70,.9)'; ctx.lineWidth = 4; ctx.stroke();
+          } else if (open) {
+            if (fistActive && throwCooldownMs <= 0) {
+              // ✊ → 🖐️  THROW! Fire the moment the hand opens — no hold needed.
+              fistActive = false;
+              throwCooldownMs = THROW_COOLDOWN;
+              suppressPalmMs = 1100;   // this same open hand must not start a dispel
+              gestureStatus('🚀 זריקה! בחר פוקימון');
+              (window as any).openSummonDock?.();
+              setTimeout(() => { if (gestureActive) gestureStatus('מצלמה פעילה'); }, 2500);
+            } else if (suppressPalmMs <= 0) {
+              // Open palm held a long, deliberate 4s → release the current Pokémon.
+              palmHoldMs += dt;
+              const progress = Math.min(1, palmHoldMs / PALM_HOLD_THRESHOLD);
+              gestureStatus(`🖐️ החזק 4 שניות לשחרור… ${Math.round(progress * 100)}%`);
+              ctx.beginPath(); ctx.arc(cx2, cy2, 28, -Math.PI/2, -Math.PI/2 + progress * Math.PI*2);
+              ctx.strokeStyle = `rgba(218,165,32,${0.4 + progress*0.6})`; ctx.lineWidth = 4; ctx.stroke();
+              if (palmHoldMs >= PALM_HOLD_THRESHOLD) {
+                palmHoldMs = 0;
+                gestureStatus('⚡ שוחרר!');
+                (window as any).dispelOrb?.();
+              }
+            }
+          } else {
+            // Transitional (mid open/close) — keep the fist armed, reset dispel.
+            palmHoldMs = 0;
+            gestureStatus(fistActive ? '✊ אגרוף מזוהה — פתח כף יד לזריקה!' : 'מצלמה פעילה');
+          }
         }
 
       });
