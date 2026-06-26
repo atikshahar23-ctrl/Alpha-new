@@ -254,6 +254,29 @@ body[data-char="ho-oh"] .char-ambient {
 .gp-camera-hidden video,
 .gp-camera-hidden canvas{ width:320px; height:240px; }
 
+/* ── Finger-pointing laser cursor ──────────────────────────────────────── */
+.laser-cursor{
+  position:fixed; top:0; left:0; z-index:2000; pointer-events:none;
+  width:0; height:0; --p:0;
+}
+.laser-cursor[hidden]{ display:none; }
+.laser-cursor .lc-dot{
+  position:absolute; left:-7px; top:-7px; width:14px; height:14px; border-radius:50%;
+  background:radial-gradient(circle, #ff5a5a 0%, #ff1a1a 55%, rgba(255,0,0,0) 75%);
+  box-shadow:0 0 14px 4px rgba(255,40,40,.85), 0 0 34px 10px rgba(255,0,0,.45);
+}
+/* dwell-progress ring (conic) around the dot */
+.laser-cursor .lc-ring{
+  position:absolute; left:-22px; top:-22px; width:44px; height:44px; border-radius:50%;
+  background:conic-gradient(#ff3b3b calc(var(--p)*360deg), rgba(255,60,60,.12) 0);
+  -webkit-mask:radial-gradient(farthest-side, transparent 62%, #000 64%);
+          mask:radial-gradient(farthest-side, transparent 62%, #000 64%);
+  opacity:.9;
+}
+.laser-cursor.lc-over .lc-dot{ box-shadow:0 0 18px 6px rgba(255,60,60,.95), 0 0 40px 14px rgba(255,0,0,.5); }
+.laser-cursor.lc-fire .lc-dot{ animation:lc-fire .3s ease; }
+@keyframes lc-fire{ 0%{ transform:scale(1);} 50%{ transform:scale(2.4); } 100%{ transform:scale(1);} }
+
 /* ── Spinning summon pokéball (screen centre, while choosing) ───────────── */
 .summon-orb{
   position:fixed; inset:0; z-index:1190;

@@ -172,7 +172,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v29 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v30 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -219,6 +219,13 @@ export function mountApp(root: HTMLElement) {
         </div>
         <span class="gi-dot"></span>
         <span class="gi-text" id="gestureStatus">מצלמה פעילה</span>
+      </div>
+
+      <!-- Finger-pointing laser cursor — follows the index finger; dwelling on a
+           target for 2s selects (clicks) it. -->
+      <div id="laserCursor" class="laser-cursor" hidden>
+        <div class="lc-ring"></div>
+        <div class="lc-dot"></div>
       </div>
 
       <!-- Summon dock — macOS-style row of Pokéballs (image above, name below).
@@ -1581,6 +1588,12 @@ export function mountApp(root: HTMLElement) {
     let fistActive = false;   // a fist is currently held (armed to throw)
     let fistMinScale = 0;     // smallest hand size seen during the current fist
     let prevScale = 0;        // hand size last frame (for forward-thrust velocity)
+    // Finger-pointing laser cursor + dwell-to-select.
+    let pointSX = 0, pointSY = 0;       // smoothed cursor screen position
+    let dwellMs = 0;
+    let dwellTarget: Element | null = null;
+    let clickCooldownMs = 0;
+    const DWELL_MS = 2000;
     // Pinch-to-grab manipulation of the orb.
     let pinchActive = false;
     let pinchStartHX = 0, pinchStartHY = 0;
@@ -1593,6 +1606,48 @@ export function mountApp(root: HTMLElement) {
       if (el) el.textContent = msg;
     }
 
+    // ── Laser-pointer cursor + dwell-to-select ──────────────────────────────
+    function clickableAt(x: number, y: number): Element | null {
+      let el = document.elementFromPoint(x, y);
+      while (el) {
+        if (el.matches('button,a,input,select,textarea,[role="button"],.sd-item,.ic,.chip,[data-id],[onclick]')) return el;
+        el = el.parentElement;
+      }
+      return null;
+    }
+    function updateLaser(x: number, y: number, dt: number) {
+      const cur = document.getElementById('laserCursor');
+      if (!cur) return;
+      cur.removeAttribute('hidden');
+      cur.style.transform = `translate(${x}px, ${y}px)`;
+      const target = clickableAt(x, y);
+      if (target && target === dwellTarget) {
+        dwellMs += dt;
+        const p = Math.min(1, dwellMs / DWELL_MS);
+        cur.style.setProperty('--p', String(p));
+        cur.classList.add('lc-arming');
+        if (dwellMs >= DWELL_MS && clickCooldownMs <= 0) {
+          dwellMs = 0; clickCooldownMs = 1400;
+          cur.classList.remove('lc-arming');
+          cur.style.setProperty('--p', '0');
+          (target as HTMLElement).click();   // dwell-select
+          cur.classList.add('lc-fire');
+          setTimeout(() => cur.classList.remove('lc-fire'), 300);
+        }
+      } else {
+        dwellTarget = target;
+        dwellMs = 0;
+        cur.style.setProperty('--p', '0');
+        cur.classList.toggle('lc-arming', false);
+        cur.classList.toggle('lc-over', !!target);
+      }
+    }
+    function hideLaser() {
+      const cur = document.getElementById('laserCursor');
+      if (cur) { cur.setAttribute('hidden', ''); cur.classList.remove('lc-arming', 'lc-over', 'lc-fire'); }
+      dwellTarget = null; dwellMs = 0; pointSX = 0; pointSY = 0;
+    }
+
     function stopGesture() {
       gestureActive = false;
       if (gestureCamera) { try { gestureCamera.stop(); } catch {} gestureCamera = null; }
@@ -1602,6 +1657,7 @@ export function mountApp(root: HTMLElement) {
       if (vid) vid.srcObject = null;
       document.getElementById('gesturePanel')!.setAttribute('hidden', '');
       $('detectBtn').classList.remove('active');
+      const cur = document.getElementById('laserCursor'); if (cur) cur.setAttribute('hidden', '');
     }
 
     async function startGesture() {
@@ -1641,7 +1697,9 @@ export function mountApp(root: HTMLElement) {
       gestureHands = new Hands({ locateFile: (f: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/${f}` });
       // Lower confidences + lightest model = the detector locks on and tracks
       // the hand almost instantly, so gestures register without a long wait.
-      gestureHands.setOptions({ maxNumHands: 1, modelComplexity: 0, minDetectionConfidence: 0.4, minTrackingConfidence: 0.35, selfieMode: true });
+      // Highest-accuracy hand model — modelComplexity 1 tracks finger articulation
+      // (needed for precise pointing) far better than the lite model.
+      gestureHands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5, selfieMode: true });
 
       let lastFrameMs = performance.now();
 
@@ -1655,6 +1713,7 @@ export function mountApp(root: HTMLElement) {
         if (!results.multiHandLandmarks?.length) {
           gestureStatus('מצלמה פעילה');
           palmHoldMs = 0; fistActive = false; fistMinScale = 0; prevScale = 0;
+          hideLaser();
           return;
         }
 
@@ -1673,12 +1732,15 @@ export function mountApp(root: HTMLElement) {
         // responsive without flickering. Count-based so it reads instantly and
         // tolerates a not-perfectly-formed hand.
         const fingerUp = (tip: number, pip: number) => lm[tip].y < lm[pip].y - 0.01;
-        const upCount = [fingerUp(8,6), fingerUp(12,10), fingerUp(16,14), fingerUp(20,18)].filter(Boolean).length;
-        const open = upCount >= 3;   // open palm (lenient — 3 of 4 fingers)
-        const fist = upCount <= 1;   // closed fist (lenient)
+        const idxUp = fingerUp(8,6), midUp = fingerUp(12,10), rngUp = fingerUp(16,14), pkyUp = fingerUp(20,18);
+        const upCount = [idxUp, midUp, rngUp, pkyUp].filter(Boolean).length;
+        const open = upCount >= 3;        // open palm (lenient — 3 of 4 fingers)
+        const fist = upCount === 0;       // closed fist
+        const pointing = idxUp && !midUp && !rngUp && !pkyUp;  // index only → laser pointer
 
         throwCooldownMs = Math.max(0, throwCooldownMs - dt);
         suppressPalmMs = Math.max(0, suppressPalmMs - dt);
+        clickCooldownMs = Math.max(0, clickCooldownMs - dt);
 
         const cx2 = lm[9].x * 320, cy2 = lm[9].y * 240;
 
@@ -1713,7 +1775,20 @@ export function mountApp(root: HTMLElement) {
           gestureStatus('🤏 אוחז בכדור — הזז יד כדי לסובב');
           ctx.beginPath(); ctx.arc(hx * 320, hy * 240, 16, 0, Math.PI * 2);
           ctx.strokeStyle = 'rgba(120,220,255,.95)'; ctx.lineWidth = 4; ctx.stroke();
+        } else if (pointing) {
+          // ☝️ Finger-pointing laser cursor — index tip drives a red on-screen
+          // cursor; dwelling on a target for 2s clicks it.
+          if (pinchActive) { pinchActive = false; pinchStartXf = null; }
+          palmHoldMs = 0; fistActive = false; fistMinScale = 0;
+          const tx = lm[8].x * window.innerWidth;
+          const ty = lm[8].y * window.innerHeight;
+          // smooth (low-pass) for a steady cursor
+          pointSX = pointSX ? pointSX + (tx - pointSX) * 0.35 : tx;
+          pointSY = pointSY ? pointSY + (ty - pointSY) * 0.35 : ty;
+          updateLaser(pointSX, pointSY, dt);
+          gestureStatus('☝️ מצביע — החזק 2 שניות לבחירה');
         } else {
+          hideLaser();
           if (pinchActive) { pinchActive = false; pinchStartXf = null; }
           if (fist) {
             // Fist + THROW toward the screen: while the fist is held, watch its
