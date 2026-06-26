@@ -52,7 +52,7 @@ const loadPhoto = async (id) => { try { const r = await store.get("hg2:photo:" +
 const loadGallery = async (id) => { try { const r = await store.get("hg2:gallery:" + id); return r && r.value ? JSON.parse(r.value) : []; } catch { return []; } };
 const loadVideo = async (id) => { try { const r = await store.get("hg2:video:" + id); return r && r.value ? r.value : null; } catch { return null; } };
 const rawGet = async (k) => { try { const r = await store.get(k); return r && r.value != null ? r.value : null; } catch { return null; } };
-const BACKUP_KEYS = ["hg2:index", "hg2:customers", "hg2:pricelist", "hg2:quotes", "hg2:quoteseq", "hg2:vehicle", "hg2:carstock", "hg2:suppliers", "hg2:invoices", "hg2:tasks", "hg2:wanumber", "hg2:init"];
+const BACKUP_KEYS = ["hg2:index", "hg2:customers", "hg2:pricelist", "hg2:quotes", "hg2:quoteseq", "hg2:vehicle", "hg2:carstock", "hg2:suppliers", "hg2:invoices", "hg2:tasks", "hg2:samsonix", "hg2:wanumber", "hg2:init"];
 async function collectBackup() {
   const data = {};
   for (const k of BACKUP_KEYS) { const v = await rawGet(k); if (v != null) data[k] = v; }
@@ -186,7 +186,7 @@ function DateField({ value, onChange, placeholder, clearable }) {
 export default function App() {
   const [ready, setReady] = useState(false);
   const [index, setIndex] = useState([]);
-  const [view, setView] = useState("hub"); // hub | logger | analytics | customers | pricing | vehicle | suppliers | carstock | invoices | new | detail
+  const [view, setView] = useState("hub"); // hub | logger | analytics | customers | pricing | vehicle | suppliers | carstock | invoices | samsonix | new | detail
   const [prevTab, setPrevTab] = useState("logger");
   const [detailId, setDetailId] = useState(null);
   const [resumeId, setResumeId] = useState(null);
@@ -302,6 +302,7 @@ export default function App() {
         {view === "suppliers" && <Suppliers onBack={() => setView("hub")} showToast={showToast} />}
         {view === "carstock" && <CarStock onBack={() => setView("hub")} showToast={showToast} />}
         {view === "invoices" && <Invoices onBack={() => setView("hub")} showToast={showToast} />}
+        {view === "samsonix" && <Samsonix onBack={() => setView("hub")} showToast={showToast} />}
         {view === "backup" && <Backup onBack={() => setView("hub")} showToast={showToast} />}
         {view === "finance" && <Finance index={index} onBack={() => setView("hub")} />}
         {view === "leads" && <Leads onBack={() => setView("hub")} showToast={showToast} />}
@@ -356,6 +357,7 @@ function Hub({ index, go, onNew }) {
     { id: "suppliers", icon: Scale, title: "השוואת ספקים", sub: "מחירי רכש" },
     { id: "carstock", icon: Boxes, title: "מלאי ברכב", sub: "מלאי נייד" },
     { id: "invoices", icon: Receipt, title: "חשבוניות", sub: "חשבונות ותשלומים" },
+    { id: "samsonix", icon: ClipboardList, title: "טפסי סמסוניק", sub: "טופס DVR · שליחה ומעקב" },
     { id: "leads", icon: Target, title: "ניהול לידים", sub: "6,452 לידים עסקיים", hot: true },
     { id: "backup", icon: Shield, title: "גיבוי ושחזור", sub: "שמירת הנתונים" },
     { id: "settings", icon: Settings, title: "הגדרות עסק", sub: "מיתוג וקישורים" },
@@ -1825,6 +1827,171 @@ function InvoiceModal({ onClose, onSave, showToast }) {
           </div>
         </div>
         <div className="hg2-modal-foot"><button className="hg2-btn ghost" onClick={onClose}>ביטול</button><button className="hg2-btn primary" onClick={() => iv.title.trim() && onSave({ ...iv, title: iv.title.trim(), supplier: iv.supplier.trim(), amount: Number(iv.amount) || 0, thumb }, photoFull)}>שמירה</button></div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================ Samsonix DVR Forms ============================ */
+const SAMSONIX_PLANS = {
+  "2gb": 'שימוש בשרת + גלישה 2GB · 39 ₪ +מע״מ (עד 2 משתמשים / 1T)',
+  "4gb": 'שימוש בשרת + גלישה 4GB · 49 ₪ +מע״מ (עד 4 משתמשים / 2T)',
+  "10gb": 'שימוש בשרת + גלישה 10GB · 59 ₪ +מע״מ (מעל 5 משתמשים / 4T)',
+};
+const SX_STATUS = ["טיוטה", "נשלח ללקוח", "נחתם/הוחזר"];
+
+// Printable Samsonix DVR contract. CVV is NEVER persisted, so it never appears
+// here — only the (optional) masked card number + expiry the record stored.
+function printSamsonix(f) {
+  const planLabel = SAMSONIX_PLANS[f.plan] || "";
+  const maskedCard = (f.cardNum || "").replace(/(.{4})(?=.)/g, "$1 ");
+  const today = dmy(f.savedAt ? f.savedAt.slice(0, 10) : todayISO());
+  const box = (on) => `<span style="display:inline-block;width:13px;height:13px;border:1.5px solid #222;text-align:center;line-height:12px;font-size:10px;font-weight:700;${on ? "background:#1a1a2e;color:#fff" : ""}">${on ? "✓" : ""}</span>`;
+  const fv = (l, v) => `<div style="border-bottom:1px solid #bbb;padding-bottom:3px"><div style="font-size:10px;color:#777">${l}</div><div style="font-size:13px;font-weight:600;min-height:16px">${v || ""}</div></div>`;
+  const win = window.open("", "_blank", "width=820,height=1000");
+  if (!win) { alert("אנא אפשר חלונות קופצים"); return; }
+  win.document.write(`<!DOCTYPE html><html dir="rtl" lang="he"><head><meta charset="utf-8"><title>Samsonix DVR – ${f.fullName || ""}</title>
+<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;direction:rtl;padding:28px 32px;color:#111;background:#fff;font-size:13px}
+.header{display:flex;justify-content:space-between;border-bottom:2px solid #1a1a2e;padding-bottom:14px;margin-bottom:14px}
+.logo{font-size:26px;font-weight:900;color:#1a1a2e;letter-spacing:1px}.logo em{color:#e63946;font-style:normal}
+h2{text-align:center;font-size:17px;text-decoration:underline;margin:12px 0 8px;color:#1a1a2e}
+.sec{margin-bottom:14px}.sectl{font-weight:700;margin-bottom:6px;color:#1a1a2e;border-bottom:1px solid #ddd;padding-bottom:4px}
+.row{display:flex;gap:8px;margin:5px 0;font-size:12.5px;align-items:center}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 20px}
+.prod{background:#fffbe6;border:1.5px solid #d4a017;border-radius:6px;padding:8px 12px;margin:8px 0;font-weight:600}
+.sig{display:flex;justify-content:space-between;margin-top:24px}.sigline{border-top:1.5px solid #555;width:220px;text-align:center;padding-top:4px;font-size:11px;color:#555}
+@media print{.noprint{display:none}}</style></head><body>
+<div class="header"><div><div class="logo">SAMS<em>O</em>NIX</div><div style="font-size:10px;color:#666;letter-spacing:3px">DVR SECURITY</div></div><div style="font-size:12px;color:#444;text-align:left">תאריך: ${today}</div></div>
+<h2>טופס הזמנת שירות Samsonix DVR</h2>
+<div class="sec"><div class="sectl">פרטי הלקוח</div><div class="grid">${fv("שם מלא", f.fullName)}${fv("ת.ז.", f.idNum)}${fv("טלפון", f.phone)}${fv("דוא״ל", f.email)}${fv("איש קשר", f.contactName)}${fv("חברה", f.company)}${fv("ח.פ./עוסק", f.bizNum)}</div></div>
+<div class="sec"><div class="sectl">המסלול הנבחר</div><div class="prod">${planLabel}</div><div class="row">${box(f.audio === "with")} כולל אודיו &nbsp;&nbsp; ${box(!!f.bsd)} ב.ס.ד</div></div>
+<div class="sec"><div class="sectl">פרטי הרכב/ים</div><div class="grid">${fv("רכב 1", f.veh1)}${fv("סוג רכב 1", f.veh1Type)}${fv("רכב 2", f.veh2)}${fv("סוג רכב 2", f.veh2Type)}</div></div>
+${(f.cardNum || f.expiry) ? `<div class="sec"><div class="sectl">פרטי תשלום</div><div class="grid">${fv("מספר כרטיס", maskedCard)}${fv("תוקף", f.expiry)}</div><div style="font-size:10px;color:#2d7a2d;margin-top:6px">🔒 קוד האבטחה (CVV) אינו נשמר במערכת מטעמי אבטחה.</div></div>` : ""}
+<div class="sig"><div class="sigline">חתימת הלקוח</div><div class="sigline">חתימת נציג</div></div>
+<div class="noprint" style="text-align:center;margin-top:24px"><button onclick="window.print()" style="padding:10px 28px;font-size:14px;background:#1a1a2e;color:#fff;border:0;border-radius:6px;cursor:pointer">הדפסה / שמירה כ-PDF</button></div>
+</body></html>`);
+  win.document.close();
+}
+
+function Samsonix({ onBack, showToast }) {
+  const [forms, setForms] = useState(null);
+  const [num, setNum] = useState("");
+  const [open, setOpen] = useState(false);
+  const [edit, setEdit] = useState(null);
+  useEffect(() => {
+    loadArr("hg2:samsonix").then(setForms);
+    store.get("hg2:wanumber").then((r) => setNum(r && r.value ? JSON.parse(r.value) : DEFAULT_WA_NUMBER)).catch(() => setNum(DEFAULT_WA_NUMBER));
+  }, []);
+  const persist = (a) => { setForms(a); saveArr("hg2:samsonix", a); };
+  const save = (data) => {
+    if (edit) persist(forms.map((x) => x.id === edit.id ? { ...edit, ...data } : x));
+    else persist([{ ...data, id: uid(), savedAt: new Date().toISOString(), status: "טיוטה" }, ...(forms || [])]);
+    setOpen(false); setEdit(null); showToast("הטופס נשמר");
+  };
+  const remove = async (f) => { if (!(await askConfirm("למחוק טופס?"))) return; persist(forms.filter((x) => x.id !== f.id)); };
+  const setStatus = (f, status) => persist(forms.map((x) => x.id === f.id ? { ...x, status } : x));
+  const cycleStatus = (f) => { const i = SX_STATUS.indexOf(f.status); setStatus(f, SX_STATUS[(i + 1) % SX_STATUS.length]); };
+  const sendToCustomer = (f) => {
+    if (!f.phone) { showToast("אין מספר טלפון ללקוח בטופס", "warn"); return; }
+    const text = `שלום ${f.fullName || ""},\nמצורף טופס הזמנת שירות Samsonix DVR:\n• מסלול: ${SAMSONIX_PLANS[f.plan] || ""}\n• אודיו: ${f.audio === "with" ? "כולל" : "ללא"}${f.bsd ? "\n• ב.ס.ד" : ""}\n• רכב: ${[f.veh1, f.veh1Type].filter(Boolean).join(" ")}\n\nנא לעבור על הפרטים ולאשר. תודה!`;
+    window.open(waLink(f.phone, text), "_blank");
+    if (f.status === "טיוטה") setStatus(f, "נשלח ללקוח");
+    showToast("נפתח וואטסאפ ללקוח");
+  };
+  const counts = useMemo(() => {
+    const c = { sent: 0, signed: 0 };
+    (forms || []).forEach((f) => { if (f.status === "נשלח ללקוח") c.sent++; if (f.status === "נחתם/הוחזר") c.signed++; });
+    return c;
+  }, [forms]);
+
+  return (
+    <div className="hg2-flow">
+      <FlowHead title="טפסי Samsonix DVR" sub="מילוי · שליחה ללקוח · מעקב" onBack={onBack} />
+      <div className="hg2-stats" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
+        <div className="hg2-stat"><span>סה״כ טפסים</span><b>{forms ? forms.length : 0}</b></div>
+        <div className="hg2-stat"><span>נשלחו</span><b style={{ color: "var(--amber)" }}>{counts.sent}</b></div>
+        <div className="hg2-stat"><span>נחתמו</span><b className="cy">{counts.signed}</b></div>
+      </div>
+      <button className="hg2-mini block" onClick={() => { setEdit(null); setOpen(true); }}><Plus size={14} /> טופס חדש</button>
+      {forms === null ? <div className="hg2-busy">טוען…</div> : (
+        <div className="hg2-list">
+          {forms.length === 0 && <div className="hg2-empty"><ClipboardList size={32} /><div>אין טפסים</div><p>צור טופס Samsonix, שלח ללקוח בוואטסאפ ועקוב אחר הסטטוס</p></div>}
+          {forms.map((f) => (
+            <div className="hg2-crow" key={f.id}>
+              <div className="hg2-crow-thumb"><ClipboardList size={18} /></div>
+              <div className="hg2-crow-mid"><b>{f.fullName || "ללא שם"}</b><span>{[f.phone, SAMSONIX_PLANS[f.plan] ? f.plan.toUpperCase() : ""].filter(Boolean).join(" · ")}</span></div>
+              <div className="hg2-inv-right">
+                <span className="hg2-crow-rev" style={{ fontSize: 11 }}>{dmy((f.savedAt || "").slice(0, 10))}</span>
+                <button className={"hg2-statuspill " + (f.status === "נחתם/הוחזר" ? "paid" : "pend")} onClick={() => cycleStatus(f)}>{f.status}</button>
+              </div>
+              <div className="hg2-crow-acts">
+                <button className="hg2-wa" onClick={() => sendToCustomer(f)} title="שלח ללקוח"><MessageSquare size={16} /></button>
+                <button className="hg2-icbtn2" onClick={() => printSamsonix(f)} title="הדפס / PDF"><Download size={14} /></button>
+                <button className="hg2-icbtn2" onClick={() => { setEdit(f); setOpen(true); }} title="עריכה"><Pencil size={14} /></button>
+                <button className="hg2-icbtn2 d" onClick={() => remove(f)} title="מחק"><Trash2 size={14} /></button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {open && <SamsonixModal initial={edit} onClose={() => { setOpen(false); setEdit(null); }} onSave={save} />}
+    </div>
+  );
+}
+
+function SamsonixModal({ initial, onClose, onSave }) {
+  const [f, setF] = useState(initial || {
+    fullName: "", idNum: "", phone: "", email: "", contactName: "", company: "", bizNum: "",
+    plan: "4gb", audio: "none", bsd: false, veh1: "", veh1Type: "", veh2: "", veh2Type: "",
+    cardNum: "", expiry: "",
+  });
+  const up = (k, v) => setF({ ...f, [k]: v });
+  return (
+    <div className="hg2-overlay" onClick={onClose}>
+      <div className="hg2-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="hg2-modal-head"><h3>{initial ? "עריכת טופס" : "טופס Samsonix חדש"}</h3><button onClick={onClose}><X size={18} /></button></div>
+        <div className="hg2-form">
+          <Field icon={User} label="שם מלא"><input value={f.fullName} onChange={(e) => up("fullName", e.target.value)} placeholder="שם הלקוח" /></Field>
+          <div className="hg2-row2">
+            <Field icon={Hash} label="ת.ז."><input value={f.idNum} onChange={(e) => up("idNum", e.target.value)} dir="ltr" style={{ textAlign: "right" }} /></Field>
+            <Field icon={Phone} label="טלפון"><input value={f.phone} onChange={(e) => up("phone", e.target.value)} dir="ltr" style={{ textAlign: "right" }} placeholder="05X-XXXXXXX" /></Field>
+          </div>
+          <Field icon={Mail} label="דוא״ל"><input value={f.email} onChange={(e) => up("email", e.target.value)} dir="ltr" style={{ textAlign: "right" }} /></Field>
+          <div className="hg2-row2">
+            <Field icon={Building2} label="חברה"><input value={f.company} onChange={(e) => up("company", e.target.value)} /></Field>
+            <Field icon={Hash} label="ח.פ./עוסק"><input value={f.bizNum} onChange={(e) => up("bizNum", e.target.value)} dir="ltr" style={{ textAlign: "right" }} /></Field>
+          </div>
+          <Field icon={User} label="איש קשר"><input value={f.contactName} onChange={(e) => up("contactName", e.target.value)} placeholder="לא חובה" /></Field>
+
+          <div className="hg2-field"><div className="hg2-flabel"><Tag size={15} /> מסלול</div>
+            <div className="hg2-seg">
+              <button className={f.plan === "2gb" ? "on" : ""} onClick={() => up("plan", "2gb")}>2GB</button>
+              <button className={f.plan === "4gb" ? "on" : ""} onClick={() => up("plan", "4gb")}>4GB</button>
+              <button className={f.plan === "10gb" ? "on" : ""} onClick={() => up("plan", "10gb")}>10GB</button>
+            </div>
+          </div>
+          <div className="hg2-row2">
+            <div className="hg2-field"><div className="hg2-flabel">אודיו</div>
+              <div className="hg2-seg"><button className={f.audio === "none" ? "on" : ""} onClick={() => up("audio", "none")}>ללא</button><button className={f.audio === "with" ? "on" : ""} onClick={() => up("audio", "with")}>כולל</button></div>
+            </div>
+            <div className="hg2-field"><div className="hg2-flabel">ב.ס.ד</div>
+              <div className="hg2-seg"><button className={!f.bsd ? "on" : ""} onClick={() => up("bsd", false)}>לא</button><button className={f.bsd ? "on" : ""} onClick={() => up("bsd", true)}>כן</button></div>
+            </div>
+          </div>
+          <div className="hg2-row2">
+            <Field icon={Car} label="רכב 1"><input value={f.veh1} onChange={(e) => up("veh1", e.target.value)} placeholder="מס׳ רכב" /></Field>
+            <Field icon={Truck} label="סוג רכב 1"><input value={f.veh1Type} onChange={(e) => up("veh1Type", e.target.value)} /></Field>
+          </div>
+          <div className="hg2-row2">
+            <Field icon={Car} label="רכב 2"><input value={f.veh2} onChange={(e) => up("veh2", e.target.value)} placeholder="לא חובה" /></Field>
+            <Field icon={Truck} label="סוג רכב 2"><input value={f.veh2Type} onChange={(e) => up("veh2Type", e.target.value)} /></Field>
+          </div>
+          <div className="hg2-row2">
+            <Field icon={DollarSign} label="מספר כרטיס (לא חובה)"><input value={f.cardNum} onChange={(e) => up("cardNum", e.target.value.replace(/[^\d]/g, ""))} dir="ltr" style={{ textAlign: "right" }} placeholder="נשמר ללא CVV" /></Field>
+            <Field icon={Calendar} label="תוקף"><input value={f.expiry} onChange={(e) => up("expiry", e.target.value)} dir="ltr" style={{ textAlign: "right" }} placeholder="MM/YY" /></Field>
+          </div>
+          <div style={{ fontSize: 11, color: "var(--ok)", marginTop: -2 }}>🔒 קוד CVV לעולם אינו נשמר במערכת.</div>
+        </div>
+        <div className="hg2-modal-foot"><button className="hg2-btn ghost" onClick={onClose}>ביטול</button><button className="hg2-btn primary" onClick={() => f.fullName.trim() && onSave({ ...f, fullName: f.fullName.trim() })}>שמירה</button></div>
       </div>
     </div>
   );

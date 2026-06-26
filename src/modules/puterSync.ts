@@ -38,6 +38,7 @@ const SYNC_TABLES = [
   'hg2:lastbackup',
   'hg2:crm_data',   // was wrongly 'hg2:crm'
   'hg2:profile',
+  'hg2:samsonix',   // Samsonix DVR forms area
   // Alpha modules
   'alpha_brain_memory_v1',
   'alpha_pomodoro_v1',
