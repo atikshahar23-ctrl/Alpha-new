@@ -7,6 +7,7 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
 import { pikaEmoteSpeak } from '../assistant/pikaVoice';
 import { readObj, writeObj } from '../util/batchedStore';
+import { GEN1 } from '../data/gen1';
 
 export type PikaEmote = 'happy' | 'curious' | 'excited' | 'sad' | 'surprised';
 
@@ -1302,6 +1303,8 @@ const CHARACTER_FILES: Record<string, string> = {
   'ho-oh':    'ar-models/ho-oh.glb',
   'pikachu-deadpool': 'ar-models/pikachu-deadpool.glb',
 };
+// Merge the imported Gen-1 pack (untextured, type-tinted GLBs, loaded on demand).
+for (const g of GEN1) CHARACTER_FILES[g.id] = `ar-models/${g.id}.glb`;
 export const CHARACTER_NAMES = Object.keys(CHARACTER_FILES);
 
 // Per-character scene background — the orb canvas is opaque and fills the whole
@@ -1359,6 +1362,7 @@ const POKEMON_CRY_ID: Record<string, number> = {
   entei: 244, moltres: 146, zapdos: 145, lugia: 249, 'ho-oh': 250,
   'pikachu-deadpool': 25,
 };
+for (const g of GEN1) POKEMON_CRY_ID[g.id] = g.dex;   // PokeAPI cries for imported Pokémon
 let _activeCry: HTMLAudioElement | null = null;
 function playCry(name: string) {
   if (_activeCry) { _activeCry.pause(); _activeCry.src = ''; _activeCry = null; }
@@ -1415,6 +1419,7 @@ const POKEMON_ATTACK_TYPE: Record<string, AttackType> = {
   'ho-oh':    'fire',
   'pikachu-deadpool': 'electric',
 };
+for (const g of GEN1) POKEMON_ATTACK_TYPE[g.id] = g.attack;   // type-based attack fx
 
 const ATTACK_COLORS: Record<AttackType, [number,number,number]> = {
   electric: [255, 238, 34],
@@ -1967,7 +1972,15 @@ function loadAndReplaceBody(
             const apply = (m: THREE.Material) => {
               (m as any).side = THREE.DoubleSide;
               const sm = m as THREE.MeshStandardMaterial;
-              if (sm.map) sm.map.colorSpace = THREE.SRGBColorSpace;
+              if (sm.map) { sm.map.colorSpace = THREE.SRGBColorSpace; }
+              else if (sm.color) {
+                // Untextured imported model (type-tinted): make it matte and dim
+                // the flat colour so the orb's bloom doesn't blow it out to white.
+                sm.color.multiplyScalar(0.5);
+                sm.roughness = 1; sm.metalness = 0;
+                if (sm.emissive) sm.emissive.setRGB(0, 0, 0);
+                (sm as any).envMapIntensity = 0.3;
+              }
             };
             if (Array.isArray(child.material)) child.material.forEach(apply);
             else if (child.material) apply(child.material);

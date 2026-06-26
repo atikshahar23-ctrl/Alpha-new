@@ -2,6 +2,7 @@ import { mountOrb, type OrbHandle } from '../orb/OrbScene';
 import { mountFlowLines } from '../bg/flowLines';
 import { loadState, saveState, addEvent, addTask, saveNote, loadEvents, loadTasks, removeEvent, type AppState, type TextLang, type AIProvider, type VoiceGender, type UILang } from '../assistant/state';
 import { askAIStream, askOnce, askVision, runTags } from '../assistant/gemini';
+import { GEN1 } from '../data/gen1';
 import { tryLocalCommand } from '../assistant/local';
 import { VoiceEngine } from '../assistant/voice';
 import { AudioEngine, type AmbientPreset } from '../assistant/audio';
@@ -171,7 +172,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v28 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v29 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -2440,6 +2441,8 @@ export function mountApp(root: HTMLElement) {
     { id: 'lugia',      label: 'לוגיה',      words: /(לוגיה|lugia)/i },
     { id: 'ho-oh',      label: 'הו-אוה',     words: /(הו.?אוה|ho.?oh)/i },
     { id: 'pikachu-deadpool', label: "פיקצ'ו דד-פול", words: /(דד.?פול|דדפול|deadpool|dead.?pool|פיקצ'?ו דד)/i },
+    // Imported Gen-1 pack (untextured, type-tinted) — selectable like the rest.
+    ...GEN1.map(g => ({ id: g.id, label: g.label, words: new RegExp(g.words, 'i') })),
   ];
 
   function setMainCharacter(id: string): string {
@@ -2588,6 +2591,7 @@ export function mountApp(root: HTMLElement) {
       entei: 244, moltres: 146, zapdos: 145, lugia: 249, 'ho-oh': 250,
       'pikachu-deadpool': 25,
     };
+    for (const g of GEN1) DEX[g.id] = g.dex;   // imported pack → PokeAPI artwork sprites
     const SPRITE = (id: string) =>
       `https://cdn.jsdelivr.net/gh/PokeAPI/sprites@master/sprites/pokemon/other/official-artwork/${DEX[id]}.png`;
 
