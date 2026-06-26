@@ -1926,6 +1926,17 @@ h2{font-size:16px;text-align:center;color:#f7c800;margin-bottom:20px}
     </label>
   </div>
 
+  <div class="card">
+    <div class="card-title">חתימה *</div>
+    <p style="font-size:12px;color:#888;margin-bottom:10px">חתום/י באצבע או עכבר בתיבה למטה</p>
+    <div class="sig-wrap">
+      <canvas id="sigCanvas" class="sig-canvas"></canvas>
+      <div class="sig-empty-hint" id="sigHint">חתום/י כאן</div>
+    </div>
+    <button type="button" class="sig-clear-btn" onclick="clearSig()">נקה חתימה</button>
+    <div id="sigErr" style="color:#e63946;font-size:12px;margin-top:6px;display:none">נא לחתום לפני השליחה</div>
+  </div>
+
   <button class="submit-btn" onclick="doSubmit()">שלח לסמסוניקס ✓</button>
 
   <div class="sent-msg" id="sentMsg">
@@ -1938,6 +1949,56 @@ h2{font-size:16px;text-align:center;color:#f7c800;margin-bottom:20px}
 <script>
 const ADMIN_PHONE='${sxEscJs(safePhone)}';
 const FORM_ID='${sxEscJs(f.id||"")}';
+
+// ── Signature pad ──────────────────────────────────────────────────────────
+var sigCvs=document.getElementById('sigCanvas');
+var sigCtx=sigCvs.getContext('2d');
+var sigDrawing=false;
+var sigHasMark=false;
+
+function initSig(){
+  var wrap=sigCvs.parentElement;
+  sigCvs.width=wrap.clientWidth||300;
+  sigCvs.height=120;
+  sigCtx.fillStyle='#1a1a2e';
+  sigCtx.fillRect(0,0,sigCvs.width,sigCvs.height);
+  sigCtx.strokeStyle='#fff';
+  sigCtx.lineWidth=2.5;
+  sigCtx.lineCap='round';
+  sigCtx.lineJoin='round';
+}
+window.addEventListener('load',initSig);
+window.addEventListener('resize',function(){if(!sigHasMark)initSig();});
+
+function sigPos(e){
+  var r=sigCvs.getBoundingClientRect();
+  var src=e.touches?e.touches[0]:e;
+  return{x:(src.clientX-r.left)*(sigCvs.width/r.width),y:(src.clientY-r.top)*(sigCvs.height/r.height)};
+}
+sigCvs.addEventListener('mousedown',function(e){sigDrawing=true;var p=sigPos(e);sigCtx.beginPath();sigCtx.moveTo(p.x,p.y);e.preventDefault();});
+sigCvs.addEventListener('mousemove',function(e){if(!sigDrawing)return;var p=sigPos(e);sigCtx.lineTo(p.x,p.y);sigCtx.stroke();sigHasMark=true;document.getElementById('sigHint').style.display='none';e.preventDefault();});
+sigCvs.addEventListener('mouseup',function(){sigDrawing=false;});
+sigCvs.addEventListener('mouseleave',function(){sigDrawing=false;});
+sigCvs.addEventListener('touchstart',function(e){sigDrawing=true;var p=sigPos(e);sigCtx.beginPath();sigCtx.moveTo(p.x,p.y);e.preventDefault();},{passive:false});
+sigCvs.addEventListener('touchmove',function(e){if(!sigDrawing)return;var p=sigPos(e);sigCtx.lineTo(p.x,p.y);sigCtx.stroke();sigHasMark=true;document.getElementById('sigHint').style.display='none';e.preventDefault();},{passive:false});
+sigCvs.addEventListener('touchend',function(){sigDrawing=false;});
+
+function clearSig(){
+  initSig();sigHasMark=false;
+  document.getElementById('sigHint').style.display='flex';
+  document.getElementById('sigErr').style.display='none';
+}
+
+function getSigDataUrl(){
+  // Export at 280×90 JPEG quality 0.35 to keep WhatsApp URL manageable
+  var out=document.createElement('canvas');
+  out.width=280;out.height=90;
+  var c=out.getContext('2d');
+  c.drawImage(sigCvs,0,0,out.width,out.height);
+  return out.toDataURL('image/jpeg',0.35);
+}
+// ──────────────────────────────────────────────────────────────────────────
+
 function doSubmit(){
   var idNum=document.getElementById('idNum').value.trim();
   var address=document.getElementById('address').value.trim();
@@ -1948,13 +2009,48 @@ function doSubmit(){
   var agree=document.getElementById('agree').checked;
   if(!veh1){alert('נא למלא לפחות מספר רכב אחד');return;}
   if(!agree){alert('נא לאשר את ההזמנה');return;}
-  var data={formId:FORM_ID,idNum:idNum,address:address,veh1:veh1,veh1Type:veh1Type,veh2:veh2,veh2Type:veh2Type,signedAt:new Date().toISOString()};
+  if(!sigHasMark){document.getElementById('sigErr').style.display='block';sigCvs.scrollIntoView({behavior:'smooth',block:'center'});return;}
+  document.getElementById('sigErr').style.display='none';
+  var sigData=getSigDataUrl();
+  var data={formId:FORM_ID,idNum:idNum,address:address,veh1:veh1,veh1Type:veh1Type,veh2:veh2,veh2Type:veh2Type,sig:sigData,signedAt:new Date().toISOString()};
   var encoded=btoa(unescape(encodeURIComponent(JSON.stringify(data))));
-  var text='SX:'+encoded;
-  window.open('https://wa.me/'+ADMIN_PHONE+'?text='+encodeURIComponent(text),'_blank');
-  document.getElementById('sentMsg').style.display='block';
+  var sxText='SX:'+encoded;
+
+  // Copy SX code to clipboard then open WhatsApp chat — user pastes.
+  // This avoids URL length limits that arise when embedding the signature.
+  function doOpen(){
+    // Try wa.me with full text if small enough, otherwise clipboard+open chat
+    var waUrl='https://wa.me/'+ADMIN_PHONE+'?text='+encodeURIComponent(sxText);
+    if(waUrl.length<=3800){
+      window.open(waUrl,'_blank');
+    } else {
+      window.open('https://wa.me/'+ADMIN_PHONE,'_blank');
+    }
+    document.getElementById('sentMsg').style.display='block';
+    document.getElementById('sentMsg').innerHTML='<h3>✓ הקוד הועתק!</h3><p>וואטסאפ נפתח.<br>הדבק את הטקסט (Ctrl+V / לחיצה ארוכה → הדבק) ושלח.</p>';
+  }
+
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(sxText).then(doOpen).catch(function(){
+      // clipboard denied — fallback to wa.me with text
+      window.open('https://wa.me/'+ADMIN_PHONE+'?text='+encodeURIComponent(sxText),'_blank');
+      document.getElementById('sentMsg').style.display='block';
+    });
+  } else {
+    // Legacy copy
+    try{var ta=document.createElement('textarea');ta.value=sxText;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.focus();ta.select();document.execCommand('copy');document.body.removeChild(ta);}catch(e){}
+    doOpen();
+  }
 }
-</script></body></html>`;
+</script>
+<style>
+.sig-wrap{position:relative;border:1.5px solid #2a2a3e;border-radius:8px;overflow:hidden;cursor:crosshair;touch-action:none}
+.sig-canvas{display:block;width:100%;height:120px}
+.sig-empty-hint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#444;font-size:15px;pointer-events:none;user-select:none}
+.sig-clear-btn{margin-top:8px;padding:6px 16px;background:transparent;border:1px solid #2a2a3e;border-radius:6px;color:#888;font-size:12px;cursor:pointer}
+.sig-clear-btn:hover{border-color:#f7c800;color:#f7c800}
+</style>
+</body></html>`;
 }
 
 // Downloads the customer HTML form as a file.
@@ -2004,7 +2100,13 @@ h2{text-align:center;font-size:17px;text-decoration:underline;margin:12px 0 8px;
 <div class="sec"><div class="sectl">המסלול הנבחר</div><div class="prod">${planLabel}</div><div class="row">${box(f.audio==="with")} כולל אודיו &nbsp;&nbsp; ${box(!!f.bsd)} ב.ס.ד</div></div>
 <div class="sec"><div class="sectl">פרטי הרכב/ים</div><div class="grid">${fv("רכב 1",f.veh1)}${fv("סוג רכב 1",f.veh1Type)}${fv("רכב 2",f.veh2)}${fv("סוג רכב 2",f.veh2Type)}</div></div>
 ${(f.cardNum||f.expiry)?`<div class="sec"><div class="sectl">פרטי תשלום</div><div class="grid">${fv("מספר כרטיס",maskedCard)}${fv("תוקף",f.expiry)}</div><div style="font-size:10px;color:#2d7a2d;margin-top:6px">🔒 קוד האבטחה (CVV) אינו נשמר במערכת.</div></div>`:""}
-<div class="sig"><div class="sigline">חתימת הלקוח</div><div class="sigline">חתימת נציג</div></div>
+<div class="sig">
+  <div class="sigline">
+    ${f.sig ? `<img src="${f.sig}" style="height:60px;max-width:220px;display:block;margin-bottom:4px;border:1px solid #ddd;border-radius:4px;background:#f8f8f8">` : '<div style="height:60px"></div>'}
+    חתימת הלקוח
+  </div>
+  <div class="sigline"><div style="height:60px"></div>חתימת נציג</div>
+</div>
 <div class="noprint" style="text-align:center;margin-top:24px"><button onclick="window.print()" style="padding:10px 28px;font-size:14px;background:#1a1a2e;color:#fff;border:0;border-radius:6px;cursor:pointer">הדפסה / שמירה כ-PDF</button></div>
 </body></html>`);
   win.document.close();
