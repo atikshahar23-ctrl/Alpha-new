@@ -810,19 +810,29 @@ export function mountApp(root: HTMLElement) {
   const topR = root.querySelector('.topR');
   if (topR) topR.insertBefore(moduleChip, topR.firstChild);
 
+  let lastAgentId = '';
   function updateModuleIndicator(moduleId: string) {
     const mod = moduleById(moduleId as any);
     const label = moduleChip.querySelector('.mc-label') as HTMLElement;
     const dot = moduleChip.querySelector('.mc-dot') as HTMLElement;
     if (mod) {
-      label.textContent = mod.label.toUpperCase();
+      label.textContent = `${mod.emoji} ${mod.label.toUpperCase()}`;
       dot.style.background = `hsl(${mod.hue}, 70%, 55%)`;
       dot.style.boxShadow = `0 0 8px hsla(${mod.hue}, 70%, 55%, .6)`;
+      moduleChip.style.setProperty('--agent-hue', String(mod.hue));
       moduleChip.classList.add('active');
     } else {
-      label.textContent = state.uiLang === 'he' ? 'מוח' : 'BRAIN';
+      label.textContent = state.uiLang === 'he' ? '🧠 מוח' : '🧠 BRAIN';
       dot.style.background = 'var(--gold)';
       dot.style.boxShadow = '0 0 8px rgba(218,165,32,.5)';
+      moduleChip.classList.remove('active');
+    }
+    // Pulse the chip whenever the active agent changes (visible handoff).
+    if (moduleId !== lastAgentId) {
+      lastAgentId = moduleId;
+      moduleChip.classList.remove('agent-switch');
+      void moduleChip.offsetWidth;          // restart the animation
+      moduleChip.classList.add('agent-switch');
     }
   }
 

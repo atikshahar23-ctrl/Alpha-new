@@ -2330,7 +2330,14 @@ body::after {
   transition: background .3s ease, box-shadow .3s ease;
 }
 .module-chip .mc-label { font-size: 10px; letter-spacing: 2px; }
-.module-chip.active { border-color: rgba(218,165,32,.3); }
+.module-chip.active { border-color: hsla(var(--agent-hue, 45), 70%, 55%, .45); }
+/* Visible agent handoff — brief glow pulse when the active agent changes. */
+.module-chip.agent-switch { animation: agent-switch .7s ease; }
+@keyframes agent-switch {
+  0%   { transform: scale(1); box-shadow: 0 0 0 0 hsla(var(--agent-hue,45),80%,60%,.6); }
+  35%  { transform: scale(1.12); box-shadow: 0 0 14px 4px hsla(var(--agent-hue,45),85%,62%,.7); }
+  100% { transform: scale(1); box-shadow: 0 0 0 0 hsla(var(--agent-hue,45),80%,60%,0); }
+}
 
 .cockpit-overlay {
   position: fixed; inset: 0; z-index: 65;
