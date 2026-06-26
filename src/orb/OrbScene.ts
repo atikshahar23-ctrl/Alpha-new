@@ -1293,11 +1293,11 @@ type CharRot3 = { x: number; y: number; z: number };
 const CHARACTER_ROT_DEFAULT: Record<string, CharRot3> = {
   pikachu:    { x: 0,           y: Math.PI, z: 0 },
   charmander: { x: 0,           y: Math.PI, z: 0 },
-  squirtle:   { x: Math.PI / 2, y: 0,       z: Math.PI },
+  squirtle:   { x: -Math.PI / 2, y: 0,       z: Math.PI },
   meowth:     { x: 0,           y: Math.PI, z: 0 },
 };
 
-const CHAR_ROT_LS_KEY = 'char_rot_v2';
+const CHAR_ROT_LS_KEY = 'char_rot_v3';
 
 function getCharRot(character: string): CharRot3 {
   try {

@@ -22,9 +22,7 @@ const SYNC_TABLES = [
   'alpha_events',
   'alpha_tasks',
   'alpha_notes',
-  // HeavyGuard — full dataset (everything is stored in localStorage).
-  // Photos/galleries/videos use dynamic per-record keys and are synced
-  // separately (see hg2 media handling in syncToCloud/syncFromCloud).
+  // HeavyGuard — full static dataset
   'hg2:index',
   'hg2:quotes',
   'hg2:tasks',
@@ -38,7 +36,9 @@ const SYNC_TABLES = [
   'hg2:wanumber',
   'hg2:init',
   'hg2:lastbackup',
-  'hg2:crm',
+  'hg2:crm_data',   // was wrongly 'hg2:crm'
+  'hg2:profile',
+  // Alpha modules
   'alpha_brain_memory_v1',
   'alpha_pomodoro_v1',
   'alpha_mood_v1',
@@ -53,11 +53,10 @@ const SYNC_TABLES = [
   'alpha_chat_history_v1',
   'alpha_sentiment_v1',
   'alpha_templates_v1',
-  // user settings
   'alpha_name',
-  'alpha_brain_memory_v1',
-  // samsonix forms
   'alpha_samsonix_forms_v1',
+  'char_rot_v2',
+  'alpha_main_character',
 ];
 
 function puter(): any {
