@@ -980,6 +980,43 @@ export function mountApp(root: HTMLElement) {
       .replace(/\n/g, '<br>');
   }
 
+  // ── Self-correction / reflection ──────────────────────────────────────────
+  // Free, instant, client-side: after the assistant answers, validate the syntax
+  // of any code it produced (no extra LLM call). JSON is checked with JSON.parse;
+  // plain JS is parsed with new Function (compiles, never executes). Module/top-
+  // await snippets are skipped to avoid false positives.
+  const JS_LANGS = ['js', 'javascript', 'jsx', 'mjs', 'cjs'];
+  function extractCodeBlocks(text: string): { lang: string; code: string }[] {
+    const out: { lang: string; code: string }[] = [];
+    const re = /```(\w+)?\n([\s\S]*?)```/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text))) out.push({ lang: (m[1] || '').toLowerCase(), code: m[2] });
+    return out;
+  }
+  function validateCode(lang: string, code: string): string | null {
+    try {
+      if (lang === 'json') { JSON.parse(code); return null; }
+      if (JS_LANGS.includes(lang)) {
+        if (/\b(import|export)\b/.test(code) || /^\s*await\b/m.test(code)) return null; // skip modules/top-await
+        // eslint-disable-next-line no-new-func
+        new Function(code);   // parses + throws on syntax error; does NOT run
+        return null;
+      }
+    } catch (e: any) { return e?.message || 'syntax error'; }
+    return null; // unknown language → no claim
+  }
+  function reflectOnReply(text: string) {
+    const blocks = extractCodeBlocks(text).filter(b => b.lang === 'json' || JS_LANGS.includes(b.lang));
+    if (!blocks.length) return;
+    const bad = blocks.map(b => ({ b, err: validateCode(b.lang, b.code) })).filter(x => x.err);
+    if (bad.length) {
+      addMsg(`⚠️ בדיקה עצמית: שגיאת תחביר ב-${bad[0].b.lang} — ${bad[0].err}`, 'sys');
+    } else {
+      const langs = [...new Set(blocks.map(b => b.lang))].join(', ');
+      addMsg(`✓ בדיקה עצמית: התחביר של הקוד (${langs}) תקין`, 'sys');
+    }
+  }
+
   let typingTurn: HTMLElement | null = null;
 
   function showTypingIndicator() {
@@ -1402,6 +1439,7 @@ export function mountApp(root: HTMLElement) {
       orb.pikaEmote(Math.random() < 0.65 ? 'happy' : 'excited');
       stream.finalize(clean || 'Done.');
       voice.speak(clean || 'Done.');
+      try { reflectOnReply(clean); } catch {}   // self-check any code it produced
       try { refreshSummary(state.history); } catch {}
     } catch (err: any) {
       removeTypingIndicator();
