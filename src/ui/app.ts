@@ -1363,11 +1363,11 @@ export function mountApp(root: HTMLElement) {
     let gestureHands: any = null;
     let gestureCamera: any = null;
     let palmHoldMs = 0;
-    let thumbsUpMs = 0;
     let throwCooldownMs = 0;
-    const PALM_HOLD_THRESHOLD = 1500;
-    const THUMBSUP_HOLD_THRESHOLD = 600;
-    const THROW_COOLDOWN = 3000;
+    let suppressPalmMs = 0;   // after a throw, ignore the open hand for dispel
+    let fistActive = false;   // a fist is currently held (armed to throw on open)
+    const PALM_HOLD_THRESHOLD = 550;   // snappy dispel
+    const THROW_COOLDOWN = 2200;
 
     function gestureStatus(msg: string) {
       const el = document.getElementById('gestureStatus');
@@ -1420,7 +1420,9 @@ export function mountApp(root: HTMLElement) {
 
       const Hands = (window as any).Hands;
       gestureHands = new Hands({ locateFile: (f: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/${f}` });
-      gestureHands.setOptions({ maxNumHands: 1, modelComplexity: 0, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5, selfieMode: true });
+      // Lower confidences + lightest model = the detector locks on and tracks
+      // the hand almost instantly, so gestures register without a long wait.
+      gestureHands.setOptions({ maxNumHands: 1, modelComplexity: 0, minDetectionConfidence: 0.4, minTrackingConfidence: 0.35, selfieMode: true });
 
       let lastFrameMs = performance.now();
 
@@ -1433,7 +1435,7 @@ export function mountApp(root: HTMLElement) {
 
         if (!results.multiHandLandmarks?.length) {
           gestureStatus('מצלמה פעילה');
-          palmHoldMs = 0; thumbsUpMs = 0;
+          palmHoldMs = 0; fistActive = false;
           return;
         }
 
@@ -1448,54 +1450,52 @@ export function mountApp(root: HTMLElement) {
           ctx.fill();
         }
 
-        // Gesture detection — finger up = tip y < pip y (screen coords: smaller y = higher up)
-        const fingerUp = (tip: number, pip: number) => lm[tip].y < lm[pip].y;
-        const indexUp = fingerUp(8, 6), middleUp = fingerUp(12, 10), ringUp = fingerUp(16, 14), pinkyUp = fingerUp(20, 18);
-        const allFingersUp = indexUp && middleUp && ringUp && pinkyUp;
-        // Thumbs up: thumb tip clearly above MCP joint AND all other fingers curled
-        const thumbsUp = lm[4].y < lm[2].y - 0.04 && !indexUp && !middleUp && !ringUp && !pinkyUp;
-
-        let gesture = 'none';
-        if (allFingersUp) gesture = 'palm';
-        else if (thumbsUp) gesture = 'thumbsup';
+        // Finger up = tip clearly above its PIP joint. Small margin keeps it
+        // responsive without flickering. Count-based so it reads instantly and
+        // tolerates a not-perfectly-formed hand.
+        const fingerUp = (tip: number, pip: number) => lm[tip].y < lm[pip].y - 0.01;
+        const upCount = [fingerUp(8,6), fingerUp(12,10), fingerUp(16,14), fingerUp(20,18)].filter(Boolean).length;
+        const open = upCount >= 3;   // open palm (lenient — 3 of 4 fingers)
+        const fist = upCount <= 1;   // closed fist (lenient)
 
         throwCooldownMs = Math.max(0, throwCooldownMs - dt);
+        suppressPalmMs = Math.max(0, suppressPalmMs - dt);
 
-        if (gesture === 'palm') {
-          thumbsUpMs = 0;
-          palmHoldMs += dt;
-          const progress = Math.min(1, palmHoldMs / PALM_HOLD_THRESHOLD);
-          gestureStatus(`🖐️ החזק… ${Math.round(progress * 100)}%`);
-          // Draw arc progress at palm center
-          const cx2 = lm[9].x * 320, cy2 = lm[9].y * 240;
-          ctx.beginPath(); ctx.arc(cx2, cy2, 28, -Math.PI/2, -Math.PI/2 + progress * Math.PI*2);
-          ctx.strokeStyle = `rgba(218,165,32,${0.4 + progress*0.6})`; ctx.lineWidth = 4; ctx.stroke();
-          if (palmHoldMs >= PALM_HOLD_THRESHOLD) {
-            palmHoldMs = 0;
-            gestureStatus('⚡ שחרר פוקימון!');
-            (window as any).dispelOrb?.();
-          }
-        } else if (gesture === 'thumbsup') {
+        const cx2 = lm[9].x * 320, cy2 = lm[9].y * 240;
+
+        if (fist) {
+          // Fist recognised — arm the throw. Open the hand to fire.
+          fistActive = true;
           palmHoldMs = 0;
-          thumbsUpMs += dt;
-          const progress = Math.min(1, thumbsUpMs / THUMBSUP_HOLD_THRESHOLD);
-          gestureStatus(`👍 החזק… ${Math.round(progress * 100)}%`);
-          // Draw arc progress at thumb tip
-          const tx = lm[4].x * 320, ty = lm[4].y * 240;
-          ctx.beginPath(); ctx.arc(tx, ty, 20, -Math.PI/2, -Math.PI/2 + progress * Math.PI*2);
-          ctx.strokeStyle = `rgba(100,220,255,${0.4 + progress*0.6})`; ctx.lineWidth = 4; ctx.stroke();
-          if (thumbsUpMs >= THUMBSUP_HOLD_THRESHOLD && throwCooldownMs <= 0) {
-            thumbsUpMs = 0;
+          gestureStatus('✊ אגרוף מזוהה — פתח כף יד לזריקה!');
+          ctx.beginPath(); ctx.arc(cx2, cy2, 26, 0, Math.PI*2);
+          ctx.strokeStyle = 'rgba(255,70,70,.9)'; ctx.lineWidth = 4; ctx.stroke();
+        } else if (open) {
+          if (fistActive && throwCooldownMs <= 0) {
+            // ✊ → 🖐️  THROW! Fire the moment the hand opens — no hold needed.
+            fistActive = false;
             throwCooldownMs = THROW_COOLDOWN;
-            gestureStatus('🎙️ בחר פוקימון בשמו');
-            // Open the macOS-style dock and let the user pick by voice/tap.
+            suppressPalmMs = 1100;   // this same open hand must not start a dispel
+            gestureStatus('🚀 זריקה! בחר פוקימון');
             (window as any).openSummonDock?.();
             setTimeout(() => { if (gestureActive) gestureStatus('מצלמה פעילה'); }, 2500);
+          } else if (suppressPalmMs <= 0) {
+            // Open palm held → dispel the current Pokémon.
+            palmHoldMs += dt;
+            const progress = Math.min(1, palmHoldMs / PALM_HOLD_THRESHOLD);
+            gestureStatus(`🖐️ החזק לשחרור… ${Math.round(progress * 100)}%`);
+            ctx.beginPath(); ctx.arc(cx2, cy2, 28, -Math.PI/2, -Math.PI/2 + progress * Math.PI*2);
+            ctx.strokeStyle = `rgba(218,165,32,${0.4 + progress*0.6})`; ctx.lineWidth = 4; ctx.stroke();
+            if (palmHoldMs >= PALM_HOLD_THRESHOLD) {
+              palmHoldMs = 0;
+              gestureStatus('⚡ שוחרר!');
+              (window as any).dispelOrb?.();
+            }
           }
         } else {
+          // Transitional (mid open/close) — keep the fist armed, reset dispel.
           palmHoldMs = 0;
-          thumbsUpMs = 0;
-          gestureStatus('מצלמה פעילה');
+          gestureStatus(fistActive ? '✊ אגרוף מזוהה — פתח כף יד לזריקה!' : 'מצלמה פעילה');
         }
 
       });
