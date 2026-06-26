@@ -2439,6 +2439,7 @@ export function mountApp(root: HTMLElement) {
     { id: 'zapdos',     label: 'זאפדוס',     words: /(זאפדוס|zapdos)/i },
     { id: 'lugia',      label: 'לוגיה',      words: /(לוגיה|lugia)/i },
     { id: 'ho-oh',      label: 'הו-אוה',     words: /(הו.?אוה|ho.?oh)/i },
+    { id: 'pikachu-deadpool', label: "פיקצ'ו דד-פול", words: /(דד.?פול|דדפול|deadpool|dead.?pool|פיקצ'?ו דד)/i },
   ];
 
   function setMainCharacter(id: string): string {
@@ -2585,6 +2586,7 @@ export function mountApp(root: HTMLElement) {
       pikachu: 25, charmander: 4, squirtle: 7, meowth: 52, bulbasaur: 1,
       eevee: 133, mewtwo: 150, articuno: 144, suicune: 245, raikou: 243,
       entei: 244, moltres: 146, zapdos: 145, lugia: 249, 'ho-oh': 250,
+      'pikachu-deadpool': 25,
     };
     const SPRITE = (id: string) =>
       `https://cdn.jsdelivr.net/gh/PokeAPI/sprites@master/sprites/pokemon/other/official-artwork/${DEX[id]}.png`;

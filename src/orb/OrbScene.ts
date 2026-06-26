@@ -1300,6 +1300,7 @@ const CHARACTER_FILES: Record<string, string> = {
   zapdos:     'ar-models/zapdos.glb',
   lugia:      'ar-models/lugia.glb',
   'ho-oh':    'ar-models/ho-oh.glb',
+  'pikachu-deadpool': 'ar-models/pikachu-deadpool.glb',
 };
 export const CHARACTER_NAMES = Object.keys(CHARACTER_FILES);
 
@@ -1356,6 +1357,7 @@ const POKEMON_CRY_ID: Record<string, number> = {
   pikachu: 25, charmander: 4, squirtle: 7, meowth: 52, bulbasaur: 1,
   eevee: 133, mewtwo: 150, articuno: 144, suicune: 245, raikou: 243,
   entei: 244, moltres: 146, zapdos: 145, lugia: 249, 'ho-oh': 250,
+  'pikachu-deadpool': 25,
 };
 let _activeCry: HTMLAudioElement | null = null;
 function playCry(name: string) {
@@ -1411,6 +1413,7 @@ const POKEMON_ATTACK_TYPE: Record<string, AttackType> = {
   zapdos:     'electric',
   lugia:      'psychic',
   'ho-oh':    'fire',
+  'pikachu-deadpool': 'electric',
 };
 
 const ATTACK_COLORS: Record<AttackType, [number,number,number]> = {
