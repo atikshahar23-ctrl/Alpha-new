@@ -1913,7 +1913,21 @@ export function mountApp(root: HTMLElement) {
     });
   }
 
+  // HeavyGuard hard business rule: the company does NOT install or quote
+  // 8-camera systems. Block any quote that references one — enforced in code so
+  // it holds even if the model ignores the prompt rule.
+  function isEightCameraRequest(text: string): boolean {
+    const s = (text || '').toLowerCase();
+    return /(^|[^\d])8\s*(-?\s*)?(cam|cameras|camera|מצלמות|מצלמה|ערוצים|channels?|ch)\b/.test(s)
+      || /\b8\s*(ch|channel)\b/.test(s)
+      || /(8|שמונה)\s*מצלמות/.test(s);
+  }
+
   async function hgCreateQuote(customer: string, phone: string, itemsStr: string) {
+    if (isEightCameraRequest(itemsStr) || isEightCameraRequest(customer)) {
+      addMsg('⛔ Heavy Guard לא מתקינה ולא מתמחרת מערכות של 8 מצלמות. אפשר להציע תצורה נתמכת אחרת (למשל מערך 360° ללא 8 מצלמות).', 'sys');
+      return;
+    }
     const items = itemsStr.split(',').map(s => {
       const [desc, priceStr] = s.trim().split(':');
       return { description: (desc || '').trim(), price: parseFloat(priceStr) || 0, qty: 1 };
