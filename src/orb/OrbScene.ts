@@ -22,6 +22,8 @@ export interface OrbHandle {
   setCharacterTransform(x: number, y: number, z: number, s: number, px: number, py: number, pz: number): void;
   getCharacterTransform(): CharXform;
   resetCharacterTransform(): void;
+  pinCharacterTransform(): void;
+  hasPinnedTransform(): boolean;
 }
 
 // ============================================================
@@ -1562,6 +1564,41 @@ function clearCharXform(character: string): void {
   } catch {}
 }
 
+// Pinned transforms — user-chosen defaults per character. When reset is pressed,
+// we restore to the pinned transform instead of the factory default if one exists.
+const CHAR_XFORM_PIN_KEY = 'char_xform_pin_v1';
+
+function getPinnedXform(character: string): CharXform | null {
+  try {
+    const saved = localStorage.getItem(CHAR_XFORM_PIN_KEY);
+    if (saved) {
+      const all = JSON.parse(saved) as Record<string, CharXform>;
+      if (all[character]) return all[character];
+    }
+  } catch {}
+  return null;
+}
+
+function savePinnedXform(character: string, xf: CharXform): void {
+  try {
+    const saved = localStorage.getItem(CHAR_XFORM_PIN_KEY);
+    const all: Record<string, CharXform> = saved ? JSON.parse(saved) : {};
+    all[character] = xf;
+    localStorage.setItem(CHAR_XFORM_PIN_KEY, JSON.stringify(all));
+  } catch {}
+}
+
+function hasPinnedXform(character: string): boolean {
+  try {
+    const saved = localStorage.getItem(CHAR_XFORM_PIN_KEY);
+    if (saved) {
+      const all = JSON.parse(saved) as Record<string, CharXform>;
+      return !!all[character];
+    }
+  } catch {}
+  return false;
+}
+
 // Stores auto-normalization values per model so real-time transform changes can
 // re-apply scale and offset without reloading.
 type BaseTransform = { s: number; cx: number; cy: number; cz: number };
@@ -2289,15 +2326,23 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     },
     resetCharacterTransform() {
       clearCharXform(mobileCurrentChar);
-      const def = defaultXform(mobileCurrentChar);
+      const pinned = getPinnedXform(mobileCurrentChar);
+      const def = pinned ?? defaultXform(mobileCurrentChar);
       if (mobileCurrentModel) {
         const bt = modelBaseTransform.get(mobileCurrentModel);
         const as = bt ? bt.s : 1;
         const acx = bt ? bt.cx : 0; const acy = bt ? bt.cy : 0; const acz = bt ? bt.cz : 0;
-        mobileCurrentModel.scale.setScalar(as);
-        mobileCurrentModel.position.set(acx, acy, acz);
+        mobileCurrentModel.scale.setScalar(as * (pinned ? def.s : 1));
+        mobileCurrentModel.position.set(acx + (pinned ? def.px : 0), acy + (pinned ? def.py : 0), acz + (pinned ? def.pz : 0));
         mobileCurrentModel.rotation.set(def.x, def.y, def.z);
       }
+    },
+    pinCharacterTransform() {
+      const xf = getCharXform(mobileCurrentChar);
+      savePinnedXform(mobileCurrentChar, xf);
+    },
+    hasPinnedTransform() {
+      return hasPinnedXform(mobileCurrentChar);
     },
   };
 }
@@ -3316,15 +3361,23 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     },
     resetCharacterTransform() {
       clearCharXform(deskCurrentChar);
-      const def = defaultXform(deskCurrentChar);
+      const pinned = getPinnedXform(deskCurrentChar);
+      const def = pinned ?? defaultXform(deskCurrentChar);
       if (deskCurrentModel) {
         const bt = modelBaseTransform.get(deskCurrentModel);
         const as = bt ? bt.s : 1;
         const acx = bt ? bt.cx : 0; const acy = bt ? bt.cy : 0; const acz = bt ? bt.cz : 0;
-        deskCurrentModel.scale.setScalar(as);
-        deskCurrentModel.position.set(acx, acy, acz);
+        deskCurrentModel.scale.setScalar(as * (pinned ? def.s : 1));
+        deskCurrentModel.position.set(acx + (pinned ? def.px : 0), acy + (pinned ? def.py : 0), acz + (pinned ? def.pz : 0));
         deskCurrentModel.rotation.set(def.x, def.y, def.z);
       }
+    },
+    pinCharacterTransform() {
+      const xf = getCharXform(deskCurrentChar);
+      savePinnedXform(deskCurrentChar, xf);
+    },
+    hasPinnedTransform() {
+      return hasPinnedXform(deskCurrentChar);
     },
   };
 }

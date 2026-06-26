@@ -1965,8 +1965,10 @@ function downloadCustomerForm(f, adminPhone) {
   const a = document.createElement("a");
   a.href = url;
   a.download = `samsonix-${(f.fullName || "טופס").replace(/\s+/g, "-")}.html`;
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 // Parses the customer's WhatsApp reply: "SX:{base64json}"
@@ -2151,7 +2153,15 @@ function SamsonixModal({ initial, onClose, onSave }) {
     fullName: "", phone: "", company: "", bizNum: "",
     plan: "4gb", audio: "none", bsd: false, notes: "",
   });
-  const up = (k, v) => setF({ ...f, [k]: v });
+  const [err, setErr] = useState("");
+  const up = (k, v) => { setF((prev) => ({ ...prev, [k]: v })); setErr(""); };
+
+  const handleSave = () => {
+    if (!f.fullName.trim()) { setErr("נא למלא שם לקוח"); return; }
+    if (!f.phone.trim()) { setErr("נא למלא מספר טלפון"); return; }
+    onSave({ ...f, fullName: f.fullName.trim(), phone: f.phone.trim() });
+  };
+
   return (
     <div className="hg2-overlay" onClick={onClose}>
       <div className="hg2-modal" onClick={(e) => e.stopPropagation()}>
@@ -2166,8 +2176,8 @@ function SamsonixModal({ initial, onClose, onSave }) {
           <Field icon={User} label="שם מלא הלקוח *"><input value={f.fullName} onChange={(e) => up("fullName", e.target.value)} placeholder="שם הלקוח" /></Field>
           <Field icon={Phone} label="טלפון *"><input value={f.phone} onChange={(e) => up("phone", e.target.value)} dir="ltr" style={{ textAlign: "right" }} placeholder="05X-XXXXXXX" /></Field>
           <div className="hg2-row2">
-            <Field icon={Building2} label="חברה"><input value={f.company} onChange={(e) => up("company", e.target.value)} /></Field>
-            <Field icon={Hash} label="ח.פ./עוסק"><input value={f.bizNum} onChange={(e) => up("bizNum", e.target.value)} dir="ltr" style={{ textAlign: "right" }} /></Field>
+            <Field icon={Building2} label="חברה"><input value={f.company || ""} onChange={(e) => up("company", e.target.value)} /></Field>
+            <Field icon={Hash} label="ח.פ./עוסק"><input value={f.bizNum || ""} onChange={(e) => up("bizNum", e.target.value)} dir="ltr" style={{ textAlign: "right" }} /></Field>
           </div>
           <div className="hg2-field"><div className="hg2-flabel"><Tag size={15} /> מסלול</div>
             <div className="hg2-seg">
@@ -2185,10 +2195,11 @@ function SamsonixModal({ initial, onClose, onSave }) {
             </div>
           </div>
           <Field icon={FileText} label="הערות פנימיות"><input value={f.notes || ""} onChange={(e) => up("notes", e.target.value)} placeholder="לא גלוי ללקוח" /></Field>
+          {err && <div style={{ color: "#e63946", fontSize: 12, padding: "4px 2px" }}>{err}</div>}
         </div>
         <div className="hg2-modal-foot">
           <button className="hg2-btn ghost" onClick={onClose}>ביטול</button>
-          <button className="hg2-btn primary" onClick={() => f.fullName.trim() && f.phone.trim() && onSave({ ...f, fullName: f.fullName.trim() })}>שמור ← שלח ללקוח</button>
+          <button className="hg2-btn primary" onClick={handleSave}>שמור ← שלח ללקוח</button>
         </div>
       </div>
     </div>
