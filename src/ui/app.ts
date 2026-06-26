@@ -197,10 +197,43 @@ export function mountApp(root: HTMLElement) {
         <label class="crp-row">↔ <input type="range" id="crpPX" min="-150" max="150" step="1" value="0"><span class="crp-val" id="crpPXv">0</span></label>
         <label class="crp-row">↕ <input type="range" id="crpPY" min="-150" max="150" step="1" value="0"><span class="crp-val" id="crpPYv">0</span></label>
         <label class="crp-row">⊙ <input type="range" id="crpPZ" min="-150" max="150" step="1" value="0"><span class="crp-val" id="crpPZv">0</span></label>
-        <button class="crp-reset" id="crpReset">איפוס לברירת מחדל</button>
+        <div class="crp-pin-row">
+          <button class="crp-pin" id="crpPin">שמור ככיוון ברירת מחדל</button>
+          <button class="crp-reset" id="crpReset">איפוס</button>
+        </div>
+        <div class="crp-pin-badge" id="crpPinBadge" hidden>✓ כיוון נשמר</div>
       </div>
 
       <div id="pokemonMenu" class="pokemon-menu" hidden></div>
+
+      <!-- Gesture control panel — camera hand detection for Pokemon swapping -->
+      <div id="gesturePanel" class="gesture-panel" hidden>
+        <div class="gp-header">
+          <span class="gp-title">זיהוי תנועות ✋</span>
+          <button class="gp-close" id="gesturePanelClose">✕</button>
+        </div>
+        <div class="gp-camera-wrap">
+          <video id="gestureVideo" autoplay playsinline muted></video>
+          <canvas id="gestureCanvas"></canvas>
+          <div class="gp-status" id="gestureStatus">⏳ מאתחל מצלמה…</div>
+        </div>
+        <div class="gp-instructions">
+          <div class="gp-hint">
+            <span class="gp-gesture">🖐️</span>
+            <div>
+              <b>כף יד פתוחה</b>
+              <small>החזק 1.5 שניות → שחרר פוקימון</small>
+            </div>
+          </div>
+          <div class="gp-hint">
+            <span class="gp-gesture">✊→🖐️</span>
+            <div>
+              <b>אגרוף ← פתח</b>
+              <small>תנועה מהירה → זרוק פוקה-בול!</small>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <aside class="left-panel" id="leftPanel">
         <div class="lp-brand">
@@ -673,7 +706,7 @@ export function mountApp(root: HTMLElement) {
   try {
     orb = mountOrb($('stage'));
   } catch {
-    orb = { setEnergy() {}, pikaEmote() {}, dispose() {}, startBodyDetection() {}, stopBodyDetection() {}, setCharacter() {}, throwPokeball(_o, d) { d && d(); }, setCharacterTransform() {}, getCharacterTransform() { return { x: 0, y: 0, z: 0, s: 1, px: 0, py: 0, pz: 0 }; }, resetCharacterTransform() {} };
+    orb = { setEnergy() {}, pikaEmote() {}, dispose() {}, startBodyDetection() {}, stopBodyDetection() {}, setCharacter() {}, throwPokeball(_o, d) { d && d(); }, setCharacterTransform() {}, getCharacterTransform() { return { x: 0, y: 0, z: 0, s: 1, px: 0, py: 0, pz: 0 }; }, resetCharacterTransform() {}, pinCharacterTransform() {}, hasPinnedTransform() { return false; } };
   }
 
   // When Pikachu chirps, trigger a brief energy burst in the 3D orb
@@ -1330,13 +1363,173 @@ export function mountApp(root: HTMLElement) {
   $('muteBtn').onclick = () => { audio.toggleMute(); };
   $('newChat').onclick = () => { state.history = []; $('rpBody').innerHTML = ''; $('chat').innerHTML = ''; clearChatHistory(); addMsg(state.name + ' ' + t('readyMsg', state.uiLang), 'al'); };
 
-  // Detect button — body detection overlay on the orb (camera interaction).
-  let detecting = false;
-  $('detectBtn').onclick = () => {
-    detecting = !detecting;
-    if (detecting) { orb.startBodyDetection(); $('detectBtn').classList.add('active'); }
-    else { orb.stopBodyDetection(); $('detectBtn').classList.remove('active'); }
-  };
+  // ── Gesture detection — camera hand tracking for Pokemon swap ───────────────
+  // Palm held 1.5s → dispel current Pokemon. Fist → quick open → throw new Pokemon.
+  {
+    let gestureActive = false;
+    let gestureStream: MediaStream | null = null;
+    let gestureHands: any = null;
+    let gestureCamera: any = null;
+    let palmHoldMs = 0;
+    let fistStartMs = 0;
+    let prevGesture = 'none';
+    let throwCooldownMs = 0;
+    const PALM_HOLD_THRESHOLD = 1500;
+    const THROW_WINDOW_MS = 500;
+    const THROW_COOLDOWN = 3000;
+
+    function gestureStatus(msg: string) {
+      const el = document.getElementById('gestureStatus');
+      if (el) el.textContent = msg;
+    }
+
+    function stopGesture() {
+      gestureActive = false;
+      if (gestureCamera) { try { gestureCamera.stop(); } catch {} gestureCamera = null; }
+      if (gestureHands) { try { gestureHands.close(); } catch {} gestureHands = null; }
+      if (gestureStream) { gestureStream.getTracks().forEach(t => t.stop()); gestureStream = null; }
+      const vid = document.getElementById('gestureVideo') as HTMLVideoElement | null;
+      if (vid) vid.srcObject = null;
+      document.getElementById('gesturePanel')!.setAttribute('hidden', '');
+      $('detectBtn').classList.remove('active');
+    }
+
+    async function startGesture() {
+      const panel = document.getElementById('gesturePanel')!;
+      panel.removeAttribute('hidden');
+      $('detectBtn').classList.add('active');
+      gestureActive = true;
+      gestureStatus('⏳ מאתחל מצלמה…');
+
+      try {
+        gestureStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: 320, height: 240 }, audio: false });
+      } catch {
+        gestureStatus('❌ גישה למצלמה נדחתה');
+        return;
+      }
+      const vid = document.getElementById('gestureVideo') as HTMLVideoElement;
+      const cvs = document.getElementById('gestureCanvas') as HTMLCanvasElement;
+      vid.srcObject = gestureStream;
+      await vid.play().catch(() => {});
+      cvs.width = 320; cvs.height = 240;
+      const ctx = cvs.getContext('2d')!;
+      gestureStatus('⏳ טוען זיהוי ידיים…');
+
+      if (!(window as any).Hands) {
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/hands.min.js';
+        s.onerror = () => gestureStatus('❌ טעינת MediaPipe נכשלה');
+        document.head.appendChild(s);
+        await new Promise<void>((res, rej) => { s.onload = () => res(); setTimeout(() => rej(), 8000); }).catch(() => {
+          gestureStatus('❌ טעינת MediaPipe נכשלה');
+          stopGesture(); return;
+        });
+        if (!gestureActive) return;
+      }
+
+      const Hands = (window as any).Hands;
+      gestureHands = new Hands({ locateFile: (f: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/${f}` });
+      gestureHands.setOptions({ maxNumHands: 1, modelComplexity: 0, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5, selfieMode: true });
+
+      let lastFrameMs = performance.now();
+
+      gestureHands.onResults((results: any) => {
+        if (!gestureActive) return;
+        const now = performance.now();
+        const dt = Math.min(200, now - lastFrameMs);
+        lastFrameMs = now;
+        ctx.clearRect(0, 0, cvs.width, cvs.height);
+
+        if (!results.multiHandLandmarks?.length) {
+          gestureStatus('🔍 מחפש יד…');
+          palmHoldMs = 0; prevGesture = 'none';
+          return;
+        }
+
+        const lm = results.multiHandLandmarks[0];
+        // Draw skeleton
+        ctx.strokeStyle = 'rgba(218,165,32,.7)'; ctx.lineWidth = 2;
+        const CONN = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+        for (const [a, b] of CONN) { ctx.beginPath(); ctx.moveTo(lm[a].x*320, lm[a].y*240); ctx.lineTo(lm[b].x*320, lm[b].y*240); ctx.stroke(); }
+        for (let i = 0; i < lm.length; i++) {
+          ctx.beginPath(); ctx.arc(lm[i].x*320, lm[i].y*240, i===8||i===4?7:3, 0, Math.PI*2);
+          ctx.fillStyle = i===8?'rgba(255,240,100,.95)':i===4?'rgba(218,165,32,.9)':'rgba(218,165,32,.65)';
+          ctx.fill();
+        }
+
+        // Finger up/down detection
+        const fingerUp = (tip: number, pip: number) => lm[tip].y < lm[pip].y;
+        const indexUp = fingerUp(8, 6), middleUp = fingerUp(12, 10), ringUp = fingerUp(16, 14), pinkyUp = fingerUp(20, 18);
+        const thumbOut = Math.abs(lm[4].x - lm[2].x) > 0.06;
+        const allFingersUp = indexUp && middleUp && ringUp && pinkyUp;
+        const allFingersDown = !indexUp && !middleUp && !ringUp && !pinkyUp && !thumbOut;
+
+        let gesture = 'none';
+        if (allFingersUp) gesture = 'palm';
+        else if (allFingersDown) gesture = 'fist';
+
+        throwCooldownMs = Math.max(0, throwCooldownMs - dt);
+
+        if (gesture === 'palm') {
+          palmHoldMs += dt;
+          const progress = Math.min(1, palmHoldMs / PALM_HOLD_THRESHOLD);
+          gestureStatus(`🖐️ החזק… ${Math.round(progress * 100)}%`);
+          // Draw arc progress
+          const cx2 = lm[9].x * 320, cy2 = lm[9].y * 240;
+          ctx.beginPath(); ctx.arc(cx2, cy2, 28, -Math.PI/2, -Math.PI/2 + progress * Math.PI*2);
+          ctx.strokeStyle = `rgba(218,165,32,${0.4 + progress*0.6})`; ctx.lineWidth = 4; ctx.stroke();
+          if (palmHoldMs >= PALM_HOLD_THRESHOLD) {
+            palmHoldMs = 0;
+            gestureStatus('⚡ שחרר פוקימון!');
+            (window as any).dispelOrb?.();
+          }
+        } else {
+          if (palmHoldMs > 0) palmHoldMs = 0;
+          if (gesture === 'none' && prevGesture === 'palm') {
+            gestureStatus('🟢 מזוהה');
+          }
+        }
+
+        // Fist → open = throw pokeball
+        if (gesture === 'fist' && prevGesture !== 'fist') fistStartMs = now;
+        if ((gesture === 'palm' || gesture === 'none') && prevGesture === 'fist') {
+          const dur = now - fistStartMs;
+          if (dur < THROW_WINDOW_MS && throwCooldownMs <= 0) {
+            throwCooldownMs = THROW_COOLDOWN;
+            gestureStatus('🔴 זרוק פוקה-בול!');
+            const charIdx = MAIN_CHARACTERS.findIndex(c => c.id === (localStorage.getItem(MAIN_CHAR_KEY) || 'pikachu'));
+            const next = MAIN_CHARACTERS[(charIdx + 1) % MAIN_CHARACTERS.length];
+            swapMainCharacterAnimated(next.id);
+            setTimeout(() => { if (gestureActive) gestureStatus('🟢 מזוהה'); }, 2000);
+          }
+        }
+
+        if (gesture !== 'palm' && gesture !== 'fist') gestureStatus('🟢 מזוהה — ממתין לתנועה');
+        prevGesture = gesture;
+      });
+
+      // Run hand detection via requestAnimationFrame loop
+      let rafId = 0;
+      const tick = async () => {
+        if (!gestureActive) return;
+        if (vid.readyState >= 2) {
+          await gestureHands.send({ image: vid }).catch(() => {});
+        }
+        rafId = requestAnimationFrame(tick);
+      };
+      (window as any).__stopGestureRaf = () => { cancelAnimationFrame(rafId); };
+      gestureStatus('🟢 מוכן — הצג יד מול המצלמה');
+      tick();
+    }
+
+    $('detectBtn').onclick = () => {
+      if (gestureActive) { (window as any).__stopGestureRaf?.(); stopGesture(); }
+      else startGesture();
+    };
+    document.getElementById('gesturePanelClose')!.onclick = () => {
+      (window as any).__stopGestureRaf?.(); stopGesture();
+    };
+  }
 
   // HeavyGuard OS
   const hgBase = import.meta.env.BASE_URL || '/';
@@ -2187,7 +2380,7 @@ export function mountApp(root: HTMLElement) {
 
     $('charPoseBtn').onclick = (e) => {
       e.stopPropagation();
-      if (panel.hasAttribute('hidden')) { crpSync(); panel.removeAttribute('hidden'); }
+      if (panel.hasAttribute('hidden')) { crpSync(); crpUpdatePinBadge(); panel.removeAttribute('hidden'); }
       else panel.setAttribute('hidden', '');
     };
     document.addEventListener('click', (e) => {
@@ -2202,13 +2395,29 @@ export function mountApp(root: HTMLElement) {
     crpPY.oninput = () => { $('crpPYv').textContent = crpPY.value; crpApply(); };
     crpPZ.oninput = () => { $('crpPZv').textContent = crpPZ.value; crpApply(); };
 
+    function crpUpdatePinBadge() {
+      const badge = $('crpPinBadge') as HTMLElement;
+      if (orb.hasPinnedTransform()) badge.removeAttribute('hidden');
+      else badge.setAttribute('hidden', '');
+    }
+
+    $('crpPin').onclick = () => {
+      orb.pinCharacterTransform();
+      crpUpdatePinBadge();
+      const btn = $('crpPin') as HTMLButtonElement;
+      btn.textContent = '✓ נשמר!';
+      setTimeout(() => { btn.textContent = 'שמור ככיוון ברירת מחדל'; }, 1500);
+    };
+
     $('crpReset').onclick = () => {
       orb.resetCharacterTransform();
       crpSync();
     };
 
     // Re-sync panel values after character swap (model loads async, so delay)
-    (window as any).__crpSyncIfOpen = () => { if (!panel.hasAttribute('hidden')) setTimeout(crpSync, 1400); };
+    (window as any).__crpSyncIfOpen = () => {
+      if (!panel.hasAttribute('hidden')) setTimeout(() => { crpSync(); crpUpdatePinBadge(); }, 1400);
+    };
   }
 
   // Voice/chat command → swap the MAIN assistant character (the orb avatar).
