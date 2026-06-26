@@ -4,6 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Alpha — יומן ומשימות</title>
+  <!-- Puter cloud (free) — lets the widget read tasks even outside the app's
+       own browser storage (e.g. a Web-Widget app's webview), after sign-in. -->
+  <script async src="https://js.puter.com/v2/"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;600;700&display=swap" rel="stylesheet" />
@@ -226,7 +229,12 @@
       try { return JSON.parse(localStorage.getItem('alpha_events') || '[]'); } catch { return []; }
     }
 
+    // Cloud-loaded tasks (from Puter). When present, they take precedence over
+    // localStorage so the widget shows your tasks even in a fresh context.
+    let cloudTasks = null;
+
     function loadAllTasks() {
+      if (cloudTasks) return cloudTasks;
       let alphaTasks = [];
       try { alphaTasks = JSON.parse(localStorage.getItem('alpha_tasks') || '[]'); } catch {}
 
@@ -338,7 +346,14 @@
       widget.querySelectorAll('.task-check').forEach(el => {
         el.addEventListener('click', () => {
           const id = el.dataset.id;
-          toggleTask(id);
+          if (cloudTasks) {
+            const t = cloudTasks.find(x => x.id === id);
+            if (t) t.done = !t.done;
+            cloudToggle(id);          // persist to Puter
+            toggleTask(id);           // and local, if present
+          } else {
+            toggleTask(id);
+          }
           render();
         });
       });
@@ -369,8 +384,54 @@
       return d.innerHTML;
     }
 
+    // ── Puter cloud loading (free, cross-context) ──────────────────────────
+    const KV = 'alpha_sync_v1:';
+    function puterReady(timeout = 6000) {
+      return new Promise(res => {
+        const t0 = Date.now();
+        (function poll() {
+          if (window.puter && window.puter.kv) return res(window.puter);
+          if (Date.now() - t0 > timeout) return res(null);
+          setTimeout(poll, 200);
+        })();
+      });
+    }
+    async function loadCloudTasks() {
+      const p = await puterReady();
+      if (!p) return;
+      try {
+        if (p.auth && p.auth.isSignedIn && !(await p.auth.isSignedIn())) return; // needs sign-in (button below)
+        const [a, h] = await Promise.all([
+          p.kv.get(KV + 'alpha_tasks').catch(() => null),
+          p.kv.get(KV + 'hg2:tasks').catch(() => null),
+        ]);
+        if (a == null && h == null) return;   // nothing synced yet — keep local
+        const alphaTasks = a ? JSON.parse(a) : [];
+        const hgRaw = h ? JSON.parse(h) : [];
+        const hgTasks = hgRaw.filter(t => !t.done).map(t => ({ id: 'hg:' + t.id, text: t.title, done: t.done || false, date: t.date || '', priority: 'med' }));
+        cloudTasks = [...alphaTasks.map(t => ({ ...t, date: t.created || t.date || '' })), ...hgTasks];
+        render();
+      } catch {}
+    }
+    // Cloud-aware toggle: persist a done-toggle back to Puter so it sticks.
+    async function cloudToggle(id) {
+      const p = (window.puter && window.puter.kv) ? window.puter : await puterReady(2000);
+      if (!p) return;
+      try {
+        const isHg = id.startsWith('hg:');
+        const kvKey = KV + (isHg ? 'hg2:tasks' : 'alpha_tasks');
+        const raw = await p.kv.get(kvKey).catch(() => null);
+        if (raw == null) return;
+        const arr = JSON.parse(raw);
+        const realId = isHg ? id.slice(3) : id;
+        const t = arr.find(x => x.id === realId);
+        if (t) { t.done = !t.done; await p.kv.set(kvKey, JSON.stringify(arr)); }
+      } catch {}
+    }
+
     render();
-    setInterval(render, 60000);
+    loadCloudTasks();
+    setInterval(() => { render(); loadCloudTasks(); }, 60000);
   </script>
 </body>
 </html>
