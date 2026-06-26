@@ -1344,6 +1344,110 @@ const CHAR_ACCENT: Record<string, number> = {
 };
 function charAccent(name: string): number { return CHAR_ACCENT[name] ?? 0xdaa520; }
 
+// ──────────────────────────────────────────────────────────────
+// POKEMON CRIES — load from PokeAPI cries CDN on first play.
+// Audio is module-scoped so swapping characters stops the old cry.
+// ──────────────────────────────────────────────────────────────
+const POKEMON_CRY_ID: Record<string, number> = {
+  pikachu: 25, charmander: 4, squirtle: 7, meowth: 52, bulbasaur: 1,
+  eevee: 133, mewtwo: 150, articuno: 144, suicune: 245, raikou: 243,
+  entei: 244, moltres: 146, zapdos: 145, lugia: 249, 'ho-oh': 250,
+};
+let _activeCry: HTMLAudioElement | null = null;
+function playCry(name: string) {
+  if (_activeCry) { _activeCry.pause(); _activeCry.src = ''; _activeCry = null; }
+  const id = POKEMON_CRY_ID[name]; if (!id) return;
+  const audio = new Audio(`https://cdn.jsdelivr.net/gh/PokeAPI/cries@main/cries/pokemon/latest/${id}.ogg`);
+  audio.volume = 0.55;
+  audio.play().catch(() => {});
+  _activeCry = audio;
+}
+function stopCry() {
+  if (_activeCry) { _activeCry.pause(); _activeCry.src = ''; _activeCry = null; }
+}
+
+// ──────────────────────────────────────────────────────────────
+// PER-POKEMON PARTICLE EFFECTS — Points cloud around the orb.
+// Mobile: half count. Uses additive blending to look "glowy".
+// ──────────────────────────────────────────────────────────────
+interface PFXCfg { color: number; count: number; size: number; speed: number; upward: boolean; }
+const POKEMON_PFX: Record<string, PFXCfg> = {
+  pikachu:    { color: 0xffee22, count: 30, size: 0.05, speed: 0.012, upward: true  },
+  charmander: { color: 0xff6622, count: 35, size: 0.05, speed: 0.014, upward: true  },
+  squirtle:   { color: 0x44bbff, count: 28, size: 0.06, speed: 0.008, upward: false },
+  meowth:     { color: 0xcc88ff, count: 22, size: 0.05, speed: 0.010, upward: true  },
+  bulbasaur:  { color: 0x55dd44, count: 30, size: 0.07, speed: 0.009, upward: true  },
+  eevee:      { color: 0xddaa55, count: 22, size: 0.05, speed: 0.010, upward: true  },
+  mewtwo:     { color: 0xcc66ff, count: 32, size: 0.06, speed: 0.011, upward: true  },
+  articuno:   { color: 0x99ddff, count: 35, size: 0.05, speed: 0.007, upward: false },
+  suicune:    { color: 0x33cccc, count: 30, size: 0.06, speed: 0.008, upward: false },
+  raikou:     { color: 0xffee22, count: 28, size: 0.04, speed: 0.015, upward: true  },
+  entei:      { color: 0xff5522, count: 38, size: 0.05, speed: 0.013, upward: true  },
+  moltres:    { color: 0xff8811, count: 40, size: 0.05, speed: 0.014, upward: true  },
+  zapdos:     { color: 0xffff22, count: 32, size: 0.04, speed: 0.016, upward: true  },
+  lugia:      { color: 0xaabbff, count: 25, size: 0.06, speed: 0.008, upward: false },
+  'ho-oh':    { color: 0xff9922, count: 38, size: 0.05, speed: 0.013, upward: true  },
+};
+
+interface PFXState { pts: THREE.Points; pos: Float32Array; vel: Float32Array; count: number; }
+
+function createParticles(scene: THREE.Scene, name: string, isMobile: boolean): PFXState | null {
+  const cfg = POKEMON_PFX[name]; if (!cfg) return null;
+  const count = isMobile ? Math.ceil(cfg.count * 0.55) : cfg.count;
+  const pos = new Float32Array(count * 3);
+  const vel = new Float32Array(count * 3);
+  const rng = () => (Math.random() - 0.5) * 2;
+  for (let i = 0; i < count; i++) {
+    // Distribute on a sphere of radius ~1.7–2.2 (just outside the orb)
+    const phi = Math.random() * Math.PI * 2;
+    const theta = Math.random() * Math.PI;
+    const r = 1.7 + Math.random() * 0.5;
+    pos[i * 3    ] = r * Math.sin(theta) * Math.cos(phi);
+    pos[i * 3 + 1] = r * Math.sin(theta) * Math.sin(phi);
+    pos[i * 3 + 2] = r * Math.cos(theta);
+    const sp = cfg.speed * (0.5 + Math.random() * 0.8);
+    vel[i * 3    ] = rng() * sp * 0.4;
+    vel[i * 3 + 1] = cfg.upward ? sp * (0.4 + Math.random() * 0.6) : rng() * sp;
+    vel[i * 3 + 2] = rng() * sp * 0.4;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const mat = new THREE.PointsMaterial({
+    color: cfg.color, size: cfg.size, transparent: true, opacity: 0.75,
+    depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true,
+  });
+  const pts = new THREE.Points(geo, mat);
+  scene.add(pts);
+  return { pts, pos, vel, count };
+}
+
+function updateParticles(pfx: PFXState, cfg: PFXCfg) {
+  for (let i = 0; i < pfx.count; i++) {
+    pfx.pos[i * 3    ] += pfx.vel[i * 3    ];
+    pfx.pos[i * 3 + 1] += pfx.vel[i * 3 + 1];
+    pfx.pos[i * 3 + 2] += pfx.vel[i * 3 + 2];
+    const x = pfx.pos[i * 3], y = pfx.pos[i * 3 + 1], z = pfx.pos[i * 3 + 2];
+    const dist = Math.sqrt(x * x + y * y + z * z);
+    if (dist > 3.0 || (cfg.upward && y > 2.8) || (!cfg.upward && y < -2.8)) {
+      // Respawn near the orb surface
+      const phi = Math.random() * Math.PI * 2;
+      const theta = Math.random() * Math.PI;
+      const r = 1.6 + Math.random() * 0.3;
+      pfx.pos[i * 3    ] = r * Math.sin(theta) * Math.cos(phi);
+      pfx.pos[i * 3 + 1] = r * Math.sin(theta) * Math.sin(phi);
+      pfx.pos[i * 3 + 2] = r * Math.cos(theta);
+    }
+  }
+  (pfx.pts.geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
+}
+
+function disposeParticles(pfx: PFXState | null, scene: THREE.Scene) {
+  if (!pfx) return;
+  scene.remove(pfx.pts);
+  pfx.pts.geometry.dispose();
+  (pfx.pts.material as THREE.Material).dispose();
+}
+
 // Recolour a collection of gold materials to an accent, preserving each one's
 // original lightness so the layered look survives the hue change.
 type AccentMat = { mat: any; baseL: number; baseS: number };
@@ -1709,6 +1813,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   group.add(pikaGroup);
   let mobileCurrentChar = 'pikachu';
   let mobileCurrentModel: THREE.Object3D | null = null;
+  let mobPFX: PFXState | null = null;
   loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/', 'pikachu', (m) => { mobileCurrentModel = m; });
   const mobileThrowPokeball = makeThrowPokeball(group, pikaGroup, import.meta.env.BASE_URL || '/');
 
@@ -2114,6 +2219,10 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     // Face the viewer at all times — only a tiny "looking around" sway, no full spin
     group.rotation.y = Math.sin(time * 0.25) * 0.12;
 
+    if (mobPFX) {
+      const cfg = POKEMON_PFX[mobileCurrentChar]; if (cfg) updateParticles(mobPFX, cfg);
+    }
+
     if (useComposer && composer) {
       try { composer.render(); } catch { useComposer = false; }
     }
@@ -2141,6 +2250,8 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     },
     dispose() {
       cancelAnimationFrame(raf);
+      stopCry();
+      disposeParticles(mobPFX, scene);
       disposeChu();
       window.removeEventListener('resize', resize);
       if (envMap) envMap.dispose();
@@ -2151,12 +2262,16 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     startBodyDetection() {},
     stopBodyDetection() {},
     setCharacter(name: string) {
+      stopCry();
+      disposeParticles(mobPFX, scene); mobPFX = null;
       mobileCurrentChar = name;
-      renderer.setClearColor(charBg(name), 1);   // recolour backdrop to match Pokemon
-      mobApplyAccent(name);                       // recolour cage / rings / lines to match
+      renderer.setClearColor(charBg(name), 1);
+      mobApplyAccent(name);
+      mobPFX = createParticles(scene, name, true);
       loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/', name, (m) => {
         mobileCurrentModel = m;
-        flashArrival(m);                          // red-laser arrival flash
+        flashArrival(m);
+        playCry(name);
       });
     },
     throwPokeball: mobileThrowPokeball,
@@ -2297,6 +2412,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   group.add(pikaGroup);
   let deskCurrentChar = 'pikachu';
   let deskCurrentModel: THREE.Object3D | null = null;
+  let deskPFX: PFXState | null = null;
   loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/', 'pikachu', (m) => { deskCurrentModel = m; });
   const deskThrowPokeball = makeThrowPokeball(group, pikaGroup, import.meta.env.BASE_URL || '/');
 
@@ -3124,6 +3240,10 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     }
     dp.needsUpdate = true;
 
+    if (deskPFX) {
+      const cfg = POKEMON_PFX[deskCurrentChar]; if (cfg) updateParticles(deskPFX, cfg);
+    }
+
     composer.render();
   }
 
@@ -3155,6 +3275,8 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     },
     dispose() {
       cancelAnimationFrame(raf);
+      stopCry();
+      disposeParticles(deskPFX, scene);
       disposeChu();
       stopBodyDetection();
       window.removeEventListener('resize', resize);
@@ -3167,12 +3289,16 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     startBodyDetection,
     stopBodyDetection,
     setCharacter(name: string) {
+      stopCry();
+      disposeParticles(deskPFX, scene); deskPFX = null;
       deskCurrentChar = name;
-      renderer.setClearColor(charBg(name), 1);   // recolour backdrop to match Pokemon
-      deskApplyAccent(name);                      // recolour cage / rings / lines to match
+      renderer.setClearColor(charBg(name), 1);
+      deskApplyAccent(name);
+      deskPFX = createParticles(scene, name, false);
       loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/', name, (m) => {
         deskCurrentModel = m;
-        flashArrival(m);                          // red-laser arrival flash
+        flashArrival(m);
+        playCry(name);
       });
     },
     throwPokeball: deskThrowPokeball,
