@@ -281,6 +281,173 @@ export async function askAI(state: AppState, text: string): Promise<string> {
 
 export { askAI as askGemini };
 
+// ─── Streaming (SSE / async-iterator) ─────────────────────────────────────
+// Same provider chain + fallback as askAI, but emits partial text as it
+// arrives so the UI can render tokens live (real time-to-first-token instead
+// of waiting for the whole reply). onText receives the FULL text-so-far each
+// tick. Any streaming failure falls back to the non-streaming call for that
+// provider, so behaviour is never worse than askAI.
+
+async function* sseLines(res: Response): AsyncGenerator<string> {
+  const reader = res.body!.getReader();
+  const dec = new TextDecoder();
+  let buf = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let nl: number;
+    while ((nl = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (line) yield line;
+    }
+  }
+  if (buf.trim()) yield buf.trim();
+}
+
+function chatMessages(state: AppState) {
+  return [
+    { role: 'system', content: systemPrompt(state) },
+    ...state.history.slice(-8).map(h => ({
+      role: h.role === 'user' ? 'user' : 'assistant',
+      content: h.parts.map(p => p.text).join(''),
+    })),
+  ];
+}
+
+// OpenAI + Grok share the OpenAI-compatible streaming wire format.
+async function streamOpenAICompat(
+  url: string, key: string, model: string, state: AppState, onText: (full: string) => void,
+): Promise<string> {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+    body: JSON.stringify({ model, messages: chatMessages(state), temperature: 0.8, max_tokens: 500, stream: true }),
+  });
+  if (!res.ok || !res.body) {
+    if (res.status === 429 || res.status === 401 || res.status === 403) throw new Error('PROVIDER_EXHAUSTED');
+    throw new Error('STREAM_FAIL');
+  }
+  let full = '';
+  for await (const line of sseLines(res)) {
+    if (!line.startsWith('data:')) continue;
+    const data = line.slice(5).trim();
+    if (data === '[DONE]') break;
+    try {
+      const j = JSON.parse(data);
+      const d = j.choices?.[0]?.delta?.content || '';
+      if (d) { full += d; onText(full); }
+    } catch {}
+  }
+  return full;
+}
+
+async function streamGeminiModel(model: string, state: AppState, onText: (full: string) => void): Promise<string> {
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': state.key },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: systemPrompt(state) }] },
+        contents: state.history.slice(-8),
+        generationConfig: { temperature: 0.8, maxOutputTokens: 500 },
+      }),
+    },
+  );
+  if (!res.ok || !res.body) throw new Error('STREAM_FAIL');
+  let full = '';
+  for await (const line of sseLines(res)) {
+    if (!line.startsWith('data:')) continue;
+    try {
+      const j = JSON.parse(line.slice(5).trim());
+      const d = (j.candidates?.[0]?.content?.parts || []).map((p: any) => p.text || '').join('');
+      if (d) { full += d; onText(full); }
+    } catch {}
+  }
+  return full;
+}
+
+async function streamGeminiChain(state: AppState, onText: (full: string) => void): Promise<string> {
+  const now = Date.now();
+  const order = [activeGeminiModel, ...GEMINI_MODELS.map((_, i) => i).filter(i => i !== activeGeminiModel)];
+  for (const idx of order) {
+    if (now < geminiCooldowns[idx]) continue;
+    try {
+      const r = await streamGeminiModel(GEMINI_MODELS[idx], state, onText);
+      if (r.trim()) { activeGeminiModel = idx; return r; }
+    } catch {}
+    geminiCooldowns[idx] = Date.now() + COOLDOWN_MS;
+  }
+  throw new Error('GEMINI_EXHAUSTED');
+}
+
+async function streamPuter(state: AppState, onText: (full: string) => void): Promise<string> {
+  const puter = (window as any).puter;
+  if (!puter?.ai?.chat) throw new Error('PROVIDER_EXHAUSTED');
+  const resp = await puter.ai.chat(chatMessages(state), { model: state.puterModel || 'gpt-4o-mini', stream: true });
+  let full = '';
+  // Puter streaming yields parts that expose the delta as `.text`.
+  for await (const part of resp) {
+    const d = part?.text ?? (typeof part === 'string' ? part : '') ?? '';
+    if (d) { full += d; onText(full); }
+  }
+  return full;
+}
+
+async function streamProvider(provider: AIProvider, state: AppState, onText: (full: string) => void): Promise<string> {
+  if (provider === 'puter') return streamPuter(state, onText);
+  if (provider === 'gemini') return streamGeminiChain(state, onText);
+  if (provider === 'grok') {
+    if (!state.grokKey) throw new Error('PROVIDER_NO_KEY');
+    return streamOpenAICompat('https://api.x.ai/v1/chat/completions', state.grokKey, 'grok-3-mini', state, onText);
+  }
+  if (!state.openaiKey) throw new Error('PROVIDER_NO_KEY');
+  return streamOpenAICompat('https://api.openai.com/v1/chat/completions', state.openaiKey, 'gpt-4o-mini', state, onText);
+}
+
+export async function askAIStream(state: AppState, text: string, onText: (full: string) => void): Promise<string> {
+  if (busy) throw new Error('Please wait for the current request to finish.');
+  busy = true;
+  state.history.push({ role: 'user', parts: [{ text }] });
+
+  try {
+    const primary = state.provider;
+    const fallbacks = PROVIDER_ORDER.filter(p => p !== primary && hasKey(p, state));
+    const chain = [primary, ...fallbacks];
+
+    for (const provider of chain) {
+      if (!hasKey(provider, state)) continue;
+      try {
+        let reply = await streamProvider(provider, state, onText);
+        if (!reply.trim()) {
+          // Streaming produced nothing — fall back to the blocking call.
+          reply = await askProvider(provider, state);
+          onText(reply);
+        }
+        state.history.push({ role: 'model', parts: [{ text: reply }] });
+        return reply;
+      } catch (err: any) {
+        const m = err?.message;
+        if (m === 'GEMINI_EXHAUSTED' || m === 'PROVIDER_EXHAUSTED' || m === 'PROVIDER_NO_KEY') continue;
+        // Transient stream error — try this provider once without streaming.
+        try {
+          const reply = await askProvider(provider, state);
+          onText(reply);
+          state.history.push({ role: 'model', parts: [{ text: reply }] });
+          return reply;
+        } catch { continue; }
+      }
+    }
+
+    state.history.pop();
+    throw new Error('All providers exhausted. Try again later or add more API keys in settings.');
+  } finally {
+    busy = false;
+  }
+}
+
 export function runTags(
   text: string,
   hooks: {

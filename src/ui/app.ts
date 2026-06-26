@@ -1,7 +1,7 @@
 import { mountOrb, type OrbHandle } from '../orb/OrbScene';
 import { mountFlowLines } from '../bg/flowLines';
 import { loadState, saveState, addEvent, addTask, saveNote, loadEvents, loadTasks, removeEvent, type AppState, type TextLang, type AIProvider, type VoiceGender, type UILang } from '../assistant/state';
-import { askAI, runTags } from '../assistant/gemini';
+import { askAIStream, runTags } from '../assistant/gemini';
 import { tryLocalCommand } from '../assistant/local';
 import { VoiceEngine } from '../assistant/voice';
 import { AudioEngine, type AmbientPreset } from '../assistant/audio';
@@ -1034,6 +1034,66 @@ export function mountApp(root: HTMLElement) {
     if (who === 'me') trackSentiment(text);
   }
 
+  // Hide action tags from the live display: remove complete [[TAG:…]] blocks
+  // and any trailing half-streamed "[[" so the user never sees raw tags.
+  function stripTagsForDisplay(s: string): string {
+    return s.replace(/\[\[[^\]]*\]\]/g, '').replace(/\[\[[^\]]*$/, '');
+  }
+
+  // Create an empty assistant bubble (chat + right panel) that updates live as
+  // streamed tokens arrive — no fake typewriter, real time-to-first-token.
+  function beginStreamMsg() {
+    removeTypingIndicator();
+    const label = state.name;
+    const chatEl = $('chat');
+    const div = document.createElement('div');
+    div.className = 'turn al streaming';
+    div.innerHTML = `<span class="who">${label}</span><div class="txt"></div>`;
+    chatEl?.appendChild(div);
+    const txt = div.querySelector<HTMLElement>('.txt')!;
+
+    const rp = $('rpBody');
+    const rpDiv = document.createElement('div');
+    rpDiv.className = 'rp-msg al streaming';
+    const time = new Date();
+    const ts = `${String(time.getHours()).padStart(2, '0')}:${String(time.getMinutes()).padStart(2, '0')}`;
+    rpDiv.innerHTML = `<div class="rp-meta"><span class="rp-who">${label}</span><span class="rp-time">${ts}</span></div><div class="rp-text"></div>`;
+    rp?.appendChild(rpDiv);
+    const rpTxt = rpDiv.querySelector<HTMLElement>('.rp-text')!;
+
+    // Coalesce updates to one paint per frame (backpressure for chatty streams).
+    let pending = '';
+    let scheduled = false;
+    const flush = () => {
+      scheduled = false;
+      const html = renderMarkdown(pending);
+      txt.innerHTML = html;
+      rpTxt.innerHTML = html;
+      if (chatEl) chatEl.scrollTop = chatEl.scrollHeight;
+      if (rp) rp.scrollTop = rp.scrollHeight;
+    };
+    return {
+      update(displayText: string) {
+        pending = displayText;
+        if (!scheduled) { scheduled = true; requestAnimationFrame(flush); }
+      },
+      finalize(finalText: string) {
+        pending = finalText;
+        flush();
+        div.classList.remove('streaming');
+        rpDiv.classList.remove('streaming');
+        lpMsgCount++;
+        const mcEl = document.getElementById('msgCount');
+        if (mcEl) mcEl.textContent = String(lpMsgCount);
+        const words = finalText.split(/\s+/).filter(w => w.length > 0).length;
+        lpTokenCount += Math.round(words * 1.3);
+        const tcEl = document.getElementById('tokenCount');
+        if (tcEl) tcEl.textContent = String(lpTokenCount);
+        saveChatMessage(finalText, 'al');
+      },
+    };
+  }
+
   function openWin(title: string) { $('winTitle').textContent = title; $('win').classList.add('show'); audio.open(); }
   $('winClose').onclick = () => { $('win').classList.remove('show'); $('winBody').innerHTML = ''; };
 
@@ -1262,7 +1322,12 @@ export function mountApp(root: HTMLElement) {
       }
     } catch {}
     try {
-      const reply = await askAI(state, text);
+      // Stream tokens into a live bubble (real TTFT). runTags runs on the full
+      // reply at the end for side-effects; tags are hidden during streaming.
+      const stream = beginStreamMsg();
+      const reply = await askAIStream(state, text, (full) => {
+        stream.update(stripTagsForDisplay(full));
+      });
       const clean = runTags(reply, {
         onVideo: openVideo, onSearch: openWebSearch, onCalendar: openCalendar,
         onEvent: addEvent, onSpotify: openSpotify,
@@ -1316,8 +1381,8 @@ export function mountApp(root: HTMLElement) {
       }) || 'Done.';
       audio.receive();
       orb.pikaEmote(Math.random() < 0.65 ? 'happy' : 'excited');
-      addMsg(clean, 'al');
-      voice.speak(clean);
+      stream.finalize(clean || 'Done.');
+      voice.speak(clean || 'Done.');
       try { refreshSummary(state.history); } catch {}
     } catch (err: any) {
       removeTypingIndicator();
