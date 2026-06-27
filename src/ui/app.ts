@@ -174,7 +174,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v52 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v53 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -2048,18 +2048,24 @@ export function mountApp(root: HTMLElement) {
 
       });
 
-      // Run hand detection via a requestAnimationFrame loop, but cap the send rate
-      // (~26fps). Flooding MediaPipe at 60fps backlogs the lite model on phones,
-      // which is what made detection lag and "go crazy". A steady ~26fps is smooth
-      // and gives the model time to track cleanly.
+      // Feed MediaPipe a CANVAS snapshot of the video at its native resolution,
+      // not the <video> element directly. On mobile, handing the hidden 1px video to
+      // send() delivers garbage/low-res frames (the root cause of "barely detects
+      // despite a great camera"); drawing the decoded frame to a canvas guarantees a
+      // clean, full-resolution image. Send rate capped (~26fps) so the lite model
+      // isn't flooded into laggy, erratic results on phones.
+      const cap = document.createElement('canvas');
+      const capCtx = cap.getContext('2d')!;
       let rafId = 0, lastSend = 0;
       const SEND_GAP = 38;
       const tick = async () => {
         if (!gestureActive) return;
         const t = performance.now();
-        if (vid.readyState >= 2 && t - lastSend >= SEND_GAP) {
+        if (vid.readyState >= 2 && vid.videoWidth > 0 && t - lastSend >= SEND_GAP) {
           lastSend = t;
-          await gestureHands.send({ image: vid }).catch(() => {});
+          if (cap.width !== vid.videoWidth) { cap.width = vid.videoWidth; cap.height = vid.videoHeight; }
+          try { capCtx.drawImage(vid, 0, 0, cap.width, cap.height); } catch {}
+          await gestureHands.send({ image: cap }).catch(() => {});
         }
         rafId = requestAnimationFrame(tick);
       };
