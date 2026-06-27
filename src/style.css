@@ -245,15 +245,15 @@ body[data-char="ho-oh"] .char-ambient {
 }
 @keyframes gi-pulse{ 0%,100%{ opacity:1; transform:scale(1); } 50%{ opacity:.35; transform:scale(.7); } }
 .gi-text{ font-weight:600; }
-/* Hidden detector feed — kept IN the viewport (a 2px speck, near-invisible) so
-   the camera keeps producing frames. iOS Safari pauses off-screen / display:none
-   video, so we can't move it away — we shrink it to nothing instead. */
+/* Hidden detector feed — kept IN the viewport (a 1px, fully transparent speck)
+   so the camera keeps producing frames without ever being visible. (Using
+   opacity:0 rather than display:none/off-screen, which pause video on iOS.) */
 .gp-camera-hidden{
-  position:fixed; right:0; bottom:0; width:2px; height:2px;
-  opacity:0.012; pointer-events:none; overflow:hidden;
+  position:fixed; left:0; bottom:0; width:1px; height:1px;
+  opacity:0; pointer-events:none; overflow:hidden;
 }
 .gp-camera-hidden video,
-.gp-camera-hidden canvas{ width:2px; height:2px; object-fit:cover; }
+.gp-camera-hidden canvas{ width:1px; height:1px; object-fit:cover; }
 
 /* ── Finger-pointing laser cursor ──────────────────────────────────────── */
 .laser-cursor{
