@@ -1898,6 +1898,19 @@ function getCharXform(character: string): CharXform {
   return all[character] ?? defaultXform(character);
 }
 
+// Apply a transform AND re-centre the model for the CURRENT rotation: rotate+scale
+// first, measure the resulting bounding box, then position so its centre sits at the
+// orb centre (plus the user's offset). Without this, rotating a model left its old
+// (load-time) centre stale, so it drifted off-screen and "auto-centre" missed.
+function applyModelXform(model: THREE.Object3D, baseS: number, x: number, y: number, z: number, s: number, px: number, py: number, pz: number): void {
+  model.rotation.set(x, y, z);
+  model.scale.setScalar(baseS * s);
+  model.position.set(0, 0, 0);
+  model.updateMatrixWorld(true);
+  const c = new THREE.Box3().setFromObject(model).getCenter(new THREE.Vector3());
+  model.position.set(-c.x + px, -c.y + py, -c.z + pz);
+}
+
 function saveCharXform(character: string, xf: CharXform): void {
   const all = readObj<Record<string, CharXform>>(CHAR_XFORM_LS_KEY, {});
   all[character] = xf;
@@ -2753,11 +2766,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
       saveCharXform(mobileCurrentChar, { x, y, z, s, px, py, pz });
       if (mobileCurrentModel) {
         const bt = modelBaseTransform.get(mobileCurrentModel);
-        const as = bt ? bt.s : 1;
-        const acx = bt ? bt.cx : 0; const acy = bt ? bt.cy : 0; const acz = bt ? bt.cz : 0;
-        mobileCurrentModel.scale.setScalar(as * s);
-        mobileCurrentModel.position.set(acx + px, acy + py, acz + pz);
-        mobileCurrentModel.rotation.set(x, y, z);
+        applyModelXform(mobileCurrentModel, bt ? bt.s : 1, x, y, z, s, px, py, pz);
       }
     },
     resetCharacterTransform() {
@@ -2766,11 +2775,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
       const def = pinned ?? defaultXform(mobileCurrentChar);
       if (mobileCurrentModel) {
         const bt = modelBaseTransform.get(mobileCurrentModel);
-        const as = bt ? bt.s : 1;
-        const acx = bt ? bt.cx : 0; const acy = bt ? bt.cy : 0; const acz = bt ? bt.cz : 0;
-        mobileCurrentModel.scale.setScalar(as * (pinned ? def.s : 1));
-        mobileCurrentModel.position.set(acx + (pinned ? def.px : 0), acy + (pinned ? def.py : 0), acz + (pinned ? def.pz : 0));
-        mobileCurrentModel.rotation.set(def.x, def.y, def.z);
+        applyModelXform(mobileCurrentModel, bt ? bt.s : 1, def.x, def.y, def.z, pinned ? def.s : 1, pinned ? def.px : 0, pinned ? def.py : 0, pinned ? def.pz : 0);
       }
     },
     pinCharacterTransform() {
@@ -3833,11 +3838,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       saveCharXform(deskCurrentChar, { x, y, z, s, px, py, pz });
       if (deskCurrentModel) {
         const bt = modelBaseTransform.get(deskCurrentModel);
-        const as = bt ? bt.s : 1;
-        const acx = bt ? bt.cx : 0; const acy = bt ? bt.cy : 0; const acz = bt ? bt.cz : 0;
-        deskCurrentModel.scale.setScalar(as * s);
-        deskCurrentModel.position.set(acx + px, acy + py, acz + pz);
-        deskCurrentModel.rotation.set(x, y, z);
+        applyModelXform(deskCurrentModel, bt ? bt.s : 1, x, y, z, s, px, py, pz);
       }
     },
     resetCharacterTransform() {
@@ -3846,11 +3847,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       const def = pinned ?? defaultXform(deskCurrentChar);
       if (deskCurrentModel) {
         const bt = modelBaseTransform.get(deskCurrentModel);
-        const as = bt ? bt.s : 1;
-        const acx = bt ? bt.cx : 0; const acy = bt ? bt.cy : 0; const acz = bt ? bt.cz : 0;
-        deskCurrentModel.scale.setScalar(as * (pinned ? def.s : 1));
-        deskCurrentModel.position.set(acx + (pinned ? def.px : 0), acy + (pinned ? def.py : 0), acz + (pinned ? def.pz : 0));
-        deskCurrentModel.rotation.set(def.x, def.y, def.z);
+        applyModelXform(deskCurrentModel, bt ? bt.s : 1, def.x, def.y, def.z, pinned ? def.s : 1, pinned ? def.px : 0, pinned ? def.py : 0, pinned ? def.pz : 0);
       }
     },
     pinCharacterTransform() {
