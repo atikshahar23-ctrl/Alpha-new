@@ -174,7 +174,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v39 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v40 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -222,6 +222,18 @@ export function mountApp(root: HTMLElement) {
         </div>
         <span class="gi-dot"></span>
         <span class="gi-text" id="gestureStatus">מצלמה פעילה</span>
+      </div>
+
+      <!-- Gesture cheat-sheet — shown when detection starts, auto-hides after 7s. -->
+      <div id="gestureHelp" class="gesture-help" hidden>
+        <div class="gh-title">🖐️ שליטה בידיים</div>
+        <ul>
+          <li><span>☝️</span><b>הצבעה</b> — סמן נע עם האצבע; החזק על כפתור = לחיצה</li>
+          <li><span>✌️</span><b>שתי אצבעות</b> — גלילת מסך (הזז יד מעלה/מטה)</li>
+          <li><span>🤏</span><b>צביטה</b> — אחיזה וסיבוב הדמות</li>
+          <li><span>✊➡️</span><b>אגרוף + זריקה מהירה</b> — זימון פוקימון</li>
+          <li><span>🖐️</span><b>כף יד פתוחה (2 שנ')</b> — שחרור הפוקימון</li>
+        </ul>
       </div>
 
       <!-- Finger-pointing laser cursor — follows the index finger; dwelling on a
@@ -1651,7 +1663,18 @@ export function mountApp(root: HTMLElement) {
     let dwellMs = 0;
     let dwellTarget: Element | null = null;
     let clickCooldownMs = 0;
-    const DWELL_MS = 2000;
+    const DWELL_MS = 1300;              // snappier dwell-to-click (was 2000)
+    let peacePrevY: number | null = null;   // last hand-Y for two-finger scroll
+    // Scroll the deepest scrollable element under (x,y); falls back to the page.
+    const scrollAt = (x: number, y: number, dy: number) => {
+      let el = document.elementFromPoint(x, y) as HTMLElement | null;
+      while (el && el !== document.body && el !== document.documentElement) {
+        const oy = getComputedStyle(el).overflowY;
+        if ((oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight + 2) { el.scrollTop += dy; return; }
+        el = el.parentElement;
+      }
+      (document.scrollingElement || document.documentElement).scrollTop += dy;
+    };
     // Gesture stability/debounce — a pose must be held briefly before it becomes
     // the "confirmed" gesture, so frame-to-frame finger jitter can't make the
     // detector flip between gestures ("go crazy").
@@ -1733,6 +1756,7 @@ export function mountApp(root: HTMLElement) {
       const vid = document.getElementById('gestureVideo') as HTMLVideoElement | null;
       if (vid) vid.srcObject = null;
       document.getElementById('gesturePanel')!.setAttribute('hidden', '');
+      const help = document.getElementById('gestureHelp'); if (help) { clearTimeout((help as any).__t); help.setAttribute('hidden', ''); }
       $('detectBtn').classList.remove('active');
       const cur = document.getElementById('laserCursor'); if (cur) cur.setAttribute('hidden', '');
     }
@@ -1743,6 +1767,18 @@ export function mountApp(root: HTMLElement) {
       $('detectBtn').classList.add('active');
       gestureActive = true;
       gestureStatus('⏳ מאתחל מצלמה…');
+
+      // Pop the gesture cheat-sheet, then fade it out after 7s.
+      const help = document.getElementById('gestureHelp');
+      if (help) {
+        help.removeAttribute('hidden');
+        help.classList.remove('gh-out');
+        clearTimeout((help as any).__t);
+        (help as any).__t = setTimeout(() => {
+          help.classList.add('gh-out');
+          setTimeout(() => help.setAttribute('hidden', ''), 600);
+        }, 7000);
+      }
 
       try {
         gestureStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: 320, height: 240 }, audio: false });
@@ -1789,7 +1825,7 @@ export function mountApp(root: HTMLElement) {
 
         if (!results.multiHandLandmarks?.length) {
           gestureStatus('מצלמה פעילה');
-          palmHoldMs = 0; fistActive = false; fistBaseline = 0; fistArmMs = 0; prevScale = 0;
+          palmHoldMs = 0; fistActive = false; fistBaseline = 0; fistArmMs = 0; prevScale = 0; peacePrevY = null;
           hideLaser();
           return;
         }
@@ -1816,6 +1852,7 @@ export function mountApp(root: HTMLElement) {
         const open = upCount >= 3;        // open palm (lenient — 3 of 4 fingers)
         const fist = upCount === 0;       // closed fist
         const pointing = idxUp && !midUp && !rngUp;  // index out, middle+ring down → pointer (pinky ignored, easier to hold)
+        const peace = idxUp && midUp && !rngUp && !pkyUp;  // ✌️ two fingers → scroll
 
         throwCooldownMs = Math.max(0, throwCooldownMs - dt);
         suppressPalmMs = Math.max(0, suppressPalmMs - dt);
@@ -1839,7 +1876,7 @@ export function mountApp(root: HTMLElement) {
         // before it takes over. Pinch and "none" switch immediately (pinch has
         // its own hysteresis; releasing should feel instant) — the others must
         // settle, which kills the flicker that made detection feel chaotic.
-        const raw = pinching ? 'pinch' : pointing ? 'point' : fist ? 'fist' : open ? 'open' : 'none';
+        const raw = pinching ? 'pinch' : pointing ? 'point' : peace ? 'peace' : fist ? 'fist' : open ? 'open' : 'none';
         if (raw === rawPrev) rawStableMs += dt; else { rawPrev = raw; rawStableMs = 0; }
         if (raw === 'pinch' || raw === 'none' || rawStableMs >= STABLE_MS) confirmedGesture = raw;
 
@@ -1880,7 +1917,21 @@ export function mountApp(root: HTMLElement) {
           pointSX = pointSX ? pointSX + (tx - pointSX) * a : tx;
           pointSY = pointSY ? pointSY + (ty - pointSY) * a : ty;
           updateLaser(pointSX, pointSY, dt);
-          gestureStatus('☝️ מצביע — החזק 2 שניות לבחירה');
+          gestureStatus('☝️ מצביע — החזק רגע לבחירה');
+        } else if (confirmedGesture === 'peace') {
+          // ✌️ Two-finger scroll — move the hand up/down to scroll the screen.
+          hideLaser();
+          fistActive = false; fistBaseline = 0; fistArmMs = 0;
+          const hy = lm[9].y;
+          if (peacePrevY != null) {
+            const hx = Math.min(window.innerWidth - 1, Math.max(0, lm[9].x * window.innerWidth));
+            const sy = Math.min(window.innerHeight - 1, Math.max(0, hy * window.innerHeight));
+            scrollAt(hx, sy, (hy - peacePrevY) * window.innerHeight * 2.4);
+          }
+          peacePrevY = hy;
+          gestureStatus('✌️ גלילה — הזז יד מעלה/מטה');
+          ctx.beginPath(); ctx.arc(cx2, cy2, 22, 0, Math.PI * 2);
+          ctx.strokeStyle = 'rgba(120,220,255,.9)'; ctx.lineWidth = 4; ctx.stroke();
         } else {
           hideLaser();
           if (pinchActive) { pinchActive = false; pinchStartXf = null; }
@@ -1934,6 +1985,7 @@ export function mountApp(root: HTMLElement) {
             (window as any).dispelOrb?.();
           }
         }
+        if (confirmedGesture !== 'peace') peacePrevY = null;
         prevScale = handScale;
 
       });
