@@ -1987,7 +1987,19 @@ function loadAndReplaceBody(
               if (!m) continue;
               (m as any).side = THREE.DoubleSide;
               const sm = m as THREE.MeshStandardMaterial;
-              if (sm.map) { sm.map.colorSpace = THREE.SRGBColorSpace; }
+              if (sm.map) {
+                sm.map.colorSpace = THREE.SRGBColorSpace;
+                // The imported Charizard (many meshes, awkward normals) renders dark
+                // under the orb lights, so self-light it with its own texture to keep
+                // the real colours bright. Other textured models look fine as-is.
+                if (character === 'charizard') {
+                  sm.emissiveMap = sm.map;
+                  sm.emissive.setRGB(1, 1, 1);
+                  sm.emissiveIntensity = 0.55;
+                  sm.roughness = 1; sm.metalness = 0;
+                  sm.needsUpdate = true;
+                }
+              }
               else if (sm.color) {
                 // Fallback flat colour (shown until the sprite texture loads, and
                 // kept if no sprite exists). Matte + gentle dim keeps bloom in check.
