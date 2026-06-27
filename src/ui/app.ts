@@ -1598,7 +1598,7 @@ export function mountApp(root: HTMLElement) {
     let pinchActive = false;
     let pinchStartHX = 0, pinchStartHY = 0;
     let pinchStartXf: { x: number; y: number; z: number; s: number; px: number; py: number; pz: number } | null = null;
-    const PALM_HOLD_THRESHOLD = 4000;  // long, deliberate hold (4s) to release a Pokémon
+    const PALM_HOLD_THRESHOLD = 2000;  // hold open palm 2s to release a Pokémon
     const THROW_COOLDOWN = 2200;
 
     function gestureStatus(msg: string) {
@@ -1607,6 +1607,7 @@ export function mountApp(root: HTMLElement) {
     }
 
     // ── Laser-pointer cursor + dwell-to-select ──────────────────────────────
+    let lastX = 0, lastY = 0;
     function clickableAt(x: number, y: number): Element | null {
       let el = document.elementFromPoint(x, y);
       while (el) {
@@ -1615,9 +1616,20 @@ export function mountApp(root: HTMLElement) {
       }
       return null;
     }
+    // Fire a full event sequence so even handlers that listen on pointer/mouse
+    // (not just click) activate — makes hand-clicking work on any button.
+    function fireClick(el: HTMLElement, x: number, y: number) {
+      const opts = { bubbles: true, cancelable: true, clientX: x, clientY: y, view: window } as any;
+      try { el.dispatchEvent(new PointerEvent('pointerdown', opts)); } catch {}
+      try { el.dispatchEvent(new MouseEvent('mousedown', opts)); } catch {}
+      try { el.dispatchEvent(new PointerEvent('pointerup', opts)); } catch {}
+      try { el.dispatchEvent(new MouseEvent('mouseup', opts)); } catch {}
+      try { el.click(); } catch {}
+    }
     function updateLaser(x: number, y: number, dt: number) {
       const cur = document.getElementById('laserCursor');
       if (!cur) return;
+      lastX = x; lastY = y;
       cur.removeAttribute('hidden');
       cur.style.transform = `translate(${x}px, ${y}px)`;
       const target = clickableAt(x, y);
@@ -1630,7 +1642,7 @@ export function mountApp(root: HTMLElement) {
           dwellMs = 0; clickCooldownMs = 1400;
           cur.classList.remove('lc-arming');
           cur.style.setProperty('--p', '0');
-          (target as HTMLElement).click();   // dwell-select
+          fireClick(target as HTMLElement, lastX, lastY);   // dwell-select
           cur.classList.add('lc-fire');
           setTimeout(() => cur.classList.remove('lc-fire'), 300);
         }
@@ -1736,7 +1748,7 @@ export function mountApp(root: HTMLElement) {
         const upCount = [idxUp, midUp, rngUp, pkyUp].filter(Boolean).length;
         const open = upCount >= 3;        // open palm (lenient — 3 of 4 fingers)
         const fist = upCount === 0;       // closed fist
-        const pointing = idxUp && !midUp && !rngUp && !pkyUp;  // index only → laser pointer
+        const pointing = idxUp && !midUp && !rngUp;  // index out, middle+ring down → pointer (pinky ignored, easier to hold)
 
         throwCooldownMs = Math.max(0, throwCooldownMs - dt);
         suppressPalmMs = Math.max(0, suppressPalmMs - dt);
@@ -1780,11 +1792,18 @@ export function mountApp(root: HTMLElement) {
           // cursor; dwelling on a target for 2s clicks it.
           if (pinchActive) { pinchActive = false; pinchStartXf = null; }
           palmHoldMs = 0; fistActive = false; fistMinScale = 0;
-          const tx = lm[8].x * window.innerWidth;
-          const ty = lm[8].y * window.innerHeight;
-          // smooth (low-pass) for a steady cursor
-          pointSX = pointSX ? pointSX + (tx - pointSX) * 0.35 : tx;
-          pointSY = pointSY ? pointSY + (ty - pointSY) * 0.35 : ty;
+          // Map the fingertip to the screen with gain around centre so a small,
+          // comfortable hand movement reaches every edge (the hand stays mid-frame).
+          const GAIN = 1.7;
+          const nx = Math.min(1, Math.max(0, 0.5 + (lm[8].x - 0.5) * GAIN));
+          const ny = Math.min(1, Math.max(0, 0.5 + (lm[8].y - 0.5) * GAIN));
+          const tx = nx * window.innerWidth;
+          const ty = ny * window.innerHeight;
+          // Adaptive smoothing: snappy on big moves, steady when hovering a target.
+          const d = Math.hypot(tx - pointSX, ty - pointSY);
+          const a = pointSX ? Math.min(0.55, 0.18 + d / 600) : 1;
+          pointSX = pointSX ? pointSX + (tx - pointSX) * a : tx;
+          pointSY = pointSY ? pointSY + (ty - pointSY) * a : ty;
           updateLaser(pointSX, pointSY, dt);
           gestureStatus('☝️ מצביע — החזק 2 שניות לבחירה');
         } else {
@@ -1817,7 +1836,7 @@ export function mountApp(root: HTMLElement) {
               // Open palm held a long, deliberate 4s → release the current Pokémon.
               palmHoldMs += dt;
               const progress = Math.min(1, palmHoldMs / PALM_HOLD_THRESHOLD);
-              gestureStatus(`🖐️ החזק 4 שניות לשחרור… ${Math.round(progress * 100)}%`);
+              gestureStatus(`🖐️ החזק 2 שניות לשחרור… ${Math.round(progress * 100)}%`);
               ctx.beginPath(); ctx.arc(cx2, cy2, 28, -Math.PI/2, -Math.PI/2 + progress * Math.PI*2);
               ctx.strokeStyle = `rgba(218,165,32,${0.4 + progress*0.6})`; ctx.lineWidth = 4; ctx.stroke();
               if (palmHoldMs >= PALM_HOLD_THRESHOLD) {
