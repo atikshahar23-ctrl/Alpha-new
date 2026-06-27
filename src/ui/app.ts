@@ -174,7 +174,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v48 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v49 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -3010,22 +3010,50 @@ export function mountApp(root: HTMLElement) {
         ctx.clearRect(0, 0, W, H);
         if (t < 0.6) {
           const p = Math.min(1, t / 0.4);            // beam grows top → centre
-          ctx.save(); ctx.lineCap = 'round';
-          const layers = [[26, .08], [15, .2], [6, .5], [2, 1]] as const;
+          const endY = -30 + (cy + 30) * p;
+          ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+          // Electric lightning core — jagged path from the top to the beam tip,
+          // re-randomised each frame so it crackles.
+          const jag = () => {
+            ctx.beginPath(); ctx.moveTo(cx, -30);
+            const segs = 9;
+            for (let s = 1; s <= segs; s++) {
+              const yy = -30 + (endY + 30) * (s / segs);
+              const amp = 18 * (1 - p * 0.4);
+              ctx.lineTo(cx + (s === segs ? 0 : (Math.random() - 0.5) * amp), yy);
+            }
+          };
+          const layers = [[26, .08], [15, .2], [6, .5], [2.5, 1]] as const;
           const cols = ['rgba(255,55,55,1)', 'rgba(255,90,55,1)', 'rgba(255,150,80,1)', '#fff'];
           layers.forEach((L, i) => {
-            ctx.beginPath(); ctx.moveTo(cx, -30); ctx.lineTo(cx, -30 + (cy + 30) * p);
+            jag();
             ctx.lineWidth = L[0]; ctx.globalAlpha = L[1]; ctx.strokeStyle = cols[i];
-            ctx.shadowColor = '#ff2a18'; ctx.shadowBlur = i === 3 ? 30 : 0; ctx.stroke();
+            ctx.shadowColor = '#ff2a18'; ctx.shadowBlur = i === 3 ? 30 : 10; ctx.stroke();
           });
+          // Forked branches off the bolt
+          ctx.globalAlpha = 0.5; ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(255,180,120,.9)';
+          for (let b = 0; b < 3; b++) {
+            const by = -30 + (endY + 30) * (0.3 + Math.random() * 0.6);
+            ctx.beginPath(); ctx.moveTo(cx, by);
+            ctx.lineTo(cx + (Math.random() - 0.5) * 70, by + (Math.random() - 0.3) * 50);
+            ctx.stroke();
+          }
           if (p >= 1) {                               // impact burst at the centre
-            const bp = (t - 0.4) / 0.2, rr = Math.min(W, H) * 0.3 * bp;
+            const bp = (t - 0.4) / 0.2, rr = Math.min(W, H) * 0.32 * bp;
             const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rr);
-            g.addColorStop(0, `rgba(255,255,255,${0.9 * (1 - bp)})`);
+            g.addColorStop(0, `rgba(255,255,255,${0.95 * (1 - bp)})`);
             g.addColorStop(0.4, `rgba(255,90,40,${0.7 * (1 - bp)})`);
             g.addColorStop(1, 'rgba(255,0,0,0)');
             ctx.globalAlpha = 1; ctx.fillStyle = g;
             ctx.beginPath(); ctx.arc(cx, cy, rr, 0, Math.PI * 2); ctx.fill();
+            // Radial spark streaks shooting out of the impact
+            ctx.strokeStyle = '#ffd9a0'; ctx.lineWidth = 2; ctx.globalAlpha = 1 - bp;
+            for (let k = 0; k < 14; k++) {
+              const a = (k / 14) * Math.PI * 2 + bp;
+              const r0 = rr * 0.5, r1 = rr * (1.1 + Math.random() * 0.4);
+              ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0);
+              ctx.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1); ctx.stroke();
+            }
           }
           ctx.restore();
           requestAnimationFrame(frame);
