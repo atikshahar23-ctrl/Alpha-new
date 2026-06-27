@@ -8,6 +8,7 @@ import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
 import { pikaEmoteSpeak } from '../assistant/pikaVoice';
 import { readObj, writeObj } from '../util/batchedStore';
 import { GEN1 } from '../data/gen1';
+import { POKEMON_SPRITE_COLOR } from '../data/pokemonColors';
 
 export type PikaEmote = 'happy' | 'curious' | 'excited' | 'sad' | 'surprised';
 
@@ -1970,6 +1971,11 @@ function loadAndReplaceBody(
         if (prev) { pikaGroup.remove(prev); }
 
         const model = gltf.scene;
+        // Accurate per-Pokemon body colour pulled from the official Gen-1 sprite
+        // sheet (keyed by National Dex number). Used only for untextured models;
+        // textured GLBs keep their own maps.
+        const dex = POKEMON_CRY_ID[character] ?? (character.indexOf('pikachu') === 0 ? 25 : 0);
+        const spriteCol = POKEMON_SPRITE_COLOR[dex];
         // All Pokemon GLBs now carry embedded textures — keep their materials,
         // just make them double-sided and shadow-casting.
         model.traverse((child) => {
@@ -1980,9 +1986,12 @@ function loadAndReplaceBody(
               const sm = m as THREE.MeshStandardMaterial;
               if (sm.map) { sm.map.colorSpace = THREE.SRGBColorSpace; }
               else if (sm.color) {
-                // Untextured imported model (type-tinted): make it matte and dim
-                // the flat colour so the orb's bloom doesn't blow it out to white.
-                sm.color.multiplyScalar(0.5);
+                // Untextured imported model: paint it with the Pokemon's true body
+                // colour from the sprite sheet (falls back to whatever flat tint the
+                // GLB shipped with). Matte + a gentle dim keeps the orb's bloom from
+                // blowing bright colours out to white.
+                if (spriteCol !== undefined) sm.color.setHex(spriteCol);
+                sm.color.multiplyScalar(0.7);
                 sm.roughness = 1; sm.metalness = 0;
                 if (sm.emissive) sm.emissive.setRGB(0, 0, 0);
                 (sm as any).envMapIntensity = 0.3;
