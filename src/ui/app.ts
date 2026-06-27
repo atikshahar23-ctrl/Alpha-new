@@ -3,6 +3,7 @@ import { mountFlowLines } from '../bg/flowLines';
 import { loadState, saveState, addEvent, addTask, saveNote, loadEvents, loadTasks, removeEvent, type AppState, type TextLang, type AIProvider, type VoiceGender, type UILang } from '../assistant/state';
 import { askAIStream, askOnce, askVision, runTags } from '../assistant/gemini';
 import { GEN1 } from '../data/gen1';
+import * as THREE from 'three';
 import { tryLocalCommand } from '../assistant/local';
 import { VoiceEngine } from '../assistant/voice';
 import { AudioEngine, type AmbientPreset } from '../assistant/audio';
@@ -233,8 +234,10 @@ export function mountApp(root: HTMLElement) {
       <!-- Spinning pokéball shown in the screen centre while the user is choosing
            (by voice or tap) which Pokémon to summon. -->
       <div id="summonOrb" class="summon-orb" hidden>
-        <div class="so-aura"></div>
-        <div class="so-ball"><span class="so-btn"></span></div>
+        <div class="so-inner">
+          <div class="so-aura"></div>
+          <canvas id="summonOrbCanvas" class="so-canvas"></canvas>
+        </div>
       </div>
       <div id="summonDock" class="summon-dock" hidden>
         <div class="sd-hint" id="summonDockHint"><span class="sd-mic">🎙️</span> אמור שם של פוקימון…</div>
@@ -2761,19 +2764,70 @@ export function mountApp(root: HTMLElement) {
       if (dockRec) { try { dockRec.stop(); } catch {} dockRec = null; }
     }
 
+    // Spectacular summon burst: white core flash + expanding shockwave ring.
     function summonFlash() {
       const f = document.createElement('div');
       f.className = 'summon-flash';
+      const ring = document.createElement('div');
+      ring.className = 'summon-shock';
       document.body.appendChild(f);
-      setTimeout(() => f.remove(), 750);
+      document.body.appendChild(ring);
+      setTimeout(() => { f.remove(); ring.remove(); }, 1100);
     }
+
+    // Real 3D Pokéball in the screen centre while choosing — its own tiny WebGL
+    // scene rendering the uploaded pokeball.glb, spinning. Launches up off-screen
+    // when a Pokémon is picked.
+    let sbRenderer: THREE.WebGLRenderer | null = null;
+    let sbScene: THREE.Scene | null = null, sbCamera: THREE.PerspectiveCamera | null = null;
+    let sbBall: THREE.Object3D | null = null, sbRaf = 0;
+    function initSummonBall3D() {
+      if (sbRenderer) return;
+      const canvas = document.getElementById('summonOrbCanvas') as HTMLCanvasElement | null;
+      if (!canvas) return;
+      try {
+        sbRenderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+        sbRenderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+        sbRenderer.setSize(240, 240, false);
+        sbScene = new THREE.Scene();
+        sbCamera = new THREE.PerspectiveCamera(38, 1, 0.1, 100); sbCamera.position.set(0, 0, 3.4);
+        sbScene.add(new THREE.AmbientLight(0xffffff, 0.95));
+        const d = new THREE.DirectionalLight(0xffffff, 1.25); d.position.set(2, 3, 4); sbScene.add(d);
+        const d2 = new THREE.DirectionalLight(0xffe0a0, 0.5); d2.position.set(-3, 1, -2); sbScene.add(d2);
+        import('three/examples/jsm/loaders/GLTFLoader.js').then(({ GLTFLoader }) => {
+          new GLTFLoader().load((import.meta.env.BASE_URL || '/') + 'ar-models/pokeball.glb', (g: any) => {
+            const m: THREE.Object3D = g.scene;
+            m.traverse((o: any) => { if (o.isMesh) o.geometry.computeVertexNormals(); });
+            const bb = new THREE.Box3().setFromObject(m);
+            const sz = bb.getSize(new THREE.Vector3()); const c = bb.getCenter(new THREE.Vector3());
+            const s = 2.0 / Math.max(sz.x, sz.y, sz.z);
+            m.scale.setScalar(s); m.position.set(-c.x * s, -c.y * s, -c.z * s);
+            const grp = new THREE.Group(); grp.add(m); sbScene!.add(grp); sbBall = grp;
+          }, undefined, () => {});
+        });
+      } catch { sbRenderer = null; }
+    }
+    function startSummonBall() {
+      initSummonBall3D();
+      if (sbRaf || !sbRenderer) return;
+      const tick = () => {
+        sbRaf = requestAnimationFrame(tick);
+        if (sbBall) { sbBall.rotation.y += 0.025; sbBall.rotation.x = Math.sin(performance.now() / 900) * 0.12; }
+        if (sbRenderer && sbScene && sbCamera) sbRenderer.render(sbScene, sbCamera);
+      };
+      tick();
+    }
+    function stopSummonBall() { cancelAnimationFrame(sbRaf); sbRaf = 0; }
 
     function openSummonDock() {
       if (dockOpen) return;
       buildDock();
       resetMagnify();
       dock.removeAttribute('hidden');
-      document.getElementById('summonOrb')?.removeAttribute('hidden');  // spinning centre pokéball
+      const orbEl = document.getElementById('summonOrb');
+      orbEl?.classList.remove('launch');
+      orbEl?.removeAttribute('hidden');  // 3D spinning centre pokéball
+      startSummonBall();
       requestAnimationFrame(() => dock.classList.add('open'));
       dockOpen = true;
       hint.innerHTML = '<span class="sd-mic">🎙️</span> אמור שם של פוקימון…';
@@ -2789,7 +2843,9 @@ export function mountApp(root: HTMLElement) {
       dockOpen = false;
       clearTimeout(dockTimer);
       stopDockVoice();
-      document.getElementById('summonOrb')?.setAttribute('hidden', '');
+      stopSummonBall();
+      const orbEl = document.getElementById('summonOrb');
+      orbEl?.setAttribute('hidden', ''); orbEl?.classList.remove('launch');
       dock.classList.remove('open');
       setTimeout(() => dock.setAttribute('hidden', ''), 260);
       if (restoreWake) { restoreWake = false; setTimeout(() => voice.setWake(true), 350); }
@@ -2800,11 +2856,13 @@ export function mountApp(root: HTMLElement) {
       stopDockVoice();
       const el = row.querySelector<HTMLElement>(`.sd-item[data-id="${id}"]`);
       el?.classList.add('sd-chosen');
+      // The 3D pokéball rises up and flies off the top of the screen…
+      document.getElementById('summonOrb')?.classList.add('launch');
       setTimeout(() => {
-        closeSummonDock();
+        closeSummonDock();          // …then it's gone — burst + summon the choice.
         summonFlash();
         swapMainCharacterAnimated(id);
-      }, 420);
+      }, 650);
     }
 
     // The thumbs-up gesture (and the pokeball button) open this dock.

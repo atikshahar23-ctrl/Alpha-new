@@ -278,32 +278,39 @@ body[data-char="ho-oh"] .char-ambient {
 .laser-cursor.lc-fire .lc-dot{ animation:lc-fire .3s ease; }
 @keyframes lc-fire{ 0%{ transform:scale(1);} 50%{ transform:scale(2.4); } 100%{ transform:scale(1);} }
 
-/* ── Spinning summon pokéball (screen centre, while choosing) ───────────── */
+/* ── 3D summon pokéball (screen centre, while choosing) ─────────────────── */
 .summon-orb{
   position:fixed; inset:0; z-index:1190;
   display:flex; align-items:center; justify-content:center; pointer-events:none;
 }
 .summon-orb[hidden]{ display:none; }
+.so-inner{
+  position:relative; display:flex; align-items:center; justify-content:center;
+  animation:so-pop .4s ease both;
+  transition:transform .65s cubic-bezier(.5,0,.7,1), opacity .65s ease;
+}
+.summon-orb.launch .so-inner{ transform:translateY(-130vh) scale(.55); opacity:0; }  /* rises off the top */
 .so-aura{
-  position:absolute; width:260px; height:260px; border-radius:50%;
+  position:absolute; width:300px; height:300px; border-radius:50%;
   background:radial-gradient(circle, rgba(255,210,120,.4) 0%, rgba(218,165,32,.14) 42%, transparent 70%);
   animation:so-aura 1.8s ease-in-out infinite;
 }
-@keyframes so-aura{ 0%,100%{ transform:scale(.85); opacity:.65; } 50%{ transform:scale(1.18); opacity:1; } }
-.so-ball{
-  position:relative; width:124px; height:124px; border-radius:50%;
-  background:linear-gradient(180deg,#f24b4b 0 48%,#1a1a1a 48% 52%,#f4f4f4 52% 100%);
-  border:5px solid #141414;
-  box-shadow:0 0 46px rgba(255,90,90,.55), 0 12px 40px rgba(0,0,0,.6), inset -10px -10px 22px rgba(0,0,0,.35);
-  animation:so-spin 1.5s linear infinite, so-pop .4s ease both;
-}
-.so-btn{
-  position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
-  width:34px; height:34px; border-radius:50%; background:#fff; border:6px solid #141414;
-  box-shadow:0 0 14px rgba(255,255,255,.95), 0 0 26px rgba(120,220,255,.6);
-}
-@keyframes so-spin{ to{ transform:rotate(360deg); } }
+@keyframes so-aura{ 0%,100%{ transform:scale(.85); opacity:.6; } 50%{ transform:scale(1.18); opacity:.95; } }
+.so-canvas{ position:relative; z-index:2; width:240px; height:240px; filter:drop-shadow(0 10px 26px rgba(0,0,0,.55)); }
 @keyframes so-pop{ from{ transform:scale(.2); opacity:0; } to{ transform:scale(1); opacity:1; } }
+
+/* Spectacular summon burst — white core flash + expanding shockwave ring */
+.summon-shock{
+  position:fixed; left:50%; top:50%; width:40px; height:40px; margin:-20px 0 0 -20px;
+  z-index:1151; pointer-events:none; border-radius:50%;
+  border:6px solid rgba(255,235,170,.9);
+  box-shadow:0 0 40px 10px rgba(255,210,120,.7), inset 0 0 30px rgba(255,255,255,.6);
+  animation:summon-shock .9s cubic-bezier(.2,.7,.3,1) forwards;
+}
+@keyframes summon-shock{
+  0%{ transform:scale(.2); opacity:.95; }
+  100%{ transform:scale(26); opacity:0; border-width:1px; }
+}
 
 /* ── Summon dock — macOS-style Pokéball dock ───────────────────────────── */
 .summon-dock{
