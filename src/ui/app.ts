@@ -174,7 +174,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v38 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v39 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -1805,10 +1805,12 @@ export function mountApp(root: HTMLElement) {
           ctx.fill();
         }
 
-        // Finger up = tip clearly above its PIP joint. Small margin keeps it
-        // responsive without flickering. Count-based so it reads instantly and
-        // tolerates a not-perfectly-formed hand.
-        const fingerUp = (tip: number, pip: number) => lm[tip].y < lm[pip].y - 0.01;
+        // Finger extended = tip is farther from the wrist than its PIP joint.
+        // This is orientation-INDEPENDENT (works with the hand tilted or sideways),
+        // unlike a raw tip.y<pip.y test — which is what made the open palm so flaky.
+        const wr = lm[0];
+        const dW = (i: number) => Math.hypot(lm[i].x - wr.x, lm[i].y - wr.y);
+        const fingerUp = (tip: number, pip: number) => dW(tip) > dW(pip) * 1.05;
         const idxUp = fingerUp(8,6), midUp = fingerUp(12,10), rngUp = fingerUp(16,14), pkyUp = fingerUp(20,18);
         const upCount = [idxUp, midUp, rngUp, pkyUp].filter(Boolean).length;
         const open = upCount >= 3;        // open palm (lenient — 3 of 4 fingers)
@@ -1849,7 +1851,7 @@ export function mountApp(root: HTMLElement) {
             pinchStartHX = hx; pinchStartHY = hy;
             pinchStartXf = orb.getCharacterTransform();
           }
-          palmHoldMs = 0; fistActive = false;
+          fistActive = false;
           const xf = pinchStartXf!;
           const SENS = 5.0;                 // high sensitivity for precise control
           const dx = hx - pinchStartHX;     // selfieMode → already mirrored
@@ -1864,7 +1866,7 @@ export function mountApp(root: HTMLElement) {
           // ☝️ Finger-pointing laser cursor — index tip drives a red on-screen
           // cursor; dwelling on a target for 2s clicks it.
           if (pinchActive) { pinchActive = false; pinchStartXf = null; }
-          palmHoldMs = 0; fistActive = false; fistBaseline = 0; fistArmMs = 0;
+          fistActive = false; fistBaseline = 0; fistArmMs = 0;
           // Map the fingertip to the screen with gain around centre so a small,
           // comfortable hand movement reaches every edge (the hand stays mid-frame).
           const GAIN = 1.7;
@@ -1908,25 +1910,28 @@ export function mountApp(root: HTMLElement) {
               ctx.beginPath(); ctx.arc(cx2, cy2, 26, 0, Math.PI * 2);
               ctx.strokeStyle = 'rgba(255,70,70,.9)'; ctx.lineWidth = 4; ctx.stroke();
             }
-          } else if (confirmedGesture === 'open') {
-            fistActive = false; fistBaseline = 0; fistArmMs = 0;
-            if (suppressPalmMs <= 0) {
-              // Open palm held a long, deliberate 4s → release the current Pokémon.
-              palmHoldMs += dt;
-              const progress = Math.min(1, palmHoldMs / PALM_HOLD_THRESHOLD);
-              gestureStatus(`🖐️ החזק 2 שניות לשחרור… ${Math.round(progress * 100)}%`);
-              ctx.beginPath(); ctx.arc(cx2, cy2, 28, -Math.PI/2, -Math.PI/2 + progress * Math.PI*2);
-              ctx.strokeStyle = `rgba(218,165,32,${0.4 + progress*0.6})`; ctx.lineWidth = 4; ctx.stroke();
-              if (palmHoldMs >= PALM_HOLD_THRESHOLD) {
-                palmHoldMs = 0;
-                gestureStatus('⚡ שוחרר!');
-                (window as any).dispelOrb?.();
-              }
-            }
-          } else {
-            // Transitional — keep the fist armed (so a thrust still counts).
-            palmHoldMs = 0;
-            gestureStatus(fistActive ? '✊ אגרוף — זרוק לכיוון המסך לזימון!' : 'מצלמה פעילה');
+          } else if (!open) {
+            // Idle (no recognised pose). Open-palm release is handled centrally below.
+            gestureStatus('מצלמה פעילה');
+          }
+        }
+
+        // ── Open-palm RELEASE (dispel) — tolerant hold ───────────────────────
+        // Accumulate while the palm is open; DECAY (not hard-reset) on brief misses
+        // so a flicker in the lite hand model doesn't keep restarting the 2s hold.
+        // Driven by the raw open signal (no debounce) for a smooth, responsive feel.
+        const dispelEligible = open && !pinching && suppressPalmMs <= 0;
+        if (dispelEligible) palmHoldMs += dt;
+        else palmHoldMs = Math.max(0, palmHoldMs - dt * 2.5);
+        if (dispelEligible && palmHoldMs > 80) {
+          const progress = Math.min(1, palmHoldMs / PALM_HOLD_THRESHOLD);
+          gestureStatus(`🖐️ החזק לשחרור… ${Math.round(progress * 100)}%`);
+          ctx.beginPath(); ctx.arc(cx2, cy2, 30, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
+          ctx.strokeStyle = `rgba(218,165,32,${0.4 + progress * 0.6})`; ctx.lineWidth = 5; ctx.stroke();
+          if (palmHoldMs >= PALM_HOLD_THRESHOLD) {
+            palmHoldMs = 0; suppressPalmMs = 900;
+            gestureStatus('⚡ שוחרר!');
+            (window as any).dispelOrb?.();
           }
         }
         prevScale = handScale;
