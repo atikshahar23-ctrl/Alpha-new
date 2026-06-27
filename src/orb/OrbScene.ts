@@ -1976,29 +1976,32 @@ function loadAndReplaceBody(
         // textured GLBs keep their own maps.
         const dex = POKEMON_CRY_ID[character] ?? (character.indexOf('pikachu') === 0 ? 25 : 0);
         const spriteCol = POKEMON_SPRITE_COLOR[dex];
-        // All Pokemon GLBs now carry embedded textures — keep their materials,
-        // just make them double-sided and shadow-casting.
+        // Some GLBs carry embedded textures (keep them); the imported pack ships
+        // untextured (single flat colour). Collect the untextured meshes so we can
+        // paint them with the real sprite via front planar projection further down.
+        const untex: { mesh: THREE.Mesh; mats: THREE.MeshStandardMaterial[] }[] = [];
         model.traverse((child) => {
           if (child instanceof THREE.Mesh) {
             child.geometry.computeVertexNormals();
-            const apply = (m: THREE.Material) => {
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+            const myUntex: THREE.MeshStandardMaterial[] = [];
+            for (const m of mats) {
+              if (!m) continue;
               (m as any).side = THREE.DoubleSide;
               const sm = m as THREE.MeshStandardMaterial;
               if (sm.map) { sm.map.colorSpace = THREE.SRGBColorSpace; }
               else if (sm.color) {
-                // Untextured imported model: paint it with the Pokemon's true body
-                // colour from the sprite sheet (falls back to whatever flat tint the
-                // GLB shipped with). Matte + a gentle dim keeps the orb's bloom from
-                // blowing bright colours out to white.
+                // Fallback flat colour (shown until the sprite texture loads, and
+                // kept if no sprite exists). Matte + gentle dim keeps bloom in check.
                 if (spriteCol !== undefined) sm.color.setHex(spriteCol);
                 sm.color.multiplyScalar(0.7);
                 sm.roughness = 1; sm.metalness = 0;
                 if (sm.emissive) sm.emissive.setRGB(0, 0, 0);
                 (sm as any).envMapIntensity = 0.3;
+                myUntex.push(sm);
               }
-            };
-            if (Array.isArray(child.material)) child.material.forEach(apply);
-            else if (child.material) apply(child.material);
+            }
+            if (myUntex.length) untex.push({ mesh: child, mats: myUntex });
             child.castShadow = true;
           }
         });
@@ -2016,6 +2019,43 @@ function loadAndReplaceBody(
         const bb = new THREE.Box3().setFromObject(model);
         const bbSize = bb.getSize(new THREE.Vector3());
         const bbCenter = bb.getCenter(new THREE.Vector3());
+
+        // ── Sprite projection ──────────────────────────────────────────────
+        // Paint untextured models with their actual Pokemon sprite. The sprites are
+        // front views and the model faces the camera, so we planar-project the image
+        // onto the mesh along Z: each vertex's XY position (in the current rotated,
+        // unscaled frame — same frame as bb) becomes its UV. Result: the real colours
+        // and features (eyes, belly, patterns) land on the front of the 3D model.
+        if (untex.length && dex >= 1 && dex <= 151) {
+          const minX = bb.min.x, minY = bb.min.y;
+          const spanX = Math.max(1e-4, bbSize.x), spanY = Math.max(1e-4, bbSize.y);
+          const v = new THREE.Vector3();
+          for (const { mesh } of untex) {
+            const geo = mesh.geometry as THREE.BufferGeometry;
+            const pos = geo.attributes.position as THREE.BufferAttribute;
+            const uv = new Float32Array(pos.count * 2);
+            for (let i = 0; i < pos.count; i++) {
+              v.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld);
+              uv[i * 2]     = (v.x - minX) / spanX;
+              uv[i * 2 + 1] = (v.y - minY) / spanY;
+            }
+            geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+          }
+          const tex = new THREE.TextureLoader().load(`${base}pokemon-sprites/${dex}.png`);
+          tex.colorSpace = THREE.SRGBColorSpace;
+          tex.magFilter = THREE.LinearFilter;
+          tex.minFilter = THREE.LinearMipmapLinearFilter;
+          tex.anisotropy = 4;
+          for (const { mats } of untex) {
+            for (const sm of mats) {
+              sm.map = tex;
+              sm.color.setRGB(1, 1, 1);   // let the texture show its true colours
+              sm.needsUpdate = true;
+            }
+          }
+        }
+        // ────────────────────────────────────────────────────────────────────
+
         const target = 2.5;   // fill the sphere (radius ~1.6)
         const s = target / Math.max(bbSize.x, bbSize.y, bbSize.z);
         // Store the base transform so real-time adjustments can re-apply without reload.
