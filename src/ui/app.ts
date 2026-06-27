@@ -174,7 +174,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v46 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v47 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -1808,11 +1808,11 @@ export function mountApp(root: HTMLElement) {
 
       const Hands = (window as any).Hands;
       gestureHands = new Hands({ locateFile: (f: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/${f}` });
-      // Lower confidences + lightest model = the detector locks on and tracks
-      // the hand almost instantly, so gestures register without a long wait.
-      // Lite model (complexity 0) — reliable on phones; complexity 1 stalls on
-      // mobile. Still tracks the fingertip well enough for pointing.
-      gestureHands.setOptions({ maxNumHands: 1, modelComplexity: 0, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5, selfieMode: true });
+      // Start with the FULL model (complexity 1) — markedly more accurate finger
+      // landmarks than the lite model, so gestures read precisely. If the device
+      // can't keep up we auto-drop to the lite model (see the fps guard below).
+      // Higher tracking confidence keeps a solid lock once the hand is acquired.
+      gestureHands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.6, selfieMode: true });
 
       let lastFrameMs = performance.now();
 
@@ -1846,11 +1846,28 @@ export function mountApp(root: HTMLElement) {
         return out;
       }
 
+      // Adaptive complexity: if the full model can't sustain a usable framerate on
+      // this device, fall back to the lite model live (no reload of the page).
+      let cplxLevel = 1, cplxFrames = 0, cplxSum = 0, cplxChecked = false;
+
       gestureHands.onResults((results: any) => {
         if (!gestureActive) return;
         const now = performance.now();
-        const dt = Math.min(200, now - lastFrameMs);
+        const rawDt = now - lastFrameMs;
+        const dt = Math.min(200, rawDt);
         lastFrameMs = now;
+        // Measure real inference cadence over the first ~40 processed frames.
+        if (!cplxChecked) {
+          cplxFrames++; cplxSum += rawDt;
+          if (cplxFrames >= 40) {
+            cplxChecked = true;
+            const avg = cplxSum / cplxFrames;
+            if (avg > 110 && cplxLevel === 1) {   // < ~9fps → too slow, drop to lite
+              cplxLevel = 0;
+              try { gestureHands.setOptions({ modelComplexity: 0 }); } catch {}
+            }
+          }
+        }
         ctx.clearRect(0, 0, cvs.width, cvs.height);
 
         if (!results.multiHandLandmarks?.length) {
