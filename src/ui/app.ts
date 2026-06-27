@@ -55,7 +55,7 @@ const UI_STRINGS: Record<string, Record<UILang, string>> = {
   detect: { he: 'זיהוי', en: 'Detect' },
   heavyguard: { he: 'הביגארד', en: 'HeavyGuard' },
   trading: { he: 'מסחר', en: 'Trading' },
-  inputPlaceholder: { he: 'הקלד או דבר עם אלפא…', en: 'Type or speak to Alpha…' },
+  inputPlaceholder: { he: 'דבר אלי…', en: 'Talk to me…' },
   searchPlaceholder: { he: 'חפש הכל…', en: 'Search everything…' },
   quickActions: { he: 'פעולות מהירות', en: 'Quick Actions' },
   quickTask: { he: '✓ משימה מהירה', en: '✓ Quick Task' },
@@ -174,7 +174,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v32 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v33 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -377,7 +377,7 @@ export function mountApp(root: HTMLElement) {
         </div>
         <div class="bar">
           <button class="ic mic" id="micBtn" title="Hey Alpha"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></button>
-          <div class="pill"><input id="input" type="text" placeholder="הקלד או דבר עם אלפא…" /></div>
+          <div class="pill"><input id="input" type="text" placeholder="דבר אלי…" name="alpha-message" autocomplete="off" autocorrect="off" autocapitalize="sentences" data-lpignore="true" data-form-type="other" /></div>
           <button class="ic send" id="sendBtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></button>
         </div>
       </div>
@@ -530,9 +530,9 @@ export function mountApp(root: HTMLElement) {
             <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
           </select>
           <p style="margin:2px 0 10px;font-size:11px;color:var(--dim)" data-i18n="puterDesc">Puter בחינם — חלון התחברות חד-פעמי יופיע בשימוש ראשון. מפתחות למטה הם אופציונליים.</p>
-          <label data-i18n="geminiKey">מפתח Gemini API</label><input id="keyInput" type="password" placeholder="AIza..." />
-          <label data-i18n="grokKey">מפתח Grok API</label><input id="grokKeyInput" type="password" placeholder="xai-..." />
-          <label data-i18n="openaiKey">מפתח OpenAI API</label><input id="openaiKeyInput" type="password" placeholder="sk-..." />
+          <label data-i18n="geminiKey">מפתח Gemini API</label><input id="keyInput" type="text" class="masked-field" placeholder="AIza..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" />
+          <label data-i18n="grokKey">מפתח Grok API</label><input id="grokKeyInput" type="text" class="masked-field" placeholder="xai-..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" />
+          <label data-i18n="openaiKey">מפתח OpenAI API</label><input id="openaiKeyInput" type="text" class="masked-field" placeholder="sk-..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" />
         </div>
 
         <div class="settings-section">

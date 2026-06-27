@@ -1113,6 +1113,11 @@ body::after {
 }
 .pill input::placeholder { color: var(--dim); opacity: .5 }
 
+/* API-key inputs: masked like a password via CSS so they're plain text fields —
+   this keeps the browser's password manager from treating the page as a login
+   page and popping "use saved password?" when you tap the chat box. */
+.masked-field { -webkit-text-security: disc; text-security: disc; }
+
 .ic {
   width: 42px; height: 42px; border-radius: 50%; border: none;
   cursor: pointer; display: grid; place-items: center;
