@@ -174,7 +174,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v45 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v46 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -1781,7 +1781,7 @@ export function mountApp(root: HTMLElement) {
       }
 
       try {
-        gestureStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: 320, height: 240 }, audio: false });
+        gestureStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
       } catch {
         gestureStatus('❌ גישה למצלמה נדחתה');
         return;
@@ -1816,6 +1816,36 @@ export function mountApp(root: HTMLElement) {
 
       let lastFrameMs = performance.now();
 
+      // ── One-Euro filter: jitter-free yet low-latency landmark smoothing ──────
+      // The raw MediaPipe landmarks jitter frame-to-frame, which made gestures
+      // flicker and the cursor shake. The One-Euro filter smooths hard when the
+      // hand is still (kills jitter) and barely at all when it moves fast (no lag)
+      // — the standard technique for hand-tracking pointers. Huge stability win.
+      const OE_MINCUT = 1.3, OE_BETA = 0.55, OE_DCUT = 1.0;
+      let oePrev: number[][] | null = null, oeDPrev: number[][] | null = null;
+      const oeAlpha = (cutoff: number, dtS: number) => { const tau = 1 / (2 * Math.PI * cutoff); return 1 / (1 + tau / dtS); };
+      function smoothLandmarks(raw: any[], dtS: number): any[] {
+        if (!oePrev || oePrev.length !== raw.length) {
+          oePrev = raw.map((p) => [p.x, p.y, p.z]);
+          oeDPrev = raw.map(() => [0, 0, 0]);
+          return raw.map((p) => ({ x: p.x, y: p.y, z: p.z }));
+        }
+        const out: any[] = [];
+        for (let i = 0; i < raw.length; i++) {
+          const r = [raw[i].x, raw[i].y, raw[i].z]; const o = [0, 0, 0];
+          for (let k = 0; k < 3; k++) {
+            const dx = (r[k] - oePrev[i][k]) / dtS;
+            const ad = oeAlpha(OE_DCUT, dtS);
+            const dHat = ad * dx + (1 - ad) * oeDPrev![i][k]; oeDPrev![i][k] = dHat;
+            const cutoff = OE_MINCUT + OE_BETA * Math.abs(dHat);
+            const a = oeAlpha(cutoff, dtS);
+            const xHat = a * r[k] + (1 - a) * oePrev[i][k]; oePrev[i][k] = xHat; o[k] = xHat;
+          }
+          out.push({ x: o[0], y: o[1], z: o[2] });
+        }
+        return out;
+      }
+
       gestureHands.onResults((results: any) => {
         if (!gestureActive) return;
         const now = performance.now();
@@ -1826,11 +1856,12 @@ export function mountApp(root: HTMLElement) {
         if (!results.multiHandLandmarks?.length) {
           gestureStatus('מצלמה פעילה');
           palmHoldMs = 0; fistActive = false; fistBaseline = 0; fistArmMs = 0; prevScale = 0; peacePrevY = null;
+          oePrev = null; oeDPrev = null;   // reset smoothing so re-acquire snaps in
           hideLaser();
           return;
         }
 
-        const lm = results.multiHandLandmarks[0];
+        const lm = smoothLandmarks(results.multiHandLandmarks[0], Math.max(0.001, dt / 1000));
         // Draw skeleton
         ctx.strokeStyle = 'rgba(218,165,32,.7)'; ctx.lineWidth = 2;
         const CONN = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
