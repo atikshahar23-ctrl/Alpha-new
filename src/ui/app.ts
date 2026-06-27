@@ -174,7 +174,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v50 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v51 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -1780,8 +1780,13 @@ export function mountApp(root: HTMLElement) {
         }, 7000);
       }
 
+      // Phones can't run MediaPipe's FULL hand model (it stalls and detection never
+      // starts), so on mobile we stay on the lite model + a lighter camera. Desktop
+      // gets the full model + higher resolution for max accuracy.
+      const isMobileDevice = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || ('ontouchstart' in window) || window.innerWidth < 900;
       try {
-        gestureStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
+        const res = isMobileDevice ? { width: { ideal: 480 }, height: { ideal: 360 } } : { width: { ideal: 640 }, height: { ideal: 480 } };
+        gestureStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', ...res }, audio: false });
       } catch {
         gestureStatus('❌ גישה למצלמה נדחתה');
         return;
@@ -1808,11 +1813,10 @@ export function mountApp(root: HTMLElement) {
 
       const Hands = (window as any).Hands;
       gestureHands = new Hands({ locateFile: (f: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/${f}` });
-      // Start with the FULL model (complexity 1) — markedly more accurate finger
-      // landmarks than the lite model, so gestures read precisely. If the device
-      // can't keep up we auto-drop to the lite model (see the fps guard below).
-      // Higher tracking confidence keeps a solid lock once the hand is acquired.
-      gestureHands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.6, selfieMode: true });
+      // Mobile = lite model (the full model stalls on phones and detection never
+      // starts). Desktop = full model for max accuracy. The One-Euro smoothing +
+      // higher tracking confidence still make BOTH far steadier than before.
+      gestureHands.setOptions({ maxNumHands: 1, modelComplexity: isMobileDevice ? 0 : 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.6, selfieMode: true });
 
       let lastFrameMs = performance.now();
 
