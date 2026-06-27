@@ -219,7 +219,14 @@ function scheduleNext() {
 export function setActiveCharacter(charId: string) {
   activeChar = charId;
   if (timer) { clearTimeout(timer); timer = null; }
-  if (charId !== 'pikachu') scheduleNext();
+  if (enabled && charId !== 'pikachu') scheduleNext();
 }
 export function stopCharacterVoice() { if (timer) { clearTimeout(timer); timer = null; } }
+// Master on/off for ALL character cries — stops the idle loop immediately when
+// off, resumes it for the active character when on.
+export function setCharacterVoiceEnabled(on: boolean) {
+  enabled = on;
+  if (!on) { if (timer) { clearTimeout(timer); timer = null; } }
+  else if (activeChar !== 'pikachu') scheduleNext();
+}
 export function getActiveCharacter() { return activeChar; }

@@ -1365,8 +1365,13 @@ const POKEMON_CRY_ID: Record<string, number> = {
 };
 for (const g of GEN1) POKEMON_CRY_ID[g.id] = g.dex;   // PokeAPI cries for imported Pokémon
 let _activeCry: HTMLAudioElement | null = null;
+let _cryEnabled = true;
+// Master on/off for the PokeAPI swap cries (every character), wired to the
+// "character voices" setting so turning it off silences all of them.
+export function setCryEnabled(on: boolean) { _cryEnabled = on; if (!on) stopCry(); }
 function playCry(name: string) {
   if (_activeCry) { _activeCry.pause(); _activeCry.src = ''; _activeCry = null; }
+  if (!_cryEnabled) return;
   const id = POKEMON_CRY_ID[name]; if (!id) return;
   const audio = new Audio(`https://cdn.jsdelivr.net/gh/PokeAPI/cries@main/cries/pokemon/latest/${id}.ogg`);
   audio.volume = 0.55;

@@ -1,4 +1,4 @@
-import { mountOrb, type OrbHandle } from '../orb/OrbScene';
+import { mountOrb, setCryEnabled, type OrbHandle } from '../orb/OrbScene';
 import { mountFlowLines } from '../bg/flowLines';
 import { loadState, saveState, addEvent, addTask, saveNote, loadEvents, loadTasks, removeEvent, type AppState, type TextLang, type AIProvider, type VoiceGender, type UILang } from '../assistant/state';
 import { askAIStream, askOnce, askVision, runTags } from '../assistant/gemini';
@@ -14,7 +14,7 @@ import { processRecurring } from '../modules/recurring';
 import * as driveSync from '../modules/driveSync';
 import * as puterSync from '../modules/puterSync';
 import { setPikaVolume, setPikaPitch, setPikaEnabled, pikaSpeak, setChirpCallback, unlockAudio } from '../assistant/pikaVoice';
-import { setActiveCharacter, playCharacterCry, stopCharacterVoice, setCharacterVolume, unlockCharacterAudio } from '../assistant/characterVoice';
+import { setActiveCharacter, playCharacterCry, stopCharacterVoice, setCharacterVolume, unlockCharacterAudio, setCharacterVoiceEnabled } from '../assistant/characterVoice';
 import { throwPokeball } from '../effects/pokeballFx';
 import { universalSearch, TYPE_ICONS, addRecentSearch, recentSearches, quickSuggestions } from '../modules/search';
 import { registerShortcut, initShortcuts, shortcutsHTML } from '../modules/shortcuts';
@@ -111,7 +111,7 @@ const UI_STRINGS: Record<string, Record<UILang, string>> = {
   initCamera: { he: 'מאתחל מצלמה…', en: 'Initializing camera…' },
   uiLanguage: { he: 'שפת מערכת', en: 'System language' },
   pikachuVoice: { he: 'פיקאצ\'ו', en: 'PIKACHU' },
-  pikaVoiceOn: { he: 'קול פיקאצ\'ו', en: 'Pikachu voice' },
+  pikaVoiceOn: { he: 'קולות הדמויות', en: 'Character voices' },
   pikaVolume: { he: 'עוצמת קול פיקאצ\'ו', en: 'Pikachu volume' },
   pikaPitch: { he: 'גובה קול פיקאצ\'ו', en: 'Pikachu pitch' },
   pikaSpeakNow: { he: 'פיקה פיקה!', en: 'Pika Pika!' },
@@ -501,7 +501,7 @@ export function mountApp(root: HTMLElement) {
         <div class="settings-section">
           <div class="ss-title" data-i18n="pikachuVoice">פיקאצ'ו</div>
           <div class="setting-row">
-            <label data-i18n="pikaVoiceOn">קול פיקאצ'ו</label>
+            <label data-i18n="pikaVoiceOn">קולות הדמויות</label>
             <label class="toggle"><input type="checkbox" id="pikaVoiceCheck" checked /><span class="toggle-slider"></span></label>
           </div>
           <label><span data-i18n="pikaVolume">עוצמת קול פיקאצ'ו</span> <span id="pikaVolVal" class="range-val">60%</span></label>
@@ -715,6 +715,8 @@ export function mountApp(root: HTMLElement) {
   setPikaVolume(state.pikaVolume);
   setPikaPitch(state.pikaPitch);
   setPikaEnabled(state.pikaVoiceOn);
+  setCharacterVoiceEnabled(state.pikaVoiceOn);   // gate all character cries on startup
+  setCryEnabled(state.pikaVoiceOn);
 
   let orb: OrbHandle;
   try {
@@ -4722,9 +4724,15 @@ export function mountApp(root: HTMLElement) {
   };
   $('pikaSpeakBtn').onclick = () => { pikaSpeak(); };
   $<HTMLInputElement>('pikaVoiceCheck').onchange = (e) => {
-    state.pikaVoiceOn = (e.target as HTMLInputElement).checked;
-    setPikaEnabled(state.pikaVoiceOn);
-    localStorage.setItem('alpha_pikavoice', state.pikaVoiceOn ? '1' : '0');
+    const on = (e.target as HTMLInputElement).checked;
+    state.pikaVoiceOn = on;
+    // One switch controls EVERY character's voice (Pikachu + all cries).
+    setPikaEnabled(on);
+    setCharacterVoiceEnabled(on);
+    setCryEnabled(on);
+    if (on) applyCharacterVoice(localStorage.getItem(MAIN_CHAR_KEY) || 'pikachu');
+    else stopCharacterVoice();
+    localStorage.setItem('alpha_pikavoice', on ? '1' : '0');
   };
   $<HTMLInputElement>('pikaVolSlider').oninput = (e) => {
     const v = +((e.target as HTMLInputElement).value) / 100;
@@ -4785,6 +4793,8 @@ export function mountApp(root: HTMLElement) {
     state.pikaVolume = +$<HTMLInputElement>('pikaVolSlider').value / 100;
     state.pikaPitch = +$<HTMLInputElement>('pikaPitchSlider').value / 100;
     setPikaEnabled(state.pikaVoiceOn);
+    setCharacterVoiceEnabled(state.pikaVoiceOn);   // one switch for all character voices
+    setCryEnabled(state.pikaVoiceOn);
     setPikaVolume(state.pikaVolume);
     setPikaPitch(state.pikaPitch);
     voice.setMicLang(state.micLang);
