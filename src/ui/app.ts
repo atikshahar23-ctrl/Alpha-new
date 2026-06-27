@@ -1,6 +1,6 @@
 import { mountOrb, setCryEnabled, type OrbHandle } from '../orb/OrbScene';
 import { mountFlowLines } from '../bg/flowLines';
-import { loadState, saveState, addEvent, addTask, saveNote, loadEvents, loadTasks, removeEvent, type AppState, type TextLang, type AIProvider, type VoiceGender, type UILang } from '../assistant/state';
+import { loadState, saveState, addEvent, addTask, scheduleTask, saveNote, loadEvents, loadTasks, removeEvent, type AppState, type TextLang, type AIProvider, type VoiceGender, type UILang } from '../assistant/state';
 import { askAIStream, askOnce, askVision, runTags } from '../assistant/gemini';
 import { GEN1 } from '../data/gen1';
 import * as THREE from 'three';
@@ -1406,8 +1406,39 @@ export function mountApp(root: HTMLElement) {
       </div>`;
     }
 
+    // ── Unscheduled tasks panel ──────────────────────────────────────────
+    // Tasks added without a date live here, beside the calendar. Tap a task (or
+    // its 📅 button) while a day is selected to schedule it onto that day.
+    const unscheduled = loadTasks().filter(tk => !tk.done && !tk.due);
+    html += `<div style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px">
+      <div style="font-size:12px;color:var(--dim);margin-bottom:10px;display:flex;align-items:center;gap:6px">
+        <span style="color:var(--gold)">◷</span> ${state.uiLang === 'he' ? 'משימות ללא שיבוץ' : 'Unscheduled tasks'}${unscheduled.length ? ` (${unscheduled.length})` : ''}
+      </div>`;
+    if (unscheduled.length === 0) {
+      html += `<div style="color:var(--dim);font-style:italic;font-size:13px">${state.uiLang === 'he' ? 'אין משימות ממתינות לשיבוץ' : 'No tasks waiting to be scheduled'}</div>`;
+    } else {
+      for (const tk of unscheduled) {
+        const pColor = tk.priority === 'high' ? '#c0432e' : tk.priority === 'low' ? '#5a8a50' : 'var(--gold)';
+        html += `<div style="display:flex;gap:10px;align-items:center;padding:9px 10px;background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:10px;margin-bottom:6px">
+          <span style="width:6px;height:6px;border-radius:50%;background:${pColor};flex-shrink:0"></span>
+          <span style="flex:1;font-size:14px">${tk.text.replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]!))}</span>
+          <button data-sched="${tk.id}" title="${selectedDate ? (state.uiLang === 'he' ? 'שבץ לתאריך הנבחר' : 'Schedule to selected day') : (state.uiLang === 'he' ? 'בחר יום בלוח תחילה' : 'Pick a day first')}" ${selectedDate ? '' : 'disabled'} style="background:${selectedDate ? 'rgba(218,165,32,.14)' : 'rgba(255,255,255,.03)'};border:1px solid var(--line);border-radius:8px;color:${selectedDate ? 'var(--gold)' : 'var(--dim)'};cursor:${selectedDate ? 'pointer' : 'default'};font-size:13px;padding:5px 9px">📅</button>
+        </div>`;
+      }
+    }
+    html += `</div>`;
+
     html += '</div>';
     $('winBody').innerHTML = html;
+
+    $('winBody').querySelectorAll<HTMLButtonElement>('[data-sched]').forEach(b => {
+      b.onclick = () => {
+        if (!selectedDate) return;
+        scheduleTask(b.dataset.sched!, selectedDate);
+        updateCalBadge();
+        renderCalendar(selectedDate);
+      };
+    });
 
     $('calPrev').onclick = () => {
       if (calViewMonth === 0) { calViewMonth = 11; calViewYear--; } else calViewMonth--;
@@ -1439,6 +1470,7 @@ export function mountApp(root: HTMLElement) {
     openWin(state.uiLang === 'he' ? 'לוח שנה' : 'Calendar');
     renderCalendar(new Date().toISOString().slice(0, 10));
   }
+  (window as any).openCalendar = openCalendar;
 
   let asking = false;
   async function ask(text: string) {
@@ -1529,8 +1561,16 @@ export function mountApp(root: HTMLElement) {
         },
         onArCamera: openArCamera,
         onGDoc: openGDoc,
-        onTask: (text: string, priority: string) => {
-          if (text) { addTask(text, (priority as 'low' | 'med' | 'high') || 'med'); addMsg(`✅ ${t('taskAdded', state.uiLang)}: "${text}"`, 'sys'); }
+        onTask: (text: string, priority: string, due?: string) => {
+          if (!text) return;
+          addTask(text, (priority as 'low' | 'med' | 'high') || 'med', due);
+          updateCalBadge();
+          if (due) {
+            addMsg(`✅ ${t('taskAdded', state.uiLang)}: "${text}" — 📅 ${due}`, 'sys');
+          } else {
+            const note = state.uiLang === 'he' ? ' (ללא שיבוץ ביומן)' : ' (unscheduled)';
+            addMsg(`✅ ${t('taskAdded', state.uiLang)}: "${text}"${note}`, 'sys');
+          }
         },
         onNote: (text: string) => {
           if (text) { saveNote(text); addMsg(`📝 ${t('noteSaved', state.uiLang)}`, 'sys'); }

@@ -37,7 +37,8 @@ Today is ${wd}, ${today}. Current month: ${currentMonth}.
 CAPABILITIES — Control the app via tags at the END of your reply (never mention them in spoken text):
 [[VIDEO: search terms]] · [[SEARCH: query]] · [[SPOTIFY: song or artist name]]
 [[EVENT: title | YYYY-MM-DD | HH:MM]] · [[CALENDAR]]
-[[TASK: task text | priority(low/med/high)]] · [[NOTE: text to save]]
+[[TASK: task text | priority(low/med/high) | YYYY-MM-DD (optional due date)]] · [[NOTE: text to save]]
+(Include the due date in TASK whenever the user names a day/date — it gets added to the calendar. Omit it for an unscheduled task.)
 [[DIARY: task title | YYYY-MM-DD]] · [[AR_CAMERA]] · [[GDOC: full URL]]
 [[TIMER_START: project name]] · [[TIMER_STOP]]
 [[HG_SEARCH: plate/chassis number]] · [[HG_EARNINGS: contractor | YYYY-MM]] · [[HG_QUOTE: customer | phone | item:price, item:price]]
@@ -573,7 +574,7 @@ export function runTags(
     onHgReport?: (fields: string[]) => void;
     onArCamera?: () => void;
     onGDoc?: (url: string) => void;
-    onTask?: (text: string, priority: string) => void;
+    onTask?: (text: string, priority: string, due?: string) => void;
     onNote?: (text: string) => void;
     onTimerStart?: (project: string) => void;
     onTimerStop?: () => void;
@@ -617,7 +618,9 @@ export function runTags(
     }
     else if (type === 'TASK' && hooks.onTask) {
       const p = arg.split('|').map(s => s.trim());
-      hooks.onTask(p[0] || '', p[1] || 'med');
+      // p[2] = optional due date (YYYY-MM-DD). When present the task is scheduled
+      // on the calendar; otherwise it stays unscheduled.
+      hooks.onTask(p[0] || '', p[1] || 'med', p[2] || '');
     }
     else if (type === 'NOTE' && hooks.onNote) {
       hooks.onNote(arg);

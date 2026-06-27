@@ -253,7 +253,7 @@
 
       const alphaWithDate = alphaTasks.map(t => ({
         ...t,
-        date: t.created || ''
+        date: t.due || t.created || ''
       }));
 
       return [...alphaWithDate, ...hgTasks];
@@ -409,7 +409,7 @@
         const alphaTasks = a ? JSON.parse(a) : [];
         const hgRaw = h ? JSON.parse(h) : [];
         const hgTasks = hgRaw.filter(t => !t.done).map(t => ({ id: 'hg:' + t.id, text: t.title, done: t.done || false, date: t.date || '', priority: 'med' }));
-        cloudTasks = [...alphaTasks.map(t => ({ ...t, date: t.created || t.date || '' })), ...hgTasks];
+        cloudTasks = [...alphaTasks.map(t => ({ ...t, date: t.due || t.created || t.date || '' })), ...hgTasks];
         render();
       } catch {}
     }

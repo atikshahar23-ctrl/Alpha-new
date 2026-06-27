@@ -179,16 +179,28 @@ export function upcomingText(): string {
 }
 
 // --- TASKS ---
-export interface Task { id: string; text: string; done: boolean; created: string; priority: 'low' | 'med' | 'high' }
+// `due` is the optional scheduled date (YYYY-MM-DD). When set, the task is also
+// mirrored onto the calendar; when empty the task is "unscheduled" and shown in
+// the calendar's unscheduled panel + the widget.
+export interface Task { id: string; text: string; done: boolean; created: string; priority: 'low' | 'med' | 'high'; due?: string }
 
 export function loadTasks(): Task[] {
   try { return JSON.parse(localStorage.getItem('alpha_tasks') || '[]'); } catch { return []; }
 }
 export function saveTasks(t: Task[]) { localStorage.setItem('alpha_tasks', JSON.stringify(t)); }
-export function addTask(text: string, priority: 'low' | 'med' | 'high' = 'med'): Task[] {
+export function addTask(text: string, priority: 'low' | 'med' | 'high' = 'med', due?: string): Task[] {
   const tasks = loadTasks();
-  tasks.push({ id: Date.now() + '_' + Math.random(), text, done: false, created: new Date().toISOString().slice(0, 10), priority });
+  tasks.push({ id: Date.now() + '_' + Math.random(), text, done: false, created: new Date().toISOString().slice(0, 10), priority, due: due || '' });
   saveTasks(tasks);
+  // A dated task is also an appointment — mirror it onto the calendar.
+  if (due) addEvent(text, due, '');
+  return tasks;
+}
+// Give an existing (unscheduled) task a date and push it onto the calendar.
+export function scheduleTask(id: string, due: string): Task[] {
+  const tasks = loadTasks();
+  const t = tasks.find(x => x.id === id);
+  if (t && due) { t.due = due; saveTasks(tasks); addEvent(t.text, due, ''); }
   return tasks;
 }
 export function toggleTask(id: string): Task[] {

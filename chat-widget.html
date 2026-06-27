@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Alpha — עוזר מהיר</title>
+  <!-- Puter cloud AI (free) — lets the widget talk to the assistant from the
+       home screen without opening the full app. -->
+  <script async src="https://js.puter.com/v2/"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;600;700&display=swap" rel="stylesheet" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      font-family: 'Assistant', sans-serif;
+      background: linear-gradient(135deg, #c8a84e 0%, #e8d48b 30%, #ffffff 60%, #f5e6a3 100%);
+      color: #2a2010;
+      padding: 12px;
+      display: flex;
+    }
+    .widget-card {
+      background: linear-gradient(160deg, rgba(255,255,255,0.96) 0%, rgba(250,240,210,0.93) 100%);
+      border-radius: 20px;
+      border: 1.5px solid rgba(200,168,78,0.4);
+      box-shadow: 0 4px 24px rgba(180,150,60,0.15), 0 1px 3px rgba(0,0,0,0.06);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      max-height: calc(100vh - 24px);
+    }
+    .widget-header {
+      background: linear-gradient(135deg, #b8942e 0%, #d4b85a 50%, #c8a84e 100%);
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .widget-header h1 { font-size: 15px; font-weight: 700; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.2); letter-spacing: 0.4px; }
+    .widget-header .logo { width: 26px; height: 26px; background: rgba(255,255,255,0.2); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px; color: #fff; }
+    .status { font-size: 10px; color: rgba(255,255,255,0.85); font-weight: 600; }
+
+    .messages { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; min-height: 120px; }
+    .msg { max-width: 88%; padding: 9px 12px; border-radius: 14px; font-size: 14px; line-height: 1.45; white-space: pre-wrap; word-wrap: break-word; }
+    .msg.user { align-self: flex-start; background: linear-gradient(135deg, #c8a84e, #d4b85a); color: #fff; border-bottom-right-radius: 4px; }
+    .msg.ai { align-self: flex-end; background: rgba(255,255,255,0.85); border: 1px solid rgba(200,168,78,0.25); border-bottom-left-radius: 4px; }
+    .msg.ai a { color: #b8942e; font-weight: 600; }
+    .msg.sys { align-self: center; font-size: 12px; color: #a09060; font-style: italic; }
+    .msg .typing { display: inline-block; }
+    .msg .typing::after { content: '▋'; animation: blink 1s step-end infinite; color: #c8a84e; }
+    @keyframes blink { 50% { opacity: 0; } }
+
+    .greet { text-align: center; color: #9a8040; padding: 16px 12px 8px; }
+    .greet .big { font-size: 16px; font-weight: 700; color: #8a6f25; margin-bottom: 4px; }
+    .greet .small { font-size: 13px; }
+
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 12px 8px; }
+    .chip { background: rgba(255,255,255,0.7); border: 1px solid rgba(200,168,78,0.35); color: #8a6f25; font-size: 12px; font-weight: 600; padding: 6px 11px; border-radius: 14px; cursor: pointer; font-family: inherit; transition: background 0.15s; }
+    .chip:hover { background: rgba(218,165,32,0.18); }
+
+    .input-row { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid rgba(200,168,78,0.2); flex-shrink: 0; align-items: flex-end; }
+    .input-row textarea { flex: 1; resize: none; max-height: 90px; min-height: 40px; background: rgba(255,255,255,0.85); border: 1px solid rgba(200,168,78,0.4); border-radius: 12px; padding: 9px 12px; color: #2a2010; font-size: 14px; font-family: inherit; line-height: 1.35; }
+    .input-row textarea:focus { outline: none; border-color: #c8a84e; }
+    .icon-btn { width: 42px; height: 42px; flex-shrink: 0; border: none; border-radius: 12px; cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center; color: #fff; }
+    .send-btn { background: linear-gradient(135deg, #b8942e, #d4b85a); }
+    .send-btn:disabled { opacity: 0.5; cursor: default; }
+    .mic-btn { background: rgba(200,168,78,0.2); color: #8a6f25; }
+    .mic-btn.live { background: linear-gradient(135deg, #c0432e, #e06a55); color: #fff; animation: pulse 1.2s infinite; }
+    @keyframes pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.08); } }
+
+    .widget-footer { padding: 8px 16px; text-align: center; border-top: 1px solid rgba(200,168,78,0.15); flex-shrink: 0; }
+    .widget-footer a { font-size: 12px; font-weight: 600; color: #b8942e; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="widget-card">
+    <div class="widget-header">
+      <h1>ALPHA — עוזר מהיר</h1>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="status" id="status">מתחבר…</span>
+        <div class="logo">α</div>
+      </div>
+    </div>
+    <div class="messages" id="messages"></div>
+    <div class="chips" id="chips"></div>
+    <div class="input-row">
+      <button class="icon-btn mic-btn" id="micBtn" title="דבר">🎤</button>
+      <textarea id="input" rows="1" placeholder="שאל אותי כל דבר…"></textarea>
+      <button class="icon-btn send-btn" id="sendBtn" title="שלח">➤</button>
+    </div>
+    <div class="widget-footer"><a href="/Alpha-new/">פתח את Alpha המלא ↗</a></div>
+  </div>
+
+  <script>
+    const messagesEl = document.getElementById('messages');
+    const inputEl = document.getElementById('input');
+    const sendBtn = document.getElementById('sendBtn');
+    const micBtn = document.getElementById('micBtn');
+    const chipsEl = document.getElementById('chips');
+    const statusEl = document.getElementById('status');
+    const HISTORY_KEY = 'alpha_chat_widget_v1';
+
+    const SYSTEM = "אתה ALPHA, עוזר אישי בעברית. ענה תמציתי, חם ומעשי. כשרלוונטי, צרף קישורים שימושיים בפורמט מרקדאון [טקסט](כתובת) — לאתרים, חיפושים, מפות, מדריכים. עזור בכל דבר: מידע, רעיונות, תכנון, תרגום, ניסוח.";
+
+    // ── conversation state ───────────────────────────────────────────────
+    let history = [];
+    try { history = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); } catch {}
+
+    function saveHistory() {
+      try { localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(-20))); } catch {}
+    }
+
+    function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+    // Render light markdown: links, bold, bare URLs, line breaks.
+    function fmt(text) {
+      let h = esc(text);
+      h = h.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+      // bare URLs not already inside an anchor
+      h = h.replace(/(^|[^"=>])(https?:\/\/[^\s<]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>');
+      h = h.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+      return h;
+    }
+
+    function addMsg(text, role) {
+      const el = document.createElement('div');
+      el.className = 'msg ' + role;
+      el.innerHTML = role === 'ai' ? fmt(text) : esc(text);
+      messagesEl.appendChild(el);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      return el;
+    }
+
+    function renderGreeting() {
+      messagesEl.innerHTML = '';
+      if (history.length === 0) {
+        const g = document.createElement('div');
+        g.className = 'greet';
+        const hr = new Date().getHours();
+        const hi = hr < 12 ? 'בוקר טוב' : hr < 18 ? 'צהריים טובים' : 'ערב טוב';
+        g.innerHTML = '<div class="big">' + hi + ' 👋</div><div class="small">אני כאן. שאל אותי כל דבר — מידע, רעיונות, קישורים, עזרה.</div>';
+        messagesEl.appendChild(g);
+      } else {
+        history.forEach(m => addMsg(m.content, m.role === 'assistant' ? 'ai' : 'user'));
+      }
+    }
+
+    const SUGGESTIONS = ['מה חדש בחדשות?', 'רעיון לארוחת ערב', 'תכנן לי את היום', 'תרגם משפט לאנגלית', 'מצא לי קישור ל…'];
+    function renderChips() {
+      chipsEl.innerHTML = '';
+      if (history.length > 0) return;
+      SUGGESTIONS.forEach(s => {
+        const b = document.createElement('button');
+        b.className = 'chip'; b.textContent = s;
+        b.onclick = () => { inputEl.value = s; send(); };
+        chipsEl.appendChild(b);
+      });
+    }
+
+    // ── Puter AI ─────────────────────────────────────────────────────────
+    function puterReady(timeout = 8000) {
+      return new Promise(res => {
+        const t0 = Date.now();
+        (function poll() {
+          if (window.puter && window.puter.ai) return res(window.puter);
+          if (Date.now() - t0 > timeout) return res(null);
+          setTimeout(poll, 200);
+        })();
+      });
+    }
+
+    function extractText(r) {
+      const c = (r && (r.message?.content ?? r.content ?? r.text)) ?? r;
+      if (typeof c === 'string') return c;
+      if (Array.isArray(c)) return c.map(p => typeof p === 'string' ? p : (p?.text || '')).join('');
+      return String(c ?? '');
+    }
+
+    let busy = false;
+    async function send() {
+      const text = inputEl.value.trim();
+      if (!text || busy) return;
+      busy = true; sendBtn.disabled = true;
+      inputEl.value = ''; inputEl.style.height = 'auto';
+      if (history.length === 0) messagesEl.innerHTML = '';
+      chipsEl.innerHTML = '';
+      addMsg(text, 'user');
+      history.push({ role: 'user', content: text });
+
+      const aiEl = addMsg('', 'ai');
+      aiEl.innerHTML = '<span class="typing"></span>';
+
+      const p = await puterReady();
+      if (!p) {
+        aiEl.innerHTML = '⚠️ אין חיבור כרגע. נסה שוב או פתח את האפליקציה המלאה.';
+        busy = false; sendBtn.disabled = false; return;
+      }
+      try {
+        const msgs = [{ role: 'system', content: SYSTEM }, ...history.slice(-12)];
+        let acc = '';
+        let streamed = false;
+        try {
+          const stream = await p.ai.chat(msgs, { model: 'gpt-4o-mini', stream: true });
+          for await (const part of stream) {
+            const d = part?.text ?? (typeof part === 'string' ? part : '') ?? '';
+            if (d) { acc += d; streamed = true; aiEl.innerHTML = fmt(acc) + '<span class="typing"></span>'; messagesEl.scrollTop = messagesEl.scrollHeight; }
+          }
+        } catch (streamErr) { streamed = false; }
+        if (!streamed || !acc) {
+          const r = await p.ai.chat(msgs, { model: 'gpt-4o-mini' });
+          acc = extractText(r);
+        }
+        acc = (acc || '').trim() || '🤔 לא הצלחתי להבין. נסה לנסח אחרת.';
+        aiEl.innerHTML = fmt(acc);
+        history.push({ role: 'assistant', content: acc });
+        saveHistory();
+      } catch (e) {
+        aiEl.innerHTML = '⚠️ שגיאה: ' + esc(e?.message || 'נסה שוב');
+      } finally {
+        busy = false; sendBtn.disabled = false;
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      }
+    }
+
+    sendBtn.onclick = send;
+    inputEl.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+    });
+    inputEl.addEventListener('input', () => {
+      inputEl.style.height = 'auto';
+      inputEl.style.height = Math.min(inputEl.scrollHeight, 90) + 'px';
+    });
+
+    // ── Voice input (Web Speech) ─────────────────────────────────────────
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SR) {
+      const rec = new SR();
+      rec.lang = 'he-IL'; rec.interimResults = false; rec.maxAlternatives = 1;
+      let listening = false;
+      micBtn.onclick = () => { listening ? rec.stop() : rec.start(); };
+      rec.onstart = () => { listening = true; micBtn.classList.add('live'); };
+      rec.onend = () => { listening = false; micBtn.classList.remove('live'); };
+      rec.onerror = () => { listening = false; micBtn.classList.remove('live'); };
+      rec.onresult = (e) => { inputEl.value = e.results[0][0].transcript; send(); };
+    } else {
+      micBtn.style.display = 'none';
+    }
+
+    // ── boot ─────────────────────────────────────────────────────────────
+    renderGreeting();
+    renderChips();
+    puterReady().then(p => { statusEl.textContent = p ? 'מחובר ●' : 'לא מחובר'; statusEl.style.color = p ? '#d6ffd6' : '#ffd6d6'; });
+  </script>
+</body>
+</html>
