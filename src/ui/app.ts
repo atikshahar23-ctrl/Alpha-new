@@ -174,7 +174,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v51 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v52 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -1816,7 +1816,7 @@ export function mountApp(root: HTMLElement) {
       // Mobile = lite model (the full model stalls on phones and detection never
       // starts). Desktop = full model for max accuracy. The One-Euro smoothing +
       // higher tracking confidence still make BOTH far steadier than before.
-      gestureHands.setOptions({ maxNumHands: 1, modelComplexity: isMobileDevice ? 0 : 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.6, selfieMode: true });
+      gestureHands.setOptions({ maxNumHands: 1, modelComplexity: isMobileDevice ? 0 : 1, minDetectionConfidence: 0.4, minTrackingConfidence: 0.5, selfieMode: true });
 
       let lastFrameMs = performance.now();
 
@@ -1882,7 +1882,9 @@ export function mountApp(root: HTMLElement) {
           return;
         }
 
-        const lm = smoothLandmarks(results.multiHandLandmarks[0], Math.max(0.001, dt / 1000));
+        // Clamp dt to a sane window so the variable mobile framerate can't
+        // destabilise the One-Euro filter (a wildly varying dt made it jump).
+        const lm = smoothLandmarks(results.multiHandLandmarks[0], Math.min(0.05, Math.max(0.012, dt / 1000)));
         // Draw skeleton
         ctx.strokeStyle = 'rgba(218,165,32,.7)'; ctx.lineWidth = 2;
         const CONN = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
@@ -1898,8 +1900,12 @@ export function mountApp(root: HTMLElement) {
         // unlike a raw tip.y<pip.y test — which is what made the open palm so flaky.
         const wr = lm[0];
         const dW = (i: number) => Math.hypot(lm[i].x - wr.x, lm[i].y - wr.y);
-        const fingerUp = (tip: number, pip: number) => dW(tip) > dW(pip) * 1.05;
-        const idxUp = fingerUp(8,6), midUp = fingerUp(12,10), rngUp = fingerUp(16,14), pkyUp = fingerUp(20,18);
+        // Finger extended = its TIP is clearly farther from the wrist than its
+        // KNUCKLE (MCP). Tip-vs-knuckle is a much bigger, cleaner signal than
+        // tip-vs-PIP, so a fist (all tips pulled in toward the palm) reads reliably
+        // even with the noisier lite model on phones.
+        const fingerUp = (tip: number, mcp: number) => dW(tip) > dW(mcp) * 1.2;
+        const idxUp = fingerUp(8,5), midUp = fingerUp(12,9), rngUp = fingerUp(16,13), pkyUp = fingerUp(20,17);
         const upCount = [idxUp, midUp, rngUp, pkyUp].filter(Boolean).length;
         const open = upCount >= 3;        // open palm (lenient — 3 of 4 fingers)
         const fist = upCount === 0;       // closed fist
@@ -2042,11 +2048,17 @@ export function mountApp(root: HTMLElement) {
 
       });
 
-      // Run hand detection via requestAnimationFrame loop
-      let rafId = 0;
+      // Run hand detection via a requestAnimationFrame loop, but cap the send rate
+      // (~26fps). Flooding MediaPipe at 60fps backlogs the lite model on phones,
+      // which is what made detection lag and "go crazy". A steady ~26fps is smooth
+      // and gives the model time to track cleanly.
+      let rafId = 0, lastSend = 0;
+      const SEND_GAP = 38;
       const tick = async () => {
         if (!gestureActive) return;
-        if (vid.readyState >= 2) {
+        const t = performance.now();
+        if (vid.readyState >= 2 && t - lastSend >= SEND_GAP) {
+          lastSend = t;
           await gestureHands.send({ image: vid }).catch(() => {});
         }
         rafId = requestAnimationFrame(tick);
