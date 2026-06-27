@@ -174,7 +174,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v33 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v34 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -2609,6 +2609,11 @@ export function mountApp(root: HTMLElement) {
 
   function setMainCharacter(id: string): string {
     const ch = MAIN_CHARACTERS.find(c => c.id === id) || MAIN_CHARACTERS[0];
+    // Bringing a character in ALWAYS un-dispels the orb. Without this, a Pokémon
+    // summoned while the orb was dispelled (palm-release gesture) loads invisibly —
+    // you'd hear its cry and see the ambient colours but not the model itself.
+    arOrbDispelled = false;
+    document.getElementById('stage')?.classList.remove('stage-dispelled');
     orb.setCharacter(ch.id);
     localStorage.setItem(MAIN_CHAR_KEY, ch.id);
     document.body.dataset.char = ch.id;   // per-character ambient (fire/water/hypnosis)
