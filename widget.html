@@ -232,6 +232,7 @@
     // Cloud-loaded tasks (from Puter). When present, they take precedence over
     // localStorage so the widget shows your tasks even in a fresh context.
     let cloudTasks = null;
+    let needsSignIn = false;   // true when Puter is up but the user isn't signed in
 
     function loadAllTasks() {
       if (cloudTasks) return cloudTasks;
@@ -315,7 +316,14 @@
       const list = [...openTasks, ...doneTasks];
       html += `<div class="section-label">משימות${openTasks.length ? ' (' + openTasks.length + ')' : ''}</div>`;
       if (list.length === 0) {
-        html += '<div class="empty-state"><div class="icon">✓</div>אין משימות פתוחות</div>';
+        // Empty here can mean two very different things in a home-screen widget:
+        // genuinely no tasks, OR not signed in so the cloud tasks can't be read in
+        // this separate storage context. Offer sign-in when that's the case.
+        if (needsSignIn) {
+          html += '<div class="empty-state"><div class="icon">🔑</div>התחבר כדי לראות את המשימות שלך מכל מקום<br><button id="widgetSignIn" style="margin-top:10px;background:linear-gradient(135deg,#b8942e,#d4b85a);color:#fff;border:none;padding:10px 18px;border-radius:12px;font-weight:700;font-size:14px;cursor:pointer;font-family:inherit">התחבר עם Google</button></div>';
+        } else {
+          html += '<div class="empty-state"><div class="icon">✓</div>אין משימות פתוחות</div>';
+        }
       } else {
         html += '<div class="task-list">';
         list.forEach(t => {
@@ -336,12 +344,16 @@
       }
 
       html += `
-        <div class="widget-footer">
+        <div class="widget-footer" style="display:flex;flex-direction:column;gap:8px">
+          <a href="/Alpha-new/chat-widget.html" style="display:block;background:linear-gradient(135deg,#b8942e,#d4b85a);color:#fff;padding:10px;border-radius:12px;font-weight:700">💬 דבר עם המערכת שלי</a>
           <a href="/Alpha-new/">פתח את Alpha Assistant</a>
         </div>
       `;
 
       widget.innerHTML = html;
+
+      const siBtn = document.getElementById('widgetSignIn');
+      if (siBtn) siBtn.addEventListener('click', doSignIn);
 
       widget.querySelectorAll('.task-check').forEach(el => {
         el.addEventListener('click', () => {
@@ -396,11 +408,28 @@
         })();
       });
     }
+    async function doSignIn() {
+      const p = await puterReady(2000);
+      if (!p || !p.auth) return;
+      try {
+        await p.auth.signIn();
+        needsSignIn = false;
+        await loadCloudTasks();
+        render();
+      } catch {}
+    }
+    window.__widgetSignIn = doSignIn;
+
     async function loadCloudTasks() {
       const p = await puterReady();
       if (!p) return;
       try {
-        if (p.auth && p.auth.isSignedIn && !(await p.auth.isSignedIn())) return; // needs sign-in (button below)
+        if (p.auth && p.auth.isSignedIn && !(await p.auth.isSignedIn())) {
+          needsSignIn = true;   // surface a sign-in button in the empty state
+          render();
+          return;
+        }
+        needsSignIn = false;
         const [a, h] = await Promise.all([
           p.kv.get(KV + 'alpha_tasks').catch(() => null),
           p.kv.get(KV + 'hg2:tasks').catch(() => null),

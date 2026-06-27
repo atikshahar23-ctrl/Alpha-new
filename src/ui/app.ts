@@ -174,7 +174,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v35 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v36 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -1565,6 +1565,10 @@ export function mountApp(root: HTMLElement) {
           if (!text) return;
           addTask(text, (priority as 'low' | 'med' | 'high') || 'med', due);
           updateCalBadge();
+          // Push to the cloud right away so the home-screen widget (a separate
+          // storage context) sees the new task without waiting for the next sync.
+          puterSync.markDirty();
+          if (puterSync.isSignedIn()) puterSync.syncToCloud().then(() => updateCloudIndicator());
           if (due) {
             addMsg(`✅ ${t('taskAdded', state.uiLang)}: "${text}" — 📅 ${due}`, 'sys');
           } else {
@@ -4664,7 +4668,12 @@ export function mountApp(root: HTMLElement) {
     fabOpen = false; fabMenu.classList.remove('show'); fabBtn.textContent = '+'; fabBtn.style.transform = '';
     if (action === 'task') {
       const text = prompt('Quick task:');
-      if (text?.trim()) { addTask(text.trim()); addMsg(`✅ Task added: "${text.trim()}"`, 'sys'); }
+      if (text?.trim()) {
+        addTask(text.trim());
+        addMsg(`✅ Task added: "${text.trim()}"`, 'sys');
+        puterSync.markDirty();
+        if (puterSync.isSignedIn()) puterSync.syncToCloud().then(() => updateCloudIndicator());
+      }
     } else if (action === 'note') {
       const text = prompt('Quick note:');
       if (text?.trim()) { saveNote(text.trim()); addMsg(`📝 ${t('noteSaved', state.uiLang)}`, 'sys'); }
