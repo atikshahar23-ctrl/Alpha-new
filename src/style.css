@@ -291,12 +291,12 @@ body[data-char="ho-oh"] .char-ambient {
 }
 .summon-orb.launch .so-inner{ transform:translateY(-130vh) scale(.55); opacity:0; }  /* rises off the top */
 .so-aura{
-  position:absolute; width:300px; height:300px; border-radius:50%;
+  position:absolute; width:min(230px,55vw); height:min(230px,55vw); border-radius:50%;
   background:radial-gradient(circle, rgba(255,210,120,.4) 0%, rgba(218,165,32,.14) 42%, transparent 70%);
   animation:so-aura 1.8s ease-in-out infinite;
 }
 @keyframes so-aura{ 0%,100%{ transform:scale(.85); opacity:.6; } 50%{ transform:scale(1.18); opacity:.95; } }
-.so-canvas{ position:relative; z-index:2; width:240px; height:240px; filter:drop-shadow(0 10px 26px rgba(0,0,0,.55)); }
+.so-canvas{ position:relative; z-index:2; width:min(170px,40vw); height:min(170px,40vw); filter:drop-shadow(0 10px 26px rgba(0,0,0,.55)); }
 @keyframes so-pop{ from{ transform:scale(.2); opacity:0; } to{ transform:scale(1); opacity:1; } }
 
 /* Spectacular summon burst — white core flash + expanding shockwave ring */

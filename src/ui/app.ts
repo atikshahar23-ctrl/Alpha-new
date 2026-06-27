@@ -2790,7 +2790,7 @@ export function mountApp(root: HTMLElement) {
         sbRenderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
         sbRenderer.setSize(240, 240, false);
         sbScene = new THREE.Scene();
-        sbCamera = new THREE.PerspectiveCamera(38, 1, 0.1, 100); sbCamera.position.set(0, 0, 3.4);
+        sbCamera = new THREE.PerspectiveCamera(38, 1, 0.1, 100); sbCamera.position.set(0, 0, 4.0);
         sbScene.add(new THREE.AmbientLight(0xffffff, 0.95));
         const d = new THREE.DirectionalLight(0xffffff, 1.25); d.position.set(2, 3, 4); sbScene.add(d);
         const d2 = new THREE.DirectionalLight(0xffe0a0, 0.5); d2.position.set(-3, 1, -2); sbScene.add(d2);
@@ -2798,11 +2798,16 @@ export function mountApp(root: HTMLElement) {
           new GLTFLoader().load((import.meta.env.BASE_URL || '/') + 'ar-models/pokeball.glb', (g: any) => {
             const m: THREE.Object3D = g.scene;
             m.traverse((o: any) => { if (o.isMesh) o.geometry.computeVertexNormals(); });
+            // Tilt so the equator (red/white split + band + button) faces the
+            // camera (red on top, classic), THEN centre/scale in the tilted frame.
+            m.rotation.x = -Math.PI / 2;
+            m.updateMatrixWorld(true);
             const bb = new THREE.Box3().setFromObject(m);
             const sz = bb.getSize(new THREE.Vector3()); const c = bb.getCenter(new THREE.Vector3());
-            const s = 2.0 / Math.max(sz.x, sz.y, sz.z);
+            const s = 1.7 / Math.max(sz.x, sz.y, sz.z);
+            const inner = new THREE.Group(); inner.add(m);
             m.scale.setScalar(s); m.position.set(-c.x * s, -c.y * s, -c.z * s);
-            const grp = new THREE.Group(); grp.add(m); sbScene!.add(grp); sbBall = grp;
+            sbScene!.add(inner); sbBall = inner;
           }, undefined, () => {});
         });
       } catch { sbRenderer = null; }
@@ -2812,12 +2817,57 @@ export function mountApp(root: HTMLElement) {
       if (sbRaf || !sbRenderer) return;
       const tick = () => {
         sbRaf = requestAnimationFrame(tick);
-        if (sbBall) { sbBall.rotation.y += 0.025; sbBall.rotation.x = Math.sin(performance.now() / 900) * 0.12; }
+        if (sbBall) { sbBall.rotation.y += 0.03; sbBall.rotation.z = Math.sin(performance.now() / 1100) * 0.08; }
         if (sbRenderer && sbScene && sbCamera) sbRenderer.render(sbScene, sbCamera);
       };
       tick();
     }
     function stopSummonBall() { cancelAnimationFrame(sbRaf); sbRaf = 0; }
+
+    // Laser fired DOWN from the rising pokéball onto the orb centre, which then
+    // reveals the chosen Pokémon. Drawn on the full-stage charSwapFx canvas.
+    function summonBeam(id: string) {
+      const cvs = $<HTMLCanvasElement>('charSwapFx');
+      const stage = document.getElementById('stage');
+      const ctx = cvs.getContext('2d');
+      if (!ctx || !stage) { setMainCharacter(id); return; }
+      cvs.classList.add('active');
+      const rect = stage.getBoundingClientRect();
+      cvs.width = rect.width; cvs.height = rect.height;
+      const W = cvs.width, H = cvs.height, cx = W / 2, cy = H * 0.46;
+      const start = performance.now();
+      let done = false;
+      const frame = (now: number) => {
+        const t = (now - start) / 1000;
+        ctx.clearRect(0, 0, W, H);
+        if (t < 0.6) {
+          const p = Math.min(1, t / 0.4);            // beam grows top → centre
+          ctx.save(); ctx.lineCap = 'round';
+          const layers = [[26, .08], [15, .2], [6, .5], [2, 1]] as const;
+          const cols = ['rgba(255,55,55,1)', 'rgba(255,90,55,1)', 'rgba(255,150,80,1)', '#fff'];
+          layers.forEach((L, i) => {
+            ctx.beginPath(); ctx.moveTo(cx, -30); ctx.lineTo(cx, -30 + (cy + 30) * p);
+            ctx.lineWidth = L[0]; ctx.globalAlpha = L[1]; ctx.strokeStyle = cols[i];
+            ctx.shadowColor = '#ff2a18'; ctx.shadowBlur = i === 3 ? 30 : 0; ctx.stroke();
+          });
+          if (p >= 1) {                               // impact burst at the centre
+            const bp = (t - 0.4) / 0.2, rr = Math.min(W, H) * 0.3 * bp;
+            const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rr);
+            g.addColorStop(0, `rgba(255,255,255,${0.9 * (1 - bp)})`);
+            g.addColorStop(0.4, `rgba(255,90,40,${0.7 * (1 - bp)})`);
+            g.addColorStop(1, 'rgba(255,0,0,0)');
+            ctx.globalAlpha = 1; ctx.fillStyle = g;
+            ctx.beginPath(); ctx.arc(cx, cy, rr, 0, Math.PI * 2); ctx.fill();
+          }
+          ctx.restore();
+          requestAnimationFrame(frame);
+        } else if (!done) {
+          done = true; ctx.clearRect(0, 0, W, H); cvs.classList.remove('active');
+          setMainCharacter(id);                       // the chosen Pokémon arrives
+        }
+      };
+      requestAnimationFrame(frame);
+    }
 
     function openSummonDock() {
       if (dockOpen) return;
@@ -2836,7 +2886,7 @@ export function mountApp(root: HTMLElement) {
       if (restoreWake) voice.setWake(false);
       startDockVoice();
       clearTimeout(dockTimer);
-      dockTimer = window.setTimeout(() => closeSummonDock(), 14000);
+      dockTimer = window.setTimeout(() => closeSummonDock(), 8000);
     }
     function closeSummonDock() {
       if (!dockOpen) return;
@@ -2856,13 +2906,12 @@ export function mountApp(root: HTMLElement) {
       stopDockVoice();
       const el = row.querySelector<HTMLElement>(`.sd-item[data-id="${id}"]`);
       el?.classList.add('sd-chosen');
-      // The 3D pokéball rises up and flies off the top of the screen…
+      // The 3D pokéball rises up toward the top of the screen…
       document.getElementById('summonOrb')?.classList.add('launch');
-      setTimeout(() => {
-        closeSummonDock();          // …then it's gone — burst + summon the choice.
-        summonFlash();
-        swapMainCharacterAnimated(id);
-      }, 650);
+      // …and as it rises, fires a laser straight down onto the orb, which
+      // reveals the chosen Pokémon. The dock + ball clear once it's off-screen.
+      setTimeout(() => { summonFlash(); summonBeam(id); }, 300);
+      setTimeout(() => closeSummonDock(), 780);
     }
 
     // The thumbs-up gesture (and the pokeball button) open this dock.
