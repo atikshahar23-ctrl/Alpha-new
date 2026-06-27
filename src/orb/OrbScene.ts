@@ -1303,7 +1303,6 @@ const CHARACTER_FILES: Record<string, string> = {
   zapdos:     'ar-models/zapdos.glb',
   lugia:      'ar-models/lugia.glb',
   'ho-oh':    'ar-models/ho-oh.glb',
-  'pikachu-deadpool': 'ar-models/pikachu-deadpool.glb',
 };
 // Merge the imported Gen-1 pack (untextured, type-tinted GLBs, loaded on demand).
 for (const g of GEN1) CHARACTER_FILES[g.id] = `ar-models/${g.id}.glb`;
@@ -1362,7 +1361,6 @@ const POKEMON_CRY_ID: Record<string, number> = {
   pikachu: 25, charmander: 4, squirtle: 7, meowth: 52, bulbasaur: 1,
   eevee: 133, mewtwo: 150, articuno: 144, suicune: 245, raikou: 243,
   entei: 244, moltres: 146, zapdos: 145, lugia: 249, 'ho-oh': 250,
-  'pikachu-deadpool': 25,
 };
 for (const g of GEN1) POKEMON_CRY_ID[g.id] = g.dex;   // PokeAPI cries for imported Pokémon
 let _activeCry: HTMLAudioElement | null = null;
@@ -1424,7 +1422,6 @@ const POKEMON_ATTACK_TYPE: Record<string, AttackType> = {
   zapdos:     'electric',
   lugia:      'psychic',
   'ho-oh':    'fire',
-  'pikachu-deadpool': 'electric',
 };
 for (const g of GEN1) POKEMON_ATTACK_TYPE[g.id] = g.attack;   // type-based attack fx
 
@@ -1874,6 +1871,7 @@ function defaultXform(character: string): CharXform {
   // Rotation defaults vary by model source format; scale/position default to identity.
   const ROT: Record<string, {x:number;y:number;z:number}> = {
     pikachu:    { x: 0,            y: Math.PI, z: 0 },
+    charizard:  { x: 0,            y: 0,       z: 0 },   // new FBX model — already faces front, upright
     charmander: { x: 0,            y: Math.PI, z: 0 },
     squirtle:   { x: -Math.PI / 2, y: 0,       z: Math.PI },
     meowth:     { x: 0,            y: Math.PI, z: 0 },
@@ -2050,6 +2048,12 @@ function loadAndReplaceBody(
             for (const sm of mats) {
               sm.map = tex;
               sm.color.setRGB(1, 1, 1);   // let the texture show its true colours
+              // Also drive the sprite as an emissive (self-lit) map so the model is
+              // always brightly coloured regardless of mesh complexity / lighting —
+              // complex imported meshes were rendering nearly black otherwise.
+              sm.emissiveMap = tex;
+              sm.emissive.setRGB(1, 1, 1);
+              sm.emissiveIntensity = 0.6;
               sm.needsUpdate = true;
             }
           }
@@ -2899,35 +2903,6 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/', 'pikachu', (m) => { deskCurrentModel = m; });
   const deskThrowPokeball = makeThrowPokeball(group, pikaGroup, import.meta.env.BASE_URL || '/');
 
-  // Deadpool Pikachu floats above the regular Pikachu when it's the active
-  // character. Parented to the scene root so it hovers in place (no orbiting).
-  let deskCompanion: THREE.Group | null = null;
-  let deskCompanionLoading = false;
-  function ensureDeskCompanion(show: boolean) {
-    if (deskCompanion) { deskCompanion.visible = show; return; }
-    if (!show || deskCompanionLoading) return;
-    deskCompanionLoading = true;
-    import('three/examples/jsm/loaders/GLTFLoader.js').then(({ GLTFLoader }) => {
-      new GLTFLoader().load((import.meta.env.BASE_URL || '/') + 'ar-models/pikachu-deadpool.glb', (g: any) => {
-        const m: THREE.Object3D = g.scene;
-        m.traverse((o: any) => {
-          if (!o.isMesh) return;
-          o.geometry.computeVertexNormals();
-          const t = (mm: any) => { mm.side = THREE.DoubleSide; if (mm.color) mm.color.multiplyScalar(0.55); mm.roughness = 1; mm.metalness = 0; };
-          Array.isArray(o.material) ? o.material.forEach(t) : (o.material && t(o.material));
-        });
-        const bb = new THREE.Box3().setFromObject(m);
-        const sz = bb.getSize(new THREE.Vector3()); const ctr = bb.getCenter(new THREE.Vector3());
-        const s = 1.25 / Math.max(sz.x, sz.y, sz.z);   // smaller than the main model
-        const wrap = new THREE.Group();
-        m.scale.setScalar(s); m.position.set(-ctr.x * s, -ctr.y * s, -ctr.z * s);
-        wrap.position.set(0, 2.35, 0);                  // hover above the orb
-        wrap.add(m); wrap.visible = show; group.add(wrap); deskCompanion = wrap;
-        deskCompanionLoading = false;
-      }, undefined, () => { deskCompanionLoading = false; });
-    });
-  }
-  ensureDeskCompanion(true);   // default character is Pikachu
 
   // ────────────────────────────────────────────
   // ORBITAL RINGS — prominent gold halo, champagne, rose
@@ -3838,7 +3813,6 @@ export function mountOrb(container: HTMLElement): OrbHandle {
         flashArrival(m);
         playCry(name);
       });
-      ensureDeskCompanion(name === 'pikachu');   // Deadpool floats above only over regular Pikachu
     },
     throwPokeball: deskThrowPokeball,
     setPerfMode(on: boolean) { perfFast = on; resize(); },

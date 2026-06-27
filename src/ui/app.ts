@@ -174,7 +174,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v40 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v41 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -2669,7 +2669,6 @@ export function mountApp(root: HTMLElement) {
     { id: 'zapdos',     label: 'זאפדוס',     words: /(זאפדוס|zapdos)/i },
     { id: 'lugia',      label: 'לוגיה',      words: /(לוגיה|lugia)/i },
     { id: 'ho-oh',      label: 'הו-אוה',     words: /(הו.?אוה|ho.?oh)/i },
-    { id: 'pikachu-deadpool', label: "פיקצ'ו דד-פול", words: /(דד.?פול|דדפול|deadpool|dead.?pool|פיקצ'?ו דד)/i },
     // Imported Gen-1 pack (untextured, type-tinted) — selectable like the rest.
     ...GEN1.map(g => ({ id: g.id, label: g.label, words: new RegExp(g.words, 'i') })),
   ];
@@ -2823,7 +2822,6 @@ export function mountApp(root: HTMLElement) {
       pikachu: 25, charmander: 4, squirtle: 7, meowth: 52, bulbasaur: 1,
       eevee: 133, mewtwo: 150, articuno: 144, suicune: 245, raikou: 243,
       entei: 244, moltres: 146, zapdos: 145, lugia: 249, 'ho-oh': 250,
-      'pikachu-deadpool': 25,
     };
     for (const g of GEN1) DEX[g.id] = g.dex;   // imported pack → PokeAPI artwork sprites
     const SPRITE = (id: string) =>
