@@ -2415,9 +2415,17 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   function frame(now: number) {
     raf = requestAnimationFrame(frame);
     if (document.hidden || document.body.classList.contains('bg-paused')) return;
-    if (now - lastFrame < 33) return;
+    // Fast mode throttles to ~45fps to spare the GPU; normal mode runs at the
+    // display's native refresh (no 30fps cap) — that headroom is what makes the
+    // motion read as smooth on 60/120Hz screens.
+    const minGap = perfFast ? 22 : 0;
+    if (minGap && now - lastFrame < minGap) return;
+    // Frame-rate-independent timing: advance by *real* elapsed seconds (clamped so a
+    // backgrounded tab or GC pause can't make the scene leap). This also restores the
+    // authored cadence — "hop every ~8s", blinks, etc. — which the old fixed 0.016
+    // step ran in slow-motion once the framerate was capped.
+    const dt = lastFrame ? Math.min((now - lastFrame) / 1000, 0.05) : 0.016;
     lastFrame = now;
-    const dt = 0.016;
     time += dt;
     amp += (ampTarget - amp) * 0.07;
     if (!dragActive) { rotVel *= 0.92; userRotY += rotVel; }
@@ -3414,9 +3422,17 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   function frame(now: number) {
     raf = requestAnimationFrame(frame);
     if (document.hidden || document.body.classList.contains('bg-paused')) return;
-    if (now - lastFrame < 33) return;
+    // Fast mode throttles to ~45fps to spare the GPU; normal mode runs at the
+    // display's native refresh (no 30fps cap) — that headroom is what makes the
+    // motion read as smooth on 60/120Hz screens.
+    const minGap = perfFast ? 22 : 0;
+    if (minGap && now - lastFrame < minGap) return;
+    // Frame-rate-independent timing: advance by *real* elapsed seconds (clamped so a
+    // backgrounded tab or GC pause can't make the scene leap). This also restores the
+    // authored cadence — "hop every ~8s", blinks, etc. — which the old fixed 0.016
+    // step ran in slow-motion once the framerate was capped.
+    const dt = lastFrame ? Math.min((now - lastFrame) / 1000, 0.05) : 0.016;
     lastFrame = now;
-    const dt = 0.016;
     time += dt;
     amp += (ampTarget - amp) * 0.07;
     if (!dragActive) { rotVel *= 0.92; userRotY += rotVel; }
