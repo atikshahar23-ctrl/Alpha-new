@@ -409,15 +409,28 @@
         })();
       });
     }
-    async function doSignIn() {
-      const p = await puterReady(2000);
-      if (!p || !p.auth) return;
-      try {
-        await p.auth.signIn();
+    function doSignIn() {
+      const p = window.puter;
+      // The sign-in popup must open SYNCHRONOUSLY inside the click — any await
+      // before signIn() loses the user-gesture and the popup gets blocked
+      // ("Puter blocks"). So call it directly here, no await beforehand.
+      if (!p || !p.auth || !p.auth.signIn) {
+        // Puter script not ready yet — warm it up; the next tap will work.
+        const btn = document.getElementById('widgetSignIn');
+        if (btn) btn.textContent = 'טוען… נסה שוב עוד רגע';
+        puterReady(5000).then(() => { const b = document.getElementById('widgetSignIn'); if (b) b.textContent = 'התחבר עם Google'; });
+        return;
+      }
+      Promise.resolve(p.auth.signIn()).then(async () => {
         needsSignIn = false;
         await loadCloudTasks();
         render();
-      } catch {}
+      }).catch(() => {
+        // Popup blocked (some home-screen WebViews disallow popups): fall back to
+        // signing in inside the full chat page in the real browser.
+        const ok = confirm('לא ניתן להתחבר מתוך הווידגט. לפתוח את הדף המלא להתחברות?');
+        if (ok) window.open('/Alpha-new/chat-widget.html', '_blank');
+      });
     }
     window.__widgetSignIn = doSignIn;
 
