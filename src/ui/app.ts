@@ -1594,6 +1594,13 @@ export function mountApp(root: HTMLElement) {
     let dwellTarget: Element | null = null;
     let clickCooldownMs = 0;
     const DWELL_MS = 2000;
+    // Gesture stability/debounce — a pose must be held briefly before it becomes
+    // the "confirmed" gesture, so frame-to-frame finger jitter can't make the
+    // detector flip between gestures ("go crazy").
+    let rawPrev = '';
+    let rawStableMs = 0;
+    let confirmedGesture = 'none';
+    const STABLE_MS = 140;
     // Pinch-to-grab manipulation of the orb.
     let pinchActive = false;
     let pinchStartHX = 0, pinchStartHY = 0;
@@ -1768,7 +1775,15 @@ export function mountApp(root: HTMLElement) {
         const pinchD = Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y);
         const pinching = pinchActive ? pinchD < 0.11 : pinchD < 0.06;
 
-        if (pinching) {
+        // Classify this frame, then debounce: a new pose must persist STABLE_MS
+        // before it takes over. Pinch and "none" switch immediately (pinch has
+        // its own hysteresis; releasing should feel instant) — the others must
+        // settle, which kills the flicker that made detection feel chaotic.
+        const raw = pinching ? 'pinch' : pointing ? 'point' : fist ? 'fist' : open ? 'open' : 'none';
+        if (raw === rawPrev) rawStableMs += dt; else { rawPrev = raw; rawStableMs = 0; }
+        if (raw === 'pinch' || raw === 'none' || rawStableMs >= STABLE_MS) confirmedGesture = raw;
+
+        if (confirmedGesture === 'pinch') {
           const hx = (lm[4].x + lm[8].x) / 2;   // pinch midpoint
           const hy = (lm[4].y + lm[8].y) / 2;
           if (!pinchActive) {
@@ -1787,7 +1802,7 @@ export function mountApp(root: HTMLElement) {
           gestureStatus('🤏 אוחז בכדור — הזז יד כדי לסובב');
           ctx.beginPath(); ctx.arc(hx * 320, hy * 240, 16, 0, Math.PI * 2);
           ctx.strokeStyle = 'rgba(120,220,255,.95)'; ctx.lineWidth = 4; ctx.stroke();
-        } else if (pointing) {
+        } else if (confirmedGesture === 'point') {
           // ☝️ Finger-pointing laser cursor — index tip drives a red on-screen
           // cursor; dwelling on a target for 2s clicks it.
           if (pinchActive) { pinchActive = false; pinchStartXf = null; }
@@ -1809,7 +1824,7 @@ export function mountApp(root: HTMLElement) {
         } else {
           hideLaser();
           if (pinchActive) { pinchActive = false; pinchStartXf = null; }
-          if (fist) {
+          if (confirmedGesture === 'fist') {
             // Fist + THROW toward the screen: while the fist is held, watch its
             // size. A quick forward thrust (hand moving toward the camera) makes
             // the fist grow sharply → summon. Natural "throw a pokéball" motion.
@@ -1830,7 +1845,7 @@ export function mountApp(root: HTMLElement) {
               ctx.beginPath(); ctx.arc(cx2, cy2, 26, 0, Math.PI * 2);
               ctx.strokeStyle = 'rgba(255,70,70,.9)'; ctx.lineWidth = 4; ctx.stroke();
             }
-          } else if (open) {
+          } else if (confirmedGesture === 'open') {
             fistActive = false; fistMinScale = 0;
             if (suppressPalmMs <= 0) {
               // Open palm held a long, deliberate 4s → release the current Pokémon.
