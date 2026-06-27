@@ -201,6 +201,7 @@ export function mountApp(root: HTMLElement) {
         <label class="crp-row">↔ <input type="range" id="crpPX" min="-150" max="150" step="1" value="0"><span class="crp-val" id="crpPXv">0</span></label>
         <label class="crp-row">↕ <input type="range" id="crpPY" min="-150" max="150" step="1" value="0"><span class="crp-val" id="crpPYv">0</span></label>
         <label class="crp-row">⊙ <input type="range" id="crpPZ" min="-150" max="150" step="1" value="0"><span class="crp-val" id="crpPZv">0</span></label>
+        <button class="crp-auto" id="crpAuto">⊹ מרכז אוטומטי</button>
         <div class="crp-pin-row">
           <button class="crp-pin" id="crpPin">שמור ככיוון ברירת מחדל</button>
           <button class="crp-reset" id="crpReset">איפוס</button>
@@ -3010,6 +3011,18 @@ export function mountApp(root: HTMLElement) {
     $('crpReset').onclick = () => {
       orb.resetCharacterTransform();
       crpSync();
+    };
+
+    // Auto-center: drop the object back to the dead-centre of the orb (zero position
+    // offset) at the default fit scale, keeping the current rotation. One tap to
+    // recover from a model that drifted off-centre or got scaled out of view.
+    $('crpAuto').onclick = () => {
+      crpPX.value = '0'; crpPY.value = '0'; crpPZ.value = '0'; crpS.value = '100';
+      $('crpPXv').textContent = '0';
+      $('crpPYv').textContent = '0';
+      $('crpPZv').textContent = '0';
+      $('crpSv').textContent = '1.00×';
+      crpApply();
     };
 
     // Re-sync panel values after character swap (model loads async, so delay)

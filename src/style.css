@@ -203,6 +203,13 @@ body[data-char="ho-oh"] .char-ambient {
   cursor:pointer; min-width:0;
 }
 .crp-val{ width:36px; text-align:left; font-variant-numeric:tabular-nums; color:#f0ebe0; }
+.crp-auto{
+  width:100%; margin-top:6px; padding:7px; border:1px solid rgba(218,165,32,.45);
+  background:linear-gradient(180deg,rgba(218,165,32,.16),rgba(218,165,32,.06));
+  color:#e8c662; border-radius:6px; font-size:11px; font-weight:600; letter-spacing:.3px;
+  cursor:pointer; transition:background .2s,border-color .2s;
+}
+.crp-auto:hover{ background:rgba(218,165,32,.26); border-color:rgba(218,165,32,.7); }
 .crp-pin-row{ display:flex; gap:6px; margin-top:6px; }
 .crp-pin{
   flex:1; padding:6px; border:1px solid rgba(218,165,32,.5);

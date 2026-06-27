@@ -2100,7 +2100,13 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     failIfMajorPerformanceCaveat: false,
   });
   let perfFast = false;
-  const prCap = () => Math.min(window.devicePixelRatio || 1, perfFast ? 1 : 2);
+  // Adaptive quality tier, bumped automatically when the GPU can't keep a smooth
+  // framerate: 0 = full (post-fx on), 1 = post-fx off, 2 = post-fx off + lower res.
+  let qTier = 0;
+  const prCap = () => {
+    const base = Math.min(window.devicePixelRatio || 1, perfFast ? 1 : 2);
+    return qTier >= 2 ? Math.min(base, 1) : base;
+  };
   renderer.setPixelRatio(prCap());
   renderer.setClearColor(charBg("pikachu"), 1);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -2411,6 +2417,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   let amp = 0.06, ampTarget = 0.06;
   let glitchStr = 0, nextGlitch = 3 + Math.random() * 5, glitchTimer = 0;
   let lastFrame = 0;
+  let fpsT = 0, fpsN = 0, warmT = 0, lowStreak = 0;
 
   function frame(now: number) {
     raf = requestAnimationFrame(frame);
@@ -2427,6 +2434,19 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     const dt = lastFrame ? Math.min((now - lastFrame) / 1000, 0.05) : 0.016;
     lastFrame = now;
     time += dt;
+    // Adaptive quality: if the GPU can't sustain ~55fps over two 1s windows, shed
+    // cost (first the post-fx pipeline, then resolution) so motion stays smooth.
+    // Sticky downgrade only — never auto-upgrades, to avoid hitching back and forth.
+    // Skipped when the user has forced Fast mode (perfFast handles it). A 3s warm-up
+    // ignores the initial model-load spike.
+    if (!perfFast && qTier < 2) {
+      warmT += dt; fpsT += dt; fpsN++;
+      if (warmT > 3 && fpsT >= 1) {
+        const fps = fpsN / fpsT; fpsT = 0; fpsN = 0;
+        if (fps < 55) { if (++lowStreak >= 2) { lowStreak = 0; qTier++; resize(); } }
+        else lowStreak = 0;
+      }
+    }
     amp += (ampTarget - amp) * 0.07;
     if (!dragActive) { rotVel *= 0.92; userRotY += rotVel; }
 
@@ -2611,10 +2631,10 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
       const cfg = POKEMON_PFX[mobileCurrentChar]; if (cfg) updateParticles(mobPFX, cfg);
     }
 
-    if (useComposer && composer && !perfFast) {
+    if (useComposer && composer && !perfFast && qTier === 0) {
       try { composer.render(); } catch { useComposer = false; }
     } else {
-      renderer.render(scene, camera);   // fast mode (or no composer): skip post
+      renderer.render(scene, camera);   // fast mode / low tier / no composer: skip post
     }
   }
 
@@ -2722,7 +2742,13 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   // Perf: cap the pixel ratio — retina/iPad (DPR 2) through bloom+MSAA+FXAA is
   // 4× the pixels for little visible gain. Fast mode caps harder and skips post.
   let perfFast = false;
-  const prCap = () => Math.min(window.devicePixelRatio || 1, perfFast ? 1 : 1.5);
+  // Adaptive quality tier, bumped automatically when the GPU can't keep a smooth
+  // framerate: 0 = full (post-fx on), 1 = post-fx off, 2 = post-fx off + lower res.
+  let qTier = 0;
+  const prCap = () => {
+    const base = Math.min(window.devicePixelRatio || 1, perfFast ? 1 : 1.5);
+    return qTier >= 2 ? Math.min(base, 1) : base;
+  };
   renderer.setPixelRatio(prCap());
   renderer.setClearColor(charBg("pikachu"), 1);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -3418,6 +3444,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   let amp = 0.06, ampTarget = 0.06;
   let glitchStr = 0, nextGlitch = 3 + Math.random() * 5, glitchTimer = 0;
   let lastFrame = 0;
+  let fpsT = 0, fpsN = 0, warmT = 0, lowStreak = 0;
 
   function frame(now: number) {
     raf = requestAnimationFrame(frame);
@@ -3434,6 +3461,19 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     const dt = lastFrame ? Math.min((now - lastFrame) / 1000, 0.05) : 0.016;
     lastFrame = now;
     time += dt;
+    // Adaptive quality: if the GPU can't sustain ~55fps over two 1s windows, shed
+    // cost (first the post-fx pipeline, then resolution) so motion stays smooth.
+    // Sticky downgrade only — never auto-upgrades, to avoid hitching back and forth.
+    // Skipped when the user has forced Fast mode (perfFast handles it). A 3s warm-up
+    // ignores the initial model-load spike.
+    if (!perfFast && qTier < 2) {
+      warmT += dt; fpsT += dt; fpsN++;
+      if (warmT > 3 && fpsT >= 1) {
+        const fps = fpsN / fpsT; fpsT = 0; fpsN = 0;
+        if (fps < 55) { if (++lowStreak >= 2) { lowStreak = 0; qTier++; resize(); } }
+        else lowStreak = 0;
+      }
+    }
     amp += (ampTarget - amp) * 0.07;
     if (!dragActive) { rotVel *= 0.92; userRotY += rotVel; }
 
@@ -3692,7 +3732,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
 
     // Fast mode skips the whole post-processing pipeline (bloom/vignette/FXAA) —
     // the single biggest GPU cost — and renders the scene straight to screen.
-    if (perfFast) renderer.render(scene, camera);
+    if (perfFast || qTier > 0) renderer.render(scene, camera);
     else composer.render();
   }
 
