@@ -174,7 +174,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v37 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v38 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -1643,7 +1643,8 @@ export function mountApp(root: HTMLElement) {
     let throwCooldownMs = 0;
     let suppressPalmMs = 0;   // after a throw, ignore the open hand for dispel
     let fistActive = false;   // a fist is currently held (armed to throw)
-    let fistMinScale = 0;     // smallest hand size seen during the current fist
+    let fistBaseline = 0;     // resting hand size while the fist is held (slow-follow)
+    let fistArmMs = 0;        // how long the current fist has been held
     let prevScale = 0;        // hand size last frame (for forward-thrust velocity)
     // Finger-pointing laser cursor + dwell-to-select.
     let pointSX = 0, pointSY = 0;       // smoothed cursor screen position
@@ -1788,7 +1789,7 @@ export function mountApp(root: HTMLElement) {
 
         if (!results.multiHandLandmarks?.length) {
           gestureStatus('מצלמה פעילה');
-          palmHoldMs = 0; fistActive = false; fistMinScale = 0; prevScale = 0;
+          palmHoldMs = 0; fistActive = false; fistBaseline = 0; fistArmMs = 0; prevScale = 0;
           hideLaser();
           return;
         }
@@ -1863,7 +1864,7 @@ export function mountApp(root: HTMLElement) {
           // ☝️ Finger-pointing laser cursor — index tip drives a red on-screen
           // cursor; dwelling on a target for 2s clicks it.
           if (pinchActive) { pinchActive = false; pinchStartXf = null; }
-          palmHoldMs = 0; fistActive = false; fistMinScale = 0;
+          palmHoldMs = 0; fistActive = false; fistBaseline = 0; fistArmMs = 0;
           // Map the fingertip to the screen with gain around centre so a small,
           // comfortable hand movement reaches every edge (the hand stays mid-frame).
           const GAIN = 1.7;
@@ -1882,28 +1883,33 @@ export function mountApp(root: HTMLElement) {
           hideLaser();
           if (pinchActive) { pinchActive = false; pinchStartXf = null; }
           if (confirmedGesture === 'fist') {
-            // Fist + THROW toward the screen: while the fist is held, watch its
-            // size. A quick forward thrust (hand moving toward the camera) makes
-            // the fist grow sharply → summon. Natural "throw a pokéball" motion.
-            if (!fistActive) { fistActive = true; fistMinScale = handScale; }
+            // Fist + THROW toward the screen: summon ONLY on a genuine fast forward
+            // lunge. A slow-following baseline absorbs steady holding and gradual
+            // drift (so the hand just sitting in a fist never triggers); only a
+            // sharp, large, FAST thrust outruns the baseline and fires.
+            if (!fistActive) { fistActive = true; fistBaseline = handScale; fistArmMs = 0; }
             palmHoldMs = 0;
-            fistMinScale = Math.min(fistMinScale, handScale);
-            const growth = handScale / fistMinScale;      // how much it lunged forward
-            const vel = handScale - prevScale;            // moving forward this frame?
-            if (growth > 1.28 && vel > 0.004 && throwCooldownMs <= 0) {
-              fistActive = false; fistMinScale = 0;
+            fistArmMs += dt;
+            const baseRef = Math.max(0.0001, fistBaseline);
+            const velRatio = (handScale - prevScale) / baseRef;        // forward speed this frame
+            const forwardRatio = (handScale - fistBaseline) / baseRef; // how far past resting size
+            // Absorb slow drift / steady holding so it can't accumulate into a throw.
+            if (Math.abs(velRatio) < 0.05) fistBaseline += (handScale - fistBaseline) * 0.08;
+            const thrust = fistArmMs > 250 && forwardRatio > 0.40 && velRatio > 0.12;
+            if (thrust && throwCooldownMs <= 0) {
+              fistActive = false; fistBaseline = 0; fistArmMs = 0;
               throwCooldownMs = THROW_COOLDOWN;
               suppressPalmMs = 1100;
               gestureStatus('🚀 זריקה! בחר פוקימון');
               (window as any).openSummonDock?.();
               setTimeout(() => { if (gestureActive) gestureStatus('מצלמה פעילה'); }, 2500);
             } else {
-              gestureStatus('✊ אגרוף — זרוק לכיוון המסך לזימון!');
+              gestureStatus('✊ אגרוף — זרוק מהר לכיוון המסך לזימון!');
               ctx.beginPath(); ctx.arc(cx2, cy2, 26, 0, Math.PI * 2);
               ctx.strokeStyle = 'rgba(255,70,70,.9)'; ctx.lineWidth = 4; ctx.stroke();
             }
           } else if (confirmedGesture === 'open') {
-            fistActive = false; fistMinScale = 0;
+            fistActive = false; fistBaseline = 0; fistArmMs = 0;
             if (suppressPalmMs <= 0) {
               // Open palm held a long, deliberate 4s → release the current Pokémon.
               palmHoldMs += dt;
