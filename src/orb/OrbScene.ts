@@ -27,6 +27,7 @@ export interface OrbHandle {
   pinCharacterTransform(): void;
   hasPinnedTransform(): boolean;
   attackCharacter(canvas: HTMLCanvasElement): void;
+  setPerfMode(on: boolean): void;
 }
 
 // ============================================================
@@ -2093,7 +2094,9 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     powerPreference: 'high-performance',
     failIfMajorPerformanceCaveat: false,
   });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  let perfFast = false;
+  const prCap = () => Math.min(window.devicePixelRatio || 1, perfFast ? 1 : 2);
+  renderer.setPixelRatio(prCap());
   renderer.setClearColor(charBg("pikachu"), 1);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.65;
@@ -2143,7 +2146,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   function resize() {
     const w = container.clientWidth || window.innerWidth;
     const h = container.clientHeight || window.innerHeight;
-    const pr = Math.min(window.devicePixelRatio || 1, 2);
+    const pr = prCap();
     renderer.setPixelRatio(pr);
     renderer.setSize(w, h, true);
     if (composer) composer.setSize(w * pr, h * pr);
@@ -2595,11 +2598,10 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
       const cfg = POKEMON_PFX[mobileCurrentChar]; if (cfg) updateParticles(mobPFX, cfg);
     }
 
-    if (useComposer && composer) {
+    if (useComposer && composer && !perfFast) {
       try { composer.render(); } catch { useComposer = false; }
-    }
-    if (!useComposer) {
-      renderer.render(scene, camera);
+    } else {
+      renderer.render(scene, camera);   // fast mode (or no composer): skip post
     }
   }
 
@@ -2647,6 +2649,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
       });
     },
     throwPokeball: mobileThrowPokeball,
+    setPerfMode(on: boolean) { perfFast = on; resize(); },
     getCharacterTransform() { return getCharXform(mobileCurrentChar); },
     setCharacterTransform(x: number, y: number, z: number, s: number, px: number, py: number, pz: number) {
       saveCharXform(mobileCurrentChar, { x, y, z, s, px, py, pz });
@@ -2703,7 +2706,11 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     powerPreference: 'high-performance',
     failIfMajorPerformanceCaveat: false,
   });
-  renderer.setPixelRatio(window.devicePixelRatio || 1);
+  // Perf: cap the pixel ratio — retina/iPad (DPR 2) through bloom+MSAA+FXAA is
+  // 4× the pixels for little visible gain. Fast mode caps harder and skips post.
+  let perfFast = false;
+  const prCap = () => Math.min(window.devicePixelRatio || 1, perfFast ? 1 : 1.5);
+  renderer.setPixelRatio(prCap());
   renderer.setClearColor(charBg("pikachu"), 1);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.75;
@@ -2725,7 +2732,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   // ────────────────────────────────────────────
   // POST-PROCESSING PIPELINE
   // ────────────────────────────────────────────
-  const dpr0 = window.devicePixelRatio || 1;
+  const dpr0 = prCap();
   // Multisampled (MSAA) render target — crisp edges through the post pipeline
   const deskRT = new THREE.WebGLRenderTarget(
     Math.max(1, Math.floor((container.clientWidth || window.innerWidth) * dpr0)),
@@ -2754,7 +2761,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   function resize() {
     const w = container.clientWidth || window.innerWidth;
     const h = container.clientHeight || window.innerHeight;
-    const pr = window.devicePixelRatio || 1;
+    const pr = prCap();
     renderer.setPixelRatio(pr);
     renderer.setSize(w, h, true);
     composer.setSize(w * pr, h * pr);
@@ -3662,7 +3669,10 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       const cfg = POKEMON_PFX[deskCurrentChar]; if (cfg) updateParticles(deskPFX, cfg);
     }
 
-    composer.render();
+    // Fast mode skips the whole post-processing pipeline (bloom/vignette/FXAA) —
+    // the single biggest GPU cost — and renders the scene straight to screen.
+    if (perfFast) renderer.render(scene, camera);
+    else composer.render();
   }
 
   raf = requestAnimationFrame(frame);
@@ -3721,6 +3731,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       ensureDeskCompanion(name === 'pikachu');   // Deadpool floats above only over regular Pikachu
     },
     throwPokeball: deskThrowPokeball,
+    setPerfMode(on: boolean) { perfFast = on; resize(); },
     getCharacterTransform() { return getCharXform(deskCurrentChar); },
     setCharacterTransform(x: number, y: number, z: number, s: number, px: number, py: number, pz: number) {
       saveCharXform(deskCurrentChar, { x, y, z, s, px, py, pz });

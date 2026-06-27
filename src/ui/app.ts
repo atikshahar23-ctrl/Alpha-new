@@ -69,6 +69,7 @@ const UI_STRINGS: Record<string, Record<UILang, string>> = {
   assistantName: { he: 'שם העוזר', en: 'Assistant name' },
   soundEffects: { he: 'אפקטי סאונד', en: 'Sound effects' },
   haptic: { he: 'משוב רטט', en: 'Haptic feedback' },
+  fastMode: { he: '⚡ מצב מהיר (ביצועים)', en: '⚡ Fast mode (performance)' },
   voiceLang: { he: 'קול ושפה', en: 'VOICE & LANGUAGE' },
   micLang: { he: 'שפת מיקרופון', en: 'Mic language' },
   voiceLangLabel: { he: 'שפת דיבור', en: 'Voice language' },
@@ -173,7 +174,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v30 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v31 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -402,6 +403,10 @@ export function mountApp(root: HTMLElement) {
           <div class="setting-row">
             <label data-i18n="haptic">משוב רטט</label>
             <label class="toggle"><input type="checkbox" id="hapticsCheck" /><span class="toggle-slider"></span></label>
+          </div>
+          <div class="setting-row">
+            <label data-i18n="fastMode">⚡ מצב מהיר (ביצועים)</label>
+            <label class="toggle"><input type="checkbox" id="fastModeCheck" /><span class="toggle-slider"></span></label>
           </div>
         </div>
 
@@ -715,8 +720,10 @@ export function mountApp(root: HTMLElement) {
   try {
     orb = mountOrb($('stage'));
   } catch {
-    orb = { setEnergy() {}, pikaEmote() {}, dispose() {}, startBodyDetection() {}, stopBodyDetection() {}, setCharacter() {}, throwPokeball(_o, d) { d && d(); }, setCharacterTransform() {}, getCharacterTransform() { return { x: 0, y: 0, z: 0, s: 1, px: 0, py: 0, pz: 0 }; }, resetCharacterTransform() {}, pinCharacterTransform() {}, hasPinnedTransform() { return false; }, attackCharacter(_c: HTMLCanvasElement) {} };
+    orb = { setEnergy() {}, pikaEmote() {}, dispose() {}, startBodyDetection() {}, stopBodyDetection() {}, setCharacter() {}, throwPokeball(_o, d) { d && d(); }, setCharacterTransform() {}, getCharacterTransform() { return { x: 0, y: 0, z: 0, s: 1, px: 0, py: 0, pz: 0 }; }, resetCharacterTransform() {}, pinCharacterTransform() {}, hasPinnedTransform() { return false; }, attackCharacter(_c: HTMLCanvasElement) {}, setPerfMode(_o: boolean) {} };
   }
+  // Apply the saved performance preference (Fast mode) on startup.
+  try { if (localStorage.getItem('alpha_fast_mode') === '1') orb.setPerfMode(true); } catch {}
 
   // When Pikachu chirps, trigger a brief energy burst in the 3D orb
   setChirpCallback(() => {
@@ -4367,6 +4374,7 @@ export function mountApp(root: HTMLElement) {
     $('voiceVolVal').textContent = Math.round((state.voiceVolume != null ? state.voiceVolume : 1) * 100) + '%';
     $<HTMLInputElement>('sfxCheck').checked = state.sfxOn;
     $<HTMLInputElement>('hapticsCheck').checked = state.haptics;
+    $<HTMLInputElement>('fastModeCheck').checked = localStorage.getItem('alpha_fast_mode') === '1';
     $<HTMLInputElement>('autoSpeakCheck').checked = state.autoSpeak;
     $<HTMLInputElement>('pikaVoiceCheck').checked = state.pikaVoiceOn;
     $<HTMLInputElement>('pikaVolSlider').value = String(Math.round(state.pikaVolume * 100));
@@ -4768,6 +4776,9 @@ export function mountApp(root: HTMLElement) {
     state.voiceVolume = +$<HTMLInputElement>('voiceVolSlider').value / 100;
     state.sfxOn = $<HTMLInputElement>('sfxCheck').checked;
     state.haptics = $<HTMLInputElement>('hapticsCheck').checked;
+    const fast = $<HTMLInputElement>('fastModeCheck').checked;
+    localStorage.setItem('alpha_fast_mode', fast ? '1' : '0');
+    orb.setPerfMode(fast);
     state.autoSpeak = $<HTMLInputElement>('autoSpeakCheck').checked;
     audio.sfxOn = state.sfxOn;
     state.pikaVoiceOn = $<HTMLInputElement>('pikaVoiceCheck').checked;
