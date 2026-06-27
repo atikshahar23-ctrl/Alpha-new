@@ -4,7 +4,7 @@ import {
   Clock, MapPin, Truck, ChevronLeft, CheckCircle2, AlertTriangle, FileSpreadsheet,
   Hash, Wrench, Factory, Tag, DollarSign, Calendar, Phone, User, Timer, Search, Film, Images, Pencil,
   BarChart3, ClipboardList, TrendingUp, Percent, Trophy,
-  Users, Car, Scale, Receipt, Boxes, Fuel, Copy, MessageSquare, Bell, CalendarDays, Circle, CalendarClock, ChevronRight, Minus, Shield, Upload, RotateCcw, Settings, Globe, Wallet, TrendingDown, Link2, Share2, Mail, Target, Building2, FileText,
+  Users, Car, Scale, Receipt, Boxes, Fuel, Copy, MessageSquare, Bell, CalendarDays, Circle, CalendarClock, ChevronRight, Minus, Shield, Upload, RotateCcw, Settings, Globe, Wallet, TrendingDown, Link2, Share2, Mail, Target, Building2, FileText, Route,
 } from "lucide-react";
 import BULL_LOGO from './heavyguard-logo.png';
 // xlsx is large (~400KB). Load it on demand only when the user actually
@@ -2333,6 +2333,94 @@ const mpx = (lng) => (lng - MAP_LNG0) * MAP_COSLAT * MAP_SC;
 const mpy = (lat) => (MAP_LAT1 - lat) * MAP_SC;
 const BASE_LL = { lat: 31.96, lng: 34.80 }; // ראשון לציון
 
+/* Period grouping helpers (week / month / year) */
+const HEB_MONTHS = ["ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני", "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר"];
+function weekStart(iso) { const d = new Date(iso + "T00:00:00"); d.setDate(d.getDate() - d.getDay()); return d; }
+function periodKey(iso, g) { if (g === "year") return iso.slice(0, 4); if (g === "month") return iso.slice(0, 7); return weekStart(iso).toISOString().slice(0, 10); }
+function periodLabel(iso, g) {
+  if (g === "year") return iso.slice(0, 4);
+  if (g === "month") { const [y, m] = iso.split("-"); return `${HEB_MONTHS[+m - 1]} ${y}`; }
+  const ws = weekStart(iso), we = new Date(ws); we.setDate(ws.getDate() + 6);
+  const f = (d) => `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}`;
+  return `שבוע ${f(ws)}–${f(we)}`;
+}
+
+/* Real satellite map via Leaflet + Esri World Imagery (free, no API key).
+   Loads Leaflet from CDN on demand; falls back to the SVG map if it can't load. */
+function useLeaflet() {
+  const [L, setL] = useState(typeof window !== "undefined" && window.L ? window.L : null);
+  useEffect(() => {
+    if (window.L) { setL(window.L); return; }
+    if (!document.getElementById("leaflet-css")) {
+      const link = document.createElement("link");
+      link.id = "leaflet-css"; link.rel = "stylesheet";
+      link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+      document.head.appendChild(link);
+    }
+    let done = false;
+    const finish = (v) => { if (!done) { done = true; setL(v); } };
+    let s = document.getElementById("leaflet-js");
+    const onLoad = () => finish(window.L || false);
+    const onErr = () => finish(false);
+    if (!s) {
+      s = document.createElement("script");
+      s.id = "leaflet-js"; s.async = true;
+      s.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+      document.body.appendChild(s);
+    }
+    s.addEventListener("load", onLoad);
+    s.addEventListener("error", onErr);
+    const to = setTimeout(() => finish(window.L || false), 9000);
+    return () => { s.removeEventListener("load", onLoad); s.removeEventListener("error", onErr); clearTimeout(to); };
+  }, []);
+  return L;
+}
+
+function SatelliteMap({ agg }) {
+  const L = useLeaflet();
+  const elRef = useRef(null);
+  const mapRef = useRef(null);
+  const layerRef = useRef(null);
+
+  useEffect(() => {
+    if (!L || !elRef.current || mapRef.current) return;
+    const map = L.map(elRef.current, { center: [31.6, 34.9], zoom: 8, attributionControl: false });
+    mapRef.current = map;
+    L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { maxZoom: 18 }).addTo(map);
+    // Place/road labels on top of the imagery so cities are readable.
+    L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", { maxZoom: 18, opacity: 0.85 }).addTo(map);
+    setTimeout(() => { try { map.invalidateSize(); } catch {} }, 250);
+    return () => { try { map.remove(); } catch {} mapRef.current = null; };
+  }, [L]);
+
+  useEffect(() => {
+    const map = mapRef.current; if (!map || !L) return;
+    if (layerRef.current) { try { layerRef.current.remove(); } catch {} }
+    const grp = L.layerGroup().addTo(map); layerRef.current = grp;
+    const entries = Object.entries(agg);
+    const max = Math.max(1, ...entries.map(([, v]) => v.c));
+    const bounds = [];
+    entries.forEach(([name, v]) => {
+      const r = 7 + (v.c / max) * 16;
+      L.circleMarker([v.g.lat, v.g.lng], { radius: r, color: "#F7E8C0", weight: 1.4, fillColor: "#E4BC63", fillOpacity: 0.72 })
+        .bindPopup(`<b>${name}</b><br>${v.c} נסיעות`).addTo(grp);
+      bounds.push([v.g.lat, v.g.lng]);
+    });
+    L.circleMarker([BASE_LL.lat, BASE_LL.lng], { radius: 7, color: "#fff", weight: 2, fillColor: "#6FD3F0", fillOpacity: 1 })
+      .bindPopup("<b>הבסיס — ראשון לציון</b>").addTo(grp);
+    bounds.push([BASE_LL.lat, BASE_LL.lng]);
+    if (bounds.length > 1) { try { map.fitBounds(bounds, { padding: [28, 28], maxZoom: 11 }); } catch {} }
+  }, [agg, L]);
+
+  if (L === false) return <IsraelMap agg={agg} />;   // CDN blocked → SVG fallback
+  return (
+    <div className="hg2-mapbox">
+      <div className="hg2-mapel" ref={elRef} />
+      {!L && <div className="hg2-maploading">טוען מפת לווין…</div>}
+    </div>
+  );
+}
+
 function IsraelMap({ agg }) {
   const [sel, setSel] = useState(null);
   const border = ISR_BORDER.map(([la, ln], i) => (i ? "L" : "M") + mpx(ln).toFixed(1) + " " + mpy(la).toFixed(1)).join(" ") + "Z";
@@ -2369,6 +2457,12 @@ function IsraelMap({ agg }) {
 function TripsMap({ index }) {
   const [from, setFrom] = useState(""); const [to, setTo] = useState(""); const [quick, setQuick] = useState("all");
   const [routeDay, setRouteDay] = useState(null);
+  const [groupBy, setGroupBy] = useState("day");
+  const [openG, setOpenG] = useState({});
+  const [kmpl, setKmpl] = useState(() => +localStorage.getItem("hg2:fuel_kmpl") || 11);
+  const [price, setPrice] = useState(() => +localStorage.getItem("hg2:fuel_price") || 7.0);
+  useEffect(() => { localStorage.setItem("hg2:fuel_kmpl", String(kmpl)); }, [kmpl]);
+  useEffect(() => { localStorage.setItem("hg2:fuel_price", String(price)); }, [price]);
 
   const setRange = (key) => {
     setQuick(key);
@@ -2386,6 +2480,36 @@ function TripsMap({ index }) {
   }, [trips]);
   const destCount = useMemo(() => new Set(trips.map((t) => t.location.trim())).size, [trips]);
 
+  // Per-day estimated km (round trip from base via nearest-neighbour route).
+  const dayStats = useMemo(() => byDate.map((d) => {
+    const r = buildDayRoute(d.items.map(([loc]) => loc));
+    const tripsN = d.items.reduce((s, [, n]) => s + n, 0);
+    return { date: d.date, items: d.items, km: r.totalKm, trips: tripsN };
+  }), [byDate]);
+  const totalKm = useMemo(() => dayStats.reduce((s, d) => s + d.km, 0), [dayStats]);
+  const fuelCost = kmpl > 0 ? totalKm / kmpl * price : 0;
+  const costOf = (km) => (kmpl > 0 ? km / kmpl * price : 0);
+
+  const grouped = useMemo(() => {
+    if (groupBy === "day") return null;
+    const m = {};
+    dayStats.forEach((d) => {
+      const key = periodKey(d.date, groupBy);
+      if (!m[key]) m[key] = { key, label: periodLabel(d.date, groupBy), days: [], km: 0, trips: 0 };
+      m[key].days.push(d); m[key].km += d.km; m[key].trips += d.trips;
+    });
+    return Object.values(m).sort((a, b) => b.key.localeCompare(a.key));
+  }, [dayStats, groupBy]);
+
+  const fmt = (n) => Math.round(n).toLocaleString("he-IL");
+  const dayBtn = (d) => (
+    <button className="hg2-tripday" key={d.date} onClick={() => setRouteDay(d)}>
+      <div className="hg2-tripday-date">{dmy(d.date)}<ChevronLeft size={15} /></div>
+      <div className="hg2-tripday-locs">{d.items.map(([loc, n], i) => <span key={i} className="hg2-triploc"><MapPin size={11} />{loc}{n > 1 ? ` ×${n}` : ""}</span>)}</div>
+      <div className="hg2-tripday-km"><Route size={11} /> {fmt(d.km)} ק"מ · ₪{fmt(costOf(d.km))}</div>
+    </button>
+  );
+
   return (
     <div className="hg2-tripsec">
       <div className="hg2-filters">
@@ -2397,23 +2521,44 @@ function TripsMap({ index }) {
         <label>מ<DateField value={from} onChange={(v) => { setFrom(v); setQuick(""); }} placeholder="התחלה" clearable /></label>
         <label>עד<DateField value={to} onChange={(v) => { setTo(v); setQuick(""); }} placeholder="סיום" clearable /></label>
       </div>
-      <div className="hg2-mapstat"><span><MapPin size={12} /> {trips.length} נסיעות</span><span>{destCount} יעדים</span></div>
+
+      {/* Top summary — estimated km + fuel cost for ALL trips in range */}
+      <div className="hg2-tripsum">
+        <div className="hg2-sumcard"><Route size={16} /><b>{fmt(totalKm)}</b><span>ק"מ משוערך</span></div>
+        <div className="hg2-sumcard"><Fuel size={16} /><b>₪{fmt(fuelCost)}</b><span>עלות דלק</span></div>
+        <div className="hg2-sumcard"><Truck size={16} /><b>{trips.length}</b><span>נסיעות</span></div>
+        <div className="hg2-sumcard"><MapPin size={16} /><b>{destCount}</b><span>יעדים</span></div>
+      </div>
+      <div className="hg2-fuelrow">
+        <label>צריכה <input type="number" inputMode="decimal" value={kmpl} onChange={(e) => setKmpl(+e.target.value || 0)} /> ק"מ/ל'</label>
+        <label>מחיר <input type="number" inputMode="decimal" value={price} onChange={(e) => setPrice(+e.target.value || 0)} /> ₪/ל'</label>
+      </div>
 
       {Object.keys(agg).length === 0
         ? <div className="hg2-mapfail"><MapPin size={26} /><div>אין נסיעות עם מיקום בטווח</div><p>בחר טווח תאריכים אחר</p></div>
-        : <IsraelMap agg={agg} />}
+        : <SatelliteMap agg={agg} />}
 
       <div className="hg2-secttl" style={{ marginTop: 16 }}><CalendarDays size={15} /> נסיעות לפי תאריך</div>
-      <div className="hg2-list">
-        {byDate.length === 0 && <div className="hg2-empty"><MapPin size={28} /><div>אין נסיעות בטווח</div><p>בחר טווח תאריכים אחר</p></div>}
-        {byDate.map((d) => (
-          <button className="hg2-tripday" key={d.date} onClick={() => setRouteDay(d)}>
-            <div className="hg2-tripday-date">{dmy(d.date)}<ChevronLeft size={15} /></div>
-            <div className="hg2-tripday-locs">{d.items.map(([loc, n], i) => <span key={i} className="hg2-triploc"><MapPin size={11} />{loc}{n > 1 ? ` ×${n}` : ""}</span>)}</div>
-          </button>
+      <div className="hg2-filters">
+        {[["day", "יום"], ["week", "שבוע"], ["month", "חודש"], ["year", "שנה"]].map(([k, l]) => (
+          <button key={k} className={"hg2-fchip" + (groupBy === k ? " on" : "")} onClick={() => setGroupBy(k)}>{l}</button>
         ))}
       </div>
-      <div className="hg2-footnote" style={{ marginTop: 8 }}>גע בנקודה במפה לשם היעד. לחיצה על יום מציגה מסלול נסיעה משוער. היעדים ממוקמים לפי עיר.</div>
+      <div className="hg2-list">
+        {dayStats.length === 0 && <div className="hg2-empty"><MapPin size={28} /><div>אין נסיעות בטווח</div><p>בחר טווח תאריכים אחר</p></div>}
+        {groupBy === "day"
+          ? dayStats.map(dayBtn)
+          : grouped.map((g) => (
+            <div className="hg2-grp" key={g.key}>
+              <button className="hg2-grphead" onClick={() => setOpenG((o) => ({ ...o, [g.key]: !o[g.key] }))}>
+                <span className="hg2-grplbl"><ChevronLeft size={14} style={{ transform: openG[g.key] ? "rotate(-90deg)" : "none", transition: "transform .15s" }} />{g.label}</span>
+                <span className="hg2-grpstat">{fmt(g.km)} ק"מ · ₪{fmt(costOf(g.km))} · {g.trips} נסיעות</span>
+              </button>
+              {openG[g.key] && <div className="hg2-grpdays">{g.days.map(dayBtn)}</div>}
+            </div>
+          ))}
+      </div>
+      <div className="hg2-footnote" style={{ marginTop: 8 }}>הק"מ והעלות הם <b>הערכה</b> — המרחק מחושב לפי קרבה בין היעדים (יציאה וחזרה מהבסיס × מקדם דרך), ועלות הדלק לפי הצריכה והמחיר שהגדרת. גע בנקודה במפה לשם היעד; לחיצה על יום מציגה מסלול.</div>
       {routeDay && <DayRoute day={routeDay} onClose={() => setRouteDay(null)} />}
     </div>
   );
@@ -3504,7 +3649,22 @@ function Styles() {
 .hg2-daterow input{flex:1;background:none;border:none;color:var(--silver);font-family:inherit;font-size:13px;outline:none}
 .hg2-mapstat{display:flex;gap:16px;font-size:12.5px;color:var(--s4);margin-bottom:10px}
 .hg2-mapstat span{display:flex;align-items:center;gap:4px}
-.hg2-mapbox{position:relative;height:300px;border-radius:14px;overflow:hidden;border:1px solid var(--s7);background:#0E141C;z-index:0;isolation:isolate}
+.hg2-tripsum{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:10px}
+.hg2-sumcard{display:flex;flex-direction:column;align-items:center;gap:2px;background:var(--s9);border:1px solid var(--s7);border-radius:12px;padding:11px 8px}
+.hg2-sumcard svg{color:var(--amber)}
+.hg2-sumcard b{font-size:18px;color:var(--silver);font-family:'Rubik',sans-serif}
+.hg2-sumcard span{font-size:11px;color:var(--s4)}
+.hg2-fuelrow{display:flex;gap:10px;margin-bottom:12px}
+.hg2-fuelrow label{flex:1;display:flex;align-items:center;gap:6px;font-size:12px;color:var(--s4);background:var(--s9);border:1px solid var(--s7);border-radius:10px;padding:6px 10px}
+.hg2-fuelrow input{width:54px;background:var(--s8);border:1px solid var(--s7);border-radius:7px;color:var(--silver);font-family:inherit;font-size:13px;padding:4px 6px;text-align:center}
+.hg2-tripday-km{display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--amber);margin-top:5px}
+.hg2-grp{border:1px solid var(--s7);border-radius:12px;margin-bottom:8px;overflow:hidden;background:var(--s9)}
+.hg2-grphead{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;background:none;border:none;color:var(--silver);font-family:inherit;padding:11px 13px;cursor:pointer;text-align:right}
+.hg2-grplbl{display:flex;align-items:center;gap:6px;font-weight:700;font-size:14px}
+.hg2-grpstat{font-size:11px;color:var(--amber);white-space:nowrap}
+.hg2-grpdays{padding:0 8px 8px;display:flex;flex-direction:column;gap:8px}
+.hg2-grpdays .hg2-tripday{background:var(--s8)}
+.hg2-mapbox{position:relative;height:340px;border-radius:14px;overflow:hidden;border:1px solid var(--s7);background:#0E141C;z-index:0;isolation:isolate}
 .hg2-mapbox .leaflet-pane,.hg2-mapbox .leaflet-top,.hg2-mapbox .leaflet-bottom,.hg2-mapbox .leaflet-control{z-index:1!important}
 .hg2-svgmap{position:relative;background:radial-gradient(120% 90% at 50% 0%,#141C28,#0C1118 80%);border:1px solid var(--s7);border-radius:14px;padding:12px;display:flex;justify-content:center;min-height:300px}
 .hg2-svgmap-svg{height:330px;width:auto;max-width:100%;display:block}
