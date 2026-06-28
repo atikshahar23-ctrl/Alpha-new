@@ -174,7 +174,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v56 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v57 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -1895,23 +1895,16 @@ export function mountApp(root: HTMLElement) {
           ctx.fill();
         }
 
-        // Finger extended = how far its TIP sits from its own KNUCKLE (MCP),
-        // measured RELATIVE to the palm length. When a finger curls — in ANY
-        // direction, including folding toward the camera (depth) — its tip collapses
-        // back toward the knuckle, so this 2D distance shrinks. That makes it robust
-        // for fists (a wrist-distance test failed because a fist curls in depth, and
-        // in 2D the tips still looked "far" from the wrist).
-        const d2 = (a: number, b: number) => Math.hypot(lm[a].x - lm[b].x, lm[a].y - lm[b].y);
-        const palm = Math.max(0.0001, d2(0, 9));             // wrist→middle-knuckle length
-        const ext = (tip: number, mcp: number) => d2(tip, mcp) / palm;
-        const eIdx = ext(8, 5), eMid = ext(12, 9), eRng = ext(16, 13), ePky = ext(20, 17);
-        const idxUp = eIdx > 0.62, midUp = eMid > 0.62, rngUp = eRng > 0.6, pkyUp = ePky > 0.5;
+        // Finger up = tip clearly above its PIP joint (held hand pointing up to the
+        // camera, the natural pose). This is the original test that worked great on
+        // phones; the "orientation-independent" distance/curl variants read every
+        // finger as extended on real devices, so only "open palm" ever registered.
+        const fingerUp = (tip: number, pip: number) => lm[tip].y < lm[pip].y - 0.02;
+        const idxUp = fingerUp(8, 6), midUp = fingerUp(12, 10), rngUp = fingerUp(16, 14), pkyUp = fingerUp(20, 18);
         const upCount = [idxUp, midUp, rngUp, pkyUp].filter(Boolean).length;
         const open = upCount >= 3;        // open palm (lenient — 3 of 4 fingers)
-        // Fist = all four tips folded near their knuckles (holistic, so one jittery
-        // finger doesn't spoil it).
-        const fist = (eIdx + eMid + eRng + ePky) / 4 < 0.5;
-        const pointing = idxUp && !midUp && !rngUp;  // index out, middle+ring down → pointer (pinky ignored, easier to hold)
+        const fist = upCount === 0;       // closed fist — no fingers up
+        const pointing = idxUp && !midUp && !rngUp;  // index out, middle+ring down → pointer
         const peace = idxUp && midUp && !rngUp && !pkyUp;  // ✌️ two fingers → scroll
 
         throwCooldownMs = Math.max(0, throwCooldownMs - dt);
