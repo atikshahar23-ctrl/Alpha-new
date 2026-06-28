@@ -179,7 +179,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v77 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v78 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -242,6 +242,10 @@ export function mountApp(root: HTMLElement) {
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M17 11l2 2 4-4"/></svg>
             <span>CRM מכירות · איתי</span>
           </a>
+          <button class="hud-sc" id="hudFleet" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 17h13v-5l-2-4H3z"/><circle cx="7" cy="17.5" r="1.6"/><circle cx="17.5" cy="17.5" r="1.6"/><path d="M16 11h3l2 3v2.5h-3"/></svg>
+            <span>ניהול צי · נסיעות</span>
+          </button>
         </div>
       </div>
 
@@ -2310,9 +2314,48 @@ export function mountApp(root: HTMLElement) {
     el.innerHTML = '<div class="hud-empty">חדשות לא זמינות כרגע</div>';
   }
 
+  // ── Fleet / trips window (add trips, navigate with Waze) ──
+  const escHtml = (s: string) => (s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+  const readTrips = (): any[] => { try { return JSON.parse(localStorage.getItem('hg2:trips') || '[]') || []; } catch { return []; } };
+  const writeTrips = (a: any[]) => { try { localStorage.setItem('hg2:trips', JSON.stringify(a)); } catch {} puterSync.scheduleSync?.(); };
+  const wazeUrl = (to: string) => `https://waze.com/ul?q=${encodeURIComponent(to || '')}&navigate=yes`;
+  function renderFleet() {
+    const trips = readTrips().slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    const totalKm = trips.reduce((s, t) => s + (Number(t.km) || 0), 0);
+    const rows = trips.map((t) => `
+      <div class="fl-row">
+        <div class="fl-mid"><b>${escHtml(t.from || '—')} ← ${escHtml(t.to || '—')}</b><span>${t.date || ''}${t.km ? ` · ${t.km} ק"מ` : ''}${t.note ? ' · ' + escHtml(t.note) : ''}</span></div>
+        ${t.to ? `<a class="fl-waze" href="${wazeUrl(t.to)}" target="_blank" rel="noopener">Waze ↗</a>` : ''}
+        <button class="fl-del" data-id="${t.id}">✕</button>
+      </div>`).join('');
+    $('winBody').innerHTML = `<div class="pad fleet-win">
+      <div class="fl-add">
+        <input id="flFrom" placeholder="מאיפה" dir="rtl"/>
+        <input id="flTo" placeholder="לאן (כתובת / עיר)" dir="rtl"/>
+        <div class="fl-add-row"><input id="flDate" type="date" value="${new Date().toISOString().slice(0, 10)}"/><input id="flKm" type="number" placeholder='ק&quot;מ' dir="ltr"/></div>
+        <button id="flAdd">+ הוסף נסיעה</button>
+      </div>
+      <div class="fl-tot">${trips.length} נסיעות · ${totalKm} ק"מ סה"כ</div>
+      <div class="fl-list">${rows || '<div class="fl-empty">אין נסיעות עדיין — הוסף אחת ונווט ב-Waze בלחיצה</div>'}</div>
+    </div>`;
+    $('winBody').querySelector('#flAdd')?.addEventListener('click', () => {
+      const g = (id: string) => (document.getElementById(id) as HTMLInputElement).value;
+      const to = g('flTo').trim();
+      if (!to) return;
+      const arr = readTrips();
+      arr.unshift({ id: Date.now().toString(36), from: g('flFrom').trim(), to, date: g('flDate'), km: g('flKm'), note: '' });
+      writeTrips(arr); renderFleet();
+    });
+    $('winBody').querySelectorAll('.fl-del').forEach((btn) => btn.addEventListener('click', () => {
+      const id = (btn as HTMLElement).dataset.id; writeTrips(readTrips().filter((t) => t.id !== id)); renderFleet();
+    }));
+  }
+  function openFleet() { openWin('ניהול צי · נסיעות 🚚'); renderFleet(); }
+
   // The HUD "HeavyGuard OS" tile reuses the existing dock handler.
   setTimeout(() => {
     document.getElementById('hudHg')?.addEventListener('click', () => document.getElementById('hgBtn')?.click());
+    document.getElementById('hudFleet')?.addEventListener('click', openFleet);
     renderHud(); renderMarkets(); renderNews();
     setInterval(renderHud, 30000);
     setInterval(renderMarkets, 60000);

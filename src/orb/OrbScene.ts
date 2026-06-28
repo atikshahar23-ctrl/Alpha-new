@@ -1317,6 +1317,7 @@ export const CHARACTER_NAMES = Object.keys(CHARACTER_FILES);
 // recolours the entire backdrop to match the Pokemon (kept dark so the 3D model
 // and UI stay readable). Pairs with the CSS .char-ambient glow + body tint.
 const CHAR_BG: Record<string, number> = {
+  robot:      0x0a0620, // purple space (matches the intro vault video ending)
   pikachu:    0x0c0a04, // electric warm
   charmander: 0x140803, // ember red
   squirtle:   0x04101c, // water blue
@@ -1333,7 +1334,7 @@ const CHAR_BG: Record<string, number> = {
   lugia:      0x081020, // deep-sea silver
   'ho-oh':    0x180e03, // sacred gold
 };
-function charBg(name: string): number { return CHAR_BG[name] ?? 0x0a0806; }
+function charBg(name: string): number { return CHAR_BG[name] ?? 0x0a0620; }
 
 // Per-character ACCENT — the bright colour for the orb's cage / rings / lines.
 // Swapping a Pokemon hue-shifts the whole gold framework to this colour so the

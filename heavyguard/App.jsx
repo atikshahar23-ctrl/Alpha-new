@@ -4,7 +4,7 @@ import {
   Clock, MapPin, Truck, ChevronLeft, CheckCircle2, AlertTriangle, FileSpreadsheet,
   Hash, Wrench, Factory, Tag, DollarSign, Calendar, Phone, User, Timer, Search, Film, Images, Pencil,
   BarChart3, ClipboardList, TrendingUp, Percent, Trophy,
-  Users, Car, Scale, Receipt, Boxes, Fuel, Copy, MessageSquare, Bell, CalendarDays, Circle, CalendarClock, ChevronRight, Minus, Shield, Upload, RotateCcw, Settings, Globe, Wallet, TrendingDown, Link2, Share2, Mail, Target, Building2, FileText, Route,
+  Users, Car, Scale, Receipt, Boxes, Fuel, Copy, MessageSquare, Bell, CalendarDays, Circle, CalendarClock, ChevronRight, Minus, Shield, Upload, RotateCcw, Settings, Globe, Wallet, TrendingDown, Link2, Share2, Mail, Target, Building2, FileText, Route, Navigation,
 } from "lucide-react";
 import BULL_LOGO from './heavyguard-logo.png';
 // xlsx is large (~400KB). Load it on demand only when the user actually
@@ -1474,10 +1474,63 @@ function Vehicle({ index, onBack, showToast }) {
         </div>
       )}
 
-      <div className="hg2-secttl"><MapPin size={15} /> מפת נסיעות</div>
+      <MyTrips showToast={showToast} />
+
+      <div className="hg2-secttl"><MapPin size={15} /> מפת נסיעות (אוטומטי מההתקנות)</div>
       <TripsMap index={index} />
 
       {open && <VehicleModal rec={edit} onClose={() => { setOpen(false); setEdit(null); }} onSave={save} />}
+    </div>
+  );
+}
+
+const wazeLink = (to) => `https://waze.com/ul?q=${encodeURIComponent(to || "")}&navigate=yes`;
+function MyTrips({ showToast }) {
+  const [trips, setTrips] = useState(null);
+  const [open, setOpen] = useState(false);
+  const [edit, setEdit] = useState(null);
+  useEffect(() => { loadArr("hg2:trips").then(setTrips); }, []);
+  const save = (t) => { let next; if (edit) next = trips.map((x) => x.id === t.id ? t : x); else next = [{ ...t, id: uid() }, ...trips]; setTrips(next); saveArr("hg2:trips", next); setOpen(false); setEdit(null); showToast("הנסיעה נשמרה"); };
+  const remove = async (t) => { if (!(await askConfirm("למחוק נסיעה?"))) return; const next = trips.filter((x) => x.id !== t.id); setTrips(next); saveArr("hg2:trips", next); };
+  const totalKm = (trips || []).reduce((s, t) => s + (Number(t.km) || 0), 0);
+  return (<>
+    <div className="hg2-secttl"><Route size={15} /> הנסיעות שלי{trips && trips.length ? ` · ${trips.length}${totalKm ? ` · ${totalKm} ק"מ` : ""}` : ""}
+      <button className="hg2-mini" onClick={() => { setEdit(null); setOpen(true); }}><Plus size={14} /> נסיעה</button>
+    </div>
+    {trips === null ? <div className="hg2-busy">טוען…</div> : (
+      <div className="hg2-list" style={{ marginBottom: 18 }}>
+        {trips.length === 0 && <div className="hg2-empty"><Route size={30} /><div>אין נסיעות עדיין</div><p>הוסף נסיעה — מאיפה, לאן, תאריך — ונווט ב-Waze בלחיצה</p></div>}
+        {trips.slice().sort((a, b) => (b.date || "").localeCompare(a.date || "")).map((t) => (
+          <div className="hg2-crow" key={t.id}>
+            <div className="hg2-crow-ic"><Route size={16} /></div>
+            <div className="hg2-crow-mid"><b>{(t.from || "—") + "  ←  " + (t.to || "—")}</b><span>{dmy(t.date)}{t.km ? ` · ${t.km} ק"מ` : ""}{t.note ? " · " + t.note : ""}</span></div>
+            <div className="hg2-crow-acts">
+              {t.to && <a className="hg2-wa" style={{ background: "#0a2942", borderColor: "#1e6ba8", color: "#3fc6ff" }} href={wazeLink(t.to)} target="_blank" rel="noreferrer" title="נווט ב-Waze"><Navigation size={16} /></a>}
+              <button className="hg2-icbtn2" onClick={() => { setEdit(t); setOpen(true); }}><Pencil size={14} /></button>
+              <button className="hg2-icbtn2 d" onClick={() => remove(t)}><Trash2 size={14} /></button>
+            </div>
+          </div>
+        ))}
+      </div>
+    )}
+    {open && <TripModal trip={edit} onClose={() => { setOpen(false); setEdit(null); }} onSave={save} />}
+  </>);
+}
+function TripModal({ trip, onClose, onSave }) {
+  const [t, setT] = useState(trip || { from: "", to: "", date: todayISO(), km: "", note: "" });
+  return (
+    <div className="hg2-overlay" onClick={onClose}>
+      <div className="hg2-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="hg2-modal-head"><h3>{trip ? "עריכת נסיעה" : "נסיעה חדשה"}</h3><button onClick={onClose}><X size={18} /></button></div>
+        <div className="hg2-form">
+          <Field icon={MapPin} label="מאיפה"><input value={t.from} onChange={(e) => setT({ ...t, from: e.target.value })} placeholder="נקודת מוצא" /></Field>
+          <Field icon={Navigation} label="לאן (כתובת/עיר)"><input value={t.to} onChange={(e) => setT({ ...t, to: e.target.value })} placeholder="יעד — ינווט ב-Waze" /></Field>
+          <Field icon={Calendar} label="תאריך"><DateField value={t.date} onChange={(v) => setT({ ...t, date: v })} /></Field>
+          <Field icon={Route} label={'ק"מ (אופציונלי)'}><input type="number" value={t.km} onChange={(e) => setT({ ...t, km: e.target.value })} placeholder="0" /></Field>
+          <Field icon={Pencil} label="הערה"><input value={t.note} onChange={(e) => setT({ ...t, note: e.target.value })} placeholder="לא חובה" /></Field>
+        </div>
+        <div className="hg2-modal-foot"><button className="hg2-btn ghost" onClick={onClose}>ביטול</button><button className="hg2-btn primary" onClick={() => { if (!(t.to || "").trim()) return; onSave({ ...t, note: (t.note || "").trim() }); }}>שמירה</button></div>
+      </div>
     </div>
   );
 }
