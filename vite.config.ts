@@ -10,6 +10,7 @@ export default defineConfig({
       input: {
         main: resolve(__dirname, 'index.html'),
         heavyguard: resolve(__dirname, 'heavyguard.html'),
+        agent: resolve(__dirname, 'agent.html'),
         widget: resolve(__dirname, 'widget.html'),
         chatwidget: resolve(__dirname, 'chat-widget.html'),
       },
