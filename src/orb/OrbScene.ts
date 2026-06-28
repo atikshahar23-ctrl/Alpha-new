@@ -22,6 +22,9 @@ export interface OrbHandle {
   stopBodyDetection(): void;
   setCharacter(name: string): void;
   throwPokeball(onOpen?: () => void, onDone?: () => void): void;
+  pokeballHold?(nx: number, ny: number): void;
+  pokeballThrow?(onArrive?: () => void): void;
+  pokeballRelease?(): void;
   setCharacterTransform(x: number, y: number, z: number, s: number, px: number, py: number, pz: number): void;
   getCharacterTransform(): CharXform;
   resetCharacterTransform(): void;
@@ -2172,10 +2175,11 @@ function loadAndReplaceBody(
 // character mesh during the throw and reveals the new one when it "opens".
 // Returns a throwPokeball(onOpen,onDone) bound to the given scene group.
 // ============================================================
-function makeThrowPokeball(group: THREE.Group, pikaGroup: THREE.Group, base: string) {
+function makeThrowPokeball(group: THREE.Group, pikaGroup: THREE.Group, base: string, camera?: THREE.Camera) {
   let ball: THREE.Object3D | null = null;
   let loading: Promise<THREE.Object3D | null> | null = null;
   let raf = 0;
+  let holdRaf = 0;
   function ensure(): Promise<THREE.Object3D | null> {
     if (ball) return Promise.resolve(ball);
     if (loading) return loading;
@@ -2199,7 +2203,49 @@ function makeThrowPokeball(group: THREE.Group, pikaGroup: THREE.Group, base: str
       })).catch(() => null);
     return loading;
   }
-  return function throwPokeball(onOpen?: () => void, onDone?: () => void) {
+  // ── Hand grab/throw: project a screen point to a 3D point in front of the orb
+  // so the REAL 3D pokéball can be "held" in the hand and thrown. ──
+  function screenToWorld(nx: number, ny: number): THREE.Vector3 {
+    const cam = camera as THREE.PerspectiveCamera;
+    const v = new THREE.Vector3(nx * 2 - 1, -(ny * 2 - 1), 0.5).unproject(cam);
+    const dir = v.sub(cam.position).normalize();
+    const targetZ = 2.3;                                  // a plane in front of the orb
+    const dist = (targetZ - cam.position.z) / dir.z;
+    return cam.position.clone().add(dir.multiplyScalar(dist));
+  }
+  function hold(nx: number, ny: number) {
+    if (!camera) return;
+    ensure().then((b) => {
+      if (!b) return;
+      cancelAnimationFrame(holdRaf);
+      b.visible = true; b.scale.setScalar(0.95);
+      b.position.copy(screenToWorld(nx, ny));
+      b.rotation.y += 0.06; b.rotation.x = 0.2;
+    });
+  }
+  function release() { if (ball) ball.visible = false; }
+  function throwIt(onArrive?: () => void) {
+    ensure().then((b) => {
+      if (!b || !camera) { onArrive && onArrive(); return; }
+      b.visible = true;
+      const from = b.position.clone();
+      const to = new THREE.Vector3(0, 0, 0);
+      const start = performance.now(); const dur = 440;
+      cancelAnimationFrame(holdRaf);
+      const tick = (now: number) => {
+        const t = Math.min(1, (now - start) / dur);
+        const e = t * t * (3 - 2 * t);
+        b.position.lerpVectors(from, to, e);
+        b.scale.setScalar(0.95 * (1 - e) + 0.2 * e);
+        b.rotation.y += 0.45; b.rotation.x += 0.22;
+        if (t < 1) holdRaf = requestAnimationFrame(tick);
+        else { b.visible = false; try { onArrive && onArrive(); } catch {} }
+      };
+      holdRaf = requestAnimationFrame(tick);
+    });
+  }
+
+  const throwPokeball = function throwPokeball(onOpen?: () => void, onDone?: () => void) {
     let opened = false, doneF = false;
     const fo = () => { if (!opened) { opened = true; pikaGroup.visible = true; try { onOpen && onOpen(); } catch {} } };
     const fd = () => { if (!doneF) { doneF = true; if (ball) ball.visible = false; try { onDone && onDone(); } catch {} } };
@@ -2229,6 +2275,7 @@ function makeThrowPokeball(group: THREE.Group, pikaGroup: THREE.Group, base: str
       raf = requestAnimationFrame(tick);
     });
   };
+  return Object.assign(throwPokeball, { hold, throwIt, release });
 }
 
 // ============================================================
@@ -2344,7 +2391,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   let mobileCurrentModel: THREE.Object3D | null = null;
   let mobPFX: PFXState | null = null;
   loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/', 'pikachu', (m) => { mobileCurrentModel = m; });
-  const mobileThrowPokeball = makeThrowPokeball(group, pikaGroup, import.meta.env.BASE_URL || '/');
+  const mobileThrowPokeball = makeThrowPokeball(group, pikaGroup, import.meta.env.BASE_URL || '/', camera);
 
   // ────────────────────────────────────────────
   // ORBITAL RINGS — gold halo, champagne, rose
@@ -2835,6 +2882,9 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
       });
     },
     throwPokeball: mobileThrowPokeball,
+    pokeballHold: (nx: number, ny: number) => mobileThrowPokeball.hold(nx, ny),
+    pokeballThrow: (onArrive?: () => void) => mobileThrowPokeball.throwIt(onArrive),
+    pokeballRelease: () => mobileThrowPokeball.release(),
     setPerfMode(on: boolean) { perfFast = on; resize(); },
     getCharacterTransform() { return getCharXform(mobileCurrentChar); },
     setCharacterTransform(x: number, y: number, z: number, s: number, px: number, py: number, pz: number) {
@@ -3003,7 +3053,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   let deskCurrentModel: THREE.Object3D | null = null;
   let deskPFX: PFXState | null = null;
   loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/', 'pikachu', (m) => { deskCurrentModel = m; });
-  const deskThrowPokeball = makeThrowPokeball(group, pikaGroup, import.meta.env.BASE_URL || '/');
+  const deskThrowPokeball = makeThrowPokeball(group, pikaGroup, import.meta.env.BASE_URL || '/', camera);
 
 
   // ────────────────────────────────────────────
@@ -3929,6 +3979,9 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       });
     },
     throwPokeball: deskThrowPokeball,
+    pokeballHold: (nx: number, ny: number) => deskThrowPokeball.hold(nx, ny),
+    pokeballThrow: (onArrive?: () => void) => deskThrowPokeball.throwIt(onArrive),
+    pokeballRelease: () => deskThrowPokeball.release(),
     setPerfMode(on: boolean) { perfFast = on; resize(); },
     getCharacterTransform() { return getCharXform(deskCurrentChar); },
     setCharacterTransform(x: number, y: number, z: number, s: number, px: number, py: number, pz: number) {

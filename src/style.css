@@ -295,20 +295,21 @@ body[data-char="ho-oh"] .char-ambient {
   width:0; height:0; --p:0;
 }
 .laser-cursor[hidden]{ display:none; }
+/* Touch-style fingertip dot (gold) — presses buttons like a touchscreen, no laser */
 .laser-cursor .lc-dot{
-  position:absolute; left:-7px; top:-7px; width:14px; height:14px; border-radius:50%;
-  background:radial-gradient(circle, #ff5a5a 0%, #ff1a1a 55%, rgba(255,0,0,0) 75%);
-  box-shadow:0 0 14px 4px rgba(255,40,40,.85), 0 0 34px 10px rgba(255,0,0,.45);
+  position:absolute; left:-9px; top:-9px; width:18px; height:18px; border-radius:50%;
+  background:radial-gradient(circle, rgba(255,245,210,.95) 0%, rgba(228,188,99,.85) 50%, rgba(228,188,99,0) 75%);
+  box-shadow:0 0 14px 4px rgba(228,188,99,.6), 0 0 30px 10px rgba(228,188,99,.3);
 }
-/* dwell-progress ring (conic) around the dot */
+/* dwell-to-press ring (conic) around the dot */
 .laser-cursor .lc-ring{
   position:absolute; left:-22px; top:-22px; width:44px; height:44px; border-radius:50%;
-  background:conic-gradient(#ff3b3b calc(var(--p)*360deg), rgba(255,60,60,.12) 0);
+  background:conic-gradient(#F7E8C0 calc(var(--p)*360deg), rgba(228,188,99,.12) 0);
   -webkit-mask:radial-gradient(farthest-side, transparent 62%, #000 64%);
           mask:radial-gradient(farthest-side, transparent 62%, #000 64%);
   opacity:.9;
 }
-.laser-cursor.lc-over .lc-dot{ box-shadow:0 0 18px 6px rgba(255,60,60,.95), 0 0 40px 14px rgba(255,0,0,.5); }
+.laser-cursor.lc-over .lc-dot{ box-shadow:0 0 18px 6px rgba(247,232,192,.95), 0 0 40px 14px rgba(228,188,99,.5); }
 .laser-cursor.lc-fire .lc-dot{ animation:lc-fire .3s ease; }
 @keyframes lc-fire{ 0%{ transform:scale(1);} 50%{ transform:scale(2.4); } 100%{ transform:scale(1);} }
 

@@ -179,7 +179,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v76 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v77 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -1743,6 +1743,7 @@ export function mountApp(root: HTMLElement) {
     const PALM_HOLD_THRESHOLD = 1100;  // hold open palm ~1.1s to release a Pokémon
     const FIST_HOLD_THRESHOLD = 650;   // hold a fist ~0.65s to summon (no throw needed)
     let fistHoldMs = 0;                // how long a confirmed fist has been held
+    let ballHeldMs = 0, ballPX = 0, ballPY = 0;   // grabbed-pokéball state (grab→throw)
     const THROW_COOLDOWN = 2200;
 
     function gestureStatus(msg: string) {
@@ -1980,9 +1981,10 @@ export function mountApp(root: HTMLElement) {
 
         const noHand = () => {
           gestureStatus('הרם יד מול המצלמה');
-          palmHoldMs = 0; fistHoldMs = 0; prevScale = 0; handPresentMs = 0;
+          palmHoldMs = 0; fistHoldMs = 0; ballHeldMs = 0; prevScale = 0; handPresentMs = 0;
           rawPrev = ''; rawStableMs = 0; confirmedGesture = 'none';
           oePrev = null; oeDPrev = null;   // reset smoothing so re-acquire snaps in
+          orb.pokeballRelease?.();
           hideLaser();
         };
         if (!results.multiHandLandmarks?.length) { noHand(); return; }
@@ -2099,28 +2101,30 @@ export function mountApp(root: HTMLElement) {
           hideLaser();
           if (pinchActive) { pinchActive = false; pinchStartXf = null; }
           if (confirmedGesture === 'fist') {
-            // ✊ HOLD a fist briefly to summon — no throw/lunge needed. The fist is
-            // already a confirmed pose (dead-zone classifier + STABLE_MS debounce),
-            // and a progress ring must fill before it fires, so a momentary or
-            // accidental fist can't trigger a summon.
+            // ✊ GRAB the REAL 3D pokéball — it appears in your fist and follows the
+            // hand inside the orb. FLICK it (fast hand motion) — or just hold — to
+            // THROW it at the orb and summon.
             palmHoldMs = 0;
             if (throwCooldownMs <= 0) {
               fistHoldMs += dt;
-              const progress = Math.min(1, fistHoldMs / FIST_HOLD_THRESHOLD);
-              gestureStatus(`✊ החזק לזימון… ${Math.round(progress * 100)}%`);
-              octx.beginPath(); octx.arc(cx2, cy2, 42, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
-              octx.strokeStyle = `rgba(255,90,90,${0.45 + progress * 0.55})`; octx.lineWidth = 6; octx.stroke();
-              if (fistHoldMs >= FIST_HOLD_THRESHOLD) {
-                fistHoldMs = 0;
-                throwCooldownMs = THROW_COOLDOWN;
-                suppressPalmMs = 1100;
-                gestureStatus('🚀 זימון! בחר פוקימון');
-                (window as any).openSummonDock?.();
+              if (ballHeldMs === 0) { ballPX = cx2; ballPY = cy2; }
+              orb.pokeballHold?.(lm[9].x, lm[9].y);
+              ballHeldMs += dt;
+              const vx = cx2 - ballPX, vy = cy2 - ballPY; ballPX = cx2; ballPY = cy2;
+              const speed = (Math.hypot(vx, vy) / Math.max(1, dt)) * 16;   // px per ~frame
+              const flick = ballHeldMs > 140 && speed > 26;
+              if (flick || fistHoldMs >= FIST_HOLD_THRESHOLD) {
+                fistHoldMs = 0; ballHeldMs = 0;
+                throwCooldownMs = THROW_COOLDOWN; suppressPalmMs = 1100;
+                gestureStatus('🚀 זריקה! בחר פוקימון');
+                orb.pokeballThrow?.(() => (window as any).openSummonDock?.());
                 setTimeout(() => { if (gestureActive) gestureStatus('זיהוי פעיל'); }, 2500);
+              } else {
+                gestureStatus('✊ אוחז בכדור — תזרוק לכיוון הכדור לזימון');
               }
             }
           } else {
-            fistHoldMs = 0;
+            fistHoldMs = 0; ballHeldMs = 0; orb.pokeballRelease?.();
             if (!open) gestureStatus('זיהוי פעיל');
           }
         }
