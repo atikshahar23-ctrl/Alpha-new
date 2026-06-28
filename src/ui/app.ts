@@ -179,7 +179,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v61 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v62 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -5146,8 +5146,9 @@ export function mountApp(root: HTMLElement) {
     }
     setTimeout(drawNeural, 66);
   }
-  initNeural();
-  drawNeural();
+  const perfLite = document.documentElement.classList.contains('perf-lite');
+  if (!perfLite) { initNeural(); drawNeural(); }
+  else { neuralCanvas.style.display = 'none'; }
 
   // --- Wave Canvas ---
   const waveCanvas = $<HTMLCanvasElement>('waveCanvas');
@@ -5182,8 +5183,8 @@ export function mountApp(root: HTMLElement) {
     }
     setTimeout(drawWave, 66);
   }
-  initWave();
-  drawWave();
+  if (!perfLite) { initWave(); drawWave(); }
+  else { waveCanvas.style.display = 'none'; }
 
   // --- Metric Bars Animation ---
   setInterval(() => {

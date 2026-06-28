@@ -2921,3 +2921,47 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
   }
   body::after { display: none; } /* stop scanline animation */
 }
+
+/* ============================================================
+   PERFORMANCE-LITE MODE
+   backdrop-filter: blur() over a live-animating WebGL canvas is
+   re-computed every frame by the compositor. On iOS Safari (iPad
+   included) this single feature can halve the framerate. perf-lite
+   strips every blur and gives the glass panels solid-enough
+   backgrounds so they stay readable, then trims a couple of always-on
+   2D canvas loops. Toggled from JS for touch/tablet devices and when
+   Fast or Mobile mode is selected.
+   ============================================================ */
+/* NOTE: two rules with deliberately different selector ordering. The CSS
+   minifier merges identical-value prefix pairs and would otherwise drop the
+   unprefixed property — but Safari 18+ (new iPads) honours the unprefixed
+   `backdrop-filter`, so both must survive into the build. */
+html.perf-lite *,
+html.perf-lite *::before,
+html.perf-lite *::after {
+  -webkit-backdrop-filter: none !important;
+}
+html.perf-lite *,
+html.perf-lite *::after,
+html.perf-lite *::before {
+  backdrop-filter: none !important;
+}
+/* Keep panels legible without the blur behind them. */
+html.perf-lite .left-panel,
+html.perf-lite .right-panel { background: linear-gradient(168deg, rgba(15,13,9,.94) 0%, rgba(9,7,5,.96) 100%) !important; }
+html.perf-lite .dock,
+html.perf-lite .setup-card,
+html.perf-lite .overlay .setup,
+html.perf-lite .modal,
+html.perf-lite .sheet,
+html.perf-lite .menu,
+html.perf-lite .popover,
+html.perf-lite .calendar-pop,
+html.perf-lite .chip { background-color: rgba(14,12,8,.95) !important; }
+html.perf-lite .overlay { background: rgba(6,5,4,.86) !important; }
+/* Compositing layers that no longer earn their keep without blur. */
+html.perf-lite .left-panel,
+html.perf-lite .right-panel,
+html.perf-lite .dock,
+html.perf-lite .topL,
+html.perf-lite .topR { will-change: auto !important; transform: none !important; }

@@ -2501,11 +2501,11 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   function frame(now: number) {
     raf = requestAnimationFrame(frame);
     if (document.hidden || document.body.classList.contains('bg-paused')) return;
-    // Fast mode throttles to ~45fps to spare the GPU; normal mode runs at the
-    // display's native refresh (no 30fps cap) — that headroom is what makes the
-    // motion read as smooth on 60/120Hz screens.
-    const minGap = perfFast ? 22 : 0;
-    if (minGap && now - lastFrame < minGap) return;
+    // Always render at the display's native refresh (60/120Hz) — no fps cap.
+    // A hard cap (the old Fast-mode 45fps throttle) reads as "low framerate" on
+    // ProMotion iPads; instead we shed *cost per frame* via perfFast + the
+    // adaptive qTier (post-fx off, then lower resolution) and let the rAF run
+    // free, which is what actually makes motion feel smooth.
     // Frame-rate-independent timing: advance by *real* elapsed seconds (clamped so a
     // backgrounded tab or GC pause can't make the scene leap). This also restores the
     // authored cadence — "hop every ~8s", blinks, etc. — which the old fixed 0.016
@@ -3504,11 +3504,11 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   function frame(now: number) {
     raf = requestAnimationFrame(frame);
     if (document.hidden || document.body.classList.contains('bg-paused')) return;
-    // Fast mode throttles to ~45fps to spare the GPU; normal mode runs at the
-    // display's native refresh (no 30fps cap) — that headroom is what makes the
-    // motion read as smooth on 60/120Hz screens.
-    const minGap = perfFast ? 22 : 0;
-    if (minGap && now - lastFrame < minGap) return;
+    // Always render at the display's native refresh (60/120Hz) — no fps cap.
+    // A hard cap (the old Fast-mode 45fps throttle) reads as "low framerate" on
+    // ProMotion iPads; instead we shed *cost per frame* via perfFast + the
+    // adaptive qTier (post-fx off, then lower resolution) and let the rAF run
+    // free, which is what actually makes motion feel smooth.
     // Frame-rate-independent timing: advance by *real* elapsed seconds (clamped so a
     // backgrounded tab or GC pause can't make the scene leap). This also restores the
     // authored cadence — "hop every ~8s", blinks, etc. — which the old fixed 0.016
