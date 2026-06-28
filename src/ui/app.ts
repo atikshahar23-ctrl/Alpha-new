@@ -179,7 +179,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v67 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v68 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -2816,6 +2816,12 @@ export function mountApp(root: HTMLElement) {
     unlockCharacterAudio();
     setCharacterVolume(state.pikaVolume);
     voice.charVoice = CHAR_TTS[id] || null;   // colour the assistant's speech
+    if (id === 'none') {
+      // No character → no cries at all.
+      setPikaEnabled(false);
+      stopCharacterVoice();
+      return;
+    }
     if (id === 'pikachu') {
       stopCharacterVoice();
       setActiveCharacter('pikachu');
@@ -2833,13 +2839,11 @@ export function mountApp(root: HTMLElement) {
   }
 
   // Apply the saved character on startup (if not the default Pikachu).
-  const savedChar = localStorage.getItem(MAIN_CHAR_KEY);
-  if (savedChar && savedChar !== 'pikachu') {
-    document.body.dataset.char = savedChar;
-    setTimeout(() => { orb.setCharacter(savedChar); applyCharacterVoice(savedChar); }, 1200);
-  } else {
-    document.body.dataset.char = 'pikachu';
-  }
+  // Default: NO Pokémon on a fresh open (empty orb, ready for the holographic
+  // figure). A user who explicitly picked a character keeps their choice.
+  const savedChar = localStorage.getItem(MAIN_CHAR_KEY) || 'none';
+  document.body.dataset.char = savedChar;
+  setTimeout(() => { orb.setCharacter(savedChar); applyCharacterVoice(savedChar); }, 1200);
 
   // ── Animated main-character swap (red-laser dispel + pokeball summon) ──
   // Plays over the orb on the main screen: a red laser strikes the current

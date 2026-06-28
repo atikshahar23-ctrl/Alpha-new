@@ -2754,6 +2754,12 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
       stopCry();
       disposeParticles(mobPFX, scene); mobPFX = null;
       mobileCurrentChar = name;
+      if (name === 'none') {
+        pikaGroup.visible = false;
+        renderer.setClearColor(charBg('none'), 1);
+        return;
+      }
+      pikaGroup.visible = true;
       renderer.setClearColor(charBg(name), 1);
       mobApplyAccent(name);
       mobPFX = createParticles(scene, name, true);
@@ -3839,6 +3845,14 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       stopCry();
       disposeParticles(deskPFX, scene); deskPFX = null;
       deskCurrentChar = name;
+      if (name === 'none') {
+        // No character — hide the model entirely (default state; makes room for the
+        // upcoming holographic figure). Keep a neutral background.
+        pikaGroup.visible = false;
+        renderer.setClearColor(charBg('none'), 1);
+        return;
+      }
+      pikaGroup.visible = true;
       renderer.setClearColor(charBg(name), 1);
       deskApplyAccent(name);
       deskPFX = createParticles(scene, name, false);
