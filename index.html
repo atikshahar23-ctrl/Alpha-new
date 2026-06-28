@@ -56,8 +56,8 @@
     /* keep EVERYTHING out until the intro completes — nothing shows before reveal */
     html.booting #app{ opacity:0 !important; }
     html.booting .welcome-overlay{ opacity:0 !important; pointer-events:none !important; }
-    body.revealed .app{ animation: app-in 1s ease both; }
-    @keyframes app-in{ from{opacity:0;transform:translateY(10px) scale(.99)} to{opacity:1;transform:none} }
+    body.revealed .app{ animation: app-in .9s ease both; }
+    @keyframes app-in{ from{opacity:0} to{opacity:1} }   /* opacity only — no layout shift */
     #introOverlay{position:fixed;inset:0;z-index:99999;background:#000;overflow:hidden;transition:opacity .6s ease,transform .7s ease}
     #introVid{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000;transition:opacity .5s ease}
     /* face scan */
@@ -76,11 +76,10 @@
     .grant-title{color:#fff;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:21px;letter-spacing:1px;text-shadow:0 0 16px rgba(228,188,99,.6)}
     .grant-sub{color:#E4BC63;font-size:13px;letter-spacing:5px}
     /* dimension entry: white warp flash + overlay zoom */
-    .intro-flash{position:absolute;inset:0;z-index:4;background:radial-gradient(circle,#fff,rgba(247,232,192,.45) 38%,transparent 70%);opacity:0;pointer-events:none}
-    #introOverlay.entering .intro-flash{animation:flash-warp .75s ease forwards}
-    @keyframes flash-warp{0%{opacity:0;transform:scale(.15)}45%{opacity:1}100%{opacity:0;transform:scale(3.2)}}
+    .intro-flash{position:absolute;inset:0;z-index:4;background:radial-gradient(circle,rgba(247,232,192,.55),rgba(228,188,99,.18) 40%,transparent 68%);opacity:0;pointer-events:none}
+    #introOverlay.entering .intro-flash{animation:flash-warp .6s ease forwards}
+    @keyframes flash-warp{0%{opacity:0;transform:scale(.5)}45%{opacity:.65}100%{opacity:0;transform:scale(1.6)}}
     #introOverlay.entering #introVid,#introOverlay.entering .intro-grant{opacity:0}
-    #introOverlay.entering{transform:scale(1.12)}
     #introOverlay.gone{opacity:0}
     #introSkip{position:absolute;bottom:max(22px,env(safe-area-inset-bottom));right:22px;z-index:5;
       background:rgba(8,8,10,.6);border:1px solid rgba(228,188,99,.4);color:#F7E8C0;

@@ -179,7 +179,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v71 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v72 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -204,8 +204,8 @@ export function mountApp(root: HTMLElement) {
           <div class="hud-core-tag">ALPHA CORE · ONLINE</div>
         </div>
 
-        <!-- Heavy Guard data cards (left column — replaces the old stats panel) -->
-        <div class="hud-col">
+        <!-- Left column — Heavy Guard data -->
+        <div class="hud-col left">
           <section class="hud-card" id="hudOps">
             <div class="hud-card-h"><span>GLOBAL OPERATIONS</span><i></i></div>
             <div class="hud-card-body">טוען…</div>
@@ -213,6 +213,18 @@ export function mountApp(root: HTMLElement) {
           <section class="hud-card" id="hudPipe">
             <div class="hud-card-h"><span>CONTRACTOR PIPELINE</span><i></i></div>
             <div class="hud-card-body">טוען…</div>
+          </section>
+        </div>
+
+        <!-- Right column — live markets + Israel news -->
+        <div class="hud-col right">
+          <section class="hud-card" id="hudMarkets">
+            <div class="hud-card-h"><span>MARKETS · שוק</span><i></i></div>
+            <div class="hud-card-body">טוען שווקים…</div>
+          </section>
+          <section class="hud-card" id="hudNews">
+            <div class="hud-card-h"><span>חדשות · ישראל</span><i></i></div>
+            <div class="hud-card-body">טוען חדשות…</div>
           </section>
         </div>
 
@@ -2238,11 +2250,63 @@ export function mountApp(root: HTMLElement) {
     }
   }
   const BIZ_TAG = 'Heavy Guard · נתוני שטח חיים';
+
+  // ── Live markets panel (Bitcoin, S&P500, NASDAQ, Gold, ETH) ──
+  async function renderMarkets() {
+    const el = document.querySelector('#hudMarkets .hud-card-body');
+    if (!el) return;
+    const fmt = (n: number) => n >= 1000 ? Math.round(n).toLocaleString('en-US') : n.toLocaleString('en-US', { maximumFractionDigits: 2 });
+    const rows: { name: string; price: string; chg: number }[] = [];
+    // Crypto — CoinGecko (free, CORS-friendly, no key)
+    try {
+      const r = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=usd&include_24hr_change=true');
+      const d = await r.json();
+      if (d.bitcoin) rows.push({ name: 'Bitcoin', price: '$' + fmt(d.bitcoin.usd), chg: d.bitcoin.usd_24h_change || 0 });
+      if (d.ethereum) rows.push({ name: 'Ethereum', price: '$' + fmt(d.ethereum.usd), chg: d.ethereum.usd_24h_change || 0 });
+    } catch {}
+    // Indices / gold — Yahoo Finance (best-effort; may be CORS-blocked on some networks)
+    for (const [sym, name] of [['%5EGSPC', 'S&P 500'], ['%5EIXIC', 'NASDAQ'], ['GC%3DF', 'זהב']]) {
+      try {
+        const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=2d`);
+        const d = await r.json();
+        const m = d.chart.result[0].meta;
+        const price = m.regularMarketPrice;
+        const prev = m.chartPreviousClose ?? m.previousClose ?? price;
+        rows.push({ name, price: fmt(price), chg: prev ? ((price - prev) / prev) * 100 : 0 });
+      } catch {}
+    }
+    el.innerHTML = rows.length === 0
+      ? '<div class="hud-empty">שווקים לא זמינים כרגע</div>'
+      : rows.map((r) => {
+        const up = r.chg >= 0; const c = up ? '#3FD79A' : '#FF5C50';
+        return `<div class="mk-row"><span class="mk-name">${r.name}</span><span class="mk-price">${r.price}</span><span class="mk-chg" style="color:${c}">${up ? '▲' : '▼'}${Math.abs(r.chg).toFixed(2)}%</span></div>`;
+      }).join('');
+  }
+
+  // ── Israel news panel (RSS via rss2json, CORS-friendly) ──
+  async function renderNews() {
+    const el = document.querySelector('#hudNews .hud-card-body');
+    if (!el) return;
+    try {
+      const rss = encodeURIComponent('https://www.ynet.co.il/Integration/StoryRss2.xml');
+      const r = await fetch('https://api.rss2json.com/v1/api.json?count=6&rss_url=' + rss);
+      const d = await r.json();
+      if (d.status === 'ok' && d.items && d.items.length) {
+        el.innerHTML = d.items.slice(0, 6).map((it: any) =>
+          `<a class="nw-row" href="${it.link}" target="_blank" rel="noopener"><span class="nw-dot"></span><span class="nw-t">${(it.title || '').replace(/</g, '&lt;')}</span></a>`).join('');
+        return;
+      }
+    } catch {}
+    el.innerHTML = '<div class="hud-empty">חדשות לא זמינות כרגע</div>';
+  }
+
   // The HUD "HeavyGuard OS" tile reuses the existing dock handler.
   setTimeout(() => {
     document.getElementById('hudHg')?.addEventListener('click', () => document.getElementById('hgBtn')?.click());
-    renderHud();
+    renderHud(); renderMarkets(); renderNews();
     setInterval(renderHud, 30000);
+    setInterval(renderMarkets, 60000);
+    setInterval(renderNews, 300000);
   }, 300);
 
   async function hgSearchLicense(query: string) {
