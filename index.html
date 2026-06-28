@@ -50,6 +50,22 @@
       <div class="grant-sub">ALPHA · נכנס למערכת</div>
     </div>
     <div class="intro-flash"></div>
+    <div class="intro-vault" aria-hidden="true">
+      <svg viewBox="0 0 400 400">
+        <circle class="v-ring v-outer" cx="200" cy="200" r="186"/>
+        <circle class="v-ring v-teeth" cx="200" cy="200" r="170"/>
+        <circle class="v-ring v-mid" cx="200" cy="200" r="138"/>
+        <g class="v-spokes">
+          <line x1="200" y1="58" x2="200" y2="122"/><line x1="200" y1="278" x2="200" y2="342"/>
+          <line x1="58" y1="200" x2="122" y2="200"/><line x1="278" y1="200" x2="342" y2="200"/>
+          <line x1="101" y1="101" x2="146" y2="146"/><line x1="254" y1="254" x2="299" y2="299"/>
+          <line x1="299" y1="101" x2="254" y2="146"/><line x1="101" y1="299" x2="146" y2="254"/>
+        </g>
+        <circle class="v-core" cx="200" cy="200" r="92"/>
+        <circle class="v-core2" cx="200" cy="200" r="70"/>
+      </svg>
+      <div class="v-text">נכנס למערכת…</div>
+    </div>
     <button id="introSkip" type="button">דלג ⏭</button>
   </div>
   <style>
@@ -81,31 +97,54 @@
     @keyframes flash-warp{0%{opacity:0;transform:scale(.5)}45%{opacity:.65}100%{opacity:0;transform:scale(1.6)}}
     #introOverlay.entering #introVid,#introOverlay.entering .intro-grant{opacity:0}
     #introOverlay.gone{opacity:0}
+    /* ── Vault door: spinning gear rings + blue LED, then zoom inside ── */
+    .intro-vault{position:absolute;inset:0;z-index:4;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;opacity:0;transition:opacity .45s ease;pointer-events:none}
+    #introOverlay.vaulting .intro-vault{opacity:1}
+    .intro-vault svg{width:min(74vh,560px);height:min(74vh,560px);filter:drop-shadow(0 0 26px rgba(63,180,255,.55))}
+    .v-ring{fill:none}
+    .v-outer{stroke:#1e4a6b;stroke-width:22}
+    .v-teeth{stroke:#3fb8ff;stroke-width:16;stroke-dasharray:5 16;opacity:.88}
+    .v-mid{stroke:#7fd8ff;stroke-width:2;stroke-dasharray:3 10;opacity:.7}
+    .v-core{fill:rgba(8,26,44,.5);stroke:#3fb8ff;stroke-width:3}
+    .v-core2{fill:none;stroke:rgba(127,216,255,.6);stroke-width:1.5}
+    .v-spokes line{stroke:#3fb8ff;stroke-width:3;opacity:.65}
+    .v-teeth,.v-mid,.v-spokes{transform-box:fill-box;transform-origin:center}
+    #introOverlay.vaulting .v-teeth{animation:v-spin 5s linear infinite}
+    #introOverlay.vaulting .v-mid{animation:v-spin 3.4s linear infinite reverse}
+    #introOverlay.vaulting .v-spokes{animation:v-spin 7s linear infinite}
+    @keyframes v-spin{to{transform:rotate(360deg)}}
+    .v-text{color:#9fdcff;font-family:'Space Grotesk',monospace,sans-serif;letter-spacing:5px;font-size:14px;text-shadow:0 0 12px rgba(63,180,255,.7)}
+    /* open: camera moves inside — the whole vault zooms toward you + fades, revealing the panels */
+    #introOverlay.vaulting-open{transform:scale(3.6);opacity:0;transition:transform 1.1s cubic-bezier(.6,0,.4,1),opacity 1.1s ease-in}
     #introSkip{position:absolute;bottom:max(22px,env(safe-area-inset-bottom));right:22px;z-index:5;
       background:rgba(8,8,10,.6);border:1px solid rgba(228,188,99,.4);color:#F7E8C0;
       padding:8px 16px;border-radius:999px;font-family:Assistant,system-ui,sans-serif;font-size:14px;cursor:pointer}
-    #introOverlay.scanning #introSkip,#introOverlay.granted #introSkip,#introOverlay.entering #introSkip{opacity:0;pointer-events:none}
+    #introOverlay.scanning #introSkip,#introOverlay.granted #introSkip,#introOverlay.vaulting #introSkip{opacity:0;pointer-events:none}
   </style>
   <script>
     (function(){
       var ov=document.getElementById('introOverlay'); if(!ov) return;
       document.documentElement.classList.add('booting');   // hide app + welcome until reveal
       var vid=document.getElementById('introVid'); var scanTxt=document.getElementById('scanTxt'); var done=false;
-      function reveal(){
+      function revealApp(){
         document.documentElement.classList.remove('booting');
         document.body.classList.add('revealed');   // panels animate in — only now
-        ov.classList.add('gone');
-        setTimeout(function(){ ov.parentNode && ov.parentNode.removeChild(ov); }, 750);
       }
-      function sequence(){            // video finished → scan → granted → enter → reveal
+      function removeOverlay(){
+        ov.classList.add('gone');
+        setTimeout(function(){ ov.parentNode && ov.parentNode.removeChild(ov); }, 800);
+      }
+      // video → face scan → ACCESS GRANTED → vault door opening (camera inside) → panels
+      function sequence(){
         if(done) return; done=true;
         ov.classList.add('scanning');
         setTimeout(function(){ if(scanTxt) scanTxt.textContent='מזהה פנים…'; }, 550);
         setTimeout(function(){ ov.classList.remove('scanning'); ov.classList.add('granted'); }, 1350);
-        setTimeout(function(){ ov.classList.add('entering'); }, 2650);   // dimension warp
-        setTimeout(reveal, 3250);                                        // panels appear
+        setTimeout(function(){ ov.classList.remove('granted'); ov.classList.add('vaulting'); }, 2650);   // vault appears + spins
+        setTimeout(function(){ revealApp(); ov.classList.add('vaulting-open'); }, 4100);                 // zoom inside, app fades in behind
+        setTimeout(removeOverlay, 5300);
       }
-      function skip(){ if(done) return; done=true; reveal(); }
+      function skip(){ if(done) return; done=true; revealApp(); removeOverlay(); }
       document.getElementById('introSkip').addEventListener('click', skip);
       if(vid){
         vid.addEventListener('ended', sequence);

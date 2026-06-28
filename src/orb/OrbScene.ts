@@ -2016,11 +2016,18 @@ function loadAndReplaceBody(
                 }
               }
               else if (character === 'robot') {
-                // Metallic robot — brushed steel with a faint cool glow; no sprite.
-                sm.color.setRGB(0.60, 0.65, 0.74);
-                sm.metalness = 0.85; sm.roughness = 0.42;
-                if (sm.emissive) sm.emissive.setRGB(0.03, 0.06, 0.10);
-                (sm as any).envMapIntensity = 1.1;
+                // The original white/black robot lost its textures in conversion, so
+                // re-assign by material: the large shell → white, accents → black.
+                const nm = (m.name || '').toLowerCase();
+                if (nm.indexOf('001') >= 0 || nm.indexOf('002') >= 0) {
+                  sm.color.setRGB(0.10, 0.11, 0.14);   // black accents
+                  sm.metalness = 0.5; sm.roughness = 0.5;
+                } else {
+                  sm.color.setRGB(0.94, 0.95, 0.97);   // white shell
+                  sm.metalness = 0.18; sm.roughness = 0.42;
+                }
+                if (sm.emissive) sm.emissive.setRGB(0, 0, 0);
+                (sm as any).envMapIntensity = 1.0;
                 sm.needsUpdate = true;
               }
               else if (sm.color) {
@@ -2118,6 +2125,26 @@ function loadAndReplaceBody(
         // Apply stored user transform (scale multiplier + position offset on top).
         model.scale.setScalar(s * xf.s);
         model.position.set(-bbCenter.x * s + xf.px, -bbCenter.y * s + xf.py, -bbCenter.z * s + xf.pz);
+
+        // Robot: the eyes were a (lost) texture, so add two neon-blue emissive eye
+        // spheres at the front-top of the head (camera looks down -z, so +z faces us).
+        if (character === 'robot') {
+          model.updateMatrixWorld(true);
+          const wbb = new THREE.Box3().setFromObject(model);
+          const wsz = wbb.getSize(new THREE.Vector3());
+          const eyeR = Math.max(0.035, wsz.y * 0.045);
+          const eyeMat = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: new THREE.Color(0x18a8ff), emissiveIntensity: 3.2, toneMapped: false, roughness: 0.2, metalness: 0 });
+          const cxw = (wbb.min.x + wbb.max.x) / 2;
+          const eyeY = wbb.max.y - wsz.y * 0.17;
+          const eyeZ = wbb.max.z;
+          for (const sgn of [-1, 1]) {
+            const eye = new THREE.Mesh(new THREE.SphereGeometry(eyeR, 18, 18), eyeMat);
+            const wp = new THREE.Vector3(cxw + sgn * wsz.x * 0.12, eyeY, eyeZ);
+            model.worldToLocal(wp);
+            eye.position.copy(wp);
+            model.add(eye);
+          }
+        }
 
         // Baked animation (e.g., the rigged robot) — drive it with a mixer that
         // the render loop updates. Stash on the group so the loop can find it.

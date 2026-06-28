@@ -179,7 +179,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v75 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v76 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -1938,23 +1938,20 @@ export function mountApp(root: HTMLElement) {
       function drawHand(hand: any[], W: number, H: number, primary: boolean) {
         const PX = (i: number) => hand[i].x * W, PY = (i: number) => hand[i].y * H;
         const palmR = Math.max(18, Math.hypot(PX(0) - PX(9), PY(0) - PY(9)));
-        const a = primary ? 1 : 0.6;
-        const g = octx.createRadialGradient(PX(9), PY(9), palmR * 0.1, PX(9), PY(9), palmR * 1.5);
-        g.addColorStop(0, `rgba(255,228,150,${0.20 * a})`); g.addColorStop(1, 'rgba(218,165,32,0)');
-        octx.beginPath();
-        for (const i of [0, 1, 5, 9, 13, 17]) { const x = PX(i), y = PY(i); i === 0 ? octx.moveTo(x, y) : octx.lineTo(x, y); }
-        octx.closePath(); octx.fillStyle = g; octx.fill();
+        const a = primary ? 1 : 0.55;
         octx.lineCap = 'round'; octx.lineJoin = 'round';
-        octx.shadowColor = 'rgba(255,200,80,.85)'; octx.shadowBlur = 18;
-        octx.strokeStyle = `rgba(245,205,130,${0.30 * a})`; octx.lineWidth = palmR * 0.46;
+        // Thin, precise anatomical-style bones with a subtle hologram glow.
+        octx.shadowColor = 'rgba(255,205,90,.7)'; octx.shadowBlur = 6;
+        octx.strokeStyle = `rgba(255,238,175,${0.9 * a})`;
+        octx.lineWidth = Math.max(1.3, palmR * 0.045);
         for (const [p, q] of HCONN) { octx.beginPath(); octx.moveTo(PX(p), PY(p)); octx.lineTo(PX(q), PY(q)); octx.stroke(); }
-        octx.shadowBlur = 10; octx.strokeStyle = `rgba(255,240,185,${0.92 * a})`; octx.lineWidth = Math.max(1.5, palmR * 0.15);
-        for (const [p, q] of HCONN) { octx.beginPath(); octx.moveTo(PX(p), PY(p)); octx.lineTo(PX(q), PY(q)); octx.stroke(); }
-        octx.shadowBlur = 12;
+        // Small precise joints (knuckles), fingertips a touch brighter.
+        octx.shadowBlur = 7;
         for (let i = 0; i < 21; i++) {
           const tip = i === 4 || i === 8 || i === 12 || i === 16 || i === 20;
-          octx.beginPath(); octx.arc(PX(i), PY(i), tip ? palmR * 0.16 : (i === 0 ? palmR * 0.2 : palmR * 0.1), 0, Math.PI * 2);
-          octx.fillStyle = tip ? `rgba(255,242,180,${0.96 * a})` : `rgba(245,205,120,${0.85 * a})`;
+          const r = tip ? Math.max(2.4, palmR * 0.055) : Math.max(1.7, palmR * 0.038);
+          octx.beginPath(); octx.arc(PX(i), PY(i), r, 0, Math.PI * 2);
+          octx.fillStyle = tip ? `rgba(255,245,195,${0.95 * a})` : `rgba(245,212,135,${0.85 * a})`;
           octx.fill();
         }
         octx.shadowBlur = 0;
