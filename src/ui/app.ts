@@ -174,7 +174,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v53 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v54 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -1895,20 +1895,22 @@ export function mountApp(root: HTMLElement) {
           ctx.fill();
         }
 
-        // Finger extended = tip is farther from the wrist than its PIP joint.
-        // This is orientation-INDEPENDENT (works with the hand tilted or sideways),
-        // unlike a raw tip.y<pip.y test — which is what made the open palm so flaky.
-        const wr = lm[0];
-        const dW = (i: number) => Math.hypot(lm[i].x - wr.x, lm[i].y - wr.y);
-        // Finger extended = its TIP is clearly farther from the wrist than its
-        // KNUCKLE (MCP). Tip-vs-knuckle is a much bigger, cleaner signal than
-        // tip-vs-PIP, so a fist (all tips pulled in toward the palm) reads reliably
-        // even with the noisier lite model on phones.
-        const fingerUp = (tip: number, mcp: number) => dW(tip) > dW(mcp) * 1.2;
-        const idxUp = fingerUp(8,5), midUp = fingerUp(12,9), rngUp = fingerUp(16,13), pkyUp = fingerUp(20,17);
+        // Finger extended = how far its TIP sits from its own KNUCKLE (MCP),
+        // measured RELATIVE to the palm length. When a finger curls — in ANY
+        // direction, including folding toward the camera (depth) — its tip collapses
+        // back toward the knuckle, so this 2D distance shrinks. That makes it robust
+        // for fists (a wrist-distance test failed because a fist curls in depth, and
+        // in 2D the tips still looked "far" from the wrist).
+        const d2 = (a: number, b: number) => Math.hypot(lm[a].x - lm[b].x, lm[a].y - lm[b].y);
+        const palm = Math.max(0.0001, d2(0, 9));             // wrist→middle-knuckle length
+        const ext = (tip: number, mcp: number) => d2(tip, mcp) / palm;
+        const eIdx = ext(8, 5), eMid = ext(12, 9), eRng = ext(16, 13), ePky = ext(20, 17);
+        const idxUp = eIdx > 0.62, midUp = eMid > 0.62, rngUp = eRng > 0.6, pkyUp = ePky > 0.5;
         const upCount = [idxUp, midUp, rngUp, pkyUp].filter(Boolean).length;
         const open = upCount >= 3;        // open palm (lenient — 3 of 4 fingers)
-        const fist = upCount === 0;       // closed fist
+        // Fist = all four tips folded near their knuckles (holistic, so one jittery
+        // finger doesn't spoil it).
+        const fist = (eIdx + eMid + eRng + ePky) / 4 < 0.5;
         const pointing = idxUp && !midUp && !rngUp;  // index out, middle+ring down → pointer (pinky ignored, easier to hold)
         const peace = idxUp && midUp && !rngUp && !pkyUp;  // ✌️ two fingers → scroll
 
