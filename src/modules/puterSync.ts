@@ -15,6 +15,34 @@ export function markDirty() {
   localStorage.setItem(DIRTY_KEY, Date.now().toString());
 }
 
+// ── Change detection + debounce — stop hammering Puter ──────────────────────
+// Previously EVERY task/note edit uploaded ALL ~37 tables (plus media) to
+// puter.kv at once, so a single action fired dozens of requests. Now we (1)
+// only upload tables whose contents actually changed since the last sync, and
+// (2) coalesce bursts of edits into ONE debounced sync. An idle session that
+// changes nothing makes zero Puter requests.
+const SNAP_KEY = 'alpha_sync_snap_v1';
+function cheapHash(s: string): string {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return s.length.toString(36) + ':' + (h >>> 0).toString(36);
+}
+function loadSnap(): Record<string, string> { try { return JSON.parse(localStorage.getItem(SNAP_KEY) || '{}'); } catch { return {}; } }
+function saveSnap(s: Record<string, string>) { try { localStorage.setItem(SNAP_KEY, JSON.stringify(s)); } catch {} }
+
+let syncTimer: any = null;
+// Debounced cloud sync: many rapid edits collapse into a single upload ~12s
+// after the last change. No-ops immediately if the user isn't signed in.
+export function scheduleSync(onDone?: () => void, delayMs = 12000) {
+  if (!isSignedIn()) return;
+  if (syncTimer) clearTimeout(syncTimer);
+  syncTimer = setTimeout(async () => {
+    syncTimer = null;
+    try { await syncToCloud(); } catch {}
+    onDone?.();
+  }, delayMs);
+}
+
 const SYNC_TABLES = [
   'alpha_leads_v1',
   'alpha_habits_v1',
@@ -155,37 +183,51 @@ export async function syncToCloud(onProgress?: (msg: string) => void): Promise<{
   if (!isSignedIn()) return { ok: false, error: 'Not signed in' };
   try {
     const tables = [...new Set(SYNC_TABLES)]; // dedupe
-    let i = 0;
+    const snap = loadSnap();
+    let changed = 0, i = 0;
+    // Only upload tables whose contents actually changed since last sync.
     for (const key of tables) {
       const val = localStorage.getItem(key);
-      if (val !== null) {
-        await puter().kv.set(KV_PREFIX + key, val);
-      }
       i++;
-      if (onProgress && i % 5 === 0) onProgress(`מעלה נתונים… ${Math.round(i / tables.length * 100)}%`);
+      if (val === null) continue;
+      const h = cheapHash(val);
+      if (snap[key] === h) continue;   // unchanged → skip the request
+      await puter().kv.set(KV_PREFIX + key, val);
+      snap[key] = h; changed++;
+      if (onProgress && changed % 5 === 0) onProgress(`מעלה נתונים… ${Math.round(i / tables.length * 100)}%`);
     }
 
     // HeavyGuard media (photos / galleries / videos / invoice blobs) — dynamic
-    // per-record keys. Upload each, then store a manifest so download knows
-    // which keys to fetch. Each is wrapped so one oversized photo doesn't abort.
+    // per-record keys. Upload only changed ones; refresh the manifest only when
+    // the set of media keys itself changed.
     const mediaKeys = collectHgMediaKeys();
     let mediaDone = 0;
     for (const key of mediaKeys) {
       const val = localStorage.getItem(key);
-      if (val !== null) {
-        if (await putMedia(key, val)) mediaDone++;
-      }
+      if (val === null) continue;
+      const mk = 'media:' + key;
+      const h = cheapHash(val);
+      if (snap[mk] === h) { mediaDone++; continue; }   // unchanged → skip
+      if (await putMedia(key, val)) { snap[mk] = h; mediaDone++; changed++; }
       if (onProgress && mediaDone % 3 === 0 && mediaKeys.length) {
         onProgress(`מעלה תמונות… ${Math.round(mediaDone / mediaKeys.length * 100)}%`);
       }
     }
-    await puter().kv.set(KV_PREFIX + HG_MEDIA_MANIFEST, JSON.stringify(mediaKeys));
+    const manifestStr = JSON.stringify(mediaKeys);
+    if (snap['__manifest__'] !== cheapHash(manifestStr)) {
+      await puter().kv.set(KV_PREFIX + HG_MEDIA_MANIFEST, manifestStr);
+      snap['__manifest__'] = cheapHash(manifestStr); changed++;
+    }
+
+    // Nothing changed → make zero further requests.
+    if (changed === 0) { onProgress?.('הכל מסונכרן ✓'); return { ok: true }; }
 
     const ts = new Date().toISOString();
     await puter().kv.set(KV_PREFIX + '__meta__', JSON.stringify({ ts, tables: tables.length, media: mediaDone }));
+    saveSnap(snap);
     localStorage.setItem(LAST_SYNC_KEY, ts);
     localStorage.removeItem(DIRTY_KEY);
-    onProgress?.(`סנכרון הושלם ✓ (${mediaDone} תמונות)`);
+    onProgress?.(`סנכרון הושלם ✓ (${changed} עודכנו)`);
     return { ok: true };
   } catch (e: any) {
     return { ok: false, error: e?.message || 'שגיאת ענן' };

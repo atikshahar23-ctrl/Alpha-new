@@ -179,7 +179,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v72 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v73 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -1612,7 +1612,7 @@ export function mountApp(root: HTMLElement) {
           tasks.unshift({ id, title, date, done: false, ts: Date.now() });
           localStorage.setItem('hg2:tasks', JSON.stringify(tasks));
           puterSync.markDirty();
-          if (puterSync.isSignedIn()) puterSync.syncToCloud().then(() => updateCloudIndicator());
+          puterSync.scheduleSync(() => updateCloudIndicator());
         },
         onHgSearch: hgSearchLicense,
         onHgEarnings: hgShowEarnings,
@@ -1635,7 +1635,7 @@ export function mountApp(root: HTMLElement) {
           puterSync.markDirty();
           const timeStr = new Date(record.reportedAt).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' });
           addMsg(`✅ התקנה נשמרה — ${record.idNumber || 'ללא מספר'} · דווח ב-${timeStr}`, 'sys');
-          if (puterSync.isSignedIn()) puterSync.syncToCloud().then(() => updateCloudIndicator());
+          puterSync.scheduleSync(() => updateCloudIndicator());
         },
         onArCamera: openArCamera,
         onGDoc: openGDoc,
@@ -1646,7 +1646,7 @@ export function mountApp(root: HTMLElement) {
           // Push to the cloud right away so the home-screen widget (a separate
           // storage context) sees the new task without waiting for the next sync.
           puterSync.markDirty();
-          if (puterSync.isSignedIn()) puterSync.syncToCloud().then(() => updateCloudIndicator());
+          puterSync.scheduleSync(() => updateCloudIndicator());
           if (due) {
             addMsg(`✅ ${t('taskAdded', state.uiLang)}: "${text}" — 📅 ${due}`, 'sys');
           } else {
@@ -2562,7 +2562,7 @@ export function mountApp(root: HTMLElement) {
     quotes.unshift(newQuote);
     localStorage.setItem('hg2:quotes', JSON.stringify(quotes));
     addMsg(`הצעת מחיר נוצרה עבור ${customer || 'לקוח'}`, 'sys');
-    if (puterSync.isSignedIn()) puterSync.syncToCloud().then(() => updateCloudIndicator());
+    puterSync.scheduleSync(() => updateCloudIndicator());
   }
 
   // AR Camera — game-like interactive experience with hand tracking
@@ -5018,7 +5018,7 @@ export function mountApp(root: HTMLElement) {
         addTask(text.trim());
         addMsg(`✅ Task added: "${text.trim()}"`, 'sys');
         puterSync.markDirty();
-        if (puterSync.isSignedIn()) puterSync.syncToCloud().then(() => updateCloudIndicator());
+        puterSync.scheduleSync(() => updateCloudIndicator());
       }
     } else if (action === 'note') {
       const text = prompt('Quick note:');
