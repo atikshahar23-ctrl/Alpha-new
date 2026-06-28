@@ -2326,7 +2326,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     composer.addPass(new RenderPass(scene, camera));
     mBloom = new UnrealBloomPass(
       new THREE.Vector2(window.innerWidth * pr0, window.innerHeight * pr0),
-      0.08, 0.5, 0.78,
+      0.05, 0.5, 0.86,   // gentle glow + high threshold so it doesn't wash the robot's colours
     );
     composer.addPass(mBloom);
     const mVignette = new ShaderPass(GOLD_VIGNETTE_SHADER);
@@ -2889,6 +2889,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     setPerfMode(on: boolean) { perfFast = on; resize(); },
     getCharacterTransform() { return getCharXform(mobileCurrentChar); },
     setCharacterTransform(x: number, y: number, z: number, s: number, px: number, py: number, pz: number) {
+      if (mobileCurrentChar === 'robot') x = 0;   // robot must stay upright — X locked at 0
       saveCharXform(mobileCurrentChar, { x, y, z, s, px, py, pz });
       if (mobileCurrentModel) {
         const bt = modelBaseTransform.get(mobileCurrentModel);
@@ -2989,7 +2990,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
 
   const bloom = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth * dpr0, window.innerHeight * dpr0),
-    0.2, 0.4, 0.7,
+    0.07, 0.4, 0.86,   // gentle glow + high threshold so it doesn't wash the robot's colours
   );
   composer.addPass(bloom);
 
@@ -3986,6 +3987,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     setPerfMode(on: boolean) { perfFast = on; resize(); },
     getCharacterTransform() { return getCharXform(deskCurrentChar); },
     setCharacterTransform(x: number, y: number, z: number, s: number, px: number, py: number, pz: number) {
+      if (deskCurrentChar === 'robot') x = 0;   // robot must stay upright — X locked at 0
       saveCharXform(deskCurrentChar, { x, y, z, s, px, py, pz });
       if (deskCurrentModel) {
         const bt = modelBaseTransform.get(deskCurrentModel);

@@ -131,8 +131,8 @@
       document.documentElement.classList.add('booting');   // hide app + welcome until reveal
       var vid=document.getElementById('introVid'); var vaultVid=document.getElementById('vaultVid');
       var scanTxt=document.getElementById('scanTxt'); var done=false, ended=false;
-      if(vid){ try{ vid.playbackRate=1.4; }catch(e){} }
-      if(vaultVid){ try{ vaultVid.playbackRate=1.4; }catch(e){} }
+      if(vid){ try{ vid.playbackRate=5; }catch(e){} }
+      if(vaultVid){ try{ vaultVid.playbackRate=5; }catch(e){} }
       function revealApp(){
         document.documentElement.classList.remove('booting');
         document.body.classList.add('revealed');   // panels animate in — only now

@@ -179,7 +179,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v78 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v79 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -256,11 +256,11 @@ export function mountApp(root: HTMLElement) {
         <label class="crp-row">Y <input type="range" id="crpY" min="-180" max="180" step="1" value="0"><span class="crp-val" id="crpYv">0°</span></label>
         <label class="crp-row">Z <input type="range" id="crpZ" min="-180" max="180" step="1" value="0"><span class="crp-val" id="crpZv">0°</span></label>
         <div class="crp-section-label">גודל</div>
-        <label class="crp-row">⊕ <input type="range" id="crpS" min="10" max="300" step="1" value="100"><span class="crp-val" id="crpSv">1.00×</span></label>
-        <div class="crp-section-label">מיקום</div>
-        <label class="crp-row">↔ <input type="range" id="crpPX" min="-150" max="150" step="1" value="0"><span class="crp-val" id="crpPXv">0</span></label>
-        <label class="crp-row">↕ <input type="range" id="crpPY" min="-150" max="150" step="1" value="0"><span class="crp-val" id="crpPYv">0</span></label>
-        <label class="crp-row">⊙ <input type="range" id="crpPZ" min="-150" max="150" step="1" value="0"><span class="crp-val" id="crpPZv">0</span></label>
+        <label class="crp-row">⊕ <input type="range" id="crpS" min="5" max="600" step="1" value="100"><span class="crp-val" id="crpSv">1.00×</span></label>
+        <div class="crp-section-label">מיקום (תנועה חופשית במרחב)</div>
+        <label class="crp-row">↔ <input type="range" id="crpPX" min="-500" max="500" step="1" value="0"><span class="crp-val" id="crpPXv">0</span></label>
+        <label class="crp-row">↕ <input type="range" id="crpPY" min="-500" max="500" step="1" value="0"><span class="crp-val" id="crpPYv">0</span></label>
+        <label class="crp-row">⊙ <input type="range" id="crpPZ" min="-500" max="500" step="1" value="0"><span class="crp-val" id="crpPZv">0</span></label>
         <button class="crp-auto" id="crpAuto">⊹ מרכז אוטומטי</button>
         <div class="crp-pin-row">
           <button class="crp-pin" id="crpPin">שמור ככיוון ברירת מחדל</button>
@@ -5780,6 +5780,23 @@ export function mountApp(root: HTMLElement) {
   const knownName = loadMemory().profile.name;
   if (!knownName) showWelcome();
   else if (prevHistory.length === 0) addMsg(personalGreeting(), 'al');
+
+  // ── Robot voice greeting on entry (once per load) — spoken in Hebrew after
+  // the intro reveals. The robot welcomes the user by name.
+  {
+    let greeted = false;
+    const greet = () => {
+      if (greeted) return; greeted = true;
+      const nm = (loadMemory().profile.name || 'שחר').trim() || 'שחר';
+      try { voice.speak(`מה המצב ${nm}?`); } catch {}
+    };
+    const poll = setInterval(() => {
+      if (document.body.classList.contains('revealed') || !document.getElementById('introOverlay')) {
+        clearInterval(poll); setTimeout(greet, 700);
+      }
+    }, 400);
+    setTimeout(() => { clearInterval(poll); greet(); }, 20000);   // fallback
+  }
 
   // ── 3D Depth — perspective-based UI panel transforms ──
   {
