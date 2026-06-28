@@ -174,7 +174,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v58 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v59 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -1902,8 +1902,13 @@ export function mountApp(root: HTMLElement) {
         const fingerUp = (tip: number, pip: number) => lm[tip].y < lm[pip].y - 0.02;
         const idxUp = fingerUp(8, 6), midUp = fingerUp(12, 10), rngUp = fingerUp(16, 14), pkyUp = fingerUp(20, 18);
         const upCount = [idxUp, midUp, rngUp, pkyUp].filter(Boolean).length;
-        const open = upCount >= 3;        // open palm (lenient — 3 of 4 fingers)
-        const fist = upCount === 0;       // closed fist — no fingers up
+        const palmLen = Math.max(0.0001, Math.hypot(lm[0].x - lm[9].x, lm[0].y - lm[9].y));
+        // Finger spread: index-tip → pinky-tip distance vs palm length. A DELIBERATE
+        // open/"stop" palm spreads the fingers; a relaxed resting hand keeps them
+        // together. Requiring spread stops the dispel from firing when you do nothing.
+        const spread = Math.hypot(lm[8].x - lm[20].x, lm[8].y - lm[20].y) / palmLen;
+        const open = upCount === 4 && spread > 0.85;   // deliberate spread-open palm only
+        const fist = upCount === 0;                    // closed fist — no fingers up
         const pointing = idxUp && !midUp && !rngUp;  // index out, middle+ring down → pointer
         const peace = idxUp && midUp && !rngUp && !pkyUp;  // ✌️ two fingers → scroll
 
@@ -2004,7 +2009,9 @@ export function mountApp(root: HTMLElement) {
             const forwardRatio = (handScale - fistBaseline) / baseRef; // how far past resting size
             // Absorb slow drift / steady holding so it can't accumulate into a throw.
             if (Math.abs(velRatio) < 0.05) fistBaseline += (handScale - fistBaseline) * 0.08;
-            const thrust = fistArmMs > 250 && forwardRatio > 0.40 && velRatio > 0.12;
+            // Strong, deliberate lunge required — a relaxed/drifting fist must NOT
+            // trigger a summon. Armed >350ms, ≥55% past resting size, fast forward.
+            const thrust = fistArmMs > 350 && forwardRatio > 0.55 && velRatio > 0.2;
             if (thrust && throwCooldownMs <= 0) {
               fistActive = false; fistBaseline = 0; fistArmMs = 0;
               throwCooldownMs = THROW_COOLDOWN;
