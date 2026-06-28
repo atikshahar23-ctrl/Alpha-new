@@ -131,10 +131,24 @@
       document.documentElement.classList.add('booting');   // hide app + welcome until reveal
       var vid=document.getElementById('introVid'); var vaultVid=document.getElementById('vaultVid');
       var scanTxt=document.getElementById('scanTxt'); var done=false, ended=false;
-      if(vid){ try{ vid.playbackRate=8; }catch(e){} }
-      if(vaultVid){ try{ vaultVid.playbackRate=8; }catch(e){} }
-      // ── Transformers-style robotic SFX on open (procedural Web Audio) ──
-      var sfxDone=false;
+      // Both intro videos slowed to ~4x so their combined run (alien 8s + vault
+      // 10s = 18s ÷ 4 ≈ 4.5s, plus the ~1s face-scan transition ≈ 5.5s) matches
+      // the uploaded opening sound (~5.44s): the videos finish as the sound ends.
+      if(vid){ try{ vid.playbackRate=4; }catch(e){} }
+      if(vaultVid){ try{ vaultVid.playbackRate=4; }catch(e){} }
+      // ── Opening sound: the uploaded clip plays over the intro videos only.
+      // Procedural Web Audio (robotSound) stays as a fallback if the file is blocked.
+      var sfxDone=false, openSnd=null, sndStarted=false;
+      function openSound(){
+        if(sndStarted) return;
+        try{
+          if(!openSnd){ openSnd=new Audio('/Alpha-new/intro-sound.mp3'); openSnd.volume=0.95;
+            openSnd.addEventListener('error', function(){ if(!sndStarted) robotSound(); }); }
+          var pr=openSnd.play();
+          if(pr && pr.then){ pr.then(function(){ sndStarted=true; }).catch(function(){ /* blocked → retry on next gesture */ }); }
+          else { sndStarted=true; }
+        }catch(e){ robotSound(); }
+      }
       function robotSound(){
         if(sfxDone) return;
         try{
@@ -160,15 +174,16 @@
           sfxDone=true; setTimeout(function(){ try{ctx.close();}catch(e){} },2400);
         }catch(e){}
       }
-      robotSound();
-      window.addEventListener('pointerdown', robotSound, {once:true});
-      window.addEventListener('keydown', robotSound, {once:true});
+      openSound();
+      window.addEventListener('pointerdown', openSound, {once:true});
+      window.addEventListener('keydown', openSound, {once:true});
       function revealApp(){
         document.documentElement.classList.remove('booting');
         document.body.classList.add('revealed');   // panels animate in — only now
       }
       function finish(){
         if(ended) return; ended=true;
+        if(openSnd){ try{ openSnd.pause(); }catch(e){} }   // sound only spans the videos
         revealApp();
         ov.classList.add('gone');
         setTimeout(function(){ ov.parentNode && ov.parentNode.removeChild(ov); }, 800);
@@ -187,9 +202,9 @@
       function sequence(){
         if(done) return; done=true;
         ov.classList.add('scanning');
-        setTimeout(function(){ if(scanTxt) scanTxt.textContent='מזהה פנים…'; }, 700);
-        setTimeout(function(){ if(scanTxt) scanTxt.textContent='זוהה ✓'; ov.classList.remove('scanning'); ov.classList.add('granted'); }, 2100);
-        setTimeout(playVault, 3300);   // cinematic vault video leads into the app
+        setTimeout(function(){ if(scanTxt) scanTxt.textContent='מזהה פנים…'; }, 200);
+        setTimeout(function(){ if(scanTxt) scanTxt.textContent='זוהה ✓'; ov.classList.remove('scanning'); ov.classList.add('granted'); }, 650);
+        setTimeout(playVault, 950);   // quick face-scan transition, then the vault video
       }
       function skip(){ if(!done){ done=true; } finish(); }
       document.getElementById('introSkip').addEventListener('click', skip);
