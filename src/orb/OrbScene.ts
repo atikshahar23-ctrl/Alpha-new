@@ -1985,14 +1985,24 @@ function auraSprite(): THREE.Texture {
   _auraSprite = new THREE.CanvasTexture(c);
   return _auraSprite;
 }
-interface AuraHandle { points: THREE.Points; update: (dt: number, t: number) => void; }
+interface AuraHandle { points: THREE.Points; ring?: THREE.Mesh; update: (dt: number, t: number) => void; }
+// Legendaries get a stronger signature: a slowly-rotating magic-circle ring at
+// their feet + a denser aura, so they feel special vs. the regular roster.
+const LEGENDARY = new Set(['articuno', 'moltres', 'zapdos', 'entei', 'raikou', 'suicune', 'lugia', 'ho-oh', 'mewtwo']);
 function attachAura(host: THREE.Group, character: string): void {
   const prev = (host as any).__aura as AuraHandle | undefined;
-  if (prev) { try { host.remove(prev.points); prev.points.geometry.dispose(); (prev.points.material as THREE.Material).dispose(); } catch {} (host as any).__aura = null; }
+  if (prev) {
+    try {
+      host.remove(prev.points); prev.points.geometry.dispose(); (prev.points.material as THREE.Material).dispose();
+      if (prev.ring) { host.remove(prev.ring); prev.ring.geometry.dispose(); (prev.ring.material as THREE.Material).dispose(); }
+    } catch {}
+    (host as any).__aura = null;
+  }
   if (character === 'robot' || character === 'none') return;   // robot keeps its true colours, no aura
   const type: AuraType = POKEMON_ATTACK_TYPE[character] || 'normal';
+  const legendary = LEGENDARY.has(character);
   const perfLite = typeof document !== 'undefined' && document.documentElement.classList.contains('perf-lite');
-  const N = perfLite ? 34 : 70;
+  const N = Math.round((perfLite ? 34 : 70) * (legendary ? (perfLite ? 1.3 : 1.55) : 1));
   const R = 1.45, H = 2.6, yBase = -1.25;
   const pos = new Float32Array(N * 3), col = new Float32Array(N * 3);
   const data: { ang: number; rad: number; y: number; sp: number; ph: number }[] = [];
@@ -2011,7 +2021,18 @@ function attachAura(host: THREE.Group, character: string): void {
   const points = new THREE.Points(geo, mat);
   points.frustumCulled = false;
   host.add(points);
+  // Legendary signature: a flat magic-circle ring at the feet (two concentric
+  // additive rings) that slowly rotates.
+  let ring: THREE.Mesh | undefined;
+  if (legendary) {
+    const ringGeo = new THREE.RingGeometry(1.05, 1.32, 64);
+    const ringMat = new THREE.MeshBasicMaterial({ color: c1.clone().lerp(c2, 0.4), transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false });
+    ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.rotation.x = -Math.PI / 2; ring.position.y = yBase + 0.02; ring.frustumCulled = false;
+    host.add(ring);
+  }
   const update = (dt: number, t: number) => {
+    if (ring) { ring.rotation.z += dt * 0.5; (ring.material as THREE.MeshBasicMaterial).opacity = 0.4 + Math.sin(t * 1.4) * 0.18; }
     const p = geo.attributes.position as THREE.BufferAttribute;
     for (let i = 0; i < N; i++) {
       const d = data[i]; let x = 0, y = 0, z = 0;
@@ -2047,7 +2068,7 @@ function attachAura(host: THREE.Group, character: string): void {
     p.needsUpdate = true;
     if (type === 'electric') mat.opacity = 0.55 + Math.random() * 0.45;   // crackle flicker
   };
-  (host as any).__aura = { points, update };
+  (host as any).__aura = { points, ring, update };
 }
 
 // ── One-shot impact burst: an expanding additive ring + flying sparks. Used
