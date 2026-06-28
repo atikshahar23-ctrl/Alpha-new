@@ -179,7 +179,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v66 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v67 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -1837,10 +1837,11 @@ export function mountApp(root: HTMLElement) {
       // Mobile = lite model (the full model stalls on phones and detection never
       // starts). Desktop = full model for max accuracy. The One-Euro smoothing +
       // higher tracking confidence still make BOTH far steadier than before.
-      // High confidence on purpose: the lite mobile model otherwise "hallucinates"
-      // a hand from background noise and fires random commands. 0.8/0.7 means it
-      // only locks on when a real hand is clearly present.
-      gestureHands.setOptions({ maxNumHands: 1, modelComplexity: isMobileDevice ? 0 : 1, minDetectionConfidence: 0.8, minTrackingConfidence: 0.7, selfieMode: true });
+      // Moderate confidence so the lite mobile model actually detects a hand (0.8
+      // was so high it often found nothing → "no skeleton"). False positives are
+      // handled downstream by the per-frame `trusted` gate + settle + hold, not by
+      // starving detection here.
+      gestureHands.setOptions({ maxNumHands: 1, modelComplexity: isMobileDevice ? 0 : 1, minDetectionConfidence: 0.6, minTrackingConfidence: 0.5, selfieMode: true });
 
       let lastFrameMs = performance.now();
 
@@ -1908,26 +1909,24 @@ export function mountApp(root: HTMLElement) {
         };
         if (!results.multiHandLandmarks?.length) { noHand(); return; }
 
-        // ── Reject phantom / low-quality detections ─────────────────────────
-        // The lite mobile model "sees" hands in background noise and then fires
-        // random commands. Two cheap, strong filters stop that:
-        //  1) MediaPipe's own handedness score must be high (a real, confident hand).
-        //  2) The hand must occupy a sensible chunk of the frame — tiny/edge blobs
-        //     (the classic false positives) are ignored.
+        // ALWAYS smooth + draw the detected hand so the user sees the skeleton as
+        // live feedback. Detection QUALITY gates only the ACTIONS (below) — it never
+        // hides the hand, otherwise a slightly-too-far hand looks like the detector
+        // is dead (the "no skeleton at all" report).
         const rawLm0 = results.multiHandLandmarks[0];
+        const lm = smoothLandmarks(rawLm0, Math.min(0.05, Math.max(0.012, dt / 1000)));
+        // Quality: MediaPipe's own handedness confidence + how much of the frame the
+        // hand fills. A real, deliberate hand scores high and is large; background
+        // false-positives are low/tiny. Only a TRUSTED hand is allowed to act.
         const score = results.multiHandedness?.[0]?.score ?? 1;
         let minx = 1, maxx = 0, miny = 1, maxy = 0;
         for (const pt of rawLm0) { if (pt.x < minx) minx = pt.x; if (pt.x > maxx) maxx = pt.x; if (pt.y < miny) miny = pt.y; if (pt.y > maxy) maxy = pt.y; }
         const handSpan = Math.max(maxx - minx, maxy - miny);   // fraction of frame
-        if (score < 0.9 || handSpan < 0.18) { octx.clearRect(0, 0, W, H); noHand(); return; }
-
-        // Clamp dt to a sane window so the variable mobile framerate can't
-        // destabilise the One-Euro filter (a wildly varying dt made it jump).
-        const lm = smoothLandmarks(rawLm0, Math.min(0.05, Math.max(0.012, dt / 1000)));
-        // Settle: a freshly-acquired hand must persist briefly before ANY action is
-        // allowed, so a flicker-in detection can't instantly trigger a command.
-        handPresentMs += dt;
-        const armed = handPresentMs >= SETTLE_MS;
+        const trusted = score >= 0.7 && handSpan >= 0.13;
+        // Settle: a trusted hand must persist briefly before it can act, so a
+        // flicker-in detection can't instantly trigger a command.
+        if (trusted) handPresentMs += dt; else handPresentMs = 0;
+        const armed = trusted && handPresentMs >= SETTLE_MS;
         // ── Draw the hand as a glowing ghost on the full-screen overlay ──────
         const PX = (i: number) => lm[i].x * W;
         const PY = (i: number) => lm[i].y * H;
