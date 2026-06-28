@@ -1958,6 +1958,98 @@ const modelBaseTransform = new WeakMap<THREE.Object3D, BaseTransform>();
 // Holds the currently-loaded swappable model per pikaGroup so we can replace it.
 const loadedModels = new WeakMap<THREE.Group, THREE.Object3D>();
 
+// ── Per-character ambient aura (type-themed idle particles) ─────────────────
+// Each Pokémon gets a distinct living effect that matches its element, floating
+// around it while idle. Cheap (one additive Points cloud, ~36–72 sprites) and
+// fully torn down on character swap.
+type AuraType = AttackType;
+function auraColors(type: AuraType): [THREE.Color, THREE.Color] {
+  switch (type) {
+    case 'electric': return [new THREE.Color(0xfff066), new THREE.Color(0xffffff)];
+    case 'fire':     return [new THREE.Color(0xff6a18), new THREE.Color(0xffd23f)];
+    case 'water':    return [new THREE.Color(0x35a7ff), new THREE.Color(0xa6e9ff)];
+    case 'grass':    return [new THREE.Color(0x4fd06a), new THREE.Color(0xcaff8f)];
+    case 'ice':      return [new THREE.Color(0x8fe9ff), new THREE.Color(0xffffff)];
+    case 'psychic':  return [new THREE.Color(0xc24fff), new THREE.Color(0xff95e6)];
+    default:         return [new THREE.Color(0xe4bc63), new THREE.Color(0xfff2c0)]; // normal → gold
+  }
+}
+let _auraSprite: THREE.Texture | null = null;
+function auraSprite(): THREE.Texture {
+  if (_auraSprite) return _auraSprite;
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d')!;
+  const grd = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grd.addColorStop(0, 'rgba(255,255,255,1)'); grd.addColorStop(.35, 'rgba(255,255,255,.55)'); grd.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grd; g.fillRect(0, 0, 64, 64);
+  _auraSprite = new THREE.CanvasTexture(c);
+  return _auraSprite;
+}
+interface AuraHandle { points: THREE.Points; update: (dt: number, t: number) => void; }
+function attachAura(host: THREE.Group, character: string): void {
+  const prev = (host as any).__aura as AuraHandle | undefined;
+  if (prev) { try { host.remove(prev.points); prev.points.geometry.dispose(); (prev.points.material as THREE.Material).dispose(); } catch {} (host as any).__aura = null; }
+  if (character === 'robot' || character === 'none') return;   // robot keeps its true colours, no aura
+  const type: AuraType = POKEMON_ATTACK_TYPE[character] || 'normal';
+  const perfLite = typeof document !== 'undefined' && document.documentElement.classList.contains('perf-lite');
+  const N = perfLite ? 34 : 70;
+  const R = 1.45, H = 2.6, yBase = -1.25;
+  const pos = new Float32Array(N * 3), col = new Float32Array(N * 3);
+  const data: { ang: number; rad: number; y: number; sp: number; ph: number }[] = [];
+  const [c1, c2] = auraColors(type);
+  for (let i = 0; i < N; i++) {
+    const ang = Math.random() * Math.PI * 2, rad = R * (0.35 + Math.random() * 0.65), y = yBase + Math.random() * H;
+    data.push({ ang, rad, y, sp: 0.3 + Math.random() * 0.9, ph: Math.random() * Math.PI * 2 });
+    pos[i * 3] = Math.cos(ang) * rad; pos[i * 3 + 1] = y; pos[i * 3 + 2] = Math.sin(ang) * rad;
+    const c = Math.random() < 0.5 ? c1 : c2;
+    col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  const mat = new THREE.PointsMaterial({ size: type === 'electric' ? 0.085 : 0.12, map: auraSprite(), vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.85, sizeAttenuation: true, toneMapped: false });
+  const points = new THREE.Points(geo, mat);
+  points.frustumCulled = false;
+  host.add(points);
+  const update = (dt: number, t: number) => {
+    const p = geo.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < N; i++) {
+      const d = data[i]; let x = 0, y = 0, z = 0;
+      switch (type) {
+        case 'fire':
+          d.y += d.sp * dt * 0.95; if (d.y > yBase + H) { d.y = yBase; d.ang = Math.random() * Math.PI * 2; d.rad = R * (0.2 + Math.random() * 0.5); }
+          { const taper = 1 - (d.y - yBase) / H * 0.65; x = Math.cos(d.ang) * d.rad * taper + Math.sin(t * 3 + d.ph) * 0.05; y = d.y; z = Math.sin(d.ang) * d.rad * taper; }
+          break;
+        case 'water':
+          d.y += d.sp * dt * 0.5; if (d.y > yBase + H) d.y = yBase;
+          x = Math.cos(d.ang) * d.rad + Math.sin(t * 2 + d.ph) * 0.08; y = d.y; z = Math.sin(d.ang) * d.rad + Math.cos(t * 2 + d.ph) * 0.08;
+          break;
+        case 'grass':
+          d.y -= d.sp * dt * 0.4; if (d.y < yBase) d.y = yBase + H;
+          d.ang += dt * 0.5 * Math.sin(t + d.ph);
+          x = Math.cos(d.ang) * d.rad; y = d.y; z = Math.sin(d.ang) * d.rad;
+          break;
+        case 'ice':
+          d.y -= d.sp * dt * 0.28; if (d.y < yBase) d.y = yBase + H;
+          x = Math.cos(d.ang) * d.rad; y = d.y + Math.sin(t * 1.5 + d.ph) * 0.03; z = Math.sin(d.ang) * d.rad;
+          break;
+        case 'electric':
+          x = Math.cos(d.ang) * d.rad + (Math.random() - 0.5) * 0.18; y = d.y + (Math.random() - 0.5) * 0.18; z = Math.sin(d.ang) * d.rad + (Math.random() - 0.5) * 0.18;
+          break;
+        case 'psychic':
+          { d.ang += dt * 1.1; const rr = d.rad + Math.sin(t * 1.5 + d.ph) * 0.15; x = Math.cos(d.ang) * rr; y = d.y + Math.sin(t * 1.2 + d.ph) * 0.2; z = Math.sin(d.ang) * rr; }
+          break;
+        default: // normal → gentle gold motes
+          x = Math.cos(d.ang) * d.rad; y = d.y + Math.sin(t * 1.1 + d.ph) * 0.18; z = Math.sin(d.ang) * d.rad;
+      }
+      p.setXYZ(i, x, y, z);
+    }
+    p.needsUpdate = true;
+    if (type === 'electric') mat.opacity = 0.55 + Math.random() * 0.45;   // crackle flicker
+  };
+  (host as any).__aura = { points, update };
+}
+
 function loadAndReplaceBody(
   pikaGroup: THREE.Group,
   _mats: PikachuMaterials,
@@ -2168,6 +2260,7 @@ function loadAndReplaceBody(
 
         pikaGroup.add(model);
         loadedModels.set(pikaGroup, model);
+        attachAura(pikaGroup, character);   // type-themed idle particles
         onLoaded?.(model);
       },
       undefined,
@@ -2632,6 +2725,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     lastFrame = now;
     time += dt;
     { const __mx = (pikaGroup as any).__mixer as THREE.AnimationMixer | undefined; if (__mx) __mx.update(dt); }
+    { const __au = (pikaGroup as any).__aura as { update:(dt:number,t:number)=>void } | undefined; if (__au) __au.update(dt, time); }
     // Adaptive quality: if the GPU can't sustain ~55fps over two 1s windows, shed
     // cost (first the post-fx pipeline, then resolution) so motion stays smooth.
     // Sticky downgrade only — never auto-upgrades, to avoid hitching back and forth.
@@ -2875,6 +2969,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
       mobileCurrentChar = name;
       if (name === 'none') {
         pikaGroup.visible = false;
+        attachAura(pikaGroup, 'none');   // tear down any aura
         renderer.setClearColor(charBg('none'), 1);
         return;
       }
@@ -3646,6 +3741,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     lastFrame = now;
     time += dt;
     { const __mx = (pikaGroup as any).__mixer as THREE.AnimationMixer | undefined; if (__mx) __mx.update(dt); }
+    { const __au = (pikaGroup as any).__aura as { update:(dt:number,t:number)=>void } | undefined; if (__au) __au.update(dt, time); }
     // Adaptive quality: if the GPU can't sustain ~55fps over two 1s windows, shed
     // cost (first the post-fx pipeline, then resolution) so motion stays smooth.
     // Sticky downgrade only — never auto-upgrades, to avoid hitching back and forth.
@@ -3973,6 +4069,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
         // No character — hide the model entirely (default state; makes room for the
         // upcoming holographic figure). Keep a neutral background.
         pikaGroup.visible = false;
+        attachAura(pikaGroup, 'none');   // tear down any aura
         renderer.setClearColor(charBg('none'), 1);
         return;
       }
