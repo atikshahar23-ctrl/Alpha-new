@@ -179,7 +179,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v84 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v85 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -2291,36 +2291,58 @@ export function mountApp(root: HTMLElement) {
   }
   const BIZ_TAG = 'Heavy Guard · נתוני שטח חיים';
 
-  // ── Live markets panel (Bitcoin, S&P500, NASDAQ, Gold, ETH) ──
-  async function renderMarkets() {
-    const el = document.querySelector('#hudMarkets .hud-card-body');
-    if (!el) return;
-    const fmt = (n: number) => n >= 1000 ? Math.round(n).toLocaleString('en-US') : n.toLocaleString('en-US', { maximumFractionDigits: 2 });
-    const rows: { name: string; price: string; chg: number }[] = [];
-    // Crypto — CoinGecko (free, CORS-friendly, no key)
+  // ── Live markets ──
+  const mkFmt = (n: number) => n >= 1000 ? Math.round(n).toLocaleString('en-US') : n.toLocaleString('en-US', { maximumFractionDigits: n >= 1 ? 2 : 4 });
+  type MkRow = { name: string; price: string; chg: number };
+  let lastMarketRows: MkRow[] = [];
+  // Fetch a fuller market board: crypto (CoinGecko) + indices/gold (Yahoo).
+  async function fetchMarketRows(): Promise<MkRow[]> {
+    const rows: MkRow[] = [];
     try {
-      const r = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=usd&include_24hr_change=true');
+      const ids = 'bitcoin,ethereum,solana,binancecoin,ripple,cardano,dogecoin';
+      const r = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`);
       const d = await r.json();
-      if (d.bitcoin) rows.push({ name: 'Bitcoin', price: '$' + fmt(d.bitcoin.usd), chg: d.bitcoin.usd_24h_change || 0 });
-      if (d.ethereum) rows.push({ name: 'Ethereum', price: '$' + fmt(d.ethereum.usd), chg: d.ethereum.usd_24h_change || 0 });
+      const order: [string, string][] = [['bitcoin', 'Bitcoin'], ['ethereum', 'Ethereum'], ['solana', 'Solana'], ['binancecoin', 'BNB'], ['ripple', 'XRP'], ['cardano', 'Cardano'], ['dogecoin', 'Dogecoin']];
+      for (const [id, name] of order) if (d[id]) rows.push({ name, price: '$' + mkFmt(d[id].usd), chg: d[id].usd_24h_change || 0 });
     } catch {}
-    // Indices / gold — Yahoo Finance (best-effort; may be CORS-blocked on some networks)
-    for (const [sym, name] of [['%5EGSPC', 'S&P 500'], ['%5EIXIC', 'NASDAQ'], ['GC%3DF', 'זהב']]) {
+    for (const [sym, name] of [['%5EGSPC', 'S&P 500'], ['%5EIXIC', 'NASDAQ'], ['%5EDJI', 'Dow Jones'], ['GC%3DF', 'זהב'], ['CL%3DF', 'נפט']]) {
       try {
         const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=2d`);
         const d = await r.json();
         const m = d.chart.result[0].meta;
         const price = m.regularMarketPrice;
         const prev = m.chartPreviousClose ?? m.previousClose ?? price;
-        rows.push({ name, price: fmt(price), chg: prev ? ((price - prev) / prev) * 100 : 0 });
+        rows.push({ name, price: mkFmt(price), chg: prev ? ((price - prev) / prev) * 100 : 0 });
       } catch {}
     }
+    if (rows.length) lastMarketRows = rows;
+    return rows;
+  }
+  const mkRowHtml = (r: MkRow) => {
+    const up = r.chg >= 0; const c = up ? '#3FD79A' : '#FF5C50';
+    return `<div class="mk-row"><span class="mk-name">${r.name}</span><span class="mk-price">${r.price}</span><span class="mk-chg" style="color:${c}">${up ? '▲' : '▼'}${Math.abs(r.chg).toFixed(2)}%</span></div>`;
+  };
+  async function renderMarkets() {
+    const el = document.querySelector('#hudMarkets .hud-card-body');
+    if (!el) return;
+    const rows = await fetchMarketRows();
     el.innerHTML = rows.length === 0
       ? '<div class="hud-empty">שווקים לא זמינים כרגע</div>'
-      : rows.map((r) => {
-        const up = r.chg >= 0; const c = up ? '#3FD79A' : '#FF5C50';
-        return `<div class="mk-row"><span class="mk-name">${r.name}</span><span class="mk-price">${r.price}</span><span class="mk-chg" style="color:${c}">${up ? '▲' : '▼'}${Math.abs(r.chg).toFixed(2)}%</span></div>`;
-      }).join('');
+      : rows.slice(0, 6).map(mkRowHtml).join('') + '<div class="mk-more">לחץ לכל השווקים ↗</div>';
+  }
+  // Full markets board in a window (opened by clicking the markets panel).
+  function openMarketsDetail() {
+    openWin('שווקים · MARKETS 📊');
+    const body = $('winBody');
+    const render = (rows: MkRow[]) => {
+      body.innerHTML = `<div class="pad mk-detail">
+        <div class="mk-detail-h">מטבעות קריפטו · מדדים · סחורות — נתונים חיים</div>
+        <div class="mk-detail-list">${rows.length ? rows.map(mkRowHtml).join('') : '<div class="ops-empty">שווקים לא זמינים כרגע</div>'}</div>
+        <a class="mk-detail-cta" href="${TRADE_URL}" target="_blank" rel="noopener">פתח את מערכת המסחר המלאה ↗</a>
+      </div>`;
+    };
+    render(lastMarketRows);
+    fetchMarketRows().then(render);
   }
 
   // ── Israel news panel (RSS via rss2json, CORS-friendly) ──
@@ -2540,10 +2562,40 @@ export function mountApp(root: HTMLElement) {
   }
   function openFleet() { openWin('מרכז שליטה · צי ומבצעים 🛰️'); renderFleet(); }
 
+  // ── Trade simulator — embedded as an in-app system (like HeavyGuard OS) ──
+  // The site is a separate Render deployment, so it loads in an iframe. If the
+  // host refuses framing, the prominent "open in new tab" button is the fallback.
+  const TRADE_URL = 'https://heavt-guard-simulator-1.onrender.com/';
+  function openTradeSystem() {
+    openWin('מערכת מסחר · TRADE 📈');
+    const body = $('winBody');
+    body.innerHTML = `<div class="sys-embed">
+      <div class="sys-embed-bar">
+        <span>מערכת המסחר שלך — חיה מתוך אלפא</span>
+        <a class="sys-embed-open" href="${TRADE_URL}" target="_blank" rel="noopener">פתח בלשונית ↗</a>
+      </div>
+      <div class="sys-embed-frame">
+        <iframe id="tradeFrame" src="${TRADE_URL}" allow="clipboard-write; fullscreen" referrerpolicy="no-referrer"></iframe>
+        <div class="sys-embed-fallback" id="tradeFallback" hidden>
+          <div>לא ניתן להטמיע את המערכת כאן</div>
+          <a class="sys-embed-cta" href="${TRADE_URL}" target="_blank" rel="noopener">פתח את מערכת המסחר ↗</a>
+        </div>
+      </div>
+    </div>`;
+    // If the iframe is blocked (X-Frame-Options) it stays blank — reveal the
+    // fallback if nothing has rendered after a short grace period.
+    const fr = body.querySelector('#tradeFrame') as HTMLIFrameElement | null;
+    let loaded = false;
+    fr?.addEventListener('load', () => { loaded = true; });
+    setTimeout(() => { if (!loaded) { const fb = body.querySelector('#tradeFallback') as HTMLElement | null; if (fb) fb.hidden = false; } }, 4500);
+  }
+
   // The HUD "HeavyGuard OS" tile reuses the existing dock handler.
   setTimeout(() => {
     document.getElementById('hudHg')?.addEventListener('click', () => document.getElementById('hgBtn')?.click());
     document.getElementById('hudFleet')?.addEventListener('click', openFleet);
+    document.getElementById('hudTrade')?.addEventListener('click', (e) => { e.preventDefault(); openTradeSystem(); });
+    document.querySelector('#hudMarkets')?.addEventListener('click', openMarketsDetail);
     renderHud(); renderMarkets(); renderNews();
     setInterval(renderHud, 30000);
     setInterval(renderMarkets, 60000);
