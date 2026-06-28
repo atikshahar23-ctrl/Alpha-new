@@ -3020,7 +3020,9 @@ html.perf-lite .topR { will-change: auto !important; transform: none !important;
 @media (min-width: 901px) {
   /* center via auto margins (uiDepthTick sets an inline transform, so we can't
      rely on translateX for centering) */
-  .app .right-panel { left: 0; right: 0; margin-left: auto; margin-right: auto; top: auto; bottom: 92px; width: min(640px, 54vw); max-height: 24vh; }
+  /* sit clear ABOVE the dock (the dock icon row is ~150px tall) so the chat
+     console never overlaps it — fixes the "panels on top of each other" issue */
+  .app .right-panel { left: 0; right: 0; margin-left: auto; margin-right: auto; top: auto; bottom: 206px; width: min(600px, 52vw); max-height: 18vh; }
 }
 /* Markets rows */
 .mk-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 12.5px; border-bottom: 1px solid rgba(228,188,99,.08); }
