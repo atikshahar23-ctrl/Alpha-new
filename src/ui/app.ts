@@ -179,7 +179,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v86 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v87 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -3314,7 +3314,7 @@ export function mountApp(root: HTMLElement) {
       // scene, so the stage must stay visible. orb.throwPokeball hides just the
       // character mesh at the right moment.
       if (t < 0.7) {
-        // red laser beam bottom → orb centre
+        // red laser beam bottom → orb centre, with an electric crackle along it
         const p = Math.min(1, t / 0.45);
         const ex = cx, ey = H + (cy - H) * p;
         ctx!.save(); ctx!.lineCap = 'round';
@@ -3325,7 +3325,16 @@ export function mountApp(root: HTMLElement) {
           ctx!.lineWidth = L[0]; ctx!.globalAlpha = L[1]; ctx!.strokeStyle = cols[i];
           ctx!.shadowColor = '#ff2200'; ctx!.shadowBlur = i === 3 ? 30 : 0; ctx!.stroke();
         });
-        // impact burst near the end
+        // jagged electric arc overlaid on the beam (energy crackle)
+        ctx!.globalAlpha = 0.85; ctx!.strokeStyle = '#ffd9c0'; ctx!.lineWidth = 1.4; ctx!.shadowColor = '#ff6a3c'; ctx!.shadowBlur = 8;
+        ctx!.beginPath(); ctx!.moveTo(cx, H);
+        const segs = 9;
+        for (let s = 1; s <= segs; s++) {
+          const f = s / segs; const bx = cx + (ex - cx) * f, by = H + (ey - H) * f;
+          ctx!.lineTo(bx + (Math.random() - 0.5) * 16, by + (Math.random() - 0.5) * 10);
+        }
+        ctx!.stroke();
+        // impact burst near the end + radiating sparks
         if (p >= 1) {
           const bp = (t - 0.45) / 0.25, rr = Math.min(W, H) * 0.28 * bp;
           const g = ctx!.createRadialGradient(cx, cy, 0, cx, cy, rr);
@@ -3334,6 +3343,11 @@ export function mountApp(root: HTMLElement) {
           g.addColorStop(1, 'rgba(255,0,0,0)');
           ctx!.globalAlpha = 1; ctx!.fillStyle = g;
           ctx!.beginPath(); ctx!.arc(cx, cy, rr, 0, Math.PI * 2); ctx!.fill();
+          ctx!.strokeStyle = '#ffe0c0'; ctx!.lineWidth = 2; ctx!.shadowColor = '#ff5a2a'; ctx!.shadowBlur = 12; ctx!.globalAlpha = 1 - bp;
+          for (let k = 0; k < 12; k++) {
+            const a = (k / 12) * Math.PI * 2 + bp; const r0 = rr * 0.5, r1 = rr * (0.9 + Math.random() * 0.4);
+            ctx!.beginPath(); ctx!.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0); ctx!.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1); ctx!.stroke();
+          }
         }
         ctx!.restore();
         requestAnimationFrame(laser);
