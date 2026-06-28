@@ -174,7 +174,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v55 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v56 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -5307,12 +5307,11 @@ export function mountApp(root: HTMLElement) {
     const ind = document.createElement('button');
     ind.id = 'cloudIndicator';
     ind.title = 'סנכרון ענן';
-    ind.style.cssText = [
-      'position:fixed;top:18px;right:220px;z-index:9000',
-      'background:rgba(10,8,6,.75);border:1px solid rgba(201,168,76,.25);border-radius:20px',
-      'padding:4px 10px;font-size:11px;color:rgba(201,168,76,.7);cursor:pointer',
-      'display:flex;align-items:center;gap:5px;transition:all .3s;letter-spacing:.5px',
-    ].join(';');
+    // Live inside the header button row (a flex row) so it never overlaps the
+    // settings button — it used to be a fixed element pinned at right:220px which
+    // landed on top of the gear on phones.
+    ind.className = 'chip ghost';
+    ind.style.cssText = 'font-size:11px;gap:5px;color:rgba(201,168,76,.7);letter-spacing:.5px;padding:0 8px;';
     ind.innerHTML = '☁ <span id="cloudStatus">לא מחובר</span>';
     ind.onclick = async () => {
       if (!puterSync.isSignedIn()) {
@@ -5333,7 +5332,8 @@ export function mountApp(root: HTMLElement) {
         setTimeout(updateCloudIndicator, 2500);
       }
     };
-    document.body.appendChild(ind);
+    const topR = document.querySelector('.chrome.topR');
+    if (topR) topR.appendChild(ind); else document.body.appendChild(ind);
   }
 
   function updateCloudIndicator() {
