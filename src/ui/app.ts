@@ -179,7 +179,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v70 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v71 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -2917,11 +2917,11 @@ export function mountApp(root: HTMLElement) {
   }
 
   // Apply the saved character on startup (if not the default Pikachu).
-  // Default: NO Pokémon on a fresh open (empty orb, ready for the holographic
-  // figure). A user who explicitly picked a character keeps their choice.
-  const savedChar = localStorage.getItem(MAIN_CHAR_KEY) || 'none';
-  document.body.dataset.char = savedChar;
-  setTimeout(() => { orb.setCharacter(savedChar); applyCharacterVoice(savedChar); }, 1200);
+  // ALWAYS start with NO Pokémon on every open — the orb stays empty until the
+  // user explicitly picks a character this session (a previous pick is NOT
+  // auto-restored, per request).
+  document.body.dataset.char = 'none';
+  setTimeout(() => { orb.setCharacter('none'); applyCharacterVoice('none'); }, 600);
 
   // ── Animated main-character swap (red-laser dispel + pokeball summon) ──
   // Plays over the orb on the main screen: a red laser strikes the current

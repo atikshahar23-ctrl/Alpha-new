@@ -3018,20 +3018,41 @@ html.perf-lite .topR { will-change: auto !important; transform: none !important;
 .hud-sc:active { transform: scale(.97); }
 
 /* ── Mobile / tablet ── */
+/* ── Mobile: clean vertical stack, nothing overlaps ──
+   top bar → shortcut rail → figure → data cards → chat → dock.
+   The old top-right HG/Trade fab-group is replaced by the rail. */
 @media (max-width: 900px) {
-  .hud-core { top: 44%; width: min(38vh, 250px); }
-  .hud-col { left: 10px; right: 10px; top: auto; bottom: 132px; transform: none; flex-direction: row; width: auto; gap: 8px; }
+  .app .fab-group { display: none !important; }
+
+  /* shortcut rail: single horizontal scroll row under the top bar */
+  .hud-rail { top: calc(var(--safe-top, 0px) + 92px); left: 0; right: 0; transform: none;
+    flex-wrap: nowrap; overflow-x: auto; justify-content: flex-start; gap: 8px; padding: 0 12px; max-width: 100%; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .hud-rail::-webkit-scrollbar { display: none; }
+  .hud-sc { flex-shrink: 0; padding: 8px 13px; font-size: 11px; }
+  .hud-sc svg { width: 14px; height: 14px; }
+
+  /* central figure: upper-middle, compact */
+  .hud-core { top: 33%; width: min(30vh, 168px); }
+  .hud-core-tag { font-size: 9px; letter-spacing: 1.5px; }
+
+  /* data cards: horizontal row sitting above the chat strip */
+  .hud-col { left: 8px; right: 8px; top: auto; bottom: 300px; transform: none; flex-direction: row; width: auto; gap: 8px; }
   .hud-col .hud-card { flex: 1; min-width: 0; padding: 9px 10px; }
-  .hud-card-h { font-size: 10px; letter-spacing: 1px; }
-  .hud-stat { font-size: 11px; padding: 3px 0; }
-  .hud-stat b { font-size: 14px; }
-  .hud-prow { font-size: 10.5px; }
-  .hud-pn { width: 48px; }
-  .hud-prow b { width: 50px; }
-  .hud-rail { top: auto; bottom: 250px; gap: 6px; }
-  .hud-sc { padding: 7px 11px; font-size: 10.5px; }
-  .hud-sc svg { width: 13px; height: 13px; }
-  /* keep the conversation panel from fighting the cards on small screens */
-  .app .right-panel { bottom: 210px; }
+  .hud-card-h { font-size: 9.5px; letter-spacing: .8px; padding-bottom: 6px; margin-bottom: 7px; }
+  .hud-stat { font-size: 10.5px; padding: 2px 0; }
+  .hud-stat b { font-size: 13px; }
+  .hud-prow { font-size: 10px; padding: 3px 0; gap: 6px; }
+  .hud-pn { width: 46px; }
+  .hud-prow b { width: 48px; }
+  .hud-foot { font-size: 9px; }
+  /* show only the top 3 contractors on a phone to keep the card short */
+  .hud-col #hudPipe .hud-prow:nth-child(n+4) { display: none; }
+
+  /* conversation strip: just above the dock, below the cards */
+  .app .right-panel { bottom: 150px; max-height: 14vh; }
+}
+@media (max-width: 380px) {
+  .hud-col { bottom: 286px; }
+  .hud-stat span, .hud-card-h span { font-size: 9px; }
 }
 html.perf-lite .hud-card, html.perf-lite .hud-sc { -webkit-backdrop-filter: none; backdrop-filter: none; background: rgba(14,11,6,.92); }
