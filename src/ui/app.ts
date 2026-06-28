@@ -179,7 +179,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v69 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v70 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -196,10 +196,10 @@ export function mountApp(root: HTMLElement) {
 
       <!-- ════════ HOLOGRAPHIC HUD (gold/white) — main display ════════ -->
       <div class="hud" id="hud">
-        <!-- Central figure: temporary holographic video until a live 3D model is imported -->
+        <!-- Central core — placeholder until a live 3D figure is imported.
+             (The alien appears only in the opening intro, not here.) -->
         <div class="hud-core" id="hudCore">
           <div class="hud-core-glow"></div>
-          <video class="hud-fig" id="hudFig" src="/Alpha-new/intro-alien.mp4" muted loop autoplay playsinline preload="auto"></video>
           <svg class="hud-core-ring" viewBox="0 0 200 200" aria-hidden="true"><circle cx="100" cy="100" r="92" fill="none" stroke="rgba(228,188,99,.5)" stroke-width="1" stroke-dasharray="4 6"/><circle cx="100" cy="100" r="78" fill="none" stroke="rgba(247,232,192,.25)" stroke-width="1"/></svg>
           <div class="hud-core-tag">ALPHA CORE · ONLINE</div>
         </div>

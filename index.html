@@ -38,66 +38,83 @@
   />
 </head>
 <body>
-  <!-- ── Intro: alien awakening video → alien-door close → reveal the app ── -->
+  <!-- ── Intro: full-screen alien on black → face scan → ACCESS GRANTED →
+            dimension entry → only then the panels appear ── -->
   <div id="introOverlay">
     <video id="introVid" muted playsinline autoplay preload="auto" src="/Alpha-new/intro-alien.mp4"></video>
-    <div class="intro-door l"></div>
-    <div class="intro-door r"></div>
-    <div class="intro-seam"></div>
+    <div class="intro-scan"><span class="scan-bar"></span><span class="scan-txt" id="scanTxt">מאתחל סורק…</span></div>
+    <div class="intro-grant">
+      <div class="grant-ring"></div>
+      <div class="grant-check">✓</div>
+      <div class="grant-title">זוהו פנים — הגישה אושרה</div>
+      <div class="grant-sub">ALPHA · נכנס למערכת</div>
+    </div>
+    <div class="intro-flash"></div>
     <button id="introSkip" type="button">דלג ⏭</button>
   </div>
   <style>
-    #introOverlay{position:fixed;inset:0;z-index:99999;background:#02030a;overflow:hidden;transition:opacity .5s ease}
-    #introVid{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:opacity .45s ease,transform 1.6s ease}
-    .intro-door{position:absolute;top:0;bottom:0;width:51%;z-index:2;
-      background:
-        repeating-linear-gradient(180deg,rgba(255,255,255,.03) 0 2px,transparent 2px 26px),
-        linear-gradient(90deg,#0a1626,#060c18 60%,#02060f);
-      transition:transform .8s cubic-bezier(.76,0,.24,1);will-change:transform}
-    .intro-door.l{left:0;transform:translateX(-101%);box-shadow:inset -2px 0 0 rgba(111,211,240,.5),inset -16px 0 40px rgba(111,211,240,.12)}
-    .intro-door.r{right:0;transform:translateX(101%);box-shadow:inset 2px 0 0 rgba(255,90,80,.5),inset 16px 0 40px rgba(255,90,80,.12)}
-    .intro-door::after{content:"";position:absolute;top:50%;width:60px;height:60px;transform:translateY(-50%);
-      background:radial-gradient(circle,rgba(111,211,240,.25),transparent 70%)}
-    .intro-door.l::after{right:-30px} .intro-door.r::after{left:-30px;background:radial-gradient(circle,rgba(255,90,80,.25),transparent 70%)}
-    .intro-seam{position:absolute;top:0;bottom:0;left:50%;width:3px;transform:translateX(-50%) scaleY(0);z-index:3;
-      background:linear-gradient(180deg,transparent,#6FD3F0,#fff,#FF5A50,transparent);
-      box-shadow:0 0 24px 6px rgba(255,255,255,.7);transition:transform .35s ease,opacity .4s ease;opacity:0}
-    #introSkip{position:absolute;bottom:max(22px,env(safe-area-inset-bottom));right:22px;z-index:4;
-      background:rgba(8,12,20,.6);border:1px solid rgba(111,211,240,.4);color:#cfe8f5;
-      padding:8px 16px;border-radius:999px;font-family:Assistant,system-ui,sans-serif;font-size:14px;cursor:pointer;backdrop-filter:blur(6px)}
-    /* CLOSING: doors slide shut, seam flares */
-    #introOverlay.closing .intro-door.l{transform:translateX(0)}
-    #introOverlay.closing .intro-door.r{transform:translateX(0)}
-    #introOverlay.closing .intro-seam{transform:translateX(-50%) scaleY(1);opacity:1}
-    #introOverlay.closing #introSkip{opacity:0;pointer-events:none}
-    /* OPENING: background goes transparent, video fades, doors part to reveal the app */
-    #introOverlay.opening{background:transparent;pointer-events:none}
-    #introOverlay.opening #introVid{opacity:0}
-    #introOverlay.opening .intro-door.l{transform:translateX(-101%)}
-    #introOverlay.opening .intro-door.r{transform:translateX(101%)}
-    #introOverlay.opening .intro-seam{opacity:0}
+    /* keep EVERYTHING out until the intro completes — nothing shows before reveal */
+    html.booting #app{ opacity:0 !important; }
+    html.booting .welcome-overlay{ opacity:0 !important; pointer-events:none !important; }
+    body.revealed .app{ animation: app-in 1s ease both; }
+    @keyframes app-in{ from{opacity:0;transform:translateY(10px) scale(.99)} to{opacity:1;transform:none} }
+    #introOverlay{position:fixed;inset:0;z-index:99999;background:#000;overflow:hidden;transition:opacity .6s ease,transform .7s ease}
+    #introVid{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000;transition:opacity .5s ease}
+    /* face scan */
+    .intro-scan{position:absolute;inset:0;z-index:2;opacity:0;transition:opacity .3s;pointer-events:none}
+    #introOverlay.scanning .intro-scan{opacity:1}
+    .scan-bar{position:absolute;left:0;right:0;top:8%;height:3px;background:linear-gradient(90deg,transparent,#F7E8C0,#E4BC63,transparent);box-shadow:0 0 26px 7px rgba(228,188,99,.6)}
+    #introOverlay.scanning .scan-bar{animation:scan-sweep 1.2s ease-in-out}
+    @keyframes scan-sweep{0%{top:10%}100%{top:90%}}
+    .scan-txt{position:absolute;bottom:15%;left:0;right:0;text-align:center;color:#F7E8C0;font-family:'Space Grotesk',monospace,sans-serif;letter-spacing:3px;font-size:15px;text-shadow:0 0 12px rgba(228,188,99,.7)}
+    /* access granted */
+    .intro-grant{position:absolute;inset:0;z-index:3;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;opacity:0;transform:scale(.92);transition:opacity .4s ease,transform .4s ease;pointer-events:none}
+    #introOverlay.granted .intro-grant{opacity:1;transform:scale(1)}
+    .grant-ring{position:absolute;width:210px;height:210px;border:2px solid rgba(228,188,99,.55);border-radius:50%;box-shadow:0 0 44px rgba(228,188,99,.4),inset 0 0 44px rgba(228,188,99,.18);animation:grant-pulse 1s ease infinite}
+    @keyframes grant-pulse{0%,100%{transform:scale(1);opacity:.7}50%{transform:scale(1.08);opacity:1}}
+    .grant-check{font-size:64px;line-height:1;color:#F7E8C0;text-shadow:0 0 30px rgba(228,188,99,.9)}
+    .grant-title{color:#fff;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:21px;letter-spacing:1px;text-shadow:0 0 16px rgba(228,188,99,.6)}
+    .grant-sub{color:#E4BC63;font-size:13px;letter-spacing:5px}
+    /* dimension entry: white warp flash + overlay zoom */
+    .intro-flash{position:absolute;inset:0;z-index:4;background:radial-gradient(circle,#fff,rgba(247,232,192,.45) 38%,transparent 70%);opacity:0;pointer-events:none}
+    #introOverlay.entering .intro-flash{animation:flash-warp .75s ease forwards}
+    @keyframes flash-warp{0%{opacity:0;transform:scale(.15)}45%{opacity:1}100%{opacity:0;transform:scale(3.2)}}
+    #introOverlay.entering #introVid,#introOverlay.entering .intro-grant{opacity:0}
+    #introOverlay.entering{transform:scale(1.12)}
     #introOverlay.gone{opacity:0}
-    @media (prefers-reduced-motion: reduce){ #introVid{display:none} }
+    #introSkip{position:absolute;bottom:max(22px,env(safe-area-inset-bottom));right:22px;z-index:5;
+      background:rgba(8,8,10,.6);border:1px solid rgba(228,188,99,.4);color:#F7E8C0;
+      padding:8px 16px;border-radius:999px;font-family:Assistant,system-ui,sans-serif;font-size:14px;cursor:pointer}
+    #introOverlay.scanning #introSkip,#introOverlay.granted #introSkip,#introOverlay.entering #introSkip{opacity:0;pointer-events:none}
   </style>
   <script>
     (function(){
       var ov=document.getElementById('introOverlay'); if(!ov) return;
-      var vid=document.getElementById('introVid'); var done=false;
-      function finish(){
-        if(done) return; done=true;
-        ov.classList.add('closing');                 // doors slam shut + seam flash
-        setTimeout(function(){ ov.classList.add('opening'); }, 820);   // part doors → reveal app
-        setTimeout(function(){ ov.classList.add('gone'); }, 1700);
-        setTimeout(function(){ ov.parentNode && ov.parentNode.removeChild(ov); }, 2250);
+      document.documentElement.classList.add('booting');   // hide app + welcome until reveal
+      var vid=document.getElementById('introVid'); var scanTxt=document.getElementById('scanTxt'); var done=false;
+      function reveal(){
+        document.documentElement.classList.remove('booting');
+        document.body.classList.add('revealed');   // panels animate in — only now
+        ov.classList.add('gone');
+        setTimeout(function(){ ov.parentNode && ov.parentNode.removeChild(ov); }, 750);
       }
-      document.getElementById('introSkip').addEventListener('click', finish);
+      function sequence(){            // video finished → scan → granted → enter → reveal
+        if(done) return; done=true;
+        ov.classList.add('scanning');
+        setTimeout(function(){ if(scanTxt) scanTxt.textContent='מזהה פנים…'; }, 550);
+        setTimeout(function(){ ov.classList.remove('scanning'); ov.classList.add('granted'); }, 1350);
+        setTimeout(function(){ ov.classList.add('entering'); }, 2650);   // dimension warp
+        setTimeout(reveal, 3250);                                        // panels appear
+      }
+      function skip(){ if(done) return; done=true; reveal(); }
+      document.getElementById('introSkip').addEventListener('click', skip);
       if(vid){
-        vid.addEventListener('ended', finish);
-        vid.addEventListener('error', finish);
+        vid.addEventListener('ended', sequence);
+        vid.addEventListener('error', sequence);
         var pr=vid.play && vid.play();
-        if(pr && pr.catch) pr.catch(function(){ /* autoplay blocked: skip button / fallback handles it */ });
-        setTimeout(finish, 16000);   // hard fallback so the app never gets stuck behind the intro
-      } else { finish(); }
+        if(pr && pr.catch) pr.catch(function(){ /* autoplay blocked: skip / fallback handle it */ });
+        setTimeout(sequence, 16000);   // hard fallback so it never gets stuck
+      } else { sequence(); }
     })();
   </script>
   <div id="app"></div>
