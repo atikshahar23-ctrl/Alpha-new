@@ -2050,6 +2050,37 @@ function attachAura(host: THREE.Group, character: string): void {
   (host as any).__aura = { points, update };
 }
 
+// ── One-shot impact burst: an expanding additive ring + flying sparks. Used
+// when the pokéball pops open (and on throw arrival). Self-animating; removes
+// itself when finished so it never touches the main render loop. ─────────────
+function spawnBurst(parent: THREE.Object3D, pos: THREE.Vector3, color: number): void {
+  const grp = new THREE.Group(); grp.position.copy(pos); parent.add(grp);
+  const ringGeo = new THREE.RingGeometry(0.1, 0.17, 48);
+  const ringMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false });
+  const ring = new THREE.Mesh(ringGeo, ringMat); grp.add(ring);
+  const N = 30;
+  const sp = new Float32Array(N * 3);
+  const vel: THREE.Vector3[] = [];
+  for (let i = 0; i < N; i++) {
+    const a = Math.random() * Math.PI * 2, b = (Math.random() - 0.5) * Math.PI, s = 1.4 + Math.random() * 1.8;
+    vel.push(new THREE.Vector3(Math.cos(a) * Math.cos(b), Math.sin(b), Math.sin(a) * Math.cos(b)).multiplyScalar(s));
+  }
+  const sgeo = new THREE.BufferGeometry(); sgeo.setAttribute('position', new THREE.BufferAttribute(sp, 3));
+  const smat = new THREE.PointsMaterial({ color, size: 0.13, map: auraSprite(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false });
+  const sparks = new THREE.Points(sgeo, smat); sparks.frustumCulled = false; grp.add(sparks);
+  const start = performance.now(), dur = 640;
+  const tick = (now: number) => {
+    const t = Math.min(1, (now - start) / dur);
+    ring.scale.setScalar(1 + t * 8); ringMat.opacity = 0.9 * (1 - t);
+    const p = sgeo.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < N; i++) p.setXYZ(i, vel[i].x * t, vel[i].y * t, vel[i].z * t);
+    p.needsUpdate = true; smat.opacity = 1 - t;
+    if (t < 1) requestAnimationFrame(tick);
+    else { parent.remove(grp); ringGeo.dispose(); ringMat.dispose(); sgeo.dispose(); smat.dispose(); }
+  };
+  requestAnimationFrame(tick);
+}
+
 function loadAndReplaceBody(
   pikaGroup: THREE.Group,
   _mats: PikachuMaterials,
@@ -2290,7 +2321,10 @@ function makeThrowPokeball(group: THREE.Group, pikaGroup: THREE.Group, base: str
           m.traverse((o: any) => {
             if (!o.isMesh) return;
             o.geometry.computeVertexNormals();
-            const t = (mm: any) => { mm.roughness = 0.3; mm.metalness = 0.18; mm.side = THREE.FrontSide; };
+            // Premium polished-metal look: low roughness + high metalness picks up
+            // the scene env reflections (scene.environment is set), so the shell
+            // reads as glossy enamel rather than flat plastic.
+            const t = (mm: any) => { mm.roughness = 0.18; mm.metalness = 0.85; mm.envMapIntensity = 1.4; mm.side = THREE.FrontSide; };
             Array.isArray(o.material) ? o.material.forEach(t) : (o.material && t(o.material));
           });
           const bb = new THREE.Box3().setFromObject(m);
@@ -2298,6 +2332,17 @@ function makeThrowPokeball(group: THREE.Group, pikaGroup: THREE.Group, base: str
           const s = 1.5 / Math.max(sz.x, sz.y, sz.z);
           const wrap = new THREE.Group();
           m.scale.setScalar(s); m.position.set(-ctr.x * s, -ctr.y * s, -ctr.z * s);
+          // Glowing centre gem on the front face (+z) so the ball reads as "charged".
+          const gemR = 0.18;
+          const gem = new THREE.Mesh(
+            new THREE.SphereGeometry(gemR, 20, 20),
+            new THREE.MeshStandardMaterial({ color: 0x081018, emissive: new THREE.Color(0x9fe6ff), emissiveIntensity: 2.6, roughness: 0.15, metalness: 0, toneMapped: false }),
+          );
+          gem.position.set(0, 0, 0.74);
+          const gemLight = new THREE.PointLight(0x9fe6ff, 1.4, 2.2, 1.4);
+          gemLight.position.copy(gem.position);
+          wrap.add(gem); wrap.add(gemLight);
+          (wrap as any).__gem = gem;
           wrap.add(m); wrap.visible = false; group.add(wrap); ball = wrap; res(wrap);
         }, undefined, () => res(null));
       })).catch(() => null);
@@ -2339,7 +2384,7 @@ function makeThrowPokeball(group: THREE.Group, pikaGroup: THREE.Group, base: str
         b.scale.setScalar(0.95 * (1 - e) + 0.2 * e);
         b.rotation.y += 0.45; b.rotation.x += 0.22;
         if (t < 1) holdRaf = requestAnimationFrame(tick);
-        else { b.visible = false; try { onArrive && onArrive(); } catch {} }
+        else { b.visible = false; try { spawnBurst(group, new THREE.Vector3(0, 0, 0), 0x9fe6ff); } catch {} try { onArrive && onArrive(); } catch {} }
       };
       holdRaf = requestAnimationFrame(tick);
     });
@@ -2347,7 +2392,7 @@ function makeThrowPokeball(group: THREE.Group, pikaGroup: THREE.Group, base: str
 
   const throwPokeball = function throwPokeball(onOpen?: () => void, onDone?: () => void) {
     let opened = false, doneF = false;
-    const fo = () => { if (!opened) { opened = true; pikaGroup.visible = true; try { onOpen && onOpen(); } catch {} } };
+    const fo = () => { if (!opened) { opened = true; pikaGroup.visible = true; try { spawnBurst(group, ball ? ball.position.clone() : new THREE.Vector3(0, 0, 0), 0x9fe6ff); } catch {} try { onOpen && onOpen(); } catch {} } };
     const fd = () => { if (!doneF) { doneF = true; if (ball) ball.visible = false; try { onDone && onDone(); } catch {} } };
     const wd1 = setTimeout(fo, 1500), wd2 = setTimeout(() => { fo(); fd(); }, 2700);
     pikaGroup.visible = false; // character vanishes (laser hit)
