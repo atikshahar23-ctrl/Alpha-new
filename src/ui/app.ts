@@ -179,7 +179,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v73 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v74 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -2958,8 +2958,8 @@ export function mountApp(root: HTMLElement) {
     unlockCharacterAudio();
     setCharacterVolume(state.pikaVolume);
     voice.charVoice = CHAR_TTS[id] || null;   // colour the assistant's speech
-    if (id === 'none') {
-      // No character → no cries at all.
+    if (id === 'none' || id === 'robot') {
+      // No character / the robot → no Pokémon cries.
       setPikaEnabled(false);
       stopCharacterVoice();
       return;
@@ -2981,11 +2981,10 @@ export function mountApp(root: HTMLElement) {
   }
 
   // Apply the saved character on startup (if not the default Pikachu).
-  // ALWAYS start with NO Pokémon on every open — the orb stays empty until the
-  // user explicitly picks a character this session (a previous pick is NOT
-  // auto-restored, per request).
-  document.body.dataset.char = 'none';
-  setTimeout(() => { orb.setCharacter('none'); applyCharacterVoice('none'); }, 600);
+  // Default centerpiece on every open is the ROBOT (no Pokémon unless the user
+  // picks one). The robot swaps like any character via the picker.
+  document.body.dataset.char = 'robot';
+  setTimeout(() => { orb.setCharacter('robot'); applyCharacterVoice('robot'); }, 600);
 
   // ── Animated main-character swap (red-laser dispel + pokeball summon) ──
   // Plays over the orb on the main screen: a red laser strikes the current

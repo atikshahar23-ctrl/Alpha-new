@@ -59,7 +59,7 @@
     body.revealed .app{ animation: app-in .9s ease both; }
     @keyframes app-in{ from{opacity:0} to{opacity:1} }   /* opacity only — no layout shift */
     #introOverlay{position:fixed;inset:0;z-index:99999;background:#000;overflow:hidden;transition:opacity .6s ease,transform .7s ease}
-    #introVid{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000;transition:opacity .5s ease}
+    #introVid{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000;transition:opacity .5s ease}
     /* face scan */
     .intro-scan{position:absolute;inset:0;z-index:2;opacity:0;transition:opacity .3s;pointer-events:none}
     #introOverlay.scanning .intro-scan{opacity:1}

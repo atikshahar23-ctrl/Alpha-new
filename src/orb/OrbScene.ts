@@ -1288,6 +1288,7 @@ function setupChuEffect(
 // Registry of swappable main characters. Pikachu is the built-in (vertex-color
 // GLB); the others are textured GLBs the user provided (converted from FBX/DAE).
 const CHARACTER_FILES: Record<string, string> = {
+  robot:      'ar-models/robot.glb',
   pikachu:    'pikachu.glb?v=5',
   charmander: 'ar-models/charmander.glb',
   squirtle:   'ar-models/squirtle.glb',
@@ -1870,6 +1871,7 @@ const CHAR_XFORM_LS_KEY = 'char_xform_v1';
 function defaultXform(character: string): CharXform {
   // Rotation defaults vary by model source format; scale/position default to identity.
   const ROT: Record<string, {x:number;y:number;z:number}> = {
+    robot:      { x: 0,            y: 0,       z: 0 },   // rigged FBX → GLB; adjust via pose if needed
     pikachu:    { x: 0,            y: Math.PI, z: 0 },
     charizard:  { x: 0,            y: 0,       z: 0 },   // new FBX model — already faces front, upright
     charmander: { x: 0,            y: Math.PI, z: 0 },
@@ -2013,6 +2015,14 @@ function loadAndReplaceBody(
                   sm.needsUpdate = true;
                 }
               }
+              else if (character === 'robot') {
+                // Metallic robot — brushed steel with a faint cool glow; no sprite.
+                sm.color.setRGB(0.60, 0.65, 0.74);
+                sm.metalness = 0.85; sm.roughness = 0.42;
+                if (sm.emissive) sm.emissive.setRGB(0.03, 0.06, 0.10);
+                (sm as any).envMapIntensity = 1.1;
+                sm.needsUpdate = true;
+              }
               else if (sm.color) {
                 // Fallback flat colour (shown until the sprite texture loads, and
                 // kept if no sprite exists). Matte + gentle dim keeps bloom in check.
@@ -2028,6 +2038,22 @@ function loadAndReplaceBody(
             child.castShadow = true;
           }
         });
+
+        // The robot model ships standing on a large flat ground plane — drop any
+        // thin/wide mesh so only the robot remains (and so the size-normalisation
+        // below fits the robot, not the floor).
+        if (character === 'robot') {
+          model.updateMatrixWorld(true);
+          const drop: THREE.Object3D[] = [];
+          model.traverse((child) => {
+            if (child instanceof THREE.Mesh) {
+              const sz = new THREE.Box3().setFromObject(child).getSize(new THREE.Vector3());
+              const dims = [sz.x, sz.y, sz.z].sort((a, b) => a - b);
+              if (dims[2] > 1e-4 && dims[0] < dims[2] * 0.06) drop.push(child);   // flat + wide → floor
+            }
+          });
+          drop.forEach((m) => m.parent && m.parent.remove(m));
+        }
 
         // Auto-normalize so every Pokemon is roughly the SAME apparent size and
         // fills the orb sphere. Rotation is applied FIRST, then the bounding box
@@ -2092,6 +2118,17 @@ function loadAndReplaceBody(
         // Apply stored user transform (scale multiplier + position offset on top).
         model.scale.setScalar(s * xf.s);
         model.position.set(-bbCenter.x * s + xf.px, -bbCenter.y * s + xf.py, -bbCenter.z * s + xf.pz);
+
+        // Baked animation (e.g., the rigged robot) — drive it with a mixer that
+        // the render loop updates. Stash on the group so the loop can find it.
+        const prevMx = (pikaGroup as any).__mixer as THREE.AnimationMixer | undefined;
+        if (prevMx) { try { prevMx.stopAllAction(); prevMx.uncacheRoot(prevMx.getRoot() as any); } catch {} (pikaGroup as any).__mixer = null; }
+        if (gltf.animations && gltf.animations.length) {
+          const mixer = new THREE.AnimationMixer(model);
+          gltf.animations.forEach((clip: THREE.AnimationClip) => { const a = mixer.clipAction(clip); a.play(); });
+          (pikaGroup as any).__mixer = mixer;
+        }
+
         pikaGroup.add(model);
         loadedModels.set(pikaGroup, model);
         onLoaded?.(model);
@@ -2513,6 +2550,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     const dt = lastFrame ? Math.min((now - lastFrame) / 1000, 0.05) : 0.016;
     lastFrame = now;
     time += dt;
+    { const __mx = (pikaGroup as any).__mixer as THREE.AnimationMixer | undefined; if (__mx) __mx.update(dt); }
     // Adaptive quality: if the GPU can't sustain ~55fps over two 1s windows, shed
     // cost (first the post-fx pipeline, then resolution) so motion stays smooth.
     // Sticky downgrade only — never auto-upgrades, to avoid hitching back and forth.
@@ -3522,6 +3560,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     const dt = lastFrame ? Math.min((now - lastFrame) / 1000, 0.05) : 0.016;
     lastFrame = now;
     time += dt;
+    { const __mx = (pikaGroup as any).__mixer as THREE.AnimationMixer | undefined; if (__mx) __mx.update(dt); }
     // Adaptive quality: if the GPU can't sustain ~55fps over two 1s windows, shed
     // cost (first the post-fx pipeline, then resolution) so motion stays smooth.
     // Sticky downgrade only — never auto-upgrades, to avoid hitching back and forth.
