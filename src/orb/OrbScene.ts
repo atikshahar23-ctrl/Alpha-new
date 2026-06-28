@@ -2181,6 +2181,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   // Adaptive quality tier, bumped automatically when the GPU can't keep a smooth
   // framerate: 0 = full (post-fx on), 1 = post-fx off, 2 = post-fx off + lower res.
   let qTier = 0;
+  const bigTouch = false;   // (desktop-scene only concept; mobile is already light)
   const prCap = () => {
     const base = Math.min(window.devicePixelRatio || 1, perfFast ? 1 : 2);
     return qTier >= 2 ? Math.min(base, 1) : base;
@@ -2521,7 +2522,10 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
       warmT += dt; fpsT += dt; fpsN++;
       if (warmT > 3 && fpsT >= 1) {
         const fps = fpsN / fpsT; fpsT = 0; fpsN = 0;
-        if (fps < 55) { if (++lowStreak >= 2) { lowStreak = 0; qTier++; resize(); } }
+        // iPad-class drops quality after a single slow window (fast relief); others
+        // wait for two so a momentary dip doesn't permanently lower quality.
+        const need = bigTouch ? 1 : 2;
+        if (fps < 55) { if (++lowStreak >= need) { lowStreak = 0; qTier++; resize(); } }
         else lowStreak = 0;
       }
     }
@@ -2800,7 +2804,10 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
 // MAIN: mountOrb — desktop renders same orb concept with full pipeline
 // ============================================================
 export function mountOrb(container: HTMLElement): OrbHandle {
-  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 768;
+  let displayPref = 'auto';
+  try { displayPref = localStorage.getItem('alpha_display_mode') || 'auto'; } catch {}
+  const autoMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 768;
+  const isMobile = displayPref === 'mobile' ? true : displayPref === 'desktop' ? false : autoMobile;
   if (isMobile) return mountMobileOrb(container);
 
   const renderer = new THREE.WebGLRenderer({
@@ -2815,8 +2822,15 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   // Adaptive quality tier, bumped automatically when the GPU can't keep a smooth
   // framerate: 0 = full (post-fx on), 1 = post-fx off, 2 = post-fx off + lower res.
   let qTier = 0;
+  // iPad-class device: big, high-DPR, touch (often reports a desktop "Macintosh" UA
+  // so it lands on this heavier desktop scene). Its huge retina screen makes a high
+  // pixel ratio the #1 bottleneck, so cap it hard — at DPR 1.0 the screen is still
+  // razor-sharp but renders ~2.25x fewer pixels than 1.5, which is what makes it
+  // smooth.
+  const bigTouch = (navigator.maxTouchPoints || 0) > 1 && (window.devicePixelRatio || 1) >= 1.5 && Math.min(window.innerWidth, window.innerHeight) >= 700;
   const prCap = () => {
-    const base = Math.min(window.devicePixelRatio || 1, perfFast ? 1 : 1.5);
+    const cap = perfFast ? 1 : (bigTouch ? 1.0 : 1.5);
+    const base = Math.min(window.devicePixelRatio || 1, cap);
     return qTier >= 2 ? Math.min(base, 1) : base;
   };
   renderer.setPixelRatio(prCap());
@@ -3511,7 +3525,10 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       warmT += dt; fpsT += dt; fpsN++;
       if (warmT > 3 && fpsT >= 1) {
         const fps = fpsN / fpsT; fpsT = 0; fpsN = 0;
-        if (fps < 55) { if (++lowStreak >= 2) { lowStreak = 0; qTier++; resize(); } }
+        // iPad-class drops quality after a single slow window (fast relief); others
+        // wait for two so a momentary dip doesn't permanently lower quality.
+        const need = bigTouch ? 1 : 2;
+        if (fps < 55) { if (++lowStreak >= need) { lowStreak = 0; qTier++; resize(); } }
         else lowStreak = 0;
       }
     }

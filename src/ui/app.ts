@@ -70,6 +70,11 @@ const UI_STRINGS: Record<string, Record<UILang, string>> = {
   soundEffects: { he: 'אפקטי סאונד', en: 'Sound effects' },
   haptic: { he: 'משוב רטט', en: 'Haptic feedback' },
   fastMode: { he: '⚡ מצב מהיר (ביצועים)', en: '⚡ Fast mode (performance)' },
+  displayMode: { he: 'מצב תצוגה', en: 'Display mode' },
+  dmAuto: { he: 'אוטומטי (לפי המכשיר)', en: 'Automatic (by device)' },
+  dmMobile: { he: '📱 מצב נייד (קל ומהיר)', en: '📱 Mobile (light & fast)' },
+  dmDesktop: { he: '🖥️ מצב מחשב (איכות מלאה)', en: '🖥️ Desktop (full quality)' },
+  displayModeDesc: { he: 'בחר מצב נייד אם המערכת איטית באייפד/טאבלט. הדף ייטען מחדש לאחר שינוי.', en: 'Choose Mobile if the app runs slow on iPad/tablet. The page reloads after changing.' },
   voiceLang: { he: 'קול ושפה', en: 'VOICE & LANGUAGE' },
   micLang: { he: 'שפת מיקרופון', en: 'Mic language' },
   voiceLangLabel: { he: 'שפת דיבור', en: 'Voice language' },
@@ -174,7 +179,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v59 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v61 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -421,6 +426,13 @@ export function mountApp(root: HTMLElement) {
             <label data-i18n="fastMode">⚡ מצב מהיר (ביצועים)</label>
             <label class="toggle"><input type="checkbox" id="fastModeCheck" /><span class="toggle-slider"></span></label>
           </div>
+          <label data-i18n="displayMode">מצב תצוגה</label>
+          <select id="displayModeSel">
+            <option value="auto" data-i18n="dmAuto">אוטומטי (לפי המכשיר)</option>
+            <option value="mobile" data-i18n="dmMobile">📱 מצב נייד (קל ומהיר)</option>
+            <option value="desktop" data-i18n="dmDesktop">🖥️ מצב מחשב (איכות מלאה)</option>
+          </select>
+          <p style="margin:2px 0 10px;font-size:11px;color:var(--dim)" data-i18n="displayModeDesc">בחר מצב נייד אם המערכת איטית באייפד/טאבלט. הדף ייטען מחדש לאחר שינוי.</p>
         </div>
 
         <div class="settings-section">
@@ -4601,6 +4613,7 @@ export function mountApp(root: HTMLElement) {
     $<HTMLInputElement>('sfxCheck').checked = state.sfxOn;
     $<HTMLInputElement>('hapticsCheck').checked = state.haptics;
     $<HTMLInputElement>('fastModeCheck').checked = localStorage.getItem('alpha_fast_mode') === '1';
+    $<HTMLSelectElement>('displayModeSel').value = localStorage.getItem('alpha_display_mode') || 'auto';
     $<HTMLInputElement>('autoSpeakCheck').checked = state.autoSpeak;
     $<HTMLInputElement>('pikaVoiceCheck').checked = state.pikaVoiceOn;
     $<HTMLInputElement>('pikaVolSlider').value = String(Math.round(state.pikaVolume * 100));
@@ -5039,10 +5052,17 @@ export function mountApp(root: HTMLElement) {
     localStorage.setItem('alpha_social_insta', socials.insta);
     localStorage.setItem('alpha_social_fb', socials.fb);
     updateConnIndicators();
+    // Display mode (mobile/desktop/auto) — needs a reload to re-mount the orb scene.
+    const prevDisplayMode = localStorage.getItem('alpha_display_mode') || 'auto';
+    const newDisplayMode = $<HTMLSelectElement>('displayModeSel').value;
+    localStorage.setItem('alpha_display_mode', newDisplayMode);
     saveState(state);
     updateAIDisplay();
     $('overlay').classList.remove('show');
     if (state.history.length === 0) addMsg(state.name + ' ' + t('onlineMsg', state.uiLang), 'al');
+    if (newDisplayMode !== prevDisplayMode) {
+      setTimeout(() => location.reload(), 150);
+    }
   };
 
   function pad(n: number) { return String(n).padStart(2, '0'); }
