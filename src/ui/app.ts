@@ -179,7 +179,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v74 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v75 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -1892,7 +1892,7 @@ export function mountApp(root: HTMLElement) {
       // was so high it often found nothing → "no skeleton"). False positives are
       // handled downstream by the per-frame `trusted` gate + settle + hold, not by
       // starving detection here.
-      gestureHands.setOptions({ maxNumHands: 1, modelComplexity: isMobileDevice ? 0 : 1, minDetectionConfidence: 0.6, minTrackingConfidence: 0.5, selfieMode: true });
+      gestureHands.setOptions({ maxNumHands: 2, modelComplexity: isMobileDevice ? 0 : 1, minDetectionConfidence: 0.6, minTrackingConfidence: 0.5, selfieMode: true });
 
       let lastFrameMs = performance.now();
 
@@ -1930,6 +1930,36 @@ export function mountApp(root: HTMLElement) {
       // this device, fall back to the lite model live (no reload of the page).
       let cplxLevel = 1, cplxFrames = 0, cplxSum = 0, cplxChecked = false;
 
+      // ── Realistic holographic hand ──────────────────────────────────────────
+      // Layered render: a radial-lit palm, a soft translucent "flesh" stroke, a
+      // bright energy-core line, and glowing joints/fingertips — reads like a real
+      // translucent hand rather than a thin wireframe. Sizes scale with the hand.
+      const HCONN = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+      function drawHand(hand: any[], W: number, H: number, primary: boolean) {
+        const PX = (i: number) => hand[i].x * W, PY = (i: number) => hand[i].y * H;
+        const palmR = Math.max(18, Math.hypot(PX(0) - PX(9), PY(0) - PY(9)));
+        const a = primary ? 1 : 0.6;
+        const g = octx.createRadialGradient(PX(9), PY(9), palmR * 0.1, PX(9), PY(9), palmR * 1.5);
+        g.addColorStop(0, `rgba(255,228,150,${0.20 * a})`); g.addColorStop(1, 'rgba(218,165,32,0)');
+        octx.beginPath();
+        for (const i of [0, 1, 5, 9, 13, 17]) { const x = PX(i), y = PY(i); i === 0 ? octx.moveTo(x, y) : octx.lineTo(x, y); }
+        octx.closePath(); octx.fillStyle = g; octx.fill();
+        octx.lineCap = 'round'; octx.lineJoin = 'round';
+        octx.shadowColor = 'rgba(255,200,80,.85)'; octx.shadowBlur = 18;
+        octx.strokeStyle = `rgba(245,205,130,${0.30 * a})`; octx.lineWidth = palmR * 0.46;
+        for (const [p, q] of HCONN) { octx.beginPath(); octx.moveTo(PX(p), PY(p)); octx.lineTo(PX(q), PY(q)); octx.stroke(); }
+        octx.shadowBlur = 10; octx.strokeStyle = `rgba(255,240,185,${0.92 * a})`; octx.lineWidth = Math.max(1.5, palmR * 0.15);
+        for (const [p, q] of HCONN) { octx.beginPath(); octx.moveTo(PX(p), PY(p)); octx.lineTo(PX(q), PY(q)); octx.stroke(); }
+        octx.shadowBlur = 12;
+        for (let i = 0; i < 21; i++) {
+          const tip = i === 4 || i === 8 || i === 12 || i === 16 || i === 20;
+          octx.beginPath(); octx.arc(PX(i), PY(i), tip ? palmR * 0.16 : (i === 0 ? palmR * 0.2 : palmR * 0.1), 0, Math.PI * 2);
+          octx.fillStyle = tip ? `rgba(255,242,180,${0.96 * a})` : `rgba(245,205,120,${0.85 * a})`;
+          octx.fill();
+        }
+        octx.shadowBlur = 0;
+      }
+
       gestureHands.onResults((results: any) => {
         if (!gestureActive) return;
         const now = performance.now();
@@ -1964,43 +1994,22 @@ export function mountApp(root: HTMLElement) {
         // live feedback. Detection QUALITY gates only the ACTIONS (below) — it never
         // hides the hand, otherwise a slightly-too-far hand looks like the detector
         // is dead (the "no skeleton at all" report).
-        const rawLm0 = results.multiHandLandmarks[0];
+        // Two-hand support: pick the PRIMARY (largest / closest) hand to drive the
+        // gestures, but draw ALL detected hands as holograms.
+        const hands: any[][] = results.multiHandLandmarks;
+        const spanOf = (h: any[]) => { let mnx = 1, mxx = 0, mny = 1, mxy = 0; for (const p of h) { if (p.x < mnx) mnx = p.x; if (p.x > mxx) mxx = p.x; if (p.y < mny) mny = p.y; if (p.y > mxy) mxy = p.y; } return Math.max(mxx - mnx, mxy - mny); };
+        let primaryIdx = 0, bestSpan = -1;
+        hands.forEach((h, idx) => { const s = spanOf(h); if (s > bestSpan) { bestSpan = s; primaryIdx = idx; } });
+        const rawLm0 = hands[primaryIdx];
         const lm = smoothLandmarks(rawLm0, Math.min(0.05, Math.max(0.012, dt / 1000)));
-        // Quality: MediaPipe's own handedness confidence + how much of the frame the
-        // hand fills. A real, deliberate hand scores high and is large; background
-        // false-positives are low/tiny. Only a TRUSTED hand is allowed to act.
-        const score = results.multiHandedness?.[0]?.score ?? 1;
-        let minx = 1, maxx = 0, miny = 1, maxy = 0;
-        for (const pt of rawLm0) { if (pt.x < minx) minx = pt.x; if (pt.x > maxx) maxx = pt.x; if (pt.y < miny) miny = pt.y; if (pt.y > maxy) maxy = pt.y; }
-        const handSpan = Math.max(maxx - minx, maxy - miny);   // fraction of frame
+        // Quality: handedness confidence + how much of the frame the hand fills.
+        const score = results.multiHandedness?.[primaryIdx]?.score ?? 1;
+        const handSpan = bestSpan;
         const trusted = score >= 0.7 && handSpan >= 0.13;
-        // Settle: a trusted hand must persist briefly before it can act, so a
-        // flicker-in detection can't instantly trigger a command.
         if (trusted) handPresentMs += dt; else handPresentMs = 0;
         const armed = trusted && handPresentMs >= SETTLE_MS;
-        // ── Draw the hand as a glowing ghost on the full-screen overlay ──────
-        const PX = (i: number) => lm[i].x * W;
-        const PY = (i: number) => lm[i].y * H;
-        const CONN = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
-        // Translucent palm fill for a human-hand read.
-        octx.beginPath();
-        for (const i of [0, 1, 5, 9, 13, 17]) { const x = PX(i), y = PY(i); if (i === 0) octx.moveTo(x, y); else octx.lineTo(x, y); }
-        octx.closePath();
-        octx.fillStyle = 'rgba(218,165,32,.06)';
-        octx.fill();
-        // Bones — gold glow.
-        octx.lineCap = 'round'; octx.lineJoin = 'round';
-        octx.shadowColor = 'rgba(255,200,80,.9)'; octx.shadowBlur = 14;
-        octx.strokeStyle = 'rgba(255,210,110,.85)'; octx.lineWidth = 5;
-        for (const [a, b] of CONN) { octx.beginPath(); octx.moveTo(PX(a), PY(a)); octx.lineTo(PX(b), PY(b)); octx.stroke(); }
-        // Joints + fingertips.
-        for (let i = 0; i < lm.length; i++) {
-          const tip = (i === 4 || i === 8 || i === 12 || i === 16 || i === 20);
-          octx.beginPath(); octx.arc(PX(i), PY(i), tip ? 9 : 5, 0, Math.PI * 2);
-          octx.fillStyle = i === 8 ? 'rgba(255,245,150,.98)' : tip ? 'rgba(255,220,120,.95)' : 'rgba(218,165,32,.8)';
-          octx.fill();
-        }
-        octx.shadowBlur = 0;
+        // Draw every hand (primary uses the smoothed landmarks; others raw).
+        for (let hi = 0; hi < hands.length; hi++) drawHand(hi === primaryIdx ? lm : hands[hi], W, H, hi === primaryIdx);
 
         // FINGER-FOLD test — the most reliable open/fist signal there is.
         // For each finger, measure tip→knuckle(MCP) distance ÷ the finger's own first
