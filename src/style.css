@@ -279,6 +279,16 @@ body[data-char="ho-oh"] .char-ambient {
 .gp-camera-hidden video,
 .gp-camera-hidden canvas{ width:1px; height:1px; object-fit:cover; }
 
+/* ── Transparent full-screen hand-skeleton overlay ─────────────────────────
+   The detected hand is drawn here as a glowing "ghost" hand so the user sees
+   the analysis in the background — no camera image is ever shown. Sits above
+   the orb but never blocks taps. */
+.hand-overlay{
+  position:fixed; inset:0; width:100vw; height:100vh;
+  z-index:1500; pointer-events:none; opacity:.92;
+}
+.hand-overlay[hidden]{ display:none; }
+
 /* ── Finger-pointing laser cursor ──────────────────────────────────────── */
 .laser-cursor{
   position:fixed; top:0; left:0; z-index:2000; pointer-events:none;

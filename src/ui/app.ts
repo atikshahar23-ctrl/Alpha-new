@@ -179,7 +179,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v62 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v63 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -226,18 +226,21 @@ export function mountApp(root: HTMLElement) {
           <canvas id="gestureCanvas"></canvas>
         </div>
         <span class="gi-dot"></span>
-        <span class="gi-text" id="gestureStatus">מצלמה פעילה</span>
+        <span class="gi-text" id="gestureStatus">זיהוי פעיל</span>
       </div>
+
+      <!-- Transparent full-screen overlay that renders the detected hand as a
+           glowing skeleton "in the background" — no camera window is ever shown. -->
+      <canvas id="handOverlay" class="hand-overlay" hidden></canvas>
 
       <!-- Gesture cheat-sheet — shown when detection starts, auto-hides after 7s. -->
       <div id="gestureHelp" class="gesture-help" hidden>
         <div class="gh-title">🖐️ שליטה בידיים</div>
         <ul>
+          <li><span>✊</span><b>אגרוף</b> — החזק רגע כדי לזמן פוקימון</li>
+          <li><span>🖐️</span><b>כף יד פתוחה</b> — החזק רגע כדי לשחרר</li>
           <li><span>☝️</span><b>הצבעה</b> — סמן נע עם האצבע; החזק על כפתור = לחיצה</li>
-          <li><span>✌️</span><b>שתי אצבעות</b> — גלילת מסך (הזז יד מעלה/מטה)</li>
           <li><span>🤏</span><b>צביטה</b> — אחיזה וסיבוב הדמות</li>
-          <li><span>✊➡️</span><b>אגרוף + זריקה מהירה</b> — זימון פוקימון</li>
-          <li><span>🖐️</span><b>כף יד פתוחה (2 שנ')</b> — שחרור הפוקימון</li>
         </ul>
       </div>
 
@@ -1665,28 +1668,14 @@ export function mountApp(root: HTMLElement) {
     let gestureCamera: any = null;
     let palmHoldMs = 0;
     let throwCooldownMs = 0;
-    let suppressPalmMs = 0;   // after a throw, ignore the open hand for dispel
-    let fistActive = false;   // a fist is currently held (armed to throw)
-    let fistBaseline = 0;     // resting hand size while the fist is held (slow-follow)
-    let fistArmMs = 0;        // how long the current fist has been held
-    let prevScale = 0;        // hand size last frame (for forward-thrust velocity)
+    let suppressPalmMs = 0;   // after a summon, ignore the open hand for dispel
+    let prevScale = 0;        // hand size last frame (kept for re-acquire reset)
     // Finger-pointing laser cursor + dwell-to-select.
     let pointSX = 0, pointSY = 0;       // smoothed cursor screen position
     let dwellMs = 0;
     let dwellTarget: Element | null = null;
     let clickCooldownMs = 0;
     const DWELL_MS = 1300;              // snappier dwell-to-click (was 2000)
-    let peacePrevY: number | null = null;   // last hand-Y for two-finger scroll
-    // Scroll the deepest scrollable element under (x,y); falls back to the page.
-    const scrollAt = (x: number, y: number, dy: number) => {
-      let el = document.elementFromPoint(x, y) as HTMLElement | null;
-      while (el && el !== document.body && el !== document.documentElement) {
-        const oy = getComputedStyle(el).overflowY;
-        if ((oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight + 2) { el.scrollTop += dy; return; }
-        el = el.parentElement;
-      }
-      (document.scrollingElement || document.documentElement).scrollTop += dy;
-    };
     // Gesture stability/debounce — a pose must be held briefly before it becomes
     // the "confirmed" gesture, so frame-to-frame finger jitter can't make the
     // detector flip between gestures ("go crazy").
@@ -1698,7 +1687,9 @@ export function mountApp(root: HTMLElement) {
     let pinchActive = false;
     let pinchStartHX = 0, pinchStartHY = 0;
     let pinchStartXf: { x: number; y: number; z: number; s: number; px: number; py: number; pz: number } | null = null;
-    const PALM_HOLD_THRESHOLD = 2000;  // hold open palm 2s to release a Pokémon
+    const PALM_HOLD_THRESHOLD = 1100;  // hold open palm ~1.1s to release a Pokémon
+    const FIST_HOLD_THRESHOLD = 650;   // hold a fist ~0.65s to summon (no throw needed)
+    let fistHoldMs = 0;                // how long a confirmed fist has been held
     const THROW_COOLDOWN = 2200;
 
     function gestureStatus(msg: string) {
@@ -1768,6 +1759,9 @@ export function mountApp(root: HTMLElement) {
       const vid = document.getElementById('gestureVideo') as HTMLVideoElement | null;
       if (vid) vid.srcObject = null;
       document.getElementById('gesturePanel')!.setAttribute('hidden', '');
+      const ov = document.getElementById('handOverlay') as HTMLCanvasElement | null;
+      if (ov) { const c = ov.getContext('2d'); if (c) c.clearRect(0, 0, ov.width, ov.height); ov.setAttribute('hidden', ''); }
+      if ((window as any).__sizeHandOverlay) { window.removeEventListener('resize', (window as any).__sizeHandOverlay); (window as any).__sizeHandOverlay = null; }
       const help = document.getElementById('gestureHelp'); if (help) { clearTimeout((help as any).__t); help.setAttribute('hidden', ''); }
       $('detectBtn').classList.remove('active');
       const cur = document.getElementById('laserCursor'); if (cur) cur.setAttribute('hidden', '');
@@ -1808,8 +1802,21 @@ export function mountApp(root: HTMLElement) {
       vid.srcObject = gestureStream;
       await vid.play().catch(() => {});
       cvs.width = 320; cvs.height = 240;
-      const ctx = cvs.getContext('2d')!;
       gestureStatus('⏳ טוען זיהוי ידיים…');
+
+      // ── Full-screen transparent overlay: draw the hand as a glowing ghost ──
+      const overlay = document.getElementById('handOverlay') as HTMLCanvasElement;
+      const octx = overlay.getContext('2d')!;
+      overlay.removeAttribute('hidden');
+      const sizeOverlay = () => {
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        overlay.width = Math.round(window.innerWidth * dpr);
+        overlay.height = Math.round(window.innerHeight * dpr);
+        octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      };
+      sizeOverlay();
+      window.addEventListener('resize', sizeOverlay);
+      (window as any).__sizeHandOverlay = sizeOverlay;
 
       if (!(window as any).Hands) {
         const s = document.createElement('script');
@@ -1884,11 +1891,12 @@ export function mountApp(root: HTMLElement) {
             }
           }
         }
-        ctx.clearRect(0, 0, cvs.width, cvs.height);
+        const W = window.innerWidth, H = window.innerHeight;
+        octx.clearRect(0, 0, W, H);
 
         if (!results.multiHandLandmarks?.length) {
-          gestureStatus('מצלמה פעילה');
-          palmHoldMs = 0; fistActive = false; fistBaseline = 0; fistArmMs = 0; prevScale = 0; peacePrevY = null;
+          gestureStatus('הרם יד מול המצלמה');
+          palmHoldMs = 0; fistHoldMs = 0; prevScale = 0;
           oePrev = null; oeDPrev = null;   // reset smoothing so re-acquire snaps in
           hideLaser();
           return;
@@ -1897,38 +1905,49 @@ export function mountApp(root: HTMLElement) {
         // Clamp dt to a sane window so the variable mobile framerate can't
         // destabilise the One-Euro filter (a wildly varying dt made it jump).
         const lm = smoothLandmarks(results.multiHandLandmarks[0], Math.min(0.05, Math.max(0.012, dt / 1000)));
-        // Draw skeleton
-        ctx.strokeStyle = 'rgba(218,165,32,.7)'; ctx.lineWidth = 2;
+        // ── Draw the hand as a glowing ghost on the full-screen overlay ──────
+        const PX = (i: number) => lm[i].x * W;
+        const PY = (i: number) => lm[i].y * H;
         const CONN = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
-        for (const [a, b] of CONN) { ctx.beginPath(); ctx.moveTo(lm[a].x*320, lm[a].y*240); ctx.lineTo(lm[b].x*320, lm[b].y*240); ctx.stroke(); }
+        // Translucent palm fill for a human-hand read.
+        octx.beginPath();
+        for (const i of [0, 1, 5, 9, 13, 17]) { const x = PX(i), y = PY(i); if (i === 0) octx.moveTo(x, y); else octx.lineTo(x, y); }
+        octx.closePath();
+        octx.fillStyle = 'rgba(218,165,32,.06)';
+        octx.fill();
+        // Bones — gold glow.
+        octx.lineCap = 'round'; octx.lineJoin = 'round';
+        octx.shadowColor = 'rgba(255,200,80,.9)'; octx.shadowBlur = 14;
+        octx.strokeStyle = 'rgba(255,210,110,.85)'; octx.lineWidth = 5;
+        for (const [a, b] of CONN) { octx.beginPath(); octx.moveTo(PX(a), PY(a)); octx.lineTo(PX(b), PY(b)); octx.stroke(); }
+        // Joints + fingertips.
         for (let i = 0; i < lm.length; i++) {
-          ctx.beginPath(); ctx.arc(lm[i].x*320, lm[i].y*240, i===8||i===4?7:3, 0, Math.PI*2);
-          ctx.fillStyle = i===8?'rgba(255,240,100,.95)':i===4?'rgba(218,165,32,.9)':'rgba(218,165,32,.65)';
-          ctx.fill();
+          const tip = (i === 4 || i === 8 || i === 12 || i === 16 || i === 20);
+          octx.beginPath(); octx.arc(PX(i), PY(i), tip ? 9 : 5, 0, Math.PI * 2);
+          octx.fillStyle = i === 8 ? 'rgba(255,245,150,.98)' : tip ? 'rgba(255,220,120,.95)' : 'rgba(218,165,32,.8)';
+          octx.fill();
         }
+        octx.shadowBlur = 0;
 
-        // Finger up = tip clearly above its PIP joint (held hand pointing up to the
-        // camera, the natural pose). This is the original test that worked great on
-        // phones; the "orientation-independent" distance/curl variants read every
-        // finger as extended on real devices, so only "open palm" ever registered.
-        const fingerUp = (tip: number, pip: number) => lm[tip].y < lm[pip].y - 0.02;
-        const idxUp = fingerUp(8, 6), midUp = fingerUp(12, 10), rngUp = fingerUp(16, 14), pkyUp = fingerUp(20, 18);
+        // Two-sided finger test with a DEAD-ZONE between "extended" and "curled".
+        // A finger only counts as UP when its tip is clearly above its PIP, and only
+        // as CURLED when clearly below. A relaxed/idle hand lands in the dead-zone →
+        // classified as 'none' → no gesture fires. This is what stops the "summons &
+        // dispels even when I do nothing" problem, while keeping open/fist easy.
+        const up = (tip: number, pip: number) => lm[tip].y < lm[pip].y - 0.04;
+        const curled = (tip: number, pip: number) => lm[tip].y > lm[pip].y + 0.015;
+        const idxUp = up(8, 6), midUp = up(12, 10), rngUp = up(16, 14), pkyUp = up(20, 18);
         const upCount = [idxUp, midUp, rngUp, pkyUp].filter(Boolean).length;
-        const palmLen = Math.max(0.0001, Math.hypot(lm[0].x - lm[9].x, lm[0].y - lm[9].y));
-        // Finger spread: index-tip → pinky-tip distance vs palm length. A DELIBERATE
-        // open/"stop" palm spreads the fingers; a relaxed resting hand keeps them
-        // together. Requiring spread stops the dispel from firing when you do nothing.
-        const spread = Math.hypot(lm[8].x - lm[20].x, lm[8].y - lm[20].y) / palmLen;
-        const open = upCount === 4 && spread > 0.85;   // deliberate spread-open palm only
-        const fist = upCount === 0;                    // closed fist — no fingers up
-        const pointing = idxUp && !midUp && !rngUp;  // index out, middle+ring down → pointer
-        const peace = idxUp && midUp && !rngUp && !pkyUp;  // ✌️ two fingers → scroll
+        const curlCount = [curled(8, 6), curled(12, 10), curled(16, 14), curled(20, 18)].filter(Boolean).length;
+        const open = upCount === 4;                       // 🖐️ all fingers extended → release
+        const fist = upCount === 0 && curlCount >= 3;     // ✊ clearly closed → summon
+        const pointing = idxUp && !midUp && !rngUp && !pkyUp;  // ☝️ index only → pointer
 
         throwCooldownMs = Math.max(0, throwCooldownMs - dt);
         suppressPalmMs = Math.max(0, suppressPalmMs - dt);
         clickCooldownMs = Math.max(0, clickCooldownMs - dt);
 
-        const cx2 = lm[9].x * 320, cy2 = lm[9].y * 240;
+        const cx2 = lm[9].x * W, cy2 = lm[9].y * H;
 
         // Hand "size" — wrist(0)→middle-MCP(9) distance. Grows as the hand moves
         // toward the camera, independent of fingers opening/closing. Drives the
@@ -1949,7 +1968,7 @@ export function mountApp(root: HTMLElement) {
         // FIST is checked first: in a fist the thumb rests over the curled fingers,
         // so thumb-tip and index-tip sit close together and the pinch test would
         // otherwise steal it. A fist (no fingers up) is unambiguous, so it wins.
-        const raw = fist ? 'fist' : pinching ? 'pinch' : pointing ? 'point' : peace ? 'peace' : open ? 'open' : 'none';
+        const raw = fist ? 'fist' : pinching ? 'pinch' : pointing ? 'point' : open ? 'open' : 'none';
         if (raw === rawPrev) rawStableMs += dt; else { rawPrev = raw; rawStableMs = 0; }
         if (raw === 'pinch' || raw === 'none' || rawStableMs >= STABLE_MS) confirmedGesture = raw;
 
@@ -1961,7 +1980,7 @@ export function mountApp(root: HTMLElement) {
             pinchStartHX = hx; pinchStartHY = hy;
             pinchStartXf = orb.getCharacterTransform();
           }
-          fistActive = false;
+          fistHoldMs = 0;
           const xf = pinchStartXf!;
           const SENS = 5.0;                 // high sensitivity for precise control
           const dx = hx - pinchStartHX;     // selfieMode → already mirrored
@@ -1970,13 +1989,13 @@ export function mountApp(root: HTMLElement) {
           // Y, vertical drag tilts around X. Relative to the grab-start pose.
           orb.setCharacterTransform(xf.x + dy * SENS, xf.y + dx * SENS, xf.z, xf.s, xf.px, xf.py, xf.pz);
           gestureStatus('🤏 אוחז בכדור — הזז יד כדי לסובב');
-          ctx.beginPath(); ctx.arc(hx * 320, hy * 240, 16, 0, Math.PI * 2);
-          ctx.strokeStyle = 'rgba(120,220,255,.95)'; ctx.lineWidth = 4; ctx.stroke();
+          octx.beginPath(); octx.arc(hx * W, hy * H, 30, 0, Math.PI * 2);
+          octx.strokeStyle = 'rgba(120,220,255,.95)'; octx.lineWidth = 5; octx.stroke();
         } else if (confirmedGesture === 'point') {
           // ☝️ Finger-pointing laser cursor — index tip drives a red on-screen
           // cursor; dwelling on a target for 2s clicks it.
           if (pinchActive) { pinchActive = false; pinchStartXf = null; }
-          fistActive = false; fistBaseline = 0; fistArmMs = 0;
+          fistHoldMs = 0;
           // Map the fingertip to the screen with gain around centre so a small,
           // comfortable hand movement reaches every edge (the hand stays mid-frame).
           const GAIN = 1.7;
@@ -1991,60 +2010,39 @@ export function mountApp(root: HTMLElement) {
           pointSY = pointSY ? pointSY + (ty - pointSY) * a : ty;
           updateLaser(pointSX, pointSY, dt);
           gestureStatus('☝️ מצביע — החזק רגע לבחירה');
-        } else if (confirmedGesture === 'peace') {
-          // ✌️ Two-finger scroll — move the hand up/down to scroll the screen.
-          hideLaser();
-          fistActive = false; fistBaseline = 0; fistArmMs = 0;
-          const hy = lm[9].y;
-          if (peacePrevY != null) {
-            const hx = Math.min(window.innerWidth - 1, Math.max(0, lm[9].x * window.innerWidth));
-            const sy = Math.min(window.innerHeight - 1, Math.max(0, hy * window.innerHeight));
-            scrollAt(hx, sy, (hy - peacePrevY) * window.innerHeight * 2.4);
-          }
-          peacePrevY = hy;
-          gestureStatus('✌️ גלילה — הזז יד מעלה/מטה');
-          ctx.beginPath(); ctx.arc(cx2, cy2, 22, 0, Math.PI * 2);
-          ctx.strokeStyle = 'rgba(120,220,255,.9)'; ctx.lineWidth = 4; ctx.stroke();
         } else {
           hideLaser();
           if (pinchActive) { pinchActive = false; pinchStartXf = null; }
           if (confirmedGesture === 'fist') {
-            // Fist + THROW toward the screen: summon ONLY on a genuine fast forward
-            // lunge. A slow-following baseline absorbs steady holding and gradual
-            // drift (so the hand just sitting in a fist never triggers); only a
-            // sharp, large, FAST thrust outruns the baseline and fires.
-            if (!fistActive) { fistActive = true; fistBaseline = handScale; fistArmMs = 0; }
+            // ✊ HOLD a fist briefly to summon — no throw/lunge needed. The fist is
+            // already a confirmed pose (dead-zone classifier + STABLE_MS debounce),
+            // and a progress ring must fill before it fires, so a momentary or
+            // accidental fist can't trigger a summon.
             palmHoldMs = 0;
-            fistArmMs += dt;
-            const baseRef = Math.max(0.0001, fistBaseline);
-            const velRatio = (handScale - prevScale) / baseRef;        // forward speed this frame
-            const forwardRatio = (handScale - fistBaseline) / baseRef; // how far past resting size
-            // Absorb slow drift / steady holding so it can't accumulate into a throw.
-            if (Math.abs(velRatio) < 0.05) fistBaseline += (handScale - fistBaseline) * 0.08;
-            // Strong, deliberate lunge required — a relaxed/drifting fist must NOT
-            // trigger a summon. Armed >350ms, ≥55% past resting size, fast forward.
-            const thrust = fistArmMs > 350 && forwardRatio > 0.55 && velRatio > 0.2;
-            if (thrust && throwCooldownMs <= 0) {
-              fistActive = false; fistBaseline = 0; fistArmMs = 0;
-              throwCooldownMs = THROW_COOLDOWN;
-              suppressPalmMs = 1100;
-              gestureStatus('🚀 זריקה! בחר פוקימון');
-              (window as any).openSummonDock?.();
-              setTimeout(() => { if (gestureActive) gestureStatus('מצלמה פעילה'); }, 2500);
-            } else {
-              gestureStatus('✊ אגרוף — זרוק מהר לכיוון המסך לזימון!');
-              ctx.beginPath(); ctx.arc(cx2, cy2, 26, 0, Math.PI * 2);
-              ctx.strokeStyle = 'rgba(255,70,70,.9)'; ctx.lineWidth = 4; ctx.stroke();
+            if (throwCooldownMs <= 0) {
+              fistHoldMs += dt;
+              const progress = Math.min(1, fistHoldMs / FIST_HOLD_THRESHOLD);
+              gestureStatus(`✊ החזק לזימון… ${Math.round(progress * 100)}%`);
+              octx.beginPath(); octx.arc(cx2, cy2, 42, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
+              octx.strokeStyle = `rgba(255,90,90,${0.45 + progress * 0.55})`; octx.lineWidth = 6; octx.stroke();
+              if (fistHoldMs >= FIST_HOLD_THRESHOLD) {
+                fistHoldMs = 0;
+                throwCooldownMs = THROW_COOLDOWN;
+                suppressPalmMs = 1100;
+                gestureStatus('🚀 זימון! בחר פוקימון');
+                (window as any).openSummonDock?.();
+                setTimeout(() => { if (gestureActive) gestureStatus('זיהוי פעיל'); }, 2500);
+              }
             }
-          } else if (!open) {
-            // Idle (no recognised pose). Open-palm release is handled centrally below.
-            gestureStatus('מצלמה פעילה');
+          } else {
+            fistHoldMs = 0;
+            if (!open) gestureStatus('זיהוי פעיל');
           }
         }
 
         // ── Open-palm RELEASE (dispel) — tolerant hold ───────────────────────
         // Accumulate while the palm is open; DECAY (not hard-reset) on brief misses
-        // so a flicker in the lite hand model doesn't keep restarting the 2s hold.
+        // so a flicker in the lite hand model doesn't keep restarting the hold.
         // Driven by the raw open signal (no debounce) for a smooth, responsive feel.
         const dispelEligible = open && !pinching && suppressPalmMs <= 0;
         if (dispelEligible) palmHoldMs += dt;
@@ -2052,15 +2050,14 @@ export function mountApp(root: HTMLElement) {
         if (dispelEligible && palmHoldMs > 80) {
           const progress = Math.min(1, palmHoldMs / PALM_HOLD_THRESHOLD);
           gestureStatus(`🖐️ החזק לשחרור… ${Math.round(progress * 100)}%`);
-          ctx.beginPath(); ctx.arc(cx2, cy2, 30, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
-          ctx.strokeStyle = `rgba(218,165,32,${0.4 + progress * 0.6})`; ctx.lineWidth = 5; ctx.stroke();
+          octx.beginPath(); octx.arc(cx2, cy2, 42, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
+          octx.strokeStyle = `rgba(218,165,32,${0.4 + progress * 0.6})`; octx.lineWidth = 6; octx.stroke();
           if (palmHoldMs >= PALM_HOLD_THRESHOLD) {
             palmHoldMs = 0; suppressPalmMs = 900;
             gestureStatus('⚡ שוחרר!');
             (window as any).dispelOrb?.();
           }
         }
-        if (confirmedGesture !== 'peace') peacePrevY = null;
         prevScale = handScale;
 
       });
