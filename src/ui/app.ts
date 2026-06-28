@@ -174,7 +174,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v57 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v58 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -1929,7 +1929,10 @@ export function mountApp(root: HTMLElement) {
         // before it takes over. Pinch and "none" switch immediately (pinch has
         // its own hysteresis; releasing should feel instant) — the others must
         // settle, which kills the flicker that made detection feel chaotic.
-        const raw = pinching ? 'pinch' : pointing ? 'point' : peace ? 'peace' : fist ? 'fist' : open ? 'open' : 'none';
+        // FIST is checked first: in a fist the thumb rests over the curled fingers,
+        // so thumb-tip and index-tip sit close together and the pinch test would
+        // otherwise steal it. A fist (no fingers up) is unambiguous, so it wins.
+        const raw = fist ? 'fist' : pinching ? 'pinch' : pointing ? 'point' : peace ? 'peace' : open ? 'open' : 'none';
         if (raw === rawPrev) rawStableMs += dt; else { rawPrev = raw; rawStableMs = 0; }
         if (raw === 'pinch' || raw === 'none' || rawStableMs >= STABLE_MS) confirmedGesture = raw;
 
