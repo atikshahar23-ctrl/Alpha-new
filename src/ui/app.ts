@@ -179,7 +179,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v81 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v82 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -244,7 +244,7 @@ export function mountApp(root: HTMLElement) {
           </a>
           <button class="hud-sc" id="hudFleet" type="button">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 17h13v-5l-2-4H3z"/><circle cx="7" cy="17.5" r="1.6"/><circle cx="17.5" cy="17.5" r="1.6"/><path d="M16 11h3l2 3v2.5h-3"/></svg>
-            <span>ניהול צי · נסיעות</span>
+            <span>צי ומבצעים · CONTROL</span>
           </button>
         </div>
       </div>
@@ -1336,8 +1336,9 @@ export function mountApp(root: HTMLElement) {
     };
   }
 
+  let winCleanup: (() => void) | null = null;   // teardown for live content (maps, animations)
   function openWin(title: string) { $('winTitle').textContent = title; $('win').classList.add('show'); audio.open(); }
-  $('winClose').onclick = () => { $('win').classList.remove('show'); $('winBody').innerHTML = ''; };
+  $('winClose').onclick = () => { try { winCleanup?.(); } catch {} winCleanup = null; $('win').classList.remove('show'); $('winBody').innerHTML = ''; };
 
   function openVideo(q: string) {
     openWin('Video · ' + q);
@@ -1713,6 +1714,31 @@ export function mountApp(root: HTMLElement) {
   };
   $('muteBtn').onclick = () => { audio.toggleMute(); };
   $('newChat').onclick = () => { state.history = []; $('rpBody').innerHTML = ''; $('chat').innerHTML = ''; clearChatHistory(); addMsg(state.name + ' ' + t('readyMsg', state.uiLang), 'al'); };
+
+  // ── Mobile minimal mode ─────────────────────────────────────────────────────
+  // On phones/tablets the HUD panels, chat and dock auto-hide 10s after the app
+  // reveals, leaving only the character, the top toolbars, and one big central
+  // record button to talk to the assistant. Tapping the character brings the
+  // panels back (and re-arms the 10s timer).
+  {
+    let dp = 'auto'; try { dp = localStorage.getItem('alpha_display_mode') || 'auto'; } catch {}
+    const autoMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || ('ontouchstart' in window) || window.innerWidth < 900;
+    const isMobileUI = dp === 'mobile' || (dp === 'auto' && autoMobile);
+    if (isMobileUI) {
+      document.body.classList.add('is-mobile-ui');
+      const rec = document.createElement('button');
+      rec.id = 'mobRec'; rec.className = 'mob-rec'; rec.type = 'button';
+      rec.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg><em>הפעל הקלטה</em>';
+      document.body.appendChild(rec);
+      rec.addEventListener('click', (e) => { e.stopPropagation(); $('micBtn').click(); rec.classList.toggle('on', $('micBtn').classList.contains('on')); });
+      let minTimer = 0;
+      const arm = () => { clearTimeout(minTimer); minTimer = window.setTimeout(() => document.body.classList.add('mobile-min'), 10000); };
+      const wake = () => { if (document.body.classList.contains('mobile-min')) { document.body.classList.remove('mobile-min'); } arm(); };
+      $('stage').addEventListener('click', wake);
+      const startWhenReady = () => { if (document.body.classList.contains('revealed') || !document.getElementById('introOverlay')) arm(); else setTimeout(startWhenReady, 500); };
+      startWhenReady();
+    }
+  }
 
   // ── Gesture detection — camera hand tracking for Pokemon swap ───────────────
   // Palm held 1.5s → dispel current Pokemon. Fist → quick open → throw new Pokemon.
@@ -2314,43 +2340,205 @@ export function mountApp(root: HTMLElement) {
     el.innerHTML = '<div class="hud-empty">חדשות לא זמינות כרגע</div>';
   }
 
-  // ── Fleet / trips window (add trips, navigate with Waze) ──
+  // ════════ Fleet & Operations Control Center ════════
+  // One window, five panels: map of installs, trips/fleet, HeavyGuard tasks,
+  // installs awaiting scheduling, and a live rotating-DNA effect.
   const escHtml = (s: string) => (s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
   const readTrips = (): any[] => { try { return JSON.parse(localStorage.getItem('hg2:trips') || '[]') || []; } catch { return []; } };
   const writeTrips = (a: any[]) => { try { localStorage.setItem('hg2:trips', JSON.stringify(a)); } catch {} puterSync.scheduleSync?.(); };
+  const readIdx = (): any[] => { try { return JSON.parse(localStorage.getItem('hg2:index') || '[]') || []; } catch { return []; } };
+  const readTasks = (): any[] => { try { return JSON.parse(localStorage.getItem('hg2:tasks') || '[]') || []; } catch { return []; } };
+  const writeTasks = (a: any[]) => { try { localStorage.setItem('hg2:tasks', JSON.stringify(a)); } catch {} puterSync.scheduleSync?.(); };
   const wazeUrl = (to: string) => `https://waze.com/ul?q=${encodeURIComponent(to || '')}&navigate=yes`;
+
+  // Israeli location → coordinates (mirrors the HeavyGuard map table) for plotting installs.
+  const FLEET_GEO: Record<string, { lat: number; lng: number; city: string }> = {"xcmg אשקלון":{lat:31.668,lng:34.574,city:"אשקלון"},"אופקים":{lat:31.317,lng:34.62,city:"אופקים"},"אחיסמך":{lat:31.931,lng:34.918,city:"אחיסמך"},"אל סייד":{lat:31.3,lng:34.86,city:"אל סייד"},"אמקול":{lat:31.792,lng:34.65,city:"אשדוד"},"אשדוד":{lat:31.792,lng:34.65,city:"אשדוד"},"אשקלון":{lat:31.668,lng:34.574,city:"אשקלון"},"באר טוביה":{lat:31.738,lng:34.722,city:"באר טוביה"},"באר שבע":{lat:31.252,lng:34.791,city:"באר שבע"},"בית נחמיה":{lat:31.952,lng:34.953,city:"בית נחמיה"},"בית שמש":{lat:31.745,lng:34.987,city:"בית שמש"},"ביתר עלית":{lat:31.696,lng:35.117,city:"ביתר עלית"},"בני עייש":{lat:31.788,lng:34.74,city:"בני עייש"},"בני ראם":{lat:31.742,lng:34.782,city:"בני ראם"},"בר גיורא":{lat:31.731,lng:35.052,city:"בר גיורא"},"גבעת ברנר":{lat:31.866,lng:34.795,city:"גבעת ברנר"},"גבעת כוח":{lat:31.96,lng:34.952,city:"גבעת כוח"},"גן יבנה":{lat:31.789,lng:34.706,city:"גן יבנה"},"חולון":{lat:32.015,lng:34.779,city:"חולון"},"חולון קטרפילר":{lat:32.015,lng:34.779,city:"חולון"},"חיפה":{lat:32.794,lng:34.989,city:"חיפה"},"טייבה":{lat:32.266,lng:35.01,city:"טייבה"},"טירה":{lat:32.234,lng:34.951,city:"טירה"},"יבנה":{lat:31.878,lng:34.739,city:"יבנה"},"יפו":{lat:32.052,lng:34.752,city:"יפו"},"ירושלים":{lat:31.768,lng:35.214,city:"ירושלים"},"כסייפה":{lat:31.24,lng:35.12,city:"כסייפה"},"כפר קאסם":{lat:32.115,lng:34.977,city:"כפר קאסם"},"כרמיאל":{lat:32.916,lng:35.292,city:"כרמיאל"},"מבשרת ציון":{lat:31.799,lng:35.15,city:"מבשרת ציון"},"מודיעין":{lat:31.898,lng:35.01,city:"מודיעין"},"מודיעין עלית":{lat:31.93,lng:35.04,city:"מודיעין עלית"},"מנוחה":{lat:31.59,lng:34.74,city:"מנוחה"},"מסמיה":{lat:31.78,lng:34.8,city:"מסמיה"},"מצליח":{lat:31.91,lng:34.85,city:"מצליח"},"נס ציונה":{lat:31.929,lng:34.798,city:"נס ציונה"},"נען":{lat:31.885,lng:34.855,city:"נען"},"נתיבות":{lat:31.422,lng:34.588,city:"נתיבות"},"עד הלום":{lat:31.792,lng:34.65,city:"אשדוד"},"עכו":{lat:32.928,lng:35.075,city:"עכו"},"ערוגות":{lat:31.73,lng:34.74,city:"ערוגות"},"פרדס חנה":{lat:32.474,lng:34.974,city:"פרדס חנה"},"פתח תקווה":{lat:32.087,lng:34.887,city:"פתח תקווה"},"צריפין":{lat:31.95,lng:34.83,city:"צריפין"},"קטרפילר":{lat:31.252,lng:34.791,city:"באר שבע"},"קטרפילר באר שבע":{lat:31.252,lng:34.791,city:"באר שבע"},"קריית גת":{lat:31.61,lng:34.771,city:"קריית גת"},"קריית מלאכי":{lat:31.731,lng:34.745,city:"קריית מלאכי"},"ראשון  לציון":{lat:31.964,lng:34.805,city:"ראשון לציון"},"ראשון לציון":{lat:31.964,lng:34.805,city:"ראשון לציון"},"רהט":{lat:31.393,lng:34.754,city:"רהט"},"רווחה":{lat:31.6,lng:34.71,city:"רווחה"},"רמלה":{lat:31.928,lng:34.866,city:"רמלה"},"שדרות":{lat:31.525,lng:34.596,city:"שדרות"},"שילת":{lat:31.93,lng:35.02,city:"שילת"},"תל אביב":{lat:32.08,lng:34.781,city:"תל אביב"},"אפקו":{lat:31.898,lng:35.01,city:"מודיעין"},"קייס":{lat:32.015,lng:34.779,city:"חולון"}};
+
+  let leafletPromise: Promise<any> | null = null;
+  function loadLeaflet(): Promise<any> {
+    if ((window as any).L) return Promise.resolve((window as any).L);
+    if (leafletPromise) return leafletPromise;
+    leafletPromise = new Promise((resolve, reject) => {
+      if (!document.getElementById('leaflet-css')) {
+        const link = document.createElement('link');
+        link.id = 'leaflet-css'; link.rel = 'stylesheet';
+        link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+        document.head.appendChild(link);
+      }
+      const s = document.createElement('script');
+      s.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'; s.async = true;
+      s.onload = () => resolve((window as any).L);
+      s.onerror = () => reject(new Error('leaflet load failed'));
+      document.head.appendChild(s);
+    });
+    return leafletPromise;
+  }
+
+  // Live rotating DNA double-helix on a canvas. Returns a stop() for teardown.
+  function startDna(cv: HTMLCanvasElement): () => void {
+    const ctx = cv.getContext('2d'); if (!ctx) return () => {};
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    let raf = 0, t = 0, alive = true;
+    const resize = () => { const r = cv.getBoundingClientRect(); cv.width = Math.max(40, r.width) * dpr; cv.height = Math.max(40, r.height) * dpr; };
+    resize();
+    const frame = () => {
+      if (!alive) return;
+      const W = cv.width, H = cv.height, cx = W / 2, amp = W * 0.27, turns = 2.3, N = 44;
+      ctx.clearRect(0, 0, W, H); t += 0.018;
+      for (let i = 0; i < N; i++) {
+        const p = i / (N - 1), y = p * H, ang = p * Math.PI * 2 * turns + t;
+        const x1 = cx + Math.sin(ang) * amp, x2 = cx + Math.sin(ang + Math.PI) * amp;
+        const z1 = (Math.cos(ang) + 1) / 2, z2 = (Math.cos(ang + Math.PI) + 1) / 2;
+        ctx.strokeStyle = `rgba(228,188,99,${0.08 + 0.14 * Math.abs(Math.sin(ang))})`;
+        ctx.lineWidth = dpr; ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x2, y); ctx.stroke();
+        ctx.fillStyle = `rgba(247,232,192,${0.35 + 0.5 * z1})`;
+        ctx.beginPath(); ctx.arc(x1, y, (2 + 2 * z1) * dpr, 0, 7); ctx.fill();
+        ctx.fillStyle = `rgba(63,198,255,${0.35 + 0.5 * z2})`;
+        ctx.beginPath(); ctx.arc(x2, y, (2 + 2 * z2) * dpr, 0, 7); ctx.fill();
+      }
+      raf = requestAnimationFrame(frame);
+    };
+    let ro: ResizeObserver | null = null;
+    try { ro = new ResizeObserver(resize); ro.observe(cv); } catch {}
+    frame();
+    return () => { alive = false; cancelAnimationFrame(raf); try { ro?.disconnect(); } catch {} };
+  }
+
+  const tripRowHtml = (t: any) => `
+    <div class="fl-row" data-id="${t.id}">
+      <div class="fl-mid"><b>${escHtml(t.from || '—')} ← ${escHtml(t.to || '—')}</b><span>${t.date || ''}${t.km ? ` · ${t.km} ק"מ` : ''}${t.note ? ' · ' + escHtml(t.note) : ''}</span></div>
+      ${t.to ? `<a class="fl-waze" href="${wazeUrl(t.to)}" target="_blank" rel="noopener">Waze ↗</a>` : ''}
+      <button class="fl-del" data-id="${t.id}">✕</button>
+    </div>`;
+
+  let mapInst: any = null;
   function renderFleet() {
+    try { winCleanup?.(); } catch {} winCleanup = null;
+    const body = $('winBody');
     const trips = readTrips().slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     const totalKm = trips.reduce((s, t) => s + (Number(t.km) || 0), 0);
-    const rows = trips.map((t) => `
-      <div class="fl-row">
-        <div class="fl-mid"><b>${escHtml(t.from || '—')} ← ${escHtml(t.to || '—')}</b><span>${t.date || ''}${t.km ? ` · ${t.km} ק"מ` : ''}${t.note ? ' · ' + escHtml(t.note) : ''}</span></div>
-        ${t.to ? `<a class="fl-waze" href="${wazeUrl(t.to)}" target="_blank" rel="noopener">Waze ↗</a>` : ''}
-        <button class="fl-del" data-id="${t.id}">✕</button>
-      </div>`).join('');
-    $('winBody').innerHTML = `<div class="pad fleet-win">
-      <div class="fl-add">
-        <input id="flFrom" placeholder="מאיפה" dir="rtl"/>
-        <input id="flTo" placeholder="לאן (כתובת / עיר)" dir="rtl"/>
-        <div class="fl-add-row"><input id="flDate" type="date" value="${new Date().toISOString().slice(0, 10)}"/><input id="flKm" type="number" placeholder='ק&quot;מ' dir="ltr"/></div>
-        <button id="flAdd">+ הוסף נסיעה</button>
+    const idx = readIdx();
+    const today = new Date().toISOString().slice(0, 10);
+
+    // Map points: installs whose location resolves to coordinates, counted per place.
+    const ptCount: Record<string, { g: { lat: number; lng: number; city: string }; n: number }> = {};
+    idx.forEach((x: any) => { const k = (x?.location || '').trim(); const g = FLEET_GEO[k]; if (!g) return; (ptCount[k] = ptCount[k] || { g, n: 0 }).n++; });
+    const geoCount = Object.keys(ptCount).length;
+
+    // Tasks: open tasks for today + undated backlog.
+    const tasks = readTasks().filter((t: any) => !t.done);
+    const dayTasks = tasks.filter((t: any) => t.date === today);
+    const backlog = tasks.filter((t: any) => !t.date);
+    const taskList = [...dayTasks, ...backlog].slice(0, 40);
+    const taskRows = taskList.length
+      ? taskList.map((t: any) => `<label class="ops-task" data-id="${t.id}"><input type="checkbox"/><span>${escHtml(t.title || '')}</span><i>${t.date === today ? 'היום' : (t.date || 'ללא תאריך')}</i></label>`).join('')
+      : '<div class="ops-empty">אין משימות פתוחות 🎉</div>';
+
+    // Unscheduled installs: still running, or no date set.
+    const unsched = idx.filter((x: any) => x && (x.status === 'running' || !x.date)).slice(0, 40);
+    const unschedRows = unsched.length
+      ? unsched.map((x: any) => { const loc = (x.location || '').trim(); return `<div class="ops-urow"><div class="ops-umid"><b>${escHtml(loc || 'ללא מיקום')}</b><span>${escHtml(cName(x.contractor || '') || '')}${x.status === 'running' ? ' · בתהליך' : ' · ללא תאריך'}</span></div>${loc ? `<a class="fl-waze" href="${wazeUrl(loc)}" target="_blank" rel="noopener">Waze ↗</a>` : ''}</div>`; }).join('')
+      : '<div class="ops-empty">אין התקנות הממתינות לתיאום</div>';
+
+    body.innerHTML = `<div class="pad ops-center">
+      <div class="ops-grid">
+        <section class="ops-panel ops-span2">
+          <div class="ops-h">🗺️ מפת התקנות · שטח</div>
+          <div class="ops-map" id="opsMap"></div>
+          <div class="ops-foot">${geoCount} מיקומים · ${idx.length} התקנות סה"כ</div>
+        </section>
+
+        <section class="ops-panel">
+          <div class="ops-h">🚚 ניהול צי · נסיעות</div>
+          <div class="fl-add">
+            <input id="flFrom" placeholder="מאיפה" dir="rtl"/>
+            <input id="flTo" placeholder="לאן (כתובת / עיר)" dir="rtl"/>
+            <div class="fl-add-row"><input id="flDate" type="date" value="${today}"/><input id="flKm" type="number" placeholder='ק&quot;מ' dir="ltr"/></div>
+            <button id="flAdd">+ הוסף נסיעה</button>
+          </div>
+          <div class="fl-tot" id="flTot">${trips.length} נסיעות · ${totalKm} ק"מ סה"כ</div>
+          <div class="ops-scroll fl-list" id="flList">${trips.map(tripRowHtml).join('') || '<div class="ops-empty">אין נסיעות עדיין — הוסף ונווט ב-Waze</div>'}</div>
+        </section>
+
+        <section class="ops-panel">
+          <div class="ops-h">✅ משימות HeavyGuard</div>
+          <div class="ops-scroll" id="opsTasks">${taskRows}</div>
+        </section>
+
+        <section class="ops-panel">
+          <div class="ops-h">📅 התקנות לתיאום</div>
+          <div class="ops-scroll">${unschedRows}</div>
+        </section>
+
+        <section class="ops-panel ops-dna-panel">
+          <div class="ops-h">🧬 ALPHA · DNA</div>
+          <canvas class="ops-dna" id="opsDna"></canvas>
+        </section>
       </div>
-      <div class="fl-tot">${trips.length} נסיעות · ${totalKm} ק"מ סה"כ</div>
-      <div class="fl-list">${rows || '<div class="fl-empty">אין נסיעות עדיין — הוסף אחת ונווט ב-Waze בלחיצה</div>'}</div>
     </div>`;
-    $('winBody').querySelector('#flAdd')?.addEventListener('click', () => {
+
+    // ── Trips: add (partial re-render of list, keeps map/DNA alive) ──
+    const refreshTripList = () => {
+      const arr = readTrips().slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      const km = arr.reduce((s, t) => s + (Number(t.km) || 0), 0);
+      const list = body.querySelector('#flList'); const tot = body.querySelector('#flTot');
+      if (list) list.innerHTML = arr.map(tripRowHtml).join('') || '<div class="ops-empty">אין נסיעות עדיין — הוסף ונווט ב-Waze</div>';
+      if (tot) tot.textContent = `${arr.length} נסיעות · ${km} ק"מ סה"כ`;
+      bindTripDel();
+    };
+    const bindTripDel = () => body.querySelectorAll('.fl-del').forEach((btn) => (btn as HTMLElement).onclick = () => {
+      const id = (btn as HTMLElement).dataset.id; writeTrips(readTrips().filter((t) => t.id !== id)); refreshTripList();
+    });
+    body.querySelector('#flAdd')?.addEventListener('click', () => {
       const g = (id: string) => (document.getElementById(id) as HTMLInputElement).value;
-      const to = g('flTo').trim();
-      if (!to) return;
+      const to = g('flTo').trim(); if (!to) return;
       const arr = readTrips();
       arr.unshift({ id: Date.now().toString(36), from: g('flFrom').trim(), to, date: g('flDate'), km: g('flKm'), note: '' });
-      writeTrips(arr); renderFleet();
+      writeTrips(arr);
+      (document.getElementById('flFrom') as HTMLInputElement).value = '';
+      (document.getElementById('flTo') as HTMLInputElement).value = '';
+      (document.getElementById('flKm') as HTMLInputElement).value = '';
+      refreshTripList();
     });
-    $('winBody').querySelectorAll('.fl-del').forEach((btn) => btn.addEventListener('click', () => {
-      const id = (btn as HTMLElement).dataset.id; writeTrips(readTrips().filter((t) => t.id !== id)); renderFleet();
+    bindTripDel();
+
+    // ── Tasks: toggle done in place (no full re-render) ──
+    body.querySelectorAll('.ops-task').forEach((el) => (el as HTMLElement).addEventListener('change', () => {
+      const id = (el as HTMLElement).dataset.id;
+      writeTasks(readTasks().map((t: any) => t.id === id ? { ...t, done: true } : t));
+      el.classList.add('ops-done');
+      setTimeout(() => el.remove(), 350);
     }));
+
+    // ── DNA animation ──
+    const dnaCv = body.querySelector('#opsDna') as HTMLCanvasElement | null;
+    const dnaStop = dnaCv ? startDna(dnaCv) : null;
+
+    // ── Map (lazy Leaflet) ──
+    const mapEl = body.querySelector('#opsMap') as HTMLElement | null;
+    if (mapEl) {
+      loadLeaflet().then((L) => {
+        if (!body.querySelector('#opsMap')) return;   // window closed meanwhile
+        mapInst = L.map(mapEl, { zoomControl: true, attributionControl: false }).setView([31.7, 34.9], 8);
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18 }).addTo(mapInst);
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18, opacity: 0.85 }).addTo(mapInst);
+        const pts = Object.values(ptCount);
+        const bounds: any[] = [];
+        pts.forEach(({ g, n }) => {
+          const r = 6 + Math.min(16, n * 2);
+          L.circleMarker([g.lat, g.lng], { radius: r, color: '#E4BC63', weight: 2, fillColor: '#F7E8C0', fillOpacity: 0.55 })
+            .addTo(mapInst).bindTooltip(`${g.city} · ${n} התקנות`, { direction: 'top' });
+          bounds.push([g.lat, g.lng]);
+        });
+        if (bounds.length) { try { mapInst.fitBounds(bounds, { padding: [30, 30], maxZoom: 11 }); } catch {} }
+        setTimeout(() => { try { mapInst?.invalidateSize(); } catch {} }, 120);
+      }).catch(() => { if (mapEl) mapEl.innerHTML = '<div class="ops-empty">מפה לא זמינה (אין רשת)</div>'; });
+    }
+
+    // teardown for this window instance
+    winCleanup = () => { try { dnaStop?.(); } catch {} if (mapInst) { try { mapInst.remove(); } catch {} mapInst = null; } };
   }
-  function openFleet() { openWin('ניהול צי · נסיעות 🚚'); renderFleet(); }
+  function openFleet() { openWin('מרכז שליטה · צי ומבצעים 🛰️'); renderFleet(); }
 
   // The HUD "HeavyGuard OS" tile reuses the existing dock handler.
   setTimeout(() => {
