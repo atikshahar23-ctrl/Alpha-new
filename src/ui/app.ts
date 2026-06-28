@@ -179,7 +179,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v64 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v65 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -1952,17 +1952,21 @@ export function mountApp(root: HTMLElement) {
         }
         octx.shadowBlur = 0;
 
-        // Two-sided finger test with a DEAD-ZONE between "extended" and "curled".
-        // A finger only counts as UP when its tip is clearly above its PIP, and only
-        // as CURLED when clearly below. A relaxed/idle hand lands in the dead-zone →
-        // classified as 'none' → no gesture fires. This is what stops the "summons &
-        // dispels even when I do nothing" problem, while keeping open/fist easy.
-        const up = (tip: number, pip: number) => lm[tip].y < lm[pip].y - 0.04;
-        const curled = (tip: number, pip: number) => lm[tip].y > lm[pip].y + 0.015;
-        const idxUp = up(8, 6), midUp = up(12, 10), rngUp = up(16, 14), pkyUp = up(20, 18);
+        // ORIENTATION-INDEPENDENT finger test. The old "tip.y above pip.y" only
+        // worked with the hand pointing straight up — at any tilt a closed fist read
+        // as open. Instead measure each fingertip's distance from the WRIST vs its
+        // PIP joint's distance from the wrist: an extended finger's tip is clearly
+        // farther out, a curled finger's tip folds back toward the palm and is
+        // closer. This holds at every hand angle. A dead-zone (×1.05 / ×0.92) keeps a
+        // relaxed hand from registering as either, so nothing fires when idle.
+        const dW = (i: number) => Math.hypot(lm[i].x - lm[0].x, lm[i].y - lm[0].y, (lm[i].z || 0) - (lm[0].z || 0));
+        const ratio = (tip: number, pip: number) => dW(tip) / Math.max(0.0001, dW(pip));
+        const rI = ratio(8, 6), rM = ratio(12, 10), rR = ratio(16, 14), rP = ratio(20, 18);
+        const idxUp = rI > 1.05, midUp = rM > 1.05, rngUp = rR > 1.05, pkyUp = rP > 1.05;
+        const idxCur = rI < 0.92, midCur = rM < 0.92, rngCur = rR < 0.92, pkyCur = rP < 0.92;
         const upCount = [idxUp, midUp, rngUp, pkyUp].filter(Boolean).length;
-        const curlCount = [curled(8, 6), curled(12, 10), curled(16, 14), curled(20, 18)].filter(Boolean).length;
-        const open = upCount === 4;                       // 🖐️ all fingers extended → release
+        const curlCount = [idxCur, midCur, rngCur, pkyCur].filter(Boolean).length;
+        const open = upCount >= 4;                         // 🖐️ all fingers extended → release
         const fist = upCount === 0 && curlCount >= 3;     // ✊ clearly closed → summon
         const pointing = idxUp && !midUp && !rngUp && !pkyUp;  // ☝️ index only → pointer
 

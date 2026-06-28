@@ -742,6 +742,25 @@ function Home({ index, onNew, onOpen, onResume, showToast, onReset, onBack }) {
     return { total, revenue, avg, totalTime };
   }, [filtered]);
 
+  // Current-month summary, broken down per contractor (every active contractor
+  // appears — even with 0 this month — so it reads as a full monthly roundup).
+  const monthSummary = useMemo(() => {
+    const now = new Date();
+    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const inMonth = done.filter((x) => (x.date || "").startsWith(ym));
+    const ids = Array.from(new Set([...activeContractors.map((c) => c.id), ...inMonth.map((x) => x.contractor)]));
+    const rows = ids.map((id) => {
+      const rs = inMonth.filter((x) => x.contractor === id);
+      return {
+        id, name: cName(id), count: rs.length,
+        revenue: rs.reduce((s, x) => s + (Number(x.price) || 0), 0),
+        time: rs.reduce((s, x) => s + (x.durationSec || 0), 0),
+      };
+    }).sort((a, b) => b.revenue - a.revenue || b.count - a.count);
+    const totals = { count: inMonth.length, revenue: inMonth.reduce((s, x) => s + (Number(x.price) || 0), 0) };
+    return { monthName: HE_MONTHS[now.getMonth()], year: now.getFullYear(), rows, totals };
+  }, [done, activeContractors]);
+
   const exportXlsx = async () => {
     if (!index.length) { showToast("אין התקנות לייצוא", "warn"); return; }
     try {
@@ -787,6 +806,26 @@ function Home({ index, onNew, onOpen, onResume, showToast, onReset, onBack }) {
         <div className="hg2-stat"><span>זמן ממוצע</span><b>{stats.avg ? fmtDur(stats.avg) : "—"}</b></div>
         <div className="hg2-stat"><span>זמן כולל</span><b>{stats.totalTime ? fmtDur(stats.totalTime) : "—"}</b></div>
       </div>
+
+      {monthSummary.rows.length > 0 && (
+        <div className="hg2-msum">
+          <div className="hg2-msum-head">
+            <span><Calendar size={14} /> סיכום החודש · {monthSummary.monthName} {monthSummary.year}</span>
+            <b className="cy">{ils(monthSummary.totals.revenue)}</b>
+          </div>
+          <div className="hg2-msum-rows">
+            {monthSummary.rows.map((r) => (
+              <div className={"hg2-msum-row" + (r.count === 0 ? " idle" : "")} key={r.id}>
+                <span className="hg2-msum-name">{r.name}</span>
+                <span className="hg2-msum-cnt">{r.count} התקנות</span>
+                {r.time > 0 && <span className="hg2-msum-time"><Timer size={11} /> {fmtDur(r.time)}</span>}
+                <b className="hg2-msum-rev">{ils(r.revenue)}</b>
+              </div>
+            ))}
+          </div>
+          <div className="hg2-msum-foot"><span>סה״כ {monthSummary.totals.count} התקנות החודש מכל הקבלנים</span></div>
+        </div>
+      )}
 
       <button className="hg2-add" onClick={onNew}><Plus size={22} /> הוספת התקנה</button>
 
@@ -3171,6 +3210,20 @@ function Styles() {
 .hg2-stat span{font-size:12px;color:var(--s4)}
 .hg2-stat b{display:block;font-family:'Rubik';font-weight:900;font-size:21px;margin-top:3px}
 .hg2-stat b.cy{color:var(--cyan)}
+
+.hg2-msum{background:var(--s9);border:1px solid var(--s7);border-radius:14px;padding:13px 14px;margin-bottom:16px}
+.hg2-msum-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:11px;padding-bottom:10px;border-bottom:1px solid var(--s7)}
+.hg2-msum-head>span{display:flex;align-items:center;gap:6px;font-family:'Rubik';font-weight:700;font-size:14px;color:var(--silver)}
+.hg2-msum-head>b{font-family:'Rubik';font-weight:900;font-size:18px}
+.hg2-msum-head>b.cy{color:var(--cyan)}
+.hg2-msum-rows{display:flex;flex-direction:column;gap:8px}
+.hg2-msum-row{display:flex;align-items:center;gap:9px;padding:8px 10px;background:var(--s8);border:1px solid var(--s7);border-radius:10px}
+.hg2-msum-row.idle{opacity:.5}
+.hg2-msum-name{font-weight:700;font-size:13.5px;color:var(--amber);flex-shrink:0;min-width:62px}
+.hg2-msum-cnt{font-size:12px;color:var(--s4);flex:1}
+.hg2-msum-time{display:flex;align-items:center;gap:3px;font-size:11px;color:var(--cyan);flex-shrink:0}
+.hg2-msum-rev{font-family:ui-monospace,monospace;font-weight:700;font-size:13.5px;color:var(--silver);flex-shrink:0;white-space:nowrap}
+.hg2-msum-foot{margin-top:10px;text-align:center;font-size:11.5px;color:var(--s4)}
 
 .hg2-add{width:100%;display:flex;align-items:center;justify-content:center;gap:9px;background:linear-gradient(135deg,var(--champ),var(--gold) 45%,var(--gold2));color:#241A06;border:none;border-radius:14px;padding:16px;font-family:'Rubik';font-weight:900;font-size:17px;cursor:pointer;box-shadow:0 8px 26px rgba(228,188,99,.32),inset 0 1px 0 rgba(255,255,255,.35);margin-bottom:18px}
 .hg2-add:active{transform:scale(.985)}
