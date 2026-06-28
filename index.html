@@ -131,8 +131,38 @@
       document.documentElement.classList.add('booting');   // hide app + welcome until reveal
       var vid=document.getElementById('introVid'); var vaultVid=document.getElementById('vaultVid');
       var scanTxt=document.getElementById('scanTxt'); var done=false, ended=false;
-      if(vid){ try{ vid.playbackRate=5; }catch(e){} }
-      if(vaultVid){ try{ vaultVid.playbackRate=5; }catch(e){} }
+      if(vid){ try{ vid.playbackRate=8; }catch(e){} }
+      if(vaultVid){ try{ vaultVid.playbackRate=8; }catch(e){} }
+      // ── Transformers-style robotic SFX on open (procedural Web Audio) ──
+      var sfxDone=false;
+      function robotSound(){
+        if(sfxDone) return;
+        try{
+          var AC=window.AudioContext||window.webkitAudioContext; if(!AC) return;
+          var ctx=new AC(); if(ctx.state==='suspended'){ ctx.resume(); }
+          var t=ctx.currentTime;
+          function servo(s,f0,f1,d){ var o=ctx.createOscillator(),g=ctx.createGain(),bp=ctx.createBiquadFilter();
+            bp.type='bandpass';bp.frequency.value=1200;bp.Q.value=7;o.type='sawtooth';
+            o.frequency.setValueAtTime(f0,t+s);o.frequency.exponentialRampToValueAtTime(f1,t+s+d);
+            g.gain.setValueAtTime(0.0001,t+s);g.gain.exponentialRampToValueAtTime(0.2,t+s+0.02);g.gain.exponentialRampToValueAtTime(0.0001,t+s+d);
+            o.connect(bp);bp.connect(g);g.connect(ctx.destination);o.start(t+s);o.stop(t+s+d+0.05); }
+          function clank(s){ var len=Math.floor(ctx.sampleRate*0.12),b=ctx.createBuffer(1,len,ctx.sampleRate),dt=b.getChannelData(0);
+            for(var i=0;i<len;i++){dt[i]=(Math.random()*2-1)*Math.pow(1-i/len,3);}
+            var sr=ctx.createBufferSource();sr.buffer=b;var hp=ctx.createBiquadFilter();hp.type='highpass';hp.frequency.value=2200;var g=ctx.createGain();g.gain.value=0.28;
+            sr.connect(hp);hp.connect(g);g.connect(ctx.destination);sr.start(t+s); }
+          servo(0,120,900,0.18); servo(0.2,820,200,0.16); clank(0.38);
+          servo(0.45,200,1150,0.2); servo(0.72,1000,300,0.18); clank(0.92);
+          servo(1.0,300,1450,0.22); clank(1.28);
+          var wo=ctx.createOscillator(),wg=ctx.createGain();wo.type='square';
+          wo.frequency.setValueAtTime(55,t);wo.frequency.linearRampToValueAtTime(150,t+1.3);
+          wg.gain.setValueAtTime(0.07,t);wg.gain.exponentialRampToValueAtTime(0.0001,t+1.5);
+          wo.connect(wg);wg.connect(ctx.destination);wo.start(t);wo.stop(t+1.6);
+          sfxDone=true; setTimeout(function(){ try{ctx.close();}catch(e){} },2400);
+        }catch(e){}
+      }
+      robotSound();
+      window.addEventListener('pointerdown', robotSound, {once:true});
+      window.addEventListener('keydown', robotSound, {once:true});
       function revealApp(){
         document.documentElement.classList.remove('booting');
         document.body.classList.add('revealed');   // panels animate in — only now
