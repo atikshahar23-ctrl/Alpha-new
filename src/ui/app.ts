@@ -179,7 +179,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v68 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v69 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -193,6 +193,45 @@ export function mountApp(root: HTMLElement) {
       <div class="stage" id="stage"></div>
       <canvas id="charSwapFx" class="char-swap-fx"></canvas>
       <canvas id="attackFx" class="attack-fx"></canvas>
+
+      <!-- ════════ HOLOGRAPHIC HUD (gold/white) — main display ════════ -->
+      <div class="hud" id="hud">
+        <!-- Central figure: temporary holographic video until a live 3D model is imported -->
+        <div class="hud-core" id="hudCore">
+          <div class="hud-core-glow"></div>
+          <video class="hud-fig" id="hudFig" src="/Alpha-new/intro-alien.mp4" muted loop autoplay playsinline preload="auto"></video>
+          <svg class="hud-core-ring" viewBox="0 0 200 200" aria-hidden="true"><circle cx="100" cy="100" r="92" fill="none" stroke="rgba(228,188,99,.5)" stroke-width="1" stroke-dasharray="4 6"/><circle cx="100" cy="100" r="78" fill="none" stroke="rgba(247,232,192,.25)" stroke-width="1"/></svg>
+          <div class="hud-core-tag">ALPHA CORE · ONLINE</div>
+        </div>
+
+        <!-- Heavy Guard data cards (left column — replaces the old stats panel) -->
+        <div class="hud-col">
+          <section class="hud-card" id="hudOps">
+            <div class="hud-card-h"><span>GLOBAL OPERATIONS</span><i></i></div>
+            <div class="hud-card-body">טוען…</div>
+          </section>
+          <section class="hud-card" id="hudPipe">
+            <div class="hud-card-h"><span>CONTRACTOR PIPELINE</span><i></i></div>
+            <div class="hud-card-body">טוען…</div>
+          </section>
+        </div>
+
+        <!-- Heavy Guard shortcut rail -->
+        <div class="hud-rail" id="hudRail">
+          <button class="hud-sc" id="hudHg" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+            <span>HEAVY GUARD OS</span>
+          </button>
+          <a class="hud-sc" id="hudTrade" href="https://heavt-guard-simulator-1.onrender.com/" target="_blank" rel="noopener">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+            <span>מערכת מסחר · TRADE</span>
+          </a>
+          <a class="hud-sc" id="hudAgent" href="/Alpha-new/agent.html" target="_blank" rel="noopener">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M17 11l2 2 4-4"/></svg>
+            <span>CRM מכירות · איתי</span>
+          </a>
+        </div>
+      </div>
 
       <div id="charRotPanel" class="char-rot-panel" hidden>
         <div class="crp-title" id="crpTitle">כיוון דמות</div>
@@ -2166,6 +2205,45 @@ export function mountApp(root: HTMLElement) {
     mb: 'm.b מערכות', sd: 'ס.ד מיגונים', hg: 'Heavy Guard',
   };
   function cName(id: string) { return CONTRACTORS[id] || id; }
+
+  // ── Holographic HUD: live Heavy Guard data on the main display ──────────
+  function renderHud() {
+    let idx: any[] = [];
+    try { idx = (JSON.parse(localStorage.getItem('hg2:index') || '[]') || []).filter((x: any) => x && x.status !== 'running'); } catch {}
+    const money = (n: number) => '₪' + (Number(n) || 0).toLocaleString('he-IL');
+    const ym = new Date().toISOString().slice(0, 7);
+    const total = idx.length;
+    const revenue = idx.reduce((s: number, x: any) => s + (Number(x.price) || 0), 0);
+    const month = idx.filter((x: any) => (x.date || '').startsWith(ym));
+    const monthRev = month.reduce((s: number, x: any) => s + (Number(x.price) || 0), 0);
+    const ops = document.querySelector('#hudOps .hud-card-body');
+    if (ops) {
+      ops.innerHTML = total === 0
+        ? '<div class="hud-empty">אין עדיין נתוני Heavy Guard במכשיר זה</div>'
+        : `<div class="hud-stat"><span>התקנות סה"כ</span><b>${total.toLocaleString('he-IL')}</b></div>
+           <div class="hud-stat"><span>הכנסה מצטברת</span><b class="cy">${money(revenue)}</b></div>
+           <div class="hud-stat"><span>החודש</span><b>${month.length} · ${money(monthRev)}</b></div>
+           <div class="hud-line"></div>
+           <div class="hud-foot">${BIZ_TAG}</div>`;
+    }
+    const pipe = document.querySelector('#hudPipe .hud-card-body');
+    if (pipe) {
+      const byC: Record<string, { count: number; rev: number }> = {};
+      idx.forEach((x: any) => { const c = x.contractor || '?'; (byC[c] = byC[c] || { count: 0, rev: 0 }); byC[c].count++; byC[c].rev += Number(x.price) || 0; });
+      const rows = Object.entries(byC).map(([id, v]) => ({ name: cName(id), ...v })).sort((a, b) => b.rev - a.rev).slice(0, 5);
+      const max = Math.max(1, ...rows.map((r) => r.rev));
+      pipe.innerHTML = rows.length === 0
+        ? '<div class="hud-empty">אין נתונים</div>'
+        : rows.map((r) => `<div class="hud-prow"><span class="hud-pn">${r.name}</span><div class="hud-pbar"><i style="width:${Math.round(r.rev / max * 100)}%"></i></div><b>${money(r.rev)}</b></div>`).join('');
+    }
+  }
+  const BIZ_TAG = 'Heavy Guard · נתוני שטח חיים';
+  // The HUD "HeavyGuard OS" tile reuses the existing dock handler.
+  setTimeout(() => {
+    document.getElementById('hudHg')?.addEventListener('click', () => document.getElementById('hgBtn')?.click());
+    renderHud();
+    setInterval(renderHud, 30000);
+  }, 300);
 
   async function hgSearchLicense(query: string) {
     const q = query.replace(/[-\s]/g, '').toLowerCase();
