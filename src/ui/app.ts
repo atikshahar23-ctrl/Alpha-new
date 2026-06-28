@@ -179,7 +179,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v88 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v89 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -2291,6 +2291,41 @@ export function mountApp(root: HTMLElement) {
   }
   const BIZ_TAG = 'Heavy Guard · נתוני שטח חיים';
 
+  // ── Business briefing (Hebrew) — HeavyGuard KPIs + fleet + live markets ──
+  // Pulls only local HG data + the markets already fetched (no cross-origin), so
+  // it always works. Shown in chat when the GLOBAL OPERATIONS panel is tapped.
+  function businessBriefing(): string {
+    const idx = readIdx();
+    const ym = new Date().toISOString().slice(0, 7);
+    const money = (n: number) => '₪' + Math.round(n || 0).toLocaleString('he-IL');
+    const total = idx.length;
+    const revenue = idx.reduce((s: number, x: any) => s + (Number(x.price) || 0), 0);
+    const month = idx.filter((x: any) => (x.date || '').startsWith(ym));
+    const monthRev = month.reduce((s: number, x: any) => s + (Number(x.price) || 0), 0);
+    const byC: Record<string, { n: number; rev: number }> = {};
+    idx.forEach((x: any) => { const c = x.contractor || '?'; (byC[c] = byC[c] || { n: 0, rev: 0 }); byC[c].n++; byC[c].rev += Number(x.price) || 0; });
+    const top = Object.entries(byC).map(([id, v]) => ({ name: cName(id), ...v })).sort((a, b) => b.rev - a.rev).slice(0, 3);
+    const unsched = idx.filter((x: any) => x && (x.status === 'running' || !x.date)).length;
+    const openTasks = readTasks().filter((t: any) => !t.done).length;
+    const trips = readTrips(); const km = trips.reduce((s: number, t: any) => s + (Number(t.km) || 0), 0);
+    const lines: string[] = ['🛡️ **תדריך עסקי · Heavy Guard**'];
+    if (total === 0) lines.push('אין עדיין נתוני התקנות במכשיר זה.');
+    else {
+      lines.push(`• התקנות סה"כ: ${total} · הכנסה מצטברת: ${money(revenue)}`);
+      lines.push(`• החודש: ${month.length} התקנות · ${money(monthRev)}`);
+      if (top.length) lines.push('• קבלנים מובילים: ' + top.map((t) => `${t.name} (${money(t.rev)})`).join(' · '));
+      if (unsched) lines.push(`• ⚠️ ${unsched} התקנות ממתינות לתיאום`);
+    }
+    if (openTasks) lines.push(`• ${openTasks} משימות פתוחות`);
+    lines.push(`• 🚚 צי: ${trips.length} נסיעות · ${km} ק"מ`);
+    if (lastMarketRows.length) {
+      const m = lastMarketRows.slice(0, 4).map((r) => `${r.name} ${r.price} (${r.chg >= 0 ? '+' : ''}${r.chg.toFixed(1)}%)`);
+      lines.push('📊 שווקים: ' + m.join(' · '));
+    }
+    return lines.join('\n');
+  }
+  (window as any).businessBriefing = businessBriefing;
+
   // ── Live markets ──
   const mkFmt = (n: number) => n >= 1000 ? Math.round(n).toLocaleString('en-US') : n.toLocaleString('en-US', { maximumFractionDigits: n >= 1 ? 2 : 4 });
   type MkRow = { name: string; price: string; chg: number };
@@ -2596,6 +2631,7 @@ export function mountApp(root: HTMLElement) {
     document.getElementById('hudFleet')?.addEventListener('click', openFleet);
     document.getElementById('hudTrade')?.addEventListener('click', (e) => { e.preventDefault(); openTradeSystem(); });
     document.querySelector('#hudMarkets')?.addEventListener('click', openMarketsDetail);
+    document.getElementById('hudOps')?.addEventListener('click', () => { addMsg(businessBriefing(), 'al'); });
     renderHud(); renderMarkets(); renderNews();
     setInterval(renderHud, 30000);
     setInterval(renderMarkets, 60000);
