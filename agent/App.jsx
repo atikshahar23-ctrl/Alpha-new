@@ -256,12 +256,14 @@ function LeadDetail({ lead, onBack, onStatus, onNotes, onOutreach, onDeal, deals
       )}
 
       <div className="ag-section">
-        <div className="ag-section-ttl">פרטי קשר</div>
+        <div className="ag-section-ttl">טלפונים{(lead.phones || []).length > 1 ? ` (${lead.phones.length})` : ""}</div>
+        {(lead.phones || []).length === 0 && <div className="ag-empty sm">אין מספרי טלפון לליד זה</div>}
         {(lead.phones || []).map((p, i) => (
-          <div key={i} className="ag-contact">
-            <Phone size={13} /><span dir="ltr">{p}</span>
-            <a href={telLink(p)} className="ag-contact-a">חייג</a>
-            <a href={waLink(p, `שלום, מדבר איתי מ-${BIZ}.`)} target="_blank" rel="noreferrer" className="ag-contact-a wa"><MessageSquare size={13} /></a>
+          <div key={i} className="ag-phone">
+            <Phone size={14} className="ag-phone-ic" />
+            <span className="ag-phone-num" dir="ltr">{p}</span>
+            <a href={telLink(p)} className="ag-phone-btn"><Phone size={13} /> חייג</a>
+            <a href={waLink(p, `שלום, מדבר איתי מ-${BIZ}.`)} target="_blank" rel="noreferrer" className="ag-phone-btn wa"><MessageSquare size={13} /> וואטסאפ</a>
           </div>
         ))}
         {lead.e && <a href={`mailto:${lead.e}`} className="ag-info"><Mail size={13} /><span className="ag-trunc">{lead.e}</span></a>}
@@ -280,9 +282,24 @@ function LeadDetail({ lead, onBack, onStatus, onNotes, onOutreach, onDeal, deals
       {(lead.mgrs || []).length > 0 && (
         <div className="ag-section">
           <div className="ag-section-ttl">אנשי קשר ({lead.mgrs.length})</div>
-          {lead.mgrs.slice(0, 8).map((m, i) => (
-            <div key={i} className="ag-mgr"><div><span className="ag-mgr-name">{m.n}</span>{m.r && <span className="ag-mgr-role">{m.r}</span>}</div>{m.e && <a href={`mailto:${m.e}`} className="ag-mgr-mail"><Mail size={11} />{m.e}</a>}</div>
-          ))}
+          {(lead.phones || []).length > 0 && <div className="ag-note-line">המספרים הם קווי העסק — חייג/שלח וואטסאפ אל איש הקשר דרכם</div>}
+          {lead.mgrs.slice(0, 12).map((m, i) => {
+            const phone = (lead.phones || [])[0];
+            return (
+              <div key={i} className="ag-person">
+                <div className="ag-person-top">
+                  <span className="ag-mgr-name">{m.n}</span>
+                  {m.r && <span className="ag-mgr-role">{m.r}</span>}
+                </div>
+                {phone && <div className="ag-person-phone" dir="ltr"><Phone size={11} /> {phone}</div>}
+                <div className="ag-person-acts">
+                  {phone && <a href={telLink(phone)} className="ag-person-btn"><Phone size={12} /> חייג</a>}
+                  {phone && <a href={waLink(phone, `שלום ${m.n}, מדבר איתי מ-${BIZ}.`)} target="_blank" rel="noreferrer" className="ag-person-btn wa"><MessageSquare size={12} /> וואטסאפ</a>}
+                  {m.e && <a href={`mailto:${m.e}`} className="ag-person-btn"><Mail size={12} /> מייל</a>}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -555,10 +572,21 @@ function StyleTag() {
 .ag-contact-a.wa{color:var(--ok)}
 .ag-info{display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px;color:var(--s4)}
 .ag-trunc{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
-.ag-mgr{padding:8px 0;border-bottom:1px solid var(--s8)}
-.ag-mgr-name{font-weight:700;font-size:13.5px}
+.ag-mgr-name{font-weight:700;font-size:14px}
 .ag-mgr-role{font-size:11.5px;color:var(--s4);margin-right:7px}
-.ag-mgr-mail{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--cyan);margin-top:3px;text-decoration:none}
+.ag-phone{display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid var(--s8);flex-wrap:wrap}
+.ag-phone-ic{color:var(--cyan);flex-shrink:0}
+.ag-phone-num{font-size:15px;font-weight:700;letter-spacing:.3px;flex:1;min-width:90px}
+.ag-phone-btn{display:flex;align-items:center;gap:5px;background:var(--s8);border:1px solid var(--s7);color:var(--cyan);border-radius:9px;padding:7px 12px;font-size:12.5px;font-weight:700;text-decoration:none;white-space:nowrap}
+.ag-phone-btn.wa{color:var(--ok);border-color:#2c6b52;background:#143b2c}
+.ag-note-line{font-size:11.5px;color:var(--s4);margin-bottom:9px;line-height:1.4}
+.ag-person{padding:10px 0;border-bottom:1px solid var(--s8)}
+.ag-person:last-child{border-bottom:none}
+.ag-person-top{display:flex;align-items:baseline;gap:7px;flex-wrap:wrap}
+.ag-person-phone{display:flex;align-items:center;gap:5px;font-size:13px;color:var(--silver);margin-top:5px;font-weight:600}
+.ag-person-acts{display:flex;gap:7px;margin-top:8px;flex-wrap:wrap}
+.ag-person-btn{display:flex;align-items:center;gap:5px;background:var(--s8);border:1px solid var(--s7);color:var(--cyan);border-radius:9px;padding:7px 13px;font-size:12.5px;font-weight:700;text-decoration:none;white-space:nowrap}
+.ag-person-btn.wa{color:var(--ok);border-color:#2c6b52;background:#143b2c}
 .ag-textarea,.ag-input,.ag-select{width:100%;background:var(--s8);border:1px solid var(--s7);color:var(--silver);border-radius:10px;padding:10px 12px;font-family:inherit;font-size:14px;outline:none}
 .ag-textarea{resize:vertical}
 .ag-btn{background:linear-gradient(135deg,var(--champ),var(--gold) 50%,var(--gold2));color:#241A06;border:none;border-radius:10px;padding:11px 16px;font-family:'Rubik';font-weight:900;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;margin-top:9px}
