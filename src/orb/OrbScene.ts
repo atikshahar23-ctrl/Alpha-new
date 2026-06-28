@@ -2123,7 +2123,13 @@ function loadAndReplaceBody(
         // ────────────────────────────────────────────────────────────────────
 
         const target = 2.5;   // fill the sphere (radius ~1.6)
-        const s = target / Math.max(bbSize.x, bbSize.y, bbSize.z);
+        // Normalize primarily by HEIGHT so EVERY character stands at the same
+        // apparent size (uniform default like the reference image). Width/depth
+        // are clamped (×0.8) so very wide models (spread wings, long tails) still
+        // can't overflow the orb, but compact and tall models both end up the
+        // same standing height — instead of max-dim, which made wide/long models
+        // look smaller than compact ones like Eevee.
+        const s = target / Math.max(bbSize.y, bbSize.x * 0.8, bbSize.z * 0.8);
         // Store the base transform so real-time adjustments can re-apply without reload.
         modelBaseTransform.set(model, { s, cx: -bbCenter.x * s, cy: -bbCenter.y * s, cz: -bbCenter.z * s });
         // Apply stored user transform (scale multiplier + position offset on top).
