@@ -2002,7 +2002,11 @@ function attachAura(host: THREE.Group, character: string): void {
   const type: AuraType = POKEMON_ATTACK_TYPE[character] || 'normal';
   const legendary = LEGENDARY.has(character);
   const perfLite = typeof document !== 'undefined' && document.documentElement.classList.contains('perf-lite');
-  const N = Math.round((perfLite ? 34 : 70) * (legendary ? (perfLite ? 1.3 : 1.55) : 1));
+  // Mobile/touch GPUs do less per-frame CPU work happily — use fewer particles
+  // there, and (below) update them every other frame. perf-lite trims further.
+  const isMobile = typeof window !== 'undefined' && (matchMedia('(max-width: 900px)').matches || 'ontouchstart' in window);
+  const base = perfLite ? 30 : isMobile ? 42 : 70;
+  const N = Math.round(base * (legendary ? (perfLite || isMobile ? 1.3 : 1.55) : 1));
   const R = 1.45, H = 2.6, yBase = -1.25;
   const pos = new Float32Array(N * 3), col = new Float32Array(N * 3);
   const data: { ang: number; rad: number; y: number; sp: number; ph: number }[] = [];
@@ -2031,8 +2035,13 @@ function attachAura(host: THREE.Group, character: string): void {
     ring.rotation.x = -Math.PI / 2; ring.position.y = yBase + 0.02; ring.frustumCulled = false;
     host.add(ring);
   }
+  let _acc = 0, _fc = 0;
   const update = (dt: number, t: number) => {
+    // Ring spins smoothly every frame with the real dt.
     if (ring) { ring.rotation.z += dt * 0.5; (ring.material as THREE.MeshBasicMaterial).opacity = 0.4 + Math.sin(t * 1.4) * 0.18; }
+    // On mobile, recompute particle positions every OTHER frame (accumulating dt
+    // so motion speed is unchanged) — halves the per-frame CPU cost of the aura.
+    if (isMobile) { _acc += dt; if ((_fc++ & 1) === 0) return; dt = _acc; _acc = 0; }
     const p = geo.attributes.position as THREE.BufferAttribute;
     for (let i = 0; i < N; i++) {
       const d = data[i]; let x = 0, y = 0, z = 0;
