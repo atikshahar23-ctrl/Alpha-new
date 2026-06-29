@@ -179,8 +179,12 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v100 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v101 ⚡</div></div></div>
       <div class="chrome topR">
+        <button class="chip ghost" id="panelsToggleBtn" title="הסתר/הצג פנלים" aria-label="הסתר פנלים">
+          <svg class="pt-hide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+          <svg class="pt-show" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-7-11-7a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 7 11 7a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+        </button>
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
         </button>
@@ -1719,6 +1723,25 @@ export function mountApp(root: HTMLElement) {
   };
   $('muteBtn').onclick = () => { audio.toggleMute(); };
   $('newChat').onclick = () => { state.history = []; $('rpBody').innerHTML = ''; $('chat').innerHTML = ''; clearChatHistory(); addMsg(state.name + ' ' + t('readyMsg', state.uiLang), 'al'); };
+
+  // ── Hide / show all panels — leaves only the top bar + the central orb ──
+  // State persists so a "clean view" survives reloads. The toggle button lives
+  // in the top bar so it stays reachable even when everything else is hidden.
+  const appEl = root.querySelector('.app') as HTMLElement;
+  const applyPanelsHidden = (hidden: boolean) => {
+    appEl.classList.toggle('panels-hidden', hidden);
+    const btn = $('panelsToggleBtn');
+    btn.title = hidden ? 'הצג פנלים' : 'הסתר פנלים';
+    btn.setAttribute('aria-label', hidden ? 'הצג פנלים' : 'הסתר פנלים');
+    btn.classList.toggle('active', hidden);
+  };
+  applyPanelsHidden(localStorage.getItem('alpha_panels_hidden') === '1');
+  $('panelsToggleBtn').onclick = () => {
+    const hidden = !appEl.classList.contains('panels-hidden');
+    localStorage.setItem('alpha_panels_hidden', hidden ? '1' : '0');
+    applyPanelsHidden(hidden);
+    try { navigator.vibrate?.(state.haptics ? 15 : 0); } catch {}
+  };
 
   // (The mobile "minimal mode" — panels auto-hiding after 10s, leaving only a
   //  central record button — was removed per user request. On mobile the panels

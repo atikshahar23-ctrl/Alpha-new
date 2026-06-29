@@ -3215,3 +3215,15 @@ body.is-mobile-ui.mobile-min .fab-group{
 
 /* business briefing — make the GLOBAL OPERATIONS panel tappable */
 #hudOps{cursor:pointer;pointer-events:auto}
+
+/* ── Hide / show panels toggle — clean immersive view (only top bar + orb) ── */
+#panelsToggleBtn .pt-show{display:none}
+#panelsToggleBtn.active .pt-hide{display:none}
+#panelsToggleBtn.active .pt-show{display:inline-block}
+#panelsToggleBtn.active{color:#E4BC63;border-color:rgba(228,188,99,.55);box-shadow:0 0 10px rgba(228,188,99,.25)}
+.app.panels-hidden .hud,
+.app.panels-hidden .left-panel,
+.app.panels-hidden .right-panel,
+.app.panels-hidden .dock,
+.app.panels-hidden .fab,
+.app.panels-hidden .fab-menu{display:none!important}

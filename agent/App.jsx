@@ -63,7 +63,7 @@ function useHgPricelist() {
   }, []);
   return pl;
 }
-const HG_SITE = "https://heavyguard.com";
+const HG_SITE = "https://heavygurad.com";
 
 /* ============================ Root App ============================ */
 export default function App() {
@@ -167,7 +167,7 @@ function Dashboard({ leads, deals, custs, go, onNewDeal }) {
       <header className="ag-head">
         <img src={BULL_LOGO} className="ag-logo" alt="" />
         <div style={{ flex: 1 }}><div className="ag-title">CRM מכירות · איתי</div><div className="ag-sub">{BIZ} — ניהול לידים ועסקאות</div></div>
-        <a className="ag-site" href={HG_SITE} target="_blank" rel="noreferrer" title="heavyguard.com">
+        <a className="ag-site" href={HG_SITE} target="_blank" rel="noreferrer" title="heavygurad.com">
           <img src={BULL_LOGO} alt="" /><span>האתר</span>
         </a>
       </header>
