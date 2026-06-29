@@ -179,7 +179,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v91 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v92 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -6101,22 +6101,8 @@ export function mountApp(root: HTMLElement) {
   if (!knownName) showWelcome();
   else if (prevHistory.length === 0) addMsg(personalGreeting(), 'al');
 
-  // ── Robot voice greeting on entry (once per load) — spoken in Hebrew after
-  // the intro reveals. The robot welcomes the user by name.
-  {
-    let greeted = false;
-    const greet = () => {
-      if (greeted) return; greeted = true;
-      const nm = (loadMemory().profile.name || 'שחר').trim() || 'שחר';
-      try { voice.speak(`מה המצב ${nm}?`); } catch {}
-    };
-    const poll = setInterval(() => {
-      if (document.body.classList.contains('revealed') || !document.getElementById('introOverlay')) {
-        clearInterval(poll); setTimeout(greet, 700);
-      }
-    }, 400);
-    setTimeout(() => { clearInterval(poll); greet(); }, 20000);   // fallback
-  }
+  // (Spoken "מה המצב" entry greeting removed per user request — the app no
+  //  longer speaks a greeting on entry.)
 
   // ── 3D Depth — perspective-based UI panel transforms ──
   {
