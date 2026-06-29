@@ -32,10 +32,78 @@ const todayISO = () => new Date().toISOString().slice(0, 10);
 const monthKey = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 const telLink = (p) => `tel:${(p || "").replace(/\s/g, "")}`;
 const waLink = (phone, text) => { let p = (phone || "").replace(/\D/g, ""); if (p.startsWith("0")) p = "972" + p.slice(1); return `https://wa.me/${p}?text=${encodeURIComponent(text || "")}`; };
-const dealTotals = (items) => {
-  const subtotal = items.reduce((s, i) => s + (Number(i.price) || 0) * (Number(i.qty) || 1), 0);
+const dealTotals = (items, discountPct = 0) => {
+  const gross = items.reduce((s, i) => s + (Number(i.price) || 0) * (Number(i.qty) || 1), 0);
+  const pct = Math.max(0, Math.min(15, Number(discountPct) || 0));
+  const discount = Math.round(gross * pct / 100);
+  const subtotal = gross - discount;
   const vat = Math.round(subtotal * VAT);
-  return { subtotal, vat, total: subtotal + vat };
+  return { gross, discount, discountPct: pct, subtotal, vat, total: subtotal + vat };
+};
+
+/* ── Me caller-ID app: copy the number for instant paste (the core ask), then
+   best-effort hop to the phone's Me app. No guessed deep-link that could show a
+   broken page — copy always works and Me reads the clipboard on open. ── */
+const copyText = async (t) => { try { await navigator.clipboard.writeText(t); return true; } catch { try { const ta = document.createElement("textarea"); ta.value = t; ta.style.position = "fixed"; ta.style.opacity = "0"; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); return true; } catch { return false; } } };
+const meLookup = async (phone, showToast) => {
+  const num = (phone || "").replace(/\s/g, "");
+  const ok = await copyText(num);
+  showToast(ok ? "המספר הועתק ✓ פתח את Me והדבק לחיפוש" : "העתק ידנית: " + num);
+};
+
+/* ── Israel city → coordinates (covers the bulk of the lead base). Names are
+   normalised (strips "ישוב ", common variants) before lookup. ── */
+const CITY_COORDS = {
+  "ירושלים": [31.7683, 35.2137], "תל אביב יפו": [32.0853, 34.7818], "תל אביב": [32.0853, 34.7818],
+  "חיפה": [32.7940, 34.9896], "ראשון לציון": [31.9730, 34.8066], "פתח תקווה": [32.0840, 34.8878],
+  "אשדוד": [31.8014, 34.6435], "נתניה": [32.3215, 34.8532], "באר שבע": [31.2520, 34.7915],
+  "בני ברק": [32.0807, 34.8338], "חולון": [32.0167, 34.7795], "רמת גן": [32.0700, 34.8245],
+  "אשקלון": [31.6688, 34.5715], "רחובות": [31.8928, 34.8113], "בת ים": [32.0231, 34.7503],
+  "כפר סבא": [32.1750, 34.9070], "הרצליה": [32.1624, 34.8447], "חדרה": [32.4340, 34.9196],
+  "מודיעין": [31.8980, 35.0104], "נצרת": [32.7019, 35.2978], "רמלה": [31.9288, 34.8667],
+  "לוד": [31.9514, 34.8953], "רעננה": [32.1848, 34.8713], "רהט": [31.3920, 34.7544],
+  "אילת": [29.5577, 34.9519], "עכו": [32.9281, 35.0818], "נהריה": [33.0085, 35.0950],
+  "קרית אתא": [32.8110, 35.1130], "קרית גת": [31.6100, 34.7642], "קרית ביאליק": [32.8307, 35.0865],
+  "קרית מוצקין": [32.8380, 35.0760], "קרית ים": [32.8480, 35.0680], "טבריה": [32.7959, 35.5300],
+  "צפת": [32.9646, 35.4960], "דימונה": [31.0707, 35.0327], "אופקים": [31.3147, 34.6200],
+  "שדרות": [31.5249, 34.5963], "נס ציונה": [31.9293, 34.7986], "יבנה": [31.8783, 34.7390],
+  "טייבה": [32.2660, 35.0090], "טירה": [32.2340, 34.9510], "אום אל פחם": [32.5160, 35.1530],
+  "כפר קאסם": [32.1140, 34.9760], "באקה אל גרביה": [32.4170, 35.0370], "טמרה": [32.8520, 35.1980],
+  "סחנין": [32.8650, 35.2980], "שפרעם": [32.8060, 35.1690], "מעלות תרשיחא": [33.0160, 35.2700],
+  "כרמיאל": [32.9170, 35.2920], "עפולה": [32.6078, 35.2897], "בית שאן": [32.4969, 35.4997],
+  "בית שמש": [31.7497, 34.9886], "מגדל העמק": [32.6750, 35.2410], "יקנעם": [32.6580, 35.1100],
+  "נוף הגליל": [32.7090, 35.3170], "ערד": [31.2590, 35.2120], "נתיבות": [31.4220, 34.5950],
+  "קרית שמונה": [33.2070, 35.5700], "זכרון יעקב": [32.5720, 34.9530], "פרדס חנה כרכור": [32.4750, 34.9740],
+  "אזור": [32.0290, 34.8000], "גבעתיים": [32.0720, 34.8120], "אור יהודה": [32.0300, 34.8530],
+  "יהוד": [32.0330, 34.8890], "ראש העין": [32.0956, 34.9560], "טורעאן": [32.7790, 35.3760],
+  "דבורייה": [32.6960, 35.3760], "עראבה": [32.8510, 35.3370], "מעלה אדומים": [31.7730, 35.2980],
+  "גבעת שמואל": [32.0780, 34.8480], "כפר יונה": [32.3170, 34.9340], "קצרין": [32.9920, 35.6900],
+};
+const REGION_CENTROID = { "צפון": [32.85, 35.25], "מרכז": [32.05, 34.85], "דרום": [31.25, 34.79], "שרון": [32.30, 34.90], "שפלה": [31.90, 34.85], "ירושלים": [31.77, 35.21] };
+const normCity = (c) => (c || "").replace(/^ישוב\s+/, "").replace(/^עיריית\s+/, "").trim();
+const cityCoords = (city) => CITY_COORDS[normCity(city)] || null;
+// Stable per-id jitter so many businesses in one city fan out instead of stacking.
+const jitter = (id, amp = 0.02) => { let h = 0; const s = String(id); for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return [((h % 1000) / 1000 - 0.5) * amp, (((h >> 10) % 1000) / 1000 - 0.5) * amp]; };
+const geoFor = (lead) => {
+  const c = cityCoords(lead.city);
+  const j = jitter(lead.id);
+  if (c) return [c[0] + j[0], c[1] + j[1]];
+  const r = REGION_CENTROID[lead.geo];
+  return r ? [r[0] + j[0] * 3, r[1] + j[1] * 3] : null;
+};
+const wazeTo = (lead) => { const c = cityCoords(lead.city); if (c) return `https://waze.com/ul?ll=${c[0]},${c[1]}&navigate=yes`; const q = encodeURIComponent([lead.addr, lead.city].filter(Boolean).join(" ")); return `https://waze.com/ul?q=${q}&navigate=yes`; };
+
+/* ── Leaflet loader (CDN, once) ── */
+let _leafletPromise = null;
+const loadLeaflet = () => {
+  if (window.L) return Promise.resolve(window.L);
+  if (_leafletPromise) return _leafletPromise;
+  _leafletPromise = new Promise((resolve, reject) => {
+    const css = document.createElement("link"); css.rel = "stylesheet"; css.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"; document.head.appendChild(css);
+    const js = document.createElement("script"); js.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+    js.onload = () => resolve(window.L); js.onerror = reject; document.head.appendChild(js);
+  });
+  return _leafletPromise;
 };
 
 /* ── HeavyGuard pricelist — read LIVE from the shared (same-origin) storage so
@@ -123,14 +191,16 @@ export default function App() {
   return (
     <div className="ag">
       <StyleTag />
-      {tab === "home" && <Dashboard leads={leads} deals={deals} custs={custs} go={setTab} onNewDeal={() => setDealDraft({})} />}
+      {tab === "home" && <Dashboard leads={leads} deals={deals} custs={custs} go={setTab} onNewDeal={() => setDealDraft({})} showToast={showToast} />}
       {tab === "leads" && <LeadsView leads={leads} updateCrm={updateCrm} addOutreach={addOutreach} onDeal={(lead) => setDealDraft({ lead })} dealsFor={(id) => deals.filter((d) => d.leadId === id)} showToast={showToast} />}
       {tab === "deals" && <DealsView deals={deals} leads={leads} onEdit={(deal) => setDealDraft({ deal })} onNew={() => setDealDraft({})} onWin={winDeal} onRemove={removeDeal} showToast={showToast} />}
       {tab === "custs" && <CustomersView custs={custs} onSave={saveCustomer} onRemove={removeCustomer} showToast={showToast} />}
+      {tab === "map" && <MapView leads={leads} custs={custs} deals={deals} showToast={showToast} />}
 
       <nav className="ag-nav">
         <button className={tab === "home" ? "on" : ""} onClick={() => setTab("home")}><LayoutDashboard size={20} /><span>בקרה</span></button>
         <button className={tab === "leads" ? "on" : ""} onClick={() => setTab("leads")}><Target size={20} /><span>לידים</span></button>
+        <button className={tab === "map" ? "on" : ""} onClick={() => setTab("map")}><MapPin size={20} /><span>מפה</span></button>
         <button className={tab === "deals" ? "on" : ""} onClick={() => setTab("deals")}><Handshake size={20} /><span>עסקאות</span></button>
         <button className={tab === "custs" ? "on" : ""} onClick={() => setTab("custs")}><UserRound size={20} /><span>לקוחות</span></button>
         <button className="ag-nav-exit" onClick={exitToAlpha}><ChevronLeft size={20} /><span>יציאה</span></button>
@@ -152,7 +222,7 @@ export default function App() {
 }
 
 /* ============================ Dashboard ============================ */
-function Dashboard({ leads, deals, custs, go, onNewDeal }) {
+function Dashboard({ leads, deals, custs, go, onNewDeal, showToast }) {
   const k = monthKey();
   const open = deals.filter((d) => d.status === "פתוח");
   const wonMonth = deals.filter((d) => d.status === "נסגר" && (d.wonAt || "").startsWith(k));
@@ -186,6 +256,14 @@ function Dashboard({ leads, deals, custs, go, onNewDeal }) {
       </div>
 
       <button className="ag-cta" onClick={onNewDeal}><Plus size={20} /> עסקה חדשה</button>
+
+      <AssistantPanel leads={leads} deals={deals} custs={custs} go={go} onNewDeal={onNewDeal} showToast={showToast} />
+
+      <button className="ag-mapcard" onClick={() => go("map")}>
+        <div className="ag-mapcard-glow" />
+        <div className="ag-mapcard-txt"><b><MapPin size={15} /> מפת העסקים · ארץ ישראל</b><span>צפה בלקוחות והלידים על המפה ותכנן מסלול פגישות</span></div>
+        <ChevronLeft size={22} />
+      </button>
 
       <div className="ag-secttl">עסקאות אחרונות</div>
       {deals.length === 0 && <div className="ag-empty"><Handshake size={32} /><div>אין עדיין עסקאות</div><p>פתח ליד וצור הצעת מחיר כדי להתחיל</p></div>}
@@ -296,7 +374,7 @@ function LeadDetail({ lead, onBack, onStatus, onNotes, onOutreach, onDeal, deals
             <Phone size={14} className="ag-phone-ic" />
             <span className="ag-phone-num" dir="ltr">{p}</span>
             <a href={telLink(p)} className="ag-phone-btn"><Phone size={13} /> חייג</a>
-            <a href={waLink(p, `שלום, מדבר איתי מ-${BIZ}.`)} target="_blank" rel="noreferrer" className="ag-phone-btn wa"><MessageSquare size={13} /> וואטסאפ</a>
+            <button onClick={() => meLookup(p, showToast)} className="ag-phone-btn me"><Copy size={13} /> Me · העתק</button>
           </div>
         ))}
         {lead.e && <a href={`mailto:${lead.e}`} className="ag-info"><Mail size={13} /><span className="ag-trunc">{lead.e}</span></a>}
@@ -327,7 +405,7 @@ function LeadDetail({ lead, onBack, onStatus, onNotes, onOutreach, onDeal, deals
                 {phone && <div className="ag-person-phone" dir="ltr"><Phone size={11} /> {phone}</div>}
                 <div className="ag-person-acts">
                   {phone && <a href={telLink(phone)} className="ag-person-btn"><Phone size={12} /> חייג</a>}
-                  {phone && <a href={waLink(phone, `שלום ${m.n}, מדבר איתי מ-${BIZ}.`)} target="_blank" rel="noreferrer" className="ag-person-btn wa"><MessageSquare size={12} /> וואטסאפ</a>}
+                  {phone && <button onClick={() => meLookup(phone, showToast)} className="ag-person-btn me"><Copy size={12} /> Me · העתק</button>}
                   {m.e && <a href={`mailto:${m.e}`} className="ag-person-btn"><Mail size={12} /> מייל</a>}
                 </div>
               </div>
@@ -397,7 +475,9 @@ function DealsView({ deals, leads, onEdit, onNew, onWin, onRemove, showToast }) 
 function dealMessage(d) {
   const lines = [`שלום ${d.name || ""},`, `הצעת מחיר מ-${BIZ}:`, ""];
   d.items.forEach((i) => { const lt = (Number(i.price) || 0) * (Number(i.qty) || 1); lines.push(`• ${i.desc} ${(Number(i.qty) || 1) > 1 ? "x" + i.qty : ""} — ${ils(lt)}`); });
-  lines.push("", `סכום ביניים: ${ils(d.subtotal)}`, `מע"מ (18%): ${ils(d.vat)}`, `סה"כ לתשלום: ${ils(d.total)}`);
+  lines.push("");
+  if (d.discount > 0) { lines.push(`מחיר מלא: ${ils(d.gross)}`, `הנחה ${d.discountPct}%: −${ils(d.discount)}`); }
+  lines.push(`סכום ביניים: ${ils(d.subtotal)}`, `מע"מ (18%): ${ils(d.vat)}`, `סה"כ לתשלום: ${ils(d.total)}`);
   if (d.note) lines.push("", d.note);
   lines.push("", "בברכה, איתי");
   return lines.join("\n");
@@ -410,6 +490,7 @@ function DealEditor({ lead, deal, leads, onClose, onSave, showToast }) {
   const [items, setItems] = useState(deal?.items?.length ? deal.items : [{ desc: "", qty: 1, price: "" }]);
   const [note, setNote] = useState(deal?.note || "");
   const [status, setStatus] = useState(deal?.status || "פתוח");
+  const [discount, setDiscount] = useState(deal?.discountPct || 0);
   const [linkQ, setLinkQ] = useState("");
   const [showQuote, setShowQuote] = useState(false);
   const pricelist = useHgPricelist();
@@ -418,7 +499,7 @@ function DealEditor({ lead, deal, leads, onClose, onSave, showToast }) {
     return [...clean, { desc: p.name, qty: 1, price: p.price }];
   });
 
-  const t = dealTotals(items);
+  const t = dealTotals(items, discount);
   const setItem = (i, k, v) => setItems((prev) => prev.map((it, idx) => (idx === i ? { ...it, [k]: v } : it)));
   const addItem = () => setItems((prev) => [...prev, { desc: "", qty: 1, price: "" }]);
   const delItem = (i) => setItems((prev) => prev.filter((_, idx) => idx !== i));
@@ -431,7 +512,8 @@ function DealEditor({ lead, deal, leads, onClose, onSave, showToast }) {
 
   const build = () => ({
     id: deal?.id || uid(), leadId, name: name.trim(), phone: phone.trim(),
-    items: items.filter((i) => i.desc.trim() || i.price), subtotal: t.subtotal, vat: t.vat, total: t.total,
+    items: items.filter((i) => i.desc.trim() || i.price),
+    gross: t.gross, discountPct: t.discountPct, discount: t.discount, subtotal: t.subtotal, vat: t.vat, total: t.total,
     status, note: note.trim(), createdAt: deal?.createdAt || todayISO(), wonAt: deal?.wonAt || null,
   });
   const doSave = () => { if (!name.trim()) { showToast("הזן שם לקוח/עסק"); return; } onSave(build()); };
@@ -472,7 +554,14 @@ function DealEditor({ lead, deal, leads, onClose, onSave, showToast }) {
           ))}
           <button className="ag-additem" onClick={addItem}><Plus size={14} /> הוסף פריט</button>
 
+          <label className="ag-lbl">הנחה ללקוח</label>
+          <div className="ag-chips sm nowrap ag-disc">
+            {[0, 5, 10, 15].map((p) => <button key={p} className={discount === p ? "on" : ""} onClick={() => setDiscount(p)}>{p === 0 ? "ללא" : p + "%"}</button>)}
+          </div>
+
           <div className="ag-totbox">
+            {t.discount > 0 && <div className="ag-totrow"><span>מחיר מלא</span><b>{ils(t.gross)}</b></div>}
+            {t.discount > 0 && <div className="ag-totrow disc"><span>הנחה {t.discountPct}%</span><b>−{ils(t.discount)}</b></div>}
             <div className="ag-totrow"><span>סכום ביניים</span><b>{ils(t.subtotal)}</b></div>
             <div className="ag-totrow"><span>מע"מ 18%</span><b>{ils(t.vat)}</b></div>
             <div className="ag-totrow grand"><span>סה"כ</span><b>{ils(t.total)}</b></div>
@@ -533,6 +622,8 @@ function DesignedQuote({ deal, onClose, showToast }) {
               </tbody>
             </table>
             <div className="ag-quote-tot">
+              {deal.discount > 0 && <div><span>מחיר מלא</span><b>{ils(deal.gross)}</b></div>}
+              {deal.discount > 0 && <div className="ag-q-disc"><span>הנחה {deal.discountPct}%</span><b>−{ils(deal.discount)}</b></div>}
               <div><span>סכום ביניים</span><b>{ils(deal.subtotal)}</b></div>
               <div><span>מע"מ 18%</span><b>{ils(deal.vat)}</b></div>
               <div className="grand"><span>סה"כ לתשלום</span><b>{ils(deal.total)}</b></div>
@@ -571,7 +662,7 @@ function CustomersView({ custs, onSave, onRemove, showToast }) {
         <div className="ag-card cust" key={c.id}>
           <div className="ag-cust-mid"><b>{c.name}</b><span dir="ltr">{c.phone || "—"}{c.city ? " · " + c.city : ""}</span>{c.notes && <span className="ag-cust-note">{c.notes}</span>}</div>
           <div className="ag-cust-acts">
-            {c.phone && <a className="ag-wa" href={waLink(c.phone, `שלום ${c.name},`)} target="_blank" rel="noreferrer"><MessageSquare size={16} /></a>}
+            {c.phone && <button className="ag-wa me" title="העתק ל-Me" onClick={() => meLookup(c.phone, showToast)}><Copy size={15} /></button>}
             {c.phone && <a className="ag-wa tel" href={telLink(c.phone)}><Phone size={15} /></a>}
             <button className="ag-icbtn" onClick={() => { setEdit(c); setOpen(true); }}><Pencil size={14} /></button>
             <button className="ag-icbtn d" onClick={async () => { onRemove(c.id); showToast("הלקוח נמחק"); }}><Trash2 size={14} /></button>
@@ -598,6 +689,181 @@ function CustomerForm({ initial, onClose, onSave }) {
           <label className="ag-lbl">הערות</label><textarea className="ag-textarea" value={c.notes} onChange={(e) => set("notes", e.target.value)} rows={2} dir="rtl" />
         </div>
         <div className="ag-sheet-foot"><button className="ag-btn ghost" onClick={onClose}>ביטול</button><button className="ag-btn" onClick={() => c.name.trim() && onSave(c)}>שמור</button></div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================ Digital assistant (rule-based, no AI) ============================ */
+const daysSince = (iso) => { if (!iso) return 9999; const d = (Date.now() - new Date(iso).getTime()) / 86400000; return isNaN(d) ? 9999 : Math.floor(d); };
+function assistantReply(q, ctx) {
+  const { leads, deals, custs, go, onNewDeal } = ctx;
+  const s = (q || "").trim().toLowerCase();
+  const open = deals.filter((d) => d.status === "פתוח");
+  const openVal = open.reduce((a, d) => a + (d.total || 0), 0);
+  const wonMonth = deals.filter((d) => d.status === "נסגר" && (d.wonAt || "").startsWith(monthKey()));
+  const followups = leads.filter((l) => ["פנייה ראשונה", "בתהליך"].includes(l.crmStatus) && daysSince((l.outreach || [])[0]?.date) >= 3);
+  const sent = leads.filter((l) => l.crmStatus === "הצעה נשלחה");
+  const hot = leads.filter((l) => ["בתהליך", "הצעה נשלחה"].includes(l.crmStatus));
+  const has = (...w) => w.some((x) => s.includes(x));
+
+  if (!s || has("עזרה", "פקודות", "מה אתה", "?")) return { text: "אני העוזר של איתי 🤝 נסה: \"מעקבים להיום\", \"הצעות שנשלחו\", \"לידים חמים\", \"עסקאות פתוחות\", \"סיכום\", \"פתח מסלול\", \"הצעת מחיר חדשה\"." };
+  if (has("מעקב", "לבדוק", "היום", "תזכור")) return { text: followups.length ? `יש ${followups.length} לידים שמחכים למעקב (3+ ימים ללא פנייה). הבולטים: ${followups.slice(0, 3).map((l) => l.n).join(" · ")}.` : "אין מעקבים דחופים כרגע — כל הכבוד! 👏", action: { label: "פתח לידים", run: () => go("leads") } };
+  if (has("נשלח", "הצעות") || (has("הצעה") && !has("חדש", "צור"))) return { text: sent.length ? `${sent.length} הצעות מחיר ממתינות לתשובה. שווה לחזור אליהן: ${sent.slice(0, 3).map((l) => l.n).join(" · ")}.` : "אין כרגע הצעות שנשלחו וממתינות.", action: { label: "פתח לידים", run: () => go("leads") } };
+  if (has("חם", "לוהט")) return { text: hot.length ? `${hot.length} לידים חמים (בתהליך/הצעה נשלחה). תעדף אותם: ${hot.slice(0, 4).map((l) => l.n).join(" · ")}.` : "אין כרגע לידים חמים.", action: { label: "פתח לידים", run: () => go("leads") } };
+  if (has("עסקא", "פתוח", "צבר")) return { text: `${open.length} עסקאות פתוחות בשווי ${ils(openVal)}. נסגרו החודש: ${wonMonth.length}.`, action: { label: "פתח עסקאות", run: () => go("deals") } };
+  if (has("לקוח")) return { text: `יש לך ${custs.length} לקוחות פעילים.`, action: { label: "פתח לקוחות", run: () => go("custs") } };
+  if (has("מסלול", "מפה", "נסיע", "פגיש")) return { text: "פותח את מפת העסקים — בחר עיר ואבנה לך מסלול פגישות יעיל. 🗺️", action: { label: "פתח מפה", run: () => go("map") } };
+  if (has("הצעת מחיר", "חדש", "צור", "בנה הצעה")) { onNewDeal && onNewDeal(); return { text: "פתחתי עסקה חדשה — בחר פריטים מהמחירון והוסף הנחה אם צריך. 📝" }; }
+  if (has("סיכום", "דוח", "מצב", "בוקר טוב", "מה המצב")) return { text: `סיכום: ${leads.length.toLocaleString()} לידים · ${followups.length} מעקבים להיום · ${sent.length} הצעות ממתינות · ${open.length} עסקאות פתוחות (${ils(openVal)}) · ${custs.length} לקוחות.` };
+  return { text: "לא הבנתי את הפקודה. כתוב \"עזרה\" כדי לראות מה אני יודע לעשות." };
+}
+const ASSIST_QUICK = ["מעקבים להיום", "הצעות שנשלחו", "לידים חמים", "עסקאות פתוחות", "סיכום", "פתח מסלול"];
+
+function AssistantPanel({ leads, deals, custs, go, onNewDeal, showToast }) {
+  const [log, setLog] = useState([{ from: "bot", text: "שלום איתי 👋 אני העוזר הדיגיטלי שלך. במה לעזור? כתוב \"עזרה\" לרשימת פקודות." }]);
+  const [q, setQ] = useState("");
+  const run = (text) => {
+    const t = (text ?? q).trim(); if (!t) return;
+    const r = assistantReply(t, { leads, deals, custs, go, onNewDeal });
+    setLog((p) => [...p.slice(-6), { from: "me", text: t }, { from: "bot", text: r.text, action: r.action }]);
+    setQ("");
+  };
+  return (
+    <div className="ag-assist">
+      <div className="ag-assist-h"><span className="ag-assist-orb" /> <b>עוזר דיגיטלי</b><i>ללא AI · פקודות מהירות</i></div>
+      <div className="ag-assist-log">
+        {log.map((m, i) => (
+          <div key={i} className={"ag-msg " + m.from}>
+            <span>{m.text}</span>
+            {m.action && <button className="ag-msg-act" onClick={() => m.action.run()}>{m.action.label} ←</button>}
+          </div>
+        ))}
+      </div>
+      <div className="ag-assist-quick">{ASSIST_QUICK.map((c) => <button key={c} onClick={() => run(c)}>{c}</button>)}</div>
+      <div className="ag-assist-in">
+        <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && run()} placeholder="כתוב פקודה…" dir="rtl" />
+        <button onClick={() => run()}><Send size={16} /></button>
+      </div>
+    </div>
+  );
+}
+
+/* ============================ Map + route planner ============================ */
+function MapView({ leads, custs, deals, showToast }) {
+  const mapRef = React.useRef(null);
+  const layerRef = React.useRef(null);
+  const [scope, setScope] = useState("all"); // all | active
+  const [region, setRegion] = useState("");
+  const [sat, setSat] = useState(false);
+  const [ready, setReady] = useState(false);
+  const [routeCity, setRouteCity] = useState("");
+
+  const dealLeadIds = useMemo(() => new Set(deals.map((d) => d.leadId)), [deals]);
+  const points = useMemo(() => {
+    let base = leads.filter((l) => {
+      if (region && l.geo !== region) return false;
+      if (scope === "active") return ["פנייה ראשונה", "בתהליך", "הצעה נשלחה", "לקוח"].includes(l.crmStatus) || dealLeadIds.has(l.id);
+      return true;
+    }).filter((l) => geoFor(l));
+    if (scope === "all" && base.length > 1500) base = base.slice(0, 1500);
+    return base.map((l) => ({ id: l.id, n: l.n, city: l.city, geo: l.geo, phone: (l.phones || [])[0] || "", addr: l.addr, status: l.crmStatus, ll: geoFor(l) }));
+  }, [leads, scope, region, dealLeadIds]);
+
+  const routeCities = useMemo(() => {
+    const m = {}; points.forEach((p) => { if (p.city) m[p.city] = (m[p.city] || 0) + 1; });
+    return Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, 40);
+  }, [points]);
+  const routeStops = useMemo(() => routeCity ? points.filter((p) => p.city === routeCity) : [], [points, routeCity]);
+  const gmapsRoute = () => {
+    const stops = routeStops.slice(0, 10);
+    if (!stops.length) return;
+    const enc = (p) => encodeURIComponent([p.addr, p.city].filter(Boolean).join(" ") || p.n);
+    const dest = enc(stops[stops.length - 1]);
+    const wp = stops.slice(0, -1).map(enc).join("%7C");
+    const url = `https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=${dest}${wp ? `&waypoints=${wp}` : ""}`;
+    window.open(url, "_blank");
+  };
+
+  useEffect(() => {
+    let alive = true;
+    loadLeaflet().then((L) => {
+      if (!alive || mapRef.current) return;
+      const map = L.map("ag-map", { zoomControl: true, attributionControl: false }).setView([31.6, 34.9], 7.4);
+      mapRef.current = map; setReady(true);
+    }).catch(() => showToast("טעינת המפה נכשלה — בדוק חיבור לאינטרנט"));
+    return () => { alive = false; if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; } };
+  }, []);
+
+  // base tiles (switch on sat toggle)
+  const tileRef = React.useRef(null);
+  useEffect(() => {
+    const L = window.L; const map = mapRef.current; if (!L || !map) return;
+    if (tileRef.current) { map.removeLayer(tileRef.current); tileRef.current = null; }
+    tileRef.current = sat
+      ? L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { maxZoom: 19 })
+      : L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", { maxZoom: 20 });
+    tileRef.current.addTo(map);
+  }, [sat, ready]);
+
+  // markers
+  useEffect(() => {
+    const L = window.L; const map = mapRef.current; if (!L || !map) return;
+    if (layerRef.current) { map.removeLayer(layerRef.current); }
+    const grp = L.layerGroup();
+    window.__agMe = (num) => meLookup(num, showToast);
+    points.forEach((p) => {
+      const color = CRM_COLOR[p.status] || "#C2912E";
+      const m = L.circleMarker(p.ll, { radius: 7, color: "#fff", weight: 1.5, fillColor: color, fillOpacity: 0.95 });
+      const tel = `tel:${(p.phone || "").replace(/\s/g, "")}`;
+      const html = `<div style="font-family:Heebo,Arial;direction:rtl;min-width:170px">
+        <b style="font-size:13px">${p.n}</b><br><span style="color:#917E50;font-size:11px">${[p.city, p.status].filter(Boolean).join(" · ")}</span>
+        ${p.phone ? `<div dir="ltr" style="margin:5px 0;font-weight:700">${p.phone}</div>` : ""}
+        <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:5px">
+          ${p.phone ? `<a href="${tel}" style="background:#1B7E9C;color:#fff;border-radius:7px;padding:4px 9px;text-decoration:none;font-size:11px;font-weight:700">חייג</a>` : ""}
+          <a href="${wazeTo(p)}" target="_blank" style="background:#33CCFF;color:#062a36;border-radius:7px;padding:4px 9px;text-decoration:none;font-size:11px;font-weight:700">Waze</a>
+          ${p.phone ? `<button onclick="window.__agMe('${p.phone}')" style="background:#C2912E;color:#241A06;border:none;border-radius:7px;padding:4px 9px;font-size:11px;font-weight:700;cursor:pointer">Me · העתק</button>` : ""}
+        </div></div>`;
+      m.bindPopup(html);
+      grp.addLayer(m);
+    });
+    grp.addTo(map); layerRef.current = grp;
+  }, [points, ready]);
+
+  return (
+    <div className="ag-flow map">
+      <header className="ag-head sm"><div style={{ flex: 1 }}><div className="ag-title">מפת העסקים</div><div className="ag-sub">{points.length.toLocaleString()} עסקים על המפה</div></div>
+        <button className={"ag-mini" + (sat ? " on" : "")} onClick={() => setSat((v) => !v)}>{sat ? "🛰 לוויין" : "🗺 מפה"}</button>
+      </header>
+      <div className="ag-chips sm">
+        <button className={scope === "active" ? "on" : ""} onClick={() => setScope("active")}>פעילים</button>
+        <button className={scope === "all" ? "on" : ""} onClick={() => setScope("all")}>כל המאגר</button>
+        <span className="ag-chip-sep" />
+        <button className={!region ? "on" : ""} onClick={() => setRegion("")}>כל הארץ</button>
+        {GEO_OPTS.map((g) => <button key={g} className={region === g ? "on" : ""} onClick={() => setRegion(g)}>{g}</button>)}
+      </div>
+      <div id="ag-map" className="ag-map" />
+      <div className="ag-section">
+        <div className="ag-section-ttl">🧭 תכנון מסלול פגישות</div>
+        <select className="ag-select" value={routeCity} onChange={(e) => setRouteCity(e.target.value)}>
+          <option value="">בחר עיר לבניית מסלול…</option>
+          {routeCities.map(([c, n]) => <option key={c} value={c}>{c} ({n})</option>)}
+        </select>
+        {routeCity && (
+          <>
+            <div className="ag-route-list">
+              {routeStops.slice(0, 10).map((p, i) => (
+                <div className="ag-route-row" key={p.id}>
+                  <span className="ag-route-n">{i + 1}</span>
+                  <div className="ag-route-mid"><b>{p.n}</b><span>{[p.addr, p.city].filter(Boolean).join(", ")}</span></div>
+                  <a className="ag-route-waze" href={wazeTo(p)} target="_blank" rel="noreferrer">Waze</a>
+                </div>
+              ))}
+              {routeStops.length > 10 && <div className="ag-note-line">מציג 10 תחנות ראשונות מתוך {routeStops.length}</div>}
+            </div>
+            <button className="ag-btn" onClick={gmapsRoute}><MapPin size={15} /> פתח מסלול ב-Google Maps</button>
+          </>
+        )}
       </div>
     </div>
   );
@@ -765,6 +1031,54 @@ function StyleTag() {
 /* heavyguard.com link button */
 .ag-site{display:flex;align-items:center;gap:6px;background:linear-gradient(135deg,var(--champ),var(--gold) 55%,var(--gold2));color:#241A06;border-radius:10px;padding:7px 11px;text-decoration:none;font-weight:900;font-size:12.5px;flex-shrink:0;box-shadow:0 4px 14px rgba(194,145,46,.3)}
 .ag-site img{width:18px;height:18px;border-radius:4px;object-fit:cover}
+
+/* discount row */
+.ag-disc{margin-bottom:2px}
+.ag-totrow.disc span,.ag-totrow.disc b{color:var(--ok)}
+.ag-q-disc span,.ag-q-disc b{color:var(--ok)!important}
+
+/* digital assistant */
+.ag-assist{background:linear-gradient(160deg,#fffdf6,#fbf3df);border:1px solid var(--s7);border-radius:15px;padding:13px;margin-bottom:14px;box-shadow:0 6px 22px rgba(160,118,31,.10)}
+.ag-assist-h{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.ag-assist-h b{font-family:'Rubik';font-weight:900;font-size:14.5px}
+.ag-assist-h i{font-style:normal;font-size:10.5px;color:var(--s4);margin-right:auto;background:var(--s8);border:1px solid var(--s7);padding:2px 8px;border-radius:20px}
+.ag-assist-orb{width:13px;height:13px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#fff,var(--gold) 55%,var(--gold2));box-shadow:0 0 10px rgba(194,145,46,.6);animation:agpulse 2.4s ease-in-out infinite}
+@keyframes agpulse{0%,100%{transform:scale(1);opacity:.85}50%{transform:scale(1.18);opacity:1}}
+.ag-assist-log{display:flex;flex-direction:column;gap:7px;max-height:210px;overflow-y:auto;margin-bottom:10px}
+.ag-msg{font-size:13px;line-height:1.5;padding:8px 11px;border-radius:11px;max-width:92%}
+.ag-msg.bot{background:var(--s8);border:1px solid var(--s7);color:var(--silver);align-self:flex-start;border-top-right-radius:3px}
+.ag-msg.me{background:linear-gradient(135deg,var(--gold),var(--gold2));color:#241A06;align-self:flex-end;font-weight:700;border-top-left-radius:3px}
+.ag-msg-act{display:block;margin-top:6px;background:var(--champ);color:#fff;border:none;border-radius:8px;padding:6px 11px;font-family:inherit;font-weight:700;font-size:12px;cursor:pointer}
+.ag-assist-quick{display:flex;gap:6px;overflow-x:auto;padding-bottom:7px;margin-bottom:9px;scrollbar-width:none}
+.ag-assist-quick::-webkit-scrollbar{display:none}
+.ag-assist-quick button{flex-shrink:0;background:var(--s9);border:1px solid var(--gold);color:var(--gold2);border-radius:20px;padding:6px 13px;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
+.ag-assist-in{display:flex;gap:7px}
+.ag-assist-in input{flex:1;background:var(--s9);border:1px solid var(--s7);border-radius:10px;padding:10px 12px;font-family:inherit;font-size:14px;color:var(--silver);outline:none}
+.ag-assist-in button{background:linear-gradient(135deg,var(--champ),var(--gold2));color:#fff;border:none;border-radius:10px;width:44px;display:flex;align-items:center;justify-content:center;cursor:pointer}
+
+/* map entry card on dashboard */
+.ag-mapcard{position:relative;overflow:hidden;width:100%;display:flex;align-items:center;gap:10px;background:linear-gradient(120deg,#2C2510,#5a4416 60%,var(--gold2));color:#fff8e8;border:none;border-radius:14px;padding:15px 14px;margin-bottom:16px;cursor:pointer;text-align:right;font-family:inherit;box-shadow:0 8px 24px rgba(60,45,10,.3)}
+.ag-mapcard-glow{position:absolute;inset:0;background:radial-gradient(circle at 85% 20%,rgba(228,188,99,.45),transparent 55%);pointer-events:none}
+.ag-mapcard-txt{flex:1;position:relative}
+.ag-mapcard-txt b{display:flex;align-items:center;gap:6px;font-family:'Rubik';font-weight:900;font-size:15px}
+.ag-mapcard-txt span{display:block;font-size:11.5px;color:#e8d9b0;margin-top:3px}
+
+/* map view */
+.ag-map{height:54vh;min-height:340px;border-radius:14px;overflow:hidden;border:1px solid var(--s7);margin-bottom:12px;box-shadow:0 8px 24px rgba(120,90,20,.12);background:var(--s8)}
+.ag-chip-sep{width:1px;background:var(--s7);margin:2px 4px;flex-shrink:0}
+.ag-mini.on{background:color-mix(in srgb,var(--gold) 18%,transparent);border-color:var(--gold);color:var(--gold2)}
+.ag-route-list{margin:10px 0 6px}
+.ag-route-row{display:flex;align-items:center;gap:9px;padding:8px 0;border-bottom:1px solid var(--s8)}
+.ag-route-n{width:24px;height:24px;flex-shrink:0;border-radius:50%;background:linear-gradient(135deg,var(--gold),var(--gold2));color:#241A06;font-family:'Rubik';font-weight:900;font-size:12px;display:flex;align-items:center;justify-content:center}
+.ag-route-mid{flex:1;min-width:0}
+.ag-route-mid b{display:block;font-size:13.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ag-route-mid span{font-size:11px;color:var(--s4)}
+.ag-route-waze{background:#33CCFF;color:#062a36;border-radius:8px;padding:6px 11px;font-size:11.5px;font-weight:800;text-decoration:none;flex-shrink:0}
+.leaflet-popup-content-wrapper{border-radius:12px}
+
+/* Me copy button (replaces WhatsApp next to numbers) */
+.ag-phone-btn.me,.ag-person-btn.me{color:var(--gold2);border-color:var(--gold);background:#FBF3DF}
+.ag-wa.me{background:#FBF3DF;border:1px solid var(--gold);color:var(--gold2);cursor:pointer}
 
 /* designed printable quote */
 .ag-quote-doc{background:#fff;border:1px solid var(--s7);border-radius:14px;padding:18px;color:#2C2510;box-shadow:0 10px 30px rgba(120,90,20,.12)}
