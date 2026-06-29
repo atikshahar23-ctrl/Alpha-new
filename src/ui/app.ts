@@ -179,7 +179,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v98 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v99 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -1829,6 +1829,7 @@ export function mountApp(root: HTMLElement) {
 
     function stopGesture() {
       gestureActive = false;
+      try { orb.setPerfMode(localStorage.getItem('alpha_fast_mode') === '1'); } catch {}   // restore orb quality
       if (gestureCamera) { try { gestureCamera.stop(); } catch {} gestureCamera = null; }
       if (gestureHands) { try { gestureHands.close(); } catch {} gestureHands = null; }
       if (gestureStream) { gestureStream.getTracks().forEach(t => t.stop()); gestureStream = null; }
@@ -1866,8 +1867,12 @@ export function mountApp(root: HTMLElement) {
       // starts), so on mobile we stay on the lite model + a lighter camera. Desktop
       // gets the full model + higher resolution for max accuracy.
       const isMobileDevice = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || ('ontouchstart' in window) || window.innerWidth < 900;
+      // On phones, running the heavy 3D orb AND MediaPipe hand inference at the same
+      // time starves the detector of frames → erratic/late detection. Drop the orb to
+      // its cheap render path while detecting (restored in stopGesture).
+      if (isMobileDevice) { try { orb.setPerfMode(true); } catch {} }
       try {
-        const res = isMobileDevice ? { width: { ideal: 480 }, height: { ideal: 360 } } : { width: { ideal: 640 }, height: { ideal: 480 } };
+        const res = isMobileDevice ? { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30 } } : { width: { ideal: 640 }, height: { ideal: 480 } };
         gestureStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', ...res }, audio: false });
       } catch {
         gestureStatus('❌ גישה למצלמה נדחתה');
@@ -1915,7 +1920,7 @@ export function mountApp(root: HTMLElement) {
       // was so high it often found nothing → "no skeleton"). False positives are
       // handled downstream by the per-frame `trusted` gate + settle + hold, not by
       // starving detection here.
-      gestureHands.setOptions({ maxNumHands: 2, modelComplexity: isMobileDevice ? 0 : 1, minDetectionConfidence: 0.6, minTrackingConfidence: 0.5, selfieMode: true });
+      gestureHands.setOptions({ maxNumHands: 2, modelComplexity: isMobileDevice ? 0 : 1, minDetectionConfidence: isMobileDevice ? 0.5 : 0.6, minTrackingConfidence: isMobileDevice ? 0.4 : 0.5, selfieMode: true });
 
       let lastFrameMs = performance.now();
 
@@ -2036,7 +2041,7 @@ export function mountApp(root: HTMLElement) {
         // Quality: handedness confidence + how much of the frame the hand fills.
         const score = results.multiHandedness?.[primaryIdx]?.score ?? 1;
         const handSpan = bestSpan;
-        const trusted = score >= 0.7 && handSpan >= 0.13;
+        const trusted = score >= (isMobileDevice ? 0.55 : 0.7) && handSpan >= (isMobileDevice ? 0.10 : 0.13);
         if (trusted) handPresentMs += dt; else handPresentMs = 0;
         const armed = trusted && handPresentMs >= SETTLE_MS;
         // Draw every hand (primary uses the smoothed landmarks; others raw).
