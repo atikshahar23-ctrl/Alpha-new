@@ -179,7 +179,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v95 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v96 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -1979,8 +1979,8 @@ export function mountApp(root: HTMLElement) {
       // bright energy-core line, and glowing joints/fingertips — reads like a real
       // translucent hand rather than a thin wireframe. Sizes scale with the hand.
       const HCONN = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
-      function drawHand(hand: any[], W: number, H: number, primary: boolean) {
-        const PX = (i: number) => hand[i].x * W, PY = (i: number) => hand[i].y * H;
+      function drawHand(hand: any[], mapX: (n: number) => number, mapY: (n: number) => number, primary: boolean) {
+        const PX = (i: number) => mapX(hand[i].x), PY = (i: number) => mapY(hand[i].y);
         const palmR = Math.max(18, Math.hypot(PX(0) - PX(9), PY(0) - PY(9)));
         const a = primary ? 1 : 0.55;
         octx.lineCap = 'round'; octx.lineJoin = 'round';
@@ -2021,6 +2021,16 @@ export function mountApp(root: HTMLElement) {
         }
         const W = window.innerWidth, H = window.innerHeight;
         octx.clearRect(0, 0, W, H);
+        // The camera frame's aspect ratio differs from the (tall) phone screen, so
+        // mapping normalised landmarks straight to x*W / y*H stretched the hand —
+        // it looked "giant"/elongated. The detector feed isn't shown, so fit the
+        // camera frame INTO the screen ("contain"): preserves the hand's true
+        // proportions and keeps it a natural size instead of filling the screen.
+        const _vw = vid.videoWidth || 640, _vh = vid.videoHeight || 480;
+        const _sc = Math.min(W / _vw, H / _vh);
+        const _dW = _vw * _sc, _dH = _vh * _sc, _oX = (W - _dW) / 2, _oY = (H - _dH) / 2;
+        const mapX = (nx: number) => _oX + nx * _dW;
+        const mapY = (ny: number) => _oY + ny * _dH;
 
         const noHand = () => {
           gestureStatus('הרם יד מול המצלמה');
@@ -2051,7 +2061,7 @@ export function mountApp(root: HTMLElement) {
         if (trusted) handPresentMs += dt; else handPresentMs = 0;
         const armed = trusted && handPresentMs >= SETTLE_MS;
         // Draw every hand (primary uses the smoothed landmarks; others raw).
-        for (let hi = 0; hi < hands.length; hi++) drawHand(hi === primaryIdx ? lm : hands[hi], W, H, hi === primaryIdx);
+        for (let hi = 0; hi < hands.length; hi++) drawHand(hi === primaryIdx ? lm : hands[hi], mapX, mapY, hi === primaryIdx);
 
         // FINGER-FOLD test — the most reliable open/fist signal there is.
         // For each finger, measure tip→knuckle(MCP) distance ÷ the finger's own first
@@ -2076,7 +2086,7 @@ export function mountApp(root: HTMLElement) {
         suppressPalmMs = Math.max(0, suppressPalmMs - dt);
         clickCooldownMs = Math.max(0, clickCooldownMs - dt);
 
-        const cx2 = lm[9].x * W, cy2 = lm[9].y * H;
+        const cx2 = mapX(lm[9].x), cy2 = mapY(lm[9].y);
 
         // Hand "size" — wrist(0)→middle-MCP(9) distance. Grows as the hand moves
         // toward the camera, independent of fingers opening/closing. Drives the
@@ -2119,7 +2129,7 @@ export function mountApp(root: HTMLElement) {
           // Y, vertical drag tilts around X. Relative to the grab-start pose.
           orb.setCharacterTransform(xf.x + dy * SENS, xf.y + dx * SENS, xf.z, xf.s, xf.px, xf.py, xf.pz);
           gestureStatus('🤏 אוחז בכדור — הזז יד כדי לסובב');
-          octx.beginPath(); octx.arc(hx * W, hy * H, 30, 0, Math.PI * 2);
+          octx.beginPath(); octx.arc(mapX(hx), mapY(hy), 30, 0, Math.PI * 2);
           octx.strokeStyle = 'rgba(120,220,255,.95)'; octx.lineWidth = 5; octx.stroke();
         } else if (confirmedGesture === 'point') {
           // ☝️ Finger-pointing laser cursor — index tip drives a red on-screen
