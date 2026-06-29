@@ -66,6 +66,7 @@ const UI_STRINGS: Record<string, Record<UILang, string>> = {
   settingsTitle: { he: 'אלפא עוזר אישי', en: 'Alpha Assistant' },
   settingsDesc: { he: 'מופעל ע"י Groq — חינמי ומהיר. הוצא מפתח חינם ב-console.groq.com.', en: 'Powered by Groq — free and fast. Get a free key at console.groq.com.' },
   general: { he: 'כללי', en: 'GENERAL' },
+  moodColor: { he: 'צבע ומצב רוח', en: 'Color & mood' },
   assistantName: { he: 'שם העוזר', en: 'Assistant name' },
   soundEffects: { he: 'אפקטי סאונד', en: 'Sound effects' },
   haptic: { he: 'משוב רטט', en: 'Haptic feedback' },
@@ -179,7 +180,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v108 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v109 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="panelsToggleBtn" title="הסתר/הצג פנלים" aria-label="הסתר פנלים">
           <svg class="pt-hide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -481,6 +482,17 @@ export function mountApp(root: HTMLElement) {
       <div class="overlay" id="overlay"><div class="card">
         <h2 data-i18n="settingsTitle">אלפא עוזר אישי</h2>
         <p data-i18n="settingsDesc">עובד בחינם מהקופסה דרך Puter — לא צריך מפתח API.</p>
+
+        <div class="settings-section">
+          <div class="ss-title" data-i18n="moodColor">צבע ומצב רוח</div>
+          <div class="mood-grid" id="moodGrid">
+            <button class="mood-opt" data-mood="gold"><span class="mood-dot" style="background:#daa520"></span>זהב</button>
+            <button class="mood-opt" data-mood="ocean"><span class="mood-dot" style="background:#3FB4E0"></span>אוקיינוס</button>
+            <button class="mood-opt" data-mood="emerald"><span class="mood-dot" style="background:#36D399"></span>אמרלד</button>
+            <button class="mood-opt" data-mood="royal"><span class="mood-dot" style="background:#A78BFA"></span>מלכותי</button>
+            <button class="mood-opt" data-mood="crimson"><span class="mood-dot" style="background:#FF6B6B"></span>אש</button>
+          </div>
+        </div>
 
         <div class="settings-section">
           <div class="ss-title" data-i18n="general">כללי</div>
@@ -1743,6 +1755,18 @@ export function mountApp(root: HTMLElement) {
     applyPanelsHidden(hidden);
     try { navigator.vibrate?.(state.haptics ? 15 : 0); } catch {}
   };
+
+  // ── Mood color themes — recolor the whole UI via a data-theme attribute ──
+  const applyMood = (mood: string) => {
+    document.documentElement.setAttribute('data-theme', mood);
+    localStorage.setItem('alpha_mood', mood);
+    document.querySelectorAll('#moodGrid .mood-opt').forEach(b =>
+      b.classList.toggle('on', (b as HTMLElement).dataset.mood === mood));
+  };
+  applyMood(localStorage.getItem('alpha_mood') || 'gold');
+  document.querySelectorAll('#moodGrid .mood-opt').forEach(btn => {
+    (btn as HTMLElement).onclick = () => { applyMood((btn as HTMLElement).dataset.mood || 'gold'); try { navigator.vibrate?.(state.haptics ? 12 : 0); } catch {} };
+  });
 
   // (The mobile "minimal mode" — panels auto-hiding after 10s, leaving only a
   //  central record button — was removed per user request. On mobile the panels

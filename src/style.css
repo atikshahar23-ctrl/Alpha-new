@@ -3227,3 +3227,13 @@ body.is-mobile-ui.mobile-min .fab-group{
 .app.panels-hidden .dock,
 .app.panels-hidden .fab,
 .app.panels-hidden .fab-menu{display:none!important}
+
+/* ── Mood color themes — recolor the whole UI accent via data-theme ── */
+:root[data-theme="ocean"]{--gold:#3FB4E0;--cyan:#bfe6f7;--fire:#5fc8ec;--purple:#6aa9d6;--white-glow:#eaf7ff;--line:rgba(63,180,224,.12);--glass-border:rgba(63,180,224,.16);--glass-hover:rgba(63,180,224,.08)}
+:root[data-theme="emerald"]{--gold:#36D399;--cyan:#a7f3d0;--fire:#5fe0ad;--purple:#3fb98a;--white-glow:#e7fff4;--line:rgba(54,211,153,.12);--glass-border:rgba(54,211,153,.16);--glass-hover:rgba(54,211,153,.08)}
+:root[data-theme="royal"]{--gold:#A78BFA;--cyan:#d6c8ff;--fire:#b89bff;--purple:#9a7ff0;--white-glow:#f1ebff;--line:rgba(167,139,250,.14);--glass-border:rgba(167,139,250,.18);--glass-hover:rgba(167,139,250,.09)}
+:root[data-theme="crimson"]{--gold:#FF6B6B;--cyan:#ffc7b8;--fire:#ff8a5b;--purple:#e06a6a;--white-glow:#fff0ec;--line:rgba(255,107,107,.13);--glass-border:rgba(255,107,107,.17);--glass-hover:rgba(255,107,107,.08)}
+.mood-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:6px}
+.mood-opt{display:flex;align-items:center;gap:7px;background:var(--glass-hover);border:1px solid var(--glass-border);color:var(--ink);border-radius:11px;padding:9px 10px;font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
+.mood-opt.on{border-color:var(--gold);background:rgba(218,165,32,.1);box-shadow:0 0 10px var(--glass-border)}
+.mood-dot{width:16px;height:16px;border-radius:50%;flex-shrink:0;border:1.5px solid rgba(255,255,255,.7)}
