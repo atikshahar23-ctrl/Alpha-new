@@ -93,16 +93,23 @@ const geoFor = (lead) => {
 };
 const wazeTo = (lead) => { const c = cityCoords(lead.city); if (c) return `https://waze.com/ul?ll=${c[0]},${c[1]}&navigate=yes`; const q = encodeURIComponent([lead.addr, lead.city].filter(Boolean).join(" ")); return `https://waze.com/ul?q=${q}&navigate=yes`; };
 
-/* ── Leaflet loader (CDN, once) ── */
+/* ── Leaflet + MarkerCluster loader (CDN, once). Clustering lets the whole
+   lead base (thousands of pins) render smoothly. ── */
+const addCss = (href) => { const l = document.createElement("link"); l.rel = "stylesheet"; l.href = href; document.head.appendChild(l); };
+const addJs = (src) => new Promise((res, rej) => { const s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
 let _leafletPromise = null;
 const loadLeaflet = () => {
-  if (window.L) return Promise.resolve(window.L);
+  if (window.L && window.L.markerClusterGroup) return Promise.resolve(window.L);
   if (_leafletPromise) return _leafletPromise;
-  _leafletPromise = new Promise((resolve, reject) => {
-    const css = document.createElement("link"); css.rel = "stylesheet"; css.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"; document.head.appendChild(css);
-    const js = document.createElement("script"); js.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
-    js.onload = () => resolve(window.L); js.onerror = reject; document.head.appendChild(js);
-  });
+  _leafletPromise = (async () => {
+    if (!window.L) { addCss("https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"); await addJs("https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"); }
+    try {
+      addCss("https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css");
+      addCss("https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css");
+      await addJs("https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js");
+    } catch { /* clustering optional — falls back to a plain layer group */ }
+    return window.L;
+  })();
   return _leafletPromise;
 };
 
@@ -778,13 +785,16 @@ function MapView({ leads, custs, deals, showToast }) {
 
   const dealLeadIds = useMemo(() => new Set(deals.map((d) => d.leadId)), [deals]);
   const points = useMemo(() => {
-    let base = leads.filter((l) => {
+    const base = leads.filter((l) => {
       if (region && l.geo !== region) return false;
       if (scope === "active") return ["פנייה ראשונה", "בתהליך", "הצעה נשלחה", "לקוח"].includes(l.crmStatus) || dealLeadIds.has(l.id);
       return true;
     }).filter((l) => geoFor(l));
-    if (scope === "all" && base.length > 1500) base = base.slice(0, 1500);
-    return base.map((l) => ({ id: l.id, n: l.n, city: l.city, geo: l.geo, phone: (l.phones || [])[0] || "", addr: l.addr, status: l.crmStatus, ll: geoFor(l) }));
+    return base.map((l) => ({
+      id: l.id, n: l.n, city: l.city, geo: l.geo, addr: l.addr, status: l.crmStatus,
+      phone: (l.phones || [])[0] || "", phones: l.phones || [], email: l.e || "", web: l.w || "",
+      sector: l.sector || "", emp: l.emp || "", rev: l.rev || "", ll: geoFor(l),
+    }));
   }, [leads, scope, region, dealLeadIds]);
 
   const routeCities = useMemo(() => {
@@ -823,23 +833,37 @@ function MapView({ leads, custs, deals, showToast }) {
     tileRef.current.addTo(map);
   }, [sat, ready]);
 
-  // markers
+  // markers — clustered so the whole base renders smoothly
   useEffect(() => {
     const L = window.L; const map = mapRef.current; if (!L || !map) return;
     if (layerRef.current) { map.removeLayer(layerRef.current); }
-    const grp = L.layerGroup();
+    const grp = L.markerClusterGroup ? L.markerClusterGroup({ chunkedLoading: true, maxClusterRadius: 50, spiderfyOnMaxZoom: true }) : L.layerGroup();
     window.__agMe = (num) => meLookup(num, showToast);
+    const esc = (s) => String(s || "").replace(/'/g, "\\'").replace(/</g, "&lt;");
+    const webUrl = (w) => w ? (/^https?:\/\//.test(w) ? w : "https://" + w) : "";
     points.forEach((p) => {
       const color = CRM_COLOR[p.status] || "#C2912E";
-      const m = L.circleMarker(p.ll, { radius: 7, color: "#fff", weight: 1.5, fillColor: color, fillOpacity: 0.95 });
+      const icon = L.divIcon({ className: "ag-pin", html: `<span style="background:${color}"></span>`, iconSize: [16, 16] });
+      const m = L.marker(p.ll, { icon });
       const tel = `tel:${(p.phone || "").replace(/\s/g, "")}`;
-      const html = `<div style="font-family:Heebo,Arial;direction:rtl;min-width:170px">
-        <b style="font-size:13px">${p.n}</b><br><span style="color:#917E50;font-size:11px">${[p.city, p.status].filter(Boolean).join(" · ")}</span>
-        ${p.phone ? `<div dir="ltr" style="margin:5px 0;font-weight:700">${p.phone}</div>` : ""}
-        <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:5px">
-          ${p.phone ? `<a href="${tel}" style="background:#1B7E9C;color:#fff;border-radius:7px;padding:4px 9px;text-decoration:none;font-size:11px;font-weight:700">חייג</a>` : ""}
-          <a href="${wazeTo(p)}" target="_blank" style="background:#33CCFF;color:#062a36;border-radius:7px;padding:4px 9px;text-decoration:none;font-size:11px;font-weight:700">Waze</a>
-          ${p.phone ? `<button onclick="window.__agMe('${p.phone}')" style="background:#C2912E;color:#241A06;border:none;border-radius:7px;padding:4px 9px;font-size:11px;font-weight:700;cursor:pointer">Me · העתק</button>` : ""}
+      const wu = webUrl(p.web);
+      const info = [];
+      if (p.sector) info.push(`<div style="font-size:11.5px;color:#5a4d28;margin-top:3px">🏷️ ${esc(p.sector)}</div>`);
+      if (p.addr || p.city) info.push(`<div style="font-size:11.5px;color:#5a4d28">📍 ${esc([p.addr, p.city].filter(Boolean).join(", "))}</div>`);
+      if (p.emp) info.push(`<div style="font-size:11.5px;color:#5a4d28">👥 ${esc(p.emp)} מועסקים</div>`);
+      if (p.rev) info.push(`<div style="font-size:11.5px;color:#5a4d28">💰 מחזור: ₪${Number(p.rev).toLocaleString()} אלף</div>`);
+      if (p.phones.length > 1) info.push(`<div dir="ltr" style="font-size:11px;color:#917E50">${esc(p.phones.slice(1, 4).join(" · "))}</div>`);
+      const html = `<div style="font-family:Heebo,Arial;direction:rtl;min-width:210px;max-width:250px">
+        <b style="font-size:14px;color:#2C2510">${esc(p.n)}</b>
+        <span style="display:inline-block;background:${color}22;color:${color};border:1px solid ${color}66;border-radius:20px;padding:1px 8px;font-size:10px;font-weight:700;margin-right:5px">${esc(p.status)}</span>
+        ${info.join("")}
+        ${p.phone ? `<div dir="ltr" style="margin:6px 0 2px;font-weight:800;font-size:13px;color:#2C2510">${esc(p.phone)}</div>` : ""}
+        <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px">
+          ${wu ? `<a href="${esc(wu)}" target="_blank" rel="noreferrer" style="background:#C2912E;color:#241A06;border-radius:7px;padding:5px 10px;text-decoration:none;font-size:11px;font-weight:800">🌐 אתר</a>` : ""}
+          ${p.phone ? `<a href="${tel}" style="background:#1B7E9C;color:#fff;border-radius:7px;padding:5px 10px;text-decoration:none;font-size:11px;font-weight:700">חייג</a>` : ""}
+          <a href="${wazeTo(p)}" target="_blank" style="background:#33CCFF;color:#062a36;border-radius:7px;padding:5px 10px;text-decoration:none;font-size:11px;font-weight:700">Waze</a>
+          ${p.email ? `<a href="mailto:${esc(p.email)}" style="background:#F5EDD9;color:#917E50;border:1px solid #E6D4A8;border-radius:7px;padding:5px 10px;text-decoration:none;font-size:11px;font-weight:700">מייל</a>` : ""}
+          ${p.phone ? `<button onclick="window.__agMe('${esc(p.phone)}')" style="background:#FBF3DF;color:#A2761F;border:1px solid #C2912E;border-radius:7px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer">Me · העתק</button>` : ""}
         </div></div>`;
       m.bindPopup(html);
       grp.addLayer(m);
@@ -1097,6 +1121,7 @@ function StyleTag() {
 .ag-route-mid span{font-size:11px;color:var(--s4)}
 .ag-route-waze{background:#33CCFF;color:#062a36;border-radius:8px;padding:6px 11px;font-size:11.5px;font-weight:800;text-decoration:none;flex-shrink:0}
 .leaflet-popup-content-wrapper{border-radius:12px}
+.ag-pin span{display:block;width:14px;height:14px;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.45)}
 
 /* Me copy button (replaces WhatsApp next to numbers) */
 .ag-phone-btn.me,.ag-person-btn.me{color:var(--gold2);border-color:var(--gold);background:#FBF3DF}
