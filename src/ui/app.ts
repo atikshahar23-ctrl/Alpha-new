@@ -179,7 +179,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v94 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v95 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -6104,9 +6104,15 @@ export function mountApp(root: HTMLElement) {
   // (Spoken "מה המצב" entry greeting removed per user request — the app no
   //  longer speaks a greeting on entry.)
 
-  // ── 3D Depth — perspective-based UI panel transforms ──
+  // ── 3D Depth — perspective-based UI panel transforms (mouse only) ──
+  // Skip entirely on touch / iPad / perf-lite: there's no mouse to drive the
+  // parallax, so it's a constant rAF for nothing AND the perspective() transforms
+  // can leave the panels looking subtly tilted/"stuck" on iPad. Mouse desktops
+  // keep the effect.
   {
-    const isMob = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 768;
+    const perfLite = document.documentElement.classList.contains('perf-lite');
+    const isTouch = (navigator.maxTouchPoints || 0) > 0 || 'ontouchstart' in window;
+    const isMob = perfLite || isTouch || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 900;
     if (!isMob) {
       let uiMX = 0, uiMY = 0;
       let uiSX = 0, uiSY = 0;
