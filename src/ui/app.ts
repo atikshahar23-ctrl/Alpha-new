@@ -179,7 +179,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v90 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v91 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -204,6 +204,10 @@ export function mountApp(root: HTMLElement) {
           <div class="hud-core-tag">ALPHA CORE · ONLINE</div>
         </div>
 
+        <!-- Wrapper: transparent on desktop (display:contents → columns keep their
+             side positions); on mobile it becomes a clean bottom-anchored flex
+             stack so the panels never overlap regardless of card height. -->
+        <div class="hud-cols">
         <!-- Left column — Heavy Guard data -->
         <div class="hud-col left">
           <section class="hud-card" id="hudOps">
@@ -226,6 +230,15 @@ export function mountApp(root: HTMLElement) {
             <div class="hud-card-h"><span>חדשות · ישראל</span><i></i></div>
             <div class="hud-card-body">טוען חדשות…</div>
           </section>
+        </div>
+
+        <!-- Fleet & operations — a real panel on the main screen (tap → full center) -->
+        <div class="hud-col fleet">
+          <section class="hud-card" id="hudFleetPanel">
+            <div class="hud-card-h"><span>צי ומבצעים · FLEET</span><i></i></div>
+            <div class="hud-card-body">טוען…</div>
+          </section>
+        </div>
         </div>
 
         <!-- Heavy Guard shortcut rail -->
@@ -2326,6 +2339,22 @@ export function mountApp(root: HTMLElement) {
   }
   (window as any).businessBriefing = businessBriefing;
 
+  // ── Fleet panel (main-screen card; tap → full control center) ──
+  function renderFleetPanel() {
+    const el = document.querySelector('#hudFleetPanel .hud-card-body');
+    if (!el) return;
+    const idx = readIdx();
+    const trips = readTrips();
+    const km = trips.reduce((s: number, t: any) => s + (Number(t.km) || 0), 0);
+    const unsched = idx.filter((x: any) => x && (x.status === 'running' || !x.date)).length;
+    const openTasks = readTasks().filter((t: any) => !t.done).length;
+    el.innerHTML = `
+      <div class="hud-stat"><span>נסיעות · ק"מ</span><b>${trips.length} · ${km.toLocaleString('he-IL')}</b></div>
+      <div class="hud-stat"><span>התקנות לתיאום</span><b>${unsched}</b></div>
+      <div class="hud-stat"><span>משימות פתוחות</span><b>${openTasks}</b></div>
+      <div class="hud-foot">לחץ למרכז השליטה · מפה · נסיעות ↗</div>`;
+  }
+
   // ── Live markets ──
   const mkFmt = (n: number) => n >= 1000 ? Math.round(n).toLocaleString('en-US') : n.toLocaleString('en-US', { maximumFractionDigits: n >= 1 ? 2 : 4 });
   type MkRow = { name: string; price: string; chg: number };
@@ -2632,8 +2661,9 @@ export function mountApp(root: HTMLElement) {
     document.getElementById('hudTrade')?.addEventListener('click', (e) => { e.preventDefault(); openTradeSystem(); });
     document.querySelector('#hudMarkets')?.addEventListener('click', openMarketsDetail);
     document.getElementById('hudOps')?.addEventListener('click', () => { addMsg(businessBriefing(), 'al'); });
-    renderHud(); renderMarkets(); renderNews();
-    setInterval(renderHud, 30000);
+    document.getElementById('hudFleetPanel')?.addEventListener('click', openFleet);
+    renderHud(); renderMarkets(); renderNews(); renderFleetPanel();
+    setInterval(() => { renderHud(); renderFleetPanel(); }, 30000);
     setInterval(renderMarkets, 60000);
     setInterval(renderNews, 300000);
   }, 300);

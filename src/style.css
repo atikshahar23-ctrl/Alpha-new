@@ -3012,9 +3012,13 @@ html.perf-lite .topR { will-change: auto !important; transform: none !important;
 .hud-core-tag { position: absolute; bottom: -4px; left: 50%; transform: translateX(-50%); font-size: 11px; letter-spacing: 2px; color: #F7E8C0; white-space: nowrap; text-shadow: 0 0 12px rgba(228,188,99,.6); }
 
 /* ── Data cards (symmetric columns framing the figure) ── */
+/* The wrapper is transparent on desktop so the columns keep their side anchors. */
+.hud-cols { display: contents; }
 .hud-col { position: absolute; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 12px; width: clamp(210px, 20vw, 270px); }
 .hud-col.left { left: 18px; }
 .hud-col.right { right: 18px; }
+.hud-col.fleet { display: none; }   /* desktop: rail button + the 4 cards already cover it */
+#hudFleetPanel { cursor: pointer; pointer-events: auto; }
 /* Desktop: move the conversation to a centered console above the dock so the
    data panels can sit symmetrically on both sides. */
 @media (min-width: 901px) {
@@ -3076,10 +3080,12 @@ html.perf-lite .topR { will-change: auto !important; transform: none !important;
   .hud-core { top: 25%; width: min(25vh, 140px); }
   .hud-core-tag { font-size: 9px; letter-spacing: 1.5px; }
 
-  /* data cards: two stacked horizontal rows (HG data above markets/news) */
-  .hud-col { left: 8px; right: 8px; top: auto; transform: none; flex-direction: row; width: auto; gap: 8px; }
-  .hud-col.left { bottom: 432px; }
-  .hud-col.right { bottom: 300px; }
+  /* data cards: a clean bottom-anchored flex stack (no fixed per-row offsets, so
+     rows never overlap regardless of card height). HG ops on top, then markets/
+     news, then the fleet panel just above the conversation strip. */
+  .hud-cols { display: flex; flex-direction: column; gap: 8px; position: absolute; left: 8px; right: 8px; bottom: 250px; pointer-events: none; }
+  .hud-col { position: static; inset: auto; top: auto; bottom: auto; transform: none; flex-direction: row; width: auto; gap: 8px; }
+  .hud-col.fleet { display: flex; }
   .hud-col .hud-card { flex: 1; min-width: 0; padding: 8px 9px; }
   .hud-card-h { font-size: 9px; letter-spacing: .6px; padding-bottom: 5px; margin-bottom: 6px; }
   .hud-stat { font-size: 10px; padding: 2px 0; }
@@ -3099,8 +3105,7 @@ html.perf-lite .topR { will-change: auto !important; transform: none !important;
   .app .right-panel { bottom: 150px; max-height: 13vh; }
 }
 @media (max-width: 380px) {
-  .hud-col.left { bottom: 410px; }
-  .hud-col.right { bottom: 286px; }
+  .hud-cols { bottom: 232px; }
   .hud-stat span, .hud-card-h span { font-size: 8.5px; }
 }
 html.perf-lite .hud-card, html.perf-lite .hud-sc { -webkit-backdrop-filter: none; backdrop-filter: none; background: rgba(14,11,6,.92); }
