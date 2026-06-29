@@ -38,6 +38,33 @@ const dealTotals = (items) => {
   return { subtotal, vat, total: subtotal + vat };
 };
 
+/* ── HeavyGuard pricelist — read LIVE from the shared (same-origin) storage so
+   it always matches HeavyGuard and updates whenever HeavyGuard changes it. ── */
+const HG_PRICELIST_KEY = "hg2:pricelist";
+const DEFAULT_PRICES = [
+  { id: "p1", name: "איתוראן 2 מערכות", price: 300 },
+  { id: "p2", name: "איתוראן 3 מערכות", price: 400 },
+  { id: "p3", name: "מצלמת רוורס + מסך", price: 1000 },
+  { id: "p4", name: "סט מסך חכם 4 מצלמות", price: 3500 },
+  { id: "p5", name: "פוינטר TOP רב קודן", price: 150 },
+];
+const loadHgPricelist = () => {
+  try { const v = localStorage.getItem(HG_PRICELIST_KEY); const a = v ? JSON.parse(v) : null; return (Array.isArray(a) && a.length) ? a : DEFAULT_PRICES; }
+  catch { return DEFAULT_PRICES; }
+};
+function useHgPricelist() {
+  const [pl, setPl] = useState(loadHgPricelist);
+  useEffect(() => {
+    const refresh = () => setPl(loadHgPricelist());
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    const iv = setInterval(refresh, 5000);   // pick up HeavyGuard edits while open
+    return () => { window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", refresh); clearInterval(iv); };
+  }, []);
+  return pl;
+}
+const HG_SITE = "https://heavyguard.com";
+
 /* ============================ Root App ============================ */
 export default function App() {
   const [tab, setTab] = useState("home");
@@ -136,7 +163,10 @@ function Dashboard({ leads, deals, custs, go, onNewDeal }) {
     <div className="ag-flow">
       <header className="ag-head">
         <img src={BULL_LOGO} className="ag-logo" alt="" />
-        <div><div className="ag-title">CRM מכירות · איתי</div><div className="ag-sub">{BIZ} — ניהול לידים ועסקאות</div></div>
+        <div style={{ flex: 1 }}><div className="ag-title">CRM מכירות · איתי</div><div className="ag-sub">{BIZ} — ניהול לידים ועסקאות</div></div>
+        <a className="ag-site" href={HG_SITE} target="_blank" rel="noreferrer" title="heavyguard.com">
+          <img src={BULL_LOGO} alt="" /><span>האתר</span>
+        </a>
       </header>
 
       <div className="ag-kpis">
@@ -378,6 +408,12 @@ function DealEditor({ lead, deal, leads, onClose, onSave, showToast }) {
   const [note, setNote] = useState(deal?.note || "");
   const [status, setStatus] = useState(deal?.status || "פתוח");
   const [linkQ, setLinkQ] = useState("");
+  const [showQuote, setShowQuote] = useState(false);
+  const pricelist = useHgPricelist();
+  const addFromPrice = (p) => setItems((prev) => {
+    const clean = prev.filter((it) => it.desc.trim() || it.price);
+    return [...clean, { desc: p.name, qty: 1, price: p.price }];
+  });
 
   const t = dealTotals(items);
   const setItem = (i, k, v) => setItems((prev) => prev.map((it, idx) => (idx === i ? { ...it, [k]: v } : it)));
@@ -415,6 +451,13 @@ function DealEditor({ lead, deal, leads, onClose, onSave, showToast }) {
           <label className="ag-lbl">טלפון</label>
           <input className="ag-input" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="050…" dir="ltr" />
 
+          <label className="ag-lbl">מחירון Heavy Guard · לחיצה מוסיפה פריט</label>
+          <div className="ag-chips">
+            {pricelist.map((p) => (
+              <button key={p.id || p.name} type="button" onClick={() => addFromPrice(p)}>{p.name} · {ils(p.price)}</button>
+            ))}
+          </div>
+
           <label className="ag-lbl">פריטי הצעה</label>
           {items.map((it, i) => (
             <div className="ag-item" key={i}>
@@ -439,9 +482,69 @@ function DealEditor({ lead, deal, leads, onClose, onSave, showToast }) {
           <textarea className="ag-textarea" value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="תנאים, תוקף הצעה…" dir="rtl" />
         </div>
         <div className="ag-sheet-foot">
-          <button className="ag-btn ghost" onClick={() => { navigator.clipboard?.writeText(dealMessage(build())); showToast("ההצעה הועתקה"); }}><Copy size={15} /> העתק</button>
+          <button className="ag-btn ghost" onClick={() => { if (!name.trim()) { showToast("הזן שם לקוח/עסק"); return; } setShowQuote(true); }}><FileText size={15} /> מעוצבת</button>
           <button className="ag-btn" onClick={doSave}>שמור</button>
-          <button className="ag-btn wa" onClick={doSend}><Send size={15} /> שלח בוואטסאפ</button>
+          <button className="ag-btn wa" onClick={doSend}><Send size={15} /> וואטסאפ</button>
+        </div>
+      </div>
+      {showQuote && <DesignedQuote deal={build()} onClose={() => setShowQuote(false)} showToast={showToast} />}
+    </div>
+  );
+}
+
+/* ============================ Designed (branded, printable) quote ============================ */
+function DesignedQuote({ deal, onClose, showToast }) {
+  const qNo = useMemo(() => "HG-" + String(Math.floor(Date.now() / 1000) % 100000).padStart(5, "0"), []);
+  const valid = useMemo(() => { const d = new Date(); d.setDate(d.getDate() + 14); return d.toLocaleDateString("he-IL"); }, []);
+  const items = (deal.items || []).filter((i) => (i.desc || "").trim() || i.price);
+  return (
+    <div className="ag-modal" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="ag-sheet">
+        <div className="ag-sheet-head ag-quote-noprint"><b>הצעת מחיר מעוצבת</b><button onClick={onClose}><X size={20} /></button></div>
+        <div className="ag-sheet-body">
+          <div className="ag-quote-doc">
+            <div className="ag-quote-top">
+              <img src={BULL_LOGO} className="ag-quote-logo" alt="" />
+              <div className="ag-quote-biz">
+                <div className="ag-quote-name">HEAVY GUARD</div>
+                <div className="ag-quote-tag">מערכות מיגון ובטיחות לרכב</div>
+              </div>
+              <div className="ag-quote-meta">
+                <div>הצעה <b>{qNo}</b></div>
+                <div>{todayISO()}</div>
+              </div>
+            </div>
+            <div className="ag-quote-to">
+              <span>לכבוד</span>
+              <b>{deal.name || "לקוח יקר"}</b>
+              {deal.phone && <em dir="ltr">{deal.phone}</em>}
+            </div>
+            <table className="ag-quote-table">
+              <thead><tr><th>פריט</th><th>כמות</th><th>מחיר</th><th>סה"כ</th></tr></thead>
+              <tbody>
+                {items.map((it, i) => {
+                  const q = Number(it.qty) || 1, pr = Number(it.price) || 0;
+                  return <tr key={i}><td>{it.desc}</td><td>{q}</td><td>{ils(pr)}</td><td>{ils(pr * q)}</td></tr>;
+                })}
+                {items.length === 0 && <tr><td colSpan={4} style={{ textAlign: "center", color: "#917E50" }}>אין פריטים</td></tr>}
+              </tbody>
+            </table>
+            <div className="ag-quote-tot">
+              <div><span>סכום ביניים</span><b>{ils(deal.subtotal)}</b></div>
+              <div><span>מע"מ 18%</span><b>{ils(deal.vat)}</b></div>
+              <div className="grand"><span>סה"כ לתשלום</span><b>{ils(deal.total)}</b></div>
+            </div>
+            {deal.note && <div className="ag-quote-note">{deal.note}</div>}
+            <div className="ag-quote-foot">
+              <div>הצעה זו בתוקף עד <b>{valid}</b></div>
+              <div className="ag-quote-sign">בברכה,<br /><b>איתי · Heavy Guard</b></div>
+            </div>
+          </div>
+        </div>
+        <div className="ag-sheet-foot ag-quote-noprint">
+          <button className="ag-btn ghost" onClick={() => { navigator.clipboard?.writeText(dealMessage(deal)); showToast("הטקסט הועתק"); }}><Copy size={15} /> העתק</button>
+          <button className="ag-btn" onClick={() => window.print()}><FileText size={15} /> הדפס / PDF</button>
+          {deal.phone && <a className="ag-btn wa" href={waLink(deal.phone, dealMessage(deal))} target="_blank" rel="noreferrer"><Send size={15} /> וואטסאפ</a>}
         </div>
       </div>
     </div>
@@ -500,7 +603,7 @@ function CustomerForm({ initial, onClose, onSave }) {
 /* ============================ Styles ============================ */
 function StyleTag() {
   return <style>{`
-.ag{--void:#080B10;--s9:#10151D;--s8:#1A2230;--s7:#2B3543;--s4:#8E9BAB;--silver:#E8EEF4;--gold:#E4BC63;--gold2:#B6883A;--champ:#F7E8C0;--cyan:#6FD3F0;--ok:#3FD79A;--red:#FF5C50;
+.ag{--void:#FAF5E9;--s9:#FFFFFF;--s8:#F5EDD9;--s7:#E6D4A8;--s4:#917E50;--silver:#2C2510;--gold:#C2912E;--gold2:#A2761F;--champ:#9A6E13;--cyan:#1B7E9C;--ok:#1E9A60;--red:#CF3A2E;
   font-family:'Heebo',Arial,sans-serif;color:var(--silver);background:var(--void);min-height:100%;direction:rtl;padding-bottom:74px}
 .ag *{box-sizing:border-box}
 .ag-flow{max-width:560px;margin:0 auto;padding:16px 14px 24px}
@@ -578,7 +681,7 @@ function StyleTag() {
 .ag-phone-ic{color:var(--cyan);flex-shrink:0}
 .ag-phone-num{font-size:15px;font-weight:700;letter-spacing:.3px;flex:1;min-width:90px}
 .ag-phone-btn{display:flex;align-items:center;gap:5px;background:var(--s8);border:1px solid var(--s7);color:var(--cyan);border-radius:9px;padding:7px 12px;font-size:12.5px;font-weight:700;text-decoration:none;white-space:nowrap}
-.ag-phone-btn.wa{color:var(--ok);border-color:#2c6b52;background:#143b2c}
+.ag-phone-btn.wa{color:var(--ok);border-color:#9AD3B4;background:#E2F4EA}
 .ag-note-line{font-size:11.5px;color:var(--s4);margin-bottom:9px;line-height:1.4}
 .ag-person{padding:10px 0;border-bottom:1px solid var(--s8)}
 .ag-person:last-child{border-bottom:none}
@@ -586,7 +689,7 @@ function StyleTag() {
 .ag-person-phone{display:flex;align-items:center;gap:5px;font-size:13px;color:var(--silver);margin-top:5px;font-weight:600}
 .ag-person-acts{display:flex;gap:7px;margin-top:8px;flex-wrap:wrap}
 .ag-person-btn{display:flex;align-items:center;gap:5px;background:var(--s8);border:1px solid var(--s7);color:var(--cyan);border-radius:9px;padding:7px 13px;font-size:12.5px;font-weight:700;text-decoration:none;white-space:nowrap}
-.ag-person-btn.wa{color:var(--ok);border-color:#2c6b52;background:#143b2c}
+.ag-person-btn.wa{color:var(--ok);border-color:#9AD3B4;background:#E2F4EA}
 .ag-textarea,.ag-input,.ag-select{width:100%;background:var(--s8);border:1px solid var(--s7);color:var(--silver);border-radius:10px;padding:10px 12px;font-family:inherit;font-size:14px;outline:none}
 .ag-textarea{resize:vertical}
 .ag-btn{background:linear-gradient(135deg,var(--champ),var(--gold) 50%,var(--gold2));color:#241A06;border:none;border-radius:10px;padding:11px 16px;font-family:'Rubik';font-weight:900;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;margin-top:9px}
@@ -610,11 +713,11 @@ function StyleTag() {
 
 .ag-deal-acts{display:flex;gap:7px;margin-top:10px;flex-wrap:wrap}
 .ag-abtn{display:flex;align-items:center;gap:5px;background:var(--s8);border:1px solid var(--s7);color:var(--silver);border-radius:9px;padding:8px 12px;font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer;text-decoration:none}
-.ag-abtn.wa{color:var(--ok);border-color:#2c6b52}
+.ag-abtn.wa{color:var(--ok);border-color:#9AD3B4}
 .ag-abtn.ok{color:#04140d;background:var(--ok);border-color:var(--ok)}
 .ag-abtn.d{color:var(--red);margin-right:auto}
 
-.ag-modal{position:fixed;inset:0;background:rgba(4,6,10,.72);backdrop-filter:blur(4px);display:flex;align-items:flex-end;justify-content:center;z-index:200}
+.ag-modal{position:fixed;inset:0;background:rgba(40,30,8,.45);backdrop-filter:blur(4px);display:flex;align-items:flex-end;justify-content:center;z-index:200}
 .ag-sheet{background:var(--s9);border:1px solid var(--s7);border-radius:18px 18px 0 0;width:100%;max-width:560px;max-height:92vh;display:flex;flex-direction:column}
 .ag-sheet.sm{max-height:80vh}
 .ag-sheet-head{display:flex;align-items:center;justify-content:space-between;padding:15px 16px;border-bottom:1px solid var(--s7)}
@@ -644,15 +747,51 @@ function StyleTag() {
 .ag-cust-mid span{font-size:12px;color:var(--s4);display:block}
 .ag-cust-note{color:var(--champ)!important;font-size:11.5px!important}
 .ag-cust-acts{display:flex;gap:6px;align-items:center}
-.ag-wa{background:#143b2c;border:1px solid #2c6b52;color:var(--ok);border-radius:9px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;text-decoration:none}
+.ag-wa{background:#E2F4EA;border:1px solid #9AD3B4;color:var(--ok);border-radius:9px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;text-decoration:none}
 .ag-wa.tel{background:var(--s8);border-color:var(--s7);color:var(--cyan)}
 .ag-icbtn{background:var(--s8);border:1px solid var(--s7);color:var(--s4);border-radius:9px;width:34px;height:34px;display:flex;align-items:center;justify-content:center;cursor:pointer}
 .ag-icbtn.d{color:var(--red)}
 
-.ag-nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:rgba(16,21,29,.96);border-top:1px solid var(--s7);z-index:100;padding-bottom:env(safe-area-inset-bottom)}
+.ag-nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:rgba(255,255,255,.97);border-top:1px solid var(--s7);z-index:100;padding-bottom:env(safe-area-inset-bottom)}
 .ag-nav button{flex:1;background:none;border:none;color:var(--s4);padding:9px 0 11px;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;font-family:inherit}
 .ag-nav button span{font-size:11px;font-weight:700}
 .ag-nav button.on{color:var(--gold)}
-.ag-toast{position:fixed;bottom:84px;left:50%;transform:translateX(-50%);background:var(--s8);border:1px solid var(--gold);color:var(--champ);padding:11px 18px;border-radius:11px;font-size:13.5px;font-weight:700;z-index:300;box-shadow:0 8px 30px rgba(0,0,0,.5);max-width:90vw;text-align:center}
+.ag-toast{position:fixed;bottom:84px;left:50%;transform:translateX(-50%);background:var(--s8);border:1px solid var(--gold);color:var(--champ);padding:11px 18px;border-radius:11px;font-size:13.5px;font-weight:700;z-index:300;box-shadow:0 8px 30px rgba(120,90,20,.25);max-width:90vw;text-align:center}
+
+/* heavyguard.com link button */
+.ag-site{display:flex;align-items:center;gap:6px;background:linear-gradient(135deg,var(--champ),var(--gold) 55%,var(--gold2));color:#241A06;border-radius:10px;padding:7px 11px;text-decoration:none;font-weight:900;font-size:12.5px;flex-shrink:0;box-shadow:0 4px 14px rgba(194,145,46,.3)}
+.ag-site img{width:18px;height:18px;border-radius:4px;object-fit:cover}
+
+/* designed printable quote */
+.ag-quote-doc{background:#fff;border:1px solid var(--s7);border-radius:14px;padding:18px;color:#2C2510;box-shadow:0 10px 30px rgba(120,90,20,.12)}
+.ag-quote-top{display:flex;align-items:center;gap:11px;border-bottom:2px solid var(--gold);padding-bottom:12px}
+.ag-quote-logo{width:50px;height:50px;border-radius:10px;object-fit:cover;flex-shrink:0}
+.ag-quote-biz{flex:1;min-width:0}
+.ag-quote-name{font-family:'Rubik';font-weight:900;font-size:21px;letter-spacing:.5px;color:var(--gold2)}
+.ag-quote-tag{font-size:11.5px;color:var(--s4)}
+.ag-quote-meta{text-align:left;font-size:11.5px;color:var(--s4)}
+.ag-quote-meta b{color:#2C2510;font-family:'Rubik'}
+.ag-quote-to{display:flex;align-items:baseline;gap:8px;margin:12px 0;flex-wrap:wrap}
+.ag-quote-to span{font-size:12px;color:var(--s4)}
+.ag-quote-to b{font-size:16px;font-family:'Rubik';font-weight:900}
+.ag-quote-to em{font-style:normal;color:var(--s4);font-size:13px}
+.ag-quote-table{width:100%;border-collapse:collapse;margin-top:6px;font-size:13px}
+.ag-quote-table th{background:var(--s8);color:var(--gold2);font-weight:700;padding:8px 10px;text-align:right;border-bottom:1px solid var(--s7)}
+.ag-quote-table td{padding:8px 10px;border-bottom:1px solid #efe4c8}
+.ag-quote-table th:nth-child(n+2),.ag-quote-table td:nth-child(n+2){text-align:center;white-space:nowrap}
+.ag-quote-tot{margin-top:12px;margin-right:auto;width:60%;min-width:220px}
+.ag-quote-tot div{display:flex;justify-content:space-between;padding:5px 0;font-size:13.5px;color:var(--s4)}
+.ag-quote-tot b{color:#2C2510;font-family:'Rubik';font-weight:700}
+.ag-quote-tot .grand{border-top:2px solid var(--gold);margin-top:5px;padding-top:9px;font-size:17px}
+.ag-quote-tot .grand span,.ag-quote-tot .grand b{color:var(--gold2);font-weight:900}
+.ag-quote-note{margin-top:12px;background:var(--s8);border-radius:9px;padding:10px 12px;font-size:12.5px;color:#5a4d28;line-height:1.5}
+.ag-quote-foot{display:flex;justify-content:space-between;align-items:flex-end;margin-top:16px;padding-top:12px;border-top:1px solid #efe4c8;font-size:12px;color:var(--s4)}
+.ag-quote-sign{text-align:left;color:#2C2510}
+@media print{
+  body *{visibility:hidden!important}
+  .ag-quote-doc,.ag-quote-doc *{visibility:visible!important}
+  .ag-quote-doc{position:absolute;inset:0;margin:0;border:none;box-shadow:none;border-radius:0}
+  .ag-quote-noprint{display:none!important}
+}
 `}</style>;
 }
