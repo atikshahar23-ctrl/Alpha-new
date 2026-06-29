@@ -836,16 +836,23 @@ function applyAssistTags(text, { go, onNewDeal }) {
   while ((m = TAGRE.exec(text))) { const tag = m[1]; if (tag === "NEWDEAL") onNewDeal && onNewDeal(); else go(tag.split(":")[1]); }
   return text.replace(TAGRE, "").trim();
 }
+// Free Groq model wheel — rotate to the next model on rate-limit so it never sticks.
+const AG_GROQ_MODELS = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "gemma2-9b-it", "llama3-70b-8192"];
 async function askGroqChat(system, history, user) {
   const key = groqKey(); if (!key) throw new Error("NO_KEY");
   const messages = [{ role: "system", content: system }, ...history.slice(-6), { role: "user", content: user }];
-  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-    body: JSON.stringify({ model: "llama-3.3-70b-versatile", messages, temperature: 0.7, max_tokens: 700 }),
-  });
-  if (!res.ok) throw new Error("Groq " + res.status);
-  const d = await res.json();
-  return d.choices?.[0]?.message?.content?.trim() || "";
+  let lastCode = 0;
+  for (const model of AG_GROQ_MODELS) {
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+      body: JSON.stringify({ model, messages, temperature: 0.7, max_tokens: 700 }),
+    });
+    if (res.ok) { const d = await res.json(); return d.choices?.[0]?.message?.content?.trim() || ""; }
+    lastCode = res.status;
+    if (res.status === 401 || res.status === 403) break;   // bad key — stop trying
+    // 429/400/404/503 → rotate to the next free model
+  }
+  throw new Error("Groq " + lastCode);
 }
 
 function AssistantPanel({ leads, deals, custs, go, onNewDeal, showToast }) {

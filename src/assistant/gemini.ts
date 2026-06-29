@@ -11,8 +11,12 @@ const GEMINI_MODELS = [
 
 // Groq — free, fast (Llama). OpenAI-compatible wire format. Text + vision models.
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const GROQ_TEXT_MODEL = 'llama-3.3-70b-versatile';
+// Free Groq models, rotated as a "wheel": if one is rate-limited the next is
+// tried, so the assistant never gets stuck — and all of them are free.
+const GROQ_MODELS = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it', 'llama3-70b-8192'];
 const GROQ_VISION_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
+let activeGroqModel = 0;
+const groqCooldowns: number[] = [0, 0, 0, 0];
 
 let activeGeminiModel = 0;
 let busy = false;
@@ -201,8 +205,7 @@ async function askOpenAIProvider(state: AppState): Promise<string> {
 
 // ─── Groq (free, fast — Llama) ───
 
-async function askGroqProvider(state: AppState): Promise<string> {
-  if (!state.groqKey) throw new Error('PROVIDER_NO_KEY');
+async function tryGroqModel(model: string, state: AppState): Promise<{ ok: true; reply: string } | { ok: false; rotate: boolean; msg: string }> {
   const messages = [
     { role: 'system' as const, content: systemPrompt(state) },
     ...state.history.slice(-8).map(h => ({
@@ -213,18 +216,31 @@ async function askGroqProvider(state: AppState): Promise<string> {
   const res = await fetch(GROQ_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${state.groqKey}` },
-    body: JSON.stringify({ model: GROQ_TEXT_MODEL, messages, temperature: 0.8, max_tokens: 600 }),
+    body: JSON.stringify({ model, messages, temperature: 0.8, max_tokens: 600 }),
   });
   if (!res.ok) {
     const code = res.status;
-    if (code === 429) throw new Error('PROVIDER_EXHAUSTED');
-    let msg = `Groq error ${code}`;
-    try { const e = await res.json(); msg = e?.error?.message || msg; } catch {}
-    if (code === 401 || code === 403) throw new Error('PROVIDER_EXHAUSTED');
-    throw new Error(msg);
+    // 429 (rate) / 503 (busy) / 400 (model decommissioned) → rotate to next free model.
+    if (code === 429 || code === 503 || code === 400 || code === 404) return { ok: false, rotate: true, msg: `${model} ${code}` };
+    if (code === 401 || code === 403) return { ok: false, rotate: false, msg: 'AUTH' };
+    return { ok: false, rotate: true, msg: `Groq ${code}` };
   }
   const data = await res.json();
-  return data.choices?.[0]?.message?.content?.trim() || '…';
+  return { ok: true, reply: data.choices?.[0]?.message?.content?.trim() || '…' };
+}
+
+async function askGroqProvider(state: AppState): Promise<string> {
+  if (!state.groqKey) throw new Error('PROVIDER_NO_KEY');
+  const now = Date.now();
+  const order = [activeGroqModel, ...GROQ_MODELS.map((_, i) => i).filter(i => i !== activeGroqModel)];
+  for (const idx of order) {
+    if (now < groqCooldowns[idx]) continue;
+    const r = await tryGroqModel(GROQ_MODELS[idx], state);
+    if (r.ok) { activeGroqModel = idx; return r.reply; }
+    if (!r.rotate) throw new Error('PROVIDER_EXHAUSTED');   // auth → let chain fall through
+    groqCooldowns[idx] = Date.now() + COOLDOWN_MS;          // park this model, try next
+  }
+  throw new Error('PROVIDER_EXHAUSTED');                    // whole wheel cooling → next provider
 }
 
 // ─── Unified ask with auto-fallback ───
@@ -351,7 +367,7 @@ export async function askOnce(state: AppState, system: string, user: string): Pr
         const res = await fetch(GROQ_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${state.groqKey}` },
-          body: JSON.stringify({ model: GROQ_TEXT_MODEL, messages: [{ role: 'system', content: system }, { role: 'user', content: user }], temperature: 0.2, max_tokens: 600 }),
+          body: JSON.stringify({ model: GROQ_MODELS[activeGroqModel], messages: [{ role: 'system', content: system }, { role: 'user', content: user }], temperature: 0.2, max_tokens: 600 }),
         });
         if (!res.ok) continue;
         const data = await res.json();
@@ -500,7 +516,7 @@ async function streamGeminiChain(state: AppState, onText: (full: string) => void
 async function streamProvider(provider: AIProvider, state: AppState, onText: (full: string) => void): Promise<string> {
   if (provider === 'groq') {
     if (!state.groqKey) throw new Error('PROVIDER_NO_KEY');
-    return streamOpenAICompat(GROQ_URL, state.groqKey, GROQ_TEXT_MODEL, state, onText);
+    return streamOpenAICompat(GROQ_URL, state.groqKey, GROQ_MODELS[activeGroqModel], state, onText);
   }
   if (provider === 'gemini') return streamGeminiChain(state, onText);
   if (provider === 'grok') {
