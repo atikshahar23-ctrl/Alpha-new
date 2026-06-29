@@ -179,7 +179,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v97 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v98 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -1728,30 +1728,9 @@ export function mountApp(root: HTMLElement) {
   $('muteBtn').onclick = () => { audio.toggleMute(); };
   $('newChat').onclick = () => { state.history = []; $('rpBody').innerHTML = ''; $('chat').innerHTML = ''; clearChatHistory(); addMsg(state.name + ' ' + t('readyMsg', state.uiLang), 'al'); };
 
-  // ── Mobile minimal mode ─────────────────────────────────────────────────────
-  // On phones/tablets the HUD panels, chat and dock auto-hide 10s after the app
-  // reveals, leaving only the character, the top toolbars, and one big central
-  // record button to talk to the assistant. Tapping the character brings the
-  // panels back (and re-arms the 10s timer).
-  {
-    let dp = 'auto'; try { dp = localStorage.getItem('alpha_display_mode') || 'auto'; } catch {}
-    const autoMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || ('ontouchstart' in window) || window.innerWidth < 900;
-    const isMobileUI = dp === 'mobile' || (dp === 'auto' && autoMobile);
-    if (isMobileUI) {
-      document.body.classList.add('is-mobile-ui');
-      const rec = document.createElement('button');
-      rec.id = 'mobRec'; rec.className = 'mob-rec'; rec.type = 'button';
-      rec.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg><em>הפעל הקלטה</em>';
-      document.body.appendChild(rec);
-      rec.addEventListener('click', (e) => { e.stopPropagation(); $('micBtn').click(); rec.classList.toggle('on', $('micBtn').classList.contains('on')); });
-      let minTimer = 0;
-      const arm = () => { clearTimeout(minTimer); minTimer = window.setTimeout(() => document.body.classList.add('mobile-min'), 10000); };
-      const wake = () => { if (document.body.classList.contains('mobile-min')) { document.body.classList.remove('mobile-min'); } arm(); };
-      $('stage').addEventListener('click', wake);
-      const startWhenReady = () => { if (document.body.classList.contains('revealed') || !document.getElementById('introOverlay')) arm(); else setTimeout(startWhenReady, 500); };
-      startWhenReady();
-    }
-  }
+  // (The mobile "minimal mode" — panels auto-hiding after 10s, leaving only a
+  //  central record button — was removed per user request. On mobile the panels
+  //  now stay visible just like on desktop.)
 
   // ── Gesture detection — camera hand tracking for Pokemon swap ───────────────
   // Palm held 1.5s → dispel current Pokemon. Fist → quick open → throw new Pokemon.

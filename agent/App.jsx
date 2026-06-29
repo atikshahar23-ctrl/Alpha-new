@@ -118,6 +118,8 @@ export default function App() {
     showToast("מזל טוב! העסקה נסגרה והלקוח נוסף 🎉");
   }, [upsertDeal, updateCrm, addCustomer, showToast]);
 
+  const exitToAlpha = () => { try { window.close(); } catch {} setTimeout(() => { window.location.href = "./"; }, 120); };
+
   return (
     <div className="ag">
       <StyleTag />
@@ -131,6 +133,7 @@ export default function App() {
         <button className={tab === "leads" ? "on" : ""} onClick={() => setTab("leads")}><Target size={20} /><span>לידים</span></button>
         <button className={tab === "deals" ? "on" : ""} onClick={() => setTab("deals")}><Handshake size={20} /><span>עסקאות</span></button>
         <button className={tab === "custs" ? "on" : ""} onClick={() => setTab("custs")}><UserRound size={20} /><span>לקוחות</span></button>
+        <button className="ag-nav-exit" onClick={exitToAlpha}><ChevronLeft size={20} /><span>יציאה</span></button>
       </nav>
 
       {dealDraft && (
@@ -756,6 +759,7 @@ function StyleTag() {
 .ag-nav button{flex:1;background:none;border:none;color:var(--s4);padding:9px 0 11px;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;font-family:inherit}
 .ag-nav button span{font-size:11px;font-weight:700}
 .ag-nav button.on{color:var(--gold)}
+.ag-nav-exit{color:var(--red)!important}
 .ag-toast{position:fixed;bottom:84px;left:50%;transform:translateX(-50%);background:var(--s8);border:1px solid var(--gold);color:var(--champ);padding:11px 18px;border-radius:11px;font-size:13.5px;font-weight:700;z-index:300;box-shadow:0 8px 30px rgba(120,90,20,.25);max-width:90vw;text-align:center}
 
 /* heavyguard.com link button */
