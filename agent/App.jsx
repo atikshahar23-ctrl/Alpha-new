@@ -243,7 +243,7 @@ export default function App() {
   return (
     <div className="ag" style={themeVars}>
       <StyleTag />
-      {tab === "home" && <Dashboard leads={leads} deals={deals} custs={custs} go={setTab} onNewDeal={() => setDealDraft({})} showToast={showToast} theme={theme} setTheme={applyTheme} />}
+      {tab === "home" && <Dashboard leads={leads} deals={deals} custs={custs} go={setTab} onNewDeal={() => setDealDraft({})} showToast={showToast} theme={theme} setTheme={applyTheme} onCatalogQuote={(p) => setDealDraft({ deal: { items: [{ desc: p.name, qty: 1, price: Number(p.price) || 0 }], status: "פתוח" } })} />}
       {tab === "leads" && <LeadsView leads={leads} updateCrm={updateCrm} addOutreach={addOutreach} onDeal={(lead) => setDealDraft({ lead })} dealsFor={(id) => deals.filter((d) => d.leadId === id)} showToast={showToast} />}
       {tab === "deals" && <DealsView deals={deals} leads={leads} onEdit={(deal) => setDealDraft({ deal })} onNew={() => setDealDraft({})} onWin={winDeal} onRemove={removeDeal} showToast={showToast} />}
       {tab === "custs" && <CustomersView custs={custs} onSave={saveCustomer} onRemove={removeCustomer} showToast={showToast} />}
@@ -274,8 +274,10 @@ export default function App() {
 }
 
 /* ============================ Dashboard ============================ */
-function Dashboard({ leads, deals, custs, go, onNewDeal, showToast, theme, setTheme }) {
+function Dashboard({ leads, deals, custs, go, onNewDeal, showToast, theme, setTheme, onCatalogQuote }) {
   const [showThemes, setShowThemes] = useState(false);
+  const [showSam, setShowSam] = useState(false);
+  const [showCat, setShowCat] = useState(false);
   const k = monthKey();
   const open = deals.filter((d) => d.status === "פתוח");
   const wonMonth = deals.filter((d) => d.status === "נסגר" && (d.wonAt || "").startsWith(k));
@@ -351,6 +353,14 @@ function Dashboard({ leads, deals, custs, go, onNewDeal, showToast, theme, setTh
         <div className="ag-mapcard-txt"><b><MapPin size={15} /> מפת העסקים · ארץ ישראל</b><span>צפה בלקוחות והלידים על המפה ותכנן מסלול פגישות</span></div>
         <ChevronLeft size={22} />
       </button>
+
+      <div className="ag-tools2">
+        <button className="ag-tool" onClick={() => setShowSam(true)}><FileText size={20} /><b>טופס סמסוניקס</b><span>החתמת לקוח · DVR</span></button>
+        <button className="ag-tool" onClick={() => setShowCat(true)}><Briefcase size={20} /><b>קטלוג מוצרים</b><span>מחירון חי</span></button>
+      </div>
+
+      {showSam && <SamsonixForm onClose={() => setShowSam(false)} showToast={showToast} />}
+      {showCat && <ProductCatalog onClose={() => setShowCat(false)} onQuote={(p) => { onCatalogQuote(p); setShowCat(false); showToast("נוסף להצעה: " + p.name); }} />}
 
       <div className="ag-secttl">עסקאות אחרונות</div>
       {deals.length === 0 && <div className="ag-empty"><Handshake size={32} /><div>אין עדיין עסקאות</div><p>פתח ליד וצור הצעת מחיר כדי להתחיל</p></div>}
@@ -609,7 +619,7 @@ function DealEditor({ lead, deal, leads, onClose, onSave, showToast }) {
   return (
     <div className="ag-modal" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="ag-sheet">
-        <div className="ag-sheet-head"><b>{deal ? "עריכת עסקה" : "עסקה חדשה"}</b><button onClick={onClose}><X size={20} /></button></div>
+        <div className="ag-sheet-head"><b>{deal?.id ? "עריכת עסקה" : "עסקה חדשה"}</b><button onClick={onClose}><X size={20} /></button></div>
         <div className="ag-sheet-body">
           <label className="ag-lbl">שם לקוח / עסק</label>
           <input className="ag-input" value={name} onChange={(e) => setName(e.target.value)} placeholder="שם" dir="rtl" />
@@ -1053,6 +1063,171 @@ function MapView({ leads, custs, deals, showToast }) {
   );
 }
 
+/* ============================ Samsonix DVR signing form ============================ */
+const SAM_PLANS = [
+  { id: "2gb", label: 'שימוש בשרת + גלישה 2GB לחודש 39 ש"ח + מע"מ (מומלץ עד 2 משתמשים)' },
+  { id: "4gb", label: 'שימוש בשרת + גלישה 4GB לחודש 49 ש"ח + מע"מ (מומלץ עד 4 משתמשים)' },
+  { id: "10gb", label: 'שימוש בשרת + גלישה 10GB לחודש 59 ש"ח + מע"מ (מעל 5 משתמשים)' },
+];
+const SAM_FORMS_KEY = "itai:samsonix"; // history — card details are NEVER stored
+
+// Open a print-ready Samsonix DVR agreement. Card details are passed in-memory
+// only (shown once on the printable form, never persisted anywhere).
+function printSamsonix(f, card) {
+  const today = dmy(todayISO());
+  const masked = (card.num || "").replace(/\s/g, "").replace(/(.{4})(?=.)/g, "$1 ");
+  const planLabel = (SAM_PLANS.find((p) => p.id === f.plan) || {}).label || "";
+  const win = window.open("", "_blank");
+  if (!win) return false;
+  const row = (l, v) => v ? `<div class="fi"><div class="fl">${l}</div><div class="fv">${v}</div></div>` : "";
+  win.document.write(`<!DOCTYPE html><html lang="he" dir="rtl"><head><meta charset="utf-8"><title>טופס סמסוניקס · ${f.fullName || ""}</title>
+<style>
+  *{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif}
+  body{padding:22px 26px;color:#1b2733;max-width:820px;margin:0 auto}
+  .hdr{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #0e7d8c;padding-bottom:10px}
+  .logo{font-size:26px;font-weight:900;color:#0e7d8c}.logo em{font-style:normal}
+  .sub{font-size:11px;letter-spacing:3px;color:#888}
+  .date{font-size:12px;text-align:left}
+  h2{font-size:17px;margin:16px 0 6px}
+  .intro{font-size:12px;line-height:1.8;color:#444}
+  .sec{margin-top:14px;border:1px solid #d7dde3;border-radius:8px;padding:11px 13px}
+  .sec-t{font-weight:700;font-size:13px;color:#0e7d8c;margin-bottom:7px}
+  .ck{display:flex;align-items:center;gap:8px;font-size:12px;margin:5px 0}
+  .box{width:15px;height:15px;border:1.5px solid #555;border-radius:3px;display:inline-flex;align-items:center;justify-content:center;font-size:11px}
+  .on{background:#0e7d8c;border-color:#0e7d8c;color:#fff}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:7px 18px}
+  .fi{font-size:12px}.fl{color:#888;font-size:10.5px}.fv{font-weight:700;border-bottom:1px solid #e3e8ee;padding:2px 0}
+  .note{background:#fff8e1;border:1px solid #e6b800;border-radius:5px;padding:7px 10px;font-size:11px;color:#7a5f00;margin-top:8px}
+  .sig{display:flex;justify-content:space-between;align-items:flex-end;margin-top:18px}
+  .sig img{max-width:200px;max-height:90px;border-bottom:1px solid #333}
+  .ft{margin-top:18px;border-top:1px solid #ccc;padding-top:9px;font-size:10.5px;color:#777;text-align:center;line-height:1.7}
+  @media print{@page{margin:8mm;size:A4}}
+</style></head><body>
+<div class="hdr"><div><div class="logo">⚡ <em>samsonix</em></div><div class="sub">ENJOY YOUR DRIVE</div></div><div class="date">תאריך: <b>${today}</b><br><span style="color:#888">DVR Subscription Agreement</span></div></div>
+<h2>שימוש בשרת לצפייה ב-DVR</h2>
+<p class="intro">הננו שמחים שבחרתם להתקין מערכת DVR עם מצלמות לצפייה והקלטה מרחוק. לצפייה דרך אפליקציה/מחשב נדרש תשלום חודשי לשרת בהוראת קבע. ניתן לבטל בהודעה בכתב 7 ימים מראש.</p>
+<div class="sec"><div class="sec-t">חבילת מנוי — הוראת קבע חודשית</div>
+${SAM_PLANS.map((p) => `<div class="ck"><span class="box ${f.plan === p.id ? "on" : ""}">${f.plan === p.id ? "✓" : ""}</span><span>${p.label}</span></div>`).join("")}
+<div class="note">***שימוש חורג מהחבילה החודשית <u>לא</u> מאפשר צפייה/הקלטות מרחוק***</div></div>
+<div class="sec"><div class="sec-t">הקלטת קול</div>
+<div class="ck"><span class="box ${f.audio === "none" ? "on" : ""}">${f.audio === "none" ? "✓" : ""}</span><span><b>ללא הקלטת קול</b></span></div>
+<div class="ck"><span class="box ${f.audio === "with" ? "on" : ""}">${f.audio === "with" ? "✓" : ""}</span><span><b>עם הקלטת קול</b> (בעלות נוספת)</span></div></div>
+${f.bsd ? `<div class="sec"><div class="ck"><span class="box on">✓</span><span>התקנת מסך BSD + 4 מצלמות — ₪4,500</span></div></div>` : ""}
+<div class="sec"><div class="sec-t">פרטי הלקוח</div><div class="grid">
+${row("שם מלא של בעל הכרטיס", f.fullName)}${row('מספר ת"ז', f.idNum)}${row("כתובת מייל", f.email)}${row("טלפון", f.phone)}${row("איש קשר", f.contactName)}${row("שם חברה", f.company)}${row("ע.מ / ח.פ", f.bizNum)}
+</div></div>
+<div class="sec"><div class="sec-t">פרטי כלי הרכב</div><div class="grid">
+${row("מספר רכב", f.veh1)}${row("סוג רכב", f.veh1Type)}${row("מספר רכב 2", f.veh2)}${row("סוג רכב 2", f.veh2Type)}
+</div></div>
+<div class="sec"><div class="sec-t">פרטי תשלום — הוראת קבע</div>
+<div class="note">🔒 פרטי כרטיס האשראי מוצגים בטופס זה בלבד ואינם נשמרים בשום מסד נתונים.</div>
+<div class="grid" style="margin-top:7px"><div class="fi" style="grid-column:1/-1"><div class="fl">מספר כרטיס אשראי</div><div class="fv" style="letter-spacing:2px">${masked}</div></div>
+${row("תוקף", card.expiry)}${row("CVV", card.cvv)}</div></div>
+<div class="sig"><div style="font-size:12px;line-height:1.7"><b>בברכה,</b><br>Heavy Guard · שיווק ומכירות<br><span style="color:#888">Samsonix · info@samsonix.com · 03-5662259</span></div>
+<div style="text-align:center">${f.sigDataUrl ? `<img src="${f.sigDataUrl}" alt="חתימה"/>` : ""}<div style="font-size:11px;color:#555;margin-top:3px">חתימת הלקוח: <b>${f.fullName || ""}</b> · ${today}</div></div></div>
+<div class="ft">St. Hametzuda 31, Azur, Israel · טל: 03-5662259 · www.samsonix.com</div>
+<script>window.addEventListener('load',()=>setTimeout(()=>window.print(),400));<\/script>
+</body></html>`);
+  win.document.close();
+  return true;
+}
+
+function SignaturePad({ onChange }) {
+  const ref = React.useRef(null);
+  const drawing = React.useRef(false);
+  React.useEffect(() => { const c = ref.current; if (!c) return; const r = c.getBoundingClientRect(); c.width = r.width; c.height = 150; const ctx = c.getContext("2d"); ctx.strokeStyle = "#16313a"; ctx.lineWidth = 2.2; ctx.lineCap = "round"; }, []);
+  const pos = (e) => { const c = ref.current; const r = c.getBoundingClientRect(); const t = e.touches ? e.touches[0] : e; return [t.clientX - r.left, t.clientY - r.top]; };
+  const start = (e) => { e.preventDefault(); drawing.current = true; const ctx = ref.current.getContext("2d"); const [x, y] = pos(e); ctx.beginPath(); ctx.moveTo(x, y); };
+  const move = (e) => { if (!drawing.current) return; e.preventDefault(); const ctx = ref.current.getContext("2d"); const [x, y] = pos(e); ctx.lineTo(x, y); ctx.stroke(); };
+  const end = () => { if (!drawing.current) return; drawing.current = false; onChange(ref.current.toDataURL("image/png")); };
+  const clear = () => { const c = ref.current; c.getContext("2d").clearRect(0, 0, c.width, c.height); onChange(""); };
+  return (
+    <div className="ag-sig">
+      <canvas ref={ref} className="ag-sig-c" onMouseDown={start} onMouseMove={move} onMouseUp={end} onMouseLeave={end} onTouchStart={start} onTouchMove={move} onTouchEnd={end} />
+      <button type="button" className="ag-sig-clear" onClick={clear}>נקה חתימה</button>
+    </div>
+  );
+}
+
+function SamsonixForm({ onClose, showToast }) {
+  const [f, setF] = useState({ plan: "4gb", audio: "none", bsd: false, fullName: "", idNum: "", email: "", phone: "", contactName: "", company: "", bizNum: "", veh1: "", veh1Type: "", veh2: "", veh2Type: "", sigDataUrl: "" });
+  const [card, setCard] = useState({ num: "", expiry: "", cvv: "" }); // in-memory only — never saved
+  const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  const submit = () => {
+    if (!f.fullName.trim() || !f.idNum.trim() || !f.veh1.trim()) { showToast("מלא שם, ת\"ז ומספר רכב"); return; }
+    if (!f.sigDataUrl) { showToast("חסרה חתימת לקוח"); return; }
+    const ok = printSamsonix(f, card);
+    if (!ok) { showToast("חסום חלונות קופצים — אפשר אותם"); return; }
+    // Persist history WITHOUT any card/CVV data.
+    try { const list = JSON.parse(localStorage.getItem(SAM_FORMS_KEY) || "[]"); list.unshift({ id: uid(), savedAt: todayISO(), fullName: f.fullName, phone: f.phone, plan: f.plan, veh1: f.veh1 }); localStorage.setItem(SAM_FORMS_KEY, JSON.stringify(list.slice(0, 200))); } catch {}
+    showToast("הטופס מוכן להדפסה/חתימה ✓");
+    onClose();
+  };
+  const I = (k, ph, extra = {}) => <input className="ag-input" value={f[k]} onChange={(e) => set(k, e.target.value)} placeholder={ph} {...extra} />;
+  return (
+    <div className="ag-modal" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="ag-sheet">
+        <div className="ag-sheet-head"><b>טופס החתמה · סמסוניקס DVR</b><button onClick={onClose}><X size={20} /></button></div>
+        <div className="ag-sheet-body">
+          <label className="ag-lbl">חבילת מנוי</label>
+          <div className="ag-chips sm nowrap">{SAM_PLANS.map((p) => <button key={p.id} className={f.plan === p.id ? "on" : ""} onClick={() => set("plan", p.id)}>{p.id.toUpperCase()}</button>)}</div>
+          <label className="ag-lbl">הקלטת קול</label>
+          <div className="ag-chips sm nowrap">
+            <button className={f.audio === "none" ? "on" : ""} onClick={() => set("audio", "none")}>ללא קול</button>
+            <button className={f.audio === "with" ? "on" : ""} onClick={() => set("audio", "with")}>עם קול</button>
+            <button className={f.bsd ? "on" : ""} onClick={() => set("bsd", !f.bsd)}>BSD + 4 מצלמות</button>
+          </div>
+          <label className="ag-lbl">שם מלא של בעל הכרטיס *</label>{I("fullName", "שם מלא")}
+          <div className="ag-row"><div style={{ flex: 1 }}><label className="ag-lbl">ת"ז *</label>{I("idNum", "ת\"ז", { dir: "ltr" })}</div><div style={{ flex: 1 }}><label className="ag-lbl">טלפון</label>{I("phone", "05X", { dir: "ltr" })}</div></div>
+          <label className="ag-lbl">מייל</label>{I("email", "name@mail.com", { dir: "ltr" })}
+          <div className="ag-row"><div style={{ flex: 1 }}><label className="ag-lbl">שם חברה</label>{I("company", "חברה")}</div><div style={{ flex: 1 }}><label className="ag-lbl">ע.מ / ח.פ</label>{I("bizNum", "מספר", { dir: "ltr" })}</div></div>
+          <div className="ag-row"><div style={{ flex: 1 }}><label className="ag-lbl">מספר רכב *</label>{I("veh1", "מספר", { dir: "ltr" })}</div><div style={{ flex: 1 }}><label className="ag-lbl">סוג רכב</label>{I("veh1Type", "סוג")}</div></div>
+          <div className="ag-row"><div style={{ flex: 1 }}><label className="ag-lbl">רכב 2</label>{I("veh2", "מספר", { dir: "ltr" })}</div><div style={{ flex: 1 }}><label className="ag-lbl">סוג רכב 2</label>{I("veh2Type", "סוג")}</div></div>
+          <div className="ag-sam-pay">
+            <div className="ag-lbl" style={{ marginTop: 0 }}>פרטי תשלום (הוראת קבע) 🔒 לא נשמרים</div>
+            <input className="ag-input" value={card.num} onChange={(e) => setCard({ ...card, num: e.target.value })} placeholder="מספר כרטיס אשראי" dir="ltr" inputMode="numeric" autoComplete="off" />
+            <div className="ag-row"><input className="ag-input" value={card.expiry} onChange={(e) => setCard({ ...card, expiry: e.target.value })} placeholder="תוקף MM/YY" dir="ltr" autoComplete="off" /><input className="ag-input" value={card.cvv} onChange={(e) => setCard({ ...card, cvv: e.target.value })} placeholder="CVV" dir="ltr" inputMode="numeric" autoComplete="off" /></div>
+          </div>
+          <label className="ag-lbl">חתימת הלקוח *</label>
+          <SignaturePad onChange={(d) => set("sigDataUrl", d)} />
+        </div>
+        <div className="ag-sheet-foot">
+          <button className="ag-btn ghost" onClick={onClose}>ביטול</button>
+          <button className="ag-btn" onClick={submit}><FileText size={15} /> הפק טופס לחתימה</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================ Product catalog ============================ */
+function ProductCatalog({ onClose, onQuote }) {
+  const pricelist = useHgPricelist();
+  const [q, setQ] = useState("");
+  const list = q ? pricelist.filter((p) => (p.name || "").toLowerCase().includes(q.toLowerCase())) : pricelist;
+  return (
+    <div className="ag-modal" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="ag-sheet">
+        <div className="ag-sheet-head"><b>קטלוג מוצרים · Heavy Guard</b><button onClick={onClose}><X size={20} /></button></div>
+        <div className="ag-sheet-body">
+          <div className="ag-searchbox"><Search size={15} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="חיפוש מוצר…" dir="rtl" />{q && <button onClick={() => setQ("")}><X size={14} /></button>}</div>
+          <div className="ag-cat-note">מסונכרן חי מהמחירון של Heavy Guard · {pricelist.length} מוצרים</div>
+          <div className="ag-cat-grid">
+            {list.map((p) => (
+              <div className="ag-cat-card" key={p.id || p.name}>
+                <div className="ag-cat-ic"><Tag size={18} /></div>
+                <div className="ag-cat-mid"><b>{p.name}</b><span>{ils(p.price)} <em>+ מע"מ</em></span></div>
+                <button className="ag-cat-add" onClick={() => onQuote(p)}><Plus size={15} /> להצעה</button>
+              </div>
+            ))}
+            {list.length === 0 && <div className="ag-empty sm">לא נמצאו מוצרים</div>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ============================ Styles ============================ */
 function StyleTag() {
   return <style>{`
@@ -1278,6 +1453,32 @@ function StyleTag() {
 /* Me copy button (replaces WhatsApp next to numbers) */
 .ag-phone-btn.me,.ag-person-btn.me{color:var(--gold2);border-color:var(--gold);background:#FBF3DF}
 .ag-wa.me{background:#FBF3DF;border:1px solid var(--gold);color:var(--gold2);cursor:pointer}
+
+/* tool launch cards (Samsonix + catalog) */
+.ag-tools2{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:16px}
+.ag-tool{display:flex;flex-direction:column;align-items:flex-start;gap:2px;background:var(--s9);border:1px solid var(--s7);border-radius:13px;padding:13px;cursor:pointer;font-family:inherit;text-align:right;color:var(--silver)}
+.ag-tool svg{color:var(--gold2);margin-bottom:5px}
+.ag-tool b{font-family:'Rubik';font-weight:900;font-size:14px}
+.ag-tool span{font-size:11px;color:var(--s4)}
+.ag-tool:active{transform:scale(.98)}
+
+/* signature pad */
+.ag-sig{margin-top:4px}
+.ag-sig-c{width:100%;height:150px;background:#fff;border:1.5px dashed var(--s7);border-radius:10px;touch-action:none;cursor:crosshair}
+.ag-sig-clear{margin-top:6px;background:var(--s8);border:1px solid var(--s7);color:var(--s4);border-radius:8px;padding:6px 12px;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer}
+.ag-sam-pay{background:var(--s8);border:1px solid var(--s7);border-radius:11px;padding:11px;margin-top:10px;display:flex;flex-direction:column;gap:8px}
+.ag-sam-pay .ag-row{margin-top:0}
+
+/* product catalog */
+.ag-cat-note{font-size:11.5px;color:var(--s4);margin:4px 0 10px}
+.ag-cat-grid{display:flex;flex-direction:column;gap:8px}
+.ag-cat-card{display:flex;align-items:center;gap:10px;background:var(--s9);border:1px solid var(--s7);border-radius:12px;padding:11px}
+.ag-cat-ic{width:38px;height:38px;flex-shrink:0;border-radius:10px;background:var(--s8);display:flex;align-items:center;justify-content:center;color:var(--gold2)}
+.ag-cat-mid{flex:1;min-width:0}
+.ag-cat-mid b{display:block;font-size:13.5px;font-weight:700}
+.ag-cat-mid span{font-size:13px;color:var(--champ);font-weight:800}
+.ag-cat-mid em{font-style:normal;font-size:10.5px;color:var(--s4);font-weight:400}
+.ag-cat-add{display:flex;align-items:center;gap:4px;background:linear-gradient(135deg,var(--champ),var(--gold2));color:#fff;border:none;border-radius:9px;padding:8px 12px;font-family:inherit;font-size:12px;font-weight:800;cursor:pointer;flex-shrink:0}
 
 /* designed quote — 1:1 with the HeavyGuard app (hg2-qd-*) */
 .hg2-quotedoc{background:#fff;color:#1b2733;border-radius:14px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,.4)}
