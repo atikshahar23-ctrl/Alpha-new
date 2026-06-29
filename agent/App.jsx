@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Plus, X, Trash2, Search, Phone, Mail, MapPin, Building2, Users, Wallet, Tag,
   Globe, ChevronLeft, MessageSquare, Pencil, Target, Bell, FileText, TrendingUp,
-  CheckCircle2, Handshake, LayoutDashboard, UserRound, Send, Copy, Briefcase,
+  CheckCircle2, Handshake, LayoutDashboard, UserRound, Send, Copy, Briefcase, Palette,
 } from "lucide-react";
 import BULL_LOGO from "../heavyguard/heavyguard-logo.png";
 import leadsData from "../heavyguard/leadsData.json";
@@ -85,18 +85,42 @@ const CITY_COORDS = {
   "יהוד": [32.0330, 34.8890], "ראש העין": [32.0956, 34.9560], "טורעאן": [32.7790, 35.3760],
   "דבורייה": [32.6960, 35.3760], "עראבה": [32.8510, 35.3370], "מעלה אדומים": [31.7730, 35.2980],
   "גבעת שמואל": [32.0780, 34.8480], "כפר יונה": [32.3170, 34.9340], "קצרין": [32.9920, 35.6900],
+  // — extended coverage so placement is accurate (and nothing lands in the sea) —
+  "אריאל": [32.1050, 35.1880], "מודיעין עילית": [31.9320, 35.0420], "אלעד": [32.0520, 34.9510],
+  "שוהם": [31.9990, 34.9470], "גדרה": [31.8130, 34.7790], "גן יבנה": [31.7880, 34.7060],
+  "קרית מלאכי": [31.7300, 34.7440], "מזכרת בתיה": [31.8520, 34.8390], "קרית עקרון": [31.8700, 34.8200],
+  "באר יעקב": [31.9430, 34.8350], "אור עקיבא": [32.5080, 34.9170], "בנימינה": [32.5150, 34.9480],
+  "קיסריה": [32.5000, 34.8970], "חריש": [32.4620, 35.0480], "אבן יהודה": [32.2710, 34.8880],
+  "תל מונד": [32.2510, 34.9170], "קדימה צורן": [32.2790, 34.9220], "פרדסיה": [32.3030, 34.9150],
+  "ראש העין": [32.0956, 34.9560], "אבו גוש": [31.8060, 35.1100], "מבשרת ציון": [31.7990, 35.1500],
+  "ביתר עילית": [31.6960, 35.1180], "טירת כרמל": [32.7610, 34.9720], "נשר": [32.7660, 35.0440],
+  "קרית טבעון": [32.7200, 35.1230], "רכסים": [32.7410, 35.0900], "כפר כנא": [32.7470, 35.3420],
+  "ריינה": [32.7220, 35.3160], "משהד": [32.7350, 35.3650], "כפר מנדא": [32.8100, 35.2570],
+  "מגאר": [32.8900, 35.4080], "ראמה": [32.9370, 35.3680], "דיר חנא": [32.8620, 35.3640],
+  "כפר יאסיף": [32.9550, 35.1640], "ירכא": [32.9580, 35.2090], "אבו סנאן": [32.9560, 35.1730],
+  "חורפיש": [33.0190, 35.3450], "בית ג'ן": [32.9670, 35.3800], "פקיעין": [32.9780, 35.3340],
+  "כפר קרע": [32.5060, 35.0470], "ערערה": [32.4920, 35.1010], "ג'ת": [32.4060, 35.0560],
+  "קלנסווה": [32.2860, 34.9810], "ג'לג'וליה": [32.1530, 34.9530], "כפר ברא": [32.1080, 34.9740],
+  "אכסאל": [32.6750, 35.3380], "יפיע": [32.6900, 35.2730], "שעב": [32.8650, 35.2010],
+  "כאבול": [32.8680, 35.2120], "ג'סר א זרקא": [32.5360, 34.9130], "פוריידיס": [32.6010, 34.9510],
+  "תל אביב": [32.0853, 34.7818], "ראש פינה": [32.9690, 35.5420], "יבנאל": [32.7080, 35.5040],
+  "שלומי": [33.0730, 35.1450], "כפר ורדים": [32.9870, 35.2880], "מעלה אדומים": [31.7730, 35.2980],
+  "ירוחם": [30.9870, 34.9290], "מצפה רמון": [30.6090, 34.8010], "תל שבע": [31.2620, 34.8410],
+  "חורה": [31.3000, 34.9410], "כסייפה": [31.2370, 35.0850], "ערערה בנגב": [31.2530, 34.9850],
+  "להבים": [31.3720, 34.8170], "מיתר": [31.3190, 34.9300], "עומר": [31.2640, 34.8470],
+  "גן יבנה ": [31.7880, 34.7060], "יקנעם עילית": [32.6580, 35.1100], "נצרת עילית": [32.7090, 35.3170],
 };
-const REGION_CENTROID = { "צפון": [32.85, 35.25], "מרכז": [32.05, 34.85], "דרום": [31.25, 34.79], "שרון": [32.30, 34.90], "שפלה": [31.90, 34.85], "ירושלים": [31.77, 35.21] };
-const normCity = (c) => (c || "").replace(/^ישוב\s+/, "").replace(/^עיריית\s+/, "").trim();
+const normCity = (c) => (c || "").replace(/^ישוב\s+/, "").replace(/^עיריית\s+/, "").replace(/^מ\.?א\.?\s+/, "").trim();
 const cityCoords = (city) => CITY_COORDS[normCity(city)] || null;
-// Stable per-id jitter so many businesses in one city fan out instead of stacking.
-const jitter = (id, amp = 0.02) => { let h = 0; const s = String(id); for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return [((h % 1000) / 1000 - 0.5) * amp, (((h >> 10) % 1000) / 1000 - 0.5) * amp]; };
+// Stable per-id jitter (small — keeps coastal cities on land, not in the sea).
+const jitter = (id, amp = 0.006) => { let h = 0; const s = String(id); for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return [((h % 1000) / 1000 - 0.5) * amp, (((h >> 10) % 1000) / 1000 - 0.5) * amp]; };
+// Accurate-only: a business is placed ONLY when its city is known. We never guess
+// a regional centroid anymore — that's what dropped pins into the Mediterranean.
 const geoFor = (lead) => {
   const c = cityCoords(lead.city);
+  if (!c) return null;
   const j = jitter(lead.id);
-  if (c) return [c[0] + j[0], c[1] + j[1]];
-  const r = REGION_CENTROID[lead.geo];
-  return r ? [r[0] + j[0] * 3, r[1] + j[1] * 3] : null;
+  return [c[0] + j[0], c[1] + j[1]];
 };
 const wazeTo = (lead) => { const c = cityCoords(lead.city); if (c) return `https://waze.com/ul?ll=${c[0]},${c[1]}&navigate=yes`; const q = encodeURIComponent([lead.addr, lead.city].filter(Boolean).join(" ")); return `https://waze.com/ul?q=${q}&navigate=yes`; };
 
@@ -149,6 +173,15 @@ const HG_SITE = "https://heavygurad.com";
 const FB_URL = "https://www.facebook.com/share/18k1Sn62EM/";
 const TT_URL = "https://www.tiktok.com/@heavy.guard?_r=1&_t=ZS-97cp13u5MKV";
 
+/* ============================ Color themes (mood) ============================ */
+const ITAI_THEMES = {
+  gold: { name: "זהב", dot: "#C2912E", vars: {} },
+  ocean: { name: "אוקיינוס", dot: "#1B7E9C", vars: { "--gold": "#1B7E9C", "--gold2": "#13607A", "--champ": "#0E5066", "--cyan": "#0E5066", "--s7": "#BFD9E4", "--s8": "#E9F3F8", "--void": "#F1F8FB" } },
+  emerald: { name: "אמרלד", dot: "#1E9A60", vars: { "--gold": "#1E9A60", "--gold2": "#15784A", "--champ": "#0F5E39", "--cyan": "#0F5E39", "--s7": "#BFE3CE", "--s8": "#E8F5EE", "--void": "#F0FAF4" } },
+  royal: { name: "מלכותי", dot: "#6D4FC4", vars: { "--gold": "#6D4FC4", "--gold2": "#553BA0", "--champ": "#3F2B7A", "--cyan": "#3F2B7A", "--s7": "#D6CCEE", "--s8": "#EEE9F8", "--void": "#F5F2FB" } },
+  crimson: { name: "בורדו", dot: "#C0392B", vars: { "--gold": "#C0392B", "--gold2": "#9B2D22", "--champ": "#7A241B", "--cyan": "#7A241B", "--s7": "#E8C9C4", "--s8": "#FBEBE8", "--void": "#FCF3F1" } },
+};
+
 /* ============================ Root App ============================ */
 export default function App() {
   const [tab, setTab] = useState("home");
@@ -157,6 +190,9 @@ export default function App() {
   const [custs, setCusts] = useState(() => load(K_CUST, []));
   const [toast, setToast] = useState(null);
   const [dealDraft, setDealDraft] = useState(null); // {lead?, deal?} open editor when set
+  const [theme, setTheme] = useState(() => { try { return localStorage.getItem("itai:theme") || "gold"; } catch { return "gold"; } });
+  const applyTheme = (t) => { setTheme(t); try { localStorage.setItem("itai:theme", t); } catch {} };
+  const themeVars = (ITAI_THEMES[theme] || ITAI_THEMES.gold).vars;
 
   const leads = useMemo(() => leadsData.map((l) => ({
     ...l,
@@ -205,9 +241,9 @@ export default function App() {
   const exitToAlpha = () => { try { window.close(); } catch {} setTimeout(() => { window.location.href = "./"; }, 120); };
 
   return (
-    <div className="ag">
+    <div className="ag" style={themeVars}>
       <StyleTag />
-      {tab === "home" && <Dashboard leads={leads} deals={deals} custs={custs} go={setTab} onNewDeal={() => setDealDraft({})} showToast={showToast} />}
+      {tab === "home" && <Dashboard leads={leads} deals={deals} custs={custs} go={setTab} onNewDeal={() => setDealDraft({})} showToast={showToast} theme={theme} setTheme={applyTheme} />}
       {tab === "leads" && <LeadsView leads={leads} updateCrm={updateCrm} addOutreach={addOutreach} onDeal={(lead) => setDealDraft({ lead })} dealsFor={(id) => deals.filter((d) => d.leadId === id)} showToast={showToast} />}
       {tab === "deals" && <DealsView deals={deals} leads={leads} onEdit={(deal) => setDealDraft({ deal })} onNew={() => setDealDraft({})} onWin={winDeal} onRemove={removeDeal} showToast={showToast} />}
       {tab === "custs" && <CustomersView custs={custs} onSave={saveCustomer} onRemove={removeCustomer} showToast={showToast} />}
@@ -238,7 +274,8 @@ export default function App() {
 }
 
 /* ============================ Dashboard ============================ */
-function Dashboard({ leads, deals, custs, go, onNewDeal, showToast }) {
+function Dashboard({ leads, deals, custs, go, onNewDeal, showToast, theme, setTheme }) {
+  const [showThemes, setShowThemes] = useState(false);
   const k = monthKey();
   const open = deals.filter((d) => d.status === "פתוח");
   const wonMonth = deals.filter((d) => d.status === "נסגר" && (d.wonAt || "").startsWith(k));
@@ -270,8 +307,27 @@ function Dashboard({ leads, deals, custs, go, onNewDeal, showToast }) {
             <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M16.5 3c.3 2.3 1.6 3.7 3.8 3.9v2.5c-1.3.1-2.5-.3-3.8-1v5.9c0 4.6-3.7 6.9-7 5.4-2.6-1.2-3.4-4.6-1.6-6.9 1-1.3 2.6-2 4.5-1.7v2.6c-.4-.1-.8-.2-1.3-.1-1 .1-1.7.8-1.7 1.8 0 1.2 1.1 2 2.3 1.7 1-.3 1.5-1.1 1.5-2.2V3h2.6z"/></svg>
           </a>
           <button className="ag-soc send" onClick={shareWorks} title="שלח עבודות ללקוח" aria-label="שלח עבודות"><Send size={15} /></button>
+          <button className="ag-soc theme" onClick={() => setShowThemes(true)} title="צבע הפלטפורמה" aria-label="צבעים"><Palette size={15} /></button>
         </div>
       </header>
+
+      {showThemes && (
+        <div className="ag-modal" onClick={(e) => { if (e.target === e.currentTarget) setShowThemes(false); }}>
+          <div className="ag-sheet sm">
+            <div className="ag-sheet-head"><b>צבע הפלטפורמה · מצב רוח</b><button onClick={() => setShowThemes(false)}><X size={20} /></button></div>
+            <div className="ag-sheet-body">
+              <div className="ag-theme-grid">
+                {Object.entries(ITAI_THEMES).map(([key, t]) => (
+                  <button key={key} className={"ag-theme-opt" + (theme === key ? " on" : "")} onClick={() => { setTheme(key); showToast("ערכת צבע: " + t.name); }}>
+                    <span className="ag-theme-dot" style={{ background: t.dot }} />
+                    <span>{t.name}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="ag-kpis">
         <button className="ag-kpi" onClick={() => go("leads")}><b>{leads.length.toLocaleString()}</b><span>לידים במאגר</span></button>
@@ -1157,6 +1213,11 @@ function StyleTag() {
 .ag-soc.fb{background:#1877F2;border-color:#1877F2;color:#fff}
 .ag-soc.tt{background:#111;border-color:#111;color:#fff}
 .ag-soc.send{background:linear-gradient(135deg,var(--champ),var(--gold2));border:none;color:#fff}
+.ag-soc.theme{background:conic-gradient(from 0deg,#C2912E,#1B7E9C,#1E9A60,#6D4FC4,#C0392B,#C2912E);border:none;color:#fff}
+.ag-theme-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.ag-theme-opt{display:flex;align-items:center;gap:10px;background:var(--s9);border:1.5px solid var(--s7);border-radius:12px;padding:13px;font-family:inherit;font-size:14px;font-weight:700;color:var(--silver);cursor:pointer}
+.ag-theme-opt.on{border-color:var(--gold);background:color-mix(in srgb,var(--gold) 12%,transparent)}
+.ag-theme-dot{width:24px;height:24px;border-radius:50%;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.2);border:2px solid #fff}
 
 /* discount row */
 .ag-disc{margin-bottom:2px}

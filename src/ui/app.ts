@@ -179,7 +179,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v107 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v108 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="panelsToggleBtn" title="הסתר/הצג פנלים" aria-label="הסתר פנלים">
           <svg class="pt-hide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -310,7 +310,8 @@ export function mountApp(root: HTMLElement) {
         <div class="gh-title">🖐️ שליטה בידיים</div>
         <ul>
           <li><span>✊</span><b>אגרוף</b> — החזק רגע כדי לזמן פוקימון</li>
-          <li><span>🖐️</span><b>כף יד פתוחה</b> — החזק רגע כדי לשחרר</li>
+          <li><span>👎</span><b>אגודל למטה</b> — החזק רגע כדי להעלים</li>
+          <li><span>🖐️</span><b>כף יד פתוחה</b> — חופשי לשחק עם הפוקימון</li>
           <li><span>☝️</span><b>הצבעה</b> — סמן נע עם האצבע; החזק על כפתור = לחיצה</li>
           <li><span>🤏</span><b>צביטה</b> — אחיזה וסיבוב הדמות</li>
         </ul>
@@ -2093,9 +2094,14 @@ export function mountApp(root: HTMLElement) {
         const idxCur = fI < 1.25, midCur = fM < 1.25, rngCur = fR < 1.25, pkyCur = fP < 1.25;
         const upCount = [idxUp, midUp, rngUp, pkyUp].filter(Boolean).length;
         const curlCount = [idxCur, midCur, rngCur, pkyCur].filter(Boolean).length;
-        const open = upCount >= 4;                         // 🖐️ all fingers extended → release
+        const open = upCount >= 4;                         // 🖐️ all fingers extended → free to PLAY
         const fist = upCount === 0 && curlCount >= 3;     // ✊ clearly closed → summon
         const pointing = idxUp && !midUp && !rngUp && !pkyUp;  // ☝️ index only → pointer
+        // 👎 Thumbs-down → dismiss the Pokémon. Four fingers curled + the thumb
+        // extended and pointing DOWN. A deliberate pose that never fires while an
+        // open hand "plays", which is exactly what the open palm used to break.
+        const thumbExt = d3(2, 4) / Math.max(0.0001, d3(2, 3)) > 1.5;
+        const thumbsDown = upCount === 0 && curlCount >= 3 && thumbExt && (lm[4].y > lm[2].y + 0.03);
 
         throwCooldownMs = Math.max(0, throwCooldownMs - dt);
         suppressPalmMs = Math.max(0, suppressPalmMs - dt);
@@ -2123,7 +2129,7 @@ export function mountApp(root: HTMLElement) {
         // so thumb-tip and index-tip sit close together and the pinch test would
         // otherwise steal it. A fist (no fingers up) is unambiguous, so it wins.
         // Until the hand has settled (armed), nothing classifies — pure observation.
-        const raw = !armed ? 'none' : fist ? 'fist' : pinching ? 'pinch' : pointing ? 'point' : open ? 'open' : 'none';
+        const raw = !armed ? 'none' : thumbsDown ? 'dispel' : fist ? 'fist' : pinching ? 'pinch' : pointing ? 'point' : open ? 'open' : 'none';
         if (raw === rawPrev) rawStableMs += dt; else { rawPrev = raw; rawStableMs = 0; }
         if (raw === 'pinch' || raw === 'none' || rawStableMs >= STABLE_MS) confirmedGesture = raw;
 
@@ -2193,25 +2199,24 @@ export function mountApp(root: HTMLElement) {
             }
           } else {
             fistHoldMs = 0; ballHeldMs = 0; orb.pokeballRelease?.();
-            if (!open) gestureStatus('זיהוי פעיל');
+            if (open) gestureStatus('🖐️ יד פתוחה — שחק עם הפוקימון'); else if (!thumbsDown) gestureStatus('זיהוי פעיל');
           }
         }
 
-        // ── Open-palm RELEASE (dispel) — tolerant hold ───────────────────────
-        // Accumulate while the palm is open; DECAY (not hard-reset) on brief misses
-        // so a flicker in the lite hand model doesn't keep restarting the hold.
-        // Driven by the raw open signal (no debounce) for a smooth, responsive feel.
-        const dispelEligible = open && !pinching && suppressPalmMs <= 0;
+        // ── 👎 Thumbs-down DISMISS (dispel) — replaces the open-palm release so an
+        // open hand stays free to play. Hold briefly; a ring shows progress. Decay
+        // (not hard-reset) on brief misses so a model flicker doesn't restart it. ──
+        const dispelEligible = thumbsDown && suppressPalmMs <= 0;
         if (dispelEligible) palmHoldMs += dt;
         else palmHoldMs = Math.max(0, palmHoldMs - dt * 2.5);
         if (dispelEligible && palmHoldMs > 80) {
           const progress = Math.min(1, palmHoldMs / PALM_HOLD_THRESHOLD);
-          gestureStatus(`🖐️ החזק לשחרור… ${Math.round(progress * 100)}%`);
+          gestureStatus(`👎 החזק להעלמה… ${Math.round(progress * 100)}%`);
           octx.beginPath(); octx.arc(cx2, cy2, 42, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
           octx.strokeStyle = `rgba(218,165,32,${0.4 + progress * 0.6})`; octx.lineWidth = 6; octx.stroke();
           if (palmHoldMs >= PALM_HOLD_THRESHOLD) {
             palmHoldMs = 0; suppressPalmMs = 900;
-            gestureStatus('⚡ שוחרר!');
+            gestureStatus('⚡ הפוקימון הועלם!');
             (window as any).dispelOrb?.();
           }
         }
