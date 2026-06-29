@@ -132,6 +132,8 @@ function useHgPricelist() {
   return pl;
 }
 const HG_SITE = "https://heavygurad.com";
+const FB_URL = "https://www.facebook.com/share/18k1Sn62EM/";
+const TT_URL = "https://www.tiktok.com/@heavy.guard?_r=1&_t=ZS-97cp13u5MKV";
 
 /* ============================ Root App ============================ */
 export default function App() {
@@ -232,14 +234,29 @@ function Dashboard({ leads, deals, custs, go, onNewDeal, showToast }) {
   const wonAll = deals.filter((d) => d.status === "נסגר");
   const conv = deals.length ? Math.round((wonAll.length / deals.length) * 100) : 0;
 
+  const shareWorks = async () => {
+    const text = `הנה עבודות וההמלצות שלנו ב-${BIZ} 🚛🛡️\nאתר: ${HG_SITE}\nFacebook: ${FB_URL}\nTikTok: ${TT_URL}`;
+    try { if (navigator.share) { await navigator.share({ title: BIZ, text }); return; } } catch { return; }
+    const ok = await copyText(text); showToast && showToast(ok ? "הקישורים הועתקו — הדבק ושלח ללקוח" : "העתקה נכשלה");
+  };
+
   return (
     <div className="ag-flow">
       <header className="ag-head">
         <img src={BULL_LOGO} className="ag-logo" alt="" />
         <div style={{ flex: 1 }}><div className="ag-title">CRM מכירות · איתי</div><div className="ag-sub">{BIZ} — ניהול לידים ועסקאות</div></div>
-        <a className="ag-site" href={HG_SITE} target="_blank" rel="noreferrer" title="heavygurad.com">
-          <img src={BULL_LOGO} alt="" /><span>האתר</span>
-        </a>
+        <div className="ag-links">
+          <a className="ag-site" href={HG_SITE} target="_blank" rel="noreferrer" title="heavygurad.com">
+            <img src={BULL_LOGO} alt="" /><span>האתר</span>
+          </a>
+          <a className="ag-soc fb" href={FB_URL} target="_blank" rel="noreferrer" title="Facebook — עבודות" aria-label="Facebook">
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor"><path d="M22 12.06C22 6.5 17.52 2 12 2S2 6.5 2 12.06c0 5 3.66 9.15 8.44 9.94v-7.03H7.9v-2.9h2.54V9.85c0-2.51 1.49-3.9 3.78-3.9 1.09 0 2.24.2 2.24.2v2.46h-1.26c-1.24 0-1.63.78-1.63 1.57v1.88h2.78l-.44 2.9h-2.34V22c4.78-.79 8.44-4.94 8.44-9.94z"/></svg>
+          </a>
+          <a className="ag-soc tt" href={TT_URL} target="_blank" rel="noreferrer" title="TikTok — עבודות" aria-label="TikTok">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M16.5 3c.3 2.3 1.6 3.7 3.8 3.9v2.5c-1.3.1-2.5-.3-3.8-1v5.9c0 4.6-3.7 6.9-7 5.4-2.6-1.2-3.4-4.6-1.6-6.9 1-1.3 2.6-2 4.5-1.7v2.6c-.4-.1-.8-.2-1.3-.1-1 .1-1.7.8-1.7 1.8 0 1.2 1.1 2 2.3 1.7 1-.3 1.5-1.1 1.5-2.2V3h2.6z"/></svg>
+          </a>
+          <button className="ag-soc send" onClick={shareWorks} title="שלח עבודות ללקוח" aria-label="שלח עבודות"><Send size={15} /></button>
+        </div>
       </header>
 
       <div className="ag-kpis">
@@ -1028,9 +1045,14 @@ function StyleTag() {
 .ag-nav-exit{color:var(--red)!important}
 .ag-toast{position:fixed;bottom:84px;left:50%;transform:translateX(-50%);background:var(--s8);border:1px solid var(--gold);color:var(--champ);padding:11px 18px;border-radius:11px;font-size:13.5px;font-weight:700;z-index:300;box-shadow:0 8px 30px rgba(120,90,20,.25);max-width:90vw;text-align:center}
 
-/* heavyguard.com link button */
+/* heavyguard.com link + social quick links */
+.ag-links{display:flex;align-items:center;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;max-width:190px}
 .ag-site{display:flex;align-items:center;gap:6px;background:linear-gradient(135deg,var(--champ),var(--gold) 55%,var(--gold2));color:#241A06;border-radius:10px;padding:7px 11px;text-decoration:none;font-weight:900;font-size:12.5px;flex-shrink:0;box-shadow:0 4px 14px rgba(194,145,46,.3)}
 .ag-site img{width:18px;height:18px;border-radius:4px;object-fit:cover}
+.ag-soc{width:34px;height:34px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border-radius:10px;text-decoration:none;cursor:pointer;border:1px solid var(--s7);background:var(--s9);color:var(--silver)}
+.ag-soc.fb{background:#1877F2;border-color:#1877F2;color:#fff}
+.ag-soc.tt{background:#111;border-color:#111;color:#fff}
+.ag-soc.send{background:linear-gradient(135deg,var(--champ),var(--gold2));border:none;color:#fff}
 
 /* discount row */
 .ag-disc{margin-bottom:2px}
