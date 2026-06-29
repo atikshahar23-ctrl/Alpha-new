@@ -3115,18 +3115,22 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     powerPreference: 'high-performance',
     failIfMajorPerformanceCaveat: false,
   });
-  // Perf: cap the pixel ratio — retina/iPad (DPR 2) through bloom+MSAA+FXAA is
-  // 4× the pixels for little visible gain. Fast mode caps harder and skips post.
-  let perfFast = false;
-  // Adaptive quality tier, bumped automatically when the GPU can't keep a smooth
-  // framerate: 0 = full (post-fx on), 1 = post-fx off, 2 = post-fx off + lower res.
-  let qTier = 0;
   // iPad-class device: big, high-DPR, touch (often reports a desktop "Macintosh" UA
   // so it lands on this heavier desktop scene). Its huge retina screen makes a high
   // pixel ratio the #1 bottleneck, so cap it hard — at DPR 1.0 the screen is still
   // razor-sharp but renders ~2.25x fewer pixels than 1.5, which is what makes it
   // smooth.
   const bigTouch = (navigator.maxTouchPoints || 0) > 1 && (window.devicePixelRatio || 1) >= 1.5 && Math.min(window.innerWidth, window.innerHeight) >= 700;
+  // Perf: cap the pixel ratio — retina/iPad (DPR 2) through bloom+MSAA+FXAA is
+  // 4× the pixels for little visible gain. Fast mode caps harder and skips post.
+  // Auto-enable the cheap render path on iPad-class / perf-lite devices: the
+  // EffectComposer (bloom + FXAA) is the single biggest cost and is skipped
+  // entirely when perfFast — this is what fixes the "stuck/limited" feel on iPad.
+  const perfLiteActive = typeof document !== 'undefined' && document.documentElement.classList.contains('perf-lite');
+  let perfFast = bigTouch || perfLiteActive;
+  // Adaptive quality tier, bumped automatically when the GPU can't keep a smooth
+  // framerate: 0 = full (post-fx on), 1 = post-fx off, 2 = post-fx off + lower res.
+  let qTier = 0;
   const prCap = () => {
     const cap = perfFast ? 1 : (bigTouch ? 1.0 : 1.5);
     const base = Math.min(window.devicePixelRatio || 1, cap);
