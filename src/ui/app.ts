@@ -179,7 +179,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v104 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v105 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="panelsToggleBtn" title="הסתר/הצג פנלים" aria-label="הסתר פנלים">
           <svg class="pt-hide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -1978,9 +1978,20 @@ export function mountApp(root: HTMLElement) {
       // bright energy-core line, and glowing joints/fingertips — reads like a real
       // translucent hand rather than a thin wireframe. Sizes scale with the hand.
       const HCONN = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+      // How large the hand skeleton is drawn (cosmetic only). Much smaller on
+      // phones, where the hand fills the front camera and otherwise sprawled.
+      const HAND_RENDER_SCALE = isMobileDevice ? 0.5 : 0.85;
       function drawHand(hand: any[], mapX: (n: number) => number, mapY: (n: number) => number, primary: boolean) {
-        const PX = (i: number) => mapX(hand[i].x), PY = (i: number) => mapY(hand[i].y);
-        const palmR = Math.max(18, Math.hypot(PX(0) - PX(9), PY(0) - PY(9)));
+        // Render the skeleton at a controlled size. On phones the front camera
+        // fills with the hand, so mapping landmarks straight onto the (contained)
+        // frame made the skeleton sprawl across the whole screen. Shrink every
+        // landmark toward the hand's own centre by HAND_RENDER_SCALE so the hand
+        // is always drawn small & natural, wherever it is — purely cosmetic;
+        // gesture math still uses the raw normalised landmarks.
+        let cx = 0, cy = 0; for (const p of hand) { cx += p.x; cy += p.y; } cx /= hand.length; cy /= hand.length;
+        const k = HAND_RENDER_SCALE;
+        const PX = (i: number) => mapX(cx + (hand[i].x - cx) * k), PY = (i: number) => mapY(cy + (hand[i].y - cy) * k);
+        const palmR = Math.max(12, Math.hypot(PX(0) - PX(9), PY(0) - PY(9)));
         const a = primary ? 1 : 0.55;
         octx.lineCap = 'round'; octx.lineJoin = 'round';
         // Thin, precise anatomical-style bones with a subtle hologram glow.
@@ -2053,6 +2064,11 @@ export function mountApp(root: HTMLElement) {
         hands.forEach((h, idx) => { const s = spanOf(h); if (s > bestSpan) { bestSpan = s; primaryIdx = idx; } });
         const rawLm0 = hands[primaryIdx];
         const lm = smoothLandmarks(rawLm0, Math.min(0.05, Math.max(0.012, dt / 1000)));
+        // Shrink-map for primary-hand overlay drawing (matches drawHand's scale so
+        // the pinch ring sits on the smaller skeleton, not the full-size hand).
+        let _pcx = 0, _pcy = 0; for (const p of lm) { _pcx += p.x; _pcy += p.y; } _pcx /= lm.length; _pcy /= lm.length;
+        const mapXs = (nx: number) => mapX(_pcx + (nx - _pcx) * HAND_RENDER_SCALE);
+        const mapYs = (ny: number) => mapY(_pcy + (ny - _pcy) * HAND_RENDER_SCALE);
         // Quality: handedness confidence + how much of the frame the hand fills.
         const score = results.multiHandedness?.[primaryIdx]?.score ?? 1;
         const handSpan = bestSpan;
@@ -2128,8 +2144,8 @@ export function mountApp(root: HTMLElement) {
           // Y, vertical drag tilts around X. Relative to the grab-start pose.
           orb.setCharacterTransform(xf.x + dy * SENS, xf.y + dx * SENS, xf.z, xf.s, xf.px, xf.py, xf.pz);
           gestureStatus('🤏 אוחז בכדור — הזז יד כדי לסובב');
-          octx.beginPath(); octx.arc(mapX(hx), mapY(hy), 30, 0, Math.PI * 2);
-          octx.strokeStyle = 'rgba(120,220,255,.95)'; octx.lineWidth = 5; octx.stroke();
+          octx.beginPath(); octx.arc(mapXs(hx), mapYs(hy), isMobileDevice ? 18 : 30, 0, Math.PI * 2);
+          octx.strokeStyle = 'rgba(120,220,255,.95)'; octx.lineWidth = isMobileDevice ? 3 : 5; octx.stroke();
         } else if (confirmedGesture === 'point') {
           // ☝️ Finger-pointing laser cursor — index tip drives a red on-screen
           // cursor; dwelling on a target for 2s clicks it.
