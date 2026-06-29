@@ -64,7 +64,7 @@ const UI_STRINGS: Record<string, Record<UILang, string>> = {
   briefing: { he: '📊 תדריך', en: '📊 Briefing' },
   fabSearch: { he: '🔍 חיפוש', en: '🔍 Search' },
   settingsTitle: { he: 'אלפא עוזר אישי', en: 'Alpha Assistant' },
-  settingsDesc: { he: 'עובד בחינם מהקופסה דרך Puter — לא צריך מפתח API.', en: 'Works free out of the box via Puter — no API key required.' },
+  settingsDesc: { he: 'מופעל ע"י Groq — חינמי ומהיר. הוצא מפתח חינם ב-console.groq.com.', en: 'Powered by Groq — free and fast. Get a free key at console.groq.com.' },
   general: { he: 'כללי', en: 'GENERAL' },
   assistantName: { he: 'שם העוזר', en: 'Assistant name' },
   soundEffects: { he: 'אפקטי סאונד', en: 'Sound effects' },
@@ -94,10 +94,10 @@ const UI_STRINGS: Record<string, Record<UILang, string>> = {
   volume: { he: 'עוצמה', en: 'Volume' },
   aiEngineTitle: { he: 'מנוע AI', en: 'AI ENGINE' },
   aiProvider: { he: 'ספק AI', en: 'AI Provider' },
-  puterFree: { he: 'Puter — חינם, בלי מפתח', en: 'Puter — Free, no key' },
-  puterModel: { he: 'מודל Puter (חינם)', en: 'Puter model (free)' },
-  puterDesc: { he: 'Puter בחינם — חלון התחברות חד-פעמי יופיע בשימוש ראשון. מפתחות למטה הם אופציונליים.', en: 'Puter is free — a one-time sign-in popup appears on first use. Keys below are optional fallbacks.' },
+  groqFree: { he: 'Groq — חינם ומהיר (Llama)', en: 'Groq — Free & fast (Llama)' },
+  groqDesc: { he: 'Groq חינמי ומהיר (Llama 3.3). הוצא מפתח חינם ב-console.groq.com והדבק כאן — בלי כרטיס אשראי ובלי חיוב. שאר המפתחות למטה אופציונליים.', en: 'Groq is free & fast (Llama 3.3). Get a free key at console.groq.com and paste it here — no credit card, no billing. Other keys below are optional fallbacks.' },
   geminiKey: { he: 'מפתח Gemini API', en: 'Gemini API key' },
+  groqKey: { he: 'מפתח Groq API (חינם)', en: 'Groq API key (free)' },
   grokKey: { he: 'מפתח Grok API', en: 'Grok API key' },
   openaiKey: { he: 'מפתח OpenAI API', en: 'OpenAI API key' },
   cloudSync: { he: 'סנכרון ענן', en: 'CLOUD SYNC' },
@@ -179,7 +179,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v99 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v100 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
           <span class="csb-ball" aria-hidden="true"></span>
@@ -370,7 +370,7 @@ export function mountApp(root: HTMLElement) {
           <div class="lp-label" data-i18n="aiEngine">מנוע AI</div>
           <div class="ai-status">
             <div class="ai-model" id="aiModelDisplay">GPT-4O MINI</div>
-            <div class="ai-provider" id="aiProviderDisplay">דרך PUTER</div>
+            <div class="ai-provider" id="aiProviderDisplay">VIA GROQ</div>
             <div class="ai-latency">
               <span class="latency-dot"></span>
               <span id="aiLatency" data-i18n="ready">מוכן</span>
@@ -611,20 +611,13 @@ export function mountApp(root: HTMLElement) {
           <div class="ss-title" data-i18n="aiEngineTitle">מנוע AI</div>
           <label data-i18n="aiProvider">ספק AI</label>
           <select id="providerSel">
-            <option value="puter" data-i18n="puterFree">Puter — חינם, בלי מפתח</option>
+            <option value="groq" data-i18n="groqFree">Groq — חינם ומהיר (Llama)</option>
             <option value="gemini">Gemini (Google)</option>
             <option value="grok">Grok (xAI)</option>
             <option value="openai">ChatGPT (OpenAI)</option>
           </select>
-          <label data-i18n="puterModel">מודל Puter (חינם)</label>
-          <select id="puterModelSel">
-            <option value="gpt-4o-mini">GPT-4o mini (fast)</option>
-            <option value="gpt-4o">GPT-4o (smartest)</option>
-            <option value="o4-mini">o4-mini (reasoning)</option>
-            <option value="claude-sonnet-4">Claude Sonnet 4</option>
-            <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
-          </select>
-          <p style="margin:2px 0 10px;font-size:11px;color:var(--dim)" data-i18n="puterDesc">Puter בחינם — חלון התחברות חד-פעמי יופיע בשימוש ראשון. מפתחות למטה הם אופציונליים.</p>
+          <label data-i18n="groqKey">מפתח Groq API (חינם)</label><input id="groqKeyInput" type="text" class="masked-field" placeholder="gsk_..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" />
+          <p style="margin:2px 0 10px;font-size:11px;color:var(--dim)" data-i18n="groqDesc">Groq חינמי ומהיר (Llama 3.3). הוצא מפתח חינם ב-console.groq.com והדבק כאן — בלי כרטיס אשראי ובלי חיוב. שאר המפתחות למטה אופציונליים.</p>
           <label data-i18n="geminiKey">מפתח Gemini API</label><input id="keyInput" type="text" class="masked-field" placeholder="AIza..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" />
           <label data-i18n="grokKey">מפתח Grok API</label><input id="grokKeyInput" type="text" class="masked-field" placeholder="xai-..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" />
           <label data-i18n="openaiKey">מפתח OpenAI API</label><input id="openaiKeyInput" type="text" class="masked-field" placeholder="sk-..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" />
@@ -1589,8 +1582,7 @@ export function mountApp(root: HTMLElement) {
     }
     // Live screen vision — capture the screen and let the model see it.
     if (isScreenVisionIntent(text)) { await runScreenVision(text); return; }
-    const puterReady = typeof (window as any).puter !== 'undefined';
-    const canAI = puterReady || state.key || state.grokKey || state.openaiKey;
+    const canAI = state.groqKey || state.key || state.grokKey || state.openaiKey;
     if (!canAI) { openSetup(); return; }
     if (asking) return;
     asking = true;
@@ -5132,9 +5124,9 @@ export function mountApp(root: HTMLElement) {
     $<HTMLInputElement>('nameInput').value = state.name;
     $<HTMLInputElement>('keyInput').value = state.key;
     $<HTMLInputElement>('grokKeyInput').value = state.grokKey;
+    $<HTMLInputElement>('groqKeyInput').value = state.groqKey;
     $<HTMLInputElement>('openaiKeyInput').value = state.openaiKey;
     $<HTMLSelectElement>('providerSel').value = state.provider;
-    $<HTMLSelectElement>('puterModelSel').value = state.puterModel;
     $<HTMLSelectElement>('micSel').value = state.micLang;
     $<HTMLSelectElement>('replySel').value = state.replyLang;
     $<HTMLSelectElement>('textLangSel').value = state.textLang;
@@ -5549,9 +5541,9 @@ export function mountApp(root: HTMLElement) {
     state.name = $<HTMLInputElement>('nameInput').value.trim() || 'ALPHA';
     state.key = $<HTMLInputElement>('keyInput').value.trim();
     state.grokKey = $<HTMLInputElement>('grokKeyInput').value.trim();
+    state.groqKey = $<HTMLInputElement>('groqKeyInput').value.trim();
     state.openaiKey = $<HTMLInputElement>('openaiKeyInput').value.trim();
     state.provider = $<HTMLSelectElement>('providerSel').value as AIProvider;
-    state.puterModel = $<HTMLSelectElement>('puterModelSel').value;
     state.micLang = $<HTMLSelectElement>('micSel').value as any;
     state.replyLang = $<HTMLSelectElement>('replySel').value as any;
     state.textLang = $<HTMLSelectElement>('textLangSel').value as TextLang;
@@ -5794,13 +5786,18 @@ export function mountApp(root: HTMLElement) {
       'gemini-2.0-flash': 'GEMINI 2.0 FLASH',
     };
     const providerNames: Record<string, string> = {
-      'puter': 'VIA PUTER',
+      'groq': 'VIA GROQ',
       'gemini': 'VIA GOOGLE',
       'grok': 'VIA XAI',
       'openai': 'VIA OPENAI',
     };
-    const pm = (state as any).puterModel as string || 'gpt-4o-mini';
-    $('aiModelDisplay').textContent = modelNames[pm] || pm.toUpperCase();
+    const modelByProvider: Record<string, string> = {
+      'groq': 'LLAMA 3.3 70B',
+      'gemini': 'GEMINI 2.0 FLASH',
+      'grok': 'GROK-3 MINI',
+      'openai': 'GPT-4O MINI',
+    };
+    $('aiModelDisplay').textContent = modelByProvider[state.provider] || (modelNames[state.provider] || '');
     $('aiProviderDisplay').textContent = providerNames[state.provider] || state.provider.toUpperCase();
   }
   updateAIDisplay();

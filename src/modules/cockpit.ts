@@ -14,8 +14,9 @@ import { route } from '../brain/router';
 import { loadPriceAlerts, savePriceAlerts, type PriceAlert } from './proactive';
 import { openSamsonixWizard, loadSamsonixForms, deleteSamsonixForm, printSamsonixForm } from './samsonixWizard';
 import {
-  addEvent, loadEvents, addTask, loadTasks, toggleTask, removeTask,
+  addEvent, loadEvents, addTask, loadTasks, toggleTask, removeTask, loadState,
 } from '../assistant/state';
+import { askVision } from '../assistant/gemini';
 import {
   loadLeads, addLead, updateLead, removeLead, advanceLead,
   loadQuotes, setQuoteStatus, removeQuote,
@@ -1688,15 +1689,18 @@ function renderAdvanced(root: HTMLElement, hooks: CockpitHooks, close: () => voi
   };
   analyze.onclick = async () => {
     if (!dataUrl) { vOut.textContent = L('בחר תמונה קודם.', 'Choose an image first.'); return; }
-    const puter = (window as any).puter;
-    if (!puter?.ai?.chat) { vOut.textContent = 'Vision needs the Puter engine (default). Open settings and ensure provider = Puter.'; return; }
-    vOut.textContent = 'Analyzing…';
+    const st = loadState();
+    if (!st.groqKey && !st.key && !st.openaiKey) {
+      vOut.textContent = L('הראייה צריכה מפתח AI. פתח הגדרות והדבק מפתח Groq חינמי.', 'Vision needs an AI key. Open settings and paste a free Groq key.');
+      return;
+    }
+    vOut.textContent = L('מנתח…', 'Analyzing…');
     try {
-      const r = await puter.ai.chat(q.value.trim() || 'Describe this image and give actionable insights.', dataUrl);
-      const text = typeof r === 'string' ? r : (r?.message?.content || r?.text || JSON.stringify(r));
-      hooks.addMsgSys('👁 ' + (text || 'No description returned.'));
+      const text = await askVision(st, q.value.trim() || 'Describe this image and give actionable insights.', dataUrl);
+      if (!text) { vOut.textContent = L('הניתוח נכשל.', 'Vision request failed.'); return; }
+      hooks.addMsgSys('👁 ' + text);
       close();
-    } catch { vOut.textContent = 'Vision request failed.'; }
+    } catch { vOut.textContent = L('הניתוח נכשל.', 'Vision request failed.'); }
   };
   vz.appendChild(field(L('תמונה', 'Image'), imgInput));
   vz.appendChild(preview);

@@ -9,6 +9,11 @@ const GEMINI_MODELS = [
   'gemini-1.5-flash-8b',
 ];
 
+// Groq — free, fast (Llama). OpenAI-compatible wire format. Text + vision models.
+const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
+const GROQ_TEXT_MODEL = 'llama-3.3-70b-versatile';
+const GROQ_VISION_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
+
 let activeGeminiModel = 0;
 let busy = false;
 const geminiCooldowns: number[] = [0, 0, 0];
@@ -194,56 +199,47 @@ async function askOpenAIProvider(state: AppState): Promise<string> {
   return data.choices?.[0]?.message?.content?.trim() || '…';
 }
 
-// ─── Puter.js (free, keyless — user-pays model) ───
+// ─── Groq (free, fast — Llama) ───
 
-function extractPuterText(r: any): string {
-  if (!r) return '';
-  if (typeof r === 'string') return r.trim();
-  const c = r.message?.content ?? r.content ?? r.text;
-  if (typeof c === 'string') return c.trim();
-  if (Array.isArray(c)) return c.map((p: any) => (typeof p === 'string' ? p : p?.text || '')).join('').trim();
-  if (typeof r.toString === 'function') {
-    const s = r.toString();
-    if (s && s !== '[object Object]') return s.trim();
-  }
-  return '';
-}
-
-async function askPuterProvider(state: AppState): Promise<string> {
-  const puter = (window as any).puter;
-  if (!puter?.ai?.chat) throw new Error('PROVIDER_EXHAUSTED');
+async function askGroqProvider(state: AppState): Promise<string> {
+  if (!state.groqKey) throw new Error('PROVIDER_NO_KEY');
   const messages = [
-    { role: 'system', content: systemPrompt(state) },
+    { role: 'system' as const, content: systemPrompt(state) },
     ...state.history.slice(-8).map(h => ({
-      role: h.role === 'user' ? 'user' : 'assistant',
+      role: h.role === 'user' ? 'user' as const : 'assistant' as const,
       content: h.parts.map(p => p.text).join(''),
     })),
   ];
-  try {
-    const r = await puter.ai.chat(messages, { model: state.puterModel || 'gpt-4o-mini' });
-    const text = extractPuterText(r);
-    if (!text) throw new Error('PROVIDER_EXHAUSTED');
-    return text;
-  } catch (err: any) {
-    if (err?.message === 'PROVIDER_EXHAUSTED') throw err;
-    // auth popup dismissed, network, or rate issue — let the chain fall through
-    throw new Error('PROVIDER_EXHAUSTED');
+  const res = await fetch(GROQ_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${state.groqKey}` },
+    body: JSON.stringify({ model: GROQ_TEXT_MODEL, messages, temperature: 0.8, max_tokens: 600 }),
+  });
+  if (!res.ok) {
+    const code = res.status;
+    if (code === 429) throw new Error('PROVIDER_EXHAUSTED');
+    let msg = `Groq error ${code}`;
+    try { const e = await res.json(); msg = e?.error?.message || msg; } catch {}
+    if (code === 401 || code === 403) throw new Error('PROVIDER_EXHAUSTED');
+    throw new Error(msg);
   }
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content?.trim() || '…';
 }
 
 // ─── Unified ask with auto-fallback ───
 
-const PROVIDER_ORDER: AIProvider[] = ['puter', 'gemini', 'grok', 'openai'];
+const PROVIDER_ORDER: AIProvider[] = ['groq', 'gemini', 'grok', 'openai'];
 
 async function askProvider(provider: AIProvider, state: AppState): Promise<string> {
-  if (provider === 'puter') return askPuterProvider(state);
+  if (provider === 'groq') return askGroqProvider(state);
   if (provider === 'gemini') return askGeminiProvider(state);
   if (provider === 'grok') return askGrokProvider(state);
   return askOpenAIProvider(state);
 }
 
 function hasKey(provider: AIProvider, state: AppState): boolean {
-  if (provider === 'puter') return typeof (window as any).puter !== 'undefined';
+  if (provider === 'groq') return !!state.groqKey;
   if (provider === 'gemini') return !!state.key;
   if (provider === 'grok') return !!state.grokKey;
   return !!state.openaiKey;
@@ -289,14 +285,19 @@ export async function askVision(state: AppState, prompt: string, imageDataUrl: s
   const order = [state.provider, ...PROVIDER_ORDER.filter(p => p !== state.provider)];
   for (const provider of order) {
     try {
-      if (provider === 'puter') {
-        const puter = (window as any).puter;
-        if (!puter?.ai?.chat) continue;
-        const r = await puter.ai.chat(
-          [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: imageDataUrl } }] }],
-          { model: 'gpt-4o-mini' },
-        );
-        const t = extractPuterText(r);
+      if (provider === 'groq') {
+        if (!state.groqKey) continue;
+        const res = await fetch(GROQ_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${state.groqKey}` },
+          body: JSON.stringify({
+            model: GROQ_VISION_MODEL, max_tokens: 600,
+            messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: imageDataUrl } }] }],
+          }),
+        });
+        if (!res.ok) continue;
+        const data = await res.json();
+        const t = data.choices?.[0]?.message?.content?.trim();
         if (t) return t;
       } else if (provider === 'openai') {
         if (!state.openaiKey) continue;
@@ -345,14 +346,16 @@ export async function askOnce(state: AppState, system: string, user: string): Pr
   for (const provider of order) {
     if (!hasKey(provider, state)) continue;
     try {
-      if (provider === 'puter') {
-        const puter = (window as any).puter;
-        if (!puter?.ai?.chat) continue;
-        const r = await puter.ai.chat(
-          [{ role: 'system', content: system }, { role: 'user', content: user }],
-          { model: state.puterModel || 'gpt-4o-mini' },
-        );
-        const t = extractPuterText(r);
+      if (provider === 'groq') {
+        if (!state.groqKey) continue;
+        const res = await fetch(GROQ_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${state.groqKey}` },
+          body: JSON.stringify({ model: GROQ_TEXT_MODEL, messages: [{ role: 'system', content: system }, { role: 'user', content: user }], temperature: 0.2, max_tokens: 600 }),
+        });
+        if (!res.ok) continue;
+        const data = await res.json();
+        const t = data.choices?.[0]?.message?.content?.trim();
         if (t) return t;
       } else if (provider === 'gemini') {
         if (!state.key) continue;
@@ -494,21 +497,11 @@ async function streamGeminiChain(state: AppState, onText: (full: string) => void
   throw new Error('GEMINI_EXHAUSTED');
 }
 
-async function streamPuter(state: AppState, onText: (full: string) => void): Promise<string> {
-  const puter = (window as any).puter;
-  if (!puter?.ai?.chat) throw new Error('PROVIDER_EXHAUSTED');
-  const resp = await puter.ai.chat(chatMessages(state), { model: state.puterModel || 'gpt-4o-mini', stream: true });
-  let full = '';
-  // Puter streaming yields parts that expose the delta as `.text`.
-  for await (const part of resp) {
-    const d = part?.text ?? (typeof part === 'string' ? part : '') ?? '';
-    if (d) { full += d; onText(full); }
-  }
-  return full;
-}
-
 async function streamProvider(provider: AIProvider, state: AppState, onText: (full: string) => void): Promise<string> {
-  if (provider === 'puter') return streamPuter(state, onText);
+  if (provider === 'groq') {
+    if (!state.groqKey) throw new Error('PROVIDER_NO_KEY');
+    return streamOpenAICompat(GROQ_URL, state.groqKey, GROQ_TEXT_MODEL, state, onText);
+  }
   if (provider === 'gemini') return streamGeminiChain(state, onText);
   if (provider === 'grok') {
     if (!state.grokKey) throw new Error('PROVIDER_NO_KEY');

@@ -2,7 +2,7 @@ export type ReplyLang = 'en' | 'he' | 'es';
 export type MicLang = 'he' | 'en' | 'es';
 export type TextLang = 'en' | 'he' | 'ar' | 'ru' | 'fr' | 'es' | 'de' | 'auto';
 
-export type AIProvider = 'puter' | 'gemini' | 'grok' | 'openai';
+export type AIProvider = 'groq' | 'puter' | 'gemini' | 'grok' | 'openai';
 
 export type VoiceGender = 'female' | 'male' | 'auto';
 
@@ -11,6 +11,7 @@ export type UILang = 'he' | 'en';
 export interface AppState {
   key: string;
   grokKey: string;
+  groqKey: string;
   openaiKey: string;
   provider: AIProvider;
   puterModel: string;
@@ -38,7 +39,7 @@ export interface AppState {
   pikaPitch: number;
 }
 
-const KEY = 'alpha_key', GROK = 'alpha_grok', OPENAI = 'alpha_openai', PROV = 'alpha_provider',
+const KEY = 'alpha_key', GROK = 'alpha_grok', GROQ = 'alpha_groq', OPENAI = 'alpha_openai', PROV = 'alpha_provider',
   PUTERMODEL = 'alpha_putermodel',
   NAME = 'alpha_name', MICLANG = 'alpha_micLang', REPLYLANG = 'alpha_replyLang',
   TEXTLANG = 'alpha_textLang', AMB = 'alpha_amb', AMBPRESET = 'alpha_ambpreset',
@@ -62,8 +63,11 @@ export function loadState(): AppState {
   return {
     key: localStorage.getItem(KEY) || '',
     grokKey: localStorage.getItem(GROK) || '',
+    groqKey: localStorage.getItem(GROQ) || '',
     openaiKey: localStorage.getItem(OPENAI) || '',
-    provider: (localStorage.getItem(PROV) as AIProvider) || 'puter',
+    // Puter was disconnected as an AI engine (it rate-limited accounts). Any user
+    // still pinned to 'puter' is migrated to the free Groq engine automatically.
+    provider: (() => { const p = localStorage.getItem(PROV); return (!p || p === 'puter') ? 'groq' : p as AIProvider; })(),
     puterModel: localStorage.getItem(PUTERMODEL) || 'gpt-4o-mini',
     name: localStorage.getItem(NAME) || 'ALPHA',
     micLang: (localStorage.getItem(MICLANG) as MicLang) || 'he',
@@ -93,6 +97,7 @@ export function loadState(): AppState {
 export function saveState(s: AppState) {
   localStorage.setItem(KEY, s.key);
   localStorage.setItem(GROK, s.grokKey);
+  localStorage.setItem(GROQ, s.groqKey);
   localStorage.setItem(OPENAI, s.openaiKey);
   localStorage.setItem(PROV, s.provider);
   localStorage.setItem(PUTERMODEL, s.puterModel);
