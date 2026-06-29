@@ -29,6 +29,13 @@ const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } cat
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const ils = (n) => "₪" + (Number(n) || 0).toLocaleString("he-IL");
 const todayISO = () => new Date().toISOString().slice(0, 10);
+const dmy = (iso) => { try { const d = new Date(iso); return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`; } catch { return iso; } };
+// Heavy Guard company profile + quote defaults — kept 1:1 with the HeavyGuard app.
+const HG_COMPANY = { name: "Heavy Guard", brand: "HEAVY GUARD", address: "דן 7, ראשל\"צ", taxId: "305794067", phone: "054-771-9070" };
+const HG_QUOTE_NOTES = ["דמי מנוי בכרטיס אשראי לחברת סמסוניקס +₪60+מע\"מ", "התקנה בבית הלקוח", "אחריות לשנה על המוצרים וההתקנה"];
+const HG_QUOTE_PAY = "ניתן לשלם באשראי או בהעברה בנקאית לחשבון 1087434, בנק לאומי (10) סניף 739. עד 3 תשלומים ללא ריבית.";
+// Continue the SAME quote counter the HeavyGuard app uses (shared localStorage).
+const nextQuoteNumber = () => { try { let n = JSON.parse(localStorage.getItem("hg2:quoteseq") || "387"); n = (Number(n) || 387) + 1; localStorage.setItem("hg2:quoteseq", JSON.stringify(n)); return n; } catch { return Math.floor(Date.now() / 1000) % 100000; } };
 const monthKey = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 const telLink = (p) => `tel:${(p || "").replace(/\s/g, "")}`;
 const waLink = (phone, text) => { let p = (phone || "").replace(/\D/g, ""); if (p.startsWith("0")) p = "972" + p.slice(1); return `https://wa.me/${p}?text=${encodeURIComponent(text || "")}`; };
@@ -609,60 +616,64 @@ function DealEditor({ lead, deal, leads, onClose, onSave, showToast }) {
 }
 
 /* ============================ Designed (branded, printable) quote ============================ */
+// Designed quote — a 1:1 replica of the HeavyGuard app's QuoteView (same layout,
+// teal letterhead band, company block, table, totals, notes & payment lines).
 function DesignedQuote({ deal, onClose, showToast }) {
-  const qNo = useMemo(() => "HG-" + String(Math.floor(Date.now() / 1000) % 100000).padStart(5, "0"), []);
-  const valid = useMemo(() => { const d = new Date(); d.setDate(d.getDate() + 14); return d.toLocaleDateString("he-IL"); }, []);
-  const items = (deal.items || []).filter((i) => (i.desc || "").trim() || i.price);
+  const co = HG_COMPANY;
+  const number = useMemo(() => nextQuoteNumber(), []);
+  const date = todayISO();
+  const validUntil = useMemo(() => { const d = new Date(); d.setDate(d.getDate() + 7); return d.toISOString().slice(0, 10); }, []);
+  const lines = (deal.items || []).filter((i) => (i.desc || "").trim() || i.price).map((i) => ({ name: i.desc, qty: Number(i.qty) || 1, price: Number(i.price) || 0 }));
+  const vatRate = 18;
+  const notes = HG_QUOTE_NOTES.concat(deal.note ? [deal.note] : []);
+  const pay = HG_QUOTE_PAY;
+  const text = () => {
+    let t = `*הצעת מחיר מספר ${number}* — ${co.name}\nלכבוד: ${deal.name || ""}\nתאריך: ${dmy(date)}\nבתוקף עד: ${dmy(validUntil)}\n\n`;
+    lines.forEach((l) => { t += `• ${l.name}${l.qty > 1 ? " ×" + l.qty : ""} — ${ils(l.price * l.qty)}\n`; });
+    t += `\nסה"כ לפני מע"מ: ${ils(deal.subtotal)}\n*סה"כ כולל ${vatRate}% מע"מ: ${ils(deal.total)}*\n\n${pay}\n\n${co.name} · ${co.address} · נייד ${co.phone}`;
+    return t;
+  };
+  const copy = async () => { const ok = await copyText(text()); showToast(ok ? "ההצעה הועתקה" : "העתקה נכשלה"); };
   return (
     <div className="ag-modal" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="ag-sheet">
-        <div className="ag-sheet-head ag-quote-noprint"><b>הצעת מחיר מעוצבת</b><button onClick={onClose}><X size={20} /></button></div>
+        <div className="ag-sheet-head ag-quote-noprint"><b>הצעת מחיר · Heavy Guard</b><button onClick={onClose}><X size={20} /></button></div>
         <div className="ag-sheet-body">
-          <div className="ag-quote-doc">
-            <div className="ag-quote-top">
-              <img src={BULL_LOGO} className="ag-quote-logo" alt="" />
-              <div className="ag-quote-biz">
-                <div className="ag-quote-name">HEAVY GUARD</div>
-                <div className="ag-quote-tag">מערכות מיגון ובטיחות לרכב</div>
+          <div className="hg2-quotedoc" id="quotedoc">
+            <div className="hg2-qd-band">
+              <div className="hg2-qd-brand">
+                <img src={BULL_LOGO} alt="" className="hg2-qd-logo" />
+                <div className="hg2-qd-name">{co.brand}</div>
+                <div className="hg2-qd-co">עוסק מורשה {co.taxId}<br />נייד: {co.phone}<br />{co.address}</div>
               </div>
-              <div className="ag-quote-meta">
-                <div>הצעה <b>{qNo}</b></div>
-                <div>{todayISO()}</div>
+              <div className="hg2-qd-titlebox">
+                <div className="hg2-qd-title">הצעת מחיר</div>
+                <div className="hg2-qd-num">הצעת מחיר מספר {number}</div>
+                <div className="hg2-qd-meta"><b>לכבוד: {deal.name || "—"}</b></div>
+                <div className="hg2-qd-meta">תאריך: {dmy(date)}</div>
+                <div className="hg2-qd-meta">בתוקף עד: {dmy(validUntil)}</div>
               </div>
             </div>
-            <div className="ag-quote-to">
-              <span>לכבוד</span>
-              <b>{deal.name || "לקוח יקר"}</b>
-              {deal.phone && <em dir="ltr">{deal.phone}</em>}
-            </div>
-            <table className="ag-quote-table">
-              <thead><tr><th>פריט</th><th>כמות</th><th>מחיר</th><th>סה"כ</th></tr></thead>
-              <tbody>
-                {items.map((it, i) => {
-                  const q = Number(it.qty) || 1, pr = Number(it.price) || 0;
-                  return <tr key={i}><td>{it.desc}</td><td>{q}</td><td>{ils(pr)}</td><td>{ils(pr * q)}</td></tr>;
-                })}
-                {items.length === 0 && <tr><td colSpan={4} style={{ textAlign: "center", color: "#917E50" }}>אין פריטים</td></tr>}
-              </tbody>
+            <table className="hg2-qd-table">
+              <thead><tr><th>תיאור הפריט</th><th>מחיר ליחידה</th><th>כמות</th><th>סה"כ</th></tr></thead>
+              <tbody>{lines.map((l, i) => <tr key={i}><td>{l.name}</td><td>{ils(l.price)}</td><td>{l.qty}</td><td>{ils(l.price * l.qty)}</td></tr>)}</tbody>
             </table>
-            <div className="ag-quote-tot">
-              {deal.discount > 0 && <div><span>מחיר מלא</span><b>{ils(deal.gross)}</b></div>}
-              {deal.discount > 0 && <div className="ag-q-disc"><span>הנחה {deal.discountPct}%</span><b>−{ils(deal.discount)}</b></div>}
-              <div><span>סכום ביניים</span><b>{ils(deal.subtotal)}</b></div>
-              <div><span>מע"מ 18%</span><b>{ils(deal.vat)}</b></div>
-              <div className="grand"><span>סה"כ לתשלום</span><b>{ils(deal.total)}</b></div>
+            <div className="hg2-qd-sums">
+              <div><span>סה"כ לפני מע"מ</span><b>{ils(deal.subtotal)}</b></div>
+              <div className="tot"><span>סה"כ כולל {vatRate}% מע"מ</span><b>{ils(deal.total)}</b></div>
             </div>
-            {deal.note && <div className="ag-quote-note">{deal.note}</div>}
-            <div className="ag-quote-foot">
-              <div>הצעה זו בתוקף עד <b>{valid}</b></div>
-              <div className="ag-quote-sign">בברכה,<br /><b>איתי · Heavy Guard</b></div>
-            </div>
+            <div className="hg2-qd-sec">הערות:</div>
+            <ul className="hg2-qd-list">{notes.map((n, i) => <li key={i}>{n}</li>)}</ul>
+            <div className="hg2-qd-sec">דרכי תשלום:</div>
+            <div className="hg2-qd-pay">{pay}</div>
+            <div className="hg2-qd-foot">כאן לשירותכם וזמינים לשאלות ובירורים.</div>
+            <div className="hg2-qd-bottomband" />
           </div>
         </div>
         <div className="ag-sheet-foot ag-quote-noprint">
-          <button className="ag-btn ghost" onClick={() => { navigator.clipboard?.writeText(dealMessage(deal)); showToast("הטקסט הועתק"); }}><Copy size={15} /> העתק</button>
+          <button className="ag-btn ghost" onClick={copy}><Copy size={15} /> העתק</button>
           <button className="ag-btn" onClick={() => window.print()}><FileText size={15} /> הדפס / PDF</button>
-          {deal.phone && <a className="ag-btn wa" href={waLink(deal.phone, dealMessage(deal))} target="_blank" rel="noreferrer"><Send size={15} /> וואטסאפ</a>}
+          {deal.phone && <a className="ag-btn wa" href={waLink(deal.phone, text())} target="_blank" rel="noreferrer"><Send size={15} /> וואטסאפ</a>}
         </div>
       </div>
     </div>
@@ -732,6 +743,7 @@ function assistantReply(q, ctx) {
   const has = (...w) => w.some((x) => s.includes(x));
 
   if (!s || has("עזרה", "פקודות", "מה אתה", "?")) return { text: "אני העוזר של איתי 🤝 נסה: \"מעקבים להיום\", \"הצעות שנשלחו\", \"לידים חמים\", \"עסקאות פתוחות\", \"סיכום\", \"פתח מסלול\", \"הצעת מחיר חדשה\"." };
+  if (has("נסח", "הודעה", "וואטסאפ", "טקסט", "מה לכתוב")) return { text: `הצעה להודעת מעקב:\n"שלום, כאן איתי מ-${BIZ} 🛡️ רציתי לבדוק אם הספקתם לעבור על ההצעה למערכות המיגון לרכב. אשמח לענות על כל שאלה ולהתאים לכם פתרון. מתי נוח לדבר?"\n(להצעות חכמות ומותאמות — הוסף מפתח Groq חינמי בהגדרות.)` };
   if (has("מעקב", "לבדוק", "היום", "תזכור")) return { text: followups.length ? `יש ${followups.length} לידים שמחכים למעקב (3+ ימים ללא פנייה). הבולטים: ${followups.slice(0, 3).map((l) => l.n).join(" · ")}.` : "אין מעקבים דחופים כרגע — כל הכבוד! 👏", action: { label: "פתח לידים", run: () => go("leads") } };
   if (has("נשלח", "הצעות") || (has("הצעה") && !has("חדש", "צור"))) return { text: sent.length ? `${sent.length} הצעות מחיר ממתינות לתשובה. שווה לחזור אליהן: ${sent.slice(0, 3).map((l) => l.n).join(" · ")}.` : "אין כרגע הצעות שנשלחו וממתינות.", action: { label: "פתח לידים", run: () => go("leads") } };
   if (has("חם", "לוהט")) return { text: hot.length ? `${hot.length} לידים חמים (בתהליך/הצעה נשלחה). תעדף אותם: ${hot.slice(0, 4).map((l) => l.n).join(" · ")}.` : "אין כרגע לידים חמים.", action: { label: "פתח לידים", run: () => go("leads") } };
@@ -740,34 +752,102 @@ function assistantReply(q, ctx) {
   if (has("מסלול", "מפה", "נסיע", "פגיש")) return { text: "פותח את מפת העסקים — בחר עיר ואבנה לך מסלול פגישות יעיל. 🗺️", action: { label: "פתח מפה", run: () => go("map") } };
   if (has("הצעת מחיר", "חדש", "צור", "בנה הצעה")) { onNewDeal && onNewDeal(); return { text: "פתחתי עסקה חדשה — בחר פריטים מהמחירון והוסף הנחה אם צריך. 📝" }; }
   if (has("סיכום", "דוח", "מצב", "בוקר טוב", "מה המצב")) return { text: `סיכום: ${leads.length.toLocaleString()} לידים · ${followups.length} מעקבים להיום · ${sent.length} הצעות ממתינות · ${open.length} עסקאות פתוחות (${ils(openVal)}) · ${custs.length} לקוחות.` };
-  return { text: "לא הבנתי את הפקודה. כתוב \"עזרה\" כדי לראות מה אני יודע לעשות." };
+  return { text: "לא הבנתי את הפקודה. כתוב \"עזרה\" כדי לראות מה אני יודע לעשות. (טיפ: עם מפתח Groq חינמי אני הופך ל-AI מלא.)" };
 }
 const ASSIST_QUICK = ["מעקבים להיום", "הצעות שנשלחו", "לידים חמים", "עסקאות פתוחות", "סיכום", "פתח מסלול"];
 
+/* ── Free AI brain via Groq (same key as the Alpha app, shared localStorage).
+   When a key exists the assistant becomes a real AI that knows the live CRM
+   and can draft messages, handle objections, prioritise and navigate. ── */
+const groqKey = () => { try { return localStorage.getItem("alpha_groq") || ""; } catch { return ""; } };
+const hasAI = () => !!groqKey();
+function assistSystem({ leads, deals, custs }) {
+  const open = deals.filter((d) => d.status === "פתוח");
+  const openVal = open.reduce((a, d) => a + (d.total || 0), 0);
+  const wonMonth = deals.filter((d) => d.status === "נסגר" && (d.wonAt || "").startsWith(monthKey()));
+  const fu = leads.filter((l) => ["פנייה ראשונה", "בתהליך"].includes(l.crmStatus) && daysSince((l.outreach || [])[0]?.date) >= 3).length;
+  const sent = leads.filter((l) => l.crmStatus === "הצעה נשלחה").length;
+  const hot = leads.filter((l) => ["בתהליך", "הצעה נשלחה"].includes(l.crmStatus)).length;
+  const pl = loadHgPricelist().map((p) => `${p.name} ₪${p.price}`).join(", ");
+  return `אתה העוזר האישי החכם של איתי — איש מכירות בכיר ב-${BIZ} (מערכות מיגון, איתור ובטיחות לרכבים כבדים: איתוראן, מצלמות רוורס, מסכים חכמים, פוינטר רב-קודן וכו'). דבר עברית טבעית, קצרה וממוקדת מכירות, בטון מקצועי, אנרגטי וחם. אתה עוזר ב: ניסוח הודעות מעקב/וואטסאפ ללקוח, טיפול בהתנגדויות מחיר, ניסוח הצעות ותמחור, תעדוף לידים, בניית תוכנית יום, וטיפים לסגירת עסקאות. כשרלוונטי תן צעד פעולה קונקרטי אחד.
+היום ${todayISO()}. נתוני ה-CRM החיים של איתי: ${leads.length.toLocaleString()} לידים, ${fu} מעקבים להיום, ${sent} הצעות שנשלחו וממתינות, ${hot} לידים חמים, ${open.length} עסקאות פתוחות בשווי ${ils(openVal)}, נסגרו החודש ${wonMonth.length}, ${custs.length} לקוחות.
+מחירון Heavy Guard: ${pl}.
+אם המשתמש מבקש לנווט במערכת, הוסף בסוף התשובה תג מתאים (ואל תזכיר אותו בטקסט): [[GO:home]] לבקרה, [[GO:leads]] ללידים, [[GO:deals]] לעסקאות, [[GO:custs]] ללקוחות, [[GO:map]] למפה/מסלולים, [[NEWDEAL]] לפתיחת הצעת מחיר חדשה.`;
+}
+const TAGRE = /\[\[(GO:(?:home|leads|deals|custs|map)|NEWDEAL)\]\]/g;
+function applyAssistTags(text, { go, onNewDeal }) {
+  let m; TAGRE.lastIndex = 0;
+  while ((m = TAGRE.exec(text))) { const tag = m[1]; if (tag === "NEWDEAL") onNewDeal && onNewDeal(); else go(tag.split(":")[1]); }
+  return text.replace(TAGRE, "").trim();
+}
+async function askGroqChat(system, history, user) {
+  const key = groqKey(); if (!key) throw new Error("NO_KEY");
+  const messages = [{ role: "system", content: system }, ...history.slice(-6), { role: "user", content: user }];
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+    body: JSON.stringify({ model: "llama-3.3-70b-versatile", messages, temperature: 0.7, max_tokens: 700 }),
+  });
+  if (!res.ok) throw new Error("Groq " + res.status);
+  const d = await res.json();
+  return d.choices?.[0]?.message?.content?.trim() || "";
+}
+
 function AssistantPanel({ leads, deals, custs, go, onNewDeal, showToast }) {
-  const [log, setLog] = useState([{ from: "bot", text: "שלום איתי 👋 אני העוזר הדיגיטלי שלך. במה לעזור? כתוב \"עזרה\" לרשימת פקודות." }]);
+  const ai = hasAI();
+  const welcome = ai
+    ? "שלום איתי 👋 אני העוזר החכם שלך (AI). אני מכיר את נתוני ה-CRM שלך — בקש ממני לנסח הודעת מעקב, לטפל בהתנגדות מחיר, לתעדף לידים, לבנות תוכנית יום או כל שאלת מכירות."
+    : "שלום איתי 👋 אני העוזר הדיגיטלי שלך. כרגע אני במצב פקודות מהירות. כדי לפתוח AI חכם וחינמי — הוסף מפתח Groq בהגדרות של Alpha (חינם, בלי כרטיס). כתוב \"עזרה\" לפקודות.";
+  const [log, setLog] = useState([{ from: "bot", text: welcome }]);
   const [q, setQ] = useState("");
-  const run = (text) => {
+  const [busy, setBusy] = useState(false);
+  const histRef = React.useRef([]);
+
+  const push = (entry) => setLog((p) => [...p.slice(-8), entry]);
+
+  // Instant rule-based (quick chips + offline fallback)
+  const runRule = (text) => {
     const t = (text ?? q).trim(); if (!t) return;
+    push({ from: "me", text: t });
     const r = assistantReply(t, { leads, deals, custs, go, onNewDeal });
-    setLog((p) => [...p.slice(-6), { from: "me", text: t }, { from: "bot", text: r.text, action: r.action }]);
+    push({ from: "bot", text: r.text, action: r.action });
     setQ("");
   };
+
+  // Smart AI path (Groq, free) for free-typed questions; falls back to rules
+  const runAsk = async () => {
+    const t = q.trim(); if (!t || busy) return;
+    push({ from: "me", text: t }); setQ("");
+    if (!ai) { const r = assistantReply(t, { leads, deals, custs, go, onNewDeal }); push({ from: "bot", text: r.text, action: r.action }); return; }
+    setBusy(true);
+    try {
+      const sys = assistSystem({ leads, deals, custs });
+      const reply = await askGroqChat(sys, histRef.current, t);
+      const clean = applyAssistTags(reply, { go, onNewDeal }) || "✔";
+      histRef.current = [...histRef.current.slice(-6), { role: "user", content: t }, { role: "assistant", content: reply }];
+      push({ from: "bot", text: clean });
+    } catch (e) {
+      const r = assistantReply(t, { leads, deals, custs, go, onNewDeal });
+      push({ from: "bot", text: (String(e.message).includes("Groq") ? "ה-AI עמוס כרגע, עניתי במצב מהיר: " : "") + r.text, action: r.action });
+    } finally { setBusy(false); }
+  };
+
   return (
     <div className="ag-assist">
-      <div className="ag-assist-h"><span className="ag-assist-orb" /> <b>עוזר דיגיטלי</b><i>ללא AI · פקודות מהירות</i></div>
+      <div className="ag-assist-h"><span className="ag-assist-orb" /> <b>עוזר אישי</b><i>{ai ? "AI חינם · Groq" : "פקודות מהירות"}</i></div>
       <div className="ag-assist-log">
         {log.map((m, i) => (
           <div key={i} className={"ag-msg " + m.from}>
             <span>{m.text}</span>
             {m.action && <button className="ag-msg-act" onClick={() => m.action.run()}>{m.action.label} ←</button>}
+            {m.from === "bot" && i > 0 && <button className="ag-msg-copy" title="העתק" onClick={async () => { const ok = await copyText(m.text); showToast && showToast(ok ? "הועתק ✓" : "העתקה נכשלה"); }}><Copy size={12} /></button>}
           </div>
         ))}
+        {busy && <div className="ag-msg bot ag-typing"><span>חושב…</span></div>}
       </div>
-      <div className="ag-assist-quick">{ASSIST_QUICK.map((c) => <button key={c} onClick={() => run(c)}>{c}</button>)}</div>
+      <div className="ag-assist-quick">{ASSIST_QUICK.map((c) => <button key={c} onClick={() => runRule(c)}>{c}</button>)}</div>
       <div className="ag-assist-in">
-        <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && run()} placeholder="כתוב פקודה…" dir="rtl" />
-        <button onClick={() => run()}><Send size={16} /></button>
+        <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && runAsk()} placeholder={ai ? "שאל אותי כל דבר על מכירות…" : "כתוב פקודה…"} dir="rtl" disabled={busy} />
+        <button onClick={runAsk} disabled={busy}><Send size={16} /></button>
       </div>
     </div>
   );
@@ -1094,7 +1174,11 @@ function StyleTag() {
 .ag-msg{font-size:13px;line-height:1.5;padding:8px 11px;border-radius:11px;max-width:92%}
 .ag-msg.bot{background:var(--s8);border:1px solid var(--s7);color:var(--silver);align-self:flex-start;border-top-right-radius:3px}
 .ag-msg.me{background:linear-gradient(135deg,var(--gold),var(--gold2));color:#241A06;align-self:flex-end;font-weight:700;border-top-left-radius:3px}
+.ag-msg.bot{position:relative;padding-left:26px;white-space:pre-wrap}
 .ag-msg-act{display:block;margin-top:6px;background:var(--champ);color:#fff;border:none;border-radius:8px;padding:6px 11px;font-family:inherit;font-weight:700;font-size:12px;cursor:pointer}
+.ag-msg-copy{position:absolute;top:5px;left:5px;background:none;border:none;color:var(--s4);cursor:pointer;opacity:.55;padding:2px;display:flex}
+.ag-msg-copy:hover{opacity:1;color:var(--gold2)}
+.ag-typing span{opacity:.7;font-style:italic}
 .ag-assist-quick{display:flex;gap:6px;overflow-x:auto;padding-bottom:7px;margin-bottom:9px;scrollbar-width:none}
 .ag-assist-quick::-webkit-scrollbar{display:none}
 .ag-assist-quick button{flex-shrink:0;background:var(--s9);border:1px solid var(--gold);color:var(--gold2);border-radius:20px;padding:6px 13px;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
@@ -1127,35 +1211,37 @@ function StyleTag() {
 .ag-phone-btn.me,.ag-person-btn.me{color:var(--gold2);border-color:var(--gold);background:#FBF3DF}
 .ag-wa.me{background:#FBF3DF;border:1px solid var(--gold);color:var(--gold2);cursor:pointer}
 
-/* designed printable quote */
-.ag-quote-doc{background:#fff;border:1px solid var(--s7);border-radius:14px;padding:18px;color:#2C2510;box-shadow:0 10px 30px rgba(120,90,20,.12)}
-.ag-quote-top{display:flex;align-items:center;gap:11px;border-bottom:2px solid var(--gold);padding-bottom:12px}
-.ag-quote-logo{width:50px;height:50px;border-radius:10px;object-fit:cover;flex-shrink:0}
-.ag-quote-biz{flex:1;min-width:0}
-.ag-quote-name{font-family:'Rubik';font-weight:900;font-size:21px;letter-spacing:.5px;color:var(--gold2)}
-.ag-quote-tag{font-size:11.5px;color:var(--s4)}
-.ag-quote-meta{text-align:left;font-size:11.5px;color:var(--s4)}
-.ag-quote-meta b{color:#2C2510;font-family:'Rubik'}
-.ag-quote-to{display:flex;align-items:baseline;gap:8px;margin:12px 0;flex-wrap:wrap}
-.ag-quote-to span{font-size:12px;color:var(--s4)}
-.ag-quote-to b{font-size:16px;font-family:'Rubik';font-weight:900}
-.ag-quote-to em{font-style:normal;color:var(--s4);font-size:13px}
-.ag-quote-table{width:100%;border-collapse:collapse;margin-top:6px;font-size:13px}
-.ag-quote-table th{background:var(--s8);color:var(--gold2);font-weight:700;padding:8px 10px;text-align:right;border-bottom:1px solid var(--s7)}
-.ag-quote-table td{padding:8px 10px;border-bottom:1px solid #efe4c8}
-.ag-quote-table th:nth-child(n+2),.ag-quote-table td:nth-child(n+2){text-align:center;white-space:nowrap}
-.ag-quote-tot{margin-top:12px;margin-right:auto;width:60%;min-width:220px}
-.ag-quote-tot div{display:flex;justify-content:space-between;padding:5px 0;font-size:13.5px;color:var(--s4)}
-.ag-quote-tot b{color:#2C2510;font-family:'Rubik';font-weight:700}
-.ag-quote-tot .grand{border-top:2px solid var(--gold);margin-top:5px;padding-top:9px;font-size:17px}
-.ag-quote-tot .grand span,.ag-quote-tot .grand b{color:var(--gold2);font-weight:900}
-.ag-quote-note{margin-top:12px;background:var(--s8);border-radius:9px;padding:10px 12px;font-size:12.5px;color:#5a4d28;line-height:1.5}
-.ag-quote-foot{display:flex;justify-content:space-between;align-items:flex-end;margin-top:16px;padding-top:12px;border-top:1px solid #efe4c8;font-size:12px;color:var(--s4)}
-.ag-quote-sign{text-align:left;color:#2C2510}
+/* designed quote — 1:1 with the HeavyGuard app (hg2-qd-*) */
+.hg2-quotedoc{background:#fff;color:#1b2733;border-radius:14px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,.4)}
+.hg2-qd-band{display:flex;gap:14px;background:linear-gradient(135deg,#bfe3e6,#d6eef0);padding:20px 18px}
+.hg2-qd-brand{text-align:center;flex-shrink:0;width:118px}
+.hg2-qd-logo{width:84px;height:84px;object-fit:contain;margin:0 auto}
+.hg2-qd-name{font-family:'Rubik',sans-serif;font-weight:900;font-size:18px;color:#16313a;margin-top:4px;letter-spacing:.5px}
+.hg2-qd-co{font-size:10.5px;line-height:1.7;color:#2c4a52;margin-top:5px}
+.hg2-qd-titlebox{flex:1;text-align:right;padding-top:4px}
+.hg2-qd-title{font-family:'Rubik';font-weight:900;font-size:30px;color:#16313a;line-height:1}
+.hg2-qd-num{font-size:13px;color:#2c4a52;margin:4px 0 12px}
+.hg2-qd-meta{font-size:13px;color:#1b2733;line-height:1.7}
+.hg2-qd-meta b{font-size:15px}
+.hg2-qd-table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:4px}
+.hg2-qd-table th{color:#5a6b78;font-weight:700;padding:11px 10px;text-align:right;border-bottom:1.5px solid #cfd8e0}
+.hg2-qd-table th:nth-child(n+2),.hg2-qd-table td:nth-child(n+2){text-align:center}
+.hg2-qd-table td{padding:13px 10px;border-bottom:1px solid #eef1f5;font-family:ui-monospace,monospace;vertical-align:top}
+.hg2-qd-table td:first-child{font-family:'Heebo',sans-serif;font-weight:600;text-align:right;line-height:1.5}
+.hg2-qd-sums{padding:4px 10px}
+.hg2-qd-sums>div{display:flex;justify-content:space-between;align-items:center;padding:7px 0;font-size:13.5px;font-weight:700;color:#1b2733}
+.hg2-qd-sums>div b{font-family:ui-monospace,monospace}
+.hg2-qd-sums .tot{border-top:1px solid #e3e8ee;font-size:15px}
+.hg2-qd-sums .tot b{color:#0e7d8c;font-size:17px}
+.hg2-qd-sec{padding:14px 10px 4px;font-size:13px;font-weight:700;text-decoration:underline;color:#1b2733}
+.hg2-qd-list{margin:0;padding:0 28px 0 10px;font-size:12.5px;color:#2c4a52;line-height:1.9}
+.hg2-qd-pay{padding:2px 10px;font-size:12.5px;color:#2c4a52;line-height:1.6}
+.hg2-qd-foot{text-align:center;font-size:12.5px;color:#5a6b78;padding:16px 10px}
+.hg2-qd-bottomband{height:18px;background:linear-gradient(135deg,#bfe3e6,#d6eef0)}
 @media print{
   body *{visibility:hidden!important}
-  .ag-quote-doc,.ag-quote-doc *{visibility:visible!important}
-  .ag-quote-doc{position:absolute;inset:0;margin:0;border:none;box-shadow:none;border-radius:0}
+  .hg2-quotedoc,.hg2-quotedoc *{visibility:visible!important}
+  .hg2-quotedoc{position:absolute;inset:0;margin:0;box-shadow:none;border-radius:0}
   .ag-quote-noprint{display:none!important}
 }
 `}</style>;
