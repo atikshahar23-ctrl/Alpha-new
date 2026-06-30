@@ -3090,7 +3090,11 @@ html.perf-lite .topR { will-change: auto !important; transform: none !important;
   /* single full-width column in a contained, scrollable region between the rail
      and the conversation strip — panels span the screen (not split to the sides),
      never clipped, never overlapping the chat/dock. */
-  .hud-cols { display: flex; flex-direction: column; gap: 8px; position: absolute; left: 10px; right: 10px; top: 104px; bottom: 150px; overflow-y: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; pointer-events: auto; }
+  /* Panels sit in a contained scroll region BELOW the shortcut rail (which is at
+     ~92px + its own height) and ABOVE the output strip + dock — so the first
+     card's header is never hidden by the chips and the last card never collides
+     with the 'פלט' output / FAB. */
+  .hud-cols { display: flex; flex-direction: column; gap: 8px; position: absolute; left: 10px; right: 10px; top: calc(var(--safe-top, 0px) + 140px); bottom: calc(13vh + 160px); overflow-y: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; pointer-events: auto; }
   .hud-cols::-webkit-scrollbar { display: none; }
   .hud-col { position: static; inset: auto; top: auto; bottom: auto; transform: none; flex-direction: column; width: auto; gap: 8px; }
   .hud-col.fleet { display: flex; }
@@ -3113,7 +3117,7 @@ html.perf-lite .topR { will-change: auto !important; transform: none !important;
   .app .right-panel { bottom: 150px; max-height: 13vh; }
 }
 @media (max-width: 380px) {
-  .hud-cols { bottom: 150px; }
+  .hud-cols { bottom: calc(13vh + 158px); }
   .hud-stat span, .hud-card-h span { font-size: 8.5px; }
 }
 html.perf-lite .hud-card, html.perf-lite .hud-sc { -webkit-backdrop-filter: none; backdrop-filter: none; background: rgba(14,11,6,.92); }
