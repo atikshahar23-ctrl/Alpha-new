@@ -80,6 +80,41 @@ async function ghCreateIssue(title, body) {
   return res.json();
 }
 
+/* ── Free execution engine: דן writes real code & opens a PR via the GitHub
+   API (free PAT + free Groq). Always targets a NEW branch + PR, never main. ── */
+const GH_API = "https://api.github.com";
+async function ghReq(path, opts = {}) {
+  const c = ghCfg(); if (!c.token) throw new Error("NO_TOKEN");
+  const res = await fetch(GH_API + path, { ...opts, headers: { Authorization: `Bearer ${c.token}`, Accept: "application/vnd.github+json", "Content-Type": "application/json", ...(opts.headers || {}) } });
+  if (!res.ok) { let t = ""; try { t = await res.text(); } catch {} throw new Error("GH " + res.status + (t ? ": " + t.slice(0, 100) : "")); }
+  return res.status === 204 ? null : res.json();
+}
+const ghPath = (c, p) => `/repos/${c.owner}/${c.repo}/contents/${p.split("/").map(encodeURIComponent).join("/")}`;
+const b64enc = (s) => btoa(unescape(encodeURIComponent(s)));
+const b64dec = (s) => { try { return decodeURIComponent(escape(atob((s || "").replace(/\n/g, "")))); } catch { return atob((s || "").replace(/\n/g, "")); } };
+async function ghGetFile(p, ref) { const c = ghCfg(); try { const r = await ghReq(ghPath(c, p) + `?ref=${encodeURIComponent(ref)}`); return { content: b64dec(r.content), sha: r.sha }; } catch (e) { if (String(e.message).includes("404")) return null; throw e; } }
+async function ghDefaultBranch() { const c = ghCfg(); const r = await ghReq(`/repos/${c.owner}/${c.repo}`); return r.default_branch || "main"; }
+async function ghCreateBranch(base, name) { const c = ghCfg(); const ref = await ghReq(`/repos/${c.owner}/${c.repo}/git/ref/heads/${base}`); try { await ghReq(`/repos/${c.owner}/${c.repo}/git/refs`, { method: "POST", body: JSON.stringify({ ref: `refs/heads/${name}`, sha: ref.object.sha }) }); } catch (e) { if (!String(e.message).includes("422")) throw e; } }
+async function ghPutFile(p, content, message, branch, sha) { const c = ghCfg(); return ghReq(ghPath(c, p), { method: "PUT", body: JSON.stringify({ message, content: b64enc(content), branch, ...(sha ? { sha } : {}) }) }); }
+async function ghOpenPR(base, head, title, body) { const c = ghCfg(); return ghReq(`/repos/${c.owner}/${c.repo}/pulls`, { method: "POST", body: JSON.stringify({ title, head, base, body }) }); }
+async function devExecute({ filePath, instruction, title }) {
+  if (!ghConfigured()) throw new Error("חבר טוקן GitHub בהגדרות");
+  if (!hasAI()) throw new Error("צריך מפתח Groq (חינם) בהגדרות");
+  const base = await ghDefaultBranch();
+  const existing = await ghGetFile(filePath, base);
+  const sys = `אתה דן, מפתח. עליך להחזיר אך ורק את התוכן המלא והחדש של הקובץ "${filePath}" לאחר ביצוע השינוי. בלי הסברים, בלי טקסט נוסף, בלי גדרות קוד.`;
+  const userMsg = existing
+    ? `תוכן נוכחי של ${filePath}:\n\n${existing.content}\n\n---\nבצע: ${instruction}\nהחזר את הקובץ המלא המעודכן.`
+    : `צור קובץ חדש ${filePath} עבור: ${instruction}\nהחזר את תוכן הקובץ המלא בלבד.`;
+  let code = await askGroq(sys, [], userMsg);
+  code = code.replace(/^```[a-zA-Z0-9]*\n?/, "").replace(/\n?```\s*$/, "").trim() + "\n";
+  const slug = (filePath.split("/").pop() || "file").replace(/[^a-zA-Z0-9]+/g, "-").toLowerCase();
+  const branch = `agents/${slug}-${Date.now().toString(36).slice(-5)}`;
+  await ghCreateBranch(base, branch);
+  await ghPutFile(filePath, code, `דן: ${title}`, branch, existing && existing.sha);
+  return ghOpenPR(base, branch, `דן: ${title}`, `${instruction}\n\n_בוצע אוטומטית ע"י מרכז הסוכנים (דן) · נפתח כ-PR לבדיקה לפני מיזוג._`);
+}
+
 /* ── Dev brief generation (Leo turns a request into an actionable spec) ── */
 function devBriefSystem() {
   return `אתה דן, המפתח הראשי של הצוות. צור בריף פיתוח מקצועי, קצר ומדויק עבור משימה במאגר הקוד.
@@ -684,9 +719,31 @@ function DevConsole({ logActivity, showToast }) {
   const [req, setReq] = useState("");
   const [brief, setBrief] = useState("");
   const [busy, setBusy] = useState(false);
+  const [filePath, setFilePath] = useState("");
+  const [execBusy, setExecBusy] = useState(false);
   const [tasks, setTasks] = useState(() => load(K_DEVTASKS, []));
   const [gh, setGh] = useState(ghConfigured());
   useEffect(() => save(K_DEVTASKS, tasks), [tasks]);
+
+  const execute = async () => {
+    const path = filePath.trim();
+    const instruction = (brief || req).trim();
+    if (!path) { showToast("הזן נתיב קובץ לביצוע (למשל agents/App.jsx)"); return; }
+    if (!instruction) { showToast("תאר מה לבנות"); return; }
+    if (execBusy) return;
+    setExecBusy(true);
+    logActivity("dev", "מבצע קוד אוטומטית: " + path);
+    try {
+      const title = briefTitle(brief || req, req).slice(0, 60);
+      const pr = await devExecute({ filePath: path, instruction, title });
+      const tk = { id: uid(), title, brief: instruction, status: "sent", issueUrl: pr.html_url, ts: now() };
+      setTasks((p) => [tk, ...p]);
+      logActivity("dev", "פתח PR אוטומטי: #" + pr.number);
+      showToast("✓ דן כתב את הקוד ופתח PR — בדוק ומזג");
+    } catch (e) {
+      showToast("ביצוע נכשל: " + String(e.message).slice(0, 70));
+    } finally { setExecBusy(false); }
+  };
 
   const genBrief = async () => {
     const t = req.trim(); if (!t || busy) return;
@@ -744,6 +801,16 @@ function DevConsole({ logActivity, showToast }) {
       <button className="ac-dev-gen" onClick={genBrief} disabled={busy || !req.trim()}>
         {busy ? <><RefreshCw size={16} className="ac-spin" /> דן עובד…</> : <><Code2 size={16} /> נסח בריף פיתוח</>}
       </button>
+
+      <div className="ac-dev-exec">
+        <div className="ac-dev-exec-h"><Terminal size={14} /> ביצוע אוטומטי · חינם <span>דן כותב את הקוד ופותח PR</span></div>
+        <input className="ac-dev-path" value={filePath} onChange={(e) => setFilePath(e.target.value)} placeholder="נתיב הקובץ · למשל agents/App.jsx או src/style.css" dir="ltr" />
+        <button className="ac-dev-execbtn" onClick={execute} disabled={execBusy || !gh}>
+          {execBusy ? <><RefreshCw size={16} className="ac-spin" /> דן כותב קוד ופותח PR…</> : <><Rocket size={16} /> בצע ופתח PR (חינם)</>}
+        </button>
+        {!gh && <div className="ac-dev-exec-note">חבר טוקן GitHub חינמי בהגדרות כדי להפעיל ביצוע אוטומטי</div>}
+        {gh && <div className="ac-dev-exec-note">💡 עובד הכי טוב על קבצים קטנים/חדשים. נפתח תמיד כ-PR לבדיקה — לא נוגע ב-main ישירות.</div>}
+      </div>
 
       {brief && (
         <div className="ac-dev-brief">
@@ -1169,6 +1236,14 @@ function StyleTag() {
 .ac-dev-in:focus{border-color:rgba(255,140,66,.5);box-shadow:0 0 0 3px rgba(255,140,66,.1)}
 .ac-dev-gen{width:100%;display:flex;align-items:center;justify-content:center;gap:8px;background:linear-gradient(135deg,#FF8C42,#C75A12);color:#fff;border:none;border-radius:13px;padding:14px;font-family:'Rubik';font-weight:900;font-size:15px;cursor:pointer;box-shadow:0 6px 24px rgba(255,140,66,.3);margin-bottom:16px}
 .ac-dev-gen:disabled{opacity:.5;cursor:not-allowed}
+.ac-dev-exec{background:linear-gradient(160deg,rgba(10,20,16,.95),rgba(6,12,10,.96));border:1px solid rgba(63,215,154,.32);border-radius:15px;padding:13px;margin-bottom:16px;box-shadow:0 6px 24px rgba(0,40,25,.35)}
+.ac-dev-exec-h{display:flex;align-items:center;gap:7px;font-family:'Rubik';font-weight:900;font-size:13.5px;color:#3FD79A;margin-bottom:10px}
+.ac-dev-exec-h span{font-weight:400;font-size:11px;color:var(--s4);margin-right:auto}
+.ac-dev-path{width:100%;background:var(--s9);border:1px solid var(--s7);color:var(--silver);border-radius:11px;padding:11px 13px;font-family:ui-monospace,monospace;font-size:13px;outline:none;margin-bottom:9px;direction:ltr;text-align:left}
+.ac-dev-path:focus{border-color:rgba(63,215,154,.5);box-shadow:0 0 0 3px rgba(63,215,154,.1)}
+.ac-dev-execbtn{width:100%;display:flex;align-items:center;justify-content:center;gap:8px;background:linear-gradient(135deg,#3FD79A,#1f9d6a);color:#04140d;border:none;border-radius:12px;padding:13px;font-family:'Rubik';font-weight:900;font-size:14.5px;cursor:pointer;box-shadow:0 6px 22px rgba(63,215,154,.3)}
+.ac-dev-execbtn:disabled{opacity:.5;cursor:not-allowed}
+.ac-dev-exec-note{font-size:11px;color:var(--s4);margin-top:9px;line-height:1.5}
 .ac-dev-brief{background:linear-gradient(160deg,rgba(16,14,32,.97),rgba(8,8,18,.98));border:1px solid rgba(255,140,66,.3);border-radius:15px;overflow:hidden;margin-bottom:8px;box-shadow:0 8px 30px rgba(0,0,0,.45)}
 .ac-dev-brief-h{display:flex;align-items:center;gap:8px;padding:12px 14px;font-family:'Rubik';font-weight:800;font-size:13px;color:#FF9D5C;border-bottom:1px solid rgba(255,140,66,.2);background:rgba(255,140,66,.06)}
 .ac-dev-brief-body{padding:14px;font-family:'Heebo',sans-serif;font-size:13px;line-height:1.7;color:var(--silver);white-space:pre-wrap;word-break:break-word;margin:0;max-height:340px;overflow-y:auto;direction:rtl}
