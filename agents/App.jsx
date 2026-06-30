@@ -4,6 +4,7 @@ import {
   Send, X, Sparkles, Activity, Lightbulb, LayoutGrid, Settings as SettingsIcon,
   Copy, Check, Circle, Zap, ChevronLeft, MessageSquare, Plus, Trash2, RefreshCw,
   ArrowUpRight, Bot, Radio, Brain, Rocket, ShieldCheck, ClipboardList,
+  GitBranch, Terminal, FileCode2,
 } from "lucide-react";
 
 /* ════════════════════════════════════════════════════════════════════
@@ -19,6 +20,8 @@ import {
 const K_HIST = "alpha:agents:hist";     // { [agentId]: [{from,text,ts}] }
 const K_IDEAS = "alpha:agents:ideas";   // [{id, agentId, text, status, ts}]
 const K_ACT = "alpha:agents:activity";  // [{id, agentId, text, ts}]
+const K_GH = "alpha:agents:gh";         // { token, owner, repo } — token stays local-only
+const K_DEVTASKS = "alpha:agents:devtasks"; // [{id, title, brief, status, issueUrl, ts}]
 const load = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } };
 const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -50,6 +53,61 @@ async function askGroq(system, history, user) {
     if (res.status === 401 || res.status === 403) break;
   }
   throw new Error("Groq " + lastCode);
+}
+
+/* ── The actual codebase the dev agent works on ── */
+const REPO_DEFAULT = { owner: "atikshahar23-ctrl", repo: "alpha-new" };
+const REPO_CONTEXT = `המאגר: atikshahar23-ctrl/alpha-new (Vite + React + TypeScript, RTL עברית, פריסה ב-GitHub Pages תחת base /Alpha-new/).
+האפליקציות במאגר:
+- index.html + src/ui/app.ts + src/style.css — אפליקציית Alpha הראשית (three.js, אורב תלת-ממד, HUD, dock).
+- agent.html + agent/App.jsx — ה-CRM של איתי (לידים, עסקאות, showroom, טופס סמסוניקס).
+- heavyguard.html + heavyguard/App.jsx — מערכת HeavyGuard OS.
+- agents.html + agents/App.jsx — מרכז הסוכנים (האפליקציה הזו).
+עיצוב: זכוכית כהה + זהב, אנימציות, CSS inline ב-StyleTag או ב-src/style.css.
+בנייה: npm run build. אסור לשמור פרטי אשראי/CVV.`;
+
+/* ── GitHub bridge (optional) — token stays in localStorage, never committed ── */
+const ghCfg = () => { const c = load(K_GH, {}); return { token: c.token || "", owner: c.owner || REPO_DEFAULT.owner, repo: c.repo || REPO_DEFAULT.repo }; };
+const ghConfigured = () => !!ghCfg().token;
+async function ghCreateIssue(title, body) {
+  const c = ghCfg(); if (!c.token) throw new Error("NO_TOKEN");
+  const res = await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}/issues`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${c.token}`, Accept: "application/vnd.github+json", "Content-Type": "application/json" },
+    body: JSON.stringify({ title, body }),
+  });
+  if (!res.ok) throw new Error("GH " + res.status);
+  return res.json();
+}
+
+/* ── Dev brief generation (Leo turns a request into an actionable spec) ── */
+function devBriefSystem() {
+  return `אתה ליאו, המפתח הראשי של הצוות. צור בריף פיתוח מקצועי, קצר ומדויק עבור משימה במאגר הקוד.
+${REPO_CONTEXT}
+החזר בעברית בלבד, בפורמט המדויק הזה (בלי קוד מלא — רק תיאור מה לבנות):
+כותרת: <שורה אחת קצרה>
+תיאור: <2-3 שורות>
+קבצים מושפעים: <רשימת קבצים סבירה מהמאגר>
+צעדי מימוש: <1. 2. 3.>
+קריטריוני קבלה: <איך נדע שזה עובד>`;
+}
+function devBriefFallback(req) {
+  return `כותרת: ${req.slice(0, 60)}
+תיאור: ${req}
+קבצים מושפעים: (השלם ידנית — למשל agent/App.jsx / agents/App.jsx / src/ui/app.ts / src/style.css)
+צעדי מימוש:
+1. לאתר את הרכיב/המסך הרלוונטי במאגר.
+2. לממש את השינוי בהתאם לעיצוב הקיים (זכוכית כהה + זהב).
+3. npm run build ולוודא שאין שגיאות.
+קריטריוני קבלה: התכונה עובדת חי, ה-build עובר, נדחף לברנצ'ים.
+(חבר מפתח Groq בהגדרות כדי שליאו ינסח בריף חכם ומלא.)`;
+}
+function briefTitle(brief, fallback) {
+  const m = brief.match(/כותרת:\s*(.+)/);
+  return (m ? m[1] : (brief.split("\n")[0] || fallback)).trim().slice(0, 90);
+}
+function claudePrompt(brief) {
+  return `במאגר ${REPO_DEFAULT.owner}/${REPO_DEFAULT.repo}, בצע את משימת הפיתוח הבאה:\n\n${brief}\n\nממש לפי העיצוב הקיים, הרץ npm run build, ודחוף לשני הברנצ'ים (claude/live-simulation-white-screen-hmclr4 ו-main).`;
 }
 
 /* ── The team ──────────────────────────────────────────────────────── */
@@ -161,6 +219,8 @@ AGENTS.forEach((a) => {
   const p = FACE_PARAMS[a.id] || FACE_PARAMS.sales;
   a.avatar = "data:image/svg+xml;utf8," + encodeURIComponent(facePortrait(p, a.color));
 });
+// Leo (dev) is wired to the real codebase — give him repo context so he's accurate.
+{ const leo = byId("dev"); if (leo) leo.persona += "\n" + REPO_CONTEXT; }
 function Face({ agent, fallback = 20 }) {
   const [err, setErr] = useState(false);
   if (err || !agent.avatar) { const I = agent.Icon; return <I size={fallback} />; }
@@ -235,6 +295,7 @@ export default function App() {
         )}
         {view === "activity" && <ActivityView activity={activity} />}
         {view === "ideas" && <IdeasView ideas={ideas} setIdeas={setIdeas} showToast={showToast} />}
+        {view === "dev" && <DevConsole logActivity={logActivity} showToast={showToast} />}
         {view === "settings" && <SettingsView showToast={showToast} />}
       </div>
 
@@ -278,6 +339,7 @@ function TopBar({ online }) {
 function BottomNav({ view, setView, ideasCount }) {
   const items = [
     { id: "roster", label: "הצוות", Icon: LayoutGrid },
+    { id: "dev", label: "פיתוח", Icon: Terminal },
     { id: "activity", label: "פעילות", Icon: Activity },
     { id: "ideas", label: "רעיונות", Icon: Lightbulb, badge: ideasCount },
     { id: "settings", label: "הגדרות", Icon: SettingsIcon },
@@ -557,17 +619,137 @@ const nextCol = (c) => COL_ORDER[Math.min(COL_ORDER.indexOf(c) + 1, 2)];
 const prevCol = (c) => COL_ORDER[Math.max(COL_ORDER.indexOf(c) - 1, 0)];
 
 /* ════════════════════════════════════════════════════════════════════
+   DEV CONSOLE — Leo turns your request into a real task on this codebase
+   ════════════════════════════════════════════════════════════════════ */
+const DEV_STATUS = { queued: { label: "ממתין", color: "#7886B8" }, sent: { label: "נשלח לביצוע", color: "#FFD23F" }, done: { label: "הושלם", color: "#3FD79A" } };
+function DevConsole({ logActivity, showToast }) {
+  const leo = byId("dev");
+  const [req, setReq] = useState("");
+  const [brief, setBrief] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [tasks, setTasks] = useState(() => load(K_DEVTASKS, []));
+  const [gh, setGh] = useState(ghConfigured());
+  useEffect(() => save(K_DEVTASKS, tasks), [tasks]);
+
+  const genBrief = async () => {
+    const t = req.trim(); if (!t || busy) return;
+    setBusy(true); setBrief("");
+    logActivity("dev", "ניסח בריף פיתוח: " + t.slice(0, 30));
+    try {
+      const out = hasAI() ? await askGroq(devBriefSystem(), [], t) : devBriefFallback(t);
+      setBrief(out || devBriefFallback(t));
+    } catch { setBrief(devBriefFallback(t)); }
+    finally { setBusy(false); }
+  };
+
+  const saveTask = (status, issueUrl) => {
+    const tk = { id: uid(), title: briefTitle(brief, req), brief, status, issueUrl: issueUrl || "", ts: now() };
+    setTasks((p) => [tk, ...p]);
+    return tk;
+  };
+
+  const copyForClaude = async () => {
+    const ok = await copyText(claudePrompt(brief));
+    saveTask("sent");
+    showToast(ok ? "הועתק — הדבק ל-Claude Code ←" : "ההעתקה נכשלה");
+  };
+
+  const openIssue = async () => {
+    if (!ghConfigured()) { showToast("חבר טוקן GitHub בהגדרות"); return; }
+    setBusy(true);
+    try {
+      const r = await ghCreateIssue(briefTitle(brief, req), brief + "\n\n---\n_נוצר ע\"י מרכז הסוכנים · לביצוע ע\"י Claude Code_");
+      saveTask("sent", r.html_url);
+      logActivity("dev", "פתח Issue על המאגר: #" + r.number);
+      showToast("Issue נפתח על המאגר ✓");
+    } catch (e) {
+      showToast(String(e.message).includes("NO_TOKEN") ? "חסר טוקן GitHub" : "פתיחת Issue נכשלה (" + e.message + ")");
+    } finally { setBusy(false); }
+  };
+
+  const setStatus = (id, status) => setTasks((p) => p.map((x) => x.id === id ? { ...x, status } : x));
+  const del = (id) => setTasks((p) => p.filter((x) => x.id !== id));
+
+  return (
+    <div className="ac-page">
+      <div className="ac-hero sm">
+        <h1>חדר פיתוח</h1>
+        <p>תאר מה לבנות — ליאו מנסח בריף מדויק על הקוד האמיתי, ושולח לביצוע</p>
+      </div>
+
+      <div className="ac-dev-leo" style={{ "--c": leo.color, "--ac": leo.accent }}>
+        <div className="ac-dev-orb"><Face agent={leo} fallback={20} /></div>
+        <div className="ac-dev-leo-txt"><b>ליאו · מחובר למאגר</b><span><GitBranch size={11} /> {ghCfg().owner}/{ghCfg().repo}</span></div>
+        <div className={"ac-dev-ghchip " + (gh ? "on" : "")}>{gh ? <><Check size={12} /> GitHub מחובר</> : <>לא מחובר</>}</div>
+      </div>
+
+      <textarea className="ac-dev-in" value={req} onChange={(e) => setReq(e.target.value)} placeholder="לדוגמה: הוסף כפתור ייצוא PDF למסך העסקאות ב-CRM של איתי…" dir="rtl" rows={3} />
+      <button className="ac-dev-gen" onClick={genBrief} disabled={busy || !req.trim()}>
+        {busy ? <><RefreshCw size={16} className="ac-spin" /> ליאו עובד…</> : <><Code2 size={16} /> נסח בריף פיתוח</>}
+      </button>
+
+      {brief && (
+        <div className="ac-dev-brief">
+          <div className="ac-dev-brief-h"><FileCode2 size={14} /> בריף פיתוח · {briefTitle(brief, req)}</div>
+          <pre className="ac-dev-brief-body">{brief}</pre>
+          <div className="ac-dev-acts">
+            <button className="ac-dev-act primary" onClick={copyForClaude}><Terminal size={14} /> העתק ל-Claude Code</button>
+            <button className="ac-dev-act" onClick={openIssue} disabled={!gh || busy}><GitBranch size={14} /> פתח Issue במאגר</button>
+            <button className="ac-dev-act" onClick={() => { saveTask("queued"); showToast("נשמר ללוח ✓"); }}><Plus size={14} /> שמור ללוח</button>
+          </div>
+        </div>
+      )}
+
+      <div className="ac-dev-board">
+        <div className="ac-sectitle" style={{ marginTop: 18 }}><GitBranch size={15} /> משימות פיתוח ({tasks.length})</div>
+        {tasks.length === 0 && <div className="ac-empty sm" style={{ padding: "26px 16px" }}><Terminal size={28} /><div>אין משימות עדיין</div><p>נסח בריף ושלח לביצוע</p></div>}
+        {tasks.map((tk) => {
+          const st = DEV_STATUS[tk.status] || DEV_STATUS.queued;
+          return (
+            <div key={tk.id} className="ac-dev-task" style={{ "--c": st.color }}>
+              <div className="ac-dev-task-top">
+                <span className="ac-dev-task-st" style={{ color: st.color, borderColor: st.color }}>{st.label}</span>
+                <b>{tk.title}</b>
+                <button className="ac-dev-task-del" onClick={() => del(tk.id)}><Trash2 size={13} /></button>
+              </div>
+              <div className="ac-dev-task-acts">
+                {tk.issueUrl && <a href={tk.issueUrl} target="_blank" rel="noreferrer" className="ac-dev-mini"><GitBranch size={12} /> Issue</a>}
+                <button className="ac-dev-mini" onClick={async () => { const ok = await copyText(claudePrompt(tk.brief)); showToast(ok ? "הועתק ל-Claude Code ←" : "נכשל"); }}><Copy size={12} /> העתק</button>
+                {tk.status !== "done"
+                  ? <button className="ac-dev-mini ok" onClick={() => setStatus(tk.id, "done")}><Check size={12} /> סמן הושלם</button>
+                  : <button className="ac-dev-mini" onClick={() => setStatus(tk.id, "queued")}>החזר לתור</button>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════
    SETTINGS
    ════════════════════════════════════════════════════════════════════ */
 function SettingsView({ showToast }) {
   const [key, setKey] = useState(() => groqKey());
   const [saved, setSaved] = useState(false);
+  const initGh = ghCfg();
+  const [ghTok, setGhTok] = useState(initGh.token);
+  const [ghRepo, setGhRepo] = useState(`${initGh.owner}/${initGh.repo}`);
+  const [ghSaved, setGhSaved] = useState(false);
 
   const saveKey = () => {
     try { localStorage.setItem("alpha_groq", key.trim()); } catch {}
     setSaved(true); showToast("נשמר ✓"); setTimeout(() => setSaved(false), 1500);
   };
   const clear = () => { try { localStorage.removeItem("alpha_groq"); } catch {} setKey(""); showToast("נמחק"); };
+
+  const saveGh = () => {
+    const [owner, repo] = (ghRepo.includes("/") ? ghRepo : `${REPO_DEFAULT.owner}/${ghRepo}`).split("/");
+    save(K_GH, { token: ghTok.trim(), owner: (owner || REPO_DEFAULT.owner).trim(), repo: (repo || REPO_DEFAULT.repo).trim() });
+    setGhSaved(true); showToast("GitHub חובר ✓"); setTimeout(() => setGhSaved(false), 1500);
+  };
+  const clearGh = () => { save(K_GH, { token: "", owner: REPO_DEFAULT.owner, repo: REPO_DEFAULT.repo }); setGhTok(""); showToast("הטוקן נמחק"); };
 
   return (
     <div className="ac-page">
@@ -588,11 +770,24 @@ function SettingsView({ showToast }) {
       </div>
 
       <div className="ac-set-card">
+        <div className="ac-set-h"><GitBranch size={18} /> חיבור למאגר הקוד (GitHub)</div>
+        <p className="ac-set-note">חבר טוקן GitHub אישי כדי שליאו יוכל לפתוח משימות (Issues) על המאגר ישירות מחדר הפיתוח. 🔒 הטוקן נשמר רק במכשיר שלך (localStorage) — לעולם לא נשלח לשום מקום חוץ מ-GitHub ולא נכנס לקוד.</p>
+        <input className="ac-set-in" type="password" value={ghTok} onChange={(e) => setGhTok(e.target.value)} placeholder="ghp_... (Personal Access Token, הרשאת repo)" dir="ltr" />
+        <input className="ac-set-in" value={ghRepo} onChange={(e) => setGhRepo(e.target.value)} placeholder="owner/repo" dir="ltr" />
+        <div className="ac-set-row">
+          <button className="ac-set-save" onClick={saveGh}>{ghSaved ? <><Check size={16} /> חובר</> : <><GitBranch size={16} /> חבר מאגר</>}</button>
+          <button className="ac-set-clear" onClick={clearGh}><Trash2 size={15} /></button>
+        </div>
+        <a className="ac-set-link" href="https://github.com/settings/tokens/new?scopes=repo&description=Alpha%20Agents" target="_blank" rel="noreferrer">צור טוקן (הרשאת repo) <ArrowUpRight size={13} /></a>
+      </div>
+
+      <div className="ac-set-card">
         <div className="ac-set-h"><ClipboardList size={18} /> איך זה עובד</div>
         <ul className="ac-set-list">
           <li><b>{AGENTS.length} סוכנים</b> — כל אחד מנהל תחום במערכות שלך.</li>
           <li><b>מנכ"ל (אורקל)</b> — מתעדף, מאציל ונותן תמונת מצב חוצת-מערכות.</li>
           <li><b>חלון שיחה ישיר</b> — לכל סוכן, עם זיכרון שיחה מקומי.</li>
+          <li><b>חדר פיתוח</b> — ליאו מנסח בריף על הקוד האמיתי → Issue במאגר או משימה ל-Claude Code.</li>
           <li><b>לוח רעיונות</b> — אוסף רעיונות לפיתוח, אוטומציות וקידום.</li>
           <li><b>פעילות חיה</b> — מציג מה הצוות עושה בזמן אמת.</li>
         </ul>
@@ -828,6 +1023,39 @@ function StyleTag() {
 .ac-set-list li::before{content:'›';position:absolute;right:0;color:var(--gold);font-weight:900}
 .ac-set-list li b{color:var(--silver)}
 .ac-set-foot{text-align:center;font-size:10.5px;color:var(--s4);letter-spacing:.12em;margin-top:18px;opacity:.6}
+
+/* ── dev console ── */
+.ac-spin{animation:acSpin .8s linear infinite}
+@keyframes acSpin{to{transform:rotate(360deg)}}
+.ac-dev-leo{display:flex;align-items:center;gap:11px;background:linear-gradient(160deg,rgba(20,14,8,.96),rgba(10,8,16,.97));border:1px solid color-mix(in srgb,var(--c) 35%,transparent);border-radius:14px;padding:12px;margin-bottom:12px;box-shadow:0 6px 24px rgba(0,0,0,.4)}
+.ac-dev-orb{width:42px;height:42px;border-radius:12px;overflow:hidden;flex-shrink:0;box-shadow:0 4px 16px color-mix(in srgb,var(--c) 45%,transparent)}
+.ac-dev-leo-txt{flex:1;min-width:0}
+.ac-dev-leo-txt b{display:block;font-family:'Rubik';font-weight:900;font-size:14.5px}
+.ac-dev-leo-txt span{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--s4);font-family:ui-monospace,monospace;margin-top:2px}
+.ac-dev-ghchip{font-size:10.5px;font-weight:800;padding:5px 10px;border-radius:20px;border:1px solid var(--s7);color:var(--s4);display:flex;align-items:center;gap:5px;flex-shrink:0}
+.ac-dev-ghchip.on{color:#3FD79A;border-color:rgba(63,215,154,.4);background:rgba(63,215,154,.08)}
+.ac-dev-in{width:100%;background:var(--s9);border:1px solid var(--s7);color:var(--silver);border-radius:13px;padding:13px 15px;font-family:inherit;font-size:14.5px;outline:none;resize:vertical;margin-bottom:10px}
+.ac-dev-in:focus{border-color:rgba(255,140,66,.5);box-shadow:0 0 0 3px rgba(255,140,66,.1)}
+.ac-dev-gen{width:100%;display:flex;align-items:center;justify-content:center;gap:8px;background:linear-gradient(135deg,#FF8C42,#C75A12);color:#fff;border:none;border-radius:13px;padding:14px;font-family:'Rubik';font-weight:900;font-size:15px;cursor:pointer;box-shadow:0 6px 24px rgba(255,140,66,.3);margin-bottom:16px}
+.ac-dev-gen:disabled{opacity:.5;cursor:not-allowed}
+.ac-dev-brief{background:linear-gradient(160deg,rgba(16,14,32,.97),rgba(8,8,18,.98));border:1px solid rgba(255,140,66,.3);border-radius:15px;overflow:hidden;margin-bottom:8px;box-shadow:0 8px 30px rgba(0,0,0,.45)}
+.ac-dev-brief-h{display:flex;align-items:center;gap:8px;padding:12px 14px;font-family:'Rubik';font-weight:800;font-size:13px;color:#FF9D5C;border-bottom:1px solid rgba(255,140,66,.2);background:rgba(255,140,66,.06)}
+.ac-dev-brief-body{padding:14px;font-family:'Heebo',sans-serif;font-size:13px;line-height:1.7;color:var(--silver);white-space:pre-wrap;word-break:break-word;margin:0;max-height:340px;overflow-y:auto;direction:rtl}
+.ac-dev-acts{display:flex;gap:8px;padding:12px 14px;border-top:1px solid var(--s7);flex-wrap:wrap}
+.ac-dev-act{flex:1;min-width:120px;display:flex;align-items:center;justify-content:center;gap:6px;background:var(--s8);border:1px solid var(--s7);color:var(--silver);border-radius:10px;padding:10px;font-family:inherit;font-size:12.5px;font-weight:800;cursor:pointer;transition:.15s}
+.ac-dev-act:hover{border-color:rgba(255,140,66,.5);color:#FF9D5C}
+.ac-dev-act:disabled{opacity:.4;cursor:not-allowed}
+.ac-dev-act.primary{background:linear-gradient(135deg,#FF8C42,#C75A12);color:#fff;border:none}
+.ac-dev-task{background:linear-gradient(160deg,rgba(16,14,30,.95),rgba(9,9,20,.96));border:1px solid var(--s7);border-right:3px solid var(--c);border-radius:12px;padding:12px;margin-bottom:9px;animation:acRise .25s ease both}
+.ac-dev-task-top{display:flex;align-items:center;gap:9px}
+.ac-dev-task-top b{flex:1;min-width:0;font-size:13.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ac-dev-task-st{font-size:10px;font-weight:800;padding:3px 9px;border-radius:20px;border:1px solid;flex-shrink:0}
+.ac-dev-task-del{background:none;border:none;color:var(--s4);cursor:pointer;display:flex;padding:2px;opacity:.6;flex-shrink:0}
+.ac-dev-task-del:hover{color:#FF6B9D;opacity:1}
+.ac-dev-task-acts{display:flex;gap:7px;margin-top:10px;flex-wrap:wrap}
+.ac-dev-mini{display:flex;align-items:center;gap:4px;background:var(--s8);border:1px solid var(--s7);color:var(--s4);border-radius:8px;padding:6px 11px;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;text-decoration:none;transition:.15s}
+.ac-dev-mini:hover{color:var(--silver)}
+.ac-dev-mini.ok{color:#3FD79A;border-color:rgba(63,215,154,.35)}
 
 /* ── empty ── */
 .ac-empty{text-align:center;padding:50px 16px;color:var(--s4)}
