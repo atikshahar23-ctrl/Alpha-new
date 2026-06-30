@@ -3401,3 +3401,8 @@ body.is-mobile-ui.mobile-min .fab-group{
 .mood-opt{display:flex;align-items:center;gap:7px;background:var(--glass-hover);border:1px solid var(--glass-border);color:var(--ink);border-radius:11px;padding:9px 10px;font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
 .mood-opt.on{border-color:var(--gold);background:rgba(218,165,32,.1);box-shadow:0 0 10px var(--glass-border)}
 .mood-dot{width:16px;height:16px;border-radius:50%;flex-shrink:0;border:1.5px solid rgba(255,255,255,.7)}
+
+/* ── Physical Pokéball capture effect ── */
+#stage { transition: opacity .42s ease, transform .42s cubic-bezier(.4,0,.2,1); }
+body.pokeball-capturing #stage { opacity:0; transform:scale(.05); pointer-events:none; }
+body.pokeball-capturing .char-ambient { opacity:0; transition:opacity .3s; }

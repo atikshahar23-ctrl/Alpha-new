@@ -2331,6 +2331,103 @@ export function mountApp(root: HTMLElement) {
       (window as any).__stopGestureRaf = () => { cancelAnimationFrame(rafId); };
       gestureStatus('מצלמה פעילה');
       tick();
+
+      // ── Physical Pokéball detector ───────────────────────────────────────────
+      // Scans the webcam feed for the user's yellow/dark-green Safari Ball.
+      // Closed ball → character retreats (pokeball-capturing CSS class).
+      // Open ball (dark interior visible) → character summoned back.
+      {
+        const pbCv = document.createElement('canvas');
+        pbCv.width = 160; pbCv.height = 120;
+        const pbCtx = pbCv.getContext('2d', { willReadFrequently: true })!;
+
+        type PBState = 'none' | 'closed' | 'open';
+        let pbState: PBState = 'none';
+        let pbReading: PBState = 'none';
+        let pbCount = 0;
+        const PB_DEBOUNCE = 4;
+
+        function samplePokeball(): PBState {
+          if (!vid.videoWidth || vid.readyState < 2) return 'none';
+          try { pbCtx.drawImage(vid, 0, 0, 160, 120); } catch { return 'none'; }
+          const { data } = pbCtx.getImageData(0, 0, 160, 120);
+
+          // Detect yellow pixels — the Safari Ball's characteristic yellow body.
+          // Thresholds tuned for the yellow/dark-green ball in the user's photos.
+          let minX = 160, maxX = 0, minY = 120, maxY = 0, yellowCount = 0;
+          for (let i = 0; i < data.length; i += 4) {
+            const r = data[i], g = data[i + 1], b = data[i + 2];
+            if (r > 155 && g > 115 && b < 115 && r - b > 70 && r > g * 1.05) {
+              const px = (i >> 2) % 160, py = (i >> 2) / 160 | 0;
+              if (px < minX) minX = px; if (px > maxX) maxX = px;
+              if (py < minY) minY = py; if (py > maxY) maxY = py;
+              yellowCount++;
+            }
+          }
+          if (yellowCount < 55) return 'none'; // not enough yellow — no ball in view
+
+          // Inside the yellow bounding box, count very dark pixels.
+          // An open ball exposes its black interior → darkRatio spikes.
+          const bx1 = Math.max(0, minX), bx2 = Math.min(159, maxX);
+          const by1 = Math.max(0, minY), by2 = Math.min(119, maxY);
+          const bw = bx2 - bx1 + 1, bh = by2 - by1 + 1;
+          if (bw < 8 || bh < 8) return 'closed';
+          let darkCount = 0, total = 0;
+          for (let y = by1; y <= by2; y++) {
+            for (let x = bx1; x <= bx2; x++) {
+              const i4 = (y * 160 + x) * 4;
+              total++;
+              if (data[i4] < 55 && data[i4 + 1] < 55 && data[i4 + 2] < 55) darkCount++;
+            }
+          }
+          const darkRatio = darkCount / Math.max(1, total);
+          const aspect = bw / Math.max(1, bh);
+          // Open = dark interior clearly visible OR ball opened very wide
+          return (darkRatio > 0.17 || aspect > 1.65) ? 'open' : 'closed';
+        }
+
+        function applyPokeballTransition(next: PBState) {
+          if (next === pbState) return;
+          const prev = pbState;
+          pbState = next;
+          if (next === 'closed') {
+            // Pokémon retreats into the ball with a shrink animation
+            document.body.classList.add('pokeball-capturing');
+          } else if (next === 'open') {
+            // Ball opens — character bursts out
+            document.body.classList.remove('pokeball-capturing');
+            if (prev === 'closed') {
+              // Was inside ball → now release with summon dock fanfare
+              setTimeout(() => (window as any).openSummonDock?.(), 380);
+            }
+          } else {
+            // Ball left the frame — restore character quietly
+            document.body.classList.remove('pokeball-capturing');
+          }
+        }
+
+        const pbInterval = setInterval(() => {
+          if (!gestureActive) { clearInterval(pbInterval); document.body.classList.remove('pokeball-capturing'); return; }
+          const reading = samplePokeball();
+          if (reading === pbReading) {
+            pbCount++;
+            if (pbCount >= PB_DEBOUNCE) { pbCount = PB_DEBOUNCE; applyPokeballTransition(reading); }
+          } else {
+            pbReading = reading;
+            pbCount = 1;
+          }
+        }, 190);
+
+        // Wrap the existing RAF stop so we also kill the interval and clean up
+        const _prevStop = (window as any).__stopGestureRaf;
+        (window as any).__stopGestureRaf = () => {
+          clearInterval(pbInterval);
+          document.body.classList.remove('pokeball-capturing');
+          pbState = 'none';
+          if (_prevStop) _prevStop();
+        };
+      }
+      // ── End Pokéball detector ────────────────────────────────────────────────
     }
 
     $('detectBtn').onclick = () => {
