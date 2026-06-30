@@ -868,27 +868,47 @@ const CHATTER = {
   legal: ["החוזה מאושר ⚖️", "הטופס תקין", "אחריות מעודכנת", "הכל חתום", "עומד בתקנות"],
   growth:["הזדמנות חדשה 🧭", "ענף חדש נפתח", "רעיון צמיחה!", "ניתחתי מתחרה", "אפיק הכנסה חדש"],
 };
-// Living office: characters roam an open-plan floor (Tamagotchi-style).
+// Living office: characters roam, work at desks, take breaks & hold meetings.
+const OFC_X0 = 6, OFC_X1 = 90, OFC_Y0 = 34, OFC_Y1 = 82;
+const OFC_DESKS = [{ x: 14, y: 34 }, { x: 14, y: 52 }, { x: 14, y: 70 }, { x: 83, y: 42 }, { x: 83, y: 60 }, { x: 83, y: 76 }];
+const OFC_SEATS = [{ x: 41, y: 50 }, { x: 50, y: 47 }, { x: 59, y: 50 }, { x: 41, y: 63 }, { x: 50, y: 66 }, { x: 59, y: 63 }];
+const OFC_BREAK = { x: 84, y: 51 };
+const OFC_STATUS = { work: "💻", meet: "👥", break: "☕", roam: "🚶" };
 function OfficeSim({ onClose, onOpenChat }) {
-  const X0 = 6, X1 = 90, Y0 = 34, Y1 = 82;
   const rnd = (a, b) => a + Math.random() * (b - a);
-  const [chars, setChars] = useState(() => AGENTS.map((a) => ({ id: a.id, x: rnd(X0, X1), y: rnd(Y0, Y1), dir: 1, dur: 3000, walking: false })));
+  const [chars, setChars] = useState(() => AGENTS.map((a, i) => ({ id: a.id, ...(OFC_DESKS[i % OFC_DESKS.length]), dir: 1, dur: 3000, walking: false, status: "work" })));
   const [bubbles, setBubbles] = useState({});
+  const meetingRef = useRef(false);
 
-  // Wander: every tick, send ~30% of the team to a new spot on the floor.
+  // Behaviour scheduler: meetings, desk work, coffee breaks and roaming.
   useEffect(() => {
+    const moveTo = (c, pt, status) => {
+      const dist = Math.hypot(pt.x - c.x, pt.y - c.y);
+      const dur = Math.round(Math.max(1400, dist * 140));
+      setTimeout(() => setChars((p) => p.map((k) => k.id === c.id ? { ...k, walking: false } : k)), dur);
+      return { ...c, x: pt.x, y: pt.y, dir: pt.x < c.x ? -1 : 1, dur, walking: true, status };
+    };
     const iv = setInterval(() => {
+      // Occasionally call a team meeting: a few agents gather at the table.
+      if (!meetingRef.current && Math.random() < 0.16) {
+        meetingRef.current = true;
+        const pick = [...AGENTS].sort(() => Math.random() - 0.5).slice(0, 5).map((a) => a.id);
+        setChars((prev) => prev.map((c) => { const idx = pick.indexOf(c.id); return idx >= 0 ? moveTo(c, OFC_SEATS[idx] || OFC_SEATS[0], "meet") : c; }));
+        setTimeout(() => { meetingRef.current = false; setChars((p) => p.map((c) => c.status === "meet" ? moveTo(c, OFC_DESKS[Math.floor(Math.random() * OFC_DESKS.length)], "work") : c)); }, 11000);
+        return;
+      }
+      // Individual behaviours for everyone not currently in the meeting.
       setChars((prev) => prev.map((c) => {
-        if (Math.random() < 0.3) {
-          const nx = rnd(X0, X1), ny = rnd(Y0, Y1);
-          const dist = Math.hypot(nx - c.x, ny - c.y);
-          const dur = Math.round(Math.max(1600, dist * 140));
-          setTimeout(() => setChars((p) => p.map((k) => k.id === c.id ? { ...k, walking: false } : k)), dur);
-          return { ...c, x: nx, y: ny, dir: nx < c.x ? -1 : 1, dur, walking: true };
+        if (c.status === "meet") return c;
+        if (Math.random() < 0.32) {
+          const r = Math.random();
+          if (r < 0.45) return moveTo(c, OFC_DESKS[Math.floor(Math.random() * OFC_DESKS.length)], "work");
+          if (r < 0.65) return moveTo(c, OFC_BREAK, "break");
+          return moveTo(c, { x: rnd(OFC_X0, OFC_X1), y: rnd(OFC_Y0, OFC_Y1) }, "roam");
         }
         return c;
       }));
-    }, 1200);
+    }, 1400);
     return () => clearInterval(iv);
   }, []);
 
@@ -914,7 +934,7 @@ function OfficeSim({ onClose, onOpenChat }) {
         <div className="off-top-l"><span className="off-live"><span className="ac-live-dot" /> חי</span><b>🏢 בניין אלפא · קומת הסוכנים</b></div>
         <button className="off-close" onClick={onClose}><X size={20} /></button>
       </div>
-      <div className="off-sub">הצוות מסתובב, עובד ומדבר · לחץ על דמות כדי להיכנס לשיחה</div>
+      <div className="off-sub">הצוות עובד 💻 · בהפסקה ☕ · בישיבה 👥 · לחץ על דמות לשיחה</div>
       <div className="ofc-floor">
         <div className="ofc-windows">{Array.from({ length: 6 }).map((_, i) => <span key={i} />)}</div>
         <div className="ofc-furn ofc-reception">קבלה</div>
@@ -933,6 +953,7 @@ function OfficeSim({ onClose, onOpenChat }) {
               style={{ left: c.x + "%", top: c.y + "%", transitionDuration: c.dur + "ms", zIndex: Math.round(c.y) + 10, "--c": a.color }}
               onClick={() => onOpenChat(c.id)}>
               {b && <div className="ofc-bubble">{b.toId && <span className="ofc-bubble-to">→ {byId(b.toId)?.name}</span>}{b.text}</div>}
+              {!c.walking && <span className="ofc-status">{OFC_STATUS[c.status] || "🚶"}</span>}
               <div className="ofc-av" style={{ transform: c.dir < 0 ? "scaleX(-1)" : "none" }}>
                 <span className="ofc-shadow" />
                 <span className="ofc-head"><img src={a.avatar} alt="" draggable={false} /></span>
@@ -1262,6 +1283,7 @@ function StyleTag() {
 .ofc-char.walking .ofc-legs i:last-child{animation:ofcStep .5s ease-in-out infinite .25s}
 @keyframes ofcBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
 @keyframes ofcStep{0%,100%{transform:translateY(0) scaleY(1)}50%{transform:translateY(-3px) scaleY(.78)}}
+.ofc-status{position:absolute;top:-4px;right:6px;font-size:12px;z-index:4;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5));animation:offPop .3s ease both}
 .ofc-name{margin-top:3px;font-size:9.5px;font-weight:800;color:#dce6ff;background:rgba(6,10,20,.6);padding:1px 7px;border-radius:8px;white-space:nowrap;box-shadow:0 0 0 1px color-mix(in srgb,var(--c) 45%,transparent)}
 .ofc-char:hover .ofc-name{color:var(--c)}
 .ofc-char:active{transform:translate(-50%,-50%) scale(.92)}
