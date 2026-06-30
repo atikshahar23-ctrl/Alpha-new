@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import BULL_LOGO from "../heavyguard/heavyguard-logo.png";
 import leadsData from "../heavyguard/leadsData.json";
+import * as cloud from "./cloud";
 
 /* ============================ Constants ============================ */
 const BIZ = "Heavy Guard";
@@ -203,32 +204,47 @@ export default function App() {
 
   const showToast = useCallback((msg) => { setToast(msg); setTimeout(() => setToast(null), 2600); }, []);
 
+  // save locally AND push to the shared cloud (no-op when cloud isn't configured)
+  const persist = (key, value) => { save(key, value); cloud.cloudPush(key, value); };
+
+  // ── Realtime shared sync: remote changes flow into local state + storage ──
+  useEffect(() => {
+    cloud.applyCloudFromLink();
+    const off = cloud.cloudSubscribe((localKey, value) => {
+      if (value == null) return;
+      if (localKey === K_CRM) { save(K_CRM, value); setCrm(value); }
+      else if (localKey === K_DEALS) { const a = Array.isArray(value) ? value : Object.values(value); save(K_DEALS, a); setDeals(a); }
+      else if (localKey === K_CUST) { const a = Array.isArray(value) ? value : Object.values(value); save(K_CUST, a); setCusts(a); }
+    }, [K_CRM, K_DEALS, K_CUST]);
+    return off;
+  }, []);
+
   const updateCrm = useCallback((id, changes) => {
-    setCrm((prev) => { const next = { ...prev, [id]: { ...prev[id], ...changes } }; save(K_CRM, next); return next; });
+    setCrm((prev) => { const next = { ...prev, [id]: { ...prev[id], ...changes } }; persist(K_CRM, next); return next; });
   }, []);
   const addOutreach = useCallback((id, entry) => {
-    setCrm((prev) => { const cur = prev[id] || {}; const next = { ...prev, [id]: { ...cur, outreach: [entry, ...(cur.outreach || [])] } }; save(K_CRM, next); return next; });
+    setCrm((prev) => { const cur = prev[id] || {}; const next = { ...prev, [id]: { ...cur, outreach: [entry, ...(cur.outreach || [])] } }; persist(K_CRM, next); return next; });
   }, []);
 
   const upsertDeal = useCallback((deal) => {
     setDeals((prev) => {
       const exists = prev.some((d) => d.id === deal.id);
       const next = exists ? prev.map((d) => (d.id === deal.id ? deal : d)) : [deal, ...prev];
-      save(K_DEALS, next); return next;
+      persist(K_DEALS, next); return next;
     });
   }, []);
-  const removeDeal = useCallback((id) => { setDeals((prev) => { const next = prev.filter((d) => d.id !== id); save(K_DEALS, next); return next; }); }, []);
+  const removeDeal = useCallback((id) => { setDeals((prev) => { const next = prev.filter((d) => d.id !== id); persist(K_DEALS, next); return next; }); }, []);
 
   const addCustomer = useCallback((c) => {
     setCusts((prev) => {
       if (c.phone && prev.some((x) => x.phone === c.phone)) return prev; // de-dupe by phone
-      const next = [{ ...c, id: c.id || uid() }, ...prev]; save(K_CUST, next); return next;
+      const next = [{ ...c, id: c.id || uid() }, ...prev]; persist(K_CUST, next); return next;
     });
   }, []);
   const saveCustomer = useCallback((c) => {
-    setCusts((prev) => { const next = c.id && prev.some((x) => x.id === c.id) ? prev.map((x) => (x.id === c.id ? c : x)) : [{ ...c, id: uid() }, ...prev]; save(K_CUST, next); return next; });
+    setCusts((prev) => { const next = c.id && prev.some((x) => x.id === c.id) ? prev.map((x) => (x.id === c.id ? c : x)) : [{ ...c, id: uid() }, ...prev]; persist(K_CUST, next); return next; });
   }, []);
-  const removeCustomer = useCallback((id) => { setCusts((prev) => { const next = prev.filter((x) => x.id !== id); save(K_CUST, next); return next; }); }, []);
+  const removeCustomer = useCallback((id) => { setCusts((prev) => { const next = prev.filter((x) => x.id !== id); persist(K_CUST, next); return next; }); }, []);
 
   // Closing a deal as "won" promotes the lead to customer.
   const winDeal = useCallback((deal, lead) => {
@@ -239,6 +255,12 @@ export default function App() {
   }, [upsertDeal, updateCrm, addCustomer, showToast]);
 
   const exitToAlpha = () => { try { window.close(); } catch {} setTimeout(() => { window.location.href = "./"; }, 120); };
+
+  // External customer Samsonix form (opened via the link Itai sends). Full-screen,
+  // no CRM nav — the customer just fills and submits.
+  if (typeof location !== "undefined" && /(^|[#&])samform/.test(location.hash || "")) {
+    return <div className="ag" style={themeVars}><StyleTag /><CustomerSamsonix showToast={showToast} />{toast && <div className="ag-toast">{toast}</div>}</div>;
+  }
 
   return (
     <div className="ag" style={themeVars}>
@@ -278,6 +300,7 @@ function Dashboard({ leads, deals, custs, go, onNewDeal, showToast, theme, setTh
   const [showThemes, setShowThemes] = useState(false);
   const [showSam, setShowSam] = useState(false);
   const [showCat, setShowCat] = useState(false);
+  const [showCloud, setShowCloud] = useState(false);
   const k = monthKey();
   const open = deals.filter((d) => d.status === "פתוח");
   const wonMonth = deals.filter((d) => d.status === "נסגר" && (d.wonAt || "").startsWith(k));
@@ -310,8 +333,10 @@ function Dashboard({ leads, deals, custs, go, onNewDeal, showToast, theme, setTh
           </a>
           <button className="ag-soc send" onClick={shareWorks} title="שלח עבודות ללקוח" aria-label="שלח עבודות"><Send size={15} /></button>
           <button className="ag-soc theme" onClick={() => setShowThemes(true)} title="צבע הפלטפורמה" aria-label="צבעים"><Palette size={15} /></button>
+          <button className={"ag-soc cloud" + (cloud.cloudConfigured() ? " on" : "")} onClick={() => setShowCloud(true)} title="מסד נתונים משותף" aria-label="ענן"><Globe size={15} /></button>
         </div>
       </header>
+      {showCloud && <CloudSettings onClose={() => setShowCloud(false)} showToast={showToast} />}
 
       {showThemes && (
         <div className="ag-modal" onClick={(e) => { if (e.target === e.currentTarget) setShowThemes(false); }}>
@@ -361,6 +386,8 @@ function Dashboard({ leads, deals, custs, go, onNewDeal, showToast, theme, setTh
 
       {showSam && <SamsonixForm onClose={() => setShowSam(false)} showToast={showToast} />}
       {showCat && <ProductCatalog onClose={() => setShowCat(false)} onQuote={(p) => { onCatalogQuote(p); setShowCat(false); showToast("נוסף להצעה: " + p.name); }} />}
+
+      <SamInbox showToast={showToast} />
 
       <div className="ag-secttl">עסקאות אחרונות</div>
       {deals.length === 0 && <div className="ag-empty"><Handshake size={32} /><div>אין עדיין עסקאות</div><p>פתח ליד וצור הצעת מחיר כדי להתחיל</p></div>}
@@ -1192,7 +1219,11 @@ function SamsonixForm({ onClose, showToast }) {
           <SignaturePad onChange={(d) => set("sigDataUrl", d)} />
         </div>
         <div className="ag-sheet-foot">
-          <button className="ag-btn ghost" onClick={onClose}>ביטול</button>
+          <button className="ag-btn ghost" onClick={() => {
+            if (!cloud.cloudConfigured()) { showToast("חבר קודם מסד נתונים (כפתור הענן)"); return; }
+            if (!f.phone.trim()) { showToast("הזן טלפון לקוח לשליחת הקישור"); return; }
+            window.open(waLink(f.phone, `שלום, למילוי טופס המנוי לסמסוניקס: ${customerSamLink(f.phone)}`), "_blank");
+          }}><Send size={15} /> שלח קישור ללקוח</button>
           <button className="ag-btn" onClick={submit}><FileText size={15} /> הפק טופס לחתימה</button>
         </div>
       </div>
@@ -1223,6 +1254,147 @@ function ProductCatalog({ onClose, onQuote }) {
             {list.length === 0 && <div className="ag-empty sm">לא נמצאו מוצרים</div>}
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================ Cloud (shared DB) settings ============================ */
+const linkParam = (k) => { try { return new URLSearchParams((location.hash || "").replace(/^#/, "").replace(/&/g, "&")).get(k) || ""; } catch { return ""; } };
+function customerSamLink(toPhone) {
+  const base = location.origin + location.pathname;
+  const db = cloud.cloudURL(), au = cloud.cloudAuth();
+  let s = `${base}#samform&to=${encodeURIComponent((toPhone || "").replace(/\D/g, ""))}`;
+  if (db) s += `&db=${encodeURIComponent(db)}`;
+  if (au) s += `&au=${encodeURIComponent(au)}`;
+  return s;
+}
+function CloudSettings({ onClose, showToast }) {
+  const [url, setUrl] = useState(cloud.cloudURL());
+  const [auth, setAuth] = useState(cloud.cloudAuth());
+  const save = () => { cloud.setCloud(url, auth); showToast(url ? "הענן חובר ✓ רענן כדי לסנכרן" : "הענן נותק"); onClose(); };
+  return (
+    <div className="ag-modal" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="ag-sheet sm">
+        <div className="ag-sheet-head"><b>מסד נתונים משותף · ענן</b><button onClick={onClose}><X size={20} /></button></div>
+        <div className="ag-sheet-body">
+          <div className="ag-cat-note" style={{ lineHeight: 1.6 }}>
+            חבר מסד Firebase חינמי כדי ששניכם תראו ותערכו את אותם נתונים בזמן אמת.
+            פתח פרויקט ב-<b>console.firebase.google.com</b> → Realtime Database → צור (מצב בדיקה) → העתק את כתובת ה-URL לכאן. חינם, בלי כרטיס אשראי.
+          </div>
+          <label className="ag-lbl">כתובת Realtime Database</label>
+          <input className="ag-input" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://xxx-default-rtdb.firebaseio.com" dir="ltr" />
+          <label className="ag-lbl">סוד / טוקן (אופציונלי)</label>
+          <input className="ag-input" value={auth} onChange={(e) => setAuth(e.target.value)} placeholder="(אם הגדרת חוקים מאובטחים)" dir="ltr" />
+          <div className="ag-cat-note">סטטוס: {cloud.cloudConfigured() ? "מחובר 🟢" : "לא מחובר ⚪"}</div>
+        </div>
+        <div className="ag-sheet-foot"><button className="ag-btn ghost" onClick={onClose}>סגור</button><button className="ag-btn" onClick={save}>שמור</button></div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================ Itai's inbox: customer-submitted forms ============================ */
+function SamInbox({ showToast }) {
+  const [items, setItems] = useState([]);
+  const [view, setView] = useState(null);
+  useEffect(() => {
+    if (!cloud.cloudConfigured()) return;
+    cloud.cloudGet("itai:saminbox").then((v) => { if (v) setItems(Object.values(v).sort((a, b) => (b.ts || 0) - (a.ts || 0))); });
+    const off = cloud.cloudSubscribe((k, v) => { if (k === "itai:saminbox" && v) setItems(Object.values(v).sort((a, b) => (b.ts || 0) - (a.ts || 0))); }, ["itai:saminbox"]);
+    return off;
+  }, []);
+  if (!cloud.cloudConfigured() || !items.length) return null;
+  return (
+    <div className="ag-section">
+      <div className="ag-section-ttl">📥 טפסים נכנסים · סמסוניקס ({items.length})</div>
+      {items.slice(0, 8).map((s) => (
+        <div className="ag-deal-row flat" key={s.id} style={{ cursor: "pointer" }} onClick={() => setView(s)}>
+          <span className="ag-dot" style={{ background: "#1E9A60" }} />
+          <div className="ag-deal-mid"><b>{s.fullName || "לקוח"}</b><span>{[s.plan?.toUpperCase(), s.veh1].filter(Boolean).join(" · ")} · {s.savedAt}</span></div>
+          <FileText size={15} />
+        </div>
+      ))}
+      {view && (
+        <div className="ag-modal" onClick={(e) => { if (e.target === e.currentTarget) setView(null); }}>
+          <div className="ag-sheet sm">
+            <div className="ag-sheet-head"><b>טופס שהתקבל · {view.fullName}</b><button onClick={() => setView(null)}><X size={20} /></button></div>
+            <div className="ag-sheet-body">
+              <div className="ag-info"><b>שם:</b>&nbsp;{view.fullName} · ת"ז {view.idNum}</div>
+              <div className="ag-info"><b>טלפון:</b>&nbsp;<span dir="ltr">{view.phone}</span> · {view.email}</div>
+              <div className="ag-info"><b>חבילה:</b>&nbsp;{(view.plan || "").toUpperCase()} · קול: {view.audio === "with" ? "כן" : "לא"} {view.bsd ? "· BSD" : ""}</div>
+              <div className="ag-info"><b>רכב:</b>&nbsp;{view.veh1} {view.veh1Type} {view.veh2 ? `· ${view.veh2} ${view.veh2Type}` : ""}</div>
+              {view.sigDataUrl && <img src={view.sigDataUrl} alt="חתימה" style={{ maxWidth: 200, border: "1px solid var(--s7)", borderRadius: 8, marginTop: 8 }} />}
+              <div className="ag-cat-note" style={{ marginTop: 10 }}>🔒 פרטי האשראי לא נשמרו במערכת — הלקוח שלח אותם ישירות לוואטסאפ שלך.</div>
+            </div>
+            <div className="ag-sheet-foot"><button className="ag-btn ghost" onClick={() => { navigator.clipboard?.writeText(`${view.fullName} · ${view.idNum} · ${view.phone} · ${(view.plan||"").toUpperCase()} · ${view.veh1}`); showToast("הפרטים הועתקו"); }}><Copy size={15} /> העתק</button><button className="ag-btn" onClick={() => setView(null)}>סגור</button></div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================ Customer-facing Samsonix form (via link) ============================ */
+function CustomerSamsonix({ showToast }) {
+  const co = HG_COMPANY;
+  const toPhone = linkParam("to");
+  const [f, setF] = useState({ plan: "4gb", audio: "none", bsd: false, fullName: "", idNum: "", email: "", phone: "", contactName: "", company: "", bizNum: "", veh1: "", veh1Type: "", veh2: "", veh2Type: "", sigDataUrl: "" });
+  const [card, setCard] = useState({ num: "", expiry: "", cvv: "" });
+  const [doneState, setDone] = useState(false);
+  const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  const fullText = () => {
+    let t = `*טופס סמסוניקס DVR — ${co.name}*\nשם: ${f.fullName}\nת"ז: ${f.idNum}\nטלפון: ${f.phone}\nמייל: ${f.email}\nחברה: ${f.company} ${f.bizNum}\nחבילה: ${(SAM_PLANS.find(p=>p.id===f.plan)||{}).label||""}\nהקלטת קול: ${f.audio==="with"?"כן":"לא"}${f.bsd?"\nBSD + 4 מצלמות":""}\nרכב: ${f.veh1} ${f.veh1Type}${f.veh2?` · ${f.veh2} ${f.veh2Type}`:""}\n— תשלום (הוראת קבע) —\nכרטיס: ${card.num}\nתוקף: ${card.expiry} · CVV: ${card.cvv}`;
+    return t;
+  };
+  const submit = async () => {
+    if (!f.fullName.trim() || !f.idNum.trim() || !f.veh1.trim()) { showToast("מלא שם, ת\"ז ומספר רכב"); return; }
+    if (!f.sigDataUrl) { showToast("חסרה חתימה"); return; }
+    // Write NON-card data + signature to the shared inbox (card is NEVER stored).
+    const rec = { id: uid(), ts: Date.now(), savedAt: todayISO(), fullName: f.fullName, idNum: f.idNum, email: f.email, phone: f.phone, company: f.company, bizNum: f.bizNum, plan: f.plan, audio: f.audio, bsd: f.bsd, veh1: f.veh1, veh1Type: f.veh1Type, veh2: f.veh2, veh2Type: f.veh2Type, sigDataUrl: f.sigDataUrl };
+    await cloud.cloudPushChild("itai:saminbox", rec.id, rec);
+    setDone(true);
+    showToast("נשלח ✓");
+  };
+  if (doneState) {
+    return (
+      <div className="ag-cust-done">
+        <div className="ag-cust-done-card">
+          <img src={BULL_LOGO} alt="" style={{ width: 64, height: 64, margin: "0 auto 10px" }} />
+          <h2>תודה {f.fullName}! ✅</h2>
+          <p>הטופס נשלח לנציג. לחץ כדי לשלוח גם את אישור התשלום ישירות בוואטסאפ (פרטי האשראי נשלחים ישירות לנציג ואינם נשמרים במערכת).</p>
+          {toPhone && <a className="ag-btn wa" style={{ textDecoration: "none" }} href={waLink(toPhone, fullText())} target="_blank" rel="noreferrer"><Send size={15} /> שלח אישור בוואטסאפ</a>}
+        </div>
+      </div>
+    );
+  }
+  const I = (k, ph, extra = {}) => <input className="ag-input" value={f[k]} onChange={(e) => set(k, e.target.value)} placeholder={ph} {...extra} />;
+  return (
+    <div className="ag-cust-page">
+      <div className="ag-cust-head"><img src={BULL_LOGO} alt="" /><div><div className="ag-title">טופס מנוי סמסוניקס DVR</div><div className="ag-sub">{co.name} · מלא/י ושלח/י</div></div></div>
+      <div className="ag-cust-body">
+        <label className="ag-lbl">חבילת מנוי</label>
+        <div className="ag-chips sm nowrap">{SAM_PLANS.map((p) => <button key={p.id} className={f.plan === p.id ? "on" : ""} onClick={() => set("plan", p.id)}>{p.id.toUpperCase()}</button>)}</div>
+        <label className="ag-lbl">הקלטת קול</label>
+        <div className="ag-chips sm nowrap">
+          <button className={f.audio === "none" ? "on" : ""} onClick={() => set("audio", "none")}>ללא קול</button>
+          <button className={f.audio === "with" ? "on" : ""} onClick={() => set("audio", "with")}>עם קול</button>
+          <button className={f.bsd ? "on" : ""} onClick={() => set("bsd", !f.bsd)}>BSD + 4 מצלמות</button>
+        </div>
+        <label className="ag-lbl">שם מלא של בעל הכרטיס *</label>{I("fullName", "שם מלא")}
+        <div className="ag-row"><div style={{ flex: 1 }}><label className="ag-lbl">ת"ז *</label>{I("idNum", "ת\"ז", { dir: "ltr" })}</div><div style={{ flex: 1 }}><label className="ag-lbl">טלפון</label>{I("phone", "05X", { dir: "ltr" })}</div></div>
+        <label className="ag-lbl">מייל</label>{I("email", "name@mail.com", { dir: "ltr" })}
+        <div className="ag-row"><div style={{ flex: 1 }}><label className="ag-lbl">שם חברה</label>{I("company", "חברה")}</div><div style={{ flex: 1 }}><label className="ag-lbl">ע.מ / ח.פ</label>{I("bizNum", "מספר", { dir: "ltr" })}</div></div>
+        <div className="ag-row"><div style={{ flex: 1 }}><label className="ag-lbl">מספר רכב *</label>{I("veh1", "מספר", { dir: "ltr" })}</div><div style={{ flex: 1 }}><label className="ag-lbl">סוג רכב</label>{I("veh1Type", "סוג")}</div></div>
+        <div className="ag-row"><div style={{ flex: 1 }}><label className="ag-lbl">רכב 2</label>{I("veh2", "מספר", { dir: "ltr" })}</div><div style={{ flex: 1 }}><label className="ag-lbl">סוג רכב 2</label>{I("veh2Type", "סוג")}</div></div>
+        <div className="ag-sam-pay">
+          <div className="ag-lbl" style={{ marginTop: 0 }}>פרטי תשלום — הוראת קבע 🔒</div>
+          <input className="ag-input" value={card.num} onChange={(e) => setCard({ ...card, num: e.target.value })} placeholder="מספר כרטיס אשראי" dir="ltr" inputMode="numeric" autoComplete="off" />
+          <div className="ag-row"><input className="ag-input" value={card.expiry} onChange={(e) => setCard({ ...card, expiry: e.target.value })} placeholder="תוקף MM/YY" dir="ltr" autoComplete="off" /><input className="ag-input" value={card.cvv} onChange={(e) => setCard({ ...card, cvv: e.target.value })} placeholder="CVV" dir="ltr" inputMode="numeric" autoComplete="off" /></div>
+        </div>
+        <label className="ag-lbl">חתימה *</label>
+        <SignaturePad onChange={(d) => set("sigDataUrl", d)} />
+        <button className="ag-btn" style={{ width: "100%", marginTop: 14 }} onClick={submit}><Send size={16} /> שלח טופס</button>
       </div>
     </div>
   );
@@ -1396,6 +1568,18 @@ function StyleTag() {
 .ag-soc.tt{background:#111;border-color:#111;color:#fff}
 .ag-soc.send{background:linear-gradient(135deg,var(--champ),var(--gold2));border:none;color:#fff}
 .ag-soc.theme{background:conic-gradient(from 0deg,#C2912E,#1B7E9C,#1E9A60,#6D4FC4,#C0392B,#C2912E);border:none;color:#fff}
+.ag-soc.cloud{background:var(--s9);border:1px solid var(--s7);color:var(--s4)}
+.ag-soc.cloud.on{background:#E2F4EA;border-color:#9AD3B4;color:var(--ok)}
+/* customer-facing Samsonix page (via link) */
+.ag-cust-page{max-width:560px;margin:0 auto;padding:16px 14px 40px;min-height:100%}
+.ag-cust-head{display:flex;align-items:center;gap:12px;margin-bottom:16px;padding-bottom:14px;border-bottom:2px solid var(--gold)}
+.ag-cust-head img{width:52px;height:52px;border-radius:11px;object-fit:cover}
+.ag-cust-body{display:flex;flex-direction:column}
+.ag-cust-done{min-height:100%;display:flex;align-items:center;justify-content:center;padding:24px}
+.ag-cust-done-card{background:var(--s9);border:1px solid var(--s7);border-radius:16px;padding:26px 20px;text-align:center;max-width:420px}
+.ag-cust-done-card h2{font-family:'Rubik';font-weight:900;font-size:22px;margin-bottom:8px;color:var(--champ)}
+.ag-cust-done-card p{font-size:13.5px;color:var(--s4);line-height:1.7;margin-bottom:16px}
+.ag-cust-done-card .ag-btn.wa{display:inline-flex;width:auto;padding:13px 22px}
 .ag-theme-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
 .ag-theme-opt{display:flex;align-items:center;gap:10px;background:var(--s9);border:1.5px solid var(--s7);border-radius:12px;padding:13px;font-family:inherit;font-size:14px;font-weight:700;color:var(--silver);cursor:pointer}
 .ag-theme-opt.on{border-color:var(--gold);background:color-mix(in srgb,var(--gold) 12%,transparent)}

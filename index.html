@@ -188,15 +188,18 @@
       // double-load, never an intentional revisit. A deliberate reload later
       // still shows the intro.
       if(window.__alphaIntro){ return; } window.__alphaIntro=true;
+      // Show the intro EXACTLY ONCE per browser session. Any later load in the
+      // same session (a reload, a re-render, or whatever bounced the app back to
+      // the intro) skips it and goes straight to the app. Open a fresh tab to see
+      // the intro again.
       try{
-        var lastTs=+sessionStorage.getItem('alpha_intro_ts')||0;
-        if(Date.now()-lastTs<8000){
+        if(sessionStorage.getItem('alpha_intro_seen')==='1'){
           ov.parentNode&&ov.parentNode.removeChild(ov);
           document.documentElement.classList.remove('booting');
           document.body.classList.add('revealed');
           return;
         }
-        sessionStorage.setItem('alpha_intro_ts',String(Date.now()));
+        sessionStorage.setItem('alpha_intro_seen','1');
       }catch(e){}
       document.documentElement.classList.add('booting');   // hide app + welcome until reveal
       var vid=document.getElementById('introVid'); var vaultVid=document.getElementById('vaultVid');
