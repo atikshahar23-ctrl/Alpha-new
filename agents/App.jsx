@@ -5,8 +5,9 @@ import {
   Copy, Check, Circle, Zap, ChevronLeft, MessageSquare, Plus, Trash2, RefreshCw,
   ArrowUpRight, Bot, Radio, Brain, Rocket, ShieldCheck, ClipboardList,
   GitBranch, Terminal, FileCode2, Coins, Package, Scale, Compass,
-  Building2, Database, GraduationCap,
+  Building2, Database, GraduationCap, Globe,
 } from "lucide-react";
+import * as cloud from "../agent/cloud";
 
 /* ════════════════════════════════════════════════════════════════════
    ALPHA · AGENTS COMMAND CENTER
@@ -25,6 +26,18 @@ const K_GH = "alpha:agents:gh";         // { token, owner, repo } — token stay
 const K_DEVTASKS = "alpha:agents:devtasks"; // [{id, title, brief, status, issueUrl, ts}]
 const load = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } };
 const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+// Cross-device sync: save locally, and — when the free shared-DB (Firebase)
+// is connected — push the same value so every device sees it live.
+// Credentials (GitHub token, Groq key) intentionally never go through this.
+const cloudSave = (k, v) => { save(k, v); if (cloud.cloudConfigured()) cloud.cloudPush(k, v).catch(() => {}); };
+function useCloudSync(key, setter) {
+  useEffect(() => {
+    if (!cloud.cloudConfigured()) return;
+    cloud.cloudGet(key).then((v) => { if (v != null) setter(v); }).catch(() => {});
+    const off = cloud.cloudSubscribe((k, v) => { if (k === key && v != null) setter(v); }, [key]);
+    return off;
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+}
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const now = () => Date.now();
 const timeAgo = (ts) => {
@@ -388,8 +401,10 @@ export default function App() {
   const [ideas, setIdeas] = useState(() => load(K_IDEAS, []));
   const [toast, setToast] = useState("");
 
-  useEffect(() => save(K_ACT, activity.slice(0, 60)), [activity]);
-  useEffect(() => save(K_IDEAS, ideas), [ideas]);
+  useCloudSync(K_ACT, setActivity);
+  useCloudSync(K_IDEAS, setIdeas);
+  useEffect(() => cloudSave(K_ACT, activity.slice(0, 60)), [activity]);
+  useEffect(() => cloudSave(K_IDEAS, ideas), [ideas]);
 
   const showToast = (t) => { setToast(t); setTimeout(() => setToast(""), 2200); };
   const logActivity = (agentId, text) => setActivity((p) => [{ id: uid(), agentId, text, ts: now() }, ...p].slice(0, 60));
@@ -557,12 +572,13 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
   const aiHist = useRef([]);
   const scrollRef = useRef(null);
 
+  useCloudSync(K_HIST, setAllHist);
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [log.length, busy]);
 
   const setLog = (next) => {
     setAllHist((prev) => {
       const merged = { ...prev, [histKey]: next.slice(-40) };
-      save(K_HIST, merged);
+      cloudSave(K_HIST, merged);
       return merged;
     });
   };
@@ -764,7 +780,8 @@ function DevConsole({ logActivity, showToast }) {
   const [execBusy, setExecBusy] = useState(false);
   const [tasks, setTasks] = useState(() => load(K_DEVTASKS, []));
   const [gh, setGh] = useState(ghConfigured());
-  useEffect(() => save(K_DEVTASKS, tasks), [tasks]);
+  useCloudSync(K_DEVTASKS, setTasks);
+  useEffect(() => cloudSave(K_DEVTASKS, tasks), [tasks]);
 
   const execute = async () => {
     const path = filePath.trim();
@@ -1063,11 +1080,12 @@ function OfficeSim({ onClose, onOpenChat }) {
 function BusinessView({ showToast }) {
   const [snap, setSnap] = useState(() => bizSnapshot());
   const [facts, setFacts] = useState(() => learnedFacts());
+  useCloudSync(K_BIZ, setFacts);
   const [fact, setFact] = useState("");
   useEffect(() => { const iv = setInterval(() => setSnap(bizSnapshot()), 5000); return () => clearInterval(iv); }, []);
 
-  const addFact = () => { const t = fact.trim(); if (!t) return; const next = [t, ...facts].slice(0, 60); setFacts(next); save(K_BIZ, next); setFact(""); showToast("הצוות למד עובדה חדשה ✓"); };
-  const delFact = (i) => { const next = facts.filter((_, k) => k !== i); setFacts(next); save(K_BIZ, next); };
+  const addFact = () => { const t = fact.trim(); if (!t) return; const next = [t, ...facts].slice(0, 60); setFacts(next); cloudSave(K_BIZ, next); setFact(""); showToast("הצוות למד עובדה חדשה ✓"); };
+  const delFact = (i) => { const next = facts.filter((_, k) => k !== i); setFacts(next); cloudSave(K_BIZ, next); };
   const hasData = snap.installs || snap.custCount || snap.openDeals;
 
   return (
@@ -1125,6 +1143,15 @@ function SettingsView({ showToast }) {
   const [ghTok, setGhTok] = useState(initGh.token);
   const [ghRepo, setGhRepo] = useState(`${initGh.owner}/${initGh.repo}`);
   const [ghSaved, setGhSaved] = useState(false);
+  const [cloudCfg, setCloudCfg] = useState(() => cloud.cloudConfigRaw());
+  const [cloudSaved, setCloudSaved] = useState(false);
+
+  const saveCloud = () => {
+    const t = cloudCfg.trim();
+    if (t) { try { const o = JSON.parse(t); if (!o.projectId || !o.apiKey) { showToast("ההגדרות חסרות apiKey/projectId"); return; } } catch { showToast("ההגדרות אינן JSON תקין"); return; } }
+    cloud.setCloudConfig(t);
+    setCloudSaved(true); showToast(t ? "הענן חובר ✓ רענן כדי לסנכרן" : "הענן נותק"); setTimeout(() => setCloudSaved(false), 1500);
+  };
 
   const saveKey = () => {
     try { localStorage.setItem("alpha_groq", key.trim()); } catch {}
@@ -1155,6 +1182,18 @@ function SettingsView({ showToast }) {
           <button className="ac-set-clear" onClick={clear}><Trash2 size={15} /></button>
         </div>
         <a className="ac-set-link" href="https://console.groq.com/keys" target="_blank" rel="noreferrer">השג מפתח חינם מ-Groq <ArrowUpRight size={13} /></a>
+      </div>
+
+      <div className="ac-set-card">
+        <div className="ac-set-h"><Globe size={18} /> סנכרון בין מכשירים · ענן
+          <span className={"ac-cloud-pill " + (cloud.cloudConfigured() ? "on" : "")}>{cloud.cloudConfigured() ? "מחובר 🟢" : "לא מחובר ⚪"}</span>
+        </div>
+        <p className="ac-set-note">בלי חיבור ענן, כל מכשיר/דפדפן רואה רק את הנתונים שלו (localStorage מקומי) — זו הסיבה שמכשיר חדש "לא רואה" את הסוכנים. חבר מסד Firebase חינמי (אותו אחד שמשמש את ה-CRM של איתי — אם כבר חיברת שם, הדבק כאן את אותו קוד) כדי שכל השיחות, הרעיונות, משימות הפיתוח והידע העסקי יסונכרנו בזמן אמת בכל מכשיר. 🔒 טוקן GitHub ומפתח Groq נשארים תמיד מקומיים בכל מכשיר, מטעמי אבטחה.</p>
+        <textarea className="ac-set-in" style={{ minHeight: 70, fontFamily: "ui-monospace,monospace", fontSize: 12 }} value={cloudCfg} onChange={(e) => setCloudCfg(e.target.value)} placeholder='{"apiKey":"...","projectId":"...", ...}' dir="ltr" />
+        <div className="ac-set-row">
+          <button className="ac-set-save" onClick={saveCloud}>{cloudSaved ? <><Check size={16} /> חובר</> : <><Globe size={16} /> חבר ענן וסנכרן</>}</button>
+        </div>
+        <a className="ac-set-link" href="https://console.firebase.google.com" target="_blank" rel="noreferrer">פתח פרויקט Firebase חינמי <ArrowUpRight size={13} /></a>
       </div>
 
       <div className="ac-set-card">
@@ -1472,6 +1511,8 @@ function StyleTag() {
 /* ── settings ── */
 .ac-set-card{background:linear-gradient(160deg,rgba(16,14,32,.96),rgba(8,8,18,.97));border:1px solid var(--s7);border-radius:16px;padding:16px;margin-bottom:14px;box-shadow:0 6px 26px rgba(0,0,0,.4)}
 .ac-set-h{display:flex;align-items:center;gap:9px;font-family:'Rubik';font-weight:800;font-size:15px;color:var(--gold);margin-bottom:10px}
+.ac-cloud-pill{margin-right:auto;font-size:10.5px;font-weight:800;padding:3px 10px;border-radius:20px;border:1px solid var(--s7);color:var(--s4);background:var(--s9)}
+.ac-cloud-pill.on{color:#3FD79A;border-color:rgba(63,215,154,.4);background:rgba(63,215,154,.08)}
 .ac-set-note{font-size:12.5px;color:var(--s4);line-height:1.65;margin-bottom:12px}
 .ac-set-in{width:100%;background:var(--s9);border:1px solid var(--s7);color:var(--silver);border-radius:11px;padding:12px 14px;font-family:ui-monospace,monospace;font-size:13px;outline:none;margin-bottom:10px}
 .ac-set-in:focus{border-color:rgba(228,188,99,.55);box-shadow:0 0 0 3px rgba(228,188,99,.1)}

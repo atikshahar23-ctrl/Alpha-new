@@ -31,6 +31,13 @@ export const CLOUD_TABLES = {
   "itai:customers": "customers",
   "itai:samsonix": "samsonix",   // Itai's own saved-form history
   "itai:saminbox": "saminbox",   // customer-submitted Samsonix forms (via link)
+  // Agents Command Center — same shared DB, so it syncs across every device.
+  // Never includes credentials (GitHub token / Groq key stay device-local).
+  "alpha:agents:hist": "agentsHist",
+  "alpha:agents:ideas": "agentsIdeas",
+  "alpha:agents:devtasks": "agentsDevTasks",
+  "alpha:agents:biz": "agentsBiz",
+  "alpha:agents:activity": "agentsActivity",
 };
 
 // A customer-form link carries the Firebase config (base64) so an external
