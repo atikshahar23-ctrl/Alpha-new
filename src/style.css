@@ -434,6 +434,28 @@ body.gesture-cam-open .stage{ background:transparent!important; }
   text-align:center;
 }
 .sd-mic{ display:inline-block; animation:gi-pulse 1.1s ease-in-out infinite; }
+/* Scroll wrapper — clips the row and shows left/right fade arrows */
+.sd-row-wrap{
+  position:relative; max-width:95vw;
+}
+/* Fade + arrow on the left when scrolled right */
+.sd-row-wrap::before,
+.sd-row-wrap::after{
+  content:''; position:absolute; top:0; bottom:0; width:52px; z-index:10;
+  pointer-events:none; transition:opacity .25s;
+}
+.sd-row-wrap::before{
+  left:0; border-radius:28px 0 0 28px;
+  background:linear-gradient(to right,rgba(3,2,12,.92),transparent);
+}
+.sd-row-wrap::after{
+  right:0; border-radius:0 28px 28px 0;
+  background:linear-gradient(to left,rgba(3,2,12,.92),transparent);
+}
+/* Hide fade when nothing to scroll that direction */
+.sd-row-wrap.at-start::before{ opacity:0; }
+.sd-row-wrap.at-end::after  { opacity:0; }
+
 .sd-row{
   display:flex; align-items:flex-end; gap:10px; padding:20px 24px 16px;
   max-width:95vw; overflow-x:auto; overflow-y:visible;
@@ -442,6 +464,11 @@ body.gesture-cam-open .stage{ background:transparent!important; }
   box-shadow:0 24px 80px rgba(0,0,0,.85), inset 0 1px 0 rgba(255,255,255,.1), 0 0 50px rgba(218,165,32,.18);
   backdrop-filter:blur(28px) saturate(1.3);
   scrollbar-width:none;
+  /* Touch scrolling */
+  touch-action:pan-x;
+  -webkit-overflow-scrolling:touch;
+  scroll-snap-type:x mandatory;
+  scroll-behavior:smooth;
 }
 .sd-row::-webkit-scrollbar{ display:none; }
 .sd-item{
@@ -451,6 +478,7 @@ body.gesture-cam-open .stage{ background:transparent!important; }
   transform-origin:bottom center; transform:scale(var(--scale));
   transition:transform .15s ease;
   animation:sd-pop .45s both; animation-delay:var(--d);
+  scroll-snap-align:center;
 }
 @keyframes sd-pop{ from{ opacity:0; transform:translateY(20px) scale(.55); } to{ opacity:1; transform:scale(1); } }
 

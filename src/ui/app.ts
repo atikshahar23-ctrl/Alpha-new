@@ -355,7 +355,9 @@ export function mountApp(root: HTMLElement) {
       <div id="dockBackdrop" class="dock-backdrop" hidden></div>
       <div id="summonDock" class="summon-dock" hidden>
         <div class="sd-hint" id="summonDockHint"><span class="sd-mic">🎙️</span> אמור שם של פוקימון…</div>
-        <div class="sd-row" id="summonDockRow"></div>
+        <div class="sd-row-wrap">
+          <div class="sd-row" id="summonDockRow"></div>
+        </div>
       </div>
 
       <aside class="left-panel" id="leftPanel">
@@ -3837,6 +3839,15 @@ export function mountApp(root: HTMLElement) {
       });
     }
 
+    // Fade-arrow scroll indicators — hide left/right fade when at the edge
+    const sdWrap = row.parentElement as HTMLDivElement;
+    function updateScrollFades() {
+      sdWrap.classList.toggle('at-start', row.scrollLeft <= 4);
+      sdWrap.classList.toggle('at-end', row.scrollLeft >= row.scrollWidth - row.clientWidth - 4);
+    }
+    row.addEventListener('scroll', updateScrollFades, { passive: true });
+    updateScrollFades();
+
     // macOS dock magnification — items swell toward the cursor.
     function magnify(clientX: number) {
       const items = Array.from(row.querySelectorAll<HTMLElement>('.sd-item'));
@@ -3852,7 +3863,7 @@ export function mountApp(root: HTMLElement) {
     function resetMagnify() {
       row.querySelectorAll<HTMLElement>('.sd-item').forEach(it => it.style.setProperty('--scale', '1'));
     }
-    row.addEventListener('pointermove', e => magnify(e.clientX));
+    row.addEventListener('pointermove', e => { if (e.pointerType !== 'touch') magnify(e.clientX); });
     row.addEventListener('pointerleave', resetMagnify);
 
     function startDockVoice() {
@@ -4083,6 +4094,7 @@ export function mountApp(root: HTMLElement) {
       if (dockOpen) return;
       buildDock();
       resetMagnify();
+      requestAnimationFrame(updateScrollFades); // fades after layout
       dock.removeAttribute('hidden');
       const bdrop = document.getElementById('dockBackdrop');
       if (bdrop) { bdrop.removeAttribute('hidden'); requestAnimationFrame(() => bdrop.classList.add('on')); }
