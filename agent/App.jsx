@@ -3,6 +3,7 @@ import {
   Plus, X, Trash2, Search, Phone, Mail, MapPin, Building2, Users, Wallet, Tag,
   Globe, ChevronLeft, MessageSquare, Pencil, Target, Bell, FileText, TrendingUp,
   CheckCircle2, Handshake, LayoutDashboard, UserRound, Send, Copy, Briefcase, Palette,
+  Megaphone, Video, BarChart2, Bookmark, Eye, ThumbsUp, CalendarDays, Sparkles, RefreshCw,
 } from "lucide-react";
 import BULL_LOGO from "../heavyguard/heavyguard-logo.png";
 import leadsData from "../heavyguard/leadsData.json";
@@ -298,6 +299,7 @@ export default function App() {
       {tab === "deals" && <DealsView deals={deals} leads={leads} onEdit={(deal) => setDealDraft({ deal })} onNew={() => setDealDraft({})} onWin={winDeal} onRemove={removeDeal} showToast={showToast} />}
       {tab === "custs" && <CustomersView custs={custs} onSave={saveCustomer} onRemove={removeCustomer} showToast={showToast} />}
       {tab === "map" && <MapView leads={leads} custs={custs} deals={deals} showToast={showToast} />}
+      {tab === "mkt" && <MarketingView showToast={showToast} />}
 
       <nav className="ag-nav">
         <button className={tab === "home" ? "on" : ""} onClick={() => setTab("home")}><LayoutDashboard size={20} /><span>בקרה</span></button>
@@ -305,6 +307,7 @@ export default function App() {
         <button className={tab === "map" ? "on" : ""} onClick={() => setTab("map")}><MapPin size={20} /><span>מפה</span></button>
         <button className={tab === "deals" ? "on" : ""} onClick={() => setTab("deals")}><Handshake size={20} /><span>עסקאות</span></button>
         <button className={tab === "custs" ? "on" : ""} onClick={() => setTab("custs")}><UserRound size={20} /><span>לקוחות</span></button>
+        <button className={tab === "mkt" ? "on" : ""} onClick={() => setTab("mkt")}><Megaphone size={20} /><span>שיווק</span></button>
         <button className="ag-nav-exit" onClick={exitToAlpha}><ChevronLeft size={20} /><span>יציאה</span></button>
       </nav>
 
@@ -1160,6 +1163,290 @@ const SAM_PLANS = [
 ];
 const SAM_FORMS_KEY = "itai:samsonix"; // history — card details are NEVER stored
 
+/* ============================ Marketing Manager ============================ */
+const MKT_KEY = "itai:marketing";
+const MKT_POSTS_KEY = "itai:mkt_posts";
+
+const MKT_TYPES = [
+  { id: "edu",  label: "חינוכי / טיפ מקצועי",  emoji: "🎓" },
+  { id: "promo", label: "פרומו / מבצע",          emoji: "🔥" },
+  { id: "demo",  label: "הדגמת מוצר",             emoji: "📸" },
+  { id: "story", label: "סיפור לקוח",             emoji: "⭐" },
+  { id: "season","label": "עונתי / חגים",         emoji: "🗓️" },
+  { id: "humor", label: "הומור / וירלי",          emoji: "😄" },
+];
+
+const MKT_PLATFORM = [
+  { id: "tiktok",    label: "TikTok",    emoji: "🎵", color: "#010101", url: TT_URL },
+  { id: "facebook",  label: "Facebook",  emoji: "📘", color: "#1877F2", url: FB_URL },
+  { id: "both",      label: "שניהם",     emoji: "📡", color: "#6a4fc4", url: null },
+];
+
+function mktSavePost(post) {
+  try {
+    const list = JSON.parse(localStorage.getItem(MKT_POSTS_KEY) || "[]");
+    const exists = list.findIndex((p) => p.id === post.id);
+    if (exists >= 0) list[exists] = post; else list.unshift(post);
+    localStorage.setItem(MKT_POSTS_KEY, JSON.stringify(list.slice(0, 300)));
+  } catch {}
+}
+function mktLoadPosts() {
+  try { return JSON.parse(localStorage.getItem(MKT_POSTS_KEY) || "[]"); } catch { return []; }
+}
+function mktSaveDraft(draft) {
+  try {
+    const list = JSON.parse(localStorage.getItem(MKT_KEY) || "[]");
+    list.unshift({ ...draft, id: uid(), savedAt: todayISO() });
+    localStorage.setItem(MKT_KEY, JSON.stringify(list.slice(0, 50)));
+  } catch {}
+}
+function mktLoadDrafts() {
+  try { return JSON.parse(localStorage.getItem(MKT_KEY) || "[]"); } catch { return []; }
+}
+
+function MarketingView({ showToast }) {
+  const [platform, setPlatform] = useState("tiktok");
+  const [ctype, setCtype] = useState("edu");
+  const [topic, setTopic] = useState("");
+  const [generated, setGenerated] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [drafts, setDrafts] = useState(() => mktLoadDrafts());
+  const [posts, setPosts] = useState(() => mktLoadPosts());
+  const [postForm, setPostForm] = useState(null); // null or {id,platform,date,text,views,likes,comments}
+  const [viewDraft, setViewDraft] = useState(null);
+  const [tab, setTab] = useState("gen"); // gen | posts | drafts
+
+  const plObj = MKT_PLATFORM.find((p) => p.id === platform) || MKT_PLATFORM[0];
+  const ctObj = MKT_TYPES.find((t) => t.id === ctype) || MKT_TYPES[0];
+
+  const generate = async () => {
+    if (!hasAI()) { showToast("הוסף מפתח Groq בהגדרות Alpha לשימוש ב-AI"); return; }
+    setGenerating(true);
+    setGenerated("");
+    const platLabel = platform === "both" ? "טיקטוק ופייסבוק" : plObj.label;
+    const sys = `אתה מנהל שיווק דיגיטלי מקצועי של Heavy Guard — חברה ישראלית למערכות מיגון ובטיחות לרכבים כבדים: מצלמות DVR, מצלמות רוורס, בלמי בטיחות, איתוראן, מסכי BSD, מצלמות גיבוי לרכבי משא. הדף הוא @heavy.guard בטיקטוק ו-Heavy Guard בפייסבוק. הקהל: בעלי עסקים עם צי רכבים כבדים בישראל. כתוב בעברית מקצועית אבל אנרגטית. בסוף הוסף 5-7 האשטאגים רלוונטיים.`;
+    const prompt = `צור פוסט מקצועי ל${platLabel} בסגנון "${ctObj.label}" ${topic ? `בנושא: ${topic}` : "על מוצרי ושירותי Heavy Guard"}. הפוסט צריך להיות מושך, ממוקד, ולעודד פעולה (לייק/שיתוף/יצירת קשר). כלול: תוכן הפוסט המלא (מתאים לפלטפורמה), המלצה לסוג הוידאו/תמונה שיתלווה, וזמן פרסום אידיאלי.`;
+    try {
+      const res = await askGroqChat(sys, [], prompt);
+      setGenerated(res);
+    } catch {
+      showToast("שגיאה בייצור תוכן — נסה שוב");
+    }
+    setGenerating(false);
+  };
+
+  const saveDraft = () => {
+    if (!generated) return;
+    const d = { platform, ctype, topic, text: generated };
+    mktSaveDraft(d);
+    setDrafts(mktLoadDrafts());
+    showToast("הטיוטה נשמרה ✓");
+  };
+
+  const copyText = (t) => { navigator.clipboard?.writeText(t); showToast("הועתק ✓"); };
+
+  const savePost = (p) => {
+    mktSavePost(p);
+    setPosts(mktLoadPosts());
+    setPostForm(null);
+    showToast("הפוסט נשמר ✓");
+  };
+  const deletePost = (id) => { try { const l = JSON.parse(localStorage.getItem(MKT_POSTS_KEY)||"[]").filter(p=>p.id!==id); localStorage.setItem(MKT_POSTS_KEY,JSON.stringify(l)); setPosts(l); } catch {} };
+  const deleteDraft = (id) => { try { const l = JSON.parse(localStorage.getItem(MKT_KEY)||"[]").filter(d=>d.id!==id); localStorage.setItem(MKT_KEY,JSON.stringify(l)); setDrafts(l); } catch {} };
+
+  const totalViews = posts.reduce((a,p)=>a+(Number(p.views)||0),0);
+  const totalLikes = posts.reduce((a,p)=>a+(Number(p.likes)||0),0);
+
+  return (
+    <div className="ag-view">
+      {/* Header */}
+      <div className="mkt-header">
+        <div className="mkt-header-top">
+          <Megaphone size={20} />
+          <span>מנהל שיווק · Heavy Guard</span>
+        </div>
+        <div className="mkt-social-links">
+          <a href={TT_URL} target="_blank" rel="noreferrer" className="mkt-social-btn tiktok">🎵 TikTok @heavy.guard</a>
+          <a href={FB_URL} target="_blank" rel="noreferrer" className="mkt-social-btn facebook">📘 Facebook Heavy Guard</a>
+        </div>
+        {posts.length > 0 && (
+          <div className="mkt-stats-row">
+            <div className="mkt-stat"><Eye size={13}/> {totalViews.toLocaleString()} צפיות</div>
+            <div className="mkt-stat"><ThumbsUp size={13}/> {totalLikes.toLocaleString()} לייקים</div>
+            <div className="mkt-stat"><Video size={13}/> {posts.length} פוסטים</div>
+          </div>
+        )}
+      </div>
+
+      {/* Sub-tabs */}
+      <div className="mkt-tabs">
+        <button className={tab==="gen"?"on":""} onClick={()=>setTab("gen")}><Sparkles size={14}/> מחולל תוכן</button>
+        <button className={tab==="posts"?"on":""} onClick={()=>setTab("posts")}><BarChart2 size={14}/> מעקב פוסטים</button>
+        <button className={tab==="drafts"?"on":""} onClick={()=>setTab("drafts")}><Bookmark size={14}/> טיוטות {drafts.length>0&&<span className="mkt-badge">{drafts.length}</span>}</button>
+      </div>
+
+      {/* ── CONTENT GENERATOR ── */}
+      {tab === "gen" && (
+        <div className="mkt-section">
+          <div className="ag-lbl">פלטפורמה</div>
+          <div className="ag-chips sm">
+            {MKT_PLATFORM.map(p => (
+              <button key={p.id} className={platform===p.id?"on":""} onClick={()=>setPlatform(p.id)}>{p.emoji} {p.label}</button>
+            ))}
+          </div>
+          <div className="ag-lbl">סוג תוכן</div>
+          <div className="ag-chips sm nowrap" style={{flexWrap:"wrap"}}>
+            {MKT_TYPES.map(t => (
+              <button key={t.id} className={ctype===t.id?"on":""} onClick={()=>setCtype(t.id)}>{t.emoji} {t.label}</button>
+            ))}
+          </div>
+          <div className="ag-lbl">נושא ספציפי (אופציונלי)</div>
+          <input className="ag-input" value={topic} onChange={e=>setTopic(e.target.value)} placeholder="למשל: מצלמות DVR לאוטובוסים, מבצע קיץ, תקנות 2026..." />
+          <button className="mkt-gen-btn" onClick={generate} disabled={generating}>
+            {generating ? <><RefreshCw size={15} className="mkt-spin"/> מייצר תוכן...</> : <><Sparkles size={15}/> ייצר פוסט AI</>}
+          </button>
+          {generated && (
+            <div className="mkt-result">
+              <div className="mkt-result-head">
+                <span>{plObj.emoji} {plObj.label} · {ctObj.emoji} {ctObj.label}</span>
+                <div style={{display:"flex",gap:6}}>
+                  <button className="mkt-icon-btn" onClick={()=>copyText(generated)} title="העתק"><Copy size={14}/></button>
+                  <button className="mkt-icon-btn" onClick={saveDraft} title="שמור טיוטה"><Bookmark size={14}/></button>
+                  <button className="mkt-icon-btn" onClick={generate} title="ייצר מחדש"><RefreshCw size={14}/></button>
+                </div>
+              </div>
+              <pre className="mkt-result-text">{generated}</pre>
+              <div className="mkt-result-actions">
+                {plObj.url && <a href={plObj.url} target="_blank" rel="noreferrer" className="mkt-post-link">{plObj.emoji} פתח {plObj.label} לפרסום</a>}
+                {platform==="both" && <>
+                  <a href={TT_URL} target="_blank" rel="noreferrer" className="mkt-post-link">🎵 TikTok</a>
+                  <a href={FB_URL} target="_blank" rel="noreferrer" className="mkt-post-link">📘 Facebook</a>
+                </>}
+              </div>
+            </div>
+          )}
+
+          {/* Weekly content ideas */}
+          <div className="mkt-ideas">
+            <div className="mkt-ideas-title"><CalendarDays size={14}/> רעיונות לשבוע הקרוב</div>
+            {[
+              { day: "ראשון", idea: "🎓 טיפ: איך מצלמות DVR מונעות תאונות? הסבר קצר + סרטון הדגמה" },
+              { day: "שלישי", idea: "📸 לפני/אחרי התקנה — הראה רכב לפני ואחרי התקנת המצלמות" },
+              { day: "חמישי", idea: "⭐ סיפור לקוח: בעל צי שניצל בזכות מצלמת הגיבוי" },
+              { day: "שבת",  idea: "🔥 מבצע סוף שבוע: חבילת DVR + מצלמת BSD במחיר מיוחד" },
+            ].map(({ day, idea }) => (
+              <div key={day} className="mkt-idea-row">
+                <span className="mkt-day">{day}</span>
+                <span>{idea}</span>
+                <button className="mkt-icon-btn" onClick={()=>{ setCtype(idea.includes("טיפ")?"edu":idea.includes("לפני")?"demo":idea.includes("סיפור")?"story":"promo"); setTab("gen"); }} title="ייצר"><Sparkles size={13}/></button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── POST TRACKER ── */}
+      {tab === "posts" && (
+        <div className="mkt-section">
+          <button className="mkt-gen-btn" style={{marginBottom:12}} onClick={()=>setPostForm({id:uid(),platform:"tiktok",date:todayISO(),text:"",views:"",likes:"",comments:""})}>
+            <Plus size={15}/> הוסף פוסט שפורסם
+          </button>
+          {posts.length === 0 && <div className="ag-empty">עדיין לא הוספת פוסטים מעוקבים</div>}
+          {posts.map(p => {
+            const plIcon = p.platform==="facebook"?"📘":"🎵";
+            return (
+              <div key={p.id} className="mkt-post-card">
+                <div className="mkt-post-head">
+                  <span>{plIcon} {p.date}</span>
+                  <div style={{display:"flex",gap:6}}>
+                    <button className="mkt-icon-btn" onClick={()=>setPostForm({...p})} title="עריכה"><Pencil size={13}/></button>
+                    <button className="mkt-icon-btn red" onClick={()=>deletePost(p.id)} title="מחק"><Trash2 size={13}/></button>
+                  </div>
+                </div>
+                {p.text && <div className="mkt-post-preview">{p.text.slice(0,80)}{p.text.length>80?"…":""}</div>}
+                <div className="mkt-post-stats">
+                  {p.views && <span><Eye size={12}/> {Number(p.views).toLocaleString()}</span>}
+                  {p.likes && <span><ThumbsUp size={12}/> {Number(p.likes).toLocaleString()}</span>}
+                  {p.comments && <span>💬 {p.comments}</span>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── DRAFTS ── */}
+      {tab === "drafts" && (
+        <div className="mkt-section">
+          {drafts.length === 0 && <div className="ag-empty">אין טיוטות שמורות — ייצר תוכן ושמור</div>}
+          {drafts.map(d => {
+            const plO = MKT_PLATFORM.find(p=>p.id===d.platform)||MKT_PLATFORM[0];
+            const ctO = MKT_TYPES.find(t=>t.id===d.ctype)||MKT_TYPES[0];
+            return (
+              <div key={d.id} className="mkt-draft-card" onClick={()=>setViewDraft(d)}>
+                <div className="mkt-post-head">
+                  <span>{plO.emoji} {plO.label} · {ctO.emoji} {ctO.label}</span>
+                  <div style={{display:"flex",gap:6}} onClick={e=>e.stopPropagation()}>
+                    <button className="mkt-icon-btn" onClick={()=>copyText(d.text)} title="העתק"><Copy size={13}/></button>
+                    <button className="mkt-icon-btn red" onClick={()=>deleteDraft(d.id)} title="מחק"><Trash2 size={13}/></button>
+                  </div>
+                </div>
+                <div className="mkt-post-preview">{(d.text||"").slice(0,90)}{(d.text||"").length>90?"…":""}</div>
+                <div className="mkt-post-stats"><CalendarDays size={12}/> {d.savedAt}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Post form modal */}
+      {postForm && (
+        <div className="ag-modal" onClick={e=>{if(e.target===e.currentTarget)setPostForm(null)}}>
+          <div className="ag-sheet sm">
+            <div className="ag-sheet-head"><b>{postForm.text?"עריכת פוסט":"הוספת פוסט"}</b><button onClick={()=>setPostForm(null)}><X size={20}/></button></div>
+            <div className="ag-sheet-body">
+              <label className="ag-lbl">פלטפורמה</label>
+              <div className="ag-chips sm">
+                <button className={postForm.platform==="tiktok"?"on":""} onClick={()=>setPostForm(p=>({...p,platform:"tiktok"}))}>🎵 TikTok</button>
+                <button className={postForm.platform==="facebook"?"on":""} onClick={()=>setPostForm(p=>({...p,platform:"facebook"}))}>📘 Facebook</button>
+              </div>
+              <label className="ag-lbl">תאריך פרסום</label>
+              <input className="ag-input" type="date" value={postForm.date} onChange={e=>setPostForm(p=>({...p,date:e.target.value}))} />
+              <label className="ag-lbl">תוכן הפוסט (קצר)</label>
+              <textarea className="ag-textarea" rows={3} value={postForm.text} onChange={e=>setPostForm(p=>({...p,text:e.target.value}))} placeholder="כותרת הפוסט / נושא..."/>
+              <div className="ag-row">
+                <div style={{flex:1}}><label className="ag-lbl"><Eye size={12}/> צפיות</label><input className="ag-input" type="number" value={postForm.views} onChange={e=>setPostForm(p=>({...p,views:e.target.value}))} placeholder="0" dir="ltr"/></div>
+                <div style={{flex:1}}><label className="ag-lbl"><ThumbsUp size={12}/> לייקים</label><input className="ag-input" type="number" value={postForm.likes} onChange={e=>setPostForm(p=>({...p,likes:e.target.value}))} placeholder="0" dir="ltr"/></div>
+                <div style={{flex:1}}><label className="ag-lbl">💬 תגובות</label><input className="ag-input" type="number" value={postForm.comments} onChange={e=>setPostForm(p=>({...p,comments:e.target.value}))} placeholder="0" dir="ltr"/></div>
+              </div>
+            </div>
+            <div className="ag-sheet-foot">
+              <button className="ag-btn ghost" onClick={()=>setPostForm(null)}>ביטול</button>
+              <button className="ag-btn" onClick={()=>savePost(postForm)}>שמור</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Draft viewer modal */}
+      {viewDraft && (
+        <div className="ag-modal" onClick={e=>{if(e.target===e.currentTarget)setViewDraft(null)}}>
+          <div className="ag-sheet">
+            <div className="ag-sheet-head"><b>טיוטה שמורה</b><button onClick={()=>setViewDraft(null)}><X size={20}/></button></div>
+            <div className="ag-sheet-body">
+              <pre className="mkt-result-text" style={{margin:0}}>{viewDraft.text}</pre>
+            </div>
+            <div className="ag-sheet-foot">
+              <button className="ag-btn ghost" onClick={()=>copyText(viewDraft.text)}><Copy size={14}/> העתק</button>
+              <button className="ag-btn" onClick={()=>setViewDraft(null)}>סגור</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Build the exact Samsonix DVR agreement HTML — matches the original printed form.
 // card = { num, expiry, cvv } — shown once then discarded (never persisted).
 // card may be null for inbox records where no card was stored.
@@ -1862,5 +2149,45 @@ function StyleTag() {
   .hg2-quotedoc{position:absolute;inset:0;margin:0;box-shadow:none;border-radius:0}
   .ag-quote-noprint{display:none!important}
 }
+
+/* ── Marketing Manager ── */
+.mkt-header{background:var(--s9);border:1px solid var(--s7);border-radius:14px;padding:14px;margin-bottom:14px}
+.mkt-header-top{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;margin-bottom:10px}
+.mkt-social-links{display:flex;gap:8px;flex-wrap:wrap}
+.mkt-social-btn{padding:7px 13px;border-radius:20px;font-size:12.5px;font-weight:600;text-decoration:none;color:#fff;display:inline-flex;align-items:center;gap:5px}
+.mkt-social-btn.tiktok{background:#010101}
+.mkt-social-btn.facebook{background:#1877F2}
+.mkt-stats-row{display:flex;gap:12px;margin-top:10px;flex-wrap:wrap}
+.mkt-stat{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--s4);background:var(--s8);padding:4px 9px;border-radius:20px}
+.mkt-tabs{display:flex;gap:6px;margin-bottom:12px;background:var(--s8);border-radius:12px;padding:4px}
+.mkt-tabs button{flex:1;padding:7px 4px;border-radius:9px;font-size:12px;display:flex;align-items:center;justify-content:center;gap:5px;border:none;background:none;color:var(--s4);cursor:pointer;font-family:inherit}
+.mkt-tabs button.on{background:var(--s9);color:var(--gold);font-weight:700;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.mkt-badge{background:var(--gold);color:#fff;border-radius:10px;font-size:10px;padding:1px 5px;margin-right:2px}
+.mkt-section{display:flex;flex-direction:column;gap:0}
+.mkt-gen-btn{display:flex;align-items:center;justify-content:center;gap:7px;background:var(--gold);color:#fff;border:none;border-radius:12px;padding:12px;font-size:14px;font-weight:700;width:100%;cursor:pointer;margin-top:10px;transition:.15s;font-family:inherit}
+.mkt-gen-btn:disabled{opacity:.6;cursor:not-allowed}
+.mkt-gen-btn:not(:disabled):hover{background:var(--gold2)}
+.mkt-result{background:var(--s8);border:1px solid var(--s7);border-radius:13px;margin-top:12px;overflow:hidden}
+.mkt-result-head{display:flex;justify-content:space-between;align-items:center;padding:9px 12px;background:var(--s9);border-bottom:1px solid var(--s7);font-size:12.5px;font-weight:600;color:var(--s4)}
+.mkt-result-text{padding:12px;font-size:13px;line-height:1.7;white-space:pre-wrap;word-break:break-word;margin:0;font-family:inherit;color:var(--silver)}
+.mkt-result-actions{display:flex;gap:8px;padding:9px 12px;border-top:1px solid var(--s7);flex-wrap:wrap}
+.mkt-post-link{background:var(--gold);color:#fff;border-radius:20px;padding:6px 13px;font-size:12px;font-weight:600;text-decoration:none;display:inline-flex;align-items:center;gap:4px}
+.mkt-icon-btn{background:var(--s8);border:1px solid var(--s7);border-radius:7px;padding:5px 7px;cursor:pointer;display:inline-flex;align-items:center;color:var(--s4);transition:.1s}
+.mkt-icon-btn:hover{background:var(--s7);color:var(--silver)}
+.mkt-icon-btn.red:hover{background:#fde8e6;color:var(--red);border-color:var(--red)}
+.mkt-ideas{background:var(--s9);border:1px solid var(--s7);border-radius:13px;margin-top:14px;overflow:hidden}
+.mkt-ideas-title{display:flex;align-items:center;gap:6px;padding:9px 12px;font-size:12.5px;font-weight:700;border-bottom:1px solid var(--s7)}
+.mkt-idea-row{display:flex;align-items:center;gap:8px;padding:8px 12px;font-size:12.5px;border-bottom:1px solid var(--s7)}
+.mkt-idea-row:last-child{border-bottom:none}
+.mkt-day{font-weight:700;color:var(--gold);min-width:40px;font-size:11.5px}
+.mkt-post-card{background:var(--s9);border:1px solid var(--s7);border-radius:12px;padding:11px 13px;margin-bottom:8px}
+.mkt-draft-card{background:var(--s9);border:1px solid var(--s7);border-radius:12px;padding:11px 13px;margin-bottom:8px;cursor:pointer;transition:.1s}
+.mkt-draft-card:hover{border-color:var(--gold)}
+.mkt-post-head{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--s4);margin-bottom:5px}
+.mkt-post-preview{font-size:12.5px;color:var(--silver);margin:3px 0 5px;line-height:1.5}
+.mkt-post-stats{display:flex;gap:10px;font-size:11.5px;color:var(--s4);align-items:center}
+.mkt-post-stats span{display:flex;align-items:center;gap:3px}
+@keyframes mkt-spin{to{transform:rotate(360deg)}}
+.mkt-spin{animation:mkt-spin .7s linear infinite}
 `}</style>;
 }
