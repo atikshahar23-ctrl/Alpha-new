@@ -114,6 +114,59 @@ const AGENTS = [
 ];
 const byId = (id) => AGENTS.find((a) => a.id === id);
 
+/* ── Faces: locally-generated flat portrait per agent (inline SVG data URI,
+   zero network dependency so they always render). ── */
+const FACE_PARAMS = {
+  ceo:   { skin: "#E8B98D", hair: "#2B2118", style: "short", beard: "stubble", glasses: false, bg1: "#3a3320", bg2: "#100d06" },
+  sales: { skin: "#F0C49A", hair: "#3A2A1C", style: "short", beard: "none",    glasses: false, bg1: "#163328", bg2: "#08160f" },
+  ops:   { skin: "#D9A06B", hair: "#1A1A22", style: "short", beard: "none",    glasses: false, bg1: "#143140", bg2: "#08161d" },
+  cmo:   { skin: "#F2CBA6", hair: "#4A2E1C", style: "long",  beard: "none",    glasses: false, bg1: "#2c1742", bg2: "#150a22" },
+  dev:   { skin: "#E6B488", hair: "#2B2118", style: "short", beard: "full",    glasses: true,  bg1: "#3a2410", bg2: "#1a0f04" },
+  auto:  { skin: "#EFC197", hair: "#C9A24B", style: "short", beard: "none",    glasses: true,  bg1: "#3a3410", bg2: "#1a1704" },
+  data:  { skin: "#E8B98D", hair: "#1A1A22", style: "long",  beard: "none",    glasses: true,  bg1: "#142a40", bg2: "#08141d" },
+  cs:    { skin: "#F2CBA6", hair: "#5A3A22", style: "long",  beard: "none",    glasses: false, bg1: "#40142a", bg2: "#1d0814" },
+};
+function facePortrait(p, shirt) {
+  const dark = (c) => c; // hair shade reused
+  const hairTop = p.style === "long"
+    ? `<path d="M24 44 C20 18 80 18 76 44 L76 60 72 60 C72 40 70 30 50 30 C30 30 28 40 28 60 L24 60 Z" fill="${p.hair}"/>`
+    : `<path d="M27 42 C26 20 74 20 73 42 C70 32 62 27 50 27 C38 27 30 32 27 42 Z" fill="${p.hair}"/>`;
+  const glasses = p.glasses
+    ? `<g stroke="#23252e" stroke-width="2.2" fill="rgba(150,200,255,.12)"><rect x="33" y="46" width="14" height="11" rx="4"/><rect x="53" y="46" width="14" height="11" rx="4"/><path d="M47 50 L53 50" fill="none"/></g>`
+    : "";
+  const beard = p.beard === "full"
+    ? `<path d="M31 56 C31 76 69 76 69 56 C69 70 64 74 50 74 C36 74 31 70 31 56 Z" fill="${p.hair}" opacity=".92"/>`
+    : p.beard === "stubble"
+    ? `<path d="M33 60 C34 72 66 72 67 60 C66 69 60 71 50 71 C40 71 34 69 33 60 Z" fill="${p.hair}" opacity=".28"/>`
+    : "";
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${p.bg1}"/><stop offset="1" stop-color="${p.bg2}"/></linearGradient></defs>`
+    + `<rect width="100" height="100" rx="20" fill="url(#bg)"/>`
+    + `<path d="M30 100 C30 80 40 74 50 74 C60 74 70 80 70 100 Z" fill="${shirt}"/>`
+    + `<path d="M30 100 C30 84 38 78 50 78 C62 78 70 84 70 100 Z" fill="rgba(255,255,255,.12)"/>`
+    + `<rect x="44" y="60" width="12" height="16" rx="6" fill="${p.skin}"/>`
+    + `<ellipse cx="27" cy="50" rx="4" ry="5" fill="${p.skin}"/><ellipse cx="73" cy="50" rx="4" ry="5" fill="${p.skin}"/>`
+    + `<path d="M30 46 C30 26 70 26 70 46 L70 54 C70 70 58 74 50 74 C42 74 30 70 30 54 Z" fill="${p.skin}"/>`
+    + dark(beard)
+    + `<path d="M36 44 C39 41 45 41 47 44" stroke="${p.hair}" stroke-width="2.4" fill="none" stroke-linecap="round"/>`
+    + `<path d="M53 44 C55 41 61 41 64 44" stroke="${p.hair}" stroke-width="2.4" fill="none" stroke-linecap="round"/>`
+    + `<ellipse cx="41" cy="51" rx="3.1" ry="3.6" fill="#fff"/><circle cx="41.3" cy="51.6" r="1.8" fill="#2a2018"/>`
+    + `<ellipse cx="59" cy="51" rx="3.1" ry="3.6" fill="#fff"/><circle cx="59.3" cy="51.6" r="1.8" fill="#2a2018"/>`
+    + glasses
+    + `<path d="M48 55 C49 58 51 58 52 55" stroke="rgba(120,80,50,.5)" stroke-width="1.6" fill="none" stroke-linecap="round"/>`
+    + `<path d="M44 64 C47 67 53 67 56 64" stroke="#9a5b46" stroke-width="2.4" fill="none" stroke-linecap="round"/>`
+    + hairTop
+    + `</svg>`;
+}
+AGENTS.forEach((a) => {
+  const p = FACE_PARAMS[a.id] || FACE_PARAMS.sales;
+  a.avatar = "data:image/svg+xml;utf8," + encodeURIComponent(facePortrait(p, a.color));
+});
+function Face({ agent, fallback = 20 }) {
+  const [err, setErr] = useState(false);
+  if (err || !agent.avatar) { const I = agent.Icon; return <I size={fallback} />; }
+  return <img className="ac-face" src={agent.avatar} alt={agent.name} draggable={false} onError={() => setErr(true)} />;
+}
+
 /* ── Scripted persona fallback (when no AI key) ── */
 const FALLBACK = {
   ceo: (q) => `קיבלתי, מנהל. ${q ? `לגבי "${q.slice(0, 40)}" — ` : ""}הנה איך אני מסתכל על זה:\n\n1. ניב (מכירות) — לעקוב אחרי הלידים החמים והעסקאות הפתוחות.\n2. תמיר (תפעול) — לוודא שכל ההתקנות מתואמות.\n3. שיר (שיווק) — לדחוף תוכן שמביא לידים חדשים.\n\n➤ הצעד הבא: בחר סוכן מהצוות ואני אאציל לו את המשימה. (חבר מפתח Groq בהגדרות כדי שאהפוך ל-AI חי ומלא.)`,
@@ -264,7 +317,7 @@ function RosterView({ onOpen, activity }) {
       {/* CEO featured card */}
       <button className="ac-ceo" style={{ "--c": ceo.color, "--ac": ceo.accent }} onClick={() => onOpen(ceo.id)}>
         <div className="ac-ceo-glow" />
-        <div className="ac-ceo-orb"><ceo.Icon size={30} /><span className="ac-orb-ring" /></div>
+        <div className="ac-ceo-orb"><Face agent={ceo} fallback={30} /><span className="ac-orb-ring" /></div>
         <div className="ac-ceo-mid">
           <div className="ac-ceo-top"><b>{ceo.name}</b><span className="ac-crown"><Crown size={12} /> {ceo.title}</span></div>
           <p>{ceo.tagline}</p>
@@ -281,7 +334,7 @@ function RosterView({ onOpen, activity }) {
             <button key={a.id} className="ac-card" style={{ "--c": a.color, "--ac": a.accent }} onClick={() => onOpen(a.id)}>
               <div className="ac-card-glow" />
               <div className="ac-card-head">
-                <div className="ac-orb"><a.Icon size={22} /><span className="ac-orb-ring" /></div>
+                <div className="ac-orb"><Face agent={a} fallback={22} /><span className="ac-orb-ring" /></div>
                 <div className="ac-status-pill"><span className="ac-live-dot" /> פעיל</div>
               </div>
               <div className="ac-card-name">{a.name}</div>
@@ -350,7 +403,7 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
       <div className="ac-chat" style={{ "--c": agent.color, "--ac": agent.accent }} onClick={(e) => e.stopPropagation()}>
         <div className="ac-chat-head">
           <button className="ac-chat-back" onClick={onClose}><ChevronLeft size={20} /></button>
-          <div className="ac-chat-orb"><agent.Icon size={20} /><span className="ac-orb-ring" /></div>
+          <div className="ac-chat-orb"><Face agent={agent} fallback={20} /><span className="ac-orb-ring" /></div>
           <div className="ac-chat-id">
             <b>{agent.name} {agent.boss && <Crown size={12} />}</b>
             <span><span className="ac-live-dot" /> {agent.title} · {hasAI() ? "AI חי" : "מצב הדגמה"}</span>
@@ -361,8 +414,8 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
         {/* quick switch to other agents */}
         <div className="ac-switch">
           {AGENTS.map((a) => (
-            <button key={a.id} className={a.id === agent.id ? "on" : ""} style={{ "--c": a.color }} onClick={() => onSwitch(a.id)} title={a.name}>
-              <a.Icon size={15} />
+            <button key={a.id} className={"ac-switch-btn " + (a.id === agent.id ? "on" : "")} style={{ "--c": a.color }} onClick={() => onSwitch(a.id)} title={a.name}>
+              <Face agent={a} fallback={15} />
             </button>
           ))}
         </div>
@@ -370,7 +423,7 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
         <div className="ac-chat-log" ref={scrollRef}>
           {log.map((m, i) => (
             <div key={i} className={"ac-msg " + m.from}>
-              {m.from === "bot" && <div className="ac-msg-av"><agent.Icon size={13} /></div>}
+              {m.from === "bot" && <div className="ac-msg-av"><Face agent={agent} fallback={13} /></div>}
               <div className="ac-msg-body">
                 <div className="ac-msg-txt">{m.text}</div>
                 {m.from === "bot" && i > 0 && (
@@ -382,7 +435,7 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
               </div>
             </div>
           ))}
-          {busy && <div className="ac-msg bot"><div className="ac-msg-av"><agent.Icon size={13} /></div><div className="ac-msg-body"><div className="ac-msg-txt ac-typing"><span /><span /><span /></div></div></div>}
+          {busy && <div className="ac-msg bot"><div className="ac-msg-av"><Face agent={agent} fallback={13} /></div><div className="ac-msg-body"><div className="ac-msg-txt ac-typing"><span /><span /><span /></div></div></div>}
         </div>
 
         <div className="ac-quick">
@@ -421,7 +474,7 @@ function ActivityView({ activity }) {
           const ag = byId(a.agentId); if (!ag) return null;
           return (
             <div key={a.id} className="ac-feed-row" style={{ "--c": ag.color }}>
-              <div className="ac-feed-orb"><ag.Icon size={15} /></div>
+              <div className="ac-feed-orb"><Face agent={ag} fallback={15} /></div>
               <div className="ac-feed-mid">
                 <b>{ag.name} <span>· {ag.title}</span></b>
                 <p>{a.text}</p>
@@ -613,6 +666,7 @@ function StyleTag() {
   box-shadow:0 4px 18px color-mix(in srgb,var(--c,#E4BC63) 55%,transparent),inset 0 1px 0 rgba(255,255,255,.5)}
 .ac-orb{width:46px;height:46px;border-radius:14px}
 .ac-orb-ring{position:absolute;inset:0;border-radius:inherit;border:2px solid var(--c,#E4BC63);animation:acRing 2.6s ease-out infinite;pointer-events:none}
+.ac-face{width:100%;height:100%;object-fit:cover;border-radius:inherit;display:block;user-select:none}
 
 /* ── live dot ── */
 .ac-live-dot{width:7px;height:7px;border-radius:50%;background:#3FD79A;box-shadow:0 0 8px #3FD79A;animation:acDot 1.8s ease-in-out infinite;flex-shrink:0;display:inline-block}
@@ -688,9 +742,11 @@ function StyleTag() {
 
 .ac-switch{display:flex;gap:7px;padding:10px 14px;overflow-x:auto;border-bottom:1px solid var(--s7);scrollbar-width:none}
 .ac-switch::-webkit-scrollbar{display:none}
-.ac-switch button{flex-shrink:0;width:36px;height:36px;border-radius:11px;background:var(--s8);border:1px solid var(--s7);color:var(--s4);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.15s}
+.ac-switch button{flex-shrink:0;width:36px;height:36px;border-radius:11px;background:var(--s8);border:1px solid var(--s7);color:var(--s4);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.15s;padding:0;overflow:hidden}
 .ac-switch button:hover{color:var(--c);border-color:color-mix(in srgb,var(--c) 50%,transparent)}
 .ac-switch button.on{background:color-mix(in srgb,var(--c) 18%,transparent);border-color:var(--c);color:var(--c);box-shadow:0 0 12px color-mix(in srgb,var(--c) 30%,transparent)}
+.ac-switch-btn{opacity:.6}
+.ac-switch-btn.on{opacity:1}
 
 .ac-chat-log{flex:1;overflow-y:auto;padding:16px 14px;display:flex;flex-direction:column;gap:14px}
 .ac-msg{display:flex;gap:9px;max-width:90%;animation:acRise .25s ease both}
