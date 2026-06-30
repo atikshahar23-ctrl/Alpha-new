@@ -25,19 +25,16 @@ function db() {
 }
 
 // Local table (localStorage key) → Firestore document id under collection "itai".
+// NOTE: this config (and DB) is shared with Itai — he pastes the same web
+// config to sync his leads/deals/customers in real time. Never add owner-only
+// data (Agents Command Center, etc.) to this table; see agents/cloud.js for
+// that separate, owner-only sync.
 export const CLOUD_TABLES = {
   "itai:crm": "crm",
   "itai:deals": "deals",
   "itai:customers": "customers",
   "itai:samsonix": "samsonix",   // Itai's own saved-form history
   "itai:saminbox": "saminbox",   // customer-submitted Samsonix forms (via link)
-  // Agents Command Center — same shared DB, so it syncs across every device.
-  // Never includes credentials (GitHub token / Groq key stay device-local).
-  "alpha:agents:hist": "agentsHist",
-  "alpha:agents:ideas": "agentsIdeas",
-  "alpha:agents:devtasks": "agentsDevTasks",
-  "alpha:agents:biz": "agentsBiz",
-  "alpha:agents:activity": "agentsActivity",
 };
 
 // A customer-form link carries the Firebase config (base64) so an external

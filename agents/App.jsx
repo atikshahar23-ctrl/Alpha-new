@@ -7,7 +7,7 @@ import {
   GitBranch, Terminal, FileCode2, Coins, Package, Scale, Compass,
   Building2, Database, GraduationCap, Globe,
 } from "lucide-react";
-import * as cloud from "../agent/cloud";
+import * as cloud from "./cloud";
 
 /* ════════════════════════════════════════════════════════════════════
    ALPHA · AGENTS COMMAND CENTER
@@ -1188,7 +1188,7 @@ function SettingsView({ showToast }) {
         <div className="ac-set-h"><Globe size={18} /> סנכרון בין מכשירים · ענן
           <span className={"ac-cloud-pill " + (cloud.cloudConfigured() ? "on" : "")}>{cloud.cloudConfigured() ? "מחובר 🟢" : "לא מחובר ⚪"}</span>
         </div>
-        <p className="ac-set-note">בלי חיבור ענן, כל מכשיר/דפדפן רואה רק את הנתונים שלו (localStorage מקומי) — זו הסיבה שמכשיר חדש "לא רואה" את הסוכנים. חבר מסד Firebase חינמי (אותו אחד שמשמש את ה-CRM של איתי — אם כבר חיברת שם, הדבק כאן את אותו קוד) כדי שכל השיחות, הרעיונות, משימות הפיתוח והידע העסקי יסונכרנו בזמן אמת בכל מכשיר. 🔒 טוקן GitHub ומפתח Groq נשארים תמיד מקומיים בכל מכשיר, מטעמי אבטחה.</p>
+        <p className="ac-set-note">בלי חיבור ענן, כל מכשיר/דפדפן רואה רק את הנתונים שלו (localStorage מקומי) — זו הסיבה שמכשיר חדש "לא רואה" את הסוכנים. חבר מסד Firebase חינמי <b>נפרד לחלוטין מהענן שאיתי מחובר אליו</b> (אפשר פרויקט Firebase חדש לגמרי, או אותו פרויקט עם קוד שונה) כדי שכל השיחות, הרעיונות, משימות הפיתוח והידע העסקי יסונכרנו בזמן אמת — רק בין המכשירים שלך. ⚠️ אל תיתן את הקוד הזה לאיתי או לאף אחד אחר — זה אזור הבעלים בלבד. 🔒 טוקן GitHub ומפתח Groq נשארים תמיד מקומיים בכל מכשיר, מטעמי אבטחה.</p>
         <textarea className="ac-set-in" style={{ minHeight: 70, fontFamily: "ui-monospace,monospace", fontSize: 12 }} value={cloudCfg} onChange={(e) => setCloudCfg(e.target.value)} placeholder='{"apiKey":"...","projectId":"...", ...}' dir="ltr" />
         <div className="ac-set-row">
           <button className="ac-set-save" onClick={saveCloud}>{cloudSaved ? <><Check size={16} /> חובר</> : <><Globe size={16} /> חבר ענן וסנכרן</>}</button>

@@ -412,7 +412,12 @@ export default function App() {
     showToast("מזל טוב! העסקה נסגרה והלקוח נוסף 🎉");
   }, [upsertDeal, updateCrm, addCustomer, showToast]);
 
-  const exitToAlpha = () => { try { window.close(); } catch {} setTimeout(() => { window.location.href = "./"; }, 120); };
+  // Exit: tries to close the tab. If that fails (the common case when this
+  // link was opened directly, e.g. by Itai) we must NOT fall back to the
+  // owner's main app — that would hand an external user the dock with links
+  // to HeavyGuard, the trading sim and the Agents Command Center. Just tell
+  // them they can close the tab.
+  const exitToAlpha = () => { try { window.close(); } catch {} setTimeout(() => { showToast("אפשר לסגור את הכרטיסייה/הדפדפן עכשיו"); }, 150); };
 
   // External customer Samsonix form (opened via the link Itai sends). Full-screen,
   // no CRM nav — the customer just fills and submits.
