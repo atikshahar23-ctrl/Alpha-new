@@ -268,6 +268,7 @@ function seedActivity() {
 export default function App() {
   const [view, setView] = useState("roster");      // roster | activity | ideas | settings
   const [chatId, setChatId] = useState(null);       // open agent chat
+  const [office, setOffice] = useState(false);      // office simulator overlay
   const [activity, setActivity] = useState(() => { const a = load(K_ACT, null); return a && a.length ? a : seedActivity(); });
   const [ideas, setIdeas] = useState(() => load(K_IDEAS, []));
   const [toast, setToast] = useState("");
@@ -290,6 +291,7 @@ export default function App() {
         {view === "roster" && (
           <RosterView
             onOpen={(id) => setChatId(id)}
+            onOffice={() => setOffice(true)}
             activity={activity}
           />
         )}
@@ -311,6 +313,8 @@ export default function App() {
           showToast={showToast}
         />
       )}
+
+      {office && <OfficeSim onClose={() => setOffice(false)} onOpenChat={(id) => { setOffice(false); setChatId(id); }} />}
 
       {toast && <div className="ac-toast">{toast}</div>}
     </div>
@@ -359,7 +363,7 @@ function BottomNav({ view, setView, ideasCount }) {
 /* ════════════════════════════════════════════════════════════════════
    ROSTER — the team grid
    ════════════════════════════════════════════════════════════════════ */
-function RosterView({ onOpen, activity }) {
+function RosterView({ onOpen, onOffice, activity }) {
   const ceo = AGENTS.find((a) => a.boss);
   const team = AGENTS.filter((a) => !a.boss);
   const lastByAgent = useMemo(() => {
@@ -386,6 +390,18 @@ function RosterView({ onOpen, activity }) {
           <div className="ac-ceo-now"><span className="ac-live-dot" /> {lastByAgent[ceo.id]?.text || "ממתין לפקודה"}</div>
         </div>
         <div className="ac-ceo-cta"><MessageSquare size={16} /> דבר איתי</div>
+      </button>
+
+      <button className="ac-office-card" onClick={onOffice}>
+        <span className="ac-office-glow" />
+        <span className="ac-office-mini">
+          {AGENTS.slice(0, 5).map((a) => <span key={a.id} className="ac-office-mini-orb" style={{ "--c": a.color }}><img src={a.avatar} alt="" /></span>)}
+        </span>
+        <span className="ac-office-txt">
+          <b>🏢 המשרד החי</b>
+          <span>היכנס וצפה בכל הצוות עובד יחד במשרד · בזמן אמת</span>
+        </span>
+        <ChevronLeft size={22} />
       </button>
 
       <div className="ac-sectitle"><Bot size={15} /> ראשי הצוות</div>
@@ -728,6 +744,76 @@ function DevConsole({ logActivity, showToast }) {
 }
 
 /* ════════════════════════════════════════════════════════════════════
+   OFFICE SIMULATOR — watch the team work together, with chat bubbles
+   ════════════════════════════════════════════════════════════════════ */
+const CHATTER = {
+  ceo:   ["יעד היום: 3 סגירות 💪", "תמונת מצב מצוינת", "קדימה צוות! 🚀", "מי צריך עזרה?", "עבודה יפה 👏"],
+  sales: ["סגרתי ליד חם 🔥", "שולח הצעת מחיר", "הלקוח מעוניין!", "פולואפ עכשיו", "עוד עסקה בדרך"],
+  ops:   ["התקנה תואמה ✅", "בודק מלאי", "הטכנאי בדרך", "הכל מסונכרן", "לוז מעודכן"],
+  cmo:   ["הפוסט עף 🚀", "רעיון לקמפיין!", "תוכן חדש מוכן", "וויראלי בדרך", "טיקטוק בוער 🔥"],
+  dev:   ["דחפתי קוד 🧑‍💻", "באג תוקן ✅", "פיצ'ר חדש בדרך", "ה-build עבר", "מרפקטר עכשיו"],
+  auto:  ["אוטומציה רצה ⚡", "חיברתי זרימה", "חוסך שעות 🙌", "טריגר הופעל", "הכל אוטומטי"],
+  data:  ["המספרים עולים 📈", "מצאתי תובנה", "הדוח מוכן", "תחזית מעודכנת", "מגמה חיובית"],
+  cs:    ["לקוח מרוצה 💗", "פתרתי פנייה", "שימור הצליח", "שיחה נהדרת", "5 כוכבים ⭐"],
+};
+function OfficeChar({ agent }) {
+  return (
+    <div className="off-char">
+      <div className="off-head"><img src={agent.avatar} alt={agent.name} draggable={false} /></div>
+      <div className="off-body" style={{ background: `linear-gradient(160deg, ${agent.color}, ${agent.color}cc)` }}>
+        <span className="off-arm l" /><span className="off-arm r" />
+      </div>
+    </div>
+  );
+}
+function OfficeSim({ onClose, onOpenChat }) {
+  const [bubbles, setBubbles] = useState({}); // { [agentId]: {text, toId, id} }
+  useEffect(() => {
+    const tick = () => {
+      const a = AGENTS[Math.floor(Math.random() * AGENTS.length)];
+      const lines = CHATTER[a.id] || ["..."];
+      const text = lines[Math.floor(Math.random() * lines.length)];
+      let toId = null;
+      if (Math.random() < 0.4) { const others = AGENTS.filter((x) => x.id !== a.id); toId = others[Math.floor(Math.random() * others.length)].id; }
+      const id = uid();
+      setBubbles((p) => ({ ...p, [a.id]: { text, toId, id } }));
+      setTimeout(() => setBubbles((p) => (p[a.id] && p[a.id].id === id ? { ...p, [a.id]: null } : p)), 4000);
+    };
+    const iv = setInterval(tick, 2400);
+    tick();
+    return () => clearInterval(iv);
+  }, []);
+  const talkingTo = new Set(Object.values(bubbles).filter(Boolean).map((b) => b.toId).filter(Boolean));
+
+  return (
+    <div className="off-overlay">
+      <div className="off-top">
+        <div className="off-top-l"><span className="off-live"><span className="ac-live-dot" /> חי</span><b>🏢 המשרד של אלפא</b></div>
+        <button className="off-close" onClick={onClose}><X size={20} /></button>
+      </div>
+      <div className="off-sub">הצוות עובד יחד · לחץ על סוכן כדי להיכנס למשרד שלו</div>
+      <div className="off-floor">
+        {AGENTS.map((a) => {
+          const b = bubbles[a.id];
+          return (
+            <button key={a.id} className={"off-room " + (talkingTo.has(a.id) ? "pinged" : "")} style={{ "--c": a.color, "--ac": a.accent }} onClick={() => onOpenChat(a.id)}>
+              <div className="off-room-glow" />
+              <div className="off-window" />
+              <div className="off-frame" />
+              <div className="off-plant"><span /><span /><span /></div>
+              {b && <div className="off-bubble">{b.toId && <span className="off-bubble-to">→ {byId(b.toId)?.name}</span>}{b.text}</div>}
+              <OfficeChar agent={a} />
+              <div className="off-desk"><div className="off-monitor"><div className="off-screen"><i /><i /><i /></div></div><div className="off-mug" /></div>
+              <div className="off-plate"><b>{a.name}</b><span>{a.title}</span></div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════
    SETTINGS
    ════════════════════════════════════════════════════════════════════ */
 function SettingsView({ showToast }) {
@@ -1062,6 +1148,77 @@ function StyleTag() {
 .ac-empty svg{opacity:.4;margin-bottom:12px}
 .ac-empty div{font-family:'Rubik';font-weight:800;font-size:16px;color:var(--silver)}
 .ac-empty p{font-size:12.5px;margin-top:5px}
+
+/* ── office launch card ── */
+.ac-office-card{position:relative;overflow:hidden;display:flex;align-items:center;gap:13px;width:100%;text-align:right;cursor:pointer;font-family:inherit;color:#fff;
+  background:linear-gradient(120deg,#13213a,#1c2f52 55%,#26407a);border:1px solid rgba(110,170,240,.4);border-radius:18px;padding:15px 14px;margin-bottom:18px;
+  box-shadow:0 8px 30px rgba(20,40,90,.5),0 0 0 1px rgba(110,170,240,.1);transition:transform .2s,box-shadow .25s}
+.ac-office-card:hover{transform:translateY(-3px);box-shadow:0 14px 44px rgba(40,64,122,.55)}
+.ac-office-glow{position:absolute;inset:0;background:radial-gradient(circle at 85% 20%,rgba(110,170,240,.35),transparent 55%);pointer-events:none}
+.ac-office-mini{display:flex;flex-shrink:0;position:relative}
+.ac-office-mini-orb{width:34px;height:34px;border-radius:10px;overflow:hidden;border:2px solid #16213a;margin-left:-12px;box-shadow:0 0 10px color-mix(in srgb,var(--c) 50%,transparent)}
+.ac-office-mini-orb:first-child{margin-left:0}
+.ac-office-mini-orb img{width:100%;height:100%;object-fit:cover;display:block}
+.ac-office-txt{flex:1;position:relative}
+.ac-office-txt b{display:block;font-family:'Rubik';font-weight:900;font-size:15.5px}
+.ac-office-txt span{display:block;font-size:11.5px;color:#bcd3f5;margin-top:3px}
+
+/* ── office simulator ── */
+.off-overlay{position:fixed;inset:0;z-index:250;display:flex;flex-direction:column;
+  background:radial-gradient(ellipse at 50% 0%,#0e1426,#060912 60%,#04040c);animation:acRise .25s ease both}
+.off-top{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid rgba(110,170,240,.18);background:rgba(6,9,18,.7);backdrop-filter:blur(14px)}
+.off-top-l{display:flex;align-items:center;gap:10px}
+.off-top-l b{font-family:'Rubik';font-weight:900;font-size:17px;color:#eaf1ff}
+.off-live{display:flex;align-items:center;gap:5px;font-size:11px;font-weight:800;color:#3FD79A;background:rgba(63,215,154,.1);border:1px solid rgba(63,215,154,.3);padding:4px 9px;border-radius:20px}
+.off-close{width:36px;height:36px;border-radius:10px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.off-sub{text-align:center;font-size:11.5px;color:#7e90b8;padding:8px 16px 4px}
+.off-floor{flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(2,1fr);gap:12px;padding:14px 14px 28px;align-content:start}
+@media(min-width:680px){.off-floor{grid-template-columns:repeat(3,1fr)}}
+@media(min-width:1000px){.off-floor{grid-template-columns:repeat(4,1fr)}}
+.off-room{position:relative;height:200px;border-radius:16px;overflow:hidden;cursor:pointer;font-family:inherit;text-align:center;
+  background:linear-gradient(180deg,color-mix(in srgb,var(--c) 22%,#0c1020) 0%,#0a0e1c 55%,#070a14 100%);
+  border:1px solid color-mix(in srgb,var(--c) 35%,transparent);
+  box-shadow:0 8px 28px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.05);transition:transform .15s,box-shadow .2s,border-color .2s}
+.off-room:hover{transform:translateY(-3px);border-color:color-mix(in srgb,var(--c) 70%,transparent);box-shadow:0 14px 40px color-mix(in srgb,var(--c) 25%,transparent)}
+.off-room.pinged{animation:offPing 1s ease}
+@keyframes offPing{0%,100%{box-shadow:0 8px 28px rgba(0,0,0,.5)}50%{box-shadow:0 0 0 3px var(--c),0 8px 34px color-mix(in srgb,var(--c) 40%,transparent)}}
+.off-room-glow{position:absolute;top:-20px;right:-20px;width:120px;height:120px;border-radius:50%;background:radial-gradient(circle,color-mix(in srgb,var(--c) 28%,transparent),transparent 70%);pointer-events:none}
+.off-window{position:absolute;top:14px;left:14px;width:46px;height:34px;border-radius:6px;background:linear-gradient(160deg,rgba(150,200,255,.25),rgba(80,130,210,.12));border:2px solid color-mix(in srgb,var(--c) 30%,#1a2238);box-shadow:inset 0 0 12px rgba(150,200,255,.15)}
+.off-frame{position:absolute;top:16px;right:16px;width:26px;height:20px;border-radius:3px;border:2px solid rgba(255,255,255,.12);background:linear-gradient(135deg,color-mix(in srgb,var(--c) 40%,transparent),rgba(255,255,255,.05))}
+.off-plant{position:absolute;bottom:12px;right:12px;display:flex;align-items:flex-end;gap:2px;height:26px}
+.off-plant span{width:5px;border-radius:3px 3px 0 0;background:linear-gradient(#3FD79A,#1f8a5a);transform-origin:bottom;animation:offSway 3.5s ease-in-out infinite}
+.off-plant span:nth-child(1){height:16px;animation-delay:0s}
+.off-plant span:nth-child(2){height:24px;animation-delay:.4s}
+.off-plant span:nth-child(3){height:18px;animation-delay:.8s}
+@keyframes offSway{0%,100%{transform:rotate(-4deg)}50%{transform:rotate(4deg)}}
+.off-char{position:absolute;left:50%;bottom:54px;transform:translateX(-50%);width:64px;z-index:2;animation:offBob 3.4s ease-in-out infinite}
+@keyframes offBob{0%,100%{transform:translateX(-50%) translateY(0)}50%{transform:translateX(-50%) translateY(-4px)}}
+.off-head{width:40px;height:40px;border-radius:50%;overflow:hidden;margin:0 auto;border:2px solid rgba(255,255,255,.85);box-shadow:0 4px 14px rgba(0,0,0,.4);position:relative;z-index:2}
+.off-head img{width:100%;height:100%;object-fit:cover;display:block}
+.off-body{width:58px;height:34px;border-radius:18px 18px 8px 8px;margin:-6px auto 0;position:relative;box-shadow:0 4px 12px rgba(0,0,0,.35)}
+.off-arm{position:absolute;top:8px;width:9px;height:20px;border-radius:6px;background:inherit;filter:brightness(.9)}
+.off-arm.l{left:-4px;transform-origin:top;animation:offType 1.1s ease-in-out infinite}
+.off-arm.r{right:-4px;transform-origin:top;animation:offType 1.1s ease-in-out infinite .55s}
+@keyframes offType{0%,100%{transform:rotate(6deg)}50%{transform:rotate(-8deg)}}
+.off-desk{position:absolute;left:0;right:0;bottom:30px;height:30px;background:linear-gradient(180deg,#2a3350,#1a2138);border-top:2px solid color-mix(in srgb,var(--c) 35%,#3a4566);z-index:3;box-shadow:0 -2px 10px rgba(0,0,0,.3)}
+.off-monitor{position:absolute;left:14px;bottom:14px;width:30px;height:22px;border-radius:4px;background:#0a0e1a;border:2px solid #313b58;z-index:4}
+.off-screen{position:absolute;inset:2px;border-radius:2px;background:linear-gradient(160deg,#0d1a2e,#0a1420);overflow:hidden;display:flex;flex-direction:column;justify-content:center;gap:2px;padding:0 3px}
+.off-screen i{height:2px;border-radius:1px;background:color-mix(in srgb,var(--c) 80%,#6fd3f0);display:block;animation:offCode 1.6s ease-in-out infinite}
+.off-screen i:nth-child(1){width:70%;animation-delay:0s}
+.off-screen i:nth-child(2){width:45%;animation-delay:.3s}
+.off-screen i:nth-child(3){width:60%;animation-delay:.6s}
+@keyframes offCode{0%,100%{opacity:.3}50%{opacity:1}}
+.off-mug{position:absolute;right:16px;bottom:14px;width:8px;height:9px;border-radius:0 0 3px 3px;background:#d8d8e8;z-index:4}
+.off-mug::after{content:'';position:absolute;top:-3px;left:1px;right:1px;height:3px;border-radius:50%;background:#6b4a2e}
+.off-plate{position:absolute;left:0;right:0;bottom:0;padding:6px;background:linear-gradient(180deg,transparent,rgba(4,6,14,.85));z-index:5}
+.off-plate b{display:block;font-family:'Rubik';font-weight:900;font-size:13px;color:#eaf1ff}
+.off-plate span{font-size:9.5px;color:color-mix(in srgb,var(--c) 60%,#9fb0d8)}
+.off-bubble{position:absolute;top:8px;left:50%;transform:translateX(-50%);z-index:6;max-width:90%;
+  background:#fff;color:#1a2238;font-size:11px;font-weight:700;padding:6px 10px;border-radius:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  box-shadow:0 6px 18px rgba(0,0,0,.4);animation:offPop .3s ease both}
+.off-bubble::after{content:'';position:absolute;bottom:-5px;left:50%;transform:translateX(-50%);border:6px solid transparent;border-top-color:#fff;border-bottom:0}
+.off-bubble-to{color:#C75A12;font-weight:900;margin-left:4px}
+@keyframes offPop{from{opacity:0;transform:translateX(-50%) scale(.7) translateY(6px)}to{opacity:1;transform:translateX(-50%) scale(1) translateY(0)}}
 
 /* ── toast ── */
 .ac-toast{position:fixed;bottom:92px;left:50%;transform:translateX(-50%);z-index:300;
