@@ -2286,6 +2286,14 @@ function SamInbox({ showToast }) {
     const off = cloud.cloudSubscribe((k, v) => { if (k === "itai:saminbox" && v) setItems(Object.values(v).sort((a, b) => (b.ts || 0) - (a.ts || 0))); }, ["itai:saminbox"]);
     return off;
   }, []);
+  const del = async (s) => {
+    if (!window.confirm(`למחוק לצמיתות את הטופס של ${s.fullName || "הלקוח"}?`)) return;
+    const next = items.filter((x) => x.id !== s.id);
+    setItems(next); setView(null);
+    const map = {}; next.forEach((x) => { map[x.id] = x; });
+    try { await cloud.cloudPush("itai:saminbox", map); showToast("הטופס נמחק ✓"); }
+    catch { setItems(items); showToast("המחיקה נכשלה"); }
+  };
   if (!cloud.cloudConfigured() || !items.length) return null;
   return (
     <div className="ag-section">
@@ -2294,7 +2302,7 @@ function SamInbox({ showToast }) {
         <div className="ag-deal-row flat" key={s.id} style={{ cursor: "pointer" }} onClick={() => setView(s)}>
           <span className="ag-dot" style={{ background: "#1E9A60" }} />
           <div className="ag-deal-mid"><b>{s.fullName || "לקוח"}</b><span>{[s.plan?.toUpperCase(), s.veh1].filter(Boolean).join(" · ")} · {s.savedAt}</span></div>
-          <FileText size={15} />
+          <button className="ag-icbtn d" title="מחק טופס" onClick={(e) => { e.stopPropagation(); del(s); }}><Trash2 size={15} /></button>
         </div>
       ))}
       {view && (
@@ -2312,6 +2320,7 @@ function SamInbox({ showToast }) {
             <div className="ag-sheet-foot">
               <button className="ag-btn ghost" onClick={() => { navigator.clipboard?.writeText(`${view.fullName} · ${view.idNum} · ${view.phone} · ${(view.plan||"").toUpperCase()} · ${view.veh1}`); showToast("הפרטים הועתקו"); }}><Copy size={15} /> העתק</button>
               <button className="ag-btn ghost" onClick={() => { const ok = printInboxSam(view); if (!ok) showToast("אפשר חלונות קופצים בדפדפן"); }}><FileText size={15} /> PDF</button>
+              <button className="ag-btn ghost" style={{ color: "var(--red)", borderColor: "var(--red)" }} onClick={() => del(view)}><Trash2 size={15} /> מחק</button>
               <button className="ag-btn" onClick={() => setView(null)}>סגור</button>
             </div>
           </div>
