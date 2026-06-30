@@ -115,15 +115,43 @@ const normCity = (c) => (c || "").replace(/^ישוב\s+/, "").replace(/^עירי
 const cityCoords = (city) => CITY_COORDS[normCity(city)] || null;
 // Stable per-id jitter (small — keeps coastal cities on land, not in the sea).
 const jitter = (id, amp = 0.006) => { let h = 0; const s = String(id); for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return [((h % 1000) / 1000 - 0.5) * amp, (((h >> 10) % 1000) / 1000 - 0.5) * amp]; };
-// Accurate-only: a business is placed ONLY when its city is known. We never guess
-// a regional centroid anymore — that's what dropped pins into the Mediterranean.
+
+// ── Exact address geocoding (free, OpenStreetMap/Nominatim, no key) ──────────
+// Each full address (street + city) is geocoded ONCE and cached in localStorage,
+// so pins land on the real address — not the city centre. Throttled to respect
+// OSM's usage policy; until an address resolves we show the city as a fallback.
+const GEOCACHE_KEY = "itai:geocache";
+let _geocache = null;
+const geocache = () => { if (_geocache) return _geocache; try { _geocache = JSON.parse(localStorage.getItem(GEOCACHE_KEY) || "{}"); } catch { _geocache = {}; } return _geocache; };
+const geocacheSet = (k, ll) => { const c = geocache(); c[k] = ll; try { localStorage.setItem(GEOCACHE_KEY, JSON.stringify(c)); } catch {} };
+const addrKey = (lead) => `${(lead.addr || "").trim()}|${normCity(lead.city)}`;
+const hasExact = (lead) => !!geocache()[addrKey(lead)];
+let _gcLast = 0;
+async function geocodeAddress(addr, city) {
+  const k = `${(addr || "").trim()}|${normCity(city)}`;
+  const c = geocache(); if (c[k]) return c[k];
+  if (!addr || !addr.trim()) return null;            // need a street for precision
+  const wait = Math.max(0, 1100 - (Date.now() - _gcLast)); if (wait) await new Promise((r) => setTimeout(r, wait)); _gcLast = Date.now();
+  try {
+    const q = encodeURIComponent(`${addr}, ${city}, ישראל`);
+    const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=il&q=${q}`, { headers: { Accept: "application/json" } });
+    if (!r.ok) return null;
+    const a = await r.json();
+    if (a && a[0]) { const ll = [parseFloat(a[0].lat), parseFloat(a[0].lon)]; geocacheSet(k, ll); return ll; }
+  } catch {}
+  return null;
+}
+
+// Prefer the exact geocoded address; fall back to city centre (jittered).
 const geoFor = (lead) => {
+  const ex = geocache()[addrKey(lead)];
+  if (ex) return ex;
   const c = cityCoords(lead.city);
   if (!c) return null;
   const j = jitter(lead.id);
   return [c[0] + j[0], c[1] + j[1]];
 };
-const wazeTo = (lead) => { const c = cityCoords(lead.city); if (c) return `https://waze.com/ul?ll=${c[0]},${c[1]}&navigate=yes`; const q = encodeURIComponent([lead.addr, lead.city].filter(Boolean).join(" ")); return `https://waze.com/ul?q=${q}&navigate=yes`; };
+const wazeTo = (lead) => { const ex = geocache()[addrKey(lead)] || cityCoords(lead.city); if (ex) return `https://waze.com/ul?ll=${ex[0]},${ex[1]}&navigate=yes`; const q = encodeURIComponent([lead.addr, lead.city].filter(Boolean).join(" ")); return `https://waze.com/ul?q=${q}&navigate=yes`; };
 
 /* ── Leaflet + MarkerCluster loader (CDN, once). Clustering lets the whole
    lead base (thousands of pins) render smoothly. ── */
@@ -962,20 +990,42 @@ function MapView({ leads, custs, deals, showToast }) {
   const [sat, setSat] = useState(false);
   const [ready, setReady] = useState(false);
   const [routeCity, setRouteCity] = useState("");
+  const [geoV, setGeoV] = useState(0);      // bumps as exact addresses resolve
+  const [geoBusy, setGeoBusy] = useState(false);
 
   const dealLeadIds = useMemo(() => new Set(deals.map((d) => d.leadId)), [deals]);
+  const inScope = (l) => {
+    if (region && l.geo !== region) return false;
+    if (scope === "active") return ["פנייה ראשונה", "בתהליך", "הצעה נשלחה", "לקוח"].includes(l.crmStatus) || dealLeadIds.has(l.id);
+    return true;
+  };
   const points = useMemo(() => {
-    const base = leads.filter((l) => {
-      if (region && l.geo !== region) return false;
-      if (scope === "active") return ["פנייה ראשונה", "בתהליך", "הצעה נשלחה", "לקוח"].includes(l.crmStatus) || dealLeadIds.has(l.id);
-      return true;
-    }).filter((l) => geoFor(l));
+    const base = leads.filter((l) => inScope(l)).filter((l) => geoFor(l));
     return base.map((l) => ({
       id: l.id, n: l.n, city: l.city, geo: l.geo, addr: l.addr, status: l.crmStatus,
       phone: (l.phones || [])[0] || "", phones: l.phones || [], email: l.e || "", web: l.w || "",
       sector: l.sector || "", emp: l.emp || "", rev: l.rev || "", ll: geoFor(l),
     }));
-  }, [leads, scope, region, dealLeadIds]);
+  }, [leads, scope, region, dealLeadIds, geoV]);
+
+  // Background geocoding: turn city-level pins into exact-address pins (cached).
+  useEffect(() => {
+    let alive = true;
+    const targets = leads.filter((l) => inScope(l) && (l.addr || "").trim() && !hasExact(l));
+    if (!targets.length) { setGeoBusy(false); return; }
+    setGeoBusy(true);
+    (async () => {
+      let n = 0;
+      for (const l of targets) {
+        if (!alive) return;
+        const ll = await geocodeAddress(l.addr, l.city);
+        if (!alive) return;
+        if (ll) { n++; if (n % 4 === 0) setGeoV((v) => v + 1); }
+      }
+      if (alive) { setGeoV((v) => v + 1); setGeoBusy(false); }
+    })();
+    return () => { alive = false; };
+  }, [scope, region, leads, dealLeadIds]);
 
   const routeCities = useMemo(() => {
     const m = {}; points.forEach((p) => { if (p.city) m[p.city] = (m[p.city] || 0) + 1; });
@@ -1053,7 +1103,7 @@ function MapView({ leads, custs, deals, showToast }) {
 
   return (
     <div className="ag-flow map">
-      <header className="ag-head sm"><div style={{ flex: 1 }}><div className="ag-title">מפת העסקים</div><div className="ag-sub">{points.length.toLocaleString()} עסקים על המפה</div></div>
+      <header className="ag-head sm"><div style={{ flex: 1 }}><div className="ag-title">מפת העסקים</div><div className="ag-sub">{points.length.toLocaleString()} עסקים{geoBusy ? " · מדייק כתובות מדויקות…" : " · מיקום מדויק לפי כתובת"}</div></div>
         <button className={"ag-mini" + (sat ? " on" : "")} onClick={() => setSat((v) => !v)}>{sat ? "🛰 לוויין" : "🗺 מפה"}</button>
       </header>
       <div className="ag-chips sm">
