@@ -202,38 +202,53 @@ function cry(charId: string) {
 export function setCharacterVolume(val: number) { volume = Math.max(0, Math.min(1, val)); }
 export function unlockCharacterAudio() { try { getCtx(); } catch {} }
 
-// Real cry audio files from PokeAPI CDN (OGG format, works in all modern browsers).
-// IDs from the national Pokédex — same ones used for sprites.
+// Real Pokémon cries — try Pokémon Showdown MP3 (universal browser support + named URLs)
+// then fall back to PokeAPI OGG via Web Audio API.
 const POKE_CRY_IDS: Record<string, number> = {
   charmander: 4, squirtle: 7, meowth: 52, bulbasaur: 1,
   eevee: 133, mewtwo: 150, articuno: 144, suicune: 245, raikou: 243,
   entei: 244, moltres: 146, zapdos: 145, lugia: 249, 'ho-oh': 250,
   pikachu: 25,
 };
-const CRY_CACHE = new Map<string, AudioBuffer>();
-async function fetchCry(charId: string): Promise<AudioBuffer | null> {
-  if (CRY_CACHE.has(charId)) return CRY_CACHE.get(charId)!;
-  const id = POKE_CRY_IDS[charId]; if (!id) return null;
-  try {
-    const url = `https://raw.githubusercontent.com/PokeAPI/cries/main/cries/pokemon/latest/${id}.ogg`;
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    const ab = await res.arrayBuffer();
-    const ctx = getCtx();
-    const buf = await ctx.decodeAudioData(ab);
-    CRY_CACHE.set(charId, buf);
-    return buf;
-  } catch { return null; }
+// Cache HTMLAudioElement per character so the same Audio node plays again fast.
+const CRY_AUDIO_CACHE = new Map<string, HTMLAudioElement>();
+const CRY_BUF_CACHE = new Map<string, AudioBuffer>();
+
+function playAudioEl(charId: string, src: string): Promise<boolean> {
+  return new Promise(resolve => {
+    let el = CRY_AUDIO_CACHE.get(charId);
+    if (!el || el.error) {
+      el = new Audio();
+      el.preload = 'auto';
+      CRY_AUDIO_CACHE.set(charId, el);
+    }
+    el.volume = Math.min(1, volume);
+    if (el.src !== src) el.src = src;
+    el.currentTime = 0;
+    el.play().then(() => resolve(true)).catch(() => resolve(false));
+  });
 }
+
 async function playRealCry(charId: string): Promise<boolean> {
+  // 1. Try Pokémon Showdown MP3 (named, MP3 = best browser support)
+  const showdownUrl = `https://play.pokemonshowdown.com/audio/cries/${charId}.mp3`;
+  const mp3ok = await playAudioEl(charId, showdownUrl);
+  if (mp3ok) return true;
+
+  // 2. Fall back to PokeAPI OGG via Web Audio API
+  const id = POKE_CRY_IDS[charId]; if (!id) return false;
   try {
-    const buf = await fetchCry(charId);
-    if (!buf) return false;
+    if (!CRY_BUF_CACHE.has(charId)) {
+      const url = `https://raw.githubusercontent.com/PokeAPI/cries/main/cries/pokemon/latest/${id}.ogg`;
+      const res = await fetch(url); if (!res.ok) return false;
+      const ab = await res.arrayBuffer();
+      const buf = await getCtx().decodeAudioData(ab);
+      CRY_BUF_CACHE.set(charId, buf);
+    }
     const ctx = getCtx();
     const src = ctx.createBufferSource();
-    src.buffer = buf;
-    const gain = ctx.createGain();
-    gain.gain.value = Math.min(1, volume * 1.1);
+    src.buffer = CRY_BUF_CACHE.get(charId)!;
+    const gain = ctx.createGain(); gain.gain.value = Math.min(1, volume * 1.1);
     src.connect(gain); gain.connect(ctx.destination);
     src.start();
     return true;

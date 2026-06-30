@@ -4,6 +4,7 @@ import {
   Globe, ChevronLeft, MessageSquare, Pencil, Target, Bell, FileText, TrendingUp,
   CheckCircle2, Handshake, LayoutDashboard, UserRound, Send, Copy, Briefcase, Palette,
   Megaphone, Video, BarChart2, Bookmark, Eye, ThumbsUp, CalendarDays, Sparkles, RefreshCw,
+  Camera, Monitor, Maximize2, Shield, Star, ChevronDown, ChevronUp,
 } from "lucide-react";
 import BULL_LOGO from "../heavyguard/heavyguard-logo.png";
 import leadsData from "../heavyguard/leadsData.json";
@@ -309,7 +310,7 @@ export default function App() {
       {tab === "deals" && <DealsView deals={deals} leads={leads} onEdit={(deal) => setDealDraft({ deal })} onNew={() => setDealDraft({})} onWin={winDeal} onRemove={removeDeal} showToast={showToast} />}
       {tab === "custs" && <CustomersView custs={custs} onSave={saveCustomer} onRemove={removeCustomer} showToast={showToast} />}
       {tab === "map" && <MapView leads={leads} custs={custs} deals={deals} showToast={showToast} />}
-      {tab === "mkt" && <MarketingView showToast={showToast} />}
+      {tab === "showroom" && <ShowroomView showToast={showToast} onQuote={(p) => setDealDraft({ deal: { items: [{ desc: p.name, qty: 1, price: Number(p.price) || 0 }], status: "פתוח" } })} />}
 
       <nav className="ag-nav">
         <button className={tab === "home" ? "on" : ""} onClick={() => setTab("home")}><LayoutDashboard size={20} /><span>בקרה</span></button>
@@ -317,7 +318,7 @@ export default function App() {
         <button className={tab === "map" ? "on" : ""} onClick={() => setTab("map")}><MapPin size={20} /><span>מפה</span></button>
         <button className={tab === "deals" ? "on" : ""} onClick={() => setTab("deals")}><Handshake size={20} /><span>עסקאות</span></button>
         <button className={tab === "custs" ? "on" : ""} onClick={() => setTab("custs")}><UserRound size={20} /><span>לקוחות</span></button>
-        <button className={tab === "mkt" ? "on" : ""} onClick={() => setTab("mkt")}><Megaphone size={20} /><span>שיווק</span></button>
+        <button className={tab === "showroom" ? "on" : ""} onClick={() => setTab("showroom")}><Camera size={20} /><span>שורום</span></button>
         <button className="ag-nav-exit" onClick={exitToAlpha}><ChevronLeft size={20} /><span>יציאה</span></button>
       </nav>
 
@@ -1786,6 +1787,139 @@ function SamsonixForm({ onClose, showToast }) {
   );
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   HeavyGuard Showroom — visual product catalog for customer presentations
+   ═══════════════════════════════════════════════════════════════════════════ */
+const HG_CAMERAS = [
+  { id:"T15",      cat:"מצלמת דש",           tags:["IP69K","2כ","AHD 2MP"],       price:null,
+    desc:"Sony AHD 2MP מצלמת דש ממוגנת IP69K, ראיית לילה LED 20 מטר, מסגרת קטנה לרכב כבד." },
+  { id:"C11",      cat:"מצלמה אחורית",       tags:["ראיית לילה","WDR","18 LED"],  price:null,
+    desc:"Sony AHD 2MP אחורית, 18 נוריות LED 20 מטר, Smart D WDR, מותאמת לאוטובוסים וטרקטורים." },
+  { id:"15EV",     cat:"מצלמה צדדית/גלגל",  tags:["IP69K","130°","2כ"],          price:null,
+    desc:"Sony AHD 2MP CMOS שדה ראייה 130°, IP69K מלא, ראיית לילה, לאוטובוסים ורכבי שיווע." },
+  { id:"12EV",     cat:"מצלמה אחורית",       tags:["IP69K","1080P","עמיד"],       price:null,
+    desc:"Sony AHD 2MP 1080P IP69K, עמידה לאבק ומים, ראיית לילה, מסגרת אלומיניום קשיחה." },
+  { id:"C500",     cat:"מצלמה קדמית",        tags:["DVR","20M LED","IP69K"],      price:null,
+    desc:"Sony AHD 2MP קדמית, ראיית לילה LED 20 מטר, כבל 25 מטר, מתאים לאוטובוסים וחשמלית." },
+  { id:"C190",     cat:"מצלמה קדמית/אחורית", tags:["WDR","127°","1080P"],         price:null,
+    desc:"AHD 1080P קדמית/אחורית כפולה, שדה ראייה 127°, WDR מתקדם לתאורה קשה, מוגנת מלאה." },
+  { id:"C600",     cat:"מצלמה קדמית",        tags:["Starvis","IP67","AHD 2MP"],   price:null,
+    desc:"Sony Starvis AHD 2MP קדמית IP67, איכות תמונה גבוהה בתאורה נמוכה, עמידה בחוץ מלאה." },
+  { id:"R19",      cat:"מצלמת רוורס",        tags:["IP69K","11 LED","2כ"],        price:null,
+    desc:"Sony AHD 2MP רוורס, 11 נוריות LED חיצוניות IP69K, ראיית לילה מוארת, למשאיות ורכבי משא." },
+];
+const HG_MONITORS = [
+  { id:"T7070M",   cat:'מסך DVR 7"',          tags:['7"','4 מצלמות','DVR'],        price:null,
+    desc:'מסך 7 אינץ\' דיגיטלי, תמיכה ב-4 מצלמות AHD, ממשק פשוט, מתאים להתקנה בלוח מחוונים.' },
+  { id:"T9052",    cat:'מסך DVR 9"',           tags:['9"','DVR','IPS'],             price:null,
+    desc:'מסך 9 אינץ\' IPS איכותי, חיבור DVR, תמיכה ב-4 מצלמות, מתאים לאוטובוסים ורכבים גדולים.' },
+  { id:"T10548SD", cat:'מסך BSD 10.1"',        tags:['BSD','6 מצלמות','DVR','DMS'], price:1,
+    desc:'מסך BSD 10.1" IPS, 4 מצלמות AHD, הקלטה DVR 256GB, תוכנת BSD/DMS — הפתרון המלא לרכב כבד.' },
+];
+const HG_SYSTEMS = [
+  { id:"SYS_BASIC",  cat:"חבילה בסיסית",    tags:["מסך 7\"","2 מצלמות","רוורס"], price:null,
+    desc:"מסך 7 אינץ' + מצלמת רוורס + מצלמה אחורית, חיבור מלא, התקנה כולל." },
+  { id:"SYS_4CAM",   cat:"חבילת 4 מצלמות",  tags:["מסך 9\"","4 מצלמות","DVR"],   price:null,
+    desc:"מסך 9 אינץ' DVR + 4 מצלמות AHD (קדמית, אחורית, 2 צדדיות) + הקלטה." },
+  { id:"SYS_BSD",    cat:"חבילת BSD מלאה",   tags:["BSD","6 מצלמות","DMS","DVR"], price:null,
+    desc:"מסך BSD 10.1\" + עד 6 מצלמות + DVR + תוכנת BSD/DMS + מצלמת נהג. פתרון בטיחות מלא." },
+  { id:"SYS_ITURAN", cat:"איתוראן + מיגון",  tags:["GPS","איתוראן","מיגון"],      price:null,
+    desc:"מערכת איתוראן GPS למעקב ואיתור בזמן אמת, שדרוג מוצרי מיגון משלימים." },
+];
+
+function ShowroomView({ showToast, onQuote }) {
+  const [section, setSection] = useState("cameras"); // cameras | monitors | systems
+  const [selected, setSelected] = useState(null);    // selected product for detail view
+  const [present, setPresent] = useState(false);     // fullscreen presentation
+  const pricelist = useHgPricelist();
+
+  const priceFor = (id) => {
+    const pl = pricelist.find(p => (p.name||"").toLowerCase().includes(id.toLowerCase()));
+    return pl ? pl.price : null;
+  };
+
+  const items = section === "cameras" ? HG_CAMERAS : section === "monitors" ? HG_MONITORS : HG_SYSTEMS;
+
+  const addToQuote = (item) => {
+    const price = priceFor(item.id) || 0;
+    onQuote({ name: `${item.id} – ${item.cat}`, price });
+    showToast(`${item.id} נוסף להצעה ✓`);
+  };
+
+  if (present && selected) {
+    return (
+      <div className="sr-present" onClick={() => setPresent(false)}>
+        <div className="sr-present-inner" onClick={e => e.stopPropagation()}>
+          <button className="sr-present-close" onClick={() => setPresent(false)}><X size={22}/></button>
+          <div className="sr-present-badge">{selected.cat}</div>
+          <div className="sr-present-id">{selected.id}</div>
+          <div className="sr-present-icon">
+            {section === "monitors" ? <Monitor size={90}/> : <Camera size={90}/>}
+          </div>
+          <div className="sr-present-tags">
+            {selected.tags.map(t => <span key={t} className="sr-tag big">{t}</span>)}
+          </div>
+          <div className="sr-present-desc">{selected.desc}</div>
+          {priceFor(selected.id) && (
+            <div className="sr-present-price">{ils(priceFor(selected.id))} <small>+ מע"מ</small></div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="ag-view">
+      <div className="sr-header">
+        <div className="sr-header-top">
+          <Shield size={18}/> <span>שורום מוצרים · Heavy Guard</span>
+        </div>
+        <div className="sr-header-sub">הצג מוצרים ללקוח · לחץ על מוצר למצב הצגה</div>
+      </div>
+
+      <div className="sr-tabs">
+        <button className={section==="cameras"?"on":""} onClick={()=>setSection("cameras")}><Camera size={14}/> מצלמות</button>
+        <button className={section==="monitors"?"on":""} onClick={()=>setSection("monitors")}><Monitor size={14}/> מסכים</button>
+        <button className={section==="systems"?"on":""} onClick={()=>setSection("systems")}><Star size={14}/> חבילות</button>
+      </div>
+
+      <div className="sr-grid">
+        {items.map(item => (
+          <div key={item.id} className="sr-card" onClick={() => { setSelected(item); setPresent(true); }}>
+            <div className="sr-card-head">
+              <div className="sr-icon-wrap">
+                {section === "monitors" ? <Monitor size={32}/> : <Camera size={32}/>}
+              </div>
+              <div className="sr-card-info">
+                <div className="sr-model">{item.id}</div>
+                <div className="sr-cat">{item.cat}</div>
+              </div>
+              <button className="sr-expand" onClick={e=>{e.stopPropagation();setSelected(item);setPresent(true);}} title="הצג ללקוח">
+                <Maximize2 size={14}/>
+              </button>
+            </div>
+            <div className="sr-tags-row">
+              {item.tags.map(t => <span key={t} className="sr-tag">{t}</span>)}
+            </div>
+            <div className="sr-desc">{item.desc}</div>
+            {priceFor(item.id) && (
+              <div className="sr-price">{ils(priceFor(item.id))} <small>+ מע"מ</small></div>
+            )}
+            <div className="sr-card-foot">
+              <button className="sr-quote-btn" onClick={e=>{e.stopPropagation();addToQuote(item);}}>
+                <Plus size={13}/> להצעת מחיר
+              </button>
+              <button className="sr-show-btn" onClick={e=>{e.stopPropagation();setSelected(item);setPresent(true);}}>
+                <Maximize2 size={13}/> הצג ללקוח
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ============================ Product catalog ============================ */
 function ProductCatalog({ onClose, onQuote }) {
   const pricelist = useHgPricelist();
@@ -2275,6 +2409,45 @@ function StyleTag() {
   .hg2-quotedoc{position:absolute;inset:0;margin:0;box-shadow:none;border-radius:0}
   .ag-quote-noprint{display:none!important}
 }
+
+/* ── ShowroomView ── */
+.sr-header{background:linear-gradient(135deg,#0a0a14,#111122);border:1px solid rgba(218,165,32,.3);border-radius:16px;padding:16px;margin-bottom:14px}
+.sr-header-top{display:flex;align-items:center;gap:8px;font-weight:800;font-size:16px;color:var(--gold);letter-spacing:.02em;margin-bottom:4px}
+.sr-header-sub{font-size:12px;color:rgba(218,165,32,.6);padding-right:26px}
+.sr-tabs{display:flex;gap:6px;margin-bottom:14px}
+.sr-tabs button{flex:1;padding:9px 4px;border-radius:10px;border:1px solid var(--s7);background:var(--s9);color:var(--s4);cursor:pointer;font-family:inherit;font-size:13px;display:flex;align-items:center;justify-content:center;gap:5px;font-weight:600;transition:all .15s}
+.sr-tabs button.on{background:linear-gradient(135deg,#1a1200,#2a2000);border-color:var(--gold);color:var(--gold);font-weight:800}
+.sr-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding-bottom:16px}
+@media(max-width:480px){.sr-grid{grid-template-columns:1fr}}
+.sr-card{background:linear-gradient(160deg,#0e0e1a,#080810);border:1px solid rgba(218,165,32,.2);border-radius:16px;padding:14px;cursor:pointer;transition:border-color .2s,transform .15s;display:flex;flex-direction:column;gap:8px}
+.sr-card:hover{border-color:rgba(218,165,32,.55);transform:translateY(-2px)}
+.sr-card:active{transform:scale(.98)}
+.sr-card-head{display:flex;align-items:flex-start;gap:10px}
+.sr-icon-wrap{width:48px;height:48px;flex-shrink:0;border-radius:12px;background:rgba(218,165,32,.1);border:1px solid rgba(218,165,32,.2);display:flex;align-items:center;justify-content:center;color:var(--gold)}
+.sr-card-info{flex:1;min-width:0}
+.sr-model{font-family:'Rubik',sans-serif;font-weight:900;font-size:18px;color:#f5e8c0;letter-spacing:.02em;line-height:1.1}
+.sr-cat{font-size:11px;color:rgba(218,165,32,.65);font-weight:600;margin-top:2px}
+.sr-expand{background:none;border:none;color:rgba(218,165,32,.4);cursor:pointer;padding:4px;flex-shrink:0;border-radius:6px;transition:color .15s}
+.sr-expand:hover{color:var(--gold)}
+.sr-tags-row{display:flex;flex-wrap:wrap;gap:4px}
+.sr-tag{display:inline-block;background:rgba(218,165,32,.12);border:1px solid rgba(218,165,32,.3);color:#f0d28a;border-radius:6px;padding:2px 7px;font-size:10px;font-weight:700;letter-spacing:.01em}
+.sr-tag.big{font-size:14px;padding:6px 14px;border-radius:10px}
+.sr-desc{font-size:11.5px;color:rgba(220,210,190,.7);line-height:1.55}
+.sr-price{font-size:16px;font-weight:800;color:var(--gold);font-family:'Rubik',sans-serif}
+.sr-card-foot{display:flex;gap:6px;margin-top:2px}
+.sr-quote-btn{flex:1;display:flex;align-items:center;justify-content:center;gap:4px;background:rgba(218,165,32,.12);border:1px solid rgba(218,165,32,.25);color:var(--gold);border-radius:8px;padding:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;transition:background .15s}
+.sr-quote-btn:hover{background:rgba(218,165,32,.22)}
+.sr-show-btn{flex:1;display:flex;align-items:center;justify-content:center;gap:4px;background:linear-gradient(135deg,var(--gold),var(--gold2));color:#1a0e00;border:none;border-radius:8px;padding:7px;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit}
+/* Presentation (fullscreen) mode */
+.sr-present{position:fixed;inset:0;z-index:9999;background:linear-gradient(160deg,#020210,#080818,#020210);display:flex;align-items:center;justify-content:center;padding:24px}
+.sr-present-inner{position:relative;max-width:480px;width:100%;text-align:center;display:flex;flex-direction:column;align-items:center;gap:16px}
+.sr-present-close{position:absolute;top:-16px;right:-16px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:#fff;border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px}
+.sr-present-badge{font-size:13px;font-weight:700;color:rgba(218,165,32,.7);letter-spacing:.06em;text-transform:uppercase}
+.sr-present-id{font-family:'Rubik',sans-serif;font-weight:900;font-size:52px;color:#f5e8c0;letter-spacing:.04em;line-height:1;text-shadow:0 0 40px rgba(218,165,32,.4)}
+.sr-present-icon{color:rgba(218,165,32,.5);margin:8px 0}
+.sr-present-tags{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
+.sr-present-desc{font-size:15px;color:rgba(220,210,190,.8);line-height:1.7;max-width:380px}
+.sr-present-price{font-family:'Rubik',sans-serif;font-size:28px;font-weight:900;color:var(--gold)}
 
 /* ── Marketing Manager ── */
 .mkt-header{background:var(--s9);border:1px solid var(--s7);border-radius:14px;padding:14px;margin-bottom:14px}

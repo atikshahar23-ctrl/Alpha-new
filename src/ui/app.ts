@@ -351,6 +351,7 @@ export function mountApp(root: HTMLElement) {
         </div>
       </div>
       <div id="dockWild" hidden></div>
+      <div id="dockBackdrop" class="dock-backdrop" hidden></div>
       <div id="summonDock" class="summon-dock" hidden>
         <div class="sd-hint" id="summonDockHint"><span class="sd-mic">🎙️</span> אמור שם של פוקימון…</div>
         <div class="sd-row" id="summonDockRow"></div>
@@ -1820,7 +1821,7 @@ export function mountApp(root: HTMLElement) {
     let dwellMs = 0;
     let dwellTarget: Element | null = null;
     let clickCooldownMs = 0;
-    const DWELL_MS = 1300;              // snappier dwell-to-click (was 2000)
+    const DWELL_MS = 800;               // fast dwell-to-click
     // Gesture stability/debounce — a pose must be held briefly before it becomes
     // the "confirmed" gesture, so frame-to-frame finger jitter can't make the
     // detector flip between gestures ("go crazy").
@@ -1848,7 +1849,7 @@ export function mountApp(root: HTMLElement) {
     function clickableAt(x: number, y: number): Element | null {
       let el = document.elementFromPoint(x, y);
       while (el) {
-        if (el.matches('button,a,input,select,textarea,[role="button"],.sd-item,.ic,.chip,[data-id],[onclick]')) return el;
+        if (el.matches('button,a,input,select,textarea,[role="button"],.sd-item,.ic,.chip,[data-id],[onclick],.sr-card,.sr-quote-btn,.sr-show-btn,.mkt-gen-btn,.mkt-icon-btn,.ag-btn,.ag-chips button,.nav-item')) return el;
         el = el.parentElement;
       }
       return null;
@@ -2220,22 +2221,32 @@ export function mountApp(root: HTMLElement) {
           octx.beginPath(); octx.arc(mapXs(hx), mapYs(hy), isMobileDevice ? 18 : 30, 0, Math.PI * 2);
           octx.strokeStyle = 'rgba(120,220,255,.95)'; octx.lineWidth = isMobileDevice ? 3 : 5; octx.stroke();
         } else if (confirmedGesture === 'point') {
-          // ☝️ Finger-pointing laser cursor — index tip drives a red on-screen
-          // cursor; dwelling on a target for 2s clicks it.
+          // ☝️ Finger-pointing laser cursor — index tip (lm[8]) drives a pixel-precise
+          // cursor; snaps to nearby clickable targets; dwelling selects.
           if (pinchActive) { pinchActive = false; pinchStartXf = null; }
           fistHoldMs = 0;
-          // Map the fingertip to the screen with gain around centre so a small,
-          // comfortable hand movement reaches every edge (the hand stays mid-frame).
-          const GAIN = 1.7;
+          // Map index fingertip to screen with GAIN around center so small, comfortable
+          // movement covers the full screen. Higher gain = less physical movement needed.
+          const GAIN = 2.1;
           const nx = Math.min(1, Math.max(0, 0.5 + (lm[8].x - 0.5) * GAIN));
           const ny = Math.min(1, Math.max(0, 0.5 + (lm[8].y - 0.5) * GAIN));
-          const tx = nx * window.innerWidth;
-          const ty = ny * window.innerHeight;
-          // Adaptive smoothing: snappy on big moves, steady when hovering a target.
-          const d = Math.hypot(tx - pointSX, ty - pointSY);
-          const a = pointSX ? Math.min(0.55, 0.18 + d / 600) : 1;
-          pointSX = pointSX ? pointSX + (tx - pointSX) * a : tx;
-          pointSY = pointSY ? pointSY + (ty - pointSY) * a : ty;
+          let ptx = nx * window.innerWidth;
+          let pty = ny * window.innerHeight;
+          // Snap to nearby clickable target — pulls cursor to the element center when
+          // within 90px, making imprecise pointing click reliably.
+          const snapTarget = clickableAt(ptx, pty);
+          if (snapTarget) {
+            const sr = (snapTarget as HTMLElement).getBoundingClientRect();
+            const scx = sr.left + sr.width / 2, scy = sr.top + sr.height / 2;
+            const sd = Math.hypot(ptx - scx, pty - scy);
+            if (sd < 90) { ptx = ptx + (scx - ptx) * 0.65; pty = pty + (scy - pty) * 0.65; }
+          }
+          // Adaptive smoothing: fast on big moves, snappy near target.
+          const d = Math.hypot(ptx - pointSX, pty - pointSY);
+          const onT = !!snapTarget;
+          const a = pointSX ? Math.min(0.75, (onT ? 0.38 : 0.2) + d / 350) : 1;
+          pointSX = pointSX ? pointSX + (ptx - pointSX) * a : ptx;
+          pointSY = pointSY ? pointSY + (pty - pointSY) * a : pty;
           updateLaser(pointSX, pointSY, dt);
           gestureStatus('☝️ מצביע — החזק רגע לבחירה');
         } else {
@@ -2304,7 +2315,7 @@ export function mountApp(root: HTMLElement) {
       // small canvas also delivers a clean image regardless of the hidden video size.
       const cap = document.createElement('canvas');
       const capCtx = cap.getContext('2d')!;
-      const CAP_W = 320;
+      const CAP_W = 480;
       let rafId = 0;
       const tick = async () => {
         if (!gestureActive) return;
@@ -3574,9 +3585,11 @@ export function mountApp(root: HTMLElement) {
     function buildDock() {
       const cur = localStorage.getItem(MAIN_CHAR_KEY) || 'pikachu';
       row.innerHTML = MAIN_CHARACTERS.map((c, i) => `
-        <button class="sd-item${c.id === cur ? ' sd-current' : ''}" data-id="${c.id}" style="--d:${i * 0.03}s">
-          <img class="sd-img" src="${SPRITE(c.id)}" alt="${c.label}" loading="eager"
-               onerror="this.style.visibility='hidden'" />
+        <button class="sd-item${c.id === cur ? ' sd-current' : ''}" data-id="${c.id}" style="--d:${i * 0.04}s">
+          <div class="sd-holo-wrap">
+            <img class="sd-holo" src="${SPRITE(c.id)}" alt="${c.label}" loading="eager"
+                 onerror="this.style.opacity='0'" />
+          </div>
           <span class="sd-ball"><span class="sd-ball-btn"></span></span>
           <span class="sd-name">${c.label}</span>
         </button>`).join('');
@@ -3832,6 +3845,8 @@ export function mountApp(root: HTMLElement) {
       buildDock();
       resetMagnify();
       dock.removeAttribute('hidden');
+      const bdrop = document.getElementById('dockBackdrop');
+      if (bdrop) { bdrop.removeAttribute('hidden'); requestAnimationFrame(() => bdrop.classList.add('on')); }
       const orbEl = document.getElementById('summonOrb');
       orbEl?.classList.remove('launch');
       orbEl?.removeAttribute('hidden');
@@ -3859,7 +3874,9 @@ export function mountApp(root: HTMLElement) {
       const orbEl = document.getElementById('summonOrb');
       orbEl?.setAttribute('hidden', ''); orbEl?.classList.remove('launch');
       dock.classList.remove('open');
-      setTimeout(() => dock.setAttribute('hidden', ''), 260);
+      const bdrop = document.getElementById('dockBackdrop');
+      if (bdrop) { bdrop.classList.remove('on'); setTimeout(() => bdrop.setAttribute('hidden', ''), 300); }
+      setTimeout(() => dock.setAttribute('hidden', ''), 320);
       if (restoreWake) { restoreWake = false; setTimeout(() => voice.setWake(true), 350); }
     }
     function selectPokemon(id: string) {
