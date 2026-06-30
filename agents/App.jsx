@@ -1583,6 +1583,10 @@ function StyleTag() {
 .ofc-floor{flex:1;position:relative;overflow:hidden;margin:8px;border-radius:16px;border:1px solid rgba(110,170,240,.18);
   background:linear-gradient(rgba(255,255,255,.014) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.014) 1px,transparent 1px),radial-gradient(ellipse at 50% 28%,#1b2440,#0c1120 68%,#070a14);
   background-size:42px 42px,42px 42px,100% 100%;box-shadow:inset 0 0 90px rgba(0,0,0,.65)}
+/* On wide screens the office floor (sized for a portrait/tablet aspect) would
+   otherwise stretch edge-to-edge with huge empty gaps between desks — cap its
+   width and center it so the room keeps its intended proportions. */
+@media(min-width:900px){.ofc-floor{max-width:860px;width:100%;margin:8px auto;align-self:center}}
 .ofc-windows{position:absolute;top:0;left:0;right:0;height:34px;display:flex;gap:9px;padding:0 14px;pointer-events:none}
 .ofc-windows span{flex:1;border-radius:0 0 7px 7px;background:linear-gradient(180deg,rgba(150,200,255,.3),rgba(80,130,210,.06));border:1px solid rgba(150,200,255,.16);border-top:none;box-shadow:inset 0 -6px 14px rgba(150,200,255,.08)}
 .ofc-furn{position:absolute;pointer-events:none}
