@@ -494,16 +494,6 @@ function Dashboard({ leads, deals, custs, go, onNewDeal, showToast, theme, setTh
         <ChevronLeft size={22} />
       </button>
 
-      <a className="ag-agents-card" href="../agents/" target="_blank" rel="noreferrer">
-        <span className="ag-agents-glow" />
-        <span className="ag-agents-orb"><Sparkles size={22} /></span>
-        <span className="ag-agents-txt">
-          <b>מרכז הסוכנים · Agents Command</b>
-          <span>צוות סוכני AI עם מנכ"ל שמנהל את כולם · שיחה ישירה</span>
-        </span>
-        <ChevronLeft size={22} />
-      </a>
-
       <div className="ag-tools2">
         <button className="ag-tool" onClick={() => setShowSam(true)}><FileText size={20} /><b>טופס סמסוניקס</b><span>החתמת לקוח · DVR</span></button>
         <button className="ag-tool" onClick={() => setShowCat(true)}><Briefcase size={20} /><b>קטלוג מוצרים</b><span>מחירון חי</span></button>
@@ -2645,17 +2635,6 @@ function StyleTag() {
 /* Me copy button (replaces WhatsApp next to numbers) */
 .ag-phone-btn.me,.ag-person-btn.me{color:var(--gold);border-color:var(--gold);background:rgba(212,168,67,.12)}
 .ag-wa.me{background:rgba(212,168,67,.12);border:1px solid var(--gold);color:var(--gold);cursor:pointer}
-
-/* Agents Command Center launch card */
-.ag-agents-card{position:relative;overflow:hidden;display:flex;align-items:center;gap:12px;width:100%;text-decoration:none;color:#fff;
-  background:linear-gradient(120deg,#1a1230,#2a1c52 55%,#3a2670);border:1px solid rgba(199,125,255,.45);border-radius:14px;padding:15px 14px;margin-bottom:12px;
-  box-shadow:0 8px 28px rgba(58,38,112,.45),0 0 0 1px rgba(199,125,255,.12)}
-.ag-agents-glow{position:absolute;inset:0;background:radial-gradient(circle at 85% 20%,rgba(199,125,255,.4),transparent 55%);pointer-events:none}
-.ag-agents-orb{width:46px;height:46px;border-radius:13px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#fff;
-  background:linear-gradient(135deg,#C77DFF,#7B3FE4);box-shadow:0 4px 18px rgba(199,125,255,.5)}
-.ag-agents-txt{flex:1;position:relative}
-.ag-agents-txt b{display:block;font-family:'Rubik';font-weight:900;font-size:15px}
-.ag-agents-txt span{display:block;font-size:11.5px;color:#d9c8ff;margin-top:3px}
 
 /* tool launch cards (Samsonix + catalog) */
 .ag-tools2{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:16px}
