@@ -266,12 +266,22 @@ export default function App() {
 
   const addCustomer = useCallback((c) => {
     setCusts((prev) => {
-      if (c.phone && prev.some((x) => x.phone === c.phone)) return prev; // de-dupe by phone
+      const normName = (s) => (s || "").trim().toLowerCase();
+      if (c.phone && prev.some((x) => x.phone === c.phone)) return prev;
+      if (c.name && prev.some((x) => normName(x.name) === normName(c.name))) return prev;
       const next = [{ ...c, id: c.id || uid() }, ...prev]; persist(K_CUST, next); return next;
     });
   }, []);
   const saveCustomer = useCallback((c) => {
-    setCusts((prev) => { const next = c.id && prev.some((x) => x.id === c.id) ? prev.map((x) => (x.id === c.id ? c : x)) : [{ ...c, id: uid() }, ...prev]; persist(K_CUST, next); return next; });
+    setCusts((prev) => {
+      if (c.id && prev.some((x) => x.id === c.id)) {
+        const next = prev.map((x) => (x.id === c.id ? c : x)); persist(K_CUST, next); return next;
+      }
+      const normName = (s) => (s || "").trim().toLowerCase();
+      if (c.phone && prev.some((x) => x.phone === c.phone)) return prev;
+      if (c.name && prev.some((x) => normName(x.name) === normName(c.name))) return prev;
+      const next = [{ ...c, id: uid() }, ...prev]; persist(K_CUST, next); return next;
+    });
   }, []);
   const removeCustomer = useCallback((id) => { setCusts((prev) => { const next = prev.filter((x) => x.id !== id); persist(K_CUST, next); return next; }); }, []);
 
@@ -809,23 +819,60 @@ function CustomersView({ custs, onSave, onRemove, showToast }) {
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState(null);
   const [q, setQ] = useState("");
-  const list = q ? custs.filter((c) => (c.name || "").toLowerCase().includes(q.toLowerCase()) || (c.phone || "").includes(q)) : custs;
+  const [filterRegion, setFilterRegion] = useState("");
+
+  const filtered = useMemo(() => {
+    let list = custs;
+    if (q) list = list.filter((c) => (c.name || "").toLowerCase().includes(q.toLowerCase()) || (c.phone || "").includes(q) || (c.city || "").includes(q));
+    if (filterRegion) list = list.filter((c) => (c.region || "") === filterRegion);
+    return list;
+  }, [custs, q, filterRegion]);
+
+  const grouped = useMemo(() => {
+    const g = {};
+    filtered.forEach((c) => { const r = c.region || "כללי"; if (!g[r]) g[r] = []; g[r].push(c); });
+    return g;
+  }, [filtered]);
+
+  const usedRegions = GEO_OPTS.filter((r) => custs.some((c) => c.region === r));
+  const regionOrder = [...GEO_OPTS, "כללי"].filter((r) => grouped[r]);
 
   return (
     <div className="ag-flow">
-      <header className="ag-head sm"><div><div className="ag-title">לקוחות</div><div className="ag-sub">{custs.length} לקוחות</div></div></header>
+      <header className="ag-head sm">
+        <div><div className="ag-title">לקוחות</div><div className="ag-sub">{custs.length} לקוחות{usedRegions.length > 0 ? ` · ${usedRegions.length} אזורים` : ""}</div></div>
+      </header>
       <button className="ag-cta" onClick={() => { setEdit(null); setOpen(true); }}><Plus size={18} /> לקוח חדש</button>
       <div className="ag-searchbox"><Search size={15} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="חיפוש לקוח…" dir="rtl" />{q && <button onClick={() => setQ("")}><X size={14} /></button>}</div>
-      {list.length === 0 && <div className="ag-empty"><UserRound size={32} /><div>אין עדיין לקוחות</div><p>לקוחות נוצרים אוטומטית כשסוגרים עסקה, או הוסף ידנית</p></div>}
-      {list.map((c) => (
-        <div className="ag-card cust" key={c.id}>
-          <div className="ag-cust-mid"><b>{c.name}</b><span dir="ltr">{c.phone || "—"}{c.city ? " · " + c.city : ""}</span>{c.notes && <span className="ag-cust-note">{c.notes}</span>}</div>
-          <div className="ag-cust-acts">
-            {c.phone && <button className="ag-wa me" title="העתק ל-Me" onClick={() => meLookup(c.phone, showToast)}><Copy size={15} /></button>}
-            {c.phone && <a className="ag-wa tel" href={telLink(c.phone)}><Phone size={15} /></a>}
-            <button className="ag-icbtn" onClick={() => { setEdit(c); setOpen(true); }}><Pencil size={14} /></button>
-            <button className="ag-icbtn d" onClick={async () => { onRemove(c.id); showToast("הלקוח נמחק"); }}><Trash2 size={14} /></button>
-          </div>
+      {usedRegions.length > 0 && (
+        <div className="ag-chips sm">
+          <button className={!filterRegion ? "on" : ""} onClick={() => setFilterRegion("")}>הכל</button>
+          {usedRegions.map((r) => (
+            <button key={r} className={filterRegion === r ? "on" : ""} onClick={() => setFilterRegion(r)}>
+              {r} <span className="cust-chip-cnt">({custs.filter((c) => c.region === r).length})</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {filtered.length === 0 && <div className="ag-empty"><UserRound size={32} /><div>אין עדיין לקוחות</div><p>לקוחות נוצרים אוטומטית כשסוגרים עסקה, או הוסף ידנית</p></div>}
+      {regionOrder.map((region) => (
+        <div key={region} className="cust-region-group">
+          <div className="cust-region-hdr"><MapPin size={13} /><span>{region}</span><span className="cust-region-cnt">{grouped[region].length}</span></div>
+          {grouped[region].map((c) => (
+            <div className="ag-card cust compact" key={c.id}>
+              <div className="ag-cust-mid">
+                <b>{c.name}</b>
+                <span dir="ltr">{c.phone || "—"}{c.city ? " · " + c.city : ""}</span>
+                {c.notes && <span className="ag-cust-note">{c.notes}</span>}
+              </div>
+              <div className="ag-cust-acts">
+                {c.phone && <button className="ag-wa me" title="העתק ל-Me" onClick={() => meLookup(c.phone, showToast)}><Copy size={15} /></button>}
+                {c.phone && <a className="ag-wa tel" href={telLink(c.phone)}><Phone size={15} /></a>}
+                <button className="ag-icbtn" onClick={() => { setEdit(c); setOpen(true); }}><Pencil size={14} /></button>
+                <button className="ag-icbtn d" onClick={() => { onRemove(c.id); showToast("הלקוח נמחק"); }}><Trash2 size={14} /></button>
+              </div>
+            </div>
+          ))}
         </div>
       ))}
       {open && <CustomerForm initial={edit} onClose={() => setOpen(false)} onSave={(c) => { onSave(c); setOpen(false); showToast(edit ? "הלקוח עודכן" : "הלקוח נוסף"); }} />}
@@ -834,7 +881,7 @@ function CustomersView({ custs, onSave, onRemove, showToast }) {
 }
 
 function CustomerForm({ initial, onClose, onSave }) {
-  const [c, setC] = useState(initial || { name: "", phone: "", email: "", city: "", notes: "" });
+  const [c, setC] = useState(initial || { name: "", phone: "", email: "", city: "", region: "", notes: "" });
   const set = (k, v) => setC((p) => ({ ...p, [k]: v }));
   return (
     <div className="ag-modal" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -845,6 +892,11 @@ function CustomerForm({ initial, onClose, onSave }) {
           <label className="ag-lbl">טלפון</label><input className="ag-input" value={c.phone} onChange={(e) => set("phone", e.target.value)} dir="ltr" />
           <label className="ag-lbl">אימייל</label><input className="ag-input" value={c.email} onChange={(e) => set("email", e.target.value)} dir="ltr" />
           <label className="ag-lbl">עיר</label><input className="ag-input" value={c.city} onChange={(e) => set("city", e.target.value)} dir="rtl" />
+          <label className="ag-lbl">אזור</label>
+          <select className="ag-input" value={c.region || ""} onChange={(e) => set("region", e.target.value)} dir="rtl">
+            <option value="">— בחר אזור —</option>
+            {GEO_OPTS.map((g) => <option key={g} value={g}>{g}</option>)}
+          </select>
           <label className="ag-lbl">הערות</label><textarea className="ag-textarea" value={c.notes} onChange={(e) => set("notes", e.target.value)} rows={2} dir="rtl" />
         </div>
         <div className="ag-sheet-foot"><button className="ag-btn ghost" onClick={onClose}>ביטול</button><button className="ag-btn" onClick={() => c.name.trim() && onSave(c)}>שמור</button></div>
@@ -1113,8 +1165,29 @@ function MapView({ leads, custs, deals, showToast }) {
       m.bindPopup(html);
       grp.addLayer(m);
     });
+    // Customer markers — gold star, distinct from lead pins
+    custs.forEach((c) => {
+      const ll = cityCoords(c.city);
+      if (!ll) return;
+      const j = jitter(c.id || c.name || "c", 0.004);
+      const cll = [ll[0] + j[0], ll[1] + j[1]];
+      const icon = L.divIcon({ className: "ag-pin-cust", html: `<span>★</span>`, iconSize: [22, 22] });
+      const m = L.marker(cll, { icon, zIndexOffset: 500 });
+      const tel = `tel:${(c.phone || "").replace(/\s/g, "")}`;
+      const custHtml = `<div style="font-family:Heebo,Arial;direction:rtl;min-width:180px;max-width:230px">
+        <b style="font-size:14px;color:#2C2510">★ ${esc(c.name)}</b>
+        <span style="display:inline-block;background:#C2912E22;color:#C2912E;border:1px solid #C2912E66;border-radius:20px;padding:1px 8px;font-size:10px;font-weight:700;margin-right:5px">לקוח</span>
+        ${c.city ? `<div style="font-size:11.5px;color:#5a4d28;margin-top:3px">📍 ${esc(c.city)}${c.region ? " · " + esc(c.region) : ""}</div>` : ""}
+        ${c.phone ? `<div dir="ltr" style="margin:6px 0 2px;font-weight:800;font-size:13px;color:#2C2510">${esc(c.phone)}</div>` : ""}
+        <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px">
+          ${c.phone ? `<a href="${tel}" style="background:#1B7E9C;color:#fff;border-radius:7px;padding:5px 10px;text-decoration:none;font-size:11px;font-weight:700">חייג</a>` : ""}
+          ${c.phone ? `<button onclick="window.__agMe('${esc(c.phone)}')" style="background:#FBF3DF;color:#A2761F;border:1px solid #C2912E;border-radius:7px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer">Me · העתק</button>` : ""}
+        </div></div>`;
+      m.bindPopup(custHtml);
+      grp.addLayer(m);
+    });
     grp.addTo(map); layerRef.current = grp;
-  }, [points, ready]);
+  }, [points, custs, ready]);
 
   return (
     <div className="ag-flow map">
@@ -2039,11 +2112,19 @@ function StyleTag() {
 .ag-sheet-foot .ag-btn{flex:1;margin-top:0}
 
 .ag-card.cust{display:flex;align-items:center;gap:10px}
+.ag-card.cust.compact{padding:8px 12px;margin-bottom:4px;border-radius:10px}
 .ag-cust-mid{flex:1;min-width:0}
 .ag-cust-mid b{display:block;font-size:14px;font-weight:700}
 .ag-cust-mid span{font-size:12px;color:var(--s4);display:block}
 .ag-cust-note{color:var(--champ)!important;font-size:11.5px!important}
 .ag-cust-acts{display:flex;gap:6px;align-items:center}
+.cust-region-group{margin-bottom:4px}
+.cust-region-hdr{display:flex;align-items:center;gap:6px;padding:8px 14px 4px;font-size:12px;font-weight:800;color:var(--gold2);text-transform:uppercase;letter-spacing:.5px}
+.cust-region-hdr svg{opacity:.7}
+.cust-region-cnt{background:var(--gold);color:#fff;border-radius:10px;font-size:10px;font-weight:800;padding:1px 7px;margin-right:4px}
+.cust-chip-cnt{opacity:.7;font-size:10px}
+.ag-pin-cust{background:none!important;border:none!important}
+.ag-pin-cust span{display:flex;align-items:center;justify-content:center;width:22px;height:22px;background:#C2912E;color:#fff;font-size:14px;border-radius:50%;box-shadow:0 2px 8px rgba(194,145,46,.6);border:2px solid #fff}
 .ag-wa{background:#E2F4EA;border:1px solid #9AD3B4;color:var(--ok);border-radius:9px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;text-decoration:none}
 .ag-wa.tel{background:var(--s8);border-color:var(--s7);color:var(--cyan)}
 .ag-icbtn{background:var(--s8);border:1px solid var(--s7);color:var(--s4);border-radius:9px;width:34px;height:34px;display:flex;align-items:center;justify-content:center;cursor:pointer}

@@ -202,20 +202,61 @@ function cry(charId: string) {
 export function setCharacterVolume(val: number) { volume = Math.max(0, Math.min(1, val)); }
 export function unlockCharacterAudio() { try { getCtx(); } catch {} }
 
-// Play the active character's cry once.
+// Real cry audio files from PokeAPI CDN (OGG format, works in all modern browsers).
+// IDs from the national Pokédex — same ones used for sprites.
+const POKE_CRY_IDS: Record<string, number> = {
+  charmander: 4, squirtle: 7, meowth: 52, bulbasaur: 1,
+  eevee: 133, mewtwo: 150, articuno: 144, suicune: 245, raikou: 243,
+  entei: 244, moltres: 146, zapdos: 145, lugia: 249, 'ho-oh': 250,
+  pikachu: 25,
+};
+const CRY_CACHE = new Map<string, AudioBuffer>();
+async function fetchCry(charId: string): Promise<AudioBuffer | null> {
+  if (CRY_CACHE.has(charId)) return CRY_CACHE.get(charId)!;
+  const id = POKE_CRY_IDS[charId]; if (!id) return null;
+  try {
+    const url = `https://raw.githubusercontent.com/PokeAPI/cries/main/cries/pokemon/latest/${id}.ogg`;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const ab = await res.arrayBuffer();
+    const ctx = getCtx();
+    const buf = await ctx.decodeAudioData(ab);
+    CRY_CACHE.set(charId, buf);
+    return buf;
+  } catch { return null; }
+}
+async function playRealCry(charId: string): Promise<boolean> {
+  try {
+    const buf = await fetchCry(charId);
+    if (!buf) return false;
+    const ctx = getCtx();
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const gain = ctx.createGain();
+    gain.gain.value = Math.min(1, volume * 1.1);
+    src.connect(gain); gain.connect(ctx.destination);
+    src.start();
+    return true;
+  } catch { return false; }
+}
+
+// Play a character's cry once — tries real audio first, falls back to synthesis.
+// Pikachu's idle timer is separate (pikaVoice.ts), but one-shot cries work for all.
 export function playCharacterCry(charId = activeChar) {
-  if (!enabled || charId === 'pikachu') return;
-  try { cry(charId); } catch {}
+  if (!enabled) return;
+  playRealCry(charId).then(ok => {
+    if (!ok && charId !== 'pikachu') { try { cry(charId); } catch {} }
+  });
 }
 
 function scheduleNext() {
   if (timer) clearTimeout(timer);
-  const delay = 16000 + Math.random() * 26000;
+  const delay = 18000 + Math.random() * 30000;
   timer = setTimeout(() => { playCharacterCry(activeChar); scheduleNext(); }, delay);
 }
 
-// Switch the active character. When non-Pikachu, periodic idle cries run; the
-// caller is responsible for muting Pikachu's own voice.
+// Switch the active character. Non-pikachu characters run periodic idle cries here;
+// Pikachu's idle chirps are handled by pikaVoice.ts to avoid duplication.
 export function setActiveCharacter(charId: string) {
   activeChar = charId;
   if (timer) { clearTimeout(timer); timer = null; }

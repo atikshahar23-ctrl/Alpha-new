@@ -2459,7 +2459,7 @@ function makeThrowPokeball(group: THREE.Group, pikaGroup: THREE.Group, base: str
 function mountMobileOrb(container: HTMLElement): OrbHandle {
   const renderer = new THREE.WebGLRenderer({
     antialias: true,
-    alpha: false,
+    alpha: true,
     powerPreference: 'high-performance',
     failIfMajorPerformanceCaveat: false,
   });
@@ -2473,7 +2473,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     return qTier >= 2 ? Math.min(base, 1) : base;
   };
   renderer.setPixelRatio(prCap());
-  renderer.setClearColor(charBg("pikachu"), 1);
+  renderer.setClearColor(charBg("pikachu"), 0);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.65;
   container.appendChild(renderer.domElement);
@@ -3045,11 +3045,11 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
       if (name === 'none') {
         pikaGroup.visible = false;
         attachAura(pikaGroup, 'none');   // tear down any aura
-        renderer.setClearColor(charBg('none'), 1);
+        renderer.setClearColor(charBg('none'), 0);
         return;
       }
       pikaGroup.visible = true;
-      renderer.setClearColor(charBg(name), 1);
+      renderer.setClearColor(charBg(name), 0);
       mobApplyAccent(name);
       mobPFX = createParticles(scene, name, true);
       loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/', name, (m) => {
@@ -3111,7 +3111,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
 
   const renderer = new THREE.WebGLRenderer({
     antialias: true,
-    alpha: false,
+    alpha: true,
     powerPreference: 'high-performance',
     failIfMajorPerformanceCaveat: false,
   });
@@ -3137,7 +3137,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     return qTier >= 2 ? Math.min(base, 1) : base;
   };
   renderer.setPixelRatio(prCap());
-  renderer.setClearColor(charBg("pikachu"), 1);
+  renderer.setClearColor(charBg("pikachu"), 0);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.75;
   container.appendChild(renderer.domElement);
@@ -4149,11 +4149,11 @@ export function mountOrb(container: HTMLElement): OrbHandle {
         // upcoming holographic figure). Keep a neutral background.
         pikaGroup.visible = false;
         attachAura(pikaGroup, 'none');   // tear down any aura
-        renderer.setClearColor(charBg('none'), 1);
+        renderer.setClearColor(charBg('none'), 0);
         return;
       }
       pikaGroup.visible = true;
-      renderer.setClearColor(charBg(name), 1);
+      renderer.setClearColor(charBg(name), 0);
       deskApplyAccent(name);
       deskPFX = createParticles(scene, name, false);
       loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/', name, (m) => {

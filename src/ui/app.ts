@@ -350,6 +350,7 @@ export function mountApp(root: HTMLElement) {
           <canvas id="summonOrbCanvas" class="so-canvas"></canvas>
         </div>
       </div>
+      <div id="dockWild" hidden></div>
       <div id="summonDock" class="summon-dock" hidden>
         <div class="sd-hint" id="summonDockHint"><span class="sd-mic">🎙️</span> אמור שם של פוקימון…</div>
         <div class="sd-row" id="summonDockRow"></div>
@@ -1906,6 +1907,7 @@ export function mountApp(root: HTMLElement) {
       if (vid) vid.srcObject = null;
       const liveVid = document.getElementById('gestureLiveVideo') as HTMLVideoElement | null;
       if (liveVid) { liveVid.srcObject = null; liveVid.setAttribute('hidden', ''); }
+      document.body.classList.remove('gesture-cam-open');
       document.getElementById('gesturePanel')!.setAttribute('hidden', '');
       const ov = document.getElementById('handOverlay') as HTMLCanvasElement | null;
       if (ov) { const c = ov.getContext('2d'); if (c) c.clearRect(0, 0, ov.width, ov.height); ov.setAttribute('hidden', ''); }
@@ -1961,9 +1963,11 @@ export function mountApp(root: HTMLElement) {
           liveVid.srcObject = gestureStream;
           liveVid.removeAttribute('hidden');
           liveVid.play().catch(() => {});
+          document.body.classList.add('gesture-cam-open');
         } else {
           liveVid.srcObject = null;
           liveVid.setAttribute('hidden', '');
+          document.body.classList.remove('gesture-cam-open');
         }
       }
       gestureStatus('⏳ טוען זיהוי ידיים…');
@@ -2264,6 +2268,12 @@ export function mountApp(root: HTMLElement) {
             fistHoldMs = 0; ballHeldMs = 0; orb.pokeballRelease?.();
             if (open) gestureStatus('🖐️ יד פתוחה — שחק עם הפוקימון'); else if (!thumbsDown) gestureStatus('זיהוי פעיל');
           }
+        }
+
+        // ── Dock gesture: when summon dock is open, track hand X to hover items ──
+        if ((window as any).__dockGestureMove && (window as any).closeSummonDock &&
+            document.getElementById('summonDock') && !document.getElementById('summonDock')!.hasAttribute('hidden')) {
+          (window as any).__dockGestureMove(lm[9].x); // wrist X (0..1)
         }
 
         // ── 👎 Thumbs-down DISMISS (dispel) — replaces the open-palm release so an
@@ -3751,6 +3761,72 @@ export function mountApp(root: HTMLElement) {
       requestAnimationFrame(frame);
     }
 
+    // Wild ambient effects while the dock is open — floating gold sparks + rings
+    function startDockWild() {
+      const el = document.getElementById('dockWild'); if (!el) return;
+      el.removeAttribute('hidden'); el.innerHTML = '';
+      // 3 concentric animated rings
+      for (let i = 0; i < 3; i++) {
+        const r = document.createElement('div'); r.className = 'dw-ring';
+        const sz = 160 + i * 120;
+        Object.assign(r.style, { width: sz+'px', height: sz+'px', left:'50%', top:'40%',
+          animationDelay: (i*0.7)+'s', animationDuration: (2.4 + i*0.5)+'s' });
+        el.appendChild(r);
+      }
+      // Vertical light beams
+      const beamCount = 8;
+      for (let i = 0; i < beamCount; i++) {
+        const b = document.createElement('div'); b.className = 'dw-beam';
+        Object.assign(b.style, { left: (8 + i*(100/beamCount))+'%',
+          animationDelay: (i*0.22)+'s', height:'0' });
+        el.appendChild(b);
+      }
+      // Floating sparks
+      for (let i = 0; i < 22; i++) {
+        const s = document.createElement('div'); s.className = 'dw-spark';
+        const hue = 30 + Math.random() * 30;
+        Object.assign(s.style, {
+          left: Math.random()*100+'%', top: (50 + Math.random()*50)+'%',
+          background: `hsl(${hue},100%,${50+Math.random()*30}%)`,
+          width: (2+Math.random()*4)+'px', height: (2+Math.random()*4)+'px',
+          animationDelay: (Math.random()*3)+'s', animationDuration: (2+Math.random()*2.5)+'s',
+        });
+        el.appendChild(s);
+      }
+      requestAnimationFrame(() => el.classList.add('on'));
+    }
+    function stopDockWild() {
+      const el = document.getElementById('dockWild'); if (!el) return;
+      el.classList.remove('on');
+      setTimeout(() => { el.setAttribute('hidden', ''); el.innerHTML = ''; }, 350);
+    }
+
+    // Gesture-based hover: the hand overlay X position maps to dock items
+    let gestureHoverIdx = -1;
+    let gestureSelectTimer: number | undefined;
+    function dockGestureMove(normX: number) {
+      if (!dockOpen) return;
+      const items = Array.from(row.querySelectorAll<HTMLElement>('.sd-item'));
+      if (!items.length) return;
+      // Map screen normX → item index
+      const idx = Math.min(items.length - 1, Math.max(0, Math.floor(normX * items.length)));
+      if (idx !== gestureHoverIdx) {
+        items.forEach(it => it.classList.remove('gesture-hover'));
+        items[idx]?.classList.add('gesture-hover');
+        magnify(idx / (items.length - 1) * window.innerWidth);
+        gestureHoverIdx = idx;
+        clearTimeout(gestureSelectTimer);
+        // Auto-select after 1.5s of stable hover
+        gestureSelectTimer = window.setTimeout(() => {
+          if (dockOpen && gestureHoverIdx === idx) {
+            const id = items[idx]?.dataset.id;
+            if (id) selectPokemon(id);
+          }
+        }, 1500);
+      }
+    }
+    (window as any).__dockGestureMove = dockGestureMove;
+
     function openSummonDock() {
       if (dockOpen) return;
       buildDock();
@@ -3758,24 +3834,28 @@ export function mountApp(root: HTMLElement) {
       dock.removeAttribute('hidden');
       const orbEl = document.getElementById('summonOrb');
       orbEl?.classList.remove('launch');
-      orbEl?.removeAttribute('hidden');  // 3D spinning centre pokéball
+      orbEl?.removeAttribute('hidden');
       startSummonBall();
+      startDockWild();
       requestAnimationFrame(() => dock.classList.add('open'));
       dockOpen = true;
+      gestureHoverIdx = -1;
       hint.innerHTML = '<span class="sd-mic">🎙️</span> אמור שם של פוקימון…';
-      // Pause the assistant mic so the two speech recognitions don't fight.
       restoreWake = voice.wakeOn;
       if (restoreWake) voice.setWake(false);
       startDockVoice();
       clearTimeout(dockTimer);
-      dockTimer = window.setTimeout(() => closeSummonDock(), 8000);
+      dockTimer = window.setTimeout(() => closeSummonDock(), 18000);
     }
     function closeSummonDock() {
       if (!dockOpen) return;
       dockOpen = false;
       clearTimeout(dockTimer);
+      clearTimeout(gestureSelectTimer);
+      gestureHoverIdx = -1;
       stopDockVoice();
       stopSummonBall();
+      stopDockWild();
       const orbEl = document.getElementById('summonOrb');
       orbEl?.setAttribute('hidden', ''); orbEl?.classList.remove('launch');
       dock.classList.remove('open');
