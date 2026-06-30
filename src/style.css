@@ -1890,18 +1890,22 @@ body::after {
     background: radial-gradient(ellipse 120% 60% at 50% 45%, rgba(218,165,32,.06) 0%, rgba(14,12,8,1) 70%);
   }
 
-  .topL { top: calc(var(--safe-top) + 10px); left: 16px; gap: 4px; }
+  .topL { top: calc(var(--safe-top) + 12px); left: 14px; gap: 2px; z-index: 6; }
   .brand-logo { width: 80px; height: 80px; }
-  .topL .wm {
-    font-size: 15px; letter-spacing: 3px;
-    filter: drop-shadow(0 0 16px rgba(218,165,32,.35));
-    background: linear-gradient(135deg, #daa520, #fff, #f0d090);
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-    background-clip: text;
-  }
-  .topL .clk { font-size: 10px; letter-spacing: 2px; margin-top: 3px;
-    color: rgba(218,165,32,.6); }
-  .topR { top: calc(var(--safe-top) + 10px); right: 14px; gap: 6px; }
+  /* The long "GOOD MORNING" greeting collided with the crowded button row on
+     phones — hide it here (the welcome card already greets by name) and keep a
+     compact clock + version stamp. */
+  .topL .wm { display: none; }
+  .topL .clk { font-size: 11px; letter-spacing: 2px; margin-top: 0;
+    color: rgba(218,165,32,.7); }
+  /* Contained, right-aligned band between the clock and the edge — extra
+     buttons scroll horizontally instead of overflowing off-screen / over the
+     clock. The wide 'מוח' label is icon-only on phones. */
+  .topR { top: calc(var(--safe-top) + 12px); right: 12px; left: 60px; gap: 5px;
+    flex-wrap: nowrap; justify-content: flex-end; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+  .topR::-webkit-scrollbar { display: none; }
+  .topR .chip { padding: 8px 9px; }
+  .topR .module-chip .mc-label { display: none; }
   .chip {
     font-size: 0; padding: 9px 11px; border-radius: 12px; gap: 0;
     background: rgba(14, 12, 8, .82);
