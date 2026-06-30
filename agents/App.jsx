@@ -34,6 +34,9 @@ const timeAgo = (ts) => {
   return Math.floor(s / 86400) + " ימים";
 };
 
+/* ── Tiny event bus: the Dev room pings the office sim so דן reacts live. ── */
+const devBus = { fns: new Set(), emit(p) { this.fns.forEach((f) => { try { f(p); } catch {} }); }, on(f) { this.fns.add(f); return () => this.fns.delete(f); } };
+
 /* ── Free AI brain (shared Groq key with the rest of Alpha) ── */
 const groqKey = () => { try { return localStorage.getItem("alpha_groq") || ""; } catch { return ""; } };
 const hasAI = () => !!groqKey();
@@ -733,6 +736,7 @@ function DevConsole({ logActivity, showToast }) {
     if (execBusy) return;
     setExecBusy(true);
     logActivity("dev", "מבצע קוד אוטומטית: " + path);
+    devBus.emit({ agentId: "dev", text: "כותב קוד… 🧑‍💻" });
     try {
       const title = briefTitle(brief || req, req).slice(0, 60);
       const pr = await devExecute({ filePath: path, instruction, title });
@@ -749,6 +753,7 @@ function DevConsole({ logActivity, showToast }) {
     const t = req.trim(); if (!t || busy) return;
     setBusy(true); setBrief("");
     logActivity("dev", "ניסח בריף פיתוח: " + t.slice(0, 30));
+    devBus.emit({ agentId: "dev", text: "מנסח בריף 🧑‍💻" });
     try {
       const out = hasAI() ? await askGroq(devBriefSystem(), [], t) : devBriefFallback(t);
       setBrief(out || devBriefFallback(t));
@@ -874,45 +879,66 @@ const OFC_DESKS = [{ x: 14, y: 34 }, { x: 14, y: 52 }, { x: 14, y: 70 }, { x: 83
 const OFC_SEATS = [{ x: 41, y: 50 }, { x: 50, y: 47 }, { x: 59, y: 50 }, { x: 41, y: 63 }, { x: 50, y: 66 }, { x: 59, y: 63 }];
 const OFC_BREAK = { x: 84, y: 51 };
 const OFC_STATUS = { work: "💻", meet: "👥", break: "☕", roam: "🚶" };
+const OFC_PHASES = [
+  { label: "בוקר", emoji: "🌅", tint: "rgba(255,196,120,.06)", sky: "#22304e" },
+  { label: "צהריים", emoji: "☀️", tint: "rgba(255,250,210,.04)", sky: "#27406a" },
+  { label: "ערב", emoji: "🌇", tint: "rgba(255,120,70,.12)", sky: "#3a2740" },
+  { label: "לילה", emoji: "🌙", tint: "rgba(20,40,120,.26)", sky: "#0e1430" },
+];
 function OfficeSim({ onClose, onOpenChat }) {
   const rnd = (a, b) => a + Math.random() * (b - a);
-  const [chars, setChars] = useState(() => AGENTS.map((a, i) => ({ id: a.id, ...(OFC_DESKS[i % OFC_DESKS.length]), dir: 1, dur: 3000, walking: false, status: "work" })));
+  const [chars, setChars] = useState(() => AGENTS.map((a, i) => ({ id: a.id, ...(OFC_DESKS[i % OFC_DESKS.length]), dir: 1, dur: 3000, walking: false, status: "work", energy: Math.round(rnd(70, 100)), held: false, focus: false })));
   const [bubbles, setBubbles] = useState({});
+  const [phase, setPhase] = useState(0);
+  const [bursts, setBursts] = useState([]);
   const meetingRef = useRef(false);
+  const floorRef = useRef(null);
+  const dragRef = useRef(null);
 
-  // Behaviour scheduler: meetings, desk work, coffee breaks and roaming.
+  const moveTo = (c, pt, status, focus = false) => {
+    const dist = Math.hypot(pt.x - c.x, pt.y - c.y);
+    const dur = Math.round(Math.max(1300, dist * 135));
+    setTimeout(() => setChars((p) => p.map((k) => k.id === c.id ? { ...k, walking: false } : k)), dur);
+    return { ...c, x: pt.x, y: pt.y, dir: pt.x < c.x ? -1 : 1, dur, walking: true, status, focus };
+  };
+  const popBubble = (id, text, toId = null) => { const bid = uid(); setBubbles((p) => ({ ...p, [id]: { text, toId, id: bid } })); setTimeout(() => setBubbles((p) => (p[id] && p[id].id === bid ? { ...p, [id]: null } : p)), 3800); };
+  const confettiAt = (x, y, color) => { const id = uid(); setBursts((p) => [...p, { id, x, y, color }]); setTimeout(() => setBursts((p) => p.filter((k) => k.id !== id)), 1300); };
+
+  // Day cycle.
+  useEffect(() => { const iv = setInterval(() => setPhase((p) => (p + 1) % OFC_PHASES.length), 16000); return () => clearInterval(iv); }, []);
+
+  // Behaviour scheduler: meetings, desk work, coffee breaks, roaming, energy.
   useEffect(() => {
-    const moveTo = (c, pt, status) => {
-      const dist = Math.hypot(pt.x - c.x, pt.y - c.y);
-      const dur = Math.round(Math.max(1400, dist * 140));
-      setTimeout(() => setChars((p) => p.map((k) => k.id === c.id ? { ...k, walking: false } : k)), dur);
-      return { ...c, x: pt.x, y: pt.y, dir: pt.x < c.x ? -1 : 1, dur, walking: true, status };
-    };
     const iv = setInterval(() => {
-      // Occasionally call a team meeting: a few agents gather at the table.
+      const noon = phase === 1;
       if (!meetingRef.current && Math.random() < 0.16) {
         meetingRef.current = true;
         const pick = [...AGENTS].sort(() => Math.random() - 0.5).slice(0, 5).map((a) => a.id);
-        setChars((prev) => prev.map((c) => { const idx = pick.indexOf(c.id); return idx >= 0 ? moveTo(c, OFC_SEATS[idx] || OFC_SEATS[0], "meet") : c; }));
+        setChars((prev) => prev.map((c) => { if (c.held) return c; const idx = pick.indexOf(c.id); return idx >= 0 ? moveTo(c, OFC_SEATS[idx] || OFC_SEATS[0], "meet") : c; }));
         setTimeout(() => { meetingRef.current = false; setChars((p) => p.map((c) => c.status === "meet" ? moveTo(c, OFC_DESKS[Math.floor(Math.random() * OFC_DESKS.length)], "work") : c)); }, 11000);
         return;
       }
-      // Individual behaviours for everyone not currently in the meeting.
       setChars((prev) => prev.map((c) => {
-        if (c.status === "meet") return c;
-        if (Math.random() < 0.32) {
+        if (c.held) return c;
+        // energy drift
+        let energy = c.energy + (c.status === "break" ? 7 : c.status === "work" ? -2 : c.status === "meet" ? -1 : -1);
+        energy = Math.max(5, Math.min(100, energy));
+        if (c.status === "meet") return { ...c, energy };
+        const tired = energy < 30;
+        if (Math.random() < (tired ? 0.5 : 0.3)) {
           const r = Math.random();
-          if (r < 0.45) return moveTo(c, OFC_DESKS[Math.floor(Math.random() * OFC_DESKS.length)], "work");
-          if (r < 0.65) return moveTo(c, OFC_BREAK, "break");
-          return moveTo(c, { x: rnd(OFC_X0, OFC_X1), y: rnd(OFC_Y0, OFC_Y1) }, "roam");
+          if (tired || (noon && r < 0.4)) return { ...moveTo(c, OFC_BREAK, "break"), energy };
+          if (r < 0.5) return { ...moveTo(c, OFC_DESKS[Math.floor(Math.random() * OFC_DESKS.length)], "work"), energy };
+          if (r < 0.68) return { ...moveTo(c, OFC_BREAK, "break"), energy };
+          return { ...moveTo(c, { x: rnd(OFC_X0, OFC_X1), y: rnd(OFC_Y0, OFC_Y1) }, "roam"), energy };
         }
-        return c;
+        return { ...c, energy };
       }));
     }, 1400);
     return () => clearInterval(iv);
-  }, []);
+  }, [phase]);
 
-  // Chatter bubbles, some directed at a teammate.
+  // Chatter + occasional confetti celebration.
   useEffect(() => {
     const tick = () => {
       const a = AGENTS[Math.floor(Math.random() * AGENTS.length)];
@@ -920,22 +946,40 @@ function OfficeSim({ onClose, onOpenChat }) {
       const text = lines[Math.floor(Math.random() * lines.length)];
       let toId = null;
       if (Math.random() < 0.4) { const o = AGENTS.filter((x) => x.id !== a.id); toId = o[Math.floor(Math.random() * o.length)].id; }
-      const id = uid();
-      setBubbles((p) => ({ ...p, [a.id]: { text, toId, id } }));
-      setTimeout(() => setBubbles((p) => (p[a.id] && p[a.id].id === id ? { ...p, [a.id]: null } : p)), 3800);
+      popBubble(a.id, text, toId);
+      if (/🔥|🎉|💰|🚀|⭐/.test(text) && Math.random() < 0.6) { const c = chars.find((k) => k.id === a.id); if (c) confettiAt(c.x, c.y, a.color); }
     };
     const iv = setInterval(tick, 2200); tick();
     return () => clearInterval(iv);
-  }, []);
+  }, [chars]);
 
+  // Dev room → דן rushes to a desk and "codes".
+  useEffect(() => devBus.on((p) => {
+    const id = (p && p.agentId) || "dev";
+    setChars((prev) => prev.map((c) => c.id === id && !c.held ? moveTo(c, OFC_DESKS[Math.floor(Math.random() * OFC_DESKS.length)], "work", true) : c));
+    popBubble(id, (p && p.text) || "מקבל משימה 🧑‍💻");
+    setTimeout(() => setChars((prev) => prev.map((c) => c.id === id ? { ...c, focus: false, energy: Math.min(100, c.energy + 12) } : c)), 6000);
+  }), []);
+
+  // Drag a character around the floor.
+  const pctFromEvent = (e) => { const r = floorRef.current.getBoundingClientRect(); const cx = (e.touches ? e.touches[0].clientX : e.clientX); const cy = (e.touches ? e.touches[0].clientY : e.clientY); return { x: Math.max(OFC_X0, Math.min(OFC_X1, (cx - r.left) / r.width * 100)), y: Math.max(OFC_Y0, Math.min(OFC_Y1, (cy - r.top) / r.height * 100)) }; };
+  const onCharDown = (e, id) => { e.stopPropagation(); dragRef.current = { id, moved: false }; setChars((p) => p.map((c) => c.id === id ? { ...c, held: true, walking: false, dur: 0 } : c)); };
+  const onFloorMove = (e) => { if (!dragRef.current) return; const pt = pctFromEvent(e); dragRef.current.moved = true; const id = dragRef.current.id; setChars((p) => p.map((c) => c.id === id ? { ...c, x: pt.x, y: pt.y, dur: 0 } : c)); };
+  const onFloorUp = () => { const d = dragRef.current; if (!d) return; dragRef.current = null; setChars((p) => p.map((c) => c.id === d.id ? { ...c, held: false, status: "roam" } : c)); if (!d.moved) onOpenChat(d.id); };
+
+  const ph = OFC_PHASES[phase];
   return (
     <div className="off-overlay">
       <div className="off-top">
         <div className="off-top-l"><span className="off-live"><span className="ac-live-dot" /> חי</span><b>🏢 בניין אלפא · קומת הסוכנים</b></div>
+        <div className="ofc-clock">{ph.emoji} {ph.label}</div>
         <button className="off-close" onClick={onClose}><X size={20} /></button>
       </div>
-      <div className="off-sub">הצוות עובד 💻 · בהפסקה ☕ · בישיבה 👥 · לחץ על דמות לשיחה</div>
-      <div className="ofc-floor">
+      <div className="off-sub">עובד 💻 · הפסקה ☕ · ישיבה 👥 · גרור דמות להזיז · לחיצה לשיחה</div>
+      <div className="ofc-floor" ref={floorRef} style={{ "--sky": ph.sky }}
+        onPointerMove={onFloorMove} onPointerUp={onFloorUp} onPointerLeave={onFloorUp}
+        onTouchMove={onFloorMove} onTouchEnd={onFloorUp}>
+        <div className="ofc-tint" style={{ background: ph.tint }} />
         <div className="ofc-windows">{Array.from({ length: 6 }).map((_, i) => <span key={i} />)}</div>
         <div className="ofc-furn ofc-reception">קבלה</div>
         <div className="ofc-furn ofc-rug" />
@@ -946,12 +990,17 @@ function OfficeSim({ onClose, onOpenChat }) {
         <div className="ofc-furn ofc-desk d4"><span className="ofc-mon" /></div>
         <div className="ofc-furn ofc-plant p1" /><div className="ofc-furn ofc-plant p2" /><div className="ofc-furn ofc-plant p3" />
         <div className="ofc-furn ofc-cooler" />
+        {bursts.map((bt) => (
+          <div key={bt.id} className="ofc-confetti" style={{ left: bt.x + "%", top: bt.y + "%" }}>
+            {Array.from({ length: 12 }).map((_, i) => <i key={i} style={{ "--a": (i * 30) + "deg", background: i % 3 === 0 ? bt.color : i % 3 === 1 ? "#FFD23F" : "#fff" }} />)}
+          </div>
+        ))}
         {chars.map((c) => {
           const a = byId(c.id); if (!a) return null; const b = bubbles[c.id];
           return (
-            <button key={c.id} className={"ofc-char" + (c.walking ? " walking" : "")} title={a.name}
-              style={{ left: c.x + "%", top: c.y + "%", transitionDuration: c.dur + "ms", zIndex: Math.round(c.y) + 10, "--c": a.color }}
-              onClick={() => onOpenChat(c.id)}>
+            <div key={c.id} className={"ofc-char" + (c.walking ? " walking" : "") + (c.held ? " held" : "") + (c.focus ? " focus" : "")} title={a.name}
+              style={{ left: c.x + "%", top: c.y + "%", transitionDuration: c.dur + "ms", zIndex: Math.round(c.y) + (c.held ? 200 : 10), "--c": a.color }}
+              onPointerDown={(e) => onCharDown(e, c.id)}>
               {b && <div className="ofc-bubble">{b.toId && <span className="ofc-bubble-to">→ {byId(b.toId)?.name}</span>}{b.text}</div>}
               {!c.walking && <span className="ofc-status">{OFC_STATUS[c.status] || "🚶"}</span>}
               <div className="ofc-av" style={{ transform: c.dir < 0 ? "scaleX(-1)" : "none" }}>
@@ -961,7 +1010,8 @@ function OfficeSim({ onClose, onOpenChat }) {
                 <span className="ofc-legs"><i /><i /></span>
               </div>
               <span className="ofc-name">{a.name}</span>
-            </button>
+              <span className="ofc-energy"><i style={{ width: c.energy + "%", background: c.energy < 30 ? "#FF5C50" : c.energy < 60 ? "#FFD23F" : "#3FD79A" }} /></span>
+            </div>
           );
         })}
       </div>
@@ -1283,7 +1333,19 @@ function StyleTag() {
 .ofc-char.walking .ofc-legs i:last-child{animation:ofcStep .5s ease-in-out infinite .25s}
 @keyframes ofcBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
 @keyframes ofcStep{0%,100%{transform:translateY(0) scaleY(1)}50%{transform:translateY(-3px) scaleY(.78)}}
+.ofc-clock{display:flex;align-items:center;gap:5px;font-size:12px;font-weight:800;color:#eaf1ff;background:rgba(255,255,255,.06);border:1px solid rgba(150,200,255,.2);padding:5px 11px;border-radius:20px;margin-right:auto;transition:.6s}
+.ofc-tint{position:absolute;inset:0;pointer-events:none;z-index:1;transition:background 1.2s ease}
+.ofc-floor{background:linear-gradient(rgba(255,255,255,.014) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.014) 1px,transparent 1px),radial-gradient(ellipse at 50% 28%,var(--sky,#1b2440),#0c1120 68%,#070a14)!important;transition:background 1.2s ease}
 .ofc-status{position:absolute;top:-4px;right:6px;font-size:12px;z-index:4;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5));animation:offPop .3s ease both}
+.ofc-char{touch-action:none}
+.ofc-char.held{cursor:grabbing}
+.ofc-char.held .ofc-av{transform:scale(1.12)!important;filter:drop-shadow(0 8px 14px rgba(0,0,0,.5))}
+.ofc-char.focus .ofc-head{box-shadow:0 0 0 3px color-mix(in srgb,var(--c) 80%,transparent),0 0 16px color-mix(in srgb,var(--c) 70%,transparent)}
+.ofc-energy{display:block;width:30px;height:3px;border-radius:2px;background:rgba(255,255,255,.14);margin-top:2px;overflow:hidden}
+.ofc-energy i{display:block;height:100%;border-radius:2px;transition:width .6s ease,background .6s ease}
+.ofc-confetti{position:absolute;width:0;height:0;z-index:300;pointer-events:none}
+.ofc-confetti i{position:absolute;width:6px;height:9px;border-radius:2px;left:0;top:0;animation:ofcConf 1.2s ease-out forwards;transform:rotate(var(--a))}
+@keyframes ofcConf{0%{opacity:1;transform:rotate(var(--a)) translateY(0) scale(1)}100%{opacity:0;transform:rotate(var(--a)) translateY(-46px) scale(.4)}}
 .ofc-name{margin-top:3px;font-size:9.5px;font-weight:800;color:#dce6ff;background:rgba(6,10,20,.6);padding:1px 7px;border-radius:8px;white-space:nowrap;box-shadow:0 0 0 1px color-mix(in srgb,var(--c) 45%,transparent)}
 .ofc-char:hover .ofc-name{color:var(--c)}
 .ofc-char:active{transform:translate(-50%,-50%) scale(.92)}
