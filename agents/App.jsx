@@ -149,7 +149,7 @@ const devBus = { fns: new Set(), emit(p) { this.fns.forEach((f) => { try { f(p);
 const groqKey = () => { try { return localStorage.getItem("alpha_groq") || ""; } catch { return ""; } };
 const hasAI = () => !!groqKey();
 const GROQ_MODELS = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "gemma2-9b-it", "llama3-70b-8192"];
-async function askGroq(system, history, user) {
+async function askGroq(system, history, user, maxTokens = 800) {
   const key = groqKey(); if (!key) throw new Error("NO_KEY");
   const messages = [{ role: "system", content: system }, ...history.slice(-6), { role: "user", content: user }];
   let lastCode = 0;
@@ -157,7 +157,7 @@ async function askGroq(system, history, user) {
     const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-      body: JSON.stringify({ model, messages, temperature: 0.75, max_tokens: 800 }),
+      body: JSON.stringify({ model, messages, temperature: 0.75, max_tokens: maxTokens }),
     });
     if (res.ok) { const d = await res.json(); return d.choices?.[0]?.message?.content?.trim() || ""; }
     lastCode = res.status;
@@ -208,16 +208,23 @@ async function ghDefaultBranch() { const c = ghCfg(); const r = await ghReq(`/re
 async function ghCreateBranch(base, name) { const c = ghCfg(); const ref = await ghReq(`/repos/${c.owner}/${c.repo}/git/ref/heads/${base}`); try { await ghReq(`/repos/${c.owner}/${c.repo}/git/refs`, { method: "POST", body: JSON.stringify({ ref: `refs/heads/${name}`, sha: ref.object.sha }) }); } catch (e) { if (!String(e.message).includes("422")) throw e; } }
 async function ghPutFile(p, content, message, branch, sha) { const c = ghCfg(); return ghReq(ghPath(c, p), { method: "PUT", body: JSON.stringify({ message, content: b64enc(content), branch, ...(sha ? { sha } : {}) }) }); }
 async function ghOpenPR(base, head, title, body) { const c = ghCfg(); return ghReq(`/repos/${c.owner}/${c.repo}/pulls`, { method: "POST", body: JSON.stringify({ title, head, base, body }) }); }
+// Free models can't reliably round-trip a huge file in one completion (the
+// output would silently get cut off mid-file and overwrite it with garbage
+// on the branch). Refuse up front rather than open a broken PR.
+const DEV_EXEC_MAX_CHARS = 12000;
 async function devExecute({ filePath, instruction, title }) {
   if (!ghConfigured()) throw new Error("חבר טוקן GitHub בהגדרות");
   if (!hasAI()) throw new Error("צריך מפתח Groq (חינם) בהגדרות");
   const base = await ghDefaultBranch();
   const existing = await ghGetFile(filePath, base);
+  if (existing && existing.content.length > DEV_EXEC_MAX_CHARS) {
+    throw new Error(`הקובץ גדול מדי לביצוע אוטומטי חינמי (${(existing.content.length / 1000).toFixed(0)}K תווים) — קיים סיכון לקטיעה. השתמש ב"פתח Issue" או "העתק ל-Claude Code" בשביל הקובץ הזה`);
+  }
   const sys = `אתה דן, מפתח. עליך להחזיר אך ורק את התוכן המלא והחדש של הקובץ "${filePath}" לאחר ביצוע השינוי. בלי הסברים, בלי טקסט נוסף, בלי גדרות קוד.`;
   const userMsg = existing
     ? `תוכן נוכחי של ${filePath}:\n\n${existing.content}\n\n---\nבצע: ${instruction}\nהחזר את הקובץ המלא המעודכן.`
     : `צור קובץ חדש ${filePath} עבור: ${instruction}\nהחזר את תוכן הקובץ המלא בלבד.`;
-  let code = await askGroq(sys, [], userMsg);
+  let code = await askGroq(sys, [], userMsg, 7000);
   code = code.replace(/^```[a-zA-Z0-9]*\n?/, "").replace(/\n?```\s*$/, "").trim() + "\n";
   const slug = (filePath.split("/").pop() || "file").replace(/[^a-zA-Z0-9]+/g, "-").toLowerCase();
   const branch = `agents/${slug}-${Date.now().toString(36).slice(-5)}`;
@@ -882,7 +889,7 @@ function DevConsole({ logActivity, showToast }) {
       logActivity("dev", "פתח PR אוטומטי: #" + pr.number);
       showToast("✓ דן כתב את הקוד ופתח PR — בדוק ומזג");
     } catch (e) {
-      showToast("ביצוע נכשל: " + String(e.message).slice(0, 70));
+      showToast("ביצוע נכשל: " + String(e.message).slice(0, 160));
     } finally { setExecBusy(false); }
   };
 
