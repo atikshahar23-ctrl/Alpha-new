@@ -106,10 +106,12 @@ export class VoiceEngine {
     try { this.rec.stop(); } catch {}
   }
 
-  // Open the microphone with maximum noise-suppression constraints and keep an
-  // AudioContext running on that stream.  Chrome's Audio Processing Module (APM)
-  // then applies those constraints to the hardware device, and SpeechRecognition
-  // — which internally opens the same mic — inherits the cleaned-up signal.
+  // Open the microphone with maximum noise-suppression constraints.
+  // Chrome's APM applies these at the OS level so SpeechRecognition, which
+  // opens the same hardware mic, inherits the cleaned-up signal.
+  // NO AudioContext is created here — connecting the mic to any AudioContext
+  // destination (even at gain=0) routes audio through the speaker pipeline
+  // and causes bass hum / feedback on many systems.
   private async preWarmMicNoise() {
     if (this.noiseStream) return;
     if (!navigator.mediaDevices?.getUserMedia) return;
@@ -123,22 +125,6 @@ export class VoiceEngine {
           sampleRate: { ideal: 16000 },
         }
       });
-      const AC = (window as any).AudioContext || (window as any).webkitAudioContext;
-      if (!AC) return;
-      const ctx: AudioContext = new AC({ sampleRate: 16000 });
-      this.noiseCtx = ctx;
-      const stream = this.noiseStream!;
-      const src = ctx.createMediaStreamSource(stream);
-      // High-pass filter at 100 Hz — removes desk vibration + AC hum.
-      const hpf = ctx.createBiquadFilter();
-      hpf.type = 'highpass';
-      hpf.frequency.value = 100;
-      // Muted destination — we process but do not play back to speakers.
-      const mute = ctx.createGain();
-      mute.gain.value = 0;
-      src.connect(hpf);
-      hpf.connect(mute);
-      mute.connect(ctx.destination);
     } catch {}
   }
 
