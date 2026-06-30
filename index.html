@@ -41,9 +41,18 @@
   <!-- ── Intro: full-screen alien on black → face scan → ACCESS GRANTED →
             dimension entry → only then the panels appear ── -->
   <div id="introOverlay">
-    <video id="introVid" muted playsinline autoplay preload="auto" src="/Alpha-new/intro-alien.mp4"></video>
+    <video id="introVid" muted playsinline preload="auto" src="/Alpha-new/intro-alien.mp4"></video>
+    <!-- cinematic HUD overlays: corner brackets + drifting scanlines + tint -->
+    <div class="intro-hud" aria-hidden="true">
+      <span class="hud-c tl"></span><span class="hud-c tr"></span><span class="hud-c bl"></span><span class="hud-c br"></span>
+      <div class="hud-top">⬡ ALPHA SECURE · BIOMETRIC GATE</div>
+      <div class="hud-bot" id="hudBot">SCANNING…</div>
+    </div>
+    <div class="intro-scanlines" aria-hidden="true"></div>
+    <div class="intro-noise" aria-hidden="true"></div>
     <!-- movie-style face-recognition: blue mesh over the face + scan line -->
     <div class="intro-facemesh">
+      <div class="fm-radar" aria-hidden="true"></div>
       <svg viewBox="0 0 300 360" preserveAspectRatio="xMidYMid meet">
         <defs><clipPath id="faceClip"><ellipse cx="150" cy="172" rx="92" ry="118"/></clipPath></defs>
         <g clip-path="url(#faceClip)" class="fm-grid">
@@ -77,6 +86,7 @@
       </div>
     </div>
     <div class="intro-grant">
+      <div class="grant-wave"></div><div class="grant-wave" style="animation-delay:.22s"></div><div class="grant-wave" style="animation-delay:.44s"></div>
       <div class="grant-ring"></div>
       <div class="grant-check">✓</div>
       <div class="grant-title">זוהו פנים — הגישה אושרה</div>
@@ -128,6 +138,36 @@
     .grant-check{font-size:64px;line-height:1;color:#dff3ff;text-shadow:0 0 30px rgba(63,198,255,.9)}
     .grant-title{color:#fff;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:21px;letter-spacing:1px;text-shadow:0 0 16px rgba(63,198,255,.6)}
     .grant-sub{color:#3fc6ff;font-size:13px;letter-spacing:5px}
+    /* ── cinematic HUD: corner brackets, scanlines, radar, shockwave ── */
+    .intro-hud{position:absolute;inset:0;z-index:2;pointer-events:none;opacity:0;transition:opacity .4s}
+    #introOverlay.scanning .intro-hud,#introOverlay.granted .intro-hud{opacity:1}
+    .hud-c{position:absolute;width:46px;height:46px;border:2px solid rgba(63,198,255,.85);filter:drop-shadow(0 0 8px rgba(63,198,255,.6));animation:hud-pulse 1.6s ease-in-out infinite}
+    .hud-c.tl{top:20px;left:20px;border-right:0;border-bottom:0}
+    .hud-c.tr{top:20px;right:20px;border-left:0;border-bottom:0}
+    .hud-c.bl{bottom:20px;left:20px;border-right:0;border-top:0}
+    .hud-c.br{bottom:20px;right:20px;border-left:0;border-top:0}
+    @keyframes hud-pulse{0%,100%{opacity:.5}50%{opacity:1}}
+    .hud-top,.hud-bot{position:absolute;left:50%;transform:translateX(-50%);color:#9fdcff;font-family:'Space Grotesk',monospace,sans-serif;font-size:11px;letter-spacing:3px;text-shadow:0 0 10px rgba(63,198,255,.7);white-space:nowrap}
+    .hud-top{top:26px}.hud-bot{bottom:64px;color:#7fd0f5}
+    #introOverlay.granted .hud-bot{color:#7bffb0;text-shadow:0 0 12px rgba(80,255,160,.8)}
+    .intro-scanlines{position:absolute;inset:0;z-index:2;pointer-events:none;opacity:0;transition:opacity .4s;mix-blend-mode:overlay;
+      background:repeating-linear-gradient(0deg,rgba(63,198,255,.10) 0px,rgba(63,198,255,.10) 1px,transparent 2px,transparent 4px)}
+    #introOverlay.scanning .intro-scanlines{opacity:1;animation:scl-drift 6s linear infinite}
+    @keyframes scl-drift{from{background-position:0 0}to{background-position:0 80px}}
+    .intro-noise{position:absolute;inset:0;z-index:2;pointer-events:none;opacity:0;
+      background:radial-gradient(circle at 50% 45%,transparent 40%,rgba(0,10,20,.55) 100%)}
+    #introOverlay.scanning .intro-noise{opacity:1}
+    .fm-radar{position:absolute;width:min(58vh,400px);height:min(58vh,400px);border-radius:50%;
+      border:1px solid rgba(63,198,255,.25);opacity:0;transition:opacity .4s;
+      background:conic-gradient(from 0deg,rgba(63,198,255,.45),transparent 28%)}
+    #introOverlay.scanning .fm-radar{opacity:.85;animation:radar-spin 2.2s linear infinite}
+    @keyframes radar-spin{to{transform:rotate(360deg)}}
+    .grant-wave{position:absolute;width:120px;height:120px;border:2px solid rgba(123,255,176,.7);border-radius:50%;opacity:0}
+    #introOverlay.granted .grant-wave{animation:grant-wave 1.1s ease-out forwards}
+    @keyframes grant-wave{0%{opacity:.8;transform:scale(.5)}100%{opacity:0;transform:scale(3.4)}}
+    /* on grant, flash the lock-on/check to victory green */
+    #introOverlay.granted .grant-check{color:#9bffc6;text-shadow:0 0 34px rgba(80,255,160,.95)}
+    #introOverlay.granted .grant-ring{border-color:rgba(123,255,176,.7);box-shadow:0 0 50px rgba(80,255,160,.5),inset 0 0 44px rgba(80,255,160,.2)}
     #introOverlay.gone{opacity:0}
     /* cinematic vault video → leads into the app */
     .intro-vaultvid{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000;opacity:0;z-index:4;transition:opacity .45s ease}
@@ -140,9 +180,27 @@
   <script>
     (function(){
       var ov=document.getElementById('introOverlay'); if(!ov) return;
+      // ── Anti-double-intro guard ────────────────────────────────────────────
+      // The intro was occasionally playing twice (a spurious re-load/re-render
+      // replays the whole sequence). Two guards: (1) a window flag stops the
+      // IIFE running twice in one document; (2) a short session timestamp skips
+      // the intro on any reload that lands within 8s of the last one — that's a
+      // double-load, never an intentional revisit. A deliberate reload later
+      // still shows the intro.
+      if(window.__alphaIntro){ return; } window.__alphaIntro=true;
+      try{
+        var lastTs=+sessionStorage.getItem('alpha_intro_ts')||0;
+        if(Date.now()-lastTs<8000){
+          ov.parentNode&&ov.parentNode.removeChild(ov);
+          document.documentElement.classList.remove('booting');
+          document.body.classList.add('revealed');
+          return;
+        }
+        sessionStorage.setItem('alpha_intro_ts',String(Date.now()));
+      }catch(e){}
       document.documentElement.classList.add('booting');   // hide app + welcome until reveal
       var vid=document.getElementById('introVid'); var vaultVid=document.getElementById('vaultVid');
-      var scanTxt=document.getElementById('scanTxt'); var done=false, ended=false;
+      var scanTxt=document.getElementById('scanTxt'); var hudBot=document.getElementById('hudBot'); var done=false, ended=false;
       // Both intro videos slowed to ~4x so their combined run (alien 8s + vault
       // 10s = 18s ÷ 4 ≈ 4.5s, plus the ~1s face-scan transition ≈ 5.5s) matches
       // the uploaded opening sound (~5.44s): the videos finish as the sound ends.
@@ -200,11 +258,13 @@
         ov.classList.add('gone');
         setTimeout(function(){ ov.parentNode && ov.parentNode.removeChild(ov); }, 800);
       }
+      var vaultStarted=false;
       function playVault(){
+        if(vaultStarted) return; vaultStarted=true;
         if(vaultVid){
           ov.classList.add('vaulting');
-          vaultVid.addEventListener('ended', finish);
-          vaultVid.addEventListener('error', finish);
+          vaultVid.addEventListener('ended', finish, {once:true});
+          vaultVid.addEventListener('error', finish, {once:true});
           var pv=vaultVid.play && vaultVid.play();
           if(pv && pv.catch) pv.catch(function(){ setTimeout(finish, 600); });
           setTimeout(finish, 13000);   // fallback if the vault video stalls
@@ -224,15 +284,16 @@
       function sequence(){
         if(done) return; done=true;
         startScan();
-        setTimeout(function(){ if(scanTxt) scanTxt.textContent='מזהה פנים…'; }, 150);
-        setTimeout(function(){ if(scanTxt) scanTxt.textContent='זוהה ✓'; ov.classList.remove('scanning'); ov.classList.add('granted'); }, 600);
+        setTimeout(function(){ if(scanTxt) scanTxt.textContent='מזהה פנים…'; if(hudBot) hudBot.textContent='LOCKING ON…'; }, 150);
+        setTimeout(function(){ if(scanTxt) scanTxt.textContent='זוהה ✓'; if(hudBot) hudBot.textContent='ACCESS GRANTED'; ov.classList.remove('scanning'); ov.classList.add('granted'); }, 600);
         setTimeout(playVault, 900);   // hand off to the vault video
       }
       function skip(){ if(!done){ done=true; } finish(); }
       document.getElementById('introSkip').addEventListener('click', skip);
       if(vid){
-        vid.addEventListener('ended', sequence);
-        vid.addEventListener('error', sequence);
+        vid.loop=false;
+        vid.addEventListener('ended', sequence, {once:true});
+        vid.addEventListener('error', sequence, {once:true});
         var pr=vid.play && vid.play();
         if(pr && pr.catch) pr.catch(function(){ /* autoplay blocked: skip / fallback handle it */ });
         // Begin the biometric scan OVER the alien video so the lock-on has real
