@@ -7,8 +7,9 @@ import {
   Camera, Monitor, Maximize2, Shield, Star, ChevronDown, ChevronUp,
 } from "lucide-react";
 import BULL_LOGO from "../heavyguard/heavyguard-logo.png";
-import leadsData from "../heavyguard/leadsData.json";
 import * as cloud from "./cloud";
+// leadsData.json is ~2MB — load it lazily (same pattern as heavyguard/App.jsx)
+// so it doesn't bloat the CRM's initial bundle / first paint.
 
 /* ============================ Constants ============================ */
 const BIZ = "Heavy Guard";
@@ -265,12 +266,14 @@ export default function App() {
   const applyTheme = (t) => { setTheme(t); try { localStorage.setItem("itai:theme", t); } catch {} };
   const themeVars = (ITAI_THEMES[theme] || ITAI_THEMES.gold).vars;
 
-  const leads = useMemo(() => leadsData.map((l) => ({
+  const [rawLeads, setRawLeads] = useState([]);
+  useEffect(() => { import("../heavyguard/leadsData.json").then((m) => setRawLeads(m.default)); }, []);
+  const leads = useMemo(() => rawLeads.map((l) => ({
     ...l,
     crmStatus: crm[l.id]?.crmStatus || (l.xStatus === "לקוח" ? "לקוח" : "חדש"),
     crmNotes: crm[l.id]?.crmNotes || "",
     outreach: crm[l.id]?.outreach || [],
-  })), [crm]);
+  })), [crm, rawLeads]);
 
   const showToast = useCallback((msg) => { setToast(msg); setTimeout(() => setToast(null), 2600); }, []);
 
