@@ -1525,7 +1525,7 @@ function _samsonixHtml(f, card, today) {
 <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-top:14px;gap:16px">
   <div style="flex:1">
     <div style="text-align:right;font-size:12px;text-decoration:underline;margin-bottom:4px">שם המתקין</div>
-    <div class="section-box">&nbsp;</div>
+    <div class="section-box" style="display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;color:#111;">Heavy Guard</div>
   </div>
   <div style="flex:3;font-size:12.5px">
     ${line("שם מלא של בעל הכרטיס", f.fullName)}
