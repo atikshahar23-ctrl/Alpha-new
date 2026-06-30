@@ -289,11 +289,8 @@ export function mountApp(root: HTMLElement) {
 
       <div id="pokemonMenu" class="pokemon-menu" hidden></div>
 
-      <!-- Gesture detection: NO window. The camera runs hidden and only a small
-           "camera live" chip confirms it's on, so hand gestures work over the
-           main screen without covering the central character. -->
+      <!-- Gesture detection chip (top bar status) -->
       <div id="gesturePanel" class="gesture-indicator" hidden>
-        <!-- hidden detector feed — used for detection only, never displayed -->
         <div class="gp-camera-hidden" aria-hidden="true">
           <video id="gestureVideo" autoplay playsinline muted></video>
           <canvas id="gestureCanvas"></canvas>
@@ -302,9 +299,27 @@ export function mountApp(root: HTMLElement) {
         <span class="gi-text" id="gestureStatus">זיהוי פעיל</span>
       </div>
 
-      <!-- Transparent full-screen overlay that renders the detected hand as a
-           glowing skeleton "in the background" — no camera window is ever shown. -->
+      <!-- Open-camera mode: full-screen selfie video with skeleton on top -->
+      <video id="gestureLiveVideo" class="gesture-live-video" autoplay playsinline muted hidden></video>
+
+      <!-- Full-screen skeleton overlay (always above everything) -->
       <canvas id="handOverlay" class="hand-overlay" hidden></canvas>
+
+      <!-- Mode chooser: shown when detect button clicked while gesture is off -->
+      <div id="gestureModeChooser" class="gesture-mode-chooser" hidden>
+        <div class="gmc-card">
+          <div class="gmc-title">🖐️ בחר מצב זיהוי ידיים</div>
+          <button class="gmc-opt" id="gmcHidden">
+            <span class="gmc-ic">👁️‍🗨️</span>
+            <div><b>מצלמה נסתרת</b><small>רק שלד הידיים מוצג — המצלמה לא גלויה</small></div>
+          </button>
+          <button class="gmc-opt" id="gmcOpen">
+            <span class="gmc-ic">📷</span>
+            <div><b>מצלמה פתוחה</b><small>רואים אותך עם השלד הדיגיטלי</small></div>
+          </button>
+          <button class="gmc-cancel" id="gmcCancel">ביטול</button>
+        </div>
+      </div>
 
       <!-- Gesture cheat-sheet — shown when detection starts, auto-hides after 7s. -->
       <div id="gestureHelp" class="gesture-help" hidden>
@@ -509,6 +524,10 @@ export function mountApp(root: HTMLElement) {
           <div class="setting-row">
             <label data-i18n="haptic">משוב רטט</label>
             <label class="toggle"><input type="checkbox" id="hapticsCheck" /><span class="toggle-slider"></span></label>
+          </div>
+          <div class="setting-row">
+            <label>🖐️ שלד דיגיטלי בזיהוי ידיים</label>
+            <label class="toggle"><input type="checkbox" id="handSkeletonCheck" /><span class="toggle-slider"></span></label>
           </div>
           <div class="setting-row">
             <label data-i18n="fastMode">⚡ מצב מהיר (ביצועים)</label>
@@ -1776,6 +1795,16 @@ export function mountApp(root: HTMLElement) {
   // Palm held 1.5s → dispel current Pokemon. Fist → quick open → throw new Pokemon.
   {
     let gestureActive = false;
+    let gestureShowSkeleton = localStorage.getItem('alpha_hand_skeleton') !== '0';
+    // Skeleton toggle checkbox
+    const handSkeletonCheck = document.getElementById('handSkeletonCheck') as HTMLInputElement;
+    if (handSkeletonCheck) {
+      handSkeletonCheck.checked = gestureShowSkeleton;
+      handSkeletonCheck.onchange = () => {
+        gestureShowSkeleton = handSkeletonCheck.checked;
+        localStorage.setItem('alpha_hand_skeleton', gestureShowSkeleton ? '1' : '0');
+      };
+    }
     let gestureStream: MediaStream | null = null;
     let gestureHands: any = null;
     let gestureCamera: any = null;
@@ -1875,6 +1904,8 @@ export function mountApp(root: HTMLElement) {
       if (gestureStream) { gestureStream.getTracks().forEach(t => t.stop()); gestureStream = null; }
       const vid = document.getElementById('gestureVideo') as HTMLVideoElement | null;
       if (vid) vid.srcObject = null;
+      const liveVid = document.getElementById('gestureLiveVideo') as HTMLVideoElement | null;
+      if (liveVid) { liveVid.srcObject = null; liveVid.setAttribute('hidden', ''); }
       document.getElementById('gesturePanel')!.setAttribute('hidden', '');
       const ov = document.getElementById('handOverlay') as HTMLCanvasElement | null;
       if (ov) { const c = ov.getContext('2d'); if (c) c.clearRect(0, 0, ov.width, ov.height); ov.setAttribute('hidden', ''); }
@@ -1884,7 +1915,7 @@ export function mountApp(root: HTMLElement) {
       const cur = document.getElementById('laserCursor'); if (cur) cur.setAttribute('hidden', '');
     }
 
-    async function startGesture() {
+    async function startGesture(camOpen = false) {
       const panel = document.getElementById('gesturePanel')!;
       panel.removeAttribute('hidden');
       $('detectBtn').classList.add('active');
@@ -1923,6 +1954,18 @@ export function mountApp(root: HTMLElement) {
       vid.srcObject = gestureStream;
       await vid.play().catch(() => {});
       cvs.width = 320; cvs.height = 240;
+      // Open-camera mode: show the full-screen mirrored selfie behind the skeleton.
+      const liveVid = document.getElementById('gestureLiveVideo') as HTMLVideoElement | null;
+      if (liveVid) {
+        if (camOpen) {
+          liveVid.srcObject = gestureStream;
+          liveVid.removeAttribute('hidden');
+          liveVid.play().catch(() => {});
+        } else {
+          liveVid.srcObject = null;
+          liveVid.setAttribute('hidden', '');
+        }
+      }
       gestureStatus('⏳ טוען זיהוי ידיים…');
 
       // ── Full-screen transparent overlay: draw the hand as a glowing ghost ──
@@ -2056,16 +2099,10 @@ export function mountApp(root: HTMLElement) {
         }
         const W = window.innerWidth, H = window.innerHeight;
         octx.clearRect(0, 0, W, H);
-        // The camera frame's aspect ratio differs from the (tall) phone screen, so
-        // mapping normalised landmarks straight to x*W / y*H stretched the hand —
-        // it looked "giant"/elongated. The detector feed isn't shown, so fit the
-        // camera frame INTO the screen ("contain"): preserves the hand's true
-        // proportions and keeps it a natural size instead of filling the screen.
-        const _vw = vid.videoWidth || 640, _vh = vid.videoHeight || 480;
-        const _sc = Math.min(W / _vw, H / _vh);
-        const _dW = _vw * _sc, _dH = _vh * _sc, _oX = (W - _dW) / 2, _oY = (H - _dH) / 2;
-        const mapX = (nx: number) => _oX + nx * _dW;
-        const mapY = (ny: number) => _oY + ny * _dH;
+        // Stretch-map: normalised [0-1] coordinates → full screen pixels so the
+        // hand tracks anywhere on screen without dead zones at the edges.
+        const mapX = (nx: number) => nx * W;
+        const mapY = (ny: number) => ny * H;
 
         const noHand = () => {
           gestureStatus('הרם יד מול המצלמה');
@@ -2101,7 +2138,9 @@ export function mountApp(root: HTMLElement) {
         if (trusted) handPresentMs += dt; else handPresentMs = 0;
         const armed = trusted && handPresentMs >= SETTLE_MS;
         // Draw every hand (primary uses the smoothed landmarks; others raw).
-        for (let hi = 0; hi < hands.length; hi++) drawHand(hi === primaryIdx ? lm : hands[hi], mapX, mapY, hi === primaryIdx);
+        if (gestureShowSkeleton) {
+          for (let hi = 0; hi < hands.length; hi++) drawHand(hi === primaryIdx ? lm : hands[hi], mapX, mapY, hi === primaryIdx);
+        }
 
         // FINGER-FOLD test — the most reliable open/fist signal there is.
         // For each finger, measure tip→knuckle(MCP) distance ÷ the finger's own first
@@ -2273,9 +2312,22 @@ export function mountApp(root: HTMLElement) {
     }
 
     $('detectBtn').onclick = () => {
-      if (gestureActive) { (window as any).__stopGestureRaf?.(); stopGesture(); }
-      else startGesture();
+      if (gestureActive) { (window as any).__stopGestureRaf?.(); stopGesture(); return; }
+      // Show mode chooser before starting.
+      const chooser = document.getElementById('gestureModeChooser');
+      if (chooser) chooser.removeAttribute('hidden');
     };
+    document.getElementById('gmcHidden')?.addEventListener('click', () => {
+      document.getElementById('gestureModeChooser')?.setAttribute('hidden', '');
+      startGesture(false);
+    });
+    document.getElementById('gmcOpen')?.addEventListener('click', () => {
+      document.getElementById('gestureModeChooser')?.setAttribute('hidden', '');
+      startGesture(true);
+    });
+    document.getElementById('gmcCancel')?.addEventListener('click', () => {
+      document.getElementById('gestureModeChooser')?.setAttribute('hidden', '');
+    });
   }
 
   // Tap/click the orb stage to trigger the active Pokemon's attack

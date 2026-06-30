@@ -305,6 +305,49 @@ body[data-char="ho-oh"] .char-ambient {
 }
 .hand-overlay[hidden]{ display:none; }
 
+/* ── Open-camera selfie background (full-screen, mirrored) ─────────────── */
+.gesture-live-video{
+  position:fixed; inset:0; width:100%; height:100%;
+  object-fit:cover; z-index:5;
+  opacity:0.65; pointer-events:none;
+  transform:scaleX(-1);
+}
+.gesture-live-video[hidden]{ display:none; }
+
+/* ── Gesture mode chooser overlay ──────────────────────────────────────── */
+.gesture-mode-chooser{
+  position:fixed; inset:0; z-index:3000;
+  display:flex; align-items:center; justify-content:center;
+  background:rgba(0,0,0,.72); backdrop-filter:blur(6px);
+}
+.gesture-mode-chooser[hidden]{ display:none; }
+.gmc-card{
+  background:#0b1623; border:1px solid rgba(0,210,255,.25);
+  border-radius:18px; padding:28px 24px; width:min(340px,90vw);
+  display:flex; flex-direction:column; gap:12px;
+  box-shadow:0 0 40px rgba(0,180,255,.18);
+}
+.gmc-title{
+  font-size:17px; font-weight:700; color:#00d2ff;
+  text-align:center; margin-bottom:4px;
+}
+.gmc-opt{
+  display:flex; align-items:center; gap:14px;
+  background:rgba(0,210,255,.07); border:1.5px solid rgba(0,210,255,.25);
+  border-radius:12px; padding:13px 15px;
+  color:#e0f4ff; text-align:right; cursor:pointer; transition:.15s;
+}
+.gmc-opt:hover{ background:rgba(0,210,255,.18); border-color:rgba(0,210,255,.6); }
+.gmc-opt b{ display:block; font-size:14px; }
+.gmc-opt small{ font-size:11px; color:#7bbdd4; }
+.gmc-ic{ font-size:26px; flex-shrink:0; }
+.gmc-cancel{
+  background:none; border:1px solid rgba(255,255,255,.15);
+  border-radius:9px; color:#aaa; padding:9px; cursor:pointer;
+  font-size:13px; transition:.15s;
+}
+.gmc-cancel:hover{ background:rgba(255,255,255,.08); color:#fff; }
+
 /* ── Finger-pointing laser cursor ──────────────────────────────────────── */
 .laser-cursor{
   position:fixed; top:0; left:0; z-index:2000; pointer-events:none;
