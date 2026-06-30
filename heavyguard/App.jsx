@@ -716,6 +716,8 @@ function LeadDetail({ lead, crmEntry, onBack, onStatusChange, onNotesChange, onA
 function Home({ index, onNew, onOpen, onResume, showToast, onReset, onBack }) {
   const [q, setQ] = useState("");
   const [filt, setFilt] = useState("all");
+  const [expC, setExpC] = useState("all");
+  const [expM, setExpM] = useState(() => new Date().toISOString().slice(0, 7));
 
   // In-progress drafts (started but not finished) — shown separately at the top
   const drafts = useMemo(() => index.filter((x) => x.status === "running"), [index]);
@@ -792,6 +794,42 @@ function Home({ index, onNew, onOpen, onResume, showToast, onReset, onBack }) {
     } catch (e) { showToast("הייצוא נכשל — נסה שוב", "warn"); }
   };
 
+  // ── One-click Excel for a chosen contractor in a chosen month ──
+  const exportContractorMonth = async () => {
+    const rows = done
+      .filter((x) => (expC === "all" || x.contractor === expC) && (x.date || "").startsWith(expM))
+      .slice()
+      .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+    if (!rows.length) { showToast("אין התקנות לקבלן/חודש שנבחרו", "warn"); return; }
+    try {
+      const XLSX = await import("xlsx");
+      const wb = XLSX.utils.book_new();
+      const cObj = CONTRACTORS.find((c) => c.id === expC);
+      const master = expC === "all" || (cObj && cObj.master);
+      const header = ["תאריך התקנה", "מחיר (ש\"ח)", "סוג רכב", "יצרן", "סוג התקנה", "מספר רישוי", "מיקום"]
+        .concat(expC === "all" ? ["קבלן"] : [])
+        .concat(master ? ["טלפון", "שם לקוח"] : []);
+      const aoa = [header];
+      let sum = 0;
+      rows.forEach((x) => {
+        sum += Number(x.price) || 0;
+        const r = [dmy(x.date), Number(x.price) || 0, x.vehicleType || "", x.manufacturer || "", x.installType || "", x.idNumber || "", x.location || ""];
+        if (expC === "all") r.push(cName(x.contractor));
+        if (master) r.push(x.phone || "", x.customer || "");
+        aoa.push(r);
+      });
+      aoa.push([]);
+      aoa.push(["סה\"כ", sum].concat(new Array(header.length - 2).fill("")));
+      aoa.push([`סה"כ התקנות: ${rows.length}`]);
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      ws["!cols"] = header.map(() => ({ wch: 16 }));
+      const label = expC === "all" ? "כל_הקבלנים" : (cObj ? cObj.name : expC);
+      XLSX.utils.book_append_sheet(wb, ws, String(label).slice(0, 28));
+      XLSX.writeFile(wb, `HeavyGuard_${label}_${expM}.xlsx`);
+      showToast(`יוצא: ${label} · ${expM} (${rows.length} התקנות)`);
+    } catch (e) { showToast("הייצוא נכשל — נסה שוב", "warn"); }
+  };
+
   return (
     <>
       <header className="hg2-head">
@@ -826,6 +864,18 @@ function Home({ index, onNew, onOpen, onResume, showToast, onReset, onBack }) {
           <div className="hg2-msum-foot"><span>סה״כ {monthSummary.totals.count} התקנות החודש מכל הקבלנים</span></div>
         </div>
       )}
+
+      <div className="hg2-expbox">
+        <div className="hg2-expbox-h"><Download size={15} /> ייצוא Excel לפי קבלן וחודש</div>
+        <div className="hg2-expbox-row">
+          <select className="hg2-expsel" value={expC} onChange={(e) => setExpC(e.target.value)}>
+            <option value="all">כל הקבלנים</option>
+            {CONTRACTORS.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <input className="hg2-expsel" type="month" value={expM} onChange={(e) => setExpM(e.target.value)} />
+        </div>
+        <button className="hg2-expbtn" onClick={exportContractorMonth}><Download size={16} /> הורד טבלת אקסל</button>
+      </div>
 
       <button className="hg2-add" onClick={onNew}><Plus size={22} /> הוספת התקנה</button>
 
@@ -3277,6 +3327,13 @@ function Styles() {
 .hg2-msum-time{display:flex;align-items:center;gap:3px;font-size:11px;color:var(--cyan);flex-shrink:0}
 .hg2-msum-rev{font-family:ui-monospace,monospace;font-weight:700;font-size:13.5px;color:var(--silver);flex-shrink:0;white-space:nowrap}
 .hg2-msum-foot{margin-top:10px;text-align:center;font-size:11.5px;color:var(--s4)}
+
+.hg2-expbox{background:var(--s9);border:1px solid var(--s7);border-radius:14px;padding:13px 14px;margin-bottom:14px}
+.hg2-expbox-h{display:flex;align-items:center;gap:7px;font-family:'Rubik';font-weight:700;font-size:14px;color:var(--silver);margin-bottom:10px}
+.hg2-expbox-row{display:flex;gap:8px;margin-bottom:10px}
+.hg2-expsel{flex:1;min-width:0;background:var(--s8);border:1px solid var(--s7);color:var(--silver);border-radius:10px;padding:10px 11px;font-family:inherit;font-size:13.5px;outline:none}
+.hg2-expbtn{width:100%;display:flex;align-items:center;justify-content:center;gap:8px;background:linear-gradient(135deg,#1E7A52,#279E69);color:#fff;border:none;border-radius:11px;padding:13px;font-family:'Rubik';font-weight:900;font-size:15px;cursor:pointer;box-shadow:0 6px 18px rgba(30,140,90,.3)}
+.hg2-expbtn:active{transform:scale(.985)}
 
 .hg2-add{width:100%;display:flex;align-items:center;justify-content:center;gap:9px;background:linear-gradient(135deg,var(--champ),var(--gold) 45%,var(--gold2));color:#241A06;border:none;border-radius:14px;padding:16px;font-family:'Rubik';font-weight:900;font-size:17px;cursor:pointer;box-shadow:0 8px 26px rgba(228,188,99,.32),inset 0 1px 0 rgba(255,255,255,.35);margin-bottom:18px}
 .hg2-add:active{transform:scale(.985)}
