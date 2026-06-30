@@ -88,7 +88,7 @@ export function loadState(): AppState {
     haptics: localStorage.getItem(HAPTICS) !== '0',
     autoSpeak: localStorage.getItem(AUTOSPEAK) !== '0',
     uiLang: (localStorage.getItem(UILANG) as UILang) || 'he',
-    pikaVoiceOn: localStorage.getItem(PIKAVOICE) !== '0',
+    pikaVoiceOn: localStorage.getItem(PIKAVOICE) === '1',
     pikaVolume: (() => { const v = parseFloat(localStorage.getItem(PIKAVOL) || ''); return isNaN(v) ? 0.6 : v; })(),
     pikaPitch: (() => { const v = parseFloat(localStorage.getItem(PIKAPITCH) || ''); return isNaN(v) ? 1.0 : v; })(),
   };

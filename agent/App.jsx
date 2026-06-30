@@ -249,6 +249,65 @@ export default function App() {
     return off;
   }, []);
 
+  // ── Auto-import customers from HeavyGuard on app open ────────────────────
+  // Reads hg2:index (installations) and hg2:customers from the shared Puter
+  // storage that the HeavyGuard app writes to, then merges any new customers
+  // into the CRM without overwriting existing ones.
+  useEffect(() => {
+    const ws = typeof window !== "undefined" && window.storage;
+    if (!ws) return;
+    const pGet = (k) => ws.get(k).then((r) => (r && r.value != null ? JSON.parse(r.value) : [])).catch(() => []);
+    Promise.all([pGet("hg2:index"), pGet("hg2:customers")]).then(([installs, hgManual]) => {
+      const normName = (s) => (s || "").trim().toLowerCase();
+      // Derive unique customers from HG installations (contractor === "hg")
+      const m = {};
+      (installs || [])
+        .filter((x) => x.contractor === "hg" && (x.customer?.trim() || x.phone?.trim()))
+        .forEach((x) => {
+          const name = (x.customer || "").trim();
+          const phone = (x.phone || "").trim();
+          const key = normName(name) + "|" + phone;
+          if (!m[key]) m[key] = { name: name || "(ללא שם)", phone, city: x.location || "", revenue: 0, count: 0 };
+          m[key].count++;
+          m[key].revenue += Number(x.price) || 0;
+        });
+      // Also pull manually added HeavyGuard customers
+      (hgManual || []).forEach((c) => {
+        const name = (c.name || "").trim(), phone = (c.phone || "").trim();
+        const key = normName(name) + "|" + phone;
+        if (!m[key]) m[key] = { name, phone, city: c.city || c.location || "", revenue: 0, count: 0, rawNotes: c.notes || "" };
+      });
+
+      const hgCusts = Object.values(m).filter((c) => c.name && c.name !== "(ללא שם)");
+      if (!hgCusts.length) return;
+
+      setCusts((prev) => {
+        const newOnes = hgCusts
+          .filter((hg) => !prev.some((c) =>
+            (hg.phone && hg.phone === c.phone) ||
+            (hg.name && normName(c.name) === normName(hg.name))
+          ))
+          .map((c) => ({
+            id: uid(),
+            name: c.name,
+            phone: c.phone,
+            email: "",
+            city: c.city || "",
+            notes: c.count > 0
+              ? `${c.count} התקנות Heavy Guard · הכנסה ${ils(c.revenue)}`
+              : (c.rawNotes || ""),
+            source: "HeavyGuard",
+          }));
+        if (!newOnes.length) return prev;
+        const next = [...newOnes, ...prev];
+        save(K_CUST, next);
+        cloud.cloudPush(K_CUST, next);
+        setTimeout(() => showToast(`✓ יובאו ${newOnes.length} לקוחות מ-Heavy Guard`), 60);
+        return next;
+      });
+    }).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const updateCrm = useCallback((id, changes) => {
     setCrm((prev) => { const next = { ...prev, [id]: { ...prev[id], ...changes } }; persist(K_CRM, next); return next; });
   }, []);
@@ -314,7 +373,7 @@ export default function App() {
 
       <nav className="ag-nav">
         <div className="ag-nav-brand">
-          <img src="/logo.png" alt="HeavyGuard" className="ag-nav-brand-logo" />
+          <img src={BULL_LOGO} alt="HeavyGuard" className="ag-nav-brand-logo" />
           <div className="ag-nav-brand-txt"><b>Heavy Guard</b><span>CRM</span></div>
         </div>
         <button className={tab === "home" ? "on" : ""} onClick={() => setTab("home")}><LayoutDashboard size={20} /><span>בקרה</span></button>
@@ -1794,6 +1853,101 @@ function SamsonixForm({ onClose, showToast }) {
 /* ═══════════════════════════════════════════════════════════════════════════
    HeavyGuard Showroom — visual product catalog for customer presentations
    ═══════════════════════════════════════════════════════════════════════════ */
+
+function ProductImg({ cat, size = 80 }) {
+  const g = "rgba(218,165,32,";
+  const s = size, h = size;
+  if (cat?.includes("מסך") || cat?.includes("BSD")) return (
+    <svg width={s} height={h} viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="6" y="10" width="68" height="44" rx="5" fill="#0a0a18" stroke={g+"0.7)"} strokeWidth="2.5"/>
+      <rect x="10" y="14" width="60" height="36" rx="3" fill="#111133"/>
+      <rect x="14" y="17" width="52" height="30" rx="2" fill="#0d0d28"/>
+      <rect x="16" y="19" width="48" height="26" rx="2" fill="#0a1428"/>
+      <rect x="18" y="21" width="12" height="8" rx="1.5" fill={g+"0.18)"}/>
+      <rect x="32" y="21" width="15" height="8" rx="1.5" fill={g+"0.12)"}/>
+      <rect x="49" y="21" width="13" height="8" rx="1.5" fill={g+"0.08)"}/>
+      <rect x="18" y="31" width="44" height="3" rx="1" fill={g+"0.1)"}/>
+      <rect x="18" y="36" width="30" height="3" rx="1" fill={g+"0.07)"}/>
+      <rect x="33" y="54" width="14" height="5" rx="2" fill={g+"0.3)"}/>
+      <rect x="22" y="58" width="36" height="3.5" rx="1.5" fill={g+"0.25)"}/>
+      <circle cx="40" cy="57" r="1.5" fill={g+"0.8)"}/>
+    </svg>
+  );
+  if (cat?.includes("דש")) return (
+    <svg width={s} height={h} viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="12" y="22" width="56" height="36" rx="8" fill="#0c0c1e" stroke={g+"0.65)"} strokeWidth="2"/>
+      <rect x="16" y="26" width="48" height="28" rx="6" fill="#111133"/>
+      <circle cx="40" cy="40" r="10" fill="#0a0a28" stroke={g+"0.5)"} strokeWidth="1.5"/>
+      <circle cx="40" cy="40" r="6.5" fill="#060614" stroke={g+"0.35)"} strokeWidth="1"/>
+      <circle cx="40" cy="40" r="3" fill="#090920"/>
+      <circle cx="37.5" cy="37.5" r="1.2" fill={g+"0.9)"} opacity="0.6"/>
+      <rect x="17" y="52" width="6" height="2" rx="1" fill={g+"0.5)"}/>
+      <rect x="57" y="52" width="6" height="2" rx="1" fill={g+"0.5)"}/>
+      <rect x="24" y="27" width="4" height="2" rx="1" fill={g+"0.3)"}/>
+      <rect x="52" y="27" width="4" height="2" rx="1" fill={g+"0.3)"}/>
+      <rect x="18" y="56" width="44" height="2" rx="1" fill={g+"0.15)"}/>
+    </svg>
+  );
+  if (cat?.includes("רוורס") || cat?.includes("אחורית")) return (
+    <svg width={s} height={h} viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="20" y="28" width="40" height="28" rx="6" fill="#0c0c1e" stroke={g+"0.65)"} strokeWidth="2"/>
+      <rect x="24" y="32" width="32" height="20" rx="4" fill="#111133"/>
+      <circle cx="40" cy="42" r="7.5" fill="#0a0a28" stroke={g+"0.45)"} strokeWidth="1.5"/>
+      <circle cx="40" cy="42" r="4.5" fill="#060614" stroke={g+"0.3)"} strokeWidth="1"/>
+      <circle cx="40" cy="42" r="2" fill="#0a0a20"/>
+      <circle cx="38.5" cy="40.5" r="0.8" fill={g+"0.8)"} opacity="0.7"/>
+      <rect x="25" y="32" width="3" height="3" rx="0.5" fill={g+"0.4)"}/>
+      <rect x="52" y="32" width="3" height="3" rx="0.5" fill={g+"0.4)"}/>
+      <rect x="25" y="49" width="3" height="3" rx="0.5" fill={g+"0.4)"}/>
+      <rect x="52" y="49" width="3" height="3" rx="0.5" fill={g+"0.4)"}/>
+      <rect x="36" y="56" width="8" height="2" rx="1" fill={g+"0.3)"}/>
+      <rect x="8" y="38" width="12" height="4" rx="1" fill={g+"0.2)"} opacity="0.7"/>
+      <rect x="60" y="38" width="12" height="4" rx="1" fill={g+"0.2)"} opacity="0.7"/>
+      {[0,1,2,3,4,5,6,7].map(i=>{
+        const a=(i/8)*Math.PI*2; const r=13;
+        return <circle key={i} cx={40+r*Math.cos(a)} cy={42+r*Math.sin(a)} r="1.2" fill={g+"0.55)"}/>;
+      })}
+    </svg>
+  );
+  if (cat?.includes("צדדית") || cat?.includes("גלגל")) return (
+    <svg width={s} height={h} viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="18" y="30" width="44" height="22" rx="11" fill="#0c0c1e" stroke={g+"0.65)"} strokeWidth="2"/>
+      <rect x="22" y="34" width="36" height="14" rx="7" fill="#111133"/>
+      <circle cx="33" cy="41" r="5.5" fill="#0a0a28" stroke={g+"0.5)"} strokeWidth="1.5"/>
+      <circle cx="33" cy="41" r="3" fill="#060614"/>
+      <circle cx="31.8" cy="39.8" r="0.9" fill={g+"0.85)"} opacity="0.65"/>
+      <rect x="42" y="37" width="12" height="2" rx="1" fill={g+"0.3)"}/>
+      <rect x="42" y="41" width="9" height="2" rx="1" fill={g+"0.2)"}/>
+      <rect x="42" y="45" width="11" height="2" rx="1" fill={g+"0.15)"}/>
+      <rect x="36" y="52" width="8" height="3" rx="1.5" fill={g+"0.25)"}/>
+      <rect x="14" y="36" width="4" height="10" rx="2" fill={g+"0.2)"}/>
+    </svg>
+  );
+  if (cat?.includes("קדמית")) return (
+    <svg width={s} height={h} viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="14" y="25" width="52" height="34" rx="7" fill="#0c0c1e" stroke={g+"0.65)"} strokeWidth="2"/>
+      <rect x="18" y="29" width="44" height="26" rx="5" fill="#111133"/>
+      <circle cx="40" cy="42" r="9" fill="#0a0a28" stroke={g+"0.5)"} strokeWidth="1.5"/>
+      <circle cx="40" cy="42" r="6" fill="#060614" stroke={g+"0.3)"} strokeWidth="1"/>
+      <circle cx="40" cy="42" r="2.5" fill="#0d0d24"/>
+      <circle cx="38" cy="40" r="1" fill={g+"0.8)"} opacity="0.6"/>
+      <rect x="19" y="53" width="8" height="1.5" rx=".75" fill={g+"0.35)"}/>
+      <rect x="53" y="53" width="8" height="1.5" rx=".75" fill={g+"0.35)"}/>
+      <rect x="19" y="30" width="8" height="1.5" rx=".75" fill={g+"0.35)"}/>
+      <rect x="53" y="30" width="8" height="1.5" rx=".75" fill={g+"0.35)"}/>
+      <rect x="37" y="59" width="6" height="2" rx="1" fill={g+"0.25)"}/>
+    </svg>
+  );
+  // default / systems — shield icon
+  return (
+    <svg width={s} height={h} viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M40 12 L62 22 L62 42 C62 55 52 65 40 70 C28 65 18 55 18 42 L18 22 Z" fill="#0c0c1e" stroke={g+"0.65)"} strokeWidth="2"/>
+      <path d="M40 18 L57 26 L57 42 C57 52 49 60 40 64 C31 60 23 52 23 42 L23 26 Z" fill="#111133"/>
+      <circle cx="40" cy="40" r="9" fill="#0a0a28" stroke={g+"0.45)"} strokeWidth="1.5"/>
+      <path d="M35 40 L38 43 L46 36" stroke={g+"0.9)"} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
 const HG_CAMERAS = [
   { id:"T15",      cat:"מצלמת דש",           tags:["IP69K","2כ","AHD 2MP"],       price:null,
     desc:"Sony AHD 2MP מצלמת דש ממוגנת IP69K, ראיית לילה LED 20 מטר, מסגרת קטנה לרכב כבד." },
@@ -1858,7 +2012,7 @@ function ShowroomView({ showToast, onQuote }) {
           <div className="sr-present-badge">{selected.cat}</div>
           <div className="sr-present-id">{selected.id}</div>
           <div className="sr-present-icon">
-            {section === "monitors" ? <Monitor size={90}/> : <Camera size={90}/>}
+            <ProductImg cat={selected.cat} size={140} />
           </div>
           <div className="sr-present-tags">
             {selected.tags.map(t => <span key={t} className="sr-tag big">{t}</span>)}
@@ -1890,32 +2044,34 @@ function ShowroomView({ showToast, onQuote }) {
       <div className="sr-grid">
         {items.map(item => (
           <div key={item.id} className="sr-card" onClick={() => { setSelected(item); setPresent(true); }}>
-            <div className="sr-card-head">
-              <div className="sr-icon-wrap">
-                {section === "monitors" ? <Monitor size={32}/> : <Camera size={32}/>}
-              </div>
-              <div className="sr-card-info">
-                <div className="sr-model">{item.id}</div>
-                <div className="sr-cat">{item.cat}</div>
-              </div>
-              <button className="sr-expand" onClick={e=>{e.stopPropagation();setSelected(item);setPresent(true);}} title="הצג ללקוח">
-                <Maximize2 size={14}/>
+            <div className="sr-img-area">
+              <ProductImg cat={item.cat} size={80} />
+              <div className="sr-img-badge">{item.cat}</div>
+              <button className="sr-expand sr-expand-abs" onClick={e=>{e.stopPropagation();setSelected(item);setPresent(true);}} title="הצג ללקוח">
+                <Maximize2 size={13}/>
               </button>
             </div>
-            <div className="sr-tags-row">
-              {item.tags.map(t => <span key={t} className="sr-tag">{t}</span>)}
-            </div>
-            <div className="sr-desc">{item.desc}</div>
-            {priceFor(item.id) && (
-              <div className="sr-price">{ils(priceFor(item.id))} <small>+ מע"מ</small></div>
-            )}
-            <div className="sr-card-foot">
-              <button className="sr-quote-btn" onClick={e=>{e.stopPropagation();addToQuote(item);}}>
-                <Plus size={13}/> להצעת מחיר
-              </button>
-              <button className="sr-show-btn" onClick={e=>{e.stopPropagation();setSelected(item);setPresent(true);}}>
-                <Maximize2 size={13}/> הצג ללקוח
-              </button>
+            <div className="sr-card-body">
+              <div className="sr-card-head" style={{padding:0,paddingTop:2}}>
+                <div className="sr-card-info">
+                  <div className="sr-model">{item.id}</div>
+                </div>
+              </div>
+              <div className="sr-tags-row">
+                {item.tags.map(t => <span key={t} className="sr-tag">{t}</span>)}
+              </div>
+              <div className="sr-desc">{item.desc}</div>
+              {priceFor(item.id) && (
+                <div className="sr-price">{ils(priceFor(item.id))} <small>+ מע"מ</small></div>
+              )}
+              <div className="sr-card-foot">
+                <button className="sr-quote-btn" onClick={e=>{e.stopPropagation();addToQuote(item);}}>
+                  <Plus size={13}/> להצעת מחיר
+                </button>
+                <button className="sr-show-btn" onClick={e=>{e.stopPropagation();setSelected(item);setPresent(true);}}>
+                  <Maximize2 size={13}/> הצג ללקוח
+                </button>
+              </div>
             </div>
           </div>
         ))}
@@ -2423,16 +2579,20 @@ function StyleTag() {
 .sr-tabs button.on{background:linear-gradient(135deg,#1a1200,#2a2000);border-color:var(--gold);color:var(--gold);font-weight:800}
 .sr-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding-bottom:16px}
 @media(max-width:480px){.sr-grid{grid-template-columns:1fr}}
-.sr-card{background:linear-gradient(160deg,#0e0e1a,#080810);border:1px solid rgba(218,165,32,.2);border-radius:16px;padding:14px;cursor:pointer;transition:border-color .2s,transform .15s;display:flex;flex-direction:column;gap:8px}
+.sr-card{background:linear-gradient(160deg,#0e0e1a,#080810);border:1px solid rgba(218,165,32,.2);border-radius:16px;padding:0;cursor:pointer;transition:border-color .2s,transform .15s;display:flex;flex-direction:column;overflow:hidden}
 .sr-card:hover{border-color:rgba(218,165,32,.55);transform:translateY(-2px)}
 .sr-card:active{transform:scale(.98)}
-.sr-card-head{display:flex;align-items:flex-start;gap:10px}
-.sr-icon-wrap{width:48px;height:48px;flex-shrink:0;border-radius:12px;background:rgba(218,165,32,.1);border:1px solid rgba(218,165,32,.2);display:flex;align-items:center;justify-content:center;color:var(--gold)}
+.sr-img-area{position:relative;background:radial-gradient(ellipse at 50% 60%,#0f0f28,#06060f);display:flex;align-items:center;justify-content:center;height:96px;border-bottom:1px solid rgba(218,165,32,.18)}
+.sr-img-badge{position:absolute;bottom:6px;left:8px;font-size:9.5px;font-weight:700;color:rgba(218,165,32,.75);letter-spacing:.04em;text-transform:uppercase;background:rgba(0,0,0,.5);padding:2px 6px;border-radius:4px}
+.sr-expand-abs{position:absolute;top:6px;right:6px;background:rgba(0,0,0,.4);border:1px solid rgba(218,165,32,.25);color:rgba(218,165,32,.5);cursor:pointer;padding:4px;border-radius:6px;transition:all .15s;display:flex;align-items:center}
+.sr-expand-abs:hover{color:var(--gold);border-color:rgba(218,165,32,.7);background:rgba(0,0,0,.7)}
+.sr-card-head{display:flex;align-items:flex-start;gap:10px;padding:10px 12px 0}
 .sr-card-info{flex:1;min-width:0}
 .sr-model{font-family:'Rubik',sans-serif;font-weight:900;font-size:18px;color:#f5e8c0;letter-spacing:.02em;line-height:1.1}
 .sr-cat{font-size:11px;color:rgba(218,165,32,.65);font-weight:600;margin-top:2px}
 .sr-expand{background:none;border:none;color:rgba(218,165,32,.4);cursor:pointer;padding:4px;flex-shrink:0;border-radius:6px;transition:color .15s}
 .sr-expand:hover{color:var(--gold)}
+.sr-card-body{padding:0 12px 12px;display:flex;flex-direction:column;gap:7px;flex:1}
 .sr-tags-row{display:flex;flex-wrap:wrap;gap:4px}
 .sr-tag{display:inline-block;background:rgba(218,165,32,.12);border:1px solid rgba(218,165,32,.3);color:#f0d28a;border-radius:6px;padding:2px 7px;font-size:10px;font-weight:700;letter-spacing:.01em}
 .sr-tag.big{font-size:14px;padding:6px 14px;border-radius:10px}

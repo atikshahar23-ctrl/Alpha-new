@@ -10,7 +10,7 @@
 
 let volume = 0.6;
 let pitch = 1.0;   // 1.0 = natural; UI sends pikaState.pikaPitch which defaults to 1.0 now
-let enabled = true;
+let enabled = false;
 let timer: ReturnType<typeof setTimeout> | null = null;
 
 // Shared AudioContext — avoids suspended-on-create Chrome/iOS bug.
