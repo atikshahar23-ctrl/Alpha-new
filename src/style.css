@@ -3402,7 +3402,48 @@ body.is-mobile-ui.mobile-min .fab-group{
 .mood-opt.on{border-color:var(--gold);background:rgba(218,165,32,.1);box-shadow:0 0 10px var(--glass-border)}
 .mood-dot{width:16px;height:16px;border-radius:50%;flex-shrink:0;border:1.5px solid rgba(255,255,255,.7)}
 
-/* ── Physical Pokéball capture effect ── */
+/* ── Physical Pokéball capture effect (desktop only) ── */
 #stage { transition: opacity .42s ease, transform .42s cubic-bezier(.4,0,.2,1); }
 body.pokeball-capturing #stage { opacity:0; transform:scale(.05); pointer-events:none; }
 body.pokeball-capturing .char-ambient { opacity:0; transition:opacity .3s; }
+
+/* ── Portrait phone: gesture / camera mode ─────────────────────────────────
+   On a portrait phone the webcam feed is landscape but the screen is tall.
+   Re-anchor the status chip, help panel, and mode-chooser so nothing covers
+   the usable area and touch targets are large enough to tap comfortably.     */
+@media (max-width: 768px) and (orientation: portrait) {
+  /* Status chip — move it to bottom-center so it doesn't fight the face */
+  .gesture-indicator {
+    top: auto;
+    bottom: 90px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 13px;
+    padding: 7px 16px;
+  }
+
+  /* Cheat-sheet — anchor to bottom so it doesn't cover face area */
+  .gesture-help {
+    top: auto;
+    bottom: 150px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(340px, 92vw);
+    max-height: 40vh;
+    overflow-y: auto;
+    font-size: 13px;
+  }
+  .gesture-help.gh-out {
+    transform: translateX(-50%) translateY(10px);
+    opacity: 0;
+  }
+
+  /* Mode chooser card — bigger touch targets */
+  .gmc-card { padding: 22px 18px; gap: 14px; }
+  .gmc-opt { padding: 15px 14px; min-height: 64px; font-size: 14px; }
+  .gmc-opt b { font-size: 15px; }
+  .gmc-cancel { padding: 13px; font-size: 14px; min-height: 48px; }
+
+  /* Open-camera live video — position: cover, face at top */
+  .gesture-live-video { object-position: center 20%; }
+}

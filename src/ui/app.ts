@@ -2333,10 +2333,9 @@ export function mountApp(root: HTMLElement) {
       tick();
 
       // ── Physical Pokéball detector ───────────────────────────────────────────
-      // Scans the webcam feed for the user's yellow/dark-green Safari Ball.
-      // Closed ball → character retreats (pokeball-capturing CSS class).
-      // Open ball (dark interior visible) → character summoned back.
-      {
+      // Desktop-only: on phones the variable lighting + skin tones generate too
+      // many false-positive yellow clusters. Only active on desktop webcam sessions.
+      if (!isMobileDevice) {
         const pbCv = document.createElement('canvas');
         pbCv.width = 160; pbCv.height = 120;
         const pbCtx = pbCv.getContext('2d', { willReadFrequently: true })!;
