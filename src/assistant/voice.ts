@@ -17,6 +17,8 @@ export class VoiceEngine {
   private onTranscript: (text: string) => void;
   private onStateChange: (s: 'armed' | 'listening' | 'thinking' | 'speaking' | '') => void;
   private recRetries = 0;
+  private noiseStream: MediaStream | null = null;
+  private noiseCtx: AudioContext | null = null;
   wakeOn = false;
   // Per-character voice modifier — when a non-default main character is the
   // assistant's avatar, its voice colours the spoken replies (e.g. Meowth =
@@ -75,9 +77,12 @@ export class VoiceEngine {
         if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
           this.wakeOn = false;
           this.onStateChange('');
-        } else if (this.wakeOn && !this.suppress && this.recRetries < 5) {
+        } else if (this.wakeOn && !this.suppress) {
+          // Keep retrying on no-speech / audio-capture / network errors.
+          // Cap the back-off at 3 s so the mic stays responsive.
           this.recRetries++;
-          setTimeout(() => this.startRec(), 500 * this.recRetries);
+          const delay = Math.min(500 * this.recRetries, 3000);
+          setTimeout(() => this.startRec(), delay);
         }
       };
     }
@@ -99,6 +104,49 @@ export class VoiceEngine {
   private stopRec() {
     if (!this.rec) return;
     try { this.rec.stop(); } catch {}
+  }
+
+  // Open the microphone with maximum noise-suppression constraints and keep an
+  // AudioContext running on that stream.  Chrome's Audio Processing Module (APM)
+  // then applies those constraints to the hardware device, and SpeechRecognition
+  // — which internally opens the same mic — inherits the cleaned-up signal.
+  private async preWarmMicNoise() {
+    if (this.noiseStream) return;
+    if (!navigator.mediaDevices?.getUserMedia) return;
+    try {
+      this.noiseStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: { ideal: true },
+          noiseSuppression: { ideal: true },
+          autoGainControl: { ideal: true },
+          channelCount: { ideal: 1 },
+          sampleRate: { ideal: 16000 },
+        }
+      });
+      const AC = (window as any).AudioContext || (window as any).webkitAudioContext;
+      if (!AC) return;
+      const ctx: AudioContext = new AC({ sampleRate: 16000 });
+      this.noiseCtx = ctx;
+      const stream = this.noiseStream!;
+      const src = ctx.createMediaStreamSource(stream);
+      // High-pass filter at 100 Hz — removes desk vibration + AC hum.
+      const hpf = ctx.createBiquadFilter();
+      hpf.type = 'highpass';
+      hpf.frequency.value = 100;
+      // Muted destination — we process but do not play back to speakers.
+      const mute = ctx.createGain();
+      mute.gain.value = 0;
+      src.connect(hpf);
+      hpf.connect(mute);
+      mute.connect(ctx.destination);
+    } catch {}
+  }
+
+  private stopNoiseStream() {
+    try { this.noiseStream?.getTracks().forEach(t => t.stop()); } catch {}
+    this.noiseStream = null;
+    try { this.noiseCtx?.close(); } catch {}
+    this.noiseCtx = null;
   }
 
   private enterCommandMode() {
@@ -201,6 +249,7 @@ export class VoiceEngine {
     this.wakeOn = on;
     this.state.wakeOn = on;
     if (on) {
+      this.preWarmMicNoise(); // engage noise suppression before recognition starts
       this.startRec();
       this.enterCommandMode();
     } else {
@@ -210,6 +259,7 @@ export class VoiceEngine {
       clearTimeout(this.silenceTimer);
       this.onStateChange('');
       this.stopRec();
+      this.stopNoiseStream();
     }
   }
 
