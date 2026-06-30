@@ -868,55 +868,78 @@ const CHATTER = {
   legal: ["החוזה מאושר ⚖️", "הטופס תקין", "אחריות מעודכנת", "הכל חתום", "עומד בתקנות"],
   growth:["הזדמנות חדשה 🧭", "ענף חדש נפתח", "רעיון צמיחה!", "ניתחתי מתחרה", "אפיק הכנסה חדש"],
 };
-function OfficeChar({ agent }) {
-  return (
-    <div className="off-char">
-      <div className="off-head"><img src={agent.avatar} alt={agent.name} draggable={false} /></div>
-      <div className="off-body" style={{ background: `linear-gradient(160deg, ${agent.color}, ${agent.color}cc)` }}>
-        <span className="off-arm l" /><span className="off-arm r" />
-      </div>
-    </div>
-  );
-}
+// Living office: characters roam an open-plan floor (Tamagotchi-style).
 function OfficeSim({ onClose, onOpenChat }) {
-  const [bubbles, setBubbles] = useState({}); // { [agentId]: {text, toId, id} }
+  const X0 = 6, X1 = 90, Y0 = 34, Y1 = 82;
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  const [chars, setChars] = useState(() => AGENTS.map((a) => ({ id: a.id, x: rnd(X0, X1), y: rnd(Y0, Y1), dir: 1, dur: 3000, walking: false })));
+  const [bubbles, setBubbles] = useState({});
+
+  // Wander: every tick, send ~30% of the team to a new spot on the floor.
+  useEffect(() => {
+    const iv = setInterval(() => {
+      setChars((prev) => prev.map((c) => {
+        if (Math.random() < 0.3) {
+          const nx = rnd(X0, X1), ny = rnd(Y0, Y1);
+          const dist = Math.hypot(nx - c.x, ny - c.y);
+          const dur = Math.round(Math.max(1600, dist * 140));
+          setTimeout(() => setChars((p) => p.map((k) => k.id === c.id ? { ...k, walking: false } : k)), dur);
+          return { ...c, x: nx, y: ny, dir: nx < c.x ? -1 : 1, dur, walking: true };
+        }
+        return c;
+      }));
+    }, 1200);
+    return () => clearInterval(iv);
+  }, []);
+
+  // Chatter bubbles, some directed at a teammate.
   useEffect(() => {
     const tick = () => {
       const a = AGENTS[Math.floor(Math.random() * AGENTS.length)];
       const lines = CHATTER[a.id] || ["..."];
       const text = lines[Math.floor(Math.random() * lines.length)];
       let toId = null;
-      if (Math.random() < 0.4) { const others = AGENTS.filter((x) => x.id !== a.id); toId = others[Math.floor(Math.random() * others.length)].id; }
+      if (Math.random() < 0.4) { const o = AGENTS.filter((x) => x.id !== a.id); toId = o[Math.floor(Math.random() * o.length)].id; }
       const id = uid();
       setBubbles((p) => ({ ...p, [a.id]: { text, toId, id } }));
-      setTimeout(() => setBubbles((p) => (p[a.id] && p[a.id].id === id ? { ...p, [a.id]: null } : p)), 4000);
+      setTimeout(() => setBubbles((p) => (p[a.id] && p[a.id].id === id ? { ...p, [a.id]: null } : p)), 3800);
     };
-    const iv = setInterval(tick, 2400);
-    tick();
+    const iv = setInterval(tick, 2200); tick();
     return () => clearInterval(iv);
   }, []);
-  const talkingTo = new Set(Object.values(bubbles).filter(Boolean).map((b) => b.toId).filter(Boolean));
 
   return (
     <div className="off-overlay">
       <div className="off-top">
-        <div className="off-top-l"><span className="off-live"><span className="ac-live-dot" /> חי</span><b>🏢 המשרד של אלפא</b></div>
+        <div className="off-top-l"><span className="off-live"><span className="ac-live-dot" /> חי</span><b>🏢 בניין אלפא · קומת הסוכנים</b></div>
         <button className="off-close" onClick={onClose}><X size={20} /></button>
       </div>
-      <div className="off-sub">הצוות עובד יחד · לחץ על סוכן כדי להיכנס למשרד שלו</div>
-      <div className="off-floor">
-        {AGENTS.map((a) => {
-          const b = bubbles[a.id];
+      <div className="off-sub">הצוות מסתובב, עובד ומדבר · לחץ על דמות כדי להיכנס לשיחה</div>
+      <div className="ofc-floor">
+        <div className="ofc-windows">{Array.from({ length: 6 }).map((_, i) => <span key={i} />)}</div>
+        <div className="ofc-furn ofc-reception">קבלה</div>
+        <div className="ofc-furn ofc-rug" />
+        <div className="ofc-furn ofc-meeting"><span className="ofc-mtable" /><i className="t" /><i className="b" /><i className="l" /><i className="r" /></div>
+        <div className="ofc-furn ofc-desk d1"><span className="ofc-mon" /></div>
+        <div className="ofc-furn ofc-desk d2"><span className="ofc-mon" /></div>
+        <div className="ofc-furn ofc-desk d3"><span className="ofc-mon" /></div>
+        <div className="ofc-furn ofc-desk d4"><span className="ofc-mon" /></div>
+        <div className="ofc-furn ofc-plant p1" /><div className="ofc-furn ofc-plant p2" /><div className="ofc-furn ofc-plant p3" />
+        <div className="ofc-furn ofc-cooler" />
+        {chars.map((c) => {
+          const a = byId(c.id); if (!a) return null; const b = bubbles[c.id];
           return (
-            <button key={a.id} className={"off-room " + (talkingTo.has(a.id) ? "pinged" : "")} style={{ "--c": a.color, "--ac": a.accent }} onClick={() => onOpenChat(a.id)}>
-              <div className="off-room-glow" />
-              <div className="off-window" />
-              <div className="off-frame" />
-              <div className="off-plant"><span /><span /><span /></div>
-              {b && <div className="off-bubble">{b.toId && <span className="off-bubble-to">→ {byId(b.toId)?.name}</span>}{b.text}</div>}
-              <OfficeChar agent={a} />
-              <div className="off-desk"><div className="off-monitor"><div className="off-screen"><i /><i /><i /></div></div><div className="off-mug" /></div>
-              <div className="off-plate"><b>{a.name}</b><span>{a.title}</span></div>
+            <button key={c.id} className={"ofc-char" + (c.walking ? " walking" : "")} title={a.name}
+              style={{ left: c.x + "%", top: c.y + "%", transitionDuration: c.dur + "ms", zIndex: Math.round(c.y) + 10, "--c": a.color }}
+              onClick={() => onOpenChat(c.id)}>
+              {b && <div className="ofc-bubble">{b.toId && <span className="ofc-bubble-to">→ {byId(b.toId)?.name}</span>}{b.text}</div>}
+              <div className="ofc-av" style={{ transform: c.dir < 0 ? "scaleX(-1)" : "none" }}>
+                <span className="ofc-shadow" />
+                <span className="ofc-head"><img src={a.avatar} alt="" draggable={false} /></span>
+                <span className="ofc-body" style={{ background: `linear-gradient(160deg, ${a.color}, ${a.color}cc)` }} />
+                <span className="ofc-legs"><i /><i /></span>
+              </div>
+              <span className="ofc-name">{a.name}</span>
             </button>
           );
         })}
@@ -1205,6 +1228,46 @@ function StyleTag() {
 .ac-idea-moves button{background:var(--s8);border:1px solid var(--s7);color:var(--s4);border-radius:8px;padding:5px 10px;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;transition:.15s}
 .ac-idea-moves button.fwd{margin-right:auto;color:var(--gold);border-color:rgba(228,188,99,.35)}
 .ac-idea-moves button:hover{color:var(--silver)}
+
+/* ── living office floor (Tamagotchi-style sim) ── */
+.ofc-floor{flex:1;position:relative;overflow:hidden;margin:8px;border-radius:16px;border:1px solid rgba(110,170,240,.18);
+  background:linear-gradient(rgba(255,255,255,.014) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.014) 1px,transparent 1px),radial-gradient(ellipse at 50% 28%,#1b2440,#0c1120 68%,#070a14);
+  background-size:42px 42px,42px 42px,100% 100%;box-shadow:inset 0 0 90px rgba(0,0,0,.65)}
+.ofc-windows{position:absolute;top:0;left:0;right:0;height:34px;display:flex;gap:9px;padding:0 14px;pointer-events:none}
+.ofc-windows span{flex:1;border-radius:0 0 7px 7px;background:linear-gradient(180deg,rgba(150,200,255,.3),rgba(80,130,210,.06));border:1px solid rgba(150,200,255,.16);border-top:none;box-shadow:inset 0 -6px 14px rgba(150,200,255,.08)}
+.ofc-furn{position:absolute;pointer-events:none}
+.ofc-rug{left:36%;top:44%;width:28%;height:26%;border-radius:50%;background:radial-gradient(ellipse,rgba(228,188,99,.10),transparent 72%)}
+.ofc-reception{right:5%;top:8%;width:108px;height:30px;border-radius:8px;background:linear-gradient(180deg,#3a2c14,#241a0a);color:#caa85e;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;border:1px solid rgba(228,188,99,.3)}
+.ofc-meeting{left:42%;top:47%;width:108px;height:64px}
+.ofc-mtable{position:absolute;inset:12px;border-radius:36px;background:linear-gradient(160deg,#2a3350,#19223a);border:1px solid rgba(150,200,255,.2)}
+.ofc-meeting i{position:absolute;width:12px;height:12px;border-radius:4px;background:#33405e}
+.ofc-meeting i.t{top:0;left:50%;transform:translateX(-50%)} .ofc-meeting i.b{bottom:0;left:50%;transform:translateX(-50%)}
+.ofc-meeting i.l{left:0;top:50%;transform:translateY(-50%)} .ofc-meeting i.r{right:0;top:50%;transform:translateY(-50%)}
+.ofc-desk{width:60px;height:24px;border-radius:6px;background:linear-gradient(180deg,#2a3350,#1a2236);border:1px solid rgba(150,200,255,.15)}
+.ofc-desk .ofc-mon{position:absolute;top:-9px;left:50%;transform:translateX(-50%);width:20px;height:14px;border-radius:3px;background:#0b1426;border:1px solid rgba(110,170,240,.4);box-shadow:0 0 9px rgba(110,170,240,.35)}
+.ofc-desk.d1{left:7%;top:30%} .ofc-desk.d2{left:7%;top:66%} .ofc-desk.d3{right:7%;top:40%} .ofc-desk.d4{right:7%;top:72%}
+.ofc-plant{width:16px;height:22px;border-radius:5px 5px 2px 2px;background:linear-gradient(#2f9e6a,#176b45);box-shadow:0 3px 6px rgba(0,0,0,.3)}
+.ofc-plant.p1{left:3%;top:50%} .ofc-plant.p2{right:2%;top:18%} .ofc-plant.p3{left:49%;bottom:3%}
+.ofc-cooler{left:90%;top:52%;width:13px;height:28px;border-radius:4px;background:linear-gradient(#bfe3ff,#7fb0e0)}
+.ofc-char{position:absolute;transform:translate(-50%,-50%);transition-property:left,top;transition-timing-function:linear;background:none;border:none;padding:0;cursor:pointer;display:flex;flex-direction:column;align-items:center;width:58px}
+.ofc-av{position:relative;display:flex;flex-direction:column;align-items:center}
+.ofc-shadow{position:absolute;bottom:-3px;left:50%;transform:translateX(-50%);width:28px;height:7px;border-radius:50%;background:rgba(0,0,0,.45);filter:blur(2px)}
+.ofc-head{width:30px;height:30px;border-radius:50%;overflow:hidden;border:2px solid rgba(255,255,255,.85);box-shadow:0 3px 10px rgba(0,0,0,.45);z-index:2}
+.ofc-head img{width:100%;height:100%;object-fit:cover;display:block}
+.ofc-body{width:32px;height:22px;border-radius:13px 13px 6px 6px;margin-top:-5px;box-shadow:0 3px 8px rgba(0,0,0,.3)}
+.ofc-legs{display:flex;gap:6px;margin-top:-1px}
+.ofc-legs i{width:6px;height:9px;border-radius:0 0 3px 3px;background:#2a3145;display:block}
+.ofc-char.walking .ofc-av{animation:ofcBob .5s ease-in-out infinite}
+.ofc-char.walking .ofc-legs i:first-child{animation:ofcStep .5s ease-in-out infinite}
+.ofc-char.walking .ofc-legs i:last-child{animation:ofcStep .5s ease-in-out infinite .25s}
+@keyframes ofcBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
+@keyframes ofcStep{0%,100%{transform:translateY(0) scaleY(1)}50%{transform:translateY(-3px) scaleY(.78)}}
+.ofc-name{margin-top:3px;font-size:9.5px;font-weight:800;color:#dce6ff;background:rgba(6,10,20,.6);padding:1px 7px;border-radius:8px;white-space:nowrap;box-shadow:0 0 0 1px color-mix(in srgb,var(--c) 45%,transparent)}
+.ofc-char:hover .ofc-name{color:var(--c)}
+.ofc-char:active{transform:translate(-50%,-50%) scale(.92)}
+.ofc-bubble{position:absolute;bottom:100%;left:50%;transform:translateX(-50%);margin-bottom:5px;background:#fff;color:#1a2238;font-size:10.5px;font-weight:700;padding:5px 9px;border-radius:11px;white-space:nowrap;box-shadow:0 6px 16px rgba(0,0,0,.45);animation:offPop .3s ease both;z-index:5}
+.ofc-bubble::after{content:'';position:absolute;bottom:-5px;left:50%;transform:translateX(-50%);border:5px solid transparent;border-top-color:#fff;border-bottom:0}
+.ofc-bubble-to{color:#C75A12;font-weight:900;margin-left:3px}
 
 /* ── settings ── */
 .ac-set-card{background:linear-gradient(160deg,rgba(16,14,32,.96),rgba(8,8,18,.97));border:1px solid var(--s7);border-radius:16px;padding:16px;margin-bottom:14px;box-shadow:0 6px 26px rgba(0,0,0,.4)}
