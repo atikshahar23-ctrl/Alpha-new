@@ -1447,138 +1447,183 @@ function MarketingView({ showToast }) {
   );
 }
 
-// Build the exact Samsonix DVR agreement HTML — matches the original printed form.
+// Build the exact Samsonix DVR agreement HTML — pixel-faithful to the original paper form.
 // card = { num, expiry, cvv } — shown once then discarded (never persisted).
 // card may be null for inbox records where no card was stored.
 function _samsonixHtml(f, card, today) {
-  const ck = (sel) => sel ? `<span style="display:inline-block;width:13px;height:13px;border:1.5px solid #333;vertical-align:middle;text-align:center;line-height:11px;font-size:10px;">✓</span>` : `<span style="display:inline-block;width:13px;height:13px;border:1.5px solid #333;vertical-align:middle;"></span>`;
-  const line = (label, val, dir = "rtl") => `<div style="margin:8px 0;font-size:12.5px;">${label}:&nbsp;<span style="display:inline-block;min-width:220px;border-bottom:1px solid #333;direction:${dir};font-weight:600;">${val || ""}</span></div>`;
-  const ccNum = card ? (card.num || "").replace(/\s/g,"").replace(/(.{4})(?=.)/g,"$1 - ") : "";
-  const ccExp = card ? (card.expiry || "") : "";
-  const ccCvv = card ? (card.cvv || "") : "";
+  // checkbox square — checked or empty
+  const ck = (sel) =>
+    `<span style="display:inline-block;width:14px;height:14px;border:1.5px solid #222;vertical-align:middle;text-align:center;line-height:12px;font-size:10px;flex-shrink:0">${sel ? "✓" : ""}</span>`;
+  // underline field: label on right, value on underlined span
+  const fl = (label, val, w = "220px", dir = "rtl") =>
+    `<div style="margin:7px 0;font-size:12.5px;direction:rtl">${label}:&nbsp;<span style="display:inline-block;min-width:${w};border-bottom:1px solid #333;direction:${dir}">${val || ""}</span></div>`;
+
+  const parts = card ? (card.num || "").replace(/\D/g,"").match(/.{1,4}/g) || [] : [];
+  const g = (i) => parts[i] || "";
+  const ccExp  = card ? (card.expiry || "") : "";
+  const ccCvv  = card ? (card.cvv   || "") : "";
+
+  const [dd="___", mm="___", yyyy="2026"] = today.split("/");
+
   return `<!DOCTYPE html><html lang="he" dir="rtl"><head><meta charset="utf-8">
 <title>Samsonix DVR · ${f.fullName || ""}</title>
 <style>
-  *{box-sizing:border-box}
-  body{font-family:Arial,Helvetica,sans-serif;padding:22px 30px;color:#111;max-width:800px;margin:0 auto;font-size:13px}
-  .hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px}
-  .logo-wrap{display:flex;align-items:center;gap:6px}
-  .logo-icon{font-size:28px;font-weight:900;color:#0e7d8c;font-style:italic}
-  .logo-text{display:flex;flex-direction:column}
-  .logo-main{font-size:22px;font-weight:900;color:#222;letter-spacing:1px}
-  .logo-sub{font-size:8.5px;letter-spacing:4px;color:#555;margin-top:1px}
-  .date-line{font-size:12px;border-bottom:1px solid #333;padding-bottom:2px}
-  .title{text-align:center;font-size:16px;font-weight:700;text-decoration:underline;margin:14px 0 10px}
-  .intro{font-size:12px;line-height:1.9;margin-bottom:6px;color:#222}
-  .ck-row{display:flex;align-items:center;gap:7px;margin:5px 0;font-size:12.5px}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Arial,Helvetica,sans-serif;color:#111;font-size:12.5px;
+       padding:20px 28px;max-width:780px;margin:0 auto;direction:rtl}
+  /* logo */
+  .logo-area{display:flex;align-items:flex-end;gap:5px}
+  .logo-slash{font-size:32px;font-weight:900;font-style:italic;color:#111;line-height:1}
+  .logo-word{font-size:21px;font-weight:900;letter-spacing:.5px;color:#111;line-height:1}
+  .logo-sub{font-size:7.5px;letter-spacing:3px;color:#444;display:block;margin-top:2px}
+  /* date sits below logo, left-aligned */
+  .date-row{margin-top:4px;font-size:12px;direction:rtl}
+  .date-row span{display:inline-block;border-bottom:1px solid #333;min-width:36px;text-align:center;margin:0 2px}
+  /* centred underlined title */
+  .form-title{text-align:center;font-size:15px;font-weight:700;text-decoration:underline;
+               margin:12px 0 10px}
+  /* regular paragraphs */
+  .para{font-size:12.5px;line-height:1.85;margin-bottom:7px;direction:rtl}
+  /* two-column block: installer box RIGHT, payment text LEFT */
+  .two-col{display:flex;direction:rtl;gap:14px;margin:10px 0 8px;align-items:flex-start}
+  .installer-col{flex:0 0 auto;min-width:150px;text-align:right}
+  .installer-lbl{font-size:12px;text-decoration:underline;margin-bottom:4px}
+  .installer-box{border:2px solid #2e7d32;width:150px;height:60px;
+                 display:flex;align-items:center;justify-content:center;
+                 font-weight:700;font-size:13px}
+  .payment-col{flex:1;font-size:12.5px;line-height:1.85}
+  /* checkboxes */
+  .ck{display:flex;align-items:center;gap:7px;margin:5px 0;font-size:12.5px}
+  /* warning */
   .warn{font-size:12px;margin:6px 0}
-  .section-box{border:2px solid #2e7d32;padding:8px 10px;min-height:50px;margin:8px 0 14px;width:160px;display:inline-block;vertical-align:top}
-  .fields{font-size:12.5px}
-  .fields .row{margin:8px 0}
-  .fields .row label{display:inline-block;min-width:0}
-  .cc-row{display:flex;gap:8px;align-items:center;margin:8px 0;font-size:12.5px}
-  .cc-box{border-bottom:1px solid #333;display:inline-block;min-width:52px;font-weight:600;text-align:center;padding:0 2px}
-  .bottom{display:flex;justify-content:space-between;align-items:flex-end;margin-top:20px}
-  .sig-area{border:2px solid #2e7d32;width:160px;min-height:70px;padding:6px;font-size:12px}
-  .sig-area img{max-width:150px;max-height:60px}
-  .contact{font-size:12.5px;line-height:1.9;text-align:center;font-weight:700}
-  .ft{margin-top:14px;border-top:1px solid #aaa;padding-top:8px;font-size:10.5px;text-align:center;color:#555;line-height:1.8}
-  @media print{@page{size:A4;margin:8mm}body{padding:0}}
+  /* customer fields */
+  .fields{margin-top:10px}
+  .fl{margin:7px 0;font-size:12.5px}
+  .ul{display:inline-block;border-bottom:1px solid #333;min-width:230px}
+  /* credit card */
+  .cc-seg{display:inline-block;border-bottom:1px solid #333;min-width:54px;
+          text-align:center;font-size:12.5px}
+  /* bottom row */
+  .bottom{display:flex;direction:rtl;gap:18px;margin-top:16px;align-items:flex-end}
+  .sig-box{border:2px solid #2e7d32;width:155px;min-height:70px;flex-shrink:0;
+           display:flex;flex-direction:column;align-items:center;justify-content:center;padding:4px}
+  .sig-box img{max-width:140px;max-height:58px}
+  .sig-name{font-size:9.5px;color:#555;margin-top:3px}
+  .contact-txt{font-size:13px;font-weight:700;line-height:1.9;text-align:center;flex:1}
+  /* footer */
+  .ft{margin-top:14px;border-top:1px solid #bbb;padding-top:7px;
+      font-size:10px;text-align:center;color:#444;line-height:1.9;direction:ltr}
+  @media print{@page{size:A4;margin:7mm}body{padding:0}}
 </style></head><body>
-<div class="hdr">
-  <div class="logo-wrap">
-    <div class="logo-icon">⌒</div>
-    <div class="logo-text">
-      <div class="logo-main">samsonix</div>
-      <div class="logo-sub">ENJOY YOUR DRIVE</div>
+
+<!-- ── HEADER: logo (left) ────────────────────────────────────── -->
+<div style="display:flex;justify-content:space-between;align-items:flex-start">
+  <div>
+    <div class="logo-area">
+      <span class="logo-slash">&#47;</span>
+      <div>
+        <span class="logo-word">samsonix</span>
+        <span class="logo-sub">ENJOY YOUR DRIVE</span>
+      </div>
+    </div>
+    <div class="date-row">
+      <span>${dd}</span> / <span>${mm}</span> / <span style="min-width:52px">${yyyy}</span>
+      &nbsp;&nbsp;תאריך :
     </div>
   </div>
-  <div class="date-line">תאריך :&nbsp;&nbsp;${today.split("/")[0] || "___"}&nbsp;/&nbsp;${today.split("/")[1] || "___"}&nbsp;/&nbsp;${today.split("/")[2] || "2026"}</div>
 </div>
 
-<div class="title">שימוש בשרת לצפייה ב DVR</div>
+<!-- ── TITLE ──────────────────────────────────────────────────── -->
+<div class="form-title">שימוש בשרת לצפייה ב DVR</div>
 
-<div class="intro">
-  הננו שמחים שבחרתם והתקנת מערכת DVR עם מצלמות לצפייה מרחוק ובהקלטות שהוקלטו לזיכרון הפנימי כאשר המערכת במצב online ובאזור קליטה סלולרי תקין.<br>
-  המערכת היא המתקדמת ביותר כוללת זיכרון פנימי ומאפשרת צפייה מרחוק ובהקלטות שהוקלטו לזיכרון הפנימי.
+<!-- ── INTRO paragraphs ───────────────────────────────────────── -->
+<p class="para">הננו שמחים שבחרתם והתקנת מערכת DVR עם מצלמות לצפייה מרחוק ובהקלטות שהוקלטו לזיכרון הפנימי.</p>
+<p class="para">המערכת היא המתקדמת ביותר כוללת זיכרון פנימי ומאפשרת צפייה מרחוק ובהקלטות שהוקלטו לזיכרון הפנימי כאשר המערכת במצב online ובאזור קליטה סלולרי תקין.</p>
+
+<!-- ── TWO-COLUMN: שם המתקין (right) | payment text (left) ───── -->
+<div class="two-col">
+  <div class="installer-col">
+    <div class="installer-lbl">שם המתקין</div>
+    <div class="installer-box">Heavy Guard</div>
+  </div>
+  <div class="payment-col">
+    על מנת לצפות מרחוק דרך אפליקציה ו/או במחשב בבית נדרש תשלום חודשי לשרת - עגן .<br>
+    למערכת מסופק כרטיס גלישה.* &nbsp;(אופציה ברכישת המערכת)<br>
+    ניתן לבטל הוראה זו בהודעה בכתב של 7 ימים מראש.
+  </div>
 </div>
 
-<div class="intro" style="margin-top:8px">
-  על מנת לצפות מרחוק דרך אפליקציה ו/או במחשב בבית נדרש תשלום חודשי לשרת - עגן &nbsp;.<br>
-  למערכת מסופק כרטיס גלישה.* &nbsp;(אופציה ברכישת המערכת)<br>
-  ניתן לבטל הוראה זו בהודעה בכתב של 7 ימים מראש.
-</div>
+<!-- ── PLAN CHECKBOXES ────────────────────────────────────────── -->
+<div style="margin:8px 0;font-size:12.5px">נא לסמן ב&nbsp;✓&nbsp; את התשלום המבוקש.</div>
+<div class="ck">${ck(f.plan==="2gb")}&nbsp; שימוש בשרת + גלישה 2GB לחודש 39 ש"ח + מע"מ (מומלץ-עד 2 משתמשים ו/או עד 1T )</div>
+<div class="ck">${ck(f.plan==="4gb")}&nbsp; שימוש בשרת + גלישה 4GB לחודש 49 ש"ח + מע"מ (מומלץ-עד 4 משתמשים ו/או עד 2T )</div>
+<div class="ck">${ck(f.plan==="10gb")}&nbsp; שימוש בשרת + גלישה 10GB לחודש 59 ש"ח + מע"מ (מומלץ-מעל 5 משתמשים ו/או עד 4T )</div>
 
-<div style="margin:10px 0;font-size:13px;">נא לסמן ב&nbsp;✓&nbsp; את התשלום המבוקש.</div>
+<div class="warn">***שימוש חורג מהחבילה החודשית <u>לא</u> מאפשרת צפייה מרחוק ו/או צפייה בהקלטות***</div>
 
+<div class="ck">${ck(f.audio==="none")}&nbsp; <u>ללא הקלטת קול</u> – כל המצלמות ללא מיקרופון</div>
+<div class="ck">${ck(f.audio==="with")}&nbsp; <u>עם הקלטת קול</u> – הוספת מיקרופון לחלל הפנימי של הרכב <b>בעלות נוספת</b></div>
+
+<!-- ── CUSTOMER FIELDS ────────────────────────────────────────── -->
 <div class="fields">
-  <div class="ck-row">${ck(f.plan==="2gb")}&nbsp; שימוש בשרת + גלישה 2GB ש"ח + מע"מ (מומלץ-עד 2 משתמשים ו/או עד 1T )</div>
-  <div class="ck-row">${ck(f.plan==="4gb")}&nbsp; שימוש בשרת + גלישה 4GB ש"ח + מע"מ (מומלץ-עד 4 משתמשים ו/או עד 2T )</div>
-  <div class="ck-row">${ck(f.plan==="10gb")}&nbsp; שימוש בשרת + גלישה 10GB ש"ח + מע"מ (מומלץ-מעל 5 משתמשים ו/או עד 4T )</div>
-</div>
+  <div class="fl">שם מלא של בעל הכרטיס:&nbsp;<span class="ul">${f.fullName||""}</span></div>
+  <div class="fl">מס ת"ז של בעל הכרטיס:&nbsp;<span class="ul">${f.idNum||""}</span></div>
 
-<div class="warn">***שימוש חורג מהחבילה החודשית <u>לא</u> מאפשר צפייה מרחוק ו/או צפייה בהקלטות***</div>
-
-<div class="ck-row">${ck(f.audio==="none")}&nbsp; <u>ללא הקלטת קול</u> – כל המצלמות ללא מיקרופון</div>
-<div class="ck-row">${ck(f.audio==="with")}&nbsp; <u>עם הקלטת קול</u> – הוספת מיקרופון לחלל הפנימי של הרכב <b>בעלות נוספת</b></div>
-
-<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-top:14px;gap:16px">
-  <div style="flex:1">
-    <div style="text-align:right;font-size:12px;text-decoration:underline;margin-bottom:4px">שם המתקין</div>
-    <div class="section-box" style="display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;color:#111;">Heavy Guard</div>
-  </div>
-  <div style="flex:3;font-size:12.5px">
-    ${line("שם מלא של בעל הכרטיס", f.fullName)}
-    ${line('מס ת"ז של בעל הכרטיס', f.idNum)}
-  </div>
-</div>
-
-<div class="fields" style="margin-top:8px">
-  <div class="cc-row">
+  <div class="fl" style="margin-top:10px">
     מס כרטיס אשראי:&nbsp;
-    <span class="cc-box">${(ccNum.split(" - ")[0])||"&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"}</span>
-    &nbsp;-&nbsp;
-    <span class="cc-box">${(ccNum.split(" - ")[1])||"&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"}</span>
-    &nbsp;-&nbsp;
-    <span class="cc-box">${(ccNum.split(" - ")[2])||"&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"}</span>
-    &nbsp;-&nbsp;
-    <span class="cc-box">${(ccNum.split(" - ")[3])||"&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"}</span>
+    <span class="cc-seg">${g(0)}</span>&nbsp;-&nbsp;
+    <span class="cc-seg">${g(1)}</span>&nbsp;-&nbsp;
+    <span class="cc-seg">${g(2)}</span>&nbsp;-&nbsp;
+    <span class="cc-seg">${g(3)}</span>
   </div>
-  <div style="display:flex;gap:28px;margin:8px 0;font-size:12.5px">
-    <span>תוקף:&nbsp;<span class="cc-box">${ccExp||"&nbsp;&nbsp;&nbsp;"}</span>&nbsp;/&nbsp;<span class="cc-box">&nbsp;&nbsp;&nbsp;</span></span>
-    <span>3 הספרות בגב הכרטיס(CVV):&nbsp;<span class="cc-box">${ccCvv||"&nbsp;&nbsp;&nbsp;"}</span></span>
+  <div class="fl">
+    תוקף:&nbsp;
+    <span class="cc-seg" style="min-width:44px">${ccExp.split("/")[0]||""}</span>
+    &nbsp;/&nbsp;
+    <span class="cc-seg" style="min-width:44px">${ccExp.split("/")[1]||""}</span>
+    &nbsp;&nbsp;&nbsp;&nbsp;
+    3 הספרות בגב הכרטיס(CVV):&nbsp;<span class="cc-seg" style="min-width:44px">${ccCvv||""}</span>
   </div>
-  ${line("כתובת המייל", f.email, "ltr")}
-  <div style="display:flex;gap:20px;margin:8px 0;font-size:12.5px">
-    <span>מס טלפון איש קשר:&nbsp;<span style="border-bottom:1px solid #333;display:inline-block;min-width:130px;font-weight:600;direction:ltr">${f.phone||""}</span></span>
-    <span>שם&nbsp;<span style="border-bottom:1px solid #333;display:inline-block;min-width:100px;font-weight:600">${f.contactName||""}</span></span>
+
+  <div class="fl" style="margin-top:8px">כתובת המייל:&nbsp;<span class="ul" style="direction:ltr">${f.email||""}</span></div>
+  <div class="fl">
+    מס טלפון איש קשר:&nbsp;
+    <span style="display:inline-block;border-bottom:1px solid #333;min-width:140px;direction:ltr">${f.phone||""}</span>
+    &nbsp;&nbsp;שם&nbsp;
+    <span style="display:inline-block;border-bottom:1px solid #333;min-width:100px">${f.contactName||""}</span>
   </div>
-  ${line("שם החברה – לחשבונית", f.company)}
-  ${line("ע.מ/ח.פ.", f.bizNum, "ltr")}
-  <div style="display:flex;gap:20px;margin:8px 0;font-size:12.5px">
-    <span>מספר רכב :&nbsp;<span style="border-bottom:1px solid #333;display:inline-block;min-width:120px;font-weight:600;direction:ltr">${f.veh1||""}</span></span>
-    <span>סוג רכב&nbsp;<span style="border-bottom:1px solid #333;display:inline-block;min-width:100px;font-weight:600">${f.veh1Type||""}</span></span>
+  <div class="fl">שם החברה – לחשבונית&nbsp;<span class="ul">${f.company||""}</span></div>
+  <div class="fl">ע.מ/ח.פ.&nbsp;<span class="ul" style="direction:ltr">${f.bizNum||""}</span></div>
+
+  <div class="fl" style="margin-top:6px">
+    מספר רכב :&nbsp;
+    <span style="display:inline-block;border-bottom:1px solid #333;min-width:130px;direction:ltr">${f.veh1||""}</span>
+    &nbsp;&nbsp;סוג רכב&nbsp;
+    <span style="display:inline-block;border-bottom:1px solid #333;min-width:110px">${f.veh1Type||""}</span>
   </div>
-  <div style="display:flex;gap:20px;margin:8px 0;font-size:12.5px">
-    <span>מספר רכב :&nbsp;<span style="border-bottom:1px solid #333;display:inline-block;min-width:120px;font-weight:600;direction:ltr">${f.veh2||""}</span></span>
-    <span>סוג רכב&nbsp;<span style="border-bottom:1px solid #333;display:inline-block;min-width:100px;font-weight:600">${f.veh2Type||""}</span></span>
+  <div class="fl">
+    מספר רכב :&nbsp;
+    <span style="display:inline-block;border-bottom:1px solid #333;min-width:130px;direction:ltr">${f.veh2||""}</span>
+    &nbsp;&nbsp;סוג רכב&nbsp;
+    <span style="display:inline-block;border-bottom:1px solid #333;min-width:110px">${f.veh2Type||""}</span>
   </div>
-  <div style="margin:5px 0;font-size:12.5px">בברכה</div>
+
+  <div style="margin:8px 0;font-size:12.5px">בברכה</div>
 </div>
 
+<!-- ── BOTTOM: sig box (right) | contact text (center-left) ───── -->
 <div class="bottom">
-  <div class="sig-area">
+  <div class="sig-box">
     ${f.sigDataUrl ? `<img src="${f.sigDataUrl}" alt="חתימה"/>` : ""}
-    <div style="font-size:10px;color:#555;margin-top:4px">${f.fullName ? `חתימת ${f.fullName}` : ""}</div>
+    ${f.fullName ? `<div class="sig-name">${f.fullName}</div>` : ""}
   </div>
-  <div class="contact">
-    קונטקט ליון<br>שיווק ומכירות
-  </div>
+  <div class="contact-txt">קונטקט ליון<br>שיווק ומכירות</div>
 </div>
 
+<!-- ── FOOTER ─────────────────────────────────────────────────── -->
 <div class="ft">
-  המצודה 31, אזור, 5800174 טל׳: 03-5662259-03: טל 5800174 פקס 5568999<br>
-  St. Hametzuda 31, Azur, 5800174, Israel Tel: 03-5662259-03: -טל<br>
+  המצודה 31, אזור, 5800174 טל׳: 03-5662259-03 פקס 5568999<br>
+  St. Hametzuda 31, Azur, 5800174, Israel &nbsp; Tel: 03-5662259-03<br>
   Website: http://www.samsonix.com &nbsp; Email: info@samsonix.com
 </div>
 <script>window.addEventListener('load',()=>setTimeout(()=>window.print(),400));<\/script>
