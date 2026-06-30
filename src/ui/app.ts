@@ -2351,26 +2351,68 @@ export function mountApp(root: HTMLElement) {
           try { pbCtx.drawImage(vid, 0, 0, 160, 120); } catch { return 'none'; }
           const { data } = pbCtx.getImageData(0, 0, 160, 120);
 
-          // Detect yellow pixels — the Safari Ball's characteristic yellow body.
-          // Thresholds tuned for the yellow/dark-green ball in the user's photos.
-          let minX = 160, maxX = 0, minY = 120, maxY = 0, yellowCount = 0;
+          // ── Safari Ball: yellow body with dark-green accents ─────────────────
+          let yMinX = 160, yMaxX = 0, yMinY = 120, yMaxY = 0, yellowCount = 0;
+          // ── Classic Pokéball: red top half + white bottom half ───────────────
+          let redSX = 0, redSY = 0, redCount = 0;
+          let whSX = 0,  whSY = 0,  whCount  = 0;
+          let rMinX = 160, rMaxX = 0, rMinY = 120, rMaxY = 0;
+          let wMinX = 160, wMaxX = 0, wMinY = 120, wMaxY = 0;
+
           for (let i = 0; i < data.length; i += 4) {
             const r = data[i], g = data[i + 1], b = data[i + 2];
+            const px = (i >> 2) % 160, py = (i >> 2) / 160 | 0;
+
+            // Yellow (Safari Ball body)
             if (r > 155 && g > 115 && b < 115 && r - b > 70 && r > g * 1.05) {
-              const px = (i >> 2) % 160, py = (i >> 2) / 160 | 0;
-              if (px < minX) minX = px; if (px > maxX) maxX = px;
-              if (py < minY) minY = py; if (py > maxY) maxY = py;
+              if (px < yMinX) yMinX = px; if (px > yMaxX) yMaxX = px;
+              if (py < yMinY) yMinY = py; if (py > yMaxY) yMaxY = py;
               yellowCount++;
             }
+            // Red (classic Pokéball top)
+            else if (r > 165 && g < 90 && b < 90) {
+              redSX += px; redSY += py; redCount++;
+              if (px < rMinX) rMinX = px; if (px > rMaxX) rMaxX = px;
+              if (py < rMinY) rMinY = py; if (py > rMaxY) rMaxY = py;
+            }
+            // White (classic Pokéball bottom)
+            else if (r > 195 && g > 195 && b > 195) {
+              whSX += px; whSY += py; whCount++;
+              if (px < wMinX) wMinX = px; if (px > wMaxX) wMaxX = px;
+              if (py < wMinY) wMinY = py; if (py > wMaxY) wMaxY = py;
+            }
           }
-          if (yellowCount < 55) return 'none'; // not enough yellow — no ball in view
 
-          // Inside the yellow bounding box, count very dark pixels.
-          // An open ball exposes its black interior → darkRatio spikes.
-          const bx1 = Math.max(0, minX), bx2 = Math.min(159, maxX);
-          const by1 = Math.max(0, minY), by2 = Math.min(119, maxY);
+          // Classic Pokéball: need enough red AND white, with red above white
+          // and both horizontally aligned (same object in the frame).
+          const classicOk = (() => {
+            if (redCount < 40 || whCount < 40) return false;
+            const rCY = redSY / redCount, wCY = whSY / whCount;
+            const rCX = redSX / redCount, wCX = whSX / whCount;
+            return rCY < wCY                      // red is above white ✓
+              && (wCY - rCY) < 65                 // not too far apart vertically
+              && Math.abs(rCX - wCX) < 55;        // horizontally aligned (same ball)
+          })();
+
+          if (yellowCount < 55 && !classicOk) return 'none';
+
+          // Build bounding box for the detected ball
+          let bx1: number, bx2: number, by1: number, by2: number;
+          if (yellowCount >= 55) {
+            bx1 = Math.max(0, yMinX); bx2 = Math.min(159, yMaxX);
+            by1 = Math.max(0, yMinY); by2 = Math.min(119, yMaxY);
+          } else {
+            // Classic: span both red and white regions
+            bx1 = Math.max(0, Math.min(rMinX, wMinX));
+            bx2 = Math.min(159, Math.max(rMaxX, wMaxX));
+            by1 = Math.max(0, Math.min(rMinY, wMinY));
+            by2 = Math.min(119, Math.max(rMaxY, wMaxY));
+          }
+
           const bw = bx2 - bx1 + 1, bh = by2 - by1 + 1;
           if (bw < 8 || bh < 8) return 'closed';
+
+          // Count dark pixels inside bounding box — open ball reveals its black interior
           let darkCount = 0, total = 0;
           for (let y = by1; y <= by2; y++) {
             for (let x = bx1; x <= bx2; x++) {
@@ -2380,8 +2422,7 @@ export function mountApp(root: HTMLElement) {
             }
           }
           const darkRatio = darkCount / Math.max(1, total);
-          const aspect = bw / Math.max(1, bh);
-          // Open = dark interior clearly visible OR ball opened very wide
+          const aspect    = bw / Math.max(1, bh);
           return (darkRatio > 0.17 || aspect > 1.65) ? 'open' : 'closed';
         }
 
