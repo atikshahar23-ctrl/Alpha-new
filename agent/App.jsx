@@ -348,7 +348,7 @@ function Dashboard({ leads, deals, custs, go, onNewDeal, showToast, theme, setTh
     <div className="ag-flow">
       <header className="ag-head">
         <img src={BULL_LOGO} className="ag-logo" alt="" />
-        <div style={{ flex: 1 }}><div className="ag-title">CRM מכירות · איתי</div><div className="ag-sub">{BIZ} — ניהול לידים ועסקאות</div></div>
+        <div style={{ flex: 1 }}><div className="ag-title">מערכת CRM</div><div className="ag-sub">{BIZ} — ניהול לידים ועסקאות</div></div>
         <div className="ag-links">
           <a className="ag-site" href={HG_SITE} target="_blank" rel="noreferrer" title="heavygurad.com">
             <img src={BULL_LOGO} alt="" /><span>האתר</span>
@@ -852,6 +852,17 @@ function CustomerForm({ initial, onClose, onSave }) {
 
 /* ============================ Digital assistant (rule-based, no AI) ============================ */
 const daysSince = (iso) => { if (!iso) return 9999; const d = (Date.now() - new Date(iso).getTime()) / 86400000; return isNaN(d) ? 9999 : Math.floor(d); };
+const MOTIVAT = [
+  "💪 איתי, אתה עושה עבודה מדהימה — כל שיחה מקרבת אותך לסגירה!",
+  "🎯 כל 'לא' שאתה מקבל הוא צעד אחד לקראת ה'כן' הבא. תמשיך!",
+  "🏆 אנשים שמתמידים סוגרים עסקאות — ואתה מתמיד, איתי.",
+  "🚀 המספרים שלך מדברים — המשך ככה ואתה סוגר חודש מצוין!",
+  "📈 כל מעקב שאתה עושה הוא השקעה שחוזרת אליך. תמשיך!",
+  "⭐ איתי, שתדע שאתה בקצב מנצח. המשך לדחוף!",
+  "🔥 מכירות זה ספורט — וה-training שלך עובד. קדימה!",
+  "✨ כל ליד הוא הזדמנות. עם הגישה שלך, רובם הופכים ללקוחות.",
+];
+const motivatRand = () => MOTIVAT[Math.floor(Math.random() * MOTIVAT.length)];
 function assistantReply(q, ctx) {
   const { leads, deals, custs, go, onNewDeal } = ctx;
   const s = (q || "").trim().toLowerCase();
@@ -863,16 +874,17 @@ function assistantReply(q, ctx) {
   const hot = leads.filter((l) => ["בתהליך", "הצעה נשלחה"].includes(l.crmStatus));
   const has = (...w) => w.some((x) => s.includes(x));
 
-  if (!s || has("עזרה", "פקודות", "מה אתה", "?")) return { text: "אני העוזר של איתי 🤝 נסה: \"מעקבים להיום\", \"הצעות שנשלחו\", \"לידים חמים\", \"עסקאות פתוחות\", \"סיכום\", \"פתח מסלול\", \"הצעת מחיר חדשה\"." };
-  if (has("נסח", "הודעה", "וואטסאפ", "טקסט", "מה לכתוב")) return { text: `הצעה להודעת מעקב:\n"שלום, כאן איתי מ-${BIZ} 🛡️ רציתי לבדוק אם הספקתם לעבור על ההצעה למערכות המיגון לרכב. אשמח לענות על כל שאלה ולהתאים לכם פתרון. מתי נוח לדבר?"\n(להצעות חכמות ומותאמות — הוסף מפתח Groq חינמי בהגדרות.)` };
-  if (has("מעקב", "לבדוק", "היום", "תזכור")) return { text: followups.length ? `יש ${followups.length} לידים שמחכים למעקב (3+ ימים ללא פנייה). הבולטים: ${followups.slice(0, 3).map((l) => l.n).join(" · ")}.` : "אין מעקבים דחופים כרגע — כל הכבוד! 👏", action: { label: "פתח לידים", run: () => go("leads") } };
-  if (has("נשלח", "הצעות") || (has("הצעה") && !has("חדש", "צור"))) return { text: sent.length ? `${sent.length} הצעות מחיר ממתינות לתשובה. שווה לחזור אליהן: ${sent.slice(0, 3).map((l) => l.n).join(" · ")}.` : "אין כרגע הצעות שנשלחו וממתינות.", action: { label: "פתח לידים", run: () => go("leads") } };
-  if (has("חם", "לוהט")) return { text: hot.length ? `${hot.length} לידים חמים (בתהליך/הצעה נשלחה). תעדף אותם: ${hot.slice(0, 4).map((l) => l.n).join(" · ")}.` : "אין כרגע לידים חמים.", action: { label: "פתח לידים", run: () => go("leads") } };
-  if (has("עסקא", "פתוח", "צבר")) return { text: `${open.length} עסקאות פתוחות בשווי ${ils(openVal)}. נסגרו החודש: ${wonMonth.length}.`, action: { label: "פתח עסקאות", run: () => go("deals") } };
-  if (has("לקוח")) return { text: `יש לך ${custs.length} לקוחות פעילים.`, action: { label: "פתח לקוחות", run: () => go("custs") } };
-  if (has("מסלול", "מפה", "נסיע", "פגיש")) return { text: "פותח את מפת העסקים — בחר עיר ואבנה לך מסלול פגישות יעיל. 🗺️", action: { label: "פתח מפה", run: () => go("map") } };
-  if (has("הצעת מחיר", "חדש", "צור", "בנה הצעה")) { onNewDeal && onNewDeal(); return { text: "פתחתי עסקה חדשה — בחר פריטים מהמחירון והוסף הנחה אם צריך. 📝" }; }
-  if (has("סיכום", "דוח", "מצב", "בוקר טוב", "מה המצב")) return { text: `סיכום: ${leads.length.toLocaleString()} לידים · ${followups.length} מעקבים להיום · ${sent.length} הצעות ממתינות · ${open.length} עסקאות פתוחות (${ils(openVal)}) · ${custs.length} לקוחות.` };
+  const motivat = () => Math.random() < 0.28 ? "\n\n" + motivatRand() : "";
+  if (!s || has("עזרה", "פקודות", "מה אתה", "?")) return { text: "איתי, אני העוזר האישי שלך 🤝 נסה: \"מעקבים להיום\", \"הצעות שנשלחו\", \"לידים חמים\", \"עסקאות פתוחות\", \"סיכום\", \"פתח מסלול\", \"הצעת מחיר חדשה\"." };
+  if (has("נסח", "הודעה", "וואטסאפ", "טקסט", "מה לכתוב")) return { text: `איתי, הנה הצעה להודעת מעקב:\n"שלום, כאן איתי מ-${BIZ} 🛡️ רציתי לבדוק אם הספקתם לעבור על ההצעה למערכות המיגון לרכב. אשמח לענות על כל שאלה ולהתאים לכם פתרון. מתי נוח לדבר?"\n(להצעות חכמות ומותאמות — הוסף מפתח Groq חינמי בהגדרות.)` };
+  if (has("מעקב", "לבדוק", "היום", "תזכור")) return { text: (followups.length ? `איתי, יש ${followups.length} לידים שמחכים למעקב (3+ ימים ללא פנייה). הבולטים: ${followups.slice(0, 3).map((l) => l.n).join(" · ")}.` : "אין מעקבים דחופים כרגע — כל הכבוד, איתי! 👏") + motivat(), action: { label: "פתח לידים", run: () => go("leads") } };
+  if (has("נשלח", "הצעות") || (has("הצעה") && !has("חדש", "צור"))) return { text: (sent.length ? `איתי, ${sent.length} הצעות מחיר ממתינות לתשובה. שווה לחזור אליהן: ${sent.slice(0, 3).map((l) => l.n).join(" · ")}.` : "אין כרגע הצעות שנשלחו וממתינות.") + motivat(), action: { label: "פתח לידים", run: () => go("leads") } };
+  if (has("חם", "לוהט")) return { text: (hot.length ? `איתי, יש לך ${hot.length} לידים חמים (בתהליך/הצעה נשלחה). תעדף אותם: ${hot.slice(0, 4).map((l) => l.n).join(" · ")}.` : "אין כרגע לידים חמים.") + motivat(), action: { label: "פתח לידים", run: () => go("leads") } };
+  if (has("עסקא", "פתוח", "צבר")) return { text: `איתי, ${open.length} עסקאות פתוחות בשווי ${ils(openVal)}. נסגרו החודש: ${wonMonth.length}.` + motivat(), action: { label: "פתח עסקאות", run: () => go("deals") } };
+  if (has("לקוח")) return { text: `איתי, יש לך ${custs.length} לקוחות פעילים.` + motivat(), action: { label: "פתח לקוחות", run: () => go("custs") } };
+  if (has("מסלול", "מפה", "נסיע", "פגיש")) return { text: "פותח את מפת העסקים — בחר עיר ואבנה לך מסלול פגישות יעיל, איתי. 🗺️", action: { label: "פתח מפה", run: () => go("map") } };
+  if (has("הצעת מחיר", "חדש", "צור", "בנה הצעה")) { onNewDeal && onNewDeal(); return { text: "פתחתי עסקה חדשה, איתי — בחר פריטים מהמחירון והוסף הנחה אם צריך. 📝" }; }
+  if (has("סיכום", "דוח", "מצב", "בוקר טוב", "מה המצב")) return { text: `איתי, הנה הסיכום שלך: ${leads.length.toLocaleString()} לידים · ${followups.length} מעקבים להיום · ${sent.length} הצעות ממתינות · ${open.length} עסקאות פתוחות (${ils(openVal)}) · ${custs.length} לקוחות.` + motivat() };
   return { text: "לא הבנתי את הפקודה. כתוב \"עזרה\" כדי לראות מה אני יודע לעשות. (טיפ: עם מפתח Groq חינמי אני הופך ל-AI מלא.)" };
 }
 const ASSIST_QUICK = ["מעקבים להיום", "הצעות שנשלחו", "לידים חמים", "עסקאות פתוחות", "סיכום", "פתח מסלול"];
@@ -890,7 +902,7 @@ function assistSystem({ leads, deals, custs }) {
   const sent = leads.filter((l) => l.crmStatus === "הצעה נשלחה").length;
   const hot = leads.filter((l) => ["בתהליך", "הצעה נשלחה"].includes(l.crmStatus)).length;
   const pl = loadHgPricelist().map((p) => `${p.name} ₪${p.price}`).join(", ");
-  return `אתה העוזר האישי החכם של איתי — איש מכירות בכיר ב-${BIZ} (מערכות מיגון, איתור ובטיחות לרכבים כבדים: איתוראן, מצלמות רוורס, מסכים חכמים, פוינטר רב-קודן וכו'). דבר עברית טבעית, קצרה וממוקדת מכירות, בטון מקצועי, אנרגטי וחם. אתה עוזר ב: ניסוח הודעות מעקב/וואטסאפ ללקוח, טיפול בהתנגדויות מחיר, ניסוח הצעות ותמחור, תעדוף לידים, בניית תוכנית יום, וטיפים לסגירת עסקאות. כשרלוונטי תן צעד פעולה קונקרטי אחד.
+  return `אתה העוזר האישי החכם של איתי — איש מכירות בכיר ב-${BIZ} (מערכות מיגון, איתור ובטיחות לרכבים כבדים: איתוראן, מצלמות רוורס, מסכים חכמים, פוינטר רב-קודן וכו'). פנה אליו תמיד בשם "איתי". דבר עברית טבעית, קצרה וממוקדת מכירות, בטון מקצועי, אנרגטי וחם. אתה עוזר ב: ניסוח הודעות מעקב/וואטסאפ ללקוח, טיפול בהתנגדויות מחיר, ניסוח הצעות ותמחור, תעדוף לידים, בניית תוכנית יום, וטיפים לסגירת עסקאות. כשרלוונטי תן צעד פעולה קונקרטי אחד. פעם בכמה תשובות (לא בכל אחת), סיים במשפט קצר ומחזק למוטיבציה כדי לעודד את איתי — כמו מאמן מכירות שמאמין בו.
 היום ${todayISO()}. נתוני ה-CRM החיים של איתי: ${leads.length.toLocaleString()} לידים, ${fu} מעקבים להיום, ${sent} הצעות שנשלחו וממתינות, ${hot} לידים חמים, ${open.length} עסקאות פתוחות בשווי ${ils(openVal)}, נסגרו החודש ${wonMonth.length}, ${custs.length} לקוחות.
 מחירון Heavy Guard: ${pl}.
 אם המשתמש מבקש לנווט במערכת, הוסף בסוף התשובה תג מתאים (ואל תזכיר אותו בטקסט): [[GO:home]] לבקרה, [[GO:leads]] ללידים, [[GO:deals]] לעסקאות, [[GO:custs]] ללקוחות, [[GO:map]] למפה/מסלולים, [[NEWDEAL]] לפתיחת הצעת מחיר חדשה.`;
@@ -923,8 +935,8 @@ async function askGroqChat(system, history, user) {
 function AssistantPanel({ leads, deals, custs, go, onNewDeal, showToast }) {
   const ai = hasAI();
   const welcome = ai
-    ? "שלום איתי 👋 אני העוזר החכם שלך (AI). אני מכיר את נתוני ה-CRM שלך — בקש ממני לנסח הודעת מעקב, לטפל בהתנגדות מחיר, לתעדף לידים, לבנות תוכנית יום או כל שאלת מכירות."
-    : "שלום איתי 👋 אני העוזר הדיגיטלי שלך. כרגע אני במצב פקודות מהירות. כדי לפתוח AI חכם וחינמי — הוסף מפתח Groq בהגדרות של Alpha (חינם, בלי כרטיס). כתוב \"עזרה\" לפקודות.";
+    ? "שלום איתי! 👋 אני העוזר החכם שלך. אני מכיר את נתוני ה-CRM שלך בזמן אמת — בקש ממני לנסח הודעת מעקב, לטפל בהתנגדות מחיר, לתעדף לידים, לבנות תוכנית יום או כל שאלת מכירות. " + motivatRand()
+    : "שלום איתי! 👋 אני העוזר האישי שלך. כרגע אני במצב פקודות מהירות — כדי לפתוח AI חכם וחינמי הוסף מפתח Groq בהגדרות של Alpha. כתוב \"עזרה\" לפקודות. " + motivatRand();
   const [log, setLog] = useState([{ from: "bot", text: welcome }]);
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
@@ -1344,6 +1356,64 @@ function CloudSettings({ onClose, showToast }) {
   );
 }
 
+/* PDF printout for a received customer Samsonix form (no card details stored) */
+function printInboxSam(s) {
+  const today = dmy(todayISO());
+  const planLabel = (SAM_PLANS.find((p) => p.id === s.plan) || {}).label || (s.plan || "").toUpperCase();
+  const win = window.open("", "_blank");
+  if (!win) return false;
+  win.document.write(`<!DOCTYPE html><html dir="rtl" lang="he"><head><meta charset="UTF-8">
+<title>טופס סמסוניקס — ${s.fullName || ""}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Arial,sans-serif;font-size:13px;color:#1a1a1a;background:#fff;padding:18px}
+  .hdr{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #1E9A60;padding-bottom:10px;margin-bottom:14px}
+  .logo{font-size:22px;font-weight:900;color:#1E9A60;letter-spacing:-1px}.sub{font-size:11px;color:#555;margin-top:2px}
+  .date{text-align:left;font-size:12px;color:#555}
+  h2{font-size:16px;font-weight:700;color:#1E9A60;margin-bottom:10px}
+  .intro{font-size:12px;color:#444;line-height:1.6;margin-bottom:12px;background:#f0faf5;border-right:3px solid #1E9A60;padding:8px 10px;border-radius:4px}
+  table{width:100%;border-collapse:collapse;margin-bottom:14px}
+  td{padding:6px 8px;border-bottom:1px solid #e8e8e8;font-size:12.5px}
+  td:first-child{font-weight:700;color:#444;width:35%;background:#f9faf9}
+  .band{background:#1E9A60;color:#fff;font-size:11px;font-weight:700;padding:5px 8px;border-radius:3px;margin:10px 0 6px}
+  .sig-box{margin-top:14px;display:flex;justify-content:space-between;align-items:flex-end;border-top:1px solid #ccc;padding-top:10px}
+  .sig img{max-width:200px;max-height:80px}
+  .note{background:#fff8e1;border:1px solid #e6b800;border-radius:4px;padding:7px 10px;font-size:11px;color:#7a5f00;margin:10px 0}
+  .ft{margin-top:16px;border-top:1px solid #ccc;padding-top:8px;font-size:10.5px;color:#777;text-align:center;line-height:1.7}
+  @media print{@page{margin:8mm;size:A4}}
+</style></head><body>
+<div class="hdr"><div><div class="logo">⚡ <em>samsonix</em></div><div class="sub">ENJOY YOUR DRIVE — Heavy Guard</div></div><div class="date">תאריך: <b>${s.savedAt || today}</b><br><span>DVR Subscription Agreement</span></div></div>
+<h2>שימוש בשרת לצפייה ב-DVR — טופס מנוי</h2>
+<p class="intro">הלקוח מילא וחתם על טופס זה דיגיטלית. פרטי האשראי הועברו ישירות לנציג בוואטסאפ ואינם מאוחסנים במערכת.</p>
+<div class="band">פרטי לקוח</div>
+<table>
+  <tr><td>שם מלא</td><td>${s.fullName || ""}</td></tr>
+  <tr><td>ת.ז</td><td>${s.idNum || ""}</td></tr>
+  <tr><td>טלפון</td><td dir="ltr">${s.phone || ""}</td></tr>
+  <tr><td>אימייל</td><td dir="ltr">${s.email || ""}</td></tr>
+  <tr><td>שם חברה</td><td>${s.company || ""}</td></tr>
+  <tr><td>ח.פ / ע.מ</td><td>${s.bizNum || ""}</td></tr>
+</table>
+<div class="band">פרטי מנוי ורכב</div>
+<table>
+  <tr><td>חבילה</td><td>${planLabel}</td></tr>
+  <tr><td>הקלטת קול</td><td>${s.audio === "with" ? "כן" : "לא"}</td></tr>
+  <tr><td>BSD</td><td>${s.bsd ? "כן — BSD + 4 מצלמות" : "לא"}</td></tr>
+  <tr><td>רכב ראשי</td><td dir="ltr">${s.veh1 || ""} ${s.veh1Type || ""}</td></tr>
+  ${s.veh2 ? `<tr><td>רכב שני</td><td dir="ltr">${s.veh2} ${s.veh2Type || ""}</td></tr>` : ""}
+</table>
+<div class="note">🔒 פרטי כרטיס האשראי לא נשמרו במערכת — הם נשלחו ישירות לנציג בוואטסאפ בהתאם לדרישות אבטחה.</div>
+<div class="sig-box">
+  <div style="font-size:12px;line-height:1.7"><b>בברכה,</b><br>Heavy Guard · שיווק ומכירות<br><span style="color:#888">Samsonix · info@samsonix.com · 03-5662259</span></div>
+  <div style="text-align:center">${s.sigDataUrl ? `<img src="${s.sigDataUrl}" alt="חתימה" />` : ""}<div style="font-size:11px;color:#555;margin-top:3px">חתימת הלקוח: <b>${s.fullName || ""}</b> · ${s.savedAt || today}</div></div>
+</div>
+<div class="ft">St. Hametzuda 31, Azur, Israel · טל: 03-5662259 · www.samsonix.com</div>
+<script>window.addEventListener('load',()=>setTimeout(()=>window.print(),400));<\/script>
+</body></html>`);
+  win.document.close();
+  return true;
+}
+
 /* ============================ Itai's inbox: customer-submitted forms ============================ */
 function SamInbox({ showToast }) {
   const [items, setItems] = useState([]);
@@ -1377,7 +1447,11 @@ function SamInbox({ showToast }) {
               {view.sigDataUrl && <img src={view.sigDataUrl} alt="חתימה" style={{ maxWidth: 200, border: "1px solid var(--s7)", borderRadius: 8, marginTop: 8 }} />}
               <div className="ag-cat-note" style={{ marginTop: 10 }}>🔒 פרטי האשראי לא נשמרו במערכת — הלקוח שלח אותם ישירות לוואטסאפ שלך.</div>
             </div>
-            <div className="ag-sheet-foot"><button className="ag-btn ghost" onClick={() => { navigator.clipboard?.writeText(`${view.fullName} · ${view.idNum} · ${view.phone} · ${(view.plan||"").toUpperCase()} · ${view.veh1}`); showToast("הפרטים הועתקו"); }}><Copy size={15} /> העתק</button><button className="ag-btn" onClick={() => setView(null)}>סגור</button></div>
+            <div className="ag-sheet-foot">
+              <button className="ag-btn ghost" onClick={() => { navigator.clipboard?.writeText(`${view.fullName} · ${view.idNum} · ${view.phone} · ${(view.plan||"").toUpperCase()} · ${view.veh1}`); showToast("הפרטים הועתקו"); }}><Copy size={15} /> העתק</button>
+              <button className="ag-btn ghost" onClick={() => { const ok = printInboxSam(view); if (!ok) showToast("אפשר חלונות קופצים בדפדפן"); }}><FileText size={15} /> PDF</button>
+              <button className="ag-btn" onClick={() => setView(null)}>סגור</button>
+            </div>
           </div>
         </div>
       )}
