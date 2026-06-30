@@ -3487,3 +3487,272 @@ body.pokeball-capturing .char-ambient { opacity:0; transition:opacity .3s; }
   /* Open-camera live video — position: cover, face at top */
   .gesture-live-video { object-position: center 20%; }
 }
+
+/* ╔══════════════════════════════════════════════════════════════════════╗
+   ║   ALPHA OS — FUTURISTIC LUXURY COMMAND CENTER v2                    ║
+   ║   Overrides applied last → always win                               ║
+   ╚══════════════════════════════════════════════════════════════════════╝ */
+
+/* ── Animated constellation grid ─────────────────────────────────────── */
+.app::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    linear-gradient(rgba(218,165,32,.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(218,165,32,.035) 1px, transparent 1px);
+  background-size: 72px 72px;
+  animation: gridDrift 60s linear infinite;
+  mask-image: radial-gradient(ellipse 90% 90% at 50% 45%, black 20%, transparent 75%);
+  -webkit-mask-image: radial-gradient(ellipse 90% 90% at 50% 45%, black 20%, transparent 75%);
+}
+@keyframes gridDrift {
+  from { background-position: 0 0, 0 0; }
+  to   { background-position: 72px 72px, 72px 72px; }
+}
+
+/* ── Scanline overlay — more cinematic ───────────────────────────────── */
+body::after {
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 3px,
+    rgba(218,165,32,.014) 3px,
+    rgba(218,165,32,.014) 4px
+  ) !important;
+  z-index: 999 !important;
+}
+
+/* ── Chips — sharper hover glow ──────────────────────────────────────── */
+.chip:hover {
+  background: rgba(218,165,32,.14) !important;
+  border-color: rgba(218,165,32,.5) !important;
+  box-shadow:
+    0 0 0 1px rgba(218,165,32,.22),
+    0 0 22px rgba(218,165,32,.18),
+    0 0 44px rgba(218,165,32,.07),
+    0 8px 30px rgba(0,0,0,.35),
+    inset 0 1px 0 rgba(255,255,255,.1) !important;
+  transform: translateY(-3px) scale(1.06) !important;
+}
+
+/* ── Panels — animated breathing border glow ─────────────────────────── */
+.left-panel {
+  border: 1px solid rgba(218,165,32,.2) !important;
+  box-shadow:
+    0 0 0 1px rgba(218,165,32,.07),
+    0 0 35px rgba(218,165,32,.06),
+    0 8px 40px rgba(0,0,0,.55),
+    inset 0 1px 0 rgba(255,255,255,.07) !important;
+  animation: panelBreath 7s ease-in-out infinite alternate !important;
+}
+.right-panel {
+  border: 1px solid rgba(218,165,32,.18) !important;
+  box-shadow:
+    0 0 0 1px rgba(218,165,32,.06),
+    0 0 30px rgba(218,165,32,.05),
+    0 8px 40px rgba(0,0,0,.5),
+    inset 0 1px 0 rgba(255,255,255,.06) !important;
+  animation: panelBreath 7s ease-in-out infinite alternate !important;
+  animation-delay: -3.5s !important;
+}
+@keyframes panelBreath {
+  from { box-shadow: 0 0 0 1px rgba(218,165,32,.06), 0 0 20px rgba(218,165,32,.04), 0 8px 40px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.06); }
+  to   { box-shadow: 0 0 0 1px rgba(218,165,32,.14), 0 0 50px rgba(218,165,32,.12), 0 12px 60px rgba(0,0,0,.65), inset 0 1px 0 rgba(255,255,255,.1); }
+}
+
+/* ── Mac dock — elevated neon underline ──────────────────────────────── */
+.mac-dock {
+  border: 1px solid rgba(218,165,32,.22) !important;
+  box-shadow:
+    0 -2px 40px rgba(218,165,32,.1),
+    0 16px 60px rgba(0,0,0,.55),
+    inset 0 1px 0 rgba(255,255,255,.09),
+    inset 0 -1px 0 rgba(0,0,0,.18) !important;
+  animation: dockGlow 5s ease-in-out infinite alternate !important;
+}
+@keyframes dockGlow {
+  from { box-shadow: 0 -2px 30px rgba(218,165,32,.08), 0 16px 60px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.08); }
+  to   { box-shadow: 0 -2px 55px rgba(218,165,32,.18), 0 16px 60px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.1); }
+}
+
+/* ── Dock items — bounce + glow ──────────────────────────────────────── */
+.dock-item:hover {
+  background: rgba(218,165,32,.12) !important;
+  border-color: rgba(218,165,32,.25) !important;
+  transform: translateY(-7px) scale(1.14) !important;
+  box-shadow: 0 6px 28px rgba(218,165,32,.14), 0 0 24px rgba(218,165,32,.07) !important;
+}
+.dock-item.active {
+  background: rgba(218,165,32,.1) !important;
+  border-color: rgba(218,165,32,.28) !important;
+  box-shadow: 0 0 22px rgba(218,165,32,.1), inset 0 1px 0 rgba(255,255,255,.07) !important;
+}
+
+/* ── AI message — holographic tinted bubble ──────────────────────────── */
+.turn.al .txt {
+  color: var(--white-glow) !important;
+  background: linear-gradient(
+    135deg,
+    rgba(218,165,32,.07) 0%,
+    rgba(255,200,100,.04) 50%,
+    rgba(218,165,32,.05) 100%
+  ) !important;
+  border-left: 2px solid rgba(218,165,32,.4) !important;
+  box-shadow: 0 0 24px rgba(218,165,32,.05), inset 0 1px 0 rgba(255,255,255,.05) !important;
+  padding: 10px 14px !important;
+  border-radius: 0 14px 14px 14px !important;
+  backdrop-filter: blur(4px) !important;
+  position: relative !important;
+}
+.turn.al .txt::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 0 14px 14px 14px;
+  background: linear-gradient(135deg, rgba(255,255,255,.03) 0%, transparent 50%);
+  pointer-events: none;
+}
+
+/* ── Input pill — vivid focus ring ───────────────────────────────────── */
+.pill {
+  border: 1px solid rgba(218,165,32,.14) !important;
+  transition: border-color .3s ease, box-shadow .35s ease !important;
+}
+.pill:focus-within {
+  border-color: rgba(218,165,32,.55) !important;
+  box-shadow:
+    0 0 0 4px rgba(218,165,32,.09),
+    0 0 35px rgba(218,165,32,.12),
+    0 4px 20px rgba(0,0,0,.22),
+    inset 0 1px 0 rgba(255,255,255,.07) !important;
+}
+
+/* ── Send button — vivid gold pulse ──────────────────────────────────── */
+.send {
+  background: linear-gradient(135deg, #b8820a, #daa520, #f8ead0, #daa520, #b8820a) !important;
+  background-size: 300% 300% !important;
+  box-shadow: 0 4px 22px rgba(218,165,32,.35), 0 0 0 1px rgba(218,165,32,.2), inset 0 1px 0 rgba(255,255,255,.28) !important;
+  animation: sendShimmer 3.5s ease-in-out infinite !important;
+}
+.send:hover {
+  box-shadow: 0 6px 35px rgba(218,165,32,.55), 0 0 55px rgba(218,165,32,.22), inset 0 1px 0 rgba(255,255,255,.35) !important;
+  transform: scale(1.12) !important;
+}
+
+/* ── FAB buttons — flowing conic sweep ───────────────────────────────── */
+.hg-fab {
+  border: 1px solid rgba(218,165,32,.26) !important;
+  box-shadow:
+    0 4px 22px rgba(0,0,0,.45),
+    0 0 0 1px rgba(218,165,32,.08),
+    inset 0 1px 0 rgba(255,255,255,.07) !important;
+  backdrop-filter: blur(40px) saturate(2) !important;
+  overflow: hidden !important;
+}
+.hg-fab:hover {
+  border-color: rgba(218,165,32,.6) !important;
+  box-shadow:
+    0 10px 44px rgba(218,165,32,.24),
+    0 0 0 1px rgba(218,165,32,.2),
+    0 0 70px rgba(218,165,32,.09),
+    inset 0 1px 0 rgba(255,255,255,.12) !important;
+  transform: translateY(-5px) scale(1.04) !important;
+}
+.trade-fab:hover {
+  box-shadow: 0 10px 44px rgba(218,185,100,.3), 0 0 70px rgba(218,185,100,.1), inset 0 1px 0 rgba(255,255,255,.12) !important;
+}
+.mkt-fab:hover {
+  box-shadow: 0 10px 44px rgba(255,90,70,.28), 0 0 70px rgba(255,80,60,.1), inset 0 1px 0 rgba(255,255,255,.12) !important;
+}
+
+/* ── Settings card — elevated glass ──────────────────────────────────── */
+.card {
+  border: 1px solid rgba(218,165,32,.22) !important;
+  box-shadow:
+    0 0 0 1px rgba(218,165,32,.08),
+    0 0 70px rgba(218,165,32,.07),
+    0 28px 90px rgba(0,0,0,.6),
+    inset 0 1px 0 rgba(255,255,255,.09),
+    inset 0 0 60px rgba(218,165,32,.018) !important;
+}
+.card h2 {
+  background: linear-gradient(135deg, #c8920a, #daa520, #ffe082, #daa520, #c8920a) !important;
+  background-size: 300% 100% !important;
+  -webkit-background-clip: text !important; background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  animation: logoShimmer 5s ease-in-out infinite !important;
+}
+.card input:focus, .card select:focus {
+  border-color: rgba(218,165,32,.35) !important;
+  box-shadow: 0 0 0 3px rgba(218,165,32,.07), 0 0 16px rgba(218,165,32,.08), inset 0 1px 3px rgba(0,0,0,.1) !important;
+}
+
+/* ── HUD cards — deeper glass ────────────────────────────────────────── */
+.hud-card {
+  background: linear-gradient(160deg, rgba(22,17,9,.8), rgba(10,8,4,.6)) !important;
+  border: 1px solid rgba(228,188,99,.32) !important;
+  box-shadow: 0 4px 24px rgba(0,0,0,.55), 0 0 40px rgba(228,188,99,.06), inset 0 1px 0 rgba(255,255,255,.06) !important;
+}
+
+/* ── HUD shortcut rail — glassy pill glow ────────────────────────────── */
+.hud-sc {
+  background: linear-gradient(135deg, rgba(247,232,192,.2), rgba(228,188,99,.12)) !important;
+  border: 1px solid rgba(228,188,99,.5) !important;
+  box-shadow: 0 2px 12px rgba(0,0,0,.3), 0 0 16px rgba(228,188,99,.06) !important;
+  transition: all .3s cubic-bezier(.34,1.56,.64,1) !important;
+}
+.hud-sc:hover {
+  background: linear-gradient(135deg, rgba(247,232,192,.35), rgba(228,188,99,.22)) !important;
+  border-color: #F7E8C0 !important;
+  box-shadow: 0 4px 22px rgba(0,0,0,.35), 0 0 28px rgba(228,188,99,.14) !important;
+  transform: translateY(-3px) scale(1.03) !important;
+}
+
+/* ── Brand logo — stronger shimmer ───────────────────────────────────── */
+.topL .wm {
+  background: linear-gradient(135deg, #b8820a, #daa520, #ffe082, #f5d060, #daa520, #b8820a) !important;
+  background-size: 400% 100% !important;
+  -webkit-background-clip: text !important; background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  filter: drop-shadow(0 0 28px rgba(255,210,80,.45)) !important;
+  animation: logoShimmer 5s ease-in-out infinite !important;
+}
+
+/* ── Mic button active — vivid pulse ─────────────────────────────────── */
+.mic.on {
+  box-shadow: 0 0 24px rgba(255,93,115,.45), 0 0 50px rgba(255,93,115,.2) !important;
+  animation: pulse-mic 1.5s ease-in-out infinite !important;
+}
+@keyframes pulse-mic {
+  0%,100% { box-shadow: 0 0 20px rgba(255,93,115,.4), 0 0 40px rgba(255,93,115,.15); }
+  50%      { box-shadow: 0 0 36px rgba(255,93,115,.65), 0 0 70px rgba(255,93,115,.3); }
+}
+
+/* ── Toggle switches — goldGlow ──────────────────────────────────────── */
+.card .tgl:checked {
+  box-shadow: 0 0 14px rgba(218,165,32,.4) !important;
+}
+
+/* ── State label — sharper text glow ────────────────────────────────── */
+.state {
+  text-shadow: 0 0 18px rgba(255,200,80,.5), 0 0 36px rgba(218,165,32,.25) !important;
+  letter-spacing: 5px !important;
+}
+
+/* ── AI node dots — brighter ─────────────────────────────────────────── */
+.ai-node-dot {
+  box-shadow: 0 0 14px rgba(218,165,32,.8), 0 0 30px rgba(218,165,32,.3) !important;
+}
+
+/* ── Mood color options ───────────────────────────────────────────────── */
+.mood-opt:hover {
+  border-color: var(--gold) !important;
+  box-shadow: 0 0 16px var(--glass-border) !important;
+  transform: scale(1.04);
+}
+.mood-opt.on {
+  box-shadow: 0 0 18px var(--glass-border), inset 0 1px 0 rgba(255,255,255,.07) !important;
+}
