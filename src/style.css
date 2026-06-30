@@ -1841,6 +1841,18 @@ body::after {
   box-shadow: 0 6px 30px rgba(218,185,100,.2), inset 0 1px 0 rgba(255,255,255,.08);
 }
 .trade-fab svg { filter: drop-shadow(0 0 6px rgba(218,185,100,.4)); }
+.mkt-fab {
+  background: linear-gradient(135deg, rgba(255,100,80,.12), rgba(255,50,50,.06));
+  border-color: rgba(255,90,70,.35);
+  color: #ff7f6b;
+  box-shadow: 0 4px 20px rgba(255,80,60,.1), inset 0 1px 0 rgba(255,255,255,.05);
+}
+.mkt-fab:hover {
+  background: linear-gradient(135deg, rgba(255,100,80,.22), rgba(255,50,50,.12));
+  border-color: rgba(255,90,70,.6);
+  box-shadow: 0 6px 30px rgba(255,80,60,.22), inset 0 1px 0 rgba(255,255,255,.08);
+}
+.mkt-fab svg { filter: drop-shadow(0 0 6px rgba(255,80,60,.5)); }
 
 /* AI capability nodes overlay */
 .ai-nodes {

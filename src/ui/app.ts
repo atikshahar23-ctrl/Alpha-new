@@ -261,6 +261,10 @@ export function mountApp(root: HTMLElement) {
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M17 11l2 2 4-4"/></svg>
             <span>CRM מכירות · איתי</span>
           </a>
+          <a class="hud-sc" id="hudMarketing" href="/Alpha-new/agent.html#marketing" target="_blank" rel="noopener">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 11l19-9-9 19-2-8-8-2z"/></svg>
+            <span>שיווק TikTok · Facebook</span>
+          </a>
           <button class="hud-sc" id="hudFleet" type="button">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 17h13v-5l-2-4H3z"/><circle cx="7" cy="17.5" r="1.6"/><circle cx="17.5" cy="17.5" r="1.6"/><path d="M16 11h3l2 3v2.5h-3"/></svg>
             <span>צי ומבצעים · CONTROL</span>
@@ -487,6 +491,12 @@ export function mountApp(root: HTMLElement) {
               <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>
             </svg>
             <span data-i18n="trading">מסחר</span>
+          </a>
+          <a class="hg-fab mkt-fab" id="mktBtn" href="/Alpha-new/agent.html#marketing" target="_blank" rel="noopener" title="שיווק TikTok · Facebook">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="22" height="22">
+              <path d="M3 11l19-9-9 19-2-8-8-2z"/>
+            </svg>
+            <span>שיווק</span>
           </a>
         </div>
         <div class="bar">

@@ -215,7 +215,14 @@ const ITAI_THEMES = {
 
 /* ============================ Root App ============================ */
 export default function App() {
-  const [tab, setTab] = useState("home");
+  const [tab, setTab] = useState(() => {
+    try {
+      const h = (location.hash || "").replace(/^#/, "");
+      const allowed = ["home","leads","deals","custs","map","showroom","marketing"];
+      if (allowed.includes(h)) return h;
+    } catch {}
+    return "home";
+  });
   const [crm, setCrm] = useState(() => load(K_CRM, {}));
   const [deals, setDeals] = useState(() => load(K_DEALS, []));
   const [custs, setCusts] = useState(() => load(K_CUST, []));
@@ -1855,97 +1862,209 @@ function SamsonixForm({ onClose, showToast }) {
    HeavyGuard Showroom — visual product catalog for customer presentations
    ═══════════════════════════════════════════════════════════════════════════ */
 
-function ProductImg({ cat, size = 80 }) {
-  const g = "rgba(218,165,32,";
-  const s = size, h = size;
-  if (cat?.includes("מסך") || cat?.includes("BSD")) return (
-    <svg width={s} height={h} viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect x="6" y="10" width="68" height="44" rx="5" fill="#0a0a18" stroke={g+"0.7)"} strokeWidth="2.5"/>
-      <rect x="10" y="14" width="60" height="36" rx="3" fill="#111133"/>
-      <rect x="14" y="17" width="52" height="30" rx="2" fill="#0d0d28"/>
-      <rect x="16" y="19" width="48" height="26" rx="2" fill="#0a1428"/>
-      <rect x="18" y="21" width="12" height="8" rx="1.5" fill={g+"0.18)"}/>
-      <rect x="32" y="21" width="15" height="8" rx="1.5" fill={g+"0.12)"}/>
-      <rect x="49" y="21" width="13" height="8" rx="1.5" fill={g+"0.08)"}/>
-      <rect x="18" y="31" width="44" height="3" rx="1" fill={g+"0.1)"}/>
-      <rect x="18" y="36" width="30" height="3" rx="1" fill={g+"0.07)"}/>
-      <rect x="33" y="54" width="14" height="5" rx="2" fill={g+"0.3)"}/>
-      <rect x="22" y="58" width="36" height="3.5" rx="1.5" fill={g+"0.25)"}/>
-      <circle cx="40" cy="57" r="1.5" fill={g+"0.8)"}/>
+/* ProductImg — per-model accurate SVG illustrations */
+function ProductImg({ id, cat, size = 80 }) {
+  const vb = "0 0 120 90";
+  const w = size * (120/90), h = size;
+  // ── C11 / 12EV — boxy rear camera with sun visor + LED array ──────────────
+  if (id === "C11" || id === "12EV") return (
+    <svg width={w} height={h} viewBox={vb} fill="none">
+      {/* sun visor */}
+      <rect x="22" y="14" width="66" height="8" rx="2" fill="#1a1a1a" stroke="#333" strokeWidth="1"/>
+      <rect x="24" y="16" width="62" height="5" rx="1" fill="#222"/>
+      {/* body */}
+      <rect x="18" y="21" width="74" height="52" rx="4" fill="#1c1c1c" stroke="#444" strokeWidth="1.5"/>
+      <rect x="22" y="25" width="66" height="44" rx="3" fill="#141414"/>
+      {/* mounting bracket right */}
+      <rect x="90" y="30" width="12" height="32" rx="2" fill="#1a1a1a" stroke="#333" strokeWidth="1"/>
+      <circle cx="96" cy="37" r="3" fill="#111" stroke="#444" strokeWidth="1"/>
+      <circle cx="96" cy="55" r="3" fill="#111" stroke="#444" strokeWidth="1"/>
+      {/* LED grid — 3×6 around central lens */}
+      {[28,36,44,52,60,68].map(x=>[31,47].map(y=><circle key={x+"-"+y} cx={x} cy={y} r="2.2" fill="#ddd" opacity="0.85"/>))}
+      {/* center lens */}
+      <circle cx="50" cy="39" r="13" fill="#0a0a0a" stroke="#555" strokeWidth="1.5"/>
+      <circle cx="50" cy="39" r="9" fill="#080808" stroke="#888" strokeWidth="1"/>
+      <circle cx="50" cy="39" r="5.5" fill="#050505"/>
+      <circle cx="47" cy="36" r="2" fill="white" opacity="0.15"/>
+      {/* mounting base bottom */}
+      <rect x="30" y="72" width="50" height="5" rx="2" fill="#1a1a1a" stroke="#333" strokeWidth="1"/>
+      <rect x="38" y="76" width="8" height="8" rx="1" fill="#151515" stroke="#333" strokeWidth="1"/>
+      <rect x="64" y="76" width="8" height="8" rx="1" fill="#151515" stroke="#333" strokeWidth="1"/>
     </svg>
   );
-  if (cat?.includes("דש")) return (
-    <svg width={s} height={h} viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect x="12" y="22" width="56" height="36" rx="8" fill="#0c0c1e" stroke={g+"0.65)"} strokeWidth="2"/>
-      <rect x="16" y="26" width="48" height="28" rx="6" fill="#111133"/>
-      <circle cx="40" cy="40" r="10" fill="#0a0a28" stroke={g+"0.5)"} strokeWidth="1.5"/>
-      <circle cx="40" cy="40" r="6.5" fill="#060614" stroke={g+"0.35)"} strokeWidth="1"/>
-      <circle cx="40" cy="40" r="3" fill="#090920"/>
-      <circle cx="37.5" cy="37.5" r="1.2" fill={g+"0.9)"} opacity="0.6"/>
-      <rect x="17" y="52" width="6" height="2" rx="1" fill={g+"0.5)"}/>
-      <rect x="57" y="52" width="6" height="2" rx="1" fill={g+"0.5)"}/>
-      <rect x="24" y="27" width="4" height="2" rx="1" fill={g+"0.3)"}/>
-      <rect x="52" y="27" width="4" height="2" rx="1" fill={g+"0.3)"}/>
-      <rect x="18" y="56" width="44" height="2" rx="1" fill={g+"0.15)"}/>
+  // ── C500 — slim windshield dash cam with adhesive mount ──────────────────
+  if (id === "C500") return (
+    <svg width={w} height={h} viewBox={vb} fill="none">
+      {/* adhesive mount top — red strip */}
+      <rect x="25" y="18" width="70" height="10" rx="3" fill="#cc2200"/>
+      <rect x="27" y="20" width="66" height="6" rx="2" fill="#ee3311" opacity="0.7"/>
+      {/* main slim body */}
+      <rect x="20" y="27" width="80" height="34" rx="5" fill="#1c1c1c" stroke="#444" strokeWidth="1.5"/>
+      <rect x="24" y="31" width="72" height="26" rx="4" fill="#141414"/>
+      {/* lens — front left area */}
+      <circle cx="45" cy="44" r="11" fill="#0a0a0a" stroke="#555" strokeWidth="1.5"/>
+      <circle cx="45" cy="44" r="7.5" fill="#080808" stroke="#777" strokeWidth="1"/>
+      <circle cx="45" cy="44" r="4.5" fill="#050505"/>
+      <circle cx="42.5" cy="41.5" r="1.8" fill="white" opacity="0.18"/>
+      {/* side connector lines */}
+      <rect x="26" y="39" width="12" height="3" rx="1.5" fill="#333"/>
+      <rect x="72" y="38" width="18" height="4" rx="2" fill="#1a1a1a" stroke="#333" strokeWidth="1"/>
+      <rect x="80" y="36" width="8" height="8" rx="2" fill="#222" stroke="#444" strokeWidth="1"/>
+      {/* bottom edge detail */}
+      <rect x="30" y="59" width="60" height="3" rx="1.5" fill="#222"/>
     </svg>
   );
-  if (cat?.includes("רוורס") || cat?.includes("אחורית")) return (
-    <svg width={s} height={h} viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect x="20" y="28" width="40" height="28" rx="6" fill="#0c0c1e" stroke={g+"0.65)"} strokeWidth="2"/>
-      <rect x="24" y="32" width="32" height="20" rx="4" fill="#111133"/>
-      <circle cx="40" cy="42" r="7.5" fill="#0a0a28" stroke={g+"0.45)"} strokeWidth="1.5"/>
-      <circle cx="40" cy="42" r="4.5" fill="#060614" stroke={g+"0.3)"} strokeWidth="1"/>
-      <circle cx="40" cy="42" r="2" fill="#0a0a20"/>
-      <circle cx="38.5" cy="40.5" r="0.8" fill={g+"0.8)"} opacity="0.7"/>
-      <rect x="25" y="32" width="3" height="3" rx="0.5" fill={g+"0.4)"}/>
-      <rect x="52" y="32" width="3" height="3" rx="0.5" fill={g+"0.4)"}/>
-      <rect x="25" y="49" width="3" height="3" rx="0.5" fill={g+"0.4)"}/>
-      <rect x="52" y="49" width="3" height="3" rx="0.5" fill={g+"0.4)"}/>
-      <rect x="36" y="56" width="8" height="2" rx="1" fill={g+"0.3)"}/>
-      <rect x="8" y="38" width="12" height="4" rx="1" fill={g+"0.2)"} opacity="0.7"/>
-      <rect x="60" y="38" width="12" height="4" rx="1" fill={g+"0.2)"} opacity="0.7"/>
-      {[0,1,2,3,4,5,6,7].map(i=>{
-        const a=(i/8)*Math.PI*2; const r=13;
-        return <circle key={i} cx={40+r*Math.cos(a)} cy={42+r*Math.sin(a)} r="1.2" fill={g+"0.55)"}/>;
-      })}
+  // ── C190 — thin cylinder dual front/rear ─────────────────────────────────
+  if (id === "C190") return (
+    <svg width={w} height={h} viewBox={vb} fill="none">
+      {/* cable at rear right */}
+      <path d="M100 50 Q108 50 110 55 Q112 60 108 62 L95 62" stroke="#333" strokeWidth="3" fill="none"/>
+      {/* ventilated hub/connector body */}
+      <ellipse cx="87" cy="50" rx="12" ry="14" fill="#1a1a1a" stroke="#444" strokeWidth="1.5"/>
+      {[44,48,52,56].map(y=><rect key={y} x="80" y={y} width="14" height="2" rx="1" fill="#111" stroke="#333" strokeWidth="0.5"/>)}
+      {/* adhesive mount top */}
+      <rect x="38" y="26" width="42" height="7" rx="2" fill="#cc2200"/>
+      {/* main slim cylinder body */}
+      <rect x="15" y="32" width="78" height="28" rx="10" fill="#1c1c1c" stroke="#444" strokeWidth="1.5"/>
+      <rect x="19" y="36" width="70" height="20" rx="8" fill="#141414"/>
+      {/* wide-angle lens front left */}
+      <circle cx="30" cy="46" r="11" fill="#0a0a0a" stroke="#666" strokeWidth="1.5"/>
+      <circle cx="30" cy="46" r="7.5" fill="#070707" stroke="#999" strokeWidth="1"/>
+      <circle cx="30" cy="46" r="4.5" fill="#040404"/>
+      <circle cx="27.5" cy="43.5" r="2" fill="white" opacity="0.15"/>
     </svg>
   );
-  if (cat?.includes("צדדית") || cat?.includes("גלגל")) return (
-    <svg width={s} height={h} viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect x="18" y="30" width="44" height="22" rx="11" fill="#0c0c1e" stroke={g+"0.65)"} strokeWidth="2"/>
-      <rect x="22" y="34" width="36" height="14" rx="7" fill="#111133"/>
-      <circle cx="33" cy="41" r="5.5" fill="#0a0a28" stroke={g+"0.5)"} strokeWidth="1.5"/>
-      <circle cx="33" cy="41" r="3" fill="#060614"/>
-      <circle cx="31.8" cy="39.8" r="0.9" fill={g+"0.85)"} opacity="0.65"/>
-      <rect x="42" y="37" width="12" height="2" rx="1" fill={g+"0.3)"}/>
-      <rect x="42" y="41" width="9" height="2" rx="1" fill={g+"0.2)"}/>
-      <rect x="42" y="45" width="11" height="2" rx="1" fill={g+"0.15)"}/>
-      <rect x="36" y="52" width="8" height="3" rx="1.5" fill={g+"0.25)"}/>
-      <rect x="14" y="36" width="4" height="10" rx="2" fill={g+"0.2)"}/>
+  // ── C600 — barrel cam with large Starvis lens + red stripe ──────────────
+  if (id === "C600") return (
+    <svg width={w} height={h} viewBox={vb} fill="none">
+      {/* red accent stripe on top */}
+      <rect x="30" y="18" width="60" height="7" rx="3" fill="#cc2200"/>
+      <rect x="32" y="19" width="56" height="4" rx="2" fill="#ee3311" opacity="0.6"/>
+      {/* main barrel body */}
+      <rect x="28" y="24" width="64" height="44" rx="8" fill="#1c1c1c" stroke="#444" strokeWidth="1.5"/>
+      <rect x="32" y="28" width="56" height="36" rx="6" fill="#141414"/>
+      {/* side mounting slots */}
+      <rect x="20" y="38" width="10" height="8" rx="2" fill="#1a1a1a" stroke="#333" strokeWidth="1"/>
+      <rect x="90" y="38" width="10" height="8" rx="2" fill="#1a1a1a" stroke="#333" strokeWidth="1"/>
+      {/* large Starvis lens center */}
+      <circle cx="60" cy="46" r="16" fill="#0a0a0a" stroke="#666" strokeWidth="2"/>
+      <circle cx="60" cy="46" r="12" fill="#070707" stroke="#888" strokeWidth="1.5"/>
+      <circle cx="60" cy="46" r="8.5" fill="#050505"/>
+      {/* colorful lens rings */}
+      <circle cx="60" cy="46" r="12" fill="none" stroke="#4466ff" strokeWidth="1" opacity="0.4"/>
+      <circle cx="60" cy="46" r="10" fill="none" stroke="#66aaff" strokeWidth="0.8" opacity="0.3"/>
+      <circle cx="60" cy="46" r="8.5" fill="none" stroke="#aa66ff" strokeWidth="0.7" opacity="0.25"/>
+      <circle cx="56.5" cy="42.5" r="3" fill="white" opacity="0.12"/>
     </svg>
   );
-  if (cat?.includes("קדמית")) return (
-    <svg width={s} height={h} viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect x="14" y="25" width="52" height="34" rx="7" fill="#0c0c1e" stroke={g+"0.65)"} strokeWidth="2"/>
-      <rect x="18" y="29" width="44" height="26" rx="5" fill="#111133"/>
-      <circle cx="40" cy="42" r="9" fill="#0a0a28" stroke={g+"0.5)"} strokeWidth="1.5"/>
-      <circle cx="40" cy="42" r="6" fill="#060614" stroke={g+"0.3)"} strokeWidth="1"/>
-      <circle cx="40" cy="42" r="2.5" fill="#0d0d24"/>
-      <circle cx="38" cy="40" r="1" fill={g+"0.8)"} opacity="0.6"/>
-      <rect x="19" y="53" width="8" height="1.5" rx=".75" fill={g+"0.35)"}/>
-      <rect x="53" y="53" width="8" height="1.5" rx=".75" fill={g+"0.35)"}/>
-      <rect x="19" y="30" width="8" height="1.5" rx=".75" fill={g+"0.35)"}/>
-      <rect x="53" y="30" width="8" height="1.5" rx=".75" fill={g+"0.35)"}/>
-      <rect x="37" y="59" width="6" height="2" rx="1" fill={g+"0.25)"}/>
+  // ── R19 / R13 — dome camera on pipe clamp mount ──────────────────────────
+  if (id === "R19" || id === "R13") return (
+    <svg width={w} height={h} viewBox={vb} fill="none">
+      {/* pipe clamp bottom */}
+      <rect x="45" y="68" width="30" height="12" rx="2" fill="#1a1a1a" stroke="#333" strokeWidth="1"/>
+      <circle cx="60" cy="77" r="5" fill="#111" stroke="#444" strokeWidth="1.5"/>
+      {/* mount bracket arms */}
+      <rect x="42" y="55" width="12" height="18" rx="2" fill="#1c1c1c" stroke="#444" strokeWidth="1"/>
+      <rect x="66" y="55" width="12" height="18" rx="2" fill="#1c1c1c" stroke="#444" strokeWidth="1"/>
+      {/* dome body */}
+      <circle cx="60" cy="42" r="28" fill="#1c1c1c" stroke="#444" strokeWidth="1.5"/>
+      <circle cx="60" cy="42" r="24" fill="#141414"/>
+      {/* LED ring — 11 LEDs */}
+      {Array.from({length:11},(_,i)=>{const a=i/11*Math.PI*2-Math.PI/2; const r=18; return <circle key={i} cx={60+r*Math.cos(a)} cy={42+r*Math.sin(a)} r="2.5" fill="#ddd" opacity="0.85"/>;})}
+      {/* center lens */}
+      <circle cx="60" cy="42" r="9" fill="#0a0a0a" stroke="#666" strokeWidth="1.5"/>
+      <circle cx="60" cy="42" r="6" fill="#070707" stroke="#4488ff" strokeWidth="1"/>
+      <circle cx="60" cy="42" r="3.5" fill="#040404"/>
+      <circle cx="57.5" cy="39.5" r="1.5" fill="white" opacity="0.2"/>
     </svg>
   );
-  // default / systems — shield icon
+  // ── T15 — dome side camera (hemisphere) ───────────────────────────────────
+  if (id === "T15") return (
+    <svg width={w} height={h} viewBox={vb} fill="none">
+      {/* base mount */}
+      <rect x="25" y="62" width="70" height="10" rx="3" fill="#1a1a1a" stroke="#333" strokeWidth="1"/>
+      <rect x="30" y="69" width="12" height="10" rx="2" fill="#151515" stroke="#333" strokeWidth="1"/>
+      <rect x="78" y="69" width="12" height="10" rx="2" fill="#151515" stroke="#333" strokeWidth="1"/>
+      {/* hemisphere dome body */}
+      <path d="M22 62 Q22 20 60 18 Q98 20 98 62 Z" fill="#1c1c1c" stroke="#444" strokeWidth="1.5"/>
+      <path d="M26 62 Q26 24 60 22 Q94 24 94 62 Z" fill="#141414"/>
+      {/* LED ring inside */}
+      {Array.from({length:9},(_,i)=>{const a=(i/9)*Math.PI+0.15; const r=28; return <circle key={i} cx={60+r*Math.cos(a)} cy={58-r*Math.sin(a)} r="2.2" fill="#ddd" opacity="0.8"/>;})}
+      {/* center lens */}
+      <circle cx="60" cy="46" r="11" fill="#0a0a0a" stroke="#555" strokeWidth="1.5"/>
+      <circle cx="60" cy="46" r="7.5" fill="#070707" stroke="#777" strokeWidth="1"/>
+      <circle cx="60" cy="46" r="4.5" fill="#040404"/>
+      <circle cx="57.5" cy="43.5" r="1.8" fill="white" opacity="0.15"/>
+    </svg>
+  );
+  // ── T7070M / T9052 / T10548SD — monitors ─────────────────────────────────
+  if (cat?.includes("מסך") || id?.includes("T70") || id?.includes("T90") || id?.includes("T10") || cat?.includes("BSD")) {
+    const isBSD = id?.includes("T10") || cat?.includes("BSD");
+    return (
+      <svg width={w} height={h} viewBox={vb} fill="none">
+        {/* sun visor */}
+        <rect x="8" y="10" width="104" height="9" rx="2" fill="#1a1a1a" stroke="#333" strokeWidth="1"/>
+        <rect x="10" y="11" width="100" height="6" rx="1.5" fill="#222"/>
+        {/* monitor body */}
+        <rect x="8" y="18" width="104" height="52" rx="3" fill="#1c1c1c" stroke="#444" strokeWidth="1.5"/>
+        {/* screen */}
+        <rect x="11" y="21" width="98" height="43" rx="2" fill={isBSD ? "#0a1020" : "#061018"}/>
+        {isBSD ? (<>
+          {/* 4-split screen */}
+          <rect x="13" y="23" width="46" height="19" rx="1" fill="#0d1a2a"/>
+          <rect x="61" y="23" width="46" height="19" rx="1" fill="#0a1420"/>
+          <rect x="13" y="44" width="46" height="18" rx="1" fill="#0d1828"/>
+          <rect x="61" y="44" width="46" height="18" rx="1" fill="#0a1620"/>
+          <rect x="13" y="23" width="94" height="2" fill="none"/>
+          <line x1="60" y1="23" x2="60" y2="62" stroke="#1a2a3a" strokeWidth="1"/>
+          <line x1="13" y1="43" x2="107" y2="43" stroke="#1a2a3a" strokeWidth="1"/>
+          {/* truck silhouettes */}
+          <rect x="20" y="28" width="28" height="12" rx="1" fill="#0f2035" opacity="0.8"/>
+          <rect x="67" y="28" width="28" height="12" rx="1" fill="#0f2035" opacity="0.8"/>
+          {/* BSD icons row */}
+          <rect x="15" y="46" width="10" height="10" rx="2" fill="#1a3a5a"/>
+          <rect x="27" y="46" width="10" height="10" rx="2" fill="#2a4a1a"/>
+          <rect x="39" y="46" width="10" height="10" rx="2" fill="#3a1a1a"/>
+          <rect x="51" y="46" width="7" height="10" rx="2" fill="#1a2a4a"/>
+        </>) : (<>
+          {/* road landscape */}
+          <rect x="13" y="23" width="94" height="39" rx="1" fill="#0d2040"/>
+          <rect x="13" y="48" width="94" height="14" rx="1" fill="#111a0a"/>
+          <path d="M55 62 L60 42 L65 62" fill="#333" opacity="0.5"/>
+          <rect x="55" y="55" width="10" height="2" rx="1" fill="#fff" opacity="0.4"/>
+        </>)}
+        {/* button row */}
+        <rect x="11" y="65" width="98" height="7" rx="1" fill="#111"/>
+        {[18,28,38,48,58,68,78,88,98].map(x=><rect key={x} x={x} y="67" width="6" height="3" rx="1" fill="#2a2a2a"/>)}
+        {/* side knob/mount */}
+        <rect x="0" y="26" width="10" height="16" rx="3" fill="#1a1a1a" stroke="#333" strokeWidth="1"/>
+        <rect x="110" y="26" width="10" height="16" rx="3" fill="#1a1a1a" stroke="#333" strokeWidth="1"/>
+        {/* stand */}
+        <rect x="48" y="72" width="24" height="4" rx="2" fill="#1a1a1a" stroke="#333" strokeWidth="1"/>
+        <rect x="54" y="75" width="12" height="8" rx="2" fill="#151515" stroke="#333" strokeWidth="1"/>
+      </svg>
+    );
+  }
+  // ── 15EV — side/wheel camera (wide-body dome) ─────────────────────────────
+  if (id === "15EV") return (
+    <svg width={w} height={h} viewBox={vb} fill="none">
+      <rect x="10" y="52" width="100" height="16" rx="4" fill="#1a1a1a" stroke="#333" strokeWidth="1"/>
+      <ellipse cx="60" cy="52" rx="50" ry="30" fill="#1c1c1c" stroke="#444" strokeWidth="1.5"/>
+      <ellipse cx="60" cy="52" rx="45" ry="25" fill="#141414"/>
+      {Array.from({length:8},(_,i)=>{const a=(i/8)*Math.PI*2; const r=30; return <circle key={i} cx={60+r*Math.cos(a)} cy={52+r*Math.sin(a)*0.55} r="2.2" fill="#ddd" opacity="0.8"/>;})}
+      <circle cx="60" cy="52" r="11" fill="#0a0a0a" stroke="#555" strokeWidth="1.5"/>
+      <circle cx="60" cy="52" r="7.5" fill="#070707" stroke="#777" strokeWidth="1"/>
+      <circle cx="60" cy="52" r="4.5" fill="#040404"/>
+      <circle cx="57.5" cy="49.5" r="1.8" fill="white" opacity="0.15"/>
+    </svg>
+  );
+  // ── systems / default — shield ────────────────────────────────────────────
   return (
-    <svg width={s} height={h} viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M40 12 L62 22 L62 42 C62 55 52 65 40 70 C28 65 18 55 18 42 L18 22 Z" fill="#0c0c1e" stroke={g+"0.65)"} strokeWidth="2"/>
-      <path d="M40 18 L57 26 L57 42 C57 52 49 60 40 64 C31 60 23 52 23 42 L23 26 Z" fill="#111133"/>
-      <circle cx="40" cy="40" r="9" fill="#0a0a28" stroke={g+"0.45)"} strokeWidth="1.5"/>
-      <path d="M35 40 L38 43 L46 36" stroke={g+"0.9)"} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+    <svg width={w} height={h} viewBox={vb} fill="none">
+      <path d="M60 12 L88 26 L88 52 C88 68 75 78 60 84 C45 78 32 68 32 52 L32 26 Z" fill="#111122" stroke="rgba(218,165,32,0.6)" strokeWidth="2"/>
+      <path d="M60 18 L83 30 L83 52 C83 65 72 73 60 78 C48 73 37 65 37 52 L37 30 Z" fill="#0d0d20"/>
+      <circle cx="60" cy="48" r="12" fill="#0a0a18" stroke="rgba(218,165,32,0.4)" strokeWidth="1.5"/>
+      <path d="M53 48 L57 52 L68 41" stroke="rgba(218,165,32,0.9)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   );
 }
@@ -2013,7 +2132,7 @@ function ShowroomView({ showToast, onQuote }) {
           <div className="sr-present-badge">{selected.cat}</div>
           <div className="sr-present-id">{selected.id}</div>
           <div className="sr-present-icon">
-            <ProductImg cat={selected.cat} size={140} />
+            <ProductImg id={selected.id} cat={selected.cat} size={140} />
           </div>
           <div className="sr-present-tags">
             {selected.tags.map(t => <span key={t} className="sr-tag big">{t}</span>)}
@@ -2046,7 +2165,7 @@ function ShowroomView({ showToast, onQuote }) {
         {items.map(item => (
           <div key={item.id} className="sr-card" onClick={() => { setSelected(item); setPresent(true); }}>
             <div className="sr-img-area">
-              <ProductImg cat={item.cat} size={80} />
+              <ProductImg id={item.id} cat={item.cat} size={80} />
               <div className="sr-img-badge">{item.cat}</div>
               <button className="sr-expand sr-expand-abs" onClick={e=>{e.stopPropagation();setSelected(item);setPresent(true);}} title="הצג ללקוח">
                 <Maximize2 size={13}/>
