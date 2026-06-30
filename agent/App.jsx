@@ -261,15 +261,17 @@ export default function App() {
   // storage that the HeavyGuard app writes to, then merges any new customers
   // into the CRM without overwriting existing ones.
   useEffect(() => {
-    const ws = typeof window !== "undefined" && window.storage;
-    if (!ws) return;
-    const pGet = (k) => ws.get(k).then((r) => (r && r.value != null ? JSON.parse(r.value) : [])).catch(() => []);
+    const ws = typeof window !== "undefined" && window.storage || null;
+    const lGet = (k) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : []; } catch { return []; } };
+    const pGet = (k) => ws
+      ? ws.get(k).then((r) => (r && r.value != null ? JSON.parse(r.value) : lGet(k))).catch(() => lGet(k))
+      : Promise.resolve(lGet(k));
     Promise.all([pGet("hg2:index"), pGet("hg2:customers")]).then(([installs, hgManual]) => {
       const normName = (s) => (s || "").trim().toLowerCase();
       // Derive unique customers from HG installations (contractor === "hg")
       const m = {};
       (installs || [])
-        .filter((x) => x.contractor === "hg" && (x.customer?.trim() || x.phone?.trim()))
+        .filter((x) => x.customer?.trim() || x.phone?.trim())
         .forEach((x) => {
           const name = (x.customer || "").trim();
           const phone = (x.phone || "").trim();

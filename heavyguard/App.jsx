@@ -46,8 +46,14 @@ const store = {
     if (typeof window !== "undefined" && window.storage) { try { return await window.storage.delete(k); } catch {} }
   },
 };
-const loadIndex = async () => { try { const r = await store.get("hg2:index"); return r && r.value ? JSON.parse(r.value) : []; } catch { return []; } };
-const saveIndex = (arr) => store.set("hg2:index", JSON.stringify(arr)).catch(() => {});
+const loadIndex = async () => {
+  try { const r = await store.get("hg2:index"); return r && r.value ? JSON.parse(r.value) : []; }
+  catch { try { return JSON.parse(localStorage.getItem("hg2:index") || '[]'); } catch { return []; } }
+};
+const saveIndex = (arr) => {
+  try { localStorage.setItem("hg2:index", JSON.stringify(arr)); } catch {}
+  return store.set("hg2:index", JSON.stringify(arr)).catch(() => {});
+};
 const loadPhoto = async (id) => { try { const r = await store.get("hg2:photo:" + id); return r && r.value ? r.value : null; } catch { return null; } };
 const loadGallery = async (id) => { try { const r = await store.get("hg2:gallery:" + id); return r && r.value ? JSON.parse(r.value) : []; } catch { return []; } };
 const loadVideo = async (id) => { try { const r = await store.get("hg2:video:" + id); return r && r.value ? r.value : null; } catch { return null; } };
@@ -1172,8 +1178,15 @@ function RankRow({ rank, label, count, revenue, max, valOverride, color }) {
 function Empty() { return <div className="hg2-busy">אין נתונים להצגה</div>; }
 
 /* ============================ Customers ============================ */
-function loadArr(key) { return store.get(key).then((r) => r && r.value ? JSON.parse(r.value) : []).catch(() => []); }
-const saveArr = (key, arr) => store.set(key, JSON.stringify(arr)).catch(() => {});
+function loadArr(key) {
+  return store.get(key)
+    .then((r) => r && r.value ? JSON.parse(r.value) : [])
+    .catch(() => { try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch { return []; } });
+}
+const saveArr = (key, arr) => {
+  try { localStorage.setItem(key, JSON.stringify(arr)); } catch {}
+  return store.set(key, JSON.stringify(arr)).catch(() => {});
+};
 
 function Customers({ index, onBack, showToast }) {
   const [custs, setCusts] = useState(null);
