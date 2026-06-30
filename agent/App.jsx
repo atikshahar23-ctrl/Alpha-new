@@ -1263,16 +1263,18 @@ function ProductCatalog({ onClose, onQuote }) {
 const linkParam = (k) => { try { return new URLSearchParams((location.hash || "").replace(/^#/, "").replace(/&/g, "&")).get(k) || ""; } catch { return ""; } };
 function customerSamLink(toPhone) {
   const base = location.origin + location.pathname;
-  const db = cloud.cloudURL(), au = cloud.cloudAuth();
   let s = `${base}#samform&to=${encodeURIComponent((toPhone || "").replace(/\D/g, ""))}`;
-  if (db) s += `&db=${encodeURIComponent(db)}`;
-  if (au) s += `&au=${encodeURIComponent(au)}`;
+  const tok = cloud.cloudLinkToken();
+  if (tok) s += `&cfg=${tok}`;
   return s;
 }
 function CloudSettings({ onClose, showToast }) {
-  const [url, setUrl] = useState(cloud.cloudURL());
-  const [auth, setAuth] = useState(cloud.cloudAuth());
-  const save = () => { cloud.setCloud(url, auth); showToast(url ? "הענן חובר ✓ רענן כדי לסנכרן" : "הענן נותק"); onClose(); };
+  const [cfg, setCfg] = useState(cloud.cloudConfigRaw());
+  const save = () => {
+    const t = cfg.trim();
+    if (t) { try { const o = JSON.parse(t); if (!o.projectId || !o.apiKey) { showToast("ההגדרות חסרות apiKey/projectId"); return; } } catch { showToast("ההגדרות אינן JSON תקין"); return; } }
+    cloud.setCloudConfig(t); showToast(t ? "הענן חובר ✓ רענן כדי לסנכרן" : "הענן נותק"); onClose();
+  };
   return (
     <div className="ag-modal" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="ag-sheet sm">
@@ -1280,12 +1282,10 @@ function CloudSettings({ onClose, showToast }) {
         <div className="ag-sheet-body">
           <div className="ag-cat-note" style={{ lineHeight: 1.6 }}>
             חבר מסד Firebase חינמי כדי ששניכם תראו ותערכו את אותם נתונים בזמן אמת.
-            פתח פרויקט ב-<b>console.firebase.google.com</b> → Realtime Database → צור (מצב בדיקה) → העתק את כתובת ה-URL לכאן. חינם, בלי כרטיס אשראי.
+            פתח פרויקט ב-<b>console.firebase.google.com</b> → ⚙ Project settings → Your apps → Web → העתק את אובייקט <b>firebaseConfig</b> והדבק כאן. גם הפעל <b>Firestore Database</b> (מצב בדיקה). חינם, בלי כרטיס אשראי.
           </div>
-          <label className="ag-lbl">כתובת Realtime Database</label>
-          <input className="ag-input" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://xxx-default-rtdb.firebaseio.com" dir="ltr" />
-          <label className="ag-lbl">סוד / טוקן (אופציונלי)</label>
-          <input className="ag-input" value={auth} onChange={(e) => setAuth(e.target.value)} placeholder="(אם הגדרת חוקים מאובטחים)" dir="ltr" />
+          <label className="ag-lbl">firebaseConfig (JSON)</label>
+          <textarea className="ag-textarea" value={cfg} onChange={(e) => setCfg(e.target.value)} rows={8} dir="ltr" placeholder={'{\n  "apiKey": "...",\n  "authDomain": "...",\n  "projectId": "...",\n  "appId": "..."\n}'} />
           <div className="ag-cat-note">סטטוס: {cloud.cloudConfigured() ? "מחובר 🟢" : "לא מחובר ⚪"}</div>
         </div>
         <div className="ag-sheet-foot"><button className="ag-btn ghost" onClick={onClose}>סגור</button><button className="ag-btn" onClick={save}>שמור</button></div>
