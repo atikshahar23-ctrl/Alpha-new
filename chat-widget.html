@@ -72,7 +72,24 @@
     @keyframes pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.08); } }
 
     .widget-footer { padding: 8px 16px; text-align: center; border-top: 1px solid rgba(200,168,78,0.15); flex-shrink: 0; }
-    .widget-footer a { font-size: 12px; font-weight: 600; color: #b8942e; text-decoration: none; }
+    .widget-footer a { font-size: 12px; font-weight: 600; color: #b8942e; text-decoration: none; transition: color .15s; }
+    .widget-footer a:hover { color: #8a6a1e; }
+
+    /* ── premium touches ── */
+    @keyframes widgetShine { 0% { background-position: 200% center; } 100% { background-position: -200% center; } }
+    .widget-card { transition: box-shadow .25s; }
+    .widget-card:hover { box-shadow: 0 10px 36px rgba(180,150,60,0.22), 0 1px 3px rgba(0,0,0,0.08); }
+    .widget-header {
+      background-image: linear-gradient(110deg, #b8942e 0%, #d4b85a 35%, #fff3c9 50%, #d4b85a 65%, #b8942e 100%);
+      background-size: 220% 100%;
+      animation: widgetShine 6s linear infinite;
+    }
+    .msg.ai { box-shadow: 0 2px 10px rgba(180,150,60,.08); }
+    .msg.user { box-shadow: 0 2px 10px rgba(200,168,78,.25); }
+    .send-btn { transition: transform .15s, box-shadow .2s; box-shadow: 0 4px 14px rgba(200,168,78,.35); }
+    .send-btn:not(:disabled):hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(200,168,78,.5); }
+    .chip { transition: background .15s, transform .15s, box-shadow .15s; }
+    .chip:hover { transform: translateY(-1px); box-shadow: 0 3px 10px rgba(200,168,78,.2); }
   </style>
 </head>
 <body>
