@@ -67,7 +67,25 @@ function bizSnapshot() {
   const openVal = openDeals.reduce((a, d) => a + (Number(d.total) || 0), 0);
   const mk = new Date().toISOString().slice(0, 7);
   const wonMonth = deals.filter((d) => d.status === "נסגר" && String(d.wonAt || "").startsWith(mk)).length;
-  return { installs: installs.length, hgRevenue, custCount, top, openDeals: openDeals.length, openVal, wonMonth, pricelist: pricelist.length };
+  // Oldest open deal age (days) — feeds the morning briefing's "follow up" nudge.
+  let staleDays = 0;
+  openDeals.forEach((d) => { const t = d.createdAt || d.ts; if (!t) return; const days = Math.floor((Date.now() - new Date(t).getTime()) / 86400000); if (days > staleDays) staleDays = days; });
+  return { installs: installs.length, hgRevenue, custCount, top, openDeals: openDeals.length, openVal, wonMonth, pricelist: pricelist.length, staleDays, staleCount: openDeals.filter((d) => { const t = d.createdAt || d.ts; if (!t) return false; return (Date.now() - new Date(t).getTime()) / 86400000 > 7; }).length };
+}
+// Revenue grouped by month (YYYY-MM) from HeavyGuard installs — last 6 months.
+function monthlyRevenue() {
+  const get = (k) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch { return null; } };
+  const installs = get("hg2:index") || [];
+  const m = {};
+  installs.forEach((x) => { const mk = String(x.date || "").slice(0, 7); if (!mk) return; m[mk] = (m[mk] || 0) + (Number(x.price) || 0); });
+  const out = [];
+  const d = new Date();
+  for (let i = 5; i >= 0; i--) {
+    const dt = new Date(d.getFullYear(), d.getMonth() - i, 1);
+    const key = dt.toISOString().slice(0, 7);
+    out.push({ key, label: dt.toLocaleDateString("he-IL", { month: "short" }), value: m[key] || 0 });
+  }
+  return out;
 }
 const learnedFacts = () => load(K_BIZ, []);
 function bizContext() {
@@ -81,6 +99,33 @@ function bizContext() {
   if (facts.length) s += `\nעובדות שאיתי לימד את הצוות:\n- ${facts.join("\n- ")}`;
   s += `\nהשתמש בידע הזה לתשובות מבוססות-נתונים על העסק.`;
   return s;
+}
+
+/* ── Daily briefing from יהודה (CEO) — once a day, grounded in live business data ── */
+const K_BRIEF_DATE = "alpha:agents:briefdate";
+const K_BRIEF_TEXT = "alpha:agents:brieftext";
+const todayKey = () => new Date().toISOString().slice(0, 10);
+function briefingSystem() {
+  return `אתה יהודה, המנכ"ל. כתוב תדריך בוקר קצר וממוקד (3-4 שורות, בלי כותרות) לאיתי, מבוסס על הנתונים העסקיים החיים שיסופקו לך. כלול: מספר אחד שחשוב היום, נקודת תשומת לב אחת (אם יש עסקה תקועה/לקוח לטיפול), ומשפט עידוד קצר. עברית, ישיר, מנהיגותי, בלי גינוני נימוס מיותרים.`;
+}
+function briefingFallback() {
+  const b = bizSnapshot();
+  const hasData = b.installs || b.openDeals;
+  if (!hasData) return "בוקר טוב, איתי ☀️ עדיין אין לי נתונים חיים — פתח את HeavyGuard או ה-CRM כדי שאוכל לתדרך אותך כל בוקר עם המספרים האמיתיים. בינתיים — קדימה, יום מצוין מחכה.";
+  const parts = [`בוקר טוב, איתי ☀️ המצב: ${b.openDeals} עסקאות פתוחות בשווי ${ils(b.openVal)}, ${b.installs} התקנות עד כה.`];
+  if (b.staleCount > 0) parts.push(`שים לב — ${b.staleCount} עסקאות פתוחות כבר מעל שבוע, כדאי לעקוב אחריהן היום.`);
+  else if (b.top[0]) parts.push(`הלקוח המוביל שלך כרגע: ${b.top[0].name} (${ils(b.top[0].rev)}).`);
+  parts.push("יום מצוין לסגור עוד עסקה 💪");
+  return parts.join(" ");
+}
+async function getDailyBriefing() {
+  if (load(K_BRIEF_DATE, "") === todayKey()) { const cached = load(K_BRIEF_TEXT, ""); if (cached) return cached; }
+  let text;
+  try { text = hasAI() ? await askGroq(briefingSystem() + bizContext(), [], "תן לי את התדריך של היום") : briefingFallback(); }
+  catch { text = briefingFallback(); }
+  if (!text) text = briefingFallback();
+  save(K_BRIEF_DATE, todayKey()); save(K_BRIEF_TEXT, text);
+  return text;
 }
 
 /* ── Tiny event bus: the Dev room pings the office sim so דן reacts live. ── */
@@ -495,6 +540,27 @@ function BottomNav({ view, setView, ideasCount }) {
 /* ════════════════════════════════════════════════════════════════════
    ROSTER — the team grid
    ════════════════════════════════════════════════════════════════════ */
+function BriefingBanner({ ceo, onOpenChat }) {
+  const [text, setText] = useState(() => (load(K_BRIEF_DATE, "") === todayKey()) ? load(K_BRIEF_TEXT, "") : "");
+  const [loading, setLoading] = useState(!text);
+  const [show, setShow] = useState(true);
+  useEffect(() => { if (text) return; getDailyBriefing().then((t) => { setText(t); setLoading(false); }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!show) return null;
+  return (
+    <div className="ac-brief" style={{ "--c": ceo.color, "--ac": ceo.accent }}>
+      <div className="ac-brief-glow" />
+      <div className="ac-brief-orb"><Face agent={ceo} fallback={18} /></div>
+      <div className="ac-brief-mid">
+        <b><Crown size={12} /> תדריך הבוקר מיהודה</b>
+        {loading ? <div className="ac-brief-load">מכין תדריך…<span /><span /><span /></div> : <p>{text}</p>}
+      </div>
+      <div className="ac-brief-acts">
+        <button onClick={() => onOpenChat(ceo.id)} title="דבר עם יהודה"><MessageSquare size={14} /></button>
+        <button onClick={() => setShow(false)} title="סגור"><X size={14} /></button>
+      </div>
+    </div>
+  );
+}
 function RosterView({ onOpen, onOffice, activity }) {
   const ceo = AGENTS.find((a) => a.boss);
   const team = AGENTS.filter((a) => !a.boss);
@@ -511,6 +577,8 @@ function RosterView({ onOpen, onOffice, activity }) {
         <h1>הצוות שלך</h1>
         <p>{AGENTS.length} סוכני AI · כל אחד מנהל תחום. לחץ על סוכן כדי לדבר איתו ישירות.</p>
       </div>
+
+      <BriefingBanner ceo={ceo} onOpenChat={onOpen} />
 
       {/* CEO featured card */}
       <button className="ac-ceo" style={{ "--c": ceo.color, "--ac": ceo.accent }} onClick={() => onOpen(ceo.id)}>
@@ -1077,12 +1145,32 @@ function OfficeSim({ onClose, onOpenChat }) {
 /* ════════════════════════════════════════════════════════════════════
    BUSINESS — what the team has learned about the business (live + taught)
    ════════════════════════════════════════════════════════════════════ */
+function RevenueChart({ months }) {
+  const max = Math.max(1, ...months.map((m) => m.value));
+  const total = months.reduce((a, m) => a + m.value, 0);
+  if (!total) return null;
+  return (
+    <div className="ac-set-card">
+      <div className="ac-set-h"><BarChart3 size={17} /> מגמת הכנסה · 6 חודשים אחרונים</div>
+      <div className="ac-rev-chart">
+        {months.map((m, i) => (
+          <div key={m.key} className="ac-rev-col">
+            <div className="ac-rev-bar-wrap"><div className="ac-rev-bar" style={{ height: (m.value / max * 100) + "%" }} title={ils(m.value)} /></div>
+            <span className="ac-rev-val">{m.value > 0 ? ils(m.value).replace("₪", "") : ""}</span>
+            <span className="ac-rev-lbl">{m.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 function BusinessView({ showToast }) {
   const [snap, setSnap] = useState(() => bizSnapshot());
+  const [months, setMonths] = useState(() => monthlyRevenue());
   const [facts, setFacts] = useState(() => learnedFacts());
   useCloudSync(K_BIZ, setFacts);
   const [fact, setFact] = useState("");
-  useEffect(() => { const iv = setInterval(() => setSnap(bizSnapshot()), 5000); return () => clearInterval(iv); }, []);
+  useEffect(() => { const iv = setInterval(() => { setSnap(bizSnapshot()); setMonths(monthlyRevenue()); }, 5000); return () => clearInterval(iv); }, []);
 
   const addFact = () => { const t = fact.trim(); if (!t) return; const next = [t, ...facts].slice(0, 60); setFacts(next); cloudSave(K_BIZ, next); setFact(""); showToast("הצוות למד עובדה חדשה ✓"); };
   const delFact = (i) => { const next = facts.filter((_, k) => k !== i); setFacts(next); cloudSave(K_BIZ, next); };
@@ -1105,6 +1193,8 @@ function BusinessView({ showToast }) {
       </div>
 
       {!hasData && <div className="ac-biz-note">עדיין אין נתונים חיים. פתח את מערכת HeavyGuard או ה-CRM של איתי (באותו דפדפן) כדי שהנתונים יסונכרנו אוטומטית לכאן.</div>}
+
+      <RevenueChart months={months} />
 
       {snap.top.length > 0 && (
         <div className="ac-set-card">
@@ -1292,6 +1382,23 @@ function StyleTag() {
 
 /* ── live dot ── */
 .ac-live-dot{width:7px;height:7px;border-radius:50%;background:#3FD79A;box-shadow:0 0 8px #3FD79A;animation:acDot 1.8s ease-in-out infinite;flex-shrink:0;display:inline-block}
+
+/* ── daily briefing banner ── */
+.ac-brief{position:relative;display:flex;align-items:flex-start;gap:11px;width:100%;overflow:hidden;
+  background:linear-gradient(120deg,rgba(28,22,6,.96),rgba(14,12,24,.97));
+  border:1px solid color-mix(in srgb,var(--c) 35%,transparent);border-radius:16px;padding:13px 14px;margin-bottom:16px;
+  box-shadow:0 6px 26px rgba(0,0,0,.4);animation:acRise .35s ease both}
+.ac-brief-glow{position:absolute;inset:0;background:radial-gradient(circle at 90% 0%,color-mix(in srgb,var(--c) 22%,transparent),transparent 55%);pointer-events:none}
+.ac-brief-orb{width:36px;height:36px;border-radius:11px;overflow:hidden;flex-shrink:0;box-shadow:0 3px 12px color-mix(in srgb,var(--c) 45%,transparent)}
+.ac-brief-mid{flex:1;min-width:0;position:relative}
+.ac-brief-mid b{display:flex;align-items:center;gap:5px;font-family:'Rubik';font-weight:800;font-size:12.5px;color:var(--c);margin-bottom:4px}
+.ac-brief-mid p{font-size:13px;line-height:1.6;color:var(--silver)}
+.ac-brief-load{font-size:12.5px;color:var(--s4);display:flex;align-items:center;gap:6px}
+.ac-brief-load span{width:5px;height:5px;border-radius:50%;background:var(--c);display:inline-block;animation:acType 1.2s ease-in-out infinite}
+.ac-brief-load span:nth-child(2){animation-delay:.2s} .ac-brief-load span:nth-child(3){animation-delay:.4s}
+.ac-brief-acts{display:flex;flex-direction:column;gap:6px;flex-shrink:0;position:relative}
+.ac-brief-acts button{width:28px;height:28px;border-radius:9px;background:var(--s8);border:1px solid var(--s7);color:var(--s4);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.15s}
+.ac-brief-acts button:hover{color:var(--c);border-color:color-mix(in srgb,var(--c) 50%,transparent)}
 
 /* ── CEO card ── */
 .ac-ceo{position:relative;width:100%;display:flex;align-items:center;gap:14px;text-align:right;cursor:pointer;font-family:inherit;color:inherit;
@@ -1507,6 +1614,12 @@ function StyleTag() {
 .ac-biz-fact span{flex:1;min-width:0;line-height:1.4}
 .ac-biz-fact button{background:none;border:none;color:var(--s4);cursor:pointer;display:flex;padding:2px;opacity:.6}
 .ac-biz-fact button:hover{color:#FF6B9D;opacity:1}
+.ac-rev-chart{display:flex;align-items:flex-end;gap:8px;height:120px;padding-top:6px}
+.ac-rev-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;height:100%}
+.ac-rev-bar-wrap{flex:1;width:100%;display:flex;align-items:flex-end;justify-content:center}
+.ac-rev-bar{width:60%;min-height:3px;border-radius:5px 5px 2px 2px;background:linear-gradient(180deg,var(--gold),var(--gold2));box-shadow:0 0 10px rgba(228,188,99,.25);transition:height .6s cubic-bezier(.34,1.56,.64,1)}
+.ac-rev-val{font-size:9.5px;color:var(--gold);font-weight:800;white-space:nowrap}
+.ac-rev-lbl{font-size:10.5px;color:var(--s4);font-weight:700}
 
 /* ── settings ── */
 .ac-set-card{background:linear-gradient(160deg,rgba(16,14,32,.96),rgba(8,8,18,.97));border:1px solid var(--s7);border-radius:16px;padding:16px;margin-bottom:14px;box-shadow:0 6px 26px rgba(0,0,0,.4)}
