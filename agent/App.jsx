@@ -2389,8 +2389,12 @@ function CustomerSamsonix({ showToast }) {
 /* ============================ Styles ============================ */
 function StyleTag() {
   return <style>{`
-.ag{--void:#06060F;--s9:#0D0D1A;--s8:#13131F;--s7:rgba(218,165,32,.18);--s4:#7070A0;--silver:#D8D8F0;--gold:#D4A843;--gold2:#B48828;--champ:#C89030;--cyan:#00C8FF;--ok:#20C97A;--red:#FF4A3E;
-  font-family:'Heebo',Arial,sans-serif;color:var(--silver);background:var(--void);min-height:100%;direction:rtl;padding-bottom:74px}
+.ag{--void:#04040E;--s9:#0A0A18;--s8:#10101E;--s7:rgba(218,165,32,.2);--s4:#6878B0;--silver:#E0E4F8;--gold:#D4A843;--gold2:#B48828;--champ:#D8A840;--cyan:#18D8FF;--ok:#22D882;--red:#FF4A3E;
+  font-family:'Heebo',Arial,sans-serif;color:var(--silver);background:var(--void);min-height:100%;direction:rtl;padding-bottom:74px;
+  background-image:linear-gradient(rgba(218,165,32,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(218,165,32,.025) 1px,transparent 1px);
+  background-size:64px 64px;animation:agGrid 70s linear infinite;
+  position:relative}
+@keyframes agGrid{from{background-position:0 0,0 0}to{background-position:64px 64px,64px 64px}}
 .ag *{box-sizing:border-box}
 .ag-flow{padding:20px 18px 28px}
 .ag-head{display:flex;align-items:center;gap:12px;margin-bottom:16px}
@@ -2826,6 +2830,286 @@ function StyleTag() {
   .sr-grid{grid-template-columns:repeat(3,1fr)}
   .ag-mapcard{max-width:700px}
   .ag-map{height:60vh;min-height:420px}
+}
+
+/* ═══════════════════════════════════════════════
+   FUTURISTIC DESIGN SYSTEM — PREMIUM OVERRIDES
+   ═══════════════════════════════════════════════ */
+
+/* ── Keyframes ── */
+@keyframes agShimmer{0%{background-position:200% center}100%{background-position:-200% center}}
+@keyframes agBorderPulse{0%,100%{opacity:.35}50%{opacity:1}}
+@keyframes agGlowPulse{0%,100%{box-shadow:0 0 0 0 rgba(212,168,67,0)}50%{box-shadow:0 0 22px 4px rgba(212,168,67,.25)}}
+@keyframes agCardFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+@keyframes agCtaShine{0%{background-position:200% center}100%{background-position:-200% center}}
+@keyframes agNavGlow{0%,100%{opacity:.6}50%{opacity:1}}
+@keyframes agSpotlight{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
+@keyframes agKpiShimmer{0%,100%{border-color:rgba(218,165,32,.2)}50%{border-color:rgba(218,165,32,.7);box-shadow:0 0 18px 2px rgba(218,165,32,.2)}}
+@keyframes agToolHover{0%{box-shadow:0 4px 16px rgba(212,168,67,0)}100%{box-shadow:0 4px 28px rgba(212,168,67,.35)}}
+@keyframes agSrBorderFlow{0%{border-color:rgba(218,165,32,.18)}50%{border-color:rgba(218,165,32,.65)}100%{border-color:rgba(218,165,32,.18)}}
+@keyframes agPresentOrb{0%,100%{opacity:.5;transform:scale(1)}50%{opacity:.85;transform:scale(1.12)}}
+@keyframes agMsgGlow{0%,100%{box-shadow:0 0 0 0 rgba(24,216,255,0)}50%{box-shadow:0 0 16px 2px rgba(24,216,255,.18)}}
+@keyframes agCyanLine{from{background-position:0 0}to{background-position:200% 0}}
+
+/* ── KPI Cards — holographic shimmer ── */
+.ag-kpi{
+  background:linear-gradient(160deg,rgba(20,18,40,.98),rgba(10,10,24,.98));
+  border:1px solid rgba(218,165,32,.35);
+  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  box-shadow:0 4px 20px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.04);
+  transition:transform .2s,box-shadow .2s,border-color .2s;
+  animation:agKpiShimmer 4s ease-in-out infinite;
+  position:relative;overflow:hidden
+}
+.ag-kpi::before{content:'';position:absolute;inset:0;background:linear-gradient(105deg,transparent 30%,rgba(218,165,32,.06) 50%,transparent 70%);background-size:200% 100%;animation:agShimmer 6s linear infinite;pointer-events:none}
+.ag-kpi:hover{transform:translateY(-3px) scale(1.025);box-shadow:0 8px 32px rgba(218,165,32,.2),inset 0 1px 0 rgba(255,255,255,.06)}
+.ag-kpi:active{transform:scale(.97)}
+
+/* ── Main Cards — deep glass ── */
+.ag-card{
+  background:linear-gradient(160deg,rgba(16,14,32,.97),rgba(8,8,20,.97));
+  border:1px solid rgba(218,165,32,.2);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  box-shadow:0 2px 16px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.03);
+  transition:border-color .2s,box-shadow .2s,transform .15s
+}
+.ag-card:hover{border-color:rgba(218,165,32,.45);box-shadow:0 6px 28px rgba(218,165,32,.12)}
+.ag-card.lead:hover,.ag-card.deal:hover{transform:translateY(-2px)}
+
+/* ── Deal rows — neon hover ── */
+.ag-deal-row{
+  background:linear-gradient(160deg,rgba(14,12,28,.97),rgba(8,8,18,.97));
+  border:1px solid rgba(218,165,32,.18);
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  transition:border-color .2s,box-shadow .2s,transform .15s
+}
+.ag-deal-row:hover{border-color:rgba(218,165,32,.5);box-shadow:0 4px 20px rgba(218,165,32,.12);transform:translateX(-2px)}
+
+/* ── Sections — glass panels ── */
+.ag-section{
+  background:linear-gradient(160deg,rgba(16,14,32,.97),rgba(8,8,20,.97));
+  border:1px solid rgba(218,165,32,.2);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  box-shadow:0 4px 24px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.03)
+}
+
+/* ── CTA Button — flowing shimmer ── */
+.ag-cta{
+  background:linear-gradient(270deg,var(--gold2),var(--champ),#fff5cc,var(--champ),var(--gold2));
+  background-size:300% 100%;
+  animation:agCtaShine 3.5s linear infinite;
+  box-shadow:0 8px 32px rgba(228,188,99,.4),0 2px 0 rgba(255,255,255,.15) inset;
+  letter-spacing:.02em;
+  transition:transform .15s,box-shadow .15s
+}
+.ag-cta:hover{transform:translateY(-2px);box-shadow:0 14px 40px rgba(228,188,99,.55)}
+.ag-cta:active{transform:scale(.985);animation-play-state:paused}
+
+/* ── Primary Button — gold glow ── */
+.ag-btn:not(.ghost):not(.wa){
+  background:linear-gradient(135deg,var(--champ),var(--gold) 50%,var(--gold2));
+  box-shadow:0 4px 18px rgba(212,168,67,.35);
+  transition:transform .15s,box-shadow .2s
+}
+.ag-btn:not(.ghost):not(.wa):hover{transform:translateY(-2px);box-shadow:0 8px 28px rgba(212,168,67,.5)}
+.ag-btn:not(.ghost):not(.wa):active{transform:scale(.97)}
+
+/* ── Search box — focus glow ring ── */
+.ag-searchbox{
+  background:linear-gradient(160deg,rgba(14,12,28,.97),rgba(8,8,18,.97));
+  border:1px solid rgba(218,165,32,.25);
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  transition:border-color .2s,box-shadow .2s
+}
+.ag-searchbox:focus-within{border-color:rgba(218,165,32,.75);box-shadow:0 0 0 3px rgba(218,165,32,.12),0 4px 20px rgba(218,165,32,.1)}
+
+/* ── Inputs ── */
+.ag-textarea,.ag-input,.ag-select{
+  background:linear-gradient(160deg,rgba(10,10,20,.97),rgba(6,6,14,.97));
+  border:1px solid rgba(218,165,32,.2);
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  transition:border-color .2s,box-shadow .2s
+}
+.ag-textarea:focus,.ag-input:focus,.ag-select:focus{border-color:rgba(218,165,32,.65);box-shadow:0 0 0 3px rgba(218,165,32,.1)}
+
+/* ── Bottom Nav — aurora border ── */
+.ag-nav{
+  background:rgba(4,4,14,.97);
+  border-top:1px solid transparent;
+  border-image:linear-gradient(90deg,transparent,rgba(218,165,32,.6),transparent) 1;
+  box-shadow:0 -8px 40px rgba(0,0,0,.6),0 -1px 0 rgba(218,165,32,.08);
+  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px)
+}
+.ag-nav button.on{
+  color:var(--gold);
+  text-shadow:0 0 12px rgba(218,165,32,.8)
+}
+.ag-nav button.on svg{filter:drop-shadow(0 0 5px rgba(218,165,32,.6))}
+
+/* ── Bottom sheet / Modal ── */
+.ag-modal{background:rgba(0,0,10,.8);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px)}
+.ag-sheet{
+  background:linear-gradient(160deg,rgba(12,10,26,.99),rgba(6,6,16,.99));
+  border:1px solid rgba(218,165,32,.25);
+  box-shadow:0 -16px 60px rgba(0,0,0,.7),0 0 0 1px rgba(218,165,32,.08),inset 0 1px 0 rgba(255,255,255,.04);
+  backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px)
+}
+.ag-sheet-head{border-bottom:1px solid rgba(218,165,32,.18)}
+.ag-sheet-foot{border-top:1px solid rgba(218,165,32,.18)}
+
+/* ── Toast ── */
+.ag-toast{
+  background:linear-gradient(135deg,rgba(12,10,26,.98),rgba(6,6,14,.98));
+  border:1px solid rgba(218,165,32,.5);
+  box-shadow:0 8px 40px rgba(212,168,67,.3);
+  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)
+}
+
+/* ── Showroom cards — holographic ── */
+.sr-card{
+  background:linear-gradient(160deg,rgba(12,10,26,.98),rgba(6,6,16,.98));
+  border:1px solid rgba(218,165,32,.22);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  box-shadow:0 4px 20px rgba(0,0,0,.5);
+  transition:border-color .3s,transform .2s,box-shadow .3s;
+  animation:agSrBorderFlow 5s ease-in-out infinite
+}
+.sr-card:hover{
+  border-color:rgba(218,165,32,.7);
+  transform:translateY(-4px);
+  box-shadow:0 12px 40px rgba(218,165,32,.22),0 4px 16px rgba(0,0,0,.5);
+  animation-play-state:paused
+}
+
+/* ── Showroom image area — deep glow ── */
+.sr-img-area{
+  background:radial-gradient(ellipse at 50% 60%,rgba(15,15,40,.9),rgba(4,4,14,1));
+  position:relative
+}
+.sr-img-area::after{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 50% 90%,rgba(218,165,32,.12),transparent 60%);pointer-events:none}
+
+/* ── Showroom presentation — cosmic ── */
+.sr-present{
+  background:radial-gradient(ellipse at 50% 30%,rgba(18,6,40,.98),rgba(2,2,14,1));
+  position:relative;overflow:hidden
+}
+.sr-present::before{
+  content:'';position:absolute;inset:0;
+  background-image:
+    radial-gradient(circle at 20% 20%,rgba(218,165,32,.06) 0%,transparent 40%),
+    radial-gradient(circle at 80% 80%,rgba(24,216,255,.05) 0%,transparent 40%),
+    linear-gradient(rgba(218,165,32,.018) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(218,165,32,.018) 1px,transparent 1px);
+  background-size:100% 100%,100% 100%,56px 56px,56px 56px;
+  animation:agGrid 80s linear infinite;
+  pointer-events:none
+}
+.sr-present-id{text-shadow:0 0 60px rgba(218,165,32,.5),0 0 120px rgba(218,165,32,.2)}
+.sr-present-price{text-shadow:0 0 30px rgba(218,165,32,.5)}
+
+/* ── AI assistant panel ── */
+.ag-assist{
+  background:linear-gradient(160deg,rgba(10,8,24,.98),rgba(6,6,16,.98));
+  border:1px solid rgba(218,165,32,.25);
+  box-shadow:0 6px 30px rgba(212,168,67,.12),inset 0 1px 0 rgba(255,255,255,.04);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)
+}
+
+/* ── AI bot messages — holographic ── */
+.ag-msg.bot{
+  background:linear-gradient(160deg,rgba(20,18,42,.97),rgba(10,10,26,.97));
+  border:1px solid rgba(24,216,255,.2);
+  color:var(--silver);
+  box-shadow:0 2px 12px rgba(24,216,255,.06);
+  animation:agMsgGlow 3s ease-in-out infinite
+}
+
+/* ── Tool launch cards ── */
+.ag-tool{
+  background:linear-gradient(160deg,rgba(14,12,28,.98),rgba(8,8,18,.98));
+  border:1px solid rgba(218,165,32,.2);
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  transition:border-color .2s,box-shadow .25s,transform .2s
+}
+.ag-tool:hover{
+  border-color:rgba(218,165,32,.65);
+  box-shadow:0 8px 30px rgba(218,165,32,.2),0 0 0 1px rgba(218,165,32,.1);
+  transform:translateY(-3px)
+}
+.ag-tool:active{transform:scale(.97)}
+
+/* ── Map card ── */
+.ag-mapcard{
+  background:linear-gradient(120deg,rgba(44,37,16,.97),rgba(90,68,22,.97),rgba(60,45,10,.97));
+  box-shadow:0 8px 32px rgba(60,45,10,.5),0 0 0 1px rgba(218,165,32,.12);
+  transition:box-shadow .2s,transform .15s
+}
+.ag-mapcard:hover{transform:translateY(-2px);box-shadow:0 14px 44px rgba(60,45,10,.6),0 0 24px rgba(218,165,32,.15)}
+
+/* ── Customer chips active state ── */
+.ag-chips button.on{
+  background:color-mix(in srgb,var(--sc,var(--gold)) 20%,transparent);
+  border-color:var(--sc,var(--gold));
+  color:var(--sc,var(--gold));
+  box-shadow:0 0 12px rgba(218,165,32,.2)
+}
+
+/* ── Pipeline filter pills ── */
+.ag-pipe.on{
+  background:color-mix(in srgb,var(--sc) 20%,transparent);
+  border-color:var(--sc);
+  color:var(--sc);
+  box-shadow:0 0 14px rgba(218,165,32,.15)
+}
+
+/* ── Back button ── */
+.ag-back{
+  background:linear-gradient(160deg,rgba(16,14,32,.97),rgba(8,8,20,.97));
+  border:1px solid rgba(218,165,32,.25);
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  transition:border-color .2s,box-shadow .2s
+}
+.ag-back:hover{border-color:rgba(218,165,32,.6);box-shadow:0 0 16px rgba(218,165,32,.2)}
+
+/* ── Quote document — glass header ── */
+.hg2-qd-band{background:linear-gradient(135deg,#c2e8eb,#d8f0f2);box-shadow:0 4px 20px rgba(0,0,0,.15)}
+
+/* ── More button ── */
+.ag-more{
+  background:linear-gradient(160deg,rgba(12,10,24,.97),rgba(6,6,16,.97));
+  border:1px solid rgba(218,165,32,.2);
+  transition:border-color .2s,box-shadow .2s
+}
+.ag-more:hover{border-color:rgba(218,165,32,.5);box-shadow:0 4px 18px rgba(218,165,32,.1)}
+
+/* ── Section title gold text glow ── */
+.ag-section-ttl{text-shadow:0 0 14px rgba(218,165,32,.4)}
+
+/* ── KPI numbers glow ── */
+.ag-kpi b.cy{text-shadow:0 0 16px rgba(24,216,255,.5)}
+.ag-kpi b.ok{text-shadow:0 0 16px rgba(34,216,130,.5)}
+
+/* ── Action buttons on cards ── */
+.ag-abtn{
+  background:linear-gradient(160deg,rgba(14,12,28,.97),rgba(8,8,18,.97));
+  border:1px solid rgba(218,165,32,.2);
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+  transition:border-color .15s,box-shadow .15s,transform .1s
+}
+.ag-abtn:hover{border-color:rgba(218,165,32,.5);box-shadow:0 4px 16px rgba(218,165,32,.15);transform:translateY(-1px)}
+
+/* ── Desktop sidebar — glow border ── */
+@media(min-width:768px){
+  .ag-nav{
+    border-left:1px solid transparent;
+    border-image:linear-gradient(180deg,transparent,rgba(218,165,32,.5),transparent) 1;
+    box-shadow:-8px 0 40px rgba(0,0,0,.6)
+  }
+  .ag-nav button.on{
+    background:linear-gradient(90deg,transparent,rgba(212,168,67,.15));
+    border-right:3px solid var(--gold);
+    box-shadow:inset -3px 0 12px rgba(218,165,32,.1)
+  }
 }
 `}</style>;
 }
