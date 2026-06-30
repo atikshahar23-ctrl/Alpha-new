@@ -4015,5 +4015,54 @@ function Styles() {
 .hg2-hub-task span{flex:1;font-size:14px;line-height:1.4}
 .hg2-today-more{margin-right:auto;background:none;border:none;color:var(--cyan);font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:2px;padding:0}
 .hg2-today-more-btn{width:100%;background:none;border:none;color:var(--cyan);font-size:12.5px;font-weight:700;cursor:pointer;padding:8px 0 2px;text-align:center}
+
+/* ═══════════════════════════════════════════════
+   FUTURISTIC DESIGN UPGRADE — glass / neon / motion
+   ═══════════════════════════════════════════════ */
+@keyframes hgGrid{from{background-position:0 0}to{background-position:56px 56px}}
+@keyframes hgShimmer{0%{background-position:200% center}100%{background-position:-200% center}}
+@keyframes hgGlowPulse{0%,100%{box-shadow:0 0 0 0 rgba(228,188,99,0)}50%{box-shadow:0 0 20px 3px rgba(228,188,99,.18)}}
+@keyframes hgFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+
+.hg2::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
+  background-image:linear-gradient(rgba(228,188,99,.022) 1px,transparent 1px),linear-gradient(90deg,rgba(228,188,99,.022) 1px,transparent 1px);
+  background-size:56px 56px;animation:hgGrid 75s linear infinite;
+  -webkit-mask-image:radial-gradient(ellipse 100% 75% at 50% 20%,#000 25%,transparent 78%);
+  mask-image:radial-gradient(ellipse 100% 75% at 50% 20%,#000 25%,transparent 78%)}
+.hg2-head,.hg2-stats,.hg2-msum,.hg2-expbox,.hg2-list,.hg2-flow,.hg2-tabbar,.hg2-analysec{position:relative;z-index:1}
+
+.hg2-name{background-size:200% auto;animation:hgShimmer 7s linear infinite}
+
+.hg2-stat{background:linear-gradient(160deg,rgba(20,26,38,.97),rgba(10,14,22,.97));backdrop-filter:blur(10px);border-color:rgba(228,188,99,.2);box-shadow:0 4px 18px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.04);transition:transform .2s,box-shadow .2s,border-color .2s}
+.hg2-stat:hover{transform:translateY(-2px);border-color:rgba(228,188,99,.5);box-shadow:0 8px 26px rgba(228,188,99,.14)}
+
+.hg2-msum,.hg2-expbox,.hg2-analysec,.hg2-today-tasks,.hg2-weekcmp{background:linear-gradient(160deg,rgba(20,26,38,.96),rgba(10,14,22,.97));backdrop-filter:blur(10px);border-color:rgba(228,188,99,.18);box-shadow:0 6px 24px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.03)}
+
+.hg2-card{background:linear-gradient(160deg,rgba(18,24,34,.96),rgba(9,12,18,.96));backdrop-filter:blur(8px);transition:border-color .2s,box-shadow .2s,transform .15s}
+.hg2-card:hover{border-color:rgba(111,211,240,.55);box-shadow:0 6px 22px rgba(111,211,240,.1);transform:translateY(-1px)}
+
+.hg2-add{background-size:200% 100%;background-image:linear-gradient(270deg,var(--gold2),var(--champ),#fff5cc,var(--champ),var(--gold2));animation:hgShimmer 4s linear infinite;transition:transform .15s,box-shadow .2s}
+.hg2-add:hover{transform:translateY(-2px);box-shadow:0 12px 34px rgba(228,188,99,.4)}
+
+.hg2-search{backdrop-filter:blur(8px);transition:border-color .2s,box-shadow .2s}
+.hg2-search:focus-within{border-color:rgba(228,188,99,.65);box-shadow:0 0 0 3px rgba(228,188,99,.1)}
+
+.hg2-fchip.on{box-shadow:0 0 12px rgba(228,188,99,.18)}
+
+.hg2-tabbar{backdrop-filter:blur(18px);box-shadow:0 -8px 32px rgba(0,0,0,.5);border-top:1px solid transparent;border-image:linear-gradient(90deg,transparent,rgba(228,188,99,.45),transparent) 1}
+.hg2-tabbar button.on svg{filter:drop-shadow(0 0 7px rgba(228,188,99,.7))}
+
+.hg2-back{transition:border-color .2s,box-shadow .2s}
+.hg2-back:hover{border-color:rgba(228,188,99,.55);box-shadow:0 0 14px rgba(228,188,99,.18)}
+
+.hg2-logo{animation:hgFloat 5s ease-in-out infinite}
+
+.hg2-rank:first-child .hg2-rank-n{box-shadow:0 0 12px rgba(228,188,99,.4)}
+.hg2-cbtn{transition:border-color .2s,box-shadow .2s,transform .15s}
+.hg2-cbtn:hover{transform:translateY(-2px)}
+.hg2-cbtn.sel{box-shadow:0 0 16px rgba(228,188,99,.15)}
+
+.hg2-modal{backdrop-filter:blur(10px)}
+.hg2-confirm{backdrop-filter:blur(14px)}
 `}</style>;
 }
