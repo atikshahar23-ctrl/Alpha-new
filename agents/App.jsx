@@ -5,6 +5,7 @@ import {
   Copy, Check, Circle, Zap, ChevronLeft, MessageSquare, Plus, Trash2, RefreshCw,
   ArrowUpRight, Bot, Radio, Brain, Rocket, ShieldCheck, ClipboardList,
   GitBranch, Terminal, FileCode2, Coins, Package, Scale, Compass,
+  Building2, Database, GraduationCap,
 } from "lucide-react";
 
 /* ════════════════════════════════════════════════════════════════════
@@ -33,6 +34,41 @@ const timeAgo = (ts) => {
   if (s < 86400) return Math.floor(s / 3600) + " שע'";
   return Math.floor(s / 86400) + " ימים";
 };
+
+/* ── Live business knowledge: agents learn the real business from shared
+   localStorage (same origin as the HeavyGuard + CRM apps) plus facts you teach. ── */
+const K_BIZ = "alpha:agents:biz"; // learned business facts (strings)
+const ils = (n) => "₪" + (Number(n) || 0).toLocaleString("he-IL");
+function bizSnapshot() {
+  const get = (k) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch { return null; } };
+  const installs = get("hg2:index") || [];
+  const deals = get("itai:deals") || [];
+  const itaiCust = get("itai:customers") || [];
+  const pricelist = get("hg2:pricelist") || [];
+  const hgRevenue = installs.reduce((a, x) => a + (Number(x.price) || 0), 0);
+  const m = {};
+  installs.forEach((x) => { const n = (x.customer || "").trim(); if (!n) return; const k = n.replace(/\s+/g, " ").replace(/^ה(?=.{2,})/, "").toLowerCase(); if (!m[k]) m[k] = { name: n, rev: 0, count: 0 }; m[k].rev += Number(x.price) || 0; m[k].count++; });
+  const top = Object.values(m).sort((a, b) => b.rev - a.rev).slice(0, 5);
+  const custCount = Math.max(Object.keys(m).length, itaiCust.length);
+  const openDeals = deals.filter((d) => d.status === "פתוח");
+  const openVal = openDeals.reduce((a, d) => a + (Number(d.total) || 0), 0);
+  const mk = new Date().toISOString().slice(0, 7);
+  const wonMonth = deals.filter((d) => d.status === "נסגר" && String(d.wonAt || "").startsWith(mk)).length;
+  return { installs: installs.length, hgRevenue, custCount, top, openDeals: openDeals.length, openVal, wonMonth, pricelist: pricelist.length };
+}
+const learnedFacts = () => load(K_BIZ, []);
+function bizContext() {
+  const b = bizSnapshot();
+  const facts = learnedFacts();
+  const hasData = b.installs || b.custCount || b.openDeals;
+  const top = b.top.length ? b.top.map((c) => `${c.name} (${ils(c.rev)})`).join(", ") : "אין נתונים עדיין";
+  let s = `\n\n[ידע עסקי חי — HeavyGuard / איתי]`;
+  if (hasData) s += `\nהתקנות: ${b.installs} · הכנסה מצטברת: ${ils(b.hgRevenue)} · לקוחות: ${b.custCount} · עסקאות פתוחות: ${b.openDeals} (${ils(b.openVal)}) · נסגרו החודש: ${b.wonMonth} · מוצרים במחירון: ${b.pricelist}.\nלקוחות מובילים: ${top}.`;
+  else s += `\nעדיין אין נתונים חיים זמינים — בקש מאיתי לפתוח את מערכת HeavyGuard/CRM כדי שהנתונים יסונכרנו.`;
+  if (facts.length) s += `\nעובדות שאיתי לימד את הצוות:\n- ${facts.join("\n- ")}`;
+  s += `\nהשתמש בידע הזה לתשובות מבוססות-נתונים על העסק.`;
+  return s;
+}
 
 /* ── Tiny event bus: the Dev room pings the office sim so דן reacts live. ── */
 const devBus = { fns: new Set(), emit(p) { this.fns.forEach((f) => { try { f(p); } catch {} }); }, on(f) { this.fns.add(f); return () => this.fns.delete(f); } };
@@ -377,6 +413,7 @@ export default function App() {
         {view === "activity" && <ActivityView activity={activity} />}
         {view === "ideas" && <IdeasView ideas={ideas} setIdeas={setIdeas} showToast={showToast} />}
         {view === "dev" && <DevConsole logActivity={logActivity} showToast={showToast} />}
+        {view === "biz" && <BusinessView showToast={showToast} />}
         {view === "settings" && <SettingsView showToast={showToast} />}
       </div>
 
@@ -422,6 +459,7 @@ function TopBar({ online }) {
 function BottomNav({ view, setView, ideasCount }) {
   const items = [
     { id: "roster", label: "הצוות", Icon: LayoutGrid },
+    { id: "biz", label: "העסק", Icon: Building2 },
     { id: "dev", label: "פיתוח", Icon: Terminal },
     { id: "activity", label: "פעילות", Icon: Activity },
     { id: "ideas", label: "רעיונות", Icon: Lightbulb, badge: ideasCount },
@@ -544,7 +582,7 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
     }
     setBusy(true);
     try {
-      const reply = await askGroq(agent.persona, aiHist.current, t);
+      const reply = await askGroq(agent.persona + bizContext(), aiHist.current, t);
       aiHist.current = [...aiHist.current.slice(-6), { role: "user", content: t }, { role: "assistant", content: reply }];
       setLog([...withMe, { from: "bot", text: reply || "✔", ts: now() }]);
     } catch (e) {
@@ -755,7 +793,7 @@ function DevConsole({ logActivity, showToast }) {
     logActivity("dev", "ניסח בריף פיתוח: " + t.slice(0, 30));
     devBus.emit({ agentId: "dev", text: "מנסח בריף 🧑‍💻" });
     try {
-      const out = hasAI() ? await askGroq(devBriefSystem(), [], t) : devBriefFallback(t);
+      const out = hasAI() ? await askGroq(devBriefSystem() + bizContext(), [], t) : devBriefFallback(t);
       setBrief(out || devBriefFallback(t));
     } catch { setBrief(devBriefFallback(t)); }
     finally { setBusy(false); }
@@ -1015,6 +1053,64 @@ function OfficeSim({ onClose, onOpenChat }) {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   BUSINESS — what the team has learned about the business (live + taught)
+   ════════════════════════════════════════════════════════════════════ */
+function BusinessView({ showToast }) {
+  const [snap, setSnap] = useState(() => bizSnapshot());
+  const [facts, setFacts] = useState(() => learnedFacts());
+  const [fact, setFact] = useState("");
+  useEffect(() => { const iv = setInterval(() => setSnap(bizSnapshot()), 5000); return () => clearInterval(iv); }, []);
+
+  const addFact = () => { const t = fact.trim(); if (!t) return; const next = [t, ...facts].slice(0, 60); setFacts(next); save(K_BIZ, next); setFact(""); showToast("הצוות למד עובדה חדשה ✓"); };
+  const delFact = (i) => { const next = facts.filter((_, k) => k !== i); setFacts(next); save(K_BIZ, next); };
+  const hasData = snap.installs || snap.custCount || snap.openDeals;
+
+  return (
+    <div className="ac-page">
+      <div className="ac-hero sm">
+        <h1>הידע העסקי של הצוות</h1>
+        <p>הסוכנים לומדים את העסק שלך בזמן אמת — וגם מה שתלמד אותם</p>
+      </div>
+
+      <div className="ac-biz-grid">
+        <div className="ac-biz-kpi"><b>{snap.installs.toLocaleString()}</b><span>התקנות</span></div>
+        <div className="ac-biz-kpi"><b className="ok">{ils(snap.hgRevenue)}</b><span>הכנסה מצטברת</span></div>
+        <div className="ac-biz-kpi"><b>{snap.custCount.toLocaleString()}</b><span>לקוחות</span></div>
+        <div className="ac-biz-kpi"><b className="cy">{snap.openDeals}</b><span>עסקאות פתוחות</span></div>
+        <div className="ac-biz-kpi"><b className="cy">{ils(snap.openVal)}</b><span>שווי פייפליין</span></div>
+        <div className="ac-biz-kpi"><b className="ok">{snap.wonMonth}</b><span>נסגרו החודש</span></div>
+      </div>
+
+      {!hasData && <div className="ac-biz-note">עדיין אין נתונים חיים. פתח את מערכת HeavyGuard או ה-CRM של איתי (באותו דפדפן) כדי שהנתונים יסונכרנו אוטומטית לכאן.</div>}
+
+      {snap.top.length > 0 && (
+        <div className="ac-set-card">
+          <div className="ac-set-h"><Database size={17} /> לקוחות מובילים</div>
+          {snap.top.map((c, i) => (
+            <div key={i} className="ac-biz-row"><span className="ac-biz-rank">{i + 1}</span><b>{c.name}</b><span className="ac-biz-cnt">{c.count} התקנות</span><span className="ac-biz-rev">{ils(c.rev)}</span></div>
+          ))}
+        </div>
+      )}
+
+      <div className="ac-set-card">
+        <div className="ac-set-h"><GraduationCap size={17} /> למד את הצוות על העסק</div>
+        <p className="ac-set-note">כתוב עובדה על העסק (מוצר מוביל, אזור פעילות, יעד, מתחרה, מדיניות…) והצוות יזכור אותה וישתמש בה בכל שיחה.</p>
+        <div className="ac-idea-add">
+          <input value={fact} onChange={(e) => setFact(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addFact()} placeholder="למשל: רוב הלקוחות שלנו צי משאיות באזור המרכז…" dir="rtl" />
+          <button onClick={addFact}><Plus size={18} /></button>
+        </div>
+        {facts.length === 0 && <div className="ac-biz-note" style={{ margin: "8px 0 0" }}>עדיין לא לימדת את הצוות עובדות. כל מה שתוסיף — הם יזכרו.</div>}
+        {facts.map((f, i) => (
+          <div key={i} className="ac-biz-fact"><GraduationCap size={13} /><span>{f}</span><button onClick={() => delFact(i)}><Trash2 size={13} /></button></div>
+        ))}
+      </div>
+
+      <div className="ac-set-foot">הידע מסונכרן חי · הסוכנים מתעדכנים אוטומטית</div>
     </div>
   );
 }
@@ -1352,6 +1448,26 @@ function StyleTag() {
 .ofc-bubble{position:absolute;bottom:100%;left:50%;transform:translateX(-50%);margin-bottom:5px;background:#fff;color:#1a2238;font-size:10.5px;font-weight:700;padding:5px 9px;border-radius:11px;white-space:nowrap;box-shadow:0 6px 16px rgba(0,0,0,.45);animation:offPop .3s ease both;z-index:5}
 .ofc-bubble::after{content:'';position:absolute;bottom:-5px;left:50%;transform:translateX(-50%);border:5px solid transparent;border-top-color:#fff;border-bottom:0}
 .ofc-bubble-to{color:#C75A12;font-weight:900;margin-left:3px}
+
+/* ── business knowledge ── */
+.ac-biz-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:9px;margin-bottom:14px}
+@media(min-width:560px){.ac-biz-grid{grid-template-columns:repeat(3,1fr)}}
+.ac-biz-kpi{background:linear-gradient(160deg,rgba(18,16,36,.96),rgba(9,9,20,.97));border:1px solid var(--s7);border-radius:13px;padding:13px;text-align:right}
+.ac-biz-kpi b{display:block;font-family:'Rubik';font-weight:900;font-size:20px;color:var(--gold)}
+.ac-biz-kpi b.ok{color:#3FD79A} .ac-biz-kpi b.cy{color:#6FD3F0}
+.ac-biz-kpi span{font-size:11.5px;color:var(--s4)}
+.ac-biz-note{font-size:12px;color:var(--s4);background:rgba(110,170,240,.06);border:1px solid rgba(110,170,240,.2);border-radius:11px;padding:11px 13px;margin-bottom:14px;line-height:1.55}
+.ac-biz-row{display:flex;align-items:center;gap:9px;padding:8px 0;border-bottom:1px solid var(--s8)}
+.ac-biz-row:last-child{border-bottom:none}
+.ac-biz-rank{width:20px;height:20px;flex-shrink:0;border-radius:50%;background:linear-gradient(135deg,var(--gold),var(--gold2));color:#1a1400;font-family:'Rubik';font-weight:900;font-size:11px;display:flex;align-items:center;justify-content:center}
+.ac-biz-row b{flex:1;min-width:0;font-size:13.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ac-biz-cnt{font-size:11px;color:var(--s4)}
+.ac-biz-rev{font-family:'Rubik';font-weight:900;font-size:13px;color:#3FD79A}
+.ac-biz-fact{display:flex;align-items:center;gap:8px;background:var(--s9);border:1px solid var(--s7);border-radius:10px;padding:9px 11px;margin-top:7px;font-size:12.5px;color:var(--silver)}
+.ac-biz-fact svg{color:var(--gold);flex-shrink:0}
+.ac-biz-fact span{flex:1;min-width:0;line-height:1.4}
+.ac-biz-fact button{background:none;border:none;color:var(--s4);cursor:pointer;display:flex;padding:2px;opacity:.6}
+.ac-biz-fact button:hover{color:#FF6B9D;opacity:1}
 
 /* ── settings ── */
 .ac-set-card{background:linear-gradient(160deg,rgba(16,14,32,.96),rgba(8,8,18,.97));border:1px solid var(--s7);border-radius:16px;padding:16px;margin-bottom:14px;box-shadow:0 6px 26px rgba(0,0,0,.4)}
