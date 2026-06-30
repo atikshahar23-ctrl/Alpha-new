@@ -87,6 +87,20 @@ function monthlyRevenue() {
   }
   return out;
 }
+// Proactive opportunity/risk detection — each agent flags what's in their lane.
+function detectOpportunities(b) {
+  const out = [];
+  if (b.hgRevenue > 0 && b.top[0] && b.top[0].rev / b.hgRevenue > 0.4) {
+    const pct = Math.round(b.top[0].rev / b.hgRevenue * 100);
+    out.push({ agentId: "growth", text: `ריכוז סיכון: ${pct}% מההכנסה מגיע מלקוח אחד (${b.top[0].name}) — כדאי לגוון את מאגר הלקוחות.` });
+  }
+  if (b.staleCount > 0) out.push({ agentId: "sales", text: `${b.staleCount} עסקאות פתוחות כבר מעל שבוע — שווה לעקוב אחריהן היום.` });
+  if (b.pricelist === 0 && b.installs > 0) out.push({ agentId: "procure", text: `אין עדיין מחירון מוגדר ב-HeavyGuard — כדאי להוסיף אחד לתמחור מהיר ועקבי.` });
+  if (b.wonMonth >= 3) out.push({ agentId: "finance", text: `חודש חזק — ${b.wonMonth} עסקאות נסגרו. כדאי לבדוק תזרים ולתכנן את הבא.` });
+  if (b.custCount === 0 && b.installs > 0) out.push({ agentId: "legal", text: `יש התקנות אבל אין עדיין לקוחות רשומים — ודא שכל לקוח חדש חותם על טופס התקשרות.` });
+  if (b.openDeals === 0 && b.installs > 0) out.push({ agentId: "sales", text: `אין כרגע עסקאות פתוחות — הזמן טוב לפתוח הצעת מחיר חדשה ולמלא את הפייפליין.` });
+  return out;
+}
 const learnedFacts = () => load(K_BIZ, []);
 function bizContext() {
   const b = bizSnapshot();
@@ -1175,6 +1189,7 @@ function BusinessView({ showToast }) {
   const addFact = () => { const t = fact.trim(); if (!t) return; const next = [t, ...facts].slice(0, 60); setFacts(next); cloudSave(K_BIZ, next); setFact(""); showToast("הצוות למד עובדה חדשה ✓"); };
   const delFact = (i) => { const next = facts.filter((_, k) => k !== i); setFacts(next); cloudSave(K_BIZ, next); };
   const hasData = snap.installs || snap.custCount || snap.openDeals;
+  const opportunities = useMemo(() => detectOpportunities(snap), [snap]);
 
   return (
     <div className="ac-page">
@@ -1193,6 +1208,21 @@ function BusinessView({ showToast }) {
       </div>
 
       {!hasData && <div className="ac-biz-note">עדיין אין נתונים חיים. פתח את מערכת HeavyGuard או ה-CRM של איתי (באותו דפדפן) כדי שהנתונים יסונכרנו אוטומטית לכאן.</div>}
+
+      {opportunities.length > 0 && (
+        <div className="ac-set-card">
+          <div className="ac-set-h"><Sparkles size={17} /> תובנות והזדמנויות</div>
+          {opportunities.map((op, i) => {
+            const ag = byId(op.agentId);
+            return (
+              <div key={i} className="ac-opp-row" style={{ "--c": ag?.color || "#888" }}>
+                <span className="ac-opp-orb"><Face agent={ag} fallback={14} /></span>
+                <div className="ac-opp-mid"><b>{ag?.name}</b><p>{op.text}</p></div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       <RevenueChart months={months} />
 
@@ -1620,6 +1650,12 @@ function StyleTag() {
 .ac-rev-bar{width:60%;min-height:3px;border-radius:5px 5px 2px 2px;background:linear-gradient(180deg,var(--gold),var(--gold2));box-shadow:0 0 10px rgba(228,188,99,.25);transition:height .6s cubic-bezier(.34,1.56,.64,1)}
 .ac-rev-val{font-size:9.5px;color:var(--gold);font-weight:800;white-space:nowrap}
 .ac-rev-lbl{font-size:10.5px;color:var(--s4);font-weight:700}
+.ac-opp-row{display:flex;align-items:flex-start;gap:9px;padding:9px 0;border-bottom:1px solid var(--s8)}
+.ac-opp-row:last-child{border-bottom:none}
+.ac-opp-orb{width:26px;height:26px;border-radius:9px;overflow:hidden;flex-shrink:0;box-shadow:0 2px 8px color-mix(in srgb,var(--c) 40%,transparent)}
+.ac-opp-mid{flex:1;min-width:0}
+.ac-opp-mid b{font-size:11.5px;font-weight:800;color:var(--c)}
+.ac-opp-mid p{font-size:12.5px;line-height:1.5;color:var(--silver);margin-top:2px}
 
 /* ── settings ── */
 .ac-set-card{background:linear-gradient(160deg,rgba(16,14,32,.96),rgba(8,8,18,.97));border:1px solid var(--s7);border-radius:16px;padding:16px;margin-bottom:14px;box-shadow:0 6px 26px rgba(0,0,0,.4)}
