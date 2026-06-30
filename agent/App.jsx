@@ -1356,57 +1356,60 @@ function CloudSettings({ onClose, showToast }) {
   );
 }
 
-/* PDF printout for a received customer Samsonix form (no card details stored) */
+/* PDF printout for a received customer Samsonix form.
+   Uses the EXACT same HTML template as printSamsonix — only the data source
+   changes (inbox record instead of the manual form). Card details are never
+   stored, so that section shows a note instead of numbers. */
 function printInboxSam(s) {
-  const today = dmy(todayISO());
-  const planLabel = (SAM_PLANS.find((p) => p.id === s.plan) || {}).label || (s.plan || "").toUpperCase();
+  const today = dmy(s.savedAt || todayISO());
   const win = window.open("", "_blank");
   if (!win) return false;
-  win.document.write(`<!DOCTYPE html><html dir="rtl" lang="he"><head><meta charset="UTF-8">
-<title>טופס סמסוניקס — ${s.fullName || ""}</title>
+  const row = (l, v) => v ? `<div class="fi"><div class="fl">${l}</div><div class="fv">${v}</div></div>` : "";
+  win.document.write(`<!DOCTYPE html><html lang="he" dir="rtl"><head><meta charset="utf-8"><title>טופס סמסוניקס · ${s.fullName || ""}</title>
 <style>
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:Arial,sans-serif;font-size:13px;color:#1a1a1a;background:#fff;padding:18px}
-  .hdr{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #1E9A60;padding-bottom:10px;margin-bottom:14px}
-  .logo{font-size:22px;font-weight:900;color:#1E9A60;letter-spacing:-1px}.sub{font-size:11px;color:#555;margin-top:2px}
-  .date{text-align:left;font-size:12px;color:#555}
-  h2{font-size:16px;font-weight:700;color:#1E9A60;margin-bottom:10px}
-  .intro{font-size:12px;color:#444;line-height:1.6;margin-bottom:12px;background:#f0faf5;border-right:3px solid #1E9A60;padding:8px 10px;border-radius:4px}
-  table{width:100%;border-collapse:collapse;margin-bottom:14px}
-  td{padding:6px 8px;border-bottom:1px solid #e8e8e8;font-size:12.5px}
-  td:first-child{font-weight:700;color:#444;width:35%;background:#f9faf9}
-  .band{background:#1E9A60;color:#fff;font-size:11px;font-weight:700;padding:5px 8px;border-radius:3px;margin:10px 0 6px}
-  .sig-box{margin-top:14px;display:flex;justify-content:space-between;align-items:flex-end;border-top:1px solid #ccc;padding-top:10px}
-  .sig img{max-width:200px;max-height:80px}
-  .note{background:#fff8e1;border:1px solid #e6b800;border-radius:4px;padding:7px 10px;font-size:11px;color:#7a5f00;margin:10px 0}
-  .ft{margin-top:16px;border-top:1px solid #ccc;padding-top:8px;font-size:10.5px;color:#777;text-align:center;line-height:1.7}
+  *{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif}
+  body{padding:22px 26px;color:#1b2733;max-width:820px;margin:0 auto}
+  .hdr{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #0e7d8c;padding-bottom:10px}
+  .logo{font-size:26px;font-weight:900;color:#0e7d8c}.logo em{font-style:normal}
+  .sub{font-size:11px;letter-spacing:3px;color:#888}
+  .date{font-size:12px;text-align:left}
+  h2{font-size:17px;margin:16px 0 6px}
+  .intro{font-size:12px;line-height:1.8;color:#444}
+  .sec{margin-top:14px;border:1px solid #d7dde3;border-radius:8px;padding:11px 13px}
+  .sec-t{font-weight:700;font-size:13px;color:#0e7d8c;margin-bottom:7px}
+  .ck{display:flex;align-items:center;gap:8px;font-size:12px;margin:5px 0}
+  .box{width:15px;height:15px;border:1.5px solid #555;border-radius:3px;display:inline-flex;align-items:center;justify-content:center;font-size:11px}
+  .on{background:#0e7d8c;border-color:#0e7d8c;color:#fff}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:7px 18px}
+  .fi{font-size:12px}.fl{color:#888;font-size:10.5px}.fv{font-weight:700;border-bottom:1px solid #e3e8ee;padding:2px 0}
+  .note{background:#fff8e1;border:1px solid #e6b800;border-radius:5px;padding:7px 10px;font-size:11px;color:#7a5f00;margin-top:8px}
+  .sig{display:flex;justify-content:space-between;align-items:flex-end;margin-top:18px}
+  .sig img{max-width:200px;max-height:90px;border-bottom:1px solid #333}
+  .ft{margin-top:18px;border-top:1px solid #ccc;padding-top:9px;font-size:10.5px;color:#777;text-align:center;line-height:1.7}
   @media print{@page{margin:8mm;size:A4}}
 </style></head><body>
-<div class="hdr"><div><div class="logo">⚡ <em>samsonix</em></div><div class="sub">ENJOY YOUR DRIVE — Heavy Guard</div></div><div class="date">תאריך: <b>${s.savedAt || today}</b><br><span>DVR Subscription Agreement</span></div></div>
-<h2>שימוש בשרת לצפייה ב-DVR — טופס מנוי</h2>
-<p class="intro">הלקוח מילא וחתם על טופס זה דיגיטלית. פרטי האשראי הועברו ישירות לנציג בוואטסאפ ואינם מאוחסנים במערכת.</p>
-<div class="band">פרטי לקוח</div>
-<table>
-  <tr><td>שם מלא</td><td>${s.fullName || ""}</td></tr>
-  <tr><td>ת.ז</td><td>${s.idNum || ""}</td></tr>
-  <tr><td>טלפון</td><td dir="ltr">${s.phone || ""}</td></tr>
-  <tr><td>אימייל</td><td dir="ltr">${s.email || ""}</td></tr>
-  <tr><td>שם חברה</td><td>${s.company || ""}</td></tr>
-  <tr><td>ח.פ / ע.מ</td><td>${s.bizNum || ""}</td></tr>
-</table>
-<div class="band">פרטי מנוי ורכב</div>
-<table>
-  <tr><td>חבילה</td><td>${planLabel}</td></tr>
-  <tr><td>הקלטת קול</td><td>${s.audio === "with" ? "כן" : "לא"}</td></tr>
-  <tr><td>BSD</td><td>${s.bsd ? "כן — BSD + 4 מצלמות" : "לא"}</td></tr>
-  <tr><td>רכב ראשי</td><td dir="ltr">${s.veh1 || ""} ${s.veh1Type || ""}</td></tr>
-  ${s.veh2 ? `<tr><td>רכב שני</td><td dir="ltr">${s.veh2} ${s.veh2Type || ""}</td></tr>` : ""}
-</table>
-<div class="note">🔒 פרטי כרטיס האשראי לא נשמרו במערכת — הם נשלחו ישירות לנציג בוואטסאפ בהתאם לדרישות אבטחה.</div>
-<div class="sig-box">
-  <div style="font-size:12px;line-height:1.7"><b>בברכה,</b><br>Heavy Guard · שיווק ומכירות<br><span style="color:#888">Samsonix · info@samsonix.com · 03-5662259</span></div>
-  <div style="text-align:center">${s.sigDataUrl ? `<img src="${s.sigDataUrl}" alt="חתימה" />` : ""}<div style="font-size:11px;color:#555;margin-top:3px">חתימת הלקוח: <b>${s.fullName || ""}</b> · ${s.savedAt || today}</div></div>
-</div>
+<div class="hdr"><div><div class="logo">⚡ <em>samsonix</em></div><div class="sub">ENJOY YOUR DRIVE</div></div><div class="date">תאריך: <b>${today}</b><br><span style="color:#888">DVR Subscription Agreement</span></div></div>
+<h2>שימוש בשרת לצפייה ב-DVR</h2>
+<p class="intro">הננו שמחים שבחרתם להתקין מערכת DVR עם מצלמות לצפייה והקלטה מרחוק. לצפייה דרך אפליקציה/מחשב נדרש תשלום חודשי לשרת בהוראת קבע. ניתן לבטל בהודעה בכתב 7 ימים מראש.</p>
+<div class="sec"><div class="sec-t">חבילת מנוי — הוראת קבע חודשית</div>
+${SAM_PLANS.map((p) => `<div class="ck"><span class="box ${s.plan === p.id ? "on" : ""}">${s.plan === p.id ? "✓" : ""}</span><span>${p.label}</span></div>`).join("")}
+<div class="note">***שימוש חורג מהחבילה החודשית <u>לא</u> מאפשר צפייה/הקלטות מרחוק***</div></div>
+<div class="sec"><div class="sec-t">הקלטת קול</div>
+<div class="ck"><span class="box ${s.audio === "none" ? "on" : ""}">${s.audio === "none" ? "✓" : ""}</span><span><b>ללא הקלטת קול</b></span></div>
+<div class="ck"><span class="box ${s.audio === "with" ? "on" : ""}">${s.audio === "with" ? "✓" : ""}</span><span><b>עם הקלטת קול</b> (בעלות נוספת)</span></div></div>
+${s.bsd ? `<div class="sec"><div class="ck"><span class="box on">✓</span><span>התקנת מסך BSD + 4 מצלמות — ₪4,500</span></div></div>` : ""}
+<div class="sec"><div class="sec-t">פרטי הלקוח</div><div class="grid">
+${row("שם מלא של בעל הכרטיס", s.fullName)}${row('מספר ת"ז', s.idNum)}${row("כתובת מייל", s.email)}${row("טלפון", s.phone)}${row("שם חברה", s.company)}${row("ע.מ / ח.פ", s.bizNum)}
+</div></div>
+<div class="sec"><div class="sec-t">פרטי כלי הרכב</div><div class="grid">
+${row("מספר רכב", s.veh1)}${row("סוג רכב", s.veh1Type)}${row("מספר רכב 2", s.veh2)}${row("סוג רכב 2", s.veh2Type)}
+</div></div>
+<div class="sec"><div class="sec-t">פרטי תשלום — הוראת קבע</div>
+<div class="note">🔒 פרטי כרטיס האשראי מוצגים בטופס זה בלבד ואינם נשמרים בשום מסד נתונים.</div>
+<div class="grid" style="margin-top:7px"><div class="fi" style="grid-column:1/-1"><div class="fl">מספר כרטיס אשראי</div><div class="fv" style="color:#888;font-style:italic">הלקוח שלח ישירות לנציג בוואטסאפ</div></div>
+</div></div>
+<div class="sig"><div style="font-size:12px;line-height:1.7"><b>בברכה,</b><br>Heavy Guard · שיווק ומכירות<br><span style="color:#888">Samsonix · info@samsonix.com · 03-5662259</span></div>
+<div style="text-align:center">${s.sigDataUrl ? `<img src="${s.sigDataUrl}" alt="חתימה"/>` : ""}<div style="font-size:11px;color:#555;margin-top:3px">חתימת הלקוח: <b>${s.fullName || ""}</b> · ${today}</div></div></div>
 <div class="ft">St. Hametzuda 31, Azur, Israel · טל: 03-5662259 · www.samsonix.com</div>
 <script>window.addEventListener('load',()=>setTimeout(()=>window.print(),400));<\/script>
 </body></html>`);
