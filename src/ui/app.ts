@@ -2351,11 +2351,16 @@ export function mountApp(root: HTMLElement) {
           try { pbCtx.drawImage(vid, 0, 0, 160, 120); } catch { return 'none'; }
           const { data } = pbCtx.getImageData(0, 0, 160, 120);
 
-          // ── Safari Ball: yellow body with dark-green accents ─────────────────
+          // ── Safari Ball: yellow/amber body ──────────────────────────────────
+          // Use relative ratios (not absolute) so indoor/warm lighting still works.
+          // Yellow = R and G both elevated, B clearly lower, R slightly > G.
           let yMinX = 160, yMaxX = 0, yMinY = 120, yMaxY = 0, yellowCount = 0;
-          // ── Classic Pokéball: red top half + white bottom half ───────────────
+
+          // ── Classic Pokéball: red top + white bottom ─────────────────────────
+          // Red  = R clearly dominant over G and B (ratio-based for dim rooms).
+          // White = all channels bright (lowered threshold for off-white / cream).
           let redSX = 0, redSY = 0, redCount = 0;
-          let whSX = 0,  whSY = 0,  whCount  = 0;
+          let whSX  = 0, whSY  = 0, whCount  = 0;
           let rMinX = 160, rMaxX = 0, rMinY = 120, rMaxY = 0;
           let wMinX = 160, wMaxX = 0, wMinY = 120, wMaxY = 0;
 
@@ -2363,46 +2368,47 @@ export function mountApp(root: HTMLElement) {
             const r = data[i], g = data[i + 1], b = data[i + 2];
             const px = (i >> 2) % 160, py = (i >> 2) / 160 | 0;
 
-            // Yellow (Safari Ball body)
-            if (r > 155 && g > 115 && b < 115 && r - b > 70 && r > g * 1.05) {
+            // Yellow (Safari Ball): R dominant, G medium, B low — ratio-based
+            if (r > 110 && g > 75 && b < 140
+                && r - b > 35 && g - b > 15
+                && r > g * 0.88 && r < g * 1.6) {
               if (px < yMinX) yMinX = px; if (px > yMaxX) yMaxX = px;
               if (py < yMinY) yMinY = py; if (py > yMaxY) yMaxY = py;
               yellowCount++;
             }
-            // Red (classic Pokéball top)
-            else if (r > 165 && g < 90 && b < 90) {
+            // Red (classic Pokéball top): R >> G and R >> B
+            else if (r > 110 && r > g * 1.5 && r > b * 1.5 && g < 130 && b < 130) {
               redSX += px; redSY += py; redCount++;
               if (px < rMinX) rMinX = px; if (px > rMaxX) rMaxX = px;
               if (py < rMinY) rMinY = py; if (py > rMaxY) rMaxY = py;
             }
-            // White (classic Pokéball bottom)
-            else if (r > 195 && g > 195 && b > 195) {
+            // White (classic Pokéball bottom): all channels bright (≥150 each)
+            else if (r > 150 && g > 150 && b > 150 && r + g + b > 490) {
               whSX += px; whSY += py; whCount++;
               if (px < wMinX) wMinX = px; if (px > wMaxX) wMaxX = px;
               if (py < wMinY) wMinY = py; if (py > wMaxY) wMaxY = py;
             }
           }
 
-          // Classic Pokéball: need enough red AND white, with red above white
-          // and both horizontally aligned (same object in the frame).
+          // Classic Pokéball: red cluster ABOVE white cluster, horizontally aligned
           const classicOk = (() => {
-            if (redCount < 40 || whCount < 40) return false;
+            if (redCount < 25 || whCount < 25) return false;
             const rCY = redSY / redCount, wCY = whSY / whCount;
             const rCX = redSX / redCount, wCX = whSX / whCount;
-            return rCY < wCY                      // red is above white ✓
-              && (wCY - rCY) < 65                 // not too far apart vertically
-              && Math.abs(rCX - wCX) < 55;        // horizontally aligned (same ball)
+            return rCY < wCY                   // red is above white ✓
+              && (wCY - rCY) < 80              // not too far apart vertically
+              && Math.abs(rCX - wCX) < 65;     // horizontally aligned (same ball)
           })();
 
-          if (yellowCount < 55 && !classicOk) return 'none';
+          const safariOk = yellowCount >= 35;
+          if (!safariOk && !classicOk) return 'none';
 
-          // Build bounding box for the detected ball
+          // Bounding box for the detected ball
           let bx1: number, bx2: number, by1: number, by2: number;
-          if (yellowCount >= 55) {
+          if (safariOk) {
             bx1 = Math.max(0, yMinX); bx2 = Math.min(159, yMaxX);
             by1 = Math.max(0, yMinY); by2 = Math.min(119, yMaxY);
           } else {
-            // Classic: span both red and white regions
             bx1 = Math.max(0, Math.min(rMinX, wMinX));
             bx2 = Math.min(159, Math.max(rMaxX, wMaxX));
             by1 = Math.max(0, Math.min(rMinY, wMinY));
@@ -2410,20 +2416,20 @@ export function mountApp(root: HTMLElement) {
           }
 
           const bw = bx2 - bx1 + 1, bh = by2 - by1 + 1;
-          if (bw < 8 || bh < 8) return 'closed';
+          if (bw < 6 || bh < 6) return 'closed';
 
-          // Count dark pixels inside bounding box — open ball reveals its black interior
+          // Open ball exposes dark interior → darkRatio rises
           let darkCount = 0, total = 0;
           for (let y = by1; y <= by2; y++) {
             for (let x = bx1; x <= bx2; x++) {
               const i4 = (y * 160 + x) * 4;
               total++;
-              if (data[i4] < 55 && data[i4 + 1] < 55 && data[i4 + 2] < 55) darkCount++;
+              if (data[i4] < 60 && data[i4 + 1] < 60 && data[i4 + 2] < 60) darkCount++;
             }
           }
           const darkRatio = darkCount / Math.max(1, total);
           const aspect    = bw / Math.max(1, bh);
-          return (darkRatio > 0.17 || aspect > 1.65) ? 'open' : 'closed';
+          return (darkRatio > 0.13 || aspect > 1.6) ? 'open' : 'closed';
         }
 
         function applyPokeballTransition(next: PBState) {
