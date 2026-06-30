@@ -370,6 +370,7 @@ export default function App() {
       {tab === "custs" && <CustomersView custs={custs} onSave={saveCustomer} onRemove={removeCustomer} showToast={showToast} />}
       {tab === "map" && <MapView leads={leads} custs={custs} deals={deals} showToast={showToast} />}
       {tab === "showroom" && <ShowroomView showToast={showToast} onQuote={(p) => setDealDraft({ deal: { items: [{ desc: p.name, qty: 1, price: Number(p.price) || 0 }], status: "פתוח" } })} />}
+      {tab === "marketing" && <MarketingView showToast={showToast} />}
 
       <nav className="ag-nav">
         <div className="ag-nav-brand">
@@ -378,10 +379,10 @@ export default function App() {
         </div>
         <button className={tab === "home" ? "on" : ""} onClick={() => setTab("home")}><LayoutDashboard size={20} /><span>בקרה</span></button>
         <button className={tab === "leads" ? "on" : ""} onClick={() => setTab("leads")}><Target size={20} /><span>לידים</span></button>
-        <button className={tab === "map" ? "on" : ""} onClick={() => setTab("map")}><MapPin size={20} /><span>מפה</span></button>
         <button className={tab === "deals" ? "on" : ""} onClick={() => setTab("deals")}><Handshake size={20} /><span>עסקאות</span></button>
         <button className={tab === "custs" ? "on" : ""} onClick={() => setTab("custs")}><UserRound size={20} /><span>לקוחות</span></button>
         <button className={tab === "showroom" ? "on" : ""} onClick={() => setTab("showroom")}><Camera size={20} /><span>שורום</span></button>
+        <button className={tab === "marketing" ? "on" : ""} onClick={() => setTab("marketing")}><Megaphone size={20} /><span>שיווק</span></button>
         <button className="ag-nav-exit" onClick={exitToAlpha}><ChevronLeft size={20} /><span>יציאה</span></button>
       </nav>
 
