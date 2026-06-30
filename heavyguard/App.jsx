@@ -313,8 +313,8 @@ export default function App() {
         {view === "finance" && <Finance index={index} onBack={() => setView("hub")} />}
         {view === "leads" && <Leads onBack={() => setView("hub")} showToast={showToast} />}
         {view === "settings" && <SettingsView onBack={() => setView("hub")} showToast={showToast} />}
-        {view === "new" && <NewInstall onCancel={() => setView("logger")} onSave={addInstall} onStartDraft={startDraft} onDiscardDraft={discardDraft} resumeEntry={resumeId ? index.find((x) => x.id === resumeId) : null} showToast={showToast} />}
-        {view === "detail" && <Detail entry={index.find((x) => x.id === detailId)} onBack={() => setView(prevTab)} onDelete={removeInstall} onUpdate={updateInstall} showToast={showToast} />}
+        {view === "new" && <NewInstall onCancel={() => setView("logger")} onSave={addInstall} onStartDraft={startDraft} onDiscardDraft={discardDraft} resumeEntry={resumeId ? index.find((x) => x.id === resumeId) : null} customers={customerDirectory(index)} showToast={showToast} />}
+        {view === "detail" && <Detail entry={index.find((x) => x.id === detailId)} onBack={() => setView(prevTab)} onDelete={removeInstall} onUpdate={updateInstall} customers={customerDirectory(index)} showToast={showToast} />}
       </div>
       {toast && <div className={"hg2-toast " + toast.kind}>{toast.kind === "ok" ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}{toast.msg}</div>}
       <ConfirmHost />
@@ -1208,15 +1208,11 @@ function Customers({ index, onBack, showToast }) {
   };
   const remove = async (c) => { if (!(await askConfirm("למחוק לקוח?"))) return; const next = custs.filter((x) => x.id !== c.id); setCusts(next); saveArr("hg2:customers", next); };
 
-  const hgClients = useMemo(() => {
-    const m = {};
-    index.filter((x) => x.contractor === "hg" && ((x.customer && x.customer.trim()) || (x.phone && x.phone.trim()))).forEach((x) => {
-      const name = (x.customer || "").trim(); const phone = (x.phone || "").trim(); const key = name + "|" + phone;
-      if (!m[key]) m[key] = { name: name || "(ללא שם)", phone, count: 0, revenue: 0, derived: true };
-      m[key].count++; m[key].revenue += Number(x.price) || 0;
-    });
-    return Object.values(m).sort((a, b) => b.count - a.count);
-  }, [index]);
+  // Merge duplicates by normalised name and sum each customer's income.
+  const hgClients = useMemo(
+    () => customerDirectory(index.filter((x) => x.contractor === "hg")).map((c) => ({ ...c, derived: true })),
+    [index]
+  );
   const manual = custs || [];
   const derivedShown = hgClients.filter((d) => !manual.some((mm) => (mm.phone && mm.phone === d.phone) || mm.name === d.name));
 
@@ -1256,7 +1252,7 @@ function Customers({ index, onBack, showToast }) {
           {derivedShown.map((c, i) => (
             <div className="hg2-crow" key={"d" + i}>
               <div className="hg2-crow-ic" style={{ color: cColor("hg") }}><User size={18} /></div>
-              <div className="hg2-crow-mid"><b>{c.name}</b><span dir="ltr" style={{ textAlign: "right" }}>{c.phone || "—"} · {c.count} התקנות</span></div>
+              <div className="hg2-crow-mid"><b>{c.name}</b><span dir="ltr" style={{ textAlign: "right" }}>{c.phone || "—"} · {c.count} התקנות · {ils(c.revenue)}</span></div>
               <div className="hg2-crow-acts">
                 {c.phone && <a className="hg2-wa" href={waLink(c.phone, "שלום " + (c.name !== "(ללא שם)" ? c.name : "") + ",")} target="_blank" rel="noreferrer"><MessageSquare size={16} /></a>}
                 <button className="hg2-icbtn2" onClick={() => { setEdit({ name: c.name === "(ללא שם)" ? "" : c.name, phone: c.phone, notes: "" }); setOpen(true); }}><Pencil size={14} /></button>
@@ -2901,8 +2897,30 @@ function Finance({ index, onBack }) {
   );
 }
 
+/* ── Customer directory: merge duplicates by normalised name, sum income.
+   Normalisation: trim, collapse spaces, drop a leading definite-article "ה".
+   Used both for the customers view (dedup) and the install-form autocomplete. ── */
+const normName = (s) => { let k = (s || "").trim().replace(/\s+/g, " "); if (k.length > 3 && k[0] === "ה") k = k.slice(1); return k.toLowerCase(); };
+function customerDirectory(index) {
+  const m = {};
+  (index || []).forEach((x) => {
+    const name = (x.customer || "").trim(); const phone = (x.phone || "").trim();
+    if (!name && !phone) return;
+    const key = normName(name) || ("#" + phone);
+    if (!m[key]) m[key] = { phone: "", count: 0, revenue: 0, variants: {} };
+    const e = m[key];
+    e.count++; e.revenue += Number(x.price) || 0;
+    if (phone && !e.phone) e.phone = phone;
+    if (name) e.variants[name] = (e.variants[name] || 0) + 1;
+  });
+  return Object.values(m).map((e) => {
+    const best = Object.entries(e.variants).sort((a, b) => b[1] - a[1])[0];
+    return { name: best ? best[0] : "(ללא שם)", phone: e.phone, count: e.count, revenue: e.revenue };
+  }).sort((a, b) => b.revenue - a.revenue);
+}
+
 /* ============================ New installation ============================ */
-function NewInstall({ onCancel, onSave, onStartDraft, onDiscardDraft, resumeEntry, showToast }) {
+function NewInstall({ onCancel, onSave, onStartDraft, onDiscardDraft, resumeEntry, customers, showToast }) {
   const r = resumeEntry || null;
   const [contractor, setContractor] = useState(r ? r.contractor : null);
   const [phase, setPhase] = useState(r ? "running" : "pick"); // pick | running | done
@@ -3062,8 +3080,12 @@ function NewInstall({ onCancel, onSave, onStartDraft, onDiscardDraft, resumeEntr
         <Field icon={DollarSign} label="מחיר (ש״ח)"><input type="number" inputMode="numeric" value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} placeholder="0" /></Field>
 
         {isMaster && <>
-          <Field icon={Phone} label="טלפון לקוח"><input value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} placeholder="05X-XXXXXXX" dir="ltr" style={{ textAlign: "right" }} /></Field>
-          <Field icon={User} label="שם לקוח"><input value={f.customer} onChange={(e) => setF({ ...f, customer: e.target.value })} placeholder="שם הלקוח" /></Field>
+          <Field icon={User} label="שם לקוח">
+            <input list="hg-cust-new" value={f.customer} placeholder="שם הלקוח · בחר לקוח קיים" autoComplete="off"
+              onChange={(e) => { const v = e.target.value; const hit = (customers || []).find((c) => c.name === v); setF((p) => ({ ...p, customer: v, phone: hit && hit.phone ? hit.phone : p.phone })); }} />
+            <datalist id="hg-cust-new">{(customers || []).map((c, i) => <option key={i} value={c.name}>{[c.phone, c.count + " התקנות"].filter(Boolean).join(" · ")}</option>)}</datalist>
+          </Field>
+          <Field icon={Phone} label="טלפון לקוח"><input value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} placeholder="05X-XXXXXXX · יתמלא אוטומטית מלקוח קיים" dir="ltr" style={{ textAlign: "right" }} /></Field>
         </>}
 
         <Field icon={Calendar} label="תאריך"><DateField value={f.date} onChange={(v) => setF({ ...f, date: v })} /></Field>
@@ -3126,7 +3148,7 @@ function NewInstall({ onCancel, onSave, onStartDraft, onDiscardDraft, resumeEntr
 }
 
 /* ============================ Detail / Edit ============================ */
-function Detail({ entry, onBack, onDelete, onUpdate, showToast }) {
+function Detail({ entry, onBack, onDelete, onUpdate, customers, showToast }) {
   const [photo, setPhoto] = useState(null);
   const [gallery, setGallery] = useState(null);
   const [video, setVideo] = useState(null);
@@ -3216,8 +3238,12 @@ function Detail({ entry, onBack, onDelete, onUpdate, showToast }) {
           <Field icon={Tag} label="סוג כלי"><input value={ef.vehicleType} onChange={(e) => setEf({ ...ef, vehicleType: e.target.value })} /></Field>
           <Field icon={DollarSign} label="מחיר (ש״ח)"><input type="number" inputMode="numeric" value={ef.price} onChange={(e) => setEf({ ...ef, price: e.target.value })} /></Field>
           {isMaster && <>
-            <Field icon={Phone} label="טלפון לקוח"><input value={ef.phone} onChange={(e) => setEf({ ...ef, phone: e.target.value })} dir="ltr" style={{ textAlign: "right" }} /></Field>
-            <Field icon={User} label="שם לקוח"><input value={ef.customer} onChange={(e) => setEf({ ...ef, customer: e.target.value })} /></Field>
+            <Field icon={User} label="שם לקוח">
+              <input list="hg-cust-edit" value={ef.customer} placeholder="שם הלקוח · בחר לקוח קיים" autoComplete="off"
+                onChange={(e) => { const v = e.target.value; const hit = (customers || []).find((c) => c.name === v); setEf((p) => ({ ...p, customer: v, phone: hit && hit.phone ? hit.phone : p.phone })); }} />
+              <datalist id="hg-cust-edit">{(customers || []).map((c, i) => <option key={i} value={c.name}>{[c.phone, c.count + " התקנות"].filter(Boolean).join(" · ")}</option>)}</datalist>
+            </Field>
+            <Field icon={Phone} label="טלפון לקוח"><input value={ef.phone} onChange={(e) => setEf({ ...ef, phone: e.target.value })} dir="ltr" style={{ textAlign: "right" }} placeholder="יתמלא אוטומטית מלקוח קיים" /></Field>
           </>}
           <Field icon={Timer} label="משך התקנה (דקות)"><input type="number" inputMode="numeric" value={ef.durMin} onChange={(e) => setEf({ ...ef, durMin: e.target.value })} placeholder="—" /></Field>
           <button type="button" className={"hg2-toggle" + (ef.withItai ? " on" : "")} onClick={() => setEf({ ...ef, withItai: !ef.withItai })}>

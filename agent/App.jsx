@@ -31,6 +31,39 @@ const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } cat
 /* ============================ Helpers ============================ */
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const ils = (n) => "₪" + (Number(n) || 0).toLocaleString("he-IL");
+// Normalised customer name: trim, collapse spaces, drop a leading definite "ה".
+const normCustName = (s) => { let k = (s || "").trim().replace(/\s+/g, " "); if (k.length > 3 && k[0] === "ה") k = k.slice(1); return k.toLowerCase(); };
+// Merge duplicate customers by normalised name; sum HeavyGuard installs + income from notes.
+function dedupeCustomers(list) {
+  const groups = {}; const order = [];
+  (list || []).forEach((c) => {
+    const key = normCustName(c.name);
+    if (!key) { order.push({ single: c }); return; }
+    if (!groups[key]) { groups[key] = []; order.push({ key }); }
+    groups[key].push(c);
+  });
+  const out = []; const seen = {};
+  order.forEach((o) => {
+    if (o.single) { out.push(o.single); return; }
+    if (seen[o.key]) return; seen[o.key] = 1;
+    const items = groups[o.key];
+    if (items.length === 1) { out.push(items[0]); return; }
+    let count = 0, rev = 0, hadHG = false; const extra = [];
+    items.forEach((c) => {
+      const note = c.notes || "";
+      const mc = note.match(/(\d+)\s*התקנות/); const mr = note.match(/הכנסה\s*₪?([\d,]+)/);
+      if (mc || mr || /Heavy ?Guard/i.test(note)) { hadHG = true; if (mc) count += parseInt(mc[1], 10) || 0; if (mr) rev += parseInt(mr[1].replace(/,/g, ""), 10) || 0; }
+      else if (note.trim()) extra.push(note.trim());
+    });
+    const base = [...items].sort((a, b) => (b.phone ? 1 : 0) - (a.phone ? 1 : 0) || (b.name || "").length - (a.name || "").length)[0];
+    const pick = (k) => items.map((c) => c[k]).find((v) => v && String(v).trim()) || "";
+    const parts = [];
+    if (hadHG) parts.push(`${count} התקנות Heavy Guard · הכנסה ${ils(rev)}`);
+    if (extra.length) parts.push(...extra);
+    out.push({ ...base, phone: pick("phone"), email: pick("email"), city: pick("city"), region: pick("region") || base.region || "", notes: parts.join(" · ") });
+  });
+  return out;
+}
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const dmy = (iso) => { try { const d = new Date(iso); return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`; } catch { return iso; } };
 // Heavy Guard company profile + quote defaults — kept 1:1 with the HeavyGuard app.
@@ -267,24 +300,27 @@ export default function App() {
       ? ws.get(k).then((r) => (r && r.value != null ? JSON.parse(r.value) : lGet(k))).catch(() => lGet(k))
       : Promise.resolve(lGet(k));
     Promise.all([pGet("hg2:index"), pGet("hg2:customers")]).then(([installs, hgManual]) => {
-      const normName = (s) => (s || "").trim().toLowerCase();
-      // Derive unique customers from HG installations (contractor === "hg")
+      const normName = normCustName;
+      // Derive unique customers from HG installations — merge by name, sum income.
       const m = {};
       (installs || [])
         .filter((x) => x.customer?.trim() || x.phone?.trim())
         .forEach((x) => {
           const name = (x.customer || "").trim();
           const phone = (x.phone || "").trim();
-          const key = normName(name) + "|" + phone;
+          const key = normName(name) || ("#" + phone);
           if (!m[key]) m[key] = { name: name || "(ללא שם)", phone, city: x.location || "", revenue: 0, count: 0 };
           m[key].count++;
           m[key].revenue += Number(x.price) || 0;
+          if (phone && !m[key].phone) m[key].phone = phone;
+          if (name && (name.length > (m[key].name || "").length || m[key].name === "(ללא שם)")) m[key].name = name;
         });
       // Also pull manually added HeavyGuard customers
       (hgManual || []).forEach((c) => {
         const name = (c.name || "").trim(), phone = (c.phone || "").trim();
-        const key = normName(name) + "|" + phone;
+        const key = normName(name) || ("#" + phone);
         if (!m[key]) m[key] = { name, phone, city: c.city || c.location || "", revenue: 0, count: 0, rawNotes: c.notes || "" };
+        else if (phone && !m[key].phone) m[key].phone = phone;
       });
 
       const hgCusts = Object.values(m).filter((c) => c.name && c.name !== "(ללא שם)");
@@ -315,6 +351,20 @@ export default function App() {
         return next;
       });
     }).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // One-time cleanup: merge any duplicate customers already stored (sum income).
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setCusts((prev) => {
+        const dd = dedupeCustomers(prev);
+        if (dd.length === prev.length) return prev;
+        save(K_CUST, dd); cloud.cloudPush(K_CUST, dd);
+        setTimeout(() => showToast(`✓ אוחדו ${prev.length - dd.length} כפילויות לקוחות`), 60);
+        return dd;
+      });
+    }, 1800);
+    return () => clearTimeout(t);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateCrm = useCallback((id, changes) => {
