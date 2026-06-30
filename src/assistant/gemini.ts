@@ -2,6 +2,7 @@ import type { AppState, AIProvider } from './state';
 import { upcomingText } from './state';
 import { getBrainContext } from '../brain';
 import { conversationSummaryForAI } from '../modules/conversationContext';
+import { tradingContextForAI } from '../modules/tradingBridge';
 
 const GEMINI_MODELS = [
   'gemini-2.0-flash',
@@ -73,7 +74,7 @@ USER'S ECOSYSTEM — You manage:
 
 When briefing the user, be proactive: mention overdue follow-ups, upcoming events, pending tasks, and actionable insights. Think like a chief of staff who anticipates needs.
 
-Calendar: ${upcomingText()}.${conversationBlock()}${brainBlock()}`;
+Calendar: ${upcomingText()}.${conversationBlock()}${brainBlock()}${tradingBlock()}`;
 }
 
 function conversationBlock(): string {
@@ -87,6 +88,13 @@ function brainBlock(): string {
   try {
     const ctx = getBrainContext();
     return ctx ? `\n\n=== MASTER BRAIN CONTEXT ===\n${ctx}` : '';
+  } catch { return ''; }
+}
+
+function tradingBlock(): string {
+  try {
+    const ctx = tradingContextForAI();
+    return ctx ? `\n\n${ctx}` : '';
   } catch { return ''; }
 }
 

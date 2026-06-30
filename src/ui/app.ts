@@ -25,6 +25,7 @@ import { trackSentiment, averageSentiment } from '../modules/sentiment';
 import { calculateScore, scoreLabel } from '../modules/scoring';
 import { toastInfo } from '../modules/toast';
 import { checkIntegrity, repairCorrupted } from '../modules/dataIntegrity';
+import { readAutotraderState, readPortfolioPositions } from '../modules/tradingBridge';
 
 const UI_STRINGS: Record<string, Record<UILang, string>> = {
   appTitle: { he: 'אלפא עוזר אישי', en: 'ALPHA ASSISTANT' },
@@ -2683,9 +2684,31 @@ export function mountApp(root: HTMLElement) {
           <div class="ops-scroll">${unschedRows}</div>
         </section>
 
-        <section class="ops-panel ops-dna-panel">
-          <div class="ops-h">🧬 ALPHA · DNA</div>
-          <canvas class="ops-dna" id="opsDna"></canvas>
+        <section class="ops-panel ops-dna-panel ops-span2">
+          <div class="ops-h">⚡ ALPHA · SIGNAL</div>
+          <div class="ops-alpha-hud">
+            <canvas class="ops-alpha-dna-cv" id="opsDna"></canvas>
+            <div class="ops-alpha-signal">
+              <div class="ops-alpha-label">MARKET DIRECTION</div>
+              <div class="ops-alpha-dir neutral" id="opsAlphaDir">LOADING…</div>
+              <div class="ops-alpha-conf-wrap">
+                <div class="ops-alpha-conf"><div class="ops-alpha-conf-bar" id="opsAlphaBar" style="width:0%"></div></div>
+                <div class="ops-alpha-conf-pct" id="opsAlphaConfPct">—</div>
+              </div>
+              <div class="ops-alpha-meta">
+                <div class="ops-alpha-kv"><span>CONFIDENCE</span><b id="opsKvConf">—</b></div>
+                <div class="ops-alpha-kv"><span>MASTERY</span><b id="opsKvMastery">—</b></div>
+                <div class="ops-alpha-kv"><span>WIN RATE</span><b id="opsKvWr">—</b></div>
+                <div class="ops-alpha-kv"><span>NET P&amp;L</span><b id="opsKvPnl">—</b></div>
+              </div>
+              <div class="ops-alpha-bots" id="opsAlphaBots"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="ops-panel ops-span2">
+          <div class="ops-h">📊 פוזיציות פעילות · Poly-Market</div>
+          <div id="opsPositions"><div class="ops-empty">אין חיבור ל-Poly-Market — פתח את האפליקציה באותו דפדפן</div></div>
         </section>
       </div>
     </div>`;
@@ -2727,6 +2750,79 @@ export function mountApp(root: HTMLElement) {
     const dnaCv = body.querySelector('#opsDna') as HTMLCanvasElement | null;
     const dnaStop = dnaCv ? startDna(dnaCv) : null;
 
+    // ── Alpha Signal HUD (Poly-Market trading data) ──
+    const hydrateTradingPanels = () => {
+      const at = readAutotraderState();
+      const positions = readPortfolioPositions();
+
+      // Alpha Signal
+      const dirEl = document.getElementById('opsAlphaDir');
+      const barEl = document.getElementById('opsAlphaBar');
+      const pctEl = document.getElementById('opsAlphaConfPct');
+      const botsEl = document.getElementById('opsAlphaBots');
+      const kvConf = document.getElementById('opsKvConf');
+      const kvMastery = document.getElementById('opsKvMastery');
+      const kvWr = document.getElementById('opsKvWr');
+      const kvPnl = document.getElementById('opsKvPnl');
+
+      if (at?.alphaState && dirEl) {
+        const s = at.alphaState;
+        const dir = s.direction || 'NEUTRAL';
+        dirEl.textContent = dir;
+        dirEl.className = `ops-alpha-dir ${dir.toLowerCase()}`;
+        const conf = Math.max(0, Math.min(100, s.confidence || 0));
+        const barColor = dir === 'LONG' ? '#20c97a' : dir === 'SHORT' ? '#ff4a3e' : '#d4a843';
+        if (barEl) { barEl.style.width = `${conf}%`; barEl.style.background = barColor; }
+        if (pctEl) pctEl.textContent = `${conf.toFixed(0)}%`;
+        if (kvConf) kvConf.textContent = `${conf.toFixed(0)}%`;
+        if (kvMastery) kvMastery.textContent = (s.masteryScore ?? 0).toFixed(1);
+        if (kvWr) kvWr.textContent = `${((s.recentWinRate || 0) * 100).toFixed(1)}%`;
+      } else if (dirEl) {
+        dirEl.textContent = 'NO DATA';
+        dirEl.className = 'ops-alpha-dir neutral';
+      }
+
+      if (at) {
+        const pnl = at.totalPnl;
+        if (kvPnl) { kvPnl.textContent = `${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}`; kvPnl.className = pnl >= 0 ? 'pos' : 'neg'; }
+        if (botsEl) {
+          const allBots = Object.keys(at.riskGuard);
+          botsEl.innerHTML = allBots.slice(0, 12).map(name => {
+            const on = !at.riskGuard[name]?.paused;
+            return `<span class="ops-alpha-bot ${on ? 'on' : 'off'}">${name}</span>`;
+          }).join('');
+        }
+      }
+
+      // Positions Panel
+      const posEl = document.getElementById('opsPositions');
+      if (posEl) {
+        if (!positions.length) {
+          posEl.innerHTML = '<div class="ops-empty">אין פוזיציות פתוחות — Poly-Market</div>';
+        } else {
+          posEl.innerHTML = `<div class="ops-pos-grid">${
+            positions.slice(0, 16).map(p => {
+              const sideKey = (p.side || '').toLowerCase();
+              const lev = p.leverage ? `x${p.leverage} · ` : '';
+              const entry = p.entry ? `@ ${p.entry.toLocaleString()}` : '';
+              const typ = p.type ? `[${p.type}]` : '';
+              return `<div class="ops-pos-row">
+                <span class="ops-pos-badge ${sideKey}">${p.side}</span>
+                <div class="ops-pos-mid">
+                  <b>${escHtml(p.symbol)}</b>
+                  <span>${lev}${entry} · ${escHtml(p.wallet)}</span>
+                </div>
+                <span class="ops-pos-tag">${typ}</span>
+              </div>`;
+            }).join('')
+          }${positions.length > 16 ? `<div class="ops-empty" style="grid-column:1/-1">+ ${positions.length - 16} פוזיציות נוספות</div>` : ''}</div>`;
+        }
+      }
+    };
+    hydrateTradingPanels();
+    // Auto-refresh trading data every 30s
+    const tradeTimer = setInterval(hydrateTradingPanels, 30000);
+
     // ── Map (lazy Leaflet) ──
     const mapEl = body.querySelector('#opsMap') as HTMLElement | null;
     if (mapEl) {
@@ -2749,7 +2845,7 @@ export function mountApp(root: HTMLElement) {
     }
 
     // teardown for this window instance
-    winCleanup = () => { try { dnaStop?.(); } catch {} if (mapInst) { try { mapInst.remove(); } catch {} mapInst = null; } };
+    winCleanup = () => { try { dnaStop?.(); } catch {} clearInterval(tradeTimer); if (mapInst) { try { mapInst.remove(); } catch {} mapInst = null; } };
   }
   function openFleet() { openWin('מרכז שליטה · צי ומבצעים 🛰️'); renderFleet(); }
 
