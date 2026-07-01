@@ -414,15 +414,17 @@ function drawTraffic(ctx, W, H, state, dt) {
   });
 }
 
-// A personalized workstation — the user's own real desk + laptop models
-// when they've loaded (desk already includes its own chair), tinted/marked
-// with the agent's own color via a floor ring + a glow on the laptop
-// screen; falls back to the earlier procedural sci-fi desk if either model
-// failed to load, so a slow/broken asset never blanks out the room.
+// A gaming battlestation — the user's real desk model, restyled into a dark
+// carbon gaming desk with an owner-color RGB edge strip + underglow, dual
+// curved monitors (screens glow in the owner's color and pulse when they're
+// working), a glowing mechanical keyboard + mouse, and the desk's built-in
+// chair re-tinted black with an owner-color racing accent. Falls back to a
+// procedural dark desk if the model failed to load so the room is never empty.
 const DESK_ITEM_NAMES = ["flower_001", "dish_001", "drink_001", "box_001"];
 function buildDesk(color = 0x3a6ad8, deskTemplate = null, laptopTemplate = null, furnitureTemplate = null, itemVariant = 0) {
   const g = new THREE.Group();
-  let monMat = null;
+  const col = new THREE.Color(color);
+  const deskTopY = DESK_SCALE * 1.494;
 
   if (deskTemplate) {
     const desk = deskTemplate.clone(true);
@@ -431,24 +433,33 @@ function buildDesk(color = 0x3a6ad8, deskTemplate = null, laptopTemplate = null,
     desk.traverse((o) => {
       if (!o.isMesh) return;
       o.castShadow = true; o.receiveShadow = true;
-      if (o.material) o.material = o.material.clone();
+      if (o.material) {
+        o.material = o.material.clone();
+        const isChair = /chair/i.test(o.name || "");
+        // Gaming makeover: near-black carbon desk; the built-in chair gets a
+        // dark shell with a subtle owner-color racing accent glow.
+        o.material.color = new THREE.Color(isChair ? 0x14161c : 0x0c0e13);
+        o.material.roughness = 0.45;
+        o.material.metalness = 0.55;
+        if (isChair) { o.material.emissive = col.clone(); o.material.emissiveIntensity = 0.18; }
+      }
     });
     g.add(desk);
   } else {
     const top = new THREE.Mesh(
       new THREE.BoxGeometry(1.05, 0.08, 0.55),
-      new THREE.MeshStandardMaterial({ color: 0x1c2136, roughness: 0.35, metalness: 0.3 })
+      new THREE.MeshStandardMaterial({ color: 0x0c0e13, roughness: 0.4, metalness: 0.55 })
     );
     top.position.y = 0.42; top.castShadow = true; top.receiveShadow = true;
     g.add(top);
-    const legMat = new THREE.MeshStandardMaterial({ color: 0x14182a, roughness: 0.5, metalness: 0.4 });
+    const legMat = new THREE.MeshStandardMaterial({ color: 0x090a0e, roughness: 0.5, metalness: 0.6 });
     [[-0.46, -0.22], [0.46, -0.22], [-0.46, 0.22], [0.46, 0.22]].forEach(([lx, lz]) => {
       const leg = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.42, 0.05), legMat);
       leg.position.set(lx, 0.21, lz); leg.castShadow = true; g.add(leg);
     });
-    const chair = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.06, 0.42), new THREE.MeshStandardMaterial({ color: 0x1c2338, roughness: 0.7 }));
+    const chair = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.06, 0.42), new THREE.MeshStandardMaterial({ color: 0x14161c, emissive: col.clone(), emissiveIntensity: 0.18, roughness: 0.6 }));
     chair.position.set(0, 0.24, 0.5); chair.castShadow = true; g.add(chair);
-    const back = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.4, 0.06), new THREE.MeshStandardMaterial({ color: 0x1c2338, roughness: 0.7 }));
+    const back = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.4, 0.06), new THREE.MeshStandardMaterial({ color: 0x14161c, emissive: col.clone(), emissiveIntensity: 0.18, roughness: 0.6 }));
     back.position.set(0, 0.46, 0.69); back.castShadow = true; g.add(back);
   }
 
@@ -462,58 +473,70 @@ function buildDesk(color = 0x3a6ad8, deskTemplate = null, laptopTemplate = null,
   ring.position.y = 0.015;
   g.add(ring);
 
-  if (laptopTemplate) {
-    const laptop = laptopTemplate.clone(true);
-    laptop.scale.setScalar(LAPTOP_SCALE);
-    laptop.rotation.y = Math.PI; // screen facing the seated character
-    laptop.position.set(LAPTOP_CENTER_OFFSET[0], DESK_SCALE * 1.494, LAPTOP_CENTER_OFFSET[2] - 0.22);
-    laptop.traverse((o) => {
-      if (!o.isMesh) return;
-      o.castShadow = true;
-      if (o.material) {
-        o.material = o.material.clone();
-        o.material.side = THREE.DoubleSide;
-        if (o.material.name === "wallpeper") {
-          o.material.emissive = new THREE.Color(color);
-          o.material.emissiveIntensity = 0.15;
-          monMat = o.material;
-        }
-      }
-    });
-    g.add(laptop);
-  } else {
-    const mon = new THREE.Mesh(
-      new THREE.BoxGeometry(0.42, 0.27, 0.03),
-      new THREE.MeshStandardMaterial({ color: 0x060a14, emissive: color, emissiveIntensity: 0.55, roughness: 0.3 })
-    );
-    mon.position.set(0, 0.74, -0.16); mon.castShadow = true; g.add(mon);
-    monMat = mon.material;
-  }
+  // RGB edge trim around the desk surface + an underglow patch on the floor.
+  const trimMat = new THREE.MeshBasicMaterial({ color });
+  const trimY = deskTopY - 0.01;
+  const tFront = new THREE.Mesh(new THREE.BoxGeometry(1.04, 0.02, 0.02), trimMat);
+  tFront.position.set(0, trimY, 0.34); g.add(tFront);
+  [-0.52, 0.52].forEach((sx) => {
+    const s = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.02, 0.68), trimMat);
+    s.position.set(sx, trimY, 0); g.add(s);
+  });
+  const underglow = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.4, 0.85),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.28, side: THREE.DoubleSide })
+  );
+  underglow.rotation.x = -Math.PI / 2;
+  underglow.position.y = 0.02;
+  g.add(underglow);
+
+  // Dual curved gaming monitors — one shared emissive screen material so both
+  // glow (and pulse when working) together; kept as monMat for the animate loop.
+  const monMat = new THREE.MeshStandardMaterial({ color: 0x02040a, emissive: col.clone(), emissiveIntensity: 0.55, roughness: 0.25, toneMapped: false });
+  const bezelMat = new THREE.MeshStandardMaterial({ color: 0x05060a, roughness: 0.4, metalness: 0.35 });
+  [-0.3, 0.3].forEach((mxp) => {
+    const mon = new THREE.Group();
+    const bezel = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.31, 0.025), bezelMat);
+    bezel.castShadow = true; mon.add(bezel);
+    const scr = new THREE.Mesh(new THREE.PlaneGeometry(0.47, 0.26), monMat);
+    scr.position.z = 0.015; mon.add(scr);
+    const stand = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.14, 8), bezelMat);
+    stand.position.y = -0.22; mon.add(stand);
+    const foot = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.015, 0.13), bezelMat);
+    foot.position.y = -0.29; mon.add(foot);
+    mon.position.set(mxp, deskTopY + 0.22, -0.2);
+    mon.rotation.y = -Math.sign(mxp) * 0.4; // angle both toward the seat
+    g.add(mon);
+  });
+
+  // Glowing mechanical keyboard + mouse.
+  const gearMat = new THREE.MeshStandardMaterial({ color: 0x0a0b10, emissive: col.clone(), emissiveIntensity: 0.35, roughness: 0.6 });
+  const kb = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.02, 0.16), gearMat);
+  kb.position.set(0, deskTopY + 0.02, 0.02); g.add(kb);
+  const mouse = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.02, 0.11), gearMat);
+  mouse.position.set(0.34, deskTopY + 0.02, 0.02); g.add(mouse);
 
   // Small holographic ring floating above the desk — a personal sci-fi touch.
   const holo = new THREE.Mesh(
     new THREE.TorusGeometry(0.09, 0.008, 8, 20),
     new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.55 })
   );
-  holo.position.set(0, DESK_SCALE * 1.494 + 0.32, -0.16);
+  holo.position.set(0, deskTopY + 0.34, -0.16);
   holo.rotation.x = Math.PI / 2.3;
   g.add(holo);
 
-  // A proper kitted-out workstation — a real desk lamp plus a rotating
-  // personal item (plant/dish/drink/box) from the user's own furniture
-  // pack, tucked at the back corners so they never clip the laptop or the
-  // seated character in front.
-  const deskTopY = DESK_SCALE * 1.494;
+  // A real desk lamp + a rotating personal item (plant/dish/drink/box) from
+  // the furniture pack, tucked at the back corners behind the monitors.
   const lamp = cloneFurniturePiece(furnitureTemplate, "lamp_001");
   if (lamp) {
     lamp.scale.setScalar(0.72);
-    lamp.position.set(0.36, deskTopY, -0.4);
+    lamp.position.set(0.42, deskTopY, -0.42);
     g.add(lamp);
   }
   const personal = cloneFurniturePiece(furnitureTemplate, DESK_ITEM_NAMES[itemVariant % DESK_ITEM_NAMES.length]);
   if (personal) {
     personal.scale.setScalar(0.6);
-    personal.position.set(-0.36, deskTopY, -0.4);
+    personal.position.set(-0.42, deskTopY, -0.42);
     g.add(personal);
   }
 
@@ -762,6 +785,91 @@ function resolveCollisions(pos, obstacles) {
       pos.x += dx * push; pos.z += dz * push;
     }
   }
+}
+
+// A glowing neon sign (canvas text on an unlit plane) — cheap way to give
+// the room a real gaming-den identity without any extra lights.
+function buildNeonSign(text, color, w = 3.4, h = 0.8) {
+  const cvs = document.createElement("canvas");
+  cvs.width = 1024; cvs.height = 200;
+  const ctx = cvs.getContext("2d");
+  const hex = "#" + new THREE.Color(color).getHexString();
+  // Auto-fit the font so the text never clips at the canvas edge (RTL Hebrew
+  // was getting its leading characters cut off at a fixed size).
+  let fs = 120;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  do { ctx.font = `900 ${fs}px 'Arial Black', system-ui, sans-serif`; fs -= 4; }
+  while (ctx.measureText(text).width > 960 && fs > 24);
+  ctx.shadowColor = hex; ctx.shadowBlur = 40;
+  ctx.fillStyle = "#fff"; ctx.fillText(text, 512, 108);
+  ctx.shadowBlur = 22; ctx.fillStyle = hex; ctx.fillText(text, 512, 108);
+  const tex = new THREE.CanvasTexture(cvs);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(w, h),
+    new THREE.MeshBasicMaterial({ map: tex, transparent: true, toneMapped: false })
+  );
+  return mesh;
+}
+
+// The owner's private executive gaming office — a glass-partitioned corner
+// suite with a premium battlestation, a crown-topped nameplate, a rug and
+// a couple of accent lights. Returns the group plus collision circles so
+// the player walks around the partition and in through the doorway.
+function buildOwnerOffice(color, deskTemplate, laptopTemplate, furnitureTemplate) {
+  const g = new THREE.Group();
+  const obstacles = [];
+  const col = new THREE.Color(color);
+
+  // Glass partition — an L in the SE corner with a doorway gap on the inner
+  // (west) side. Frames + faint tinted glass.
+  const glassMat = new THREE.MeshPhysicalMaterial({ color: 0x8fd0ff, transparent: true, opacity: 0.1, roughness: 0.05, metalness: 0.1, side: THREE.DoubleSide });
+  const frameMat = new THREE.MeshStandardMaterial({ color: 0x0c0e13, roughness: 0.4, metalness: 0.6 });
+  const neonEdge = new THREE.MeshBasicMaterial({ color });
+  const wallH = 2.6;
+  // North wall (runs along x, at local z = -3), full width.
+  const nWall = new THREE.Mesh(new THREE.PlaneGeometry(7, wallH), glassMat);
+  nWall.position.set(0, wallH / 2, -3); g.add(nWall);
+  const nTop = new THREE.Mesh(new THREE.BoxGeometry(7, 0.06, 0.06), neonEdge); nTop.position.set(0, wallH, -3); g.add(nTop);
+  // West wall (runs along z, at local x = -3.5), with a doorway gap at the south end.
+  const wWall = new THREE.Mesh(new THREE.PlaneGeometry(4.4, wallH), glassMat);
+  wWall.rotation.y = Math.PI / 2; wWall.position.set(-3.5, wallH / 2, -0.8); g.add(wWall);
+  const wTop = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 4.4), neonEdge); wTop.position.set(-3.5, wallH, -0.8); g.add(wTop);
+  // collision circles along the two walls (doorway left open at south-west).
+  for (let t = -3; t <= 3; t += 0.9) obstacles.push({ x: t, z: -3, r: 0.28 });
+  for (let t = -3; t <= 1; t += 0.9) obstacles.push({ x: -3.5, z: t, r: 0.28 });
+
+  // Premium rug.
+  const rug = buildRug(5.4, 4.8, 0x14161c);
+  rug.position.set(0, 0.006, -0.5);
+  g.add(rug);
+  const rugTrim = new THREE.Mesh(new THREE.RingGeometry(2.5, 2.62, 40), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.4, side: THREE.DoubleSide }));
+  rugTrim.rotation.x = -Math.PI / 2; rugTrim.position.set(0, 0.012, -0.5); g.add(rugTrim);
+
+  // Executive battlestation at the back, facing the doorway (south-west).
+  const desk = buildDesk(color, deskTemplate, laptopTemplate, furnitureTemplate, 0);
+  desk.group.position.set(0.6, 0, -2.0);
+  desk.group.rotation.y = Math.PI; // face into the room (south)
+  desk.group.scale.setScalar(1.15);
+  g.add(desk.group);
+  obstacles.push({ x: 0.6, z: -2.0, r: 1.0 });
+
+  // Nameplate floating over the suite, with a little gold crown above it.
+  const sign = buildNeonSign("המשרד של שחר", color, 3.6, 0.7);
+  sign.position.set(0, 2.95, -2.92);
+  g.add(sign);
+  const crown = new THREE.Mesh(
+    new THREE.ConeGeometry(0.16, 0.18, 5),
+    new THREE.MeshStandardMaterial({ color: 0xE4BC63, emissive: 0x5a4318, emissiveIntensity: 0.8, metalness: 0.6, roughness: 0.3 })
+  );
+  crown.position.set(0, 3.4, -2.92);
+  g.add(crown);
+
+  // Two accent uplights hidden behind the desk for a premium glow.
+  const up = new THREE.PointLight(color, 0.8, 6);
+  up.position.set(0.6, 0.5, -2.4); g.add(up);
+
+  return { group: g, obstacles, deskMon: desk.monMat, deskHolo: desk.holo };
 }
 
 export default function Office3D({ chars, byId, phase, phases, deskPositions, seatPositions, dineTablePositions, bizData, onClose, onOpenChat }) {
@@ -1029,7 +1137,8 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     drawTradeScreen(tradeCtx, tradeCanvas.width, tradeCanvas.height, tradeState);
     drawHgScreen(hgCtx, hgCanvas.width, hgCanvas.height, liveRef.current.bizData);
     let screenT = 0;
-    [[-10.4, 9.4], [10.8, -8.6], [7.6, 8.4]].forEach(([px, pz]) => {
+    // (SE corner plant removed — that corner is now the owner's office.)
+    [[-10.4, 9.4], [10.8, -8.6]].forEach(([px, pz]) => {
       const plant = buildPlant();
       plant.position.set(px, 0, pz);
       scene.add(plant);
@@ -1076,9 +1185,45 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     [[-9.5, 8.5, 1.0], [-3.5, 8.2, 0.9], [12.1, 3.7, 1.4], [9.0, -9.5, 0.9], [10.6, -9.5, 0.8]]
       .forEach(([ox, oz, r]) => obstacles.push({ x: ox, z: oz, r }));
 
-    // Player
+    // The owner's private executive gaming office in the SE corner.
+    const ownerOffice = buildOwnerOffice(0xE4BC63, deskTemplate, laptopTemplate, furnitureTemplate);
+    const OFFICE_ORIGIN = { x: 8.5, z: 8.2 };
+    ownerOffice.group.position.set(OFFICE_ORIGIN.x, 0, OFFICE_ORIGIN.z);
+    scene.add(ownerOffice.group);
+    ownerOffice.obstacles.forEach((o) => obstacles.push({ x: OFFICE_ORIGIN.x + o.x, z: OFFICE_ORIGIN.z + o.z, r: o.r }));
+    if (ownerOffice.deskMon) deskMons.push(ownerOffice.deskMon);
+    if (ownerOffice.deskHolo) deskHolos.push(ownerOffice.deskHolo);
+
+    // ── Gaming-den ambiance ──────────────────────────────────────────────
+    // Neon accent floor strips down the main aisles + two big neon wall signs
+    // + a pair of coloured accent lights, so the whole floor reads as a fun
+    // gaming HQ rather than a plain bullpen. All emissive/unlit except the two
+    // point lights, so it's cheap.
+    const neonStripMat1 = new THREE.MeshBasicMaterial({ color: 0x18e0ff, transparent: true, opacity: 0.5 });
+    const neonStripMat2 = new THREE.MeshBasicMaterial({ color: 0xff3ea5, transparent: true, opacity: 0.5 });
+    [-6.5, -2.75, 1.0].forEach((ax, i) => {
+      const strip = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 15), i % 2 ? neonStripMat2 : neonStripMat1);
+      strip.rotation.x = -Math.PI / 2;
+      strip.position.set(ax, 0.02, -1.5);
+      scene.add(strip);
+    });
+    const alphaSign = buildNeonSign("ALPHA HQ", 0x18e0ff, 5.2, 1.3);
+    alphaSign.rotation.y = Math.PI / 2;
+    alphaSign.position.set(-(FLOOR_W / 2) + 0.15, 4.4, -3);
+    scene.add(alphaSign);
+    const ggSign = buildNeonSign("GG · LEVEL UP", 0xff3ea5, 4.6, 1.1);
+    ggSign.rotation.y = -Math.PI / 2;
+    ggSign.position.set((FLOOR_W / 2) - 0.15, 4.6, 2.5);
+    scene.add(ggSign);
+    const accentCyan = new THREE.PointLight(0x18e0ff, 0.5, 20);
+    accentCyan.position.set(-6, 4.8, 0); scene.add(accentCyan);
+    const accentMagenta = new THREE.PointLight(0xff3ea5, 0.5, 20);
+    accentMagenta.position.set(6, 4.8, 2); scene.add(accentMagenta);
+
+    // Player — spawns inside their own office, ready to walk out and meet the team.
     const playerH = buildHuman(0xE4BC63, "אתה", true, charTemplate, charClips);
-    playerH.group.position.set(0, 0, 6.2);
+    playerH.group.position.set(7.0, 0, 9.4);
+    playerH.group.rotation.y = Math.PI; // facing into the office (toward the desk)
     scene.add(playerH.group);
 
     // NPCs
