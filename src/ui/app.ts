@@ -3195,6 +3195,9 @@ export function mountApp(root: HTMLElement) {
     document.getElementById('hudHg')?.addEventListener('click', () => document.getElementById('hgBtn')?.click());
     document.getElementById('hudFleet')?.addEventListener('click', openFleet);
     document.getElementById('hudTrade')?.addEventListener('click', (e) => { e.preventDefault(); openTradeSystem(); });
+    // The dock's "מסחר" fab button was still a plain external-tab link —
+    // only the HUD rail tile above was ever wired to the in-app embed.
+    document.getElementById('tradeBtn')?.addEventListener('click', (e) => { e.preventDefault(); openTradeSystem(); });
     document.querySelector('#hudMarkets')?.addEventListener('click', openMarketsDetail);
     document.getElementById('hudOps')?.addEventListener('click', () => { addMsg(businessBriefing(), 'al'); });
     document.getElementById('hudFleetPanel')?.addEventListener('click', openFleet);
