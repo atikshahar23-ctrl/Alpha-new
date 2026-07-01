@@ -262,6 +262,19 @@ body[data-char="ho-oh"] .char-ambient {
 }
 .gesture-indicator[hidden]{ display:none; }
 
+/* Diagnostic readout shown while detecting on a phone — reports exactly
+   where the pipeline is (camera ready / model loaded / hands found / trust
+   score) so a "still doesn't detect anything" report comes with real data
+   instead of nothing to go on. */
+.gesture-debug{
+  position:fixed; top:46px; left:50%; transform:translateX(-50%);
+  z-index:1100; max-width:92vw; padding:5px 10px; border-radius:10px;
+  background:rgba(6,4,12,.78); border:1px solid rgba(110,220,180,.3);
+  font:11px/1.4 ui-monospace,monospace; color:#8fe6c4; white-space:pre-wrap;
+  text-align:center; direction:ltr; pointer-events:none;
+}
+.gesture-debug[hidden]{ display:none; }
+
 /* Gesture cheat-sheet shown when detection starts (auto-hides after 7s) */
 .gesture-help{
   position:fixed; top:54px; left:50%; transform:translateX(-50%) translateY(0);

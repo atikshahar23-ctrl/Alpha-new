@@ -307,6 +307,11 @@ export function mountApp(root: HTMLElement) {
         <span class="gi-dot"></span>
         <span class="gi-text" id="gestureStatus">זיהוי פעיל</span>
       </div>
+      <!-- Always-visible diagnostic readout while detecting on a phone — lets
+           us see exactly where the pipeline is stuck (camera / model load /
+           zero hands found / low confidence) instead of a silent "doesn't
+           work" report with no way to tell what actually failed. -->
+      <div id="gestureDebug" class="gesture-debug" hidden></div>
 
       <!-- Open-camera mode: full-screen selfie video with skeleton on top -->
       <video id="gestureLiveVideo" class="gesture-live-video" autoplay playsinline muted hidden></video>
@@ -1875,6 +1880,32 @@ export function mountApp(root: HTMLElement) {
     let ballHeldMs = 0, ballPX = 0, ballPY = 0;   // grabbed-pokéball state (grab→throw)
     const THROW_COOLDOWN = 2200;
 
+    // ── Live diagnostic readout (mobile only) — turns "still doesn't work,
+    // no idea why" into concrete numbers: is the camera actually producing
+    // frames, is MediaPipe actually returning results, is a hand ever found,
+    // and at what confidence/size. ──
+    let dbgOn = false;
+    let dbgFramesSent = 0, dbgResults = 0, dbgHandsFound = 0;
+    let dbgLastScore = 0, dbgLastSpan = 0, dbgLastArmed = false;
+    function dbgRender() {
+      const el = document.getElementById('gestureDebug');
+      if (!el || !dbgOn) return;
+      el.textContent =
+        `sent:${dbgFramesSent} res:${dbgResults} hands:${dbgHandsFound}\n` +
+        `score:${dbgLastScore.toFixed(2)} span:${dbgLastSpan.toFixed(2)} armed:${dbgLastArmed ? 'Y' : 'N'}`;
+    }
+    function dbgStart(isMobile: boolean) {
+      dbgOn = isMobile;
+      dbgFramesSent = 0; dbgResults = 0; dbgHandsFound = 0; dbgLastScore = 0; dbgLastSpan = 0; dbgLastArmed = false;
+      const el = document.getElementById('gestureDebug');
+      if (el) { if (isMobile) { el.removeAttribute('hidden'); dbgRender(); } else el.setAttribute('hidden', ''); }
+    }
+    function dbgStop() {
+      dbgOn = false;
+      const el = document.getElementById('gestureDebug');
+      if (el) el.setAttribute('hidden', '');
+    }
+
     function gestureStatus(msg: string) {
       const el = document.getElementById('gestureStatus');
       if (el) el.textContent = msg;
@@ -1938,6 +1969,7 @@ export function mountApp(root: HTMLElement) {
       gestureActive = false;
       if (gestureWatchdog) { clearTimeout(gestureWatchdog); gestureWatchdog = null; }
       gotFirstHandResult = false;
+      dbgStop();
       try { orb.setPerfMode(localStorage.getItem('alpha_fast_mode') === '1'); } catch {}   // restore orb quality
       if (gestureCamera) { try { gestureCamera.stop(); } catch {} gestureCamera = null; }
       if (gestureHands) { try { gestureHands.close(); } catch {} gestureHands = null; }
@@ -1979,6 +2011,7 @@ export function mountApp(root: HTMLElement) {
       // starts), so on mobile we stay on the lite model + a lighter camera. Desktop
       // gets the full model + higher resolution for max accuracy.
       const isMobileDevice = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || ('ontouchstart' in window) || window.innerWidth < 900;
+      dbgStart(isMobileDevice);
       // On phones, running the heavy 3D orb AND MediaPipe hand inference at the same
       // time starves the detector of frames → erratic/late detection. Drop the orb to
       // its cheap render path while detecting (restored in stopGesture).
@@ -1986,8 +2019,17 @@ export function mountApp(root: HTMLElement) {
       try {
         const res = isMobileDevice ? { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30 } } : { width: { ideal: 640 }, height: { ideal: 480 } };
         gestureStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', ...res }, audio: false });
-      } catch {
-        gestureStatus('❌ גישה למצלמה נדחתה');
+      } catch (err) {
+        // Report the REAL failure, not a blanket "permission denied" — e.g. the
+        // camera being held by another app/tab (NotReadableError) or an
+        // unsatisfiable constraint (OverconstrainedError) looks nothing like a
+        // permission problem to the user, and used to show that misleading
+        // message while leaving the panel stuck half-open (gestureActive was
+        // never reset, so a retry needed an extra click just to close it).
+        const name = (err as any)?.name || 'Unknown';
+        console.error('[gesture] getUserMedia failed:', name, err);
+        gestureStatus(name === 'NotAllowedError' ? '❌ גישה למצלמה נדחתה' : `❌ שגיאת מצלמה (${name}) — נסה שוב`);
+        stopGesture();
         return;
       }
       const vid = document.getElementById('gestureVideo') as HTMLVideoElement;
@@ -2141,6 +2183,8 @@ export function mountApp(root: HTMLElement) {
           gotFirstHandResult = true;
           if (gestureWatchdog) { clearTimeout(gestureWatchdog); gestureWatchdog = null; }
         }
+        dbgResults++;
+        dbgHandsFound = results.multiHandLandmarks?.length || 0;
         const now = performance.now();
         const rawDt = now - lastFrameMs;
         const dt = Math.min(200, rawDt);
@@ -2171,6 +2215,7 @@ export function mountApp(root: HTMLElement) {
           oePrev = null; oeDPrev = null;   // reset smoothing so re-acquire snaps in
           orb.pokeballRelease?.();
           hideLaser();
+          dbgLastScore = 0; dbgLastSpan = 0; dbgLastArmed = false; dbgRender();
         };
         if (!results.multiHandLandmarks?.length) { noHand(); return; }
 
@@ -2197,6 +2242,7 @@ export function mountApp(root: HTMLElement) {
         const trusted = score >= (isMobileDevice ? 0.55 : 0.7) && handSpan >= (isMobileDevice ? 0.10 : 0.13);
         if (trusted) handPresentMs += dt; else handPresentMs = 0;
         const armed = trusted && handPresentMs >= SETTLE_MS;
+        dbgLastScore = score; dbgLastSpan = handSpan; dbgLastArmed = armed; dbgRender();
         // Draw every hand (primary uses the smoothed landmarks; others raw).
         if (gestureShowSkeleton) {
           for (let hi = 0; hi < hands.length; hi++) drawHand(hi === primaryIdx ? lm : hands[hi], mapX, mapY, hi === primaryIdx);
@@ -2418,6 +2464,7 @@ export function mountApp(root: HTMLElement) {
           const h = Math.round(CAP_W * (vid.videoHeight / vid.videoWidth));
           if (cap.width !== CAP_W) { cap.width = CAP_W; cap.height = h; }
           try { capCtx.drawImage(vid, 0, 0, CAP_W, h); } catch {}
+          dbgFramesSent++; dbgRender();
           await sendWithTimeout(cap);
         }
         rafId = requestAnimationFrame(tick);
