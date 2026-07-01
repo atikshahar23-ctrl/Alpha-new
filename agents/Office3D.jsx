@@ -629,7 +629,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // fixes it regardless of how high any future camera mode goes.
     const ceiling = new THREE.Mesh(
       new THREE.PlaneGeometry(FLOOR_W, FLOOR_D),
-      new THREE.MeshStandardMaterial({ color: 0x0a0d18, roughness: 1, side: THREE.BackSide })
+      new THREE.MeshStandardMaterial({ color: 0x1a2c4a, roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.16, side: THREE.BackSide, depthWrite: false })
     );
     ceiling.rotation.x = Math.PI / 2;
     ceiling.position.y = 5.4;
