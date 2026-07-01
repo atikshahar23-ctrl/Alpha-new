@@ -78,6 +78,101 @@ function placeFurniturePiece(scene, template, name, x, y, z, rotY = 0) {
   return piece;
 }
 
+// Two wall TVs give the office a lived-in, "always something on" feel — one
+// tuned to a live-markets ticker, one to the real HeavyGuard/CRM numbers
+// (via bizSnapshot(), passed down as `bizData`). The furniture pack's own
+// texture atlas is shared across every piece, so the "screen" can't just be
+// the TV mesh's own material — a separate unlit plane is layered just in
+// front of it instead, carrying its own CanvasTexture that gets redrawn a
+// few times a second to feel live without hammering the GPU every frame.
+function buildTvScreen(furnitureTemplate, canvas) {
+  const g = new THREE.Group();
+  const tvNode = furnitureTemplate ? furnitureTemplate.getObjectByName("tv_wall_001") : null;
+  if (tvNode) {
+    const tv = tvNode.clone(true);
+    // The node keeps its position from the furniture pack's own flat
+    // preview layout (each of the 40 pieces sits at a different spot in
+    // that single shared scene) — reset to the group's local origin so it
+    // lands exactly where this group is placed, not offset by that layout.
+    tv.position.set(0, 0, 0);
+    tv.rotation.set(0, 0, 0);
+    tv.traverse((o) => {
+      if (!o.isMesh) return;
+      o.castShadow = true; o.receiveShadow = true;
+      if (o.material) o.material = o.material.clone();
+    });
+    g.add(tv);
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const screen = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.5, 1.38),
+    new THREE.MeshBasicMaterial({ map: tex, toneMapped: false })
+  );
+  screen.position.set(0.02, 0.846, 0.26);
+  g.add(screen);
+  return { group: g, tex };
+}
+
+function makeTradeTickerState() {
+  const rnd = mulberry32(303);
+  const symbols = ["HGRD", "BTC", "GOLD", "S&P"];
+  const prices = [212.4, 61840, 2384.2, 5312.8];
+  return { rnd, symbols, prices, deltas: symbols.map(() => 0), candles: Array.from({ length: 22 }, () => 40 + rnd() * 30) };
+}
+function stepTradeTicker(state) {
+  state.prices = state.prices.map((p, i) => {
+    const move = (state.rnd() - 0.48) * p * 0.006;
+    state.deltas[i] = (move / p) * 100;
+    return Math.max(0.01, p + move);
+  });
+  state.candles.push(clamp(state.candles[state.candles.length - 1] + (state.rnd() - 0.5) * 12, 8, 92));
+  state.candles.shift();
+}
+function drawTradeScreen(ctx, W, H, state) {
+  ctx.fillStyle = "#060a10"; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = "#1fd67a"; ctx.font = "700 30px 'Courier New',monospace";
+  ctx.fillText("⚡ LIVE MARKETS", 18, 38);
+  ctx.strokeStyle = "#123422"; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(0, 52); ctx.lineTo(W, 52); ctx.stroke();
+  const chartX = 18, chartY = 66, chartW = W - 36, chartH = H * 0.4;
+  ctx.strokeStyle = "#0f1a14"; for (let gy = 0; gy <= 4; gy++) { const y = chartY + (chartH / 4) * gy; ctx.beginPath(); ctx.moveTo(chartX, y); ctx.lineTo(chartX + chartW, y); ctx.stroke(); }
+  const cw = chartW / state.candles.length;
+  state.candles.forEach((v, i) => {
+    const h = (v / 100) * chartH;
+    const up = i === 0 || v >= state.candles[i - 1];
+    ctx.fillStyle = up ? "#1fd67a" : "#e0473f";
+    ctx.fillRect(chartX + i * cw + cw * 0.18, chartY + chartH - h, cw * 0.64, Math.max(2, h));
+  });
+  let ty = chartY + chartH + 34;
+  state.symbols.forEach((s, i) => {
+    const p = state.prices[i], d = state.deltas[i];
+    ctx.fillStyle = "#cdeeff"; ctx.font = "600 19px 'Courier New',monospace"; ctx.fillText(s, chartX, ty);
+    ctx.fillStyle = d >= 0 ? "#1fd67a" : "#e0473f";
+    ctx.fillText(`${p >= 1000 ? p.toFixed(0) : p.toFixed(2)}  ${d >= 0 ? "▲" : "▼"}${Math.abs(d).toFixed(2)}%`, chartX + 110, ty);
+    ty += 26;
+  });
+}
+
+function drawHgScreen(ctx, W, H, biz) {
+  ctx.fillStyle = "#050b0a"; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = "#5fd0ff"; ctx.font = "700 28px 'Courier New',monospace";
+  ctx.fillText("🛡 HEAVYGUARD OPS", 18, 38);
+  ctx.strokeStyle = "#0e2430"; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(0, 52); ctx.lineTo(W, 52); ctx.stroke();
+  const ils = (n) => "₪" + Math.round(n).toLocaleString();
+  const kpis = biz ? [
+    ["התקנות", biz.installs], ["הכנסה מצטברת", ils(biz.hgRevenue)], ["לקוחות", biz.custCount],
+    ["עסקאות פתוחות", biz.openDeals], ["שווי פייפליין", ils(biz.openVal)], ["נסגרו החודש", biz.wonMonth],
+  ] : [["ממתין לנתונים", "…"]];
+  let ty = 88;
+  kpis.forEach(([label, val]) => {
+    ctx.fillStyle = "#8fe3c0"; ctx.font = "17px 'Courier New',monospace"; ctx.fillText(label, 18, ty);
+    ctx.fillStyle = "#fff"; ctx.font = "700 25px 'Courier New',monospace"; ctx.fillText(String(val), 18, ty + 26);
+    ty += 58;
+  });
+}
+
 function loadGltf(url) {
   return new Promise((resolve, reject) => {
     new GLTFLoader().load(url, (gltf) => resolve(gltf.scene), undefined, reject);
@@ -532,9 +627,9 @@ function setClip(h, shortName) {
 
 const hexToInt = (hex) => parseInt(hex.replace("#", ""), 16);
 
-export default function Office3D({ chars, byId, phase, phases, deskPositions, seatPositions, dineTablePositions, onClose, onOpenChat }) {
+export default function Office3D({ chars, byId, phase, phases, deskPositions, seatPositions, dineTablePositions, bizData, onClose, onOpenChat }) {
   const mountRef = useRef(null);
-  const liveRef = useRef({ chars, phase, joyVec: { x: 0, y: 0 }, keys: {}, firstPerson: false });
+  const liveRef = useRef({ chars, phase, bizData, joyVec: { x: 0, y: 0 }, keys: {}, firstPerson: false });
   const [talkTarget, setTalkTarget] = useState(null);
   const [joyKnob, setJoyKnob] = useState({ x: 0, y: 0 });
   const [firstPerson, setFirstPerson] = useState(false);
@@ -543,6 +638,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   useEffect(() => { liveRef.current.chars = chars; }, [chars]);
   useEffect(() => { liveRef.current.firstPerson = firstPerson; }, [firstPerson]);
   useEffect(() => { liveRef.current.phase = phase; }, [phase]);
+  useEffect(() => { liveRef.current.bizData = bizData; }, [bizData]);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -680,7 +776,6 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       placeFurniturePiece(scene, furnitureTemplate, "coffee_table_001", -9.5, 0, 7.1, 0);
       placeFurniturePiece(scene, furnitureTemplate, "lamp_002", -7.3, 0, 9.3, 0);
       placeFurniturePiece(scene, furnitureTemplate, "flower_001", -11.9, 0, 8.9, 0);
-      placeFurniturePiece(scene, furnitureTemplate, "tv_wall_001", -(FLOOR_W / 2) + 0.2, 1.6, 8.5, Math.PI / 2);
       // Storage corner (south-east) — closet, dresser, a stacked box.
       placeFurniturePiece(scene, furnitureTemplate, "closet_001", 9.0, 0, -9.5, 0);
       placeFurniturePiece(scene, furnitureTemplate, "dresser_001", 10.6, 0, -9.5, 0);
@@ -706,6 +801,30 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     shelf.position.set(-11.8, 0, 6.5);
     shelf.rotation.y = Math.PI / 2;
     scene.add(shelf);
+
+    // Two wall TVs for a lived-in "always something on" office feel — a
+    // live-markets ticker over the lounge sofa, and the real HeavyGuard/CRM
+    // numbers near the meeting nook. Redrawn a few times a second in the
+    // animate loop below, not every frame.
+    const tradeCanvas = document.createElement("canvas");
+    tradeCanvas.width = 640; tradeCanvas.height = 356;
+    const tradeCtx = tradeCanvas.getContext("2d");
+    const tradeState = makeTradeTickerState();
+    const tvTrade = buildTvScreen(furnitureTemplate, tradeCanvas);
+    tvTrade.group.position.set(-(FLOOR_W / 2) + 0.2, 1.5, 8.5);
+    tvTrade.group.rotation.y = Math.PI / 2;
+    scene.add(tvTrade.group);
+
+    const hgCanvas = document.createElement("canvas");
+    hgCanvas.width = 640; hgCanvas.height = 356;
+    const hgCtx = hgCanvas.getContext("2d");
+    const tvHg = buildTvScreen(furnitureTemplate, hgCanvas);
+    tvHg.group.position.set((FLOOR_W / 2) - 0.2, 1.5, -5.5);
+    tvHg.group.rotation.y = -Math.PI / 2;
+    scene.add(tvHg.group);
+    drawTradeScreen(tradeCtx, tradeCanvas.width, tradeCanvas.height, tradeState);
+    drawHgScreen(hgCtx, hgCanvas.width, hgCanvas.height, liveRef.current.bizData);
+    let screenT = 0;
     [[-10.4, 9.4], [10.8, -8.6], [7.6, 8.4]].forEach(([px, pz]) => {
       const plant = buildPlant();
       plant.position.set(px, 0, pz);
@@ -793,6 +912,19 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       sun.color.lerp(tmpColor.set(sunTargetHex), Math.min(1, dt * 0.8));
       const ambTargetInt = isNight ? 0.35 : 0.65;
       ambient.intensity += (ambTargetInt - ambient.intensity) * Math.min(1, dt * 0.8);
+
+      // Wall TVs — redrawn ~once a second, not every frame; the trading
+      // screen ticks a simulated market, the HeavyGuard screen reflects
+      // whatever real business numbers came in via the bizData prop.
+      screenT += dt;
+      if (screenT >= 1) {
+        screenT = 0;
+        stepTradeTicker(tradeState);
+        drawTradeScreen(tradeCtx, tradeCanvas.width, tradeCanvas.height, tradeState);
+        tvTrade.tex.needsUpdate = true;
+        drawHgScreen(hgCtx, hgCanvas.width, hgCanvas.height, liveRef.current.bizData);
+        tvHg.tex.needsUpdate = true;
+      }
 
       let mx = 0, mz = 0;
       if (keys["w"] || keys["arrowup"]) mz -= 1;
