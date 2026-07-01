@@ -1972,11 +1972,13 @@ function StyleTag() {
   display:flex;align-items:center;gap:8px;background:linear-gradient(135deg,var(--c),color-mix(in srgb,var(--c) 60%,#000));
   color:#fff;border:none;border-radius:30px;padding:12px 20px;font-family:'Rubik';font-weight:900;font-size:14px;
   cursor:pointer;box-shadow:0 8px 26px color-mix(in srgb,var(--c) 50%,transparent);animation:acRise .2s ease both}
-.off3-joy{position:absolute;left:20px;bottom:20px;z-index:3;width:96px;height:96px;border-radius:50%;
-  background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.18);touch-action:none}
-.off3-joy-knob{position:absolute;left:50%;top:50%;width:42px;height:42px;margin:-21px 0 0 -21px;border-radius:50%;
-  background:linear-gradient(135deg,var(--gold),var(--gold2));box-shadow:0 4px 14px rgba(228,188,99,.4);pointer-events:none}
-@media(min-width:900px){.off3-joy{display:none}}
+/* Floating joystick — appears centred on wherever you first touch/click. */
+.off3-joy.floating{position:absolute;z-index:4;width:128px;height:128px;margin:-64px 0 0 -64px;border-radius:50%;
+  background:radial-gradient(circle,rgba(255,255,255,.1),rgba(255,255,255,.03));
+  border:2px solid rgba(228,188,99,.5);box-shadow:0 0 0 6px rgba(0,0,0,.15),0 8px 26px rgba(0,0,0,.4);
+  pointer-events:none;touch-action:none;backdrop-filter:blur(2px)}
+.off3-joy-knob{position:absolute;left:50%;top:50%;width:56px;height:56px;margin:-28px 0 0 -28px;border-radius:50%;
+  background:linear-gradient(135deg,var(--gold),var(--gold2));box-shadow:0 4px 16px rgba(228,188,99,.55),inset 0 2px 4px rgba(255,255,255,.4);pointer-events:none}
 .off3-view-toggle{position:absolute;top:10px;right:10px;z-index:3;width:38px;height:38px;border-radius:50%;
   display:flex;align-items:center;justify-content:center;background:rgba(6,9,18,.72);border:1px solid rgba(110,170,240,.3);
   color:#eaf1ff;cursor:pointer;backdrop-filter:blur(8px)}
