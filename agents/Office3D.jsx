@@ -8,7 +8,7 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { SSAOPass } from "three/examples/jsm/postprocessing/SSAOPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
-import { MessageCircle, Eye, User, Mic, VolumeX, X, Settings as SettingsIcon } from "lucide-react";
+import { MessageCircle, Eye, User, Mic, VolumeX, Volume2, X, Settings as SettingsIcon } from "lucide-react";
 
 /* ════════════════════════════════════════════════════════════════════
    3D OFFICE — walk the floor yourself (WASD / joystick), approach a
@@ -1249,6 +1249,19 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   // conversation text on screen. State (not a ref) so the settings panel can
   // show and toggle it.
   const [autoListen, setAutoListen] = useState(true);
+  // Voice picker — same localStorage key App.jsx's speakText() reads, so
+  // choosing a voice here actually changes what every agent sounds like,
+  // both in the sim and in the regular text-chat modal.
+  const [voiceList, setVoiceList] = useState([]);
+  const [voiceUri, setVoiceUriState] = useState(() => { try { return localStorage.getItem("alpha:agents:voiceUri") || ""; } catch { return ""; } });
+  const setVoiceUri = (uri) => { setVoiceUriState(uri); try { localStorage.setItem("alpha:agents:voiceUri", uri); } catch {} };
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.speechSynthesis) return;
+    const refresh = () => setVoiceList(window.speechSynthesis.getVoices());
+    refresh();
+    window.speechSynthesis.onvoiceschanged = refresh;
+    return () => { window.speechSynthesis.onvoiceschanged = null; };
+  }, []);
 
   useEffect(() => { liveRef.current.chars = chars; }, [chars]);
   useEffect(() => { liveRef.current.firstPerson = firstPerson; }, [firstPerson]);
@@ -2156,16 +2169,16 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     if (!agent || !voice) return;
     if (voiceState === "listening") {
       // Manual tap while listening = the user wants to pause, not restart.
-      if (!auto) autoListenRef.current = false;
+      if (!auto) setAutoListen(false);
       try { recogRef.current?.stop(); } catch {}
       setVoiceState("idle");
       return;
     }
-    if (!auto) autoListenRef.current = true;
+    if (!auto) setAutoListen(true);
     if (!voice.canListen) {
       const line = `שלום, אני ${agent.name}. ${agent.tagline || ""}`;
       setVoiceLine({ who: agent.name, text: line, color: agent.color });
-      if (voice.canSpeak) { setVoiceState("speaking"); voice.speak(line); setTimeout(() => setVoiceState((s) => (s === "speaking" ? "idle" : s)), 3000); }
+      if (voice.canSpeak) { setVoiceState("speaking"); voice.speak(line, agent.id); setTimeout(() => setVoiceState((s) => (s === "speaking" ? "idle" : s)), 3000); }
       return;
     }
     const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -2180,7 +2193,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       try { reply = await voice.ask(agent.id, said); } catch {}
       reply = reply || "סליחה, לא הצלחתי לענות כרגע.";
       setVoiceLine({ who: agent.name, text: reply, color: agent.color });
-      if (voice.canSpeak) { setVoiceState("speaking"); voice.speak(reply); }
+      if (voice.canSpeak) { setVoiceState("speaking"); voice.speak(reply, agent.id); }
       const dur = Math.min(14000, 1600 + reply.length * 55);
       setTimeout(() => setVoiceState((s) => (s === "speaking" ? "idle" : s)), voice.canSpeak ? dur : 4500);
     };
@@ -2227,7 +2240,16 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
             <span><Eye size={15} /> איכות גרפית (זוהר + הצללות)</span>
             <b className={graphicsHigh ? "on" : ""}>{graphicsHigh ? "גבוהה" : "חסכונית"}</b>
           </button>
-          <p className="off3-settings-note">בגוף ראשון (הפוך): ↑/W נסוג ו-↓/S מתקדם לפי הכיוון שאתה מסתכל אליו (בלי לסובב את המצלמה), ←/→ או A/D מסובבים אותך בכיוון ההפוך.</p>
+          {voiceList.length > 0 && (
+            <div className="off3-settings-row off3-settings-select">
+              <span><Volume2 size={15} /> קול הסוכנים</span>
+              <select value={voiceUri} onChange={(e) => setVoiceUri(e.target.value)}>
+                <option value="">אוטומטי (עברית)</option>
+                {voiceList.map((v) => <option key={v.voiceURI} value={v.voiceURI}>{v.name} ({v.lang})</option>)}
+              </select>
+            </div>
+          )}
+          <p className="off3-settings-note">בגוף ראשון (הפוך): ↑/W נסוג ו-↓/S מתקדם לפי הכיוון שאתה מסתכל אליו (בלי לסובב את המצלמה), ←/→ או A/D מסובבים אותך בכיוון ההפוך. כל סוכן מדבר בגובה קול מעט שונה כדי שיהיה קל להבחין ביניהם.</p>
         </div>
       )}
       {voiceLine && (

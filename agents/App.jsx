@@ -6,7 +6,7 @@ import {
   ArrowUpRight, Bot, Radio, Brain, Rocket, ShieldCheck, ClipboardList,
   GitBranch, Terminal, FileCode2, Coins, Package, Scale, Compass,
   Building2, Database, GraduationCap, Globe, Mic, Volume2, VolumeX, LineChart,
-  Clock, CalendarClock,
+  Clock, CalendarClock, Hammer,
 } from "lucide-react";
 import * as cloud from "./cloud";
 import Office3D from "./Office3D.jsx";
@@ -125,6 +125,22 @@ function mergeItaiDuplicateCustomers() {
   const merged = list.length - out.length;
   if (merged > 0) cloudSave("itai:customers", out);
   return { merged, dupNames };
+}
+// Real action for דבורה (facilities): shuffles which agent sits at which
+// desk — persisted, so it survives closing and reopening the office sim,
+// and actually changes who's assigned to which glass office next time it
+// loads (OfficeSim reads this order for its initial seating instead of
+// always giving agent i desk i).
+const K_DESK_ORDER = "alpha:agents:deskorder";
+function reorganizeOffice() {
+  const ids = AGENTS.map((a) => a.id);
+  for (let i = ids.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+  }
+  save(K_DESK_ORDER, ids);
+  cloudSave(K_DESK_ORDER, ids);
+  return ids;
 }
 // Revenue grouped by month (YYYY-MM) from HeavyGuard installs — last 6 months.
 function monthlyRevenue() {
@@ -294,20 +310,37 @@ const SpeechRecognitionCtor = typeof window !== "undefined" ? (window.SpeechReco
 const canListen = () => !!SpeechRecognitionCtor;
 const canSpeak = () => typeof window !== "undefined" && !!window.speechSynthesis;
 const K_VOICE_ON = "alpha:agents:voiceOn";
+const K_VOICE_URI = "alpha:agents:voiceUri"; // user's chosen system TTS voice, "" = auto-pick Hebrew
 
 function pickHebrewVoice() {
   const voices = window.speechSynthesis.getVoices();
   return voices.find((v) => v.lang?.startsWith("he")) || voices.find((v) => v.lang?.startsWith("iw")) || null;
 }
-function speakText(text) {
+// The browser only ever exposes 1-2 Hebrew voices, so every agent speaking
+// through the same voice sounded identical. A small deterministic pitch
+// offset per agent id gives each of them a slightly different register —
+// cheap, free, and enough to tell who's talking without a real per-agent
+// voice.
+function agentPitch(agentId) {
+  if (!agentId) return 1;
+  let h = 0;
+  for (let i = 0; i < agentId.length; i++) h = (h * 31 + agentId.charCodeAt(i)) | 0;
+  return 0.85 + (Math.abs(h) % 100) / 100 * 0.35; // 0.85–1.20
+}
+function listSpeechVoices() {
+  return canSpeak() ? window.speechSynthesis.getVoices() : [];
+}
+function speakText(text, agentId) {
   if (!canSpeak() || !text) return;
   try {
     window.speechSynthesis.cancel(); // don't stack overlapping replies
     const u = new SpeechSynthesisUtterance(text);
     u.lang = "he-IL";
-    const voice = pickHebrewVoice();
+    const chosenUri = load(K_VOICE_URI, "");
+    const voice = (chosenUri && listSpeechVoices().find((v) => v.voiceURI === chosenUri)) || pickHebrewVoice();
     if (voice) u.voice = voice;
     u.rate = 1.02;
+    u.pitch = agentPitch(agentId);
     window.speechSynthesis.speak(u);
   } catch {}
 }
@@ -506,6 +539,13 @@ const AGENTS = [
     persona: "אתה יוסף — החוזה ומתכנן לטווח ארוך, מנהל האסטרטגיה והצמיחה. אתה אחראי על חזון, זיהוי הזדמנויות שוק, ניתוח מתחרים, אפיקי הכנסה חדשים ותוכניות התרחבות ל-HeavyGuard. אופי: רגוע וקצבי, יצירתי מאוד — משלב אינטואיציה חדשנית עם ידע עסקי עמוק כדי לראות הזדמנות שאחרים מפספסים. תן מהלך צמיחה קונקרטי אחד.",
     quick: ["איפה הזדמנות הצמיחה?", "נתח לי מתחרים", "אפיק הכנסה חדש", "תוכנית התרחבות"],
   },
+  {
+    id: "facilities", name: "דבורה", title: "מנהלת משרד ושיפוצים", Icon: Hammer, color: "#E08D45", accent: "#FFD3A0",
+    tagline: "מארגנת את המשרד, מנהלת שיפוצים ומעבירה סוכנים לעמדות חדשות",
+    domain: "ניהול משרד · ארגון · שיפוצים",
+    persona: "את דבורה — מנהלת המשרד והשיפוצים של הצוות. את אחראית על ארגון וסדר החלל הפיזי במשרד, תכנון שיפוצים ושדרוגים, וסידור עמדות עבודה מסודרות לכל סוכן — כולל העברת סוכנים לעמדות חדשות כשצריך לרענן את המשרד. אופי: קפדנית, פרקטית, אוהבת סדר מושלם — לא סובלת בלאגן ותמיד יודעת בדיוק איפה כל דבר צריך להיות. כשמבקשים ממך לארגן/לשפץ את המשרד תני תשובה שמתארת את מה שביצעת בפועל, ותני צעד קונקרטי הבא.",
+    quick: ["ארגני את המשרד", "תכנני שיפוץ", "העבירי את כולם לעמדות חדשות", "מה מצב הסדר במשרד?"],
+  },
 ];
 const byId = (id) => AGENTS.find((a) => a.id === id);
 
@@ -524,6 +564,7 @@ const FACE_PARAMS = {
   procure:{ skin: "#D9A06B", hair: "#3A2A1C", style: "short", beard: "full",   glasses: false, bg1: "#2a3a10", bg2: "#121a04" },
   legal:  { skin: "#EFC197", hair: "#1A1A22", style: "short", beard: "none",   glasses: true,  bg1: "#241f44", bg2: "#100d22" },
   growth: { skin: "#E6B488", hair: "#2B2118", style: "short", beard: "stubble",glasses: false, bg1: "#3a1320", bg2: "#1a0810" },
+  facilities: { skin: "#F2CBA6", hair: "#6B3A22", style: "long", beard: "none", glasses: true, bg1: "#40260f", bg2: "#1c1006" },
 };
 function facePortrait(p, shirt) {
   const dark = (c) => c; // hair shade reused
@@ -582,6 +623,7 @@ const FALLBACK = {
   procure: (q) => `בודק מלאי 📦 ${q ? `לגבי "${q.slice(0, 40)}" — ` : ""}המלצת רכש:\n\n• בדוק פריטים שמתחת לסף המינימום.\n• השווה 2-3 ספקים לפני הזמנה.\n• הזמן מבעוד מועד כדי לא לעכב התקנות.\n\n➤ הצעד הבא: רכז רשימת חוסרים. (חבר מפתח Groq ל-AI מלא.)`,
   legal: (q) => `בודק את הניסוח ⚖️ ${q ? `לגבי "${q.slice(0, 40)}" — ` : ""}נקודות חשובות:\n\n• ודא שתנאי האחריות ברורים בטופס.\n• כלול מדיניות ביטולים והחזרים.\n• שמור הסכמה חתומה מכל לקוח.\n\n➤ הצעד הבא: עבור על טופס ההתקשרות. (זו הכוונה כללית, לא ייעוץ משפטי מחייב.)`,
   growth: (q) => `חושב קדימה 🧭 ${q ? `לגבי "${q.slice(0, 40)}" — ` : ""}מהלך צמיחה:\n\n• זהה ענף לקוחות שעוד לא מיצינו (צי, חקלאות, בנייה).\n• הצע חבילת מנוי/שירות מתמשך כהכנסה חוזרת.\n• בדוק מה המתחרים לא נותנים — וזה הבידול שלנו.\n\n➤ הצעד הבא: בחר ענף יעד אחד לחודש הקרוב. (חבר מפתח Groq ל-AI מלא.)`,
+  facilities: (q) => `בודקת את המשרד 🧹 ${q ? `לגבי "${q.slice(0, 40)}" — ` : ""}תוכנית סדר ושיפוץ:\n\n• לזהות עמדות עם בלאגן ולסדר אותן היום.\n• לתכנן שיפוץ קטן לאזור שנראה הכי עמוס.\n• לוודא שלכל סוכן יש עמדה מסודרת ומצוידת.\n\n➤ הצעד הבא: תגיד "ארגני את המשרד" ואני מסדרת מחדש את כל העמדות ממש עכשיו — פעולה אמיתית, לא רק הבטחה.`,
 };
 
 /* ── Live activity seed (gives the room a heartbeat) ── */
@@ -598,6 +640,7 @@ const ACTIVITY_TEMPLATES = {
   procure: ["בדק רמות מלאי", "השווה מחירי ספקים", "הזמין ציוד חדש", "עדכן מחירון רכש"],
   legal: ["בדק טופס התקשרות", "עדכן תנאי אחריות", "סקר חוזה לקוח", "וידא עמידה בתקנות"],
   growth: ["ניתח מתחרים", "זיהה הזדמנות שוק", "תכנן אפיק הכנסה", "בנה תוכנית התרחבות"],
+  facilities: ["בדקה סדר וניקיון במשרד", "ארגנה עמדת עבודה", "תכננה שיפוץ לפינת הישיבה", "עדכנה סידור עמדות"],
 };
 
 function seedActivity() {
@@ -628,6 +671,7 @@ const CHATTER_PAIRS = [
   { a: "data", b: "finance", make: (b) => [`ההכנסה המצטברת עומדת על ${ils(b.hgRevenue)} — המגמה חיובית?`, `כן, ואני עוקב שהגבייה תואמת את הפייפליין הפתוח.`] },
   { a: "legal", b: "ops", make: () => [`כל ההתקנות האחרונות עם טופס התקשרות חתום?`, `בודק מול הצוות ומעדכן אותך.`] },
   { a: "growth", b: "ceo", make: (b) => [`יש הזדמנות צמיחה שכדאי לדחוף החודש?`, `תראה לי מספרים ונחליט יחד בישיבת הצוות.`] },
+  { a: "facilities", b: "ceo", make: () => [`המשרד מתחיל להיות עמוס, אפשר לארגן מחדש?`, `כן, תתחילי בעמדות שהכי מבולגנות.`] },
 ];
 const IDEA_TEMPLATES = [
   { agentId: "growth", make: (b) => `לבחון הרחבה לאזור פעילות נוסף — יש כרגע ${b.custCount} לקוחות ו-${ils(b.openVal)} בפייפליין הפתוח, יש מקום לצמוח.` },
@@ -638,6 +682,7 @@ const IDEA_TEMPLATES = [
   { agentId: "finance", make: (b) => `מעקב גבייה יזום לעסקאות פתוחות מעל שבוע (${b.staleCount} כרגע) לפני שהן הופכות לחוב אבוד.` },
   { agentId: "procure", make: () => `להשוות מחירי ספקים מחדש — יכול לשפר את שולי הרווח בהתקנות הבאות.` },
   { agentId: "ops", make: (b) => `לוח זמנים דינמי להתקנות לפי אזור, כדי לצמצם נסיעות טכנאים.` },
+  { agentId: "facilities", make: () => `שיפוץ קטן לפינת הישיבה המשותפת ועוד עמדות אחסון מסודרות למשרד.` },
 ];
 function marketMover(rows) {
   if (!rows || !rows.length) return null;
@@ -991,6 +1036,22 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
       const reply = agent.id === "sales"
         ? `בוצע 💪 ${detail}`
         : `בדקתי מול זבולון (מנהל ה-CRM) והרצנו את זה עכשיו — ${detail}`;
+      setTimeout(() => { setLog([...withMe, { from: "bot", text: reply, ts: now() }]); if (voiceOn) speakText(reply); }, 350);
+      return;
+    }
+
+    // Real action for דבורה (facilities): reorganizing/renovating the
+    // office actually reshuffles who sits at which desk — a real, persisted
+    // change, not just a description of one. Reopen the office sim (or the
+    // current one, next time it refreshes chars) to see everyone at a new
+    // spot.
+    if (/ארגן|ארגני|שיפוץ|לשפץ|סדר.{0,3}(את ה)?משרד|משרד חדש/.test(t)) {
+      const order = reorganizeOffice();
+      logActivity("facilities", `ארגנה מחדש את סידור העמדות במשרד (${order.length} עמדות)`);
+      const detail = "ארגנתי מחדש את כל עמדות העבודה במשרד — כל סוכן קיבל עמדה חדשה ומסודרת. תראה את השינוי בפעם הבאה שתיכנס למשרד החי.";
+      const reply = agent.id === "facilities"
+        ? `בוצע 🧹 ${detail}`
+        : `העברתי את זה לדבורה (מנהלת המשרד) והיא כבר טיפלה בזה — ${detail}`;
       setTimeout(() => { setLog([...withMe, { from: "bot", text: reply, ts: now() }]); if (voiceOn) speakText(reply); }, 350);
       return;
     }
@@ -1361,12 +1422,14 @@ const CHATTER = {
 // weighted so "at the desk, working" is what the room looks like most of the
 // time, not constant aimless wandering.
 const OFC_X0 = 4, OFC_X1 = 96, OFC_Y0 = 18, OFC_Y1 = 86;
-// 12 desks — one per agent, in a proper 4×3 bullpen grid. Index i is agent
-// i's permanent "home" desk (AGENTS.length === OFC_DESKS.length), so a desk
+// 13 desks — one per agent (AGENTS.length === OFC_DESKS.length), so a desk
 // always belongs to the same person and can show a real occupied/idle state.
+// The core 4×3 bullpen grid plus one extra desk for דבורה (facilities), set
+// off in a 5th column at the middle row — clear of the meeting nook, dining
+// room and owner's office in the SE corner.
 const OFC_DESKS = [
   { x: 12, y: 24 }, { x: 29, y: 24 }, { x: 46, y: 24 }, { x: 63, y: 24 },
-  { x: 12, y: 42 }, { x: 29, y: 42 }, { x: 46, y: 42 }, { x: 63, y: 42 },
+  { x: 12, y: 42 }, { x: 29, y: 42 }, { x: 46, y: 42 }, { x: 63, y: 42 }, { x: 80, y: 42 },
   { x: 12, y: 60 }, { x: 29, y: 60 }, { x: 46, y: 60 }, { x: 63, y: 60 },
 ];
 // Meeting nook, upper right.
@@ -1399,7 +1462,14 @@ function OfficeSim({ onClose, onOpenChat, logActivity, showToast }) {
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   // Every agent gets their own permanent desk (home) they return to by
   // default — a real seat, not a random spot picked fresh each time.
-  const [chars, setChars] = useState(() => AGENTS.map((a, i) => { const home = OFC_DESKS[i % OFC_DESKS.length]; return { id: a.id, ...home, home, dir: 1, dur: 3000, walking: false, status: "work", energy: Math.round(rnd(70, 100)), held: false, focus: false }; }));
+  const [chars, setChars] = useState(() => {
+    // A reorg by דבורה persists a shuffled desk order — use it if present
+    // (and still valid for the current roster) so the seating change is
+    // actually visible next time the office loads, not just described.
+    const order = load(K_DESK_ORDER, null);
+    const ids = order && order.length === AGENTS.length && order.every((id) => byId(id)) ? order : AGENTS.map((a) => a.id);
+    return ids.map((id, i) => { const home = OFC_DESKS[i % OFC_DESKS.length]; return { id, ...home, home, dir: 1, dur: 3000, walking: false, status: "work", energy: Math.round(rnd(70, 100)), held: false, focus: false }; });
+  });
   const [bubbles, setBubbles] = useState({});
   const [phase, setPhase] = useState(0);
   const [bursts, setBursts] = useState([]);
@@ -2394,6 +2464,9 @@ function StyleTag() {
 .off3-settings-row span{display:flex;align-items:center;gap:7px}
 .off3-settings-row b{font-size:11px;font-weight:800;color:#7e90b8}
 .off3-settings-row b.on{color:#3FD79A}
+.off3-settings-select{flex-wrap:wrap}
+.off3-settings-select select{max-width:130px;background:var(--s9);border:1px solid var(--s7);color:var(--silver);border-radius:8px;
+  padding:5px 7px;font-family:inherit;font-size:10.5px;outline:none;cursor:pointer}
 .off3-settings-note{font-size:10.5px;line-height:1.6;color:#7e90b8;padding:10px 14px 14px}
 .off-floor{flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(2,1fr);gap:12px;padding:14px 14px 28px;align-content:start}
 @media(min-width:680px){.off-floor{grid-template-columns:repeat(3,1fr)}}
