@@ -226,54 +226,70 @@ function buildFloorTexture() {
   return tex;
 }
 
-// A real Manhattan-at-night reference photo (blue hour, a spired Empire
-// State-style tower, dense lit windows, a river catching the light) drove
-// this — baked once into a canvas texture: a hazy far layer for depth, a
-// river strip with light reflections, then the main skyline with one
-// signature tiered/spired tower and varied building silhouettes.
-function buildSkylineTexture() {
-  const cvs = document.createElement("canvas");
-  cvs.width = 1600; cvs.height = 600;
-  const ctx = cvs.getContext("2d");
-  const W = cvs.width, H = cvs.height;
-
+// A real Manhattan reference photo (a spired Empire State-style tower,
+// dense windows, a river catching the light) drove this — a day and a
+// night version of the same skyline, drawn onto a shared canvas and swapped
+// (redrawn + texture.needsUpdate) whenever the office's day/night phase
+// actually changes, so the window isn't a single static image any more.
+function drawSkyline(ctx, W, H, mode) {
+  const isDay = mode === "day";
   const sky = ctx.createLinearGradient(0, 0, 0, H);
-  sky.addColorStop(0, "#0a1230");
-  sky.addColorStop(0.45, "#122043");
-  sky.addColorStop(0.8, "#1c2f52");
-  sky.addColorStop(1, "#2c3d5c");
+  if (isDay) {
+    sky.addColorStop(0, "#6fb3e6"); sky.addColorStop(0.5, "#a9d4ee");
+    sky.addColorStop(0.8, "#d8ecf6"); sky.addColorStop(1, "#eef7fb");
+  } else {
+    sky.addColorStop(0, "#0a1230"); sky.addColorStop(0.45, "#122043");
+    sky.addColorStop(0.8, "#1c2f52"); sky.addColorStop(1, "#2c3d5c");
+  }
   ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
 
   const rnd = mulberry32(7);
   const horizon = H * 0.86;
 
+  if (isDay) {
+    const sunGrad = ctx.createRadialGradient(W * 0.78, H * 0.16, 0, W * 0.78, H * 0.16, 150);
+    sunGrad.addColorStop(0, "rgba(255,252,225,.85)");
+    sunGrad.addColorStop(1, "rgba(255,252,225,0)");
+    ctx.fillStyle = sunGrad; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = "rgba(255,255,255,.7)";
+    for (let i = 0; i < 4; i++) {
+      const cx = rnd() * W, cy = 40 + rnd() * 90, s = 40 + rnd() * 50;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, s, s * 0.4, 0, 0, Math.PI * 2);
+      ctx.ellipse(cx + s * 0.6, cy + 6, s * 0.7, s * 0.32, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
   // hazy far skyline layer — low-contrast silhouettes for depth.
-  const farColors = ["#1a2338", "#161f30", "#202b44"];
+  const farColors = isDay ? ["#9fc3de", "#89b3d2", "#b0d0e6"] : ["#1a2338", "#161f30", "#202b44"];
   let fx = 0;
   while (fx < W) {
-    const w = 20 + rnd() * 40;
-    const h = 40 + rnd() * 90;
+    const w = 20 + rnd() * 40, h = 40 + rnd() * 90;
     ctx.fillStyle = farColors[Math.floor(rnd() * farColors.length)];
     ctx.fillRect(fx, horizon - h, w, h);
     fx += w + 2 + rnd() * 6;
   }
 
-  // river strip with warm reflected light.
-  ctx.fillStyle = "#0d1626";
+  // river strip — sunlit ripples by day, warm reflected light by night.
+  ctx.fillStyle = isDay ? "#5f9dc4" : "#0d1626";
   ctx.fillRect(0, horizon, W, H - horizon);
   for (let i = 0; i < 70; i++) {
-    const rx = rnd() * W;
-    const ry = horizon + rnd() * (H - horizon) * 0.7;
-    ctx.fillStyle = `rgba(255,${(190 + rnd() * 40) | 0},${(120 + rnd() * 60) | 0},${(0.15 + rnd() * 0.25).toFixed(2)})`;
+    const rx = rnd() * W, ry = horizon + rnd() * (H - horizon) * 0.7;
+    ctx.fillStyle = isDay
+      ? `rgba(255,255,255,${(0.2 + rnd() * 0.35).toFixed(2)})`
+      : `rgba(255,${(190 + rnd() * 40) | 0},${(120 + rnd() * 60) | 0},${(0.15 + rnd() * 0.25).toFixed(2)})`;
     ctx.fillRect(rx, ry, 2 + rnd() * 3, 1);
   }
 
-  function windows(x, y, w, h, warmRatio) {
+  function windows(x, y, w, h, ratio) {
     for (let wy = y + 6; wy < y + h - 4; wy += 12) {
       for (let wx = x + 4; wx < x + w - 4; wx += 9) {
         const r = rnd();
-        if (r < warmRatio) {
-          ctx.fillStyle = r < warmRatio * 0.12 ? "rgba(150,220,255,.85)" : "rgba(255,206,130,.9)";
+        if (r < ratio) {
+          ctx.fillStyle = isDay
+            ? (r < ratio * 0.3 ? "rgba(255,255,255,.5)" : "rgba(150,195,220,.35)")
+            : (r < ratio * 0.12 ? "rgba(150,220,255,.85)" : "rgba(255,206,130,.9)");
           ctx.fillRect(wx, wy, 3.4, 6.5);
         }
       }
@@ -281,7 +297,7 @@ function buildSkylineTexture() {
   }
 
   // main skyline — varied silhouettes, one signature spired tower.
-  const bodyColors = ["#0c1220", "#0f1626", "#080d18", "#111a2c"];
+  const bodyColors = isDay ? ["#5a6b7d", "#6b7c8e", "#4d5c6d", "#7189a0"] : ["#0c1220", "#0f1626", "#080d18", "#111a2c"];
   let x = 0, towerPlaced = false;
   while (x < W) {
     const w = 34 + rnd() * 70;
@@ -298,7 +314,7 @@ function buildSkylineTexture() {
         ctx.fillRect(bx + (w - tw) / 2, ty, tw, th);
         ty += th; tw *= 0.72;
       }
-      ctx.fillStyle = "rgba(255,230,190,.95)";
+      ctx.fillStyle = isDay ? "rgba(255,255,255,.9)" : "rgba(255,230,190,.95)";
       ctx.fillRect(bx + w / 2 - 1.5, by - 46, 3, 46);
       ctx.fillStyle = bodyColors[0];
     } else if (rnd() > 0.6) {
@@ -312,10 +328,39 @@ function buildSkylineTexture() {
     windows(bx, by, w, h, 0.4 + rnd() * 0.3);
     x += w + 3 + rnd() * 7;
   }
-
+}
+function buildSkylineTexture(mode) {
+  const cvs = document.createElement("canvas");
+  cvs.width = 1600; cvs.height = 600;
+  const ctx = cvs.getContext("2d");
+  drawSkyline(ctx, cvs.width, cvs.height, mode);
   const tex = new THREE.CanvasTexture(cvs);
   tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
+  return { canvas: cvs, ctx, tex };
+}
+
+// A thin animated "street" strip layered at the base of the skyline wall —
+// a few colored light streaks crawling left/right — so the window reads as
+// a live city outside, not a painted backdrop. Cheap: a small 1024×48
+// canvas redrawn every frame.
+function makeTrafficState() {
+  const rnd = mulberry32(555);
+  const cars = Array.from({ length: 14 }, () => ({
+    x: rnd() * 1024,
+    y: 10 + rnd() * 28,
+    speed: (rnd() > 0.5 ? 1 : -1) * (40 + rnd() * 70),
+    color: rnd() > 0.25 ? "#ffcf8a" : "#ff5a4a",
+  }));
+  return { cars };
+}
+function drawTraffic(ctx, W, H, state, dt) {
+  ctx.fillStyle = "#0b0f18"; ctx.fillRect(0, 0, W, H);
+  state.cars.forEach((c) => {
+    c.x += c.speed * dt;
+    if (c.x < -20) c.x = W + 20; if (c.x > W + 20) c.x = -20;
+    ctx.fillStyle = c.color;
+    ctx.fillRect(c.x, c.y, c.speed > 0 ? 14 : -14, 2.4);
+  });
 }
 
 // A personalized workstation — the user's own real desk + laptop models
@@ -746,15 +791,33 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       scene.add(panel);
     });
 
-    // North window wall — floor-to-ceiling NYC skyline view.
-    const skylineTex = buildSkylineTexture();
+    // North window wall — floor-to-ceiling NYC skyline view. Starts in
+    // whatever mode the current phase calls for; animate() below swaps the
+    // whole canvas (day ⇄ night) only when the phase actually crosses that
+    // boundary, so it's cheap but never just one frozen picture.
+    let skylineMode = liveRef.current.phase <= 1 ? "day" : "night";
+    const skyline = buildSkylineTexture(skylineMode);
     const [nwx, nwz] = [0, -(FLOOR_D / 2) - 0.05];
     const skyWall = new THREE.Mesh(
       new THREE.PlaneGeometry(FLOOR_W, 6.4),
-      new THREE.MeshBasicMaterial({ map: skylineTex })
+      new THREE.MeshBasicMaterial({ map: skyline.tex })
     );
     skyWall.position.set(nwx, 3.2, nwz);
     scene.add(skyWall);
+    // A thin animated street strip at the base — small, cheap, redrawn
+    // every frame — so the window always has some motion in it.
+    const trafficCanvas = document.createElement("canvas");
+    trafficCanvas.width = 1024; trafficCanvas.height = 48;
+    const trafficCtx = trafficCanvas.getContext("2d");
+    const trafficState = makeTrafficState();
+    const trafficTex = new THREE.CanvasTexture(trafficCanvas);
+    trafficTex.colorSpace = THREE.SRGBColorSpace;
+    const trafficStrip = new THREE.Mesh(
+      new THREE.PlaneGeometry(FLOOR_W, 0.5),
+      new THREE.MeshBasicMaterial({ map: trafficTex, toneMapped: false })
+    );
+    trafficStrip.position.set(nwx, 0.42, nwz + 0.02);
+    scene.add(trafficStrip);
     // Window mullions for structure over the glass.
     const mullionMat = new THREE.MeshStandardMaterial({ color: 0x0e1220, roughness: 0.6 });
     for (let i = -5; i <= 5; i++) {
@@ -938,6 +1001,18 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         tvHg.tex.needsUpdate = true;
       }
 
+      // Skyline window — swap the whole canvas only when day/night actually
+      // flips (cheap, rare); the street traffic strip redraws every frame
+      // (tiny canvas) so the view is never a single static picture.
+      const desiredSkyMode = liveRef.current.phase <= 1 ? "day" : "night";
+      if (desiredSkyMode !== skylineMode) {
+        skylineMode = desiredSkyMode;
+        drawSkyline(skyline.ctx, skyline.canvas.width, skyline.canvas.height, skylineMode);
+        skyline.tex.needsUpdate = true;
+      }
+      drawTraffic(trafficCtx, trafficCanvas.width, trafficCanvas.height, trafficState, dt);
+      trafficTex.needsUpdate = true;
+
       let mx = 0, mz = 0;
       if (keys["w"] || keys["arrowup"]) mz -= 1;
       if (keys["s"] || keys["arrowdown"]) mz += 1;
@@ -975,9 +1050,18 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         const dx = tx - h.group.position.x, dz = tz - h.group.position.z;
         const dist = Math.hypot(dx, dz);
         if (dist > 0.01) {
-          const step = Math.min(1, dt * (c.walking ? 3.2 : 6));
-          h.group.position.x += dx * step;
-          h.group.position.z += dz * step;
+          // A real walking pace (units/sec), not a percent-of-remaining-
+          // distance lerp — the old lerp closed most of the gap in the
+          // first frame or two for any far-off desk, reading as teleporting
+          // rather than walking across the room.
+          const NPC_SPEED = 1.9;
+          const maxStep = NPC_SPEED * dt;
+          if (dist <= maxStep) {
+            h.group.position.x = tx; h.group.position.z = tz;
+          } else {
+            h.group.position.x += (dx / dist) * maxStep;
+            h.group.position.z += (dz / dist) * maxStep;
+          }
         }
         const targetY = atDesk ? SEAT_DROP : 0;
         h.group.position.y += (targetY - h.group.position.y) * Math.min(1, dt * 6);

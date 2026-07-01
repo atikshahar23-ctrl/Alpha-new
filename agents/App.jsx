@@ -19,6 +19,12 @@ import Office3D from "./Office3D.jsx";
    personas when no key is present, so the room is always live.
    ════════════════════════════════════════════════════════════════════ */
 
+// The team here works for שחר (Shachar), the company owner — Itai is a
+// separate external salesperson who only ever uses his own CRM (agent.html)
+// and never sees this Agents Command Center, so nothing here should address
+// "him" as the reader.
+const OWNER_NAME = "שחר";
+
 /* ── Storage ── */
 const K_HIST = "alpha:agents:hist";     // { [agentId]: [{from,text,ts}] }
 const K_IDEAS = "alpha:agents:ideas";   // [{id, agentId, text, status, ts}]
@@ -109,10 +115,10 @@ function bizContext() {
   const facts = learnedFacts();
   const hasData = b.installs || b.custCount || b.openDeals;
   const top = b.top.length ? b.top.map((c) => `${c.name} (${ils(c.rev)})`).join(", ") : "אין נתונים עדיין";
-  let s = `\n\n[ידע עסקי חי — HeavyGuard / איתי]`;
+  let s = `\n\n[ידע עסקי חי — HeavyGuard / ה-CRM של איתי]`;
   if (hasData) s += `\nהתקנות: ${b.installs} · הכנסה מצטברת: ${ils(b.hgRevenue)} · לקוחות: ${b.custCount} · עסקאות פתוחות: ${b.openDeals} (${ils(b.openVal)}) · נסגרו החודש: ${b.wonMonth} · מוצרים במחירון: ${b.pricelist}.\nלקוחות מובילים: ${top}.`;
-  else s += `\nעדיין אין נתונים חיים זמינים — בקש מאיתי לפתוח את מערכת HeavyGuard/CRM כדי שהנתונים יסונכרנו.`;
-  if (facts.length) s += `\nעובדות שאיתי לימד את הצוות:\n- ${facts.join("\n- ")}`;
+  else s += `\nעדיין אין נתונים חיים זמינים — פתח את מערכת HeavyGuard/CRM כדי שהנתונים יסונכרנו.`;
+  if (facts.length) s += `\nעובדות שלימדת את הצוות:\n- ${facts.join("\n- ")}`;
   s += `\nהשתמש בידע הזה לתשובות מבוססות-נתונים על העסק.`;
   return s;
 }
@@ -122,13 +128,13 @@ const K_BRIEF_DATE = "alpha:agents:briefdate";
 const K_BRIEF_TEXT = "alpha:agents:brieftext";
 const todayKey = () => new Date().toISOString().slice(0, 10);
 function briefingSystem() {
-  return `אתה יהודה, המנכ"ל. כתוב תדריך בוקר קצר וממוקד (3-4 שורות, בלי כותרות) לאיתי, מבוסס על הנתונים העסקיים החיים שיסופקו לך. כלול: מספר אחד שחשוב היום, נקודת תשומת לב אחת (אם יש עסקה תקועה/לקוח לטיפול), ומשפט עידוד קצר. עברית, ישיר, מנהיגותי, בלי גינוני נימוס מיותרים.`;
+  return `אתה יהודה, המנכ"ל. כתוב תדריך בוקר קצר וממוקד (3-4 שורות, בלי כותרות) ל${OWNER_NAME}, בעל החברה, מבוסס על הנתונים העסקיים החיים שיסופקו לך. כלול: מספר אחד שחשוב היום, נקודת תשומת לב אחת (אם יש עסקה תקועה/לקוח לטיפול), ומשפט עידוד קצר. עברית, ישיר, מנהיגותי, בלי גינוני נימוס מיותרים.`;
 }
 function briefingFallback() {
   const b = bizSnapshot();
   const hasData = b.installs || b.openDeals;
-  if (!hasData) return "בוקר טוב, איתי ☀️ עדיין אין לי נתונים חיים — פתח את HeavyGuard או ה-CRM כדי שאוכל לתדרך אותך כל בוקר עם המספרים האמיתיים. בינתיים — קדימה, יום מצוין מחכה.";
-  const parts = [`בוקר טוב, איתי ☀️ המצב: ${b.openDeals} עסקאות פתוחות בשווי ${ils(b.openVal)}, ${b.installs} התקנות עד כה.`];
+  if (!hasData) return `בוקר טוב, ${OWNER_NAME} ☀️ עדיין אין לי נתונים חיים — פתח את HeavyGuard או ה-CRM כדי שאוכל לתדרך אותך כל בוקר עם המספרים האמיתיים. בינתיים — קדימה, יום מצוין מחכה.`;
+  const parts = [`בוקר טוב, ${OWNER_NAME} ☀️ המצב: ${b.openDeals} עסקאות פתוחות בשווי ${ils(b.openVal)}, ${b.installs} התקנות עד כה.`];
   if (b.staleCount > 0) parts.push(`שים לב — ${b.staleCount} עסקאות פתוחות כבר מעל שבוע, כדאי לעקוב אחריהן היום.`);
   else if (b.top[0]) parts.push(`הלקוח המוביל שלך כרגע: ${b.top[0].name} (${ils(b.top[0].rev)}).`);
   parts.push("יום מצוין לסגור עוד עסקה 💪");
@@ -455,7 +461,7 @@ function Face({ agent, fallback = 20 }) {
 /* ── Scripted persona fallback (when no AI key) ── */
 const FALLBACK = {
   ceo: (q) => `קיבלתי, מנהל. ${q ? `לגבי "${q.slice(0, 40)}" — ` : ""}הנה איך אני מסתכל על זה:\n\n1. זבולון (מכירות) — לעקוב אחרי הלידים החמים והעסקאות הפתוחות.\n2. גד (תפעול) — לוודא שכל ההתקנות מתואמות.\n3. נפתלי (שיווק) — לדחוף תוכן שמביא לידים חדשים.\n\n➤ הצעד הבא: בחר שבט מהצוות ואני אאציל לו את המשימה. (חבר מפתח Groq בהגדרות כדי שאהפוך ל-AI חי ומלא.)`,
-  sales: (q) => `על זה, איתי 💪 ${q ? `לגבי "${q.slice(0, 40)}" — ` : ""}המהלך החכם:\n\n• פנה קודם ללידים שלא ענו 3+ ימים — שם הכסף.\n• הודעת מעקב קצרה: "היי [שם], חשבתי עליך — יש לי פתרון מיגון שיתאים בול לצי שלך. מתי נוח לדבר 5 דק'?"\n\n➤ הצעד הבא: שלח 3 הודעות מעקב עכשיו. (חבר מפתח Groq להפעלת AI מלא.)`,
+  sales: (q) => `על זה, ${OWNER_NAME} 💪 ${q ? `לגבי "${q.slice(0, 40)}" — ` : ""}המהלך החכם:\n\n• פנה קודם ללידים שלא ענו 3+ ימים — שם הכסף.\n• הודעת מעקב קצרה: "היי [שם], חשבתי עליך — יש לי פתרון מיגון שיתאים בול לצי שלך. מתי נוח לדבר 5 דק'?"\n\n➤ הצעד הבא: שלח 3 הודעות מעקב עכשיו. (חבר מפתח Groq להפעלת AI מלא.)`,
   ops: (q) => `מסודר. ${q ? `לגבי "${q.slice(0, 40)}" — ` : ""}צ'קליסט תפעול:\n\n☑ אשר זמינות טכנאי ליום ההתקנה\n☑ ודא מלאי: מצלמות, מסכים, איתורן\n☑ שלח ללקוח אישור + שעה\n☑ סגירה: חתימה + תשלום\n\n➤ הצעד הבא: עבור על ההתקנות של השבוע. (חבר מפתח Groq ל-AI מלא.)`,
   cmo: (q) => `יאללה תוכן 🎬 ${q ? `לגבי "${q.slice(0, 40)}" — ` : ""}רעיון מהיר:\n\nהוק: "ככה גנב מנסה לפרוץ למשאית — וזה מה שעוצר אותו 👇"\nגוף: הדגמת מצלמה/איתורן בפעולה.\nCTA: "רוצה מיגון כזה? שלח לנו הודעה."\n\n➤ הצעד הבא: צלם 15 שניות מהשטח. (חבר מפתח Groq ל-AI מלא.)`,
   dev: (q) => `מבין. ${q ? `לגבי "${q.slice(0, 40)}" — ` : ""}תכנון מהיר:\n\n• מיקום: קומפוננטה חדשה תחת ה-App הרלוונטי.\n• State: localStorage לשמירה, מתעדכן בזמן אמת.\n• UI: כרטיס זכוכית בעיצוב הקיים (זהב/כהה).\n\n➤ הצעד הבא: אגדיר את הקומפוננטה ואחבר ל-nav. (חבר מפתח Groq ל-AI מלא.)`,
@@ -1129,6 +1135,9 @@ const OFC_PHASES = [
   { label: "ערב", emoji: "🌇", tint: "rgba(255,120,70,.12)", sky: "#3a2740" },
   { label: "לילה", emoji: "🌙", tint: "rgba(20,40,120,.26)", sky: "#0e1430" },
 ];
+// Per-phase duration (ms) — morning + noon (both daylight) add up to most
+// of the cycle, evening/night pass quickly.
+const OFC_PHASE_DUR = [22000, 34000, 10000, 10000];
 function OfficeSim({ onClose, onOpenChat }) {
   const rnd = (a, b) => a + Math.random() * (b - a);
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -1149,8 +1158,18 @@ function OfficeSim({ onClose, onOpenChat }) {
   const popBubble = (id, text, toId = null) => { const bid = uid(); setBubbles((p) => ({ ...p, [id]: { text, toId, id: bid } })); setTimeout(() => setBubbles((p) => (p[id] && p[id].id === bid ? { ...p, [id]: null } : p)), 3800); };
   const confettiAt = (x, y, color) => { const id = uid(); setBursts((p) => [...p, { id, x, y, color }]); setTimeout(() => setBursts((p) => p.filter((k) => k.id !== id)), 1300); };
 
-  // Day cycle.
-  useEffect(() => { const iv = setInterval(() => setPhase((p) => (p + 1) % OFC_PHASES.length), 16000); return () => clearInterval(iv); }, []);
+  // Day cycle — weighted so the office is mostly in daylight (morning +
+  // noon) rather than an even split across all four phases, which read as
+  // "dim/night" more often than not.
+  useEffect(() => {
+    let cur = 0, to = setTimeout(step, OFC_PHASE_DUR[0]);
+    function step() {
+      cur = (cur + 1) % OFC_PHASES.length;
+      setPhase(cur);
+      to = setTimeout(step, OFC_PHASE_DUR[cur]);
+    }
+    return () => clearTimeout(to);
+  }, []);
 
   // Behaviour scheduler: meetings, desk work, coffee/lunch breaks, short
   // walks, energy. Biased hard toward "sitting at your own desk working" —
