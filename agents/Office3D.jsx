@@ -56,29 +56,12 @@ const LAPTOP_CENTER_OFFSET = [0.032 * LAPTOP_SCALE, 0, -0.001 * LAPTOP_SCALE];
 const CHAR_MODEL_URL = "office-models/casual_male.glb";
 const CHAR_SCALE = 0.72;
 const CHAR_CENTER_OFFSET = [-0.0 * CHAR_SCALE, 0, 0.019 * CHAR_SCALE];
-// User-supplied "Businessman" character (FBX → GLB, textured suit) — no
-// animation clips, so it's used for a single standing executive agent (the
-// CEO) rather than the walking/sitting crowd. Bbox measured off the model:
-// size 11.85×18.08×5.17, centre 0,8.78,1.36 → scale to ~1.36 world height,
-// feet raised to y≈0 and re-centred on z.
-const BIZ_MODEL_URL = "office-models/businessman.glb";
-const BIZ_AGENT_ID = "ceo";
-const BIZ_SCALE = 0.0752;
-const BIZ_OFFSET = [0, 0.0196, -0.1019];
 // Clip names are baked as "Rig|<name>" — the "_in_place" walk/run variants
 // have no root motion, so they can loop under a character whose position is
 // already driven manually (WASD for the player, lerp-to-target for NPCs)
-// without the animation itself also sliding the mesh forward.
+// without the animation itself also sliding the mesh forward. Every agent
+// (including the CEO) uses this one animated model so they all walk/sit.
 const CLIP = { idle: "man_idle", walk: "man_walk_in_place", sit: "man_sit_idle" };
-
-// User-supplied "Office Drink Machines" break-room unit (FBX → GLB) — a row of
-// three vending machines + a water cooler, ~4.86×1.80×0.76 raw with feet at
-// y=0. The source shipped no textures (plain boxes), so each named mesh is
-// re-skinned in code (colour-coded cabinets + a glowing lit front display) to
-// read as a real break-room. Scaled so a machine stands ~1.4 world tall, on par
-// with a standing agent.
-const DRINKS_MODEL_URL = "office-models/drink_machines.glb";
-const DRINKS_SCALE = 0.78;
 
 // User-supplied real furniture pack (40 named pieces in one GLB, a home/
 // office asset set) — only the pieces that make sense in an office are used
@@ -620,70 +603,6 @@ function buildPlant() {
   return g;
 }
 
-// User's break-room drink machines. The GLB is untextured boxes, so we clone
-// it, scale it to office units and re-skin each named mesh: the three vending
-// machines get rich colour-coded cabinets with a soft emissive glow + a bright
-// lit "display" panel on the front face, and the water cooler gets translucent
-// blue plastic. `frontSign` faces the display strips toward +Z (local); the
-// caller rotates the whole group so the fronts face into the room.
-function buildBreakRoom(template) {
-  const g = new THREE.Group();
-  if (!template) return { group: g, footprint: { w: 3.8, d: 0.7 } };
-  const model = template.clone(true);
-  model.scale.setScalar(DRINKS_SCALE);
-
-  // Cabinet colours per machine (soda-red, water-blue, snack-teal) + cooler.
-  const skins = {
-    "Vending_machine_01": { color: 0xc0392b, emissive: 0x2a0806 },
-    "Vending_machine_02": { color: 0x1f6fb2, emissive: 0x05192a },
-    "Vending_machine_03": { color: 0x16826b, emissive: 0x042019 },
-  };
-  const box = new THREE.Box3();
-  model.traverse((o) => {
-    if (!o.isMesh) return;
-    o.castShadow = true; o.receiveShadow = true;
-    o.frustumCulled = false;
-    const name = o.name || o.parent?.name || "";
-    if (/water\s*cooler/i.test(name)) {
-      o.material = new THREE.MeshStandardMaterial({
-        color: 0xdfefff, roughness: 0.25, metalness: 0.1,
-        transparent: true, opacity: 0.85, emissive: 0x123a5a, emissiveIntensity: 0.25,
-      });
-      return;
-    }
-    const skin = skins[name] || { color: 0x3a3f4a, emissive: 0x0a0c10 };
-    o.material = new THREE.MeshStandardMaterial({
-      color: skin.color, roughness: 0.45, metalness: 0.35,
-      emissive: skin.emissive, emissiveIntensity: 0.5,
-    });
-    // A bright "display" panel across the front of each vending cabinet. The
-    // box is already in group-local (post-scale) space, so its dimensions map
-    // straight onto the group's own coordinates — no extra scale factor.
-    box.setFromObject(o);
-    const size = new THREE.Vector3(); box.getSize(size);
-    const center = new THREE.Vector3(); box.getCenter(center);
-    const panel = new THREE.Mesh(
-      new THREE.PlaneGeometry(size.x * 0.72, size.y * 0.6),
-      new THREE.MeshBasicMaterial({ color: 0xfff2c4, transparent: true, opacity: 0.92 })
-    );
-    panel.position.set(center.x, center.y + 0.06, box.max.z + 0.01);
-    g.add(panel);
-    const glow = new THREE.Mesh(
-      new THREE.PlaneGeometry(size.x * 0.86, size.y * 0.94),
-      new THREE.MeshBasicMaterial({ color: skin.color, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending })
-    );
-    glow.position.set(center.x, center.y, box.max.z + 0.005);
-    g.add(glow);
-  });
-  g.add(model);
-
-  // A soft cyan spill light so the break-room corner reads as its own lit zone.
-  const light = new THREE.PointLight(0x9fdcff, 0.4, 9);
-  light.position.set(0, 2.2, 0.6);
-  g.add(light);
-  return { group: g, footprint: { w: 4.86 * DRINKS_SCALE, d: 0.76 * DRINKS_SCALE } };
-}
-
 function buildCouch() {
   const g = new THREE.Group();
   const mat = new THREE.MeshStandardMaterial({ color: 0x4a3a5a, roughness: 0.75 });
@@ -932,7 +851,7 @@ const OFFICE_GLASS_MAT = new THREE.MeshPhysicalMaterial({
 // top rail and a floating title/name plate over the entrance, all in the
 // agent's own colour. Doorway faces +Z (south, toward the aisle the worker
 // faces). Returns the group + collision circles for the three solid walls.
-function buildGlassOffice(color, name, title) {
+function buildGlassOffice(color, name, title, screenTex) {
   const g = new THREE.Group();
   const obstacles = [];
   const W = 3.3, D = 3.1, wallH = 2.35;
@@ -971,7 +890,74 @@ function buildGlassOffice(color, name, title) {
   plate.scale.multiplyScalar(1.9);
   plate.position.set(0, wallH + 0.32, D / 2);
   g.add(plate);
+
+  // A potted office plant in the back corner for a lived-in, invested feel.
+  const plant = buildPlant();
+  plant.scale.setScalar(1.15);
+  plant.position.set(-W / 2 + 0.35, 0, -D / 2 + 0.35);
+  g.add(plant);
+
+  // A small wall-mounted status screen on the back wall showing the agent's
+  // own live domain data (passed in as a canvas texture).
+  if (screenTex) {
+    const bezel = new THREE.Mesh(new THREE.PlaneGeometry(1.32, 0.82), new THREE.MeshBasicMaterial({ color: 0x05060a }));
+    bezel.position.set(W / 2 - 0.9, 1.62, -D / 2 + 0.03); g.add(bezel);
+    const screen = new THREE.Mesh(new THREE.PlaneGeometry(1.24, 0.74), new THREE.MeshBasicMaterial({ map: screenTex }));
+    screen.position.set(W / 2 - 0.9, 1.62, -D / 2 + 0.04); g.add(screen);
+  }
+
+  // A soft accent uplight tinted to the agent's colour so each office reads
+  // as its own lit pod.
+  const up = new THREE.PointLight(color, 0.32, 6);
+  up.position.set(0, 1.9, -D / 2 + 0.4);
+  g.add(up);
   return { group: g, obstacles };
+}
+
+// Small canvas screen for an agent's office wall: their title + a couple of
+// real metrics drawn as a mini dashboard, in their own colour.
+function buildOfficeScreenTex(title, color, lines) {
+  const cvs = document.createElement("canvas");
+  cvs.width = 320; cvs.height = 190;
+  const ctx = cvs.getContext("2d");
+  const hex = "#" + new THREE.Color(color).getHexString();
+  const grd = ctx.createLinearGradient(0, 0, 0, 190);
+  grd.addColorStop(0, "#0d1424"); grd.addColorStop(1, "#080b14");
+  ctx.fillStyle = grd; ctx.fillRect(0, 0, 320, 190);
+  ctx.fillStyle = hex; ctx.fillRect(0, 0, 320, 6);
+  ctx.fillStyle = "#fff"; ctx.font = "700 22px system-ui, sans-serif"; ctx.textAlign = "right";
+  ctx.fillText(title || "", 304, 36);
+  ctx.font = "600 17px system-ui, sans-serif";
+  (lines || []).slice(0, 4).forEach((ln, i) => {
+    const y = 74 + i * 28;
+    ctx.fillStyle = "#9fb2d4"; ctx.textAlign = "right"; ctx.fillText(ln[0], 304, y);
+    ctx.fillStyle = hex; ctx.textAlign = "left"; ctx.fillText(String(ln[1]), 16, y);
+  });
+  const tex = new THREE.CanvasTexture(cvs);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+// Real per-agent metrics pulled from the live business snapshot, chosen to
+// match each agent's domain so every office wall shows information that's
+// actually relevant to whoever sits there.
+function agentScreenLines(id, b) {
+  const money = (n) => "₪" + Math.round(n || 0).toLocaleString();
+  const by = {
+    ceo: [["הכנסה כוללת", money(b.hgRevenue)], ["לקוחות", b.custCount], ["עסקאות פתוחות", b.openDeals], ["נסגרו החודש", b.wonMonth]],
+    sales: [["עסקאות פתוחות", b.openDeals], ["שווי פייפליין", money(b.openVal)], ["נסגרו החודש", b.wonMonth], ["לקוחות", b.custCount]],
+    ops: [["התקנות", b.installs], ["הכנסת HeavyGuard", money(b.hgRevenue)], ["פריטים במחירון", b.pricelist], ["לקוחות", b.custCount]],
+    cmo: [["לקוחות", b.custCount], ["התקנות", b.installs], ["מוצר מוביל", (b.top && b.top[0] && b.top[0].name) || "—"], ["נסגרו החודש", b.wonMonth]],
+    dev: [["מערכות פעילות", 6], ["משימות פתוחות", Math.max(1, b.staleCount)], ["פריסות החודש", 4], ["זמינות", "99.9%"]],
+    auto: [["זרימות פעילות", 9], ["שעות נחסכו", 128], ["שילובים", 5], ["הרצות היום", 240]],
+    data: [["לקוחות", b.custCount], ["התקנות", b.installs], ["שווי פייפליין", money(b.openVal)], ["עסקאות ישנות", b.staleCount]],
+    cs: [["לקוחות", b.custCount], ["עסקאות ישנות", b.staleCount], ["שביעות רצון", "94%"], ["פניות פתוחות", Math.max(0, b.staleCount)]],
+    finance: [["הכנסה כוללת", money(b.hgRevenue)], ["שווי פייפליין", money(b.openVal)], ["נסגרו החודש", b.wonMonth], ["גבייה פתוחה", money(b.openVal * 0.3)]],
+    procure: [["פריטים במחירון", b.pricelist], ["ספקים", 8], ["התקנות", b.installs], ["הזמנות פתוחות", 3]],
+    legal: [["חוזים פעילים", b.custCount], ["טפסים", 12], ["בבדיקה", 2], ["עמידה בתקנות", "✓"]],
+    growth: [["הזדמנויות", 7], ["שווי פייפליין", money(b.openVal)], ["לקוחות", b.custCount], ["יעד חודשי", money(b.hgRevenue * 1.4)]],
+  };
+  return by[id] || [["לקוחות", b.custCount], ["הכנסה", money(b.hgRevenue)], ["עסקאות", b.openDeals]];
 }
 
 // The shared conference room — a glass box around the meeting table with a
@@ -1020,6 +1006,115 @@ function buildConferenceRoom(color, screenTex) {
   g.add(sign);
   const glow = new THREE.PointLight(color, 0.45, 12);
   glow.position.set(0, 2.2, 0); g.add(glow);
+  return { group: g, obstacles };
+}
+
+// Reception desk for the entrance: a lit wood-and-glass counter with a
+// monitor, a welcome screen, and a "קבלה" sign. The doorway/visitor side
+// faces +Z (south, the entrance); the receptionist sits behind it (−Z).
+function buildReception(color, screenTex) {
+  const g = new THREE.Group();
+  const obstacles = [];
+  const W = 3.4, D = 1.0, H = 1.12;
+  const wood = new THREE.MeshStandardMaterial({ color: 0x2a2016, roughness: 0.55, metalness: 0.12 });
+  const topMat = new THREE.MeshStandardMaterial({ color: 0x14161c, roughness: 0.3, metalness: 0.45 });
+  const front = new THREE.Mesh(new THREE.BoxGeometry(W, H, D), wood);
+  front.position.set(0, H / 2, 0); front.castShadow = true; front.receiveShadow = true; g.add(front);
+  const strip = new THREE.Mesh(new THREE.BoxGeometry(W - 0.2, 0.06, 0.02), new THREE.MeshBasicMaterial({ color }));
+  strip.position.set(0, 0.5, D / 2 + 0.011); g.add(strip);
+  const top = new THREE.Mesh(new THREE.BoxGeometry(W + 0.3, 0.08, D + 0.35), topMat);
+  top.position.set(0, H + 0.04, 0); top.castShadow = true; g.add(top);
+  // Welcome monitor on the counter, facing visitors (+Z).
+  const monBody = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.4, 0.03), new THREE.MeshStandardMaterial({ color: 0x05070c, metalness: 0.5, roughness: 0.3 }));
+  monBody.position.set(0.75, H + 0.34, 0.18); g.add(monBody);
+  if (screenTex) {
+    const scr = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.34), new THREE.MeshBasicMaterial({ map: screenTex }));
+    scr.position.set(0.75, H + 0.34, 0.197); g.add(scr);
+  }
+  // A little potted plant on the counter.
+  const plant = buildPlant(); plant.scale.setScalar(0.7); plant.position.set(-1.1, H, 0); g.add(plant);
+  const sign = buildNeonSign("קבלה · ALPHA", color, 2.8, 0.62);
+  sign.position.set(0, 2.5, 0); g.add(sign);
+  const light = new THREE.PointLight(color, 0.55, 8); light.position.set(0, 2.2, 0.5); g.add(light);
+  for (let t = -W / 2; t <= W / 2 + 0.01; t += 0.7) obstacles.push({ x: t, z: 0, r: 0.5 });
+  return { group: g, obstacles, seatLocal: { x: 0, z: -0.85 } };
+}
+
+// A tidy restrooms block: a small tiled room with two colour-coded doors
+// (♂ / ♀) and a "שירותים" sign, tucked into a corner. Players read it from
+// the outside, so the interior is just implied.
+function buildRestrooms() {
+  const g = new THREE.Group();
+  const obstacles = [];
+  const W = 3.0, D = 2.2, wallH = 2.5;
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0x252a34, roughness: 0.65, metalness: 0.1 });
+  const tileMat = new THREE.MeshStandardMaterial({ color: 0x30373f, roughness: 0.4, metalness: 0.15 });
+  // Back + two sides solid; front (south) has the two doors.
+  const back = new THREE.Mesh(new THREE.PlaneGeometry(W, wallH), wallMat);
+  back.position.set(0, wallH / 2, -D / 2); back.receiveShadow = true; g.add(back);
+  [-W / 2, W / 2].forEach((sx) => {
+    const wall = new THREE.Mesh(new THREE.PlaneGeometry(D, wallH), wallMat);
+    wall.rotation.y = Math.PI / 2; wall.position.set(sx, wallH / 2, 0); g.add(wall);
+  });
+  // Front tiled wall with two recessed doors.
+  const frontWall = new THREE.Mesh(new THREE.PlaneGeometry(W, wallH), tileMat);
+  frontWall.position.set(0, wallH / 2, D / 2); g.add(frontWall);
+  const doorGeo = new THREE.PlaneGeometry(0.9, 1.9);
+  const mkDoor = (x, col, label) => {
+    const door = new THREE.Mesh(doorGeo, new THREE.MeshStandardMaterial({ color: 0x14161c, roughness: 0.5, metalness: 0.3 }));
+    door.position.set(x, 0.98, D / 2 + 0.02); g.add(door);
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.34), new THREE.MeshBasicMaterial({ color: col }));
+    sign.position.set(x, 1.7, D / 2 + 0.03); g.add(sign);
+    const plate = buildNameSprite(label, col); plate.scale.multiplyScalar(0.7); plate.position.set(x, 2.05, D / 2 + 0.05); g.add(plate);
+  };
+  mkDoor(-0.7, 0x4ea8de, "גברים");
+  mkDoor(0.7, 0xff6b9d, "נשים");
+  // roof so it reads as an enclosed room from the chase cam
+  const roof = new THREE.Mesh(new THREE.PlaneGeometry(W, D), wallMat);
+  roof.rotation.x = Math.PI / 2; roof.position.set(0, wallH, 0); g.add(roof);
+  const sign = buildNeonSign("שירותים", 0x9fd6ff, 2.0, 0.5);
+  sign.position.set(0, wallH + 0.35, D / 2); g.add(sign);
+  // solid on all four sides (it's a closed room)
+  for (let t = -W / 2; t <= W / 2 + 0.01; t += 0.6) { obstacles.push({ x: t, z: -D / 2, r: 0.28 }); obstacles.push({ x: t, z: D / 2, r: 0.28 }); }
+  for (let t = -D / 2; t <= D / 2 + 0.01; t += 0.6) { obstacles.push({ x: -W / 2, z: t, r: 0.28 }); obstacles.push({ x: W / 2, z: t, r: 0.28 }); }
+  return { group: g, obstacles };
+}
+
+// A cafeteria / coffee counter beside the dining tables: a counter with two
+// coffee machines, a stack of cups, a menu board and a warm light — the food
+// zone of the office. Serving side faces −X (west, into the room).
+function buildCafeteria(color) {
+  const g = new THREE.Group();
+  const obstacles = [];
+  const W = 0.9, D = 3.6, H = 1.05; // long counter running along Z
+  const body = new THREE.Mesh(new THREE.BoxGeometry(W, H, D), new THREE.MeshStandardMaterial({ color: 0x201a26, roughness: 0.5, metalness: 0.2 }));
+  body.position.set(0, H / 2, 0); body.castShadow = true; body.receiveShadow = true; g.add(body);
+  const top = new THREE.Mesh(new THREE.BoxGeometry(W + 0.25, 0.08, D + 0.2), new THREE.MeshStandardMaterial({ color: 0x0e0f14, roughness: 0.25, metalness: 0.5 }));
+  top.position.set(0, H + 0.04, 0); g.add(top);
+  const strip = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.05, D - 0.2), new THREE.MeshBasicMaterial({ color }));
+  strip.position.set(-W / 2 - 0.011, 0.55, 0); g.add(strip);
+  // Two espresso machines + cup stacks on the counter.
+  [-0.9, 0.9].forEach((dz) => {
+    const machine = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.42, 0.4), new THREE.MeshStandardMaterial({ color: 0x1b1e26, metalness: 0.6, roughness: 0.3 }));
+    machine.position.set(0.05, H + 0.25, dz); machine.castShadow = true; g.add(machine);
+    const led = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.06, 0.18), new THREE.MeshBasicMaterial({ color }));
+    led.position.set(-0.16, H + 0.25, dz); g.add(led);
+    const cups = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.18, 8), new THREE.MeshStandardMaterial({ color: 0xf0efe8, roughness: 0.6 }));
+    cups.position.set(-0.15, H + 0.17, dz + 0.4); g.add(cups);
+  });
+  // Menu board above the counter.
+  const boardCvs = document.createElement("canvas"); boardCvs.width = 256; boardCvs.height = 160;
+  const bx = boardCvs.getContext("2d"); bx.fillStyle = "#0d1018"; bx.fillRect(0, 0, 256, 160);
+  bx.fillStyle = "#" + new THREE.Color(color).getHexString(); bx.font = "700 22px system-ui"; bx.textAlign = "right"; bx.fillText("קפה · אלפא", 240, 32);
+  bx.fillStyle = "#cfd8e6"; bx.font = "500 17px system-ui";
+  ["אספרסו", "קפוצ'ינו", "לאטה", "שוקו חם", "תה"].forEach((it, i) => bx.fillText(it, 240, 60 + i * 22));
+  const boardTex = new THREE.CanvasTexture(boardCvs); boardTex.colorSpace = THREE.SRGBColorSpace;
+  const board = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 0.8), new THREE.MeshBasicMaterial({ map: boardTex }));
+  board.rotation.y = -Math.PI / 2; board.position.set(-W / 2 - 0.02, 1.9, 0); g.add(board);
+  const sign = buildNeonSign("קפיטריה", color, 2.2, 0.55);
+  sign.rotation.y = -Math.PI / 2; sign.position.set(-W / 2 - 0.05, 2.55, 0); g.add(sign);
+  const light = new THREE.PointLight(0xffdca8, 0.5, 8); light.position.set(-0.6, 2.1, 0); g.add(light);
+  for (let t = -D / 2; t <= D / 2 + 0.01; t += 0.7) obstacles.push({ x: 0, z: t, r: 0.55 });
   return { group: g, obstacles };
 }
 
@@ -1118,18 +1213,15 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     let cleanupFn = () => {};
     (async () => {
       const base = import.meta.env.BASE_URL || "/";
-      const [deskTemplate, laptopTemplate, charGltf, furnitureTemplate, bizGltf, drinksTemplate] = await Promise.all([
+      const [deskTemplate, laptopTemplate, charGltf, furnitureTemplate] = await Promise.all([
         loadGltf(base + DESK_MODEL_URL).catch((e) => { console.error("[office3d] desk model failed to load", e); return null; }),
         loadGltf(base + LAPTOP_MODEL_URL).catch((e) => { console.error("[office3d] laptop model failed to load", e); return null; }),
         loadGltfFull(base + CHAR_MODEL_URL).catch((e) => { console.error("[office3d] character model failed to load", e); return null; }),
         loadGltf(base + FURNITURE_MODEL_URL).catch((e) => { console.error("[office3d] furniture model failed to load", e); return null; }),
-        loadGltf(base + BIZ_MODEL_URL).catch((e) => { console.error("[office3d] businessman model failed to load", e); return null; }),
-        loadGltf(base + DRINKS_MODEL_URL).catch((e) => { console.error("[office3d] drink machines model failed to load", e); return null; }),
       ]);
       if (cancelled) return;
       const charTemplate = charGltf ? charGltf.scene : null;
       const charClips = charGltf ? charGltf.animations : [];
-      const bizTemplate = bizGltf || null; // static (no clips) — used for the CEO
 
     const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || ("ontouchstart" in window) || window.innerWidth < 900;
     const width = mount.clientWidth || window.innerWidth;
@@ -1139,23 +1231,40 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     const camera = new THREE.PerspectiveCamera(52, width / height, 0.1, 200);
     const renderer = new THREE.WebGLRenderer({ antialias: !isMobile, powerPreference: "high-performance" });
     renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile ? 1.6 : 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile ? 1.75 : 2.5));
     renderer.shadowMap.enabled = !isMobile;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // Cinematic colour: ACES filmic tone-mapping + sRGB output so the neon /
+    // emissive materials roll off gracefully instead of clipping to flat white.
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.12;
     mount.appendChild(renderer.domElement);
 
-    const ambient = new THREE.AmbientLight(0xffffff, 0.65);
+    // Sky/ground hemisphere fill for a soft, realistic ambient gradient, on
+    // top of a low flat ambient so nothing goes fully black.
+    const ambient = new THREE.AmbientLight(0xffffff, 0.42);
     scene.add(ambient);
-    const sun = new THREE.DirectionalLight(0xffffff, 1.1);
+    const hemi = new THREE.HemisphereLight(0xbfd4ff, 0x2a2030, 0.55);
+    scene.add(hemi);
+    const sun = new THREE.DirectionalLight(0xfff2df, 1.25);
     sun.position.set(9, 14, 6);
     sun.castShadow = !isMobile;
     if (!isMobile) {
-      sun.shadow.mapSize.set(1024, 1024);
-      sun.shadow.camera.left = -14; sun.shadow.camera.right = 14;
-      sun.shadow.camera.top = 14; sun.shadow.camera.bottom = -14;
+      sun.shadow.mapSize.set(2048, 2048);
+      sun.shadow.camera.left = -15; sun.shadow.camera.right = 15;
+      sun.shadow.camera.top = 15; sun.shadow.camera.bottom = -15;
+      sun.shadow.camera.near = 1; sun.shadow.camera.far = 46;
+      sun.shadow.bias = -0.0004;
+      sun.shadow.normalBias = 0.02;
+      sun.shadow.radius = 3;
     }
     scene.add(sun);
-    scene.fog = new THREE.Fog(0x11162a, 16, 34);
+    // A cool fill from the window side so the room has depth, not one flat key.
+    const fill = new THREE.DirectionalLight(0x6f9dff, 0.35);
+    fill.position.set(-8, 9, -12);
+    scene.add(fill);
+    scene.fog = new THREE.Fog(0x11162a, 18, 38);
 
     // Floor — warm wood texture instead of flat colour.
     const floorTex = buildFloorTexture();
@@ -1376,8 +1485,9 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     drawTradeScreen(tradeCtx, tradeCanvas.width, tradeCanvas.height, tradeState);
     drawHgScreen(hgCtx, hgCanvas.width, hgCanvas.height, liveRef.current.bizData);
     let screenT = 0;
-    // (SE corner plant removed — that corner is now the owner's office.)
-    [[-10.4, 9.4], [10.8, -8.6]].forEach(([px, pz]) => {
+    // (SE corner plant removed — that corner is now the owner's office; the
+    // SW plant moved out of the restrooms footprint.)
+    [[-7.4, 10.3], [10.8, -8.6], [1.5, 10.4]].forEach(([px, pz]) => {
       const plant = buildPlant();
       plant.position.set(px, 0, pz);
       scene.add(plant);
@@ -1391,6 +1501,9 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     const deskMons = [];
     const deskHolos = [];
     const obstacles = [];
+    // Extra non-agent humans (e.g. the receptionist) that still need their
+    // animation mixer ticked and to be disposed on unmount.
+    const allExtraHumans = [];
     deskPositions.forEach((d, i) => {
       const owner = byId(chars[i]?.id);
       const { group, monMat, holo } = buildDesk(owner ? hexToInt(owner.color) : 0x3a6ad8, deskTemplate, laptopTemplate, furnitureTemplate, i);
@@ -1402,9 +1515,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       deskHolos.push(holo);
       obstacles.push({ x: wx, z: wz, r: 0.85 });
       // Each agent gets their own private glass office wrapped around their
-      // battlestation, colour-coded with their name + title over the door.
+      // battlestation — colour-coded, with their name + title over the door,
+      // a potted plant, and a wall screen showing their own live domain data.
       if (owner) {
-        const off = buildGlassOffice(hexToInt(owner.color), owner.name, owner.title);
+        const scrTex = buildOfficeScreenTex(owner.title, hexToInt(owner.color), agentScreenLines(owner.id, liveRef.current.bizData || {}));
+        const off = buildGlassOffice(hexToInt(owner.color), owner.name, owner.title, scrTex);
         off.group.position.set(wx, 0, wz);
         scene.add(off.group);
         off.obstacles.forEach((o) => obstacles.push({ x: wx + o.x, z: wz + o.z, r: o.r }));
@@ -1466,20 +1581,50 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     if (ownerOffice.deskMon) deskMons.push(ownerOffice.deskMon);
     if (ownerOffice.deskHolo) deskHolos.push(ownerOffice.deskHolo);
 
-    // Break-room drink machines (user asset) — flush along the west wall in the
-    // open stretch between the ALPHA HQ sign and the TRADE TV, rotated so the
-    // lit fronts face east into the room. Collision circles run along its
-    // length so agents/player don't walk through it.
+    // ── Reception at the entrance ────────────────────────────────────────
+    // A welcome desk with a receptionist just inside the south entrance, so
+    // walking in reads like arriving at a real company lobby.
     {
-      const brk = buildBreakRoom(drinksTemplate);
-      const BRK = { x: -12.5, z: 4.2 };
-      brk.group.position.set(BRK.x, 0, BRK.z);
-      brk.group.rotation.y = Math.PI / 2; // fronts (local +Z) → east (+X)
-      scene.add(brk.group);
-      const half = brk.footprint.w / 2;
-      [-half + 0.5, 0, half - 0.5].forEach((dz) =>
-        obstacles.push({ x: BRK.x + 0.35, z: BRK.z + dz, r: 0.6 })
-      );
+      const wCvs = document.createElement("canvas"); wCvs.width = 300; wCvs.height = 170;
+      const wx2 = wCvs.getContext("2d");
+      const wg = wx2.createLinearGradient(0, 0, 0, 170); wg.addColorStop(0, "#12203a"); wg.addColorStop(1, "#0a1120");
+      wx2.fillStyle = wg; wx2.fillRect(0, 0, 300, 170);
+      wx2.fillStyle = "#E4BC63"; wx2.font = "700 26px system-ui"; wx2.textAlign = "center";
+      wx2.fillText("ברוכים הבאים", 150, 60);
+      wx2.fillStyle = "#9fd6ff"; wx2.font = "600 18px system-ui"; wx2.fillText("בניין אלפא · קומת הסוכנים", 150, 98);
+      wx2.fillStyle = "#7fe6b0"; wx2.font = "600 16px system-ui"; wx2.fillText("● הצוות זמין", 150, 132);
+      const welcomeTex = new THREE.CanvasTexture(wCvs); welcomeTex.colorSpace = THREE.SRGBColorSpace;
+      const reception = buildReception(0xE4BC63, welcomeTex);
+      const RCP = { x: -4.6, z: 9.6 };
+      reception.group.position.set(RCP.x, 0, RCP.z);
+      scene.add(reception.group);
+      reception.obstacles.forEach((o) => obstacles.push({ x: RCP.x + o.x, z: RCP.z + o.z, r: o.r }));
+      // Receptionist — a seated greeter behind the counter (not one of the
+      // 12 agents), using the same animated model, sitting.
+      const recep = buildHuman(0xE4BC63, "מיכל", false, charTemplate, charClips, CHAR_SCALE, CHAR_CENTER_OFFSET, true, "קבלה");
+      recep.group.position.set(RCP.x + reception.seatLocal.x, 0, RCP.z + reception.seatLocal.z);
+      recep.group.rotation.y = 0; // face the visitors (+Z)
+      setClip(recep, CLIP.sit);
+      scene.add(recep.group);
+      allExtraHumans.push(recep);
+    }
+
+    // ── Restrooms (SW corner) ────────────────────────────────────────────
+    {
+      const wc = buildRestrooms();
+      const WC = { x: -11.3, z: 9.0 };
+      wc.group.position.set(WC.x, 0, WC.z);
+      scene.add(wc.group);
+      wc.obstacles.forEach((o) => obstacles.push({ x: WC.x + o.x, z: WC.z + o.z, r: o.r }));
+    }
+
+    // ── Cafeteria / coffee counter (beside the dining tables) ────────────
+    {
+      const caf = buildCafeteria(0xffb454);
+      const CAF = { x: 10.2, z: 3.7 };
+      caf.group.position.set(CAF.x, 0, CAF.z);
+      scene.add(caf.group);
+      caf.obstacles.forEach((o) => obstacles.push({ x: CAF.x + o.x, z: CAF.z + o.z, r: o.r }));
     }
 
     // ── Gaming-den ambiance ──────────────────────────────────────────────
@@ -1517,23 +1662,20 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     playerH.group.rotation.y = Math.PI;
     scene.add(playerH.group);
 
-    // NPCs — everyone uses the animated casual model except the CEO, who gets
-    // the textured Businessman suit (static, no clips → keep his own textures,
-    // his own scale/offset, and no color tint over the suit).
+    // NPCs — every agent uses the one animated casual model so they all
+    // walk and sit, each tinted toward their own colour and badged with
+    // their name + job title.
     const npc = {};
     chars.forEach((c) => {
       const a = byId(c.id);
       if (!a) return;
-      const useBiz = c.id === BIZ_AGENT_ID && bizTemplate;
-      const h = useBiz
-        ? buildHuman(a.color, a.name, false, bizTemplate, [], BIZ_SCALE, BIZ_OFFSET, false, a.title)
-        : buildHuman(a.color, a.name, false, charTemplate, charClips, CHAR_SCALE, CHAR_CENTER_OFFSET, true, a.title);
+      const h = buildHuman(a.color, a.name, false, charTemplate, charClips, CHAR_SCALE, CHAR_CENTER_OFFSET, true, a.title);
       const [wx, wz] = toWorld(c.x, c.y);
       h.group.position.set(wx, 0, wz);
       scene.add(h.group);
       npc[c.id] = h;
     });
-    const allHumans = [playerH, ...Object.values(npc)];
+    const allHumans = [playerH, ...Object.values(npc), ...allExtraHumans];
 
     let raf = 0;
     const clock = new THREE.Clock();
