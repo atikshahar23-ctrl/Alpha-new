@@ -21,10 +21,11 @@ const toWorld = (x, y) => [(x - 50) * SCALE, (y - 50) * SCALE];
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const TALK_DIST = 2.15;
 const FLOOR_W = 26, FLOOR_D = 22;
-// Every desk in the grid sits at the same (unrotated) orientation, so one
-// fixed heading makes every seated worker face their own monitor — value
-// tuned by eye against the desk model's own screen-facing direction.
-const DESK_FACE_ROT = 0;
+// Every desk in the grid shares one orientation, so a single heading makes
+// every seated worker face their own monitor. The desk groups themselves are
+// also rotated by this same angle at placement, so the station + the seated
+// character always turn together and stay aligned (chair ↔ seat offset).
+const DESK_FACE_ROT = Math.PI;
 // The sit_idle animation's hip position doesn't naturally land on this
 // desk model's built-in chair seat — both tuned by eye (isolated render
 // test) against the actual chair mesh so seated workers look properly
@@ -1177,6 +1178,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       const { group, monMat, holo } = buildDesk(owner ? hexToInt(owner.color) : 0x3a6ad8, deskTemplate, laptopTemplate, furnitureTemplate, i);
       const [wx, wz] = toWorld(d.x, d.y);
       group.position.set(wx, 0, wz);
+      group.rotation.y = DESK_FACE_ROT; // turn the whole station to match the seated worker
       scene.add(group);
       deskMons.push(monMat);
       deskHolos.push(holo);

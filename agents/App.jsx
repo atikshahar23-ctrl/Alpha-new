@@ -172,7 +172,7 @@ const K_BRIEF_DATE = "alpha:agents:briefdate";
 const K_BRIEF_TEXT = "alpha:agents:brieftext";
 const todayKey = () => new Date().toISOString().slice(0, 10);
 function briefingSystem() {
-  return `אתה יהודה, המנכ"ל. כתוב תדריך בוקר קצר וממוקד (3-4 שורות, בלי כותרות) ל${OWNER_NAME}, בעל החברה, מבוסס על הנתונים העסקיים החיים שיסופקו לך. כלול: מספר אחד שחשוב היום, נקודת תשומת לב אחת (אם יש עסקה תקועה/לקוח לטיפול), ומשפט עידוד קצר. עברית, ישיר, מנהיגותי, בלי גינוני נימוס מיותרים.`;
+  return `אתה יהודה, המנכ"ל. כתוב תדריך בוקר קצר וממוקד (3-4 שורות, בלי כותרות) ל${OWNER_NAME}, בעל החברה. פנה אך ורק ל${OWNER_NAME} בשמו. חל איסור מוחלט לפנות ל"איתי" או להזכיר את השם "איתי" — איתי הוא איש מכירות חיצוני שאינו קורא את התדריך הזה. בסס על הנתונים העסקיים החיים שיסופקו לך. כלול: מספר אחד שחשוב היום, נקודת תשומת לב אחת (אם יש עסקה תקועה/לקוח לטיפול), ומשפט עידוד קצר. עברית, ישיר, מנהיגותי, בלי גינוני נימוס מיותרים.`;
 }
 function briefingFallback() {
   const b = bizSnapshot();
@@ -184,18 +184,30 @@ function briefingFallback() {
   parts.push("יום מצוין לסגור עוד עסקה 💪");
   return parts.join(" ");
 }
+// The briefing is addressed to the owner (שחר); it must never greet or name
+// "איתי" (an external CRM-only salesperson who doesn't read it). The LLM
+// sometimes writes "איתי" anyway, so we scrub it deterministically — a
+// vocative "איתי," at the start becomes "שחר,", and any remaining standalone
+// "איתי" is swapped to the owner's name too. This is the hard guarantee.
+function scrubOwnerName(text) {
+  if (!text) return text;
+  return text
+    .replace(/^\s*איתי\b/, OWNER_NAME)
+    .replace(/([,\s])איתי\b/g, `$1${OWNER_NAME}`)
+    .replace(/\bאיתי\b/g, OWNER_NAME);
+}
 async function getDailyBriefing() {
   if (load(K_BRIEF_DATE, "") === todayKey()) {
     const cached = load(K_BRIEF_TEXT, "");
     // Discard anything cached from before the owner-identity fix — it may
-    // still greet "איתי" (wrong; he's an external CRM-only salesperson, not
-    // the reader) and would otherwise sit cached for the rest of the day.
+    // still greet "איתי" and would otherwise sit cached for the rest of the day.
     if (cached && !cached.includes("איתי")) return cached;
   }
   let text;
   try { text = hasAI() ? await askGroq(briefingSystem() + bizContext(), [], "תן לי את התדריך של היום") : briefingFallback(); }
   catch { text = briefingFallback(); }
   if (!text) text = briefingFallback();
+  text = scrubOwnerName(text);
   save(K_BRIEF_DATE, todayKey()); save(K_BRIEF_TEXT, text);
   return text;
 }
