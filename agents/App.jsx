@@ -80,6 +80,50 @@ function bizSnapshot() {
   openDeals.forEach((d) => { const t = d.createdAt || d.ts; if (!t) return; const days = Math.floor((Date.now() - new Date(t).getTime()) / 86400000); if (days > staleDays) staleDays = days; });
   return { installs: installs.length, hgRevenue, custCount, top, openDeals: openDeals.length, openVal, wonMonth, pricelist: pricelist.length, staleDays, staleCount: openDeals.filter((d) => { const t = d.createdAt || d.ts; if (!t) return false; return (Date.now() - new Date(t).getTime()) / 86400000 > 7; }).length };
 }
+// Real action, not just a chat reply — merges duplicate customers directly
+// in Itai's CRM data (same "itai:customers" key agent.html reads/writes),
+// so asking any agent to do this actually does it. Same identity rule as
+// agent/App.jsx's dedupeCustomers: same phone OR same normalised name.
+function mergeItaiDuplicateCustomers() {
+  const get = (k) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch { return null; } };
+  const list = get("itai:customers") || [];
+  const normName = (s) => { let k = (s || "").trim().replace(/\s+/g, " "); if (k.length > 3 && k[0] === "ה") k = k.slice(1); return k.toLowerCase(); };
+  const normPhone = (p) => (p || "").replace(/\D/g, "").replace(/^972/, "0");
+  const parent = list.map((_, i) => i);
+  const find = (i) => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; };
+  const byPhone = {}, byName = {};
+  list.forEach((c, i) => {
+    const ph = normPhone(c.phone);
+    if (ph && ph.length >= 7) { if (byPhone[ph] !== undefined) union(i, byPhone[ph]); else byPhone[ph] = i; }
+    const nm = normName(c.name);
+    if (nm) { if (byName[nm] !== undefined) union(i, byName[nm]); else byName[nm] = i; }
+  });
+  const groups = {};
+  list.forEach((c, i) => { const r = find(i); (groups[r] = groups[r] || []).push(c); });
+  const out = [];
+  const dupNames = [];
+  Object.values(groups).forEach((items) => {
+    if (items.length === 1) { out.push(items[0]); return; }
+    dupNames.push(items[0].name || "(ללא שם)");
+    let count = 0, rev = 0, hadHG = false; const extra = [];
+    items.forEach((c) => {
+      const note = c.notes || "";
+      const mc = note.match(/(\d+)\s*התקנות/); const mr = note.match(/הכנסה\s*₪?([\d,]+)/);
+      if (mc || mr || /Heavy ?Guard/i.test(note)) { hadHG = true; if (mc) count += parseInt(mc[1], 10) || 0; if (mr) rev += parseInt(mr[1].replace(/,/g, ""), 10) || 0; }
+      else if (note.trim()) extra.push(note.trim());
+    });
+    const base = [...items].sort((a, b) => (b.phone ? 1 : 0) - (a.phone ? 1 : 0) || (b.name || "").length - (a.name || "").length)[0];
+    const pick = (k) => items.map((c) => c[k]).find((v) => v && String(v).trim()) || "";
+    const parts = [];
+    if (hadHG) parts.push(`${count} התקנות Heavy Guard · הכנסה ${ils(rev)}`);
+    if (extra.length) parts.push(...extra);
+    out.push({ ...base, phone: pick("phone"), email: pick("email"), city: pick("city"), region: pick("region") || base.region || "", notes: parts.join(" · ") });
+  });
+  const merged = list.length - out.length;
+  if (merged > 0) cloudSave("itai:customers", out);
+  return { merged, dupNames };
+}
 // Revenue grouped by month (YYYY-MM) from HeavyGuard installs — last 6 months.
 function monthlyRevenue() {
   const get = (k) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch { return null; } };
@@ -141,7 +185,13 @@ function briefingFallback() {
   return parts.join(" ");
 }
 async function getDailyBriefing() {
-  if (load(K_BRIEF_DATE, "") === todayKey()) { const cached = load(K_BRIEF_TEXT, ""); if (cached) return cached; }
+  if (load(K_BRIEF_DATE, "") === todayKey()) {
+    const cached = load(K_BRIEF_TEXT, "");
+    // Discard anything cached from before the owner-identity fix — it may
+    // still greet "איתי" (wrong; he's an external CRM-only salesperson, not
+    // the reader) and would otherwise sit cached for the rest of the day.
+    if (cached && !cached.includes("איתי")) return cached;
+  }
   let text;
   try { text = hasAI() ? await askGroq(briefingSystem() + bizContext(), [], "תן לי את התדריך של היום") : briefingFallback(); }
   catch { text = briefingFallback(); }
@@ -743,6 +793,22 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
     const withMe = [...base, { from: "me", text: t, ts: now() }];
     setLog(withMe); setQ("");
     logActivity(agent.id, "ענה לפנייה: " + t.slice(0, 30));
+
+    // Real actions, not just talk — a request that matches a known, safe
+    // capability actually executes against the live data instead of only
+    // getting a conversational reply. This is what makes asking יהודה (or
+    // any agent) to "merge duplicate customers" actually do something,
+    // rather than just describing what he'd do.
+    if (/מזג|איחוד|כפילוי/.test(t) && /לקוח/.test(t)) {
+      const { merged, dupNames } = mergeItaiDuplicateCustomers();
+      logActivity("sales", merged > 0 ? `מיזג ${merged} כפילויות לקוחות ב-CRM` : "בדק כפילויות לקוחות ב-CRM — לא נמצאו");
+      const detail = merged > 0 ? `מיזגתי ${merged} כפילויות (${dupNames.slice(0, 4).join(", ")}${dupNames.length > 4 ? "…" : ""}) — כל לקוח מופיע פעם אחת עם סך ההתקנות וההכנסה מאוחד.` : "בדקתי את רשימת הלקוחות — לא מצאתי כפילויות כרגע.";
+      const reply = agent.id === "sales"
+        ? `בוצע 💪 ${detail}`
+        : `בדקתי מול זבולון (מנהל ה-CRM) והרצנו את זה עכשיו — ${detail}`;
+      setTimeout(() => { setLog([...withMe, { from: "bot", text: reply, ts: now() }]); if (voiceOn) speakText(reply); }, 350);
+      return;
+    }
 
     if (!hasAI()) {
       const reply = FALLBACK[agent.id](t);

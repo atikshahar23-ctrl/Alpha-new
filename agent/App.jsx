@@ -3,7 +3,7 @@ import {
   Plus, X, Trash2, Search, Phone, Mail, MapPin, Building2, Users, Wallet, Tag,
   Globe, ChevronLeft, MessageSquare, Pencil, Target, Bell, FileText, TrendingUp,
   CheckCircle2, Handshake, LayoutDashboard, UserRound, Send, Copy, Briefcase, Palette,
-  Camera, Monitor, Maximize2, Shield, Star, ChevronDown, ChevronUp,
+  Camera, Monitor, Maximize2, Shield, Star, ChevronDown, ChevronUp, GitMerge,
 } from "lucide-react";
 import BULL_LOGO from "../heavyguard/heavyguard-logo.png";
 import * as cloud from "./cloud";
@@ -33,20 +33,30 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 const ils = (n) => "₪" + (Number(n) || 0).toLocaleString("he-IL");
 // Normalised customer name: trim, collapse spaces, drop a leading definite "ה".
 const normCustName = (s) => { let k = (s || "").trim().replace(/\s+/g, " "); if (k.length > 3 && k[0] === "ה") k = k.slice(1); return k.toLowerCase(); };
-// Merge duplicate customers by normalised name; sum HeavyGuard installs + income from notes.
+// Merge duplicate customers — two records are the same customer if EITHER
+// their phone numbers match OR their normalised names match (union-find, so
+// A↔B by phone and B↔C by name still all collapse into one group). Matching
+// on name alone missed real duplicates that came in with the exact same
+// phone but a stray whitespace/invisible character difference in the name
+// (common with copy-pasted Hebrew text), which is what name-only matching
+// was silently leaving behind.
+const normPhone = (p) => { const d = (p || "").replace(/\D/g, ""); return d.replace(/^972/, "0"); };
 function dedupeCustomers(list) {
-  const groups = {}; const order = [];
-  (list || []).forEach((c) => {
-    const key = normCustName(c.name);
-    if (!key) { order.push({ single: c }); return; }
-    if (!groups[key]) { groups[key] = []; order.push({ key }); }
-    groups[key].push(c);
+  const arr = list || [];
+  const parent = arr.map((_, i) => i);
+  const find = (i) => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; };
+  const byPhone = {}, byName = {};
+  arr.forEach((c, i) => {
+    const ph = normPhone(c.phone);
+    if (ph && ph.length >= 7) { if (byPhone[ph] !== undefined) union(i, byPhone[ph]); else byPhone[ph] = i; }
+    const nm = normCustName(c.name);
+    if (nm) { if (byName[nm] !== undefined) union(i, byName[nm]); else byName[nm] = i; }
   });
-  const out = []; const seen = {};
-  order.forEach((o) => {
-    if (o.single) { out.push(o.single); return; }
-    if (seen[o.key]) return; seen[o.key] = 1;
-    const items = groups[o.key];
+  const groups = {};
+  arr.forEach((c, i) => { const r = find(i); (groups[r] = groups[r] || []).push(c); });
+  const out = [];
+  Object.values(groups).forEach((items) => {
     if (items.length === 1) { out.push(items[0]); return; }
     let count = 0, rev = 0, hadHG = false; const extra = [];
     items.forEach((c) => {
@@ -417,6 +427,12 @@ export default function App() {
     });
   }, []);
   const removeCustomer = useCallback((id) => { setCusts((prev) => { const next = prev.filter((x) => x.id !== id); persist(K_CUST, next); return next; }); }, []);
+  const mergeCustomers = useCallback(() => {
+    const dd = dedupeCustomers(custs);
+    const merged = custs.length - dd.length;
+    if (merged > 0) { setCusts(dd); persist(K_CUST, dd); }
+    return merged;
+  }, [custs]);
 
   // Closing a deal as "won" promotes the lead to customer.
   const winDeal = useCallback((deal, lead) => {
@@ -445,7 +461,7 @@ export default function App() {
       {tab === "home" && <Dashboard leads={leads} deals={deals} custs={custs} go={setTab} onNewDeal={() => setDealDraft({})} showToast={showToast} theme={theme} setTheme={applyTheme} onCatalogQuote={(p) => setDealDraft({ deal: { items: [{ desc: p.name, qty: 1, price: Number(p.price) || 0 }], status: "פתוח" } })} />}
       {tab === "leads" && <LeadsView leads={leads} updateCrm={updateCrm} addOutreach={addOutreach} onDeal={(lead) => setDealDraft({ lead })} dealsFor={(id) => deals.filter((d) => d.leadId === id)} showToast={showToast} />}
       {tab === "deals" && <DealsView deals={deals} leads={leads} onEdit={(deal) => setDealDraft({ deal })} onNew={() => setDealDraft({})} onWin={winDeal} onRemove={removeDeal} showToast={showToast} />}
-      {tab === "custs" && <CustomersView custs={custs} onSave={saveCustomer} onRemove={removeCustomer} showToast={showToast} />}
+      {tab === "custs" && <CustomersView custs={custs} onSave={saveCustomer} onRemove={removeCustomer} onMerge={mergeCustomers} showToast={showToast} />}
       {tab === "map" && <MapView leads={leads} custs={custs} deals={deals} showToast={showToast} />}
       {tab === "showroom" && <ShowroomView showToast={showToast} onQuote={(p) => setDealDraft({ deal: { items: [{ desc: p.name, qty: 1, price: Number(p.price) || 0 }], status: "פתוח" } })} />}
 
@@ -956,11 +972,13 @@ function DesignedQuote({ deal, onClose, showToast }) {
 }
 
 /* ============================ Customers ============================ */
-function CustomersView({ custs, onSave, onRemove, showToast }) {
+function CustomersView({ custs, onSave, onRemove, onMerge, showToast }) {
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState(null);
   const [q, setQ] = useState("");
   const [filterRegion, setFilterRegion] = useState("");
+  const dupCount = useMemo(() => custs.length - dedupeCustomers(custs).length, [custs]);
+  const doMerge = () => { const n = onMerge(); showToast(n > 0 ? `✓ אוחדו ${n} כפילויות לקוחות` : "לא נמצאו כפילויות"); };
 
   const filtered = useMemo(() => {
     let list = custs;
@@ -983,7 +1001,10 @@ function CustomersView({ custs, onSave, onRemove, showToast }) {
       <header className="ag-head sm">
         <div><div className="ag-title">לקוחות</div><div className="ag-sub">{custs.length} לקוחות{usedRegions.length > 0 ? ` · ${usedRegions.length} אזורים` : ""}</div></div>
       </header>
-      <button className="ag-cta" onClick={() => { setEdit(null); setOpen(true); }}><Plus size={18} /> לקוח חדש</button>
+      <div className="ag-cust-ctas">
+        <button className="ag-cta" onClick={() => { setEdit(null); setOpen(true); }}><Plus size={18} /> לקוח חדש</button>
+        {dupCount > 0 && <button className="ag-cta ghost warn" onClick={doMerge}><GitMerge size={16} /> מזג {dupCount} כפילויות</button>}
+      </div>
       <div className="ag-searchbox"><Search size={15} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="חיפוש לקוח…" dir="rtl" />{q && <button onClick={() => setQ("")}><X size={14} /></button>}</div>
       {usedRegions.length > 0 && (
         <div className="ag-chips sm">
@@ -2226,6 +2247,10 @@ function StyleTag() {
 
 .ag-cta{width:100%;display:flex;align-items:center;justify-content:center;gap:8px;background:linear-gradient(135deg,var(--champ),var(--gold) 45%,var(--gold2));color:#241A06;border:none;border-radius:13px;padding:15px;font-family:'Rubik';font-weight:900;font-size:16px;cursor:pointer;margin-bottom:16px;box-shadow:0 8px 24px rgba(228,188,99,.28)}
 .ag-cta:active{transform:scale(.985)}
+.ag-cust-ctas{display:flex;gap:10px}
+.ag-cust-ctas .ag-cta{margin-bottom:0}
+.ag-cta.ghost.warn{background:rgba(230,160,60,.12);color:#E6A03C;border:1px solid rgba(230,160,60,.4);box-shadow:none;font-size:14px;padding:13px}
+.ag-cta.ghost.warn:hover{background:rgba(230,160,60,.2)}
 
 .ag-secttl{font-family:'Rubik';font-weight:700;font-size:15px;margin:6px 0 10px}
 .ag-deal-row{display:flex;align-items:center;gap:10px;width:100%;background:var(--s9);border:1px solid var(--s7);border-radius:12px;padding:11px;margin-bottom:8px;cursor:pointer;color:inherit;font-family:inherit;text-align:right}
