@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MessageCircle, Eye, User } from "lucide-react";
 
 /* ════════════════════════════════════════════════════════════════════
@@ -19,6 +20,26 @@ const toWorld = (x, y) => [(x - 50) * SCALE, (y - 50) * SCALE];
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const TALK_DIST = 2.15;
 const FLOOR_W = 26, FLOOR_D = 22;
+
+// User-supplied real desk + laptop models (converted from the Sketchfab OBJ
+// downloads to optimized GLB via obj2gltf + gltf-transform). Loaded once and
+// cloned per desk. Scale factors + recentring offsets were measured directly
+// off each model's bounding box (desk: size 2.934×1.494×3.801, centre
+// 0.813,0.747,0; laptop: size 4.063×4.049×5.828, centre -0.032,2.017,0.001 —
+// both already sit base-down at y≈0 in their own space, only X needed
+// recentring) so they drop onto the existing desk grid without guesswork.
+const DESK_MODEL_URL = "office-models/office_desk.glb";
+const LAPTOP_MODEL_URL = "office-models/thin_laptop.glb";
+const DESK_SCALE = 0.37;
+const DESK_CENTER_OFFSET = [-0.813 * DESK_SCALE, 0, 0];
+const LAPTOP_SCALE = 0.09;
+const LAPTOP_CENTER_OFFSET = [0.032 * LAPTOP_SCALE, 0, -0.001 * LAPTOP_SCALE];
+
+function loadGltf(url) {
+  return new Promise((resolve, reject) => {
+    new GLTFLoader().load(url, (gltf) => resolve(gltf.scene), undefined, reject);
+  });
+}
 
 function mulberry32(a) {
   return function () {
@@ -87,78 +108,91 @@ function buildSkylineTexture() {
   return tex;
 }
 
-// A personalized "futuristic workstation" — a triple-monitor sci-fi rig
-// tinted with the agent's own color, plus a glowing edge strip along the
-// desk front so each person's desk reads as their own from across the room.
-function buildDesk(color = 0x3a6ad8) {
+// A personalized workstation — the user's own real desk + laptop models
+// when they've loaded (desk already includes its own chair), tinted/marked
+// with the agent's own color via a floor ring + a glow on the laptop
+// screen; falls back to the earlier procedural sci-fi desk if either model
+// failed to load, so a slow/broken asset never blanks out the room.
+function buildDesk(color = 0x3a6ad8, deskTemplate = null, laptopTemplate = null) {
   const g = new THREE.Group();
-  const top = new THREE.Mesh(
-    new THREE.BoxGeometry(1.05, 0.08, 0.55),
-    new THREE.MeshStandardMaterial({ color: 0x1c2136, roughness: 0.35, metalness: 0.3 })
-  );
-  top.position.y = 0.42;
-  top.castShadow = true; top.receiveShadow = true;
-  g.add(top);
-  // Glowing edge strip along the front of the desk, in the owner's colour.
-  const edge = new THREE.Mesh(
-    new THREE.BoxGeometry(1.05, 0.015, 0.03),
-    new THREE.MeshBasicMaterial({ color })
-  );
-  edge.position.set(0, 0.4, 0.275);
-  g.add(edge);
-  const legMat = new THREE.MeshStandardMaterial({ color: 0x14182a, roughness: 0.5, metalness: 0.4 });
-  [[-0.46, -0.22], [0.46, -0.22], [-0.46, 0.22], [0.46, 0.22]].forEach(([lx, lz]) => {
-    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.42, 0.05), legMat);
-    leg.position.set(lx, 0.21, lz);
-    leg.castShadow = true;
-    g.add(leg);
-  });
-  // Center monitor (the one whose glow tracks work status) + two angled side
-  // monitors for a "battlestation" look, all tinted with the owner's color.
-  const frameMat = new THREE.MeshStandardMaterial({ color: 0x0a0e1a, roughness: 0.4, metalness: 0.5 });
-  const mon = new THREE.Mesh(
-    new THREE.BoxGeometry(0.42, 0.27, 0.03),
-    new THREE.MeshStandardMaterial({ color: 0x060a14, emissive: color, emissiveIntensity: 0.55, roughness: 0.3 })
-  );
-  mon.position.set(0, 0.74, -0.16);
-  mon.castShadow = true;
-  g.add(mon);
-  const monFrame = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.31, 0.02), frameMat);
-  monFrame.position.set(0, 0.74, -0.175);
-  g.add(monFrame);
-  [-1, 1].forEach((side) => {
-    const sm = new THREE.Mesh(
-      new THREE.BoxGeometry(0.24, 0.2, 0.025),
-      new THREE.MeshStandardMaterial({ color: 0x060a14, emissive: color, emissiveIntensity: 0.3, roughness: 0.3 })
+  let monMat = null;
+
+  if (deskTemplate) {
+    const desk = deskTemplate.clone(true);
+    desk.scale.setScalar(DESK_SCALE);
+    desk.position.set(...DESK_CENTER_OFFSET);
+    desk.traverse((o) => {
+      if (!o.isMesh) return;
+      o.castShadow = true; o.receiveShadow = true;
+      if (o.material) o.material = o.material.clone();
+    });
+    g.add(desk);
+  } else {
+    const top = new THREE.Mesh(
+      new THREE.BoxGeometry(1.05, 0.08, 0.55),
+      new THREE.MeshStandardMaterial({ color: 0x1c2136, roughness: 0.35, metalness: 0.3 })
     );
-    sm.position.set(side * 0.32, 0.68, -0.1);
-    sm.rotation.y = -side * 0.6;
-    sm.castShadow = true;
-    g.add(sm);
-  });
+    top.position.y = 0.42; top.castShadow = true; top.receiveShadow = true;
+    g.add(top);
+    const legMat = new THREE.MeshStandardMaterial({ color: 0x14182a, roughness: 0.5, metalness: 0.4 });
+    [[-0.46, -0.22], [0.46, -0.22], [-0.46, 0.22], [0.46, 0.22]].forEach(([lx, lz]) => {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.42, 0.05), legMat);
+      leg.position.set(lx, 0.21, lz); leg.castShadow = true; g.add(leg);
+    });
+    const chair = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.06, 0.42), new THREE.MeshStandardMaterial({ color: 0x1c2338, roughness: 0.7 }));
+    chair.position.set(0, 0.24, 0.5); chair.castShadow = true; g.add(chair);
+    const back = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.4, 0.06), new THREE.MeshStandardMaterial({ color: 0x1c2338, roughness: 0.7 }));
+    back.position.set(0, 0.46, 0.69); back.castShadow = true; g.add(back);
+  }
+
+  // Floor ring in the owner's color at the base of the desk — a consistent
+  // "whose desk is this" marker regardless of the desk model's own shape.
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(0.72, 0.82, 24),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.4, side: THREE.DoubleSide })
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.015;
+  g.add(ring);
+
+  if (laptopTemplate) {
+    const laptop = laptopTemplate.clone(true);
+    laptop.scale.setScalar(LAPTOP_SCALE);
+    laptop.rotation.y = Math.PI; // screen facing the seated character
+    laptop.position.set(LAPTOP_CENTER_OFFSET[0], DESK_SCALE * 1.494, LAPTOP_CENTER_OFFSET[2] - 0.22);
+    laptop.traverse((o) => {
+      if (!o.isMesh) return;
+      o.castShadow = true;
+      if (o.material) {
+        o.material = o.material.clone();
+        o.material.side = THREE.DoubleSide;
+        if (o.material.name === "wallpeper") {
+          o.material.emissive = new THREE.Color(color);
+          o.material.emissiveIntensity = 0.15;
+          monMat = o.material;
+        }
+      }
+    });
+    g.add(laptop);
+  } else {
+    const mon = new THREE.Mesh(
+      new THREE.BoxGeometry(0.42, 0.27, 0.03),
+      new THREE.MeshStandardMaterial({ color: 0x060a14, emissive: color, emissiveIntensity: 0.55, roughness: 0.3 })
+    );
+    mon.position.set(0, 0.74, -0.16); mon.castShadow = true; g.add(mon);
+    monMat = mon.material;
+  }
+
   // Small holographic ring floating above the desk — a personal sci-fi touch.
   const holo = new THREE.Mesh(
     new THREE.TorusGeometry(0.09, 0.008, 8, 20),
     new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.55 })
   );
-  holo.position.set(0, 1.05, -0.16);
+  holo.position.set(0, DESK_SCALE * 1.494 + 0.32, -0.16);
   holo.rotation.x = Math.PI / 2.3;
   g.add(holo);
-  const chair = new THREE.Mesh(
-    new THREE.BoxGeometry(0.42, 0.06, 0.42),
-    new THREE.MeshStandardMaterial({ color: 0x1c2338, roughness: 0.7 })
-  );
-  chair.position.set(0, 0.24, 0.5);
-  chair.castShadow = true;
-  g.add(chair);
-  const back = new THREE.Mesh(
-    new THREE.BoxGeometry(0.42, 0.4, 0.06),
-    new THREE.MeshStandardMaterial({ color: 0x1c2338, roughness: 0.7 })
-  );
-  back.position.set(0, 0.46, 0.69);
-  back.castShadow = true;
-  g.add(back);
-  return { group: g, monMat: mon.material, holo };
+
+  return { group: g, monMat, holo };
 }
 
 function buildDiningTable() {
@@ -396,6 +430,22 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
+    // Load the user's own desk/laptop models before building the room —
+    // both are tiny (well under 200KB combined) so this delay is negligible,
+    // and it keeps the rest of the scene-building code below unchanged
+    // (buildDesk just receives the templates instead of building blind).
+    // If either fails to load, buildDesk() falls back to the procedural
+    // desk/monitor so the room never ends up empty.
+    let cancelled = false;
+    let cleanupFn = () => {};
+    (async () => {
+      const base = import.meta.env.BASE_URL || "/";
+      const [deskTemplate, laptopTemplate] = await Promise.all([
+        loadGltf(base + DESK_MODEL_URL).catch((e) => { console.error("[office3d] desk model failed to load", e); return null; }),
+        loadGltf(base + LAPTOP_MODEL_URL).catch((e) => { console.error("[office3d] laptop model failed to load", e); return null; }),
+      ]);
+      if (cancelled) return;
+
     const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || ("ontouchstart" in window) || window.innerWidth < 900;
     const width = mount.clientWidth || window.innerWidth;
     const height = mount.clientHeight || window.innerHeight;
@@ -521,7 +571,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     const deskHolos = [];
     deskPositions.forEach((d, i) => {
       const owner = byId(chars[i]?.id);
-      const { group, monMat, holo } = buildDesk(owner ? hexToInt(owner.color) : 0x3a6ad8);
+      const { group, monMat, holo } = buildDesk(owner ? hexToInt(owner.color) : 0x3a6ad8, deskTemplate, laptopTemplate);
       const [wx, wz] = toWorld(d.x, d.y);
       group.position.set(wx, 0, wz);
       scene.add(group);
@@ -720,21 +770,24 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     };
     window.addEventListener("resize", onResize);
 
-    return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
-      window.removeEventListener("resize", onResize);
-      scene.traverse((obj) => {
-        if (obj.geometry) obj.geometry.dispose();
-        if (obj.material) {
-          const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-          mats.forEach((m) => { if (m.map) m.map.dispose(); m.dispose(); });
-        }
-      });
-      renderer.dispose();
-      if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement);
-    };
+      cleanupFn = () => {
+        cancelAnimationFrame(raf);
+        window.removeEventListener("keydown", onKeyDown);
+        window.removeEventListener("keyup", onKeyUp);
+        window.removeEventListener("resize", onResize);
+        scene.traverse((obj) => {
+          if (obj.geometry) obj.geometry.dispose();
+          if (obj.material) {
+            const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+            mats.forEach((m) => { if (m.map) m.map.dispose(); m.dispose(); });
+          }
+        });
+        renderer.dispose();
+        if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement);
+      };
+    })();
+
+    return () => { cancelled = true; cleanupFn(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
