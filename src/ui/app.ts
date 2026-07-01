@@ -2449,7 +2449,10 @@ export function mountApp(root: HTMLElement) {
         let pbState: PBState = 'none';
         let pbReading: PBState = 'none';
         let pbCount = 0;
-        const PB_DEBOUNCE = 4;
+        // Sampled every 190ms — 10 consecutive matching reads (~1.9s sustained)
+        // before a transition fires, so a passing coincidence (shifting light,
+        // a moment's head turn) can't trigger a "ball" state on its own.
+        const PB_DEBOUNCE = 10;
 
         function samplePokeball(): PBState {
           if (!vid.videoWidth || vid.readyState < 2) return 'none';
@@ -2473,10 +2476,15 @@ export function mountApp(root: HTMLElement) {
             const r = data[i], g = data[i + 1], b = data[i + 2];
             const px = (i >> 2) % 160, py = (i >> 2) / 160 | 0;
 
-            // Yellow (Safari Ball): R dominant, G medium, B low — ratio-based
+            // Yellow (Safari Ball): R and G close together and both high, B
+            // clearly lower — a narrower band than before, specifically to
+            // separate genuine amber/gold from skin tone, which typically has
+            // R noticeably ahead of G (this loose test used to read ordinary
+            // skin/warm-lit wood as "yellow ball" and spawn a Pokémon with no
+            // ball ever shown).
             if (r > 110 && g > 75 && b < 140
                 && r - b > 35 && g - b > 15
-                && r > g * 0.88 && r < g * 1.6) {
+                && r > g * 0.85 && r < g * 1.2) {
               if (px < yMinX) yMinX = px; if (px > yMaxX) yMaxX = px;
               if (py < yMinY) yMinY = py; if (py > yMaxY) yMaxY = py;
               yellowCount++;
@@ -2495,17 +2503,27 @@ export function mountApp(root: HTMLElement) {
             }
           }
 
-          // Classic Pokéball: red cluster ABOVE white cluster, horizontally aligned
+          // Classic Pokéball: red cluster ABOVE white cluster, horizontally
+          // aligned, AND compact (a real ball held up is a small tight blob —
+          // a red shirt in front of a white wall, or a face, spans a much
+          // bigger and looser area than that, and used to pass this check).
           const classicOk = (() => {
-            if (redCount < 25 || whCount < 25) return false;
+            if (redCount < 200 || whCount < 200) return false;
             const rCY = redSY / redCount, wCY = whSY / whCount;
             const rCX = redSX / redCount, wCX = whSX / whCount;
+            const bw = Math.max(rMaxX, wMaxX) - Math.min(rMinX, wMinX);
+            const bh = Math.max(rMaxY, wMaxY) - Math.min(rMinY, wMinY);
             return rCY < wCY                   // red is above white ✓
               && (wCY - rCY) < 80              // not too far apart vertically
-              && Math.abs(rCX - wCX) < 65;     // horizontally aligned (same ball)
+              && Math.abs(rCX - wCX) < 65      // horizontally aligned (same ball)
+              && bw < 90 && bh < 90;           // compact — an actual held-up ball, not a shirt+wall
           })();
 
-          const safariOk = yellowCount >= 35;
+          // A real ball shown to the camera fills a meaningful, compact patch
+          // of the frame — not a handful of scattered pixels that happen to
+          // match a loose color ratio somewhere in the shot.
+          const yBw = yMaxX - yMinX, yBh = yMaxY - yMinY;
+          const safariOk = yellowCount >= 500 && yBw < 100 && yBh < 100;
           if (!safariOk && !classicOk) return 'none';
 
           // Bounding box for the detected ball
