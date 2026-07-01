@@ -876,7 +876,10 @@ function RosterView({ onOpen, onOffice, activity }) {
       {/* CEO featured card */}
       <button className="ac-ceo" style={{ "--c": ceo.color, "--ac": ceo.accent }} onClick={() => onOpen(ceo.id)}>
         <div className="ac-ceo-glow" />
-        <div className="ac-ceo-orb"><Face agent={ceo} fallback={30} /><span className="ac-orb-ring" /></div>
+        <div className="ac-avatar-wrap ac-avatar-wrap--xl">
+          <div className="ac-ceo-orb"><Face agent={ceo} fallback={30} /><span className="ac-orb-ring" /></div>
+          <span className="ac-avatar-live" />
+        </div>
         <div className="ac-ceo-mid">
           <div className="ac-ceo-top"><b>{ceo.name}</b><span className="ac-crown"><Crown size={12} /> {ceo.title}</span></div>
           <p>{ceo.tagline}</p>
@@ -904,13 +907,18 @@ function RosterView({ onOpen, onOffice, activity }) {
           return (
             <button key={a.id} className="ac-card" style={{ "--c": a.color, "--ac": a.accent }} onClick={() => onOpen(a.id)}>
               <div className="ac-card-glow" />
-              <div className="ac-card-head">
-                <div className="ac-orb"><Face agent={a} fallback={22} /><span className="ac-orb-ring" /></div>
-                <div className="ac-status-pill"><span className="ac-live-dot" /> פעיל</div>
+              <div className="ac-card-portrait">
+                <div className="ac-avatar-wrap">
+                  <div className="ac-orb"><Face agent={a} fallback={26} /><span className="ac-orb-ring" /></div>
+                  <span className="ac-avatar-live" />
+                  <span className="ac-avatar-badge"><a.Icon size={11} /></span>
+                </div>
               </div>
               <div className="ac-card-name">{a.name}</div>
               <div className="ac-card-title">{a.title}</div>
-              <div className="ac-card-domain">{a.domain}</div>
+              <div className="ac-card-chips">
+                {a.domain.split(" · ").map((d, i) => <span key={i} className="ac-chip">{d}</span>)}
+              </div>
               <div className="ac-card-now">{act ? act.text : a.tagline}</div>
               <div className="ac-card-foot"><MessageSquare size={13} /> שיחה</div>
             </button>
@@ -1904,6 +1912,16 @@ function StyleTag() {
 .ac-orb-ring{position:absolute;inset:0;border-radius:inherit;border:2px solid var(--c,#E4BC63);animation:acRing 2.6s ease-out infinite;pointer-events:none}
 .ac-face{width:100%;height:100%;object-fit:cover;border-radius:inherit;display:block;user-select:none}
 
+/* ── roster portraits: circular avatar + live dot + role badge ── */
+.ac-avatar-wrap{position:relative;width:46px;height:46px;flex-shrink:0}
+.ac-avatar-wrap--xl{width:62px;height:62px}
+.ac-avatar-wrap .ac-orb,.ac-avatar-wrap .ac-ceo-orb{width:100%;height:100%;border-radius:50%}
+.ac-avatar-live{position:absolute;bottom:1px;left:1px;width:13px;height:13px;border-radius:50%;background:#3FD79A;
+  border:2.5px solid #0a0a14;box-shadow:0 0 8px #3FD79A;animation:acDot 1.8s ease-in-out infinite}
+.ac-avatar-badge{position:absolute;top:-3px;right:-3px;width:22px;height:22px;border-radius:50%;background:var(--c);
+  color:#0c0a02;display:flex;align-items:center;justify-content:center;border:2.5px solid #0d0c1a;
+  box-shadow:0 2px 8px color-mix(in srgb,var(--c) 55%,transparent)}
+
 /* ── live dot ── */
 .ac-live-dot{width:7px;height:7px;border-radius:50%;background:#3FD79A;box-shadow:0 0 8px #3FD79A;animation:acDot 1.8s ease-in-out infinite;flex-shrink:0;display:inline-block}
 
@@ -1949,21 +1967,25 @@ function StyleTag() {
 .ac-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
 @media(min-width:640px){.ac-grid{grid-template-columns:repeat(3,1fr)}}
 @media(min-width:980px){.ac-grid{grid-template-columns:repeat(4,1fr)}}
-.ac-card{position:relative;text-align:right;cursor:pointer;font-family:inherit;color:inherit;overflow:hidden;
-  background:linear-gradient(160deg,rgba(16,14,32,.96),rgba(8,8,18,.97));
-  border:1px solid color-mix(in srgb,var(--c) 28%,transparent);border-radius:18px;padding:14px;
+.ac-card{position:relative;text-align:center;cursor:pointer;font-family:inherit;color:inherit;overflow:hidden;
+  background:radial-gradient(140% 70% at 50% -12%,color-mix(in srgb,var(--c) 22%,transparent),transparent 60%),
+    linear-gradient(160deg,rgba(16,14,32,.96),rgba(8,8,18,.97));
+  border:1px solid color-mix(in srgb,var(--c) 28%,transparent);border-top:2.5px solid color-mix(in srgb,var(--c) 60%,transparent);
+  border-radius:18px;padding:16px 12px 14px;
   box-shadow:0 6px 26px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.04);
   transition:transform .2s,box-shadow .25s,border-color .2s}
 .ac-card:hover{transform:translateY(-4px);border-color:color-mix(in srgb,var(--c) 65%,transparent);box-shadow:0 14px 40px color-mix(in srgb,var(--c) 22%,transparent)}
 .ac-card:active{transform:scale(.98)}
 .ac-card-glow{position:absolute;top:-30px;left:-30px;width:120px;height:120px;border-radius:50%;background:radial-gradient(circle,color-mix(in srgb,var(--c) 22%,transparent),transparent 70%);pointer-events:none}
-.ac-card-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:11px;position:relative}
-.ac-status-pill{display:flex;align-items:center;gap:5px;font-size:9.5px;font-weight:800;color:#3FD79A;background:rgba(63,215,154,.1);border:1px solid rgba(63,215,154,.3);padding:3px 8px;border-radius:20px}
-.ac-card-name{font-family:'Rubik';font-weight:900;font-size:17px;position:relative}
-.ac-card-title{font-size:12px;color:var(--c);font-weight:700;margin-top:1px}
-.ac-card-domain{font-size:10.5px;color:var(--s4);margin-top:6px;letter-spacing:.02em}
-.ac-card-now{font-size:11px;color:var(--silver);margin-top:9px;line-height:1.45;min-height:30px;opacity:.85;border-top:1px solid var(--s7);padding-top:8px}
-.ac-card-foot{display:flex;align-items:center;justify-content:center;gap:5px;margin-top:10px;font-size:11.5px;font-weight:800;color:var(--c);background:color-mix(in srgb,var(--c) 10%,transparent);border:1px solid color-mix(in srgb,var(--c) 26%,transparent);border-radius:10px;padding:8px}
+.ac-card-portrait{display:flex;justify-content:center;margin-bottom:10px;position:relative}
+.ac-card-name{font-family:'Rubik';font-weight:900;font-size:16px;position:relative}
+.ac-card-title{font-size:11.5px;color:var(--c);font-weight:700;margin-top:2px}
+.ac-card-chips{display:flex;flex-wrap:wrap;justify-content:center;gap:4px;margin-top:9px}
+.ac-chip{font-size:9px;font-weight:700;color:var(--s3);background:var(--s8);border:1px solid var(--s7);border-radius:20px;padding:3px 8px;white-space:nowrap}
+.ac-card-now{font-size:11px;color:var(--silver);margin-top:10px;line-height:1.45;min-height:30px;opacity:.85;border-top:1px solid var(--s7);padding-top:9px}
+.ac-card-foot{display:flex;align-items:center;justify-content:center;gap:5px;margin-top:11px;font-size:11.5px;font-weight:900;color:#0c0a02;
+  background:linear-gradient(135deg,var(--c),color-mix(in srgb,var(--c) 55%,#000));border:none;border-radius:11px;padding:9px;
+  box-shadow:0 4px 16px color-mix(in srgb,var(--c) 42%,transparent)}
 
 /* ── bottom nav ── */
 .ac-nav{position:fixed;bottom:0;left:0;right:0;z-index:40;display:flex;

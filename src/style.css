@@ -3793,3 +3793,47 @@ body::after {
 .mood-opt.on {
   box-shadow: 0 0 18px var(--glass-border), inset 0 1px 0 rgba(255,255,255,.07) !important;
 }
+
+/* ── Hologram reading mode ───────────────────────────────────────────────
+   While Alpha is actively talking, the small output panel was too cramped
+   to read comfortably next to the 3D figure. This hides the figure and
+   blows the response up into a large, centered, easy-to-read holographic
+   overlay instead — reverts the instant it's done speaking. !important
+   throughout because .right-panel/.hud-fig positioning is already spread
+   across many breakpoint-specific rules earlier in this file that this
+   needs to win over regardless of viewport width. */
+body.ac-hologram .hud-fig,
+body.ac-hologram .hud-core-glow,
+body.ac-hologram .hud-core-ring,
+body.ac-hologram .hud-core-tag {
+  opacity: 0 !important;
+  transition: opacity .4s ease !important;
+  pointer-events: none !important;
+}
+body.ac-hologram .right-panel {
+  position: fixed !important;
+  left: 50% !important; right: auto !important; top: 50% !important; bottom: auto !important;
+  transform: translate(-50%, -50%) !important;
+  width: min(720px, 88vw) !important;
+  max-height: min(70vh, 640px) !important;
+  height: auto !important;
+  z-index: 30 !important;
+  background: linear-gradient(168deg, rgba(10,8,20,.9), rgba(6,5,14,.94)) !important;
+  border: 1px solid rgba(228,188,99,.4) !important;
+  box-shadow: 0 0 0 1px rgba(228,188,99,.14), 0 0 70px rgba(228,188,99,.2), 0 30px 90px rgba(0,0,0,.7) !important;
+  backdrop-filter: blur(26px) saturate(1.6) !important;
+  -webkit-backdrop-filter: blur(26px) saturate(1.6) !important;
+  animation: acHoloIn .3s ease both !important;
+}
+body.ac-hologram .rp-title { font-size: 15px !important; letter-spacing: 4px !important; }
+body.ac-hologram .rp-body { padding: 22px 28px !important; gap: 18px !important; }
+body.ac-hologram .rp-text { font-size: 19px !important; line-height: 1.75 !important; color: #F7E8C0 !important; }
+body.ac-hologram .rp-meta { font-size: 12px !important; }
+@keyframes acHoloIn {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(.94); }
+  to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+@media (max-width: 560px) {
+  body.ac-hologram .right-panel { width: 92vw !important; max-height: 60vh !important; }
+  body.ac-hologram .rp-text { font-size: 16.5px !important; }
+}

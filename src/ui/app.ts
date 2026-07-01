@@ -1121,6 +1121,11 @@ export function mountApp(root: HTMLElement) {
     $('state').textContent = label;
     orb.setEnergy(s === 'speaking' ? 0.95 : s === 'listening' ? 0.5 : s === 'armed' ? 0.2 : 0.06);
     if (s === 'listening') orb.pikaEmote('curious');
+    // Hologram reading mode: while the assistant is actively talking, the
+    // small output panel was too cramped to read comfortably. Hide the 3D
+    // figure and blow the response up into a large centered holographic
+    // overlay instead — reverts the moment it's done speaking.
+    document.body.classList.toggle('ac-hologram', s === 'speaking' || s === 'thinking');
   }
 
   const voice = new VoiceEngine(state, (text) => { addMsg(text, 'me'); ask(text); }, setStatus);
@@ -2850,20 +2855,48 @@ export function mountApp(root: HTMLElement) {
     fetchMarketRows().then(render);
   }
 
-  // ── Israel news panel (RSS via rss2json, CORS-friendly) ──
+  // ── Israel news panel ──────────────────────────────────────────────
+  // rss2json's free anonymous tier is rate-limited and often just fails
+  // (this was showing "חדשות לא זמינות" almost permanently), so this now
+  // falls back to fetching the raw RSS XML through a CORS proxy and
+  // parsing it client-side, trying a couple of Israeli news feeds in turn
+  // before giving up. Refreshed every 5 minutes (well inside "hourly").
+  const NEWS_SOURCES = [
+    'https://www.ynet.co.il/Integration/StoryRss2.xml',
+    'https://rss.walla.co.il/feed/1',
+  ];
+  function newsRowsHtml(items: { title: string; link: string }[]) {
+    return items.slice(0, 6).map((it) =>
+      `<a class="nw-row" href="${it.link}" target="_blank" rel="noopener"><span class="nw-dot"></span><span class="nw-t">${(it.title || '').replace(/</g, '&lt;')}</span></a>`).join('');
+  }
+  async function fetchRssViaJsonProxy(rssUrl: string): Promise<{ title: string; link: string }[]> {
+    try {
+      const r = await fetch('https://api.rss2json.com/v1/api.json?count=6&rss_url=' + encodeURIComponent(rssUrl), { signal: AbortSignal.timeout(6000) });
+      const d = await r.json();
+      if (d.status === 'ok' && d.items && d.items.length) return d.items.map((it: any) => ({ title: it.title, link: it.link }));
+    } catch {}
+    return [];
+  }
+  async function fetchRssViaCorsProxy(rssUrl: string): Promise<{ title: string; link: string }[]> {
+    try {
+      const r = await fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(rssUrl), { signal: AbortSignal.timeout(8000) });
+      const xml = await r.text();
+      const doc = new DOMParser().parseFromString(xml, 'text/xml');
+      return [...doc.querySelectorAll('item')].map((it) => ({
+        title: it.querySelector('title')?.textContent || '',
+        link: it.querySelector('link')?.textContent || '#',
+      })).filter((it) => it.title);
+    } catch {}
+    return [];
+  }
   async function renderNews() {
     const el = document.querySelector('#hudNews .hud-card-body');
     if (!el) return;
-    try {
-      const rss = encodeURIComponent('https://www.ynet.co.il/Integration/StoryRss2.xml');
-      const r = await fetch('https://api.rss2json.com/v1/api.json?count=6&rss_url=' + rss);
-      const d = await r.json();
-      if (d.status === 'ok' && d.items && d.items.length) {
-        el.innerHTML = d.items.slice(0, 6).map((it: any) =>
-          `<a class="nw-row" href="${it.link}" target="_blank" rel="noopener"><span class="nw-dot"></span><span class="nw-t">${(it.title || '').replace(/</g, '&lt;')}</span></a>`).join('');
-        return;
-      }
-    } catch {}
+    for (const src of NEWS_SOURCES) {
+      let items = await fetchRssViaJsonProxy(src);
+      if (!items.length) items = await fetchRssViaCorsProxy(src);
+      if (items.length) { el.innerHTML = newsRowsHtml(items); return; }
+    }
     el.innerHTML = '<div class="hud-empty">חדשות לא זמינות כרגע</div>';
   }
 
