@@ -823,7 +823,10 @@ function buildOwnerOffice(color, deskTemplate, laptopTemplate, furnitureTemplate
 
   // Glass partition — an L in the SE corner with a doorway gap on the inner
   // (west) side. Frames + faint tinted glass.
-  const glassMat = new THREE.MeshPhysicalMaterial({ color: 0x8fd0ff, transparent: true, opacity: 0.1, roughness: 0.05, metalness: 0.1, side: THREE.DoubleSide });
+  // depthWrite:false is essential — a transparent pane that still writes depth
+  // occludes everything behind it, which was making the agents (seen through
+  // these partition walls) and the player (spawned inside the glass box) vanish.
+  const glassMat = new THREE.MeshPhysicalMaterial({ color: 0x8fd0ff, transparent: true, opacity: 0.1, roughness: 0.05, metalness: 0.1, side: THREE.DoubleSide, depthWrite: false });
   const frameMat = new THREE.MeshStandardMaterial({ color: 0x0c0e13, roughness: 0.4, metalness: 0.6 });
   const neonEdge = new THREE.MeshBasicMaterial({ color });
   const wallH = 2.6;
@@ -877,6 +880,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   const liveRef = useRef({ chars, phase, bizData, joyVec: { x: 0, y: 0 }, keys: {}, firstPerson: false });
   const [talkTarget, setTalkTarget] = useState(null);
   const [joyKnob, setJoyKnob] = useState({ x: 0, y: 0 });
+  const [joyBase, setJoyBase] = useState(null); // floating joystick anchor (screen px), null = hidden
   const [firstPerson, setFirstPerson] = useState(false);
   const joyDrag = useRef(null);
 
@@ -1019,7 +1023,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
 
     const glass = new THREE.Mesh(
       new THREE.PlaneGeometry(FLOOR_W, 6.4),
-      new THREE.MeshPhysicalMaterial({ color: 0xbcd8f0, transparent: true, opacity: 0.06, roughness: 0.05, metalness: 0.1 })
+      new THREE.MeshPhysicalMaterial({ color: 0xbcd8f0, transparent: true, opacity: 0.06, roughness: 0.05, metalness: 0.1, depthWrite: false })
     );
     glass.position.set(nwx, 3.2, nwz);
     scene.add(glass);
@@ -1236,10 +1240,12 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     const accentMagenta = new THREE.PointLight(0xff3ea5, 0.5, 20);
     accentMagenta.position.set(6, 4.8, 2); scene.add(accentMagenta);
 
-    // Player — spawns inside their own office, ready to walk out and meet the team.
+    // Player — spawns at their office doorway, fully in the open (no glass
+    // between the camera and the player), facing north into the room so both
+    // the player and the whole team are clearly framed the moment it opens.
     const playerH = buildHuman(0xE4BC63, "אתה", true, charTemplate, charClips);
-    playerH.group.position.set(7.0, 0, 9.4);
-    playerH.group.rotation.y = Math.PI; // facing into the office (toward the desk)
+    playerH.group.position.set(5.4, 0, 9.4);
+    playerH.group.rotation.y = Math.PI;
     scene.add(playerH.group);
 
     // NPCs
@@ -1478,23 +1484,38 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Joystick (touch) — drag from the base to set a normalized move vector.
-  const JOY_R = 44;
+  // Floating joystick — touch/click anywhere on the floor view and the stick
+  // appears right under your finger, so it's always comfortable to reach. A
+  // larger radius gives finer control, and a small dead-zone kills drift/jitter
+  // near the centre for precise stops.
+  const JOY_R = 64;         // px from centre = full speed
+  const JOY_DEAD = 0.14;    // fraction of the radius ignored as a dead-zone
   const onJoyStart = (e) => {
     const t = e.touches ? e.touches[0] : e;
     joyDrag.current = { ox: t.clientX, oy: t.clientY };
+    setJoyBase({ x: t.clientX, y: t.clientY });
+    setJoyKnob({ x: 0, y: 0 });
+    liveRef.current.joyVec = { x: 0, y: 0 };
   };
   const onJoyMove = (e) => {
     if (!joyDrag.current) return;
     const t = e.touches ? e.touches[0] : e;
     let dx = t.clientX - joyDrag.current.ox, dy = t.clientY - joyDrag.current.oy;
     const len = Math.hypot(dx, dy);
-    if (len > JOY_R) { dx = (dx / len) * JOY_R; dy = (dy / len) * JOY_R; }
+    const clamped = Math.min(len, JOY_R);
+    if (len > 0) { dx = (dx / len) * clamped; dy = (dy / len) * clamped; }
     setJoyKnob({ x: dx, y: dy });
-    liveRef.current.joyVec = { x: dx / JOY_R, y: dy / JOY_R };
+    // Dead-zone + smooth remap so small movements are precise and there's no
+    // jitter when you're barely touching the centre.
+    let mag = clamped / JOY_R;
+    if (mag < JOY_DEAD) { liveRef.current.joyVec = { x: 0, y: 0 }; return; }
+    mag = (mag - JOY_DEAD) / (1 - JOY_DEAD);
+    const ux = len > 0 ? (dx / clamped) : 0, uy = len > 0 ? (dy / clamped) : 0;
+    liveRef.current.joyVec = { x: ux * mag, y: uy * mag };
   };
   const onJoyEnd = () => {
     joyDrag.current = null;
+    setJoyBase(null);
     setJoyKnob({ x: 0, y: 0 });
     liveRef.current.joyVec = { x: 0, y: 0 };
   };
@@ -1505,8 +1526,9 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   return (
     <div className="off3-wrap">
       <div ref={mountRef} className="off3-canvas"
-        onTouchMove={onJoyMove} onTouchEnd={onJoyEnd} onMouseMove={onJoyMove} onMouseUp={onJoyEnd} />
-      <div className="off3-hint">חצים / WASD לזוז · התקרב לעובד ולחץ "דבר" · {ph.emoji} {ph.label}</div>
+        onTouchStart={onJoyStart} onTouchMove={onJoyMove} onTouchEnd={onJoyEnd}
+        onMouseDown={onJoyStart} onMouseMove={onJoyMove} onMouseUp={onJoyEnd} onMouseLeave={onJoyEnd} />
+      <div className="off3-hint">גע במסך וגרור כדי לנווט · חצים / WASD במחשב · התקרב לעובד ולחץ "דבר" · {ph.emoji} {ph.label}</div>
       <button className="off3-view-toggle" onClick={() => setFirstPerson((v) => !v)} title="החלף תצוגה">
         {firstPerson ? <User size={18} /> : <Eye size={18} />}
       </button>
@@ -1515,9 +1537,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           <MessageCircle size={18} /> דבר עם {talkAgent.name}
         </button>
       )}
-      <div className="off3-joy" onTouchStart={onJoyStart} onMouseDown={onJoyStart}>
-        <div className="off3-joy-knob" style={{ transform: `translate(${joyKnob.x}px, ${joyKnob.y}px)` }} />
-      </div>
+      {joyBase && (
+        <div className="off3-joy floating" style={{ left: joyBase.x, top: joyBase.y }}>
+          <div className="off3-joy-knob" style={{ transform: `translate(${joyKnob.x}px, ${joyKnob.y}px)` }} />
+        </div>
+      )}
     </div>
   );
 }
