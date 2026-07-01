@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import { MessageCircle } from "lucide-react";
+import { MessageCircle, Eye, User } from "lucide-react";
 
 /* ════════════════════════════════════════════════════════════════════
    3D OFFICE — walk the floor yourself (WASD / joystick), approach a
@@ -87,29 +87,63 @@ function buildSkylineTexture() {
   return tex;
 }
 
-function buildDesk() {
+// A personalized "futuristic workstation" — a triple-monitor sci-fi rig
+// tinted with the agent's own color, plus a glowing edge strip along the
+// desk front so each person's desk reads as their own from across the room.
+function buildDesk(color = 0x3a6ad8) {
   const g = new THREE.Group();
   const top = new THREE.Mesh(
     new THREE.BoxGeometry(1.05, 0.08, 0.55),
-    new THREE.MeshStandardMaterial({ color: 0x2a3350, roughness: 0.6 })
+    new THREE.MeshStandardMaterial({ color: 0x1c2136, roughness: 0.35, metalness: 0.3 })
   );
   top.position.y = 0.42;
   top.castShadow = true; top.receiveShadow = true;
   g.add(top);
-  const legMat = new THREE.MeshStandardMaterial({ color: 0x1a2136, roughness: 0.8 });
+  // Glowing edge strip along the front of the desk, in the owner's colour.
+  const edge = new THREE.Mesh(
+    new THREE.BoxGeometry(1.05, 0.015, 0.03),
+    new THREE.MeshBasicMaterial({ color })
+  );
+  edge.position.set(0, 0.4, 0.275);
+  g.add(edge);
+  const legMat = new THREE.MeshStandardMaterial({ color: 0x14182a, roughness: 0.5, metalness: 0.4 });
   [[-0.46, -0.22], [0.46, -0.22], [-0.46, 0.22], [0.46, 0.22]].forEach(([lx, lz]) => {
     const leg = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.42, 0.05), legMat);
     leg.position.set(lx, 0.21, lz);
     leg.castShadow = true;
     g.add(leg);
   });
+  // Center monitor (the one whose glow tracks work status) + two angled side
+  // monitors for a "battlestation" look, all tinted with the owner's color.
+  const frameMat = new THREE.MeshStandardMaterial({ color: 0x0a0e1a, roughness: 0.4, metalness: 0.5 });
   const mon = new THREE.Mesh(
-    new THREE.BoxGeometry(0.4, 0.26, 0.04),
-    new THREE.MeshStandardMaterial({ color: 0x0b1426, emissive: 0x1c3a66, emissiveIntensity: 0.5, roughness: 0.4 })
+    new THREE.BoxGeometry(0.42, 0.27, 0.03),
+    new THREE.MeshStandardMaterial({ color: 0x060a14, emissive: color, emissiveIntensity: 0.55, roughness: 0.3 })
   );
-  mon.position.set(0, 0.72, -0.14);
+  mon.position.set(0, 0.74, -0.16);
   mon.castShadow = true;
   g.add(mon);
+  const monFrame = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.31, 0.02), frameMat);
+  monFrame.position.set(0, 0.74, -0.175);
+  g.add(monFrame);
+  [-1, 1].forEach((side) => {
+    const sm = new THREE.Mesh(
+      new THREE.BoxGeometry(0.24, 0.2, 0.025),
+      new THREE.MeshStandardMaterial({ color: 0x060a14, emissive: color, emissiveIntensity: 0.3, roughness: 0.3 })
+    );
+    sm.position.set(side * 0.32, 0.68, -0.1);
+    sm.rotation.y = -side * 0.6;
+    sm.castShadow = true;
+    g.add(sm);
+  });
+  // Small holographic ring floating above the desk — a personal sci-fi touch.
+  const holo = new THREE.Mesh(
+    new THREE.TorusGeometry(0.09, 0.008, 8, 20),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.55 })
+  );
+  holo.position.set(0, 1.05, -0.16);
+  holo.rotation.x = Math.PI / 2.3;
+  g.add(holo);
   const chair = new THREE.Mesh(
     new THREE.BoxGeometry(0.42, 0.06, 0.42),
     new THREE.MeshStandardMaterial({ color: 0x1c2338, roughness: 0.7 })
@@ -124,7 +158,7 @@ function buildDesk() {
   back.position.set(0, 0.46, 0.69);
   back.castShadow = true;
   g.add(back);
-  return { group: g, monMat: mon.material };
+  return { group: g, monMat: mon.material, holo };
 }
 
 function buildDiningTable() {
@@ -349,12 +383,14 @@ const hexToInt = (hex) => parseInt(hex.replace("#", ""), 16);
 
 export default function Office3D({ chars, byId, phase, phases, deskPositions, seatPositions, dineTablePositions, onClose, onOpenChat }) {
   const mountRef = useRef(null);
-  const liveRef = useRef({ chars, phase, joyVec: { x: 0, y: 0 }, keys: {} });
+  const liveRef = useRef({ chars, phase, joyVec: { x: 0, y: 0 }, keys: {}, firstPerson: false });
   const [talkTarget, setTalkTarget] = useState(null);
   const [joyKnob, setJoyKnob] = useState({ x: 0, y: 0 });
+  const [firstPerson, setFirstPerson] = useState(false);
   const joyDrag = useRef(null);
 
   useEffect(() => { liveRef.current.chars = chars; }, [chars]);
+  useEffect(() => { liveRef.current.firstPerson = firstPerson; }, [firstPerson]);
   useEffect(() => { liveRef.current.phase = phase; }, [phase]);
 
   useEffect(() => {
@@ -414,10 +450,15 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       scene.add(rug);
     }
 
-    // Ceiling + recessed light panels over the bullpen.
+    // Ceiling + recessed light panels over the bullpen. BackSide only — the
+    // chase camera sits at y=6.4 (above this ceiling's y=5.4), and a
+    // DoubleSide ceiling was visible from above too, blocking the whole
+    // view straight down onto the room. A real ceiling is never seen from
+    // above anyway, so BackSide (visible only from inside, looking up)
+    // fixes it regardless of how high any future camera mode goes.
     const ceiling = new THREE.Mesh(
       new THREE.PlaneGeometry(FLOOR_W, FLOOR_D),
-      new THREE.MeshStandardMaterial({ color: 0x0a0d18, roughness: 1, side: THREE.DoubleSide })
+      new THREE.MeshStandardMaterial({ color: 0x0a0d18, roughness: 1, side: THREE.BackSide })
     );
     ceiling.rotation.x = Math.PI / 2;
     ceiling.position.y = 5.4;
@@ -474,14 +515,18 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       scene.add(plant);
     });
 
-    // Furniture
+    // Furniture — each desk is tinted with its owner's own color (same
+    // index mapping as chars[i]'s permanent home desk).
     const deskMons = [];
-    deskPositions.forEach((d) => {
-      const { group, monMat } = buildDesk();
+    const deskHolos = [];
+    deskPositions.forEach((d, i) => {
+      const owner = byId(chars[i]?.id);
+      const { group, monMat, holo } = buildDesk(owner ? hexToInt(owner.color) : 0x3a6ad8);
       const [wx, wz] = toWorld(d.x, d.y);
       group.position.set(wx, 0, wz);
       scene.add(group);
       deskMons.push(monMat);
+      deskHolos.push(holo);
     });
     dineTablePositions.forEach((t) => {
       const tbl = buildDiningTable();
@@ -631,12 +676,25 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         const occ = !!owner && owner.status === "work" && !owner.walking;
         mat.emissiveIntensity = occ ? 0.5 + Math.sin(clock.elapsedTime * 2.2) * 0.25 : 0.15;
       });
+      deskHolos.forEach((holo, i) => { if (holo) holo.rotation.z = clock.elapsedTime * 0.6 + i; });
 
-      // camera: fixed-offset chase cam behind + above the player
-      const camOffset = new THREE.Vector3(0, 6.4, 7.6);
-      const desired = playerH.group.position.clone().add(camOffset);
-      camera.position.lerp(desired, 0.07);
-      camera.lookAt(playerH.group.position.x, 1.1, playerH.group.position.z);
+      // camera: third-person chase cam by default, or first-person from the
+      // player's own eyes (toggle button) — own body hidden in first-person
+      // so it doesn't block the view from the inside.
+      if (liveRef.current.firstPerson) {
+        playerH.group.visible = false;
+        const eyeY = 1.32;
+        const fx = Math.sin(playerH.group.rotation.y), fz = Math.cos(playerH.group.rotation.y);
+        const eyePos = new THREE.Vector3(playerH.group.position.x, eyeY, playerH.group.position.z);
+        camera.position.lerp(eyePos, 0.4);
+        camera.lookAt(eyePos.x + fx, eyeY, eyePos.z + fz);
+      } else {
+        playerH.group.visible = true;
+        const camOffset = new THREE.Vector3(0, 6.4, 7.6);
+        const desired = playerH.group.position.clone().add(camOffset);
+        camera.position.lerp(desired, 0.07);
+        camera.lookAt(playerH.group.position.x, 1.1, playerH.group.position.z);
+      }
 
       // proximity → talk prompt
       let nearest = null, nearestDist = TALK_DIST;
@@ -709,6 +767,9 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       <div ref={mountRef} className="off3-canvas"
         onTouchMove={onJoyMove} onTouchEnd={onJoyEnd} onMouseMove={onJoyMove} onMouseUp={onJoyEnd} />
       <div className="off3-hint">חצים / WASD לזוז · התקרב לעובד ולחץ "דבר" · {ph.emoji} {ph.label}</div>
+      <button className="off3-view-toggle" onClick={() => setFirstPerson((v) => !v)} title="החלף תצוגה">
+        {firstPerson ? <User size={18} /> : <Eye size={18} />}
+      </button>
       {talkAgent && (
         <button className="off3-talk" style={{ "--c": talkAgent.color }} onClick={() => onOpenChat(talkAgent.id)}>
           <MessageCircle size={18} /> דבר עם {talkAgent.name}

@@ -1826,6 +1826,10 @@ function StyleTag() {
 .off3-joy-knob{position:absolute;left:50%;top:50%;width:42px;height:42px;margin:-21px 0 0 -21px;border-radius:50%;
   background:linear-gradient(135deg,var(--gold),var(--gold2));box-shadow:0 4px 14px rgba(228,188,99,.4);pointer-events:none}
 @media(min-width:900px){.off3-joy{display:none}}
+.off3-view-toggle{position:absolute;top:10px;right:10px;z-index:3;width:38px;height:38px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;background:rgba(6,9,18,.72);border:1px solid rgba(110,170,240,.3);
+  color:#eaf1ff;cursor:pointer;backdrop-filter:blur(8px)}
+.off3-view-toggle:hover{border-color:var(--gold);color:var(--gold)}
 .off-floor{flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(2,1fr);gap:12px;padding:14px 14px 28px;align-content:start}
 @media(min-width:680px){.off-floor{grid-template-columns:repeat(3,1fr)}}
 @media(min-width:1000px){.off-floor{grid-template-columns:repeat(4,1fr)}}
