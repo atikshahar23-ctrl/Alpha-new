@@ -8,6 +8,7 @@ import {
   Building2, Database, GraduationCap, Globe,
 } from "lucide-react";
 import * as cloud from "./cloud";
+import Office3D from "./Office3D.jsx";
 
 /* ════════════════════════════════════════════════════════════════════
    ALPHA · AGENTS COMMAND CENTER
@@ -1079,8 +1080,6 @@ function OfficeSim({ onClose, onOpenChat }) {
   const [phase, setPhase] = useState(0);
   const [bursts, setBursts] = useState([]);
   const meetingRef = useRef(false);
-  const floorRef = useRef(null);
-  const dragRef = useRef(null);
 
   const moveTo = (c, pt, status, focus = false) => {
     const dist = Math.hypot(pt.x - c.x, pt.y - c.y);
@@ -1162,73 +1161,25 @@ function OfficeSim({ onClose, onOpenChat }) {
     setTimeout(() => setChars((prev) => prev.map((c) => c.id === id ? { ...c, focus: false, energy: Math.min(100, c.energy + 12) } : c)), 6000);
   }), []);
 
-  // Drag a character around the floor.
-  const pctFromEvent = (e) => { const r = floorRef.current.getBoundingClientRect(); const cx = (e.touches ? e.touches[0].clientX : e.clientX); const cy = (e.touches ? e.touches[0].clientY : e.clientY); return { x: Math.max(OFC_X0, Math.min(OFC_X1, (cx - r.left) / r.width * 100)), y: Math.max(OFC_Y0, Math.min(OFC_Y1, (cy - r.top) / r.height * 100)) }; };
-  const onCharDown = (e, id) => { e.stopPropagation(); dragRef.current = { id, moved: false }; setChars((p) => p.map((c) => c.id === id ? { ...c, held: true, walking: false, dur: 0 } : c)); };
-  const onFloorMove = (e) => { if (!dragRef.current) return; const pt = pctFromEvent(e); dragRef.current.moved = true; const id = dragRef.current.id; setChars((p) => p.map((c) => c.id === id ? { ...c, x: pt.x, y: pt.y, dur: 0 } : c)); };
-  const onFloorUp = () => { const d = dragRef.current; if (!d) return; dragRef.current = null; setChars((p) => p.map((c) => c.id === d.id ? { ...c, held: false, status: "roam" } : c)); if (!d.moved) onOpenChat(d.id); };
-
   const ph = OFC_PHASES[phase];
   return (
-    <div className="off-overlay">
+    <div className="off-overlay off3">
       <div className="off-top">
-        <div className="off-top-l"><span className="off-live"><span className="ac-live-dot" /> חי</span><b>🏢 בניין אלפא · קומת הסוכנים</b></div>
+        <div className="off-top-l"><span className="off-live"><span className="ac-live-dot" /> חי</span><b>🏢 בניין אלפא · קומת הסוכנים · תלת-ממד</b></div>
         <div className="ofc-clock">{ph.emoji} {ph.label}</div>
         <button className="off-close" onClick={onClose}><X size={20} /></button>
       </div>
-      <div className="off-sub">עובד 💻 · ישיבה 👥 · ארוחה 🍽️ · הפסקה ☕ · גרור דמות להזיז · לחיצה לשיחה</div>
-      <div className="ofc-floor" ref={floorRef} style={{ "--sky": ph.sky }}
-        onPointerMove={onFloorMove} onPointerUp={onFloorUp} onPointerLeave={onFloorUp}
-        onTouchMove={onFloorMove} onTouchEnd={onFloorUp}>
-        <div className="ofc-tint" style={{ background: ph.tint }} />
-        <div className="ofc-windows">{Array.from({ length: 6 }).map((_, i) => <span key={i} />)}</div>
-        <div className="ofc-furn ofc-reception">קבלה</div>
-        <div className="ofc-furn ofc-rug" />
-        <div className="ofc-furn ofc-meeting"><span className="ofc-mtable" /><i className="t" /><i className="b" /><i className="l" /><i className="r" /></div>
-        {OFC_DESKS.map((d, i) => {
-          const owner = chars[i];
-          const occ = owner && owner.status === "work" && !owner.walking;
-          return (
-            <div key={i} className={"ofc-furn ofc-desk" + (occ ? " occ" : "")} style={{ left: d.x + "%", top: d.y + "%" }}>
-              <span className="ofc-mon" /><span className="ofc-kbd" /><span className="ofc-chairback" />
-            </div>
-          );
-        })}
-        <div className="ofc-furn ofc-dine-label">חדר אוכל</div>
-        {OFC_DINE_TABLES.map((t, i) => (
-          <div key={i} className="ofc-furn ofc-dine-table" style={{ left: t.x + "%", top: t.y + "%" }}>
-            <span className="ofc-dtop" /><i className="t" /><i className="b" /><i className="l" /><i className="r" />
-          </div>
-        ))}
-        <div className="ofc-furn ofc-plant p1" /><div className="ofc-furn ofc-plant p2" /><div className="ofc-furn ofc-plant p3" />
-        <div className="ofc-furn ofc-cooler" />
-        {bursts.map((bt) => (
-          <div key={bt.id} className="ofc-confetti" style={{ left: bt.x + "%", top: bt.y + "%" }}>
-            {Array.from({ length: 12 }).map((_, i) => <i key={i} style={{ "--a": (i * 30) + "deg", background: i % 3 === 0 ? bt.color : i % 3 === 1 ? "#FFD23F" : "#fff" }} />)}
-          </div>
-        ))}
-        {chars.map((c) => {
-          const a = byId(c.id); if (!a) return null; const b = bubbles[c.id];
-          const seated = !c.walking && (c.status === "work" || c.status === "meet" || c.status === "eat");
-          return (
-            <div key={c.id} className={"ofc-char" + (c.walking ? " walking" : "") + (c.held ? " held" : "") + (c.focus ? " focus" : "") + (seated ? " seated" : "") + (seated && c.status === "work" ? " at-work" : "")} title={a.name}
-              style={{ left: c.x + "%", top: c.y + "%", transitionDuration: c.dur + "ms", zIndex: Math.round(c.y) + (c.held ? 200 : 10), "--c": a.color }}
-              onPointerDown={(e) => onCharDown(e, c.id)}>
-              {b && <div className="ofc-bubble">{b.toId && <span className="ofc-bubble-to">→ {byId(b.toId)?.name}</span>}{b.text}</div>}
-              {!c.walking && <span className="ofc-status">{OFC_STATUS[c.status] || "🚶"}</span>}
-              <div className="ofc-av" style={{ transform: c.dir < 0 ? "scaleX(-1)" : "none" }}>
-                <span className="ofc-shadow" />
-                <span className="ofc-head"><img src={a.avatar} alt="" draggable={false} /></span>
-                <span className="ofc-body" style={{ background: `linear-gradient(160deg, ${a.color}, ${a.color}cc)` }} />
-                <span className="ofc-chair" />
-                <span className="ofc-legs"><i /><i /></span>
-              </div>
-              <span className="ofc-name">{a.name}</span>
-              <span className="ofc-energy"><i style={{ width: c.energy + "%", background: c.energy < 30 ? "#FF5C50" : c.energy < 60 ? "#FFD23F" : "#3FD79A" }} /></span>
-            </div>
-          );
-        })}
-      </div>
+      <Office3D
+        chars={chars}
+        byId={byId}
+        phase={phase}
+        phases={OFC_PHASES}
+        deskPositions={OFC_DESKS}
+        seatPositions={OFC_SEATS}
+        dineTablePositions={OFC_DINE_TABLES}
+        onClose={onClose}
+        onOpenChat={onOpenChat}
+      />
     </div>
   );
 }
@@ -1857,6 +1808,24 @@ function StyleTag() {
 .off-live{display:flex;align-items:center;gap:5px;font-size:11px;font-weight:800;color:#3FD79A;background:rgba(63,215,154,.1);border:1px solid rgba(63,215,154,.3);padding:4px 9px;border-radius:20px}
 .off-close{width:36px;height:36px;border-radius:10px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer}
 .off-sub{text-align:center;font-size:11.5px;color:#7e90b8;padding:8px 16px 4px}
+
+/* ── 3D office (walk-around, WASD/joystick) ── */
+.off3{background:#05070f}
+.off3-wrap{flex:1;position:relative;overflow:hidden}
+.off3-canvas{position:absolute;inset:0;touch-action:none}
+.off3-canvas canvas{display:block;width:100%!important;height:100%!important}
+.off3-hint{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:2;
+  background:rgba(6,9,18,.72);border:1px solid rgba(110,170,240,.25);border-radius:20px;
+  padding:6px 14px;font-size:11.5px;color:#aebde0;backdrop-filter:blur(8px);white-space:nowrap;pointer-events:none}
+.off3-talk{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);z-index:3;
+  display:flex;align-items:center;gap:8px;background:linear-gradient(135deg,var(--c),color-mix(in srgb,var(--c) 60%,#000));
+  color:#fff;border:none;border-radius:30px;padding:12px 20px;font-family:'Rubik';font-weight:900;font-size:14px;
+  cursor:pointer;box-shadow:0 8px 26px color-mix(in srgb,var(--c) 50%,transparent);animation:acRise .2s ease both}
+.off3-joy{position:absolute;left:20px;bottom:20px;z-index:3;width:96px;height:96px;border-radius:50%;
+  background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.18);touch-action:none}
+.off3-joy-knob{position:absolute;left:50%;top:50%;width:42px;height:42px;margin:-21px 0 0 -21px;border-radius:50%;
+  background:linear-gradient(135deg,var(--gold),var(--gold2));box-shadow:0 4px 14px rgba(228,188,99,.4);pointer-events:none}
+@media(min-width:900px){.off3-joy{display:none}}
 .off-floor{flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(2,1fr);gap:12px;padding:14px 14px 28px;align-content:start}
 @media(min-width:680px){.off-floor{grid-template-columns:repeat(3,1fr)}}
 @media(min-width:1000px){.off-floor{grid-template-columns:repeat(4,1fr)}}
