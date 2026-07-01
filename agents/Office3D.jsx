@@ -8,7 +8,7 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { SSAOPass } from "three/examples/jsm/postprocessing/SSAOPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
-import { MessageCircle, Eye, User, Mic } from "lucide-react";
+import { MessageCircle, Eye, User, Mic, VolumeX, X, Settings as SettingsIcon } from "lucide-react";
 
 /* ════════════════════════════════════════════════════════════════════
    3D OFFICE — walk the floor yourself (WASD / joystick), approach a
@@ -1191,20 +1191,46 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   const [joyBase, setJoyBase] = useState(null); // floating joystick anchor (screen px), null = hidden
   const [firstPerson, setFirstPerson] = useState(false);
   const [voiceState, setVoiceState] = useState("idle"); // idle | listening | thinking | speaking
-  const [voiceLine, setVoiceLine] = useState(null);      // { who, text } subtitle
+  const [voiceLine, setVoiceLine] = useState(null);      // { who, text } subtitle — sticky, only the user's own X closes it
   const recogRef = useRef(null);
   const joyDrag = useRef(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [graphicsHigh, setGraphicsHigh] = useState(true); // bloom + SSAO on/off, for low-end devices
+  // Whether the mic should keep re-listening on its own while you're near an
+  // agent — on by default (mic is "always listening" while in the sim), the
+  // user can pause it (mic button, or the settings panel) without losing the
+  // conversation text on screen. State (not a ref) so the settings panel can
+  // show and toggle it.
+  const [autoListen, setAutoListen] = useState(true);
 
   useEffect(() => { liveRef.current.chars = chars; }, [chars]);
   useEffect(() => { liveRef.current.firstPerson = firstPerson; }, [firstPerson]);
   useEffect(() => { liveRef.current.phase = phase; }, [phase]);
   useEffect(() => { liveRef.current.bizData = bizData; }, [bizData]);
+  // Push the graphics-quality toggle down into the postprocessing passes
+  // once they exist (they're created inside the async mount effect below).
+  useEffect(() => { liveRef.current.setGraphicsHigh?.(graphicsHigh); }, [graphicsHigh]);
   // Stop any live mic / speech when the sim unmounts.
   useEffect(() => () => { try { recogRef.current?.stop(); window.speechSynthesis?.cancel(); } catch {} }, []);
-  // Walk away from an agent → drop the subtitle + stop listening.
+  // Walk away from an agent → stop the live mic (nothing to listen for), but
+  // the subtitle/transcript stays on screen until you dismiss it yourself —
+  // it used to vanish the instant you stepped back, which read as "the text
+  // disappears too fast".
   useEffect(() => {
-    if (!talkTarget) { setVoiceLine(null); try { recogRef.current?.stop(); } catch {} setVoiceState("idle"); }
+    if (!talkTarget) { try { recogRef.current?.stop(); } catch {} setVoiceState("idle"); }
   }, [talkTarget]);
+  // Approaching a new agent re-arms the always-listening mic for them.
+  useEffect(() => { if (talkTarget) setAutoListen(true); }, [talkTarget]);
+  // The "always listening" loop: whenever you're standing near an agent, the
+  // mic is idle, and auto-listen hasn't been paused, start listening on its
+  // own — no need to tap the mic every single time you want to talk.
+  useEffect(() => {
+    if (!talkTarget || !voice?.canListen || !autoListen) return;
+    if (voiceState !== "idle") return;
+    const t = setTimeout(() => startVoiceTalk(true), 550);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [talkTarget, voiceState]);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -1270,6 +1296,14 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     const bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), 0.55, 0.7, 0.85);
     composer.addPass(bloomPass);
     composer.addPass(new OutputPass());
+    // Settings-panel graphics toggle — both passes support .enabled out of
+    // the box (base three.js Pass class), so this is a cheap on/off for
+    // slower devices without rebuilding the composer chain.
+    liveRef.current.setGraphicsHigh = (high) => {
+      bloomPass.enabled = high;
+      if (ssaoPass) ssaoPass.enabled = high;
+    };
+    liveRef.current.setGraphicsHigh(graphicsHigh);
 
     // ── Real HDRI environment (free CC0 Poly Haven) for image-based lighting
     // + realistic reflections on glass/marble/metal, with a hard fallback to
@@ -1819,10 +1853,34 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       trafficTex.needsUpdate = true;
 
       let mx = 0, mz = 0;
-      if (keys["w"] || keys["arrowup"]) mz -= 1;
-      if (keys["s"] || keys["arrowdown"]) mz += 1;
-      if (keys["a"] || keys["arrowleft"]) mx -= 1;
-      if (keys["d"] || keys["arrowright"]) mx += 1;
+      // First-person keyboard nav used to feel "backwards": every key press
+      // (including S/↓) snapped the character — and with it, the locked-on
+      // first-person camera — to face the absolute world direction of that
+      // key, so walking "backward" actually spun you 180° to face the new
+      // heading instead of just stepping back. In first person, ↑/W and
+      // ↓/S now walk forward/backward relative to whichever way you're
+      // already looking (no spin), and ←/→ / A/D turn you in place instead
+      // of strafing — classic, predictable first-person controls. Third-
+      // person and the touch joystick keep the original absolute-direction
+      // scheme, which reads fine from an outside chase camera.
+      const kFwd = (keys["w"] || keys["arrowup"] ? 1 : 0) - (keys["s"] || keys["arrowdown"] ? 1 : 0);
+      const kTurn = (keys["d"] || keys["arrowright"] ? 1 : 0) - (keys["a"] || keys["arrowleft"] ? 1 : 0);
+      const fpTankControls = liveRef.current.firstPerson && (kFwd !== 0 || kTurn !== 0);
+      if (fpTankControls) {
+        if (kTurn) {
+          const TURN_SPEED = 2.6;
+          playerH.group.rotation.y += kTurn * TURN_SPEED * dt;
+        }
+        if (kFwd) {
+          mx = Math.sin(playerH.group.rotation.y) * kFwd;
+          mz = Math.cos(playerH.group.rotation.y) * kFwd;
+        }
+      } else {
+        if (keys["w"] || keys["arrowup"]) mz -= 1;
+        if (keys["s"] || keys["arrowdown"]) mz += 1;
+        if (keys["a"] || keys["arrowleft"]) mx -= 1;
+        if (keys["d"] || keys["arrowright"]) mx += 1;
+      }
       mx += jv.x; mz += jv.y;
       const mlen = Math.hypot(mx, mz);
       if (mlen > 0.08) {
@@ -1831,14 +1889,16 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         playerH.group.position.x = clamp(playerH.group.position.x + mx * SPEED * dt, -12.2, 12.2);
         playerH.group.position.z = clamp(playerH.group.position.z + mz * SPEED * dt, -10.2, 10.2);
         resolveCollisions(playerH.group.position, obstacles);
-        const targetRot = Math.atan2(mx, mz);
-        let dRot = targetRot - playerH.group.rotation.y;
-        while (dRot > Math.PI) dRot -= Math.PI * 2;
-        while (dRot < -Math.PI) dRot += Math.PI * 2;
-        playerH.group.rotation.y += dRot * Math.min(1, dt * 10);
+        if (!fpTankControls) {
+          const targetRot = Math.atan2(mx, mz);
+          let dRot = targetRot - playerH.group.rotation.y;
+          while (dRot > Math.PI) dRot -= Math.PI * 2;
+          while (dRot < -Math.PI) dRot += Math.PI * 2;
+          playerH.group.rotation.y += dRot * Math.min(1, dt * 10);
+        }
         setClip(playerH, CLIP.walk);
       } else {
-        setClip(playerH, CLIP.idle);
+        setClip(playerH, fpTankControls && kTurn ? CLIP.walk : CLIP.idle);
       }
 
       // NPCs: walk a simple two-point "aisle" route to their live target
@@ -2034,17 +2094,28 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   const ph = phases[phase];
 
   // Talk to the agent you're standing next to, by voice, right here in the
-  // simulator — tap the mic, speak, and they answer out loud (same brain as
-  // the text chat). Falls back to a spoken greeting if speech-to-text isn't
-  // available in the browser.
-  const startVoiceTalk = () => {
+  // simulator. The mic is "always listening" while you're near an agent —
+  // it starts on its own (see the auto-listen effect above) and, once the
+  // agent finishes replying, quietly starts listening again on its own, so
+  // you can have a real back-and-forth without tapping anything. Tapping the
+  // mic button while it's listening pauses the auto-loop (so it doesn't
+  // immediately restart); tapping again resumes it. Falls back to a spoken
+  // greeting if speech-to-text isn't available in the browser at all.
+  const startVoiceTalk = (auto = false) => {
     const agent = talkTarget ? byId(talkTarget) : null;
     if (!agent || !voice) return;
-    if (voiceState === "listening") { try { recogRef.current?.stop(); } catch {} setVoiceState("idle"); return; }
+    if (voiceState === "listening") {
+      // Manual tap while listening = the user wants to pause, not restart.
+      if (!auto) autoListenRef.current = false;
+      try { recogRef.current?.stop(); } catch {}
+      setVoiceState("idle");
+      return;
+    }
+    if (!auto) autoListenRef.current = true;
     if (!voice.canListen) {
       const line = `שלום, אני ${agent.name}. ${agent.tagline || ""}`;
       setVoiceLine({ who: agent.name, text: line, color: agent.color });
-      if (voice.canSpeak) { setVoiceState("speaking"); voice.speak(line); setTimeout(() => setVoiceState("idle"), 3000); }
+      if (voice.canSpeak) { setVoiceState("speaking"); voice.speak(line); setTimeout(() => setVoiceState((s) => (s === "speaking" ? "idle" : s)), 3000); }
       return;
     }
     const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -2063,12 +2134,19 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       const dur = Math.min(14000, 1600 + reply.length * 55);
       setTimeout(() => setVoiceState((s) => (s === "speaking" ? "idle" : s)), voice.canSpeak ? dur : 4500);
     };
-    rec.onerror = () => setVoiceState("idle");
+    rec.onerror = () => setVoiceState((s) => (s === "listening" ? "idle" : s));
     rec.onend = () => setVoiceState((s) => (s === "listening" ? "idle" : s));
     recogRef.current = rec;
     setVoiceState("listening");
     setVoiceLine({ who: agent.name, text: "מקשיב… דבר עכשיו 🎤", color: agent.color });
     try { rec.start(); } catch { setVoiceState("idle"); }
+  };
+  // Mute the agent mid-sentence — stops the spoken reply immediately and
+  // (since the mic stays "always listening") quietly resumes listening for
+  // your next line a moment later, instead of leaving the conversation stuck.
+  const muteSpeaking = () => {
+    try { window.speechSynthesis?.cancel(); } catch {}
+    setVoiceState((s) => (s === "speaking" ? "idle" : s));
   };
   const voiceLabel = voiceState === "listening" ? "מקשיב…" : voiceState === "thinking" ? "חושב…" : voiceState === "speaking" ? "מדבר…" : (talkAgent ? `דבר בקול עם ${talkAgent.name}` : "");
 
@@ -2081,17 +2159,44 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       <button className="off3-view-toggle" onClick={() => setFirstPerson((v) => !v)} title="החלף תצוגה">
         {firstPerson ? <User size={18} /> : <Eye size={18} />}
       </button>
+      <button className="off3-settings-toggle" onClick={() => setSettingsOpen((v) => !v)} title="הגדרות סימולטור">
+        <SettingsIcon size={18} />
+      </button>
+      {settingsOpen && (
+        <div className="off3-settings">
+          <div className="off3-settings-head">הגדרות סימולטור<button onClick={() => setSettingsOpen(false)}><X size={14} /></button></div>
+          <button className="off3-settings-row" onClick={() => setFirstPerson((v) => !v)}>
+            <span>{firstPerson ? <User size={15} /> : <Eye size={15} />} תצוגה</span>
+            <b>{firstPerson ? "גוף ראשון" : "גוף שלישי"}</b>
+          </button>
+          <button className="off3-settings-row" onClick={() => setAutoListen((v) => !v)}>
+            <span><Mic size={15} /> מיקרופון תמיד מאזין</span>
+            <b className={autoListen ? "on" : ""}>{autoListen ? "פעיל" : "כבוי"}</b>
+          </button>
+          <button className="off3-settings-row" onClick={() => setGraphicsHigh((v) => !v)}>
+            <span><Eye size={15} /> איכות גרפית (זוהר + הצללות)</span>
+            <b className={graphicsHigh ? "on" : ""}>{graphicsHigh ? "גבוהה" : "חסכונית"}</b>
+          </button>
+          <p className="off3-settings-note">בגוף ראשון: ↑/W מתקדם ו-↓/S נסוג לפי הכיוון שאתה מסתכל אליו (בלי לסובב את המצלמה), ←/→ או A/D מסובבים אותך במקום.</p>
+        </div>
+      )}
       {voiceLine && (
         <div className="off3-subtitle">
           <b style={{ color: voiceLine.color }}>{voiceLine.who}</b>
           <span>{voiceLine.text}</span>
+          <button className="off3-subtitle-x" onClick={() => setVoiceLine(null)} title="סגור"><X size={14} /></button>
         </div>
       )}
       {talkAgent && (
         <div className="off3-talkbar">
-          <button className={"off3-mic " + voiceState} style={{ "--c": talkAgent.color }} onClick={startVoiceTalk} title={voiceLabel}>
-            {voiceState === "listening" ? <Mic size={20} /> : <Mic size={20} />}
+          <button className={"off3-mic " + voiceState} style={{ "--c": talkAgent.color }} onClick={() => startVoiceTalk(false)} title={voiceLabel}>
+            <Mic size={20} />
           </button>
+          {voiceState === "speaking" && (
+            <button className="off3-mute" style={{ "--c": talkAgent.color }} onClick={muteSpeaking} title="השתק">
+              <VolumeX size={18} />
+            </button>
+          )}
           <button className="off3-talk" style={{ "--c": talkAgent.color }} onClick={() => onOpenChat(talkAgent.id)}>
             <MessageCircle size={18} /> {voiceLabel}
           </button>
