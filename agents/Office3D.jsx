@@ -8,12 +8,84 @@ import { MessageCircle } from "lucide-react";
    dining / meeting coordinates as the 2D layout (same OFC_* constants
    passed in as props) so the NPC behaviour scheduler in OfficeSim needs
    no changes — only the rendering + a player avatar are new.
+   A New York-style office shell: a window wall with a skyline view,
+   ceiling light panels + pendant lamps, a wood floor, rugs, plants and a
+   lounge corner, with day/night lighting actually driven by the phase
+   clock (sun colour/intensity, ambient tint and fog all lerp toward it).
    ════════════════════════════════════════════════════════════════════ */
 
 const SCALE = 0.22; // world units per floor-percent point
 const toWorld = (x, y) => [(x - 50) * SCALE, (y - 50) * SCALE];
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const TALK_DIST = 2.15;
+const FLOOR_W = 26, FLOOR_D = 22;
+
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Deterministic wood-plank floor — warm, real-office feel instead of flat colour.
+function buildFloorTexture() {
+  const cvs = document.createElement("canvas");
+  cvs.width = 512; cvs.height = 512;
+  const ctx = cvs.getContext("2d");
+  const rnd = mulberry32(42);
+  const planks = ["#3a2c1e", "#40311f", "#362a1c", "#443423"];
+  const plankW = 512 / 8;
+  for (let col = 0; col < 8; col++) {
+    ctx.fillStyle = planks[Math.floor(rnd() * planks.length)];
+    ctx.fillRect(col * plankW, 0, plankW, 512);
+    ctx.strokeStyle = "rgba(0,0,0,.25)"; ctx.lineWidth = 2;
+    ctx.strokeRect(col * plankW, 0, plankW, 512);
+    for (let s = 0; s < 6; s++) {
+      const y = rnd() * 512;
+      ctx.strokeStyle = "rgba(0,0,0,.12)"; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(col * plankW, y); ctx.lineTo(col * plankW + plankW, y + rnd() * 6 - 3); ctx.stroke();
+    }
+  }
+  const tex = new THREE.CanvasTexture(cvs);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(FLOOR_W / 4, FLOOR_D / 4);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+// NYC skyline at dusk, baked once into a texture — buildings + lit windows.
+function buildSkylineTexture() {
+  const cvs = document.createElement("canvas");
+  cvs.width = 1024; cvs.height = 400;
+  const ctx = cvs.getContext("2d");
+  const sky = ctx.createLinearGradient(0, 0, 0, 400);
+  sky.addColorStop(0, "#1b2a55"); sky.addColorStop(0.55, "#3a3468"); sky.addColorStop(1, "#5a4a72");
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, 1024, 400);
+  const rnd = mulberry32(7);
+  const buildingColors = ["#0c1020", "#12172c", "#080b16"];
+  let x = 0;
+  while (x < 1024) {
+    const w = 26 + rnd() * 48;
+    const h = 90 + rnd() * 220;
+    ctx.fillStyle = buildingColors[Math.floor(rnd() * buildingColors.length)];
+    ctx.fillRect(x, 400 - h, w, h);
+    // spire on some towers
+    if (rnd() > 0.7) { ctx.fillRect(x + w / 2 - 2, 400 - h - 30, 4, 30); }
+    // lit windows
+    ctx.fillStyle = "rgba(255,208,140,.92)";
+    for (let wy = 400 - h + 10; wy < 392; wy += 13) {
+      for (let wx = x + 4; wx < x + w - 4; wx += 11) {
+        if (rnd() > 0.5) ctx.fillRect(wx, wy, 3.4, 6);
+      }
+    }
+    x += w + 5 + rnd() * 8;
+  }
+  const tex = new THREE.CanvasTexture(cvs);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
 
 function buildDesk() {
   const g = new THREE.Group();
@@ -95,67 +167,195 @@ function buildMeetingTable() {
   return g;
 }
 
-// Simple low-poly figure: capsule body + head plane textured with the
-// agent's avatar (always faces the camera via a Sprite), small legs.
+function buildPlant() {
+  const g = new THREE.Group();
+  const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.13, 0.24, 10), new THREE.MeshStandardMaterial({ color: 0x2a2016, roughness: 0.8 }));
+  pot.position.y = 0.12; pot.castShadow = true;
+  g.add(pot);
+  const leafMat = new THREE.MeshStandardMaterial({ color: 0x2f7d4f, roughness: 0.7 });
+  for (let i = 0; i < 5; i++) {
+    const leaf = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.5 + Math.random() * 0.3, 6), leafMat);
+    const ang = (i / 5) * Math.PI * 2;
+    leaf.position.set(Math.sin(ang) * 0.06, 0.5, Math.cos(ang) * 0.06);
+    leaf.rotation.z = Math.sin(ang) * 0.25;
+    leaf.rotation.x = Math.cos(ang) * 0.25;
+    leaf.castShadow = true;
+    g.add(leaf);
+  }
+  return g;
+}
+
+function buildCouch() {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color: 0x4a3a5a, roughness: 0.75 });
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.34, 0.6), mat);
+  seat.position.y = 0.24; seat.castShadow = true; seat.receiveShadow = true;
+  g.add(seat);
+  const back = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.5, 0.16), mat);
+  back.position.set(0, 0.55, -0.28); back.castShadow = true;
+  g.add(back);
+  [-0.68, 0.68].forEach((ax) => {
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.44, 0.6), mat);
+    arm.position.set(ax, 0.36, 0); arm.castShadow = true;
+    g.add(arm);
+  });
+  return g;
+}
+
+function buildBookshelf() {
+  const g = new THREE.Group();
+  const frame = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.7, 0.28), new THREE.MeshStandardMaterial({ color: 0x2a2016, roughness: 0.8 }));
+  frame.position.y = 0.85; frame.castShadow = true; frame.receiveShadow = true;
+  g.add(frame);
+  const bookColors = [0xC0392B, 0x2980B9, 0xE4BC63, 0x27AE60, 0x8E44AD, 0xE67E22];
+  for (let shelf = 0; shelf < 3; shelf++) {
+    let bx = -0.5;
+    while (bx < 0.5) {
+      const bw = 0.06 + Math.random() * 0.06;
+      const bh = 0.28 + Math.random() * 0.08;
+      const book = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, 0.2), new THREE.MeshStandardMaterial({ color: bookColors[Math.floor(Math.random() * bookColors.length)], roughness: 0.6 }));
+      book.position.set(bx, 0.22 + shelf * 0.52, 0.03);
+      book.castShadow = true;
+      g.add(book);
+      bx += bw + 0.015;
+    }
+  }
+  return g;
+}
+
+function buildRug(w, d, color) {
+  const rug = new THREE.Mesh(
+    new THREE.PlaneGeometry(w, d),
+    new THREE.MeshStandardMaterial({ color, roughness: 1, transparent: true, opacity: 0.85 })
+  );
+  rug.rotation.x = -Math.PI / 2;
+  rug.position.y = 0.008;
+  rug.receiveShadow = true;
+  return rug;
+}
+
+function buildPendantLamp() {
+  const g = new THREE.Group();
+  const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 1.0, 6), new THREE.MeshBasicMaterial({ color: 0x111111 }));
+  cord.position.y = 0.5;
+  g.add(cord);
+  const shade = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.16, 12, 1, true), new THREE.MeshStandardMaterial({ color: 0x1a1710, side: THREE.DoubleSide, roughness: 0.6 }));
+  g.add(shade);
+  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 8), new THREE.MeshBasicMaterial({ color: 0xffdca0 }));
+  bulb.position.y = -0.05;
+  g.add(bulb);
+  const light = new THREE.PointLight(0xffcf8a, 0.9, 3.2);
+  light.position.y = -0.08;
+  g.add(light);
+  return g;
+}
+
+// A real (if low-poly) human figure: skin head + avatar face sprite, shirt
+// torso, arms with hands, trousers legs with shoes — built so limbs are
+// Groups hinged at the shoulder/hip, giving natural walking / sitting poses
+// instead of a single blob capsule.
 function buildHuman(color, avatarUrl, isPlayer) {
   const g = new THREE.Group();
-  const bodyMat = new THREE.MeshStandardMaterial({ color, roughness: 0.55 });
-  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.22, 0.42, 4, 8), bodyMat);
-  body.position.y = 0.5;
-  body.castShadow = true;
-  g.add(body);
-  const legMat = new THREE.MeshStandardMaterial({ color: 0x20263c, roughness: 0.8 });
-  const legL = new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.32, 3, 6), legMat);
-  legL.position.set(-0.1, 0.17, 0);
-  legL.castShadow = true;
-  const legR = legL.clone();
-  legR.position.x = 0.1;
-  g.add(legL); g.add(legR);
+  const SKIN = 0xE0AC80;
+  const skinMat = new THREE.MeshStandardMaterial({ color: SKIN, roughness: 0.65 });
+  const shirtMat = new THREE.MeshStandardMaterial({ color, roughness: 0.5 });
+  const pantsMat = new THREE.MeshStandardMaterial({ color: 0x242b42, roughness: 0.75 });
+  const shoeMat = new THREE.MeshStandardMaterial({ color: 0x14182a, roughness: 0.55 });
 
-  let faceSprite = null;
+  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.19, 0.34, 4, 8), shirtMat);
+  torso.position.y = 0.78;
+  torso.castShadow = true;
+  g.add(torso);
+
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.075, 0.09, 8), skinMat);
+  neck.position.y = 1.0;
+  g.add(neck);
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.165, 14, 14), skinMat);
+  head.position.y = 1.15;
+  head.castShadow = true;
+  g.add(head);
+
   if (avatarUrl) {
     const tex = new THREE.TextureLoader().load(avatarUrl);
     tex.colorSpace = THREE.SRGBColorSpace;
-    const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true });
-    faceSprite = new THREE.Sprite(spriteMat);
-    faceSprite.scale.set(0.42, 0.42, 1);
-    faceSprite.position.y = 0.98;
-    g.add(faceSprite);
-  } else {
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.19, 12, 12), bodyMat);
-    head.position.y = 0.95;
-    head.castShadow = true;
-    g.add(head);
+    // A Sprite always faces the camera regardless of the parent's rotation,
+    // so it can't be pushed "in front of" the head with a fixed local
+    // z-offset (that offset rotates with the character and ends up behind
+    // the head from some angles). Disabling depth-test + a high render
+    // order instead guarantees the face always draws on top of the head
+    // sphere sitting right behind it, from any angle — otherwise the face
+    // was getting silently depth-occluded and every character read bald.
+    const faceMat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+    const face = new THREE.Sprite(faceMat);
+    face.scale.set(0.37, 0.37, 1);
+    face.position.y = 1.16;
+    face.renderOrder = 999;
+    g.add(face);
   }
+
+  function buildArm(side) {
+    const arm = new THREE.Group();
+    const upper = new THREE.Mesh(new THREE.CapsuleGeometry(0.052, 0.22, 3, 6), shirtMat);
+    upper.position.y = -0.11;
+    upper.castShadow = true;
+    arm.add(upper);
+    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 8), skinMat);
+    hand.position.y = -0.24;
+    arm.add(hand);
+    arm.position.set(side * 0.24, 0.92, 0);
+    return arm;
+  }
+  const armL = buildArm(-1), armR = buildArm(1);
+  g.add(armL); g.add(armR);
+
+  function buildLeg(side) {
+    const leg = new THREE.Group();
+    const upper = new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.32, 3, 6), pantsMat);
+    upper.position.y = -0.16;
+    upper.castShadow = true;
+    leg.add(upper);
+    const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.06, 0.19), shoeMat);
+    shoe.position.set(0, -0.35, 0.03);
+    shoe.castShadow = true;
+    leg.add(shoe);
+    leg.position.set(side * 0.1, 0.56, 0);
+    return leg;
+  }
+  const legL = buildLeg(-1), legR = buildLeg(1);
+  g.add(legL); g.add(legR);
 
   if (isPlayer) {
     const crown = new THREE.Mesh(
-      new THREE.ConeGeometry(0.14, 0.14, 5),
+      new THREE.ConeGeometry(0.12, 0.12, 5),
       new THREE.MeshStandardMaterial({ color: 0xE4BC63, emissive: 0x5a4318, emissiveIntensity: 0.6 })
     );
-    crown.position.y = 1.24;
+    crown.position.y = 1.4;
     g.add(crown);
   }
 
   const ring = new THREE.Mesh(
     new THREE.RingGeometry(0.26, 0.32, 20),
-    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.55, side: THREE.DoubleSide })
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.5, side: THREE.DoubleSide })
   );
   ring.rotation.x = -Math.PI / 2;
   ring.position.y = 0.02;
   g.add(ring);
 
-  return { group: g, legL, legR, body, ring };
+  return { group: g, legL, legR, armL, armR, torso, ring };
 }
+
+const hexToInt = (hex) => parseInt(hex.replace("#", ""), 16);
 
 export default function Office3D({ chars, byId, phase, phases, deskPositions, seatPositions, dineTablePositions, onClose, onOpenChat }) {
   const mountRef = useRef(null);
-  const liveRef = useRef({ chars, joyVec: { x: 0, y: 0 }, keys: {} });
+  const liveRef = useRef({ chars, phase, joyVec: { x: 0, y: 0 }, keys: {} });
   const [talkTarget, setTalkTarget] = useState(null);
   const [joyKnob, setJoyKnob] = useState({ x: 0, y: 0 });
   const joyDrag = useRef(null);
 
   useEffect(() => { liveRef.current.chars = chars; }, [chars]);
+  useEffect(() => { liveRef.current.phase = phase; }, [phase]);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -184,17 +384,95 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       sun.shadow.camera.top = 14; sun.shadow.camera.bottom = -14;
     }
     scene.add(sun);
+    scene.fog = new THREE.Fog(0x11162a, 16, 34);
 
+    // Floor — warm wood texture instead of flat colour.
+    const floorTex = buildFloorTexture();
     const floor = new THREE.Mesh(
-      new THREE.PlaneGeometry(26, 22),
-      new THREE.MeshStandardMaterial({ color: 0x11162a, roughness: 0.95 })
+      new THREE.PlaneGeometry(FLOOR_W, FLOOR_D),
+      new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.85 })
     );
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
     scene.add(floor);
-    const grid = new THREE.GridHelper(26, 26, 0x2a3350, 0x1a2138);
-    grid.position.y = 0.005;
-    scene.add(grid);
+
+    // Rugs under the meeting nook and dining room for warmth.
+    {
+      const cx = seatPositions.reduce((s, p) => s + p.x, 0) / seatPositions.length;
+      const cy = seatPositions.reduce((s, p) => s + p.y, 0) / seatPositions.length;
+      const [wx, wz] = toWorld(cx, cy);
+      const rug = buildRug(3.4, 3.2, 0x3a2c1c);
+      rug.position.set(wx, 0, wz);
+      scene.add(rug);
+    }
+    if (dineTablePositions.length) {
+      const cx = dineTablePositions.reduce((s, p) => s + p.x, 0) / dineTablePositions.length;
+      const cy = dineTablePositions.reduce((s, p) => s + p.y, 0) / dineTablePositions.length;
+      const [wx, wz] = toWorld(cx, cy);
+      const rug = buildRug(6.2, 5.6, 0x2a2440);
+      rug.position.set(wx, 0, wz);
+      scene.add(rug);
+    }
+
+    // Ceiling + recessed light panels over the bullpen.
+    const ceiling = new THREE.Mesh(
+      new THREE.PlaneGeometry(FLOOR_W, FLOOR_D),
+      new THREE.MeshStandardMaterial({ color: 0x0a0d18, roughness: 1, side: THREE.DoubleSide })
+    );
+    ceiling.rotation.x = Math.PI / 2;
+    ceiling.position.y = 5.4;
+    scene.add(ceiling);
+    const panelMat = new THREE.MeshBasicMaterial({ color: 0xdfe8ff });
+    deskPositions.forEach((d, i) => {
+      if (i % 4 !== 0) return; // one panel per desk row-group, not every desk
+      const [wx, wz] = toWorld(d.x, d.y);
+      const panel = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 0.5), panelMat);
+      panel.rotation.x = Math.PI / 2;
+      panel.position.set(wx + 1.6, 5.35, wz);
+      scene.add(panel);
+    });
+
+    // North window wall — floor-to-ceiling NYC skyline view.
+    const skylineTex = buildSkylineTexture();
+    const [nwx, nwz] = [0, -(FLOOR_D / 2) - 0.05];
+    const skyWall = new THREE.Mesh(
+      new THREE.PlaneGeometry(FLOOR_W, 6.4),
+      new THREE.MeshBasicMaterial({ map: skylineTex })
+    );
+    skyWall.position.set(nwx, 3.2, nwz);
+    scene.add(skyWall);
+    // Window mullions for structure over the glass.
+    const mullionMat = new THREE.MeshStandardMaterial({ color: 0x0e1220, roughness: 0.6 });
+    for (let i = -5; i <= 5; i++) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(0.08, 6.4, 0.1), mullionMat);
+      m.position.set(i * (FLOOR_W / 11), 3.2, nwz + 0.03);
+      scene.add(m);
+    }
+    // Side walls (plain — enclose the room without competing with the skyline).
+    const wallMat = new THREE.MeshStandardMaterial({ color: 0x151c30, roughness: 0.9 });
+    const wallL = new THREE.Mesh(new THREE.PlaneGeometry(FLOOR_D, 6.4), wallMat);
+    wallL.rotation.y = Math.PI / 2;
+    wallL.position.set(-(FLOOR_W / 2) - 0.05, 3.2, 0);
+    scene.add(wallL);
+    const wallR = wallL.clone();
+    wallR.rotation.y = -Math.PI / 2;
+    wallR.position.x = (FLOOR_W / 2) + 0.05;
+    scene.add(wallR);
+
+    // Lounge corner + bookshelf for a lived-in office feel.
+    const couch = buildCouch();
+    couch.position.set(-9.5, 0, 8.5);
+    couch.rotation.y = Math.PI;
+    scene.add(couch);
+    const shelf = buildBookshelf();
+    shelf.position.set(-11.8, 0, 6.5);
+    shelf.rotation.y = Math.PI / 2;
+    scene.add(shelf);
+    [[-10.4, 9.4], [10.8, -8.6], [7.6, 8.4]].forEach(([px, pz]) => {
+      const plant = buildPlant();
+      plant.position.set(px, 0, pz);
+      scene.add(plant);
+    });
 
     // Furniture
     const deskMons = [];
@@ -210,6 +488,9 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       const [wx, wz] = toWorld(t.x, t.y);
       tbl.position.set(wx, 0, wz);
       scene.add(tbl);
+      const lamp = buildPendantLamp();
+      lamp.position.set(wx, 5.0, wz);
+      scene.add(lamp);
     });
     {
       const mt = buildMeetingTable();
@@ -240,18 +521,20 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     let raf = 0;
     const clock = new THREE.Clock();
     let walkT = 0;
+    const curSky = new THREE.Color(0x1b2440);
+    const tmpColor = new THREE.Color();
 
     const onKeyDown = (e) => { liveRef.current.keys[e.key.toLowerCase()] = true; };
     const onKeyUp = (e) => { liveRef.current.keys[e.key.toLowerCase()] = false; };
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
 
-    function setSeated(h, seated) {
-      const s = seated ? 0.35 : 1;
-      h.legL.scale.y = s; h.legR.scale.y = s;
-      h.legL.position.y = seated ? 0.06 : 0.17;
-      h.legR.position.y = seated ? 0.06 : 0.17;
-      h.body.position.y = seated ? 0.36 : 0.5;
+    function setSeated(h, seated, dt) {
+      const target = seated ? -1.25 : 0;
+      h.legL.rotation.x += (target - h.legL.rotation.x) * Math.min(1, dt * 7);
+      h.legR.rotation.x += (target - h.legR.rotation.x) * Math.min(1, dt * 7);
+      const torsoY = seated ? 0.7 : 0.78;
+      h.torso.position.y += (torsoY - h.torso.position.y) * Math.min(1, dt * 7);
     }
 
     function animate() {
@@ -260,6 +543,23 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       const keys = liveRef.current.keys;
       const jv = liveRef.current.joyVec;
 
+      // Day/night: lerp sun/ambient/fog toward the current phase's sky colour
+      // and vary sun intensity + warmth so morning/noon/evening/night are
+      // actually visible, not just a header label.
+      const ph = phases[liveRef.current.phase] || phases[0];
+      tmpColor.set(ph.sky || "#1b2440");
+      curSky.lerp(tmpColor, Math.min(1, dt * 0.6));
+      scene.fog.color.copy(curSky);
+      renderer.setClearColor(curSky, 1);
+      const isNight = liveRef.current.phase >= 3;
+      const isEvening = liveRef.current.phase === 2;
+      const sunTargetInt = isNight ? 0.35 : isEvening ? 0.8 : 1.15;
+      const sunTargetHex = isNight ? 0x27407a : isEvening ? 0xffb46a : 0xfff2d8;
+      sun.intensity += (sunTargetInt - sun.intensity) * Math.min(1, dt * 0.8);
+      sun.color.lerp(tmpColor.set(sunTargetHex), Math.min(1, dt * 0.8));
+      const ambTargetInt = isNight ? 0.35 : 0.65;
+      ambient.intensity += (ambTargetInt - ambient.intensity) * Math.min(1, dt * 0.8);
+
       let mx = 0, mz = 0;
       if (keys["w"] || keys["arrowup"]) mz -= 1;
       if (keys["s"] || keys["arrowdown"]) mz += 1;
@@ -267,13 +567,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       if (keys["d"] || keys["arrowright"]) mx += 1;
       mx += jv.x; mz += jv.y;
       const mlen = Math.hypot(mx, mz);
-      let moving = false;
       if (mlen > 0.08) {
-        moving = true;
         mx /= mlen; mz /= mlen;
         const SPEED = 4.4;
-        playerH.group.position.x = clamp(playerH.group.position.x + mx * SPEED * dt, -12.5, 12.5);
-        playerH.group.position.z = clamp(playerH.group.position.z + mz * SPEED * dt, -10.5, 10.5);
+        playerH.group.position.x = clamp(playerH.group.position.x + mx * SPEED * dt, -12.2, 12.2);
+        playerH.group.position.z = clamp(playerH.group.position.z + mz * SPEED * dt, -10.2, 10.2);
         const targetRot = Math.atan2(mx, mz);
         let dRot = targetRot - playerH.group.rotation.y;
         while (dRot > Math.PI) dRot -= Math.PI * 2;
@@ -282,8 +580,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         walkT += dt * 9;
         playerH.legL.rotation.x = Math.sin(walkT) * 0.6;
         playerH.legR.rotation.x = Math.sin(walkT + Math.PI) * 0.6;
+        playerH.armL.rotation.x = Math.sin(walkT + Math.PI) * 0.5;
+        playerH.armR.rotation.x = Math.sin(walkT) * 0.5;
       } else {
         playerH.legL.rotation.x *= 0.8; playerH.legR.rotation.x *= 0.8;
+        playerH.armL.rotation.x *= 0.8; playerH.armR.rotation.x *= 0.8;
       }
 
       // NPCs: lerp toward their live target position; walking bob; seated pose.
@@ -306,11 +607,20 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           h.group.rotation.y += dRot * Math.min(1, dt * 8);
           h.legL.rotation.x = Math.sin(walkT * 1.1) * 0.5;
           h.legR.rotation.x = Math.sin(walkT * 1.1 + Math.PI) * 0.5;
-          setSeated(h, false);
+          h.armL.rotation.x = Math.sin(walkT * 1.1 + Math.PI) * 0.45;
+          h.armR.rotation.x = Math.sin(walkT * 1.1) * 0.45;
+          setSeated(h, false, dt);
         } else {
           const seated = c.status === "work" || c.status === "meet" || c.status === "eat";
-          setSeated(h, seated);
-          h.legL.rotation.x *= 0.8; h.legR.rotation.x *= 0.8;
+          setSeated(h, seated, dt);
+          h.legL.rotation.x *= 0.85; h.legR.rotation.x *= 0.85;
+          if (seated && c.status === "work") {
+            // subtle typing motion
+            h.armL.rotation.x = -1.15 + Math.sin(clock.elapsedTime * 6 + h.group.position.x) * 0.06;
+            h.armR.rotation.x = -1.15 + Math.sin(clock.elapsedTime * 6.3 + h.group.position.x) * 0.06;
+          } else {
+            h.armL.rotation.x *= 0.85; h.armR.rotation.x *= 0.85;
+          }
         }
       });
 
@@ -369,11 +679,6 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Day/night: tint the ambient/sun via CSS-driven scene background instead
-  // of reaching back into the three.js instance (kept simple — the overlay
-  // header already shows the clock/phase; a subtle fog color shift below).
-  useEffect(() => {}, [phase]);
 
   // Joystick (touch) — drag from the base to set a normalized move vector.
   const JOY_R = 44;
