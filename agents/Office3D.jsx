@@ -56,6 +56,15 @@ const LAPTOP_CENTER_OFFSET = [0.032 * LAPTOP_SCALE, 0, -0.001 * LAPTOP_SCALE];
 const CHAR_MODEL_URL = "office-models/casual_male.glb";
 const CHAR_SCALE = 0.72;
 const CHAR_CENTER_OFFSET = [-0.0 * CHAR_SCALE, 0, 0.019 * CHAR_SCALE];
+// User-supplied "Businessman" character (FBX → GLB, textured suit) — no
+// animation clips, so it's used for a single standing executive agent (the
+// CEO) rather than the walking/sitting crowd. Bbox measured off the model:
+// size 11.85×18.08×5.17, centre 0,8.78,1.36 → scale to ~1.36 world height,
+// feet raised to y≈0 and re-centred on z.
+const BIZ_MODEL_URL = "office-models/businessman.glb";
+const BIZ_AGENT_ID = "ceo";
+const BIZ_SCALE = 0.0752;
+const BIZ_OFFSET = [0, 0.0196, -0.1019];
 // Clip names are baked as "Rig|<name>" — the "_in_place" walk/run variants
 // have no root motion, so they can loop under a character whose position is
 // already driven manually (WASD for the player, lerp-to-target for NPCs)
@@ -506,7 +515,7 @@ function buildDesk(color = 0x3a6ad8, deskTemplate = null, laptopTemplate = null,
     const foot = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.015, 0.13), bezelMat);
     foot.position.y = -0.29; mon.add(foot);
     mon.position.set(mxp, deskTopY + 0.22, -0.2);
-    mon.rotation.y = -Math.sign(mxp) * 0.4; // angle both toward the seat
+    mon.rotation.y = -Math.sign(mxp) * 0.4 + Math.PI; // face the seated worker (turned to match the 180° desk)
     g.add(mon);
   });
 
@@ -699,14 +708,14 @@ function buildNameSprite(name, color) {
 // (not group.clone(true)) so each instance gets its own independent
 // skeleton/bones — a plain clone shares bone objects across instances and
 // every character would end up mirroring the same pose.
-function buildHuman(color, name, isPlayer, charTemplate, charClips) {
+function buildHuman(color, name, isPlayer, charTemplate, charClips, modelScale = CHAR_SCALE, modelOffset = CHAR_CENTER_OFFSET, tintClothes = true) {
   const g = new THREE.Group();
 
   let mixer = null, actions = {}, current = null;
   if (charTemplate) {
     const model = cloneSkinned(charTemplate);
-    model.scale.setScalar(CHAR_SCALE);
-    model.position.set(...CHAR_CENTER_OFFSET);
+    model.scale.setScalar(modelScale);
+    model.position.set(...modelOffset);
     model.traverse((o) => {
       if (!o.isMesh && !o.isSkinnedMesh) return;
       o.castShadow = true; o.receiveShadow = true;
@@ -718,8 +727,9 @@ function buildHuman(color, name, isPlayer, charTemplate, charClips) {
       if (o.material) {
         o.material = o.material.clone();
         // Subtle tint toward the owner's color so clothing still carries a
-        // personal touch even though everyone shares one base texture.
-        o.material.color = new THREE.Color(0xffffff).lerp(new THREE.Color(color), 0.2);
+        // personal touch even though everyone shares one base texture. Skipped
+        // for models that already have their own distinct textured outfit.
+        if (tintClothes) o.material.color = new THREE.Color(0xffffff).lerp(new THREE.Color(color), 0.2);
       }
     });
     g.add(model);
@@ -912,15 +922,17 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     let cleanupFn = () => {};
     (async () => {
       const base = import.meta.env.BASE_URL || "/";
-      const [deskTemplate, laptopTemplate, charGltf, furnitureTemplate] = await Promise.all([
+      const [deskTemplate, laptopTemplate, charGltf, furnitureTemplate, bizGltf] = await Promise.all([
         loadGltf(base + DESK_MODEL_URL).catch((e) => { console.error("[office3d] desk model failed to load", e); return null; }),
         loadGltf(base + LAPTOP_MODEL_URL).catch((e) => { console.error("[office3d] laptop model failed to load", e); return null; }),
         loadGltfFull(base + CHAR_MODEL_URL).catch((e) => { console.error("[office3d] character model failed to load", e); return null; }),
         loadGltf(base + FURNITURE_MODEL_URL).catch((e) => { console.error("[office3d] furniture model failed to load", e); return null; }),
+        loadGltf(base + BIZ_MODEL_URL).catch((e) => { console.error("[office3d] businessman model failed to load", e); return null; }),
       ]);
       if (cancelled) return;
       const charTemplate = charGltf ? charGltf.scene : null;
       const charClips = charGltf ? charGltf.animations : [];
+      const bizTemplate = bizGltf || null; // static (no clips) — used for the CEO
 
     const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || ("ontouchstart" in window) || window.innerWidth < 900;
     const width = mount.clientWidth || window.innerWidth;
@@ -1260,12 +1272,17 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     playerH.group.rotation.y = Math.PI;
     scene.add(playerH.group);
 
-    // NPCs
+    // NPCs — everyone uses the animated casual model except the CEO, who gets
+    // the textured Businessman suit (static, no clips → keep his own textures,
+    // his own scale/offset, and no color tint over the suit).
     const npc = {};
     chars.forEach((c) => {
       const a = byId(c.id);
       if (!a) return;
-      const h = buildHuman(a.color, a.name, false, charTemplate, charClips);
+      const useBiz = c.id === BIZ_AGENT_ID && bizTemplate;
+      const h = useBiz
+        ? buildHuman(a.color, a.name, false, bizTemplate, [], BIZ_SCALE, BIZ_OFFSET, false)
+        : buildHuman(a.color, a.name, false, charTemplate, charClips);
       const [wx, wz] = toWorld(c.x, c.y);
       h.group.position.set(wx, 0, wz);
       scene.add(h.group);
