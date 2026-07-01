@@ -98,33 +98,93 @@ function buildFloorTexture() {
   return tex;
 }
 
-// NYC skyline at dusk, baked once into a texture — buildings + lit windows.
+// A real Manhattan-at-night reference photo (blue hour, a spired Empire
+// State-style tower, dense lit windows, a river catching the light) drove
+// this — baked once into a canvas texture: a hazy far layer for depth, a
+// river strip with light reflections, then the main skyline with one
+// signature tiered/spired tower and varied building silhouettes.
 function buildSkylineTexture() {
   const cvs = document.createElement("canvas");
-  cvs.width = 1024; cvs.height = 400;
+  cvs.width = 1600; cvs.height = 600;
   const ctx = cvs.getContext("2d");
-  const sky = ctx.createLinearGradient(0, 0, 0, 400);
-  sky.addColorStop(0, "#1b2a55"); sky.addColorStop(0.55, "#3a3468"); sky.addColorStop(1, "#5a4a72");
-  ctx.fillStyle = sky; ctx.fillRect(0, 0, 1024, 400);
+  const W = cvs.width, H = cvs.height;
+
+  const sky = ctx.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, "#0a1230");
+  sky.addColorStop(0.45, "#122043");
+  sky.addColorStop(0.8, "#1c2f52");
+  sky.addColorStop(1, "#2c3d5c");
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
+
   const rnd = mulberry32(7);
-  const buildingColors = ["#0c1020", "#12172c", "#080b16"];
-  let x = 0;
-  while (x < 1024) {
-    const w = 26 + rnd() * 48;
-    const h = 90 + rnd() * 220;
-    ctx.fillStyle = buildingColors[Math.floor(rnd() * buildingColors.length)];
-    ctx.fillRect(x, 400 - h, w, h);
-    // spire on some towers
-    if (rnd() > 0.7) { ctx.fillRect(x + w / 2 - 2, 400 - h - 30, 4, 30); }
-    // lit windows
-    ctx.fillStyle = "rgba(255,208,140,.92)";
-    for (let wy = 400 - h + 10; wy < 392; wy += 13) {
-      for (let wx = x + 4; wx < x + w - 4; wx += 11) {
-        if (rnd() > 0.5) ctx.fillRect(wx, wy, 3.4, 6);
+  const horizon = H * 0.86;
+
+  // hazy far skyline layer — low-contrast silhouettes for depth.
+  const farColors = ["#1a2338", "#161f30", "#202b44"];
+  let fx = 0;
+  while (fx < W) {
+    const w = 20 + rnd() * 40;
+    const h = 40 + rnd() * 90;
+    ctx.fillStyle = farColors[Math.floor(rnd() * farColors.length)];
+    ctx.fillRect(fx, horizon - h, w, h);
+    fx += w + 2 + rnd() * 6;
+  }
+
+  // river strip with warm reflected light.
+  ctx.fillStyle = "#0d1626";
+  ctx.fillRect(0, horizon, W, H - horizon);
+  for (let i = 0; i < 70; i++) {
+    const rx = rnd() * W;
+    const ry = horizon + rnd() * (H - horizon) * 0.7;
+    ctx.fillStyle = `rgba(255,${(190 + rnd() * 40) | 0},${(120 + rnd() * 60) | 0},${(0.15 + rnd() * 0.25).toFixed(2)})`;
+    ctx.fillRect(rx, ry, 2 + rnd() * 3, 1);
+  }
+
+  function windows(x, y, w, h, warmRatio) {
+    for (let wy = y + 6; wy < y + h - 4; wy += 12) {
+      for (let wx = x + 4; wx < x + w - 4; wx += 9) {
+        const r = rnd();
+        if (r < warmRatio) {
+          ctx.fillStyle = r < warmRatio * 0.12 ? "rgba(150,220,255,.85)" : "rgba(255,206,130,.9)";
+          ctx.fillRect(wx, wy, 3.4, 6.5);
+        }
       }
     }
-    x += w + 5 + rnd() * 8;
   }
+
+  // main skyline — varied silhouettes, one signature spired tower.
+  const bodyColors = ["#0c1220", "#0f1626", "#080d18", "#111a2c"];
+  let x = 0, towerPlaced = false;
+  while (x < W) {
+    const w = 34 + rnd() * 70;
+    let h = 110 + rnd() * 240;
+    const placeTower = !towerPlaced && x > W * 0.28 && x < W * 0.42;
+    if (placeTower) { h = H * 0.62; towerPlaced = true; }
+    const bx = x, by = horizon - h;
+    ctx.fillStyle = bodyColors[Math.floor(rnd() * bodyColors.length)];
+
+    if (placeTower) {
+      let ty = by, tw = w;
+      for (let t = 0; t < 4; t++) {
+        const th = h * 0.16;
+        ctx.fillRect(bx + (w - tw) / 2, ty, tw, th);
+        ty += th; tw *= 0.72;
+      }
+      ctx.fillStyle = "rgba(255,230,190,.95)";
+      ctx.fillRect(bx + w / 2 - 1.5, by - 46, 3, 46);
+      ctx.fillStyle = bodyColors[0];
+    } else if (rnd() > 0.6) {
+      ctx.fillRect(bx, by + h * 0.08, w, h * 0.92);
+      ctx.fillRect(bx + w * 0.15, by, w * 0.7, h * 0.1);
+    } else {
+      ctx.fillRect(bx, by, w, h);
+    }
+    if (!placeTower && rnd() > 0.75) { ctx.fillRect(bx + w / 2 - 1, by - 18, 2, 18); }
+
+    windows(bx, by, w, h, 0.4 + rnd() * 0.3);
+    x += w + 3 + rnd() * 7;
+  }
+
   const tex = new THREE.CanvasTexture(cvs);
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
