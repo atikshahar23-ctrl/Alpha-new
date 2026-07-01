@@ -2,6 +2,12 @@ import React, { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
+import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
+import { SSAOPass } from "three/examples/jsm/postprocessing/SSAOPass.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { MessageCircle, Eye, User, Mic } from "lucide-react";
 
 /* ════════════════════════════════════════════════════════════════════
@@ -1231,15 +1237,59 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     const camera = new THREE.PerspectiveCamera(52, width / height, 0.1, 200);
     const renderer = new THREE.WebGLRenderer({ antialias: !isMobile, powerPreference: "high-performance" });
     renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile ? 1.75 : 2.5));
+    // A touch under 2× keeps postprocessing (bloom + SSAO) smooth while still
+    // looking crisp; mobile stays lighter.
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile ? 1.5 : 2));
     renderer.shadowMap.enabled = !isMobile;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     // Cinematic colour: ACES filmic tone-mapping + sRGB output so the neon /
     // emissive materials roll off gracefully instead of clipping to flat white.
+    // (The final tone-map/encode is done by OutputPass at the end of the
+    // post-processing chain below.)
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.12;
+    renderer.toneMappingExposure = 1.1;
     mount.appendChild(renderer.domElement);
+
+    // ── Post-processing chain: RenderPass → SSAO (desktop) → Bloom → Output ──
+    // Bloom gives the neon/monitors a soft realistic glow; SSAO grounds every
+    // object with contact shadowing; OutputPass applies the ACES tone-map +
+    // sRGB at the very end so nothing double-encodes.
+    const composer = new EffectComposer(renderer);
+    composer.setPixelRatio(renderer.getPixelRatio());
+    composer.setSize(width, height);
+    composer.addPass(new RenderPass(scene, camera));
+    let ssaoPass = null;
+    if (!isMobile) {
+      ssaoPass = new SSAOPass(scene, camera, width, height);
+      ssaoPass.kernelRadius = 0.6;
+      ssaoPass.minDistance = 0.0008;
+      ssaoPass.maxDistance = 0.12;
+      composer.addPass(ssaoPass);
+    }
+    const bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), 0.55, 0.7, 0.85);
+    composer.addPass(bloomPass);
+    composer.addPass(new OutputPass());
+
+    // ── Real HDRI environment (free CC0 Poly Haven) for image-based lighting
+    // + realistic reflections on glass/marble/metal, with a hard fallback to
+    // the procedural sky so the scene never breaks if the CDN is unreachable.
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    pmrem.compileEquirectangularShader();
+    new RGBELoader()
+      .setDataType(THREE.HalfFloatType)
+      .load(
+        "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/kloppenheim_06_puresky_2k.hdr",
+        (hdr) => {
+          if (cancelled) { hdr.dispose(); return; }
+          hdr.mapping = THREE.EquirectangularReflectionMapping;
+          const env = pmrem.fromEquirectangular(hdr).texture;
+          scene.environment = env;
+          hdr.dispose(); pmrem.dispose();
+        },
+        undefined,
+        () => { /* offline/blocked — keep the procedural skyline + lights */ }
+      );
 
     // Sky/ground hemisphere fill for a soft, realistic ambient gradient, on
     // top of a low flat ambient so nothing goes fully black.
@@ -1266,11 +1316,38 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     scene.add(fill);
     scene.fog = new THREE.Fog(0x11162a, 18, 38);
 
-    // Floor — warm wood texture instead of flat colour.
+    // Dust motes drifting through the room — a soft round sprite, additively
+    // blended, catching the light for a lived-in, sunbeam feel. Cheap (one
+    // draw call) and animated by slow drift in the loop.
+    const dustCount = isMobile ? 120 : 320;
+    const dustGeo = new THREE.BufferGeometry();
+    const dustPos = new Float32Array(dustCount * 3);
+    const dustPhase = new Float32Array(dustCount);
+    for (let i = 0; i < dustCount; i++) {
+      dustPos[i * 3] = (Math.random() - 0.5) * FLOOR_W;
+      dustPos[i * 3 + 1] = 0.4 + Math.random() * 4.6;
+      dustPos[i * 3 + 2] = (Math.random() - 0.5) * FLOOR_D;
+      dustPhase[i] = Math.random() * Math.PI * 2;
+    }
+    dustGeo.setAttribute("position", new THREE.BufferAttribute(dustPos, 3));
+    const dustCvs = document.createElement("canvas"); dustCvs.width = dustCvs.height = 32;
+    const dctx = dustCvs.getContext("2d");
+    const dgrad = dctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+    dgrad.addColorStop(0, "rgba(255,248,230,0.9)"); dgrad.addColorStop(1, "rgba(255,248,230,0)");
+    dctx.fillStyle = dgrad; dctx.fillRect(0, 0, 32, 32);
+    const dustTex = new THREE.CanvasTexture(dustCvs);
+    const dust = new THREE.Points(dustGeo, new THREE.PointsMaterial({
+      size: 0.06, map: dustTex, transparent: true, opacity: 0.5, depthWrite: false,
+      blending: THREE.AdditiveBlending, sizeAttenuation: true,
+    }));
+    scene.add(dust);
+
+    // Floor — polished hardwood: warm wood texture + low roughness so it
+    // catches soft reflections of the room + HDRI sky (image-based lighting).
     const floorTex = buildFloorTexture();
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(FLOOR_W, FLOOR_D),
-      new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.85 })
+      new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.42, metalness: 0.18, envMapIntensity: 0.7 })
     );
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
@@ -1828,6 +1905,18 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       });
       allHumans.forEach((h) => { if (h.mixer) h.mixer.update(dt); });
 
+      // Slow dust drift — a gentle upward bob + lateral sway per mote.
+      {
+        const t = clock.elapsedTime;
+        const arr = dust.geometry.attributes.position.array;
+        for (let i = 0; i < dustCount; i++) {
+          arr[i * 3 + 1] += Math.sin(t * 0.3 + dustPhase[i]) * dt * 0.06 + dt * 0.02;
+          if (arr[i * 3 + 1] > 5.2) arr[i * 3 + 1] = 0.4;
+          arr[i * 3] += Math.sin(t * 0.2 + dustPhase[i]) * dt * 0.04;
+        }
+        dust.geometry.attributes.position.needsUpdate = true;
+      }
+
       // desk monitor glow follows work status (index i is agent i's home desk,
       // same 1:1 mapping the 2D behaviour scheduler already relies on).
       deskMons.forEach((mat, i) => {
@@ -1867,7 +1956,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         liveRef.current.setTalkTarget(nearest);
       }
 
-      renderer.render(scene, camera);
+      composer.render();
     }
     liveRef.current.setTalkTarget = setTalkTarget;
     animate();
@@ -1876,6 +1965,9 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       const w = mount.clientWidth || window.innerWidth, h = mount.clientHeight || window.innerHeight;
       camera.aspect = w / h; camera.updateProjectionMatrix();
       renderer.setSize(w, h);
+      composer.setSize(w, h);
+      bloomPass.setSize(w, h);
+      if (ssaoPass) ssaoPass.setSize(w, h);
     };
     window.addEventListener("resize", onResize);
 
@@ -1891,6 +1983,8 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
             mats.forEach((m) => { if (m.map) m.map.dispose(); m.dispose(); });
           }
         });
+        try { composer.dispose(); } catch {}
+        if (scene.environment) { scene.environment.dispose(); scene.environment = null; }
         renderer.dispose();
         if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement);
       };
