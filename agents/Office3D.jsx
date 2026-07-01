@@ -25,6 +25,12 @@ const FLOOR_W = 26, FLOOR_D = 22;
 // fixed heading makes every seated worker face their own monitor — value
 // tuned by eye against the desk model's own screen-facing direction.
 const DESK_FACE_ROT = 0;
+// The sit_idle animation's hip position doesn't naturally land on this
+// desk model's built-in chair seat — both tuned by eye (isolated render
+// test) against the actual chair mesh so seated workers look properly
+// settled into it instead of hovering just above/in front of it.
+const SEAT_BACK = -0.12;
+const SEAT_DROP = -0.06;
 
 // User-supplied real desk + laptop models (converted from the Sketchfab OBJ
 // downloads to optimized GLB via obj2gltf + gltf-transform). Loaded once and
@@ -958,7 +964,14 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       const liveChars = liveRef.current.chars || [];
       liveChars.forEach((c) => {
         const h = npc[c.id]; if (!h) return;
-        const [tx, tz] = toWorld(c.x, c.y);
+        const atDesk = c.status === "work";
+        // The sit_idle clip's hip height/depth doesn't line up with this
+        // specific chair model at the desk's exact floor spot — nudge the
+        // walk target itself back and down onto the visible chair seat
+        // (tuned by eye), so there's no separate snap once they arrive.
+        const [rawTx, rawTz] = toWorld(c.x, c.y);
+        const tx = atDesk ? rawTx + Math.sin(DESK_FACE_ROT) * SEAT_BACK : rawTx;
+        const tz = atDesk ? rawTz + Math.cos(DESK_FACE_ROT) * SEAT_BACK : rawTz;
         const dx = tx - h.group.position.x, dz = tz - h.group.position.z;
         const dist = Math.hypot(dx, dz);
         if (dist > 0.01) {
@@ -966,6 +979,8 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           h.group.position.x += dx * step;
           h.group.position.z += dz * step;
         }
+        const targetY = atDesk ? SEAT_DROP : 0;
+        h.group.position.y += (targetY - h.group.position.y) * Math.min(1, dt * 6);
         if (dist > 0.03) {
           const targetRot = Math.atan2(dx, dz);
           let dRot = targetRot - h.group.rotation.y;
@@ -980,7 +995,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           // whatever direction they happened to walk in from — every desk
           // in the grid shares the same unrotated layout, so one fixed
           // heading squares everyone up to their own screen.
-          if (c.status === "work") {
+          if (atDesk) {
             let dRot = DESK_FACE_ROT - h.group.rotation.y;
             while (dRot > Math.PI) dRot -= Math.PI * 2;
             while (dRot < -Math.PI) dRot += Math.PI * 2;
