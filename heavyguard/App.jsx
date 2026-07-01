@@ -5,6 +5,7 @@ import {
   Hash, Wrench, Factory, Tag, DollarSign, Calendar, Phone, User, Timer, Search, Film, Images, Pencil,
   BarChart3, ClipboardList, TrendingUp, Percent, Trophy,
   Users, Car, Scale, Receipt, Boxes, Fuel, Copy, MessageSquare, Bell, CalendarDays, Circle, CalendarClock, ChevronRight, Minus, Shield, Upload, RotateCcw, Settings, Globe, Wallet, TrendingDown, Link2, Share2, Mail, Target, Building2, FileText, Route, Navigation,
+  Megaphone, Eye, ThumbsUp, Video, BarChart2, Bookmark, Sparkles, RefreshCw,
 } from "lucide-react";
 import BULL_LOGO from './heavyguard-logo.png';
 // xlsx is large (~400KB). Load it on demand only when the user actually
@@ -81,6 +82,31 @@ const waLink = (phone, text) => { let p = (phone || "").replace(/\D/g, ""); if (
 // +972 4-374-8824) — used until the user sets their own.
 const DEFAULT_WA_NUMBER = "04-374-8824";
 const fmtClock = (s) => { s = Math.max(0, Math.floor(s)); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60; return (h ? String(h).padStart(2, "0") + ":" : "") + String(m).padStart(2, "0") + ":" + String(sec).padStart(2, "0"); };
+
+/* ---------------- marketing (TikTok/Facebook) — owner-side, free AI ---------------- */
+const FB_URL = "https://www.facebook.com/share/18k1Sn62EM/";
+const TT_URL = "https://www.tiktok.com/@heavy.guard?_r=1&_t=ZS-97cp13u5MKV";
+// Shared free-AI key with the rest of Alpha (localStorage "alpha_groq") — set
+// once in any app's settings and it works everywhere.
+const groqKey = () => { try { return localStorage.getItem("alpha_groq") || ""; } catch { return ""; } };
+const hasAI = () => !!groqKey();
+const AG_GROQ_MODELS = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "gemma2-9b-it", "llama3-70b-8192"];
+async function askGroqChat(system, history, user) {
+  const key = groqKey(); if (!key) throw new Error("NO_KEY");
+  const messages = [{ role: "system", content: system }, ...history.slice(-6), { role: "user", content: user }];
+  let lastCode = 0;
+  for (const model of AG_GROQ_MODELS) {
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+      body: JSON.stringify({ model, messages, temperature: 0.7, max_tokens: 700 }),
+    });
+    if (res.ok) { const d = await res.json(); return d.choices?.[0]?.message?.content?.trim() || ""; }
+    lastCode = res.status;
+    if (res.status === 401 || res.status === 403) break;   // bad key — stop trying
+    // 429/400/404/503 → rotate to the next free model
+  }
+  throw new Error("Groq " + lastCode);
+}
 const fmtDur = (s) => { if (!s && s !== 0) return "—"; const m = Math.round(s / 60); if (m < 60) return m + " דק׳"; const h = Math.floor(m / 60); return `${h}ש׳ ${m % 60}ד׳`; };
 
 function compress(file, maxDim, q) {
@@ -192,7 +218,12 @@ function DateField({ value, onChange, placeholder, clearable }) {
 export default function App() {
   const [ready, setReady] = useState(false);
   const [index, setIndex] = useState([]);
-  const [view, setView] = useState("hub"); // hub | logger | analytics | customers | pricing | vehicle | suppliers | carstock | invoices | samsonix | new | detail
+  // hub | logger | analytics | customers | pricing | vehicle | suppliers | carstock | invoices | samsonix | marketing | new | detail
+  // Deep-link support (e.g. heavyguard.html#marketing) so other apps/dock
+  // shortcuts can jump straight to a tab, same as the CRM's #marketing hash.
+  const [view, setView] = useState(() => {
+    try { const h = (location.hash || "").replace(/^#/, ""); return h === "marketing" ? "marketing" : "hub"; } catch { return "hub"; }
+  });
   const [prevTab, setPrevTab] = useState("logger");
   const [detailId, setDetailId] = useState(null);
   const [resumeId, setResumeId] = useState(null);
@@ -309,6 +340,7 @@ export default function App() {
         {view === "carstock" && <CarStock onBack={() => setView("hub")} showToast={showToast} />}
         {view === "invoices" && <Invoices onBack={() => setView("hub")} showToast={showToast} />}
         {view === "samsonix" && <Samsonix onBack={() => setView("hub")} showToast={showToast} />}
+        {view === "marketing" && <MarketingView onBack={() => setView("hub")} showToast={showToast} />}
         {view === "backup" && <Backup onBack={() => setView("hub")} showToast={showToast} />}
         {view === "finance" && <Finance index={index} onBack={() => setView("hub")} />}
         {view === "leads" && <Leads onBack={() => setView("hub")} showToast={showToast} />}
@@ -364,6 +396,7 @@ function Hub({ index, go, onNew }) {
     { id: "carstock", icon: Boxes, title: "מלאי ברכב", sub: "מלאי נייד" },
     { id: "invoices", icon: Receipt, title: "חשבוניות", sub: "חשבונות ותשלומים" },
     { id: "samsonix", icon: ClipboardList, title: "טפסי סמסוניק", sub: "טופס DVR · שליחה ומעקב" },
+    { id: "marketing", icon: Megaphone, title: "שיווק", sub: "TikTok · Facebook" },
     { id: "leads", icon: Target, title: "ניהול לידים", sub: "6,452 לידים עסקיים", hot: true },
     { id: "backup", icon: Shield, title: "גיבוי ושחזור", sub: "שמירת הנתונים" },
     { id: "settings", icon: Settings, title: "הגדרות עסק", sub: "מיתוג וקישורים" },
@@ -3332,6 +3365,292 @@ function Field({ icon: I, label, children }) {
   return <label className="hg2-field"><div className="hg2-flabel">{I && <I size={15} />} {label}</div>{children}</label>;
 }
 
+/* ============================ Marketing (TikTok/Facebook) ============================ */
+const MKT_KEY = "hg2:marketing";
+const MKT_POSTS_KEY = "hg2:mkt_posts";
+
+const MKT_TYPES = [
+  { id: "edu",  label: "חינוכי / טיפ מקצועי",  emoji: "🎓" },
+  { id: "promo", label: "פרומו / מבצע",          emoji: "🔥" },
+  { id: "demo",  label: "הדגמת מוצר",             emoji: "📸" },
+  { id: "story", label: "סיפור לקוח",             emoji: "⭐" },
+  { id: "season","label": "עונתי / חגים",         emoji: "🗓️" },
+  { id: "humor", label: "הומור / וירלי",          emoji: "😄" },
+];
+
+const MKT_PLATFORM = [
+  { id: "tiktok",    label: "TikTok",    emoji: "🎵", color: "#010101", url: TT_URL },
+  { id: "facebook",  label: "Facebook",  emoji: "📘", color: "#1877F2", url: FB_URL },
+  { id: "both",      label: "שניהם",     emoji: "📡", color: "#6a4fc4", url: null },
+];
+
+function mktSavePost(post) {
+  try {
+    const list = JSON.parse(localStorage.getItem(MKT_POSTS_KEY) || "[]");
+    const exists = list.findIndex((p) => p.id === post.id);
+    if (exists >= 0) list[exists] = post; else list.unshift(post);
+    localStorage.setItem(MKT_POSTS_KEY, JSON.stringify(list.slice(0, 300)));
+  } catch {}
+}
+function mktLoadPosts() {
+  try { return JSON.parse(localStorage.getItem(MKT_POSTS_KEY) || "[]"); } catch { return []; }
+}
+function mktSaveDraft(draft) {
+  try {
+    const list = JSON.parse(localStorage.getItem(MKT_KEY) || "[]");
+    list.unshift({ ...draft, id: uid(), savedAt: todayISO() });
+    localStorage.setItem(MKT_KEY, JSON.stringify(list.slice(0, 50)));
+  } catch {}
+}
+function mktLoadDrafts() {
+  try { return JSON.parse(localStorage.getItem(MKT_KEY) || "[]"); } catch { return []; }
+}
+
+function MarketingView({ onBack, showToast }) {
+  const [platform, setPlatform] = useState("tiktok");
+  const [ctype, setCtype] = useState("edu");
+  const [topic, setTopic] = useState("");
+  const [generated, setGenerated] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [drafts, setDrafts] = useState(() => mktLoadDrafts());
+  const [posts, setPosts] = useState(() => mktLoadPosts());
+  const [postForm, setPostForm] = useState(null); // null or {id,platform,date,text,views,likes,comments}
+  const [viewDraft, setViewDraft] = useState(null);
+  const [tab, setTab] = useState("gen"); // gen | posts | drafts
+
+  const plObj = MKT_PLATFORM.find((p) => p.id === platform) || MKT_PLATFORM[0];
+  const ctObj = MKT_TYPES.find((t) => t.id === ctype) || MKT_TYPES[0];
+
+  const generate = async () => {
+    if (!hasAI()) { showToast("הוסף מפתח Groq בהגדרות Alpha לשימוש ב-AI"); return; }
+    setGenerating(true);
+    setGenerated("");
+    const platLabel = platform === "both" ? "טיקטוק ופייסבוק" : plObj.label;
+    const sys = `אתה מנהל שיווק דיגיטלי מקצועי של Heavy Guard — חברה ישראלית למערכות מיגון ובטיחות לרכבים כבדים: מצלמות DVR, מצלמות רוורס, בלמי בטיחות, איתוראן, מסכי BSD, מצלמות גיבוי לרכבי משא. הדף הוא @heavy.guard בטיקטוק ו-Heavy Guard בפייסבוק. הקהל: בעלי עסקים עם צי רכבים כבדים בישראל. כתוב בעברית מקצועית אבל אנרגטית. בסוף הוסף 5-7 האשטאגים רלוונטיים.`;
+    const prompt = `צור פוסט מקצועי ל${platLabel} בסגנון "${ctObj.label}" ${topic ? `בנושא: ${topic}` : "על מוצרי ושירותי Heavy Guard"}. הפוסט צריך להיות מושך, ממוקד, ולעודד פעולה (לייק/שיתוף/יצירת קשר). כלול: תוכן הפוסט המלא (מתאים לפלטפורמה), המלצה לסוג הוידאו/תמונה שיתלווה, וזמן פרסום אידיאלי.`;
+    try {
+      const res = await askGroqChat(sys, [], prompt);
+      setGenerated(res);
+    } catch {
+      showToast("שגיאה בייצור תוכן — נסה שוב");
+    }
+    setGenerating(false);
+  };
+
+  const saveDraft = () => {
+    if (!generated) return;
+    const d = { platform, ctype, topic, text: generated };
+    mktSaveDraft(d);
+    setDrafts(mktLoadDrafts());
+    showToast("הטיוטה נשמרה ✓");
+  };
+
+  const copyText = (t) => { navigator.clipboard?.writeText(t); showToast("הועתק ✓"); };
+
+  const savePost = (p) => {
+    mktSavePost(p);
+    setPosts(mktLoadPosts());
+    setPostForm(null);
+    showToast("הפוסט נשמר ✓");
+  };
+  const deletePost = (id) => { try { const l = JSON.parse(localStorage.getItem(MKT_POSTS_KEY)||"[]").filter(p=>p.id!==id); localStorage.setItem(MKT_POSTS_KEY,JSON.stringify(l)); setPosts(l); } catch {} };
+  const deleteDraft = (id) => { try { const l = JSON.parse(localStorage.getItem(MKT_KEY)||"[]").filter(d=>d.id!==id); localStorage.setItem(MKT_KEY,JSON.stringify(l)); setDrafts(l); } catch {} };
+
+  const totalViews = posts.reduce((a,p)=>a+(Number(p.views)||0),0);
+  const totalLikes = posts.reduce((a,p)=>a+(Number(p.likes)||0),0);
+
+  return (
+    <div className="hg2-flow">
+      <FlowHead title="שיווק · TikTok ו-Facebook" sub="תוכן, מעקב ופרסום" onBack={onBack} />
+
+      {/* Header */}
+      <div className="mkt-header">
+        <div className="mkt-header-top">
+          <Megaphone size={20} />
+          <span>מנהל שיווק · Heavy Guard</span>
+        </div>
+        <div className="mkt-social-links">
+          <a href={TT_URL} target="_blank" rel="noreferrer" className="mkt-social-btn tiktok">🎵 TikTok @heavy.guard</a>
+          <a href={FB_URL} target="_blank" rel="noreferrer" className="mkt-social-btn facebook">📘 Facebook Heavy Guard</a>
+        </div>
+        {posts.length > 0 && (
+          <div className="mkt-stats-row">
+            <div className="mkt-stat"><Eye size={13}/> {totalViews.toLocaleString()} צפיות</div>
+            <div className="mkt-stat"><ThumbsUp size={13}/> {totalLikes.toLocaleString()} לייקים</div>
+            <div className="mkt-stat"><Video size={13}/> {posts.length} פוסטים</div>
+          </div>
+        )}
+      </div>
+
+      {/* Sub-tabs */}
+      <div className="mkt-tabs">
+        <button className={tab==="gen"?"on":""} onClick={()=>setTab("gen")}><Sparkles size={14}/> מחולל תוכן</button>
+        <button className={tab==="posts"?"on":""} onClick={()=>setTab("posts")}><BarChart2 size={14}/> מעקב פוסטים</button>
+        <button className={tab==="drafts"?"on":""} onClick={()=>setTab("drafts")}><Bookmark size={14}/> טיוטות {drafts.length>0&&<span className="mkt-badge">{drafts.length}</span>}</button>
+      </div>
+
+      {/* ── CONTENT GENERATOR ── */}
+      {tab === "gen" && (
+        <div className="mkt-section">
+          <div className="ag-lbl">פלטפורמה</div>
+          <div className="ag-chips sm">
+            {MKT_PLATFORM.map(p => (
+              <button key={p.id} className={platform===p.id?"on":""} onClick={()=>setPlatform(p.id)}>{p.emoji} {p.label}</button>
+            ))}
+          </div>
+          <div className="ag-lbl">סוג תוכן</div>
+          <div className="ag-chips sm nowrap" style={{flexWrap:"wrap"}}>
+            {MKT_TYPES.map(t => (
+              <button key={t.id} className={ctype===t.id?"on":""} onClick={()=>setCtype(t.id)}>{t.emoji} {t.label}</button>
+            ))}
+          </div>
+          <div className="ag-lbl">נושא ספציפי (אופציונלי)</div>
+          <input className="ag-input" value={topic} onChange={e=>setTopic(e.target.value)} placeholder="למשל: מצלמות DVR לאוטובוסים, מבצע קיץ, תקנות 2026..." />
+          <button className="mkt-gen-btn" onClick={generate} disabled={generating}>
+            {generating ? <><RefreshCw size={15} className="mkt-spin"/> מייצר תוכן...</> : <><Sparkles size={15}/> ייצר פוסט AI</>}
+          </button>
+          {generated && (
+            <div className="mkt-result">
+              <div className="mkt-result-head">
+                <span>{plObj.emoji} {plObj.label} · {ctObj.emoji} {ctObj.label}</span>
+                <div style={{display:"flex",gap:6}}>
+                  <button className="mkt-icon-btn" onClick={()=>copyText(generated)} title="העתק"><Copy size={14}/></button>
+                  <button className="mkt-icon-btn" onClick={saveDraft} title="שמור טיוטה"><Bookmark size={14}/></button>
+                  <button className="mkt-icon-btn" onClick={generate} title="ייצר מחדש"><RefreshCw size={14}/></button>
+                </div>
+              </div>
+              <pre className="mkt-result-text">{generated}</pre>
+              <div className="mkt-result-actions">
+                {plObj.url && <a href={plObj.url} target="_blank" rel="noreferrer" className="mkt-post-link">{plObj.emoji} פתח {plObj.label} לפרסום</a>}
+                {platform==="both" && <>
+                  <a href={TT_URL} target="_blank" rel="noreferrer" className="mkt-post-link">🎵 TikTok</a>
+                  <a href={FB_URL} target="_blank" rel="noreferrer" className="mkt-post-link">📘 Facebook</a>
+                </>}
+              </div>
+            </div>
+          )}
+
+          {/* Weekly content ideas */}
+          <div className="mkt-ideas">
+            <div className="mkt-ideas-title"><CalendarDays size={14}/> רעיונות לשבוע הקרוב</div>
+            {[
+              { day: "ראשון", idea: "🎓 טיפ: איך מצלמות DVR מונעות תאונות? הסבר קצר + סרטון הדגמה" },
+              { day: "שלישי", idea: "📸 לפני/אחרי התקנה — הראה רכב לפני ואחרי התקנת המצלמות" },
+              { day: "חמישי", idea: "⭐ סיפור לקוח: בעל צי שניצל בזכות מצלמת הגיבוי" },
+              { day: "שבת",  idea: "🔥 מבצע סוף שבוע: חבילת DVR + מצלמת BSD במחיר מיוחד" },
+            ].map(({ day, idea }) => (
+              <div key={day} className="mkt-idea-row">
+                <span className="mkt-day">{day}</span>
+                <span>{idea}</span>
+                <button className="mkt-icon-btn" onClick={()=>{ setCtype(idea.includes("טיפ")?"edu":idea.includes("לפני")?"demo":idea.includes("סיפור")?"story":"promo"); setTab("gen"); }} title="ייצר"><Sparkles size={13}/></button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── POST TRACKER ── */}
+      {tab === "posts" && (
+        <div className="mkt-section">
+          <button className="mkt-gen-btn" style={{marginBottom:12}} onClick={()=>setPostForm({id:uid(),platform:"tiktok",date:todayISO(),text:"",views:"",likes:"",comments:""})}>
+            <Plus size={15}/> הוסף פוסט שפורסם
+          </button>
+          {posts.length === 0 && <div className="ag-empty">עדיין לא הוספת פוסטים מעוקבים</div>}
+          {posts.map(p => {
+            const plIcon = p.platform==="facebook"?"📘":"🎵";
+            return (
+              <div key={p.id} className="mkt-post-card">
+                <div className="mkt-post-head">
+                  <span>{plIcon} {p.date}</span>
+                  <div style={{display:"flex",gap:6}}>
+                    <button className="mkt-icon-btn" onClick={()=>setPostForm({...p})} title="עריכה"><Pencil size={13}/></button>
+                    <button className="mkt-icon-btn red" onClick={()=>deletePost(p.id)} title="מחק"><Trash2 size={13}/></button>
+                  </div>
+                </div>
+                {p.text && <div className="mkt-post-preview">{p.text.slice(0,80)}{p.text.length>80?"…":""}</div>}
+                <div className="mkt-post-stats">
+                  {p.views && <span><Eye size={12}/> {Number(p.views).toLocaleString()}</span>}
+                  {p.likes && <span><ThumbsUp size={12}/> {Number(p.likes).toLocaleString()}</span>}
+                  {p.comments && <span>💬 {p.comments}</span>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── DRAFTS ── */}
+      {tab === "drafts" && (
+        <div className="mkt-section">
+          {drafts.length === 0 && <div className="ag-empty">אין טיוטות שמורות — ייצר תוכן ושמור</div>}
+          {drafts.map(d => {
+            const plO = MKT_PLATFORM.find(p=>p.id===d.platform)||MKT_PLATFORM[0];
+            const ctO = MKT_TYPES.find(t=>t.id===d.ctype)||MKT_TYPES[0];
+            return (
+              <div key={d.id} className="mkt-draft-card" onClick={()=>setViewDraft(d)}>
+                <div className="mkt-post-head">
+                  <span>{plO.emoji} {plO.label} · {ctO.emoji} {ctO.label}</span>
+                  <div style={{display:"flex",gap:6}} onClick={e=>e.stopPropagation()}>
+                    <button className="mkt-icon-btn" onClick={()=>copyText(d.text)} title="העתק"><Copy size={13}/></button>
+                    <button className="mkt-icon-btn red" onClick={()=>deleteDraft(d.id)} title="מחק"><Trash2 size={13}/></button>
+                  </div>
+                </div>
+                <div className="mkt-post-preview">{(d.text||"").slice(0,90)}{(d.text||"").length>90?"…":""}</div>
+                <div className="mkt-post-stats"><CalendarDays size={12}/> {d.savedAt}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Post form modal */}
+      {postForm && (
+        <div className="ag-modal" onClick={e=>{if(e.target===e.currentTarget)setPostForm(null)}}>
+          <div className="ag-sheet sm">
+            <div className="ag-sheet-head"><b>{postForm.text?"עריכת פוסט":"הוספת פוסט"}</b><button onClick={()=>setPostForm(null)}><X size={20}/></button></div>
+            <div className="ag-sheet-body">
+              <label className="ag-lbl">פלטפורמה</label>
+              <div className="ag-chips sm">
+                <button className={postForm.platform==="tiktok"?"on":""} onClick={()=>setPostForm(p=>({...p,platform:"tiktok"}))}>🎵 TikTok</button>
+                <button className={postForm.platform==="facebook"?"on":""} onClick={()=>setPostForm(p=>({...p,platform:"facebook"}))}>📘 Facebook</button>
+              </div>
+              <label className="ag-lbl">תאריך פרסום</label>
+              <input className="ag-input" type="date" value={postForm.date} onChange={e=>setPostForm(p=>({...p,date:e.target.value}))} />
+              <label className="ag-lbl">תוכן הפוסט (קצר)</label>
+              <textarea className="ag-textarea" rows={3} value={postForm.text} onChange={e=>setPostForm(p=>({...p,text:e.target.value}))} placeholder="כותרת הפוסט / נושא..."/>
+              <div className="ag-row">
+                <div style={{flex:1}}><label className="ag-lbl"><Eye size={12}/> צפיות</label><input className="ag-input" type="number" value={postForm.views} onChange={e=>setPostForm(p=>({...p,views:e.target.value}))} placeholder="0" dir="ltr"/></div>
+                <div style={{flex:1}}><label className="ag-lbl"><ThumbsUp size={12}/> לייקים</label><input className="ag-input" type="number" value={postForm.likes} onChange={e=>setPostForm(p=>({...p,likes:e.target.value}))} placeholder="0" dir="ltr"/></div>
+                <div style={{flex:1}}><label className="ag-lbl">💬 תגובות</label><input className="ag-input" type="number" value={postForm.comments} onChange={e=>setPostForm(p=>({...p,comments:e.target.value}))} placeholder="0" dir="ltr"/></div>
+              </div>
+            </div>
+            <div className="ag-sheet-foot">
+              <button className="ag-btn ghost" onClick={()=>setPostForm(null)}>ביטול</button>
+              <button className="ag-btn" onClick={()=>savePost(postForm)}>שמור</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Draft viewer modal */}
+      {viewDraft && (
+        <div className="ag-modal" onClick={e=>{if(e.target===e.currentTarget)setViewDraft(null)}}>
+          <div className="ag-sheet">
+            <div className="ag-sheet-head"><b>טיוטה שמורה</b><button onClick={()=>setViewDraft(null)}><X size={20}/></button></div>
+            <div className="ag-sheet-body">
+              <pre className="mkt-result-text" style={{margin:0}}>{viewDraft.text}</pre>
+            </div>
+            <div className="ag-sheet-foot">
+              <button className="ag-btn ghost" onClick={()=>copyText(viewDraft.text)}><Copy size={14}/> העתק</button>
+              <button className="ag-btn" onClick={()=>setViewDraft(null)}>סגור</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ============================ styles ============================ */
 function Styles() {
   return <style>{`
@@ -4064,5 +4383,71 @@ function Styles() {
 
 .hg2-modal{backdrop-filter:blur(10px)}
 .hg2-confirm{backdrop-filter:blur(14px)}
+
+/* ── Marketing (TikTok/Facebook) — shared generic controls it depends on ── */
+.ag-chips{display:flex;gap:7px;overflow-x:auto;padding-bottom:8px;margin-bottom:6px;scrollbar-width:none}
+.ag-chips::-webkit-scrollbar{display:none}
+.ag-chips.nowrap{flex-wrap:wrap}
+.ag-chips button{flex-shrink:0;background:var(--s8);border:1px solid var(--s7);color:var(--s4);border-radius:20px;padding:7px 15px;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap}
+.ag-chips button.on{background:color-mix(in srgb,var(--gold) 16%,transparent);border-color:var(--gold);color:var(--gold)}
+.ag-chips.sm button{padding:6px 12px;font-size:12px}
+.ag-textarea,.ag-input,.ag-select{width:100%;background:var(--s8);border:1px solid var(--s7);color:var(--silver);border-radius:10px;padding:10px 12px;font-family:inherit;font-size:14px;outline:none}
+.ag-textarea{resize:vertical}
+.ag-btn{background:linear-gradient(135deg,var(--champ),var(--gold) 50%,var(--gold2));color:#241A06;border:none;border-radius:10px;padding:11px 16px;font-family:'Rubik';font-weight:900;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;margin-top:9px}
+.ag-btn.ghost{background:var(--s8);border:1px solid var(--s7);color:var(--silver)}
+.ag-row{display:flex;gap:8px;margin-top:8px}
+.ag-row .ag-btn{flex:1;margin-top:0}
+.ag-empty{text-align:center;padding:34px 16px;color:var(--s4)}
+.ag-modal{position:fixed;inset:0;background:rgba(0,0,10,.8);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);display:flex;align-items:flex-end;justify-content:center;z-index:200}
+.ag-sheet{background:linear-gradient(160deg,rgba(20,26,38,.98),rgba(10,14,22,.98));border:1px solid var(--s7);border-radius:18px 18px 0 0;width:100%;max-width:560px;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 -16px 60px rgba(0,0,0,.6)}
+.ag-sheet.sm{max-height:80vh}
+.ag-sheet-head{display:flex;align-items:center;justify-content:space-between;padding:15px 16px;border-bottom:1px solid var(--s7)}
+.ag-sheet-head b{font-family:'Rubik';font-weight:900;font-size:16px}
+.ag-sheet-head button{background:none;border:none;color:var(--s4);cursor:pointer;display:flex}
+.ag-sheet-body{padding:14px 16px;overflow-y:auto}
+.ag-sheet-foot{display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--s7)}
+.ag-sheet-foot .ag-btn{flex:1;margin-top:0}
+.ag-lbl{display:block;font-size:12px;color:var(--s4);margin:11px 0 5px;font-weight:700}
+.ag-lbl:first-child{margin-top:0}
+@media(min-width:640px){.ag-modal{align-items:center}.ag-sheet{border-radius:18px}}
+
+.mkt-header{background:var(--s9);border:1px solid var(--s7);border-radius:14px;padding:14px;margin-bottom:14px}
+.mkt-header-top{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;margin-bottom:10px;color:var(--amber)}
+.mkt-social-links{display:flex;gap:8px;flex-wrap:wrap}
+.mkt-social-btn{padding:7px 13px;border-radius:20px;font-size:12.5px;font-weight:600;text-decoration:none;color:#fff;display:inline-flex;align-items:center;gap:5px}
+.mkt-social-btn.tiktok{background:#010101}
+.mkt-social-btn.facebook{background:#1877F2}
+.mkt-stats-row{display:flex;gap:12px;margin-top:10px;flex-wrap:wrap}
+.mkt-stat{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--s4);background:var(--s8);padding:4px 9px;border-radius:20px}
+.mkt-tabs{display:flex;gap:6px;margin-bottom:12px;background:var(--s8);border-radius:12px;padding:4px}
+.mkt-tabs button{flex:1;padding:7px 4px;border-radius:9px;font-size:12px;display:flex;align-items:center;justify-content:center;gap:5px;border:none;background:none;color:var(--s4);cursor:pointer;font-family:inherit}
+.mkt-tabs button.on{background:var(--s9);color:var(--gold);font-weight:700;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+.mkt-badge{background:var(--gold);color:#1A1206;border-radius:10px;font-size:10px;padding:1px 5px;margin-right:2px;font-weight:900}
+.mkt-section{display:flex;flex-direction:column;gap:0}
+.mkt-gen-btn{display:flex;align-items:center;justify-content:center;gap:7px;background:linear-gradient(135deg,var(--gold),var(--gold2));color:#1A1206;border:none;border-radius:12px;padding:12px;font-size:14px;font-weight:900;width:100%;cursor:pointer;margin-top:10px;transition:.15s;font-family:'Rubik';box-shadow:0 4px 16px rgba(228,188,99,.3)}
+.mkt-gen-btn:disabled{opacity:.6;cursor:not-allowed}
+.mkt-gen-btn:not(:disabled):hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(228,188,99,.4)}
+.mkt-result{background:var(--s8);border:1px solid var(--s7);border-radius:13px;margin-top:12px;overflow:hidden}
+.mkt-result-head{display:flex;justify-content:space-between;align-items:center;padding:9px 12px;background:var(--s9);border-bottom:1px solid var(--s7);font-size:12.5px;font-weight:600;color:var(--s4)}
+.mkt-result-text{padding:12px;font-size:13px;line-height:1.7;white-space:pre-wrap;word-break:break-word;margin:0;font-family:inherit;color:var(--silver)}
+.mkt-result-actions{display:flex;gap:8px;padding:9px 12px;border-top:1px solid var(--s7);flex-wrap:wrap}
+.mkt-post-link{background:var(--gold);color:#1A1206;border-radius:20px;padding:6px 13px;font-size:12px;font-weight:700;text-decoration:none;display:inline-flex;align-items:center;gap:4px}
+.mkt-icon-btn{background:var(--s8);border:1px solid var(--s7);border-radius:7px;padding:5px 7px;cursor:pointer;display:inline-flex;align-items:center;color:var(--s4);transition:.1s}
+.mkt-icon-btn:hover{background:var(--s7);color:var(--silver)}
+.mkt-icon-btn.red:hover{background:rgba(255,92,80,.15);color:var(--red);border-color:var(--red)}
+.mkt-ideas{background:var(--s9);border:1px solid var(--s7);border-radius:13px;margin-top:14px;overflow:hidden}
+.mkt-ideas-title{display:flex;align-items:center;gap:6px;padding:9px 12px;font-size:12.5px;font-weight:700;border-bottom:1px solid var(--s7)}
+.mkt-idea-row{display:flex;align-items:center;gap:8px;padding:8px 12px;font-size:12.5px;border-bottom:1px solid var(--s7)}
+.mkt-idea-row:last-child{border-bottom:none}
+.mkt-day{font-weight:700;color:var(--gold);min-width:40px;font-size:11.5px}
+.mkt-post-card{background:var(--s9);border:1px solid var(--s7);border-radius:12px;padding:11px 13px;margin-bottom:8px}
+.mkt-draft-card{background:var(--s9);border:1px solid var(--s7);border-radius:12px;padding:11px 13px;margin-bottom:8px;cursor:pointer;transition:.1s}
+.mkt-draft-card:hover{border-color:var(--gold)}
+.mkt-post-head{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--s4);margin-bottom:5px}
+.mkt-post-preview{font-size:12.5px;color:var(--silver);margin:3px 0 5px;line-height:1.5}
+.mkt-post-stats{display:flex;gap:10px;font-size:11.5px;color:var(--s4);align-items:center}
+.mkt-post-stats span{display:flex;align-items:center;gap:3px}
+@keyframes mkt-spin{to{transform:rotate(360deg)}}
+.mkt-spin{animation:mkt-spin .7s linear infinite}
 `}</style>;
 }
