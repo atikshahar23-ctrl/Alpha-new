@@ -263,6 +263,29 @@ export function buildTiggo7(): THREE.Group {
   return car;
 }
 
+// The owner's real Israeli plate, front and rear: yellow EU-style plate,
+// blue country band, 396-04-704.
+function israeliPlateTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 64;
+  const x = c.getContext('2d')!;
+  x.fillStyle = '#111'; x.fillRect(0, 0, 256, 64);
+  x.fillStyle = '#ffb700';
+  x.beginPath(); (x as any).roundRect(2, 2, 252, 60, 7); x.fill();
+  x.fillStyle = '#1a3fae';
+  x.beginPath(); (x as any).roundRect(2, 2, 34, 60, 7); x.fill();
+  x.fillRect(20, 2, 16, 60);
+  x.fillStyle = '#fff'; x.font = '700 13px system-ui, sans-serif';
+  x.textAlign = 'center'; x.textBaseline = 'middle';
+  x.fillText('IL', 19, 50);
+  x.fillText('✡', 19, 22);
+  x.fillStyle = '#111'; x.font = '900 36px system-ui, sans-serif';
+  x.fillText('396-04-704', 146, 35);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
 export function mountTiggo3D(container: HTMLElement): () => void {
   const W = container.clientWidth || 240;
   const H = container.clientHeight || 150;
@@ -287,15 +310,102 @@ export function mountTiggo3D(container: HTMLElement): () => void {
   rim.position.set(-5, 3, -4);
   scene.add(rim);
 
-  const car = buildTiggo7();
+  // The turntable group — the real GLB (the owner's uploaded Tiggo 7 model,
+  // re-materialed white with all its trim) swaps in when it finishes
+  // loading; the procedural stand-in shows instantly and is the permanent
+  // fallback if the download fails.
+  let car: THREE.Object3D = buildTiggo7();
   scene.add(car);
+  (async () => {
+    try {
+      const [{ GLTFLoader }, { MeshoptDecoder }] = await Promise.all([
+        import('three/examples/jsm/loaders/GLTFLoader.js'),
+        import('three/examples/jsm/libs/meshopt_decoder.module.js'),
+      ]);
+      const loader = new GLTFLoader();
+      loader.setMeshoptDecoder(MeshoptDecoder);
+      const base = (import.meta as any).env?.BASE_URL || '/';
+      loader.load(base + 'office-models/tiggo7.glb', (g) => {
+        const real = g.scene;
+        // Model is in mm with the front toward -x; normalise to the same
+        // world the stand-in used: ~4.6 units long, grounded at y=0,
+        // centred, nose toward +z.
+        const box = new THREE.Box3().setFromObject(real);
+        const size = box.getSize(new THREE.Vector3());
+        const ctr = box.getCenter(new THREE.Vector3());
+        const s = 4.6 / Math.max(size.x, size.z);
+        const wrap = new THREE.Group();
+        real.position.set(-ctr.x, -box.min.y, -ctr.z);
+        wrap.add(real);
+        wrap.scale.setScalar(s);
+        wrap.rotation.y = -Math.PI / 2; // front (-x in model space) → +z
+
+        // Children added to `real` live in raw model space (mm, z-centre at
+        // ~1800) — the recentering shift on `real.position` moves them along
+        // with the body, so positions here use the raw bbox coordinates.
+        const plateTex = israeliPlateTexture();
+        const plateMat = new THREE.MeshBasicMaterial({ map: plateTex });
+        const front = new THREE.Mesh(new THREE.PlaneGeometry(520, 130), plateMat);
+        front.position.set(box.min.x - 8, 620, ctr.z);
+        front.rotation.y = -Math.PI / 2;
+        real.add(front);
+        const rear = new THREE.Mesh(new THREE.PlaneGeometry(520, 130), plateMat);
+        rear.position.set(box.max.x + 8, 980, ctr.z);
+        rear.rotation.y = Math.PI / 2;
+        real.add(rear);
+
+        // Heavy Guard decal on the fuel-door (rear-right fender).
+        const decal = new THREE.Mesh(
+          new THREE.PlaneGeometry(240, 240),
+          new THREE.MeshBasicMaterial({ map: hgLogoTexture(), transparent: true })
+        );
+        decal.position.set(box.max.x - 1050, 1010, box.max.z + 6);
+        real.add(decal);
+
+        // Ground shadow under the real car too (length runs along model x).
+        const shadow = new THREE.Mesh(
+          new THREE.PlaneGeometry(5.6 / s, 2.6 / s),
+          new THREE.MeshBasicMaterial({ map: shadowTexture(), transparent: true, depthWrite: false })
+        );
+        shadow.rotation.x = -Math.PI / 2;
+        shadow.position.set(ctr.x, box.min.y + 2, ctr.z);
+        real.add(shadow);
+
+        const spin = car.rotation.y;
+        scene.remove(car);
+        car = wrap;
+        car.rotation.y = spin;
+        scene.add(car);
+      }, undefined, () => { /* keep the procedural fallback */ });
+    } catch { /* dynamic import failed — fallback stays */ }
+  })();
+
+  // Drag to spin the car yourself; the slow showroom turntable resumes a
+  // couple of seconds after you let go.
+  let dragging = false, lastX = 0, lastDragAt = 0;
+  const el = renderer.domElement;
+  el.style.touchAction = 'none';
+  el.style.cursor = 'grab';
+  const onDown = (e: PointerEvent) => { dragging = true; lastX = e.clientX; el.setPointerCapture(e.pointerId); el.style.cursor = 'grabbing'; };
+  const onMove = (e: PointerEvent) => {
+    if (!dragging) return;
+    car.rotation.y += (e.clientX - lastX) * 0.012;
+    lastX = e.clientX;
+    lastDragAt = performance.now();
+  };
+  const onUp = (e: PointerEvent) => { dragging = false; lastDragAt = performance.now(); try { el.releasePointerCapture(e.pointerId); } catch {} el.style.cursor = 'grab'; };
+  el.addEventListener('pointerdown', onDown);
+  el.addEventListener('pointermove', onMove);
+  el.addEventListener('pointerup', onUp);
+  el.addEventListener('pointercancel', onUp);
 
   let raf = 0;
   const clock = new THREE.Clock();
   const tick = () => {
     raf = requestAnimationFrame(tick);
+    const dt = clock.getDelta();
     if (document.hidden) return;
-    car.rotation.y += clock.getDelta() * 0.45; // slow showroom turntable
+    if (!dragging && performance.now() - lastDragAt > 2500) car.rotation.y += dt * 0.45;
     renderer.render(scene, camera);
   };
   tick();
@@ -310,6 +420,10 @@ export function mountTiggo3D(container: HTMLElement): () => void {
   return () => {
     cancelAnimationFrame(raf);
     window.removeEventListener('resize', onResize);
+    el.removeEventListener('pointerdown', onDown);
+    el.removeEventListener('pointermove', onMove);
+    el.removeEventListener('pointerup', onUp);
+    el.removeEventListener('pointercancel', onUp);
     scene.traverse((o: any) => {
       if (o.geometry) o.geometry.dispose();
       if (o.material) { const ms = Array.isArray(o.material) ? o.material : [o.material]; ms.forEach((m: any) => { if (m.map) m.map.dispose(); m.dispose(); }); }
