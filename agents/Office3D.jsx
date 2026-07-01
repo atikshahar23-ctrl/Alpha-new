@@ -71,6 +71,15 @@ const BIZ_OFFSET = [0, 0.0196, -0.1019];
 // without the animation itself also sliding the mesh forward.
 const CLIP = { idle: "man_idle", walk: "man_walk_in_place", sit: "man_sit_idle" };
 
+// User-supplied "Office Drink Machines" break-room unit (FBX → GLB) — a row of
+// three vending machines + a water cooler, ~4.86×1.80×0.76 raw with feet at
+// y=0. The source shipped no textures (plain boxes), so each named mesh is
+// re-skinned in code (colour-coded cabinets + a glowing lit front display) to
+// read as a real break-room. Scaled so a machine stands ~1.4 world tall, on par
+// with a standing agent.
+const DRINKS_MODEL_URL = "office-models/drink_machines.glb";
+const DRINKS_SCALE = 0.78;
+
 // User-supplied real furniture pack (40 named pieces in one GLB, a home/
 // office asset set) — only the pieces that make sense in an office are used
 // (lounge, break-room, storage); measuring each named node's own local bbox
@@ -611,6 +620,70 @@ function buildPlant() {
   return g;
 }
 
+// User's break-room drink machines. The GLB is untextured boxes, so we clone
+// it, scale it to office units and re-skin each named mesh: the three vending
+// machines get rich colour-coded cabinets with a soft emissive glow + a bright
+// lit "display" panel on the front face, and the water cooler gets translucent
+// blue plastic. `frontSign` faces the display strips toward +Z (local); the
+// caller rotates the whole group so the fronts face into the room.
+function buildBreakRoom(template) {
+  const g = new THREE.Group();
+  if (!template) return { group: g, footprint: { w: 3.8, d: 0.7 } };
+  const model = template.clone(true);
+  model.scale.setScalar(DRINKS_SCALE);
+
+  // Cabinet colours per machine (soda-red, water-blue, snack-teal) + cooler.
+  const skins = {
+    "Vending_machine_01": { color: 0xc0392b, emissive: 0x2a0806 },
+    "Vending_machine_02": { color: 0x1f6fb2, emissive: 0x05192a },
+    "Vending_machine_03": { color: 0x16826b, emissive: 0x042019 },
+  };
+  const box = new THREE.Box3();
+  model.traverse((o) => {
+    if (!o.isMesh) return;
+    o.castShadow = true; o.receiveShadow = true;
+    o.frustumCulled = false;
+    const name = o.name || o.parent?.name || "";
+    if (/water\s*cooler/i.test(name)) {
+      o.material = new THREE.MeshStandardMaterial({
+        color: 0xdfefff, roughness: 0.25, metalness: 0.1,
+        transparent: true, opacity: 0.85, emissive: 0x123a5a, emissiveIntensity: 0.25,
+      });
+      return;
+    }
+    const skin = skins[name] || { color: 0x3a3f4a, emissive: 0x0a0c10 };
+    o.material = new THREE.MeshStandardMaterial({
+      color: skin.color, roughness: 0.45, metalness: 0.35,
+      emissive: skin.emissive, emissiveIntensity: 0.5,
+    });
+    // A bright "display" panel across the front of each vending cabinet. The
+    // box is already in group-local (post-scale) space, so its dimensions map
+    // straight onto the group's own coordinates — no extra scale factor.
+    box.setFromObject(o);
+    const size = new THREE.Vector3(); box.getSize(size);
+    const center = new THREE.Vector3(); box.getCenter(center);
+    const panel = new THREE.Mesh(
+      new THREE.PlaneGeometry(size.x * 0.72, size.y * 0.6),
+      new THREE.MeshBasicMaterial({ color: 0xfff2c4, transparent: true, opacity: 0.92 })
+    );
+    panel.position.set(center.x, center.y + 0.06, box.max.z + 0.01);
+    g.add(panel);
+    const glow = new THREE.Mesh(
+      new THREE.PlaneGeometry(size.x * 0.86, size.y * 0.94),
+      new THREE.MeshBasicMaterial({ color: skin.color, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending })
+    );
+    glow.position.set(center.x, center.y, box.max.z + 0.005);
+    g.add(glow);
+  });
+  g.add(model);
+
+  // A soft cyan spill light so the break-room corner reads as its own lit zone.
+  const light = new THREE.PointLight(0x9fdcff, 0.4, 9);
+  light.position.set(0, 2.2, 0.6);
+  g.add(light);
+  return { group: g, footprint: { w: 4.86 * DRINKS_SCALE, d: 0.76 * DRINKS_SCALE } };
+}
+
 function buildCouch() {
   const g = new THREE.Group();
   const mat = new THREE.MeshStandardMaterial({ color: 0x4a3a5a, roughness: 0.75 });
@@ -922,12 +995,13 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     let cleanupFn = () => {};
     (async () => {
       const base = import.meta.env.BASE_URL || "/";
-      const [deskTemplate, laptopTemplate, charGltf, furnitureTemplate, bizGltf] = await Promise.all([
+      const [deskTemplate, laptopTemplate, charGltf, furnitureTemplate, bizGltf, drinksTemplate] = await Promise.all([
         loadGltf(base + DESK_MODEL_URL).catch((e) => { console.error("[office3d] desk model failed to load", e); return null; }),
         loadGltf(base + LAPTOP_MODEL_URL).catch((e) => { console.error("[office3d] laptop model failed to load", e); return null; }),
         loadGltfFull(base + CHAR_MODEL_URL).catch((e) => { console.error("[office3d] character model failed to load", e); return null; }),
         loadGltf(base + FURNITURE_MODEL_URL).catch((e) => { console.error("[office3d] furniture model failed to load", e); return null; }),
         loadGltf(base + BIZ_MODEL_URL).catch((e) => { console.error("[office3d] businessman model failed to load", e); return null; }),
+        loadGltf(base + DRINKS_MODEL_URL).catch((e) => { console.error("[office3d] drink machines model failed to load", e); return null; }),
       ]);
       if (cancelled) return;
       const charTemplate = charGltf ? charGltf.scene : null;
@@ -1236,6 +1310,22 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     ownerOffice.obstacles.forEach((o) => obstacles.push({ x: OFFICE_ORIGIN.x + o.x, z: OFFICE_ORIGIN.z + o.z, r: o.r }));
     if (ownerOffice.deskMon) deskMons.push(ownerOffice.deskMon);
     if (ownerOffice.deskHolo) deskHolos.push(ownerOffice.deskHolo);
+
+    // Break-room drink machines (user asset) — flush along the west wall in the
+    // open stretch between the ALPHA HQ sign and the TRADE TV, rotated so the
+    // lit fronts face east into the room. Collision circles run along its
+    // length so agents/player don't walk through it.
+    {
+      const brk = buildBreakRoom(drinksTemplate);
+      const BRK = { x: -12.5, z: 4.2 };
+      brk.group.position.set(BRK.x, 0, BRK.z);
+      brk.group.rotation.y = Math.PI / 2; // fronts (local +Z) → east (+X)
+      scene.add(brk.group);
+      const half = brk.footprint.w / 2;
+      [-half + 0.5, 0, half - 0.5].forEach((dz) =>
+        obstacles.push({ x: BRK.x + 0.35, z: BRK.z + dz, r: 0.6 })
+      );
+    }
 
     // ── Gaming-den ambiance ──────────────────────────────────────────────
     // Neon accent floor strips down the main aisles + two big neon wall signs
