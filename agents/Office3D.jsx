@@ -776,10 +776,16 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       placeFurniturePiece(scene, furnitureTemplate, "coffee_table_001", -9.5, 0, 7.1, 0);
       placeFurniturePiece(scene, furnitureTemplate, "lamp_002", -7.3, 0, 9.3, 0);
       placeFurniturePiece(scene, furnitureTemplate, "flower_001", -11.9, 0, 8.9, 0);
-      // Storage corner (south-east) — closet, dresser, a stacked box.
+      // A little "treat/surprise" — an air-hockey table between the lounge
+      // and dining room, for the cozy-office-with-perks feel.
+      placeFurniturePiece(scene, furnitureTemplate, "air_hockey_001", -3.5, 0, 8.2, Math.PI / 2);
+      // Storage corner (south-east) — closet, dresser, a stacked box, and a
+      // couple of toys tucked by it for a lived-in, playful touch.
       placeFurniturePiece(scene, furnitureTemplate, "closet_001", 9.0, 0, -9.5, 0);
       placeFurniturePiece(scene, furnitureTemplate, "dresser_001", 10.6, 0, -9.5, 0);
       placeFurniturePiece(scene, furnitureTemplate, "box_001", 11.6, 0, -9.2, 0);
+      placeFurniturePiece(scene, furnitureTemplate, "toy_001", 8.3, 0, -8.6, 0.6);
+      placeFurniturePiece(scene, furnitureTemplate, "toy_002", 8.7, 0, -8.2, -0.4);
       // Break-room kitchenette (east wall) — a counter with small appliances
       // and clutter, plus a fridge and sink, near the existing dining tables.
       placeFurniturePiece(scene, furnitureTemplate, "kitchen_table_001", 12.1, 0, 3.7, Math.PI / 2);
