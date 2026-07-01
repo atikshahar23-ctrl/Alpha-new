@@ -2333,12 +2333,19 @@ function StyleTag() {
 .off3-mic.thinking{opacity:.7}
 .off3-mic.speaking{box-shadow:0 0 0 4px color-mix(in srgb,var(--c) 40%,transparent),0 8px 26px color-mix(in srgb,var(--c) 55%,transparent)}
 @keyframes off3MicPulse{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--c) 55%,transparent)}50%{box-shadow:0 0 0 14px transparent}}
-/* Live conversation subtitle above the talk bar. */
+.off3-mute{flex-shrink:0;width:44px;height:44px;border-radius:50%;border:1px solid color-mix(in srgb,var(--c) 50%,transparent);cursor:pointer;
+  display:flex;align-items:center;justify-content:center;background:rgba(6,9,18,.75);color:var(--c);animation:acRise .15s ease both}
+.off3-mute:active{transform:scale(.92)}
+/* Live conversation subtitle above the talk bar — sticky, stays until the
+   user taps the X (used to auto-clear the moment you stepped away). */
 .off3-subtitle{position:absolute;left:50%;bottom:92px;transform:translateX(-50%);z-index:3;max-width:min(560px,86vw);
   display:flex;flex-direction:column;gap:2px;text-align:center;background:rgba(6,9,18,.82);border:1px solid rgba(255,255,255,.12);
-  border-radius:16px;padding:10px 18px;backdrop-filter:blur(10px);animation:acRise .18s ease both}
+  border-radius:16px;padding:10px 34px 10px 18px;backdrop-filter:blur(10px);animation:acRise .18s ease both}
 .off3-subtitle b{font-family:'Rubik';font-weight:900;font-size:13px}
 .off3-subtitle span{font-size:14.5px;color:#eaf1ff;line-height:1.45}
+.off3-subtitle-x{position:absolute;top:8px;left:8px;background:rgba(255,255,255,.08);border:none;border-radius:50%;
+  width:22px;height:22px;display:flex;align-items:center;justify-content:center;color:#aebde0;cursor:pointer}
+.off3-subtitle-x:hover{color:#fff;background:rgba(255,255,255,.16)}
 /* Floating joystick — appears centred on wherever you first touch/click. */
 .off3-joy.floating{position:absolute;z-index:4;width:128px;height:128px;margin:-64px 0 0 -64px;border-radius:50%;
   background:radial-gradient(circle,rgba(255,255,255,.1),rgba(255,255,255,.03));
@@ -2350,6 +2357,22 @@ function StyleTag() {
   display:flex;align-items:center;justify-content:center;background:rgba(6,9,18,.72);border:1px solid rgba(110,170,240,.3);
   color:#eaf1ff;cursor:pointer;backdrop-filter:blur(8px)}
 .off3-view-toggle:hover{border-color:var(--gold);color:var(--gold)}
+.off3-settings-toggle{position:absolute;top:10px;right:56px;z-index:3;width:38px;height:38px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;background:rgba(6,9,18,.72);border:1px solid rgba(110,170,240,.3);
+  color:#eaf1ff;cursor:pointer;backdrop-filter:blur(8px)}
+.off3-settings-toggle:hover{border-color:var(--gold);color:var(--gold)}
+.off3-settings{position:absolute;top:56px;right:10px;z-index:60;width:min(300px,86vw);background:rgba(8,11,22,.94);
+  backdrop-filter:blur(16px);border:1px solid rgba(110,170,240,.22);border-radius:16px;box-shadow:0 18px 44px rgba(0,0,0,.55);
+  animation:acRise .2s ease both}
+.off3-settings-head{display:flex;align-items:center;font-size:12.5px;font-weight:800;color:#eaf1ff;padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.08)}
+.off3-settings-head button{margin-right:auto;background:none;border:none;color:#7e90b8;cursor:pointer;display:flex}
+.off3-settings-row{width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;background:none;border:none;
+  border-bottom:1px solid rgba(255,255,255,.06);color:#cfd8e6;padding:11px 14px;font-family:inherit;font-size:12px;cursor:pointer;text-align:right}
+.off3-settings-row:hover{background:rgba(255,255,255,.04)}
+.off3-settings-row span{display:flex;align-items:center;gap:7px}
+.off3-settings-row b{font-size:11px;font-weight:800;color:#7e90b8}
+.off3-settings-row b.on{color:#3FD79A}
+.off3-settings-note{font-size:10.5px;line-height:1.6;color:#7e90b8;padding:10px 14px 14px}
 .off-floor{flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(2,1fr);gap:12px;padding:14px 14px 28px;align-content:start}
 @media(min-width:680px){.off-floor{grid-template-columns:repeat(3,1fr)}}
 @media(min-width:1000px){.off-floor{grid-template-columns:repeat(4,1fr)}}
