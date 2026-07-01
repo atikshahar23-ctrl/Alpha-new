@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
 import { MessageCircle, Eye, User } from "lucide-react";
 
 /* ════════════════════════════════════════════════════════════════════
@@ -35,9 +36,30 @@ const DESK_CENTER_OFFSET = [-0.813 * DESK_SCALE, 0, 0];
 const LAPTOP_SCALE = 0.09;
 const LAPTOP_CENTER_OFFSET = [0.032 * LAPTOP_SCALE, 0, -0.001 * LAPTOP_SCALE];
 
+// User-supplied rigged "Casual Male" character (FBX → GLB, 15 baked
+// animation clips) — temporarily standing in for every agent + the player
+// per the owner's request. Bbox measured directly off the model: size
+// 1.696×1.888×0.383, centre 0,0.940,-0.019 (feet already sit at y≈0). Scale
+// chosen so the total height roughly matches the old procedural figure
+// (~1.35 world units) that the desk/camera/TALK_DIST constants were tuned for.
+const CHAR_MODEL_URL = "office-models/casual_male.glb";
+const CHAR_SCALE = 0.72;
+const CHAR_CENTER_OFFSET = [-0.0 * CHAR_SCALE, 0, 0.019 * CHAR_SCALE];
+// Clip names are baked as "Rig|<name>" — the "_in_place" walk/run variants
+// have no root motion, so they can loop under a character whose position is
+// already driven manually (WASD for the player, lerp-to-target for NPCs)
+// without the animation itself also sliding the mesh forward.
+const CLIP = { idle: "man_idle", walk: "man_walk_in_place", sit: "man_sit_idle" };
+
 function loadGltf(url) {
   return new Promise((resolve, reject) => {
     new GLTFLoader().load(url, (gltf) => resolve(gltf.scene), undefined, reject);
+  });
+}
+
+function loadGltfFull(url) {
+  return new Promise((resolve, reject) => {
+    new GLTFLoader().load(url, (gltf) => resolve(gltf), undefined, reject);
   });
 }
 
@@ -318,89 +340,84 @@ function buildPendantLamp() {
   return g;
 }
 
-// A real (if low-poly) human figure: skin head + avatar face sprite, shirt
-// torso, arms with hands, trousers legs with shoes — built so limbs are
-// Groups hinged at the shoulder/hip, giving natural walking / sitting poses
-// instead of a single blob capsule.
-function buildHuman(color, avatarUrl, isPlayer) {
+// A small canvas-texture nameplate floating above the head — the character
+// model itself now has one fixed face/body, so this (plus the colored floor
+// ring below) is what lets you tell agents apart at a glance.
+function buildNameSprite(name, color) {
+  const cvs = document.createElement("canvas");
+  cvs.width = 256; cvs.height = 64;
+  const ctx = cvs.getContext("2d");
+  const hex = "#" + new THREE.Color(color).getHexString();
+  ctx.fillStyle = "rgba(10,10,20,.55)";
+  ctx.beginPath();
+  ctx.roundRect(4, 14, 248, 36, 14);
+  ctx.fill();
+  ctx.fillStyle = hex;
+  ctx.beginPath(); ctx.arc(28, 32, 9, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#fff";
+  ctx.font = "700 26px system-ui, sans-serif";
+  ctx.textBaseline = "middle";
+  ctx.fillText(name || "", 46, 33);
+  const tex = new THREE.CanvasTexture(cvs);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(0.9, 0.225, 1);
+  sprite.renderOrder = 999;
+  return sprite;
+}
+
+// The real rigged "Casual Male" character (FBX → GLB, temporarily standing
+// in for every agent + the player). SkeletonUtils' clone() is required
+// (not group.clone(true)) so each instance gets its own independent
+// skeleton/bones — a plain clone shares bone objects across instances and
+// every character would end up mirroring the same pose.
+function buildHuman(color, name, isPlayer, charTemplate, charClips) {
   const g = new THREE.Group();
-  const SKIN = 0xE0AC80;
-  const skinMat = new THREE.MeshStandardMaterial({ color: SKIN, roughness: 0.65 });
-  const shirtMat = new THREE.MeshStandardMaterial({ color, roughness: 0.5 });
-  const pantsMat = new THREE.MeshStandardMaterial({ color: 0x242b42, roughness: 0.75 });
-  const shoeMat = new THREE.MeshStandardMaterial({ color: 0x14182a, roughness: 0.55 });
 
-  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.19, 0.34, 4, 8), shirtMat);
-  torso.position.y = 0.78;
-  torso.castShadow = true;
-  g.add(torso);
+  let mixer = null, actions = {}, current = null;
+  if (charTemplate) {
+    const model = cloneSkinned(charTemplate);
+    model.scale.setScalar(CHAR_SCALE);
+    model.position.set(...CHAR_CENTER_OFFSET);
+    model.traverse((o) => {
+      if (!o.isMesh && !o.isSkinnedMesh) return;
+      o.castShadow = true; o.receiveShadow = true;
+      // The skinned mesh's own cached bounding sphere (baked at parse time)
+      // doesn't track this nested Rig/mesh scale hierarchy correctly, so
+      // the default frustum-culling check was wrongly culling the whole
+      // body out of view — only the crown/ring/nametag ever rendered.
+      o.frustumCulled = false;
+      if (o.material) {
+        o.material = o.material.clone();
+        // Subtle tint toward the owner's color so clothing still carries a
+        // personal touch even though everyone shares one base texture.
+        o.material.color = new THREE.Color(0xffffff).lerp(new THREE.Color(color), 0.2);
+      }
+    });
+    g.add(model);
 
-  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.075, 0.09, 8), skinMat);
-  neck.position.y = 1.0;
-  g.add(neck);
-
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.165, 14, 14), skinMat);
-  head.position.y = 1.15;
-  head.castShadow = true;
-  g.add(head);
-
-  if (avatarUrl) {
-    const tex = new THREE.TextureLoader().load(avatarUrl);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    // A Sprite always faces the camera regardless of the parent's rotation,
-    // so it can't be pushed "in front of" the head with a fixed local
-    // z-offset (that offset rotates with the character and ends up behind
-    // the head from some angles). Disabling depth-test + a high render
-    // order instead guarantees the face always draws on top of the head
-    // sphere sitting right behind it, from any angle — otherwise the face
-    // was getting silently depth-occluded and every character read bald.
-    const faceMat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
-    const face = new THREE.Sprite(faceMat);
-    face.scale.set(0.37, 0.37, 1);
-    face.position.y = 1.16;
-    face.renderOrder = 999;
-    g.add(face);
+    if (charClips && charClips.length) {
+      mixer = new THREE.AnimationMixer(model);
+      charClips.forEach((clip) => { actions[clip.name] = mixer.clipAction(clip); });
+      const findClip = (short) => Object.keys(actions).find((n) => n.endsWith(short));
+      current = findClip(CLIP.idle);
+      if (current && actions[current]) actions[current].play();
+    }
   }
-
-  function buildArm(side) {
-    const arm = new THREE.Group();
-    const upper = new THREE.Mesh(new THREE.CapsuleGeometry(0.052, 0.22, 3, 6), shirtMat);
-    upper.position.y = -0.11;
-    upper.castShadow = true;
-    arm.add(upper);
-    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 8), skinMat);
-    hand.position.y = -0.24;
-    arm.add(hand);
-    arm.position.set(side * 0.24, 0.92, 0);
-    return arm;
-  }
-  const armL = buildArm(-1), armR = buildArm(1);
-  g.add(armL); g.add(armR);
-
-  function buildLeg(side) {
-    const leg = new THREE.Group();
-    const upper = new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.32, 3, 6), pantsMat);
-    upper.position.y = -0.16;
-    upper.castShadow = true;
-    leg.add(upper);
-    const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.06, 0.19), shoeMat);
-    shoe.position.set(0, -0.35, 0.03);
-    shoe.castShadow = true;
-    leg.add(shoe);
-    leg.position.set(side * 0.1, 0.56, 0);
-    return leg;
-  }
-  const legL = buildLeg(-1), legR = buildLeg(1);
-  g.add(legL); g.add(legR);
 
   if (isPlayer) {
     const crown = new THREE.Mesh(
       new THREE.ConeGeometry(0.12, 0.12, 5),
       new THREE.MeshStandardMaterial({ color: 0xE4BC63, emissive: 0x5a4318, emissiveIntensity: 0.6 })
     );
-    crown.position.y = 1.4;
+    crown.position.y = 1.42;
     g.add(crown);
   }
+
+  const nameSprite = buildNameSprite(name, color);
+  nameSprite.position.y = 1.55;
+  g.add(nameSprite);
 
   const ring = new THREE.Mesh(
     new THREE.RingGeometry(0.26, 0.32, 20),
@@ -410,7 +427,20 @@ function buildHuman(color, avatarUrl, isPlayer) {
   ring.position.y = 0.02;
   g.add(ring);
 
-  return { group: g, legL, legR, armL, armR, torso, ring };
+  return { group: g, ring, mixer, actions, current };
+}
+
+// Crossfade to a named clip (matched by suffix, e.g. "man_walk_in_place")
+// only when it's actually changing, so idle/walk/sit don't restart every frame.
+function setClip(h, shortName) {
+  if (!h.mixer) return;
+  const name = Object.keys(h.actions).find((n) => n.endsWith(shortName));
+  if (!name || name === h.current) return;
+  const next = h.actions[name];
+  const prev = h.current ? h.actions[h.current] : null;
+  next.reset().setEffectiveWeight(1).fadeIn(0.25).play();
+  if (prev) prev.fadeOut(0.25);
+  h.current = name;
 }
 
 const hexToInt = (hex) => parseInt(hex.replace("#", ""), 16);
@@ -440,11 +470,14 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     let cleanupFn = () => {};
     (async () => {
       const base = import.meta.env.BASE_URL || "/";
-      const [deskTemplate, laptopTemplate] = await Promise.all([
+      const [deskTemplate, laptopTemplate, charGltf] = await Promise.all([
         loadGltf(base + DESK_MODEL_URL).catch((e) => { console.error("[office3d] desk model failed to load", e); return null; }),
         loadGltf(base + LAPTOP_MODEL_URL).catch((e) => { console.error("[office3d] laptop model failed to load", e); return null; }),
+        loadGltfFull(base + CHAR_MODEL_URL).catch((e) => { console.error("[office3d] character model failed to load", e); return null; }),
       ]);
       if (cancelled) return;
+      const charTemplate = charGltf ? charGltf.scene : null;
+      const charClips = charGltf ? charGltf.animations : [];
 
     const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || ("ontouchstart" in window) || window.innerWidth < 900;
     const width = mount.clientWidth || window.innerWidth;
@@ -597,7 +630,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     }
 
     // Player
-    const playerH = buildHuman(0xE4BC63, null, true);
+    const playerH = buildHuman(0xE4BC63, "אתה", true, charTemplate, charClips);
     playerH.group.position.set(0, 0, 6.2);
     scene.add(playerH.group);
 
@@ -606,16 +639,16 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     chars.forEach((c) => {
       const a = byId(c.id);
       if (!a) return;
-      const h = buildHuman(a.color, a.avatar, false);
+      const h = buildHuman(a.color, a.name, false, charTemplate, charClips);
       const [wx, wz] = toWorld(c.x, c.y);
       h.group.position.set(wx, 0, wz);
       scene.add(h.group);
       npc[c.id] = h;
     });
+    const allHumans = [playerH, ...Object.values(npc)];
 
     let raf = 0;
     const clock = new THREE.Clock();
-    let walkT = 0;
     const curSky = new THREE.Color(0x1b2440);
     const tmpColor = new THREE.Color();
 
@@ -623,14 +656,6 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     const onKeyUp = (e) => { liveRef.current.keys[e.key.toLowerCase()] = false; };
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
-
-    function setSeated(h, seated, dt) {
-      const target = seated ? -1.25 : 0;
-      h.legL.rotation.x += (target - h.legL.rotation.x) * Math.min(1, dt * 7);
-      h.legR.rotation.x += (target - h.legR.rotation.x) * Math.min(1, dt * 7);
-      const torsoY = seated ? 0.7 : 0.78;
-      h.torso.position.y += (torsoY - h.torso.position.y) * Math.min(1, dt * 7);
-    }
 
     function animate() {
       raf = requestAnimationFrame(animate);
@@ -672,14 +697,9 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         while (dRot > Math.PI) dRot -= Math.PI * 2;
         while (dRot < -Math.PI) dRot += Math.PI * 2;
         playerH.group.rotation.y += dRot * Math.min(1, dt * 10);
-        walkT += dt * 9;
-        playerH.legL.rotation.x = Math.sin(walkT) * 0.6;
-        playerH.legR.rotation.x = Math.sin(walkT + Math.PI) * 0.6;
-        playerH.armL.rotation.x = Math.sin(walkT + Math.PI) * 0.5;
-        playerH.armR.rotation.x = Math.sin(walkT) * 0.5;
+        setClip(playerH, CLIP.walk);
       } else {
-        playerH.legL.rotation.x *= 0.8; playerH.legR.rotation.x *= 0.8;
-        playerH.armL.rotation.x *= 0.8; playerH.armR.rotation.x *= 0.8;
+        setClip(playerH, CLIP.idle);
       }
 
       // NPCs: lerp toward their live target position; walking bob; seated pose.
@@ -700,24 +720,13 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           while (dRot > Math.PI) dRot -= Math.PI * 2;
           while (dRot < -Math.PI) dRot += Math.PI * 2;
           h.group.rotation.y += dRot * Math.min(1, dt * 8);
-          h.legL.rotation.x = Math.sin(walkT * 1.1) * 0.5;
-          h.legR.rotation.x = Math.sin(walkT * 1.1 + Math.PI) * 0.5;
-          h.armL.rotation.x = Math.sin(walkT * 1.1 + Math.PI) * 0.45;
-          h.armR.rotation.x = Math.sin(walkT * 1.1) * 0.45;
-          setSeated(h, false, dt);
+          setClip(h, CLIP.walk);
         } else {
           const seated = c.status === "work" || c.status === "meet" || c.status === "eat";
-          setSeated(h, seated, dt);
-          h.legL.rotation.x *= 0.85; h.legR.rotation.x *= 0.85;
-          if (seated && c.status === "work") {
-            // subtle typing motion
-            h.armL.rotation.x = -1.15 + Math.sin(clock.elapsedTime * 6 + h.group.position.x) * 0.06;
-            h.armR.rotation.x = -1.15 + Math.sin(clock.elapsedTime * 6.3 + h.group.position.x) * 0.06;
-          } else {
-            h.armL.rotation.x *= 0.85; h.armR.rotation.x *= 0.85;
-          }
+          setClip(h, seated ? CLIP.sit : CLIP.idle);
         }
       });
+      allHumans.forEach((h) => { if (h.mixer) h.mixer.update(dt); });
 
       // desk monitor glow follows work status (index i is agent i's home desk,
       // same 1:1 mapping the 2D behaviour scheduler already relies on).
