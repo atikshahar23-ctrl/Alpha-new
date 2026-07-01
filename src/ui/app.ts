@@ -1856,6 +1856,10 @@ export function mountApp(root: HTMLElement) {
     let pinchActive = false;
     let pinchStartHX = 0, pinchStartHY = 0;
     let pinchStartXf: { x: number; y: number; z: number; s: number; px: number; py: number; pz: number } | null = null;
+    // When the Pokémon summon dock is open, a pinch scrolls it left/right
+    // instead of spinning the character — this remembers the scroll offset
+    // at the moment the pinch started, mirroring pinchStartHX/pinchStartXf.
+    let dockScrollStartLeft = 0;
     const PALM_HOLD_THRESHOLD = 1100;  // hold open palm ~1.1s to release a Pokémon
     const FIST_HOLD_THRESHOLD = 650;   // hold a fist ~0.65s to summon (no throw needed)
     let fistHoldMs = 0;                // how long a confirmed fist has been held
@@ -2227,20 +2231,31 @@ export function mountApp(root: HTMLElement) {
         if (confirmedGesture === 'pinch') {
           const hx = (lm[4].x + lm[8].x) / 2;   // pinch midpoint
           const hy = (lm[4].y + lm[8].y) / 2;
+          const dockEl = document.getElementById('summonDock');
+          const dockIsOpen = !!dockEl && !dockEl.hasAttribute('hidden');
           if (!pinchActive) {
             pinchActive = true;
             pinchStartHX = hx; pinchStartHY = hy;
-            pinchStartXf = orb.getCharacterTransform();
+            if (dockIsOpen) dockScrollStartLeft = (window as any).__dockScrollLeft?.() ?? 0;
+            else pinchStartXf = orb.getCharacterTransform();
           }
           fistHoldMs = 0;
-          const xf = pinchStartXf!;
-          const SENS = 5.0;                 // high sensitivity for precise control
           const dx = hx - pinchStartHX;     // selfieMode → already mirrored
           const dy = hy - pinchStartHY;
-          // Grab & turn the Pokémon inside the orb: horizontal drag spins around
-          // Y, vertical drag tilts around X. Relative to the grab-start pose.
-          orb.setCharacterTransform(xf.x + dy * SENS, xf.y + dx * SENS, xf.z, xf.s, xf.px, xf.py, xf.pz);
-          gestureStatus('🤏 אוחז בכדור — הזז יד כדי לסובב');
+          if (dockIsOpen && (window as any).__dockScrollTo) {
+            // 🤏 Pinch (thumb + index finger together) while the Pokémon bar is
+            // open — drag left/right to scroll it, like swiping a carousel.
+            const SENS_SCROLL = window.innerWidth * 1.6;
+            (window as any).__dockScrollTo(dockScrollStartLeft - dx * SENS_SCROLL);
+            gestureStatus('🤏 גלול ימינה/שמאלה לבחירת פוקימון');
+          } else {
+            const xf = pinchStartXf!;
+            const SENS = 5.0;                 // high sensitivity for precise control
+            // Grab & turn the Pokémon inside the orb: horizontal drag spins around
+            // Y, vertical drag tilts around X. Relative to the grab-start pose.
+            orb.setCharacterTransform(xf.x + dy * SENS, xf.y + dx * SENS, xf.z, xf.s, xf.px, xf.py, xf.pz);
+            gestureStatus('🤏 אוחז בכדור — הזז יד כדי לסובב');
+          }
           octx.beginPath(); octx.arc(mapXs(hx), mapYs(hy), isMobileDevice ? 18 : 30, 0, Math.PI * 2);
           octx.strokeStyle = 'rgba(120,220,255,.95)'; octx.lineWidth = isMobileDevice ? 3 : 5; octx.stroke();
         } else if (confirmedGesture === 'point') {
@@ -2304,8 +2319,10 @@ export function mountApp(root: HTMLElement) {
           }
         }
 
-        // ── Dock gesture: when summon dock is open, track hand X to hover items ──
-        if ((window as any).__dockGestureMove && (window as any).closeSummonDock &&
+        // ── Dock gesture: when summon dock is open, track hand X to hover items.
+        // Skipped while pinching — a pinch instead drags the dock to scroll it
+        // (see the pinch branch above), so the two must not fight over the frame. ──
+        if (confirmedGesture !== 'pinch' && (window as any).__dockGestureMove && (window as any).closeSummonDock &&
             document.getElementById('summonDock') && !document.getElementById('summonDock')!.hasAttribute('hidden')) {
           (window as any).__dockGestureMove(lm[9].x); // wrist X (0..1)
         }
@@ -3859,11 +3876,15 @@ export function mountApp(root: HTMLElement) {
       });
     }
 
-    // Fade-arrow scroll indicators — hide left/right fade when at the edge
+    // Fade-arrow scroll indicators — hide left/right fade when at the edge.
+    // The page is RTL, and modern browsers give an RTL scroll container a
+    // NEGATIVE scrollLeft range (0 at the logical start/rightmost item, down
+    // to -(scrollWidth-clientWidth) at the end) — not the 0..max LTR range.
     const sdWrap = row.parentElement as HTMLDivElement;
     function updateScrollFades() {
-      sdWrap.classList.toggle('at-start', row.scrollLeft <= 4);
-      sdWrap.classList.toggle('at-end', row.scrollLeft >= row.scrollWidth - row.clientWidth - 4);
+      const max = row.scrollWidth - row.clientWidth;
+      sdWrap.classList.toggle('at-start', row.scrollLeft >= -4);
+      sdWrap.classList.toggle('at-end', row.scrollLeft <= -max + 4);
     }
     row.addEventListener('scroll', updateScrollFades, { passive: true });
     updateScrollFades();
@@ -4109,6 +4130,22 @@ export function mountApp(root: HTMLElement) {
       }
     }
     (window as any).__dockGestureMove = dockGestureMove;
+
+    // Pinch-drag horizontal scroll (thumb + index finger together) while the
+    // dock is open. Exposes a LOGICAL scroll coordinate (0 = start/first
+    // item, max = end/last item, increasing = further into the list) so the
+    // gesture code doesn't need to know this is an RTL container — the row's
+    // actual scrollLeft runs 0..-(max) in RTL (0 at the start), so we negate.
+    // Uses scrollTo({behavior:'instant'}) — .sd-row has CSS scroll-behavior:
+    // smooth for momentum/click scrolls, which would fight a live per-frame
+    // pinch-drag (each frame would kick off a new easing animation that never
+    // catches up to the hand), so a drag must bypass it explicitly.
+    (window as any).__dockScrollLeft = () => -row.scrollLeft;
+    (window as any).__dockScrollTo = (logicalX: number) => {
+      const max = row.scrollWidth - row.clientWidth;
+      row.scrollTo({ left: -Math.max(0, Math.min(max, logicalX)), behavior: 'instant' });
+      updateScrollFades();
+    };
 
     function openSummonDock() {
       if (dockOpen) return;
