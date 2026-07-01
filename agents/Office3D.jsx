@@ -984,6 +984,22 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       panel.position.set(wx + 1.6, 5.35, wz);
       scene.add(panel);
     });
+    // Designer hanging pendant lamps over each desk column — an emissive
+    // glass globe on a slim cord, for a more upscale/luxurious ceiling. No
+    // per-lamp light (kept cheap); the emissive globes read as lit fixtures.
+    {
+      const cordMat = new THREE.MeshStandardMaterial({ color: 0x0c0e13, roughness: 0.5, metalness: 0.6 });
+      const globeMat = new THREE.MeshStandardMaterial({ color: 0xfff2d0, emissive: 0xffe6b0, emissiveIntensity: 0.9, roughness: 0.3 });
+      const cols = [...new Set(deskPositions.map((d) => Math.round(toWorld(d.x, d.y)[0])))];
+      cols.forEach((cx) => {
+        [-4.5, 0, 4.5].forEach((cz) => {
+          const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 1.1, 6), cordMat);
+          cord.position.set(cx + 0.8, 4.85, cz); scene.add(cord);
+          const globe = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 12), globeMat);
+          globe.position.set(cx + 0.8, 4.25, cz); scene.add(globe);
+        });
+      });
+    }
 
     // North window wall — a real 3D skyline with actual depth, not a flat
     // painted picture. The old single texture-plane is pushed far back as a
