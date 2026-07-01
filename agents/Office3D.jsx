@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
-import { MessageCircle, Eye, User } from "lucide-react";
+import { MessageCircle, Eye, User, Mic } from "lucide-react";
 
 /* ════════════════════════════════════════════════════════════════════
    3D OFFICE — walk the floor yourself (WASD / joystick), approach a
@@ -876,19 +876,28 @@ function buildOwnerOffice(color, deskTemplate, laptopTemplate, furnitureTemplate
   return { group: g, obstacles, deskMon: desk.monMat, deskHolo: desk.holo };
 }
 
-export default function Office3D({ chars, byId, phase, phases, deskPositions, seatPositions, dineTablePositions, bizData, onClose, onOpenChat }) {
+export default function Office3D({ chars, byId, phase, phases, deskPositions, seatPositions, dineTablePositions, bizData, voice, onClose, onOpenChat }) {
   const mountRef = useRef(null);
   const liveRef = useRef({ chars, phase, bizData, joyVec: { x: 0, y: 0 }, keys: {}, firstPerson: false });
   const [talkTarget, setTalkTarget] = useState(null);
   const [joyKnob, setJoyKnob] = useState({ x: 0, y: 0 });
   const [joyBase, setJoyBase] = useState(null); // floating joystick anchor (screen px), null = hidden
   const [firstPerson, setFirstPerson] = useState(false);
+  const [voiceState, setVoiceState] = useState("idle"); // idle | listening | thinking | speaking
+  const [voiceLine, setVoiceLine] = useState(null);      // { who, text } subtitle
+  const recogRef = useRef(null);
   const joyDrag = useRef(null);
 
   useEffect(() => { liveRef.current.chars = chars; }, [chars]);
   useEffect(() => { liveRef.current.firstPerson = firstPerson; }, [firstPerson]);
   useEffect(() => { liveRef.current.phase = phase; }, [phase]);
   useEffect(() => { liveRef.current.bizData = bizData; }, [bizData]);
+  // Stop any live mic / speech when the sim unmounts.
+  useEffect(() => () => { try { recogRef.current?.stop(); window.speechSynthesis?.cancel(); } catch {} }, []);
+  // Walk away from an agent → drop the subtitle + stop listening.
+  useEffect(() => {
+    if (!talkTarget) { setVoiceLine(null); try { recogRef.current?.stop(); } catch {} setVoiceState("idle"); }
+  }, [talkTarget]);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -1242,11 +1251,12 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     const accentMagenta = new THREE.PointLight(0xff3ea5, 0.5, 20);
     accentMagenta.position.set(6, 4.8, 2); scene.add(accentMagenta);
 
-    // Player — spawns at their office doorway, fully in the open (no glass
-    // between the camera and the player), facing north into the room so both
-    // the player and the whole team are clearly framed the moment it opens.
+    // Player — spawns in the open central aisle just south of the bullpen,
+    // clear of any wall/desk so movement is free and comfortable from the
+    // first step, facing north toward the team (the owner's glass office is
+    // right there to the east to walk into).
     const playerH = buildHuman(0xE4BC63, "אתה", true, charTemplate, charClips);
-    playerH.group.position.set(5.4, 0, 9.4);
+    playerH.group.position.set(2.2, 0, 8.6);
     playerH.group.rotation.y = Math.PI;
     scene.add(playerH.group);
 
@@ -1525,19 +1535,69 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   const talkAgent = talkTarget ? byId(talkTarget) : null;
   const ph = phases[phase];
 
+  // Talk to the agent you're standing next to, by voice, right here in the
+  // simulator — tap the mic, speak, and they answer out loud (same brain as
+  // the text chat). Falls back to a spoken greeting if speech-to-text isn't
+  // available in the browser.
+  const startVoiceTalk = () => {
+    const agent = talkTarget ? byId(talkTarget) : null;
+    if (!agent || !voice) return;
+    if (voiceState === "listening") { try { recogRef.current?.stop(); } catch {} setVoiceState("idle"); return; }
+    if (!voice.canListen) {
+      const line = `שלום, אני ${agent.name}. ${agent.tagline || ""}`;
+      setVoiceLine({ who: agent.name, text: line, color: agent.color });
+      if (voice.canSpeak) { setVoiceState("speaking"); voice.speak(line); setTimeout(() => setVoiceState("idle"), 3000); }
+      return;
+    }
+    const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const rec = new Rec();
+    rec.lang = "he-IL"; rec.continuous = false; rec.interimResults = false;
+    rec.onresult = async (e) => {
+      const said = e.results?.[0]?.[0]?.transcript?.trim();
+      if (!said) { setVoiceState("idle"); return; }
+      setVoiceLine({ who: "אתה", text: said, color: "#E4BC63" });
+      setVoiceState("thinking");
+      let reply = "";
+      try { reply = await voice.ask(agent.id, said); } catch {}
+      reply = reply || "סליחה, לא הצלחתי לענות כרגע.";
+      setVoiceLine({ who: agent.name, text: reply, color: agent.color });
+      if (voice.canSpeak) { setVoiceState("speaking"); voice.speak(reply); }
+      const dur = Math.min(14000, 1600 + reply.length * 55);
+      setTimeout(() => setVoiceState((s) => (s === "speaking" ? "idle" : s)), voice.canSpeak ? dur : 4500);
+    };
+    rec.onerror = () => setVoiceState("idle");
+    rec.onend = () => setVoiceState((s) => (s === "listening" ? "idle" : s));
+    recogRef.current = rec;
+    setVoiceState("listening");
+    setVoiceLine({ who: agent.name, text: "מקשיב… דבר עכשיו 🎤", color: agent.color });
+    try { rec.start(); } catch { setVoiceState("idle"); }
+  };
+  const voiceLabel = voiceState === "listening" ? "מקשיב…" : voiceState === "thinking" ? "חושב…" : voiceState === "speaking" ? "מדבר…" : (talkAgent ? `דבר בקול עם ${talkAgent.name}` : "");
+
   return (
     <div className="off3-wrap">
       <div ref={mountRef} className="off3-canvas"
         onTouchStart={onJoyStart} onTouchMove={onJoyMove} onTouchEnd={onJoyEnd}
         onMouseDown={onJoyStart} onMouseMove={onJoyMove} onMouseUp={onJoyEnd} onMouseLeave={onJoyEnd} />
-      <div className="off3-hint">גע במסך וגרור כדי לנווט · חצים / WASD במחשב · התקרב לעובד ולחץ "דבר" · {ph.emoji} {ph.label}</div>
+      <div className="off3-hint">גע במסך וגרור כדי לנווט · חצים / WASD במחשב · התקרב לעובד ודבר איתו · {ph.emoji} {ph.label}</div>
       <button className="off3-view-toggle" onClick={() => setFirstPerson((v) => !v)} title="החלף תצוגה">
         {firstPerson ? <User size={18} /> : <Eye size={18} />}
       </button>
+      {voiceLine && (
+        <div className="off3-subtitle">
+          <b style={{ color: voiceLine.color }}>{voiceLine.who}</b>
+          <span>{voiceLine.text}</span>
+        </div>
+      )}
       {talkAgent && (
-        <button className="off3-talk" style={{ "--c": talkAgent.color }} onClick={() => onOpenChat(talkAgent.id)}>
-          <MessageCircle size={18} /> דבר עם {talkAgent.name}
-        </button>
+        <div className="off3-talkbar">
+          <button className={"off3-mic " + voiceState} style={{ "--c": talkAgent.color }} onClick={startVoiceTalk} title={voiceLabel}>
+            {voiceState === "listening" ? <Mic size={20} /> : <Mic size={20} />}
+          </button>
+          <button className="off3-talk" style={{ "--c": talkAgent.color }} onClick={() => onOpenChat(talkAgent.id)}>
+            <MessageCircle size={18} /> {voiceLabel}
+          </button>
+        </div>
       )}
       {joyBase && (
         <div className="off3-joy floating" style={{ left: joyBase.x, top: joyBase.y }}>
