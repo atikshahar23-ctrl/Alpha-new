@@ -5,7 +5,7 @@ import {
   Copy, Check, Circle, Zap, ChevronLeft, MessageSquare, Plus, Trash2, RefreshCw,
   ArrowUpRight, Bot, Radio, Brain, Rocket, ShieldCheck, ClipboardList,
   GitBranch, Terminal, FileCode2, Coins, Package, Scale, Compass,
-  Building2, Database, GraduationCap, Globe,
+  Building2, Database, GraduationCap, Globe, Mic, Volume2, VolumeX,
 } from "lucide-react";
 import * as cloud from "./cloud";
 import Office3D from "./Office3D.jsx";
@@ -166,6 +166,34 @@ async function askGroq(system, history, user, maxTokens = 800) {
     if (res.status === 401 || res.status === 403) break;
   }
   throw new Error("Groq " + lastCode);
+}
+
+/* ── Voice chat: free, browser-native Web Speech API — no backend/cost.
+   Mic input (SpeechRecognition) transcribes what you say into the chat box;
+   voice output (SpeechSynthesis) reads each agent's reply aloud in Hebrew.
+   Chrome/Edge (desktop + Android) support both; Safari/iOS support is
+   patchy, so every call point feature-detects and just hides the controls
+   rather than erroring. ── */
+const SpeechRecognitionCtor = typeof window !== "undefined" ? (window.SpeechRecognition || window.webkitSpeechRecognition) : null;
+const canListen = () => !!SpeechRecognitionCtor;
+const canSpeak = () => typeof window !== "undefined" && !!window.speechSynthesis;
+const K_VOICE_ON = "alpha:agents:voiceOn";
+
+function pickHebrewVoice() {
+  const voices = window.speechSynthesis.getVoices();
+  return voices.find((v) => v.lang?.startsWith("he")) || voices.find((v) => v.lang?.startsWith("iw")) || null;
+}
+function speakText(text) {
+  if (!canSpeak() || !text) return;
+  try {
+    window.speechSynthesis.cancel(); // don't stack overlapping replies
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = "he-IL";
+    const voice = pickHebrewVoice();
+    if (voice) u.voice = voice;
+    u.rate = 1.02;
+    window.speechSynthesis.speak(u);
+  } catch {}
 }
 
 /* ── The actual codebase(s) the dev agent works on ── */
@@ -669,11 +697,30 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
   const log = allHist[histKey] || [{ from: "bot", text: greeting(agent), ts: now() }];
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [voiceOn, setVoiceOn] = useState(() => load(K_VOICE_ON, true) && canSpeak());
   const aiHist = useRef([]);
   const scrollRef = useRef(null);
+  const recogRef = useRef(null);
 
   useCloudSync(K_HIST, setAllHist);
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [log.length, busy]);
+  useEffect(() => () => { try { recogRef.current?.stop(); window.speechSynthesis?.cancel(); } catch {} }, []);
+
+  const toggleVoice = () => { const v = !voiceOn; setVoiceOn(v); save(K_VOICE_ON, v); if (!v) try { window.speechSynthesis?.cancel(); } catch {} };
+
+  const toggleMic = () => {
+    if (!canListen()) { showToast("זיהוי דיבור לא נתמך בדפדפן הזה"); return; }
+    if (listening) { recogRef.current?.stop(); return; }
+    const rec = new SpeechRecognitionCtor();
+    rec.lang = "he-IL"; rec.continuous = false; rec.interimResults = false;
+    rec.onresult = (e) => { const text = e.results?.[0]?.[0]?.transcript?.trim(); if (text) send(text); };
+    rec.onerror = () => setListening(false);
+    rec.onend = () => setListening(false);
+    recogRef.current = rec;
+    setListening(true);
+    try { rec.start(); } catch { setListening(false); }
+  };
 
   const setLog = (next) => {
     setAllHist((prev) => {
@@ -693,7 +740,7 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
 
     if (!hasAI()) {
       const reply = FALLBACK[agent.id](t);
-      setTimeout(() => setLog([...withMe, { from: "bot", text: reply, ts: now() }]), 350);
+      setTimeout(() => { setLog([...withMe, { from: "bot", text: reply, ts: now() }]); if (voiceOn) speakText(reply); }, 350);
       return;
     }
     setBusy(true);
@@ -701,9 +748,11 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
       const reply = await askGroq(agent.persona + bizContext(), aiHist.current, t);
       aiHist.current = [...aiHist.current.slice(-6), { role: "user", content: t }, { role: "assistant", content: reply }];
       setLog([...withMe, { from: "bot", text: reply || "✔", ts: now() }]);
+      if (voiceOn) speakText(reply || "");
     } catch (e) {
       const fb = FALLBACK[agent.id](t);
       setLog([...withMe, { from: "bot", text: (String(e.message).includes("Groq") ? "ה-AI עמוס כרגע, הנה תשובה מהירה:\n\n" : "") + fb, ts: now() }]);
+      if (voiceOn) speakText(fb);
     } finally { setBusy(false); }
   };
 
@@ -719,6 +768,11 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
             <b>{agent.name} {agent.boss && <Crown size={12} />}</b>
             <span><span className="ac-live-dot" /> {agent.title} · {hasAI() ? "AI חי" : "מצב הדגמה"}</span>
           </div>
+          {canSpeak() && (
+            <button className={"ac-chat-x " + (voiceOn ? "on" : "")} onClick={toggleVoice} title={voiceOn ? "כבה קול" : "הפעל קול"}>
+              {voiceOn ? <Volume2 size={16} /> : <VolumeX size={16} />}
+            </button>
+          )}
           <button className="ac-chat-x" onClick={clearChat} title="אפס שיחה"><RefreshCw size={16} /></button>
         </div>
 
@@ -754,10 +808,15 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
         </div>
 
         <div className="ac-chat-in">
+          {canListen() && (
+            <button className={"ac-mic-btn " + (listening ? "on" : "")} onClick={toggleMic} disabled={busy} title={listening ? "מקשיב… לחץ לעצור" : "דבר במיקרופון"}>
+              <Mic size={18} />
+            </button>
+          )}
           <input
             value={q} onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && send()}
-            placeholder={`כתוב ל${agent.name}…`} dir="rtl" disabled={busy}
+            placeholder={listening ? "מקשיב…" : `כתוב ל${agent.name}…`} dir="rtl" disabled={busy}
           />
           <button onClick={() => send()} disabled={busy || !q.trim()}><Send size={18} /></button>
         </div>
@@ -1521,6 +1580,12 @@ function StyleTag() {
 .ac-chat-head{display:flex;align-items:center;gap:11px;padding:13px 14px;border-bottom:1px solid color-mix(in srgb,var(--c) 22%,transparent);background:linear-gradient(135deg,color-mix(in srgb,var(--c) 10%,transparent),transparent)}
 .ac-chat-back,.ac-chat-x{background:var(--s8);border:1px solid var(--s7);color:var(--silver);width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;transition:.15s}
 .ac-chat-back:hover,.ac-chat-x:hover{border-color:color-mix(in srgb,var(--c) 50%,transparent);color:var(--c)}
+.ac-chat-x.on{border-color:color-mix(in srgb,var(--c) 60%,transparent);color:var(--c);background:color-mix(in srgb,var(--c) 14%,transparent)}
+.ac-mic-btn{width:48px;flex-shrink:0;border-radius:13px;background:var(--s8);border:1px solid var(--s7);color:var(--silver);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:.15s}
+.ac-mic-btn:hover{border-color:color-mix(in srgb,var(--c) 50%,transparent);color:var(--c)}
+.ac-mic-btn.on{background:linear-gradient(135deg,var(--c),var(--gold2));color:#1a1400;border-color:transparent;animation:acMicPulse 1.1s ease-in-out infinite}
+.ac-mic-btn:disabled{opacity:.45;cursor:not-allowed}
+@keyframes acMicPulse{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--c) 45%,transparent)}50%{box-shadow:0 0 0 8px transparent}}
 .ac-chat-orb{width:38px;height:38px;border-radius:11px}
 .ac-chat-id{flex:1;min-width:0}
 .ac-chat-id b{display:flex;align-items:center;gap:5px;font-family:'Rubik';font-weight:900;font-size:16px}
