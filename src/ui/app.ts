@@ -1833,6 +1833,15 @@ export function mountApp(root: HTMLElement) {
     let gestureStream: MediaStream | null = null;
     let gestureHands: any = null;
     let gestureCamera: any = null;
+    // Watchdog: MediaPipe's hand model lazily fetches wasm/binary assets from the
+    // CDN on the first send() call. On a flaky mobile network (carrier content
+    // filtering, slow data) that fetch can silently hang forever — the send()
+    // promise never resolves or rejects, so nothing ever crashes, but nothing
+    // ever detects either: this is what "gestures don't work at all on my
+    // phone" looks like from the outside. gotFirstHandResult + gestureWatchdog
+    // give the user real feedback + an easy retry instead of a silent freeze.
+    let gotFirstHandResult = false;
+    let gestureWatchdog: ReturnType<typeof setTimeout> | null = null;
     let palmHoldMs = 0;
     let throwCooldownMs = 0;
     let suppressPalmMs = 0;   // after a summon, ignore the open hand for dispel
@@ -1927,6 +1936,8 @@ export function mountApp(root: HTMLElement) {
 
     function stopGesture() {
       gestureActive = false;
+      if (gestureWatchdog) { clearTimeout(gestureWatchdog); gestureWatchdog = null; }
+      gotFirstHandResult = false;
       try { orb.setPerfMode(localStorage.getItem('alpha_fast_mode') === '1'); } catch {}   // restore orb quality
       if (gestureCamera) { try { gestureCamera.stop(); } catch {} gestureCamera = null; }
       if (gestureHands) { try { gestureHands.close(); } catch {} gestureHands = null; }
@@ -2017,25 +2028,38 @@ export function mountApp(root: HTMLElement) {
       if (!(window as any).Hands) {
         const s = document.createElement('script');
         s.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/hands.min.js';
-        s.onerror = () => gestureStatus('❌ טעינת MediaPipe נכשלה');
         document.head.appendChild(s);
-        await new Promise<void>((res, rej) => { s.onload = () => res(); setTimeout(() => rej(), 8000); }).catch(() => {
-          gestureStatus('❌ טעינת MediaPipe נכשלה');
+        let scriptFailed = false;
+        s.onerror = () => { scriptFailed = true; };
+        await new Promise<void>((res, rej) => {
+          s.onload = () => res();
+          const t = setInterval(() => { if (scriptFailed) { clearInterval(t); rej(); } }, 100);
+          setTimeout(() => { clearInterval(t); rej(); }, 8000);
+        }).catch(() => {
+          console.error('[gesture] failed to load MediaPipe hands.min.js from CDN');
+          gestureStatus('❌ טעינת זיהוי ידיים נכשלה — בדוק חיבור אינטרנט ונסה שוב');
           stopGesture(); return;
         });
         if (!gestureActive) return;
       }
 
       const Hands = (window as any).Hands;
-      gestureHands = new Hands({ locateFile: (f: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/${f}` });
-      // Mobile = lite model (the full model stalls on phones and detection never
-      // starts). Desktop = full model for max accuracy. The One-Euro smoothing +
-      // higher tracking confidence still make BOTH far steadier than before.
-      // Moderate confidence so the lite mobile model actually detects a hand (0.8
-      // was so high it often found nothing → "no skeleton"). False positives are
-      // handled downstream by the per-frame `trusted` gate + settle + hold, not by
-      // starving detection here.
-      gestureHands.setOptions({ maxNumHands: 2, modelComplexity: isMobileDevice ? 0 : 1, minDetectionConfidence: isMobileDevice ? 0.5 : 0.6, minTrackingConfidence: isMobileDevice ? 0.4 : 0.5, selfieMode: true });
+      try {
+        gestureHands = new Hands({ locateFile: (f: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/${f}` });
+        // Mobile = lite model (the full model stalls on phones and detection never
+        // starts). Desktop = full model for max accuracy. The One-Euro smoothing +
+        // higher tracking confidence still make BOTH far steadier than before.
+        // Moderate confidence so the lite mobile model actually detects a hand (0.8
+        // was so high it often found nothing → "no skeleton"). False positives are
+        // handled downstream by the per-frame `trusted` gate + settle + hold, not by
+        // starving detection here.
+        gestureHands.setOptions({ maxNumHands: 2, modelComplexity: isMobileDevice ? 0 : 1, minDetectionConfidence: isMobileDevice ? 0.5 : 0.6, minTrackingConfidence: isMobileDevice ? 0.4 : 0.5, selfieMode: true });
+      } catch (err) {
+        console.error('[gesture] Hands init failed', err);
+        gestureStatus('❌ זיהוי ידיים לא נטען — נסה שוב');
+        stopGesture();
+        return;
+      }
 
       let lastFrameMs = performance.now();
 
@@ -2113,6 +2137,10 @@ export function mountApp(root: HTMLElement) {
 
       gestureHands.onResults((results: any) => {
         if (!gestureActive) return;
+        if (!gotFirstHandResult) {
+          gotFirstHandResult = true;
+          if (gestureWatchdog) { clearTimeout(gestureWatchdog); gestureWatchdog = null; }
+        }
         const now = performance.now();
         const rawDt = now - lastFrameMs;
         const dt = Math.min(200, rawDt);
@@ -2357,19 +2385,44 @@ export function mountApp(root: HTMLElement) {
       const capCtx = cap.getContext('2d')!;
       const CAP_W = 480;
       let rafId = 0;
+      // MediaPipe's send() lazily fetches its wasm/model binaries from the CDN on
+      // the first call and can hang indefinitely on a bad connection instead of
+      // rejecting — a plain `await` on that would freeze this whole loop forever
+      // (no next frame ever gets scheduled, camera looks "on" but nothing happens).
+      // Race it against a timeout so a stuck call can never block the loop.
+      const SEND_TIMEOUT_MS = 4000;
+      function sendWithTimeout(image: HTMLCanvasElement): Promise<void> {
+        return new Promise((resolve) => {
+          let done = false;
+          const finish = () => { if (!done) { done = true; resolve(); } };
+          setTimeout(finish, SEND_TIMEOUT_MS);
+          gestureHands.send({ image }).then(finish, finish);
+        });
+      }
       const tick = async () => {
         if (!gestureActive) return;
         if (vid.readyState >= 2 && vid.videoWidth > 0) {
           const h = Math.round(CAP_W * (vid.videoHeight / vid.videoWidth));
           if (cap.width !== CAP_W) { cap.width = CAP_W; cap.height = h; }
           try { capCtx.drawImage(vid, 0, 0, CAP_W, h); } catch {}
-          await gestureHands.send({ image: cap }).catch(() => {});
+          await sendWithTimeout(cap);
         }
         rafId = requestAnimationFrame(tick);
       };
       (window as any).__stopGestureRaf = () => { cancelAnimationFrame(rafId); };
       gestureStatus('מצלמה פעילה');
       tick();
+      // Watchdog: if the model never produces a single result (stuck loading its
+      // wasm/binary assets over a flaky connection, or silently incompatible with
+      // this browser), give a real error + return to a retryable state instead of
+      // leaving "מצלמה פעילה" on screen forever with nothing actually happening.
+      gestureWatchdog = setTimeout(() => {
+        if (gestureActive && !gotFirstHandResult) {
+          console.error('[gesture] no hand-tracking results after 9s — MediaPipe likely failed to load over the network');
+          gestureStatus('❌ הזיהוי לא נטען — בדוק חיבור אינטרנט ונסה שוב');
+          stopGesture();
+        }
+      }, 9000);
 
       // ── Physical Pokéball detector ───────────────────────────────────────────
       // Desktop-only: on phones the variable lighting + skin tones generate too
