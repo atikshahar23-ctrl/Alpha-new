@@ -21,6 +21,10 @@ const toWorld = (x, y) => [(x - 50) * SCALE, (y - 50) * SCALE];
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const TALK_DIST = 2.15;
 const FLOOR_W = 26, FLOOR_D = 22;
+// Every desk in the grid sits at the same (unrotated) orientation, so one
+// fixed heading makes every seated worker face their own monitor — value
+// tuned by eye against the desk model's own screen-facing direction.
+const DESK_FACE_ROT = 0;
 
 // User-supplied real desk + laptop models (converted from the Sketchfab OBJ
 // downloads to optimized GLB via obj2gltf + gltf-transform). Loaded once and
@@ -50,6 +54,29 @@ const CHAR_CENTER_OFFSET = [-0.0 * CHAR_SCALE, 0, 0.019 * CHAR_SCALE];
 // already driven manually (WASD for the player, lerp-to-target for NPCs)
 // without the animation itself also sliding the mesh forward.
 const CLIP = { idle: "man_idle", walk: "man_walk_in_place", sit: "man_sit_idle" };
+
+// User-supplied real furniture pack (40 named pieces in one GLB, a home/
+// office asset set) — only the pieces that make sense in an office are used
+// (lounge, break-room, storage); measuring each named node's own local bbox
+// showed they're already real-world-meter scale sitting base-down at y≈0,
+// same as this scene's units, so pieces are placed with no extra scale/
+// recentring — just position + a facing rotation per spot.
+const FURNITURE_MODEL_URL = "office-models/furniture.glb";
+function placeFurniturePiece(scene, template, name, x, y, z, rotY = 0) {
+  if (!template) return null;
+  const node = template.getObjectByName(name);
+  if (!node) return null;
+  const piece = node.clone(true);
+  piece.position.set(x, y, z);
+  piece.rotation.y = rotY;
+  piece.traverse((o) => {
+    if (!o.isMesh) return;
+    o.castShadow = true; o.receiveShadow = true;
+    if (o.material) o.material = o.material.clone();
+  });
+  scene.add(piece);
+  return piece;
+}
 
 function loadGltf(url) {
   return new Promise((resolve, reject) => {
@@ -530,10 +557,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     let cleanupFn = () => {};
     (async () => {
       const base = import.meta.env.BASE_URL || "/";
-      const [deskTemplate, laptopTemplate, charGltf] = await Promise.all([
+      const [deskTemplate, laptopTemplate, charGltf, furnitureTemplate] = await Promise.all([
         loadGltf(base + DESK_MODEL_URL).catch((e) => { console.error("[office3d] desk model failed to load", e); return null; }),
         loadGltf(base + LAPTOP_MODEL_URL).catch((e) => { console.error("[office3d] laptop model failed to load", e); return null; }),
         loadGltfFull(base + CHAR_MODEL_URL).catch((e) => { console.error("[office3d] character model failed to load", e); return null; }),
+        loadGltf(base + FURNITURE_MODEL_URL).catch((e) => { console.error("[office3d] furniture model failed to load", e); return null; }),
       ]);
       if (cancelled) return;
       const charTemplate = charGltf ? charGltf.scene : null;
@@ -643,11 +671,37 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     wallR.position.x = (FLOOR_W / 2) + 0.05;
     scene.add(wallR);
 
-    // Lounge corner + bookshelf for a lived-in office feel.
-    const couch = buildCouch();
-    couch.position.set(-9.5, 0, 8.5);
-    couch.rotation.y = Math.PI;
-    scene.add(couch);
+    // Lounge corner + bookshelf for a lived-in office feel — the user's own
+    // furniture pack pieces (real sofa, coffee table, floor lamp, wall TV)
+    // replace the earlier procedural couch when the model loads; falls back
+    // to the procedural one so the corner is never empty.
+    if (furnitureTemplate) {
+      placeFurniturePiece(scene, furnitureTemplate, "sofa_001", -9.5, 0, 8.5, Math.PI);
+      placeFurniturePiece(scene, furnitureTemplate, "coffee_table_001", -9.5, 0, 7.1, 0);
+      placeFurniturePiece(scene, furnitureTemplate, "lamp_002", -7.3, 0, 9.3, 0);
+      placeFurniturePiece(scene, furnitureTemplate, "flower_001", -11.9, 0, 8.9, 0);
+      placeFurniturePiece(scene, furnitureTemplate, "tv_wall_001", -(FLOOR_W / 2) + 0.2, 1.6, 8.5, Math.PI / 2);
+      // Storage corner (south-east) — closet, dresser, a stacked box.
+      placeFurniturePiece(scene, furnitureTemplate, "closet_001", 9.0, 0, -9.5, 0);
+      placeFurniturePiece(scene, furnitureTemplate, "dresser_001", 10.6, 0, -9.5, 0);
+      placeFurniturePiece(scene, furnitureTemplate, "box_001", 11.6, 0, -9.2, 0);
+      // Break-room kitchenette (east wall) — a counter with small appliances
+      // and clutter, plus a fridge and sink, near the existing dining tables.
+      placeFurniturePiece(scene, furnitureTemplate, "kitchen_table_001", 12.1, 0, 3.7, Math.PI / 2);
+      placeFurniturePiece(scene, furnitureTemplate, "fridge_001", 12.5, 0, 1.0, -Math.PI / 2);
+      placeFurniturePiece(scene, furnitureTemplate, "kitchen_sink_001", 12.5, 0, 6.3, -Math.PI / 2);
+      placeFurniturePiece(scene, furnitureTemplate, "coffee_machine_001", 12.0, 1.036, 3.1, 0);
+      placeFurniturePiece(scene, furnitureTemplate, "microwave_oven_001", 12.2, 1.036, 4.2, 0);
+      placeFurniturePiece(scene, furnitureTemplate, "dish_001", 11.85, 1.036, 3.6, 0);
+      placeFurniturePiece(scene, furnitureTemplate, "dish_002", 12.45, 1.036, 3.9, 0);
+      placeFurniturePiece(scene, furnitureTemplate, "drink_001", 11.95, 1.036, 4.0, 0);
+      placeFurniturePiece(scene, furnitureTemplate, "drink_002", 12.35, 1.036, 3.4, 0);
+    } else {
+      const couch = buildCouch();
+      couch.position.set(-9.5, 0, 8.5);
+      couch.rotation.y = Math.PI;
+      scene.add(couch);
+    }
     const shelf = buildBookshelf();
     shelf.position.set(-11.8, 0, 6.5);
     shelf.rotation.y = Math.PI / 2;
@@ -784,6 +838,16 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         } else {
           const seated = c.status === "work" || c.status === "meet" || c.status === "eat";
           setClip(h, seated ? CLIP.sit : CLIP.idle);
+          // Working at the desk: face the monitor head-on instead of
+          // whatever direction they happened to walk in from — every desk
+          // in the grid shares the same unrotated layout, so one fixed
+          // heading squares everyone up to their own screen.
+          if (c.status === "work") {
+            let dRot = DESK_FACE_ROT - h.group.rotation.y;
+            while (dRot > Math.PI) dRot -= Math.PI * 2;
+            while (dRot < -Math.PI) dRot += Math.PI * 2;
+            h.group.rotation.y += dRot * Math.min(1, dt * 6);
+          }
         }
       });
       allHumans.forEach((h) => { if (h.mixer) h.mixer.update(dt); });
