@@ -68,18 +68,27 @@ const CLIP = { idle: "man_idle", walk: "man_walk_in_place", sit: "man_sit_idle" 
 // same as this scene's units, so pieces are placed with no extra scale/
 // recentring — just position + a facing rotation per spot.
 const FURNITURE_MODEL_URL = "office-models/furniture.glb";
-function placeFurniturePiece(scene, template, name, x, y, z, rotY = 0) {
+function cloneFurniturePiece(template, name) {
   if (!template) return null;
   const node = template.getObjectByName(name);
   if (!node) return null;
   const piece = node.clone(true);
-  piece.position.set(x, y, z);
-  piece.rotation.y = rotY;
+  // Reset to the pack's own flat preview-layout position first — see
+  // buildTvScreen for why this matters.
+  piece.position.set(0, 0, 0);
+  piece.rotation.set(0, 0, 0);
   piece.traverse((o) => {
     if (!o.isMesh) return;
     o.castShadow = true; o.receiveShadow = true;
     if (o.material) o.material = o.material.clone();
   });
+  return piece;
+}
+function placeFurniturePiece(scene, template, name, x, y, z, rotY = 0) {
+  const piece = cloneFurniturePiece(template, name);
+  if (!piece) return null;
+  piece.position.set(x, y, z);
+  piece.rotation.y = rotY;
   scene.add(piece);
   return piece;
 }
@@ -339,6 +348,48 @@ function buildSkylineTexture(mode) {
   return { canvas: cvs, ctx, tex };
 }
 
+// A real building facade (a tileable window grid) so the skyline outside
+// the window can be genuine 3D geometry instead of a flat painted plane —
+// the actual "depth in the window" fix. Two separate textures, both cloned
+// per building (cheap — shares the image, only `repeat` differs) so each
+// tiles its own grid to its own size: a neutral grey-glass albedo (so
+// buildings read as ordinary daytime glass/concrete, not permanently lit),
+// and a mostly-black emissive layer with only the window squares bright,
+// ramped in at night in animate() so nothing glows unless it's actually dark.
+function buildFacadeAlbedo() {
+  const cvs = document.createElement("canvas");
+  cvs.width = 128; cvs.height = 128;
+  const ctx = cvs.getContext("2d");
+  const rnd = mulberry32(4242);
+  ctx.fillStyle = "#48505e"; ctx.fillRect(0, 0, 128, 128);
+  for (let y = 6; y < 122; y += 13) {
+    for (let x = 6; x < 122; x += 11) {
+      ctx.fillStyle = rnd() > 0.3 ? "#5f7488" : "#333b46";
+      ctx.fillRect(x, y, 6, 8);
+    }
+  }
+  const tex = new THREE.CanvasTexture(cvs);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+function buildFacadeEmissive() {
+  const cvs = document.createElement("canvas");
+  cvs.width = 128; cvs.height = 128;
+  const ctx = cvs.getContext("2d");
+  const rnd = mulberry32(4242); // same seed as the albedo grid so lit windows line up
+  ctx.fillStyle = "#000"; ctx.fillRect(0, 0, 128, 128);
+  for (let y = 6; y < 122; y += 13) {
+    for (let x = 6; x < 122; x += 11) {
+      if (rnd() > 0.3) { ctx.fillStyle = "#ffd696"; ctx.fillRect(x, y, 6, 8); }
+    }
+  }
+  const tex = new THREE.CanvasTexture(cvs);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
 // A thin animated "street" strip layered at the base of the skyline wall —
 // a few colored light streaks crawling left/right — so the window reads as
 // a live city outside, not a painted backdrop. Cheap: a small 1024×48
@@ -368,7 +419,8 @@ function drawTraffic(ctx, W, H, state, dt) {
 // with the agent's own color via a floor ring + a glow on the laptop
 // screen; falls back to the earlier procedural sci-fi desk if either model
 // failed to load, so a slow/broken asset never blanks out the room.
-function buildDesk(color = 0x3a6ad8, deskTemplate = null, laptopTemplate = null) {
+const DESK_ITEM_NAMES = ["flower_001", "dish_001", "drink_001", "box_001"];
+function buildDesk(color = 0x3a6ad8, deskTemplate = null, laptopTemplate = null, furnitureTemplate = null, itemVariant = 0) {
   const g = new THREE.Group();
   let monMat = null;
 
@@ -446,6 +498,24 @@ function buildDesk(color = 0x3a6ad8, deskTemplate = null, laptopTemplate = null)
   holo.position.set(0, DESK_SCALE * 1.494 + 0.32, -0.16);
   holo.rotation.x = Math.PI / 2.3;
   g.add(holo);
+
+  // A proper kitted-out workstation — a real desk lamp plus a rotating
+  // personal item (plant/dish/drink/box) from the user's own furniture
+  // pack, tucked at the back corners so they never clip the laptop or the
+  // seated character in front.
+  const deskTopY = DESK_SCALE * 1.494;
+  const lamp = cloneFurniturePiece(furnitureTemplate, "lamp_001");
+  if (lamp) {
+    lamp.scale.setScalar(0.72);
+    lamp.position.set(0.36, deskTopY, -0.4);
+    g.add(lamp);
+  }
+  const personal = cloneFurniturePiece(furnitureTemplate, DESK_ITEM_NAMES[itemVariant % DESK_ITEM_NAMES.length]);
+  if (personal) {
+    personal.scale.setScalar(0.6);
+    personal.position.set(-0.36, deskTopY, -0.4);
+    g.add(personal);
+  }
 
   return { group: g, monMat, holo };
 }
@@ -678,6 +748,22 @@ function setClip(h, shortName) {
 
 const hexToInt = (hex) => parseInt(hex.replace("#", ""), 16);
 
+// Simple circle-vs-circle push-out so the player can't walk straight through
+// desks/furniture — this was the biggest source of "uncomfortable to move
+// around", since clipping into a desk with a chase camera right behind you
+// reads as broken rather than just visually odd.
+function resolveCollisions(pos, obstacles) {
+  for (const o of obstacles) {
+    const dx = pos.x - o.x, dz = pos.z - o.z;
+    const d = Math.hypot(dx, dz);
+    const minD = o.r + 0.32; // + player's own rough radius
+    if (d > 0 && d < minD) {
+      const push = (minD - d) / d;
+      pos.x += dx * push; pos.z += dz * push;
+    }
+  }
+}
+
 export default function Office3D({ chars, byId, phase, phases, deskPositions, seatPositions, dineTablePositions, bizData, onClose, onOpenChat }) {
   const mountRef = useRef(null);
   const liveRef = useRef({ chars, phase, bizData, joyVec: { x: 0, y: 0 }, keys: {}, firstPerson: false });
@@ -791,19 +877,62 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       scene.add(panel);
     });
 
-    // North window wall — floor-to-ceiling NYC skyline view. Starts in
-    // whatever mode the current phase calls for; animate() below swaps the
-    // whole canvas (day ⇄ night) only when the phase actually crosses that
-    // boundary, so it's cheap but never just one frozen picture.
+    // North window wall — a real 3D skyline with actual depth, not a flat
+    // painted picture. The old single texture-plane is pushed far back as a
+    // distant hazy horizon; a cluster of real 3D buildings (boxes with a
+    // tiled window-facade texture) sits between the window and that horizon
+    // so moving the camera gives genuine parallax. A near-transparent glass
+    // pane at the actual window line keeps a slight reflective feel.
     let skylineMode = liveRef.current.phase <= 1 ? "day" : "night";
     const skyline = buildSkylineTexture(skylineMode);
     const [nwx, nwz] = [0, -(FLOOR_D / 2) - 0.05];
     const skyWall = new THREE.Mesh(
-      new THREE.PlaneGeometry(FLOOR_W, 6.4),
-      new THREE.MeshBasicMaterial({ map: skyline.tex })
+      new THREE.PlaneGeometry(150, 46),
+      new THREE.MeshBasicMaterial({ map: skyline.tex, fog: false })
     );
-    skyWall.position.set(nwx, 3.2, nwz);
+    skyWall.position.set(nwx, 14, nwz - 46);
     scene.add(skyWall);
+
+    const glass = new THREE.Mesh(
+      new THREE.PlaneGeometry(FLOOR_W, 6.4),
+      new THREE.MeshPhysicalMaterial({ color: 0xbcd8f0, transparent: true, opacity: 0.06, roughness: 0.05, metalness: 0.1 })
+    );
+    glass.position.set(nwx, 3.2, nwz);
+    scene.add(glass);
+
+    // Real 3D buildings for actual foreground depth/parallax — sparse and
+    // set well back from the glass (12–40 units past the window) so they
+    // read as a skyline in the distance with real sky between them, not a
+    // wall of texture pressed up against the window.
+    const facadeAlbedo = buildFacadeAlbedo();
+    const facadeEmissive = buildFacadeEmissive();
+    const nearBuildingMats = [];
+    {
+      const cityRnd = mulberry32(9091);
+      let bx = -70;
+      while (bx < 70) {
+        const w = 3 + cityRnd() * 5, h = 7 + cityRnd() * 20, d = 3 + cityRnd() * 5;
+        const bz = nwz - 12 - cityRnd() * 28;
+        const gap = w + 5 + cityRnd() * 9;
+        if (Math.abs(bx) > 5) {
+          const albedoTex = facadeAlbedo.clone();
+          const emissiveTex = facadeEmissive.clone();
+          albedoTex.repeat.set(Math.max(1, w / 2.2), Math.max(1, h / 3.2));
+          emissiveTex.repeat.copy(albedoTex.repeat);
+          albedoTex.needsUpdate = true; emissiveTex.needsUpdate = true;
+          const mat = new THREE.MeshStandardMaterial({
+            map: albedoTex, emissiveMap: emissiveTex, emissive: 0xffd8a0, emissiveIntensity: 0,
+            roughness: 0.75, metalness: 0.15, fog: false,
+          });
+          const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+          mesh.position.set(bx, h / 2, bz);
+          scene.add(mesh);
+          nearBuildingMats.push(mat);
+        }
+        bx += gap;
+      }
+    }
+
     // A thin animated street strip at the base — small, cheap, redrawn
     // every frame — so the window always has some motion in it.
     const trafficCanvas = document.createElement("canvas");
@@ -816,7 +945,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       new THREE.PlaneGeometry(FLOOR_W, 0.5),
       new THREE.MeshBasicMaterial({ map: trafficTex, toneMapped: false })
     );
-    trafficStrip.position.set(nwx, 0.42, nwz + 0.02);
+    trafficStrip.position.set(nwx, 0.42, nwz - 4);
     scene.add(trafficStrip);
     // Window mullions for structure over the glass.
     const mullionMat = new THREE.MeshStandardMaterial({ color: 0x0e1220, roughness: 0.6 });
@@ -907,17 +1036,22 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     });
 
     // Furniture — each desk is tinted with its owner's own color (same
-    // index mapping as chars[i]'s permanent home desk).
+    // index mapping as chars[i]'s permanent home desk), and fully kitted
+    // out with a lamp + a personal item that rotates by desk index for
+    // variety. Also collects a collision circle per obstacle so the player
+    // can't walk straight through any of it (see resolveCollisions above).
     const deskMons = [];
     const deskHolos = [];
+    const obstacles = [];
     deskPositions.forEach((d, i) => {
       const owner = byId(chars[i]?.id);
-      const { group, monMat, holo } = buildDesk(owner ? hexToInt(owner.color) : 0x3a6ad8, deskTemplate, laptopTemplate);
+      const { group, monMat, holo } = buildDesk(owner ? hexToInt(owner.color) : 0x3a6ad8, deskTemplate, laptopTemplate, furnitureTemplate, i);
       const [wx, wz] = toWorld(d.x, d.y);
       group.position.set(wx, 0, wz);
       scene.add(group);
       deskMons.push(monMat);
       deskHolos.push(holo);
+      obstacles.push({ x: wx, z: wz, r: 0.85 });
     });
     dineTablePositions.forEach((t) => {
       const tbl = buildDiningTable();
@@ -927,6 +1061,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       const lamp = buildPendantLamp();
       lamp.position.set(wx, 5.0, wz);
       scene.add(lamp);
+      obstacles.push({ x: wx, z: wz, r: 1.1 });
     });
     {
       const mt = buildMeetingTable();
@@ -935,7 +1070,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       const [wx, wz] = toWorld(cx, cy);
       mt.position.set(wx, 0, wz);
       scene.add(mt);
+      obstacles.push({ x: wx, z: wz, r: 1.0 });
     }
+    // A few fixed pieces the player would otherwise walk straight through.
+    [[-9.5, 8.5, 1.0], [-3.5, 8.2, 0.9], [12.1, 3.7, 1.4], [9.0, -9.5, 0.9], [10.6, -9.5, 0.8]]
+      .forEach(([ox, oz, r]) => obstacles.push({ x: ox, z: oz, r }));
 
     // Player
     const playerH = buildHuman(0xE4BC63, "אתה", true, charTemplate, charClips);
@@ -987,6 +1126,12 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       sun.color.lerp(tmpColor.set(sunTargetHex), Math.min(1, dt * 0.8));
       const ambTargetInt = isNight ? 0.35 : 0.65;
       ambient.intensity += (ambTargetInt - ambient.intensity) * Math.min(1, dt * 0.8);
+      // Near-building windows light up after dark — same lit-window feel as
+      // the painted skyline behind them, but on real 3D geometry.
+      const buildingGlowTarget = isNight ? 0.85 : isEvening ? 0.4 : 0.02;
+      nearBuildingMats.forEach((mat) => {
+        mat.emissiveIntensity += (buildingGlowTarget - mat.emissiveIntensity) * Math.min(1, dt * 0.8);
+      });
 
       // Wall TVs — redrawn ~once a second, not every frame; the trading
       // screen ticks a simulated market, the HeavyGuard screen reflects
@@ -1025,6 +1170,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         const SPEED = 4.4;
         playerH.group.position.x = clamp(playerH.group.position.x + mx * SPEED * dt, -12.2, 12.2);
         playerH.group.position.z = clamp(playerH.group.position.z + mz * SPEED * dt, -10.2, 10.2);
+        resolveCollisions(playerH.group.position, obstacles);
         const targetRot = Math.atan2(mx, mz);
         let dRot = targetRot - playerH.group.rotation.y;
         while (dRot > Math.PI) dRot -= Math.PI * 2;
@@ -1035,7 +1181,10 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         setClip(playerH, CLIP.idle);
       }
 
-      // NPCs: lerp toward their live target position; walking bob; seated pose.
+      // NPCs: walk a simple two-point "aisle" route to their live target
+      // (down their column to the destination's row, then across) instead
+      // of cutting a diagonal beeline through every desk in between — reads
+      // as deliberate human wayfinding rather than gliding through furniture.
       const liveChars = liveRef.current.chars || [];
       liveChars.forEach((c) => {
         const h = npc[c.id]; if (!h) return;
@@ -1045,10 +1194,17 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         // walk target itself back and down onto the visible chair seat
         // (tuned by eye), so there's no separate snap once they arrive.
         const [rawTx, rawTz] = toWorld(c.x, c.y);
-        const tx = atDesk ? rawTx + Math.sin(DESK_FACE_ROT) * SEAT_BACK : rawTx;
-        const tz = atDesk ? rawTz + Math.cos(DESK_FACE_ROT) * SEAT_BACK : rawTz;
+        const finalX = atDesk ? rawTx + Math.sin(DESK_FACE_ROT) * SEAT_BACK : rawTx;
+        const finalZ = atDesk ? rawTz + Math.cos(DESK_FACE_ROT) * SEAT_BACK : rawTz;
+        if (h.destX === undefined || Math.abs(h.destX - finalX) > 0.05 || Math.abs(h.destZ - finalZ) > 0.05) {
+          h.destX = finalX; h.destZ = finalZ;
+          h.wpX = h.group.position.x; h.wpZ = finalZ;
+        }
+        const atWp = Math.hypot(h.wpX - h.group.position.x, h.wpZ - h.group.position.z) < 0.1;
+        const tx = atWp ? finalX : h.wpX, tz = atWp ? finalZ : h.wpZ;
         const dx = tx - h.group.position.x, dz = tz - h.group.position.z;
         const dist = Math.hypot(dx, dz);
+        const distFinal = Math.hypot(finalX - h.group.position.x, finalZ - h.group.position.z);
         if (dist > 0.01) {
           // A real walking pace (units/sec), not a percent-of-remaining-
           // distance lerp — the old lerp closed most of the gap in the
@@ -1063,9 +1219,9 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
             h.group.position.z += (dz / dist) * maxStep;
           }
         }
-        const targetY = atDesk ? SEAT_DROP : 0;
+        const targetY = atDesk && distFinal <= 0.03 ? SEAT_DROP : 0;
         h.group.position.y += (targetY - h.group.position.y) * Math.min(1, dt * 6);
-        if (dist > 0.03) {
+        if (distFinal > 0.03) {
           const targetRot = Math.atan2(dx, dz);
           let dRot = targetRot - h.group.rotation.y;
           while (dRot > Math.PI) dRot -= Math.PI * 2;
@@ -1112,7 +1268,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         playerH.group.visible = true;
         const camOffset = new THREE.Vector3(0, 6.4, 7.6);
         const desired = playerH.group.position.clone().add(camOffset);
-        camera.position.lerp(desired, 0.07);
+        camera.position.lerp(desired, Math.min(1, dt * 5.2));
         camera.lookAt(playerH.group.position.x, 1.1, playerH.group.position.z);
       }
 
