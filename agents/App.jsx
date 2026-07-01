@@ -1334,6 +1334,20 @@ function OfficeSim({ onClose, onOpenChat }) {
         seatPositions={OFC_SEATS}
         dineTablePositions={OFC_DINE_TABLES}
         bizData={bizSnapshot()}
+        voice={{
+          canListen: canListen(),
+          canSpeak: canSpeak(),
+          speak: speakText,
+          // Ask a specific agent (by id) something and get their reply — same
+          // brain as the text chat (persona + live business context), with the
+          // scripted fallback when no AI key is configured.
+          ask: async (id, text) => {
+            const a = byId(id); if (!a) return "";
+            if (!hasAI()) return FALLBACK[id] ? FALLBACK[id](text) : `שלום, אני ${a.name}. ${a.tagline}.`;
+            try { return await askGroq(a.persona + bizContext(), [], text); }
+            catch { return FALLBACK[id] ? FALLBACK[id](text) : "סליחה, לא הצלחתי לענות כרגע."; }
+          },
+        }}
         onClose={onClose}
         onOpenChat={onOpenChat}
       />
@@ -1980,10 +1994,26 @@ function StyleTag() {
 .off3-hint{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:2;
   background:rgba(6,9,18,.72);border:1px solid rgba(110,170,240,.25);border-radius:20px;
   padding:6px 14px;font-size:11.5px;color:#aebde0;backdrop-filter:blur(8px);white-space:nowrap;pointer-events:none}
-.off3-talk{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);z-index:3;
-  display:flex;align-items:center;gap:8px;background:linear-gradient(135deg,var(--c),color-mix(in srgb,var(--c) 60%,#000));
+/* Talk bar (mic + text-chat) shown when standing next to an agent. */
+.off3-talkbar{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);z-index:3;
+  display:flex;align-items:center;gap:10px;animation:acRise .2s ease both}
+.off3-talk{display:flex;align-items:center;gap:8px;background:linear-gradient(135deg,var(--c),color-mix(in srgb,var(--c) 60%,#000));
   color:#fff;border:none;border-radius:30px;padding:12px 20px;font-family:'Rubik';font-weight:900;font-size:14px;
-  cursor:pointer;box-shadow:0 8px 26px color-mix(in srgb,var(--c) 50%,transparent);animation:acRise .2s ease both}
+  cursor:pointer;box-shadow:0 8px 26px color-mix(in srgb,var(--c) 50%,transparent)}
+.off3-mic{flex-shrink:0;width:54px;height:54px;border-radius:50%;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(135deg,var(--c),color-mix(in srgb,var(--c) 55%,#000));color:#fff;
+  box-shadow:0 8px 26px color-mix(in srgb,var(--c) 55%,transparent);transition:.15s}
+.off3-mic:active{transform:scale(.92)}
+.off3-mic.listening{animation:off3MicPulse 1s ease-in-out infinite}
+.off3-mic.thinking{opacity:.7}
+.off3-mic.speaking{box-shadow:0 0 0 4px color-mix(in srgb,var(--c) 40%,transparent),0 8px 26px color-mix(in srgb,var(--c) 55%,transparent)}
+@keyframes off3MicPulse{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--c) 55%,transparent)}50%{box-shadow:0 0 0 14px transparent}}
+/* Live conversation subtitle above the talk bar. */
+.off3-subtitle{position:absolute;left:50%;bottom:92px;transform:translateX(-50%);z-index:3;max-width:min(560px,86vw);
+  display:flex;flex-direction:column;gap:2px;text-align:center;background:rgba(6,9,18,.82);border:1px solid rgba(255,255,255,.12);
+  border-radius:16px;padding:10px 18px;backdrop-filter:blur(10px);animation:acRise .18s ease both}
+.off3-subtitle b{font-family:'Rubik';font-weight:900;font-size:13px}
+.off3-subtitle span{font-size:14.5px;color:#eaf1ff;line-height:1.45}
 /* Floating joystick — appears centred on wherever you first touch/click. */
 .off3-joy.floating{position:absolute;z-index:4;width:128px;height:128px;margin:-64px 0 0 -64px;border-radius:50%;
   background:radial-gradient(circle,rgba(255,255,255,.1),rgba(255,255,255,.03));
