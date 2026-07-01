@@ -752,26 +752,44 @@ function buildPendantLamp() {
 // A small canvas-texture nameplate floating above the head — the character
 // model itself now has one fixed face/body, so this (plus the colored floor
 // ring below) is what lets you tell agents apart at a glance.
-function buildNameSprite(name, color) {
+// Floating badge over each character: their name (top line) and — when given —
+// their job title on a second line in their own colour, so you can read what
+// every agent does just by looking at who's standing where.
+function buildNameSprite(name, color, role) {
   const cvs = document.createElement("canvas");
-  cvs.width = 256; cvs.height = 64;
+  cvs.width = 340; cvs.height = role ? 104 : 64;
   const ctx = cvs.getContext("2d");
   const hex = "#" + new THREE.Color(color).getHexString();
-  ctx.fillStyle = "rgba(10,10,20,.55)";
+  ctx.fillStyle = "rgba(10,10,20,.62)";
   ctx.beginPath();
-  ctx.roundRect(4, 14, 248, 36, 14);
+  ctx.roundRect(6, 8, 328, role ? 88 : 44, 16);
   ctx.fill();
+  if (role) {
+    // thin coloured underline separating name from role
+    ctx.strokeStyle = hex; ctx.globalAlpha = 0.5; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(24, 56); ctx.lineTo(316, 56); ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+  const nameY = role ? 34 : 32;
   ctx.fillStyle = hex;
-  ctx.beginPath(); ctx.arc(28, 32, 9, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(30, nameY, 9, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = "#fff";
-  ctx.font = "700 26px system-ui, sans-serif";
+  ctx.font = "700 27px system-ui, sans-serif";
   ctx.textBaseline = "middle";
-  ctx.fillText(name || "", 46, 33);
+  ctx.textAlign = "left";
+  ctx.fillText(name || "", 50, nameY + 1);
+  if (role) {
+    ctx.fillStyle = hex;
+    ctx.font = "600 20px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(role, 170, 78);
+  }
   const tex = new THREE.CanvasTexture(cvs);
   tex.colorSpace = THREE.SRGBColorSpace;
   const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
   const sprite = new THREE.Sprite(mat);
-  sprite.scale.set(0.9, 0.225, 1);
+  if (role) sprite.scale.set(1.16, 0.355, 1);
+  else sprite.scale.set(0.9, 0.225, 1);
   sprite.renderOrder = 999;
   return sprite;
 }
@@ -781,7 +799,7 @@ function buildNameSprite(name, color) {
 // (not group.clone(true)) so each instance gets its own independent
 // skeleton/bones — a plain clone shares bone objects across instances and
 // every character would end up mirroring the same pose.
-function buildHuman(color, name, isPlayer, charTemplate, charClips, modelScale = CHAR_SCALE, modelOffset = CHAR_CENTER_OFFSET, tintClothes = true) {
+function buildHuman(color, name, isPlayer, charTemplate, charClips, modelScale = CHAR_SCALE, modelOffset = CHAR_CENTER_OFFSET, tintClothes = true, role = "") {
   const g = new THREE.Group();
 
   let mixer = null, actions = {}, current = null;
@@ -825,8 +843,8 @@ function buildHuman(color, name, isPlayer, charTemplate, charClips, modelScale =
     g.add(crown);
   }
 
-  const nameSprite = buildNameSprite(name, color);
-  nameSprite.position.y = 1.55;
+  const nameSprite = buildNameSprite(name, color, role);
+  nameSprite.position.y = role ? 1.66 : 1.55;
   g.add(nameSprite);
 
   const ring = new THREE.Mesh(
@@ -900,6 +918,111 @@ function buildNeonSign(text, color, w = 3.4, h = 0.8) {
 // suite with a premium battlestation, a crown-topped nameplate, a rug and
 // a couple of accent lights. Returns the group plus collision circles so
 // the player walks around the partition and in through the doorway.
+// A shared, cheap glass material for every partition in the room. One instance
+// (not per-wall clones) keeps draw-state changes down. depthWrite:false is
+// essential — a transparent pane that still writes depth occludes the agents
+// and player standing behind it (the original "everyone is invisible" bug).
+const OFFICE_GLASS_MAT = new THREE.MeshPhysicalMaterial({
+  color: 0x9fd6ff, transparent: true, opacity: 0.09, roughness: 0.05,
+  metalness: 0.1, side: THREE.DoubleSide, depthWrite: false,
+});
+
+// A private glass-walled office wrapped around one agent's battlestation:
+// a back wall + two side walls (front left open as the doorway) with a neon
+// top rail and a floating title/name plate over the entrance, all in the
+// agent's own colour. Doorway faces +Z (south, toward the aisle the worker
+// faces). Returns the group + collision circles for the three solid walls.
+function buildGlassOffice(color, name, title) {
+  const g = new THREE.Group();
+  const obstacles = [];
+  const W = 3.3, D = 3.1, wallH = 2.35;
+  const neon = new THREE.MeshBasicMaterial({ color });
+
+  const addRail = (w, x, z, alongZ) => {
+    const rail = new THREE.Mesh(
+      new THREE.BoxGeometry(alongZ ? 0.05 : w, 0.05, alongZ ? w : 0.05), neon);
+    rail.position.set(x, wallH, z); g.add(rail);
+  };
+  // Back wall (north, -Z)
+  const back = new THREE.Mesh(new THREE.PlaneGeometry(W, wallH), OFFICE_GLASS_MAT);
+  back.position.set(0, wallH / 2, -D / 2); g.add(back);
+  addRail(W, 0, -D / 2, false);
+  // Side walls (west -X, east +X)
+  [-W / 2, W / 2].forEach((sx) => {
+    const wall = new THREE.Mesh(new THREE.PlaneGeometry(D, wallH), OFFICE_GLASS_MAT);
+    wall.rotation.y = Math.PI / 2; wall.position.set(sx, wallH / 2, 0); g.add(wall);
+    addRail(D, sx, 0, true);
+  });
+  // A short glass return on each side of the doorway so the front isn't a
+  // gaping hole, leaving a ~1.3-wide entrance in the middle.
+  [-1, 1].forEach((s) => {
+    const jamb = new THREE.Mesh(new THREE.PlaneGeometry(1.0, wallH), OFFICE_GLASS_MAT);
+    jamb.position.set(s * (W / 2 - 0.5), wallH / 2, D / 2); g.add(jamb);
+    addRail(1.0, s * (W / 2 - 0.5), D / 2, false);
+  });
+
+  // Collision circles along the three solid walls (doorway gap stays open).
+  for (let t = -W / 2; t <= W / 2 + 0.01; t += 0.75) obstacles.push({ x: t, z: -D / 2, r: 0.22 });
+  for (let t = -D / 2; t <= D / 2 + 0.01; t += 0.75) { obstacles.push({ x: -W / 2, z: t, r: 0.22 }); obstacles.push({ x: W / 2, z: t, r: 0.22 }); }
+  obstacles.push({ x: -(W / 2 - 0.5), z: D / 2, r: 0.28 }, { x: W / 2 - 0.5, z: D / 2, r: 0.28 });
+
+  // Frosted door-header plate with the agent's name + title, over the entrance.
+  const plate = buildNameSprite(name, color, title);
+  plate.scale.multiplyScalar(1.9);
+  plate.position.set(0, wallH + 0.32, D / 2);
+  g.add(plate);
+  return { group: g, obstacles };
+}
+
+// The shared conference room — a glass box around the meeting table with a
+// doorway on the south side, a big presentation screen on the back wall, and
+// a "חדר ישיבות" sign over the door.
+function buildConferenceRoom(color, screenTex) {
+  const g = new THREE.Group();
+  const obstacles = [];
+  const W = 5.6, D = 5.0, wallH = 2.6;
+  const neon = new THREE.MeshBasicMaterial({ color });
+  const rail = (geo, x, y, z) => { const m = new THREE.Mesh(geo, neon); m.position.set(x, y, z); g.add(m); };
+
+  // Back + two sides = solid glass; front (south) has a centred doorway gap.
+  const back = new THREE.Mesh(new THREE.PlaneGeometry(W, wallH), OFFICE_GLASS_MAT);
+  back.position.set(0, wallH / 2, -D / 2); g.add(back);
+  rail(new THREE.BoxGeometry(W, 0.06, 0.06), 0, wallH, -D / 2);
+  [-W / 2, W / 2].forEach((sx) => {
+    const wall = new THREE.Mesh(new THREE.PlaneGeometry(D, wallH), OFFICE_GLASS_MAT);
+    wall.rotation.y = Math.PI / 2; wall.position.set(sx, wallH / 2, 0); g.add(wall);
+    rail(new THREE.BoxGeometry(0.06, 0.06, D), sx, wallH, 0);
+  });
+  [-1, 1].forEach((s) => {
+    const seg = new THREE.Mesh(new THREE.PlaneGeometry(1.7, wallH), OFFICE_GLASS_MAT);
+    seg.position.set(s * (W / 2 - 0.85), wallH / 2, D / 2); g.add(seg);
+    rail(new THREE.BoxGeometry(1.7, 0.06, 0.06), s * (W / 2 - 0.85), wallH, D / 2);
+  });
+
+  // Presentation screen on the inside of the back wall.
+  if (screenTex) {
+    const screen = new THREE.Mesh(
+      new THREE.PlaneGeometry(3.4, 1.9),
+      new THREE.MeshBasicMaterial({ map: screenTex })
+    );
+    screen.position.set(0, 1.5, -D / 2 + 0.06); g.add(screen);
+    const bezel = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 2.1), new THREE.MeshBasicMaterial({ color: 0x05060a }));
+    bezel.position.set(0, 1.5, -D / 2 + 0.05); g.add(bezel);
+  }
+
+  // Collisions on the three solid walls + the two door jambs.
+  for (let t = -W / 2; t <= W / 2 + 0.01; t += 0.7) obstacles.push({ x: t, z: -D / 2, r: 0.24 });
+  for (let t = -D / 2; t <= D / 2 + 0.01; t += 0.7) { obstacles.push({ x: -W / 2, z: t, r: 0.24 }); obstacles.push({ x: W / 2, z: t, r: 0.24 }); }
+  [-1, 1].forEach((s) => { for (let k = 0; k < 2; k++) obstacles.push({ x: s * (W / 2 - 0.4 - k * 0.7), z: D / 2, r: 0.24 }); });
+
+  const sign = buildNeonSign("חדר ישיבות", color, 3.2, 0.7);
+  sign.position.set(0, wallH + 0.4, D / 2);
+  g.add(sign);
+  const glow = new THREE.PointLight(color, 0.45, 12);
+  glow.position.set(0, 2.2, 0); g.add(glow);
+  return { group: g, obstacles };
+}
+
 function buildOwnerOffice(color, deskTemplate, laptopTemplate, furnitureTemplate) {
   const g = new THREE.Group();
   const obstacles = [];
@@ -1278,6 +1401,14 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       deskMons.push(monMat);
       deskHolos.push(holo);
       obstacles.push({ x: wx, z: wz, r: 0.85 });
+      // Each agent gets their own private glass office wrapped around their
+      // battlestation, colour-coded with their name + title over the door.
+      if (owner) {
+        const off = buildGlassOffice(hexToInt(owner.color), owner.name, owner.title);
+        off.group.position.set(wx, 0, wz);
+        scene.add(off.group);
+        off.obstacles.forEach((o) => obstacles.push({ x: wx + o.x, z: wz + o.z, r: o.r }));
+      }
     });
     dineTablePositions.forEach((t) => {
       const tbl = buildDiningTable();
@@ -1297,6 +1428,30 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       mt.position.set(wx, 0, wz);
       scene.add(mt);
       obstacles.push({ x: wx, z: wz, r: 1.0 });
+      // Wrap the whole meeting nook in a shared glass conference room with a
+      // presentation screen + "חדר ישיבות" sign over the door.
+      const confCvs = document.createElement("canvas");
+      confCvs.width = 512; confCvs.height = 288;
+      const cctx = confCvs.getContext("2d");
+      const cg = cctx.createLinearGradient(0, 0, 0, 288);
+      cg.addColorStop(0, "#101a2e"); cg.addColorStop(1, "#0a1120");
+      cctx.fillStyle = cg; cctx.fillRect(0, 0, 512, 288);
+      cctx.fillStyle = "#E4BC63"; cctx.font = "700 40px system-ui, sans-serif";
+      cctx.textAlign = "center"; cctx.fillText("מרכז הסוכנים · אלפא", 256, 60);
+      cctx.fillStyle = "#9fd6ff"; cctx.font = "600 24px system-ui, sans-serif";
+      cctx.fillText("ישיבת צוות · יעדים ושיתופי פעולה", 256, 100);
+      const bars = [0.5, 0.72, 0.6, 0.88, 0.66, 0.95];
+      bars.forEach((b, bi) => {
+        cctx.fillStyle = ["#3FD79A", "#6FD3F0", "#C77DFF", "#FF8C42", "#FFD23F", "#FF6B9D"][bi];
+        const bw = 44, gap = 24, x0 = 70 + bi * (bw + gap);
+        cctx.fillRect(x0, 250 - b * 110, bw, b * 110);
+      });
+      const confScreenTex = new THREE.CanvasTexture(confCvs);
+      confScreenTex.colorSpace = THREE.SRGBColorSpace;
+      const conf = buildConferenceRoom(0xE4BC63, confScreenTex);
+      conf.group.position.set(wx, 0, wz);
+      scene.add(conf.group);
+      conf.obstacles.forEach((o) => obstacles.push({ x: wx + o.x, z: wz + o.z, r: o.r }));
     }
     // A few fixed pieces the player would otherwise walk straight through.
     [[-9.5, 8.5, 1.0], [-3.5, 8.2, 0.9], [12.1, 3.7, 1.4], [9.0, -9.5, 0.9], [10.6, -9.5, 0.8]]
@@ -1357,7 +1512,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // clear of any wall/desk so movement is free and comfortable from the
     // first step, facing north toward the team (the owner's glass office is
     // right there to the east to walk into).
-    const playerH = buildHuman(0xE4BC63, "אתה", true, charTemplate, charClips);
+    const playerH = buildHuman(0xE4BC63, "אתה", true, charTemplate, charClips, CHAR_SCALE, CHAR_CENTER_OFFSET, true, "הבעלים · שחר");
     playerH.group.position.set(2.2, 0, 8.6);
     playerH.group.rotation.y = Math.PI;
     scene.add(playerH.group);
@@ -1371,8 +1526,8 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       if (!a) return;
       const useBiz = c.id === BIZ_AGENT_ID && bizTemplate;
       const h = useBiz
-        ? buildHuman(a.color, a.name, false, bizTemplate, [], BIZ_SCALE, BIZ_OFFSET, false)
-        : buildHuman(a.color, a.name, false, charTemplate, charClips);
+        ? buildHuman(a.color, a.name, false, bizTemplate, [], BIZ_SCALE, BIZ_OFFSET, false, a.title)
+        : buildHuman(a.color, a.name, false, charTemplate, charClips, CHAR_SCALE, CHAR_CENTER_OFFSET, true, a.title);
       const [wx, wz] = toWorld(c.x, c.y);
       h.group.position.set(wx, 0, wz);
       scene.add(h.group);
