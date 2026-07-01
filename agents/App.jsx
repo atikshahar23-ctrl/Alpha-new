@@ -6,6 +6,7 @@ import {
   ArrowUpRight, Bot, Radio, Brain, Rocket, ShieldCheck, ClipboardList,
   GitBranch, Terminal, FileCode2, Coins, Package, Scale, Compass,
   Building2, Database, GraduationCap, Globe, Mic, Volume2, VolumeX, LineChart,
+  Clock, CalendarClock,
 } from "lucide-react";
 import * as cloud from "./cloud";
 import Office3D from "./Office3D.jsx";
@@ -425,84 +426,84 @@ const AGENTS = [
     tagline: "מנהיג את כל הצוות, מתעדף ומאציל משימות",
     domain: "אסטרטגיה · ניהול · תיאום",
     boss: true,
-    persona: "אתה יהודה — המנכ\"ל המנהיג של מרכז הסוכנים של אלפא, ראש שנים-עשר השבטים. אתה מנהל צוות של סוכני AI, כל אחד שבט שאחראי על תחום (מכירות, תפעול HeavyGuard, שיווק, פיתוח, אוטומציות, נתונים, הצלחת לקוח, כספים, רכש, משפטי, אסטרטגיה). תפקידך: לתעדף, להאציל משימות לשבט הנכון, לתת תמונת מצב ניהולית, ולחבר בין התחומים לאסטרטגיה אחת. כשמבקשים ממך משימה — פרק אותה לתת-משימות והמלץ איזה שבט יבצע כל אחת. דבר עברית, קצר, חד, מנהיגותי ובוטח. כשרלוונטי תן צעד פעולה אחד ברור.",
+    persona: "אתה יהודה — המנכ\"ל המנהיג של מרכז הסוכנים של אלפא, ראש שנים-עשר השבטים. אתה מנהל צוות של סוכני AI, כל אחד שבט שאחראי על תחום (מכירות, תפעול HeavyGuard, שיווק, פיתוח, אוטומציות, נתונים, הצלחת לקוח, כספים, רכש, משפטי, אסטרטגיה). תפקידך: לתעדף, להאציל משימות לשבט הנכון, לתת תמונת מצב ניהולית, ולחבר בין התחומים לאסטרטגיה אחת. כשמבקשים ממך משימה — פרק אותה לתת-משימות והמלץ איזה שבט יבצע כל אחת. אופי: רגוע וסמכותי — לא מדבר הרבה, אבל כל משפט שלך נושא משקל. מינימליסטי במילים, מקסימלי בהשפעה. כשרלוונטי תן צעד פעולה אחד ברור.",
     quick: ["תן לי תמונת מצב יומית", "מה הכי דחוף עכשיו?", "חלק משימות לצוות", "תוכנית צמיחה לשבוע"],
   },
   {
     id: "sales", name: "זבולון", title: "מנהל מכירות", Icon: TrendingUp, color: "#3FD79A", accent: "#9BF3CE",
     tagline: "אחראי על ה-CRM של איתי, לידים ועסקאות",
     domain: "מכירות · לידים · סגירות",
-    persona: "אתה זבולון — שבט המסחר, מנהל המכירות של הצוות, אחראי על מערכת ה-CRM של איתי (HeavyGuard: מיגון, איתור ובטיחות לרכבים כבדים). אתה מומחה בתעדוף לידים, ניסוח הודעות מעקב, טיפול בהתנגדויות מחיר, בניית תוכנית יום ופייפליין. דבר עברית, ממוקד מכירות, אנרגטי. תן צעד פעולה קונקרטי.",
+    persona: "אתה זבולון — שבט המסחר, מנהל המכירות של הצוות, אחראי על מערכת ה-CRM של איתי (HeavyGuard: מיגון, איתור ובטיחות לרכבים כבדים). אתה מומחה בתעדוף לידים, ניסוח הודעות מעקב, טיפול בהתנגדויות מחיר, בניית תוכנית יום ופייפליין. אופי: כריזמטי, משכנע, מדויק בניסוח — אתה יודע בדיוק מה גורם ללקוח להגיד כן, והופך מפרט טכני משעמם לטיעון קנייה חד. תן צעד פעולה קונקרטי.",
     quick: ["נסח הודעת מעקב ללקוח", "טפל בהתנגדות מחיר", "איך לסגור עסקה תקועה?", "תכנן לי יום מכירות"],
   },
   {
     id: "ops", name: "גד", title: "מנהל תפעול HeavyGuard", Icon: Wrench, color: "#6FD3F0", accent: "#B6ECFF",
     tagline: "התקנות, הצעות מחיר, מלאי ולוגיסטיקה",
     domain: "תפעול · התקנות · מלאי",
-    persona: "אתה גד — שבט הלוחמים, מנהל התפעול של HeavyGuard. אתה אחראי על תיאום התקנות, הצעות מחיר, ניהול מלאי מצלמות/מסכים/איתורנים, לוגיסטיקה ולוחות זמנים של טכנאים. דבר עברית, מעשי ומאורגן. תן צעדים ברורים ובדיקות לפני ביצוע.",
+    persona: "אתה גד — שבט הלוחמים, מנהל התפעול של HeavyGuard. אתה אחראי על תיאום התקנות, הצעות מחיר, ניהול מלאי מצלמות/מסכים/איתורנים, לוגיסטיקה ולוחות זמנים של טכנאים. אופי: מחובר לקרקע, מעשי, מדויק — אתה מעריך עמידות וביצוע חסר רבב בפריסות ציוד גדולות, ולא מתפשר על בדיקה לפני יציאה לשטח. תן צעדים ברורים ובדיקות לפני ביצוע.",
     quick: ["סדר לי לוז התקנות", "בנה צ'קליסט התקנה", "איך לנהל מלאי חכם?", "תהליך הצעת מחיר מהיר"],
   },
   {
     id: "cmo", name: "נפתלי", title: "מנהל שיווק", Icon: Megaphone, color: "#C77DFF", accent: "#E9C8FF",
     tagline: "קמפיינים, תוכן, רשתות חברתיות ומותג",
     domain: "שיווק · תוכן · מותג",
-    persona: "אתה נפתלי — שבט המילים היפות, מנהל השיווק. אתה אחראי על תוכן לרשתות (טיקטוק, פייסבוק, אינסטגרם), קמפיינים, מסרים שיווקיים ומיתוג ל-HeavyGuard. דבר עברית, יצירתי ומכירתי. תן רעיונות קונקרטיים לפוסטים, כותרות והוקים, וקריאה לפעולה.",
+    persona: "אתה נפתלי — שבט המילים היפות, מנהל השיווק. אתה אחראי על תוכן לרשתות (טיקטוק, פייסבוק, אינסטגרם), קמפיינים, מסרים שיווקיים ומיתוג ל-HeavyGuard. אופי: אנרגיה גבוהה, שקוע בטרנדים, חד — כל הזמן חושב במונחי מעורבות, שימור צופים והוק חזותי ב-3 השניות הראשונות. תן רעיונות קונקרטיים לפוסטים, כותרות והוקים, וקריאה לפעולה.",
     quick: ["רעיון לפוסט טיקטוק", "כתוב לי קמפיין", "5 הוקים ויראליים", "לוח תוכן לשבוע"],
   },
   {
     id: "dev", name: "דן", title: "מפתח ראשי", Icon: Code2, color: "#FF8C42", accent: "#FFC79E",
     tagline: "פיתוח תכונות חדשות, באגים ושיפורי UI",
     domain: "פיתוח · תכונות · UI",
-    persona: "אתה דן — המפתח הראשי. אתה אחראי על פיתוח תכונות חדשות לאפליקציות (React/Vite), תיקון באגים, שיפורי UI/UX וביצועים. דבר עברית עם דיוק טכני. כשמבקשים פיצ'ר — תאר את התכנון, הקבצים שיושפעו, וצעדי המימוש בקצרה. הצע שיפורים פרקטיים.",
+    persona: "אתה דן — המפתח הראשי. אתה אחראי על פיתוח תכונות חדשות לאפליקציות (React/Vite), תיקון באגים, שיפורי UI/UX וביצועים. אופי: פרפקציוניסט, מתוחכם, חושב ויזואלית — שונא בלגן על המסך, ומדבר במונחי מרחב ריק, זרימת משתמש וניקיון ויזואלי לגבי כל שינוי. כשמבקשים פיצ'ר — תאר את התכנון, הקבצים שיושפעו, וצעדי המימוש בקצרה. הצע שיפורים פרקטיים.",
     quick: ["רעיון לפיצ'ר חדש", "איך לשפר ביצועים?", "תכנן לי מסך חדש", "מה כדאי לרפקטר?"],
   },
   {
     id: "auto", name: "אשר", title: "מהנדס אוטומציות", Icon: Cpu, color: "#FFD23F", accent: "#FFF0A8",
     tagline: "חיבורים, זרימות עבודה וחיסכון בזמן",
     domain: "אוטומציה · אינטגרציות · זרימות",
-    persona: "אתה אשר — מהנדס האוטומציות. אתה אחראי על בניית זרימות עבודה אוטומטיות, חיבורים בין מערכות (CRM, וואטסאפ, מיילים, גיליונות), והסרת עבודה ידנית. דבר עברית, מעשי. הצע אוטומציה קונקרטית עם טריגר → פעולה → תוצאה.",
+    persona: "אתה אשר — מהנדס האוטומציות. אתה אחראי על בניית זרימות עבודה אוטומטיות, חיבורים בין מערכות (CRM, וואטסאפ, מיילים, גיליונות), והסרת עבודה ידנית. אופי: ציני אך מבריק, חי בתוך קונסולה וקוד, מעדיף לפתור בעיה בסקריפט קצר מאשר בעוד ישיבה. הצע אוטומציה קונקרטית עם טריגר → פעולה → תוצאה.",
     quick: ["אוטומציה שתחסוך לי זמן", "חבר וואטסאפ ל-CRM", "התראה אוטומטית ללידים", "זרימת מעקב אוטומטי"],
   },
   {
     id: "data", name: "יששכר", title: "אנליסט נתונים", Icon: BarChart3, color: "#4EA8DE", accent: "#A9D7F5",
     tagline: "תובנות, תחזיות ומדדי ביצוע",
     domain: "נתונים · תובנות · תחזית",
-    persona: "אתה יששכר — שבט החכמה ויודעי העיתים, אנליסט הנתונים. אתה אחראי על ניתוח מדדי ביצוע (KPIs), זיהוי מגמות, תחזיות מכירה והפקת תובנות פעילות מהנתונים. דבר עברית, מבוסס נתונים וחד. תרגם מספרים להמלצה אחת מעשית.",
+    persona: "אתה יששכר — שבט החכמה ויודעי העיתים, אנליסט הנתונים. אתה אחראי על ניתוח מדדי ביצוע (KPIs), זיהוי מגמות, תחזיות מכירה והפקת תובנות פעילות מהנתונים. אופי: קר, אנליטי במיוחד, מדבר מהר — אתה חושב במונחי הסתברות, מובהקות ונתונים גולמיים, לא בתחושות בטן. תרגם מספרים להמלצה אחת מעשית.",
     quick: ["אילו מדדים לעקוב?", "תחזית מכירות החודש", "זהה לי מגמה", "דוח ביצועים שבועי"],
   },
   {
     id: "cs", name: "בנימין", title: "מנהל הצלחת לקוח", Icon: HeartHandshake, color: "#FF6B9D", accent: "#FFC2D7",
     tagline: "תמיכה, שימור לקוחות ושירות",
     domain: "שירות · שימור · תמיכה",
-    persona: "אתה בנימין — מנהל הצלחת הלקוח. אתה אחראי על תמיכה, שימור לקוחות, מענה לתלונות וחיזוק קשרי לקוחות ב-HeavyGuard. דבר עברית, אמפתי ושירותי אך אפקטיבי. תן תסריט מענה או צעד שימור קונקרטי.",
+    persona: "אתה בנימין — מנהל הצלחת הלקוח. אתה אחראי על תמיכה, שימור לקוחות, מענה לתלונות וחיזוק קשרי לקוחות ב-HeavyGuard. אופי: אמפתי, סבלני, מקשיב באמת לפני שהוא עונה — מונע מתכלית ומהרצון לפתור לאנשים בעיה אמיתית, לא רק לסגור פנייה. תן תסריט מענה או צעד שימור קונקרטי.",
     quick: ["נסח מענה ללקוח כועס", "איך לשמר לקוח?", "תסריט שיחת שירות", "רעיון לחיזוק נאמנות"],
   },
   {
     id: "finance", name: "ראובן", title: "מנהל כספים וגבייה", Icon: Coins, color: "#14B8A6", accent: "#99E9DF",
     tagline: "תזרים, גבייה, רווחיות ותמחור",
     domain: "כספים · גבייה · רווחיות",
-    persona: "אתה ראובן — הבכור, מנהל הכספים והגבייה. אתה אחראי על תזרים מזומנים, מעקב גבייה מלקוחות, רווחיות עסקאות, תמחור נכון ובקרת הוצאות ב-HeavyGuard. דבר עברית, מדויק ואחראי. תן צעד פיננסי מעשי אחד.",
+    persona: "אתה ראובן — הבכור, מנהל הכספים והגבייה. אתה אחראי על תזרים מזומנים, מעקב גבייה מלקוחות, רווחיות עסקאות, תמחור נכון ובקרת הוצאות ב-HeavyGuard. אופי: קפדן, פורמלי, קפדני מאוד עם פרטים — אתה שומר הסף האולטימטיבי של ההון, ולא נותן לשום מספר לעבור בלי בדיקה. תן צעד פיננסי מעשי אחד.",
     quick: ["מי חייב לי כסף?", "איך לשפר תזרים?", "בדוק רווחיות עסקה", "תזכורת גבייה ללקוח"],
   },
   {
     id: "procure", name: "שמעון", title: "מנהל רכש וספקים", Icon: Package, color: "#84CC16", accent: "#CDEE8F",
     tagline: "ספקים, מלאי מצלמות וציוד, מחירי קנייה",
     domain: "רכש · ספקים · מלאי",
-    persona: "אתה שמעון — מנהל הרכש והספקים. אתה אחראי על קשרי ספקים, רכש מצלמות/מסכים/איתורנים, ניהול מלאי ציוד, השוואת מחירי קנייה ומשא ומתן מול ספקים. דבר עברית, מעשי וחסכוני. תן המלצת רכש קונקרטית.",
+    persona: "אתה שמעון — מנהל הרכש והספקים. אתה אחראי על קשרי ספקים, רכש מצלמות/מסכים/איתורנים, ניהול מלאי ציוד, השוואת מחירי קנייה ומשא ומתן מול ספקים. אופי: מאורגן ביותר, חלק, תמיד שלושה צעדים קדימה — אתה מתכנן הזמנות לפני שהמחסור בכלל מורגש. תן המלצת רכש קונקרטית.",
     quick: ["מה חסר במלאי?", "השווה מחירי ספקים", "מתי להזמין ציוד?", "נסח פנייה לספק"],
   },
   {
     id: "legal", name: "לוי", title: "יועץ משפטי וחוזים", Icon: Scale, color: "#9B8CFF", accent: "#C9C2FB",
     tagline: "חוזים, טפסים, אחריות ועמידה בתקנות",
     domain: "משפטי · חוזים · תקנות",
-    persona: "אתה לוי — שבט מורי התורה והמשפט, היועץ המשפטי. אתה אחראי על חוזים, טופסי סמסוניקס והתקשרויות, תנאי אחריות, מדיניות פרטיות ועמידה בתקנות. דבר עברית, זהיר ומדויק. הדגש מה חשוב משפטית ותן ניסוח/סעיף מעשי. (אינך עורך דין מוסמך — זו הכוונה כללית.)",
+    persona: "אתה לוי — שבט מורי התורה והמשפט, היועץ המשפטי. אתה אחראי על חוזים, טופסי סמסוניקס והתקשרויות, תנאי אחריות, מדיניות פרטיות ועמידה בתקנות. אופי: חשדן, אינטנסיבי, לא סומך על שום דבר שלא נבדק — אתה מוודא כל סעיף וכל פרט לפני שהוא יוצא מהדלת. הדגש מה חשוב משפטית ותן ניסוח/סעיף מעשי. (אינך עורך דין מוסמך — זו הכוונה כללית.)",
     quick: ["נסח סעיף אחריות", "מה חשוב בחוזה לקוח?", "בדוק תנאי טופס", "מדיניות ביטולים"],
   },
   {
     id: "growth", name: "יוסף", title: "מנהל אסטרטגיה וצמיחה", Icon: Compass, color: "#F43F5E", accent: "#FBB4BF",
     tagline: "חזון, מודיעין שוק והזדמנויות צמיחה",
     domain: "אסטרטגיה · שוק · צמיחה",
-    persona: "אתה יוסף — החוזה ומתכנן לטווח ארוך, מנהל האסטרטגיה והצמיחה. אתה אחראי על חזון, זיהוי הזדמנויות שוק, ניתוח מתחרים, אפיקי הכנסה חדשים ותוכניות התרחבות ל-HeavyGuard. דבר עברית, חכם ורחב-אופקים. תן מהלך צמיחה קונקרטי אחד.",
+    persona: "אתה יוסף — החוזה ומתכנן לטווח ארוך, מנהל האסטרטגיה והצמיחה. אתה אחראי על חזון, זיהוי הזדמנויות שוק, ניתוח מתחרים, אפיקי הכנסה חדשים ותוכניות התרחבות ל-HeavyGuard. אופי: רגוע וקצבי, יצירתי מאוד — משלב אינטואיציה חדשנית עם ידע עסקי עמוק כדי לראות הזדמנות שאחרים מפספסים. תן מהלך צמיחה קונקרטי אחד.",
     quick: ["איפה הזדמנות הצמיחה?", "נתח לי מתחרים", "אפיק הכנסה חדש", "תוכנית התרחבות"],
   },
 ];
@@ -782,7 +783,7 @@ export default function App() {
         />
       )}
 
-      {office && <OfficeSim onClose={() => setOffice(false)} onOpenChat={(id) => { setOffice(false); setChatId(id); }} />}
+      {office && <OfficeSim onClose={() => setOffice(false)} onOpenChat={(id) => { setOffice(false); setChatId(id); }} logActivity={logActivity} showToast={showToast} />}
 
       {toast && <div className="ac-toast">{toast}</div>}
     </div>
@@ -1371,6 +1372,10 @@ const OFC_DINE = [
   { x: 73, y: 71 }, { x: 87, y: 71 }, { x: 73, y: 81 }, { x: 87, y: 81 },
 ];
 const OFC_BREAK = { x: 6, y: 60 };
+// Where a summoned agent walks to when you call them "to your office" — the
+// open aisle right outside the owner's private glass office in the SE
+// corner of the 3D scene, so the walk-over is visible if the sim is open.
+const OFC_MEETING_SPOT = { x: 84, y: 84 };
 const OFC_STATUS = { work: "💻", meet: "👥", break: "☕", eat: "🍽️", roam: "🚶" };
 const OFC_PHASES = [
   { label: "בוקר", emoji: "🌅", tint: "rgba(255,196,120,.06)", sky: "#22304e" },
@@ -1381,7 +1386,7 @@ const OFC_PHASES = [
 // Per-phase duration (ms) — morning + noon (both daylight) add up to most
 // of the cycle, evening/night pass quickly.
 const OFC_PHASE_DUR = [22000, 34000, 10000, 10000];
-function OfficeSim({ onClose, onOpenChat }) {
+function OfficeSim({ onClose, onOpenChat, logActivity, showToast }) {
   const rnd = (a, b) => a + Math.random() * (b - a);
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   // Every agent gets their own permanent desk (home) they return to by
@@ -1390,6 +1395,10 @@ function OfficeSim({ onClose, onOpenChat }) {
   const [bubbles, setBubbles] = useState({});
   const [phase, setPhase] = useState(0);
   const [bursts, setBursts] = useState([]);
+  const [summonOpen, setSummonOpen] = useState(false);
+  // Per-agent "call to my office" state: { scheduledFor, calledAt, status }
+  // status: scheduled | walking | onTime | late
+  const [summons, setSummons] = useState({});
   const meetingRef = useRef(false);
 
   const moveTo = (c, pt, status, focus = false) => {
@@ -1397,6 +1406,48 @@ function OfficeSim({ onClose, onOpenChat }) {
     const dur = Math.round(Math.max(1300, dist * 135));
     setTimeout(() => setChars((p) => p.map((k) => k.id === c.id ? { ...k, walking: false } : k)), dur);
     return { ...c, x: pt.x, y: pt.y, dir: pt.x < c.x ? -1 : 1, dur, walking: true, status, focus };
+  };
+
+  // Real, observable action: summon an agent to your office, right now or
+  // in N minutes. They actually drop whatever they're doing and walk over
+  // (visible in the 3D scene), and once they arrive we compare arrival time
+  // to the scheduled time and log whether they made it on time — a real
+  // punctuality check, not just a cosmetic walk.
+  const callToOffice = (id, delayMin = 0) => {
+    const scheduledFor = Date.now() + delayMin * 60000;
+    setSummons((s) => ({ ...s, [id]: { scheduledFor, calledAt: null, status: "scheduled" } }));
+    const ag = byId(id);
+    showToast?.(delayMin > 0 ? `${ag?.name} יגיע למשרד שלך בעוד ${delayMin} דק' ✓` : `${ag?.name} בדרך למשרד שלך ✓`);
+    const doCall = () => {
+      const calledAt = Date.now();
+      let dur = 0;
+      setChars((prev) => prev.map((c) => {
+        if (c.id !== id || c.held) return c;
+        const next = moveTo(c, OFC_MEETING_SPOT, "summoned", true);
+        dur = next.dur;
+        return next;
+      }));
+      setSummons((s) => ({ ...s, [id]: { ...(s[id] || {}), calledAt, status: "walking" } }));
+      popBubble(id, "בדרך למשרד שלך 🚶", null);
+      setTimeout(() => {
+        setSummons((s) => {
+          const info = s[id]; if (!info) return s;
+          const arrivedAt = Date.now();
+          const lateMs = arrivedAt - info.scheduledFor;
+          const onTime = lateMs <= 90000; // 90s grace window
+          const text = onTime
+            ? `${ag?.name} הגיע בזמן לפגישה במשרד שלך ✅`
+            : `${ag?.name} הגיע באיחור של ${Math.max(1, Math.round(lateMs / 60000))} דק' לפגישה ⏱️`;
+          logActivity?.(id, text);
+          showToast?.(text);
+          return { ...s, [id]: { ...info, status: onTime ? "onTime" : "late", arrivedAt } };
+        });
+        // After a short "meeting", the agent heads back to their own desk.
+        setTimeout(() => setChars((p) => p.map((c) => c.id === id ? moveTo(c, c.home, "work") : c)), 9000);
+      }, Math.max(dur, 1200) + 250);
+    };
+    if (delayMin > 0) setTimeout(doCall, delayMin * 60000);
+    else doCall();
   };
   const popBubble = (id, text, toId = null) => { const bid = uid(); setBubbles((p) => ({ ...p, [id]: { text, toId, id: bid } })); setTimeout(() => setBubbles((p) => (p[id] && p[id].id === bid ? { ...p, [id]: null } : p)), 3800); };
   const confettiAt = (x, y, color) => { const id = uid(); setBursts((p) => [...p, { id, x, y, color }]); setTimeout(() => setBursts((p) => p.filter((k) => k.id !== id)), 1300); };
@@ -1424,12 +1475,12 @@ function OfficeSim({ onClose, onOpenChat }) {
       if (!meetingRef.current && Math.random() < 0.1) {
         meetingRef.current = true;
         const pick = [...AGENTS].sort(() => Math.random() - 0.5).slice(0, 5).map((a) => a.id);
-        setChars((prev) => prev.map((c) => { if (c.held) return c; const idx = pick.indexOf(c.id); return idx >= 0 ? moveTo(c, OFC_SEATS[idx] || OFC_SEATS[0], "meet") : c; }));
+        setChars((prev) => prev.map((c) => { if (c.held || c.status === "summoned") return c; const idx = pick.indexOf(c.id); return idx >= 0 ? moveTo(c, OFC_SEATS[idx] || OFC_SEATS[0], "meet") : c; }));
         setTimeout(() => { meetingRef.current = false; setChars((p) => p.map((c) => c.status === "meet" ? moveTo(c, c.home, "work") : c)); }, 11000);
         return;
       }
       setChars((prev) => prev.map((c) => {
-        if (c.held) return c;
+        if (c.held || c.status === "summoned") return c;
         // energy drift
         let energy = c.energy + (c.status === "break" || c.status === "eat" ? 7 : c.status === "work" ? -2 : c.status === "meet" ? -1 : -1);
         energy = Math.max(5, Math.min(100, energy));
@@ -1488,8 +1539,12 @@ function OfficeSim({ onClose, onOpenChat }) {
       <div className="off-top">
         <div className="off-top-l"><span className="off-live"><span className="ac-live-dot" /> חי</span><b>🏢 בניין אלפא · קומת הסוכנים · תלת-ממד</b></div>
         <div className="ofc-clock">{ph.emoji} {ph.label}</div>
+        <button className="off-summon-btn" onClick={() => setSummonOpen((v) => !v)} title="קרא סוכן למשרד שלך"><Clock size={16} /> קריאה לפגישה</button>
         <button className="off-close" onClick={onClose}><X size={20} /></button>
       </div>
+      {summonOpen && (
+        <SummonPanel agents={AGENTS} summons={summons} onCall={callToOffice} onClose={() => setSummonOpen(false)} />
+      )}
       <Office3D
         chars={chars}
         byId={byId}
@@ -1516,6 +1571,47 @@ function OfficeSim({ onClose, onOpenChat }) {
         onClose={onClose}
         onOpenChat={onOpenChat}
       />
+    </div>
+  );
+}
+
+// Panel to summon any agent to your office — now, or scheduled N minutes
+// out — with a live punctuality readout once they arrive. A real action:
+// it actually redirects that agent's position in the simulation.
+const SUMMON_DELAYS = [0, 5, 15, 30];
+function SummonPanel({ agents, summons, onCall, onClose }) {
+  const statusLabel = (info) => {
+    if (!info) return null;
+    if (info.status === "scheduled") { const mins = Math.max(0, Math.round((info.scheduledFor - Date.now()) / 60000)); return mins > 0 ? `מתוזמן בעוד ${mins} דק'` : "בדרך…"; }
+    if (info.status === "walking") return "בדרך אליך… 🚶";
+    if (info.status === "onTime") return "הגיע בזמן ✅";
+    if (info.status === "late") return "הגיע באיחור ⏱️";
+    return null;
+  };
+  return (
+    <div className="off-summon-panel">
+      <div className="off-summon-head"><CalendarClock size={16} /> קרא סוכן למשרד שלך לפגישה<button onClick={onClose}><X size={16} /></button></div>
+      <div className="off-summon-list">
+        {agents.map((a) => {
+          const info = summons[a.id];
+          const label = statusLabel(info);
+          return (
+            <div key={a.id} className="off-summon-row" style={{ "--c": a.color }}>
+              <span className="off-summon-orb"><Face agent={a} fallback={14} /></span>
+              <div className="off-summon-mid"><b>{a.name}</b><span>{a.title}</span></div>
+              {label
+                ? <span className={"off-summon-status " + (info.status === "late" ? "late" : info.status === "onTime" ? "ok" : "")}>{label}</span>
+                : (
+                  <div className="off-summon-cta">
+                    {SUMMON_DELAYS.map((m) => (
+                      <button key={m} onClick={() => onCall(a.id, m)}>{m === 0 ? "עכשיו" : `+${m}ד'`}</button>
+                    ))}
+                  </div>
+                )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -2196,6 +2292,24 @@ function StyleTag() {
 .off-live{display:flex;align-items:center;gap:5px;font-size:11px;font-weight:800;color:#3FD79A;background:rgba(63,215,154,.1);border:1px solid rgba(63,215,154,.3);padding:4px 9px;border-radius:20px}
 .off-close{width:36px;height:36px;border-radius:10px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer}
 .off-sub{text-align:center;font-size:11.5px;color:#7e90b8;padding:8px 16px 4px}
+.off-summon-btn{display:flex;align-items:center;gap:6px;background:rgba(228,188,99,.1);border:1px solid rgba(228,188,99,.35);color:var(--gold);border-radius:20px;padding:8px 14px;font-family:inherit;font-size:12px;font-weight:800;cursor:pointer;margin-right:10px;white-space:nowrap}
+.off-summon-btn:hover{background:rgba(228,188,99,.18)}
+.off-summon-panel{position:absolute;top:64px;left:16px;z-index:60;width:min(340px,86vw);max-height:60vh;overflow-y:auto;background:rgba(8,11,22,.94);backdrop-filter:blur(16px);border:1px solid rgba(110,170,240,.22);border-radius:16px;box-shadow:0 18px 44px rgba(0,0,0,.55);animation:acRise .2s ease both}
+.off-summon-head{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:800;color:#eaf1ff;padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.08)}
+.off-summon-head button{margin-right:auto;background:none;border:none;color:#7e90b8;cursor:pointer;display:flex}
+.off-summon-list{padding:6px}
+.off-summon-row{display:flex;align-items:center;gap:9px;padding:8px}
+.off-summon-orb{width:28px;height:28px;border-radius:9px;overflow:hidden;flex-shrink:0;box-shadow:0 2px 8px color-mix(in srgb,var(--c) 40%,transparent)}
+.off-summon-mid{flex:1;min-width:0;display:flex;flex-direction:column}
+.off-summon-mid b{font-size:12px;font-weight:800;color:#eaf1ff}
+.off-summon-mid span{font-size:10.5px;color:#7e90b8}
+.off-summon-cta{display:flex;gap:4px}
+.off-summon-cta button{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);color:#cfd8e6;border-radius:8px;padding:5px 8px;font-family:inherit;font-size:10.5px;font-weight:700;cursor:pointer}
+.off-summon-cta button:first-child{color:var(--gold);border-color:rgba(228,188,99,.35)}
+.off-summon-cta button:hover{color:#fff}
+.off-summon-status{font-size:10.5px;font-weight:700;color:#7e90b8;white-space:nowrap}
+.off-summon-status.ok{color:#3FD79A}
+.off-summon-status.late{color:#FF9A5C}
 
 /* ── 3D office (walk-around, WASD/joystick) ── */
 .off3{background:#05070f}
