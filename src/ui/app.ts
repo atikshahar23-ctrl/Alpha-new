@@ -2245,16 +2245,29 @@ export function mountApp(root: HTMLElement) {
         const pinching = pinchActive ? pinchD < 0.11 : pinchD < 0.06;
 
         // Classify this frame, then debounce: a new pose must persist STABLE_MS
-        // before it takes over. Pinch and "none" switch immediately (pinch has
-        // its own hysteresis; releasing should feel instant) — the others must
-        // settle, which kills the flicker that made detection feel chaotic.
-        // FIST is checked first: in a fist the thumb rests over the curled fingers,
-        // so thumb-tip and index-tip sit close together and the pinch test would
-        // otherwise steal it. A fist (no fingers up) is unambiguous, so it wins.
+        // before it takes over — "none" switches immediately (an empty/relaxed
+        // reading should never be second-guessed). FIST is checked first: in a
+        // fist the thumb rests over the curled fingers, so thumb-tip and
+        // index-tip sit close together and the pinch test would otherwise
+        // steal it. A fist (no fingers up) is unambiguous, so it wins.
         // Until the hand has settled (armed), nothing classifies — pure observation.
         const raw = !armed ? 'none' : thumbsDown ? 'dispel' : fist ? 'fist' : pinching ? 'pinch' : pointing ? 'point' : open ? 'open' : 'none';
         if (raw === rawPrev) rawStableMs += dt; else { rawPrev = raw; rawStableMs = 0; }
-        if (raw === 'pinch' || raw === 'none' || rawStableMs >= STABLE_MS) confirmedGesture = raw;
+        // Pinch used to skip this debounce entirely ("its own hysteresis
+        // already protects it") — but the 2D thumb-index distance it's based
+        // on can dip below the grab threshold for a single noisy frame during
+        // completely ordinary hand movement (not a deliberate pinch), and
+        // since pinch drives a continuous action (spin the character / drag
+        // the summon dock) that one bad frame was enough to visibly hijack
+        // the screen with no real pinch ever made — exactly the "does things
+        // I didn't ask for" complaint. Require a short deliberate hold to
+        // START a pinch, same as every other gesture; once a pinch is
+        // actually active, keep releasing/tracking instant so an intentional
+        // grab still feels responsive.
+        const PINCH_ENTER_MS = 140;
+        if (raw === 'none') confirmedGesture = raw;
+        else if (raw === 'pinch') { if (pinchActive || rawStableMs >= PINCH_ENTER_MS) confirmedGesture = raw; }
+        else if (rawStableMs >= STABLE_MS) confirmedGesture = raw;
 
         if (confirmedGesture === 'pinch') {
           const hx = (lm[4].x + lm[8].x) / 2;   // pinch midpoint
