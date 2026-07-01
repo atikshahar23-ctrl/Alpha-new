@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
-  Crown, TrendingUp, Wrench, Megaphone, Code2, Cpu, BarChart3, HeartHandshake,
+  Crown, TrendingUp, TrendingDown, Wrench, Megaphone, Code2, Cpu, BarChart3, HeartHandshake,
   Send, X, Sparkles, Activity, Lightbulb, LayoutGrid, Settings as SettingsIcon,
   Copy, Check, Circle, Zap, ChevronLeft, MessageSquare, Plus, Trash2, RefreshCw,
   ArrowUpRight, Bot, Radio, Brain, Rocket, ShieldCheck, ClipboardList,
   GitBranch, Terminal, FileCode2, Coins, Package, Scale, Compass,
-  Building2, Database, GraduationCap, Globe, Mic, Volume2, VolumeX,
+  Building2, Database, GraduationCap, Globe, Mic, Volume2, VolumeX, LineChart,
 } from "lucide-react";
 import * as cloud from "./cloud";
 import Office3D from "./Office3D.jsx";
@@ -32,6 +32,7 @@ const K_ACT = "alpha:agents:activity";  // [{id, agentId, text, ts}]
 const K_GH = "alpha:agents:gh";         // { token, owner, repo } — token stays local-only
 const K_GH_TARGET = "alpha:agents:gh:target"; // which repo preset the dev console currently targets
 const K_DEVTASKS = "alpha:agents:devtasks"; // [{id, title, brief, status, issueUrl, ts}]
+const K_INVEST = "alpha:agents:invest"; // [{id, agentId, text, ts}] — read-only market commentary
 const load = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } };
 const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 // Cross-device sync: save locally, and — when the free shared-DB (Firebase)
@@ -139,6 +140,52 @@ function monthlyRevenue() {
   }
   return out;
 }
+/* ── Live investments world: read-only crypto + stock/index/commodity board.
+   Free public APIs (CoinGecko + Yahoo Finance chart), no key needed. This is
+   observation only — the team analyses and flags moves, it never places any
+   trade or touches real money. A tiny module-level cache + pub/sub so both
+   the Business view's table and the autonomous agents' commentary share one
+   set of live numbers instead of each firing its own network requests. ── */
+const mkFmt = (n) => (n >= 1000 ? Math.round(n).toLocaleString("en-US") : n.toLocaleString("en-US", { maximumFractionDigits: n >= 1 ? 2 : 4 }));
+async function fetchMarketRows() {
+  const rows = [];
+  try {
+    const ids = "bitcoin,ethereum,solana,binancecoin,ripple,cardano,dogecoin";
+    const r = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`);
+    const d = await r.json();
+    const order = [["bitcoin", "Bitcoin", "crypto"], ["ethereum", "Ethereum", "crypto"], ["solana", "Solana", "crypto"], ["binancecoin", "BNB", "crypto"], ["ripple", "XRP", "crypto"], ["cardano", "Cardano", "crypto"], ["dogecoin", "Dogecoin", "crypto"]];
+    for (const [id, name, kind] of order) if (d[id]) rows.push({ name, kind, price: "$" + mkFmt(d[id].usd), raw: d[id].usd, chg: d[id].usd_24h_change || 0 });
+  } catch {}
+  for (const [sym, name] of [["%5EGSPC", "S&P 500"], ["%5EIXIC", "NASDAQ"], ["%5EDJI", "Dow Jones"], ["GC%3DF", "זהב"], ["CL%3DF", "נפט"]]) {
+    try {
+      const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=2d`);
+      const d = await r.json();
+      const m = d.chart.result[0].meta;
+      const price = m.regularMarketPrice;
+      const prev = m.chartPreviousClose ?? m.previousClose ?? price;
+      rows.push({ name, kind: "stock", price: mkFmt(price), raw: price, chg: prev ? ((price - prev) / prev) * 100 : 0 });
+    } catch {}
+  }
+  return rows;
+}
+let marketCache = { rows: [], ts: 0 };
+const marketListeners = new Set();
+async function refreshMarket() {
+  const rows = await fetchMarketRows();
+  if (rows.length) { marketCache = { rows, ts: Date.now() }; marketListeners.forEach((fn) => fn(rows)); }
+  return rows;
+}
+function useMarket() {
+  const [rows, setRows] = useState(marketCache.rows);
+  useEffect(() => {
+    marketListeners.add(setRows);
+    if (!marketCache.rows.length) refreshMarket();
+    const iv = setInterval(refreshMarket, 90000);
+    return () => { marketListeners.delete(setRows); clearInterval(iv); };
+  }, []);
+  return rows;
+}
+
 // Proactive opportunity/risk detection — each agent flags what's in their lane.
 function detectOpportunities(b) {
   const out = [];
@@ -564,6 +611,50 @@ function seedActivity() {
 }
 
 /* ════════════════════════════════════════════════════════════════════
+   AUTONOMOUS AGENTS ENGINE — the team keeps working on its own: agents
+   pair up and discuss the real business numbers, drop new ideas onto the
+   board, wrap up ideas that have been "in progress" a while, and post
+   read-only market commentary. Everything here is deterministic templates
+   over live data (bizSnapshot / marketCache) — free, no AI key needed, and
+   it never executes a trade or touches money; it only observes and flags.
+   ════════════════════════════════════════════════════════════════════ */
+const CHATTER_PAIRS = [
+  { a: "ceo", b: "sales", make: (b) => [`מה מצב הפייפליין? יש לנו ${b.openDeals} עסקאות פתוחות?`, `כן, בשווי ${ils(b.openVal)} — ${b.wonMonth} כבר נסגרו החודש.`] },
+  { a: "sales", b: "cs", make: (b) => [`יש לקוחות שצריך לחזק לפני חידוש?`, `${b.staleCount} עסקאות לא זזו מעל שבוע — אני עוקב אחריהן.`] },
+  { a: "ops", b: "procure", make: (b) => [`יש לנו מלאי מספיק להתקנות הקרובות?`, `בדקתי — ${b.pricelist} פריטים במחירון, אני מוודא זמינות מול הספקים.`] },
+  { a: "cmo", b: "growth", make: (b) => [`איך הביצועים מול המתחרים?`, `יש לנו ${b.custCount} לקוחות פעילים — אני בודק הזדמנות להרחבה לאזור חדש.`] },
+  { a: "dev", b: "auto", make: () => [`אפשר לחסוך זמן עם אוטומציה על תהליך ההתקנה?`, `כן, אני בונה זרימה שתסנכרן את זה אוטומטית.`] },
+  { a: "data", b: "finance", make: (b) => [`ההכנסה המצטברת עומדת על ${ils(b.hgRevenue)} — המגמה חיובית?`, `כן, ואני עוקב שהגבייה תואמת את הפייפליין הפתוח.`] },
+  { a: "legal", b: "ops", make: () => [`כל ההתקנות האחרונות עם טופס התקשרות חתום?`, `בודק מול הצוות ומעדכן אותך.`] },
+  { a: "growth", b: "ceo", make: (b) => [`יש הזדמנות צמיחה שכדאי לדחוף החודש?`, `תראה לי מספרים ונחליט יחד בישיבת הצוות.`] },
+];
+const IDEA_TEMPLATES = [
+  { agentId: "growth", make: (b) => `לבחון הרחבה לאזור פעילות נוסף — יש כרגע ${b.custCount} לקוחות ו-${ils(b.openVal)} בפייפליין הפתוח, יש מקום לצמוח.` },
+  { agentId: "cmo", make: (b) => `קמפיין ממוקד ללקוחות שסגרו ב-90 הימים האחרונים כדי להעלות שיעור המלצות (${b.wonMonth} עסקאות נסגרו החודש).` },
+  { agentId: "auto", make: () => `אוטומציה שתשלח תזכורת מעקב אוטומטית לעסקה שלא זזה מעל שבוע.` },
+  { agentId: "data", make: (b) => `דוח שבועי אוטומטי שמשווה את קצב הסגירה (${b.wonMonth} החודש) מול החודש הקודם.` },
+  { agentId: "cs", make: (b) => `סקר שביעות רצון קצר ל-${Math.min(b.custCount, 20)} הלקוחות הפעילים האחרונים.` },
+  { agentId: "finance", make: (b) => `מעקב גבייה יזום לעסקאות פתוחות מעל שבוע (${b.staleCount} כרגע) לפני שהן הופכות לחוב אבוד.` },
+  { agentId: "procure", make: () => `להשוות מחירי ספקים מחדש — יכול לשפר את שולי הרווח בהתקנות הבאות.` },
+  { agentId: "ops", make: (b) => `לוח זמנים דינמי להתקנות לפי אזור, כדי לצמצם נסיעות טכנאים.` },
+];
+function marketMover(rows) {
+  if (!rows || !rows.length) return null;
+  return rows.reduce((max, r) => (Math.abs(r.chg) > Math.abs(max.chg) ? r : max), rows[0]);
+}
+const INVEST_AGENTS = ["finance", "growth", "data"];
+function investAnalysis(agentId, mover) {
+  const dir = mover.chg >= 0 ? "עלה" : "ירד";
+  const pct = Math.abs(mover.chg).toFixed(1);
+  const by = {
+    finance: `${mover.name} ${dir} ${pct}% ב-24 שעות (${mover.price}) — שווה לעקוב מבחינת תזרים והשפעה על נכסים נזילים, בלי לבצע מהלך פזיז.`,
+    growth: `${mover.name} ${dir} ${pct}% — תנועה כזו בשוק לפעמים מקדימה שינוי בסנטימנט צרכני, כדאי לעקוב אם זה משפיע על ביקוש.`,
+    data: `זיהיתי תנודה של ${pct}% ב-${mover.name} ב-24 שעות (${dir}) — מוסיף למעקב המגמות השוטף, אין עדיין מסקנה חד-משמעית.`,
+  };
+  return by[agentId] || by.data;
+}
+
+/* ════════════════════════════════════════════════════════════════════
    APP SHELL
    ════════════════════════════════════════════════════════════════════ */
 export default function App() {
@@ -572,16 +663,89 @@ export default function App() {
   const [office, setOffice] = useState(false);      // office simulator overlay
   const [activity, setActivity] = useState(() => { const a = load(K_ACT, null); return a && a.length ? a : seedActivity(); });
   const [ideas, setIdeas] = useState(() => load(K_IDEAS, []));
+  const [invest, setInvest] = useState(() => load(K_INVEST, []));
   const [toast, setToast] = useState("");
+  const ideasRef = useRef(ideas);
+  useEffect(() => { ideasRef.current = ideas; }, [ideas]);
 
   useCloudSync(K_ACT, setActivity);
   useCloudSync(K_IDEAS, setIdeas);
+  useCloudSync(K_INVEST, setInvest);
   useEffect(() => cloudSave(K_ACT, activity.slice(0, 60)), [activity]);
   useEffect(() => cloudSave(K_IDEAS, ideas), [ideas]);
+  useEffect(() => cloudSave(K_INVEST, invest.slice(0, 30)), [invest]);
 
   const showToast = (t) => { setToast(t); setTimeout(() => setToast(""), 2200); };
   const logActivity = (agentId, text) => setActivity((p) => [{ id: uid(), agentId, text, ts: now() }, ...p].slice(0, 60));
+  const logInvest = (agentId, text) => setInvest((p) => [{ id: uid(), agentId, text, ts: now() }, ...p].slice(0, 30));
   const addIdea = (agentId, text) => { setIdeas((p) => [{ id: uid(), agentId, text, status: "new", ts: now() }, ...p]); showToast("רעיון נוסף ללוח ✓"); };
+
+  // Moving a card is a real action, not just a label change: starting an
+  // idea logs it to the live activity feed, and — if it's assigned to דן
+  // (dev) and GitHub is connected — actually opens a real Issue on the repo
+  // in the background, linking it back onto the card once it's created.
+  const moveIdea = (id, status) => {
+    setIdeas((prev) => {
+      const idea = prev.find((i) => i.id === id);
+      if (idea && status !== idea.status) {
+        const ag = byId(idea.agentId);
+        if (status === "doing") {
+          logActivity(idea.agentId, `${ag?.name || ""} התחיל לעבוד על: ${idea.text.slice(0, 60)}`.trim());
+          if (idea.agentId === "dev" && ghConfigured()) {
+            (async () => {
+              try {
+                const targetKey = load(K_GH_TARGET, REPO_PRESETS[0].key);
+                const target = REPO_PRESETS.find((r) => r.key === targetKey) || REPO_PRESETS[0];
+                const r = await ghCreateIssue(idea.text.slice(0, 60), idea.text + "\n\n---\n_נוצר אוטומטית מלוח הרעיונות של מרכז הסוכנים._", target);
+                setIdeas((p2) => p2.map((x) => (x.id === id ? { ...x, issueUrl: r.html_url } : x)));
+                logActivity("dev", `פתח Issue אוטומטי על ${target.repo}: #${r.number}`);
+              } catch { /* no token / offline — the activity log entry above still stands */ }
+            })();
+          }
+        } else if (status === "done") {
+          logActivity(idea.agentId, `${ag?.name || ""} סיים: ${idea.text.slice(0, 60)}`.trim());
+        }
+      }
+      return prev.map((i) => (i.id === id ? { ...i, status } : i));
+    });
+  };
+
+  // Autonomous engine — the team keeps moving even when you're not looking:
+  // agents pair up and discuss the real numbers, drop new ideas on the
+  // board, wrap up ideas that have been sitting in "doing" a while, and
+  // post read-only market commentary. Deterministic templates over live
+  // data, so it's free and needs no AI key. Paused while the tab is hidden.
+  useEffect(() => {
+    let tick = 0;
+    refreshMarket();
+    const marketIv = setInterval(refreshMarket, 90000);
+    const iv = setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      tick++;
+      const b = bizSnapshot();
+      const kind = tick % 4;
+      if (kind === 0) {
+        const pair = CHATTER_PAIRS[Math.floor(Math.random() * CHATTER_PAIRS.length)];
+        const [lineA, lineB] = pair.make(b);
+        logActivity(pair.a, lineA);
+        setTimeout(() => logActivity(pair.b, lineB), 1400);
+      } else if (kind === 1) {
+        const tpl = IDEA_TEMPLATES[Math.floor(Math.random() * IDEA_TEMPLATES.length)];
+        addIdea(tpl.agentId, tpl.make(b));
+      } else if (kind === 2) {
+        const doing = ideasRef.current.filter((i) => i.status === "doing").sort((x, y) => x.ts - y.ts);
+        if (doing.length && Date.now() - doing[0].ts > 2 * 60 * 1000) moveIdea(doing[0].id, "done");
+      } else {
+        const mover = marketMover(marketCache.rows);
+        if (mover) {
+          const agentId = INVEST_AGENTS[Math.floor(Math.random() * INVEST_AGENTS.length)];
+          logInvest(agentId, investAnalysis(agentId, mover));
+        }
+      }
+    }, 55000);
+    return () => { clearInterval(iv); clearInterval(marketIv); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const activeAgent = chatId ? byId(chatId) : null;
 
@@ -599,9 +763,9 @@ export default function App() {
           />
         )}
         {view === "activity" && <ActivityView activity={activity} />}
-        {view === "ideas" && <IdeasView ideas={ideas} setIdeas={setIdeas} showToast={showToast} />}
+        {view === "ideas" && <IdeasView ideas={ideas} setIdeas={setIdeas} moveIdea={moveIdea} showToast={showToast} />}
         {view === "dev" && <DevConsole logActivity={logActivity} showToast={showToast} />}
-        {view === "biz" && <BusinessView showToast={showToast} />}
+        {view === "biz" && <BusinessView showToast={showToast} invest={invest} />}
         {view === "settings" && <SettingsView showToast={showToast} />}
       </div>
 
@@ -950,7 +1114,7 @@ const IDEA_COLS = [
   { id: "doing", label: "בתהליך", Icon: Rocket },
   { id: "done", label: "הושלם", Icon: Check },
 ];
-function IdeasView({ ideas, setIdeas, showToast }) {
+function IdeasView({ ideas, setIdeas, moveIdea, showToast }) {
   const [text, setText] = useState("");
   const [agentId, setAgentId] = useState("dev");
 
@@ -959,7 +1123,7 @@ function IdeasView({ ideas, setIdeas, showToast }) {
     setIdeas((p) => [{ id: uid(), agentId, text: t, status: "new", ts: now() }, ...p]);
     setText(""); showToast("רעיון נוסף ✓");
   };
-  const move = (id, status) => setIdeas((p) => p.map((i) => i.id === id ? { ...i, status } : i));
+  const move = (id, status) => { moveIdea(id, status); if (status === "doing") showToast("התחיל לעבוד — עוקב בפעילות ↗"); };
   const del = (id) => setIdeas((p) => p.filter((i) => i.id !== id));
 
   return (
@@ -991,6 +1155,7 @@ function IdeasView({ ideas, setIdeas, showToast }) {
                     <div key={i.id} className="ac-idea" style={{ "--c": ag?.color || "#888" }}>
                       <div className="ac-idea-top"><span className="ac-idea-by">{ag?.Icon && <ag.Icon size={11} />} {ag?.name}</span><button className="ac-idea-del" onClick={() => del(i.id)}><Trash2 size={12} /></button></div>
                       <p>{i.text}</p>
+                      {i.issueUrl && <a className="ac-idea-issue" href={i.issueUrl} target="_blank" rel="noreferrer"><GitBranch size={11} /> Issue נפתח בגיטהאב ↗</a>}
                       <div className="ac-idea-moves">
                         {col.id !== "new" && <button onClick={() => move(i.id, prevCol(col.id))}>←</button>}
                         {col.id !== "done" && <button className="fwd" onClick={() => move(i.id, nextCol(col.id))}>{col.id === "new" ? "התחל" : "סיים"} →</button>}
@@ -1377,10 +1542,11 @@ function RevenueChart({ months }) {
     </div>
   );
 }
-function BusinessView({ showToast }) {
+function BusinessView({ showToast, invest }) {
   const [snap, setSnap] = useState(() => bizSnapshot());
   const [months, setMonths] = useState(() => monthlyRevenue());
   const [facts, setFacts] = useState(() => learnedFacts());
+  const market = useMarket();
   useCloudSync(K_BIZ, setFacts);
   const [fact, setFact] = useState("");
   useEffect(() => { const iv = setInterval(() => { setSnap(bizSnapshot()); setMonths(monthlyRevenue()); }, 5000); return () => clearInterval(iv); }, []);
@@ -1424,6 +1590,39 @@ function BusinessView({ showToast }) {
       )}
 
       <RevenueChart months={months} />
+
+      <div className="ac-set-card">
+        <div className="ac-set-h"><LineChart size={17} /> עולם ההשקעות · שוק חי</div>
+        <p className="ac-set-note">מעקב בלבד — הצוות מנתח ומסמן תנודות, ולעולם לא מבצע קנייה/מכירה אמיתית או נוגע בכסף.</p>
+        {market.length === 0 && <div className="ac-biz-note" style={{ margin: "8px 0 0" }}>טוען נתוני שוק חיים…</div>}
+        {market.length > 0 && (
+          <div className="ac-mk-grid">
+            {market.map((r, i) => {
+              const up = r.chg >= 0;
+              return (
+                <div key={i} className="ac-mk-row">
+                  <span className="ac-mk-name">{r.name}</span>
+                  <span className="ac-mk-price">{r.price}</span>
+                  <span className={"ac-mk-chg " + (up ? "up" : "dn")}>{up ? <TrendingUp size={12} /> : <TrendingDown size={12} />} {Math.abs(r.chg).toFixed(2)}%</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {invest && invest.length > 0 && (
+          <div className="ac-mk-notes">
+            {invest.slice(0, 5).map((n) => {
+              const ag = byId(n.agentId);
+              return (
+                <div key={n.id} className="ac-opp-row" style={{ "--c": ag?.color || "#888" }}>
+                  <span className="ac-opp-orb"><Face agent={ag} fallback={13} /></span>
+                  <div className="ac-opp-mid"><b>{ag?.name}</b><p>{n.text}</p></div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       {snap.top.length > 0 && (
         <div className="ac-set-card">
@@ -1776,6 +1975,18 @@ function StyleTag() {
 .ac-idea-moves button{background:var(--s8);border:1px solid var(--s7);color:var(--s4);border-radius:8px;padding:5px 10px;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;transition:.15s}
 .ac-idea-moves button.fwd{margin-right:auto;color:var(--gold);border-color:rgba(228,188,99,.35)}
 .ac-idea-moves button:hover{color:var(--silver)}
+.ac-idea-issue{display:flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;color:var(--gold);text-decoration:none;margin-top:6px;opacity:.9}
+.ac-idea-issue:hover{opacity:1;text-decoration:underline}
+
+/* ── investments world (read-only market board) ── */
+.ac-mk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:10px}
+.ac-mk-row{display:flex;flex-direction:column;gap:3px;background:var(--s9);border:1px solid var(--s7);border-radius:11px;padding:9px 11px}
+.ac-mk-name{font-size:11px;font-weight:700;color:var(--s3)}
+.ac-mk-price{font-size:14px;font-weight:800;color:var(--silver)}
+.ac-mk-chg{display:flex;align-items:center;gap:3px;font-size:11px;font-weight:700}
+.ac-mk-chg.up{color:#3FD79A}
+.ac-mk-chg.dn{color:#FF5C50}
+.ac-mk-notes{margin-top:14px;border-top:1px solid var(--s8);padding-top:6px}
 
 /* ── living office floor (Tamagotchi-style sim) ── */
 .ofc-floor{flex:1;position:relative;overflow:hidden;margin:8px;border-radius:16px;border:1px solid rgba(110,170,240,.18);
