@@ -23,6 +23,7 @@ const K_HIST = "alpha:agents:hist";     // { [agentId]: [{from,text,ts}] }
 const K_IDEAS = "alpha:agents:ideas";   // [{id, agentId, text, status, ts}]
 const K_ACT = "alpha:agents:activity";  // [{id, agentId, text, ts}]
 const K_GH = "alpha:agents:gh";         // { token, owner, repo } — token stays local-only
+const K_GH_TARGET = "alpha:agents:gh:target"; // which repo preset the dev console currently targets
 const K_DEVTASKS = "alpha:agents:devtasks"; // [{id, title, brief, status, issueUrl, ts}]
 const load = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } };
 const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
@@ -166,8 +167,14 @@ async function askGroq(system, history, user, maxTokens = 800) {
   throw new Error("Groq " + lastCode);
 }
 
-/* ── The actual codebase the dev agent works on ── */
+/* ── The actual codebase(s) the dev agent works on ── */
 const REPO_DEFAULT = { owner: "atikshahar23-ctrl", repo: "alpha-new" };
+// One GitHub PAT (repo scope) covers every repo under the same account, so
+// the dev console can target either project without a second token.
+const REPO_PRESETS = [
+  { key: "alpha", label: "Alpha (עוזר · CRM · HeavyGuard)", owner: "atikshahar23-ctrl", repo: "Alpha-new" },
+  { key: "hgsim", label: "Heavy Guard Simulator (Render)", owner: "atikshahar23-ctrl", repo: "heavt-guard-simulator" },
+];
 const REPO_CONTEXT = `המאגר: atikshahar23-ctrl/alpha-new (Vite + React + TypeScript, RTL עברית, פריסה ב-GitHub Pages תחת base /Alpha-new/).
 האפליקציות במאגר:
 - index.html + src/ui/app.ts + src/style.css — אפליקציית Alpha הראשית (three.js, אורב תלת-ממד, HUD, dock).
@@ -178,10 +185,10 @@ const REPO_CONTEXT = `המאגר: atikshahar23-ctrl/alpha-new (Vite + React + Ty
 בנייה: npm run build. אסור לשמור פרטי אשראי/CVV.`;
 
 /* ── GitHub bridge (optional) — token stays in localStorage, never committed ── */
-const ghCfg = () => { const c = load(K_GH, {}); return { token: c.token || "", owner: c.owner || REPO_DEFAULT.owner, repo: c.repo || REPO_DEFAULT.repo }; };
+const ghCfg = (target) => { const c = load(K_GH, {}); return { token: c.token || "", owner: target?.owner || c.owner || REPO_DEFAULT.owner, repo: target?.repo || c.repo || REPO_DEFAULT.repo }; };
 const ghConfigured = () => !!ghCfg().token;
-async function ghCreateIssue(title, body) {
-  const c = ghCfg(); if (!c.token) throw new Error("NO_TOKEN");
+async function ghCreateIssue(title, body, target) {
+  const c = ghCfg(target); if (!c.token) throw new Error("NO_TOKEN");
   const res = await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}/issues`, {
     method: "POST",
     headers: { Authorization: `Bearer ${c.token}`, Accept: "application/vnd.github+json", "Content-Type": "application/json" },
@@ -192,10 +199,13 @@ async function ghCreateIssue(title, body) {
 }
 
 /* ── Free execution engine: דן writes real code & opens a PR via the GitHub
-   API (free PAT + free Groq). Always targets a NEW branch + PR, never main. ── */
+   API (free PAT + free Groq). Always targets a NEW branch + PR, never main.
+   `target` (optional {owner,repo}) lets the dev console point at a different
+   repo under the same GitHub account — e.g. the Heavy Guard Simulator site
+   deployed on Render — using the same PAT. ── */
 const GH_API = "https://api.github.com";
-async function ghReq(path, opts = {}) {
-  const c = ghCfg(); if (!c.token) throw new Error("NO_TOKEN");
+async function ghReq(path, opts = {}, target) {
+  const c = ghCfg(target); if (!c.token) throw new Error("NO_TOKEN");
   const res = await fetch(GH_API + path, { ...opts, headers: { Authorization: `Bearer ${c.token}`, Accept: "application/vnd.github+json", "Content-Type": "application/json", ...(opts.headers || {}) } });
   if (!res.ok) { let t = ""; try { t = await res.text(); } catch {} throw new Error("GH " + res.status + (t ? ": " + t.slice(0, 100) : "")); }
   return res.status === 204 ? null : res.json();
@@ -203,20 +213,20 @@ async function ghReq(path, opts = {}) {
 const ghPath = (c, p) => `/repos/${c.owner}/${c.repo}/contents/${p.split("/").map(encodeURIComponent).join("/")}`;
 const b64enc = (s) => btoa(unescape(encodeURIComponent(s)));
 const b64dec = (s) => { try { return decodeURIComponent(escape(atob((s || "").replace(/\n/g, "")))); } catch { return atob((s || "").replace(/\n/g, "")); } };
-async function ghGetFile(p, ref) { const c = ghCfg(); try { const r = await ghReq(ghPath(c, p) + `?ref=${encodeURIComponent(ref)}`); return { content: b64dec(r.content), sha: r.sha }; } catch (e) { if (String(e.message).includes("404")) return null; throw e; } }
-async function ghDefaultBranch() { const c = ghCfg(); const r = await ghReq(`/repos/${c.owner}/${c.repo}`); return r.default_branch || "main"; }
-async function ghCreateBranch(base, name) { const c = ghCfg(); const ref = await ghReq(`/repos/${c.owner}/${c.repo}/git/ref/heads/${base}`); try { await ghReq(`/repos/${c.owner}/${c.repo}/git/refs`, { method: "POST", body: JSON.stringify({ ref: `refs/heads/${name}`, sha: ref.object.sha }) }); } catch (e) { if (!String(e.message).includes("422")) throw e; } }
-async function ghPutFile(p, content, message, branch, sha) { const c = ghCfg(); return ghReq(ghPath(c, p), { method: "PUT", body: JSON.stringify({ message, content: b64enc(content), branch, ...(sha ? { sha } : {}) }) }); }
-async function ghOpenPR(base, head, title, body) { const c = ghCfg(); return ghReq(`/repos/${c.owner}/${c.repo}/pulls`, { method: "POST", body: JSON.stringify({ title, head, base, body }) }); }
+async function ghGetFile(p, ref, target) { const c = ghCfg(target); try { const r = await ghReq(ghPath(c, p) + `?ref=${encodeURIComponent(ref)}`, {}, target); return { content: b64dec(r.content), sha: r.sha }; } catch (e) { if (String(e.message).includes("404")) return null; throw e; } }
+async function ghDefaultBranch(target) { const c = ghCfg(target); const r = await ghReq(`/repos/${c.owner}/${c.repo}`, {}, target); return r.default_branch || "main"; }
+async function ghCreateBranch(base, name, target) { const c = ghCfg(target); const ref = await ghReq(`/repos/${c.owner}/${c.repo}/git/ref/heads/${base}`, {}, target); try { await ghReq(`/repos/${c.owner}/${c.repo}/git/refs`, { method: "POST", body: JSON.stringify({ ref: `refs/heads/${name}`, sha: ref.object.sha }) }, target); } catch (e) { if (!String(e.message).includes("422")) throw e; } }
+async function ghPutFile(p, content, message, branch, sha, target) { const c = ghCfg(target); return ghReq(ghPath(c, p), { method: "PUT", body: JSON.stringify({ message, content: b64enc(content), branch, ...(sha ? { sha } : {}) }) }, target); }
+async function ghOpenPR(base, head, title, body, target) { const c = ghCfg(target); return ghReq(`/repos/${c.owner}/${c.repo}/pulls`, { method: "POST", body: JSON.stringify({ title, head, base, body }) }, target); }
 // Free models can't reliably round-trip a huge file in one completion (the
 // output would silently get cut off mid-file and overwrite it with garbage
 // on the branch). Refuse up front rather than open a broken PR.
 const DEV_EXEC_MAX_CHARS = 12000;
-async function devExecute({ filePath, instruction, title }) {
+async function devExecute({ filePath, instruction, title, target }) {
   if (!ghConfigured()) throw new Error("חבר טוקן GitHub בהגדרות");
   if (!hasAI()) throw new Error("צריך מפתח Groq (חינם) בהגדרות");
-  const base = await ghDefaultBranch();
-  const existing = await ghGetFile(filePath, base);
+  const base = await ghDefaultBranch(target);
+  const existing = await ghGetFile(filePath, base, target);
   if (existing && existing.content.length > DEV_EXEC_MAX_CHARS) {
     throw new Error(`הקובץ גדול מדי לביצוע אוטומטי חינמי (${(existing.content.length / 1000).toFixed(0)}K תווים) — קיים סיכון לקטיעה. השתמש ב"פתח Issue" או "העתק ל-Claude Code" בשביל הקובץ הזה`);
   }
@@ -228,9 +238,9 @@ async function devExecute({ filePath, instruction, title }) {
   code = code.replace(/^```[a-zA-Z0-9]*\n?/, "").replace(/\n?```\s*$/, "").trim() + "\n";
   const slug = (filePath.split("/").pop() || "file").replace(/[^a-zA-Z0-9]+/g, "-").toLowerCase();
   const branch = `agents/${slug}-${Date.now().toString(36).slice(-5)}`;
-  await ghCreateBranch(base, branch);
-  await ghPutFile(filePath, code, `דן: ${title}`, branch, existing && existing.sha);
-  return ghOpenPR(base, branch, `דן: ${title}`, `${instruction}\n\n_בוצע אוטומטית ע"י מרכז הסוכנים (דן) · נפתח כ-PR לבדיקה לפני מיזוג._`);
+  await ghCreateBranch(base, branch, target);
+  await ghPutFile(filePath, code, `דן: ${title}`, branch, existing && existing.sha, target);
+  return ghOpenPR(base, branch, `דן: ${title}`, `${instruction}\n\n_בוצע אוטומטית ע"י מרכז הסוכנים (דן) · נפתח כ-PR לבדיקה לפני מיזוג._`, target);
 }
 
 /* ── Dev brief generation (Leo turns a request into an actionable spec) ── */
@@ -869,6 +879,9 @@ function DevConsole({ logActivity, showToast }) {
   const [execBusy, setExecBusy] = useState(false);
   const [tasks, setTasks] = useState(() => load(K_DEVTASKS, []));
   const [gh, setGh] = useState(ghConfigured());
+  const [targetKey, setTargetKey] = useState(() => load(K_GH_TARGET, REPO_PRESETS[0].key));
+  const target = REPO_PRESETS.find((r) => r.key === targetKey) || REPO_PRESETS[0];
+  const pickTarget = (key) => { setTargetKey(key); save(K_GH_TARGET, key); };
   useCloudSync(K_DEVTASKS, setTasks);
   useEffect(() => cloudSave(K_DEVTASKS, tasks), [tasks]);
 
@@ -879,12 +892,12 @@ function DevConsole({ logActivity, showToast }) {
     if (!instruction) { showToast("תאר מה לבנות"); return; }
     if (execBusy) return;
     setExecBusy(true);
-    logActivity("dev", "מבצע קוד אוטומטית: " + path);
+    logActivity("dev", `מבצע קוד אוטומטית ב-${target.repo}: ${path}`);
     devBus.emit({ agentId: "dev", text: "כותב קוד… 🧑‍💻" });
     try {
       const title = briefTitle(brief || req, req).slice(0, 60);
-      const pr = await devExecute({ filePath: path, instruction, title });
-      const tk = { id: uid(), title, brief: instruction, status: "sent", issueUrl: pr.html_url, ts: now() };
+      const pr = await devExecute({ filePath: path, instruction, title, target });
+      const tk = { id: uid(), title, brief: instruction, status: "sent", issueUrl: pr.html_url, ts: now(), repo: target.repo };
       setTasks((p) => [tk, ...p]);
       logActivity("dev", "פתח PR אוטומטי: #" + pr.number);
       showToast("✓ דן כתב את הקוד ופתח PR — בדוק ומזג");
@@ -921,10 +934,10 @@ function DevConsole({ logActivity, showToast }) {
     if (!ghConfigured()) { showToast("חבר טוקן GitHub בהגדרות"); return; }
     setBusy(true);
     try {
-      const r = await ghCreateIssue(briefTitle(brief, req), brief + "\n\n---\n_נוצר ע\"י מרכז הסוכנים · לביצוע ע\"י Claude Code_");
+      const r = await ghCreateIssue(briefTitle(brief, req), brief + "\n\n---\n_נוצר ע\"י מרכז הסוכנים · לביצוע ע\"י Claude Code_", target);
       saveTask("sent", r.html_url);
-      logActivity("dev", "פתח Issue על המאגר: #" + r.number);
-      showToast("Issue נפתח על המאגר ✓");
+      logActivity("dev", `פתח Issue על ${target.repo}: #` + r.number);
+      showToast(`Issue נפתח על ${target.repo} ✓`);
     } catch (e) {
       showToast(String(e.message).includes("NO_TOKEN") ? "חסר טוקן GitHub" : "פתיחת Issue נכשלה (" + e.message + ")");
     } finally { setBusy(false); }
@@ -942,8 +955,16 @@ function DevConsole({ logActivity, showToast }) {
 
       <div className="ac-dev-leo" style={{ "--c": leo.color, "--ac": leo.accent }}>
         <div className="ac-dev-orb"><Face agent={leo} fallback={20} /></div>
-        <div className="ac-dev-leo-txt"><b>דן · מחובר למאגר</b><span><GitBranch size={11} /> {ghCfg().owner}/{ghCfg().repo}</span></div>
+        <div className="ac-dev-leo-txt"><b>דן · מחובר למאגר</b><span><GitBranch size={11} /> {target.owner}/{target.repo}</span></div>
         <div className={"ac-dev-ghchip " + (gh ? "on" : "")}>{gh ? <><Check size={12} /> GitHub מחובר</> : <>לא מחובר</>}</div>
+      </div>
+
+      <div className="ac-repo-picker">
+        {REPO_PRESETS.map((r) => (
+          <button key={r.key} className={"ac-repo-chip" + (targetKey === r.key ? " on" : "")} onClick={() => pickTarget(r.key)}>
+            <GitBranch size={12} /> {r.label}
+          </button>
+        ))}
       </div>
 
       <textarea className="ac-dev-in" value={req} onChange={(e) => setReq(e.target.value)} placeholder="לדוגמה: הוסף כפתור ייצוא PDF למסך העסקאות ב-CRM של איתי…" dir="rtl" rows={3} />
@@ -1325,9 +1346,9 @@ function SettingsView({ showToast }) {
 
       <div className="ac-set-card">
         <div className="ac-set-h"><GitBranch size={18} /> חיבור למאגר הקוד (GitHub)</div>
-        <p className="ac-set-note">חבר טוקן GitHub אישי כדי שדן יוכל לפתוח משימות (Issues) על המאגר ישירות מחדר הפיתוח. 🔒 הטוקן נשמר רק במכשיר שלך (localStorage) — לעולם לא נשלח לשום מקום חוץ מ-GitHub ולא נכנס לקוד.</p>
+        <p className="ac-set-note">חבר טוקן GitHub אישי (הרשאת repo) כדי שדן יוכל לכתוב קוד, לפתוח Issues ו-PRs. אותו טוקן אחד נותן גישה לכל המאגרים שלך — כולל <b>Alpha-new</b> וגם <b>heavt-guard-simulator</b> (האתר שרץ על Render). בחדר הפיתוח יש בורר מאגר כדי לבחור על איזה פרויקט דן עובד בכל משימה. 🔒 הטוקן נשמר רק במכשיר שלך (localStorage) — לעולם לא נשלח לשום מקום חוץ מ-GitHub ולא נכנס לקוד.</p>
         <input className="ac-set-in" type="password" value={ghTok} onChange={(e) => setGhTok(e.target.value)} placeholder="ghp_... (Personal Access Token, הרשאת repo)" dir="ltr" />
-        <input className="ac-set-in" value={ghRepo} onChange={(e) => setGhRepo(e.target.value)} placeholder="owner/repo" dir="ltr" />
+        <input className="ac-set-in" value={ghRepo} onChange={(e) => setGhRepo(e.target.value)} placeholder="owner/repo (ברירת מחדל)" dir="ltr" />
         <div className="ac-set-row">
           <button className="ac-set-save" onClick={saveGh}>{ghSaved ? <><Check size={16} /> חובר</> : <><GitBranch size={16} /> חבר מאגר</>}</button>
           <button className="ac-set-clear" onClick={clearGh}><Trash2 size={15} /></button>
@@ -1696,6 +1717,9 @@ function StyleTag() {
 .ac-dev-leo-txt span{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--s4);font-family:ui-monospace,monospace;margin-top:2px}
 .ac-dev-ghchip{font-size:10.5px;font-weight:800;padding:5px 10px;border-radius:20px;border:1px solid var(--s7);color:var(--s4);display:flex;align-items:center;gap:5px;flex-shrink:0}
 .ac-dev-ghchip.on{color:#3FD79A;border-color:rgba(63,215,154,.4);background:rgba(63,215,154,.08)}
+.ac-repo-picker{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.ac-repo-chip{display:flex;align-items:center;gap:6px;background:var(--s9);border:1px solid var(--s7);color:var(--s4);border-radius:20px;padding:8px 13px;font-size:12px;font-weight:700;cursor:pointer;transition:.15s}
+.ac-repo-chip.on{color:#1a1400;background:linear-gradient(135deg,var(--gold),var(--gold2));border-color:transparent;box-shadow:0 4px 14px rgba(228,188,99,.3)}
 .ac-dev-in{width:100%;background:var(--s9);border:1px solid var(--s7);color:var(--silver);border-radius:13px;padding:13px 15px;font-family:inherit;font-size:14.5px;outline:none;resize:vertical;margin-bottom:10px}
 .ac-dev-in:focus{border-color:rgba(255,140,66,.5);box-shadow:0 0 0 3px rgba(255,140,66,.1)}
 .ac-dev-gen{width:100%;display:flex;align-items:center;justify-content:center;gap:8px;background:linear-gradient(135deg,#FF8C42,#C75A12);color:#fff;border:none;border-radius:13px;padding:14px;font-family:'Rubik';font-weight:900;font-size:15px;cursor:pointer;box-shadow:0 6px 24px rgba(255,140,66,.3);margin-bottom:16px}
