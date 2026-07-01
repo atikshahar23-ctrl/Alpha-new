@@ -1200,6 +1200,7 @@ function MapView({ leads, custs, deals, showToast }) {
   const [routeCity, setRouteCity] = useState("");
   const [geoV, setGeoV] = useState(0);      // bumps as exact addresses resolve
   const [geoBusy, setGeoBusy] = useState(false);
+  const [geoProgress, setGeoProgress] = useState({ done: 0, total: 0 }); // visible progress — free geocoding is rate-limited to ~1/sec, so thousands of leads take real time; showing counts makes that legible instead of looking stuck
 
   const dealLeadIds = useMemo(() => new Set(deals.map((d) => d.leadId)), [deals]);
   const inScope = (l) => {
@@ -1216,18 +1217,25 @@ function MapView({ leads, custs, deals, showToast }) {
     }));
   }, [leads, scope, region, dealLeadIds, geoV]);
 
-  // Background geocoding: turn city-level pins into exact-address pins (cached).
+  // Background geocoding: turn city-level pins into exact-address pins
+  // (cached). Nominatim's free/no-key usage policy caps this at ~1 req/sec,
+  // so a large lead base can take a real while — surfacing done/total (not
+  // just a spinner) is what makes that legible instead of looking stuck or
+  // "wrong" while most pins are still sitting at their city-centre fallback.
   useEffect(() => {
     let alive = true;
     const targets = leads.filter((l) => inScope(l) && (l.addr || "").trim() && !hasExact(l));
-    if (!targets.length) { setGeoBusy(false); return; }
+    if (!targets.length) { setGeoBusy(false); setGeoProgress({ done: 0, total: 0 }); return; }
     setGeoBusy(true);
+    setGeoProgress({ done: 0, total: targets.length });
     (async () => {
-      let n = 0;
+      let n = 0, done = 0;
       for (const l of targets) {
         if (!alive) return;
         const ll = await geocodeAddress(l.addr, l.city);
         if (!alive) return;
+        done++;
+        setGeoProgress({ done, total: targets.length });
         if (ll) { n++; if (n % 4 === 0) setGeoV((v) => v + 1); }
       }
       if (alive) { setGeoV((v) => v + 1); setGeoBusy(false); }
@@ -1285,9 +1293,10 @@ function MapView({ leads, custs, deals, showToast }) {
       const m = L.marker(p.ll, { icon });
       const tel = `tel:${(p.phone || "").replace(/\s/g, "")}`;
       const wu = webUrl(p.web);
+      const exact = hasExact(p);
       const info = [];
       if (p.sector) info.push(`<div style="font-size:11.5px;color:#5a4d28;margin-top:3px">🏷️ ${esc(p.sector)}</div>`);
-      if (p.addr || p.city) info.push(`<div style="font-size:11.5px;color:#5a4d28">📍 ${esc([p.addr, p.city].filter(Boolean).join(", "))}</div>`);
+      if (p.addr || p.city) info.push(`<div style="font-size:11.5px;color:#5a4d28">📍 ${esc([p.addr, p.city].filter(Boolean).join(", "))}${p.addr ? (exact ? ' <span style="color:#2E9E5B;font-weight:700">· מיקום מדויק</span>' : ' <span style="color:#B4841F;font-weight:700">· ממתין לדיוק כתובת (כרגע מרכז העיר)</span>') : ""}</div>`);
       if (p.emp) info.push(`<div style="font-size:11.5px;color:#5a4d28">👥 ${esc(p.emp)} מועסקים</div>`);
       if (p.rev) info.push(`<div style="font-size:11.5px;color:#5a4d28">💰 מחזור: ₪${Number(p.rev).toLocaleString()} אלף</div>`);
       if (p.phones.length > 1) info.push(`<div dir="ltr" style="font-size:11px;color:#917E50">${esc(p.phones.slice(1, 4).join(" · "))}</div>`);
@@ -1332,7 +1341,7 @@ function MapView({ leads, custs, deals, showToast }) {
 
   return (
     <div className="ag-flow map">
-      <header className="ag-head sm"><div style={{ flex: 1 }}><div className="ag-title">מפת העסקים</div><div className="ag-sub">{points.length.toLocaleString()} עסקים{geoBusy ? " · מדייק כתובות מדויקות…" : " · מיקום מדויק לפי כתובת"}</div></div>
+      <header className="ag-head sm"><div style={{ flex: 1 }}><div className="ag-title">מפת העסקים</div><div className="ag-sub">{points.length.toLocaleString()} עסקים{geoBusy ? ` · מדייק כתובות מדויקות… (${geoProgress.done.toLocaleString()}/${geoProgress.total.toLocaleString()})` : " · מיקום מדויק לפי כתובת"}</div></div>
         <button className={"ag-mini" + (sat ? " on" : "")} onClick={() => setSat((v) => !v)}>{sat ? "🛰 לוויין" : "🗺 מפה"}</button>
       </header>
       <div className="ag-chips sm">
