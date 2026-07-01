@@ -1236,6 +1236,7 @@ function OfficeSim({ onClose, onOpenChat }) {
         deskPositions={OFC_DESKS}
         seatPositions={OFC_SEATS}
         dineTablePositions={OFC_DINE_TABLES}
+        bizData={bizSnapshot()}
         onClose={onClose}
         onOpenChat={onOpenChat}
       />
