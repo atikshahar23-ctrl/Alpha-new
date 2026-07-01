@@ -1911,8 +1911,10 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       // of strafing — classic, predictable first-person controls. Third-
       // person and the touch joystick keep the original absolute-direction
       // scheme, which reads fine from an outside chase camera.
-      const kFwd = (keys["w"] || keys["arrowup"] ? 1 : 0) - (keys["s"] || keys["arrowdown"] ? 1 : 0);
-      const kTurn = (keys["d"] || keys["arrowright"] ? 1 : 0) - (keys["a"] || keys["arrowleft"] ? 1 : 0);
+      // Inverted by request: ↑/W now steps backward and ↓/S steps forward
+      // (relative to view), and ←/→ / A/D turn the opposite way too.
+      const kFwd = -((keys["w"] || keys["arrowup"] ? 1 : 0) - (keys["s"] || keys["arrowdown"] ? 1 : 0));
+      const kTurn = -((keys["d"] || keys["arrowright"] ? 1 : 0) - (keys["a"] || keys["arrowleft"] ? 1 : 0));
       const fpTankControls = liveRef.current.firstPerson && (kFwd !== 0 || kTurn !== 0);
       if (fpTankControls) {
         if (kTurn) {
@@ -2225,7 +2227,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
             <span><Eye size={15} /> איכות גרפית (זוהר + הצללות)</span>
             <b className={graphicsHigh ? "on" : ""}>{graphicsHigh ? "גבוהה" : "חסכונית"}</b>
           </button>
-          <p className="off3-settings-note">בגוף ראשון: ↑/W מתקדם ו-↓/S נסוג לפי הכיוון שאתה מסתכל אליו (בלי לסובב את המצלמה), ←/→ או A/D מסובבים אותך במקום.</p>
+          <p className="off3-settings-note">בגוף ראשון (הפוך): ↑/W נסוג ו-↓/S מתקדם לפי הכיוון שאתה מסתכל אליו (בלי לסובב את המצלמה), ←/→ או A/D מסובבים אותך בכיוון ההפוך.</p>
         </div>
       )}
       {voiceLine && (
