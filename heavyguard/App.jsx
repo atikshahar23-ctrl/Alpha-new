@@ -4061,6 +4061,11 @@ function Styles() {
   body *{visibility:hidden!important}
   #quotedoc,#quotedoc *{visibility:visible!important}
   #quotedoc{position:absolute;inset:0;margin:0;box-shadow:none;border-radius:0}
+  /* Without this, most browsers default to "background graphics off" for
+     print/PDF and silently drop the cyan header/bottom band gradients —
+     the quote prints with those bands missing/wrong-colored instead of
+     matching what's shown on screen. */
+  #quotedoc,#quotedoc *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}
 }
 
 /* confirm dialog */

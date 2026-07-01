@@ -74,6 +74,10 @@ const HG_QUOTE_PAY = "ניתן לשלם באשראי או בהעברה בנקא�
 const nextQuoteNumber = () => { try { let n = JSON.parse(localStorage.getItem("hg2:quoteseq") || "387"); n = (Number(n) || 387) + 1; localStorage.setItem("hg2:quoteseq", JSON.stringify(n)); return n; } catch { return Math.floor(Date.now() / 1000) % 100000; } };
 const monthKey = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 const telLink = (p) => `tel:${(p || "").replace(/\s/g, "")}`;
+// Website fields are stored as typed ("www.movir.co.il", "movir.co.il") with
+// no protocol, so a plain href=lead.w would resolve as a broken relative
+// link — prefix https:// only when a protocol isn't already there.
+const websiteUrl = (w) => { const t = (w || "").trim(); if (!t) return ""; return /^https?:\/\//i.test(t) ? t : `https://${t}`; };
 const waLink = (phone, text) => { let p = (phone || "").replace(/\D/g, ""); if (p.startsWith("0")) p = "972" + p.slice(1); return `https://wa.me/${p}?text=${encodeURIComponent(text || "")}`; };
 const dealTotals = (items, discountPct = 0) => {
   const gross = items.reduce((s, i) => s + (Number(i.price) || 0) * (Number(i.qty) || 1), 0);
@@ -681,7 +685,7 @@ function LeadDetail({ lead, onBack, onStatus, onNotes, onOutreach, onDeal, deals
         ))}
         {lead.e && <a href={`mailto:${lead.e}`} className="ag-info"><Mail size={13} /><span className="ag-trunc">{lead.e}</span></a>}
         {lead.addr && <div className="ag-info"><MapPin size={13} />{lead.addr}, {lead.city}</div>}
-        {lead.w && <div className="ag-info"><Globe size={13} /><span className="ag-trunc">{lead.w}</span></div>}
+        {lead.w && <a href={websiteUrl(lead.w)} target="_blank" rel="noopener noreferrer" className="ag-info ag-link"><Globe size={13} /><span className="ag-trunc">{lead.w}</span></a>}
       </div>
 
       <div className="ag-section">
@@ -2257,6 +2261,8 @@ function StyleTag() {
 .ag-contact-a{background:var(--s8);border:1px solid var(--s7);color:var(--cyan);border-radius:8px;padding:5px 11px;font-size:12px;font-weight:700;text-decoration:none;display:flex;align-items:center;gap:4px}
 .ag-contact-a.wa{color:var(--ok)}
 .ag-info{display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px;color:var(--s4)}
+.ag-link{text-decoration:none;cursor:pointer}
+.ag-link:hover{color:var(--gold);text-decoration:underline}
 .ag-trunc{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .ag-mgr-name{font-weight:700;font-size:14px}
 .ag-mgr-role{font-size:11.5px;color:var(--s4);margin-right:7px}
@@ -2487,6 +2493,11 @@ function StyleTag() {
   .hg2-quotedoc,.hg2-quotedoc *{visibility:visible!important}
   .hg2-quotedoc{position:absolute;inset:0;margin:0;box-shadow:none;border-radius:0}
   .ag-quote-noprint{display:none!important}
+  /* Without this, most browsers default to "background graphics off" for
+     print/PDF and silently drop the cyan header band + bottom band gradient
+     backgrounds — the quote prints with those bands missing/wrong-colored
+     instead of matching what's shown on screen. */
+  .hg2-quotedoc,.hg2-quotedoc *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}
 }
 
 /* ── ShowroomView ── */
