@@ -1038,12 +1038,31 @@ const CHATTER = {
   legal: ["החוזה מאושר ⚖️", "הטופס תקין", "אחריות מעודכנת", "הכל חתום", "עומד בתקנות"],
   growth:["הזדמנות חדשה 🧭", "ענף חדש נפתח", "רעיון צמיחה!", "ניתחתי מתחרה", "אפיק הכנסה חדש"],
 };
-// Living office: characters roam, work at desks, take breaks & hold meetings.
-const OFC_X0 = 6, OFC_X1 = 90, OFC_Y0 = 34, OFC_Y1 = 82;
-const OFC_DESKS = [{ x: 14, y: 34 }, { x: 14, y: 52 }, { x: 14, y: 70 }, { x: 83, y: 42 }, { x: 83, y: 60 }, { x: 83, y: 76 }];
-const OFC_SEATS = [{ x: 41, y: 50 }, { x: 50, y: 47 }, { x: 59, y: 50 }, { x: 41, y: 63 }, { x: 50, y: 66 }, { x: 59, y: 63 }];
-const OFC_BREAK = { x: 84, y: 51 };
-const OFC_STATUS = { work: "💻", meet: "👥", break: "☕", roam: "🚶" };
+// Living office: characters sit at their own desk and work by default, break
+// off for meetings, coffee, lunch in the dining room, or the odd short walk —
+// weighted so "at the desk, working" is what the room looks like most of the
+// time, not constant aimless wandering.
+const OFC_X0 = 4, OFC_X1 = 96, OFC_Y0 = 18, OFC_Y1 = 86;
+// 12 desks — one per agent, in a proper 4×3 bullpen grid. Index i is agent
+// i's permanent "home" desk (AGENTS.length === OFC_DESKS.length), so a desk
+// always belongs to the same person and can show a real occupied/idle state.
+const OFC_DESKS = [
+  { x: 12, y: 24 }, { x: 29, y: 24 }, { x: 46, y: 24 }, { x: 63, y: 24 },
+  { x: 12, y: 42 }, { x: 29, y: 42 }, { x: 46, y: 42 }, { x: 63, y: 42 },
+  { x: 12, y: 60 }, { x: 29, y: 60 }, { x: 46, y: 60 }, { x: 63, y: 60 },
+];
+// Meeting nook, upper right.
+const OFC_SEATS = [{ x: 76, y: 22 }, { x: 84, y: 20 }, { x: 92, y: 22 }, { x: 76, y: 34 }, { x: 84, y: 36 }, { x: 92, y: 34 }];
+// Dining room, lower right — two round tables, four seats each (centers at
+// 80/58 and 80/76 — see OFC_DINE_TABLES below). A real sit-down lunch spot,
+// distinct from the quick coffee-cooler stop.
+const OFC_DINE_TABLES = [{ x: 80, y: 58 }, { x: 80, y: 76 }];
+const OFC_DINE = [
+  { x: 73, y: 53 }, { x: 87, y: 53 }, { x: 73, y: 63 }, { x: 87, y: 63 },
+  { x: 73, y: 71 }, { x: 87, y: 71 }, { x: 73, y: 81 }, { x: 87, y: 81 },
+];
+const OFC_BREAK = { x: 6, y: 60 };
+const OFC_STATUS = { work: "💻", meet: "👥", break: "☕", eat: "🍽️", roam: "🚶" };
 const OFC_PHASES = [
   { label: "בוקר", emoji: "🌅", tint: "rgba(255,196,120,.06)", sky: "#22304e" },
   { label: "צהריים", emoji: "☀️", tint: "rgba(255,250,210,.04)", sky: "#27406a" },
@@ -1052,7 +1071,10 @@ const OFC_PHASES = [
 ];
 function OfficeSim({ onClose, onOpenChat }) {
   const rnd = (a, b) => a + Math.random() * (b - a);
-  const [chars, setChars] = useState(() => AGENTS.map((a, i) => ({ id: a.id, ...(OFC_DESKS[i % OFC_DESKS.length]), dir: 1, dur: 3000, walking: false, status: "work", energy: Math.round(rnd(70, 100)), held: false, focus: false })));
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  // Every agent gets their own permanent desk (home) they return to by
+  // default — a real seat, not a random spot picked fresh each time.
+  const [chars, setChars] = useState(() => AGENTS.map((a, i) => { const home = OFC_DESKS[i % OFC_DESKS.length]; return { id: a.id, ...home, home, dir: 1, dur: 3000, walking: false, status: "work", energy: Math.round(rnd(70, 100)), held: false, focus: false }; }));
   const [bubbles, setBubbles] = useState({});
   const [phase, setPhase] = useState(0);
   const [bursts, setBursts] = useState([]);
@@ -1072,30 +1094,44 @@ function OfficeSim({ onClose, onOpenChat }) {
   // Day cycle.
   useEffect(() => { const iv = setInterval(() => setPhase((p) => (p + 1) % OFC_PHASES.length), 16000); return () => clearInterval(iv); }, []);
 
-  // Behaviour scheduler: meetings, desk work, coffee breaks, roaming, energy.
+  // Behaviour scheduler: meetings, desk work, coffee/lunch breaks, short
+  // walks, energy. Biased hard toward "sitting at your own desk working" —
+  // that's the room's resting state, not a random pick each tick — so the
+  // floor reads as an office actually working, not people drifting around.
   useEffect(() => {
     const iv = setInterval(() => {
       const noon = phase === 1;
-      if (!meetingRef.current && Math.random() < 0.16) {
+      if (!meetingRef.current && Math.random() < 0.1) {
         meetingRef.current = true;
         const pick = [...AGENTS].sort(() => Math.random() - 0.5).slice(0, 5).map((a) => a.id);
         setChars((prev) => prev.map((c) => { if (c.held) return c; const idx = pick.indexOf(c.id); return idx >= 0 ? moveTo(c, OFC_SEATS[idx] || OFC_SEATS[0], "meet") : c; }));
-        setTimeout(() => { meetingRef.current = false; setChars((p) => p.map((c) => c.status === "meet" ? moveTo(c, OFC_DESKS[Math.floor(Math.random() * OFC_DESKS.length)], "work") : c)); }, 11000);
+        setTimeout(() => { meetingRef.current = false; setChars((p) => p.map((c) => c.status === "meet" ? moveTo(c, c.home, "work") : c)); }, 11000);
         return;
       }
       setChars((prev) => prev.map((c) => {
         if (c.held) return c;
         // energy drift
-        let energy = c.energy + (c.status === "break" ? 7 : c.status === "work" ? -2 : c.status === "meet" ? -1 : -1);
+        let energy = c.energy + (c.status === "break" || c.status === "eat" ? 7 : c.status === "work" ? -2 : c.status === "meet" ? -1 : -1);
         energy = Math.max(5, Math.min(100, energy));
         if (c.status === "meet") return { ...c, energy };
-        const tired = energy < 30;
-        if (Math.random() < (tired ? 0.5 : 0.3)) {
+        const tired = energy < 25;
+        const atDesk = c.status === "work" && !c.walking;
+        // Already sitting and working → very low odds of getting up at all.
+        // Away from the desk (break/eat/roam) → much more likely to head back.
+        const changeChance = tired ? 0.42 : atDesk ? 0.09 : 0.4;
+        if (Math.random() < changeChance) {
           const r = Math.random();
-          if (tired || (noon && r < 0.4)) return { ...moveTo(c, OFC_BREAK, "break"), energy };
-          if (r < 0.5) return { ...moveTo(c, OFC_DESKS[Math.floor(Math.random() * OFC_DESKS.length)], "work"), energy };
-          if (r < 0.68) return { ...moveTo(c, OFC_BREAK, "break"), energy };
-          return { ...moveTo(c, { x: rnd(OFC_X0, OFC_X1), y: rnd(OFC_Y0, OFC_Y1) }, "roam"), energy };
+          if (tired) return { ...moveTo(c, OFC_BREAK, "break"), energy };
+          if (noon && r < 0.3) return { ...moveTo(c, OFC_DINE[Math.floor(Math.random() * OFC_DINE.length)], "eat"), energy };
+          if (r < 0.62) return { ...moveTo(c, c.home, "work"), energy };
+          if (r < 0.78) return { ...moveTo(c, OFC_BREAK, "break"), energy };
+          if (r < 0.88) return { ...moveTo(c, OFC_DINE[Math.floor(Math.random() * OFC_DINE.length)], "eat"), energy };
+          // A short stretch-your-legs walk near the desk, not a trip across
+          // the whole floor — keeps the room feeling like an office, not an
+          // empty hall people drift through.
+          const rx = clamp(c.x + rnd(-16, 16), OFC_X0, OFC_X1);
+          const ry = clamp(c.y + rnd(-14, 14), OFC_Y0, OFC_Y1);
+          return { ...moveTo(c, { x: rx, y: ry }, "roam"), energy };
         }
         return { ...c, energy };
       }));
@@ -1121,7 +1157,7 @@ function OfficeSim({ onClose, onOpenChat }) {
   // Dev room → דן rushes to a desk and "codes".
   useEffect(() => devBus.on((p) => {
     const id = (p && p.agentId) || "dev";
-    setChars((prev) => prev.map((c) => c.id === id && !c.held ? moveTo(c, OFC_DESKS[Math.floor(Math.random() * OFC_DESKS.length)], "work", true) : c));
+    setChars((prev) => prev.map((c) => c.id === id && !c.held ? moveTo(c, c.home, "work", true) : c));
     popBubble(id, (p && p.text) || "מקבל משימה 🧑‍💻");
     setTimeout(() => setChars((prev) => prev.map((c) => c.id === id ? { ...c, focus: false, energy: Math.min(100, c.energy + 12) } : c)), 6000);
   }), []);
@@ -1140,7 +1176,7 @@ function OfficeSim({ onClose, onOpenChat }) {
         <div className="ofc-clock">{ph.emoji} {ph.label}</div>
         <button className="off-close" onClick={onClose}><X size={20} /></button>
       </div>
-      <div className="off-sub">עובד 💻 · הפסקה ☕ · ישיבה 👥 · גרור דמות להזיז · לחיצה לשיחה</div>
+      <div className="off-sub">עובד 💻 · ישיבה 👥 · ארוחה 🍽️ · הפסקה ☕ · גרור דמות להזיז · לחיצה לשיחה</div>
       <div className="ofc-floor" ref={floorRef} style={{ "--sky": ph.sky }}
         onPointerMove={onFloorMove} onPointerUp={onFloorUp} onPointerLeave={onFloorUp}
         onTouchMove={onFloorMove} onTouchEnd={onFloorUp}>
@@ -1149,10 +1185,21 @@ function OfficeSim({ onClose, onOpenChat }) {
         <div className="ofc-furn ofc-reception">קבלה</div>
         <div className="ofc-furn ofc-rug" />
         <div className="ofc-furn ofc-meeting"><span className="ofc-mtable" /><i className="t" /><i className="b" /><i className="l" /><i className="r" /></div>
-        <div className="ofc-furn ofc-desk d1"><span className="ofc-mon" /></div>
-        <div className="ofc-furn ofc-desk d2"><span className="ofc-mon" /></div>
-        <div className="ofc-furn ofc-desk d3"><span className="ofc-mon" /></div>
-        <div className="ofc-furn ofc-desk d4"><span className="ofc-mon" /></div>
+        {OFC_DESKS.map((d, i) => {
+          const owner = chars[i];
+          const occ = owner && owner.status === "work" && !owner.walking;
+          return (
+            <div key={i} className={"ofc-furn ofc-desk" + (occ ? " occ" : "")} style={{ left: d.x + "%", top: d.y + "%" }}>
+              <span className="ofc-mon" /><span className="ofc-kbd" /><span className="ofc-chairback" />
+            </div>
+          );
+        })}
+        <div className="ofc-furn ofc-dine-label">חדר אוכל</div>
+        {OFC_DINE_TABLES.map((t, i) => (
+          <div key={i} className="ofc-furn ofc-dine-table" style={{ left: t.x + "%", top: t.y + "%" }}>
+            <span className="ofc-dtop" /><i className="t" /><i className="b" /><i className="l" /><i className="r" />
+          </div>
+        ))}
         <div className="ofc-furn ofc-plant p1" /><div className="ofc-furn ofc-plant p2" /><div className="ofc-furn ofc-plant p3" />
         <div className="ofc-furn ofc-cooler" />
         {bursts.map((bt) => (
@@ -1162,8 +1209,9 @@ function OfficeSim({ onClose, onOpenChat }) {
         ))}
         {chars.map((c) => {
           const a = byId(c.id); if (!a) return null; const b = bubbles[c.id];
+          const seated = !c.walking && (c.status === "work" || c.status === "meet" || c.status === "eat");
           return (
-            <div key={c.id} className={"ofc-char" + (c.walking ? " walking" : "") + (c.held ? " held" : "") + (c.focus ? " focus" : "")} title={a.name}
+            <div key={c.id} className={"ofc-char" + (c.walking ? " walking" : "") + (c.held ? " held" : "") + (c.focus ? " focus" : "") + (seated ? " seated" : "") + (seated && c.status === "work" ? " at-work" : "")} title={a.name}
               style={{ left: c.x + "%", top: c.y + "%", transitionDuration: c.dur + "ms", zIndex: Math.round(c.y) + (c.held ? 200 : 10), "--c": a.color }}
               onPointerDown={(e) => onCharDown(e, c.id)}>
               {b && <div className="ofc-bubble">{b.toId && <span className="ofc-bubble-to">→ {byId(b.toId)?.name}</span>}{b.text}</div>}
@@ -1172,6 +1220,7 @@ function OfficeSim({ onClose, onOpenChat }) {
                 <span className="ofc-shadow" />
                 <span className="ofc-head"><img src={a.avatar} alt="" draggable={false} /></span>
                 <span className="ofc-body" style={{ background: `linear-gradient(160deg, ${a.color}, ${a.color}cc)` }} />
+                <span className="ofc-chair" />
                 <span className="ofc-legs"><i /><i /></span>
               </div>
               <span className="ofc-name">{a.name}</span>
@@ -1611,19 +1660,37 @@ function StyleTag() {
 .ofc-windows{position:absolute;top:0;left:0;right:0;height:34px;display:flex;gap:9px;padding:0 14px;pointer-events:none}
 .ofc-windows span{flex:1;border-radius:0 0 7px 7px;background:linear-gradient(180deg,rgba(150,200,255,.3),rgba(80,130,210,.06));border:1px solid rgba(150,200,255,.16);border-top:none;box-shadow:inset 0 -6px 14px rgba(150,200,255,.08)}
 .ofc-furn{position:absolute;pointer-events:none}
-.ofc-rug{left:36%;top:44%;width:28%;height:26%;border-radius:50%;background:radial-gradient(ellipse,rgba(228,188,99,.10),transparent 72%)}
-.ofc-reception{right:5%;top:8%;width:108px;height:30px;border-radius:8px;background:linear-gradient(180deg,#3a2c14,#241a0a);color:#caa85e;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;border:1px solid rgba(228,188,99,.3)}
-.ofc-meeting{left:42%;top:47%;width:108px;height:64px}
-.ofc-mtable{position:absolute;inset:12px;border-radius:36px;background:linear-gradient(160deg,#2a3350,#19223a);border:1px solid rgba(150,200,255,.2)}
-.ofc-meeting i{position:absolute;width:12px;height:12px;border-radius:4px;background:#33405e}
+.ofc-rug{left:66%;top:12%;width:32%;height:30%;border-radius:50%;background:radial-gradient(ellipse,rgba(228,188,99,.10),transparent 72%)}
+.ofc-reception{right:3%;top:4%;width:96px;height:28px;border-radius:8px;background:linear-gradient(180deg,#3a2c14,#241a0a);color:#caa85e;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;border:1px solid rgba(228,188,99,.3)}
+.ofc-meeting{left:70%;top:15%;width:100px;height:58px}
+.ofc-mtable{position:absolute;inset:11px;border-radius:34px;background:linear-gradient(160deg,#2a3350,#19223a);border:1px solid rgba(150,200,255,.2)}
+.ofc-meeting i{position:absolute;width:11px;height:11px;border-radius:4px;background:#33405e}
 .ofc-meeting i.t{top:0;left:50%;transform:translateX(-50%)} .ofc-meeting i.b{bottom:0;left:50%;transform:translateX(-50%)}
 .ofc-meeting i.l{left:0;top:50%;transform:translateY(-50%)} .ofc-meeting i.r{right:0;top:50%;transform:translateY(-50%)}
-.ofc-desk{width:60px;height:24px;border-radius:6px;background:linear-gradient(180deg,#2a3350,#1a2236);border:1px solid rgba(150,200,255,.15)}
+/* Desks are rendered data-driven (12 of them, one per agent) with inline
+   left/top from OFC_DESKS, so position + occupied-glow can both be computed
+   in JS. translate(-50%,-28%) puts the desk just in front of (below) the
+   character's stand point, screen toward them — reads as "sitting at it"
+   rather than the desk and character overlapping dead-center. */
+.ofc-desk{width:58px;height:24px;border-radius:6px;background:linear-gradient(180deg,#2a3350,#1a2236);border:1px solid rgba(150,200,255,.15);transform:translate(-50%,-28%);transition:box-shadow .4s ease}
 .ofc-desk .ofc-mon{position:absolute;top:-9px;left:50%;transform:translateX(-50%);width:20px;height:14px;border-radius:3px;background:#0b1426;border:1px solid rgba(110,170,240,.4);box-shadow:0 0 9px rgba(110,170,240,.35)}
-.ofc-desk.d1{left:7%;top:30%} .ofc-desk.d2{left:7%;top:66%} .ofc-desk.d3{right:7%;top:40%} .ofc-desk.d4{right:7%;top:72%}
+.ofc-desk .ofc-kbd{position:absolute;bottom:4px;left:50%;transform:translateX(-50%);width:22px;height:5px;border-radius:2px;background:#141b2e;border:1px solid rgba(150,200,255,.18)}
+.ofc-desk .ofc-chairback{position:absolute;bottom:-9px;left:50%;transform:translateX(-50%);width:22px;height:9px;border-radius:4px 4px 0 0;background:#1c2338;border:1px solid rgba(150,200,255,.12)}
+/* Occupied (someone actively working here) → monitor glows brighter and
+   pulses gently, a small "someone is really at this desk" cue at a glance. */
+.ofc-desk.occ{box-shadow:0 0 16px rgba(110,170,240,.22)}
+.ofc-desk.occ .ofc-mon{animation:ofcDeskGlow 2.6s ease-in-out infinite}
+@keyframes ofcDeskGlow{0%,100%{box-shadow:0 0 9px rgba(110,170,240,.35);background:#0b1426}50%{box-shadow:0 0 15px rgba(120,210,255,.65);background:#0e1d38}}
+/* Dining room — bottom-right, two round tables with four chairs each. */
+.ofc-dine-label{left:64%;top:47%;width:120px;height:22px;border-radius:8px;background:rgba(255,180,90,.1);color:#ffb95a;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;border:1px solid rgba(255,180,90,.28)}
+.ofc-dine-table{width:64px;height:64px;transform:translate(-50%,-50%)}
+.ofc-dtop{position:absolute;inset:14px;border-radius:50%;background:linear-gradient(160deg,#3a2c1c,#231909);border:1px solid rgba(255,180,90,.3);box-shadow:inset 0 0 12px rgba(0,0,0,.4)}
+.ofc-dine-table i{position:absolute;width:10px;height:10px;border-radius:3px;background:#3a2c1c;border:1px solid rgba(255,180,90,.2)}
+.ofc-dine-table i.t{top:-2px;left:50%;transform:translateX(-50%)} .ofc-dine-table i.b{bottom:-2px;left:50%;transform:translateX(-50%)}
+.ofc-dine-table i.l{left:-2px;top:50%;transform:translateY(-50%)} .ofc-dine-table i.r{right:-2px;top:50%;transform:translateY(-50%)}
 .ofc-plant{width:16px;height:22px;border-radius:5px 5px 2px 2px;background:linear-gradient(#2f9e6a,#176b45);box-shadow:0 3px 6px rgba(0,0,0,.3)}
-.ofc-plant.p1{left:3%;top:50%} .ofc-plant.p2{right:2%;top:18%} .ofc-plant.p3{left:49%;bottom:3%}
-.ofc-cooler{left:90%;top:52%;width:13px;height:28px;border-radius:4px;background:linear-gradient(#bfe3ff,#7fb0e0)}
+.ofc-plant.p1{left:2%;top:16%} .ofc-plant.p2{left:38%;top:80%} .ofc-plant.p3{left:96%;top:46%}
+.ofc-cooler{left:4%;top:54%;width:13px;height:28px;border-radius:4px;background:linear-gradient(#bfe3ff,#7fb0e0)}
 .ofc-char{position:absolute;transform:translate(-50%,-50%);transition-property:left,top;transition-timing-function:linear;background:none;border:none;padding:0;cursor:pointer;display:flex;flex-direction:column;align-items:center;width:58px}
 .ofc-av{position:relative;display:flex;flex-direction:column;align-items:center}
 .ofc-shadow{position:absolute;bottom:-3px;left:50%;transform:translateX(-50%);width:28px;height:7px;border-radius:50%;background:rgba(0,0,0,.45);filter:blur(2px)}
@@ -1632,11 +1699,21 @@ function StyleTag() {
 .ofc-body{width:32px;height:22px;border-radius:13px 13px 6px 6px;margin-top:-5px;box-shadow:0 3px 8px rgba(0,0,0,.3)}
 .ofc-legs{display:flex;gap:6px;margin-top:-1px}
 .ofc-legs i{width:6px;height:9px;border-radius:0 0 3px 3px;background:#2a3145;display:block}
+.ofc-chair{display:none;width:24px;height:8px;border-radius:0 0 5px 5px;background:#1c2338;margin-top:-2px}
 .ofc-char.walking .ofc-av{animation:ofcBob .5s ease-in-out infinite}
 .ofc-char.walking .ofc-legs i:first-child{animation:ofcStep .5s ease-in-out infinite}
 .ofc-char.walking .ofc-legs i:last-child{animation:ofcStep .5s ease-in-out infinite .25s}
 @keyframes ofcBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
 @keyframes ofcStep{0%,100%{transform:translateY(0) scaleY(1)}50%{transform:translateY(-3px) scaleY(.78)}}
+/* Seated (working / in a meeting / eating) — legs tuck behind a chair seat
+   instead of standing, and a "typing"/small motion cue plays while working
+   so desks read as actually being used, not just occupied. */
+.ofc-char.seated .ofc-legs{display:none}
+.ofc-char.seated .ofc-chair{display:block}
+.ofc-char.seated .ofc-body{border-radius:11px 11px 4px 4px}
+.ofc-char.seated .ofc-shadow{width:20px}
+.ofc-char.seated.at-work .ofc-av{animation:ofcType 1.1s ease-in-out infinite}
+@keyframes ofcType{0%,100%{transform:translateY(0)}50%{transform:translateY(-1px)}}
 .ofc-clock{display:flex;align-items:center;gap:5px;font-size:12px;font-weight:800;color:#eaf1ff;background:rgba(255,255,255,.06);border:1px solid rgba(150,200,255,.2);padding:5px 11px;border-radius:20px;margin-right:auto;transition:.6s}
 .ofc-tint{position:absolute;inset:0;pointer-events:none;z-index:1;transition:background 1.2s ease}
 .ofc-floor{background:linear-gradient(rgba(255,255,255,.014) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.014) 1px,transparent 1px),radial-gradient(ellipse at 50% 28%,var(--sky,#1b2440),#0c1120 68%,#070a14)!important;transition:background 1.2s ease}
