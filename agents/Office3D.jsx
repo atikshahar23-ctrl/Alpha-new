@@ -76,6 +76,14 @@ const CLIP = { idle: "man_idle", walk: "man_walk_in_place", sit: "man_sit_idle" 
 // same as this scene's units, so pieces are placed with no extra scale/
 // recentring — just position + a facing rotation per spot.
 const FURNITURE_MODEL_URL = "office-models/furniture.glb";
+// User-supplied "LP Officeroom" pack (FBX → GLB, one small furnished office
+// scene, single shared texture atlas) — used to furnish each agent's private
+// glass office with a couple of real decor pieces (a leafy plant + a little
+// side table) instead of the plain procedural placeholders. Raw room is a 5m
+// box; OFFICE_DECOR_SCALE brings its pieces down to this scene's ~3.3m office
+// footprint.
+const OFFICE_DECOR_MODEL_URL = "office-models/officeroom.glb";
+const OFFICE_DECOR_SCALE = 0.55;
 function cloneFurniturePiece(template, name) {
   if (!template) return null;
   const node = template.getObjectByName(name);
@@ -91,6 +99,30 @@ function cloneFurniturePiece(template, name) {
     if (o.material) o.material = o.material.clone();
   });
   return piece;
+}
+// The LP Officeroom pack's geometry is authored in absolute room-space
+// coordinates (identity node transforms, vertex positions baked at each
+// piece's original spot in that 5m room) rather than locally centred at the
+// object's own origin — the opposite of the furniture.glb convention above.
+// Wrapping the recentred clone in its own group lets the caller then freely
+// set position/scale on that outer group without fighting the baked offset.
+function cloneDecorPiece(template, name) {
+  if (!template) return null;
+  const node = template.getObjectByName(name);
+  if (!node) return null;
+  const raw = node.clone(true);
+  raw.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(raw);
+  const center = new THREE.Vector3(); box.getCenter(center);
+  raw.position.set(-center.x, -box.min.y, -center.z);
+  raw.traverse((o) => {
+    if (!o.isMesh) return;
+    o.castShadow = true; o.receiveShadow = true;
+    if (o.material) o.material = o.material.clone();
+  });
+  const wrap = new THREE.Group();
+  wrap.add(raw);
+  return wrap;
 }
 function placeFurniturePiece(scene, template, name, x, y, z, rotY = 0) {
   const piece = cloneFurniturePiece(template, name);
@@ -857,7 +889,7 @@ const OFFICE_GLASS_MAT = new THREE.MeshPhysicalMaterial({
 // top rail and a floating title/name plate over the entrance, all in the
 // agent's own colour. Doorway faces +Z (south, toward the aisle the worker
 // faces). Returns the group + collision circles for the three solid walls.
-function buildGlassOffice(color, name, title, screenTex) {
+function buildGlassOffice(color, name, title, screenTex, decorTemplate) {
   const g = new THREE.Group();
   const obstacles = [];
   const W = 3.3, D = 3.1, wallH = 2.35;
@@ -897,11 +929,26 @@ function buildGlassOffice(color, name, title, screenTex) {
   plate.position.set(0, wallH + 0.32, D / 2);
   g.add(plate);
 
-  // A potted office plant in the back corner for a lived-in, invested feel.
-  const plant = buildPlant();
-  plant.scale.setScalar(1.15);
-  plant.position.set(-W / 2 + 0.35, 0, -D / 2 + 0.35);
-  g.add(plant);
+  // A real leafy plant + a little side table (from the user's LP Officeroom
+  // pack) for a lived-in, furnished feel — falls back to the plain
+  // procedural plant if that pack failed to load.
+  const flower = cloneDecorPiece(decorTemplate, "Office2_Flower");
+  if (flower) {
+    flower.scale.setScalar(OFFICE_DECOR_SCALE);
+    flower.position.set(-W / 2 + 0.4, 0, -D / 2 + 0.4);
+    g.add(flower);
+  } else {
+    const plant = buildPlant();
+    plant.scale.setScalar(1.15);
+    plant.position.set(-W / 2 + 0.35, 0, -D / 2 + 0.35);
+    g.add(plant);
+  }
+  const littleTable = cloneDecorPiece(decorTemplate, "Office2_little_table");
+  if (littleTable) {
+    littleTable.scale.setScalar(OFFICE_DECOR_SCALE);
+    littleTable.position.set(W / 2 - 0.4, 0, -D / 2 + 0.4);
+    g.add(littleTable);
+  }
 
   // A small wall-mounted status screen on the back wall showing the agent's
   // own live domain data (passed in as a canvas texture).
@@ -1245,11 +1292,12 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     let cleanupFn = () => {};
     (async () => {
       const base = import.meta.env.BASE_URL || "/";
-      const [deskTemplate, laptopTemplate, charGltf, furnitureTemplate] = await Promise.all([
+      const [deskTemplate, laptopTemplate, charGltf, furnitureTemplate, officeDecorTemplate] = await Promise.all([
         loadGltf(base + DESK_MODEL_URL).catch((e) => { console.error("[office3d] desk model failed to load", e); return null; }),
         loadGltf(base + LAPTOP_MODEL_URL).catch((e) => { console.error("[office3d] laptop model failed to load", e); return null; }),
         loadGltfFull(base + CHAR_MODEL_URL).catch((e) => { console.error("[office3d] character model failed to load", e); return null; }),
         loadGltf(base + FURNITURE_MODEL_URL).catch((e) => { console.error("[office3d] furniture model failed to load", e); return null; }),
+        loadGltf(base + OFFICE_DECOR_MODEL_URL).catch((e) => { console.error("[office3d] office decor model failed to load", e); return null; }),
       ]);
       if (cancelled) return;
       const charTemplate = charGltf ? charGltf.scene : null;
@@ -1630,7 +1678,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       // a potted plant, and a wall screen showing their own live domain data.
       if (owner) {
         const scrTex = buildOfficeScreenTex(owner.title, hexToInt(owner.color), agentScreenLines(owner.id, liveRef.current.bizData || {}));
-        const off = buildGlassOffice(hexToInt(owner.color), owner.name, owner.title, scrTex);
+        const off = buildGlassOffice(hexToInt(owner.color), owner.name, owner.title, scrTex, officeDecorTemplate);
         off.group.position.set(wx, 0, wz);
         scene.add(off.group);
         off.obstacles.forEach((o) => obstacles.push({ x: wx + o.x, z: wz + o.z, r: o.r }));
