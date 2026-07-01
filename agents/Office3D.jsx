@@ -1924,9 +1924,10 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       // of strafing — classic, predictable first-person controls. Third-
       // person and the touch joystick keep the original absolute-direction
       // scheme, which reads fine from an outside chase camera.
-      // Inverted by request: ↑/W now steps backward and ↓/S steps forward
-      // (relative to view), and ←/→ / A/D turn the opposite way too.
-      const kFwd = -((keys["w"] || keys["arrowup"] ? 1 : 0) - (keys["s"] || keys["arrowdown"] ? 1 : 0));
+      // Turn direction inverted by request; forward/backward flipped back
+      // (a second invert request restored ↑/W = forward, ↓/S = backward,
+      // both still relative to the direction you're looking).
+      const kFwd = (keys["w"] || keys["arrowup"] ? 1 : 0) - (keys["s"] || keys["arrowdown"] ? 1 : 0);
       const kTurn = -((keys["d"] || keys["arrowright"] ? 1 : 0) - (keys["a"] || keys["arrowleft"] ? 1 : 0));
       const fpTankControls = liveRef.current.firstPerson && (kFwd !== 0 || kTurn !== 0);
       if (fpTankControls) {
@@ -2249,7 +2250,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
               </select>
             </div>
           )}
-          <p className="off3-settings-note">בגוף ראשון (הפוך): ↑/W נסוג ו-↓/S מתקדם לפי הכיוון שאתה מסתכל אליו (בלי לסובב את המצלמה), ←/→ או A/D מסובבים אותך בכיוון ההפוך. כל סוכן מדבר בגובה קול מעט שונה כדי שיהיה קל להבחין ביניהם.</p>
+          <p className="off3-settings-note">בגוף ראשון: ↑/W מתקדם ו-↓/S נסוג לפי הכיוון שאתה מסתכל אליו (בלי לסובב את המצלמה), ←/→ או A/D מסובבים אותך (בכיוון הפוך). כל סוכן מדבר בגובה קול מעט שונה כדי שיהיה קל להבחין ביניהם.</p>
         </div>
       )}
       {voiceLine && (

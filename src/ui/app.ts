@@ -224,6 +224,13 @@ export function mountApp(root: HTMLElement) {
             <div class="hud-card-h"><span>CONTRACTOR PIPELINE</span><i></i></div>
             <div class="hud-card-body">טוען…</div>
           </section>
+          <!-- The owner's actual car (Chery Tiggo 7 PHEV 2025 Noble) as a live
+               3D turntable, with the real fleet numbers right beneath it. -->
+          <section class="hud-card" id="hudFleetPanel">
+            <div class="hud-card-h"><span>הרכב שלי · TIGGO 7 PHEV</span><i></i></div>
+            <div class="hud-car3d" id="hudCar3d"></div>
+            <div class="hud-card-body">טוען…</div>
+          </section>
         </div>
 
         <!-- Right column — live markets + Israel news -->
@@ -238,13 +245,7 @@ export function mountApp(root: HTMLElement) {
           </section>
         </div>
 
-        <!-- Fleet & operations — a real panel on the main screen (tap → full center) -->
-        <div class="hud-col fleet">
-          <section class="hud-card" id="hudFleetPanel">
-            <div class="hud-card-h"><span>צי ומבצעים · FLEET</span><i></i></div>
-            <div class="hud-card-body">טוען…</div>
-          </section>
-        </div>
+        <!-- (fleet card moved into the left column above, with the 3D car) -->
         </div>
 
         <!-- Heavy Guard shortcut rail -->
@@ -3238,6 +3239,12 @@ export function mountApp(root: HTMLElement) {
     setInterval(() => { renderHud(); renderFleetPanel(); }, 30000);
     setInterval(renderMarkets, 60000);
     setInterval(renderNews, 300000);
+    // The owner's 3D Tiggo 7 turntable in the fleet card — lazy dynamic
+    // import so three.js never weighs down the main bundle's initial load.
+    {
+      const carEl = document.getElementById('hudCar3d');
+      if (carEl) import('../modules/tiggo3d').then((m) => m.mountTiggo3D(carEl)).catch(() => { carEl.style.display = 'none'; });
+    }
   }, 300);
 
   async function hgSearchLicense(query: string) {
