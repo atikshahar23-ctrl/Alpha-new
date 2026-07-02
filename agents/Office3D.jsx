@@ -3886,13 +3886,13 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           ) : (
             <div className="off3-phone-body">
               <div className="off3-phone-sec">העוזר הראשי · ALPHA</div>
-              <button className="off3-phone-act" onClick={() => window.open("./", "_blank")}>🤖 פתח את מרכז הפיקוד הראשי</button>
+              <button className="off3-phone-act" onClick={() => { window.location.href = "./"; }}>🤖 פתח את מרכז הפיקוד הראשי</button>
               <button className="off3-phone-act" onClick={() => setTurbo((v) => !v)}>🚀 טורבו: {turbo ? "פעיל — כבה" : "כבוי — הפעל"}</button>
               <button className="off3-phone-act" onClick={() => setFirstPerson((v) => !v)}>👁 תצוגה: {firstPerson ? "גוף ראשון" : "גוף שלישי"}</button>
               <div className="off3-phone-sec">המערכות שלך</div>
-              <button className="off3-phone-act" onClick={() => window.open("heavyguard.html", "_blank")}>🛡 HEAVY GUARD OS</button>
-              <button className="off3-phone-act" onClick={() => window.open("https://heavt-guard-simulator-1.onrender.com/", "_blank")}>📈 מערכת מסחר · TRADE</button>
-              <button className="off3-phone-act" onClick={() => window.open("agent.html", "_blank")}>👔 CRM מכירות · איתי</button>
+              <button className="off3-phone-act" onClick={() => { window.location.href = "heavyguard.html"; }}>🛡 HEAVY GUARD OS</button>
+              <button className="off3-phone-act" onClick={() => { window.location.href = "https://heavt-guard-simulator-1.onrender.com/"; }}>📈 מערכת מסחר · TRADE</button>
+              <button className="off3-phone-act" onClick={() => { window.location.href = "agent.html"; }}>👔 CRM מכירות · איתי</button>
               <button className="off3-phone-act" onClick={() => onOpenChat("cmo")}>📣 שיווק · נפתלי (טיוטות ופרסום)</button>
               <button className="off3-phone-act" onClick={() => onOpenChat("ceo")}>🧑‍💼 דבר עם יהודה — המנכ"ל</button>
             </div>

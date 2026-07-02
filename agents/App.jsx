@@ -248,6 +248,7 @@ function bizContext() {
   const hasData = b.installs || b.custCount || b.openDeals;
   const top = b.top.length ? b.top.map((c) => `${c.name} (${ils(c.rev)})`).join(", ") : "אין נתונים עדיין";
   let s = `\n\n[ידע עסקי חי — HeavyGuard / ה-CRM של איתי]`;
+  s += `\nהבעלים של החברה הוא ${OWNER_NAME} — אליו/אליה יש לפנות כ"הבעלים" ולו/לה יש הרשאת אישור סופית. איתי הוא איש מכירות חיצוני שמפעיל את ה-CRM בלבד ואינו הבעלים — אין לכנות אותו "הבעלים" או להתייחס אליו כאילו הוא מקבל ההחלטות הראשי.`;
   if (hasData) s += `\nהתקנות: ${b.installs} · הכנסה מצטברת: ${ils(b.hgRevenue)} · לקוחות: ${b.custCount} · עסקאות פתוחות: ${b.openDeals} (${ils(b.openVal)}) · נסגרו החודש: ${b.wonMonth} · מוצרים במחירון: ${b.pricelist}.\nלקוחות מובילים: ${top}.`;
   else s += `\nעדיין אין נתונים חיים זמינים — פתח את מערכת HeavyGuard/CRM כדי שהנתונים יסונכרנו.`;
   if (facts.length) s += `\nעובדות שלימדת את הצוות:\n- ${facts.join("\n- ")}`;

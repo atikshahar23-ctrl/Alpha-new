@@ -182,7 +182,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v161 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v162 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="panelsToggleBtn" title="הסתר/הצג פנלים" aria-label="הסתר פנלים">
           <svg class="pt-hide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -285,15 +285,15 @@ export function mountApp(root: HTMLElement) {
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
             <span>מערכת מסחר · TRADE</span>
           </a>
-          <a class="hud-sc" id="hudAgent" href="/Alpha-new/agent.html" target="_blank" rel="noopener">
+          <a class="hud-sc" id="hudAgent" href="/Alpha-new/agent.html">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M17 11l2 2 4-4"/></svg>
             <span>CRM מכירות · איתי</span>
           </a>
-          <a class="hud-sc" id="hudMarketing" href="/Alpha-new/heavyguard.html#marketing" target="_blank" rel="noopener">
+          <a class="hud-sc" id="hudMarketing" href="/Alpha-new/heavyguard.html#marketing">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 11l19-9-9 19-2-8-8-2z"/></svg>
             <span>שיווק TikTok · Facebook</span>
           </a>
-          <a class="hud-sc hud-sc-agents" id="hudAgents" href="/Alpha-new/agents.html" target="_blank" rel="noopener">
+          <a class="hud-sc hud-sc-agents" id="hudAgents" href="/Alpha-new/agents.html">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3.2"/><circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="5" cy="18" r="2"/><circle cx="19" cy="18" r="2"/><path d="M9.5 10.5 6.5 7.5M14.5 10.5l3-3M9.5 13.5l-3 3M14.5 13.5l3 3"/></svg>
             <span>מרכז הסוכנים · AGENTS</span>
           </a>
@@ -529,13 +529,13 @@ export function mountApp(root: HTMLElement) {
             </svg>
             <span data-i18n="trading">מסחר</span>
           </a>
-          <a class="hg-fab mkt-fab" id="mktBtn" href="/Alpha-new/heavyguard.html#marketing" target="_blank" rel="noopener" title="שיווק TikTok · Facebook">
+          <a class="hg-fab mkt-fab" id="mktBtn" href="/Alpha-new/heavyguard.html#marketing" title="שיווק TikTok · Facebook">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="22" height="22">
               <path d="M3 11l19-9-9 19-2-8-8-2z"/>
             </svg>
             <span>שיווק</span>
           </a>
-          <a class="hg-fab agents-fab" id="agentsBtn" href="/Alpha-new/agents.html" target="_blank" rel="noopener" title="מרכז הסוכנים · Agents Command">
+          <a class="hg-fab agents-fab" id="agentsBtn" href="/Alpha-new/agents.html" title="מרכז הסוכנים · Agents Command">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="22" height="22">
               <circle cx="12" cy="12" r="3.2"/><circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="5" cy="18" r="2"/><circle cx="19" cy="18" r="2"/><path d="M9.5 10.5 6.5 7.5M14.5 10.5l3-3M9.5 13.5l-3 3M14.5 13.5l3 3"/>
             </svg>
@@ -2879,7 +2879,7 @@ export function mountApp(root: HTMLElement) {
       <div class="hud-stat"><span>אחזקה מצטברת</span><b>${money(maintCost)}</b></div>
       ${last ? `<div class="hud-stat"><span>אחרון: ${last.type || ''}</span><b>${(last.date || '').split('-').reverse().join('/')}</b></div>` : ''}
       ${gpsRow}
-      <div class="hud-foot">מסונכרן עם ניהול הצי ב-Heavy Guard ↗ · <a href="gps.html" target="_blank" rel="noopener" style="color:#F7E8C0;font-weight:800;text-decoration:none" onclick="event.stopPropagation()">🛰️ GPS Tracker</a></div>`;
+      <div class="hud-foot">מסונכרן עם ניהול הצי ב-Heavy Guard ↗ · <a href="gps.html" style="color:#F7E8C0;font-weight:800;text-decoration:none" onclick="event.stopPropagation()">🛰️ GPS Tracker</a></div>`;
     document.getElementById('hudOdoEdit')?.addEventListener('click', (e) => {
       e.stopPropagation();
       const cur = odo.km ? String(odo.km) : '';
@@ -3717,6 +3717,11 @@ export function mountApp(root: HTMLElement) {
     // The dock's "מסחר" fab button was still a plain external-tab link —
     // only the HUD rail tile above was ever wired to the in-app embed.
     document.getElementById('tradeBtn')?.addEventListener('click', (e) => { e.preventDefault(); openTradeSystem(); });
+    // The market widget's own "פתח TRADE" fallback link (re-rendered on every
+    // price refresh, so it needs delegation rather than a one-time bind).
+    document.querySelector('#hudMarkets')?.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement)?.closest('.mk-trade-open')) { e.preventDefault(); e.stopPropagation(); openTradeSystem(); }
+    });
     document.querySelector('#hudMarkets')?.addEventListener('click', toggleMarketsPanel);
     // Pre-cog preload: hovering the card warms the market data before the
     // expand click ever lands (renderMarkets self-caches, so it's free).
