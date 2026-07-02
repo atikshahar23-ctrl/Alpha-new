@@ -2468,6 +2468,15 @@ function StyleTag() {
 .off3-settings-select select{max-width:130px;background:var(--s9);border:1px solid var(--s7);color:var(--silver);border-radius:8px;
   padding:5px 7px;font-family:inherit;font-size:10.5px;outline:none;cursor:pointer}
 .off3-settings-note{font-size:10.5px;line-height:1.6;color:#7e90b8;padding:10px 14px 14px}
+/* Branded loading overlay while the office models download. */
+.off3-loader{position:absolute;inset:0;z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;
+  background:radial-gradient(ellipse at 50% 30%,#101830,#060912 70%);animation:acRise .2s ease both}
+.off3-loader-logo{font-size:44px;animation:off3LoaderFloat 2.2s ease-in-out infinite}
+.off3-loader b{font-family:'Rubik';font-weight:900;font-size:16px;color:#eaf1ff}
+.off3-loader-bar{width:min(260px,60vw);height:8px;border-radius:6px;background:rgba(255,255,255,.08);overflow:hidden;border:1px solid rgba(110,170,240,.25)}
+.off3-loader-bar i{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg,var(--gold),#7fd7ff);transition:width .25s ease;box-shadow:0 0 14px rgba(228,188,99,.5)}
+.off3-loader span{font-size:12px;font-weight:700;color:#7e90b8}
+@keyframes off3LoaderFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
 .off-floor{flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(2,1fr);gap:12px;padding:14px 14px 28px;align-content:start}
 @media(min-width:680px){.off-floor{grid-template-columns:repeat(3,1fr)}}
 @media(min-width:1000px){.off-floor{grid-template-columns:repeat(4,1fr)}}
