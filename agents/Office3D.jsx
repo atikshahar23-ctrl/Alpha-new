@@ -2285,6 +2285,21 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       mt.position.set(wx, 0, wz);
       scene.add(mt);
       obstacles.push({ x: wx, z: wz, r: 1.0 });
+      // The owner's real marble-and-gold conference table replaces the
+      // procedural capsule once it loads (which stays as the fallback if
+      // the model ever fails to fetch — same pattern as the podium car).
+      {
+        const tableLoader = new GLTFLoader();
+        tableLoader.setMeshoptDecoder(MeshoptDecoder);
+        tableLoader.load(base + "office-models/meeting_table.glb", (g) => {
+          const real = g.scene;
+          real.position.set(wx, 0, wz);
+          real.rotation.y = Math.PI / 2; // long axis across the room, matching the seat spread
+          scene.add(real);
+          real.traverse((o) => { if (o.isMesh) o.castShadow = o.receiveShadow = true; });
+          mt.visible = false;
+        }, undefined, () => { /* model failed to load — procedural capsule stays visible */ });
+      }
       // Wrap the whole meeting nook in a shared glass conference room with a
       // presentation screen + "חדר ישיבות" sign over the door.
       const confCvs = document.createElement("canvas");
