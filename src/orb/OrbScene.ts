@@ -2473,7 +2473,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     return qTier >= 2 ? Math.min(base, 1) : base;
   };
   renderer.setPixelRatio(prCap());
-  renderer.setClearColor(charBg("pikachu"), 0);
+  renderer.setClearColor(charBg('robot'), 0);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.65;
   container.appendChild(renderer.domElement);
@@ -2562,10 +2562,20 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   const pikaGroup = pika.group;
   pikaGroup.scale.setScalar(0.95);
   group.add(pikaGroup);
-  let mobileCurrentChar = 'pikachu';
+  // The centerpiece default is the ROBOT — the procedural Pikachu used to
+  // flash first (procedural body → pikachu.glb → robot swap at 600ms), so
+  // its body is hidden from frame 0 and the robot loads directly.
+  pikaGroup.traverse((child) => {
+    if (child instanceof THREE.Mesh) {
+      const mat = Array.isArray(child.material) ? child.material[0] : child.material;
+      if (mat instanceof THREE.MeshPhysicalMaterial) child.visible = false;
+      if (mat instanceof THREE.MeshBasicMaterial && (mat as THREE.MeshBasicMaterial).map) child.visible = false;
+    }
+  });
+  let mobileCurrentChar = 'robot';
   let mobileCurrentModel: THREE.Object3D | null = null;
   let mobPFX: PFXState | null = null;
-  loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/', 'pikachu', (m) => { mobileCurrentModel = m; });
+  loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/', 'robot', (m) => { mobileCurrentModel = m; });
   const mobileThrowPokeball = makeThrowPokeball(group, pikaGroup, import.meta.env.BASE_URL || '/', camera);
 
   // ────────────────────────────────────────────
@@ -3137,7 +3147,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     return qTier >= 2 ? Math.min(base, 1) : base;
   };
   renderer.setPixelRatio(prCap());
-  renderer.setClearColor(charBg("pikachu"), 0);
+  renderer.setClearColor(charBg('robot'), 0);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.75;
   container.appendChild(renderer.domElement);
@@ -3231,10 +3241,20 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   const pika = buildPikachu(pikaMats, 1.0);
   const pikaGroup = pika.group;
   group.add(pikaGroup);
-  let deskCurrentChar = 'pikachu';
+  // The centerpiece default is the ROBOT — the procedural Pikachu used to
+  // flash first (procedural body → pikachu.glb → robot swap at 600ms), so
+  // its body is hidden from frame 0 and the robot loads directly.
+  pikaGroup.traverse((child) => {
+    if (child instanceof THREE.Mesh) {
+      const mat = Array.isArray(child.material) ? child.material[0] : child.material;
+      if (mat instanceof THREE.MeshPhysicalMaterial) child.visible = false;
+      if (mat instanceof THREE.MeshBasicMaterial && (mat as THREE.MeshBasicMaterial).map) child.visible = false;
+    }
+  });
+  let deskCurrentChar = 'robot';
   let deskCurrentModel: THREE.Object3D | null = null;
   let deskPFX: PFXState | null = null;
-  loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/', 'pikachu', (m) => { deskCurrentModel = m; });
+  loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/', 'robot', (m) => { deskCurrentModel = m; });
   const deskThrowPokeball = makeThrowPokeball(group, pikaGroup, import.meta.env.BASE_URL || '/', camera);
 
 

@@ -182,7 +182,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v143 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v144 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="panelsToggleBtn" title="הסתר/הצג פנלים" aria-label="הסתר פנלים">
           <svg class="pt-hide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -4081,11 +4081,12 @@ export function mountApp(root: HTMLElement) {
     }
   }
 
-  // Apply the saved character on startup (if not the default Pikachu).
-  // Default centerpiece on every open is the ROBOT (no Pokémon unless the user
-  // picks one). The robot swaps like any character via the picker.
+  // Default centerpiece on every open is the ROBOT (no Pokémon unless the
+  // user picks one). The orb scene itself now boots straight on the robot,
+  // so no swap call is needed here — calling setCharacter again reloaded the
+  // model and caused the pikachu→robot flash the owner asked to remove.
   document.body.dataset.char = 'robot';
-  setTimeout(() => { orb.setCharacter('robot'); applyCharacterVoice('robot'); }, 600);
+  setTimeout(() => applyCharacterVoice('robot'), 600);
 
   // ── Animated main-character swap (red-laser dispel + pokeball summon) ──
   // Plays over the orb on the main screen: a red laser strikes the current
