@@ -192,7 +192,7 @@ async function fetchMarketRows() {
   } catch {}
   // All Yahoo symbols fetched in ONE parallel batch (they were sequential —
   // 5 round-trips back to back); order is preserved by mapping the results.
-  const yahooSyms = [["%5EGSPC", "S&P 500"], ["%5EIXIC", "NASDAQ"], ["%5EDJI", "Dow Jones"], ["GC%3DF", "זהב"], ["CL%3DF", "נפט"]];
+  const yahooSyms = [["%5EGSPC", "S&P 500"], ["%5EIXIC", "NASDAQ"], ["%5EDJI", "Dow Jones"], ["GC%3DF", "זהב"], ["CL%3DF", "נפט"], ["AAPL", "Apple"], ["NVDA", "Nvidia"], ["TSLA", "Tesla"], ["MSFT", "Microsoft"], ["GOOGL", "Google"]];
   const yahoo = await Promise.all(yahooSyms.map(async ([sym, name]) => {
     try {
       const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=2d`);

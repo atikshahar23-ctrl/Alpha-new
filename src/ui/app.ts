@@ -182,7 +182,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v136 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v137 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="panelsToggleBtn" title="הסתר/הצג פנלים" aria-label="הסתר פנלים">
           <svg class="pt-hide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -2858,8 +2858,9 @@ export function mountApp(root: HTMLElement) {
 
   // ── Live markets ──
   const mkFmt = (n: number) => n >= 1000 ? Math.round(n).toLocaleString('en-US') : n.toLocaleString('en-US', { maximumFractionDigits: n >= 1 ? 2 : 4 });
-  type MkRow = { name: string; price: string; chg: number };
+  type MkRow = { name: string; price: string; chg: number; group?: 'crypto' | 'index' | 'stock' };
   let lastMarketRows: MkRow[] = [];
+  let lastMarketAt = 0;
   // Fetch a fuller market board: crypto (CoinGecko) + indices/gold (Yahoo).
   async function fetchMarketRows(): Promise<MkRow[]> {
     const rows: MkRow[] = [];
@@ -2868,49 +2869,90 @@ export function mountApp(root: HTMLElement) {
       const r = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`);
       const d = await r.json();
       const order: [string, string][] = [['bitcoin', 'Bitcoin'], ['ethereum', 'Ethereum'], ['solana', 'Solana'], ['binancecoin', 'BNB'], ['ripple', 'XRP'], ['cardano', 'Cardano'], ['dogecoin', 'Dogecoin']];
-      for (const [id, name] of order) if (d[id]) rows.push({ name, price: '$' + mkFmt(d[id].usd), chg: d[id].usd_24h_change || 0 });
+      for (const [id, name] of order) if (d[id]) rows.push({ name, price: '$' + mkFmt(d[id].usd), chg: d[id].usd_24h_change || 0, group: 'crypto' });
     } catch {}
-    // One parallel batch instead of five sequential round-trips.
-    const yahooSyms: [string, string][] = [['%5EGSPC', 'S&P 500'], ['%5EIXIC', 'NASDAQ'], ['%5EDJI', 'Dow Jones'], ['GC%3DF', 'זהב'], ['CL%3DF', 'נפט']];
-    const yahoo = await Promise.all(yahooSyms.map(async ([sym, name]) => {
+    // Indices/commodities + real single STOCKS — one parallel batch.
+    const yahooSyms: [string, string, 'index' | 'stock'][] = [
+      ['%5EGSPC', 'S&P 500', 'index'], ['%5EIXIC', 'NASDAQ', 'index'], ['%5EDJI', 'Dow Jones', 'index'], ['GC%3DF', 'זהב', 'index'], ['CL%3DF', 'נפט', 'index'],
+      ['AAPL', 'Apple', 'stock'], ['NVDA', 'Nvidia', 'stock'], ['TSLA', 'Tesla', 'stock'], ['MSFT', 'Microsoft', 'stock'], ['GOOGL', 'Google', 'stock'],
+    ];
+    const yahoo = await Promise.all(yahooSyms.map(async ([sym, name, group]) => {
       try {
         const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=2d`);
         const d = await r.json();
         const m = d.chart.result[0].meta;
         const price = m.regularMarketPrice;
         const prev = m.chartPreviousClose ?? m.previousClose ?? price;
-        return { name, price: mkFmt(price), chg: prev ? ((price - prev) / prev) * 100 : 0 } as MkRow;
+        return { name, price: (group === 'stock' ? '$' : '') + mkFmt(price), chg: prev ? ((price - prev) / prev) * 100 : 0, group } as MkRow;
       } catch { return null; }
     }));
     yahoo.forEach((row) => { if (row) rows.push(row); });
-    if (rows.length) lastMarketRows = rows;
+    if (rows.length) { lastMarketRows = rows; lastMarketAt = Date.now(); }
     return rows;
   }
   const mkRowHtml = (r: MkRow) => {
     const up = r.chg >= 0; const c = up ? '#3FD79A' : '#FF5C50';
     return `<div class="mk-row"><span class="mk-name">${r.name}</span><span class="mk-price">${r.price}</span><span class="mk-chg" style="color:${c}">${up ? '▲' : '▼'}${Math.abs(r.chg).toFixed(2)}%</span></div>`;
   };
-  async function renderMarkets() {
+  // Quick-access strip to the TRADE platform: live autotrader numbers read
+  // via the trading bridge (direction+confidence, PnL, win rate, bots,
+  // open positions) with a one-tap link to the full platform.
+  function tradeStripHtml(): string {
+    const openLink = `<a class="mk-trade-open" href="${TRADE_URL}" target="_blank" rel="noopener">פתח TRADE ↗</a>`;
+    const t = readAutotraderState();
+    if (!t) {
+      return `<div class="mk-trade"><div class="mk-trade-foot"><span>📈 פלטפורמת המסחר · אין נתונים חיים במכשיר זה</span>${openLink}</div></div>`;
+    }
+    const pos = readPortfolioPositions();
+    const dir = t.alphaState?.direction || 'NEUTRAL';
+    const dirTxt = dir === 'LONG' ? '📈 LONG' : dir === 'SHORT' ? '📉 SHORT' : '⏸ נייטרלי';
+    const conf = t.alphaState ? ` ${Math.round(t.alphaState.confidence || 0)}%` : '';
+    const pnlC = t.totalPnl >= 0 ? '#3FD79A' : '#FF5C50';
+    return `<div class="mk-trade">
+      <div class="mk-trade-row">
+        <div><b style="color:${pnlC}">${t.totalPnl >= 0 ? '+' : ''}$${Math.round(t.totalPnl).toLocaleString('en-US')}</b><span>PnL</span></div>
+        <div><b>${Math.round(t.fleetWinRate)}%</b><span>הצלחה</span></div>
+        <div><b>${t.activeBots.length}</b><span>בוטים</span></div>
+        <div><b>${dirTxt}${conf}</b><span>כיוון</span></div>
+      </div>
+      <div class="mk-trade-foot"><span>${pos.length} פוזיציות פתוחות · ${t.totalTrades} עסקאות</span>${openLink}</div>
+    </div>`;
+  }
+  // The panel itself expands/collapses in place on tap: collapsed shows a
+  // mixed taste of each group; expanded shows the full board under group
+  // headers (crypto / indices+commodities / stocks).
+  let mkExpanded = false;
+  const MK_GROUPS: ['crypto' | 'index' | 'stock', string][] = [['crypto', 'קריפטו'], ['index', 'מדדים וסחורות'], ['stock', 'מניות']];
+  function renderMarketsBody(rows: MkRow[]) {
     const el = document.querySelector('#hudMarkets .hud-card-body');
     if (!el) return;
-    const rows = await fetchMarketRows();
-    el.innerHTML = rows.length === 0
-      ? '<div class="hud-empty">שווקים לא זמינים כרגע</div>'
-      : rows.slice(0, 6).map(mkRowHtml).join('') + '<div class="mk-more">לחץ לכל השווקים ↗</div>';
+    const strip = tradeStripHtml();
+    if (!rows.length) { el.innerHTML = strip + '<div class="hud-empty">שווקים לא זמינים כרגע</div>'; return; }
+    if (mkExpanded) {
+      const sections = MK_GROUPS.map(([g, title]) => {
+        const rs = rows.filter((r) => r.group === g);
+        return rs.length ? `<div class="mk-sec">${title}</div>` + rs.map(mkRowHtml).join('') : '';
+      }).join('');
+      el.innerHTML = strip + sections + '<div class="mk-more">לחץ לצמצום ⌃</div>';
+    } else {
+      const pick = [
+        ...rows.filter((r) => r.group === 'crypto').slice(0, 2),
+        ...rows.filter((r) => r.group === 'index').slice(0, 2),
+        ...rows.filter((r) => r.group === 'stock').slice(0, 2),
+      ];
+      el.innerHTML = strip + (pick.length ? pick : rows.slice(0, 6)).map(mkRowHtml).join('') + '<div class="mk-more">לחץ להרחבת כל השווקים ⌄</div>';
+    }
   }
-  // Full markets board in a window (opened by clicking the markets panel).
-  function openMarketsDetail() {
-    openWin('שווקים · MARKETS 📊');
-    const body = $('winBody');
-    const render = (rows: MkRow[]) => {
-      body.innerHTML = `<div class="pad mk-detail">
-        <div class="mk-detail-h">מטבעות קריפטו · מדדים · סחורות — נתונים חיים</div>
-        <div class="mk-detail-list">${rows.length ? rows.map(mkRowHtml).join('') : '<div class="ops-empty">שווקים לא זמינים כרגע</div>'}</div>
-        <a class="mk-detail-cta" href="${TRADE_URL}" target="_blank" rel="noopener">פתח את מערכת המסחר המלאה ↗</a>
-      </div>`;
-    };
-    render(lastMarketRows);
-    fetchMarketRows().then(render);
+  async function renderMarkets() {
+    // Fresh-enough cache renders instantly (e.g. on expand/collapse taps).
+    if (Date.now() - lastMarketAt < 55000 && lastMarketRows.length) { renderMarketsBody(lastMarketRows); return; }
+    renderMarketsBody(lastMarketRows);
+    renderMarketsBody(await fetchMarketRows());
+  }
+  function toggleMarketsPanel(e: Event) {
+    if ((e.target as HTMLElement).closest('a')) return; // links keep working
+    mkExpanded = !mkExpanded;
+    renderMarketsBody(lastMarketRows);
   }
 
   // ── Israel news panel ──────────────────────────────────────────────
@@ -3341,7 +3383,7 @@ export function mountApp(root: HTMLElement) {
     // The dock's "מסחר" fab button was still a plain external-tab link —
     // only the HUD rail tile above was ever wired to the in-app embed.
     document.getElementById('tradeBtn')?.addEventListener('click', (e) => { e.preventDefault(); openTradeSystem(); });
-    document.querySelector('#hudMarkets')?.addEventListener('click', openMarketsDetail);
+    document.querySelector('#hudMarkets')?.addEventListener('click', toggleMarketsPanel);
     document.getElementById('hudOps')?.addEventListener('click', () => { addMsg(businessBriefing(), 'al'); });
     document.getElementById('hudFleetPanel')?.addEventListener('click', openFleet);
     renderHud(); renderMarkets(); renderNews(); renderFleetPanel();
