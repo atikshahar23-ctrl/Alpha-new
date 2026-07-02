@@ -386,7 +386,16 @@ const devBus = { fns: new Set(), emit(p) { this.fns.forEach((f) => { try { f(p);
    With neither key, the agents run on the scripted persona fallbacks. ── */
 const groqKey = () => { try { return localStorage.getItem("alpha_groq") || ""; } catch { return ""; } };
 const anthropicKey = () => { try { return localStorage.getItem("alpha_anthropic") || ""; } catch { return ""; } };
-const hasAI = () => !!anthropicKey() || !!groqKey();
+/* LM Studio — the owner's own machine as a free 24/7 brain. Talks the
+   OpenAI-compatible API LM Studio serves locally (default
+   http://localhost:1234/v1). Browsers treat http://localhost as a
+   trustworthy origin even from an HTTPS page, so this works with zero
+   infrastructure — just enable CORS + 'Serve on Local Network' off. */
+const K_LMS_URL = "alpha:agents:lmsUrl";
+const K_LMS_MODEL = "alpha:agents:lmsModel";
+const lmsUrl = () => { try { return (localStorage.getItem(K_LMS_URL) || "").trim(); } catch { return ""; } };
+const lmsModel = () => { try { return (localStorage.getItem(K_LMS_MODEL) || "").trim(); } catch { return ""; } };
+const hasAI = () => !!anthropicKey() || !!groqKey() || !!lmsUrl();
 const K_CLAUDE_MODEL = "alpha:agents:claudeModel";
 const CLAUDE_MODELS = [
   { id: "claude-opus-4-8", label: "Claude Opus 4.8 · החזק (מומלץ)" },
@@ -436,6 +445,24 @@ async function askGroq(system, history, user, maxTokens = 800) {
   }
   throw new Error("Groq " + lastCode);
 }
+async function askLmStudio(system, history, user, maxTokens = 800) {
+  const base = lmsUrl().replace(/\/+$/, "");
+  if (!base) throw new Error("NO_LMS");
+  const res = await fetch(base + "/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: lmsModel() || "local-model",
+      messages: [{ role: "system", content: system }, ...history.slice(-6), { role: "user", content: user }],
+      temperature: 0.75,
+      max_tokens: maxTokens,
+    }),
+    signal: AbortSignal.timeout(120000), // local models can be slow on big prompts
+  });
+  if (!res.ok) throw new Error("LM Studio " + res.status);
+  const d = await res.json();
+  return d.choices?.[0]?.message?.content?.trim() || "";
+}
 /* ── Smart routing — יהודה (המנכ"ל) מחליט ─────────────────────────────────
    When BOTH engines are connected, each request is routed by its size and
    complexity: short everyday questions go to the free engine (Groq), and
@@ -447,10 +474,14 @@ async function askGroq(system, history, user, maxTokens = 800) {
    answered each message. ── */
 const COMPLEX_HINTS = /תכנון|אסטרטג|נתח|ניתוח|השוו|תוכנית|מפורט|דוח|מסמך|סיכום|קוד|באג|תקציב|תחזית|צפי|מייל|הצעת מחיר|בריף|רעיון|שיפור|למה |איך כדאי/;
 function routeAI(user, history, maxTokens) {
-  const hasC = !!anthropicKey(), hasG = !!groqKey();
-  if (hasC && !hasG) return { engine: "claude", reason: "רק Claude מחובר" };
-  if (!hasC && hasG) return { engine: "groq", reason: "רק Groq מחובר" };
-  if (!hasC && !hasG) return { engine: "local", reason: "אין מפתח AI" };
+  const hasC = !!anthropicKey(), hasG = !!groqKey(), hasL = !!lmsUrl();
+  // The free lane: the owner's own LM Studio machine wins over Groq when
+  // configured — it's private, unlimited and runs 24/7 at home.
+  const free = hasL ? "lmstudio" : hasG ? "groq" : null;
+  const freeLabel = hasL ? "LM Studio המקומי" : "Groq";
+  if (!hasC && !free) return { engine: "local", reason: "אין מנוע AI מחובר" };
+  if (hasC && !free) return { engine: "claude", reason: "רק Claude מחובר" };
+  if (!hasC) return { engine: free, reason: `רק ${freeLabel} מחובר (חינם)` };
   let score = 0;
   if (user.length > 200) score += 2; else if (user.length > 90) score += 1;
   if (maxTokens > 1500) score += 3; // dev-console code briefs and the like
@@ -458,7 +489,7 @@ function routeAI(user, history, maxTokens) {
   if (history.length >= 6) score += 1; // deep conversation → context matters
   return score >= 2
     ? { engine: "claude", reason: "יהודה ניתב ל-Claude — משימה גדולה/מורכבת" }
-    : { engine: "groq", reason: "יהודה ניתב ל-Groq — בקשה קצרה, חינם" };
+    : { engine: free, reason: `יהודה ניתב ל-${freeLabel} — בקשה קצרה, חינם` };
 }
 // One entry point for every agent conversation. Routed by יהודה when both
 // engines exist; each engine rescues the other on failure so a conversation
@@ -466,20 +497,25 @@ function routeAI(user, history, maxTokens) {
 async function askAI(system, history, user, maxTokens = 800) {
   const route = routeAI(user, history, maxTokens);
   askAI.last = route;
-  if (route.engine === "claude") {
-    try { return await askClaude(system, history, user, maxTokens); }
-    catch (e) {
-      if (!groqKey()) throw e;
-      askAI.last = { engine: "groq", reason: "Claude נכשל — גיבוי חינמי" };
-      return askGroq(system, history, user, maxTokens);
-    }
+  const runners = { claude: askClaude, groq: askGroq, lmstudio: askLmStudio };
+  const available = [
+    anthropicKey() && "claude",
+    lmsUrl() && "lmstudio",
+    groqKey() && "groq",
+  ].filter(Boolean);
+  // Chosen engine first, then every other connected engine as a rescue —
+  // a conversation never dies because one brain hiccuped.
+  const order = [route.engine, ...available.filter((e) => e !== route.engine)];
+  let lastErr = null;
+  for (let i = 0; i < order.length; i++) {
+    const eng = order[i];
+    if (!runners[eng]) continue;
+    try {
+      if (i > 0) askAI.last = { engine: eng, reason: `${order[0]} נכשל — ${eng === "lmstudio" ? "LM Studio" : eng} חילץ` };
+      return await runners[eng](system, history, user, maxTokens);
+    } catch (e) { lastErr = e; }
   }
-  try { return await askGroq(system, history, user, maxTokens); }
-  catch (e) {
-    if (!anthropicKey()) throw e;
-    askAI.last = { engine: "claude", reason: "Groq נכשל — Claude חילץ" };
-    return askClaude(system, history, user, maxTokens);
-  }
+  throw lastErr || new Error("אין מנוע AI מחובר");
 }
 
 /* ── Google Business reviews — real data for נפתלי (marketing) ──────────
@@ -1807,7 +1843,7 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
                     )}
                     {m.via && m.via.engine !== "local" && (
                       <span className={"ac-via " + m.via.engine} title={m.via.reason}>
-                        {m.via.engine === "claude" ? "🧠 Claude" : "⚡ Groq"}
+                        {m.via.engine === "claude" ? "🧠 Claude" : m.via.engine === "lmstudio" ? "🖥 מקומי" : "⚡ Groq"}
                       </span>
                     )}
                   </div>
@@ -2601,6 +2637,25 @@ function SettingsView({ showToast }) {
   };
   const clearClaude = () => { try { localStorage.removeItem("alpha_anthropic"); } catch {} setClaudeKey(""); showToast("מפתח Claude נמחק"); };
   const [gCid, setGCid] = useState(() => googleCid());
+  const [lmsU, setLmsU] = useState(() => lmsUrl());
+  const [lmsM, setLmsM] = useState(() => lmsModel());
+  const [lmsStatus, setLmsStatus] = useState("");
+  const saveLms = () => {
+    try { localStorage.setItem(K_LMS_URL, lmsU.trim().replace(/\/+$/, "")); localStorage.setItem(K_LMS_MODEL, lmsM.trim()); } catch {}
+    showToast(lmsU.trim() ? "LM Studio חובר ✓" : "הוסר");
+  };
+  const testLms = async () => {
+    saveLms();
+    const base = lmsU.trim().replace(/\/+$/, "");
+    if (!base) { setLmsStatus("הזן כתובת קודם"); return; }
+    setLmsStatus("בודק חיבור…");
+    try {
+      const r = await fetch(base + "/models", { signal: AbortSignal.timeout(6000) });
+      const d = await r.json();
+      const names = (d.data || []).map((m) => m.id).slice(0, 3).join(", ");
+      setLmsStatus(r.ok ? `מחובר 🟢 מודלים טעונים: ${names || "אין (טען מודל ב-LM Studio)"}` : "שגיאה HTTP " + r.status);
+    } catch { setLmsStatus("לא מצליח להתחבר — ודא ש-LM Studio רץ, שהשרת הופעל (Developer → Start Server) ושה-CORS מאופשר"); }
+  };
   const [fbP, setFbP] = useState(() => fbPageId());
   const [fbT, setFbT] = useState(() => fbPageToken());
   const [fbStatus, setFbStatus] = useState("");
@@ -2700,6 +2755,22 @@ function SettingsView({ showToast }) {
           <button className="ac-set-clear" onClick={clear}><Trash2 size={15} /></button>
         </div>
         <a className="ac-set-link" href="https://console.groq.com/keys" target="_blank" rel="noreferrer">השג מפתח חינם מ-Groq <ArrowUpRight size={13} /></a>
+      </div>
+
+      <div className="ac-set-card">
+        <div className="ac-set-h">🖥 LM Studio · המחשב שלך כמוח 24/7
+          <span className={"ac-cloud-pill " + (lmsUrl() ? "on" : "")}>{lmsUrl() ? "מחובר 🟢" : "לא מחובר ⚪"}</span>
+        </div>
+        <p className="ac-set-note">חבר את הסוכנים ל-LM Studio שרץ קבוע במחשב שלך — מוח חינמי, פרטי ובלתי מוגבל. כשהוא מחובר, יהודה מנתב אליו את כל הבקשות הקצרות (במקום Groq), ו-Claude נשאר רק למשימות הגדולות. עובד רק בדפדפן על אותו מחשב שבו LM Studio רץ (localhost). הגדרה חד-פעמית ב-LM Studio: טאב Developer → הפעל Start Server → הפעל CORS. כתובת ברירת המחדל: http://localhost:1234/v1</p>
+        <input className="ac-set-in" value={lmsU} onChange={(e) => setLmsU(e.target.value)} placeholder="http://localhost:1234/v1" dir="ltr" />
+        <input className="ac-set-in" value={lmsM} onChange={(e) => setLmsM(e.target.value)} placeholder="שם מודל (רשות — ריק ישתמש במודל הטעון)" dir="ltr" />
+        <div className="ac-set-row">
+          <button className="ac-set-save" onClick={saveLms}><Check size={16} /> שמור</button>
+          <button className="ac-set-save" onClick={testLms}>🔌 בדוק חיבור</button>
+          <button className="ac-set-clear" onClick={() => { try { localStorage.removeItem(K_LMS_URL); localStorage.removeItem(K_LMS_MODEL); } catch {} setLmsU(""); setLmsM(""); setLmsStatus(""); showToast("נמחק"); }}><Trash2 size={15} /></button>
+        </div>
+        {lmsStatus && <p className="ac-set-note" style={{ marginTop: 6 }}>{lmsStatus}</p>}
+        <a className="ac-set-link" href="https://lmstudio.ai" target="_blank" rel="noreferrer">הורד LM Studio (חינם) <ArrowUpRight size={13} /></a>
       </div>
 
       <div className="ac-set-card">
