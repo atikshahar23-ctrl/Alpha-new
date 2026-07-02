@@ -472,6 +472,40 @@ async function fetchGoogleReviews() {
   };
 }
 
+/* ── Social networks — real Facebook Page publishing for נפתלי ──────────
+   Draft → human approval → publish. Nothing EVER goes out on its own:
+   נפתלי only prepares drafts, and a post reaches Facebook only when the
+   owner presses the publish button on that specific draft. Publishing
+   itself is pure client-side Graph API (POST /{page-id}/feed) with a
+   user-supplied Page Access Token that is stored ONLY on this device —
+   like every other key in the app, it never enters the code or the repo.
+   TikTok has no browser-only publishing API (it requires an approved app
+   + a backend), so TikTok drafts get an honest copy-to-clipboard flow for
+   manual posting instead of pretending. ── */
+const K_FB_PAGE = "alpha:social:fbPageId";
+const K_FB_TOKEN = "alpha:social:fbPageToken";
+const K_SOCIAL_DRAFTS = "alpha:social:drafts"; // [{id, text, status: draft|published, ts, link}]
+const fbPageId = () => { try { return localStorage.getItem(K_FB_PAGE) || ""; } catch { return ""; } };
+const fbPageToken = () => { try { return localStorage.getItem(K_FB_TOKEN) || ""; } catch { return ""; } };
+const fbConnected = () => !!(fbPageId() && fbPageToken());
+async function fbGraph(path, opts = {}) {
+  const r = await fetch(`https://graph.facebook.com/v21.0/${path}`, opts);
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || d.error) throw new Error(d?.error?.message || "HTTP " + r.status);
+  return d;
+}
+async function fbTestConnection() {
+  return fbGraph(`${fbPageId()}?fields=name&access_token=${encodeURIComponent(fbPageToken())}`);
+}
+async function fbPublishPost(text) {
+  const d = await fbGraph(`${fbPageId()}/feed`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ message: text, access_token: fbPageToken() }),
+  });
+  return d.id; // "{pageId}_{postId}" → linkable on facebook.com
+}
+
 /* ── Voice chat: free, browser-native Web Speech API — no backend/cost.
    Mic input (SpeechRecognition) transcribes what you say into the chat box;
    voice output (SpeechSynthesis) reads each agent's reply aloud in Hebrew.
@@ -656,8 +690,8 @@ const AGENTS = [
     id: "cmo", name: "נפתלי", title: "מנהל שיווק", Icon: Megaphone, color: "#C77DFF", accent: "#E9C8FF",
     tagline: "קמפיינים, תוכן, רשתות חברתיות ומותג",
     domain: "שיווק · תוכן · מותג",
-    persona: "אתה נפתלי — שבט המילים היפות, מנהל השיווק. אתה אחראי על תוכן לרשתות (טיקטוק, פייסבוק, אינסטגרם), קמפיינים, מסרים שיווקיים ומיתוג ל-HeavyGuard. אופי: אנרגיה גבוהה, שקוע בטרנדים, חד — כל הזמן חושב במונחי מעורבות, שימור צופים והוק חזותי ב-3 השניות הראשונות. תן רעיונות קונקרטיים לפוסטים, כותרות והוקים, וקריאה לפעולה.",
-    quick: ["רעיון לפוסט טיקטוק", "כתוב לי קמפיין", "5 הוקים ויראליים", "לוח תוכן לשבוע"],
+    persona: "אתה נפתלי — שבט המילים היפות, מנהל השיווק. אתה אחראי על תוכן לרשתות (טיקטוק, פייסבוק, אינסטגרם), קמפיינים, מסרים שיווקיים ומיתוג ל-HeavyGuard. אתה מכין טיוטות פוסטים בלבד — פרסום בפועל קורה רק אחרי אישור ידני של הבעלים בחלון הרשתות החברתיות. אופי: אנרגיה גבוהה, שקוע בטרנדים, חד — כל הזמן חושב במונחי מעורבות, שימור צופים והוק חזותי ב-3 השניות הראשונות. תן רעיונות קונקרטיים לפוסטים, כותרות והוקים, וקריאה לפעולה.",
+    quick: ["טיוטת פוסט לפייסבוק", "רעיון לפוסט טיקטוק", "5 הוקים ויראליים", "לוח תוכן לשבוע"],
   },
   {
     id: "dev", name: "דן", title: "מפתח ראשי", Icon: Code2, color: "#FF8C42", accent: "#FFC79E",
@@ -1426,6 +1460,82 @@ function GoogleReviewsModal({ agent, onClose, onUse }) {
   );
 }
 
+/* The social-publishing window: נפתלי's drafts queue with the human
+   approval gate. Every draft shows exactly what will be posted; the
+   Facebook button publishes THAT text to the connected business page
+   (after an explicit confirm), TikTok gets copy-to-clipboard. */
+function SocialModal({ agent, onClose, onAskDraft, showToast, logActivity }) {
+  const [drafts, setDrafts] = useState(() => load(K_SOCIAL_DRAFTS, []));
+  const [topic, setTopic] = useState("");
+  const [busyId, setBusyId] = useState(null);
+  const [conn, setConn] = useState({ state: fbConnected() ? "set" : "none", name: "" });
+  const persist = (next) => { setDrafts(next); save(K_SOCIAL_DRAFTS, next.slice(0, 40)); };
+  useEffect(() => {
+    if (!fbConnected()) return;
+    fbTestConnection().then((d) => setConn({ state: "ok", name: d.name || "" })).catch((e) => setConn({ state: "err", name: String(e?.message || e) }));
+  }, []);
+
+  const publish = async (d) => {
+    if (!fbConnected()) { showToast("חבר עמוד פייסבוק בהגדרות קודם"); return; }
+    if (!window.confirm(`לפרסם את הפוסט הזה לעמוד הפייסבוק של העסק?\n\n"${d.text.slice(0, 120)}${d.text.length > 120 ? "…" : ""}"`)) return;
+    setBusyId(d.id);
+    try {
+      const postId = await fbPublishPost(d.text);
+      persist(drafts.map((x) => x.id === d.id ? { ...x, status: "published", link: `https://www.facebook.com/${postId}` } : x));
+      logActivity?.(agent.id, "פרסם פוסט אמיתי לעמוד הפייסבוק של העסק (באישור הבעלים)");
+      showToast("פורסם לפייסבוק ✓");
+    } catch (e) {
+      showToast("פרסום נכשל: " + String(e?.message || e).slice(0, 80));
+    }
+    setBusyId(null);
+  };
+
+  return (
+    <div className="ac-modal" onClick={onClose} style={{ zIndex: 60 }}>
+      <div className="ac-panel online" style={{ "--c": agent.color, "--ac": agent.accent }} onClick={(e) => e.stopPropagation()}>
+        <button className="ac-panel-x" onClick={onClose}><X size={16} /></button>
+        <div className="ac-panel-id" style={{ marginBottom: 10 }}>
+          <b>📣 רשתות חברתיות</b>
+          <span>
+            {conn.state === "ok" ? `פייסבוק מחובר · ${conn.name} 🟢` :
+             conn.state === "err" ? "פייסבוק: שגיאת חיבור ⚠️" :
+             conn.state === "set" ? "פייסבוק: בודק חיבור…" : "פייסבוק לא מחובר — חבר בהגדרות ⚪"}
+          </span>
+        </div>
+        <div className="ac-grev-note">
+          כל פוסט יוצא רק אחרי אישור שלך — נפתלי מכין טיוטות בלבד. טיקטוק דורש אפליקציה מאושרת ושרת, ולכן שם הזרימה היא העתקה ידנית (בכנות, בלי העמדות פנים).
+        </div>
+        <div className="ac-idea-add" style={{ margin: "10px 0" }}>
+          <input value={topic} onChange={(e) => setTopic(e.target.value)} onKeyDown={(e) => e.key === "Enter" && topic.trim() && (onAskDraft(topic.trim()), setTopic(""))} placeholder="נושא לפוסט חדש — נפתלי יכין טיוטה…" dir="rtl" />
+          <button onClick={() => { if (topic.trim()) { onAskDraft(topic.trim()); setTopic(""); } }} title="בקש טיוטה מנפתלי"><Send size={16} /></button>
+        </div>
+        <div className="ac-grev-list">
+          {drafts.length === 0 && <div className="ac-grev-note">אין טיוטות עדיין — בקש מנפתלי טיוטה למעלה, או שמור תשובה שלו מהצ'אט עם כפתור "📣 לטיוטות פרסום".</div>}
+          {drafts.map((d) => (
+            <div key={d.id} className="ac-grev-row">
+              <div className="ac-grev-head">
+                <b>{d.status === "published" ? "✅ פורסם" : "📝 טיוטה"}</b>
+                <span>{new Date(d.ts).toLocaleDateString("he-IL")}</span>
+              </div>
+              <p style={{ whiteSpace: "pre-wrap" }}>{d.text}</p>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {d.status !== "published" && (
+                  <button onClick={() => publish(d)} disabled={busyId === d.id}>
+                    {busyId === d.id ? "מפרסם…" : "אשר ופרסם לפייסבוק ✓"}
+                  </button>
+                )}
+                {d.link && <button onClick={() => window.open(d.link, "_blank")}>פתח בפייסבוק ↗</button>}
+                <button onClick={async () => { const ok = await copyText(d.text); showToast(ok ? "הועתק — הדבק בטיקטוק ✓" : "העתקה נכשלה"); }}>העתק לטיקטוק</button>
+                <button onClick={() => persist(drafts.filter((x) => x.id !== d.id))}><Trash2 size={12} /></button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ════════════════════════════════════════════════════════════════════
    CHAT MODAL — direct line to one agent
    ════════════════════════════════════════════════════════════════════ */
@@ -1437,6 +1547,7 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
   const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);
   const [revOpen, setRevOpen] = useState(false); // Google-reviews window (נפתלי)
+  const [socOpen, setSocOpen] = useState(false); // social-publishing window (נפתלי)
   const [voiceOn, setVoiceOn] = useState(() => load(K_VOICE_ON, true) && canSpeak());
   const aiHist = useRef([]);
   const scrollRef = useRef(null);
@@ -1567,6 +1678,13 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
                   <div className="ac-msg-acts">
                     <button onClick={async () => { const ok = await copyText(m.text); showToast(ok ? "הועתק ✓" : "נכשל"); }}><Copy size={12} /> העתק</button>
                     <button onClick={() => { addIdea(agent.id, m.text.split("\n")[0].slice(0, 90)); }}><Lightbulb size={12} /> לרעיונות</button>
+                    {agent.id === "cmo" && (
+                      <button onClick={() => {
+                        const drafts = load(K_SOCIAL_DRAFTS, []);
+                        save(K_SOCIAL_DRAFTS, [{ id: uid(), text: m.text, status: "draft", ts: now() }, ...drafts].slice(0, 40));
+                        showToast("נשמר כטיוטת פרסום — ממתין לאישורך 📣");
+                      }}><Megaphone size={12} /> לטיוטות פרסום</button>
+                    )}
                     {m.via && m.via.engine !== "local" && (
                       <span className={"ac-via " + m.via.engine} title={m.via.reason}>
                         {m.via.engine === "claude" ? "🧠 Claude" : "⚡ Groq"}
@@ -1583,6 +1701,9 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
         <div className="ac-quick">
           {agent.id === "cmo" && (
             <button className="ac-grev-open" onClick={() => setRevOpen(true)} disabled={busy}>⭐ ביקורות גוגל</button>
+          )}
+          {agent.id === "cmo" && (
+            <button className="ac-grev-open" onClick={() => setSocOpen(true)} disabled={busy}>📣 רשתות חברתיות</button>
           )}
           {agent.quick.map((c) => <button key={c} onClick={() => send(c)} disabled={busy}>{c}</button>)}
         </div>
@@ -1609,6 +1730,19 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
             setRevOpen(false);
             logActivity?.(agent.id, `משך ביקורת גוגל אמיתית (${r.stars}★) והופך אותה לפוסט`);
             send(`כתוב פוסט שיווקי קצר לרשתות (עברית, עם הוק חזק ו-CTA) המבוסס על הביקורת האמיתית הזו מגוגל — ${r.stars} כוכבים מאת ${r.who}: "${(r.text || "לקוח מרוצה מאוד מהשירות").slice(0, 200)}"`);
+          }}
+        />
+      )}
+      {socOpen && (
+        <SocialModal
+          agent={agent}
+          onClose={() => setSocOpen(false)}
+          showToast={showToast}
+          logActivity={logActivity}
+          onAskDraft={(topic) => {
+            setSocOpen(false);
+            logActivity?.(agent.id, "מכין טיוטת פוסט לאישור הבעלים: " + topic.slice(0, 30));
+            send(`כתוב טיוטת פוסט לפייסבוק של העסק (עברית, הוק חזק, קצר, CTA ברור, בלי האשטגים מוגזמים) בנושא: ${topic}. זו טיוטה בלבד — היא תפורסם רק אחרי אישור שלי.`);
           }}
         />
       )}
@@ -2344,6 +2478,20 @@ function SettingsView({ showToast }) {
   };
   const clearClaude = () => { try { localStorage.removeItem("alpha_anthropic"); } catch {} setClaudeKey(""); showToast("מפתח Claude נמחק"); };
   const [gCid, setGCid] = useState(() => googleCid());
+  const [fbP, setFbP] = useState(() => fbPageId());
+  const [fbT, setFbT] = useState(() => fbPageToken());
+  const [fbStatus, setFbStatus] = useState("");
+  const saveFb = () => {
+    try { localStorage.setItem(K_FB_PAGE, fbP.trim()); localStorage.setItem(K_FB_TOKEN, fbT.trim()); } catch {}
+    showToast("חיבור פייסבוק נשמר ✓");
+  };
+  const testFb = async () => {
+    saveFb();
+    if (!fbConnected()) { setFbStatus("חסר Page ID או טוקן"); return; }
+    setFbStatus("בודק…");
+    try { const d = await fbTestConnection(); setFbStatus(`מחובר לעמוד "${d.name}" 🟢`); }
+    catch (e) { setFbStatus("שגיאה: " + String(e?.message || e).slice(0, 90)); }
+  };
   const initGh = ghCfg();
   const [ghTok, setGhTok] = useState(initGh.token);
   const [ghRepo, setGhRepo] = useState(`${initGh.owner}/${initGh.repo}`);
@@ -2402,6 +2550,22 @@ function SettingsView({ showToast }) {
           <button className="ac-set-save" onClick={() => { try { localStorage.setItem(K_GOOGLE_CID, gCid.trim()); } catch {} showToast("Client ID נשמר ✓"); }}><Check size={16} /> שמור</button>
         </div>
         <a className="ac-set-link" href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer">קונסולת Google Cloud · Credentials <ArrowUpRight size={13} /></a>
+      </div>
+
+      <div className="ac-set-card">
+        <div className="ac-set-h"><Megaphone size={18} /> רשתות חברתיות · פרסום לנפתלי
+          <span className={"ac-cloud-pill " + (fbConnected() ? "on" : "")}>{fbConnected() ? "מחובר 🟢" : "לא מחובר ⚪"}</span>
+        </div>
+        <p className="ac-set-note">נפתלי מכין טיוטות פוסטים, ו<b>שום דבר לא מתפרסם בלי אישור ידני שלך</b> — כפתור "📣 רשתות חברתיות" בחלון השיחה שלו פותח את תור הטיוטות עם כפתור אישור לכל פוסט. פרסום לפייסבוק דורש Page ID + Page Access Token של עמוד העסק (מ-Meta Graph API Explorer, עם ההרשאות pages_manage_posts + pages_read_engagement). 🔒 הטוקן נשמר רק במכשיר הזה ולעולם לא נכנס לקוד. טיקטוק — אין API לפרסום מדפדפן בלבד (דורש אפליקציה מאושרת ושרת), ולכן שם הזרימה היא העתקה ידנית של הטיוטה.</p>
+        <input className="ac-set-in" value={fbP} onChange={(e) => setFbP(e.target.value)} placeholder="Facebook Page ID (מספר העמוד)" dir="ltr" />
+        <input className="ac-set-in" type="password" value={fbT} onChange={(e) => setFbT(e.target.value)} placeholder="Page Access Token (EAAG...)" dir="ltr" />
+        <div className="ac-set-row">
+          <button className="ac-set-save" onClick={saveFb}><Check size={16} /> שמור</button>
+          <button className="ac-set-save" onClick={testFb}>🔌 בדוק חיבור</button>
+          <button className="ac-set-clear" onClick={() => { try { localStorage.removeItem(K_FB_PAGE); localStorage.removeItem(K_FB_TOKEN); } catch {} setFbP(""); setFbT(""); setFbStatus(""); showToast("נמחק"); }}><Trash2 size={15} /></button>
+        </div>
+        {fbStatus && <p className="ac-set-note" style={{ marginTop: 6 }}>{fbStatus}</p>}
+        <a className="ac-set-link" href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noreferrer">Meta Graph API Explorer · הפקת טוקן עמוד <ArrowUpRight size={13} /></a>
       </div>
 
       <div className="ac-set-card">
