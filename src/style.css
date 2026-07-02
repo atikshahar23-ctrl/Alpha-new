@@ -3194,6 +3194,12 @@ html.perf-lite .topR { will-change: auto !important; transform: none !important;
    pointer-events:none so everything beneath still receives clicks. */
 .hud { position: fixed; inset: 0; z-index: 5; pointer-events: none; font-family: 'Space Grotesk', system-ui, sans-serif; }
 
+/* ── Market storm mode — auto high-contrast when the board runs hot ── */
+body.mkt-storm #hudMarkets { border-color: rgba(255,92,80,.6); box-shadow: 0 0 22px rgba(255,92,80,.22), inset 0 0 12px rgba(255,92,80,.08); }
+body.mkt-storm #hudMarkets .hud-card-h span::after { content: ' · ⚠ שוק סוער'; color: #ff5c50; font-weight: 800; }
+body.mkt-storm .holo-tag { border-color: rgba(255,92,80,.6); box-shadow: 0 0 18px rgba(255,92,80,.22); }
+body.mkt-storm .holo-tag span { color: #ffd7d2; text-shadow: 0 0 12px rgba(255,92,80,.5); }
+
 /* ── Physicality: panels glued to the screen glass (parallax vars) ── */
 body.boot-done .hud-col.left, body.boot-done .hud-col.right {
   transform: translate(calc(var(--par-x, 0) * -7px), calc(-50% + var(--par-y, 0) * -5px));

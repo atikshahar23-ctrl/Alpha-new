@@ -182,7 +182,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v155 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v156 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="panelsToggleBtn" title="הסתר/הצג פנלים" aria-label="הסתר פנלים">
           <svg class="pt-hide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -3134,6 +3134,11 @@ export function mountApp(root: HTMLElement) {
     const stars = Array.from({ length: mobile ? 40 : 85 }, () => ({ x: Math.random(), y: Math.random(), r: R(0.4, 1.5), p: R(0, 7), s: R(0.002, 0.012) }));
     const nodes = Array.from({ length: mobile ? 11 : 22 }, () => ({ x: Math.random(), y: Math.random(), vx: R(-0.012, 0.012), vy: R(-0.009, 0.009) }));
     const pulses: { a: number; b: number; t: number; v: number }[] = [];
+    // Data-driven nebula: market volatility (__mktVol 0..1) scales the
+    // aurora and the pulse rate; a data refresh fires __bgfxPulse → the
+    // mesh visibly surges and the nodes vibrate for a moment.
+    let burst = 0;
+    (window as any).__bgfxPulse = () => { burst = 1; };
     let comet: { x: number; y: number; vx: number; vy: number; life: number } | null = null;
     let nextComet = R(2, 6);
     const auroras = [0, 1, 2].map((i) => ({ cx: 0.2 + i * 0.3, cy: 0.25 + (i % 2) * 0.4, r: R(0.24, 0.4), hue: i === 1 ? '46,230,255' : '228,188,99', ph: R(0, 7) }));
@@ -3146,13 +3151,16 @@ export function mountApp(root: HTMLElement) {
       ctx.clearRect(0, 0, W, H);
       ctx.globalCompositeOperation = 'lighter';
       const t = now / 1000;
-      // aurora — three huge soft blobs drifting in slow circles
+      const vol = Math.min(1, Number((window as any).__mktVol) || 0);
+      if (burst > 0) burst = Math.max(0, burst - dt * 0.6);
+      // aurora — three huge soft blobs drifting in slow circles, glowing
+      // brighter when the markets run hot
       auroras.forEach((a) => {
         const cx = (a.cx + Math.sin(t * 0.05 + a.ph) * 0.06) * W;
         const cy = (a.cy + Math.cos(t * 0.04 + a.ph) * 0.05) * H;
         const rad = a.r * Math.max(W, H);
         const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
-        g.addColorStop(0, `rgba(${a.hue},${0.05 + 0.02 * Math.sin(t * 0.3 + a.ph)})`);
+        g.addColorStop(0, `rgba(${a.hue},${(0.05 + 0.02 * Math.sin(t * 0.3 + a.ph)) * (1 + vol * 0.9 + burst * 0.6)})`);
         g.addColorStop(1, 'rgba(0,0,0,0)');
         ctx.fillStyle = g;
         ctx.fillRect(cx - rad, cy - rad, rad * 2, rad * 2);
@@ -3174,12 +3182,13 @@ export function mountApp(root: HTMLElement) {
             ctx.moveTo(nodes[i].x * W, nodes[i].y * H);
             ctx.lineTo(nodes[j].x * W, nodes[j].y * H);
             ctx.stroke();
-            if (pulses.length < 5 && Math.random() < 0.002) pulses.push({ a: i, b: j, t: 0, v: R(0.5, 1.1) });
+            if (pulses.length < 8 && Math.random() < 0.002 + vol * 0.004 + burst * 0.02) pulses.push({ a: i, b: j, t: 0, v: R(0.5, 1.1) });
           }
         }
         ctx.fillStyle = 'rgba(247,232,192,.5)';
         ctx.beginPath();
-        ctx.arc(nodes[i].x * W, nodes[i].y * H, Math.max(1, W / 1500), 0, 7);
+        const jit = burst * 2.2; // nodes vibrate on a data surge
+        ctx.arc(nodes[i].x * W + (jit ? (Math.random() - 0.5) * jit : 0), nodes[i].y * H + (jit ? (Math.random() - 0.5) * jit : 0), Math.max(1, W / 1500) * (1 + burst * 0.7), 0, 7);
         ctx.fill();
       }
       for (let k = pulses.length - 1; k >= 0; k--) {
@@ -3230,6 +3239,15 @@ export function mountApp(root: HTMLElement) {
   }
 
   function renderMarketsBody(rows: MkRow[]) {
+    // Market-stress read: the average absolute 24h move across the board
+    // drives the 'storm mode' UI state (high-contrast red accents before
+    // you even ask) and the background nebula's intensity + pulse rate.
+    if (rows.length) {
+      const vol = rows.reduce((sum, r) => sum + Math.min(10, Math.abs(r.chg)), 0) / rows.length;
+      (window as any).__mktVol = Math.min(1, vol / 5);
+      document.body.classList.toggle('mkt-storm', vol >= 3.2);
+      (window as any).__bgfxPulse?.();
+    }
     // Live holographic BTC tag beside the robot (decrypt-scrambles on change).
     const btc = rows.find((r) => r.name === 'Bitcoin');
     const holoVal = document.getElementById('holoBtcVal');
@@ -3700,6 +3718,9 @@ export function mountApp(root: HTMLElement) {
     // only the HUD rail tile above was ever wired to the in-app embed.
     document.getElementById('tradeBtn')?.addEventListener('click', (e) => { e.preventDefault(); openTradeSystem(); });
     document.querySelector('#hudMarkets')?.addEventListener('click', toggleMarketsPanel);
+    // Pre-cog preload: hovering the card warms the market data before the
+    // expand click ever lands (renderMarkets self-caches, so it's free).
+    document.querySelector('#hudMarkets')?.addEventListener('pointerenter', () => { renderMarkets(); });
     document.getElementById('hudOps')?.addEventListener('click', () => { addMsg(businessBriefing(), 'al'); });
     document.getElementById('hudFleetPanel')?.addEventListener('click', openFleet);
     renderHud(); renderMarkets(); renderNews(); renderFleetPanel();
