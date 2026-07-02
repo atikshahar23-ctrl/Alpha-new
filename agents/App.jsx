@@ -255,6 +255,78 @@ function bizContext() {
   return s;
 }
 
+/* ── Knowledge Bridge: per-domain live data attached to every ask ──────
+   Each specialist pulls the CURRENT state of their own domain (fleet
+   record, pipeline, drafts, dev tasks, live markets…) on top of the shared
+   business snapshot — and the protocol forbids inventing numbers: a
+   missing source is reported as unavailable, never guessed. ── */
+const readLS = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
+function domainContext(id) {
+  try {
+    const b = bizSnapshot();
+    switch (id) {
+      case "ceo":
+        return `\n[גשר ידע · הנהלה] פייפליין: ${b.openDeals} עסקאות (${ils(b.openVal)}) · תקועות: ${b.staleCount} · נסגרו החודש: ${b.wonMonth} · הכנסה מצטברת: ${ils(b.hgRevenue)} · לקוחות: ${b.custCount}`;
+      case "ops": {
+        const veh = readLS("hg2:vehicle", null), odo = readLS("hg2:odometer", null);
+        const trips = readLS("hg2:trips", []), gps = readLS("hg_trips_v1", []);
+        return `\n[גשר ידע · צי ותפעול] מד ק"מ: ${odo && odo.km ? odo.km + ' ק"מ (' + (odo.date || "") + ")" : "לא הוזן"} · רשומת רכב: ${veh ? "קיימת" : "אין"} · נסיעות רשומות: ${trips.length} · נסיעות GPS: ${gps.length} · התקנות: ${b.installs}`;
+      }
+      case "finance": {
+        const at = readLS("arb_scan_autotrader", null);
+        const mk = (marketCache.rows || []).slice(0, 6).map((r) => `${r.name} ${r.price} (${r.chg > 0 ? "+" : ""}${Number(r.chg).toFixed(1)}%)`).join(" · ");
+        return `\n[גשר ידע · כספים והשקעות] הכנסה מצטברת (ספרים): ${ils(b.hgRevenue)} · פייפליין פתוח: ${ils(b.openVal)} · שווקים חיים: ${mk || "נתון חי לא זמין"} · אוטוטרייד (דמו בלבד): ${at ? "מחובר" : "לא מחובר"}`;
+      }
+      case "sales": {
+        const deals = readLS("itai:deals", []);
+        const open = deals.filter((d) => d.status === "פתוח").slice(0, 5).map((d) => `${d.customer || d.name || "?"} (${ils(d.value || 0)})`).join(", ");
+        return `\n[גשר ידע · מכירות] פתוחות: ${b.openDeals} בשווי ${ils(b.openVal)} · תקועות מעל שבוע: ${b.staleCount} · דוגמאות: ${open || "אין"}`;
+      }
+      case "cs":
+        return `\n[גשר ידע · לקוחות] לקוחות פעילים: ${b.custCount} · עסקאות ישנות למעקב: ${b.staleCount} · מובילים: ${b.top.map((c) => c.name).join(", ") || "אין"}`;
+      case "data":
+        return `\n[גשר ידע · דאטה] התקנות ${b.installs} · לקוחות ${b.custCount} · פתוחות ${b.openDeals} (${ils(b.openVal)}) · נסגרו החודש ${b.wonMonth}`;
+      case "cmo": {
+        const drafts = readLS(K_SOCIAL_DRAFTS, []);
+        return `\n[גשר ידע · שיווק] טיוטות פרסום: ${drafts.length} (פורסמו: ${drafts.filter((d) => d.status === "published").length}) · פייסבוק: ${fbConnected() ? "מחובר" : "לא מחובר"} · לקוחות: ${b.custCount}`;
+      }
+      case "dev": {
+        const t = readLS(K_DEVTASKS, []);
+        return `\n[גשר ידע · פיתוח] משימות: ${t.length} (פתוחות: ${t.filter((x) => x.status !== "done").length}) · GitHub: ${ghCfg().token ? "מחובר" : "לא מחובר"}`;
+      }
+      case "auto": {
+        const iis = readLS(K_IDEAS, []);
+        return `\n[גשר ידע · אוטומציות] רעיונות ברי-ביצוע: ${iis.filter((i) => ideaExecOf(i)).length} · הושלמו בפועל: ${iis.filter((i) => i.status === "done").length}`;
+      }
+      case "procure":
+        return `\n[גשר ידע · רכש] פריטים במחירון: ${b.pricelist} · התקנות (צריכת מלאי): ${b.installs}`;
+      case "legal":
+        return `\n[גשר ידע · משפטי] לקוחות פעילים (חוזים): ${b.custCount} · עסקאות פתוחות הדורשות חוזה: ${b.openDeals}`;
+      case "growth":
+        return `\n[גשר ידע · אסטרטגיה] פייפליין: ${ils(b.openVal)} · סגירות החודש: ${b.wonMonth} · הכנסה מצטברת: ${ils(b.hgRevenue)}`;
+      default:
+        return "";
+    }
+  } catch { return "\n[גשר ידע: מקור הנתונים החי לא זמין כרגע]"; }
+}
+/* Free real-time web lookup — DuckDuckGo Instant Answer API (CORS-enabled,
+   zero-cost). Invoked only when the user explicitly asks to check the web
+   (חפש/בדוק ברשת), so normal chats stay fast. Fails honestly. */
+async function webLookup(q) {
+  try {
+    const r = await fetch("https://api.duckduckgo.com/?q=" + encodeURIComponent(q) + "&format=json&no_html=1&skip_disambig=1", { signal: AbortSignal.timeout(7000) });
+    const d = await r.json();
+    const bits = [];
+    if (d.AbstractText) bits.push(d.AbstractText);
+    if (d.Answer) bits.push(String(d.Answer));
+    (d.RelatedTopics || []).slice(0, 3).forEach((t) => { if (t && t.Text) bits.push(t.Text); });
+    return bits.length ? `\n[חיפוש רשת חינמי · DuckDuckGo]\n${bits.join("\n").slice(0, 900)}` : "";
+  } catch { return ""; }
+}
+const WEB_ASK_RE = /חפש ברשת|בדוק ברשת|חפש לי|תחפש|search the web/i;
+
+const SPECIALIST_PROTOCOL = `\n\n[פרוטוקול מומחה]\n1) בסס כל תשובה עסקית אך ורק על גשר הידע והידע העסקי החי שסופקו — אסור להמציא מספרים. נתון חסר? אמור "נתון חי לא זמין".\n2) על שאלה כללית ("מה קורה?") ענה בסיכום דשבורד: עד 3 נקודות קריטיות מהתחום שלך, עם מספרים.\n3) מותר להציע פעולה קונקרטית ("אני מציע… לאשר?") — הביצוע תמיד באישור הבעלים בלבד.`;
+
 /* ── Daily briefing from יהודה (CEO) — once a day, grounded in live business data ── */
 const K_BRIEF_DATE = "alpha:agents:briefdate";
 const K_BRIEF_TEXT = "alpha:agents:brieftext";
@@ -1034,6 +1106,37 @@ export default function App() {
 
   const showToast = (t) => { setToast(t); setTimeout(() => setToast(""), 2200); };
   const logActivity = (agentId, text) => setActivity((p) => [{ id: uid(), agentId, text, ts: now() }, ...p].slice(0, 60));
+
+  // ── Autonomous attention monitors — real domain checks that raise an
+  // Alpha Alert (toast + activity) when a metric actually crosses a line:
+  // זבולון on stalled pipeline value, גד on a due vehicle reminder, ראובן
+  // on an un-updated bookkeeping month. Each alert fires at most once per
+  // 6 hours, and only from live data — no invented drama.
+  useEffect(() => {
+    const K_ALERTS = "alpha:agents:lastAlerts";
+    const check = () => {
+      const last = load(K_ALERTS, {});
+      const fire = (id, key, text) => {
+        if (now() - (last[key] || 0) < 6 * 3600e3) return;
+        last[key] = now(); save(K_ALERTS, last);
+        logActivity(id, "🚨 Alpha Alert: " + text);
+        showToast("🚨 " + text);
+      };
+      try {
+        const b = bizSnapshot();
+        if (b.staleCount >= 3) fire("sales", "stale", `זבולון: ${b.staleCount} עסקאות פתוחות מעל שבוע — ${ils(b.openVal)} בפייפליין דורש מעקב`);
+        const veh = readLS("hg2:vehicle", null);
+        const rem = veh && Array.isArray(veh.reminders) ? veh.reminders.find((r) => r && r.date && new Date(r.date) <= new Date()) : null;
+        if (rem) fire("ops", "veh", `גד: תזכורת רכב הגיעה — ${rem.title || rem.text || rem.name || "טיפול"}`);
+        const curMonth = new Date().toISOString().slice(0, 7);
+        if (BOOKS_LAST_KEY < curMonth) fire("finance", "books", `ראובן: הנהלת החשבונות מעודכנת עד ${BOOKS_LAST_KEY} — חסר עדכון ל-${curMonth}`);
+      } catch {}
+    };
+    const t = setTimeout(check, 12000);
+    const iv = setInterval(check, 180000);
+    return () => { clearTimeout(t); clearInterval(iv); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const logInvest = (agentId, text) => setInvest((p) => [{ id: uid(), agentId, text, ts: now() }, ...p].slice(0, 30));
   // De-duplicated: the exact same idea text never piles up on the board
   // (the autonomous engine used to drop identical cards repeatedly).
@@ -1639,7 +1742,12 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
     }
     setBusy(true);
     try {
-      const reply = await askAI(agent.persona + bizContext(), aiHist.current, t);
+      let webCtx = "";
+      if (WEB_ASK_RE.test(t)) {
+        webCtx = await webLookup(t.replace(WEB_ASK_RE, "").trim() || t);
+        if (!webCtx) webCtx = "\n[חיפוש רשת: לא התקבלו תוצאות — אמור לבעלים שהחיפוש החי לא זמין כרגע]";
+      }
+      const reply = await askAI(agent.persona + bizContext() + domainContext(agent.id) + SPECIALIST_PROTOCOL + webCtx, aiHist.current, t);
       const via = askAI.last; // which brain יהודה routed this to (+ why)
       aiHist.current = [...aiHist.current.slice(-6), { role: "user", content: t }, { role: "assistant", content: reply }];
       setLog([...withMe, { from: "bot", text: reply || "✔", ts: now(), via }]);
@@ -2295,7 +2403,7 @@ function OfficeSim({ onClose, onOpenChat, logActivity, showToast }) {
             try {
               if (window.__off3spatial) spatial = `\n\nמפת המשרד בזמן אמת (אתה הסוכן ${id}): ${JSON.stringify(window.__off3spatial)}`;
             } catch {}
-            try { return await askAI(a.persona + bizContext() + spatial, [], text); }
+            try { return await askAI(a.persona + bizContext() + domainContext(a.id) + SPECIALIST_PROTOCOL + spatial, [], text); }
             catch { return FALLBACK[id] ? FALLBACK[id](text) : "סליחה, לא הצלחתי לענות כרגע."; }
           },
         }}
