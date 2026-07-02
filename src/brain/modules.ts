@@ -8,6 +8,7 @@ import type { ModuleId } from './memory';
 export interface BrainModule {
   id: ModuleId;
   label: string;
+  emoji: string;        // agent face for the active-agent chip
   hue: number;          // accent hue for UI chips
   icon: string;         // inline SVG path data (24x24)
   // keyword → weight, multilingual (he + en). Higher = stronger signal.
@@ -20,6 +21,7 @@ export const MODULES: Record<Exclude<ModuleId, 'general'>, BrainModule> = {
   business: {
     id: 'business',
     label: 'Business',
+    emoji: '🛡️',
     hue: 38,
     icon: 'M3 21h18M5 21V7l8-4v18M19 21V11l-6-3M9 9v.01M9 12v.01M9 15v.01',
     keywords: {
@@ -31,11 +33,13 @@ export const MODULES: Record<Exclude<ModuleId, 'general'>, BrainModule> = {
       משאית: 2, מצלמה: 1.5, שיווק: 2, פוסט: 1.5, קמפיין: 2, רכב: 1.5, חשבונית: 2,
     },
     systemFragment:
-      'ACTIVE MODULE: BUSINESS OPS (HeavyGuard). Act as a sharp operations + marketing partner for a field-installation business (360° truck cameras, trackers, security for Scania/Volvo etc.). Help with CRM, scheduling, inventory, quotes, and marketing copy. Use [[HG_SEARCH]], [[HG_EARNINGS]], [[HG_QUOTE]], [[DIARY]] when relevant. Be concrete and commercial.',
+      'ACTIVE MODULE: BUSINESS OPS (HeavyGuard). You combine three roles: (1) Fleet & Project Architect — technical specs for 360° camera / DVR / remote-viewing installs on heavy vehicles (concrete pumps, Scania/Volvo/Mercedes trucks), hardware inventory, and multi-truck deployment plans; (2) Sales & CRM closer — process leads, answer remote-viewing FAQs, draft precise quotes by vehicle type; (3) Marketing strategist — TikTok/Facebook hooks, hashtags, viral video workflows. Use [[HG_SEARCH]], [[HG_EARNINGS]], [[HG_QUOTE]], [[DIARY]] when relevant. Be concrete and commercial. ' +
+      'HARD RULE — Heavy Guard does NOT perform or quote 8-camera systems. If asked for an 8-camera setup, politely refuse and steer the customer to a supported configuration; NEVER emit an [[HG_QUOTE]] for an 8-camera system.',
   },
   trading: {
     id: 'trading',
     label: 'Trading',
+    emoji: '📈',
     hue: 145,
     icon: 'M3 17l6-6 4 4 8-8M14 7h7v7',
     keywords: {
@@ -52,6 +56,7 @@ export const MODULES: Record<Exclude<ModuleId, 'general'>, BrainModule> = {
   creative: {
     id: 'creative',
     label: 'Creative',
+    emoji: '🎤',
     hue: 280,
     icon: 'M12 19l7-7 3 3-7 7-3-3zM18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5zM2 2l7.586 7.586M11 13a2 2 0 100-4 2 2 0 000 4z',
     keywords: {
@@ -67,6 +72,7 @@ export const MODULES: Record<Exclude<ModuleId, 'general'>, BrainModule> = {
   personal: {
     id: 'personal',
     label: 'Personal',
+    emoji: '🏠',
     hue: 200,
     icon: 'M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2zM9 22V12h6v10',
     keywords: {

@@ -21,6 +21,8 @@ const SYNC_TABLES = [
   'hg2:index',
   'hg2:quotes',
   'hg2:tasks',
+  'hg2:trips',
+  'hg2:vehicle',
   'alpha_brain_memory_v1',
   'alpha_pomodoro_v1',
   'alpha_mood_v1',
@@ -35,6 +37,7 @@ const SYNC_TABLES = [
   'alpha_chat_history_v1',
   'alpha_sentiment_v1',
   'alpha_templates_v1',
+  'alpha_samsonix_forms_v1',
 ];
 
 interface DriveToken {

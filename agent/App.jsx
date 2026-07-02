@@ -1,0 +1,2913 @@
+import React, { useState, useEffect, useMemo, useCallback } from "react";
+import {
+  Plus, X, Trash2, Search, Phone, Mail, MapPin, Building2, Users, Wallet, Tag,
+  Globe, ChevronLeft, MessageSquare, Pencil, Target, Bell, FileText, TrendingUp,
+  CheckCircle2, Handshake, LayoutDashboard, UserRound, Send, Copy, Briefcase, Palette,
+  Camera, Monitor, Maximize2, Shield, Star, ChevronDown, ChevronUp, GitMerge,
+} from "lucide-react";
+import BULL_LOGO from "../heavyguard/heavyguard-logo.png";
+import * as cloud from "./cloud";
+// leadsData.json is ~2MB — load it lazily (same pattern as heavyguard/App.jsx)
+// so it doesn't bloat the CRM's initial bundle / first paint.
+
+/* ============================ Constants ============================ */
+const BIZ = "Heavy Guard";
+const VAT = 0.18; // מע"מ ישראל
+const CRM_STATUSES = ["חדש", "פנייה ראשונה", "בתהליך", "הצעה נשלחה", "לקוח", "אבד"];
+const CRM_COLOR = { "חדש": "#8E9BAB", "פנייה ראשונה": "#6FD3F0", "בתהליך": "#E4BC63", "הצעה נשלחה": "#8b5cf6", "לקוח": "#3FD79A", "אבד": "#FF5C50" };
+const GEO_OPTS = ["צפון", "מרכז", "דרום", "שרון", "שפלה", "ירושלים"];
+const OUTREACH_TYPES = ["שיחה", "וואטסאפ", "מייל", "פגישה", "הודעה", "אחר"];
+const OUTREACH_RESULTS = ["חיובי", "אין מענה", "שלילי", "מעניין", "לחזור"];
+const DEAL_STATES = ["פתוח", "נסגר", "אבד"];
+const DEAL_COLOR = { "פתוח": "#E4BC63", "נסגר": "#3FD79A", "אבד": "#FF5C50" };
+
+/* ============================ Storage (itai namespace) ============================ */
+const K_CRM = "itai:crm";       // { [leadId]: { crmStatus, crmNotes, outreach:[] } }
+const K_DEALS = "itai:deals";   // [ {id, leadId, name, phone, items, subtotal, vat, total, status, note, createdAt, wonAt} ]
+const K_CUST = "itai:customers"; // [ {id, name, phone, email, city, notes, source} ]
+const load = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } };
+const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+
+/* ============================ Helpers ============================ */
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const ils = (n) => "₪" + (Number(n) || 0).toLocaleString("he-IL");
+// Normalised customer name: trim, collapse spaces, drop a leading definite "ה".
+const normCustName = (s) => { let k = (s || "").trim().replace(/\s+/g, " "); if (k.length > 3 && k[0] === "ה") k = k.slice(1); return k.toLowerCase(); };
+// Merge duplicate customers — two records are the same customer if EITHER
+// their phone numbers match OR their normalised names match (union-find, so
+// A↔B by phone and B↔C by name still all collapse into one group). Matching
+// on name alone missed real duplicates that came in with the exact same
+// phone but a stray whitespace/invisible character difference in the name
+// (common with copy-pasted Hebrew text), which is what name-only matching
+// was silently leaving behind.
+const normPhone = (p) => { const d = (p || "").replace(/\D/g, ""); return d.replace(/^972/, "0"); };
+function dedupeCustomers(list) {
+  const arr = list || [];
+  const parent = arr.map((_, i) => i);
+  const find = (i) => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; };
+  const byPhone = {}, byName = {};
+  arr.forEach((c, i) => {
+    const ph = normPhone(c.phone);
+    if (ph && ph.length >= 7) { if (byPhone[ph] !== undefined) union(i, byPhone[ph]); else byPhone[ph] = i; }
+    const nm = normCustName(c.name);
+    if (nm) { if (byName[nm] !== undefined) union(i, byName[nm]); else byName[nm] = i; }
+  });
+  const groups = {};
+  arr.forEach((c, i) => { const r = find(i); (groups[r] = groups[r] || []).push(c); });
+  const out = [];
+  Object.values(groups).forEach((items) => {
+    if (items.length === 1) { out.push(items[0]); return; }
+    let count = 0, rev = 0, hadHG = false; const extra = [];
+    items.forEach((c) => {
+      const note = c.notes || "";
+      const mc = note.match(/(\d+)\s*התקנות/); const mr = note.match(/הכנסה\s*₪?([\d,]+)/);
+      if (mc || mr || /Heavy ?Guard/i.test(note)) { hadHG = true; if (mc) count += parseInt(mc[1], 10) || 0; if (mr) rev += parseInt(mr[1].replace(/,/g, ""), 10) || 0; }
+      else if (note.trim()) extra.push(note.trim());
+    });
+    const base = [...items].sort((a, b) => (b.phone ? 1 : 0) - (a.phone ? 1 : 0) || (b.name || "").length - (a.name || "").length)[0];
+    const pick = (k) => items.map((c) => c[k]).find((v) => v && String(v).trim()) || "";
+    const parts = [];
+    if (hadHG) parts.push(`${count} התקנות Heavy Guard · הכנסה ${ils(rev)}`);
+    if (extra.length) parts.push(...extra);
+    out.push({ ...base, phone: pick("phone"), email: pick("email"), city: pick("city"), region: pick("region") || base.region || "", notes: parts.join(" · ") });
+  });
+  return out;
+}
+const todayISO = () => new Date().toISOString().slice(0, 10);
+const dmy = (iso) => { try { const d = new Date(iso); return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`; } catch { return iso; } };
+// Heavy Guard company profile + quote defaults — kept 1:1 with the HeavyGuard app.
+const HG_COMPANY = { name: "Heavy Guard", brand: "HEAVY GUARD", address: "דן 7, ראשל\"צ", taxId: "305794067", phone: "054-771-9070" };
+const HG_QUOTE_NOTES = ["דמי מנוי בכרטיס אשראי לחברת סמסוניקס +₪60+מע\"מ", "התקנה בבית הלקוח", "אחריות לשנה על המוצרים וההתקנה"];
+const HG_QUOTE_PAY = "ניתן לשלם באשראי או בהעברה בנקאית לחשבון 1087434, בנק לאומי (10) סניף 739. עד 3 תשלומים ללא ריבית.";
+// Continue the SAME quote counter the HeavyGuard app uses (shared localStorage).
+const nextQuoteNumber = () => { try { let n = JSON.parse(localStorage.getItem("hg2:quoteseq") || "387"); n = (Number(n) || 387) + 1; localStorage.setItem("hg2:quoteseq", JSON.stringify(n)); return n; } catch { return Math.floor(Date.now() / 1000) % 100000; } };
+const monthKey = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+const telLink = (p) => `tel:${(p || "").replace(/\s/g, "")}`;
+// Website fields are stored as typed ("www.movir.co.il", "movir.co.il") with
+// no protocol, so a plain href=lead.w would resolve as a broken relative
+// link — prefix https:// only when a protocol isn't already there.
+const websiteUrl = (w) => { const t = (w || "").trim(); if (!t) return ""; return /^https?:\/\//i.test(t) ? t : `https://${t}`; };
+const waLink = (phone, text) => { let p = (phone || "").replace(/\D/g, ""); if (p.startsWith("0")) p = "972" + p.slice(1); return `https://wa.me/${p}?text=${encodeURIComponent(text || "")}`; };
+const dealTotals = (items, discountPct = 0) => {
+  const gross = items.reduce((s, i) => s + (Number(i.price) || 0) * (Number(i.qty) || 1), 0);
+  const pct = Math.max(0, Math.min(15, Number(discountPct) || 0));
+  const discount = Math.round(gross * pct / 100);
+  const subtotal = gross - discount;
+  const vat = Math.round(subtotal * VAT);
+  return { gross, discount, discountPct: pct, subtotal, vat, total: subtotal + vat };
+};
+
+/* ── Me caller-ID app: copy the number for instant paste (the core ask), then
+   best-effort hop to the phone's Me app. No guessed deep-link that could show a
+   broken page — copy always works and Me reads the clipboard on open. ── */
+const copyText = async (t) => { try { await navigator.clipboard.writeText(t); return true; } catch { try { const ta = document.createElement("textarea"); ta.value = t; ta.style.position = "fixed"; ta.style.opacity = "0"; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); return true; } catch { return false; } } };
+const meLookup = async (phone, showToast) => {
+  const num = (phone || "").replace(/\s/g, "");
+  const ok = await copyText(num);
+  showToast(ok ? "המספר הועתק ✓ פתח את Me והדבק לחיפוש" : "העתק ידנית: " + num);
+};
+
+/* ── Israel city → coordinates (covers the bulk of the lead base). Names are
+   normalised (strips "ישוב ", common variants) before lookup. ── */
+const CITY_COORDS = {
+  "ירושלים": [31.7683, 35.2137], "תל אביב יפו": [32.0853, 34.7818], "תל אביב": [32.0853, 34.7818],
+  "חיפה": [32.7940, 34.9896], "ראשון לציון": [31.9730, 34.8066], "פתח תקווה": [32.0840, 34.8878],
+  "אשדוד": [31.8014, 34.6435], "נתניה": [32.3215, 34.8532], "באר שבע": [31.2520, 34.7915],
+  "בני ברק": [32.0807, 34.8338], "חולון": [32.0167, 34.7795], "רמת גן": [32.0700, 34.8245],
+  "אשקלון": [31.6688, 34.5715], "רחובות": [31.8928, 34.8113], "בת ים": [32.0231, 34.7503],
+  "כפר סבא": [32.1750, 34.9070], "הרצליה": [32.1624, 34.8447], "חדרה": [32.4340, 34.9196],
+  "מודיעין": [31.8980, 35.0104], "נצרת": [32.7019, 35.2978], "רמלה": [31.9288, 34.8667],
+  "לוד": [31.9514, 34.8953], "רעננה": [32.1848, 34.8713], "רהט": [31.3920, 34.7544],
+  "אילת": [29.5577, 34.9519], "עכו": [32.9281, 35.0818], "נהריה": [33.0085, 35.0950],
+  "קרית אתא": [32.8110, 35.1130], "קרית גת": [31.6100, 34.7642], "קרית ביאליק": [32.8307, 35.0865],
+  "קרית מוצקין": [32.8380, 35.0760], "קרית ים": [32.8480, 35.0680], "טבריה": [32.7959, 35.5300],
+  "צפת": [32.9646, 35.4960], "דימונה": [31.0707, 35.0327], "אופקים": [31.3147, 34.6200],
+  "שדרות": [31.5249, 34.5963], "נס ציונה": [31.9293, 34.7986], "יבנה": [31.8783, 34.7390],
+  "טייבה": [32.2660, 35.0090], "טירה": [32.2340, 34.9510], "אום אל פחם": [32.5160, 35.1530],
+  "כפר קאסם": [32.1140, 34.9760], "באקה אל גרביה": [32.4170, 35.0370], "טמרה": [32.8520, 35.1980],
+  "סחנין": [32.8650, 35.2980], "שפרעם": [32.8060, 35.1690], "מעלות תרשיחא": [33.0160, 35.2700],
+  "כרמיאל": [32.9170, 35.2920], "עפולה": [32.6078, 35.2897], "בית שאן": [32.4969, 35.4997],
+  "בית שמש": [31.7497, 34.9886], "מגדל העמק": [32.6750, 35.2410], "יקנעם": [32.6580, 35.1100],
+  "נוף הגליל": [32.7090, 35.3170], "ערד": [31.2590, 35.2120], "נתיבות": [31.4220, 34.5950],
+  "קרית שמונה": [33.2070, 35.5700], "זכרון יעקב": [32.5720, 34.9530], "פרדס חנה כרכור": [32.4750, 34.9740],
+  "אזור": [32.0290, 34.8000], "גבעתיים": [32.0720, 34.8120], "אור יהודה": [32.0300, 34.8530],
+  "יהוד": [32.0330, 34.8890], "ראש העין": [32.0956, 34.9560], "טורעאן": [32.7790, 35.3760],
+  "דבורייה": [32.6960, 35.3760], "עראבה": [32.8510, 35.3370], "מעלה אדומים": [31.7730, 35.2980],
+  "גבעת שמואל": [32.0780, 34.8480], "כפר יונה": [32.3170, 34.9340], "קצרין": [32.9920, 35.6900],
+  // — extended coverage so placement is accurate (and nothing lands in the sea) —
+  "אריאל": [32.1050, 35.1880], "מודיעין עילית": [31.9320, 35.0420], "אלעד": [32.0520, 34.9510],
+  "שוהם": [31.9990, 34.9470], "גדרה": [31.8130, 34.7790], "גן יבנה": [31.7880, 34.7060],
+  "קרית מלאכי": [31.7300, 34.7440], "מזכרת בתיה": [31.8520, 34.8390], "קרית עקרון": [31.8700, 34.8200],
+  "באר יעקב": [31.9430, 34.8350], "אור עקיבא": [32.5080, 34.9170], "בנימינה": [32.5150, 34.9480],
+  "קיסריה": [32.5000, 34.8970], "חריש": [32.4620, 35.0480], "אבן יהודה": [32.2710, 34.8880],
+  "תל מונד": [32.2510, 34.9170], "קדימה צורן": [32.2790, 34.9220], "פרדסיה": [32.3030, 34.9150],
+  "ראש העין": [32.0956, 34.9560], "אבו גוש": [31.8060, 35.1100], "מבשרת ציון": [31.7990, 35.1500],
+  "ביתר עילית": [31.6960, 35.1180], "טירת כרמל": [32.7610, 34.9720], "נשר": [32.7660, 35.0440],
+  "קרית טבעון": [32.7200, 35.1230], "רכסים": [32.7410, 35.0900], "כפר כנא": [32.7470, 35.3420],
+  "ריינה": [32.7220, 35.3160], "משהד": [32.7350, 35.3650], "כפר מנדא": [32.8100, 35.2570],
+  "מגאר": [32.8900, 35.4080], "ראמה": [32.9370, 35.3680], "דיר חנא": [32.8620, 35.3640],
+  "כפר יאסיף": [32.9550, 35.1640], "ירכא": [32.9580, 35.2090], "אבו סנאן": [32.9560, 35.1730],
+  "חורפיש": [33.0190, 35.3450], "בית ג'ן": [32.9670, 35.3800], "פקיעין": [32.9780, 35.3340],
+  "כפר קרע": [32.5060, 35.0470], "ערערה": [32.4920, 35.1010], "ג'ת": [32.4060, 35.0560],
+  "קלנסווה": [32.2860, 34.9810], "ג'לג'וליה": [32.1530, 34.9530], "כפר ברא": [32.1080, 34.9740],
+  "אכסאל": [32.6750, 35.3380], "יפיע": [32.6900, 35.2730], "שעב": [32.8650, 35.2010],
+  "כאבול": [32.8680, 35.2120], "ג'סר א זרקא": [32.5360, 34.9130], "פוריידיס": [32.6010, 34.9510],
+  "תל אביב": [32.0853, 34.7818], "ראש פינה": [32.9690, 35.5420], "יבנאל": [32.7080, 35.5040],
+  "שלומי": [33.0730, 35.1450], "כפר ורדים": [32.9870, 35.2880], "מעלה אדומים": [31.7730, 35.2980],
+  "ירוחם": [30.9870, 34.9290], "מצפה רמון": [30.6090, 34.8010], "תל שבע": [31.2620, 34.8410],
+  "חורה": [31.3000, 34.9410], "כסייפה": [31.2370, 35.0850], "ערערה בנגב": [31.2530, 34.9850],
+  "להבים": [31.3720, 34.8170], "מיתר": [31.3190, 34.9300], "עומר": [31.2640, 34.8470],
+  "גן יבנה ": [31.7880, 34.7060], "יקנעם עילית": [32.6580, 35.1100], "נצרת עילית": [32.7090, 35.3170],
+};
+const normCity = (c) => (c || "").replace(/^ישוב\s+/, "").replace(/^עיריית\s+/, "").replace(/^מ\.?א\.?\s+/, "").trim();
+const cityCoords = (city) => CITY_COORDS[normCity(city)] || null;
+// Stable per-id jitter (small — keeps coastal cities on land, not in the sea).
+const jitter = (id, amp = 0.006) => { let h = 0; const s = String(id); for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return [((h % 1000) / 1000 - 0.5) * amp, (((h >> 10) % 1000) / 1000 - 0.5) * amp]; };
+
+// ── Exact address geocoding (free, OpenStreetMap/Nominatim, no key) ──────────
+// Each full address (street + city) is geocoded ONCE and cached in localStorage,
+// so pins land on the real address — not the city centre. Throttled to respect
+// OSM's usage policy; until an address resolves we show the city as a fallback.
+const GEOCACHE_KEY = "itai:geocache";
+let _geocache = null;
+const geocache = () => { if (_geocache) return _geocache; try { _geocache = JSON.parse(localStorage.getItem(GEOCACHE_KEY) || "{}"); } catch { _geocache = {}; } return _geocache; };
+const geocacheSet = (k, ll) => { const c = geocache(); c[k] = ll; try { localStorage.setItem(GEOCACHE_KEY, JSON.stringify(c)); } catch {} };
+const addrKey = (lead) => `${(lead.addr || "").trim()}|${normCity(lead.city)}`;
+const hasExact = (lead) => !!geocache()[addrKey(lead)];
+let _gcLast = 0;
+async function geocodeAddress(addr, city) {
+  const k = `${(addr || "").trim()}|${normCity(city)}`;
+  const c = geocache(); if (c[k]) return c[k];
+  if (!addr || !addr.trim()) return null;            // need a street for precision
+  const wait = Math.max(0, 1100 - (Date.now() - _gcLast)); if (wait) await new Promise((r) => setTimeout(r, wait)); _gcLast = Date.now();
+  try {
+    const q = encodeURIComponent(`${addr}, ${city}, ישראל`);
+    const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=il&q=${q}`, { headers: { Accept: "application/json" } });
+    if (!r.ok) return null;
+    const a = await r.json();
+    if (a && a[0]) { const ll = [parseFloat(a[0].lat), parseFloat(a[0].lon)]; geocacheSet(k, ll); return ll; }
+  } catch {}
+  return null;
+}
+
+// Prefer the exact geocoded address; fall back to city centre (jittered).
+const geoFor = (lead) => {
+  const ex = geocache()[addrKey(lead)];
+  if (ex) return ex;
+  const c = cityCoords(lead.city);
+  if (!c) return null;
+  const j = jitter(lead.id);
+  return [c[0] + j[0], c[1] + j[1]];
+};
+const wazeTo = (lead) => { const ex = geocache()[addrKey(lead)] || cityCoords(lead.city); if (ex) return `https://waze.com/ul?ll=${ex[0]},${ex[1]}&navigate=yes`; const q = encodeURIComponent([lead.addr, lead.city].filter(Boolean).join(" ")); return `https://waze.com/ul?q=${q}&navigate=yes`; };
+
+/* ── Leaflet + MarkerCluster loader (CDN, once). Clustering lets the whole
+   lead base (thousands of pins) render smoothly. ── */
+const addCss = (href) => { const l = document.createElement("link"); l.rel = "stylesheet"; l.href = href; document.head.appendChild(l); };
+const addJs = (src) => new Promise((res, rej) => { const s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
+let _leafletPromise = null;
+const loadLeaflet = () => {
+  if (window.L && window.L.markerClusterGroup) return Promise.resolve(window.L);
+  if (_leafletPromise) return _leafletPromise;
+  _leafletPromise = (async () => {
+    if (!window.L) { addCss("https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"); await addJs("https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"); }
+    try {
+      addCss("https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css");
+      addCss("https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css");
+      await addJs("https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js");
+    } catch { /* clustering optional — falls back to a plain layer group */ }
+    return window.L;
+  })();
+  return _leafletPromise;
+};
+
+/* ── HeavyGuard pricelist — read LIVE from the shared (same-origin) storage so
+   it always matches HeavyGuard and updates whenever HeavyGuard changes it. ── */
+const HG_PRICELIST_KEY = "hg2:pricelist";
+const DEFAULT_PRICES = [
+  { id: "p1", name: "איתוראן 2 מערכות", price: 300 },
+  { id: "p2", name: "איתוראן 3 מערכות", price: 400 },
+  { id: "p3", name: "מצלמת רוורס + מסך", price: 1000 },
+  { id: "p4", name: "סט מסך חכם 4 מצלמות", price: 3500 },
+  { id: "p5", name: "פוינטר TOP רב קודן", price: 150 },
+];
+const loadHgPricelist = () => {
+  try { const v = localStorage.getItem(HG_PRICELIST_KEY); const a = v ? JSON.parse(v) : null; return (Array.isArray(a) && a.length) ? a : DEFAULT_PRICES; }
+  catch { return DEFAULT_PRICES; }
+};
+function useHgPricelist() {
+  const [pl, setPl] = useState(loadHgPricelist);
+  useEffect(() => {
+    const refresh = () => setPl(loadHgPricelist());
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    const iv = setInterval(refresh, 5000);   // pick up HeavyGuard edits while open
+    return () => { window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", refresh); clearInterval(iv); };
+  }, []);
+  return pl;
+}
+const HG_SITE = "https://heavygurad.com";
+const FB_URL = "https://www.facebook.com/share/18k1Sn62EM/";
+const TT_URL = "https://www.tiktok.com/@heavy.guard?_r=1&_t=ZS-97cp13u5MKV";
+
+/* ============================ Color themes (mood) ============================ */
+// Each non-default theme switches the app from its dark base to a LIGHT mood
+// (void goes near-white) — but used to only override --gold/--gold2/--champ/
+// --cyan/--s7/--s8, leaving --s9 (card backgrounds, still near-black),
+// --s4 (secondary text) and --silver (primary text, still near-white) at
+// their dark-theme values. Result: near-white text on a near-white page and
+// near-black cards floating on a light background — the "color change"
+// that looked broken. Every theme now fully overrides all three so text and
+// surfaces stay legible and consistent after switching.
+const ITAI_THEMES = {
+  gold: { name: "זהב", dot: "#C2912E", vars: {} },
+  ocean: { name: "אוקיינוס", dot: "#1B7E9C", vars: { "--gold": "#1B7E9C", "--gold2": "#13607A", "--champ": "#0E5066", "--cyan": "#0E5066", "--s7": "#BFD9E4", "--s8": "#E9F3F8", "--void": "#F1F8FB", "--s9": "#FFFFFF", "--s4": "#3E6B7D", "--silver": "#0B2A35", "--gold-rgb": "27,126,156", "--card-rgb": "255,255,255", "--card2-rgb": "233,243,248" } },
+  emerald: { name: "אמרלד", dot: "#1E9A60", vars: { "--gold": "#1E9A60", "--gold2": "#15784A", "--champ": "#0F5E39", "--cyan": "#0F5E39", "--s7": "#BFE3CE", "--s8": "#E8F5EE", "--void": "#F0FAF4", "--s9": "#FFFFFF", "--s4": "#3D7A5C", "--silver": "#0B2E1C", "--gold-rgb": "30,154,96", "--card-rgb": "255,255,255", "--card2-rgb": "232,245,238" } },
+  royal: { name: "מלכותי", dot: "#6D4FC4", vars: { "--gold": "#6D4FC4", "--gold2": "#553BA0", "--champ": "#3F2B7A", "--cyan": "#3F2B7A", "--s7": "#D6CCEE", "--s8": "#EEE9F8", "--void": "#F5F2FB", "--s9": "#FFFFFF", "--s4": "#6D5AA8", "--silver": "#211545", "--gold-rgb": "109,79,196", "--card-rgb": "255,255,255", "--card2-rgb": "238,233,248" } },
+  crimson: { name: "בורדו", dot: "#C0392B", vars: { "--gold": "#C0392B", "--gold2": "#9B2D22", "--champ": "#7A241B", "--cyan": "#7A241B", "--s7": "#E8C9C4", "--s8": "#FBEBE8", "--void": "#FCF3F1", "--s9": "#FFFFFF", "--s4": "#A85A4C", "--silver": "#3D0F09", "--gold-rgb": "192,57,43", "--card-rgb": "255,255,255", "--card2-rgb": "251,235,232" } },
+};
+
+/* ============================ Root App ============================ */
+export default function App() {
+  const [tab, setTab] = useState(() => {
+    try {
+      const h = (location.hash || "").replace(/^#/, "");
+      const allowed = ["home","leads","deals","custs","map","showroom"];
+      if (allowed.includes(h)) return h;
+    } catch {}
+    return "home";
+  });
+  const [crm, setCrm] = useState(() => load(K_CRM, {}));
+  const [deals, setDeals] = useState(() => load(K_DEALS, []));
+  const [custs, setCusts] = useState(() => load(K_CUST, []));
+  const [toast, setToast] = useState(null);
+  const [dealDraft, setDealDraft] = useState(null); // {lead?, deal?} open editor when set
+  const [theme, setTheme] = useState(() => { try { return localStorage.getItem("itai:theme") || "gold"; } catch { return "gold"; } });
+  const applyTheme = (t) => { setTheme(t); try { localStorage.setItem("itai:theme", t); } catch {} };
+  const themeVars = (ITAI_THEMES[theme] || ITAI_THEMES.gold).vars;
+
+  const [rawLeads, setRawLeads] = useState([]);
+  useEffect(() => { import("../heavyguard/leadsData.json").then((m) => setRawLeads(m.default)); }, []);
+  const leads = useMemo(() => rawLeads.map((l) => ({
+    ...l,
+    crmStatus: crm[l.id]?.crmStatus || (l.xStatus === "לקוח" ? "לקוח" : "חדש"),
+    crmNotes: crm[l.id]?.crmNotes || "",
+    outreach: crm[l.id]?.outreach || [],
+  })), [crm, rawLeads]);
+
+  const showToast = useCallback((msg) => { setToast(msg); setTimeout(() => setToast(null), 2600); }, []);
+
+  // save locally AND push to the shared cloud (no-op when cloud isn't configured)
+  const persist = (key, value) => { save(key, value); cloud.cloudPush(key, value); };
+
+  // ── Realtime shared sync: remote changes flow into local state + storage ──
+  useEffect(() => {
+    cloud.applyCloudFromLink();
+    const off = cloud.cloudSubscribe((localKey, value) => {
+      if (value == null) return;
+      if (localKey === K_CRM) { save(K_CRM, value); setCrm(value); }
+      else if (localKey === K_DEALS) { const a = Array.isArray(value) ? value : Object.values(value); save(K_DEALS, a); setDeals(a); }
+      else if (localKey === K_CUST) { const a = Array.isArray(value) ? value : Object.values(value); save(K_CUST, a); setCusts(a); }
+    }, [K_CRM, K_DEALS, K_CUST]);
+    return off;
+  }, []);
+
+  // ── Auto-import customers from HeavyGuard on app open ────────────────────
+  // Reads hg2:index (installations) and hg2:customers from the shared Puter
+  // storage that the HeavyGuard app writes to, then merges any new customers
+  // into the CRM without overwriting existing ones.
+  useEffect(() => {
+    const ws = typeof window !== "undefined" && window.storage || null;
+    const lGet = (k) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : []; } catch { return []; } };
+    const pGet = (k) => ws
+      ? ws.get(k).then((r) => (r && r.value != null ? JSON.parse(r.value) : lGet(k))).catch(() => lGet(k))
+      : Promise.resolve(lGet(k));
+    Promise.all([pGet("hg2:index"), pGet("hg2:customers")]).then(([installs, hgManual]) => {
+      const normName = normCustName;
+      // Derive unique customers from HG installations — merge by name, sum income.
+      const m = {};
+      (installs || [])
+        .filter((x) => x.customer?.trim() || x.phone?.trim())
+        .forEach((x) => {
+          const name = (x.customer || "").trim();
+          const phone = (x.phone || "").trim();
+          const key = normName(name) || ("#" + phone);
+          if (!m[key]) m[key] = { name: name || "(ללא שם)", phone, city: x.location || "", revenue: 0, count: 0 };
+          m[key].count++;
+          m[key].revenue += Number(x.price) || 0;
+          if (phone && !m[key].phone) m[key].phone = phone;
+          if (name && (name.length > (m[key].name || "").length || m[key].name === "(ללא שם)")) m[key].name = name;
+        });
+      // Also pull manually added HeavyGuard customers
+      (hgManual || []).forEach((c) => {
+        const name = (c.name || "").trim(), phone = (c.phone || "").trim();
+        const key = normName(name) || ("#" + phone);
+        if (!m[key]) m[key] = { name, phone, city: c.city || c.location || "", revenue: 0, count: 0, rawNotes: c.notes || "" };
+        else if (phone && !m[key].phone) m[key].phone = phone;
+      });
+
+      const hgCusts = Object.values(m).filter((c) => c.name && c.name !== "(ללא שם)");
+      if (!hgCusts.length) return;
+
+      setCusts((prev) => {
+        const newOnes = hgCusts
+          .filter((hg) => !prev.some((c) =>
+            (hg.phone && hg.phone === c.phone) ||
+            (hg.name && normName(c.name) === normName(hg.name))
+          ))
+          .map((c) => ({
+            id: uid(),
+            name: c.name,
+            phone: c.phone,
+            email: "",
+            city: c.city || "",
+            notes: c.count > 0
+              ? `${c.count} התקנות Heavy Guard · הכנסה ${ils(c.revenue)}`
+              : (c.rawNotes || ""),
+            source: "HeavyGuard",
+          }));
+        if (!newOnes.length) return prev;
+        const next = [...newOnes, ...prev];
+        save(K_CUST, next);
+        cloud.cloudPush(K_CUST, next);
+        setTimeout(() => showToast(`✓ יובאו ${newOnes.length} לקוחות מ-Heavy Guard`), 60);
+        return next;
+      });
+    }).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // One-time cleanup: merge any duplicate customers already stored (sum income).
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setCusts((prev) => {
+        const dd = dedupeCustomers(prev);
+        if (dd.length === prev.length) return prev;
+        save(K_CUST, dd); cloud.cloudPush(K_CUST, dd);
+        setTimeout(() => showToast(`✓ אוחדו ${prev.length - dd.length} כפילויות לקוחות`), 60);
+        return dd;
+      });
+    }, 1800);
+    return () => clearTimeout(t);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const updateCrm = useCallback((id, changes) => {
+    setCrm((prev) => { const next = { ...prev, [id]: { ...prev[id], ...changes } }; persist(K_CRM, next); return next; });
+  }, []);
+  const addOutreach = useCallback((id, entry) => {
+    setCrm((prev) => { const cur = prev[id] || {}; const next = { ...prev, [id]: { ...cur, outreach: [entry, ...(cur.outreach || [])] } }; persist(K_CRM, next); return next; });
+  }, []);
+
+  const upsertDeal = useCallback((deal) => {
+    setDeals((prev) => {
+      const exists = prev.some((d) => d.id === deal.id);
+      const next = exists ? prev.map((d) => (d.id === deal.id ? deal : d)) : [deal, ...prev];
+      persist(K_DEALS, next); return next;
+    });
+  }, []);
+  const removeDeal = useCallback((id) => { setDeals((prev) => { const next = prev.filter((d) => d.id !== id); persist(K_DEALS, next); return next; }); }, []);
+
+  const addCustomer = useCallback((c) => {
+    setCusts((prev) => {
+      const normName = (s) => (s || "").trim().toLowerCase();
+      if (c.phone && prev.some((x) => x.phone === c.phone)) return prev;
+      if (c.name && prev.some((x) => normName(x.name) === normName(c.name))) return prev;
+      const next = [{ ...c, id: c.id || uid() }, ...prev]; persist(K_CUST, next); return next;
+    });
+  }, []);
+  const saveCustomer = useCallback((c) => {
+    setCusts((prev) => {
+      if (c.id && prev.some((x) => x.id === c.id)) {
+        const next = prev.map((x) => (x.id === c.id ? c : x)); persist(K_CUST, next); return next;
+      }
+      const normName = (s) => (s || "").trim().toLowerCase();
+      if (c.phone && prev.some((x) => x.phone === c.phone)) return prev;
+      if (c.name && prev.some((x) => normName(x.name) === normName(c.name))) return prev;
+      const next = [{ ...c, id: uid() }, ...prev]; persist(K_CUST, next); return next;
+    });
+  }, []);
+  const removeCustomer = useCallback((id) => { setCusts((prev) => { const next = prev.filter((x) => x.id !== id); persist(K_CUST, next); return next; }); }, []);
+  const mergeCustomers = useCallback(() => {
+    const dd = dedupeCustomers(custs);
+    const merged = custs.length - dd.length;
+    if (merged > 0) { setCusts(dd); persist(K_CUST, dd); }
+    return merged;
+  }, [custs]);
+
+  // Closing a deal as "won" promotes the lead to customer.
+  const winDeal = useCallback((deal, lead) => {
+    upsertDeal({ ...deal, status: "נסגר", wonAt: todayISO() });
+    updateCrm(deal.leadId, { crmStatus: "לקוח" });
+    if (lead || deal.name) addCustomer({ name: deal.name || lead?.n, phone: deal.phone || (lead?.phones || [])[0] || "", email: lead?.e || "", city: lead?.city || "", notes: `נסגרה עסקה: ${ils(deal.total)}`, source: "עסקה" });
+    showToast("מזל טוב! העסקה נסגרה והלקוח נוסף 🎉");
+  }, [upsertDeal, updateCrm, addCustomer, showToast]);
+
+  // Exit: tries to close the tab. If that fails (the common case when this
+  // link was opened directly, e.g. by Itai) we must NOT fall back to the
+  // owner's main app — that would hand an external user the dock with links
+  // to HeavyGuard, the trading sim and the Agents Command Center. Just tell
+  // them they can close the tab.
+  const exitToAlpha = () => { try { window.close(); } catch {} setTimeout(() => { showToast("אפשר לסגור את הכרטיסייה/הדפדפן עכשיו"); }, 150); };
+
+  // External customer Samsonix form (opened via the link Itai sends). Full-screen,
+  // no CRM nav — the customer just fills and submits.
+  if (typeof location !== "undefined" && /(^|[#&])samform/.test(location.hash || "")) {
+    return <div className="ag" style={themeVars}><StyleTag /><CustomerSamsonix showToast={showToast} />{toast && <div className="ag-toast">{toast}</div>}</div>;
+  }
+
+  return (
+    <div className="ag" style={themeVars}>
+      <StyleTag />
+      {tab === "home" && <Dashboard leads={leads} deals={deals} custs={custs} go={setTab} onNewDeal={() => setDealDraft({})} showToast={showToast} theme={theme} setTheme={applyTheme} onCatalogQuote={(p) => setDealDraft({ deal: { items: [{ desc: p.name, qty: 1, price: Number(p.price) || 0 }], status: "פתוח" } })} />}
+      {tab === "leads" && <LeadsView leads={leads} updateCrm={updateCrm} addOutreach={addOutreach} onDeal={(lead) => setDealDraft({ lead })} dealsFor={(id) => deals.filter((d) => d.leadId === id)} showToast={showToast} />}
+      {tab === "deals" && <DealsView deals={deals} leads={leads} onEdit={(deal) => setDealDraft({ deal })} onNew={() => setDealDraft({})} onWin={winDeal} onRemove={removeDeal} showToast={showToast} />}
+      {tab === "custs" && <CustomersView custs={custs} onSave={saveCustomer} onRemove={removeCustomer} onMerge={mergeCustomers} showToast={showToast} />}
+      {tab === "map" && <MapView leads={leads} custs={custs} deals={deals} showToast={showToast} />}
+      {tab === "showroom" && <ShowroomView showToast={showToast} onQuote={(p) => setDealDraft({ deal: { items: [{ desc: p.name, qty: 1, price: Number(p.price) || 0 }], status: "פתוח" } })} />}
+
+      <nav className="ag-nav">
+        <div className="ag-nav-brand">
+          <img src={BULL_LOGO} alt="HeavyGuard" className="ag-nav-brand-logo" />
+          <div className="ag-nav-brand-txt"><b>Heavy Guard</b><span>CRM</span></div>
+        </div>
+        <button className={tab === "home" ? "on" : ""} onClick={() => setTab("home")}><LayoutDashboard size={20} /><span>בקרה</span></button>
+        <button className={tab === "leads" ? "on" : ""} onClick={() => setTab("leads")}><Target size={20} /><span>לידים</span></button>
+        <button className={tab === "deals" ? "on" : ""} onClick={() => setTab("deals")}><Handshake size={20} /><span>עסקאות</span></button>
+        <button className={tab === "custs" ? "on" : ""} onClick={() => setTab("custs")}><UserRound size={20} /><span>לקוחות</span></button>
+        <button className={tab === "showroom" ? "on" : ""} onClick={() => setTab("showroom")}><Camera size={20} /><span>שורום</span></button>
+        <button className="ag-nav-exit" onClick={exitToAlpha}><ChevronLeft size={20} /><span>יציאה</span></button>
+      </nav>
+
+      {dealDraft && (
+        <DealEditor
+          lead={dealDraft.lead}
+          deal={dealDraft.deal}
+          leads={leads}
+          onClose={() => setDealDraft(null)}
+          onSave={(d) => { upsertDeal(d); setDealDraft(null); showToast("העסקה נשמרה"); }}
+          showToast={showToast}
+        />
+      )}
+      {toast && <div className="ag-toast">{toast}</div>}
+    </div>
+  );
+}
+
+/* ============================ Dashboard ============================ */
+function Dashboard({ leads, deals, custs, go, onNewDeal, showToast, theme, setTheme, onCatalogQuote }) {
+  const [showThemes, setShowThemes] = useState(false);
+  const [showSam, setShowSam] = useState(false);
+  const [showCat, setShowCat] = useState(false);
+  const [showCloud, setShowCloud] = useState(false);
+  const k = monthKey();
+  const open = deals.filter((d) => d.status === "פתוח");
+  const wonMonth = deals.filter((d) => d.status === "נסגר" && (d.wonAt || "").startsWith(k));
+  const openValue = open.reduce((s, d) => s + (d.total || 0), 0);
+  const wonValue = wonMonth.reduce((s, d) => s + (d.total || 0), 0);
+  const inProgress = leads.filter((l) => ["פנייה ראשונה", "בתהליך", "הצעה נשלחה"].includes(l.crmStatus)).length;
+  const wonAll = deals.filter((d) => d.status === "נסגר");
+  const conv = deals.length ? Math.round((wonAll.length / deals.length) * 100) : 0;
+
+  const shareWorks = async () => {
+    const text = `הנה עבודות וההמלצות שלנו ב-${BIZ} 🚛🛡️\nאתר: ${HG_SITE}\nFacebook: ${FB_URL}\nTikTok: ${TT_URL}`;
+    try { if (navigator.share) { await navigator.share({ title: BIZ, text }); return; } } catch { return; }
+    const ok = await copyText(text); showToast && showToast(ok ? "הקישורים הועתקו — הדבק ושלח ללקוח" : "העתקה נכשלה");
+  };
+
+  return (
+    <div className="ag-flow">
+      <header className="ag-head">
+        <img src={BULL_LOGO} className="ag-logo" alt="" />
+        <div style={{ flex: 1 }}><div className="ag-title">מערכת CRM</div><div className="ag-sub">{BIZ} — ניהול לידים ועסקאות</div></div>
+        <div className="ag-links">
+          <a className="ag-site" href={HG_SITE} target="_blank" rel="noreferrer" title="heavygurad.com">
+            <img src={BULL_LOGO} alt="" /><span>האתר</span>
+          </a>
+          <a className="ag-soc fb" href={FB_URL} target="_blank" rel="noreferrer" title="Facebook — עבודות" aria-label="Facebook">
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor"><path d="M22 12.06C22 6.5 17.52 2 12 2S2 6.5 2 12.06c0 5 3.66 9.15 8.44 9.94v-7.03H7.9v-2.9h2.54V9.85c0-2.51 1.49-3.9 3.78-3.9 1.09 0 2.24.2 2.24.2v2.46h-1.26c-1.24 0-1.63.78-1.63 1.57v1.88h2.78l-.44 2.9h-2.34V22c4.78-.79 8.44-4.94 8.44-9.94z"/></svg>
+          </a>
+          <a className="ag-soc tt" href={TT_URL} target="_blank" rel="noreferrer" title="TikTok — עבודות" aria-label="TikTok">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M16.5 3c.3 2.3 1.6 3.7 3.8 3.9v2.5c-1.3.1-2.5-.3-3.8-1v5.9c0 4.6-3.7 6.9-7 5.4-2.6-1.2-3.4-4.6-1.6-6.9 1-1.3 2.6-2 4.5-1.7v2.6c-.4-.1-.8-.2-1.3-.1-1 .1-1.7.8-1.7 1.8 0 1.2 1.1 2 2.3 1.7 1-.3 1.5-1.1 1.5-2.2V3h2.6z"/></svg>
+          </a>
+          <button className="ag-soc send" onClick={shareWorks} title="שלח עבודות ללקוח" aria-label="שלח עבודות"><Send size={15} /></button>
+          <button className="ag-soc theme" onClick={() => setShowThemes(true)} title="צבע הפלטפורמה" aria-label="צבעים"><Palette size={15} /></button>
+          <button className={"ag-soc cloud" + (cloud.cloudConfigured() ? " on" : "")} onClick={() => setShowCloud(true)} title="מסד נתונים משותף" aria-label="ענן"><Globe size={15} /></button>
+        </div>
+      </header>
+      {showCloud && <CloudSettings onClose={() => setShowCloud(false)} showToast={showToast} />}
+
+      {showThemes && (
+        <div className="ag-modal" onClick={(e) => { if (e.target === e.currentTarget) setShowThemes(false); }}>
+          <div className="ag-sheet sm">
+            <div className="ag-sheet-head"><b>צבע הפלטפורמה · מצב רוח</b><button onClick={() => setShowThemes(false)}><X size={20} /></button></div>
+            <div className="ag-sheet-body">
+              <div className="ag-theme-grid">
+                {Object.entries(ITAI_THEMES).map(([key, t]) => (
+                  <button key={key} className={"ag-theme-opt" + (theme === key ? " on" : "")} onClick={() => { setTheme(key); showToast("ערכת צבע: " + t.name); }}>
+                    <span className="ag-theme-dot" style={{ background: t.dot }} />
+                    <span>{t.name}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="ag-kpis">
+        <button className="ag-kpi" onClick={() => go("leads")}><b>{leads.length.toLocaleString()}</b><span>לידים במאגר</span></button>
+        <button className="ag-kpi" onClick={() => go("leads")}><b>{inProgress.toLocaleString()}</b><span>בתהליך</span></button>
+        <button className="ag-kpi" onClick={() => go("deals")}><b className="cy">{open.length}</b><span>עסקאות פתוחות</span></button>
+        <button className="ag-kpi" onClick={() => go("custs")}><b className="ok">{custs.length}</b><span>לקוחות</span></button>
+      </div>
+
+      <div className="ag-card big">
+        <div className="ag-card-row"><span><Briefcase size={15} /> שווי צבר פתוח</span><b className="cy">{ils(openValue)}</b></div>
+        <div className="ag-card-row"><span><TrendingUp size={15} /> נסגר החודש</span><b className="ok">{ils(wonValue)}</b></div>
+        <div className="ag-card-row"><span><CheckCircle2 size={15} /> אחוז סגירה</span><b>{conv}%</b></div>
+      </div>
+
+      <button className="ag-cta" onClick={onNewDeal}><Plus size={20} /> עסקה חדשה</button>
+
+      <AssistantPanel leads={leads} deals={deals} custs={custs} go={go} onNewDeal={onNewDeal} showToast={showToast} />
+
+      <button className="ag-mapcard" onClick={() => go("map")}>
+        <div className="ag-mapcard-glow" />
+        <div className="ag-mapcard-txt"><b><MapPin size={15} /> מפת העסקים · ארץ ישראל</b><span>צפה בלקוחות והלידים על המפה ותכנן מסלול פגישות</span></div>
+        <ChevronLeft size={22} />
+      </button>
+
+      <div className="ag-tools2">
+        <button className="ag-tool" onClick={() => setShowSam(true)}><FileText size={20} /><b>טופס סמסוניקס</b><span>החתמת לקוח · DVR</span></button>
+        <button className="ag-tool" onClick={() => setShowCat(true)}><Briefcase size={20} /><b>קטלוג מוצרים</b><span>מחירון חי</span></button>
+      </div>
+
+      {showSam && <SamsonixForm onClose={() => setShowSam(false)} showToast={showToast} />}
+      {showCat && <ProductCatalog onClose={() => setShowCat(false)} onQuote={(p) => { onCatalogQuote(p); setShowCat(false); showToast("נוסף להצעה: " + p.name); }} />}
+
+      <SamInbox showToast={showToast} />
+
+      <div className="ag-secttl">עסקאות אחרונות</div>
+      {deals.length === 0 && <div className="ag-empty"><Handshake size={32} /><div>אין עדיין עסקאות</div><p>פתח ליד וצור הצעת מחיר כדי להתחיל</p></div>}
+      {deals.slice(0, 5).map((d) => (
+        <button className="ag-deal-row" key={d.id} onClick={() => go("deals")}>
+          <span className="ag-dot" style={{ background: DEAL_COLOR[d.status] }} />
+          <div className="ag-deal-mid"><b>{d.name || "ללא שם"}</b><span>{d.items.length} פריטים · {d.createdAt}</span></div>
+          <div className="ag-deal-val">{ils(d.total)}</div>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ============================ Leads ============================ */
+function LeadsView({ leads, updateCrm, addOutreach, onDeal, dealsFor, showToast }) {
+  const [search, setSearch] = useState("");
+  const [geo, setGeo] = useState("");
+  const [status, setStatus] = useState("");
+  const [sel, setSel] = useState(null);
+  const [page, setPage] = useState(0);
+  const PAGE = 50;
+
+  const filtered = useMemo(() => leads.filter((l) => {
+    if (geo && l.geo !== geo) return false;
+    if (status && l.crmStatus !== status) return false;
+    if (search) { const q = search.toLowerCase(); return (l.n || "").toLowerCase().includes(q) || (l.city || "").toLowerCase().includes(q) || (l.sector || "").toLowerCase().includes(q) || (l.phones || []).some((p) => p.includes(q)); }
+    return true;
+  }), [leads, search, geo, status]);
+  const paged = filtered.slice(0, (page + 1) * PAGE);
+
+  const selLead = sel ? leads.find((l) => l.id === sel) : null;
+  if (selLead) return (
+    <LeadDetail lead={selLead} onBack={() => setSel(null)}
+      onStatus={(s) => updateCrm(selLead.id, { crmStatus: s })}
+      onNotes={(n) => updateCrm(selLead.id, { crmNotes: n })}
+      onOutreach={(e) => addOutreach(selLead.id, e)}
+      onDeal={() => onDeal(selLead)} deals={dealsFor(selLead.id)} showToast={showToast} />
+  );
+
+  return (
+    <div className="ag-flow">
+      <header className="ag-head sm"><div><div className="ag-title">ניהול לידים</div><div className="ag-sub">{filtered.length.toLocaleString()} תוצאות</div></div></header>
+      <div className="ag-searchbox"><Search size={15} /><input value={search} onChange={(e) => { setSearch(e.target.value); setPage(0); }} placeholder="חיפוש שם, עיר, תחום, טלפון…" dir="rtl" />{search && <button onClick={() => setSearch("")}><X size={14} /></button>}</div>
+      <div className="ag-chips">
+        <button className={!geo ? "on" : ""} onClick={() => { setGeo(""); setPage(0); }}>הכל</button>
+        {GEO_OPTS.map((g) => <button key={g} className={geo === g ? "on" : ""} onClick={() => { setGeo(g); setPage(0); }}>{g}</button>)}
+      </div>
+      <div className="ag-chips sm">
+        <button className={!status ? "on" : ""} onClick={() => { setStatus(""); setPage(0); }}>כל הסטטוסים</button>
+        {CRM_STATUSES.map((s) => <button key={s} className={status === s ? "on" : ""} style={{ "--sc": CRM_COLOR[s] }} onClick={() => { setStatus(s); setPage(0); }}>{s}</button>)}
+      </div>
+      {paged.map((l) => <LeadCard key={l.id} lead={l} onClick={() => setSel(l.id)} />)}
+      {filtered.length > paged.length && <button className="ag-more" onClick={() => setPage((p) => p + 1)}>טען עוד · {(filtered.length - paged.length).toLocaleString()} נותרו</button>}
+      {filtered.length === 0 && <div className="ag-empty"><Target size={32} /><div>אין תוצאות</div></div>}
+    </div>
+  );
+}
+
+function LeadCard({ lead, onClick }) {
+  const color = CRM_COLOR[lead.crmStatus] || "#8E9BAB";
+  return (
+    <button className="ag-card lead" onClick={onClick}>
+      <div className="ag-card-top"><div className="ag-card-name">{lead.n}</div><span className="ag-badge" style={{ background: color + "22", color, border: `1px solid ${color}55` }}>{lead.crmStatus}</span></div>
+      <div className="ag-card-meta">
+        {lead.city && <span><MapPin size={11} />{lead.city}</span>}
+        {(lead.phones || [])[0] && <span><Phone size={11} />{lead.phones[0]}</span>}
+        {lead.outreach?.length > 0 && <span className="ag-act"><Bell size={10} />{lead.outreach.length}</span>}
+      </div>
+      {lead.sector && <div className="ag-card-sector">{lead.sector}</div>}
+    </button>
+  );
+}
+
+function LeadDetail({ lead, onBack, onStatus, onNotes, onOutreach, onDeal, deals, showToast }) {
+  const [notes, setNotes] = useState(lead.crmNotes || "");
+  const [showAdd, setShowAdd] = useState(false);
+  const [oType, setOType] = useState("שיחה");
+  const [oResult, setOResult] = useState("חיובי");
+  const [oNotes, setONotes] = useState("");
+
+  const submitOut = () => {
+    if (!oNotes.trim()) { showToast("הוסף פרטי פנייה"); return; }
+    onOutreach({ id: uid(), type: oType, result: oResult, notes: oNotes.trim(), date: todayISO() });
+    setONotes(""); setShowAdd(false); showToast("הפנייה נרשמה");
+  };
+
+  return (
+    <div className="ag-flow">
+      <header className="ag-head sm"><button className="ag-back" onClick={onBack}><ChevronLeft size={22} /></button><div style={{ flex: 1, minWidth: 0 }}><div className="ag-title" style={{ fontSize: 16 }}>{lead.n}</div><div className="ag-sub">{[lead.city, lead.geo].filter(Boolean).join(" · ")}</div></div></header>
+
+      <div className="ag-pipeline">{CRM_STATUSES.map((s) => <button key={s} className={"ag-pipe" + (lead.crmStatus === s ? " on" : "")} style={{ "--sc": CRM_COLOR[s] }} onClick={() => onStatus(s)}>{s}</button>)}</div>
+
+      <button className="ag-cta" onClick={onDeal}><FileText size={18} /> צור / שלח הצעת מחיר</button>
+
+      {deals.length > 0 && (
+        <div className="ag-section">
+          <div className="ag-section-ttl">עסקאות לליד זה ({deals.length})</div>
+          {deals.map((d) => <div className="ag-deal-row flat" key={d.id}><span className="ag-dot" style={{ background: DEAL_COLOR[d.status] }} /><div className="ag-deal-mid"><b>{d.status}</b><span>{d.items.length} פריטים · {d.createdAt}</span></div><div className="ag-deal-val">{ils(d.total)}</div></div>)}
+        </div>
+      )}
+
+      <div className="ag-section">
+        <div className="ag-section-ttl">טלפונים{(lead.phones || []).length > 1 ? ` (${lead.phones.length})` : ""}</div>
+        {(lead.phones || []).length === 0 && <div className="ag-empty sm">אין מספרי טלפון לליד זה</div>}
+        {(lead.phones || []).map((p, i) => (
+          <div key={i} className="ag-phone">
+            <Phone size={14} className="ag-phone-ic" />
+            <span className="ag-phone-num" dir="ltr">{p}</span>
+            <a href={telLink(p)} className="ag-phone-btn"><Phone size={13} /> חייג</a>
+            <button onClick={() => meLookup(p, showToast)} className="ag-phone-btn me"><Copy size={13} /> Me · העתק</button>
+          </div>
+        ))}
+        {lead.e && <a href={`mailto:${lead.e}`} className="ag-info"><Mail size={13} /><span className="ag-trunc">{lead.e}</span></a>}
+        {lead.addr && <div className="ag-info"><MapPin size={13} />{lead.addr}, {lead.city}</div>}
+        {lead.w && <a href={websiteUrl(lead.w)} target="_blank" rel="noopener noreferrer" className="ag-info ag-link"><Globe size={13} /><span className="ag-trunc">{lead.w}</span></a>}
+      </div>
+
+      <div className="ag-section">
+        <div className="ag-section-ttl">פרטי עסק</div>
+        {lead.sector && <div className="ag-info"><Building2 size={13} />{lead.sector}</div>}
+        {lead.emp && <div className="ag-info"><Users size={13} />{lead.emp} מועסקים</div>}
+        {lead.rev && <div className="ag-info"><Wallet size={13} />מחזור: ₪{Number(lead.rev).toLocaleString()} אלף</div>}
+        {lead.activity && <div className="ag-info"><Tag size={13} />{lead.activity.replace(/;/g, " · ")}</div>}
+      </div>
+
+      {(lead.mgrs || []).length > 0 && (
+        <div className="ag-section">
+          <div className="ag-section-ttl">אנשי קשר ({lead.mgrs.length})</div>
+          {(lead.phones || []).length > 0 && <div className="ag-note-line">המספרים הם קווי העסק — חייג/שלח וואטסאפ אל איש הקשר דרכם</div>}
+          {lead.mgrs.slice(0, 12).map((m, i) => {
+            const phone = (lead.phones || [])[0];
+            return (
+              <div key={i} className="ag-person">
+                <div className="ag-person-top">
+                  <span className="ag-mgr-name">{m.n}</span>
+                  {m.r && <span className="ag-mgr-role">{m.r}</span>}
+                </div>
+                {phone && <div className="ag-person-phone" dir="ltr"><Phone size={11} /> {phone}</div>}
+                <div className="ag-person-acts">
+                  {phone && <a href={telLink(phone)} className="ag-person-btn"><Phone size={12} /> חייג</a>}
+                  {phone && <button onClick={() => meLookup(phone, showToast)} className="ag-person-btn me"><Copy size={12} /> Me · העתק</button>}
+                  {m.e && <a href={`mailto:${m.e}`} className="ag-person-btn"><Mail size={12} /> מייל</a>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="ag-section">
+        <div className="ag-section-ttl">הערות</div>
+        <textarea className="ag-textarea" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="הערות אישיות על הליד…" rows={3} dir="rtl" />
+        <button className="ag-btn" onClick={() => { onNotes(notes); showToast("ההערות נשמרו"); }}>שמור הערות</button>
+      </div>
+
+      <div className="ag-section">
+        <div className="ag-section-ttl-row"><span className="ag-section-ttl">יומן פניות ({lead.outreach.length})</span><button className="ag-mini" onClick={() => setShowAdd((v) => !v)}>+ פנייה</button></div>
+        {showAdd && (
+          <div className="ag-addform">
+            <div className="ag-row"><select value={oType} onChange={(e) => setOType(e.target.value)} className="ag-select">{OUTREACH_TYPES.map((t) => <option key={t}>{t}</option>)}</select><select value={oResult} onChange={(e) => setOResult(e.target.value)} className="ag-select">{OUTREACH_RESULTS.map((r) => <option key={r}>{r}</option>)}</select></div>
+            <textarea value={oNotes} onChange={(e) => setONotes(e.target.value)} placeholder="פרטי הפנייה…" rows={2} className="ag-textarea" dir="rtl" />
+            <div className="ag-row"><button className="ag-btn" onClick={submitOut}>שמור</button><button className="ag-btn ghost" onClick={() => setShowAdd(false)}>ביטול</button></div>
+          </div>
+        )}
+        {lead.outreach.length === 0 && !showAdd && <div className="ag-empty sm">אין פניות מתועדות עדיין</div>}
+        {lead.outreach.map((e) => (
+          <div key={e.id} className="ag-out"><div className="ag-out-h"><span className="ag-out-t">{e.type}</span><span className="ag-out-r">{e.result}</span><span className="ag-out-d">{e.date}</span></div><div className="ag-out-n">{e.notes}</div></div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ============================ Deals ============================ */
+function DealsView({ deals, leads, onEdit, onNew, onWin, onRemove, showToast }) {
+  const [f, setF] = useState("");
+  const list = f ? deals.filter((d) => d.status === f) : deals;
+  const pipe = deals.filter((d) => d.status === "פתוח").reduce((s, d) => s + (d.total || 0), 0);
+
+  return (
+    <div className="ag-flow">
+      <header className="ag-head sm"><div><div className="ag-title">עסקאות</div><div className="ag-sub">צבר פתוח: {ils(pipe)}</div></div></header>
+      <button className="ag-cta" onClick={onNew}><Plus size={18} /> עסקה חדשה</button>
+      <div className="ag-chips sm">
+        <button className={!f ? "on" : ""} onClick={() => setF("")}>הכל</button>
+        {DEAL_STATES.map((s) => <button key={s} className={f === s ? "on" : ""} style={{ "--sc": DEAL_COLOR[s] }} onClick={() => setF(s)}>{s}</button>)}
+      </div>
+      {list.length === 0 && <div className="ag-empty"><Handshake size={32} /><div>אין עסקאות</div><p>לחץ "עסקה חדשה" כדי לבנות הצעת מחיר</p></div>}
+      {list.map((d) => {
+        const lead = leads.find((l) => l.id === d.leadId);
+        return (
+          <div className="ag-card deal" key={d.id}>
+            <div className="ag-card-top"><div className="ag-card-name">{d.name || "ללא שם"}</div><span className="ag-badge" style={{ background: DEAL_COLOR[d.status] + "22", color: DEAL_COLOR[d.status], border: `1px solid ${DEAL_COLOR[d.status]}55` }}>{d.status}</span></div>
+            <div className="ag-card-meta"><span>{d.items.length} פריטים</span><span>{d.createdAt}</span><b className="ag-deal-val">{ils(d.total)}</b></div>
+            <div className="ag-deal-acts">
+              <a className="ag-abtn wa" href={waLink(d.phone, dealMessage(d))} target="_blank" rel="noreferrer"><MessageSquare size={14} /> שלח</a>
+              <button className="ag-abtn" onClick={() => onEdit(d)}><Pencil size={14} /> ערוך</button>
+              {d.status !== "נסגר" && <button className="ag-abtn ok" onClick={() => onWin(d, lead)}><CheckCircle2 size={14} /> נסגר!</button>}
+              <button className="ag-abtn d" onClick={() => onRemove(d.id)}><Trash2 size={14} /></button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function dealMessage(d) {
+  const lines = [`שלום ${d.name || ""},`, `הצעת מחיר מ-${BIZ}:`, ""];
+  d.items.forEach((i) => { const lt = (Number(i.price) || 0) * (Number(i.qty) || 1); lines.push(`• ${i.desc} ${(Number(i.qty) || 1) > 1 ? "x" + i.qty : ""} — ${ils(lt)}`); });
+  lines.push("");
+  if (d.discount > 0) { lines.push(`מחיר מלא: ${ils(d.gross)}`, `הנחה ${d.discountPct}%: −${ils(d.discount)}`); }
+  lines.push(`סכום ביניים: ${ils(d.subtotal)}`, `מע"מ (18%): ${ils(d.vat)}`, `סה"כ לתשלום: ${ils(d.total)}`);
+  if (d.note) lines.push("", d.note);
+  lines.push("", "בברכה, איתי");
+  return lines.join("\n");
+}
+
+function DealEditor({ lead, deal, leads, onClose, onSave, showToast }) {
+  const [name, setName] = useState(deal?.name || lead?.n || "");
+  const [phone, setPhone] = useState(deal?.phone || (lead?.phones || [])[0] || "");
+  const [leadId, setLeadId] = useState(deal?.leadId || lead?.id || "");
+  const [items, setItems] = useState(deal?.items?.length ? deal.items : [{ desc: "", qty: 1, price: "" }]);
+  const [note, setNote] = useState(deal?.note || "");
+  const [status, setStatus] = useState(deal?.status || "פתוח");
+  const [discount, setDiscount] = useState(deal?.discountPct || 0);
+  const [linkQ, setLinkQ] = useState("");
+  const [showQuote, setShowQuote] = useState(false);
+  const pricelist = useHgPricelist();
+  const addFromPrice = (p) => setItems((prev) => {
+    const clean = prev.filter((it) => it.desc.trim() || it.price);
+    return [...clean, { desc: p.name, qty: 1, price: p.price }];
+  });
+
+  const t = dealTotals(items, discount);
+  const setItem = (i, k, v) => setItems((prev) => prev.map((it, idx) => (idx === i ? { ...it, [k]: v } : it)));
+  const addItem = () => setItems((prev) => [...prev, { desc: "", qty: 1, price: "" }]);
+  const delItem = (i) => setItems((prev) => prev.filter((_, idx) => idx !== i));
+
+  const linkMatches = useMemo(() => {
+    if (!linkQ.trim()) return [];
+    const q = linkQ.toLowerCase();
+    return leads.filter((l) => (l.n || "").toLowerCase().includes(q) || (l.phones || []).some((p) => p.includes(q))).slice(0, 6);
+  }, [linkQ, leads]);
+
+  const build = () => ({
+    id: deal?.id || uid(), leadId, name: name.trim(), phone: phone.trim(),
+    items: items.filter((i) => i.desc.trim() || i.price),
+    gross: t.gross, discountPct: t.discountPct, discount: t.discount, subtotal: t.subtotal, vat: t.vat, total: t.total,
+    status, note: note.trim(), createdAt: deal?.createdAt || todayISO(), wonAt: deal?.wonAt || null,
+  });
+  const doSave = () => { if (!name.trim()) { showToast("הזן שם לקוח/עסק"); return; } onSave(build()); };
+  const doSend = () => { if (!phone.trim()) { showToast("הזן טלפון לשליחה"); return; } const d = build(); onSave(d); window.open(waLink(phone, dealMessage(d)), "_blank"); };
+
+  return (
+    <div className="ag-modal" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="ag-sheet">
+        <div className="ag-sheet-head"><b>{deal?.id ? "עריכת עסקה" : "עסקה חדשה"}</b><button onClick={onClose}><X size={20} /></button></div>
+        <div className="ag-sheet-body">
+          <label className="ag-lbl">שם לקוח / עסק</label>
+          <input className="ag-input" value={name} onChange={(e) => setName(e.target.value)} placeholder="שם" dir="rtl" />
+          {!lead && !deal && (
+            <>
+              <label className="ag-lbl">קשר לליד קיים (אופציונלי)</label>
+              <input className="ag-input" value={linkQ} onChange={(e) => setLinkQ(e.target.value)} placeholder="חפש ליד לפי שם/טלפון…" dir="rtl" />
+              {linkMatches.map((l) => <button key={l.id} className="ag-link-opt" onClick={() => { setLeadId(l.id); setName(l.n); setPhone((l.phones || [])[0] || ""); setLinkQ(""); }}>{l.n} · {(l.phones || [])[0] || ""}</button>)}
+            </>
+          )}
+          <label className="ag-lbl">טלפון</label>
+          <input className="ag-input" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="050…" dir="ltr" />
+
+          <label className="ag-lbl">מחירון Heavy Guard · לחיצה מוסיפה פריט</label>
+          <div className="ag-chips">
+            {pricelist.map((p) => (
+              <button key={p.id || p.name} type="button" onClick={() => addFromPrice(p)}>{p.name} · {ils(p.price)}</button>
+            ))}
+          </div>
+
+          <label className="ag-lbl">פריטי הצעה</label>
+          {items.map((it, i) => (
+            <div className="ag-item" key={i}>
+              <input className="ag-input desc" value={it.desc} onChange={(e) => setItem(i, "desc", e.target.value)} placeholder="תיאור פריט/שירות" dir="rtl" />
+              <input className="ag-input qty" type="number" min="1" value={it.qty} onChange={(e) => setItem(i, "qty", e.target.value)} placeholder="כמ'" />
+              <input className="ag-input price" type="number" min="0" value={it.price} onChange={(e) => setItem(i, "price", e.target.value)} placeholder="₪" dir="ltr" />
+              {items.length > 1 && <button className="ag-item-del" onClick={() => delItem(i)}><X size={14} /></button>}
+            </div>
+          ))}
+          <button className="ag-additem" onClick={addItem}><Plus size={14} /> הוסף פריט</button>
+
+          <label className="ag-lbl">הנחה ללקוח</label>
+          <div className="ag-chips sm nowrap ag-disc">
+            {[0, 5, 10, 15].map((p) => <button key={p} className={discount === p ? "on" : ""} onClick={() => setDiscount(p)}>{p === 0 ? "ללא" : p + "%"}</button>)}
+          </div>
+
+          <div className="ag-totbox">
+            {t.discount > 0 && <div className="ag-totrow"><span>מחיר מלא</span><b>{ils(t.gross)}</b></div>}
+            {t.discount > 0 && <div className="ag-totrow disc"><span>הנחה {t.discountPct}%</span><b>−{ils(t.discount)}</b></div>}
+            <div className="ag-totrow"><span>סכום ביניים</span><b>{ils(t.subtotal)}</b></div>
+            <div className="ag-totrow"><span>מע"מ 18%</span><b>{ils(t.vat)}</b></div>
+            <div className="ag-totrow grand"><span>סה"כ</span><b>{ils(t.total)}</b></div>
+          </div>
+
+          <label className="ag-lbl">סטטוס</label>
+          <div className="ag-chips sm nowrap">{DEAL_STATES.map((s) => <button key={s} className={status === s ? "on" : ""} style={{ "--sc": DEAL_COLOR[s] }} onClick={() => setStatus(s)}>{s}</button>)}</div>
+
+          <label className="ag-lbl">הערה להצעה (אופציונלי)</label>
+          <textarea className="ag-textarea" value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="תנאים, תוקף הצעה…" dir="rtl" />
+        </div>
+        <div className="ag-sheet-foot">
+          <button className="ag-btn ghost" onClick={() => { if (!name.trim()) { showToast("הזן שם לקוח/עסק"); return; } setShowQuote(true); }}><FileText size={15} /> מעוצבת</button>
+          <button className="ag-btn" onClick={doSave}>שמור</button>
+          <button className="ag-btn wa" onClick={doSend}><Send size={15} /> וואטסאפ</button>
+        </div>
+      </div>
+      {showQuote && <DesignedQuote deal={build()} onClose={() => setShowQuote(false)} showToast={showToast} />}
+    </div>
+  );
+}
+
+/* ============================ Designed (branded, printable) quote ============================ */
+// Designed quote — a 1:1 replica of the HeavyGuard app's QuoteView (same layout,
+// teal letterhead band, company block, table, totals, notes & payment lines).
+function DesignedQuote({ deal, onClose, showToast }) {
+  const co = HG_COMPANY;
+  const number = useMemo(() => nextQuoteNumber(), []);
+  const date = todayISO();
+  const validUntil = useMemo(() => { const d = new Date(); d.setDate(d.getDate() + 7); return d.toISOString().slice(0, 10); }, []);
+  const lines = (deal.items || []).filter((i) => (i.desc || "").trim() || i.price).map((i) => ({ name: i.desc, qty: Number(i.qty) || 1, price: Number(i.price) || 0 }));
+  const vatRate = 18;
+  const notes = HG_QUOTE_NOTES.concat(deal.note ? [deal.note] : []);
+  const pay = HG_QUOTE_PAY;
+  const text = () => {
+    let t = `*הצעת מחיר מספר ${number}* — ${co.name}\nלכבוד: ${deal.name || ""}\nתאריך: ${dmy(date)}\nבתוקף עד: ${dmy(validUntil)}\n\n`;
+    lines.forEach((l) => { t += `• ${l.name}${l.qty > 1 ? " ×" + l.qty : ""} — ${ils(l.price * l.qty)}\n`; });
+    t += `\nסה"כ לפני מע"מ: ${ils(deal.subtotal)}\n*סה"כ כולל ${vatRate}% מע"מ: ${ils(deal.total)}*\n\n${pay}\n\n${co.name} · ${co.address} · נייד ${co.phone}`;
+    return t;
+  };
+  const copy = async () => { const ok = await copyText(text()); showToast(ok ? "ההצעה הועתקה" : "העתקה נכשלה"); };
+  return (
+    <div className="ag-modal" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="ag-sheet">
+        <div className="ag-sheet-head ag-quote-noprint"><b>הצעת מחיר · Heavy Guard</b><button onClick={onClose}><X size={20} /></button></div>
+        <div className="ag-sheet-body">
+          <div className="hg2-quotedoc" id="quotedoc">
+            <div className="hg2-qd-band">
+              <div className="hg2-qd-brand">
+                <img src={BULL_LOGO} alt="" className="hg2-qd-logo" />
+                <div className="hg2-qd-name">{co.brand}</div>
+                <div className="hg2-qd-co">עוסק מורשה {co.taxId}<br />נייד: {co.phone}<br />{co.address}</div>
+              </div>
+              <div className="hg2-qd-titlebox">
+                <div className="hg2-qd-title">הצעת מחיר</div>
+                <div className="hg2-qd-num">הצעת מחיר מספר {number}</div>
+                <div className="hg2-qd-meta"><b>לכבוד: {deal.name || "—"}</b></div>
+                <div className="hg2-qd-meta">תאריך: {dmy(date)}</div>
+                <div className="hg2-qd-meta">בתוקף עד: {dmy(validUntil)}</div>
+              </div>
+            </div>
+            <table className="hg2-qd-table">
+              <thead><tr><th>תיאור הפריט</th><th>מחיר ליחידה</th><th>כמות</th><th>סה"כ</th></tr></thead>
+              <tbody>{lines.map((l, i) => <tr key={i}><td>{l.name}</td><td>{ils(l.price)}</td><td>{l.qty}</td><td>{ils(l.price * l.qty)}</td></tr>)}</tbody>
+            </table>
+            <div className="hg2-qd-sums">
+              <div><span>סה"כ לפני מע"מ</span><b>{ils(deal.subtotal)}</b></div>
+              <div className="tot"><span>סה"כ כולל {vatRate}% מע"מ</span><b>{ils(deal.total)}</b></div>
+            </div>
+            <div className="hg2-qd-sec">הערות:</div>
+            <ul className="hg2-qd-list">{notes.map((n, i) => <li key={i}>{n}</li>)}</ul>
+            <div className="hg2-qd-sec">דרכי תשלום:</div>
+            <div className="hg2-qd-pay">{pay}</div>
+            <div className="hg2-qd-foot">כאן לשירותכם וזמינים לשאלות ובירורים.</div>
+            <div className="hg2-qd-bottomband" />
+          </div>
+        </div>
+        <div className="ag-sheet-foot ag-quote-noprint">
+          <button className="ag-btn ghost" onClick={copy}><Copy size={15} /> העתק</button>
+          <button className="ag-btn" onClick={() => window.print()}><FileText size={15} /> הדפס / PDF</button>
+          {deal.phone && <a className="ag-btn wa" href={waLink(deal.phone, text())} target="_blank" rel="noreferrer"><Send size={15} /> וואטסאפ</a>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================ Customers ============================ */
+function CustomersView({ custs, onSave, onRemove, onMerge, showToast }) {
+  const [open, setOpen] = useState(false);
+  const [edit, setEdit] = useState(null);
+  const [q, setQ] = useState("");
+  const [filterRegion, setFilterRegion] = useState("");
+  const dupCount = useMemo(() => custs.length - dedupeCustomers(custs).length, [custs]);
+  const doMerge = () => { const n = onMerge(); showToast(n > 0 ? `✓ אוחדו ${n} כפילויות לקוחות` : "לא נמצאו כפילויות"); };
+
+  const filtered = useMemo(() => {
+    let list = custs;
+    if (q) list = list.filter((c) => (c.name || "").toLowerCase().includes(q.toLowerCase()) || (c.phone || "").includes(q) || (c.city || "").includes(q));
+    if (filterRegion) list = list.filter((c) => (c.region || "") === filterRegion);
+    return list;
+  }, [custs, q, filterRegion]);
+
+  const grouped = useMemo(() => {
+    const g = {};
+    filtered.forEach((c) => { const r = c.region || "כללי"; if (!g[r]) g[r] = []; g[r].push(c); });
+    return g;
+  }, [filtered]);
+
+  const usedRegions = GEO_OPTS.filter((r) => custs.some((c) => c.region === r));
+  const regionOrder = [...GEO_OPTS, "כללי"].filter((r) => grouped[r]);
+
+  return (
+    <div className="ag-flow">
+      <header className="ag-head sm">
+        <div><div className="ag-title">לקוחות</div><div className="ag-sub">{custs.length} לקוחות{usedRegions.length > 0 ? ` · ${usedRegions.length} אזורים` : ""}</div></div>
+      </header>
+      <div className="ag-cust-ctas">
+        <button className="ag-cta" onClick={() => { setEdit(null); setOpen(true); }}><Plus size={18} /> לקוח חדש</button>
+        {dupCount > 0 && <button className="ag-cta ghost warn" onClick={doMerge}><GitMerge size={16} /> מזג {dupCount} כפילויות</button>}
+      </div>
+      <div className="ag-searchbox"><Search size={15} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="חיפוש לקוח…" dir="rtl" />{q && <button onClick={() => setQ("")}><X size={14} /></button>}</div>
+      {usedRegions.length > 0 && (
+        <div className="ag-chips sm">
+          <button className={!filterRegion ? "on" : ""} onClick={() => setFilterRegion("")}>הכל</button>
+          {usedRegions.map((r) => (
+            <button key={r} className={filterRegion === r ? "on" : ""} onClick={() => setFilterRegion(r)}>
+              {r} <span className="cust-chip-cnt">({custs.filter((c) => c.region === r).length})</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {filtered.length === 0 && <div className="ag-empty"><UserRound size={32} /><div>אין עדיין לקוחות</div><p>לקוחות נוצרים אוטומטית כשסוגרים עסקה, או הוסף ידנית</p></div>}
+      {regionOrder.map((region) => (
+        <div key={region} className="cust-region-group">
+          <div className="cust-region-hdr"><MapPin size={13} /><span>{region}</span><span className="cust-region-cnt">{grouped[region].length}</span></div>
+          {grouped[region].map((c) => (
+            <div className="ag-card cust compact" key={c.id}>
+              <div className="ag-cust-mid">
+                <b>{c.name}</b>
+                <span dir="ltr">{c.phone || "—"}{c.city ? " · " + c.city : ""}</span>
+                {c.notes && <span className="ag-cust-note">{c.notes}</span>}
+              </div>
+              <div className="ag-cust-acts">
+                {c.phone && <button className="ag-wa me" title="העתק ל-Me" onClick={() => meLookup(c.phone, showToast)}><Copy size={15} /></button>}
+                {c.phone && <a className="ag-wa tel" href={telLink(c.phone)}><Phone size={15} /></a>}
+                <button className="ag-icbtn" onClick={() => { setEdit(c); setOpen(true); }}><Pencil size={14} /></button>
+                <button className="ag-icbtn d" onClick={() => { onRemove(c.id); showToast("הלקוח נמחק"); }}><Trash2 size={14} /></button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ))}
+      {open && <CustomerForm initial={edit} onClose={() => setOpen(false)} onSave={(c) => { onSave(c); setOpen(false); showToast(edit ? "הלקוח עודכן" : "הלקוח נוסף"); }} />}
+    </div>
+  );
+}
+
+function CustomerForm({ initial, onClose, onSave }) {
+  const [c, setC] = useState(initial || { name: "", phone: "", email: "", city: "", region: "", notes: "" });
+  const set = (k, v) => setC((p) => ({ ...p, [k]: v }));
+  return (
+    <div className="ag-modal" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="ag-sheet sm">
+        <div className="ag-sheet-head"><b>{initial ? "עריכת לקוח" : "לקוח חדש"}</b><button onClick={onClose}><X size={20} /></button></div>
+        <div className="ag-sheet-body">
+          <label className="ag-lbl">שם</label><input className="ag-input" value={c.name} onChange={(e) => set("name", e.target.value)} dir="rtl" />
+          <label className="ag-lbl">טלפון</label><input className="ag-input" value={c.phone} onChange={(e) => set("phone", e.target.value)} dir="ltr" />
+          <label className="ag-lbl">אימייל</label><input className="ag-input" value={c.email} onChange={(e) => set("email", e.target.value)} dir="ltr" />
+          <label className="ag-lbl">עיר</label><input className="ag-input" value={c.city} onChange={(e) => set("city", e.target.value)} dir="rtl" />
+          <label className="ag-lbl">אזור</label>
+          <select className="ag-input" value={c.region || ""} onChange={(e) => set("region", e.target.value)} dir="rtl">
+            <option value="">— בחר אזור —</option>
+            {GEO_OPTS.map((g) => <option key={g} value={g}>{g}</option>)}
+          </select>
+          <label className="ag-lbl">הערות</label><textarea className="ag-textarea" value={c.notes} onChange={(e) => set("notes", e.target.value)} rows={2} dir="rtl" />
+        </div>
+        <div className="ag-sheet-foot"><button className="ag-btn ghost" onClick={onClose}>ביטול</button><button className="ag-btn" onClick={() => c.name.trim() && onSave(c)}>שמור</button></div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================ Digital assistant (rule-based, no AI) ============================ */
+const daysSince = (iso) => { if (!iso) return 9999; const d = (Date.now() - new Date(iso).getTime()) / 86400000; return isNaN(d) ? 9999 : Math.floor(d); };
+const MOTIVAT = [
+  "💪 איתי, אתה עושה עבודה מדהימה — כל שיחה מקרבת אותך לסגירה!",
+  "🎯 כל 'לא' שאתה מקבל הוא צעד אחד לקראת ה'כן' הבא. תמשיך!",
+  "🏆 אנשים שמתמידים סוגרים עסקאות — ואתה מתמיד, איתי.",
+  "🚀 המספרים שלך מדברים — המשך ככה ואתה סוגר חודש מצוין!",
+  "📈 כל מעקב שאתה עושה הוא השקעה שחוזרת אליך. תמשיך!",
+  "⭐ איתי, שתדע שאתה בקצב מנצח. המשך לדחוף!",
+  "🔥 מכירות זה ספורט — וה-training שלך עובד. קדימה!",
+  "✨ כל ליד הוא הזדמנות. עם הגישה שלך, רובם הופכים ללקוחות.",
+];
+const motivatRand = () => MOTIVAT[Math.floor(Math.random() * MOTIVAT.length)];
+function assistantReply(q, ctx) {
+  const { leads, deals, custs, go, onNewDeal } = ctx;
+  const s = (q || "").trim().toLowerCase();
+  const open = deals.filter((d) => d.status === "פתוח");
+  const openVal = open.reduce((a, d) => a + (d.total || 0), 0);
+  const wonMonth = deals.filter((d) => d.status === "נסגר" && (d.wonAt || "").startsWith(monthKey()));
+  const followups = leads.filter((l) => ["פנייה ראשונה", "בתהליך"].includes(l.crmStatus) && daysSince((l.outreach || [])[0]?.date) >= 3);
+  const sent = leads.filter((l) => l.crmStatus === "הצעה נשלחה");
+  const hot = leads.filter((l) => ["בתהליך", "הצעה נשלחה"].includes(l.crmStatus));
+  const has = (...w) => w.some((x) => s.includes(x));
+
+  const motivat = () => Math.random() < 0.28 ? "\n\n" + motivatRand() : "";
+  if (!s || has("עזרה", "פקודות", "מה אתה", "?")) return { text: "איתי, אני העוזר האישי שלך 🤝 נסה: \"מעקבים להיום\", \"הצעות שנשלחו\", \"לידים חמים\", \"עסקאות פתוחות\", \"סיכום\", \"פתח מסלול\", \"הצעת מחיר חדשה\"." };
+  if (has("נסח", "הודעה", "וואטסאפ", "טקסט", "מה לכתוב")) return { text: `איתי, הנה הצעה להודעת מעקב:\n"שלום, כאן איתי מ-${BIZ} 🛡️ רציתי לבדוק אם הספקתם לעבור על ההצעה למערכות המיגון לרכב. אשמח לענות על כל שאלה ולהתאים לכם פתרון. מתי נוח לדבר?"\n(להצעות חכמות ומותאמות — הוסף מפתח Groq חינמי בהגדרות.)` };
+  if (has("מעקב", "לבדוק", "היום", "תזכור")) return { text: (followups.length ? `איתי, יש ${followups.length} לידים שמחכים למעקב (3+ ימים ללא פנייה). הבולטים: ${followups.slice(0, 3).map((l) => l.n).join(" · ")}.` : "אין מעקבים דחופים כרגע — כל הכבוד, איתי! 👏") + motivat(), action: { label: "פתח לידים", run: () => go("leads") } };
+  if (has("נשלח", "הצעות") || (has("הצעה") && !has("חדש", "צור"))) return { text: (sent.length ? `איתי, ${sent.length} הצעות מחיר ממתינות לתשובה. שווה לחזור אליהן: ${sent.slice(0, 3).map((l) => l.n).join(" · ")}.` : "אין כרגע הצעות שנשלחו וממתינות.") + motivat(), action: { label: "פתח לידים", run: () => go("leads") } };
+  if (has("חם", "לוהט")) return { text: (hot.length ? `איתי, יש לך ${hot.length} לידים חמים (בתהליך/הצעה נשלחה). תעדף אותם: ${hot.slice(0, 4).map((l) => l.n).join(" · ")}.` : "אין כרגע לידים חמים.") + motivat(), action: { label: "פתח לידים", run: () => go("leads") } };
+  if (has("עסקא", "פתוח", "צבר")) return { text: `איתי, ${open.length} עסקאות פתוחות בשווי ${ils(openVal)}. נסגרו החודש: ${wonMonth.length}.` + motivat(), action: { label: "פתח עסקאות", run: () => go("deals") } };
+  if (has("לקוח")) return { text: `איתי, יש לך ${custs.length} לקוחות פעילים.` + motivat(), action: { label: "פתח לקוחות", run: () => go("custs") } };
+  if (has("מסלול", "מפה", "נסיע", "פגיש")) return { text: "פותח את מפת העסקים — בחר עיר ואבנה לך מסלול פגישות יעיל, איתי. 🗺️", action: { label: "פתח מפה", run: () => go("map") } };
+  if (has("הצעת מחיר", "חדש", "צור", "בנה הצעה")) { onNewDeal && onNewDeal(); return { text: "פתחתי עסקה חדשה, איתי — בחר פריטים מהמחירון והוסף הנחה אם צריך. 📝" }; }
+  if (has("סיכום", "דוח", "מצב", "בוקר טוב", "מה המצב")) return { text: `איתי, הנה הסיכום שלך: ${leads.length.toLocaleString()} לידים · ${followups.length} מעקבים להיום · ${sent.length} הצעות ממתינות · ${open.length} עסקאות פתוחות (${ils(openVal)}) · ${custs.length} לקוחות.` + motivat() };
+  return { text: "לא הבנתי את הפקודה. כתוב \"עזרה\" כדי לראות מה אני יודע לעשות. (טיפ: עם מפתח Groq חינמי אני הופך ל-AI מלא.)" };
+}
+const ASSIST_QUICK = ["מעקבים להיום", "הצעות שנשלחו", "לידים חמים", "עסקאות פתוחות", "סיכום", "פתח מסלול"];
+
+/* ── Free AI brain via Groq (same key as the Alpha app, shared localStorage).
+   When a key exists the assistant becomes a real AI that knows the live CRM
+   and can draft messages, handle objections, prioritise and navigate. ── */
+const groqKey = () => { try { return localStorage.getItem("alpha_groq") || ""; } catch { return ""; } };
+const hasAI = () => !!groqKey();
+function assistSystem({ leads, deals, custs }) {
+  const open = deals.filter((d) => d.status === "פתוח");
+  const openVal = open.reduce((a, d) => a + (d.total || 0), 0);
+  const wonMonth = deals.filter((d) => d.status === "נסגר" && (d.wonAt || "").startsWith(monthKey()));
+  const fu = leads.filter((l) => ["פנייה ראשונה", "בתהליך"].includes(l.crmStatus) && daysSince((l.outreach || [])[0]?.date) >= 3).length;
+  const sent = leads.filter((l) => l.crmStatus === "הצעה נשלחה").length;
+  const hot = leads.filter((l) => ["בתהליך", "הצעה נשלחה"].includes(l.crmStatus)).length;
+  const pl = loadHgPricelist().map((p) => `${p.name} ₪${p.price}`).join(", ");
+  return `אתה העוזר האישי החכם של איתי — איש מכירות בכיר ב-${BIZ} (מערכות מיגון, איתור ובטיחות לרכבים כבדים: איתוראן, מצלמות רוורס, מסכים חכמים, פוינטר רב-קודן וכו'). פנה אליו תמיד בשם "איתי". דבר עברית טבעית, קצרה וממוקדת מכירות, בטון מקצועי, אנרגטי וחם. אתה עוזר ב: ניסוח הודעות מעקב/וואטסאפ ללקוח, טיפול בהתנגדויות מחיר, ניסוח הצעות ותמחור, תעדוף לידים, בניית תוכנית יום, וטיפים לסגירת עסקאות. כשרלוונטי תן צעד פעולה קונקרטי אחד. פעם בכמה תשובות (לא בכל אחת), סיים במשפט קצר ומחזק למוטיבציה כדי לעודד את איתי — כמו מאמן מכירות שמאמין בו.
+היום ${todayISO()}. נתוני ה-CRM החיים של איתי: ${leads.length.toLocaleString()} לידים, ${fu} מעקבים להיום, ${sent} הצעות שנשלחו וממתינות, ${hot} לידים חמים, ${open.length} עסקאות פתוחות בשווי ${ils(openVal)}, נסגרו החודש ${wonMonth.length}, ${custs.length} לקוחות.
+מחירון Heavy Guard: ${pl}.
+אם המשתמש מבקש לנווט במערכת, הוסף בסוף התשובה תג מתאים (ואל תזכיר אותו בטקסט): [[GO:home]] לבקרה, [[GO:leads]] ללידים, [[GO:deals]] לעסקאות, [[GO:custs]] ללקוחות, [[GO:map]] למפה/מסלולים, [[NEWDEAL]] לפתיחת הצעת מחיר חדשה.`;
+}
+const TAGRE = /\[\[(GO:(?:home|leads|deals|custs|map)|NEWDEAL)\]\]/g;
+function applyAssistTags(text, { go, onNewDeal }) {
+  let m; TAGRE.lastIndex = 0;
+  while ((m = TAGRE.exec(text))) { const tag = m[1]; if (tag === "NEWDEAL") onNewDeal && onNewDeal(); else go(tag.split(":")[1]); }
+  return text.replace(TAGRE, "").trim();
+}
+// Free Groq model wheel — rotate to the next model on rate-limit so it never sticks.
+const AG_GROQ_MODELS = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "gemma2-9b-it", "llama3-70b-8192"];
+async function askGroqChat(system, history, user) {
+  const key = groqKey(); if (!key) throw new Error("NO_KEY");
+  const messages = [{ role: "system", content: system }, ...history.slice(-6), { role: "user", content: user }];
+  let lastCode = 0;
+  for (const model of AG_GROQ_MODELS) {
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+      body: JSON.stringify({ model, messages, temperature: 0.7, max_tokens: 700 }),
+    });
+    if (res.ok) { const d = await res.json(); return d.choices?.[0]?.message?.content?.trim() || ""; }
+    lastCode = res.status;
+    if (res.status === 401 || res.status === 403) break;   // bad key — stop trying
+    // 429/400/404/503 → rotate to the next free model
+  }
+  throw new Error("Groq " + lastCode);
+}
+
+function AssistantPanel({ leads, deals, custs, go, onNewDeal, showToast }) {
+  const ai = hasAI();
+  const welcome = ai
+    ? "שלום איתי! 👋 אני העוזר החכם שלך. אני מכיר את נתוני ה-CRM שלך בזמן אמת — בקש ממני לנסח הודעת מעקב, לטפל בהתנגדות מחיר, לתעדף לידים, לבנות תוכנית יום או כל שאלת מכירות. " + motivatRand()
+    : "שלום איתי! 👋 אני העוזר האישי שלך. כרגע אני במצב פקודות מהירות — כדי לפתוח AI חכם וחינמי הוסף מפתח Groq בהגדרות של Alpha. כתוב \"עזרה\" לפקודות. " + motivatRand();
+  const [log, setLog] = useState([{ from: "bot", text: welcome }]);
+  const [q, setQ] = useState("");
+  const [busy, setBusy] = useState(false);
+  const histRef = React.useRef([]);
+
+  const push = (entry) => setLog((p) => [...p.slice(-8), entry]);
+
+  // Instant rule-based (quick chips + offline fallback)
+  const runRule = (text) => {
+    const t = (text ?? q).trim(); if (!t) return;
+    push({ from: "me", text: t });
+    const r = assistantReply(t, { leads, deals, custs, go, onNewDeal });
+    push({ from: "bot", text: r.text, action: r.action });
+    setQ("");
+  };
+
+  // Smart AI path (Groq, free) for free-typed questions; falls back to rules
+  const runAsk = async () => {
+    const t = q.trim(); if (!t || busy) return;
+    push({ from: "me", text: t }); setQ("");
+    if (!ai) { const r = assistantReply(t, { leads, deals, custs, go, onNewDeal }); push({ from: "bot", text: r.text, action: r.action }); return; }
+    setBusy(true);
+    try {
+      const sys = assistSystem({ leads, deals, custs });
+      const reply = await askGroqChat(sys, histRef.current, t);
+      const clean = applyAssistTags(reply, { go, onNewDeal }) || "✔";
+      histRef.current = [...histRef.current.slice(-6), { role: "user", content: t }, { role: "assistant", content: reply }];
+      push({ from: "bot", text: clean });
+    } catch (e) {
+      const r = assistantReply(t, { leads, deals, custs, go, onNewDeal });
+      push({ from: "bot", text: (String(e.message).includes("Groq") ? "ה-AI עמוס כרגע, עניתי במצב מהיר: " : "") + r.text, action: r.action });
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="ag-assist">
+      <div className="ag-assist-h"><span className="ag-assist-orb" /> <b>עוזר אישי</b><i>{ai ? "AI חינם · Groq" : "פקודות מהירות"}</i></div>
+      <div className="ag-assist-log">
+        {log.map((m, i) => (
+          <div key={i} className={"ag-msg " + m.from}>
+            <span>{m.text}</span>
+            {m.action && <button className="ag-msg-act" onClick={() => m.action.run()}>{m.action.label} ←</button>}
+            {m.from === "bot" && i > 0 && <button className="ag-msg-copy" title="העתק" onClick={async () => { const ok = await copyText(m.text); showToast && showToast(ok ? "הועתק ✓" : "העתקה נכשלה"); }}><Copy size={12} /></button>}
+          </div>
+        ))}
+        {busy && <div className="ag-msg bot ag-typing"><span>חושב…</span></div>}
+      </div>
+      <div className="ag-assist-quick">{ASSIST_QUICK.map((c) => <button key={c} onClick={() => runRule(c)}>{c}</button>)}</div>
+      <div className="ag-assist-in">
+        <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && runAsk()} placeholder={ai ? "שאל אותי כל דבר על מכירות…" : "כתוב פקודה…"} dir="rtl" disabled={busy} />
+        <button onClick={runAsk} disabled={busy}><Send size={16} /></button>
+      </div>
+    </div>
+  );
+}
+
+/* ============================ Map + route planner ============================ */
+function MapView({ leads, custs, deals, showToast }) {
+  const mapRef = React.useRef(null);
+  const layerRef = React.useRef(null);
+  const [scope, setScope] = useState("all"); // all | active
+  const [region, setRegion] = useState("");
+  const [sat, setSat] = useState(false);
+  const [ready, setReady] = useState(false);
+  const [routeCity, setRouteCity] = useState("");
+  const [geoV, setGeoV] = useState(0);      // bumps as exact addresses resolve
+  const [geoBusy, setGeoBusy] = useState(false);
+  const [geoProgress, setGeoProgress] = useState({ done: 0, total: 0 }); // visible progress — free geocoding is rate-limited to ~1/sec, so thousands of leads take real time; showing counts makes that legible instead of looking stuck
+
+  const dealLeadIds = useMemo(() => new Set(deals.map((d) => d.leadId)), [deals]);
+  const inScope = (l) => {
+    if (region && l.geo !== region) return false;
+    if (scope === "active") return ["פנייה ראשונה", "בתהליך", "הצעה נשלחה", "לקוח"].includes(l.crmStatus) || dealLeadIds.has(l.id);
+    return true;
+  };
+  const points = useMemo(() => {
+    const base = leads.filter((l) => inScope(l)).filter((l) => geoFor(l));
+    return base.map((l) => ({
+      id: l.id, n: l.n, city: l.city, geo: l.geo, addr: l.addr, status: l.crmStatus,
+      phone: (l.phones || [])[0] || "", phones: l.phones || [], email: l.e || "", web: l.w || "",
+      sector: l.sector || "", emp: l.emp || "", rev: l.rev || "", ll: geoFor(l),
+    }));
+  }, [leads, scope, region, dealLeadIds, geoV]);
+
+  // Background geocoding: turn city-level pins into exact-address pins
+  // (cached). Nominatim's free/no-key usage policy caps this at ~1 req/sec,
+  // so a large lead base can take a real while — surfacing done/total (not
+  // just a spinner) is what makes that legible instead of looking stuck or
+  // "wrong" while most pins are still sitting at their city-centre fallback.
+  useEffect(() => {
+    let alive = true;
+    const targets = leads.filter((l) => inScope(l) && (l.addr || "").trim() && !hasExact(l));
+    if (!targets.length) { setGeoBusy(false); setGeoProgress({ done: 0, total: 0 }); return; }
+    setGeoBusy(true);
+    setGeoProgress({ done: 0, total: targets.length });
+    (async () => {
+      let n = 0, done = 0;
+      for (const l of targets) {
+        if (!alive) return;
+        const ll = await geocodeAddress(l.addr, l.city);
+        if (!alive) return;
+        done++;
+        setGeoProgress({ done, total: targets.length });
+        if (ll) { n++; if (n % 4 === 0) setGeoV((v) => v + 1); }
+      }
+      if (alive) { setGeoV((v) => v + 1); setGeoBusy(false); }
+    })();
+    return () => { alive = false; };
+  }, [scope, region, leads, dealLeadIds]);
+
+  const routeCities = useMemo(() => {
+    const m = {}; points.forEach((p) => { if (p.city) m[p.city] = (m[p.city] || 0) + 1; });
+    return Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, 40);
+  }, [points]);
+  const routeStops = useMemo(() => routeCity ? points.filter((p) => p.city === routeCity) : [], [points, routeCity]);
+  const gmapsRoute = () => {
+    const stops = routeStops.slice(0, 10);
+    if (!stops.length) return;
+    const enc = (p) => encodeURIComponent([p.addr, p.city].filter(Boolean).join(" ") || p.n);
+    const dest = enc(stops[stops.length - 1]);
+    const wp = stops.slice(0, -1).map(enc).join("%7C");
+    const url = `https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=${dest}${wp ? `&waypoints=${wp}` : ""}`;
+    window.open(url, "_blank");
+  };
+
+  useEffect(() => {
+    let alive = true;
+    loadLeaflet().then((L) => {
+      if (!alive || mapRef.current) return;
+      const map = L.map("ag-map", { zoomControl: true, attributionControl: false }).setView([31.6, 34.9], 7.4);
+      mapRef.current = map; setReady(true);
+    }).catch(() => showToast("טעינת המפה נכשלה — בדוק חיבור לאינטרנט"));
+    return () => { alive = false; if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; } };
+  }, []);
+
+  // base tiles (switch on sat toggle)
+  const tileRef = React.useRef(null);
+  useEffect(() => {
+    const L = window.L; const map = mapRef.current; if (!L || !map) return;
+    if (tileRef.current) { map.removeLayer(tileRef.current); tileRef.current = null; }
+    tileRef.current = sat
+      ? L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { maxZoom: 19 })
+      : L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", { maxZoom: 20 });
+    tileRef.current.addTo(map);
+  }, [sat, ready]);
+
+  // markers — clustered so the whole base renders smoothly
+  useEffect(() => {
+    const L = window.L; const map = mapRef.current; if (!L || !map) return;
+    if (layerRef.current) { map.removeLayer(layerRef.current); }
+    const grp = L.markerClusterGroup ? L.markerClusterGroup({ chunkedLoading: true, maxClusterRadius: 50, spiderfyOnMaxZoom: true }) : L.layerGroup();
+    window.__agMe = (num) => meLookup(num, showToast);
+    const esc = (s) => String(s || "").replace(/'/g, "\\'").replace(/</g, "&lt;");
+    const webUrl = (w) => w ? (/^https?:\/\//.test(w) ? w : "https://" + w) : "";
+    points.forEach((p) => {
+      const color = CRM_COLOR[p.status] || "#C2912E";
+      const icon = L.divIcon({ className: "ag-pin", html: `<span style="background:${color}"></span>`, iconSize: [16, 16] });
+      const m = L.marker(p.ll, { icon });
+      const tel = `tel:${(p.phone || "").replace(/\s/g, "")}`;
+      const wu = webUrl(p.web);
+      const exact = hasExact(p);
+      const info = [];
+      if (p.sector) info.push(`<div style="font-size:11.5px;color:#5a4d28;margin-top:3px">🏷️ ${esc(p.sector)}</div>`);
+      if (p.addr || p.city) info.push(`<div style="font-size:11.5px;color:#5a4d28">📍 ${esc([p.addr, p.city].filter(Boolean).join(", "))}${p.addr ? (exact ? ' <span style="color:#2E9E5B;font-weight:700">· מיקום מדויק</span>' : ' <span style="color:#B4841F;font-weight:700">· ממתין לדיוק כתובת (כרגע מרכז העיר)</span>') : ""}</div>`);
+      if (p.emp) info.push(`<div style="font-size:11.5px;color:#5a4d28">👥 ${esc(p.emp)} מועסקים</div>`);
+      if (p.rev) info.push(`<div style="font-size:11.5px;color:#5a4d28">💰 מחזור: ₪${Number(p.rev).toLocaleString()} אלף</div>`);
+      if (p.phones.length > 1) info.push(`<div dir="ltr" style="font-size:11px;color:#917E50">${esc(p.phones.slice(1, 4).join(" · "))}</div>`);
+      const html = `<div style="font-family:Heebo,Arial;direction:rtl;min-width:210px;max-width:250px">
+        <b style="font-size:14px;color:#2C2510">${esc(p.n)}</b>
+        <span style="display:inline-block;background:${color}22;color:${color};border:1px solid ${color}66;border-radius:20px;padding:1px 8px;font-size:10px;font-weight:700;margin-right:5px">${esc(p.status)}</span>
+        ${info.join("")}
+        ${p.phone ? `<div dir="ltr" style="margin:6px 0 2px;font-weight:800;font-size:13px;color:#2C2510">${esc(p.phone)}</div>` : ""}
+        <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px">
+          ${wu ? `<a href="${esc(wu)}" target="_blank" rel="noreferrer" style="background:#C2912E;color:#241A06;border-radius:7px;padding:5px 10px;text-decoration:none;font-size:11px;font-weight:800">🌐 אתר</a>` : ""}
+          ${p.phone ? `<a href="${tel}" style="background:#1B7E9C;color:#fff;border-radius:7px;padding:5px 10px;text-decoration:none;font-size:11px;font-weight:700">חייג</a>` : ""}
+          <a href="${wazeTo(p)}" target="_blank" style="background:#33CCFF;color:#062a36;border-radius:7px;padding:5px 10px;text-decoration:none;font-size:11px;font-weight:700">Waze</a>
+          ${p.email ? `<a href="mailto:${esc(p.email)}" style="background:#F5EDD9;color:#917E50;border:1px solid #E6D4A8;border-radius:7px;padding:5px 10px;text-decoration:none;font-size:11px;font-weight:700">מייל</a>` : ""}
+          ${p.phone ? `<button onclick="window.__agMe('${esc(p.phone)}')" style="background:#FBF3DF;color:#A2761F;border:1px solid #C2912E;border-radius:7px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer">Me · העתק</button>` : ""}
+        </div></div>`;
+      m.bindPopup(html);
+      grp.addLayer(m);
+    });
+    // Customer markers — gold star, distinct from lead pins
+    custs.forEach((c) => {
+      const ll = cityCoords(c.city);
+      if (!ll) return;
+      const j = jitter(c.id || c.name || "c", 0.004);
+      const cll = [ll[0] + j[0], ll[1] + j[1]];
+      const icon = L.divIcon({ className: "ag-pin-cust", html: `<span>★</span>`, iconSize: [22, 22] });
+      const m = L.marker(cll, { icon, zIndexOffset: 500 });
+      const tel = `tel:${(c.phone || "").replace(/\s/g, "")}`;
+      const custHtml = `<div style="font-family:Heebo,Arial;direction:rtl;min-width:180px;max-width:230px">
+        <b style="font-size:14px;color:#2C2510">★ ${esc(c.name)}</b>
+        <span style="display:inline-block;background:#C2912E22;color:#C2912E;border:1px solid #C2912E66;border-radius:20px;padding:1px 8px;font-size:10px;font-weight:700;margin-right:5px">לקוח</span>
+        ${c.city ? `<div style="font-size:11.5px;color:#5a4d28;margin-top:3px">📍 ${esc(c.city)}${c.region ? " · " + esc(c.region) : ""}</div>` : ""}
+        ${c.phone ? `<div dir="ltr" style="margin:6px 0 2px;font-weight:800;font-size:13px;color:#2C2510">${esc(c.phone)}</div>` : ""}
+        <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px">
+          ${c.phone ? `<a href="${tel}" style="background:#1B7E9C;color:#fff;border-radius:7px;padding:5px 10px;text-decoration:none;font-size:11px;font-weight:700">חייג</a>` : ""}
+          ${c.phone ? `<button onclick="window.__agMe('${esc(c.phone)}')" style="background:#FBF3DF;color:#A2761F;border:1px solid #C2912E;border-radius:7px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer">Me · העתק</button>` : ""}
+        </div></div>`;
+      m.bindPopup(custHtml);
+      grp.addLayer(m);
+    });
+    grp.addTo(map); layerRef.current = grp;
+  }, [points, custs, ready]);
+
+  return (
+    <div className="ag-flow map">
+      <header className="ag-head sm"><div style={{ flex: 1 }}><div className="ag-title">מפת העסקים</div><div className="ag-sub">{points.length.toLocaleString()} עסקים{geoBusy ? ` · מדייק כתובות מדויקות… (${geoProgress.done.toLocaleString()}/${geoProgress.total.toLocaleString()})` : " · מיקום מדויק לפי כתובת"}</div></div>
+        <button className={"ag-mini" + (sat ? " on" : "")} onClick={() => setSat((v) => !v)}>{sat ? "🛰 לוויין" : "🗺 מפה"}</button>
+      </header>
+      <div className="ag-chips sm">
+        <button className={scope === "active" ? "on" : ""} onClick={() => setScope("active")}>פעילים</button>
+        <button className={scope === "all" ? "on" : ""} onClick={() => setScope("all")}>כל המאגר</button>
+        <span className="ag-chip-sep" />
+        <button className={!region ? "on" : ""} onClick={() => setRegion("")}>כל הארץ</button>
+        {GEO_OPTS.map((g) => <button key={g} className={region === g ? "on" : ""} onClick={() => setRegion(g)}>{g}</button>)}
+      </div>
+      <div id="ag-map" className="ag-map" />
+      <div className="ag-section">
+        <div className="ag-section-ttl">🧭 תכנון מסלול פגישות</div>
+        <select className="ag-select" value={routeCity} onChange={(e) => setRouteCity(e.target.value)}>
+          <option value="">בחר עיר לבניית מסלול…</option>
+          {routeCities.map(([c, n]) => <option key={c} value={c}>{c} ({n})</option>)}
+        </select>
+        {routeCity && (
+          <>
+            <div className="ag-route-list">
+              {routeStops.slice(0, 10).map((p, i) => (
+                <div className="ag-route-row" key={p.id}>
+                  <span className="ag-route-n">{i + 1}</span>
+                  <div className="ag-route-mid"><b>{p.n}</b><span>{[p.addr, p.city].filter(Boolean).join(", ")}</span></div>
+                  <a className="ag-route-waze" href={wazeTo(p)} target="_blank" rel="noreferrer">Waze</a>
+                </div>
+              ))}
+              {routeStops.length > 10 && <div className="ag-note-line">מציג 10 תחנות ראשונות מתוך {routeStops.length}</div>}
+            </div>
+            <button className="ag-btn" onClick={gmapsRoute}><MapPin size={15} /> פתח מסלול ב-Google Maps</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ============================ Samsonix DVR signing form ============================ */
+const SAM_PLANS = [
+  { id: "2gb", label: 'שימוש בשרת + גלישה 2GB לחודש 39 ש"ח + מע"מ (מומלץ עד 2 משתמשים)' },
+  { id: "4gb", label: 'שימוש בשרת + גלישה 4GB לחודש 49 ש"ח + מע"מ (מומלץ עד 4 משתמשים)' },
+  { id: "10gb", label: 'שימוש בשרת + גלישה 10GB לחודש 59 ש"ח + מע"מ (מעל 5 משתמשים)' },
+];
+const SAM_FORMS_KEY = "itai:samsonix"; // history — card details are NEVER stored
+
+// Build the exact Samsonix DVR agreement HTML — pixel-faithful to the original paper form.
+// card = { num, expiry, cvv } — shown once then discarded (never persisted).
+// card may be null for inbox records where no card was stored.
+function _samsonixHtml(f, card, today) {
+  // checkbox square — checked or empty
+  const ck = (sel) =>
+    `<span style="display:inline-block;width:14px;height:14px;border:1.5px solid #222;vertical-align:middle;text-align:center;line-height:12px;font-size:10px;flex-shrink:0">${sel ? "✓" : ""}</span>`;
+  // underline field: label on right, value on underlined span
+  const fl = (label, val, w = "220px", dir = "rtl") =>
+    `<div style="margin:7px 0;font-size:12.5px;direction:rtl">${label}:&nbsp;<span style="display:inline-block;min-width:${w};border-bottom:1px solid #333;direction:${dir}">${val || ""}</span></div>`;
+
+  const parts = card ? (card.num || "").replace(/\D/g,"").match(/.{1,4}/g) || [] : [];
+  const g = (i) => parts[i] || "";
+  const ccExp  = card ? (card.expiry || "") : "";
+  const ccCvv  = card ? (card.cvv   || "") : "";
+
+  const [dd="___", mm="___", yyyy="2026"] = today.split("/");
+
+  return `<!DOCTYPE html><html lang="he" dir="rtl"><head><meta charset="utf-8">
+<title>Samsonix DVR · ${f.fullName || ""}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Arial,Helvetica,sans-serif;color:#111;font-size:12.5px;
+       padding:20px 28px;max-width:780px;margin:0 auto;direction:rtl}
+  /* logo */
+  .logo-area{display:flex;align-items:flex-end;gap:5px}
+  .logo-slash{font-size:32px;font-weight:900;font-style:italic;color:#111;line-height:1}
+  .logo-word{font-size:21px;font-weight:900;letter-spacing:.5px;color:#111;line-height:1}
+  .logo-sub{font-size:7.5px;letter-spacing:3px;color:#444;display:block;margin-top:2px}
+  /* date sits below logo, left-aligned */
+  .date-row{margin-top:4px;font-size:12px;direction:rtl}
+  .date-row span{display:inline-block;border-bottom:1px solid #333;min-width:36px;text-align:center;margin:0 2px}
+  /* centred underlined title */
+  .form-title{text-align:center;font-size:15px;font-weight:700;text-decoration:underline;
+               margin:12px 0 10px}
+  /* regular paragraphs */
+  .para{font-size:12.5px;line-height:1.85;margin-bottom:7px;direction:rtl}
+  /* two-column block: installer box RIGHT, payment text LEFT */
+  .two-col{display:flex;direction:rtl;gap:14px;margin:10px 0 8px;align-items:flex-start}
+  .installer-col{flex:0 0 auto;min-width:150px;text-align:right}
+  .installer-lbl{font-size:12px;text-decoration:underline;margin-bottom:4px}
+  .installer-box{border:2px solid #2e7d32;width:150px;height:60px;
+                 display:flex;align-items:center;justify-content:center;
+                 font-weight:700;font-size:13px}
+  .payment-col{flex:1;font-size:12.5px;line-height:1.85}
+  /* checkboxes */
+  .ck{display:flex;align-items:center;gap:7px;margin:5px 0;font-size:12.5px}
+  /* warning */
+  .warn{font-size:12px;margin:6px 0}
+  /* customer fields */
+  .fields{margin-top:10px}
+  .fl{margin:7px 0;font-size:12.5px}
+  .ul{display:inline-block;border-bottom:1px solid #333;min-width:230px}
+  /* credit card */
+  .cc-seg{display:inline-block;border-bottom:1px solid #333;min-width:54px;
+          text-align:center;font-size:12.5px}
+  /* bottom row */
+  .bottom{display:flex;direction:rtl;gap:18px;margin-top:16px;align-items:flex-end}
+  .sig-box{border:2px solid #2e7d32;width:155px;min-height:70px;flex-shrink:0;
+           display:flex;flex-direction:column;align-items:center;justify-content:center;padding:4px}
+  .sig-box img{max-width:140px;max-height:58px}
+  .sig-name{font-size:9.5px;color:#555;margin-top:3px}
+  .contact-txt{font-size:13px;font-weight:700;line-height:1.9;text-align:center;flex:1}
+  /* footer */
+  .ft{margin-top:14px;border-top:1px solid #bbb;padding-top:7px;
+      font-size:10px;text-align:center;color:#444;line-height:1.9;direction:ltr}
+  @media print{@page{size:A4;margin:7mm}body{padding:0}}
+</style></head><body>
+
+<!-- ── HEADER: logo (left) ────────────────────────────────────── -->
+<div style="display:flex;justify-content:space-between;align-items:flex-start">
+  <div>
+    <div class="logo-area">
+      <span class="logo-slash">&#47;</span>
+      <div>
+        <span class="logo-word">samsonix</span>
+        <span class="logo-sub">ENJOY YOUR DRIVE</span>
+      </div>
+    </div>
+    <div class="date-row">
+      <span>${dd}</span> / <span>${mm}</span> / <span style="min-width:52px">${yyyy}</span>
+      &nbsp;&nbsp;תאריך :
+    </div>
+  </div>
+</div>
+
+<!-- ── TITLE ──────────────────────────────────────────────────── -->
+<div class="form-title">שימוש בשרת לצפייה ב DVR</div>
+
+<!-- ── INTRO paragraphs ───────────────────────────────────────── -->
+<p class="para">הננו שמחים שבחרתם והתקנת מערכת DVR עם מצלמות לצפייה מרחוק ובהקלטות שהוקלטו לזיכרון הפנימי.</p>
+<p class="para">המערכת היא המתקדמת ביותר כוללת זיכרון פנימי ומאפשרת צפייה מרחוק ובהקלטות שהוקלטו לזיכרון הפנימי כאשר המערכת במצב online ובאזור קליטה סלולרי תקין.</p>
+
+<!-- ── TWO-COLUMN: שם המתקין (right) | payment text (left) ───── -->
+<div class="two-col">
+  <div class="installer-col">
+    <div class="installer-lbl">שם המתקין</div>
+    <div class="installer-box">Heavy Guard</div>
+  </div>
+  <div class="payment-col">
+    על מנת לצפות מרחוק דרך אפליקציה ו/או במחשב בבית נדרש תשלום חודשי לשרת - עגן .<br>
+    למערכת מסופק כרטיס גלישה.* &nbsp;(אופציה ברכישת המערכת)<br>
+    ניתן לבטל הוראה זו בהודעה בכתב של 7 ימים מראש.
+  </div>
+</div>
+
+<!-- ── PLAN CHECKBOXES ────────────────────────────────────────── -->
+<div style="margin:8px 0;font-size:12.5px">נא לסמן ב&nbsp;✓&nbsp; את התשלום המבוקש.</div>
+<div class="ck">${ck(f.plan==="2gb")}&nbsp; שימוש בשרת + גלישה 2GB לחודש 39 ש"ח + מע"מ (מומלץ-עד 2 משתמשים ו/או עד 1T )</div>
+<div class="ck">${ck(f.plan==="4gb")}&nbsp; שימוש בשרת + גלישה 4GB לחודש 49 ש"ח + מע"מ (מומלץ-עד 4 משתמשים ו/או עד 2T )</div>
+<div class="ck">${ck(f.plan==="10gb")}&nbsp; שימוש בשרת + גלישה 10GB לחודש 59 ש"ח + מע"מ (מומלץ-מעל 5 משתמשים ו/או עד 4T )</div>
+
+<div class="warn">***שימוש חורג מהחבילה החודשית <u>לא</u> מאפשרת צפייה מרחוק ו/או צפייה בהקלטות***</div>
+
+<div class="ck">${ck(f.audio==="none")}&nbsp; <u>ללא הקלטת קול</u> – כל המצלמות ללא מיקרופון</div>
+<div class="ck">${ck(f.audio==="with")}&nbsp; <u>עם הקלטת קול</u> – הוספת מיקרופון לחלל הפנימי של הרכב <b>בעלות נוספת</b></div>
+
+<!-- ── CUSTOMER FIELDS ────────────────────────────────────────── -->
+<div class="fields">
+  <div class="fl">שם מלא של בעל הכרטיס:&nbsp;<span class="ul">${f.fullName||""}</span></div>
+  <div class="fl">מס ת"ז של בעל הכרטיס:&nbsp;<span class="ul">${f.idNum||""}</span></div>
+
+  <div class="fl" style="margin-top:10px">
+    מס כרטיס אשראי:&nbsp;
+    <span class="cc-seg">${g(0)}</span>&nbsp;-&nbsp;
+    <span class="cc-seg">${g(1)}</span>&nbsp;-&nbsp;
+    <span class="cc-seg">${g(2)}</span>&nbsp;-&nbsp;
+    <span class="cc-seg">${g(3)}</span>
+  </div>
+  <div class="fl">
+    תוקף:&nbsp;
+    <span class="cc-seg" style="min-width:44px">${ccExp.split("/")[0]||""}</span>
+    &nbsp;/&nbsp;
+    <span class="cc-seg" style="min-width:44px">${ccExp.split("/")[1]||""}</span>
+    &nbsp;&nbsp;&nbsp;&nbsp;
+    3 הספרות בגב הכרטיס(CVV):&nbsp;<span class="cc-seg" style="min-width:44px">${ccCvv||""}</span>
+  </div>
+
+  <div class="fl" style="margin-top:8px">כתובת המייל:&nbsp;<span class="ul" style="direction:ltr">${f.email||""}</span></div>
+  <div class="fl">
+    מס טלפון איש קשר:&nbsp;
+    <span style="display:inline-block;border-bottom:1px solid #333;min-width:140px;direction:ltr">${f.phone||""}</span>
+    &nbsp;&nbsp;שם&nbsp;
+    <span style="display:inline-block;border-bottom:1px solid #333;min-width:100px">${f.contactName||""}</span>
+  </div>
+  <div class="fl">שם החברה – לחשבונית&nbsp;<span class="ul">${f.company||""}</span></div>
+  <div class="fl">ע.מ/ח.פ.&nbsp;<span class="ul" style="direction:ltr">${f.bizNum||""}</span></div>
+
+  <div class="fl" style="margin-top:6px">
+    מספר רכב :&nbsp;
+    <span style="display:inline-block;border-bottom:1px solid #333;min-width:130px;direction:ltr">${f.veh1||""}</span>
+    &nbsp;&nbsp;סוג רכב&nbsp;
+    <span style="display:inline-block;border-bottom:1px solid #333;min-width:110px">${f.veh1Type||""}</span>
+  </div>
+  <div class="fl">
+    מספר רכב :&nbsp;
+    <span style="display:inline-block;border-bottom:1px solid #333;min-width:130px;direction:ltr">${f.veh2||""}</span>
+    &nbsp;&nbsp;סוג רכב&nbsp;
+    <span style="display:inline-block;border-bottom:1px solid #333;min-width:110px">${f.veh2Type||""}</span>
+  </div>
+
+  <div style="margin:8px 0;font-size:12.5px">בברכה</div>
+</div>
+
+<!-- ── BOTTOM: sig box (right) | contact text (center-left) ───── -->
+<div class="bottom">
+  <div class="sig-box">
+    ${f.sigDataUrl ? `<img src="${f.sigDataUrl}" alt="חתימה"/>` : ""}
+    ${f.fullName ? `<div class="sig-name">${f.fullName}</div>` : ""}
+  </div>
+  <div class="contact-txt">קונטקט ליון<br>שיווק ומכירות</div>
+</div>
+
+<!-- ── FOOTER ─────────────────────────────────────────────────── -->
+<div class="ft">
+  המצודה 31, אזור, 5800174 טל׳: 03-5662259-03 פקס 5568999<br>
+  St. Hametzuda 31, Azur, 5800174, Israel &nbsp; Tel: 03-5662259-03<br>
+  Website: http://www.samsonix.com &nbsp; Email: info@samsonix.com
+</div>
+<script>window.addEventListener('load',()=>setTimeout(()=>window.print(),400));<\/script>
+</body></html>`;
+}
+
+// Open a print-ready Samsonix DVR agreement. Card details are passed in-memory
+// only (shown once on the printable form, never persisted anywhere).
+function printSamsonix(f, card) {
+  const today = dmy(todayISO());
+  const win = window.open("", "_blank");
+  if (!win) return false;
+  win.document.write(_samsonixHtml(f, card, today));
+  win.document.close();
+  return true;
+}
+
+function SignaturePad({ onChange }) {
+  const ref = React.useRef(null);
+  const drawing = React.useRef(false);
+  React.useEffect(() => { const c = ref.current; if (!c) return; const r = c.getBoundingClientRect(); c.width = r.width; c.height = 150; const ctx = c.getContext("2d"); ctx.strokeStyle = "#16313a"; ctx.lineWidth = 2.2; ctx.lineCap = "round"; }, []);
+  const pos = (e) => { const c = ref.current; const r = c.getBoundingClientRect(); const t = e.touches ? e.touches[0] : e; return [t.clientX - r.left, t.clientY - r.top]; };
+  const start = (e) => { e.preventDefault(); drawing.current = true; const ctx = ref.current.getContext("2d"); const [x, y] = pos(e); ctx.beginPath(); ctx.moveTo(x, y); };
+  const move = (e) => { if (!drawing.current) return; e.preventDefault(); const ctx = ref.current.getContext("2d"); const [x, y] = pos(e); ctx.lineTo(x, y); ctx.stroke(); };
+  const end = () => { if (!drawing.current) return; drawing.current = false; onChange(ref.current.toDataURL("image/png")); };
+  const clear = () => { const c = ref.current; c.getContext("2d").clearRect(0, 0, c.width, c.height); onChange(""); };
+  return (
+    <div className="ag-sig">
+      <canvas ref={ref} className="ag-sig-c" onMouseDown={start} onMouseMove={move} onMouseUp={end} onMouseLeave={end} onTouchStart={start} onTouchMove={move} onTouchEnd={end} />
+      <button type="button" className="ag-sig-clear" onClick={clear}>נקה חתימה</button>
+    </div>
+  );
+}
+
+function SamsonixForm({ onClose, showToast }) {
+  const [f, setF] = useState({ plan: "4gb", audio: "none", bsd: false, fullName: "", idNum: "", email: "", phone: "", contactName: "", company: "", bizNum: "", veh1: "", veh1Type: "", veh2: "", veh2Type: "", sigDataUrl: "" });
+  const [card, setCard] = useState({ num: "", expiry: "", cvv: "" }); // in-memory only — never saved
+  const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  const submit = () => {
+    if (!f.fullName.trim() || !f.idNum.trim() || !f.veh1.trim()) { showToast("מלא שם, ת\"ז ומספר רכב"); return; }
+    if (!f.sigDataUrl) { showToast("חסרה חתימת לקוח"); return; }
+    const ok = printSamsonix(f, card);
+    if (!ok) { showToast("חסום חלונות קופצים — אפשר אותם"); return; }
+    // Persist history WITHOUT any card/CVV data.
+    try { const list = JSON.parse(localStorage.getItem(SAM_FORMS_KEY) || "[]"); list.unshift({ id: uid(), savedAt: todayISO(), fullName: f.fullName, phone: f.phone, plan: f.plan, veh1: f.veh1 }); localStorage.setItem(SAM_FORMS_KEY, JSON.stringify(list.slice(0, 200))); } catch {}
+    showToast("הטופס מוכן להדפסה/חתימה ✓");
+    onClose();
+  };
+  const I = (k, ph, extra = {}) => <input className="ag-input" value={f[k]} onChange={(e) => set(k, e.target.value)} placeholder={ph} {...extra} />;
+  return (
+    <div className="ag-modal" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="ag-sheet">
+        <div className="ag-sheet-head"><b>טופס החתמה · סמסוניקס DVR</b><button onClick={onClose}><X size={20} /></button></div>
+        <div className="ag-sheet-body">
+          <label className="ag-lbl">חבילת מנוי</label>
+          <div className="ag-chips sm nowrap">{SAM_PLANS.map((p) => <button key={p.id} className={f.plan === p.id ? "on" : ""} onClick={() => set("plan", p.id)}>{p.id.toUpperCase()}</button>)}</div>
+          <label className="ag-lbl">הקלטת קול</label>
+          <div className="ag-chips sm nowrap">
+            <button className={f.audio === "none" ? "on" : ""} onClick={() => set("audio", "none")}>ללא קול</button>
+            <button className={f.audio === "with" ? "on" : ""} onClick={() => set("audio", "with")}>עם קול</button>
+            <button className={f.bsd ? "on" : ""} onClick={() => set("bsd", !f.bsd)}>BSD + 4 מצלמות</button>
+          </div>
+          <label className="ag-lbl">שם מלא של בעל הכרטיס *</label>{I("fullName", "שם מלא")}
+          <div className="ag-row"><div style={{ flex: 1 }}><label className="ag-lbl">ת"ז *</label>{I("idNum", "ת\"ז", { dir: "ltr" })}</div><div style={{ flex: 1 }}><label className="ag-lbl">טלפון</label>{I("phone", "05X", { dir: "ltr" })}</div></div>
+          <label className="ag-lbl">מייל</label>{I("email", "name@mail.com", { dir: "ltr" })}
+          <div className="ag-row"><div style={{ flex: 1 }}><label className="ag-lbl">שם חברה</label>{I("company", "חברה")}</div><div style={{ flex: 1 }}><label className="ag-lbl">ע.מ / ח.פ</label>{I("bizNum", "מספר", { dir: "ltr" })}</div></div>
+          <div className="ag-row"><div style={{ flex: 1 }}><label className="ag-lbl">מספר רכב *</label>{I("veh1", "מספר", { dir: "ltr" })}</div><div style={{ flex: 1 }}><label className="ag-lbl">סוג רכב</label>{I("veh1Type", "סוג")}</div></div>
+          <div className="ag-row"><div style={{ flex: 1 }}><label className="ag-lbl">רכב 2</label>{I("veh2", "מספר", { dir: "ltr" })}</div><div style={{ flex: 1 }}><label className="ag-lbl">סוג רכב 2</label>{I("veh2Type", "סוג")}</div></div>
+          <div className="ag-sam-pay">
+            <div className="ag-lbl" style={{ marginTop: 0 }}>פרטי תשלום (הוראת קבע) 🔒 לא נשמרים</div>
+            <input className="ag-input" value={card.num} onChange={(e) => setCard({ ...card, num: e.target.value })} placeholder="מספר כרטיס אשראי" dir="ltr" inputMode="numeric" autoComplete="off" />
+            <div className="ag-row"><input className="ag-input" value={card.expiry} onChange={(e) => setCard({ ...card, expiry: e.target.value })} placeholder="תוקף MM/YY" dir="ltr" autoComplete="off" /><input className="ag-input" value={card.cvv} onChange={(e) => setCard({ ...card, cvv: e.target.value })} placeholder="CVV" dir="ltr" inputMode="numeric" autoComplete="off" /></div>
+          </div>
+          <label className="ag-lbl">חתימת הלקוח *</label>
+          <SignaturePad onChange={(d) => set("sigDataUrl", d)} />
+        </div>
+        <div className="ag-sheet-foot">
+          <button className="ag-btn ghost" onClick={() => {
+            if (!cloud.cloudConfigured()) { showToast("חבר קודם מסד נתונים (כפתור הענן)"); return; }
+            if (!f.phone.trim()) { showToast("הזן טלפון לקוח לשליחת הקישור"); return; }
+            window.open(waLink(f.phone, `שלום, למילוי טופס המנוי לסמסוניקס: ${customerSamLink(f.phone)}`), "_blank");
+          }}><Send size={15} /> שלח קישור ללקוח</button>
+          <button className="ag-btn" onClick={submit}><FileText size={15} /> הפק טופס לחתימה</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   HeavyGuard Showroom — visual product catalog for customer presentations
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ProductImg — per-model accurate SVG illustrations */
+function ProductImg({ id, cat, size = 80 }) {
+  const vb = "0 0 120 90";
+  const w = size * (120/90), h = size;
+  // ── C11 / 12EV — boxy rear camera with sun visor + LED array ──────────────
+  if (id === "C11" || id === "12EV") return (
+    <svg width={w} height={h} viewBox={vb} fill="none">
+      {/* sun visor */}
+      <rect x="22" y="14" width="66" height="8" rx="2" fill="#1a1a1a" stroke="#333" strokeWidth="1"/>
+      <rect x="24" y="16" width="62" height="5" rx="1" fill="#222"/>
+      {/* body */}
+      <rect x="18" y="21" width="74" height="52" rx="4" fill="#1c1c1c" stroke="#444" strokeWidth="1.5"/>
+      <rect x="22" y="25" width="66" height="44" rx="3" fill="#141414"/>
+      {/* mounting bracket right */}
+      <rect x="90" y="30" width="12" height="32" rx="2" fill="#1a1a1a" stroke="#333" strokeWidth="1"/>
+      <circle cx="96" cy="37" r="3" fill="#111" stroke="#444" strokeWidth="1"/>
+      <circle cx="96" cy="55" r="3" fill="#111" stroke="#444" strokeWidth="1"/>
+      {/* LED grid — 3×6 around central lens */}
+      {[28,36,44,52,60,68].map(x=>[31,47].map(y=><circle key={x+"-"+y} cx={x} cy={y} r="2.2" fill="#ddd" opacity="0.85"/>))}
+      {/* center lens */}
+      <circle cx="50" cy="39" r="13" fill="#0a0a0a" stroke="#555" strokeWidth="1.5"/>
+      <circle cx="50" cy="39" r="9" fill="#080808" stroke="#888" strokeWidth="1"/>
+      <circle cx="50" cy="39" r="5.5" fill="#050505"/>
+      <circle cx="47" cy="36" r="2" fill="white" opacity="0.15"/>
+      {/* mounting base bottom */}
+      <rect x="30" y="72" width="50" height="5" rx="2" fill="#1a1a1a" stroke="#333" strokeWidth="1"/>
+      <rect x="38" y="76" width="8" height="8" rx="1" fill="#151515" stroke="#333" strokeWidth="1"/>
+      <rect x="64" y="76" width="8" height="8" rx="1" fill="#151515" stroke="#333" strokeWidth="1"/>
+    </svg>
+  );
+  // ── C500 — slim windshield dash cam with adhesive mount ──────────────────
+  if (id === "C500") return (
+    <svg width={w} height={h} viewBox={vb} fill="none">
+      {/* adhesive mount top — red strip */}
+      <rect x="25" y="18" width="70" height="10" rx="3" fill="#cc2200"/>
+      <rect x="27" y="20" width="66" height="6" rx="2" fill="#ee3311" opacity="0.7"/>
+      {/* main slim body */}
+      <rect x="20" y="27" width="80" height="34" rx="5" fill="#1c1c1c" stroke="#444" strokeWidth="1.5"/>
+      <rect x="24" y="31" width="72" height="26" rx="4" fill="#141414"/>
+      {/* lens — front left area */}
+      <circle cx="45" cy="44" r="11" fill="#0a0a0a" stroke="#555" strokeWidth="1.5"/>
+      <circle cx="45" cy="44" r="7.5" fill="#080808" stroke="#777" strokeWidth="1"/>
+      <circle cx="45" cy="44" r="4.5" fill="#050505"/>
+      <circle cx="42.5" cy="41.5" r="1.8" fill="white" opacity="0.18"/>
+      {/* side connector lines */}
+      <rect x="26" y="39" width="12" height="3" rx="1.5" fill="#333"/>
+      <rect x="72" y="38" width="18" height="4" rx="2" fill="#1a1a1a" stroke="#333" strokeWidth="1"/>
+      <rect x="80" y="36" width="8" height="8" rx="2" fill="#222" stroke="#444" strokeWidth="1"/>
+      {/* bottom edge detail */}
+      <rect x="30" y="59" width="60" height="3" rx="1.5" fill="#222"/>
+    </svg>
+  );
+  // ── C190 — thin cylinder dual front/rear ─────────────────────────────────
+  if (id === "C190") return (
+    <svg width={w} height={h} viewBox={vb} fill="none">
+      {/* cable at rear right */}
+      <path d="M100 50 Q108 50 110 55 Q112 60 108 62 L95 62" stroke="#333" strokeWidth="3" fill="none"/>
+      {/* ventilated hub/connector body */}
+      <ellipse cx="87" cy="50" rx="12" ry="14" fill="#1a1a1a" stroke="#444" strokeWidth="1.5"/>
+      {[44,48,52,56].map(y=><rect key={y} x="80" y={y} width="14" height="2" rx="1" fill="#111" stroke="#333" strokeWidth="0.5"/>)}
+      {/* adhesive mount top */}
+      <rect x="38" y="26" width="42" height="7" rx="2" fill="#cc2200"/>
+      {/* main slim cylinder body */}
+      <rect x="15" y="32" width="78" height="28" rx="10" fill="#1c1c1c" stroke="#444" strokeWidth="1.5"/>
+      <rect x="19" y="36" width="70" height="20" rx="8" fill="#141414"/>
+      {/* wide-angle lens front left */}
+      <circle cx="30" cy="46" r="11" fill="#0a0a0a" stroke="#666" strokeWidth="1.5"/>
+      <circle cx="30" cy="46" r="7.5" fill="#070707" stroke="#999" strokeWidth="1"/>
+      <circle cx="30" cy="46" r="4.5" fill="#040404"/>
+      <circle cx="27.5" cy="43.5" r="2" fill="white" opacity="0.15"/>
+    </svg>
+  );
+  // ── C600 — barrel cam with large Starvis lens + red stripe ──────────────
+  if (id === "C600") return (
+    <svg width={w} height={h} viewBox={vb} fill="none">
+      {/* red accent stripe on top */}
+      <rect x="30" y="18" width="60" height="7" rx="3" fill="#cc2200"/>
+      <rect x="32" y="19" width="56" height="4" rx="2" fill="#ee3311" opacity="0.6"/>
+      {/* main barrel body */}
+      <rect x="28" y="24" width="64" height="44" rx="8" fill="#1c1c1c" stroke="#444" strokeWidth="1.5"/>
+      <rect x="32" y="28" width="56" height="36" rx="6" fill="#141414"/>
+      {/* side mounting slots */}
+      <rect x="20" y="38" width="10" height="8" rx="2" fill="#1a1a1a" stroke="#333" strokeWidth="1"/>
+      <rect x="90" y="38" width="10" height="8" rx="2" fill="#1a1a1a" stroke="#333" strokeWidth="1"/>
+      {/* large Starvis lens center */}
+      <circle cx="60" cy="46" r="16" fill="#0a0a0a" stroke="#666" strokeWidth="2"/>
+      <circle cx="60" cy="46" r="12" fill="#070707" stroke="#888" strokeWidth="1.5"/>
+      <circle cx="60" cy="46" r="8.5" fill="#050505"/>
+      {/* colorful lens rings */}
+      <circle cx="60" cy="46" r="12" fill="none" stroke="#4466ff" strokeWidth="1" opacity="0.4"/>
+      <circle cx="60" cy="46" r="10" fill="none" stroke="#66aaff" strokeWidth="0.8" opacity="0.3"/>
+      <circle cx="60" cy="46" r="8.5" fill="none" stroke="#aa66ff" strokeWidth="0.7" opacity="0.25"/>
+      <circle cx="56.5" cy="42.5" r="3" fill="white" opacity="0.12"/>
+    </svg>
+  );
+  // ── R19 / R13 — dome camera on pipe clamp mount ──────────────────────────
+  if (id === "R19" || id === "R13") return (
+    <svg width={w} height={h} viewBox={vb} fill="none">
+      {/* pipe clamp bottom */}
+      <rect x="45" y="68" width="30" height="12" rx="2" fill="#1a1a1a" stroke="#333" strokeWidth="1"/>
+      <circle cx="60" cy="77" r="5" fill="#111" stroke="#444" strokeWidth="1.5"/>
+      {/* mount bracket arms */}
+      <rect x="42" y="55" width="12" height="18" rx="2" fill="#1c1c1c" stroke="#444" strokeWidth="1"/>
+      <rect x="66" y="55" width="12" height="18" rx="2" fill="#1c1c1c" stroke="#444" strokeWidth="1"/>
+      {/* dome body */}
+      <circle cx="60" cy="42" r="28" fill="#1c1c1c" stroke="#444" strokeWidth="1.5"/>
+      <circle cx="60" cy="42" r="24" fill="#141414"/>
+      {/* LED ring — 11 LEDs */}
+      {Array.from({length:11},(_,i)=>{const a=i/11*Math.PI*2-Math.PI/2; const r=18; return <circle key={i} cx={60+r*Math.cos(a)} cy={42+r*Math.sin(a)} r="2.5" fill="#ddd" opacity="0.85"/>;})}
+      {/* center lens */}
+      <circle cx="60" cy="42" r="9" fill="#0a0a0a" stroke="#666" strokeWidth="1.5"/>
+      <circle cx="60" cy="42" r="6" fill="#070707" stroke="#4488ff" strokeWidth="1"/>
+      <circle cx="60" cy="42" r="3.5" fill="#040404"/>
+      <circle cx="57.5" cy="39.5" r="1.5" fill="white" opacity="0.2"/>
+    </svg>
+  );
+  // ── T15 — dome side camera (hemisphere) ───────────────────────────────────
+  if (id === "T15") return (
+    <svg width={w} height={h} viewBox={vb} fill="none">
+      {/* base mount */}
+      <rect x="25" y="62" width="70" height="10" rx="3" fill="#1a1a1a" stroke="#333" strokeWidth="1"/>
+      <rect x="30" y="69" width="12" height="10" rx="2" fill="#151515" stroke="#333" strokeWidth="1"/>
+      <rect x="78" y="69" width="12" height="10" rx="2" fill="#151515" stroke="#333" strokeWidth="1"/>
+      {/* hemisphere dome body */}
+      <path d="M22 62 Q22 20 60 18 Q98 20 98 62 Z" fill="#1c1c1c" stroke="#444" strokeWidth="1.5"/>
+      <path d="M26 62 Q26 24 60 22 Q94 24 94 62 Z" fill="#141414"/>
+      {/* LED ring inside */}
+      {Array.from({length:9},(_,i)=>{const a=(i/9)*Math.PI+0.15; const r=28; return <circle key={i} cx={60+r*Math.cos(a)} cy={58-r*Math.sin(a)} r="2.2" fill="#ddd" opacity="0.8"/>;})}
+      {/* center lens */}
+      <circle cx="60" cy="46" r="11" fill="#0a0a0a" stroke="#555" strokeWidth="1.5"/>
+      <circle cx="60" cy="46" r="7.5" fill="#070707" stroke="#777" strokeWidth="1"/>
+      <circle cx="60" cy="46" r="4.5" fill="#040404"/>
+      <circle cx="57.5" cy="43.5" r="1.8" fill="white" opacity="0.15"/>
+    </svg>
+  );
+  // ── T7070M / T9052 / T10548SD — monitors ─────────────────────────────────
+  if (cat?.includes("מסך") || id?.includes("T70") || id?.includes("T90") || id?.includes("T10") || cat?.includes("BSD")) {
+    const isBSD = id?.includes("T10") || cat?.includes("BSD");
+    return (
+      <svg width={w} height={h} viewBox={vb} fill="none">
+        {/* sun visor */}
+        <rect x="8" y="10" width="104" height="9" rx="2" fill="#1a1a1a" stroke="#333" strokeWidth="1"/>
+        <rect x="10" y="11" width="100" height="6" rx="1.5" fill="#222"/>
+        {/* monitor body */}
+        <rect x="8" y="18" width="104" height="52" rx="3" fill="#1c1c1c" stroke="#444" strokeWidth="1.5"/>
+        {/* screen */}
+        <rect x="11" y="21" width="98" height="43" rx="2" fill={isBSD ? "#0a1020" : "#061018"}/>
+        {isBSD ? (<>
+          {/* 4-split screen */}
+          <rect x="13" y="23" width="46" height="19" rx="1" fill="#0d1a2a"/>
+          <rect x="61" y="23" width="46" height="19" rx="1" fill="#0a1420"/>
+          <rect x="13" y="44" width="46" height="18" rx="1" fill="#0d1828"/>
+          <rect x="61" y="44" width="46" height="18" rx="1" fill="#0a1620"/>
+          <rect x="13" y="23" width="94" height="2" fill="none"/>
+          <line x1="60" y1="23" x2="60" y2="62" stroke="#1a2a3a" strokeWidth="1"/>
+          <line x1="13" y1="43" x2="107" y2="43" stroke="#1a2a3a" strokeWidth="1"/>
+          {/* truck silhouettes */}
+          <rect x="20" y="28" width="28" height="12" rx="1" fill="#0f2035" opacity="0.8"/>
+          <rect x="67" y="28" width="28" height="12" rx="1" fill="#0f2035" opacity="0.8"/>
+          {/* BSD icons row */}
+          <rect x="15" y="46" width="10" height="10" rx="2" fill="#1a3a5a"/>
+          <rect x="27" y="46" width="10" height="10" rx="2" fill="#2a4a1a"/>
+          <rect x="39" y="46" width="10" height="10" rx="2" fill="#3a1a1a"/>
+          <rect x="51" y="46" width="7" height="10" rx="2" fill="#1a2a4a"/>
+        </>) : (<>
+          {/* road landscape */}
+          <rect x="13" y="23" width="94" height="39" rx="1" fill="#0d2040"/>
+          <rect x="13" y="48" width="94" height="14" rx="1" fill="#111a0a"/>
+          <path d="M55 62 L60 42 L65 62" fill="#333" opacity="0.5"/>
+          <rect x="55" y="55" width="10" height="2" rx="1" fill="#fff" opacity="0.4"/>
+        </>)}
+        {/* button row */}
+        <rect x="11" y="65" width="98" height="7" rx="1" fill="#111"/>
+        {[18,28,38,48,58,68,78,88,98].map(x=><rect key={x} x={x} y="67" width="6" height="3" rx="1" fill="#2a2a2a"/>)}
+        {/* side knob/mount */}
+        <rect x="0" y="26" width="10" height="16" rx="3" fill="#1a1a1a" stroke="#333" strokeWidth="1"/>
+        <rect x="110" y="26" width="10" height="16" rx="3" fill="#1a1a1a" stroke="#333" strokeWidth="1"/>
+        {/* stand */}
+        <rect x="48" y="72" width="24" height="4" rx="2" fill="#1a1a1a" stroke="#333" strokeWidth="1"/>
+        <rect x="54" y="75" width="12" height="8" rx="2" fill="#151515" stroke="#333" strokeWidth="1"/>
+      </svg>
+    );
+  }
+  // ── 15EV — side/wheel camera (wide-body dome) ─────────────────────────────
+  if (id === "15EV") return (
+    <svg width={w} height={h} viewBox={vb} fill="none">
+      <rect x="10" y="52" width="100" height="16" rx="4" fill="#1a1a1a" stroke="#333" strokeWidth="1"/>
+      <ellipse cx="60" cy="52" rx="50" ry="30" fill="#1c1c1c" stroke="#444" strokeWidth="1.5"/>
+      <ellipse cx="60" cy="52" rx="45" ry="25" fill="#141414"/>
+      {Array.from({length:8},(_,i)=>{const a=(i/8)*Math.PI*2; const r=30; return <circle key={i} cx={60+r*Math.cos(a)} cy={52+r*Math.sin(a)*0.55} r="2.2" fill="#ddd" opacity="0.8"/>;})}
+      <circle cx="60" cy="52" r="11" fill="#0a0a0a" stroke="#555" strokeWidth="1.5"/>
+      <circle cx="60" cy="52" r="7.5" fill="#070707" stroke="#777" strokeWidth="1"/>
+      <circle cx="60" cy="52" r="4.5" fill="#040404"/>
+      <circle cx="57.5" cy="49.5" r="1.8" fill="white" opacity="0.15"/>
+    </svg>
+  );
+  // ── systems / default — shield ────────────────────────────────────────────
+  return (
+    <svg width={w} height={h} viewBox={vb} fill="none">
+      <path d="M60 12 L88 26 L88 52 C88 68 75 78 60 84 C45 78 32 68 32 52 L32 26 Z" fill="#111122" stroke="rgba(var(--gold-rgb),0.6)" strokeWidth="2"/>
+      <path d="M60 18 L83 30 L83 52 C83 65 72 73 60 78 C48 73 37 65 37 52 L37 30 Z" fill="#0d0d20"/>
+      <circle cx="60" cy="48" r="12" fill="#0a0a18" stroke="rgba(var(--gold-rgb),0.4)" strokeWidth="1.5"/>
+      <path d="M53 48 L57 52 L68 41" stroke="rgba(var(--gold-rgb),0.9)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+const HG_CAMERAS = [
+  { id:"T15",      cat:"מצלמת דש",           tags:["IP69K","2כ","AHD 2MP"],       price:null,
+    desc:"Sony AHD 2MP מצלמת דש ממוגנת IP69K, ראיית לילה LED 20 מטר, מסגרת קטנה לרכב כבד." },
+  { id:"C11",      cat:"מצלמה אחורית",       tags:["ראיית לילה","WDR","18 LED"],  price:null,
+    desc:"Sony AHD 2MP אחורית, 18 נוריות LED 20 מטר, Smart D WDR, מותאמת לאוטובוסים וטרקטורים." },
+  { id:"15EV",     cat:"מצלמה צדדית/גלגל",  tags:["IP69K","130°","2כ"],          price:null,
+    desc:"Sony AHD 2MP CMOS שדה ראייה 130°, IP69K מלא, ראיית לילה, לאוטובוסים ורכבי שיווע." },
+  { id:"12EV",     cat:"מצלמה אחורית",       tags:["IP69K","1080P","עמיד"],       price:null,
+    desc:"Sony AHD 2MP 1080P IP69K, עמידה לאבק ומים, ראיית לילה, מסגרת אלומיניום קשיחה." },
+  { id:"C500",     cat:"מצלמה קדמית",        tags:["DVR","20M LED","IP69K"],      price:null,
+    desc:"Sony AHD 2MP קדמית, ראיית לילה LED 20 מטר, כבל 25 מטר, מתאים לאוטובוסים וחשמלית." },
+  { id:"C190",     cat:"מצלמה קדמית/אחורית", tags:["WDR","127°","1080P"],         price:null,
+    desc:"AHD 1080P קדמית/אחורית כפולה, שדה ראייה 127°, WDR מתקדם לתאורה קשה, מוגנת מלאה." },
+  { id:"C600",     cat:"מצלמה קדמית",        tags:["Starvis","IP67","AHD 2MP"],   price:null,
+    desc:"Sony Starvis AHD 2MP קדמית IP67, איכות תמונה גבוהה בתאורה נמוכה, עמידה בחוץ מלאה." },
+  { id:"R19",      cat:"מצלמת רוורס",        tags:["IP69K","11 LED","2כ"],        price:null,
+    desc:"Sony AHD 2MP רוורס, 11 נוריות LED חיצוניות IP69K, ראיית לילה מוארת, למשאיות ורכבי משא." },
+];
+const HG_MONITORS = [
+  { id:"T7070M",   cat:'מסך DVR 7"',          tags:['7"','4 מצלמות','DVR'],        price:null,
+    desc:'מסך 7 אינץ\' דיגיטלי, תמיכה ב-4 מצלמות AHD, ממשק פשוט, מתאים להתקנה בלוח מחוונים.' },
+  { id:"T9052",    cat:'מסך DVR 9"',           tags:['9"','DVR','IPS'],             price:null,
+    desc:'מסך 9 אינץ\' IPS איכותי, חיבור DVR, תמיכה ב-4 מצלמות, מתאים לאוטובוסים ורכבים גדולים.' },
+  { id:"T10548SD", cat:'מסך BSD 10.1"',        tags:['BSD','6 מצלמות','DVR','DMS'], price:1,
+    desc:'מסך BSD 10.1" IPS, 4 מצלמות AHD, הקלטה DVR 256GB, תוכנת BSD/DMS — הפתרון המלא לרכב כבד.' },
+];
+const HG_SYSTEMS = [
+  { id:"SYS_BASIC",  cat:"חבילה בסיסית",    tags:["מסך 7\"","2 מצלמות","רוורס"], price:null,
+    desc:"מסך 7 אינץ' + מצלמת רוורס + מצלמה אחורית, חיבור מלא, התקנה כולל." },
+  { id:"SYS_4CAM",   cat:"חבילת 4 מצלמות",  tags:["מסך 9\"","4 מצלמות","DVR"],   price:null,
+    desc:"מסך 9 אינץ' DVR + 4 מצלמות AHD (קדמית, אחורית, 2 צדדיות) + הקלטה." },
+  { id:"SYS_BSD",    cat:"חבילת BSD מלאה",   tags:["BSD","6 מצלמות","DMS","DVR"], price:null,
+    desc:"מסך BSD 10.1\" + עד 6 מצלמות + DVR + תוכנת BSD/DMS + מצלמת נהג. פתרון בטיחות מלא." },
+  { id:"SYS_ITURAN", cat:"איתוראן + מיגון",  tags:["GPS","איתוראן","מיגון"],      price:null,
+    desc:"מערכת איתוראן GPS למעקב ואיתור בזמן אמת, שדרוג מוצרי מיגון משלימים." },
+];
+
+function ShowroomView({ showToast, onQuote }) {
+  const [section, setSection] = useState("cameras"); // cameras | monitors | systems
+  const [selected, setSelected] = useState(null);    // selected product for detail view
+  const [present, setPresent] = useState(false);     // fullscreen presentation
+  const pricelist = useHgPricelist();
+
+  const priceFor = (id) => {
+    const pl = pricelist.find(p => (p.name||"").toLowerCase().includes(id.toLowerCase()));
+    return pl ? pl.price : null;
+  };
+
+  const items = section === "cameras" ? HG_CAMERAS : section === "monitors" ? HG_MONITORS : HG_SYSTEMS;
+
+  const addToQuote = (item) => {
+    const price = priceFor(item.id) || 0;
+    onQuote({ name: `${item.id} – ${item.cat}`, price });
+    showToast(`${item.id} נוסף להצעה ✓`);
+  };
+
+  if (present && selected) {
+    return (
+      <div className="sr-present" onClick={() => setPresent(false)}>
+        <div className="sr-present-inner" onClick={e => e.stopPropagation()}>
+          <button className="sr-present-close" onClick={() => setPresent(false)}><X size={22}/></button>
+          <div className="sr-present-badge">{selected.cat}</div>
+          <div className="sr-present-id">{selected.id}</div>
+          <div className="sr-present-icon">
+            <ProductImg id={selected.id} cat={selected.cat} size={140} />
+          </div>
+          <div className="sr-present-tags">
+            {selected.tags.map(t => <span key={t} className="sr-tag big">{t}</span>)}
+          </div>
+          <div className="sr-present-desc">{selected.desc}</div>
+          {priceFor(selected.id) && (
+            <div className="sr-present-price">{ils(priceFor(selected.id))} <small>+ מע"מ</small></div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="ag-view">
+      <div className="sr-header">
+        <div className="sr-header-top">
+          <Shield size={18}/> <span>שורום מוצרים · Heavy Guard</span>
+        </div>
+        <div className="sr-header-sub">הצג מוצרים ללקוח · לחץ על מוצר למצב הצגה</div>
+      </div>
+
+      <div className="sr-tabs">
+        <button className={section==="cameras"?"on":""} onClick={()=>setSection("cameras")}><Camera size={14}/> מצלמות</button>
+        <button className={section==="monitors"?"on":""} onClick={()=>setSection("monitors")}><Monitor size={14}/> מסכים</button>
+        <button className={section==="systems"?"on":""} onClick={()=>setSection("systems")}><Star size={14}/> חבילות</button>
+      </div>
+
+      <div className="sr-grid">
+        {items.map(item => (
+          <div key={item.id} className="sr-card" onClick={() => { setSelected(item); setPresent(true); }}>
+            <div className="sr-img-area">
+              <ProductImg id={item.id} cat={item.cat} size={80} />
+              <div className="sr-img-badge">{item.cat}</div>
+              <button className="sr-expand sr-expand-abs" onClick={e=>{e.stopPropagation();setSelected(item);setPresent(true);}} title="הצג ללקוח">
+                <Maximize2 size={13}/>
+              </button>
+            </div>
+            <div className="sr-card-body">
+              <div className="sr-card-head" style={{padding:0,paddingTop:2}}>
+                <div className="sr-card-info">
+                  <div className="sr-model">{item.id}</div>
+                </div>
+              </div>
+              <div className="sr-tags-row">
+                {item.tags.map(t => <span key={t} className="sr-tag">{t}</span>)}
+              </div>
+              <div className="sr-desc">{item.desc}</div>
+              {priceFor(item.id) && (
+                <div className="sr-price">{ils(priceFor(item.id))} <small>+ מע"מ</small></div>
+              )}
+              <div className="sr-card-foot">
+                <button className="sr-quote-btn" onClick={e=>{e.stopPropagation();addToQuote(item);}}>
+                  <Plus size={13}/> להצעת מחיר
+                </button>
+                <button className="sr-show-btn" onClick={e=>{e.stopPropagation();setSelected(item);setPresent(true);}}>
+                  <Maximize2 size={13}/> הצג ללקוח
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ============================ Product catalog ============================ */
+function ProductCatalog({ onClose, onQuote }) {
+  const pricelist = useHgPricelist();
+  const [q, setQ] = useState("");
+  const list = q ? pricelist.filter((p) => (p.name || "").toLowerCase().includes(q.toLowerCase())) : pricelist;
+  return (
+    <div className="ag-modal" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="ag-sheet">
+        <div className="ag-sheet-head"><b>קטלוג מוצרים · Heavy Guard</b><button onClick={onClose}><X size={20} /></button></div>
+        <div className="ag-sheet-body">
+          <div className="ag-searchbox"><Search size={15} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="חיפוש מוצר…" dir="rtl" />{q && <button onClick={() => setQ("")}><X size={14} /></button>}</div>
+          <div className="ag-cat-note">מסונכרן חי מהמחירון של Heavy Guard · {pricelist.length} מוצרים</div>
+          <div className="ag-cat-grid">
+            {list.map((p) => (
+              <div className="ag-cat-card" key={p.id || p.name}>
+                <div className="ag-cat-ic"><Tag size={18} /></div>
+                <div className="ag-cat-mid"><b>{p.name}</b><span>{ils(p.price)} <em>+ מע"מ</em></span></div>
+                <button className="ag-cat-add" onClick={() => onQuote(p)}><Plus size={15} /> להצעה</button>
+              </div>
+            ))}
+            {list.length === 0 && <div className="ag-empty sm">לא נמצאו מוצרים</div>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================ Cloud (shared DB) settings ============================ */
+const linkParam = (k) => { try { return new URLSearchParams((location.hash || "").replace(/^#/, "").replace(/&/g, "&")).get(k) || ""; } catch { return ""; } };
+function customerSamLink(toPhone) {
+  const base = location.origin + location.pathname;
+  let s = `${base}#samform&to=${encodeURIComponent((toPhone || "").replace(/\D/g, ""))}`;
+  const tok = cloud.cloudLinkToken();
+  if (tok) s += `&cfg=${tok}`;
+  return s;
+}
+function CloudSettings({ onClose, showToast }) {
+  const [cfg, setCfg] = useState(cloud.cloudConfigRaw());
+  const save = () => {
+    const t = cfg.trim();
+    if (t) { try { const o = JSON.parse(t); if (!o.projectId || !o.apiKey) { showToast("ההגדרות חסרות apiKey/projectId"); return; } } catch { showToast("ההגדרות אינן JSON תקין"); return; } }
+    cloud.setCloudConfig(t); showToast(t ? "הענן חובר ✓ רענן כדי לסנכרן" : "הענן נותק"); onClose();
+  };
+  return (
+    <div className="ag-modal" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="ag-sheet sm">
+        <div className="ag-sheet-head"><b>מסד נתונים משותף · ענן</b><button onClick={onClose}><X size={20} /></button></div>
+        <div className="ag-sheet-body">
+          <div className="ag-cat-note" style={{ lineHeight: 1.6 }}>
+            חבר מסד Firebase חינמי כדי ששניכם תראו ותערכו את אותם נתונים בזמן אמת.
+            פתח פרויקט ב-<b>console.firebase.google.com</b> → ⚙ Project settings → Your apps → Web → העתק את אובייקט <b>firebaseConfig</b> והדבק כאן. גם הפעל <b>Firestore Database</b> (מצב בדיקה). חינם, בלי כרטיס אשראי.
+          </div>
+          <label className="ag-lbl">firebaseConfig (JSON)</label>
+          <textarea className="ag-textarea" value={cfg} onChange={(e) => setCfg(e.target.value)} rows={8} dir="ltr" placeholder={'{\n  "apiKey": "...",\n  "authDomain": "...",\n  "projectId": "...",\n  "appId": "..."\n}'} />
+          <div className="ag-cat-note">סטטוס: {cloud.cloudConfigured() ? "מחובר 🟢" : "לא מחובר ⚪"}</div>
+        </div>
+        <div className="ag-sheet-foot"><button className="ag-btn ghost" onClick={onClose}>סגור</button><button className="ag-btn" onClick={save}>שמור</button></div>
+      </div>
+    </div>
+  );
+}
+
+/* PDF printout for a received customer Samsonix form — same template as printSamsonix.
+   Card details are never stored for inbox records, so card fields are left blank. */
+function printInboxSam(s) {
+  const today = dmy(s.savedAt || todayISO());
+  const win = window.open("", "_blank");
+  if (!win) return false;
+  win.document.write(_samsonixHtml(s, null, today));
+  win.document.close();
+  return true;
+}
+
+/* ============================ Itai's inbox: customer-submitted forms ============================ */
+function SamInbox({ showToast }) {
+  const [items, setItems] = useState([]);
+  const [view, setView] = useState(null);
+  useEffect(() => {
+    if (!cloud.cloudConfigured()) return;
+    cloud.cloudGet("itai:saminbox").then((v) => { if (v) setItems(Object.values(v).sort((a, b) => (b.ts || 0) - (a.ts || 0))); });
+    const off = cloud.cloudSubscribe((k, v) => { if (k === "itai:saminbox" && v) setItems(Object.values(v).sort((a, b) => (b.ts || 0) - (a.ts || 0))); }, ["itai:saminbox"]);
+    return off;
+  }, []);
+  const del = async (s) => {
+    if (!window.confirm(`למחוק לצמיתות את הטופס של ${s.fullName || "הלקוח"}?`)) return;
+    const next = items.filter((x) => x.id !== s.id);
+    setItems(next); setView(null);
+    const map = {}; next.forEach((x) => { map[x.id] = x; });
+    try { await cloud.cloudPush("itai:saminbox", map); showToast("הטופס נמחק ✓"); }
+    catch { setItems(items); showToast("המחיקה נכשלה"); }
+  };
+  if (!cloud.cloudConfigured() || !items.length) return null;
+  return (
+    <div className="ag-section">
+      <div className="ag-section-ttl">📥 טפסים נכנסים · סמסוניקס ({items.length})</div>
+      {items.slice(0, 8).map((s) => (
+        <div className="ag-deal-row flat" key={s.id} style={{ cursor: "pointer" }} onClick={() => setView(s)}>
+          <span className="ag-dot" style={{ background: "#1E9A60" }} />
+          <div className="ag-deal-mid"><b>{s.fullName || "לקוח"}</b><span>{[s.plan?.toUpperCase(), s.veh1].filter(Boolean).join(" · ")} · {s.savedAt}</span></div>
+          <button className="ag-icbtn d" title="מחק טופס" onClick={(e) => { e.stopPropagation(); del(s); }}><Trash2 size={15} /></button>
+        </div>
+      ))}
+      {view && (
+        <div className="ag-modal" onClick={(e) => { if (e.target === e.currentTarget) setView(null); }}>
+          <div className="ag-sheet sm">
+            <div className="ag-sheet-head"><b>טופס שהתקבל · {view.fullName}</b><button onClick={() => setView(null)}><X size={20} /></button></div>
+            <div className="ag-sheet-body">
+              <div className="ag-info"><b>שם:</b>&nbsp;{view.fullName} · ת"ז {view.idNum}</div>
+              <div className="ag-info"><b>טלפון:</b>&nbsp;<span dir="ltr">{view.phone}</span> · {view.email}</div>
+              <div className="ag-info"><b>חבילה:</b>&nbsp;{(view.plan || "").toUpperCase()} · קול: {view.audio === "with" ? "כן" : "לא"} {view.bsd ? "· BSD" : ""}</div>
+              <div className="ag-info"><b>רכב:</b>&nbsp;{view.veh1} {view.veh1Type} {view.veh2 ? `· ${view.veh2} ${view.veh2Type}` : ""}</div>
+              {view.sigDataUrl && <img src={view.sigDataUrl} alt="חתימה" style={{ maxWidth: 200, border: "1px solid var(--s7)", borderRadius: 8, marginTop: 8 }} />}
+              <div className="ag-cat-note" style={{ marginTop: 10 }}>🔒 פרטי האשראי לא נשמרו במערכת — הלקוח שלח אותם ישירות לוואטסאפ שלך.</div>
+            </div>
+            <div className="ag-sheet-foot">
+              <button className="ag-btn ghost" onClick={() => { navigator.clipboard?.writeText(`${view.fullName} · ${view.idNum} · ${view.phone} · ${(view.plan||"").toUpperCase()} · ${view.veh1}`); showToast("הפרטים הועתקו"); }}><Copy size={15} /> העתק</button>
+              <button className="ag-btn ghost" onClick={() => { const ok = printInboxSam(view); if (!ok) showToast("אפשר חלונות קופצים בדפדפן"); }}><FileText size={15} /> PDF</button>
+              <button className="ag-btn ghost" style={{ color: "var(--red)", borderColor: "var(--red)" }} onClick={() => del(view)}><Trash2 size={15} /> מחק</button>
+              <button className="ag-btn" onClick={() => setView(null)}>סגור</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================ Customer-facing Samsonix form (via link) ============================ */
+function CustomerSamsonix({ showToast }) {
+  const co = HG_COMPANY;
+  const toPhone = linkParam("to");
+  const [f, setF] = useState({ plan: "4gb", audio: "none", bsd: false, fullName: "", idNum: "", email: "", phone: "", contactName: "", company: "", bizNum: "", veh1: "", veh1Type: "", veh2: "", veh2Type: "", sigDataUrl: "" });
+  const [card, setCard] = useState({ num: "", expiry: "", cvv: "" });
+  const [doneState, setDone] = useState(false);
+  const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  const fullText = () => {
+    let t = `*טופס סמסוניקס DVR — ${co.name}*\nשם: ${f.fullName}\nת"ז: ${f.idNum}\nטלפון: ${f.phone}\nמייל: ${f.email}\nחברה: ${f.company} ${f.bizNum}\nחבילה: ${(SAM_PLANS.find(p=>p.id===f.plan)||{}).label||""}\nהקלטת קול: ${f.audio==="with"?"כן":"לא"}${f.bsd?"\nBSD + 4 מצלמות":""}\nרכב: ${f.veh1} ${f.veh1Type}${f.veh2?` · ${f.veh2} ${f.veh2Type}`:""}\n— תשלום (הוראת קבע) —\nכרטיס: ${card.num}\nתוקף: ${card.expiry} · CVV: ${card.cvv}`;
+    return t;
+  };
+  const submit = async () => {
+    if (!f.fullName.trim() || !f.idNum.trim() || !f.veh1.trim()) { showToast("מלא שם, ת\"ז ומספר רכב"); return; }
+    if (!f.sigDataUrl) { showToast("חסרה חתימה"); return; }
+    // Write NON-card data + signature to the shared inbox (card is NEVER stored).
+    const rec = { id: uid(), ts: Date.now(), savedAt: todayISO(), fullName: f.fullName, idNum: f.idNum, email: f.email, phone: f.phone, company: f.company, bizNum: f.bizNum, plan: f.plan, audio: f.audio, bsd: f.bsd, veh1: f.veh1, veh1Type: f.veh1Type, veh2: f.veh2, veh2Type: f.veh2Type, sigDataUrl: f.sigDataUrl };
+    await cloud.cloudPushChild("itai:saminbox", rec.id, rec);
+    setDone(true);
+    showToast("נשלח ✓");
+  };
+  if (doneState) {
+    return (
+      <div className="ag-cust-done">
+        <div className="ag-cust-done-card">
+          <img src={BULL_LOGO} alt="" style={{ width: 64, height: 64, margin: "0 auto 10px" }} />
+          <h2>תודה {f.fullName}! ✅</h2>
+          <p>הטופס נשלח לנציג. לחץ כדי לשלוח גם את אישור התשלום ישירות בוואטסאפ (פרטי האשראי נשלחים ישירות לנציג ואינם נשמרים במערכת).</p>
+          {toPhone && <a className="ag-btn wa" style={{ textDecoration: "none" }} href={waLink(toPhone, fullText())} target="_blank" rel="noreferrer"><Send size={15} /> שלח אישור בוואטסאפ</a>}
+        </div>
+      </div>
+    );
+  }
+  const I = (k, ph, extra = {}) => <input className="ag-input" value={f[k]} onChange={(e) => set(k, e.target.value)} placeholder={ph} {...extra} />;
+  return (
+    <div className="ag-cust-page">
+      <div className="ag-cust-head"><img src={BULL_LOGO} alt="" /><div><div className="ag-title">טופס מנוי סמסוניקס DVR</div><div className="ag-sub">{co.name} · מלא/י ושלח/י</div></div></div>
+      <div className="ag-cust-body">
+        <label className="ag-lbl">חבילת מנוי</label>
+        <div className="ag-chips sm nowrap">{SAM_PLANS.map((p) => <button key={p.id} className={f.plan === p.id ? "on" : ""} onClick={() => set("plan", p.id)}>{p.id.toUpperCase()}</button>)}</div>
+        <label className="ag-lbl">הקלטת קול</label>
+        <div className="ag-chips sm nowrap">
+          <button className={f.audio === "none" ? "on" : ""} onClick={() => set("audio", "none")}>ללא קול</button>
+          <button className={f.audio === "with" ? "on" : ""} onClick={() => set("audio", "with")}>עם קול</button>
+          <button className={f.bsd ? "on" : ""} onClick={() => set("bsd", !f.bsd)}>BSD + 4 מצלמות</button>
+        </div>
+        <label className="ag-lbl">שם מלא של בעל הכרטיס *</label>{I("fullName", "שם מלא")}
+        <div className="ag-row"><div style={{ flex: 1 }}><label className="ag-lbl">ת"ז *</label>{I("idNum", "ת\"ז", { dir: "ltr" })}</div><div style={{ flex: 1 }}><label className="ag-lbl">טלפון</label>{I("phone", "05X", { dir: "ltr" })}</div></div>
+        <label className="ag-lbl">מייל</label>{I("email", "name@mail.com", { dir: "ltr" })}
+        <div className="ag-row"><div style={{ flex: 1 }}><label className="ag-lbl">שם חברה</label>{I("company", "חברה")}</div><div style={{ flex: 1 }}><label className="ag-lbl">ע.מ / ח.פ</label>{I("bizNum", "מספר", { dir: "ltr" })}</div></div>
+        <div className="ag-row"><div style={{ flex: 1 }}><label className="ag-lbl">מספר רכב *</label>{I("veh1", "מספר", { dir: "ltr" })}</div><div style={{ flex: 1 }}><label className="ag-lbl">סוג רכב</label>{I("veh1Type", "סוג")}</div></div>
+        <div className="ag-row"><div style={{ flex: 1 }}><label className="ag-lbl">רכב 2</label>{I("veh2", "מספר", { dir: "ltr" })}</div><div style={{ flex: 1 }}><label className="ag-lbl">סוג רכב 2</label>{I("veh2Type", "סוג")}</div></div>
+        <div className="ag-sam-pay">
+          <div className="ag-lbl" style={{ marginTop: 0 }}>פרטי תשלום — הוראת קבע 🔒</div>
+          <input className="ag-input" value={card.num} onChange={(e) => setCard({ ...card, num: e.target.value })} placeholder="מספר כרטיס אשראי" dir="ltr" inputMode="numeric" autoComplete="off" />
+          <div className="ag-row"><input className="ag-input" value={card.expiry} onChange={(e) => setCard({ ...card, expiry: e.target.value })} placeholder="תוקף MM/YY" dir="ltr" autoComplete="off" /><input className="ag-input" value={card.cvv} onChange={(e) => setCard({ ...card, cvv: e.target.value })} placeholder="CVV" dir="ltr" inputMode="numeric" autoComplete="off" /></div>
+        </div>
+        <label className="ag-lbl">חתימה *</label>
+        <SignaturePad onChange={(d) => set("sigDataUrl", d)} />
+        <button className="ag-btn" style={{ width: "100%", marginTop: 14 }} onClick={submit}><Send size={16} /> שלח טופס</button>
+      </div>
+    </div>
+  );
+}
+
+/* ============================ Styles ============================ */
+function StyleTag() {
+  return <style>{`
+.ag{--void:#04040E;--s9:#0A0A18;--s8:#10101E;--s7:rgba(var(--gold-rgb),.2);--s4:#6878B0;--silver:#E0E4F8;--gold:#D4A843;--gold2:#B48828;--champ:#D8A840;--cyan:#18D8FF;--ok:#22D882;--red:#FF4A3E;
+  /* Decomposed RGB triples so the many hardcoded rgba(var(--gold-rgb),X) glow/
+     border tints and rgba(var(--card-rgb),X)/rgba(var(--card2-rgb),X) card-gradient tints
+     added by the "futuristic overhaul" pass can become theme-aware via
+     rgba(var(--gold-rgb),X) instead of never responding to a mood switch. */
+  --gold-rgb:212,168,67;--card-rgb:20,18,40;--card2-rgb:10,10,24;
+  font-family:'Heebo',Arial,sans-serif;color:var(--silver);background:var(--void);min-height:100%;direction:rtl;padding-bottom:74px;
+  background-image:linear-gradient(rgba(var(--gold-rgb),.025) 1px,transparent 1px),linear-gradient(90deg,rgba(var(--gold-rgb),.025) 1px,transparent 1px);
+  background-size:64px 64px;animation:agGrid 70s linear infinite;
+  position:relative}
+@keyframes agGrid{from{background-position:0 0,0 0}to{background-position:64px 64px,64px 64px}}
+.ag *{box-sizing:border-box}
+.ag-flow{padding:20px 18px 28px}
+.ag-head{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+.ag-head.sm{margin-bottom:12px}
+.ag-logo{width:46px;height:46px;border-radius:11px;object-fit:cover;flex-shrink:0}
+.ag-title{font-family:'Rubik';font-weight:900;font-size:19px;letter-spacing:-.3px}
+.ag-sub{font-size:12.5px;color:var(--s4);margin-top:2px}
+.ag-back{background:var(--s8);border:1px solid var(--s7);color:var(--silver);border-radius:10px;width:38px;height:38px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0}
+
+.ag-kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:9px;margin-bottom:14px}
+.ag-kpi{background:var(--s9);border:1px solid var(--s7);border-radius:13px;padding:13px;text-align:right;cursor:pointer;color:inherit;font-family:inherit}
+.ag-kpi:active{transform:scale(.98)}
+.ag-kpi b{display:block;font-family:'Rubik';font-weight:900;font-size:23px}
+.ag-kpi b.cy{color:var(--cyan)} .ag-kpi b.ok{color:var(--ok)}
+.ag-kpi span{font-size:12px;color:var(--s4)}
+
+.ag-card{background:var(--s9);border:1px solid var(--s7);border-radius:13px;padding:13px;margin-bottom:10px}
+.ag-card.big{margin-bottom:14px}
+.ag-card-row{display:flex;align-items:center;justify-content:space-between;padding:7px 0}
+.ag-card-row span{display:flex;align-items:center;gap:7px;font-size:13.5px;color:var(--s4)}
+.ag-card-row b{font-family:'Rubik';font-weight:900;font-size:17px}
+.ag-card-row b.cy{color:var(--cyan)} .ag-card-row b.ok{color:var(--ok)}
+
+.ag-cta{width:100%;display:flex;align-items:center;justify-content:center;gap:8px;background:linear-gradient(135deg,var(--champ),var(--gold) 45%,var(--gold2));color:#241A06;border:none;border-radius:13px;padding:15px;font-family:'Rubik';font-weight:900;font-size:16px;cursor:pointer;margin-bottom:16px;box-shadow:0 8px 24px rgba(228,188,99,.28)}
+.ag-cta:active{transform:scale(.985)}
+.ag-cust-ctas{display:flex;gap:10px}
+.ag-cust-ctas .ag-cta{margin-bottom:0}
+.ag-cta.ghost.warn{background:rgba(230,160,60,.12);color:#E6A03C;border:1px solid rgba(230,160,60,.4);box-shadow:none;font-size:14px;padding:13px}
+.ag-cta.ghost.warn:hover{background:rgba(230,160,60,.2)}
+
+.ag-secttl{font-family:'Rubik';font-weight:700;font-size:15px;margin:6px 0 10px}
+.ag-deal-row{display:flex;align-items:center;gap:10px;width:100%;background:var(--s9);border:1px solid var(--s7);border-radius:12px;padding:11px;margin-bottom:8px;cursor:pointer;color:inherit;font-family:inherit;text-align:right}
+.ag-deal-row.flat{cursor:default}
+.ag-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+.ag-deal-mid{flex:1;min-width:0}
+.ag-deal-mid b{display:block;font-size:14px;font-weight:700}
+.ag-deal-mid span{font-size:11.5px;color:var(--s4)}
+.ag-deal-val{font-family:'Rubik';font-weight:900;font-size:15px;color:var(--champ);white-space:nowrap}
+
+.ag-searchbox{display:flex;align-items:center;gap:9px;background:var(--s9);border:1px solid var(--s7);border-radius:11px;padding:11px 13px;margin-bottom:10px;color:var(--s4)}
+.ag-searchbox input{flex:1;background:none;border:none;outline:none;color:var(--silver);font-size:15px;font-family:inherit;min-width:0}
+.ag-searchbox button{background:none;border:none;color:var(--s4);cursor:pointer;display:flex;padding:0}
+.ag-chips{display:flex;gap:7px;overflow-x:auto;padding-bottom:8px;margin-bottom:6px;scrollbar-width:none}
+.ag-chips::-webkit-scrollbar{display:none}
+.ag-chips.nowrap{flex-wrap:wrap}
+.ag-chips button{flex-shrink:0;background:var(--s8);border:1px solid var(--s7);color:var(--s4);border-radius:20px;padding:7px 15px;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap}
+.ag-chips button.on{background:color-mix(in srgb,var(--sc,var(--gold)) 16%,transparent);border-color:var(--sc,var(--gold));color:var(--sc,var(--gold))}
+.ag-chips.sm button{padding:6px 12px;font-size:12px}
+
+.ag-card.lead,.ag-card.deal{cursor:pointer;text-align:right;width:100%;font-family:inherit;color:inherit;display:block}
+.ag-card-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px}
+.ag-card-name{font-size:14.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ag-badge{font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:20px;white-space:nowrap;flex-shrink:0}
+.ag-card-meta{display:flex;gap:12px;font-size:11.5px;color:var(--s4);flex-wrap:wrap;align-items:center}
+.ag-card-meta span{display:flex;align-items:center;gap:3px}
+.ag-card-meta .ag-act{color:var(--cyan)}
+.ag-card-sector{font-size:11.5px;color:var(--s4);margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ag-more{width:100%;background:var(--s8);border:1px solid var(--s7);color:var(--silver);border-radius:11px;padding:12px;font-family:inherit;font-weight:700;font-size:13.5px;cursor:pointer;margin:6px 0}
+
+.ag-pipeline{display:flex;gap:6px;overflow-x:auto;padding-bottom:10px;margin-bottom:12px;scrollbar-width:none}
+.ag-pipeline::-webkit-scrollbar{display:none}
+.ag-pipe{flex-shrink:0;background:var(--s8);border:1px solid var(--s7);color:var(--s4);border-radius:10px;padding:9px 13px;font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap}
+.ag-pipe.on{background:color-mix(in srgb,var(--sc) 18%,transparent);border-color:var(--sc);color:var(--sc)}
+
+.ag-section{background:var(--s9);border:1px solid var(--s7);border-radius:13px;padding:13px;margin-bottom:10px}
+.ag-section-ttl{font-family:'Rubik';font-weight:700;font-size:13.5px;color:var(--champ);margin-bottom:9px}
+.ag-section-ttl-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px}
+.ag-section-ttl-row .ag-section-ttl{margin-bottom:0}
+.ag-contact{display:flex;align-items:center;gap:9px;padding:8px 0;border-bottom:1px solid var(--s8);font-size:13.5px}
+.ag-contact span{flex:1}
+.ag-contact-a{background:var(--s8);border:1px solid var(--s7);color:var(--cyan);border-radius:8px;padding:5px 11px;font-size:12px;font-weight:700;text-decoration:none;display:flex;align-items:center;gap:4px}
+.ag-contact-a.wa{color:var(--ok)}
+.ag-info{display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px;color:var(--s4)}
+.ag-link{text-decoration:none;cursor:pointer}
+.ag-link:hover{color:var(--gold);text-decoration:underline}
+.ag-trunc{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.ag-mgr-name{font-weight:700;font-size:14px}
+.ag-mgr-role{font-size:11.5px;color:var(--s4);margin-right:7px}
+.ag-phone{display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid var(--s8);flex-wrap:wrap}
+.ag-phone-ic{color:var(--cyan);flex-shrink:0}
+.ag-phone-num{font-size:15px;font-weight:700;letter-spacing:.3px;flex:1;min-width:90px}
+.ag-phone-btn{display:flex;align-items:center;gap:5px;background:var(--s8);border:1px solid var(--s7);color:var(--cyan);border-radius:9px;padding:7px 12px;font-size:12.5px;font-weight:700;text-decoration:none;white-space:nowrap}
+.ag-phone-btn.wa{color:var(--ok);border-color:rgba(32,201,122,.35);background:rgba(32,201,122,.12)}
+.ag-note-line{font-size:11.5px;color:var(--s4);margin-bottom:9px;line-height:1.4}
+.ag-person{padding:10px 0;border-bottom:1px solid var(--s8)}
+.ag-person:last-child{border-bottom:none}
+.ag-person-top{display:flex;align-items:baseline;gap:7px;flex-wrap:wrap}
+.ag-person-phone{display:flex;align-items:center;gap:5px;font-size:13px;color:var(--silver);margin-top:5px;font-weight:600}
+.ag-person-acts{display:flex;gap:7px;margin-top:8px;flex-wrap:wrap}
+.ag-person-btn{display:flex;align-items:center;gap:5px;background:var(--s8);border:1px solid var(--s7);color:var(--cyan);border-radius:9px;padding:7px 13px;font-size:12.5px;font-weight:700;text-decoration:none;white-space:nowrap}
+.ag-person-btn.wa{color:var(--ok);border-color:rgba(32,201,122,.35);background:rgba(32,201,122,.12)}
+.ag-textarea,.ag-input,.ag-select{width:100%;background:var(--s8);border:1px solid var(--s7);color:var(--silver);border-radius:10px;padding:10px 12px;font-family:inherit;font-size:14px;outline:none}
+.ag-textarea{resize:vertical}
+.ag-btn{background:linear-gradient(135deg,var(--champ),var(--gold) 50%,var(--gold2));color:#241A06;border:none;border-radius:10px;padding:11px 16px;font-family:'Rubik';font-weight:900;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;margin-top:9px}
+.ag-btn.ghost{background:var(--s8);border:1px solid var(--s7);color:var(--silver)}
+.ag-btn.wa{background:linear-gradient(135deg,#3FD79A,#1faa70);color:#04140d}
+.ag-mini{background:var(--s8);border:1px solid var(--s7);color:var(--cyan);border-radius:8px;padding:6px 11px;font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer}
+.ag-row{display:flex;gap:8px;margin-top:8px}
+.ag-row .ag-btn,.ag-row .ag-select{flex:1;margin-top:0}
+.ag-addform{margin-top:8px}
+.ag-empty{text-align:center;padding:34px 16px;color:var(--s4)}
+.ag-empty svg{opacity:.5;margin-bottom:10px}
+.ag-empty div{font-weight:700;font-size:15px;color:var(--silver)}
+.ag-empty p{font-size:12.5px;margin-top:5px}
+.ag-empty.sm{padding:14px;font-size:12.5px}
+.ag-out{background:var(--s8);border-radius:9px;padding:9px 11px;margin-top:7px}
+.ag-out-h{display:flex;align-items:center;gap:8px;font-size:12px;margin-bottom:4px}
+.ag-out-t{font-weight:700;color:var(--champ)}
+.ag-out-r{color:var(--cyan)}
+.ag-out-d{margin-right:auto;color:var(--s4)}
+.ag-out-n{font-size:13px}
+
+.ag-deal-acts{display:flex;gap:7px;margin-top:10px;flex-wrap:wrap}
+.ag-abtn{display:flex;align-items:center;gap:5px;background:var(--s8);border:1px solid var(--s7);color:var(--silver);border-radius:9px;padding:8px 12px;font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer;text-decoration:none}
+.ag-abtn.wa{color:var(--ok);border-color:#9AD3B4}
+.ag-abtn.ok{color:#04140d;background:var(--ok);border-color:var(--ok)}
+.ag-abtn.d{color:var(--red);margin-right:auto}
+
+.ag-modal{position:fixed;inset:0;background:rgba(0,0,10,.7);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:flex;align-items:flex-end;justify-content:center;z-index:200}
+.ag-sheet{background:var(--s9);border:1px solid var(--s7);border-radius:18px 18px 0 0;width:100%;max-width:560px;max-height:92vh;display:flex;flex-direction:column}
+.ag-sheet.sm{max-height:80vh}
+.ag-sheet-head{display:flex;align-items:center;justify-content:space-between;padding:15px 16px;border-bottom:1px solid var(--s7)}
+.ag-sheet-head b{font-family:'Rubik';font-weight:900;font-size:16px}
+.ag-sheet-head button{background:none;border:none;color:var(--s4);cursor:pointer;display:flex}
+.ag-sheet-body{padding:14px 16px;overflow-y:auto}
+.ag-lbl{display:block;font-size:12px;color:var(--s4);margin:11px 0 5px;font-weight:700}
+.ag-lbl:first-child{margin-top:0}
+.ag-item{display:flex;gap:6px;margin-bottom:7px;align-items:center}
+.ag-input.desc{flex:1}
+.ag-input.qty{width:58px;text-align:center}
+.ag-input.price{width:80px}
+.ag-item-del{background:var(--s8);border:1px solid var(--s7);color:var(--red);border-radius:8px;width:34px;height:38px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0}
+.ag-additem{background:var(--s8);border:1px dashed var(--s7);color:var(--cyan);border-radius:10px;padding:10px;width:100%;font-family:inherit;font-weight:700;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;margin-top:4px}
+.ag-totbox{background:var(--s8);border-radius:11px;padding:12px;margin-top:12px}
+.ag-totrow{display:flex;justify-content:space-between;padding:5px 0;font-size:13.5px;color:var(--s4)}
+.ag-totrow b{color:var(--silver);font-family:'Rubik';font-weight:700}
+.ag-totrow.grand{border-top:1px solid var(--s7);margin-top:5px;padding-top:9px;font-size:16px}
+.ag-totrow.grand span,.ag-totrow.grand b{color:var(--champ);font-weight:900}
+.ag-link-opt{display:block;width:100%;text-align:right;background:var(--s8);border:1px solid var(--s7);color:var(--silver);border-radius:9px;padding:9px 11px;font-family:inherit;font-size:13px;cursor:pointer;margin-top:6px}
+.ag-sheet-foot{display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--s7)}
+.ag-sheet-foot .ag-btn{flex:1;margin-top:0}
+
+.ag-card.cust{display:flex;align-items:center;gap:10px}
+.ag-card.cust.compact{padding:8px 12px;margin-bottom:4px;border-radius:10px}
+.ag-cust-mid{flex:1;min-width:0}
+.ag-cust-mid b{display:block;font-size:14px;font-weight:700}
+.ag-cust-mid span{font-size:12px;color:var(--s4);display:block}
+.ag-cust-note{color:var(--champ)!important;font-size:11.5px!important}
+.ag-cust-acts{display:flex;gap:6px;align-items:center}
+.cust-region-group{margin-bottom:4px}
+.cust-region-hdr{display:flex;align-items:center;gap:6px;padding:8px 14px 4px;font-size:12px;font-weight:800;color:var(--gold2);text-transform:uppercase;letter-spacing:.5px}
+.cust-region-hdr svg{opacity:.7}
+.cust-region-cnt{background:var(--gold);color:#fff;border-radius:10px;font-size:10px;font-weight:800;padding:1px 7px;margin-right:4px}
+.cust-chip-cnt{opacity:.7;font-size:10px}
+.ag-pin-cust{background:none!important;border:none!important}
+.ag-pin-cust span{display:flex;align-items:center;justify-content:center;width:22px;height:22px;background:#C2912E;color:#fff;font-size:14px;border-radius:50%;box-shadow:0 2px 8px rgba(194,145,46,.6);border:2px solid #fff}
+.ag-wa{background:rgba(32,201,122,.12);border:1px solid rgba(32,201,122,.35);color:var(--ok);border-radius:9px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;text-decoration:none}
+.ag-wa.tel{background:var(--s8);border-color:var(--s7);color:var(--cyan)}
+.ag-icbtn{background:var(--s8);border:1px solid var(--s7);color:var(--s4);border-radius:9px;width:34px;height:34px;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.ag-icbtn.d{color:var(--red)}
+
+.ag-nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:rgba(var(--card2-rgb),.96);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--s7);z-index:100;padding-bottom:env(safe-area-inset-bottom)}
+.ag-nav button{flex:1;background:none;border:none;color:var(--s4);padding:9px 0 11px;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;font-family:inherit;transition:color .15s}
+.ag-nav button span{font-size:11px;font-weight:700}
+.ag-nav button.on{color:var(--gold)}
+.ag-nav-exit{color:var(--red)!important}
+.ag-toast{position:fixed;bottom:84px;left:50%;transform:translateX(-50%);background:var(--s8);border:1px solid var(--gold);color:var(--champ);padding:11px 18px;border-radius:11px;font-size:13.5px;font-weight:700;z-index:300;box-shadow:0 8px 30px rgba(var(--gold-rgb),.25);max-width:90vw;text-align:center}
+
+/* heavyguard.com link + social quick links */
+.ag-links{display:flex;align-items:center;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;max-width:190px}
+.ag-site{display:flex;align-items:center;gap:6px;background:linear-gradient(135deg,var(--champ),var(--gold) 55%,var(--gold2));color:#241A06;border-radius:10px;padding:7px 11px;text-decoration:none;font-weight:900;font-size:12.5px;flex-shrink:0;box-shadow:0 4px 14px rgba(194,145,46,.3)}
+.ag-site img{width:18px;height:18px;border-radius:4px;object-fit:cover}
+.ag-soc{width:34px;height:34px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border-radius:10px;text-decoration:none;cursor:pointer;border:1px solid var(--s7);background:var(--s9);color:var(--silver)}
+.ag-soc.fb{background:#1877F2;border-color:#1877F2;color:#fff}
+.ag-soc.tt{background:#111;border-color:#111;color:#fff}
+.ag-soc.send{background:linear-gradient(135deg,var(--champ),var(--gold2));border:none;color:#fff}
+.ag-soc.theme{background:conic-gradient(from 0deg,#C2912E,#1B7E9C,#1E9A60,#6D4FC4,#C0392B,#C2912E);border:none;color:#fff}
+.ag-soc.cloud{background:var(--s9);border:1px solid var(--s7);color:var(--s4)}
+.ag-soc.cloud.on{background:#E2F4EA;border-color:#9AD3B4;color:var(--ok)}
+/* customer-facing Samsonix page (via link) */
+.ag-cust-page{padding:16px 14px 40px;min-height:100%}
+.ag-cust-head{display:flex;align-items:center;gap:12px;margin-bottom:16px;padding-bottom:14px;border-bottom:2px solid var(--gold)}
+.ag-cust-head img{width:52px;height:52px;border-radius:11px;object-fit:cover}
+.ag-cust-body{display:flex;flex-direction:column}
+.ag-cust-done{min-height:100%;display:flex;align-items:center;justify-content:center;padding:24px}
+.ag-cust-done-card{background:var(--s9);border:1px solid var(--s7);border-radius:16px;padding:26px 20px;text-align:center;max-width:420px}
+.ag-cust-done-card h2{font-family:'Rubik';font-weight:900;font-size:22px;margin-bottom:8px;color:var(--champ)}
+.ag-cust-done-card p{font-size:13.5px;color:var(--s4);line-height:1.7;margin-bottom:16px}
+.ag-cust-done-card .ag-btn.wa{display:inline-flex;width:auto;padding:13px 22px}
+.ag-theme-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.ag-theme-opt{display:flex;align-items:center;gap:10px;background:var(--s9);border:1.5px solid var(--s7);border-radius:12px;padding:13px;font-family:inherit;font-size:14px;font-weight:700;color:var(--silver);cursor:pointer}
+.ag-theme-opt.on{border-color:var(--gold);background:rgba(var(--gold-rgb),.1)}
+.ag-theme-dot{width:24px;height:24px;border-radius:50%;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.2);border:2px solid #fff}
+
+/* discount row */
+.ag-disc{margin-bottom:2px}
+.ag-totrow.disc span,.ag-totrow.disc b{color:var(--ok)}
+.ag-q-disc span,.ag-q-disc b{color:var(--ok)!important}
+
+/* digital assistant */
+.ag-assist{background:linear-gradient(160deg,#0d0d1c,#111120);border:1px solid var(--s7);border-radius:15px;padding:13px;margin-bottom:14px;box-shadow:0 6px 22px rgba(var(--gold-rgb),.10)}
+.ag-assist-h{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.ag-assist-h b{font-family:'Rubik';font-weight:900;font-size:14.5px}
+.ag-assist-h i{font-style:normal;font-size:10.5px;color:var(--s4);margin-right:auto;background:var(--s8);border:1px solid var(--s7);padding:2px 8px;border-radius:20px}
+.ag-assist-orb{width:13px;height:13px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#fff,var(--gold) 55%,var(--gold2));box-shadow:0 0 10px rgba(194,145,46,.6);animation:agpulse 2.4s ease-in-out infinite}
+@keyframes agpulse{0%,100%{transform:scale(1);opacity:.85}50%{transform:scale(1.18);opacity:1}}
+.ag-assist-log{display:flex;flex-direction:column;gap:7px;max-height:210px;overflow-y:auto;margin-bottom:10px}
+.ag-msg{font-size:13px;line-height:1.5;padding:8px 11px;border-radius:11px;max-width:92%}
+.ag-msg.bot{background:var(--s8);border:1px solid var(--s7);color:var(--silver);align-self:flex-start;border-top-right-radius:3px}
+.ag-msg.me{background:linear-gradient(135deg,var(--gold),var(--gold2));color:#241A06;align-self:flex-end;font-weight:700;border-top-left-radius:3px}
+.ag-msg.bot{position:relative;padding-left:26px;white-space:pre-wrap}
+.ag-msg-act{display:block;margin-top:6px;background:var(--champ);color:#fff;border:none;border-radius:8px;padding:6px 11px;font-family:inherit;font-weight:700;font-size:12px;cursor:pointer}
+.ag-msg-copy{position:absolute;top:5px;left:5px;background:none;border:none;color:var(--s4);cursor:pointer;opacity:.55;padding:2px;display:flex}
+.ag-msg-copy:hover{opacity:1;color:var(--gold2)}
+.ag-typing span{opacity:.7;font-style:italic}
+.ag-assist-quick{display:flex;gap:6px;overflow-x:auto;padding-bottom:7px;margin-bottom:9px;scrollbar-width:none}
+.ag-assist-quick::-webkit-scrollbar{display:none}
+.ag-assist-quick button{flex-shrink:0;background:rgba(var(--gold-rgb),.08);border:1px solid rgba(var(--gold-rgb),.35);color:var(--gold);border-radius:20px;padding:6px 13px;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
+.ag-assist-in{display:flex;gap:7px}
+.ag-assist-in input{flex:1;background:var(--s9);border:1px solid var(--s7);border-radius:10px;padding:10px 12px;font-family:inherit;font-size:14px;color:var(--silver);outline:none}
+.ag-assist-in button{background:linear-gradient(135deg,var(--champ),var(--gold2));color:#fff;border:none;border-radius:10px;width:44px;display:flex;align-items:center;justify-content:center;cursor:pointer}
+
+/* map entry card on dashboard */
+.ag-mapcard{position:relative;overflow:hidden;width:100%;display:flex;align-items:center;gap:10px;background:linear-gradient(120deg,#2C2510,#5a4416 60%,var(--gold2));color:#fff8e8;border:none;border-radius:14px;padding:15px 14px;margin-bottom:16px;cursor:pointer;text-align:right;font-family:inherit;box-shadow:0 8px 24px rgba(60,45,10,.3)}
+.ag-mapcard-glow{position:absolute;inset:0;background:radial-gradient(circle at 85% 20%,rgba(228,188,99,.45),transparent 55%);pointer-events:none}
+.ag-mapcard-txt{flex:1;position:relative}
+.ag-mapcard-txt b{display:flex;align-items:center;gap:6px;font-family:'Rubik';font-weight:900;font-size:15px}
+.ag-mapcard-txt span{display:block;font-size:11.5px;color:#e8d9b0;margin-top:3px}
+
+/* map view */
+.ag-map{height:54vh;min-height:340px;border-radius:14px;overflow:hidden;border:1px solid var(--s7);margin-bottom:12px;box-shadow:0 8px 24px rgba(120,90,20,.12);background:var(--s8)}
+.ag-chip-sep{width:1px;background:var(--s7);margin:2px 4px;flex-shrink:0}
+.ag-mini.on{background:color-mix(in srgb,var(--gold) 18%,transparent);border-color:var(--gold);color:var(--gold2)}
+.ag-route-list{margin:10px 0 6px}
+.ag-route-row{display:flex;align-items:center;gap:9px;padding:8px 0;border-bottom:1px solid var(--s8)}
+.ag-route-n{width:24px;height:24px;flex-shrink:0;border-radius:50%;background:linear-gradient(135deg,var(--gold),var(--gold2));color:#241A06;font-family:'Rubik';font-weight:900;font-size:12px;display:flex;align-items:center;justify-content:center}
+.ag-route-mid{flex:1;min-width:0}
+.ag-route-mid b{display:block;font-size:13.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ag-route-mid span{font-size:11px;color:var(--s4)}
+.ag-route-waze{background:#33CCFF;color:#062a36;border-radius:8px;padding:6px 11px;font-size:11.5px;font-weight:800;text-decoration:none;flex-shrink:0}
+.leaflet-popup-content-wrapper{border-radius:12px}
+.ag-pin span{display:block;width:14px;height:14px;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.45)}
+
+/* Me copy button (replaces WhatsApp next to numbers) */
+.ag-phone-btn.me,.ag-person-btn.me{color:var(--gold);border-color:var(--gold);background:rgba(var(--gold-rgb),.12)}
+.ag-wa.me{background:rgba(var(--gold-rgb),.12);border:1px solid var(--gold);color:var(--gold);cursor:pointer}
+
+/* tool launch cards (Samsonix + catalog) */
+.ag-tools2{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:16px}
+.ag-tool{display:flex;flex-direction:column;align-items:flex-start;gap:2px;background:var(--s9);border:1px solid var(--s7);border-radius:13px;padding:13px;cursor:pointer;font-family:inherit;text-align:right;color:var(--silver)}
+.ag-tool svg{color:var(--gold2);margin-bottom:5px}
+.ag-tool b{font-family:'Rubik';font-weight:900;font-size:14px}
+.ag-tool span{font-size:11px;color:var(--s4)}
+.ag-tool:active{transform:scale(.98)}
+
+/* signature pad */
+.ag-sig{margin-top:4px}
+.ag-sig-c{width:100%;height:150px;background:#fff;border:1.5px dashed var(--s7);border-radius:10px;touch-action:none;cursor:crosshair}
+.ag-sig-clear{margin-top:6px;background:var(--s8);border:1px solid var(--s7);color:var(--s4);border-radius:8px;padding:6px 12px;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer}
+.ag-sam-pay{background:var(--s8);border:1px solid var(--s7);border-radius:11px;padding:11px;margin-top:10px;display:flex;flex-direction:column;gap:8px}
+.ag-sam-pay .ag-row{margin-top:0}
+
+/* product catalog */
+.ag-cat-note{font-size:11.5px;color:var(--s4);margin:4px 0 10px}
+.ag-cat-grid{display:flex;flex-direction:column;gap:8px}
+.ag-cat-card{display:flex;align-items:center;gap:10px;background:var(--s9);border:1px solid var(--s7);border-radius:12px;padding:11px}
+.ag-cat-ic{width:38px;height:38px;flex-shrink:0;border-radius:10px;background:var(--s8);display:flex;align-items:center;justify-content:center;color:var(--gold2)}
+.ag-cat-mid{flex:1;min-width:0}
+.ag-cat-mid b{display:block;font-size:13.5px;font-weight:700}
+.ag-cat-mid span{font-size:13px;color:var(--champ);font-weight:800}
+.ag-cat-mid em{font-style:normal;font-size:10.5px;color:var(--s4);font-weight:400}
+.ag-cat-add{display:flex;align-items:center;gap:4px;background:linear-gradient(135deg,var(--champ),var(--gold2));color:#fff;border:none;border-radius:9px;padding:8px 12px;font-family:inherit;font-size:12px;font-weight:800;cursor:pointer;flex-shrink:0}
+
+/* designed quote — 1:1 with the HeavyGuard app (hg2-qd-*) */
+.hg2-quotedoc{background:#fff;color:#1b2733;border-radius:14px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,.4)}
+.hg2-qd-band{display:flex;gap:14px;background:linear-gradient(135deg,#bfe3e6,#d6eef0);padding:20px 18px}
+.hg2-qd-brand{text-align:center;flex-shrink:0;width:118px}
+.hg2-qd-logo{width:84px;height:84px;object-fit:contain;margin:0 auto}
+.hg2-qd-name{font-family:'Rubik',sans-serif;font-weight:900;font-size:18px;color:#16313a;margin-top:4px;letter-spacing:.5px}
+.hg2-qd-co{font-size:10.5px;line-height:1.7;color:#2c4a52;margin-top:5px}
+.hg2-qd-titlebox{flex:1;text-align:right;padding-top:4px}
+.hg2-qd-title{font-family:'Rubik';font-weight:900;font-size:30px;color:#16313a;line-height:1}
+.hg2-qd-num{font-size:13px;color:#2c4a52;margin:4px 0 12px}
+.hg2-qd-meta{font-size:13px;color:#1b2733;line-height:1.7}
+.hg2-qd-meta b{font-size:15px}
+.hg2-qd-table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:4px}
+.hg2-qd-table th{color:#5a6b78;font-weight:700;padding:11px 10px;text-align:right;border-bottom:1.5px solid #cfd8e0}
+.hg2-qd-table th:nth-child(n+2),.hg2-qd-table td:nth-child(n+2){text-align:center}
+.hg2-qd-table td{padding:13px 10px;border-bottom:1px solid #eef1f5;font-family:ui-monospace,monospace;vertical-align:top}
+.hg2-qd-table td:first-child{font-family:'Heebo',sans-serif;font-weight:600;text-align:right;line-height:1.5}
+.hg2-qd-sums{padding:4px 10px}
+.hg2-qd-sums>div{display:flex;justify-content:space-between;align-items:center;padding:7px 0;font-size:13.5px;font-weight:700;color:#1b2733}
+.hg2-qd-sums>div b{font-family:ui-monospace,monospace}
+.hg2-qd-sums .tot{border-top:1px solid #e3e8ee;font-size:15px}
+.hg2-qd-sums .tot b{color:#0e7d8c;font-size:17px}
+.hg2-qd-sec{padding:14px 10px 4px;font-size:13px;font-weight:700;text-decoration:underline;color:#1b2733}
+.hg2-qd-list{margin:0;padding:0 28px 0 10px;font-size:12.5px;color:#2c4a52;line-height:1.9}
+.hg2-qd-pay{padding:2px 10px;font-size:12.5px;color:#2c4a52;line-height:1.6}
+.hg2-qd-foot{text-align:center;font-size:12.5px;color:#5a6b78;padding:16px 10px}
+.hg2-qd-bottomband{height:18px;background:linear-gradient(135deg,#bfe3e6,#d6eef0)}
+@media print{
+  body *{visibility:hidden!important}
+  .hg2-quotedoc,.hg2-quotedoc *{visibility:visible!important}
+  .hg2-quotedoc{position:absolute;inset:0;margin:0;box-shadow:none;border-radius:0}
+  .ag-quote-noprint{display:none!important}
+  /* Without this, most browsers default to "background graphics off" for
+     print/PDF and silently drop the cyan header band + bottom band gradient
+     backgrounds — the quote prints with those bands missing/wrong-colored
+     instead of matching what's shown on screen. */
+  .hg2-quotedoc,.hg2-quotedoc *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}
+}
+
+/* ── ShowroomView ── */
+.sr-header{background:linear-gradient(135deg,#0a0a14,#111122);border:1px solid rgba(var(--gold-rgb),.3);border-radius:16px;padding:16px;margin-bottom:14px}
+.sr-header-top{display:flex;align-items:center;gap:8px;font-weight:800;font-size:16px;color:var(--gold);letter-spacing:.02em;margin-bottom:4px}
+.sr-header-sub{font-size:12px;color:rgba(var(--gold-rgb),.6);padding-right:26px}
+.sr-tabs{display:flex;gap:6px;margin-bottom:14px}
+.sr-tabs button{flex:1;padding:9px 4px;border-radius:10px;border:1px solid var(--s7);background:var(--s9);color:var(--s4);cursor:pointer;font-family:inherit;font-size:13px;display:flex;align-items:center;justify-content:center;gap:5px;font-weight:600;transition:all .15s}
+.sr-tabs button.on{background:linear-gradient(135deg,#1a1200,#2a2000);border-color:var(--gold);color:var(--gold);font-weight:800}
+.sr-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding-bottom:16px}
+@media(max-width:480px){.sr-grid{grid-template-columns:1fr}}
+.sr-card{background:linear-gradient(160deg,#0e0e1a,#080810);border:1px solid rgba(var(--gold-rgb),.2);border-radius:16px;padding:0;cursor:pointer;transition:border-color .2s,transform .15s;display:flex;flex-direction:column;overflow:hidden}
+.sr-card:hover{border-color:rgba(var(--gold-rgb),.55);transform:translateY(-2px)}
+.sr-card:active{transform:scale(.98)}
+.sr-img-area{position:relative;background:radial-gradient(ellipse at 50% 60%,#0f0f28,#06060f);display:flex;align-items:center;justify-content:center;height:96px;border-bottom:1px solid rgba(var(--gold-rgb),.18)}
+.sr-img-badge{position:absolute;bottom:6px;left:8px;font-size:9.5px;font-weight:700;color:rgba(var(--gold-rgb),.75);letter-spacing:.04em;text-transform:uppercase;background:rgba(0,0,0,.5);padding:2px 6px;border-radius:4px}
+.sr-expand-abs{position:absolute;top:6px;right:6px;background:rgba(0,0,0,.4);border:1px solid rgba(var(--gold-rgb),.25);color:rgba(var(--gold-rgb),.5);cursor:pointer;padding:4px;border-radius:6px;transition:all .15s;display:flex;align-items:center}
+.sr-expand-abs:hover{color:var(--gold);border-color:rgba(var(--gold-rgb),.7);background:rgba(0,0,0,.7)}
+.sr-card-head{display:flex;align-items:flex-start;gap:10px;padding:10px 12px 0}
+.sr-card-info{flex:1;min-width:0}
+.sr-model{font-family:'Rubik',sans-serif;font-weight:900;font-size:18px;color:#f5e8c0;letter-spacing:.02em;line-height:1.1}
+.sr-cat{font-size:11px;color:rgba(var(--gold-rgb),.65);font-weight:600;margin-top:2px}
+.sr-expand{background:none;border:none;color:rgba(var(--gold-rgb),.4);cursor:pointer;padding:4px;flex-shrink:0;border-radius:6px;transition:color .15s}
+.sr-expand:hover{color:var(--gold)}
+.sr-card-body{padding:0 12px 12px;display:flex;flex-direction:column;gap:7px;flex:1}
+.sr-tags-row{display:flex;flex-wrap:wrap;gap:4px}
+.sr-tag{display:inline-block;background:rgba(var(--gold-rgb),.12);border:1px solid rgba(var(--gold-rgb),.3);color:#f0d28a;border-radius:6px;padding:2px 7px;font-size:10px;font-weight:700;letter-spacing:.01em}
+.sr-tag.big{font-size:14px;padding:6px 14px;border-radius:10px}
+.sr-desc{font-size:11.5px;color:rgba(220,210,190,.7);line-height:1.55}
+.sr-price{font-size:16px;font-weight:800;color:var(--gold);font-family:'Rubik',sans-serif}
+.sr-card-foot{display:flex;gap:6px;margin-top:2px}
+.sr-quote-btn{flex:1;display:flex;align-items:center;justify-content:center;gap:4px;background:rgba(var(--gold-rgb),.12);border:1px solid rgba(var(--gold-rgb),.25);color:var(--gold);border-radius:8px;padding:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;transition:background .15s}
+.sr-quote-btn:hover{background:rgba(var(--gold-rgb),.22)}
+.sr-show-btn{flex:1;display:flex;align-items:center;justify-content:center;gap:4px;background:linear-gradient(135deg,var(--gold),var(--gold2));color:#1a0e00;border:none;border-radius:8px;padding:7px;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit}
+/* Presentation (fullscreen) mode */
+.sr-present{position:fixed;inset:0;z-index:9999;background:linear-gradient(160deg,#020210,#080818,#020210);display:flex;align-items:center;justify-content:center;padding:24px}
+.sr-present-inner{position:relative;max-width:480px;width:100%;text-align:center;display:flex;flex-direction:column;align-items:center;gap:16px}
+.sr-present-close{position:absolute;top:-16px;right:-16px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:#fff;border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px}
+.sr-present-badge{font-size:13px;font-weight:700;color:rgba(var(--gold-rgb),.7);letter-spacing:.06em;text-transform:uppercase}
+.sr-present-id{font-family:'Rubik',sans-serif;font-weight:900;font-size:52px;color:#f5e8c0;letter-spacing:.04em;line-height:1;text-shadow:0 0 40px rgba(var(--gold-rgb),.4)}
+.sr-present-icon{color:rgba(var(--gold-rgb),.5);margin:8px 0}
+.sr-present-tags{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
+.sr-present-desc{font-size:15px;color:rgba(220,210,190,.8);line-height:1.7;max-width:380px}
+.sr-present-price{font-family:'Rubik',sans-serif;font-size:28px;font-weight:900;color:var(--gold)}
+
+/* ── Brand header (hidden on mobile, shown in sidebar on desktop) ── */
+.ag-nav-brand{display:none}
+
+/* ── Desktop sidebar layout ── */
+@media(min-width:768px){
+  .ag{padding-bottom:0;padding-right:240px}
+  .ag-flow{max-width:900px;margin:0 auto}
+  .ag-nav{
+    flex-direction:column;
+    right:0;left:auto;bottom:0;top:0;
+    width:240px;
+    border-top:none;
+    border-left:1px solid var(--s7);
+    padding:0 0 16px;
+    overflow-y:auto;
+    align-items:stretch
+  }
+  .ag-nav-brand{
+    display:flex;align-items:center;gap:10px;
+    padding:16px 18px;
+    border-bottom:1px solid var(--s7);
+    margin-bottom:8px;
+    background:linear-gradient(135deg,rgba(var(--gold-rgb),.1),transparent)
+  }
+  .ag-nav-brand-logo{width:36px;height:36px;border-radius:9px;object-fit:cover;flex-shrink:0}
+  .ag-nav-brand-txt{flex:1;text-align:right}
+  .ag-nav-brand-txt b{display:block;font-family:'Rubik';font-weight:900;font-size:14px;color:var(--gold);line-height:1.2}
+  .ag-nav-brand-txt span{font-size:10px;color:var(--s4);letter-spacing:.08em;text-transform:uppercase}
+  .ag-nav button{
+    flex:none;
+    flex-direction:row;
+    justify-content:flex-end;
+    padding:11px 18px;
+    gap:10px;
+    border-radius:0;
+    text-align:right
+  }
+  .ag-nav button span{font-size:13px;font-weight:700}
+  .ag-nav button.on{
+    background:linear-gradient(90deg,transparent,rgba(var(--gold-rgb),.12));
+    border-right:3px solid var(--gold)
+  }
+  .ag-nav-exit{margin-top:auto}
+  .ag-toast{bottom:24px;right:260px;left:auto;transform:none}
+  .ag-kpis{grid-template-columns:repeat(4,1fr)}
+  .ag-modal{align-items:center}
+  .ag-sheet{border-radius:18px;max-width:680px;max-height:88vh}
+  .ag-cust-page{max-width:760px;margin:0 auto}
+  .sr-grid{grid-template-columns:repeat(3,1fr)}
+  .ag-mapcard{max-width:700px}
+  .ag-map{height:60vh;min-height:420px}
+}
+
+/* ═══════════════════════════════════════════════
+   FUTURISTIC DESIGN SYSTEM — PREMIUM OVERRIDES
+   ═══════════════════════════════════════════════ */
+
+/* ── Keyframes ── */
+@keyframes agShimmer{0%{background-position:200% center}100%{background-position:-200% center}}
+@keyframes agBorderPulse{0%,100%{opacity:.35}50%{opacity:1}}
+@keyframes agGlowPulse{0%,100%{box-shadow:0 0 0 0 rgba(var(--gold-rgb),0)}50%{box-shadow:0 0 22px 4px rgba(var(--gold-rgb),.25)}}
+@keyframes agCardFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+@keyframes agCtaShine{0%{background-position:200% center}100%{background-position:-200% center}}
+@keyframes agNavGlow{0%,100%{opacity:.6}50%{opacity:1}}
+@keyframes agSpotlight{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
+@keyframes agKpiShimmer{0%,100%{border-color:rgba(var(--gold-rgb),.2)}50%{border-color:rgba(var(--gold-rgb),.7);box-shadow:0 0 18px 2px rgba(var(--gold-rgb),.2)}}
+@keyframes agToolHover{0%{box-shadow:0 4px 16px rgba(var(--gold-rgb),0)}100%{box-shadow:0 4px 28px rgba(var(--gold-rgb),.35)}}
+@keyframes agSrBorderFlow{0%{border-color:rgba(var(--gold-rgb),.18)}50%{border-color:rgba(var(--gold-rgb),.65)}100%{border-color:rgba(var(--gold-rgb),.18)}}
+@keyframes agPresentOrb{0%,100%{opacity:.5;transform:scale(1)}50%{opacity:.85;transform:scale(1.12)}}
+@keyframes agMsgGlow{0%,100%{box-shadow:0 0 0 0 rgba(24,216,255,0)}50%{box-shadow:0 0 16px 2px rgba(24,216,255,.18)}}
+@keyframes agCyanLine{from{background-position:0 0}to{background-position:200% 0}}
+
+/* ── KPI Cards — holographic shimmer ── */
+.ag-kpi{
+  background:linear-gradient(160deg,rgba(var(--card-rgb),.98),rgba(var(--card2-rgb),.98));
+  border:1px solid rgba(var(--gold-rgb),.35);
+  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  box-shadow:0 4px 20px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.04);
+  transition:transform .2s,box-shadow .2s,border-color .2s;
+  animation:agKpiShimmer 4s ease-in-out infinite;
+  position:relative;overflow:hidden
+}
+.ag-kpi::before{content:'';position:absolute;inset:0;background:linear-gradient(105deg,transparent 30%,rgba(var(--gold-rgb),.06) 50%,transparent 70%);background-size:200% 100%;animation:agShimmer 6s linear infinite;pointer-events:none}
+.ag-kpi:hover{transform:translateY(-3px) scale(1.025);box-shadow:0 8px 32px rgba(var(--gold-rgb),.2),inset 0 1px 0 rgba(255,255,255,.06)}
+.ag-kpi:active{transform:scale(.97)}
+
+/* ── Main Cards — deep glass ── */
+.ag-card{
+  background:linear-gradient(160deg,rgba(var(--card-rgb),.97),rgba(var(--card2-rgb),.97));
+  border:1px solid rgba(var(--gold-rgb),.2);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  box-shadow:0 2px 16px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.03);
+  transition:border-color .2s,box-shadow .2s,transform .15s
+}
+.ag-card:hover{border-color:rgba(var(--gold-rgb),.45);box-shadow:0 6px 28px rgba(var(--gold-rgb),.12)}
+.ag-card.lead:hover,.ag-card.deal:hover{transform:translateY(-2px)}
+
+/* ── Deal rows — neon hover ── */
+.ag-deal-row{
+  background:linear-gradient(160deg,rgba(14,12,28,.97),rgba(var(--card2-rgb),.97));
+  border:1px solid rgba(var(--gold-rgb),.18);
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  transition:border-color .2s,box-shadow .2s,transform .15s
+}
+.ag-deal-row:hover{border-color:rgba(var(--gold-rgb),.5);box-shadow:0 4px 20px rgba(var(--gold-rgb),.12);transform:translateX(-2px)}
+
+/* ── Sections — glass panels ── */
+.ag-section{
+  background:linear-gradient(160deg,rgba(var(--card-rgb),.97),rgba(var(--card2-rgb),.97));
+  border:1px solid rgba(var(--gold-rgb),.2);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  box-shadow:0 4px 24px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.03)
+}
+
+/* ── CTA Button — flowing shimmer ── */
+.ag-cta{
+  background:linear-gradient(270deg,var(--gold2),var(--champ),#fff5cc,var(--champ),var(--gold2));
+  background-size:300% 100%;
+  animation:agCtaShine 3.5s linear infinite;
+  box-shadow:0 8px 32px rgba(228,188,99,.4),0 2px 0 rgba(255,255,255,.15) inset;
+  letter-spacing:.02em;
+  transition:transform .15s,box-shadow .15s
+}
+.ag-cta:hover{transform:translateY(-2px);box-shadow:0 14px 40px rgba(228,188,99,.55)}
+.ag-cta:active{transform:scale(.985);animation-play-state:paused}
+
+/* ── Primary Button — gold glow ── */
+.ag-btn:not(.ghost):not(.wa){
+  background:linear-gradient(135deg,var(--champ),var(--gold) 50%,var(--gold2));
+  box-shadow:0 4px 18px rgba(var(--gold-rgb),.35);
+  transition:transform .15s,box-shadow .2s
+}
+.ag-btn:not(.ghost):not(.wa):hover{transform:translateY(-2px);box-shadow:0 8px 28px rgba(var(--gold-rgb),.5)}
+.ag-btn:not(.ghost):not(.wa):active{transform:scale(.97)}
+
+/* ── Search box — focus glow ring ── */
+.ag-searchbox{
+  background:linear-gradient(160deg,rgba(14,12,28,.97),rgba(var(--card2-rgb),.97));
+  border:1px solid rgba(var(--gold-rgb),.25);
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  transition:border-color .2s,box-shadow .2s
+}
+.ag-searchbox:focus-within{border-color:rgba(var(--gold-rgb),.75);box-shadow:0 0 0 3px rgba(var(--gold-rgb),.12),0 4px 20px rgba(var(--gold-rgb),.1)}
+
+/* ── Inputs ── */
+.ag-textarea,.ag-input,.ag-select{
+  background:linear-gradient(160deg,rgba(var(--card2-rgb),.97),rgba(var(--card2-rgb),.97));
+  border:1px solid rgba(var(--gold-rgb),.2);
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  transition:border-color .2s,box-shadow .2s
+}
+.ag-textarea:focus,.ag-input:focus,.ag-select:focus{border-color:rgba(var(--gold-rgb),.65);box-shadow:0 0 0 3px rgba(var(--gold-rgb),.1)}
+
+/* ── Bottom Nav — aurora border ── */
+.ag-nav{
+  background:rgba(var(--card2-rgb),.97);
+  border-top:1px solid transparent;
+  border-image:linear-gradient(90deg,transparent,rgba(var(--gold-rgb),.6),transparent) 1;
+  box-shadow:0 -8px 40px rgba(0,0,0,.6),0 -1px 0 rgba(var(--gold-rgb),.08);
+  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px)
+}
+.ag-nav button.on{
+  color:var(--gold);
+  text-shadow:0 0 12px rgba(var(--gold-rgb),.8)
+}
+.ag-nav button.on svg{filter:drop-shadow(0 0 5px rgba(var(--gold-rgb),.6))}
+
+/* ── Bottom sheet / Modal ── */
+.ag-modal{background:rgba(0,0,10,.8);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px)}
+.ag-sheet{
+  background:linear-gradient(160deg,rgba(var(--card2-rgb),.99),rgba(var(--card2-rgb),.99));
+  border:1px solid rgba(var(--gold-rgb),.25);
+  box-shadow:0 -16px 60px rgba(0,0,0,.7),0 0 0 1px rgba(var(--gold-rgb),.08),inset 0 1px 0 rgba(255,255,255,.04);
+  backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px)
+}
+.ag-sheet-head{border-bottom:1px solid rgba(var(--gold-rgb),.18)}
+.ag-sheet-foot{border-top:1px solid rgba(var(--gold-rgb),.18)}
+
+/* ── Toast ── */
+.ag-toast{
+  background:linear-gradient(135deg,rgba(var(--card2-rgb),.98),rgba(var(--card2-rgb),.98));
+  border:1px solid rgba(var(--gold-rgb),.5);
+  box-shadow:0 8px 40px rgba(var(--gold-rgb),.3);
+  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)
+}
+
+/* ── Showroom cards — holographic ── */
+.sr-card{
+  background:linear-gradient(160deg,rgba(var(--card2-rgb),.98),rgba(var(--card2-rgb),.98));
+  border:1px solid rgba(var(--gold-rgb),.22);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  box-shadow:0 4px 20px rgba(0,0,0,.5);
+  transition:border-color .3s,transform .2s,box-shadow .3s;
+  animation:agSrBorderFlow 5s ease-in-out infinite
+}
+.sr-card:hover{
+  border-color:rgba(var(--gold-rgb),.7);
+  transform:translateY(-4px);
+  box-shadow:0 12px 40px rgba(var(--gold-rgb),.22),0 4px 16px rgba(0,0,0,.5);
+  animation-play-state:paused
+}
+
+/* ── Showroom image area — deep glow ── */
+.sr-img-area{
+  background:radial-gradient(ellipse at 50% 60%,rgba(var(--card-rgb),.9),rgba(var(--card2-rgb),1));
+  position:relative
+}
+.sr-img-area::after{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 50% 90%,rgba(var(--gold-rgb),.12),transparent 60%);pointer-events:none}
+
+/* ── Showroom presentation — cosmic ── */
+.sr-present{
+  background:radial-gradient(ellipse at 50% 30%,rgba(var(--card-rgb),.98),rgba(var(--card2-rgb),1));
+  position:relative;overflow:hidden
+}
+.sr-present::before{
+  content:'';position:absolute;inset:0;
+  background-image:
+    radial-gradient(circle at 20% 20%,rgba(var(--gold-rgb),.06) 0%,transparent 40%),
+    radial-gradient(circle at 80% 80%,rgba(24,216,255,.05) 0%,transparent 40%),
+    linear-gradient(rgba(var(--gold-rgb),.018) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(var(--gold-rgb),.018) 1px,transparent 1px);
+  background-size:100% 100%,100% 100%,56px 56px,56px 56px;
+  animation:agGrid 80s linear infinite;
+  pointer-events:none
+}
+.sr-present-id{text-shadow:0 0 60px rgba(var(--gold-rgb),.5),0 0 120px rgba(var(--gold-rgb),.2)}
+.sr-present-price{text-shadow:0 0 30px rgba(var(--gold-rgb),.5)}
+
+/* ── AI assistant panel ── */
+.ag-assist{
+  background:linear-gradient(160deg,rgba(var(--card2-rgb),.98),rgba(var(--card2-rgb),.98));
+  border:1px solid rgba(var(--gold-rgb),.25);
+  box-shadow:0 6px 30px rgba(var(--gold-rgb),.12),inset 0 1px 0 rgba(255,255,255,.04);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)
+}
+
+/* ── AI bot messages — holographic ── */
+.ag-msg.bot{
+  background:linear-gradient(160deg,rgba(var(--card-rgb),.97),rgba(var(--card2-rgb),.97));
+  border:1px solid rgba(24,216,255,.2);
+  color:var(--silver);
+  box-shadow:0 2px 12px rgba(24,216,255,.06);
+  animation:agMsgGlow 3s ease-in-out infinite
+}
+
+/* ── Tool launch cards ── */
+.ag-tool{
+  background:linear-gradient(160deg,rgba(14,12,28,.98),rgba(var(--card2-rgb),.98));
+  border:1px solid rgba(var(--gold-rgb),.2);
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  transition:border-color .2s,box-shadow .25s,transform .2s
+}
+.ag-tool:hover{
+  border-color:rgba(var(--gold-rgb),.65);
+  box-shadow:0 8px 30px rgba(var(--gold-rgb),.2),0 0 0 1px rgba(var(--gold-rgb),.1);
+  transform:translateY(-3px)
+}
+.ag-tool:active{transform:scale(.97)}
+
+/* ── Map card ── */
+.ag-mapcard{
+  background:linear-gradient(120deg,rgba(44,37,16,.97),rgba(90,68,22,.97),rgba(60,45,10,.97));
+  box-shadow:0 8px 32px rgba(60,45,10,.5),0 0 0 1px rgba(var(--gold-rgb),.12);
+  transition:box-shadow .2s,transform .15s
+}
+.ag-mapcard:hover{transform:translateY(-2px);box-shadow:0 14px 44px rgba(60,45,10,.6),0 0 24px rgba(var(--gold-rgb),.15)}
+
+/* ── Customer chips active state ── */
+.ag-chips button.on{
+  background:color-mix(in srgb,var(--sc,var(--gold)) 20%,transparent);
+  border-color:var(--sc,var(--gold));
+  color:var(--sc,var(--gold));
+  box-shadow:0 0 12px rgba(var(--gold-rgb),.2)
+}
+
+/* ── Pipeline filter pills ── */
+.ag-pipe.on{
+  background:color-mix(in srgb,var(--sc) 20%,transparent);
+  border-color:var(--sc);
+  color:var(--sc);
+  box-shadow:0 0 14px rgba(var(--gold-rgb),.15)
+}
+
+/* ── Back button ── */
+.ag-back{
+  background:linear-gradient(160deg,rgba(var(--card-rgb),.97),rgba(var(--card2-rgb),.97));
+  border:1px solid rgba(var(--gold-rgb),.25);
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  transition:border-color .2s,box-shadow .2s
+}
+.ag-back:hover{border-color:rgba(var(--gold-rgb),.6);box-shadow:0 0 16px rgba(var(--gold-rgb),.2)}
+
+/* ── Quote document — glass header ── */
+.hg2-qd-band{background:linear-gradient(135deg,#c2e8eb,#d8f0f2);box-shadow:0 4px 20px rgba(0,0,0,.15)}
+
+/* ── More button ── */
+.ag-more{
+  background:linear-gradient(160deg,rgba(var(--card2-rgb),.97),rgba(var(--card2-rgb),.97));
+  border:1px solid rgba(var(--gold-rgb),.2);
+  transition:border-color .2s,box-shadow .2s
+}
+.ag-more:hover{border-color:rgba(var(--gold-rgb),.5);box-shadow:0 4px 18px rgba(var(--gold-rgb),.1)}
+
+/* ── Section title gold text glow ── */
+.ag-section-ttl{text-shadow:0 0 14px rgba(var(--gold-rgb),.4)}
+
+/* ── KPI numbers glow ── */
+.ag-kpi b.cy{text-shadow:0 0 16px rgba(24,216,255,.5)}
+.ag-kpi b.ok{text-shadow:0 0 16px rgba(34,216,130,.5)}
+
+/* ── Action buttons on cards ── */
+.ag-abtn{
+  background:linear-gradient(160deg,rgba(14,12,28,.97),rgba(var(--card2-rgb),.97));
+  border:1px solid rgba(var(--gold-rgb),.2);
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+  transition:border-color .15s,box-shadow .15s,transform .1s
+}
+.ag-abtn:hover{border-color:rgba(var(--gold-rgb),.5);box-shadow:0 4px 16px rgba(var(--gold-rgb),.15);transform:translateY(-1px)}
+
+/* ── Desktop sidebar — glow border ── */
+@media(min-width:768px){
+  .ag-nav{
+    border-left:1px solid transparent;
+    border-image:linear-gradient(180deg,transparent,rgba(var(--gold-rgb),.5),transparent) 1;
+    box-shadow:-8px 0 40px rgba(0,0,0,.6)
+  }
+  .ag-nav button.on{
+    background:linear-gradient(90deg,transparent,rgba(var(--gold-rgb),.15));
+    border-right:3px solid var(--gold);
+    box-shadow:inset -3px 0 12px rgba(var(--gold-rgb),.1)
+  }
+}
+`}</style>;
+}

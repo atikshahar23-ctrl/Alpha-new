@@ -9,6 +9,27 @@ holographic data-network shell.
 Built with **TypeScript + Vite + Three.js** — a real modular codebase
 (`src/orb`, `src/assistant`, `src/ui`), not a single HTML file.
 
+## Apps in this repo
+
+This is a multi-app suite, all built and deployed together from one Vite
+config (`vite.config.ts`) and served as static files under one origin:
+
+| Entry point | App | Who it's for |
+|---|---|---|
+| `index.html` | **Alpha** — the main 3D assistant (orb, voice, HUD/dock) | Owner |
+| `agent.html` | **Itai's CRM** — leads, deals, customers, showroom, Samsonix forms | Owner + Itai (external salesperson, link-only access) |
+| `heavyguard.html` | **HeavyGuard OS** — installation logging, pricing, fleet/vehicle, finance | Owner (operations) |
+| `agents.html` | **Agents Command Center** — a team of 12 AI agents (named after the tribes of Israel) with individual chats, a live office simulator, a dev console that can open real GitHub PRs/Issues, and a live business-knowledge layer | Owner only |
+| `widget.html` / `chat-widget.html` | Small embeddable task/chat widgets | External (embed on a site) |
+
+**Owner-vs-external boundary:** `agent.html` is the only app meant to be
+shared externally (with Itai). It must never link or redirect into the other
+apps — see the comment on `exitToAlpha` in `agent/App.jsx`. The Agents
+Command Center also runs its own, separate cloud-sync config
+(`agents/cloud.js`, key `alpha:owner:fbconfig`) from the CRM's shared one
+(`agent/cloud.js`, key `itai:fbconfig`), so Itai's CRM access never
+implicitly unlocks owner-only data.
+
 ## Run locally
 
 ```bash
@@ -57,7 +78,7 @@ Click **⚙ SETTINGS** to set:
 ## Project structure
 
 ```
-src/
+src/                    Main Alpha assistant (index.html)
   orb/
     OrbScene.ts        Three.js scene: fire+water shader core + network shell
     fireWaterShader.ts Custom GLSL vertex/fragment shaders
@@ -70,6 +91,10 @@ src/
     app.ts             DOM construction and event wiring
   style.css
   main.ts              Entry point
+
+agent/                  Itai's CRM (agent.html) — React, leads/deals/customers
+heavyguard/              HeavyGuard OS (heavyguard.html) — React, install logging
+agents/                  Agents Command Center (agents.html) — React, 12 AI agents
 ```
 
 ## Notes on the orb

@@ -1,16 +1,21 @@
-import { mountOrb, type OrbHandle } from '../orb/OrbScene';
+import { mountOrb, setCryEnabled, type OrbHandle } from '../orb/OrbScene';
 import { mountFlowLines } from '../bg/flowLines';
-import { loadState, saveState, addEvent, addTask, saveNote, loadEvents, loadTasks, removeEvent, type AppState, type TextLang, type AIProvider, type VoiceGender, type UILang } from '../assistant/state';
-import { askAI, runTags } from '../assistant/gemini';
+import { loadState, saveState, addEvent, addTask, scheduleTask, saveNote, loadEvents, loadTasks, removeEvent, type AppState, type TextLang, type AIProvider, type VoiceGender, type UILang } from '../assistant/state';
+import { askAIStream, askOnce, askVision, runTags } from '../assistant/gemini';
+import { GEN1 } from '../data/gen1';
+import * as THREE from 'three';
 import { tryLocalCommand } from '../assistant/local';
 import { VoiceEngine } from '../assistant/voice';
 import { AudioEngine, type AmbientPreset } from '../assistant/audio';
-import { orchestrate, refreshSummary, moduleById, loadMemory, updateProfile } from '../brain';
+import { orchestrate, refreshSummary, moduleById, loadMemory, updateProfile, prepareRecall } from '../brain';
 import { type CockpitHandle } from '../modules/cockpit';
 import { runProactive } from '../modules/proactive';
 import { processRecurring } from '../modules/recurring';
 import * as driveSync from '../modules/driveSync';
-import { setPikaVolume, setPikaPitch, setPikaEnabled, pikaSpeak, setChirpCallback } from '../assistant/pikaVoice';
+import * as puterSync from '../modules/puterSync';
+import { setPikaVolume, setPikaPitch, setPikaEnabled, pikaSpeak, setChirpCallback, unlockAudio } from '../assistant/pikaVoice';
+import { setActiveCharacter, playCharacterCry, stopCharacterVoice, setCharacterVolume, unlockCharacterAudio, setCharacterVoiceEnabled } from '../assistant/characterVoice';
+import { throwPokeball } from '../effects/pokeballFx';
 import { universalSearch, TYPE_ICONS, addRecentSearch, recentSearches, quickSuggestions } from '../modules/search';
 import { registerShortcut, initShortcuts, shortcutsHTML } from '../modules/shortcuts';
 import { dailyBriefing } from '../modules/analytics';
@@ -20,6 +25,8 @@ import { trackSentiment, averageSentiment } from '../modules/sentiment';
 import { calculateScore, scoreLabel } from '../modules/scoring';
 import { toastInfo } from '../modules/toast';
 import { checkIntegrity, repairCorrupted } from '../modules/dataIntegrity';
+import { readAutotraderState, readPortfolioPositions } from '../modules/tradingBridge';
+import { BOOKS_BY_KEY, BOOKS_LAST_KEY, cumulativeIncome } from '../modules/books';
 
 const UI_STRINGS: Record<string, Record<UILang, string>> = {
   appTitle: { he: 'אלפא עוזר אישי', en: 'ALPHA ASSISTANT' },
@@ -50,7 +57,7 @@ const UI_STRINGS: Record<string, Record<UILang, string>> = {
   detect: { he: 'זיהוי', en: 'Detect' },
   heavyguard: { he: 'הביגארד', en: 'HeavyGuard' },
   trading: { he: 'מסחר', en: 'Trading' },
-  inputPlaceholder: { he: 'הקלד או דבר עם אלפא…', en: 'Type or speak to Alpha…' },
+  inputPlaceholder: { he: 'דבר אלי…', en: 'Talk to me…' },
   searchPlaceholder: { he: 'חפש הכל…', en: 'Search everything…' },
   quickActions: { he: 'פעולות מהירות', en: 'Quick Actions' },
   quickTask: { he: '✓ משימה מהירה', en: '✓ Quick Task' },
@@ -59,11 +66,18 @@ const UI_STRINGS: Record<string, Record<UILang, string>> = {
   briefing: { he: '📊 תדריך', en: '📊 Briefing' },
   fabSearch: { he: '🔍 חיפוש', en: '🔍 Search' },
   settingsTitle: { he: 'אלפא עוזר אישי', en: 'Alpha Assistant' },
-  settingsDesc: { he: 'עובד בחינם מהקופסה דרך Puter — לא צריך מפתח API.', en: 'Works free out of the box via Puter — no API key required.' },
+  settingsDesc: { he: 'מופעל ע"י Groq — חינמי ומהיר. הוצא מפתח חינם ב-console.groq.com.', en: 'Powered by Groq — free and fast. Get a free key at console.groq.com.' },
   general: { he: 'כללי', en: 'GENERAL' },
+  moodColor: { he: 'צבע ומצב רוח', en: 'Color & mood' },
   assistantName: { he: 'שם העוזר', en: 'Assistant name' },
   soundEffects: { he: 'אפקטי סאונד', en: 'Sound effects' },
   haptic: { he: 'משוב רטט', en: 'Haptic feedback' },
+  fastMode: { he: '⚡ מצב מהיר (ביצועים)', en: '⚡ Fast mode (performance)' },
+  displayMode: { he: 'מצב תצוגה', en: 'Display mode' },
+  dmAuto: { he: 'אוטומטי (לפי המכשיר)', en: 'Automatic (by device)' },
+  dmMobile: { he: '📱 מצב נייד (קל ומהיר)', en: '📱 Mobile (light & fast)' },
+  dmDesktop: { he: '🖥️ מצב מחשב (איכות מלאה)', en: '🖥️ Desktop (full quality)' },
+  displayModeDesc: { he: 'בחר מצב נייד אם המערכת איטית באייפד/טאבלט. הדף ייטען מחדש לאחר שינוי.', en: 'Choose Mobile if the app runs slow on iPad/tablet. The page reloads after changing.' },
   voiceLang: { he: 'קול ושפה', en: 'VOICE & LANGUAGE' },
   micLang: { he: 'שפת מיקרופון', en: 'Mic language' },
   voiceLangLabel: { he: 'שפת דיבור', en: 'Voice language' },
@@ -83,10 +97,10 @@ const UI_STRINGS: Record<string, Record<UILang, string>> = {
   volume: { he: 'עוצמה', en: 'Volume' },
   aiEngineTitle: { he: 'מנוע AI', en: 'AI ENGINE' },
   aiProvider: { he: 'ספק AI', en: 'AI Provider' },
-  puterFree: { he: 'Puter — חינם, בלי מפתח', en: 'Puter — Free, no key' },
-  puterModel: { he: 'מודל Puter (חינם)', en: 'Puter model (free)' },
-  puterDesc: { he: 'Puter בחינם — חלון התחברות חד-פעמי יופיע בשימוש ראשון. מפתחות למטה הם אופציונליים.', en: 'Puter is free — a one-time sign-in popup appears on first use. Keys below are optional fallbacks.' },
+  groqFree: { he: 'Groq — חינם ומהיר (Llama)', en: 'Groq — Free & fast (Llama)' },
+  groqDesc: { he: 'Groq חינמי ומהיר (Llama 3.3). הוצא מפתח חינם ב-console.groq.com והדבק כאן — בלי כרטיס אשראי ובלי חיוב. שאר המפתחות למטה אופציונליים.', en: 'Groq is free & fast (Llama 3.3). Get a free key at console.groq.com and paste it here — no credit card, no billing. Other keys below are optional fallbacks.' },
   geminiKey: { he: 'מפתח Gemini API', en: 'Gemini API key' },
+  groqKey: { he: 'מפתח Groq API (חינם)', en: 'Groq API key (free)' },
   grokKey: { he: 'מפתח Grok API', en: 'Grok API key' },
   openaiKey: { he: 'מפתח OpenAI API', en: 'OpenAI API key' },
   cloudSync: { he: 'סנכרון ענן', en: 'CLOUD SYNC' },
@@ -105,7 +119,7 @@ const UI_STRINGS: Record<string, Record<UILang, string>> = {
   initCamera: { he: 'מאתחל מצלמה…', en: 'Initializing camera…' },
   uiLanguage: { he: 'שפת מערכת', en: 'System language' },
   pikachuVoice: { he: 'פיקאצ\'ו', en: 'PIKACHU' },
-  pikaVoiceOn: { he: 'קול פיקאצ\'ו', en: 'Pikachu voice' },
+  pikaVoiceOn: { he: 'קולות הדמויות', en: 'Character voices' },
   pikaVolume: { he: 'עוצמת קול פיקאצ\'ו', en: 'Pikachu volume' },
   pikaPitch: { he: 'גובה קול פיקאצ\'ו', en: 'Pikachu pitch' },
   pikaSpeakNow: { he: 'פיקה פיקה!', en: 'Pika Pika!' },
@@ -167,16 +181,220 @@ function t(key: string, lang: UILang): string {
 export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
-      <div class="chrome topL"><img class="brand-logo" src="${import.meta.env.BASE_URL}heavyguard-logo.png" alt="HeavyGuard" /><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v8 ⚡</div></div></div>
+      <div class="char-ambient" id="charAmbient"></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v124 ⚡</div></div></div>
       <div class="chrome topR">
+        <button class="chip ghost" id="panelsToggleBtn" title="הסתר/הצג פנלים" aria-label="הסתר פנלים">
+          <svg class="pt-hide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+          <svg class="pt-show" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-7-11-7a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 7 11 7a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+        </button>
+        <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
+          <span class="csb-ball" aria-hidden="true"></span>
+        </button>
+        <button class="chip ghost" id="charPoseBtn" title="כיוון דמות" aria-label="כיוון דמות" style="font-size:11px;padding:0 5px;">⚙</button>
         <button class="chip ghost" id="searchBtn" aria-label="Search (Ctrl+K)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
         <button class="chip ghost" id="muteBtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg></button>
         <button class="chip" id="settingsBtn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg> <span data-i18n="settings">הגדרות</span></button>
         <button class="chip ghost" id="newChat"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> <span data-i18n="newChat">חדש</span></button>
       </div>
       <div class="stage" id="stage"></div>
+      <canvas id="charSwapFx" class="char-swap-fx"></canvas>
+      <canvas id="attackFx" class="attack-fx"></canvas>
+
+      <!-- ════════ HOLOGRAPHIC HUD (gold/white) — main display ════════ -->
+      <div class="hud" id="hud">
+        <!-- Central core — placeholder until a live 3D figure is imported.
+             (The alien appears only in the opening intro, not here.) -->
+        <div class="hud-core" id="hudCore">
+          <div class="hud-core-glow"></div>
+          <svg class="hud-core-ring" viewBox="0 0 200 200" aria-hidden="true"><circle cx="100" cy="100" r="92" fill="none" stroke="rgba(228,188,99,.5)" stroke-width="1" stroke-dasharray="4 6"/><circle cx="100" cy="100" r="78" fill="none" stroke="rgba(247,232,192,.25)" stroke-width="1"/></svg>
+          <div class="hud-core-tag">ALPHA CORE · ONLINE</div>
+        </div>
+
+        <!-- Wrapper: transparent on desktop (display:contents → columns keep their
+             side positions); on mobile it becomes a clean bottom-anchored flex
+             stack so the panels never overlap regardless of card height. -->
+        <div class="hud-cols">
+        <!-- Left column — Heavy Guard data -->
+        <div class="hud-col left">
+          <section class="hud-card" id="hudOps">
+            <div class="hud-card-h"><span>GLOBAL OPERATIONS</span><i></i></div>
+            <div class="hud-card-body">טוען…</div>
+          </section>
+          <section class="hud-card" id="hudPipe">
+            <div class="hud-card-h"><span>CONTRACTOR PIPELINE</span><i></i></div>
+            <div class="hud-card-body">טוען…</div>
+          </section>
+          <!-- The owner's actual car (Chery Tiggo 7 PHEV 2025 Noble) as a live
+               3D turntable, with the real fleet numbers right beneath it. -->
+          <section class="hud-card" id="hudFleetPanel">
+            <div class="hud-card-h"><span>הרכב שלי · TIGGO 7 PHEV</span><i></i></div>
+            <div class="hud-car3d" id="hudCar3d"></div>
+            <div class="hud-card-body">טוען…</div>
+          </section>
+          <section class="hud-card" id="hudAgenda">
+            <div class="hud-card-h"><span>היום ביומן</span><i></i></div>
+            <div class="hud-card-body">טוען…</div>
+          </section>
+          <section class="hud-card" id="hudTasksPanel">
+            <div class="hud-card-h"><span>משימות פתוחות</span><i></i></div>
+            <div class="hud-card-body">טוען…</div>
+          </section>
+        </div>
+
+        <!-- Right column — live markets + Israel news -->
+        <div class="hud-col right">
+          <section class="hud-card" id="hudMarkets">
+            <div class="hud-card-h"><span>MARKETS · שוק</span><i></i></div>
+            <div class="hud-card-body">טוען שווקים…</div>
+          </section>
+          <section class="hud-card" id="hudNews">
+            <div class="hud-card-h"><span>חדשות · ישראל</span><i></i></div>
+            <div class="hud-card-body">טוען חדשות…</div>
+          </section>
+          <section class="hud-card" id="hudTeamPanel">
+            <div class="hud-card-h"><span>הסוכנים עכשיו</span><i></i></div>
+            <div class="hud-card-body">טוען…</div>
+          </section>
+          <section class="hud-card" id="hudWeather">
+            <div class="hud-card-h"><span>מזג אוויר</span><i></i></div>
+            <div class="hud-card-body">טוען…</div>
+          </section>
+        </div>
+
+        <!-- (fleet card moved into the left column above, with the 3D car) -->
+        </div>
+
+        <!-- Heavy Guard shortcut rail -->
+        <div class="hud-rail" id="hudRail">
+          <button class="hud-sc" id="hudHg" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+            <span>HEAVY GUARD OS</span>
+          </button>
+          <a class="hud-sc" id="hudTrade" href="https://heavt-guard-simulator-1.onrender.com/" target="_blank" rel="noopener">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+            <span>מערכת מסחר · TRADE</span>
+          </a>
+          <a class="hud-sc" id="hudAgent" href="/Alpha-new/agent.html" target="_blank" rel="noopener">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M17 11l2 2 4-4"/></svg>
+            <span>CRM מכירות · איתי</span>
+          </a>
+          <a class="hud-sc" id="hudMarketing" href="/Alpha-new/heavyguard.html#marketing" target="_blank" rel="noopener">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 11l19-9-9 19-2-8-8-2z"/></svg>
+            <span>שיווק TikTok · Facebook</span>
+          </a>
+          <a class="hud-sc hud-sc-agents" id="hudAgents" href="/Alpha-new/agents.html" target="_blank" rel="noopener">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3.2"/><circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="5" cy="18" r="2"/><circle cx="19" cy="18" r="2"/><path d="M9.5 10.5 6.5 7.5M14.5 10.5l3-3M9.5 13.5l-3 3M14.5 13.5l3 3"/></svg>
+            <span>מרכז הסוכנים · AGENTS</span>
+          </a>
+          <button class="hud-sc" id="hudFleet" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 17h13v-5l-2-4H3z"/><circle cx="7" cy="17.5" r="1.6"/><circle cx="17.5" cy="17.5" r="1.6"/><path d="M16 11h3l2 3v2.5h-3"/></svg>
+            <span>צי ומבצעים · CONTROL</span>
+          </button>
+        </div>
+      </div>
+
+      <div id="charRotPanel" class="char-rot-panel" hidden>
+        <div class="crp-title" id="crpTitle">כיוון דמות</div>
+        <div class="crp-section-label">סיבוב</div>
+        <label class="crp-row">X <input type="range" id="crpX" min="-180" max="180" step="1" value="0"><span class="crp-val" id="crpXv">0°</span></label>
+        <label class="crp-row">Y <input type="range" id="crpY" min="-180" max="180" step="1" value="0"><span class="crp-val" id="crpYv">0°</span></label>
+        <label class="crp-row">Z <input type="range" id="crpZ" min="-180" max="180" step="1" value="0"><span class="crp-val" id="crpZv">0°</span></label>
+        <div class="crp-section-label">גודל</div>
+        <label class="crp-row">⊕ <input type="range" id="crpS" min="5" max="600" step="1" value="100"><span class="crp-val" id="crpSv">1.00×</span></label>
+        <div class="crp-section-label">מיקום (תנועה חופשית במרחב)</div>
+        <label class="crp-row">↔ <input type="range" id="crpPX" min="-500" max="500" step="1" value="0"><span class="crp-val" id="crpPXv">0</span></label>
+        <label class="crp-row">↕ <input type="range" id="crpPY" min="-500" max="500" step="1" value="0"><span class="crp-val" id="crpPYv">0</span></label>
+        <label class="crp-row">⊙ <input type="range" id="crpPZ" min="-500" max="500" step="1" value="0"><span class="crp-val" id="crpPZv">0</span></label>
+        <button class="crp-auto" id="crpAuto">⊹ מרכז אוטומטי</button>
+        <div class="crp-pin-row">
+          <button class="crp-pin" id="crpPin">שמור ככיוון ברירת מחדל</button>
+          <button class="crp-reset" id="crpReset">איפוס</button>
+        </div>
+        <div class="crp-pin-badge" id="crpPinBadge" hidden>✓ כיוון נשמר</div>
+      </div>
+
+      <div id="pokemonMenu" class="pokemon-menu" hidden></div>
+
+      <!-- Gesture detection chip (top bar status) -->
+      <div id="gesturePanel" class="gesture-indicator" hidden>
+        <div class="gp-camera-hidden" aria-hidden="true">
+          <video id="gestureVideo" autoplay playsinline muted></video>
+          <canvas id="gestureCanvas"></canvas>
+        </div>
+        <span class="gi-dot"></span>
+        <span class="gi-text" id="gestureStatus">זיהוי פעיל</span>
+      </div>
+      <!-- Always-visible diagnostic readout while detecting on a phone — lets
+           us see exactly where the pipeline is stuck (camera / model load /
+           zero hands found / low confidence) instead of a silent "doesn't
+           work" report with no way to tell what actually failed. -->
+      <div id="gestureDebug" class="gesture-debug" hidden></div>
+
+      <!-- Open-camera mode: full-screen selfie video with skeleton on top -->
+      <video id="gestureLiveVideo" class="gesture-live-video" autoplay playsinline muted hidden></video>
+
+      <!-- Full-screen skeleton overlay (always above everything) -->
+      <canvas id="handOverlay" class="hand-overlay" hidden></canvas>
+
+      <!-- Mode chooser: shown when detect button clicked while gesture is off -->
+      <div id="gestureModeChooser" class="gesture-mode-chooser" hidden>
+        <div class="gmc-card">
+          <div class="gmc-title">🖐️ בחר מצב זיהוי ידיים</div>
+          <button class="gmc-opt" id="gmcHidden">
+            <span class="gmc-ic">👁️‍🗨️</span>
+            <div><b>מצלמה נסתרת</b><small>רק שלד הידיים מוצג — המצלמה לא גלויה</small></div>
+          </button>
+          <button class="gmc-opt" id="gmcOpen">
+            <span class="gmc-ic">📷</span>
+            <div><b>מצלמה פתוחה</b><small>רואים אותך עם השלד הדיגיטלי</small></div>
+          </button>
+          <button class="gmc-cancel" id="gmcCancel">ביטול</button>
+        </div>
+      </div>
+
+      <!-- Gesture cheat-sheet — shown when detection starts, auto-hides after 7s. -->
+      <div id="gestureHelp" class="gesture-help" hidden>
+        <div class="gh-title">🖐️ שליטה בידיים</div>
+        <ul>
+          <li><span>✊</span><b>אגרוף</b> — החזק רגע כדי לזמן פוקימון</li>
+          <li><span>👎</span><b>אגודל למטה</b> — החזק רגע כדי להעלים</li>
+          <li><span>🖐️</span><b>כף יד פתוחה</b> — חופשי לשחק עם הפוקימון</li>
+          <li><span>☝️</span><b>הצבעה</b> — סמן נע עם האצבע; החזק על כפתור = לחיצה</li>
+          <li><span>🤏</span><b>צביטה</b> — אחיזה וסיבוב הדמות</li>
+        </ul>
+      </div>
+
+      <!-- Finger-pointing laser cursor — follows the index finger; dwelling on a
+           target for 2s selects (clicks) it. -->
+      <div id="laserCursor" class="laser-cursor" hidden>
+        <div class="lc-ring"></div>
+        <div class="lc-dot"></div>
+      </div>
+
+      <!-- Summon dock — macOS-style row of Pokéballs (image above, name below).
+           Opens on summon; the mic listens and the user picks a Pokémon by name. -->
+      <!-- Spinning pokéball shown in the screen centre while the user is choosing
+           (by voice or tap) which Pokémon to summon. -->
+      <div id="summonOrb" class="summon-orb" hidden>
+        <div class="so-inner">
+          <div class="so-aura"></div>
+          <canvas id="summonOrbCanvas" class="so-canvas"></canvas>
+        </div>
+      </div>
+      <div id="dockWild" hidden></div>
+      <div id="dockBackdrop" class="dock-backdrop" hidden></div>
+      <div id="summonDock" class="summon-dock" hidden>
+        <div class="sd-hint" id="summonDockHint"><span class="sd-mic">🎙️</span> אמור שם של פוקימון…</div>
+        <div class="sd-row-wrap">
+          <div class="sd-row" id="summonDockRow"></div>
+        </div>
+      </div>
 
       <aside class="left-panel" id="leftPanel">
+        <div class="lp-brand">
+          <img class="brand-logo" src="${import.meta.env.BASE_URL}heavyguard-logo.png" alt="HeavyGuard" />
+        </div>
         <div class="lp-head">
           <span class="lp-title" data-i18n="system">מערכת</span>
           <span class="lp-status" id="lpStatus" data-i18n="online">● מחובר</span>
@@ -209,7 +427,7 @@ export function mountApp(root: HTMLElement) {
           <div class="lp-label" data-i18n="aiEngine">מנוע AI</div>
           <div class="ai-status">
             <div class="ai-model" id="aiModelDisplay">GPT-4O MINI</div>
-            <div class="ai-provider" id="aiProviderDisplay">דרך PUTER</div>
+            <div class="ai-provider" id="aiProviderDisplay">VIA GROQ</div>
             <div class="ai-latency">
               <span class="latency-dot"></span>
               <span id="aiLatency" data-i18n="ready">מוכן</span>
@@ -301,10 +519,22 @@ export function mountApp(root: HTMLElement) {
             </svg>
             <span data-i18n="trading">מסחר</span>
           </a>
+          <a class="hg-fab mkt-fab" id="mktBtn" href="/Alpha-new/heavyguard.html#marketing" target="_blank" rel="noopener" title="שיווק TikTok · Facebook">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="22" height="22">
+              <path d="M3 11l19-9-9 19-2-8-8-2z"/>
+            </svg>
+            <span>שיווק</span>
+          </a>
+          <a class="hg-fab agents-fab" id="agentsBtn" href="/Alpha-new/agents.html" target="_blank" rel="noopener" title="מרכז הסוכנים · Agents Command">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="22" height="22">
+              <circle cx="12" cy="12" r="3.2"/><circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="5" cy="18" r="2"/><circle cx="19" cy="18" r="2"/><path d="M9.5 10.5 6.5 7.5M14.5 10.5l3-3M9.5 13.5l-3 3M14.5 13.5l3 3"/>
+            </svg>
+            <span>סוכנים</span>
+          </a>
         </div>
         <div class="bar">
           <button class="ic mic" id="micBtn" title="Hey Alpha"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></button>
-          <div class="pill"><input id="input" type="text" placeholder="הקלד או דבר עם אלפא…" /></div>
+          <div class="pill"><input id="input" type="text" placeholder="דבר אלי…" name="alpha-message" autocomplete="off" autocorrect="off" autocapitalize="sentences" data-lpignore="true" data-form-type="other" /></div>
           <button class="ic send" id="sendBtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></button>
         </div>
       </div>
@@ -315,6 +545,17 @@ export function mountApp(root: HTMLElement) {
       <div class="overlay" id="overlay"><div class="card">
         <h2 data-i18n="settingsTitle">אלפא עוזר אישי</h2>
         <p data-i18n="settingsDesc">עובד בחינם מהקופסה דרך Puter — לא צריך מפתח API.</p>
+
+        <div class="settings-section">
+          <div class="ss-title" data-i18n="moodColor">צבע ומצב רוח</div>
+          <div class="mood-grid" id="moodGrid">
+            <button class="mood-opt" data-mood="gold"><span class="mood-dot" style="background:#daa520"></span>זהב</button>
+            <button class="mood-opt" data-mood="ocean"><span class="mood-dot" style="background:#3FB4E0"></span>אוקיינוס</button>
+            <button class="mood-opt" data-mood="emerald"><span class="mood-dot" style="background:#36D399"></span>אמרלד</button>
+            <button class="mood-opt" data-mood="royal"><span class="mood-dot" style="background:#A78BFA"></span>מלכותי</button>
+            <button class="mood-opt" data-mood="crimson"><span class="mood-dot" style="background:#FF6B6B"></span>אש</button>
+          </div>
+        </div>
 
         <div class="settings-section">
           <div class="ss-title" data-i18n="general">כללי</div>
@@ -332,6 +573,21 @@ export function mountApp(root: HTMLElement) {
             <label data-i18n="haptic">משוב רטט</label>
             <label class="toggle"><input type="checkbox" id="hapticsCheck" /><span class="toggle-slider"></span></label>
           </div>
+          <div class="setting-row">
+            <label>🖐️ שלד דיגיטלי בזיהוי ידיים</label>
+            <label class="toggle"><input type="checkbox" id="handSkeletonCheck" /><span class="toggle-slider"></span></label>
+          </div>
+          <div class="setting-row">
+            <label data-i18n="fastMode">⚡ מצב מהיר (ביצועים)</label>
+            <label class="toggle"><input type="checkbox" id="fastModeCheck" /><span class="toggle-slider"></span></label>
+          </div>
+          <label data-i18n="displayMode">מצב תצוגה</label>
+          <select id="displayModeSel">
+            <option value="auto" data-i18n="dmAuto">אוטומטי (לפי המכשיר)</option>
+            <option value="mobile" data-i18n="dmMobile">📱 מצב נייד (קל ומהיר)</option>
+            <option value="desktop" data-i18n="dmDesktop">🖥️ מצב מחשב (איכות מלאה)</option>
+          </select>
+          <p style="margin:2px 0 10px;font-size:11px;color:var(--dim)" data-i18n="displayModeDesc">בחר מצב נייד אם המערכת איטית באייפד/טאבלט. הדף ייטען מחדש לאחר שינוי.</p>
         </div>
 
         <div class="settings-section">
@@ -425,7 +681,7 @@ export function mountApp(root: HTMLElement) {
         <div class="settings-section">
           <div class="ss-title" data-i18n="pikachuVoice">פיקאצ'ו</div>
           <div class="setting-row">
-            <label data-i18n="pikaVoiceOn">קול פיקאצ'ו</label>
+            <label data-i18n="pikaVoiceOn">קולות הדמויות</label>
             <label class="toggle"><input type="checkbox" id="pikaVoiceCheck" checked /><span class="toggle-slider"></span></label>
           </div>
           <label><span data-i18n="pikaVolume">עוצמת קול פיקאצ'ו</span> <span id="pikaVolVal" class="range-val">60%</span></label>
@@ -439,43 +695,79 @@ export function mountApp(root: HTMLElement) {
           <div class="ss-title" data-i18n="aiEngineTitle">מנוע AI</div>
           <label data-i18n="aiProvider">ספק AI</label>
           <select id="providerSel">
-            <option value="puter" data-i18n="puterFree">Puter — חינם, בלי מפתח</option>
+            <option value="groq" data-i18n="groqFree">Groq — חינם ומהיר (Llama)</option>
             <option value="gemini">Gemini (Google)</option>
             <option value="grok">Grok (xAI)</option>
             <option value="openai">ChatGPT (OpenAI)</option>
           </select>
-          <label data-i18n="puterModel">מודל Puter (חינם)</label>
-          <select id="puterModelSel">
-            <option value="gpt-4o-mini">GPT-4o mini (fast)</option>
-            <option value="gpt-4o">GPT-4o (smartest)</option>
-            <option value="o4-mini">o4-mini (reasoning)</option>
-            <option value="claude-sonnet-4">Claude Sonnet 4</option>
-            <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
-          </select>
-          <p style="margin:2px 0 10px;font-size:11px;color:var(--dim)" data-i18n="puterDesc">Puter בחינם — חלון התחברות חד-פעמי יופיע בשימוש ראשון. מפתחות למטה הם אופציונליים.</p>
-          <label data-i18n="geminiKey">מפתח Gemini API</label><input id="keyInput" type="password" placeholder="AIza..." />
-          <label data-i18n="grokKey">מפתח Grok API</label><input id="grokKeyInput" type="password" placeholder="xai-..." />
-          <label data-i18n="openaiKey">מפתח OpenAI API</label><input id="openaiKeyInput" type="password" placeholder="sk-..." />
+          <label data-i18n="groqKey">מפתח Groq API (חינם)</label><input id="groqKeyInput" type="text" class="masked-field" placeholder="gsk_..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" />
+          <p style="margin:2px 0 10px;font-size:11px;color:var(--dim)" data-i18n="groqDesc">Groq חינמי ומהיר (Llama 3.3). הוצא מפתח חינם ב-console.groq.com והדבק כאן — בלי כרטיס אשראי ובלי חיוב. שאר המפתחות למטה אופציונליים.</p>
+          <label data-i18n="geminiKey">מפתח Gemini API</label><input id="keyInput" type="text" class="masked-field" placeholder="AIza..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" />
+          <label data-i18n="grokKey">מפתח Grok API</label><input id="grokKeyInput" type="text" class="masked-field" placeholder="xai-..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" />
+          <label data-i18n="openaiKey">מפתח OpenAI API</label><input id="openaiKeyInput" type="text" class="masked-field" placeholder="sk-..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" />
         </div>
 
         <div class="settings-section">
           <div class="ss-title" data-i18n="cloudSync">סנכרון ענן</div>
-          <p style="margin:0 0 10px;font-size:11px;color:var(--dim);line-height:1.5">סנכרן את כל הנתונים ל-Google Drive. דורש Google OAuth Client ID מ-<a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color:var(--gold)">Google Cloud Console</a>.</p>
-          <label>Google OAuth Client ID</label>
-          <input id="driveClientId" type="text" placeholder="xxxx.apps.googleusercontent.com" style="font-size:11px" />
-          <div style="display:flex;gap:8px;margin:10px 0;flex-wrap:wrap">
-            <button class="cloud-btn" id="driveConnectBtn" data-i18n="connectDrive">חבר Google Drive</button>
-            <button class="cloud-btn" id="driveUploadBtn" disabled data-i18n="backupDrive">גיבוי ל-Drive</button>
-            <button class="cloud-btn" id="driveDownloadBtn" disabled data-i18n="restoreDrive">שחזור מ-Drive</button>
-          </div>
-          <div class="cloud-status" id="driveStatus"></div>
-          <div style="border-top:1px solid rgba(218,165,32,.08);margin:12px 0;padding-top:10px">
-            <p style="font-size:11px;color:var(--dim);margin-bottom:8px" data-i18n="noGoogle">אין חשבון Google? ייצא/ייבא קובץ גיבוי ישירות:</p>
-            <div style="display:flex;gap:8px">
-              <button class="cloud-btn" id="localExportBtn" data-i18n="exportJson">ייצוא JSON</button>
-              <button class="cloud-btn" id="localImportBtn" data-i18n="importJson">ייבוא JSON</button>
+
+          <!-- ── Puter / Google sign-in (primary, zero-setup) ── -->
+          <div id="puterSyncBox" style="background:rgba(218,165,32,.06);border:1px solid rgba(218,165,32,.18);border-radius:10px;padding:14px;margin-bottom:14px">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+              <svg width="20" height="20" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+              <span style="font-weight:600;font-size:13px">סנכרון אוטומטי עם Google</span>
+            </div>
+            <p style="font-size:11px;color:var(--dim);margin:0 0 12px;line-height:1.6">התחבר עם חשבון Google שלך — הנתונים יישמרו בענן ויסתנכרנו בין הטלפון, המחשב והאייפד שלך אוטומטית.</p>
+            <div id="puterSignedOut" style="display:flex;flex-direction:column;gap:8px">
+              <button id="puterSignInBtn" style="display:flex;align-items:center;justify-content:center;gap:8px;background:#fff;color:#333;border:1px solid #ddd;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:500;cursor:pointer;width:100%">
+                <svg width="16" height="16" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84z"/></svg>
+                התחבר עם Google
+              </button>
+            </div>
+            <div id="puterSignedIn" style="display:none;flex-direction:column;gap:8px">
+              <div style="display:flex;align-items:center;gap:8px;font-size:12px">
+                <span style="width:8px;height:8px;background:#34A853;border-radius:50%;display:inline-block;flex-shrink:0"></span>
+                <span id="puterUserLabel" style="color:#34A853;font-weight:500">מחובר</span>
+              </div>
+              <div class="cloud-status" id="puterStatus"></div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button class="cloud-btn" id="puterSyncNowBtn">סנכרן עכשיו ☁️</button>
+                <button class="cloud-btn" id="puterRestoreBtn">שחזר מהענן ⬇️</button>
+                <button class="cloud-btn" id="puterSignOutBtn" style="background:rgba(255,60,60,.12);border-color:rgba(255,60,60,.3);color:#f87;">התנתק</button>
+              </div>
+              <div style="margin-top:8px">
+                <label style="font-size:11px;color:var(--dim);display:block;margin-bottom:4px">תפקיד מכשיר זה בסנכרון:</label>
+                <select id="syncRoleSel" style="font-size:12px;width:100%;background:rgba(255,255,255,.05);border:1px solid rgba(218,165,32,.2);border-radius:6px;color:var(--ink);padding:6px 8px">
+                  <option value="primary">📱 ראשי — הטלפון (תמיד מעלה, לא מוריד)</option>
+                  <option value="secondary">💻 משני — מחשב / אייפד (תמיד מוריד מהטלפון)</option>
+                  <option value="auto">🔄 אוטומטי (לפי זמן)</option>
+                </select>
+              </div>
             </div>
           </div>
+
+          <!-- ── Fallback: local JSON export/import ── -->
+          <details style="margin-top:4px">
+            <summary style="font-size:11px;color:var(--dim);cursor:pointer;user-select:none">אפשרויות גיבוי ידניות</summary>
+            <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">
+              <div style="display:flex;gap:8px">
+                <button class="cloud-btn" id="localExportBtn" data-i18n="exportJson">ייצוא JSON</button>
+                <button class="cloud-btn" id="localImportBtn" data-i18n="importJson">ייבוא JSON</button>
+              </div>
+              <details style="margin-top:4px">
+                <summary style="font-size:10px;color:var(--dim);cursor:pointer">חיבור Google Drive ישיר (מתקדם)</summary>
+                <div style="margin-top:8px">
+                  <label style="font-size:11px">Google OAuth Client ID</label>
+                  <input id="driveClientId" type="text" placeholder="xxxx.apps.googleusercontent.com" style="font-size:11px;margin-top:4px" />
+                  <div style="display:flex;gap:8px;margin:8px 0;flex-wrap:wrap">
+                    <button class="cloud-btn" id="driveConnectBtn">חבר Drive</button>
+                    <button class="cloud-btn" id="driveUploadBtn" disabled>גיבוי</button>
+                    <button class="cloud-btn" id="driveDownloadBtn" disabled>שחזור</button>
+                  </div>
+                  <div class="cloud-status" id="driveStatus"></div>
+                </div>
+              </details>
+            </div>
+          </details>
         </div>
 
         <div class="settings-section">
@@ -569,6 +861,7 @@ export function mountApp(root: HTMLElement) {
             <canvas id="arCanvas"></canvas>
             <canvas id="arFxCanvas"></canvas>
             <canvas id="arObjCanvas"></canvas>
+            <canvas id="arCharCanvas"></canvas>
             <div class="ar-hud" id="arHud">
               <div class="ar-status" id="arStatus">מאתחל מצלמה…</div>
               <div class="ar-hand-indicator" id="arHandIndicator"></div>
@@ -595,19 +888,27 @@ export function mountApp(root: HTMLElement) {
   setPikaVolume(state.pikaVolume);
   setPikaPitch(state.pikaPitch);
   setPikaEnabled(state.pikaVoiceOn);
+  setCharacterVoiceEnabled(state.pikaVoiceOn);   // gate all character cries on startup
+  setCryEnabled(state.pikaVoiceOn);
 
   let orb: OrbHandle;
   try {
     orb = mountOrb($('stage'));
   } catch {
-    orb = { setEnergy() {}, pikaEmote() {}, dispose() {}, startBodyDetection() {}, stopBodyDetection() {} };
+    orb = { setEnergy() {}, pikaEmote() {}, dispose() {}, startBodyDetection() {}, stopBodyDetection() {}, setCharacter() {}, throwPokeball(_o, d) { d && d(); }, setCharacterTransform() {}, getCharacterTransform() { return { x: 0, y: 0, z: 0, s: 1, px: 0, py: 0, pz: 0 }; }, resetCharacterTransform() {}, pinCharacterTransform() {}, hasPinnedTransform() { return false; }, attackCharacter(_c: HTMLCanvasElement) {}, setPerfMode(_o: boolean) {} };
   }
+  // Apply the saved performance preference (Fast mode) on startup.
+  try { if (localStorage.getItem('alpha_fast_mode') === '1') orb.setPerfMode(true); } catch {}
 
   // When Pikachu chirps, trigger a brief energy burst in the 3D orb
   setChirpCallback(() => {
     orb.setEnergy(0.95);
     setTimeout(() => orb.setEnergy(0.06), 900);
   });
+
+  // Unlock Web Audio on first user interaction (iOS/Chrome autoplay policy)
+  const _unlockOnce = () => { unlockAudio(); document.removeEventListener('pointerdown', _unlockOnce); };
+  document.addEventListener('pointerdown', _unlockOnce);
 
   mountFlowLines(root.querySelector('.app')!);
 
@@ -702,19 +1003,29 @@ export function mountApp(root: HTMLElement) {
   const topR = root.querySelector('.topR');
   if (topR) topR.insertBefore(moduleChip, topR.firstChild);
 
+  let lastAgentId = '';
   function updateModuleIndicator(moduleId: string) {
     const mod = moduleById(moduleId as any);
     const label = moduleChip.querySelector('.mc-label') as HTMLElement;
     const dot = moduleChip.querySelector('.mc-dot') as HTMLElement;
     if (mod) {
-      label.textContent = mod.label.toUpperCase();
+      label.textContent = `${mod.emoji} ${mod.label.toUpperCase()}`;
       dot.style.background = `hsl(${mod.hue}, 70%, 55%)`;
       dot.style.boxShadow = `0 0 8px hsla(${mod.hue}, 70%, 55%, .6)`;
+      moduleChip.style.setProperty('--agent-hue', String(mod.hue));
       moduleChip.classList.add('active');
     } else {
-      label.textContent = state.uiLang === 'he' ? 'מוח' : 'BRAIN';
+      label.textContent = state.uiLang === 'he' ? '🧠 מוח' : '🧠 BRAIN';
       dot.style.background = 'var(--gold)';
       dot.style.boxShadow = '0 0 8px rgba(218,165,32,.5)';
+      moduleChip.classList.remove('active');
+    }
+    // Pulse the chip whenever the active agent changes (visible handoff).
+    if (moduleId !== lastAgentId) {
+      lastAgentId = moduleId;
+      moduleChip.classList.remove('agent-switch');
+      void moduleChip.offsetWidth;          // restart the animation
+      moduleChip.classList.add('agent-switch');
     }
   }
 
@@ -827,6 +1138,12 @@ export function mountApp(root: HTMLElement) {
     const label = { armed: t('armed', state.uiLang), listening: t('listening', state.uiLang), thinking: t('thinking', state.uiLang), speaking: t('speaking', state.uiLang), '': t('standby', state.uiLang) }[s];
     $('state').textContent = label;
     orb.setEnergy(s === 'speaking' ? 0.95 : s === 'listening' ? 0.5 : s === 'armed' ? 0.2 : 0.06);
+    if (s === 'listening') orb.pikaEmote('curious');
+    // Hologram reading mode: while the assistant is actively talking, the
+    // small output panel was too cramped to read comfortably. Hide the 3D
+    // figure and blow the response up into a large centered holographic
+    // overlay instead — reverts the moment it's done speaking.
+    document.body.classList.toggle('ac-hologram', s === 'speaking' || s === 'thinking');
   }
 
   const voice = new VoiceEngine(state, (text) => { addMsg(text, 'me'); ask(text); }, setStatus);
@@ -860,6 +1177,129 @@ export function mountApp(root: HTMLElement) {
       .replace(/^• (.+)$/gm, '<span style="display:block;padding-left:4px"><span style="color:var(--gold);margin-right:6px">•</span>$1</span>')
       .replace(/\n/g, '<br>');
   }
+
+  // ── Self-correction / reflection ──────────────────────────────────────────
+  // Free, instant, client-side: after the assistant answers, validate the syntax
+  // of any code it produced (no extra LLM call). JSON is checked with JSON.parse;
+  // plain JS is parsed with new Function (compiles, never executes). Module/top-
+  // await snippets are skipped to avoid false positives.
+  const JS_LANGS = ['js', 'javascript', 'jsx', 'mjs', 'cjs'];
+  const CHECK_LANGS = ['json', 'xml', 'svg', 'css', ...JS_LANGS];
+  function extractCodeBlocks(text: string): { lang: string; code: string }[] {
+    const out: { lang: string; code: string }[] = [];
+    const re = /```(\w+)?\n([\s\S]*?)```/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text))) out.push({ lang: (m[1] || '').toLowerCase(), code: m[2] });
+    return out;
+  }
+  function validateCode(lang: string, code: string): string | null {
+    try {
+      if (lang === 'json') { JSON.parse(code); return null; }
+      if (JS_LANGS.includes(lang)) {
+        if (/\b(import|export)\b/.test(code) || /^\s*await\b/m.test(code)) return null; // skip modules/top-await
+        // eslint-disable-next-line no-new-func
+        new Function(code);   // parses + throws on syntax error; does NOT run
+        return null;
+      }
+      if (lang === 'xml' || lang === 'svg') {
+        const doc = new DOMParser().parseFromString(code, 'application/xml');
+        const err = doc.querySelector('parsererror');
+        return err ? (err.textContent || 'XML parse error').replace(/\s+/g, ' ').trim().slice(0, 140) : null;
+      }
+      if (lang === 'css') {
+        // Brace balance — valid CSS is always balanced; catches the common break
+        // without false-positives on well-formed stylesheets.
+        let depth = 0;
+        for (const ch of code) { if (ch === '{') depth++; else if (ch === '}') { if (--depth < 0) return 'unbalanced "}" in CSS'; } }
+        return depth !== 0 ? 'unbalanced "{ }" in CSS' : null;
+      }
+    } catch (e: any) { return e?.message || 'syntax error'; }
+    return null; // unknown language → no claim
+  }
+  function reflectOnReply(text: string) {
+    const blocks = extractCodeBlocks(text).filter(b => CHECK_LANGS.includes(b.lang));
+    if (!blocks.length) return;
+    const bad = blocks.map(b => ({ b, err: validateCode(b.lang, b.code) })).filter(x => x.err);
+    if (bad.length) {
+      addMsg(`⚠️ בדיקה עצמית: שגיאת תחביר ב-${bad[0].b.lang} — ${bad[0].err}`, 'sys');
+      void autoFixCode(bad[0].b);   // background, non-blocking self-correction
+    } else {
+      const langs = [...new Set(blocks.map(b => b.lang))].join(', ');
+      addMsg(`✓ בדיקה עצמית: התחביר של הקוד (${langs}) תקין`, 'sys');
+    }
+  }
+
+  // Self-correction: one focused LLM call to repair a broken code block. The fix
+  // is only shown if it actually parses clean — otherwise we stay silent and the
+  // ⚠ note remains. Runs in the background; never blocks the original reply.
+  let autoFixing = false;
+  async function autoFixCode(block: { lang: string; code: string }) {
+    if (autoFixing) return;
+    autoFixing = true;
+    try {
+      const sys = 'You are a precise code fixer. Fix ONLY syntax errors. Reply with a single corrected code block and nothing else — no explanation.';
+      const user = `Fix the syntax error in this ${block.lang} code. Return only the corrected code inside one \`\`\`${block.lang} fenced block:\n\n\`\`\`${block.lang}\n${block.code}\n\`\`\``;
+      const out = await askOnce(state, sys, user);
+      if (!out) return;
+      const fixed = extractCodeBlocks(out).find(b => {
+        const lang = b.lang || block.lang;
+        return b.code.trim() && validateCode(lang, b.code) === null;
+      });
+      if (fixed) {
+        addMsg(`🔧 תיקון אוטומטי (${block.lang}):\n\`\`\`${block.lang}\n${fixed.code.trim()}\n\`\`\``, 'al');
+      }
+    } catch {} finally { autoFixing = false; }
+  }
+
+  // ── Live screen vision ─────────────────────────────────────────────────────
+  // Capture one frame of the user's screen (getDisplayMedia) and ask a vision
+  // model about it. Free + client-side. The capture stops immediately (single
+  // snapshot), and the frame is downscaled to keep the payload small.
+  function isScreenVisionIntent(text: string): boolean {
+    const s = text.toLowerCase();
+    return /(מה.*(על|ב).*מסך|תראה.*מסך|ראה.*(את ה)?מסך|צלם.*מסך|המסך שלי|מסתכל.*מסך)/.test(s)
+      || /(see|look at|read|analyze|check).{0,12}(my )?screen|screen ?vision|share.{0,6}screen|what'?s on (my )?screen/.test(s);
+  }
+  async function captureScreenFrame(): Promise<string | null> {
+    try {
+      const stream = await (navigator.mediaDevices as any).getDisplayMedia({ video: { frameRate: 1 }, audio: false });
+      const video = document.createElement('video');
+      video.srcObject = stream; video.muted = true;
+      await video.play().catch(() => {});
+      await new Promise(r => setTimeout(r, 350));   // let a real frame arrive
+      const w = video.videoWidth || 1280, h = video.videoHeight || 720;
+      const scale = Math.min(1, 1280 / w);
+      const cw = Math.round(w * scale), ch = Math.round(h * scale);
+      const canvas = document.createElement('canvas'); canvas.width = cw; canvas.height = ch;
+      canvas.getContext('2d')!.drawImage(video, 0, 0, cw, ch);
+      stream.getTracks().forEach((t: MediaStreamTrack) => t.stop());
+      video.srcObject = null;
+      return canvas.toDataURL('image/jpeg', 0.7);
+    } catch { return null; }
+  }
+  async function runScreenVision(text: string) {
+    if (asking) return;
+    asking = true;
+    setStatus('thinking');
+    addMsg('👁️ בקש שיתוף מסך כדי שאוכל לראות…', 'sys');
+    try {
+      const img = await captureScreenFrame();
+      if (!img) { addMsg('לא הצלחתי לגשת למסך (השיתוף בוטל או נדחה).', 'sys'); return; }
+      showTypingIndicator();
+      const q = text.trim() || 'מה אתה רואה על המסך? עזור לי בהקשר.';
+      const reply = await askVision(state, `${q}\n\nReply in the user's language, concise and actionable.`, img);
+      removeTypingIndicator();
+      if (reply) { addMsg(reply, 'al'); voice.speak(reply); }
+      else addMsg('המודל לא החזיר תיאור של המסך. נסה שוב או בדוק שספק ה-AI תומך בתמונות.', 'sys');
+    } catch (e: any) {
+      removeTypingIndicator();
+      addMsg('שגיאה בראיית המסך: ' + (e?.message || ''), 'sys');
+    } finally {
+      asking = false;
+      setStatus('');
+    }
+  }
+  (window as any).runScreenVision = runScreenVision;
 
   let typingTurn: HTMLElement | null = null;
 
@@ -931,8 +1371,69 @@ export function mountApp(root: HTMLElement) {
     if (who === 'me') trackSentiment(text);
   }
 
+  // Hide action tags from the live display: remove complete [[TAG:…]] blocks
+  // and any trailing half-streamed "[[" so the user never sees raw tags.
+  function stripTagsForDisplay(s: string): string {
+    return s.replace(/\[\[[^\]]*\]\]/g, '').replace(/\[\[[^\]]*$/, '');
+  }
+
+  // Create an empty assistant bubble (chat + right panel) that updates live as
+  // streamed tokens arrive — no fake typewriter, real time-to-first-token.
+  function beginStreamMsg() {
+    removeTypingIndicator();
+    const label = state.name;
+    const chatEl = $('chat');
+    const div = document.createElement('div');
+    div.className = 'turn al streaming';
+    div.innerHTML = `<span class="who">${label}</span><div class="txt"></div>`;
+    chatEl?.appendChild(div);
+    const txt = div.querySelector<HTMLElement>('.txt')!;
+
+    const rp = $('rpBody');
+    const rpDiv = document.createElement('div');
+    rpDiv.className = 'rp-msg al streaming';
+    const time = new Date();
+    const ts = `${String(time.getHours()).padStart(2, '0')}:${String(time.getMinutes()).padStart(2, '0')}`;
+    rpDiv.innerHTML = `<div class="rp-meta"><span class="rp-who">${label}</span><span class="rp-time">${ts}</span></div><div class="rp-text"></div>`;
+    rp?.appendChild(rpDiv);
+    const rpTxt = rpDiv.querySelector<HTMLElement>('.rp-text')!;
+
+    // Coalesce updates to one paint per frame (backpressure for chatty streams).
+    let pending = '';
+    let scheduled = false;
+    const flush = () => {
+      scheduled = false;
+      const html = renderMarkdown(pending);
+      txt.innerHTML = html;
+      rpTxt.innerHTML = html;
+      if (chatEl) chatEl.scrollTop = chatEl.scrollHeight;
+      if (rp) rp.scrollTop = rp.scrollHeight;
+    };
+    return {
+      update(displayText: string) {
+        pending = displayText;
+        if (!scheduled) { scheduled = true; requestAnimationFrame(flush); }
+      },
+      finalize(finalText: string) {
+        pending = finalText;
+        flush();
+        div.classList.remove('streaming');
+        rpDiv.classList.remove('streaming');
+        lpMsgCount++;
+        const mcEl = document.getElementById('msgCount');
+        if (mcEl) mcEl.textContent = String(lpMsgCount);
+        const words = finalText.split(/\s+/).filter(w => w.length > 0).length;
+        lpTokenCount += Math.round(words * 1.3);
+        const tcEl = document.getElementById('tokenCount');
+        if (tcEl) tcEl.textContent = String(lpTokenCount);
+        saveChatMessage(finalText, 'al');
+      },
+    };
+  }
+
+  let winCleanup: (() => void) | null = null;   // teardown for live content (maps, animations)
   function openWin(title: string) { $('winTitle').textContent = title; $('win').classList.add('show'); audio.open(); }
-  $('winClose').onclick = () => { $('win').classList.remove('show'); $('winBody').innerHTML = ''; };
+  $('winClose').onclick = () => { try { winCleanup?.(); } catch {} winCleanup = null; $('win').classList.remove('show'); $('winBody').innerHTML = ''; };
 
   function openVideo(q: string) {
     openWin('Video · ' + q);
@@ -1018,43 +1519,168 @@ export function mountApp(root: HTMLElement) {
     } catch { $('winBody').innerHTML = '<div class="pad" style="color:var(--dim)">שגיאת חיפוש.</div>'; }
   }
 
-  function renderCalendar() {
-    const ev = loadEvents();
-    let html = '<div class="pad"><div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">' +
-      '<input id="evT" placeholder="Title" style="flex:1;min-width:140px;background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:10px;padding:10px;color:var(--ink)">' +
-      '<input type="date" id="evD" style="background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:10px;padding:10px;color:var(--ink)">' +
-      '<input type="time" id="evTime" style="background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:10px;padding:10px;color:var(--ink)">' +
-      '<button id="evAdd" style="background:linear-gradient(135deg,var(--gold),#fff);border:none;border-radius:10px;padding:10px 18px;cursor:pointer;color:#0a0806;font-weight:600">Add</button></div>';
-    if (!ev.length) html += '<div style="color:var(--dim);font-style:italic">היומן ריק.</div>';
-    for (const e of ev) {
-      const isHg = e.id.startsWith('hg:');
-      const badge = isHg ? '<span style="font-size:9px;letter-spacing:1px;color:var(--gold);background:rgba(255,194,77,.1);padding:2px 6px;border-radius:4px;margin-left:6px">HG</span>' : '';
-      html += `<div style="display:flex;gap:12px;align-items:center;padding:12px;background:rgba(255,255,255,.03);border:1px solid ${isHg ? 'rgba(255,194,77,.15)' : 'var(--line)'};border-radius:12px;margin-bottom:8px"><span style="color:var(--cyan);min-width:100px;font-size:13px">${e.date}${e.time ? ' · ' + e.time : ''}</span><span style="flex:1">${e.title}${badge}</span><button data-id="${e.id}" class="del" style="background:none;border:none;color:var(--dim);cursor:pointer;font-size:16px">✕</button></div>`;
+  let calViewYear = new Date().getFullYear();
+  let calViewMonth = new Date().getMonth();
+
+  function renderCalendar(selectedDate?: string) {
+    const allEvents = loadEvents();
+    const today = new Date().toISOString().slice(0, 10);
+    const year = calViewYear;
+    const month = calViewMonth;
+    const monthNames = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+    const dayNames = ['א','ב','ג','ד','ה','ו','ש'];
+    const firstDay = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+    // Build set of dates that have events
+    const eventDates = new Set(allEvents.map(e => e.date));
+
+    // Month grid header
+    let html = `<div style="padding:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <button id="calPrev" style="background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:8px;color:var(--ink);padding:6px 12px;cursor:pointer;font-size:16px">‹</button>
+        <span style="font-size:17px;font-weight:600;color:var(--ink)">${monthNames[month]} ${year}</span>
+        <button id="calNext" style="background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:8px;color:var(--ink);padding:6px 12px;cursor:pointer;font-size:16px">›</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:8px;text-align:center">
+        ${dayNames.map(d => `<div style="color:var(--dim);font-size:11px;padding:4px">${d}</div>`).join('')}
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">
+        ${Array(firstDay).fill('<div></div>').join('')}`;
+
+    for (let d = 1; d <= daysInMonth; d++) {
+      const iso = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const isToday = iso === today;
+      const isSelected = iso === selectedDate;
+      const hasEvent = eventDates.has(iso);
+      const bg = isSelected ? 'var(--gold)' : isToday ? 'rgba(218,165,32,.18)' : 'rgba(255,255,255,.03)';
+      const color = isSelected ? '#0a0806' : 'var(--ink)';
+      const border = isToday && !isSelected ? '1px solid rgba(218,165,32,.5)' : '1px solid transparent';
+      html += `<button data-date="${iso}" style="aspect-ratio:1;background:${bg};border:${border};border-radius:8px;color:${color};cursor:pointer;font-size:13px;font-weight:${isToday || isSelected ? '700' : '400'};position:relative;padding:0">
+        ${d}${hasEvent ? `<span style="position:absolute;bottom:3px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:${isSelected ? '#0a0806' : 'var(--gold)'}"></span>` : ''}
+      </button>`;
     }
+    html += `</div>`;
+
+    // If a date is selected, show its events + add form below
+    if (selectedDate) {
+      const dayEvents = allEvents.filter(e => e.date === selectedDate);
+      html += `<div style="margin-top:16px;border-top:1px solid var(--line);padding-top:16px">
+        <div style="font-size:13px;color:var(--dim);margin-bottom:10px">${selectedDate}</div>
+        ${dayEvents.length === 0 ? '<div style="color:var(--dim);font-style:italic;margin-bottom:12px">אין אירועים</div>' : ''}
+        ${dayEvents.map(e => {
+          const isHg = e.id.startsWith('hg:');
+          return `<div style="display:flex;gap:10px;align-items:center;padding:10px;background:rgba(255,255,255,.03);border:1px solid ${isHg ? 'rgba(255,194,77,.15)' : 'var(--line)'};border-radius:10px;margin-bottom:6px">
+            ${e.time ? `<span style="color:var(--cyan);font-size:12px;min-width:40px">${e.time}</span>` : ''}
+            <span style="flex:1;font-size:14px">${e.title}</span>
+            <button data-id="${e.id}" class="del" style="background:none;border:none;color:var(--dim);cursor:pointer;font-size:15px">✕</button>
+          </div>`;
+        }).join('')}
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+          <input id="evT" placeholder="${state.uiLang === 'he' ? 'כותרת אירוע' : 'Event title'}" style="flex:1;min-width:120px;background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--ink);font-size:13px">
+          <input type="time" id="evTime" style="background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--ink);font-size:13px">
+          <button id="evAdd" style="background:linear-gradient(135deg,var(--gold),#c8953a);border:none;border-radius:8px;padding:8px 16px;cursor:pointer;color:#0a0806;font-weight:600;font-size:13px">+</button>
+        </div>
+      </div>`;
+    }
+
+    // ── Unscheduled tasks panel ──────────────────────────────────────────
+    // Tasks added without a date live here, beside the calendar. Tap a task (or
+    // its 📅 button) while a day is selected to schedule it onto that day.
+    const unscheduled = loadTasks().filter(tk => !tk.done && !tk.due);
+    html += `<div style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px">
+      <div style="font-size:12px;color:var(--dim);margin-bottom:10px;display:flex;align-items:center;gap:6px">
+        <span style="color:var(--gold)">◷</span> ${state.uiLang === 'he' ? 'משימות ללא שיבוץ' : 'Unscheduled tasks'}${unscheduled.length ? ` (${unscheduled.length})` : ''}
+      </div>`;
+    if (unscheduled.length === 0) {
+      html += `<div style="color:var(--dim);font-style:italic;font-size:13px">${state.uiLang === 'he' ? 'אין משימות ממתינות לשיבוץ' : 'No tasks waiting to be scheduled'}</div>`;
+    } else {
+      for (const tk of unscheduled) {
+        const pColor = tk.priority === 'high' ? '#c0432e' : tk.priority === 'low' ? '#5a8a50' : 'var(--gold)';
+        html += `<div style="display:flex;gap:10px;align-items:center;padding:9px 10px;background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:10px;margin-bottom:6px">
+          <span style="width:6px;height:6px;border-radius:50%;background:${pColor};flex-shrink:0"></span>
+          <span style="flex:1;font-size:14px">${tk.text.replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]!))}</span>
+          <button data-sched="${tk.id}" title="${selectedDate ? (state.uiLang === 'he' ? 'שבץ לתאריך הנבחר' : 'Schedule to selected day') : (state.uiLang === 'he' ? 'בחר יום בלוח תחילה' : 'Pick a day first')}" ${selectedDate ? '' : 'disabled'} style="background:${selectedDate ? 'rgba(218,165,32,.14)' : 'rgba(255,255,255,.03)'};border:1px solid var(--line);border-radius:8px;color:${selectedDate ? 'var(--gold)' : 'var(--dim)'};cursor:${selectedDate ? 'pointer' : 'default'};font-size:13px;padding:5px 9px">📅</button>
+        </div>`;
+      }
+    }
+    html += `</div>`;
+
     html += '</div>';
     $('winBody').innerHTML = html;
-    $('evAdd').onclick = () => { const t = $<HTMLInputElement>('evT').value.trim(), d = $<HTMLInputElement>('evD').value; if (!t || !d) return; addEvent(t, d, $<HTMLInputElement>('evTime').value); renderCalendar(); updateCalBadge(); };
-    $('winBody').querySelectorAll<HTMLButtonElement>('.del').forEach(b => b.onclick = () => { removeEvent(b.dataset.id!); renderCalendar(); updateCalBadge(); });
+
+    $('winBody').querySelectorAll<HTMLButtonElement>('[data-sched]').forEach(b => {
+      b.onclick = () => {
+        if (!selectedDate) return;
+        scheduleTask(b.dataset.sched!, selectedDate);
+        updateCalBadge();
+        renderCalendar(selectedDate);
+      };
+    });
+
+    $('calPrev').onclick = () => {
+      if (calViewMonth === 0) { calViewMonth = 11; calViewYear--; } else calViewMonth--;
+      renderCalendar(selectedDate);
+    };
+    $('calNext').onclick = () => {
+      if (calViewMonth === 11) { calViewMonth = 0; calViewYear++; } else calViewMonth++;
+      renderCalendar(selectedDate);
+    };
+    $('winBody').querySelectorAll<HTMLButtonElement>('[data-date]').forEach(btn => {
+      btn.onclick = () => renderCalendar(btn.dataset.date!);
+    });
+    const evAdd = document.getElementById('evAdd');
+    if (evAdd) evAdd.onclick = () => {
+      const title = ($('evT') as HTMLInputElement).value.trim();
+      const time = ($('evTime') as HTMLInputElement).value;
+      if (!title || !selectedDate) return;
+      addEvent(title, selectedDate, time);
+      updateCalBadge();
+      renderCalendar(selectedDate);
+    };
+    $('winBody').querySelectorAll<HTMLButtonElement>('.del').forEach(b => {
+      b.onclick = () => { removeEvent(b.dataset.id!); updateCalBadge(); renderCalendar(selectedDate); };
+    });
   }
-  function openCalendar() { openWin('Calendar'); renderCalendar(); }
+  function openCalendar() {
+    calViewYear = new Date().getFullYear();
+    calViewMonth = new Date().getMonth();
+    openWin(state.uiLang === 'he' ? 'לוח שנה' : 'Calendar');
+    renderCalendar(new Date().toISOString().slice(0, 10));
+  }
+  (window as any).openCalendar = openCalendar;
 
   let asking = false;
   async function ask(text: string) {
+    // AR Pokemon voice control (switch / dispel) — handled instantly, offline.
+    const arReply = tryArVoiceCommand(text);
+    if (arReply) {
+      audio.receive();
+      orb.pikaEmote('excited');
+      addMsg(arReply, 'al');
+      voice.speak(arReply);
+      return;
+    }
     const localReply = tryLocalCommand(text);
     if (localReply) {
       audio.receive();
+      orb.pikaEmote('excited');
       addMsg(localReply, 'al');
       voice.speak(localReply);
       return;
     }
-    const puterReady = typeof (window as any).puter !== 'undefined';
-    const canAI = puterReady || state.key || state.grokKey || state.openaiKey;
+    // Live screen vision — capture the screen and let the model see it.
+    if (isScreenVisionIntent(text)) { await runScreenVision(text); return; }
+    const canAI = state.groqKey || state.key || state.grokKey || state.openaiKey;
     if (!canAI) { openSetup(); return; }
     if (asking) return;
     asking = true;
     setStatus('thinking');
     showTypingIndicator();
     // Master Brain: route intent, activate module, inject long-term memory.
+    // Compute the on-device query embedding first (free, falls back silently)
+    // so recall() can score memory semantically; never blocks the AI call long.
+    try { await prepareRecall(text); } catch {}
     try {
       const r = orchestrate(text);
       updateModuleIndicator(r.module);
@@ -1070,7 +1696,12 @@ export function mountApp(root: HTMLElement) {
       }
     } catch {}
     try {
-      const reply = await askAI(state, text);
+      // Stream tokens into a live bubble (real TTFT). runTags runs on the full
+      // reply at the end for side-effects; tags are hidden during streaming.
+      const stream = beginStreamMsg();
+      const reply = await askAIStream(state, text, (full) => {
+        stream.update(stripTagsForDisplay(full));
+      });
       const clean = runTags(reply, {
         onVideo: openVideo, onSearch: openWebSearch, onCalendar: openCalendar,
         onEvent: addEvent, onSpotify: openSpotify,
@@ -1078,9 +1709,9 @@ export function mountApp(root: HTMLElement) {
           const tasks = await hgLoad('hg2:tasks');
           const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
           tasks.unshift({ id, title, date, done: false, ts: Date.now() });
-          const storage = (window as any).storage || (window as any).puter?.kv;
-          if (storage) { try { await storage.set('hg2:tasks', JSON.stringify(tasks)); } catch {} }
           localStorage.setItem('hg2:tasks', JSON.stringify(tasks));
+          puterSync.markDirty();
+          puterSync.scheduleSync(() => updateCloudIndicator());
         },
         onHgSearch: hgSearchLicense,
         onHgEarnings: hgShowEarnings,
@@ -1099,16 +1730,28 @@ export function mountApp(root: HTMLElement) {
           };
           const index = await hgLoad('hg2:index');
           index.unshift(record);
-          const storage = (window as any).storage || (window as any).puter?.kv;
-          if (storage) { try { await storage.set('hg2:index', JSON.stringify(index)); } catch {} }
           localStorage.setItem('hg2:index', JSON.stringify(index));
+          puterSync.markDirty();
           const timeStr = new Date(record.reportedAt).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' });
           addMsg(`✅ התקנה נשמרה — ${record.idNumber || 'ללא מספר'} · דווח ב-${timeStr}`, 'sys');
+          puterSync.scheduleSync(() => updateCloudIndicator());
         },
         onArCamera: openArCamera,
         onGDoc: openGDoc,
-        onTask: (text: string, priority: string) => {
-          if (text) { addTask(text, (priority as 'low' | 'med' | 'high') || 'med'); addMsg(`✅ ${t('taskAdded', state.uiLang)}: "${text}"`, 'sys'); }
+        onTask: (text: string, priority: string, due?: string) => {
+          if (!text) return;
+          addTask(text, (priority as 'low' | 'med' | 'high') || 'med', due);
+          updateCalBadge();
+          // Push to the cloud right away so the home-screen widget (a separate
+          // storage context) sees the new task without waiting for the next sync.
+          puterSync.markDirty();
+          puterSync.scheduleSync(() => updateCloudIndicator());
+          if (due) {
+            addMsg(`✅ ${t('taskAdded', state.uiLang)}: "${text}" — 📅 ${due}`, 'sys');
+          } else {
+            const note = state.uiLang === 'he' ? ' (ללא שיבוץ ביומן)' : ' (unscheduled)';
+            addMsg(`✅ ${t('taskAdded', state.uiLang)}: "${text}"${note}`, 'sys');
+          }
         },
         onNote: (text: string) => {
           if (text) { saveNote(text); addMsg(`📝 ${t('noteSaved', state.uiLang)}`, 'sys'); }
@@ -1123,11 +1766,14 @@ export function mountApp(root: HTMLElement) {
         },
       }) || 'Done.';
       audio.receive();
-      addMsg(clean, 'al');
-      voice.speak(clean);
+      orb.pikaEmote(Math.random() < 0.65 ? 'happy' : 'excited');
+      stream.finalize(clean || 'Done.');
+      voice.speak(clean || 'Done.');
+      try { reflectOnReply(clean); } catch {}   // self-check any code it produced
       try { refreshSummary(state.history); } catch {}
     } catch (err: any) {
       removeTypingIndicator();
+      orb.pikaEmote('sad');
       if (voice.wakeOn) setTimeout(() => voice.setWake(true), 500);
       else setStatus('');
       addMsg(err.message || t('connectionError', state.uiLang), 'sys');
@@ -1141,6 +1787,7 @@ export function mountApp(root: HTMLElement) {
     const t = input.value.trim();
     if (!t) return;
     input.value = '';
+    voice.stopSpeaking();   // barge-in: silence any current speech immediately
     audio.send();
     addMsg(t, 'me');
     ask(t);
@@ -1154,6 +1801,7 @@ export function mountApp(root: HTMLElement) {
     }
     audio.ensure();
     const turningOn = !voice.wakeOn;
+    if (turningOn) voice.stopSpeaking();   // barge-in: stop talking when the user starts to listen/speak
     voice.setWake(turningOn);
     $('micBtn').classList.toggle('on', turningOn);
     if (turningOn) audio.micOn(); else audio.micOff();
@@ -1161,13 +1809,899 @@ export function mountApp(root: HTMLElement) {
   $('muteBtn').onclick = () => { audio.toggleMute(); };
   $('newChat').onclick = () => { state.history = []; $('rpBody').innerHTML = ''; $('chat').innerHTML = ''; clearChatHistory(); addMsg(state.name + ' ' + t('readyMsg', state.uiLang), 'al'); };
 
-  // Detect button
-  let detecting = false;
-  $('detectBtn').onclick = () => {
-    detecting = !detecting;
-    if (detecting) { orb.startBodyDetection(); $('detectBtn').classList.add('active'); }
-    else { orb.stopBodyDetection(); $('detectBtn').classList.remove('active'); }
+  // ── Hide / show all panels — leaves only the top bar + the central orb ──
+  // State persists so a "clean view" survives reloads. The toggle button lives
+  // in the top bar so it stays reachable even when everything else is hidden.
+  const appEl = root.querySelector('.app') as HTMLElement;
+  const applyPanelsHidden = (hidden: boolean) => {
+    appEl.classList.toggle('panels-hidden', hidden);
+    const btn = $('panelsToggleBtn');
+    btn.title = hidden ? 'הצג פנלים' : 'הסתר פנלים';
+    btn.setAttribute('aria-label', hidden ? 'הצג פנלים' : 'הסתר פנלים');
+    btn.classList.toggle('active', hidden);
   };
+  applyPanelsHidden(localStorage.getItem('alpha_panels_hidden') === '1');
+  $('panelsToggleBtn').onclick = () => {
+    const hidden = !appEl.classList.contains('panels-hidden');
+    localStorage.setItem('alpha_panels_hidden', hidden ? '1' : '0');
+    applyPanelsHidden(hidden);
+    try { navigator.vibrate?.(state.haptics ? 15 : 0); } catch {}
+  };
+
+  // ── Mood color themes — recolor the whole UI via a data-theme attribute ──
+  const applyMood = (mood: string) => {
+    document.documentElement.setAttribute('data-theme', mood);
+    localStorage.setItem('alpha_mood', mood);
+    document.querySelectorAll('#moodGrid .mood-opt').forEach(b =>
+      b.classList.toggle('on', (b as HTMLElement).dataset.mood === mood));
+  };
+  applyMood(localStorage.getItem('alpha_mood') || 'gold');
+  document.querySelectorAll('#moodGrid .mood-opt').forEach(btn => {
+    (btn as HTMLElement).onclick = () => { applyMood((btn as HTMLElement).dataset.mood || 'gold'); try { navigator.vibrate?.(state.haptics ? 12 : 0); } catch {} };
+  });
+
+  // (The mobile "minimal mode" — panels auto-hiding after 10s, leaving only a
+  //  central record button — was removed per user request. On mobile the panels
+  //  now stay visible just like on desktop.)
+
+  // ── Gesture detection — camera hand tracking for Pokemon swap ───────────────
+  // Palm held 1.5s → dispel current Pokemon. Fist → quick open → throw new Pokemon.
+  {
+    let gestureActive = false;
+    let gestureShowSkeleton = localStorage.getItem('alpha_hand_skeleton') !== '0';
+    // Skeleton toggle checkbox
+    const handSkeletonCheck = document.getElementById('handSkeletonCheck') as HTMLInputElement;
+    if (handSkeletonCheck) {
+      handSkeletonCheck.checked = gestureShowSkeleton;
+      handSkeletonCheck.onchange = () => {
+        gestureShowSkeleton = handSkeletonCheck.checked;
+        localStorage.setItem('alpha_hand_skeleton', gestureShowSkeleton ? '1' : '0');
+      };
+    }
+    let gestureStream: MediaStream | null = null;
+    let gestureHands: any = null;
+    let gestureCamera: any = null;
+    // Watchdog: MediaPipe's hand model lazily fetches wasm/binary assets from the
+    // CDN on the first send() call. On a flaky mobile network (carrier content
+    // filtering, slow data) that fetch can silently hang forever — the send()
+    // promise never resolves or rejects, so nothing ever crashes, but nothing
+    // ever detects either: this is what "gestures don't work at all on my
+    // phone" looks like from the outside. gotFirstHandResult + gestureWatchdog
+    // give the user real feedback + an easy retry instead of a silent freeze.
+    let gotFirstHandResult = false;
+    let gestureWatchdog: ReturnType<typeof setTimeout> | null = null;
+    let palmHoldMs = 0;
+    let throwCooldownMs = 0;
+    let suppressPalmMs = 0;   // after a summon, ignore the open hand for dispel
+    let prevScale = 0;        // hand size last frame (kept for re-acquire reset)
+    let handPresentMs = 0;    // how long a CONFIDENT, real-sized hand has been held
+    const SETTLE_MS = 450;    // ignore the first moments after acquiring a hand
+    // Finger-pointing laser cursor + dwell-to-select.
+    let pointSX = 0, pointSY = 0;       // smoothed cursor screen position
+    let dwellMs = 0;
+    let dwellTarget: Element | null = null;
+    let clickCooldownMs = 0;
+    const DWELL_MS = 800;               // fast dwell-to-click
+    // Gesture stability/debounce — a pose must be held briefly before it becomes
+    // the "confirmed" gesture, so frame-to-frame finger jitter can't make the
+    // detector flip between gestures ("go crazy").
+    let rawPrev = '';
+    let rawStableMs = 0;
+    let confirmedGesture = 'none';
+    const STABLE_MS = 230;   // a pose must hold this long before it's confirmed
+    // Pinch-to-grab manipulation of the orb.
+    let pinchActive = false;
+    let pinchStartHX = 0, pinchStartHY = 0;
+    let pinchStartXf: { x: number; y: number; z: number; s: number; px: number; py: number; pz: number } | null = null;
+    // When the Pokémon summon dock is open, a pinch scrolls it left/right
+    // instead of spinning the character — this remembers the scroll offset
+    // at the moment the pinch started, mirroring pinchStartHX/pinchStartXf.
+    let dockScrollStartLeft = 0;
+    const PALM_HOLD_THRESHOLD = 1100;  // hold open palm ~1.1s to release a Pokémon
+    const FIST_HOLD_THRESHOLD = 650;   // hold a fist ~0.65s to summon (no throw needed)
+    let fistHoldMs = 0;                // how long a confirmed fist has been held
+    let ballHeldMs = 0, ballPX = 0, ballPY = 0;   // grabbed-pokéball state (grab→throw)
+    const THROW_COOLDOWN = 2200;
+
+    // ── Live diagnostic readout (mobile only) — turns "still doesn't work,
+    // no idea why" into concrete numbers: is the camera actually producing
+    // frames, is MediaPipe actually returning results, is a hand ever found,
+    // and at what confidence/size. ──
+    let dbgOn = false;
+    let dbgFramesSent = 0, dbgResults = 0, dbgHandsFound = 0;
+    let dbgLastScore = 0, dbgLastSpan = 0, dbgLastArmed = false;
+    function dbgRender() {
+      const el = document.getElementById('gestureDebug');
+      if (!el || !dbgOn) return;
+      el.textContent =
+        `sent:${dbgFramesSent} res:${dbgResults} hands:${dbgHandsFound}\n` +
+        `score:${dbgLastScore.toFixed(2)} span:${dbgLastSpan.toFixed(2)} armed:${dbgLastArmed ? 'Y' : 'N'}`;
+    }
+    function dbgStart(isMobile: boolean) {
+      dbgOn = isMobile;
+      dbgFramesSent = 0; dbgResults = 0; dbgHandsFound = 0; dbgLastScore = 0; dbgLastSpan = 0; dbgLastArmed = false;
+      const el = document.getElementById('gestureDebug');
+      if (el) { if (isMobile) { el.removeAttribute('hidden'); dbgRender(); } else el.setAttribute('hidden', ''); }
+    }
+    function dbgStop() {
+      dbgOn = false;
+      const el = document.getElementById('gestureDebug');
+      if (el) el.setAttribute('hidden', '');
+    }
+
+    function gestureStatus(msg: string) {
+      const el = document.getElementById('gestureStatus');
+      if (el) el.textContent = msg;
+    }
+
+    // ── Laser-pointer cursor + dwell-to-select ──────────────────────────────
+    let lastX = 0, lastY = 0;
+    function clickableAt(x: number, y: number): Element | null {
+      let el = document.elementFromPoint(x, y);
+      while (el) {
+        if (el.matches('button,a,input,select,textarea,[role="button"],.sd-item,.ic,.chip,[data-id],[onclick],.sr-card,.sr-quote-btn,.sr-show-btn,.mkt-gen-btn,.mkt-icon-btn,.ag-btn,.ag-chips button,.nav-item')) return el;
+        el = el.parentElement;
+      }
+      return null;
+    }
+    // Fire a full event sequence so even handlers that listen on pointer/mouse
+    // (not just click) activate — makes hand-clicking work on any button.
+    function fireClick(el: HTMLElement, x: number, y: number) {
+      const opts = { bubbles: true, cancelable: true, clientX: x, clientY: y, view: window } as any;
+      try { el.dispatchEvent(new PointerEvent('pointerdown', opts)); } catch {}
+      try { el.dispatchEvent(new MouseEvent('mousedown', opts)); } catch {}
+      try { el.dispatchEvent(new PointerEvent('pointerup', opts)); } catch {}
+      try { el.dispatchEvent(new MouseEvent('mouseup', opts)); } catch {}
+      try { el.click(); } catch {}
+    }
+    function updateLaser(x: number, y: number, dt: number) {
+      const cur = document.getElementById('laserCursor');
+      if (!cur) return;
+      lastX = x; lastY = y;
+      cur.removeAttribute('hidden');
+      cur.style.transform = `translate(${x}px, ${y}px)`;
+      const target = clickableAt(x, y);
+      if (target && target === dwellTarget) {
+        dwellMs += dt;
+        const p = Math.min(1, dwellMs / DWELL_MS);
+        cur.style.setProperty('--p', String(p));
+        cur.classList.add('lc-arming');
+        if (dwellMs >= DWELL_MS && clickCooldownMs <= 0) {
+          dwellMs = 0; clickCooldownMs = 1400;
+          cur.classList.remove('lc-arming');
+          cur.style.setProperty('--p', '0');
+          fireClick(target as HTMLElement, lastX, lastY);   // dwell-select
+          cur.classList.add('lc-fire');
+          setTimeout(() => cur.classList.remove('lc-fire'), 300);
+        }
+      } else {
+        dwellTarget = target;
+        dwellMs = 0;
+        cur.style.setProperty('--p', '0');
+        cur.classList.toggle('lc-arming', false);
+        cur.classList.toggle('lc-over', !!target);
+      }
+    }
+    function hideLaser() {
+      const cur = document.getElementById('laserCursor');
+      if (cur) { cur.setAttribute('hidden', ''); cur.classList.remove('lc-arming', 'lc-over', 'lc-fire'); }
+      dwellTarget = null; dwellMs = 0; pointSX = 0; pointSY = 0;
+    }
+
+    function stopGesture() {
+      gestureActive = false;
+      if (gestureWatchdog) { clearTimeout(gestureWatchdog); gestureWatchdog = null; }
+      gotFirstHandResult = false;
+      dbgStop();
+      try { orb.setPerfMode(localStorage.getItem('alpha_fast_mode') === '1'); } catch {}   // restore orb quality
+      if (gestureCamera) { try { gestureCamera.stop(); } catch {} gestureCamera = null; }
+      if (gestureHands) { try { gestureHands.close(); } catch {} gestureHands = null; }
+      if (gestureStream) { gestureStream.getTracks().forEach(t => t.stop()); gestureStream = null; }
+      const vid = document.getElementById('gestureVideo') as HTMLVideoElement | null;
+      if (vid) vid.srcObject = null;
+      const liveVid = document.getElementById('gestureLiveVideo') as HTMLVideoElement | null;
+      if (liveVid) { liveVid.srcObject = null; liveVid.setAttribute('hidden', ''); }
+      document.body.classList.remove('gesture-cam-open');
+      document.getElementById('gesturePanel')!.setAttribute('hidden', '');
+      const ov = document.getElementById('handOverlay') as HTMLCanvasElement | null;
+      if (ov) { const c = ov.getContext('2d'); if (c) c.clearRect(0, 0, ov.width, ov.height); ov.setAttribute('hidden', ''); }
+      if ((window as any).__sizeHandOverlay) { window.removeEventListener('resize', (window as any).__sizeHandOverlay); (window as any).__sizeHandOverlay = null; }
+      const help = document.getElementById('gestureHelp'); if (help) { clearTimeout((help as any).__t); help.setAttribute('hidden', ''); }
+      $('detectBtn').classList.remove('active');
+      const cur = document.getElementById('laserCursor'); if (cur) cur.setAttribute('hidden', '');
+    }
+
+    async function startGesture(camOpen = false) {
+      const panel = document.getElementById('gesturePanel')!;
+      panel.removeAttribute('hidden');
+      $('detectBtn').classList.add('active');
+      gestureActive = true;
+      gestureStatus('⏳ מאתחל מצלמה…');
+
+      // Pop the gesture cheat-sheet, then fade it out after 7s.
+      const help = document.getElementById('gestureHelp');
+      if (help) {
+        help.removeAttribute('hidden');
+        help.classList.remove('gh-out');
+        clearTimeout((help as any).__t);
+        (help as any).__t = setTimeout(() => {
+          help.classList.add('gh-out');
+          setTimeout(() => help.setAttribute('hidden', ''), 600);
+        }, 7000);
+      }
+
+      // Phones can't run MediaPipe's FULL hand model (it stalls and detection never
+      // starts), so on mobile we stay on the lite model + a lighter camera. Desktop
+      // gets the full model + higher resolution for max accuracy.
+      const isMobileDevice = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || ('ontouchstart' in window) || window.innerWidth < 900;
+      dbgStart(isMobileDevice);
+      // On phones, running the heavy 3D orb AND MediaPipe hand inference at the same
+      // time starves the detector of frames → erratic/late detection. Drop the orb to
+      // its cheap render path while detecting (restored in stopGesture).
+      if (isMobileDevice) { try { orb.setPerfMode(true); } catch {} }
+      try {
+        const res = isMobileDevice ? { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30 } } : { width: { ideal: 640 }, height: { ideal: 480 } };
+        gestureStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', ...res }, audio: false });
+      } catch (err) {
+        // Report the REAL failure, not a blanket "permission denied" — e.g. the
+        // camera being held by another app/tab (NotReadableError) or an
+        // unsatisfiable constraint (OverconstrainedError) looks nothing like a
+        // permission problem to the user, and used to show that misleading
+        // message while leaving the panel stuck half-open (gestureActive was
+        // never reset, so a retry needed an extra click just to close it).
+        const name = (err as any)?.name || 'Unknown';
+        console.error('[gesture] getUserMedia failed:', name, err);
+        gestureStatus(name === 'NotAllowedError' ? '❌ גישה למצלמה נדחתה' : `❌ שגיאת מצלמה (${name}) — נסה שוב`);
+        stopGesture();
+        return;
+      }
+      const vid = document.getElementById('gestureVideo') as HTMLVideoElement;
+      const cvs = document.getElementById('gestureCanvas') as HTMLCanvasElement;
+      vid.srcObject = gestureStream;
+      await vid.play().catch(() => {});
+      cvs.width = 320; cvs.height = 240;
+      // Open-camera mode: show the full-screen mirrored selfie behind the skeleton.
+      const liveVid = document.getElementById('gestureLiveVideo') as HTMLVideoElement | null;
+      if (liveVid) {
+        if (camOpen) {
+          liveVid.srcObject = gestureStream;
+          liveVid.removeAttribute('hidden');
+          liveVid.play().catch(() => {});
+          document.body.classList.add('gesture-cam-open');
+        } else {
+          liveVid.srcObject = null;
+          liveVid.setAttribute('hidden', '');
+          document.body.classList.remove('gesture-cam-open');
+        }
+      }
+      gestureStatus('⏳ טוען זיהוי ידיים…');
+
+      // ── Full-screen transparent overlay: draw the hand as a glowing ghost ──
+      const overlay = document.getElementById('handOverlay') as HTMLCanvasElement;
+      const octx = overlay.getContext('2d')!;
+      overlay.removeAttribute('hidden');
+      const sizeOverlay = () => {
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        overlay.width = Math.round(window.innerWidth * dpr);
+        overlay.height = Math.round(window.innerHeight * dpr);
+        octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      };
+      sizeOverlay();
+      window.addEventListener('resize', sizeOverlay);
+      (window as any).__sizeHandOverlay = sizeOverlay;
+
+      if (!(window as any).Hands) {
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/hands.min.js';
+        document.head.appendChild(s);
+        let scriptFailed = false;
+        s.onerror = () => { scriptFailed = true; };
+        await new Promise<void>((res, rej) => {
+          s.onload = () => res();
+          const t = setInterval(() => { if (scriptFailed) { clearInterval(t); rej(); } }, 100);
+          setTimeout(() => { clearInterval(t); rej(); }, 8000);
+        }).catch(() => {
+          console.error('[gesture] failed to load MediaPipe hands.min.js from CDN');
+          gestureStatus('❌ טעינת זיהוי ידיים נכשלה — בדוק חיבור אינטרנט ונסה שוב');
+          stopGesture(); return;
+        });
+        if (!gestureActive) return;
+      }
+
+      const Hands = (window as any).Hands;
+      try {
+        gestureHands = new Hands({ locateFile: (f: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/${f}` });
+        // Mobile = lite model (the full model stalls on phones and detection never
+        // starts). Desktop = full model for max accuracy. The One-Euro smoothing +
+        // higher tracking confidence still make BOTH far steadier than before.
+        // Moderate confidence so the lite mobile model actually detects a hand (0.8
+        // was so high it often found nothing → "no skeleton"). False positives are
+        // handled downstream by the per-frame `trusted` gate + settle + hold, not by
+        // starving detection here.
+        gestureHands.setOptions({ maxNumHands: 2, modelComplexity: isMobileDevice ? 0 : 1, minDetectionConfidence: isMobileDevice ? 0.5 : 0.6, minTrackingConfidence: isMobileDevice ? 0.4 : 0.5, selfieMode: true });
+      } catch (err) {
+        console.error('[gesture] Hands init failed', err);
+        gestureStatus('❌ זיהוי ידיים לא נטען — נסה שוב');
+        stopGesture();
+        return;
+      }
+
+      let lastFrameMs = performance.now();
+
+      // ── One-Euro filter: jitter-free yet low-latency landmark smoothing ──────
+      // The raw MediaPipe landmarks jitter frame-to-frame, which made gestures
+      // flicker and the cursor shake. The One-Euro filter smooths hard when the
+      // hand is still (kills jitter) and barely at all when it moves fast (no lag)
+      // — the standard technique for hand-tracking pointers. Huge stability win.
+      const OE_MINCUT = 1.3, OE_BETA = 0.55, OE_DCUT = 1.0;
+      let oePrev: number[][] | null = null, oeDPrev: number[][] | null = null;
+      const oeAlpha = (cutoff: number, dtS: number) => { const tau = 1 / (2 * Math.PI * cutoff); return 1 / (1 + tau / dtS); };
+      function smoothLandmarks(raw: any[], dtS: number): any[] {
+        if (!oePrev || oePrev.length !== raw.length) {
+          oePrev = raw.map((p) => [p.x, p.y, p.z]);
+          oeDPrev = raw.map(() => [0, 0, 0]);
+          return raw.map((p) => ({ x: p.x, y: p.y, z: p.z }));
+        }
+        const out: any[] = [];
+        for (let i = 0; i < raw.length; i++) {
+          const r = [raw[i].x, raw[i].y, raw[i].z]; const o = [0, 0, 0];
+          for (let k = 0; k < 3; k++) {
+            const dx = (r[k] - oePrev[i][k]) / dtS;
+            const ad = oeAlpha(OE_DCUT, dtS);
+            const dHat = ad * dx + (1 - ad) * oeDPrev![i][k]; oeDPrev![i][k] = dHat;
+            const cutoff = OE_MINCUT + OE_BETA * Math.abs(dHat);
+            const a = oeAlpha(cutoff, dtS);
+            const xHat = a * r[k] + (1 - a) * oePrev[i][k]; oePrev[i][k] = xHat; o[k] = xHat;
+          }
+          out.push({ x: o[0], y: o[1], z: o[2] });
+        }
+        return out;
+      }
+
+      // Adaptive complexity: if the full model can't sustain a usable framerate on
+      // this device, fall back to the lite model live (no reload of the page).
+      let cplxLevel = 1, cplxFrames = 0, cplxSum = 0, cplxChecked = false;
+
+      // ── Realistic holographic hand ──────────────────────────────────────────
+      // Layered render: a radial-lit palm, a soft translucent "flesh" stroke, a
+      // bright energy-core line, and glowing joints/fingertips — reads like a real
+      // translucent hand rather than a thin wireframe. Sizes scale with the hand.
+      const HCONN = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+      // How large the hand skeleton is drawn (cosmetic only). Much smaller on
+      // phones, where the hand fills the front camera and otherwise sprawled.
+      const HAND_RENDER_SCALE = isMobileDevice ? 0.5 : 0.85;
+      function drawHand(hand: any[], mapX: (n: number) => number, mapY: (n: number) => number, primary: boolean) {
+        // Render the skeleton at a controlled size. On phones the front camera
+        // fills with the hand, so mapping landmarks straight onto the (contained)
+        // frame made the skeleton sprawl across the whole screen. Shrink every
+        // landmark toward the hand's own centre by HAND_RENDER_SCALE so the hand
+        // is always drawn small & natural, wherever it is — purely cosmetic;
+        // gesture math still uses the raw normalised landmarks.
+        let cx = 0, cy = 0; for (const p of hand) { cx += p.x; cy += p.y; } cx /= hand.length; cy /= hand.length;
+        const k = HAND_RENDER_SCALE;
+        const PX = (i: number) => mapX(cx + (hand[i].x - cx) * k), PY = (i: number) => mapY(cy + (hand[i].y - cy) * k);
+        const palmR = Math.max(12, Math.hypot(PX(0) - PX(9), PY(0) - PY(9)));
+        const a = primary ? 1 : 0.55;
+        octx.lineCap = 'round'; octx.lineJoin = 'round';
+        // Thin, precise anatomical-style bones with a subtle hologram glow.
+        octx.shadowColor = 'rgba(255,205,90,.7)'; octx.shadowBlur = 6;
+        octx.strokeStyle = `rgba(255,238,175,${0.9 * a})`;
+        octx.lineWidth = Math.max(1.3, palmR * 0.045);
+        for (const [p, q] of HCONN) { octx.beginPath(); octx.moveTo(PX(p), PY(p)); octx.lineTo(PX(q), PY(q)); octx.stroke(); }
+        // Small precise joints (knuckles), fingertips a touch brighter.
+        octx.shadowBlur = 7;
+        for (let i = 0; i < 21; i++) {
+          const tip = i === 4 || i === 8 || i === 12 || i === 16 || i === 20;
+          const r = tip ? Math.max(2.4, palmR * 0.055) : Math.max(1.7, palmR * 0.038);
+          octx.beginPath(); octx.arc(PX(i), PY(i), r, 0, Math.PI * 2);
+          octx.fillStyle = tip ? `rgba(255,245,195,${0.95 * a})` : `rgba(245,212,135,${0.85 * a})`;
+          octx.fill();
+        }
+        octx.shadowBlur = 0;
+      }
+
+      gestureHands.onResults((results: any) => {
+        if (!gestureActive) return;
+        if (!gotFirstHandResult) {
+          gotFirstHandResult = true;
+          if (gestureWatchdog) { clearTimeout(gestureWatchdog); gestureWatchdog = null; }
+        }
+        dbgResults++;
+        dbgHandsFound = results.multiHandLandmarks?.length || 0;
+        const now = performance.now();
+        const rawDt = now - lastFrameMs;
+        const dt = Math.min(200, rawDt);
+        lastFrameMs = now;
+        // Measure real inference cadence over the first ~40 processed frames.
+        if (!cplxChecked) {
+          cplxFrames++; cplxSum += rawDt;
+          if (cplxFrames >= 40) {
+            cplxChecked = true;
+            const avg = cplxSum / cplxFrames;
+            if (avg > 110 && cplxLevel === 1) {   // < ~9fps → too slow, drop to lite
+              cplxLevel = 0;
+              try { gestureHands.setOptions({ modelComplexity: 0 }); } catch {}
+            }
+          }
+        }
+        const W = window.innerWidth, H = window.innerHeight;
+        octx.clearRect(0, 0, W, H);
+        // Stretch-map: normalised [0-1] coordinates → full screen pixels so the
+        // hand tracks anywhere on screen without dead zones at the edges.
+        const mapX = (nx: number) => nx * W;
+        const mapY = (ny: number) => ny * H;
+
+        const noHand = () => {
+          gestureStatus('הרם יד מול המצלמה');
+          palmHoldMs = 0; fistHoldMs = 0; ballHeldMs = 0; prevScale = 0; handPresentMs = 0;
+          rawPrev = ''; rawStableMs = 0; confirmedGesture = 'none';
+          oePrev = null; oeDPrev = null;   // reset smoothing so re-acquire snaps in
+          orb.pokeballRelease?.();
+          hideLaser();
+          dbgLastScore = 0; dbgLastSpan = 0; dbgLastArmed = false; dbgRender();
+        };
+        if (!results.multiHandLandmarks?.length) { noHand(); return; }
+
+        // ALWAYS smooth + draw the detected hand so the user sees the skeleton as
+        // live feedback. Detection QUALITY gates only the ACTIONS (below) — it never
+        // hides the hand, otherwise a slightly-too-far hand looks like the detector
+        // is dead (the "no skeleton at all" report).
+        // Two-hand support: pick the PRIMARY (largest / closest) hand to drive the
+        // gestures, but draw ALL detected hands as holograms.
+        const hands: any[][] = results.multiHandLandmarks;
+        const spanOf = (h: any[]) => { let mnx = 1, mxx = 0, mny = 1, mxy = 0; for (const p of h) { if (p.x < mnx) mnx = p.x; if (p.x > mxx) mxx = p.x; if (p.y < mny) mny = p.y; if (p.y > mxy) mxy = p.y; } return Math.max(mxx - mnx, mxy - mny); };
+        let primaryIdx = 0, bestSpan = -1;
+        hands.forEach((h, idx) => { const s = spanOf(h); if (s > bestSpan) { bestSpan = s; primaryIdx = idx; } });
+        const rawLm0 = hands[primaryIdx];
+        const lm = smoothLandmarks(rawLm0, Math.min(0.05, Math.max(0.012, dt / 1000)));
+        // Shrink-map for primary-hand overlay drawing (matches drawHand's scale so
+        // the pinch ring sits on the smaller skeleton, not the full-size hand).
+        let _pcx = 0, _pcy = 0; for (const p of lm) { _pcx += p.x; _pcy += p.y; } _pcx /= lm.length; _pcy /= lm.length;
+        const mapXs = (nx: number) => mapX(_pcx + (nx - _pcx) * HAND_RENDER_SCALE);
+        const mapYs = (ny: number) => mapY(_pcy + (ny - _pcy) * HAND_RENDER_SCALE);
+        // Quality: handedness confidence + how much of the frame the hand fills.
+        const score = results.multiHandedness?.[primaryIdx]?.score ?? 1;
+        const handSpan = bestSpan;
+        const trusted = score >= (isMobileDevice ? 0.55 : 0.7) && handSpan >= (isMobileDevice ? 0.10 : 0.13);
+        if (trusted) handPresentMs += dt; else handPresentMs = 0;
+        const armed = trusted && handPresentMs >= SETTLE_MS;
+        dbgLastScore = score; dbgLastSpan = handSpan; dbgLastArmed = armed; dbgRender();
+        // Draw every hand (primary uses the smoothed landmarks; others raw).
+        if (gestureShowSkeleton) {
+          for (let hi = 0; hi < hands.length; hi++) drawHand(hi === primaryIdx ? lm : hands[hi], mapX, mapY, hi === primaryIdx);
+        }
+
+        // FINGER-FOLD test — the most reliable open/fist signal there is.
+        // For each finger, measure tip→knuckle(MCP) distance ÷ the finger's own first
+        // bone (MCP→PIP). Extended fingers give ≈2.2–2.8; a curled finger folds its
+        // tip back to the knuckle giving ≈0.2–0.5 — a huge, unambiguous gap. Because
+        // it's all distances WITHIN one finger it's fully rotation-invariant (works at
+        // any hand angle) and self-normalising (the short pinky reads the same as the
+        // long middle finger). The wide dead-zone (1.55 up / 1.25 curl) leaves a
+        // relaxed hand as 'none' so nothing fires when idle.
+        const d3 = (a: number, b: number) => Math.hypot(lm[a].x - lm[b].x, lm[a].y - lm[b].y, (lm[a].z || 0) - (lm[b].z || 0));
+        const fold = (mcp: number, pip: number, tip: number) => d3(mcp, tip) / Math.max(0.0001, d3(mcp, pip));
+        const fI = fold(5, 6, 8), fM = fold(9, 10, 12), fR = fold(13, 14, 16), fP = fold(17, 18, 20);
+        const idxUp = fI > 1.55, midUp = fM > 1.55, rngUp = fR > 1.55, pkyUp = fP > 1.55;
+        const idxCur = fI < 1.25, midCur = fM < 1.25, rngCur = fR < 1.25, pkyCur = fP < 1.25;
+        const upCount = [idxUp, midUp, rngUp, pkyUp].filter(Boolean).length;
+        const curlCount = [idxCur, midCur, rngCur, pkyCur].filter(Boolean).length;
+        const open = upCount >= 4;                         // 🖐️ all fingers extended → free to PLAY
+        const fist = upCount === 0 && curlCount >= 3;     // ✊ clearly closed → summon
+        const pointing = idxUp && !midUp && !rngUp && !pkyUp;  // ☝️ index only → pointer
+        // 👎 Thumbs-down → dismiss the Pokémon. Four fingers curled + the thumb
+        // extended and pointing DOWN. A deliberate pose that never fires while an
+        // open hand "plays", which is exactly what the open palm used to break.
+        const thumbExt = d3(2, 4) / Math.max(0.0001, d3(2, 3)) > 1.5;
+        const thumbsDown = upCount === 0 && curlCount >= 3 && thumbExt && (lm[4].y > lm[2].y + 0.03);
+
+        throwCooldownMs = Math.max(0, throwCooldownMs - dt);
+        suppressPalmMs = Math.max(0, suppressPalmMs - dt);
+        clickCooldownMs = Math.max(0, clickCooldownMs - dt);
+
+        const cx2 = mapX(lm[9].x), cy2 = mapY(lm[9].y);
+
+        // Hand "size" — wrist(0)→middle-MCP(9) distance. Grows as the hand moves
+        // toward the camera, independent of fingers opening/closing. Drives the
+        // forward-thrust ("throw at the screen") detection.
+        const handScale = Math.hypot(lm[0].x - lm[9].x, lm[0].y - lm[9].y);
+        if (prevScale === 0) prevScale = handScale;
+
+        // Pinch = thumb tip (4) close to index tip (8). Hysteresis (grab <0.06,
+        // hold until >0.11) so the grip doesn't flicker. Pinch takes priority
+        // over every other gesture so grabbing never triggers throw/dispel.
+        const pinchD = Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y);
+        const pinching = pinchActive ? pinchD < 0.11 : pinchD < 0.06;
+
+        // Classify this frame, then debounce: a new pose must persist STABLE_MS
+        // before it takes over — "none" switches immediately (an empty/relaxed
+        // reading should never be second-guessed). FIST is checked first: in a
+        // fist the thumb rests over the curled fingers, so thumb-tip and
+        // index-tip sit close together and the pinch test would otherwise
+        // steal it. A fist (no fingers up) is unambiguous, so it wins.
+        // Until the hand has settled (armed), nothing classifies — pure observation.
+        const raw = !armed ? 'none' : thumbsDown ? 'dispel' : fist ? 'fist' : pinching ? 'pinch' : pointing ? 'point' : open ? 'open' : 'none';
+        if (raw === rawPrev) rawStableMs += dt; else { rawPrev = raw; rawStableMs = 0; }
+        // Pinch used to skip this debounce entirely ("its own hysteresis
+        // already protects it") — but the 2D thumb-index distance it's based
+        // on can dip below the grab threshold for a single noisy frame during
+        // completely ordinary hand movement (not a deliberate pinch), and
+        // since pinch drives a continuous action (spin the character / drag
+        // the summon dock) that one bad frame was enough to visibly hijack
+        // the screen with no real pinch ever made — exactly the "does things
+        // I didn't ask for" complaint. Require a short deliberate hold to
+        // START a pinch, same as every other gesture; once a pinch is
+        // actually active, keep releasing/tracking instant so an intentional
+        // grab still feels responsive.
+        const PINCH_ENTER_MS = 140;
+        if (raw === 'none') confirmedGesture = raw;
+        else if (raw === 'pinch') { if (pinchActive || rawStableMs >= PINCH_ENTER_MS) confirmedGesture = raw; }
+        else if (rawStableMs >= STABLE_MS) confirmedGesture = raw;
+
+        if (confirmedGesture === 'pinch') {
+          const hx = (lm[4].x + lm[8].x) / 2;   // pinch midpoint
+          const hy = (lm[4].y + lm[8].y) / 2;
+          const dockEl = document.getElementById('summonDock');
+          const dockIsOpen = !!dockEl && !dockEl.hasAttribute('hidden');
+          if (!pinchActive) {
+            pinchActive = true;
+            pinchStartHX = hx; pinchStartHY = hy;
+            if (dockIsOpen) dockScrollStartLeft = (window as any).__dockScrollLeft?.() ?? 0;
+            else pinchStartXf = orb.getCharacterTransform();
+          }
+          fistHoldMs = 0;
+          const dx = hx - pinchStartHX;     // selfieMode → already mirrored
+          const dy = hy - pinchStartHY;
+          if (dockIsOpen && (window as any).__dockScrollTo) {
+            // 🤏 Pinch (thumb + index finger together) while the Pokémon bar is
+            // open — drag left/right to scroll it, like swiping a carousel.
+            const SENS_SCROLL = window.innerWidth * 1.6;
+            (window as any).__dockScrollTo(dockScrollStartLeft - dx * SENS_SCROLL);
+            gestureStatus('🤏 גלול ימינה/שמאלה לבחירת פוקימון');
+          } else {
+            const xf = pinchStartXf!;
+            const SENS = 5.0;                 // high sensitivity for precise control
+            // Grab & turn the Pokémon inside the orb: horizontal drag spins around
+            // Y, vertical drag tilts around X. Relative to the grab-start pose.
+            orb.setCharacterTransform(xf.x + dy * SENS, xf.y + dx * SENS, xf.z, xf.s, xf.px, xf.py, xf.pz);
+            gestureStatus('🤏 אוחז בכדור — הזז יד כדי לסובב');
+          }
+          octx.beginPath(); octx.arc(mapXs(hx), mapYs(hy), isMobileDevice ? 18 : 30, 0, Math.PI * 2);
+          octx.strokeStyle = 'rgba(120,220,255,.95)'; octx.lineWidth = isMobileDevice ? 3 : 5; octx.stroke();
+        } else if (confirmedGesture === 'point') {
+          // ☝️ Finger-pointing laser cursor — index tip (lm[8]) drives a pixel-precise
+          // cursor; snaps to nearby clickable targets; dwelling selects.
+          if (pinchActive) { pinchActive = false; pinchStartXf = null; }
+          fistHoldMs = 0;
+          // Map index fingertip to screen with GAIN around center so small, comfortable
+          // movement covers the full screen. Higher gain = less physical movement needed.
+          const GAIN = 2.1;
+          const nx = Math.min(1, Math.max(0, 0.5 + (lm[8].x - 0.5) * GAIN));
+          const ny = Math.min(1, Math.max(0, 0.5 + (lm[8].y - 0.5) * GAIN));
+          let ptx = nx * window.innerWidth;
+          let pty = ny * window.innerHeight;
+          // Snap to nearby clickable target — pulls cursor to the element center when
+          // within 90px, making imprecise pointing click reliably.
+          const snapTarget = clickableAt(ptx, pty);
+          if (snapTarget) {
+            const sr = (snapTarget as HTMLElement).getBoundingClientRect();
+            const scx = sr.left + sr.width / 2, scy = sr.top + sr.height / 2;
+            const sd = Math.hypot(ptx - scx, pty - scy);
+            if (sd < 90) { ptx = ptx + (scx - ptx) * 0.65; pty = pty + (scy - pty) * 0.65; }
+          }
+          // Adaptive smoothing: fast on big moves, snappy near target.
+          const d = Math.hypot(ptx - pointSX, pty - pointSY);
+          const onT = !!snapTarget;
+          const a = pointSX ? Math.min(0.75, (onT ? 0.38 : 0.2) + d / 350) : 1;
+          pointSX = pointSX ? pointSX + (ptx - pointSX) * a : ptx;
+          pointSY = pointSY ? pointSY + (pty - pointSY) * a : pty;
+          updateLaser(pointSX, pointSY, dt);
+          gestureStatus('☝️ מצביע — החזק רגע לבחירה');
+        } else {
+          hideLaser();
+          if (pinchActive) { pinchActive = false; pinchStartXf = null; }
+          if (confirmedGesture === 'fist') {
+            // ✊ GRAB the REAL 3D pokéball — it appears in your fist and follows the
+            // hand inside the orb. FLICK it (fast hand motion) — or just hold — to
+            // THROW it at the orb and summon.
+            palmHoldMs = 0;
+            if (throwCooldownMs <= 0) {
+              fistHoldMs += dt;
+              if (ballHeldMs === 0) { ballPX = cx2; ballPY = cy2; }
+              orb.pokeballHold?.(lm[9].x, lm[9].y);
+              ballHeldMs += dt;
+              const vx = cx2 - ballPX, vy = cy2 - ballPY; ballPX = cx2; ballPY = cy2;
+              const speed = (Math.hypot(vx, vy) / Math.max(1, dt)) * 16;   // px per ~frame
+              const flick = ballHeldMs > 140 && speed > 26;
+              if (flick || fistHoldMs >= FIST_HOLD_THRESHOLD) {
+                fistHoldMs = 0; ballHeldMs = 0;
+                throwCooldownMs = THROW_COOLDOWN; suppressPalmMs = 1100;
+                gestureStatus('🚀 זריקה! בחר פוקימון');
+                orb.pokeballThrow?.(() => (window as any).openSummonDock?.());
+                setTimeout(() => { if (gestureActive) gestureStatus('זיהוי פעיל'); }, 2500);
+              } else {
+                gestureStatus('✊ אוחז בכדור — תזרוק לכיוון הכדור לזימון');
+              }
+            }
+          } else {
+            fistHoldMs = 0; ballHeldMs = 0; orb.pokeballRelease?.();
+            if (open) gestureStatus('🖐️ יד פתוחה — שחק עם הפוקימון'); else if (!thumbsDown) gestureStatus('זיהוי פעיל');
+          }
+        }
+
+        // ── Dock gesture: when summon dock is open, track hand X to hover items.
+        // Skipped while pinching — a pinch instead drags the dock to scroll it
+        // (see the pinch branch above), so the two must not fight over the frame. ──
+        if (confirmedGesture !== 'pinch' && (window as any).__dockGestureMove && (window as any).closeSummonDock &&
+            document.getElementById('summonDock') && !document.getElementById('summonDock')!.hasAttribute('hidden')) {
+          (window as any).__dockGestureMove(lm[9].x); // wrist X (0..1)
+        }
+
+        // ── 👎 Thumbs-down DISMISS (dispel) — replaces the open-palm release so an
+        // open hand stays free to play. Hold briefly; a ring shows progress. Decay
+        // (not hard-reset) on brief misses so a model flicker doesn't restart it. ──
+        const dispelEligible = thumbsDown && suppressPalmMs <= 0;
+        if (dispelEligible) palmHoldMs += dt;
+        else palmHoldMs = Math.max(0, palmHoldMs - dt * 2.5);
+        if (dispelEligible && palmHoldMs > 80) {
+          const progress = Math.min(1, palmHoldMs / PALM_HOLD_THRESHOLD);
+          gestureStatus(`👎 החזק להעלמה… ${Math.round(progress * 100)}%`);
+          octx.beginPath(); octx.arc(cx2, cy2, 42, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
+          octx.strokeStyle = `rgba(218,165,32,${0.4 + progress * 0.6})`; octx.lineWidth = 6; octx.stroke();
+          if (palmHoldMs >= PALM_HOLD_THRESHOLD) {
+            palmHoldMs = 0; suppressPalmMs = 900;
+            gestureStatus('⚡ הפוקימון הועלם!');
+            (window as any).dispelOrb?.();
+          }
+        }
+        prevScale = handScale;
+
+      });
+
+      // Feed MediaPipe a SMALL, downscaled canvas frame (~320px wide). This is what
+      // made it "work great" before: the lite model is fast on a small image and
+      // resizes to 256 internally anyway, so sending the camera's full (possibly
+      // 720p+) frame just choked it on mobile → "barely detects". Drawing to a fixed
+      // small canvas also delivers a clean image regardless of the hidden video size.
+      const cap = document.createElement('canvas');
+      const capCtx = cap.getContext('2d')!;
+      const CAP_W = 480;
+      let rafId = 0;
+      // MediaPipe's send() lazily fetches its wasm/model binaries from the CDN on
+      // the first call and can hang indefinitely on a bad connection instead of
+      // rejecting — a plain `await` on that would freeze this whole loop forever
+      // (no next frame ever gets scheduled, camera looks "on" but nothing happens).
+      // Race it against a timeout so a stuck call can never block the loop.
+      const SEND_TIMEOUT_MS = 4000;
+      function sendWithTimeout(image: HTMLCanvasElement): Promise<void> {
+        return new Promise((resolve) => {
+          let done = false;
+          const finish = () => { if (!done) { done = true; resolve(); } };
+          setTimeout(finish, SEND_TIMEOUT_MS);
+          gestureHands.send({ image }).then(finish, finish);
+        });
+      }
+      const tick = async () => {
+        if (!gestureActive) return;
+        if (vid.readyState >= 2 && vid.videoWidth > 0) {
+          const h = Math.round(CAP_W * (vid.videoHeight / vid.videoWidth));
+          if (cap.width !== CAP_W) { cap.width = CAP_W; cap.height = h; }
+          try { capCtx.drawImage(vid, 0, 0, CAP_W, h); } catch {}
+          dbgFramesSent++; dbgRender();
+          await sendWithTimeout(cap);
+        }
+        rafId = requestAnimationFrame(tick);
+      };
+      (window as any).__stopGestureRaf = () => { cancelAnimationFrame(rafId); };
+      gestureStatus('מצלמה פעילה');
+      tick();
+      // Watchdog: if the model never produces a single result (stuck loading its
+      // wasm/binary assets over a flaky connection, or silently incompatible with
+      // this browser), give a real error + return to a retryable state instead of
+      // leaving "מצלמה פעילה" on screen forever with nothing actually happening.
+      gestureWatchdog = setTimeout(() => {
+        if (gestureActive && !gotFirstHandResult) {
+          console.error('[gesture] no hand-tracking results after 9s — MediaPipe likely failed to load over the network');
+          gestureStatus('❌ הזיהוי לא נטען — בדוק חיבור אינטרנט ונסה שוב');
+          stopGesture();
+        }
+      }, 9000);
+
+      // ── Physical Pokéball detector ───────────────────────────────────────────
+      // Desktop-only: on phones the variable lighting + skin tones generate too
+      // many false-positive yellow clusters. Only active on desktop webcam sessions.
+      if (!isMobileDevice) {
+        const pbCv = document.createElement('canvas');
+        pbCv.width = 160; pbCv.height = 120;
+        const pbCtx = pbCv.getContext('2d', { willReadFrequently: true })!;
+
+        type PBState = 'none' | 'closed' | 'open';
+        let pbState: PBState = 'none';
+        let pbReading: PBState = 'none';
+        let pbCount = 0;
+        // Sampled every 190ms — 10 consecutive matching reads (~1.9s sustained)
+        // before a transition fires, so a passing coincidence (shifting light,
+        // a moment's head turn) can't trigger a "ball" state on its own.
+        const PB_DEBOUNCE = 10;
+
+        function samplePokeball(): PBState {
+          if (!vid.videoWidth || vid.readyState < 2) return 'none';
+          try { pbCtx.drawImage(vid, 0, 0, 160, 120); } catch { return 'none'; }
+          const { data } = pbCtx.getImageData(0, 0, 160, 120);
+
+          // ── Safari Ball: yellow/amber body ──────────────────────────────────
+          // Use relative ratios (not absolute) so indoor/warm lighting still works.
+          // Yellow = R and G both elevated, B clearly lower, R slightly > G.
+          let yMinX = 160, yMaxX = 0, yMinY = 120, yMaxY = 0, yellowCount = 0;
+
+          // ── Classic Pokéball: red top + white bottom ─────────────────────────
+          // Red  = R clearly dominant over G and B (ratio-based for dim rooms).
+          // White = all channels bright (lowered threshold for off-white / cream).
+          let redSX = 0, redSY = 0, redCount = 0;
+          let whSX  = 0, whSY  = 0, whCount  = 0;
+          let rMinX = 160, rMaxX = 0, rMinY = 120, rMaxY = 0;
+          let wMinX = 160, wMaxX = 0, wMinY = 120, wMaxY = 0;
+
+          for (let i = 0; i < data.length; i += 4) {
+            const r = data[i], g = data[i + 1], b = data[i + 2];
+            const px = (i >> 2) % 160, py = (i >> 2) / 160 | 0;
+
+            // Yellow (Safari Ball): R and G close together and both high, B
+            // clearly lower — a narrower band than before, specifically to
+            // separate genuine amber/gold from skin tone, which typically has
+            // R noticeably ahead of G (this loose test used to read ordinary
+            // skin/warm-lit wood as "yellow ball" and spawn a Pokémon with no
+            // ball ever shown).
+            if (r > 110 && g > 75 && b < 140
+                && r - b > 35 && g - b > 15
+                && r > g * 0.85 && r < g * 1.2) {
+              if (px < yMinX) yMinX = px; if (px > yMaxX) yMaxX = px;
+              if (py < yMinY) yMinY = py; if (py > yMaxY) yMaxY = py;
+              yellowCount++;
+            }
+            // Red (classic Pokéball top): R >> G and R >> B
+            else if (r > 110 && r > g * 1.5 && r > b * 1.5 && g < 130 && b < 130) {
+              redSX += px; redSY += py; redCount++;
+              if (px < rMinX) rMinX = px; if (px > rMaxX) rMaxX = px;
+              if (py < rMinY) rMinY = py; if (py > rMaxY) rMaxY = py;
+            }
+            // White (classic Pokéball bottom): all channels bright (≥150 each)
+            else if (r > 150 && g > 150 && b > 150 && r + g + b > 490) {
+              whSX += px; whSY += py; whCount++;
+              if (px < wMinX) wMinX = px; if (px > wMaxX) wMaxX = px;
+              if (py < wMinY) wMinY = py; if (py > wMaxY) wMaxY = py;
+            }
+          }
+
+          // Classic Pokéball: red cluster ABOVE white cluster, horizontally
+          // aligned, AND compact (a real ball held up is a small tight blob —
+          // a red shirt in front of a white wall, or a face, spans a much
+          // bigger and looser area than that, and used to pass this check).
+          const classicOk = (() => {
+            if (redCount < 200 || whCount < 200) return false;
+            const rCY = redSY / redCount, wCY = whSY / whCount;
+            const rCX = redSX / redCount, wCX = whSX / whCount;
+            const bw = Math.max(rMaxX, wMaxX) - Math.min(rMinX, wMinX);
+            const bh = Math.max(rMaxY, wMaxY) - Math.min(rMinY, wMinY);
+            return rCY < wCY                   // red is above white ✓
+              && (wCY - rCY) < 80              // not too far apart vertically
+              && Math.abs(rCX - wCX) < 65      // horizontally aligned (same ball)
+              && bw < 90 && bh < 90;           // compact — an actual held-up ball, not a shirt+wall
+          })();
+
+          // A real ball shown to the camera fills a meaningful, compact patch
+          // of the frame — not a handful of scattered pixels that happen to
+          // match a loose color ratio somewhere in the shot.
+          const yBw = yMaxX - yMinX, yBh = yMaxY - yMinY;
+          const safariOk = yellowCount >= 500 && yBw < 100 && yBh < 100;
+          if (!safariOk && !classicOk) return 'none';
+
+          // Bounding box for the detected ball
+          let bx1: number, bx2: number, by1: number, by2: number;
+          if (safariOk) {
+            bx1 = Math.max(0, yMinX); bx2 = Math.min(159, yMaxX);
+            by1 = Math.max(0, yMinY); by2 = Math.min(119, yMaxY);
+          } else {
+            bx1 = Math.max(0, Math.min(rMinX, wMinX));
+            bx2 = Math.min(159, Math.max(rMaxX, wMaxX));
+            by1 = Math.max(0, Math.min(rMinY, wMinY));
+            by2 = Math.min(119, Math.max(rMaxY, wMaxY));
+          }
+
+          const bw = bx2 - bx1 + 1, bh = by2 - by1 + 1;
+          if (bw < 6 || bh < 6) return 'closed';
+
+          // Open ball exposes dark interior → darkRatio rises
+          let darkCount = 0, total = 0;
+          for (let y = by1; y <= by2; y++) {
+            for (let x = bx1; x <= bx2; x++) {
+              const i4 = (y * 160 + x) * 4;
+              total++;
+              if (data[i4] < 60 && data[i4 + 1] < 60 && data[i4 + 2] < 60) darkCount++;
+            }
+          }
+          const darkRatio = darkCount / Math.max(1, total);
+          const aspect    = bw / Math.max(1, bh);
+          return (darkRatio > 0.13 || aspect > 1.6) ? 'open' : 'closed';
+        }
+
+        function applyPokeballTransition(next: PBState) {
+          if (next === pbState) return;
+          const prev = pbState;
+          pbState = next;
+          if (next === 'closed') {
+            // Pokémon retreats into the ball with a shrink animation
+            document.body.classList.add('pokeball-capturing');
+          } else if (next === 'open') {
+            // Ball opens — character bursts out
+            document.body.classList.remove('pokeball-capturing');
+            if (prev === 'closed') {
+              // Was inside ball → now release with summon dock fanfare
+              setTimeout(() => (window as any).openSummonDock?.(), 380);
+            }
+          } else {
+            // Ball left the frame — restore character quietly
+            document.body.classList.remove('pokeball-capturing');
+          }
+        }
+
+        const pbInterval = setInterval(() => {
+          if (!gestureActive) { clearInterval(pbInterval); document.body.classList.remove('pokeball-capturing'); return; }
+          const reading = samplePokeball();
+          if (reading === pbReading) {
+            pbCount++;
+            if (pbCount >= PB_DEBOUNCE) { pbCount = PB_DEBOUNCE; applyPokeballTransition(reading); }
+          } else {
+            pbReading = reading;
+            pbCount = 1;
+          }
+        }, 190);
+
+        // Wrap the existing RAF stop so we also kill the interval and clean up
+        const _prevStop = (window as any).__stopGestureRaf;
+        (window as any).__stopGestureRaf = () => {
+          clearInterval(pbInterval);
+          document.body.classList.remove('pokeball-capturing');
+          pbState = 'none';
+          if (_prevStop) _prevStop();
+        };
+      }
+      // ── End Pokéball detector ────────────────────────────────────────────────
+    }
+
+    $('detectBtn').onclick = () => {
+      if (gestureActive) { (window as any).__stopGestureRaf?.(); stopGesture(); return; }
+      // Show mode chooser before starting.
+      const chooser = document.getElementById('gestureModeChooser');
+      if (chooser) chooser.removeAttribute('hidden');
+    };
+    document.getElementById('gmcHidden')?.addEventListener('click', () => {
+      document.getElementById('gestureModeChooser')?.setAttribute('hidden', '');
+      startGesture(false);
+    });
+    document.getElementById('gmcOpen')?.addEventListener('click', () => {
+      document.getElementById('gestureModeChooser')?.setAttribute('hidden', '');
+      startGesture(true);
+    });
+    document.getElementById('gmcCancel')?.addEventListener('click', () => {
+      document.getElementById('gestureModeChooser')?.setAttribute('hidden', '');
+    });
+  }
+
+  // Tap/click the orb stage to trigger the active Pokemon's attack
+  {
+    let attackCooldown = false;
+    document.getElementById('stage')!.addEventListener('click', () => {
+      if (attackCooldown) return;
+      attackCooldown = true;
+      const canvas = $<HTMLCanvasElement>('attackFx');
+      const rect = document.getElementById('stage')!.getBoundingClientRect();
+      canvas.style.width = rect.width + 'px';
+      canvas.style.height = rect.height + 'px';
+      orb.attackCharacter(canvas);
+      setTimeout(() => { attackCooldown = false; }, 1800);
+    });
+  }
 
   // HeavyGuard OS
   const hgBase = import.meta.env.BASE_URL || '/';
@@ -1192,13 +2726,6 @@ export function mountApp(root: HTMLElement) {
   });
 
   async function hgLoad(key: string): Promise<any[]> {
-    const storage = (window as any).storage || (window as any).puter?.kv;
-    if (storage) {
-      try {
-        const r = await storage.get(key);
-        if (r && r.value != null) return JSON.parse(r.value);
-      } catch {}
-    }
     try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch { return []; }
   }
 
@@ -1207,6 +2734,611 @@ export function mountApp(root: HTMLElement) {
     mb: 'm.b מערכות', sd: 'ס.ד מיגונים', hg: 'Heavy Guard',
   };
   function cName(id: string) { return CONTRACTORS[id] || id; }
+
+  // ── Holographic HUD: live Heavy Guard data on the main display ──────────
+  function renderHud() {
+    let idx: any[] = [];
+    try { idx = (JSON.parse(localStorage.getItem('hg2:index') || '[]') || []).filter((x: any) => x && x.status !== 'running'); } catch {}
+    const money = (n: number) => '₪' + (Number(n) || 0).toLocaleString('he-IL');
+    const ym = new Date().toISOString().slice(0, 7);
+    const total = idx.length;
+    // Cumulative income comes from the accountant's books (see modules/books.ts),
+    // plus live installs only for months the bookkeeper hasn't closed yet.
+    const liveAfter = idx.reduce((s: number, x: any) => s + (String(x.date || '').slice(0, 7) > BOOKS_LAST_KEY ? (Number(x.price) || 0) : 0), 0);
+    const revenue = cumulativeIncome(liveAfter);
+    const month = idx.filter((x: any) => (x.date || '').startsWith(ym));
+    const monthRev = BOOKS_BY_KEY[ym] ? BOOKS_BY_KEY[ym].income : month.reduce((s: number, x: any) => s + (Number(x.price) || 0), 0);
+    const ops = document.querySelector('#hudOps .hud-card-body');
+    if (ops) {
+      ops.innerHTML = total === 0 && revenue === 0
+        ? '<div class="hud-empty">אין עדיין נתוני Heavy Guard במכשיר זה</div>'
+        : `<div class="hud-stat"><span>התקנות סה"כ</span><b>${total.toLocaleString('he-IL')}</b></div>
+           <div class="hud-stat"><span>הכנסה מצטברת</span><b class="cy">${money(revenue)}</b></div>
+           <div class="hud-stat"><span>החודש</span><b>${month.length} · ${money(monthRev)}</b></div>
+           <div class="hud-line"></div>
+           <div class="hud-foot">${BIZ_TAG}</div>`;
+    }
+    const pipe = document.querySelector('#hudPipe .hud-card-body');
+    if (pipe) {
+      const byC: Record<string, { count: number; rev: number }> = {};
+      idx.forEach((x: any) => { const c = x.contractor || '?'; (byC[c] = byC[c] || { count: 0, rev: 0 }); byC[c].count++; byC[c].rev += Number(x.price) || 0; });
+      const rows = Object.entries(byC).map(([id, v]) => ({ name: cName(id), ...v })).sort((a, b) => b.rev - a.rev).slice(0, 5);
+      const max = Math.max(1, ...rows.map((r) => r.rev));
+      pipe.innerHTML = rows.length === 0
+        ? '<div class="hud-empty">אין נתונים</div>'
+        : rows.map((r) => `<div class="hud-prow"><span class="hud-pn">${r.name}</span><div class="hud-pbar"><i style="width:${Math.round(r.rev / max * 100)}%"></i></div><b>${money(r.rev)}</b></div>`).join('');
+    }
+  }
+  const BIZ_TAG = 'Heavy Guard · נתוני שטח חיים';
+
+  // ── Business briefing (Hebrew) — HeavyGuard KPIs + fleet + live markets ──
+  // Pulls only local HG data + the markets already fetched (no cross-origin), so
+  // it always works. Shown in chat when the GLOBAL OPERATIONS panel is tapped.
+  function businessBriefing(): string {
+    const idx = readIdx();
+    const ym = new Date().toISOString().slice(0, 7);
+    const money = (n: number) => '₪' + Math.round(n || 0).toLocaleString('he-IL');
+    const total = idx.length;
+    // Same books-authoritative income as the HUD (see modules/books.ts).
+    const liveAfter = idx.reduce((s: number, x: any) => s + (String(x.date || '').slice(0, 7) > BOOKS_LAST_KEY ? (Number(x.price) || 0) : 0), 0);
+    const revenue = cumulativeIncome(liveAfter);
+    const month = idx.filter((x: any) => (x.date || '').startsWith(ym));
+    const monthRev = BOOKS_BY_KEY[ym] ? BOOKS_BY_KEY[ym].income : month.reduce((s: number, x: any) => s + (Number(x.price) || 0), 0);
+    const byC: Record<string, { n: number; rev: number }> = {};
+    idx.forEach((x: any) => { const c = x.contractor || '?'; (byC[c] = byC[c] || { n: 0, rev: 0 }); byC[c].n++; byC[c].rev += Number(x.price) || 0; });
+    const top = Object.entries(byC).map(([id, v]) => ({ name: cName(id), ...v })).sort((a, b) => b.rev - a.rev).slice(0, 3);
+    const unsched = idx.filter((x: any) => x && (x.status === 'running' || !x.date)).length;
+    const openTasks = readTasks().filter((t: any) => !t.done).length;
+    const trips = readTrips(); const km = trips.reduce((s: number, t: any) => s + (Number(t.km) || 0), 0);
+    const lines: string[] = ['🛡️ **תדריך עסקי · Heavy Guard**'];
+    if (total === 0 && revenue === 0) lines.push('אין עדיין נתוני התקנות במכשיר זה.');
+    else {
+      lines.push(`• התקנות סה"כ: ${total} · הכנסה מצטברת: ${money(revenue)}`);
+      lines.push(`• החודש: ${month.length} התקנות · ${money(monthRev)}`);
+      if (top.length) lines.push('• קבלנים מובילים: ' + top.map((t) => `${t.name} (${money(t.rev)})`).join(' · '));
+      if (unsched) lines.push(`• ⚠️ ${unsched} התקנות ממתינות לתיאום`);
+    }
+    if (openTasks) lines.push(`• ${openTasks} משימות פתוחות`);
+    lines.push(`• 🚚 צי: ${trips.length} נסיעות · ${km} ק"מ`);
+    if (lastMarketRows.length) {
+      const m = lastMarketRows.slice(0, 4).map((r) => `${r.name} ${r.price} (${r.chg >= 0 ? '+' : ''}${r.chg.toFixed(1)}%)`);
+      lines.push('📊 שווקים: ' + m.join(' · '));
+    }
+    return lines.join('\n');
+  }
+  (window as any).businessBriefing = businessBriefing;
+
+  // ── Fleet panel (main-screen card; tap → full control center) ──
+  // Mirrors the REAL ניהול-צי data inside Heavy Guard: the same hg2:trips
+  // and hg2:vehicle stores its "רכב ותחזוקה" screen reads/writes — trips +
+  // km, upcoming ביטוח/טסט/טיפול reminders (≤30 days, exactly HG's rule),
+  // and total maintenance spend. One source of truth, two screens.
+  function renderFleetPanel() {
+    const el = document.querySelector('#hudFleetPanel .hud-card-body');
+    if (!el) return;
+    const trips = readTrips();
+    const km = trips.reduce((s: number, t: any) => s + (Number(t.km) || 0), 0);
+    let vehicle: any[] = [];
+    try { vehicle = JSON.parse(localStorage.getItem('hg2:vehicle') || '[]') || []; } catch {}
+    const maintCost = vehicle.reduce((s: number, r: any) => s + (Number(r.cost) || 0), 0);
+    const daysTo = (d: string) => Math.ceil((new Date(d).getTime() - Date.now()) / 86400000);
+    const reminders = vehicle
+      .filter((r: any) => r.remind)
+      .map((r: any) => ({ ...r, days: daysTo(r.remind) }))
+      .filter((r: any) => r.days <= 30)
+      .sort((a: any, b: any) => a.days - b.days)
+      .slice(0, 2);
+    const remindHtml = reminders.map((r: any) =>
+      `<div class="hud-stat"><span>⏰ ${r.type}${r.note ? ' · ' + r.note : ''}</span><b class="${r.days < 0 ? 'warn' : ''}">${r.days < 0 ? `עבר לפני ${-r.days} ימים` : r.days === 0 ? 'היום' : `בעוד ${r.days} ימים`}</b></div>`).join('');
+    const last = vehicle.slice().sort((a: any, b: any) => (b.date || '').localeCompare(a.date || ''))[0];
+    el.innerHTML = `
+      <div class="hud-stat"><span>נסיעות · ק"מ</span><b>${trips.length} · ${km.toLocaleString('he-IL')}</b></div>
+      ${remindHtml}
+      <div class="hud-stat"><span>אחזקה מצטברת</span><b>${money(maintCost)}</b></div>
+      ${last ? `<div class="hud-stat"><span>אחרון: ${last.type || ''}</span><b>${(last.date || '').split('-').reverse().join('/')}</b></div>` : ''}
+      <div class="hud-foot">מסונכרן עם ניהול הצי ב-Heavy Guard ↗</div>`;
+  }
+  const money = (n: number) => '₪' + Math.round(n || 0).toLocaleString('he-IL');
+
+  // ── Live markets ──
+  const mkFmt = (n: number) => n >= 1000 ? Math.round(n).toLocaleString('en-US') : n.toLocaleString('en-US', { maximumFractionDigits: n >= 1 ? 2 : 4 });
+  type MkRow = { name: string; price: string; chg: number };
+  let lastMarketRows: MkRow[] = [];
+  // Fetch a fuller market board: crypto (CoinGecko) + indices/gold (Yahoo).
+  async function fetchMarketRows(): Promise<MkRow[]> {
+    const rows: MkRow[] = [];
+    try {
+      const ids = 'bitcoin,ethereum,solana,binancecoin,ripple,cardano,dogecoin';
+      const r = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`);
+      const d = await r.json();
+      const order: [string, string][] = [['bitcoin', 'Bitcoin'], ['ethereum', 'Ethereum'], ['solana', 'Solana'], ['binancecoin', 'BNB'], ['ripple', 'XRP'], ['cardano', 'Cardano'], ['dogecoin', 'Dogecoin']];
+      for (const [id, name] of order) if (d[id]) rows.push({ name, price: '$' + mkFmt(d[id].usd), chg: d[id].usd_24h_change || 0 });
+    } catch {}
+    for (const [sym, name] of [['%5EGSPC', 'S&P 500'], ['%5EIXIC', 'NASDAQ'], ['%5EDJI', 'Dow Jones'], ['GC%3DF', 'זהב'], ['CL%3DF', 'נפט']]) {
+      try {
+        const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=2d`);
+        const d = await r.json();
+        const m = d.chart.result[0].meta;
+        const price = m.regularMarketPrice;
+        const prev = m.chartPreviousClose ?? m.previousClose ?? price;
+        rows.push({ name, price: mkFmt(price), chg: prev ? ((price - prev) / prev) * 100 : 0 });
+      } catch {}
+    }
+    if (rows.length) lastMarketRows = rows;
+    return rows;
+  }
+  const mkRowHtml = (r: MkRow) => {
+    const up = r.chg >= 0; const c = up ? '#3FD79A' : '#FF5C50';
+    return `<div class="mk-row"><span class="mk-name">${r.name}</span><span class="mk-price">${r.price}</span><span class="mk-chg" style="color:${c}">${up ? '▲' : '▼'}${Math.abs(r.chg).toFixed(2)}%</span></div>`;
+  };
+  async function renderMarkets() {
+    const el = document.querySelector('#hudMarkets .hud-card-body');
+    if (!el) return;
+    const rows = await fetchMarketRows();
+    el.innerHTML = rows.length === 0
+      ? '<div class="hud-empty">שווקים לא זמינים כרגע</div>'
+      : rows.slice(0, 6).map(mkRowHtml).join('') + '<div class="mk-more">לחץ לכל השווקים ↗</div>';
+  }
+  // Full markets board in a window (opened by clicking the markets panel).
+  function openMarketsDetail() {
+    openWin('שווקים · MARKETS 📊');
+    const body = $('winBody');
+    const render = (rows: MkRow[]) => {
+      body.innerHTML = `<div class="pad mk-detail">
+        <div class="mk-detail-h">מטבעות קריפטו · מדדים · סחורות — נתונים חיים</div>
+        <div class="mk-detail-list">${rows.length ? rows.map(mkRowHtml).join('') : '<div class="ops-empty">שווקים לא זמינים כרגע</div>'}</div>
+        <a class="mk-detail-cta" href="${TRADE_URL}" target="_blank" rel="noopener">פתח את מערכת המסחר המלאה ↗</a>
+      </div>`;
+    };
+    render(lastMarketRows);
+    fetchMarketRows().then(render);
+  }
+
+  // ── Israel news panel ──────────────────────────────────────────────
+  // rss2json's free anonymous tier is rate-limited and often just fails
+  // (this was showing "חדשות לא זמינות" almost permanently), so this now
+  // falls back to fetching the raw RSS XML through a CORS proxy and
+  // parsing it client-side, trying a couple of Israeli news feeds in turn
+  // before giving up. Refreshed every 5 minutes (well inside "hourly").
+  const NEWS_SOURCES = [
+    'https://www.ynet.co.il/Integration/StoryRss2.xml',
+    'https://rss.walla.co.il/feed/1',
+  ];
+  function newsRowsHtml(items: { title: string; link: string }[]) {
+    return items.slice(0, 6).map((it) =>
+      `<a class="nw-row" href="${it.link}" target="_blank" rel="noopener"><span class="nw-dot"></span><span class="nw-t">${(it.title || '').replace(/</g, '&lt;')}</span></a>`).join('');
+  }
+  async function fetchRssViaJsonProxy(rssUrl: string): Promise<{ title: string; link: string }[]> {
+    try {
+      const r = await fetch('https://api.rss2json.com/v1/api.json?count=6&rss_url=' + encodeURIComponent(rssUrl), { signal: AbortSignal.timeout(6000) });
+      const d = await r.json();
+      if (d.status === 'ok' && d.items && d.items.length) return d.items.map((it: any) => ({ title: it.title, link: it.link }));
+    } catch {}
+    return [];
+  }
+  async function fetchRssViaCorsProxy(rssUrl: string): Promise<{ title: string; link: string }[]> {
+    try {
+      const r = await fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(rssUrl), { signal: AbortSignal.timeout(8000) });
+      const xml = await r.text();
+      const doc = new DOMParser().parseFromString(xml, 'text/xml');
+      return [...doc.querySelectorAll('item')].map((it) => ({
+        title: it.querySelector('title')?.textContent || '',
+        link: it.querySelector('link')?.textContent || '#',
+      })).filter((it) => it.title);
+    } catch {}
+    return [];
+  }
+  async function renderNews() {
+    const el = document.querySelector('#hudNews .hud-card-body');
+    if (!el) return;
+    for (const src of NEWS_SOURCES) {
+      let items = await fetchRssViaJsonProxy(src);
+      if (!items.length) items = await fetchRssViaCorsProxy(src);
+      if (items.length) { el.innerHTML = newsRowsHtml(items); return; }
+    }
+    el.innerHTML = '<div class="hud-empty">חדשות לא זמינות כרגע</div>';
+  }
+
+  // ── The four side panels: today's agenda, open personal tasks, live agent
+  // activity from the Agents Command Center (same localStorage the agents
+  // app writes), and real Tel-Aviv weather (open-meteo, free, no key). ──
+  const esc = (s: string) => String(s || '').replace(/</g, '&lt;');
+  function renderAgendaPanel() {
+    const el = document.querySelector('#hudAgenda .hud-card-body');
+    if (!el) return;
+    const today = new Date().toISOString().slice(0, 10);
+    const ev = loadEvents().filter((e) => e.date >= today).slice(0, 3);
+    el.innerHTML = ev.length
+      ? ev.map((e) => `<div class="hud-stat"><span>${esc(e.title).slice(0, 26)}</span><b class="cy" style="font-size:12px">${e.date === today ? (e.time || 'היום') : e.date.slice(5).split('-').reverse().join('/')}</b></div>`).join('')
+      : '<div class="hud-empty">אין אירועים קרובים · אמור "קבע פגישה"</div>';
+  }
+  function renderTasksPanel() {
+    const el = document.querySelector('#hudTasksPanel .hud-card-body');
+    if (!el) return;
+    const open = loadTasks().filter((t) => !t.done);
+    const top = [...open].sort((a, b) => (a.priority === 'high' ? -1 : 1) - (b.priority === 'high' ? -1 : 1)).slice(0, 3);
+    el.innerHTML = top.length
+      ? top.map((t) => `<div class="hud-stat"><span>${t.priority === 'high' ? '🔥 ' : ''}${esc(t.text).slice(0, 28)}</span></div>`).join('') +
+        (open.length > 3 ? `<div class="hud-foot">+${open.length - 3} נוספות</div>` : '')
+      : '<div class="hud-empty">אין משימות פתוחות 🎉</div>';
+  }
+  const AGENT_NAMES: Record<string, string> = { ceo: 'יהודה', sales: 'זבולון', ops: 'גד', cmo: 'נפתלי', dev: 'דן', auto: 'אשר', data: 'יששכר', cs: 'בנימין', finance: 'ראובן', procure: 'שמעון', legal: 'לוי', growth: 'יוסף', facilities: 'דבורה' };
+  function renderTeamPanel() {
+    const el = document.querySelector('#hudTeamPanel .hud-card-body');
+    if (!el) return;
+    let acts: any[] = [];
+    try { acts = JSON.parse(localStorage.getItem('alpha:agents:activity') || '[]') || []; } catch {}
+    const top = acts.slice(0, 3);
+    el.innerHTML = top.length
+      ? top.map((a) => `<div class="hud-stat"><span><b style="font-size:11px;color:#E4BC63">${AGENT_NAMES[a.agentId] || ''}</b> · ${esc(a.text).slice(0, 30)}</span></div>`).join('') +
+        '<div class="hud-foot">לחץ למרכז הסוכנים ↗</div>'
+      : '<div class="hud-empty">פתח את מרכז הסוכנים כדי להתחיל</div>';
+  }
+  const WMO: Record<number, string> = { 0: '☀️ בהיר', 1: '🌤️ בהיר בעיקר', 2: '⛅ מעונן חלקית', 3: '☁️ מעונן', 45: '🌫️ ערפל', 48: '🌫️ ערפל', 51: '🌦️ טפטוף', 53: '🌦️ טפטוף', 61: '🌧️ גשם קל', 63: '🌧️ גשם', 65: '🌧️ גשם חזק', 80: '🌦️ ממטרים', 95: '⛈️ סופת רעמים' };
+  async function renderWeatherPanel() {
+    const el = document.querySelector('#hudWeather .hud-card-body');
+    if (!el) return;
+    try {
+      const r = await fetch('https://api.open-meteo.com/v1/forecast?latitude=32.08&longitude=34.78&current=temperature_2m,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min&timezone=Asia%2FJerusalem&forecast_days=1', { signal: AbortSignal.timeout(7000) });
+      const d = await r.json();
+      const c = d.current;
+      el.innerHTML = `
+        <div class="hud-stat"><span>${WMO[c.weather_code] || '🌡️'}</span><b>${Math.round(c.temperature_2m)}°</b></div>
+        <div class="hud-stat"><span>טווח היום</span><b class="cy" style="font-size:13px">${Math.round(d.daily.temperature_2m_min[0])}°–${Math.round(d.daily.temperature_2m_max[0])}°</b></div>
+        <div class="hud-foot">תל אביב · רוח ${Math.round(c.wind_speed_10m)} קמ"ש</div>`;
+    } catch {
+      el.innerHTML = '<div class="hud-empty">מזג אוויר לא זמין כרגע</div>';
+    }
+  }
+
+  // ════════ Fleet & Operations Control Center ════════
+  // One window, five panels: map of installs, trips/fleet, HeavyGuard tasks,
+  // installs awaiting scheduling, and a live rotating-DNA effect.
+  const escHtml = (s: string) => (s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+  const readTrips = (): any[] => { try { return JSON.parse(localStorage.getItem('hg2:trips') || '[]') || []; } catch { return []; } };
+  const writeTrips = (a: any[]) => { try { localStorage.setItem('hg2:trips', JSON.stringify(a)); } catch {} puterSync.scheduleSync?.(); };
+  const readIdx = (): any[] => { try { return JSON.parse(localStorage.getItem('hg2:index') || '[]') || []; } catch { return []; } };
+  const readTasks = (): any[] => { try { return JSON.parse(localStorage.getItem('hg2:tasks') || '[]') || []; } catch { return []; } };
+  const writeTasks = (a: any[]) => { try { localStorage.setItem('hg2:tasks', JSON.stringify(a)); } catch {} puterSync.scheduleSync?.(); };
+  const wazeUrl = (to: string) => `https://waze.com/ul?q=${encodeURIComponent(to || '')}&navigate=yes`;
+
+  // Israeli location → coordinates (mirrors the HeavyGuard map table) for plotting installs.
+  const FLEET_GEO: Record<string, { lat: number; lng: number; city: string }> = {"xcmg אשקלון":{lat:31.668,lng:34.574,city:"אשקלון"},"אופקים":{lat:31.317,lng:34.62,city:"אופקים"},"אחיסמך":{lat:31.931,lng:34.918,city:"אחיסמך"},"אל סייד":{lat:31.3,lng:34.86,city:"אל סייד"},"אמקול":{lat:31.792,lng:34.65,city:"אשדוד"},"אשדוד":{lat:31.792,lng:34.65,city:"אשדוד"},"אשקלון":{lat:31.668,lng:34.574,city:"אשקלון"},"באר טוביה":{lat:31.738,lng:34.722,city:"באר טוביה"},"באר שבע":{lat:31.252,lng:34.791,city:"באר שבע"},"בית נחמיה":{lat:31.952,lng:34.953,city:"בית נחמיה"},"בית שמש":{lat:31.745,lng:34.987,city:"בית שמש"},"ביתר עלית":{lat:31.696,lng:35.117,city:"ביתר עלית"},"בני עייש":{lat:31.788,lng:34.74,city:"בני עייש"},"בני ראם":{lat:31.742,lng:34.782,city:"בני ראם"},"בר גיורא":{lat:31.731,lng:35.052,city:"בר גיורא"},"גבעת ברנר":{lat:31.866,lng:34.795,city:"גבעת ברנר"},"גבעת כוח":{lat:31.96,lng:34.952,city:"גבעת כוח"},"גן יבנה":{lat:31.789,lng:34.706,city:"גן יבנה"},"חולון":{lat:32.015,lng:34.779,city:"חולון"},"חולון קטרפילר":{lat:32.015,lng:34.779,city:"חולון"},"חיפה":{lat:32.794,lng:34.989,city:"חיפה"},"טייבה":{lat:32.266,lng:35.01,city:"טייבה"},"טירה":{lat:32.234,lng:34.951,city:"טירה"},"יבנה":{lat:31.878,lng:34.739,city:"יבנה"},"יפו":{lat:32.052,lng:34.752,city:"יפו"},"ירושלים":{lat:31.768,lng:35.214,city:"ירושלים"},"כסייפה":{lat:31.24,lng:35.12,city:"כסייפה"},"כפר קאסם":{lat:32.115,lng:34.977,city:"כפר קאסם"},"כרמיאל":{lat:32.916,lng:35.292,city:"כרמיאל"},"מבשרת ציון":{lat:31.799,lng:35.15,city:"מבשרת ציון"},"מודיעין":{lat:31.898,lng:35.01,city:"מודיעין"},"מודיעין עלית":{lat:31.93,lng:35.04,city:"מודיעין עלית"},"מנוחה":{lat:31.59,lng:34.74,city:"מנוחה"},"מסמיה":{lat:31.78,lng:34.8,city:"מסמיה"},"מצליח":{lat:31.91,lng:34.85,city:"מצליח"},"נס ציונה":{lat:31.929,lng:34.798,city:"נס ציונה"},"נען":{lat:31.885,lng:34.855,city:"נען"},"נתיבות":{lat:31.422,lng:34.588,city:"נתיבות"},"עד הלום":{lat:31.792,lng:34.65,city:"אשדוד"},"עכו":{lat:32.928,lng:35.075,city:"עכו"},"ערוגות":{lat:31.73,lng:34.74,city:"ערוגות"},"פרדס חנה":{lat:32.474,lng:34.974,city:"פרדס חנה"},"פתח תקווה":{lat:32.087,lng:34.887,city:"פתח תקווה"},"צריפין":{lat:31.95,lng:34.83,city:"צריפין"},"קטרפילר":{lat:31.252,lng:34.791,city:"באר שבע"},"קטרפילר באר שבע":{lat:31.252,lng:34.791,city:"באר שבע"},"קריית גת":{lat:31.61,lng:34.771,city:"קריית גת"},"קריית מלאכי":{lat:31.731,lng:34.745,city:"קריית מלאכי"},"ראשון  לציון":{lat:31.964,lng:34.805,city:"ראשון לציון"},"ראשון לציון":{lat:31.964,lng:34.805,city:"ראשון לציון"},"רהט":{lat:31.393,lng:34.754,city:"רהט"},"רווחה":{lat:31.6,lng:34.71,city:"רווחה"},"רמלה":{lat:31.928,lng:34.866,city:"רמלה"},"שדרות":{lat:31.525,lng:34.596,city:"שדרות"},"שילת":{lat:31.93,lng:35.02,city:"שילת"},"תל אביב":{lat:32.08,lng:34.781,city:"תל אביב"},"אפקו":{lat:31.898,lng:35.01,city:"מודיעין"},"קייס":{lat:32.015,lng:34.779,city:"חולון"}};
+
+  let leafletPromise: Promise<any> | null = null;
+  function loadLeaflet(): Promise<any> {
+    if ((window as any).L) return Promise.resolve((window as any).L);
+    if (leafletPromise) return leafletPromise;
+    leafletPromise = new Promise((resolve, reject) => {
+      if (!document.getElementById('leaflet-css')) {
+        const link = document.createElement('link');
+        link.id = 'leaflet-css'; link.rel = 'stylesheet';
+        link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+        document.head.appendChild(link);
+      }
+      const s = document.createElement('script');
+      s.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'; s.async = true;
+      s.onload = () => resolve((window as any).L);
+      s.onerror = () => reject(new Error('leaflet load failed'));
+      document.head.appendChild(s);
+    });
+    return leafletPromise;
+  }
+
+  // Live rotating DNA double-helix on a canvas. Returns a stop() for teardown.
+  function startDna(cv: HTMLCanvasElement): () => void {
+    const ctx = cv.getContext('2d'); if (!ctx) return () => {};
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    let raf = 0, t = 0, alive = true;
+    const resize = () => { const r = cv.getBoundingClientRect(); cv.width = Math.max(40, r.width) * dpr; cv.height = Math.max(40, r.height) * dpr; };
+    resize();
+    const frame = () => {
+      if (!alive) return;
+      const W = cv.width, H = cv.height, cx = W / 2, amp = W * 0.27, turns = 2.3, N = 44;
+      ctx.clearRect(0, 0, W, H); t += 0.018;
+      for (let i = 0; i < N; i++) {
+        const p = i / (N - 1), y = p * H, ang = p * Math.PI * 2 * turns + t;
+        const x1 = cx + Math.sin(ang) * amp, x2 = cx + Math.sin(ang + Math.PI) * amp;
+        const z1 = (Math.cos(ang) + 1) / 2, z2 = (Math.cos(ang + Math.PI) + 1) / 2;
+        ctx.strokeStyle = `rgba(228,188,99,${0.08 + 0.14 * Math.abs(Math.sin(ang))})`;
+        ctx.lineWidth = dpr; ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x2, y); ctx.stroke();
+        ctx.fillStyle = `rgba(247,232,192,${0.35 + 0.5 * z1})`;
+        ctx.beginPath(); ctx.arc(x1, y, (2 + 2 * z1) * dpr, 0, 7); ctx.fill();
+        ctx.fillStyle = `rgba(63,198,255,${0.35 + 0.5 * z2})`;
+        ctx.beginPath(); ctx.arc(x2, y, (2 + 2 * z2) * dpr, 0, 7); ctx.fill();
+      }
+      raf = requestAnimationFrame(frame);
+    };
+    let ro: ResizeObserver | null = null;
+    try { ro = new ResizeObserver(resize); ro.observe(cv); } catch {}
+    frame();
+    return () => { alive = false; cancelAnimationFrame(raf); try { ro?.disconnect(); } catch {} };
+  }
+
+  const tripRowHtml = (t: any) => `
+    <div class="fl-row" data-id="${t.id}">
+      <div class="fl-mid"><b>${escHtml(t.from || '—')} ← ${escHtml(t.to || '—')}</b><span>${t.date || ''}${t.km ? ` · ${t.km} ק"מ` : ''}${t.note ? ' · ' + escHtml(t.note) : ''}</span></div>
+      ${t.to ? `<a class="fl-waze" href="${wazeUrl(t.to)}" target="_blank" rel="noopener">Waze ↗</a>` : ''}
+      <button class="fl-del" data-id="${t.id}">✕</button>
+    </div>`;
+
+  let mapInst: any = null;
+  function renderFleet() {
+    try { winCleanup?.(); } catch {} winCleanup = null;
+    const body = $('winBody');
+    const trips = readTrips().slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    const totalKm = trips.reduce((s, t) => s + (Number(t.km) || 0), 0);
+    const idx = readIdx();
+    const today = new Date().toISOString().slice(0, 10);
+
+    // Map points: installs whose location resolves to coordinates, counted per place.
+    const ptCount: Record<string, { g: { lat: number; lng: number; city: string }; n: number }> = {};
+    idx.forEach((x: any) => { const k = (x?.location || '').trim(); const g = FLEET_GEO[k]; if (!g) return; (ptCount[k] = ptCount[k] || { g, n: 0 }).n++; });
+    const geoCount = Object.keys(ptCount).length;
+
+    // Tasks: open tasks for today + undated backlog.
+    const tasks = readTasks().filter((t: any) => !t.done);
+    const dayTasks = tasks.filter((t: any) => t.date === today);
+    const backlog = tasks.filter((t: any) => !t.date);
+    const taskList = [...dayTasks, ...backlog].slice(0, 40);
+    const taskRows = taskList.length
+      ? taskList.map((t: any) => `<label class="ops-task" data-id="${t.id}"><input type="checkbox"/><span>${escHtml(t.title || '')}</span><i>${t.date === today ? 'היום' : (t.date || 'ללא תאריך')}</i></label>`).join('')
+      : '<div class="ops-empty">אין משימות פתוחות 🎉</div>';
+
+    // Unscheduled installs: still running, or no date set.
+    const unsched = idx.filter((x: any) => x && (x.status === 'running' || !x.date)).slice(0, 40);
+    const unschedRows = unsched.length
+      ? unsched.map((x: any) => { const loc = (x.location || '').trim(); return `<div class="ops-urow"><div class="ops-umid"><b>${escHtml(loc || 'ללא מיקום')}</b><span>${escHtml(cName(x.contractor || '') || '')}${x.status === 'running' ? ' · בתהליך' : ' · ללא תאריך'}</span></div>${loc ? `<a class="fl-waze" href="${wazeUrl(loc)}" target="_blank" rel="noopener">Waze ↗</a>` : ''}</div>`; }).join('')
+      : '<div class="ops-empty">אין התקנות הממתינות לתיאום</div>';
+
+    body.innerHTML = `<div class="pad ops-center">
+      <div class="ops-grid">
+        <section class="ops-panel ops-span2">
+          <div class="ops-h">🗺️ מפת התקנות · שטח</div>
+          <div class="ops-map" id="opsMap"></div>
+          <div class="ops-foot">${geoCount} מיקומים · ${idx.length} התקנות סה"כ</div>
+        </section>
+
+        <section class="ops-panel">
+          <div class="ops-h">🚚 ניהול צי · נסיעות</div>
+          <div class="fl-add">
+            <input id="flFrom" placeholder="מאיפה" dir="rtl"/>
+            <input id="flTo" placeholder="לאן (כתובת / עיר)" dir="rtl"/>
+            <div class="fl-add-row"><input id="flDate" type="date" value="${today}"/><input id="flKm" type="number" placeholder='ק&quot;מ' dir="ltr"/></div>
+            <button id="flAdd">+ הוסף נסיעה</button>
+          </div>
+          <div class="fl-tot" id="flTot">${trips.length} נסיעות · ${totalKm} ק"מ סה"כ</div>
+          <div class="ops-scroll fl-list" id="flList">${trips.map(tripRowHtml).join('') || '<div class="ops-empty">אין נסיעות עדיין — הוסף ונווט ב-Waze</div>'}</div>
+        </section>
+
+        <section class="ops-panel">
+          <div class="ops-h">✅ משימות HeavyGuard</div>
+          <div class="ops-scroll" id="opsTasks">${taskRows}</div>
+        </section>
+
+        <section class="ops-panel">
+          <div class="ops-h">📅 התקנות לתיאום</div>
+          <div class="ops-scroll">${unschedRows}</div>
+        </section>
+
+        <section class="ops-panel ops-dna-panel ops-span2">
+          <div class="ops-h">⚡ ALPHA · SIGNAL</div>
+          <div class="ops-alpha-hud">
+            <canvas class="ops-alpha-dna-cv" id="opsDna"></canvas>
+            <div class="ops-alpha-signal">
+              <div class="ops-alpha-label">MARKET DIRECTION</div>
+              <div class="ops-alpha-dir neutral" id="opsAlphaDir">LOADING…</div>
+              <div class="ops-alpha-conf-wrap">
+                <div class="ops-alpha-conf"><div class="ops-alpha-conf-bar" id="opsAlphaBar" style="width:0%"></div></div>
+                <div class="ops-alpha-conf-pct" id="opsAlphaConfPct">—</div>
+              </div>
+              <div class="ops-alpha-meta">
+                <div class="ops-alpha-kv"><span>CONFIDENCE</span><b id="opsKvConf">—</b></div>
+                <div class="ops-alpha-kv"><span>MASTERY</span><b id="opsKvMastery">—</b></div>
+                <div class="ops-alpha-kv"><span>WIN RATE</span><b id="opsKvWr">—</b></div>
+                <div class="ops-alpha-kv"><span>NET P&amp;L</span><b id="opsKvPnl">—</b></div>
+              </div>
+              <div class="ops-alpha-bots" id="opsAlphaBots"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="ops-panel ops-span2">
+          <div class="ops-h">📊 פוזיציות פעילות · Poly-Market</div>
+          <div id="opsPositions"><div class="ops-empty">אין חיבור ל-Poly-Market — פתח את האפליקציה באותו דפדפן</div></div>
+        </section>
+      </div>
+    </div>`;
+
+    // ── Trips: add (partial re-render of list, keeps map/DNA alive) ──
+    const refreshTripList = () => {
+      const arr = readTrips().slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      const km = arr.reduce((s, t) => s + (Number(t.km) || 0), 0);
+      const list = body.querySelector('#flList'); const tot = body.querySelector('#flTot');
+      if (list) list.innerHTML = arr.map(tripRowHtml).join('') || '<div class="ops-empty">אין נסיעות עדיין — הוסף ונווט ב-Waze</div>';
+      if (tot) tot.textContent = `${arr.length} נסיעות · ${km} ק"מ סה"כ`;
+      bindTripDel();
+    };
+    const bindTripDel = () => body.querySelectorAll('.fl-del').forEach((btn) => (btn as HTMLElement).onclick = () => {
+      const id = (btn as HTMLElement).dataset.id; writeTrips(readTrips().filter((t) => t.id !== id)); refreshTripList();
+    });
+    body.querySelector('#flAdd')?.addEventListener('click', () => {
+      const g = (id: string) => (document.getElementById(id) as HTMLInputElement).value;
+      const to = g('flTo').trim(); if (!to) return;
+      const arr = readTrips();
+      arr.unshift({ id: Date.now().toString(36), from: g('flFrom').trim(), to, date: g('flDate'), km: g('flKm'), note: '' });
+      writeTrips(arr);
+      (document.getElementById('flFrom') as HTMLInputElement).value = '';
+      (document.getElementById('flTo') as HTMLInputElement).value = '';
+      (document.getElementById('flKm') as HTMLInputElement).value = '';
+      refreshTripList();
+    });
+    bindTripDel();
+
+    // ── Tasks: toggle done in place (no full re-render) ──
+    body.querySelectorAll('.ops-task').forEach((el) => (el as HTMLElement).addEventListener('change', () => {
+      const id = (el as HTMLElement).dataset.id;
+      writeTasks(readTasks().map((t: any) => t.id === id ? { ...t, done: true } : t));
+      el.classList.add('ops-done');
+      setTimeout(() => el.remove(), 350);
+    }));
+
+    // ── DNA animation ──
+    const dnaCv = body.querySelector('#opsDna') as HTMLCanvasElement | null;
+    const dnaStop = dnaCv ? startDna(dnaCv) : null;
+
+    // ── Alpha Signal HUD (Poly-Market trading data) ──
+    const hydrateTradingPanels = () => {
+      const at = readAutotraderState();
+      const positions = readPortfolioPositions();
+
+      // Alpha Signal
+      const dirEl = document.getElementById('opsAlphaDir');
+      const barEl = document.getElementById('opsAlphaBar');
+      const pctEl = document.getElementById('opsAlphaConfPct');
+      const botsEl = document.getElementById('opsAlphaBots');
+      const kvConf = document.getElementById('opsKvConf');
+      const kvMastery = document.getElementById('opsKvMastery');
+      const kvWr = document.getElementById('opsKvWr');
+      const kvPnl = document.getElementById('opsKvPnl');
+
+      if (at?.alphaState && dirEl) {
+        const s = at.alphaState;
+        const dir = s.direction || 'NEUTRAL';
+        dirEl.textContent = dir;
+        dirEl.className = `ops-alpha-dir ${dir.toLowerCase()}`;
+        const conf = Math.max(0, Math.min(100, s.confidence || 0));
+        const barColor = dir === 'LONG' ? '#20c97a' : dir === 'SHORT' ? '#ff4a3e' : '#d4a843';
+        if (barEl) { barEl.style.width = `${conf}%`; barEl.style.background = barColor; }
+        if (pctEl) pctEl.textContent = `${conf.toFixed(0)}%`;
+        if (kvConf) kvConf.textContent = `${conf.toFixed(0)}%`;
+        if (kvMastery) kvMastery.textContent = (s.masteryScore ?? 0).toFixed(1);
+        if (kvWr) kvWr.textContent = `${((s.recentWinRate || 0) * 100).toFixed(1)}%`;
+      } else if (dirEl) {
+        dirEl.textContent = 'NO DATA';
+        dirEl.className = 'ops-alpha-dir neutral';
+      }
+
+      if (at) {
+        const pnl = at.totalPnl;
+        if (kvPnl) { kvPnl.textContent = `${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}`; kvPnl.className = pnl >= 0 ? 'pos' : 'neg'; }
+        if (botsEl) {
+          const allBots = Object.keys(at.riskGuard);
+          botsEl.innerHTML = allBots.slice(0, 12).map(name => {
+            const on = !at.riskGuard[name]?.paused;
+            return `<span class="ops-alpha-bot ${on ? 'on' : 'off'}">${name}</span>`;
+          }).join('');
+        }
+      }
+
+      // Positions Panel
+      const posEl = document.getElementById('opsPositions');
+      if (posEl) {
+        if (!positions.length) {
+          posEl.innerHTML = '<div class="ops-empty">אין פוזיציות פתוחות — Poly-Market</div>';
+        } else {
+          posEl.innerHTML = `<div class="ops-pos-grid">${
+            positions.slice(0, 16).map(p => {
+              const sideKey = (p.side || '').toLowerCase();
+              const lev = p.leverage ? `x${p.leverage} · ` : '';
+              const entry = p.entry ? `@ ${p.entry.toLocaleString()}` : '';
+              const typ = p.type ? `[${p.type}]` : '';
+              return `<div class="ops-pos-row">
+                <span class="ops-pos-badge ${sideKey}">${p.side}</span>
+                <div class="ops-pos-mid">
+                  <b>${escHtml(p.symbol)}</b>
+                  <span>${lev}${entry} · ${escHtml(p.wallet)}</span>
+                </div>
+                <span class="ops-pos-tag">${typ}</span>
+              </div>`;
+            }).join('')
+          }${positions.length > 16 ? `<div class="ops-empty" style="grid-column:1/-1">+ ${positions.length - 16} פוזיציות נוספות</div>` : ''}</div>`;
+        }
+      }
+    };
+    hydrateTradingPanels();
+    // Auto-refresh trading data every 30s
+    const tradeTimer = setInterval(hydrateTradingPanels, 30000);
+
+    // ── Map (lazy Leaflet) ──
+    const mapEl = body.querySelector('#opsMap') as HTMLElement | null;
+    if (mapEl) {
+      loadLeaflet().then((L) => {
+        if (!body.querySelector('#opsMap')) return;   // window closed meanwhile
+        mapInst = L.map(mapEl, { zoomControl: true, attributionControl: false }).setView([31.7, 34.9], 8);
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18 }).addTo(mapInst);
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18, opacity: 0.85 }).addTo(mapInst);
+        const pts = Object.values(ptCount);
+        const bounds: any[] = [];
+        pts.forEach(({ g, n }) => {
+          const r = 6 + Math.min(16, n * 2);
+          L.circleMarker([g.lat, g.lng], { radius: r, color: '#E4BC63', weight: 2, fillColor: '#F7E8C0', fillOpacity: 0.55 })
+            .addTo(mapInst).bindTooltip(`${g.city} · ${n} התקנות`, { direction: 'top' });
+          bounds.push([g.lat, g.lng]);
+        });
+        if (bounds.length) { try { mapInst.fitBounds(bounds, { padding: [30, 30], maxZoom: 11 }); } catch {} }
+        setTimeout(() => { try { mapInst?.invalidateSize(); } catch {} }, 120);
+      }).catch(() => { if (mapEl) mapEl.innerHTML = '<div class="ops-empty">מפה לא זמינה (אין רשת)</div>'; });
+    }
+
+    // teardown for this window instance
+    winCleanup = () => { try { dnaStop?.(); } catch {} clearInterval(tradeTimer); if (mapInst) { try { mapInst.remove(); } catch {} mapInst = null; } };
+  }
+  function openFleet() { openWin('מרכז שליטה · צי ומבצעים 🛰️'); renderFleet(); }
+
+  // ── Trade simulator — embedded as an in-app system (like HeavyGuard OS) ──
+  // The site is a separate Render deployment, so it loads in an iframe. If the
+  // host refuses framing, the prominent "open in new tab" button is the fallback.
+  const TRADE_URL = 'https://heavt-guard-simulator-1.onrender.com/';
+  function openTradeSystem() {
+    openWin('מערכת מסחר · TRADE 📈');
+    const body = $('winBody');
+    body.innerHTML = `<div class="sys-embed">
+      <div class="sys-embed-bar">
+        <span>מערכת המסחר שלך — חיה מתוך אלפא</span>
+        <a class="sys-embed-open" href="${TRADE_URL}" target="_blank" rel="noopener">פתח בלשונית ↗</a>
+      </div>
+      <div class="sys-embed-frame">
+        <iframe id="tradeFrame" src="${TRADE_URL}" allow="clipboard-write; fullscreen" referrerpolicy="no-referrer"></iframe>
+        <div class="sys-embed-fallback" id="tradeFallback" hidden>
+          <div>לא ניתן להטמיע את המערכת כאן</div>
+          <a class="sys-embed-cta" href="${TRADE_URL}" target="_blank" rel="noopener">פתח את מערכת המסחר ↗</a>
+        </div>
+      </div>
+    </div>`;
+    // If the iframe is blocked (X-Frame-Options) it stays blank — reveal the
+    // fallback if nothing has rendered after a short grace period.
+    const fr = body.querySelector('#tradeFrame') as HTMLIFrameElement | null;
+    let loaded = false;
+    fr?.addEventListener('load', () => { loaded = true; });
+    setTimeout(() => { if (!loaded) { const fb = body.querySelector('#tradeFallback') as HTMLElement | null; if (fb) fb.hidden = false; } }, 4500);
+  }
+
+  // The HUD "HeavyGuard OS" tile reuses the existing dock handler.
+  setTimeout(() => {
+    document.getElementById('hudHg')?.addEventListener('click', () => document.getElementById('hgBtn')?.click());
+    document.getElementById('hudFleet')?.addEventListener('click', openFleet);
+    document.getElementById('hudTrade')?.addEventListener('click', (e) => { e.preventDefault(); openTradeSystem(); });
+    // The dock's "מסחר" fab button was still a plain external-tab link —
+    // only the HUD rail tile above was ever wired to the in-app embed.
+    document.getElementById('tradeBtn')?.addEventListener('click', (e) => { e.preventDefault(); openTradeSystem(); });
+    document.querySelector('#hudMarkets')?.addEventListener('click', openMarketsDetail);
+    document.getElementById('hudOps')?.addEventListener('click', () => { addMsg(businessBriefing(), 'al'); });
+    document.getElementById('hudFleetPanel')?.addEventListener('click', openFleet);
+    renderHud(); renderMarkets(); renderNews(); renderFleetPanel();
+    renderAgendaPanel(); renderTasksPanel(); renderTeamPanel(); renderWeatherPanel();
+    document.getElementById('hudTeamPanel')?.addEventListener('click', () => { location.href = 'agents.html'; });
+    setInterval(() => { renderHud(); renderFleetPanel(); renderAgendaPanel(); renderTasksPanel(); renderTeamPanel(); }, 30000);
+    setInterval(renderMarkets, 60000);
+    setInterval(renderNews, 300000);
+    setInterval(renderWeatherPanel, 900000);
+    // The owner's 3D Tiggo 7 turntable in the fleet card — lazy dynamic
+    // import so three.js never weighs down the main bundle's initial load.
+    {
+      const carEl = document.getElementById('hudCar3d');
+      if (carEl) import('../modules/tiggo3d').then((m) => m.mountTiggo3D(carEl)).catch(() => { carEl.style.display = 'none'; });
+    }
+  }, 300);
 
   async function hgSearchLicense(query: string) {
     const q = query.replace(/[-\s]/g, '').toLowerCase();
@@ -1270,6 +3402,15 @@ export function mountApp(root: HTMLElement) {
     }
     const curMonth = new Date().toISOString().slice(0, 7);
     const effectiveMonth = month || curMonth;
+
+    // Compute prev / next month strings
+    const [ey, em] = effectiveMonth.split('-').map(Number);
+    const prevMonthDate = new Date(ey, em - 2, 1);
+    const nextMonthDate = new Date(ey, em, 1);
+    const prevMonth = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
+    const nextMonth = `${nextMonthDate.getFullYear()}-${String(nextMonthDate.getMonth() + 1).padStart(2, '0')}`;
+    const isCurrentMonth = effectiveMonth === curMonth;
+
     let filtered = index.filter((r: any) => r.status !== 'running');
     if (contractor) {
       const cLow = contractor.toLowerCase();
@@ -1280,7 +3421,9 @@ export function mountApp(root: HTMLElement) {
       });
     }
     const monthFiltered = filtered.filter((r: any) => (r.date || '').startsWith(effectiveMonth));
+    const curMonthFiltered = filtered.filter((r: any) => (r.date || '').startsWith(curMonth));
     const allTimeFiltered = filtered;
+
     const byContractor: Record<string, { total: number; count: number; jobs: any[] }> = {};
     for (const r of monthFiltered) {
       const cn = cName(r.contractor);
@@ -1288,6 +3431,14 @@ export function mountApp(root: HTMLElement) {
       byContractor[cn].total += r.price || 0;
       byContractor[cn].count++;
       byContractor[cn].jobs.push({ date: r.date, price: r.price, type: r.installType, vehicle: r.vehicleType, id: r.idNumber });
+    }
+    // Current month totals per contractor (for comparison when browsing past months)
+    const byContractorCur: Record<string, { total: number; count: number }> = {};
+    for (const r of curMonthFiltered) {
+      const cn = cName(r.contractor);
+      if (!byContractorCur[cn]) byContractorCur[cn] = { total: 0, count: 0 };
+      byContractorCur[cn].total += r.price || 0;
+      byContractorCur[cn].count++;
     }
     const byContractorAll: Record<string, { total: number; count: number }> = {};
     for (const r of allTimeFiltered) {
@@ -1297,20 +3448,34 @@ export function mountApp(root: HTMLElement) {
       byContractorAll[cn].count++;
     }
     const grandTotal = monthFiltered.reduce((s: number, r: any) => s + (r.price || 0), 0);
+    const curGrandTotal = curMonthFiltered.reduce((s: number, r: any) => s + (r.price || 0), 0);
     const totalJobs = monthFiltered.length;
     const allTimeTotal = allTimeFiltered.reduce((s: number, r: any) => s + (r.price || 0), 0);
     const hebrewMonths = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
     const [y, m] = effectiveMonth.split('-');
     const monthLabel = `${hebrewMonths[parseInt(m) - 1]} ${y}`;
+    const [cy, cm] = curMonth.split('-');
+    const curMonthLabel = `${hebrewMonths[parseInt(cm) - 1]} ${cy}`;
 
     openWin(`HeavyGuard · הכנסות · ${monthLabel}`);
     let html = '<div class="pad" style="direction:rtl">';
+
+    // Month navigation bar
+    html += `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:12px;padding:6px 10px">
+      <button id="earPrev" style="background:none;border:none;color:var(--cyan);font-size:22px;cursor:pointer;padding:4px 10px;border-radius:8px;line-height:1" title="חודש קודם">◀</button>
+      <span style="font-weight:600;font-size:15px">${monthLabel}</span>
+      <button id="earNext" style="background:none;border:none;color:${isCurrentMonth ? 'rgba(255,255,255,.15)' : 'var(--cyan)'};font-size:22px;cursor:pointer;padding:4px 10px;border-radius:8px;line-height:1" ${isCurrentMonth ? 'disabled' : ''} title="חודש הבא">▶</button>
+    </div>`;
+
+    // Grand total card
     html += `<div style="text-align:center;margin-bottom:20px;padding:16px;background:rgba(218,165,32,.06);border-radius:16px;border:1px solid rgba(218,165,32,.15)">
       <div style="font-size:11px;letter-spacing:2px;color:var(--dim);text-transform:uppercase;margin-bottom:4px">${monthLabel}</div>
       <div style="font-size:36px;font-weight:700;color:var(--gold);direction:ltr">₪${grandTotal.toLocaleString()}</div>
-      <div style="color:var(--dim);font-size:13px;margin-top:4px">${totalJobs} עבודות החודש</div>
-      ${allTimeTotal !== grandTotal ? `<div style="color:var(--dim);font-size:11px;margin-top:2px;opacity:.6">סה"כ כללי: ₪${allTimeTotal.toLocaleString()}</div>` : ''}
+      <div style="color:var(--dim);font-size:13px;margin-top:4px">${totalJobs} עבודות</div>
+      ${!isCurrentMonth ? `<div style="color:var(--cyan);font-size:12px;margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,.06)">${curMonthLabel} (החודש): ₪${curGrandTotal.toLocaleString()} · ${curMonthFiltered.length} עבודות</div>` : ''}
+      ${allTimeTotal !== grandTotal ? `<div style="color:var(--dim);font-size:11px;margin-top:4px;opacity:.6">סה"כ כללי: ₪${allTimeTotal.toLocaleString()}</div>` : ''}
     </div>`;
+
     const entries = Object.entries(byContractor).sort((a, b) => (b[1] as any).total - (a[1] as any).total);
     if (!entries.length) {
       html += '<div style="text-align:center;color:var(--dim);padding:20px">אין עבודות לחודש זה</div>';
@@ -1318,6 +3483,7 @@ export function mountApp(root: HTMLElement) {
     for (const [name, info] of entries) {
       const pct = grandTotal ? Math.round((info.total / grandTotal) * 100) : 0;
       const allTime = byContractorAll[name];
+      const curInfo = byContractorCur[name];
       const uid = 'ej_' + name.replace(/\s/g, '_');
       html += `<div style="background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:10px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
@@ -1330,6 +3496,7 @@ export function mountApp(root: HTMLElement) {
           </div>
           <span style="color:var(--dim);font-size:12px;min-width:60px;text-align:left">${pct}% · ${info.count} עבודות</span>
         </div>
+        ${!isCurrentMonth && curInfo ? `<div style="font-size:12px;color:var(--cyan);margin-bottom:6px;padding:5px 10px;background:rgba(0,212,255,.06);border-radius:8px;display:inline-block">${curMonthLabel}: ₪${curInfo.total.toLocaleString()} (${curInfo.count} עבודות)</div>` : ''}
         ${allTime ? `<div style="font-size:11px;color:var(--dim);opacity:.6">סה"כ כללי: ₪${allTime.total.toLocaleString()} (${allTime.count} עבודות)</div>` : ''}
         <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
         <button data-target="${uid}" style="background:none;border:1px solid var(--line);color:var(--cyan);padding:6px 14px;border-radius:8px;cursor:pointer;font-size:12px;transition:.2s" class="earningsToggle">פרטי עבודות ▼</button>
@@ -1345,6 +3512,13 @@ export function mountApp(root: HTMLElement) {
     }
     html += '</div>';
     $('winBody').innerHTML = html;
+
+    // Month navigation handlers
+    const prevBtn = document.getElementById('earPrev');
+    const nextBtn = document.getElementById('earNext');
+    if (prevBtn) prevBtn.onclick = () => hgShowEarnings(contractor, prevMonth);
+    if (nextBtn && !isCurrentMonth) nextBtn.onclick = () => hgShowEarnings(contractor, nextMonth);
+
     $('winBody').querySelectorAll<HTMLButtonElement>('.earningsToggle').forEach(btn => {
       btn.onclick = () => {
         const target = document.getElementById(btn.dataset.target || '');
@@ -1360,7 +3534,6 @@ export function mountApp(root: HTMLElement) {
         const cn = btn.dataset.name || '';
         const info = byContractor[cn];
         if (!info) return;
-        // Build a clean statement for this contractor + month
         const lines: string[] = [];
         lines.push(`דוח עבודות — ${cn}`);
         lines.push(`חודש: ${monthLabel}`);
@@ -1385,14 +3558,27 @@ export function mountApp(root: HTMLElement) {
             addMsg(`📋 הדוח של ${cn} הועתק — אפשר להדביק בוואטסאפ`, 'sys');
           }
         } catch {
-          // Fallback: open WhatsApp with the report prefilled
           window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
         }
       };
     });
   }
 
+  // HeavyGuard hard business rule: the company does NOT install or quote
+  // 8-camera systems. Block any quote that references one — enforced in code so
+  // it holds even if the model ignores the prompt rule.
+  function isEightCameraRequest(text: string): boolean {
+    const s = (text || '').toLowerCase();
+    return /(^|[^\d])8\s*(-?\s*)?(cam|cameras|camera|מצלמות|מצלמה|ערוצים|channels?|ch)\b/.test(s)
+      || /\b8\s*(ch|channel)\b/.test(s)
+      || /(8|שמונה)\s*מצלמות/.test(s);
+  }
+
   async function hgCreateQuote(customer: string, phone: string, itemsStr: string) {
+    if (isEightCameraRequest(itemsStr) || isEightCameraRequest(customer)) {
+      addMsg('⛔ Heavy Guard לא מתקינה ולא מתמחרת מערכות של 8 מצלמות. אפשר להציע תצורה נתמכת אחרת (למשל מערך 360° ללא 8 מצלמות).', 'sys');
+      return;
+    }
     const items = itemsStr.split(',').map(s => {
       const [desc, priceStr] = s.trim().split(':');
       return { description: (desc || '').trim(), price: parseFloat(priceStr) || 0, qty: 1 };
@@ -1405,17 +3591,15 @@ export function mountApp(root: HTMLElement) {
     };
     const quotes = await hgLoad('hg2:quotes');
     quotes.unshift(newQuote);
-    const storage = (window as any).storage || (window as any).puter?.kv;
-    if (storage) {
-      try { await storage.set('hg2:quotes', JSON.stringify(quotes)); } catch {}
-    }
     localStorage.setItem('hg2:quotes', JSON.stringify(quotes));
     addMsg(`הצעת מחיר נוצרה עבור ${customer || 'לקוח'}`, 'sys');
+    puterSync.scheduleSync(() => updateCloudIndicator());
   }
 
   // AR Camera — game-like interactive experience with hand tracking
   let arStream: MediaStream | null = null;
   let arAnimFrame = 0;
+  let arHandLoop = 0;
 
   interface ArObj {
     x: number; y: number; vx: number; vy: number;
@@ -1427,6 +3611,10 @@ export function mountApp(root: HTMLElement) {
   let arObjects: ArObj[] = [];
   let arHandPos = { x: -1, y: -1, pinching: false };
   let arHand2Pos = { x: -1, y: -1, pinching: false };
+  // Hand-zone for character switching: hold your hand in the dashed circle.
+  let arZoneDwell = 0;       // seconds the hand has been inside the zone
+  let arZoneCooldown = 0;    // seconds before the zone can fire again
+  const AR_ZONE = { x: 0.5, y: 0.74, r: 0.13 }; // normalized (lower-centre)
   let arGrabbed: ArObj | null = null;
   let arObjCtx: CanvasRenderingContext2D | null = null;
 
@@ -1445,6 +3633,976 @@ export function mountApp(root: HTMLElement) {
 
   type ArEffect = 'none' | 'fire' | 'water' | 'laser' | 'sparkle' | 'rainbow';
   let arCurrentFx: ArEffect = 'none';
+
+  // ── Dispel & Summon system ──────────────────────────────────
+  interface ArCharacter {
+    name: string; url: string; img?: HTMLImageElement;
+    color?: string; // type glow color
+    drawFn?: (ctx: CanvasRenderingContext2D, size: number) => void;
+  }
+  const arCharacters: ArCharacter[] = [];
+  let arCharIdx = -1;           // which character is summoned (-1 = none)
+  let arCharAnim = 0;           // 0→1 entry animation progress
+  let arCharFromDir = { x: 0, y: 0 };
+  let arOrbDispelled = false;
+  let arPalmHoldTime = 0;
+  let arPrevGesture: 'none' | 'peace' | 'fist' | 'palm' | 'thumbsUp' | 'pointUp' = 'none';
+  let arFistStartTime = 0;
+  let arThrowCooldown = 0;
+  let arBeamFiring = false;
+  let arBeamOrigin = { x: 0.5, y: 0.5 };
+  let arBeamProgress = 0;
+  // Pokeball animation state
+  let arPokeballPhase: 'idle' | 'fly' | 'wobble' | 'open' | 'done' = 'idle';
+  let arPokeballT = 0;
+  let arPokeballFrom = { x: 0.5, y: 0.8 };
+  let arCharCtx: CanvasRenderingContext2D | null = null;
+
+  // ── Pokeball canvas draw helper ──────────────────────────
+  function drawPokeballAt(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, wobble = 0) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(wobble);
+    ctx.shadowColor = '#ff3333';
+    ctx.shadowBlur = r * 0.4;
+    // Red top
+    ctx.beginPath();
+    ctx.arc(0, 0, r, Math.PI, 0);
+    ctx.fillStyle = '#e63835';
+    ctx.fill();
+    // White bottom
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI);
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    // Black outline + stripe
+    ctx.strokeStyle = '#111';
+    ctx.lineWidth = r * 0.06;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-r, 0);
+    ctx.lineTo(r, 0);
+    ctx.stroke();
+    // Center button
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.22, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#111';
+    ctx.lineWidth = r * 0.06;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ── Pokemon canvas draw functions ────────────────────────
+  function drawPikachu(ctx: CanvasRenderingContext2D, s: number) {
+    // Body
+    ctx.fillStyle = '#ffd700';
+    ctx.beginPath(); ctx.ellipse(0, s * 0.05, s * 0.28, s * 0.32, 0, 0, Math.PI * 2); ctx.fill();
+    // Ears
+    ctx.fillStyle = '#ffd700';
+    for (const sx of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(sx * s * 0.18, -s * 0.22);
+      ctx.lineTo(sx * s * 0.26, -s * 0.46);
+      ctx.lineTo(sx * s * 0.10, -s * 0.22);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#111';
+      ctx.beginPath();
+      ctx.moveTo(sx * s * 0.17, -s * 0.34);
+      ctx.lineTo(sx * s * 0.24, -s * 0.46);
+      ctx.lineTo(sx * s * 0.11, -s * 0.34);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#ffd700';
+    }
+    // Brown back stripes
+    ctx.strokeStyle = '#b8860b'; ctx.lineWidth = s * 0.04;
+    ctx.beginPath(); ctx.moveTo(-s * 0.13, -s * 0.16); ctx.lineTo(s * 0.13, -s * 0.16); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-s * 0.17, -s * 0.05); ctx.lineTo(s * 0.17, -s * 0.05); ctx.stroke();
+    // Red cheeks
+    ctx.fillStyle = 'rgba(220,50,50,0.85)';
+    ctx.beginPath(); ctx.ellipse(-s * 0.19, s * 0.04, s * 0.08, s * 0.055, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(s * 0.19, s * 0.04, s * 0.08, s * 0.055, 0, 0, Math.PI * 2); ctx.fill();
+    // Eyes
+    ctx.fillStyle = '#111';
+    ctx.beginPath(); ctx.arc(-s * 0.10, -s * 0.07, s * 0.055, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(s * 0.10, -s * 0.07, s * 0.055, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(-s * 0.09, -s * 0.09, s * 0.018, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(s * 0.11, -s * 0.09, s * 0.018, 0, Math.PI * 2); ctx.fill();
+    // Lightning bolt tail
+    ctx.strokeStyle = '#ffd700'; ctx.lineWidth = s * 0.065; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(s * 0.26, s * 0.10);
+    ctx.lineTo(s * 0.40, -s * 0.08);
+    ctx.lineTo(s * 0.30, -s * 0.08);
+    ctx.lineTo(s * 0.44, -s * 0.30);
+    ctx.stroke();
+    // Feet
+    ctx.fillStyle = '#ffd700';
+    ctx.beginPath(); ctx.ellipse(-s * 0.13, s * 0.33, s * 0.07, s * 0.05, -0.2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(s * 0.13, s * 0.33, s * 0.07, s * 0.05, 0.2, 0, Math.PI * 2); ctx.fill();
+  }
+
+  function drawCharizard(ctx: CanvasRenderingContext2D, s: number) {
+    ctx.fillStyle = '#3a8fb5';
+    for (const sx of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(sx * s * 0.12, -s * 0.05);
+      ctx.lineTo(sx * s * 0.52, -s * 0.38);
+      ctx.lineTo(sx * s * 0.48, s * 0.12);
+      ctx.lineTo(sx * s * 0.22, s * 0.06);
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.fillStyle = '#f08030';
+    ctx.beginPath(); ctx.ellipse(0, s * 0.06, s * 0.22, s * 0.30, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#f0e0b0';
+    ctx.beginPath(); ctx.ellipse(0, s * 0.10, s * 0.14, s * 0.22, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#f08030';
+    ctx.beginPath(); ctx.arc(0, -s * 0.20, s * 0.17, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#10c010';
+    ctx.beginPath(); ctx.arc(-s * 0.07, -s * 0.22, s * 0.05, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(s * 0.07, -s * 0.22, s * 0.05, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#111';
+    ctx.beginPath(); ctx.arc(-s * 0.07, -s * 0.22, s * 0.025, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(s * 0.07, -s * 0.22, s * 0.025, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#f08030';
+    ctx.beginPath();
+    ctx.moveTo(s * 0.15, s * 0.28);
+    ctx.quadraticCurveTo(s * 0.42, s * 0.44, s * 0.36, s * 0.56);
+    ctx.quadraticCurveTo(s * 0.28, s * 0.44, s * 0.20, s * 0.34);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#ff6600';
+    ctx.beginPath(); ctx.arc(s * 0.36, s * 0.57, s * 0.07, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffcc00';
+    ctx.beginPath(); ctx.arc(s * 0.37, s * 0.54, s * 0.04, 0, Math.PI * 2); ctx.fill();
+  }
+
+  function drawCharmander(ctx: CanvasRenderingContext2D, s: number) {
+    ctx.fillStyle = '#f08030';
+    ctx.beginPath(); ctx.ellipse(0, s * 0.08, s * 0.20, s * 0.26, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#f0e080';
+    ctx.beginPath(); ctx.ellipse(0, s * 0.12, s * 0.12, s * 0.18, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#f08030';
+    ctx.beginPath(); ctx.arc(0, -s * 0.18, s * 0.16, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#4090e0';
+    ctx.beginPath(); ctx.arc(-s * 0.06, -s * 0.20, s * 0.045, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(s * 0.06, -s * 0.20, s * 0.045, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#111';
+    ctx.beginPath(); ctx.arc(-s * 0.06, -s * 0.20, s * 0.022, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(s * 0.06, -s * 0.20, s * 0.022, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#f08030';
+    ctx.beginPath();
+    ctx.moveTo(s * 0.18, s * 0.25);
+    ctx.quadraticCurveTo(s * 0.40, s * 0.36, s * 0.36, s * 0.48);
+    ctx.quadraticCurveTo(s * 0.28, s * 0.38, s * 0.20, s * 0.32);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#ff8800';
+    ctx.beginPath(); ctx.arc(s * 0.37, s * 0.49, s * 0.055, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffdd00';
+    ctx.beginPath(); ctx.arc(s * 0.37, s * 0.47, s * 0.03, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#f08030'; ctx.lineWidth = s * 0.07; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-s * 0.16, s * 0.02); ctx.lineTo(-s * 0.28, s * 0.12); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(s * 0.16, s * 0.02); ctx.lineTo(s * 0.28, s * 0.12); ctx.stroke();
+  }
+
+  function drawSquirtle(ctx: CanvasRenderingContext2D, s: number) {
+    // Shell
+    ctx.fillStyle = '#7a5c14';
+    ctx.beginPath(); ctx.ellipse(0, s * 0.10, s * 0.23, s * 0.25, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#4a3808'; ctx.lineWidth = s * 0.025;
+    ctx.beginPath(); ctx.moveTo(0, -s * 0.14); ctx.lineTo(0, s * 0.32); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-s * 0.20, s * 0.10); ctx.lineTo(s * 0.20, s * 0.10); ctx.stroke();
+    // Body
+    ctx.fillStyle = '#4896c8';
+    ctx.beginPath(); ctx.ellipse(0, s * 0.08, s * 0.18, s * 0.20, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#c8e8f0';
+    ctx.beginPath(); ctx.ellipse(0, s * 0.12, s * 0.10, s * 0.14, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#4896c8';
+    ctx.beginPath(); ctx.arc(0, -s * 0.18, s * 0.16, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#111';
+    ctx.beginPath(); ctx.arc(-s * 0.06, -s * 0.20, s * 0.05, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(s * 0.06, -s * 0.20, s * 0.05, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(-s * 0.055, -s * 0.21, s * 0.018, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(s * 0.065, -s * 0.21, s * 0.018, 0, Math.PI * 2); ctx.fill();
+    // Curled tail
+    ctx.strokeStyle = '#4896c8'; ctx.lineWidth = s * 0.07; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(s * 0.16, s * 0.25);
+    ctx.bezierCurveTo(s * 0.42, s * 0.36, s * 0.46, s * 0.14, s * 0.32, s * 0.02);
+    ctx.stroke();
+  }
+
+  function drawMeowth(ctx: CanvasRenderingContext2D, s: number) {
+    ctx.fillStyle = '#d4b896';
+    ctx.beginPath(); ctx.ellipse(0, s * 0.10, s * 0.20, s * 0.26, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#f5e8d8';
+    ctx.beginPath(); ctx.ellipse(0, s * 0.12, s * 0.12, s * 0.18, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#d4b896';
+    ctx.beginPath(); ctx.arc(0, -s * 0.17, s * 0.18, 0, Math.PI * 2); ctx.fill();
+    // Ears
+    for (const sx of [-1, 1]) {
+      ctx.fillStyle = '#d4b896';
+      ctx.beginPath();
+      ctx.moveTo(sx * s * 0.14, -s * 0.28);
+      ctx.lineTo(sx * s * 0.22, -s * 0.42);
+      ctx.lineTo(sx * s * 0.06, -s * 0.30);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#f0a8b8';
+      ctx.beginPath();
+      ctx.moveTo(sx * s * 0.13, -s * 0.30);
+      ctx.lineTo(sx * s * 0.20, -s * 0.41);
+      ctx.lineTo(sx * s * 0.07, -s * 0.31);
+      ctx.closePath(); ctx.fill();
+    }
+    // Gold coin
+    ctx.fillStyle = '#ffd700';
+    ctx.beginPath(); ctx.arc(0, -s * 0.28, s * 0.065, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#b8860b'; ctx.lineWidth = s * 0.02; ctx.stroke();
+    // Eyes
+    ctx.fillStyle = '#111';
+    ctx.beginPath(); ctx.ellipse(-s * 0.07, -s * 0.17, s * 0.04, s * 0.055, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(s * 0.07, -s * 0.17, s * 0.04, s * 0.055, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(-s * 0.065, -s * 0.19, s * 0.015, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(s * 0.075, -s * 0.19, s * 0.015, 0, Math.PI * 2); ctx.fill();
+    // Whiskers
+    ctx.strokeStyle = '#888'; ctx.lineWidth = s * 0.015;
+    ctx.beginPath(); ctx.moveTo(-s * 0.08, -s * 0.12); ctx.lineTo(-s * 0.30, -s * 0.10); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-s * 0.08, -s * 0.09); ctx.lineTo(-s * 0.30, -s * 0.08); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(s * 0.08, -s * 0.12); ctx.lineTo(s * 0.30, -s * 0.10); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(s * 0.08, -s * 0.09); ctx.lineTo(s * 0.30, -s * 0.08); ctx.stroke();
+    // Curled tail
+    ctx.strokeStyle = '#d4b896'; ctx.lineWidth = s * 0.07; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(s * 0.16, s * 0.28);
+    ctx.bezierCurveTo(s * 0.44, s * 0.36, s * 0.46, s * 0.04, s * 0.30, -s * 0.06);
+    ctx.stroke();
+  }
+
+  // Register all built-in Pokemon
+  function registerBuiltinPokemon() {
+    arCharacters.length = 0;
+    arCharacters.push({ name: 'Pikachu', url: '', color: '#ffd700', drawFn: drawPikachu });
+    arCharacters.push({ name: 'Charizard', url: '', color: '#f08030', drawFn: drawCharizard });
+    arCharacters.push({ name: 'Charmander', url: '', color: '#ff8800', drawFn: drawCharmander });
+    arCharacters.push({ name: 'Squirtle', url: '', color: '#4896c8', drawFn: drawSquirtle });
+    arCharacters.push({ name: 'Meowth', url: '', color: '#d4b896', drawFn: drawMeowth });
+  }
+  registerBuiltinPokemon();
+
+  // Add image-based character (keeps built-ins in place)
+  function addArCharacter(name: string, url: string) {
+    const ch: ArCharacter = { name, url };
+    const img = new Image();
+    img.src = url;
+    img.onload = () => { ch.img = img; };
+    arCharacters.push(ch);
+  }
+  (window as any).addArCharacter = addArCharacter;
+
+  // Switch to a Pokemon by name or index (callable by AI assistant)
+  function switchArPokemon(nameOrIdx: string | number) {
+    if (arCharacters.length === 0) return;
+    if (typeof nameOrIdx === 'number') {
+      arCharIdx = ((nameOrIdx % arCharacters.length) + arCharacters.length) % arCharacters.length;
+    } else {
+      const lo = nameOrIdx.toLowerCase();
+      const idx = arCharacters.findIndex(c => c.name.toLowerCase().includes(lo));
+      arCharIdx = idx >= 0 ? idx : (arCharIdx + 1) % arCharacters.length;
+    }
+    arCharAnim = 0;
+    arPokeballPhase = 'fly';
+    arPokeballT = 0;
+    arPokeballFrom = { x: 0.5, y: 0.85 };
+    if (!arOrbDispelled) {
+      arOrbDispelled = true;
+      document.getElementById('stage')?.classList.add('stage-dispelled');
+    }
+  }
+  (window as any).switchArPokemon = switchArPokemon;
+  (window as any).dispelOrb = () => {
+    if (!arOrbDispelled) {
+      arOrbDispelled = true;
+      document.getElementById('stage')?.classList.add('stage-dispelled');
+    }
+  };
+
+  // ── Main assistant character (the orb avatar) ───────────────
+  // The orb's main character is Pikachu by default and can be swapped for the
+  // other models the user provided. Persisted so it survives reloads.
+  const MAIN_CHAR_KEY = 'alpha_main_character';
+  const MAIN_CHARACTERS = [
+    { id: 'pikachu',    label: 'פיקאצ\'ו',   words: /(פיקאצ'?ו|פיקצ'?ו|פיקא|pikachu|pika)/i },
+    { id: 'charmander', label: 'צ\'רמנדר',   words: /(צ'?רמנדר|צ'?ארמנדר|charmander|charm)/i },
+    { id: 'squirtle',   label: 'סקווירטל',   words: /(סקווירטל|סקוירטל|squirtle|squirt)/i },
+    { id: 'meowth',     label: 'מיאוט\'',    words: /(מיאו?את'?|מיואו|meowth|meow)/i },
+    { id: 'bulbasaur',  label: 'בולבסאור',   words: /(בולב|bulbasaur|bulba)/i },
+    { id: 'eevee',      label: 'איווי',       words: /(איווי|אאיווי|eevee|evee)/i },
+    { id: 'mewtwo',     label: 'מיוטו',      words: /(מיוטו|mewtwo|mew\s?two)/i },
+    { id: 'articuno',   label: 'ארטיקונו',   words: /(ארטיקונו|articuno)/i },
+    { id: 'suicune',    label: 'סויקון',      words: /(סויקון|suicune)/i },
+    { id: 'raikou',     label: 'ריאיקו',     words: /(ריאיקו|raikou)/i },
+    { id: 'entei',      label: 'אנטיי',      words: /(אנטיי|entei)/i },
+    { id: 'moltres',    label: 'מולטרס',     words: /(מולטרס|moltres)/i },
+    { id: 'zapdos',     label: 'זאפדוס',     words: /(זאפדוס|zapdos)/i },
+    { id: 'lugia',      label: 'לוגיה',      words: /(לוגיה|lugia)/i },
+    { id: 'ho-oh',      label: 'הו-אוה',     words: /(הו.?אוה|ho.?oh)/i },
+    // Imported Gen-1 pack (untextured, type-tinted) — selectable like the rest.
+    ...GEN1.map(g => ({ id: g.id, label: g.label, words: new RegExp(g.words, 'i') })),
+  ];
+
+  function setMainCharacter(id: string): string {
+    const ch = MAIN_CHARACTERS.find(c => c.id === id) || MAIN_CHARACTERS[0];
+    // Bringing a character in ALWAYS un-dispels the orb. Without this, a Pokémon
+    // summoned while the orb was dispelled (palm-release gesture) loads invisibly —
+    // you'd hear its cry and see the ambient colours but not the model itself.
+    arOrbDispelled = false;
+    document.getElementById('stage')?.classList.remove('stage-dispelled');
+    orb.setCharacter(ch.id);
+    localStorage.setItem(MAIN_CHAR_KEY, ch.id);
+    document.body.dataset.char = ch.id;   // per-character ambient (fire/water/hypnosis)
+    applyCharacterVoice(ch.id);
+    orb.pikaEmote('excited');
+    (window as any).__crpSyncIfOpen?.();
+    return ch.label;
+  }
+  (window as any).setMainCharacter = setMainCharacter;
+
+  // Voice handoff: when the active character is NOT Pikachu, mute Pikachu's
+  // voice and let that character do its own synthesized cries. Switching back
+  // to Pikachu restores his voice (respecting the user's voice on/off setting).
+  // Per-character colouring of the assistant's spoken (TTS) voice. Meowth
+  // "talks", so when he's the avatar the assistant speaks in his deep raspy
+  // voice; Charmander/Squirtle get subtler tints; Pikachu = normal.
+  const CHAR_TTS: Record<string, { pitch?: number; rate?: number } | null> = {
+    pikachu: null,
+    charmander: { pitch: 0.7, rate: 0.97 },
+    squirtle: { pitch: 1.3, rate: 1.06 },
+    meowth: { pitch: 0.4, rate: 0.9 },
+  };
+  function applyCharacterVoice(id: string) {
+    unlockCharacterAudio();
+    setCharacterVolume(state.pikaVolume);
+    voice.charVoice = CHAR_TTS[id] || null;   // colour the assistant's speech
+    if (id === 'none' || id === 'robot') {
+      // No character / the robot → no Pokémon cries.
+      setPikaEnabled(false);
+      stopCharacterVoice();
+      return;
+    }
+    if (id === 'pikachu') {
+      stopCharacterVoice();
+      setActiveCharacter('pikachu');
+      setPikaEnabled(state.pikaVoiceOn);       // restore Pikachu per user setting
+    } else if (id === 'meowth') {
+      // Meowth talks (via the TTS voice above) rather than doing animal cries.
+      setPikaEnabled(false);
+      stopCharacterVoice();
+      if (state.pikaVoiceOn) setTimeout(() => playCharacterCry('meowth'), 200); // one greeting cry
+    } else {
+      setPikaEnabled(false);                   // mute Pikachu
+      setActiveCharacter(id);                  // start this character's idle cries
+      if (state.pikaVoiceOn) setTimeout(() => playCharacterCry(id), 200);
+    }
+  }
+
+  // Apply the saved character on startup (if not the default Pikachu).
+  // Default centerpiece on every open is the ROBOT (no Pokémon unless the user
+  // picks one). The robot swaps like any character via the picker.
+  document.body.dataset.char = 'robot';
+  setTimeout(() => { orb.setCharacter('robot'); applyCharacterVoice('robot'); }, 600);
+
+  // ── Animated main-character swap (red-laser dispel + pokeball summon) ──
+  // Plays over the orb on the main screen: a red laser strikes the current
+  // character → it vanishes → a pokeball flies in, wobbles, cracks open with a
+  // laser burst → the new character emerges (loaded into the orb).
+  let charSwapBusy = false;
+
+  // Swap the main character with: red-laser dispel → real 3D Pokéball flies in,
+  // wobbles, opens with a burst → new character loads. Runs over the orb stage.
+  function swapMainCharacterAnimated(nextId: string) {
+    if (charSwapBusy) return;
+    const cvs = $<HTMLCanvasElement>('charSwapFx');
+    const stage = document.getElementById('stage');
+    const ctx = cvs.getContext('2d');
+    // If the orb was dispelled (e.g. via the palm gesture) the stage is faded
+    // to opacity:0 — restore it so the pokeball fly-in AND the summoned model
+    // are visible, not just the sound and ambient colors.
+    arOrbDispelled = false;
+    stage?.classList.remove('stage-dispelled');
+    if (!ctx || !stage) { setMainCharacter(nextId); return; }
+    charSwapBusy = true;
+    $('charSwapBtn')?.classList.add('busy');
+    cvs.classList.add('active');
+    const rect = stage.getBoundingClientRect();
+    cvs.width = rect.width; cvs.height = rect.height;
+    const W = cvs.width, H = cvs.height;
+    const cx = W / 2, cy = H * 0.46;
+    const start = performance.now();
+    let handedOff = false;
+    function laser(now: number) {
+      const t = (now - start) / 1000;
+      ctx!.clearRect(0, 0, W, H);
+      // Note: we do NOT hide #stage — the 3D pokeball renders inside the orb
+      // scene, so the stage must stay visible. orb.throwPokeball hides just the
+      // character mesh at the right moment.
+      if (t < 0.7) {
+        // red laser beam bottom → orb centre, with an electric crackle along it
+        const p = Math.min(1, t / 0.45);
+        const ex = cx, ey = H + (cy - H) * p;
+        ctx!.save(); ctx!.lineCap = 'round';
+        const layers = [[26, .08], [15, .2], [6, .5], [2, 1]] as const;
+        const cols = ['rgba(255,40,40,1)','rgba(255,70,40,1)','rgba(255,130,60,1)','#fff'];
+        layers.forEach((L, i) => {
+          ctx!.beginPath(); ctx!.moveTo(cx, H); ctx!.lineTo(ex, ey);
+          ctx!.lineWidth = L[0]; ctx!.globalAlpha = L[1]; ctx!.strokeStyle = cols[i];
+          ctx!.shadowColor = '#ff2200'; ctx!.shadowBlur = i === 3 ? 30 : 0; ctx!.stroke();
+        });
+        // jagged electric arc overlaid on the beam (energy crackle)
+        ctx!.globalAlpha = 0.85; ctx!.strokeStyle = '#ffd9c0'; ctx!.lineWidth = 1.4; ctx!.shadowColor = '#ff6a3c'; ctx!.shadowBlur = 8;
+        ctx!.beginPath(); ctx!.moveTo(cx, H);
+        const segs = 9;
+        for (let s = 1; s <= segs; s++) {
+          const f = s / segs; const bx = cx + (ex - cx) * f, by = H + (ey - H) * f;
+          ctx!.lineTo(bx + (Math.random() - 0.5) * 16, by + (Math.random() - 0.5) * 10);
+        }
+        ctx!.stroke();
+        // impact burst near the end + radiating sparks
+        if (p >= 1) {
+          const bp = (t - 0.45) / 0.25, rr = Math.min(W, H) * 0.28 * bp;
+          const g = ctx!.createRadialGradient(cx, cy, 0, cx, cy, rr);
+          g.addColorStop(0, `rgba(255,255,255,${0.9 * (1 - bp)})`);
+          g.addColorStop(0.4, `rgba(255,60,30,${0.7 * (1 - bp)})`);
+          g.addColorStop(1, 'rgba(255,0,0,0)');
+          ctx!.globalAlpha = 1; ctx!.fillStyle = g;
+          ctx!.beginPath(); ctx!.arc(cx, cy, rr, 0, Math.PI * 2); ctx!.fill();
+          ctx!.strokeStyle = '#ffe0c0'; ctx!.lineWidth = 2; ctx!.shadowColor = '#ff5a2a'; ctx!.shadowBlur = 12; ctx!.globalAlpha = 1 - bp;
+          for (let k = 0; k < 12; k++) {
+            const a = (k / 12) * Math.PI * 2 + bp; const r0 = rr * 0.5, r1 = rr * (0.9 + Math.random() * 0.4);
+            ctx!.beginPath(); ctx!.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0); ctx!.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1); ctx!.stroke();
+          }
+        }
+        ctx!.restore();
+        requestAnimationFrame(laser);
+      } else if (!handedOff) {
+        handedOff = true;
+        ctx!.clearRect(0, 0, W, H);
+        cvs.classList.remove('active');
+        // Hand off to the real 3D pokeball rendered INSIDE the orb scene
+        // (always visible — same context that renders the characters).
+        orb.throwPokeball(
+          () => { setMainCharacter(nextId); },
+          () => { charSwapBusy = false; $('charSwapBtn')?.classList.remove('busy'); },
+        );
+      }
+    }
+    requestAnimationFrame(laser);
+  }
+  (window as any).swapMainCharacterAnimated = swapMainCharacterAnimated;
+
+  // Summon dock — a macOS-style row of Pokéballs (small artwork above the ball,
+  // name below). Opens on summon; the mic listens and the user picks a Pokémon
+  // by saying its name → it arrives with the wild swap animation.
+  {
+    const dock = document.getElementById('summonDock') as HTMLDivElement;
+    const row = document.getElementById('summonDockRow') as HTMLDivElement;
+    const hint = document.getElementById('summonDockHint') as HTMLDivElement;
+    let dockOpen = false;
+    let dockTimer: number | undefined;
+    let dockRec: any = null;
+    let restoreWake = false;
+
+    // PokeAPI National-Dex numbers → official artwork sprites (via jsdelivr).
+    const DEX: Record<string, number> = {
+      pikachu: 25, charmander: 4, squirtle: 7, meowth: 52, bulbasaur: 1,
+      eevee: 133, mewtwo: 150, articuno: 144, suicune: 245, raikou: 243,
+      entei: 244, moltres: 146, zapdos: 145, lugia: 249, 'ho-oh': 250,
+    };
+    for (const g of GEN1) DEX[g.id] = g.dex;   // imported pack → PokeAPI artwork sprites
+    const SPRITE = (id: string) =>
+      `https://cdn.jsdelivr.net/gh/PokeAPI/sprites@master/sprites/pokemon/other/official-artwork/${DEX[id]}.png`;
+
+    function buildDock() {
+      const cur = localStorage.getItem(MAIN_CHAR_KEY) || 'pikachu';
+      row.innerHTML = MAIN_CHARACTERS.map((c, i) => `
+        <button class="sd-item${c.id === cur ? ' sd-current' : ''}" data-id="${c.id}" style="--d:${i * 0.04}s">
+          <div class="sd-holo-wrap">
+            <img class="sd-holo" src="${SPRITE(c.id)}" alt="${c.label}" loading="eager"
+                 onerror="this.style.opacity='0'" />
+          </div>
+          <span class="sd-ball"><span class="sd-ball-btn"></span></span>
+          <span class="sd-name">${c.label}</span>
+        </button>`).join('');
+      row.querySelectorAll<HTMLButtonElement>('.sd-item').forEach(btn => {
+        btn.addEventListener('click', () => selectPokemon(btn.dataset.id!));
+      });
+    }
+
+    // Fade-arrow scroll indicators — hide left/right fade when at the edge.
+    // The page is RTL, and modern browsers give an RTL scroll container a
+    // NEGATIVE scrollLeft range (0 at the logical start/rightmost item, down
+    // to -(scrollWidth-clientWidth) at the end) — not the 0..max LTR range.
+    const sdWrap = row.parentElement as HTMLDivElement;
+    function updateScrollFades() {
+      const max = row.scrollWidth - row.clientWidth;
+      sdWrap.classList.toggle('at-start', row.scrollLeft >= -4);
+      sdWrap.classList.toggle('at-end', row.scrollLeft <= -max + 4);
+    }
+    row.addEventListener('scroll', updateScrollFades, { passive: true });
+    updateScrollFades();
+
+    // macOS dock magnification — items swell toward the cursor.
+    function magnify(clientX: number) {
+      const items = Array.from(row.querySelectorAll<HTMLElement>('.sd-item'));
+      const MAX = 150;
+      items.forEach(it => {
+        const r = it.getBoundingClientRect();
+        const c = r.left + r.width / 2;
+        const d = Math.abs(clientX - c);
+        const scale = d > MAX ? 1 : 1 + 0.55 * (1 - d / MAX);
+        it.style.setProperty('--scale', scale.toFixed(3));
+      });
+    }
+    function resetMagnify() {
+      row.querySelectorAll<HTMLElement>('.sd-item').forEach(it => it.style.setProperty('--scale', '1'));
+    }
+    row.addEventListener('pointermove', e => { if (e.pointerType !== 'touch') magnify(e.clientX); });
+    row.addEventListener('pointerleave', resetMagnify);
+
+    function startDockVoice() {
+      const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (!SR) { hint.innerHTML = '👆 בחר פוקימון מהשורה'; return; }
+      try {
+        dockRec = new SR();
+        dockRec.lang = state.micLang === 'he' ? 'he-IL' : state.micLang === 'es' ? 'es-ES' : 'en-US';
+        dockRec.continuous = true; dockRec.interimResults = true; dockRec.maxAlternatives = 3;
+        dockRec.onresult = (e: any) => {
+          for (let i = e.resultIndex; i < e.results.length; i++) {
+            const res = e.results[i];
+            for (let a = 0; a < res.length; a++) {
+              const t = (res[a].transcript || '').toLowerCase();
+              const match = MAIN_CHARACTERS.find(c => c.words.test(t));
+              if (match) { selectPokemon(match.id); return; }
+            }
+          }
+        };
+        dockRec.onerror = () => {};
+        dockRec.start();
+      } catch {}
+    }
+    function stopDockVoice() {
+      if (dockRec) { try { dockRec.stop(); } catch {} dockRec = null; }
+    }
+
+    // Spectacular summon burst: white core flash + expanding shockwave ring.
+    function summonFlash() {
+      const f = document.createElement('div');
+      f.className = 'summon-flash';
+      const ring = document.createElement('div');
+      ring.className = 'summon-shock';
+      document.body.appendChild(f);
+      document.body.appendChild(ring);
+      setTimeout(() => { f.remove(); ring.remove(); }, 1100);
+    }
+
+    // Real 3D Pokéball in the screen centre while choosing — its own tiny WebGL
+    // scene rendering the uploaded pokeball.glb, spinning. Launches up off-screen
+    // when a Pokémon is picked.
+    let sbRenderer: THREE.WebGLRenderer | null = null;
+    let sbScene: THREE.Scene | null = null, sbCamera: THREE.PerspectiveCamera | null = null;
+    let sbBall: THREE.Object3D | null = null, sbRaf = 0;
+    function initSummonBall3D() {
+      if (sbRenderer) return;
+      const canvas = document.getElementById('summonOrbCanvas') as HTMLCanvasElement | null;
+      if (!canvas) return;
+      try {
+        sbRenderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+        sbRenderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+        sbRenderer.setSize(240, 240, false);
+        sbScene = new THREE.Scene();
+        sbCamera = new THREE.PerspectiveCamera(38, 1, 0.1, 100); sbCamera.position.set(0, 0, 4.0);
+        sbScene.add(new THREE.AmbientLight(0xffffff, 0.95));
+        const d = new THREE.DirectionalLight(0xffffff, 1.25); d.position.set(2, 3, 4); sbScene.add(d);
+        const d2 = new THREE.DirectionalLight(0xffe0a0, 0.5); d2.position.set(-3, 1, -2); sbScene.add(d2);
+        import('three/examples/jsm/loaders/GLTFLoader.js').then(({ GLTFLoader }) => {
+          new GLTFLoader().load((import.meta.env.BASE_URL || '/') + 'ar-models/pokeball.glb', (g: any) => {
+            const m: THREE.Object3D = g.scene;
+            m.traverse((o: any) => { if (o.isMesh) o.geometry.computeVertexNormals(); });
+            // Tilt so the equator (red/white split + band + button) faces the
+            // camera (red on top, classic), THEN centre/scale in the tilted frame.
+            m.rotation.x = -Math.PI / 2;
+            m.updateMatrixWorld(true);
+            const bb = new THREE.Box3().setFromObject(m);
+            const sz = bb.getSize(new THREE.Vector3()); const c = bb.getCenter(new THREE.Vector3());
+            const s = 1.7 / Math.max(sz.x, sz.y, sz.z);
+            const inner = new THREE.Group(); inner.add(m);
+            m.scale.setScalar(s); m.position.set(-c.x * s, -c.y * s, -c.z * s);
+            sbScene!.add(inner); sbBall = inner;
+          }, undefined, () => {});
+        });
+      } catch { sbRenderer = null; }
+    }
+    function startSummonBall() {
+      initSummonBall3D();
+      if (sbRaf || !sbRenderer) return;
+      const tick = () => {
+        sbRaf = requestAnimationFrame(tick);
+        if (sbBall) { sbBall.rotation.y += 0.03; sbBall.rotation.z = Math.sin(performance.now() / 1100) * 0.08; }
+        if (sbRenderer && sbScene && sbCamera) sbRenderer.render(sbScene, sbCamera);
+      };
+      tick();
+    }
+    function stopSummonBall() { cancelAnimationFrame(sbRaf); sbRaf = 0; }
+
+    // Laser fired DOWN from the rising pokéball onto the orb centre, which then
+    // reveals the chosen Pokémon. Drawn on the full-stage charSwapFx canvas.
+    function summonBeam(id: string) {
+      const cvs = $<HTMLCanvasElement>('charSwapFx');
+      const stage = document.getElementById('stage');
+      const ctx = cvs.getContext('2d');
+      if (!ctx || !stage) { setMainCharacter(id); return; }
+      cvs.classList.add('active');
+      const rect = stage.getBoundingClientRect();
+      cvs.width = rect.width; cvs.height = rect.height;
+      const W = cvs.width, H = cvs.height, cx = W / 2, cy = H * 0.46;
+      const start = performance.now();
+      let done = false;
+      const frame = (now: number) => {
+        const t = (now - start) / 1000;
+        ctx.clearRect(0, 0, W, H);
+        if (t < 0.6) {
+          const p = Math.min(1, t / 0.4);            // beam grows top → centre
+          const endY = -30 + (cy + 30) * p;
+          ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+          // Electric lightning core — jagged path from the top to the beam tip,
+          // re-randomised each frame so it crackles.
+          const jag = () => {
+            ctx.beginPath(); ctx.moveTo(cx, -30);
+            const segs = 9;
+            for (let s = 1; s <= segs; s++) {
+              const yy = -30 + (endY + 30) * (s / segs);
+              const amp = 18 * (1 - p * 0.4);
+              ctx.lineTo(cx + (s === segs ? 0 : (Math.random() - 0.5) * amp), yy);
+            }
+          };
+          const layers = [[26, .08], [15, .2], [6, .5], [2.5, 1]] as const;
+          const cols = ['rgba(255,55,55,1)', 'rgba(255,90,55,1)', 'rgba(255,150,80,1)', '#fff'];
+          layers.forEach((L, i) => {
+            jag();
+            ctx.lineWidth = L[0]; ctx.globalAlpha = L[1]; ctx.strokeStyle = cols[i];
+            ctx.shadowColor = '#ff2a18'; ctx.shadowBlur = i === 3 ? 30 : 10; ctx.stroke();
+          });
+          // Forked branches off the bolt
+          ctx.globalAlpha = 0.5; ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(255,180,120,.9)';
+          for (let b = 0; b < 3; b++) {
+            const by = -30 + (endY + 30) * (0.3 + Math.random() * 0.6);
+            ctx.beginPath(); ctx.moveTo(cx, by);
+            ctx.lineTo(cx + (Math.random() - 0.5) * 70, by + (Math.random() - 0.3) * 50);
+            ctx.stroke();
+          }
+          if (p >= 1) {                               // impact burst at the centre
+            const bp = (t - 0.4) / 0.2, rr = Math.min(W, H) * 0.32 * bp;
+            const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rr);
+            g.addColorStop(0, `rgba(255,255,255,${0.95 * (1 - bp)})`);
+            g.addColorStop(0.4, `rgba(255,90,40,${0.7 * (1 - bp)})`);
+            g.addColorStop(1, 'rgba(255,0,0,0)');
+            ctx.globalAlpha = 1; ctx.fillStyle = g;
+            ctx.beginPath(); ctx.arc(cx, cy, rr, 0, Math.PI * 2); ctx.fill();
+            // Radial spark streaks shooting out of the impact
+            ctx.strokeStyle = '#ffd9a0'; ctx.lineWidth = 2; ctx.globalAlpha = 1 - bp;
+            for (let k = 0; k < 14; k++) {
+              const a = (k / 14) * Math.PI * 2 + bp;
+              const r0 = rr * 0.5, r1 = rr * (1.1 + Math.random() * 0.4);
+              ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0);
+              ctx.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1); ctx.stroke();
+            }
+          }
+          ctx.restore();
+          requestAnimationFrame(frame);
+        } else if (!done) {
+          done = true; ctx.clearRect(0, 0, W, H); cvs.classList.remove('active');
+          setMainCharacter(id);                       // the chosen Pokémon arrives
+        }
+      };
+      requestAnimationFrame(frame);
+    }
+
+    // Wild ambient effects while the dock is open — floating gold sparks + rings
+    function startDockWild() {
+      const el = document.getElementById('dockWild'); if (!el) return;
+      el.removeAttribute('hidden'); el.innerHTML = '';
+      // 3 concentric animated rings
+      for (let i = 0; i < 3; i++) {
+        const r = document.createElement('div'); r.className = 'dw-ring';
+        const sz = 160 + i * 120;
+        Object.assign(r.style, { width: sz+'px', height: sz+'px', left:'50%', top:'40%',
+          animationDelay: (i*0.7)+'s', animationDuration: (2.4 + i*0.5)+'s' });
+        el.appendChild(r);
+      }
+      // Vertical light beams
+      const beamCount = 8;
+      for (let i = 0; i < beamCount; i++) {
+        const b = document.createElement('div'); b.className = 'dw-beam';
+        Object.assign(b.style, { left: (8 + i*(100/beamCount))+'%',
+          animationDelay: (i*0.22)+'s', height:'0' });
+        el.appendChild(b);
+      }
+      // Floating sparks
+      for (let i = 0; i < 22; i++) {
+        const s = document.createElement('div'); s.className = 'dw-spark';
+        const hue = 30 + Math.random() * 30;
+        Object.assign(s.style, {
+          left: Math.random()*100+'%', top: (50 + Math.random()*50)+'%',
+          background: `hsl(${hue},100%,${50+Math.random()*30}%)`,
+          width: (2+Math.random()*4)+'px', height: (2+Math.random()*4)+'px',
+          animationDelay: (Math.random()*3)+'s', animationDuration: (2+Math.random()*2.5)+'s',
+        });
+        el.appendChild(s);
+      }
+      requestAnimationFrame(() => el.classList.add('on'));
+    }
+    function stopDockWild() {
+      const el = document.getElementById('dockWild'); if (!el) return;
+      el.classList.remove('on');
+      setTimeout(() => { el.setAttribute('hidden', ''); el.innerHTML = ''; }, 350);
+    }
+
+    // Gesture-based hover: the hand overlay X position maps to dock items
+    let gestureHoverIdx = -1;
+    let gestureSelectTimer: number | undefined;
+    function dockGestureMove(normX: number) {
+      if (!dockOpen) return;
+      const items = Array.from(row.querySelectorAll<HTMLElement>('.sd-item'));
+      if (!items.length) return;
+      // Map screen normX → item index
+      const idx = Math.min(items.length - 1, Math.max(0, Math.floor(normX * items.length)));
+      if (idx !== gestureHoverIdx) {
+        items.forEach(it => it.classList.remove('gesture-hover'));
+        items[idx]?.classList.add('gesture-hover');
+        magnify(idx / (items.length - 1) * window.innerWidth);
+        gestureHoverIdx = idx;
+        clearTimeout(gestureSelectTimer);
+        // Auto-select after 1.5s of stable hover
+        gestureSelectTimer = window.setTimeout(() => {
+          if (dockOpen && gestureHoverIdx === idx) {
+            const id = items[idx]?.dataset.id;
+            if (id) selectPokemon(id);
+          }
+        }, 1500);
+      }
+    }
+    (window as any).__dockGestureMove = dockGestureMove;
+
+    // Pinch-drag horizontal scroll (thumb + index finger together) while the
+    // dock is open. Exposes a LOGICAL scroll coordinate (0 = start/first
+    // item, max = end/last item, increasing = further into the list) so the
+    // gesture code doesn't need to know this is an RTL container — the row's
+    // actual scrollLeft runs 0..-(max) in RTL (0 at the start), so we negate.
+    // Uses scrollTo({behavior:'instant'}) — .sd-row has CSS scroll-behavior:
+    // smooth for momentum/click scrolls, which would fight a live per-frame
+    // pinch-drag (each frame would kick off a new easing animation that never
+    // catches up to the hand), so a drag must bypass it explicitly.
+    (window as any).__dockScrollLeft = () => -row.scrollLeft;
+    (window as any).__dockScrollTo = (logicalX: number) => {
+      const max = row.scrollWidth - row.clientWidth;
+      row.scrollTo({ left: -Math.max(0, Math.min(max, logicalX)), behavior: 'instant' });
+      updateScrollFades();
+    };
+
+    function openSummonDock() {
+      if (dockOpen) return;
+      buildDock();
+      resetMagnify();
+      requestAnimationFrame(updateScrollFades); // fades after layout
+      dock.removeAttribute('hidden');
+      const bdrop = document.getElementById('dockBackdrop');
+      if (bdrop) { bdrop.removeAttribute('hidden'); requestAnimationFrame(() => bdrop.classList.add('on')); }
+      const orbEl = document.getElementById('summonOrb');
+      orbEl?.classList.remove('launch');
+      orbEl?.removeAttribute('hidden');
+      startSummonBall();
+      startDockWild();
+      requestAnimationFrame(() => dock.classList.add('open'));
+      dockOpen = true;
+      gestureHoverIdx = -1;
+      hint.innerHTML = '<span class="sd-mic">🎙️</span> אמור שם של פוקימון…';
+      restoreWake = voice.wakeOn;
+      if (restoreWake) voice.setWake(false);
+      startDockVoice();
+      clearTimeout(dockTimer);
+      dockTimer = window.setTimeout(() => closeSummonDock(), 18000);
+    }
+    function closeSummonDock() {
+      if (!dockOpen) return;
+      dockOpen = false;
+      clearTimeout(dockTimer);
+      clearTimeout(gestureSelectTimer);
+      gestureHoverIdx = -1;
+      stopDockVoice();
+      stopSummonBall();
+      stopDockWild();
+      const orbEl = document.getElementById('summonOrb');
+      orbEl?.setAttribute('hidden', ''); orbEl?.classList.remove('launch');
+      dock.classList.remove('open');
+      const bdrop = document.getElementById('dockBackdrop');
+      if (bdrop) { bdrop.classList.remove('on'); setTimeout(() => bdrop.setAttribute('hidden', ''), 300); }
+      setTimeout(() => dock.setAttribute('hidden', ''), 320);
+      if (restoreWake) { restoreWake = false; setTimeout(() => voice.setWake(true), 350); }
+    }
+    function selectPokemon(id: string) {
+      if (!dockOpen) return;
+      clearTimeout(dockTimer);
+      stopDockVoice();
+      const el = row.querySelector<HTMLElement>(`.sd-item[data-id="${id}"]`);
+      el?.classList.add('sd-chosen');
+      // The 3D pokéball rises up toward the top of the screen…
+      document.getElementById('summonOrb')?.classList.add('launch');
+      // …and as it rises, fires a laser straight down onto the orb, which
+      // reveals the chosen Pokémon. The dock + ball clear once it's off-screen.
+      setTimeout(() => { summonFlash(); summonBeam(id); }, 300);
+      setTimeout(() => closeSummonDock(), 780);
+    }
+
+    // The thumbs-up gesture (and the pokeball button) open this dock.
+    (window as any).openSummonDock = openSummonDock;
+    (window as any).closeSummonDock = closeSummonDock;
+
+    $('charSwapBtn').onclick = (e) => {
+      e.stopPropagation();
+      if (dockOpen) closeSummonDock(); else openSummonDock();
+    };
+    document.addEventListener('click', (e) => {
+      if (dockOpen && !(e.target as Element).closest('#summonDock, #charSwapBtn')) closeSummonDock();
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && dockOpen) closeSummonDock(); });
+  }
+
+  // Character transform panel — full rotation, scale and position control per model.
+  {
+    const panel = document.getElementById('charRotPanel') as HTMLDivElement;
+    const crpX  = $<HTMLInputElement>('crpX');
+    const crpY  = $<HTMLInputElement>('crpY');
+    const crpZ  = $<HTMLInputElement>('crpZ');
+    const crpS  = $<HTMLInputElement>('crpS');
+    const crpPX = $<HTMLInputElement>('crpPX');
+    const crpPY = $<HTMLInputElement>('crpPY');
+    const crpPZ = $<HTMLInputElement>('crpPZ');
+    const toRad = (d: string) => parseFloat(d) * Math.PI / 180;
+    const toDeg = (r: number) => Math.round(r * 180 / Math.PI);
+
+    function crpSync() {
+      const xf = orb.getCharacterTransform();
+      crpX.value  = String(toDeg(xf.x));
+      crpY.value  = String(toDeg(xf.y));
+      crpZ.value  = String(toDeg(xf.z));
+      crpS.value  = String(Math.round(xf.s * 100));
+      crpPX.value = String(Math.round(xf.px * 100));
+      crpPY.value = String(Math.round(xf.py * 100));
+      crpPZ.value = String(Math.round(xf.pz * 100));
+      $('crpXv').textContent  = crpX.value + '°';
+      $('crpYv').textContent  = crpY.value + '°';
+      $('crpZv').textContent  = crpZ.value + '°';
+      $('crpSv').textContent  = (xf.s).toFixed(2) + '×';
+      $('crpPXv').textContent = crpPX.value;
+      $('crpPYv').textContent = crpPY.value;
+      $('crpPZv').textContent = crpPZ.value;
+    }
+
+    function crpApply() {
+      orb.setCharacterTransform(
+        toRad(crpX.value), toRad(crpY.value), toRad(crpZ.value),
+        parseFloat(crpS.value) / 100,
+        parseFloat(crpPX.value) / 100, parseFloat(crpPY.value) / 100, parseFloat(crpPZ.value) / 100
+      );
+    }
+
+    $('charPoseBtn').onclick = (e) => {
+      e.stopPropagation();
+      if (panel.hasAttribute('hidden')) { crpSync(); crpUpdatePinBadge(); panel.removeAttribute('hidden'); }
+      else panel.setAttribute('hidden', '');
+    };
+    document.addEventListener('click', (e) => {
+      if (!panel.contains(e.target as Node) && e.target !== $('charPoseBtn')) panel.setAttribute('hidden', '');
+    });
+
+    crpX.oninput  = () => { $('crpXv').textContent  = crpX.value + '°'; crpApply(); };
+    crpY.oninput  = () => { $('crpYv').textContent  = crpY.value + '°'; crpApply(); };
+    crpZ.oninput  = () => { $('crpZv').textContent  = crpZ.value + '°'; crpApply(); };
+    crpS.oninput  = () => { $('crpSv').textContent  = (parseFloat(crpS.value)/100).toFixed(2) + '×'; crpApply(); };
+    crpPX.oninput = () => { $('crpPXv').textContent = crpPX.value; crpApply(); };
+    crpPY.oninput = () => { $('crpPYv').textContent = crpPY.value; crpApply(); };
+    crpPZ.oninput = () => { $('crpPZv').textContent = crpPZ.value; crpApply(); };
+
+    function crpUpdatePinBadge() {
+      const badge = $('crpPinBadge') as HTMLElement;
+      if (orb.hasPinnedTransform()) badge.removeAttribute('hidden');
+      else badge.setAttribute('hidden', '');
+    }
+
+    $('crpPin').onclick = () => {
+      orb.pinCharacterTransform();
+      crpUpdatePinBadge();
+      const btn = $('crpPin') as HTMLButtonElement;
+      btn.textContent = '✓ נשמר!';
+      setTimeout(() => { btn.textContent = 'שמור ככיוון ברירת מחדל'; }, 1500);
+    };
+
+    $('crpReset').onclick = () => {
+      orb.resetCharacterTransform();
+      crpSync();
+    };
+
+    // Auto-center: drop the object back to the dead-centre of the orb (zero position
+    // offset) at the default fit scale, keeping the current rotation. One tap to
+    // recover from a model that drifted off-centre or got scaled out of view.
+    $('crpAuto').onclick = () => {
+      crpPX.value = '0'; crpPY.value = '0'; crpPZ.value = '0'; crpS.value = '100';
+      $('crpPXv').textContent = '0';
+      $('crpPYv').textContent = '0';
+      $('crpPZv').textContent = '0';
+      $('crpSv').textContent = '1.00×';
+      crpApply();
+    };
+
+    // Re-sync panel values after character swap (model loads async, so delay)
+    (window as any).__crpSyncIfOpen = () => {
+      if (!panel.hasAttribute('hidden')) setTimeout(() => { crpSync(); crpUpdatePinBadge(); }, 1400);
+    };
+  }
+
+  // Voice/chat command → swap the MAIN assistant character (the orb avatar).
+  // Returns a reply string if it handled the command, else null.
+  function tryArVoiceCommand(text: string): string | null {
+    const low = text.trim().toLowerCase();
+
+    const mentionsChar = /(דמות|דמויות|פוקימון|פוקמון|אוויטר|avatar|character|pokemon|pokémon)/i.test(low);
+    const hasSwitchVerb = /(החלף|תחליף|שנה|תשנה|הבא|הבאה|הראה|תראה|תביא|הצג|switch|change|next|show|bring|turn into|be)/i.test(low);
+    const named = MAIN_CHARACTERS.find(c => c.words.test(low));
+
+    // Named character with a switch verb or "character" context → swap it
+    // with the pokeball + red-laser animation.
+    if (named && (hasSwitchVerb || mentionsChar)) {
+      swapMainCharacterAnimated(named.id);
+      return `הדמות הראשית מתחלפת ל${named.label} ⚡`;
+    }
+
+    // Generic next/switch ("החלף דמות" / "הדמות הבאה") → cycle to next.
+    if (hasSwitchVerb && mentionsChar) {
+      const cur = localStorage.getItem(MAIN_CHAR_KEY) || 'pikachu';
+      const idx = MAIN_CHARACTERS.findIndex(c => c.id === cur);
+      const next = MAIN_CHARACTERS[(idx + 1) % MAIN_CHARACTERS.length];
+      swapMainCharacterAnimated(next.id);
+      return `הדמות הראשית מתחלפת ל${next.label} ⚡`;
+    }
+
+    return null;
+  }
+
   let arFxCtx: CanvasRenderingContext2D | null = null;
 
   interface FxParticle {
@@ -1589,6 +4747,192 @@ export function mountApp(root: HTMLElement) {
     if (arHandPos.x >= 0 && arCurrentFx !== 'none') {
       const cvs2 = arFxCtx.canvas;
       spawnFxParticles(arHandPos.x, arHandPos.y, cvs2.width, cvs2.height);
+    }
+  }
+
+  // ── Beam + character canvas draw ─────────────────────────────
+  function drawArCharLayer() {
+    if (!arCharCtx) return;
+    const cvs = arCharCtx.canvas;
+    const ctx = arCharCtx;
+    const w = cvs.width, h = cvs.height;
+    ctx.clearRect(0, 0, w, h);
+
+    // Laser beam flying from hand toward orb center
+    if (arBeamFiring) {
+      arBeamProgress = Math.min(1, arBeamProgress + 0.045);
+      const bx1 = arBeamOrigin.x * w;
+      const by1 = arBeamOrigin.y * h;
+      const bx2 = 0.5 * w;
+      const by2 = 0.5 * h;
+      const endX = bx1 + (bx2 - bx1) * arBeamProgress;
+      const endY = by1 + (by2 - by1) * arBeamProgress;
+      ctx.save();
+      ctx.lineCap = 'round';
+      // Outer glow
+      for (let layer = 3; layer >= 0; layer--) {
+        const widths = [24, 14, 6, 2];
+        const alphas = [0.06, 0.15, 0.45, 1];
+        const colors = ['rgba(255,40,40,1)', 'rgba(255,80,40,1)', 'rgba(255,140,60,1)', '#fff'];
+        ctx.beginPath();
+        ctx.moveTo(bx1, by1);
+        ctx.lineTo(endX, endY);
+        ctx.lineWidth = widths[layer];
+        ctx.strokeStyle = colors[layer];
+        ctx.globalAlpha = alphas[layer];
+        ctx.shadowColor = '#ff2200';
+        ctx.shadowBlur = layer === 0 ? 40 : 0;
+        ctx.stroke();
+      }
+      // Tip flare
+      ctx.globalAlpha = 0.9;
+      const grad = ctx.createRadialGradient(endX, endY, 0, endX, endY, 30);
+      grad.addColorStop(0, 'rgba(255,200,100,0.9)');
+      grad.addColorStop(0.5, 'rgba(255,80,20,0.4)');
+      grad.addColorStop(1, 'rgba(255,0,0,0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(endX, endY, 30, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      // When beam reaches orb center — trigger dispel
+      if (arBeamProgress >= 1 && !arOrbDispelled) {
+        arBeamFiring = false;
+        arOrbDispelled = true;
+        // Disintegration burst at center
+        for (let i = 0; i < 60; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const spd = 3 + Math.random() * 10;
+          arFxParticles.push({
+            x: bx2, y: by2,
+            vx: Math.cos(angle) * spd, vy: Math.sin(angle) * spd,
+            life: 1, maxLife: 0.4 + Math.random() * 0.6,
+            size: 3 + Math.random() * 12,
+            color: ['#ff4400','#ff7700','#ffaa00','#daa520','#fff','#ff2288'][Math.floor(Math.random()*6)],
+            alpha: 1,
+          });
+        }
+        // Hide stage
+        const stageEl = document.getElementById('stage');
+        if (stageEl) stageEl.classList.add('stage-dispelled');
+      }
+    }
+
+    // Palm hold indicator — circular charge-up ring around hand
+    if (arHandPos.x >= 0 && !arOrbDispelled && !arBeamFiring && arPalmHoldTime > 0.1) {
+      const progress = Math.min(1, arPalmHoldTime / 0.7);
+      const hx = arHandPos.x * w, hy = arHandPos.y * h;
+      ctx.save();
+      ctx.globalAlpha = 0.8;
+      ctx.strokeStyle = `hsl(${10 + progress * 30},100%,${50 + progress * 20}%)`;
+      ctx.lineWidth = 3;
+      ctx.shadowColor = '#ff4400';
+      ctx.shadowBlur = 20;
+      ctx.beginPath();
+      ctx.arc(hx, hy, 48, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // ── Pokeball animation ────────────────────────────────────
+    const pbCX = w * 0.5, pbCY = h * 0.45;
+    const pbR = Math.min(w, h) * 0.08;
+
+    if (arPokeballPhase === 'fly') {
+      arPokeballT++;
+      const t = Math.min(1, arPokeballT / 28);
+      const ease = 1 - Math.pow(1 - t, 3);
+      const bx = arPokeballFrom.x * w + (pbCX - arPokeballFrom.x * w) * ease;
+      const by = arPokeballFrom.y * h + (pbCY - arPokeballFrom.y * h) * ease;
+      const r = pbR * (0.5 + 0.5 * ease);
+      drawPokeballAt(ctx, bx, by, r);
+      if (t >= 1) { arPokeballPhase = 'wobble'; arPokeballT = 0; }
+    } else if (arPokeballPhase === 'wobble') {
+      arPokeballT++;
+      const wobble = Math.sin(arPokeballT * 0.55) * 0.36 * Math.max(0, 1 - arPokeballT / 25);
+      drawPokeballAt(ctx, pbCX, pbCY, pbR, wobble);
+      if (arPokeballT >= 28) { arPokeballPhase = 'open'; arPokeballT = 0; }
+    } else if (arPokeballPhase === 'open') {
+      arPokeballT++;
+      const t = arPokeballT / 15;
+      // Two halves of pokeball flying apart
+      const halfOff = pbR * 2 * t;
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, 1 - t * 1.2);
+      // Top half flies up
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(pbCX, pbCY - halfOff, pbR, Math.PI, 0);
+      ctx.fillStyle = '#e63835'; ctx.fill();
+      ctx.strokeStyle = '#111'; ctx.lineWidth = pbR * 0.06; ctx.stroke();
+      ctx.restore();
+      // Bottom half flies down
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(pbCX, pbCY + halfOff, pbR, 0, Math.PI);
+      ctx.fillStyle = '#fff'; ctx.fill();
+      ctx.strokeStyle = '#111'; ctx.lineWidth = pbR * 0.06; ctx.stroke();
+      ctx.restore();
+      ctx.restore();
+      // White expansion flash
+      const flashR = pbR * 3 * t;
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, 0.8 - t);
+      const grad = ctx.createRadialGradient(pbCX, pbCY, 0, pbCX, pbCY, flashR);
+      grad.addColorStop(0, 'rgba(255,255,255,1)');
+      grad.addColorStop(0.4, 'rgba(255,230,120,0.7)');
+      grad.addColorStop(1, 'rgba(255,180,40,0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath(); ctx.arc(pbCX, pbCY, flashR, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      if (arPokeballT >= 15) { arPokeballPhase = 'done'; arPokeballT = 0; }
+    }
+
+    // ── Character display after pokeball opens ────────────────
+    if (arOrbDispelled && arCharIdx >= 0 && arCharacters[arCharIdx] && arPokeballPhase === 'done') {
+      const ch = arCharacters[arCharIdx];
+      arCharAnim = Math.min(1, arCharAnim + 0.04);
+      const scale = 0.6 + arCharAnim * 0.4;
+      const alpha = arCharAnim;
+      const cx = w * 0.5;
+      const cy = h * 0.45;
+      const fromX = arCharFromDir.x * w * (1 - arCharAnim) * 0.3;
+      const fromY = arCharFromDir.y * h * (1 - arCharAnim) * 0.3;
+      const size = Math.min(w, h) * 0.52;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.translate(cx + fromX, cy + fromY);
+      ctx.scale(scale, scale);
+      // Type glow
+      if (ch.color) {
+        ctx.shadowColor = ch.color;
+        ctx.shadowBlur = 60;
+      }
+      if (ch.drawFn) {
+        ch.drawFn(ctx, size * 0.5);
+      } else if (ch.img) {
+        ctx.drawImage(ch.img, -size / 2, -size / 2, size, size);
+      } else {
+        ctx.font = `${Math.round(size * 0.35)}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = ch.color || '#daa520';
+        ctx.fillText(ch.name[0] || '?', 0, 0);
+      }
+      ctx.restore();
+      // Name label
+      if (ch.name && arCharAnim > 0.5) {
+        ctx.save();
+        ctx.globalAlpha = (arCharAnim - 0.5) * 2;
+        ctx.font = `bold ${Math.round(w * 0.028)}px "Space Grotesk", sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.fillStyle = ch.color || '#daa520';
+        ctx.shadowColor = ch.color || '#daa520';
+        ctx.shadowBlur = 18;
+        ctx.fillText(ch.name, w * 0.5, h * 0.78);
+        ctx.restore();
+      }
     }
   }
 
@@ -2031,8 +5375,60 @@ export function mountApp(root: HTMLElement) {
       ftCtx.restore();
     }
 
+    drawArCharSwitchZone(w, h, dt);
+
     drawFxParticles();
+    drawArCharLayer();
     arAnimFrame = requestAnimationFrame(drawArObjects);
+  }
+
+  // Dashed "place your hand here" zone — hold your hand inside to switch the
+  // main character. Far more reliable than gesture classification.
+  function drawArCharSwitchZone(w: number, h: number, dt: number) {
+    if (!arObjCtx) return;
+    const ctx = arObjCtx;
+    const zx = AR_ZONE.x * w, zy = AR_ZONE.y * h, zr = AR_ZONE.r * Math.min(w, h);
+    arZoneCooldown = Math.max(0, arZoneCooldown - dt);
+
+    const hand = arHandPos.x >= 0;
+    const dist = hand ? Math.hypot(arHandPos.x * w - zx, arHandPos.y * h - zy) : Infinity;
+    const inside = hand && dist < zr && arZoneCooldown <= 0;
+    if (inside) arZoneDwell = Math.min(1, arZoneDwell + dt / 0.8); // 0.8s to fill
+    else arZoneDwell = Math.max(0, arZoneDwell - dt * 1.5);
+
+    ctx.save();
+    // dashed ring
+    ctx.setLineDash([12, 9]);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = inside ? 'rgba(255,210,90,0.95)' : 'rgba(218,165,32,0.6)';
+    ctx.shadowColor = '#daa520'; ctx.shadowBlur = inside ? 18 : 8;
+    ctx.beginPath(); ctx.arc(zx, zy, zr, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+    // dwell progress arc
+    if (arZoneDwell > 0.01) {
+      ctx.lineWidth = 6; ctx.strokeStyle = '#ffcc33'; ctx.shadowBlur = 22;
+      ctx.beginPath(); ctx.arc(zx, zy, zr, -Math.PI / 2, -Math.PI / 2 + arZoneDwell * Math.PI * 2); ctx.stroke();
+    }
+    // label
+    ctx.shadowBlur = 0;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `${Math.round(zr * 0.5)}px sans-serif`;
+    ctx.fillText('🖐️', zx, zy - zr * 0.1);
+    ctx.fillStyle = inside ? '#ffe08a' : 'rgba(245,230,200,0.9)';
+    ctx.font = `bold ${Math.round(zr * 0.2)}px "Space Grotesk", sans-serif`;
+    ctx.fillText('החלף דמות', zx, zy + zr * 0.45);
+    ctx.restore();
+
+    if (arZoneDwell >= 1 && arZoneCooldown <= 0) {
+      arZoneDwell = 0; arZoneCooldown = 4;
+      const cur = localStorage.getItem(MAIN_CHAR_KEY) || 'pikachu';
+      const idx = MAIN_CHARACTERS.findIndex(c => c.id === cur);
+      const next = MAIN_CHARACTERS[(idx + 1) % MAIN_CHARACTERS.length];
+      addFloatingText(AR_ZONE.x, AR_ZONE.y - 0.14, '⚡ ' + next.label, '#ffcc33');
+      const vp = document.getElementById('arViewport');
+      if (vp) throwPokeball(vp, { onOpen: () => setMainCharacter(next.id) });
+      else setMainCharacter(next.id);
+    }
   }
 
   function openArCamera() {
@@ -2044,6 +5440,8 @@ export function mountApp(root: HTMLElement) {
     const ctx = canvas.getContext('2d')!;
     arObjCtx = objCanvas.getContext('2d')!;
     arFxCtx = fxCanvas.getContext('2d')!;
+    const charCanvas = $<HTMLCanvasElement>('arCharCanvas');
+    arCharCtx = charCanvas.getContext('2d')!;
     const statusEl = $('arStatus');
     const handIndicator = $('arHandIndicator');
     const buttonsEl = $('arButtons');
@@ -2051,6 +5449,27 @@ export function mountApp(root: HTMLElement) {
     const arBtns = [
       { label: 'חיפוש רכב', icon: '🔍', action: () => { const q = prompt('מספר רישוי:'); if (q) hgSearchLicense(q); } },
       { label: 'הכנסות', icon: '💰', action: () => hgShowEarnings('', new Date().toISOString().slice(0, 7)) },
+      { label: 'החלף דמות', icon: '⚡', action: () => {
+        if (!arOrbDispelled) {
+          // First tap: dispel the main orb and summon the first Pokemon.
+          arOrbDispelled = true;
+          document.getElementById('stage')?.classList.add('stage-dispelled');
+          if (arCharacters.length > 0) {
+            arCharIdx = 0;
+            arCharAnim = 0;
+            arPokeballPhase = 'fly'; arPokeballT = 0;
+            arPokeballFrom = { x: 0.5, y: 0.85 };
+            arThrowCooldown = 3.0;
+          }
+        } else if (arCharacters.length > 0 && arPokeballPhase !== 'fly' && arPokeballPhase !== 'wobble' && arPokeballPhase !== 'open') {
+          // Subsequent taps: cycle to the next Pokemon.
+          arCharIdx = (arCharIdx + 1) % arCharacters.length;
+          arCharAnim = 0;
+          arPokeballPhase = 'fly'; arPokeballT = 0;
+          arPokeballFrom = { x: 0.5, y: 0.85 };
+          arThrowCooldown = 3.0;
+        }
+      }},
       { label: 'צלם', icon: '📸', action: () => captureArPhoto() },
       { label: 'סגור', icon: '✕', action: closeArCamera },
     ];
@@ -2064,33 +5483,67 @@ export function mountApp(root: HTMLElement) {
       buttonsEl.appendChild(btn);
     });
 
-    statusEl.textContent = 'מאתחל מצלמה…';
+    statusEl.textContent = 'מבקש הרשאה למצלמה…';
     statusEl.style.opacity = '1';
 
-    navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: 'user',
-        width: { ideal: 1920, min: 1280 },
-        height: { ideal: 1080, min: 720 },
-        frameRate: { ideal: 30 },
+    const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+
+    // On phones, ask for a lighter stream WITHOUT hard min-resolution
+    // constraints (many front cameras reject 1280×720 minimums and the
+    // whole request fails). We progressively fall back to the most basic
+    // request so the permission prompt always succeeds.
+    const constraintLevels: MediaStreamConstraints[] = isMobile
+      ? [
+          { video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } } },
+          { video: { facingMode: 'user' } },
+          { video: true },
+        ]
+      : [
+          { video: { facingMode: 'user', width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } } },
+          { video: { facingMode: 'user' } },
+          { video: true },
+        ];
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      statusEl.textContent = 'הדפדפן לא תומך במצלמה';
+      return;
+    }
+
+    const tryGetStream = async (): Promise<MediaStream | null> => {
+      for (const c of constraintLevels) {
+        try { return await navigator.mediaDevices.getUserMedia(c); }
+        catch (e: any) {
+          // Permission denied is final — stop trying other resolutions.
+          if (e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')) throw e;
+        }
       }
-    }).then(stream => {
+      return null;
+    };
+
+    tryGetStream().then(stream => {
+      if (!stream) { statusEl.textContent = 'לא נמצאה מצלמה זמינה'; return; }
       arStream = stream;
       video.srcObject = stream;
-      video.onloadedmetadata = () => {
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        objCanvas.width = video.videoWidth;
-        objCanvas.height = video.videoHeight;
-        fxCanvas.width = video.videoWidth;
-        fxCanvas.height = video.videoHeight;
-        statusEl.textContent = 'מצלמה פעילה';
+      // iOS Safari needs an explicit play() after metadata loads.
+      const onReady = () => {
+        const vw = video.videoWidth || 1280;
+        const vh = video.videoHeight || 720;
+        canvas.width = vw; canvas.height = vh;
+        objCanvas.width = vw; objCanvas.height = vh;
+        fxCanvas.width = vw; fxCanvas.height = vh;
+        charCanvas.width = vw; charCanvas.height = vh;
+        statusEl.textContent = 'מצלמה פעילה ✓';
         setTimeout(() => { statusEl.style.opacity = '0'; }, 2000);
         drawArObjects();
         startHandTracking(video, canvas, ctx, handIndicator, arBtns);
       };
-    }).catch(() => {
-      statusEl.textContent = 'שגיאה: לא ניתן לגשת למצלמה';
+      video.onloadedmetadata = () => { video.play().catch(() => {}); onReady(); };
+    }).catch((e: any) => {
+      if (e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')) {
+        statusEl.textContent = 'נדחתה הרשאת מצלמה — אשר גישה בהגדרות הדפדפן';
+      } else {
+        statusEl.textContent = 'שגיאה: לא ניתן לגשת למצלמה';
+      }
     });
   }
 
@@ -2098,13 +5551,22 @@ export function mountApp(root: HTMLElement) {
     $('arOverlay').classList.remove('show');
     if (arStream) { arStream.getTracks().forEach(t => t.stop()); arStream = null; }
     cancelAnimationFrame(arAnimFrame);
-    arObjects = []; arGrabbed = null; arObjCtx = null; arFxCtx = null;
+    cancelAnimationFrame(arHandLoop);
+    arObjects = []; arGrabbed = null; arObjCtx = null; arFxCtx = null; arCharCtx = null;
     arFxParticles = []; arLaserTrail = []; arCurrentFx = 'none';
     arGravityZones = []; arTrampoline = null; arFloatingTexts = [];
     arScore = 0; arCombo = 0; arGameActive = false; arGesture = 'none';
     arHand2Pos = { x: -1, y: -1, pinching: false };
+    // Reset dispel/summon state
+    arOrbDispelled = false; arBeamFiring = false; arBeamProgress = 0;
+    arPalmHoldTime = 0; arCharAnim = 0; arThrowCooldown = 0;
+    arPrevGesture = 'none';
+    arPokeballPhase = 'idle'; arPokeballT = 0;
+    document.getElementById('stage')?.classList.remove('stage-dispelled');
     document.querySelectorAll('.ar-fx-btn').forEach(b => b.classList.remove('ar-fx-active'));
     $('arStatus').style.opacity = '1';
+    const hi = document.getElementById('arHandIndicator');
+    if (hi) { hi.classList.remove('ar-detecting', 'ar-searching'); hi.textContent = ''; }
   }
   $('calBtn').onclick = () => openCalendar();
   $('arClose').onclick = closeArCamera;
@@ -2190,37 +5652,54 @@ export function mountApp(root: HTMLElement) {
     pointerEl.className = 'ar-pointer';
     $('arViewport').appendChild(pointerEl);
 
-    const mpScript = document.createElement('script');
-    mpScript.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/hands.min.js';
-    mpScript.onload = () => {
-      const camScript = document.createElement('script');
-      camScript.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.min.js';
-      camScript.onload = () => initMediaPipeHands(video, canvas, ctx, pointerEl, handIndicator, arBtns);
-      document.head.appendChild(camScript);
-    };
-    document.head.appendChild(mpScript);
+    handIndicator.textContent = '⏳ טוען זיהוי…';
+    handIndicator.classList.add('ar-searching');
+    // Reuse the script if AR was opened before in this session.
+    if ((window as any).Hands) {
+      initMediaPipeHands(video, canvas, ctx, pointerEl, handIndicator, arBtns);
+    } else {
+      const mpScript = document.createElement('script');
+      mpScript.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/hands.min.js';
+      mpScript.onerror = () => { handIndicator.textContent = 'נכשלה טעינת זיהוי היד — בדוק חיבור'; };
+      mpScript.onload = () => initMediaPipeHands(video, canvas, ctx, pointerEl, handIndicator, arBtns);
+      document.head.appendChild(mpScript);
+    }
 
     function initMediaPipeHands(
       vid: HTMLVideoElement, cvs: HTMLCanvasElement, c: CanvasRenderingContext2D,
       ptr: HTMLElement, indicator: HTMLElement, btns: { label: string; action: () => void }[]
     ) {
       const Hands = (window as any).Hands;
-      const Camera = (window as any).Camera;
-      if (!Hands || !Camera) {
+      if (!Hands) {
         indicator.textContent = 'Hand tracking unavailable';
         return;
       }
       const hands = new Hands({ locateFile: (f: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/${f}` });
-      hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.6 });
+      // Lighter model + single hand on phones so it runs smoothly.
+      // Highest-quality detection on every device. Lower confidence
+      // thresholds so a hand is picked up readily even in poor lighting.
+      hands.setOptions({
+        maxNumHands: 2,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.4,
+        minTrackingConfidence: 0.4,
+        selfieMode: true,
+      });
+      // Frame-rate-independent gesture timing.
+      let lastFrameT = performance.now();
 
       hands.onResults((results: any) => {
+        const nowT = performance.now();
+        const frameDt = Math.min(0.2, (nowT - lastFrameT) / 1000); // seconds, capped
+        lastFrameT = nowT;
         c.clearRect(0, 0, cvs.width, cvs.height);
         if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
           for (let h = 0; h < results.multiHandLandmarks.length; h++) {
             const landmarks = results.multiHandLandmarks[h];
             const isRight = h === 0;
-            indicator.textContent = results.multiHandLandmarks.length > 1 ? '✋✋ שתי ידיים' : '✋ יד מזוהה';
-            indicator.style.color = '#daa520';
+            indicator.textContent = results.multiHandLandmarks.length > 1 ? '🟢 מזהה אותך — שתי ידיים' : '🟢 מזהה אותך — יד אחת';
+            indicator.classList.add('ar-detecting');
+            indicator.classList.remove('ar-searching');
 
             c.strokeStyle = isRight ? 'rgba(218,165,32,0.6)' : 'rgba(200,149,106,0.6)';
             c.lineWidth = 2;
@@ -2275,7 +5754,42 @@ export function mountApp(root: HTMLElement) {
               else if (indexUp && !middleUp && !ringUp && !pinkyUp) arGesture = 'pointUp';
               else arGesture = 'none';
 
-              // Gesture-triggered actions
+              // ── Dispel & Summon logic ──────────────────────────────
+              // Palm held 0.7s → fire laser beam at orb
+              if (arGesture === 'palm' && !arOrbDispelled && !arBeamFiring) {
+                arPalmHoldTime += frameDt;
+                if (arPalmHoldTime >= 0.7) {
+                  arBeamFiring = true;
+                  arBeamProgress = 0;
+                  arBeamOrigin = { x: hx, y: hy };
+                  arPalmHoldTime = 0;
+                }
+              } else if (arGesture !== 'palm') {
+                arPalmHoldTime = 0;
+              }
+
+              // Fist → open quickly = "throw" → summon next character via pokeball
+              if (arGesture === 'fist' && arPrevGesture !== 'fist') {
+                arFistStartTime = Date.now();
+              }
+              if ((arGesture === 'palm' || arGesture === 'none') && arPrevGesture === 'fist') {
+                const fistDur = Date.now() - arFistStartTime;
+                if (fistDur < 400 && arOrbDispelled && arThrowCooldown <= 0 && arCharacters.length > 0) {
+                  arCharIdx = (arCharIdx + 1) % arCharacters.length;
+                  arCharAnim = 0;
+                  arCharFromDir = { x: hx - 0.5, y: hy - 0.5 };
+                  arThrowCooldown = 3.0;
+                  arPokeballPhase = 'fly';
+                  arPokeballT = 0;
+                  arPokeballFrom = { x: hx, y: hy };
+                  addFloatingText(hx, hy, '⚡ ' + (arCharacters[arCharIdx]?.name || 'Pokemon'), arCharacters[arCharIdx]?.color || '#daa520');
+                }
+              }
+              arPrevGesture = arGesture;
+              arThrowCooldown = Math.max(0, arThrowCooldown - frameDt);
+              // ──────────────────────────────────────────────────────
+
+              // Gesture-triggered actions (objects in sandbox)
               if (arGesture === 'palm' && arCurrentFx === 'none') {
                 for (const obj of arObjects) {
                   if (!obj.grabbed) {
@@ -2342,19 +5856,30 @@ export function mountApp(root: HTMLElement) {
             }
           }
         } else {
-          indicator.textContent = '👋 הראה יד למצלמה';
-          indicator.style.color = 'var(--dim)';
+          indicator.textContent = '🟡 מחפש… הראה יד למצלמה';
+          indicator.classList.add('ar-searching');
+          indicator.classList.remove('ar-detecting');
           ptr.style.opacity = '0';
           arHandPos = { x: -1, y: -1, pinching: false };
           if (arGrabbed) { arGrabbed.grabbed = false; arGrabbed = null; }
         }
       });
 
-      const cam = new Camera(vid, {
-        onFrame: async () => { await hands.send({ image: vid }); },
-        width: vid.videoWidth || 1920, height: vid.videoHeight || 1080,
-      });
-      cam.start();
+      // Drive MediaPipe from OUR existing camera stream via a manual frame
+      // loop instead of MediaPipe's Camera util — the util opens a *second*
+      // getUserMedia stream, which fails on phones that allow only one
+      // camera consumer at a time.
+      let sending = false;
+      const pump = async () => {
+        if (!arStream) return; // camera closed
+        if (!sending && vid.readyState >= 2 && vid.videoWidth > 0) {
+          sending = true;
+          try { await hands.send({ image: vid }); } catch {}
+          sending = false;
+        }
+        arHandLoop = requestAnimationFrame(pump);
+      };
+      pump();
     }
   }
 
@@ -2391,9 +5916,9 @@ export function mountApp(root: HTMLElement) {
     $<HTMLInputElement>('nameInput').value = state.name;
     $<HTMLInputElement>('keyInput').value = state.key;
     $<HTMLInputElement>('grokKeyInput').value = state.grokKey;
+    $<HTMLInputElement>('groqKeyInput').value = state.groqKey;
     $<HTMLInputElement>('openaiKeyInput').value = state.openaiKey;
     $<HTMLSelectElement>('providerSel').value = state.provider;
-    $<HTMLSelectElement>('puterModelSel').value = state.puterModel;
     $<HTMLSelectElement>('micSel').value = state.micLang;
     $<HTMLSelectElement>('replySel').value = state.replyLang;
     $<HTMLSelectElement>('textLangSel').value = state.textLang;
@@ -2408,6 +5933,8 @@ export function mountApp(root: HTMLElement) {
     $('voiceVolVal').textContent = Math.round((state.voiceVolume != null ? state.voiceVolume : 1) * 100) + '%';
     $<HTMLInputElement>('sfxCheck').checked = state.sfxOn;
     $<HTMLInputElement>('hapticsCheck').checked = state.haptics;
+    $<HTMLInputElement>('fastModeCheck').checked = localStorage.getItem('alpha_fast_mode') === '1';
+    $<HTMLSelectElement>('displayModeSel').value = localStorage.getItem('alpha_display_mode') || 'auto';
     $<HTMLInputElement>('autoSpeakCheck').checked = state.autoSpeak;
     $<HTMLInputElement>('pikaVoiceCheck').checked = state.pikaVoiceOn;
     $<HTMLInputElement>('pikaVolSlider').value = String(Math.round(state.pikaVolume * 100));
@@ -2468,12 +5995,13 @@ export function mountApp(root: HTMLElement) {
   function updateDriveUI() {
     const connected = driveSync.isConnected();
     const btn = $('driveConnectBtn');
-    btn.textContent = connected ? '✓ Connected' : 'Connect Google Drive';
+    btn.textContent = connected ? '✓ מחובר' : 'חבר Google Drive';
     btn.classList.toggle('cloud-connected', connected);
     ($('driveUploadBtn') as HTMLButtonElement).disabled = !connected;
     ($('driveDownloadBtn') as HTMLButtonElement).disabled = !connected;
     const last = driveSync.lastSyncTime();
-    $('driveStatus').textContent = last ? `Last sync: ${new Date(last).toLocaleString()}` : '';
+    const autoNote = connected ? ' · גיבוי אוטומטי כל 5 דקות' : '';
+    $('driveStatus').textContent = last ? `סנכרון אחרון: ${new Date(last).toLocaleTimeString('he-IL')}${autoNote}` : (connected ? autoNote.trim() : '');
   }
   $('driveConnectBtn').onclick = async () => {
     const id = $<HTMLInputElement>('driveClientId').value.trim();
@@ -2505,6 +6033,66 @@ export function mountApp(root: HTMLElement) {
     if (r.ok) { alert(`שוחזרו ${r.tables} טבלאות. טוען מחדש…`); location.reload(); }
     else alert('ייבוא נכשל: ' + r.error);
   };
+
+  // ── Puter / Google sync ──
+  function updatePuterUI() {
+    const signedIn = puterSync.isSignedIn();
+    $('puterSignedOut').style.display = signedIn ? 'none' : 'flex';
+    $('puterSignedIn').style.display = signedIn ? 'flex' : 'none';
+    if (signedIn) {
+      puterSync.getUser().then(u => {
+        if (u) $('puterUserLabel').textContent = `מחובר: ${u.username || u.email || 'Google'}`;
+      }).catch(() => {});
+      const last = puterSync.lastSyncTime();
+      $('puterStatus').textContent = last
+        ? `סנכרון אחרון: ${new Date(last).toLocaleTimeString('he-IL')} · אוטומטי כל 5 דקות`
+        : 'סנכרון אוטומטי כל 5 דקות';
+    }
+  }
+  $('puterSignInBtn').onclick = async () => {
+    $('puterSignInBtn').textContent = 'מתחבר…';
+    ($('puterSignInBtn') as HTMLButtonElement).disabled = true;
+    const ok = await puterSync.signIn();
+    ($('puterSignInBtn') as HTMLButtonElement).disabled = false;
+    $('puterSignInBtn').innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84z"/></svg> התחבר עם Google`;
+    if (ok) {
+      updatePuterUI();
+      puterSync.syncToCloud(m => { $('puterStatus').textContent = m; });
+    }
+  };
+  $('puterSyncNowBtn').onclick = async () => {
+    ($('puterSyncNowBtn') as HTMLButtonElement).disabled = true;
+    $('puterStatus').textContent = 'מסנכרן…';
+    const r = await puterSync.syncToCloud(m => { $('puterStatus').textContent = m; });
+    if (!r.ok) $('puterStatus').textContent = 'שגיאה: ' + r.error;
+    ($('puterSyncNowBtn') as HTMLButtonElement).disabled = false;
+    updatePuterUI();
+  };
+  $('puterRestoreBtn').onclick = async () => {
+    if (!confirm('שחזור יחליף את הנתונים המקומיים בגיבוי מהענן. להמשיך?')) return;
+    const r = await puterSync.syncFromCloud(m => { $('puterStatus').textContent = m; });
+    if (!r.ok) $('puterStatus').textContent = 'שגיאה: ' + r.error;
+    else setTimeout(() => location.reload(), 1500);
+  };
+  $('puterSignOutBtn').onclick = async () => {
+    await puterSync.signOut();
+    updatePuterUI();
+  };
+
+  // Sync role selector
+  const syncRoleSel = $<HTMLSelectElement>('syncRoleSel');
+  syncRoleSel.value = puterSync.getSyncRole();
+  syncRoleSel.addEventListener('change', () => {
+    puterSync.setSyncRole(syncRoleSel.value as 'primary' | 'secondary' | 'auto');
+  });
+
+  // Refresh Puter UI when settings open
+  $('settingsBtn').addEventListener('click', () => {
+    setTimeout(() => {
+      updatePuterUI();
+      syncRoleSel.value = puterSync.getSyncRole();
+    }, 50);
+  });
 
   // ── Universal Search ──
   const searchOverlay = $('searchOverlay');
@@ -2576,7 +6164,12 @@ export function mountApp(root: HTMLElement) {
     fabOpen = false; fabMenu.classList.remove('show'); fabBtn.textContent = '+'; fabBtn.style.transform = '';
     if (action === 'task') {
       const text = prompt('Quick task:');
-      if (text?.trim()) { addTask(text.trim()); addMsg(`✅ Task added: "${text.trim()}"`, 'sys'); }
+      if (text?.trim()) {
+        addTask(text.trim());
+        addMsg(`✅ Task added: "${text.trim()}"`, 'sys');
+        puterSync.markDirty();
+        puterSync.scheduleSync(() => updateCloudIndicator());
+      }
     } else if (action === 'note') {
       const text = prompt('Quick note:');
       if (text?.trim()) { saveNote(text.trim()); addMsg(`📝 ${t('noteSaved', state.uiLang)}`, 'sys'); }
@@ -2694,9 +6287,15 @@ export function mountApp(root: HTMLElement) {
   };
   $('pikaSpeakBtn').onclick = () => { pikaSpeak(); };
   $<HTMLInputElement>('pikaVoiceCheck').onchange = (e) => {
-    state.pikaVoiceOn = (e.target as HTMLInputElement).checked;
-    setPikaEnabled(state.pikaVoiceOn);
-    localStorage.setItem('alpha_pikavoice', state.pikaVoiceOn ? '1' : '0');
+    const on = (e.target as HTMLInputElement).checked;
+    state.pikaVoiceOn = on;
+    // One switch controls EVERY character's voice (Pikachu + all cries).
+    setPikaEnabled(on);
+    setCharacterVoiceEnabled(on);
+    setCryEnabled(on);
+    if (on) applyCharacterVoice(localStorage.getItem(MAIN_CHAR_KEY) || 'pikachu');
+    else stopCharacterVoice();
+    localStorage.setItem('alpha_pikavoice', on ? '1' : '0');
   };
   $<HTMLInputElement>('pikaVolSlider').oninput = (e) => {
     const v = +((e.target as HTMLInputElement).value) / 100;
@@ -2734,9 +6333,9 @@ export function mountApp(root: HTMLElement) {
     state.name = $<HTMLInputElement>('nameInput').value.trim() || 'ALPHA';
     state.key = $<HTMLInputElement>('keyInput').value.trim();
     state.grokKey = $<HTMLInputElement>('grokKeyInput').value.trim();
+    state.groqKey = $<HTMLInputElement>('groqKeyInput').value.trim();
     state.openaiKey = $<HTMLInputElement>('openaiKeyInput').value.trim();
     state.provider = $<HTMLSelectElement>('providerSel').value as AIProvider;
-    state.puterModel = $<HTMLSelectElement>('puterModelSel').value;
     state.micLang = $<HTMLSelectElement>('micSel').value as any;
     state.replyLang = $<HTMLSelectElement>('replySel').value as any;
     state.textLang = $<HTMLSelectElement>('textLangSel').value as TextLang;
@@ -2748,12 +6347,17 @@ export function mountApp(root: HTMLElement) {
     state.voiceVolume = +$<HTMLInputElement>('voiceVolSlider').value / 100;
     state.sfxOn = $<HTMLInputElement>('sfxCheck').checked;
     state.haptics = $<HTMLInputElement>('hapticsCheck').checked;
+    const fast = $<HTMLInputElement>('fastModeCheck').checked;
+    localStorage.setItem('alpha_fast_mode', fast ? '1' : '0');
+    orb.setPerfMode(fast);
     state.autoSpeak = $<HTMLInputElement>('autoSpeakCheck').checked;
     audio.sfxOn = state.sfxOn;
     state.pikaVoiceOn = $<HTMLInputElement>('pikaVoiceCheck').checked;
     state.pikaVolume = +$<HTMLInputElement>('pikaVolSlider').value / 100;
     state.pikaPitch = +$<HTMLInputElement>('pikaPitchSlider').value / 100;
     setPikaEnabled(state.pikaVoiceOn);
+    setCharacterVoiceEnabled(state.pikaVoiceOn);   // one switch for all character voices
+    setCryEnabled(state.pikaVoiceOn);
     setPikaVolume(state.pikaVolume);
     setPikaPitch(state.pikaPitch);
     voice.setMicLang(state.micLang);
@@ -2769,10 +6373,17 @@ export function mountApp(root: HTMLElement) {
     localStorage.setItem('alpha_social_insta', socials.insta);
     localStorage.setItem('alpha_social_fb', socials.fb);
     updateConnIndicators();
+    // Display mode (mobile/desktop/auto) — needs a reload to re-mount the orb scene.
+    const prevDisplayMode = localStorage.getItem('alpha_display_mode') || 'auto';
+    const newDisplayMode = $<HTMLSelectElement>('displayModeSel').value;
+    localStorage.setItem('alpha_display_mode', newDisplayMode);
     saveState(state);
     updateAIDisplay();
     $('overlay').classList.remove('show');
     if (state.history.length === 0) addMsg(state.name + ' ' + t('onlineMsg', state.uiLang), 'al');
+    if (newDisplayMode !== prevDisplayMode) {
+      setTimeout(() => location.reload(), 150);
+    }
   };
 
   function pad(n: number) { return String(n).padStart(2, '0'); }
@@ -2856,8 +6467,9 @@ export function mountApp(root: HTMLElement) {
     }
     setTimeout(drawNeural, 66);
   }
-  initNeural();
-  drawNeural();
+  const perfLite = document.documentElement.classList.contains('perf-lite');
+  if (!perfLite) { initNeural(); drawNeural(); }
+  else { neuralCanvas.style.display = 'none'; }
 
   // --- Wave Canvas ---
   const waveCanvas = $<HTMLCanvasElement>('waveCanvas');
@@ -2892,8 +6504,8 @@ export function mountApp(root: HTMLElement) {
     }
     setTimeout(drawWave, 66);
   }
-  initWave();
-  drawWave();
+  if (!perfLite) { initWave(); drawWave(); }
+  else { waveCanvas.style.display = 'none'; }
 
   // --- Metric Bars Animation ---
   setInterval(() => {
@@ -2966,13 +6578,18 @@ export function mountApp(root: HTMLElement) {
       'gemini-2.0-flash': 'GEMINI 2.0 FLASH',
     };
     const providerNames: Record<string, string> = {
-      'puter': 'VIA PUTER',
+      'groq': 'VIA GROQ',
       'gemini': 'VIA GOOGLE',
       'grok': 'VIA XAI',
       'openai': 'VIA OPENAI',
     };
-    const pm = (state as any).puterModel as string || 'gpt-4o-mini';
-    $('aiModelDisplay').textContent = modelNames[pm] || pm.toUpperCase();
+    const modelByProvider: Record<string, string> = {
+      'groq': 'LLAMA 3.3 70B',
+      'gemini': 'GEMINI 2.0 FLASH',
+      'grok': 'GROK-3 MINI',
+      'openai': 'GPT-4O MINI',
+    };
+    $('aiModelDisplay').textContent = modelByProvider[state.provider] || (modelNames[state.provider] || '');
     $('aiProviderDisplay').textContent = providerNames[state.provider] || state.provider.toUpperCase();
   }
   updateAIDisplay();
@@ -3034,6 +6651,219 @@ export function mountApp(root: HTMLElement) {
     nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') finish(nameInput.value); });
   }
 
+  // ── Cloud sync status indicator ──
+  function addCloudIndicator() {
+    if ($('cloudIndicator')) return;
+    const ind = document.createElement('button');
+    ind.id = 'cloudIndicator';
+    ind.title = 'סנכרון ענן';
+    // Live inside the header button row (a flex row) so it never overlaps the
+    // settings button — it used to be a fixed element pinned at right:220px which
+    // landed on top of the gear on phones.
+    ind.className = 'chip ghost';
+    ind.style.cssText = 'font-size:11px;gap:5px;color:rgba(201,168,76,.7);letter-spacing:.5px;padding:0 8px;';
+    ind.innerHTML = '☁ <span id="cloudStatus">לא מחובר</span>';
+    ind.onclick = async () => {
+      if (!puterSync.isSignedIn()) {
+        sessionStorage.removeItem(LOGIN_SKIP_KEY);
+        showLoginScreen();
+        return;
+      }
+      (ind as HTMLElement).innerHTML = '🔄 <span id="cloudStatus">מסנכרן…</span>';
+      const action = await puterSync.smartSync();
+      if (action === 'downloaded') {
+        (ind as HTMLElement).innerHTML = '✓ <span id="cloudStatus">עודכן מהענן</span>';
+        setTimeout(() => location.reload(), 800);
+      } else if (action === 'uploaded') {
+        (ind as HTMLElement).innerHTML = '✓ <span id="cloudStatus">הועלה לענן</span>';
+        setTimeout(updateCloudIndicator, 2500);
+      } else {
+        (ind as HTMLElement).innerHTML = '⚠ <span id="cloudStatus">שגיאה</span>';
+        setTimeout(updateCloudIndicator, 2500);
+      }
+    };
+    const topR = document.querySelector('.chrome.topR');
+    if (topR) topR.appendChild(ind); else document.body.appendChild(ind);
+  }
+
+  function updateCloudIndicator() {
+    const ind = $('cloudIndicator');
+    if (!ind) return;
+    if (puterSync.isSignedIn()) {
+      const ts = puterSync.lastSyncTime();
+      const ago = ts ? new Date(ts).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }) : '';
+      ind.innerHTML = `✓ <span id="cloudStatus">${ago || 'מחובר'}</span>`;
+      (ind as HTMLElement).style.borderColor = 'rgba(76,175,80,.4)';
+      (ind as HTMLElement).style.color = 'rgba(76,175,80,.85)';
+    } else {
+      ind.innerHTML = '☁ <span id="cloudStatus">לא מחובר</span>';
+      (ind as HTMLElement).style.borderColor = 'rgba(201,168,76,.25)';
+      (ind as HTMLElement).style.color = 'rgba(201,168,76,.7)';
+    }
+  }
+
+  // ── Login screen — shown on first open or when signed out ──
+  // Uses sessionStorage so "skip" only lasts for the current browser session.
+  const LOGIN_SKIP_KEY = 'alpha_login_skipped_session';
+  async function showLoginScreen(): Promise<void> {
+    return new Promise((resolve) => {
+      const ov = document.createElement('div');
+      ov.id = 'loginScreen';
+      ov.style.cssText = [
+        'position:fixed;inset:0;z-index:99999',
+        'background:linear-gradient(135deg,#0a0806 0%,#130f07 50%,#0d0a05 100%)',
+        'display:flex;flex-direction:column;align-items:center;justify-content:center',
+        'padding:24px;transition:opacity .5s',
+      ].join(';');
+      ov.innerHTML = `
+        <div style="text-align:center;max-width:360px;width:100%">
+          <img src="${import.meta.env.BASE_URL}heavyguard-logo.png" alt="Alpha"
+               style="height:56px;margin-bottom:8px;filter:drop-shadow(0 0 18px rgba(218,165,32,.5))" />
+          <h1 style="font-size:26px;font-weight:700;color:#daa520;margin:0 0 4px;letter-spacing:2px">ALPHA</h1>
+          <p style="font-size:12px;color:rgba(218,165,32,.5);letter-spacing:4px;margin:0 0 36px">העוזר האישי שלך</p>
+
+          <div style="background:rgba(218,165,32,.06);border:1px solid rgba(218,165,32,.18);border-radius:16px;padding:28px 24px;margin-bottom:16px">
+            <p style="font-size:13px;color:rgba(255,255,255,.7);margin:0 0 20px;line-height:1.7">
+              התחבר עם חשבון Google כדי לשמור את הנתונים שלך ולסנכרן בין כל המכשירים
+            </p>
+            <button id="loginGoogleBtn" style="
+              display:flex;align-items:center;justify-content:center;gap:10px;
+              width:100%;padding:13px 20px;border-radius:10px;
+              background:#fff;color:#1a1a1a;border:none;
+              font-size:15px;font-weight:600;cursor:pointer;
+              box-shadow:0 2px 12px rgba(0,0,0,.3);transition:transform .15s,box-shadow .15s
+            ">
+              <svg width="20" height="20" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/>
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+              </svg>
+              המשך עם Google
+            </button>
+            <div id="loginStatus" style="font-size:11px;color:rgba(218,165,32,.7);margin-top:12px;min-height:16px;text-align:center"></div>
+          </div>
+
+          <button id="loginSkipBtn" style="
+            background:none;border:none;color:rgba(255,255,255,.3);
+            font-size:12px;cursor:pointer;padding:8px;text-decoration:underline
+          ">המשך ללא חשבון</button>
+        </div>`;
+
+      document.body.appendChild(ov);
+
+      const dismiss = (synced: boolean) => {
+        ov.style.opacity = '0';
+        setTimeout(() => { ov.remove(); resolve(); updateCloudIndicator(); }, 500);
+        if (synced) sessionStorage.removeItem(LOGIN_SKIP_KEY);
+      };
+
+      (ov.querySelector('#loginGoogleBtn') as HTMLButtonElement).onclick = async () => {
+        const btn = ov.querySelector('#loginGoogleBtn') as HTMLButtonElement;
+        const status = ov.querySelector('#loginStatus') as HTMLElement;
+        btn.disabled = true;
+        btn.style.opacity = '0.7';
+        status.textContent = 'מתחבר…';
+        const ok = await puterSync.signIn();
+        if (!ok) {
+          btn.disabled = false;
+          btn.style.opacity = '1';
+          status.textContent = 'ההתחברות בוטלה. נסה שוב.';
+          return;
+        }
+        status.textContent = 'מחובר! מוריד נתונים…';
+        const hasCloud = await puterSync.hasCloudBackup();
+        if (hasCloud) {
+          const r = await puterSync.syncFromCloud(m => { status.textContent = m; });
+          if (r.ok && (r.tables ?? 0) > 0) {
+            status.textContent = `✓ שוחזרו ${r.tables} טבלאות`;
+            setTimeout(() => dismiss(true), 900);
+            setTimeout(() => location.reload(), 1500);
+            return;
+          }
+        }
+        status.textContent = '✓ מחובר — הנתונים יסתנכרנו אוטומטית';
+        setTimeout(() => dismiss(true), 800);
+      };
+
+      (ov.querySelector('#loginSkipBtn') as HTMLButtonElement).onclick = () => {
+        sessionStorage.setItem(LOGIN_SKIP_KEY, '1');
+        dismiss(false);
+      };
+    });
+  }
+
+  // ── Cloud init — wait for puter.js async load, then login + sync ──
+  addCloudIndicator();
+  (async () => {
+    const puterReady = await puterSync.waitForPuter(10_000);
+    updateCloudIndicator();
+
+    if (puterReady) {
+      if (!puterSync.isSignedIn()) {
+        const skippedThisSession = !!sessionStorage.getItem(LOGIN_SKIP_KEY);
+        if (!skippedThisSession) {
+          await showLoginScreen();
+        }
+      }
+
+      if (puterSync.isSignedIn()) {
+        // Smart sync: compare cloud timestamp vs local — pull if cloud is newer, push if local is newer
+        const action = await puterSync.smartSync();
+        // Reload once after a cloud download so the UI picks up fresh data.
+        // Guard with sessionStorage: the "secondary" device role ALWAYS returns
+        // 'downloaded', so without this guard the page reloads in an infinite
+        // loop (download → reload → download → reload…).
+        const RELOAD_GUARD = 'alpha_synced_reload_done';
+        if (action === 'downloaded' && !sessionStorage.getItem(RELOAD_GUARD)) {
+          sessionStorage.setItem(RELOAD_GUARD, '1');
+          updateCloudIndicator();
+          setTimeout(() => location.reload(), 600);
+          return;
+        }
+        updateCloudIndicator();
+
+        // Periodic sync every 2 min — pick up changes from other devices.
+        setInterval(async () => {
+          if (puterSync.isSignedIn()) {
+            await puterSync.smartSync();
+            updateCloudIndicator();
+          }
+        }, 2 * 60 * 1000);
+      }
+    }
+
+    // ── Immediate upload when HeavyGuard saves (photos / installs / edits) ──
+    // HeavyGuard runs in a same-origin iframe; when it writes hg2:* keys to
+    // localStorage, THIS window receives a 'storage' event. Mark dirty and
+    // upload (debounced) so photos and changes reach the other devices right
+    // away instead of waiting for the periodic timer. 'secondary' devices only
+    // download, so they don't upload here.
+    let hgUploadTimer: ReturnType<typeof setTimeout> | null = null;
+    window.addEventListener('storage', (e) => {
+      if (!e.key || !e.key.startsWith('hg2:')) return;
+      puterSync.markDirty();
+      if (puterSync.getSyncRole() === 'secondary') return;
+      if (hgUploadTimer) clearTimeout(hgUploadTimer);
+      hgUploadTimer = setTimeout(() => {
+        if (puterSync.isSignedIn()) {
+          puterSync.syncToCloud().then(() => updateCloudIndicator());
+        }
+      }, 3500); // debounce bursts (e.g. several photos at once)
+    });
+
+    // Google Drive fallback
+    if (driveSync.isConnected()) {
+      const hasLocalData = localStorage.getItem('alpha_events') || localStorage.getItem('alpha_tasks') || localStorage.getItem('alpha_brain_memory_v1');
+      if (!hasLocalData) {
+        const r = await driveSync.syncFromCloud();
+        if (r.ok && (r.tables ?? 0) > 0) { setTimeout(() => location.reload(), 500); return; }
+      }
+      setTimeout(() => driveSync.syncToCloud(), 30_000);
+      setInterval(() => { if (driveSync.isConnected()) driveSync.syncToCloud(); }, 5 * 60 * 1000);
+    }
+  })();
+
   // ── Restore chat history ──
   const prevHistory = loadChatHistory();
   if (prevHistory.length > 0) {
@@ -3054,9 +6884,18 @@ export function mountApp(root: HTMLElement) {
   if (!knownName) showWelcome();
   else if (prevHistory.length === 0) addMsg(personalGreeting(), 'al');
 
-  // ── 3D Depth — perspective-based UI panel transforms ──
+  // (Spoken "מה המצב" entry greeting removed per user request — the app no
+  //  longer speaks a greeting on entry.)
+
+  // ── 3D Depth — perspective-based UI panel transforms (mouse only) ──
+  // Skip entirely on touch / iPad / perf-lite: there's no mouse to drive the
+  // parallax, so it's a constant rAF for nothing AND the perspective() transforms
+  // can leave the panels looking subtly tilted/"stuck" on iPad. Mouse desktops
+  // keep the effect.
   {
-    const isMob = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 768;
+    const perfLite = document.documentElement.classList.contains('perf-lite');
+    const isTouch = (navigator.maxTouchPoints || 0) > 0 || 'ontouchstart' in window;
+    const isMob = perfLite || isTouch || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 900;
     if (!isMob) {
       let uiMX = 0, uiMY = 0;
       let uiSX = 0, uiSY = 0;

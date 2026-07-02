@@ -4,6 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Alpha — יומן ומשימות</title>
+  <!-- Puter cloud (free) — lets the widget read tasks even outside the app's
+       own browser storage (e.g. a Web-Widget app's webview), after sign-in. -->
+  <script async src="https://js.puter.com/v2/"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;600;700&display=swap" rel="stylesheet" />
@@ -196,7 +199,29 @@
       color: #b8942e;
       text-decoration: none;
       letter-spacing: 0.3px;
+      transition: color .15s;
     }
+    .widget-footer a:hover { color: #8a6a1e; }
+
+    /* ── premium touches ── */
+    @keyframes widgetShine { 0% { background-position: 200% center; } 100% { background-position: -200% center; } }
+    .widget-card {
+      transition: box-shadow .25s, transform .25s;
+    }
+    .widget-card:hover {
+      box-shadow: 0 10px 36px rgba(180,150,60,0.22), 0 1px 3px rgba(0,0,0,0.08);
+    }
+    .widget-header {
+      background-image: linear-gradient(110deg, #b8942e 0%, #d4b85a 35%, #fff3c9 50%, #d4b85a 65%, #b8942e 100%);
+      background-size: 220% 100%;
+      animation: widgetShine 6s linear infinite;
+      position: relative;
+    }
+    .task-item { border-radius: 10px; }
+    .task-item:hover { background: rgba(200,168,78,0.06); }
+    .task-check { transition: transform .15s, box-shadow .2s; }
+    .task-check:hover { transform: scale(1.08); }
+    .task-check.done { box-shadow: 0 2px 10px rgba(200,168,78,.4); }
   </style>
 </head>
 <body>
@@ -226,7 +251,13 @@
       try { return JSON.parse(localStorage.getItem('alpha_events') || '[]'); } catch { return []; }
     }
 
+    // Cloud-loaded tasks (from Puter). When present, they take precedence over
+    // localStorage so the widget shows your tasks even in a fresh context.
+    let cloudTasks = null;
+    let needsSignIn = false;   // true when Puter is up but the user isn't signed in
+
     function loadAllTasks() {
+      if (cloudTasks) return cloudTasks;
       let alphaTasks = [];
       try { alphaTasks = JSON.parse(localStorage.getItem('alpha_tasks') || '[]'); } catch {}
 
@@ -245,7 +276,7 @@
 
       const alphaWithDate = alphaTasks.map(t => ({
         ...t,
-        date: t.created || ''
+        date: t.due || t.created || ''
       }));
 
       return [...alphaWithDate, ...hgTasks];
@@ -300,12 +331,24 @@
         html += '</div>';
       }
 
-      html += '<div class="section-label">משימות השבוע</div>';
-      if (weekTasks.length === 0) {
-        html += '<div class="empty-state"><div class="icon">☀</div>אין משימות השבוע</div>';
+      // Show ALL open tasks (any date or none) + a few recently-done — so
+      // nothing is missed regardless of when it was created.
+      const openTasks = allTasks.filter(t => !t.done);
+      const doneTasks = allTasks.filter(t => t.done).slice(0, 6);
+      const list = [...openTasks, ...doneTasks];
+      html += `<div class="section-label">משימות${openTasks.length ? ' (' + openTasks.length + ')' : ''}</div>`;
+      if (list.length === 0) {
+        // Empty here can mean two very different things in a home-screen widget:
+        // genuinely no tasks, OR not signed in so the cloud tasks can't be read in
+        // this separate storage context. Offer sign-in when that's the case.
+        if (needsSignIn) {
+          html += '<div class="empty-state"><div class="icon">🔑</div>התחבר כדי לראות את המשימות שלך מכל מקום<br><button id="widgetSignIn" style="margin-top:10px;background:linear-gradient(135deg,#b8942e,#d4b85a);color:#fff;border:none;padding:10px 18px;border-radius:12px;font-weight:700;font-size:14px;cursor:pointer;font-family:inherit">התחבר עם Google</button></div>';
+        } else {
+          html += '<div class="empty-state"><div class="icon">✓</div>אין משימות פתוחות</div>';
+        }
       } else {
         html += '<div class="task-list">';
-        weekTasks.forEach(t => {
+        list.forEach(t => {
           const doneClass = t.done ? 'done' : '';
           const pLabel = t.priority === 'high' ? 'דחוף' : t.priority === 'low' ? 'נמוך' : 'רגיל';
           html += `
@@ -322,39 +365,29 @@
         html += '</div>';
       }
 
-      html += '<div class="section-label">לא שובץ</div>';
-      if (unassigned.length === 0) {
-        html += '<div class="empty-state"><div class="icon">✓</div>הכל מתוזמן</div>';
-      } else {
-        html += '<div class="task-list">';
-        unassigned.forEach(t => {
-          const doneClass = t.done ? 'done' : '';
-          const pLabel = t.priority === 'high' ? 'דחוף' : t.priority === 'low' ? 'נמוך' : 'רגיל';
-          html += `
-            <div class="task-item ${doneClass}" data-id="${t.id}">
-              <div class="task-check ${doneClass}" data-id="${t.id}"></div>
-              <div class="task-content">
-                <div class="task-text">${esc(t.text)}</div>
-              </div>
-              <span class="task-priority ${t.priority}">${pLabel}</span>
-            </div>
-          `;
-        });
-        html += '</div>';
-      }
-
       html += `
-        <div class="widget-footer">
+        <div class="widget-footer" style="display:flex;flex-direction:column;gap:8px">
+          <a href="/Alpha-new/chat-widget.html" style="display:block;background:linear-gradient(135deg,#b8942e,#d4b85a);color:#fff;padding:11px;border-radius:12px;font-weight:700;font-size:14px">💬 שיחה מהירה עם העוזר</a>
           <a href="/Alpha-new/">פתח את Alpha Assistant</a>
         </div>
       `;
 
       widget.innerHTML = html;
 
+      const siBtn = document.getElementById('widgetSignIn');
+      if (siBtn) siBtn.addEventListener('click', doSignIn);
+
       widget.querySelectorAll('.task-check').forEach(el => {
         el.addEventListener('click', () => {
           const id = el.dataset.id;
-          toggleTask(id);
+          if (cloudTasks) {
+            const t = cloudTasks.find(x => x.id === id);
+            if (t) t.done = !t.done;
+            cloudToggle(id);          // persist to Puter
+            toggleTask(id);           // and local, if present
+          } else {
+            toggleTask(id);
+          }
           render();
         });
       });
@@ -385,8 +418,84 @@
       return d.innerHTML;
     }
 
+    // ── Puter cloud loading (free, cross-context) ──────────────────────────
+    const KV = 'alpha_sync_v1:';
+    function puterReady(timeout = 6000) {
+      return new Promise(res => {
+        const t0 = Date.now();
+        (function poll() {
+          if (window.puter && window.puter.kv) return res(window.puter);
+          if (Date.now() - t0 > timeout) return res(null);
+          setTimeout(poll, 200);
+        })();
+      });
+    }
+    function doSignIn() {
+      const p = window.puter;
+      // The sign-in popup must open SYNCHRONOUSLY inside the click — any await
+      // before signIn() loses the user-gesture and the popup gets blocked
+      // ("Puter blocks"). So call it directly here, no await beforehand.
+      if (!p || !p.auth || !p.auth.signIn) {
+        // Puter script not ready yet — warm it up; the next tap will work.
+        const btn = document.getElementById('widgetSignIn');
+        if (btn) btn.textContent = 'טוען… נסה שוב עוד רגע';
+        puterReady(5000).then(() => { const b = document.getElementById('widgetSignIn'); if (b) b.textContent = 'התחבר עם Google'; });
+        return;
+      }
+      Promise.resolve(p.auth.signIn()).then(async () => {
+        needsSignIn = false;
+        await loadCloudTasks();
+        render();
+      }).catch(() => {
+        // Popup blocked (some home-screen WebViews disallow popups): fall back to
+        // signing in inside the full chat page in the real browser.
+        const ok = confirm('לא ניתן להתחבר מתוך הווידגט. לפתוח את הדף המלא להתחברות?');
+        if (ok) window.open('/Alpha-new/chat-widget.html', '_blank');
+      });
+    }
+    window.__widgetSignIn = doSignIn;
+
+    async function loadCloudTasks() {
+      const p = await puterReady();
+      if (!p) return;
+      try {
+        if (p.auth && p.auth.isSignedIn && !(await p.auth.isSignedIn())) {
+          needsSignIn = true;   // surface a sign-in button in the empty state
+          render();
+          return;
+        }
+        needsSignIn = false;
+        const [a, h] = await Promise.all([
+          p.kv.get(KV + 'alpha_tasks').catch(() => null),
+          p.kv.get(KV + 'hg2:tasks').catch(() => null),
+        ]);
+        if (a == null && h == null) return;   // nothing synced yet — keep local
+        const alphaTasks = a ? JSON.parse(a) : [];
+        const hgRaw = h ? JSON.parse(h) : [];
+        const hgTasks = hgRaw.filter(t => !t.done).map(t => ({ id: 'hg:' + t.id, text: t.title, done: t.done || false, date: t.date || '', priority: 'med' }));
+        cloudTasks = [...alphaTasks.map(t => ({ ...t, date: t.due || t.created || t.date || '' })), ...hgTasks];
+        render();
+      } catch {}
+    }
+    // Cloud-aware toggle: persist a done-toggle back to Puter so it sticks.
+    async function cloudToggle(id) {
+      const p = (window.puter && window.puter.kv) ? window.puter : await puterReady(2000);
+      if (!p) return;
+      try {
+        const isHg = id.startsWith('hg:');
+        const kvKey = KV + (isHg ? 'hg2:tasks' : 'alpha_tasks');
+        const raw = await p.kv.get(kvKey).catch(() => null);
+        if (raw == null) return;
+        const arr = JSON.parse(raw);
+        const realId = isHg ? id.slice(3) : id;
+        const t = arr.find(x => x.id === realId);
+        if (t) { t.done = !t.done; await p.kv.set(kvKey, JSON.stringify(arr)); }
+      } catch {}
+    }
+
     render();
-    setInterval(render, 60000);
+    loadCloudTasks();
+    setInterval(() => { render(); loadCloudTasks(); }, 60000);
   </script>
 </body>
 </html>

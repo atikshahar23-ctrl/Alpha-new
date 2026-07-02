@@ -4,7 +4,8 @@ import {
   Clock, MapPin, Truck, ChevronLeft, CheckCircle2, AlertTriangle, FileSpreadsheet,
   Hash, Wrench, Factory, Tag, DollarSign, Calendar, Phone, User, Timer, Search, Film, Images, Pencil,
   BarChart3, ClipboardList, TrendingUp, Percent, Trophy,
-  Users, Car, Scale, Receipt, Boxes, Fuel, Copy, MessageSquare, Bell, CalendarDays, Circle, CalendarClock, ChevronRight, Minus, Shield, Upload, RotateCcw, Settings, Globe, Wallet, TrendingDown, Link2, Share2, Mail, Target, Building2,
+  Users, Car, Scale, Receipt, Boxes, Fuel, Copy, MessageSquare, Bell, CalendarDays, Circle, CalendarClock, ChevronRight, Minus, Shield, Upload, RotateCcw, Settings, Globe, Wallet, TrendingDown, Link2, Share2, Mail, Target, Building2, FileText, Route, Navigation,
+  Megaphone, Eye, ThumbsUp, Video, BarChart2, Bookmark, Sparkles, RefreshCw,
 } from "lucide-react";
 import BULL_LOGO from './heavyguard-logo.png';
 // xlsx is large (~400KB). Load it on demand only when the user actually
@@ -46,13 +47,19 @@ const store = {
     if (typeof window !== "undefined" && window.storage) { try { return await window.storage.delete(k); } catch {} }
   },
 };
-const loadIndex = async () => { try { const r = await store.get("hg2:index"); return r && r.value ? JSON.parse(r.value) : []; } catch { return []; } };
-const saveIndex = (arr) => store.set("hg2:index", JSON.stringify(arr)).catch(() => {});
+const loadIndex = async () => {
+  try { const r = await store.get("hg2:index"); return r && r.value ? JSON.parse(r.value) : []; }
+  catch { try { return JSON.parse(localStorage.getItem("hg2:index") || '[]'); } catch { return []; } }
+};
+const saveIndex = (arr) => {
+  try { localStorage.setItem("hg2:index", JSON.stringify(arr)); } catch {}
+  return store.set("hg2:index", JSON.stringify(arr)).catch(() => {});
+};
 const loadPhoto = async (id) => { try { const r = await store.get("hg2:photo:" + id); return r && r.value ? r.value : null; } catch { return null; } };
 const loadGallery = async (id) => { try { const r = await store.get("hg2:gallery:" + id); return r && r.value ? JSON.parse(r.value) : []; } catch { return []; } };
 const loadVideo = async (id) => { try { const r = await store.get("hg2:video:" + id); return r && r.value ? r.value : null; } catch { return null; } };
 const rawGet = async (k) => { try { const r = await store.get(k); return r && r.value != null ? r.value : null; } catch { return null; } };
-const BACKUP_KEYS = ["hg2:index", "hg2:customers", "hg2:pricelist", "hg2:quotes", "hg2:quoteseq", "hg2:vehicle", "hg2:carstock", "hg2:suppliers", "hg2:invoices", "hg2:tasks", "hg2:wanumber", "hg2:init"];
+const BACKUP_KEYS = ["hg2:index", "hg2:customers", "hg2:pricelist", "hg2:quotes", "hg2:quoteseq", "hg2:vehicle", "hg2:carstock", "hg2:suppliers", "hg2:invoices", "hg2:tasks", "hg2:samsonix", "hg2:wanumber", "hg2:init"];
 async function collectBackup() {
   const data = {};
   for (const k of BACKUP_KEYS) { const v = await rawGet(k); if (v != null) data[k] = v; }
@@ -71,7 +78,35 @@ const ils = (n) => "₪" + (Number(n) || 0).toLocaleString("he-IL");
 const dmy = (iso) => { if (!iso) return ""; const [y, m, d] = iso.split("-"); return `${d}.${m}.${y.slice(2)}`; };
 const daysFromNow = (iso) => { if (!iso) return 9999; return Math.round((new Date(iso) - new Date(todayISO())) / 86400000); };
 const waLink = (phone, text) => { let p = (phone || "").replace(/\D/g, ""); if (p.startsWith("0")) p = "972" + p.slice(1); return `https://wa.me/${p}?text=${encodeURIComponent(text || "")}`; };
+// Default WhatsApp number for forwarding invoices (Paperless accounting,
+// +972 4-374-8824) — used until the user sets their own.
+const DEFAULT_WA_NUMBER = "04-374-8824";
 const fmtClock = (s) => { s = Math.max(0, Math.floor(s)); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60; return (h ? String(h).padStart(2, "0") + ":" : "") + String(m).padStart(2, "0") + ":" + String(sec).padStart(2, "0"); };
+
+/* ---------------- marketing (TikTok/Facebook) — owner-side, free AI ---------------- */
+const FB_URL = "https://www.facebook.com/share/18k1Sn62EM/";
+const TT_URL = "https://www.tiktok.com/@heavy.guard?_r=1&_t=ZS-97cp13u5MKV";
+// Shared free-AI key with the rest of Alpha (localStorage "alpha_groq") — set
+// once in any app's settings and it works everywhere.
+const groqKey = () => { try { return localStorage.getItem("alpha_groq") || ""; } catch { return ""; } };
+const hasAI = () => !!groqKey();
+const AG_GROQ_MODELS = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "gemma2-9b-it", "llama3-70b-8192"];
+async function askGroqChat(system, history, user) {
+  const key = groqKey(); if (!key) throw new Error("NO_KEY");
+  const messages = [{ role: "system", content: system }, ...history.slice(-6), { role: "user", content: user }];
+  let lastCode = 0;
+  for (const model of AG_GROQ_MODELS) {
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+      body: JSON.stringify({ model, messages, temperature: 0.7, max_tokens: 700 }),
+    });
+    if (res.ok) { const d = await res.json(); return d.choices?.[0]?.message?.content?.trim() || ""; }
+    lastCode = res.status;
+    if (res.status === 401 || res.status === 403) break;   // bad key — stop trying
+    // 429/400/404/503 → rotate to the next free model
+  }
+  throw new Error("Groq " + lastCode);
+}
 const fmtDur = (s) => { if (!s && s !== 0) return "—"; const m = Math.round(s / 60); if (m < 60) return m + " דק׳"; const h = Math.floor(m / 60); return `${h}ש׳ ${m % 60}ד׳`; };
 
 function compress(file, maxDim, q) {
@@ -183,7 +218,12 @@ function DateField({ value, onChange, placeholder, clearable }) {
 export default function App() {
   const [ready, setReady] = useState(false);
   const [index, setIndex] = useState([]);
-  const [view, setView] = useState("hub"); // hub | logger | analytics | customers | pricing | vehicle | suppliers | carstock | invoices | new | detail
+  // hub | logger | analytics | customers | pricing | vehicle | suppliers | carstock | invoices | samsonix | marketing | new | detail
+  // Deep-link support (e.g. heavyguard.html#marketing) so other apps/dock
+  // shortcuts can jump straight to a tab, same as the CRM's #marketing hash.
+  const [view, setView] = useState(() => {
+    try { const h = (location.hash || "").replace(/^#/, ""); return h === "marketing" ? "marketing" : "hub"; } catch { return "hub"; }
+  });
   const [prevTab, setPrevTab] = useState("logger");
   const [detailId, setDetailId] = useState(null);
   const [resumeId, setResumeId] = useState(null);
@@ -299,12 +339,14 @@ export default function App() {
         {view === "suppliers" && <Suppliers onBack={() => setView("hub")} showToast={showToast} />}
         {view === "carstock" && <CarStock onBack={() => setView("hub")} showToast={showToast} />}
         {view === "invoices" && <Invoices onBack={() => setView("hub")} showToast={showToast} />}
+        {view === "samsonix" && <Samsonix onBack={() => setView("hub")} showToast={showToast} />}
+        {view === "marketing" && <MarketingView onBack={() => setView("hub")} showToast={showToast} />}
         {view === "backup" && <Backup onBack={() => setView("hub")} showToast={showToast} />}
         {view === "finance" && <Finance index={index} onBack={() => setView("hub")} />}
         {view === "leads" && <Leads onBack={() => setView("hub")} showToast={showToast} />}
         {view === "settings" && <SettingsView onBack={() => setView("hub")} showToast={showToast} />}
-        {view === "new" && <NewInstall onCancel={() => setView("logger")} onSave={addInstall} onStartDraft={startDraft} onDiscardDraft={discardDraft} resumeEntry={resumeId ? index.find((x) => x.id === resumeId) : null} showToast={showToast} />}
-        {view === "detail" && <Detail entry={index.find((x) => x.id === detailId)} onBack={() => setView(prevTab)} onDelete={removeInstall} onUpdate={updateInstall} showToast={showToast} />}
+        {view === "new" && <NewInstall onCancel={() => setView("logger")} onSave={addInstall} onStartDraft={startDraft} onDiscardDraft={discardDraft} resumeEntry={resumeId ? index.find((x) => x.id === resumeId) : null} customers={customerDirectory(index)} showToast={showToast} />}
+        {view === "detail" && <Detail entry={index.find((x) => x.id === detailId)} onBack={() => setView(prevTab)} onDelete={removeInstall} onUpdate={updateInstall} customers={customerDirectory(index)} showToast={showToast} />}
       </div>
       {toast && <div className={"hg2-toast " + toast.kind}>{toast.kind === "ok" ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}{toast.msg}</div>}
       <ConfirmHost />
@@ -353,6 +395,8 @@ function Hub({ index, go, onNew }) {
     { id: "suppliers", icon: Scale, title: "השוואת ספקים", sub: "מחירי רכש" },
     { id: "carstock", icon: Boxes, title: "מלאי ברכב", sub: "מלאי נייד" },
     { id: "invoices", icon: Receipt, title: "חשבוניות", sub: "חשבונות ותשלומים" },
+    { id: "samsonix", icon: ClipboardList, title: "טפסי סמסוניק", sub: "טופס DVR · שליחה ומעקב" },
+    { id: "marketing", icon: Megaphone, title: "שיווק", sub: "TikTok · Facebook" },
     { id: "leads", icon: Target, title: "ניהול לידים", sub: "6,452 לידים עסקיים", hot: true },
     { id: "backup", icon: Shield, title: "גיבוי ושחזור", sub: "שמירת הנתונים" },
     { id: "settings", icon: Settings, title: "הגדרות עסק", sub: "מיתוג וקישורים" },
@@ -711,6 +755,8 @@ function LeadDetail({ lead, crmEntry, onBack, onStatusChange, onNotesChange, onA
 function Home({ index, onNew, onOpen, onResume, showToast, onReset, onBack }) {
   const [q, setQ] = useState("");
   const [filt, setFilt] = useState("all");
+  const [expC, setExpC] = useState("all");
+  const [expM, setExpM] = useState(() => new Date().toISOString().slice(0, 7));
 
   // In-progress drafts (started but not finished) — shown separately at the top
   const drafts = useMemo(() => index.filter((x) => x.status === "running"), [index]);
@@ -736,6 +782,25 @@ function Home({ index, onNew, onOpen, onResume, showToast, onReset, onBack }) {
     const totalTime = durs.reduce((a, b) => a + b, 0);
     return { total, revenue, avg, totalTime };
   }, [filtered]);
+
+  // Current-month summary, broken down per contractor (every active contractor
+  // appears — even with 0 this month — so it reads as a full monthly roundup).
+  const monthSummary = useMemo(() => {
+    const now = new Date();
+    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const inMonth = done.filter((x) => (x.date || "").startsWith(ym));
+    const ids = Array.from(new Set([...activeContractors.map((c) => c.id), ...inMonth.map((x) => x.contractor)]));
+    const rows = ids.map((id) => {
+      const rs = inMonth.filter((x) => x.contractor === id);
+      return {
+        id, name: cName(id), count: rs.length,
+        revenue: rs.reduce((s, x) => s + (Number(x.price) || 0), 0),
+        time: rs.reduce((s, x) => s + (x.durationSec || 0), 0),
+      };
+    }).sort((a, b) => b.revenue - a.revenue || b.count - a.count);
+    const totals = { count: inMonth.length, revenue: inMonth.reduce((s, x) => s + (Number(x.price) || 0), 0) };
+    return { monthName: HE_MONTHS[now.getMonth()], year: now.getFullYear(), rows, totals };
+  }, [done, activeContractors]);
 
   const exportXlsx = async () => {
     if (!index.length) { showToast("אין התקנות לייצוא", "warn"); return; }
@@ -768,6 +833,42 @@ function Home({ index, onNew, onOpen, onResume, showToast, onReset, onBack }) {
     } catch (e) { showToast("הייצוא נכשל — נסה שוב", "warn"); }
   };
 
+  // ── One-click Excel for a chosen contractor in a chosen month ──
+  const exportContractorMonth = async () => {
+    const rows = done
+      .filter((x) => (expC === "all" || x.contractor === expC) && (x.date || "").startsWith(expM))
+      .slice()
+      .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+    if (!rows.length) { showToast("אין התקנות לקבלן/חודש שנבחרו", "warn"); return; }
+    try {
+      const XLSX = await import("xlsx");
+      const wb = XLSX.utils.book_new();
+      const cObj = CONTRACTORS.find((c) => c.id === expC);
+      const master = expC === "all" || (cObj && cObj.master);
+      const header = ["תאריך התקנה", "מחיר (ש\"ח)", "סוג רכב", "יצרן", "סוג התקנה", "מספר רישוי", "מיקום"]
+        .concat(expC === "all" ? ["קבלן"] : [])
+        .concat(master ? ["טלפון", "שם לקוח"] : []);
+      const aoa = [header];
+      let sum = 0;
+      rows.forEach((x) => {
+        sum += Number(x.price) || 0;
+        const r = [dmy(x.date), Number(x.price) || 0, x.vehicleType || "", x.manufacturer || "", x.installType || "", x.idNumber || "", x.location || ""];
+        if (expC === "all") r.push(cName(x.contractor));
+        if (master) r.push(x.phone || "", x.customer || "");
+        aoa.push(r);
+      });
+      aoa.push([]);
+      aoa.push(["סה\"כ", sum].concat(new Array(header.length - 2).fill("")));
+      aoa.push([`סה"כ התקנות: ${rows.length}`]);
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      ws["!cols"] = header.map(() => ({ wch: 16 }));
+      const label = expC === "all" ? "כל_הקבלנים" : (cObj ? cObj.name : expC);
+      XLSX.utils.book_append_sheet(wb, ws, String(label).slice(0, 28));
+      XLSX.writeFile(wb, `HeavyGuard_${label}_${expM}.xlsx`);
+      showToast(`יוצא: ${label} · ${expM} (${rows.length} התקנות)`);
+    } catch (e) { showToast("הייצוא נכשל — נסה שוב", "warn"); }
+  };
+
   return (
     <>
       <header className="hg2-head">
@@ -781,6 +882,38 @@ function Home({ index, onNew, onOpen, onResume, showToast, onReset, onBack }) {
         <div className="hg2-stat"><span>הכנסה</span><b className="cy">{ils(stats.revenue)}</b></div>
         <div className="hg2-stat"><span>זמן ממוצע</span><b>{stats.avg ? fmtDur(stats.avg) : "—"}</b></div>
         <div className="hg2-stat"><span>זמן כולל</span><b>{stats.totalTime ? fmtDur(stats.totalTime) : "—"}</b></div>
+      </div>
+
+      {monthSummary.rows.length > 0 && (
+        <div className="hg2-msum">
+          <div className="hg2-msum-head">
+            <span><Calendar size={14} /> סיכום החודש · {monthSummary.monthName} {monthSummary.year}</span>
+            <b className="cy">{ils(monthSummary.totals.revenue)}</b>
+          </div>
+          <div className="hg2-msum-rows">
+            {monthSummary.rows.map((r) => (
+              <div className={"hg2-msum-row" + (r.count === 0 ? " idle" : "")} key={r.id}>
+                <span className="hg2-msum-name">{r.name}</span>
+                <span className="hg2-msum-cnt">{r.count} התקנות</span>
+                {r.time > 0 && <span className="hg2-msum-time"><Timer size={11} /> {fmtDur(r.time)}</span>}
+                <b className="hg2-msum-rev">{ils(r.revenue)}</b>
+              </div>
+            ))}
+          </div>
+          <div className="hg2-msum-foot"><span>סה״כ {monthSummary.totals.count} התקנות החודש מכל הקבלנים</span></div>
+        </div>
+      )}
+
+      <div className="hg2-expbox">
+        <div className="hg2-expbox-h"><Download size={15} /> ייצוא Excel לפי קבלן וחודש</div>
+        <div className="hg2-expbox-row">
+          <select className="hg2-expsel" value={expC} onChange={(e) => setExpC(e.target.value)}>
+            <option value="all">כל הקבלנים</option>
+            {CONTRACTORS.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <input className="hg2-expsel" type="month" value={expM} onChange={(e) => setExpM(e.target.value)} />
+        </div>
+        <button className="hg2-expbtn" onClick={exportContractorMonth}><Download size={16} /> הורד טבלת אקסל</button>
       </div>
 
       <button className="hg2-add" onClick={onNew}><Plus size={22} /> הוספת התקנה</button>
@@ -1078,8 +1211,15 @@ function RankRow({ rank, label, count, revenue, max, valOverride, color }) {
 function Empty() { return <div className="hg2-busy">אין נתונים להצגה</div>; }
 
 /* ============================ Customers ============================ */
-function loadArr(key) { return store.get(key).then((r) => r && r.value ? JSON.parse(r.value) : []).catch(() => []); }
-const saveArr = (key, arr) => store.set(key, JSON.stringify(arr)).catch(() => {});
+function loadArr(key) {
+  return store.get(key)
+    .then((r) => r && r.value ? JSON.parse(r.value) : [])
+    .catch(() => { try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch { return []; } });
+}
+const saveArr = (key, arr) => {
+  try { localStorage.setItem(key, JSON.stringify(arr)); } catch {}
+  return store.set(key, JSON.stringify(arr)).catch(() => {});
+};
 
 function Customers({ index, onBack, showToast }) {
   const [custs, setCusts] = useState(null);
@@ -1101,15 +1241,11 @@ function Customers({ index, onBack, showToast }) {
   };
   const remove = async (c) => { if (!(await askConfirm("למחוק לקוח?"))) return; const next = custs.filter((x) => x.id !== c.id); setCusts(next); saveArr("hg2:customers", next); };
 
-  const hgClients = useMemo(() => {
-    const m = {};
-    index.filter((x) => x.contractor === "hg" && ((x.customer && x.customer.trim()) || (x.phone && x.phone.trim()))).forEach((x) => {
-      const name = (x.customer || "").trim(); const phone = (x.phone || "").trim(); const key = name + "|" + phone;
-      if (!m[key]) m[key] = { name: name || "(ללא שם)", phone, count: 0, revenue: 0, derived: true };
-      m[key].count++; m[key].revenue += Number(x.price) || 0;
-    });
-    return Object.values(m).sort((a, b) => b.count - a.count);
-  }, [index]);
+  // Merge duplicates by normalised name and sum each customer's income.
+  const hgClients = useMemo(
+    () => customerDirectory(index.filter((x) => x.contractor === "hg")).map((c) => ({ ...c, derived: true })),
+    [index]
+  );
   const manual = custs || [];
   const derivedShown = hgClients.filter((d) => !manual.some((mm) => (mm.phone && mm.phone === d.phone) || mm.name === d.name));
 
@@ -1149,7 +1285,7 @@ function Customers({ index, onBack, showToast }) {
           {derivedShown.map((c, i) => (
             <div className="hg2-crow" key={"d" + i}>
               <div className="hg2-crow-ic" style={{ color: cColor("hg") }}><User size={18} /></div>
-              <div className="hg2-crow-mid"><b>{c.name}</b><span dir="ltr" style={{ textAlign: "right" }}>{c.phone || "—"} · {c.count} התקנות</span></div>
+              <div className="hg2-crow-mid"><b>{c.name}</b><span dir="ltr" style={{ textAlign: "right" }}>{c.phone || "—"} · {c.count} התקנות · {ils(c.revenue)}</span></div>
               <div className="hg2-crow-acts">
                 {c.phone && <a className="hg2-wa" href={waLink(c.phone, "שלום " + (c.name !== "(ללא שם)" ? c.name : "") + ",")} target="_blank" rel="noreferrer"><MessageSquare size={16} /></a>}
                 <button className="hg2-icbtn2" onClick={() => { setEdit({ name: c.name === "(ללא שם)" ? "" : c.name, phone: c.phone, notes: "" }); setOpen(true); }}><Pencil size={14} /></button>
@@ -1430,10 +1566,63 @@ function Vehicle({ index, onBack, showToast }) {
         </div>
       )}
 
-      <div className="hg2-secttl"><MapPin size={15} /> מפת נסיעות</div>
+      <MyTrips showToast={showToast} />
+
+      <div className="hg2-secttl"><MapPin size={15} /> מפת נסיעות (אוטומטי מההתקנות)</div>
       <TripsMap index={index} />
 
       {open && <VehicleModal rec={edit} onClose={() => { setOpen(false); setEdit(null); }} onSave={save} />}
+    </div>
+  );
+}
+
+const wazeLink = (to) => `https://waze.com/ul?q=${encodeURIComponent(to || "")}&navigate=yes`;
+function MyTrips({ showToast }) {
+  const [trips, setTrips] = useState(null);
+  const [open, setOpen] = useState(false);
+  const [edit, setEdit] = useState(null);
+  useEffect(() => { loadArr("hg2:trips").then(setTrips); }, []);
+  const save = (t) => { let next; if (edit) next = trips.map((x) => x.id === t.id ? t : x); else next = [{ ...t, id: uid() }, ...trips]; setTrips(next); saveArr("hg2:trips", next); setOpen(false); setEdit(null); showToast("הנסיעה נשמרה"); };
+  const remove = async (t) => { if (!(await askConfirm("למחוק נסיעה?"))) return; const next = trips.filter((x) => x.id !== t.id); setTrips(next); saveArr("hg2:trips", next); };
+  const totalKm = (trips || []).reduce((s, t) => s + (Number(t.km) || 0), 0);
+  return (<>
+    <div className="hg2-secttl"><Route size={15} /> הנסיעות שלי{trips && trips.length ? ` · ${trips.length}${totalKm ? ` · ${totalKm} ק"מ` : ""}` : ""}
+      <button className="hg2-mini" onClick={() => { setEdit(null); setOpen(true); }}><Plus size={14} /> נסיעה</button>
+    </div>
+    {trips === null ? <div className="hg2-busy">טוען…</div> : (
+      <div className="hg2-list" style={{ marginBottom: 18 }}>
+        {trips.length === 0 && <div className="hg2-empty"><Route size={30} /><div>אין נסיעות עדיין</div><p>הוסף נסיעה — מאיפה, לאן, תאריך — ונווט ב-Waze בלחיצה</p></div>}
+        {trips.slice().sort((a, b) => (b.date || "").localeCompare(a.date || "")).map((t) => (
+          <div className="hg2-crow" key={t.id}>
+            <div className="hg2-crow-ic"><Route size={16} /></div>
+            <div className="hg2-crow-mid"><b>{(t.from || "—") + "  ←  " + (t.to || "—")}</b><span>{dmy(t.date)}{t.km ? ` · ${t.km} ק"מ` : ""}{t.note ? " · " + t.note : ""}</span></div>
+            <div className="hg2-crow-acts">
+              {t.to && <a className="hg2-wa" style={{ background: "#0a2942", borderColor: "#1e6ba8", color: "#3fc6ff" }} href={wazeLink(t.to)} target="_blank" rel="noreferrer" title="נווט ב-Waze"><Navigation size={16} /></a>}
+              <button className="hg2-icbtn2" onClick={() => { setEdit(t); setOpen(true); }}><Pencil size={14} /></button>
+              <button className="hg2-icbtn2 d" onClick={() => remove(t)}><Trash2 size={14} /></button>
+            </div>
+          </div>
+        ))}
+      </div>
+    )}
+    {open && <TripModal trip={edit} onClose={() => { setOpen(false); setEdit(null); }} onSave={save} />}
+  </>);
+}
+function TripModal({ trip, onClose, onSave }) {
+  const [t, setT] = useState(trip || { from: "", to: "", date: todayISO(), km: "", note: "" });
+  return (
+    <div className="hg2-overlay" onClick={onClose}>
+      <div className="hg2-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="hg2-modal-head"><h3>{trip ? "עריכת נסיעה" : "נסיעה חדשה"}</h3><button onClick={onClose}><X size={18} /></button></div>
+        <div className="hg2-form">
+          <Field icon={MapPin} label="מאיפה"><input value={t.from} onChange={(e) => setT({ ...t, from: e.target.value })} placeholder="נקודת מוצא" /></Field>
+          <Field icon={Navigation} label="לאן (כתובת/עיר)"><input value={t.to} onChange={(e) => setT({ ...t, to: e.target.value })} placeholder="יעד — ינווט ב-Waze" /></Field>
+          <Field icon={Calendar} label="תאריך"><DateField value={t.date} onChange={(v) => setT({ ...t, date: v })} /></Field>
+          <Field icon={Route} label={'ק"מ (אופציונלי)'}><input type="number" value={t.km} onChange={(e) => setT({ ...t, km: e.target.value })} placeholder="0" /></Field>
+          <Field icon={Pencil} label="הערה"><input value={t.note} onChange={(e) => setT({ ...t, note: e.target.value })} placeholder="לא חובה" /></Field>
+        </div>
+        <div className="hg2-modal-foot"><button className="hg2-btn ghost" onClick={onClose}>ביטול</button><button className="hg2-btn primary" onClick={() => { if (!(t.to || "").trim()) return; onSave({ ...t, note: (t.note || "").trim() }); }}>שמירה</button></div>
+      </div>
     </div>
   );
 }
@@ -1739,7 +1928,7 @@ function Invoices({ onBack, showToast }) {
   const [inv, setInv] = useState(null);
   const [num, setNum] = useState("");
   const [open, setOpen] = useState(false);
-  useEffect(() => { loadArr("hg2:invoices").then(setInv); store.get("hg2:wanumber").then((r) => setNum(r && r.value ? JSON.parse(r.value) : "")).catch(() => { }); }, []);
+  useEffect(() => { loadArr("hg2:invoices").then(setInv); store.get("hg2:wanumber").then((r) => setNum(r && r.value ? JSON.parse(r.value) : DEFAULT_WA_NUMBER)).catch(() => setNum(DEFAULT_WA_NUMBER)); }, []);
   const persist = (a) => { setInv(a); saveArr("hg2:invoices", a); };
   const saveNum = (v) => { setNum(v); store.set("hg2:wanumber", JSON.stringify(v)).catch(() => { }); };
   const add = async (data, photoFull) => { const id = uid(); if (photoFull) { try { await store.set("hg2:inv:" + id, photoFull); } catch { } } persist([{ ...data, id, hasPhoto: !!photoFull }, ...(inv || [])]); setOpen(false); showToast("החשבונית נשמרה"); };
@@ -1827,6 +2016,482 @@ function InvoiceModal({ onClose, onSave, showToast }) {
   );
 }
 
+/* ============================ Samsonix DVR Forms ============================ */
+const SAMSONIX_PLANS = {
+  "2gb": 'שימוש בשרת + גלישה 2GB · 39 ₪ +מע״מ (עד 2 משתמשים / 1T)',
+  "4gb": 'שימוש בשרת + גלישה 4GB · 49 ₪ +מע״מ (עד 4 משתמשים / 2T)',
+  "10gb": 'שימוש בשרת + גלישה 10GB · 59 ₪ +מע״מ (מעל 5 משתמשים / 4T)',
+};
+const SX_STATUS = ["טיוטה", "נשלח ללקוח", "התקבל תשובה", "הושלם"];
+const SX_COLOR = { "טיוטה": "", "נשלח ללקוח": "pend", "התקבל תשובה": "cy", "הושלם": "paid" };
+
+// Escape helpers used inside the customer HTML template string
+function sxEsc(s) { return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function sxEscJs(s) { return String(s ?? "").replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/\r?\n/g,"\\n"); }
+
+// Generates a self-contained HTML file the admin sends to the customer.
+// Customer fills vehicle/ID details; on submit it encodes data as SX:{base64}
+// and opens WhatsApp addressed to the admin's number.
+function generateCustomerHTML(f, adminPhone) {
+  const planLabel = SAMSONIX_PLANS[f.plan] || f.plan || "";
+  const audioLabel = f.audio === "with" ? "כולל אודיו" : "ללא אודיו";
+  const bsdLabel = f.bsd ? " · ב.ס.ד" : "";
+  const safePhone = String(adminPhone || "").replace(/[^0-9]/g, "");
+  return `<!DOCTYPE html>
+<html dir="rtl" lang="he"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>טופס Samsonix DVR – ${sxEsc(f.fullName || "")}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;direction:rtl;background:#0d0d1a;color:#eee;min-height:100vh}
+.wrap{max-width:480px;margin:0 auto;padding:20px 16px 40px}
+.logo{font-size:28px;font-weight:900;color:#fff;letter-spacing:1px;text-align:center;padding:20px 0 4px}
+.logo em{color:#e63946;font-style:normal}
+.sub{font-size:11px;letter-spacing:4px;color:#888;text-align:center;margin-bottom:24px}
+h2{font-size:16px;text-align:center;color:#f7c800;margin-bottom:20px}
+.card{background:#161625;border:1px solid #2a2a3e;border-radius:10px;padding:16px;margin-bottom:14px}
+.card-title{font-size:11px;font-weight:700;color:#f7c800;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:12px;border-bottom:1px solid #2a2a3e;padding-bottom:8px}
+.info-row{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid #1e1e30;font-size:13px}
+.info-row:last-child{border-bottom:none}
+.info-row .lbl{color:#999}
+.info-row .val{font-weight:600;color:#fff;text-align:left}
+.plan-badge{background:#f7c800;color:#000;font-weight:800;border-radius:5px;padding:3px 10px;font-size:13px}
+.field{margin-bottom:12px}
+.field label{display:block;font-size:12px;color:#aaa;margin-bottom:4px}
+.field input{width:100%;background:#1e1e30;border:1px solid #2a2a3e;border-radius:7px;padding:11px 12px;color:#fff;font-size:14px;font-family:Arial,sans-serif}
+.field input:focus{outline:none;border-color:#f7c800}
+.field input::placeholder{color:#444}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.check-row{display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:10px 0;font-size:13px;line-height:1.5;color:#ccc}
+.check-row input[type=checkbox]{width:20px;height:20px;flex-shrink:0;accent-color:#f7c800;cursor:pointer;margin-top:1px}
+.submit-btn{width:100%;background:linear-gradient(135deg,#f7c800,#e8a000);color:#000;font-size:16px;font-weight:800;padding:15px;border:none;border-radius:10px;cursor:pointer;margin-top:8px}
+.submit-btn:active{opacity:.85}
+.note{font-size:11px;color:#555;text-align:center;margin-top:14px;line-height:1.7}
+.sent-msg{display:none;background:#0d1f0d;border:1.5px solid #2d7a2d;border-radius:10px;padding:20px;text-align:center;margin-top:16px}
+.sent-msg h3{color:#5fd65f;font-size:17px;margin-bottom:8px}
+.sent-msg p{font-size:13px;color:#aaa;line-height:1.6}
+</style></head>
+<body><div class="wrap">
+  <div class="logo">SAMS<em>O</em>NIX</div>
+  <div class="sub">DVR SECURITY</div>
+  <h2>טופס הזמנת שירות DVR</h2>
+
+  <div class="card">
+    <div class="card-title">פרטי ההזמנה שלך</div>
+    <div class="info-row"><span class="lbl">שם לקוח</span><span class="val">${sxEsc(f.fullName || "")}</span></div>
+    <div class="info-row"><span class="lbl">מסלול</span><span class="val"><span class="plan-badge">${sxEsc((f.plan || "").toUpperCase())}</span></span></div>
+    <div class="info-row"><span class="lbl">פירוט</span><span class="val" style="font-size:11px;max-width:240px;text-align:left">${sxEsc(planLabel)}</span></div>
+    <div class="info-row"><span class="lbl">אפשרויות</span><span class="val">${sxEsc(audioLabel + bsdLabel)}</span></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">פרטים אישיים</div>
+    <div class="field"><label>ת.ז. / ח.פ. *</label><input type="text" id="idNum" inputmode="numeric" placeholder="מספר זהות"></div>
+    <div class="field"><label>כתובת</label><input type="text" id="address" placeholder="רחוב, מספר, עיר" style="direction:rtl"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">פרטי הרכב/ים *</div>
+    <div class="row2">
+      <div class="field"><label>לוחית רישוי 1</label><input type="text" id="veh1" placeholder="12-345-67"></div>
+      <div class="field"><label>יצרן / דגם</label><input type="text" id="veh1Type" placeholder="טויוטה הייס" style="direction:rtl"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>לוחית רישוי 2</label><input type="text" id="veh2" placeholder="לא חובה"></div>
+      <div class="field"><label>יצרן / דגם</label><input type="text" id="veh2Type" placeholder="" style="direction:rtl"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">אישור ✍</div>
+    <label class="check-row">
+      <input type="checkbox" id="agree">
+      <span>קראתי ואני מאשר/ת את פרטי ההזמנה לעיל ומסכים/ה לתנאי השירות של Samsonix.</span>
+    </label>
+  </div>
+
+  <div class="card">
+    <div class="card-title">חתימה *</div>
+    <p style="font-size:12px;color:#888;margin-bottom:10px">חתום/י באצבע או עכבר בתיבה למטה</p>
+    <div class="sig-wrap">
+      <canvas id="sigCanvas" class="sig-canvas"></canvas>
+      <div class="sig-empty-hint" id="sigHint">חתום/י כאן</div>
+    </div>
+    <button type="button" class="sig-clear-btn" onclick="clearSig()">נקה חתימה</button>
+    <div id="sigErr" style="color:#e63946;font-size:12px;margin-top:6px;display:none">נא לחתום לפני השליחה</div>
+  </div>
+
+  <button class="submit-btn" onclick="doSubmit()">שלח לסמסוניקס ✓</button>
+
+  <div class="sent-msg" id="sentMsg">
+    <h3>נשלח בהצלחה! ✓</h3>
+    <p>הפרטים נשלחו לסמסוניקס דרך וואטסאפ.<br>נציג יחזור אליך בהקדם.</p>
+  </div>
+
+  <div class="note">🔒 הטופס אינו שומר מידע בשרתים. הנתונים מועברים ישירות דרך וואטסאפ.</div>
+</div>
+<script>
+const ADMIN_PHONE='${sxEscJs(safePhone)}';
+const FORM_ID='${sxEscJs(f.id||"")}';
+
+// ── Signature pad ──────────────────────────────────────────────────────────
+var sigCvs=document.getElementById('sigCanvas');
+var sigCtx=sigCvs.getContext('2d');
+var sigDrawing=false;
+var sigHasMark=false;
+
+function initSig(){
+  var wrap=sigCvs.parentElement;
+  sigCvs.width=wrap.clientWidth||300;
+  sigCvs.height=120;
+  sigCtx.fillStyle='#1a1a2e';
+  sigCtx.fillRect(0,0,sigCvs.width,sigCvs.height);
+  sigCtx.strokeStyle='#fff';
+  sigCtx.lineWidth=2.5;
+  sigCtx.lineCap='round';
+  sigCtx.lineJoin='round';
+}
+window.addEventListener('load',initSig);
+window.addEventListener('resize',function(){if(!sigHasMark)initSig();});
+
+function sigPos(e){
+  var r=sigCvs.getBoundingClientRect();
+  var src=e.touches?e.touches[0]:e;
+  return{x:(src.clientX-r.left)*(sigCvs.width/r.width),y:(src.clientY-r.top)*(sigCvs.height/r.height)};
+}
+sigCvs.addEventListener('mousedown',function(e){sigDrawing=true;var p=sigPos(e);sigCtx.beginPath();sigCtx.moveTo(p.x,p.y);e.preventDefault();});
+sigCvs.addEventListener('mousemove',function(e){if(!sigDrawing)return;var p=sigPos(e);sigCtx.lineTo(p.x,p.y);sigCtx.stroke();sigHasMark=true;document.getElementById('sigHint').style.display='none';e.preventDefault();});
+sigCvs.addEventListener('mouseup',function(){sigDrawing=false;});
+sigCvs.addEventListener('mouseleave',function(){sigDrawing=false;});
+sigCvs.addEventListener('touchstart',function(e){sigDrawing=true;var p=sigPos(e);sigCtx.beginPath();sigCtx.moveTo(p.x,p.y);e.preventDefault();},{passive:false});
+sigCvs.addEventListener('touchmove',function(e){if(!sigDrawing)return;var p=sigPos(e);sigCtx.lineTo(p.x,p.y);sigCtx.stroke();sigHasMark=true;document.getElementById('sigHint').style.display='none';e.preventDefault();},{passive:false});
+sigCvs.addEventListener('touchend',function(){sigDrawing=false;});
+
+function clearSig(){
+  initSig();sigHasMark=false;
+  document.getElementById('sigHint').style.display='flex';
+  document.getElementById('sigErr').style.display='none';
+}
+
+function getSigDataUrl(){
+  // Export at 280×90 JPEG quality 0.35 to keep WhatsApp URL manageable
+  var out=document.createElement('canvas');
+  out.width=280;out.height=90;
+  var c=out.getContext('2d');
+  c.drawImage(sigCvs,0,0,out.width,out.height);
+  return out.toDataURL('image/jpeg',0.35);
+}
+// ──────────────────────────────────────────────────────────────────────────
+
+function doSubmit(){
+  var idNum=document.getElementById('idNum').value.trim();
+  var address=document.getElementById('address').value.trim();
+  var veh1=document.getElementById('veh1').value.trim();
+  var veh1Type=document.getElementById('veh1Type').value.trim();
+  var veh2=document.getElementById('veh2').value.trim();
+  var veh2Type=document.getElementById('veh2Type').value.trim();
+  var agree=document.getElementById('agree').checked;
+  if(!veh1){alert('נא למלא לפחות מספר רכב אחד');return;}
+  if(!agree){alert('נא לאשר את ההזמנה');return;}
+  if(!sigHasMark){document.getElementById('sigErr').style.display='block';sigCvs.scrollIntoView({behavior:'smooth',block:'center'});return;}
+  document.getElementById('sigErr').style.display='none';
+  var sigData=getSigDataUrl();
+  var data={formId:FORM_ID,idNum:idNum,address:address,veh1:veh1,veh1Type:veh1Type,veh2:veh2,veh2Type:veh2Type,sig:sigData,signedAt:new Date().toISOString()};
+  var encoded=btoa(unescape(encodeURIComponent(JSON.stringify(data))));
+  var sxText='SX:'+encoded;
+
+  // Copy SX code to clipboard then open WhatsApp chat — user pastes.
+  // This avoids URL length limits that arise when embedding the signature.
+  function doOpen(){
+    // Try wa.me with full text if small enough, otherwise clipboard+open chat
+    var waUrl='https://wa.me/'+ADMIN_PHONE+'?text='+encodeURIComponent(sxText);
+    if(waUrl.length<=3800){
+      window.open(waUrl,'_blank');
+    } else {
+      window.open('https://wa.me/'+ADMIN_PHONE,'_blank');
+    }
+    document.getElementById('sentMsg').style.display='block';
+    document.getElementById('sentMsg').innerHTML='<h3>✓ הקוד הועתק!</h3><p>וואטסאפ נפתח.<br>הדבק את הטקסט (Ctrl+V / לחיצה ארוכה → הדבק) ושלח.</p>';
+  }
+
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(sxText).then(doOpen).catch(function(){
+      // clipboard denied — fallback to wa.me with text
+      window.open('https://wa.me/'+ADMIN_PHONE+'?text='+encodeURIComponent(sxText),'_blank');
+      document.getElementById('sentMsg').style.display='block';
+    });
+  } else {
+    // Legacy copy
+    try{var ta=document.createElement('textarea');ta.value=sxText;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.focus();ta.select();document.execCommand('copy');document.body.removeChild(ta);}catch(e){}
+    doOpen();
+  }
+}
+</script>
+<style>
+.sig-wrap{position:relative;border:1.5px solid #2a2a3e;border-radius:8px;overflow:hidden;cursor:crosshair;touch-action:none}
+.sig-canvas{display:block;width:100%;height:120px}
+.sig-empty-hint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#444;font-size:15px;pointer-events:none;user-select:none}
+.sig-clear-btn{margin-top:8px;padding:6px 16px;background:transparent;border:1px solid #2a2a3e;border-radius:6px;color:#888;font-size:12px;cursor:pointer}
+.sig-clear-btn:hover{border-color:#f7c800;color:#f7c800}
+</style>
+</body></html>`;
+}
+
+// Downloads the customer HTML form as a file.
+function downloadCustomerForm(f, adminPhone) {
+  const html = generateCustomerHTML(f, adminPhone);
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `samsonix-${(f.fullName || "טופס").replace(/\s+/g, "-")}.html`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// Parses the customer's WhatsApp reply: "SX:{base64json}"
+function parseSXResponse(text) {
+  const m = String(text).match(/SX:([A-Za-z0-9+/=]+)/);
+  if (!m) return null;
+  try { return JSON.parse(decodeURIComponent(escape(atob(m[1])))); } catch { return null; }
+}
+
+// Printable final Samsonix DVR contract. CVV is NEVER persisted.
+function printSamsonix(f) {
+  const planLabel = SAMSONIX_PLANS[f.plan] || "";
+  const maskedCard = (f.cardNum || "").replace(/(.{4})(?=.)/g, "$1 ");
+  const today = dmy(f.savedAt ? f.savedAt.slice(0, 10) : todayISO());
+  const box = (on) => `<span style="display:inline-block;width:13px;height:13px;border:1.5px solid #222;text-align:center;line-height:12px;font-size:10px;font-weight:700;${on ? "background:#1a1a2e;color:#fff" : ""}">${on ? "✓" : ""}</span>`;
+  const fv = (l, v) => `<div style="border-bottom:1px solid #bbb;padding-bottom:3px"><div style="font-size:10px;color:#777">${l}</div><div style="font-size:13px;font-weight:600;min-height:16px">${v || ""}</div></div>`;
+  const win = window.open("", "_blank", "width=820,height=1000");
+  if (!win) { alert("אנא אפשר חלונות קופצים"); return; }
+  const signedStr = f.signedAt ? ` · נחתם: ${dmy(f.signedAt.slice(0,10))}` : "";
+  win.document.write(`<!DOCTYPE html><html dir="rtl" lang="he"><head><meta charset="utf-8"><title>Samsonix DVR – ${f.fullName || ""}</title>
+<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;direction:rtl;padding:28px 32px;color:#111;background:#fff;font-size:13px}
+.header{display:flex;justify-content:space-between;border-bottom:2px solid #1a1a2e;padding-bottom:14px;margin-bottom:14px}
+.logo{font-size:26px;font-weight:900;color:#1a1a2e;letter-spacing:1px}.logo em{color:#e63946;font-style:normal}
+h2{text-align:center;font-size:17px;text-decoration:underline;margin:12px 0 8px;color:#1a1a2e}
+.sec{margin-bottom:14px}.sectl{font-weight:700;margin-bottom:6px;color:#1a1a2e;border-bottom:1px solid #ddd;padding-bottom:4px}
+.row{display:flex;gap:8px;margin:5px 0;font-size:12.5px;align-items:center}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 20px}
+.prod{background:#fffbe6;border:1.5px solid #d4a017;border-radius:6px;padding:8px 12px;margin:8px 0;font-weight:600}
+.sig{display:flex;justify-content:space-between;margin-top:24px}.sigline{border-top:1.5px solid #555;width:220px;text-align:center;padding-top:4px;font-size:11px;color:#555}
+@media print{.noprint{display:none}}</style></head><body>
+<div class="header"><div><div class="logo">SAMS<em>O</em>NIX</div><div style="font-size:10px;color:#666;letter-spacing:3px">DVR SECURITY</div></div><div style="font-size:12px;color:#444;text-align:left">תאריך: ${today}${signedStr}</div></div>
+<h2>טופס הזמנת שירות Samsonix DVR</h2>
+<div class="sec"><div class="sectl">פרטי הלקוח</div><div class="grid">${fv("שם מלא",f.fullName)}${fv("ת.ז.",f.idNum)}${fv("כתובת",f.address)}${fv("טלפון",f.phone)}${fv("חברה",f.company)}${fv("ח.פ./עוסק",f.bizNum)}</div></div>
+<div class="sec"><div class="sectl">המסלול הנבחר</div><div class="prod">${planLabel}</div><div class="row">${box(f.audio==="with")} כולל אודיו &nbsp;&nbsp; ${box(!!f.bsd)} ב.ס.ד</div></div>
+<div class="sec"><div class="sectl">פרטי הרכב/ים</div><div class="grid">${fv("רכב 1",f.veh1)}${fv("סוג רכב 1",f.veh1Type)}${fv("רכב 2",f.veh2)}${fv("סוג רכב 2",f.veh2Type)}</div></div>
+${(f.cardNum||f.expiry)?`<div class="sec"><div class="sectl">פרטי תשלום</div><div class="grid">${fv("מספר כרטיס",maskedCard)}${fv("תוקף",f.expiry)}</div><div style="font-size:10px;color:#2d7a2d;margin-top:6px">🔒 קוד האבטחה (CVV) אינו נשמר במערכת.</div></div>`:""}
+<div class="sig">
+  <div class="sigline">
+    ${f.sig ? `<img src="${f.sig}" style="height:60px;max-width:220px;display:block;margin-bottom:4px;border:1px solid #ddd;border-radius:4px;background:#f8f8f8">` : '<div style="height:60px"></div>'}
+    חתימת הלקוח
+  </div>
+  <div class="sigline"><div style="height:60px"></div>חתימת נציג</div>
+</div>
+<div class="noprint" style="text-align:center;margin-top:24px"><button onclick="window.print()" style="padding:10px 28px;font-size:14px;background:#1a1a2e;color:#fff;border:0;border-radius:6px;cursor:pointer">הדפסה / שמירה כ-PDF</button></div>
+</body></html>`);
+  win.document.close();
+}
+
+function Samsonix({ onBack, showToast }) {
+  const [forms, setForms] = useState(null);
+  const [num, setNum] = useState("");
+  const [open, setOpen] = useState(false);
+  const [edit, setEdit] = useState(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importText, setImportText] = useState("");
+  const [importErr, setImportErr] = useState("");
+
+  useEffect(() => {
+    loadArr("hg2:samsonix").then(setForms);
+    store.get("hg2:wanumber").then((r) => setNum(r && r.value ? JSON.parse(r.value) : DEFAULT_WA_NUMBER)).catch(() => setNum(DEFAULT_WA_NUMBER));
+  }, []);
+
+  const persist = (a) => { setForms(a); saveArr("hg2:samsonix", a); };
+  const save = (data) => {
+    if (edit) persist(forms.map((x) => x.id === edit.id ? { ...edit, ...data } : x));
+    else persist([{ ...data, id: uid(), savedAt: new Date().toISOString(), status: "טיוטה" }, ...(forms || [])]);
+    setOpen(false); setEdit(null); showToast("הטופס נשמר");
+  };
+  const remove = async (f) => { if (!(await askConfirm("למחוק טופס?"))) return; persist(forms.filter((x) => x.id !== f.id)); };
+  const setStatus = (f, status) => persist(forms.map((x) => x.id === f.id ? { ...x, status } : x));
+  const cycleStatus = (f) => { const i = SX_STATUS.indexOf(f.status); setStatus(f, SX_STATUS[(i + 1) % SX_STATUS.length]); };
+
+  // Generate the interactive customer HTML file + open WhatsApp to send it
+  const sendToCustomer = (f) => {
+    if (!f.phone) { showToast("אין מספר טלפון ללקוח בטופס", "warn"); return; }
+    downloadCustomerForm(f, num);
+    const msg = `שלום ${f.fullName || ""},\nמצורף קובץ טופס הזמנת שירות Samsonix DVR.\nפתח/י את הקובץ בדפדפן, מלא/י את הפרטים ולחץ/י "שלח".`;
+    window.open(waLink(f.phone, msg), "_blank");
+    if (f.status === "טיוטה") setStatus(f, "נשלח ללקוח");
+    showToast("קובץ הטופס הורד · נפתח וואטסאפ ללקוח");
+  };
+
+  // Parse the customer's SX:{base64} reply from WhatsApp
+  const handleImport = () => {
+    setImportErr("");
+    const parsed = parseSXResponse(importText);
+    if (!parsed) { setImportErr("לא נמצא קוד SX תקין. ודא שהעתקת את ההודעה המלאה."); return; }
+    const match = (forms || []).find((x) => x.id === parsed.formId);
+    const merged = match
+      ? { ...match, ...parsed, status: "התקבל תשובה" }
+      : { id: uid(), savedAt: new Date().toISOString(), status: "התקבל תשובה", plan: "4gb", audio: "none", bsd: false, fullName: "", phone: "", ...parsed };
+    persist((forms || []).map((x) => (x.id === merged.id ? merged : x)).concat(match ? [] : [merged]));
+    setImportOpen(false); setImportText(""); setImportErr("");
+    showToast(match ? `עודכן: ${match.fullName}` : "טופס חדש נוצר מהתשובה");
+  };
+
+  const counts = useMemo(() => {
+    const c = { sent: 0, received: 0, done: 0 };
+    (forms || []).forEach((f) => {
+      if (f.status === "נשלח ללקוח") c.sent++;
+      if (f.status === "התקבל תשובה") c.received++;
+      if (f.status === "הושלם") c.done++;
+    });
+    return c;
+  }, [forms]);
+
+  return (
+    <div className="hg2-flow">
+      <FlowHead title="טפסי Samsonix DVR" sub="שליחה ללקוח · קבלת תשובה · הפקת מסמך" onBack={onBack} />
+      <div className="hg2-stats" style={{ gridTemplateColumns: "1fr 1fr 1fr 1fr" }}>
+        <div className="hg2-stat"><span>סה״כ</span><b>{forms ? forms.length : 0}</b></div>
+        <div className="hg2-stat"><span>נשלחו</span><b style={{ color: "var(--amber)" }}>{counts.sent}</b></div>
+        <div className="hg2-stat"><span>התקבלו</span><b className="cy">{counts.received}</b></div>
+        <div className="hg2-stat"><span>הושלמו</span><b className="paid">{counts.done}</b></div>
+      </div>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+        <button className="hg2-mini" style={{ flex: 1 }} onClick={() => { setEdit(null); setOpen(true); }}><Plus size={14} /> טופס חדש ללקוח</button>
+        <button className="hg2-mini" style={{ flex: 1, background: "rgba(63,214,200,.15)", color: "var(--cyan)" }} onClick={() => setImportOpen(true)}><Download size={14} /> ייבא תשובת לקוח</button>
+      </div>
+
+      {forms === null ? <div className="hg2-busy">טוען…</div> : (
+        <div className="hg2-list">
+          {forms.length === 0 && (
+            <div className="hg2-empty">
+              <ClipboardList size={32} />
+              <div>אין טפסים עדיין</div>
+              <p>צור טופס → שלח ללקוח → לקוח ממלא ושולח חזרה → ייבא תשובה → הפק מסמך</p>
+            </div>
+          )}
+          {forms.map((f) => (
+            <div className="hg2-crow" key={f.id}>
+              <div className="hg2-crow-thumb"><ClipboardList size={18} /></div>
+              <div className="hg2-crow-mid">
+                <b>{f.fullName || "ללא שם"}</b>
+                <span>{[f.phone, f.plan ? f.plan.toUpperCase() : ""].filter(Boolean).join(" · ")}{f.veh1 ? ` · ${f.veh1}` : ""}</span>
+              </div>
+              <div className="hg2-inv-right">
+                <span className="hg2-crow-rev" style={{ fontSize: 11 }}>{dmy((f.savedAt || "").slice(0, 10))}</span>
+                <button className={`hg2-statuspill ${SX_COLOR[f.status] || ""}`} onClick={() => cycleStatus(f)}>{f.status}</button>
+              </div>
+              <div className="hg2-crow-acts">
+                <button className="hg2-wa" onClick={() => sendToCustomer(f)} title="שלח טופס ללקוח"><MessageSquare size={16} /></button>
+                <button className="hg2-icbtn2" onClick={() => printSamsonix(f)} title="הדפס מסמך סופי"><Download size={14} /></button>
+                <button className="hg2-icbtn2" onClick={() => { setEdit(f); setOpen(true); }} title="עריכה"><Pencil size={14} /></button>
+                <button className="hg2-icbtn2 d" onClick={() => remove(f)} title="מחק"><Trash2 size={14} /></button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* New form modal — admin fills only basic details */}
+      {open && <SamsonixModal initial={edit} onClose={() => { setOpen(false); setEdit(null); }} onSave={save} />}
+
+      {/* Import customer response dialog */}
+      {importOpen && (
+        <div className="hg2-overlay" onClick={() => setImportOpen(false)}>
+          <div className="hg2-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 440 }}>
+            <div className="hg2-modal-head"><h3>ייבוא תשובת לקוח</h3><button onClick={() => setImportOpen(false)}><X size={18} /></button></div>
+            <div className="hg2-form">
+              <p style={{ fontSize: 13, color: "#aaa", lineHeight: 1.6, marginBottom: 12 }}>
+                העתק את הודעת הוואטסאפ שקיבלת מהלקוח (ההודעה מתחילה ב-<code style={{ color: "var(--cyan)" }}>SX:</code>) והדבק כאן:
+              </p>
+              <textarea
+                value={importText}
+                onChange={(e) => { setImportText(e.target.value); setImportErr(""); }}
+                rows={5}
+                placeholder={"SX:eyJmb3JtSWQiOi..."}
+                style={{ width: "100%", background: "#1e1e30", border: "1px solid #2a2a3e", borderRadius: 7, padding: "10px 12px", color: "#fff", fontSize: 13, fontFamily: "monospace", direction: "ltr", resize: "vertical" }}
+              />
+              {importErr && <div style={{ color: "#e63946", fontSize: 12, marginTop: 6 }}>{importErr}</div>}
+            </div>
+            <div className="hg2-modal-foot">
+              <button className="hg2-btn ghost" onClick={() => setImportOpen(false)}>ביטול</button>
+              <button className="hg2-btn primary" onClick={handleImport} disabled={!importText.trim()}>ייבא ועדכן</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Admin-only modal: only the fields the admin knows before sending to customer.
+// Vehicle details, ID, address are filled by the customer in the HTML form.
+function SamsonixModal({ initial, onClose, onSave }) {
+  const [f, setF] = useState(initial || {
+    fullName: "", phone: "", company: "", bizNum: "",
+    plan: "4gb", audio: "none", bsd: false, notes: "",
+  });
+  const [err, setErr] = useState("");
+  const up = (k, v) => { setF((prev) => ({ ...prev, [k]: v })); setErr(""); };
+
+  const handleSave = () => {
+    if (!f.fullName.trim()) { setErr("נא למלא שם לקוח"); return; }
+    if (!f.phone.trim()) { setErr("נא למלא מספר טלפון"); return; }
+    onSave({ ...f, fullName: f.fullName.trim(), phone: f.phone.trim() });
+  };
+
+  return (
+    <div className="hg2-overlay" onClick={onClose}>
+      <div className="hg2-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="hg2-modal-head">
+          <h3>{initial ? "עריכת פרטי טופס" : "טופס Samsonix חדש"}</h3>
+          <button onClick={onClose}><X size={18} /></button>
+        </div>
+        <p style={{ fontSize: 12, color: "#888", padding: "0 16px 12px", lineHeight: 1.6 }}>
+          מלא את הפרטים הבסיסיים. לאחר שמירה — לחץ על כפתור הוואטסאפ בשורת הטופס כדי לשלוח ללקוח קובץ HTML למילוי.
+        </p>
+        <div className="hg2-form">
+          <Field icon={User} label="שם מלא הלקוח *"><input value={f.fullName} onChange={(e) => up("fullName", e.target.value)} placeholder="שם הלקוח" /></Field>
+          <Field icon={Phone} label="טלפון *"><input value={f.phone} onChange={(e) => up("phone", e.target.value)} dir="ltr" style={{ textAlign: "right" }} placeholder="05X-XXXXXXX" /></Field>
+          <div className="hg2-row2">
+            <Field icon={Building2} label="חברה"><input value={f.company || ""} onChange={(e) => up("company", e.target.value)} /></Field>
+            <Field icon={Hash} label="ח.פ./עוסק"><input value={f.bizNum || ""} onChange={(e) => up("bizNum", e.target.value)} dir="ltr" style={{ textAlign: "right" }} /></Field>
+          </div>
+          <div className="hg2-field"><div className="hg2-flabel"><Tag size={15} /> מסלול</div>
+            <div className="hg2-seg">
+              <button className={f.plan === "2gb" ? "on" : ""} onClick={() => up("plan", "2gb")}>2GB</button>
+              <button className={f.plan === "4gb" ? "on" : ""} onClick={() => up("plan", "4gb")}>4GB</button>
+              <button className={f.plan === "10gb" ? "on" : ""} onClick={() => up("plan", "10gb")}>10GB</button>
+            </div>
+          </div>
+          <div className="hg2-row2">
+            <div className="hg2-field"><div className="hg2-flabel">אודיו</div>
+              <div className="hg2-seg"><button className={f.audio === "none" ? "on" : ""} onClick={() => up("audio", "none")}>ללא</button><button className={f.audio === "with" ? "on" : ""} onClick={() => up("audio", "with")}>כולל</button></div>
+            </div>
+            <div className="hg2-field"><div className="hg2-flabel">ב.ס.ד</div>
+              <div className="hg2-seg"><button className={!f.bsd ? "on" : ""} onClick={() => up("bsd", false)}>לא</button><button className={f.bsd ? "on" : ""} onClick={() => up("bsd", true)}>כן</button></div>
+            </div>
+          </div>
+          <Field icon={FileText} label="הערות פנימיות"><input value={f.notes || ""} onChange={(e) => up("notes", e.target.value)} placeholder="לא גלוי ללקוח" /></Field>
+          {err && <div style={{ color: "#e63946", fontSize: 12, padding: "4px 2px" }}>{err}</div>}
+        </div>
+        <div className="hg2-modal-foot">
+          <button className="hg2-btn ghost" onClick={onClose}>ביטול</button>
+          <button className="hg2-btn primary" onClick={handleSave}>שמור ← שלח ללקוח</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ============================ Trips map ============================ */
 function inRange(d, from, to) { if (from && d < from) return false; if (to && d > to) return false; return true; }
 const BASE = { name: "ראשון לציון (בסיס)", lat: 31.964, lng: 34.805 };
@@ -1851,6 +2516,94 @@ const MAP_SC = 107.7, MAP_COSLAT = 0.853, MAP_LNG0 = 34.18, MAP_LAT1 = 33.38;
 const mpx = (lng) => (lng - MAP_LNG0) * MAP_COSLAT * MAP_SC;
 const mpy = (lat) => (MAP_LAT1 - lat) * MAP_SC;
 const BASE_LL = { lat: 31.96, lng: 34.80 }; // ראשון לציון
+
+/* Period grouping helpers (week / month / year) */
+const HEB_MONTHS = ["ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני", "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר"];
+function weekStart(iso) { const d = new Date(iso + "T00:00:00"); d.setDate(d.getDate() - d.getDay()); return d; }
+function periodKey(iso, g) { if (g === "year") return iso.slice(0, 4); if (g === "month") return iso.slice(0, 7); return weekStart(iso).toISOString().slice(0, 10); }
+function periodLabel(iso, g) {
+  if (g === "year") return iso.slice(0, 4);
+  if (g === "month") { const [y, m] = iso.split("-"); return `${HEB_MONTHS[+m - 1]} ${y}`; }
+  const ws = weekStart(iso), we = new Date(ws); we.setDate(ws.getDate() + 6);
+  const f = (d) => `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}`;
+  return `שבוע ${f(ws)}–${f(we)}`;
+}
+
+/* Real satellite map via Leaflet + Esri World Imagery (free, no API key).
+   Loads Leaflet from CDN on demand; falls back to the SVG map if it can't load. */
+function useLeaflet() {
+  const [L, setL] = useState(typeof window !== "undefined" && window.L ? window.L : null);
+  useEffect(() => {
+    if (window.L) { setL(window.L); return; }
+    if (!document.getElementById("leaflet-css")) {
+      const link = document.createElement("link");
+      link.id = "leaflet-css"; link.rel = "stylesheet";
+      link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+      document.head.appendChild(link);
+    }
+    let done = false;
+    const finish = (v) => { if (!done) { done = true; setL(v); } };
+    let s = document.getElementById("leaflet-js");
+    const onLoad = () => finish(window.L || false);
+    const onErr = () => finish(false);
+    if (!s) {
+      s = document.createElement("script");
+      s.id = "leaflet-js"; s.async = true;
+      s.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+      document.body.appendChild(s);
+    }
+    s.addEventListener("load", onLoad);
+    s.addEventListener("error", onErr);
+    const to = setTimeout(() => finish(window.L || false), 9000);
+    return () => { s.removeEventListener("load", onLoad); s.removeEventListener("error", onErr); clearTimeout(to); };
+  }, []);
+  return L;
+}
+
+function SatelliteMap({ agg }) {
+  const L = useLeaflet();
+  const elRef = useRef(null);
+  const mapRef = useRef(null);
+  const layerRef = useRef(null);
+
+  useEffect(() => {
+    if (!L || !elRef.current || mapRef.current) return;
+    const map = L.map(elRef.current, { center: [31.6, 34.9], zoom: 8, attributionControl: false });
+    mapRef.current = map;
+    L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { maxZoom: 18 }).addTo(map);
+    // Place/road labels on top of the imagery so cities are readable.
+    L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", { maxZoom: 18, opacity: 0.85 }).addTo(map);
+    setTimeout(() => { try { map.invalidateSize(); } catch {} }, 250);
+    return () => { try { map.remove(); } catch {} mapRef.current = null; };
+  }, [L]);
+
+  useEffect(() => {
+    const map = mapRef.current; if (!map || !L) return;
+    if (layerRef.current) { try { layerRef.current.remove(); } catch {} }
+    const grp = L.layerGroup().addTo(map); layerRef.current = grp;
+    const entries = Object.entries(agg);
+    const max = Math.max(1, ...entries.map(([, v]) => v.c));
+    const bounds = [];
+    entries.forEach(([name, v]) => {
+      const r = 7 + (v.c / max) * 16;
+      L.circleMarker([v.g.lat, v.g.lng], { radius: r, color: "#F7E8C0", weight: 1.4, fillColor: "#E4BC63", fillOpacity: 0.72 })
+        .bindPopup(`<b>${name}</b><br>${v.c} נסיעות`).addTo(grp);
+      bounds.push([v.g.lat, v.g.lng]);
+    });
+    L.circleMarker([BASE_LL.lat, BASE_LL.lng], { radius: 7, color: "#fff", weight: 2, fillColor: "#6FD3F0", fillOpacity: 1 })
+      .bindPopup("<b>הבסיס — ראשון לציון</b>").addTo(grp);
+    bounds.push([BASE_LL.lat, BASE_LL.lng]);
+    if (bounds.length > 1) { try { map.fitBounds(bounds, { padding: [28, 28], maxZoom: 11 }); } catch {} }
+  }, [agg, L]);
+
+  if (L === false) return <IsraelMap agg={agg} />;   // CDN blocked → SVG fallback
+  return (
+    <div className="hg2-mapbox">
+      <div className="hg2-mapel" ref={elRef} />
+      {!L && <div className="hg2-maploading">טוען מפת לווין…</div>}
+    </div>
+  );
+}
 
 function IsraelMap({ agg }) {
   const [sel, setSel] = useState(null);
@@ -1888,6 +2641,12 @@ function IsraelMap({ agg }) {
 function TripsMap({ index }) {
   const [from, setFrom] = useState(""); const [to, setTo] = useState(""); const [quick, setQuick] = useState("all");
   const [routeDay, setRouteDay] = useState(null);
+  const [groupBy, setGroupBy] = useState("day");
+  const [openG, setOpenG] = useState({});
+  const [kmpl, setKmpl] = useState(() => +localStorage.getItem("hg2:fuel_kmpl") || 11);
+  const [price, setPrice] = useState(() => +localStorage.getItem("hg2:fuel_price") || 7.0);
+  useEffect(() => { localStorage.setItem("hg2:fuel_kmpl", String(kmpl)); }, [kmpl]);
+  useEffect(() => { localStorage.setItem("hg2:fuel_price", String(price)); }, [price]);
 
   const setRange = (key) => {
     setQuick(key);
@@ -1905,6 +2664,36 @@ function TripsMap({ index }) {
   }, [trips]);
   const destCount = useMemo(() => new Set(trips.map((t) => t.location.trim())).size, [trips]);
 
+  // Per-day estimated km (round trip from base via nearest-neighbour route).
+  const dayStats = useMemo(() => byDate.map((d) => {
+    const r = buildDayRoute(d.items.map(([loc]) => loc));
+    const tripsN = d.items.reduce((s, [, n]) => s + n, 0);
+    return { date: d.date, items: d.items, km: r.totalKm, trips: tripsN };
+  }), [byDate]);
+  const totalKm = useMemo(() => dayStats.reduce((s, d) => s + d.km, 0), [dayStats]);
+  const fuelCost = kmpl > 0 ? totalKm / kmpl * price : 0;
+  const costOf = (km) => (kmpl > 0 ? km / kmpl * price : 0);
+
+  const grouped = useMemo(() => {
+    if (groupBy === "day") return null;
+    const m = {};
+    dayStats.forEach((d) => {
+      const key = periodKey(d.date, groupBy);
+      if (!m[key]) m[key] = { key, label: periodLabel(d.date, groupBy), days: [], km: 0, trips: 0 };
+      m[key].days.push(d); m[key].km += d.km; m[key].trips += d.trips;
+    });
+    return Object.values(m).sort((a, b) => b.key.localeCompare(a.key));
+  }, [dayStats, groupBy]);
+
+  const fmt = (n) => Math.round(n).toLocaleString("he-IL");
+  const dayBtn = (d) => (
+    <button className="hg2-tripday" key={d.date} onClick={() => setRouteDay(d)}>
+      <div className="hg2-tripday-date">{dmy(d.date)}<ChevronLeft size={15} /></div>
+      <div className="hg2-tripday-locs">{d.items.map(([loc, n], i) => <span key={i} className="hg2-triploc"><MapPin size={11} />{loc}{n > 1 ? ` ×${n}` : ""}</span>)}</div>
+      <div className="hg2-tripday-km"><Route size={11} /> {fmt(d.km)} ק"מ · ₪{fmt(costOf(d.km))}</div>
+    </button>
+  );
+
   return (
     <div className="hg2-tripsec">
       <div className="hg2-filters">
@@ -1916,23 +2705,44 @@ function TripsMap({ index }) {
         <label>מ<DateField value={from} onChange={(v) => { setFrom(v); setQuick(""); }} placeholder="התחלה" clearable /></label>
         <label>עד<DateField value={to} onChange={(v) => { setTo(v); setQuick(""); }} placeholder="סיום" clearable /></label>
       </div>
-      <div className="hg2-mapstat"><span><MapPin size={12} /> {trips.length} נסיעות</span><span>{destCount} יעדים</span></div>
+
+      {/* Top summary — estimated km + fuel cost for ALL trips in range */}
+      <div className="hg2-tripsum">
+        <div className="hg2-sumcard"><Route size={16} /><b>{fmt(totalKm)}</b><span>ק"מ משוערך</span></div>
+        <div className="hg2-sumcard"><Fuel size={16} /><b>₪{fmt(fuelCost)}</b><span>עלות דלק</span></div>
+        <div className="hg2-sumcard"><Truck size={16} /><b>{trips.length}</b><span>נסיעות</span></div>
+        <div className="hg2-sumcard"><MapPin size={16} /><b>{destCount}</b><span>יעדים</span></div>
+      </div>
+      <div className="hg2-fuelrow">
+        <label>צריכה <input type="number" inputMode="decimal" value={kmpl} onChange={(e) => setKmpl(+e.target.value || 0)} /> ק"מ/ל'</label>
+        <label>מחיר <input type="number" inputMode="decimal" value={price} onChange={(e) => setPrice(+e.target.value || 0)} /> ₪/ל'</label>
+      </div>
 
       {Object.keys(agg).length === 0
         ? <div className="hg2-mapfail"><MapPin size={26} /><div>אין נסיעות עם מיקום בטווח</div><p>בחר טווח תאריכים אחר</p></div>
-        : <IsraelMap agg={agg} />}
+        : <SatelliteMap agg={agg} />}
 
       <div className="hg2-secttl" style={{ marginTop: 16 }}><CalendarDays size={15} /> נסיעות לפי תאריך</div>
-      <div className="hg2-list">
-        {byDate.length === 0 && <div className="hg2-empty"><MapPin size={28} /><div>אין נסיעות בטווח</div><p>בחר טווח תאריכים אחר</p></div>}
-        {byDate.map((d) => (
-          <button className="hg2-tripday" key={d.date} onClick={() => setRouteDay(d)}>
-            <div className="hg2-tripday-date">{dmy(d.date)}<ChevronLeft size={15} /></div>
-            <div className="hg2-tripday-locs">{d.items.map(([loc, n], i) => <span key={i} className="hg2-triploc"><MapPin size={11} />{loc}{n > 1 ? ` ×${n}` : ""}</span>)}</div>
-          </button>
+      <div className="hg2-filters">
+        {[["day", "יום"], ["week", "שבוע"], ["month", "חודש"], ["year", "שנה"]].map(([k, l]) => (
+          <button key={k} className={"hg2-fchip" + (groupBy === k ? " on" : "")} onClick={() => setGroupBy(k)}>{l}</button>
         ))}
       </div>
-      <div className="hg2-footnote" style={{ marginTop: 8 }}>גע בנקודה במפה לשם היעד. לחיצה על יום מציגה מסלול נסיעה משוער. היעדים ממוקמים לפי עיר.</div>
+      <div className="hg2-list">
+        {dayStats.length === 0 && <div className="hg2-empty"><MapPin size={28} /><div>אין נסיעות בטווח</div><p>בחר טווח תאריכים אחר</p></div>}
+        {groupBy === "day"
+          ? dayStats.map(dayBtn)
+          : grouped.map((g) => (
+            <div className="hg2-grp" key={g.key}>
+              <button className="hg2-grphead" onClick={() => setOpenG((o) => ({ ...o, [g.key]: !o[g.key] }))}>
+                <span className="hg2-grplbl"><ChevronLeft size={14} style={{ transform: openG[g.key] ? "rotate(-90deg)" : "none", transition: "transform .15s" }} />{g.label}</span>
+                <span className="hg2-grpstat">{fmt(g.km)} ק"מ · ₪{fmt(costOf(g.km))} · {g.trips} נסיעות</span>
+              </button>
+              {openG[g.key] && <div className="hg2-grpdays">{g.days.map(dayBtn)}</div>}
+            </div>
+          ))}
+      </div>
+      <div className="hg2-footnote" style={{ marginTop: 8 }}>הק"מ והעלות הם <b>הערכה</b> — המרחק מחושב לפי קרבה בין היעדים (יציאה וחזרה מהבסיס × מקדם דרך), ועלות הדלק לפי הצריכה והמחיר שהגדרת. גע בנקודה במפה לשם היעד; לחיצה על יום מציגה מסלול.</div>
       {routeDay && <DayRoute day={routeDay} onClose={() => setRouteDay(null)} />}
     </div>
   );
@@ -2120,8 +2930,30 @@ function Finance({ index, onBack }) {
   );
 }
 
+/* ── Customer directory: merge duplicates by normalised name, sum income.
+   Normalisation: trim, collapse spaces, drop a leading definite-article "ה".
+   Used both for the customers view (dedup) and the install-form autocomplete. ── */
+const normName = (s) => { let k = (s || "").trim().replace(/\s+/g, " "); if (k.length > 3 && k[0] === "ה") k = k.slice(1); return k.toLowerCase(); };
+function customerDirectory(index) {
+  const m = {};
+  (index || []).forEach((x) => {
+    const name = (x.customer || "").trim(); const phone = (x.phone || "").trim();
+    if (!name && !phone) return;
+    const key = normName(name) || ("#" + phone);
+    if (!m[key]) m[key] = { phone: "", count: 0, revenue: 0, variants: {} };
+    const e = m[key];
+    e.count++; e.revenue += Number(x.price) || 0;
+    if (phone && !e.phone) e.phone = phone;
+    if (name) e.variants[name] = (e.variants[name] || 0) + 1;
+  });
+  return Object.values(m).map((e) => {
+    const best = Object.entries(e.variants).sort((a, b) => b[1] - a[1])[0];
+    return { name: best ? best[0] : "(ללא שם)", phone: e.phone, count: e.count, revenue: e.revenue };
+  }).sort((a, b) => b.revenue - a.revenue);
+}
+
 /* ============================ New installation ============================ */
-function NewInstall({ onCancel, onSave, onStartDraft, onDiscardDraft, resumeEntry, showToast }) {
+function NewInstall({ onCancel, onSave, onStartDraft, onDiscardDraft, resumeEntry, customers, showToast }) {
   const r = resumeEntry || null;
   const [contractor, setContractor] = useState(r ? r.contractor : null);
   const [phase, setPhase] = useState(r ? "running" : "pick"); // pick | running | done
@@ -2281,8 +3113,12 @@ function NewInstall({ onCancel, onSave, onStartDraft, onDiscardDraft, resumeEntr
         <Field icon={DollarSign} label="מחיר (ש״ח)"><input type="number" inputMode="numeric" value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} placeholder="0" /></Field>
 
         {isMaster && <>
-          <Field icon={Phone} label="טלפון לקוח"><input value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} placeholder="05X-XXXXXXX" dir="ltr" style={{ textAlign: "right" }} /></Field>
-          <Field icon={User} label="שם לקוח"><input value={f.customer} onChange={(e) => setF({ ...f, customer: e.target.value })} placeholder="שם הלקוח" /></Field>
+          <Field icon={User} label="שם לקוח">
+            <input list="hg-cust-new" value={f.customer} placeholder="שם הלקוח · בחר לקוח קיים" autoComplete="off"
+              onChange={(e) => { const v = e.target.value; const hit = (customers || []).find((c) => c.name === v); setF((p) => ({ ...p, customer: v, phone: hit && hit.phone ? hit.phone : p.phone })); }} />
+            <datalist id="hg-cust-new">{(customers || []).map((c, i) => <option key={i} value={c.name}>{[c.phone, c.count + " התקנות"].filter(Boolean).join(" · ")}</option>)}</datalist>
+          </Field>
+          <Field icon={Phone} label="טלפון לקוח"><input value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} placeholder="05X-XXXXXXX · יתמלא אוטומטית מלקוח קיים" dir="ltr" style={{ textAlign: "right" }} /></Field>
         </>}
 
         <Field icon={Calendar} label="תאריך"><DateField value={f.date} onChange={(v) => setF({ ...f, date: v })} /></Field>
@@ -2345,7 +3181,7 @@ function NewInstall({ onCancel, onSave, onStartDraft, onDiscardDraft, resumeEntr
 }
 
 /* ============================ Detail / Edit ============================ */
-function Detail({ entry, onBack, onDelete, onUpdate, showToast }) {
+function Detail({ entry, onBack, onDelete, onUpdate, customers, showToast }) {
   const [photo, setPhoto] = useState(null);
   const [gallery, setGallery] = useState(null);
   const [video, setVideo] = useState(null);
@@ -2435,8 +3271,12 @@ function Detail({ entry, onBack, onDelete, onUpdate, showToast }) {
           <Field icon={Tag} label="סוג כלי"><input value={ef.vehicleType} onChange={(e) => setEf({ ...ef, vehicleType: e.target.value })} /></Field>
           <Field icon={DollarSign} label="מחיר (ש״ח)"><input type="number" inputMode="numeric" value={ef.price} onChange={(e) => setEf({ ...ef, price: e.target.value })} /></Field>
           {isMaster && <>
-            <Field icon={Phone} label="טלפון לקוח"><input value={ef.phone} onChange={(e) => setEf({ ...ef, phone: e.target.value })} dir="ltr" style={{ textAlign: "right" }} /></Field>
-            <Field icon={User} label="שם לקוח"><input value={ef.customer} onChange={(e) => setEf({ ...ef, customer: e.target.value })} /></Field>
+            <Field icon={User} label="שם לקוח">
+              <input list="hg-cust-edit" value={ef.customer} placeholder="שם הלקוח · בחר לקוח קיים" autoComplete="off"
+                onChange={(e) => { const v = e.target.value; const hit = (customers || []).find((c) => c.name === v); setEf((p) => ({ ...p, customer: v, phone: hit && hit.phone ? hit.phone : p.phone })); }} />
+              <datalist id="hg-cust-edit">{(customers || []).map((c, i) => <option key={i} value={c.name}>{[c.phone, c.count + " התקנות"].filter(Boolean).join(" · ")}</option>)}</datalist>
+            </Field>
+            <Field icon={Phone} label="טלפון לקוח"><input value={ef.phone} onChange={(e) => setEf({ ...ef, phone: e.target.value })} dir="ltr" style={{ textAlign: "right" }} placeholder="יתמלא אוטומטית מלקוח קיים" /></Field>
           </>}
           <Field icon={Timer} label="משך התקנה (דקות)"><input type="number" inputMode="numeric" value={ef.durMin} onChange={(e) => setEf({ ...ef, durMin: e.target.value })} placeholder="—" /></Field>
           <button type="button" className={"hg2-toggle" + (ef.withItai ? " on" : "")} onClick={() => setEf({ ...ef, withItai: !ef.withItai })}>
@@ -2525,6 +3365,292 @@ function Field({ icon: I, label, children }) {
   return <label className="hg2-field"><div className="hg2-flabel">{I && <I size={15} />} {label}</div>{children}</label>;
 }
 
+/* ============================ Marketing (TikTok/Facebook) ============================ */
+const MKT_KEY = "hg2:marketing";
+const MKT_POSTS_KEY = "hg2:mkt_posts";
+
+const MKT_TYPES = [
+  { id: "edu",  label: "חינוכי / טיפ מקצועי",  emoji: "🎓" },
+  { id: "promo", label: "פרומו / מבצע",          emoji: "🔥" },
+  { id: "demo",  label: "הדגמת מוצר",             emoji: "📸" },
+  { id: "story", label: "סיפור לקוח",             emoji: "⭐" },
+  { id: "season","label": "עונתי / חגים",         emoji: "🗓️" },
+  { id: "humor", label: "הומור / וירלי",          emoji: "😄" },
+];
+
+const MKT_PLATFORM = [
+  { id: "tiktok",    label: "TikTok",    emoji: "🎵", color: "#010101", url: TT_URL },
+  { id: "facebook",  label: "Facebook",  emoji: "📘", color: "#1877F2", url: FB_URL },
+  { id: "both",      label: "שניהם",     emoji: "📡", color: "#6a4fc4", url: null },
+];
+
+function mktSavePost(post) {
+  try {
+    const list = JSON.parse(localStorage.getItem(MKT_POSTS_KEY) || "[]");
+    const exists = list.findIndex((p) => p.id === post.id);
+    if (exists >= 0) list[exists] = post; else list.unshift(post);
+    localStorage.setItem(MKT_POSTS_KEY, JSON.stringify(list.slice(0, 300)));
+  } catch {}
+}
+function mktLoadPosts() {
+  try { return JSON.parse(localStorage.getItem(MKT_POSTS_KEY) || "[]"); } catch { return []; }
+}
+function mktSaveDraft(draft) {
+  try {
+    const list = JSON.parse(localStorage.getItem(MKT_KEY) || "[]");
+    list.unshift({ ...draft, id: uid(), savedAt: todayISO() });
+    localStorage.setItem(MKT_KEY, JSON.stringify(list.slice(0, 50)));
+  } catch {}
+}
+function mktLoadDrafts() {
+  try { return JSON.parse(localStorage.getItem(MKT_KEY) || "[]"); } catch { return []; }
+}
+
+function MarketingView({ onBack, showToast }) {
+  const [platform, setPlatform] = useState("tiktok");
+  const [ctype, setCtype] = useState("edu");
+  const [topic, setTopic] = useState("");
+  const [generated, setGenerated] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [drafts, setDrafts] = useState(() => mktLoadDrafts());
+  const [posts, setPosts] = useState(() => mktLoadPosts());
+  const [postForm, setPostForm] = useState(null); // null or {id,platform,date,text,views,likes,comments}
+  const [viewDraft, setViewDraft] = useState(null);
+  const [tab, setTab] = useState("gen"); // gen | posts | drafts
+
+  const plObj = MKT_PLATFORM.find((p) => p.id === platform) || MKT_PLATFORM[0];
+  const ctObj = MKT_TYPES.find((t) => t.id === ctype) || MKT_TYPES[0];
+
+  const generate = async () => {
+    if (!hasAI()) { showToast("הוסף מפתח Groq בהגדרות Alpha לשימוש ב-AI"); return; }
+    setGenerating(true);
+    setGenerated("");
+    const platLabel = platform === "both" ? "טיקטוק ופייסבוק" : plObj.label;
+    const sys = `אתה מנהל שיווק דיגיטלי מקצועי של Heavy Guard — חברה ישראלית למערכות מיגון ובטיחות לרכבים כבדים: מצלמות DVR, מצלמות רוורס, בלמי בטיחות, איתוראן, מסכי BSD, מצלמות גיבוי לרכבי משא. הדף הוא @heavy.guard בטיקטוק ו-Heavy Guard בפייסבוק. הקהל: בעלי עסקים עם צי רכבים כבדים בישראל. כתוב בעברית מקצועית אבל אנרגטית. בסוף הוסף 5-7 האשטאגים רלוונטיים.`;
+    const prompt = `צור פוסט מקצועי ל${platLabel} בסגנון "${ctObj.label}" ${topic ? `בנושא: ${topic}` : "על מוצרי ושירותי Heavy Guard"}. הפוסט צריך להיות מושך, ממוקד, ולעודד פעולה (לייק/שיתוף/יצירת קשר). כלול: תוכן הפוסט המלא (מתאים לפלטפורמה), המלצה לסוג הוידאו/תמונה שיתלווה, וזמן פרסום אידיאלי.`;
+    try {
+      const res = await askGroqChat(sys, [], prompt);
+      setGenerated(res);
+    } catch {
+      showToast("שגיאה בייצור תוכן — נסה שוב");
+    }
+    setGenerating(false);
+  };
+
+  const saveDraft = () => {
+    if (!generated) return;
+    const d = { platform, ctype, topic, text: generated };
+    mktSaveDraft(d);
+    setDrafts(mktLoadDrafts());
+    showToast("הטיוטה נשמרה ✓");
+  };
+
+  const copyText = (t) => { navigator.clipboard?.writeText(t); showToast("הועתק ✓"); };
+
+  const savePost = (p) => {
+    mktSavePost(p);
+    setPosts(mktLoadPosts());
+    setPostForm(null);
+    showToast("הפוסט נשמר ✓");
+  };
+  const deletePost = (id) => { try { const l = JSON.parse(localStorage.getItem(MKT_POSTS_KEY)||"[]").filter(p=>p.id!==id); localStorage.setItem(MKT_POSTS_KEY,JSON.stringify(l)); setPosts(l); } catch {} };
+  const deleteDraft = (id) => { try { const l = JSON.parse(localStorage.getItem(MKT_KEY)||"[]").filter(d=>d.id!==id); localStorage.setItem(MKT_KEY,JSON.stringify(l)); setDrafts(l); } catch {} };
+
+  const totalViews = posts.reduce((a,p)=>a+(Number(p.views)||0),0);
+  const totalLikes = posts.reduce((a,p)=>a+(Number(p.likes)||0),0);
+
+  return (
+    <div className="hg2-flow">
+      <FlowHead title="שיווק · TikTok ו-Facebook" sub="תוכן, מעקב ופרסום" onBack={onBack} />
+
+      {/* Header */}
+      <div className="mkt-header">
+        <div className="mkt-header-top">
+          <Megaphone size={20} />
+          <span>מנהל שיווק · Heavy Guard</span>
+        </div>
+        <div className="mkt-social-links">
+          <a href={TT_URL} target="_blank" rel="noreferrer" className="mkt-social-btn tiktok">🎵 TikTok @heavy.guard</a>
+          <a href={FB_URL} target="_blank" rel="noreferrer" className="mkt-social-btn facebook">📘 Facebook Heavy Guard</a>
+        </div>
+        {posts.length > 0 && (
+          <div className="mkt-stats-row">
+            <div className="mkt-stat"><Eye size={13}/> {totalViews.toLocaleString()} צפיות</div>
+            <div className="mkt-stat"><ThumbsUp size={13}/> {totalLikes.toLocaleString()} לייקים</div>
+            <div className="mkt-stat"><Video size={13}/> {posts.length} פוסטים</div>
+          </div>
+        )}
+      </div>
+
+      {/* Sub-tabs */}
+      <div className="mkt-tabs">
+        <button className={tab==="gen"?"on":""} onClick={()=>setTab("gen")}><Sparkles size={14}/> מחולל תוכן</button>
+        <button className={tab==="posts"?"on":""} onClick={()=>setTab("posts")}><BarChart2 size={14}/> מעקב פוסטים</button>
+        <button className={tab==="drafts"?"on":""} onClick={()=>setTab("drafts")}><Bookmark size={14}/> טיוטות {drafts.length>0&&<span className="mkt-badge">{drafts.length}</span>}</button>
+      </div>
+
+      {/* ── CONTENT GENERATOR ── */}
+      {tab === "gen" && (
+        <div className="mkt-section">
+          <div className="ag-lbl">פלטפורמה</div>
+          <div className="ag-chips sm">
+            {MKT_PLATFORM.map(p => (
+              <button key={p.id} className={platform===p.id?"on":""} onClick={()=>setPlatform(p.id)}>{p.emoji} {p.label}</button>
+            ))}
+          </div>
+          <div className="ag-lbl">סוג תוכן</div>
+          <div className="ag-chips sm nowrap" style={{flexWrap:"wrap"}}>
+            {MKT_TYPES.map(t => (
+              <button key={t.id} className={ctype===t.id?"on":""} onClick={()=>setCtype(t.id)}>{t.emoji} {t.label}</button>
+            ))}
+          </div>
+          <div className="ag-lbl">נושא ספציפי (אופציונלי)</div>
+          <input className="ag-input" value={topic} onChange={e=>setTopic(e.target.value)} placeholder="למשל: מצלמות DVR לאוטובוסים, מבצע קיץ, תקנות 2026..." />
+          <button className="mkt-gen-btn" onClick={generate} disabled={generating}>
+            {generating ? <><RefreshCw size={15} className="mkt-spin"/> מייצר תוכן...</> : <><Sparkles size={15}/> ייצר פוסט AI</>}
+          </button>
+          {generated && (
+            <div className="mkt-result">
+              <div className="mkt-result-head">
+                <span>{plObj.emoji} {plObj.label} · {ctObj.emoji} {ctObj.label}</span>
+                <div style={{display:"flex",gap:6}}>
+                  <button className="mkt-icon-btn" onClick={()=>copyText(generated)} title="העתק"><Copy size={14}/></button>
+                  <button className="mkt-icon-btn" onClick={saveDraft} title="שמור טיוטה"><Bookmark size={14}/></button>
+                  <button className="mkt-icon-btn" onClick={generate} title="ייצר מחדש"><RefreshCw size={14}/></button>
+                </div>
+              </div>
+              <pre className="mkt-result-text">{generated}</pre>
+              <div className="mkt-result-actions">
+                {plObj.url && <a href={plObj.url} target="_blank" rel="noreferrer" className="mkt-post-link">{plObj.emoji} פתח {plObj.label} לפרסום</a>}
+                {platform==="both" && <>
+                  <a href={TT_URL} target="_blank" rel="noreferrer" className="mkt-post-link">🎵 TikTok</a>
+                  <a href={FB_URL} target="_blank" rel="noreferrer" className="mkt-post-link">📘 Facebook</a>
+                </>}
+              </div>
+            </div>
+          )}
+
+          {/* Weekly content ideas */}
+          <div className="mkt-ideas">
+            <div className="mkt-ideas-title"><CalendarDays size={14}/> רעיונות לשבוע הקרוב</div>
+            {[
+              { day: "ראשון", idea: "🎓 טיפ: איך מצלמות DVR מונעות תאונות? הסבר קצר + סרטון הדגמה" },
+              { day: "שלישי", idea: "📸 לפני/אחרי התקנה — הראה רכב לפני ואחרי התקנת המצלמות" },
+              { day: "חמישי", idea: "⭐ סיפור לקוח: בעל צי שניצל בזכות מצלמת הגיבוי" },
+              { day: "שבת",  idea: "🔥 מבצע סוף שבוע: חבילת DVR + מצלמת BSD במחיר מיוחד" },
+            ].map(({ day, idea }) => (
+              <div key={day} className="mkt-idea-row">
+                <span className="mkt-day">{day}</span>
+                <span>{idea}</span>
+                <button className="mkt-icon-btn" onClick={()=>{ setCtype(idea.includes("טיפ")?"edu":idea.includes("לפני")?"demo":idea.includes("סיפור")?"story":"promo"); setTab("gen"); }} title="ייצר"><Sparkles size={13}/></button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── POST TRACKER ── */}
+      {tab === "posts" && (
+        <div className="mkt-section">
+          <button className="mkt-gen-btn" style={{marginBottom:12}} onClick={()=>setPostForm({id:uid(),platform:"tiktok",date:todayISO(),text:"",views:"",likes:"",comments:""})}>
+            <Plus size={15}/> הוסף פוסט שפורסם
+          </button>
+          {posts.length === 0 && <div className="ag-empty">עדיין לא הוספת פוסטים מעוקבים</div>}
+          {posts.map(p => {
+            const plIcon = p.platform==="facebook"?"📘":"🎵";
+            return (
+              <div key={p.id} className="mkt-post-card">
+                <div className="mkt-post-head">
+                  <span>{plIcon} {p.date}</span>
+                  <div style={{display:"flex",gap:6}}>
+                    <button className="mkt-icon-btn" onClick={()=>setPostForm({...p})} title="עריכה"><Pencil size={13}/></button>
+                    <button className="mkt-icon-btn red" onClick={()=>deletePost(p.id)} title="מחק"><Trash2 size={13}/></button>
+                  </div>
+                </div>
+                {p.text && <div className="mkt-post-preview">{p.text.slice(0,80)}{p.text.length>80?"…":""}</div>}
+                <div className="mkt-post-stats">
+                  {p.views && <span><Eye size={12}/> {Number(p.views).toLocaleString()}</span>}
+                  {p.likes && <span><ThumbsUp size={12}/> {Number(p.likes).toLocaleString()}</span>}
+                  {p.comments && <span>💬 {p.comments}</span>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── DRAFTS ── */}
+      {tab === "drafts" && (
+        <div className="mkt-section">
+          {drafts.length === 0 && <div className="ag-empty">אין טיוטות שמורות — ייצר תוכן ושמור</div>}
+          {drafts.map(d => {
+            const plO = MKT_PLATFORM.find(p=>p.id===d.platform)||MKT_PLATFORM[0];
+            const ctO = MKT_TYPES.find(t=>t.id===d.ctype)||MKT_TYPES[0];
+            return (
+              <div key={d.id} className="mkt-draft-card" onClick={()=>setViewDraft(d)}>
+                <div className="mkt-post-head">
+                  <span>{plO.emoji} {plO.label} · {ctO.emoji} {ctO.label}</span>
+                  <div style={{display:"flex",gap:6}} onClick={e=>e.stopPropagation()}>
+                    <button className="mkt-icon-btn" onClick={()=>copyText(d.text)} title="העתק"><Copy size={13}/></button>
+                    <button className="mkt-icon-btn red" onClick={()=>deleteDraft(d.id)} title="מחק"><Trash2 size={13}/></button>
+                  </div>
+                </div>
+                <div className="mkt-post-preview">{(d.text||"").slice(0,90)}{(d.text||"").length>90?"…":""}</div>
+                <div className="mkt-post-stats"><CalendarDays size={12}/> {d.savedAt}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Post form modal */}
+      {postForm && (
+        <div className="ag-modal" onClick={e=>{if(e.target===e.currentTarget)setPostForm(null)}}>
+          <div className="ag-sheet sm">
+            <div className="ag-sheet-head"><b>{postForm.text?"עריכת פוסט":"הוספת פוסט"}</b><button onClick={()=>setPostForm(null)}><X size={20}/></button></div>
+            <div className="ag-sheet-body">
+              <label className="ag-lbl">פלטפורמה</label>
+              <div className="ag-chips sm">
+                <button className={postForm.platform==="tiktok"?"on":""} onClick={()=>setPostForm(p=>({...p,platform:"tiktok"}))}>🎵 TikTok</button>
+                <button className={postForm.platform==="facebook"?"on":""} onClick={()=>setPostForm(p=>({...p,platform:"facebook"}))}>📘 Facebook</button>
+              </div>
+              <label className="ag-lbl">תאריך פרסום</label>
+              <input className="ag-input" type="date" value={postForm.date} onChange={e=>setPostForm(p=>({...p,date:e.target.value}))} />
+              <label className="ag-lbl">תוכן הפוסט (קצר)</label>
+              <textarea className="ag-textarea" rows={3} value={postForm.text} onChange={e=>setPostForm(p=>({...p,text:e.target.value}))} placeholder="כותרת הפוסט / נושא..."/>
+              <div className="ag-row">
+                <div style={{flex:1}}><label className="ag-lbl"><Eye size={12}/> צפיות</label><input className="ag-input" type="number" value={postForm.views} onChange={e=>setPostForm(p=>({...p,views:e.target.value}))} placeholder="0" dir="ltr"/></div>
+                <div style={{flex:1}}><label className="ag-lbl"><ThumbsUp size={12}/> לייקים</label><input className="ag-input" type="number" value={postForm.likes} onChange={e=>setPostForm(p=>({...p,likes:e.target.value}))} placeholder="0" dir="ltr"/></div>
+                <div style={{flex:1}}><label className="ag-lbl">💬 תגובות</label><input className="ag-input" type="number" value={postForm.comments} onChange={e=>setPostForm(p=>({...p,comments:e.target.value}))} placeholder="0" dir="ltr"/></div>
+              </div>
+            </div>
+            <div className="ag-sheet-foot">
+              <button className="ag-btn ghost" onClick={()=>setPostForm(null)}>ביטול</button>
+              <button className="ag-btn" onClick={()=>savePost(postForm)}>שמור</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Draft viewer modal */}
+      {viewDraft && (
+        <div className="ag-modal" onClick={e=>{if(e.target===e.currentTarget)setViewDraft(null)}}>
+          <div className="ag-sheet">
+            <div className="ag-sheet-head"><b>טיוטה שמורה</b><button onClick={()=>setViewDraft(null)}><X size={20}/></button></div>
+            <div className="ag-sheet-body">
+              <pre className="mkt-result-text" style={{margin:0}}>{viewDraft.text}</pre>
+            </div>
+            <div className="ag-sheet-foot">
+              <button className="ag-btn ghost" onClick={()=>copyText(viewDraft.text)}><Copy size={14}/> העתק</button>
+              <button className="ag-btn" onClick={()=>setViewDraft(null)}>סגור</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ============================ styles ============================ */
 function Styles() {
   return <style>{`
@@ -2545,6 +3671,27 @@ function Styles() {
 .hg2-stat span{font-size:12px;color:var(--s4)}
 .hg2-stat b{display:block;font-family:'Rubik';font-weight:900;font-size:21px;margin-top:3px}
 .hg2-stat b.cy{color:var(--cyan)}
+
+.hg2-msum{background:var(--s9);border:1px solid var(--s7);border-radius:14px;padding:13px 14px;margin-bottom:16px}
+.hg2-msum-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:11px;padding-bottom:10px;border-bottom:1px solid var(--s7)}
+.hg2-msum-head>span{display:flex;align-items:center;gap:6px;font-family:'Rubik';font-weight:700;font-size:14px;color:var(--silver)}
+.hg2-msum-head>b{font-family:'Rubik';font-weight:900;font-size:18px}
+.hg2-msum-head>b.cy{color:var(--cyan)}
+.hg2-msum-rows{display:flex;flex-direction:column;gap:8px}
+.hg2-msum-row{display:flex;align-items:center;gap:9px;padding:8px 10px;background:var(--s8);border:1px solid var(--s7);border-radius:10px}
+.hg2-msum-row.idle{opacity:.5}
+.hg2-msum-name{font-weight:700;font-size:13.5px;color:var(--amber);flex-shrink:0;min-width:62px}
+.hg2-msum-cnt{font-size:12px;color:var(--s4);flex:1}
+.hg2-msum-time{display:flex;align-items:center;gap:3px;font-size:11px;color:var(--cyan);flex-shrink:0}
+.hg2-msum-rev{font-family:ui-monospace,monospace;font-weight:700;font-size:13.5px;color:var(--silver);flex-shrink:0;white-space:nowrap}
+.hg2-msum-foot{margin-top:10px;text-align:center;font-size:11.5px;color:var(--s4)}
+
+.hg2-expbox{background:var(--s9);border:1px solid var(--s7);border-radius:14px;padding:13px 14px;margin-bottom:14px}
+.hg2-expbox-h{display:flex;align-items:center;gap:7px;font-family:'Rubik';font-weight:700;font-size:14px;color:var(--silver);margin-bottom:10px}
+.hg2-expbox-row{display:flex;gap:8px;margin-bottom:10px}
+.hg2-expsel{flex:1;min-width:0;background:var(--s8);border:1px solid var(--s7);color:var(--silver);border-radius:10px;padding:10px 11px;font-family:inherit;font-size:13.5px;outline:none}
+.hg2-expbtn{width:100%;display:flex;align-items:center;justify-content:center;gap:8px;background:linear-gradient(135deg,#1E7A52,#279E69);color:#fff;border:none;border-radius:11px;padding:13px;font-family:'Rubik';font-weight:900;font-size:15px;cursor:pointer;box-shadow:0 6px 18px rgba(30,140,90,.3)}
+.hg2-expbtn:active{transform:scale(.985)}
 
 .hg2-add{width:100%;display:flex;align-items:center;justify-content:center;gap:9px;background:linear-gradient(135deg,var(--champ),var(--gold) 45%,var(--gold2));color:#241A06;border:none;border-radius:14px;padding:16px;font-family:'Rubik';font-weight:900;font-size:17px;cursor:pointer;box-shadow:0 8px 26px rgba(228,188,99,.32),inset 0 1px 0 rgba(255,255,255,.35);margin-bottom:18px}
 .hg2-add:active{transform:scale(.985)}
@@ -2914,6 +4061,11 @@ function Styles() {
   body *{visibility:hidden!important}
   #quotedoc,#quotedoc *{visibility:visible!important}
   #quotedoc{position:absolute;inset:0;margin:0;box-shadow:none;border-radius:0}
+  /* Without this, most browsers default to "background graphics off" for
+     print/PDF and silently drop the cyan header/bottom band gradients —
+     the quote prints with those bands missing/wrong-colored instead of
+     matching what's shown on screen. */
+  #quotedoc,#quotedoc *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}
 }
 
 /* confirm dialog */
@@ -3023,7 +4175,22 @@ function Styles() {
 .hg2-daterow input{flex:1;background:none;border:none;color:var(--silver);font-family:inherit;font-size:13px;outline:none}
 .hg2-mapstat{display:flex;gap:16px;font-size:12.5px;color:var(--s4);margin-bottom:10px}
 .hg2-mapstat span{display:flex;align-items:center;gap:4px}
-.hg2-mapbox{position:relative;height:300px;border-radius:14px;overflow:hidden;border:1px solid var(--s7);background:#0E141C;z-index:0;isolation:isolate}
+.hg2-tripsum{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:10px}
+.hg2-sumcard{display:flex;flex-direction:column;align-items:center;gap:2px;background:var(--s9);border:1px solid var(--s7);border-radius:12px;padding:11px 8px}
+.hg2-sumcard svg{color:var(--amber)}
+.hg2-sumcard b{font-size:18px;color:var(--silver);font-family:'Rubik',sans-serif}
+.hg2-sumcard span{font-size:11px;color:var(--s4)}
+.hg2-fuelrow{display:flex;gap:10px;margin-bottom:12px}
+.hg2-fuelrow label{flex:1;display:flex;align-items:center;gap:6px;font-size:12px;color:var(--s4);background:var(--s9);border:1px solid var(--s7);border-radius:10px;padding:6px 10px}
+.hg2-fuelrow input{width:54px;background:var(--s8);border:1px solid var(--s7);border-radius:7px;color:var(--silver);font-family:inherit;font-size:13px;padding:4px 6px;text-align:center}
+.hg2-tripday-km{display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--amber);margin-top:5px}
+.hg2-grp{border:1px solid var(--s7);border-radius:12px;margin-bottom:8px;overflow:hidden;background:var(--s9)}
+.hg2-grphead{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;background:none;border:none;color:var(--silver);font-family:inherit;padding:11px 13px;cursor:pointer;text-align:right}
+.hg2-grplbl{display:flex;align-items:center;gap:6px;font-weight:700;font-size:14px}
+.hg2-grpstat{font-size:11px;color:var(--amber);white-space:nowrap}
+.hg2-grpdays{padding:0 8px 8px;display:flex;flex-direction:column;gap:8px}
+.hg2-grpdays .hg2-tripday{background:var(--s8)}
+.hg2-mapbox{position:relative;height:340px;border-radius:14px;overflow:hidden;border:1px solid var(--s7);background:#0E141C;z-index:0;isolation:isolate}
 .hg2-mapbox .leaflet-pane,.hg2-mapbox .leaflet-top,.hg2-mapbox .leaflet-bottom,.hg2-mapbox .leaflet-control{z-index:1!important}
 .hg2-svgmap{position:relative;background:radial-gradient(120% 90% at 50% 0%,#141C28,#0C1118 80%);border:1px solid var(--s7);border-radius:14px;padding:12px;display:flex;justify-content:center;min-height:300px}
 .hg2-svgmap-svg{height:330px;width:auto;max-width:100%;display:block}
@@ -3172,5 +4339,120 @@ function Styles() {
 .hg2-hub-task span{flex:1;font-size:14px;line-height:1.4}
 .hg2-today-more{margin-right:auto;background:none;border:none;color:var(--cyan);font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:2px;padding:0}
 .hg2-today-more-btn{width:100%;background:none;border:none;color:var(--cyan);font-size:12.5px;font-weight:700;cursor:pointer;padding:8px 0 2px;text-align:center}
+
+/* ═══════════════════════════════════════════════
+   FUTURISTIC DESIGN UPGRADE — glass / neon / motion
+   ═══════════════════════════════════════════════ */
+@keyframes hgGrid{from{background-position:0 0}to{background-position:56px 56px}}
+@keyframes hgShimmer{0%{background-position:200% center}100%{background-position:-200% center}}
+@keyframes hgGlowPulse{0%,100%{box-shadow:0 0 0 0 rgba(228,188,99,0)}50%{box-shadow:0 0 20px 3px rgba(228,188,99,.18)}}
+@keyframes hgFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+
+.hg2::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
+  background-image:linear-gradient(rgba(228,188,99,.022) 1px,transparent 1px),linear-gradient(90deg,rgba(228,188,99,.022) 1px,transparent 1px);
+  background-size:56px 56px;animation:hgGrid 75s linear infinite;
+  -webkit-mask-image:radial-gradient(ellipse 100% 75% at 50% 20%,#000 25%,transparent 78%);
+  mask-image:radial-gradient(ellipse 100% 75% at 50% 20%,#000 25%,transparent 78%)}
+.hg2-head,.hg2-stats,.hg2-msum,.hg2-expbox,.hg2-list,.hg2-flow,.hg2-tabbar,.hg2-analysec{position:relative;z-index:1}
+
+.hg2-name{background-size:200% auto;animation:hgShimmer 7s linear infinite}
+
+.hg2-stat{background:linear-gradient(160deg,rgba(20,26,38,.97),rgba(10,14,22,.97));backdrop-filter:blur(10px);border-color:rgba(228,188,99,.2);box-shadow:0 4px 18px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.04);transition:transform .2s,box-shadow .2s,border-color .2s}
+.hg2-stat:hover{transform:translateY(-2px);border-color:rgba(228,188,99,.5);box-shadow:0 8px 26px rgba(228,188,99,.14)}
+
+.hg2-msum,.hg2-expbox,.hg2-analysec,.hg2-today-tasks,.hg2-weekcmp{background:linear-gradient(160deg,rgba(20,26,38,.96),rgba(10,14,22,.97));backdrop-filter:blur(10px);border-color:rgba(228,188,99,.18);box-shadow:0 6px 24px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.03)}
+
+.hg2-card{background:linear-gradient(160deg,rgba(18,24,34,.96),rgba(9,12,18,.96));backdrop-filter:blur(8px);transition:border-color .2s,box-shadow .2s,transform .15s}
+.hg2-card:hover{border-color:rgba(111,211,240,.55);box-shadow:0 6px 22px rgba(111,211,240,.1);transform:translateY(-1px)}
+
+.hg2-add{background-size:200% 100%;background-image:linear-gradient(270deg,var(--gold2),var(--champ),#fff5cc,var(--champ),var(--gold2));animation:hgShimmer 4s linear infinite;transition:transform .15s,box-shadow .2s}
+.hg2-add:hover{transform:translateY(-2px);box-shadow:0 12px 34px rgba(228,188,99,.4)}
+
+.hg2-search{backdrop-filter:blur(8px);transition:border-color .2s,box-shadow .2s}
+.hg2-search:focus-within{border-color:rgba(228,188,99,.65);box-shadow:0 0 0 3px rgba(228,188,99,.1)}
+
+.hg2-fchip.on{box-shadow:0 0 12px rgba(228,188,99,.18)}
+
+.hg2-tabbar{backdrop-filter:blur(18px);box-shadow:0 -8px 32px rgba(0,0,0,.5);border-top:1px solid transparent;border-image:linear-gradient(90deg,transparent,rgba(228,188,99,.45),transparent) 1}
+.hg2-tabbar button.on svg{filter:drop-shadow(0 0 7px rgba(228,188,99,.7))}
+
+.hg2-back{transition:border-color .2s,box-shadow .2s}
+.hg2-back:hover{border-color:rgba(228,188,99,.55);box-shadow:0 0 14px rgba(228,188,99,.18)}
+
+.hg2-logo{animation:hgFloat 5s ease-in-out infinite}
+
+.hg2-rank:first-child .hg2-rank-n{box-shadow:0 0 12px rgba(228,188,99,.4)}
+.hg2-cbtn{transition:border-color .2s,box-shadow .2s,transform .15s}
+.hg2-cbtn:hover{transform:translateY(-2px)}
+.hg2-cbtn.sel{box-shadow:0 0 16px rgba(228,188,99,.15)}
+
+.hg2-modal{backdrop-filter:blur(10px)}
+.hg2-confirm{backdrop-filter:blur(14px)}
+
+/* ── Marketing (TikTok/Facebook) — shared generic controls it depends on ── */
+.ag-chips{display:flex;gap:7px;overflow-x:auto;padding-bottom:8px;margin-bottom:6px;scrollbar-width:none}
+.ag-chips::-webkit-scrollbar{display:none}
+.ag-chips.nowrap{flex-wrap:wrap}
+.ag-chips button{flex-shrink:0;background:var(--s8);border:1px solid var(--s7);color:var(--s4);border-radius:20px;padding:7px 15px;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap}
+.ag-chips button.on{background:color-mix(in srgb,var(--gold) 16%,transparent);border-color:var(--gold);color:var(--gold)}
+.ag-chips.sm button{padding:6px 12px;font-size:12px}
+.ag-textarea,.ag-input,.ag-select{width:100%;background:var(--s8);border:1px solid var(--s7);color:var(--silver);border-radius:10px;padding:10px 12px;font-family:inherit;font-size:14px;outline:none}
+.ag-textarea{resize:vertical}
+.ag-btn{background:linear-gradient(135deg,var(--champ),var(--gold) 50%,var(--gold2));color:#241A06;border:none;border-radius:10px;padding:11px 16px;font-family:'Rubik';font-weight:900;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;margin-top:9px}
+.ag-btn.ghost{background:var(--s8);border:1px solid var(--s7);color:var(--silver)}
+.ag-row{display:flex;gap:8px;margin-top:8px}
+.ag-row .ag-btn{flex:1;margin-top:0}
+.ag-empty{text-align:center;padding:34px 16px;color:var(--s4)}
+.ag-modal{position:fixed;inset:0;background:rgba(0,0,10,.8);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);display:flex;align-items:flex-end;justify-content:center;z-index:200}
+.ag-sheet{background:linear-gradient(160deg,rgba(20,26,38,.98),rgba(10,14,22,.98));border:1px solid var(--s7);border-radius:18px 18px 0 0;width:100%;max-width:560px;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 -16px 60px rgba(0,0,0,.6)}
+.ag-sheet.sm{max-height:80vh}
+.ag-sheet-head{display:flex;align-items:center;justify-content:space-between;padding:15px 16px;border-bottom:1px solid var(--s7)}
+.ag-sheet-head b{font-family:'Rubik';font-weight:900;font-size:16px}
+.ag-sheet-head button{background:none;border:none;color:var(--s4);cursor:pointer;display:flex}
+.ag-sheet-body{padding:14px 16px;overflow-y:auto}
+.ag-sheet-foot{display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--s7)}
+.ag-sheet-foot .ag-btn{flex:1;margin-top:0}
+.ag-lbl{display:block;font-size:12px;color:var(--s4);margin:11px 0 5px;font-weight:700}
+.ag-lbl:first-child{margin-top:0}
+@media(min-width:640px){.ag-modal{align-items:center}.ag-sheet{border-radius:18px}}
+
+.mkt-header{background:var(--s9);border:1px solid var(--s7);border-radius:14px;padding:14px;margin-bottom:14px}
+.mkt-header-top{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;margin-bottom:10px;color:var(--amber)}
+.mkt-social-links{display:flex;gap:8px;flex-wrap:wrap}
+.mkt-social-btn{padding:7px 13px;border-radius:20px;font-size:12.5px;font-weight:600;text-decoration:none;color:#fff;display:inline-flex;align-items:center;gap:5px}
+.mkt-social-btn.tiktok{background:#010101}
+.mkt-social-btn.facebook{background:#1877F2}
+.mkt-stats-row{display:flex;gap:12px;margin-top:10px;flex-wrap:wrap}
+.mkt-stat{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--s4);background:var(--s8);padding:4px 9px;border-radius:20px}
+.mkt-tabs{display:flex;gap:6px;margin-bottom:12px;background:var(--s8);border-radius:12px;padding:4px}
+.mkt-tabs button{flex:1;padding:7px 4px;border-radius:9px;font-size:12px;display:flex;align-items:center;justify-content:center;gap:5px;border:none;background:none;color:var(--s4);cursor:pointer;font-family:inherit}
+.mkt-tabs button.on{background:var(--s9);color:var(--gold);font-weight:700;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+.mkt-badge{background:var(--gold);color:#1A1206;border-radius:10px;font-size:10px;padding:1px 5px;margin-right:2px;font-weight:900}
+.mkt-section{display:flex;flex-direction:column;gap:0}
+.mkt-gen-btn{display:flex;align-items:center;justify-content:center;gap:7px;background:linear-gradient(135deg,var(--gold),var(--gold2));color:#1A1206;border:none;border-radius:12px;padding:12px;font-size:14px;font-weight:900;width:100%;cursor:pointer;margin-top:10px;transition:.15s;font-family:'Rubik';box-shadow:0 4px 16px rgba(228,188,99,.3)}
+.mkt-gen-btn:disabled{opacity:.6;cursor:not-allowed}
+.mkt-gen-btn:not(:disabled):hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(228,188,99,.4)}
+.mkt-result{background:var(--s8);border:1px solid var(--s7);border-radius:13px;margin-top:12px;overflow:hidden}
+.mkt-result-head{display:flex;justify-content:space-between;align-items:center;padding:9px 12px;background:var(--s9);border-bottom:1px solid var(--s7);font-size:12.5px;font-weight:600;color:var(--s4)}
+.mkt-result-text{padding:12px;font-size:13px;line-height:1.7;white-space:pre-wrap;word-break:break-word;margin:0;font-family:inherit;color:var(--silver)}
+.mkt-result-actions{display:flex;gap:8px;padding:9px 12px;border-top:1px solid var(--s7);flex-wrap:wrap}
+.mkt-post-link{background:var(--gold);color:#1A1206;border-radius:20px;padding:6px 13px;font-size:12px;font-weight:700;text-decoration:none;display:inline-flex;align-items:center;gap:4px}
+.mkt-icon-btn{background:var(--s8);border:1px solid var(--s7);border-radius:7px;padding:5px 7px;cursor:pointer;display:inline-flex;align-items:center;color:var(--s4);transition:.1s}
+.mkt-icon-btn:hover{background:var(--s7);color:var(--silver)}
+.mkt-icon-btn.red:hover{background:rgba(255,92,80,.15);color:var(--red);border-color:var(--red)}
+.mkt-ideas{background:var(--s9);border:1px solid var(--s7);border-radius:13px;margin-top:14px;overflow:hidden}
+.mkt-ideas-title{display:flex;align-items:center;gap:6px;padding:9px 12px;font-size:12.5px;font-weight:700;border-bottom:1px solid var(--s7)}
+.mkt-idea-row{display:flex;align-items:center;gap:8px;padding:8px 12px;font-size:12.5px;border-bottom:1px solid var(--s7)}
+.mkt-idea-row:last-child{border-bottom:none}
+.mkt-day{font-weight:700;color:var(--gold);min-width:40px;font-size:11.5px}
+.mkt-post-card{background:var(--s9);border:1px solid var(--s7);border-radius:12px;padding:11px 13px;margin-bottom:8px}
+.mkt-draft-card{background:var(--s9);border:1px solid var(--s7);border-radius:12px;padding:11px 13px;margin-bottom:8px;cursor:pointer;transition:.1s}
+.mkt-draft-card:hover{border-color:var(--gold)}
+.mkt-post-head{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--s4);margin-bottom:5px}
+.mkt-post-preview{font-size:12.5px;color:var(--silver);margin:3px 0 5px;line-height:1.5}
+.mkt-post-stats{display:flex;gap:10px;font-size:11.5px;color:var(--s4);align-items:center}
+.mkt-post-stats span{display:flex;align-items:center;gap:3px}
+@keyframes mkt-spin{to{transform:rotate(360deg)}}
+.mkt-spin{animation:mkt-spin .7s linear infinite}
 `}</style>;
 }

@@ -2,7 +2,7 @@ export type ReplyLang = 'en' | 'he' | 'es';
 export type MicLang = 'he' | 'en' | 'es';
 export type TextLang = 'en' | 'he' | 'ar' | 'ru' | 'fr' | 'es' | 'de' | 'auto';
 
-export type AIProvider = 'puter' | 'gemini' | 'grok' | 'openai';
+export type AIProvider = 'groq' | 'puter' | 'gemini' | 'grok' | 'openai';
 
 export type VoiceGender = 'female' | 'male' | 'auto';
 
@@ -11,6 +11,7 @@ export type UILang = 'he' | 'en';
 export interface AppState {
   key: string;
   grokKey: string;
+  groqKey: string;
   openaiKey: string;
   provider: AIProvider;
   puterModel: string;
@@ -38,7 +39,7 @@ export interface AppState {
   pikaPitch: number;
 }
 
-const KEY = 'alpha_key', GROK = 'alpha_grok', OPENAI = 'alpha_openai', PROV = 'alpha_provider',
+const KEY = 'alpha_key', GROK = 'alpha_grok', GROQ = 'alpha_groq', OPENAI = 'alpha_openai', PROV = 'alpha_provider',
   PUTERMODEL = 'alpha_putermodel',
   NAME = 'alpha_name', MICLANG = 'alpha_micLang', REPLYLANG = 'alpha_replyLang',
   TEXTLANG = 'alpha_textLang', AMB = 'alpha_amb', AMBPRESET = 'alpha_ambpreset',
@@ -62,8 +63,11 @@ export function loadState(): AppState {
   return {
     key: localStorage.getItem(KEY) || '',
     grokKey: localStorage.getItem(GROK) || '',
+    groqKey: localStorage.getItem(GROQ) || '',
     openaiKey: localStorage.getItem(OPENAI) || '',
-    provider: (localStorage.getItem(PROV) as AIProvider) || 'puter',
+    // Puter was disconnected as an AI engine (it rate-limited accounts). Any user
+    // still pinned to 'puter' is migrated to the free Groq engine automatically.
+    provider: (() => { const p = localStorage.getItem(PROV); return (!p || p === 'puter') ? 'groq' : p as AIProvider; })(),
     puterModel: localStorage.getItem(PUTERMODEL) || 'gpt-4o-mini',
     name: localStorage.getItem(NAME) || 'ALPHA',
     micLang: (localStorage.getItem(MICLANG) as MicLang) || 'he',
@@ -84,15 +88,16 @@ export function loadState(): AppState {
     haptics: localStorage.getItem(HAPTICS) !== '0',
     autoSpeak: localStorage.getItem(AUTOSPEAK) !== '0',
     uiLang: (localStorage.getItem(UILANG) as UILang) || 'he',
-    pikaVoiceOn: localStorage.getItem(PIKAVOICE) !== '0',
+    pikaVoiceOn: localStorage.getItem(PIKAVOICE) === '1',
     pikaVolume: (() => { const v = parseFloat(localStorage.getItem(PIKAVOL) || ''); return isNaN(v) ? 0.6 : v; })(),
-    pikaPitch: (() => { const v = parseFloat(localStorage.getItem(PIKAPITCH) || ''); return isNaN(v) ? 2.0 : v; })(),
+    pikaPitch: (() => { const v = parseFloat(localStorage.getItem(PIKAPITCH) || ''); return isNaN(v) ? 1.0 : v; })(),
   };
 }
 
 export function saveState(s: AppState) {
   localStorage.setItem(KEY, s.key);
   localStorage.setItem(GROK, s.grokKey);
+  localStorage.setItem(GROQ, s.groqKey);
   localStorage.setItem(OPENAI, s.openaiKey);
   localStorage.setItem(PROV, s.provider);
   localStorage.setItem(PUTERMODEL, s.puterModel);
@@ -179,16 +184,28 @@ export function upcomingText(): string {
 }
 
 // --- TASKS ---
-export interface Task { id: string; text: string; done: boolean; created: string; priority: 'low' | 'med' | 'high' }
+// `due` is the optional scheduled date (YYYY-MM-DD). When set, the task is also
+// mirrored onto the calendar; when empty the task is "unscheduled" and shown in
+// the calendar's unscheduled panel + the widget.
+export interface Task { id: string; text: string; done: boolean; created: string; priority: 'low' | 'med' | 'high'; due?: string }
 
 export function loadTasks(): Task[] {
   try { return JSON.parse(localStorage.getItem('alpha_tasks') || '[]'); } catch { return []; }
 }
 export function saveTasks(t: Task[]) { localStorage.setItem('alpha_tasks', JSON.stringify(t)); }
-export function addTask(text: string, priority: 'low' | 'med' | 'high' = 'med'): Task[] {
+export function addTask(text: string, priority: 'low' | 'med' | 'high' = 'med', due?: string): Task[] {
   const tasks = loadTasks();
-  tasks.push({ id: Date.now() + '_' + Math.random(), text, done: false, created: new Date().toISOString().slice(0, 10), priority });
+  tasks.push({ id: Date.now() + '_' + Math.random(), text, done: false, created: new Date().toISOString().slice(0, 10), priority, due: due || '' });
   saveTasks(tasks);
+  // A dated task is also an appointment — mirror it onto the calendar.
+  if (due) addEvent(text, due, '');
+  return tasks;
+}
+// Give an existing (unscheduled) task a date and push it onto the calendar.
+export function scheduleTask(id: string, due: string): Task[] {
+  const tasks = loadTasks();
+  const t = tasks.find(x => x.id === id);
+  if (t && due) { t.due = due; saveTasks(tasks); addEvent(t.text, due, ''); }
   return tasks;
 }
 export function toggleTask(id: string): Task[] {

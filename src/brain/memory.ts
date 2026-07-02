@@ -40,8 +40,54 @@ export interface BrainMemory {
   updated: number;
 }
 
+import { embed, cosine, isReady, warmup } from './embeddings';
+import { readObj, writeObj } from '../util/batchedStore';
+
 const KEY = 'alpha_brain_memory_v1';
 const MAX_FACTS = 200;
+
+// ── On-device vector index (free, optional) ─────────────────────────────────
+// Fact embeddings live in their own batched store (kept out of the main memory
+// blob so it stays small). recall() uses them when a query vector is available
+// and falls back to lexical scoring otherwise — zero regression when the model
+// isn't loaded.
+const VEC_KEY = 'alpha_fact_vecs_v1';
+let vecCache: Record<string, number[]> | null = null;
+let queryVec: Float32Array | null = null;
+
+function vecs(): Record<string, number[]> {
+  if (!vecCache) vecCache = readObj<Record<string, number[]>>(VEC_KEY, {});
+  return vecCache;
+}
+function setVec(id: string, v: Float32Array) {
+  vecs()[id] = Array.from(v);
+  writeObj(VEC_KEY, vecCache);
+}
+
+// Embed a fact in the background and store its vector. Deferred off the current
+// task so neither Worker creation nor inference touches the interactive path.
+function embedFact(id: string, text: string) {
+  setTimeout(() => { embed(text).then(v => { if (v) setVec(id, v); }).catch(() => {}); }, 0);
+}
+
+// Compute the query embedding before recall(). The app awaits this once per
+// turn, then orchestrate()/recall() stay synchronous. Also backfills vectors
+// for any facts that don't have one yet.
+export async function prepareRecall(query: string): Promise<void> {
+  queryVec = null;
+  // Until the model is warm we add ZERO latency: defer background loading off
+  // the awaited path entirely (even Worker creation) and fall back to keyword
+  // recall this turn. Once warm, embedding a short query is fast (<150ms), so we
+  // await it with a small safety cap.
+  if (!isReady()) { setTimeout(warmup, 0); return; }
+  try {
+    queryVec = await embed(query, 800);
+    if (queryVec) {
+      const store = vecs();
+      for (const f of loadMemory().facts) if (!store[f.id]) embedFact(f.id, f.text);
+    }
+  } catch { queryVec = null; }
+}
 
 function blank(): BrainMemory {
   return {
@@ -87,32 +133,47 @@ export function remember(text: string, module: ModuleId = 'general', weight = 0.
   // de-dup near-identical facts
   const norm = clean.toLowerCase();
   if (m.facts.some(f => f.text.toLowerCase() === norm)) return;
-  m.facts.unshift({ id: uid(), text: clean, module, ts: Date.now(), weight });
+  const id = uid();
+  m.facts.unshift({ id, text: clean, module, ts: Date.now(), weight });
   if (m.facts.length > MAX_FACTS) m.facts.length = MAX_FACTS;
   saveMemory(m);
+  embedFact(id, clean);   // background — no effect on this call's latency
 }
 
 export function forgetFact(id: string) {
   const m = loadMemory();
   m.facts = m.facts.filter(f => f.id !== id);
   saveMemory(m);
+  const store = vecs();
+  if (store[id]) { delete store[id]; writeObj(VEC_KEY, store); }
 }
 
-// Recall the most relevant facts for a query using lightweight scoring:
-// term overlap + importance weight + recency. Stand-in for vector search.
+// Recall the most relevant facts for a query. When an on-device query vector is
+// available (set by prepareRecall) and facts have embeddings, score by semantic
+// cosine similarity blended with recency + module; otherwise fall back to the
+// lexical term-overlap scoring. Always synchronous.
 export function recall(query: string, limit = 6, module?: ModuleId): MemoryFact[] {
   const m = loadMemory();
-  const terms = tokenize(query);
   const now = Date.now();
+  const store = vecs();
+  const haveVectors = !!queryVec && m.facts.some(f => store[f.id]);
+
   const scored = m.facts.map(f => {
-    const fterms = tokenize(f.text);
-    let overlap = 0;
-    for (const t of terms) if (fterms.includes(t)) overlap++;
     const ageDays = (now - f.ts) / 86_400_000;
     const recency = Math.exp(-ageDays / 45); // ~45-day half-life-ish decay
     const moduleBoost = module && f.module === module ? 0.5 : 0;
-    const score = overlap * 1.0 + f.weight * 0.8 + recency * 0.4 + moduleBoost;
-    return { f, score };
+    let relevance: number;
+    if (haveVectors && store[f.id]) {
+      // cosine ∈ [-1,1]; scale to weight it similarly to lexical overlap.
+      relevance = Math.max(0, cosine(queryVec!, store[f.id])) * 4;
+    } else {
+      const terms = tokenize(query);
+      const fterms = tokenize(f.text);
+      let overlap = 0;
+      for (const t of terms) if (fterms.includes(t)) overlap++;
+      relevance = overlap * 1.0;
+    }
+    return { f, score: relevance + f.weight * 0.8 + recency * 0.4 + moduleBoost };
   });
   return scored
     .filter(s => s.score > 0.3)

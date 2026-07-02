@@ -23,6 +23,11 @@
     })();
   </script>
   <link rel="manifest" href="/Alpha-new/manifest.json" />
+  <link rel="icon" type="image/png" href="/Alpha-new/favicon-bull.png" />
+  <link rel="apple-touch-icon" href="/Alpha-new/apple-touch-icon.png" />
+  <!-- Warm the default orb character + pokeball so they appear instantly. -->
+  <link rel="preload" as="fetch" type="model/gltf-binary" href="/Alpha-new/ar-models/pikachu.glb" crossorigin="anonymous" />
+  <link rel="preload" as="fetch" type="model/gltf-binary" href="/Alpha-new/ar-models/pokeball.glb" crossorigin="anonymous" />
   <!-- Puter.js: free, keyless access to GPT-4o / Claude / Gemini (user-pays model) -->
   <script async src="https://js.puter.com/v2/"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -33,6 +38,274 @@
   />
 </head>
 <body>
+  <!-- ── Intro: full-screen alien on black → face scan → ACCESS GRANTED →
+            dimension entry → only then the panels appear ── -->
+  <div id="introOverlay">
+    <video id="introVid" muted playsinline preload="auto" src="/Alpha-new/intro-alien.mp4"></video>
+    <!-- cinematic HUD overlays: corner brackets + drifting scanlines + tint -->
+    <div class="intro-hud" aria-hidden="true">
+      <span class="hud-c tl"></span><span class="hud-c tr"></span><span class="hud-c bl"></span><span class="hud-c br"></span>
+      <div class="hud-top">⬡ ALPHA SECURE · BIOMETRIC GATE</div>
+      <div class="hud-bot" id="hudBot">SCANNING…</div>
+    </div>
+    <div class="intro-scanlines" aria-hidden="true"></div>
+    <div class="intro-noise" aria-hidden="true"></div>
+    <!-- movie-style face-recognition: blue mesh over the face + scan line -->
+    <div class="intro-facemesh">
+      <div class="fm-radar" aria-hidden="true"></div>
+      <svg viewBox="0 0 300 360" preserveAspectRatio="xMidYMid meet">
+        <defs><clipPath id="faceClip"><ellipse cx="150" cy="172" rx="92" ry="118"/></clipPath></defs>
+        <g clip-path="url(#faceClip)" class="fm-grid">
+          <line x1="30" y1="80" x2="270" y2="80"/><line x1="30" y1="112" x2="270" y2="112"/>
+          <line x1="30" y1="144" x2="270" y2="144"/><line x1="30" y1="176" x2="270" y2="176"/>
+          <line x1="30" y1="208" x2="270" y2="208"/><line x1="30" y1="240" x2="270" y2="240"/>
+          <line x1="30" y1="272" x2="270" y2="272"/>
+          <line x1="90" y1="40" x2="90" y2="300"/><line x1="120" y1="40" x2="120" y2="300"/>
+          <line x1="150" y1="40" x2="150" y2="300"/><line x1="180" y1="40" x2="180" y2="300"/>
+          <line x1="210" y1="40" x2="210" y2="300"/>
+        </g>
+        <ellipse class="fm-face" cx="150" cy="172" rx="92" ry="118"/>
+        <circle class="fm-dot" cx="120" cy="150" r="3.2"/><circle class="fm-dot" cx="180" cy="150" r="3.2"/>
+        <circle class="fm-dot" cx="150" cy="200" r="3.2"/><circle class="fm-dot" cx="150" cy="240" r="3.2"/>
+        <circle class="fm-dot" cx="105" cy="200" r="2.6"/><circle class="fm-dot" cx="195" cy="200" r="2.6"/>
+        <g class="fm-scan"><line x1="40" y1="0" x2="260" y2="0"/></g>
+        <path class="fm-ret" d="M36 76 V40 H72"/><path class="fm-ret" d="M264 76 V40 H228"/>
+        <path class="fm-ret" d="M36 268 V304 H72"/><path class="fm-ret" d="M264 268 V304 H228"/>
+        <!-- targeting crosshair + lock box that converges on the face -->
+        <g class="fm-cross"><line x1="150" y1="40" x2="150" y2="304"/><line x1="36" y1="172" x2="264" y2="172"/></g>
+        <rect class="fm-lock" x="92" y="92" width="116" height="160" rx="6"/>
+      </svg>
+      <div class="fm-text" id="scanTxt">מאתחל סריקה ביומטרית…</div>
+      <div class="fm-data">
+        <span class="fm-line" style="--i:0">FACE MATCH · 99.7%</span>
+        <span class="fm-line" style="--i:1">RETINA SCAN · OK</span>
+        <span class="fm-line" style="--i:2">PULSE · 72 BPM</span>
+        <span class="fm-line" style="--i:3">VOICE PRINT · OK</span>
+        <span class="fm-line" style="--i:4">BIOMETRIC LOCK · <b id="fmPct">0</b>%</span>
+        <span class="fm-line" style="--i:5">CLEARANCE · ALPHA-1</span>
+      </div>
+    </div>
+    <div class="intro-grant">
+      <div class="grant-wave"></div><div class="grant-wave" style="animation-delay:.22s"></div><div class="grant-wave" style="animation-delay:.44s"></div>
+      <div class="grant-ring"></div>
+      <div class="grant-check">✓</div>
+      <div class="grant-title">זוהו פנים — הגישה אושרה</div>
+      <div class="grant-sub">ALPHA · נכנס למערכת</div>
+    </div>
+    <!-- cinematic vault video → leads into the app -->
+    <video id="vaultVid" class="intro-vaultvid" muted playsinline preload="auto" src="/Alpha-new/intro-vault.mp4"></video>
+    <button id="introSkip" type="button">דלג ⏭</button>
+  </div>
+  <style>
+    /* keep EVERYTHING out until the intro completes — nothing shows before reveal */
+    html.booting #app{ opacity:0 !important; }
+    html.booting .welcome-overlay{ opacity:0 !important; pointer-events:none !important; }
+    body.revealed .app{ animation: app-in .9s ease both; }
+    @keyframes app-in{ from{opacity:0} to{opacity:1} }   /* opacity only — no layout shift */
+    #introOverlay{position:fixed;inset:0;z-index:99999;background:#000;overflow:hidden;transition:opacity .6s ease,transform .7s ease}
+    #introVid{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000;transition:opacity .5s ease}
+    /* ── James-Bond-style biometric face scan (blue mesh over the face) ── */
+    .intro-facemesh{position:absolute;inset:0;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;opacity:0;transition:opacity .35s;pointer-events:none}
+    #introOverlay.scanning .intro-facemesh{opacity:1}
+    .intro-facemesh svg{width:min(44vh,300px);height:auto;filter:drop-shadow(0 0 16px rgba(63,198,255,.6))}
+    .fm-grid line{stroke:rgba(63,198,255,.45);stroke-width:1}
+    #introOverlay.scanning .fm-grid line{animation:fm-flicker 1.8s ease-in-out infinite}
+    @keyframes fm-flicker{0%,100%{opacity:.3}50%{opacity:.78}}
+    .fm-face{fill:none;stroke:#3fc6ff;stroke-width:2}
+    .fm-dot{fill:#cdeeff}
+    .fm-ret{fill:none;stroke:#3fc6ff;stroke-width:3}
+    .fm-scan line{stroke:#dff3ff;stroke-width:2;filter:drop-shadow(0 0 9px #3fc6ff)}
+    .fm-scan{transform-box:fill-box;transform-origin:center}
+    #introOverlay.scanning .fm-scan{animation:fm-sweep 1.5s ease-in-out infinite}
+    @keyframes fm-sweep{0%{transform:translateY(48px)}100%{transform:translateY(290px)}}
+    .fm-text{color:#9fdcff;font-family:'Space Grotesk',monospace,sans-serif;letter-spacing:3px;font-size:15px;text-shadow:0 0 12px rgba(63,198,255,.7)}
+    .fm-data{display:flex;flex-direction:column;gap:5px;align-items:center}
+    .fm-data .fm-line{color:#7fd0f5;font-family:'Space Grotesk',monospace,sans-serif;font-size:12px;letter-spacing:2px;opacity:0}
+    .fm-data .fm-line b{color:#dff3ff;font-weight:700}
+    #introOverlay.scanning .fm-data .fm-line{animation:fm-in .3s ease forwards;animation-delay:calc(.08s + var(--i)*.13s)}
+    @keyframes fm-in{from{opacity:0;transform:translateY(5px)}to{opacity:.95;transform:none}}
+    /* targeting crosshair + lock box converging on the face (James-Bond lock-on) */
+    .fm-cross line{stroke:rgba(63,198,255,.55);stroke-width:1;stroke-dasharray:5 7}
+    #introOverlay.scanning .fm-cross{animation:fm-flicker 1.2s ease-in-out infinite}
+    .fm-lock{fill:none;stroke:#3fc6ff;stroke-width:2.5;opacity:0;transform-box:fill-box;transform-origin:center}
+    #introOverlay.scanning .fm-lock{animation:fm-lockon 1.1s cubic-bezier(.2,.8,.2,1) forwards}
+    @keyframes fm-lockon{0%{opacity:0;transform:scale(1.6)}60%{opacity:.9}100%{opacity:.95;transform:scale(1)}}
+    /* access granted */
+    .intro-grant{position:absolute;inset:0;z-index:3;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;opacity:0;transform:scale(.92);transition:opacity .4s ease,transform .4s ease;pointer-events:none}
+    #introOverlay.granted .intro-grant{opacity:1;transform:scale(1)}
+    .grant-ring{position:absolute;width:210px;height:210px;border:2px solid rgba(63,198,255,.6);border-radius:50%;box-shadow:0 0 44px rgba(63,198,255,.4),inset 0 0 44px rgba(63,198,255,.18);animation:grant-pulse 1s ease infinite}
+    @keyframes grant-pulse{0%,100%{transform:scale(1);opacity:.7}50%{transform:scale(1.08);opacity:1}}
+    .grant-check{font-size:64px;line-height:1;color:#dff3ff;text-shadow:0 0 30px rgba(63,198,255,.9)}
+    .grant-title{color:#fff;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:21px;letter-spacing:1px;text-shadow:0 0 16px rgba(63,198,255,.6)}
+    .grant-sub{color:#3fc6ff;font-size:13px;letter-spacing:5px}
+    /* ── cinematic HUD: corner brackets, scanlines, radar, shockwave ── */
+    .intro-hud{position:absolute;inset:0;z-index:2;pointer-events:none;opacity:0;transition:opacity .4s}
+    #introOverlay.scanning .intro-hud,#introOverlay.granted .intro-hud{opacity:1}
+    .hud-c{position:absolute;width:46px;height:46px;border:2px solid rgba(63,198,255,.85);filter:drop-shadow(0 0 8px rgba(63,198,255,.6));animation:hud-pulse 1.6s ease-in-out infinite}
+    .hud-c.tl{top:20px;left:20px;border-right:0;border-bottom:0}
+    .hud-c.tr{top:20px;right:20px;border-left:0;border-bottom:0}
+    .hud-c.bl{bottom:20px;left:20px;border-right:0;border-top:0}
+    .hud-c.br{bottom:20px;right:20px;border-left:0;border-top:0}
+    @keyframes hud-pulse{0%,100%{opacity:.5}50%{opacity:1}}
+    .hud-top,.hud-bot{position:absolute;left:50%;transform:translateX(-50%);color:#9fdcff;font-family:'Space Grotesk',monospace,sans-serif;font-size:11px;letter-spacing:3px;text-shadow:0 0 10px rgba(63,198,255,.7);white-space:nowrap}
+    .hud-top{top:26px}.hud-bot{bottom:64px;color:#7fd0f5}
+    #introOverlay.granted .hud-bot{color:#7bffb0;text-shadow:0 0 12px rgba(80,255,160,.8)}
+    .intro-scanlines{position:absolute;inset:0;z-index:2;pointer-events:none;opacity:0;transition:opacity .4s;mix-blend-mode:overlay;
+      background:repeating-linear-gradient(0deg,rgba(63,198,255,.10) 0px,rgba(63,198,255,.10) 1px,transparent 2px,transparent 4px)}
+    #introOverlay.scanning .intro-scanlines{opacity:1;animation:scl-drift 6s linear infinite}
+    @keyframes scl-drift{from{background-position:0 0}to{background-position:0 80px}}
+    .intro-noise{position:absolute;inset:0;z-index:2;pointer-events:none;opacity:0;
+      background:radial-gradient(circle at 50% 45%,transparent 40%,rgba(0,10,20,.55) 100%)}
+    #introOverlay.scanning .intro-noise{opacity:1}
+    .fm-radar{position:absolute;width:min(58vh,400px);height:min(58vh,400px);border-radius:50%;
+      border:1px solid rgba(63,198,255,.25);opacity:0;transition:opacity .4s;
+      background:conic-gradient(from 0deg,rgba(63,198,255,.45),transparent 28%)}
+    #introOverlay.scanning .fm-radar{opacity:.85;animation:radar-spin 2.2s linear infinite}
+    @keyframes radar-spin{to{transform:rotate(360deg)}}
+    .grant-wave{position:absolute;width:120px;height:120px;border:2px solid rgba(123,255,176,.7);border-radius:50%;opacity:0}
+    #introOverlay.granted .grant-wave{animation:grant-wave 1.1s ease-out forwards}
+    @keyframes grant-wave{0%{opacity:.8;transform:scale(.5)}100%{opacity:0;transform:scale(3.4)}}
+    /* on grant, flash the lock-on/check to victory green */
+    #introOverlay.granted .grant-check{color:#9bffc6;text-shadow:0 0 34px rgba(80,255,160,.95)}
+    #introOverlay.granted .grant-ring{border-color:rgba(123,255,176,.7);box-shadow:0 0 50px rgba(80,255,160,.5),inset 0 0 44px rgba(80,255,160,.2)}
+    #introOverlay.gone{opacity:0}
+    /* cinematic vault video → leads into the app */
+    .intro-vaultvid{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000;opacity:0;z-index:4;transition:opacity .45s ease}
+    #introOverlay.vaulting .intro-vaultvid{opacity:1}
+    #introSkip{position:absolute;bottom:max(22px,env(safe-area-inset-bottom));right:22px;z-index:5;
+      background:rgba(8,8,10,.6);border:1px solid rgba(228,188,99,.4);color:#F7E8C0;
+      padding:8px 16px;border-radius:999px;font-family:Assistant,system-ui,sans-serif;font-size:14px;cursor:pointer}
+    #introOverlay.granted #introSkip{opacity:0;pointer-events:none}
+  </style>
+  <script>
+    (function(){
+      var ov=document.getElementById('introOverlay'); if(!ov) return;
+      // ── Anti-double-intro guard ────────────────────────────────────────────
+      // The intro was occasionally playing twice (a spurious re-load/re-render
+      // replays the whole sequence). Two guards: (1) a window flag stops the
+      // IIFE running twice in one document; (2) a short session timestamp skips
+      // the intro on any reload that lands within 8s of the last one — that's a
+      // double-load, never an intentional revisit. A deliberate reload later
+      // still shows the intro.
+      if(window.__alphaIntro){ return; } window.__alphaIntro=true;
+      // Show the intro EXACTLY ONCE per browser session. Any later load in the
+      // same session (a reload, a re-render, or whatever bounced the app back to
+      // the intro) skips it and goes straight to the app. Open a fresh tab to see
+      // the intro again.
+      try{
+        if(sessionStorage.getItem('alpha_intro_seen')==='1'){
+          ov.parentNode&&ov.parentNode.removeChild(ov);
+          document.documentElement.classList.remove('booting');
+          document.body.classList.add('revealed');
+          return;
+        }
+        sessionStorage.setItem('alpha_intro_seen','1');
+      }catch(e){}
+      document.documentElement.classList.add('booting');   // hide app + welcome until reveal
+      var vid=document.getElementById('introVid'); var vaultVid=document.getElementById('vaultVid');
+      var scanTxt=document.getElementById('scanTxt'); var hudBot=document.getElementById('hudBot'); var done=false, ended=false;
+      // Both intro videos slowed to ~4x so their combined run (alien 8s + vault
+      // 10s = 18s ÷ 4 ≈ 4.5s, plus the ~1s face-scan transition ≈ 5.5s) matches
+      // the uploaded opening sound (~5.44s): the videos finish as the sound ends.
+      if(vid){ try{ vid.playbackRate=4; }catch(e){} }
+      if(vaultVid){ try{ vaultVid.playbackRate=4; }catch(e){} }
+      // ── Opening sound: the uploaded clip plays over the intro videos only.
+      // Procedural Web Audio (robotSound) stays as a fallback if the file is blocked.
+      var sfxDone=false, openSnd=null, sndStarted=false;
+      function openSound(){
+        if(sndStarted) return;
+        try{
+          if(!openSnd){ openSnd=new Audio('/Alpha-new/intro-sound.mp3'); openSnd.volume=0.95;
+            openSnd.addEventListener('error', function(){ if(!sndStarted) robotSound(); }); }
+          var pr=openSnd.play();
+          if(pr && pr.then){ pr.then(function(){ sndStarted=true; }).catch(function(){ /* blocked → retry on next gesture */ }); }
+          else { sndStarted=true; }
+        }catch(e){ robotSound(); }
+      }
+      function robotSound(){
+        if(sfxDone) return;
+        try{
+          var AC=window.AudioContext||window.webkitAudioContext; if(!AC) return;
+          var ctx=new AC(); if(ctx.state==='suspended'){ ctx.resume(); }
+          var t=ctx.currentTime;
+          function servo(s,f0,f1,d){ var o=ctx.createOscillator(),g=ctx.createGain(),bp=ctx.createBiquadFilter();
+            bp.type='bandpass';bp.frequency.value=1200;bp.Q.value=7;o.type='sawtooth';
+            o.frequency.setValueAtTime(f0,t+s);o.frequency.exponentialRampToValueAtTime(f1,t+s+d);
+            g.gain.setValueAtTime(0.0001,t+s);g.gain.exponentialRampToValueAtTime(0.2,t+s+0.02);g.gain.exponentialRampToValueAtTime(0.0001,t+s+d);
+            o.connect(bp);bp.connect(g);g.connect(ctx.destination);o.start(t+s);o.stop(t+s+d+0.05); }
+          function clank(s){ var len=Math.floor(ctx.sampleRate*0.12),b=ctx.createBuffer(1,len,ctx.sampleRate),dt=b.getChannelData(0);
+            for(var i=0;i<len;i++){dt[i]=(Math.random()*2-1)*Math.pow(1-i/len,3);}
+            var sr=ctx.createBufferSource();sr.buffer=b;var hp=ctx.createBiquadFilter();hp.type='highpass';hp.frequency.value=2200;var g=ctx.createGain();g.gain.value=0.28;
+            sr.connect(hp);hp.connect(g);g.connect(ctx.destination);sr.start(t+s); }
+          servo(0,120,900,0.18); servo(0.2,820,200,0.16); clank(0.38);
+          servo(0.45,200,1150,0.2); servo(0.72,1000,300,0.18); clank(0.92);
+          servo(1.0,300,1450,0.22); clank(1.28);
+          var wo=ctx.createOscillator(),wg=ctx.createGain();wo.type='square';
+          wo.frequency.setValueAtTime(55,t);wo.frequency.linearRampToValueAtTime(150,t+1.3);
+          wg.gain.setValueAtTime(0.07,t);wg.gain.exponentialRampToValueAtTime(0.0001,t+1.5);
+          wo.connect(wg);wg.connect(ctx.destination);wo.start(t);wo.stop(t+1.6);
+          sfxDone=true; setTimeout(function(){ try{ctx.close();}catch(e){} },2400);
+        }catch(e){}
+      }
+      openSound();
+      window.addEventListener('pointerdown', openSound, {once:true});
+      window.addEventListener('keydown', openSound, {once:true});
+      function revealApp(){
+        document.documentElement.classList.remove('booting');
+        document.body.classList.add('revealed');   // panels animate in — only now
+      }
+      function finish(){
+        if(ended) return; ended=true;
+        if(openSnd){ try{ openSnd.pause(); }catch(e){} }   // sound only spans the videos
+        revealApp();
+        ov.classList.add('gone');
+        setTimeout(function(){ ov.parentNode && ov.parentNode.removeChild(ov); }, 800);
+      }
+      var vaultStarted=false;
+      function playVault(){
+        if(vaultStarted) return; vaultStarted=true;
+        if(vaultVid){
+          ov.classList.add('vaulting');
+          vaultVid.addEventListener('ended', finish, {once:true});
+          vaultVid.addEventListener('error', finish, {once:true});
+          var pv=vaultVid.play && vaultVid.play();
+          if(pv && pv.catch) pv.catch(function(){ setTimeout(finish, 600); });
+          setTimeout(finish, 13000);   // fallback if the vault video stalls
+        } else { finish(); }
+      }
+      // Biometric-lock % counter (climbs 0→99 during the scan)
+      var pctStarted=false;
+      function startScan(){
+        if(ov.classList.contains('granted')) return;
+        ov.classList.add('scanning');
+        if(pctStarted) return; pctStarted=true;
+        var el=document.getElementById('fmPct'); if(!el) return;
+        var s=performance.now();
+        (function step(now){ var p=Math.min(1,(now-s)/1300); el.textContent=String(Math.round(p*99)); if(p<1) requestAnimationFrame(step); })(performance.now());
+      }
+      // alien (with scan overlay) → ACCESS GRANTED → vault video → panels
+      function sequence(){
+        if(done) return; done=true;
+        startScan();
+        setTimeout(function(){ if(scanTxt) scanTxt.textContent='מזהה פנים…'; if(hudBot) hudBot.textContent='LOCKING ON…'; }, 150);
+        setTimeout(function(){ if(scanTxt) scanTxt.textContent='זוהה ✓'; if(hudBot) hudBot.textContent='ACCESS GRANTED'; ov.classList.remove('scanning'); ov.classList.add('granted'); }, 600);
+        setTimeout(playVault, 900);   // hand off to the vault video
+      }
+      function skip(){ if(!done){ done=true; } finish(); }
+      document.getElementById('introSkip').addEventListener('click', skip);
+      if(vid){
+        vid.loop=false;
+        vid.addEventListener('ended', sequence, {once:true});
+        vid.addEventListener('error', sequence, {once:true});
+        var pr=vid.play && vid.play();
+        if(pr && pr.catch) pr.catch(function(){ /* autoplay blocked: skip / fallback handle it */ });
+        // Begin the biometric scan OVER the alien video so the lock-on has real
+        // screen time before ACCESS GRANTED (the alien is "being scanned").
+        setTimeout(function(){ if(!done) startScan(); }, 650);
+        setTimeout(sequence, 14000);   // hard fallback so it never gets stuck
+      } else { sequence(); }
+    })();
+  </script>
   <div id="app"></div>
   <script type="module" src="/src/main.ts"></script>
 </body>
