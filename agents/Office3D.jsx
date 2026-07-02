@@ -1265,6 +1265,85 @@ function buildOwnerOffice(color, deskTemplate, laptopTemplate, furnitureTemplate
   plant.position.set(5.6, 0, -3.5);
   g.add(plant);
 
+  /* ── Command-center upgrades (owner request: "Iron Man"-style suite) ──
+     A holographic projector pedestal with a slowly-spinning wireframe
+     globe, two server racks with breathing LED columns along the back
+     wall, an IoT control slab angled on the desk, and two wall-wash light
+     bars. All emissive/cheap; the spinner + blink material are returned
+     so the render loop can animate them. */
+  const spinners = [];
+  const blinkMats = [];
+  {
+    // Holographic projector — pedestal + wireframe icosahedron + light cone.
+    const holo = new THREE.Group();
+    const ped = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.34, 0.42, 0.5, 18),
+      new THREE.MeshStandardMaterial({ color: 0x0c0e13, roughness: 0.35, metalness: 0.7 })
+    );
+    ped.position.y = 0.25; ped.castShadow = true; holo.add(ped);
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.02, 8, 24), new THREE.MeshBasicMaterial({ color }));
+    rim.rotation.x = Math.PI / 2; rim.position.y = 0.51; holo.add(rim);
+    const cone = new THREE.Mesh(
+      new THREE.ConeGeometry(0.36, 0.9, 20, 1, true),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.07, side: THREE.DoubleSide, depthWrite: false })
+    );
+    cone.position.y = 0.97; cone.rotation.x = Math.PI; holo.add(cone);
+    const globe = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(0.3, 1),
+      new THREE.MeshBasicMaterial({ color, wireframe: true, transparent: true, opacity: 0.75 })
+    );
+    globe.position.y = 1.15; holo.add(globe);
+    spinners.push(globe);
+    const holoLight = new THREE.PointLight(color, 0.5, 3.5);
+    holoLight.position.y = 1.1; holo.add(holoLight);
+    holo.position.set(3.0, 0, -1.4);
+    g.add(holo);
+    obstacles.push({ x: 3.0, z: -1.4, r: 0.55 });
+
+    // Two server racks against the back wall — dark cabinets with LED rows.
+    const ledMat = new THREE.MeshBasicMaterial({ color: 0x33ff88, transparent: true, opacity: 0.85 });
+    const ledMat2 = new THREE.MeshBasicMaterial({ color: 0x3fa8ff, transparent: true, opacity: 0.7 });
+    blinkMats.push(ledMat, ledMat2);
+    [-3.4, -2.2].forEach((rx, ri) => {
+      const rack = new THREE.Mesh(
+        new THREE.BoxGeometry(1.0, 2.0, 0.55),
+        new THREE.MeshStandardMaterial({ color: 0x0b0d12, roughness: 0.45, metalness: 0.5 })
+      );
+      rack.position.set(rx, 1.0, -3.95); rack.castShadow = true; g.add(rack);
+      for (let row = 0; row < 6; row++) {
+        const led = new THREE.Mesh(new THREE.PlaneGeometry(0.72, 0.05), row % 2 === ri ? ledMat : ledMat2);
+        led.position.set(rx, 0.35 + row * 0.28, -3.67);
+        g.add(led);
+      }
+      obstacles.push({ x: rx, z: -3.95, r: 0.6 });
+    });
+
+    // IoT control slab angled on the desk — a drawn touch panel.
+    const iotCvs = document.createElement("canvas"); iotCvs.width = 128; iotCvs.height = 80;
+    const ic = iotCvs.getContext("2d");
+    ic.fillStyle = "#060a12"; ic.fillRect(0, 0, 128, 80);
+    const hex = "#" + new THREE.Color(color).getHexString();
+    ic.fillStyle = hex; ic.font = "700 11px system-ui"; ic.textAlign = "right"; ic.fillText("ALPHA · בקרה", 122, 15);
+    [26, 40, 54].forEach((y, i) => {
+      ic.fillStyle = "rgba(120,160,255,.25)"; ic.fillRect(10, y, 88, 5);
+      ic.fillStyle = hex; ic.fillRect(10 + [22, 48, 70][i], y - 2, 8, 9);
+    });
+    ["תאורה", "אקלים", "אבטחה"].forEach((t, i) => { ic.fillStyle = "#8ea0c4"; ic.font = "9px system-ui"; ic.fillText(t, 122, 32 + i * 14); });
+    ic.fillStyle = "#3FD79A"; ic.beginPath(); ic.arc(14, 14, 4, 0, 7); ic.fill();
+    const iotTex = new THREE.CanvasTexture(iotCvs); iotTex.colorSpace = THREE.SRGBColorSpace;
+    const iot = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.26), new THREE.MeshBasicMaterial({ map: iotTex }));
+    iot.position.set(1.55, 0.83, -1.75);
+    iot.rotation.set(-0.9, Math.PI, 0);
+    g.add(iot);
+
+    // Wall-wash light bars on the back wall.
+    [-0.6, 2.2].forEach((wx2) => {
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.05, 0.05), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8 }));
+      bar.position.set(wx2, 2.25, -4.24);
+      g.add(bar);
+    });
+  }
+
   // Nameplate floating over the suite, with a little gold crown above it.
   const sign = buildNeonSign("המשרד של שחר", color, 3.6, 0.7);
   sign.position.set(0.6, 2.95, -4.22);
@@ -1280,7 +1359,7 @@ function buildOwnerOffice(color, deskTemplate, laptopTemplate, furnitureTemplate
   const up = new THREE.PointLight(color, 0.8, 7);
   up.position.set(0.5, 0.5, -2.6); g.add(up);
 
-  return { group: g, obstacles, deskMon: desk.monMat, deskHolo: desk.holo, seatLocal };
+  return { group: g, obstacles, deskMon: desk.monMat, deskHolo: desk.holo, seatLocal, spinners, blinkMats };
 }
 
 export default function Office3D({ chars, byId, phase, phases, deskPositions, seatPositions, dineTablePositions, meetingSpot, bizData, marketRows, voice, onClose, onOpenChat }) {
@@ -1902,7 +1981,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       // and clutter, plus a fridge and sink, near the existing dining tables.
       placeFurniturePiece(scene, furnitureTemplate, "kitchen_table_001", 18.4, 0, 5.6, Math.PI / 2);
       placeFurniturePiece(scene, furnitureTemplate, "fridge_001", 18.8, 0, 1.5, -Math.PI / 2);
-      placeFurniturePiece(scene, furnitureTemplate, "kitchen_sink_001", 18.8, 0, 9.5, -Math.PI / 2);
+      placeFurniturePiece(scene, furnitureTemplate, "kitchen_sink_001", 18.8, 0, 7.6, -Math.PI / 2);
       placeFurniturePiece(scene, furnitureTemplate, "coffee_machine_001", 18.3, 1.036, 5.0, 0);
       placeFurniturePiece(scene, furnitureTemplate, "microwave_oven_001", 18.5, 1.036, 6.1, 0);
       placeFurniturePiece(scene, furnitureTemplate, "dish_001", 18.15, 1.036, 5.5, 0);
@@ -1944,7 +2023,9 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     let screenT = 0;
     // (SE corner plant removed — that corner is now the owner's office; the
     // SW plant moved out of the restrooms footprint.)
-    [[-11.1, 15.5], [16.2, -12.9], [2.3, 15.6]].forEach(([px, pz]) => {
+    // (middle plant pulled out of the storage-corner cluster so it doesn't
+    // crowd the dresser/box pieces)
+    [[-11.1, 15.5], [16.2, -11.3], [2.3, 15.6]].forEach(([px, pz]) => {
       const plant = buildPlant();
       plant.position.set(px, 0, pz);
       scene.add(plant);
@@ -2054,12 +2135,56 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     ownerOffice.obstacles.forEach((o) => obstacles.push({ x: OFFICE_ORIGIN.x + o.x, z: OFFICE_ORIGIN.z + o.z, r: o.r }));
     if (ownerOffice.deskMon) deskMons.push(ownerOffice.deskMon);
     if (ownerOffice.deskHolo) deskHolos.push(ownerOffice.deskHolo);
+    const ownerSpinners = ownerOffice.spinners || [];
+    const ownerBlinkMats = ownerOffice.blinkMats || [];
     // The owner's chair in world coordinates — where the player can sit down.
     const OWNER_SEAT = {
       x: OFFICE_ORIGIN.x + ownerOffice.seatLocal.x,
       z: OFFICE_ORIGIN.z + ownerOffice.seatLocal.z,
       ry: ownerOffice.seatLocal.ry,
     };
+
+    // Security-feed wall screen inside the owner suite (east room wall) —
+    // four labelled "camera" quadrants with a live clock + blinking REC,
+    // redrawn on the shared screen tick.
+    const secCvs = document.createElement("canvas");
+    secCvs.width = 384; secCvs.height = 256;
+    const secCtx = secCvs.getContext("2d");
+    const secTex = new THREE.CanvasTexture(secCvs);
+    secTex.colorSpace = THREE.SRGBColorSpace;
+    let secBlink = false;
+    const drawSecurity = () => {
+      const c = secCtx;
+      c.fillStyle = "#04070c"; c.fillRect(0, 0, 384, 256);
+      const cams = ["כניסה ראשית", "מחסן ציוד", "חניון", "קומת סוכנים"];
+      const seeds = [31, 77, 123, 209];
+      for (let q = 0; q < 4; q++) {
+        const qx = (q % 2) * 192, qy = Math.floor(q / 2) * 128;
+        c.fillStyle = "#0a1018"; c.fillRect(qx + 3, qy + 3, 186, 122);
+        // faint "scene" — a few grey blocks per camera, deterministic
+        const rnd = mulberry32(seeds[q]);
+        c.fillStyle = "rgba(80,100,130,.22)";
+        for (let b = 0; b < 5; b++) c.fillRect(qx + 10 + rnd() * 120, qy + 40 + rnd() * 60, 18 + rnd() * 40, 14 + rnd() * 30);
+        c.strokeStyle = "rgba(63,215,154,.35)"; c.strokeRect(qx + 3, qy + 3, 186, 122);
+        c.fillStyle = "#3FD79A"; c.font = "700 12px system-ui"; c.textAlign = "right";
+        c.fillText(cams[q], qx + 184, qy + 18);
+        if (secBlink) { c.fillStyle = "#ff5f6d"; c.beginPath(); c.arc(qx + 14, qy + 14, 4, 0, 7); c.fill(); }
+        c.fillStyle = "#8ea0c4"; c.font = "10px ui-monospace,monospace"; c.textAlign = "left";
+        c.fillText(new Date().toLocaleTimeString("he-IL"), qx + 8, qy + 118);
+      }
+      secBlink = !secBlink;
+    };
+    drawSecurity();
+    {
+      const bezel = new THREE.Mesh(new THREE.PlaneGeometry(3.3, 2.25), new THREE.MeshBasicMaterial({ color: 0x03040a }));
+      bezel.rotation.y = -Math.PI / 2;
+      bezel.position.set(FLOOR_W / 2 - 0.1, 2.1, 12.6);
+      scene.add(bezel);
+      const secScreen = new THREE.Mesh(new THREE.PlaneGeometry(3.1, 2.06), new THREE.MeshBasicMaterial({ map: secTex }));
+      secScreen.rotation.y = -Math.PI / 2;
+      secScreen.position.set(FLOOR_W / 2 - 0.12, 2.1, 12.6);
+      scene.add(secScreen);
+    }
 
     // ── Reception at the entrance ────────────────────────────────────────
     // A welcome desk with a receptionist just inside the south entrance, so
@@ -2157,9 +2282,10 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       hang("Office2_decoration2", -(FLOOR_W / 2) + 0.12, 2.6, 8.4, Math.PI / 2, 1.4);
       // big framed picture on the east wall near the owner's office
       hang("Office2_picture", FLOOR_W / 2 - 0.12, 1.9, 8.1, Math.PI, 1.2);
-      // record player + vinyls on the cafeteria counter
-      hang("Office2_Vinyl_players", 15.35, 1.1, 4.25, -Math.PI / 2, 1.0);
-      hang("Office2_Vinyls", 15.35, 1.1, 3.65, -Math.PI / 2, 1.0);
+      // record player + vinyls on the cafeteria counter — kept within the
+      // counter top's actual span (z 3.8..7.4) so nothing floats off its edge
+      hang("Office2_Vinyl_players", 15.35, 1.1, 4.7, -Math.PI / 2, 1.0);
+      hang("Office2_Vinyls", 15.35, 1.1, 5.3, -Math.PI / 2, 1.0);
     }
 
     // ── Gaming-den ambiance ──────────────────────────────────────────────
@@ -2169,10 +2295,12 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // point lights, so it's cheap.
     const neonStripMat1 = new THREE.MeshBasicMaterial({ color: 0x18e0ff, transparent: true, opacity: 0.5 });
     const neonStripMat2 = new THREE.MeshBasicMaterial({ color: 0xff3ea5, transparent: true, opacity: 0.5 });
+    // Aisle strips end BEFORE the south office row (pods start at z≈8) —
+    // they used to run under the glass walls into two of the offices.
     [-9.75, -4.1, 1.5].forEach((ax, i) => {
-      const strip = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 22), i % 2 ? neonStripMat2 : neonStripMat1);
+      const strip = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 18), i % 2 ? neonStripMat2 : neonStripMat1);
       strip.rotation.x = -Math.PI / 2;
-      strip.position.set(ax, 0.02, -2.25);
+      strip.position.set(ax, 0.02, -3.0);
       scene.add(strip);
     });
     const alphaSign = buildNeonSign("ALPHA HQ", 0x18e0ff, 5.2, 1.3);
@@ -2226,6 +2354,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         ...allHumans.map((h) => h.group),
         planeGroup, birdGroup, heliGroup, balloonGroup, searchGroup,
         ...deskHolos.filter(Boolean),
+        ...ownerSpinners,
         camera,
       ]);
       const isDynamic = (o) => {
@@ -2301,7 +2430,14 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           drawBillboard(bbMode);
           bbTex.needsUpdate = true;
         }
+        // Security feed: clock + REC blink refresh.
+        drawSecurity();
+        secTex.needsUpdate = true;
       }
+      // Command-center life in the owner suite: the hologram globe spins,
+      // the server-rack LED columns breathe.
+      ownerSpinners.forEach((s) => { s.rotation.y += dt * 0.9; s.rotation.x += dt * 0.22; });
+      ownerBlinkMats.forEach((m, i) => { m.opacity = 0.45 + Math.abs(Math.sin(clock.elapsedTime * (1.6 + i * 0.7))) * 0.5; });
 
       // Skyline window — swap the whole canvas only when the sky mode
       // actually flips (cheap, rare): full day → golden-hour sunset in the
