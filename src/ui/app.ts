@@ -182,7 +182,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v133 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v134 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="panelsToggleBtn" title="הסתר/הצג פנלים" aria-label="הסתר פנלים">
           <svg class="pt-hide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -2870,16 +2870,19 @@ export function mountApp(root: HTMLElement) {
       const order: [string, string][] = [['bitcoin', 'Bitcoin'], ['ethereum', 'Ethereum'], ['solana', 'Solana'], ['binancecoin', 'BNB'], ['ripple', 'XRP'], ['cardano', 'Cardano'], ['dogecoin', 'Dogecoin']];
       for (const [id, name] of order) if (d[id]) rows.push({ name, price: '$' + mkFmt(d[id].usd), chg: d[id].usd_24h_change || 0 });
     } catch {}
-    for (const [sym, name] of [['%5EGSPC', 'S&P 500'], ['%5EIXIC', 'NASDAQ'], ['%5EDJI', 'Dow Jones'], ['GC%3DF', 'זהב'], ['CL%3DF', 'נפט']]) {
+    // One parallel batch instead of five sequential round-trips.
+    const yahooSyms: [string, string][] = [['%5EGSPC', 'S&P 500'], ['%5EIXIC', 'NASDAQ'], ['%5EDJI', 'Dow Jones'], ['GC%3DF', 'זהב'], ['CL%3DF', 'נפט']];
+    const yahoo = await Promise.all(yahooSyms.map(async ([sym, name]) => {
       try {
         const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=2d`);
         const d = await r.json();
         const m = d.chart.result[0].meta;
         const price = m.regularMarketPrice;
         const prev = m.chartPreviousClose ?? m.previousClose ?? price;
-        rows.push({ name, price: mkFmt(price), chg: prev ? ((price - prev) / prev) * 100 : 0 });
-      } catch {}
-    }
+        return { name, price: mkFmt(price), chg: prev ? ((price - prev) / prev) * 100 : 0 } as MkRow;
+      } catch { return null; }
+    }));
+    yahoo.forEach((row) => { if (row) rows.push(row); });
     if (rows.length) lastMarketRows = rows;
     return rows;
   }

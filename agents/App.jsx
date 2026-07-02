@@ -190,16 +190,20 @@ async function fetchMarketRows() {
     const order = [["bitcoin", "Bitcoin", "crypto"], ["ethereum", "Ethereum", "crypto"], ["solana", "Solana", "crypto"], ["binancecoin", "BNB", "crypto"], ["ripple", "XRP", "crypto"], ["cardano", "Cardano", "crypto"], ["dogecoin", "Dogecoin", "crypto"]];
     for (const [id, name, kind] of order) if (d[id]) rows.push({ name, kind, price: "$" + mkFmt(d[id].usd), raw: d[id].usd, chg: d[id].usd_24h_change || 0 });
   } catch {}
-  for (const [sym, name] of [["%5EGSPC", "S&P 500"], ["%5EIXIC", "NASDAQ"], ["%5EDJI", "Dow Jones"], ["GC%3DF", "זהב"], ["CL%3DF", "נפט"]]) {
+  // All Yahoo symbols fetched in ONE parallel batch (they were sequential —
+  // 5 round-trips back to back); order is preserved by mapping the results.
+  const yahooSyms = [["%5EGSPC", "S&P 500"], ["%5EIXIC", "NASDAQ"], ["%5EDJI", "Dow Jones"], ["GC%3DF", "זהב"], ["CL%3DF", "נפט"]];
+  const yahoo = await Promise.all(yahooSyms.map(async ([sym, name]) => {
     try {
       const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=2d`);
       const d = await r.json();
       const m = d.chart.result[0].meta;
       const price = m.regularMarketPrice;
       const prev = m.chartPreviousClose ?? m.previousClose ?? price;
-      rows.push({ name, kind: "stock", price: mkFmt(price), raw: price, chg: prev ? ((price - prev) / prev) * 100 : 0 });
-    } catch {}
-  }
+      return { name, kind: "stock", price: mkFmt(price), raw: price, chg: prev ? ((price - prev) / prev) * 100 : 0 };
+    } catch { return null; }
+  }));
+  yahoo.forEach((row) => { if (row) rows.push(row); });
   return rows;
 }
 let marketCache = { rows: [], ts: 0 };
@@ -1815,6 +1819,14 @@ function OfficeSim({ onClose, onOpenChat, logActivity, showToast }) {
   // Live market rows (CoinGecko + Yahoo) — same shared cache the Business
   // view uses, so the sim's wall TV shows the REAL board, not a simulation.
   const marketRows = useMarket();
+  // Business snapshot for the 3D screens: computed on an interval, not on
+  // every render — bizSnapshot() parses several localStorage stores, and the
+  // sim re-renders on every scheduler tick.
+  const [bizData, setBizData] = useState(() => bizSnapshot());
+  useEffect(() => {
+    const iv = setInterval(() => setBizData(bizSnapshot()), 30000);
+    return () => clearInterval(iv);
+  }, []);
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   // Every agent gets their own permanent desk (home) they return to by
   // default — a real seat, not a random spot picked fresh each time.
@@ -1990,7 +2002,7 @@ function OfficeSim({ onClose, onOpenChat, logActivity, showToast }) {
         seatPositions={OFC_SEATS}
         dineTablePositions={OFC_DINE_TABLES}
         meetingSpot={OFC_MEETING_SPOT}
-        bizData={bizSnapshot()}
+        bizData={bizData}
         marketRows={marketRows}
         onAutoFix={(msg) => { showToast?.(msg); logActivity?.("facilities", msg); }}
         voice={{

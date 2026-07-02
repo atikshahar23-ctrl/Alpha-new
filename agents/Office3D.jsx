@@ -2397,6 +2397,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
 
     let raf = 0;
     let integrityT = 0;
+    let frameNo = 0;
     const clock = new THREE.Clock();
     const curSky = new THREE.Color(0x1b2440);
     const tmpColor = new THREE.Color();
@@ -2680,7 +2681,25 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           }
         }
       });
-      allHumans.forEach((h) => { if (h.mixer) h.mixer.update(dt); });
+      // Animation LOD: characters far from the camera tick their skinned
+      // animation every 3rd frame (with accumulated dt so playback speed
+      // stays correct) instead of every frame — with ~15 characters the
+      // mixers are one of the biggest CPU costs, and at distance the lower
+      // sample rate is invisible.
+      frameNo++;
+      allHumans.forEach((h, hi) => {
+        if (!h.mixer) return;
+        const far = camera.position.distanceToSquared(h.group.position) > 340; // ~18+ units away
+        if (far) {
+          h.lodDt = (h.lodDt || 0) + dt;
+          if ((frameNo + hi) % 3 !== 0) return;
+          h.mixer.update(h.lodDt);
+          h.lodDt = 0;
+        } else {
+          if (h.lodDt) { h.mixer.update(h.lodDt); h.lodDt = 0; }
+          h.mixer.update(dt);
+        }
+      });
       // QA hook: live world positions, only published when a debugger opts in
       // (window.__off3debug = true) — zero cost otherwise.
       if (typeof window !== "undefined" && window.__off3debug) {
