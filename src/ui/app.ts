@@ -26,6 +26,7 @@ import { calculateScore, scoreLabel } from '../modules/scoring';
 import { toastInfo } from '../modules/toast';
 import { checkIntegrity, repairCorrupted } from '../modules/dataIntegrity';
 import { readAutotraderState, readPortfolioPositions } from '../modules/tradingBridge';
+import { BOOKS_BY_KEY, BOOKS_LAST_KEY, cumulativeIncome } from '../modules/books';
 
 const UI_STRINGS: Record<string, Record<UILang, string>> = {
   appTitle: { he: 'אלפא עוזר אישי', en: 'ALPHA ASSISTANT' },
@@ -181,7 +182,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v122 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v123 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="panelsToggleBtn" title="הסתר/הצג פנלים" aria-label="הסתר פנלים">
           <svg class="pt-hide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -2741,12 +2742,15 @@ export function mountApp(root: HTMLElement) {
     const money = (n: number) => '₪' + (Number(n) || 0).toLocaleString('he-IL');
     const ym = new Date().toISOString().slice(0, 7);
     const total = idx.length;
-    const revenue = idx.reduce((s: number, x: any) => s + (Number(x.price) || 0), 0);
+    // Cumulative income comes from the accountant's books (see modules/books.ts),
+    // plus live installs only for months the bookkeeper hasn't closed yet.
+    const liveAfter = idx.reduce((s: number, x: any) => s + (String(x.date || '').slice(0, 7) > BOOKS_LAST_KEY ? (Number(x.price) || 0) : 0), 0);
+    const revenue = cumulativeIncome(liveAfter);
     const month = idx.filter((x: any) => (x.date || '').startsWith(ym));
-    const monthRev = month.reduce((s: number, x: any) => s + (Number(x.price) || 0), 0);
+    const monthRev = BOOKS_BY_KEY[ym] ? BOOKS_BY_KEY[ym].income : month.reduce((s: number, x: any) => s + (Number(x.price) || 0), 0);
     const ops = document.querySelector('#hudOps .hud-card-body');
     if (ops) {
-      ops.innerHTML = total === 0
+      ops.innerHTML = total === 0 && revenue === 0
         ? '<div class="hud-empty">אין עדיין נתוני Heavy Guard במכשיר זה</div>'
         : `<div class="hud-stat"><span>התקנות סה"כ</span><b>${total.toLocaleString('he-IL')}</b></div>
            <div class="hud-stat"><span>הכנסה מצטברת</span><b class="cy">${money(revenue)}</b></div>
@@ -2775,9 +2779,11 @@ export function mountApp(root: HTMLElement) {
     const ym = new Date().toISOString().slice(0, 7);
     const money = (n: number) => '₪' + Math.round(n || 0).toLocaleString('he-IL');
     const total = idx.length;
-    const revenue = idx.reduce((s: number, x: any) => s + (Number(x.price) || 0), 0);
+    // Same books-authoritative income as the HUD (see modules/books.ts).
+    const liveAfter = idx.reduce((s: number, x: any) => s + (String(x.date || '').slice(0, 7) > BOOKS_LAST_KEY ? (Number(x.price) || 0) : 0), 0);
+    const revenue = cumulativeIncome(liveAfter);
     const month = idx.filter((x: any) => (x.date || '').startsWith(ym));
-    const monthRev = month.reduce((s: number, x: any) => s + (Number(x.price) || 0), 0);
+    const monthRev = BOOKS_BY_KEY[ym] ? BOOKS_BY_KEY[ym].income : month.reduce((s: number, x: any) => s + (Number(x.price) || 0), 0);
     const byC: Record<string, { n: number; rev: number }> = {};
     idx.forEach((x: any) => { const c = x.contractor || '?'; (byC[c] = byC[c] || { n: 0, rev: 0 }); byC[c].n++; byC[c].rev += Number(x.price) || 0; });
     const top = Object.entries(byC).map(([id, v]) => ({ name: cName(id), ...v })).sort((a, b) => b.rev - a.rev).slice(0, 3);
@@ -2785,7 +2791,7 @@ export function mountApp(root: HTMLElement) {
     const openTasks = readTasks().filter((t: any) => !t.done).length;
     const trips = readTrips(); const km = trips.reduce((s: number, t: any) => s + (Number(t.km) || 0), 0);
     const lines: string[] = ['🛡️ **תדריך עסקי · Heavy Guard**'];
-    if (total === 0) lines.push('אין עדיין נתוני התקנות במכשיר זה.');
+    if (total === 0 && revenue === 0) lines.push('אין עדיין נתוני התקנות במכשיר זה.');
     else {
       lines.push(`• התקנות סה"כ: ${total} · הכנסה מצטברת: ${money(revenue)}`);
       lines.push(`• החודש: ${month.length} התקנות · ${money(monthRev)}`);

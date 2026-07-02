@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import * as cloud from "./cloud";
 import Office3D from "./Office3D.jsx";
+import { BOOKS_BY_KEY, BOOKS_LAST_KEY, BOOKS_TOTAL_INCOME } from "../src/modules/books";
 
 /* ════════════════════════════════════════════════════════════════════
    ALPHA · AGENTS COMMAND CENTER
@@ -62,13 +63,22 @@ const timeAgo = (ts) => {
    localStorage (same origin as the HeavyGuard + CRM apps) plus facts you teach. ── */
 const K_BIZ = "alpha:agents:biz"; // learned business facts (strings)
 const ils = (n) => "₪" + (Number(n) || 0).toLocaleString("he-IL");
+
+/* The REAL books — authoritative monthly income from the owner's accountant
+   software, shared with the main dashboard so both always show identical
+   numbers. See src/modules/books.ts for the data + update instructions. */
+
 function bizSnapshot() {
   const get = (k) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch { return null; } };
   const installs = get("hg2:index") || [];
   const deals = get("itai:deals") || [];
   const itaiCust = get("itai:customers") || [];
   const pricelist = get("hg2:pricelist") || [];
-  const hgRevenue = installs.reduce((a, x) => a + (Number(x.price) || 0), 0);
+  // Cumulative income = the accountant's books (authoritative through
+  // BOOKS_LAST_KEY) + live HeavyGuard installs only for months after that,
+  // so the figure matches the real books exactly and still ticks up live.
+  const liveAfterBooks = installs.reduce((a, x) => a + (String(x.date || "").slice(0, 7) > BOOKS_LAST_KEY ? (Number(x.price) || 0) : 0), 0);
+  const hgRevenue = BOOKS_TOTAL_INCOME + liveAfterBooks;
   const m = {};
   installs.forEach((x) => { const n = (x.customer || "").trim(); if (!n) return; const k = n.replace(/\s+/g, " ").replace(/^ה(?=.{2,})/, "").toLowerCase(); if (!m[k]) m[k] = { name: n, rev: 0, count: 0 }; m[k].rev += Number(x.price) || 0; m[k].count++; });
   const top = Object.values(m).sort((a, b) => b.rev - a.rev).slice(0, 5);
@@ -142,7 +152,9 @@ function reorganizeOffice() {
   cloudSave(K_DESK_ORDER, ids);
   return ids;
 }
-// Revenue grouped by month (YYYY-MM) from HeavyGuard installs — last 6 months.
+// Revenue grouped by month (YYYY-MM) — last 6 months. The accountant's books
+// (ACCOUNTANT_BOOKS) are authoritative for every month they cover; only months
+// AFTER the last statement fall through to the live HeavyGuard install feed.
 function monthlyRevenue() {
   const get = (k) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch { return null; } };
   const installs = get("hg2:index") || [];
@@ -153,7 +165,9 @@ function monthlyRevenue() {
   for (let i = 5; i >= 0; i--) {
     const dt = new Date(d.getFullYear(), d.getMonth() - i, 1);
     const key = dt.toISOString().slice(0, 7);
-    out.push({ key, label: dt.toLocaleDateString("he-IL", { month: "short" }), value: m[key] || 0 });
+    const booked = BOOKS_BY_KEY[key];
+    const value = booked ? booked.income : (key > BOOKS_LAST_KEY ? (m[key] || 0) : 0);
+    out.push({ key, label: dt.toLocaleDateString("he-IL", { month: "short" }), value });
   }
   return out;
 }
