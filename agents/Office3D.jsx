@@ -2525,6 +2525,55 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       }, undefined, () => { /* car download failed — podium stays as decor */ });
     }
 
+    // ── The two office dogs 🐾 — ניקי וטיארה ────────────────────────────
+    // The full pack was removed by request; these two stay, by name: ניקי
+    // the pomeranian (tinted sable like the owner's real dog) and טיארה the
+    // chihuahua (rigged, her baked idle clip keeps her alive). They wander
+    // the open centre floor, pause to sniff, and waddle while walking.
+    const dogs = [];
+    {
+      const spawnDog = (template, clips, cfg) => {
+        const skinned = !!(clips && clips.length);
+        const body = skinned ? cloneSkinned(template) : template.clone(true);
+        const db = new THREE.Box3().setFromObject(body);
+        const ds = db.getSize(new THREE.Vector3());
+        const dc = db.getCenter(new THREE.Vector3());
+        const scale = cfg.height / (ds.y || 1);
+        const wrap = new THREE.Group();
+        body.position.set(-dc.x * scale, -db.min.y * scale, -dc.z * scale);
+        body.scale.setScalar(scale);
+        body.traverse((o) => {
+          if (!o.isMesh && !o.isSkinnedMesh) return;
+          o.castShadow = true; o.frustumCulled = false;
+          if (cfg.tint && o.material) { o.material = o.material.clone(); o.material.color = new THREE.Color(cfg.tint); }
+        });
+        wrap.add(body);
+        const tag = buildNameSprite(cfg.name, "#E4BC63", "");
+        tag.scale.multiplyScalar(0.62);
+        tag.position.y = cfg.height + 0.28;
+        wrap.add(tag);
+        wrap.position.set(cfg.x, 0, cfg.z);
+        scene.add(wrap);
+        let mixer = null;
+        if (skinned) {
+          mixer = new THREE.AnimationMixer(body);
+          mixer.clipAction(clips[0]).play();
+        }
+        dogs.push({ group: wrap, mixer, target: null, pauseT: 1 + dogs.length * 1.5, speed: 1.0 + dogs.length * 0.2 });
+      };
+      const dogLoader = new GLTFLoader();
+      dogLoader.setMeshoptDecoder(MeshoptDecoder);
+      dogLoader.load(base + "office-models/pomeranian.glb", (g) => {
+        spawnDog(g.scene, null, { name: "ניקי", height: 0.5, tint: 0xc9803e, x: -6.5, z: 3.5 });
+      }, undefined, () => {});
+      dogLoader.load(base + "office-models/chihuahua.glb", (g) => {
+        spawnDog(g.scene, g.animations, { name: "טיארה", height: 0.36, x: 1.5, z: 4.5 });
+      }, undefined, () => {});
+    }
+    // A wandering dog's next stop — somewhere on the open centre floor,
+    // clear of the car podium and the perimeter offices.
+    const dogSpot = () => ({ x: -10 + Math.random() * 15, z: -7 + Math.random() * 12 });
+
     // ── Reception at the entrance ────────────────────────────────────────
     // A welcome desk with a receptionist just inside the south entrance, so
     // walking in reads like arriving at a real company lobby.
@@ -2828,6 +2877,24 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       }
       // Center-stage car turns slowly on its podium.
       centerSpin.forEach((w) => { w.rotation.y += dt * 0.28; });
+      // ניקי + טיארה: wander → pause/sniff → wander, waddling while walking.
+      dogs.forEach((d, di) => {
+        if (d.mixer) d.mixer.update(dt);
+        if (d.pauseT > 0) { d.pauseT -= dt; d.group.rotation.z = 0; return; }
+        if (!d.target) d.target = dogSpot();
+        const dx = d.target.x - d.group.position.x, dz = d.target.z - d.group.position.z;
+        const dist = Math.hypot(dx, dz);
+        if (dist < 0.15) {
+          d.pauseT = 2 + Math.random() * 6;
+          d.target = null;
+          return;
+        }
+        const step = Math.min(dist, d.speed * dt);
+        d.group.position.x += (dx / dist) * step;
+        d.group.position.z += (dz / dist) * step;
+        d.group.rotation.y = Math.atan2(dx, dz);
+        d.group.rotation.z = Math.sin(clock.elapsedTime * 9 + di * 2) * 0.055; // waddle
+      });
       // Command-center life in the owner suite: the hologram globe spins,
       // the server-rack LED columns breathe.
       ownerSpinners.forEach((s) => { s.rotation.y += dt * 0.9; s.rotation.x += dt * 0.22; });
