@@ -354,14 +354,50 @@ async function askGroq(system, history, user, maxTokens = 800) {
   }
   throw new Error("Groq " + lastCode);
 }
-// One entry point for every agent conversation: Claude first when a key is
-// set, Groq as the free engine / mid-conversation fallback.
+/* ── Smart routing — יהודה (המנכ"ל) מחליט ─────────────────────────────────
+   When BOTH engines are connected, each request is routed by its size and
+   complexity: short everyday questions go to the free engine (Groq), and
+   big/analytical work — planning, code briefs, documents, deep multi-turn
+   context — gets the paid Claude, so the expensive tokens are spent only
+   where they actually matter. With one engine connected there is nothing
+   to decide; with none, the scripted personas answer. The decision (and
+   its reason) is published on askAI.last so the chat can show which brain
+   answered each message. ── */
+const COMPLEX_HINTS = /תכנון|אסטרטג|נתח|ניתוח|השוו|תוכנית|מפורט|דוח|מסמך|סיכום|קוד|באג|תקציב|תחזית|צפי|מייל|הצעת מחיר|בריף|רעיון|שיפור|למה |איך כדאי/;
+function routeAI(user, history, maxTokens) {
+  const hasC = !!anthropicKey(), hasG = !!groqKey();
+  if (hasC && !hasG) return { engine: "claude", reason: "רק Claude מחובר" };
+  if (!hasC && hasG) return { engine: "groq", reason: "רק Groq מחובר" };
+  if (!hasC && !hasG) return { engine: "local", reason: "אין מפתח AI" };
+  let score = 0;
+  if (user.length > 200) score += 2; else if (user.length > 90) score += 1;
+  if (maxTokens > 1500) score += 3; // dev-console code briefs and the like
+  if (COMPLEX_HINTS.test(user)) score += 2;
+  if (history.length >= 6) score += 1; // deep conversation → context matters
+  return score >= 2
+    ? { engine: "claude", reason: "יהודה ניתב ל-Claude — משימה גדולה/מורכבת" }
+    : { engine: "groq", reason: "יהודה ניתב ל-Groq — בקשה קצרה, חינם" };
+}
+// One entry point for every agent conversation. Routed by יהודה when both
+// engines exist; each engine rescues the other on failure so a conversation
+// never dies mid-flow.
 async function askAI(system, history, user, maxTokens = 800) {
-  if (anthropicKey()) {
+  const route = routeAI(user, history, maxTokens);
+  askAI.last = route;
+  if (route.engine === "claude") {
     try { return await askClaude(system, history, user, maxTokens); }
-    catch (e) { if (!groqKey()) throw e; }
+    catch (e) {
+      if (!groqKey()) throw e;
+      askAI.last = { engine: "groq", reason: "Claude נכשל — גיבוי חינמי" };
+      return askGroq(system, history, user, maxTokens);
+    }
   }
-  return askGroq(system, history, user, maxTokens);
+  try { return await askGroq(system, history, user, maxTokens); }
+  catch (e) {
+    if (!anthropicKey()) throw e;
+    askAI.last = { engine: "claude", reason: "Groq נכשל — Claude חילץ" };
+    return askClaude(system, history, user, maxTokens);
+  }
 }
 
 /* ── Voice chat: free, browser-native Web Speech API — no backend/cost.
@@ -1132,8 +1168,9 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
     setBusy(true);
     try {
       const reply = await askAI(agent.persona + bizContext(), aiHist.current, t);
+      const via = askAI.last; // which brain יהודה routed this to (+ why)
       aiHist.current = [...aiHist.current.slice(-6), { role: "user", content: t }, { role: "assistant", content: reply }];
-      setLog([...withMe, { from: "bot", text: reply || "✔", ts: now() }]);
+      setLog([...withMe, { from: "bot", text: reply || "✔", ts: now(), via }]);
       if (voiceOn) speakText(reply || "");
     } catch (e) {
       const fb = FALLBACK[agent.id](t);
@@ -1181,6 +1218,11 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
                   <div className="ac-msg-acts">
                     <button onClick={async () => { const ok = await copyText(m.text); showToast(ok ? "הועתק ✓" : "נכשל"); }}><Copy size={12} /> העתק</button>
                     <button onClick={() => { addIdea(agent.id, m.text.split("\n")[0].slice(0, 90)); }}><Lightbulb size={12} /> לרעיונות</button>
+                    {m.via && m.via.engine !== "local" && (
+                      <span className={"ac-via " + m.via.engine} title={m.via.reason}>
+                        {m.via.engine === "claude" ? "🧠 Claude" : "⚡ Groq"}
+                      </span>
+                    )}
                   </div>
                 )}
               </div>
@@ -1962,7 +2004,7 @@ function SettingsView({ showToast }) {
         <div className="ac-set-h"><Sparkles size={18} /> Claude (Anthropic) · המוח האמיתי
           <span className={"ac-cloud-pill " + (anthropicKey() ? "on" : "")}>{anthropicKey() ? "מחובר 🟢" : "לא מחובר ⚪"}</span>
         </div>
-        <p className="ac-set-note">חיבור ישיר ל-Claude של Anthropic — כל שיחה עם סוכן עוברת למודל האמיתי. שים לב: זהו שירות <b>בתשלום לפי שימוש</b> (אין מנוי קבוע — משלמים רק על מה שצורכים, ואפשר להגדיר תקרת הוצאה חודשית בחשבון Anthropic). 🔒 המפתח נשמר רק במכשיר הזה והקריאות הולכות ישירות מהדפדפן ל-Anthropic. כשמפתח Claude מחובר הוא קודם ל-Groq; אם קריאה נכשלת — יש נפילה אוטומטית ל-Groq כדי שהשיחה לא תיעצר.</p>
+        <p className="ac-set-note">חיבור ישיר ל-Claude של Anthropic — כל שיחה עם סוכן עוברת למודל האמיתי. שים לב: זהו שירות <b>בתשלום לפי שימוש</b> (אין מנוי קבוע — משלמים רק על מה שצורכים, ואפשר להגדיר תקרת הוצאה חודשית בחשבון Anthropic). 🔒 המפתח נשמר רק במכשיר הזה והקריאות הולכות ישירות מהדפדפן ל-Anthropic. 🧭 כששני המפתחות מחוברים, יהודה (המנכ"ל) מנתב כל בקשה לפי הגודל שלה: שאלות קצרות ויומיומיות → Groq החינמי; משימות גדולות/מורכבות (תכנון, ניתוח, קוד, מסמכים, שיחה עמוקה) → Claude. ליד כל תשובה בצ'אט מופיע תג שמראה איזה מוח ענה ולמה. אם מנוע נכשל — השני מחלץ אוטומטית.</p>
         <input className="ac-set-in" type="password" value={claudeKey} onChange={(e) => setClaudeKey(e.target.value)} placeholder="sk-ant-..." dir="ltr" />
         <select className="ac-set-in" value={claudeMdl} onChange={(e) => setClaudeMdl(e.target.value)} dir="rtl">
           {CLAUDE_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
@@ -2220,6 +2262,9 @@ function StyleTag() {
 .ac-msg-acts{display:flex;gap:7px;margin-top:6px}
 .ac-msg-acts button{display:flex;align-items:center;gap:4px;background:var(--s8);border:1px solid var(--s7);color:var(--s4);border-radius:8px;padding:5px 9px;font-family:inherit;font-size:10.5px;font-weight:700;cursor:pointer;transition:.15s}
 .ac-msg-acts button:hover{color:var(--c);border-color:color-mix(in srgb,var(--c) 45%,transparent)}
+.ac-via{display:flex;align-items:center;border-radius:8px;padding:5px 9px;font-size:10px;font-weight:800;letter-spacing:.3px;cursor:help}
+.ac-via.claude{background:rgba(228,188,99,.12);border:1px solid rgba(228,188,99,.4);color:#E4BC63}
+.ac-via.groq{background:rgba(110,170,240,.1);border:1px solid rgba(110,170,240,.35);color:#9fc6f0}
 .ac-typing{display:flex;gap:5px;align-items:center;padding:14px 15px!important}
 .ac-typing span{width:7px;height:7px;border-radius:50%;background:var(--c);display:inline-block;animation:acType 1.2s ease-in-out infinite}
 .ac-typing span:nth-child(2){animation-delay:.2s}
