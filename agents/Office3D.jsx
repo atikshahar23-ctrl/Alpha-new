@@ -280,7 +280,7 @@ function buildFloorTexture() {
 // night version of the same skyline, drawn onto a shared canvas and swapped
 // (redrawn + texture.needsUpdate) whenever the office's day/night phase
 // actually changes, so the window isn't a single static image any more.
-function drawSkyline(ctx, W, H, mode) {
+export function drawSkyline(ctx, W, H, mode) {
   const isDay = mode === "day";
   const isSunset = mode === "sunset";
   const sky = ctx.createLinearGradient(0, 0, 0, H);
