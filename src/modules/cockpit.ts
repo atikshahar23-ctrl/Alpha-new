@@ -12,6 +12,7 @@ import {
 } from '../brain/memory';
 import { route } from '../brain/router';
 import { loadPriceAlerts, savePriceAlerts, type PriceAlert } from './proactive';
+import { sim, isSimConfigured, getSimUrl, setSimUrl } from './simulatorBridge';
 import { openSamsonixWizard, loadSamsonixForms, deleteSamsonixForm, printSamsonixForm } from './samsonixWizard';
 import {
   addEvent, loadEvents, addTask, loadTasks, toggleTask, removeTask, loadState,
@@ -818,6 +819,52 @@ function renderTrading(root: HTMLElement, hooks: CockpitHooks, close: () => void
   tk.appendChild(price);
   tk.appendChild(row);
   root.appendChild(tk);
+
+  // ── HeavyGuard Simulator — the same live backend connection used by the
+  // Agents area's Simulator tab (agents/SimulatorPanel.jsx), reached here
+  // through the same simulatorBridge client instead of a second one. ──
+  const hg = card(L('סימולטור מסחר · HeavyGuard', 'HeavyGuard Trading Simulator'), L('אותו חיבור שיש באזור הסוכנים', 'Same connection as the Agents area'));
+  if (!isSimConfigured()) setSimUrl('https://heavt-guard-simulator-1.onrender.com/');
+  const hgUrl = el('div', 'cp-note', esc(getSimUrl()));
+  const hgStatus = el('div', 'cp-note', L('לא נבדק', 'Not checked yet'));
+  const hgPrices = el('div', 'cp-list');
+  const hgPos = el('div', 'cp-list');
+  const hgRefresh = btn(L('רענון ⟳', 'Refresh ⟳'), true);
+  const drawHg = async () => {
+    hgStatus.textContent = L('בודק…', 'Checking…');
+    try {
+      const [prices, positions] = await Promise.all([sim.getBinanceMulti(), sim.getOpenPositions()]);
+      hgStatus.innerHTML = `<span class="cp-chg up">● ${L('חי', 'Live')}</span>`;
+      hgPrices.innerHTML = '';
+      prices.slice(0, 4).forEach(d => {
+        const r = el('div', 'cp-row');
+        const chg = parseFloat(d.lastFundingRate) * 100;
+        r.innerHTML = `<span class="cp-row-main">${esc(d.symbol.replace('USDT', ''))}</span><span class="cp-row-sub">$${parseFloat(d.markPrice).toLocaleString()} · funding ${chg.toFixed(3)}%</span>`;
+        hgPrices.appendChild(r);
+      });
+      hgPos.innerHTML = '';
+      if (!positions.length) hgPos.appendChild(el('div', 'cp-empty', L('אין פוזיציות פתוחות.', 'No open positions.')));
+      else positions.forEach(p => {
+        const pnl = parseFloat(p.unRealizedProfit);
+        const r = el('div', 'cp-row');
+        r.innerHTML = `<span class="cp-row-main">${esc(p.symbol)}</span><span class="cp-row-sub ${pnl >= 0 ? 'up' : 'down'}">${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)} USDT</span>`;
+        hgPos.appendChild(r);
+      });
+    } catch (e) {
+      hgStatus.innerHTML = `<span class="cp-chg down">● ${L('לא זמין', 'Offline')}</span>`;
+      hgPrices.innerHTML = ''; hgPos.innerHTML = '';
+    }
+  };
+  hgRefresh.onclick = drawHg;
+  hg.appendChild(hgUrl);
+  hg.appendChild(hgStatus);
+  hg.appendChild(el('div', 'cp-card-sub', L('מחירים', 'Prices')));
+  hg.appendChild(hgPrices);
+  hg.appendChild(el('div', 'cp-card-sub', L('פוזיציות נייר פתוחות', 'Open paper positions')));
+  hg.appendChild(hgPos);
+  hg.appendChild(hgRefresh);
+  root.appendChild(hg);
+  drawHg();
 
   // ── Price alerts ──
   const al = card(L('התראות מחיר', 'Price Alerts'), L('התראות אוטומטיות בחציית סף', 'Proactive notifications on threshold cross'));
