@@ -2267,6 +2267,122 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         off.obstacles.forEach((o) => obstacles.push({ x: wx + o.x * cr + o.z * sr, z: wz - o.x * sr + o.z * cr, r: o.r }));
       }
     });
+    // Department zoning — the 13 desks are grouped into three clusters
+    // (declared in that order in AGENTS, zipped 1:1 onto deskPositions):
+    // north row = revenue/growth, west column = finance/ops, south row =
+    // engineering. A floating neon zone label over each cluster's midpoint
+    // makes the grouping actually readable on the floor, not just an
+    // invisible convention in the data.
+    {
+      const zones = [
+        { range: [0, 5], label: "צמיחה · הכנסות", color: 0xF43F5E },
+        { range: [5, 9], label: "כספים · תפעול", color: 0x14B8A6 },
+        { range: [9, 13], label: "הנדסה · מערכות", color: 0xFF8C42 },
+      ];
+      zones.forEach((z) => {
+        const group = deskPositions.slice(z.range[0], z.range[1]);
+        const cx = group.reduce((s, p) => s + p.x, 0) / group.length;
+        const cy = group.reduce((s, p) => s + p.y, 0) / group.length;
+        const [wx, wz] = toWorld(cx, cy);
+        const sign = buildNeonSign(z.label, z.color, 2.6, 0.5);
+        sign.position.set(wx, 4.1, wz);
+        scene.add(sign);
+      });
+    }
+    // ── Executive mezzanine ─────────────────────────────────────────────
+    // A real second level over the west lounge corner (the floor's quietest
+    // traffic zone since v150 — agents no longer roam through it): a
+    // marble-and-gold platform reached by an actual climbable staircase,
+    // glass balustrades, a private lounge, a minimalist "restroom" volume,
+    // and its own skyline balcony window. scene.userData carries the
+    // geometry so the animate loop's player-height field and the
+    // proximity/lighting logic below can read it without re-deriving it.
+    const MEZ = { x: -13, z: 11, y: 2.6, w: 9, d: 9 };
+    const STAIR = { x: -13, xw: 1.7, z0: 1.0, z1: MEZ.z - MEZ.d / 2 };
+    scene.userData.mezzanine = { MEZ, STAIR };
+    {
+      const goldMat = new THREE.MeshStandardMaterial({ color: 0xE4BC63, roughness: 0.35, metalness: 0.6 });
+      const marbleMat = new THREE.MeshStandardMaterial({ color: 0xdedad2, roughness: 0.2, metalness: 0.05 });
+      const glassMat = new THREE.MeshPhysicalMaterial({ color: 0x8fd0ff, transparent: true, opacity: 0.12, roughness: 0.05, metalness: 0.1, side: THREE.DoubleSide, depthWrite: false });
+
+      // Platform slab + four corner support columns.
+      const slab = new THREE.Mesh(new THREE.BoxGeometry(MEZ.w, 0.26, MEZ.d), marbleMat);
+      slab.position.set(MEZ.x, MEZ.y - 0.13, MEZ.z);
+      slab.castShadow = true; slab.receiveShadow = true;
+      scene.add(slab);
+      const edgeTrim = new THREE.Mesh(new THREE.BoxGeometry(MEZ.w + 0.06, 0.05, MEZ.d + 0.06), goldMat);
+      edgeTrim.position.set(MEZ.x, MEZ.y, MEZ.z);
+      scene.add(edgeTrim);
+      [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([sx, sz]) => {
+        const col = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, MEZ.y, 10), goldMat);
+        col.position.set(MEZ.x + sx * (MEZ.w / 2 - 0.3), MEZ.y / 2, MEZ.z + sz * (MEZ.d / 2 - 0.3));
+        col.castShadow = true;
+        scene.add(col);
+      });
+
+      // Glass balustrade around the open edges — south (stair landing gap
+      // left clear) and east (the side overlooking the open floor).
+      const rail = (w, x, z, alongX) => {
+        const g = new THREE.Mesh(new THREE.PlaneGeometry(w, 1.0), glassMat);
+        if (!alongX) g.rotation.y = Math.PI / 2;
+        g.position.set(x, MEZ.y + 0.5, z);
+        scene.add(g);
+        const top = new THREE.Mesh(new THREE.BoxGeometry(alongX ? w : 0.05, 0.04, alongX ? 0.05 : w), goldMat);
+        top.position.set(x, MEZ.y + 1.0, z);
+        scene.add(top);
+      };
+      rail(MEZ.w - STAIR.xw - 0.4, MEZ.x - STAIR.xw / 2 - (MEZ.w - STAIR.xw - 0.4) / 2 - 0.2, MEZ.z - MEZ.d / 2, true);
+      rail((MEZ.w - STAIR.xw) / 2, MEZ.x + STAIR.xw / 2 + (MEZ.w - STAIR.xw) / 4 + 0.1, MEZ.z - MEZ.d / 2, true);
+      rail(MEZ.d, MEZ.x + MEZ.w / 2, MEZ.z, false);
+
+      // Staircase — a straight run of gold-edged marble steps climbing from
+      // the open floor up to the platform's south landing.
+      const STEPS = 14;
+      for (let i = 0; i < STEPS; i++) {
+        const t0 = i / STEPS, t1 = (i + 1) / STEPS;
+        const stepZ = STAIR.z0 + (STAIR.z1 - STAIR.z0) * (t0 + t1) / 2;
+        const stepY = MEZ.y * ((t0 + t1) / 2);
+        const step = new THREE.Mesh(new THREE.BoxGeometry(STAIR.xw, 0.06, (STAIR.z1 - STAIR.z0) / STEPS + 0.02), marbleMat);
+        step.position.set(STAIR.x, stepY, stepZ);
+        step.castShadow = true; step.receiveShadow = true;
+        scene.add(step);
+      }
+      // Handrails flanking the stair run.
+      [-1, 1].forEach((s) => {
+        const rl = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, STAIR.z1 - STAIR.z0), goldMat);
+        rl.position.set(STAIR.x + s * STAIR.xw / 2, MEZ.y * 0.55, (STAIR.z0 + STAIR.z1) / 2);
+        rl.rotation.x = -Math.atan2(MEZ.y, STAIR.z1 - STAIR.z0);
+        scene.add(rl);
+      });
+
+      // Private lounge on the platform: a couch + coffee table, an
+      // "EXECUTIVE" neon sign, a minimalist frosted-glass restroom volume,
+      // and a west-facing balcony window with its own skyline view (the
+      // ground floor's showcase window only faces north).
+      const lounge = buildCouch();
+      lounge.scale.setScalar(0.85);
+      lounge.position.set(MEZ.x - 1.6, MEZ.y, MEZ.z + 1.6);
+      lounge.rotation.y = Math.PI / 2;
+      scene.add(lounge);
+      const execSign = buildNeonSign("EXECUTIVE LOUNGE", 0xE4BC63, 2.4, 0.5);
+      execSign.position.set(MEZ.x, MEZ.y + 1.9, MEZ.z + MEZ.d / 2 - 0.1);
+      scene.add(execSign);
+
+      const wcMat = new THREE.MeshPhysicalMaterial({ color: 0xdfeeff, transparent: true, opacity: 0.35, roughness: 0.2, side: THREE.DoubleSide, depthWrite: false });
+      const wc = new THREE.Mesh(new THREE.BoxGeometry(1.3, 2.2, 1.3), wcMat);
+      wc.position.set(MEZ.x + 2.6, MEZ.y + 1.1, MEZ.z - 2.8);
+      scene.add(wc);
+      const wcSign = buildNeonSign("שירותים", 0x6FD3F0, 1.1, 0.32);
+      wcSign.position.set(MEZ.x + 2.6, MEZ.y + 2.45, MEZ.z - 2.8);
+      scene.add(wcSign);
+
+      const balcTex = skyline.tex.clone();
+      balcTex.repeat.set(0.3, 0.4); balcTex.offset.set(0.1, 0.15); balcTex.needsUpdate = true;
+      const balcWin = new THREE.Mesh(new THREE.PlaneGeometry(MEZ.d - 1.5, 1.8), new THREE.MeshBasicMaterial({ map: balcTex, fog: false }));
+      balcWin.rotation.y = Math.PI / 2;
+      balcWin.position.set(MEZ.x - MEZ.w / 2 - 0.02, MEZ.y + 1.3, MEZ.z);
+      scene.add(balcWin);
+    }
     dineTablePositions.forEach((t) => {
       const tbl = buildDiningTable();
       const [wx, wz] = toWorld(t.x, t.y);
@@ -2958,6 +3074,51 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     const curSky = new THREE.Color(0x1b2440);
     const tmpColor = new THREE.Color();
 
+    // Executive mezzanine height field — a cheap "ramp zone" instead of a
+    // real navmesh: the staircase footprint maps z-progress to height, the
+    // platform footprint is a flat plateau, everywhere else is the ground
+    // floor. Only the player uses this (the 13 desk agents never leave the
+    // ground floor), so this is the entire "multi-level pathfinding" the
+    // sim needs — a full 3D navmesh would be solving a problem that
+    // doesn't exist here.
+    const mez = scene.userData.mezzanine;
+    function mezHeightAt(x, z) {
+      if (!mez) return 0;
+      const { MEZ, STAIR } = mez;
+      if (x > STAIR.x - STAIR.xw / 2 && x < STAIR.x + STAIR.xw / 2 && z > STAIR.z0 && z <= STAIR.z1) {
+        const t = Math.min(1, Math.max(0, (z - STAIR.z0) / (STAIR.z1 - STAIR.z0)));
+        return MEZ.y * t;
+      }
+      if (x > MEZ.x - MEZ.w / 2 && x < MEZ.x + MEZ.w / 2 && z > STAIR.z1 && z < MEZ.z + MEZ.d / 2) {
+        return MEZ.y;
+      }
+      return 0;
+    }
+    // A holographic "ACCESS GRANTED" gate at the stair base — flashes once
+    // per approach, matching the proximity-security ask without a real
+    // per-door state machine (there's exactly one door here: the stairs).
+    let mezAccess = null;
+    if (mez) {
+      const gateX = mez.STAIR.x, gateZ = mez.STAIR.z0 - 0.6;
+      const tagCvs = document.createElement("canvas");
+      tagCvs.width = 384; tagCvs.height = 96;
+      const tctx = tagCvs.getContext("2d");
+      tctx.fillStyle = "rgba(6,16,10,.85)"; tctx.fillRect(0, 0, 384, 96);
+      tctx.strokeStyle = "#3FD79A"; tctx.lineWidth = 3; tctx.strokeRect(2, 2, 380, 92);
+      tctx.fillStyle = "#3FD79A"; tctx.font = "800 30px system-ui"; tctx.textAlign = "center";
+      tctx.fillText("✓ ACCESS GRANTED", 192, 58);
+      const tagTex = new THREE.CanvasTexture(tagCvs); tagTex.colorSpace = THREE.SRGBColorSpace;
+      const tag = new THREE.Sprite(new THREE.SpriteMaterial({ map: tagTex, transparent: true, opacity: 0, depthWrite: false }));
+      tag.scale.set(1.6, 0.4, 1);
+      tag.position.set(gateX, 2.3, gateZ);
+      scene.add(tag);
+      const ring = new THREE.Mesh(new THREE.RingGeometry(0.5, 0.56, 32), new THREE.MeshBasicMaterial({ color: 0x3FD79A, transparent: true, opacity: 0, side: THREE.DoubleSide }));
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(gateX, 0.03, gateZ);
+      scene.add(ring);
+      mezAccess = { gateX, gateZ, tag, ring, flashT: 0, wasIn: false, warm: 0 };
+    }
+
     const onKeyDown = (e) => {
       const k = e.key.toLowerCase();
       liveRef.current.keys[k] = true;
@@ -3210,7 +3371,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         playerH.group.rotation.y += dSit * k;
         setClip(playerH, CLIP.sit);
       } else if (mlen > 0.08) {
-        playerH.group.position.y += (0 - playerH.group.position.y) * Math.min(1, dt * 8);
+        playerH.group.position.y += (mezHeightAt(playerH.group.position.x, playerH.group.position.z) - playerH.group.position.y) * Math.min(1, dt * 8);
         mx /= mlen; mz /= mlen;
         const SPEED = 5.0;
         playerH.group.position.x = clamp(playerH.group.position.x + mx * SPEED * dt, -(FLOOR_W / 2 - 1), FLOOR_W / 2 - 1);
@@ -3225,8 +3386,29 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         }
         setClip(playerH, CLIP.walk);
       } else {
-        playerH.group.position.y += (0 - playerH.group.position.y) * Math.min(1, dt * 8);
+        playerH.group.position.y += (mezHeightAt(playerH.group.position.x, playerH.group.position.z) - playerH.group.position.y) * Math.min(1, dt * 8);
         setClip(playerH, fpTankControls && kTurn ? CLIP.walk : CLIP.idle);
+      }
+      // Executive mezzanine: a proximity "ACCESS GRANTED" flash at the
+      // stair base (fires once per approach), and the whole room's ambient
+      // warms toward gold while the owner is up on the platform — Work
+      // Mode down on the floor, Executive Mode upstairs.
+      if (mezAccess) {
+        const dStair = Math.hypot(playerH.group.position.x - mezAccess.gateX, playerH.group.position.z - mezAccess.gateZ);
+        const inGate = dStair < 2.2;
+        if (inGate && !mezAccess.wasIn) { mezAccess.flashT = 1; }
+        mezAccess.wasIn = inGate;
+        if (mezAccess.flashT > 0) {
+          mezAccess.flashT = Math.max(0, mezAccess.flashT - dt * 0.6);
+          mezAccess.tag.material.opacity = mezAccess.flashT * 0.95;
+          mezAccess.ring.material.opacity = mezAccess.flashT * 0.8;
+          mezAccess.ring.scale.setScalar(1 + (1 - mezAccess.flashT) * 1.6);
+        }
+        const upstairs = playerH.group.position.y > 1.3;
+        const targetWarm = upstairs ? 1 : 0;
+        mezAccess.warm += (targetWarm - mezAccess.warm) * Math.min(1, dt * 1.2);
+        ambient.color.setRGB(1, 1 - mezAccess.warm * 0.08, 1 - mezAccess.warm * 0.22);
+        sun.color.lerp(tmpColor.set(mezAccess.warm > 0.5 ? 0xffdca0 : sunTargetHex), mezAccess.warm * 0.5 * dt);
       }
       // "You can sit here" prompt — near your own chair (or already seated).
       const nearSeat = Math.hypot(playerH.group.position.x - OWNER_SEAT.x, playerH.group.position.z - OWNER_SEAT.z) < 3.2;
