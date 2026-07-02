@@ -3447,6 +3447,14 @@ body.is-mobile-ui.mobile-min .fab-group{
 .sys-embed-cta{background:linear-gradient(135deg,#F7E8C0,#E4BC63);color:#241a06;border-radius:11px;padding:12px 20px;font-weight:800;text-decoration:none}
 #hudMarkets{cursor:pointer;pointer-events:auto}
 .mk-more{margin-top:8px;text-align:center;font-size:10.5px;color:#8a7d5e;letter-spacing:.4px}
+.mk-sec{margin:9px 0 3px;font-size:10px;font-weight:800;letter-spacing:1.4px;color:#E4BC63;border-bottom:1px solid rgba(228,188,99,.2);padding-bottom:3px}
+.mk-trade{background:linear-gradient(150deg,rgba(24,224,255,.07),rgba(228,188,99,.05));border:1px solid rgba(228,188,99,.22);border-radius:12px;padding:9px 11px;margin-bottom:9px}
+.mk-trade-row{display:flex;justify-content:space-between;gap:6px;margin-bottom:7px}
+.mk-trade-row>div{display:flex;flex-direction:column;align-items:center;gap:1px}
+.mk-trade-row b{font-size:13px;font-weight:800;color:#fff;font-family:'Space Grotesk',monospace;white-space:nowrap}
+.mk-trade-row span{font-size:9px;color:#8a7d5e}
+.mk-trade-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:10px;color:#cfc3a3}
+.mk-trade-open{background:rgba(228,188,99,.16);border:1px solid rgba(228,188,99,.4);color:#F7E8C0;border-radius:8px;padding:4px 10px;font-size:10.5px;font-weight:800;text-decoration:none;white-space:nowrap}
 .mk-detail{display:flex;flex-direction:column;gap:12px}
 .mk-detail-h{font-size:13px;color:#e4bc63;text-align:center;font-family:"Space Grotesk",sans-serif;letter-spacing:.4px}
 .mk-detail-list{display:flex;flex-direction:column;gap:8px}
