@@ -1524,6 +1524,44 @@ function QuoteView({ quote, profile = PROFILE_DEFAULT, onBack, showToast }) {
 
 /* ============================ Vehicle & maintenance ============================ */
 const VEHICLE_TYPES = ["ביטוח", "טסט", "טיפול", "תיקון"];
+// Current odometer (ק"מ) — one shared record ("hg2:odometer") that the main
+// dashboard's fleet card reads too, so updating the number here updates the
+// car panel on the main screen (and vice versa) — one source of truth.
+function Odometer({ showToast }) {
+  const [odo, setOdo] = useState(null);
+  const [val, setVal] = useState("");
+  useEffect(() => {
+    store.get("hg2:odometer")
+      .then((r) => setOdo(r && r.value ? JSON.parse(r.value) : {}))
+      .catch(() => { try { setOdo(JSON.parse(localStorage.getItem("hg2:odometer") || "{}")); } catch { setOdo({}); } });
+  }, []);
+  const save = () => {
+    const km = parseInt(val, 10);
+    if (!km || km <= 0) return;
+    const rec = { km, date: todayISO() };
+    setOdo(rec); setVal("");
+    try { localStorage.setItem("hg2:odometer", JSON.stringify(rec)); } catch {}
+    store.set("hg2:odometer", JSON.stringify(rec)).catch(() => {});
+    showToast('מד הק"מ עודכן ✓');
+  };
+  return (<>
+    <div className="hg2-secttl"><Car size={15} /> מד ק"מ נוכחי</div>
+    <div className="hg2-crow" style={{ marginBottom: 18, alignItems: "center" }}>
+      <div className="hg2-crow-ic"><Route size={16} /></div>
+      <div className="hg2-crow-mid">
+        <b>{odo && odo.km ? odo.km.toLocaleString("he-IL") + ' ק"מ' : "לא הוזן עדיין"}</b>
+        <span>{odo && odo.date ? "עודכן " + dmy(odo.date) : 'עדכן את קריאת מד הק"מ של הרכב'}</span>
+      </div>
+      <input
+        type="number" inputMode="numeric" placeholder='ק"מ חדש'
+        value={val} onChange={(e) => setVal(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") save(); }}
+        style={{ width: 110, background: "#0d1117", border: "1px solid #263041", borderRadius: 10, color: "#fff", padding: "8px 10px", fontSize: 14 }}
+      />
+      <button className="hg2-mini" onClick={save}><CheckCircle2 size={14} /> עדכן</button>
+    </div>
+  </>);
+}
 function Vehicle({ index, onBack, showToast }) {
   const [recs, setRecs] = useState(null);
   const [open, setOpen] = useState(false);
@@ -1545,6 +1583,8 @@ function Vehicle({ index, onBack, showToast }) {
       <FlowHead title="רכב ותחזוקה" sub="ביטוח · טסט · טיפולים · נסיעות" onBack={onBack} />
 
       {reminders.length > 0 && <div className="hg2-remind"><Bell size={16} /><div>{reminders.map((r) => <div key={r.id}>{r.type}{r.note ? " · " + r.note : ""} — {r.days < 0 ? `עבר לפני ${-r.days} ימים` : `בעוד ${r.days} ימים`}</div>)}</div></div>}
+
+      <Odometer showToast={showToast} />
 
       <div className="hg2-secttl"><Wrench size={15} /> תחזוקה ומסמכים
         <button className="hg2-mini" onClick={() => { setEdit(null); setOpen(true); }}><Plus size={14} /> רשומה</button>

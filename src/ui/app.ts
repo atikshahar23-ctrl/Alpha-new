@@ -182,7 +182,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v124 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v125 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="panelsToggleBtn" title="הסתר/הצג פנלים" aria-label="הסתר פנלים">
           <svg class="pt-hide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -2831,12 +2831,28 @@ export function mountApp(root: HTMLElement) {
     const remindHtml = reminders.map((r: any) =>
       `<div class="hud-stat"><span>⏰ ${r.type}${r.note ? ' · ' + r.note : ''}</span><b class="${r.days < 0 ? 'warn' : ''}">${r.days < 0 ? `עבר לפני ${-r.days} ימים` : r.days === 0 ? 'היום' : `בעוד ${r.days} ימים`}</b></div>`).join('');
     const last = vehicle.slice().sort((a: any, b: any) => (b.date || '').localeCompare(a.date || ''))[0];
+    // Current odometer — same "hg2:odometer" record HG's רכב-ותחזוקה screen
+    // writes; tap ✎ to update it right from here (writes back to the shared
+    // key, so HG shows the new reading too).
+    let odo: any = {};
+    try { odo = JSON.parse(localStorage.getItem('hg2:odometer') || '{}') || {}; } catch {}
     el.innerHTML = `
+      <div class="hud-stat"><span>מד ק"מ נוכחי</span><b class="cy">${odo.km ? Number(odo.km).toLocaleString('he-IL') : '—'} <button id="hudOdoEdit" title="עדכן ק&quot;מ" style="background:none;border:1px solid rgba(228,188,99,.4);border-radius:6px;color:#E4BC63;font-size:11px;cursor:pointer;padding:1px 7px;vertical-align:2px">✎</button></b></div>
       <div class="hud-stat"><span>נסיעות · ק"מ</span><b>${trips.length} · ${km.toLocaleString('he-IL')}</b></div>
       ${remindHtml}
       <div class="hud-stat"><span>אחזקה מצטברת</span><b>${money(maintCost)}</b></div>
       ${last ? `<div class="hud-stat"><span>אחרון: ${last.type || ''}</span><b>${(last.date || '').split('-').reverse().join('/')}</b></div>` : ''}
       <div class="hud-foot">מסונכרן עם ניהול הצי ב-Heavy Guard ↗</div>`;
+    document.getElementById('hudOdoEdit')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const cur = odo.km ? String(odo.km) : '';
+      const v = window.prompt('קריאת מד ק"מ נוכחית:', cur);
+      const kmNew = parseInt(v || '', 10);
+      if (!kmNew || kmNew <= 0) return;
+      try { localStorage.setItem('hg2:odometer', JSON.stringify({ km: kmNew, date: new Date().toISOString().slice(0, 10) })); } catch {}
+      puterSync.scheduleSync?.();
+      renderFleetPanel();
+    });
   }
   const money = (n: number) => '₪' + Math.round(n || 0).toLocaleString('he-IL');
 
