@@ -2207,22 +2207,18 @@ function OfficeSim({ onClose, onOpenChat, logActivity, showToast }) {
         if (c.status === "meet") return { ...c, energy };
         const tired = energy < 25;
         const atDesk = c.status === "work" && !c.walking;
-        // Already sitting and working → very low odds of getting up at all.
-        // Away from the desk (break/eat/roam) → much more likely to head back.
-        const changeChance = tired ? 0.42 : atDesk ? 0.09 : 0.4;
-        if (Math.random() < changeChance) {
-          const r = Math.random();
+        // WorkingAtDesk is the hard default state — no more aimless roaming.
+        // An agent leaves the desk only for a REAL event: exhaustion (coffee),
+        // the noon lunch window, a meeting, or a summon from the owner; and
+        // anyone away from their desk gravitates straight back to work.
+        if (atDesk) {
+          if (tired && Math.random() < 0.42) return { ...moveTo(c, OFC_BREAK, "break"), energy };
+          if (noon && Math.random() < 0.12) return { ...moveTo(c, OFC_DINE[Math.floor(Math.random() * OFC_DINE.length)], "eat"), energy };
+          return { ...c, energy };
+        }
+        if (Math.random() < 0.45) {
           if (tired) return { ...moveTo(c, OFC_BREAK, "break"), energy };
-          if (noon && r < 0.3) return { ...moveTo(c, OFC_DINE[Math.floor(Math.random() * OFC_DINE.length)], "eat"), energy };
-          if (r < 0.62) return { ...moveTo(c, c.home, "work"), energy };
-          if (r < 0.78) return { ...moveTo(c, OFC_BREAK, "break"), energy };
-          if (r < 0.88) return { ...moveTo(c, OFC_DINE[Math.floor(Math.random() * OFC_DINE.length)], "eat"), energy };
-          // A short stretch-your-legs walk near the desk, not a trip across
-          // the whole floor — keeps the room feeling like an office, not an
-          // empty hall people drift through.
-          const rx = clamp(c.x + rnd(-16, 16), OFC_X0, OFC_X1);
-          const ry = clamp(c.y + rnd(-14, 14), OFC_Y0, OFC_Y1);
-          return { ...moveTo(c, { x: rx, y: ry }, "roam"), energy };
+          return { ...moveTo(c, c.home, "work"), energy };
         }
         return { ...c, energy };
       }));
