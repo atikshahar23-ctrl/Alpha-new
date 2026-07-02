@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import * as cloud from "./cloud";
 import Office3D from "./Office3D.jsx";
-import { BOOKS_BY_KEY, BOOKS_LAST_KEY, BOOKS_TOTAL_INCOME } from "../src/modules/books";
+import { BOOKS_BY_KEY, BOOKS_LAST_KEY, BOOKS_TOTAL_INCOME } from "../src/modules/books";import SimulatorPanel from "./SimulatorPanel.jsx";import { AGENT_TOOLS, handleAgentToolCall, isSimConfigured } from "../src/modules/simulatorBridge";
 
 /* ════════════════════════════════════════════════════════════════════
    ALPHA · AGENTS COMMAND CENTER
@@ -28,7 +28,7 @@ import { BOOKS_BY_KEY, BOOKS_LAST_KEY, BOOKS_TOTAL_INCOME } from "../src/modules
 const OWNER_NAME = "שחר";
 
 /* ── Storage ── */
-const K_HIST = "alpha:agents:hist";     // { [agentId]: [{from,text,ts}] }
+const K_SIM_TAB = "simulator"; // Tab key for SimulatorPanelconst K_HIST = "alpha:agents:hist";     // { [agentId]: [{from,text,ts}] }
 const K_IDEAS = "alpha:agents:ideas";   // [{id, agentId, text, status, ts}]
 const K_ACT = "alpha:agents:activity";  // [{id, agentId, text, ts}]
 const K_GH = "alpha:agents:gh";         // { token, owner, repo } — token stays local-only
