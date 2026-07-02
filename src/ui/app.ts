@@ -231,6 +231,14 @@ export function mountApp(root: HTMLElement) {
             <div class="hud-car3d" id="hudCar3d"></div>
             <div class="hud-card-body">טוען…</div>
           </section>
+          <section class="hud-card" id="hudAgenda">
+            <div class="hud-card-h"><span>היום ביומן</span><i></i></div>
+            <div class="hud-card-body">טוען…</div>
+          </section>
+          <section class="hud-card" id="hudTasksPanel">
+            <div class="hud-card-h"><span>משימות פתוחות</span><i></i></div>
+            <div class="hud-card-body">טוען…</div>
+          </section>
         </div>
 
         <!-- Right column — live markets + Israel news -->
@@ -242,6 +250,14 @@ export function mountApp(root: HTMLElement) {
           <section class="hud-card" id="hudNews">
             <div class="hud-card-h"><span>חדשות · ישראל</span><i></i></div>
             <div class="hud-card-body">טוען חדשות…</div>
+          </section>
+          <section class="hud-card" id="hudTeamPanel">
+            <div class="hud-card-h"><span>הסוכנים עכשיו</span><i></i></div>
+            <div class="hud-card-body">טוען…</div>
+          </section>
+          <section class="hud-card" id="hudWeather">
+            <div class="hud-card-h"><span>מזג אוויר</span><i></i></div>
+            <div class="hud-card-body">טוען…</div>
           </section>
         </div>
 
@@ -2901,6 +2917,58 @@ export function mountApp(root: HTMLElement) {
     el.innerHTML = '<div class="hud-empty">חדשות לא זמינות כרגע</div>';
   }
 
+  // ── The four side panels: today's agenda, open personal tasks, live agent
+  // activity from the Agents Command Center (same localStorage the agents
+  // app writes), and real Tel-Aviv weather (open-meteo, free, no key). ──
+  const esc = (s: string) => String(s || '').replace(/</g, '&lt;');
+  function renderAgendaPanel() {
+    const el = document.querySelector('#hudAgenda .hud-card-body');
+    if (!el) return;
+    const today = new Date().toISOString().slice(0, 10);
+    const ev = loadEvents().filter((e) => e.date >= today).slice(0, 3);
+    el.innerHTML = ev.length
+      ? ev.map((e) => `<div class="hud-stat"><span>${esc(e.title).slice(0, 26)}</span><b class="cy" style="font-size:12px">${e.date === today ? (e.time || 'היום') : e.date.slice(5).split('-').reverse().join('/')}</b></div>`).join('')
+      : '<div class="hud-empty">אין אירועים קרובים · אמור "קבע פגישה"</div>';
+  }
+  function renderTasksPanel() {
+    const el = document.querySelector('#hudTasksPanel .hud-card-body');
+    if (!el) return;
+    const open = loadTasks().filter((t) => !t.done);
+    const top = [...open].sort((a, b) => (a.priority === 'high' ? -1 : 1) - (b.priority === 'high' ? -1 : 1)).slice(0, 3);
+    el.innerHTML = top.length
+      ? top.map((t) => `<div class="hud-stat"><span>${t.priority === 'high' ? '🔥 ' : ''}${esc(t.text).slice(0, 28)}</span></div>`).join('') +
+        (open.length > 3 ? `<div class="hud-foot">+${open.length - 3} נוספות</div>` : '')
+      : '<div class="hud-empty">אין משימות פתוחות 🎉</div>';
+  }
+  const AGENT_NAMES: Record<string, string> = { ceo: 'יהודה', sales: 'זבולון', ops: 'גד', cmo: 'נפתלי', dev: 'דן', auto: 'אשר', data: 'יששכר', cs: 'בנימין', finance: 'ראובן', procure: 'שמעון', legal: 'לוי', growth: 'יוסף', facilities: 'דבורה' };
+  function renderTeamPanel() {
+    const el = document.querySelector('#hudTeamPanel .hud-card-body');
+    if (!el) return;
+    let acts: any[] = [];
+    try { acts = JSON.parse(localStorage.getItem('alpha:agents:activity') || '[]') || []; } catch {}
+    const top = acts.slice(0, 3);
+    el.innerHTML = top.length
+      ? top.map((a) => `<div class="hud-stat"><span><b style="font-size:11px;color:#E4BC63">${AGENT_NAMES[a.agentId] || ''}</b> · ${esc(a.text).slice(0, 30)}</span></div>`).join('') +
+        '<div class="hud-foot">לחץ למרכז הסוכנים ↗</div>'
+      : '<div class="hud-empty">פתח את מרכז הסוכנים כדי להתחיל</div>';
+  }
+  const WMO: Record<number, string> = { 0: '☀️ בהיר', 1: '🌤️ בהיר בעיקר', 2: '⛅ מעונן חלקית', 3: '☁️ מעונן', 45: '🌫️ ערפל', 48: '🌫️ ערפל', 51: '🌦️ טפטוף', 53: '🌦️ טפטוף', 61: '🌧️ גשם קל', 63: '🌧️ גשם', 65: '🌧️ גשם חזק', 80: '🌦️ ממטרים', 95: '⛈️ סופת רעמים' };
+  async function renderWeatherPanel() {
+    const el = document.querySelector('#hudWeather .hud-card-body');
+    if (!el) return;
+    try {
+      const r = await fetch('https://api.open-meteo.com/v1/forecast?latitude=32.08&longitude=34.78&current=temperature_2m,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min&timezone=Asia%2FJerusalem&forecast_days=1', { signal: AbortSignal.timeout(7000) });
+      const d = await r.json();
+      const c = d.current;
+      el.innerHTML = `
+        <div class="hud-stat"><span>${WMO[c.weather_code] || '🌡️'}</span><b>${Math.round(c.temperature_2m)}°</b></div>
+        <div class="hud-stat"><span>טווח היום</span><b class="cy" style="font-size:13px">${Math.round(d.daily.temperature_2m_min[0])}°–${Math.round(d.daily.temperature_2m_max[0])}°</b></div>
+        <div class="hud-foot">תל אביב · רוח ${Math.round(c.wind_speed_10m)} קמ"ש</div>`;
+    } catch {
+      el.innerHTML = '<div class="hud-empty">מזג אוויר לא זמין כרגע</div>';
+    }
+  }
+
   // ════════ Fleet & Operations Control Center ════════
   // One window, five panels: map of installs, trips/fleet, HeavyGuard tasks,
   // installs awaiting scheduling, and a live rotating-DNA effect.
@@ -3236,9 +3304,12 @@ export function mountApp(root: HTMLElement) {
     document.getElementById('hudOps')?.addEventListener('click', () => { addMsg(businessBriefing(), 'al'); });
     document.getElementById('hudFleetPanel')?.addEventListener('click', openFleet);
     renderHud(); renderMarkets(); renderNews(); renderFleetPanel();
-    setInterval(() => { renderHud(); renderFleetPanel(); }, 30000);
+    renderAgendaPanel(); renderTasksPanel(); renderTeamPanel(); renderWeatherPanel();
+    document.getElementById('hudTeamPanel')?.addEventListener('click', () => { location.href = 'agents.html'; });
+    setInterval(() => { renderHud(); renderFleetPanel(); renderAgendaPanel(); renderTasksPanel(); renderTeamPanel(); }, 30000);
     setInterval(renderMarkets, 60000);
     setInterval(renderNews, 300000);
+    setInterval(renderWeatherPanel, 900000);
     // The owner's 3D Tiggo 7 turntable in the fleet card — lazy dynamic
     // import so three.js never weighs down the main bundle's initial load.
     {
