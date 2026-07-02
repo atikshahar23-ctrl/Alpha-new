@@ -204,11 +204,12 @@
       document.documentElement.classList.add('booting');   // hide app + welcome until reveal
       var vid=document.getElementById('introVid'); var vaultVid=document.getElementById('vaultVid');
       var scanTxt=document.getElementById('scanTxt'); var hudBot=document.getElementById('hudBot'); var done=false, ended=false;
-      // Both intro videos slowed to ~4x so their combined run (alien 8s + vault
-      // 10s = 18s ÷ 4 ≈ 4.5s, plus the ~1s face-scan transition ≈ 5.5s) matches
-      // the uploaded opening sound (~5.44s): the videos finish as the sound ends.
-      if(vid){ try{ vid.playbackRate=4; }catch(e){} }
-      if(vaultVid){ try{ vaultVid.playbackRate=4; }catch(e){} }
+      // Both intro videos slowed to ~1.46x so their combined run (alien 8s +
+      // vault 10s = 18s ÷ 1.46 ≈ 12.32s, plus the 0.9s face-scan/lock-on gap
+      // between them ≈ 13.22s) matches the uploaded opening sound (13.22s):
+      // the videos finish right as the sound ends.
+      if(vid){ try{ vid.playbackRate=1.46; }catch(e){} }
+      if(vaultVid){ try{ vaultVid.playbackRate=1.46; }catch(e){} }
       // ── Opening sound: the uploaded clip plays over the intro videos only.
       // Procedural Web Audio (robotSound) stays as a fallback if the file is blocked.
       var sfxDone=false, openSnd=null, sndStarted=false;
