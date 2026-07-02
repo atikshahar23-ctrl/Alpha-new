@@ -3191,6 +3191,45 @@ html.perf-lite .topR { will-change: auto !important; transform: none !important;
 
 .hud { position: fixed; inset: 0; z-index: 2; pointer-events: none; font-family: 'Space Grotesk', system-ui, sans-serif; }
 
+/* ── Background FX layer (stars / comets / constellation streams) ── */
+.bgfx { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
+
+/* ── Orbital radial menu around the robot ── */
+.orb-menu { position: absolute; top: 47%; left: 50%; width: 0; height: 0; pointer-events: none;
+  animation: orbm-spin 90s linear infinite; }
+.orb-menu.paused, .orb-menu.paused .orbm-in { animation-play-state: paused; }
+@keyframes orbm-spin { to { transform: rotate(360deg); } }
+.orbm-item { position: absolute; top: 0; left: 0;
+  transform: rotate(var(--a)) translate(min(31vmin, 300px)); }
+.orbm-in { pointer-events: auto; display: flex; flex-direction: column; align-items: center; gap: 5px;
+  background: none; border: none; cursor: pointer; padding: 0; font-family: inherit;
+  animation: orbm-counter 90s linear infinite;
+  transform: rotate(calc(-1 * var(--a)));
+  transition: filter .25s; }
+@keyframes orbm-counter {
+  from { transform: rotate(calc(-1 * var(--a))); }
+  to   { transform: rotate(calc(-360deg - var(--a))); }
+}
+.orbm-ic { width: 58px; height: 58px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 32% 28%, rgba(228,188,99,.2), rgba(8,6,2,.78) 70%);
+  border: 1px solid rgba(228,188,99,.5); color: #F7E8C0;
+  box-shadow: 0 0 16px rgba(228,188,99,.22), inset 0 0 12px rgba(228,188,99,.12);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  transition: transform .28s cubic-bezier(.34,1.56,.64,1), box-shadow .28s, border-color .28s; }
+.orbm-ic svg { width: 23px; height: 23px; }
+.orbm-in b { font-size: 10px; font-weight: 700; letter-spacing: .4px; color: #d9c491; white-space: nowrap;
+  text-shadow: 0 0 10px rgba(0,0,0,.9); transition: color .25s; }
+.orbm-in:hover .orbm-ic { transform: scale(1.22);
+  border-color: #ffe9b0; box-shadow: 0 0 30px rgba(228,188,99,.55), inset 0 0 18px rgba(228,188,99,.3); }
+.orbm-in:hover b { color: #ffe9b0; }
+/* expanding tech-ring on hover */
+.orbm-ic::after { content: ''; position: absolute; inset: -7px; border-radius: 50%;
+  border: 1px dashed rgba(228,188,99,.0); transition: inset .3s, border-color .3s;
+  animation: hud-spin 14s linear infinite; }
+.orbm-in:hover .orbm-ic::after { inset: -12px; border-color: rgba(228,188,99,.65); }
+@media (max-width: 900px) { .orb-menu { display: none; } }
+@media (prefers-reduced-motion: reduce) { .orb-menu, .orbm-in, .orbm-ic::after { animation: none; } }
+
 /* ── Central figure ── */
 .hud-core { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -54%); width: min(44vh, 360px); aspect-ratio: 3/4; display: flex; align-items: center; justify-content: center; }
 .hud-core-glow { position: absolute; inset: -14%; background: radial-gradient(circle, rgba(228,188,99,.22), transparent 65%); filter: blur(10px); }

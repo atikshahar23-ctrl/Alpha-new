@@ -182,7 +182,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v148 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v149 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="panelsToggleBtn" title="הסתר/הצג פנלים" aria-label="הסתר פנלים">
           <svg class="pt-hide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -198,6 +198,7 @@ export function mountApp(root: HTMLElement) {
         <button class="chip ghost" id="newChat"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> <span data-i18n="newChat">חדש</span></button>
       </div>
       <div class="stage" id="stage"></div>
+      <canvas id="bgfx" class="bgfx" aria-hidden="true"></canvas>
       <canvas id="charSwapFx" class="char-swap-fx"></canvas>
       <canvas id="attackFx" class="attack-fx"></canvas>
 
@@ -210,6 +211,11 @@ export function mountApp(root: HTMLElement) {
           <svg class="hud-core-ring" viewBox="0 0 200 200" aria-hidden="true"><circle cx="100" cy="100" r="92" fill="none" stroke="rgba(228,188,99,.5)" stroke-width="1" stroke-dasharray="4 6"/><circle cx="100" cy="100" r="78" fill="none" stroke="rgba(247,232,192,.25)" stroke-width="1"/></svg>
           <div class="hud-core-tag">ALPHA CORE · ONLINE</div>
         </div>
+
+        <!-- Orbital radial menu — the six quick-access destinations orbiting
+             the robot (built in JS from the hud-rail, so the two menus can
+             never drift apart). Desktop only; the rail serves mobile. -->
+        <div class="orb-menu" id="orbMenu"></div>
 
         <!-- Wrapper: transparent on desktop (display:contents → columns keep their
              side positions); on mobile it becomes a clean bottom-anchored flex
@@ -894,6 +900,8 @@ export function mountApp(root: HTMLElement) {
   let orb: OrbHandle;
   try {
     orb = mountOrb($('stage'));
+    buildOrbitalMenu();
+    startBgFx();
   } catch {
     orb = { setEnergy() {}, pikaEmote() {}, dispose() {}, startBodyDetection() {}, stopBodyDetection() {}, setCharacter() {}, throwPokeball(_o, d) { d && d(); }, setCharacterTransform() {}, getCharacterTransform() { return { x: 0, y: 0, z: 0, s: 1, px: 0, py: 0, pz: 0 }; }, resetCharacterTransform() {}, pinCharacterTransform() {}, hasPinnedTransform() { return false; }, attackCharacter(_c: HTMLCanvasElement) {}, setPerfMode(_o: boolean) {} };
   }
@@ -2956,6 +2964,151 @@ export function mountApp(root: HTMLElement) {
   // headers (crypto / indices+commodities / stocks).
   let mkExpanded = false;
   const MK_GROUPS: ['crypto' | 'index' | 'stock', string][] = [['crypto', 'קריפטו'], ['index', 'מדדים וסחורות'], ['stock', 'מניות']];
+  // ── Orbital radial menu — the hud-rail destinations orbiting the robot.
+  // Cloned from #hudRail so the two menus can never drift apart; clicking a
+  // ring item triggers the original rail entry (same handlers/links).
+  function buildOrbitalMenu() {
+    const menu = document.getElementById('orbMenu');
+    const rail = document.getElementById('hudRail');
+    if (!menu || !rail || menu.children.length) return;
+    const items = Array.from(rail.children) as HTMLElement[];
+    const n = items.length || 1;
+    items.forEach((src, i) => {
+      const a = (360 / n) * i - 90;
+      const wrap = document.createElement('div');
+      wrap.className = 'orbm-item';
+      wrap.style.setProperty('--a', a + 'deg');
+      const btn = document.createElement('button');
+      btn.className = 'orbm-in';
+      btn.type = 'button';
+      btn.style.setProperty('--a', a + 'deg');
+      const label = (src.querySelector('span')?.textContent || '').split('·')[0].trim();
+      btn.innerHTML = `<i class="orbm-ic">${src.querySelector('svg')?.outerHTML || ''}</i><b>${label}</b>`;
+      btn.onclick = () => src.click();
+      btn.onmouseenter = () => menu.classList.add('paused');
+      btn.onmouseleave = () => menu.classList.remove('paused');
+      wrap.appendChild(btn);
+      menu.appendChild(wrap);
+    });
+  }
+
+  // ── Background FX layer — stars, comets, constellation data-streams and a
+  // soft aurora on a 2D canvas above the orb scene (additive, transparent).
+  // Cheap: one canvas, a few hundred draw ops, paused when the tab hides,
+  // skipped entirely for reduced-motion users.
+  function startBgFx() {
+    const cvs = document.getElementById('bgfx') as HTMLCanvasElement | null;
+    if (!cvs || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const ctx = cvs.getContext('2d');
+    if (!ctx) return;
+    let W = 0; let H = 0;
+    const resize = () => {
+      const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+      W = cvs.width = Math.round(innerWidth * dpr);
+      H = cvs.height = Math.round(innerHeight * dpr);
+    };
+    resize();
+    window.addEventListener('resize', resize);
+    const mobile = innerWidth < 860;
+    const R = (a: number, b: number) => a + Math.random() * (b - a);
+    const stars = Array.from({ length: mobile ? 40 : 85 }, () => ({ x: Math.random(), y: Math.random(), r: R(0.4, 1.5), p: R(0, 7), s: R(0.002, 0.012) }));
+    const nodes = Array.from({ length: mobile ? 11 : 22 }, () => ({ x: Math.random(), y: Math.random(), vx: R(-0.012, 0.012), vy: R(-0.009, 0.009) }));
+    const pulses: { a: number; b: number; t: number; v: number }[] = [];
+    let comet: { x: number; y: number; vx: number; vy: number; life: number } | null = null;
+    let nextComet = R(2, 6);
+    const auroras = [0, 1, 2].map((i) => ({ cx: 0.2 + i * 0.3, cy: 0.25 + (i % 2) * 0.4, r: R(0.24, 0.4), hue: i === 1 ? '46,230,255' : '228,188,99', ph: R(0, 7) }));
+    let last = performance.now();
+    const tick = (now: number) => {
+      requestAnimationFrame(tick);
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      if (document.hidden || !W) return;
+      ctx.clearRect(0, 0, W, H);
+      ctx.globalCompositeOperation = 'lighter';
+      const t = now / 1000;
+      // aurora — three huge soft blobs drifting in slow circles
+      auroras.forEach((a) => {
+        const cx = (a.cx + Math.sin(t * 0.05 + a.ph) * 0.06) * W;
+        const cy = (a.cy + Math.cos(t * 0.04 + a.ph) * 0.05) * H;
+        const rad = a.r * Math.max(W, H);
+        const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
+        g.addColorStop(0, `rgba(${a.hue},${0.05 + 0.02 * Math.sin(t * 0.3 + a.ph)})`);
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(cx - rad, cy - rad, rad * 2, rad * 2);
+      });
+      // constellation nodes + links + data pulses
+      nodes.forEach((nd) => {
+        nd.x = (nd.x + nd.vx * dt + 1) % 1;
+        nd.y = (nd.y + nd.vy * dt + 1) % 1;
+      });
+      const LINK = mobile ? 0.16 : 0.13;
+      ctx.lineWidth = Math.max(1, W / 1900);
+      for (let i = 0; i < nodes.length; i++) {
+        for (let j = i + 1; j < nodes.length; j++) {
+          const dx = nodes[i].x - nodes[j].x; const dy = nodes[i].y - nodes[j].y;
+          const d = Math.hypot(dx, dy * (H / W));
+          if (d < LINK) {
+            ctx.strokeStyle = `rgba(228,188,99,${0.14 * (1 - d / LINK)})`;
+            ctx.beginPath();
+            ctx.moveTo(nodes[i].x * W, nodes[i].y * H);
+            ctx.lineTo(nodes[j].x * W, nodes[j].y * H);
+            ctx.stroke();
+            if (pulses.length < 5 && Math.random() < 0.002) pulses.push({ a: i, b: j, t: 0, v: R(0.5, 1.1) });
+          }
+        }
+        ctx.fillStyle = 'rgba(247,232,192,.5)';
+        ctx.beginPath();
+        ctx.arc(nodes[i].x * W, nodes[i].y * H, Math.max(1, W / 1500), 0, 7);
+        ctx.fill();
+      }
+      for (let k = pulses.length - 1; k >= 0; k--) {
+        const p = pulses[k];
+        p.t += p.v * dt;
+        if (p.t >= 1) { pulses.splice(k, 1); continue; }
+        const A = nodes[p.a]; const B = nodes[p.b];
+        const px = (A.x + (B.x - A.x) * p.t) * W;
+        const py = (A.y + (B.y - A.y) * p.t) * H;
+        ctx.fillStyle = 'rgba(46,230,255,.85)';
+        ctx.beginPath();
+        ctx.arc(px, py, Math.max(1.6, W / 900), 0, 7);
+        ctx.fill();
+      }
+      // twinkling stars
+      stars.forEach((st) => {
+        st.y = (st.y + st.s * dt) % 1;
+        const a = 0.25 + 0.55 * Math.abs(Math.sin(t * 1.8 + st.p));
+        ctx.fillStyle = `rgba(247,232,192,${a})`;
+        ctx.beginPath();
+        ctx.arc(st.x * W, st.y * H, st.r * (W / 1600), 0, 7);
+        ctx.fill();
+      });
+      // shooting star every few seconds
+      nextComet -= dt;
+      if (!comet && nextComet <= 0) {
+        comet = { x: R(0.1, 0.9) * W, y: R(0, 0.25) * H, vx: R(-0.5, 0.5) * W, vy: R(0.25, 0.45) * H, life: 1 };
+        nextComet = R(4, 9);
+      }
+      if (comet) {
+        comet.x += comet.vx * dt; comet.y += comet.vy * dt; comet.life -= dt * 0.9;
+        if (comet.life <= 0) { comet = null; } else {
+          const tail = 0.12;
+          const g = ctx.createLinearGradient(comet.x - comet.vx * tail, comet.y - comet.vy * tail, comet.x, comet.y);
+          g.addColorStop(0, 'rgba(228,188,99,0)');
+          g.addColorStop(1, `rgba(255,240,200,${0.8 * comet.life})`);
+          ctx.strokeStyle = g;
+          ctx.lineWidth = Math.max(1.4, W / 1100);
+          ctx.beginPath();
+          ctx.moveTo(comet.x - comet.vx * tail, comet.y - comet.vy * tail);
+          ctx.lineTo(comet.x, comet.y);
+          ctx.stroke();
+        }
+      }
+      ctx.globalCompositeOperation = 'source-over';
+    };
+    requestAnimationFrame(tick);
+  }
+
   function renderMarketsBody(rows: MkRow[]) {
     const el = document.querySelector('#hudMarkets .hud-card-body');
     if (!el) return;
