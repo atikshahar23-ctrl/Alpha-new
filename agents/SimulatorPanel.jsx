@@ -57,12 +57,12 @@ function SetupForm({ onSave }) {
                 <div className="flex items-center gap-2 text-amber-400 font-semibold">
                         <SettingsIcon size={18} />
                         Connect to HeavyGuard Simulator
-                </div>div>
+                </div>
                 <p className="text-gray-400 text-sm">
-                        Enter the deployed URL of the <code>heavt-guard-simulator</code>code> backend
-                        (e.g.&nbsp;<code>https://heavt-guard-simulator.onrender.com</code>code>).
+                        Enter the deployed URL of the <code>heavt-guard-simulator</code> backend
+                        (e.g.&nbsp;<code>https://heavt-guard-simulator.onrender.com</code>).
                         Leave the API key blank if the server has no auth.
-                </p>p>
+                </p>
                 <label className="flex flex-col gap-1 text-sm text-gray-300">
                         Simulator URL
                         <input
@@ -71,7 +71,7 @@ function SetupForm({ onSave }) {
                                     value={url}
                                     onChange={(e) => setUrl(e.target.value)}
                                   />
-                </label>label>
+                </label>
                 <label className="flex flex-col gap-1 text-sm text-gray-300">
                         API Key (optional)
                         <input
@@ -81,15 +81,15 @@ function SetupForm({ onSave }) {
                                     type="password"
                                     onChange={(e) => setKey(e.target.value)}
                                   />
-                </label>label>
+                </label>
         <button
                   className="bg-blue-600 hover:bg-blue-700 text-white rounded px-4 py-2 font-semibold transition"
                   onClick={save}
                   disabled={!url.startsWith("http")}
                 >
                 Save &amp; Connect
-        </button>button>
-          </div>div>
+        </button>
+          </div>
         );
 }
 
@@ -100,12 +100,12 @@ function PriceCard({ d }) {
     const funding = parseFloat(d.lastFundingRate) * 100;
     return (
           <div className="bg-gray-800 rounded-lg p-3 flex flex-col gap-1 min-w-[110px]">
-                <span className="text-gray-400 text-xs font-mono">{sym}/USDT</span>span>
-                <span className="text-white font-bold text-base">${fmt(d.markPrice)}</span>span>
+                <span className="text-gray-400 text-xs font-mono">{sym}/USDT</span>
+                <span className="text-white font-bold text-base">${fmt(d.markPrice)}</span>
                 <span className={`text-xs ${funding >= 0 ? "text-emerald-400" : "text-red-400"}`}>
                         Funding {pct(d.lastFundingRate)}
-                </span>span>
-          </div>div>
+                </span>
+          </div>
         );
 }
 
@@ -116,13 +116,13 @@ function SignalRow({ s }) {
           <div className="flex items-center gap-3 bg-gray-800 rounded-lg px-3 py-2 text-sm">
                 <span className={`font-bold w-16 ${isLong ? "text-emerald-400" : "text-red-400"}`}>
                   {isLong ? "▲" : "▼"} {s.direction}
-                </span>span>
-                <span className="text-white font-mono w-24">{s.symbol}</span>span>
-                <span className="text-gray-400">entry <span className="text-white">{fmt(s.entry)}</span>span></span>span>
-                <span className="text-gray-400">SL <span className="text-red-400">{fmt(s.sl)}</span>span></span>span>
-                <span className="text-gray-400">TP <span className="text-emerald-400">{fmt(s.tp)}</span>span></span>span>
-                <span className="ml-auto text-xs text-gray-500">conf {Math.round(s.confidence * 100)}%</span>span>
-          </div>div>
+                </span>
+                <span className="text-white font-mono w-24">{s.symbol}</span>
+                <span className="text-gray-400">entry <span className="text-white">{fmt(s.entry)}</span></span>
+                <span className="text-gray-400">SL <span className="text-red-400">{fmt(s.sl)}</span></span>
+                <span className="text-gray-400">TP <span className="text-emerald-400">{fmt(s.tp)}</span></span>
+                <span className="ml-auto text-xs text-gray-500">conf {Math.round(s.confidence * 100)}%</span>
+          </div>
         );
 }
 
@@ -131,20 +131,20 @@ function PositionRow({ p, onClose }) {
     const pnl = parseFloat(p.unRealizedProfit);
     return (
           <div className="flex items-center gap-3 bg-gray-800 rounded-lg px-3 py-2 text-sm">
-                <span className="text-white font-mono w-24">{p.symbol}</span>span>
-                <span className="text-gray-400">qty <span className="text-white">{p.positionAmt}</span>span></span>span>
-                <span className="text-gray-400">@ <span className="text-white">{fmt(p.entryPrice)}</span>span></span>span>
+                <span className="text-white font-mono w-24">{p.symbol}</span>
+                <span className="text-gray-400">qty <span className="text-white">{p.positionAmt}</span></span>
+                <span className="text-gray-400">@ <span className="text-white">{fmt(p.entryPrice)}</span></span>
                 <span className={`ml-auto font-bold ${pnl >= 0 ? "text-emerald-400" : "text-red-400"}`}>
                   {pnl >= 0 ? "+" : ""}{pnl.toFixed(2)} USDT
-                </span>span>
+                </span>
                 <button
                           className="ml-2 text-gray-500 hover:text-red-400 transition"
                           title="Close position"
                           onClick={() => onClose(p.symbol)}
                         >
                         <X size={14} />
-                </button>button>
-          </div>div>
+                </button>
+          </div>
         );
 }
 
@@ -223,18 +223,18 @@ export default function SimulatorPanel() {
             {/* Header */}
                 <div className="flex items-center gap-3">
                         <BarChart3 size={20} className="text-blue-400" />
-                        <span className="font-semibold text-lg">HeavyGuard Simulator</span>span>
-                        <span className="text-xs text-gray-500 truncate max-w-[200px]">{getSimUrl()}</span>span>
+                        <span className="font-semibold text-lg">HeavyGuard Simulator</span>
+                        <span className="text-xs text-gray-500 truncate max-w-[200px]">{getSimUrl()}</span>
                         <div className="ml-auto flex items-center gap-2">
                           {status === "online" && (
                         <span className="flex items-center gap-1 text-xs text-emerald-400">
                                       <CheckCircle2 size={12} /> Live
-                        </span>span>
+                        </span>
                                   )}
                           {status === "offline" && (
                         <span className="flex items-center gap-1 text-xs text-red-400">
                                       <XCircle size={12} /> Offline
-                        </span>span>
+                        </span>
                                   )}
                                   <button
                                                 className="text-gray-400 hover:text-white transition"
@@ -242,23 +242,23 @@ export default function SimulatorPanel() {
                                                 title="Refresh"
                                               >
                                               <RefreshCw size={16} className={status === "loading" ? "animate-spin" : ""} />
-                                  </button>button>
+                                  </button>
                                   <button
                                                 className="text-gray-500 hover:text-amber-400 transition"
                                                 onClick={() => { setConfigured(false); }}
                                                 title="Settings"
                                               >
                                               <SettingsIcon size={16} />
-                                  </button>button>
-                        </div>div>
-                </div>div>
+                                  </button>
+                        </div>
+                </div>
           
             {/* Error banner */}
             {error && (
                     <div className="flex items-center gap-2 bg-red-900/40 border border-red-700 rounded px-3 py-2 text-red-300 text-sm">
                               <AlertTriangle size={14} />
                       {error}
-                    </div>div>
+                    </div>
                 )}
           
             {/* Fear & Greed */}
@@ -266,19 +266,19 @@ export default function SimulatorPanel() {
                     <div className="flex items-center gap-2 text-sm text-gray-400">
                               <Activity size={14} />
                               Fear &amp; Greed:
-                              <span className="text-white font-bold">{overview.fearGreed.value}</span>span>
-                              <span className="text-gray-500">({overview.fearGreed.classification})</span>span>
-                    </div>div>
+                              <span className="text-white font-bold">{overview.fearGreed.value}</span>
+                              <span className="text-gray-500">({overview.fearGreed.classification})</span>
+                    </div>
                 )}
           
             {/* Price cards */}
             {prices.length > 0 && (
                     <div>
-                              <div className="text-xs text-gray-500 mb-2 uppercase tracking-wider">Live Prices</div>div>
+                              <div className="text-xs text-gray-500 mb-2 uppercase tracking-wider">Live Prices</div>
                               <div className="flex flex-wrap gap-2">
                                 {prices.map((d) => <PriceCard key={d.symbol} d={d} />)}
-                              </div>div>
-                    </div>div>
+                              </div>
+                    </div>
                 )}
           
             {/* Scalp signals */}
@@ -286,28 +286,28 @@ export default function SimulatorPanel() {
                     <div>
                               <div className="text-xs text-gray-500 mb-2 uppercase tracking-wider flex items-center gap-1">
                                           <Zap size={12} /> Scalp Signals
-                              </div>div>
+                              </div>
                               <div className="flex flex-col gap-1">
                                 {signals.map((s) => <SignalRow key={s.symbol} s={s} />)}
-                              </div>div>
-                    </div>div>
+                              </div>
+                    </div>
                 )}
           
             {/* Open positions */}
                 <div>
                         <div className="text-xs text-gray-500 mb-2 uppercase tracking-wider flex items-center justify-between">
-                                  <span className="flex items-center gap-1"><Shield size={12} /> Paper Positions ({positions.length})</span>span>
+                                  <span className="flex items-center gap-1"><Shield size={12} /> Paper Positions ({positions.length})</span>
                           {positions.length > 0 && (
                         <button
                                         className="text-red-400 hover:text-red-300 text-xs transition"
                                         onClick={closeAll}
                                       >
                                       Close All
-                        </button>button>
+                        </button>
                                   )}
-                        </div>div>
+                        </div>
                   {positions.length === 0 ? (
-                      <div className="text-gray-600 text-sm italic">No open positions</div>div>
+                      <div className="text-gray-600 text-sm italic">No open positions</div>
                     ) : (
                       <div className="flex flex-col gap-1">
                         {positions.map((p) => (
@@ -317,13 +317,13 @@ export default function SimulatorPanel() {
                                                         onClose={closePosition}
                                                       />
                                     ))}
-                      </div>div>
+                      </div>
                         )}
-                </div>div>
+                </div>
           
                 <div className="text-xs text-gray-700 mt-auto pt-2 border-t border-gray-800">
                         Paper trading only — no real funds involved.
-                </div>div>
-          </div>div>
+                </div>
+          </div>
         );
-}</div>
+}
