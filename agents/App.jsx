@@ -282,7 +282,7 @@ async function getDailyBriefing() {
     if (cached && !cached.includes("איתי")) return cached;
   }
   let text;
-  try { text = hasAI() ? await askGroq(briefingSystem() + bizContext(), [], "תן לי את התדריך של היום") : briefingFallback(); }
+  try { text = hasAI() ? await askAI(briefingSystem() + bizContext(), [], "תן לי את התדריך של היום") : briefingFallback(); }
   catch { text = briefingFallback(); }
   if (!text) text = briefingFallback();
   text = scrubOwnerName(text);
@@ -293,9 +293,50 @@ async function getDailyBriefing() {
 /* ── Tiny event bus: the Dev room pings the office sim so דן reacts live. ── */
 const devBus = { fns: new Set(), emit(p) { this.fns.forEach((f) => { try { f(p); } catch {} }); }, on(f) { this.fns.add(f); return () => this.fns.delete(f); } };
 
-/* ── Free AI brain (shared Groq key with the rest of Alpha) ── */
+/* ── AI brain ────────────────────────────────────────────────────────────
+   Two engines, one dispatcher (askAI):
+   · Claude (Anthropic) — the real thing, when an Anthropic API key is set.
+     Paid per use; the key + model choice live only in this device's
+     localStorage and calls go straight from the browser to Anthropic
+     (official SDK, no server of ours in between).
+   · Groq (free tier) — the free fallback, and the fallback if a Claude
+     call fails mid-conversation.
+   With neither key, the agents run on the scripted persona fallbacks. ── */
 const groqKey = () => { try { return localStorage.getItem("alpha_groq") || ""; } catch { return ""; } };
-const hasAI = () => !!groqKey();
+const anthropicKey = () => { try { return localStorage.getItem("alpha_anthropic") || ""; } catch { return ""; } };
+const hasAI = () => !!anthropicKey() || !!groqKey();
+const K_CLAUDE_MODEL = "alpha:agents:claudeModel";
+const CLAUDE_MODELS = [
+  { id: "claude-opus-4-8", label: "Claude Opus 4.8 · החזק (מומלץ)" },
+  { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6 · מאוזן" },
+  { id: "claude-haiku-4-5", label: "Claude Haiku 4.5 · מהיר וחסכוני" },
+];
+const claudeModel = () => { try { return localStorage.getItem(K_CLAUDE_MODEL) || CLAUDE_MODELS[0].id; } catch { return CLAUDE_MODELS[0].id; } };
+// SDK is loaded lazily so users without a Claude key never download it.
+let anthropicClient = null, anthropicClientKey = "";
+async function getAnthropic(key) {
+  const { default: Anthropic } = await import("@anthropic-ai/sdk");
+  if (!anthropicClient || anthropicClientKey !== key) {
+    anthropicClient = new Anthropic({ apiKey: key, dangerouslyAllowBrowser: true });
+    anthropicClientKey = key;
+  }
+  return anthropicClient;
+}
+async function askClaude(system, history, user, maxTokens = 800) {
+  const key = anthropicKey(); if (!key) throw new Error("NO_KEY");
+  const client = await getAnthropic(key);
+  // Anthropic requires strictly alternating turns starting with "user" —
+  // trim any leading assistant message left over from the sliding window.
+  let hist = history.slice(-6).filter((m) => m.role === "user" || m.role === "assistant");
+  while (hist.length && hist[0].role !== "user") hist = hist.slice(1);
+  const msg = await client.messages.create({
+    model: claudeModel(),
+    max_tokens: maxTokens,
+    system,
+    messages: [...hist, { role: "user", content: user }],
+  });
+  return (msg.content || []).filter((b) => b.type === "text").map((b) => b.text).join("").trim();
+}
 const GROQ_MODELS = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "gemma2-9b-it", "llama3-70b-8192"];
 async function askGroq(system, history, user, maxTokens = 800) {
   const key = groqKey(); if (!key) throw new Error("NO_KEY");
@@ -312,6 +353,15 @@ async function askGroq(system, history, user, maxTokens = 800) {
     if (res.status === 401 || res.status === 403) break;
   }
   throw new Error("Groq " + lastCode);
+}
+// One entry point for every agent conversation: Claude first when a key is
+// set, Groq as the free engine / mid-conversation fallback.
+async function askAI(system, history, user, maxTokens = 800) {
+  if (anthropicKey()) {
+    try { return await askClaude(system, history, user, maxTokens); }
+    catch (e) { if (!groqKey()) throw e; }
+  }
+  return askGroq(system, history, user, maxTokens);
 }
 
 /* ── Voice chat: free, browser-native Web Speech API — no backend/cost.
@@ -420,7 +470,7 @@ async function ghOpenPR(base, head, title, body, target) { const c = ghCfg(targe
 const DEV_EXEC_MAX_CHARS = 12000;
 async function devExecute({ filePath, instruction, title, target }) {
   if (!ghConfigured()) throw new Error("חבר טוקן GitHub בהגדרות");
-  if (!hasAI()) throw new Error("צריך מפתח Groq (חינם) בהגדרות");
+  if (!hasAI()) throw new Error("צריך מפתח AI בהגדרות (Claude או Groq)");
   const base = await ghDefaultBranch(target);
   const existing = await ghGetFile(filePath, base, target);
   if (existing && existing.content.length > DEV_EXEC_MAX_CHARS) {
@@ -430,7 +480,7 @@ async function devExecute({ filePath, instruction, title, target }) {
   const userMsg = existing
     ? `תוכן נוכחי של ${filePath}:\n\n${existing.content}\n\n---\nבצע: ${instruction}\nהחזר את הקובץ המלא המעודכן.`
     : `צור קובץ חדש ${filePath} עבור: ${instruction}\nהחזר את תוכן הקובץ המלא בלבד.`;
-  let code = await askGroq(sys, [], userMsg, 7000);
+  let code = await askAI(sys, [], userMsg, 7000);
   code = code.replace(/^```[a-zA-Z0-9]*\n?/, "").replace(/\n?```\s*$/, "").trim() + "\n";
   const slug = (filePath.split("/").pop() || "file").replace(/[^a-zA-Z0-9]+/g, "-").toLowerCase();
   const branch = `agents/${slug}-${Date.now().toString(36).slice(-5)}`;
@@ -459,7 +509,7 @@ function devBriefFallback(req) {
 2. לממש את השינוי בהתאם לעיצוב הקיים (זכוכית כהה + זהב).
 3. npm run build ולוודא שאין שגיאות.
 קריטריוני קבלה: התכונה עובדת חי, ה-build עובר, נדחף לברנצ'ים.
-(חבר מפתח Groq בהגדרות כדי שדן ינסח בריף חכם ומלא.)`;
+(חבר מפתח Claude או Groq בהגדרות כדי שדן ינסח בריף חכם ומלא.)`;
 }
 function briefTitle(brief, fallback) {
   const m = brief.match(/כותרת:\s*(.+)/);
@@ -629,18 +679,18 @@ function Face({ agent, fallback = 20 }) {
 
 /* ── Scripted persona fallback (when no AI key) ── */
 const FALLBACK = {
-  ceo: (q) => `קיבלתי, מנהל. ${q ? `לגבי "${q.slice(0, 40)}" — ` : ""}הנה איך אני מסתכל על זה:\n\n1. זבולון (מכירות) — לעקוב אחרי הלידים החמים והעסקאות הפתוחות.\n2. גד (תפעול) — לוודא שכל ההתקנות מתואמות.\n3. נפתלי (שיווק) — לדחוף תוכן שמביא לידים חדשים.\n\n➤ הצעד הבא: בחר שבט מהצוות ואני אאציל לו את המשימה. (חבר מפתח Groq בהגדרות כדי שאהפוך ל-AI חי ומלא.)`,
-  sales: (q) => `על זה, ${OWNER_NAME} 💪 ${q ? `לגבי "${q.slice(0, 40)}" — ` : ""}המהלך החכם:\n\n• פנה קודם ללידים שלא ענו 3+ ימים — שם הכסף.\n• הודעת מעקב קצרה: "היי [שם], חשבתי עליך — יש לי פתרון מיגון שיתאים בול לצי שלך. מתי נוח לדבר 5 דק'?"\n\n➤ הצעד הבא: שלח 3 הודעות מעקב עכשיו. (חבר מפתח Groq להפעלת AI מלא.)`,
-  ops: (q) => `מסודר. ${q ? `לגבי "${q.slice(0, 40)}" — ` : ""}צ'קליסט תפעול:\n\n☑ אשר זמינות טכנאי ליום ההתקנה\n☑ ודא מלאי: מצלמות, מסכים, איתורן\n☑ שלח ללקוח אישור + שעה\n☑ סגירה: חתימה + תשלום\n\n➤ הצעד הבא: עבור על ההתקנות של השבוע. (חבר מפתח Groq ל-AI מלא.)`,
-  cmo: (q) => `יאללה תוכן 🎬 ${q ? `לגבי "${q.slice(0, 40)}" — ` : ""}רעיון מהיר:\n\nהוק: "ככה גנב מנסה לפרוץ למשאית — וזה מה שעוצר אותו 👇"\nגוף: הדגמת מצלמה/איתורן בפעולה.\nCTA: "רוצה מיגון כזה? שלח לנו הודעה."\n\n➤ הצעד הבא: צלם 15 שניות מהשטח. (חבר מפתח Groq ל-AI מלא.)`,
-  dev: (q) => `מבין. ${q ? `לגבי "${q.slice(0, 40)}" — ` : ""}תכנון מהיר:\n\n• מיקום: קומפוננטה חדשה תחת ה-App הרלוונטי.\n• State: localStorage לשמירה, מתעדכן בזמן אמת.\n• UI: כרטיס זכוכית בעיצוב הקיים (זהב/כהה).\n\n➤ הצעד הבא: אגדיר את הקומפוננטה ואחבר ל-nav. (חבר מפתח Groq ל-AI מלא.)`,
-  auto: (q) => `מחבר חוטים ⚡ ${q ? `לגבי "${q.slice(0, 40)}" — ` : ""}אוטומציה מוצעת:\n\nטריגר: ליד חדש נכנס ל-CRM\n→ פעולה: הודעת וואטסאפ אוטומטית + תזכורת מעקב ל-3 ימים\n→ תוצאה: 0 לידים נופלים בין הכיסאות.\n\n➤ הצעד הבא: נגדיר את הטריגר הראשון. (חבר מפתח Groq ל-AI מלא.)`,
-  data: (q) => `בודקת נתונים 📊 ${q ? `לגבי "${q.slice(0, 40)}" — ` : ""}מדדים שחשוב לעקוב:\n\n• אחוז המרה ליד→עסקה\n• זמן ממוצע לסגירה\n• שווי פייפליין פתוח\n• לידים חמים שלא טופלו\n\n➤ הצעד הבא: נתחיל ממעקב אחוז ההמרה. (חבר מפתח Groq ל-AI מלא.)`,
-  cs: (q) => `כאן בשבילך 💗 ${q ? `לגבי "${q.slice(0, 40)}" — ` : ""}תסריט מענה:\n\n"שלום [שם], תודה שפנית — אני כאן בדיוק בשביל זה. בוא נסדר את זה ביחד עכשיו. ספר לי בדיוק מה קרה ואני דואג לפתרון מהיר."\n\n➤ הצעד הבא: צור קשר יזום עם לקוח אחד מהשבוע. (חבר מפתח Groq ל-AI מלא.)`,
-  finance: (q) => `בודק מספרים 💰 ${q ? `לגבי "${q.slice(0, 40)}" — ` : ""}מהלך פיננסי:\n\n• רכז את כל החובות הפתוחים לפי גיל החוב.\n• שלח תזכורת גבייה מנומסת ללקוחות מעל 30 יום.\n• ודא שכל עסקה מתומחרת ברווחיות בריאה.\n\n➤ הצעד הבא: עבור על רשימת הגבייה היום. (חבר מפתח Groq ל-AI מלא.)`,
-  procure: (q) => `בודק מלאי 📦 ${q ? `לגבי "${q.slice(0, 40)}" — ` : ""}המלצת רכש:\n\n• בדוק פריטים שמתחת לסף המינימום.\n• השווה 2-3 ספקים לפני הזמנה.\n• הזמן מבעוד מועד כדי לא לעכב התקנות.\n\n➤ הצעד הבא: רכז רשימת חוסרים. (חבר מפתח Groq ל-AI מלא.)`,
+  ceo: (q) => `קיבלתי, מנהל. ${q ? `לגבי "${q.slice(0, 40)}" — ` : ""}הנה איך אני מסתכל על זה:\n\n1. זבולון (מכירות) — לעקוב אחרי הלידים החמים והעסקאות הפתוחות.\n2. גד (תפעול) — לוודא שכל ההתקנות מתואמות.\n3. נפתלי (שיווק) — לדחוף תוכן שמביא לידים חדשים.\n\n➤ הצעד הבא: בחר שבט מהצוות ואני אאציל לו את המשימה. (חבר מפתח Claude או Groq בהגדרות כדי שאהפוך ל-AI חי ומלא.)`,
+  sales: (q) => `על זה, ${OWNER_NAME} 💪 ${q ? `לגבי "${q.slice(0, 40)}" — ` : ""}המהלך החכם:\n\n• פנה קודם ללידים שלא ענו 3+ ימים — שם הכסף.\n• הודעת מעקב קצרה: "היי [שם], חשבתי עליך — יש לי פתרון מיגון שיתאים בול לצי שלך. מתי נוח לדבר 5 דק'?"\n\n➤ הצעד הבא: שלח 3 הודעות מעקב עכשיו. (חבר מפתח Claude או Groq להפעלת AI מלא.)`,
+  ops: (q) => `מסודר. ${q ? `לגבי "${q.slice(0, 40)}" — ` : ""}צ'קליסט תפעול:\n\n☑ אשר זמינות טכנאי ליום ההתקנה\n☑ ודא מלאי: מצלמות, מסכים, איתורן\n☑ שלח ללקוח אישור + שעה\n☑ סגירה: חתימה + תשלום\n\n➤ הצעד הבא: עבור על ההתקנות של השבוע. (חבר מפתח Claude או Groq ל-AI מלא.)`,
+  cmo: (q) => `יאללה תוכן 🎬 ${q ? `לגבי "${q.slice(0, 40)}" — ` : ""}רעיון מהיר:\n\nהוק: "ככה גנב מנסה לפרוץ למשאית — וזה מה שעוצר אותו 👇"\nגוף: הדגמת מצלמה/איתורן בפעולה.\nCTA: "רוצה מיגון כזה? שלח לנו הודעה."\n\n➤ הצעד הבא: צלם 15 שניות מהשטח. (חבר מפתח Claude או Groq ל-AI מלא.)`,
+  dev: (q) => `מבין. ${q ? `לגבי "${q.slice(0, 40)}" — ` : ""}תכנון מהיר:\n\n• מיקום: קומפוננטה חדשה תחת ה-App הרלוונטי.\n• State: localStorage לשמירה, מתעדכן בזמן אמת.\n• UI: כרטיס זכוכית בעיצוב הקיים (זהב/כהה).\n\n➤ הצעד הבא: אגדיר את הקומפוננטה ואחבר ל-nav. (חבר מפתח Claude או Groq ל-AI מלא.)`,
+  auto: (q) => `מחבר חוטים ⚡ ${q ? `לגבי "${q.slice(0, 40)}" — ` : ""}אוטומציה מוצעת:\n\nטריגר: ליד חדש נכנס ל-CRM\n→ פעולה: הודעת וואטסאפ אוטומטית + תזכורת מעקב ל-3 ימים\n→ תוצאה: 0 לידים נופלים בין הכיסאות.\n\n➤ הצעד הבא: נגדיר את הטריגר הראשון. (חבר מפתח Claude או Groq ל-AI מלא.)`,
+  data: (q) => `בודקת נתונים 📊 ${q ? `לגבי "${q.slice(0, 40)}" — ` : ""}מדדים שחשוב לעקוב:\n\n• אחוז המרה ליד→עסקה\n• זמן ממוצע לסגירה\n• שווי פייפליין פתוח\n• לידים חמים שלא טופלו\n\n➤ הצעד הבא: נתחיל ממעקב אחוז ההמרה. (חבר מפתח Claude או Groq ל-AI מלא.)`,
+  cs: (q) => `כאן בשבילך 💗 ${q ? `לגבי "${q.slice(0, 40)}" — ` : ""}תסריט מענה:\n\n"שלום [שם], תודה שפנית — אני כאן בדיוק בשביל זה. בוא נסדר את זה ביחד עכשיו. ספר לי בדיוק מה קרה ואני דואג לפתרון מהיר."\n\n➤ הצעד הבא: צור קשר יזום עם לקוח אחד מהשבוע. (חבר מפתח Claude או Groq ל-AI מלא.)`,
+  finance: (q) => `בודק מספרים 💰 ${q ? `לגבי "${q.slice(0, 40)}" — ` : ""}מהלך פיננסי:\n\n• רכז את כל החובות הפתוחים לפי גיל החוב.\n• שלח תזכורת גבייה מנומסת ללקוחות מעל 30 יום.\n• ודא שכל עסקה מתומחרת ברווחיות בריאה.\n\n➤ הצעד הבא: עבור על רשימת הגבייה היום. (חבר מפתח Claude או Groq ל-AI מלא.)`,
+  procure: (q) => `בודק מלאי 📦 ${q ? `לגבי "${q.slice(0, 40)}" — ` : ""}המלצת רכש:\n\n• בדוק פריטים שמתחת לסף המינימום.\n• השווה 2-3 ספקים לפני הזמנה.\n• הזמן מבעוד מועד כדי לא לעכב התקנות.\n\n➤ הצעד הבא: רכז רשימת חוסרים. (חבר מפתח Claude או Groq ל-AI מלא.)`,
   legal: (q) => `בודק את הניסוח ⚖️ ${q ? `לגבי "${q.slice(0, 40)}" — ` : ""}נקודות חשובות:\n\n• ודא שתנאי האחריות ברורים בטופס.\n• כלול מדיניות ביטולים והחזרים.\n• שמור הסכמה חתומה מכל לקוח.\n\n➤ הצעד הבא: עבור על טופס ההתקשרות. (זו הכוונה כללית, לא ייעוץ משפטי מחייב.)`,
-  growth: (q) => `חושב קדימה 🧭 ${q ? `לגבי "${q.slice(0, 40)}" — ` : ""}מהלך צמיחה:\n\n• זהה ענף לקוחות שעוד לא מיצינו (צי, חקלאות, בנייה).\n• הצע חבילת מנוי/שירות מתמשך כהכנסה חוזרת.\n• בדוק מה המתחרים לא נותנים — וזה הבידול שלנו.\n\n➤ הצעד הבא: בחר ענף יעד אחד לחודש הקרוב. (חבר מפתח Groq ל-AI מלא.)`,
+  growth: (q) => `חושב קדימה 🧭 ${q ? `לגבי "${q.slice(0, 40)}" — ` : ""}מהלך צמיחה:\n\n• זהה ענף לקוחות שעוד לא מיצינו (צי, חקלאות, בנייה).\n• הצע חבילת מנוי/שירות מתמשך כהכנסה חוזרת.\n• בדוק מה המתחרים לא נותנים — וזה הבידול שלנו.\n\n➤ הצעד הבא: בחר ענף יעד אחד לחודש הקרוב. (חבר מפתח Claude או Groq ל-AI מלא.)`,
   facilities: (q) => `בודקת את המשרד 🧹 ${q ? `לגבי "${q.slice(0, 40)}" — ` : ""}תוכנית סדר ושיפוץ:\n\n• לזהות עמדות עם בלאגן ולסדר אותן היום.\n• לתכנן שיפוץ קטן לאזור שנראה הכי עמוס.\n• לוודא שלכל סוכן יש עמדה מסודרת ומצוידת.\n\n➤ הצעד הבא: תגיד "ארגני את המשרד" ואני מסדרת מחדש את כל העמדות ממש עכשיו — פעולה אמיתית, לא רק הבטחה.`,
 };
 
@@ -865,7 +915,7 @@ function TopBar({ online }) {
         </div>
       </div>
       <div className={"ac-top-status " + (online ? "on" : "off")}>
-        <Radio size={13} /> {online ? "AI חי" : "מצב הדגמה"}
+        <Radio size={13} /> {online ? (anthropicKey() ? "Claude חי" : "AI חי") : "מצב הדגמה"}
       </div>
     </div>
   );
@@ -1081,7 +1131,7 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
     }
     setBusy(true);
     try {
-      const reply = await askGroq(agent.persona + bizContext(), aiHist.current, t);
+      const reply = await askAI(agent.persona + bizContext(), aiHist.current, t);
       aiHist.current = [...aiHist.current.slice(-6), { role: "user", content: t }, { role: "assistant", content: reply }];
       setLog([...withMe, { from: "bot", text: reply || "✔", ts: now() }]);
       if (voiceOn) speakText(reply || "");
@@ -1102,7 +1152,7 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
           <div className="ac-chat-orb"><Face agent={agent} fallback={20} /><span className="ac-orb-ring" /></div>
           <div className="ac-chat-id">
             <b>{agent.name} {agent.boss && <Crown size={12} />}</b>
-            <span><span className="ac-live-dot" /> {agent.title} · {hasAI() ? "AI חי" : "מצב הדגמה"}</span>
+            <span><span className="ac-live-dot" /> {agent.title} · {anthropicKey() ? "Claude חי" : hasAI() ? "AI חי" : "מצב הדגמה"}</span>
           </div>
           {canSpeak() && (
             <button className={"ac-chat-x " + (voiceOn ? "on" : "")} onClick={toggleVoice} title={voiceOn ? "כבה קול" : "הפעל קול"}>
@@ -1161,7 +1211,7 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
   );
 }
 function greeting(a) {
-  return `שלום! אני ${a.name}, ${a.title}. ${a.tagline}. ${hasAI() ? "אני מחובר ל-AI חי — שאל אותי כל דבר בתחום שלי." : "במצב הדגמה כרגע — חבר מפתח Groq בהגדרות כדי שאהפוך לחכם מלא."} במה אפשר לעזור?`;
+  return `שלום! אני ${a.name}, ${a.title}. ${a.tagline}. ${hasAI() ? "אני מחובר ל-AI חי — שאל אותי כל דבר בתחום שלי." : "במצב הדגמה כרגע — חבר מפתח Claude או Groq בהגדרות כדי שאהפוך לחכם מלא."} במה אפשר לעזור?`;
 }
 
 /* ════════════════════════════════════════════════════════════════════
@@ -1309,7 +1359,7 @@ function DevConsole({ logActivity, showToast }) {
     logActivity("dev", "ניסח בריף פיתוח: " + t.slice(0, 30));
     devBus.emit({ agentId: "dev", text: "מנסח בריף 🧑‍💻" });
     try {
-      const out = hasAI() ? await askGroq(devBriefSystem() + bizContext(), [], t) : devBriefFallback(t);
+      const out = hasAI() ? await askAI(devBriefSystem() + bizContext(), [], t) : devBriefFallback(t);
       setBrief(out || devBriefFallback(t));
     } catch { setBrief(devBriefFallback(t)); }
     finally { setBusy(false); }
@@ -1677,7 +1727,7 @@ function OfficeSim({ onClose, onOpenChat, logActivity, showToast }) {
           ask: async (id, text) => {
             const a = byId(id); if (!a) return "";
             if (!hasAI()) return FALLBACK[id] ? FALLBACK[id](text) : `שלום, אני ${a.name}. ${a.tagline}.`;
-            try { return await askGroq(a.persona + bizContext(), [], text); }
+            try { return await askAI(a.persona + bizContext(), [], text); }
             catch { return FALLBACK[id] ? FALLBACK[id](text) : "סליחה, לא הצלחתי לענות כרגע."; }
           },
         }}
@@ -1866,6 +1916,14 @@ function BusinessView({ showToast, invest }) {
 function SettingsView({ showToast }) {
   const [key, setKey] = useState(() => groqKey());
   const [saved, setSaved] = useState(false);
+  const [claudeKey, setClaudeKey] = useState(() => anthropicKey());
+  const [claudeSaved, setClaudeSaved] = useState(false);
+  const [claudeMdl, setClaudeMdl] = useState(() => claudeModel());
+  const saveClaude = () => {
+    try { localStorage.setItem("alpha_anthropic", claudeKey.trim()); localStorage.setItem(K_CLAUDE_MODEL, claudeMdl); } catch {}
+    setClaudeSaved(true); showToast(claudeKey.trim() ? "Claude חובר ✓" : "ההגדרות נשמרו"); setTimeout(() => setClaudeSaved(false), 1500);
+  };
+  const clearClaude = () => { try { localStorage.removeItem("alpha_anthropic"); } catch {} setClaudeKey(""); showToast("מפתח Claude נמחק"); };
   const initGh = ghCfg();
   const [ghTok, setGhTok] = useState(initGh.token);
   const [ghRepo, setGhRepo] = useState(`${initGh.owner}/${initGh.repo}`);
@@ -1897,7 +1955,23 @@ function SettingsView({ showToast }) {
     <div className="ac-page">
       <div className="ac-hero sm">
         <h1>הגדרות</h1>
-        <p>הפעל את מוח ה-AI החינמי לכל הסוכנים</p>
+        <p>חבר מוח AI לכל הסוכנים — Claude האמיתי, או Groq החינמי</p>
+      </div>
+
+      <div className="ac-set-card">
+        <div className="ac-set-h"><Sparkles size={18} /> Claude (Anthropic) · המוח האמיתי
+          <span className={"ac-cloud-pill " + (anthropicKey() ? "on" : "")}>{anthropicKey() ? "מחובר 🟢" : "לא מחובר ⚪"}</span>
+        </div>
+        <p className="ac-set-note">חיבור ישיר ל-Claude של Anthropic — כל שיחה עם סוכן עוברת למודל האמיתי. שים לב: זהו שירות <b>בתשלום לפי שימוש</b> (אין מנוי קבוע — משלמים רק על מה שצורכים, ואפשר להגדיר תקרת הוצאה חודשית בחשבון Anthropic). 🔒 המפתח נשמר רק במכשיר הזה והקריאות הולכות ישירות מהדפדפן ל-Anthropic. כשמפתח Claude מחובר הוא קודם ל-Groq; אם קריאה נכשלת — יש נפילה אוטומטית ל-Groq כדי שהשיחה לא תיעצר.</p>
+        <input className="ac-set-in" type="password" value={claudeKey} onChange={(e) => setClaudeKey(e.target.value)} placeholder="sk-ant-..." dir="ltr" />
+        <select className="ac-set-in" value={claudeMdl} onChange={(e) => setClaudeMdl(e.target.value)} dir="rtl">
+          {CLAUDE_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+        </select>
+        <div className="ac-set-row">
+          <button className="ac-set-save" onClick={saveClaude}>{claudeSaved ? <><Check size={16} /> חובר</> : <><Sparkles size={16} /> חבר את Claude</>}</button>
+          <button className="ac-set-clear" onClick={clearClaude}><Trash2 size={15} /></button>
+        </div>
+        <a className="ac-set-link" href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">צור מפתח API בחשבון Anthropic <ArrowUpRight size={13} /></a>
       </div>
 
       <div className="ac-set-card">
