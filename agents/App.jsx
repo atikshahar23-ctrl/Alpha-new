@@ -3501,6 +3501,13 @@ function StyleTag() {
 .off3-phone-act{background:rgba(46,230,255,.07);border:1px solid rgba(46,230,255,.28);border-radius:11px;
   color:#d7f6ff;font-family:inherit;font-size:12.5px;font-weight:700;padding:9px 10px;cursor:pointer;text-align:right}
 .off3-phone-act:hover{background:rgba(46,230,255,.16);border-color:#2ee6ff}
+.off3-phone-embed{flex:1;min-height:0;display:flex;flex-direction:column}
+.off3-phone-embed-bar{display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid rgba(46,230,255,.22);
+  font-size:11.5px;font-weight:800;color:#9fe6f4}
+.off3-phone-back{background:rgba(46,230,255,.1);border:1px solid rgba(46,230,255,.3);border-radius:8px;color:#d7f6ff;
+  font-family:inherit;font-size:11px;font-weight:700;padding:5px 9px;cursor:pointer}
+.off3-phone-back:hover{background:rgba(46,230,255,.2)}
+.off3-phone-iframe{flex:1;min-height:360px;width:100%;border:0;background:#04040e}
 .off3-turbo.on{background:linear-gradient(135deg,rgba(63,215,154,.3),rgba(63,215,154,.1));
   border-color:#3FD79A;color:#b8ffd9;box-shadow:0 0 14px rgba(63,215,154,.35)}
 .off3-settings{position:absolute;top:56px;right:10px;z-index:60;width:min(300px,86vw);background:rgba(8,11,22,.94);

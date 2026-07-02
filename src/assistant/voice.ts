@@ -251,11 +251,11 @@ export class VoiceEngine {
 
   private isFemaleVoice(name: string): boolean {
     const n = name.toLowerCase();
-    return /female|woman|aria|jenny|jane|michelle|sonia|libby|samantha|zira|eva|joanna|amy|emma|salli|carmit|lucia|elena|conchita|lupe|penelope|paulina|monica|tessa|karen|moira|fiona|veena|ioana|sara|laura|alice|amelie|anna|catarina|damayanti|kanya|kyoko|mei-jia|melina|milena|nora|o-ren|sin-ji|tian-tian|ting-ting|yuna|zosia/.test(n);
+    return /female|woman|aria|jenny|jane|michelle|sonia|libby|samantha|zira|eva|joanna|amy|emma|salli|carmit|hila|lucia|elena|conchita|lupe|penelope|paulina|monica|tessa|karen|moira|fiona|veena|ioana|sara|laura|alice|amelie|anna|catarina|damayanti|kanya|kyoko|mei-jia|melina|milena|nora|o-ren|sin-ji|tian-tian|ting-ting|yuna|zosia/.test(n);
   }
   private isMaleVoice(name: string): boolean {
     const n = name.toLowerCase();
-    return /\bmale\b|david|mark|guy|james|ryan|daniel|thomas|oliver|jorge|diego|enrique|rishi|alex|fred|junior|liam/.test(n);
+    return /\bmale\b|david|mark|guy|james|ryan|daniel|thomas|oliver|jorge|diego|enrique|rishi|alex|fred|junior|liam|avri|asaf/.test(n);
   }
   private scoreVoice(v: SpeechSynthesisVoice) {
     let s = 0;
@@ -286,6 +286,11 @@ export class VoiceEngine {
       if (v.lang === 'en-US') s += 2; else if (v.lang === 'en-GB') s += 1;
     }
     if (L === 'he' && /carmit|hebrew/.test(n)) s += 4;
+    // Avri/Hila are the free Microsoft Azure neural voices for Hebrew that
+    // ship with Windows/Edge — noticeably more natural than the default
+    // espeak-style fallback voices, so they're worth ranking above generic
+    // "Hebrew" matches even without the premium/neural keywords in their name.
+    if (L === 'he' && /avri|hila/.test(n)) s += 10;
     if (L === 'es' && /lucia|elena|jorge|paulina|monica/.test(n)) s += 4;
 
     return s;
@@ -338,8 +343,13 @@ export class VoiceEngine {
     if (this.chosenVoice) { u.voice = this.chosenVoice; u.lang = this.chosenVoice.lang; }
     else u.lang = this.state.replyLang === 'he' ? 'he-IL' : this.state.replyLang === 'es' ? 'es-ES' : 'en-US';
     const cv = this.charVoice;
-    u.rate = (this.state.voiceSpeed || 1.0) * (cv?.rate ?? 1);
-    u.pitch = Math.max(0, Math.min(2, (this.state.voicePitch != null ? this.state.voicePitch : 1.0) * (cv?.pitch ?? 1)));
+    // A small "calm, professional" prosody bias for Hebrew specifically —
+    // a touch slower and a touch lower-pitched reads as more authoritative
+    // and less synthesized. Layered on top of the user's own rate/pitch
+    // sliders (and any character-voice override), never replacing them.
+    const calmBias = this.state.replyLang === 'he' ? { rate: 0.95, pitch: 0.97 } : { rate: 1, pitch: 1 };
+    u.rate = (this.state.voiceSpeed || 1.0) * (cv?.rate ?? 1) * calmBias.rate;
+    u.pitch = Math.max(0, Math.min(2, (this.state.voicePitch != null ? this.state.voicePitch : 1.0) * (cv?.pitch ?? 1) * calmBias.pitch));
     u.volume = this.state.voiceVolume != null ? this.state.voiceVolume : 1.0;
     let finished = false;
     const done = () => {
@@ -372,8 +382,11 @@ export class VoiceEngine {
     if (opts?.voiceName) v = this.voices.find(x => x.name === opts.voiceName) || v;
     if (v) { u.voice = v; u.lang = v.lang; }
     else u.lang = this.state.replyLang === 'he' ? 'he-IL' : this.state.replyLang === 'es' ? 'es-ES' : 'en-US';
-    u.rate = opts?.rate != null ? opts.rate : (this.state.voiceSpeed || 1.0);
-    u.pitch = opts?.pitch != null ? opts.pitch : (this.state.voicePitch != null ? this.state.voicePitch : 1.0);
+    // Match the same Hebrew calm-bias applied in speak() so a Voice Studio
+    // preview sounds like what will actually play, not a different mix.
+    const calmBias = this.state.replyLang === 'he' ? { rate: 0.95, pitch: 0.97 } : { rate: 1, pitch: 1 };
+    u.rate = (opts?.rate != null ? opts.rate : (this.state.voiceSpeed || 1.0)) * calmBias.rate;
+    u.pitch = (opts?.pitch != null ? opts.pitch : (this.state.voicePitch != null ? this.state.voicePitch : 1.0)) * calmBias.pitch;
     u.volume = opts?.volume != null ? opts.volume : (this.state.voiceVolume != null ? this.state.voiceVolume : 1.0);
     const wasSuppressed = this.suppress;
     this.suppress = true;

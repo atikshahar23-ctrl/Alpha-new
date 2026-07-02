@@ -1520,6 +1520,9 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   const [phoneOpen, setPhoneOpen] = useState(false);
   const [phoneTab, setPhoneTab] = useState("chat");
   const [phoneLog, setPhoneLog] = useState([]);
+  // Sandbox mode: HeavyGuard/CRM/TRADE render inside the phone's own iframe
+  // instead of navigating away, so the user never leaves the simulation.
+  const [phoneEmbed, setPhoneEmbed] = useState(null); // { url, title } | null
   useEffect(() => { liveRef.current.phoneOpen = phoneOpen; }, [phoneOpen]);
   useEffect(() => {
     liveRef.current.voiceLine = voiceLine;
@@ -3385,6 +3388,12 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           playerH.group.rotation.y += dRot * Math.min(1, dt * 10);
         }
         setClip(playerH, CLIP.walk);
+        // Same foot-slide fix the NPCs use: the walk clip plays at the pace
+        // that actually matches SPEED, instead of always at 1x — previously
+        // the player's stride visibly skated/shuffled against the ground at
+        // the fixed movement speed, reading as "robotic".
+        const pact = playerH.current && playerH.actions[playerH.current];
+        if (pact) pact.timeScale = Math.max(0.35, Math.min(1.25, SPEED / 2.5));
       } else {
         playerH.group.position.y += (mezHeightAt(playerH.group.position.x, playerH.group.position.z) - playerH.group.position.y) * Math.min(1, dt * 8);
         setClip(playerH, fpTankControls && kTurn ? CLIP.walk : CLIP.idle);
@@ -3868,10 +3877,25 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         <div className="off3-phone">
           <div className="off3-phone-notch" />
           <div className="off3-phone-tabs">
-            <button className={phoneTab === "chat" ? "on" : ""} onClick={() => setPhoneTab("chat")}>💬 שיחה חיה</button>
-            <button className={phoneTab === "ctrl" ? "on" : ""} onClick={() => setPhoneTab("ctrl")}>🎛 שליטה</button>
+            <button className={phoneTab === "chat" ? "on" : ""} onClick={() => { setPhoneTab("chat"); setPhoneEmbed(null); }}>💬 שיחה חיה</button>
+            <button className={phoneTab === "ctrl" ? "on" : ""} onClick={() => { setPhoneTab("ctrl"); setPhoneEmbed(null); }}>🎛 שליטה</button>
           </div>
-          {phoneTab === "chat" ? (
+          {phoneEmbed ? (
+            <div className="off3-phone-embed">
+              <div className="off3-phone-embed-bar">
+                <button className="off3-phone-back" onClick={() => setPhoneEmbed(null)}>← חזרה</button>
+                <span>{phoneEmbed.title}</span>
+              </div>
+              <iframe
+                key={phoneEmbed.url}
+                src={phoneEmbed.url}
+                title={phoneEmbed.title}
+                className="off3-phone-iframe"
+                allow="clipboard-write"
+                referrerPolicy="no-referrer"
+              />
+            </div>
+          ) : phoneTab === "chat" ? (
             <div className="off3-phone-body">
               {talkAgent
                 ? <div className="off3-phone-live">📡 בשיחה חיה עם {talkAgent.name} — ההולוגרמה מוקרנת מהיד</div>
@@ -3886,13 +3910,18 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           ) : (
             <div className="off3-phone-body">
               <div className="off3-phone-sec">העוזר הראשי · ALPHA</div>
+              {/* Command Center runs its own full 3D scene, same as this
+                  office sim — embedding two live WebGL contexts in one phone
+                  panel would tank performance on mobile, so this one still
+                  navigates instead of sandboxing. Everything else below is a
+                  plain 2D app and renders fine inside the phone's iframe. */}
               <button className="off3-phone-act" onClick={() => { window.location.href = "./"; }}>🤖 פתח את מרכז הפיקוד הראשי</button>
               <button className="off3-phone-act" onClick={() => setTurbo((v) => !v)}>🚀 טורבו: {turbo ? "פעיל — כבה" : "כבוי — הפעל"}</button>
               <button className="off3-phone-act" onClick={() => setFirstPerson((v) => !v)}>👁 תצוגה: {firstPerson ? "גוף ראשון" : "גוף שלישי"}</button>
               <div className="off3-phone-sec">המערכות שלך</div>
-              <button className="off3-phone-act" onClick={() => { window.location.href = "heavyguard.html"; }}>🛡 HEAVY GUARD OS</button>
-              <button className="off3-phone-act" onClick={() => { window.location.href = "https://heavt-guard-simulator-1.onrender.com/"; }}>📈 מערכת מסחר · TRADE</button>
-              <button className="off3-phone-act" onClick={() => { window.location.href = "agent.html"; }}>👔 CRM מכירות · איתי</button>
+              <button className="off3-phone-act" onClick={() => setPhoneEmbed({ url: "heavyguard.html", title: "🛡 HEAVY GUARD OS" })}>🛡 HEAVY GUARD OS</button>
+              <button className="off3-phone-act" onClick={() => setPhoneEmbed({ url: "https://heavt-guard-simulator-1.onrender.com/", title: "📈 מערכת מסחר · TRADE" })}>📈 מערכת מסחר · TRADE</button>
+              <button className="off3-phone-act" onClick={() => setPhoneEmbed({ url: "agent.html", title: "👔 CRM מכירות · איתי" })}>👔 CRM מכירות · איתי</button>
               <button className="off3-phone-act" onClick={() => onOpenChat("cmo")}>📣 שיווק · נפתלי (טיוטות ופרסום)</button>
               <button className="off3-phone-act" onClick={() => onOpenChat("ceo")}>🧑‍💼 דבר עם יהודה — המנכ"ל</button>
             </div>
