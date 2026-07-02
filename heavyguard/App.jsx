@@ -1668,6 +1668,21 @@ function ProjectModal({ proj, onClose, onSave }) {
 }
 
 /* ============================ Vehicle & maintenance ============================ */
+// The owner's actual car (Chery Tiggo 7 PHEV) as a live 3D turntable at the
+// top of the vehicle screen — the exact same module the main dashboard
+// mounts (lazy-imported so it costs nothing until this screen opens);
+// mountTiggo3D returns its disposer for unmount.
+function Car3D() {
+  const ref = useRef(null);
+  useEffect(() => {
+    let cleanup = null, dead = false;
+    import("../src/modules/tiggo3d")
+      .then((m) => { if (!dead && ref.current) cleanup = m.mountTiggo3D(ref.current); })
+      .catch(() => { if (ref.current) ref.current.style.display = "none"; });
+    return () => { dead = true; if (cleanup) cleanup(); };
+  }, []);
+  return <div className="hg2-car3d" ref={ref} />;
+}
 const VEHICLE_TYPES = ["ביטוח", "טסט", "טיפול", "תיקון"];
 // Current odometer (ק"מ) — one shared record ("hg2:odometer") that the main
 // dashboard's fleet card reads too, so updating the number here updates the
@@ -1726,6 +1741,8 @@ function Vehicle({ index, onBack, showToast }) {
   return (
     <div className="hg2-flow">
       <FlowHead title="רכב ותחזוקה" sub="ביטוח · טסט · טיפולים · נסיעות" onBack={onBack} />
+
+      <Car3D />
 
       {reminders.length > 0 && <div className="hg2-remind"><Bell size={16} /><div>{reminders.map((r) => <div key={r.id}>{r.type}{r.note ? " · " + r.note : ""} — {r.days < 0 ? `עבר לפני ${-r.days} ימים` : `בעוד ${r.days} ימים`}</div>)}</div></div>}
 
@@ -4066,6 +4083,9 @@ function Styles() {
 .hg2-cmd-main span{font-size:12px;color:var(--s4);letter-spacing:.5px}
 .hg2-cmd-main b{display:block;font-family:'Rubik';font-weight:900;font-size:34px;line-height:1.1;margin:3px 0;background:linear-gradient(95deg,var(--champ),var(--gold));-webkit-background-clip:text;background-clip:text;color:transparent}
 .hg2-cmd-main em{font-style:normal;font-size:11.5px;color:var(--s4)}
+.hg2-car3d{height:190px;border-radius:16px;overflow:hidden;margin-bottom:14px;border:1px solid var(--s7);
+  background:radial-gradient(ellipse 70% 90% at 50% 100%, rgba(228,188,99,.08), transparent 65%), linear-gradient(160deg,#141b26,#0b0f16);cursor:grab}
+.hg2-car3d canvas{width:100%!important;height:100%!important;display:block}
 .hg2-trend{display:flex;align-items:flex-end;gap:5px;height:38px;margin-top:10px}
 .hg2-trend i{flex:1;max-width:26px;border-radius:4px 4px 2px 2px;background:linear-gradient(180deg,var(--gold),rgba(228,188,99,.25));box-shadow:0 0 8px rgba(228,188,99,.25)}
 .hg2-proj{background:var(--s9);border:1px solid var(--s7);border-radius:14px;padding:13px 15px;margin-bottom:10px;position:relative;overflow:hidden}
