@@ -1514,6 +1514,17 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   const [firstPerson, setFirstPerson] = useState(false);
   const [voiceState, setVoiceState] = useState("idle"); // idle | listening | thinking | speaking
   const [voiceLine, setVoiceLine] = useState(null);      // { who, text } subtitle — sticky, only the user's own X closes it
+  // 📱 The owner's phone: a HUD handset that mirrors the live conversation
+  // (the same lines the 3D hologram projects) plus a control tab for the
+  // main assistant and every system.
+  const [phoneOpen, setPhoneOpen] = useState(false);
+  const [phoneTab, setPhoneTab] = useState("chat");
+  const [phoneLog, setPhoneLog] = useState([]);
+  useEffect(() => { liveRef.current.phoneOpen = phoneOpen; }, [phoneOpen]);
+  useEffect(() => {
+    liveRef.current.voiceLine = voiceLine;
+    if (voiceLine && voiceLine.text) setPhoneLog((p) => [...p.slice(-11), voiceLine]);
+  }, [voiceLine]);
   const recogRef = useRef(null);
   const joyDrag = useRef(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -2836,6 +2847,58 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // first step, facing north toward the team (the owner's glass office is
     // right there to the east to walk into).
     const playerH = buildHuman(0xE4BC63, "אתה", true, charTemplate, charClips, CHAR_SCALE, CHAR_CENTER_OFFSET, true, "הבעלים · שחר");
+    // 📱 Phone-in-hand + hologram: whenever a conversation is live (or the
+    // phone UI is open), a glowing handset appears at the owner's hand
+    // projecting a light cone with the current line of dialogue floating
+    // above it — the conversation, physically in the room.
+    const phoneGrp = new THREE.Group();
+    const phoneBeam = new THREE.Mesh(
+      new THREE.ConeGeometry(0.30, 0.55, 18, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0x2ee6ff, transparent: true, opacity: 0.10, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false, fog: false })
+    );
+    {
+      const handset = new THREE.Mesh(
+        new THREE.BoxGeometry(0.055, 0.115, 0.012),
+        new THREE.MeshStandardMaterial({ color: 0x0b0e14, metalness: 0.6, roughness: 0.3, emissive: 0x2ee6ff, emissiveIntensity: 0.35 })
+      );
+      phoneGrp.add(handset);
+      phoneBeam.position.y = 0.34;
+      phoneGrp.add(phoneBeam);
+    }
+    const phoneHoloCvs = document.createElement("canvas");
+    phoneHoloCvs.width = 512; phoneHoloCvs.height = 224;
+    const phCtx = phoneHoloCvs.getContext("2d");
+    const phoneHoloTex = new THREE.CanvasTexture(phoneHoloCvs);
+    phoneHoloTex.colorSpace = THREE.SRGBColorSpace;
+    const drawPhoneHolo = (who, text) => {
+      phCtx.clearRect(0, 0, 512, 224);
+      phCtx.fillStyle = "rgba(4,16,26,.72)"; phCtx.fillRect(0, 0, 512, 224);
+      phCtx.strokeStyle = "rgba(46,230,255,.75)"; phCtx.lineWidth = 3; phCtx.strokeRect(2, 2, 508, 220);
+      phCtx.fillStyle = "#2ee6ff"; phCtx.font = "800 30px system-ui"; phCtx.textAlign = "right";
+      phCtx.fillText("📡 " + (who || "ALPHA"), 488, 46);
+      phCtx.fillStyle = "#d7f6ff"; phCtx.font = "500 24px system-ui";
+      const words = String(text || "").split(" ");
+      let line = "", y = 92;
+      for (const w of words) {
+        if ((line + " " + w).length > 34) { phCtx.fillText(line, 488, y); y += 34; line = w; if (y > 200) break; }
+        else line = line ? line + " " + w : w;
+      }
+      if (y <= 200 && line) phCtx.fillText(line, 488, y);
+      // holographic scan lines
+      phCtx.fillStyle = "rgba(46,230,255,.06)";
+      for (let sy = 4; sy < 224; sy += 6) phCtx.fillRect(2, sy, 508, 1);
+      phoneHoloTex.needsUpdate = true;
+    };
+    drawPhoneHolo("", "מחובר · ALPHA");
+    const phoneHolo = new THREE.Sprite(new THREE.SpriteMaterial({ map: phoneHoloTex, transparent: true, opacity: 0.95, depthWrite: false }));
+    phoneHolo.scale.set(1.05, 0.46, 1);
+    phoneHolo.position.y = 0.85;
+    phoneGrp.add(phoneHolo);
+    phoneGrp.position.set(0.21, 1.03, 0.2);
+    phoneGrp.visible = false;
+    playerH.group.add(phoneGrp);
+    let lastHoloLine = "";
+    let phoneAnimT = 1; // 0→1 raise/flicker-in progress
     playerH.group.position.set(3.3, 0, 12.9);
     playerH.group.rotation.y = Math.PI;
     scene.add(playerH.group);
@@ -2977,6 +3040,32 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       }
       // Center-stage car turns slowly on its podium.
       centerSpin.forEach((w) => { w.rotation.y += dt * 0.28; });
+      // 📱 phone hologram — appears while talking (or with the phone UI
+      // open) and mirrors the current line of dialogue.
+      const phoneOn = !!liveRef.current.talkTarget || !!liveRef.current.phoneOpen;
+      if (phoneGrp.visible !== phoneOn) {
+        phoneGrp.visible = phoneOn;
+        if (phoneOn) phoneAnimT = 0; // raise + flicker-in starts
+      }
+      if (phoneOn) {
+        const cv = liveRef.current.voiceLine;
+        const key = cv ? cv.who + "|" + cv.text : "";
+        if (key !== lastHoloLine) { lastHoloLine = key; drawPhoneHolo(cv && cv.who, (cv && cv.text) || "מחובר · ALPHA"); }
+        // raise animation: the handset lifts to viewing height while the
+        // hologram flickers into existence.
+        if (phoneAnimT < 1) {
+          phoneAnimT = Math.min(1, phoneAnimT + dt * 2.2);
+          const e = 1 - Math.pow(1 - phoneAnimT, 3);
+          phoneGrp.position.y = 0.82 + 0.21 * e;
+          const flick = phoneAnimT < 0.85 ? (Math.sin(clock.elapsedTime * 40) > -0.4 ? 1 : 0.25) : 1;
+          phoneHolo.material.opacity = 0.95 * e * flick;
+          phoneHolo.scale.set(1.05 * e, 0.46 * e, 1);
+        } else {
+          phoneHolo.material.opacity = 0.95;
+        }
+        phoneBeam.rotation.y += dt * 1.2;
+        phoneBeam.material.opacity = 0.08 + 0.05 * Math.abs(Math.sin(clock.elapsedTime * 2.2));
+      }
       // Diagnostic sweep: the glowing ring rises over the car for ~2.6s of
       // every 18s cycle, shrinking with the body's taper.
       if (scanRing) {
@@ -3589,6 +3678,44 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       >
         <Zap size={16} /> {turbo ? "טורבו פעיל" : "טורבו"}
       </button>
+      <button className={"off3-phonebtn" + (phoneOpen ? " on" : "")} onClick={() => setPhoneOpen((v) => !v)} title="הטלפון שלך — שיחה חיה ושליטה במערכות">
+        📱
+      </button>
+      {phoneOpen && (
+        <div className="off3-phone">
+          <div className="off3-phone-notch" />
+          <div className="off3-phone-tabs">
+            <button className={phoneTab === "chat" ? "on" : ""} onClick={() => setPhoneTab("chat")}>💬 שיחה חיה</button>
+            <button className={phoneTab === "ctrl" ? "on" : ""} onClick={() => setPhoneTab("ctrl")}>🎛 שליטה</button>
+          </div>
+          {phoneTab === "chat" ? (
+            <div className="off3-phone-body">
+              {talkAgent
+                ? <div className="off3-phone-live">📡 בשיחה חיה עם {talkAgent.name} — ההולוגרמה מוקרנת מהיד</div>
+                : <div className="off3-phone-live dim">אין שיחה פעילה — התקרב לסוכן ודבר איתו</div>}
+              {phoneLog.length === 0 && <p className="off3-phone-empty">כל שורת שיחה תופיע כאן וגם על ההולוגרמה שמעל הטלפון ביד שלך.</p>}
+              {phoneLog.map((l, i) => (
+                <div key={i} className="off3-phone-line" style={{ "--c": l.color || "#2ee6ff" }}>
+                  <b>{l.who}</b><span>{l.text}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="off3-phone-body">
+              <div className="off3-phone-sec">העוזר הראשי · ALPHA</div>
+              <button className="off3-phone-act" onClick={() => window.open("./", "_blank")}>🤖 פתח את מרכז הפיקוד הראשי</button>
+              <button className="off3-phone-act" onClick={() => setTurbo((v) => !v)}>🚀 טורבו: {turbo ? "פעיל — כבה" : "כבוי — הפעל"}</button>
+              <button className="off3-phone-act" onClick={() => setFirstPerson((v) => !v)}>👁 תצוגה: {firstPerson ? "גוף ראשון" : "גוף שלישי"}</button>
+              <div className="off3-phone-sec">המערכות שלך</div>
+              <button className="off3-phone-act" onClick={() => window.open("heavyguard.html", "_blank")}>🛡 HEAVY GUARD OS</button>
+              <button className="off3-phone-act" onClick={() => window.open("https://heavt-guard-simulator-1.onrender.com/", "_blank")}>📈 מערכת מסחר · TRADE</button>
+              <button className="off3-phone-act" onClick={() => window.open("agent.html", "_blank")}>👔 CRM מכירות · איתי</button>
+              <button className="off3-phone-act" onClick={() => onOpenChat("cmo")}>📣 שיווק · נפתלי (טיוטות ופרסום)</button>
+              <button className="off3-phone-act" onClick={() => onOpenChat("ceo")}>🧑‍💼 דבר עם יהודה — המנכ"ל</button>
+            </div>
+          )}
+        </div>
+      )}
       {(canSit || sitting) && (
         <button className={"off3-sit" + (sitting ? " on" : "")} onClick={() => setSitting((v) => !v)} title={sitting ? "קום מהכיסא" : "שב בכיסא שלך (E)"}>
           {sitting ? "🚶 קום" : "🪑 שב בכיסא שלך"}

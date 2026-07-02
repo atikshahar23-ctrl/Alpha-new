@@ -3288,6 +3288,30 @@ function StyleTag() {
   border:1px solid rgba(110,170,240,.3);color:#eaf1ff;font-weight:800;font-size:.75rem;
   cursor:pointer;backdrop-filter:blur(8px);white-space:nowrap;font-family:inherit}
 .off3-turbo:hover{border-color:#3FD79A;color:#b8ffd9}
+.off3-phonebtn{position:absolute;top:56px;right:96px;z-index:3;width:34px;height:34px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;background:rgba(6,9,18,.72);
+  border:1px solid rgba(46,230,255,.4);font-size:15px;cursor:pointer;backdrop-filter:blur(8px)}
+.off3-phonebtn:hover,.off3-phonebtn.on{border-color:#2ee6ff;box-shadow:0 0 14px rgba(46,230,255,.45)}
+.off3-phone{position:absolute;top:100px;right:10px;z-index:61;width:min(270px,88vw);max-height:min(480px,70vh);
+  display:flex;flex-direction:column;background:linear-gradient(170deg,rgba(6,14,24,.96),rgba(3,8,14,.97));
+  border:1px solid rgba(46,230,255,.45);border-radius:26px;box-shadow:0 0 30px rgba(46,230,255,.25),0 18px 44px rgba(0,0,0,.6);
+  backdrop-filter:blur(16px);overflow:hidden;animation:acRise .25s ease both}
+.off3-phone-notch{width:86px;height:16px;margin:8px auto 2px;border-radius:9px;background:#020508;border:1px solid rgba(46,230,255,.25)}
+.off3-phone-tabs{display:flex;gap:6px;padding:8px 10px 6px}
+.off3-phone-tabs button{flex:1;background:rgba(46,230,255,.06);border:1px solid rgba(46,230,255,.25);border-radius:10px;
+  color:#8fd8e8;font-family:inherit;font-size:12px;font-weight:700;padding:7px 4px;cursor:pointer}
+.off3-phone-tabs button.on{background:rgba(46,230,255,.18);color:#d7f6ff;border-color:#2ee6ff}
+.off3-phone-body{padding:8px 12px 14px;overflow-y:auto;display:flex;flex-direction:column;gap:7px}
+.off3-phone-live{font-size:11.5px;font-weight:800;color:#2ee6ff;padding:6px 8px;border:1px dashed rgba(46,230,255,.4);border-radius:9px}
+.off3-phone-live.dim{color:#6d8896;border-color:rgba(120,150,165,.3)}
+.off3-phone-empty{font-size:11px;color:#6d8896;line-height:1.5;margin:2px 0}
+.off3-phone-line{border-right:3px solid var(--c);padding:5px 8px;background:rgba(255,255,255,.03);border-radius:8px}
+.off3-phone-line b{display:block;font-size:10.5px;color:var(--c)}
+.off3-phone-line span{font-size:12px;color:#d9e6ee;line-height:1.45}
+.off3-phone-sec{font-size:10px;font-weight:800;letter-spacing:1px;color:#5f8ea0;margin-top:4px}
+.off3-phone-act{background:rgba(46,230,255,.07);border:1px solid rgba(46,230,255,.28);border-radius:11px;
+  color:#d7f6ff;font-family:inherit;font-size:12.5px;font-weight:700;padding:9px 10px;cursor:pointer;text-align:right}
+.off3-phone-act:hover{background:rgba(46,230,255,.16);border-color:#2ee6ff}
 .off3-turbo.on{background:linear-gradient(135deg,rgba(63,215,154,.3),rgba(63,215,154,.1));
   border-color:#3FD79A;color:#b8ffd9;box-shadow:0 0 14px rgba(63,215,154,.35)}
 .off3-settings{position:absolute;top:56px;right:10px;z-index:60;width:min(300px,86vw);background:rgba(8,11,22,.94);

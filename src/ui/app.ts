@@ -182,7 +182,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v153 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v154 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="panelsToggleBtn" title="הסתר/הצג פנלים" aria-label="הסתר פנלים">
           <svg class="pt-hide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -3048,7 +3048,9 @@ export function mountApp(root: HTMLElement) {
     const items = Array.from(rail.children) as HTMLElement[];
     const n = items.length || 1;
     items.forEach((src, i) => {
-      const a = (360 / n) * i - 90;
+      // Crown arc over the robot (-160°..-20°): the bottom stays clear of
+      // the reply panel, dock and menu trigger no matter the screen size.
+      const a = n > 1 ? -160 + (140 / (n - 1)) * i : -90;
       const wrap = document.createElement('div');
       wrap.className = 'orbm-item';
       wrap.style.setProperty('--a', a + 'deg');
