@@ -3191,6 +3191,45 @@ html.perf-lite .topR { will-change: auto !important; transform: none !important;
 
 .hud { position: fixed; inset: 0; z-index: 2; pointer-events: none; font-family: 'Space Grotesk', system-ui, sans-serif; }
 
+/* ── Cinematic boot sequence ── */
+.boot-veil { position: fixed; inset: 0; z-index: 40; background: #000; opacity: 1;
+  transition: opacity .9s ease; pointer-events: none; }
+.boot-veil.grid { background:
+  linear-gradient(rgba(228,188,99,.08) 1px, transparent 1px),
+  linear-gradient(90deg, rgba(228,188,99,.08) 1px, transparent 1px),
+  radial-gradient(ellipse at 50% 45%, rgba(228,188,99,.1), #000 72%);
+  background-size: 48px 48px, 48px 48px, 100% 100%;
+  animation: boot-grid-in .8s ease both; }
+@keyframes boot-grid-in { from { opacity: .0; } to { opacity: 1; } }
+.boot-veil.fade { opacity: 0; }
+body.boot-run .stage { opacity: 0; transform: scale(.82); }
+body.boot-mat .stage { opacity: 1; transform: none;
+  transition: opacity 1.4s ease, transform 1.4s cubic-bezier(.2,1,.3,1); }
+@media (min-width: 901px) {
+  body.boot-run .hud-col.left { opacity: 0; transform: translate(-46px, -50%); }
+  body.boot-run .hud-col.right { opacity: 0; transform: translate(46px, -50%); }
+  body.boot-lock .hud-col.left, body.boot-lock .hud-col.right { opacity: 1; transform: translate(0, -50%);
+    transition: opacity .6s ease, transform .75s cubic-bezier(.2,1.2,.4,1); }
+}
+@media (max-width: 900px) {
+  body.boot-run .hud-cols { opacity: 0; }
+  body.boot-lock .hud-cols { opacity: 1; transition: opacity .7s ease; }
+}
+body.boot-lock .hud-card { position: relative; }
+body.boot-lock .hud-card::after { content: ''; position: absolute; inset: 0; border-radius: 14px;
+  border: 1px solid rgba(228,188,99,.9); opacity: 0; pointer-events: none;
+  animation: boot-ping .7s ease-out both; animation-delay: calc(var(--bi, 0) * .12s); }
+@keyframes boot-ping { 0% { opacity: .85; transform: scale(.94); } 100% { opacity: 0; transform: scale(1.07); } }
+body.boot-online .hud-card { animation: boot-sync 1.3s ease both; }
+@keyframes boot-sync {
+  0%, 100% { box-shadow: inset 0 0 0 1px rgba(247,232,192,.05), 0 10px 40px rgba(0,0,0,.5); }
+  45% { box-shadow: 0 0 26px rgba(228,188,99,.55), inset 0 0 14px rgba(228,188,99,.2); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .boot-veil { display: none; }
+  body.boot-run .stage, body.boot-run .hud-col.left, body.boot-run .hud-col.right, body.boot-run .hud-cols { opacity: 1; transform: none; }
+}
+
 /* ── Background FX layer (stars / comets / constellation streams) ── */
 .bgfx { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
 

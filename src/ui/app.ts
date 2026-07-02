@@ -182,7 +182,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v151 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v152 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="panelsToggleBtn" title="הסתר/הצג פנלים" aria-label="הסתר פנלים">
           <svg class="pt-hide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -906,6 +906,7 @@ export function mountApp(root: HTMLElement) {
     orb = mountOrb($('stage'));
     buildOrbitalMenu();
     startBgFx();
+    runBootSequence();
     // JARVIS focus mode: while the user grabs the 3D stage (rotating or
     // playing with the robot) the side panels fade way down; they glide
     // back a moment after release, keeping the focus on the scene.
@@ -2982,6 +2983,61 @@ export function mountApp(root: HTMLElement) {
   // headers (crypto / indices+commodities / stocks).
   let mkExpanded = false;
   const MK_GROUPS: ['crypto' | 'index' | 'stock', string][] = [['crypto', 'קריפטו'], ['index', 'מדדים וסחורות'], ['stock', 'מניות']];
+  // ── Cinematic boot sequence — chained onto the intro's 'revealed' class.
+  // Darkness → neural grid → the robot materializes (scale+glow) → panels
+  // lock in with ping rings + header text de-scrambling → gold sync pulse
+  // and a 1s robot calibration surge. Pure CSS classes staged from here.
+  function runBootSequence() {
+    const body = document.body;
+    if (body.classList.contains('boot-done')) return;
+    const start = () => {
+      if (body.classList.contains('boot-run')) return;
+      body.classList.add('boot-run');
+      document.querySelectorAll<HTMLElement>('.hud-card').forEach((c, i) => c.style.setProperty('--bi', String(i % 5)));
+      const veil = document.createElement('div');
+      veil.className = 'boot-veil';
+      body.appendChild(veil);
+      // Low power-up hum — only audible when the intro's click/keypress
+      // already unlocked audio; otherwise silently skipped.
+      try {
+        const AC: any = (window as any).AudioContext || (window as any).webkitAudioContext;
+        const actx = new AC();
+        if (actx.state === 'running') {
+          const o = actx.createOscillator(); const g = actx.createGain();
+          o.type = 'sine';
+          o.frequency.setValueAtTime(46, actx.currentTime);
+          o.frequency.exponentialRampToValueAtTime(110, actx.currentTime + 1.6);
+          g.gain.setValueAtTime(0.0001, actx.currentTime);
+          g.gain.exponentialRampToValueAtTime(0.05, actx.currentTime + 0.5);
+          g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime + 1.9);
+          o.connect(g); g.connect(actx.destination);
+          o.start(); o.stop(actx.currentTime + 2);
+          setTimeout(() => { try { actx.close(); } catch {} }, 2500);
+        } else { try { actx.close(); } catch {} }
+      } catch {}
+      setTimeout(() => veil.classList.add('grid'), 500);                                    // stage 1
+      setTimeout(() => { body.classList.add('boot-mat'); veil.classList.add('fade'); }, 1400); // stage 2
+      setTimeout(() => {                                                                    // stage 3
+        body.classList.add('boot-lock');
+        document.querySelectorAll<HTMLElement>('.hud-card-h span').forEach((el, i) => {
+          const txt = el.textContent || '';
+          if (txt) setTimeout(() => scrambleTo(el, txt), i * 90);
+        });
+      }, 2000);
+      setTimeout(() => {                                                                    // online
+        body.classList.add('boot-online');
+        try { orb.setEnergy(0.9); setTimeout(() => orb.setEnergy(0.2), 1000); } catch {}
+        veil.remove();
+        setTimeout(() => { body.classList.remove('boot-run', 'boot-mat', 'boot-lock', 'boot-online'); body.classList.add('boot-done'); }, 1700);
+      }, 3300);
+    };
+    if (body.classList.contains('revealed')) { start(); return; }
+    const mo = new MutationObserver(() => {
+      if (body.classList.contains('revealed')) { mo.disconnect(); start(); }
+    });
+    mo.observe(body, { attributes: true, attributeFilter: ['class'] });
+  }
+
   // ── Orbital radial menu — the hud-rail destinations orbiting the robot.
   // Cloned from #hudRail so the two menus can never drift apart; clicking a
   // ring item triggers the original rail entry (same handlers/links).
