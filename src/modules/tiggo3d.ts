@@ -354,6 +354,35 @@ export function mountTiggo3D(container: HTMLElement): () => void {
         rear.rotation.y = Math.PI / 2;
         real.add(rear);
 
+        // Headlights — the converted mesh's lamp housings read as dark
+        // plastic, so the front looked blind (owner flagged it). Two parts:
+        // any material the converter classed as a headlight gets a cool
+        // white glow, and slim LED DRL strips + main lens planes are added
+        // at the hood line on both sides, like the real Tiggo 7's split
+        // C-lights. All raw model space (mm), same as the plates.
+        real.traverse((o: any) => {
+          if (!o.isMesh || !o.material) return;
+          const mats = Array.isArray(o.material) ? o.material : [o.material];
+          mats.forEach((m: any) => {
+            if (/headlight/i.test(m.name || '') && m.emissive) {
+              m.emissive = new THREE.Color(0xbfd9ff);
+              m.emissiveIntensity = 1.1;
+            }
+          });
+        });
+        const lampMat = new THREE.MeshBasicMaterial({ color: 0xeaf6ff, toneMapped: false });
+        const lensMat = new THREE.MeshBasicMaterial({ color: 0x9fc6f0, transparent: true, opacity: 0.9 });
+        [-1, 1].forEach((sd) => {
+          const drl = new THREE.Mesh(new THREE.PlaneGeometry(430, 38), lampMat);
+          drl.position.set(box.min.x - 4, 955, ctr.z + sd * 560);
+          drl.rotation.y = -Math.PI / 2;
+          real.add(drl);
+          const lens = new THREE.Mesh(new THREE.PlaneGeometry(280, 105), lensMat);
+          lens.position.set(box.min.x - 3, 810, ctr.z + sd * 640);
+          lens.rotation.y = -Math.PI / 2;
+          real.add(lens);
+        });
+
         // Heavy Guard decal on the fuel-door (rear-right fender).
         const decal = new THREE.Mesh(
           new THREE.PlaneGeometry(240, 240),

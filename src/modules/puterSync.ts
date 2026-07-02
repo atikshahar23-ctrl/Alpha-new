@@ -58,6 +58,7 @@ const SYNC_TABLES = [
   'hg2:pricelist',
   'hg2:quoteseq',
   'hg2:vehicle',
+  'hg2:trips',
   'hg2:carstock',
   'hg2:suppliers',
   'hg2:invoices',

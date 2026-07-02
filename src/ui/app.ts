@@ -182,7 +182,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v123 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v124 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="panelsToggleBtn" title="הסתר/הצג פנלים" aria-label="הסתר פנלים">
           <svg class="pt-hide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -2809,20 +2809,36 @@ export function mountApp(root: HTMLElement) {
   (window as any).businessBriefing = businessBriefing;
 
   // ── Fleet panel (main-screen card; tap → full control center) ──
+  // Mirrors the REAL ניהול-צי data inside Heavy Guard: the same hg2:trips
+  // and hg2:vehicle stores its "רכב ותחזוקה" screen reads/writes — trips +
+  // km, upcoming ביטוח/טסט/טיפול reminders (≤30 days, exactly HG's rule),
+  // and total maintenance spend. One source of truth, two screens.
   function renderFleetPanel() {
     const el = document.querySelector('#hudFleetPanel .hud-card-body');
     if (!el) return;
-    const idx = readIdx();
     const trips = readTrips();
     const km = trips.reduce((s: number, t: any) => s + (Number(t.km) || 0), 0);
-    const unsched = idx.filter((x: any) => x && (x.status === 'running' || !x.date)).length;
-    const openTasks = readTasks().filter((t: any) => !t.done).length;
+    let vehicle: any[] = [];
+    try { vehicle = JSON.parse(localStorage.getItem('hg2:vehicle') || '[]') || []; } catch {}
+    const maintCost = vehicle.reduce((s: number, r: any) => s + (Number(r.cost) || 0), 0);
+    const daysTo = (d: string) => Math.ceil((new Date(d).getTime() - Date.now()) / 86400000);
+    const reminders = vehicle
+      .filter((r: any) => r.remind)
+      .map((r: any) => ({ ...r, days: daysTo(r.remind) }))
+      .filter((r: any) => r.days <= 30)
+      .sort((a: any, b: any) => a.days - b.days)
+      .slice(0, 2);
+    const remindHtml = reminders.map((r: any) =>
+      `<div class="hud-stat"><span>⏰ ${r.type}${r.note ? ' · ' + r.note : ''}</span><b class="${r.days < 0 ? 'warn' : ''}">${r.days < 0 ? `עבר לפני ${-r.days} ימים` : r.days === 0 ? 'היום' : `בעוד ${r.days} ימים`}</b></div>`).join('');
+    const last = vehicle.slice().sort((a: any, b: any) => (b.date || '').localeCompare(a.date || ''))[0];
     el.innerHTML = `
       <div class="hud-stat"><span>נסיעות · ק"מ</span><b>${trips.length} · ${km.toLocaleString('he-IL')}</b></div>
-      <div class="hud-stat"><span>התקנות לתיאום</span><b>${unsched}</b></div>
-      <div class="hud-stat"><span>משימות פתוחות</span><b>${openTasks}</b></div>
-      <div class="hud-foot">לחץ למרכז השליטה · מפה · נסיעות ↗</div>`;
+      ${remindHtml}
+      <div class="hud-stat"><span>אחזקה מצטברת</span><b>${money(maintCost)}</b></div>
+      ${last ? `<div class="hud-stat"><span>אחרון: ${last.type || ''}</span><b>${(last.date || '').split('-').reverse().join('/')}</b></div>` : ''}
+      <div class="hud-foot">מסונכרן עם ניהול הצי ב-Heavy Guard ↗</div>`;
   }
+  const money = (n: number) => '₪' + Math.round(n || 0).toLocaleString('he-IL');
 
   // ── Live markets ──
   const mkFmt = (n: number) => n >= 1000 ? Math.round(n).toLocaleString('en-US') : n.toLocaleString('en-US', { maximumFractionDigits: n >= 1 ? 2 : 4 });

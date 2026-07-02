@@ -3244,6 +3244,7 @@ html.perf-lite .topR { will-change: auto !important; transform: none !important;
 .hud-stat { display: flex; align-items: center; justify-content: space-between; padding: 5px 0; font-size: 13px; color: #cfc3a3; }
 .hud-stat b { font-size: 18px; font-weight: 700; color: #fff; font-family: 'Space Grotesk', monospace; }
 .hud-stat b.cy { color: #F7E8C0; }
+.hud-stat b.warn { color: #ff7d6e; }
 .hud-line { height: 1px; background: linear-gradient(90deg, transparent, rgba(228,188,99,.45), transparent); margin: 9px 0; }
 .hud-foot { font-size: 10.5px; color: #8a7d5e; letter-spacing: .4px; }
 .hud-empty { font-size: 12px; color: #8a7d5e; padding: 12px 0; text-align: center; }

@@ -21,6 +21,8 @@ const SYNC_TABLES = [
   'hg2:index',
   'hg2:quotes',
   'hg2:tasks',
+  'hg2:trips',
+  'hg2:vehicle',
   'alpha_brain_memory_v1',
   'alpha_pomodoro_v1',
   'alpha_mood_v1',

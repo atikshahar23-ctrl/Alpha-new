@@ -174,43 +174,34 @@ function buildTvScreen(furnitureTemplate, canvas) {
   return { group: g, tex };
 }
 
-function makeTradeTickerState() {
-  const rnd = mulberry32(303);
-  const symbols = ["HGRD", "BTC", "GOLD", "S&P"];
-  const prices = [212.4, 61840, 2384.2, 5312.8];
-  return { rnd, symbols, prices, deltas: symbols.map(() => 0), candles: Array.from({ length: 22 }, () => 40 + rnd() * 30) };
-}
-function stepTradeTicker(state) {
-  state.prices = state.prices.map((p, i) => {
-    const move = (state.rnd() - 0.48) * p * 0.006;
-    state.deltas[i] = (move / p) * 100;
-    return Math.max(0.01, p + move);
-  });
-  state.candles.push(clamp(state.candles[state.candles.length - 1] + (state.rnd() - 0.5) * 12, 8, 92));
-  state.candles.shift();
-}
-function drawTradeScreen(ctx, W, H, state) {
+// The markets wall TV shows the REAL live board — the exact same rows the
+// Business view's investments world fetches (CoinGecko crypto + Yahoo
+// indices/commodities), passed in via the marketRows prop. No simulated
+// prices anywhere: until the first real fetch lands, the screen says it's
+// loading instead of inventing numbers.
+function drawTradeScreen(ctx, W, H, rows) {
   ctx.fillStyle = "#060a10"; ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = "#1fd67a"; ctx.font = "700 30px 'Courier New',monospace";
+  ctx.textAlign = "left";
   ctx.fillText("⚡ LIVE MARKETS", 18, 38);
+  ctx.font = "600 15px 'Courier New',monospace";
+  ctx.fillStyle = "#4d6a5c"; ctx.textAlign = "right";
+  ctx.fillText(new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }), W - 16, 36);
+  ctx.textAlign = "left";
   ctx.strokeStyle = "#123422"; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(0, 52); ctx.lineTo(W, 52); ctx.stroke();
-  const chartX = 18, chartY = 66, chartW = W - 36, chartH = H * 0.4;
-  ctx.strokeStyle = "#0f1a14"; for (let gy = 0; gy <= 4; gy++) { const y = chartY + (chartH / 4) * gy; ctx.beginPath(); ctx.moveTo(chartX, y); ctx.lineTo(chartX + chartW, y); ctx.stroke(); }
-  const cw = chartW / state.candles.length;
-  state.candles.forEach((v, i) => {
-    const h = (v / 100) * chartH;
-    const up = i === 0 || v >= state.candles[i - 1];
-    ctx.fillStyle = up ? "#1fd67a" : "#e0473f";
-    ctx.fillRect(chartX + i * cw + cw * 0.18, chartY + chartH - h, cw * 0.64, Math.max(2, h));
-  });
-  let ty = chartY + chartH + 34;
-  state.symbols.forEach((s, i) => {
-    const p = state.prices[i], d = state.deltas[i];
-    ctx.fillStyle = "#cdeeff"; ctx.font = "600 19px 'Courier New',monospace"; ctx.fillText(s, chartX, ty);
-    ctx.fillStyle = d >= 0 ? "#1fd67a" : "#e0473f";
-    ctx.fillText(`${p >= 1000 ? p.toFixed(0) : p.toFixed(2)}  ${d >= 0 ? "▲" : "▼"}${Math.abs(d).toFixed(2)}%`, chartX + 110, ty);
-    ty += 26;
+  if (!rows || !rows.length) {
+    ctx.fillStyle = "#5f7d6f"; ctx.font = "600 22px 'Courier New',monospace";
+    ctx.fillText("טוען נתוני שוק חיים…", 18, H / 2);
+    return;
+  }
+  let ty = 84;
+  rows.slice(0, 9).forEach((r) => {
+    ctx.fillStyle = "#cdeeff"; ctx.font = "600 19px 'Courier New',monospace";
+    ctx.fillText(r.name, 18, ty);
+    ctx.fillStyle = r.chg >= 0 ? "#1fd67a" : "#e0473f";
+    ctx.fillText(`${r.price}  ${r.chg >= 0 ? "▲" : "▼"}${Math.abs(r.chg).toFixed(2)}%`, 200, ty);
+    ty += 30;
   });
 }
 
@@ -1121,69 +1112,30 @@ function buildConferenceRoom(color, screenTex) {
 function buildReception(color, screenTex) {
   const g = new THREE.Group();
   const obstacles = [];
-  const W = 3.4, D = 1.0, H = 1.12;
+  // Sized to the character (counter ~waist-chest height), not a monument.
+  const W = 2.4, D = 0.8, H = 0.95;
   const wood = new THREE.MeshStandardMaterial({ color: 0x2a2016, roughness: 0.55, metalness: 0.12 });
   const topMat = new THREE.MeshStandardMaterial({ color: 0x14161c, roughness: 0.3, metalness: 0.45 });
   const front = new THREE.Mesh(new THREE.BoxGeometry(W, H, D), wood);
   front.position.set(0, H / 2, 0); front.castShadow = true; front.receiveShadow = true; g.add(front);
   const strip = new THREE.Mesh(new THREE.BoxGeometry(W - 0.2, 0.06, 0.02), new THREE.MeshBasicMaterial({ color }));
   strip.position.set(0, 0.5, D / 2 + 0.011); g.add(strip);
-  const top = new THREE.Mesh(new THREE.BoxGeometry(W + 0.3, 0.08, D + 0.35), topMat);
-  top.position.set(0, H + 0.04, 0); top.castShadow = true; g.add(top);
+  const top = new THREE.Mesh(new THREE.BoxGeometry(W + 0.2, 0.07, D + 0.25), topMat);
+  top.position.set(0, H + 0.035, 0); top.castShadow = true; g.add(top);
   // Welcome monitor on the counter, facing visitors (+Z).
-  const monBody = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.4, 0.03), new THREE.MeshStandardMaterial({ color: 0x05070c, metalness: 0.5, roughness: 0.3 }));
-  monBody.position.set(0.75, H + 0.34, 0.18); g.add(monBody);
+  const monBody = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.34, 0.03), new THREE.MeshStandardMaterial({ color: 0x05070c, metalness: 0.5, roughness: 0.3 }));
+  monBody.position.set(0.6, H + 0.28, 0.14); g.add(monBody);
   if (screenTex) {
-    const scr = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.34), new THREE.MeshBasicMaterial({ map: screenTex }));
-    scr.position.set(0.75, H + 0.34, 0.197); g.add(scr);
+    const scr = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.28), new THREE.MeshBasicMaterial({ map: screenTex }));
+    scr.position.set(0.6, H + 0.28, 0.157); g.add(scr);
   }
   // A little potted plant on the counter.
-  const plant = buildPlant(); plant.scale.setScalar(0.7); plant.position.set(-1.1, H, 0); g.add(plant);
-  const sign = buildNeonSign("קבלה · ALPHA", color, 2.8, 0.62);
-  sign.position.set(0, 2.5, 0); g.add(sign);
-  const light = new THREE.PointLight(color, 0.55, 8); light.position.set(0, 2.2, 0.5); g.add(light);
-  for (let t = -W / 2; t <= W / 2 + 0.01; t += 0.7) obstacles.push({ x: t, z: 0, r: 0.5 });
-  return { group: g, obstacles, seatLocal: { x: 0, z: -0.85 } };
-}
-
-// A tidy restrooms block: a small tiled room with two colour-coded doors
-// (♂ / ♀) and a "שירותים" sign, tucked into a corner. Players read it from
-// the outside, so the interior is just implied.
-function buildRestrooms() {
-  const g = new THREE.Group();
-  const obstacles = [];
-  const W = 3.0, D = 2.2, wallH = 2.5;
-  const wallMat = new THREE.MeshStandardMaterial({ color: 0x252a34, roughness: 0.65, metalness: 0.1 });
-  const tileMat = new THREE.MeshStandardMaterial({ color: 0x30373f, roughness: 0.4, metalness: 0.15 });
-  // Back + two sides solid; front (south) has the two doors.
-  const back = new THREE.Mesh(new THREE.PlaneGeometry(W, wallH), wallMat);
-  back.position.set(0, wallH / 2, -D / 2); back.receiveShadow = true; g.add(back);
-  [-W / 2, W / 2].forEach((sx) => {
-    const wall = new THREE.Mesh(new THREE.PlaneGeometry(D, wallH), wallMat);
-    wall.rotation.y = Math.PI / 2; wall.position.set(sx, wallH / 2, 0); g.add(wall);
-  });
-  // Front tiled wall with two recessed doors.
-  const frontWall = new THREE.Mesh(new THREE.PlaneGeometry(W, wallH), tileMat);
-  frontWall.position.set(0, wallH / 2, D / 2); g.add(frontWall);
-  const doorGeo = new THREE.PlaneGeometry(0.9, 1.9);
-  const mkDoor = (x, col, label) => {
-    const door = new THREE.Mesh(doorGeo, new THREE.MeshStandardMaterial({ color: 0x14161c, roughness: 0.5, metalness: 0.3 }));
-    door.position.set(x, 0.98, D / 2 + 0.02); g.add(door);
-    const sign = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.34), new THREE.MeshBasicMaterial({ color: col }));
-    sign.position.set(x, 1.7, D / 2 + 0.03); g.add(sign);
-    const plate = buildNameSprite(label, col); plate.scale.multiplyScalar(0.7); plate.position.set(x, 2.05, D / 2 + 0.05); g.add(plate);
-  };
-  mkDoor(-0.7, 0x4ea8de, "גברים");
-  mkDoor(0.7, 0xff6b9d, "נשים");
-  // roof so it reads as an enclosed room from the chase cam
-  const roof = new THREE.Mesh(new THREE.PlaneGeometry(W, D), wallMat);
-  roof.rotation.x = Math.PI / 2; roof.position.set(0, wallH, 0); g.add(roof);
-  const sign = buildNeonSign("שירותים", 0x9fd6ff, 2.0, 0.5);
-  sign.position.set(0, wallH + 0.35, D / 2); g.add(sign);
-  // solid on all four sides (it's a closed room)
-  for (let t = -W / 2; t <= W / 2 + 0.01; t += 0.6) { obstacles.push({ x: t, z: -D / 2, r: 0.28 }); obstacles.push({ x: t, z: D / 2, r: 0.28 }); }
-  for (let t = -D / 2; t <= D / 2 + 0.01; t += 0.6) { obstacles.push({ x: -W / 2, z: t, r: 0.28 }); obstacles.push({ x: W / 2, z: t, r: 0.28 }); }
-  return { group: g, obstacles };
+  const plant = buildPlant(); plant.scale.setScalar(0.55); plant.position.set(-0.85, H, 0); g.add(plant);
+  const sign = buildNeonSign("קבלה · ALPHA", color, 2.4, 0.56);
+  sign.position.set(0, 2.3, 0); g.add(sign);
+  const light = new THREE.PointLight(color, 0.55, 8); light.position.set(0, 2.0, 0.5); g.add(light);
+  for (let t = -W / 2; t <= W / 2 + 0.01; t += 0.6) obstacles.push({ x: t, z: 0, r: 0.45 });
+  return { group: g, obstacles, seatLocal: { x: 0, z: -0.7 } };
 }
 
 // A cafeteria / coffee counter beside the dining tables: a counter with two
@@ -1331,7 +1283,7 @@ function buildOwnerOffice(color, deskTemplate, laptopTemplate, furnitureTemplate
   return { group: g, obstacles, deskMon: desk.monMat, deskHolo: desk.holo, seatLocal };
 }
 
-export default function Office3D({ chars, byId, phase, phases, deskPositions, seatPositions, dineTablePositions, meetingSpot, bizData, voice, onClose, onOpenChat }) {
+export default function Office3D({ chars, byId, phase, phases, deskPositions, seatPositions, dineTablePositions, meetingSpot, bizData, marketRows, voice, onClose, onOpenChat }) {
   const mountRef = useRef(null);
   const liveRef = useRef({ chars, phase, bizData, joyVec: { x: 0, y: 0 }, keys: {}, firstPerson: false });
   const [talkTarget, setTalkTarget] = useState(null);
@@ -1377,6 +1329,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   useEffect(() => { liveRef.current.sitting = sitting; }, [sitting]);
   useEffect(() => { liveRef.current.phase = phase; }, [phase]);
   useEffect(() => { liveRef.current.bizData = bizData; }, [bizData]);
+  useEffect(() => { liveRef.current.marketRows = marketRows; }, [marketRows]);
   // Push the graphics-quality toggle down into the postprocessing passes
   // once they exist (they're created inside the async mount effect below).
   useEffect(() => { liveRef.current.setGraphicsHigh?.(graphicsHigh); }, [graphicsHigh]);
@@ -1394,13 +1347,30 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   // The "always listening" loop: whenever you're standing near an agent, the
   // mic is idle, and auto-listen hasn't been paused, start listening on its
   // own — no need to tap the mic every single time you want to talk.
+  // autoListen is a dependency too, so re-enabling it (mic button/settings)
+  // immediately restarts the loop instead of waiting for a state change.
   useEffect(() => {
     if (!talkTarget || !voice?.canListen || !autoListen) return;
     if (voiceState !== "idle") return;
     const t = setTimeout(() => startVoiceTalk(true), 550);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [talkTarget, voiceState]);
+  }, [talkTarget, voiceState, autoListen]);
+  // Watchdog: the flowing-chat loop must ALWAYS come back to "idle" (that's
+  // what re-opens the mic). If any stage silently stalls — a hung AI request
+  // in "thinking", a speech-synthesis glitch in "speaking", a recognition
+  // session that never fires onend — force it back to idle after that
+  // stage's worst-case time, so the conversation never dies mid-flow.
+  useEffect(() => {
+    if (voiceState === "idle") return;
+    const cap = voiceState === "listening" ? 20000 : voiceState === "thinking" ? 30000 : 60000;
+    const t = setTimeout(() => {
+      try { recogRef.current?.stop(); } catch {}
+      try { window.speechSynthesis?.cancel(); } catch {}
+      setVoiceState("idle");
+    }, cap);
+    return () => clearTimeout(t);
+  }, [voiceState]);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -1818,7 +1788,6 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     const tradeCanvas = document.createElement("canvas");
     tradeCanvas.width = 640; tradeCanvas.height = 356;
     const tradeCtx = tradeCanvas.getContext("2d");
-    const tradeState = makeTradeTickerState();
     const tvTrade = buildTvScreen(furnitureTemplate, tradeCanvas);
     tvTrade.group.position.set(-(FLOOR_W / 2) + 0.2, 1.5, 12.8);
     tvTrade.group.rotation.y = Math.PI / 2;
@@ -1831,7 +1800,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     tvHg.group.position.set((FLOOR_W / 2) - 0.2, 1.5, -8.3);
     tvHg.group.rotation.y = -Math.PI / 2;
     scene.add(tvHg.group);
-    drawTradeScreen(tradeCtx, tradeCanvas.width, tradeCanvas.height, tradeState);
+    drawTradeScreen(tradeCtx, tradeCanvas.width, tradeCanvas.height, liveRef.current.marketRows);
     drawHgScreen(hgCtx, hgCanvas.width, hgCanvas.height, liveRef.current.bizData);
     let screenT = 0;
     // (SE corner plant removed — that corner is now the owner's office; the
@@ -1857,8 +1826,12 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       const owner = byId(chars[i]?.id);
       const { group, monMat, holo } = buildDesk(owner ? hexToInt(owner.color) : 0x3a6ad8, deskTemplate, laptopTemplate, furnitureTemplate, i);
       const [wx, wz] = toWorld(d.x, d.y);
+      // Per-desk facing (perimeter layout): the whole station turns to the
+      // desk's own rot so the seated worker looks the right way for the wall
+      // their office sits against.
+      const rot = typeof d.rot === "number" ? d.rot : DESK_FACE_ROT;
       group.position.set(wx, 0, wz);
-      group.rotation.y = DESK_FACE_ROT; // turn the whole station to match the seated worker
+      group.rotation.y = rot;
       scene.add(group);
       deskMons.push(monMat);
       deskHolos.push(holo);
@@ -1866,12 +1839,17 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       // Each agent gets their own private glass office wrapped around their
       // battlestation — colour-coded, with their name + title over the door,
       // a potted plant, and a wall screen showing their own live domain data.
+      // The office turns with the desk (doorway on the worker's back side),
+      // and its wall collision circles get the same rotation applied.
       if (owner) {
         const scrTex = buildOfficeScreenTex(owner.title, hexToInt(owner.color), agentScreenLines(owner.id, liveRef.current.bizData || {}));
         const off = buildGlassOffice(hexToInt(owner.color), owner.name, owner.title, scrTex, officeDecorTemplate);
+        const offRot = rot - Math.PI;
         off.group.position.set(wx, 0, wz);
+        off.group.rotation.y = offRot;
         scene.add(off.group);
-        off.obstacles.forEach((o) => obstacles.push({ x: wx + o.x, z: wz + o.z, r: o.r }));
+        const cr = Math.cos(offRot), sr = Math.sin(offRot);
+        off.obstacles.forEach((o) => obstacles.push({ x: wx + o.x * cr + o.z * sr, z: wz - o.x * sr + o.z * cr, r: o.r }));
       }
     });
     dineTablePositions.forEach((t) => {
@@ -1959,27 +1937,57 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       const welcomeTex = new THREE.CanvasTexture(wCvs); welcomeTex.colorSpace = THREE.SRGBColorSpace;
       const reception = buildReception(0xE4BC63, welcomeTex);
       const RCP = { x: -6.9, z: 14.4 };
+      // Flipped 180° (owner request): the welcome screen + front face the
+      // room/entrance walkway on the north side, מיכל sits on the south side.
       reception.group.position.set(RCP.x, 0, RCP.z);
+      reception.group.rotation.y = Math.PI;
       scene.add(reception.group);
-      reception.obstacles.forEach((o) => obstacles.push({ x: RCP.x + o.x, z: RCP.z + o.z, r: o.r }));
+      reception.obstacles.forEach((o) => obstacles.push({ x: RCP.x - o.x, z: RCP.z - o.z, r: o.r }));
       // Receptionist — a seated greeter behind the counter (not one of the
-      // 12 agents), using the same animated model, sitting.
-      const recep = buildHuman(0xE4BC63, "מיכל", false, charTemplate, charClips, CHAR_SCALE, CHAR_CENTER_OFFSET, true, "קבלה");
-      recep.group.position.set(RCP.x + reception.seatLocal.x, 0, RCP.z + reception.seatLocal.z);
-      recep.group.rotation.y = 0; // face the visitors (+Z)
+      // 12 agents). Restyled to actually look like her own person: petite,
+      // rose outfit, dark hair (cap + low ponytail attached to the head bone
+      // so it follows the sit pose).
+      const recep = buildHuman(0xD96A9E, "מיכל", false, charTemplate, charClips, CHAR_SCALE * 0.94, CHAR_CENTER_OFFSET, true, "קבלה");
+      recep.group.traverse((o) => {
+        if ((o.isMesh || o.isSkinnedMesh) && o.material && o.material.color) {
+          o.material.color = new THREE.Color(0xffffff).lerp(new THREE.Color(0xD96A9E), 0.45);
+        }
+      });
+      {
+        let head = null;
+        recep.group.traverse((o) => { if (!head && o.isBone && /head/i.test(o.name)) head = o; });
+        if (head) {
+          // Bone space in this FBX-converted rig is NOT world scale — attach
+          // via the bone's actual world scale so the hair comes out head-
+          // sized (a raw attach rendered as a building-sized brown blob).
+          recep.group.updateMatrixWorld(true);
+          const ws = new THREE.Vector3();
+          head.getWorldScale(ws);
+          const inv = 1 / (ws.x || 1);
+          const hairMat = new THREE.MeshStandardMaterial({ color: 0x33200f, roughness: 0.55 });
+          const hair = new THREE.Group();
+          // Sizes below are WORLD units (head radius ≈ 0.08 at this model's
+          // scale); the inverse-scale on the group maps them into bone space.
+          const cap = new THREE.Mesh(new THREE.SphereGeometry(0.085, 14, 12, 0, Math.PI * 2, 0, Math.PI * 0.6), hairMat);
+          cap.scale.set(1.02, 1.15, 1.1);
+          hair.add(cap);
+          const tail = new THREE.Mesh(new THREE.CapsuleGeometry(0.03, 0.15, 4, 8), hairMat);
+          tail.position.set(0, -0.075, -0.08);
+          tail.rotation.x = 0.45;
+          hair.add(tail);
+          hair.scale.setScalar(inv);
+          hair.position.set(0, 0.035 * inv, 0.008 * inv);
+          head.add(hair);
+        }
+      }
+      recep.group.position.set(RCP.x - reception.seatLocal.x, 0, RCP.z - reception.seatLocal.z);
+      recep.group.rotation.y = Math.PI; // face the flipped counter front (north)
       setClip(recep, CLIP.sit);
       scene.add(recep.group);
       allExtraHumans.push(recep);
     }
 
-    // ── Restrooms (SW corner) ────────────────────────────────────────────
-    {
-      const wc = buildRestrooms();
-      const WC = { x: -17.0, z: 13.5 };
-      wc.group.position.set(WC.x, 0, WC.z);
-      scene.add(wc.group);
-      wc.obstacles.forEach((o) => obstacles.push({ x: WC.x + o.x, z: WC.z + o.z, r: o.r }));
-    }
+    // (Restroom stalls removed — owner request; the SW corner stays open.)
 
     // ── Cafeteria / coffee counter (beside the dining tables) ────────────
     {
@@ -2136,14 +2144,14 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         mat.emissiveIntensity += (buildingGlowTarget - mat.emissiveIntensity) * Math.min(1, dt * 0.8);
       });
 
-      // Wall TVs — redrawn ~once a second, not every frame; the trading
-      // screen ticks a simulated market, the HeavyGuard screen reflects
-      // whatever real business numbers came in via the bizData prop.
+      // Wall TVs — redrawn every few seconds, not every frame; BOTH screens
+      // show real data now: the markets TV renders the live CoinGecko/Yahoo
+      // rows (marketRows prop), the HeavyGuard screen the real business
+      // numbers (bizData prop).
       screenT += dt;
-      if (screenT >= 1) {
+      if (screenT >= 3) {
         screenT = 0;
-        stepTradeTicker(tradeState);
-        drawTradeScreen(tradeCtx, tradeCanvas.width, tradeCanvas.height, tradeState);
+        drawTradeScreen(tradeCtx, tradeCanvas.width, tradeCanvas.height, liveRef.current.marketRows);
         tvTrade.tex.needsUpdate = true;
         drawHgScreen(hgCtx, hgCanvas.width, hgCanvas.height, liveRef.current.bizData);
         tvHg.tex.needsUpdate = true;
@@ -2261,13 +2269,16 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       liveChars.forEach((c) => {
         const h = npc[c.id]; if (!h) return;
         const atDesk = c.status === "work";
+        // Per-desk facing (perimeter layout) — the direction this worker's
+        // own station points; falls back to the old shared heading.
+        const drot = c.home && typeof c.home.rot === "number" ? c.home.rot : DESK_FACE_ROT;
         // The sit_idle clip's hip height/depth doesn't line up with this
         // specific chair model at the desk's exact floor spot — nudge the
         // walk target itself back and down onto the visible chair seat
         // (tuned by eye), so there's no separate snap once they arrive.
         const [rawTx, rawTz] = toWorld(c.x, c.y);
-        const finalX = atDesk ? rawTx + Math.sin(DESK_FACE_ROT) * SEAT_BACK : rawTx;
-        const finalZ = atDesk ? rawTz + Math.cos(DESK_FACE_ROT) * SEAT_BACK : rawTz;
+        const finalX = atDesk ? rawTx + Math.sin(drot) * SEAT_BACK : rawTx;
+        const finalZ = atDesk ? rawTz + Math.cos(drot) * SEAT_BACK : rawTz;
         if (h.destX === undefined || Math.abs(h.destX - finalX) > 0.05 || Math.abs(h.destZ - finalZ) > 0.05) {
           h.destX = finalX; h.destZ = finalZ;
           h.wpX = h.group.position.x; h.wpZ = finalZ;
@@ -2319,7 +2330,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           // in the grid shares the same unrotated layout, so one fixed
           // heading squares everyone up to their own screen.
           if (atDesk || summoned) {
-            const face = summoned ? Math.PI : DESK_FACE_ROT;
+            const face = summoned ? Math.PI : drot;
             let dRot = face - h.group.rotation.y;
             while (dRot > Math.PI) dRot -= Math.PI * 2;
             while (dRot < -Math.PI) dRot += Math.PI * 2;
@@ -2504,9 +2515,14 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       try { reply = await voice.ask(agent.id, said); } catch {}
       reply = reply || "סליחה, לא הצלחתי לענות כרגע.";
       setVoiceLine({ who: agent.name, text: reply, color: agent.color });
-      if (voice.canSpeak) { setVoiceState("speaking"); voice.speak(reply, agent.id); }
-      const dur = Math.min(14000, 1600 + reply.length * 55);
-      setTimeout(() => setVoiceState((s) => (s === "speaking" ? "idle" : s)), voice.canSpeak ? dur : 4500);
+      // Return to idle the moment the spoken reply actually ends (real
+      // utterance onend), so the mic re-opens right away and the chat keeps
+      // flowing; the estimated-duration timer stays only as a fallback for
+      // browsers that never fire onend.
+      const backToIdle = () => setVoiceState((s) => (s === "speaking" ? "idle" : s));
+      if (voice.canSpeak) { setVoiceState("speaking"); voice.speak(reply, agent.id, backToIdle); }
+      const dur = Math.min(30000, 1600 + reply.length * 65);
+      setTimeout(backToIdle, voice.canSpeak ? dur : 4500);
     };
     rec.onerror = () => setVoiceState((s) => (s === "listening" ? "idle" : s));
     rec.onend = () => setVoiceState((s) => (s === "listening" ? "idle" : s));

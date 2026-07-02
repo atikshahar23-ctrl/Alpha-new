@@ -344,8 +344,8 @@ function agentPitch(agentId) {
 function listSpeechVoices() {
   return canSpeak() ? window.speechSynthesis.getVoices() : [];
 }
-function speakText(text, agentId) {
-  if (!canSpeak() || !text) return;
+function speakText(text, agentId, onEnd) {
+  if (!canSpeak() || !text) { onEnd?.(); return; }
   try {
     window.speechSynthesis.cancel(); // don't stack overlapping replies
     const u = new SpeechSynthesisUtterance(text);
@@ -355,8 +355,12 @@ function speakText(text, agentId) {
     if (voice) u.voice = voice;
     u.rate = 1.02;
     u.pitch = agentPitch(agentId);
+    // Real end-of-speech signal (fires on finish, cancel, or error) — the
+    // sim's always-listening loop uses this to re-open the mic at the exact
+    // moment the agent stops talking, instead of guessing from text length.
+    if (onEnd) { u.onend = () => onEnd(); u.onerror = () => onEnd(); }
     window.speechSynthesis.speak(u);
-  } catch {}
+  } catch { onEnd?.(); }
 }
 
 /* ── The actual codebase(s) the dev agent works on ── */
@@ -1438,15 +1442,20 @@ const CHATTER = {
 const OFC_X0 = 4, OFC_X1 = 96, OFC_Y0 = 18, OFC_Y1 = 86;
 // 13 desks — one per agent (AGENTS.length === OFC_DESKS.length), so a desk
 // always belongs to the same person and can show a real occupied/idle state.
-// The core 4×3 bullpen grid plus one extra desk for דבורה (facilities), set
-// below the 4th column in the open south aisle — the whole east strip stays
-// a clear walking corridor between the conference room (north), the dining
-// area (middle) and the owner's now-bigger suite (SE corner), so nothing on
-// the doubled floor reads as a maze.
+// Laid out like a real office: the private glass offices line the PERIMETER
+// (a north row along the window, a west-wall column, and a south row), each
+// with its own facing (rot — the direction the seated worker looks; the
+// doorway opens on their back side, toward the walkway). The center of the
+// floor stays completely open — clear corridors everywhere, nothing piled
+// in the middle. The east strip holds the conference room, dining and the
+// owner's suite, as before.
 const OFC_DESKS = [
-  { x: 12, y: 24 }, { x: 29, y: 24 }, { x: 46, y: 24 }, { x: 63, y: 24 },
-  { x: 12, y: 42 }, { x: 29, y: 42 }, { x: 46, y: 42 }, { x: 63, y: 42 }, { x: 63, y: 76 },
-  { x: 12, y: 60 }, { x: 29, y: 60 }, { x: 46, y: 60 }, { x: 63, y: 60 },
+  // North row — workers face the skyline window (rot π), doors open south.
+  { x: 10, y: 16, rot: Math.PI }, { x: 24, y: 16, rot: Math.PI }, { x: 38, y: 16, rot: Math.PI }, { x: 52, y: 16, rot: Math.PI }, { x: 66, y: 16, rot: Math.PI },
+  // West column — workers face the west wall (rot -π/2), doors open east.
+  { x: 8, y: 32, rot: -Math.PI / 2 }, { x: 8, y: 46, rot: -Math.PI / 2 }, { x: 8, y: 60, rot: -Math.PI / 2 }, { x: 8, y: 74, rot: -Math.PI / 2 },
+  // South row — workers face south (rot 0), doors open north into the floor.
+  { x: 26, y: 79, rot: 0 }, { x: 39, y: 79, rot: 0 }, { x: 52, y: 79, rot: 0 }, { x: 65, y: 79, rot: 0 },
 ];
 // Meeting nook, upper right.
 const OFC_SEATS = [{ x: 76, y: 22 }, { x: 84, y: 20 }, { x: 92, y: 22 }, { x: 76, y: 34 }, { x: 84, y: 36 }, { x: 92, y: 34 }];
@@ -1458,7 +1467,9 @@ const OFC_DINE = [
   { x: 79, y: 42 }, { x: 89, y: 42 }, { x: 79, y: 50 }, { x: 89, y: 50 },
   { x: 79, y: 58 }, { x: 89, y: 58 }, { x: 79, y: 66 }, { x: 89, y: 66 },
 ];
-const OFC_BREAK = { x: 6, y: 60 };
+// Coffee-cooler stop, beside the cafeteria counter on the east side (the old
+// west-wall spot now sits inside a perimeter office).
+const OFC_BREAK = { x: 92, y: 56 };
 // Where a summoned agent walks to when you call them "to your office" — the
 // guest chair INSIDE the owner's private glass office in the SE corner of
 // the 3D scene (Office3D places that chair exactly on this spot), so the
@@ -1476,6 +1487,9 @@ const OFC_PHASES = [
 const OFC_PHASE_DUR = [22000, 34000, 10000, 10000];
 function OfficeSim({ onClose, onOpenChat, logActivity, showToast }) {
   const rnd = (a, b) => a + Math.random() * (b - a);
+  // Live market rows (CoinGecko + Yahoo) — same shared cache the Business
+  // view uses, so the sim's wall TV shows the REAL board, not a simulation.
+  const marketRows = useMarket();
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   // Every agent gets their own permanent desk (home) they return to by
   // default — a real seat, not a random spot picked fresh each time.
@@ -1652,6 +1666,7 @@ function OfficeSim({ onClose, onOpenChat, logActivity, showToast }) {
         dineTablePositions={OFC_DINE_TABLES}
         meetingSpot={OFC_MEETING_SPOT}
         bizData={bizSnapshot()}
+        marketRows={marketRows}
         voice={{
           canListen: canListen(),
           canSpeak: canSpeak(),
