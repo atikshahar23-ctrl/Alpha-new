@@ -3,6 +3,8 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
 import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
+import { CSS3DRenderer, CSS3DObject } from "three/examples/jsm/renderers/CSS3DRenderer.js";
+import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
@@ -1505,6 +1507,19 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     renderer.toneMappingExposure = 1.1;
     mount.appendChild(renderer.domElement);
 
+    // ── CSS3D layer — a REAL, browsable iframe living inside the 3D room ──
+    // Used for the 100-inch wall screen showing the live heavyguard.com
+    // site. The layer sits above the WebGL canvas with pointer-events off,
+    // except the iframe itself, so you can walk with the joystick anywhere
+    // and actually scroll/click the site when the cursor is on the screen.
+    const cssScene = new THREE.Scene();
+    const cssRenderer = new CSS3DRenderer();
+    cssRenderer.setSize(width, height);
+    cssRenderer.domElement.style.position = "absolute";
+    cssRenderer.domElement.style.inset = "0";
+    cssRenderer.domElement.style.pointerEvents = "none";
+    mount.appendChild(cssRenderer.domElement);
+
     // ── Post-processing chain: RenderPass → SSAO (desktop) → Bloom → Output ──
     // Bloom gives the neon/monitors a soft realistic glow; SSAO grounds every
     // object with contact shadowing; OutputPass applies the ACES tone-map +
@@ -2171,46 +2186,129 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       ry: ownerOffice.seatLocal.ry,
     };
 
-    // Security-feed wall screen inside the owner suite (east room wall) —
-    // four labelled "camera" quadrants with a live clock + blinking REC,
-    // redrawn on the shared screen tick.
-    const secCvs = document.createElement("canvas");
-    secCvs.width = 384; secCvs.height = 256;
-    const secCtx = secCvs.getContext("2d");
-    const secTex = new THREE.CanvasTexture(secCvs);
-    secTex.colorSpace = THREE.SRGBColorSpace;
+    // Security wall screen inside the owner suite — LIVE VIDEO, not a
+    // picture (owner request): a real render-to-texture feed of the office
+    // itself, from a CCTV camera that cycles between four vantage points
+    // (reception, bullpen, cafeteria, the suite) every few seconds. Agents
+    // walking by genuinely appear on the monitor. A slim overlay bar shows
+    // the active camera name, running clock and blinking REC.
+    const secRT = new THREE.WebGLRenderTarget(512, 288);
+    const secCam = new THREE.PerspectiveCamera(64, 512 / 288, 0.1, 60);
+    const SEC_VIEWS = [
+      { name: "כניסה וקבלה", pos: [-2.5, 3.2, 15.6], look: [-6.9, 0.8, 13.5] },
+      { name: "קומת הסוכנים", pos: [0, 4.2, 6.0], look: [0, 0.6, -8] },
+      { name: "קפיטריה", pos: [17.8, 3.0, 1.0], look: [11.5, 0.7, 4.5] },
+      { name: "המשרד שלך", pos: [8.6, 3.0, 15.6], look: [13.5, 0.7, 10.3] },
+    ];
+    let secViewIdx = 0;
+    const applySecView = () => {
+      const v = SEC_VIEWS[secViewIdx];
+      secCam.position.set(...v.pos);
+      secCam.lookAt(...v.look);
+    };
+    applySecView();
+    const secBarCvs = document.createElement("canvas");
+    secBarCvs.width = 512; secBarCvs.height = 44;
+    const secBarCtx = secBarCvs.getContext("2d");
+    const secBarTex = new THREE.CanvasTexture(secBarCvs);
+    secBarTex.colorSpace = THREE.SRGBColorSpace;
     let secBlink = false;
-    const drawSecurity = () => {
-      const c = secCtx;
-      c.fillStyle = "#04070c"; c.fillRect(0, 0, 384, 256);
-      const cams = ["כניסה ראשית", "מחסן ציוד", "חניון", "קומת סוכנים"];
-      const seeds = [31, 77, 123, 209];
-      for (let q = 0; q < 4; q++) {
-        const qx = (q % 2) * 192, qy = Math.floor(q / 2) * 128;
-        c.fillStyle = "#0a1018"; c.fillRect(qx + 3, qy + 3, 186, 122);
-        // faint "scene" — a few grey blocks per camera, deterministic
-        const rnd = mulberry32(seeds[q]);
-        c.fillStyle = "rgba(80,100,130,.22)";
-        for (let b = 0; b < 5; b++) c.fillRect(qx + 10 + rnd() * 120, qy + 40 + rnd() * 60, 18 + rnd() * 40, 14 + rnd() * 30);
-        c.strokeStyle = "rgba(63,215,154,.35)"; c.strokeRect(qx + 3, qy + 3, 186, 122);
-        c.fillStyle = "#3FD79A"; c.font = "700 12px system-ui"; c.textAlign = "right";
-        c.fillText(cams[q], qx + 184, qy + 18);
-        if (secBlink) { c.fillStyle = "#ff5f6d"; c.beginPath(); c.arc(qx + 14, qy + 14, 4, 0, 7); c.fill(); }
-        c.fillStyle = "#8ea0c4"; c.font = "10px ui-monospace,monospace"; c.textAlign = "left";
-        c.fillText(new Date().toLocaleTimeString("he-IL"), qx + 8, qy + 118);
-      }
+    const drawSecurityBar = () => {
+      const c = secBarCtx;
+      c.fillStyle = "rgba(3,5,10,.92)"; c.fillRect(0, 0, 512, 44);
+      c.fillStyle = "#3FD79A"; c.font = "700 20px system-ui"; c.textAlign = "right";
+      c.fillText("🎥 " + SEC_VIEWS[secViewIdx].name, 498, 29);
+      c.fillStyle = "#8ea0c4"; c.font = "16px ui-monospace,monospace"; c.textAlign = "left";
+      c.fillText(new Date().toLocaleTimeString("he-IL"), 46, 29);
+      if (secBlink) { c.fillStyle = "#ff5f6d"; c.beginPath(); c.arc(22, 22, 7, 0, 7); c.fill(); }
       secBlink = !secBlink;
     };
-    drawSecurity();
+    drawSecurityBar();
+    let secScreen;
     {
       const bezel = new THREE.Mesh(new THREE.PlaneGeometry(3.3, 2.25), new THREE.MeshBasicMaterial({ color: 0x03040a }));
       bezel.rotation.y = -Math.PI / 2;
       bezel.position.set(FLOOR_W / 2 - 0.1, 2.1, 12.6);
       scene.add(bezel);
-      const secScreen = new THREE.Mesh(new THREE.PlaneGeometry(3.1, 2.06), new THREE.MeshBasicMaterial({ map: secTex }));
+      secScreen = new THREE.Mesh(new THREE.PlaneGeometry(3.1, 2.06), new THREE.MeshBasicMaterial({ map: secRT.texture }));
       secScreen.rotation.y = -Math.PI / 2;
       secScreen.position.set(FLOOR_W / 2 - 0.12, 2.1, 12.6);
       scene.add(secScreen);
+      const bar = new THREE.Mesh(new THREE.PlaneGeometry(3.1, 0.27), new THREE.MeshBasicMaterial({ map: secBarTex, transparent: true }));
+      bar.rotation.y = -Math.PI / 2;
+      bar.position.set(FLOOR_W / 2 - 0.13, 2.995, 12.6);
+      scene.add(bar);
+    }
+
+    // The 100-inch wall browser — the LIVE heavyguard.com site on the
+    // suite's south wall, actually browsable (scroll, click) thanks to the
+    // CSS3D iframe layer. A WebGL bezel frames the spot; the iframe floats
+    // at the exact same transform. 100" 16:9 ≈ 2.21×1.25m.
+    {
+      let wallSite = "https://heavyguard.com";
+      try { wallSite = localStorage.getItem("alpha:agents:wallSite") || wallSite; } catch {}
+      const bez = new THREE.Mesh(new THREE.PlaneGeometry(2.45, 1.5), new THREE.MeshBasicMaterial({ color: 0x03040a }));
+      bez.rotation.y = Math.PI;
+      bez.position.set(13.6, 2.15, FLOOR_D / 2 - 0.08);
+      scene.add(bez);
+      const label = buildNeonSign("HEAVYGUARD.COM · LIVE", 0xE4BC63, 2.2, 0.4);
+      label.rotation.y = Math.PI;
+      label.position.set(13.6, 3.15, FLOOR_D / 2 - 0.1);
+      scene.add(label);
+      const holder = document.createElement("div");
+      holder.style.width = "1104px"; holder.style.height = "620px";
+      holder.style.background = "#0a0e16";
+      holder.style.pointerEvents = "auto";
+      const iframe = document.createElement("iframe");
+      iframe.src = wallSite;
+      iframe.style.width = "100%"; iframe.style.height = "100%";
+      iframe.style.border = "0";
+      iframe.setAttribute("loading", "lazy");
+      holder.appendChild(iframe);
+      const cssObj = new CSS3DObject(holder);
+      // 2.21m wide / 1104px → world units per CSS pixel
+      cssObj.scale.setScalar(2.21 / 1104);
+      cssObj.position.set(13.6, 2.15, FLOOR_D / 2 - 0.1);
+      cssObj.rotation.y = Math.PI;
+      cssScene.add(cssObj);
+    }
+
+    // The owner's real Tiggo 7, center stage — a display podium in the
+    // middle of the open floor with the actual car model slowly turning.
+    const centerSpin = [];
+    {
+      const podium = new THREE.Mesh(
+        new THREE.CylinderGeometry(2.7, 2.9, 0.14, 40),
+        new THREE.MeshStandardMaterial({ color: 0x14161c, roughness: 0.35, metalness: 0.5 })
+      );
+      podium.position.set(-2.5, 0.07, -1.0);
+      podium.receiveShadow = true;
+      scene.add(podium);
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(2.8, 0.035, 8, 60), new THREE.MeshBasicMaterial({ color: 0xE4BC63 }));
+      ring.rotation.x = Math.PI / 2;
+      ring.position.set(-2.5, 0.15, -1.0);
+      scene.add(ring);
+      const spot = new THREE.PointLight(0xfff2d8, 0.7, 9);
+      spot.position.set(-2.5, 3.4, -1.0);
+      scene.add(spot);
+      obstacles.push({ x: -2.5, z: -1.0, r: 3.0 });
+      const carLoader = new GLTFLoader();
+      carLoader.setMeshoptDecoder(MeshoptDecoder);
+      carLoader.load(base + "office-models/tiggo7.glb", (g) => {
+        const car = g.scene;
+        const cb = new THREE.Box3().setFromObject(car);
+        const cs = cb.getSize(new THREE.Vector3());
+        const cc = cb.getCenter(new THREE.Vector3());
+        const s = 4.2 / Math.max(cs.x, cs.z);
+        const wrap = new THREE.Group();
+        car.position.set(-cc.x, -cb.min.y, -cc.z);
+        wrap.add(car);
+        wrap.scale.setScalar(s);
+        wrap.position.set(-2.5, 0.14, -1.0);
+        scene.add(wrap);
+        wrap.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.matrixAutoUpdate = true; } });
+        centerSpin.push(wrap);
+      }, undefined, () => { /* car download failed — podium stays as decor */ });
     }
 
     // ── Reception at the entrance ────────────────────────────────────────
@@ -2429,6 +2527,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     let raf = 0;
     let integrityT = 0;
     let frameNo = 0;
+    let secSwitchT = 0;
     const clock = new THREE.Clock();
     const curSky = new THREE.Color(0x1b2440);
     const tmpColor = new THREE.Color();
@@ -2491,9 +2590,29 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           bbTex.needsUpdate = true;
         }
         // Security feed: clock + REC blink refresh.
-        drawSecurity();
-        secTex.needsUpdate = true;
+        drawSecurityBar();
+        secBarTex.needsUpdate = true;
       }
+      // Live CCTV: render the actual office into the security screen's
+      // texture every 3rd frame (the screen hides during its own capture to
+      // avoid a feedback loop), and cycle the vantage point every ~6s.
+      secSwitchT += dt;
+      if (secSwitchT >= 6) {
+        secSwitchT = 0;
+        secViewIdx = (secViewIdx + 1) % SEC_VIEWS.length;
+        applySecView();
+        drawSecurityBar();
+        secBarTex.needsUpdate = true;
+      }
+      if (frameNo % 3 === 0) {
+        secScreen.visible = false;
+        renderer.setRenderTarget(secRT);
+        renderer.render(scene, secCam);
+        renderer.setRenderTarget(null);
+        secScreen.visible = true;
+      }
+      // Center-stage car turns slowly on its podium.
+      centerSpin.forEach((w) => { w.rotation.y += dt * 0.28; });
       // Command-center life in the owner suite: the hologram globe spins,
       // the server-rack LED columns breathe.
       ownerSpinners.forEach((s) => { s.rotation.y += dt * 0.9; s.rotation.x += dt * 0.22; });
@@ -2792,6 +2911,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       }
 
       composer.render();
+      cssRenderer.render(cssScene, camera); // the browsable wall iframe tracks the same camera
     }
     liveRef.current.setTalkTarget = setTalkTarget;
     liveRef.current.setSitting = setSitting;
@@ -2803,6 +2923,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       const w = mount.clientWidth || window.innerWidth, h = mount.clientHeight || window.innerHeight;
       camera.aspect = w / h; camera.updateProjectionMatrix();
       renderer.setSize(w, h);
+      cssRenderer.setSize(w, h);
       composer.setSize(w, h);
       bloomPass.setSize(w, h);
       if (ssaoPass) ssaoPass.setSize(w, h);
@@ -2822,9 +2943,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           }
         });
         try { composer.dispose(); } catch {}
+        try { secRT.dispose(); } catch {}
         if (scene.environment) { scene.environment.dispose(); scene.environment = null; }
         renderer.dispose();
         if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement);
+        if (cssRenderer.domElement.parentNode === mount) mount.removeChild(cssRenderer.domElement);
       };
     })();
 
