@@ -25,6 +25,7 @@ const SYNC_TABLES = [
   'hg2:vehicle',
   'hg2:odometer',
   'hg2:projects',
+  'alpha:social:drafts',
   'alpha_brain_memory_v1',
   'alpha_pomodoro_v1',
   'alpha_mood_v1',

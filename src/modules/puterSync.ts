@@ -61,6 +61,7 @@ const SYNC_TABLES = [
   'hg2:trips',
   'hg2:odometer',
   'hg2:projects',
+  'alpha:social:drafts',
   'hg2:carstock',
   'hg2:suppliers',
   'hg2:invoices',
