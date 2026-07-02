@@ -74,6 +74,9 @@ function bizSnapshot() {
   const deals = get("itai:deals") || [];
   const itaiCust = get("itai:customers") || [];
   const pricelist = get("hg2:pricelist") || [];
+  // Large fleet projects (HeavyGuard's פרויקטי-צי module) — the team keeps
+  // an eye on active ones too.
+  const fleetProjects = (get("hg2:projects") || []).filter((p) => !p.completed).length;
   // Cumulative income = the accountant's books (authoritative through
   // BOOKS_LAST_KEY) + live HeavyGuard installs only for months after that,
   // so the figure matches the real books exactly and still ticks up live.
@@ -90,7 +93,7 @@ function bizSnapshot() {
   // Oldest open deal age (days) — feeds the morning briefing's "follow up" nudge.
   let staleDays = 0;
   openDeals.forEach((d) => { const t = d.createdAt || d.ts; if (!t) return; const days = Math.floor((Date.now() - new Date(t).getTime()) / 86400000); if (days > staleDays) staleDays = days; });
-  return { installs: installs.length, hgRevenue, custCount, top, openDeals: openDeals.length, openVal, wonMonth, pricelist: pricelist.length, staleDays, staleCount: openDeals.filter((d) => { const t = d.createdAt || d.ts; if (!t) return false; return (Date.now() - new Date(t).getTime()) / 86400000 > 7; }).length };
+  return { installs: installs.length, hgRevenue, custCount, top, openDeals: openDeals.length, openVal, wonMonth, pricelist: pricelist.length, fleetProjects, staleDays, staleCount: openDeals.filter((d) => { const t = d.createdAt || d.ts; if (!t) return false; return (Date.now() - new Date(t).getTime()) / 86400000 > 7; }).length };
 }
 // Real action, not just a chat reply — merges duplicate customers directly
 // in Itai's CRM data (same "itai:customers" key agent.html reads/writes),
@@ -776,6 +779,9 @@ const CHATTER_PAIRS = [
   { a: "legal", b: "ops", make: () => [`כל ההתקנות האחרונות עם טופס התקשרות חתום?`, `בודק מול הצוות ומעדכן אותך.`] },
   { a: "growth", b: "ceo", make: (b) => [`יש הזדמנות צמיחה שכדאי לדחוף החודש?`, `תראה לי מספרים ונחליט יחד בישיבת הצוות.`] },
   { a: "facilities", b: "ceo", make: () => [`המשרד מתחיל להיות עמוס, אפשר לארגן מחדש?`, `כן, תתחילי בעמדות שהכי מבולגנות.`] },
+  { a: "ops", b: "ceo", make: (b) => b.fleetProjects
+    ? [`יש ${b.fleetProjects} פרויקטי צי פעילים — אני עוקב אחרי ההתקדמות מול ההתקנות בפועל.`, `מצוין. תעדכן אותי אם קצב ההתקנות מפגר אחרי הלוז.`]
+    : [`שווה לפתוח את פרויקטי הצי הבאים כפרויקטים במערכת — מעקב התקדמות ורווחיות אוטומטי.`, `רעיון טוב, תכין את זה מול זבולון.`] },
 ];
 const IDEA_TEMPLATES = [
   { agentId: "growth", make: (b) => `לבחון הרחבה לאזור פעילות נוסף — יש כרגע ${b.custCount} לקוחות ו-${ils(b.openVal)} בפייפליין הפתוח, יש מקום לצמוח.` },
