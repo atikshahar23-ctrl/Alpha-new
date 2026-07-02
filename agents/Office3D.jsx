@@ -2311,6 +2311,101 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       }, undefined, () => { /* car download failed — podium stays as decor */ });
     }
 
+    // ── The office dogs 🐾 ───────────────────────────────────────────────
+    // Eight real dogs roam the floor: five pomeranians (the owner's model,
+    // 30MB→403KB, tinted sable orange-and-dark like his real dog's photo)
+    // led by ניקי, plus three rigged chihuahuas (with their baked idle
+    // animation) — טיארה first. Each wanders between open-floor spots and
+    // the dog corner (beds, food + water bowls), pauses to sniff, waddles
+    // while walking, and rests on the cushions.
+    const DOG_CORNER = { x: -16.6, z: -13.2 };
+    const DOG_BEDS = [
+      { x: -17.4, z: -14.2 }, { x: -16.0, z: -14.6 }, { x: -14.8, z: -13.6 }, { x: -17.6, z: -12.4 },
+    ];
+    const dogs = [];
+    {
+      const rug = buildRug(4.4, 3.6, 0x2a2016);
+      rug.position.set(DOG_CORNER.x, 0.005, DOG_CORNER.z);
+      scene.add(rug);
+      DOG_BEDS.forEach((b) => {
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.13, 10, 22), new THREE.MeshStandardMaterial({ color: 0x5a4632, roughness: 0.9 }));
+        ring.rotation.x = -Math.PI / 2; ring.position.set(b.x, 0.12, b.z); ring.castShadow = true; scene.add(ring);
+        const cushion = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.08, 20), new THREE.MeshStandardMaterial({ color: 0x8a6a4a, roughness: 1 }));
+        cushion.position.set(b.x, 0.06, b.z); scene.add(cushion);
+      });
+      const bowl = (x, z, inner) => {
+        const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.11, 0.09, 16), new THREE.MeshStandardMaterial({ color: 0x30353f, roughness: 0.4, metalness: 0.6 }));
+        rim.position.set(x, 0.045, z); scene.add(rim);
+        const fill = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.02, 16), new THREE.MeshStandardMaterial({ color: inner, roughness: 0.8 }));
+        fill.position.set(x, 0.085, z); scene.add(fill);
+      };
+      bowl(-15.4, -12.2, 0x6b4a26); // food
+      bowl(-14.9, -12.5, 0x3a7bd5); // water
+      const dogSign = buildNameSprite("פינת הכלבים 🐾", "#E08D45", "");
+      dogSign.scale.multiplyScalar(1.6);
+      dogSign.position.set(DOG_CORNER.x, 1.5, DOG_CORNER.z - 1.2);
+      scene.add(dogSign);
+      obstacles.push({ x: DOG_CORNER.x, z: DOG_CORNER.z - 0.6, r: 1.1 });
+
+      const spawnDog = (template, clips, cfg, idx) => {
+        const skinned = !!(clips && clips.length);
+        const body = skinned ? cloneSkinned(template) : template.clone(true);
+        const db = new THREE.Box3().setFromObject(body);
+        const ds = db.getSize(new THREE.Vector3());
+        const dc = db.getCenter(new THREE.Vector3());
+        const scale = cfg.height / (ds.y || 1);
+        const wrap = new THREE.Group();
+        body.position.set(-dc.x * scale, -db.min.y * scale, -dc.z * scale);
+        body.scale.setScalar(scale);
+        body.traverse((o) => {
+          if (!o.isMesh && !o.isSkinnedMesh) return;
+          o.castShadow = true; o.frustumCulled = false;
+          if (cfg.tint && o.material) { o.material = o.material.clone(); o.material.color = new THREE.Color(cfg.tint); }
+        });
+        wrap.add(body);
+        const tag = buildNameSprite(cfg.name, cfg.gold ? "#E4BC63" : "#E08D45", "");
+        tag.scale.multiplyScalar(0.62);
+        tag.position.y = cfg.height + 0.28;
+        wrap.add(tag);
+        const bed = DOG_BEDS[idx % DOG_BEDS.length];
+        wrap.position.set(bed.x + (idx % 4) * 0.45 - 0.7, 0, bed.z + 0.7 + (idx % 2) * 0.4);
+        scene.add(wrap);
+        let mixer = null;
+        if (skinned) {
+          mixer = new THREE.AnimationMixer(body);
+          mixer.clipAction(clips[0]).play();
+        }
+        dogs.push({ group: wrap, mixer, target: null, pauseT: 1 + idx * 1.4, speed: 1.0 + (idx % 4) * 0.18 });
+      };
+      const dogLoader = new GLTFLoader();
+      dogLoader.setMeshoptDecoder(MeshoptDecoder);
+      // Pomeranians — sable tints sampled from the owner's photo (warm
+      // orange body, darker back).
+      dogLoader.load(base + "office-models/pomeranian.glb", (g) => {
+        [
+          { name: "ניקי", gold: true, height: 0.5, tint: 0xc9803e },
+          { name: "מוקה", height: 0.42, tint: 0xb06a30 },
+          { name: "שוקו", height: 0.42, tint: 0x8a5426 },
+          { name: "לונה", height: 0.4, tint: 0xd29a5c },
+          { name: "סימבה", height: 0.44, tint: 0xc9803e },
+        ].forEach((cfg, i) => spawnDog(g.scene, null, cfg, i));
+      }, undefined, () => {});
+      // Chihuahuas — rigged, their baked clip keeps them alive while roaming.
+      dogLoader.load(base + "office-models/chihuahua.glb", (g) => {
+        [
+          { name: "טיארה", gold: true, height: 0.36 },
+          { name: "צ'יקו", height: 0.33 },
+          { name: "פיצי", height: 0.31 },
+        ].forEach((cfg, i) => spawnDog(g.scene, g.animations, cfg, i + 5));
+      }, undefined, () => {});
+    }
+    // A wandering dog's next stop: usually a random open-floor spot,
+    // sometimes back to a bed for a rest.
+    const dogSpot = () => {
+      if (Math.random() < 0.3) { const b = DOG_BEDS[Math.floor(Math.random() * DOG_BEDS.length)]; return { x: b.x, z: b.z + 0.25, rest: true }; }
+      return { x: -10 + Math.random() * 15, z: -7 + Math.random() * 12, rest: false };
+    };
+
     // ── Reception at the entrance ────────────────────────────────────────
     // A welcome desk with a receptionist just inside the south entrance, so
     // walking in reads like arriving at a real company lobby.
@@ -2613,6 +2708,25 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       }
       // Center-stage car turns slowly on its podium.
       centerSpin.forEach((w) => { w.rotation.y += dt * 0.28; });
+      // Dogs: wander → pause/sniff → wander, with a waddle while walking
+      // and longer rests on the beds. Chihuahua mixers tick their idle clip.
+      dogs.forEach((d, di) => {
+        if (d.mixer) d.mixer.update(dt);
+        if (d.pauseT > 0) { d.pauseT -= dt; d.group.rotation.z = 0; return; }
+        if (!d.target) d.target = dogSpot();
+        const dx = d.target.x - d.group.position.x, dz = d.target.z - d.group.position.z;
+        const dist = Math.hypot(dx, dz);
+        if (dist < 0.12) {
+          d.pauseT = d.target.rest ? 9 + Math.random() * 14 : 1.5 + Math.random() * 4;
+          d.target = null;
+          return;
+        }
+        const step = Math.min(dist, d.speed * dt);
+        d.group.position.x += (dx / dist) * step;
+        d.group.position.z += (dz / dist) * step;
+        d.group.rotation.y = Math.atan2(dx, dz);
+        d.group.rotation.z = Math.sin(clock.elapsedTime * 9 + di * 2) * 0.055; // waddle
+      });
       // Command-center life in the owner suite: the hologram globe spins,
       // the server-rack LED columns breathe.
       ownerSpinners.forEach((s) => { s.rotation.y += dt * 0.9; s.rotation.x += dt * 0.22; });
