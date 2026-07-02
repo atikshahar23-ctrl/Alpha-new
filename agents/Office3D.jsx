@@ -3,7 +3,6 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
 import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
-import { CSS3DRenderer, CSS3DObject } from "three/examples/jsm/renderers/CSS3DRenderer.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
@@ -270,6 +269,70 @@ function buildFloorTexture() {
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.repeat.set(FLOOR_W / 4, FLOOR_D / 4);
   tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  return tex;
+}
+
+// Painted-plaster wall: warm slate-blue paint with subtle roller noise, a
+// darker wainscot band at the bottom and a thin brass trim line between —
+// so the walls read as designed and painted, not a flat untextured fill.
+// The canvas maps the full 6.4m wall height; callers set horizontal repeat.
+function buildWallTexture(repeatX) {
+  const cvs = document.createElement("canvas");
+  cvs.width = 512; cvs.height = 512;
+  const ctx = cvs.getContext("2d");
+  const rnd = mulberry32(7);
+  const g = ctx.createLinearGradient(0, 0, 0, 512);
+  g.addColorStop(0, "#3b4a73"); g.addColorStop(0.7, "#33405f"); g.addColorStop(1, "#2a3550");
+  ctx.fillStyle = g; ctx.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 1500; i++) {
+    ctx.fillStyle = rnd() < 0.5 ? `rgba(255,255,255,${(rnd() * 0.045).toFixed(3)})` : `rgba(0,0,0,${(rnd() * 0.06).toFixed(3)})`;
+    ctx.fillRect(rnd() * 512, rnd() * 512, 1 + rnd() * 3, 2 + rnd() * 16);
+  }
+  // wainscot: bottom ~1.1m of the 6.4m wall ≈ 88px
+  ctx.fillStyle = "#151b2c"; ctx.fillRect(0, 512 - 88, 512, 88);
+  for (let i = 0; i < 350; i++) {
+    ctx.fillStyle = `rgba(255,255,255,${(rnd() * 0.035).toFixed(3)})`;
+    ctx.fillRect(rnd() * 512, 512 - 88 + rnd() * 88, 2, 1 + rnd() * 7);
+  }
+  ctx.fillStyle = "#E4BC63"; ctx.fillRect(0, 512 - 92, 512, 4);
+  const tex = new THREE.CanvasTexture(cvs);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.repeat.set(repeatX, 1);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  return tex;
+}
+
+// Designed ceiling — dark coffered panels with warm LED light strips and a
+// brass perimeter trim, baked into one canvas so the whole ceiling costs a
+// single textured plane.
+function buildCeilingTexture() {
+  const cvs = document.createElement("canvas");
+  cvs.width = 1024; cvs.height = 866; // ≈ FLOOR_W:FLOOR_D
+  const ctx = cvs.getContext("2d");
+  ctx.fillStyle = "#10141f"; ctx.fillRect(0, 0, 1024, 866);
+  const cols = 10, rows = 8, cw = 1024 / cols, rh = 866 / rows;
+  for (let c = 0; c < cols; c++) for (let r = 0; r < rows; r++) {
+    const x = c * cw, y = r * rh;
+    const g = ctx.createLinearGradient(x, y, x, y + rh);
+    g.addColorStop(0, "#1b2233"); g.addColorStop(1, "#141a28");
+    ctx.fillStyle = g;
+    ctx.fillRect(x + 6, y + 6, cw - 12, rh - 12);
+    ctx.strokeStyle = "rgba(228,188,99,.14)"; ctx.lineWidth = 2;
+    ctx.strokeRect(x + 6, y + 6, cw - 12, rh - 12);
+    if (r % 2 === 1) {
+      // recessed warm LED strip with a soft halo
+      ctx.fillStyle = "rgba(255,237,196,.2)";
+      ctx.fillRect(x + cw * 0.16, y + rh / 2 - 10, cw * 0.68, 20);
+      ctx.fillStyle = "#ffedc4";
+      ctx.fillRect(x + cw * 0.22, y + rh / 2 - 4, cw * 0.56, 8);
+    }
+  }
+  ctx.strokeStyle = "#E4BC63"; ctx.lineWidth = 6; ctx.strokeRect(8, 8, 1008, 850);
+  const tex = new THREE.CanvasTexture(cvs);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
   return tex;
 }
 
@@ -1591,19 +1654,6 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     renderer.toneMappingExposure = 1.1;
     mount.appendChild(renderer.domElement);
 
-    // ── CSS3D layer — a REAL, browsable iframe living inside the 3D room ──
-    // Used for the 100-inch wall screen showing the live heavyguard.com
-    // site. The layer sits above the WebGL canvas with pointer-events off,
-    // except the iframe itself, so you can walk with the joystick anywhere
-    // and actually scroll/click the site when the cursor is on the screen.
-    const cssScene = new THREE.Scene();
-    const cssRenderer = new CSS3DRenderer();
-    cssRenderer.setSize(width, height);
-    cssRenderer.domElement.style.position = "absolute";
-    cssRenderer.domElement.style.inset = "0";
-    cssRenderer.domElement.style.pointerEvents = "none";
-    mount.appendChild(cssRenderer.domElement);
-
     // ── Post-processing chain: RenderPass → SSAO (desktop) → Bloom → Output ──
     // Bloom gives the neon/monitors a soft realistic glow; SSAO grounds every
     // object with contact shadowing; OutputPass applies the ACES tone-map +
@@ -1737,28 +1787,19 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       scene.add(rug);
     }
 
-    // Ceiling + recessed light panels over the bullpen. BackSide only — the
-    // chase camera sits at y=6.4 (above this ceiling's y=5.4), and a
-    // DoubleSide ceiling was visible from above too, blocking the whole
-    // view straight down onto the room. A real ceiling is never seen from
-    // above anyway, so BackSide (visible only from inside, looking up)
-    // fixes it regardless of how high any future camera mode goes.
+    // Designed ceiling — coffered panels + warm LED strips + brass trim,
+    // one textured plane. Single-sided facing DOWN (rotation.x = +π/2, the
+    // same orientation the old light panels used), so from inside/first
+    // person it reads as a real finished ceiling, while the third-person
+    // chase camera above it looks straight through — its backface is
+    // culled, so it never hides the room from the owner's usual view.
     const ceiling = new THREE.Mesh(
       new THREE.PlaneGeometry(FLOOR_W, FLOOR_D),
-      new THREE.MeshStandardMaterial({ color: 0x1a2c4a, roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.16, side: THREE.BackSide, depthWrite: false })
+      new THREE.MeshBasicMaterial({ map: buildCeilingTexture(), toneMapped: false })
     );
     ceiling.rotation.x = Math.PI / 2;
     ceiling.position.y = 5.4;
     scene.add(ceiling);
-    const panelMat = new THREE.MeshBasicMaterial({ color: 0xdfe8ff });
-    deskPositions.forEach((d, i) => {
-      if (i % 4 !== 0) return; // one panel per desk row-group, not every desk
-      const [wx, wz] = toWorld(d.x, d.y);
-      const panel = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 0.5), panelMat);
-      panel.rotation.x = Math.PI / 2;
-      panel.position.set(wx + 1.6, 5.35, wz);
-      scene.add(panel);
-    });
     // Designer hanging pendant lamps over each desk column — an emissive
     // glass globe on a slim cord, for a more upscale/luxurious ceiling. No
     // per-lamp light (kept cheap); the emissive globes read as lit fixtures.
@@ -2045,8 +2086,13 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       m.position.set(i * (FLOOR_W / 11), 3.2, nwz + 0.03);
       scene.add(m);
     }
-    // Side walls (plain — enclose the room without competing with the skyline).
-    const wallMat = new THREE.MeshStandardMaterial({ color: 0x151c30, roughness: 0.9 });
+    // Painted walls — slate-blue plaster with a dark wainscot + brass trim
+    // (buildWallTexture). The side walls got the paint job, and the south
+    // side finally gets a REAL wall: it never existed, so the big wall
+    // screen and the art there floated against the open sky, which is a
+    // big part of why that side of the room shimmered. Front-side only,
+    // facing in — the chase camera outside the south edge sees through it.
+    const wallMat = new THREE.MeshStandardMaterial({ map: buildWallTexture(5), roughness: 0.85, metalness: 0.05 });
     const wallL = new THREE.Mesh(new THREE.PlaneGeometry(FLOOR_D, 6.4), wallMat);
     wallL.rotation.y = Math.PI / 2;
     wallL.position.set(-(FLOOR_W / 2) - 0.05, 3.2, 0);
@@ -2055,6 +2101,13 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     wallR.rotation.y = -Math.PI / 2;
     wallR.position.x = (FLOOR_W / 2) + 0.05;
     scene.add(wallR);
+    const wallS = new THREE.Mesh(
+      new THREE.PlaneGeometry(FLOOR_W, 6.4),
+      new THREE.MeshStandardMaterial({ map: buildWallTexture(6), roughness: 0.85, metalness: 0.05 })
+    );
+    wallS.rotation.y = Math.PI;
+    wallS.position.set(0, 3.2, FLOOR_D / 2 + 0.05);
+    scene.add(wallS);
 
     // High clerestory window band on the east wall — a second slice of the
     // city visible from the dining/owner side, using the same skyline canvas
@@ -2346,13 +2399,14 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       scene.add(bar);
     }
 
-    // The 100-inch wall browser — the LIVE heavyguard.com site on the
-    // suite's south wall, actually browsable (scroll, click) thanks to the
-    // CSS3D iframe layer. A WebGL bezel frames the spot; the iframe floats
-    // at the exact same transform. 100" 16:9 ≈ 2.21×1.25m.
+    // The 100-inch wall screen — the old CSS3D iframe is gone: heavyguard.com
+    // refuses to be embedded (X-Frame-Options), which left a black hole, and
+    // the DOM layer itself flickered against the WebGL canvas on Macs. The
+    // screen is now a plain WebGL surface drawing a site-style board from
+    // the LIVE business numbers, refreshed with the other TVs; the neon
+    // label still points visitors at the real URL.
+    let drawSiteScreen = () => {};
     {
-      let wallSite = "https://heavyguard.com";
-      try { wallSite = localStorage.getItem("alpha:agents:wallSite") || wallSite; } catch {}
       const bez = new THREE.Mesh(new THREE.PlaneGeometry(2.45, 1.5), new THREE.MeshBasicMaterial({ color: 0x03040a }));
       bez.rotation.y = Math.PI;
       bez.position.set(13.6, 2.15, FLOOR_D / 2 - 0.08);
@@ -2361,22 +2415,53 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       label.rotation.y = Math.PI;
       label.position.set(13.6, 3.15, FLOOR_D / 2 - 0.1);
       scene.add(label);
-      const holder = document.createElement("div");
-      holder.style.width = "1104px"; holder.style.height = "620px";
-      holder.style.background = "#0a0e16";
-      holder.style.pointerEvents = "auto";
-      const iframe = document.createElement("iframe");
-      iframe.src = wallSite;
-      iframe.style.width = "100%"; iframe.style.height = "100%";
-      iframe.style.border = "0";
-      iframe.setAttribute("loading", "lazy");
-      holder.appendChild(iframe);
-      const cssObj = new CSS3DObject(holder);
-      // 2.21m wide / 1104px → world units per CSS pixel
-      cssObj.scale.setScalar(2.21 / 1104);
-      cssObj.position.set(13.6, 2.15, FLOOR_D / 2 - 0.1);
-      cssObj.rotation.y = Math.PI;
-      cssScene.add(cssObj);
+      const siteCvs = document.createElement("canvas");
+      siteCvs.width = 1104; siteCvs.height = 620;
+      const sc = siteCvs.getContext("2d");
+      const siteTex = new THREE.CanvasTexture(siteCvs);
+      siteTex.colorSpace = THREE.SRGBColorSpace;
+      siteTex.anisotropy = 8;
+      drawSiteScreen = () => {
+        const b = liveRef.current.bizData || {};
+        const W = 1104, H = 620;
+        sc.fillStyle = "#0a0e16"; sc.fillRect(0, 0, W, H);
+        sc.fillStyle = "#0f1420"; sc.fillRect(0, 0, W, 64);
+        sc.fillStyle = "#E4BC63"; sc.font = "900 30px system-ui"; sc.textAlign = "right";
+        sc.fillText("HEAVY GUARD", W - 28, 43);
+        sc.fillStyle = "#8ea0c4"; sc.font = "500 20px system-ui"; sc.textAlign = "left";
+        sc.fillText("heavyguard.com", 28, 40);
+        sc.strokeStyle = "rgba(228,188,99,.35)"; sc.lineWidth = 2;
+        sc.beginPath(); sc.moveTo(0, 64); sc.lineTo(W, 64); sc.stroke();
+        if (bbLogoImg && bbLogoImg.complete && bbLogoImg.naturalWidth) {
+          const lw = 180;
+          sc.drawImage(bbLogoImg, W - 120 - lw, 100, lw, lw * 1.16);
+        }
+        sc.fillStyle = "#f2f4f8"; sc.font = "900 50px system-ui"; sc.textAlign = "right";
+        sc.fillText("מיגון כלי צמ\"ה מתקדם", W - 340, 185);
+        sc.fillStyle = "#aeb8ca"; sc.font = "500 26px system-ui";
+        sc.fillText("מצלמות · איתור · שמשות ממוגנות · התקנה בשטח", W - 340, 232);
+        sc.fillStyle = "#E4BC63"; sc.fillRect(W - 690, 262, 350, 54);
+        sc.fillStyle = "#0a0e16"; sc.font = "800 26px system-ui"; sc.textAlign = "center";
+        sc.fillText("heavyguard.com ↗", W - 515, 297);
+        const stats = [["לקוחות", b.custCount ?? "—"], ["התקנות", b.installs ?? "—"], ["עסקאות פתוחות", b.openDeals ?? "—"]];
+        stats.forEach(([lbl, val], i) => {
+          const x = W - 74 - i * 330;
+          sc.fillStyle = "#11182a"; sc.fillRect(x - 290, 350, 290, 150);
+          sc.strokeStyle = "rgba(228,188,99,.3)"; sc.lineWidth = 2; sc.strokeRect(x - 290, 350, 290, 150);
+          sc.fillStyle = "#E4BC63"; sc.font = "900 52px system-ui"; sc.textAlign = "center";
+          sc.fillText(String(val), x - 145, 428);
+          sc.fillStyle = "#8ea0c4"; sc.font = "600 22px system-ui";
+          sc.fillText(lbl, x - 145, 472);
+        });
+        sc.fillStyle = "#3FD79A"; sc.font = "700 20px system-ui"; sc.textAlign = "right";
+        sc.fillText("● LIVE — נתוני העסק בזמן אמת · " + new Date().toLocaleTimeString("he-IL"), W - 28, H - 24);
+        siteTex.needsUpdate = true;
+      };
+      drawSiteScreen();
+      const siteScreen = new THREE.Mesh(new THREE.PlaneGeometry(2.21, 1.25), new THREE.MeshBasicMaterial({ map: siteTex, toneMapped: false }));
+      siteScreen.rotation.y = Math.PI;
+      siteScreen.position.set(13.6, 2.15, FLOOR_D / 2 - 0.1);
+      scene.add(siteScreen);
     }
 
     // ── The brand around the room ─────────────────────────────────────────
@@ -2711,6 +2796,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         tvTrade.tex.needsUpdate = true;
         drawHgScreen(hgCtx, hgCanvas.width, hgCanvas.height, liveRef.current.bizData);
         tvHg.tex.needsUpdate = true;
+        drawSiteScreen(); // wall site-board follows the same live refresh
         // The city billboard flips to its next ad every other screen tick.
         bbTick++;
         if (bbTick % 2 === 0) {
@@ -3044,12 +3130,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       }
 
       if (turboOn) {
-        // Straight render: skips SSAO/bloom/output passes AND the CSS3D
-        // iframe compositing — the two biggest per-frame costs on weak GPUs.
+        // Straight render: skips the SSAO/bloom/output passes — the biggest
+        // per-frame GPU cost on weak machines.
         renderer.render(scene, camera);
       } else {
         composer.render();
-        cssRenderer.render(cssScene, camera); // the browsable wall iframe tracks the same camera
       }
     }
     liveRef.current.setTalkTarget = setTalkTarget;
@@ -3058,9 +3143,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     liveRef.current.toggleSit = () => setSitting((v) => (v ? false : !!liveRef.current.canSit));
     // Turbo 🚀 — every lever at once: 1x pixel ratio, post chain bypassed
     // (animate renders straight through the renderer), shadows off, dust +
-    // sky-life extras hidden, CCTV frozen on its last frame, and the CSS3D
-    // iframe wall uncomposited (display:none) — on Macs that iframe layer
-    // is one of the heaviest costs in the whole sim.
+    // sky-life extras hidden, CCTV frozen on its last frame.
     liveRef.current.setTurbo = (on) => {
       turboOn = on;
       applyPasses();
@@ -3074,7 +3157,6 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       heliGroup.visible = !on;
       balloonGroup.visible = !on && skylineMode === "day";
       searchGroup.visible = !on && skylineMode === "night";
-      cssRenderer.domElement.style.display = on ? "none" : "";
     };
     liveRef.current.setTurbo(turbo);
     animate();
@@ -3083,7 +3165,6 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       const w = mount.clientWidth || window.innerWidth, h = mount.clientHeight || window.innerHeight;
       camera.aspect = w / h; camera.updateProjectionMatrix();
       renderer.setSize(w, h);
-      cssRenderer.setSize(w, h);
       composer.setSize(w, h);
       bloomPass.setSize(w, h);
       if (ssaoPass) ssaoPass.setSize(w, h);
@@ -3107,7 +3188,6 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         if (scene.environment) { scene.environment.dispose(); scene.environment = null; }
         renderer.dispose();
         if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement);
-        if (cssRenderer.domElement.parentNode === mount) mount.removeChild(cssRenderer.domElement);
       };
     })();
 
