@@ -1703,10 +1703,125 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           mesh.position.set(bx, h / 2, bz);
           scene.add(mesh);
           nearBuildingMats.push(mat);
+          if (!scene.userData.tallB || h > scene.userData.tallB.h) scene.userData.tallB = { x: bx, h, z: bz, d };
         }
         bx += gap;
       }
     }
+
+    /* ── Showcase-window life v3 ──────────────────────────────────────────
+       The view out the glass gets a living city layer: a Times-Square-style
+       billboard on the tallest nearby tower cycling REAL content (Heavy
+       Guard ad → ALPHA → live Bitcoin off the market feed), a helicopter
+       with a spinning rotor + strobe crossing opposite the airliner, a
+       striped hot-air balloon drifting by day, and two searchlight beams
+       sweeping the sky at night. All sprite/canvas-cheap. ── */
+    const bbCvs = document.createElement("canvas");
+    bbCvs.width = 220; bbCvs.height = 320;
+    const bbCtx = bbCvs.getContext("2d");
+    const bbTex = new THREE.CanvasTexture(bbCvs);
+    bbTex.colorSpace = THREE.SRGBColorSpace;
+    const drawBillboard = (mode) => {
+      const c = bbCtx;
+      c.fillStyle = "#05070d"; c.fillRect(0, 0, 220, 320);
+      c.textAlign = "center";
+      if (mode === 0) {
+        c.fillStyle = "#E4BC63"; c.font = "900 34px system-ui";
+        c.fillText("HEAVY", 110, 96); c.fillText("GUARD", 110, 140);
+        c.strokeStyle = "#E4BC63"; c.lineWidth = 3;
+        c.beginPath(); c.moveTo(110, 176); c.lineTo(146, 196); c.lineTo(146, 238); c.lineTo(110, 262); c.lineTo(74, 238); c.lineTo(74, 196); c.closePath(); c.stroke();
+        c.fillStyle = "#cfd8e6"; c.font = "700 19px system-ui";
+        c.fillText("מיגון כלי צמ\"ה", 110, 296);
+      } else if (mode === 1) {
+        c.fillStyle = "#18e0ff"; c.font = "900 44px system-ui";
+        c.fillText("ALPHA", 110, 130);
+        c.fillStyle = "#ff3ea5"; c.font = "800 26px system-ui";
+        c.fillText("HQ · 24/7", 110, 176);
+        c.fillStyle = "#9fb2d4"; c.font = "600 17px system-ui";
+        c.fillText("13 סוכנים · עיר אחת", 110, 232);
+      } else {
+        const btc = (liveRef.current.marketRows || []).find((r) => r.name === "Bitcoin");
+        c.fillStyle = "#f7931a"; c.font = "900 52px system-ui";
+        c.fillText("₿", 110, 92);
+        c.font = "800 24px system-ui"; c.fillText("BITCOIN", 110, 136);
+        c.fillStyle = "#fff"; c.font = "800 26px system-ui";
+        c.fillText(btc ? btc.price : "…", 110, 196);
+        if (btc) {
+          c.fillStyle = btc.chg >= 0 ? "#3FD79A" : "#ff5f6d"; c.font = "800 22px system-ui";
+          c.fillText(`${btc.chg >= 0 ? "▲" : "▼"} ${Math.abs(btc.chg).toFixed(2)}%`, 110, 244);
+        }
+        c.fillStyle = "#5f7d6f"; c.font = "600 14px system-ui";
+        c.fillText("LIVE", 110, 290);
+      }
+    };
+    drawBillboard(0);
+    let bbMode = 0, bbTick = 0;
+    const bbMat = new THREE.MeshBasicMaterial({ map: bbTex, toneMapped: false, fog: false });
+    {
+      const tall = scene.userData.tallB || { x: 24, h: 20, z: nwz - 24, d: 4 };
+      const frame = new THREE.Mesh(new THREE.PlaneGeometry(5.0, 7.0), new THREE.MeshBasicMaterial({ color: 0x02030a, fog: false }));
+      frame.position.set(tall.x, tall.h * 0.62, tall.z + tall.d / 2 + 0.05);
+      scene.add(frame);
+      const billboard = new THREE.Mesh(new THREE.PlaneGeometry(4.5, 6.5), bbMat);
+      billboard.position.set(tall.x, tall.h * 0.62, tall.z + tall.d / 2 + 0.09);
+      scene.add(billboard);
+    }
+
+    // Helicopter — crosses right-to-left (opposite the airliner), higher.
+    const heliGroup = new THREE.Group();
+    const heliBodyMat = new THREE.MeshBasicMaterial({ color: 0x11141c, fog: false });
+    const heliBody = new THREE.Mesh(new THREE.SphereGeometry(0.55, 10, 8), heliBodyMat);
+    heliBody.scale.set(1.5, 0.75, 0.7); heliGroup.add(heliBody);
+    const heliTail = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.14, 0.12), heliBodyMat);
+    heliTail.position.set(-1.2, 0.12, 0); heliGroup.add(heliTail);
+    const heliRotor = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.04, 0.16), new THREE.MeshBasicMaterial({ color: 0x2a3040, transparent: true, opacity: 0.75, fog: false }));
+    heliRotor.position.y = 0.52; heliGroup.add(heliRotor);
+    const heliStrobe = new THREE.Mesh(new THREE.SphereGeometry(0.11, 6, 6), new THREE.MeshBasicMaterial({ color: 0xff4444, transparent: true, opacity: 0.9, fog: false }));
+    heliStrobe.position.set(0.2, -0.42, 0); heliGroup.add(heliStrobe);
+    heliGroup.position.set(70, 23, nwz - 24);
+    scene.add(heliGroup);
+
+    // Hot-air balloon — striped envelope + basket, drifting slowly, day only.
+    const balloonGroup = new THREE.Group();
+    {
+      const sc = document.createElement("canvas"); sc.width = 64; sc.height = 32;
+      const sctx = sc.getContext("2d");
+      const cols = ["#e2504c", "#f2b134", "#f7f4ea", "#3a7bd5"];
+      for (let i = 0; i < 8; i++) { sctx.fillStyle = cols[i % cols.length]; sctx.fillRect(i * 8, 0, 8, 32); }
+      const st = new THREE.CanvasTexture(sc); st.colorSpace = THREE.SRGBColorSpace;
+      const env = new THREE.Mesh(new THREE.SphereGeometry(1.5, 16, 12), new THREE.MeshStandardMaterial({ map: st, roughness: 0.7, fog: false }));
+      env.scale.set(1, 1.15, 1); balloonGroup.add(env);
+      const basket = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.4, 0.5), new THREE.MeshStandardMaterial({ color: 0x6b4a26, roughness: 0.8, fog: false }));
+      basket.position.y = -2.3; balloonGroup.add(basket);
+      [[-0.3, -0.3], [0.3, 0.3]].forEach(([rx, rz]) => {
+        const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 1.0, 4), heliBodyMat);
+        rope.position.set(rx, -1.75, rz); balloonGroup.add(rope);
+      });
+    }
+    balloonGroup.position.set(-45, 14, nwz - 30);
+    scene.add(balloonGroup);
+
+    // Night searchlights — two additive beams sweeping from behind the city.
+    const searchGroup = new THREE.Group();
+    const mkBeam = (px, tilt) => {
+      const bc = document.createElement("canvas"); bc.width = 32; bc.height = 128;
+      const bx2 = bc.getContext("2d");
+      const grd = bx2.createLinearGradient(0, 128, 0, 0);
+      grd.addColorStop(0, "rgba(210,230,255,.55)"); grd.addColorStop(1, "rgba(210,230,255,0)");
+      bx2.fillStyle = grd; bx2.fillRect(0, 0, 32, 128);
+      const bt = new THREE.CanvasTexture(bc);
+      const geo = new THREE.PlaneGeometry(1.0, 30);
+      geo.translate(0, 15, 0); // pivot at the base so rotation sweeps the beam
+      const beam = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: bt, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+      beam.position.set(px, 5, nwz - 33);
+      beam.rotation.z = tilt;
+      searchGroup.add(beam);
+      return beam;
+    };
+    const beam1 = mkBeam(-20, -0.15);
+    const beam2 = mkBeam(28, 0.2);
+    searchGroup.visible = false;
+    scene.add(searchGroup);
 
     // A thin animated street strip at the base — small, cheap, redrawn
     // every frame — so the window always has some motion in it.
@@ -1739,6 +1854,30 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     wallR.rotation.y = -Math.PI / 2;
     wallR.position.x = (FLOOR_W / 2) + 0.05;
     scene.add(wallR);
+
+    // High clerestory window band on the east wall — a second slice of the
+    // city visible from the dining/owner side, using the same skyline canvas
+    // with its own offset/repeat so it reads as a different part of town.
+    const eastWinTex = skyline.tex.clone();
+    eastWinTex.repeat.set(0.34, 0.42);
+    eastWinTex.offset.set(0.42, 0.12);
+    eastWinTex.needsUpdate = true;
+    {
+      const bandFrame = new THREE.Mesh(new THREE.PlaneGeometry(13.5, 2.3), new THREE.MeshBasicMaterial({ color: 0x0a0e18 }));
+      bandFrame.rotation.y = -Math.PI / 2;
+      bandFrame.position.set(FLOOR_W / 2 - 0.02, 4.2, -4.5);
+      scene.add(bandFrame);
+      const band = new THREE.Mesh(new THREE.PlaneGeometry(13, 1.9), new THREE.MeshBasicMaterial({ map: eastWinTex, fog: false }));
+      band.rotation.y = -Math.PI / 2;
+      band.position.set(FLOOR_W / 2 - 0.06, 4.2, -4.5);
+      scene.add(band);
+      for (let i = -2; i <= 2; i++) {
+        const m = new THREE.Mesh(new THREE.BoxGeometry(0.09, 2.1, 0.07), mullionMat);
+        m.rotation.y = -Math.PI / 2;
+        m.position.set(FLOOR_W / 2 - 0.08, 4.2, -4.5 + i * 3.25);
+        scene.add(m);
+      }
+    }
 
     // Lounge corner + bookshelf for a lived-in office feel — the user's own
     // furniture pack pieces (real sofa, coffee table, floor lamp, wall TV)
@@ -2085,7 +2224,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     {
       const dynamicRoots = new Set([
         ...allHumans.map((h) => h.group),
-        planeGroup, birdGroup,
+        planeGroup, birdGroup, heliGroup, balloonGroup, searchGroup,
         ...deskHolos.filter(Boolean),
         camera,
       ]);
@@ -2155,6 +2294,13 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         tvTrade.tex.needsUpdate = true;
         drawHgScreen(hgCtx, hgCanvas.width, hgCanvas.height, liveRef.current.bizData);
         tvHg.tex.needsUpdate = true;
+        // The city billboard flips to its next ad every other screen tick.
+        bbTick++;
+        if (bbTick % 2 === 0) {
+          bbMode = (bbMode + 1) % 3;
+          drawBillboard(bbMode);
+          bbTex.needsUpdate = true;
+        }
       }
 
       // Skyline window — swap the whole canvas only when the sky mode
@@ -2166,8 +2312,12 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         skylineMode = desiredSkyMode;
         drawSkyline(skyline.ctx, skyline.canvas.width, skyline.canvas.height, skylineMode);
         skyline.tex.needsUpdate = true;
+        eastWinTex.needsUpdate = true; // same canvas, its own texture instance
         cloudMat.opacity = skylineMode === "day" ? 0.85 : skylineMode === "sunset" ? 0.5 : 0.16;
         birdGroup.visible = skylineMode === "day";
+        balloonGroup.visible = skylineMode === "day";
+        searchGroup.visible = skylineMode === "night";
+        bbMat.color.setScalar(skylineMode === "day" ? 0.8 : 1); // billboard pops after dark
       }
       drawTraffic(trafficCtx, trafficCanvas.width, trafficCanvas.height, trafficState, dt);
       trafficTex.needsUpdate = true;
@@ -2183,6 +2333,21 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         birdGroup.position.x += dt * 1.6;
         if (birdGroup.position.x > 80) birdGroup.position.x = -80;
         birdGroup.children.forEach((b, i) => { b.position.y = Math.sin(clock.elapsedTime * 2.2 + i * 1.7) * 0.35; });
+      }
+      // Helicopter crosses right-to-left, rotor spinning, strobe blinking.
+      heliGroup.position.x -= dt * 4.6;
+      if (heliGroup.position.x < -85) heliGroup.position.x = 85 + Math.random() * 130;
+      heliRotor.rotation.y += dt * 26;
+      heliStrobe.material.opacity = (Math.sin(clock.elapsedTime * 9) > 0) ? 0.9 : 0.12;
+      // Balloon drifts + bobs by day; searchlights sweep by night.
+      if (balloonGroup.visible) {
+        balloonGroup.position.x += dt * 0.55;
+        if (balloonGroup.position.x > 75) balloonGroup.position.x = -75;
+        balloonGroup.position.y = 14 + Math.sin(clock.elapsedTime * 0.35) * 0.6;
+      }
+      if (searchGroup.visible) {
+        beam1.rotation.z = -0.15 + Math.sin(clock.elapsedTime * 0.22) * 0.42;
+        beam2.rotation.z = 0.2 + Math.sin(clock.elapsedTime * 0.17 + 2.1) * 0.36;
       }
 
       let mx = 0, mz = 0;
