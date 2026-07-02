@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0a0a0c">
+<title>HG TRACK · מעקב נסיעות</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0a0a0c;
+  --panel:#121216;
+  --panel2:#18181e;
+  --line:#26262e;
+  --gold:#d4af5a;
+  --gold-hi:#f0d089;
+  --ice:#e8e8ec;
+  --dim:#8b8b96;
+  --live:#3ddc84;
+  --alert:#ff5252;
+  --mono:'Share Tech Mono',monospace;
+  --heb:'Heebo',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--ice);font-family:var(--heb);user-select:none;-webkit-user-select:none}
+
+/* ---------- shell ---------- */
+#app{display:flex;flex-direction:column;height:100dvh}
+header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:14px 18px 10px;border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg,#121216 0%,#0a0a0c 100%);
+  flex-shrink:0;
+}
+.brand{display:flex;align-items:center;gap:10px}
+.brand-mark{
+  width:34px;height:34px;border:1.5px solid var(--gold);border-radius:8px;
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);color:var(--gold);font-size:14px;letter-spacing:1px;
+  box-shadow:0 0 18px rgba(212,175,90,.15) inset;
+}
+.brand h1{font-size:15px;font-weight:700;letter-spacing:.5px}
+.brand h1 span{color:var(--gold);font-weight:300}
+#gpsBadge{
+  display:flex;align-items:center;gap:6px;font-size:11px;color:var(--dim);
+  font-family:var(--mono);direction:ltr;
+}
+#gpsDot{width:8px;height:8px;border-radius:50%;background:#555;transition:.3s}
+#gpsDot.ok{background:var(--live);box-shadow:0 0 8px var(--live)}
+#gpsDot.bad{background:var(--alert);box-shadow:0 0 8px var(--alert)}
+
+/* ---------- tabs ---------- */
+nav{display:flex;border-bottom:1px solid var(--line);flex-shrink:0;background:var(--bg)}
+nav button{
+  flex:1;padding:11px 0;background:none;border:none;color:var(--dim);
+  font-family:var(--heb);font-size:13px;font-weight:500;cursor:pointer;
+  border-bottom:2px solid transparent;transition:.2s;
+}
+nav button.on{color:var(--gold);border-bottom-color:var(--gold)}
+main{flex:1;overflow:hidden;position:relative}
+.view{position:absolute;inset:0;overflow-y:auto;display:none;padding-bottom:env(safe-area-inset-bottom)}
+.view.on{display:block}
+
+/* ---------- HUD (drive view) ---------- */
+#driveView{display:none;flex-direction:column}
+#driveView.on{display:flex}
+#hud{
+  flex-shrink:0;padding:22px 18px 16px;text-align:center;
+  background:
+    radial-gradient(ellipse 90% 70% at 50% -20%,rgba(212,175,90,.10),transparent 60%),
+    var(--bg);
+}
+#speedWrap{position:relative;display:inline-block}
+#speedRing{width:210px;height:210px}
+#speedNum{
+  position:absolute;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+}
+#speedVal{font-family:var(--mono);font-size:64px;line-height:1;color:var(--ice);direction:ltr}
+#speedVal.moving{color:var(--gold-hi);text-shadow:0 0 24px rgba(240,208,137,.35)}
+#speedUnit{font-size:11px;color:var(--dim);letter-spacing:3px;margin-top:4px}
+#hudStats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:16px}
+.hstat{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 6px}
+.hstat .v{font-family:var(--mono);font-size:20px;color:var(--ice);direction:ltr}
+.hstat .l{font-size:10px;color:var(--dim);margin-top:3px;letter-spacing:.5px}
+#tripBtn{
+  margin:16px auto 0;display:block;width:calc(100% - 0px);max-width:340px;
+  padding:16px;border-radius:14px;border:none;cursor:pointer;
+  font-family:var(--heb);font-size:17px;font-weight:700;letter-spacing:.5px;
+  background:linear-gradient(135deg,var(--gold) 0%,#b8923f 100%);color:#141414;
+  box-shadow:0 6px 24px rgba(212,175,90,.28);transition:.2s;
+}
+#tripBtn.stop{background:linear-gradient(135deg,#e05252 0%,#a03030 100%);color:#fff;box-shadow:0 6px 24px rgba(224,82,82,.28)}
+#tripBtn:active{transform:scale(.97)}
+#autoRow{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:12px;font-size:12px;color:var(--dim)}
+.switch{position:relative;width:38px;height:21px;flex-shrink:0}
+.switch input{opacity:0;width:0;height:0}
+.slider{position:absolute;inset:0;background:var(--line);border-radius:21px;transition:.2s;cursor:pointer}
+.slider:before{content:"";position:absolute;height:15px;width:15px;right:3px;top:3px;background:var(--dim);border-radius:50%;transition:.2s}
+.switch input:checked + .slider{background:rgba(212,175,90,.35)}
+.switch input:checked + .slider:before{background:var(--gold);transform:translateX(-17px)}
+#liveMap{flex:1;min-height:120px;filter:saturate(.7) brightness(.9)}
+
+/* ---------- log ---------- */
+#logView{padding:14px}
+.summary{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px;
+}
+.sum{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 8px;text-align:center}
+.sum .v{font-family:var(--mono);font-size:19px;color:var(--gold);direction:ltr}
+.sum .l{font-size:10px;color:var(--dim);margin-top:4px}
+.trip{
+  background:var(--panel);border:1px solid var(--line);border-radius:14px;
+  padding:14px;margin-bottom:10px;
+}
+.trip-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.trip-date{font-size:13px;font-weight:700}
+.trip-time{font-size:11px;color:var(--dim);font-family:var(--mono);direction:ltr}
+.trip-stats{display:flex;gap:14px;font-size:12px;color:var(--dim)}
+.trip-stats b{color:var(--ice);font-family:var(--mono);font-weight:400;direction:ltr;display:inline-block}
+.trip-actions{display:flex;gap:8px;margin-top:10px}
+.trip-actions button{
+  flex:1;padding:7px;border-radius:8px;border:1px solid var(--line);
+  background:var(--panel2);color:var(--dim);font-family:var(--heb);font-size:12px;cursor:pointer;
+}
+.trip-actions button:active{color:var(--gold);border-color:var(--gold)}
+.empty{text-align:center;color:var(--dim);padding:50px 20px;font-size:14px;line-height:1.8}
+.empty .big{font-size:34px;display:block;margin-bottom:10px;opacity:.5}
+
+/* ---------- settings / sync ---------- */
+#syncView{padding:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:12px}
+.card h3{font-size:14px;color:var(--gold);margin-bottom:4px}
+.card p{font-size:12px;color:var(--dim);line-height:1.7;margin-bottom:10px}
+.card input[type=url],.card input[type=text]{
+  width:100%;padding:11px;border-radius:10px;border:1px solid var(--line);
+  background:var(--bg);color:var(--ice);font-family:var(--mono);font-size:12px;direction:ltr;
+}
+.btnrow{display:flex;gap:8px;margin-top:10px}
+.btn{
+  flex:1;padding:12px;border-radius:10px;border:1px solid var(--line);
+  background:var(--panel2);color:var(--ice);font-family:var(--heb);font-size:13px;font-weight:500;cursor:pointer;transition:.15s;
+}
+.btn.gold{background:rgba(212,175,90,.12);border-color:var(--gold);color:var(--gold)}
+.btn:active{transform:scale(.97)}
+.note{font-size:11px;color:var(--dim);line-height:1.7;padding:4px 2px}
+#toast{
+  position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);
+  background:var(--panel2);border:1px solid var(--gold);color:var(--gold);
+  padding:10px 20px;border-radius:30px;font-size:13px;transition:.3s;z-index:9999;opacity:0;
+  white-space:nowrap;
+}
+#toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+.leaflet-container{background:#0e0e12}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand">
+      <div class="brand-mark">HG</div>
+      <h1>HG TRACK <span>· מעקב נסיעות</span></h1>
+    </div>
+    <div id="gpsBadge"><span id="gpsAcc">GPS —</span><div id="gpsDot"></div></div>
+  </header>
+
+  <nav>
+    <button class="on" data-v="driveView">נסיעה</button>
+    <button data-v="logView">יומן</button>
+    <button data-v="syncView">חיבורים</button>
+  </nav>
+
+  <main>
+    <!-- DRIVE -->
+    <section id="driveView" class="view on">
+      <div id="hud">
+        <div id="speedWrap">
+          <svg id="speedRing" viewBox="0 0 210 210">
+            <circle cx="105" cy="105" r="94" fill="none" stroke="#1c1c22" stroke-width="7"/>
+            <circle id="ringArc" cx="105" cy="105" r="94" fill="none" stroke="#d4af5a" stroke-width="7"
+              stroke-linecap="round" stroke-dasharray="590" stroke-dashoffset="590"
+              transform="rotate(-90 105 105)" style="transition:stroke-dashoffset .4s"/>
+          </svg>
+          <div id="speedNum">
+            <div id="speedVal">0</div>
+            <div id="speedUnit">קמ״ש</div>
+          </div>
+        </div>
+        <div id="hudStats">
+          <div class="hstat"><div class="v" id="stDist">0.0</div><div class="l">ק״מ</div></div>
+          <div class="hstat"><div class="v" id="stTime">00:00</div><div class="l">משך</div></div>
+          <div class="hstat"><div class="v" id="stAvg">0</div><div class="l">ממוצע</div></div>
+        </div>
+        <button id="tripBtn">התחל נסיעה</button>
+        <div id="autoRow">
+          <label class="switch"><input type="checkbox" id="autoStart" checked><span class="slider"></span></label>
+          <span>זיהוי אוטומטי — נסיעה נפתחת מעל 15 קמ״ש ונסגרת אחרי 3 דק׳ עצירה</span>
+        </div>
+      </div>
+      <div id="liveMap"></div>
+    </section>
+
+    <!-- LOG -->
+    <section id="logView" class="view">
+      <div class="summary">
+        <div class="sum"><div class="v" id="sumTrips">0</div><div class="l">נסיעות</div></div>
+        <div class="sum"><div class="v" id="sumKm">0</div><div class="l">ק״מ סה״כ</div></div>
+        <div class="sum"><div class="v" id="sumH">0</div><div class="l">שעות נהיגה</div></div>
+      </div>
+      <div id="tripList"></div>
+    </section>
+
+    <!-- SYNC -->
+    <section id="syncView" class="view">
+      <div class="card">
+        <h3>סנכרון למערכת שלך</h3>
+        <p>כל נסיעה שמסתיימת נשלחת אוטומטית כ־POST (JSON) לכתובת שתגדיר — Heavy Guard OS, Webhook, שרת Render או כל endpoint אחר.</p>
+        <input type="url" id="webhookUrl" placeholder="https://your-server.com/api/trips">
+        <input type="text" id="apiKey" placeholder="API Key (אופציונלי — נשלח כ-Authorization: Bearer)" style="margin-top:8px">
+        <div class="btnrow">
+          <button class="btn gold" id="saveHook">שמור</button>
+          <button class="btn" id="testHook">בדיקת חיבור</button>
+        </div>
+        <div class="btnrow">
+          <button class="btn" id="syncAll">סנכרן את כל היומן עכשיו</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3>ייצוא ידני</h3>
+        <p>הורדת יומן הנסיעות המלא כולל מסלולי GPS.</p>
+        <div class="btnrow">
+          <button class="btn" id="expJson">JSON</button>
+          <button class="btn" id="expCsv">CSV</button>
+          <button class="btn" id="expGeo">GeoJSON</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3>ניהול</h3>
+        <div class="btnrow">
+          <button class="btn" id="wakeBtn">מסך דולק בזמן נסיעה: כבוי</button>
+        </div>
+        <div class="btnrow">
+          <button class="btn" id="clearAll" style="color:var(--alert);border-color:rgba(255,82,82,.3)">מחיקת כל הנתונים</button>
+        </div>
+      </div>
+      <p class="note">⚠️ מגבלת iOS/דפדפן: המעקב פעיל רק כשהאפליקציה פתוחה על המסך. הוסף למסך הבית (שיתוף ← הוסף למסך הבית) והפעל ״מסך דולק״ לנסיעות רצופות. למעקב ברקע אמיתי נדרשת אפליקציה נייטיב — אפשר לבנות בהמשך.</p>
+    </section>
+  </main>
+</div>
+<div id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+"use strict";
+/* ================= STATE ================= */
+const S = {
+  watching:false, watchId:null,
+  trip:null,            // active trip {start, points[], dist, maxSpd}
+  lastFix:null,
+  stopTimer:null,
+  wakeLock:null, wantWake:false,
+  autoMode:true,
+};
+const DB_KEY='hg_trips_v1', CFG_KEY='hg_cfg_v1';
+const cfg = JSON.parse(localStorage.getItem(CFG_KEY)||'{}');
+const trips = JSON.parse(localStorage.getItem(DB_KEY)||'[]');
+
+/* ================= HELPERS ================= */
+const $=id=>document.getElementById(id);
+const toast=m=>{const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),2600)};
+const hav=(a,b)=>{ // meters
+  const R=6371000,d=Math.PI/180;
+  const dLat=(b.lat-a.lat)*d, dLon=(b.lon-a.lon)*d;
+  const q=Math.sin(dLat/2)**2+Math.cos(a.lat*d)*Math.cos(b.lat*d)*Math.sin(dLon/2)**2;
+  return 2*R*Math.asin(Math.sqrt(q));
+};
+const fmtT=s=>{s=Math.floor(s);const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;
+  return h?`${h}:${String(m).padStart(2,'0')}:${String(x).padStart(2,'0')}`:`${String(m).padStart(2,'0')}:${String(x).padStart(2,'0')}`};
+const save=()=>localStorage.setItem(DB_KEY,JSON.stringify(trips));
+const saveCfg=()=>localStorage.setItem(CFG_KEY,JSON.stringify(cfg));
+
+/* ================= MAP ================= */
+let map,marker,poly;
+function initMap(){
+  if(typeof L==='undefined'){document.getElementById('liveMap')&&(document.getElementById('liveMap').innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#8a8a95;font-size:13px">המפה לא נטענה (אין רשת) — המעקב וההיסטוריה עובדים רגיל</div>');return}
+  map=L.map('liveMap',{zoomControl:false,attributionControl:false}).setView([31.9,35.0],9);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:19}).addTo(map);
+  poly=L.polyline([],{color:'#d4af5a',weight:4,opacity:.9}).addTo(map);
+  marker=L.circleMarker([31.9,35.0],{radius:7,color:'#f0d089',fillColor:'#d4af5a',fillOpacity:1,weight:2}).addTo(map);
+}
+
+/* ================= GPS ================= */
+function startWatch(){
+  if(S.watching) return;
+  if(!navigator.geolocation){toast('אין תמיכת GPS בדפדפן');return}
+  S.watchId=navigator.geolocation.watchPosition(onFix,onErr,{enableHighAccuracy:true,maximumAge:1000,timeout:15000});
+  S.watching=true;
+}
+function onErr(e){
+  $('gpsDot').className='bad';$('gpsAcc').textContent='GPS ✕';
+  if(e.code===1) toast('נדרש אישור מיקום — בדוק הגדרות דפדפן');
+}
+function onFix(pos){
+  const c=pos.coords;
+  const fix={lat:c.latitude,lon:c.longitude,acc:c.accuracy,spd:c.speed,t:pos.timestamp};
+  $('gpsDot').className='ok';
+  $('gpsAcc').textContent='GPS ±'+Math.round(c.accuracy)+'m';
+  if(c.accuracy>60){S.lastFix=fix;return} // ignore garbage fixes
+
+  // speed: prefer sensor, fallback to computed
+  let kmh=0;
+  if(c.speed!=null && c.speed>=0) kmh=c.speed*3.6;
+  else if(S.lastFix){
+    const dt=(fix.t-S.lastFix.t)/1000;
+    if(dt>0.5) kmh=(hav(S.lastFix,fix)/dt)*3.6;
+  }
+  if(kmh<2) kmh=0;
+  updHud(kmh);
+  marker&&marker.setLatLng([fix.lat,fix.lon]);
+  if(!S.trip) map&&map.setView([fix.lat,fix.lon],15);
+
+  // auto start/stop
+  if(S.autoMode && !S.trip && kmh>15) beginTrip('auto');
+  if(S.trip){
+    recordPoint(fix,kmh);
+    if(kmh<3){
+      if(!S.stopTimer && S.autoMode) S.stopTimer=setTimeout(()=>endTrip('auto'),3*60*1000);
+    } else if(S.stopTimer){clearTimeout(S.stopTimer);S.stopTimer=null}
+  }
+  S.lastFix=fix;
+}
+
+/* ================= TRIP ================= */
+function beginTrip(src){
+  S.trip={id:Date.now(),start:Date.now(),points:[],dist:0,maxSpd:0,src};
+  $('tripBtn').textContent='סיים נסיעה';$('tripBtn').classList.add('stop');
+  poly&&poly.setLatLngs([]);
+  requestWake();
+  toast(src==='auto'?'זוהתה תנועה — נסיעה נפתחה':'נסיעה נפתחה');
+}
+function recordPoint(fix,kmh){
+  const p={lat:+fix.lat.toFixed(6),lon:+fix.lon.toFixed(6),t:fix.t,s:+kmh.toFixed(1)};
+  const pts=S.trip.points;
+  if(pts.length){
+    const d=hav(pts[pts.length-1],p);
+    if(d<4) return;               // dedupe jitter
+    S.trip.dist+=d;
+  }
+  pts.push(p);
+  if(kmh>S.trip.maxSpd) S.trip.maxSpd=kmh;
+  poly&&poly.addLatLng([p.lat,p.lon]);
+  map&&map.panTo([p.lat,p.lon]);
+  // live stats
+  $('stDist').textContent=(S.trip.dist/1000).toFixed(1);
+  const dur=(Date.now()-S.trip.start)/1000;
+  $('stTime').textContent=fmtT(dur);
+  $('stAvg').textContent=Math.round((S.trip.dist/1000)/(dur/3600)||0);
+}
+function endTrip(src){
+  if(!S.trip) return;
+  clearTimeout(S.stopTimer);S.stopTimer=null;
+  const t=S.trip;S.trip=null;
+  const dur=(Date.now()-t.start)/1000;
+  $('tripBtn').textContent='התחל נסיעה';$('tripBtn').classList.remove('stop');
+  releaseWake();
+  if(t.dist<200){toast('נסיעה קצרה מדי — לא נשמרה');resetHud();return}
+  const rec={
+    id:t.id, source:'hg-track-pwa',
+    startedAt:new Date(t.start).toISOString(),
+    endedAt:new Date().toISOString(),
+    durationSec:Math.round(dur),
+    distanceKm:+(t.dist/1000).toFixed(2),
+    avgKmh:Math.round((t.dist/1000)/(dur/3600)||0),
+    maxKmh:Math.round(t.maxSpd),
+    startPoint:t.points[0]||null,
+    endPoint:t.points[t.points.length-1]||null,
+    path:t.points,
+    synced:false,
+  };
+  trips.unshift(rec);save();
+  renderLog();resetHud();
+  toast(`נסיעה נשמרה · ${rec.distanceKm} ק״מ`);
+  pushTrip(rec);
+}
+function resetHud(){updHud(0);$('stDist').textContent='0.0';$('stTime').textContent='00:00';$('stAvg').textContent='0'}
+function updHud(kmh){
+  const v=Math.round(kmh);
+  const el=$('speedVal');el.textContent=v;el.classList.toggle('moving',v>0);
+  $('ringArc').style.strokeDashoffset=590-590*Math.min(kmh/160,1);
+}
+
+/* ================= WAKE LOCK ================= */
+async function requestWake(){
+  if(!S.wantWake||!('wakeLock' in navigator))return;
+  try{S.wakeLock=await navigator.wakeLock.request('screen')}catch(e){}
+}
+function releaseWake(){if(S.wakeLock){S.wakeLock.release();S.wakeLock=null}}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&S.trip)requestWake()});
+
+/* ================= SYNC ================= */
+async function pushTrip(rec){
+  if(!cfg.hook)return;
+  try{
+    const r=await fetch(cfg.hook,{method:'POST',headers:hdrs(),body:JSON.stringify(rec)});
+    if(r.ok){rec.synced=true;save();renderLog();toast('סונכרן למערכת ✓')}
+  }catch(e){/* stays synced:false, retry via "sync all" */}
+}
+const hdrs=()=>{const h={'Content-Type':'application/json'};if(cfg.key)h['Authorization']='Bearer '+cfg.key;return h};
+
+/* ================= LOG UI ================= */
+function renderLog(){
+  const list=$('tripList');
+  $('sumTrips').textContent=trips.length;
+  $('sumKm').textContent=Math.round(trips.reduce((a,t)=>a+t.distanceKm,0));
+  $('sumH').textContent=(trips.reduce((a,t)=>a+t.durationSec,0)/3600).toFixed(1);
+  if(!trips.length){list.innerHTML='<div class="empty"><span class="big">🛰</span>אין עדיין נסיעות.<br>צא לדרך — המערכת תזהה לבד.</div>';return}
+  list.innerHTML=trips.map((t,i)=>{
+    const d=new Date(t.startedAt);
+    return `<div class="trip">
+      <div class="trip-head">
+        <div class="trip-date">${d.toLocaleDateString('he-IL',{weekday:'short',day:'numeric',month:'numeric'})} ${t.synced?'<span style="color:var(--live);font-size:11px">✓ סונכרן</span>':''}</div>
+        <div class="trip-time">${d.toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'})}</div>
+      </div>
+      <div class="trip-stats">
+        <span>מרחק <b>${t.distanceKm}</b> ק״מ</span>
+        <span>משך <b>${fmtT(t.durationSec)}</b></span>
+        <span>מקס׳ <b>${t.maxKmh}</b></span>
+      </div>
+      <div class="trip-actions">
+        <button onclick="showTrip(${i})">מסלול</button>
+        <button onclick="delTrip(${i})">מחק</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+window.showTrip=i=>{
+  const t=trips[i];if(!t.path?.length)return toast('אין מסלול שמור');
+  switchView('driveView');
+  if(poly){poly.setLatLngs(t.path.map(p=>[p.lat,p.lon]));
+  map.fitBounds(poly.getBounds(),{padding:[30,30]});}
+};
+window.delTrip=i=>{if(confirm('למחוק נסיעה זו?')){trips.splice(i,1);save();renderLog()}};
+
+/* ================= EXPORT ================= */
+const dl=(name,data,mime)=>{
+  const b=new Blob([data],{type:mime}),u=URL.createObjectURL(b),a=document.createElement('a');
+  a.href=u;a.download=name;a.click();URL.revokeObjectURL(u);
+};
+$('expJson').onclick=()=>dl('hg-trips.json',JSON.stringify(trips,null,2),'application/json');
+$('expCsv').onclick=()=>{
+  const rows=[['id','startedAt','endedAt','durationSec','distanceKm','avgKmh','maxKmh','startLat','startLon','endLat','endLon']];
+  trips.forEach(t=>rows.push([t.id,t.startedAt,t.endedAt,t.durationSec,t.distanceKm,t.avgKmh,t.maxKmh,
+    t.startPoint?.lat??'',t.startPoint?.lon??'',t.endPoint?.lat??'',t.endPoint?.lon??'']));
+  dl('hg-trips.csv',rows.map(r=>r.join(',')).join('\n'),'text/csv');
+};
+$('expGeo').onclick=()=>{
+  const geo={type:'FeatureCollection',features:trips.filter(t=>t.path?.length).map(t=>({
+    type:'Feature',properties:{id:t.id,startedAt:t.startedAt,distanceKm:t.distanceKm},
+    geometry:{type:'LineString',coordinates:t.path.map(p=>[p.lon,p.lat])}
+  }))};
+  dl('hg-trips.geojson',JSON.stringify(geo),'application/geo+json');
+};
+
+/* ================= SETTINGS ================= */
+$('webhookUrl').value=cfg.hook||'';
+$('apiKey').value=cfg.key||'';
+$('saveHook').onclick=()=>{cfg.hook=$('webhookUrl').value.trim();cfg.key=$('apiKey').value.trim();saveCfg();toast('נשמר')};
+$('testHook').onclick=async()=>{
+  const u=$('webhookUrl').value.trim();if(!u)return toast('הזן כתובת');
+  try{const r=await fetch(u,{method:'POST',headers:hdrs(),body:JSON.stringify({source:'hg-track-pwa',type:'ping',at:new Date().toISOString()})});
+    toast(r.ok?'החיבור תקין ✓':'השרת החזיר '+r.status);
+  }catch(e){toast('אין גישה לשרת — בדוק CORS/כתובת')}
+};
+$('syncAll').onclick=async()=>{
+  if(!cfg.hook)return toast('הגדר כתובת סנכרון קודם');
+  let ok=0;
+  for(const t of trips.filter(t=>!t.synced)){
+    try{const r=await fetch(cfg.hook,{method:'POST',headers:hdrs(),body:JSON.stringify(t)});
+      if(r.ok){t.synced=true;ok++}}catch(e){}
+  }
+  save();renderLog();toast(ok?`סונכרנו ${ok} נסיעות`:'אין מה לסנכרן / שגיאת חיבור');
+};
+$('clearAll').onclick=()=>{if(confirm('למחוק את כל היומן לצמיתות?')){trips.length=0;save();renderLog();toast('היומן נמחק')}};
+$('wakeBtn').onclick=function(){
+  S.wantWake=!S.wantWake;
+  this.textContent='מסך דולק בזמן נסיעה: '+(S.wantWake?'פעיל':'כבוי');
+  this.classList.toggle('gold',S.wantWake);
+  if(S.wantWake&&S.trip)requestWake();else releaseWake();
+};
+$('autoStart').onchange=e=>S.autoMode=e.target.checked;
+
+/* ================= NAV ================= */
+function switchView(id){
+  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.v===id));
+  document.querySelectorAll('.view').forEach(v=>v.classList.toggle('on',v.id===id));
+  if(id==='driveView')setTimeout(()=>map&&map.invalidateSize(),80);
+}
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>switchView(b.dataset.v));
+
+/* ================= BOOT ================= */
+$('tripBtn').onclick=()=>S.trip?endTrip('manual'):beginTrip('manual');
+initMap();
+renderLog();
+startWatch();
+</script>
+</body>
+</html>
