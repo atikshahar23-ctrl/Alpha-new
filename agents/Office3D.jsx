@@ -2315,6 +2315,37 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       hang("Office2_Vinyls", 15.35, 1.1, 5.3, -Math.PI / 2, 1.0);
     }
 
+    // ── The owner's real field photos, framed on the walls ──────────────
+    // Five photos from actual Heavy Guard installs (uploaded by the owner),
+    // hung poster-sized (~1.7 units tall next to the 1.35-tall characters)
+    // in dark frames, each at its true aspect ratio, on stretches of wall
+    // that were still bare: two on the west wall, two on the east wall
+    // around the clerestory band, one on the south wall behind reception.
+    {
+      const texLoader = new THREE.TextureLoader();
+      const photoFrameMat = new THREE.MeshStandardMaterial({ color: 0x0c0e13, roughness: 0.4, metalness: 0.5 });
+      const hangPhoto = (file, x, y, z, rotY, h, aspect) => {
+        const w = h * aspect;
+        const g = new THREE.Group();
+        const frame = new THREE.Mesh(new THREE.BoxGeometry(w + 0.14, h + 0.14, 0.05), photoFrameMat);
+        frame.castShadow = true;
+        g.add(frame);
+        const tex = texLoader.load(base + "wall-art/" + file);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        const pic = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85, metalness: 0 }));
+        pic.position.z = 0.031;
+        g.add(pic);
+        g.position.set(x, y, z);
+        g.rotation.y = rotY;
+        scene.add(g);
+      };
+      hangPhoto("art1.jpg", -(FLOOR_W / 2) + 0.1, 2.7, -9.5, Math.PI / 2, 1.7, 0.709);
+      hangPhoto("art2.jpg", -(FLOOR_W / 2) + 0.1, 2.7, -1.0, Math.PI / 2, 1.7, 0.558);
+      hangPhoto("art3.jpg", (FLOOR_W / 2) - 0.1, 2.3, -13.2, -Math.PI / 2, 1.6, 0.585);
+      hangPhoto("art4.jpg", (FLOOR_W / 2) - 0.1, 2.2, 6.3, -Math.PI / 2, 1.6, 0.647);
+      hangPhoto("art5.jpg", 1.0, 2.6, (FLOOR_D / 2) - 0.1, Math.PI, 1.7, 0.75);
+    }
+
     // ── Gaming-den ambiance ──────────────────────────────────────────────
     // Neon accent floor strips down the main aisles + two big neon wall signs
     // + a pair of coloured accent lights, so the whole floor reads as a fun
