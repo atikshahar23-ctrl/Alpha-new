@@ -1685,7 +1685,9 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       ssaoPass.maxDistance = 0.12;
       composer.addPass(ssaoPass);
     }
-    const bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), 0.55, 0.7, 0.85);
+    // Mobile gets gentler bloom — post-processing is the first thing to
+    // give up on a phone GPU (per the responsive perf budget).
+    const bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), isMobile ? 0.32 : 0.55, 0.7, 0.85);
     composer.addPass(bloomPass);
     composer.addPass(new OutputPass());
     // Settings-panel graphics toggle — both passes support .enabled out of
@@ -3068,7 +3070,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       }
       // Diagnostic sweep: the glowing ring rises over the car for ~2.6s of
       // every 18s cycle, shrinking with the body's taper.
-      if (scanRing) {
+      if (scanRing && !isMobile) { // sweep skipped on phones (perf budget)
         scanT += dt;
         if (scanT > 18) scanT = 0;
         const k = scanT / 2.6;

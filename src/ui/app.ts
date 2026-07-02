@@ -182,7 +182,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v154 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v155 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="panelsToggleBtn" title="הסתר/הצג פנלים" aria-label="הסתר פנלים">
           <svg class="pt-hide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -907,6 +907,7 @@ export function mountApp(root: HTMLElement) {
     buildOrbitalMenu();
     startBgFx();
     runBootSequence();
+    startParallax();
     // JARVIS focus mode: while the user grabs the 3D stage (rotating or
     // playing with the robot) the side panels fade way down; they glide
     // back a moment after release, keeping the focus on the scene.
@@ -2983,6 +2984,34 @@ export function mountApp(root: HTMLElement) {
   // headers (crypto / indices+commodities / stocks).
   let mkExpanded = false;
   const MK_GROUPS: ['crypto' | 'index' | 'stock', string][] = [['crypto', 'קריפטו'], ['index', 'מדדים וסחורות'], ['stock', 'מניות']];
+  // ── Physicality engine: the 2D panels ride the screen glass. Mouse (or
+  // phone tilt via gyroscope) nudges the side panels a few px opposite the
+  // pointer, selling the illusion that the UI floats in front of the 3D
+  // space behind it. rAF-throttled CSS vars; skipped for reduced-motion.
+  function startParallax() {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const root = document.body;
+    let tx = 0; let ty = 0; let raf = 0;
+    const apply = () => {
+      raf = 0;
+      root.style.setProperty('--par-x', tx.toFixed(3));
+      root.style.setProperty('--par-y', ty.toFixed(3));
+    };
+    const queue = () => { if (!raf) raf = requestAnimationFrame(apply); };
+    window.addEventListener('pointermove', (e) => {
+      tx = (e.clientX / innerWidth) * 2 - 1;
+      ty = (e.clientY / innerHeight) * 2 - 1;
+      queue();
+    }, { passive: true });
+    // phone tilt — same vars from the gyroscope where available
+    window.addEventListener('deviceorientation', (e) => {
+      if (e.gamma == null || e.beta == null) return;
+      tx = Math.max(-1, Math.min(1, e.gamma / 30));
+      ty = Math.max(-1, Math.min(1, (e.beta - 45) / 30));
+      queue();
+    }, { passive: true });
+  }
+
   // ── Cinematic boot sequence — chained onto the intro's 'revealed' class.
   // Darkness → neural grid → the robot materializes (scale+glow) → panels
   // lock in with ping rings + header text de-scrambling → gold sync pulse

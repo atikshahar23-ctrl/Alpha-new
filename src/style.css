@@ -3194,6 +3194,18 @@ html.perf-lite .topR { will-change: auto !important; transform: none !important;
    pointer-events:none so everything beneath still receives clicks. */
 .hud { position: fixed; inset: 0; z-index: 5; pointer-events: none; font-family: 'Space Grotesk', system-ui, sans-serif; }
 
+/* ── Physicality: panels glued to the screen glass (parallax vars) ── */
+body.boot-done .hud-col.left, body.boot-done .hud-col.right {
+  transform: translate(calc(var(--par-x, 0) * -7px), calc(-50% + var(--par-y, 0) * -5px));
+  transition: opacity .45s; }
+body.boot-done .left-panel, body.boot-done .right-panel {
+  translate: calc(var(--par-x, 0) * -5px) calc(var(--par-y, 0) * -4px); }
+body.boot-done .holo-tag {
+  translate: calc(var(--par-x, 0) * -10px) calc(var(--par-y, 0) * -7px); }
+@media (max-width: 900px) {
+  body.boot-done .hud-col.left, body.boot-done .hud-col.right { transform: none; }
+}
+
 /* ── Cinematic boot sequence ── */
 .boot-veil { position: fixed; inset: 0; z-index: 40; background: #000; opacity: 1;
   transition: opacity .9s ease; pointer-events: none; }
