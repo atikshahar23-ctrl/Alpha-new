@@ -1992,6 +1992,7 @@ function OfficeSim({ onClose, onOpenChat, logActivity, showToast }) {
         meetingSpot={OFC_MEETING_SPOT}
         bizData={bizSnapshot()}
         marketRows={marketRows}
+        onAutoFix={(msg) => { showToast?.(msg); logActivity?.("facilities", msg); }}
         voice={{
           canListen: canListen(),
           canSpeak: canSpeak(),

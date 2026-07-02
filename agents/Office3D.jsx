@@ -1362,7 +1362,7 @@ function buildOwnerOffice(color, deskTemplate, laptopTemplate, furnitureTemplate
   return { group: g, obstacles, deskMon: desk.monMat, deskHolo: desk.holo, seatLocal, spinners, blinkMats };
 }
 
-export default function Office3D({ chars, byId, phase, phases, deskPositions, seatPositions, dineTablePositions, meetingSpot, bizData, marketRows, voice, onClose, onOpenChat }) {
+export default function Office3D({ chars, byId, phase, phases, deskPositions, seatPositions, dineTablePositions, meetingSpot, bizData, marketRows, voice, onClose, onOpenChat, onAutoFix }) {
   const mountRef = useRef(null);
   const liveRef = useRef({ chars, phase, bizData, joyVec: { x: 0, y: 0 }, keys: {}, firstPerson: false });
   const [talkTarget, setTalkTarget] = useState(null);
@@ -1409,6 +1409,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   useEffect(() => { liveRef.current.phase = phase; }, [phase]);
   useEffect(() => { liveRef.current.bizData = bizData; }, [bizData]);
   useEffect(() => { liveRef.current.marketRows = marketRows; }, [marketRows]);
+  useEffect(() => { liveRef.current.onAutoFix = onAutoFix; }, [onAutoFix]);
   // Push the graphics-quality toggle down into the postprocessing passes
   // once they exist (they're created inside the async mount effect below).
   useEffect(() => { liveRef.current.setGraphicsHigh?.(graphicsHigh); }, [graphicsHigh]);
@@ -2114,6 +2115,32 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       conf.group.position.set(wx, 0, wz);
       scene.add(conf.group);
       conf.obstacles.forEach((o) => obstacles.push({ x: wx + o.x, z: wz + o.z, r: o.r }));
+
+      // Real chairs under every meeting seat — agents used to sit on thin
+      // air at the nook (the classic "floating character" anomaly). Each
+      // chair sits exactly on the walk-target the scheduler sends sitters
+      // to, backrest away from the table; the render loop also turns
+      // arriving sitters toward the table (see the "meet" facing below).
+      scene.userData.meetCenter = { x: wx, z: wz };
+      const meetChairs = seatPositions.map((p) => {
+        const [sx, sz] = toWorld(p.x, p.y);
+        const chair = buildGuestChair(0xE4BC63);
+        chair.position.set(sx, 0, sz);
+        chair.rotation.y = Math.atan2(wx - sx, wz - sz) + Math.PI;
+        scene.add(chair);
+        return chair;
+      });
+      // ── דבורה's environment watchdog ─────────────────────────────────
+      // Self-healing integrity check: if the meeting table or any chair
+      // ever drops out of the scene (a bad future edit, a broken asset
+      // pass), it is re-attached on the spot and the office manager
+      // reports the fix — no user intervention needed.
+      scene.userData.integrityCheck = () => {
+        let fixed = 0;
+        if (mt.parent !== scene) { scene.add(mt); fixed++; }
+        meetChairs.forEach((ch) => { if (ch.parent !== scene) { scene.add(ch); fixed++; } });
+        return fixed;
+      };
     }
     // A few fixed pieces the player would otherwise walk straight through.
     [[-14.3, 12.8, 1.0], [-5.3, 12.3, 0.9], [18.4, 5.6, 1.6], [13.5, -14.3, 0.9], [15.9, -14.3, 0.8]]
@@ -2369,6 +2396,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     }
 
     let raf = 0;
+    let integrityT = 0;
     const clock = new THREE.Clock();
     const curSky = new THREE.Color(0x1b2440);
     const tmpColor = new THREE.Color();
@@ -2438,6 +2466,14 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       // the server-rack LED columns breathe.
       ownerSpinners.forEach((s) => { s.rotation.y += dt * 0.9; s.rotation.x += dt * 0.22; });
       ownerBlinkMats.forEach((m, i) => { m.opacity = 0.45 + Math.abs(Math.sin(clock.elapsedTime * (1.6 + i * 0.7))) * 0.5; });
+      // דבורה's watchdog: periodic environment-integrity sweep (missing
+      // meeting furniture is respawned and reported) — cheap parent checks.
+      integrityT += dt;
+      if (integrityT >= 15) {
+        integrityT = 0;
+        const fixed = scene.userData.integrityCheck ? scene.userData.integrityCheck() : 0;
+        if (fixed > 0) liveRef.current.onAutoFix?.(`🔧 דבורה תיקנה את הסביבה אוטומטית: ${fixed} פריטי ריהוט חסרים שוחזרו בחדר הישיבות והצוות עוגן חזרה למקומו`);
+      }
 
       // Skyline window — swap the whole canvas only when the sky mode
       // actually flips (cheap, rare): full day → golden-hour sunset in the
@@ -2630,8 +2666,13 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           // whatever direction they happened to walk in from — every desk
           // in the grid shares the same unrotated layout, so one fixed
           // heading squares everyone up to their own screen.
-          if (atDesk || summoned) {
-            const face = summoned ? Math.PI : drot;
+          const meetC = c.status === "meet" ? scene.userData.meetCenter : null;
+          if (atDesk || summoned || meetC) {
+            // Anchored sitters face the right way: their monitor at a desk,
+            // the owner's desk when summoned, the table in a meeting.
+            const face = summoned ? Math.PI
+              : atDesk ? drot
+              : Math.atan2(meetC.x - h.group.position.x, meetC.z - h.group.position.z);
             let dRot = face - h.group.rotation.y;
             while (dRot > Math.PI) dRot -= Math.PI * 2;
             while (dRot < -Math.PI) dRot += Math.PI * 2;
@@ -2646,6 +2687,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         const npcs = {};
         liveChars.forEach((c) => { const h = npc[c.id]; if (h) npcs[c.id] = [h.group.position.x, h.group.position.z, c.status]; });
         window.__off3pos = { player: [playerH.group.position.x, playerH.group.position.z], npcs };
+        window.__off3scene = scene;
       }
 
       // Slow dust drift — a gentle upward bob + lateral sway per mote.
