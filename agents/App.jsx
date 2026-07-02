@@ -403,6 +403,71 @@ async function askAI(system, history, user, maxTokens = 800) {
   }
 }
 
+/* ── Google Business reviews — real data for נפתלי (marketing) ──────────
+   Browser equivalent of the owner's Python snippet (accounts → locations →
+   reviews on the My Business APIs), using Google Identity Services token
+   flow with ONLY the public client_id — the client_secret is never needed
+   in a pure-browser app and must never be committed to this public repo. ── */
+const K_GOOGLE_CID = "alpha:google:clientId";
+const DEFAULT_GOOGLE_CID = "243197444145-4go2os4nmvjadncma2c581tr535hl8lo.apps.googleusercontent.com";
+const googleCid = () => { try { return localStorage.getItem(K_GOOGLE_CID) || DEFAULT_GOOGLE_CID; } catch { return DEFAULT_GOOGLE_CID; } };
+let gisPromise = null;
+function loadGis() {
+  if (gisPromise) return gisPromise;
+  gisPromise = new Promise((resolve, reject) => {
+    if (window.google?.accounts?.oauth2) return resolve();
+    const s = document.createElement("script");
+    s.src = "https://accounts.google.com/gsi/client";
+    s.onload = () => resolve();
+    s.onerror = () => { gisPromise = null; reject(new Error("טעינת Google נכשלה")); };
+    document.head.appendChild(s);
+  });
+  return gisPromise;
+}
+async function googleToken() {
+  await loadGis();
+  return new Promise((resolve, reject) => {
+    try {
+      const tc = window.google.accounts.oauth2.initTokenClient({
+        client_id: googleCid(),
+        scope: "https://www.googleapis.com/auth/business.manage",
+        callback: (resp) => (resp && resp.access_token ? resolve(resp.access_token) : reject(new Error(resp?.error_description || resp?.error || "לא התקבל אישור"))),
+        error_callback: (e) => reject(new Error(e?.message || e?.type || "חלון ההתחברות נסגר")),
+      });
+      tc.requestAccessToken();
+    } catch (e) { reject(e); }
+  });
+}
+const STAR_NUM = { ONE: 1, TWO: 2, THREE: 3, FOUR: 4, FIVE: 5 };
+async function fetchGoogleReviews() {
+  const token = await googleToken();
+  const jf = async (url) => {
+    const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d?.error?.message || "HTTP " + r.status);
+    return d;
+  };
+  const acc = await jf("https://mybusinessaccountmanagement.googleapis.com/v1/accounts");
+  const account = acc.accounts?.[0]?.name; // "accounts/123..."
+  if (!account) throw new Error("לא נמצא חשבון Google Business Profile למשתמש הזה");
+  const locs = await jf(`https://mybusinessbusinessinformation.googleapis.com/v1/${account}/locations?readMask=name,title&pageSize=10`);
+  const loc = locs.locations?.[0];
+  if (!loc) throw new Error("לא נמצא מיקום עסק בחשבון");
+  const rev = await jf(`https://mybusiness.googleapis.com/v4/${account}/${loc.name}/reviews?pageSize=20`);
+  return {
+    business: loc.title,
+    avg: rev.averageRating || 0,
+    total: rev.totalReviewCount || 0,
+    reviews: (rev.reviews || []).map((x) => ({
+      id: x.reviewId,
+      stars: STAR_NUM[x.starRating] || 0,
+      text: x.comment || "",
+      who: x.reviewer?.displayName || "לקוח",
+      when: x.updateTime || x.createTime || "",
+    })),
+  };
+}
+
 /* ── Voice chat: free, browser-native Web Speech API — no backend/cost.
    Mic input (SpeechRecognition) transcribes what you say into the chat box;
    voice output (SpeechSynthesis) reads each agent's reply aloud in Hebrew.
@@ -1188,6 +1253,49 @@ function RosterView({ onOpen, onOffice, activity }) {
   );
 }
 
+/* Google-reviews window for נפתלי — pulls the business's REAL Google
+   reviews (OAuth popup → My Business APIs) and lets one tap turn any
+   review into a social-post brief in the chat. */
+function GoogleReviewsModal({ agent, onClose, onUse }) {
+  const [st, setSt] = useState({ loading: true, error: null, data: null });
+  useEffect(() => {
+    fetchGoogleReviews()
+      .then((data) => setSt({ loading: false, error: null, data }))
+      .catch((e) => setSt({ loading: false, error: String(e?.message || e), data: null }));
+  }, []);
+  const stars = (n) => "★".repeat(n) + "☆".repeat(Math.max(0, 5 - n));
+  return (
+    <div className="ac-modal" onClick={onClose} style={{ zIndex: 60 }}>
+      <div className="ac-panel online" style={{ "--c": agent.color, "--ac": agent.accent }} onClick={(e) => e.stopPropagation()}>
+        <button className="ac-panel-x" onClick={onClose}><X size={16} /></button>
+        <div className="ac-panel-id" style={{ marginBottom: 10 }}>
+          <b>⭐ ביקורות גוגל</b>
+          <span>{st.data ? `${st.data.business} · ממוצע ${st.data.avg.toFixed(1)} · ${st.data.total} ביקורות` : "Google Business Profile"}</span>
+        </div>
+        {st.loading && <div className="ac-grev-note">נפתלי מתחבר לגוגל… אשר את חלון ההתחברות אם נפתח 🔐</div>}
+        {st.error && (
+          <div className="ac-grev-note err">
+            לא הצלחתי למשוך ביקורות: {st.error}
+            <small>ודא ש: (1) הדומיין של האתר מאושר כ-JavaScript origin בקונסולת Google Cloud; (2) חשבון Google Business Profile מחובר למשתמש שאישרת; (3) ה-API של Business Profile מאושר לפרויקט (גוגל דורשת בקשת גישה חד-פעמית).</small>
+          </div>
+        )}
+        {st.data && (
+          <div className="ac-grev-list">
+            {st.data.reviews.length === 0 && <div className="ac-grev-note">אין ביקורות עדיין</div>}
+            {st.data.reviews.map((r) => (
+              <div key={r.id} className="ac-grev-row">
+                <div className="ac-grev-head"><b>{stars(r.stars)}</b><span>{r.who}{r.when ? " · " + new Date(r.when).toLocaleDateString("he-IL") : ""}</span></div>
+                {r.text && <p>{r.text}</p>}
+                <button onClick={() => onUse(r)}><Megaphone size={13} /> הפוך לפוסט שיווקי</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ════════════════════════════════════════════════════════════════════
    CHAT MODAL — direct line to one agent
    ════════════════════════════════════════════════════════════════════ */
@@ -1198,6 +1306,7 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);
+  const [revOpen, setRevOpen] = useState(false); // Google-reviews window (נפתלי)
   const [voiceOn, setVoiceOn] = useState(() => load(K_VOICE_ON, true) && canSpeak());
   const aiHist = useRef([]);
   const scrollRef = useRef(null);
@@ -1342,6 +1451,9 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
         </div>
 
         <div className="ac-quick">
+          {agent.id === "cmo" && (
+            <button className="ac-grev-open" onClick={() => setRevOpen(true)} disabled={busy}>⭐ ביקורות גוגל</button>
+          )}
           {agent.quick.map((c) => <button key={c} onClick={() => send(c)} disabled={busy}>{c}</button>)}
         </div>
 
@@ -1359,6 +1471,17 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
           <button onClick={() => send()} disabled={busy || !q.trim()}><Send size={18} /></button>
         </div>
       </div>
+      {revOpen && (
+        <GoogleReviewsModal
+          agent={agent}
+          onClose={() => setRevOpen(false)}
+          onUse={(r) => {
+            setRevOpen(false);
+            logActivity?.(agent.id, `משך ביקורת גוגל אמיתית (${r.stars}★) והופך אותה לפוסט`);
+            send(`כתוב פוסט שיווקי קצר לרשתות (עברית, עם הוק חזק ו-CTA) המבוסס על הביקורת האמיתית הזו מגוגל — ${r.stars} כוכבים מאת ${r.who}: "${(r.text || "לקוח מרוצה מאוד מהשירות").slice(0, 200)}"`);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -2076,6 +2199,7 @@ function SettingsView({ showToast }) {
     setClaudeSaved(true); showToast(claudeKey.trim() ? "Claude חובר ✓" : "ההגדרות נשמרו"); setTimeout(() => setClaudeSaved(false), 1500);
   };
   const clearClaude = () => { try { localStorage.removeItem("alpha_anthropic"); } catch {} setClaudeKey(""); showToast("מפתח Claude נמחק"); };
+  const [gCid, setGCid] = useState(() => googleCid());
   const initGh = ghCfg();
   const [ghTok, setGhTok] = useState(initGh.token);
   const [ghRepo, setGhRepo] = useState(`${initGh.owner}/${initGh.repo}`);
@@ -2124,6 +2248,16 @@ function SettingsView({ showToast }) {
           <button className="ac-set-clear" onClick={clearClaude}><Trash2 size={15} /></button>
         </div>
         <a className="ac-set-link" href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">צור מפתח API בחשבון Anthropic <ArrowUpRight size={13} /></a>
+      </div>
+
+      <div className="ac-set-card">
+        <div className="ac-set-h"><Megaphone size={18} /> Google Business · ביקורות לנפתלי</div>
+        <p className="ac-set-note">נפתלי (שיווק) מושך את הביקורות האמיתיות של העסק מ-Google Business Profile והופך אותן לפוסטים — כפתור "⭐ ביקורות גוגל" בחלון השיחה שלו. הזרימה משתמשת רק ב-Client ID הציבורי (התחברות בחלון קופץ של גוגל) — <b>בלי ה-client_secret, שלעולם לא נכנס לקוד</b>. דרישות חד-פעמיות בקונסולת Google Cloud: להוסיף את כתובת האתר כ-JavaScript origin מורשה, ולאשר גישה ל-Business Profile APIs.</p>
+        <input className="ac-set-in" value={gCid} onChange={(e) => setGCid(e.target.value)} placeholder="....apps.googleusercontent.com" dir="ltr" />
+        <div className="ac-set-row">
+          <button className="ac-set-save" onClick={() => { try { localStorage.setItem(K_GOOGLE_CID, gCid.trim()); } catch {} showToast("Client ID נשמר ✓"); }}><Check size={16} /> שמור</button>
+        </div>
+        <a className="ac-set-link" href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer">קונסולת Google Cloud · Credentials <ArrowUpRight size={13} /></a>
       </div>
 
       <div className="ac-set-card">
@@ -2463,6 +2597,18 @@ function StyleTag() {
 .ac-panel-actions button.main{background:linear-gradient(135deg, color-mix(in srgb, var(--c) 34%, transparent), color-mix(in srgb, var(--c) 14%, transparent));
   border-color:color-mix(in srgb, var(--c) 55%, transparent);color:#fff}
 .ac-panel-actions button:hover{box-shadow:0 0 16px color-mix(in srgb, var(--c) 32%, transparent)}
+/* Google reviews window (נפתלי) */
+.ac-grev-open{background:linear-gradient(135deg,rgba(66,133,244,.22),rgba(66,133,244,.08))!important;border-color:rgba(66,133,244,.45)!important;color:#a9c8ff!important;font-weight:800}
+.ac-grev-note{background:rgba(10,15,30,.6);border:1px solid rgba(120,160,255,.16);border-radius:12px;padding:12px;font-size:.8rem;color:#cfd8e6;line-height:1.6}
+.ac-grev-note.err{border-color:rgba(255,95,109,.35)}
+.ac-grev-note small{display:block;margin-top:8px;color:#8ea0c4;font-size:.68rem;line-height:1.6}
+.ac-grev-list{display:flex;flex-direction:column;gap:8px;max-height:52vh;overflow-y:auto}
+.ac-grev-row{background:rgba(10,15,30,.6);border:1px solid rgba(120,160,255,.14);border-radius:12px;padding:10px 12px}
+.ac-grev-head{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+.ac-grev-head b{color:#FFD23F;letter-spacing:2px;font-size:.85rem}
+.ac-grev-head span{font-size:.68rem;color:#8ea0c4}
+.ac-grev-row p{font-size:.78rem;color:#e6edf7;line-height:1.55;margin:4px 0 8px}
+.ac-grev-row button{display:flex;align-items:center;gap:6px;background:color-mix(in srgb,var(--c) 12%,transparent);border:1px solid color-mix(in srgb,var(--c) 40%,transparent);color:var(--ac);border-radius:9px;padding:6px 11px;font-family:inherit;font-size:.7rem;font-weight:800;cursor:pointer}
 .ac-via{display:flex;align-items:center;border-radius:8px;padding:5px 9px;font-size:10px;font-weight:800;letter-spacing:.3px;cursor:help}
 .ac-via.claude{background:rgba(228,188,99,.12);border:1px solid rgba(228,188,99,.4);color:#E4BC63}
 .ac-via.groq{background:rgba(110,170,240,.1);border:1px solid rgba(110,170,240,.35);color:#9fc6f0}
