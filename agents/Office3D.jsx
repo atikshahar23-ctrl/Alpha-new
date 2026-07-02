@@ -2658,7 +2658,9 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       const dogLoader = new GLTFLoader();
       dogLoader.setMeshoptDecoder(MeshoptDecoder);
       dogLoader.load(base + "office-models/pomeranian.glb", (g) => {
-        spawnDog(g.scene, null, { name: "ניקי", height: 0.5, tint: 0xc9803e, x: -6.5, z: 3.5 });
+        // The owner's re-uploaded pomeranian (Blender source → GLB, 30MB→185KB)
+        // ships with its own fur textures — no tint, it shows as designed.
+        spawnDog(g.scene, null, { name: "ניקי", height: 0.5, x: -6.5, z: 3.5 });
       }, undefined, () => {});
       dogLoader.load(base + "office-models/chihuahua.glb", (g) => {
         spawnDog(g.scene, g.animations, { name: "טיארה", height: 0.36, x: 1.5, z: 4.5 });
