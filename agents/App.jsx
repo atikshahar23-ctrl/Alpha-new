@@ -1003,21 +1003,140 @@ function BriefingBanner({ ceo, onOpenChat }) {
     </div>
   );
 }
+// Deterministic per-agent "system load" — stable numbers per agent (hash of
+// the id) so the micro-metrics read as that agent's character, with the CSS
+// flicker animation supplying the live feel.
+function agentLoad(id) {
+  let h = 0;
+  for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) % 997;
+  return { cpu: 34 + (h % 53), mem: 22 + ((h * 7) % 61) };
+}
+
+/* One agent "cube" — a glass command-center tile: 3D tilt that follows the
+   mouse, a scanning laser on hover, a pulsing inner core, a live terminal
+   showing the agent's REAL recent activity, micro-metrics, and a glowing
+   border that reflects live status (purple pulse = executed something in
+   the last couple of minutes, cyan = online). Click opens the control
+   panel; the small button jumps straight into chat. */
+function AgentCube({ a, acts, onOpen, onPanel }) {
+  const ref = useRef(null);
+  const onMove = (e) => {
+    const el = ref.current; if (!el) return;
+    const r = el.getBoundingClientRect();
+    const px = (e.clientX - r.left) / r.width - 0.5;
+    const py = (e.clientY - r.top) / r.height - 0.5;
+    el.style.setProperty("--rx", (-py * 9).toFixed(2) + "deg");
+    el.style.setProperty("--ry", (px * 11).toFixed(2) + "deg");
+  };
+  const onLeave = () => {
+    const el = ref.current; if (!el) return;
+    el.style.setProperty("--rx", "0deg"); el.style.setProperty("--ry", "0deg");
+  };
+  const exec = acts[0] && Date.now() - acts[0].ts < 150000;
+  const { cpu, mem } = agentLoad(a.id);
+  const lines = acts.slice(0, 3).map((x) => x.text);
+  if (!lines.length) lines.push(a.tagline);
+  return (
+    <div ref={ref} className={"ac-cube " + (exec ? "exec" : "online")} style={{ "--c": a.color, "--ac": a.accent }}
+      onMouseMove={onMove} onMouseLeave={onLeave} onClick={() => onPanel(a.id)} role="button" tabIndex={0}
+      onKeyDown={(e) => { if (e.key === "Enter") onPanel(a.id); }}>
+      <span className="ac-cube-scan" />
+      <span className="ac-cube-core" />
+      <div className="ac-card-portrait">
+        <div className="ac-avatar-wrap">
+          <div className="ac-orb"><Face agent={a} fallback={26} /><span className="ac-orb-ring" /></div>
+          <span className="ac-avatar-live" />
+          <span className="ac-avatar-badge"><a.Icon size={11} /></span>
+        </div>
+      </div>
+      <div className="ac-cube-name">{a.name}</div>
+      <div className="ac-card-title">{a.title}</div>
+      <div className="ac-cube-status"><i /> {exec ? "מבצע משימה" : "מקוון · זמין"}</div>
+      <div className="ac-cube-term">
+        {lines.map((ln, i) => <div key={i} className="ac-cube-ln"><span className="p">‹</span> {ln}</div>)}
+        <div className="ac-cube-ln"><span className="p">‹</span> <span className="ac-caret" /></div>
+      </div>
+      <div className="ac-cube-metrics">
+        <div className="ac-cube-m"><span>עומס</span><div className="bar"><i style={{ "--w": cpu + "%" }} /></div><b>{cpu}%</b></div>
+        <div className="ac-cube-m"><span>זיכרון</span><div className="bar mem"><i style={{ "--w": mem + "%" }} /></div><b>{mem}%</b></div>
+      </div>
+      <button className="ac-cube-chat" onClick={(e) => { e.stopPropagation(); onOpen(a.id); }}>
+        <MessageSquare size={13} /> שיחה מיידית
+      </button>
+    </div>
+  );
+}
+
+/* The expanded Agent Control Panel — the cube "opens up" into a centred
+   glass console: status, full live activity stream with timestamps, stat
+   tiles, quick prompts, and the big actions (chat / meet in the office). */
+function AgentPanel({ a, acts, onClose, onOpen, onOffice }) {
+  const exec = acts[0] && Date.now() - acts[0].ts < 150000;
+  const { cpu, mem } = agentLoad(a.id);
+  const tFmt = (ts) => new Date(ts).toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
+  return (
+    <div className="ac-modal" onClick={onClose}>
+      <div className={"ac-panel " + (exec ? "exec" : "online")} style={{ "--c": a.color, "--ac": a.accent }} onClick={(e) => e.stopPropagation()}>
+        <span className="ac-cube-scan" />
+        <button className="ac-panel-x" onClick={onClose}><X size={16} /></button>
+        <div className="ac-panel-head">
+          <div className="ac-avatar-wrap ac-avatar-wrap--xl">
+            <span className="ac-cube-core big" />
+            <div className="ac-ceo-orb"><Face agent={a} fallback={30} /><span className="ac-orb-ring" /></div>
+            <span className="ac-avatar-live" />
+          </div>
+          <div className="ac-panel-id">
+            <b>{a.name}</b>
+            <span>{a.title}</span>
+            <div className="ac-cube-status"><i /> {exec ? "מבצע משימה כרגע" : "מקוון · זמין"}</div>
+          </div>
+        </div>
+        <div className="ac-card-chips center">
+          {a.domain.split(" · ").map((d, i) => <span key={i} className="ac-chip">{d}</span>)}
+        </div>
+        <div className="ac-panel-stats">
+          <div><b>{cpu}%</b><span>עומס עיבוד</span></div>
+          <div><b>{mem}%</b><span>זיכרון</span></div>
+          <div><b>{acts.length}</b><span>פעולות אחרונות</span></div>
+        </div>
+        <div className="ac-cube-term panel">
+          {(acts.length ? acts.slice(0, 7) : [{ id: "x", text: a.tagline, ts: Date.now() }]).map((x) => (
+            <div key={x.id} className="ac-cube-ln"><span className="t">{tFmt(x.ts)}</span><span className="p">‹</span> {x.text}</div>
+          ))}
+          <div className="ac-cube-ln"><span className="p">‹</span> <span className="ac-caret" /></div>
+        </div>
+        <div className="ac-panel-quick">
+          {a.quick.slice(0, 3).map((qq) => (
+            <button key={qq} onClick={() => { onClose(); onOpen(a.id); }}>{qq}</button>
+          ))}
+        </div>
+        <div className="ac-panel-actions">
+          <button className="main" onClick={() => { onClose(); onOpen(a.id); }}><MessageSquare size={16} /> פתח שיחה</button>
+          <button onClick={() => { onClose(); onOffice(); }}><Building2 size={16} /> פגוש במשרד החי</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RosterView({ onOpen, onOffice, activity }) {
   const ceo = AGENTS.find((a) => a.boss);
   const team = AGENTS.filter((a) => !a.boss);
+  const [panelId, setPanelId] = useState(null);
   const lastByAgent = useMemo(() => {
     const m = {};
     for (const a of activity) if (!m[a.agentId]) m[a.agentId] = a;
     return m;
   }, [activity]);
+  const actsFor = (id) => activity.filter((x) => x.agentId === id);
+  const panelAgent = panelId ? byId(panelId) : null;
 
   return (
-    <div className="ac-page">
+    <div className="ac-page ac-cmd">
       <div className="ac-hero">
         <div className="ac-hero-glow" />
         <h1>הצוות שלך</h1>
-        <p>{AGENTS.length} סוכני AI · כל אחד מנהל תחום. לחץ על סוכן כדי לדבר איתו ישירות.</p>
+        <p>{AGENTS.length} סוכני AI · כל אחד מנהל תחום. לחץ על סוכן לפנל שליטה, או ישר לשיחה.</p>
       </div>
 
       <BriefingBanner ceo={ceo} onOpenChat={onOpen} />
@@ -1051,29 +1170,14 @@ function RosterView({ onOpen, onOffice, activity }) {
 
       <div className="ac-sectitle"><Bot size={15} /> ראשי הצוות</div>
       <div className="ac-grid">
-        {team.map((a) => {
-          const act = lastByAgent[a.id];
-          return (
-            <button key={a.id} className="ac-card" style={{ "--c": a.color, "--ac": a.accent }} onClick={() => onOpen(a.id)}>
-              <div className="ac-card-glow" />
-              <div className="ac-card-portrait">
-                <div className="ac-avatar-wrap">
-                  <div className="ac-orb"><Face agent={a} fallback={26} /><span className="ac-orb-ring" /></div>
-                  <span className="ac-avatar-live" />
-                  <span className="ac-avatar-badge"><a.Icon size={11} /></span>
-                </div>
-              </div>
-              <div className="ac-card-name">{a.name}</div>
-              <div className="ac-card-title">{a.title}</div>
-              <div className="ac-card-chips">
-                {a.domain.split(" · ").map((d, i) => <span key={i} className="ac-chip">{d}</span>)}
-              </div>
-              <div className="ac-card-now">{act ? act.text : a.tagline}</div>
-              <div className="ac-card-foot"><MessageSquare size={13} /> שיחה</div>
-            </button>
-          );
-        })}
+        {team.map((a) => (
+          <AgentCube key={a.id} a={a} acts={actsFor(a.id)} onOpen={onOpen} onPanel={setPanelId} />
+        ))}
       </div>
+
+      {panelAgent && (
+        <AgentPanel a={panelAgent} acts={actsFor(panelAgent.id)} onClose={() => setPanelId(null)} onOpen={onOpen} onOffice={onOffice} />
+      )}
     </div>
   );
 }
@@ -2262,6 +2366,97 @@ function StyleTag() {
 .ac-msg-acts{display:flex;gap:7px;margin-top:6px}
 .ac-msg-acts button{display:flex;align-items:center;gap:4px;background:var(--s8);border:1px solid var(--s7);color:var(--s4);border-radius:8px;padding:5px 9px;font-family:inherit;font-size:10.5px;font-weight:700;cursor:pointer;transition:.15s}
 .ac-msg-acts button:hover{color:var(--c);border-color:color-mix(in srgb,var(--c) 45%,transparent)}
+/* ── JARVIS command-center roster ─────────────────────────────────────── */
+.ac-cmd{position:relative}
+.ac-cmd::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:
+    radial-gradient(ellipse 90% 55% at 50% -8%, rgba(24,224,255,.055), transparent 62%),
+    radial-gradient(ellipse 70% 45% at 88% 108%, rgba(255,62,165,.045), transparent 62%),
+    repeating-linear-gradient(0deg, transparent 0 39px, rgba(120,160,255,.032) 39px 40px),
+    repeating-linear-gradient(90deg, transparent 0 39px, rgba(120,160,255,.032) 39px 40px)}
+.ac-cube{position:relative;display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;
+  padding:18px 13px 13px;border-radius:20px;cursor:pointer;isolation:isolate;overflow:hidden;user-select:none;
+  background:linear-gradient(160deg, rgba(16,22,40,.72), rgba(8,11,22,.86));
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  border:1px solid color-mix(in srgb, var(--st,#18e0ff) 26%, transparent);
+  box-shadow:0 14px 34px rgba(0,0,0,.45), inset 0 0 26px rgba(8,13,28,.55);
+  transform:perspective(760px) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg));
+  transition:box-shadow .25s, border-color .25s, transform .12s ease-out}
+.ac-cube.online{--st:#18e0ff}
+.ac-cube.exec{--st:#b56bff;animation:cubePulse 2.1s ease-in-out infinite}
+@keyframes cubePulse{0%,100%{box-shadow:0 0 10px rgba(181,107,255,.14),0 14px 34px rgba(0,0,0,.45)}50%{box-shadow:0 0 30px rgba(181,107,255,.42),0 14px 34px rgba(0,0,0,.45)}}
+.ac-cube:hover{transform:perspective(760px) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg)) translateY(-7px) scale(1.03);
+  border-color:color-mix(in srgb, var(--st) 62%, transparent);
+  box-shadow:0 0 28px color-mix(in srgb, var(--st) 30%, transparent), 0 24px 46px rgba(0,0,0,.55)}
+.ac-cube-scan{position:absolute;left:0;right:0;top:-42%;height:34%;z-index:1;pointer-events:none;opacity:0;
+  background:linear-gradient(180deg, transparent, color-mix(in srgb, var(--st,#18e0ff) 14%, transparent) 55%, color-mix(in srgb, var(--st,#18e0ff) 44%, transparent) 97%, transparent)}
+.ac-cube:hover .ac-cube-scan, .ac-panel .ac-cube-scan{opacity:1;animation:cubeScan 1.8s linear infinite}
+@keyframes cubeScan{from{top:-42%}to{top:122%}}
+.ac-cube-core{position:absolute;top:4px;left:50%;width:130px;height:130px;margin-left:-65px;z-index:0;pointer-events:none;border-radius:50%;
+  background:radial-gradient(circle, color-mix(in srgb, var(--c) 32%, transparent), transparent 66%);
+  filter:blur(6px);animation:corePulse 3s ease-in-out infinite}
+.ac-cube-core.big{top:-14px;width:170px;height:170px;margin-left:-85px}
+@keyframes corePulse{0%,100%{opacity:.3;transform:scale(.9)}50%{opacity:.62;transform:scale(1.08)}}
+.ac-cube-name{font-size:1.05rem;font-weight:900;letter-spacing:1.2px;color:#fff;position:relative;z-index:2}
+.ac-cube-status{display:flex;align-items:center;gap:6px;font-size:.66rem;font-weight:800;letter-spacing:.5px;color:var(--st,#18e0ff);position:relative;z-index:2}
+.ac-cube-status i{width:7px;height:7px;border-radius:50%;background:var(--st,#18e0ff);box-shadow:0 0 8px var(--st,#18e0ff);animation:blip 1.4s ease-in-out infinite}
+@keyframes blip{0%,100%{opacity:.45;transform:scale(.85)}50%{opacity:1;transform:scale(1.2)}}
+.ac-cube-term{width:100%;background:rgba(3,6,12,.74);border:1px solid rgba(120,160,255,.13);border-radius:10px;position:relative;z-index:2;
+  padding:7px 9px;text-align:right;font-family:ui-monospace,SFMono-Regular,monospace;font-size:.63rem;line-height:1.6;color:#7fe6b0;
+  min-height:66px;display:flex;flex-direction:column;justify-content:flex-end;overflow:hidden}
+.ac-cube-term.panel{min-height:120px;font-size:.7rem;max-height:168px}
+.ac-cube-ln{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ac-cube-ln .p{color:var(--c);font-weight:800;margin-left:4px}
+.ac-cube-ln .t{color:#4d6183;font-size:.58rem;margin-left:6px}
+.ac-caret{display:inline-block;width:7px;height:11px;background:#7fe6b0;vertical-align:-1px;animation:caretBlink 1s steps(1) infinite}
+@keyframes caretBlink{50%{opacity:0}}
+.ac-cube-metrics{width:100%;display:flex;flex-direction:column;gap:4px;position:relative;z-index:2}
+.ac-cube-m{display:flex;align-items:center;gap:7px;font-size:.6rem;color:#8ea0c4}
+.ac-cube-m span{width:36px;text-align:right;flex-shrink:0}
+.ac-cube-m b{width:28px;color:#cfd8e6;font-size:.6rem;flex-shrink:0;text-align:left}
+.ac-cube-m .bar{flex:1;height:5px;border-radius:3px;background:rgba(120,160,255,.13);overflow:hidden}
+.ac-cube-m .bar i{display:block;height:100%;width:var(--w);border-radius:3px;transform-origin:right;
+  background:linear-gradient(90deg, var(--ac), var(--c));animation:barFlicker 2.7s ease-in-out infinite}
+.ac-cube-m .bar.mem i{animation-delay:1.3s}
+@keyframes barFlicker{0%,100%{transform:scaleX(1);opacity:1}50%{transform:scaleX(.88);opacity:.75}}
+.ac-cube-chat{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;padding:8px 0;margin-top:2px;position:relative;z-index:2;
+  border-radius:11px;border:1px solid color-mix(in srgb, var(--c) 38%, transparent);
+  background:color-mix(in srgb, var(--c) 10%, transparent);color:var(--ac);
+  font-family:inherit;font-size:.74rem;font-weight:800;cursor:pointer;transition:.18s}
+.ac-cube-chat:hover{background:color-mix(in srgb, var(--c) 22%, transparent);box-shadow:0 0 14px color-mix(in srgb, var(--c) 30%, transparent)}
+/* Agent control panel */
+.ac-panel{position:relative;width:min(520px,94vw);max-height:88vh;overflow-y:auto;overflow-x:hidden;border-radius:24px;padding:22px 20px 18px;isolation:isolate;
+  background:linear-gradient(165deg, rgba(16,22,40,.92), rgba(7,10,20,.95));
+  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  border:1px solid color-mix(in srgb, var(--c) 42%, transparent);
+  box-shadow:0 0 60px color-mix(in srgb, var(--c) 20%, transparent), 0 30px 80px rgba(0,0,0,.6);
+  animation:panelIn .3s cubic-bezier(.2,.9,.3,1.15)}
+.ac-panel.online{--st:#18e0ff}
+.ac-panel.exec{--st:#b56bff}
+@keyframes panelIn{from{opacity:0;transform:scale(.72) translateY(30px)}to{opacity:1;transform:scale(1) translateY(0)}}
+.ac-panel-x{position:absolute;top:12px;left:12px;z-index:4;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  background:rgba(6,9,18,.7);border:1px solid rgba(120,160,255,.2);color:#cfd8e6;cursor:pointer}
+.ac-panel-head{display:flex;align-items:center;gap:16px;margin-bottom:10px;position:relative;z-index:2}
+.ac-panel-id{display:flex;flex-direction:column;gap:4px;text-align:right}
+.ac-panel-id b{font-size:1.5rem;font-weight:900;letter-spacing:1px;color:#fff}
+.ac-panel-id>span{font-size:.82rem;color:var(--ac);font-weight:700}
+.ac-card-chips.center{justify-content:center;margin-bottom:10px}
+.ac-panel-stats{display:flex;gap:8px;margin-bottom:10px;position:relative;z-index:2}
+.ac-panel-stats>div{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:9px 4px;border-radius:12px;
+  background:rgba(10,15,30,.6);border:1px solid rgba(120,160,255,.14)}
+.ac-panel-stats b{font-size:1.05rem;font-weight:900;color:var(--ac)}
+.ac-panel-stats span{font-size:.6rem;color:#8ea0c4}
+.ac-panel-quick{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0;position:relative;z-index:2}
+.ac-panel-quick button{border-radius:10px;padding:7px 11px;font-family:inherit;font-size:.7rem;font-weight:700;cursor:pointer;
+  background:rgba(10,15,30,.6);border:1px solid rgba(120,160,255,.18);color:#cfd8e6;transition:.15s}
+.ac-panel-quick button:hover{border-color:var(--c);color:var(--ac)}
+.ac-panel-actions{display:flex;gap:8px;position:relative;z-index:2}
+.ac-panel-actions button{flex:1;display:flex;align-items:center;justify-content:center;gap:7px;padding:12px 0;border-radius:13px;
+  font-family:inherit;font-size:.82rem;font-weight:800;cursor:pointer;transition:.18s;
+  background:rgba(10,15,30,.6);border:1px solid rgba(120,160,255,.2);color:#cfd8e6}
+.ac-panel-actions button.main{background:linear-gradient(135deg, color-mix(in srgb, var(--c) 34%, transparent), color-mix(in srgb, var(--c) 14%, transparent));
+  border-color:color-mix(in srgb, var(--c) 55%, transparent);color:#fff}
+.ac-panel-actions button:hover{box-shadow:0 0 16px color-mix(in srgb, var(--c) 32%, transparent)}
 .ac-via{display:flex;align-items:center;border-radius:8px;padding:5px 9px;font-size:10px;font-weight:800;letter-spacing:.3px;cursor:help}
 .ac-via.claude{background:rgba(228,188,99,.12);border:1px solid rgba(228,188,99,.4);color:#E4BC63}
 .ac-via.groq{background:rgba(110,170,240,.1);border:1px solid rgba(110,170,240,.35);color:#9fc6f0}
