@@ -3106,6 +3106,13 @@ function StyleTag() {
   cursor:pointer;backdrop-filter:blur(8px);white-space:nowrap}
 .off3-sit:hover{border-color:var(--gold);box-shadow:0 0 14px rgba(228,188,99,.35)}
 .off3-sit.on{background:linear-gradient(135deg,rgba(228,188,99,.28),rgba(228,188,99,.12));color:#ffe9b0}
+.off3-turbo{position:absolute;top:56px;right:10px;z-index:3;height:34px;padding:0 13px;border-radius:17px;
+  display:flex;align-items:center;justify-content:center;gap:6px;background:rgba(6,9,18,.72);
+  border:1px solid rgba(110,170,240,.3);color:#eaf1ff;font-weight:800;font-size:.75rem;
+  cursor:pointer;backdrop-filter:blur(8px);white-space:nowrap;font-family:inherit}
+.off3-turbo:hover{border-color:#3FD79A;color:#b8ffd9}
+.off3-turbo.on{background:linear-gradient(135deg,rgba(63,215,154,.3),rgba(63,215,154,.1));
+  border-color:#3FD79A;color:#b8ffd9;box-shadow:0 0 14px rgba(63,215,154,.35)}
 .off3-settings{position:absolute;top:56px;right:10px;z-index:60;width:min(300px,86vw);background:rgba(8,11,22,.94);
   backdrop-filter:blur(16px);border:1px solid rgba(110,170,240,.22);border-radius:16px;box-shadow:0 18px 44px rgba(0,0,0,.55);
   animation:acRise .2s ease both}

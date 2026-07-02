@@ -10,7 +10,7 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { SSAOPass } from "three/examples/jsm/postprocessing/SSAOPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
-import { MessageCircle, Eye, User, Mic, VolumeX, Volume2, X, Settings as SettingsIcon } from "lucide-react";
+import { MessageCircle, Eye, User, Mic, VolumeX, Volume2, X, Zap, Settings as SettingsIcon } from "lucide-react";
 
 /* ════════════════════════════════════════════════════════════════════
    3D OFFICE — walk the floor yourself (WASD / joystick), approach a
@@ -926,6 +926,44 @@ const OFFICE_GLASS_MAT = new THREE.MeshPhysicalMaterial({
   metalness: 0.1, side: THREE.DoubleSide, depthWrite: false,
 });
 
+// The real Heavy Guard logo (the bull-over-gear brand mark, transparent PNG)
+// as a shared texture — created once per mount from the effect (which knows
+// the base URL) and reused by every builder that hangs the brand somewhere.
+let HG_LOGO_TEX = null;
+function buildLogoPlane(w) {
+  if (!HG_LOGO_TEX) return null;
+  // 240x279 source → keep the mark's true aspect so the bull never distorts.
+  return new THREE.Mesh(
+    new THREE.PlaneGeometry(w, w * 1.16),
+    new THREE.MeshBasicMaterial({ map: HG_LOGO_TEX, transparent: true, toneMapped: false, depthWrite: false })
+  );
+}
+
+// A proper office-door nameplate: dark brushed plate, gold frame, the
+// agent's name big + role under it, with a colour accent bar — mounted at
+// eye height beside every office entrance, like a real office floor.
+function buildDoorSign(name, title, color) {
+  const cvs = document.createElement("canvas");
+  cvs.width = 512; cvs.height = 256;
+  const c = cvs.getContext("2d");
+  const hex = "#" + new THREE.Color(color).getHexString();
+  const grd = c.createLinearGradient(0, 0, 0, 256);
+  grd.addColorStop(0, "#1b1f2a"); grd.addColorStop(1, "#0c0e14");
+  c.fillStyle = grd; c.fillRect(0, 0, 512, 256);
+  c.strokeStyle = "rgba(228,188,99,.8)"; c.lineWidth = 6; c.strokeRect(7, 7, 498, 242);
+  c.strokeStyle = "rgba(228,188,99,.25)"; c.lineWidth = 2; c.strokeRect(16, 16, 480, 224);
+  c.fillStyle = hex; c.fillRect(452, 44, 10, 168);
+  c.textAlign = "right";
+  c.fillStyle = "#f2f4f8"; c.font = "800 76px system-ui";
+  c.fillText(name, 428, 122);
+  c.fillStyle = "#aeb8ca"; c.font = "500 42px system-ui";
+  c.fillText(title, 428, 194);
+  const tex = new THREE.CanvasTexture(cvs);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  return new THREE.Mesh(new THREE.PlaneGeometry(0.66, 0.33), new THREE.MeshBasicMaterial({ map: tex, toneMapped: false }));
+}
+
 // A private glass-walled office wrapped around one agent's battlestation:
 // a back wall + two side walls (front left open as the doorway) with a neon
 // top rail and a floating title/name plate over the entrance, all in the
@@ -972,6 +1010,12 @@ function buildGlassOffice(color, name, title, screenTex, decorTemplate) {
   plate.position.set(0, wallH + 0.32, D / 2);
   g.add(plate);
 
+  // Entrance nameplate on the right door jamb at eye height — name + role,
+  // the standard sign you'd find beside a real office door.
+  const doorSign = buildDoorSign(name, title, color);
+  doorSign.position.set(W / 2 - 0.4, 1.45, D / 2 + 0.015);
+  g.add(doorSign);
+
   // A real leafy plant + a little side table (from the user's LP Officeroom
   // pack) for a lived-in, furnished feel — falls back to the plain
   // procedural plant if that pack failed to load.
@@ -1014,8 +1058,11 @@ function buildGlassOffice(color, name, title, screenTex, decorTemplate) {
 // real metrics drawn as a mini dashboard, in their own colour.
 function buildOfficeScreenTex(title, color, lines) {
   const cvs = document.createElement("canvas");
-  cvs.width = 320; cvs.height = 190;
+  // 2x supersampled (drawn in 320x190 logical coords) — the office wall
+  // screens sit close to the walk path and read crisp instead of fuzzy.
+  cvs.width = 640; cvs.height = 380;
   const ctx = cvs.getContext("2d");
+  ctx.scale(2, 2);
   const hex = "#" + new THREE.Color(color).getHexString();
   const grd = ctx.createLinearGradient(0, 0, 0, 190);
   grd.addColorStop(0, "#0d1424"); grd.addColorStop(1, "#080b14");
@@ -1031,6 +1078,7 @@ function buildOfficeScreenTex(title, color, lines) {
   });
   const tex = new THREE.CanvasTexture(cvs);
   tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
   return tex;
 }
 
@@ -1103,6 +1151,13 @@ function buildConferenceRoom(color, screenTex) {
   const sign = buildNeonSign("חדר ישיבות", color, 3.2, 0.7);
   sign.position.set(0, wallH + 0.4, D / 2);
   g.add(sign);
+  // Entrance nameplate beside the door + the company mark next to the
+  // presentation screen, so the meeting room carries the brand too.
+  const doorSign = buildDoorSign("חדר ישיבות", "פגישות צוות והנהלה", color);
+  doorSign.position.set(W / 2 - 0.85, 1.45, D / 2 + 0.02);
+  g.add(doorSign);
+  const roomLogo = buildLogoPlane(0.95);
+  if (roomLogo) { roomLogo.position.set(-2.85, 1.55, -D / 2 + 0.07); g.add(roomLogo); }
   const glow = new THREE.PointLight(color, 0.45, 12);
   glow.position.set(0, 2.2, 0); g.add(glow);
   return { group: g, obstacles };
@@ -1121,7 +1176,11 @@ function buildReception(color, screenTex) {
   const front = new THREE.Mesh(new THREE.BoxGeometry(W, H, D), wood);
   front.position.set(0, H / 2, 0); front.castShadow = true; front.receiveShadow = true; g.add(front);
   const strip = new THREE.Mesh(new THREE.BoxGeometry(W - 0.2, 0.06, 0.02), new THREE.MeshBasicMaterial({ color }));
-  strip.position.set(0, 0.5, D / 2 + 0.011); g.add(strip);
+  strip.position.set(0, 0.14, D / 2 + 0.011); g.add(strip);
+  // The company mark front-and-centre on the counter — the first brand
+  // touchpoint a visitor sees walking in.
+  const deskLogo = buildLogoPlane(0.52);
+  if (deskLogo) { deskLogo.position.set(0, 0.52, D / 2 + 0.013); g.add(deskLogo); }
   const top = new THREE.Mesh(new THREE.BoxGeometry(W + 0.2, 0.07, D + 0.25), topMat);
   top.position.set(0, H + 0.035, 0); top.castShadow = true; g.add(top);
   // Welcome monitor on the counter, facing visitors (+Z).
@@ -1230,6 +1289,16 @@ function buildOwnerOffice(color, deskTemplate, laptopTemplate, furnitureTemplate
   for (let t = -5.3; t <= 6.5; t += 0.85) obstacles.push({ x: t, z: -4.3, r: 0.26 });
   for (let t = -4.3; t <= -0.8; t += 0.8) obstacles.push({ x: -5.3, z: t, r: 0.26 });
   for (let t = 0.9; t <= 4.0; t += 0.8) obstacles.push({ x: -5.3, z: t, r: 0.26 });
+
+  // Entrance nameplate beside the suite door (west wall, facing the
+  // approach) + the company mark on the glass behind the desk, executive-
+  // office style.
+  const doorSign = buildDoorSign("שחר", "מנכ\"ל ובעלים", color);
+  doorSign.rotation.y = -Math.PI / 2;
+  doorSign.position.set(-5.33, 1.45, 1.5);
+  g.add(doorSign);
+  const suiteLogo = buildLogoPlane(1.45);
+  if (suiteLogo) { suiteLogo.position.set(0.5, 1.55, -4.26); g.add(suiteLogo); }
 
   // Premium rug under the whole meeting area.
   const rug = buildRug(7.4, 5.6, 0x14161c);
@@ -1385,6 +1454,16 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   // null once everything is in and the room is live).
   const [loadPct, setLoadPct] = useState(0);
   const [graphicsHigh, setGraphicsHigh] = useState(true); // bloom + SSAO on/off, for low-end devices
+  // Turbo mode 🚀 — the "make it actually smooth" switch for machines where
+  // the sim stutters (the owner's Mac): renders at 1x DPR straight through
+  // the renderer (no post chain), drops shadows, freezes the CCTV feed,
+  // hides the sky-life extras and the live iframe wall. Persisted so a
+  // laggy machine stays fast on the next visit.
+  const [turbo, setTurbo] = useState(() => { try { return localStorage.getItem("alpha:agents:turbo") === "1"; } catch { return false; } });
+  useEffect(() => {
+    liveRef.current.setTurbo?.(turbo);
+    try { localStorage.setItem("alpha:agents:turbo", turbo ? "1" : "0"); } catch {}
+  }, [turbo]);
   // Whether the mic should keep re-listening on its own while you're near an
   // agent — on by default (mic is "always listening" while in the sim), the
   // user can pause it (mic button, or the settings panel) without losing the
@@ -1467,6 +1546,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     let cleanupFn = () => {};
     (async () => {
       const base = import.meta.env.BASE_URL || "/";
+      // Real Heavy Guard brand mark, shared by every logo placement in the
+      // room (reception counter, owner suite, meeting room, floor decal…).
+      HG_LOGO_TEX = new THREE.TextureLoader().load(base + "office-models/hg-logo.png");
+      HG_LOGO_TEX.colorSpace = THREE.SRGBColorSpace;
+      HG_LOGO_TEX.anisotropy = 8;
       // One shared manager so the loading overlay can show real download
       // progress across all five models instead of an indeterminate spinner.
       const manager = new THREE.LoadingManager();
@@ -1541,11 +1625,16 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     composer.addPass(new OutputPass());
     // Settings-panel graphics toggle — both passes support .enabled out of
     // the box (base three.js Pass class), so this is a cheap on/off for
-    // slower devices without rebuilding the composer chain.
-    liveRef.current.setGraphicsHigh = (high) => {
-      bloomPass.enabled = high;
-      if (ssaoPass) ssaoPass.enabled = high;
+    // slower devices without rebuilding the composer chain. Turbo overrides
+    // both passes off regardless of the quality toggle (turboOn is shared
+    // with setTurbo, defined once the whole scene exists).
+    let gfxHigh = graphicsHigh;
+    let turboOn = false;
+    const applyPasses = () => {
+      bloomPass.enabled = gfxHigh && !turboOn;
+      if (ssaoPass) ssaoPass.enabled = gfxHigh && !turboOn;
     };
+    liveRef.current.setGraphicsHigh = (high) => { gfxHigh = high; applyPasses(); };
     liveRef.current.setGraphicsHigh(graphicsHigh);
 
     // ── Real HDRI environment (free CC0 Poly Haven) for image-based lighting
@@ -1812,19 +1901,31 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
        striped hot-air balloon drifting by day, and two searchlight beams
        sweeping the sky at night. All sprite/canvas-cheap. ── */
     const bbCvs = document.createElement("canvas");
-    bbCvs.width = 220; bbCvs.height = 320;
+    // 2x supersampled (drawn in 220x320 logical coords) so the billboard
+    // text and the brand mark stay crisp instead of soft up close.
+    bbCvs.width = 440; bbCvs.height = 640;
     const bbCtx = bbCvs.getContext("2d");
+    bbCtx.scale(2, 2);
     const bbTex = new THREE.CanvasTexture(bbCvs);
     bbTex.colorSpace = THREE.SRGBColorSpace;
+    bbTex.anisotropy = 8;
+    // The REAL Heavy Guard logo on the tower ad (repaints the board when the
+    // image lands, replacing the old placeholder hexagon).
+    let bbLogoImg = null;
     const drawBillboard = (mode) => {
       const c = bbCtx;
       c.fillStyle = "#05070d"; c.fillRect(0, 0, 220, 320);
       c.textAlign = "center";
       if (mode === 0) {
-        c.fillStyle = "#E4BC63"; c.font = "900 34px system-ui";
-        c.fillText("HEAVY", 110, 96); c.fillText("GUARD", 110, 140);
-        c.strokeStyle = "#E4BC63"; c.lineWidth = 3;
-        c.beginPath(); c.moveTo(110, 176); c.lineTo(146, 196); c.lineTo(146, 238); c.lineTo(110, 262); c.lineTo(74, 238); c.lineTo(74, 196); c.closePath(); c.stroke();
+        if (bbLogoImg && bbLogoImg.complete && bbLogoImg.naturalWidth) {
+          const lw = 132, lh = lw * 1.16;
+          c.drawImage(bbLogoImg, 110 - lw / 2, 24, lw, lh);
+          c.fillStyle = "#E4BC63"; c.font = "900 27px system-ui";
+          c.fillText("HEAVY GUARD", 110, 216);
+        } else {
+          c.fillStyle = "#E4BC63"; c.font = "900 34px system-ui";
+          c.fillText("HEAVY", 110, 96); c.fillText("GUARD", 110, 140);
+        }
         c.fillStyle = "#cfd8e6"; c.font = "700 19px system-ui";
         c.fillText("מיגון כלי צמ\"ה", 110, 296);
       } else if (mode === 1) {
@@ -1851,6 +1952,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     };
     drawBillboard(0);
     let bbMode = 0, bbTick = 0;
+    {
+      const img = new Image();
+      img.onload = () => { bbLogoImg = img; if (bbMode === 0) { drawBillboard(0); bbTex.needsUpdate = true; } };
+      img.src = base + "office-models/hg-logo.png";
+    }
     const bbMat = new THREE.MeshBasicMaterial({ map: bbTex, toneMapped: false, fog: false });
     {
       const tall = scene.userData.tallB || { x: 24, h: 20, z: nwz - 24, d: 4 };
@@ -2273,6 +2379,29 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       cssScene.add(cssObj);
     }
 
+    // ── The brand around the room ─────────────────────────────────────────
+    // The real Heavy Guard mark in the places a real HQ would carry it:
+    // a big backlit wall logo on the south wall beside the browser screen,
+    // and a floor decal in the lobby in front of the car podium.
+    {
+      const wallLogo = buildLogoPlane(1.9);
+      if (wallLogo) {
+        wallLogo.rotation.y = Math.PI;
+        wallLogo.position.set(8.6, 2.05, FLOOR_D / 2 - 0.1);
+        scene.add(wallLogo);
+        const wallGlow = new THREE.PointLight(0xE4BC63, 0.35, 6);
+        wallGlow.position.set(8.6, 2.2, FLOOR_D / 2 - 1.2);
+        scene.add(wallGlow);
+      }
+      const floorLogo = buildLogoPlane(2.6);
+      if (floorLogo) {
+        floorLogo.rotation.x = -Math.PI / 2;
+        floorLogo.material.opacity = 0.92;
+        floorLogo.position.set(-2.5, 0.02, 4.4);
+        scene.add(floorLogo);
+      }
+    }
+
     // The owner's real Tiggo 7, center stage — a display podium in the
     // middle of the open floor with the actual car model slowly turning.
     const centerSpin = [];
@@ -2310,101 +2439,6 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         centerSpin.push(wrap);
       }, undefined, () => { /* car download failed — podium stays as decor */ });
     }
-
-    // ── The office dogs 🐾 ───────────────────────────────────────────────
-    // Eight real dogs roam the floor: five pomeranians (the owner's model,
-    // 30MB→403KB, tinted sable orange-and-dark like his real dog's photo)
-    // led by ניקי, plus three rigged chihuahuas (with their baked idle
-    // animation) — טיארה first. Each wanders between open-floor spots and
-    // the dog corner (beds, food + water bowls), pauses to sniff, waddles
-    // while walking, and rests on the cushions.
-    const DOG_CORNER = { x: -16.6, z: -13.2 };
-    const DOG_BEDS = [
-      { x: -17.4, z: -14.2 }, { x: -16.0, z: -14.6 }, { x: -14.8, z: -13.6 }, { x: -17.6, z: -12.4 },
-    ];
-    const dogs = [];
-    {
-      const rug = buildRug(4.4, 3.6, 0x2a2016);
-      rug.position.set(DOG_CORNER.x, 0.005, DOG_CORNER.z);
-      scene.add(rug);
-      DOG_BEDS.forEach((b) => {
-        const ring = new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.13, 10, 22), new THREE.MeshStandardMaterial({ color: 0x5a4632, roughness: 0.9 }));
-        ring.rotation.x = -Math.PI / 2; ring.position.set(b.x, 0.12, b.z); ring.castShadow = true; scene.add(ring);
-        const cushion = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.08, 20), new THREE.MeshStandardMaterial({ color: 0x8a6a4a, roughness: 1 }));
-        cushion.position.set(b.x, 0.06, b.z); scene.add(cushion);
-      });
-      const bowl = (x, z, inner) => {
-        const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.11, 0.09, 16), new THREE.MeshStandardMaterial({ color: 0x30353f, roughness: 0.4, metalness: 0.6 }));
-        rim.position.set(x, 0.045, z); scene.add(rim);
-        const fill = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.02, 16), new THREE.MeshStandardMaterial({ color: inner, roughness: 0.8 }));
-        fill.position.set(x, 0.085, z); scene.add(fill);
-      };
-      bowl(-15.4, -12.2, 0x6b4a26); // food
-      bowl(-14.9, -12.5, 0x3a7bd5); // water
-      const dogSign = buildNameSprite("פינת הכלבים 🐾", "#E08D45", "");
-      dogSign.scale.multiplyScalar(1.6);
-      dogSign.position.set(DOG_CORNER.x, 1.5, DOG_CORNER.z - 1.2);
-      scene.add(dogSign);
-      obstacles.push({ x: DOG_CORNER.x, z: DOG_CORNER.z - 0.6, r: 1.1 });
-
-      const spawnDog = (template, clips, cfg, idx) => {
-        const skinned = !!(clips && clips.length);
-        const body = skinned ? cloneSkinned(template) : template.clone(true);
-        const db = new THREE.Box3().setFromObject(body);
-        const ds = db.getSize(new THREE.Vector3());
-        const dc = db.getCenter(new THREE.Vector3());
-        const scale = cfg.height / (ds.y || 1);
-        const wrap = new THREE.Group();
-        body.position.set(-dc.x * scale, -db.min.y * scale, -dc.z * scale);
-        body.scale.setScalar(scale);
-        body.traverse((o) => {
-          if (!o.isMesh && !o.isSkinnedMesh) return;
-          o.castShadow = true; o.frustumCulled = false;
-          if (cfg.tint && o.material) { o.material = o.material.clone(); o.material.color = new THREE.Color(cfg.tint); }
-        });
-        wrap.add(body);
-        const tag = buildNameSprite(cfg.name, cfg.gold ? "#E4BC63" : "#E08D45", "");
-        tag.scale.multiplyScalar(0.62);
-        tag.position.y = cfg.height + 0.28;
-        wrap.add(tag);
-        const bed = DOG_BEDS[idx % DOG_BEDS.length];
-        wrap.position.set(bed.x + (idx % 4) * 0.45 - 0.7, 0, bed.z + 0.7 + (idx % 2) * 0.4);
-        scene.add(wrap);
-        let mixer = null;
-        if (skinned) {
-          mixer = new THREE.AnimationMixer(body);
-          mixer.clipAction(clips[0]).play();
-        }
-        dogs.push({ group: wrap, mixer, target: null, pauseT: 1 + idx * 1.4, speed: 1.0 + (idx % 4) * 0.18 });
-      };
-      const dogLoader = new GLTFLoader();
-      dogLoader.setMeshoptDecoder(MeshoptDecoder);
-      // Pomeranians — sable tints sampled from the owner's photo (warm
-      // orange body, darker back).
-      dogLoader.load(base + "office-models/pomeranian.glb", (g) => {
-        [
-          { name: "ניקי", gold: true, height: 0.5, tint: 0xc9803e },
-          { name: "מוקה", height: 0.42, tint: 0xb06a30 },
-          { name: "שוקו", height: 0.42, tint: 0x8a5426 },
-          { name: "לונה", height: 0.4, tint: 0xd29a5c },
-          { name: "סימבה", height: 0.44, tint: 0xc9803e },
-        ].forEach((cfg, i) => spawnDog(g.scene, null, cfg, i));
-      }, undefined, () => {});
-      // Chihuahuas — rigged, their baked clip keeps them alive while roaming.
-      dogLoader.load(base + "office-models/chihuahua.glb", (g) => {
-        [
-          { name: "טיארה", gold: true, height: 0.36 },
-          { name: "צ'יקו", height: 0.33 },
-          { name: "פיצי", height: 0.31 },
-        ].forEach((cfg, i) => spawnDog(g.scene, g.animations, cfg, i + 5));
-      }, undefined, () => {});
-    }
-    // A wandering dog's next stop: usually a random open-floor spot,
-    // sometimes back to a bed for a rest.
-    const dogSpot = () => {
-      if (Math.random() < 0.3) { const b = DOG_BEDS[Math.floor(Math.random() * DOG_BEDS.length)]; return { x: b.x, z: b.z + 0.25, rest: true }; }
-      return { x: -10 + Math.random() * 15, z: -7 + Math.random() * 12, rest: false };
-    };
 
     // ── Reception at the entrance ────────────────────────────────────────
     // A welcome desk with a receptionist just inside the south entrance, so
@@ -2699,7 +2733,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         drawSecurityBar();
         secBarTex.needsUpdate = true;
       }
-      if (frameNo % 3 === 0) {
+      if (!turboOn && frameNo % 3 === 0) {
         secScreen.visible = false;
         renderer.setRenderTarget(secRT);
         renderer.render(scene, secCam);
@@ -2708,25 +2742,6 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       }
       // Center-stage car turns slowly on its podium.
       centerSpin.forEach((w) => { w.rotation.y += dt * 0.28; });
-      // Dogs: wander → pause/sniff → wander, with a waddle while walking
-      // and longer rests on the beds. Chihuahua mixers tick their idle clip.
-      dogs.forEach((d, di) => {
-        if (d.mixer) d.mixer.update(dt);
-        if (d.pauseT > 0) { d.pauseT -= dt; d.group.rotation.z = 0; return; }
-        if (!d.target) d.target = dogSpot();
-        const dx = d.target.x - d.group.position.x, dz = d.target.z - d.group.position.z;
-        const dist = Math.hypot(dx, dz);
-        if (dist < 0.12) {
-          d.pauseT = d.target.rest ? 9 + Math.random() * 14 : 1.5 + Math.random() * 4;
-          d.target = null;
-          return;
-        }
-        const step = Math.min(dist, d.speed * dt);
-        d.group.position.x += (dx / dist) * step;
-        d.group.position.z += (dz / dist) * step;
-        d.group.rotation.y = Math.atan2(dx, dz);
-        d.group.rotation.z = Math.sin(clock.elapsedTime * 9 + di * 2) * 0.055; // waddle
-      });
       // Command-center life in the owner suite: the hologram globe spins,
       // the server-rack LED columns breathe.
       ownerSpinners.forEach((s) => { s.rotation.y += dt * 0.9; s.rotation.x += dt * 0.22; });
@@ -2752,8 +2767,8 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         eastWinTex.needsUpdate = true; // same canvas, its own texture instance
         cloudMat.opacity = skylineMode === "day" ? 0.85 : skylineMode === "sunset" ? 0.5 : 0.16;
         birdGroup.visible = skylineMode === "day";
-        balloonGroup.visible = skylineMode === "day";
-        searchGroup.visible = skylineMode === "night";
+        balloonGroup.visible = !turboOn && skylineMode === "day";
+        searchGroup.visible = !turboOn && skylineMode === "night";
         bbMat.color.setScalar(skylineMode === "day" ? 0.8 : 1); // billboard pops after dark
       }
       drawTraffic(trafficCtx, trafficCanvas.width, trafficCanvas.height, trafficState, dt);
@@ -2951,12 +2966,16 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       // mixers are one of the biggest CPU costs, and at distance the lower
       // sample rate is invisible.
       frameNo++;
+      // Turbo tightens the LOD: "far" starts at ~11 units instead of ~18,
+      // and far characters tick every 4th frame instead of every 3rd.
+      const lodFar = turboOn ? 120 : 340;
+      const lodEvery = turboOn ? 4 : 3;
       allHumans.forEach((h, hi) => {
         if (!h.mixer) return;
-        const far = camera.position.distanceToSquared(h.group.position) > 340; // ~18+ units away
+        const far = camera.position.distanceToSquared(h.group.position) > lodFar;
         if (far) {
           h.lodDt = (h.lodDt || 0) + dt;
-          if ((frameNo + hi) % 3 !== 0) return;
+          if ((frameNo + hi) % lodEvery !== 0) return;
           h.mixer.update(h.lodDt);
           h.lodDt = 0;
         } else {
@@ -2974,7 +2993,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       }
 
       // Slow dust drift — a gentle upward bob + lateral sway per mote.
-      {
+      if (!turboOn) {
         const t = clock.elapsedTime;
         const arr = dust.geometry.attributes.position.array;
         for (let i = 0; i < dustCount; i++) {
@@ -3024,13 +3043,40 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         liveRef.current.setTalkTarget(nearest);
       }
 
-      composer.render();
-      cssRenderer.render(cssScene, camera); // the browsable wall iframe tracks the same camera
+      if (turboOn) {
+        // Straight render: skips SSAO/bloom/output passes AND the CSS3D
+        // iframe compositing — the two biggest per-frame costs on weak GPUs.
+        renderer.render(scene, camera);
+      } else {
+        composer.render();
+        cssRenderer.render(cssScene, camera); // the browsable wall iframe tracks the same camera
+      }
     }
     liveRef.current.setTalkTarget = setTalkTarget;
     liveRef.current.setSitting = setSitting;
     liveRef.current.setCanSit = setCanSit;
     liveRef.current.toggleSit = () => setSitting((v) => (v ? false : !!liveRef.current.canSit));
+    // Turbo 🚀 — every lever at once: 1x pixel ratio, post chain bypassed
+    // (animate renders straight through the renderer), shadows off, dust +
+    // sky-life extras hidden, CCTV frozen on its last frame, and the CSS3D
+    // iframe wall uncomposited (display:none) — on Macs that iframe layer
+    // is one of the heaviest costs in the whole sim.
+    liveRef.current.setTurbo = (on) => {
+      turboOn = on;
+      applyPasses();
+      renderer.setPixelRatio(on ? 1 : Math.min(window.devicePixelRatio || 1, isMobile ? 1.5 : 2));
+      composer.setPixelRatio(renderer.getPixelRatio());
+      renderer.setSize(mount.clientWidth, mount.clientHeight);
+      composer.setSize(mount.clientWidth, mount.clientHeight);
+      renderer.shadowMap.autoUpdate = !on;
+      sun.castShadow = !on && !isMobile;
+      dust.visible = !on;
+      heliGroup.visible = !on;
+      balloonGroup.visible = !on && skylineMode === "day";
+      searchGroup.visible = !on && skylineMode === "night";
+      cssRenderer.domElement.style.display = on ? "none" : "";
+    };
+    liveRef.current.setTurbo(turbo);
     animate();
 
     const onResize = () => {
@@ -3187,6 +3233,13 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       <button className="off3-view-toggle" onClick={() => setFirstPerson((v) => !v)} title="החלף תצוגה">
         {firstPerson ? <User size={18} /> : <Eye size={18} />}
       </button>
+      <button
+        className={"off3-turbo" + (turbo ? " on" : "")}
+        onClick={() => setTurbo((v) => !v)}
+        title={turbo ? "מצב טורבו פעיל — הסימולטור רץ במהירות מקסימלית" : "מצב טורבו — האצה לסימולטור חלק 100%"}
+      >
+        <Zap size={16} /> {turbo ? "טורבו פעיל" : "טורבו"}
+      </button>
       {(canSit || sitting) && (
         <button className={"off3-sit" + (sitting ? " on" : "")} onClick={() => setSitting((v) => !v)} title={sitting ? "קום מהכיסא" : "שב בכיסא שלך (E)"}>
           {sitting ? "🚶 קום" : "🪑 שב בכיסא שלך"}
@@ -3209,6 +3262,10 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           <button className="off3-settings-row" onClick={() => setGraphicsHigh((v) => !v)}>
             <span><Eye size={15} /> איכות גרפית (זוהר + הצללות)</span>
             <b className={graphicsHigh ? "on" : ""}>{graphicsHigh ? "גבוהה" : "חסכונית"}</b>
+          </button>
+          <button className="off3-settings-row" onClick={() => setTurbo((v) => !v)}>
+            <span><Zap size={15} /> מצב טורבו — האצה מקסימלית</span>
+            <b className={turbo ? "on" : ""}>{turbo ? "פעיל 🚀" : "כבוי"}</b>
           </button>
           {voiceList.length > 0 && (
             <div className="off3-settings-row off3-settings-select">
