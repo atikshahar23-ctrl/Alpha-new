@@ -855,14 +855,103 @@ const CHATTER_PAIRS = [
 const IDEA_TEMPLATES = [
   { agentId: "growth", make: (b) => `לבחון הרחבה לאזור פעילות נוסף — יש כרגע ${b.custCount} לקוחות ו-${ils(b.openVal)} בפייפליין הפתוח, יש מקום לצמוח.` },
   { agentId: "cmo", make: (b) => `קמפיין ממוקד ללקוחות שסגרו ב-90 הימים האחרונים כדי להעלות שיעור המלצות (${b.wonMonth} עסקאות נסגרו החודש).` },
-  { agentId: "auto", make: () => `אוטומציה שתשלח תזכורת מעקב אוטומטית לעסקה שלא זזה מעל שבוע.` },
-  { agentId: "data", make: (b) => `דוח שבועי אוטומטי שמשווה את קצב הסגירה (${b.wonMonth} החודש) מול החודש הקודם.` },
+  { agentId: "auto", make: () => `אוטומציה שתשלח תזכורת מעקב אוטומטית לעסקה שלא זזה מעל שבוע.`, exec: "followups" },
+  { agentId: "data", make: (b) => `דוח שבועי אוטומטי שמשווה את קצב הסגירה (${b.wonMonth} החודש) מול החודש הקודם.`, exec: "weeklyReport" },
   { agentId: "cs", make: (b) => `סקר שביעות רצון קצר ל-${Math.min(b.custCount, 20)} הלקוחות הפעילים האחרונים.` },
-  { agentId: "finance", make: (b) => `מעקב גבייה יזום לעסקאות פתוחות מעל שבוע (${b.staleCount} כרגע) לפני שהן הופכות לחוב אבוד.` },
+  { agentId: "finance", make: (b) => `מעקב גבייה יזום לעסקאות פתוחות מעל שבוע (${b.staleCount} כרגע) לפני שהן הופכות לחוב אבוד.`, exec: "collections" },
   { agentId: "procure", make: () => `להשוות מחירי ספקים מחדש — יכול לשפר את שולי הרווח בהתקנות הבאות.` },
   { agentId: "ops", make: (b) => `לוח זמנים דינמי להתקנות לפי אזור, כדי לצמצם נסיעות טכנאים.` },
-  { agentId: "facilities", make: () => `שיפוץ קטן לפינת הישיבה המשותפת ועוד עמדות אחסון מסודרות למשרד.` },
+  { agentId: "facilities", make: () => `שיפוץ קטן לפינת הישיבה המשותפת ועוד עמדות אחסון מסודרות למשרד.`, exec: "reorganize" },
 ];
+
+/* ── REAL idea executors ─────────────────────────────────────────────────
+   An idea with an executor is only ever marked "done" AFTER its real action
+   ran, and the card keeps a result line describing exactly what was created
+   (owner mandate: no pretend work — nothing gets labelled finished unless
+   something actually happened). Each executor returns { note }; stale deals
+   are read from the same CRM stores the rest of the system writes. ── */
+const K_REPORTS = "alpha:agents:reports";
+const staleOpenDeals = () => {
+  const get = (k) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch { return null; } };
+  return (get("itai:deals") || []).filter((d) => {
+    if (d.status !== "פתוח") return false;
+    const t = d.createdAt || d.ts; if (!t) return false;
+    return (Date.now() - new Date(t).getTime()) / 86400000 > 7;
+  });
+};
+const IDEA_EXECUTORS = {
+  // finance: real collection-follow-up TASKS in Heavy Guard (hg2:tasks —
+  // the same store the HG hub's "משימות להיום" reads and toggles).
+  collections: () => {
+    const deals = staleOpenDeals();
+    if (!deals.length) return { note: "נבדק מול ה-CRM: אין עסקאות תקועות מעל שבוע — אין צורך במשימות גבייה ✓" };
+    const tasks = load("hg2:tasks", []) || [];
+    let created = 0;
+    deals.forEach((d) => {
+      const title = `מעקב גבייה: ${String(d.customer || d.title || "עסקה").slice(0, 40)} · ${ils(Number(d.total) || 0)}`;
+      if (tasks.some((t) => t.title === title && !t.done)) return;
+      tasks.unshift({ id: uid(), title, date: new Date().toISOString().slice(0, 10), done: false, ts: Date.now(), from: "agents" });
+      created++;
+    });
+    if (created) { save("hg2:tasks", tasks); cloudSave("hg2:tasks", tasks); }
+    return { note: created ? `נוצרו ${created} משימות גבייה אמיתיות ב-Heavy Guard (מסך יומן ומשימות)` : "משימות הגבייה לעסקאות האלה כבר קיימות — לא נוצרו כפילויות" };
+  },
+  // auto: real CALENDAR reminders (alpha_events — the assistant's agenda,
+  // shows on the main dashboard's "היום ביומן" panel) for stale deals.
+  followups: () => {
+    const deals = staleOpenDeals();
+    if (!deals.length) return { note: "נבדק מול ה-CRM: אין עסקאות שדורשות תזכורת מעקב כרגע ✓" };
+    const events = load("alpha_events", []) || [];
+    const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+    let created = 0;
+    deals.forEach((d) => {
+      const title = `מעקב עסקה: ${String(d.customer || d.title || "עסקה").slice(0, 40)}`;
+      if (events.some((e) => e.title === title && e.date >= new Date().toISOString().slice(0, 10))) return;
+      events.push({ id: uid(), title, date: tomorrow, time: "09:00" });
+      created++;
+    });
+    if (created) { save("alpha_events", events); cloudSave("alpha_events", events); }
+    return { note: created ? `נקבעו ${created} תזכורות מעקב אמיתיות ביומן (מחר 09:00) — מופיעות בפנל "היום ביומן"` : "תזכורות המעקב כבר קיימות ביומן" };
+  },
+  // data: a real weekly report generated from the live numbers and saved
+  // (alpha:agents:reports) — the summary line is pinned to the card.
+  weeklyReport: () => {
+    const b = bizSnapshot();
+    const months = monthlyRevenue();
+    const cur = months[months.length - 1], prev = months[months.length - 2];
+    const delta = prev && prev.value ? Math.round(((cur.value - prev.value) / prev.value) * 100) : null;
+    const text = [
+      `📊 דוח שבועי · ${new Date().toLocaleDateString("he-IL")}`,
+      `הכנסה מצטברת: ${ils(b.hgRevenue)} · החודש (${cur.label}): ${ils(cur.value)}${delta === null ? "" : ` (${delta >= 0 ? "+" : ""}${delta}% מול ${prev.label})`}`,
+      `עסקאות פתוחות: ${b.openDeals} בשווי ${ils(b.openVal)} · נסגרו החודש: ${b.wonMonth}`,
+      `לקוחות: ${b.custCount} · תקועות מעל שבוע: ${b.staleCount}`,
+      b.top[0] ? `לקוח מוביל: ${b.top[0].name} (${ils(b.top[0].rev)})` : "",
+    ].filter(Boolean).join("\n");
+    const reports = load(K_REPORTS, []) || [];
+    reports.unshift({ id: uid(), ts: Date.now(), text });
+    save(K_REPORTS, reports.slice(0, 12));
+    cloudSave(K_REPORTS, reports.slice(0, 12));
+    const head = text.split("\n")[1];
+    return { note: `הדוח הופק ונשמר ✓ ${head}`, report: text };
+  },
+  // facilities: the real office reorg (persisted seat shuffle the 3D sim
+  // reads on its next load).
+  reorganize: () => {
+    reorganizeOffice();
+    return { note: "בוצע ארגון אמיתי של העמדות — הסידור החדש נשמר וייכנס לתוקף בכניסה הבאה למשרד החי" };
+  },
+};
+// Executor lookup that also recognises ideas created before this feature
+// (they carry no exec tag) by their template text.
+function ideaExecOf(idea) {
+  if (idea.exec && IDEA_EXECUTORS[idea.exec]) return idea.exec;
+  const t = idea.text || "";
+  if (idea.agentId === "finance" && /גבייה/.test(t)) return "collections";
+  if (idea.agentId === "auto" && /תזכורת מעקב/.test(t)) return "followups";
+  if (idea.agentId === "data" && /דוח שבועי/.test(t)) return "weeklyReport";
+  if (idea.agentId === "facilities" && /שיפוץ|ארגון|עמדות/.test(t)) return "reorganize";
+  return null;
+}
 function marketMover(rows) {
   if (!rows || !rows.length) return null;
   return rows.reduce((max, r) => (Math.abs(r.chg) > Math.abs(max.chg) ? r : max), rows[0]);
@@ -903,7 +992,15 @@ export default function App() {
   const showToast = (t) => { setToast(t); setTimeout(() => setToast(""), 2200); };
   const logActivity = (agentId, text) => setActivity((p) => [{ id: uid(), agentId, text, ts: now() }, ...p].slice(0, 60));
   const logInvest = (agentId, text) => setInvest((p) => [{ id: uid(), agentId, text, ts: now() }, ...p].slice(0, 30));
-  const addIdea = (agentId, text) => { setIdeas((p) => [{ id: uid(), agentId, text, status: "new", ts: now() }, ...p]); showToast("רעיון נוסף ללוח ✓"); };
+  // De-duplicated: the exact same idea text never piles up on the board
+  // (the autonomous engine used to drop identical cards repeatedly).
+  const addIdea = (agentId, text, exec = null) => {
+    setIdeas((p) => {
+      if (p.some((i) => i.text === text && i.status !== "done")) return p;
+      showToast("רעיון נוסף ללוח ✓");
+      return [{ id: uid(), agentId, text, status: "new", ts: now(), ...(exec ? { exec } : {}) }, ...p];
+    });
+  };
 
   // Moving a card is a real action, not just a label change: starting an
   // idea logs it to the live activity feed, and — if it's assigned to דן
@@ -912,8 +1009,26 @@ export default function App() {
   const moveIdea = (id, status) => {
     setIdeas((prev) => {
       const idea = prev.find((i) => i.id === id);
-      if (idea && status !== idea.status) {
-        const ag = byId(idea.agentId);
+      if (!idea) return prev;
+      const agEx = byId(idea.agentId);
+      // Ideas with a REAL executor: moving them forward RUNS the action,
+      // and only a successful run marks them done — with the result pinned
+      // to the card. Works also on cards already sitting in "doing" (the
+      // engine retries them), so no pretend completions anywhere.
+      const execKey = status === "doing" ? ideaExecOf(idea) : null;
+      if (execKey) {
+        try {
+          const res = IDEA_EXECUTORS[execKey]();
+          logActivity(idea.agentId, `${agEx?.name || ""} ביצע בפועל: ${res.note}`.trim());
+          showToast("בוצע ✓ " + res.note.slice(0, 60));
+          return prev.map((i) => (i.id === id ? { ...i, status: "done", result: res.note } : i));
+        } catch (e) {
+          showToast("הפעולה נכשלה: " + String(e?.message || e).slice(0, 60));
+          return prev;
+        }
+      }
+      if (status !== idea.status) {
+        const ag = agEx;
         if (status === "doing") {
           logActivity(idea.agentId, `${ag?.name || ""} התחיל לעבוד על: ${idea.text.slice(0, 60)}`.trim());
           if (idea.agentId === "dev" && ghConfigured()) {
@@ -956,10 +1071,14 @@ export default function App() {
         setTimeout(() => logActivity(pair.b, lineB), 1400);
       } else if (kind === 1) {
         const tpl = IDEA_TEMPLATES[Math.floor(Math.random() * IDEA_TEMPLATES.length)];
-        addIdea(tpl.agentId, tpl.make(b));
+        addIdea(tpl.agentId, tpl.make(b), tpl.exec || null);
       } else if (kind === 2) {
-        const doing = ideasRef.current.filter((i) => i.status === "doing").sort((x, y) => x.ts - y.ts);
-        if (doing.length && Date.now() - doing[0].ts > 2 * 60 * 1000) moveIdea(doing[0].id, "done");
+        // No more fake completions (a timer used to flip old "doing" cards
+        // to done with zero work behind it). Now: if an in-progress idea has
+        // a REAL executor, run it — done only through actual execution;
+        // ideas without an executor simply stay until a human moves them.
+        const doing = ideasRef.current.filter((i) => i.status === "doing" && ideaExecOf(i)).sort((x, y) => x.ts - y.ts);
+        if (doing.length) moveIdea(doing[0].id, "doing");
       } else {
         const mover = marketMover(marketCache.rows);
         if (mover) {
@@ -1573,9 +1692,14 @@ function IdeasView({ ideas, setIdeas, moveIdea, showToast }) {
                       <div className="ac-idea-top"><span className="ac-idea-by">{ag?.Icon && <ag.Icon size={11} />} {ag?.name}</span><button className="ac-idea-del" onClick={() => del(i.id)}><Trash2 size={12} /></button></div>
                       <p>{i.text}</p>
                       {i.issueUrl && <a className="ac-idea-issue" href={i.issueUrl} target="_blank" rel="noreferrer"><GitBranch size={11} /> Issue נפתח בגיטהאב ↗</a>}
+                      {i.result && <div className="ac-idea-result">✅ {i.result}</div>}
                       <div className="ac-idea-moves">
                         {col.id !== "new" && <button onClick={() => move(i.id, prevCol(col.id))}>←</button>}
-                        {col.id !== "done" && <button className="fwd" onClick={() => move(i.id, nextCol(col.id))}>{col.id === "new" ? "התחל" : "סיים"} →</button>}
+                        {col.id !== "done" && (
+                          <button className={"fwd" + (ideaExecOf(i) ? " exec" : "")} onClick={() => move(i.id, nextCol(col.id))}>
+                            {col.id === "new" ? (ideaExecOf(i) ? "⚡ בצע עכשיו" : "התחל") : "סיים"} →
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
@@ -2610,6 +2734,8 @@ function StyleTag() {
 .ac-panel-actions button.main{background:linear-gradient(135deg, color-mix(in srgb, var(--c) 34%, transparent), color-mix(in srgb, var(--c) 14%, transparent));
   border-color:color-mix(in srgb, var(--c) 55%, transparent);color:#fff}
 .ac-panel-actions button:hover{box-shadow:0 0 16px color-mix(in srgb, var(--c) 32%, transparent)}
+.ac-idea-result{background:rgba(63,215,154,.08);border:1px solid rgba(63,215,154,.3);border-radius:9px;padding:7px 9px;font-size:.68rem;color:#8fe3c0;line-height:1.5;margin:6px 0}
+.ac-idea-moves button.exec{background:linear-gradient(135deg,rgba(63,215,154,.25),rgba(63,215,154,.1));border-color:rgba(63,215,154,.5);color:#7fe6b0}
 /* Google reviews window (נפתלי) */
 .ac-grev-open{background:linear-gradient(135deg,rgba(66,133,244,.22),rgba(66,133,244,.08))!important;border-color:rgba(66,133,244,.45)!important;color:#a9c8ff!important;font-weight:800}
 .ac-grev-note{background:rgba(10,15,30,.6);border:1px solid rgba(120,160,255,.16);border-radius:12px;padding:12px;font-size:.8rem;color:#cfd8e6;line-height:1.6}
