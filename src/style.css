@@ -3199,9 +3199,12 @@ html.perf-lite .topR { will-change: auto !important; transform: none !important;
   animation: orbm-spin 90s linear infinite; }
 .orb-menu.paused, .orb-menu.paused .orbm-in { animation-play-state: paused; }
 @keyframes orbm-spin { to { transform: rotate(360deg); } }
-.orbm-item { position: absolute; top: 0; left: 0;
-  transform: rotate(var(--a)) translate(min(31vmin, 300px)); }
-.orbm-in { pointer-events: auto; display: flex; flex-direction: column; align-items: center; gap: 5px;
+.orbm-item { position: absolute; top: 0; left: 0; opacity: 0;
+  transform: rotate(var(--a)) translate(var(--d, 12px));
+  transition: transform .55s cubic-bezier(.3,1.45,.5,1), opacity .3s;
+  transition-delay: calc(var(--i, 0) * 45ms); }
+.orb-menu.open .orbm-item { --d: min(31vmin, 300px); opacity: 1; }
+.orbm-in { pointer-events: none; display: flex; flex-direction: column; align-items: center; gap: 5px;
   background: none; border: none; cursor: pointer; padding: 0; font-family: inherit;
   animation: orbm-counter 90s linear infinite;
   transform: rotate(calc(-1 * var(--a)));
@@ -3227,7 +3230,42 @@ html.perf-lite .topR { will-change: auto !important; transform: none !important;
   border: 1px dashed rgba(228,188,99,.0); transition: inset .3s, border-color .3s;
   animation: hud-spin 14s linear infinite; }
 .orbm-in:hover .orbm-ic::after { inset: -12px; border-color: rgba(228,188,99,.65); }
+.orb-menu.open .orbm-in { pointer-events: auto; }
 @media (max-width: 900px) { .orb-menu { display: none; } }
+
+/* ── Zero-clutter desktop: the top rail duplicated the orbital menu, so it
+   hides on desktop (still the navigation on mobile, and still the DOM the
+   ring is cloned from). The dock ghosts until hovered/focused. ── */
+@media (min-width: 901px) {
+  .hud .hud-rail { display: none; }   /* outranks the base display:flex below */
+  .dock { opacity: .1; transform: translateY(10px); transition: opacity .35s, transform .35s; }
+  .dock:hover, .dock:focus-within { opacity: 1; transform: none; }
+}
+
+/* ALPHA MENU trigger under the robot */
+.hud-core-tag { pointer-events: auto; cursor: pointer; padding: 6px 16px;
+  border: 1px solid rgba(228,188,99,.45); border-radius: 999px; background: rgba(8,6,2,.6);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  transition: box-shadow .3s, color .3s, border-color .3s; }
+.hud-core-tag:hover { color: #ffe9b0; border-color: #ffe9b0; box-shadow: 0 0 20px rgba(228,188,99,.45); }
+
+/* JARVIS focus mode — grabbing the 3D stage fades the side UI */
+.hud-col, .orb-menu, .holo-tag { transition: opacity .45s; }
+body.ui-dim .hud-col, body.ui-dim .orb-menu, body.ui-dim .holo-tag { opacity: .1; }
+
+/* Holographic BTC tag + fiber-optic leader line */
+.holo-tag { position: absolute; top: 27%; left: calc(50% + min(21vmin, 200px));
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  padding: 8px 14px; border: 1px solid rgba(46,230,255,.5); border-radius: 10px;
+  background: rgba(4,12,20,.55); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  box-shadow: 0 0 18px rgba(46,230,255,.18); pointer-events: none; }
+.holo-tag b { font-size: 10px; letter-spacing: 1.5px; color: #7fd8ea; font-weight: 700; }
+.holo-tag span { font-size: 17px; font-weight: 800; color: #d7f6ff; font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 12px rgba(46,230,255,.5); }
+.holo-tag i { position: absolute; top: 60%; right: 100%; width: 74px; height: 1px;
+  background: linear-gradient(270deg, rgba(46,230,255,.8), rgba(46,230,255,0));
+  transform: rotate(14deg); transform-origin: right center; }
+@media (max-width: 900px) { .holo-tag { display: none; } }
 @media (prefers-reduced-motion: reduce) { .orb-menu, .orbm-in, .orbm-ic::after { animation: none; } }
 
 /* ── Central figure ── */
