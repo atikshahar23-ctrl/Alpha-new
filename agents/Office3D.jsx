@@ -3209,6 +3209,13 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         const targetY = (atDesk || summoned) && distFinal <= 0.03 ? SEAT_DROP : 0;
         h.group.position.y += (targetY - h.group.position.y) * Math.min(1, dt * 6);
         h.isWalking = distFinal > 0.03;
+        // Perfect-seat settle: once anchored, glide the last residual onto
+        // the exact seat anchor so every sitter lines up with their chair
+        // and keyboard instead of hovering a few centimetres off.
+        if (!h.isWalking) {
+          h.group.position.x += (finalX - h.group.position.x) * Math.min(1, dt * 5);
+          h.group.position.z += (finalZ - h.group.position.z) * Math.min(1, dt * 5);
+        }
         if (distFinal > 0.03) {
           setClip(h, CLIP.walk);
           // Foot-slide fix: the walk clip plays at the speed the body is
@@ -3224,7 +3231,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           const seated = c.status === "work" || c.status === "meet" || c.status === "eat" || summoned;
           setClip(h, seated ? CLIP.sit : CLIP.idle);
           const act = h.current && h.actions[h.current];
-          if (act) act.timeScale = 1; // idle/sit always play at natural speed
+          // Deep-work loop: desk workers breathe at their own slow cadence —
+          // the sit clip's speed waves gently per agent (the model ships one
+          // sitting clip; typing variety is expressed through cadence + the
+          // monitor glow that already pulses on working desks).
+          if (act) act.timeScale = atDesk ? 1 + 0.14 * Math.sin(clock.elapsedTime * 0.55 + h.group.position.x * 2.7) : 1;
           // Working at the desk: face the monitor head-on instead of
           // whatever direction they happened to walk in from — every desk
           // in the grid shares the same unrotated layout, so one fixed
