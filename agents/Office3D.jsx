@@ -228,15 +228,15 @@ function drawHgScreen(ctx, W, H, biz) {
   });
 }
 
-function loadGltf(url) {
+function loadGltf(url, manager) {
   return new Promise((resolve, reject) => {
-    new GLTFLoader().load(url, (gltf) => resolve(gltf.scene), undefined, reject);
+    new GLTFLoader(manager).load(url, (gltf) => resolve(gltf.scene), undefined, reject);
   });
 }
 
-function loadGltfFull(url) {
+function loadGltfFull(url, manager) {
   return new Promise((resolve, reject) => {
-    new GLTFLoader().load(url, (gltf) => resolve(gltf), undefined, reject);
+    new GLTFLoader(manager).load(url, (gltf) => resolve(gltf), undefined, reject);
   });
 }
 
@@ -1287,6 +1287,9 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   const recogRef = useRef(null);
   const joyDrag = useRef(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Model-download progress for the branded loading overlay (0..100, then
+  // null once everything is in and the room is live).
+  const [loadPct, setLoadPct] = useState(0);
   const [graphicsHigh, setGraphicsHigh] = useState(true); // bloom + SSAO on/off, for low-end devices
   // Whether the mic should keep re-listening on its own while you're near an
   // agent — on by default (mic is "always listening" while in the sim), the
@@ -1350,14 +1353,21 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     let cleanupFn = () => {};
     (async () => {
       const base = import.meta.env.BASE_URL || "/";
+      // One shared manager so the loading overlay can show real download
+      // progress across all five models instead of an indeterminate spinner.
+      const manager = new THREE.LoadingManager();
+      manager.onProgress = (_url, loaded, total) => {
+        if (!cancelled && total > 0) setLoadPct(Math.min(99, Math.round((loaded / total) * 100)));
+      };
       const [deskTemplate, laptopTemplate, charGltf, furnitureTemplate, officeDecorTemplate] = await Promise.all([
-        loadGltf(base + DESK_MODEL_URL).catch((e) => { console.error("[office3d] desk model failed to load", e); return null; }),
-        loadGltf(base + LAPTOP_MODEL_URL).catch((e) => { console.error("[office3d] laptop model failed to load", e); return null; }),
-        loadGltfFull(base + CHAR_MODEL_URL).catch((e) => { console.error("[office3d] character model failed to load", e); return null; }),
-        loadGltf(base + FURNITURE_MODEL_URL).catch((e) => { console.error("[office3d] furniture model failed to load", e); return null; }),
-        loadGltf(base + OFFICE_DECOR_MODEL_URL).catch((e) => { console.error("[office3d] office decor model failed to load", e); return null; }),
+        loadGltf(base + DESK_MODEL_URL, manager).catch((e) => { console.error("[office3d] desk model failed to load", e); return null; }),
+        loadGltf(base + LAPTOP_MODEL_URL, manager).catch((e) => { console.error("[office3d] laptop model failed to load", e); return null; }),
+        loadGltfFull(base + CHAR_MODEL_URL, manager).catch((e) => { console.error("[office3d] character model failed to load", e); return null; }),
+        loadGltf(base + FURNITURE_MODEL_URL, manager).catch((e) => { console.error("[office3d] furniture model failed to load", e); return null; }),
+        loadGltf(base + OFFICE_DECOR_MODEL_URL, manager).catch((e) => { console.error("[office3d] office decor model failed to load", e); return null; }),
       ]);
       if (cancelled) return;
+      setLoadPct(null); // room is live
       const charTemplate = charGltf ? charGltf.scene : null;
       const charClips = charGltf ? charGltf.animations : [];
 
@@ -2368,6 +2378,14 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         onTouchStart={onJoyStart} onTouchMove={onJoyMove} onTouchEnd={onJoyEnd}
         onMouseDown={onJoyStart} onMouseMove={onJoyMove} onMouseUp={onJoyEnd} onMouseLeave={onJoyEnd} />
       <div className="off3-hint">גע במסך וגרור כדי לנווט · חצים / WASD במחשב · התקרב לעובד ודבר איתו · {ph.emoji} {ph.label}</div>
+      {loadPct !== null && (
+        <div className="off3-loader">
+          <div className="off3-loader-logo">🏢</div>
+          <b>בונה את המשרד החי…</b>
+          <div className="off3-loader-bar"><i style={{ width: `${Math.max(6, loadPct)}%` }} /></div>
+          <span>{loadPct}%</span>
+        </div>
+      )}
       <button className="off3-view-toggle" onClick={() => setFirstPerson((v) => !v)} title="החלף תצוגה">
         {firstPerson ? <User size={18} /> : <Eye size={18} />}
       </button>
