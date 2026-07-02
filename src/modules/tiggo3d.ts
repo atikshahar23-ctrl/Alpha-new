@@ -378,9 +378,34 @@ export function mountTiggo3D(container: HTMLElement): () => void {
           });
         });
 
-        // Heavy Guard decal on the fuel-door (rear-right fender).
+        // Working headlight BEAMS: a spotlight anchored at each lamp,
+        // aimed forward, plus a dark standard-material ground disc so the
+        // light actually paints pools on the surroundings (the shadow decal
+        // is unlit MeshBasic and can't receive light). decay=0 keeps the
+        // intensity sane in this model's millimetre units.
+        [-1, 1].forEach((sd) => {
+          const beam = new THREE.SpotLight(0xdfeaff, 1.1, 9000, 0.5, 0.45, 0);
+          beam.position.set(box.min.x + 120, 860, ctr.z + sd * 560);
+          const tgt = new THREE.Object3D();
+          tgt.position.set(box.min.x - 5200, 60, ctr.z + sd * 900);
+          real.add(tgt);
+          beam.target = tgt;
+          real.add(beam);
+        });
+        const litGround = new THREE.Mesh(
+          new THREE.CircleGeometry(4200, 40),
+          new THREE.MeshStandardMaterial({ color: 0x14171f, roughness: 0.92, metalness: 0.05 })
+        );
+        litGround.rotation.x = -Math.PI / 2;
+        litGround.position.set(ctr.x - 1200, box.min.y + 1, ctr.z);
+        real.add(litGround);
+
+        // Heavy Guard logo — strictly on the fuel cap: a separate ROUND
+        // mesh the size of the cap, hovering 6mm off the fuel-door panel.
+        // Being its own geometry (not a body-material change), it cannot
+        // bleed onto doors or panels by construction.
         const decal = new THREE.Mesh(
-          new THREE.PlaneGeometry(240, 240),
+          new THREE.CircleGeometry(105, 36),
           new THREE.MeshBasicMaterial({ map: hgLogoTexture(), transparent: true })
         );
         decal.position.set(box.max.x - 1050, 1010, box.max.z + 6);
