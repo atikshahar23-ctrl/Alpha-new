@@ -1503,7 +1503,10 @@ function SocialModal({ agent, onClose, onAskDraft, showToast, logActivity }) {
           </span>
         </div>
         <div className="ac-grev-note">
-          כל פוסט יוצא רק אחרי אישור שלך — נפתלי מכין טיוטות בלבד. טיקטוק דורש אפליקציה מאושרת ושרת, ולכן שם הזרימה היא העתקה ידנית (בכנות, בלי העמדות פנים).
+          כל פוסט יוצא רק אחרי אישור שלך — נפתלי מכין טיוטות בלבד.
+        </div>
+        <div className="ac-grev-note">
+          🎵 <b>טיקטוק:</b> לטיקטוק אין API לפרסום ישיר מדפדפן (דורש אפליקציה מאושרת של TikTok + שרת) — לכן החיבור שם הוא חצי-ידני בכוונה: כפתור "העתק ופתח טיקטוק" על כל טיוטה מעתיק את הטקסט ופותח את מסך ההעלאה של TikTok Studio, ואתה רק מדביק ומצרף סרטון. פייסבוק לעומת זאת מתפרסם ישירות מכאן.
         </div>
         <div className="ac-idea-add" style={{ margin: "10px 0" }}>
           <input value={topic} onChange={(e) => setTopic(e.target.value)} onKeyDown={(e) => e.key === "Enter" && topic.trim() && (onAskDraft(topic.trim()), setTopic(""))} placeholder="נושא לפוסט חדש — נפתלי יכין טיוטה…" dir="rtl" />
@@ -1525,7 +1528,11 @@ function SocialModal({ agent, onClose, onAskDraft, showToast, logActivity }) {
                   </button>
                 )}
                 {d.link && <button onClick={() => window.open(d.link, "_blank")}>פתח בפייסבוק ↗</button>}
-                <button onClick={async () => { const ok = await copyText(d.text); showToast(ok ? "הועתק — הדבק בטיקטוק ✓" : "העתקה נכשלה"); }}>העתק לטיקטוק</button>
+                <button onClick={async () => {
+                  const ok = await copyText(d.text);
+                  showToast(ok ? "הטקסט הועתק — נפתח טיקטוק, הדבק שם ✓" : "העתקה נכשלה");
+                  if (ok) window.open("https://www.tiktok.com/tiktokstudio/upload", "_blank");
+                }}>🎵 העתק ופתח טיקטוק ↗</button>
                 <button onClick={() => persist(drafts.filter((x) => x.id !== d.id))}><Trash2 size={12} /></button>
               </div>
             </div>
