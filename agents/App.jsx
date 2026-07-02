@@ -1155,6 +1155,7 @@ export default function App() {
         {view === "dev" && <DevConsole logActivity={logActivity} showToast={showToast} />}
         {view === "biz" && <BusinessView showToast={showToast} invest={invest} />}
         {view === "settings" && <SettingsView showToast={showToast} />}
+        {view === "simulator" && <SimulatorPanel />}
       </div>
 
       <BottomNav view={view} setView={(v) => { setView(v); setChatId(null); }} ideasCount={ideas.filter((i) => i.status === "new").length} />
@@ -1203,10 +1204,11 @@ function BottomNav({ view, setView, ideasCount }) {
     { id: "dev", label: "פיתוח", Icon: Terminal },
     { id: "activity", label: "פעילות", Icon: Activity },
     { id: "ideas", label: "רעיונות", Icon: Lightbulb, badge: ideasCount },
+    { id: "simulator", label: "📊 Simulator", Icon: BarChart3 },
     { id: "settings", label: "הגדרות", Icon: SettingsIcon },
   ];
   return (
-    <div className="ac-nav">
+    <d
       {items.map(({ id, label, Icon, badge }) => (
         <button key={id} className={view === id ? "on" : ""} onClick={() => setView(id)}>
           <div className="ac-nav-ic"><Icon size={20} />{badge ? <i className="ac-nav-badge">{badge}</i> : null}</div>
