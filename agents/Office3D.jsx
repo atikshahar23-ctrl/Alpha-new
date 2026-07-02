@@ -1767,7 +1767,10 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     const floorTex = buildFloorTexture();
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(FLOOR_W, FLOOR_D),
-      new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.42, metalness: 0.18, envMapIntensity: 0.7 })
+      // Showroom-polished: a touch glossier + stronger HDRI reflection so
+      // the car, agents and neon read in the floor (env-map "SSR" — the
+      // real screen-space pass would cost a full extra scene render).
+      new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.34, metalness: 0.22, envMapIntensity: 0.9 })
     );
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
@@ -2497,6 +2500,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // The owner's real Tiggo 7, center stage — a display podium in the
     // middle of the open floor with the actual car model slowly turning.
     const centerSpin = [];
+    let scanRing = null;
     {
       const podium = new THREE.Mesh(
         new THREE.CylinderGeometry(2.7, 2.9, 0.14, 40),
@@ -2513,6 +2517,18 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       spot.position.set(-2.5, 3.4, -1.0);
       scene.add(spot);
       obstacles.push({ x: -2.5, z: -1.0, r: 3.0 });
+      // Diagnostic "LIDAR" sweep — a glowing ring that rises over the car
+      // every ~18s, like a showroom scanner. One additive torus; the full
+      // post-process scan-line pass the spec asks for would cost more per
+      // frame than the entire car.
+      scanRing = new THREE.Mesh(
+        new THREE.TorusGeometry(2.45, 0.022, 8, 64),
+        new THREE.MeshBasicMaterial({ color: 0x2ee6ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false })
+      );
+      scanRing.rotation.x = Math.PI / 2;
+      scanRing.position.set(-2.5, 0.1, -1.0);
+      scanRing.visible = false;
+      scene.add(scanRing);
       const carLoader = new GLTFLoader();
       carLoader.setMeshoptDecoder(MeshoptDecoder);
       carLoader.load(base + "office-models/tiggo7.glb", (g) => {
@@ -2527,7 +2543,44 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         wrap.scale.setScalar(s);
         wrap.position.set(-2.5, 0.14, -1.0);
         scene.add(wrap);
-        wrap.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.matrixAutoUpdate = true; } });
+        // Showroom automotive paint: body panels get a physical clearcoat
+        // (the lacquer-over-paint double reflection of real car paint) and
+        // the tinted glass becomes actual thin glass. Materials are shared
+        // palettes after optimization, so upgrades are mapped per-material.
+        const upgraded = new Map();
+        wrap.traverse((o) => {
+          if (!o.isMesh) return;
+          o.castShadow = true; o.matrixAutoUpdate = true;
+          const m = o.material;
+          if (!m || !m.isMeshStandardMaterial || m.isMeshPhysicalMaterial) return;
+          if (!upgraded.has(m)) {
+            const phys = new THREE.MeshPhysicalMaterial({
+              color: m.color ? m.color.clone() : new THREE.Color(0xffffff),
+              map: m.map || null,
+              normalMap: m.normalMap || null,
+              emissive: m.emissive ? m.emissive.clone() : new THREE.Color(0),
+              emissiveMap: m.emissiveMap || null,
+              emissiveIntensity: m.emissiveIntensity ?? 1,
+              side: m.side,
+              transparent: m.transparent,
+              opacity: m.opacity,
+            });
+            if (m.transparent && m.opacity < 0.9) {
+              // window glass — smooth, reflective, barely-there
+              phys.metalness = 0; phys.roughness = 0.05;
+              phys.opacity = Math.min(m.opacity, 0.35);
+              phys.envMapIntensity = 1.4;
+            } else {
+              phys.metalness = Math.max(m.metalness ?? 0, 0.55);
+              phys.roughness = Math.min(m.roughness ?? 1, 0.34);
+              phys.clearcoat = 1;
+              phys.clearcoatRoughness = 0.08;
+              phys.envMapIntensity = 1.1;
+            }
+            upgraded.set(m, phys);
+          }
+          o.material = upgraded.get(m);
+        });
         centerSpin.push(wrap);
       }, undefined, () => { /* car download failed — podium stays as decor */ });
     }
@@ -2781,6 +2834,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         planeGroup, birdGroup, heliGroup, balloonGroup, searchGroup,
         ...deskHolos.filter(Boolean),
         ...ownerSpinners,
+        ...(scanRing ? [scanRing] : []),
         camera,
       ]);
       const isDynamic = (o) => {
@@ -2798,6 +2852,8 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     let integrityT = 0;
     let frameNo = 0;
     let secSwitchT = 0;
+    let scanT = 0;     // diagnostic sweep timer over the showroom car
+    let spatialT = 9;  // spatial-bridge refresh timer (starts ripe)
     const clock = new THREE.Clock();
     const curSky = new THREE.Color(0x1b2440);
     const tmpColor = new THREE.Color();
@@ -2884,6 +2940,21 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       }
       // Center-stage car turns slowly on its podium.
       centerSpin.forEach((w) => { w.rotation.y += dt * 0.28; });
+      // Diagnostic sweep: the glowing ring rises over the car for ~2.6s of
+      // every 18s cycle, shrinking with the body's taper.
+      if (scanRing) {
+        scanT += dt;
+        if (scanT > 18) scanT = 0;
+        const k = scanT / 2.6;
+        if (k < 1 && centerSpin.length) {
+          scanRing.visible = true;
+          scanRing.position.y = 0.12 + k * 1.7;
+          scanRing.scale.setScalar(1 - k * 0.38);
+          scanRing.material.opacity = 0.85 * Math.sin(Math.PI * k);
+        } else if (scanRing.visible) {
+          scanRing.visible = false;
+        }
+      }
       // ניקי + טיארה: wander → pause/sniff → wander, waddling while walking.
       dogs.forEach((d, di) => {
         if (d.mixer) d.mixer.update(dt);
@@ -3134,6 +3205,20 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
             while (dRot > Math.PI) dRot -= Math.PI * 2;
             while (dRot < -Math.PI) dRot += Math.PI * 2;
             h.group.rotation.y += dRot * Math.min(1, dt * 6);
+          } else {
+            // Unanchored bystanders notice the owner: within ~3m they turn
+            // smoothly to face him as he passes — a rig-safe whole-body
+            // "look at" (bone-level head tracking on this rig risked broken
+            // necks, so attention is expressed with the body).
+            const pdx = playerH.group.position.x - h.group.position.x;
+            const pdz = playerH.group.position.z - h.group.position.z;
+            if (Math.hypot(pdx, pdz) < 3.2) {
+              const face = Math.atan2(pdx, pdz);
+              let dRot = face - h.group.rotation.y;
+              while (dRot > Math.PI) dRot -= Math.PI * 2;
+              while (dRot < -Math.PI) dRot += Math.PI * 2;
+              h.group.rotation.y += dRot * Math.min(1, dt * 4);
+            }
           }
         }
       });
@@ -3179,6 +3264,32 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           h.mixer.update(dt);
         }
       });
+      // Spatial bridge for the AI brains: a compact live map of where every
+      // agent, the player, the dogs and the key landmarks are, refreshed
+      // every ~2s. OfficeSim attaches it to the voice/chat prompt so an
+      // agent literally knows who's standing where when it answers.
+      spatialT += dt;
+      if (spatialT >= 2 && typeof window !== "undefined") {
+        spatialT = 0;
+        const agentsMap = {};
+        liveChars.forEach((c) => {
+          const h = npc[c.id]; if (!h) return;
+          agentsMap[c.id] = [Math.round(h.group.position.x * 10) / 10, Math.round(h.group.position.z * 10) / 10, c.status];
+        });
+        window.__off3spatial = {
+          יחידות: "מטרים, [x,z]",
+          הבעלים: [Math.round(playerH.group.position.x * 10) / 10, Math.round(playerH.group.position.z * 10) / 10],
+          סוכנים: agentsMap,
+          כלבים: dogs.map((d, i) => [i === 0 ? "ניקי" : "טיארה", Math.round(d.group.position.x * 10) / 10, Math.round(d.group.position.z * 10) / 10]),
+          נקודות_ציון: {
+            רכב_התצוגה: [-2.5, -1.0],
+            חדר_ישיבות: scene.userData.meetCenter ? [Math.round(scene.userData.meetCenter.x * 10) / 10, Math.round(scene.userData.meetCenter.z * 10) / 10] : null,
+            המשרד_של_הבעלים: [FLOOR_W / 2 - 6.5, FLOOR_D / 2 - 4.0],
+            קבלה: [-6.9, 13.5],
+            קפיטריה: [17.8, 1.0],
+          },
+        };
+      }
       // QA hook: live world positions, only published when a debugger opts in
       // (window.__off3debug = true) — zero cost otherwise.
       if (typeof window !== "undefined" && window.__off3debug) {

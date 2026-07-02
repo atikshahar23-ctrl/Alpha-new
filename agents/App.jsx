@@ -2287,7 +2287,14 @@ function OfficeSim({ onClose, onOpenChat, logActivity, showToast }) {
           ask: async (id, text) => {
             const a = byId(id); if (!a) return "";
             if (!hasAI()) return FALLBACK[id] ? FALLBACK[id](text) : `שלום, אני ${a.name}. ${a.tagline}.`;
-            try { return await askAI(a.persona + bizContext(), [], text); }
+            // Spatial awareness: the sim publishes a live map of the floor
+            // (window.__off3spatial) — attach it so the agent knows where
+            // everyone actually stands when it answers ("מי ליד הרכב?").
+            let spatial = "";
+            try {
+              if (window.__off3spatial) spatial = `\n\nמפת המשרד בזמן אמת (אתה הסוכן ${id}): ${JSON.stringify(window.__off3spatial)}`;
+            } catch {}
+            try { return await askAI(a.persona + bizContext() + spatial, [], text); }
             catch { return FALLBACK[id] ? FALLBACK[id](text) : "סליחה, לא הצלחתי לענות כרגע."; }
           },
         }}
