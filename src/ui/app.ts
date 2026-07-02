@@ -182,7 +182,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v166 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v167 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="panelsToggleBtn" title="הסתר/הצג פנלים" aria-label="הסתר פנלים">
           <svg class="pt-hide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -6799,11 +6799,26 @@ export function mountApp(root: HTMLElement) {
     if (h < 21) return 'GOOD EVENING';
     return 'GOOD NIGHT';
   }
+  // Midnight Protocol (02:00–06:00 Israel time): the whole UI dims toward a
+  // deeper, cooler palette — matching proactive.ts's parallel decision to
+  // silence routine notifications during the same window.
+  function isMidnightProtocol(): boolean {
+    try {
+      const h = parseInt(
+        new Intl.DateTimeFormat('en-US', { hour: '2-digit', hour12: false, timeZone: 'Asia/Jerusalem' }).format(new Date()),
+        10
+      );
+      return h >= 2 && h < 6;
+    } catch { return false; }
+  }
+  document.documentElement.classList.toggle('midnight-protocol', isMidnightProtocol());
+
   setInterval(() => {
     const d = new Date();
     $('clock').textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
     const wmEl = document.querySelector('.wm');
     if (wmEl) wmEl.textContent = getGreeting();
+    document.documentElement.classList.toggle('midnight-protocol', isMidnightProtocol());
   }, 1000);
 
   // ===== LEFT PANEL ANIMATIONS =====

@@ -653,6 +653,15 @@ body.gesture-cam-open .stage{ background:transparent!important; }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
 html, body, #app { height: 100% }
 
+/* Midnight Protocol (02:00–06:00 Israel time) — a quiet, deeper palette for
+   overnight use; toggled by src/ui/app.ts. Filters #app rather than html so
+   the OS-chrome-adjacent elements (nothing here, but keeps the rule scoped)
+   stay predictable. */
+html.midnight-protocol #app {
+  filter: brightness(0.86) saturate(0.82) contrast(0.97);
+  transition: filter 1.2s ease;
+}
+
 html {
   text-rendering: optimizeLegibility;
   -webkit-text-size-adjust: 100%;
