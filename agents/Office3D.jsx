@@ -2582,6 +2582,40 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           o.material = upgraded.get(m);
         });
         centerSpin.push(wrap);
+        // Holographic data anchor — a glowing callout line from the hood up
+        // to a floating telemetry tag showing the REAL odometer reading from
+        // Heavy Guard's shared vehicle record (hg2:odometer), refreshed with
+        // the other live screens.
+        const holoCvs = document.createElement("canvas");
+        holoCvs.width = 512; holoCvs.height = 160;
+        const hx = holoCvs.getContext("2d");
+        const holoTex = new THREE.CanvasTexture(holoCvs);
+        holoTex.colorSpace = THREE.SRGBColorSpace;
+        const drawCarHolo = () => {
+          let odo = null;
+          try { odo = JSON.parse(localStorage.getItem("hg2:odometer") || "null"); } catch {}
+          hx.clearRect(0, 0, 512, 160);
+          hx.fillStyle = "rgba(6,14,24,.78)"; hx.fillRect(0, 0, 512, 160);
+          hx.strokeStyle = "rgba(46,230,255,.8)"; hx.lineWidth = 3; hx.strokeRect(2, 2, 508, 156);
+          hx.fillStyle = "#2ee6ff"; hx.font = "800 40px system-ui"; hx.textAlign = "right";
+          hx.fillText("TIGGO 7 PHEV", 492, 52);
+          hx.fillStyle = "#d7f6ff"; hx.font = "600 30px system-ui";
+          hx.fillText(odo && odo.km ? `ק"מ כולל: ${Number(odo.km).toLocaleString("he-IL")}` : "טלמטריה · Heavy Guard", 492, 100);
+          hx.fillStyle = "#8fd8e8"; hx.font = "500 24px system-ui";
+          hx.fillText((odo && odo.date ? odo.date + " · " : "") + "LIVE", 492, 142);
+          holoTex.needsUpdate = true;
+        };
+        drawCarHolo();
+        const holo = new THREE.Sprite(new THREE.SpriteMaterial({ map: holoTex, transparent: true, opacity: 0.92, depthWrite: false }));
+        holo.scale.set(1.9, 0.6, 1);
+        holo.position.set(-1.15, 2.75, -1.0);
+        scene.add(holo);
+        const anchorLine = new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-2.1, 1.1, -1.0), new THREE.Vector3(-1.15, 2.45, -1.0)]),
+          new THREE.LineBasicMaterial({ color: 0x2ee6ff, transparent: true, opacity: 0.65 })
+        );
+        scene.add(anchorLine);
+        scene.userData.drawCarHolo = drawCarHolo;
       }, undefined, () => { /* car download failed — podium stays as decor */ });
     }
 
@@ -2909,6 +2943,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         drawHgScreen(hgCtx, hgCanvas.width, hgCanvas.height, liveRef.current.bizData);
         tvHg.tex.needsUpdate = true;
         drawSiteScreen(); // wall site-board follows the same live refresh
+        if (scene.userData.drawCarHolo) scene.userData.drawCarHolo(); // car telemetry tag too
         // The city billboard flips to its next ad every other screen tick.
         bbTick++;
         if (bbTick % 2 === 0) {

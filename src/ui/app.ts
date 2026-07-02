@@ -182,7 +182,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v147 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v148 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="panelsToggleBtn" title="הסתר/הצג פנלים" aria-label="הסתר פנלים">
           <svg class="pt-hide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -2901,8 +2901,32 @@ export function mountApp(root: HTMLElement) {
   }
   const mkRowHtml = (r: MkRow) => {
     const up = r.chg >= 0; const c = up ? '#3FD79A' : '#FF5C50';
-    return `<div class="mk-row"><span class="mk-name">${r.name}</span><span class="mk-price">${r.price}</span><span class="mk-chg" style="color:${c}">${up ? '▲' : '▼'}${Math.abs(r.chg).toFixed(2)}%</span></div>`;
+    return `<div class="mk-row"><span class="mk-name">${r.name}</span><span class="mk-price" data-mk="${r.name}">${r.price}</span><span class="mk-chg" style="color:${c}">${up ? '▲' : '▼'}${Math.abs(r.chg).toFixed(2)}%</span></div>`;
   };
+  // Sci-fi "decrypt" effect — a changed market value scrambles through
+  // random glyphs for ~0.4s before settling on the real number, so live
+  // updates read as data streaming in rather than silently mutating.
+  const mkPrevVals = new Map<string, string>();
+  function scrambleTo(el: HTMLElement, finalText: string) {
+    const glyphs = '0123456789₪$#%@&';
+    const steps = 8;
+    let i = 0;
+    const iv = setInterval(() => {
+      i++;
+      if (i >= steps || !el.isConnected) { el.textContent = finalText; clearInterval(iv); return; }
+      const reveal = (i / steps) * finalText.length;
+      el.textContent = finalText.split('').map((ch, idx) => (idx < reveal || ch === ',' || ch === '.' ? ch : glyphs[(Math.random() * glyphs.length) | 0])).join('');
+    }, 50);
+  }
+  function scrambleChangedPrices(container: Element) {
+    container.querySelectorAll<HTMLElement>('.mk-price[data-mk]').forEach((el) => {
+      const key = el.dataset.mk || '';
+      const val = el.textContent || '';
+      const prev = mkPrevVals.get(key);
+      mkPrevVals.set(key, val);
+      if (prev !== undefined && prev !== val) scrambleTo(el, val);
+    });
+  }
   // Quick-access strip to the TRADE platform: live autotrader numbers read
   // via the trading bridge (direction+confidence, PnL, win rate, bots,
   // open positions) with a one-tap link to the full platform.
@@ -2943,6 +2967,7 @@ export function mountApp(root: HTMLElement) {
         return rs.length ? `<div class="mk-sec">${title}</div>` + rs.map(mkRowHtml).join('') : '';
       }).join('');
       el.innerHTML = strip + sections + '<div class="mk-more">לחץ לצמצום ⌃</div>';
+      scrambleChangedPrices(el);
     } else {
       const pick = [
         ...rows.filter((r) => r.group === 'crypto').slice(0, 2),
@@ -2950,6 +2975,7 @@ export function mountApp(root: HTMLElement) {
         ...rows.filter((r) => r.group === 'stock').slice(0, 2),
       ];
       el.innerHTML = strip + (pick.length ? pick : rows.slice(0, 6)).map(mkRowHtml).join('') + '<div class="mk-more">לחץ להרחבת כל השווקים ⌄</div>';
+      scrambleChangedPrices(el);
     }
   }
   async function renderMarkets() {
