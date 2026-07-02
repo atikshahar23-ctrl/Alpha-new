@@ -730,8 +730,10 @@ function buildMeetingTable() {
 
 function buildPlant() {
   const g = new THREE.Group();
+  // Small props stay out of the shadow map — a dozen plants each casting an
+  // invisible 10cm shadow is pure shadow-pass cost.
   const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.13, 0.24, 10), new THREE.MeshStandardMaterial({ color: 0x2a2016, roughness: 0.8 }));
-  pot.position.y = 0.12; pot.castShadow = true;
+  pot.position.y = 0.12;
   g.add(pot);
   const leafMat = new THREE.MeshStandardMaterial({ color: 0x2f7d4f, roughness: 0.7 });
   for (let i = 0; i < 5; i++) {
@@ -740,7 +742,6 @@ function buildPlant() {
     leaf.position.set(Math.sin(ang) * 0.06, 0.5, Math.cos(ang) * 0.06);
     leaf.rotation.z = Math.sin(ang) * 0.25;
     leaf.rotation.x = Math.cos(ang) * 0.25;
-    leaf.castShadow = true;
     g.add(leaf);
   }
   return g;
@@ -787,7 +788,10 @@ function buildBookshelf() {
 function buildRug(w, d, color) {
   const rug = new THREE.Mesh(
     new THREE.PlaneGeometry(w, d),
-    new THREE.MeshStandardMaterial({ color, roughness: 1, transparent: true, opacity: 0.85 })
+    // polygonOffset pulls the rug decisively in front of the floor in the
+    // depth buffer — the tiny y-offset alone left the two planes close
+    // enough to z-fight (shimmer) at grazing camera angles.
+    new THREE.MeshStandardMaterial({ color, roughness: 1, transparent: true, opacity: 0.85, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 })
   );
   rug.rotation.x = -Math.PI / 2;
   rug.position.y = 0.008;
@@ -928,8 +932,8 @@ function setClip(h, shortName) {
   if (!name || name === h.current) return;
   const next = h.actions[name];
   const prev = h.current ? h.actions[h.current] : null;
-  next.reset().setEffectiveWeight(1).fadeIn(0.25).play();
-  if (prev) prev.fadeOut(0.25);
+  next.reset().setEffectiveWeight(1).fadeIn(0.35).play();
+  if (prev) prev.fadeOut(0.35);
   h.current = name;
 }
 
@@ -1722,7 +1726,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       sun.shadow.camera.top = 15; sun.shadow.camera.bottom = -15;
       sun.shadow.camera.near = 1; sun.shadow.camera.far = 46;
       sun.shadow.bias = -0.0004;
-      sun.shadow.normalBias = 0.02;
+      sun.shadow.normalBias = 0.035; // higher normal bias kills acne banding on curved character meshes
       sun.shadow.radius = 3;
     }
     scene.add(sun);
@@ -2482,6 +2486,9 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       if (floorLogo) {
         floorLogo.rotation.x = -Math.PI / 2;
         floorLogo.material.opacity = 0.92;
+        floorLogo.material.polygonOffset = true;
+        floorLogo.material.polygonOffsetFactor = -2;
+        floorLogo.material.polygonOffsetUnits = -2;
         floorLogo.position.set(-2.5, 0.02, 4.4);
         scene.add(floorLogo);
       }
@@ -2712,8 +2719,8 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // + a pair of coloured accent lights, so the whole floor reads as a fun
     // gaming HQ rather than a plain bullpen. All emissive/unlit except the two
     // point lights, so it's cheap.
-    const neonStripMat1 = new THREE.MeshBasicMaterial({ color: 0x18e0ff, transparent: true, opacity: 0.5 });
-    const neonStripMat2 = new THREE.MeshBasicMaterial({ color: 0xff3ea5, transparent: true, opacity: 0.5 });
+    const neonStripMat1 = new THREE.MeshBasicMaterial({ color: 0x18e0ff, transparent: true, opacity: 0.5, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+    const neonStripMat2 = new THREE.MeshBasicMaterial({ color: 0xff3ea5, transparent: true, opacity: 0.5, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
     // Aisle strips end BEFORE the south office row (pods start at z≈8) —
     // they used to run under the glass walls into two of the offices.
     [-9.75, -4.1, 1.5].forEach((ax, i) => {
@@ -3064,30 +3071,45 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         const dx = tx - h.group.position.x, dz = tz - h.group.position.z;
         const dist = Math.hypot(dx, dz);
         const distFinal = Math.hypot(finalX - h.group.position.x, finalZ - h.group.position.z);
-        if (dist > 0.01) {
-          // A real walking pace (units/sec), not a percent-of-remaining-
-          // distance lerp — the old lerp closed most of the gap in the
-          // first frame or two for any far-off desk, reading as teleporting
-          // rather than walking across the room.
-          const NPC_SPEED = 2.5;
-          const maxStep = NPC_SPEED * dt;
-          if (dist <= maxStep) {
-            h.group.position.x = tx; h.group.position.z = tz;
-          } else {
-            h.group.position.x += (dx / dist) * maxStep;
-            h.group.position.z += (dz / dist) * maxStep;
-          }
-        }
-        const summoned = c.status === "summoned";
-        const targetY = (atDesk || summoned) && distFinal <= 0.03 ? SEAT_DROP : 0;
-        h.group.position.y += (targetY - h.group.position.y) * Math.min(1, dt * 6);
-        if (distFinal > 0.03) {
+        // Pivot-then-walk: rotation is smoothly damped toward the travel
+        // direction, and the agent only advances once roughly facing it
+        // (<~55°) — a route now starts with a clean turn in place instead
+        // of a sideways moonwalk toward the target.
+        let stepped = 0;
+        if (dist > 0.01 && distFinal > 0.03) {
           const targetRot = Math.atan2(dx, dz);
           let dRot = targetRot - h.group.rotation.y;
           while (dRot > Math.PI) dRot -= Math.PI * 2;
           while (dRot < -Math.PI) dRot += Math.PI * 2;
           h.group.rotation.y += dRot * Math.min(1, dt * 8);
+          if (Math.abs(dRot) < 0.95) {
+            // A real walking pace (units/sec), not a percent-of-remaining-
+            // distance lerp — the old lerp closed most of the gap in the
+            // first frame or two for any far-off desk, reading as
+            // teleporting rather than walking across the room.
+            const NPC_SPEED = 2.5;
+            const maxStep = NPC_SPEED * dt;
+            if (dist <= maxStep) {
+              h.group.position.x = tx; h.group.position.z = tz;
+              stepped = dist;
+            } else {
+              h.group.position.x += (dx / dist) * maxStep;
+              h.group.position.z += (dz / dist) * maxStep;
+              stepped = maxStep;
+            }
+          }
+        }
+        const summoned = c.status === "summoned";
+        const targetY = (atDesk || summoned) && distFinal <= 0.03 ? SEAT_DROP : 0;
+        h.group.position.y += (targetY - h.group.position.y) * Math.min(1, dt * 6);
+        h.isWalking = distFinal > 0.03;
+        if (distFinal > 0.03) {
           setClip(h, CLIP.walk);
+          // Foot-slide fix: the walk clip plays at the speed the body is
+          // actually covering ground — a pivoting or arriving agent steps
+          // slowly, a mid-route one at full pace.
+          const act = h.current && h.actions[h.current];
+          if (act) act.timeScale = Math.max(0.35, Math.min(1.25, (stepped / Math.max(dt, 1e-4)) / 2.5));
         } else {
           // A summoned agent has walked into your office and reached the
           // guest chair — they sit down on it, facing the owner's desk
@@ -3095,6 +3117,8 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           // sitting across the desk from each other.
           const seated = c.status === "work" || c.status === "meet" || c.status === "eat" || summoned;
           setClip(h, seated ? CLIP.sit : CLIP.idle);
+          const act = h.current && h.actions[h.current];
+          if (act) act.timeScale = 1; // idle/sit always play at natural speed
           // Working at the desk: face the monitor head-on instead of
           // whatever direction they happened to walk in from — every desk
           // in the grid shares the same unrotated layout, so one fixed
@@ -3113,6 +3137,25 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           }
         }
       });
+      // Walking agents give each other shoulder room: a light pairwise
+      // push-out so two people crossing the same aisle sidestep each other
+      // instead of clipping through. Seated/anchored agents stay planted —
+      // only active walkers take part, so the pass stays tiny.
+      {
+        const walkers = liveChars.map((c) => npc[c.id]).filter((h) => h && h.isWalking);
+        for (let i = 0; i < walkers.length; i++) {
+          for (let j = i + 1; j < walkers.length; j++) {
+            const A = walkers[i].group.position, B = walkers[j].group.position;
+            const sdx = B.x - A.x, sdz = B.z - A.z;
+            const sd = Math.hypot(sdx, sdz);
+            if (sd > 1e-4 && sd < 0.55) {
+              const push = ((0.55 - sd) * 0.5) / sd;
+              A.x -= sdx * push; A.z -= sdz * push;
+              B.x += sdx * push; B.z += sdz * push;
+            }
+          }
+        }
+      }
       // Animation LOD: characters far from the camera tick their skinned
       // animation every 3rd frame (with accumulated dt so playback speed
       // stays correct) instead of every frame — with ~15 characters the
