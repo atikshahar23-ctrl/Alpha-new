@@ -282,10 +282,14 @@ function buildFloorTexture() {
 // actually changes, so the window isn't a single static image any more.
 function drawSkyline(ctx, W, H, mode) {
   const isDay = mode === "day";
+  const isSunset = mode === "sunset";
   const sky = ctx.createLinearGradient(0, 0, 0, H);
   if (isDay) {
     sky.addColorStop(0, "#6fb3e6"); sky.addColorStop(0.5, "#a9d4ee");
     sky.addColorStop(0.8, "#d8ecf6"); sky.addColorStop(1, "#eef7fb");
+  } else if (isSunset) {
+    sky.addColorStop(0, "#3d2f63"); sky.addColorStop(0.45, "#b4507a");
+    sky.addColorStop(0.72, "#f08a4b"); sky.addColorStop(1, "#ffc27a");
   } else {
     sky.addColorStop(0, "#0a1230"); sky.addColorStop(0.45, "#122043");
     sky.addColorStop(0.8, "#1c2f52"); sky.addColorStop(1, "#2c3d5c");
@@ -308,10 +312,43 @@ function drawSkyline(ctx, W, H, mode) {
       ctx.ellipse(cx + s * 0.6, cy + 6, s * 0.7, s * 0.32, 0, 0, Math.PI * 2);
       ctx.fill();
     }
+  } else if (isSunset) {
+    // A low, huge sun melting into the skyline + lit cloud streaks.
+    const sunGrad = ctx.createRadialGradient(W * 0.32, H * 0.74, 0, W * 0.32, H * 0.74, 240);
+    sunGrad.addColorStop(0, "rgba(255,214,140,.95)");
+    sunGrad.addColorStop(0.25, "rgba(255,164,84,.6)");
+    sunGrad.addColorStop(1, "rgba(255,150,70,0)");
+    ctx.fillStyle = sunGrad; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = "rgba(255,215,170,.9)";
+    ctx.beginPath(); ctx.arc(W * 0.32, H * 0.74, 42, 0, Math.PI * 2); ctx.fill();
+    for (let i = 0; i < 5; i++) {
+      const cy = H * (0.2 + rnd() * 0.35), cw = 120 + rnd() * 260;
+      ctx.fillStyle = `rgba(255,${(150 + rnd() * 60) | 0},${(110 + rnd() * 50) | 0},${(0.25 + rnd() * 0.25).toFixed(2)})`;
+      ctx.beginPath();
+      ctx.ellipse(rnd() * W, cy, cw, 7 + rnd() * 9, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else {
+    // Moon + a soft halo and a scatter of stars.
+    const mx = W * 0.72, my = H * 0.15;
+    const halo = ctx.createRadialGradient(mx, my, 0, mx, my, 120);
+    halo.addColorStop(0, "rgba(220,235,255,.5)"); halo.addColorStop(1, "rgba(220,235,255,0)");
+    ctx.fillStyle = halo; ctx.fillRect(mx - 130, my - 130, 260, 260);
+    ctx.fillStyle = "#e8f1fb";
+    ctx.beginPath(); ctx.arc(mx, my, 26, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "rgba(180,200,220,.55)";
+    ctx.beginPath(); ctx.arc(mx - 8, my - 5, 5, 0, Math.PI * 2); ctx.arc(mx + 9, my + 8, 3.4, 0, Math.PI * 2); ctx.arc(mx + 3, my - 12, 2.6, 0, Math.PI * 2); ctx.fill();
+    for (let i = 0; i < 90; i++) {
+      const sx = rnd() * W, sy = rnd() * H * 0.55;
+      ctx.fillStyle = `rgba(255,255,255,${(0.25 + rnd() * 0.6).toFixed(2)})`;
+      ctx.fillRect(sx, sy, rnd() > 0.9 ? 2 : 1, rnd() > 0.9 ? 2 : 1);
+    }
   }
 
   // hazy far skyline layer — low-contrast silhouettes for depth.
-  const farColors = isDay ? ["#9fc3de", "#89b3d2", "#b0d0e6"] : ["#1a2338", "#161f30", "#202b44"];
+  const farColors = isDay ? ["#9fc3de", "#89b3d2", "#b0d0e6"]
+    : isSunset ? ["#5a3f66", "#4e3759", "#684a72"]
+    : ["#1a2338", "#161f30", "#202b44"];
   let fx = 0;
   while (fx < W) {
     const w = 20 + rnd() * 40, h = 40 + rnd() * 90;
@@ -320,13 +357,16 @@ function drawSkyline(ctx, W, H, mode) {
     fx += w + 2 + rnd() * 6;
   }
 
-  // river strip — sunlit ripples by day, warm reflected light by night.
-  ctx.fillStyle = isDay ? "#5f9dc4" : "#0d1626";
+  // river strip — sunlit ripples by day, molten orange at sunset, warm
+  // reflected light by night.
+  ctx.fillStyle = isDay ? "#5f9dc4" : isSunset ? "#472e42" : "#0d1626";
   ctx.fillRect(0, horizon, W, H - horizon);
   for (let i = 0; i < 70; i++) {
     const rx = rnd() * W, ry = horizon + rnd() * (H - horizon) * 0.7;
     ctx.fillStyle = isDay
       ? `rgba(255,255,255,${(0.2 + rnd() * 0.35).toFixed(2)})`
+      : isSunset
+      ? `rgba(255,${(150 + rnd() * 60) | 0},${(80 + rnd() * 50) | 0},${(0.25 + rnd() * 0.35).toFixed(2)})`
       : `rgba(255,${(190 + rnd() * 40) | 0},${(120 + rnd() * 60) | 0},${(0.15 + rnd() * 0.25).toFixed(2)})`;
     ctx.fillRect(rx, ry, 2 + rnd() * 3, 1);
   }
@@ -338,6 +378,8 @@ function drawSkyline(ctx, W, H, mode) {
         if (r < ratio) {
           ctx.fillStyle = isDay
             ? (r < ratio * 0.3 ? "rgba(255,255,255,.5)" : "rgba(150,195,220,.35)")
+            : isSunset
+            ? (r < ratio * 0.4 ? "rgba(255,196,120,.8)" : "rgba(90,60,90,.5)")
             : (r < ratio * 0.12 ? "rgba(150,220,255,.85)" : "rgba(255,206,130,.9)");
           ctx.fillRect(wx, wy, 3.4, 6.5);
         }
@@ -346,7 +388,9 @@ function drawSkyline(ctx, W, H, mode) {
   }
 
   // main skyline — varied silhouettes, one signature spired tower.
-  const bodyColors = isDay ? ["#5a6b7d", "#6b7c8e", "#4d5c6d", "#7189a0"] : ["#0c1220", "#0f1626", "#080d18", "#111a2c"];
+  const bodyColors = isDay ? ["#5a6b7d", "#6b7c8e", "#4d5c6d", "#7189a0"]
+    : isSunset ? ["#241c38", "#1d1830", "#2a2140", "#171226"]
+    : ["#0c1220", "#0f1626", "#080d18", "#111a2c"];
   let x = 0, towerPlaced = false;
   while (x < W) {
     const w = 34 + rnd() * 70;
@@ -1009,6 +1053,7 @@ function agentScreenLines(id, b) {
     procure: [["פריטים במחירון", b.pricelist], ["ספקים", 8], ["התקנות", b.installs], ["הזמנות פתוחות", 3]],
     legal: [["חוזים פעילים", b.custCount], ["טפסים", 12], ["בבדיקה", 2], ["עמידה בתקנות", "✓"]],
     growth: [["הזדמנויות", 7], ["שווי פייפליין", money(b.openVal)], ["לקוחות", b.custCount], ["יעד חודשי", money(b.hgRevenue * 1.4)]],
+    facilities: [["עמדות במשרד", 13], ["סדר כללי", "✓"], ["שיפוצים פעילים", 1], ["בקשות פתוחות", 2]],
   };
   return by[id] || [["לקוחות", b.custCount], ["הכנסה", money(b.hgRevenue)], ["עסקאות", b.openDeals]];
 }
@@ -1521,6 +1566,66 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     skyWall.position.set(nwx, 14, nwz - 46);
     scene.add(skyWall);
 
+    // Drifting cloud layer — one repeating transparent strip just in front
+    // of the sky wall, scrolled slowly in the render loop for real motion
+    // in the view (opacity retuned per sky mode: bright by day, warm-dim at
+    // sunset, near-invisible at night).
+    const cloudCvs = document.createElement("canvas");
+    cloudCvs.width = 1024; cloudCvs.height = 200;
+    {
+      const cctx2 = cloudCvs.getContext("2d");
+      const crnd = mulberry32(1234);
+      cctx2.clearRect(0, 0, 1024, 200);
+      for (let i = 0; i < 9; i++) {
+        const cx = crnd() * 1024, cy = 30 + crnd() * 120, s = 45 + crnd() * 75;
+        const a = 0.25 + crnd() * 0.3;
+        cctx2.fillStyle = `rgba(255,255,255,${a.toFixed(2)})`;
+        cctx2.beginPath();
+        cctx2.ellipse(cx, cy, s, s * 0.32, 0, 0, Math.PI * 2);
+        cctx2.ellipse(cx + s * 0.55, cy + 7, s * 0.62, s * 0.26, 0, 0, Math.PI * 2);
+        cctx2.ellipse(cx - s * 0.5, cy + 9, s * 0.5, s * 0.22, 0, 0, Math.PI * 2);
+        cctx2.fill();
+      }
+    }
+    const cloudTex = new THREE.CanvasTexture(cloudCvs);
+    cloudTex.wrapS = THREE.RepeatWrapping;
+    cloudTex.colorSpace = THREE.SRGBColorSpace;
+    const cloudMat = new THREE.MeshBasicMaterial({ map: cloudTex, transparent: true, opacity: 0.85, depthWrite: false, fog: false });
+    const cloudLayer = new THREE.Mesh(new THREE.PlaneGeometry(150, 13), cloudMat);
+    cloudLayer.position.set(nwx, 26, nwz - 44.5);
+    scene.add(cloudLayer);
+
+    // A tiny airliner crossing the view with a blinking beacon.
+    const planeGroup = new THREE.Group();
+    const planeBody = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.12, 0.12), new THREE.MeshBasicMaterial({ color: 0xd8dde6, fog: false }));
+    planeGroup.add(planeBody);
+    const planeWing = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.05, 1.1), new THREE.MeshBasicMaterial({ color: 0xb9c0cc, fog: false }));
+    planeGroup.add(planeWing);
+    const planeBeacon = new THREE.Mesh(
+      new THREE.SphereGeometry(0.1, 6, 6),
+      new THREE.MeshBasicMaterial({ color: 0xff2a1a, transparent: true, opacity: 0.9, fog: false })
+    );
+    planeBeacon.position.set(-0.85, 0.05, 0);
+    planeGroup.add(planeBeacon);
+    planeGroup.position.set(-60, 25.5, nwz - 40);
+    scene.add(planeGroup);
+
+    // A small flock of birds (day only) — three dark 'v' sprites bobbing.
+    const birdGroup = new THREE.Group();
+    for (let i = 0; i < 3; i++) {
+      const bc = document.createElement("canvas"); bc.width = bc.height = 32;
+      const bx2 = bc.getContext("2d");
+      bx2.strokeStyle = "rgba(20,24,32,.9)"; bx2.lineWidth = 3; bx2.lineCap = "round";
+      bx2.beginPath(); bx2.moveTo(4, 20); bx2.quadraticCurveTo(16, 8, 16, 18); bx2.quadraticCurveTo(16, 8, 28, 20); bx2.stroke();
+      const bt = new THREE.CanvasTexture(bc);
+      const bird = new THREE.Sprite(new THREE.SpriteMaterial({ map: bt, transparent: true, fog: false }));
+      bird.scale.set(0.9, 0.9, 1);
+      bird.position.set(i * 2.1 - 2, (i % 2) * 0.5, i * 0.4);
+      birdGroup.add(bird);
+    }
+    birdGroup.position.set(-30, 17.5, nwz - 34);
+    scene.add(birdGroup);
+
     const glass = new THREE.Mesh(
       new THREE.PlaneGeometry(FLOOR_W, 6.4),
       new THREE.MeshPhysicalMaterial({ color: 0xbcd8f0, transparent: true, opacity: 0.06, roughness: 0.05, metalness: 0.1, depthWrite: false })
@@ -1849,6 +1954,33 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     });
     const allHumans = [playerH, ...Object.values(npc), ...allExtraHumans];
 
+    // Freeze matrix auto-update on everything whose LOCAL transform never
+    // changes after assembly — the walls, desks, offices, plants, city
+    // buildings, signage… (hundreds of objects). three.js recomposes every
+    // auto-update matrix each frame; the only things that actually move
+    // locally are the characters (and their animated bones), the sky-life
+    // sprites, and the spinning desk holos, so everything else can be
+    // composed once. A child with a frozen local matrix still follows its
+    // parent — world matrices are re-derived when a parent moves — so this
+    // is safe for nested static content. Worth several ms/frame on mobile.
+    {
+      const dynamicRoots = new Set([
+        ...allHumans.map((h) => h.group),
+        planeGroup, birdGroup,
+        ...deskHolos.filter(Boolean),
+        camera,
+      ]);
+      const isDynamic = (o) => {
+        for (let p = o; p; p = p.parent) if (dynamicRoots.has(p)) return true;
+        return false;
+      };
+      scene.traverse((o) => {
+        if (isDynamic(o)) return;
+        o.matrixAutoUpdate = false;
+        o.updateMatrix();
+      });
+    }
+
     let raf = 0;
     const clock = new THREE.Clock();
     const curSky = new THREE.Color(0x1b2440);
@@ -1901,17 +2033,33 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         tvHg.tex.needsUpdate = true;
       }
 
-      // Skyline window — swap the whole canvas only when day/night actually
-      // flips (cheap, rare); the street traffic strip redraws every frame
-      // (tiny canvas) so the view is never a single static picture.
-      const desiredSkyMode = liveRef.current.phase <= 1 ? "day" : "night";
+      // Skyline window — swap the whole canvas only when the sky mode
+      // actually flips (cheap, rare): full day → golden-hour sunset in the
+      // evening phase → starry night with a moon. The street traffic strip
+      // redraws every frame (tiny canvas) so the view is never static.
+      const desiredSkyMode = liveRef.current.phase <= 1 ? "day" : liveRef.current.phase === 2 ? "sunset" : "night";
       if (desiredSkyMode !== skylineMode) {
         skylineMode = desiredSkyMode;
         drawSkyline(skyline.ctx, skyline.canvas.width, skyline.canvas.height, skylineMode);
         skyline.tex.needsUpdate = true;
+        cloudMat.opacity = skylineMode === "day" ? 0.85 : skylineMode === "sunset" ? 0.5 : 0.16;
+        birdGroup.visible = skylineMode === "day";
       }
       drawTraffic(trafficCtx, trafficCanvas.width, trafficCanvas.height, trafficState, dt);
       trafficTex.needsUpdate = true;
+
+      // Sky life: clouds drift on a repeating layer; a tiny airliner with a
+      // blinking beacon crosses every so often; a small flock of birds bobs
+      // across by day. All a handful of sprites — effectively free.
+      cloudTex.offset.x = (cloudTex.offset.x + dt * 0.0035) % 1;
+      planeGroup.position.x += dt * 3.2;
+      if (planeGroup.position.x > 85) planeGroup.position.x = -85 - Math.random() * 160;
+      planeBeacon.material.opacity = (Math.sin(clock.elapsedTime * 6) > 0.4) ? 0.95 : 0.08;
+      if (birdGroup.visible) {
+        birdGroup.position.x += dt * 1.6;
+        if (birdGroup.position.x > 80) birdGroup.position.x = -80;
+        birdGroup.children.forEach((b, i) => { b.position.y = Math.sin(clock.elapsedTime * 2.2 + i * 1.7) * 0.35; });
+      }
 
       let mx = 0, mz = 0;
       // First-person keyboard nav used to feel "backwards": every key press
