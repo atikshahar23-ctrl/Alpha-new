@@ -3202,7 +3202,12 @@ html.perf-lite .topR { will-change: auto !important; transform: none !important;
 /* ── Data cards (symmetric columns framing the figure) ── */
 /* The wrapper is transparent on desktop so the columns keep their side anchors. */
 .hud-cols { display: contents; }
-.hud-col { position: absolute; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 12px; width: clamp(210px, 20vw, 270px); }
+.hud-col { position: absolute; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 12px; width: clamp(210px, 20vw, 270px);
+  /* with the extra panels the columns can outgrow short screens — scroll
+     inside the column instead of clipping/overlapping the dock */
+  max-height: calc(100vh - 150px); overflow-y: auto; scrollbar-width: none; }
+.hud-col::-webkit-scrollbar { display: none; }
+#hudTeamPanel { cursor: pointer; pointer-events: auto; }
 .hud-col.left { left: 18px; }
 .hud-col.right { right: 18px; }
 .hud-col.fleet { display: none; }   /* desktop: rail button + the 4 cards already cover it */
