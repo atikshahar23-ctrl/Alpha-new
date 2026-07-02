@@ -182,7 +182,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v150 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v151 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="panelsToggleBtn" title="הסתר/הצג פנלים" aria-label="הסתר פנלים">
           <svg class="pt-hide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -217,6 +217,10 @@ export function mountApp(root: HTMLElement) {
              never drift apart). Desktop only; the rail serves mobile. -->
         <div class="orb-menu" id="orbMenu"></div>
 
+        <!-- Holographic data anchor: live BTC beside the robot with a
+             fiber-optic leader line pointing at the core. -->
+        <div class="holo-tag" id="holoBtc" hidden><i></i><b>BTC · LIVE</b><span id="holoBtcVal">—</span></div>
+
         <!-- Wrapper: transparent on desktop (display:contents → columns keep their
              side positions); on mobile it becomes a clean bottom-anchored flex
              stack so the panels never overlap regardless of card height. -->
@@ -229,6 +233,10 @@ export function mountApp(root: HTMLElement) {
           </section>
           <section class="hud-card" id="hudPipe">
             <div class="hud-card-h"><span>CONTRACTOR PIPELINE</span><i></i></div>
+            <div class="hud-card-body">טוען…</div>
+          </section>
+          <section class="hud-card" id="hudTeamPanel">
+            <div class="hud-card-h"><span>הסוכנים עכשיו</span><i></i></div>
             <div class="hud-card-body">טוען…</div>
           </section>
           <!-- The owner's actual car (Chery Tiggo 7 PHEV 2025 Noble) as a live
@@ -257,10 +265,6 @@ export function mountApp(root: HTMLElement) {
           <section class="hud-card" id="hudNews">
             <div class="hud-card-h"><span>חדשות · ישראל</span><i></i></div>
             <div class="hud-card-body">טוען חדשות…</div>
-          </section>
-          <section class="hud-card" id="hudTeamPanel">
-            <div class="hud-card-h"><span>הסוכנים עכשיו</span><i></i></div>
-            <div class="hud-card-body">טוען…</div>
           </section>
           <section class="hud-card" id="hudWeather">
             <div class="hud-card-h"><span>מזג אוויר</span><i></i></div>
@@ -902,6 +906,20 @@ export function mountApp(root: HTMLElement) {
     orb = mountOrb($('stage'));
     buildOrbitalMenu();
     startBgFx();
+    // JARVIS focus mode: while the user grabs the 3D stage (rotating or
+    // playing with the robot) the side panels fade way down; they glide
+    // back a moment after release, keeping the focus on the scene.
+    {
+      let dimT: number | undefined;
+      $('stage').addEventListener('pointerdown', () => {
+        if (dimT) clearTimeout(dimT);
+        document.body.classList.add('ui-dim');
+      });
+      window.addEventListener('pointerup', () => {
+        if (dimT) clearTimeout(dimT);
+        dimT = window.setTimeout(() => document.body.classList.remove('ui-dim'), 900);
+      });
+    }
   } catch {
     orb = { setEnergy() {}, pikaEmote() {}, dispose() {}, startBodyDetection() {}, stopBodyDetection() {}, setCharacter() {}, throwPokeball(_o, d) { d && d(); }, setCharacterTransform() {}, getCharacterTransform() { return { x: 0, y: 0, z: 0, s: 1, px: 0, py: 0, pz: 0 }; }, resetCharacterTransform() {}, pinCharacterTransform() {}, hasPinnedTransform() { return false; }, attackCharacter(_c: HTMLCanvasElement) {}, setPerfMode(_o: boolean) {} };
   }
@@ -2987,9 +3005,24 @@ export function mountApp(root: HTMLElement) {
       btn.onclick = () => src.click();
       btn.onmouseenter = () => menu.classList.add('paused');
       btn.onmouseleave = () => menu.classList.remove('paused');
+      wrap.style.setProperty('--i', String(i));
       wrap.appendChild(btn);
       menu.appendChild(wrap);
     });
+    // Contextual reveal — the ring stays collapsed inside the core until the
+    // ALPHA MENU trigger under the robot is hovered or clicked; clicking
+    // anywhere else folds it back in (zero-clutter default).
+    const tag = document.querySelector('.hud-core-tag') as HTMLElement | null;
+    if (tag) {
+      tag.textContent = '✦ ALPHA MENU';
+      const open = (v: boolean) => menu.classList.toggle('open', v);
+      tag.addEventListener('click', (e) => { e.stopPropagation(); open(!menu.classList.contains('open')); });
+      tag.addEventListener('mouseenter', () => open(true));
+      document.addEventListener('click', (e) => {
+        const t = e.target as Node;
+        if (!menu.contains(t) && t !== tag) open(false);
+      });
+    }
   }
 
   // ── Background FX layer — stars, comets, constellation data-streams and a
@@ -3110,6 +3143,14 @@ export function mountApp(root: HTMLElement) {
   }
 
   function renderMarketsBody(rows: MkRow[]) {
+    // Live holographic BTC tag beside the robot (decrypt-scrambles on change).
+    const btc = rows.find((r) => r.name === 'Bitcoin');
+    const holoVal = document.getElementById('holoBtcVal');
+    const holoTag = document.getElementById('holoBtc');
+    if (btc && holoVal && holoTag) {
+      (holoTag as HTMLElement).hidden = false;
+      if (holoVal.textContent !== btc.price) scrambleTo(holoVal as HTMLElement, btc.price);
+    }
     const el = document.querySelector('#hudMarkets .hud-card-body');
     if (!el) return;
     const strip = tradeStripHtml();
