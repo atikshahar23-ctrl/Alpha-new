@@ -1914,6 +1914,31 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       caf.obstacles.forEach((o) => obstacles.push({ x: CAF.x + o.x, z: CAF.z + o.z, r: o.r }));
     }
 
+    // ── Wall decor from the user's LP Officeroom pack ────────────────────
+    // Real modeled pieces (wall clock, framed art, a record player for the
+    // cafeteria counter) hung on the side walls so the shell doesn't read
+    // as bare drywall between the neon signs.
+    {
+      const hang = (name, x, y, z, rotY, s = 1) => {
+        const piece = cloneDecorPiece(officeDecorTemplate, name);
+        if (!piece) return;
+        piece.scale.setScalar(s);
+        piece.position.set(x, y, z);
+        piece.rotation.y = rotY;
+        scene.add(piece);
+      };
+      // wall clock on the east wall, over the lounge area
+      hang("Office2_clock_1", FLOOR_W / 2 - 0.12, 2.6, -1.4, -Math.PI / 2, 1.3);
+      // two framed decorations on the west wall near reception
+      hang("Office2_decoration1", -(FLOOR_W / 2) + 0.12, 2.6, 7.0, Math.PI / 2, 1.4);
+      hang("Office2_decoration2", -(FLOOR_W / 2) + 0.12, 2.6, 5.6, Math.PI / 2, 1.4);
+      // big framed picture on the east wall near the owner's office
+      hang("Office2_picture", FLOOR_W / 2 - 0.12, 1.9, 5.4, Math.PI, 1.2);
+      // record player + vinyls on the cafeteria counter
+      hang("Office2_Vinyl_players", 10.25, 1.1, 2.35, -Math.PI / 2, 1.0);
+      hang("Office2_Vinyls", 10.25, 1.1, 1.75, -Math.PI / 2, 1.0);
+    }
+
     // ── Gaming-den ambiance ──────────────────────────────────────────────
     // Neon accent floor strips down the main aisles + two big neon wall signs
     // + a pair of coloured accent lights, so the whole floor reads as a fun
