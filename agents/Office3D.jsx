@@ -2358,15 +2358,12 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         scene.add(rl);
       });
 
-      // Private lounge on the platform: a couch + coffee table, an
-      // "EXECUTIVE" neon sign, a minimalist frosted-glass restroom volume,
-      // and a west-facing balcony window with its own skyline view (the
-      // ground floor's showcase window only faces north).
-      const lounge = buildCouch();
-      lounge.scale.setScalar(0.85);
-      lounge.position.set(MEZ.x - 1.6, MEZ.y, MEZ.z + 1.6);
-      lounge.rotation.y = Math.PI / 2;
-      scene.add(lounge);
+      // Private lounge on the platform: an "EXECUTIVE" neon sign, a
+      // minimalist frosted-glass restroom volume, and a west-facing balcony
+      // window with its own skyline view (the ground floor's showcase
+      // window only faces north). The reused buildCouch() prop that used
+      // to sit here read as a plain dark-purple block with no cushion
+      // detail, not an actual couch — removed rather than shipped ugly.
       const execSign = buildNeonSign("EXECUTIVE LOUNGE", 0xE4BC63, 2.4, 0.5);
       execSign.position.set(MEZ.x, MEZ.y + 1.9, MEZ.z + MEZ.d / 2 - 0.1);
       scene.add(execSign);

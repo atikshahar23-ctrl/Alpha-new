@@ -2240,9 +2240,6 @@ const OFC_PHASES = [
   { label: "ערב", emoji: "🌇", tint: "rgba(255,120,70,.12)", sky: "#3a2740" },
   { label: "לילה", emoji: "🌙", tint: "rgba(20,40,120,.26)", sky: "#0e1430" },
 ];
-// Per-phase duration (ms) — morning + noon (both daylight) add up to most
-// of the cycle, evening/night pass quickly.
-const OFC_PHASE_DUR = [22000, 34000, 10000, 10000];
 function OfficeSim({ onClose, onOpenChat, logActivity, showToast }) {
   const rnd = (a, b) => a + Math.random() * (b - a);
   // Live market rows (CoinGecko + Yahoo) — same shared cache the Business
@@ -2329,17 +2326,21 @@ function OfficeSim({ onClose, onOpenChat, logActivity, showToast }) {
   const popBubble = (id, text, toId = null) => { const bid = uid(); setBubbles((p) => ({ ...p, [id]: { text, toId, id: bid } })); setTimeout(() => setBubbles((p) => (p[id] && p[id].id === bid ? { ...p, [id]: null } : p)), 3800); };
   const confettiAt = (x, y, color) => { const id = uid(); setBursts((p) => [...p, { id, x, y, color }]); setTimeout(() => setBursts((p) => p.filter((k) => k.id !== id)), 1300); };
 
-  // Day cycle — weighted so the office is mostly in daylight (morning +
-  // noon) rather than an even split across all four phases, which read as
-  // "dim/night" more often than not.
+  // Day cycle — matches real Israel local time (Asia/Jerusalem), so the
+  // office's lighting/skyline reflects when it actually is outside for
+  // the owner. Checked once a minute; the ambient/sun color lerp already
+  // driving the visual transition (Office3D's per-frame color lerp toward
+  // the phase target) makes each hourly boundary read as a smooth shift,
+  // not a hard cut.
   useEffect(() => {
-    let cur = 0, to = setTimeout(step, OFC_PHASE_DUR[0]);
-    function step() {
-      cur = (cur + 1) % OFC_PHASES.length;
-      setPhase(cur);
-      to = setTimeout(step, OFC_PHASE_DUR[cur]);
-    }
-    return () => clearTimeout(to);
+    const israelHour = () => parseInt(
+      new Intl.DateTimeFormat("en-US", { hour: "2-digit", hour12: false, timeZone: "Asia/Jerusalem" }).format(new Date()),
+      10
+    );
+    const phaseForHour = (h) => (h >= 5 && h < 11 ? 0 : h >= 11 && h < 17 ? 1 : h >= 17 && h < 20 ? 2 : 3);
+    setPhase(phaseForHour(israelHour()));
+    const iv = setInterval(() => setPhase(phaseForHour(israelHour())), 60000);
+    return () => clearInterval(iv);
   }, []);
 
   // Behaviour scheduler: meetings, desk work, coffee/lunch breaks, short
