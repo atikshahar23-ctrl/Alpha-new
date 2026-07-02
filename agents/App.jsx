@@ -688,11 +688,11 @@ const AGENTS = [
     quick: ["נסח מענה ללקוח כועס", "איך לשמר לקוח?", "תסריט שיחת שירות", "רעיון לחיזוק נאמנות"],
   },
   {
-    id: "finance", name: "ראובן", title: "מנהל כספים וגבייה", Icon: Coins, color: "#14B8A6", accent: "#99E9DF",
-    tagline: "תזרים, גבייה, רווחיות ותמחור",
-    domain: "כספים · גבייה · רווחיות",
-    persona: "אתה ראובן — הבכור, מנהל הכספים והגבייה. אתה אחראי על תזרים מזומנים, מעקב גבייה מלקוחות, רווחיות עסקאות, תמחור נכון ובקרת הוצאות ב-HeavyGuard. אופי: קפדן, פורמלי, קפדני מאוד עם פרטים — אתה שומר הסף האולטימטיבי של ההון, ולא נותן לשום מספר לעבור בלי בדיקה. תן צעד פיננסי מעשי אחד.",
-    quick: ["מי חייב לי כסף?", "איך לשפר תזרים?", "בדוק רווחיות עסקה", "תזכורת גבייה ללקוח"],
+    id: "finance", name: "ראובן", title: "מנהל כספים, גבייה והשקעות", Icon: Coins, color: "#14B8A6", accent: "#99E9DF",
+    tagline: "תזרים, גבייה, רווחיות והשקעות",
+    domain: "כספים · גבייה · השקעות",
+    persona: "אתה ראובן — הבכור, מנהל הכספים, הגבייה וההשקעות. אתה אחראי על תזרים מזומנים, מעקב גבייה מלקוחות, רווחיות עסקאות, תמחור נכון ובקרת הוצאות ב-HeavyGuard, ואתה היחיד שאחראי על מעקב השקעות ושווקים — קריפטו ומניות. אתה מתריע רק כשיש תנועה שבאמת שווה תשומת לב, ולעולם לא מבצע פעולה בכסף אמיתי — מעקב והמלצות בלבד. אופי: קפדן, פורמלי, קפדני מאוד עם פרטים — אתה שומר הסף האולטימטיבי של ההון, ולא נותן לשום מספר לעבור בלי בדיקה. תן צעד פיננסי מעשי אחד.",
+    quick: ["מי חייב לי כסף?", "מה מצב השווקים?", "בדוק רווחיות עסקה", "תזכורת גבייה ללקוח"],
   },
   {
     id: "procure", name: "שמעון", title: "מנהל רכש וספקים", Icon: Package, color: "#84CC16", accent: "#CDEE8F",
@@ -956,16 +956,22 @@ function marketMover(rows) {
   if (!rows || !rows.length) return null;
   return rows.reduce((max, r) => (Math.abs(r.chg) > Math.abs(max.chg) ? r : max), rows[0]);
 }
-const INVEST_AGENTS = ["finance", "growth", "data"];
+/* ראובן (כספים) הוא האחראי הבלעדי על ההשקעות — סוכן אחד, קול אחד (owner
+   request: too many agents were echoing the same market line). He only
+   speaks when there's something WORTH the owner's attention: a move above
+   the alert threshold, and never the same asset+direction twice in a row
+   unless the move grew meaningfully. */
+const INVEST_AGENTS = ["finance"];
+const INVEST_ALERT_PCT = 3; // below this, the market is just breathing
+let lastInvestNote = { name: "", dir: "", pct: 0 };
 function investAnalysis(agentId, mover) {
   const dir = mover.chg >= 0 ? "עלה" : "ירד";
-  const pct = Math.abs(mover.chg).toFixed(1);
-  const by = {
-    finance: `${mover.name} ${dir} ${pct}% ב-24 שעות (${mover.price}) — שווה לעקוב מבחינת תזרים והשפעה על נכסים נזילים, בלי לבצע מהלך פזיז.`,
-    growth: `${mover.name} ${dir} ${pct}% — תנועה כזו בשוק לפעמים מקדימה שינוי בסנטימנט צרכני, כדאי לעקוב אם זה משפיע על ביקוש.`,
-    data: `זיהיתי תנודה של ${pct}% ב-${mover.name} ב-24 שעות (${dir}) — מוסיף למעקב המגמות השוטף, אין עדיין מסקנה חד-משמעית.`,
-  };
-  return by[agentId] || by.data;
+  const pct = Math.abs(mover.chg);
+  if (pct < INVEST_ALERT_PCT) return null; // not alert-worthy
+  if (lastInvestNote.name === mover.name && lastInvestNote.dir === dir && pct - lastInvestNote.pct < 1.5) return null; // same story as last time
+  lastInvestNote = { name: mover.name, dir, pct };
+  const level = pct >= 8 ? "🚨 תנועה חריגה" : pct >= 5 ? "⚠️ שווה תשומת לב" : "👁 למעקב";
+  return `${level}: ${mover.name} ${dir} ${pct.toFixed(1)}% ב-24 שעות (${mover.price}). ${dir === "עלה" ? "אם אתה מחזיק — נקודה טובה לבחון מימוש חלקי; אם לא — לא לרדוף אחרי העלייה." : "ירידה כזו היא או הזדמנות כניסה מדורגת או אזהרת מגמה — תלוי בהקשר השבועי."} מעקב בלבד — אני לא מבצע שום פעולה בכסף.`;
 }
 
 /* ════════════════════════════════════════════════════════════════════
@@ -1083,7 +1089,8 @@ export default function App() {
         const mover = marketMover(marketCache.rows);
         if (mover) {
           const agentId = INVEST_AGENTS[Math.floor(Math.random() * INVEST_AGENTS.length)];
-          logInvest(agentId, investAnalysis(agentId, mover));
+          const note = investAnalysis(agentId, mover);
+          if (note) logInvest(agentId, note);
         }
       }
     }, 55000);
