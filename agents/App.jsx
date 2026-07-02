@@ -1439,28 +1439,31 @@ const OFC_X0 = 4, OFC_X1 = 96, OFC_Y0 = 18, OFC_Y1 = 86;
 // 13 desks — one per agent (AGENTS.length === OFC_DESKS.length), so a desk
 // always belongs to the same person and can show a real occupied/idle state.
 // The core 4×3 bullpen grid plus one extra desk for דבורה (facilities), set
-// off in a 5th column at the middle row — clear of the meeting nook, dining
-// room and owner's office in the SE corner.
+// below the 4th column in the open south aisle — the whole east strip stays
+// a clear walking corridor between the conference room (north), the dining
+// area (middle) and the owner's now-bigger suite (SE corner), so nothing on
+// the doubled floor reads as a maze.
 const OFC_DESKS = [
   { x: 12, y: 24 }, { x: 29, y: 24 }, { x: 46, y: 24 }, { x: 63, y: 24 },
-  { x: 12, y: 42 }, { x: 29, y: 42 }, { x: 46, y: 42 }, { x: 63, y: 42 }, { x: 80, y: 42 },
+  { x: 12, y: 42 }, { x: 29, y: 42 }, { x: 46, y: 42 }, { x: 63, y: 42 }, { x: 63, y: 76 },
   { x: 12, y: 60 }, { x: 29, y: 60 }, { x: 46, y: 60 }, { x: 63, y: 60 },
 ];
 // Meeting nook, upper right.
 const OFC_SEATS = [{ x: 76, y: 22 }, { x: 84, y: 20 }, { x: 92, y: 22 }, { x: 76, y: 34 }, { x: 84, y: 36 }, { x: 92, y: 34 }];
-// Dining room, lower right — two round tables, four seats each (centers at
-// 80/58 and 80/76 — see OFC_DINE_TABLES below). A real sit-down lunch spot,
-// distinct from the quick coffee-cooler stop.
-const OFC_DINE_TABLES = [{ x: 80, y: 58 }, { x: 80, y: 76 }];
+// Dining room, mid-right between the conference room and the owner's suite —
+// two round tables, four seats each. A real sit-down lunch spot, distinct
+// from the quick coffee-cooler stop.
+const OFC_DINE_TABLES = [{ x: 84, y: 46 }, { x: 84, y: 62 }];
 const OFC_DINE = [
-  { x: 73, y: 53 }, { x: 87, y: 53 }, { x: 73, y: 63 }, { x: 87, y: 63 },
-  { x: 73, y: 71 }, { x: 87, y: 71 }, { x: 73, y: 81 }, { x: 87, y: 81 },
+  { x: 79, y: 42 }, { x: 89, y: 42 }, { x: 79, y: 50 }, { x: 89, y: 50 },
+  { x: 79, y: 58 }, { x: 89, y: 58 }, { x: 79, y: 66 }, { x: 89, y: 66 },
 ];
 const OFC_BREAK = { x: 6, y: 60 };
 // Where a summoned agent walks to when you call them "to your office" — the
-// open aisle right outside the owner's private glass office in the SE
-// corner of the 3D scene, so the walk-over is visible if the sim is open.
-const OFC_MEETING_SPOT = { x: 84, y: 84 };
+// guest chair INSIDE the owner's private glass office in the SE corner of
+// the 3D scene (Office3D places that chair exactly on this spot), so the
+// called agent walks in through the door and sits down facing your desk.
+const OFC_MEETING_SPOT = { x: 90, y: 87 };
 const OFC_STATUS = { work: "💻", meet: "👥", break: "☕", eat: "🍽️", roam: "🚶" };
 const OFC_PHASES = [
   { label: "בוקר", emoji: "🌅", tint: "rgba(255,196,120,.06)", sky: "#22304e" },
@@ -1534,8 +1537,10 @@ function OfficeSim({ onClose, onOpenChat, logActivity, showToast }) {
           showToast?.(text);
           return { ...s, [id]: { ...info, status: onTime ? "onTime" : "late", arrivedAt } };
         });
-        // After a short "meeting", the agent heads back to their own desk.
-        setTimeout(() => setChars((p) => p.map((c) => c.id === id ? moveTo(c, c.home, "work") : c)), 9000);
+        // The agent stays seated on the guest chair across your desk for a
+        // real meeting-length stay (you can sit facing them and talk), then
+        // heads back to their own desk.
+        setTimeout(() => setChars((p) => p.map((c) => c.id === id ? moveTo(c, c.home, "work") : c)), 120000);
       }, Math.max(dur, 1200) + 250);
     };
     if (delayMin > 0) setTimeout(doCall, delayMin * 60000);
@@ -1645,6 +1650,7 @@ function OfficeSim({ onClose, onOpenChat, logActivity, showToast }) {
         deskPositions={OFC_DESKS}
         seatPositions={OFC_SEATS}
         dineTablePositions={OFC_DINE_TABLES}
+        meetingSpot={OFC_MEETING_SPOT}
         bizData={bizSnapshot()}
         voice={{
           canListen: canListen(),
@@ -2467,6 +2473,12 @@ function StyleTag() {
   display:flex;align-items:center;justify-content:center;background:rgba(6,9,18,.72);border:1px solid rgba(110,170,240,.3);
   color:#eaf1ff;cursor:pointer;backdrop-filter:blur(8px)}
 .off3-settings-toggle:hover{border-color:var(--gold);color:var(--gold)}
+.off3-sit{position:absolute;top:10px;right:102px;z-index:3;height:38px;padding:0 16px;border-radius:19px;
+  display:flex;align-items:center;justify-content:center;gap:6px;background:rgba(6,9,18,.72);
+  border:1px solid rgba(228,188,99,.45);color:var(--gold);font-weight:700;font-size:.82rem;
+  cursor:pointer;backdrop-filter:blur(8px);white-space:nowrap}
+.off3-sit:hover{border-color:var(--gold);box-shadow:0 0 14px rgba(228,188,99,.35)}
+.off3-sit.on{background:linear-gradient(135deg,rgba(228,188,99,.28),rgba(228,188,99,.12));color:#ffe9b0}
 .off3-settings{position:absolute;top:56px;right:10px;z-index:60;width:min(300px,86vw);background:rgba(8,11,22,.94);
   backdrop-filter:blur(16px);border:1px solid rgba(110,170,240,.22);border-radius:16px;box-shadow:0 18px 44px rgba(0,0,0,.55);
   animation:acRise .2s ease both}

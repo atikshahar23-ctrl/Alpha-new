@@ -22,11 +22,16 @@ import { MessageCircle, Eye, User, Mic, VolumeX, Volume2, X, Settings as Setting
    clock (sun colour/intensity, ambient tint and fog all lerp toward it).
    ════════════════════════════════════════════════════════════════════ */
 
-const SCALE = 0.22; // world units per floor-percent point
+// The floor was doubled (owner request): the same 0–100% layout grid now maps
+// onto a much larger room (SCALE 0.22→0.33, floor 26×22→39×33 ≈ ×2.25 area),
+// so every desk pod gets wide clear corridors around it instead of the old
+// packed-maze center. All hand-placed world coordinates below are scaled by
+// the same ×1.5 factor so wall-anchored fixtures stay on their walls.
+const SCALE = 0.33; // world units per floor-percent point
 const toWorld = (x, y) => [(x - 50) * SCALE, (y - 50) * SCALE];
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-const TALK_DIST = 2.15;
-const FLOOR_W = 26, FLOOR_D = 22;
+const TALK_DIST = 2.5;
+const FLOOR_W = 39, FLOOR_D = 33;
 // Every desk in the grid shares one orientation, so a single heading makes
 // every seated worker face their own monitor. The desk groups themselves are
 // also rotated by this same angle at placement, so the station + the seated
@@ -955,17 +960,18 @@ function buildGlassOffice(color, name, title, screenTex, decorTemplate) {
     addRail(D, sx, 0, true);
   });
   // A short glass return on each side of the doorway so the front isn't a
-  // gaping hole, leaving a ~1.3-wide entrance in the middle.
+  // gaping hole, leaving a ~1.7-wide entrance in the middle (widened along
+  // with the floor doubling so walking in never feels like threading a maze).
   [-1, 1].forEach((s) => {
-    const jamb = new THREE.Mesh(new THREE.PlaneGeometry(1.0, wallH), OFFICE_GLASS_MAT);
-    jamb.position.set(s * (W / 2 - 0.5), wallH / 2, D / 2); g.add(jamb);
-    addRail(1.0, s * (W / 2 - 0.5), D / 2, false);
+    const jamb = new THREE.Mesh(new THREE.PlaneGeometry(0.8, wallH), OFFICE_GLASS_MAT);
+    jamb.position.set(s * (W / 2 - 0.4), wallH / 2, D / 2); g.add(jamb);
+    addRail(0.8, s * (W / 2 - 0.4), D / 2, false);
   });
 
   // Collision circles along the three solid walls (doorway gap stays open).
   for (let t = -W / 2; t <= W / 2 + 0.01; t += 0.75) obstacles.push({ x: t, z: -D / 2, r: 0.22 });
   for (let t = -D / 2; t <= D / 2 + 0.01; t += 0.75) { obstacles.push({ x: -W / 2, z: t, r: 0.22 }); obstacles.push({ x: W / 2, z: t, r: 0.22 }); }
-  obstacles.push({ x: -(W / 2 - 0.5), z: D / 2, r: 0.28 }, { x: W / 2 - 0.5, z: D / 2, r: 0.28 });
+  obstacles.push({ x: -(W / 2 - 0.4), z: D / 2, r: 0.24 }, { x: W / 2 - 0.4, z: D / 2, r: 0.24 });
 
   // Frosted door-header plate with the agent's name + title, over the entrance.
   const plate = buildNameSprite(name, color, title);
@@ -1064,7 +1070,9 @@ function agentScreenLines(id, b) {
 function buildConferenceRoom(color, screenTex) {
   const g = new THREE.Group();
   const obstacles = [];
-  const W = 5.6, D = 5.0, wallH = 2.6;
+  // Grew with the doubled floor so the meeting seats (spread wider now)
+  // still sit comfortably inside the glass, with room to walk around them.
+  const W = 7.6, D = 6.8, wallH = 2.6;
   const neon = new THREE.MeshBasicMaterial({ color });
   const rail = (geo, x, y, z) => { const m = new THREE.Mesh(geo, neon); m.position.set(x, y, z); g.add(m); };
 
@@ -1216,69 +1224,122 @@ function buildCafeteria(color) {
   return { group: g, obstacles };
 }
 
-function buildOwnerOffice(color, deskTemplate, laptopTemplate, furnitureTemplate) {
+// A visitor chair for the owner's meeting corner — a simple executive guest
+// chair (seat, backrest, four legs) in near-black with a thin accent glow, so
+// a summoned agent has a real chair to sit on across the desk from the owner.
+function buildGuestChair(color) {
+  const g = new THREE.Group();
+  const shell = new THREE.MeshStandardMaterial({ color: 0x14161c, roughness: 0.55, metalness: 0.25, emissive: new THREE.Color(color), emissiveIntensity: 0.12 });
+  const legMat = new THREE.MeshStandardMaterial({ color: 0x0c0e13, roughness: 0.4, metalness: 0.7 });
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.07, 0.5), shell);
+  seat.position.y = 0.27; seat.castShadow = true; g.add(seat);
+  const back = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.55, 0.07), shell);
+  back.position.set(0, 0.57, -0.22); back.castShadow = true; g.add(back);
+  [[-0.21, -0.19], [0.21, -0.19], [-0.21, 0.19], [0.21, 0.19]].forEach(([lx, lz]) => {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.27, 6), legMat);
+    leg.position.set(lx, 0.135, lz); g.add(leg);
+  });
+  return g;
+}
+
+// The owner's private executive suite, rebuilt around real meetings: a much
+// bigger glass corner office (grew with the doubled floor), the desk now
+// faces INTO the room so the owner looks at whoever walks in, and two guest
+// chairs sit across the desk — the summon flow walks the called agent in
+// through the door and sits them down on one, facing the owner. Returns the
+// local seat spots (owner chair + guest chair) so the sim can snap the player
+// and the summoned agent onto them precisely.
+function buildOwnerOffice(color, deskTemplate, laptopTemplate, furnitureTemplate, guestLocal) {
   const g = new THREE.Group();
   const obstacles = [];
-  const col = new THREE.Color(color);
 
-  // Glass partition — an L in the SE corner with a doorway gap on the inner
-  // (west) side. Frames + faint tinted glass.
+  // Glass partition — an L in the SE corner. North wall spans the full suite;
+  // the west wall has a wide doorway gap (local z −0.8..0.9, ~1.7 wide) that
+  // the summoned agent's walk-in route passes through.
   // depthWrite:false is essential — a transparent pane that still writes depth
   // occludes everything behind it, which was making the agents (seen through
   // these partition walls) and the player (spawned inside the glass box) vanish.
   const glassMat = new THREE.MeshPhysicalMaterial({ color: 0x8fd0ff, transparent: true, opacity: 0.1, roughness: 0.05, metalness: 0.1, side: THREE.DoubleSide, depthWrite: false });
-  const frameMat = new THREE.MeshStandardMaterial({ color: 0x0c0e13, roughness: 0.4, metalness: 0.6 });
   const neonEdge = new THREE.MeshBasicMaterial({ color });
   const wallH = 2.6;
-  // North wall (runs along x, at local z = -3), full width.
-  const nWall = new THREE.Mesh(new THREE.PlaneGeometry(7, wallH), glassMat);
-  nWall.position.set(0, wallH / 2, -3); g.add(nWall);
-  const nTop = new THREE.Mesh(new THREE.BoxGeometry(7, 0.06, 0.06), neonEdge); nTop.position.set(0, wallH, -3); g.add(nTop);
-  // West wall (runs along z, at local x = -3.5), with a doorway gap at the south end.
-  const wWall = new THREE.Mesh(new THREE.PlaneGeometry(4.4, wallH), glassMat);
-  wWall.rotation.y = Math.PI / 2; wWall.position.set(-3.5, wallH / 2, -0.8); g.add(wWall);
-  const wTop = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 4.4), neonEdge); wTop.position.set(-3.5, wallH, -0.8); g.add(wTop);
-  // collision circles along the two walls (doorway left open at south-west).
-  for (let t = -3; t <= 3; t += 0.9) obstacles.push({ x: t, z: -3, r: 0.28 });
-  for (let t = -3; t <= 1; t += 0.9) obstacles.push({ x: -3.5, z: t, r: 0.28 });
+  // North wall (runs along x, at local z = -4.3), spanning to the room's east wall.
+  const nWall = new THREE.Mesh(new THREE.PlaneGeometry(11.8, wallH), glassMat);
+  nWall.position.set(0.6, wallH / 2, -4.3); g.add(nWall);
+  const nTop = new THREE.Mesh(new THREE.BoxGeometry(11.8, 0.06, 0.06), neonEdge); nTop.position.set(0.6, wallH, -4.3); g.add(nTop);
+  // West wall (runs along z, at local x = -5.3) in two segments around the door.
+  [[-2.55, 3.5], [2.45, 3.1]].forEach(([cz, len]) => {
+    const seg = new THREE.Mesh(new THREE.PlaneGeometry(len, wallH), glassMat);
+    seg.rotation.y = Math.PI / 2; seg.position.set(-5.3, wallH / 2, cz); g.add(seg);
+    const top = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, len), neonEdge); top.position.set(-5.3, wallH, cz); g.add(top);
+  });
+  // collision circles along the walls (doorway gap left open).
+  for (let t = -5.3; t <= 6.5; t += 0.85) obstacles.push({ x: t, z: -4.3, r: 0.26 });
+  for (let t = -4.3; t <= -0.8; t += 0.8) obstacles.push({ x: -5.3, z: t, r: 0.26 });
+  for (let t = 0.9; t <= 4.0; t += 0.8) obstacles.push({ x: -5.3, z: t, r: 0.26 });
 
-  // Premium rug.
-  const rug = buildRug(5.4, 4.8, 0x14161c);
-  rug.position.set(0, 0.006, -0.5);
+  // Premium rug under the whole meeting area.
+  const rug = buildRug(7.4, 5.6, 0x14161c);
+  rug.position.set(0.6, 0.006, -0.8);
   g.add(rug);
-  const rugTrim = new THREE.Mesh(new THREE.RingGeometry(2.5, 2.62, 40), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.4, side: THREE.DoubleSide }));
-  rugTrim.rotation.x = -Math.PI / 2; rugTrim.position.set(0, 0.012, -0.5); g.add(rugTrim);
+  const rugTrim = new THREE.Mesh(new THREE.RingGeometry(2.6, 2.72, 40), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.4, side: THREE.DoubleSide }));
+  rugTrim.rotation.x = -Math.PI / 2; rugTrim.position.set(0.6, 0.012, -0.8); g.add(rugTrim);
 
-  // Executive battlestation at the back, facing the doorway (south-west).
+  // Executive battlestation — now facing SOUTH into the room, so sitting at
+  // it means facing the door and whoever was summoned to the meeting.
   const desk = buildDesk(color, deskTemplate, laptopTemplate, furnitureTemplate, 0);
-  desk.group.position.set(0.6, 0, -2.0);
-  desk.group.rotation.y = Math.PI; // face into the room (south)
-  desk.group.scale.setScalar(1.15);
+  desk.group.position.set(0.5, 0, -2.2);
+  desk.group.rotation.y = 0;
+  desk.group.scale.setScalar(1.2);
   g.add(desk.group);
-  obstacles.push({ x: 0.6, z: -2.0, r: 1.0 });
+  obstacles.push({ x: 0.5, z: -2.2, r: 1.0 });
+  // The owner's own chair spot (matches the desk model's built-in chair, same
+  // SEAT_BACK offset convention as the agents' desks) — where the player sits.
+  const seatLocal = { x: 0.5, z: -2.2 + SEAT_BACK, ry: 0 };
+
+  // Two guest chairs across the desk, facing the owner. The first one is
+  // placed exactly on the summon meeting spot so the called agent walks in
+  // and sits right down on it.
+  const guests = guestLocal && guestLocal.length ? guestLocal : [{ x: 0.2, z: -0.29 }, { x: 1.9, z: -0.29 }];
+  guests.forEach((p) => {
+    const chair = buildGuestChair(color);
+    chair.position.set(p.x, 0, p.z);
+    chair.rotation.y = Math.PI; // backrest to the south — sitter faces the desk
+    g.add(chair);
+  });
+
+  // A leafy plant in the far corner for warmth.
+  const plant = buildPlant();
+  plant.scale.setScalar(1.25);
+  plant.position.set(5.6, 0, -3.5);
+  g.add(plant);
 
   // Nameplate floating over the suite, with a little gold crown above it.
   const sign = buildNeonSign("המשרד של שחר", color, 3.6, 0.7);
-  sign.position.set(0, 2.95, -2.92);
+  sign.position.set(0.6, 2.95, -4.22);
   g.add(sign);
   const crown = new THREE.Mesh(
     new THREE.ConeGeometry(0.16, 0.18, 5),
     new THREE.MeshStandardMaterial({ color: 0xE4BC63, emissive: 0x5a4318, emissiveIntensity: 0.8, metalness: 0.6, roughness: 0.3 })
   );
-  crown.position.set(0, 3.4, -2.92);
+  crown.position.set(0.6, 3.4, -4.22);
   g.add(crown);
 
-  // Two accent uplights hidden behind the desk for a premium glow.
-  const up = new THREE.PointLight(color, 0.8, 6);
-  up.position.set(0.6, 0.5, -2.4); g.add(up);
+  // Accent uplight hidden behind the desk for a premium glow.
+  const up = new THREE.PointLight(color, 0.8, 7);
+  up.position.set(0.5, 0.5, -2.6); g.add(up);
 
-  return { group: g, obstacles, deskMon: desk.monMat, deskHolo: desk.holo };
+  return { group: g, obstacles, deskMon: desk.monMat, deskHolo: desk.holo, seatLocal };
 }
 
-export default function Office3D({ chars, byId, phase, phases, deskPositions, seatPositions, dineTablePositions, bizData, voice, onClose, onOpenChat }) {
+export default function Office3D({ chars, byId, phase, phases, deskPositions, seatPositions, dineTablePositions, meetingSpot, bizData, voice, onClose, onOpenChat }) {
   const mountRef = useRef(null);
   const liveRef = useRef({ chars, phase, bizData, joyVec: { x: 0, y: 0 }, keys: {}, firstPerson: false });
   const [talkTarget, setTalkTarget] = useState(null);
+  // Sitting on your own chair in your office ("שב"/"קום" button, or E key when
+  // near the chair). While seated the sit animation plays and any movement
+  // input stands you back up.
+  const [sitting, setSitting] = useState(false);
+  const [canSit, setCanSit] = useState(false);
   const [joyKnob, setJoyKnob] = useState({ x: 0, y: 0 });
   const [joyBase, setJoyBase] = useState(null); // floating joystick anchor (screen px), null = hidden
   const [firstPerson, setFirstPerson] = useState(false);
@@ -1313,6 +1374,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
 
   useEffect(() => { liveRef.current.chars = chars; }, [chars]);
   useEffect(() => { liveRef.current.firstPerson = firstPerson; }, [firstPerson]);
+  useEffect(() => { liveRef.current.sitting = sitting; }, [sitting]);
   useEffect(() => { liveRef.current.phase = phase; }, [phase]);
   useEffect(() => { liveRef.current.bizData = bizData; }, [bizData]);
   // Push the graphics-quality toggle down into the postprocessing passes
@@ -1508,7 +1570,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       const cx = seatPositions.reduce((s, p) => s + p.x, 0) / seatPositions.length;
       const cy = seatPositions.reduce((s, p) => s + p.y, 0) / seatPositions.length;
       const [wx, wz] = toWorld(cx, cy);
-      const rug = buildRug(3.4, 3.2, 0x3a2c1c);
+      const rug = buildRug(5.0, 4.8, 0x3a2c1c);
       rug.position.set(wx, 0, wz);
       scene.add(rug);
     }
@@ -1516,7 +1578,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       const cx = dineTablePositions.reduce((s, p) => s + p.x, 0) / dineTablePositions.length;
       const cy = dineTablePositions.reduce((s, p) => s + p.y, 0) / dineTablePositions.length;
       const [wx, wz] = toWorld(cx, cy);
-      const rug = buildRug(6.2, 5.6, 0x2a2440);
+      const rug = buildRug(9.0, 8.2, 0x2a2440);
       rug.position.set(wx, 0, wz);
       scene.add(rug);
     }
@@ -1551,7 +1613,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       const globeMat = new THREE.MeshStandardMaterial({ color: 0xfff2d0, emissive: 0xffe6b0, emissiveIntensity: 0.9, roughness: 0.3 });
       const cols = [...new Set(deskPositions.map((d) => Math.round(toWorld(d.x, d.y)[0])))];
       cols.forEach((cx) => {
-        [-4.5, 0, 4.5].forEach((cz) => {
+        [-6.8, 0, 6.8].forEach((cz) => {
           const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 1.1, 6), cordMat);
           cord.position.set(cx + 0.8, 4.85, cz); scene.add(cord);
           const globe = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 12), globeMat);
@@ -1713,39 +1775,39 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // replace the earlier procedural couch when the model loads; falls back
     // to the procedural one so the corner is never empty.
     if (furnitureTemplate) {
-      placeFurniturePiece(scene, furnitureTemplate, "sofa_001", -9.5, 0, 8.5, Math.PI);
-      placeFurniturePiece(scene, furnitureTemplate, "coffee_table_001", -9.5, 0, 7.1, 0);
-      placeFurniturePiece(scene, furnitureTemplate, "lamp_002", -7.3, 0, 9.3, 0);
-      placeFurniturePiece(scene, furnitureTemplate, "flower_001", -11.9, 0, 8.9, 0);
+      placeFurniturePiece(scene, furnitureTemplate, "sofa_001", -14.3, 0, 12.8, Math.PI);
+      placeFurniturePiece(scene, furnitureTemplate, "coffee_table_001", -14.3, 0, 10.7, 0);
+      placeFurniturePiece(scene, furnitureTemplate, "lamp_002", -11.0, 0, 14.0, 0);
+      placeFurniturePiece(scene, furnitureTemplate, "flower_001", -17.9, 0, 13.4, 0);
       // A little "treat/surprise" — an air-hockey table between the lounge
       // and dining room, for the cozy-office-with-perks feel.
-      placeFurniturePiece(scene, furnitureTemplate, "air_hockey_001", -3.5, 0, 8.2, Math.PI / 2);
+      placeFurniturePiece(scene, furnitureTemplate, "air_hockey_001", -5.3, 0, 12.3, Math.PI / 2);
       // Storage corner (south-east) — closet, dresser, a stacked box, and a
       // couple of toys tucked by it for a lived-in, playful touch.
-      placeFurniturePiece(scene, furnitureTemplate, "closet_001", 9.0, 0, -9.5, 0);
-      placeFurniturePiece(scene, furnitureTemplate, "dresser_001", 10.6, 0, -9.5, 0);
-      placeFurniturePiece(scene, furnitureTemplate, "box_001", 11.6, 0, -9.2, 0);
-      placeFurniturePiece(scene, furnitureTemplate, "toy_001", 8.3, 0, -8.6, 0.6);
-      placeFurniturePiece(scene, furnitureTemplate, "toy_002", 8.7, 0, -8.2, -0.4);
+      placeFurniturePiece(scene, furnitureTemplate, "closet_001", 13.5, 0, -14.3, 0);
+      placeFurniturePiece(scene, furnitureTemplate, "dresser_001", 15.9, 0, -14.3, 0);
+      placeFurniturePiece(scene, furnitureTemplate, "box_001", 17.4, 0, -13.8, 0);
+      placeFurniturePiece(scene, furnitureTemplate, "toy_001", 12.5, 0, -12.9, 0.6);
+      placeFurniturePiece(scene, furnitureTemplate, "toy_002", 13.1, 0, -12.3, -0.4);
       // Break-room kitchenette (east wall) — a counter with small appliances
       // and clutter, plus a fridge and sink, near the existing dining tables.
-      placeFurniturePiece(scene, furnitureTemplate, "kitchen_table_001", 12.1, 0, 3.7, Math.PI / 2);
-      placeFurniturePiece(scene, furnitureTemplate, "fridge_001", 12.5, 0, 1.0, -Math.PI / 2);
-      placeFurniturePiece(scene, furnitureTemplate, "kitchen_sink_001", 12.5, 0, 6.3, -Math.PI / 2);
-      placeFurniturePiece(scene, furnitureTemplate, "coffee_machine_001", 12.0, 1.036, 3.1, 0);
-      placeFurniturePiece(scene, furnitureTemplate, "microwave_oven_001", 12.2, 1.036, 4.2, 0);
-      placeFurniturePiece(scene, furnitureTemplate, "dish_001", 11.85, 1.036, 3.6, 0);
-      placeFurniturePiece(scene, furnitureTemplate, "dish_002", 12.45, 1.036, 3.9, 0);
-      placeFurniturePiece(scene, furnitureTemplate, "drink_001", 11.95, 1.036, 4.0, 0);
-      placeFurniturePiece(scene, furnitureTemplate, "drink_002", 12.35, 1.036, 3.4, 0);
+      placeFurniturePiece(scene, furnitureTemplate, "kitchen_table_001", 18.4, 0, 5.6, Math.PI / 2);
+      placeFurniturePiece(scene, furnitureTemplate, "fridge_001", 18.8, 0, 1.5, -Math.PI / 2);
+      placeFurniturePiece(scene, furnitureTemplate, "kitchen_sink_001", 18.8, 0, 9.5, -Math.PI / 2);
+      placeFurniturePiece(scene, furnitureTemplate, "coffee_machine_001", 18.3, 1.036, 5.0, 0);
+      placeFurniturePiece(scene, furnitureTemplate, "microwave_oven_001", 18.5, 1.036, 6.1, 0);
+      placeFurniturePiece(scene, furnitureTemplate, "dish_001", 18.15, 1.036, 5.5, 0);
+      placeFurniturePiece(scene, furnitureTemplate, "dish_002", 18.75, 1.036, 5.8, 0);
+      placeFurniturePiece(scene, furnitureTemplate, "drink_001", 18.25, 1.036, 5.9, 0);
+      placeFurniturePiece(scene, furnitureTemplate, "drink_002", 18.65, 1.036, 5.3, 0);
     } else {
       const couch = buildCouch();
-      couch.position.set(-9.5, 0, 8.5);
+      couch.position.set(-14.3, 0, 12.8);
       couch.rotation.y = Math.PI;
       scene.add(couch);
     }
     const shelf = buildBookshelf();
-    shelf.position.set(-11.8, 0, 6.5);
+    shelf.position.set(-18.6, 0, 9.8);
     shelf.rotation.y = Math.PI / 2;
     scene.add(shelf);
 
@@ -1758,7 +1820,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     const tradeCtx = tradeCanvas.getContext("2d");
     const tradeState = makeTradeTickerState();
     const tvTrade = buildTvScreen(furnitureTemplate, tradeCanvas);
-    tvTrade.group.position.set(-(FLOOR_W / 2) + 0.2, 1.5, 8.5);
+    tvTrade.group.position.set(-(FLOOR_W / 2) + 0.2, 1.5, 12.8);
     tvTrade.group.rotation.y = Math.PI / 2;
     scene.add(tvTrade.group);
 
@@ -1766,7 +1828,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     hgCanvas.width = 640; hgCanvas.height = 356;
     const hgCtx = hgCanvas.getContext("2d");
     const tvHg = buildTvScreen(furnitureTemplate, hgCanvas);
-    tvHg.group.position.set((FLOOR_W / 2) - 0.2, 1.5, -5.5);
+    tvHg.group.position.set((FLOOR_W / 2) - 0.2, 1.5, -8.3);
     tvHg.group.rotation.y = -Math.PI / 2;
     scene.add(tvHg.group);
     drawTradeScreen(tradeCtx, tradeCanvas.width, tradeCanvas.height, tradeState);
@@ -1774,7 +1836,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     let screenT = 0;
     // (SE corner plant removed — that corner is now the owner's office; the
     // SW plant moved out of the restrooms footprint.)
-    [[-7.4, 10.3], [10.8, -8.6], [1.5, 10.4]].forEach(([px, pz]) => {
+    [[-11.1, 15.5], [16.2, -12.9], [2.3, 15.6]].forEach(([px, pz]) => {
       const plant = buildPlant();
       plant.position.set(px, 0, pz);
       scene.add(plant);
@@ -1856,17 +1918,31 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       conf.obstacles.forEach((o) => obstacles.push({ x: wx + o.x, z: wz + o.z, r: o.r }));
     }
     // A few fixed pieces the player would otherwise walk straight through.
-    [[-9.5, 8.5, 1.0], [-3.5, 8.2, 0.9], [12.1, 3.7, 1.4], [9.0, -9.5, 0.9], [10.6, -9.5, 0.8]]
+    [[-14.3, 12.8, 1.0], [-5.3, 12.3, 0.9], [18.4, 5.6, 1.6], [13.5, -14.3, 0.9], [15.9, -14.3, 0.8]]
       .forEach(([ox, oz, r]) => obstacles.push({ x: ox, z: oz, r }));
 
-    // The owner's private executive gaming office in the SE corner.
-    const ownerOffice = buildOwnerOffice(0xE4BC63, deskTemplate, laptopTemplate, furnitureTemplate);
-    const OFFICE_ORIGIN = { x: 8.5, z: 8.2 };
+    // The owner's private executive suite in the SE corner — anchored to the
+    // room walls so it stays a corner office at any floor size. The first
+    // guest chair is placed exactly on the 2D summon meeting spot, so a
+    // summoned agent's walk target IS the chair.
+    const OFFICE_ORIGIN = { x: FLOOR_W / 2 - 6.5, z: FLOOR_D / 2 - 4.0 };
+    const guestLocal = (() => {
+      if (!meetingSpot) return null;
+      const [gx, gz] = toWorld(meetingSpot.x, meetingSpot.y);
+      return [{ x: gx - OFFICE_ORIGIN.x, z: gz - OFFICE_ORIGIN.z }, { x: gx - OFFICE_ORIGIN.x + 1.7, z: gz - OFFICE_ORIGIN.z }];
+    })();
+    const ownerOffice = buildOwnerOffice(0xE4BC63, deskTemplate, laptopTemplate, furnitureTemplate, guestLocal);
     ownerOffice.group.position.set(OFFICE_ORIGIN.x, 0, OFFICE_ORIGIN.z);
     scene.add(ownerOffice.group);
     ownerOffice.obstacles.forEach((o) => obstacles.push({ x: OFFICE_ORIGIN.x + o.x, z: OFFICE_ORIGIN.z + o.z, r: o.r }));
     if (ownerOffice.deskMon) deskMons.push(ownerOffice.deskMon);
     if (ownerOffice.deskHolo) deskHolos.push(ownerOffice.deskHolo);
+    // The owner's chair in world coordinates — where the player can sit down.
+    const OWNER_SEAT = {
+      x: OFFICE_ORIGIN.x + ownerOffice.seatLocal.x,
+      z: OFFICE_ORIGIN.z + ownerOffice.seatLocal.z,
+      ry: ownerOffice.seatLocal.ry,
+    };
 
     // ── Reception at the entrance ────────────────────────────────────────
     // A welcome desk with a receptionist just inside the south entrance, so
@@ -1882,7 +1958,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       wx2.fillStyle = "#7fe6b0"; wx2.font = "600 16px system-ui"; wx2.fillText("● הצוות זמין", 150, 132);
       const welcomeTex = new THREE.CanvasTexture(wCvs); welcomeTex.colorSpace = THREE.SRGBColorSpace;
       const reception = buildReception(0xE4BC63, welcomeTex);
-      const RCP = { x: -4.6, z: 9.6 };
+      const RCP = { x: -6.9, z: 14.4 };
       reception.group.position.set(RCP.x, 0, RCP.z);
       scene.add(reception.group);
       reception.obstacles.forEach((o) => obstacles.push({ x: RCP.x + o.x, z: RCP.z + o.z, r: o.r }));
@@ -1899,7 +1975,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // ── Restrooms (SW corner) ────────────────────────────────────────────
     {
       const wc = buildRestrooms();
-      const WC = { x: -11.3, z: 9.0 };
+      const WC = { x: -17.0, z: 13.5 };
       wc.group.position.set(WC.x, 0, WC.z);
       scene.add(wc.group);
       wc.obstacles.forEach((o) => obstacles.push({ x: WC.x + o.x, z: WC.z + o.z, r: o.r }));
@@ -1908,7 +1984,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // ── Cafeteria / coffee counter (beside the dining tables) ────────────
     {
       const caf = buildCafeteria(0xffb454);
-      const CAF = { x: 10.2, z: 3.7 };
+      const CAF = { x: 15.3, z: 5.6 };
       caf.group.position.set(CAF.x, 0, CAF.z);
       scene.add(caf.group);
       caf.obstacles.forEach((o) => obstacles.push({ x: CAF.x + o.x, z: CAF.z + o.z, r: o.r }));
@@ -1928,15 +2004,15 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         scene.add(piece);
       };
       // wall clock on the east wall, over the lounge area
-      hang("Office2_clock_1", FLOOR_W / 2 - 0.12, 2.6, -1.4, -Math.PI / 2, 1.3);
+      hang("Office2_clock_1", FLOOR_W / 2 - 0.12, 2.6, -2.1, -Math.PI / 2, 1.3);
       // two framed decorations on the west wall near reception
-      hang("Office2_decoration1", -(FLOOR_W / 2) + 0.12, 2.6, 7.0, Math.PI / 2, 1.4);
-      hang("Office2_decoration2", -(FLOOR_W / 2) + 0.12, 2.6, 5.6, Math.PI / 2, 1.4);
+      hang("Office2_decoration1", -(FLOOR_W / 2) + 0.12, 2.6, 10.5, Math.PI / 2, 1.4);
+      hang("Office2_decoration2", -(FLOOR_W / 2) + 0.12, 2.6, 8.4, Math.PI / 2, 1.4);
       // big framed picture on the east wall near the owner's office
-      hang("Office2_picture", FLOOR_W / 2 - 0.12, 1.9, 5.4, Math.PI, 1.2);
+      hang("Office2_picture", FLOOR_W / 2 - 0.12, 1.9, 8.1, Math.PI, 1.2);
       // record player + vinyls on the cafeteria counter
-      hang("Office2_Vinyl_players", 10.25, 1.1, 2.35, -Math.PI / 2, 1.0);
-      hang("Office2_Vinyls", 10.25, 1.1, 1.75, -Math.PI / 2, 1.0);
+      hang("Office2_Vinyl_players", 15.35, 1.1, 4.25, -Math.PI / 2, 1.0);
+      hang("Office2_Vinyls", 15.35, 1.1, 3.65, -Math.PI / 2, 1.0);
     }
 
     // ── Gaming-den ambiance ──────────────────────────────────────────────
@@ -1946,31 +2022,31 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // point lights, so it's cheap.
     const neonStripMat1 = new THREE.MeshBasicMaterial({ color: 0x18e0ff, transparent: true, opacity: 0.5 });
     const neonStripMat2 = new THREE.MeshBasicMaterial({ color: 0xff3ea5, transparent: true, opacity: 0.5 });
-    [-6.5, -2.75, 1.0].forEach((ax, i) => {
-      const strip = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 15), i % 2 ? neonStripMat2 : neonStripMat1);
+    [-9.75, -4.1, 1.5].forEach((ax, i) => {
+      const strip = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 22), i % 2 ? neonStripMat2 : neonStripMat1);
       strip.rotation.x = -Math.PI / 2;
-      strip.position.set(ax, 0.02, -1.5);
+      strip.position.set(ax, 0.02, -2.25);
       scene.add(strip);
     });
     const alphaSign = buildNeonSign("ALPHA HQ", 0x18e0ff, 5.2, 1.3);
     alphaSign.rotation.y = Math.PI / 2;
-    alphaSign.position.set(-(FLOOR_W / 2) + 0.15, 4.4, -3);
+    alphaSign.position.set(-(FLOOR_W / 2) + 0.15, 4.4, -4.5);
     scene.add(alphaSign);
     const ggSign = buildNeonSign("GG · LEVEL UP", 0xff3ea5, 4.6, 1.1);
     ggSign.rotation.y = -Math.PI / 2;
-    ggSign.position.set((FLOOR_W / 2) - 0.15, 4.6, 2.5);
+    ggSign.position.set((FLOOR_W / 2) - 0.15, 4.6, 3.75);
     scene.add(ggSign);
-    const accentCyan = new THREE.PointLight(0x18e0ff, 0.5, 20);
-    accentCyan.position.set(-6, 4.8, 0); scene.add(accentCyan);
-    const accentMagenta = new THREE.PointLight(0xff3ea5, 0.5, 20);
-    accentMagenta.position.set(6, 4.8, 2); scene.add(accentMagenta);
+    const accentCyan = new THREE.PointLight(0x18e0ff, 0.5, 26);
+    accentCyan.position.set(-9, 4.8, 0); scene.add(accentCyan);
+    const accentMagenta = new THREE.PointLight(0xff3ea5, 0.5, 26);
+    accentMagenta.position.set(9, 4.8, 3); scene.add(accentMagenta);
 
     // Player — spawns in the open central aisle just south of the bullpen,
     // clear of any wall/desk so movement is free and comfortable from the
     // first step, facing north toward the team (the owner's glass office is
     // right there to the east to walk into).
     const playerH = buildHuman(0xE4BC63, "אתה", true, charTemplate, charClips, CHAR_SCALE, CHAR_CENTER_OFFSET, true, "הבעלים · שחר");
-    playerH.group.position.set(2.2, 0, 8.6);
+    playerH.group.position.set(3.3, 0, 12.9);
     playerH.group.rotation.y = Math.PI;
     scene.add(playerH.group);
 
@@ -2021,7 +2097,12 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     const curSky = new THREE.Color(0x1b2440);
     const tmpColor = new THREE.Color();
 
-    const onKeyDown = (e) => { liveRef.current.keys[e.key.toLowerCase()] = true; };
+    const onKeyDown = (e) => {
+      const k = e.key.toLowerCase();
+      liveRef.current.keys[k] = true;
+      // E toggles sitting on your own office chair (only when near it).
+      if (k === "e") liveRef.current.toggleSit?.();
+    };
     const onKeyUp = (e) => { liveRef.current.keys[e.key.toLowerCase()] = false; };
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
@@ -2130,11 +2211,27 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       }
       mx += jv.x; mz += jv.y;
       const mlen = Math.hypot(mx, mz);
-      if (mlen > 0.08) {
+      // Sitting on your own chair: any movement input stands you up; otherwise
+      // glide onto the seat (position, drop, and facing — south, toward the
+      // guest chairs) and hold the sit animation.
+      if (liveRef.current.sitting && (mlen > 0.08 || fpTankControls)) {
+        liveRef.current.setSitting?.(false);
+      } else if (liveRef.current.sitting) {
+        const k = Math.min(1, dt * 6);
+        playerH.group.position.x += (OWNER_SEAT.x - playerH.group.position.x) * k;
+        playerH.group.position.z += (OWNER_SEAT.z - playerH.group.position.z) * k;
+        playerH.group.position.y += (SEAT_DROP - playerH.group.position.y) * k;
+        let dSit = OWNER_SEAT.ry - playerH.group.rotation.y;
+        while (dSit > Math.PI) dSit -= Math.PI * 2;
+        while (dSit < -Math.PI) dSit += Math.PI * 2;
+        playerH.group.rotation.y += dSit * k;
+        setClip(playerH, CLIP.sit);
+      } else if (mlen > 0.08) {
+        playerH.group.position.y += (0 - playerH.group.position.y) * Math.min(1, dt * 8);
         mx /= mlen; mz /= mlen;
-        const SPEED = 4.4;
-        playerH.group.position.x = clamp(playerH.group.position.x + mx * SPEED * dt, -12.2, 12.2);
-        playerH.group.position.z = clamp(playerH.group.position.z + mz * SPEED * dt, -10.2, 10.2);
+        const SPEED = 5.0;
+        playerH.group.position.x = clamp(playerH.group.position.x + mx * SPEED * dt, -(FLOOR_W / 2 - 1), FLOOR_W / 2 - 1);
+        playerH.group.position.z = clamp(playerH.group.position.z + mz * SPEED * dt, -(FLOOR_D / 2 - 1), FLOOR_D / 2 - 1);
         resolveCollisions(playerH.group.position, obstacles);
         if (!fpTankControls) {
           const targetRot = Math.atan2(mx, mz);
@@ -2145,7 +2242,15 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         }
         setClip(playerH, CLIP.walk);
       } else {
+        playerH.group.position.y += (0 - playerH.group.position.y) * Math.min(1, dt * 8);
         setClip(playerH, fpTankControls && kTurn ? CLIP.walk : CLIP.idle);
+      }
+      // "You can sit here" prompt — near your own chair (or already seated).
+      const nearSeat = Math.hypot(playerH.group.position.x - OWNER_SEAT.x, playerH.group.position.z - OWNER_SEAT.z) < 3.2;
+      liveRef.current.canSit = nearSeat;
+      if (liveRef.current.canSitShown !== nearSeat) {
+        liveRef.current.canSitShown = nearSeat;
+        liveRef.current.setCanSit?.(nearSeat);
       }
 
       // NPCs: walk a simple two-point "aisle" route to their live target
@@ -2166,8 +2271,14 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         if (h.destX === undefined || Math.abs(h.destX - finalX) > 0.05 || Math.abs(h.destZ - finalZ) > 0.05) {
           h.destX = finalX; h.destZ = finalZ;
           h.wpX = h.group.position.x; h.wpZ = finalZ;
+          h.wpDone = false;
         }
-        const atWp = Math.hypot(h.wpX - h.group.position.x, h.wpZ - h.group.position.z) < 0.1;
+        // Waypoint arrival must be sticky: the first step toward the final
+        // target can be longer than the 0.1 arrival radius (dt is clamped at
+        // 0.05s, so below 20fps a step is up to 0.125), and without the flag
+        // the walker bounces back to the waypoint forever, jammed mid-route.
+        const atWp = h.wpDone || Math.hypot(h.wpX - h.group.position.x, h.wpZ - h.group.position.z) < 0.1;
+        h.wpDone = atWp;
         const tx = atWp ? finalX : h.wpX, tz = atWp ? finalZ : h.wpZ;
         const dx = tx - h.group.position.x, dz = tz - h.group.position.z;
         const dist = Math.hypot(dx, dz);
@@ -2177,7 +2288,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           // distance lerp — the old lerp closed most of the gap in the
           // first frame or two for any far-off desk, reading as teleporting
           // rather than walking across the room.
-          const NPC_SPEED = 1.9;
+          const NPC_SPEED = 2.5;
           const maxStep = NPC_SPEED * dt;
           if (dist <= maxStep) {
             h.group.position.x = tx; h.group.position.z = tz;
@@ -2186,7 +2297,8 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
             h.group.position.z += (dz / dist) * maxStep;
           }
         }
-        const targetY = atDesk && distFinal <= 0.03 ? SEAT_DROP : 0;
+        const summoned = c.status === "summoned";
+        const targetY = (atDesk || summoned) && distFinal <= 0.03 ? SEAT_DROP : 0;
         h.group.position.y += (targetY - h.group.position.y) * Math.min(1, dt * 6);
         if (distFinal > 0.03) {
           const targetRot = Math.atan2(dx, dz);
@@ -2196,14 +2308,19 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           h.group.rotation.y += dRot * Math.min(1, dt * 8);
           setClip(h, CLIP.walk);
         } else {
-          const seated = c.status === "work" || c.status === "meet" || c.status === "eat";
+          // A summoned agent has walked into your office and reached the
+          // guest chair — they sit down on it, facing the owner's desk
+          // (north), so a scheduled meeting reads as two people actually
+          // sitting across the desk from each other.
+          const seated = c.status === "work" || c.status === "meet" || c.status === "eat" || summoned;
           setClip(h, seated ? CLIP.sit : CLIP.idle);
           // Working at the desk: face the monitor head-on instead of
           // whatever direction they happened to walk in from — every desk
           // in the grid shares the same unrotated layout, so one fixed
           // heading squares everyone up to their own screen.
-          if (atDesk) {
-            let dRot = DESK_FACE_ROT - h.group.rotation.y;
+          if (atDesk || summoned) {
+            const face = summoned ? Math.PI : DESK_FACE_ROT;
+            let dRot = face - h.group.rotation.y;
             while (dRot > Math.PI) dRot -= Math.PI * 2;
             while (dRot < -Math.PI) dRot += Math.PI * 2;
             h.group.rotation.y += dRot * Math.min(1, dt * 6);
@@ -2211,6 +2328,13 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         }
       });
       allHumans.forEach((h) => { if (h.mixer) h.mixer.update(dt); });
+      // QA hook: live world positions, only published when a debugger opts in
+      // (window.__off3debug = true) — zero cost otherwise.
+      if (typeof window !== "undefined" && window.__off3debug) {
+        const npcs = {};
+        liveChars.forEach((c) => { const h = npc[c.id]; if (h) npcs[c.id] = [h.group.position.x, h.group.position.z, c.status]; });
+        window.__off3pos = { player: [playerH.group.position.x, playerH.group.position.z], npcs };
+      }
 
       // Slow dust drift — a gentle upward bob + lateral sway per mote.
       {
@@ -2238,7 +2362,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       // so it doesn't block the view from the inside.
       if (liveRef.current.firstPerson) {
         playerH.group.visible = false;
-        const eyeY = 1.32;
+        const eyeY = liveRef.current.sitting ? 0.96 : 1.32;
         const fx = Math.sin(playerH.group.rotation.y), fz = Math.cos(playerH.group.rotation.y);
         const eyePos = new THREE.Vector3(playerH.group.position.x, eyeY, playerH.group.position.z);
         camera.position.lerp(eyePos, 0.4);
@@ -2266,6 +2390,9 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       composer.render();
     }
     liveRef.current.setTalkTarget = setTalkTarget;
+    liveRef.current.setSitting = setSitting;
+    liveRef.current.setCanSit = setCanSit;
+    liveRef.current.toggleSit = () => setSitting((v) => (v ? false : !!liveRef.current.canSit));
     animate();
 
     const onResize = () => {
@@ -2402,7 +2529,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       <div ref={mountRef} className="off3-canvas"
         onTouchStart={onJoyStart} onTouchMove={onJoyMove} onTouchEnd={onJoyEnd}
         onMouseDown={onJoyStart} onMouseMove={onJoyMove} onMouseUp={onJoyEnd} onMouseLeave={onJoyEnd} />
-      <div className="off3-hint">גע במסך וגרור כדי לנווט · חצים / WASD במחשב · התקרב לעובד ודבר איתו · {ph.emoji} {ph.label}</div>
+      <div className="off3-hint">גע במסך וגרור כדי לנווט · חצים / WASD במחשב · התקרב לעובד ודבר איתו · ליד הכיסא שלך: E לשבת · {ph.emoji} {ph.label}</div>
       {loadPct !== null && (
         <div className="off3-loader">
           <div className="off3-loader-logo">🏢</div>
@@ -2414,6 +2541,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       <button className="off3-view-toggle" onClick={() => setFirstPerson((v) => !v)} title="החלף תצוגה">
         {firstPerson ? <User size={18} /> : <Eye size={18} />}
       </button>
+      {(canSit || sitting) && (
+        <button className={"off3-sit" + (sitting ? " on" : "")} onClick={() => setSitting((v) => !v)} title={sitting ? "קום מהכיסא" : "שב בכיסא שלך (E)"}>
+          {sitting ? "🚶 קום" : "🪑 שב בכיסא שלך"}
+        </button>
+      )}
       <button className="off3-settings-toggle" onClick={() => setSettingsOpen((v) => !v)} title="הגדרות סימולטור">
         <SettingsIcon size={18} />
       </button>
