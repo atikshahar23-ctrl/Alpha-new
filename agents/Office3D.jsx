@@ -2704,48 +2704,32 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       reception.group.rotation.y = Math.PI;
       scene.add(reception.group);
       reception.obstacles.forEach((o) => obstacles.push({ x: RCP.x - o.x, z: RCP.z - o.z, r: o.r }));
-      // Receptionist — a seated greeter behind the counter (not one of the
-      // 12 agents). Restyled to actually look like her own person: petite,
-      // rose outfit, dark hair (cap + low ponytail attached to the head bone
-      // so it follows the sit pose).
-      const recep = buildHuman(0xD96A9E, "מיכל", false, charTemplate, charClips, CHAR_SCALE * 0.94, CHAR_CENTER_OFFSET, true, "קבלה");
-      recep.group.traverse((o) => {
-        if ((o.isMesh || o.isSkinnedMesh) && o.material && o.material.color) {
-          o.material.color = new THREE.Color(0xffffff).lerp(new THREE.Color(0xD96A9E), 0.45);
-        }
-      });
-      {
-        let head = null;
-        recep.group.traverse((o) => { if (!head && o.isBone && /head/i.test(o.name)) head = o; });
-        if (head) {
-          // Bone space in this FBX-converted rig is NOT world scale — attach
-          // via the bone's actual world scale so the hair comes out head-
-          // sized (a raw attach rendered as a building-sized brown blob).
-          recep.group.updateMatrixWorld(true);
-          const ws = new THREE.Vector3();
-          head.getWorldScale(ws);
-          const inv = 1 / (ws.x || 1);
-          const hairMat = new THREE.MeshStandardMaterial({ color: 0x33200f, roughness: 0.55 });
-          const hair = new THREE.Group();
-          // Sizes below are WORLD units (head radius ≈ 0.08 at this model's
-          // scale); the inverse-scale on the group maps them into bone space.
-          const cap = new THREE.Mesh(new THREE.SphereGeometry(0.085, 14, 12, 0, Math.PI * 2, 0, Math.PI * 0.6), hairMat);
-          cap.scale.set(1.02, 1.15, 1.1);
-          hair.add(cap);
-          const tail = new THREE.Mesh(new THREE.CapsuleGeometry(0.03, 0.15, 4, 8), hairMat);
-          tail.position.set(0, -0.075, -0.08);
-          tail.rotation.x = 0.45;
-          hair.add(tail);
-          hair.scale.setScalar(inv);
-          hair.position.set(0, 0.035 * inv, 0.008 * inv);
-          head.add(hair);
-        }
-      }
-      recep.group.position.set(RCP.x - reception.seatLocal.x, 0, RCP.z - reception.seatLocal.z);
-      recep.group.rotation.y = Math.PI; // face the flipped counter front (north)
-      setClip(recep, CLIP.sit);
-      scene.add(recep.group);
-      allExtraHumans.push(recep);
+      // Receptionist — her own real model (the owner's "posh female" asset,
+      // a proper seated pose baked in — no more the shared male rig tinted
+      // pink with procedural sphere hair). Fully static (no mixer/clips
+      // needed; she never leaves the desk), so she's loaded directly rather
+      // than through buildHuman/allExtraHumans.
+      const recepLoader = new GLTFLoader();
+      recepLoader.setMeshoptDecoder(MeshoptDecoder);
+      recepLoader.load(base + "office-models/michal_receptionist.glb", (g) => {
+        const m = g.scene;
+        const mb = new THREE.Box3().setFromObject(m);
+        const ms = mb.getSize(new THREE.Vector3());
+        const mc = mb.getCenter(new THREE.Vector3());
+        const s = (1.55 / ms.y) || 1; // normalize to a real seated-adult height
+        const wrap = new THREE.Group();
+        m.position.set(-mc.x, -mb.min.y, -mc.z);
+        m.scale.setScalar(s);
+        wrap.add(m);
+        m.traverse((o) => { if (o.isMesh) { o.castShadow = true; } });
+        const tag = buildNameSprite("מיכל", "#D96A9E", "קבלה");
+        tag.scale.multiplyScalar(1.7);
+        tag.position.y = 1.65;
+        wrap.add(tag);
+        wrap.position.set(RCP.x - reception.seatLocal.x, 0, RCP.z - reception.seatLocal.z);
+        wrap.rotation.y = Math.PI; // face the flipped counter front (north)
+        scene.add(wrap);
+      }, undefined, () => { /* model failed to load — desk stays as decor */ });
     }
 
     // (Restroom stalls removed — owner request; the SW corner stays open.)
