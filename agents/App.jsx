@@ -1208,7 +1208,7 @@ function BottomNav({ view, setView, ideasCount }) {
     { id: "settings", label: "הגדרות", Icon: SettingsIcon },
   ];
   return (
-    <d
+    <div className="ac-nav">
       {items.map(({ id, label, Icon, badge }) => (
         <button key={id} className={view === id ? "on" : ""} onClick={() => setView(id)}>
           <div className="ac-nav-ic"><Icon size={20} />{badge ? <i className="ac-nav-badge">{badge}</i> : null}</div>
