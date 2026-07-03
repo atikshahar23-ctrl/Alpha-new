@@ -40,7 +40,9 @@ function useAmbientOffice(enabled, volume) {
     const humSrc = ctx.createBufferSource();
     humSrc.buffer = humBuf; humSrc.loop = true;
     const humFilter = ctx.createBiquadFilter();
-    humFilter.type = "lowpass"; humFilter.frequency.value = 220;
+    // Tuned lower than a plain office AC hum — reads more like a server-rack
+    // / ops-center drone (tactical command-center ambience).
+    humFilter.type = "lowpass"; humFilter.frequency.value = 165;
     const humGain = ctx.createGain(); humGain.gain.value = 0.7;
     humSrc.connect(humFilter); humFilter.connect(humGain); humGain.connect(master);
     humSrc.start();

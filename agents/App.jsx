@@ -3598,6 +3598,37 @@ function StyleTag() {
 .off3-phone-act{background:rgba(46,230,255,.07);border:1px solid rgba(46,230,255,.28);border-radius:11px;
   color:#d7f6ff;font-family:inherit;font-size:12.5px;font-weight:700;padding:9px 10px;cursor:pointer;text-align:right}
 .off3-phone-act:hover{background:rgba(46,230,255,.16);border-color:#2ee6ff}
+.off3-phone-brand{text-align:center;font-size:9.5px;font-weight:800;letter-spacing:1.5px;color:#5f8ea0;margin:2px 0 0}
+.off3-phone-brand i{font-style:normal;color:#2ee6ff;opacity:.8}
+.off3-phone-unlock{position:absolute;inset:0;z-index:5;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+  background:radial-gradient(ellipse at center,rgba(6,16,26,.97),rgba(2,6,10,.99));animation:off3PhoneUnlockFade .55s ease forwards}
+.off3-phone-unlock-ring{width:52px;height:52px;border-radius:50%;border:2px solid rgba(46,230,255,.3);border-top-color:#2ee6ff;
+  animation:off3PhoneSpin .7s linear infinite;box-shadow:0 0 18px rgba(46,230,255,.35)}
+.off3-phone-unlock b{font-size:13px;font-weight:800;letter-spacing:1px;color:#d7f6ff;margin-top:4px}
+.off3-phone-unlock span{font-size:10.5px;color:#6fa8c4}
+@keyframes off3PhoneSpin{to{transform:rotate(360deg)}}
+@keyframes off3PhoneUnlockFade{0%,72%{opacity:1;pointer-events:auto}100%{opacity:0;pointer-events:none}}
+.off3-phone-tab-sec{position:relative}
+.off3-phone-badge{position:absolute;top:4px;left:8px;width:7px;height:7px;border-radius:50%;background:#ff5c50;
+  box-shadow:0 0 6px rgba(255,92,80,.8);animation:off3PhoneBadgePulse 1.4s ease-in-out infinite}
+@keyframes off3PhoneBadgePulse{0%,100%{opacity:1}50%{opacity:.35}}
+.off3-phone-home{align-items:center;text-align:center}
+.off3-phone-homeclock{font-size:34px;font-weight:800;color:#d7f6ff;letter-spacing:1px;margin-top:4px}
+.off3-phone-homesub{font-size:10.5px;font-weight:700;color:#5f8ea0;letter-spacing:.5px;margin-bottom:10px}
+.off3-phone-apps{display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%}
+.off3-phone-app{position:relative;display:flex;flex-direction:column;align-items:center;gap:5px;background:rgba(46,230,255,.06);
+  border:1px solid rgba(46,230,255,.25);border-radius:14px;color:#d7f6ff;font-family:inherit;font-size:11px;font-weight:700;
+  padding:12px 6px;cursor:pointer}
+.off3-phone-app:hover{background:rgba(46,230,255,.14);border-color:#2ee6ff}
+.off3-phone-app span{font-size:20px}
+.off3-phone-alert{display:flex;align-items:flex-start;gap:8px;padding:8px 9px;border-radius:9px;background:rgba(255,255,255,.03);
+  border-inline-start:3px solid #6fa8c4;font-size:11.5px;color:#d9e6ee;line-height:1.4}
+.off3-phone-alert b{flex-shrink:0;font-size:11px}
+.off3-phone-alert.lvl-high{border-inline-start-color:#ff5c50;background:rgba(255,92,80,.06)}
+.off3-phone-alert.lvl-mid{border-inline-start-color:#E4BC63;background:rgba(228,188,99,.06)}
+.off3-phone-alert.lvl-low{border-inline-start-color:#3FD79A;background:rgba(63,215,154,.06)}
+.off3-phone-slider{display:flex;align-items:center;gap:8px;font-size:11.5px;font-weight:700;color:#8fd8e8;padding:2px 2px}
+.off3-phone-slider input[type="range"]{flex:1;accent-color:#2ee6ff}
 .radio-ctl{display:flex;flex-direction:column;gap:10px;padding:2px}
 .radio-ctl-hidden{position:absolute;width:0;height:0;overflow:hidden;padding:0;margin:0;pointer-events:none}
 .radio-ctl-head{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:800;color:#9fe6f4}
@@ -3656,6 +3687,14 @@ function StyleTag() {
 .off3-god-sel{padding:6px 14px 12px}
 .off3-god-sel-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 0 8px}
 .off3-god-sel-head b{font-size:12.5px;color:#E4BC63}
+.off3-god-secure{font-size:9px;font-weight:800;letter-spacing:.5px;color:#3FD79A;animation:off3SecurePulse 1.8s ease-in-out infinite}
+@keyframes off3SecurePulse{0%,100%{opacity:1;color:#3FD79A}50%{opacity:.6;color:#2ee6ff}}
+.off3-god-tacspec{border:1px solid rgba(0,255,255,.25);border-radius:9px;padding:6px 8px;margin:4px 0;background:rgba(0,255,255,.04)}
+.off3-god-tacspec-xyz{display:flex;justify-content:space-between;gap:6px;font-size:10px;color:#5f8ea0;font-weight:700;margin:4px 0}
+.off3-god-tacspec-xyz b{color:#2ee6ff;font-variant-numeric:tabular-nums;margin-inline-start:3px}
+.off3-god-tacspec-row{display:flex;justify-content:space-between;gap:8px;font-size:10px;color:#5f8ea0;font-weight:700}
+.off3-god-tacspec-row b{color:#E4BC63}
+.off3-god-tacspec-snap{font-size:9.5px;font-weight:800;color:#00ffff;margin-top:4px;letter-spacing:.3px}
 .off3-god-del{background:rgba(255,92,80,.1);border:1px solid rgba(255,92,80,.35);border-radius:8px;color:#ff5c50;
   cursor:pointer;padding:5px 7px;display:flex}
 .off3-god-row{width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;background:none;border:none;

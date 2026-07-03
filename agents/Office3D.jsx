@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useMemo } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
@@ -1943,6 +1943,19 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   // Real business activity, normalized 0..1 — drives the space portal's
   // orbit speed (busier pipeline = faster orbits), not a random wobble.
   const spacePortalLoad = Math.min(1, ((bizData?.openDeals || 0) + (bizData?.fleetProjects || 0) * 2) / 20);
+  // Security tab feed — real Heavy Guard fleet/pipeline signal (bizData),
+  // not fabricated DVR events: a stuck deal or an active fleet project is
+  // an actual thing worth a tactical notification, so we surface exactly
+  // that instead of inventing camera alerts with no data behind them.
+  const securityAlerts = useMemo(() => {
+    const b = bizData || {};
+    const out = [];
+    if (b.staleCount > 0) out.push({ level: "high", text: `${b.staleCount} עסקאות תקועות מעל שבוע (הישנה ביותר: ${b.staleDays || 0} ימים)` });
+    if (b.fleetProjects > 0) out.push({ level: "mid", text: `${b.fleetProjects} פרויקטי צי פעילים במעקב` });
+    if (b.openDeals > 0) out.push({ level: "low", text: `${b.openDeals} עסקאות פתוחות בצנרת (₪${Math.round(b.openVal || 0).toLocaleString()})` });
+    if (out.length === 0) out.push({ level: "low", text: "אין התראות פעילות — כל המערכות תקינות" });
+    return out;
+  }, [bizData]);
   // God Mode — owner-only admin overlay (off by default): click-select the
   // car/trucks/portal/spawned props and transform/delete them, spawn new
   // ones, pause the sim clock, and override the light level.
@@ -1950,21 +1963,41 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   const [selectedObj, setSelectedObj] = useState(null);
   const [godPaused, setGodPaused] = useState(false);
   const [godLight, setGodLight] = useState(1);
+  const [godSpeed, setGodSpeed] = useState(1); // agent walk-speed multiplier — Command Center dial
+  // Blueprint Tactical Mode — God Mode's construction view: the whole scene
+  // drops to a cyan wireframe schematic over a laser floor grid, and every
+  // position change snaps to a 0.5m grid for precision placement.
+  const [blueprint, setBlueprint] = useState(false);
   const [joyKnob, setJoyKnob] = useState({ x: 0, y: 0 });
   const [joyBase, setJoyBase] = useState(null); // floating joystick anchor (screen px), null = hidden
   const [firstPerson, setFirstPerson] = useState(false);
   const [voiceState, setVoiceState] = useState("idle"); // idle | listening | thinking | speaking
   const [voiceLine, setVoiceLine] = useState(null);      // { who, text } subtitle — sticky, only the user's own X closes it
-  // 📱 The owner's phone: a HUD handset that mirrors the live conversation
-  // (the same lines the 3D hologram projects) plus a control tab for the
-  // main assistant and every system.
+  // 📱 ALPHA-LINK-01 — the owner's tactical secure terminal: a HUD handset
+  // that mirrors the live conversation (the same lines the 3D hologram
+  // projects) plus a control tab for the main assistant and every system.
   const [phoneOpen, setPhoneOpen] = useState(false);
-  const [phoneTab, setPhoneTab] = useState("chat");
+  const [phoneTab, setPhoneTab] = useState("home");
   const [phoneLog, setPhoneLog] = useState([]);
+  // A brief "biometric unlock" beat plays every time the terminal wakes —
+  // pure CSS animation gated by this flag, cleared after it finishes.
+  const [phoneUnlocking, setPhoneUnlocking] = useState(false);
+  const [phoneClock, setPhoneClock] = useState(() => new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }));
+  useEffect(() => {
+    const iv = setInterval(() => setPhoneClock(new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" })), 15000);
+    return () => clearInterval(iv);
+  }, []);
   // Sandbox mode: HeavyGuard/CRM/TRADE render inside the phone's own iframe
   // instead of navigating away, so the user never leaves the simulation.
   const [phoneEmbed, setPhoneEmbed] = useState(null); // { url, title } | null
   useEffect(() => { liveRef.current.phoneOpen = phoneOpen; }, [phoneOpen]);
+  useEffect(() => {
+    if (!phoneOpen) return;
+    setPhoneUnlocking(true);
+    try { navigator.vibrate?.(14); } catch {}
+    const t = setTimeout(() => setPhoneUnlocking(false), 550);
+    return () => clearTimeout(t);
+  }, [phoneOpen]);
   useEffect(() => {
     liveRef.current.voiceLine = voiceLine;
     if (voiceLine && voiceLine.text) setPhoneLog((p) => [...p.slice(-11), voiceLine]);
@@ -2057,9 +2090,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   // Push the graphics-quality toggle down into the postprocessing passes
   // once they exist (they're created inside the async mount effect below).
   useEffect(() => { liveRef.current.setGraphicsHigh?.(graphicsHigh); }, [graphicsHigh]);
-  useEffect(() => { liveRef.current.godMode = godOpen; if (!godOpen) liveRef.current.deselect?.(); }, [godOpen]);
+  useEffect(() => { liveRef.current.godMode = godOpen; if (!godOpen) { liveRef.current.deselect?.(); setBlueprint(false); } }, [godOpen]);
+  useEffect(() => { liveRef.current.setBlueprint?.(blueprint); }, [blueprint]);
   useEffect(() => { liveRef.current.godPaused = godPaused; }, [godPaused]);
   useEffect(() => { liveRef.current.godLightMul = godLight; }, [godLight]);
+  useEffect(() => { liveRef.current.godSpeedMul = godSpeed; }, [godSpeed]);
   useEffect(() => { liveRef.current.setSelectedObj = setSelectedObj; }, []);
   // Stop any live mic / speech when the sim unmounts.
   useEffect(() => () => { try { recogRef.current?.stop(); window.speechSynthesis?.cancel(); } catch {} }, []);
@@ -2214,10 +2249,13 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       );
 
     // Sky/ground hemisphere fill for a soft, realistic ambient gradient, on
-    // top of a low flat ambient so nothing goes fully black.
-    const ambient = new THREE.AmbientLight(0xffffff, 0.42);
+    // top of a low flat ambient so nothing goes fully black. Tuned cool —
+    // charcoal ground bounce instead of a warm one — for the tactical
+    // command-center mood; the day/night phase system (fog/sun, below)
+    // still drives the actual lighting swings on top of this base.
+    const ambient = new THREE.AmbientLight(0xc9d9f2, 0.42);
     scene.add(ambient);
-    const hemi = new THREE.HemisphereLight(0xbfd4ff, 0x2a2030, 0.55);
+    const hemi = new THREE.HemisphereLight(0xbfd4ff, 0x161a24, 0.55);
     scene.add(hemi);
     const sun = new THREE.DirectionalLight(0xfff2df, 1.25);
     sun.position.set(9, 14, 6);
@@ -4124,7 +4162,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
             // curve: h.curSpeed ramps up to that pace over ~0.3s and eases
             // back down over the final ~0.6m of the route, instead of
             // snapping to full speed or stopping dead on arrival.
-            const NPC_SPEED = 1.4;
+            const NPC_SPEED = 1.4 * (liveRef.current.godSpeedMul || 1);
             const targetSpeed = NPC_SPEED * Math.min(1, distFinal / 0.6);
             h.curSpeed = (h.curSpeed ?? 0) + (targetSpeed - (h.curSpeed ?? 0)) * Math.min(1, dt * 3);
             const maxStep = h.curSpeed * dt;
@@ -4397,6 +4435,9 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     mount.addEventListener("click", onGodClick);
     liveRef.current.applyPos = (axis, val) => {
       if (!selectedThreeObj) return;
+      // Blueprint mode = construction mode: placements snap to a 0.5m grid
+      // so equipment lines up MIL-SPEC straight instead of eyeballed.
+      if (liveRef.current.blueprintOn) val = Math.round(val * 2) / 2;
       selectedThreeObj.position[axis] = val;
       liveRef.current.setSelectedObj?.(snapshotSelected());
     };
@@ -4421,6 +4462,39 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       liveRef.current.setSelectedObj?.(null);
     };
     liveRef.current.deselect = () => { selectedThreeObj = null; liveRef.current.setSelectedObj?.(null); };
+    // ── Blueprint Tactical Mode ─────────────────────────────────────────
+    // One shared wireframe material for the whole scene (not one per mesh)
+    // + a laser reference grid on the floor. Each mesh's real material is
+    // parked on userData while active and restored on exit — meshes whose
+    // materials the animate() loop keeps mutating (screen canvases, blink
+    // pulses) are untouched by this: those writes go to the parked
+    // originals and simply reappear intact when blueprint mode ends.
+    const bpWireMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, wireframe: true, transparent: true, opacity: 0.35 });
+    const bpGrid = new THREE.GridHelper(Math.max(FLOOR_W, FLOOR_D), Math.max(FLOOR_W, FLOOR_D), 0x00ffff, 0x123540);
+    bpGrid.position.y = 0.02;
+    bpGrid.material.transparent = true;
+    bpGrid.material.opacity = 0.5;
+    liveRef.current.setBlueprint = (active) => {
+      if (!!liveRef.current.blueprintOn === !!active) return;
+      liveRef.current.blueprintOn = active;
+      if (active) {
+        scene.traverse((o) => {
+          if (o.isMesh && o.material !== bpWireMat && o.userData._bpSaved === undefined) {
+            o.userData._bpSaved = o.material;
+            o.material = bpWireMat;
+          }
+        });
+        scene.add(bpGrid);
+      } else {
+        scene.traverse((o) => {
+          if (o.isMesh && o.userData._bpSaved !== undefined) {
+            o.material = o.userData._bpSaved;
+            delete o.userData._bpSaved;
+          }
+        });
+        scene.remove(bpGrid);
+      }
+    };
     // Spawn menu — procedural props for the camera/DVR (no GLB needed), and
     // the Volvo GLB reloaded for "truck" (the browser caches the file, so a
     // second load is cheap). New spawns land just south of the desk ring
@@ -4684,11 +4758,48 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           survive being closed. */}
       <div className={"off3-phone" + (phoneOpen ? "" : " off3-phone-closed")}>
           <div className="off3-phone-notch" />
+          <div className="off3-phone-brand">ALPHA-LINK-01 <i>· מוצפן</i></div>
+          {phoneUnlocking && (
+            <div className="off3-phone-unlock">
+              <div className="off3-phone-unlock-ring" />
+              <b>ALPHA-LINK-01</b>
+              <span>מאמת זיהוי ביומטרי…</span>
+            </div>
+          )}
           <div className="off3-phone-tabs">
-            <button className={phoneTab === "chat" ? "on" : ""} onClick={() => { setPhoneTab("chat"); setPhoneEmbed(null); }}>💬 שיחה חיה</button>
-            <button className={phoneTab === "ctrl" ? "on" : ""} onClick={() => { setPhoneTab("ctrl"); setPhoneEmbed(null); }}>🎛 שליטה</button>
-            <button className={phoneTab === "radio" ? "on" : ""} onClick={() => { setPhoneTab("radio"); setPhoneEmbed(null); }}>📻 רדיו</button>
+            <button className={phoneTab === "home" ? "on" : ""} onClick={() => { setPhoneTab("home"); setPhoneEmbed(null); }} title="בית">🏠</button>
+            <button className={phoneTab === "chat" ? "on" : ""} onClick={() => { setPhoneTab("chat"); setPhoneEmbed(null); }} title="שיחה חיה">💬</button>
+            <button className={phoneTab === "ctrl" ? "on" : ""} onClick={() => { setPhoneTab("ctrl"); setPhoneEmbed(null); }} title="שליטה">🎛</button>
+            <button className={phoneTab === "radio" ? "on" : ""} onClick={() => { setPhoneTab("radio"); setPhoneEmbed(null); }} title="רדיו">📻</button>
+            <button className={"off3-phone-tab-sec" + (phoneTab === "sec" ? " on" : "")} onClick={() => { setPhoneTab("sec"); setPhoneEmbed(null); }} title="אבטחה">
+              🛡{securityAlerts.some((a) => a.level === "high") && <i className="off3-phone-badge" />}
+            </button>
           </div>
+          {!phoneEmbed && phoneTab === "home" && (
+            <div className="off3-phone-body off3-phone-home">
+              <div className="off3-phone-homeclock">{phoneClock}</div>
+              <div className="off3-phone-homesub">ALPHA-LINK-01 · מסוף מאובטח</div>
+              <div className="off3-phone-apps">
+                <button className="off3-phone-app" onClick={() => setPhoneTab("chat")}><span>💬</span>שיחה חיה</button>
+                <button className="off3-phone-app" onClick={() => setPhoneTab("ctrl")}><span>🎛</span>מרכז פיקוד</button>
+                <button className="off3-phone-app" onClick={() => setPhoneTab("radio")}><span>📻</span>רדיו</button>
+                <button className="off3-phone-app" onClick={() => setPhoneTab("sec")}>
+                  <span>🛡</span>אבטחה{securityAlerts.some((a) => a.level === "high") && <i className="off3-phone-badge" />}
+                </button>
+              </div>
+            </div>
+          )}
+          {!phoneEmbed && phoneTab === "sec" && (
+            <div className="off3-phone-body">
+              <div className="off3-phone-sec">HEAVY GUARD · התראות צי בזמן אמת</div>
+              {securityAlerts.map((a, i) => (
+                <div key={i} className={"off3-phone-alert lvl-" + a.level}>
+                  <b>{a.level === "high" ? "🔴" : a.level === "mid" ? "🟡" : "🟢"}</b>
+                  <span>{a.text}</span>
+                </div>
+              ))}
+            </div>
+          )}
           {phoneEmbed && (
             <div className="off3-phone-embed">
               <div className="off3-phone-embed-bar">
@@ -4732,6 +4843,15 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
               <button className="off3-phone-act" onClick={() => { window.location.href = "./"; }}>🤖 פתח את מרכז הפיקוד הראשי</button>
               <button className="off3-phone-act" onClick={() => setTurbo((v) => !v)}>🚀 טורבו: {turbo ? "פעיל — כבה" : "כבוי — הפעל"}</button>
               <button className="off3-phone-act" onClick={() => setFirstPerson((v) => !v)}>👁 תצוגה: {firstPerson ? "גוף ראשון" : "גוף שלישי"}</button>
+              <div className="off3-phone-sec">בקרת מתקן</div>
+              <label className="off3-phone-slider">
+                <span>💡 תאורה</span>
+                <input type="range" min="0.4" max="1.8" step="0.05" value={godLight} onChange={(e) => setGodLight(parseFloat(e.target.value))} />
+              </label>
+              <label className="off3-phone-slider">
+                <span>🏃 מהירות סוכנים</span>
+                <input type="range" min="0.3" max="2.5" step="0.1" value={godSpeed} onChange={(e) => setGodSpeed(parseFloat(e.target.value))} />
+              </label>
               <div className="off3-phone-sec">המערכות שלך</div>
               <button className="off3-phone-act" onClick={() => setPhoneEmbed({ url: "heavyguard.html", title: "🛡 HEAVY GUARD OS" })}>🛡 HEAVY GUARD OS</button>
               <button className="off3-phone-act" onClick={() => setPhoneEmbed({ url: "https://heavt-guard-simulator-1.onrender.com/", title: "📈 מערכת מסחר · TRADE" })}>📈 מערכת מסחר · TRADE</button>
@@ -4795,6 +4915,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
             <div className="off3-god-sel">
               <div className="off3-god-sel-head">
                 <b>{selectedObj.label}</b>
+                <span className="off3-god-secure">🔒 SECURE LINK</span>
                 {selectedObj.deletable && (
                   <button className="off3-god-del" onClick={() => liveRef.current.deleteSelected?.()} title="מחק אובייקט">
                     <Trash2 size={14} />
@@ -4826,6 +4947,19 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
                 <input type="range" min="0.2" max="3" step="0.05" value={selectedObj.scale}
                   onChange={(e) => liveRef.current.applyScale?.(parseFloat(e.target.value))} />
               </label>
+              <div className="off3-god-tacspec">
+                <div className="off3-god-sec off3-god-sec-in">TACTICAL SPECIFICATIONS</div>
+                <div className="off3-god-tacspec-xyz">
+                  <span>X <b>{selectedObj.x.toFixed(2)}</b></span>
+                  <span>Y <b>{selectedObj.y.toFixed(2)}</b></span>
+                  <span>Z <b>{selectedObj.z.toFixed(2)}</b></span>
+                </div>
+                <div className="off3-god-tacspec-row">
+                  <span>סיווג ביטחוני</span>
+                  <b>{selectedObj.deletable ? "ALPHA-3 · ציוד" : "ALPHA-1 · נכס ליבה"}</b>
+                </div>
+                {blueprint && <div className="off3-god-tacspec-snap">📐 הצמדה לרשת · 0.5m</div>}
+              </div>
               {selectedObj.meta && Object.keys(selectedObj.meta).length > 0 && (
                 <div className="off3-god-specs">
                   <div className="off3-god-sec off3-god-sec-in">מפרט טכני</div>
@@ -4847,6 +4981,12 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
             <button onClick={() => liveRef.current.spawnAsset?.("camera")}>📷 מצלמת אבטחה</button>
             <button onClick={() => liveRef.current.spawnAsset?.("dvr")}>📼 DVR</button>
           </div>
+          <div className="off3-god-sec">מצב בנייה</div>
+          <button className="off3-god-row off3-god-toggle" onClick={() => setBlueprint((v) => !v)}>
+            <span>📐 Blueprint — שרטוט טקטי</span>
+            <b className={blueprint ? "on" : ""}>{blueprint ? "פעיל" : "כבוי"}</b>
+          </button>
+          {blueprint && <p className="off3-god-hint">כל הסצנה בתצוגת שרטוט + רשת לייזר · מיקומים נצמדים לרשת של 0.5m</p>}
           <div className="off3-god-sec">סימולציה</div>
           <button className="off3-god-row off3-god-toggle" onClick={() => setGodPaused((v) => !v)}>
             <span>⏸ השהה זמן/סיבובים</span>
@@ -4855,6 +4995,10 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           <label className="off3-god-row">
             <span>💡 עוצמת תאורה</span>
             <input type="range" min="0.4" max="1.8" step="0.05" value={godLight} onChange={(e) => setGodLight(parseFloat(e.target.value))} />
+          </label>
+          <label className="off3-god-row">
+            <span>🏃 מהירות סוכנים</span>
+            <input type="range" min="0.3" max="2.5" step="0.1" value={godSpeed} onChange={(e) => setGodSpeed(parseFloat(e.target.value))} />
           </label>
         </div>
       )}
