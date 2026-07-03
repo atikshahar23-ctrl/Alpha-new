@@ -9,7 +9,7 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { SSAOPass } from "three/examples/jsm/postprocessing/SSAOPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
-import { MessageCircle, Eye, User, Mic, VolumeX, Volume2, X, Zap, Settings as SettingsIcon } from "lucide-react";
+import { MessageCircle, Eye, User, Mic, VolumeX, Volume2, X, Zap, Settings as SettingsIcon, Trash2 } from "lucide-react";
 import { useDeviceProfile } from "./deviceProfiler.js";
 import RadioController from "./RadioController.jsx";
 
@@ -1492,6 +1492,46 @@ function buildKitchen(color) {
   return { group: g, obstacles };
 }
 
+// God Mode spawn props — a small security camera (wall-style dome mount,
+// blinking record LED) and a rack-mount DVR box. Plain primitives, not
+// GLB models — cheap to spawn on demand from the admin panel.
+function buildSecurityCameraProp() {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.11, 0.11, 0.22, 16),
+    new THREE.MeshStandardMaterial({ color: 0x1a1c22, roughness: 0.4, metalness: 0.6 })
+  );
+  body.rotation.z = Math.PI / 2; body.castShadow = true; g.add(body);
+  const lens = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.06, 0.07, 0.06, 16),
+    new THREE.MeshStandardMaterial({ color: 0x0a0c12, roughness: 0.1, metalness: 0.3 })
+  );
+  lens.rotation.z = Math.PI / 2; lens.position.x = 0.14; g.add(lens);
+  const mount = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.16, 0.06), new THREE.MeshStandardMaterial({ color: 0x111318, roughness: 0.5, metalness: 0.5 }));
+  mount.position.set(-0.14, 0.1, 0); g.add(mount);
+  const led = new THREE.Mesh(new THREE.SphereGeometry(0.015, 8, 8), new THREE.MeshBasicMaterial({ color: 0xff3b30 }));
+  led.position.set(0.1, 0.06, 0); g.add(led);
+  const glow = new THREE.PointLight(0xff3b30, 0.25, 1.5);
+  glow.position.copy(led.position); g.add(glow);
+  return g;
+}
+function buildDvrBoxProp() {
+  const g = new THREE.Group();
+  const chassis = new THREE.Mesh(
+    new THREE.BoxGeometry(0.44, 0.08, 0.32),
+    new THREE.MeshStandardMaterial({ color: 0x14161c, roughness: 0.4, metalness: 0.5 })
+  );
+  chassis.position.y = 0.04; chassis.castShadow = true; chassis.receiveShadow = true;
+  g.add(chassis);
+  const face = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.07), new THREE.MeshStandardMaterial({ color: 0x0a0c12, roughness: 0.3, metalness: 0.4 }));
+  face.rotation.y = Math.PI / 2; face.position.set(0.221, 0.04, 0); g.add(face);
+  for (let i = 0; i < 4; i++) {
+    const led = new THREE.Mesh(new THREE.PlaneGeometry(0.012, 0.012), new THREE.MeshBasicMaterial({ color: i === 0 ? 0x3FD79A : 0x2ee6ff }));
+    led.rotation.y = Math.PI / 2; led.position.set(0.222, 0.055, -0.13 + i * 0.06); g.add(led);
+  }
+  return g;
+}
+
 // The owner's private executive suite, rebuilt around real meetings: a much
 // bigger glass corner office (grew with the doubled floor), the desk now
 // faces INTO the room so the owner looks at whoever walks in, and two guest
@@ -1895,6 +1935,13 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   // Real business activity, normalized 0..1 — drives the space portal's
   // orbit speed (busier pipeline = faster orbits), not a random wobble.
   const spacePortalLoad = Math.min(1, ((bizData?.openDeals || 0) + (bizData?.fleetProjects || 0) * 2) / 20);
+  // God Mode — owner-only admin overlay (off by default): click-select the
+  // car/trucks/portal/spawned props and transform/delete them, spawn new
+  // ones, pause the sim clock, and override the light level.
+  const [godOpen, setGodOpen] = useState(false);
+  const [selectedObj, setSelectedObj] = useState(null);
+  const [godPaused, setGodPaused] = useState(false);
+  const [godLight, setGodLight] = useState(1);
   const [joyKnob, setJoyKnob] = useState({ x: 0, y: 0 });
   const [joyBase, setJoyBase] = useState(null); // floating joystick anchor (screen px), null = hidden
   const [firstPerson, setFirstPerson] = useState(false);
@@ -1972,6 +2019,10 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   // Push the graphics-quality toggle down into the postprocessing passes
   // once they exist (they're created inside the async mount effect below).
   useEffect(() => { liveRef.current.setGraphicsHigh?.(graphicsHigh); }, [graphicsHigh]);
+  useEffect(() => { liveRef.current.godMode = godOpen; if (!godOpen) liveRef.current.deselect?.(); }, [godOpen]);
+  useEffect(() => { liveRef.current.godPaused = godPaused; }, [godPaused]);
+  useEffect(() => { liveRef.current.godLightMul = godLight; }, [godLight]);
+  useEffect(() => { liveRef.current.setSelectedObj = setSelectedObj; }, []);
   // Stop any live mic / speech when the sim unmounts.
   useEffect(() => () => { try { recogRef.current?.stop(); window.speechSynthesis?.cancel(); } catch {} }, []);
   // Walk away from an agent → stop the live mic (nothing to listen for), but
@@ -2955,6 +3006,19 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // middle of the open floor with the actual car model slowly turning.
     const centerSpin = [];
     let scanRing = null;
+    // ── God Mode registry — the curated set of objects an owner can select,
+    // move/rotate/scale or delete from the admin panel. Deliberately NOT the
+    // whole scene: desks/agents/walls are data-driven (positions come from
+    // OFC_DESKS etc.) and moving them here wouldn't persist or would fight
+    // the sim, so only free-standing display pieces (car, trucks, portal)
+    // and anything spawned from the panel are registered.
+    const editableObjects = [];
+    const registerEditable = (obj, label, deletable = false) => {
+      obj.userData.editable = true;
+      obj.userData.label = label;
+      obj.userData.deletable = deletable;
+      editableObjects.push(obj);
+    };
     {
       const podium = new THREE.Mesh(
         new THREE.CylinderGeometry(2.7, 2.9, 0.14, 40),
@@ -3036,6 +3100,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           o.material = upgraded.get(m);
         });
         centerSpin.push(wrap);
+        registerEditable(wrap, "TIGGO 7", false);
         // Holographic data anchor — a glowing callout line from the hood up
         // to a floating telemetry tag showing the REAL odometer reading from
         // Heavy Guard's shared vehicle record (hg2:odometer), refreshed with
@@ -3156,6 +3221,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           o.material = upgraded.get(m);
         });
         centerSpin.push(wrap);
+        registerEditable(wrap, t.label, false);
       }, undefined, () => { /* truck download failed — podium stays as decor */ });
     });
 
@@ -3193,6 +3259,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         wrap.traverse((o) => { if (o.isMesh) { o.material.side = THREE.DoubleSide; } });
         scene.add(wrap);
         portalObj = wrap;
+        registerEditable(wrap, "SPACE PORTAL", false);
       }, undefined, () => {});
     }
 
@@ -3554,26 +3621,32 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
 
       // Day/night: lerp sun/ambient/fog toward the current phase's sky colour
       // and vary sun intensity + warmth so morning/noon/evening/night are
-      // actually visible, not just a header label.
-      const ph = phases[liveRef.current.phase] || phases[0];
-      tmpColor.set(ph.sky || "#1b2440");
-      curSky.lerp(tmpColor, Math.min(1, dt * 0.6));
-      scene.fog.color.copy(curSky);
-      renderer.setClearColor(curSky, 1);
-      const isNight = liveRef.current.phase >= 3;
-      const isEvening = liveRef.current.phase === 2;
-      const sunTargetInt = isNight ? 0.35 : isEvening ? 0.8 : 1.15;
-      const sunTargetHex = isNight ? 0x27407a : isEvening ? 0xffb46a : 0xfff2d8;
-      sun.intensity += (sunTargetInt - sun.intensity) * Math.min(1, dt * 0.8);
-      sun.color.lerp(tmpColor.set(sunTargetHex), Math.min(1, dt * 0.8));
-      const ambTargetInt = isNight ? 0.35 : 0.65;
-      ambient.intensity += (ambTargetInt - ambient.intensity) * Math.min(1, dt * 0.8);
-      // Near-building windows light up after dark — same lit-window feel as
-      // the painted skyline behind them, but on real 3D geometry.
-      const buildingGlowTarget = isNight ? 0.85 : isEvening ? 0.4 : 0.02;
-      nearBuildingMats.forEach((mat) => {
-        mat.emissiveIntensity += (buildingGlowTarget - mat.emissiveIntensity) * Math.min(1, dt * 0.8);
-      });
+      // actually visible, not just a header label. God Mode's pause freezes
+      // this clock (the lerp targets stop moving); its light slider scales
+      // the target intensities so it still visibly reacts to the slider
+      // even while paused, without touching the color transition itself.
+      if (!liveRef.current.godPaused) {
+        const ph = phases[liveRef.current.phase] || phases[0];
+        tmpColor.set(ph.sky || "#1b2440");
+        curSky.lerp(tmpColor, Math.min(1, dt * 0.6));
+        scene.fog.color.copy(curSky);
+        renderer.setClearColor(curSky, 1);
+        const lightMul = liveRef.current.godLightMul || 1;
+        const isNight = liveRef.current.phase >= 3;
+        const isEvening = liveRef.current.phase === 2;
+        const sunTargetInt = (isNight ? 0.35 : isEvening ? 0.8 : 1.15) * lightMul;
+        const sunTargetHex = isNight ? 0x27407a : isEvening ? 0xffb46a : 0xfff2d8;
+        sun.intensity += (sunTargetInt - sun.intensity) * Math.min(1, dt * 0.8);
+        sun.color.lerp(tmpColor.set(sunTargetHex), Math.min(1, dt * 0.8));
+        const ambTargetInt = (isNight ? 0.35 : 0.65) * lightMul;
+        ambient.intensity += (ambTargetInt - ambient.intensity) * Math.min(1, dt * 0.8);
+        // Near-building windows light up after dark — same lit-window feel as
+        // the painted skyline behind them, but on real 3D geometry.
+        const buildingGlowTarget = isNight ? 0.85 : isEvening ? 0.4 : 0.02;
+        nearBuildingMats.forEach((mat) => {
+          mat.emissiveIntensity += (buildingGlowTarget - mat.emissiveIntensity) * Math.min(1, dt * 0.8);
+        });
+      }
 
       // Wall TVs — redrawn every few seconds, not every frame; BOTH screens
       // show real data now: the markets TV renders the live CoinGecko/Yahoo
@@ -3618,7 +3691,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         secScreen.visible = true;
       }
       // Center-stage car turns slowly on its podium.
-      centerSpin.forEach((w) => { w.rotation.y += dt * 0.28; });
+      if (!liveRef.current.godPaused) centerSpin.forEach((w) => { w.rotation.y += dt * 0.28; });
       // 📱 phone hologram — appears while talking (or with the phone UI
       // open) and mirrors the current line of dialogue.
       const phoneOn = !!liveRef.current.talkTarget || !!liveRef.current.phoneOpen;
@@ -4114,6 +4187,120 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       setInSpace(false);
     };
     liveRef.current.toggleSit = () => setSitting((v) => (v ? false : !!liveRef.current.canSit));
+
+    // ── God Mode — owner-only admin tools ───────────────────────────────
+    // Click-to-select one of the curated editable objects (car/trucks/
+    // portal/anything spawned from the panel — never desks/agents/walls,
+    // see the registerEditable() comment above), then move/rotate/scale it
+    // or delete it (spawned objects only). A spawn menu adds new props, a
+    // pause toggle freezes the day/night clock + podium turntables, and a
+    // lighting slider scales sun/ambient intensity on top of whatever the
+    // real day-phase would otherwise set.
+    let selectedThreeObj = null;
+    const godRaycaster = new THREE.Raycaster();
+    const findEditableAncestor = (obj) => {
+      let o = obj;
+      while (o) { if (o.userData?.editable) return o; o = o.parent; }
+      return null;
+    };
+    const snapshotSelected = () => {
+      if (!selectedThreeObj) return null;
+      return {
+        label: selectedThreeObj.userData.label || "אובייקט",
+        deletable: !!selectedThreeObj.userData.deletable,
+        x: selectedThreeObj.position.x, y: selectedThreeObj.position.y, z: selectedThreeObj.position.z,
+        rotY: selectedThreeObj.rotation.y, scale: selectedThreeObj.scale.x,
+      };
+    };
+    const onGodClick = (e) => {
+      if (!liveRef.current.godMode) return;
+      const rect = mount.getBoundingClientRect();
+      const ndc = new THREE.Vector2(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        -((e.clientY - rect.top) / rect.height) * 2 + 1
+      );
+      godRaycaster.setFromCamera(ndc, camera);
+      const hits = godRaycaster.intersectObjects(editableObjects, true);
+      const hit = hits.length ? findEditableAncestor(hits[0].object) : null;
+      selectedThreeObj = hit;
+      liveRef.current.setSelectedObj?.(snapshotSelected());
+    };
+    mount.addEventListener("click", onGodClick);
+    liveRef.current.applyPos = (axis, val) => {
+      if (!selectedThreeObj) return;
+      selectedThreeObj.position[axis] = val;
+      liveRef.current.setSelectedObj?.(snapshotSelected());
+    };
+    liveRef.current.applyRotY = (val) => {
+      if (!selectedThreeObj) return;
+      selectedThreeObj.rotation.y = val;
+      liveRef.current.setSelectedObj?.(snapshotSelected());
+    };
+    liveRef.current.applyScale = (val) => {
+      if (!selectedThreeObj) return;
+      selectedThreeObj.scale.setScalar(val);
+      liveRef.current.setSelectedObj?.(snapshotSelected());
+    };
+    liveRef.current.deleteSelected = () => {
+      if (!selectedThreeObj || !selectedThreeObj.userData.deletable) return;
+      scene.remove(selectedThreeObj);
+      const idx = editableObjects.indexOf(selectedThreeObj);
+      if (idx >= 0) editableObjects.splice(idx, 1);
+      const spinIdx = centerSpin.indexOf(selectedThreeObj);
+      if (spinIdx >= 0) centerSpin.splice(spinIdx, 1);
+      selectedThreeObj = null;
+      liveRef.current.setSelectedObj?.(null);
+    };
+    liveRef.current.deselect = () => { selectedThreeObj = null; liveRef.current.setSelectedObj?.(null); };
+    // Spawn menu — procedural props for the camera/DVR (no GLB needed), and
+    // the Volvo GLB reloaded for "truck" (the browser caches the file, so a
+    // second load is cheap). New spawns land just south of the desk ring
+    // and are immediately selected so the transform panel is ready to use.
+    const spawnPoint = () => ({ x: 0, z: 22 });
+    liveRef.current.spawnAsset = (type) => {
+      const p = spawnPoint();
+      if (type === "camera") {
+        const cam = buildSecurityCameraProp();
+        cam.position.set(p.x, 2.4, p.z);
+        scene.add(cam);
+        registerEditable(cam, "מצלמת אבטחה", true);
+        selectedThreeObj = cam;
+        liveRef.current.setSelectedObj?.(snapshotSelected());
+      } else if (type === "dvr") {
+        const dvr = buildDvrBoxProp();
+        dvr.position.set(p.x, 0, p.z);
+        scene.add(dvr);
+        registerEditable(dvr, "DVR", true);
+        selectedThreeObj = dvr;
+        liveRef.current.setSelectedObj?.(snapshotSelected());
+      } else if (type === "truck") {
+        const spawnLoader = new GLTFLoader();
+        spawnLoader.setMeshoptDecoder(MeshoptDecoder);
+        spawnLoader.load(base + "office-models/volvo_fh16.glb", (g) => {
+          const truck = g.scene;
+          const tb = new THREE.Box3().setFromObject(truck);
+          const ts = tb.getSize(new THREE.Vector3());
+          const tc = tb.getCenter(new THREE.Vector3());
+          const s = 5.8 / Math.max(ts.x, ts.z);
+          const wrap = new THREE.Group();
+          truck.position.set(-tc.x, -tb.min.y, -tc.z);
+          wrap.add(truck);
+          wrap.scale.setScalar(s);
+          wrap.position.set(p.x, 0, p.z);
+          scene.add(wrap);
+          registerEditable(wrap, "משאית (חדשה)", true);
+          selectedThreeObj = wrap;
+          liveRef.current.setSelectedObj?.(snapshotSelected());
+        }, undefined, () => {});
+      }
+    };
+    // Pause — freezes the day/night clock and the podium turntables (see
+    // the gates inside animate(), below). Player movement/camera keep
+    // working so the admin can still walk around while paused.
+    liveRef.current.godPaused = false;
+    // Lighting override — a 0.4x..1.8x multiplier on top of whatever the
+    // real day-phase would set for sun/ambient intensity this frame.
+    liveRef.current.godLightMul = 1;
     // Turbo 🚀 — every lever at once: 1x pixel ratio, post chain bypassed
     // (animate renders straight through the renderer), shadows off, dust +
     // sky-life extras hidden, CCTV frozen on its last frame.
@@ -4149,6 +4336,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         window.removeEventListener("keydown", onKeyDown);
         window.removeEventListener("keyup", onKeyUp);
         window.removeEventListener("resize", onResize);
+        mount.removeEventListener("click", onGodClick);
         scene.traverse((obj) => {
           if (obj.geometry) obj.geometry.dispose();
           if (obj.material) {
@@ -4383,6 +4571,10 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
             <span><Zap size={15} /> מצב טורבו — האצה מקסימלית</span>
             <b className={turbo ? "on" : ""}>{turbo ? "פעיל 🚀" : "כבוי"}</b>
           </button>
+          <button className="off3-settings-row" onClick={() => { setSettingsOpen(false); setGodOpen(true); }}>
+            <span>🛠 God Mode — עריכת סצנה</span>
+            <b className={godOpen ? "on" : ""}>{godOpen ? "פתוח" : "כלים למנהל"}</b>
+          </button>
           {voiceList.length > 0 && (
             <div className="off3-settings-row off3-settings-select">
               <span><Volume2 size={15} /> קול הסוכנים</span>
@@ -4393,6 +4585,69 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
             </div>
           )}
           <p className="off3-settings-note">בגוף ראשון: ↑/W מתקדם ו-↓/S נסוג לפי הכיוון שאתה מסתכל אליו (בלי לסובב את המצלמה), ←/→ או A/D מסובבים אותך (בכיוון הפוך). כל סוכן מדבר בגובה קול מעט שונה כדי שיהיה קל להבחין ביניהם.</p>
+        </div>
+      )}
+      {godOpen && (
+        <div className="off3-god">
+          <div className="off3-god-head">
+            🛠 God Mode
+            <button onClick={() => setGodOpen(false)}><X size={14} /></button>
+          </div>
+          <p className="off3-god-hint">לחץ על הרכב / משאית / פורטל בסביבה כדי לבחור אותו.</p>
+          {selectedObj ? (
+            <div className="off3-god-sel">
+              <div className="off3-god-sel-head">
+                <b>{selectedObj.label}</b>
+                {selectedObj.deletable && (
+                  <button className="off3-god-del" onClick={() => liveRef.current.deleteSelected?.()} title="מחק אובייקט">
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
+              <label className="off3-god-row">
+                <span>X</span>
+                <input type="range" min="-38" max="38" step="0.2" value={selectedObj.x}
+                  onChange={(e) => liveRef.current.applyPos?.("x", parseFloat(e.target.value))} />
+              </label>
+              <label className="off3-god-row">
+                <span>Y</span>
+                <input type="range" min="-1" max="6" step="0.1" value={selectedObj.y}
+                  onChange={(e) => liveRef.current.applyPos?.("y", parseFloat(e.target.value))} />
+              </label>
+              <label className="off3-god-row">
+                <span>Z</span>
+                <input type="range" min="-32" max="32" step="0.2" value={selectedObj.z}
+                  onChange={(e) => liveRef.current.applyPos?.("z", parseFloat(e.target.value))} />
+              </label>
+              <label className="off3-god-row">
+                <span>סיבוב</span>
+                <input type="range" min="0" max={Math.PI * 2} step="0.05" value={selectedObj.rotY}
+                  onChange={(e) => liveRef.current.applyRotY?.(parseFloat(e.target.value))} />
+              </label>
+              <label className="off3-god-row">
+                <span>גודל</span>
+                <input type="range" min="0.2" max="3" step="0.05" value={selectedObj.scale}
+                  onChange={(e) => liveRef.current.applyScale?.(parseFloat(e.target.value))} />
+              </label>
+            </div>
+          ) : (
+            <div className="off3-god-empty">אין אובייקט נבחר</div>
+          )}
+          <div className="off3-god-sec">הוספת אובייקט</div>
+          <div className="off3-god-spawn">
+            <button onClick={() => liveRef.current.spawnAsset?.("truck")}>🚚 משאית</button>
+            <button onClick={() => liveRef.current.spawnAsset?.("camera")}>📷 מצלמת אבטחה</button>
+            <button onClick={() => liveRef.current.spawnAsset?.("dvr")}>📼 DVR</button>
+          </div>
+          <div className="off3-god-sec">סימולציה</div>
+          <button className="off3-god-row off3-god-toggle" onClick={() => setGodPaused((v) => !v)}>
+            <span>⏸ השהה זמן/סיבובים</span>
+            <b className={godPaused ? "on" : ""}>{godPaused ? "מושהה" : "רץ"}</b>
+          </button>
+          <label className="off3-god-row">
+            <span>💡 עוצמת תאורה</span>
+            <input type="range" min="0.4" max="1.8" step="0.05" value={godLight} onChange={(e) => setGodLight(parseFloat(e.target.value))} />
+          </label>
         </div>
       )}
       {voiceLine && (

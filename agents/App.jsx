@@ -3606,6 +3606,34 @@ function StyleTag() {
 .off3-settings-select select{max-width:130px;background:var(--s9);border:1px solid var(--s7);color:var(--silver);border-radius:8px;
   padding:5px 7px;font-family:inherit;font-size:10.5px;outline:none;cursor:pointer}
 .off3-settings-note{font-size:10.5px;line-height:1.6;color:#7e90b8;padding:10px 14px 14px}
+/* God Mode admin panel — owner-only scene editor. */
+.off3-god{position:absolute;top:56px;left:10px;z-index:60;width:min(300px,86vw);max-height:80vh;overflow-y:auto;
+  background:rgba(10,8,18,.95);backdrop-filter:blur(16px);border:1px solid rgba(228,188,99,.28);border-radius:16px;
+  box-shadow:0 18px 44px rgba(0,0,0,.55);animation:acRise .2s ease both}
+.off3-god-head{display:flex;align-items:center;font-size:12.5px;font-weight:800;color:#f7e8c0;padding:12px 14px;
+  border-bottom:1px solid rgba(228,188,99,.18)}
+.off3-god-head button{margin-right:auto;background:none;border:none;color:#7e90b8;cursor:pointer;display:flex}
+.off3-god-hint{font-size:10.5px;line-height:1.5;color:#7e90b8;padding:10px 14px 4px}
+.off3-god-empty{font-size:11.5px;color:#7e90b8;font-style:italic;padding:8px 14px 14px}
+.off3-god-sel{padding:6px 14px 12px}
+.off3-god-sel-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 0 8px}
+.off3-god-sel-head b{font-size:12.5px;color:#E4BC63}
+.off3-god-del{background:rgba(255,92,80,.1);border:1px solid rgba(255,92,80,.35);border-radius:8px;color:#ff5c50;
+  cursor:pointer;padding:5px 7px;display:flex}
+.off3-god-row{width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;background:none;border:none;
+  color:#cfd8e6;padding:7px 14px;font-family:inherit;font-size:12px;text-align:right}
+.off3-god-row span{flex-shrink:0;min-width:44px}
+.off3-god-row input[type="range"]{flex:1;accent-color:#E4BC63}
+.off3-god-toggle{cursor:pointer;border-bottom:1px solid rgba(255,255,255,.06)}
+.off3-god-toggle:hover{background:rgba(255,255,255,.04)}
+.off3-god-toggle b{font-size:11px;font-weight:800;color:#7e90b8}
+.off3-god-toggle b.on{color:#E4BC63}
+.off3-god-sec{font-size:10px;font-weight:800;letter-spacing:1px;color:#5f8ea0;padding:10px 14px 4px;
+  border-top:1px solid rgba(255,255,255,.06);margin-top:4px}
+.off3-god-spawn{display:flex;gap:6px;flex-wrap:wrap;padding:6px 14px 12px}
+.off3-god-spawn button{background:rgba(228,188,99,.08);border:1px solid rgba(228,188,99,.28);border-radius:10px;
+  color:#f7e8c0;font-family:inherit;font-size:11.5px;font-weight:700;padding:8px 10px;cursor:pointer}
+.off3-god-spawn button:hover{background:rgba(228,188,99,.16);border-color:#E4BC63}
 /* Branded loading overlay while the office models download. */
 .off3-loader{position:absolute;inset:0;z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;
   background:radial-gradient(ellipse at 50% 30%,#101830,#060912 70%);animation:acRise .2s ease both}
