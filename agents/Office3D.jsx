@@ -1512,6 +1512,147 @@ function buildOwnerOffice(color, deskTemplate, laptopTemplate, furnitureTemplate
   return { group: g, obstacles, deskMon: desk.monMat, deskHolo: desk.holo, seatLocal, spinners, blinkMats };
 }
 
+/* ── Space portal overlay ────────────────────────────────────────────
+   A small, self-contained three.js scene (its own renderer/camera/RAF
+   loop, entirely separate from the office scene underneath — the office
+   keeps simulating in the background so nothing has to pause/resume).
+   Starfield + a glowing sun + a handful of planets on simple circular
+   orbits, slow free-look via drag, and a return button. */
+function SpaceOverlay({ onReturn }) {
+  const mountRef = useRef(null);
+
+  useEffect(() => {
+    const mount = mountRef.current;
+    if (!mount) return;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x000107);
+    const camera = new THREE.PerspectiveCamera(60, mount.clientWidth / mount.clientHeight, 0.1, 2000);
+    camera.position.set(0, 14, 34);
+    camera.lookAt(0, 0, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+    renderer.setSize(mount.clientWidth, mount.clientHeight);
+    mount.appendChild(renderer.domElement);
+
+    // Starfield — a big cloud of points scattered across a sphere.
+    const starCount = 2200;
+    const starPos = new Float32Array(starCount * 3);
+    for (let i = 0; i < starCount; i++) {
+      const r = 400 + Math.random() * 600;
+      const th = Math.random() * Math.PI * 2;
+      const ph = Math.acos(2 * Math.random() - 1);
+      starPos[i * 3] = r * Math.sin(ph) * Math.cos(th);
+      starPos[i * 3 + 1] = r * Math.sin(ph) * Math.sin(th);
+      starPos[i * 3 + 2] = r * Math.cos(ph);
+    }
+    const starGeo = new THREE.BufferGeometry();
+    starGeo.setAttribute("position", new THREE.BufferAttribute(starPos, 3));
+    const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 1.1, sizeAttenuation: false }));
+    scene.add(stars);
+
+    // The sun — emissive core + a light so the planets actually shade.
+    const sun = new THREE.Mesh(
+      new THREE.SphereGeometry(5, 32, 32),
+      new THREE.MeshBasicMaterial({ color: 0xffd27a })
+    );
+    scene.add(sun);
+    const sunLight = new THREE.PointLight(0xfff2d0, 3.2, 0, 0);
+    scene.add(sunLight);
+    scene.add(new THREE.AmbientLight(0x304060, 0.5));
+
+    const PLANETS = [
+      { color: 0x8fd0ff, size: 0.9, dist: 11, speed: 0.55, tilt: 0.1 },
+      { color: 0xe4a25a, size: 1.4, dist: 17, speed: 0.34, tilt: 0.04 },
+      { color: 0x6fe0a0, size: 1.1, dist: 23, speed: 0.24, tilt: 0.18 },
+      { color: 0xd06fe0, size: 1.7, dist: 30, speed: 0.16, tilt: 0.02 },
+      { color: 0xe45a5a, size: 0.7, dist: 36, speed: 0.12, tilt: 0.12 },
+    ];
+    const planets = PLANETS.map((p) => {
+      const mesh = new THREE.Mesh(
+        new THREE.SphereGeometry(p.size, 24, 24),
+        new THREE.MeshStandardMaterial({ color: p.color, roughness: 0.7, metalness: 0.1 })
+      );
+      scene.add(mesh);
+      const ringGeo = new THREE.RingGeometry(p.dist - 0.02, p.dist + 0.02, 96);
+      const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: p.color, transparent: true, opacity: 0.12, side: THREE.DoubleSide }));
+      ring.rotation.x = -Math.PI / 2;
+      scene.add(ring);
+      return { mesh, angle: Math.random() * Math.PI * 2, ...p };
+    });
+
+    // Slow free-look: drag to orbit the camera around the sun.
+    let dragging = false, lastX = 0, lastY = 0, az = 0.0, el = 0.38;
+    const onDown = (e) => { dragging = true; const p = e.touches ? e.touches[0] : e; lastX = p.clientX; lastY = p.clientY; };
+    const onMove = (e) => {
+      if (!dragging) return;
+      const p = e.touches ? e.touches[0] : e;
+      az -= (p.clientX - lastX) * 0.005;
+      el = Math.max(0.08, Math.min(1.3, el - (p.clientY - lastY) * 0.004));
+      lastX = p.clientX; lastY = p.clientY;
+    };
+    const onUp = () => { dragging = false; };
+    mount.addEventListener("mousedown", onDown);
+    mount.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    mount.addEventListener("touchstart", onDown, { passive: true });
+    mount.addEventListener("touchmove", onMove, { passive: true });
+    mount.addEventListener("touchend", onUp);
+
+    let raf = null;
+    const clock = new THREE.Clock();
+    const animate = () => {
+      raf = requestAnimationFrame(animate);
+      const dt = Math.min(clock.getDelta(), 0.05);
+      planets.forEach((p) => {
+        p.angle += dt * p.speed * 0.2;
+        p.mesh.position.set(Math.cos(p.angle) * p.dist, Math.sin(p.angle * 0.4) * p.dist * p.tilt, Math.sin(p.angle) * p.dist);
+        p.mesh.rotation.y += dt * 0.3;
+      });
+      sun.rotation.y += dt * 0.05;
+      const camDist = 48;
+      camera.position.set(
+        Math.cos(az) * Math.cos(el) * camDist,
+        Math.sin(el) * camDist,
+        Math.sin(az) * Math.cos(el) * camDist
+      );
+      camera.lookAt(0, 0, 0);
+      renderer.render(scene, camera);
+    };
+    animate();
+
+    const onResize = () => {
+      camera.aspect = mount.clientWidth / mount.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(mount.clientWidth, mount.clientHeight);
+    };
+    window.addEventListener("resize", onResize);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", onResize);
+      mount.removeEventListener("mousedown", onDown);
+      mount.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      mount.removeEventListener("touchstart", onDown);
+      mount.removeEventListener("touchmove", onMove);
+      mount.removeEventListener("touchend", onUp);
+      starGeo.dispose();
+      renderer.dispose();
+      if (renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement);
+    };
+  }, []);
+
+  return (
+    <div className="off3-space-wrap">
+      <div ref={mountRef} className="off3-space-canvas" />
+      <div className="off3-space-hint">גרור כדי להביט מסביב · רחף בחלל בין כוכבי הלכת</div>
+      <button className="off3-space-return" onClick={onReturn}>🚪 חזרה למשרד</button>
+    </div>
+  );
+}
+
 export default function Office3D({ chars, byId, phase, phases, deskPositions, seatPositions, dineTablePositions, meetingSpot, bizData, marketRows, voice, onClose, onOpenChat, onAutoFix }) {
   const mountRef = useRef(null);
   const liveRef = useRef({ chars, phase, bizData, joyVec: { x: 0, y: 0 }, keys: {}, firstPerson: false });
@@ -1521,6 +1662,13 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   // input stands you back up.
   const [sitting, setSitting] = useState(false);
   const [canSit, setCanSit] = useState(false);
+  // Space portal (owner request): walk into the glowing ring at the office
+  // edge and get whisked into a full solar-system view; a return button
+  // brings you back. The office's own renderer/scene keep running quietly
+  // underneath — simpler and safer than trying to pause the existing
+  // animate() loop, and the overlay's opaque background + pointer-events
+  // hide/block it completely while active.
+  const [inSpace, setInSpace] = useState(false);
   const [joyKnob, setJoyKnob] = useState({ x: 0, y: 0 });
   const [joyBase, setJoyBase] = useState(null); // floating joystick anchor (screen px), null = hidden
   const [firstPerson, setFirstPerson] = useState(false);
@@ -2774,6 +2922,43 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       }, undefined, () => { /* truck download failed — podium stays as decor */ });
     });
 
+    // ── Space portal ─────────────────────────────────────────────────────
+    // Placed on the south wall — clear of the desk ring (max radius ~15.84),
+    // reception (-13.8, 28.8) and the cafeteria (30.6, 11.2). Walking into
+    // it (proximity check in animate(), below) opens the solar-system view.
+    const PORTAL = { x: 0, z: 30 };
+    scene.userData.portal = PORTAL;
+    let portalObj = null;
+    {
+      const glow = new THREE.PointLight(0x8fd0ff, 1.1, 8);
+      glow.position.set(PORTAL.x, 1.3, PORTAL.z);
+      scene.add(glow);
+      const ringMark = new THREE.Mesh(new THREE.RingGeometry(1.6, 1.9, 40), new THREE.MeshBasicMaterial({ color: 0x8fd0ff, transparent: true, opacity: 0.5, side: THREE.DoubleSide }));
+      ringMark.rotation.x = -Math.PI / 2;
+      ringMark.position.set(PORTAL.x, 0.02, PORTAL.z);
+      scene.add(ringMark);
+      const sign = buildNeonSign("SPACE SIM", 0x8fd0ff, 2.0, 0.42);
+      sign.position.set(PORTAL.x, 3.6, PORTAL.z - 1.6);
+      scene.add(sign);
+      const portalLoader = new GLTFLoader();
+      portalLoader.setMeshoptDecoder(MeshoptDecoder);
+      portalLoader.load(base + "office-models/space_portal.glb", (g) => {
+        const p = g.scene;
+        const pb = new THREE.Box3().setFromObject(p);
+        const ps = pb.getSize(new THREE.Vector3());
+        const pc = pb.getCenter(new THREE.Vector3());
+        const s = 2.2 / ps.y; // fit a 2.2m-tall ring
+        const wrap = new THREE.Group();
+        p.position.set(-pc.x, -pb.min.y, -pc.z);
+        wrap.add(p);
+        wrap.scale.setScalar(s);
+        wrap.position.set(PORTAL.x, 0, PORTAL.z);
+        wrap.traverse((o) => { if (o.isMesh) { o.material.side = THREE.DoubleSide; } });
+        scene.add(wrap);
+        portalObj = wrap;
+      }, undefined, () => {});
+    }
+
     // ── The two office dogs 🐾 — ניקי וטיארה ────────────────────────────
     // The full pack was removed by request; these two stay, by name: ניקי
     // the pomeranian (tinted sable like the owner's real dog) and טיארה the
@@ -3378,6 +3563,17 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         liveRef.current.setCanSit?.(nearSeat);
       }
 
+      // Space portal — walk into it and get launched into the space overlay.
+      // Edge-triggered like canSit above: only fires on the rising edge, and
+      // the return-to-office handler steps the player back off the portal
+      // marker so this naturally re-arms for the next visit.
+      const portal = scene.userData.portal;
+      const nearPortal = portal && Math.hypot(playerH.group.position.x - portal.x, playerH.group.position.z - portal.z) < 1.8;
+      if (liveRef.current.inSpaceShown !== nearPortal) {
+        liveRef.current.inSpaceShown = nearPortal;
+        if (nearPortal) liveRef.current.setInSpace?.(true);
+      }
+
       // NPCs: walk a simple two-point "aisle" route to their live target
       // (down their column to the destination's row, then across) instead
       // of cutting a diagonal beeline through every desk in between — reads
@@ -3641,6 +3837,16 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     liveRef.current.setTalkTarget = setTalkTarget;
     liveRef.current.setSitting = setSitting;
     liveRef.current.setCanSit = setCanSit;
+    liveRef.current.setInSpace = setInSpace;
+    // Called by the space overlay's return button — steps the player back
+    // off the portal marker (otherwise nearPortal would stay true and the
+    // rising-edge check above could never re-arm for the next visit).
+    liveRef.current.exitPortal = () => {
+      const portal = scene.userData.portal;
+      if (portal) playerH.group.position.set(portal.x, 0, portal.z - 3.5); // step north, back toward the room (the south wall sits just past the portal)
+      liveRef.current.inSpaceShown = false;
+      setInSpace(false);
+    };
     liveRef.current.toggleSit = () => setSitting((v) => (v ? false : !!liveRef.current.canSit));
     // Turbo 🚀 — every lever at once: 1x pixel ratio, post chain bypassed
     // (animate renders straight through the renderer), shadows off, dust +
@@ -3945,6 +4151,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           <div className="off3-joy-knob" style={{ transform: `translate(${joyKnob.x}px, ${joyKnob.y}px)` }} />
         </div>
       )}
+      {inSpace && <SpaceOverlay onReturn={() => liveRef.current.exitPortal?.()} />}
     </div>
   );
 }

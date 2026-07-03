@@ -3537,6 +3537,16 @@ function StyleTag() {
 .off3-loader-bar i{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg,var(--gold),#7fd7ff);transition:width .25s ease;box-shadow:0 0 14px rgba(228,188,99,.5)}
 .off3-loader span{font-size:12px;font-weight:700;color:#7e90b8}
 @keyframes off3LoaderFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+/* Space portal overlay — sits on top of the office canvas, its own scene. */
+.off3-space-wrap{position:absolute;inset:0;z-index:30;background:#000107;animation:acRise .25s ease both}
+.off3-space-canvas{position:absolute;inset:0;cursor:grab}
+.off3-space-canvas:active{cursor:grabbing}
+.off3-space-hint{position:absolute;top:14px;left:50%;transform:translateX(-50%);font-size:11.5px;font-weight:700;color:#9fb6e0;
+  background:rgba(8,12,26,.55);border:1px solid rgba(143,208,255,.25);padding:6px 14px;border-radius:14px;pointer-events:none;white-space:nowrap}
+.off3-space-return{position:absolute;bottom:22px;left:50%;transform:translateX(-50%);z-index:31;height:44px;padding:0 22px;border-radius:22px;
+  border:1px solid rgba(143,208,255,.4);background:linear-gradient(180deg,#1a2b4a,#0c1526);color:#eaf1ff;font-family:'Rubik';font-weight:800;font-size:13.5px;
+  cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.5),0 0 20px rgba(143,208,255,.15)}
+.off3-space-return:hover{border-color:rgba(143,208,255,.7);box-shadow:0 8px 24px rgba(0,0,0,.5),0 0 28px rgba(143,208,255,.3)}
 .off-floor{flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(2,1fr);gap:12px;padding:14px 14px 28px;align-content:start}
 @media(min-width:680px){.off-floor{grid-template-columns:repeat(3,1fr)}}
 @media(min-width:1000px){.off-floor{grid-template-columns:repeat(4,1fr)}}
