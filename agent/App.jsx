@@ -3,7 +3,7 @@ import {
   Plus, X, Trash2, Search, Phone, Mail, MapPin, Building2, Users, Wallet, Tag,
   Globe, ChevronLeft, MessageSquare, Pencil, Target, Bell, FileText, TrendingUp,
   CheckCircle2, Handshake, LayoutDashboard, UserRound, Send, Copy, Briefcase, Palette,
-  Camera, Monitor, Maximize2, Shield, Star, ChevronDown, ChevronUp, GitMerge,
+  Camera, Monitor, Maximize2, Shield, Star, ChevronDown, ChevronUp, GitMerge, Home,
 } from "lucide-react";
 import BULL_LOGO from "../heavyguard/heavyguard-logo.png";
 import * as cloud from "./cloud";
@@ -520,6 +520,7 @@ function Dashboard({ leads, deals, custs, go, onNewDeal, showToast, theme, setTh
         <img src={BULL_LOGO} className="ag-logo" alt="" />
         <div style={{ flex: 1 }}><div className="ag-title">מערכת CRM</div><div className="ag-sub">{BIZ} — ניהול לידים ועסקאות</div></div>
         <div className="ag-links">
+          <a className="ag-soc home" href="/Alpha-new/" title="חזרה לאלפא" aria-label="חזרה לאלפא"><Home size={15} /></a>
           <a className="ag-site" href={HG_SITE} target="_blank" rel="noreferrer" title="heavygurad.com">
             <img src={BULL_LOGO} alt="" /><span>האתר</span>
           </a>
@@ -2401,6 +2402,8 @@ function StyleTag() {
 .ag-soc.theme{background:conic-gradient(from 0deg,#C2912E,#1B7E9C,#1E9A60,#6D4FC4,#C0392B,#C2912E);border:none;color:#fff}
 .ag-soc.cloud{background:var(--s9);border:1px solid var(--s7);color:var(--s4)}
 .ag-soc.cloud.on{background:#E2F4EA;border-color:#9AD3B4;color:var(--ok)}
+.ag-soc.home{color:var(--gold2)}
+.ag-soc.home:hover{border-color:var(--gold2);color:var(--gold)}
 /* customer-facing Samsonix page (via link) */
 .ag-cust-page{padding:16px 14px 40px;min-height:100%}
 .ag-cust-head{display:flex;align-items:center;gap:12px;margin-bottom:16px;padding-bottom:14px;border-bottom:2px solid var(--gold)}

@@ -5,7 +5,7 @@ import {
   Hash, Wrench, Factory, Tag, DollarSign, Calendar, Phone, User, Timer, Search, Film, Images, Pencil,
   BarChart3, ClipboardList, TrendingUp, Percent, Trophy,
   Users, Car, Scale, Receipt, Boxes, Fuel, Copy, MessageSquare, Bell, CalendarDays, Circle, CalendarClock, ChevronRight, Minus, Shield, Upload, RotateCcw, Settings, Globe, Wallet, TrendingDown, Link2, Share2, Mail, Target, Building2, FileText, Route, Navigation,
-  Megaphone, Eye, ThumbsUp, Video, BarChart2, Bookmark, Sparkles, RefreshCw,
+  Megaphone, Eye, ThumbsUp, Video, BarChart2, Bookmark, Sparkles, RefreshCw, Home as HomeIcon,
 } from "lucide-react";
 import BULL_LOGO from './heavyguard-logo.png';
 // The accountant's real books — the same shared source of truth the main
@@ -434,6 +434,7 @@ function Hub({ index, go, onNew }) {
       <header className="hg2-head hg2-head-lux">
         <img src={BULL_LOGO} className="hg2-logo" alt="" />
         <div><div className="hg2-name">HEAVY GUARD</div><div className="hg2-tag">מערכת הניהול של העסק</div></div>
+        <a className="hg2-home" href="/Alpha-new/" title="חזרה לאלפא"><HomeIcon size={18} /></a>
       </header>
 
       <div className="hg2-cmd">
@@ -3867,6 +3868,9 @@ function Styles() {
 .hg2-logo{width:46px;filter:drop-shadow(0 1px 6px rgba(228,188,99,.45))}
 .hg2-name{font-family:'Rubik';font-weight:900;font-size:19px;letter-spacing:1.5px;background:linear-gradient(95deg,var(--gold2),var(--gold) 40%,var(--champ) 70%,var(--gold));-webkit-background-clip:text;background-clip:text;color:transparent}
 .hg2-tag{font-size:10.5px;color:var(--gold);opacity:.8;letter-spacing:2px;font-weight:700}
+.hg2-home{margin-inline-start:auto;width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;
+  background:var(--s9);border:1px solid var(--s7);color:var(--gold);transition:border-color .15s,color .15s}
+.hg2-home:hover{border-color:var(--gold);color:var(--champ)}
 
 .hg2-stats{display:grid;grid-template-columns:repeat(2,1fr);gap:9px;margin-bottom:14px}
 .hg2-stat{background:var(--s9);border:1px solid var(--s7);border-radius:13px;padding:12px 14px}

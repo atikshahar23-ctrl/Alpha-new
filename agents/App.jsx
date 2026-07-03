@@ -6,7 +6,7 @@ import {
   ArrowUpRight, Bot, Radio, Brain, Rocket, ShieldCheck, ClipboardList,
   GitBranch, Terminal, FileCode2, Coins, Package, Scale, Compass,
   Building2, Database, GraduationCap, Globe, Mic, Volume2, VolumeX, LineChart,
-  Clock, CalendarClock, Hammer,
+  Clock, CalendarClock, Hammer, Home,
 } from "lucide-react";
 import * as cloud from "./cloud";
 import Office3D from "./Office3D.jsx";
@@ -1336,8 +1336,11 @@ function TopBar({ online }) {
           <span>ALPHA · AGENTS COMMAND</span>
         </div>
       </div>
-      <div className={"ac-top-status " + (online ? "on" : "off")}>
-        <Radio size={13} /> {online ? (anthropicKey() ? "Claude חי" : "AI חי") : "מצב הדגמה"}
+      <div className="ac-top-right">
+        <div className={"ac-top-status " + (online ? "on" : "off")}>
+          <Radio size={13} /> {online ? (anthropicKey() ? "Claude חי" : "AI חי") : "מצב הדגמה"}
+        </div>
+        <a className="ac-top-home" href="/Alpha-new/" title="חזרה לאלפא"><Home size={16} /></a>
       </div>
     </div>
   );
@@ -2871,6 +2874,10 @@ function StyleTag() {
 .ac-top-status.on{color:#3FD79A;border-color:rgba(63,215,154,.4);background:rgba(63,215,154,.08)}
 .ac-top-status.off{color:var(--s4);background:var(--s9)}
 .ac-top-status svg{animation:acDot 2s ease-in-out infinite}
+.ac-top-right{display:flex;align-items:center;gap:8px}
+.ac-top-home{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;
+  background:var(--s9);border:1px solid var(--s7);color:var(--s4);transition:border-color .15s,color .15s}
+.ac-top-home:hover{border-color:#E4BC63;color:#E4BC63}
 
 .ac-main{position:relative;z-index:1}
 .ac-page{padding:18px 16px 24px;max-width:1100px;margin:0 auto;animation:acRise .35s ease both}
