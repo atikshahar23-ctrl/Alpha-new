@@ -1924,9 +1924,9 @@ const GOD_META_LABELS = {
   coverage_angle: "זווית כיסוי", battery_status: "מצב סוללה", storage: "אחסון", channels: "ערוצים",
 };
 
-export default function Office3D({ chars, byId, phase, phases, deskPositions, seatPositions, dineTablePositions, meetingSpot, bizData, marketRows, voice, onClose, onOpenChat, onAutoFix }) {
+export default function Office3D({ chars, byId, phase, phases, deskPositions, seatPositions, dineTablePositions, meetingSpot, bizData, marketRows, weather, voice, onClose, onOpenChat, onAutoFix }) {
   const mountRef = useRef(null);
-  const liveRef = useRef({ chars, phase, bizData, joyVec: { x: 0, y: 0 }, keys: {}, firstPerson: false });
+  const liveRef = useRef({ chars, phase, bizData, weather, joyVec: { x: 0, y: 0 }, keys: {}, firstPerson: false });
   const [talkTarget, setTalkTarget] = useState(null);
   // Sitting on your own chair in your office ("שב"/"קום" button, or E key when
   // near the chair). While seated the sit animation plays and any movement
@@ -2052,6 +2052,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   useEffect(() => { liveRef.current.phase = phase; }, [phase]);
   useEffect(() => { liveRef.current.bizData = bizData; }, [bizData]);
   useEffect(() => { liveRef.current.marketRows = marketRows; }, [marketRows]);
+  useEffect(() => { liveRef.current.weather = weather; }, [weather]);
   useEffect(() => { liveRef.current.onAutoFix = onAutoFix; }, [onAutoFix]);
   // Push the graphics-quality toggle down into the postprocessing passes
   // once they exist (they're created inside the async mount effect below).
@@ -2411,6 +2412,50 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     );
     glass.position.set(nwx, 3.2, nwz);
     scene.add(glass);
+
+    // Real-weather rain — a genuine GLSL streak shader on a thin plane just
+    // in front of the window glass, only visible when the owner's real
+    // location (Rishon LeZion, via useWeather in App.jsx) is actually
+    // raining. Multiple layered streak fields at different densities/speeds
+    // for a less mechanical look; opacity is the only thing toggled at
+    // runtime (see animate(), below) so there's no shader recompile cost.
+    const rainMat = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      uniforms: { uTime: { value: 0 }, uOpacity: { value: 0 } },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        varying vec2 vUv;
+        uniform float uTime;
+        uniform float uOpacity;
+        float hash(float n) { return fract(sin(n) * 43758.5453123); }
+        float streaks(vec2 uv, float density, float speed, float seed) {
+          vec2 g = vec2(uv.x * density, uv.y);
+          float col = floor(g.x);
+          float off = hash(col + seed);
+          float y = fract(g.y * 2.2 - uTime * speed + off * 7.0);
+          float x = fract(g.x) - 0.5 + (off - 0.5) * 0.4;
+          float streak = smoothstep(0.5, 0.0, abs(x) * 14.0) * smoothstep(0.0, 0.06, y) * smoothstep(0.55, 0.06, y);
+          return streak;
+        }
+        void main() {
+          float s = streaks(vUv, 26.0, 0.55, 0.0) * 0.5;
+          s += streaks(vUv * vec2(1.0, 1.0) + 0.37, 40.0, 0.8, 11.0) * 0.35;
+          s += streaks(vUv * vec2(1.0, 1.0) + 0.71, 17.0, 0.4, 27.0) * 0.4;
+          vec3 dropColor = vec3(0.75, 0.85, 0.95);
+          gl_FragColor = vec4(dropColor, clamp(s, 0.0, 1.0) * uOpacity);
+        }
+      `,
+    });
+    const rainPlane = new THREE.Mesh(new THREE.PlaneGeometry(FLOOR_W, 6.4), rainMat);
+    rainPlane.position.set(nwx, 3.2, nwz + 0.03);
+    scene.add(rainPlane);
 
     // Real 3D buildings for actual foreground depth/parallax — sparse and
     // set well back from the glass (12–40 units past the window) so they
@@ -3736,11 +3781,16 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         const lightMul = liveRef.current.godLightMul || 1;
         const isNight = liveRef.current.phase >= 3;
         const isEvening = liveRef.current.phase === 2;
-        const sunTargetInt = (isNight ? 0.35 : isEvening ? 0.8 : 1.15) * lightMul;
+        // Real overcast/rain over Rishon LeZion knocks a bit off both
+        // lights — an honest touch of "it's actually grey outside today",
+        // not a full replacement for the phase-driven day/night system.
+        const cloudCover = liveRef.current.weather?.cloudCover ?? 0;
+        const overcastMul = 1 - Math.min(0.3, cloudCover / 100 * 0.3);
+        const sunTargetInt = (isNight ? 0.35 : isEvening ? 0.8 : 1.15) * lightMul * overcastMul;
         const sunTargetHex = isNight ? 0x27407a : isEvening ? 0xffb46a : 0xfff2d8;
         sun.intensity += (sunTargetInt - sun.intensity) * Math.min(1, dt * 0.8);
         sun.color.lerp(tmpColor.set(sunTargetHex), Math.min(1, dt * 0.8));
-        const ambTargetInt = (isNight ? 0.35 : 0.65) * lightMul;
+        const ambTargetInt = (isNight ? 0.35 : 0.65) * lightMul * overcastMul;
         ambient.intensity += (ambTargetInt - ambient.intensity) * Math.min(1, dt * 0.8);
         // Near-building windows light up after dark — same lit-window feel as
         // the painted skyline behind them, but on real 3D geometry.
@@ -3749,6 +3799,12 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           mat.emissiveIntensity += (buildingGlowTarget - mat.emissiveIntensity) * Math.min(1, dt * 0.8);
         });
       }
+      // Rain on the glass — fades in/out rather than snapping, matches
+      // liveRef.current.weather.isRaining set from the real Rishon LeZion
+      // forecast (App.jsx's useWeather effect, refreshed every 20 minutes).
+      rainMat.uniforms.uTime.value += dt;
+      const rainTarget = liveRef.current.weather?.isRaining ? 0.8 : 0;
+      rainMat.uniforms.uOpacity.value += (rainTarget - rainMat.uniforms.uOpacity.value) * Math.min(1, dt * 0.5);
 
       // Wall TVs — redrawn every few seconds, not every frame; BOTH screens
       // show real data now: the markets TV renders the live CoinGecko/Yahoo

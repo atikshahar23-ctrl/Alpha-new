@@ -2385,6 +2385,30 @@ function OfficeSim({ onClose, onOpenChat, logActivity, showToast }) {
     return () => clearInterval(iv);
   }, []);
 
+  // Real weather for Rishon LeZion (owner's real location) — Open-Meteo,
+  // free and keyless. Drives the office window: rain streaks on the glass
+  // when it's actually raining outside, a touch of extra overcast dimming
+  // when cloud cover is high. Refreshed every 20 minutes — weather doesn't
+  // need per-second polling, and this keeps it well clear of any rate limit.
+  const [weather, setWeather] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    const fetchWeather = async () => {
+      try {
+        const r = await fetch("https://api.open-meteo.com/v1/forecast?latitude=31.9730&longitude=34.7925&current=temperature_2m,precipitation,weather_code,cloud_cover,is_day&timezone=Asia%2FJerusalem");
+        const j = await r.json();
+        const c = j.current;
+        if (cancelled || !c) return;
+        // WMO weather codes: 51-67 drizzle/rain, 80-82 rain showers, 95-99 storms.
+        const isRaining = (c.precipitation > 0) || (c.weather_code >= 51 && c.weather_code <= 82) || (c.weather_code >= 95);
+        setWeather({ isRaining, isDay: !!c.is_day, tempC: c.temperature_2m, cloudCover: c.cloud_cover, code: c.weather_code });
+      } catch { /* offline/blocked — the office just keeps its normal weather-less lighting */ }
+    };
+    fetchWeather();
+    const wIv = setInterval(fetchWeather, 20 * 60000);
+    return () => { cancelled = true; clearInterval(wIv); };
+  }, []);
+
   // Behaviour scheduler: meetings, desk work, coffee/lunch breaks, short
   // walks, energy. Biased hard toward "sitting at your own desk working" —
   // that's the room's resting state, not a random pick each tick — so the
@@ -2476,6 +2500,7 @@ function OfficeSim({ onClose, onOpenChat, logActivity, showToast }) {
         meetingSpot={OFC_MEETING_SPOT}
         bizData={bizData}
         marketRows={marketRows}
+        weather={weather}
         onAutoFix={(msg) => { showToast?.(msg); logActivity?.("facilities", msg); }}
         voice={{
           canListen: canListen(),
