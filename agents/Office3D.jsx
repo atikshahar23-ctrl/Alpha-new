@@ -28,11 +28,20 @@ import { MessageCircle, Eye, User, Mic, VolumeX, Volume2, X, Zap, Settings as Se
 // so every desk pod gets wide clear corridors around it instead of the old
 // packed-maze center. All hand-placed world coordinates below are scaled by
 // the same ×1.5 factor so wall-anchored fixtures stay on their walls.
-const SCALE = 0.33; // world units per floor-percent point
+// Enlarged again ×3 (owner request, mobile navigation felt cramped): SCALE
+// and FLOOR_W/FLOOR_D triple, spreading every toWorld()-derived fixture
+// (desks, offices, dining, reception, cafeteria) 3x further apart — but
+// CHAR_SCALE/DESK_SCALE below are untouched, so people and furniture stay
+// their current size; only the room gets more spacious. TALK_DIST and the
+// player's own walk SPEED scale with it so proximity and crossing time
+// still feel right. The two hand-placed absolute fixtures added after the
+// 1.5x pass (the mezzanine + reception) are re-positioned ×3 by hand below,
+// since they're not derived from toWorld().
+const SCALE = 0.99; // world units per floor-percent point
 const toWorld = (x, y) => [(x - 50) * SCALE, (y - 50) * SCALE];
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-const TALK_DIST = 2.5;
-const FLOOR_W = 39, FLOOR_D = 33;
+const TALK_DIST = 7.5;
+const FLOOR_W = 117, FLOOR_D = 99;
 // Every desk in the grid shares one orientation, so a single heading makes
 // every seated worker face their own monitor. The desk groups themselves are
 // also rotated by this same angle at placement, so the station + the seated
@@ -2300,8 +2309,14 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // and its own skyline balcony window. scene.userData carries the
     // geometry so the animate loop's player-height field and the
     // proximity/lighting logic below can read it without re-deriving it.
-    const MEZ = { x: -13, z: 11, y: 2.6, w: 9, d: 9 };
-    const STAIR = { x: -13, xw: 1.7, z0: 1.0, z1: MEZ.z - MEZ.d / 2 };
+    // Position (x, z) scaled ×3 to match the enlarged floor; y/w/d (the
+    // platform's own height and footprint) intentionally left unscaled —
+    // its interior layout (lounge sign, restroom, balcony offsets below)
+    // is all relative to w/d, so touching those would require re-deriving
+    // every offset in this block. The platform is simply relocated further
+    // out to where its desk cluster now sits, not resized.
+    const MEZ = { x: -39, z: 33, y: 2.6, w: 9, d: 9 };
+    const STAIR = { x: -39, xw: 1.7, z0: 3.0, z1: MEZ.z - MEZ.d / 2 };
     scene.userData.mezzanine = { MEZ, STAIR };
     {
       const goldMat = new THREE.MeshStandardMaterial({ color: 0xE4BC63, roughness: 0.35, metalness: 0.6 });
@@ -2828,7 +2843,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       wx2.fillStyle = "#7fe6b0"; wx2.font = "600 16px system-ui"; wx2.fillText("● הצוות זמין", 150, 132);
       const welcomeTex = new THREE.CanvasTexture(wCvs); welcomeTex.colorSpace = THREE.SRGBColorSpace;
       const reception = buildReception(0xE4BC63, welcomeTex);
-      const RCP = { x: -6.9, z: 14.4 };
+      const RCP = { x: -20.7, z: 43.2 };
       // Flipped 180° (owner request): the welcome screen + front face the
       // room/entrance walkway on the north side, מיכל sits on the south side.
       reception.group.position.set(RCP.x, 0, RCP.z);
@@ -2868,7 +2883,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // ── Cafeteria / coffee counter (beside the dining tables) ────────────
     {
       const caf = buildCafeteria(0xffb454);
-      const CAF = { x: 15.3, z: 5.6 };
+      const CAF = { x: 45.9, z: 16.8 };
       caf.group.position.set(CAF.x, 0, CAF.z);
       scene.add(caf.group);
       caf.obstacles.forEach((o) => obstacles.push({ x: CAF.x + o.x, z: CAF.z + o.z, r: o.r }));
@@ -3335,8 +3350,19 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       // Turn direction inverted by request; forward/backward flipped back
       // (a second invert request restored ↑/W = forward, ↓/S = backward,
       // both still relative to the direction you're looking).
-      const kFwd = (keys["w"] || keys["arrowup"] ? 1 : 0) - (keys["s"] || keys["arrowdown"] ? 1 : 0);
-      const kTurn = -((keys["d"] || keys["arrowright"] ? 1 : 0) - (keys["a"] || keys["arrowleft"] ? 1 : 0));
+      let kFwd = (keys["w"] || keys["arrowup"] ? 1 : 0) - (keys["s"] || keys["arrowdown"] ? 1 : 0);
+      let kTurn = -((keys["d"] || keys["arrowright"] ? 1 : 0) - (keys["a"] || keys["arrowleft"] ? 1 : 0));
+      // Mobile has no keyboard, so the touch joystick was the only way to
+      // move in first person — but it still used the old absolute-world
+      // scheme (push "up" = fixed compass heading, not "forward"), which
+      // is exactly what made it disorienting: once you'd turned away from
+      // that heading, pushing "up" no longer walked you where the locked
+      // first-person camera was looking. Route the stick into the same
+      // relative forward/turn the keyboard fix above already uses.
+      if (liveRef.current.firstPerson && Math.hypot(jv.x, jv.y) > 0.001) {
+        kFwd = kFwd || -jv.y;
+        kTurn = kTurn || -jv.x;
+      }
       const fpTankControls = liveRef.current.firstPerson && (kFwd !== 0 || kTurn !== 0);
       if (fpTankControls) {
         if (kTurn) {
@@ -3352,8 +3378,8 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         if (keys["s"] || keys["arrowdown"]) mz += 1;
         if (keys["a"] || keys["arrowleft"]) mx -= 1;
         if (keys["d"] || keys["arrowright"]) mx += 1;
+        mx += jv.x; mz += jv.y;
       }
-      mx += jv.x; mz += jv.y;
       const mlen = Math.hypot(mx, mz);
       // Sitting on your own chair: any movement input stands you up; otherwise
       // glide onto the seat (position, drop, and facing — south, toward the
@@ -3373,7 +3399,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       } else if (mlen > 0.08) {
         playerH.group.position.y += (mezHeightAt(playerH.group.position.x, playerH.group.position.z) - playerH.group.position.y) * Math.min(1, dt * 8);
         mx /= mlen; mz /= mlen;
-        const SPEED = 5.0;
+        const SPEED = 15.0; // ×3 with the floor, so crossing time still feels right
         playerH.group.position.x = clamp(playerH.group.position.x + mx * SPEED * dt, -(FLOOR_W / 2 - 1), FLOOR_W / 2 - 1);
         playerH.group.position.z = clamp(playerH.group.position.z + mz * SPEED * dt, -(FLOOR_D / 2 - 1), FLOOR_D / 2 - 1);
         resolveCollisions(playerH.group.position, obstacles);
