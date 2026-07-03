@@ -801,6 +801,7 @@ body::after {
               0 0 0 0.5px rgba(218,165,32,.05),
               inset 0 1px 0 rgba(255,255,255,.05), inset 0 -1px 0 rgba(0,0,0,.1);
   will-change: transform;
+  position: relative; overflow: hidden;
 }
 .chip svg { flex-shrink: 0; filter: drop-shadow(0 0 3px rgba(218,165,32,.2)); }
 .chip:hover {
@@ -812,6 +813,19 @@ body::after {
 }
 .chip:active { transform: translateY(0) scale(.96); transition-duration: .1s; }
 .chip.ghost { color: var(--dim); border-color: var(--line) }
+
+/* Global click ripple — a small water-drop pulse from the click point,
+   spawned by attachRipple() in app.ts. Any container gets it by being
+   position:relative + overflow:hidden and passing the click coords in. */
+.ac-ripple-span {
+  position: absolute; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle, rgba(218,165,32,.35) 0%, rgba(218,165,32,.12) 45%, transparent 70%);
+  transform: translate(-50%, -50%) scale(0);
+  animation: ac-ripple-out .6s cubic-bezier(.22,.9,.35,1) forwards;
+}
+@keyframes ac-ripple-out {
+  to { transform: translate(-50%, -50%) scale(1); opacity: 0; }
+}
 .chip.ghost:hover { color: var(--gold); border-color: var(--glass-border) }
 
 /* 3D stage — FULL SCREEN */
@@ -2971,6 +2985,7 @@ select.cp-input option { background: #14120c; color: var(--ink); }
   box-shadow: 0 4px 16px rgba(218,165,32,.3), 0 1px 3px rgba(0,0,0,.3);
   transition: transform .3s cubic-bezier(.34,1.56,.64,1), box-shadow .3s;
   display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
 }
 .fab:hover { transform: scale(1.1); box-shadow: 0 6px 24px rgba(218,165,32,.4); }
 .fab-menu {

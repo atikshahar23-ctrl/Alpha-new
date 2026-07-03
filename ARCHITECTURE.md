@@ -105,3 +105,27 @@ LangGraph Supervisor = Agent 6 System Commander
 6. Sandbox code-exec, realtime voice, social automation as separate services.
 
 **Caveats:** 120Hz is realistic for UI/animation, not for LLM round-trips (there, *stream* so it feels instant). OS/IoT control cannot come from the web app — it needs the desktop shell.
+
+## 7. Visual language — AlphaCorePalette
+
+Documenting the tokens that already exist across the app (index.html's `src/style.css` and agents.html's `.ac{}` block in `agents/App.jsx`) as the canonical reference, rather than inventing a competing palette — both already converge on the same "deep charcoal + gold, blue-grey accent" identity. Any new UI/3D component should pull from these, not introduce new one-off hex values.
+
+**2D (CSS custom properties):**
+- Background: `--void:#04040E` (agents) / near-black base (index)
+- Surfaces: `--s9:#0A0A18`, `--s8:#10101F` (agents' two-step surface elevation)
+- Primary accent (gold): `--gold:#E4BC63` (agents) / `--gold:#daa520` (index) — both "electric gold," not identical hex; don't force one onto the other, each app's gold is already tuned to its own darker/lighter base
+- Secondary gold: `--gold2:#B48828`
+- Borders/glow: `--s7:rgba(218,165,32,.18)` (translucent gold border, used everywhere for card outlines)
+- Text: `--silver:#E4E8FA`
+- Muted/status-blue ("cyber-blue"): `--s4:#7886B8`
+- Cards: dark glass — `background:linear-gradient(160deg,rgba(16,14,32,.96),rgba(8,8,18,.97))`, `border:1px solid var(--s7)`, `border-radius:14-16px`, `backdrop-filter:blur(14-20px)`. Radius and blur vary intentionally by element weight (chips ~10-12px, cards 14-16px, modals 16-18px) — do not flatten to one fixed value.
+- index.html additionally ships a full alt-theme system (`data-theme="ocean|emerald|royal"`) swapping `--gold`/`--cyan`/`--fire`/`--purple` as a set — new components should read these vars, not hardcode colors, so they inherit whichever theme is active.
+
+**3D (Office3D.jsx / three.js):**
+- Key light: warm directional "sun" (`0xfff2df`) — Executive Suite / daytime glow
+- Fill light: cool blue directional (`0x6f9dff`) — already the "Cyber-Blue" fill called for in lighting briefs
+- Ambient + hemisphere (`0xbfd4ff` sky / `0x2a2030` ground) round out the base — this is already a three-point-equivalent rig; a from-scratch relight isn't needed
+- Accent point lights reuse the agent's own color (desk glow, holo light) — 0x18e0ff cyan and 0xff3ea5 magenta are the two standing "signal" accents for special effects (LIDAR scan, alert pulses)
+- Gold trim/signage: `0xE4BC63` matches the 2D gold exactly, so 3D props read as the same brand as the dashboard
+
+**Interaction feedback (2D):** hover = `translateY(-2px)` + brighten `border-color`/`box-shadow` glow (already the `.chip:hover`/card-hover pattern in `src/style.css`); keep new components consistent with this rather than introducing a different hover language.

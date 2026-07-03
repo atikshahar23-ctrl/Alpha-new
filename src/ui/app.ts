@@ -182,7 +182,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v167 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v168 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="panelsToggleBtn" title="הסתר/הצג פנלים" aria-label="הסתר פנלים">
           <svg class="pt-hide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -6820,6 +6820,25 @@ export function mountApp(root: HTMLElement) {
     if (wmEl) wmEl.textContent = getGreeting();
     document.documentElement.classList.toggle('midnight-protocol', isMidnightProtocol());
   }, 1000);
+
+  // Global click-ripple (AlphaCorePalette interaction guideline: a subtle
+  // water-drop pulse from the click point). Delegated on the document so it
+  // covers every .chip/.fab without per-element wiring; the target just
+  // needs position:relative-or-fixed + overflow:hidden (both already true
+  // for chips and fabs).
+  document.addEventListener('pointerdown', (e) => {
+    const target = (e.target as HTMLElement)?.closest('.chip, .fab') as HTMLElement | null;
+    if (!target) return;
+    const r = target.getBoundingClientRect();
+    const size = Math.max(r.width, r.height) * 1.6;
+    const span = document.createElement('span');
+    span.className = 'ac-ripple-span';
+    span.style.width = span.style.height = `${size}px`;
+    span.style.left = `${e.clientX - r.left}px`;
+    span.style.top = `${e.clientY - r.top}px`;
+    target.appendChild(span);
+    span.addEventListener('animationend', () => span.remove());
+  });
 
   // ===== LEFT PANEL ANIMATIONS =====
 
