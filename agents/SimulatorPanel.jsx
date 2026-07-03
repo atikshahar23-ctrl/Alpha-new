@@ -113,8 +113,13 @@ function SimulatorPanelStyle() {
 }
 
 /* ── Setup form ────────────────────────────────────────── */
+// Same real, deployed URL already used everywhere else in the app (the
+// phone's TRADE button, the main dashboard's trade FAB) — pre-filled here
+// too so this form can't send someone off to guess/mistype a hostname.
+const DEFAULT_SIM_URL = "https://heavt-guard-simulator-1.onrender.com/";
+
 function SetupForm({ onSave }) {
-  const [url, setUrl] = useState(getSimUrl());
+  const [url, setUrl] = useState(getSimUrl() || DEFAULT_SIM_URL);
   const [key, setKey] = useState(getSimApiKey());
   const save = () => {
     setSimUrl(url);
@@ -129,7 +134,7 @@ function SetupForm({ onSave }) {
       </div>
       <p className="sp-setup-note">
         הזינו את כתובת ה-URL של השרת <code>heavt-guard-simulator</code>
-        {" "}(למשל <code>https://heavt-guard-simulator.onrender.com</code>).
+        {" "}(השרת שלכם רץ ב-<code>https://heavt-guard-simulator-1.onrender.com/</code>).
         אם לשרת אין הרשאה — השאירו את שדה המפתח ריק.
       </p>
       <label className="sp-field">

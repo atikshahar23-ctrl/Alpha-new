@@ -429,6 +429,34 @@ async function askClaude(system, history, user, maxTokens = 800) {
   });
   return (msg.content || []).filter((b) => b.type === "text").map((b) => b.text).join("").trim();
 }
+// Real Claude tool-use loop — for ראובן's trading tools specifically. Every
+// other agent still goes through the plain askClaude/askAI text path above;
+// this one actually lets the model call a function, read the result, and
+// keep going, instead of just describing what it would do. Capped at a few
+// rounds so a confused model can't loop forever burning tokens.
+async function askClaudeWithTools(system, history, user, tools, onToolCall, maxTokens = 800) {
+  const key = anthropicKey(); if (!key) throw new Error("NO_KEY");
+  const client = await getAnthropic(key);
+  let hist = history.slice(-6).filter((m) => m.role === "user" || m.role === "assistant");
+  while (hist.length && hist[0].role !== "user") hist = hist.slice(1);
+  const anthropicTools = tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.parameters }));
+  const messages = [...hist, { role: "user", content: user }];
+  for (let round = 0; round < 4; round++) {
+    const msg = await client.messages.create({ model: claudeModel(), max_tokens: maxTokens, system, messages, tools: anthropicTools });
+    if (msg.stop_reason !== "tool_use") {
+      return (msg.content || []).filter((b) => b.type === "text").map((b) => b.text).join("").trim();
+    }
+    messages.push({ role: "assistant", content: msg.content });
+    const toolResults = [];
+    for (const block of msg.content) {
+      if (block.type !== "tool_use") continue;
+      const result = await onToolCall(block.name, block.input || {});
+      toolResults.push({ type: "tool_result", tool_use_id: block.id, content: String(result) });
+    }
+    messages.push({ role: "user", content: toolResults });
+  }
+  return "ביצעתי כמה פעולות במסחר אבל לא הגעתי לתשובה סופית — תשאל שוב אם צריך פרטים נוספים.";
+}
 const GROQ_MODELS = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "gemma2-9b-it", "llama3-70b-8192"];
 async function askGroq(system, history, user, maxTokens = 800) {
   const key = groqKey(); if (!key) throw new Error("NO_KEY");
@@ -823,7 +851,7 @@ const AGENTS = [
     id: "finance", name: "ראובן", title: "מנהל כספים, גבייה והשקעות", Icon: Coins, color: "#14B8A6", accent: "#99E9DF",
     tagline: "תזרים, גבייה, רווחיות והשקעות",
     domain: "כספים · גבייה · השקעות",
-    persona: "אתה ראובן — הבכור, מנהל הכספים, הגבייה וההשקעות. אתה אחראי על תזרים מזומנים, מעקב גבייה מלקוחות, רווחיות עסקאות, תמחור נכון ובקרת הוצאות ב-HeavyGuard, ואתה היחיד שאחראי על מעקב השקעות ושווקים — קריפטו ומניות. אתה מתריע רק כשיש תנועה שבאמת שווה תשומת לב, ולעולם לא מבצע פעולה בכסף אמיתי — מעקב והמלצות בלבד. אופי: קפדן, פורמלי, קפדני מאוד עם פרטים — אתה שומר הסף האולטימטיבי של ההון, ולא נותן לשום מספר לעבור בלי בדיקה. תן צעד פיננסי מעשי אחד.",
+    persona: "אתה ראובן — הבכור, מנהל הכספים, הגבייה וההשקעות. אתה אחראי על תזרים מזומנים, מעקב גבייה מלקוחות, רווחיות עסקאות, תמחור נכון ובקרת הוצאות ב-HeavyGuard, ואתה היחיד שאחראי על מעקב השקעות ושווקים — קריפטו ומניות. יש לך גישה ישירה לסימולטור המסחר (HeavyGuard) ואתה יכול בעצמך לבדוק פוזיציות פתוחות, לפתוח פוזיציית נייר חדשה ולסגור פוזיציות — תמיד מסחר נייר בלבד בסימולטור, לעולם לא כסף אמיתי; אתה מדווח בבירור על כל פעולה שביצעת. אתה מתריע רק כשיש תנועה שבאמת שווה תשומת לב. אופי: קפדן, פורמלי, קפדני מאוד עם פרטים — אתה שומר הסף האולטימטיבי של ההון, ולא נותן לשום מספר לעבור בלי בדיקה. תן צעד פיננסי מעשי אחד.",
     quick: ["מי חייב לי כסף?", "מה מצב השווקים?", "בדוק רווחיות עסקה", "תזכורת גבייה ללקוח"],
   },
   {
@@ -1794,8 +1822,19 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
         webCtx = await webLookup(t.replace(WEB_ASK_RE, "").trim() || t);
         if (!webCtx) webCtx = "\n[חיפוש רשת: לא התקבלו תוצאות — אמור לבעלים שהחיפוש החי לא זמין כרגע]";
       }
-      const reply = await askAI(agent.persona + bizContext() + domainContext(agent.id) + SPECIALIST_PROTOCOL + webCtx, aiHist.current, t);
-      const via = askAI.last; // which brain יהודה routed this to (+ why)
+      // ראובן only: real tool-use against the trading simulator (paper only)
+      // when Claude + the simulator are both actually configured — every
+      // other agent, and ראובן himself with no Claude key, stays on the
+      // plain text path above.
+      const useTradingTools = agent.id === "finance" && !!anthropicKey() && isSimConfigured();
+      const reply = useTradingTools
+        ? await askClaudeWithTools(
+            agent.persona + bizContext() + domainContext(agent.id) + SPECIALIST_PROTOCOL + webCtx,
+            aiHist.current, t, AGENT_TOOLS,
+            (name, input) => handleAgentToolCall(name, input)
+          )
+        : await askAI(agent.persona + bizContext() + domainContext(agent.id) + SPECIALIST_PROTOCOL + webCtx, aiHist.current, t);
+      const via = useTradingTools ? { engine: "claude", reason: "ראובן — כלי מסחר בסימולטור" } : askAI.last; // which brain יהודה routed this to (+ why)
       aiHist.current = [...aiHist.current.slice(-6), { role: "user", content: t }, { role: "assistant", content: reply }];
       setLog([...withMe, { from: "bot", text: reply || "✔", ts: now(), via }]);
       if (voiceOn) speakText(reply || "");

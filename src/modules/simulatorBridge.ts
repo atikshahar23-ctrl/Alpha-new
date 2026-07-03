@@ -14,7 +14,7 @@
              *
               * Config (stored in localStorage, never hard-coded):
                *   alpha:sim:url    – base URL of the simulator backend
-                *                      e.g. "https://heavt-guard-simulator.onrender.com"
+                *                      e.g. "https://heavt-guard-simulator-1.onrender.com"
                  *   alpha:sim:apiKey – optional Bearer token if the simulator
                   *                      is deployed with auth enabled
                    *
