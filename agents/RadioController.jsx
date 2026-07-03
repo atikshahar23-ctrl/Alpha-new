@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, forwardRef, useImperativeHandle } from "react";
 import { Radio, Play, Pause, Volume2, VolumeX } from "lucide-react";
 
 /* ── Ambient office audio (Web Audio, no external assets) ─────────────────
@@ -106,7 +106,14 @@ const STATIONS = [
   { id: "lbc", name: "LBC", city: "London", url: "https://media-ice.musicradio.com/LBCMP3", color: "#E4BC63" },
 ];
 
-export default function RadioController({ compact = false, onPlayStateChange }) {
+// Lives mounted for the whole office session (not just while the phone
+// panel is open) — a persistent <audio> element and its own Web Audio
+// ambient context, so the broadcast (and the office hum) keep running in
+// the background exactly like a real radio would when you put your phone
+// away. `visible` just hides the panel UI via CSS, it never unmounts the
+// player. `ref` exposes toggle()/state so a compact mini-widget elsewhere
+// in the HUD can control it without the panel being open.
+const RadioController = forwardRef(function RadioController({ compact = false, visible = true, onPlayStateChange }, ref) {
   const [ambientOn, setAmbientOn] = useState(true);
   const [ambientVol, setAmbientVol] = useState(0.12);
   useAmbientOffice(ambientOn, ambientVol);
@@ -122,13 +129,13 @@ export default function RadioController({ compact = false, onPlayStateChange }) 
     if (a) a.volume = radioVol;
   }, [radioVol]);
 
-  // Mic protocol: a live broadcast and the always-listening agent mic
-  // shouldn't run at once — the office would try to transcribe the radio.
-  useEffect(() => { onPlayStateChange?.(playing); }, [playing]);
-  useEffect(() => () => onPlayStateChange?.(false), []); // release the mic if the panel unmounts mid-broadcast
-
   const station = STATIONS[stationIdx];
   const cities = [...new Set(STATIONS.map((s) => s.city))];
+
+  // Mic protocol: a live broadcast and the always-listening agent mic
+  // shouldn't run at once — the office would try to transcribe the radio.
+  useEffect(() => { onPlayStateChange?.(playing, station.name); }, [playing, station.name]);
+  useEffect(() => () => onPlayStateChange?.(false), []); // release the mic if the sim itself closes mid-broadcast
 
   const play = () => {
     const a = audioRef.current;
@@ -154,8 +161,10 @@ export default function RadioController({ compact = false, onPlayStateChange }) 
     }
   };
 
+  useImperativeHandle(ref, () => ({ toggle, isPlaying: () => playing, stationName: () => station.name }));
+
   return (
-    <div className={"radio-ctl" + (compact ? " compact" : "")}>
+    <div className={"radio-ctl" + (compact ? " compact" : "") + (visible ? "" : " radio-ctl-hidden")}>
       <audio
         ref={audioRef}
         onError={() => setStatus("error")}
@@ -200,4 +209,6 @@ export default function RadioController({ compact = false, onPlayStateChange }) 
       </div>
     </div>
   );
-}
+});
+
+export default RadioController;

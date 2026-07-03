@@ -9,7 +9,7 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { SSAOPass } from "three/examples/jsm/postprocessing/SSAOPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
-import { MessageCircle, Eye, User, Mic, VolumeX, Volume2, X, Zap, Settings as SettingsIcon, Trash2 } from "lucide-react";
+import { MessageCircle, Eye, User, Mic, VolumeX, Volume2, X, Zap, Settings as SettingsIcon, Trash2, Radio, Pause } from "lucide-react";
 import { useDeviceProfile } from "./deviceProfiler.js";
 import RadioController from "./RadioController.jsx";
 
@@ -2008,15 +2008,29 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   // stream) — a live recognition session is cut short too. Whatever the
   // user had autoListen set to before the broadcast is restored after.
   const autoListenBeforeRadioRef = useRef(true);
-  const handleRadioPlayState = (isPlaying) => {
-    if (isPlaying) {
-      autoListenBeforeRadioRef.current = autoListen;
-      setAutoListen(false);
-      try { recogRef.current?.stop(); } catch {}
-      setVoiceState((s) => (s === "listening" ? "idle" : s));
-    } else {
-      setAutoListen(autoListenBeforeRadioRef.current);
-    }
+  // Persistent radio — the player itself lives mounted for the whole office
+  // session (see the always-mounted .off3-phone below), this just tracks
+  // "is it on and what's playing" for the mini-widget shown when the
+  // phone's closed, and exposes toggle() via radioRef for that widget.
+  const radioRef = useRef(null);
+  const [radioPlaying, setRadioPlaying] = useState(false);
+  const [radioStationName, setRadioStationName] = useState("");
+  const handleRadioPlayState = (isPlaying, stationName) => {
+    if (stationName) setRadioStationName(stationName);
+    // Edge-triggered: switching stations mid-broadcast re-fires this with
+    // isPlaying still true, which must NOT re-run the mute/restore dance
+    // (that would stomp the saved autoListen value with "false").
+    setRadioPlaying((wasPlaying) => {
+      if (isPlaying && !wasPlaying) {
+        autoListenBeforeRadioRef.current = autoListen;
+        setAutoListen(false);
+        try { recogRef.current?.stop(); } catch {}
+        setVoiceState((s) => (s === "listening" ? "idle" : s));
+      } else if (!isPlaying && wasPlaying) {
+        setAutoListen(autoListenBeforeRadioRef.current);
+      }
+      return isPlaying;
+    });
   };
   // Voice picker — same localStorage key App.jsx's speakText() reads, so
   // choosing a voice here actually changes what every agent sounds like,
@@ -3446,6 +3460,51 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       kitchen.obstacles.forEach((o) => obstacles.push({ x: KTC.x + o.x, z: KTC.z + o.z, r: o.r }));
     }
 
+    // ── Art sculpture (east wall, clear of the CCTV truck/CAF/desk ring) —
+    // the owner's own abstract bronze sculpt, same podium treatment as the
+    // car/trucks: a display base + gold ring + spotlight + slow turn.
+    {
+      const ART = { x: 33, z: -8 };
+      const podium = new THREE.Mesh(
+        new THREE.CylinderGeometry(2.6, 2.8, 0.14, 40),
+        new THREE.MeshStandardMaterial({ color: 0x14161c, roughness: 0.35, metalness: 0.5 })
+      );
+      podium.position.set(ART.x, 0.07, ART.z);
+      podium.receiveShadow = true;
+      scene.add(podium);
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(2.7, 0.03, 8, 60), new THREE.MeshBasicMaterial({ color: 0xE4BC63 }));
+      ring.rotation.x = Math.PI / 2;
+      ring.position.set(ART.x, 0.15, ART.z);
+      scene.add(ring);
+      const spot = new THREE.PointLight(0xfff2d8, 0.65, 8);
+      spot.position.set(ART.x, 3.6, ART.z);
+      scene.add(spot);
+      obstacles.push({ x: ART.x, z: ART.z, r: 2.8 });
+      const sign = buildNeonSign("פסל אבסטרקטי", 0xE4BC63, 2.0, 0.42);
+      sign.position.set(ART.x, 3.2, ART.z - 1.5);
+      scene.add(sign);
+      const artLoader = new GLTFLoader();
+      artLoader.setMeshoptDecoder(MeshoptDecoder);
+      artLoader.load(base + "office-models/art_sculpture.glb", (g) => {
+        const art = g.scene;
+        const ab = new THREE.Box3().setFromObject(art);
+        const as = ab.getSize(new THREE.Vector3());
+        const ac = ab.getCenter(new THREE.Vector3());
+        const s = 2.0 / Math.max(as.x, as.y, as.z); // ~2m display piece
+        const wrap = new THREE.Group();
+        art.position.set(-ac.x, -ab.min.y, -ac.z);
+        wrap.add(art);
+        wrap.scale.setScalar(s);
+        wrap.position.set(ART.x, 0.14, ART.z);
+        art.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+        scene.add(wrap);
+        centerSpin.push(wrap);
+        registerEditable(wrap, "פסל אבסטרקטי", false, {
+          origin_date: "2026", material_spec: "ברונזה — יצוק ממודל תלת-ממד מקורי", security_level: "רגיל", maintenance_status: "תקין",
+        });
+      }, undefined, () => { /* sculpture download failed — podium stays as decor */ });
+    }
+
     // ── Wall decor from the user's LP Officeroom pack ────────────────────
     // Real modeled pieces (wall clock, framed art, a record player for the
     // cafeteria counter) hung on the side walls so the shell doesn't read
@@ -4551,18 +4610,30 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       >
         <Zap size={16} /> {turbo ? "טורבו פעיל" : "טורבו"}
       </button>
+      {radioPlaying && !(phoneOpen && phoneTab === "radio") && (
+        <div className="off3-radio-mini" title={radioStationName}>
+          <Radio size={13} />
+          <span>{radioStationName}</span>
+          <button onClick={() => radioRef.current?.toggle()} title="השתק"><Pause size={12} /></button>
+        </div>
+      )}
       <button className={"off3-phonebtn" + (phoneOpen ? " on" : "")} onClick={() => setPhoneOpen((v) => !v)} title="הטלפון שלך — שיחה חיה ושליטה במערכות">
         📱
       </button>
-      {phoneOpen && (
-        <div className="off3-phone">
+      {/* Always mounted (CSS-hidden when the phone is closed, not unmounted)
+          so the radio panel inside it never loses its <audio> element and
+          the broadcast keeps running in the background exactly like a real
+          radio when you close the phone — only the JSX conditionals for
+          chat/ctrl/embed content still mount-on-demand, they don't need to
+          survive being closed. */}
+      <div className={"off3-phone" + (phoneOpen ? "" : " off3-phone-closed")}>
           <div className="off3-phone-notch" />
           <div className="off3-phone-tabs">
             <button className={phoneTab === "chat" ? "on" : ""} onClick={() => { setPhoneTab("chat"); setPhoneEmbed(null); }}>💬 שיחה חיה</button>
             <button className={phoneTab === "ctrl" ? "on" : ""} onClick={() => { setPhoneTab("ctrl"); setPhoneEmbed(null); }}>🎛 שליטה</button>
             <button className={phoneTab === "radio" ? "on" : ""} onClick={() => { setPhoneTab("radio"); setPhoneEmbed(null); }}>📻 רדיו</button>
           </div>
-          {phoneEmbed ? (
+          {phoneEmbed && (
             <div className="off3-phone-embed">
               <div className="off3-phone-embed-bar">
                 <button className="off3-phone-back" onClick={() => setPhoneEmbed(null)}>← חזרה</button>
@@ -4577,7 +4648,8 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
                 referrerPolicy="no-referrer"
               />
             </div>
-          ) : phoneTab === "chat" ? (
+          )}
+          {!phoneEmbed && phoneTab === "chat" && (
             <div className="off3-phone-body">
               {talkAgent
                 ? <div className="off3-phone-live">📡 בשיחה חיה עם {talkAgent.name} — ההולוגרמה מוקרנת מהיד</div>
@@ -4589,11 +4661,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
                 </div>
               ))}
             </div>
-          ) : phoneTab === "radio" ? (
-            <div className="off3-phone-body">
-              <RadioController onPlayStateChange={handleRadioPlayState} />
-            </div>
-          ) : (
+          )}
+          <div className={"off3-phone-body" + (!phoneEmbed && phoneTab === "radio" ? "" : " off3-phone-body-hidden")}>
+            <RadioController ref={radioRef} visible={!phoneEmbed && phoneTab === "radio"} onPlayStateChange={handleRadioPlayState} />
+          </div>
+          {!phoneEmbed && phoneTab === "ctrl" && (
             <div className="off3-phone-body">
               <div className="off3-phone-sec">העוזר הראשי · ALPHA</div>
               {/* Command Center runs its own full 3D scene, same as this
@@ -4612,8 +4684,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
               <button className="off3-phone-act" onClick={() => onOpenChat("ceo")}>🧑‍💼 דבר עם יהודה — המנכ"ל</button>
             </div>
           )}
-        </div>
-      )}
+      </div>
       {(canSit || sitting) && (
         <button className={"off3-sit" + (sitting ? " on" : "")} onClick={() => setSitting((v) => !v)} title={sitting ? "קום מהכיסא" : "שב בכיסא שלך (E)"}>
           {sitting ? "🚶 קום" : "🪑 שב בכיסא שלך"}

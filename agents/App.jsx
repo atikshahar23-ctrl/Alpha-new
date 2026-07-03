@@ -3544,10 +3544,19 @@ function StyleTag() {
   display:flex;align-items:center;justify-content:center;background:rgba(6,9,18,.72);
   border:1px solid rgba(46,230,255,.4);font-size:15px;cursor:pointer;backdrop-filter:blur(8px)}
 .off3-phonebtn:hover,.off3-phonebtn.on{border-color:#2ee6ff;box-shadow:0 0 14px rgba(46,230,255,.45)}
+.off3-radio-mini{position:absolute;top:56px;right:136px;z-index:3;height:34px;display:flex;align-items:center;gap:6px;
+  padding:0 10px;border-radius:17px;background:rgba(6,9,18,.72);border:1px solid rgba(46,230,255,.4);
+  color:#8fe0f4;font-size:11px;font-weight:700;backdrop-filter:blur(8px);max-width:150px}
+.off3-radio-mini span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.off3-radio-mini button{background:none;border:none;color:#8fe0f4;cursor:pointer;display:flex;flex-shrink:0;padding:0}
 .off3-phone{position:absolute;top:100px;right:10px;z-index:61;width:min(270px,88vw);max-height:min(480px,70vh);
   display:flex;flex-direction:column;background:linear-gradient(170deg,rgba(6,14,24,.96),rgba(3,8,14,.97));
   border:1px solid rgba(46,230,255,.45);border-radius:26px;box-shadow:0 0 30px rgba(46,230,255,.25),0 18px 44px rgba(0,0,0,.6);
   backdrop-filter:blur(16px);overflow:hidden;animation:acRise .25s ease both}
+/* Always mounted so the radio keeps playing — closed state collapses to
+   nothing visually/interactively rather than unmounting. */
+.off3-phone-closed{width:0;height:0;min-width:0;border:none;box-shadow:none;animation:none;pointer-events:none;opacity:0}
+.off3-phone-body-hidden{position:absolute;width:0;height:0;overflow:hidden;padding:0;margin:0;pointer-events:none}
 .off3-phone-notch{width:86px;height:16px;margin:8px auto 2px;border-radius:9px;background:#020508;border:1px solid rgba(46,230,255,.25)}
 .off3-phone-tabs{display:flex;gap:6px;padding:8px 10px 6px}
 .off3-phone-tabs button{flex:1;background:rgba(46,230,255,.06);border:1px solid rgba(46,230,255,.25);border-radius:10px;
@@ -3565,6 +3574,7 @@ function StyleTag() {
   color:#d7f6ff;font-family:inherit;font-size:12.5px;font-weight:700;padding:9px 10px;cursor:pointer;text-align:right}
 .off3-phone-act:hover{background:rgba(46,230,255,.16);border-color:#2ee6ff}
 .radio-ctl{display:flex;flex-direction:column;gap:10px;padding:2px}
+.radio-ctl-hidden{position:absolute;width:0;height:0;overflow:hidden;padding:0;margin:0;pointer-events:none}
 .radio-ctl-head{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:800;color:#9fe6f4}
 .radio-ctl-dot{margin-inline-start:auto;font-size:9.5px;font-weight:800;padding:3px 8px;border-radius:10px;background:rgba(255,255,255,.06);color:#7e90b8}
 .radio-ctl-dot.playing{color:#3FD79A;background:rgba(63,215,154,.12)}
