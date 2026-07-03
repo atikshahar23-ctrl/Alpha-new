@@ -10,6 +10,8 @@ import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPa
 import { SSAOPass } from "three/examples/jsm/postprocessing/SSAOPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { MessageCircle, Eye, User, Mic, VolumeX, Volume2, X, Zap, Settings as SettingsIcon } from "lucide-react";
+import { useDeviceProfile } from "./deviceProfiler.js";
+import RadioController from "./RadioController.jsx";
 
 /* ════════════════════════════════════════════════════════════════════
    3D OFFICE — walk the floor yourself (WASD / joystick), approach a
@@ -1334,6 +1336,162 @@ function buildGuestChair(color) {
   return g;
 }
 
+// A compact mini-gym: a treadmill (slanted deck + display), a dumbbell rack
+// with a few weight pairs, and a wall mirror panel — for the 10:00/12:00/
+//16:00 break windows.
+function buildMiniGym(color) {
+  const g = new THREE.Group();
+  const obstacles = [];
+  const dark = new THREE.MeshStandardMaterial({ color: 0x1a1c22, roughness: 0.5, metalness: 0.35 });
+  const rubber = new THREE.MeshStandardMaterial({ color: 0x101114, roughness: 0.85 });
+
+  // Treadmill.
+  const deck = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.12, 1.8), rubber);
+  deck.position.set(-1.1, 0.16, 0); deck.rotation.x = -0.05; deck.castShadow = true; deck.receiveShadow = true;
+  g.add(deck);
+  const console_ = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.55, 0.08), dark);
+  console_.position.set(-1.1, 0.75, 0.82); console_.rotation.x = -0.35; console_.castShadow = true;
+  g.add(console_);
+  const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.24), new THREE.MeshBasicMaterial({ color }));
+  screen.position.set(-1.1, 0.8, 0.86); screen.rotation.x = -0.35;
+  g.add(screen);
+  const rails = [[-0.32, -1.1], [0.32, -1.1]];
+  rails.forEach(([ox]) => {
+    const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 1.1, 6), dark);
+    rail.position.set(-1.1 + ox, 0.55, 0.1); g.add(rail);
+  });
+  obstacles.push({ x: -1.1, z: 0, r: 0.75 });
+
+  // Dumbbell rack (A-frame + three weight pairs, ascending size).
+  const rackMat = new THREE.MeshStandardMaterial({ color: 0x22252c, roughness: 0.4, metalness: 0.6 });
+  const rackFrame = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.65, 0.35), rackMat);
+  rackFrame.position.set(0.9, 0.32, -0.1); rackFrame.castShadow = true; rackFrame.receiveShadow = true;
+  g.add(rackFrame);
+  const weightMat = new THREE.MeshStandardMaterial({ color: 0x2a2d34, roughness: 0.6, metalness: 0.4 });
+  [-0.28, 0, 0.28].forEach((dx, i) => {
+    const r = 0.06 + i * 0.02;
+    [-0.09, 0.09].forEach((dz) => {
+      const head = new THREE.Mesh(new THREE.SphereGeometry(r, 8, 8), weightMat);
+      head.position.set(0.9 + dx, 0.65 + r, -0.1 + dz); head.castShadow = true;
+      g.add(head);
+    });
+    const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.18, 6), new THREE.MeshStandardMaterial({ color: 0x3a3d44, metalness: 0.7, roughness: 0.3 }));
+    bar.rotation.z = Math.PI / 2; bar.position.set(0.9 + dx, 0.65 + r, -0.1); g.add(bar);
+  });
+  obstacles.push({ x: 0.9, z: -0.1, r: 0.6 });
+
+  // Wall mirror behind the equipment (reflective-looking, cheap fresnel fake).
+  const mirror = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.6, 1.7),
+    new THREE.MeshStandardMaterial({ color: 0x2a3550, roughness: 0.08, metalness: 0.9 })
+  );
+  mirror.position.set(0, 1.0, -1.05); mirror.rotation.x = 0.02;
+  g.add(mirror);
+  const light = new THREE.PointLight(0xdfe8ff, 0.55, 7);
+  light.position.set(0, 2.1, -0.2); g.add(light);
+  const sign = buildNeonSign("חדר כושר", color, 2.2, 0.55);
+  sign.position.set(0, 2.35, -1.0); g.add(sign);
+  return { group: g, obstacles };
+}
+
+// A lounge/break corner facing the north skyline window: two couches around
+// a low table, a rug and a couple of plants — where agents unwind during a
+// break window instead of loitering at their desks.
+function buildLoungeArea(color) {
+  const g = new THREE.Group();
+  const obstacles = [];
+  const rug = buildRug(3.2, 2.6, 0x2c2438);
+  rug.position.y = 0.005; g.add(rug);
+
+  const couchA = buildCouch();
+  couchA.position.set(0, 0, -0.75); couchA.rotation.y = Math.PI;
+  g.add(couchA);
+  obstacles.push({ x: 0, z: -0.75, r: 0.9 });
+
+  const couchB = buildCouch();
+  couchB.scale.set(0.75, 1, 0.75);
+  couchB.position.set(-1.15, 0, 0.55); couchB.rotation.y = Math.PI / 2;
+  g.add(couchB);
+  obstacles.push({ x: -1.15, z: 0.55, r: 0.7 });
+
+  const table = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.42, 0.42, 0.32, 16),
+    new THREE.MeshStandardMaterial({ color: 0x17181e, roughness: 0.3, metalness: 0.4 })
+  );
+  table.position.set(-0.1, 0.16, 0.05); table.castShadow = true; table.receiveShadow = true;
+  g.add(table);
+  const glassTop = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.46, 0.46, 0.02, 16),
+    new THREE.MeshPhysicalMaterial({ color: 0x9fd6ff, transparent: true, opacity: 0.2, roughness: 0.1, metalness: 0.1 })
+  );
+  glassTop.position.set(-0.1, 0.33, 0.05); g.add(glassTop);
+  obstacles.push({ x: -0.1, z: 0.05, r: 0.5 });
+
+  [[1.35, -1.2], [1.3, 1.1]].forEach(([px, pz]) => {
+    const plant = buildPlant();
+    plant.position.set(px, 0, pz); plant.scale.setScalar(1.3);
+    g.add(plant);
+  });
+
+  const light = new THREE.PointLight(0xffd8b0, 0.5, 7);
+  light.position.set(0, 2.0, 0); g.add(light);
+  const sign = buildNeonSign("לאונג' והפסקות", color, 2.6, 0.55);
+  sign.position.set(0, 2.35, -1.15); g.add(sign);
+  return { group: g, obstacles };
+}
+
+// Employee kitchenette — counter with sink, upper cabinets, a fridge and a
+// microwave. Decor only (west wall, just outside the percent-space grid
+// the animated agents walk in), same category as reception/the fleet
+// podiums: a real amenity to look at, not a scripted NPC destination.
+function buildKitchen(color) {
+  const g = new THREE.Group();
+  const obstacles = [];
+  const cab = new THREE.MeshStandardMaterial({ color: 0x22242c, roughness: 0.45, metalness: 0.3 });
+  const counterTop = new THREE.MeshStandardMaterial({ color: 0x0e0f14, roughness: 0.2, metalness: 0.5 });
+
+  const counter = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.9, 2.6), cab);
+  counter.position.set(0, 0.45, 0); counter.castShadow = true; counter.receiveShadow = true;
+  g.add(counter);
+  const top = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.06, 2.7), counterTop);
+  top.position.set(0, 0.93, 0); g.add(top);
+  // Sink basin, inset into the counter.
+  const sink = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.12, 0.55), new THREE.MeshStandardMaterial({ color: 0x0a0a10, roughness: 0.15, metalness: 0.8 }));
+  sink.position.set(0.05, 0.9, 0.5); g.add(sink);
+  const faucet = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.3, 6), new THREE.MeshStandardMaterial({ color: 0xc8d0da, metalness: 0.85, roughness: 0.2 }));
+  faucet.position.set(-0.15, 1.08, 0.5); g.add(faucet);
+
+  // Upper cabinets.
+  const upper = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.6, 2.2), cab);
+  upper.position.set(0.05, 1.85, -0.1); upper.castShadow = true;
+  g.add(upper);
+  const upperStrip = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.55, 2.1), new THREE.MeshBasicMaterial({ color }));
+  upperStrip.position.set(0.31, 1.85, -0.1); g.add(upperStrip);
+
+  // Fridge, at the counter's end.
+  const fridge = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.75, 0.68), new THREE.MeshStandardMaterial({ color: 0xd7dde4, roughness: 0.3, metalness: 0.6 }));
+  fridge.position.set(0, 0.875, 1.65); fridge.castShadow = true; fridge.receiveShadow = true;
+  g.add(fridge);
+  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 1.0, 6), new THREE.MeshStandardMaterial({ color: 0x8a8f98, metalness: 0.8, roughness: 0.25 }));
+  handle.rotation.z = Math.PI / 2; handle.position.set(0.36, 1.1, 1.5); g.add(handle);
+  obstacles.push({ x: 0, z: 1.65, r: 0.5 });
+
+  // Microwave on the counter.
+  const micro = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.25, 0.3), new THREE.MeshStandardMaterial({ color: 0x1b1e26, roughness: 0.4, metalness: 0.5 }));
+  micro.position.set(0.05, 1.08, -0.9); micro.castShadow = true;
+  g.add(micro);
+  const microLed = new THREE.Mesh(new THREE.PlaneGeometry(0.14, 0.06), new THREE.MeshBasicMaterial({ color: 0x2ee6ff }));
+  microLed.position.set(0.23, 1.1, -0.9); microLed.rotation.y = Math.PI / 2;
+  g.add(microLed);
+
+  for (let t = -1.3; t <= 1.3 + 0.01; t += 0.75) obstacles.push({ x: 0, z: t, r: 0.5 });
+  const light = new THREE.PointLight(0xfff0d8, 0.55, 7);
+  light.position.set(-0.3, 2.1, 0); g.add(light);
+  const sign = buildNeonSign("מטבח", color, 1.8, 0.55);
+  sign.rotation.y = Math.PI / 2; sign.position.set(0.5, 2.3, -0.1); g.add(sign);
+  return { group: g, obstacles };
+}
+
 // The owner's private executive suite, rebuilt around real meetings: a much
 // bigger glass corner office (grew with the doubled floor), the desk now
 // faces INTO the room so the owner looks at whoever walks in, and two guest
@@ -1694,13 +1852,24 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   // Model-download progress for the branded loading overlay (0..100, then
   // null once everything is in and the room is live).
   const [loadPct, setLoadPct] = useState(0);
-  const [graphicsHigh, setGraphicsHigh] = useState(true); // bloom + SSAO on/off, for low-end devices
+  // DeviceProfiler picks the *first-run* default for graphicsHigh/turbo
+  // (iPad/mobile-low starts lean, desktop starts maxed) — a saved manual
+  // choice in localStorage always wins over the detected default.
+  const { budget: perfBudget } = useDeviceProfile();
+  const [graphicsHigh, setGraphicsHigh] = useState(() => {
+    try { const v = localStorage.getItem("alpha:agents:graphicsHigh"); if (v !== null) return v === "1"; } catch {}
+    return perfBudget.graphicsHigh;
+  }); // bloom + SSAO on/off, for low-end devices
+  useEffect(() => { try { localStorage.setItem("alpha:agents:graphicsHigh", graphicsHigh ? "1" : "0"); } catch {} }, [graphicsHigh]);
   // Turbo mode 🚀 — the "make it actually smooth" switch for machines where
   // the sim stutters (the owner's Mac): renders at 1x DPR straight through
   // the renderer (no post chain), drops shadows, freezes the CCTV feed,
   // hides the sky-life extras and the live iframe wall. Persisted so a
   // laggy machine stays fast on the next visit.
-  const [turbo, setTurbo] = useState(() => { try { return localStorage.getItem("alpha:agents:turbo") === "1"; } catch { return false; } });
+  const [turbo, setTurbo] = useState(() => {
+    try { const v = localStorage.getItem("alpha:agents:turbo"); if (v !== null) return v === "1"; } catch {}
+    return perfBudget.turbo;
+  });
   useEffect(() => {
     liveRef.current.setTurbo?.(turbo);
     try { localStorage.setItem("alpha:agents:turbo", turbo ? "1" : "0"); } catch {}
@@ -3070,6 +3239,35 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       caf.obstacles.forEach((o) => obstacles.push({ x: CAF.x + o.x, z: CAF.z + o.z, r: o.r }));
     }
 
+    // ── Mini-gym + lounge (north window strip between the two truck podiums)
+    // World coordinates are the toWorld() image of OFC_GYM/OFC_LOUNGE in
+    // App.jsx — the animated agents actually walk to these exact spots
+    // during a break window, so the props sit right where they'll stand.
+    {
+      const gym = buildMiniGym(0x6fd3f0);
+      const GYM = { x: -11.5, z: -24.5 };
+      gym.group.position.set(GYM.x, 0, GYM.z);
+      scene.add(gym.group);
+      gym.obstacles.forEach((o) => obstacles.push({ x: GYM.x + o.x, z: GYM.z + o.z, r: o.r }));
+
+      const lounge = buildLoungeArea(0xE4BC63);
+      const LNG = { x: 11.5, z: -24.5 };
+      lounge.group.position.set(LNG.x, 0, LNG.z);
+      scene.add(lounge.group);
+      lounge.obstacles.forEach((o) => obstacles.push({ x: LNG.x + o.x, z: LNG.z + o.z, r: o.r }));
+    }
+
+    // ── Kitchen (west wall, decor only — same category as reception/the
+    // fleet podiums: outside the percent-space grid the animated agents
+    // path through, a real amenity to look at rather than a scripted stop).
+    {
+      const kitchen = buildKitchen(0x3FD79A);
+      const KTC = { x: -30, z: 5 };
+      kitchen.group.position.set(KTC.x, 0, KTC.z);
+      scene.add(kitchen.group);
+      kitchen.obstacles.forEach((o) => obstacles.push({ x: KTC.x + o.x, z: KTC.z + o.z, r: o.r }));
+    }
+
     // ── Wall decor from the user's LP Officeroom pack ────────────────────
     // Real modeled pieces (wall clock, framed art, a record player for the
     // cafeteria counter) hung on the side walls so the shell doesn't read
@@ -4036,6 +4234,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           <div className="off3-phone-tabs">
             <button className={phoneTab === "chat" ? "on" : ""} onClick={() => { setPhoneTab("chat"); setPhoneEmbed(null); }}>💬 שיחה חיה</button>
             <button className={phoneTab === "ctrl" ? "on" : ""} onClick={() => { setPhoneTab("ctrl"); setPhoneEmbed(null); }}>🎛 שליטה</button>
+            <button className={phoneTab === "radio" ? "on" : ""} onClick={() => { setPhoneTab("radio"); setPhoneEmbed(null); }}>📻 רדיו</button>
           </div>
           {phoneEmbed ? (
             <div className="off3-phone-embed">
@@ -4063,6 +4262,10 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
                   <b>{l.who}</b><span>{l.text}</span>
                 </div>
               ))}
+            </div>
+          ) : phoneTab === "radio" ? (
+            <div className="off3-phone-body">
+              <RadioController />
             </div>
           ) : (
             <div className="off3-phone-body">

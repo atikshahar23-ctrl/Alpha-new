@@ -2233,12 +2233,48 @@ const OFC_DINE = [
 // Coffee-cooler stop, beside the cafeteria counter on the east side (the old
 // west-wall spot now sits inside a perimeter office).
 const OFC_BREAK = { x: 92, y: 56 };
+// Mini-gym + lounge — the open strip along the north window wall between the
+// two truck podiums (world x -27..25, z -24..-26; verified clear when the
+// fleet showcase was placed). Converted to percent-space via the inverse of
+// Office3D's toWorld(): percent = 50 + world/SCALE (SCALE 0.66).
+const OFC_GYM = [{ x: 30, y: 11 }, { x: 35, y: 15 }];
+const OFC_LOUNGE = [{ x: 65, y: 11 }, { x: 70, y: 15 }];
 // Where a summoned agent walks to when you call them "to your office" — the
 // guest chair INSIDE the owner's private glass office in the SE corner of
 // the 3D scene (Office3D places that chair exactly on this spot), so the
 // called agent walks in through the door and sits down facing your desk.
 const OFC_MEETING_SPOT = { x: 90, y: 87 };
-const OFC_STATUS = { work: "💻", meet: "👥", break: "☕", eat: "🍽️", roam: "🚶" };
+const OFC_STATUS = { work: "💻", meet: "👥", break: "☕", eat: "🍽️", roam: "🚶", gym: "🏋️", lounge: "🛋️" };
+// Strict company-wide break windows (Israel time) — agents only leave their
+// desks for the gym/lounge/coffee/lunch inside these 20-minute windows;
+// every other minute of the day pathfinding locks them to their workstation.
+const BREAK_WINDOWS = [{ hour: 10, minute: 0 }, { hour: 12, minute: 0 }, { hour: 16, minute: 0 }];
+const BREAK_WINDOW_MIN = 20;
+function useBreakSchedule() {
+  const [onBreak, setOnBreak] = useState(false);
+  useEffect(() => {
+    const check = () => {
+      const parts = new Intl.DateTimeFormat("en-US", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Jerusalem" }).formatToParts(new Date());
+      const h = parseInt(parts.find((p) => p.type === "hour").value, 10);
+      const m = parseInt(parts.find((p) => p.type === "minute").value, 10);
+      const minutesNow = h * 60 + m;
+      setOnBreak(BREAK_WINDOWS.some((w) => { const start = w.hour * 60 + w.minute; return minutesNow >= start && minutesNow < start + BREAK_WINDOW_MIN; }));
+    };
+    check();
+    const iv = setInterval(check, 20000);
+    return () => clearInterval(iv);
+  }, []);
+  return onBreak;
+}
+// The four things an agent can do during an open break window — picked at
+// random per agent so the gym/lounge/coffee/lunch spots all see some traffic
+// instead of everyone piling into one.
+const BREAK_DESTS = [
+  { pool: OFC_GYM, status: "gym" },
+  { pool: OFC_LOUNGE, status: "lounge" },
+  { pool: [OFC_BREAK], status: "break" },
+  { pool: OFC_DINE, status: "eat" },
+];
 const OFC_PHASES = [
   { label: "בוקר", emoji: "🌅", tint: "rgba(255,196,120,.06)", sky: "#22304e" },
   { label: "צהריים", emoji: "☀️", tint: "rgba(255,250,210,.04)", sky: "#27406a" },
@@ -2247,6 +2283,7 @@ const OFC_PHASES = [
 ];
 function OfficeSim({ onClose, onOpenChat, logActivity, showToast }) {
   const rnd = (a, b) => a + Math.random() * (b - a);
+  const onBreak = useBreakSchedule();
   // Live market rows (CoinGecko + Yahoo) — same shared cache the Business
   // view uses, so the sim's wall TV shows the REAL board, not a simulation.
   const marketRows = useMarket();
@@ -2354,7 +2391,6 @@ function OfficeSim({ onClose, onOpenChat, logActivity, showToast }) {
   // floor reads as an office actually working, not people drifting around.
   useEffect(() => {
     const iv = setInterval(() => {
-      const noon = phase === 1;
       if (!meetingRef.current && Math.random() < 0.1) {
         meetingRef.current = true;
         const pick = [...AGENTS].sort(() => Math.random() - 0.5).slice(0, 5).map((a) => a.id);
@@ -2365,29 +2401,34 @@ function OfficeSim({ onClose, onOpenChat, logActivity, showToast }) {
       setChars((prev) => prev.map((c) => {
         if (c.held || c.status === "summoned") return c;
         // energy drift
-        let energy = c.energy + (c.status === "break" || c.status === "eat" ? 7 : c.status === "work" ? -2 : c.status === "meet" ? -1 : -1);
+        const onZone = c.status === "break" || c.status === "eat" || c.status === "gym" || c.status === "lounge";
+        let energy = c.energy + (onZone ? 7 : c.status === "work" ? -2 : c.status === "meet" ? -1 : -1);
         energy = Math.max(5, Math.min(100, energy));
         if (c.status === "meet") return { ...c, energy };
-        const tired = energy < 25;
         const atDesk = c.status === "work" && !c.walking;
-        // WorkingAtDesk is the hard default state — no more aimless roaming.
-        // An agent leaves the desk only for a REAL event: exhaustion (coffee),
-        // the noon lunch window, a meeting, or a summon from the owner; and
-        // anyone away from their desk gravitates straight back to work.
+        // WorkingAtDesk is the hard default state — locked, not a random pick.
+        // An agent leaves the desk ONLY inside one of the three synchronized
+        // company break windows (10:00 / 12:00 / 16:00, useBreakSchedule) or
+        // for a REAL event: a meeting or a summon from the owner. Outside a
+        // window there is no exception, tiredness included — pathfinding
+        // locks everyone to their workstation.
         if (atDesk) {
-          if (tired && Math.random() < 0.42) return { ...moveTo(c, OFC_BREAK, "break"), energy };
-          if (noon && Math.random() < 0.12) return { ...moveTo(c, OFC_DINE[Math.floor(Math.random() * OFC_DINE.length)], "eat"), energy };
+          if (onBreak && Math.random() < 0.22) {
+            const dest = BREAK_DESTS[Math.floor(Math.random() * BREAK_DESTS.length)];
+            const pt = dest.pool[Math.floor(Math.random() * dest.pool.length)];
+            return { ...moveTo(c, pt, dest.status), energy };
+          }
           return { ...c, energy };
         }
-        if (Math.random() < 0.45) {
-          if (tired) return { ...moveTo(c, OFC_BREAK, "break"), energy };
-          return { ...moveTo(c, c.home, "work"), energy };
-        }
+        // Away from the desk: the moment the window closes, head straight
+        // back — no lingering once break time is over.
+        if (!onBreak) return { ...moveTo(c, c.home, "work"), energy };
+        if (Math.random() < 0.3) return { ...moveTo(c, c.home, "work"), energy };
         return { ...c, energy };
       }));
     }, 1400);
     return () => clearInterval(iv);
-  }, [phase]);
+  }, [onBreak]);
 
   // Chatter + occasional confetti celebration.
   useEffect(() => {
@@ -2860,6 +2901,18 @@ function StyleTag() {
 @keyframes acFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
 @keyframes acType{0%,60%,100%{opacity:.25;transform:translateY(0)}30%{opacity:1;transform:translateY(-3px)}}
 @keyframes acRise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+
+/* perf-lite — DeviceProfiler flags this on iPad/mobile-low so the app skips
+   backdrop-filter (a major GPU cost on iOS Safari especially) and the
+   continuously-repainting background grid. Panels keep their existing
+   background opacity, they just stop blurring what's behind them. */
+.perf-lite .ac::before{animation:none}
+.perf-lite .off-top,.perf-lite .off-summon-panel,.perf-lite .off3-phone,
+.perf-lite .ac-modal,.perf-lite .off3-settings,.perf-lite .off3-subtitle,
+.perf-lite .off3-hint,.perf-lite .off3-view-toggle,.perf-lite .off3-turbo,
+.perf-lite .off3-phonebtn,.perf-lite .off3-sit,.perf-lite .off3-settings-toggle,
+.perf-lite .off3-mic,.perf-lite .off3-mute,.perf-lite .off3-talk{
+  backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
 
 /* ── Top bar ── */
 .ac-top{position:sticky;top:0;z-index:30;display:flex;align-items:center;justify-content:space-between;padding:14px 16px;
@@ -3511,6 +3564,24 @@ function StyleTag() {
 .off3-phone-act{background:rgba(46,230,255,.07);border:1px solid rgba(46,230,255,.28);border-radius:11px;
   color:#d7f6ff;font-family:inherit;font-size:12.5px;font-weight:700;padding:9px 10px;cursor:pointer;text-align:right}
 .off3-phone-act:hover{background:rgba(46,230,255,.16);border-color:#2ee6ff}
+.radio-ctl{display:flex;flex-direction:column;gap:10px;padding:2px}
+.radio-ctl-head{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:800;color:#9fe6f4}
+.radio-ctl-dot{margin-inline-start:auto;font-size:9.5px;font-weight:800;padding:3px 8px;border-radius:10px;background:rgba(255,255,255,.06);color:#7e90b8}
+.radio-ctl-dot.playing{color:#3FD79A;background:rgba(63,215,154,.12)}
+.radio-ctl-dot.loading{color:#E4BC63;background:rgba(228,188,99,.12)}
+.radio-ctl-dot.error{color:#ff5c50;background:rgba(255,92,80,.12)}
+.radio-ctl-stations{display:flex;gap:6px;flex-wrap:wrap}
+.radio-ctl-station{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);border-radius:10px;
+  color:#d9e6ee;font-family:inherit;font-size:11.5px;font-weight:700;padding:7px 12px;cursor:pointer}
+.radio-ctl-station.on{border-color:var(--c);color:var(--c);background:color-mix(in srgb,var(--c) 14%,transparent)}
+.radio-ctl-row{display:flex;align-items:center;gap:8px;color:#7e90b8}
+.radio-ctl-row input[type="range"]{flex:1;accent-color:#2ee6ff}
+.radio-ctl-play{width:34px;height:34px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+  background:rgba(46,230,255,.12);border:1px solid rgba(46,230,255,.4);color:#2ee6ff;cursor:pointer}
+.radio-ctl-play:hover{background:rgba(46,230,255,.22)}
+.radio-ctl-row.ambient{padding-top:4px;border-top:1px solid rgba(255,255,255,.08)}
+.radio-ctl-amb{display:flex;align-items:center;gap:5px;background:none;border:none;color:#7e90b8;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap}
+.radio-ctl-amb.on{color:#3FD79A}
 .off3-phone-embed{flex:1;min-height:0;display:flex;flex-direction:column}
 .off3-phone-embed-bar{display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid rgba(46,230,255,.22);
   font-size:11.5px;font-weight:800;color:#9fe6f4}
