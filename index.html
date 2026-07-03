@@ -176,6 +176,16 @@
       background:rgba(8,8,10,.6);border:1px solid rgba(228,188,99,.4);color:#F7E8C0;
       padding:8px 16px;border-radius:999px;font-family:Assistant,system-ui,sans-serif;font-size:14px;cursor:pointer}
     #introOverlay.granted #introSkip{opacity:0;pointer-events:none}
+    /* intro-vault.mp4 is a 16:9 landscape source. object-fit:cover on a
+       tall phone screen (typically ~9:19.5) forces a ~3x zoom to cover the
+       height, cropping almost all the width — the video reads as an
+       unrecognizable close-up smear instead of the vault reveal. Switch to
+       contain on narrow viewports so the full frame is always visible
+       (letterboxed on black, which already matches the boot sequence's
+       black background). intro-alien.mp4 is already 9:16 and stays cover. */
+    @media (max-width: 768px) {
+      .intro-vaultvid{object-fit:contain}
+    }
   </style>
   <script>
     (function(){
