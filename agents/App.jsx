@@ -3625,6 +3625,11 @@ function StyleTag() {
   border:1px solid rgba(143,208,255,.4);background:linear-gradient(180deg,#1a2b4a,#0c1526);color:#eaf1ff;font-family:'Rubik';font-weight:800;font-size:13.5px;
   cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.5),0 0 20px rgba(143,208,255,.15)}
 .off3-space-return:hover{border-color:rgba(143,208,255,.7);box-shadow:0 8px 24px rgba(0,0,0,.5),0 0 28px rgba(143,208,255,.3)}
+.off3-space-focus{position:absolute;top:14px;right:14px;z-index:31;height:36px;padding:0 16px;border-radius:18px;
+  border:1px solid rgba(143,208,255,.3);background:rgba(8,12,26,.55);color:#9fb6e0;font-family:'Rubik';font-weight:700;font-size:12px;cursor:pointer}
+.off3-space-focus:hover{border-color:rgba(143,208,255,.6);color:#eaf1ff}
+.off3-space-wrap.focus::after{content:'';position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(ellipse 70% 60% at 50% 50%,transparent 40%,rgba(0,1,7,.85) 100%);animation:acRise .4s ease both}
 .off-floor{flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(2,1fr);gap:12px;padding:14px 14px 28px;align-content:start}
 @media(min-width:680px){.off-floor{grid-template-columns:repeat(3,1fr)}}
 @media(min-width:1000px){.off-floor{grid-template-columns:repeat(4,1fr)}}

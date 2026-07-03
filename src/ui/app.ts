@@ -1,6 +1,6 @@
 import { mountOrb, setCryEnabled, type OrbHandle } from '../orb/OrbScene';
 import { mountFlowLines } from '../bg/flowLines';
-import { loadState, saveState, addEvent, addTask, scheduleTask, saveNote, loadEvents, loadTasks, removeEvent, type AppState, type TextLang, type AIProvider, type VoiceGender, type UILang } from '../assistant/state';
+import { loadState, saveState, addEvent, addTask, scheduleTask, saveNote, loadEvents, loadTasks, removeEvent, loadHgBacklog, scheduleHgTask, loadInstallDates, type AppState, type TextLang, type AIProvider, type VoiceGender, type UILang } from '../assistant/state';
 import { askAIStream, askOnce, askVision, runTags } from '../assistant/gemini';
 import { GEN1 } from '../data/gen1';
 import * as THREE from 'three';
@@ -182,7 +182,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v179 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v180 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="panelsToggleBtn" title="הסתר/הצג פנלים" aria-label="הסתר פנלים">
           <svg class="pt-hide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -1560,8 +1560,11 @@ export function mountApp(root: HTMLElement) {
     const firstDay = new Date(year, month, 1).getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
 
-    // Build set of dates that have events
+    // Build set of dates that have events, plus Heavy Guard install dates —
+    // so a day HG's own calendar marks (an install happened) shows a marker
+    // here too, even with no Alpha event/task on it.
     const eventDates = new Set(allEvents.map(e => e.date));
+    const installDates = loadInstallDates();
 
     // Month grid header
     let html = `<div style="padding:16px">
@@ -1581,11 +1584,14 @@ export function mountApp(root: HTMLElement) {
       const isToday = iso === today;
       const isSelected = iso === selectedDate;
       const hasEvent = eventDates.has(iso);
+      const hasInstall = installDates.has(iso);
       const bg = isSelected ? 'var(--gold)' : isToday ? 'rgba(218,165,32,.18)' : 'rgba(255,255,255,.03)';
       const color = isSelected ? '#0a0806' : 'var(--ink)';
       const border = isToday && !isSelected ? '1px solid rgba(218,165,32,.5)' : '1px solid transparent';
-      html += `<button data-date="${iso}" style="aspect-ratio:1;background:${bg};border:${border};border-radius:8px;color:${color};cursor:pointer;font-size:13px;font-weight:${isToday || isSelected ? '700' : '400'};position:relative;padding:0">
-        ${d}${hasEvent ? `<span style="position:absolute;bottom:3px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:${isSelected ? '#0a0806' : 'var(--gold)'}"></span>` : ''}
+      const dotColor = isSelected ? '#0a0806' : 'var(--gold)';
+      const instColor = isSelected ? '#0a0806' : 'var(--cyan)';
+      html += `<button data-date="${iso}" title="${hasInstall ? (state.uiLang === 'he' ? 'התקנה ב-Heavy Guard ביום זה' : 'Heavy Guard install this day') : ''}" style="aspect-ratio:1;background:${bg};border:${border};border-radius:8px;color:${color};cursor:pointer;font-size:13px;font-weight:${isToday || isSelected ? '700' : '400'};position:relative;padding:0">
+        ${d}<span style="position:absolute;bottom:3px;left:50%;transform:translateX(-50%);display:flex;gap:2px">${hasEvent ? `<span style="width:4px;height:4px;border-radius:50%;background:${dotColor}"></span>` : ''}${hasInstall ? `<span style="width:4px;height:4px;border-radius:50%;background:${instColor}"></span>` : ''}</span>
       </button>`;
     }
     html += `</div>`;
@@ -1615,20 +1621,35 @@ export function mountApp(root: HTMLElement) {
     // ── Unscheduled tasks panel ──────────────────────────────────────────
     // Tasks added without a date live here, beside the calendar. Tap a task (or
     // its 📅 button) while a day is selected to schedule it onto that day.
+    // Merges Alpha's own backlog with Heavy Guard's undated hg2:tasks —
+    // previously HG backlog items had no representation here at all.
     const unscheduled = loadTasks().filter(tk => !tk.done && !tk.due);
+    const hgBacklog = loadHgBacklog();
+    const totalUnscheduled = unscheduled.length + hgBacklog.length;
     html += `<div style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px">
       <div style="font-size:12px;color:var(--dim);margin-bottom:10px;display:flex;align-items:center;gap:6px">
-        <span style="color:var(--gold)">◷</span> ${state.uiLang === 'he' ? 'משימות ללא שיבוץ' : 'Unscheduled tasks'}${unscheduled.length ? ` (${unscheduled.length})` : ''}
+        <span style="color:var(--gold)">◷</span> ${state.uiLang === 'he' ? 'משימות ללא שיבוץ' : 'Unscheduled tasks'}${totalUnscheduled ? ` (${totalUnscheduled})` : ''}
       </div>`;
-    if (unscheduled.length === 0) {
+    if (totalUnscheduled === 0) {
       html += `<div style="color:var(--dim);font-style:italic;font-size:13px">${state.uiLang === 'he' ? 'אין משימות ממתינות לשיבוץ' : 'No tasks waiting to be scheduled'}</div>`;
     } else {
+      const schedTitle = selectedDate ? (state.uiLang === 'he' ? 'שבץ לתאריך הנבחר' : 'Schedule to selected day') : (state.uiLang === 'he' ? 'בחר יום בלוח תחילה' : 'Pick a day first');
+      const schedBg = selectedDate ? 'rgba(218,165,32,.14)' : 'rgba(255,255,255,.03)';
+      const schedColor = selectedDate ? 'var(--gold)' : 'var(--dim)';
+      const schedCursor = selectedDate ? 'pointer' : 'default';
       for (const tk of unscheduled) {
         const pColor = tk.priority === 'high' ? '#c0432e' : tk.priority === 'low' ? '#5a8a50' : 'var(--gold)';
         html += `<div style="display:flex;gap:10px;align-items:center;padding:9px 10px;background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:10px;margin-bottom:6px">
           <span style="width:6px;height:6px;border-radius:50%;background:${pColor};flex-shrink:0"></span>
           <span style="flex:1;font-size:14px">${tk.text.replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]!))}</span>
-          <button data-sched="${tk.id}" title="${selectedDate ? (state.uiLang === 'he' ? 'שבץ לתאריך הנבחר' : 'Schedule to selected day') : (state.uiLang === 'he' ? 'בחר יום בלוח תחילה' : 'Pick a day first')}" ${selectedDate ? '' : 'disabled'} style="background:${selectedDate ? 'rgba(218,165,32,.14)' : 'rgba(255,255,255,.03)'};border:1px solid var(--line);border-radius:8px;color:${selectedDate ? 'var(--gold)' : 'var(--dim)'};cursor:${selectedDate ? 'pointer' : 'default'};font-size:13px;padding:5px 9px">📅</button>
+          <button data-sched="${tk.id}" title="${schedTitle}" ${selectedDate ? '' : 'disabled'} style="background:${schedBg};border:1px solid var(--line);border-radius:8px;color:${schedColor};cursor:${schedCursor};font-size:13px;padding:5px 9px">📅</button>
+        </div>`;
+      }
+      for (const tk of hgBacklog) {
+        html += `<div style="display:flex;gap:10px;align-items:center;padding:9px 10px;background:rgba(255,255,255,.03);border:1px solid rgba(255,194,77,.15);border-radius:10px;margin-bottom:6px">
+          <span style="width:6px;height:6px;border-radius:50%;background:var(--cyan);flex-shrink:0" title="Heavy Guard"></span>
+          <span style="flex:1;font-size:14px">${tk.title.replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]!))}</span>
+          <button data-sched-hg="${tk.id}" title="${schedTitle}" ${selectedDate ? '' : 'disabled'} style="background:${schedBg};border:1px solid var(--line);border-radius:8px;color:${schedColor};cursor:${schedCursor};font-size:13px;padding:5px 9px">📅</button>
         </div>`;
       }
     }
@@ -1641,6 +1662,14 @@ export function mountApp(root: HTMLElement) {
       b.onclick = () => {
         if (!selectedDate) return;
         scheduleTask(b.dataset.sched!, selectedDate);
+        updateCalBadge();
+        renderCalendar(selectedDate);
+      };
+    });
+    $('winBody').querySelectorAll<HTMLButtonElement>('[data-sched-hg]').forEach(b => {
+      b.onclick = () => {
+        if (!selectedDate) return;
+        scheduleHgTask(b.dataset.schedHg!, selectedDate);
         updateCalBadge();
         renderCalendar(selectedDate);
       };

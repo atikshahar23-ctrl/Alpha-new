@@ -1674,10 +1674,20 @@ function buildOwnerOffice(color, deskTemplate, laptopTemplate, furnitureTemplate
    A small, self-contained three.js scene (its own renderer/camera/RAF
    loop, entirely separate from the office scene underneath — the office
    keeps simulating in the background so nothing has to pause/resume).
-   Starfield + a glowing sun + a handful of planets on simple circular
-   orbits, slow free-look via drag, and a return button. */
-function SpaceOverlay({ onReturn }) {
+   Starfield + a colored nebula particle field + a glowing sun + a handful
+   of planets on simple circular orbits + three "data-stream" rings whose
+   glow tracks real business metrics, slow free-look via drag, a Focus Mode
+   dim/zoom, and a return button.
+   `load` (0..1) is a real, live figure — see the caller in Office3D below —
+   not a cosmetic random wobble: it speeds the orbits up when the business
+   is actually busier (more open deals + active fleet projects). */
+function SpaceOverlay({ onReturn, load = 0 }) {
   const mountRef = useRef(null);
+  const loadRef = useRef(load);
+  useEffect(() => { loadRef.current = load; }, [load]);
+  const [focusMode, setFocusMode] = useState(false);
+  const focusRef = useRef(focusMode);
+  useEffect(() => { focusRef.current = focusMode; }, [focusMode]);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -1694,7 +1704,7 @@ function SpaceOverlay({ onReturn }) {
     renderer.setSize(mount.clientWidth, mount.clientHeight);
     mount.appendChild(renderer.domElement);
 
-    // Starfield — a big cloud of points scattered across a sphere.
+    // Starfield — a big cloud of tight white points scattered across a sphere.
     const starCount = 2200;
     const starPos = new Float32Array(starCount * 3);
     for (let i = 0; i < starCount; i++) {
@@ -1710,6 +1720,32 @@ function SpaceOverlay({ onReturn }) {
     const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 1.1, sizeAttenuation: false }));
     scene.add(stars);
 
+    // Nebula — a looser, closer, colored particle field (additive blend for
+    // glow) drifting slowly, so the backdrop reads as a living gas cloud
+    // rather than a flat starfield.
+    const nebCount = 900;
+    const nebPos = new Float32Array(nebCount * 3);
+    const nebCol = new Float32Array(nebCount * 3);
+    const nebPalette = [new THREE.Color(0x8fd0ff), new THREE.Color(0xb98fe8), new THREE.Color(0xe86fb0), new THREE.Color(0x6fe0c8)];
+    for (let i = 0; i < nebCount; i++) {
+      const r = 60 + Math.random() * 220;
+      const th = Math.random() * Math.PI * 2;
+      const ph = Math.acos(2 * Math.random() - 1) * 0.7 + Math.PI * 0.15; // flattened toward the ecliptic
+      nebPos[i * 3] = r * Math.sin(ph) * Math.cos(th);
+      nebPos[i * 3 + 1] = r * Math.cos(ph) * 0.4;
+      nebPos[i * 3 + 2] = r * Math.sin(ph) * Math.sin(th);
+      const c = nebPalette[Math.floor(Math.random() * nebPalette.length)];
+      nebCol[i * 3] = c.r; nebCol[i * 3 + 1] = c.g; nebCol[i * 3 + 2] = c.b;
+    }
+    const nebGeo = new THREE.BufferGeometry();
+    nebGeo.setAttribute("position", new THREE.BufferAttribute(nebPos, 3));
+    nebGeo.setAttribute("color", new THREE.BufferAttribute(nebCol, 3));
+    const nebula = new THREE.Points(nebGeo, new THREE.PointsMaterial({
+      size: 2.6, vertexColors: true, transparent: true, opacity: 0.45,
+      blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
+    }));
+    scene.add(nebula);
+
     // The sun — emissive core + a light so the planets actually shade.
     const sun = new THREE.Mesh(
       new THREE.SphereGeometry(5, 32, 32),
@@ -1719,6 +1755,25 @@ function SpaceOverlay({ onReturn }) {
     const sunLight = new THREE.PointLight(0xfff2d0, 3.2, 0, 0);
     scene.add(sunLight);
     scene.add(new THREE.AmbientLight(0x304060, 0.5));
+
+    // "Data-stream" rings around the sun — each one visualizes a real
+    // business channel (installs / open pipeline / fleet projects); its
+    // emissive brightness is set once from the live bizData snapshot the
+    // portal was opened with, not re-polled every frame (this is a mood
+    // read of "how busy things are right now", not a dashboard).
+    const streamRings = [
+      { r: 7, tilt: 0.15, speed: 0.6, color: 0x2ee6ff },
+      { r: 8.4, tilt: -0.28, speed: -0.42, color: 0xE4BC63 },
+      { r: 9.8, tilt: 0.42, speed: 0.3, color: 0x3FD79A },
+    ].map((s) => {
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(s.r, 0.035, 8, 96),
+        new THREE.MeshBasicMaterial({ color: s.color, transparent: true, opacity: 0.55 })
+      );
+      ring.rotation.x = Math.PI / 2 + s.tilt;
+      scene.add(ring);
+      return { mesh: ring, ...s };
+    });
 
     const PLANETS = [
       { color: 0x8fd0ff, size: 0.9, dist: 11, speed: 0.55, tilt: 0.1 },
@@ -1763,13 +1818,19 @@ function SpaceOverlay({ onReturn }) {
     const animate = () => {
       raf = requestAnimationFrame(animate);
       const dt = Math.min(clock.getDelta(), 0.05);
+      // Real load, not decoration — 1x at idle, up to 2.5x when the
+      // business snapshot shows a lot of open work in flight.
+      const loadMul = 1 + loadRef.current * 1.5;
       planets.forEach((p) => {
-        p.angle += dt * p.speed * 0.2;
+        p.angle += dt * p.speed * 0.2 * loadMul;
         p.mesh.position.set(Math.cos(p.angle) * p.dist, Math.sin(p.angle * 0.4) * p.dist * p.tilt, Math.sin(p.angle) * p.dist);
         p.mesh.rotation.y += dt * 0.3;
       });
+      streamRings.forEach((s) => { s.mesh.rotation.z += dt * s.speed * loadMul; });
+      nebula.rotation.y += dt * 0.006;
       sun.rotation.y += dt * 0.05;
-      const camDist = 48;
+      const focus = focusRef.current;
+      const camDist = focus ? 30 : 48;
       camera.position.set(
         Math.cos(az) * Math.cos(el) * camDist,
         Math.sin(el) * camDist,
@@ -1797,15 +1858,19 @@ function SpaceOverlay({ onReturn }) {
       mount.removeEventListener("touchmove", onMove);
       mount.removeEventListener("touchend", onUp);
       starGeo.dispose();
+      nebGeo.dispose();
       renderer.dispose();
       if (renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement);
     };
   }, []);
 
   return (
-    <div className="off3-space-wrap">
+    <div className={"off3-space-wrap" + (focusMode ? " focus" : "")}>
       <div ref={mountRef} className="off3-space-canvas" />
-      <div className="off3-space-hint">גרור כדי להביט מסביב · רחף בחלל בין כוכבי הלכת</div>
+      {!focusMode && <div className="off3-space-hint">גרור כדי להביט מסביב · רחף בחלל בין כוכבי הלכת</div>}
+      <button className="off3-space-focus" onClick={() => setFocusMode((v) => !v)} title="מצב פוקוס">
+        {focusMode ? "⤢ יציאה ממצב פוקוס" : "⤡ מצב פוקוס"}
+      </button>
       <button className="off3-space-return" onClick={onReturn}>🚪 חזרה למשרד</button>
     </div>
   );
@@ -1827,6 +1892,9 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   // animate() loop, and the overlay's opaque background + pointer-events
   // hide/block it completely while active.
   const [inSpace, setInSpace] = useState(false);
+  // Real business activity, normalized 0..1 — drives the space portal's
+  // orbit speed (busier pipeline = faster orbits), not a random wobble.
+  const spacePortalLoad = Math.min(1, ((bizData?.openDeals || 0) + (bizData?.fleetProjects || 0) * 2) / 20);
   const [joyKnob, setJoyKnob] = useState({ x: 0, y: 0 });
   const [joyBase, setJoyBase] = useState(null); // floating joystick anchor (screen px), null = hidden
   const [firstPerson, setFirstPerson] = useState(false);
@@ -4354,7 +4422,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           <div className="off3-joy-knob" style={{ transform: `translate(${joyKnob.x}px, ${joyKnob.y}px)` }} />
         </div>
       )}
-      {inSpace && <SpaceOverlay onReturn={() => liveRef.current.exitPortal?.()} />}
+      {inSpace && <SpaceOverlay onReturn={() => liveRef.current.exitPortal?.()} load={spacePortalLoad} />}
     </div>
   );
 }

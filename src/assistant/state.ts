@@ -221,6 +221,38 @@ export function removeTask(id: string): Task[] {
   return tasks;
 }
 
+// Heavy Guard's own task store ('hg2:tasks') has undated "backlog" items —
+// loadEvents() above only merges the DATED ones onto the calendar, so a
+// backlog task created in Heavy Guard used to be invisible here entirely.
+// These two functions bring backlog parity to the calendar's "unscheduled
+// tasks" panel, and let scheduling one from Alpha write straight back to
+// the same hg2:tasks record Heavy Guard reads (no fork/duplicate).
+export interface HgTask { id: string; title: string }
+export function loadHgBacklog(): HgTask[] {
+  try {
+    const tasks: { id: string; title: string; date?: string; done: boolean }[] = JSON.parse(localStorage.getItem('hg2:tasks') || '[]');
+    return tasks.filter(t => !t.date && !t.done).map(t => ({ id: 'hg:' + t.id, title: t.title }));
+  } catch { return []; }
+}
+export function scheduleHgTask(id: string, due: string) {
+  const rawId = id.startsWith('hg:') ? id.slice(3) : id;
+  try {
+    const tasks = JSON.parse(localStorage.getItem('hg2:tasks') || '[]');
+    const t = tasks.find((x: { id: string }) => x.id === rawId);
+    if (t) { t.date = due; localStorage.setItem('hg2:tasks', JSON.stringify(tasks)); }
+  } catch {}
+}
+
+// Days with a Heavy Guard vehicle installation logged ('hg2:index') — so the
+// month grid marks the same "something happened this day" dates Heavy
+// Guard's own calendar marks, not just Alpha-side events/tasks.
+export function loadInstallDates(): Set<string> {
+  try {
+    const rows: { date?: string }[] = JSON.parse(localStorage.getItem('hg2:index') || '[]');
+    return new Set(rows.map(r => r.date).filter((d): d is string => !!d));
+  } catch { return new Set(); }
+}
+
 // --- NOTES ---
 export function loadNotes(): string[] {
   try { return JSON.parse(localStorage.getItem('alpha_notes') || '[]'); } catch { return []; }
