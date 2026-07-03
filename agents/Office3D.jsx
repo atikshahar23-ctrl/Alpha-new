@@ -2309,14 +2309,17 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // and its own skyline balcony window. scene.userData carries the
     // geometry so the animate loop's player-height field and the
     // proximity/lighting logic below can read it without re-deriving it.
-    // Position (x, z) scaled ×3 to match the enlarged floor; y/w/d (the
-    // platform's own height and footprint) intentionally left unscaled —
-    // its interior layout (lounge sign, restroom, balcony offsets below)
-    // is all relative to w/d, so touching those would require re-deriving
-    // every offset in this block. The platform is simply relocated further
-    // out to where its desk cluster now sits, not resized.
-    const MEZ = { x: -39, z: 33, y: 2.6, w: 9, d: 9 };
-    const STAIR = { x: -39, xw: 1.7, z0: 3.0, z1: MEZ.z - MEZ.d / 2 };
+    // Re-sized for the ×3 floor, not just re-positioned: leaving the
+    // platform at its old 9×9 footprint (an earlier pass here) meant the
+    // staircase run got 3x longer but the landing was still tiny — the
+    // restroom box ended up almost exactly where the player arrives,
+    // reading as "stuck against a wall the moment you climb up." Verified
+    // clear of every desk cluster by hand against the real OFC_DESKS
+    // percentages: west column's farthest desk lands at world (-41.58,
+    // 23.76), the south row spans x[-23.76,14.85] at z=28.71 — this
+    // platform's span (x[-56,-36], z[26,46]) clears both with margin.
+    const MEZ = { x: -46, z: 36, y: 2.6, w: 20, d: 20 };
+    const STAIR = { x: -46, xw: 1.7, z0: 6, z1: MEZ.z - MEZ.d / 2 };
     scene.userData.mezzanine = { MEZ, STAIR };
     {
       const goldMat = new THREE.MeshStandardMaterial({ color: 0xE4BC63, roughness: 0.35, metalness: 0.6 });
@@ -2333,7 +2336,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       scene.add(edgeTrim);
       [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([sx, sz]) => {
         const col = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, MEZ.y, 10), goldMat);
-        col.position.set(MEZ.x + sx * (MEZ.w / 2 - 0.3), MEZ.y / 2, MEZ.z + sz * (MEZ.d / 2 - 0.3));
+        col.position.set(MEZ.x + sx * (MEZ.w / 2 - 0.7), MEZ.y / 2, MEZ.z + sz * (MEZ.d / 2 - 0.7));
         col.castShadow = true;
         scene.add(col);
       });
@@ -2384,16 +2387,19 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       scene.add(execSign);
 
       const wcMat = new THREE.MeshPhysicalMaterial({ color: 0xdfeeff, transparent: true, opacity: 0.35, roughness: 0.2, side: THREE.DoubleSide, depthWrite: false });
+      // Tucked into the far corner (away from the staircase landing at
+      // MEZ.z - MEZ.d/2) so arriving at the top of the stairs opens onto
+      // clear platform, not straight into a glass wall.
       const wc = new THREE.Mesh(new THREE.BoxGeometry(1.3, 2.2, 1.3), wcMat);
-      wc.position.set(MEZ.x + 2.6, MEZ.y + 1.1, MEZ.z - 2.8);
+      wc.position.set(MEZ.x + 5.8, MEZ.y + 1.1, MEZ.z + 6.2);
       scene.add(wc);
       const wcSign = buildNeonSign("שירותים", 0x6FD3F0, 1.1, 0.32);
-      wcSign.position.set(MEZ.x + 2.6, MEZ.y + 2.45, MEZ.z - 2.8);
+      wcSign.position.set(MEZ.x + 5.8, MEZ.y + 2.45, MEZ.z + 6.2);
       scene.add(wcSign);
 
       const balcTex = skyline.tex.clone();
       balcTex.repeat.set(0.3, 0.4); balcTex.offset.set(0.1, 0.15); balcTex.needsUpdate = true;
-      const balcWin = new THREE.Mesh(new THREE.PlaneGeometry(MEZ.d - 1.5, 1.8), new THREE.MeshBasicMaterial({ map: balcTex, fog: false }));
+      const balcWin = new THREE.Mesh(new THREE.PlaneGeometry(MEZ.d - 3.3, 1.8), new THREE.MeshBasicMaterial({ map: balcTex, fog: false }));
       balcWin.rotation.y = Math.PI / 2;
       balcWin.position.set(MEZ.x - MEZ.w / 2 - 0.02, MEZ.y + 1.3, MEZ.z);
       scene.add(balcWin);
