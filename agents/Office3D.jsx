@@ -11,6 +11,7 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { SSAOPass } from "three/examples/jsm/postprocessing/SSAOPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
+import { SMAAPass } from "three/examples/jsm/postprocessing/SMAAPass.js";
 import { MessageCircle, Eye, User, Mic, VolumeX, Volume2, X, Zap, Settings as SettingsIcon, Trash2, Radio, Pause } from "lucide-react";
 import { useDeviceProfile } from "./deviceProfiler.js";
 import RadioController from "./RadioController.jsx";
@@ -2099,6 +2100,14 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     liveRef.current.setTurbo?.(turbo);
     try { localStorage.setItem("alpha:agents:turbo", turbo ? "1" : "0"); } catch {}
   }, [turbo]);
+  // Adaptive perf watchdog needs the real React setter (distinct from the
+  // imperative liveRef.current.setTurbo above, which only pushes an
+  // already-decided value INTO the scene) so a sustained-low-FPS detection
+  // inside animate() can actually flip the state and have it flow through
+  // the normal one-way binding, same as a manual toggle would.
+  useEffect(() => { liveRef.current.reactSetTurbo = setTurbo; }, []);
+  const [autoTurboNotice, setAutoTurboNotice] = useState(false);
+  useEffect(() => { liveRef.current.setAutoTurboNotice = setAutoTurboNotice; }, []);
   // Whether the mic should keep re-listening on its own while you're near an
   // agent — on by default (mic is "always listening" while in the sim), the
   // user can pause it (mic button, or the settings panel) without losing the
@@ -2305,6 +2314,18 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     const bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), isMobile ? 0.32 : 0.55, 0.7, 0.85);
     composer.addPass(bloomPass);
     composer.addPass(new OutputPass());
+    // EffectComposer renders through its own WebGLRenderTargets, so the
+    // renderer's own `antialias: true` context flag never actually applies
+    // once post-processing is in the chain — a well-known three.js gotcha,
+    // and the real cause of soft/jagged edges on the wireframes, HUD text
+    // canvases and God Mode gizmo. SMAA (image-space, no extra render-target
+    // cost like MSAA would need here) restores real edge sharpness; desktop
+    // only — mobile stays on bloom/SSAO's existing lighter budget.
+    let smaaPass = null;
+    if (!isMobile) {
+      smaaPass = new SMAAPass(width * renderer.getPixelRatio(), height * renderer.getPixelRatio());
+      composer.addPass(smaaPass);
+    }
     // Settings-panel graphics toggle — both passes support .enabled out of
     // the box (base three.js Pass class), so this is a cheap on/off for
     // slower devices without rebuilding the composer chain. Turbo overrides
@@ -3895,6 +3916,19 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     let secSwitchT = 0;
     let scanT = 0;     // diagnostic sweep timer over the showroom car
     let spatialT = 9;  // spatial-bridge refresh timer (starts ripe)
+    // Adaptive perf watchdog — CPU core count / RAM (DeviceProfiler's only
+    // real signals) say nothing about GPU strength, and that's exactly the
+    // blind spot on older Apple hardware: a 2020 MacBook Pro or an iMac with
+    // integrated/older discrete graphics reports plenty of cores and still
+    // chokes on SSAO+bloom+shadows together. Rather than guess at Mac model
+    // strings (fragile, breaks on the next hardware refresh), measure the
+    // actual achieved frame time after the initial asset-load settles, and
+    // drop to turbo once — same lever the manual toggle already uses —  if
+    // it's genuinely struggling, on ANY machine, Apple or not.
+    let perfWatchT = 0;
+    let perfFrameCount = 0;
+    let perfBadFrames = 0;
+    let perfChecked = false;
     const clock = new THREE.Clock();
     const curSky = new THREE.Color(0x1b2440);
     const tmpColor = new THREE.Color();
@@ -3915,7 +3949,32 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // headset's own refresh rate and requestAnimationFrame simply doesn't
     // fire during a session. Works identically to rAF outside of XR too.
     function animate() {
-      const dt = Math.min(0.05, clock.getDelta());
+      const rawDt = clock.getDelta();
+      const dt = Math.min(0.05, rawDt);
+      // Sample real (unclamped) frame time for ~2s starting 6s in — long
+      // enough for the initial GLB/texture loads to be done so their one-time
+      // hitches don't get mistaken for a sustained low-power GPU. One shot
+      // per session (perfChecked): downgrades if warranted, then gets out of
+      // the way — this isn't a continuous rebalancer, just a one-time safety
+      // net for hardware the manual turbo toggle would otherwise never reach
+      // (most people never open Settings after something feels "just a bit slow").
+      if (!perfChecked && !turboOn) {
+        perfWatchT += rawDt;
+        if (perfWatchT > 6 && perfWatchT < 8) {
+          perfFrameCount++;
+          if (rawDt > 1 / 24) perfBadFrames++; // slower than 24fps this frame
+        } else if (perfWatchT >= 8) {
+          perfChecked = true;
+          // Over 40% of the sampled window ran under 24fps → genuinely
+          // struggling GPU, not a one-off hitch. Same lever as the manual
+          // toggle, triggered once, with a visible one-time notice so it
+          // doesn't read as the sim randomly changing quality on its own.
+          if (perfFrameCount > 10 && perfBadFrames / perfFrameCount > 0.4) {
+            liveRef.current.reactSetTurbo?.(true);
+            liveRef.current.setAutoTurboNotice?.(true);
+          }
+        }
+      }
       const keys = liveRef.current.keys;
       const jv = liveRef.current.joyVec;
 
@@ -4612,10 +4671,29 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       selectedThreeObj.scale.setScalar(val);
       liveRef.current.setSelectedObj?.(snapshotSelected());
     };
+    // scene.remove() only unlinks a node from the graph — it does NOT free
+    // its GPU-side geometry/texture memory. A spawned truck in particular
+    // carries a full GLB's worth of geometry + textures; spawning and
+    // deleting one repeatedly without this leaked real WebGL memory for
+    // the rest of the session. Mirrors the generic disposal loop already
+    // run once at unmount (below), just triggered per-object, immediately.
+    const disposeObject3D = (obj) => {
+      obj.traverse((o) => {
+        if (o.geometry) o.geometry.dispose();
+        if (o.material) {
+          const mats = Array.isArray(o.material) ? o.material : [o.material];
+          mats.forEach((m) => {
+            Object.values(m).forEach((v) => { if (v && v.isTexture) v.dispose(); });
+            m.dispose();
+          });
+        }
+      });
+    };
     liveRef.current.deleteSelected = () => {
       if (!selectedThreeObj || !selectedThreeObj.userData.deletable) return;
       transformControls.detach();
       scene.remove(selectedThreeObj);
+      disposeObject3D(selectedThreeObj);
       const idx = editableObjects.indexOf(selectedThreeObj);
       if (idx >= 0) editableObjects.splice(idx, 1);
       const spinIdx = centerSpin.indexOf(selectedThreeObj);
@@ -4762,6 +4840,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       [...editableObjects].filter((o) => o.userData.deletable).forEach((o) => {
         transformControls.detach();
         scene.remove(o);
+        disposeObject3D(o);
         const idx = editableObjects.indexOf(o);
         if (idx >= 0) editableObjects.splice(idx, 1);
       });
@@ -4823,6 +4902,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       composer.setPixelRatio(renderer.getPixelRatio());
       renderer.setSize(mount.clientWidth, mount.clientHeight);
       composer.setSize(mount.clientWidth, mount.clientHeight);
+      if (smaaPass) smaaPass.setSize(mount.clientWidth * renderer.getPixelRatio(), mount.clientHeight * renderer.getPixelRatio());
       renderer.shadowMap.autoUpdate = !on;
       sun.castShadow = !on && !isMobile;
       dust.visible = !on;
@@ -4840,6 +4920,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       composer.setSize(w, h);
       bloomPass.setSize(w, h);
       if (ssaoPass) ssaoPass.setSize(w, h);
+      if (smaaPass) smaaPass.setSize(w * renderer.getPixelRatio(), h * renderer.getPixelRatio());
     };
     window.addEventListener("resize", onResize);
 
@@ -4977,6 +5058,12 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         onTouchStart={onJoyStart} onTouchMove={onJoyMove} onTouchEnd={onJoyEnd}
         onMouseDown={onJoyStart} onMouseMove={onJoyMove} onMouseUp={onJoyEnd} onMouseLeave={onJoyEnd} />
       <div className="off3-hint">גע במסך וגרור כדי לנווט · חצים / WASD במחשב · Shift לספרינט טקטי · התקרב לעובד ודבר איתו · ליד הכיסא שלך: E לשבת · {ph.emoji} {ph.label}</div>
+      {autoTurboNotice && (
+        <div className="off3-autoturbo">
+          🚀 זיהינו שהמכשיר מתקשה — הפעלנו מצב טורבו אוטומטית לתצוגה חלקה. אפשר לכבות בהגדרות.
+          <button onClick={() => setAutoTurboNotice(false)}><X size={13} /></button>
+        </div>
+      )}
       {loadPct !== null && (
         <div className="off3-loader">
           <div className="off3-loader-logo">🏢</div>

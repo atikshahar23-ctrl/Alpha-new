@@ -3768,6 +3768,12 @@ function StyleTag() {
 .off3-vehicle-head button{background:rgba(255,92,80,.1);border:1px solid rgba(255,92,80,.35);border-radius:8px;color:#ff5c50;
   font-family:inherit;font-size:11px;font-weight:700;padding:4px 8px;cursor:pointer}
 .off3-vehicle-note{font-size:10px;color:#5f8ea0;line-height:1.4;margin:2px 0 0}
+.off3-autoturbo{position:absolute;top:96px;left:50%;transform:translateX(-50%);z-index:30;display:flex;align-items:center;gap:10px;
+  background:linear-gradient(170deg,rgba(6,14,24,.96),rgba(3,8,14,.97));border:1px solid rgba(228,188,99,.4);border-radius:12px;
+  padding:8px 12px;font-size:11.5px;color:#E4E8FA;box-shadow:0 0 20px rgba(228,188,99,.2),0 10px 26px rgba(0,0,0,.5);
+  max-width:min(420px,88vw);animation:acRise .3s ease both}
+.off3-autoturbo button{background:none;border:none;color:#7886B8;cursor:pointer;display:flex;flex-shrink:0}
+.off3-autoturbo button:hover{color:#E4E8FA}
 .off3-god-del{background:rgba(255,92,80,.1);border:1px solid rgba(255,92,80,.35);border-radius:8px;color:#ff5c50;
   cursor:pointer;padding:5px 7px;display:flex}
 .off3-god-row{width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;background:none;border:none;
