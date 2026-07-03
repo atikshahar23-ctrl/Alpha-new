@@ -654,12 +654,17 @@ body.gesture-cam-open .stage{ background:transparent!important; }
 html, body, #app { height: 100% }
 
 /* Midnight Protocol (02:00–06:00 Israel time) — a quiet, deeper palette for
-   overnight use; toggled by src/ui/app.ts. Filters #app rather than html so
-   the OS-chrome-adjacent elements (nothing here, but keeps the rule scoped)
-   stay predictable. */
-html.midnight-protocol #app {
-  filter: brightness(0.86) saturate(0.82) contrast(0.97);
-  transition: filter 1.2s ease;
+   overnight use; toggled by src/ui/app.ts. A fixed dark scrim, NOT a
+   filter on #app: a CSS filter on an ancestor becomes the containing
+   block for every position:fixed descendant, which broke every HUD chip
+   and dock button on mobile (they collapsed relative to #app's own box
+   instead of the real viewport). A plain overlay has no such side effect. */
+#midnightScrim {
+  position: fixed; inset: 0; z-index: 2000; pointer-events: none;
+  background: rgba(6, 8, 18, 0); transition: background 1.2s ease;
+}
+html.midnight-protocol #midnightScrim {
+  background: rgba(6, 8, 18, .16);
 }
 
 html {
