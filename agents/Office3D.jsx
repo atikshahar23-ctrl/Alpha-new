@@ -28,21 +28,23 @@ import { MessageCircle, Eye, User, Mic, VolumeX, Volume2, X, Zap, Settings as Se
 // so every desk pod gets wide clear corridors around it instead of the old
 // packed-maze center. All hand-placed world coordinates below are scaled by
 // the same ×1.5 factor so wall-anchored fixtures stay on their walls.
-// Enlarged again ×3 (owner request, mobile navigation felt cramped): SCALE
-// and FLOOR_W/FLOOR_D triple, spreading every toWorld()-derived fixture
-// (desks, offices, dining, reception, cafeteria) 3x further apart — but
-// CHAR_SCALE/DESK_SCALE below are untouched, so people and furniture stay
-// their current size; only the room gets more spacious. TALK_DIST and the
-// player's own walk SPEED scale with it so proximity and crossing time
-// still feel right. RCP (reception), the one hand-placed absolute fixture
-// left after the 1.5x pass, is re-positioned ×3 by hand below since it's
-// not derived from toWorld(). (The executive mezzanine that used to live
-// here too was removed entirely — single floor only, per owner request.)
-const SCALE = 0.99; // world units per floor-percent point
+// Enlarged ×3 (owner request, mobile navigation felt cramped), then dialed
+// back to ×2 overall (owner request, ×3 read as too big): SCALE and
+// FLOOR_W/FLOOR_D scale together, spreading every toWorld()-derived fixture
+// (desks, offices, dining, reception, cafeteria) apart by the same factor —
+// but CHAR_SCALE/DESK_SCALE below are untouched, so people and furniture
+// stay their current size; only the room's spaciousness changes. TALK_DIST
+// and the player's own walk SPEED scale with it so proximity and crossing
+// time still feel right. RCP (reception), the one hand-placed absolute
+// fixture left after the original 1.5x pass, is re-positioned by hand below
+// since it's not derived from toWorld(). (The executive mezzanine that
+// used to live here too was removed entirely — single floor only, per
+// owner request.)
+const SCALE = 0.66; // world units per floor-percent point
 const toWorld = (x, y) => [(x - 50) * SCALE, (y - 50) * SCALE];
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-const TALK_DIST = 7.5;
-const FLOOR_W = 117, FLOOR_D = 99;
+const TALK_DIST = 5.0;
+const FLOOR_W = 78, FLOOR_D = 66;
 // Every desk in the grid shares one orientation, so a single heading makes
 // every seated worker face their own monitor. The desk groups themselves are
 // also rotated by this same angle at placement, so the station + the seated
@@ -2747,7 +2749,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       wx2.fillStyle = "#7fe6b0"; wx2.font = "600 16px system-ui"; wx2.fillText("● הצוות זמין", 150, 132);
       const welcomeTex = new THREE.CanvasTexture(wCvs); welcomeTex.colorSpace = THREE.SRGBColorSpace;
       const reception = buildReception(0xE4BC63, welcomeTex);
-      const RCP = { x: -20.7, z: 43.2 };
+      const RCP = { x: -13.8, z: 28.8 };
       // Flipped 180° (owner request): the welcome screen + front face the
       // room/entrance walkway on the north side, מיכל sits on the south side.
       reception.group.position.set(RCP.x, 0, RCP.z);
@@ -2787,7 +2789,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // ── Cafeteria / coffee counter (beside the dining tables) ────────────
     {
       const caf = buildCafeteria(0xffb454);
-      const CAF = { x: 45.9, z: 16.8 };
+      const CAF = { x: 30.6, z: 11.2 };
       caf.group.position.set(CAF.x, 0, CAF.z);
       scene.add(caf.group);
       caf.obstacles.forEach((o) => obstacles.push({ x: CAF.x + o.x, z: CAF.z + o.z, r: o.r }));
@@ -3257,7 +3259,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         setClip(playerH, CLIP.sit);
       } else if (mlen > 0.08) {
         mx /= mlen; mz /= mlen;
-        const SPEED = 15.0; // ×3 with the floor, so crossing time still feels right
+        const SPEED = 10.0; // scales with the floor, so crossing time still feels right
         playerH.group.position.x = clamp(playerH.group.position.x + mx * SPEED * dt, -(FLOOR_W / 2 - 1), FLOOR_W / 2 - 1);
         playerH.group.position.z = clamp(playerH.group.position.z + mz * SPEED * dt, -(FLOOR_D / 2 - 1), FLOOR_D / 2 - 1);
         resolveCollisions(playerH.group.position, obstacles);
