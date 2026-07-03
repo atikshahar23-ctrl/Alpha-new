@@ -3570,6 +3570,9 @@ function StyleTag() {
 .radio-ctl-dot.playing{color:#3FD79A;background:rgba(63,215,154,.12)}
 .radio-ctl-dot.loading{color:#E4BC63;background:rgba(228,188,99,.12)}
 .radio-ctl-dot.error{color:#ff5c50;background:rgba(255,92,80,.12)}
+.radio-ctl-micnote{font-size:10.5px;font-weight:700;color:#ff5c50;background:rgba(255,92,80,.1);border:1px solid rgba(255,92,80,.3);
+  border-radius:8px;padding:5px 9px}
+.radio-ctl-city-label{font-size:10px;font-weight:800;letter-spacing:.5px;color:#7e90b8;margin:4px 0 2px}
 .radio-ctl-stations{display:flex;gap:6px;flex-wrap:wrap}
 .radio-ctl-station{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);border-radius:10px;
   color:#d9e6ee;font-family:inherit;font-size:11.5px;font-weight:700;padding:7px 12px;cursor:pointer}
@@ -3634,6 +3637,11 @@ function StyleTag() {
 .off3-god-spawn button{background:rgba(228,188,99,.08);border:1px solid rgba(228,188,99,.28);border-radius:10px;
   color:#f7e8c0;font-family:inherit;font-size:11.5px;font-weight:700;padding:8px 10px;cursor:pointer}
 .off3-god-spawn button:hover{background:rgba(228,188,99,.16);border-color:#E4BC63}
+.off3-god-specs{padding:2px 0 6px}
+.off3-god-sec-in{padding:6px 0 4px;margin-top:6px;border-top:1px solid rgba(255,255,255,.06)}
+.off3-god-spec-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:4px 0;font-size:11.5px}
+.off3-god-spec-row span{color:#7e90b8}
+.off3-god-spec-row b{color:#cfd8e6;font-weight:700;text-align:left}
 /* Branded loading overlay while the office models download. */
 .off3-loader{position:absolute;inset:0;z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;
   background:radial-gradient(ellipse at 50% 30%,#101830,#060912 70%);animation:acRise .2s ease both}

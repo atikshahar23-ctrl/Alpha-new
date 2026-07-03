@@ -1916,6 +1916,14 @@ function SpaceOverlay({ onReturn, load = 0 }) {
   );
 }
 
+// Hebrew labels for the God Mode "Super-Detailed" spec panel — every
+// registerEditable() call attaches a metadata object keyed like this.
+const GOD_META_LABELS = {
+  id: "מזהה", origin_date: "תאריך התקנה", material_spec: "חומרים", security_level: "רמת אבטחה",
+  maintenance_status: "סטטוס תחזוקה", firmware: "קושחה", resolution: "רזולוציה", night_vision: "ראיית לילה",
+  coverage_angle: "זווית כיסוי", battery_status: "מצב סוללה", storage: "אחסון", channels: "ערוצים",
+};
+
 export default function Office3D({ chars, byId, phase, phases, deskPositions, seatPositions, dineTablePositions, meetingSpot, bizData, marketRows, voice, onClose, onOpenChat, onAutoFix }) {
   const mountRef = useRef(null);
   const liveRef = useRef({ chars, phase, bizData, joyVec: { x: 0, y: 0 }, keys: {}, firstPerson: false });
@@ -1995,6 +2003,21 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   // conversation text on screen. State (not a ref) so the settings panel can
   // show and toggle it.
   const [autoListen, setAutoListen] = useState(true);
+  // Mic protocol: while the office radio is broadcasting, the always-
+  // listening mic goes quiet (otherwise it'd try to transcribe the
+  // stream) — a live recognition session is cut short too. Whatever the
+  // user had autoListen set to before the broadcast is restored after.
+  const autoListenBeforeRadioRef = useRef(true);
+  const handleRadioPlayState = (isPlaying) => {
+    if (isPlaying) {
+      autoListenBeforeRadioRef.current = autoListen;
+      setAutoListen(false);
+      try { recogRef.current?.stop(); } catch {}
+      setVoiceState((s) => (s === "listening" ? "idle" : s));
+    } else {
+      setAutoListen(autoListenBeforeRadioRef.current);
+    }
+  };
   // Voice picker — same localStorage key App.jsx's speakText() reads, so
   // choosing a voice here actually changes what every agent sounds like,
   // both in the sim and in the regular text-chat modal.
@@ -3013,10 +3036,24 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // the sim, so only free-standing display pieces (car, trucks, portal)
     // and anything spawned from the panel are registered.
     const editableObjects = [];
-    const registerEditable = (obj, label, deletable = false) => {
+    // Persistent inventory log (localStorage) — every spawned asset gets a
+    // unique ID + its spawn coordinates recorded here, same pattern as the
+    // rest of the app's hg2:*/alpha:* stores. Legacy showroom pieces (car/
+    // trucks/portal) aren't logged here — they're built into the scene,
+    // not "installed" assets — only things the owner actually adds are.
+    const logInventoryAsset = (id, type, label, pos) => {
+      try {
+        const key = "alpha:sim:inventory";
+        const list = JSON.parse(localStorage.getItem(key) || "[]");
+        list.push({ id, type, label, x: pos.x, y: pos.y, z: pos.z, spawnedAt: new Date().toISOString() });
+        localStorage.setItem(key, JSON.stringify(list));
+      } catch {}
+    };
+    const registerEditable = (obj, label, deletable = false, meta = {}) => {
       obj.userData.editable = true;
       obj.userData.label = label;
       obj.userData.deletable = deletable;
+      obj.userData.meta = meta;
       editableObjects.push(obj);
     };
     {
@@ -3100,7 +3137,9 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           o.material = upgraded.get(m);
         });
         centerSpin.push(wrap);
-        registerEditable(wrap, "TIGGO 7", false);
+        registerEditable(wrap, "TIGGO 7", false, {
+          origin_date: "2024", material_spec: "מתכת/פלסטיק, גימור מטאלי", security_level: "רגיל", maintenance_status: "תקין",
+        });
         // Holographic data anchor — a glowing callout line from the hood up
         // to a floating telemetry tag showing the REAL odometer reading from
         // Heavy Guard's shared vehicle record (hg2:odometer), refreshed with
@@ -3221,7 +3260,9 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           o.material = upgraded.get(m);
         });
         centerSpin.push(wrap);
-        registerEditable(wrap, t.label, false);
+        registerEditable(wrap, t.label, false, {
+          origin_date: "2024", material_spec: "פלדה/אלומיניום, תא נהג מרופד", security_level: "רגיל", maintenance_status: "תקין",
+        });
       }, undefined, () => { /* truck download failed — podium stays as decor */ });
     });
 
@@ -3259,7 +3300,9 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         wrap.traverse((o) => { if (o.isMesh) { o.material.side = THREE.DoubleSide; } });
         scene.add(wrap);
         portalObj = wrap;
-        registerEditable(wrap, "SPACE PORTAL", false);
+        registerEditable(wrap, "SPACE PORTAL", false, {
+          origin_date: "2026", material_spec: "זכוכית/מתכת, ליבה זוהרת", security_level: "מוגבל — גישת בעלים בלבד", maintenance_status: "פעיל",
+        });
       }, undefined, () => {});
     }
 
@@ -3961,9 +4004,15 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
             // A real walking pace (units/sec), not a percent-of-remaining-
             // distance lerp — the old lerp closed most of the gap in the
             // first frame or two for any far-off desk, reading as
-            // teleporting rather than walking across the room.
-            const NPC_SPEED = 2.5;
-            const maxStep = NPC_SPEED * dt;
+            // teleporting rather than walking across the room. Capped at a
+            // realistic human pace (~1.4 m/s) with an actual accel/decel
+            // curve: h.curSpeed ramps up to that pace over ~0.3s and eases
+            // back down over the final ~0.6m of the route, instead of
+            // snapping to full speed or stopping dead on arrival.
+            const NPC_SPEED = 1.4;
+            const targetSpeed = NPC_SPEED * Math.min(1, distFinal / 0.6);
+            h.curSpeed = (h.curSpeed ?? 0) + (targetSpeed - (h.curSpeed ?? 0)) * Math.min(1, dt * 3);
+            const maxStep = h.curSpeed * dt;
             if (dist <= maxStep) {
               h.group.position.x = tx; h.group.position.z = tz;
               stepped = dist;
@@ -3972,7 +4021,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
               h.group.position.z += (dz / dist) * maxStep;
               stepped = maxStep;
             }
+          } else {
+            h.curSpeed = (h.curSpeed ?? 0) * Math.max(0, 1 - dt * 3); // still pivoting — ease speed back down
           }
+        } else {
+          h.curSpeed = 0; // arrived / not moving — next departure starts from rest
         }
         const summoned = c.status === "summoned";
         const targetY = (atDesk || summoned) && distFinal <= 0.03 ? SEAT_DROP : 0;
@@ -4210,6 +4263,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         deletable: !!selectedThreeObj.userData.deletable,
         x: selectedThreeObj.position.x, y: selectedThreeObj.position.y, z: selectedThreeObj.position.z,
         rotY: selectedThreeObj.rotation.y, scale: selectedThreeObj.scale.x,
+        meta: selectedThreeObj.userData.meta || {},
       };
     };
     const onGodClick = (e) => {
@@ -4257,20 +4311,32 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // second load is cheap). New spawns land just south of the desk ring
     // and are immediately selected so the transform panel is ready to use.
     const spawnPoint = () => ({ x: 0, z: 22 });
+    const newAssetId = (prefix) => `${prefix}-${Date.now().toString(36).toUpperCase()}`;
     liveRef.current.spawnAsset = (type) => {
       const p = spawnPoint();
+      const today = new Date().toISOString().slice(0, 10);
       if (type === "camera") {
+        const id = newAssetId("CAM");
         const cam = buildSecurityCameraProp();
         cam.position.set(p.x, 2.4, p.z);
         scene.add(cam);
-        registerEditable(cam, "מצלמת אבטחה", true);
+        registerEditable(cam, "מצלמת אבטחה", true, {
+          id, origin_date: today, material_spec: "פלסטיק/מתכת, עמיד למים IP66", security_level: "גבוה", maintenance_status: "תקין",
+          firmware: "v4.2.1", resolution: "4K", night_vision: true, coverage_angle: "110°", battery_status: "מחובר לחשמל (ללא סוללה)",
+        });
+        logInventoryAsset(id, "camera", "מצלמת אבטחה", cam.position);
         selectedThreeObj = cam;
         liveRef.current.setSelectedObj?.(snapshotSelected());
       } else if (type === "dvr") {
+        const id = newAssetId("DVR");
         const dvr = buildDvrBoxProp();
         dvr.position.set(p.x, 0, p.z);
         scene.add(dvr);
-        registerEditable(dvr, "DVR", true);
+        registerEditable(dvr, "DVR", true, {
+          id, origin_date: today, material_spec: "מתכת, רכיבים אלקטרוניים", security_level: "גבוה", maintenance_status: "תקין",
+          firmware: "v2.0.4", storage: "2TB HDD", channels: 8,
+        });
+        logInventoryAsset(id, "dvr", "DVR", dvr.position);
         selectedThreeObj = dvr;
         liveRef.current.setSelectedObj?.(snapshotSelected());
       } else if (type === "truck") {
@@ -4288,7 +4354,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           wrap.scale.setScalar(s);
           wrap.position.set(p.x, 0, p.z);
           scene.add(wrap);
-          registerEditable(wrap, "משאית (חדשה)", true);
+          const id = newAssetId("TRK");
+          registerEditable(wrap, "משאית (חדשה)", true, {
+            id, origin_date: today, material_spec: "פלדה/אלומיניום, תא נהג מרופד", security_level: "רגיל", maintenance_status: "תקין",
+          });
+          logInventoryAsset(id, "truck", "משאית (חדשה)", wrap.position);
           selectedThreeObj = wrap;
           liveRef.current.setSelectedObj?.(snapshotSelected());
         }, undefined, () => {});
@@ -4521,7 +4591,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
             </div>
           ) : phoneTab === "radio" ? (
             <div className="off3-phone-body">
-              <RadioController />
+              <RadioController onPlayStateChange={handleRadioPlayState} />
             </div>
           ) : (
             <div className="off3-phone-body">
@@ -4629,6 +4699,17 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
                 <input type="range" min="0.2" max="3" step="0.05" value={selectedObj.scale}
                   onChange={(e) => liveRef.current.applyScale?.(parseFloat(e.target.value))} />
               </label>
+              {selectedObj.meta && Object.keys(selectedObj.meta).length > 0 && (
+                <div className="off3-god-specs">
+                  <div className="off3-god-sec off3-god-sec-in">מפרט טכני</div>
+                  {Object.entries(selectedObj.meta).map(([k, v]) => (
+                    <div key={k} className="off3-god-spec-row">
+                      <span>{GOD_META_LABELS[k] || k}</span>
+                      <b>{typeof v === "boolean" ? (v ? "כן" : "לא") : String(v)}</b>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           ) : (
             <div className="off3-god-empty">אין אובייקט נבחר</div>

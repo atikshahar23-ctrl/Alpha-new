@@ -89,15 +89,24 @@ function useAmbientOffice(enabled, volume) {
   }, [volume]);
 }
 
-// Public live streams — Israeli terrestrial stations occasionally rotate
-// CDN endpoints; if a station won't play, its URL likely needs updating.
+// Public live streams — terrestrial stations occasionally rotate CDN
+// endpoints; if a station won't play, its URL likely needs updating (the
+// UI degrades to a clean "connection error" status rather than crashing).
 const STATIONS = [
-  { id: "glz", name: "גלגלצ", url: "https://glzwizzlv.bynetcdn.com/glglz_mp3", color: "#2ee6ff" },
-  { id: "eco99", name: "אקו 99", url: "https://stream.eco99fm.co.il/eco99fm", color: "#3FD79A" },
-  { id: "kan88", name: "כאן 88", url: "https://kanmusic-live.kan.org.il/Kan88", color: "#E4BC63" },
+  { id: "glz", name: "גלגלצ", city: "ישראל", url: "https://glzwizzlv.bynetcdn.com/glglz_mp3", color: "#2ee6ff" },
+  { id: "eco99", name: "אקו 99", city: "ישראל", url: "https://stream.eco99fm.co.il/eco99fm", color: "#3FD79A" },
+  { id: "kan88", name: "כאן 88", city: "ישראל", url: "https://kanmusic-live.kan.org.il/Kan88", color: "#E4BC63" },
+  { id: "103fm", name: "103FM", city: "ישראל", url: "https://103fm.mrgcdn.co/103fm/64", color: "#ff6b9d" },
+  { id: "kantarbut", name: "כאן תרבות", city: "ישראל", url: "https://kan-radio.media.kan.org.il/hls/live/2035696/kanreshetgimel/master.m3u8", color: "#c8953a" },
+  { id: "wqxr", name: "WQXR · Classical", city: "New York", url: "https://stream.wqxr.org/wqxr", color: "#8fd0ff" },
+  { id: "wnyc", name: "WNYC · News/Talk", city: "New York", url: "https://stream.wnyc.org/wnyc-fm939", color: "#b98fe8" },
+  { id: "hot97", name: "Hot 97 · Hip-Hop", city: "New York", url: "https://n10a-e2.revma.ihrhls.com/zc399", color: "#ff5c50" },
+  { id: "bbc1", name: "BBC Radio 1", city: "London", url: "https://as-hls-ww-live.akamaized.net/pool_904/live/ww/bbc_radio_one/bbc_radio_one.isml/bbc_radio_one-audio%3d96000.norewind.m3u8", color: "#e86fb0" },
+  { id: "capital", name: "Capital FM", city: "London", url: "https://media-ice.musicradio.com/CapitalMP3", color: "#6fe0c8" },
+  { id: "lbc", name: "LBC", city: "London", url: "https://media-ice.musicradio.com/LBCMP3", color: "#E4BC63" },
 ];
 
-export default function RadioController({ compact = false }) {
+export default function RadioController({ compact = false, onPlayStateChange }) {
   const [ambientOn, setAmbientOn] = useState(true);
   const [ambientVol, setAmbientVol] = useState(0.12);
   useAmbientOffice(ambientOn, ambientVol);
@@ -113,7 +122,13 @@ export default function RadioController({ compact = false }) {
     if (a) a.volume = radioVol;
   }, [radioVol]);
 
+  // Mic protocol: a live broadcast and the always-listening agent mic
+  // shouldn't run at once — the office would try to transcribe the radio.
+  useEffect(() => { onPlayStateChange?.(playing); }, [playing]);
+  useEffect(() => () => onPlayStateChange?.(false), []); // release the mic if the panel unmounts mid-broadcast
+
   const station = STATIONS[stationIdx];
+  const cities = [...new Set(STATIONS.map((s) => s.city))];
 
   const play = () => {
     const a = audioRef.current;
@@ -121,7 +136,7 @@ export default function RadioController({ compact = false }) {
     setStatus("loading");
     a.src = station.url;
     a.volume = radioVol;
-    a.play().then(() => { setPlaying(true); setStatus("playing"); }).catch(() => setStatus("error"));
+    a.play().then(() => { setPlaying(true); setStatus("playing"); }).catch(() => { setStatus("error"); setPlaying(false); });
   };
   const stop = () => {
     const a = audioRef.current;
@@ -135,7 +150,7 @@ export default function RadioController({ compact = false }) {
       setStatus("loading");
       const a = audioRef.current;
       a.src = STATIONS[idx].url;
-      a.play().then(() => setStatus("playing")).catch(() => setStatus("error"));
+      a.play().then(() => { setStatus("playing"); setPlaying(true); }).catch(() => { setStatus("error"); setPlaying(false); });
     }
   };
 
@@ -149,21 +164,27 @@ export default function RadioController({ compact = false }) {
       />
       <div className="radio-ctl-head">
         <Radio size={15} />
-        <span>רדיו ישראלי</span>
+        <span>רדיו עולמי</span>
         <b className={"radio-ctl-dot " + status}>{status === "playing" ? "משדר" : status === "loading" ? "מתחבר…" : status === "error" ? "שגיאת חיבור" : "כבוי"}</b>
       </div>
-      <div className="radio-ctl-stations">
-        {STATIONS.map((s, i) => (
-          <button
-            key={s.id}
-            className={"radio-ctl-station" + (i === stationIdx ? " on" : "")}
-            style={{ "--c": s.color }}
-            onClick={() => switchStation(i)}
-          >
-            {s.name}
-          </button>
-        ))}
-      </div>
+      {playing && <div className="radio-ctl-micnote">🎙️ המיקרופון מושתק כל עוד הרדיו משדר</div>}
+      {cities.map((city) => (
+        <div key={city} className="radio-ctl-city">
+          <div className="radio-ctl-city-label">{city}</div>
+          <div className="radio-ctl-stations">
+            {STATIONS.map((s, i) => s.city === city && (
+              <button
+                key={s.id}
+                className={"radio-ctl-station" + (i === stationIdx ? " on" : "")}
+                style={{ "--c": s.color }}
+                onClick={() => switchStation(i)}
+              >
+                {s.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
       <div className="radio-ctl-row">
         <button className="radio-ctl-play" onClick={toggle} title={playing ? "עצור" : "נגן"}>
           {playing ? <Pause size={16} /> : <Play size={16} />}
