@@ -1798,7 +1798,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       // Showroom-polished: a touch glossier + stronger HDRI reflection so
       // the car, agents and neon read in the floor (env-map "SSR" — the
       // real screen-space pass would cost a full extra scene render).
-      new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.34, metalness: 0.22, envMapIntensity: 0.9 })
+      // Command-center gloss (owner request): sharper reflections so the
+      // ring of glowing workstations reads in the floor. Metalness stays
+      // below the literal 0.8 asked for — on a textured (non-mirror) wood
+      // map that high a value just multiplies the albedo toward black.
+      new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.2, metalness: 0.45, envMapIntensity: 1.15 })
     );
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;

@@ -2200,21 +2200,23 @@ const CHATTER = {
 const OFC_X0 = 4, OFC_X1 = 96, OFC_Y0 = 18, OFC_Y1 = 86;
 // 13 desks — one per agent (AGENTS.length === OFC_DESKS.length), so a desk
 // always belongs to the same person and can show a real occupied/idle state.
-// Laid out like a real office: the private glass offices line the PERIMETER
-// (a north row along the window, a west-wall column, and a south row), each
-// with its own facing (rot — the direction the seated worker looks; the
-// doorway opens on their back side, toward the walkway). The center of the
-// floor stays completely open — clear corridors everywhere, nothing piled
-// in the middle. The east strip holds the conference room, dining and the
-// owner's suite, as before.
-const OFC_DESKS = [
-  // North row — workers face the skyline window (rot π), doors open south.
-  { x: 10, y: 16, rot: Math.PI }, { x: 24, y: 16, rot: Math.PI }, { x: 38, y: 16, rot: Math.PI }, { x: 52, y: 16, rot: Math.PI }, { x: 66, y: 16, rot: Math.PI },
-  // West column — workers face the west wall (rot -π/2), doors open east.
-  { x: 8, y: 32, rot: -Math.PI / 2 }, { x: 8, y: 46, rot: -Math.PI / 2 }, { x: 8, y: 60, rot: -Math.PI / 2 }, { x: 8, y: 74, rot: -Math.PI / 2 },
-  // South row — workers face south (rot 0), doors open north into the floor.
-  { x: 26, y: 79, rot: 0 }, { x: 39, y: 79, rot: 0 }, { x: 52, y: 79, rot: 0 }, { x: 65, y: 79, rot: 0 },
-];
+// Command-center ring (owner request): all 13 workstations distributed on
+// a mathematically exact circle around the central Focus Zone (the car
+// podium sits at the room's center), every seated worker facing inward —
+// rot points each desk (and its wrap-around glass office, which turns with
+// it) straight at the middle of the room. The circle's radius is chosen so
+// each office pod clears its neighbours by ~4m of walking space and the
+// ring's east edge stays clear of the fixed east-strip fixtures (meeting
+// nook / dining / owner suite). The zone-sign slices ([0,5]/[5,9]/[9,13])
+// stay contiguous — they now label three arc sectors instead of three rows.
+const OFC_DESKS = Array.from({ length: 13 }, (_, i) => {
+  const a = -Math.PI / 2 + (i / 13) * Math.PI * 2; // start due north, sweep clockwise
+  const x = 50 + 24 * Math.cos(a);
+  const y = 50 + 24 * Math.sin(a);
+  // Face the room's center: toWorld() scales x/y by the same factor, so the
+  // percent-space direction (50-x, 50-y) is the world facing direction too.
+  return { x, y, rot: Math.atan2(50 - x, 50 - y) };
+});
 // Meeting nook, upper right.
 const OFC_SEATS = [{ x: 76, y: 22 }, { x: 84, y: 20 }, { x: 92, y: 22 }, { x: 76, y: 34 }, { x: 84, y: 36 }, { x: 92, y: 34 }];
 // Dining room, mid-right between the conference room and the owner's suite —
