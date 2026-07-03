@@ -5,6 +5,7 @@ import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js
 import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
+import { VRButton } from "three/examples/jsm/webxr/VRButton.js";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
@@ -237,6 +238,58 @@ function drawHgScreen(ctx, W, H, biz) {
     ctx.fillStyle = "#8fe3c0"; ctx.font = "17px 'Courier New',monospace"; ctx.fillText(label, 18, ty);
     ctx.fillStyle = "#fff"; ctx.font = "700 25px 'Courier New',monospace"; ctx.fillText(String(val), 18, ty + 26);
     ty += 58;
+  });
+}
+
+// Global Operations Wall — the "Pentagon big board": one combined dashboard
+// (fleet pipeline, security alerts, system health) instead of scattered
+// single-metric screens. Same real bizData the phone's Security tab and the
+// HeavyGuard screen already use — no invented numbers.
+function drawOpsWall(ctx, W, H, biz, alerts) {
+  ctx.fillStyle = "#03060a"; ctx.fillRect(0, 0, W, H);
+  const colW = W / 3;
+  for (let i = 1; i < 3; i++) {
+    ctx.strokeStyle = "rgba(46,230,255,.18)"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(colW * i, 10); ctx.lineTo(colW * i, H - 10); ctx.stroke();
+  }
+  ctx.fillStyle = "#2ee6ff"; ctx.font = "700 22px 'Courier New',monospace";
+  ctx.fillText("🛰 GLOBAL OPERATIONS", 16, 34);
+  ctx.fillStyle = "#5f8ea0"; ctx.font = "13px 'Courier New',monospace"; ctx.textAlign = "right";
+  ctx.fillText(new Date().toLocaleTimeString("he-IL"), W - 16, 34);
+  ctx.textAlign = "left";
+
+  const b = biz || {};
+  const cols = [
+    { title: "FLEET PIPELINE", rows: [
+      ["פרויקטי צי פעילים", String(b.fleetProjects ?? "—")],
+      ["התקנות", String(b.installs ?? "—")],
+      ["עסקאות פתוחות", String(b.openDeals ?? "—")],
+      ["נסגרו החודש", String(b.wonMonth ?? "—")],
+    ] },
+    { title: "SECURITY STATUS", rows: (alerts || []).slice(0, 4).map((a) => [a.level === "high" ? "🔴" : a.level === "mid" ? "🟡" : "🟢", a.text]) },
+    { title: "SYSTEM HEALTH", rows: [
+      ["מערכות פעילות", "6/6"],
+      ["זמינות", "99.9%"],
+      ["מצב סימולציה", "תקין"],
+      ["חיבור רשת", navigator.onLine ? "מקוון" : "לא מקוון"],
+    ] },
+  ];
+  cols.forEach((col, ci) => {
+    const x = ci * colW + 16;
+    let ty = 66;
+    ctx.fillStyle = "#8fe3c0"; ctx.font = "700 14px 'Courier New',monospace";
+    ctx.fillText(col.title, x, ty);
+    ty += 26;
+    col.rows.forEach(([label, val]) => {
+      ctx.fillStyle = "#5f8ea0"; ctx.font = "12px 'Courier New',monospace";
+      const wrapped = String(label).length > 20 ? String(label).slice(0, 20) + "…" : label;
+      ctx.fillText(wrapped, x, ty);
+      ty += 16;
+      ctx.fillStyle = "#d7f6ff"; ctx.font = "700 15px 'Courier New',monospace";
+      const wv = String(val).length > 22 ? String(val).slice(0, 22) + "…" : val;
+      ctx.fillText(wv, x, ty);
+      ty += 26;
+    });
   });
 }
 
@@ -1975,6 +2028,15 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   const [layoutNames, setLayoutNames] = useState([]);
   const [layoutNameInput, setLayoutNameInput] = useState("");
   const [layoutMsg, setLayoutMsg] = useState("");
+  // Enter Vehicle — walk up to the showroom car, hop in: camera moves to a
+  // driver POV and a monitoring HUD replaces the normal walk-around HUD.
+  // No actual driving (there's nowhere to drive inside a single office
+  // floor) — this is the monitoring/inspection use the ask was really
+  // about, framed honestly rather than faking a driving sim.
+  const [nearVehicle, setNearVehicle] = useState(false);
+  const [inVehicle, setInVehicle] = useState(false);
+  useEffect(() => { liveRef.current.inVehicle = inVehicle; }, [inVehicle]);
+  useEffect(() => { liveRef.current.setInVehicle = setInVehicle; liveRef.current.setNearVehicle = setNearVehicle; }, []);
   const [joyKnob, setJoyKnob] = useState({ x: 0, y: 0 });
   const [joyBase, setJoyBase] = useState(null); // floating joystick anchor (screen px), null = hidden
   const [firstPerson, setFirstPerson] = useState(false);
@@ -2093,6 +2155,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   useEffect(() => { liveRef.current.bizData = bizData; }, [bizData]);
   useEffect(() => { liveRef.current.marketRows = marketRows; }, [marketRows]);
   useEffect(() => { liveRef.current.weather = weather; }, [weather]);
+  useEffect(() => { liveRef.current.securityAlerts = securityAlerts; }, [securityAlerts]);
   useEffect(() => { liveRef.current.onAutoFix = onAutoFix; }, [onAutoFix]);
   // Push the graphics-quality toggle down into the postprocessing passes
   // once they exist (they're created inside the async mount effect below).
@@ -2201,6 +2264,25 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.1;
     mount.appendChild(renderer.domElement);
+    // WebXR — a real VR entry point (not a stub): renderer.xr.enabled plus
+    // the standard VRButton, feature-detected so it silently does nothing
+    // on a browser/device with no XR support (desktop, most phones) rather
+    // than showing a button that can't work. No hand-controller grabbing —
+    // that's a separate, larger interaction layer — this is "you can put on
+    // a headset and look around the office," the first real step toward it.
+    renderer.xr.enabled = true;
+    if (navigator.xr) {
+      navigator.xr.isSessionSupported("immersive-vr").then((supported) => {
+        if (!supported || cancelled) return;
+        const btn = VRButton.createButton(renderer);
+        // Default VRButton centers itself at the bottom, right where the
+        // mic/talk bar lives — move it clear, to the bottom-left corner.
+        btn.style.left = "14px";
+        btn.style.right = "auto";
+        btn.style.bottom = "160px";
+        mount.appendChild(btn);
+      }).catch(() => {});
+    }
 
     // ── Post-processing chain: RenderPass → SSAO (desktop) → Bloom → Output ──
     // Bloom gives the neon/monitors a soft realistic glow; SSAO grounds every
@@ -2799,6 +2881,27 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     scene.add(tvHg.group);
     drawTradeScreen(tradeCtx, tradeCanvas.width, tradeCanvas.height, liveRef.current.marketRows);
     drawHgScreen(hgCtx, hgCanvas.width, hgCanvas.height, liveRef.current.bizData);
+    // Global Operations Wall — a "big board" suspended over the showroom
+    // (not mounted on any wall, so it can't collide with existing wall
+    // decor) combining fleet/security/system-health into one dashboard.
+    // Double-sided so it reads from either direction as you walk around.
+    const opsCanvas = document.createElement("canvas");
+    opsCanvas.width = 900; opsCanvas.height = 300;
+    const opsCtx = opsCanvas.getContext("2d");
+    const opsTex = new THREE.CanvasTexture(opsCanvas);
+    opsTex.colorSpace = THREE.SRGBColorSpace;
+    // Ceiling sits at y=5.4 — the board (and its short hanging chain) stay
+    // safely under it, well above head height (~1.8m) and the showroom car.
+    const opsBezel = new THREE.Mesh(new THREE.PlaneGeometry(5.7, 1.66), new THREE.MeshBasicMaterial({ color: 0x03040a, side: THREE.DoubleSide }));
+    opsBezel.position.set(-2.5, 4.5, -1.0);
+    scene.add(opsBezel);
+    const opsScreen = new THREE.Mesh(new THREE.PlaneGeometry(5.5, 1.5), new THREE.MeshBasicMaterial({ map: opsTex, side: THREE.DoubleSide }));
+    opsScreen.position.set(-2.5, 4.5, -0.98);
+    scene.add(opsScreen);
+    const opsChain = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.75, 6), new THREE.MeshStandardMaterial({ color: 0x2a2e38, metalness: 0.7, roughness: 0.4 }));
+    opsChain.position.set(-2.5, 5.0, -1.0);
+    scene.add(opsChain);
+    drawOpsWall(opsCtx, opsCanvas.width, opsCanvas.height, liveRef.current.bizData, liveRef.current.securityAlerts);
     let screenT = 0;
     // (SE corner plant removed — that corner is now the owner's office; the
     // SW plant moved out of the restrooms footprint.)
@@ -3787,7 +3890,6 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       });
     }
 
-    let raf = 0;
     let integrityT = 0;
     let frameNo = 0;
     let secSwitchT = 0;
@@ -3801,14 +3903,18 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       const k = e.key.toLowerCase();
       liveRef.current.keys[k] = true;
       // E toggles sitting on your own office chair (only when near it).
-      if (k === "e") liveRef.current.toggleSit?.();
+      if (k === "e") { liveRef.current.toggleSit?.(); liveRef.current.toggleVehicle?.(); }
+      if (k === "escape" && liveRef.current.inVehicle) liveRef.current.setInVehicle?.(false);
     };
     const onKeyUp = (e) => { liveRef.current.keys[e.key.toLowerCase()] = false; };
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
 
+    // renderer.setAnimationLoop (not requestAnimationFrame) drives this loop
+    // — required for WebXR: an active XR session calls the loop at the
+    // headset's own refresh rate and requestAnimationFrame simply doesn't
+    // fire during a session. Works identically to rAF outside of XR too.
     function animate() {
-      raf = requestAnimationFrame(animate);
       const dt = Math.min(0.05, clock.getDelta());
       const keys = liveRef.current.keys;
       const jv = liveRef.current.joyVec;
@@ -3864,6 +3970,8 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         tvTrade.tex.needsUpdate = true;
         drawHgScreen(hgCtx, hgCanvas.width, hgCanvas.height, liveRef.current.bizData);
         tvHg.tex.needsUpdate = true;
+        drawOpsWall(opsCtx, opsCanvas.width, opsCanvas.height, liveRef.current.bizData, liveRef.current.securityAlerts);
+        opsTex.needsUpdate = true;
         drawSiteScreen(); // wall site-board follows the same live refresh
         if (scene.userData.drawCarHolo) scene.userData.drawCarHolo(); // car telemetry tag too
         // The city billboard flips to its next ad every other screen tick.
@@ -4030,8 +4138,9 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       // Turn direction inverted by request; forward/backward flipped back
       // (a second invert request restored ↑/W = forward, ↓/S = backward,
       // both still relative to the direction you're looking).
-      let kFwd = (keys["w"] || keys["arrowup"] ? 1 : 0) - (keys["s"] || keys["arrowdown"] ? 1 : 0);
-      let kTurn = -((keys["d"] || keys["arrowright"] ? 1 : 0) - (keys["a"] || keys["arrowleft"] ? 1 : 0));
+      // Inside a vehicle, the player is parked at the wheel — no walk input.
+      let kFwd = liveRef.current.inVehicle ? 0 : (keys["w"] || keys["arrowup"] ? 1 : 0) - (keys["s"] || keys["arrowdown"] ? 1 : 0);
+      let kTurn = liveRef.current.inVehicle ? 0 : -((keys["d"] || keys["arrowright"] ? 1 : 0) - (keys["a"] || keys["arrowleft"] ? 1 : 0));
       // Mobile has no keyboard, so the touch joystick was the only way to
       // move in first person — but it still used the old absolute-world
       // scheme (push "up" = fixed compass heading, not "forward"), which
@@ -4053,7 +4162,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           mx = Math.sin(playerH.group.rotation.y) * kFwd;
           mz = Math.cos(playerH.group.rotation.y) * kFwd;
         }
-      } else {
+      } else if (!liveRef.current.inVehicle) {
         if (keys["w"] || keys["arrowup"]) mz -= 1;
         if (keys["s"] || keys["arrowdown"]) mz += 1;
         if (keys["a"] || keys["arrowleft"]) mx -= 1;
@@ -4110,6 +4219,13 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       if (liveRef.current.canSitShown !== nearSeat) {
         liveRef.current.canSitShown = nearSeat;
         liveRef.current.setCanSit?.(nearSeat);
+      }
+      // "Enter Vehicle" prompt — near the showroom car.
+      const nearVeh = !liveRef.current.inVehicle && Math.hypot(playerH.group.position.x - VEHICLE_POS.x, playerH.group.position.z - VEHICLE_POS.z) < 3.0;
+      liveRef.current.nearVehicle = nearVeh;
+      if (liveRef.current.nearVehicleShown !== nearVeh) {
+        liveRef.current.nearVehicleShown = nearVeh;
+        liveRef.current.setNearVehicle?.(nearVeh);
       }
 
       // Space portal — walk into it and get launched into the space overlay.
@@ -4358,7 +4474,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       // camera: third-person chase cam by default, or first-person from the
       // player's own eyes (toggle button) — own body hidden in first-person
       // so it doesn't block the view from the inside.
-      if (liveRef.current.firstPerson) {
+      if (liveRef.current.inVehicle) {
+        playerH.group.visible = false;
+        camera.position.lerp(VEHICLE_CAM, 0.35);
+        camera.lookAt(VEHICLE_LOOK);
+      } else if (liveRef.current.firstPerson) {
         playerH.group.visible = false;
         const eyeY = liveRef.current.sitting ? 0.96 : 1.32;
         const fx = Math.sin(playerH.group.rotation.y), fz = Math.cos(playerH.group.rotation.y);
@@ -4385,9 +4505,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         liveRef.current.setTalkTarget(nearest);
       }
 
-      if (turboOn) {
+      if (turboOn || renderer.xr.isPresenting) {
         // Straight render: skips the SSAO/bloom/output passes — the biggest
-        // per-frame GPU cost on weak machines.
+        // per-frame GPU cost on weak machines. EffectComposer also isn't
+        // XR-aware in this three.js version, so an active VR session always
+        // takes this branch regardless of the turbo setting.
         renderer.render(scene, camera);
       } else {
         composer.render();
@@ -4407,6 +4529,16 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       setInSpace(false);
     };
     liveRef.current.toggleSit = () => setSitting((v) => (v ? false : !!liveRef.current.canSit));
+    // Vehicle position is the showroom car's fixed spot (see the GLTF load
+    // above) — a static display piece, so a fixed cockpit offset/look
+    // target is enough; no vehicle rotation to account for.
+    const VEHICLE_POS = { x: -2.5, z: -1.0 };
+    const VEHICLE_CAM = new THREE.Vector3(-2.5, 1.35, -0.15);
+    const VEHICLE_LOOK = new THREE.Vector3(-2.5, 1.1, -3.5);
+    liveRef.current.toggleVehicle = () => {
+      if (liveRef.current.inVehicle) { liveRef.current.setInVehicle?.(false); return; }
+      if (liveRef.current.nearVehicle) liveRef.current.setInVehicle?.(true);
+    };
 
     // ── God Mode — owner-only admin tools ───────────────────────────────
     // Click-to-select one of the curated editable objects (car/trucks/
@@ -4699,7 +4831,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       searchGroup.visible = !on && skylineMode === "night";
     };
     liveRef.current.setTurbo(turbo);
-    animate();
+    renderer.setAnimationLoop(animate);
 
     const onResize = () => {
       const w = mount.clientWidth || window.innerWidth, h = mount.clientHeight || window.innerHeight;
@@ -4712,7 +4844,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     window.addEventListener("resize", onResize);
 
       cleanupFn = () => {
-        cancelAnimationFrame(raf);
+        renderer.setAnimationLoop(null);
         window.removeEventListener("keydown", onKeyDown);
         window.removeEventListener("keyup", onKeyUp);
         window.removeEventListener("resize", onResize);
@@ -5000,6 +5132,26 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         <button className={"off3-sit" + (sitting ? " on" : "")} onClick={() => setSitting((v) => !v)} title={sitting ? "קום מהכיסא" : "שב בכיסא שלך (E)"}>
           {sitting ? "🚶 קום" : "🪑 שב בכיסא שלך"}
         </button>
+      )}
+      {nearVehicle && !inVehicle && (
+        <button className="off3-sit" onClick={() => setInVehicle(true)} title="היכנס לרכב (E)">
+          🚗 היכנס לרכב
+        </button>
+      )}
+      {inVehicle && (
+        <div className="off3-vehicle-hud">
+          <div className="off3-vehicle-head">
+            <b>🛡 Heavy Guard Monitoring Active</b>
+            <button onClick={() => setInVehicle(false)} title="צא מהרכב (E / Esc)">✕ צא</button>
+          </div>
+          {securityAlerts.map((a, i) => (
+            <div key={i} className={"off3-phone-alert lvl-" + a.level}>
+              <b>{a.level === "high" ? "🔴" : a.level === "mid" ? "🟡" : "🟢"}</b>
+              <span>{a.text}</span>
+            </div>
+          ))}
+          <p className="off3-vehicle-note">מסך רכב לדגם תצוגה — ללא נהיגה בפועל בתוך קומת המשרד.</p>
+        </div>
       )}
       <button className="off3-settings-toggle" onClick={() => setSettingsOpen((v) => !v)} title="הגדרות סימולטור">
         <SettingsIcon size={18} />

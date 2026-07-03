@@ -3721,6 +3721,14 @@ function StyleTag() {
   color:#8fd8e8;font-family:inherit;font-size:10.5px;font-weight:700;padding:4px 8px;cursor:pointer}
 .off3-god-layout-del{background:rgba(255,92,80,.1)!important;border-color:rgba(255,92,80,.35)!important;color:#ff5c50!important;
   display:flex;align-items:center;padding:4px 6px!important}
+.off3-vehicle-hud{position:absolute;left:14px;bottom:80px;z-index:12;width:min(280px,80vw);display:flex;flex-direction:column;gap:7px;
+  background:linear-gradient(170deg,rgba(6,14,24,.96),rgba(3,8,14,.97));border:1px solid rgba(46,230,255,.4);border-radius:16px;
+  padding:12px 14px;box-shadow:0 0 30px rgba(46,230,255,.2),0 18px 44px rgba(0,0,0,.6);animation:acRise .25s ease both}
+.off3-vehicle-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.off3-vehicle-head b{font-size:12px;color:#d7f6ff}
+.off3-vehicle-head button{background:rgba(255,92,80,.1);border:1px solid rgba(255,92,80,.35);border-radius:8px;color:#ff5c50;
+  font-family:inherit;font-size:11px;font-weight:700;padding:4px 8px;cursor:pointer}
+.off3-vehicle-note{font-size:10px;color:#5f8ea0;line-height:1.4;margin:2px 0 0}
 .off3-god-del{background:rgba(255,92,80,.1);border:1px solid rgba(255,92,80,.35);border-radius:8px;color:#ff5c50;
   cursor:pointer;padding:5px 7px;display:flex}
 .off3-god-row{width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;background:none;border:none;
