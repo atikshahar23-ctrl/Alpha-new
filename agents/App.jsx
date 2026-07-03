@@ -3695,6 +3695,32 @@ function StyleTag() {
 .off3-god-tacspec-row{display:flex;justify-content:space-between;gap:8px;font-size:10px;color:#5f8ea0;font-weight:700}
 .off3-god-tacspec-row b{color:#E4BC63}
 .off3-god-tacspec-snap{font-size:9.5px;font-weight:800;color:#00ffff;margin-top:4px;letter-spacing:.3px}
+.off3-god-gizmo{display:flex;gap:5px;margin:2px 0 6px}
+.off3-god-gizmo button{flex:1;background:rgba(46,230,255,.06);border:1px solid rgba(46,230,255,.25);border-radius:9px;
+  color:#8fd8e8;font-family:inherit;font-size:11px;font-weight:700;padding:6px 2px;cursor:pointer}
+.off3-god-gizmo button.on{background:rgba(46,230,255,.2);color:#d7f6ff;border-color:#2ee6ff}
+.off3-restore{position:absolute;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;
+  background:rgba(2,6,10,.72);backdrop-filter:blur(6px)}
+.off3-restore-box{background:linear-gradient(170deg,rgba(6,14,24,.98),rgba(3,8,14,.99));border:1px solid rgba(46,230,255,.4);
+  border-radius:18px;padding:20px 22px;max-width:340px;box-shadow:0 0 30px rgba(46,230,255,.25),0 18px 44px rgba(0,0,0,.6);text-align:center}
+.off3-restore-box b{font-size:15px;color:#d7f6ff;display:block;margin-bottom:8px}
+.off3-restore-box p{font-size:12.5px;color:#8fd8e8;line-height:1.5;margin:0 0 14px}
+.off3-restore-row{display:flex;gap:8px}
+.off3-restore-yes,.off3-restore-no{flex:1;border-radius:10px;font-family:inherit;font-size:12px;font-weight:700;padding:9px 8px;cursor:pointer}
+.off3-restore-yes{background:rgba(46,230,255,.18);border:1px solid #2ee6ff;color:#d7f6ff}
+.off3-restore-no{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.15);color:#8fa0b0}
+.off3-god-layout-save{display:flex;gap:6px;margin:2px 0}
+.off3-god-layout-save input{flex:1;background:rgba(255,255,255,.04);border:1px solid rgba(46,230,255,.25);border-radius:9px;
+  color:#d7f6ff;font-family:inherit;font-size:11.5px;padding:7px 9px}
+.off3-god-layout-save button{background:rgba(46,230,255,.14);border:1px solid rgba(46,230,255,.35);border-radius:9px;
+  color:#d7f6ff;font-family:inherit;font-size:11.5px;font-weight:700;padding:6px 10px;cursor:pointer;white-space:nowrap}
+.off3-god-layout-msg{color:#3FD79A}
+.off3-god-layout-row{display:flex;align-items:center;gap:6px;font-size:11.5px;color:#8fd8e8;padding:5px 2px}
+.off3-god-layout-row span{flex:1;font-weight:700;color:#d7f6ff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.off3-god-layout-row button{background:rgba(46,230,255,.1);border:1px solid rgba(46,230,255,.3);border-radius:7px;
+  color:#8fd8e8;font-family:inherit;font-size:10.5px;font-weight:700;padding:4px 8px;cursor:pointer}
+.off3-god-layout-del{background:rgba(255,92,80,.1)!important;border-color:rgba(255,92,80,.35)!important;color:#ff5c50!important;
+  display:flex;align-items:center;padding:4px 6px!important}
 .off3-god-del{background:rgba(255,92,80,.1);border:1px solid rgba(255,92,80,.35);border-radius:8px;color:#ff5c50;
   cursor:pointer;padding:5px 7px;display:flex}
 .off3-god-row{width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;background:none;border:none;

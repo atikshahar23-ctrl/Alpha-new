@@ -4,6 +4,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
 import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
+import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
@@ -1968,6 +1969,12 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   // drops to a cyan wireframe schematic over a laser floor grid, and every
   // position change snaps to a 0.5m grid for precision placement.
   const [blueprint, setBlueprint] = useState(false);
+  const [gizmoMode, setGizmoMode] = useState("translate"); // translate | rotate | scale — on-canvas TransformControls handle
+  // State Persistence — named office layouts (saved spawned props only).
+  const [showLoadPrompt, setShowLoadPrompt] = useState(false);
+  const [layoutNames, setLayoutNames] = useState([]);
+  const [layoutNameInput, setLayoutNameInput] = useState("");
+  const [layoutMsg, setLayoutMsg] = useState("");
   const [joyKnob, setJoyKnob] = useState({ x: 0, y: 0 });
   const [joyBase, setJoyBase] = useState(null); // floating joystick anchor (screen px), null = hidden
   const [firstPerson, setFirstPerson] = useState(false);
@@ -2092,10 +2099,12 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   useEffect(() => { liveRef.current.setGraphicsHigh?.(graphicsHigh); }, [graphicsHigh]);
   useEffect(() => { liveRef.current.godMode = godOpen; if (!godOpen) { liveRef.current.deselect?.(); setBlueprint(false); } }, [godOpen]);
   useEffect(() => { liveRef.current.setBlueprint?.(blueprint); }, [blueprint]);
+  useEffect(() => { liveRef.current.setGizmoMode?.(gizmoMode); }, [gizmoMode]);
   useEffect(() => { liveRef.current.godPaused = godPaused; }, [godPaused]);
   useEffect(() => { liveRef.current.godLightMul = godLight; }, [godLight]);
   useEffect(() => { liveRef.current.godSpeedMul = godSpeed; }, [godSpeed]);
   useEffect(() => { liveRef.current.setSelectedObj = setSelectedObj; }, []);
+  useEffect(() => { liveRef.current.setShowLoadPrompt = setShowLoadPrompt; liveRef.current.setLayoutNames = setLayoutNames; }, []);
   // Stop any live mic / speech when the sim unmounts.
   useEffect(() => () => { try { recogRef.current?.stop(); window.speechSynthesis?.cancel(); } catch {} }, []);
   // Walk away from an agent → stop the live mic (nothing to listen for), but
@@ -4069,7 +4078,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         setClip(playerH, CLIP.sit);
       } else if (mlen > 0.08) {
         mx /= mlen; mz /= mlen;
-        const SPEED = 10.0; // scales with the floor, so crossing time still feels right
+        // Tactical Sprint — hold Shift for a burst pace, same collision/turn
+        // logic as the professional walk, just faster.
+        const sprinting = !!keys["shift"];
+        liveRef.current.sprinting = sprinting;
+        const SPEED = (sprinting ? 17.5 : 10.0); // scales with the floor, so crossing time still feels right
         playerH.group.position.x = clamp(playerH.group.position.x + mx * SPEED * dt, -(FLOOR_W / 2 - 1), FLOOR_W / 2 - 1);
         playerH.group.position.z = clamp(playerH.group.position.z + mz * SPEED * dt, -(FLOOR_D / 2 - 1), FLOOR_D / 2 - 1);
         resolveCollisions(playerH.group.position, obstacles);
@@ -4088,6 +4101,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         const pact = playerH.current && playerH.actions[playerH.current];
         if (pact) pact.timeScale = Math.max(0.35, Math.min(1.25, SPEED / 2.5));
       } else {
+        liveRef.current.sprinting = false;
         setClip(playerH, fpTankControls && kTurn ? CLIP.walk : CLIP.idle);
       }
       // "You can sit here" prompt — near your own chair (or already seated).
@@ -4419,8 +4433,22 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         meta: selectedThreeObj.userData.meta || {},
       };
     };
+    // ── TransformControls — the "GTA-style" drag gizmo for God Mode. A
+    // click selects the object (raycast above), and the gizmo attaches to
+    // it for direct drag/rotate/scale on the canvas; the slider panel and
+    // the gizmo both write through applyPos/applyRotY/applyScale, so they
+    // always agree on the object's live transform.
+    const transformControls = new TransformControls(camera, renderer.domElement);
+    const gizmoHelper = transformControls.getHelper();
+    gizmoHelper.traverse((o) => { o.userData.isGizmo = true; });
+    scene.add(gizmoHelper);
+    transformControls.addEventListener("dragging-changed", (e) => { liveRef.current.gizmoDragging = e.value; });
+    transformControls.addEventListener("objectChange", () => {
+      liveRef.current.setSelectedObj?.(snapshotSelected());
+    });
+    liveRef.current.setGizmoMode = (mode) => transformControls.setMode(mode);
     const onGodClick = (e) => {
-      if (!liveRef.current.godMode) return;
+      if (!liveRef.current.godMode || liveRef.current.gizmoDragging) return;
       const rect = mount.getBoundingClientRect();
       const ndc = new THREE.Vector2(
         ((e.clientX - rect.left) / rect.width) * 2 - 1,
@@ -4430,6 +4458,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       const hits = godRaycaster.intersectObjects(editableObjects, true);
       const hit = hits.length ? findEditableAncestor(hits[0].object) : null;
       selectedThreeObj = hit;
+      if (hit) transformControls.attach(hit); else transformControls.detach();
       liveRef.current.setSelectedObj?.(snapshotSelected());
     };
     mount.addEventListener("click", onGodClick);
@@ -4453,6 +4482,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     };
     liveRef.current.deleteSelected = () => {
       if (!selectedThreeObj || !selectedThreeObj.userData.deletable) return;
+      transformControls.detach();
       scene.remove(selectedThreeObj);
       const idx = editableObjects.indexOf(selectedThreeObj);
       if (idx >= 0) editableObjects.splice(idx, 1);
@@ -4461,7 +4491,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       selectedThreeObj = null;
       liveRef.current.setSelectedObj?.(null);
     };
-    liveRef.current.deselect = () => { selectedThreeObj = null; liveRef.current.setSelectedObj?.(null); };
+    liveRef.current.deselect = () => { selectedThreeObj = null; transformControls.detach(); liveRef.current.setSelectedObj?.(null); };
     // ── Blueprint Tactical Mode ─────────────────────────────────────────
     // One shared wireframe material for the whole scene (not one per mesh)
     // + a laser reference grid on the floor. Each mesh's real material is
@@ -4479,7 +4509,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       liveRef.current.blueprintOn = active;
       if (active) {
         scene.traverse((o) => {
-          if (o.isMesh && o.material !== bpWireMat && o.userData._bpSaved === undefined) {
+          if (o.isMesh && !o.userData.isGizmo && o.material !== bpWireMat && o.userData._bpSaved === undefined) {
             o.userData._bpSaved = o.material;
             o.material = bpWireMat;
           }
@@ -4494,6 +4524,10 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         });
         scene.remove(bpGrid);
       }
+      // Placement precision follows Blueprint: 0.5m snap on the on-canvas
+      // gizmo too, matching applyPos's own snap for the slider panel.
+      transformControls.setTranslationSnap(active ? 0.5 : null);
+      transformControls.setRotationSnap(active ? THREE.MathUtils.degToRad(15) : null);
     };
     // Spawn menu — procedural props for the camera/DVR (no GLB needed), and
     // the Volvo GLB reloaded for "truck" (the browser caches the file, so a
@@ -4501,32 +4535,45 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // and are immediately selected so the transform panel is ready to use.
     const spawnPoint = () => ({ x: 0, z: 22 });
     const newAssetId = (prefix) => `${prefix}-${Date.now().toString(36).toUpperCase()}`;
-    liveRef.current.spawnAsset = (type) => {
-      const p = spawnPoint();
+    // restoreOpts lets State Persistence recreate a saved layout: explicit
+    // x/y/z/rotY/scale instead of the default spawn point, and `silent` to
+    // skip the inventory log + auto-select (loading 12 saved props
+    // shouldn't spam the log or leave only the last one selected... though
+    // in practice leaving the last one selected is harmless and simpler).
+    liveRef.current.spawnAsset = (type, restoreOpts) => {
+      const p = restoreOpts || spawnPoint();
       const today = new Date().toISOString().slice(0, 10);
       if (type === "camera") {
         const id = newAssetId("CAM");
         const cam = buildSecurityCameraProp();
-        cam.position.set(p.x, 2.4, p.z);
+        cam.position.set(p.x, p.y != null ? p.y : 2.4, p.z);
+        if (p.rotY != null) cam.rotation.y = p.rotY;
+        if (p.scale != null) cam.scale.setScalar(p.scale);
+        cam.userData.type = "camera";
         scene.add(cam);
         registerEditable(cam, "מצלמת אבטחה", true, {
           id, origin_date: today, material_spec: "פלסטיק/מתכת, עמיד למים IP66", security_level: "גבוה", maintenance_status: "תקין",
           firmware: "v4.2.1", resolution: "4K", night_vision: true, coverage_angle: "110°", battery_status: "מחובר לחשמל (ללא סוללה)",
         });
-        logInventoryAsset(id, "camera", "מצלמת אבטחה", cam.position);
+        if (!restoreOpts?.silent) logInventoryAsset(id, "camera", "מצלמת אבטחה", cam.position);
         selectedThreeObj = cam;
+        transformControls.attach(cam);
         liveRef.current.setSelectedObj?.(snapshotSelected());
       } else if (type === "dvr") {
         const id = newAssetId("DVR");
         const dvr = buildDvrBoxProp();
-        dvr.position.set(p.x, 0, p.z);
+        dvr.position.set(p.x, p.y != null ? p.y : 0, p.z);
+        if (p.rotY != null) dvr.rotation.y = p.rotY;
+        if (p.scale != null) dvr.scale.setScalar(p.scale);
+        dvr.userData.type = "dvr";
         scene.add(dvr);
         registerEditable(dvr, "DVR", true, {
           id, origin_date: today, material_spec: "מתכת, רכיבים אלקטרוניים", security_level: "גבוה", maintenance_status: "תקין",
           firmware: "v2.0.4", storage: "2TB HDD", channels: 8,
         });
-        logInventoryAsset(id, "dvr", "DVR", dvr.position);
+        if (!restoreOpts?.silent) logInventoryAsset(id, "dvr", "DVR", dvr.position);
         selectedThreeObj = dvr;
+        transformControls.attach(dvr);
         liveRef.current.setSelectedObj?.(snapshotSelected());
       } else if (type === "truck") {
         const spawnLoader = new GLTFLoader();
@@ -4536,23 +4583,97 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           const tb = new THREE.Box3().setFromObject(truck);
           const ts = tb.getSize(new THREE.Vector3());
           const tc = tb.getCenter(new THREE.Vector3());
-          const s = 5.8 / Math.max(ts.x, ts.z);
+          // p.scale (when restoring) is the truck's own final saved scale,
+          // not a multiplier on the auto-fit — apply it as-is instead of
+          // recomputing the fit, so a resized truck restores at the exact
+          // size it was left at.
+          const s = p.scale != null ? p.scale : 5.8 / Math.max(ts.x, ts.z);
           const wrap = new THREE.Group();
           truck.position.set(-tc.x, -tb.min.y, -tc.z);
           wrap.add(truck);
           wrap.scale.setScalar(s);
-          wrap.position.set(p.x, 0, p.z);
+          wrap.position.set(p.x, p.y != null ? p.y : 0, p.z);
+          if (p.rotY != null) wrap.rotation.y = p.rotY;
+          wrap.userData.type = "truck";
           scene.add(wrap);
           const id = newAssetId("TRK");
           registerEditable(wrap, "משאית (חדשה)", true, {
             id, origin_date: today, material_spec: "פלדה/אלומיניום, תא נהג מרופד", security_level: "רגיל", maintenance_status: "תקין",
           });
-          logInventoryAsset(id, "truck", "משאית (חדשה)", wrap.position);
+          if (!restoreOpts?.silent) logInventoryAsset(id, "truck", "משאית (חדשה)", wrap.position);
           selectedThreeObj = wrap;
+          transformControls.attach(wrap);
           liveRef.current.setSelectedObj?.(snapshotSelected());
         }, undefined, () => {});
       }
     };
+    // ── State Persistence — named office layouts (localStorage) ─────────
+    // Only the owner-spawned props (camera/DVR/truck — same set God Mode
+    // can already select/delete) are ever saved; the built-in showroom
+    // (car, portal, desks, walls) is data-driven from the sim's own props
+    // and always rebuilds itself on load, so saving it here would be
+    // redundant and risks fighting the live sim on restore.
+    const LAYOUTS_KEY = "alpha:sim:layouts";
+    const readLayouts = () => { try { return JSON.parse(localStorage.getItem(LAYOUTS_KEY) || "{}"); } catch { return {}; } };
+    const writeLayouts = (all) => { try { localStorage.setItem(LAYOUTS_KEY, JSON.stringify(all)); } catch {} };
+    const captureLayout = () => editableObjects
+      .filter((o) => o.userData.deletable && o.userData.type)
+      .map((o) => ({ type: o.userData.type, x: o.position.x, y: o.position.y, z: o.position.z, rotY: o.rotation.y, scale: o.scale.x }));
+    liveRef.current.saveLayout = (name) => {
+      const all = readLayouts();
+      all[name] = { items: captureLayout(), savedAt: new Date().toISOString() };
+      writeLayouts(all);
+      liveRef.current.setLayoutNames?.(Object.keys(all).filter((n) => n !== "__auto__"));
+      return all[name].items.length;
+    };
+    liveRef.current.clearSpawned = () => {
+      [...editableObjects].filter((o) => o.userData.deletable).forEach((o) => {
+        transformControls.detach();
+        scene.remove(o);
+        const idx = editableObjects.indexOf(o);
+        if (idx >= 0) editableObjects.splice(idx, 1);
+      });
+      selectedThreeObj = null;
+      liveRef.current.setSelectedObj?.(null);
+    };
+    liveRef.current.loadLayout = (name) => {
+      const all = readLayouts();
+      const layout = all[name];
+      if (!layout) return 0;
+      liveRef.current.clearSpawned();
+      layout.items.forEach((item) => {
+        liveRef.current.spawnAsset(item.type, { x: item.x, y: item.y, z: item.z, rotY: item.rotY, scale: item.scale, silent: true });
+      });
+      return layout.items.length;
+    };
+    liveRef.current.listLayouts = () => Object.keys(readLayouts()).filter((n) => n !== "__auto__");
+    liveRef.current.deleteLayout = (name) => {
+      const all = readLayouts();
+      delete all[name];
+      writeLayouts(all);
+      liveRef.current.setLayoutNames?.(Object.keys(all).filter((n) => n !== "__auto__"));
+    };
+    // Auto-save every 60s to a reserved "__auto__" slot — never lose a
+    // session's placements even if the owner never hits Save explicitly.
+    const autoSaveIv = setInterval(() => {
+      const items = captureLayout();
+      if (items.length === 0) return; // nothing placed yet — skip the write
+      const all = readLayouts();
+      all.__auto__ = { items, savedAt: new Date().toISOString() };
+      writeLayouts(all);
+    }, 60000);
+    // Startup prompt — only if a previous session actually left something
+    // placed; an empty auto-save slot has nothing worth restoring.
+    {
+      const auto = readLayouts().__auto__;
+      if (auto && auto.items && auto.items.length > 0) {
+        liveRef.current.pendingRestore = auto.items.length;
+        liveRef.current.setShowLoadPrompt?.(true);
+      }
+      liveRef.current.setLayoutNames?.(Object.keys(readLayouts()).filter((n) => n !== "__auto__"));
+    }
+    liveRef.current.confirmLoadLast = () => { liveRef.current.loadLayout("__auto__"); liveRef.current.setShowLoadPrompt?.(false); };
+    liveRef.current.dismissLoadPrompt = () => liveRef.current.setShowLoadPrompt?.(false);
     // Pause — freezes the day/night clock and the podium turntables (see
     // the gates inside animate(), below). Player movement/camera keep
     // working so the admin can still walk around while paused.
@@ -4596,6 +4717,8 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         window.removeEventListener("keyup", onKeyUp);
         window.removeEventListener("resize", onResize);
         mount.removeEventListener("click", onGodClick);
+        transformControls.dispose();
+        clearInterval(autoSaveIv);
         scene.traverse((obj) => {
           if (obj.geometry) obj.geometry.dispose();
           if (obj.material) {
@@ -4721,13 +4844,25 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       <div ref={mountRef} className="off3-canvas"
         onTouchStart={onJoyStart} onTouchMove={onJoyMove} onTouchEnd={onJoyEnd}
         onMouseDown={onJoyStart} onMouseMove={onJoyMove} onMouseUp={onJoyEnd} onMouseLeave={onJoyEnd} />
-      <div className="off3-hint">גע במסך וגרור כדי לנווט · חצים / WASD במחשב · התקרב לעובד ודבר איתו · ליד הכיסא שלך: E לשבת · {ph.emoji} {ph.label}</div>
+      <div className="off3-hint">גע במסך וגרור כדי לנווט · חצים / WASD במחשב · Shift לספרינט טקטי · התקרב לעובד ודבר איתו · ליד הכיסא שלך: E לשבת · {ph.emoji} {ph.label}</div>
       {loadPct !== null && (
         <div className="off3-loader">
           <div className="off3-loader-logo">🏢</div>
           <b>בונה את המשרד החי…</b>
           <div className="off3-loader-bar"><i style={{ width: `${Math.max(6, loadPct)}%` }} /></div>
           <span>{loadPct}%</span>
+        </div>
+      )}
+      {showLoadPrompt && (
+        <div className="off3-restore">
+          <div className="off3-restore-box">
+            <b>📐 שחזור תצורה</b>
+            <p>נמצאה תצורת ציוד שמורה מהפעם הקודמת ({liveRef.current.pendingRestore} פריטים). לטעון אותה?</p>
+            <div className="off3-restore-row">
+              <button className="off3-restore-yes" onClick={() => liveRef.current.confirmLoadLast?.()}>טען תצורה אחרונה</button>
+              <button className="off3-restore-no" onClick={() => liveRef.current.dismissLoadPrompt?.()}>התחל ריק</button>
+            </div>
+          </div>
         </div>
       )}
       <button className="off3-view-toggle" onClick={() => setFirstPerson((v) => !v)} title="החלף תצוגה">
@@ -4922,6 +5057,12 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
                   </button>
                 )}
               </div>
+              <div className="off3-god-gizmo">
+                <button className={gizmoMode === "translate" ? "on" : ""} onClick={() => setGizmoMode("translate")}>✥ הזזה</button>
+                <button className={gizmoMode === "rotate" ? "on" : ""} onClick={() => setGizmoMode("rotate")}>↻ סיבוב</button>
+                <button className={gizmoMode === "scale" ? "on" : ""} onClick={() => setGizmoMode("scale")}>⤢ גודל</button>
+              </div>
+              <p className="off3-god-hint">גרור את הידית הצבעונית שמופיעה על האובייקט בסצנה — או השתמש במחוונים למטה.</p>
               <label className="off3-god-row">
                 <span>X</span>
                 <input type="range" min="-38" max="38" step="0.2" value={selectedObj.x}
@@ -4987,6 +5128,29 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
             <b className={blueprint ? "on" : ""}>{blueprint ? "פעיל" : "כבוי"}</b>
           </button>
           {blueprint && <p className="off3-god-hint">כל הסצנה בתצוגת שרטוט + רשת לייזר · מיקומים נצמדים לרשת של 0.5m</p>}
+          <div className="off3-god-sec">תצורות משרד (שמירה אוטומטית כל 60 שנ׳)</div>
+          <div className="off3-god-layout-save">
+            <input
+              type="text" placeholder="שם תצורה, למשל Mission-Ready"
+              value={layoutNameInput} onChange={(e) => setLayoutNameInput(e.target.value)}
+            />
+            <button onClick={() => {
+              const name = layoutNameInput.trim();
+              if (!name) return;
+              const n = liveRef.current.saveLayout?.(name) || 0;
+              setLayoutMsg(`נשמר "${name}" — ${n} פריטים`);
+              setLayoutNameInput("");
+              setTimeout(() => setLayoutMsg(""), 3500);
+            }}>💾 שמור</button>
+          </div>
+          {layoutMsg && <p className="off3-god-hint off3-god-layout-msg">{layoutMsg}</p>}
+          {layoutNames.length > 0 ? layoutNames.map((name) => (
+            <div key={name} className="off3-god-layout-row">
+              <span>{name}</span>
+              <button onClick={() => { const n = liveRef.current.loadLayout?.(name) || 0; setLayoutMsg(`נטען "${name}" — ${n} פריטים`); setTimeout(() => setLayoutMsg(""), 3500); }}>טען</button>
+              <button className="off3-god-layout-del" onClick={() => liveRef.current.deleteLayout?.(name)}><Trash2 size={12} /></button>
+            </div>
+          )) : <p className="off3-god-hint">אין עדיין תצורות שמורות בשם — רק שמירה אוטומטית ברקע.</p>}
           <div className="off3-god-sec">סימולציה</div>
           <button className="off3-god-row off3-god-toggle" onClick={() => setGodPaused((v) => !v)}>
             <span>⏸ השהה זמן/סיבובים</span>

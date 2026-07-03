@@ -284,6 +284,13 @@ export class VoiceEngine {
       if (/aria|jenny|michelle/.test(n)) s += 4;
       if (/david|mark|ryan/.test(n)) s += 4;
       if (v.lang === 'en-US') s += 2; else if (v.lang === 'en-GB') s += 1;
+      // "Jarvis" lean: when gender isn't pinned to female, favor a deep,
+      // composed British-English male voice — the closest an OS/browser
+      // voice list gets to that assistant archetype without attempting to
+      // clone anyone's actual voice (not possible via speechSynthesis, and
+      // not something to do with a copyrighted character even if it were).
+      if (gender !== 'female' && /daniel|george|arthur|ryan|oliver/.test(n)) s += 9;
+      if (gender !== 'female' && v.lang === 'en-GB' && this.isMaleVoice(n)) s += 5;
     }
     if (L === 'he' && /carmit|hebrew/.test(n)) s += 4;
     // Avri/Hila are the free Microsoft Azure neural voices for Hebrew that
@@ -343,11 +350,11 @@ export class VoiceEngine {
     if (this.chosenVoice) { u.voice = this.chosenVoice; u.lang = this.chosenVoice.lang; }
     else u.lang = this.state.replyLang === 'he' ? 'he-IL' : this.state.replyLang === 'es' ? 'es-ES' : 'en-US';
     const cv = this.charVoice;
-    // A small "calm, professional" prosody bias for Hebrew specifically —
-    // a touch slower and a touch lower-pitched reads as more authoritative
-    // and less synthesized. Layered on top of the user's own rate/pitch
-    // sliders (and any character-voice override), never replacing them.
-    const calmBias = this.state.replyLang === 'he' ? { rate: 0.95, pitch: 0.97 } : { rate: 1, pitch: 1 };
+    // A small "calm, professional" prosody bias — a touch slower and a touch
+    // lower-pitched reads as more authoritative and less synthesized (the
+    // "Jarvis" cadence), layered on top of the user's own rate/pitch sliders
+    // (and any character-voice override), never replacing them.
+    const calmBias = this.state.replyLang === 'he' ? { rate: 0.95, pitch: 0.95 } : { rate: 0.97, pitch: 0.94 };
     u.rate = (this.state.voiceSpeed || 1.0) * (cv?.rate ?? 1) * calmBias.rate;
     u.pitch = Math.max(0, Math.min(2, (this.state.voicePitch != null ? this.state.voicePitch : 1.0) * (cv?.pitch ?? 1) * calmBias.pitch));
     u.volume = this.state.voiceVolume != null ? this.state.voiceVolume : 1.0;
