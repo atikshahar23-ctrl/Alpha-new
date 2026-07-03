@@ -3206,9 +3206,16 @@ html.perf-lite .overlay { background: rgba(6,5,4,.86) !important; }
 /* Compositing layers that no longer earn their keep without blur. */
 html.perf-lite .left-panel,
 html.perf-lite .right-panel,
-html.perf-lite .dock,
 html.perf-lite .topL,
 html.perf-lite .topR { will-change: auto !important; transform: none !important; }
+/* .dock's transform is NOT decorative — it's how left:50% becomes actually
+   centered (translateX(-50%)). The shared rule above used to include .dock
+   and wipe that out with transform:none!important, which is why the dock
+   was permanently off-center specifically on iPad/iOS: decidePerfLite() in
+   main.ts unconditionally classifies any iPad as perf-lite (regardless of
+   viewport width), so this !important rule always won there, no matter
+   what the base/media-query .dock rules said. */
+html.perf-lite .dock { will-change: auto !important; transform: translateX(-50%) !important; }
 
 /* ════════════════════════════════════════════════════════════════════
    HOLOGRAPHIC HUD — gold/white main display
@@ -3325,8 +3332,19 @@ body.boot-online .hud-card { animation: boot-sync 1.3s ease both; }
    ring is cloned from). The dock ghosts until hovered/focused. ── */
 @media (min-width: 901px) {
   .hud .hud-rail { display: none; }   /* outranks the base display:flex below */
-  .dock { opacity: .1; transform: translateY(10px); transition: opacity .35s, transform .35s; }
-  .dock:hover, .dock:focus-within { opacity: 1; transform: none; }
+}
+/* The "ghost until hovered" dock only makes sense on a device with a real
+   hover state — on touch (iPad included, even at a wide landscape width
+   ≥901px) there's no hover to reveal it, so it just reads as "the dock
+   disappeared". Gated to hover-capable pointers only; touch keeps the dock
+   fully visible always. Both states keep translateX(-50%) — .dock is
+   centered via left:50% + that transform (base .dock rule) — replacing
+   the transform here instead of composing with it silently uncentered
+   the whole dock on every desktop/tablet width, which is the bug that
+   kept "fixing" this back to off-center. */
+@media (min-width: 901px) and (hover: hover) and (pointer: fine) {
+  .dock { opacity: .1; transform: translateX(-50%) translateY(10px); transition: opacity .35s, transform .35s; }
+  .dock:hover, .dock:focus-within { opacity: 1; transform: translateX(-50%); }
 }
 
 /* ALPHA MENU trigger under the robot */
