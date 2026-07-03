@@ -2688,6 +2688,92 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       }, undefined, () => { /* car download failed — podium stays as decor */ });
     }
 
+    // ── Fleet showcase: the owner's real truck models on display podiums ──
+    // Same treatment as the Tiggo (podium + gold ring + spotlight + slow
+    // turn + clearcoat), placed in the two clear front corners flanking the
+    // desk ring — "around, not in the center", per the owner. Truck length
+    // normalized to 5.8 units (vs the car's 4.2 — a tractor unit really is
+    // ~1.4x a crossover). NW/NE corners verified clear: reception lives in
+    // the SW, the meeting nook's north edge is at z≈-19.8 so the NE podium
+    // at z=-26 keeps ~2.5 units of walkway past its 3.7 radius.
+    const TRUCKS = [
+      { url: "office-models/volvo_fh16.glb", x: -27, z: -24, label: "VOLVO FH16" },
+      { url: "office-models/man_tgx.glb", x: 25, z: -26, label: "MAN TGX V8" },
+    ];
+    TRUCKS.forEach((t) => {
+      const podium = new THREE.Mesh(
+        new THREE.CylinderGeometry(3.5, 3.7, 0.14, 40),
+        new THREE.MeshStandardMaterial({ color: 0x14161c, roughness: 0.35, metalness: 0.5 })
+      );
+      podium.position.set(t.x, 0.07, t.z);
+      podium.receiveShadow = true;
+      scene.add(podium);
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(3.6, 0.035, 8, 60), new THREE.MeshBasicMaterial({ color: 0xE4BC63 }));
+      ring.rotation.x = Math.PI / 2;
+      ring.position.set(t.x, 0.15, t.z);
+      scene.add(ring);
+      const spot = new THREE.PointLight(0xfff2d8, 0.7, 11);
+      spot.position.set(t.x, 4.2, t.z);
+      scene.add(spot);
+      obstacles.push({ x: t.x, z: t.z, r: 3.8 });
+      const sign = buildNeonSign(t.label, 0xE4BC63, 2.2, 0.45);
+      sign.position.set(t.x, 4.6, t.z);
+      scene.add(sign);
+      const loader = new GLTFLoader();
+      loader.setMeshoptDecoder(MeshoptDecoder);
+      loader.load(base + t.url, (g) => {
+        const truck = g.scene;
+        const tb = new THREE.Box3().setFromObject(truck);
+        const ts = tb.getSize(new THREE.Vector3());
+        const tc = tb.getCenter(new THREE.Vector3());
+        const s = 5.8 / Math.max(ts.x, ts.z);
+        const wrap = new THREE.Group();
+        truck.position.set(-tc.x, -tb.min.y, -tc.z);
+        wrap.add(truck);
+        wrap.scale.setScalar(s);
+        wrap.position.set(t.x, 0.14, t.z);
+        scene.add(wrap);
+        // Same showroom clearcoat upgrade the car gets — paint gets the
+        // lacquer double-reflection, tinted glass becomes actual glass.
+        const upgraded = new Map();
+        wrap.traverse((o) => {
+          if (!o.isMesh) return;
+          o.castShadow = true; o.matrixAutoUpdate = true;
+          const m = o.material;
+          if (!m || !m.isMeshStandardMaterial || m.isMeshPhysicalMaterial) return;
+          if (!upgraded.has(m)) {
+            const phys = new THREE.MeshPhysicalMaterial({
+              color: m.color ? m.color.clone() : new THREE.Color(0xffffff),
+              map: m.map || null,
+              normalMap: m.normalMap || null,
+              metalnessMap: m.metalnessMap || null,
+              roughnessMap: m.roughnessMap || null,
+              emissive: m.emissive ? m.emissive.clone() : new THREE.Color(0),
+              emissiveMap: m.emissiveMap || null,
+              emissiveIntensity: m.emissiveIntensity ?? 1,
+              side: m.side,
+              transparent: m.transparent,
+              opacity: m.opacity,
+            });
+            if (m.transparent && m.opacity < 0.9) {
+              phys.metalness = 0; phys.roughness = 0.05;
+              phys.opacity = Math.min(m.opacity, 0.35);
+              phys.envMapIntensity = 1.4;
+            } else {
+              phys.metalness = m.metalness ?? 0.3;
+              phys.roughness = Math.min(m.roughness ?? 1, 0.5);
+              phys.clearcoat = 0.7;
+              phys.clearcoatRoughness = 0.12;
+              phys.envMapIntensity = 1.0;
+            }
+            upgraded.set(m, phys);
+          }
+          o.material = upgraded.get(m);
+        });
+        centerSpin.push(wrap);
+      }, undefined, () => { /* truck download failed — podium stays as decor */ });
+    });
+
     // ── The two office dogs 🐾 — ניקי וטיארה ────────────────────────────
     // The full pack was removed by request; these two stay, by name: ניקי
     // the pomeranian (tinted sable like the owner's real dog) and טיארה the
