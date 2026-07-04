@@ -2487,19 +2487,27 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     ceiling.position.y = 5.4;
     scene.add(ceiling);
     // Designer hanging pendant lamps over each desk column — an emissive
-    // glass globe on a slim cord, for a more upscale/luxurious ceiling. No
-    // per-lamp light (kept cheap); the emissive globes read as lit fixtures.
+    // glass globe on a slim cord, for a more upscale/luxurious ceiling. Each
+    // column also gets a real, non-shadow-casting PointLight (cheap — no
+    // shadow map) so the room actually stays lit in the evening/night phases
+    // instead of just going dim with the outside sky; ramped in animate()
+    // below alongside the sun/ambient lerp.
+    const officeGlobeMat = new THREE.MeshStandardMaterial({ color: 0xfff2d0, emissive: 0xffe6b0, emissiveIntensity: 0.9, roughness: 0.3 });
+    const interiorLights = [];
     {
       const cordMat = new THREE.MeshStandardMaterial({ color: 0x0c0e13, roughness: 0.5, metalness: 0.6 });
-      const globeMat = new THREE.MeshStandardMaterial({ color: 0xfff2d0, emissive: 0xffe6b0, emissiveIntensity: 0.9, roughness: 0.3 });
       const cols = [...new Set(deskPositions.map((d) => Math.round(toWorld(d.x, d.y)[0])))];
       cols.forEach((cx) => {
         [-6.8, 0, 6.8].forEach((cz) => {
           const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 1.1, 6), cordMat);
           cord.position.set(cx + 0.8, 4.85, cz); scene.add(cord);
-          const globe = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 12), globeMat);
+          const globe = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 12), officeGlobeMat);
           globe.position.set(cx + 0.8, 4.25, cz); scene.add(globe);
         });
+        const roomLight = new THREE.PointLight(0xffdba0, 0.3, 15, 1.7);
+        roomLight.position.set(cx + 0.8, 3.9, 0);
+        scene.add(roomLight);
+        interiorLights.push(roomLight);
       });
     }
 
@@ -2663,6 +2671,70 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         bx += gap;
       }
     }
+
+    // A second, closer row of buildings for real parallax depth between the
+    // glass and the distant skyline — bolder, sparser silhouettes right up
+    // against the window instead of one flat depth layer. Skipped on mobile
+    // to keep the extra draw calls off weaker GPUs; the far row above still
+    // reads as a full city there.
+    if (!isMobile) {
+      const cityRnd2 = mulberry32(3131);
+      let bx2 = -65;
+      while (bx2 < 65) {
+        const w = 2.4 + cityRnd2() * 3.4, h = 5 + cityRnd2() * 12, d = 2.4 + cityRnd2() * 3.4;
+        const bz2 = nwz - 6 - cityRnd2() * 6;
+        const gap = w + 9 + cityRnd2() * 13;
+        if (Math.abs(bx2) > 9) {
+          const albedoTex = facadeAlbedo.clone();
+          const emissiveTex = facadeEmissive.clone();
+          albedoTex.repeat.set(Math.max(1, w / 2.2), Math.max(1, h / 3.2));
+          emissiveTex.repeat.copy(albedoTex.repeat);
+          albedoTex.needsUpdate = true; emissiveTex.needsUpdate = true;
+          const mat = new THREE.MeshStandardMaterial({
+            map: albedoTex, emissiveMap: emissiveTex, emissive: 0xffd8a0, emissiveIntensity: 0,
+            roughness: 0.75, metalness: 0.15, fog: false,
+          });
+          const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+          mesh.position.set(bx2, h / 2, bz2);
+          scene.add(mesh);
+          nearBuildingMats.push(mat);
+        }
+        bx2 += gap;
+      }
+    }
+
+    // A blinking red aviation obstruction light on the tallest tower — the
+    // kind of small real-skyline detail that reads as genuine city life.
+    let rooftopBeacon = null;
+    if (scene.userData.tallB) {
+      const tall = scene.userData.tallB;
+      rooftopBeacon = new THREE.Mesh(
+        new THREE.SphereGeometry(0.16, 8, 8),
+        new THREE.MeshBasicMaterial({ color: 0xff2a1a, transparent: true, opacity: 0.9, fog: false })
+      );
+      rooftopBeacon.position.set(tall.x, tall.h + 0.35, tall.z);
+      scene.add(rooftopBeacon);
+    }
+
+    // A soft warm glow along the horizon behind the skyline, only visible
+    // after dark — real cities cast a "light pollution" dome from below.
+    const cityGlowCvs = document.createElement("canvas");
+    cityGlowCvs.width = 512; cityGlowCvs.height = 128;
+    {
+      const gctx = cityGlowCvs.getContext("2d");
+      const grad = gctx.createLinearGradient(0, 128, 0, 0);
+      grad.addColorStop(0, "rgba(255,188,120,0.6)");
+      grad.addColorStop(1, "rgba(255,188,120,0)");
+      gctx.fillStyle = grad; gctx.fillRect(0, 0, 512, 128);
+    }
+    const cityGlowTex = new THREE.CanvasTexture(cityGlowCvs);
+    const cityGlowMat = new THREE.MeshBasicMaterial({
+      map: cityGlowTex, transparent: true, opacity: 0, depthWrite: false,
+      blending: THREE.AdditiveBlending, fog: false,
+    });
+    const cityGlow = new THREE.Mesh(new THREE.PlaneGeometry(150, 14), cityGlowMat);
+    cityGlow.position.set(nwx, 5, nwz - 45.5);
+    scene.add(cityGlow);
 
     /* ── Showcase-window life v3 ──────────────────────────────────────────
        The view out the glass gets a living city layer: a Times-Square-style
@@ -4037,6 +4109,16 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         nearBuildingMats.forEach((mat) => {
           mat.emissiveIntensity += (buildingGlowTarget - mat.emissiveIntensity) * Math.min(1, dt * 0.8);
         });
+        // Interior office lights compensate for the dimming sun/ambient so
+        // the room itself stays clearly readable after dark — a real office
+        // keeps its ceiling lights on regardless of what the sky is doing
+        // outside the window.
+        const roomLightTarget = (isNight ? 1.7 : isEvening ? 1.1 : 0.3) * lightMul;
+        interiorLights.forEach((lt) => {
+          lt.intensity += (roomLightTarget - lt.intensity) * Math.min(1, dt * 0.8);
+        });
+        const globeGlowTarget = isNight ? 1.4 : isEvening ? 1.1 : 0.9;
+        officeGlobeMat.emissiveIntensity += (globeGlowTarget - officeGlobeMat.emissiveIntensity) * Math.min(1, dt * 0.8);
       }
       // Rain on the glass — fades in/out rather than snapping, matches
       // liveRef.current.weather.isRaining set from the real Rishon LeZion
@@ -4221,6 +4303,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         beam1.rotation.z = -0.15 + Math.sin(clock.elapsedTime * 0.22) * 0.42;
         beam2.rotation.z = 0.2 + Math.sin(clock.elapsedTime * 0.17 + 2.1) * 0.36;
       }
+      // Rooftop obstruction light blinks around the clock; the horizon glow
+      // only builds up once the sky actually turns to sunset/night.
+      if (rooftopBeacon) rooftopBeacon.material.opacity = (Math.sin(clock.elapsedTime * 3.4) > 0.3) ? 0.95 : 0.15;
+      const cityGlowTarget = skylineMode === "night" ? 0.85 : skylineMode === "sunset" ? 0.35 : 0;
+      cityGlowMat.opacity += (cityGlowTarget - cityGlowMat.opacity) * Math.min(1, dt * 0.8);
 
       let mx = 0, mz = 0;
       // First-person keyboard nav used to feel "backwards": every key press
