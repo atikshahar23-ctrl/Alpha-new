@@ -184,7 +184,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v196 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v197 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="panelsToggleBtn" title="הסתר/הצג פנלים" aria-label="הסתר פנלים">
           <svg class="pt-hide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -3386,8 +3386,10 @@ export function mountApp(root: HTMLElement) {
     'https://rss.walla.co.il/feed/1',
   ];
   function newsRowsHtml(items: { title: string; link: string }[]) {
-    return items.slice(0, 6).map((it) =>
-      `<a class="nw-row" href="${it.link}" target="_blank" rel="noopener"><span class="nw-dot"></span><span class="nw-t">${(it.title || '').replace(/</g, '&lt;')}</span></a>`).join('');
+    return items.slice(0, 6).map((it) => {
+      const href = /^https?:\/\//i.test(it.link || '') ? it.link : '#';
+      return `<a class="nw-row" href="${escHtml(href)}" target="_blank" rel="noopener"><span class="nw-dot"></span><span class="nw-t">${escHtml(it.title || '')}</span></a>`;
+    }).join('');
   }
   async function fetchRssViaJsonProxy(rssUrl: string): Promise<{ title: string; link: string }[]> {
     try {
@@ -3746,7 +3748,7 @@ export function mountApp(root: HTMLElement) {
           const allBots = Object.keys(at.riskGuard);
           botsEl.innerHTML = allBots.slice(0, 12).map(name => {
             const on = !at.riskGuard[name]?.paused;
-            return `<span class="ops-alpha-bot ${on ? 'on' : 'off'}">${name}</span>`;
+            return `<span class="ops-alpha-bot ${on ? 'on' : 'off'}">${escHtml(name)}</span>`;
           }).join('');
         }
       }
@@ -3762,9 +3764,9 @@ export function mountApp(root: HTMLElement) {
               const sideKey = (p.side || '').toLowerCase();
               const lev = p.leverage ? `x${p.leverage} · ` : '';
               const entry = p.entry ? `@ ${p.entry.toLocaleString()}` : '';
-              const typ = p.type ? `[${p.type}]` : '';
+              const typ = p.type ? `[${escHtml(p.type)}]` : '';
               return `<div class="ops-pos-row">
-                <span class="ops-pos-badge ${sideKey}">${p.side}</span>
+                <span class="ops-pos-badge ${escHtml(sideKey)}">${escHtml(p.side)}</span>
                 <div class="ops-pos-mid">
                   <b>${escHtml(p.symbol)}</b>
                   <span>${lev}${entry} · ${escHtml(p.wallet)}</span>
