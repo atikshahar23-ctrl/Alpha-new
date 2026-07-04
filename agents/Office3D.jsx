@@ -2080,9 +2080,14 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   const [loadPct, setLoadPct] = useState(0);
   // DeviceProfiler picks the *first-run* default for graphicsHigh/turbo
   // (iPad/mobile-low starts lean, desktop starts maxed) — a saved manual
-  // choice in localStorage always wins over the detected default.
+  // choice in localStorage always wins over the detected default. "מצב
+  // חסכוני" (Comfort Mode, set from the main dashboard before the sim ever
+  // opens) outranks even a saved manual choice — it's an explicit "this
+  // machine needs the light path, full stop" declaration.
   const { budget: perfBudget } = useDeviceProfile();
+  const comfortMode = (() => { try { return localStorage.getItem("alpha:comfortMode") === "1"; } catch { return false; } })();
   const [graphicsHigh, setGraphicsHigh] = useState(() => {
+    if (comfortMode) return false;
     try { const v = localStorage.getItem("alpha:agents:graphicsHigh"); if (v !== null) return v === "1"; } catch {}
     return perfBudget.graphicsHigh;
   }); // bloom + SSAO on/off, for low-end devices
@@ -2093,6 +2098,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   // hides the sky-life extras and the live iframe wall. Persisted so a
   // laggy machine stays fast on the next visit.
   const [turbo, setTurbo] = useState(() => {
+    if (comfortMode) return true;
     try { const v = localStorage.getItem("alpha:agents:turbo"); if (v !== null) return v === "1"; } catch {}
     return perfBudget.turbo;
   });
@@ -2252,7 +2258,17 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       const charTemplate = charGltf ? charGltf.scene : null;
       const charClips = charGltf ? charGltf.animations : [];
 
-    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || ("ontouchstart" in window) || window.innerWidth < 900;
+    // "מצב חסכוני" (Comfort Mode) — a main-dashboard toggle for machines that
+    // report as full desktops (no touch, wide screen — a 2020 MacBook Pro's
+    // Intel/AMD integrated GPU included) but still can't carry the full
+    // HDRI+SSAO+shadow pipeline. Unlike the in-sim turbo toggle, this is
+    // read BEFORE any of the heavy one-time construction below runs (HDRI
+    // download+prefilter, SSAO pass, shadow maps) — turbo only lightens
+    // ongoing per-frame cost after that construction already happened, so it
+    // can't help with a freeze that happens during the initial mount itself.
+    let lowSpec = false;
+    try { lowSpec = localStorage.getItem("alpha:comfortMode") === "1"; } catch {}
+    const isMobile = lowSpec || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || ("ontouchstart" in window) || window.innerWidth < 900;
     const width = mount.clientWidth || window.innerWidth;
     const height = mount.clientHeight || window.innerHeight;
 
@@ -2343,22 +2359,29 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // ── Real HDRI environment (free CC0 Poly Haven) for image-based lighting
     // + realistic reflections on glass/marble/metal, with a hard fallback to
     // the procedural sky so the scene never breaks if the CDN is unreachable.
-    const pmrem = new THREE.PMREMGenerator(renderer);
-    pmrem.compileEquirectangularShader();
-    new RGBELoader()
-      .setDataType(THREE.HalfFloatType)
-      .load(
-        "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/kloppenheim_06_puresky_2k.hdr",
-        (hdr) => {
-          if (cancelled) { hdr.dispose(); return; }
-          hdr.mapping = THREE.EquirectangularReflectionMapping;
-          const env = pmrem.fromEquirectangular(hdr).texture;
-          scene.environment = env;
-          hdr.dispose(); pmrem.dispose();
-        },
-        undefined,
-        () => { /* offline/blocked — keep the procedural skyline + lights */ }
-      );
+    // Skipped entirely on the lite tier — downloading a 2K HDR image and
+    // running its GPU-side cubemap prefiltering is one of the more expensive
+    // one-time costs in the whole mount, previously unconditional (it ran
+    // even on real phones). The procedural sky/lights are already a
+    // complete fallback, not a degraded one.
+    if (!isMobile) {
+      const pmrem = new THREE.PMREMGenerator(renderer);
+      pmrem.compileEquirectangularShader();
+      new RGBELoader()
+        .setDataType(THREE.HalfFloatType)
+        .load(
+          "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/kloppenheim_06_puresky_2k.hdr",
+          (hdr) => {
+            if (cancelled) { hdr.dispose(); return; }
+            hdr.mapping = THREE.EquirectangularReflectionMapping;
+            const env = pmrem.fromEquirectangular(hdr).texture;
+            scene.environment = env;
+            hdr.dispose(); pmrem.dispose();
+          },
+          undefined,
+          () => { /* offline/blocked — keep the procedural skyline + lights */ }
+        );
+    }
 
     // Sky/ground hemisphere fill for a soft, realistic ambient gradient, on
     // top of a low flat ambient so nothing goes fully black. Tuned cool —

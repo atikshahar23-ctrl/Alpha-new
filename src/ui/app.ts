@@ -31,6 +31,7 @@ import { BOOKS_BY_KEY, BOOKS_LAST_KEY, cumulativeIncome } from '../modules/books
 const UI_STRINGS: Record<string, Record<UILang, string>> = {
   appTitle: { he: 'אלפא עוזר אישי', en: 'ALPHA ASSISTANT' },
   settings: { he: 'הגדרות', en: 'SETTINGS' },
+  comfortMode: { he: 'מצב חסכוני', en: 'COMFORT MODE' },
   newChat: { he: 'חדש', en: 'NEW' },
   system: { he: 'מערכת', en: 'SYSTEM' },
   online: { he: '● מחובר', en: '● ONLINE' },
@@ -182,7 +183,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v190 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v191 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="panelsToggleBtn" title="הסתר/הצג פנלים" aria-label="הסתר פנלים">
           <svg class="pt-hide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -194,6 +195,7 @@ export function mountApp(root: HTMLElement) {
         <button class="chip ghost" id="charPoseBtn" title="כיוון דמות" aria-label="כיוון דמות" style="font-size:11px;padding:0 5px;">⚙</button>
         <button class="chip ghost" id="searchBtn" aria-label="Search (Ctrl+K)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
         <button class="chip ghost" id="muteBtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg></button>
+        <button class="chip ghost" id="comfortModeBtn" title="מצב חסכוני — למחשבים חלשים/ישנים, מונע קיפאון של הסימולציה התלת-ממדית">🐢 <span data-i18n="comfortMode">מצב חסכוני</span></button>
         <button class="chip" id="settingsBtn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg> <span data-i18n="settings">הגדרות</span></button>
         <button class="chip ghost" id="newChat"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> <span data-i18n="newChat">חדש</span></button>
       </div>
@@ -1864,6 +1866,24 @@ export function mountApp(root: HTMLElement) {
     if (turningOn) audio.micOn(); else audio.micOff();
   };
   $('muteBtn').onclick = () => { audio.toggleMute(); };
+  // מצב חסכוני — a persistent flag the office 3D sim (agents.html) reads
+  // BEFORE its own heavy one-time mount (HDRI download+prefilter, shadow
+  // maps, SSAO) even starts, so it's a real fix for a sim that locks up on
+  // load — not just a lighter runtime toggle to find after the freeze
+  // already happened. Set here, on the main screen, so it's ready the next
+  // time the office is opened.
+  const comfortModeBtn = $('comfortModeBtn');
+  const syncComfortModeBtn = () => {
+    const on = localStorage.getItem('alpha:comfortMode') === '1';
+    comfortModeBtn.classList.toggle('on', on);
+  };
+  syncComfortModeBtn();
+  comfortModeBtn.onclick = () => {
+    const on = localStorage.getItem('alpha:comfortMode') === '1';
+    localStorage.setItem('alpha:comfortMode', on ? '0' : '1');
+    syncComfortModeBtn();
+    addMsg(on ? '🐢 מצב חסכוני כובה — הסימולציה תחזור לאיכות מלאה בפעם הבאה שתיפתח.' : '🐢 מצב חסכוני הופעל — בפעם הבאה שתיפתח את הסימולציה התלת-ממדית היא תיטען קלה משמעותית (בלי HDRI/צללים/SSAO), מותאם למחשבים חלשים או ישנים.', 'sys');
+  };
   $('newChat').onclick = () => { state.history = []; $('rpBody').innerHTML = ''; $('chat').innerHTML = ''; clearChatHistory(); addMsg(state.name + ' ' + t('readyMsg', state.uiLang), 'al'); };
 
   // ── Hide / show all panels — leaves only the top bar + the central orb ──

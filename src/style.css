@@ -818,6 +818,10 @@ body::after {
 }
 .chip:active { transform: translateY(0) scale(.96); transition-duration: .1s; }
 .chip.ghost { color: var(--dim); border-color: var(--line) }
+#comfortModeBtn.on {
+  color: #3FD79A; border-color: rgba(63,215,154,.5); background: rgba(63,215,154,.12);
+  box-shadow: 0 0 0 0.5px rgba(63,215,154,.2), 0 4px 14px rgba(63,215,154,.15);
+}
 
 /* Global click ripple — a small water-drop pulse from the click point,
    spawned by attachRipple() in app.ts. Any container gets it by being
