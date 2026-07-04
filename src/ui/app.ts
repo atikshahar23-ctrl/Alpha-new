@@ -183,7 +183,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v191 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v192 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="panelsToggleBtn" title="הסתר/הצג פנלים" aria-label="הסתר פנלים">
           <svg class="pt-hide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -1174,6 +1174,15 @@ export function mountApp(root: HTMLElement) {
     // figure and blow the response up into a large centered holographic
     // overlay instead — reverts the moment it's done speaking.
     document.body.classList.toggle('ac-hologram', s === 'speaking' || s === 'thinking');
+    // Keep the mic button's visual "on" state in sync with what the voice
+    // engine actually did — previously this class was only ever set at
+    // click time. When recognition dies on its own (mic permission denied
+    // or revoked, browser blocks it, "service-not-allowed") VoiceEngine
+    // calls onStateChange('') to flip itself off internally, but the
+    // button stayed lit "on" with nothing actually listening — exactly the
+    // "the assistant isn't listening, isn't answering" symptom, with no
+    // visible sign anything had gone wrong.
+    $('micBtn').classList.toggle('on', s !== '' && voice.wakeOn);
   }
 
   const voice = new VoiceEngine(state, (text) => { addMsg(text, 'me'); ask(text); }, setStatus);
