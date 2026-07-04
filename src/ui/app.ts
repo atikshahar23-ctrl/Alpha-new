@@ -184,7 +184,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v194 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v195 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="panelsToggleBtn" title="הסתר/הצג פנלים" aria-label="הסתר פנלים">
           <svg class="pt-hide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -272,6 +272,10 @@ export function mountApp(root: HTMLElement) {
           </section>
           <section class="hud-card" id="hudWeather">
             <div class="hud-card-h"><span>מזג אוויר</span><i></i></div>
+            <div class="hud-card-body">טוען…</div>
+          </section>
+          <section class="hud-card" id="hudOnThisDay">
+            <div class="hud-card-h"><span>קרה היום בעבר</span><i></i></div>
             <div class="hud-card-body">טוען…</div>
           </section>
         </div>
@@ -3467,6 +3471,45 @@ export function mountApp(root: HTMLElement) {
       el.innerHTML = '<div class="hud-empty">מזג אוויר לא זמין כרגע</div>';
     }
   }
+  // "קרה היום בעבר" — real historical events for today's month/day, from
+  // Wikipedia's free/keyless On This Day API (same "free public API, real
+  // data, no key" pattern as the weather/markets/news cards above — nothing
+  // here is invented). Cached per calendar date in localStorage so this
+  // only ever hits the network once a day, not on every HUD refresh tick;
+  // Hebrew Wikipedia first (matches the app), falling back to English if
+  // the Hebrew edition has nothing for the date.
+  async function fetchOnThisDay(mm: string, dd: string): Promise<{ year: string; text: string }[]> {
+    for (const lang of ['he', 'en']) {
+      try {
+        const r = await fetch(`https://${lang}.wikipedia.org/api/rest_v1/feed/onthisday/events/${mm}/${dd}`, { signal: AbortSignal.timeout(8000) });
+        if (!r.ok) continue;
+        const d = await r.json();
+        const events = (d.events || []) as { year: number; text: string }[];
+        if (events.length > 0) return events.slice(0, 3).map((e) => ({ year: String(e.year), text: e.text }));
+      } catch { /* try the next language / fall through to the empty-state below */ }
+    }
+    return [];
+  }
+  async function renderOnThisDayPanel() {
+    const el = document.querySelector('#hudOnThisDay .hud-card-body');
+    if (!el) return;
+    const today = new Date();
+    const dateKey = today.toISOString().slice(0, 10);
+    const CACHE_KEY = 'alpha:onthisday';
+    let cached: { date: string; events: { year: string; text: string }[] } | null = null;
+    try { cached = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null'); } catch {}
+    let events = cached && cached.date === dateKey ? cached.events : null;
+    if (!events) {
+      const mm = String(today.getMonth() + 1).padStart(2, '0');
+      const dd = String(today.getDate()).padStart(2, '0');
+      events = await fetchOnThisDay(mm, dd);
+      try { localStorage.setItem(CACHE_KEY, JSON.stringify({ date: dateKey, events })); } catch {}
+    }
+    el.innerHTML = events.length
+      ? events.map((e) => `<div class="hud-stat hud-otd-row"><b class="cy" style="font-size:12px">${esc(e.year)}</b><span>${esc(e.text).slice(0, 90)}</span></div>`).join('') +
+        '<div class="hud-foot">ויקיפדיה · קרה היום בעבר</div>'
+      : '<div class="hud-empty">לא נמצאו אירועים להיום כרגע</div>';
+  }
 
   // ════════ Fleet & Operations Control Center ════════
   // One window, five panels: map of installs, trips/fleet, HeavyGuard tasks,
@@ -3811,12 +3854,16 @@ export function mountApp(root: HTMLElement) {
     document.getElementById('hudOps')?.addEventListener('click', () => { addMsg(businessBriefing(), 'al'); });
     document.getElementById('hudFleetPanel')?.addEventListener('click', openFleet);
     renderHud(); renderMarkets(); renderNews(); renderFleetPanel();
-    renderAgendaPanel(); renderTasksPanel(); renderTeamPanel(); renderWeatherPanel();
+    renderAgendaPanel(); renderTasksPanel(); renderTeamPanel(); renderWeatherPanel(); renderOnThisDayPanel();
     document.getElementById('hudTeamPanel')?.addEventListener('click', () => { location.href = 'agents.html'; });
     setInterval(() => { renderHud(); renderFleetPanel(); renderAgendaPanel(); renderTasksPanel(); renderTeamPanel(); }, 30000);
     setInterval(renderMarkets, 60000);
     setInterval(renderNews, 300000);
     setInterval(renderWeatherPanel, 900000);
+    // Only actually needs to refresh once a day (its own cache already
+    // guards the network call) — checked hourly just so a tab left open
+    // across midnight picks up the new day's events reasonably promptly.
+    setInterval(renderOnThisDayPanel, 3600000);
     // The owner's 3D Tiggo 7 turntable in the fleet card — lazy dynamic
     // import so three.js never weighs down the main bundle's initial load.
     {
