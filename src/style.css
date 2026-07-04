@@ -3661,6 +3661,11 @@ body.is-mobile-ui.mobile-min .fab-group{
 .app.panels-hidden .dock,
 .app.panels-hidden .fab,
 .app.panels-hidden .fab-menu{display:none!important}
+#declutterBtn.on{color:#E4BC63;border-color:rgba(228,188,99,.55);box-shadow:0 0 10px rgba(228,188,99,.25)}
+.app.declutter #stage,
+.app.declutter .flow-bg,
+.app.declutter #bgfx,
+.app.declutter .char-ambient{display:none!important}
 
 /* ── Mood color themes — recolor the whole UI accent via data-theme ── */
 :root[data-theme="ocean"]{--gold:#3FB4E0;--cyan:#bfe6f7;--fire:#5fc8ec;--purple:#6aa9d6;--white-glow:#eaf7ff;--line:rgba(63,180,224,.12);--glass-border:rgba(63,180,224,.16);--glass-hover:rgba(63,180,224,.08)}

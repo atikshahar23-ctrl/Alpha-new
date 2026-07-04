@@ -32,6 +32,7 @@ const UI_STRINGS: Record<string, Record<UILang, string>> = {
   appTitle: { he: 'אלפא עוזר אישי', en: 'ALPHA ASSISTANT' },
   settings: { he: 'הגדרות', en: 'SETTINGS' },
   comfortMode: { he: 'מצב חסכוני', en: 'COMFORT MODE' },
+  declutter: { he: 'מסך נקי', en: 'CLEAN SCREEN' },
   newChat: { he: 'חדש', en: 'NEW' },
   system: { he: 'מערכת', en: 'SYSTEM' },
   online: { he: '● מחובר', en: '● ONLINE' },
@@ -183,7 +184,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v193 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v194 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="panelsToggleBtn" title="הסתר/הצג פנלים" aria-label="הסתר פנלים">
           <svg class="pt-hide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -196,6 +197,7 @@ export function mountApp(root: HTMLElement) {
         <button class="chip ghost" id="searchBtn" aria-label="Search (Ctrl+K)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
         <button class="chip ghost" id="muteBtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg></button>
         <button class="chip ghost" id="comfortModeBtn" title="מצב חסכוני — למחשבים חלשים/ישנים, מונע קיפאון של הסימולציה התלת-ממדית">🐢 <span data-i18n="comfortMode">מצב חסכוני</span></button>
+        <button class="chip ghost" id="declutterBtn" title="הסרת האנימציה המרכזית וצמצום מהיר של אפקטי הרקע — למסך נקי ומהיר יותר">🌑 <span data-i18n="declutter">מסך נקי</span></button>
         <button class="chip" id="settingsBtn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg> <span data-i18n="settings">הגדרות</span></button>
         <button class="chip ghost" id="newChat"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> <span data-i18n="newChat">חדש</span></button>
       </div>
@@ -1911,6 +1913,28 @@ export function mountApp(root: HTMLElement) {
     const hidden = !appEl.classList.contains('panels-hidden');
     localStorage.setItem('alpha_panels_hidden', hidden ? '1' : '0');
     applyPanelsHidden(hidden);
+    try { navigator.vibrate?.(state.haptics ? 15 : 0); } catch {}
+  };
+
+  // "מסך נקי" — one click removes the central orb/character animation and
+  // the animated backgrounds (flow-lines canvas, bgfx aurora, ambient
+  // particles) entirely, rather than just lowering their quality like the
+  // existing alpha_fast_mode setting does. Hiding the elements stops their
+  // paint/composite cost immediately; the orb's own render loop is also
+  // dropped to its light path via setPerfMode so it isn't still doing full
+  // work off-screen. Turning it back off restores whatever fast-mode
+  // preference the user already had, rather than assuming full quality.
+  const declutterBtn = $('declutterBtn');
+  const applyDeclutter = (on: boolean) => {
+    appEl.classList.toggle('declutter', on);
+    declutterBtn.classList.toggle('on', on);
+    try { orb.setPerfMode(on || localStorage.getItem('alpha_fast_mode') === '1'); } catch {}
+  };
+  applyDeclutter(localStorage.getItem('alpha:declutter') === '1');
+  declutterBtn.onclick = () => {
+    const on = !appEl.classList.contains('declutter');
+    localStorage.setItem('alpha:declutter', on ? '1' : '0');
+    applyDeclutter(on);
     try { navigator.vibrate?.(state.haptics ? 15 : 0); } catch {}
   };
 
