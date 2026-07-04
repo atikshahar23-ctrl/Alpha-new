@@ -3955,6 +3955,10 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     const clock = new THREE.Clock();
     const curSky = new THREE.Color(0x1b2440);
     const tmpColor = new THREE.Color();
+    // Reused every frame (never allocated inside animate()) — feeds the CCTV
+    // frustum check below.
+    const camFrustum = new THREE.Frustum();
+    const camFrustumMat = new THREE.Matrix4();
 
     const onKeyDown = (e) => {
       const k = e.key.toLowerCase();
@@ -4078,12 +4082,24 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         drawSecurityBar();
         secBarTex.needsUpdate = true;
       }
+      // Frustum-cull the capture itself: this re-render is a full second pass
+      // over the whole scene from another camera — genuinely expensive, and
+      // was previously running on a timer with zero regard for whether the
+      // player could even see the screen. Most of a session is spent at a
+      // desk or walking somewhere that isn't facing this wall, so skipping
+      // the capture whenever it's off-screen is close to a free win the rest
+      // of the time. The moment the player turns toward it, the frustum test
+      // passes again and it's refreshed within 3 frames — no visible staleness.
       if (!turboOn && frameNo % 3 === 0) {
-        secScreen.visible = false;
-        renderer.setRenderTarget(secRT);
-        renderer.render(scene, secCam);
-        renderer.setRenderTarget(null);
-        secScreen.visible = true;
+        camFrustumMat.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+        camFrustum.setFromProjectionMatrix(camFrustumMat);
+        if (camFrustum.intersectsObject(secScreen)) {
+          secScreen.visible = false;
+          renderer.setRenderTarget(secRT);
+          renderer.render(scene, secCam);
+          renderer.setRenderTarget(null);
+          secScreen.visible = true;
+        }
       }
       // Center-stage car turns slowly on its podium.
       if (!liveRef.current.godPaused) centerSpin.forEach((w) => { w.rotation.y += dt * 0.28; });
