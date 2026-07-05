@@ -102,6 +102,21 @@ const ROBOT_MODEL_URL = "office-models/legendary_robot.glb";
 const ROBOT_CENTER_OFFSET = [0, 0, 0];
 const ROBOT_CLIP = { idle: "idle", walk: "walk", sit: "idle" };
 
+// דבורה herself was later given a specific real model (uploaded "Sophia"
+// character) instead of the shared casual_male template — same rig-swap
+// pattern as the robot, just for one named agent. The source FBX's one
+// baked "idling" clip turned out to be authored against a doubly-transformed
+// rig hierarchy: fixing that hierarchy for a correct static pose left the
+// animation itself deforming the mesh into an invisible off-screen blob
+// (confirmed by rendering the identical rest pose with the clip disabled —
+// perfectly fine standing) — so this asset ships with no animation at all;
+// she holds one fixed standing pose regardless of idle/walk/sit state,
+// same "no clip" tradeoff already accepted for the robot's missing sit pose,
+// just across all three here instead of one.
+const SOPHIA_MODEL_URL = "office-models/sophia.glb";
+const SOPHIA_CENTER_OFFSET = [0, 0, 0];
+const SOPHIA_CLIP = { idle: "idle", walk: "idle", sit: "idle" };
+
 // User-supplied real furniture pack (40 named pieces in one GLB, a home/
 // office asset set) — only the pieces that make sense in an office are used
 // (lounge, break-room, storage); measuring each named node's own local bbox
@@ -3013,13 +3028,14 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       manager.onProgress = (_url, loaded, total) => {
         if (!cancelled && total > 0) setLoadPct(Math.min(99, Math.round((loaded / total) * 100)));
       };
-      const [deskTemplate, laptopTemplate, charGltf, furnitureTemplate, officeDecorTemplate, robotGltf] = await Promise.all([
+      const [deskTemplate, laptopTemplate, charGltf, furnitureTemplate, officeDecorTemplate, robotGltf, sophiaGltf] = await Promise.all([
         loadGltf(base + DESK_MODEL_URL, manager).catch((e) => { console.error("[office3d] desk model failed to load", e); return null; }),
         loadGltf(base + LAPTOP_MODEL_URL, manager).catch((e) => { console.error("[office3d] laptop model failed to load", e); return null; }),
         loadGltfFull(base + CHAR_MODEL_URL, manager).catch((e) => { console.error("[office3d] character model failed to load", e); return null; }),
         loadGltf(base + FURNITURE_MODEL_URL, manager).catch((e) => { console.error("[office3d] furniture model failed to load", e); return null; }),
         loadGltf(base + OFFICE_DECOR_MODEL_URL, manager).catch((e) => { console.error("[office3d] office decor model failed to load", e); return null; }),
         loadGltfFull(base + ROBOT_MODEL_URL, manager).catch((e) => { console.error("[office3d] robot model failed to load", e); return null; }),
+        loadGltfFull(base + SOPHIA_MODEL_URL, manager).catch((e) => { console.error("[office3d] sophia model failed to load", e); return null; }),
       ]);
       if (cancelled) return;
       setLoadPct(null); // room is live
@@ -3031,6 +3047,9 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       const robotTemplate = robotGltf ? robotGltf.scene : charTemplate;
       const robotClips = robotGltf ? robotGltf.animations : charClips;
       const robotClipMap = robotGltf ? ROBOT_CLIP : CLIP;
+      const sophiaTemplate = sophiaGltf ? sophiaGltf.scene : charTemplate;
+      const sophiaClips = sophiaGltf ? sophiaGltf.animations : charClips;
+      const sophiaClipMap = sophiaGltf ? SOPHIA_CLIP : CLIP;
 
     // "מצב חסכוני" (Comfort Mode) — a main-dashboard toggle for machines that
     // report as full desktops (no touch, wide screen — a 2020 MacBook Pro's
@@ -4911,12 +4930,14 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       const a = byId(c.id);
       if (!a) return;
       // Every agent except דבורה (facilities) wears the uploaded Legendary
-      // Robot rig instead of the human model — owner request, she keeps her
-      // human look. Its own real albedo/emission material carries the look
-      // on its own, so it skips the per-agent colour tint the human model uses.
-      const h = a.id !== "facilities"
-        ? buildHuman(a.color, a.name, false, robotTemplate, robotClips, CHAR_SCALE, ROBOT_CENTER_OFFSET, false, a.title, robotClipMap)
-        : buildHuman(a.color, a.name, false, charTemplate, charClips, CHAR_SCALE, CHAR_CENTER_OFFSET, true, a.title, CLIP);
+      // Robot rig instead of the human model — owner request. דבורה herself
+      // was later given the uploaded "Sophia" character model instead of the
+      // shared casual_male template. Both real-textured models carry their
+      // own look, so they skip the per-agent colour tint the plain human
+      // template uses to differentiate otherwise-identical bodies.
+      const h = a.id === "facilities"
+        ? buildHuman(a.color, a.name, false, sophiaTemplate, sophiaClips, CHAR_SCALE, SOPHIA_CENTER_OFFSET, false, a.title, sophiaClipMap)
+        : buildHuman(a.color, a.name, false, robotTemplate, robotClips, CHAR_SCALE, ROBOT_CENTER_OFFSET, false, a.title, robotClipMap);
       const [wx, wz] = toWorld(c.x, c.y);
       h.group.position.set(wx, 0, wz);
       scene.add(h.group);
