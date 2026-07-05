@@ -1250,6 +1250,122 @@ function buildGlassOffice(color, name, title, screenTex, decorTemplate) {
   return { group: g, obstacles };
 }
 
+// Robot charging capsule — replaces the private glass office for every robot
+// agent (all except דבורה, who keeps her human office). An open-front glass
+// tube on a glowing dock ring: the robot walks in to charge and steps out for
+// its routines, the live data screen moved OUTSIDE onto a side stand, and a
+// charge-meter panel above the opening is redrawn live from the animate loop.
+function buildChargingPod(color, name, title, screenTex) {
+  const g = new THREE.Group();
+  const obstacles = [];
+  const R = 0.95, H = 2.5;
+
+  // Dock base + glowing ring — same staging language as the display podiums.
+  const base = new THREE.Mesh(
+    new THREE.CylinderGeometry(R + 0.25, R + 0.4, 0.12, 28),
+    new THREE.MeshStandardMaterial({ color: 0x161a24, roughness: 0.4, metalness: 0.6 })
+  );
+  base.position.y = 0.06; base.receiveShadow = true; g.add(base);
+  const ringMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85 });
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(R + 0.14, 0.03, 8, 40), ringMat);
+  ring.rotation.x = Math.PI / 2; ring.position.y = 0.13; g.add(ring);
+
+  // Rear glass shell — a 3/4 tube with the opening facing +Z (the walk-in
+  // side, same direction the old office doorway faced), so entering the
+  // capsule is just walking to its center — no door logic needed.
+  const shell = new THREE.Mesh(
+    new THREE.CylinderGeometry(R, R, H, 30, 1, true, Math.PI * 0.25, Math.PI * 1.5),
+    OFFICE_GLASS_MAT
+  );
+  shell.position.y = 0.12 + H / 2; g.add(shell);
+  // Vertical frame ribs on the opening's two edges + a colored top halo.
+  const ribMat = new THREE.MeshStandardMaterial({ color: 0x1d2330, roughness: 0.35, metalness: 0.7 });
+  [-1, 1].forEach((s) => {
+    const rib = new THREE.Mesh(new THREE.BoxGeometry(0.07, H, 0.07), ribMat);
+    rib.position.set(s * R * Math.SQRT1_2, 0.12 + H / 2, R * Math.SQRT1_2);
+    g.add(rib);
+  });
+  const halo = new THREE.Mesh(new THREE.TorusGeometry(R, 0.045, 8, 40), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.6 }));
+  halo.rotation.x = Math.PI / 2; halo.position.y = 0.12 + H; g.add(halo);
+  const cap = new THREE.Mesh(
+    new THREE.CylinderGeometry(R + 0.12, R + 0.02, 0.14, 28),
+    new THREE.MeshStandardMaterial({ color: 0x161a24, roughness: 0.4, metalness: 0.6 })
+  );
+  cap.position.y = 0.12 + H + 0.07; g.add(cap);
+
+  // Inner energy column — additive glow the animate loop pulses while the
+  // robot is actually docked and charging.
+  const glowMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.07, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+  const glow = new THREE.Mesh(new THREE.CylinderGeometry(R - 0.28, R - 0.28, H - 0.35, 20, 1, true), glowMat);
+  glow.position.y = 0.12 + H / 2; g.add(glow);
+
+  // Charge-meter panel above the opening — live canvas, drawn by drawPodMeter.
+  const meterCvs = document.createElement("canvas");
+  meterCvs.width = 256; meterCvs.height = 140;
+  const meterTex = new THREE.CanvasTexture(meterCvs);
+  meterTex.colorSpace = THREE.SRGBColorSpace;
+  const meterBezel = new THREE.Mesh(new THREE.PlaneGeometry(0.92, 0.56), new THREE.MeshBasicMaterial({ color: 0x05060a }));
+  meterBezel.position.set(0, 0.12 + H + 0.48, 0.30); g.add(meterBezel);
+  const meterScreen = new THREE.Mesh(new THREE.PlaneGeometry(0.86, 0.5), new THREE.MeshBasicMaterial({ map: meterTex }));
+  meterScreen.position.set(0, 0.12 + H + 0.48, 0.315); g.add(meterScreen);
+
+  // Frosted name/title plate over the meter, same as the old office door had.
+  const plate = buildNameSprite(name, color, title);
+  plate.scale.multiplyScalar(1.9);
+  plate.position.set(0, 0.12 + H + 1.05, 0.3);
+  g.add(plate);
+
+  // The agent's live data screen — outside the capsule on a slim side stand,
+  // facing the walkway (owner request: the data stays visible without the
+  // robot's own body blocking the old in-office wall screen).
+  if (screenTex) {
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1.5, 10), ribMat);
+    pole.position.set(R + 0.75, 0.75, 0.35); g.add(pole);
+    const bezel = new THREE.Mesh(new THREE.PlaneGeometry(1.32, 0.82), new THREE.MeshBasicMaterial({ color: 0x05060a }));
+    bezel.position.set(R + 0.75, 1.78, 0.35); bezel.rotation.y = -0.22; g.add(bezel);
+    const screen = new THREE.Mesh(new THREE.PlaneGeometry(1.24, 0.74), new THREE.MeshBasicMaterial({ map: screenTex }));
+    screen.position.set(R + 0.75, 1.78, 0.36); screen.rotation.y = -0.22; g.add(screen);
+    obstacles.push({ x: R + 0.75, z: 0.35, r: 0.28 });
+  }
+
+  // Accent light so the dock reads as its own lit pod, like the offices did.
+  const up = new THREE.PointLight(color, 0.35, 5.5);
+  up.position.set(0, 2.0, 0);
+  g.add(up);
+
+  // Collision along the rear shell arc only — the opening stays walkable.
+  for (let a = Math.PI * 0.3; a <= Math.PI * 1.7; a += Math.PI / 7) {
+    obstacles.push({ x: Math.sin(a + Math.PI) * R, z: Math.cos(a + Math.PI) * R, r: 0.22 });
+  }
+
+  return { group: g, obstacles, glowMat, ringMat, meter: { canvas: meterCvs, ctx: meterCvs.getContext("2d"), tex: meterTex } };
+}
+
+// Battery panel for a charging pod: level bar + % + a ⚡ while docked, in the
+// agent's own colour. Redrawn once a second from the animate loop, not per frame.
+function drawPodMeter(pod) {
+  const { ctx, canvas } = pod.meter;
+  const W = canvas.width, Hh = canvas.height;
+  const lvl = Math.round(pod.charge);
+  const barColor = lvl > 50 ? "#3FD79A" : lvl > 20 ? "#E4A63C" : "#F4504A";
+  ctx.clearRect(0, 0, W, Hh);
+  const grd = ctx.createLinearGradient(0, 0, 0, Hh);
+  grd.addColorStop(0, "#0d1424"); grd.addColorStop(1, "#080b14");
+  ctx.fillStyle = grd; ctx.fillRect(0, 0, W, Hh);
+  ctx.fillStyle = pod.hex; ctx.fillRect(0, 0, W, 5);
+  ctx.font = "700 26px system-ui, sans-serif"; ctx.textAlign = "left"; ctx.fillStyle = "#9fb2d4";
+  ctx.fillText("CHARGE", 14, 40);
+  ctx.textAlign = "right"; ctx.fillStyle = barColor; ctx.font = "800 30px system-ui, sans-serif";
+  ctx.fillText(lvl + "%" + (pod.charging ? " ⚡" : ""), W - 14, 42);
+  // battery outline + fill
+  const bx = 14, by = 62, bw = W - 46, bh = 48;
+  ctx.strokeStyle = "#2a3550"; ctx.lineWidth = 3; ctx.strokeRect(bx, by, bw, bh);
+  ctx.fillStyle = "#2a3550"; ctx.fillRect(bx + bw + 4, by + 14, 10, 20); // battery tip
+  ctx.fillStyle = barColor;
+  ctx.fillRect(bx + 4, by + 4, Math.max(4, (bw - 8) * lvl / 100), bh - 8);
+  pod.meter.tex.needsUpdate = true;
+}
+
 // Small canvas screen for an agent's office wall: their title + a couple of
 // real metrics drawn as a mini dashboard, in their own colour.
 function buildOfficeScreenTex(title, color, lines) {
@@ -3389,37 +3505,67 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // Extra non-agent humans (e.g. the receptionist) that still need their
     // animation mixer ticked and to be disposed on unmount.
     const allExtraHumans = [];
+    // Robot charging pods, tracked for the animate loop: charge level rises
+    // while its robot is actually docked (standing inside), drains slowly
+    // while it's out on a routine, and the pod's meter/glow reflect it live.
+    const chargePods = [];
     deskPositions.forEach((d, i) => {
       const owner = byId(chars[i]?.id);
-      const { group, monMat, holo } = buildDesk(owner ? hexToInt(owner.color) : 0x3a6ad8, deskTemplate, laptopTemplate, furnitureTemplate, i);
       const [wx, wz] = toWorld(d.x, d.y);
       // Per-desk facing (perimeter layout): the whole station turns to the
       // desk's own rot so the seated worker looks the right way for the wall
       // their office sits against.
       const rot = typeof d.rot === "number" ? d.rot : DESK_FACE_ROT;
-      group.position.set(wx, 0, wz);
-      group.rotation.y = rot;
-      scene.add(group);
-      deskMons.push(monMat);
-      deskHolos.push(holo);
-      obstacles.push({ x: wx, z: wz, r: 0.85 });
-      // Each agent gets their own private glass office wrapped around their
-      // battlestation — colour-coded, with their name + title over the door,
-      // a potted plant, and a wall screen showing their own live domain data.
-      // The office turns with the desk (doorway on the worker's back side),
-      // and its wall collision circles get the same rotation applied.
-      if (owner) {
-        const scrTex = buildOfficeScreenTex(owner.title, hexToInt(owner.color), agentScreenLines(owner.id, liveRef.current.bizData || {}));
-        const off = buildGlassOffice(hexToInt(owner.color), owner.name, owner.title, scrTex, officeDecorTemplate);
-        const offRot = rot - Math.PI;
-        off.group.position.set(wx, 0, wz);
-        off.group.rotation.y = offRot;
-        scene.add(off.group);
-        const cr = Math.cos(offRot), sr = Math.sin(offRot);
-        off.obstacles.forEach((o) => obstacles.push({ x: wx + o.x * cr + o.z * sr, z: wz - o.x * sr + o.z * cr, r: o.r }));
-        registerRoom(rooms, wx, wz, offRot, { cx: 0, cz: 0, halfW: 1.65, halfD: 1.55, doorX: 0, doorZ: 1.55, doorNX: 0, doorNZ: 1 });
+      if (!owner || owner.id === "facilities") {
+        // דבורה (the one human left on the floor) keeps the full battlestation
+        // + private glass office; the fallback (no owner) keeps a plain desk.
+        const { group, monMat, holo } = buildDesk(owner ? hexToInt(owner.color) : 0x3a6ad8, deskTemplate, laptopTemplate, furnitureTemplate, i);
+        group.position.set(wx, 0, wz);
+        group.rotation.y = rot;
+        scene.add(group);
+        deskMons.push(monMat);
+        deskHolos.push(holo);
+        obstacles.push({ x: wx, z: wz, r: 0.85 });
+        if (owner) {
+          const scrTex = buildOfficeScreenTex(owner.title, hexToInt(owner.color), agentScreenLines(owner.id, liveRef.current.bizData || {}));
+          const off = buildGlassOffice(hexToInt(owner.color), owner.name, owner.title, scrTex, officeDecorTemplate);
+          const offRot = rot - Math.PI;
+          off.group.position.set(wx, 0, wz);
+          off.group.rotation.y = offRot;
+          scene.add(off.group);
+          const cr = Math.cos(offRot), sr = Math.sin(offRot);
+          off.obstacles.forEach((o) => obstacles.push({ x: wx + o.x * cr + o.z * sr, z: wz - o.x * sr + o.z * cr, r: o.r }));
+          registerRoom(rooms, wx, wz, offRot, { cx: 0, cz: 0, halfW: 1.65, halfD: 1.55, doorX: 0, doorZ: 1.55, doorNX: 0, doorNZ: 1 });
+        }
+        return;
       }
+      // Every robot agent: the office + desk are replaced by a charging
+      // capsule on the same ring spot (owner request — they're robots now,
+      // they dock instead of sitting). The capsule's opening faces where the
+      // old office doorway faced, so the agents' existing walk-to-desk
+      // routine now walks them straight into the dock; no obstacle at the
+      // pod center (player collision covers only the rear shell arc), and no
+      // registerRoom — there's nothing to funnel through a door anymore.
+      const scrTex = buildOfficeScreenTex(owner.title, hexToInt(owner.color), agentScreenLines(owner.id, liveRef.current.bizData || {}));
+      const pod = buildChargingPod(hexToInt(owner.color), owner.name, owner.title, scrTex);
+      const podRot = rot - Math.PI;
+      pod.group.position.set(wx, 0, wz);
+      pod.group.rotation.y = podRot;
+      scene.add(pod.group);
+      const cr = Math.cos(podRot), sr = Math.sin(podRot);
+      pod.obstacles.forEach((o) => obstacles.push({ x: wx + o.x * cr + o.z * sr, z: wz - o.x * sr + o.z * cr, r: o.r }));
+      const entry = {
+        id: owner.id, x: wx, z: wz, hex: owner.color,
+        glowMat: pod.glowMat, ringMat: pod.ringMat, meter: pod.meter,
+        charge: 55 + Math.random() * 40, charging: false,
+      };
+      drawPodMeter(entry);
+      chargePods.push(entry);
     });
+    // Which agents live in pods (vs. דבורה's real desk) — the NPC anchor
+    // logic branches on this: pod robots stand at pod-center facing out,
+    // no chair nudge, no sit drop.
+    const podIdSet = new Set(chargePods.map((p) => p.id));
     // Department zoning — the 13 desks are grouped into three clusters
     // (declared in that order in AGENTS, zipped 1:1 onto deskPositions):
     // north row = revenue/growth, west column = finance/ops, south row =
@@ -4464,6 +4610,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     let integrityT = 0;
     let frameNo = 0;
     let secSwitchT = 0;
+    let podT = 0;      // 1Hz charging-pod meter/charge tick
     let scanT = 0;     // diagnostic sweep timer over the showroom car
     let spatialT = 9;  // spatial-bridge refresh timer (starts ripe)
     // Adaptive perf watchdog — CPU core count / RAM (DeviceProfiler's only
@@ -4936,6 +5083,9 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       liveChars.forEach((c) => {
         const h = npc[c.id]; if (!h) return;
         const atDesk = c.status === "work";
+        // Robots dock standing at their charging pod's center — no chair, so
+        // the seat-back nudge and the sit-drop below don't apply to them.
+        const inPod = podIdSet.has(c.id);
         // Per-desk facing (perimeter layout) — the direction this worker's
         // own station points; falls back to the old shared heading.
         const drot = c.home && typeof c.home.rot === "number" ? c.home.rot : DESK_FACE_ROT;
@@ -4944,8 +5094,9 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         // walk target itself back and down onto the visible chair seat
         // (tuned by eye), so there's no separate snap once they arrive.
         const [rawTx, rawTz] = toWorld(c.x, c.y);
-        const finalX = atDesk ? rawTx + Math.sin(drot) * SEAT_BACK : rawTx;
-        const finalZ = atDesk ? rawTz + Math.cos(drot) * SEAT_BACK : rawTz;
+        const seatNudge = atDesk && !inPod;
+        const finalX = seatNudge ? rawTx + Math.sin(drot) * SEAT_BACK : rawTx;
+        const finalZ = seatNudge ? rawTz + Math.cos(drot) * SEAT_BACK : rawTz;
         if (h.destX === undefined || Math.abs(h.destX - finalX) > 0.05 || Math.abs(h.destZ - finalZ) > 0.05) {
           h.destX = finalX; h.destZ = finalZ;
           // Funnel through actual doorways: whenever the walker's current
@@ -5025,7 +5176,10 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           h.wpDone = false;
         }
         const summoned = c.status === "summoned";
-        const targetY = (atDesk || summoned) && distFinal <= 0.03 ? SEAT_DROP : 0;
+        // Pod robots never take the chair-seat Y drop — they have no sit
+        // animation (clipMap falls back to idle), so dropping the standing
+        // rig would just sink it into the floor.
+        const targetY = !inPod && (atDesk || summoned) && distFinal <= 0.03 ? SEAT_DROP : 0;
         h.group.position.y += (targetY - h.group.position.y) * Math.min(1, dt * 6);
         h.isWalking = distFinal > 0.03;
         // Perfect-seat settle: once anchored, glide the last residual onto
@@ -5062,9 +5216,12 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           const meetC = c.status === "meet" ? scene.userData.meetCenter : null;
           if (atDesk || summoned || meetC) {
             // Anchored sitters face the right way: their monitor at a desk,
-            // the owner's desk when summoned, the table in a meeting.
+            // the owner's desk when summoned, the table in a meeting. A
+            // docked robot faces OUT through its pod's opening (drot + π —
+            // the opening faces away from the wall the old desk faced),
+            // watching the floor while it charges instead of the shell.
             const face = summoned ? Math.PI
-              : atDesk ? drot
+              : atDesk ? (inPod ? drot + Math.PI : drot)
               : Math.atan2(meetC.x - h.group.position.x, meetC.z - h.group.position.z);
             let dRot = face - h.group.rotation.y;
             while (dRot > Math.PI) dRot -= Math.PI * 2;
@@ -5185,6 +5342,23 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         mat.emissiveIntensity = occ ? 0.5 + Math.sin(clock.elapsedTime * 2.2) * 0.25 : 0.15;
       });
       deskHolos.forEach((holo, i) => { if (holo) holo.rotation.z = clock.elapsedTime * 0.6 + i; });
+      // Charging pods: once a second, dock detection + charge bookkeeping +
+      // meter redraw (12 small canvases — cheap at 1Hz, wasteful per frame);
+      // the energy-column glow pulses per frame only while actually charging.
+      podT += dt;
+      if (podT >= 1) {
+        podT = 0;
+        chargePods.forEach((pod) => {
+          const h = npc[pod.id];
+          const docked = !!h && Math.hypot(h.group.position.x - pod.x, h.group.position.z - pod.z) < 1.15;
+          pod.charging = docked;
+          pod.charge = clamp(pod.charge + (docked ? 2.2 : -0.25), 5, 100);
+          drawPodMeter(pod);
+        });
+      }
+      chargePods.forEach((pod) => {
+        pod.glowMat.opacity = pod.charging ? 0.16 + Math.abs(Math.sin(clock.elapsedTime * 2.4)) * 0.1 : 0.07;
+      });
 
       // camera: third-person chase cam by default, or first-person from the
       // player's own eyes (toggle button) — own body hidden in first-person
