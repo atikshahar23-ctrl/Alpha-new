@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "build:combined": "tsc && VITE_BASE_PATH=/alpha/ VITE_OUT_DIR=dist-combined vite build",
+    "build:render": "tsc && VITE_BASE_PATH=/ VITE_OUT_DIR=dist-render VITE_COMBINED_DEPLOY=1 vite build",
     "preview": "vite preview"
   },
   "devDependencies": {

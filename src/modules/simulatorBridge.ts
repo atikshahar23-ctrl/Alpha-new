@@ -33,6 +33,12 @@
  *   // → pass ctx into the Gemini/Claude prompt as extra context
  */
 
+// Compile-time flag, injected by vite.config.ts's `define` — true only in
+// the `npm run build:render` output, where a Render Rewrite Rule proxies
+// /api/* to the simulator's Node service same-origin. Always false in the
+// default GitHub Pages build.
+declare const __COMBINED_DEPLOY__: boolean;
+
 /* ── Config helpers ─────────────────────────────────────── */
 
 const K_URL = "alpha:sim:url";
@@ -41,12 +47,12 @@ const K_KEY = "alpha:sim:apiKey";
 export function getSimUrl(): string {
   const stored = (localStorage.getItem(K_URL) || "").replace(/\/$/, "");
   if (stored) return stored;
-  // Combined single-origin deployment: Alpha-new is mounted under /alpha/ on
-  // the same Render service that hosts the simulator's own /api routes (see
-  // README-combined-deploy.md), so no URL needs to be typed into Settings at
-  // all — same-origin is always correct there. Standalone GitHub Pages
-  // deployments never match this path and fall through to "" as before.
-  if (typeof location !== "undefined" && location.pathname.startsWith("/alpha/")) {
+  // build:render deployment: a Render Static Site with a Rewrite Rule
+  // proxying /api/* to the simulator's Node service (see
+  // README-combined-deploy.md) — no URL needs to be typed into Settings at
+  // all, same-origin is always correct there. The default GitHub Pages
+  // build never sets this flag and falls through to "" as before.
+  if (__COMBINED_DEPLOY__ && typeof location !== "undefined") {
     return location.origin;
   }
   return "";
