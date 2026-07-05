@@ -791,6 +791,8 @@ function Home({ index, onNew, onOpen, onResume, showToast, onReset, onBack }) {
   const [filt, setFilt] = useState("all");
   const [expC, setExpC] = useState("all");
   const [expM, setExpM] = useState(() => new Date().toISOString().slice(0, 7));
+  const [page, setPage] = useState(0);
+  const PAGE = 50;
 
   // In-progress drafts (started but not finished) — shown separately at the top
   const drafts = useMemo(() => index.filter((x) => x.status === "running"), [index]);
@@ -807,6 +809,7 @@ function Home({ index, onNew, onOpen, onResume, showToast, onReset, onBack }) {
         .some((v) => (v || "").toString().toLowerCase().includes(t));
     });
   }, [done, q, filt]);
+  const paged = useMemo(() => filtered.slice(0, (page + 1) * PAGE), [filtered, page]);
 
   const stats = useMemo(() => {
     const total = filtered.length;
@@ -960,14 +963,14 @@ function Home({ index, onNew, onOpen, onResume, showToast, onReset, onBack }) {
       {index.length > 0 && <>
         <div className="hg2-search">
           <Search size={16} />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="חיפוש לפי רישוי, שלדה, מיקום או יצרן" />
-          {q && <button onClick={() => setQ("")}><X size={15} /></button>}
+          <input value={q} onChange={(e) => { setQ(e.target.value); setPage(0); }} placeholder="חיפוש לפי רישוי, שלדה, מיקום או יצרן" />
+          {q && <button onClick={() => { setQ(""); setPage(0); }}><X size={15} /></button>}
         </div>
         {activeContractors.length > 1 && (
           <div className="hg2-filters">
-            <button className={"hg2-fchip" + (filt === "all" ? " on" : "")} onClick={() => setFilt("all")}>הכל</button>
+            <button className={"hg2-fchip" + (filt === "all" ? " on" : "")} onClick={() => { setFilt("all"); setPage(0); }}>הכל</button>
             {activeContractors.map((c) => (
-              <button key={c.id} className={"hg2-fchip" + (filt === c.id ? " on" : "")} onClick={() => setFilt(c.id)}>{c.name}</button>
+              <button key={c.id} className={"hg2-fchip" + (filt === c.id ? " on" : "")} onClick={() => { setFilt(c.id); setPage(0); }}>{c.name}</button>
             ))}
           </div>
         )}
@@ -993,7 +996,7 @@ function Home({ index, onNew, onOpen, onResume, showToast, onReset, onBack }) {
       <div className="hg2-list">
         {done.length === 0 && drafts.length === 0 && <div className="hg2-empty"><Truck size={36} /><div>אין עדיין התקנות</div><p>לחץ "הוספת התקנה" כדי לתעד את הראשונה — עם טיימר וצילום רישוי</p></div>}
         {done.length > 0 && filtered.length === 0 && <div className="hg2-empty"><Search size={32} /><div>אין תוצאות</div><p>לא נמצאה התקנה תואמת. נסה מונח חיפוש אחר או נקה את הסינון.</p></div>}
-        {filtered.map((x) => (
+        {paged.map((x) => (
           <button className="hg2-card" key={x.id} onClick={() => onOpen(x.id)}>
             <div className="hg2-card-thumb">{x.thumb ? <img src={x.thumb} alt="" /> : <Truck size={22} />}</div>
             <div className="hg2-card-mid">
@@ -1004,6 +1007,7 @@ function Home({ index, onNew, onOpen, onResume, showToast, onReset, onBack }) {
             <div className="hg2-card-price">{ils(x.price)}</div>
           </button>
         ))}
+        {filtered.length > paged.length && <button className="hg2-more" onClick={() => setPage((p) => p + 1)}>טען עוד · {(filtered.length - paged.length).toLocaleString()} נותרו</button>}
       </div>
       <div className="hg2-footnote">הנתונים נשמרים במכשיר. "ייצוא ל-Drive" מפיק קובץ Excel מסודר לפי קבלן ותאריך — שמור אותו לתיקייה שלך ב-Drive.</div>
       {index.length > 0 && <button className="hg2-reset" onClick={onReset}><Trash2 size={13} /> נקה הכל והתחל נקי</button>}
@@ -3941,6 +3945,8 @@ function Styles() {
 .hg2-footnote{font-size:11.5px;color:var(--s4);text-align:center;margin-top:18px;line-height:1.6;padding:0 10px}
 .hg2-reset{display:flex;align-items:center;justify-content:center;gap:6px;margin:14px auto 0;background:none;border:1px solid var(--s7);color:var(--s4);border-radius:9px;padding:9px 16px;font-family:inherit;font-size:12.5px;cursor:pointer}
 .hg2-reset:active{border-color:var(--red);color:var(--red)}
+.hg2-more{display:block;width:100%;margin-top:4px;background:var(--s9);border:1px solid var(--s7);color:var(--cyan);border-radius:11px;padding:11px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer}
+.hg2-more:active{border-color:var(--cyan)}
 
 .hg2-tabbar{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:520px;display:flex;background:rgba(11,15,20,.93);backdrop-filter:blur(10px);border-top:1px solid var(--s7);z-index:40}
 .hg2-tabbar button{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;color:var(--s4);padding:11px 0 14px;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer}
