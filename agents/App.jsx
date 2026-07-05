@@ -1377,7 +1377,7 @@ function TopBar({ online }) {
         <div className={"ac-top-status " + (online ? "on" : "off")}>
           <Radio size={13} /> {online ? (anthropicKey() ? "Claude חי" : "AI חי") : "מצב הדגמה"}
         </div>
-        <a className="ac-top-home" href="/Alpha-new/" title="חזרה לאלפא"><Home size={16} /></a>
+        <a className="ac-top-home" href={import.meta.env.BASE_URL} title="חזרה לאלפא"><Home size={16} /></a>
       </div>
     </div>
   );

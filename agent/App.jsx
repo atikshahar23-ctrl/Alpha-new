@@ -520,7 +520,7 @@ function Dashboard({ leads, deals, custs, go, onNewDeal, showToast, theme, setTh
         <img src={BULL_LOGO} className="ag-logo" alt="" />
         <div style={{ flex: 1 }}><div className="ag-title">מערכת CRM</div><div className="ag-sub">{BIZ} — ניהול לידים ועסקאות</div></div>
         <div className="ag-links">
-          <a className="ag-soc home" href="/Alpha-new/" title="חזרה לאלפא" aria-label="חזרה לאלפא"><Home size={15} /></a>
+          <a className="ag-soc home" href={import.meta.env.BASE_URL} title="חזרה לאלפא" aria-label="חזרה לאלפא"><Home size={15} /></a>
           <a className="ag-site" href={HG_SITE} target="_blank" rel="noreferrer" title="heavygurad.com">
             <img src={BULL_LOGO} alt="" /><span>האתר</span>
           </a>

@@ -293,15 +293,15 @@ export function mountApp(root: HTMLElement) {
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
             <span>מערכת מסחר · TRADE</span>
           </a>
-          <a class="hud-sc" id="hudAgent" href="/Alpha-new/agent.html">
+          <a class="hud-sc" id="hudAgent" href="${import.meta.env.BASE_URL}agent.html">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M17 11l2 2 4-4"/></svg>
             <span>CRM מכירות · איתי</span>
           </a>
-          <a class="hud-sc" id="hudMarketing" href="/Alpha-new/heavyguard.html#marketing">
+          <a class="hud-sc" id="hudMarketing" href="${import.meta.env.BASE_URL}heavyguard.html#marketing">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 11l19-9-9 19-2-8-8-2z"/></svg>
             <span>שיווק TikTok · Facebook</span>
           </a>
-          <a class="hud-sc hud-sc-agents" id="hudAgents" href="/Alpha-new/agents.html">
+          <a class="hud-sc hud-sc-agents" id="hudAgents" href="${import.meta.env.BASE_URL}agents.html">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3.2"/><circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="5" cy="18" r="2"/><circle cx="19" cy="18" r="2"/><path d="M9.5 10.5 6.5 7.5M14.5 10.5l3-3M9.5 13.5l-3 3M14.5 13.5l3 3"/></svg>
             <span>מרכז הסוכנים · AGENTS</span>
           </a>
@@ -537,13 +537,13 @@ export function mountApp(root: HTMLElement) {
             </svg>
             <span data-i18n="trading">מסחר</span>
           </a>
-          <a class="hg-fab mkt-fab" id="mktBtn" href="/Alpha-new/heavyguard.html#marketing" title="שיווק TikTok · Facebook">
+          <a class="hg-fab mkt-fab" id="mktBtn" href="${import.meta.env.BASE_URL}heavyguard.html#marketing" title="שיווק TikTok · Facebook">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="22" height="22">
               <path d="M3 11l19-9-9 19-2-8-8-2z"/>
             </svg>
             <span>שיווק</span>
           </a>
-          <a class="hg-fab agents-fab" id="agentsBtn" href="/Alpha-new/agents.html" title="מרכז הסוכנים · Agents Command">
+          <a class="hg-fab agents-fab" id="agentsBtn" href="${import.meta.env.BASE_URL}agents.html" title="מרכז הסוכנים · Agents Command">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="22" height="22">
               <circle cx="12" cy="12" r="3.2"/><circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="5" cy="18" r="2"/><circle cx="19" cy="18" r="2"/><path d="M9.5 10.5 6.5 7.5M14.5 10.5l3-3M9.5 13.5l-3 3M14.5 13.5l3 3"/>
             </svg>

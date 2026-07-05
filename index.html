@@ -22,12 +22,12 @@
       }
     })();
   </script>
-  <link rel="manifest" href="/Alpha-new/manifest.json" />
-  <link rel="icon" type="image/png" href="/Alpha-new/favicon-bull.png" />
-  <link rel="apple-touch-icon" href="/Alpha-new/apple-touch-icon.png" />
+  <link rel="manifest" href="%BASE_URL%manifest.json" />
+  <link rel="icon" type="image/png" href="%BASE_URL%favicon-bull.png" />
+  <link rel="apple-touch-icon" href="%BASE_URL%apple-touch-icon.png" />
   <!-- Warm the default orb character + pokeball so they appear instantly. -->
-  <link rel="preload" as="fetch" type="model/gltf-binary" href="/Alpha-new/ar-models/pikachu.glb" crossorigin="anonymous" />
-  <link rel="preload" as="fetch" type="model/gltf-binary" href="/Alpha-new/ar-models/pokeball.glb" crossorigin="anonymous" />
+  <link rel="preload" as="fetch" type="model/gltf-binary" href="%BASE_URL%ar-models/pikachu.glb" crossorigin="anonymous" />
+  <link rel="preload" as="fetch" type="model/gltf-binary" href="%BASE_URL%ar-models/pokeball.glb" crossorigin="anonymous" />
   <!-- Puter.js: free, keyless access to GPT-4o / Claude / Gemini (user-pays model) -->
   <script async src="https://js.puter.com/v2/"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -41,7 +41,7 @@
   <!-- ── Intro: full-screen alien on black → face scan → ACCESS GRANTED →
             dimension entry → only then the panels appear ── -->
   <div id="introOverlay">
-    <video id="introVid" muted playsinline preload="auto" src="/Alpha-new/intro-alien.mp4"></video>
+    <video id="introVid" muted playsinline preload="auto" src="%BASE_URL%intro-alien.mp4"></video>
     <!-- cinematic HUD overlays: corner brackets + drifting scanlines + tint -->
     <div class="intro-hud" aria-hidden="true">
       <span class="hud-c tl"></span><span class="hud-c tr"></span><span class="hud-c bl"></span><span class="hud-c br"></span>
@@ -93,7 +93,7 @@
       <div class="grant-sub">ALPHA · נכנס למערכת</div>
     </div>
     <!-- cinematic vault video → leads into the app -->
-    <video id="vaultVid" class="intro-vaultvid" muted playsinline preload="auto" src="/Alpha-new/intro-vault.mp4"></video>
+    <video id="vaultVid" class="intro-vaultvid" muted playsinline preload="auto" src="%BASE_URL%intro-vault.mp4"></video>
     <button id="introSkip" type="button">דלג ⏭</button>
   </div>
   <style>
@@ -226,7 +226,7 @@
       function openSound(){
         if(sndStarted) return;
         try{
-          if(!openSnd){ openSnd=new Audio('/Alpha-new/intro-sound.mp3'); openSnd.volume=0.95;
+          if(!openSnd){ openSnd=new Audio('%BASE_URL%intro-sound.mp3'); openSnd.volume=0.95;
             openSnd.addEventListener('error', function(){ if(!sndStarted) robotSound(); }); }
           var pr=openSnd.play();
           if(pr && pr.then){ pr.then(function(){ sndStarted=true; }).catch(function(){ /* blocked → retry on next gesture */ }); }

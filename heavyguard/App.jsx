@@ -434,7 +434,7 @@ function Hub({ index, go, onNew }) {
       <header className="hg2-head hg2-head-lux">
         <img src={BULL_LOGO} className="hg2-logo" alt="" />
         <div><div className="hg2-name">HEAVY GUARD</div><div className="hg2-tag">מערכת הניהול של העסק</div></div>
-        <a className="hg2-home" href="/Alpha-new/" title="חזרה לאלפא"><HomeIcon size={18} /></a>
+        <a className="hg2-home" href={import.meta.env.BASE_URL} title="חזרה לאלפא"><HomeIcon size={18} /></a>
       </header>
 
       <div className="hg2-cmd">
