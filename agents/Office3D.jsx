@@ -2010,7 +2010,7 @@ const GOD_META_LABELS = {
   coverage_angle: "זווית כיסוי", battery_status: "מצב סוללה", storage: "אחסון", channels: "ערוצים",
 };
 
-export default function Office3D({ chars, byId, phase, phases, deskPositions, seatPositions, dineTablePositions, meetingSpot, bizData, marketRows, weather, voice, onClose, onOpenChat, onAutoFix, onTalkChange }) {
+export default function Office3D({ chars, byId, phase, phases, deskPositions, deskGroups, seatPositions, dineTablePositions, meetingSpot, bizData, marketRows, weather, voice, onClose, onOpenChat, onAutoFix, onTalkChange }) {
   const mountRef = useRef(null);
   const liveRef = useRef({ chars, phase, bizData, weather, joyVec: { x: 0, y: 0 }, keys: {}, firstPerson: false });
   const [talkTarget, setTalkTarget] = useState(null);
@@ -3084,6 +3084,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // Extra non-agent humans (e.g. the receptionist) that still need their
     // animation mixer ticked and to be disposed on unmount.
     const allExtraHumans = [];
+    // Which desk indices sit on a shared bench pod (3-seat, no private walls)
+    // rather than getting their own individual desk + private glass office.
+    const podOfIdx = new Map();
+    (deskGroups || []).forEach((g) => { if (g.length > 1) g.forEach((idx) => podOfIdx.set(idx, g)); });
+    const deskGroupMeshes = new Array(deskPositions.length).fill(null);
     deskPositions.forEach((d, i) => {
       const owner = byId(chars[i]?.id);
       const { group, monMat, holo } = buildDesk(owner ? hexToInt(owner.color) : 0x3a6ad8, deskTemplate, laptopTemplate, furnitureTemplate, i);
@@ -3095,15 +3100,18 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       group.position.set(wx, 0, wz);
       group.rotation.y = rot;
       scene.add(group);
+      deskGroupMeshes[i] = group; // kept as the fallback if this seat is on a bench pod (hidden once the shared model loads) — see below
       deskMons.push(monMat);
       deskHolos.push(holo);
       obstacles.push({ x: wx, z: wz, r: 0.85 });
-      // Each agent gets their own private glass office wrapped around their
-      // battlestation — colour-coded, with their name + title over the door,
-      // a potted plant, and a wall screen showing their own live domain data.
-      // The office turns with the desk (doorway on the worker's back side),
-      // and its wall collision circles get the same rotation applied.
-      if (owner) {
+      // A lone agent (currently only יהודה, the CEO) gets their own private
+      // glass office wrapped around their battlestation — colour-coded, with
+      // their name + title over the door, a potted plant, and a wall screen
+      // showing their own live domain data. The office turns with the desk
+      // (doorway on the worker's back side), and its wall collision circles
+      // get the same rotation applied. Bench-pod agents skip this entirely —
+      // they sit at a shared open desk, no walls/door needed.
+      if (owner && !podOfIdx.has(i)) {
         const scrTex = buildOfficeScreenTex(owner.title, hexToInt(owner.color), agentScreenLines(owner.id, liveRef.current.bizData || {}));
         const off = buildGlassOffice(hexToInt(owner.color), owner.name, owner.title, scrTex, officeDecorTemplate);
         const offRot = rot - Math.PI;
@@ -3115,22 +3123,50 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         registerRoom(rooms, wx, wz, offRot, { cx: 0, cz: 0, halfW: 1.65, halfD: 1.55, doorX: 0, doorZ: 1.55, doorNX: 0, doorNZ: 1 });
       }
     });
-    // Department zoning — the 13 desks are grouped into three clusters
-    // (declared in that order in AGENTS, zipped 1:1 onto deskPositions):
-    // north row = revenue/growth, west column = finance/ops, south row =
-    // engineering. A floating neon zone label over each cluster's midpoint
-    // makes the grouping actually readable on the floor, not just an
-    // invisible convention in the data.
+    // Shared 3-seat bench pods (the uploaded desk model — desk slab, three
+    // monitor stations with low partitions, three chairs). One real GLB load
+    // per pod, cloned isn't needed since each pod loads its own instance;
+    // the individual per-seat desks built above stay as the fallback and are
+    // only hidden once a pod's model actually finishes loading.
+    (deskGroups || []).filter((g) => g.length > 1).forEach((group) => {
+      const pts = group.map((idx) => toWorld(deskPositions[idx].x, deskPositions[idx].y));
+      const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length;
+      const cz = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+      const rot = deskPositions[group[0]].rot;
+      obstacles.push({ x: cx, z: cz, r: 2.4 });
+      const benchLoader = new GLTFLoader();
+      benchLoader.setMeshoptDecoder(MeshoptDecoder);
+      benchLoader.load(base + "office-models/bench_pod3.glb", (g) => {
+        const real = g.scene;
+        const rb = new THREE.Box3().setFromObject(real);
+        const rc = rb.getCenter(new THREE.Vector3());
+        const wrap = new THREE.Group();
+        real.position.set(-rc.x, -rb.min.y, -rc.z);
+        wrap.add(real);
+        real.traverse((o) => { if (o.isMesh) o.castShadow = o.receiveShadow = true; });
+        wrap.position.set(cx, 0, cz);
+        wrap.rotation.y = rot;
+        scene.add(wrap);
+        group.forEach((idx) => { if (deskGroupMeshes[idx]) deskGroupMeshes[idx].visible = false; });
+      }, undefined, () => { /* model failed to load — each agent's individual desk stays visible */ });
+    });
+    // Department zoning — each shared bench pod gets a floating neon label
+    // over its midpoint (in the same order as the bench-building pass above)
+    // so the grouping is actually readable on the floor, not just an
+    // invisible convention in the data. יהודה's own solo desk already carries
+    // his name/title on his private office door, so no separate label there.
     {
-      const zones = [
-        { range: [0, 5], label: "צמיחה · הכנסות", color: 0xF43F5E },
-        { range: [5, 9], label: "כספים · תפעול", color: 0x14B8A6 },
-        { range: [9, 13], label: "הנדסה · מערכות", color: 0xFF8C42 },
+      const podLabels = [
+        { label: "צמיחה · שיווק · מכירות", color: 0xF43F5E },
+        { label: "שירות · רכש · משרד", color: 0x6FD3F0 },
+        { label: "כספים · תפעול · משפטי", color: 0x14B8A6 },
+        { label: "הנדסה · מערכות", color: 0xFF8C42 },
       ];
-      zones.forEach((z) => {
-        const group = deskPositions.slice(z.range[0], z.range[1]);
-        const cx = group.reduce((s, p) => s + p.x, 0) / group.length;
-        const cy = group.reduce((s, p) => s + p.y, 0) / group.length;
+      (deskGroups || []).filter((g) => g.length > 1).forEach((group, gi) => {
+        const z = podLabels[gi] || { label: "", color: 0xffffff };
+        const pts = group.map((idx) => deskPositions[idx]);
+        const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length;
+        const cy = pts.reduce((s, p) => s + p.y, 0) / pts.length;
         const [wx, wz] = toWorld(cx, cy);
         const sign = buildNeonSign(z.label, z.color, 2.6, 0.5);
         sign.position.set(wx, 4.1, wz);
@@ -3750,6 +3786,27 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       reception.group.rotation.y = Math.PI;
       scene.add(reception.group);
       reception.obstacles.forEach((o) => obstacles.push({ x: RCP.x - o.x, z: RCP.z - o.z, r: o.r }));
+      // The owner's real reception-desk model replaces the procedural
+      // counter once it loads (same fallback pattern as the meeting table
+      // and the car podium — the procedural box stays visible if it fails).
+      {
+        const deskLoader = new GLTFLoader();
+        deskLoader.setMeshoptDecoder(MeshoptDecoder);
+        deskLoader.load(base + "office-models/reception_desk.glb", (g) => {
+          const real = g.scene;
+          const rb = new THREE.Box3().setFromObject(real);
+          const rs = rb.getSize(new THREE.Vector3());
+          const rc = rb.getCenter(new THREE.Vector3());
+          const wrap = new THREE.Group();
+          real.position.set(-rc.x, -rb.min.y, -rc.z);
+          wrap.add(real);
+          real.traverse((o) => { if (o.isMesh) o.castShadow = o.receiveShadow = true; });
+          wrap.position.set(RCP.x, 0, RCP.z);
+          wrap.rotation.y = Math.PI;
+          scene.add(wrap);
+          reception.group.visible = false;
+        }, undefined, () => { /* model failed to load — procedural counter stays visible */ });
+      }
       // Receptionist — her own real model (the owner's "posh female" asset,
       // a proper seated pose baked in — no more the shared male rig tinted
       // pink with procedural sphere hair). Fully static (no mixer/clips
@@ -4677,6 +4734,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       // desk monitor glow follows work status (index i is agent i's home desk,
       // same 1:1 mapping the 2D behaviour scheduler already relies on).
       deskMons.forEach((mat, i) => {
+        if (!mat) return; // bench-pod seats share one model with no per-agent monitor material
         const owner = liveChars[i];
         const occ = !!owner && owner.status === "work" && !owner.walking;
         mat.emissiveIntensity = occ ? 0.5 + Math.sin(clock.elapsedTime * 2.2) * 0.25 : 0.15;
