@@ -41,6 +41,7 @@ body[data-char="moltres"]   { background-color: #160803; }
 body[data-char="zapdos"]    { background-color: #100e02; }
 body[data-char="lugia"]     { background-color: #080d14; }
 body[data-char="ho-oh"]     { background-color: #140c03; }
+body[data-char="alphabrain"]{ background-color: #120d02; }
 body[data-char="charmander"] .char-ambient {
   opacity: .5;
   background:
@@ -1159,12 +1160,42 @@ body::after {
   transform-origin: center bottom;
 }
 
+.state-row {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+}
+
 .state {
   font-family: "Space Grotesk", sans-serif;
   font-size: 13px; letter-spacing: 4px; text-transform: uppercase;
-  color: var(--gold); height: 20px; margin-bottom: 10px;
+  color: var(--gold); height: 20px; margin-bottom: 0;
   opacity: .7;
   text-shadow: 0 0 12px rgba(255, 194, 77, .4);
+}
+
+/* Voice equalizer — reacts to the assistant's actual speaking state (no raw
+   audio data exists for speechSynthesis, so this is a lively synced pulse
+   rather than a literal FFT reading), on in the dock next to the status
+   label and again inside the office simulator's talk HUD. */
+.voice-eq {
+  display: flex; align-items: flex-end; gap: 2.5px; height: 14px;
+  opacity: .35; transition: opacity .25s;
+}
+.voice-eq i {
+  display: block; width: 3px; height: 100%; border-radius: 2px;
+  background: linear-gradient(180deg, var(--gold), rgba(218,165,32,.4));
+  transform: scaleY(.25); transform-origin: bottom;
+}
+.voice-eq.on { opacity: 1; }
+.voice-eq.on i { animation: eqBar .9s ease-in-out infinite; }
+.voice-eq i:nth-child(1) { animation-delay: 0s; }
+.voice-eq i:nth-child(2) { animation-delay: .15s; }
+.voice-eq i:nth-child(3) { animation-delay: .3s; }
+.voice-eq i:nth-child(4) { animation-delay: .45s; }
+@keyframes eqBar {
+  0%, 100% { transform: scaleY(.25); }
+  25% { transform: scaleY(.9); }
+  50% { transform: scaleY(.45); }
+  75% { transform: scaleY(1); }
 }
 
 /* ========== MAC DOCK ========== */
@@ -2164,8 +2195,9 @@ body::after {
   .rp-who { font-size: 8px; letter-spacing: 2.5px; }
 
   .dock { width: 100vw; padding: 0 8px; }
+  .state-row { margin-bottom: 8px; }
   .state {
-    font-size: 9px; letter-spacing: 5px; margin-bottom: 8px;
+    font-size: 9px; letter-spacing: 5px; margin-bottom: 0;
     color: var(--gold); opacity: .8;
     text-shadow: 0 0 14px rgba(218,165,32,.5);
   }
@@ -2333,7 +2365,7 @@ body::after {
   }
 
   .dock { bottom: 0; }
-  .state { display: none; }
+  .state-row { display: none; }
   .mac-dock { padding: 4px 10px 3px; border-radius: 14px; }
   .bar { padding: 2px 4px 8px; }
   .ic { width: 34px; height: 34px; }

@@ -483,7 +483,10 @@ export function mountApp(root: HTMLElement) {
       </aside>
 
       <div class="dock">
-        <div class="state" id="state" data-i18n="standby">המתנה</div>
+        <div class="state-row">
+          <div class="voice-eq" id="voiceEq" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+          <div class="state" id="state" data-i18n="standby">המתנה</div>
+        </div>
         <div class="mac-dock" id="macDock">
           <button class="dock-item" data-q="What's the weather today?">
             <span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg></span>
@@ -1173,6 +1176,7 @@ export function mountApp(root: HTMLElement) {
   function setStatus(s: 'armed' | 'listening' | 'thinking' | 'speaking' | '') {
     const label = { armed: t('armed', state.uiLang), listening: t('listening', state.uiLang), thinking: t('thinking', state.uiLang), speaking: t('speaking', state.uiLang), '': t('standby', state.uiLang) }[s];
     $('state').textContent = label;
+    $('voiceEq').classList.toggle('on', s === 'speaking');
     orb.setEnergy(s === 'speaking' ? 0.95 : s === 'listening' ? 0.5 : s === 'armed' ? 0.2 : 0.06);
     if (s === 'listening') orb.pikaEmote('curious');
     // Hologram reading mode: while the assistant is actively talking, the
@@ -4552,8 +4556,8 @@ export function mountApp(root: HTMLElement) {
     unlockCharacterAudio();
     setCharacterVolume(state.pikaVolume);
     voice.charVoice = CHAR_TTS[id] || null;   // colour the assistant's speech
-    if (id === 'none' || id === 'robot') {
-      // No character / the robot → no Pokémon cries.
+    if (id === 'none' || id === 'robot' || id === 'alphabrain') {
+      // No character / the robot / the Alpha Brain hologram → no Pokémon cries.
       setPikaEnabled(false);
       stopCharacterVoice();
       return;
@@ -4574,12 +4578,12 @@ export function mountApp(root: HTMLElement) {
     }
   }
 
-  // Default centerpiece on every open is the ROBOT (no Pokémon unless the
-  // user picks one). The orb scene itself now boots straight on the robot,
-  // so no swap call is needed here — calling setCharacter again reloaded the
-  // model and caused the pikachu→robot flash the owner asked to remove.
-  document.body.dataset.char = 'robot';
-  setTimeout(() => applyCharacterVoice('robot'), 600);
+  // Default centerpiece on every open is the ALPHA BRAIN hologram (no Pokémon/
+  // robot unless the user picks one). The orb scene itself now boots straight
+  // on it, so no swap call is needed here — calling setCharacter again reloaded
+  // the model and caused the pikachu→robot flash the owner asked to remove.
+  document.body.dataset.char = 'alphabrain';
+  setTimeout(() => applyCharacterVoice('alphabrain'), 600);
 
   // ── Animated main-character swap (red-laser dispel + pokeball summon) ──
   // Plays over the orb on the main screen: a red laser strikes the current

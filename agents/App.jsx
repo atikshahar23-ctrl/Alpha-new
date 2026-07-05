@@ -3847,6 +3847,19 @@ function StyleTag() {
 .off3-mute{flex-shrink:0;width:44px;height:44px;border-radius:50%;border:1px solid color-mix(in srgb,var(--c) 50%,transparent);cursor:pointer;
   display:flex;align-items:center;justify-content:center;background:rgba(6,9,18,.75);color:var(--c);animation:acRise .15s ease both}
 .off3-mute:active{transform:scale(.92)}
+/* Voice equalizer — tinted to whichever agent is talking, lively while they
+   actually speak (no raw audio data exists for speechSynthesis, so this is
+   a synced pulse rather than a literal FFT reading). */
+.off3-eq{display:flex;align-items:flex-end;gap:3px;height:20px;padding:0 4px;opacity:.3;transition:opacity .25s}
+.off3-eq i{display:block;width:4px;height:100%;border-radius:2px;background:var(--c);transform:scaleY(.22);transform-origin:bottom}
+.off3-eq.on{opacity:1}
+.off3-eq.on i{animation:off3EqBar .85s ease-in-out infinite}
+.off3-eq i:nth-child(1){animation-delay:0s}
+.off3-eq i:nth-child(2){animation-delay:.14s}
+.off3-eq i:nth-child(3){animation-delay:.28s}
+.off3-eq i:nth-child(4){animation-delay:.42s}
+.off3-eq i:nth-child(5){animation-delay:.56s}
+@keyframes off3EqBar{0%,100%{transform:scaleY(.22)}25%{transform:scaleY(.95)}50%{transform:scaleY(.4)}75%{transform:scaleY(1)}}
 /* Live conversation subtitle above the talk bar — sticky, stays until the
    user taps the X (used to auto-clear the moment you stepped away). */
 .off3-subtitle{position:absolute;left:50%;bottom:92px;transform:translateX(-50%);z-index:3;max-width:min(560px,86vw);
@@ -3857,12 +3870,16 @@ function StyleTag() {
 .off3-subtitle-x{position:absolute;top:8px;left:8px;background:rgba(255,255,255,.08);border:none;border-radius:50%;
   width:22px;height:22px;display:flex;align-items:center;justify-content:center;color:#aebde0;cursor:pointer}
 .off3-subtitle-x:hover{color:#fff;background:rgba(255,255,255,.16)}
-/* Floating joystick — appears centred on wherever you first touch/click. */
-.off3-joy.floating{position:absolute;z-index:4;width:128px;height:128px;margin:-64px 0 0 -64px;border-radius:50%;
+/* Twin-stick walk controls — fixed left (move) / right (turn/look) sticks,
+   the standard dual-analog game layout, always on screen in each corner. */
+.off3-joy-fixed{position:absolute;z-index:4;bottom:26px;width:112px;height:112px;border-radius:50%;
   background:radial-gradient(circle,rgba(255,255,255,.1),rgba(255,255,255,.03));
-  border:2px solid rgba(228,188,99,.5);box-shadow:0 0 0 6px rgba(0,0,0,.15),0 8px 26px rgba(0,0,0,.4);
-  pointer-events:none;touch-action:none;backdrop-filter:blur(2px)}
-.off3-joy-knob{position:absolute;left:50%;top:50%;width:56px;height:56px;margin:-28px 0 0 -28px;border-radius:50%;
+  border:2px solid rgba(228,188,99,.4);box-shadow:0 0 0 6px rgba(0,0,0,.15),0 8px 26px rgba(0,0,0,.4);
+  touch-action:none;backdrop-filter:blur(2px)}
+.off3-joy-fixed.active{border-color:rgba(228,188,99,.85)}
+.off3-joy-left{left:22px}
+.off3-joy-right{right:22px}
+.off3-joy-knob{position:absolute;left:50%;top:50%;width:52px;height:52px;margin:-26px 0 0 -26px;border-radius:50%;
   background:linear-gradient(135deg,var(--gold),var(--gold2));box-shadow:0 4px 16px rgba(228,188,99,.55),inset 0 2px 4px rgba(255,255,255,.4);pointer-events:none}
 .off3-view-toggle{position:absolute;top:10px;right:10px;z-index:3;width:38px;height:38px;border-radius:50%;
   display:flex;align-items:center;justify-content:center;background:rgba(6,9,18,.72);border:1px solid rgba(110,170,240,.3);
@@ -4012,6 +4029,10 @@ function StyleTag() {
   border-bottom:1px solid rgba(228,188,99,.18)}
 .off3-god-head button{margin-right:auto;background:none;border:none;color:#7e90b8;cursor:pointer;display:flex}
 .off3-god-hint{font-size:10.5px;line-height:1.5;color:#7e90b8;padding:10px 14px 4px}
+.off3-god-standstill{display:flex;align-items:center;justify-content:center;gap:7px;width:calc(100% - 28px);margin:2px 14px 8px;
+  background:rgba(255,92,80,.08);border:1px solid rgba(255,92,80,.35);border-radius:10px;color:#ff9a90;
+  font-family:inherit;font-size:11.5px;font-weight:700;padding:9px 10px;cursor:pointer}
+.off3-god-standstill.on{background:rgba(63,215,154,.16);border-color:#3FD79A;color:#9df7cf;box-shadow:0 0 14px rgba(63,215,154,.25)}
 .off3-god-empty{font-size:11.5px;color:#7e90b8;font-style:italic;padding:8px 14px 14px}
 .off3-god-sel{padding:6px 14px 12px}
 .off3-god-sel-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 0 8px}

@@ -1162,18 +1162,15 @@ function AssistantPanel({ leads, deals, custs, go, onNewDeal, showToast }) {
 
   const push = (entry) => setLog((p) => [...p.slice(-8), entry]);
 
-  // Instant rule-based (quick chips + offline fallback)
-  const runRule = (text) => {
-    const t = (text ?? q).trim(); if (!t) return;
-    push({ from: "me", text: t });
-    const r = assistantReply(t, { leads, deals, custs, go, onNewDeal });
-    push({ from: "bot", text: r.text, action: r.action });
-    setQ("");
-  };
-
-  // Smart AI path (Groq, free) for free-typed questions; falls back to rules
-  const runAsk = async () => {
-    const t = q.trim(); if (!t || busy) return;
+  // Smart AI path (Groq, free) — used for both free-typed questions AND the
+  // quick chips below. The chips used to always hit the rule-based canned
+  // replies even with a Groq key configured, which is exactly why the
+  // assistant read as scripted instead of a real conversation; now a chip
+  // tap is just a pre-filled question sent through the same real AI path,
+  // and only falls back to the instant rule engine when there's no key (or
+  // the API call itself fails).
+  const runAsk = async (textOverride) => {
+    const t = (textOverride ?? q).trim(); if (!t || busy) return;
     push({ from: "me", text: t }); setQ("");
     if (!ai) { const r = assistantReply(t, { leads, deals, custs, go, onNewDeal }); push({ from: "bot", text: r.text, action: r.action }); return; }
     setBusy(true);
@@ -1202,7 +1199,7 @@ function AssistantPanel({ leads, deals, custs, go, onNewDeal, showToast }) {
         ))}
         {busy && <div className="ag-msg bot ag-typing"><span>חושב…</span></div>}
       </div>
-      <div className="ag-assist-quick">{ASSIST_QUICK.map((c) => <button key={c} onClick={() => runRule(c)}>{c}</button>)}</div>
+      <div className="ag-assist-quick">{ASSIST_QUICK.map((c) => <button key={c} disabled={busy} onClick={() => runAsk(c)}>{c}</button>)}</div>
       <div className="ag-assist-in">
         <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && runAsk()} placeholder={ai ? "שאל אותי כל דבר על מכירות…" : "כתוב פקודה…"} dir="rtl" disabled={busy} />
         <button onClick={runAsk} disabled={busy}><Send size={16} /></button>

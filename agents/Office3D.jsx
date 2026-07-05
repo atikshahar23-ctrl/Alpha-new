@@ -12,7 +12,7 @@ import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPa
 import { SSAOPass } from "three/examples/jsm/postprocessing/SSAOPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { SMAAPass } from "three/examples/jsm/postprocessing/SMAAPass.js";
-import { MessageCircle, Eye, User, Mic, VolumeX, Volume2, X, Zap, Settings as SettingsIcon, Trash2, Radio, Pause } from "lucide-react";
+import { MessageCircle, Eye, User, Mic, VolumeX, Volume2, X, Zap, Settings as SettingsIcon, Trash2, Radio, Pause, Lock, Unlock } from "lucide-react";
 import { useDeviceProfile } from "./deviceProfiler.js";
 import RadioController from "./RadioController.jsx";
 
@@ -91,6 +91,16 @@ const CHAR_CENTER_OFFSET = [-0.0 * CHAR_SCALE, 0, 0.019 * CHAR_SCALE];
 // without the animation itself also sliding the mesh forward. Every agent
 // (including the CEO) uses this one animated model so they all walk/sit.
 const CLIP = { idle: "man_idle", walk: "man_walk_in_place", sit: "man_sit_idle" };
+
+// Every agent except דבורה (facilities) — owner request — wears the
+// uploaded "Legendary Robot" rig instead of the human model. Converted with
+// the same raw height (1.8846) and centered/grounded pivot as casual_male.glb,
+// so it drops into buildHuman() with the same CHAR_SCALE/zero offset — only
+// its own clip names differ (no baked sit pose, so CLIP.sit falls back to
+// its idle animation instead of leaving the character frozen mid-transition).
+const ROBOT_MODEL_URL = "office-models/legendary_robot.glb";
+const ROBOT_CENTER_OFFSET = [0, 0, 0];
+const ROBOT_CLIP = { idle: "idle", walk: "walk", sit: "idle" };
 
 // User-supplied real furniture pack (40 named pieces in one GLB, a home/
 // office asset set) — only the pieces that make sense in an office are used
@@ -934,7 +944,7 @@ function buildNameSprite(name, color, role) {
 // (not group.clone(true)) so each instance gets its own independent
 // skeleton/bones — a plain clone shares bone objects across instances and
 // every character would end up mirroring the same pose.
-function buildHuman(color, name, isPlayer, charTemplate, charClips, modelScale = CHAR_SCALE, modelOffset = CHAR_CENTER_OFFSET, tintClothes = true, role = "") {
+function buildHuman(color, name, isPlayer, charTemplate, charClips, modelScale = CHAR_SCALE, modelOffset = CHAR_CENTER_OFFSET, tintClothes = true, role = "", clipMap = CLIP) {
   const g = new THREE.Group();
 
   let mixer = null, actions = {}, current = null;
@@ -964,7 +974,7 @@ function buildHuman(color, name, isPlayer, charTemplate, charClips, modelScale =
       mixer = new THREE.AnimationMixer(model);
       charClips.forEach((clip) => { actions[clip.name] = mixer.clipAction(clip); });
       const findClip = (short) => Object.keys(actions).find((n) => n.endsWith(short));
-      current = findClip(CLIP.idle);
+      current = findClip(clipMap.idle);
       if (current && actions[current]) actions[current].play();
     }
   }
@@ -990,13 +1000,18 @@ function buildHuman(color, name, isPlayer, charTemplate, charClips, modelScale =
   ring.position.y = 0.02;
   g.add(ring);
 
-  return { group: g, ring, mixer, actions, current };
+  return { group: g, ring, mixer, actions, current, clipMap };
 }
 
-// Crossfade to a named clip (matched by suffix, e.g. "man_walk_in_place")
-// only when it's actually changing, so idle/walk/sit don't restart every frame.
-function setClip(h, shortName) {
+// Crossfade to a named clip — CLIP.walk/CLIP.idle/CLIP.sit used to be passed
+// in directly, but every character now carries its own clipMap (the human
+// rig's baked names vs. the Legendary Robot's own "idle"/"walk", which also
+// has no sit pose and falls back to its idle) — callers pass the generic
+// key ("idle"/"walk"/"sit") and it's resolved through h.clipMap here, only
+// crossfading when the resolved clip is actually changing.
+function setClip(h, action) {
   if (!h.mixer) return;
+  const shortName = (h.clipMap || CLIP)[action] || action;
   const name = Object.keys(h.actions).find((n) => n.endsWith(shortName));
   if (!name || name === h.current) return;
   const next = h.actions[name];
@@ -2223,7 +2238,7 @@ const GOD_META_LABELS = {
 
 export default function Office3D({ chars, byId, phase, phases, deskPositions, seatPositions, dineTablePositions, meetingSpot, bizData, marketRows, weather, voice, onClose, onOpenChat, onAutoFix, onTalkChange, agentVoiceDefaults }) {
   const mountRef = useRef(null);
-  const liveRef = useRef({ chars, phase, bizData, weather, joyVec: { x: 0, y: 0 }, keys: {}, firstPerson: false });
+  const liveRef = useRef({ chars, phase, bizData, weather, joyVec: { x: 0, y: 0 }, turnVec: { x: 0, y: 0 }, keys: {}, firstPerson: false });
   const [talkTarget, setTalkTarget] = useState(null);
   // Tell the owning scheduler who (if anyone) you're actively in a live
   // conversation with, so it can hold that agent in place and pause the
@@ -2279,6 +2294,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   // position change snaps to a 0.5m grid for precision placement.
   const [blueprint, setBlueprint] = useState(false);
   const [gizmoMode, setGizmoMode] = useState("translate"); // translate | rotate | scale — on-canvas TransformControls handle
+  // Stand Still — God Mode's movement lock: dragging the on-canvas gizmo (or
+  // just clicking to select an object) shares the same pointer as the walk
+  // joystick, so without this the player would wander off mid-edit. Freezes
+  // both translation and turning until released.
+  const [standStill, setStandStill] = useState(false);
   // State Persistence — named office layouts (saved spawned props only).
   const [showLoadPrompt, setShowLoadPrompt] = useState(false);
   const [layoutNames, setLayoutNames] = useState([]);
@@ -2309,8 +2329,15 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     });
     return () => { cancelled = true; };
   }, [nearTruck]);
-  const [joyKnob, setJoyKnob] = useState({ x: 0, y: 0 });
-  const [joyBase, setJoyBase] = useState(null); // floating joystick anchor (screen px), null = hidden
+  // Twin-stick walk controls — the standard game-controller layout: a fixed
+  // left stick for movement, a fixed right stick for turning/looking, each
+  // anchored to its own corner instead of the old single stick that floated
+  // wherever you first touched (which also meant any click anywhere on the
+  // canvas — including a God Mode gizmo drag — doubled as a walk input).
+  const [leftKnob, setLeftKnob] = useState({ x: 0, y: 0 });
+  const [leftActive, setLeftActive] = useState(false);
+  const [rightKnob, setRightKnob] = useState({ x: 0, y: 0 });
+  const [rightActive, setRightActive] = useState(false);
   const [firstPerson, setFirstPerson] = useState(false);
   const [voiceState, setVoiceState] = useState("idle"); // idle | listening | thinking | speaking
   const [voiceLine, setVoiceLine] = useState(null);      // { who, text } subtitle — sticky, only the user's own X closes it
@@ -2360,7 +2387,8 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     if (voiceLine && voiceLine.text) setPhoneLog((p) => [...p.slice(-11), voiceLine]);
   }, [voiceLine]);
   const recogRef = useRef(null);
-  const joyDrag = useRef(null);
+  const leftDrag = useRef(null);
+  const rightDrag = useRef(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Model-download progress for the branded loading overlay (0..100, then
   // null once everything is in and the room is live).
@@ -2480,7 +2508,8 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   // Push the graphics-quality toggle down into the postprocessing passes
   // once they exist (they're created inside the async mount effect below).
   useEffect(() => { liveRef.current.setGraphicsHigh?.(graphicsHigh); }, [graphicsHigh]);
-  useEffect(() => { liveRef.current.godMode = godOpen; if (!godOpen) { liveRef.current.deselect?.(); setBlueprint(false); } }, [godOpen]);
+  useEffect(() => { liveRef.current.godMode = godOpen; if (!godOpen) { liveRef.current.deselect?.(); setBlueprint(false); setStandStill(false); } }, [godOpen]);
+  useEffect(() => { liveRef.current.standStill = standStill; }, [standStill]);
   useEffect(() => { liveRef.current.setBlueprint?.(blueprint); }, [blueprint]);
   useEffect(() => { liveRef.current.setGizmoMode?.(gizmoMode); }, [gizmoMode]);
   useEffect(() => { liveRef.current.godPaused = godPaused; }, [godPaused]);
@@ -2551,17 +2580,24 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       manager.onProgress = (_url, loaded, total) => {
         if (!cancelled && total > 0) setLoadPct(Math.min(99, Math.round((loaded / total) * 100)));
       };
-      const [deskTemplate, laptopTemplate, charGltf, furnitureTemplate, officeDecorTemplate] = await Promise.all([
+      const [deskTemplate, laptopTemplate, charGltf, furnitureTemplate, officeDecorTemplate, robotGltf] = await Promise.all([
         loadGltf(base + DESK_MODEL_URL, manager).catch((e) => { console.error("[office3d] desk model failed to load", e); return null; }),
         loadGltf(base + LAPTOP_MODEL_URL, manager).catch((e) => { console.error("[office3d] laptop model failed to load", e); return null; }),
         loadGltfFull(base + CHAR_MODEL_URL, manager).catch((e) => { console.error("[office3d] character model failed to load", e); return null; }),
         loadGltf(base + FURNITURE_MODEL_URL, manager).catch((e) => { console.error("[office3d] furniture model failed to load", e); return null; }),
         loadGltf(base + OFFICE_DECOR_MODEL_URL, manager).catch((e) => { console.error("[office3d] office decor model failed to load", e); return null; }),
+        loadGltfFull(base + ROBOT_MODEL_URL, manager).catch((e) => { console.error("[office3d] robot model failed to load", e); return null; }),
       ]);
       if (cancelled) return;
       setLoadPct(null); // room is live
       const charTemplate = charGltf ? charGltf.scene : null;
       const charClips = charGltf ? charGltf.animations : [];
+      // Falls back to the human model/clips if the robot ever fails to load,
+      // so a bad fetch degrades to "everyone looks human" instead of an
+      // empty desk.
+      const robotTemplate = robotGltf ? robotGltf.scene : charTemplate;
+      const robotClips = robotGltf ? robotGltf.animations : charClips;
+      const robotClipMap = robotGltf ? ROBOT_CLIP : CLIP;
 
     // "מצב חסכוני" (Comfort Mode) — a main-dashboard toggle for machines that
     // report as full desktops (no touch, wide screen — a 2020 MacBook Pro's
@@ -3302,10 +3338,14 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     scene.add(tvHg.group);
     drawTradeScreen(tradeCtx, tradeCanvas.width, tradeCanvas.height, liveRef.current.marketRows);
     drawHgScreen(hgCtx, hgCanvas.width, hgCanvas.height, liveRef.current.bizData);
-    // Global Operations Wall — a "big board" suspended over the showroom
+    // Global Operations Wall — a "big board" suspended over the showroom car
     // (not mounted on any wall, so it can't collide with existing wall
     // decor) combining fleet/security/system-health into one dashboard.
     // Double-sided so it reads from either direction as you walk around.
+    // Hangs over the car's own spot (near the owner's office — the car and
+    // its full podium/ring/light rig relocated there so the Alpha hologram
+    // could take the floor's center; the ops board is fleet/vehicle data,
+    // so it travels with the car rather than staying centered over Alpha).
     const opsCanvas = document.createElement("canvas");
     opsCanvas.width = 900; opsCanvas.height = 300;
     const opsCtx = opsCanvas.getContext("2d");
@@ -3314,13 +3354,13 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // Ceiling sits at y=5.4 — the board (and its short hanging chain) stay
     // safely under it, well above head height (~1.8m) and the showroom car.
     const opsBezel = new THREE.Mesh(new THREE.PlaneGeometry(5.7, 1.66), new THREE.MeshBasicMaterial({ color: 0x03040a, side: THREE.DoubleSide }));
-    opsBezel.position.set(-2.5, 4.5, -1.0);
+    opsBezel.position.set(21, 4.5, 18.0);
     scene.add(opsBezel);
     const opsScreen = new THREE.Mesh(new THREE.PlaneGeometry(5.5, 1.5), new THREE.MeshBasicMaterial({ map: opsTex, side: THREE.DoubleSide }));
-    opsScreen.position.set(-2.5, 4.5, -0.98);
+    opsScreen.position.set(21, 4.5, 18.02);
     scene.add(opsScreen);
     const opsChain = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.75, 6), new THREE.MeshStandardMaterial({ color: 0x2a2e38, metalness: 0.7, roughness: 0.4 }));
-    opsChain.position.set(-2.5, 5.0, -1.0);
+    opsChain.position.set(21, 5.0, 18.0);
     scene.add(opsChain);
     drawOpsWall(opsCtx, opsCanvas.width, opsCanvas.height, liveRef.current.bizData, liveRef.current.securityAlerts);
     let screenT = 0;
@@ -3517,12 +3557,29 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     if (ownerOffice.holoLocal) {
       alphaSpots.push({ x: OFFICE_ORIGIN.x + ownerOffice.holoLocal.x, z: OFFICE_ORIGIN.z + ownerOffice.holoLocal.z });
     }
-    // A giant version of the same globe, hovering high over the car podium
-    // at the room's center (owner request: "like a small sun") — visible
-    // from almost anywhere on the floor, not competing for the car's own
-    // floor space since it floats well above it.
+    // A giant version of the same globe, grounded at the room's dead center
+    // (owner request: "like a small sun", standing on the floor where the
+    // car used to be — the car and its podium moved out near the owner's
+    // office so this could take the center without the two competing for
+    // the same floor space).
     {
       const sunColor = 0xE4BC63;
+      const SUN_SPOT = { x: -2.5, z: -1.0 };
+      // A ground stage of its own — same staging language as the car's old
+      // podium+ring, so the giant hologram reads as deliberately grounded
+      // centerpiece rather than a sphere dropped in an empty spot.
+      const sunStage = new THREE.Mesh(
+        new THREE.CylinderGeometry(2.7, 2.9, 0.14, 40),
+        new THREE.MeshStandardMaterial({ color: 0x14161c, roughness: 0.35, metalness: 0.5 })
+      );
+      sunStage.position.set(SUN_SPOT.x, 0.07, SUN_SPOT.z);
+      sunStage.receiveShadow = true;
+      scene.add(sunStage);
+      const sunStageRing = new THREE.Mesh(new THREE.TorusGeometry(2.8, 0.035, 8, 60), new THREE.MeshBasicMaterial({ color: sunColor }));
+      sunStageRing.rotation.x = Math.PI / 2;
+      sunStageRing.position.set(SUN_SPOT.x, 0.15, SUN_SPOT.z);
+      scene.add(sunStageRing);
+      obstacles.push({ x: SUN_SPOT.x, z: SUN_SPOT.z, r: 3.0 });
       const sunGroup = new THREE.Group();
       const core = new THREE.Mesh(
         new THREE.IcosahedronGeometry(1.8, 2),
@@ -3549,13 +3606,17 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       sunGroup.add(glowSprite);
       const sunLight = new THREE.PointLight(sunColor, 1.4, 26);
       sunGroup.add(sunLight);
+      // Nameplate floats just above the ball (under the 5.4m ceiling)
+      // instead of below it now that the ball itself sits near the floor.
       const sunSign = buildNeonSign("אלפא · העוזר הראשי", sunColor, 4.2, 0.8);
-      sunSign.position.y = -3.2;
+      sunSign.position.y = 2.7;
       sunGroup.add(sunSign);
-      sunGroup.position.set(-2.5, 9.5, -1.0);
+      // Grounded: the wireframe's own 2.3 radius rests just above the floor
+      // instead of floating up past the ceiling.
+      sunGroup.position.set(SUN_SPOT.x, 2.4, SUN_SPOT.z);
       scene.add(sunGroup);
       ownerSpinners.push(wire, core);
-      alphaSpots.push({ x: -2.5, z: -1.0 });
+      alphaSpots.push({ x: SUN_SPOT.x, z: SUN_SPOT.z });
     }
     scene.userData.alphaSpots = alphaSpots;
     // The owner's chair in world coordinates — where the player can sit down.
@@ -3742,21 +3803,25 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       editableObjects.push(obj);
     };
     {
+      // Car display moved off the room's dead center and out near the
+      // owner's office (owner request) — the floor's actual center is now
+      // the grounded Alpha hologram instead (built further below).
+      const CAR_SPOT = { x: 21, z: 18 };
       const podium = new THREE.Mesh(
         new THREE.CylinderGeometry(2.7, 2.9, 0.14, 40),
         new THREE.MeshStandardMaterial({ color: 0x14161c, roughness: 0.35, metalness: 0.5 })
       );
-      podium.position.set(-2.5, 0.07, -1.0);
+      podium.position.set(CAR_SPOT.x, 0.07, CAR_SPOT.z);
       podium.receiveShadow = true;
       scene.add(podium);
       const ring = new THREE.Mesh(new THREE.TorusGeometry(2.8, 0.035, 8, 60), new THREE.MeshBasicMaterial({ color: 0xE4BC63 }));
       ring.rotation.x = Math.PI / 2;
-      ring.position.set(-2.5, 0.15, -1.0);
+      ring.position.set(CAR_SPOT.x, 0.15, CAR_SPOT.z);
       scene.add(ring);
       const spot = new THREE.PointLight(0xfff2d8, 0.7, 9);
-      spot.position.set(-2.5, 3.4, -1.0);
+      spot.position.set(CAR_SPOT.x, 3.4, CAR_SPOT.z);
       scene.add(spot);
-      obstacles.push({ x: -2.5, z: -1.0, r: 3.0 });
+      obstacles.push({ x: CAR_SPOT.x, z: CAR_SPOT.z, r: 3.0 });
       // Diagnostic "LIDAR" sweep — a glowing ring that rises over the car
       // every ~18s, like a showroom scanner. One additive torus; the full
       // post-process scan-line pass the spec asks for would cost more per
@@ -3766,7 +3831,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         new THREE.MeshBasicMaterial({ color: 0x2ee6ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false })
       );
       scanRing.rotation.x = Math.PI / 2;
-      scanRing.position.set(-2.5, 0.1, -1.0);
+      scanRing.position.set(CAR_SPOT.x, 0.1, CAR_SPOT.z);
       scanRing.visible = false;
       scene.add(scanRing);
       const carLoader = new GLTFLoader();
@@ -3781,7 +3846,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         car.position.set(-cc.x, -cb.min.y, -cc.z);
         wrap.add(car);
         wrap.scale.setScalar(s);
-        wrap.position.set(-2.5, 0.14, -1.0);
+        wrap.position.set(CAR_SPOT.x, 0.14, CAR_SPOT.z);
         scene.add(wrap);
         // Showroom automotive paint: body panels get a physical clearcoat
         // (the lacquer-over-paint double reflection of real car paint) and
@@ -4353,7 +4418,13 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     chars.forEach((c) => {
       const a = byId(c.id);
       if (!a) return;
-      const h = buildHuman(a.color, a.name, false, charTemplate, charClips, CHAR_SCALE, CHAR_CENTER_OFFSET, true, a.title);
+      // Every agent except דבורה (facilities) wears the uploaded Legendary
+      // Robot rig instead of the human model — owner request, she keeps her
+      // human look. Its own real albedo/emission material carries the look
+      // on its own, so it skips the per-agent colour tint the human model uses.
+      const h = a.id !== "facilities"
+        ? buildHuman(a.color, a.name, false, robotTemplate, robotClips, CHAR_SCALE, ROBOT_CENTER_OFFSET, false, a.title, robotClipMap)
+        : buildHuman(a.color, a.name, false, charTemplate, charClips, CHAR_SCALE, CHAR_CENTER_OFFSET, true, a.title, CLIP);
       const [wx, wz] = toWorld(c.x, c.y);
       h.group.position.set(wx, 0, wz);
       scene.add(h.group);
@@ -4694,6 +4765,10 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       cityGlowMat.opacity += (cityGlowTarget - cityGlowMat.opacity) * Math.min(1, dt * 0.8);
 
       let mx = 0, mz = 0;
+      // Stand Still (God Mode): freezes all walk/turn input dead so a
+      // click-drag on the gizmo or the settings sliders can never also
+      // shove the player across the room.
+      const moveLocked = !!liveRef.current.standStill;
       // First-person keyboard nav used to feel "backwards": every key press
       // (including S/↓) snapped the character — and with it, the locked-on
       // first-person camera — to face the absolute world direction of that
@@ -4708,8 +4783,8 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       // (a second invert request restored ↑/W = forward, ↓/S = backward,
       // both still relative to the direction you're looking).
       // Inside a vehicle, the player is parked at the wheel — no walk input.
-      let kFwd = liveRef.current.inVehicle ? 0 : (keys["w"] || keys["arrowup"] ? 1 : 0) - (keys["s"] || keys["arrowdown"] ? 1 : 0);
-      let kTurn = liveRef.current.inVehicle ? 0 : -((keys["d"] || keys["arrowright"] ? 1 : 0) - (keys["a"] || keys["arrowleft"] ? 1 : 0));
+      let kFwd = (liveRef.current.inVehicle || moveLocked) ? 0 : (keys["w"] || keys["arrowup"] ? 1 : 0) - (keys["s"] || keys["arrowdown"] ? 1 : 0);
+      let kTurn = (liveRef.current.inVehicle || moveLocked) ? 0 : -((keys["d"] || keys["arrowright"] ? 1 : 0) - (keys["a"] || keys["arrowleft"] ? 1 : 0));
       // Mobile has no keyboard, so the touch joystick was the only way to
       // move in first person — but it still used the old absolute-world
       // scheme (push "up" = fixed compass heading, not "forward"), which
@@ -4717,10 +4792,16 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       // that heading, pushing "up" no longer walked you where the locked
       // first-person camera was looking. Route the stick into the same
       // relative forward/turn the keyboard fix above already uses.
-      if (liveRef.current.firstPerson && Math.hypot(jv.x, jv.y) > 0.001) {
+      if (!moveLocked && liveRef.current.firstPerson && Math.hypot(jv.x, jv.y) > 0.001) {
         kFwd = kFwd || -jv.y;
         kTurn = kTurn || -jv.x;
       }
+      // Right stick — dedicated turn/look input, on top of whichever mode
+      // (first person, third person, even sitting) the left stick/keyboard
+      // is already driving movement in.
+      const tv = liveRef.current.turnVec;
+      const rightStickTurn = !moveLocked && Math.hypot(tv.x, tv.y) > 0.001;
+      if (rightStickTurn) kTurn = kTurn || -tv.x;
       const fpTankControls = liveRef.current.firstPerson && (kFwd !== 0 || kTurn !== 0);
       if (fpTankControls) {
         if (kTurn) {
@@ -4731,7 +4812,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           mx = Math.sin(playerH.group.rotation.y) * kFwd;
           mz = Math.cos(playerH.group.rotation.y) * kFwd;
         }
-      } else if (!liveRef.current.inVehicle) {
+      } else if (!liveRef.current.inVehicle && !moveLocked) {
         if (keys["w"] || keys["arrowup"]) mz -= 1;
         if (keys["s"] || keys["arrowdown"]) mz += 1;
         if (keys["a"] || keys["arrowleft"]) mx -= 1;
@@ -4767,7 +4848,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           playerH.group.rotation.y += dSit * Math.min(1, dt * 2);
         }
         playerH.group.rotation.x += ((feetUp ? -0.12 : 0) - playerH.group.rotation.x) * k;
-        setClip(playerH, CLIP.sit);
+        setClip(playerH, "sit");
       } else if (mlen > 0.08) {
         mx /= mlen; mz /= mlen;
         // Tactical Sprint — hold Shift for a burst pace, same collision/turn
@@ -4778,14 +4859,19 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         playerH.group.position.x = clamp(playerH.group.position.x + mx * SPEED * dt, -(FLOOR_W / 2 - 1), FLOOR_W / 2 - 1);
         playerH.group.position.z = clamp(playerH.group.position.z + mz * SPEED * dt, -(FLOOR_D / 2 - 1), FLOOR_D / 2 - 1);
         resolveCollisions(playerH.group.position, obstacles);
-        if (!fpTankControls) {
+        // Right-stick look overrides the usual "auto-face travel direction"
+        // third-person behaviour — with a dedicated look stick, walking one
+        // way while looking another is expected, not a bug to smooth over.
+        if (rightStickTurn) {
+          playerH.group.rotation.y += kTurn * 2.6 * dt;
+        } else if (!fpTankControls) {
           const targetRot = Math.atan2(mx, mz);
           let dRot = targetRot - playerH.group.rotation.y;
           while (dRot > Math.PI) dRot -= Math.PI * 2;
           while (dRot < -Math.PI) dRot += Math.PI * 2;
           playerH.group.rotation.y += dRot * Math.min(1, dt * 10);
         }
-        setClip(playerH, CLIP.walk);
+        setClip(playerH, "walk");
         // Same foot-slide fix the NPCs use: the walk clip plays at the pace
         // that actually matches SPEED, instead of always at 1x — previously
         // the player's stride visibly skated/shuffled against the ground at
@@ -4794,7 +4880,10 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         if (pact) pact.timeScale = Math.max(0.35, Math.min(1.25, SPEED / 2.5));
       } else {
         liveRef.current.sprinting = false;
-        setClip(playerH, fpTankControls && kTurn ? CLIP.walk : CLIP.idle);
+        // Free-look in place: the right stick can turn you while standing
+        // still in third person too, same as it does mid-walk above.
+        if (!fpTankControls && rightStickTurn) playerH.group.rotation.y += kTurn * 2.6 * dt;
+        setClip(playerH, fpTankControls && kTurn ? "walk" : "idle");
       }
       // "You can sit here" prompt — near your own chair (or already seated).
       const nearSeat = Math.hypot(playerH.group.position.x - OWNER_SEAT.x, playerH.group.position.z - OWNER_SEAT.z) < 3.2;
@@ -4947,7 +5036,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           h.group.position.z += (finalZ - h.group.position.z) * Math.min(1, dt * 5);
         }
         if (distFinal > 0.03) {
-          setClip(h, CLIP.walk);
+          setClip(h, "walk");
           // Foot-slide fix: the walk clip plays at the speed the body is
           // actually covering ground — a pivoting or arriving agent steps
           // slowly, a mid-route one at full pace.
@@ -4959,7 +5048,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           // (north), so a scheduled meeting reads as two people actually
           // sitting across the desk from each other.
           const seated = c.status === "work" || c.status === "meet" || c.status === "eat" || summoned;
-          setClip(h, seated ? CLIP.sit : CLIP.idle);
+          setClip(h, seated ? "sit" : "idle");
           const act = h.current && h.actions[h.current];
           // Deep-work loop: desk workers breathe at their own slow cadence —
           // the sit clip's speed waves gently per agent (the model ships one
@@ -5165,9 +5254,9 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // Vehicle position is the showroom car's fixed spot (see the GLTF load
     // above) — a static display piece, so a fixed cockpit offset/look
     // target is enough; no vehicle rotation to account for.
-    const VEHICLE_POS = { x: -2.5, z: -1.0 };
-    const VEHICLE_CAM = new THREE.Vector3(-2.5, 1.35, -0.15);
-    const VEHICLE_LOOK = new THREE.Vector3(-2.5, 1.1, -3.5);
+    const VEHICLE_POS = { x: 21, z: 18 };
+    const VEHICLE_CAM = new THREE.Vector3(21, 1.35, 18.85);
+    const VEHICLE_LOOK = new THREE.Vector3(21, 1.1, 15.5);
     liveRef.current.toggleVehicle = () => {
       if (liveRef.current.inVehicle) { liveRef.current.setInVehicle?.(false); return; }
       if (liveRef.current.nearVehicle) liveRef.current.setInVehicle?.(true);
@@ -5529,41 +5618,49 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Floating joystick — touch/click anywhere on the floor view and the stick
-  // appears right under your finger, so it's always comfortable to reach. A
-  // larger radius gives finer control, and a small dead-zone kills drift/jitter
-  // near the centre for precise stops.
-  const JOY_R = 64;         // px from centre = full speed
+  // Twin-stick walk controls — a fixed left stick for movement, a fixed
+  // right stick for turning/looking, the standard dual-analog layout. Each
+  // stick captures its own pointer the moment it's pressed (setPointerCapture)
+  // so dragging keeps working even once the finger slides off the small
+  // on-screen circle, same as a real controller thumbstick.
+  const JOY_R = 52;         // px from centre = full deflection
   const JOY_DEAD = 0.14;    // fraction of the radius ignored as a dead-zone
-  const onJoyStart = (e) => {
-    const t = e.touches ? e.touches[0] : e;
-    joyDrag.current = { ox: t.clientX, oy: t.clientY };
-    setJoyBase({ x: t.clientX, y: t.clientY });
-    setJoyKnob({ x: 0, y: 0 });
-    liveRef.current.joyVec = { x: 0, y: 0 };
+  const makeStick = (dragRef, setKnob, setActive, vecKey) => {
+    const onDown = (e) => {
+      e.preventDefault();
+      const rect = e.currentTarget.getBoundingClientRect();
+      dragRef.current = { ox: rect.left + rect.width / 2, oy: rect.top + rect.height / 2, id: e.pointerId };
+      setActive(true);
+      try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+    };
+    const onMove = (e) => {
+      const d = dragRef.current;
+      if (!d || e.pointerId !== d.id) return;
+      let dx = e.clientX - d.ox, dy = e.clientY - d.oy;
+      const len = Math.hypot(dx, dy);
+      const clamped = Math.min(len, JOY_R);
+      if (len > 0) { dx = (dx / len) * clamped; dy = (dy / len) * clamped; }
+      setKnob({ x: dx, y: dy });
+      // Dead-zone + smooth remap so small movements are precise and there's
+      // no jitter when you're barely touching the centre.
+      let mag = clamped / JOY_R;
+      if (mag < JOY_DEAD) { liveRef.current[vecKey] = { x: 0, y: 0 }; return; }
+      mag = (mag - JOY_DEAD) / (1 - JOY_DEAD);
+      const ux = len > 0 ? dx / clamped : 0, uy = len > 0 ? dy / clamped : 0;
+      liveRef.current[vecKey] = { x: ux * mag, y: uy * mag };
+    };
+    const onUp = (e) => {
+      const d = dragRef.current;
+      if (d && e.pointerId !== d.id) return;
+      dragRef.current = null;
+      setActive(false);
+      setKnob({ x: 0, y: 0 });
+      liveRef.current[vecKey] = { x: 0, y: 0 };
+    };
+    return { onPointerDown: onDown, onPointerMove: onMove, onPointerUp: onUp, onPointerCancel: onUp };
   };
-  const onJoyMove = (e) => {
-    if (!joyDrag.current) return;
-    const t = e.touches ? e.touches[0] : e;
-    let dx = t.clientX - joyDrag.current.ox, dy = t.clientY - joyDrag.current.oy;
-    const len = Math.hypot(dx, dy);
-    const clamped = Math.min(len, JOY_R);
-    if (len > 0) { dx = (dx / len) * clamped; dy = (dy / len) * clamped; }
-    setJoyKnob({ x: dx, y: dy });
-    // Dead-zone + smooth remap so small movements are precise and there's no
-    // jitter when you're barely touching the centre.
-    let mag = clamped / JOY_R;
-    if (mag < JOY_DEAD) { liveRef.current.joyVec = { x: 0, y: 0 }; return; }
-    mag = (mag - JOY_DEAD) / (1 - JOY_DEAD);
-    const ux = len > 0 ? (dx / clamped) : 0, uy = len > 0 ? (dy / clamped) : 0;
-    liveRef.current.joyVec = { x: ux * mag, y: uy * mag };
-  };
-  const onJoyEnd = () => {
-    joyDrag.current = null;
-    setJoyBase(null);
-    setJoyKnob({ x: 0, y: 0 });
-    liveRef.current.joyVec = { x: 0, y: 0 };
-  };
+  const leftStick = makeStick(leftDrag, setLeftKnob, setLeftActive, "joyVec");
+  const rightStick = makeStick(rightDrag, setRightKnob, setRightActive, "turnVec");
 
   const talkAgent = talkTarget ? byId(talkTarget) : null;
   const ph = phases[phase];
@@ -5635,10 +5732,8 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
 
   return (
     <div className="off3-wrap">
-      <div ref={mountRef} className="off3-canvas"
-        onTouchStart={onJoyStart} onTouchMove={onJoyMove} onTouchEnd={onJoyEnd}
-        onMouseDown={onJoyStart} onMouseMove={onJoyMove} onMouseUp={onJoyEnd} onMouseLeave={onJoyEnd} />
-      <div className="off3-hint">גע במסך וגרור כדי לנווט · חצים / WASD במחשב · Shift לספרינט טקטי · התקרב לעובד ודבר איתו · ליד הכיסא שלך: E לשבת · {ph.emoji} {ph.label}</div>
+      <div ref={mountRef} className="off3-canvas" />
+      <div className="off3-hint">ג'ויסטיק שמאלי לתזוזה · ימני לפנייה/מבט · חצים / WASD במחשב · Shift לספרינט טקטי · התקרב לעובד ודבר איתו · ליד הכיסא שלך: E לשבת · {ph.emoji} {ph.label}</div>
       {autoTurboNotice && (
         <div className="off3-autoturbo">
           🚀 זיהינו שהמכשיר מתקשה — הפעלנו מצב טורבו אוטומטית לתצוגה חלקה. אפשר לכבות בהגדרות.
@@ -5950,6 +6045,9 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
             <button onClick={() => setGodOpen(false)}><X size={14} /></button>
           </div>
           <p className="off3-god-hint">לחץ על הרכב / משאית / פורטל בסביבה כדי לבחור אותו.</p>
+          <button className={"off3-god-standstill" + (standStill ? " on" : "")} onClick={() => setStandStill((v) => !v)}>
+            {standStill ? <><Lock size={14} /> עומד במקום — לחץ לשחרר</> : <><Unlock size={14} /> עמוד במקום כדי לשלוט באובייקט</>}
+          </button>
           {selectedObj ? (
             <div className="off3-god-sel">
               <div className="off3-god-sel-head">
@@ -6082,6 +6180,9 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           <button className={"off3-mic " + voiceState} style={{ "--c": talkAgent.color }} onClick={() => startVoiceTalk(false)} title={voiceLabel}>
             <Mic size={20} />
           </button>
+          <div className={"off3-eq" + (voiceState === "speaking" ? " on" : "")} style={{ "--c": talkAgent.color }} aria-hidden="true">
+            <i /><i /><i /><i /><i />
+          </div>
           {voiceState === "speaking" && (
             <button className="off3-mute" style={{ "--c": talkAgent.color }} onClick={muteSpeaking} title="השתק">
               <VolumeX size={18} />
@@ -6092,11 +6193,16 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           </button>
         </div>
       )}
-      {joyBase && (
-        <div className="off3-joy floating" style={{ left: joyBase.x, top: joyBase.y }}>
-          <div className="off3-joy-knob" style={{ transform: `translate(${joyKnob.x}px, ${joyKnob.y}px)` }} />
-        </div>
-      )}
+      <div className={"off3-joy-fixed off3-joy-left" + (leftActive ? " active" : "")}
+        onPointerDown={leftStick.onPointerDown} onPointerMove={leftStick.onPointerMove}
+        onPointerUp={leftStick.onPointerUp} onPointerCancel={leftStick.onPointerCancel}>
+        <div className="off3-joy-knob" style={{ transform: `translate(${leftKnob.x}px, ${leftKnob.y}px)` }} />
+      </div>
+      <div className={"off3-joy-fixed off3-joy-right" + (rightActive ? " active" : "")}
+        onPointerDown={rightStick.onPointerDown} onPointerMove={rightStick.onPointerMove}
+        onPointerUp={rightStick.onPointerUp} onPointerCancel={rightStick.onPointerCancel}>
+        <div className="off3-joy-knob" style={{ transform: `translate(${rightKnob.x}px, ${rightKnob.y}px)` }} />
+      </div>
       {inSpace && <SpaceOverlay onReturn={() => liveRef.current.exitPortal?.()} load={spacePortalLoad} />}
       {inFlight && <FlightOverlay onReturn={() => setInFlight(false)} />}
     </div>
