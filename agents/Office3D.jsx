@@ -2010,10 +2010,14 @@ const GOD_META_LABELS = {
   coverage_angle: "זווית כיסוי", battery_status: "מצב סוללה", storage: "אחסון", channels: "ערוצים",
 };
 
-export default function Office3D({ chars, byId, phase, phases, deskPositions, seatPositions, dineTablePositions, meetingSpot, bizData, marketRows, weather, voice, onClose, onOpenChat, onAutoFix }) {
+export default function Office3D({ chars, byId, phase, phases, deskPositions, seatPositions, dineTablePositions, meetingSpot, bizData, marketRows, weather, voice, onClose, onOpenChat, onAutoFix, onTalkChange }) {
   const mountRef = useRef(null);
   const liveRef = useRef({ chars, phase, bizData, weather, joyVec: { x: 0, y: 0 }, keys: {}, firstPerson: false });
   const [talkTarget, setTalkTarget] = useState(null);
+  // Tell the owning scheduler who (if anyone) you're actively in a live
+  // conversation with, so it can hold that agent in place and pause the
+  // random meeting sweep instead of having other agents interrupt.
+  useEffect(() => { onTalkChange?.(talkTarget); }, [talkTarget, onTalkChange]);
   // Sitting on your own chair in your office ("שב"/"קום" button, or E key when
   // near the chair). While seated the sit animation plays and any movement
   // input stands you back up.

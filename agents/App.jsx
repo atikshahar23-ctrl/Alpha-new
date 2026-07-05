@@ -2377,12 +2377,16 @@ const OFC_BREAK = { x: 92, y: 56 };
 // Office3D's toWorld(): percent = 50 + world/SCALE (SCALE 0.66).
 const OFC_GYM = [{ x: 30, y: 11 }, { x: 35, y: 15 }];
 const OFC_LOUNGE = [{ x: 65, y: 11 }, { x: 70, y: 15 }];
+// Just outside each truck-showcase podium's collision circle (world radius
+// 3.8, centered at world (-27,-24) and (25,-26) — see the fleet showcase in
+// Office3D) — a spot to actually stop and look at the trucks on a break.
+const OFC_TRUCKS = [{ x: 17, y: 14 }, { x: 80, y: 11 }];
 // Where a summoned agent walks to when you call them "to your office" — the
 // guest chair INSIDE the owner's private glass office in the SE corner of
 // the 3D scene (Office3D places that chair exactly on this spot), so the
 // called agent walks in through the door and sits down facing your desk.
 const OFC_MEETING_SPOT = { x: 90, y: 87 };
-const OFC_STATUS = { work: "💻", meet: "👥", break: "☕", eat: "🍽️", roam: "🚶", gym: "🏋️", lounge: "🛋️" };
+const OFC_STATUS = { work: "💻", meet: "👥", break: "☕", eat: "🍽️", roam: "🚶", gym: "🏋️", lounge: "🛋️", trucks: "🚚" };
 // Strict company-wide break windows (Israel time) — agents only leave their
 // desks for the gym/lounge/coffee/lunch inside these 20-minute windows;
 // every other minute of the day pathfinding locks them to their workstation.
@@ -2404,14 +2408,15 @@ function useBreakSchedule() {
   }, []);
   return onBreak;
 }
-// The four things an agent can do during an open break window — picked at
-// random per agent so the gym/lounge/coffee/lunch spots all see some traffic
-// instead of everyone piling into one.
+// The things an agent can do during an open break window — picked at random
+// per agent so the gym/lounge/coffee/lunch/showroom spots all see some
+// traffic instead of everyone piling into one.
 const BREAK_DESTS = [
   { pool: OFC_GYM, status: "gym" },
   { pool: OFC_LOUNGE, status: "lounge" },
   { pool: [OFC_BREAK], status: "break" },
   { pool: OFC_DINE, status: "eat" },
+  { pool: OFC_TRUCKS, status: "trucks" },
 ];
 const OFC_PHASES = [
   { label: "בוקר", emoji: "🌅", tint: "rgba(255,196,120,.06)", sky: "#22304e" },
@@ -2452,6 +2457,15 @@ function OfficeSim({ onClose, onOpenChat, logActivity, showToast }) {
   // status: scheduled | walking | onTime | late
   const [summons, setSummons] = useState({});
   const meetingRef = useRef(false);
+  // Whoever the owner is actively in a live voice conversation with in the
+  // sim right now (or null) — held in place and excluded from the random
+  // meeting sweep below, so other agents don't wander over and interrupt
+  // mid-conversation; they carry on their own routine instead.
+  const talkTargetRef = useRef(null);
+  const onTalkChange = (id) => {
+    talkTargetRef.current = id;
+    setChars((prev) => prev.map((c) => ({ ...c, held: c.id === id })));
+  };
 
   const moveTo = (c, pt, status, focus = false) => {
     const dist = Math.hypot(pt.x - c.x, pt.y - c.y);
@@ -2553,6 +2567,10 @@ function OfficeSim({ onClose, onOpenChat, logActivity, showToast }) {
   // floor reads as an office actually working, not people drifting around.
   useEffect(() => {
     const iv = setInterval(() => {
+      // Paused while the owner is in a live conversation with someone in the
+      // sim — nobody gets swept into a meeting, and the person they're
+      // actually talking to stays put (see onTalkChange/held above).
+      if (talkTargetRef.current) return;
       if (!meetingRef.current && Math.random() < 0.1) {
         meetingRef.current = true;
         const pick = [...AGENTS].sort(() => Math.random() - 0.5).slice(0, 5).map((a) => a.id);
@@ -2563,7 +2581,7 @@ function OfficeSim({ onClose, onOpenChat, logActivity, showToast }) {
       setChars((prev) => prev.map((c) => {
         if (c.held || c.status === "summoned") return c;
         // energy drift
-        const onZone = c.status === "break" || c.status === "eat" || c.status === "gym" || c.status === "lounge";
+        const onZone = c.status === "break" || c.status === "eat" || c.status === "gym" || c.status === "lounge" || c.status === "trucks";
         let energy = c.energy + (onZone ? 7 : c.status === "work" ? -2 : c.status === "meet" ? -1 : -1);
         energy = Math.max(5, Math.min(100, energy));
         if (c.status === "meet") return { ...c, energy };
@@ -2640,6 +2658,7 @@ function OfficeSim({ onClose, onOpenChat, logActivity, showToast }) {
         marketRows={marketRows}
         weather={weather}
         onAutoFix={(msg) => { showToast?.(msg); logActivity?.("facilities", msg); }}
+        onTalkChange={onTalkChange}
         voice={{
           canListen: canListen(),
           canSpeak: canSpeak(),
