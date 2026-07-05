@@ -1055,6 +1055,20 @@ function roomContaining(rooms, x, z) {
   return null;
 }
 
+// Free real-world blurb about a truck model — same DuckDuckGo Instant
+// Answer API pattern used elsewhere in this app (no key, no cost). Fails
+// honestly (returns "") rather than inventing specs.
+async function fetchTruckBlurb(query) {
+  try {
+    const r = await fetch("https://api.duckduckgo.com/?q=" + encodeURIComponent(query + " truck specifications") + "&format=json&no_html=1&skip_disambig=1", { signal: AbortSignal.timeout(7000) });
+    const d = await r.json();
+    const bits = [];
+    if (d.AbstractText) bits.push(d.AbstractText);
+    (d.RelatedTopics || []).slice(0, 2).forEach((t) => { if (t && t.Text) bits.push(t.Text); });
+    return bits.length ? bits.join(" · ").slice(0, 420) : "";
+  } catch { return ""; }
+}
+
 // A glowing neon sign (canvas text on an unlit plane) — cheap way to give
 // the room a real gaming-den identity without any extra lights.
 function buildNeonSign(text, color, w = 3.4, h = 0.8) {
@@ -2097,6 +2111,21 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, de
   const [inVehicle, setInVehicle] = useState(false);
   useEffect(() => { liveRef.current.inVehicle = inVehicle; }, [inVehicle]);
   useEffect(() => { liveRef.current.setInVehicle = setInVehicle; liveRef.current.setNearVehicle = setNearVehicle; }, []);
+  // Truck info signs: standing near a truck's podium sign fetches (and
+  // caches) a short real-world blurb about that model from the free
+  // DuckDuckGo Instant Answer API — no key, no cost.
+  const [nearTruck, setNearTruck] = useState(null); // { label } | null
+  const [truckInfo, setTruckInfo] = useState({}); // label -> "loading" | text | "unavailable"
+  useEffect(() => { liveRef.current.setNearTruck = setNearTruck; }, []);
+  useEffect(() => {
+    if (!nearTruck || truckInfo[nearTruck.label]) return;
+    let cancelled = false;
+    setTruckInfo((p) => ({ ...p, [nearTruck.label]: "loading" }));
+    fetchTruckBlurb(nearTruck.label).then((text) => {
+      if (!cancelled) setTruckInfo((p) => ({ ...p, [nearTruck.label]: text || "אין מידע זמין כרגע." }));
+    });
+    return () => { cancelled = true; };
+  }, [nearTruck]);
   const [joyKnob, setJoyKnob] = useState({ x: 0, y: 0 });
   const [joyBase, setJoyBase] = useState(null); // floating joystick anchor (screen px), null = hidden
   const [firstPerson, setFirstPerson] = useState(false);
@@ -3622,6 +3651,9 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, de
       { url: "office-models/volvo_fh16.glb", x: -27, z: -24, label: "VOLVO FH16" },
       { url: "office-models/man_tgx.glb", x: 25, z: -26, label: "MAN TGX V8" },
     ];
+    // Exposed for the per-frame proximity check below (approaching a truck's
+    // sign fetches real info about that model).
+    scene.userData.trucks = TRUCKS.map((t) => ({ x: t.x, z: t.z, label: t.label }));
     TRUCKS.forEach((t) => {
       const podium = new THREE.Mesh(
         new THREE.CylinderGeometry(3.5, 3.7, 0.14, 40),
@@ -4509,6 +4541,15 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, de
       if (liveRef.current.nearVehicleShown !== nearVeh) {
         liveRef.current.nearVehicleShown = nearVeh;
         liveRef.current.setNearVehicle?.(nearVeh);
+      }
+
+      // Truck info sign — standing near a truck's nameplate shows real info
+      // about that model (fetched once per truck, cached in React state).
+      const trucks = scene.userData.trucks || [];
+      const nearestTruck = trucks.find((t) => Math.hypot(playerH.group.position.x - t.x, playerH.group.position.z - t.z) < 4.5) || null;
+      if (liveRef.current.nearTruckLabel !== (nearestTruck && nearestTruck.label)) {
+        liveRef.current.nearTruckLabel = nearestTruck && nearestTruck.label;
+        liveRef.current.setNearTruck?.(nearestTruck);
       }
 
       // Space portal — walk into it and get launched into the space overlay.
@@ -5479,6 +5520,12 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, de
         <button className="off3-sit" onClick={() => setInVehicle(true)} title="היכנס לרכב (E)">
           🚗 היכנס לרכב
         </button>
+      )}
+      {nearTruck && (
+        <div className="off3-subtitle">
+          <b style={{ color: "#E4BC63" }}>🚚 {nearTruck.label}</b>
+          <span>{truckInfo[nearTruck.label] === "loading" ? "טוען מידע…" : (truckInfo[nearTruck.label] || "טוען מידע…")}</span>
+        </div>
       )}
       {inVehicle && (
         <div className="off3-vehicle-hud">
