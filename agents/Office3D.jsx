@@ -2186,6 +2186,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   const [voiceList, setVoiceList] = useState([]);
   const [voiceUri, setVoiceUriState] = useState(() => { try { return localStorage.getItem("alpha:agents:voiceUri") || ""; } catch { return ""; } });
   const setVoiceUri = (uri) => { setVoiceUriState(uri); try { localStorage.setItem("alpha:agents:voiceUri", uri); } catch {} };
+  // Reply language — same localStorage key App.jsx's askAI()/speakText() read,
+  // so switching it here changes what every agent (sim, chat modal, briefings,
+  // trading) actually replies in, not just this panel's own labels.
+  const [agentLang, setAgentLangState] = useState(() => { try { return localStorage.getItem("alpha:agents:lang") || "he"; } catch { return "he"; } });
+  const setAgentLang = (lang) => { setAgentLangState(lang); try { localStorage.setItem("alpha:agents:lang", lang); } catch {} };
   useEffect(() => {
     if (typeof window === "undefined" || !window.speechSynthesis) return;
     const refresh = () => setVoiceList(window.speechSynthesis.getVoices());
@@ -5419,6 +5424,13 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
               </select>
             </div>
           )}
+          <div className="off3-settings-row off3-settings-select">
+            <span><MessageCircle size={15} /> שפת תשובות הסוכנים</span>
+            <select value={agentLang} onChange={(e) => setAgentLang(e.target.value)}>
+              <option value="he">עברית</option>
+              <option value="en">English</option>
+            </select>
+          </div>
           <p className="off3-settings-note">בגוף ראשון: ↑/W מתקדם ו-↓/S נסוג לפי הכיוון שאתה מסתכל אליו (בלי לסובב את המצלמה), ←/→ או A/D מסובבים אותך (בכיוון הפוך). כל סוכן מדבר בגובה קול מעט שונה כדי שיהיה קל להבחין ביניהם.</p>
         </div>
       )}

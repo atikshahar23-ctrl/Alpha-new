@@ -569,6 +569,7 @@ function routeAI(user, history, maxTokens) {
 // engines exist; each engine rescues the other on failure so a conversation
 // never dies mid-flow.
 async function askAI(system, history, user, maxTokens = 800) {
+  system += langDirective();
   const route = routeAI(user, history, maxTokens);
   askAI.last = route;
   const runners = { claude: askClaude, groq: askGroq, lmstudio: askLmStudio };
@@ -702,10 +703,27 @@ const canListen = () => !!SpeechRecognitionCtor;
 const canSpeak = () => typeof window !== "undefined" && !!window.speechSynthesis;
 const K_VOICE_ON = "alpha:agents:voiceOn";
 const K_VOICE_URI = "alpha:agents:voiceUri"; // user's chosen system TTS voice, "" = auto-pick Hebrew
+const K_LANG = "alpha:agents:lang"; // "he" (default) | "en" — set from the sim's side settings panel
+
+function getAgentLang() {
+  try { return localStorage.getItem(K_LANG) || "he"; } catch { return "he"; }
+}
+// Appended to every system prompt so a language switch in the settings panel
+// actually changes what every agent (chat, sim, briefings, trading) replies
+// in — not just the UI chrome, which stays Hebrew either way.
+function langDirective() {
+  return getAgentLang() === "en"
+    ? "\n\n[Language] Reply in English only, regardless of what language the incoming message is written in."
+    : "";
+}
 
 function pickHebrewVoice() {
   const voices = window.speechSynthesis.getVoices();
   return voices.find((v) => v.lang?.startsWith("he")) || voices.find((v) => v.lang?.startsWith("iw")) || null;
+}
+function pickEnglishVoice() {
+  const voices = window.speechSynthesis.getVoices();
+  return voices.find((v) => v.lang?.startsWith("en")) || null;
 }
 // The browser only ever exposes 1-2 Hebrew voices, so every agent speaking
 // through the same voice sounded identical. A small deterministic pitch
@@ -726,9 +744,10 @@ function speakText(text, agentId, onEnd) {
   try {
     window.speechSynthesis.cancel(); // don't stack overlapping replies
     const u = new SpeechSynthesisUtterance(text);
-    u.lang = "he-IL";
+    const isEn = getAgentLang() === "en";
+    u.lang = isEn ? "en-US" : "he-IL";
     const chosenUri = load(K_VOICE_URI, "");
-    const voice = (chosenUri && listSpeechVoices().find((v) => v.voiceURI === chosenUri)) || pickHebrewVoice();
+    const voice = (chosenUri && listSpeechVoices().find((v) => v.voiceURI === chosenUri)) || (isEn ? pickEnglishVoice() : pickHebrewVoice());
     if (voice) u.voice = voice;
     u.rate = 1.02;
     u.pitch = agentPitch(agentId);
@@ -1880,7 +1899,7 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
         ? (groqKey() ? "groq" : anthropicKey() ? "claude" : null)
         : null;
       const useTradingTools = !!tradingEngine;
-      const tradingPersona = agent.persona + bizContext() + domainContext(agent.id) + SPECIALIST_PROTOCOL + webCtx;
+      const tradingPersona = agent.persona + bizContext() + domainContext(agent.id) + SPECIALIST_PROTOCOL + webCtx + langDirective();
       const reply = tradingEngine === "groq"
         ? await askGroqWithTools(tradingPersona, aiHist.current, t, AGENT_TOOLS, (name, input) => handleAgentToolCall(name, input))
         : tradingEngine === "claude"
