@@ -1629,29 +1629,49 @@ function buildOwnerOffice(color, deskTemplate, laptopTemplate, furnitureTemplate
   const g = new THREE.Group();
   const obstacles = [];
 
-  // Glass partition — an L in the SE corner. North wall spans the full suite;
+  // Solid partition — an L in the SE corner. North wall spans the full suite;
   // the west wall has a wide doorway gap (local z −0.8..0.9, ~1.7 wide) that
-  // the summoned agent's walk-in route passes through.
-  // depthWrite:false is essential — a transparent pane that still writes depth
-  // occludes everything behind it, which was making the agents (seen through
-  // these partition walls) and the player (spawned inside the glass box) vanish.
-  const glassMat = new THREE.MeshPhysicalMaterial({ color: 0x8fd0ff, transparent: true, opacity: 0.1, roughness: 0.05, metalness: 0.1, side: THREE.DoubleSide, depthWrite: false });
+  // the summoned agent's walk-in route passes through, filled by a real door
+  // leaf below. Owner request: unlike every other office's glass walls, this
+  // one is fully opaque — nobody can see (or shoot a camera) straight through
+  // into the private suite from the floor.
+  const wallMat = new THREE.MeshStandardMaterial({ map: buildWallTexture(4), roughness: 0.8, metalness: 0.08 });
   const neonEdge = new THREE.MeshBasicMaterial({ color });
   const wallH = 2.6;
   // North wall (runs along x, at local z = -4.3), spanning to the room's east wall.
-  const nWall = new THREE.Mesh(new THREE.PlaneGeometry(11.8, wallH), glassMat);
-  nWall.position.set(0.6, wallH / 2, -4.3); g.add(nWall);
+  const nWall = new THREE.Mesh(new THREE.PlaneGeometry(11.8, wallH), wallMat);
+  nWall.position.set(0.6, wallH / 2, -4.3); nWall.receiveShadow = true; g.add(nWall);
   const nTop = new THREE.Mesh(new THREE.BoxGeometry(11.8, 0.06, 0.06), neonEdge); nTop.position.set(0.6, wallH, -4.3); g.add(nTop);
   // West wall (runs along z, at local x = -5.3) in two segments around the door.
   [[-2.55, 3.5], [2.45, 3.1]].forEach(([cz, len]) => {
-    const seg = new THREE.Mesh(new THREE.PlaneGeometry(len, wallH), glassMat);
-    seg.rotation.y = Math.PI / 2; seg.position.set(-5.3, wallH / 2, cz); g.add(seg);
+    const seg = new THREE.Mesh(new THREE.PlaneGeometry(len, wallH), wallMat);
+    seg.rotation.y = Math.PI / 2; seg.position.set(-5.3, wallH / 2, cz); seg.receiveShadow = true; g.add(seg);
     const top = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, len), neonEdge); top.position.set(-5.3, wallH, cz); g.add(top);
   });
-  // collision circles along the walls (doorway gap left open).
+  // A real door leaf filling the west-wall gap — hinged on the south jamb,
+  // permanently propped half-open (no per-frame animation needed) so it
+  // reads as an actual door instead of an empty gap in the wall.
+  {
+    const doorMat = new THREE.MeshStandardMaterial({ color: 0x1c1f28, roughness: 0.4, metalness: 0.3 });
+    const doorW = 1.6, doorT = 0.06;
+    const hinge = new THREE.Group();
+    hinge.position.set(-5.3, 0, 0.9); // south jamb of the doorway gap
+    const leaf = new THREE.Mesh(new THREE.BoxGeometry(doorT, wallH - 0.08, doorW), doorMat);
+    leaf.position.set(0, (wallH - 0.08) / 2, -doorW / 2);
+    leaf.castShadow = leaf.receiveShadow = true;
+    hinge.add(leaf);
+    const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.22, 8), new THREE.MeshStandardMaterial({ color: 0xC9A24B, metalness: 0.8, roughness: 0.25 }));
+    handle.rotation.z = Math.PI / 2; handle.position.set(doorT / 2 + 0.02, (wallH - 0.08) / 2, -doorW + 0.12);
+    hinge.add(handle);
+    hinge.rotation.y = -0.85; // propped open into the room
+    g.add(hinge);
+  }
+  // collision circles along the walls + the door leaf's own swept footprint
+  // (doorway gap otherwise left open).
   for (let t = -5.3; t <= 6.5; t += 0.85) obstacles.push({ x: t, z: -4.3, r: 0.26 });
   for (let t = -4.3; t <= -0.8; t += 0.8) obstacles.push({ x: -5.3, z: t, r: 0.26 });
   for (let t = 0.9; t <= 4.0; t += 0.8) obstacles.push({ x: -5.3, z: t, r: 0.26 });
+  obstacles.push({ x: -4.6, z: 0.4, r: 0.35 });
 
   // Entrance nameplate beside the suite door (west wall, facing the
   // approach) + the company mark on the glass behind the desk, executive-
