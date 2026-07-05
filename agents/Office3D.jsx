@@ -3771,51 +3771,6 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       kitchen.obstacles.forEach((o) => obstacles.push({ x: KTC.x + o.x, z: KTC.z + o.z, r: o.r }));
     }
 
-    // ── Art sculpture (east wall, clear of the CCTV truck/CAF/desk ring) —
-    // the owner's own abstract bronze sculpt, same podium treatment as the
-    // car/trucks: a display base + gold ring + spotlight + slow turn.
-    {
-      const ART = { x: 33, z: -8 };
-      const podium = new THREE.Mesh(
-        new THREE.CylinderGeometry(2.6, 2.8, 0.14, 40),
-        new THREE.MeshStandardMaterial({ color: 0x14161c, roughness: 0.35, metalness: 0.5 })
-      );
-      podium.position.set(ART.x, 0.07, ART.z);
-      podium.receiveShadow = true;
-      scene.add(podium);
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(2.7, 0.03, 8, 60), new THREE.MeshBasicMaterial({ color: 0xE4BC63 }));
-      ring.rotation.x = Math.PI / 2;
-      ring.position.set(ART.x, 0.15, ART.z);
-      scene.add(ring);
-      const spot = new THREE.PointLight(0xfff2d8, 0.65, 8);
-      spot.position.set(ART.x, 3.6, ART.z);
-      scene.add(spot);
-      obstacles.push({ x: ART.x, z: ART.z, r: 2.8 });
-      const sign = buildNeonSign("פסל אבסטרקטי", 0xE4BC63, 2.0, 0.42);
-      sign.position.set(ART.x, 3.2, ART.z - 1.5);
-      scene.add(sign);
-      const artLoader = new GLTFLoader();
-      artLoader.setMeshoptDecoder(MeshoptDecoder);
-      artLoader.load(base + "office-models/art_sculpture.glb", (g) => {
-        const art = g.scene;
-        const ab = new THREE.Box3().setFromObject(art);
-        const as = ab.getSize(new THREE.Vector3());
-        const ac = ab.getCenter(new THREE.Vector3());
-        const s = 2.0 / Math.max(as.x, as.y, as.z); // ~2m display piece
-        const wrap = new THREE.Group();
-        art.position.set(-ac.x, -ab.min.y, -ac.z);
-        wrap.add(art);
-        wrap.scale.setScalar(s);
-        wrap.position.set(ART.x, 0.14, ART.z);
-        art.traverse((o) => { if (o.isMesh) o.castShadow = true; });
-        scene.add(wrap);
-        centerSpin.push(wrap);
-        registerEditable(wrap, "פסל אבסטרקטי", false, {
-          origin_date: "2026", material_spec: "ברונזה — יצוק ממודל תלת-ממד מקורי", security_level: "רגיל", maintenance_status: "תקין",
-        });
-      }, undefined, () => { /* sculpture download failed — podium stays as decor */ });
-    }
-
     // ── Wall decor from the user's LP Officeroom pack ────────────────────
     // Real modeled pieces (wall clock, framed art, a record player for the
     // cafeteria counter) hung on the side walls so the shell doesn't read
