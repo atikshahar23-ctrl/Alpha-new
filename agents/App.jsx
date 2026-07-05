@@ -2503,31 +2503,14 @@ const OFC_X0 = 4, OFC_X1 = 96, OFC_Y0 = 18, OFC_Y1 = 86;
 // ring's east edge stays clear of the fixed east-strip fixtures (meeting
 // nook / dining / owner suite). The zone-sign slices ([0,5]/[5,9]/[9,13])
 // stay contiguous — they now label three arc sectors instead of three rows.
-// Desk groups, by AGENTS index (ceo=0, growth=1, cmo=2, sales=3, cs=4,
-// finance=5, ops=6, procure=7, legal=8, dev=9, auto=10, data=11,
-// facilities=12). יהודה keeps his own private glass office (boss); the other
-// 12 share four 3-seat bench pods (the uploaded shared-desk model comes as a
-// fixed 3-seat unit, so groups of 3 tile it with no empty/leftover seats).
-const OFC_POD_GROUPS = [[0], [1, 2, 3], [4, 7, 12], [5, 6, 8], [9, 10, 11]];
-// One slot per group evenly spaced around the same command-center ring as
-// before; a lone agent (CEO) sits centered on its slot, a 3-agent pod spreads
-// along the tangent (perpendicular to the inward-facing direction) so the
-// three seats sit side by side on the shared bench, all facing the center.
-const OFC_DESKS = (() => {
-  const out = new Array(13);
-  const SEAT_GAP = 1.3 / 0.66; // ~1.3m seat spacing, converted to percent-space (SCALE=0.66)
-  OFC_POD_GROUPS.forEach((group, slot) => {
-    const a = -Math.PI / 2 + (slot / OFC_POD_GROUPS.length) * Math.PI * 2;
-    const cx = 50 + 24 * Math.cos(a), cy = 50 + 24 * Math.sin(a);
-    const rot = Math.atan2(50 - cx, 50 - cy);
-    const tx = -Math.sin(a), ty = Math.cos(a); // tangent direction at this slot
-    group.forEach((agentIdx, j) => {
-      const off = (j - (group.length - 1) / 2) * SEAT_GAP;
-      out[agentIdx] = { x: cx + tx * off, y: cy + ty * off, rot, podSlot: slot, podSize: group.length };
-    });
-  });
-  return out;
-})();
+const OFC_DESKS = Array.from({ length: 13 }, (_, i) => {
+  const a = -Math.PI / 2 + (i / 13) * Math.PI * 2; // start due north, sweep clockwise
+  const x = 50 + 24 * Math.cos(a);
+  const y = 50 + 24 * Math.sin(a);
+  // Face the room's center: toWorld() scales x/y by the same factor, so the
+  // percent-space direction (50-x, 50-y) is the world facing direction too.
+  return { x, y, rot: Math.atan2(50 - x, 50 - y) };
+});
 // Meeting nook, upper right.
 const OFC_SEATS = [{ x: 76, y: 22 }, { x: 84, y: 20 }, { x: 92, y: 22 }, { x: 76, y: 34 }, { x: 84, y: 36 }, { x: 92, y: 34 }];
 // Dining room, mid-right between the conference room and the owner's suite —
@@ -2822,7 +2805,6 @@ function OfficeSim({ onClose, onOpenChat, logActivity, showToast }) {
         phase={phase}
         phases={OFC_PHASES}
         deskPositions={OFC_DESKS}
-        deskGroups={OFC_POD_GROUPS}
         seatPositions={OFC_SEATS}
         dineTablePositions={OFC_DINE_TABLES}
         meetingSpot={OFC_MEETING_SPOT}

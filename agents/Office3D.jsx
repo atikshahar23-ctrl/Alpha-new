@@ -1269,21 +1269,21 @@ function buildOfficeScreenTex(title, color, lines) {
 function agentScreenLines(id, b) {
   const money = (n) => "₪" + Math.round(n || 0).toLocaleString();
   const by = {
-    ceo: [["הכנסה כוללת", money(b.hgRevenue)], ["לקוחות", b.custCount], ["עסקאות פתוחות", b.openDeals], ["נסגרו החודש", b.wonMonth]],
-    sales: [["עסקאות פתוחות", b.openDeals], ["שווי פייפליין", money(b.openVal)], ["נסגרו החודש", b.wonMonth], ["לקוחות", b.custCount]],
-    ops: [["התקנות", b.installs], ["הכנסת HeavyGuard", money(b.hgRevenue)], ["פריטים במחירון", b.pricelist], ["לקוחות", b.custCount]],
-    cmo: [["לקוחות", b.custCount], ["התקנות", b.installs], ["מוצר מוביל", (b.top && b.top[0] && b.top[0].name) || "—"], ["נסגרו החודש", b.wonMonth]],
-    dev: [["מערכות פעילות", 6], ["משימות פתוחות", Math.max(1, b.staleCount)], ["פריסות החודש", 4], ["זמינות", "99.9%"]],
-    auto: [["זרימות פעילות", 9], ["שעות נחסכו", 128], ["שילובים", 5], ["הרצות היום", 240]],
-    data: [["לקוחות", b.custCount], ["התקנות", b.installs], ["שווי פייפליין", money(b.openVal)], ["עסקאות ישנות", b.staleCount]],
-    cs: [["לקוחות", b.custCount], ["עסקאות ישנות", b.staleCount], ["שביעות רצון", "94%"], ["פניות פתוחות", Math.max(0, b.staleCount)]],
-    finance: [["הכנסה כוללת", money(b.hgRevenue)], ["שווי פייפליין", money(b.openVal)], ["נסגרו החודש", b.wonMonth], ["גבייה פתוחה", money(b.openVal * 0.3)]],
-    procure: [["פריטים במחירון", b.pricelist], ["ספקים", 8], ["התקנות", b.installs], ["הזמנות פתוחות", 3]],
-    legal: [["חוזים פעילים", b.custCount], ["טפסים", 12], ["בבדיקה", 2], ["עמידה בתקנות", "✓"]],
-    growth: [["הזדמנויות", 7], ["שווי פייפליין", money(b.openVal)], ["לקוחות", b.custCount], ["יעד חודשי", money(b.hgRevenue * 1.4)]],
-    facilities: [["עמדות במשרד", 13], ["סדר כללי", "✓"], ["שיפוצים פעילים", 1], ["בקשות פתוחות", 2]],
+    ceo: [["Total Revenue", money(b.hgRevenue)], ["Customers", b.custCount], ["Open Deals", b.openDeals], ["Closed This Month", b.wonMonth]],
+    sales: [["Open Deals", b.openDeals], ["Pipeline Value", money(b.openVal)], ["Closed This Month", b.wonMonth], ["Customers", b.custCount]],
+    ops: [["Installs", b.installs], ["HeavyGuard Revenue", money(b.hgRevenue)], ["Pricelist Items", b.pricelist], ["Customers", b.custCount]],
+    cmo: [["Customers", b.custCount], ["Installs", b.installs], ["Top Product", (b.top && b.top[0] && b.top[0].name) || "—"], ["Closed This Month", b.wonMonth]],
+    dev: [["Active Systems", 6], ["Open Tasks", Math.max(1, b.staleCount)], ["Deploys This Month", 4], ["Uptime", "99.9%"]],
+    auto: [["Active Flows", 9], ["Hours Saved", 128], ["Integrations", 5], ["Runs Today", 240]],
+    data: [["Customers", b.custCount], ["Installs", b.installs], ["Pipeline Value", money(b.openVal)], ["Stale Deals", b.staleCount]],
+    cs: [["Customers", b.custCount], ["Stale Deals", b.staleCount], ["Satisfaction", "94%"], ["Open Tickets", Math.max(0, b.staleCount)]],
+    finance: [["Total Revenue", money(b.hgRevenue)], ["Pipeline Value", money(b.openVal)], ["Closed This Month", b.wonMonth], ["Open Collections", money(b.openVal * 0.3)]],
+    procure: [["Pricelist Items", b.pricelist], ["Suppliers", 8], ["Installs", b.installs], ["Open Orders", 3]],
+    legal: [["Active Contracts", b.custCount], ["Forms", 12], ["Under Review", 2], ["Compliance", "✓"]],
+    growth: [["Opportunities", 7], ["Pipeline Value", money(b.openVal)], ["Customers", b.custCount], ["Monthly Target", money(b.hgRevenue * 1.4)]],
+    facilities: [["Desks in Office", 13], ["Overall Order", "✓"], ["Active Renovations", 1], ["Open Requests", 2]],
   };
-  return by[id] || [["לקוחות", b.custCount], ["הכנסה", money(b.hgRevenue)], ["עסקאות", b.openDeals]];
+  return by[id] || [["Customers", b.custCount], ["Revenue", money(b.hgRevenue)], ["Deals", b.openDeals]];
 }
 
 // The shared conference room — a glass box around the meeting table with a
@@ -2221,7 +2221,7 @@ const GOD_META_LABELS = {
   coverage_angle: "זווית כיסוי", battery_status: "מצב סוללה", storage: "אחסון", channels: "ערוצים",
 };
 
-export default function Office3D({ chars, byId, phase, phases, deskPositions, deskGroups, seatPositions, dineTablePositions, meetingSpot, bizData, marketRows, weather, voice, onClose, onOpenChat, onAutoFix, onTalkChange, agentVoiceDefaults }) {
+export default function Office3D({ chars, byId, phase, phases, deskPositions, seatPositions, dineTablePositions, meetingSpot, bizData, marketRows, weather, voice, onClose, onOpenChat, onAutoFix, onTalkChange, agentVoiceDefaults }) {
   const mountRef = useRef(null);
   const liveRef = useRef({ chars, phase, bizData, weather, joyVec: { x: 0, y: 0 }, keys: {}, firstPerson: false });
   const [talkTarget, setTalkTarget] = useState(null);
@@ -3342,11 +3342,6 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, de
     // Extra non-agent humans (e.g. the receptionist) that still need their
     // animation mixer ticked and to be disposed on unmount.
     const allExtraHumans = [];
-    // Which desk indices sit on a shared bench pod (3-seat, no private walls)
-    // rather than getting their own individual desk + private glass office.
-    const podOfIdx = new Map();
-    (deskGroups || []).forEach((g) => { if (g.length > 1) g.forEach((idx) => podOfIdx.set(idx, g)); });
-    const deskGroupMeshes = new Array(deskPositions.length).fill(null);
     deskPositions.forEach((d, i) => {
       const owner = byId(chars[i]?.id);
       const { group, monMat, holo } = buildDesk(owner ? hexToInt(owner.color) : 0x3a6ad8, deskTemplate, laptopTemplate, furnitureTemplate, i);
@@ -3358,18 +3353,15 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, de
       group.position.set(wx, 0, wz);
       group.rotation.y = rot;
       scene.add(group);
-      deskGroupMeshes[i] = group; // kept as the fallback if this seat is on a bench pod (hidden once the shared model loads) — see below
       deskMons.push(monMat);
       deskHolos.push(holo);
       obstacles.push({ x: wx, z: wz, r: 0.85 });
-      // A lone agent (currently only יהודה, the CEO) gets their own private
-      // glass office wrapped around their battlestation — colour-coded, with
-      // their name + title over the door, a potted plant, and a wall screen
-      // showing their own live domain data. The office turns with the desk
-      // (doorway on the worker's back side), and its wall collision circles
-      // get the same rotation applied. Bench-pod agents skip this entirely —
-      // they sit at a shared open desk, no walls/door needed.
-      if (owner && !podOfIdx.has(i)) {
+      // Each agent gets their own private glass office wrapped around their
+      // battlestation — colour-coded, with their name + title over the door,
+      // a potted plant, and a wall screen showing their own live domain data.
+      // The office turns with the desk (doorway on the worker's back side),
+      // and its wall collision circles get the same rotation applied.
+      if (owner) {
         const scrTex = buildOfficeScreenTex(owner.title, hexToInt(owner.color), agentScreenLines(owner.id, liveRef.current.bizData || {}));
         const off = buildGlassOffice(hexToInt(owner.color), owner.name, owner.title, scrTex, officeDecorTemplate);
         const offRot = rot - Math.PI;
@@ -3381,50 +3373,22 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, de
         registerRoom(rooms, wx, wz, offRot, { cx: 0, cz: 0, halfW: 1.65, halfD: 1.55, doorX: 0, doorZ: 1.55, doorNX: 0, doorNZ: 1 });
       }
     });
-    // Shared 3-seat bench pods (the uploaded desk model — desk slab, three
-    // monitor stations with low partitions, three chairs). One real GLB load
-    // per pod, cloned isn't needed since each pod loads its own instance;
-    // the individual per-seat desks built above stay as the fallback and are
-    // only hidden once a pod's model actually finishes loading.
-    (deskGroups || []).filter((g) => g.length > 1).forEach((group) => {
-      const pts = group.map((idx) => toWorld(deskPositions[idx].x, deskPositions[idx].y));
-      const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length;
-      const cz = pts.reduce((s, p) => s + p[1], 0) / pts.length;
-      const rot = deskPositions[group[0]].rot;
-      obstacles.push({ x: cx, z: cz, r: 2.4 });
-      const benchLoader = new GLTFLoader();
-      benchLoader.setMeshoptDecoder(MeshoptDecoder);
-      benchLoader.load(base + "office-models/bench_pod3.glb", (g) => {
-        const real = g.scene;
-        const rb = new THREE.Box3().setFromObject(real);
-        const rc = rb.getCenter(new THREE.Vector3());
-        const wrap = new THREE.Group();
-        real.position.set(-rc.x, -rb.min.y, -rc.z);
-        wrap.add(real);
-        real.traverse((o) => { if (o.isMesh) o.castShadow = o.receiveShadow = true; });
-        wrap.position.set(cx, 0, cz);
-        wrap.rotation.y = rot;
-        scene.add(wrap);
-        group.forEach((idx) => { if (deskGroupMeshes[idx]) deskGroupMeshes[idx].visible = false; });
-      }, undefined, () => { /* model failed to load — each agent's individual desk stays visible */ });
-    });
-    // Department zoning — each shared bench pod gets a floating neon label
-    // over its midpoint (in the same order as the bench-building pass above)
-    // so the grouping is actually readable on the floor, not just an
-    // invisible convention in the data. יהודה's own solo desk already carries
-    // his name/title on his private office door, so no separate label there.
+    // Department zoning — the 13 desks are grouped into three clusters
+    // (declared in that order in AGENTS, zipped 1:1 onto deskPositions):
+    // north row = revenue/growth, west column = finance/ops, south row =
+    // engineering. A floating neon zone label over each cluster's midpoint
+    // makes the grouping actually readable on the floor, not just an
+    // invisible convention in the data.
     {
-      const podLabels = [
-        { label: "צמיחה · שיווק · מכירות", color: 0xF43F5E },
-        { label: "שירות · רכש · משרד", color: 0x6FD3F0 },
-        { label: "כספים · תפעול · משפטי", color: 0x14B8A6 },
-        { label: "הנדסה · מערכות", color: 0xFF8C42 },
+      const zones = [
+        { range: [0, 5], label: "צמיחה · הכנסות", color: 0xF43F5E },
+        { range: [5, 9], label: "כספים · תפעול", color: 0x14B8A6 },
+        { range: [9, 13], label: "הנדסה · מערכות", color: 0xFF8C42 },
       ];
-      (deskGroups || []).filter((g) => g.length > 1).forEach((group, gi) => {
-        const z = podLabels[gi] || { label: "", color: 0xffffff };
-        const pts = group.map((idx) => deskPositions[idx]);
-        const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length;
-        const cy = pts.reduce((s, p) => s + p.y, 0) / pts.length;
+      zones.forEach((z) => {
+        const group = deskPositions.slice(z.range[0], z.range[1]);
+        const cx = group.reduce((s, p) => s + p.x, 0) / group.length;
+        const cy = group.reduce((s, p) => s + p.y, 0) / group.length;
         const [wx, wz] = toWorld(cx, cy);
         const sign = buildNeonSign(z.label, z.color, 2.6, 0.5);
         sign.position.set(wx, 4.1, wz);
