@@ -463,6 +463,46 @@ async function askClaudeWithTools(system, history, user, tools, onToolCall, maxT
   return "ביצעתי כמה פעולות במסחר אבל לא הגעתי לתשובה סופית — תשאל שוב אם צריך פרטים נוספים.";
 }
 const GROQ_MODELS = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "gemma2-9b-it", "llama3-70b-8192"];
+// Real tool-use for ראובן over the FREE Groq engine — same idea as
+// askClaudeWithTools above, just talking the OpenAI-compatible tool-calling
+// wire format Groq's endpoint speaks (tools/tool_calls/role:"tool") instead
+// of Anthropic's (input_schema/tool_use/tool_result). Only the two models
+// Groq documents tool support for are tried here — gemma2/llama3-8192 from
+// the plain-chat wheel above aren't reliable tool callers, so they're
+// deliberately left out rather than silently failing mid-trade.
+const GROQ_TOOL_MODELS = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"];
+async function askGroqWithTools(system, history, user, tools, onToolCall, maxTokens = 800) {
+  const key = groqKey(); if (!key) throw new Error("NO_KEY");
+  const groqTools = tools.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.parameters } }));
+  let messages = [{ role: "system", content: system }, ...history.slice(-6), { role: "user", content: user }];
+  for (const model of GROQ_TOOL_MODELS) {
+    try {
+      let roundMessages = messages;
+      for (let round = 0; round < 4; round++) {
+        const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+          body: JSON.stringify({ model, messages: roundMessages, tools: groqTools, temperature: 0.4, max_tokens: maxTokens }),
+        });
+        if (!res.ok) throw new Error("Groq " + res.status);
+        const d = await res.json();
+        const msg = d.choices?.[0]?.message;
+        if (!msg?.tool_calls?.length) return (msg?.content || "").trim();
+        roundMessages = [...roundMessages, { role: "assistant", content: msg.content || null, tool_calls: msg.tool_calls }];
+        for (const call of msg.tool_calls) {
+          let input = {};
+          try { input = JSON.parse(call.function.arguments || "{}"); } catch {}
+          const result = await onToolCall(call.function.name, input);
+          roundMessages = [...roundMessages, { role: "tool", tool_call_id: call.id, content: String(result) }];
+        }
+      }
+      return "ביצעתי כמה פעולות במסחר אבל לא הגעתי לתשובה סופית — תשאל שוב אם צריך פרטים נוספים.";
+    } catch (e) {
+      if (model === GROQ_TOOL_MODELS[GROQ_TOOL_MODELS.length - 1]) throw e;
+      // try the next tool-capable model in the wheel
+    }
+  }
+}
 async function askGroq(system, history, user, maxTokens = 800) {
   const key = groqKey(); if (!key) throw new Error("NO_KEY");
   const messages = [{ role: "system", content: system }, ...history.slice(-6), { role: "user", content: user }];
@@ -1832,18 +1872,21 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
         if (!webCtx) webCtx = "\n[חיפוש רשת: לא התקבלו תוצאות — אמור לבעלים שהחיפוש החי לא זמין כרגע]";
       }
       // ראובן only: real tool-use against the trading simulator (paper only)
-      // when Claude + the simulator are both actually configured — every
-      // other agent, and ראובן himself with no Claude key, stays on the
-      // plain text path above.
-      const useTradingTools = agent.id === "finance" && !!anthropicKey() && isSimConfigured();
-      const reply = useTradingTools
-        ? await askClaudeWithTools(
-            agent.persona + bizContext() + domainContext(agent.id) + SPECIALIST_PROTOCOL + webCtx,
-            aiHist.current, t, AGENT_TOOLS,
-            (name, input) => handleAgentToolCall(name, input)
-          )
-        : await askAI(agent.persona + bizContext() + domainContext(agent.id) + SPECIALIST_PROTOCOL + webCtx, aiHist.current, t);
-      const via = useTradingTools ? { engine: "claude", reason: "ראובן — כלי מסחר בסימולטור" } : askAI.last; // which brain יהודה routed this to (+ why)
+      // when at least one tool-capable engine + the simulator are actually
+      // configured — every other agent, and ראובן himself with neither key,
+      // stays on the plain text path above. Groq is tried first since it's
+      // free; Claude is the fallback when only that's configured.
+      const tradingEngine = agent.id === "finance" && isSimConfigured()
+        ? (groqKey() ? "groq" : anthropicKey() ? "claude" : null)
+        : null;
+      const useTradingTools = !!tradingEngine;
+      const tradingPersona = agent.persona + bizContext() + domainContext(agent.id) + SPECIALIST_PROTOCOL + webCtx;
+      const reply = tradingEngine === "groq"
+        ? await askGroqWithTools(tradingPersona, aiHist.current, t, AGENT_TOOLS, (name, input) => handleAgentToolCall(name, input))
+        : tradingEngine === "claude"
+        ? await askClaudeWithTools(tradingPersona, aiHist.current, t, AGENT_TOOLS, (name, input) => handleAgentToolCall(name, input))
+        : await askAI(tradingPersona, aiHist.current, t);
+      const via = useTradingTools ? { engine: tradingEngine, reason: `ראובן — כלי מסחר בסימולטור (${tradingEngine === "groq" ? "Groq · חינם" : "Claude"})` } : askAI.last; // which brain יהודה routed this to (+ why)
       aiHist.current = [...aiHist.current.slice(-6), { role: "user", content: t }, { role: "assistant", content: reply }];
       setLog([...withMe, { from: "bot", text: reply || "✔", ts: now(), via }]);
       if (voiceOn) speakText(reply || "");
