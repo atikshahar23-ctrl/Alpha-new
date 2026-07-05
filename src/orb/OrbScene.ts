@@ -23,7 +23,7 @@ export interface OrbHandle {
   setCharacter(name: string): void;
   throwPokeball(onOpen?: () => void, onDone?: () => void): void;
   pokeballHold?(nx: number, ny: number): void;
-  pokeballThrow?(onArrive?: () => void): void;
+  pokeballThrow?(onArrive?: () => void, speed?: number): void;
   pokeballRelease?(): void;
   setCharacterTransform(x: number, y: number, z: number, s: number, px: number, py: number, pz: number): void;
   getCharacterTransform(): CharXform;
@@ -2399,20 +2399,30 @@ function makeThrowPokeball(group: THREE.Group, pikaGroup: THREE.Group, base: str
     });
   }
   function release() { if (ball) ball.visible = false; }
-  function throwIt(onArrive?: () => void) {
+  // `speed` is the real hand-flick speed from the gesture detector (px/frame,
+  // roughly 0-100 in practice — see app.ts's flick threshold of ~26). A fast
+  // flick makes for a quicker, more aggressive throw with a higher arc and
+  // faster spin; a gentle "hold to summon" (no real flick, speed omitted)
+  // keeps the original soft toss feel this always had.
+  function throwIt(onArrive?: () => void, speed = 30) {
     ensure().then((b) => {
       if (!b || !camera) { onArrive && onArrive(); return; }
       b.visible = true;
       const from = b.position.clone();
       const to = new THREE.Vector3(0, 0, 0);
-      const start = performance.now(); const dur = 440;
+      const intensity = Math.max(0, Math.min(1, (speed - 20) / 80)); // 0..1
+      const dur = 520 - intensity * 260;          // 520ms gentle → 260ms hard flick
+      const arcHeight = 0.35 + intensity * 0.9;   // a real arc instead of a flat lerp
+      const spinRate = 0.3 + intensity * 0.7;
+      const start = performance.now();
       cancelAnimationFrame(holdRaf);
       const tick = (now: number) => {
         const t = Math.min(1, (now - start) / dur);
         const e = t * t * (3 - 2 * t);
         b.position.lerpVectors(from, to, e);
+        b.position.y += Math.sin(t * Math.PI) * arcHeight; // parabolic arc, peaks mid-flight
         b.scale.setScalar(0.95 * (1 - e) + 0.2 * e);
-        b.rotation.y += 0.45; b.rotation.x += 0.22;
+        b.rotation.y += 0.45 * spinRate; b.rotation.x += 0.22 * spinRate;
         if (t < 1) holdRaf = requestAnimationFrame(tick);
         else { b.visible = false; try { spawnBurst(group, new THREE.Vector3(0, 0, 0), 0x9fe6ff); } catch {} try { onArrive && onArrive(); } catch {} }
       };
@@ -3070,7 +3080,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     },
     throwPokeball: mobileThrowPokeball,
     pokeballHold: (nx: number, ny: number) => mobileThrowPokeball.hold(nx, ny),
-    pokeballThrow: (onArrive?: () => void) => mobileThrowPokeball.throwIt(onArrive),
+    pokeballThrow: (onArrive?: () => void, speed?: number) => mobileThrowPokeball.throwIt(onArrive, speed),
     pokeballRelease: () => mobileThrowPokeball.release(),
     setPerfMode(on: boolean) { perfFast = on; resize(); },
     getCharacterTransform() { return getCharXform(mobileCurrentChar); },
@@ -4184,7 +4194,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     },
     throwPokeball: deskThrowPokeball,
     pokeballHold: (nx: number, ny: number) => deskThrowPokeball.hold(nx, ny),
-    pokeballThrow: (onArrive?: () => void) => deskThrowPokeball.throwIt(onArrive),
+    pokeballThrow: (onArrive?: () => void, speed?: number) => deskThrowPokeball.throwIt(onArrive, speed),
     pokeballRelease: () => deskThrowPokeball.release(),
     setPerfMode(on: boolean) { perfFast = on; resize(); },
     getCharacterTransform() { return getCharXform(deskCurrentChar); },

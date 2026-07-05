@@ -184,7 +184,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v197 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v198 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip ghost" id="panelsToggleBtn" title="הסתר/הצג פנלים" aria-label="הסתר פנלים">
           <svg class="pt-hide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -1989,6 +1989,9 @@ export function mountApp(root: HTMLElement) {
     let suppressPalmMs = 0;   // after a summon, ignore the open hand for dispel
     let prevScale = 0;        // hand size last frame (kept for re-acquire reset)
     let handPresentMs = 0;    // how long a CONFIDENT, real-sized hand has been held
+    let noHandMs = 0;         // how long since a hand was last found (dark-room check)
+    let darkCheckMs = 0;      // throttle for the brightness sample
+    let isDarkEnv = false;    // last brightness verdict — sticky between checks
     const SETTLE_MS = 450;    // ignore the first moments after acquiring a hand
     // Finger-pointing laser cursor + dwell-to-select.
     let pointSX = 0, pointSY = 0;       // smoothed cursor screen position
@@ -2106,6 +2109,7 @@ export function mountApp(root: HTMLElement) {
       gestureActive = false;
       if (gestureWatchdog) { clearTimeout(gestureWatchdog); gestureWatchdog = null; }
       gotFirstHandResult = false;
+      noHandMs = 0; darkCheckMs = 0; isDarkEnv = false;
       dbgStop();
       try { orb.setPerfMode(localStorage.getItem('alpha_fast_mode') === '1'); } catch {}   // restore orb quality
       if (gestureCamera) { try { gestureCamera.stop(); } catch {} gestureCamera = null; }
@@ -2346,7 +2350,27 @@ export function mountApp(root: HTMLElement) {
         const mapY = (ny: number) => ny * H;
 
         const noHand = () => {
-          gestureStatus('הרם יד מול המצלמה');
+          // If no hand has been found for a while, check whether the room is
+          // actually just too dark to see anything — sampled cheaply (coarse
+          // stride) from the same small downscaled frame already fed to
+          // MediaPipe, so a dark room gets an actionable message instead of
+          // an endless, misleading "raise your hand" with no clue why it
+          // never works.
+          noHandMs += dt;
+          darkCheckMs += dt;
+          if (darkCheckMs > 600 && noHandMs > 2000) {
+            darkCheckMs = 0;
+            try {
+              const w = cap.width, h = cap.height;
+              if (w > 0 && h > 0) {
+                const data = capCtx.getImageData(0, 0, w, h).data;
+                let sum = 0, n = 0;
+                for (let i = 0; i < data.length; i += 40) { sum += data[i] + data[i + 1] + data[i + 2]; n++; }
+                isDarkEnv = n > 0 && (sum / (n * 3)) < 45;
+              }
+            } catch { /* getImageData can throw on a tainted canvas — just skip this check */ }
+          }
+          gestureStatus(isDarkEnv ? '🔅 חשוך מדי לזיהוי — הוסף תאורה או התקרב לחלון' : 'הרם יד מול המצלמה');
           palmHoldMs = 0; fistHoldMs = 0; ballHeldMs = 0; prevScale = 0; handPresentMs = 0;
           rawPrev = ''; rawStableMs = 0; confirmedGesture = 'none';
           oePrev = null; oeDPrev = null;   // reset smoothing so re-acquire snaps in
@@ -2355,6 +2379,7 @@ export function mountApp(root: HTMLElement) {
           dbgLastScore = 0; dbgLastSpan = 0; dbgLastArmed = false; dbgRender();
         };
         if (!results.multiHandLandmarks?.length) { noHand(); return; }
+        noHandMs = 0; isDarkEnv = false;
 
         // ALWAYS smooth + draw the detected hand so the user sees the skeleton as
         // live feedback. Detection QUALITY gates only the ACTIONS (below) — it never
@@ -2531,7 +2556,11 @@ export function mountApp(root: HTMLElement) {
                 fistHoldMs = 0; ballHeldMs = 0;
                 throwCooldownMs = THROW_COOLDOWN; suppressPalmMs = 1100;
                 gestureStatus('🚀 זריקה! בחר פוקימון');
-                orb.pokeballThrow?.(() => (window as any).openSummonDock?.());
+                // A real flick passes its actual measured speed through so the throw
+                // animation's duration/arc/spin genuinely reflects how hard the user
+                // threw — a slow release (hold-to-summon, no flick) keeps the default
+                // gentle toss instead of being forced through the same speed math.
+                orb.pokeballThrow?.(() => (window as any).openSummonDock?.(), flick ? speed : undefined);
                 setTimeout(() => { if (gestureActive) gestureStatus('זיהוי פעיל'); }, 2500);
               } else {
                 gestureStatus('✊ אוחז בכדור — תזרוק לכיוון הכדור לזימון');
