@@ -403,14 +403,31 @@ function releaseWake(){if(S.wakeLock){S.wakeLock.release();S.wakeLock=null}}
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&S.trip)requestWake()});
 
 /* ================= SYNC ================= */
-async function pushTrip(rec){
+// The phone's connection while driving is unreliable, so a failed push gets
+// silent retries with exponential backoff (2s/5s/10s) instead of just sitting
+// unsynced until the user remembers to open Settings and hit "sync all".
+const RETRY_DELAYS_MS=[2000,5000,10000];
+async function pushTrip(rec,attempt=0){
   if(!cfg.hook)return;
   try{
     const r=await fetch(cfg.hook,{method:'POST',headers:hdrs(),body:JSON.stringify(rec)});
-    if(r.ok){rec.synced=true;save();renderLog();toast('סונכרן למערכת ✓')}
-  }catch(e){/* stays synced:false, retry via "sync all" */}
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    rec.synced=true;save();renderLog();toast('סונכרן למערכת ✓');
+  }catch(e){
+    if(attempt<RETRY_DELAYS_MS.length)setTimeout(()=>pushTrip(rec,attempt+1),RETRY_DELAYS_MS[attempt]);
+    // final attempt still fails silently — stays synced:false, picked up by
+    // the next "online" event or a manual "sync all".
+  }
 }
 const hdrs=()=>{const h={'Content-Type':'application/json'};if(cfg.key)h['Authorization']='Bearer '+cfg.key;return h};
+
+// Connection-state monitoring: trips recorded while offline (or that ran out
+// of retries mid-tunnel) get pushed automatically the moment the phone is
+// back online, instead of waiting for the driver to notice and sync by hand.
+window.addEventListener('online',()=>{
+  if(!cfg.hook)return;
+  trips.filter(t=>!t.synced).forEach(t=>pushTrip(t));
+});
 
 /* ================= LOG UI ================= */
 function renderLog(){
@@ -476,14 +493,12 @@ $('testHook').onclick=async()=>{
     toast(r.ok?'החיבור תקין ✓':'השרת החזיר '+r.status);
   }catch(e){toast('אין גישה לשרת — בדוק CORS/כתובת')}
 };
-$('syncAll').onclick=async()=>{
+$('syncAll').onclick=()=>{
   if(!cfg.hook)return toast('הגדר כתובת סנכרון קודם');
-  let ok=0;
-  for(const t of trips.filter(t=>!t.synced)){
-    try{const r=await fetch(cfg.hook,{method:'POST',headers:hdrs(),body:JSON.stringify(t)});
-      if(r.ok){t.synced=true;ok++}}catch(e){}
-  }
-  save();renderLog();toast(ok?`סונכרנו ${ok} נסיעות`:'אין מה לסנכרן / שגיאת חיבור');
+  const pending=trips.filter(t=>!t.synced);
+  if(!pending.length)return toast('אין מה לסנכרן');
+  pending.forEach(t=>pushTrip(t));
+  toast(`מסנכרן ${pending.length} נסיעות ברקע…`);
 };
 $('clearAll').onclick=()=>{if(confirm('למחוק את כל היומן לצמיתות?')){trips.length=0;save();renderLog();toast('היומן נמחק')}};
 $('wakeBtn').onclick=function(){
