@@ -2137,6 +2137,15 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, de
   const [phoneOpen, setPhoneOpen] = useState(false);
   const [phoneTab, setPhoneTab] = useState("home");
   const [phoneLog, setPhoneLog] = useState([]);
+  // Spotify — a simple embed widget (no login/API key): paste any public
+  // track/album/playlist/show link and it plays via Spotify's own official
+  // embed iframe, reusing the same phoneEmbed viewer as the trade system.
+  const [spotifyUrl, setSpotifyUrlState] = useState(() => { try { return localStorage.getItem("alpha:office:spotifyUrl") || ""; } catch { return ""; } });
+  const setSpotifyUrl = (u) => { setSpotifyUrlState(u); try { localStorage.setItem("alpha:office:spotifyUrl", u); } catch {} };
+  const toSpotifyEmbedUrl = (url) => {
+    const m = (url || "").match(/open\.spotify\.com\/(?:intl-\w+\/)?(track|album|playlist|show|episode|artist)\/([a-zA-Z0-9]+)/);
+    return m ? `https://open.spotify.com/embed/${m[1]}/${m[2]}?theme=0` : null;
+  };
   // A brief "biometric unlock" beat plays every time the terminal wakes —
   // pure CSS animation gated by this flag, cleared after it finishes.
   const [phoneUnlocking, setPhoneUnlocking] = useState(false);
@@ -5428,6 +5437,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, de
             <button className={phoneTab === "chat" ? "on" : ""} onClick={() => { setPhoneTab("chat"); setPhoneEmbed(null); }} title="שיחה חיה">💬</button>
             <button className={phoneTab === "ctrl" ? "on" : ""} onClick={() => { setPhoneTab("ctrl"); setPhoneEmbed(null); }} title="שליטה">🎛</button>
             <button className={phoneTab === "radio" ? "on" : ""} onClick={() => { setPhoneTab("radio"); setPhoneEmbed(null); }} title="רדיו">📻</button>
+            <button className={phoneTab === "spotify" ? "on" : ""} onClick={() => { setPhoneTab("spotify"); setPhoneEmbed(null); }} title="ספוטיפי">🎵</button>
             <button className={"off3-phone-tab-sec" + (phoneTab === "sec" ? " on" : "")} onClick={() => { setPhoneTab("sec"); setPhoneEmbed(null); }} title="אבטחה">
               🛡{securityAlerts.some((a) => a.level === "high") && <i className="off3-phone-badge" />}
             </button>
@@ -5440,6 +5450,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, de
                 <button className="off3-phone-app" onClick={() => setPhoneTab("chat")}><span>💬</span>שיחה חיה</button>
                 <button className="off3-phone-app" onClick={() => setPhoneTab("ctrl")}><span>🎛</span>מרכז פיקוד</button>
                 <button className="off3-phone-app" onClick={() => setPhoneTab("radio")}><span>📻</span>רדיו</button>
+                <button className="off3-phone-app" onClick={() => setPhoneTab("spotify")}><span>🎵</span>ספוטיפי</button>
                 <button className="off3-phone-app" onClick={() => setPhoneTab("sec")}>
                   <span>🛡</span>אבטחה{securityAlerts.some((a) => a.level === "high") && <i className="off3-phone-badge" />}
                 </button>
@@ -5489,6 +5500,30 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, de
           <div className={"off3-phone-body" + (!phoneEmbed && phoneTab === "radio" ? "" : " off3-phone-body-hidden")}>
             <RadioController ref={radioRef} visible={!phoneEmbed && phoneTab === "radio"} onPlayStateChange={handleRadioPlayState} />
           </div>
+          {!phoneEmbed && phoneTab === "spotify" && (
+            <div className="off3-phone-body off3-spotify">
+              <div className="off3-phone-sec">🎵 ספוטיפי — הדבק קישור לשיר/פלייליסט/אלבום ציבורי</div>
+              <input
+                className="off3-spotify-input"
+                type="text"
+                dir="ltr"
+                placeholder="https://open.spotify.com/playlist/..."
+                value={spotifyUrl}
+                onChange={(e) => setSpotifyUrl(e.target.value)}
+              />
+              <button
+                className="off3-voice-test"
+                disabled={!toSpotifyEmbedUrl(spotifyUrl)}
+                onClick={() => { const u = toSpotifyEmbedUrl(spotifyUrl); if (u) setPhoneEmbed({ title: "ספוטיפי", url: u }); }}
+              >
+                ▶ פתח נגן ספוטיפי
+              </button>
+              {spotifyUrl && !toSpotifyEmbedUrl(spotifyUrl) && (
+                <p className="off3-phone-empty">זה לא נראה כמו קישור open.spotify.com תקין (שיר/אלבום/פלייליסט/פודקאסט).</p>
+              )}
+              <p className="off3-phone-empty">וידג'ט חינמי ללא התחברות — מנגן פלייליסטים/שירים ציבוריים ששיתפתם מהאפליקציה של ספוטיפי (כפתור "שתף" → "העתק קישור").</p>
+            </div>
+          )}
           {!phoneEmbed && phoneTab === "ctrl" && (
             <div className="off3-phone-body">
               <div className="off3-phone-sec">העוזר הראשי · ALPHA</div>

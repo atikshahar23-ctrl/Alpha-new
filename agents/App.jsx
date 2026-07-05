@@ -3789,6 +3789,9 @@ function StyleTag() {
 .off3-phone-live{font-size:11.5px;font-weight:800;color:#2ee6ff;padding:6px 8px;border:1px dashed rgba(46,230,255,.4);border-radius:9px}
 .off3-phone-live.dim{color:#6d8896;border-color:rgba(120,150,165,.3)}
 .off3-phone-empty{font-size:11px;color:#6d8896;line-height:1.5;margin:2px 0}
+.off3-spotify-input{width:100%;background:var(--s9);border:1px solid var(--s7);color:var(--silver);border-radius:8px;
+  padding:8px 10px;font-family:inherit;font-size:11.5px;outline:none;margin:8px 0}
+.off3-spotify-input:focus{border-color:#1DB954}
 .off3-phone-line{border-right:3px solid var(--c);padding:5px 8px;background:rgba(255,255,255,.03);border-radius:8px}
 .off3-phone-line b{display:block;font-size:10.5px;color:var(--c)}
 .off3-phone-line span{font-size:12px;color:#d9e6ee;line-height:1.45}
