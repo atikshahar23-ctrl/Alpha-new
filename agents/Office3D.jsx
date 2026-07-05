@@ -2344,6 +2344,316 @@ function FlightOverlay({ onReturn }) {
   );
 }
 
+// Procedural corrugated-metal wall texture for the hangar — vertical ridge
+// shading + a hazard stripe near the floor, same canvas-texture convention
+// as every other surface in this file (no external image assets).
+function buildHangarWallTexture() {
+  const cvs = document.createElement("canvas");
+  cvs.width = 256; cvs.height = 512;
+  const ctx = cvs.getContext("2d");
+  const g = ctx.createLinearGradient(0, 0, 0, 512);
+  g.addColorStop(0, "#3a3f47"); g.addColorStop(1, "#22262c");
+  ctx.fillStyle = g; ctx.fillRect(0, 0, 256, 512);
+  // Corrugation: repeating vertical ridge highlight/shadow pairs.
+  for (let x = 0; x < 256; x += 16) {
+    ctx.fillStyle = "rgba(255,255,255,.06)"; ctx.fillRect(x, 0, 6, 512);
+    ctx.fillStyle = "rgba(0,0,0,.18)"; ctx.fillRect(x + 6, 0, 6, 512);
+  }
+  // Rust/streak accents.
+  const rnd = mulberry32(11);
+  for (let i = 0; i < 40; i++) {
+    ctx.fillStyle = `rgba(120,70,40,${(rnd() * 0.12).toFixed(3)})`;
+    ctx.fillRect(rnd() * 256, 0, 3 + rnd() * 5, 512 * (0.2 + rnd() * 0.6));
+  }
+  // Hazard stripe band near the floor.
+  const bandY = 512 - 46;
+  ctx.fillStyle = "#e8b93c";
+  ctx.fillRect(0, bandY, 256, 46);
+  ctx.fillStyle = "#141414";
+  for (let x = -46; x < 256 + 46; x += 46) {
+    ctx.save(); ctx.beginPath();
+    ctx.moveTo(x, bandY + 46); ctx.lineTo(x + 23, bandY); ctx.lineTo(x + 46, bandY); ctx.lineTo(x + 23 + 23, bandY + 46);
+    ctx.closePath(); ctx.fill(); ctx.restore();
+  }
+  const tex = new THREE.CanvasTexture(cvs);
+  tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  return tex;
+}
+
+// Sealed concrete floor — subtle mottling + a few painted parking-bay
+// rectangles, drawn once and tiled across the whole hangar slab.
+function buildHangarFloorTexture() {
+  const cvs = document.createElement("canvas");
+  cvs.width = cvs.height = 512;
+  const ctx = cvs.getContext("2d");
+  ctx.fillStyle = "#3d4147"; ctx.fillRect(0, 0, 512, 512);
+  const rnd = mulberry32(23);
+  for (let i = 0; i < 900; i++) {
+    ctx.fillStyle = rnd() < 0.5 ? `rgba(255,255,255,${(rnd() * 0.03).toFixed(3)})` : `rgba(0,0,0,${(rnd() * 0.05).toFixed(3)})`;
+    ctx.fillRect(rnd() * 512, rnd() * 512, 1 + rnd() * 2, 1 + rnd() * 2);
+  }
+  ctx.strokeStyle = "#e8b93c"; ctx.lineWidth = 5;
+  ctx.strokeRect(30, 30, 452, 452);
+  const tex = new THREE.CanvasTexture(cvs);
+  tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  return tex;
+}
+
+// A simple house exterior beyond the hangar's open bay door — walls + a
+// pitched roof + a lit door and two glowing windows, entirely procedural.
+// A starting placeholder ("owner request: a house nearby too") rather than
+// a walk-in interior — the same iterate-then-expand approach this project
+// has used for every other new area.
+function buildHouseExterior() {
+  const g = new THREE.Group();
+  const wallCvs = document.createElement("canvas");
+  wallCvs.width = 256; wallCvs.height = 256;
+  const wctx = wallCvs.getContext("2d");
+  wctx.fillStyle = "#c9b79a"; wctx.fillRect(0, 0, 256, 256);
+  const rnd = mulberry32(31);
+  for (let i = 0; i < 500; i++) {
+    wctx.fillStyle = `rgba(0,0,0,${(rnd() * 0.05).toFixed(3)})`;
+    wctx.fillRect(rnd() * 256, rnd() * 256, 1 + rnd() * 2, 1);
+  }
+  const wallTex = new THREE.CanvasTexture(wallCvs);
+  wallTex.colorSpace = THREE.SRGBColorSpace;
+  const W = 9, D = 8, H = 4.4;
+  const body = new THREE.Mesh(new THREE.BoxGeometry(W, H, D), new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.85 }));
+  body.position.y = H / 2; body.castShadow = true; body.receiveShadow = true;
+  g.add(body);
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(7.2, 2.6, 4), new THREE.MeshStandardMaterial({ color: 0x6b3a2f, roughness: 0.8 }));
+  roof.rotation.y = Math.PI / 4;
+  roof.position.y = H + 1.3;
+  roof.castShadow = true;
+  g.add(roof);
+  // Warm-lit door + two windows facing the hangar.
+  const door = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 2.3), new THREE.MeshStandardMaterial({ color: 0x3a2417, roughness: 0.7 }));
+  door.position.set(0, 1.15, -D / 2 - 0.01);
+  g.add(door);
+  [-1, 1].forEach((s) => {
+    const win = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 1.1), new THREE.MeshStandardMaterial({ color: 0xffdf8c, emissive: 0xffcf6a, emissiveIntensity: 1.3 }));
+    win.position.set(s * 2.8, 2.4, -D / 2 - 0.01);
+    g.add(win);
+    const light = new THREE.PointLight(0xffcf8a, 0.5, 6);
+    light.position.set(s * 2.8, 2.4, -D / 2 - 0.6);
+    g.add(light);
+  });
+  // A little patch of ground + a path leading back toward the hangar.
+  const yard = new THREE.Mesh(new THREE.CircleGeometry(16, 24), new THREE.MeshStandardMaterial({ color: 0x2f5c3a, roughness: 1 }));
+  yard.rotation.x = -Math.PI / 2; yard.position.y = -0.02; yard.receiveShadow = true;
+  g.add(yard);
+  const path = new THREE.Mesh(new THREE.PlaneGeometry(3, 20), new THREE.MeshStandardMaterial({ color: 0x8a8478, roughness: 1 }));
+  path.rotation.x = -Math.PI / 2; path.position.set(0, -0.01, -D / 2 - 10);
+  g.add(path);
+  return g;
+}
+
+function HangarOverlay({ onReturn }) {
+  const mountRef = useRef(null);
+
+  useEffect(() => {
+    const mount = mountRef.current;
+    if (!mount) return;
+    let cancelled = false;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0d1016);
+    scene.fog = new THREE.Fog(0x0d1016, 30, 110);
+
+    const camera = new THREE.PerspectiveCamera(70, mount.clientWidth / mount.clientHeight, 0.1, 500);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+    renderer.setSize(mount.clientWidth, mount.clientHeight);
+    renderer.shadowMap.enabled = true;
+    mount.appendChild(renderer.domElement);
+
+    scene.add(new THREE.AmbientLight(0x8f9bbf, 0.55));
+    const sun = new THREE.DirectionalLight(0xfff2d8, 0.5);
+    sun.position.set(20, 40, -20);
+    scene.add(sun);
+
+    const W = 34, D = 46, H = 9; // hangar interior footprint (open on +Z toward the house)
+    const wallMat = new THREE.MeshStandardMaterial({ map: buildHangarWallTexture(), roughness: 0.6, metalness: 0.35, side: THREE.DoubleSide });
+    wallMat.map.repeat.set(W / 4, H / 4);
+    const backWallMat = wallMat.clone(); backWallMat.map = wallMat.map.clone(); backWallMat.map.repeat.set(D / 4, H / 4); backWallMat.map.needsUpdate = true;
+
+    const floorTex = buildHangarFloorTexture();
+    floorTex.repeat.set(W / 5, D / 5);
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, D), new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.85, metalness: 0.15 }));
+    floor.rotation.x = -Math.PI / 2;
+    floor.receiveShadow = true;
+    scene.add(floor);
+
+    // Back wall (entrance side, -Z — away from the house) + two side walls.
+    // The +Z wall stays fully open: that's the bay door leading out to the house.
+    const back = new THREE.Mesh(new THREE.PlaneGeometry(W, H), wallMat);
+    back.position.set(0, H / 2, -D / 2); scene.add(back);
+    [-1, 1].forEach((s) => {
+      const side = new THREE.Mesh(new THREE.PlaneGeometry(D, H), backWallMat);
+      side.rotation.y = Math.PI / 2; side.position.set(s * W / 2, H / 2, 0); scene.add(side);
+    });
+    // A header beam over the open bay door so the opening reads as a real
+    // rolling door, not just a missing wall.
+    const header = new THREE.Mesh(new THREE.BoxGeometry(W, 1.1, 0.4), new THREE.MeshStandardMaterial({ color: 0xe8b93c, roughness: 0.5, metalness: 0.4 }));
+    header.position.set(0, H - 0.55, D / 2);
+    scene.add(header);
+
+    // Ceiling trusses + hanging industrial lights.
+    for (let z = -D / 2 + 4; z <= D / 2 - 4; z += 7) {
+      const truss = new THREE.Mesh(new THREE.BoxGeometry(W - 1, 0.5, 0.5), new THREE.MeshStandardMaterial({ color: 0x24272c, roughness: 0.5, metalness: 0.6 }));
+      truss.position.set(0, H - 0.3, z);
+      scene.add(truss);
+      const bulb = new THREE.PointLight(0xfff2d0, 0.9, 16);
+      bulb.position.set(0, H - 1.0, z);
+      scene.add(bulb);
+      const shade = new THREE.Mesh(new THREE.ConeGeometry(0.6, 0.5, 12), new THREE.MeshStandardMaterial({ color: 0x1a1c20, emissive: 0xfff2d0, emissiveIntensity: 0.6 }));
+      shade.rotation.x = Math.PI; shade.position.set(0, H - 0.75, z);
+      scene.add(shade);
+    }
+
+    const base = import.meta.env.BASE_URL || "/";
+    const loader = new GLTFLoader();
+    loader.setMeshoptDecoder(MeshoptDecoder);
+
+    // Hyperion statue — the centerpiece, toward the back of the hangar on a
+    // lit plinth with its own dramatic spotlight.
+    const statuePos = { x: 0, z: -D / 2 + 10 };
+    const plinth = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 2.8, 0.5, 28), new THREE.MeshStandardMaterial({ color: 0x1c1f24, roughness: 0.4, metalness: 0.5 }));
+    plinth.position.set(statuePos.x, 0.25, statuePos.z);
+    plinth.castShadow = true; plinth.receiveShadow = true;
+    scene.add(plinth);
+    const plinthRing = new THREE.Mesh(new THREE.TorusGeometry(2.85, 0.05, 8, 48), new THREE.MeshBasicMaterial({ color: 0xe8b93c }));
+    plinthRing.rotation.x = Math.PI / 2; plinthRing.position.set(statuePos.x, 0.52, statuePos.z);
+    scene.add(plinthRing);
+    const statueSpot = new THREE.SpotLight(0xdfe8ff, 3.2, 30, Math.PI / 7, 0.4, 1.2);
+    statueSpot.position.set(statuePos.x, H - 0.5, statuePos.z + 1);
+    statueSpot.target.position.set(statuePos.x, 3, statuePos.z);
+    scene.add(statueSpot, statueSpot.target);
+    loader.load(base + "office-models/hyperion.glb", (g) => {
+      const m = g.scene;
+      m.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      const bb = new THREE.Box3().setFromObject(m);
+      const size = bb.getSize(new THREE.Vector3());
+      const scale = 6.8 / Math.max(size.y, 0.01); // ~6.8m tall display, towers over the room
+      m.scale.setScalar(scale);
+      const bb2 = new THREE.Box3().setFromObject(m);
+      m.position.x -= (bb2.min.x + bb2.max.x) / 2;
+      m.position.z -= (bb2.min.z + bb2.max.z) / 2;
+      m.position.y -= bb2.min.y;
+      m.position.x += statuePos.x; m.position.y += 0.5; m.position.z += statuePos.z;
+      scene.add(m);
+    }, undefined, () => {});
+
+    // Vehicle bay — real models parked along one side wall, each on its own
+    // painted floor spot (the hazard-striped rectangle baked into the floor
+    // texture reads as the bay outline; these are just the actual cars).
+    [
+      { url: "tiggo7.glb", x: -W / 2 + 4, z: -8, target: 4.2, rotY: Math.PI / 2 },
+      { url: "volvo_fh16.glb", x: -W / 2 + 4.5, z: 4, target: 6.5, rotY: Math.PI / 2 },
+    ].forEach((v) => {
+      loader.load(base + "office-models/" + v.url, (g) => {
+        const m = g.scene;
+        m.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+        const bb = new THREE.Box3().setFromObject(m);
+        const size = bb.getSize(new THREE.Vector3());
+        const scale = v.target / Math.max(size.x, size.z, 0.01);
+        m.scale.setScalar(scale);
+        const bb2 = new THREE.Box3().setFromObject(m);
+        m.position.x -= (bb2.min.x + bb2.max.x) / 2;
+        m.position.z -= (bb2.min.z + bb2.max.z) / 2;
+        m.position.y -= bb2.min.y;
+        m.position.x += v.x; m.position.z += v.z;
+        m.rotation.y = v.rotY;
+        scene.add(m);
+      }, undefined, () => {});
+    });
+
+    // The house, visible beyond the open bay door.
+    const house = buildHouseExterior();
+    house.position.set(0, 0, D / 2 + 15);
+    scene.add(house);
+    // Night sky beyond the door + a big ground plane so the yard doesn't
+    // just fall off into the fog color at the edges.
+    const outerGround = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshStandardMaterial({ color: 0x1c2b20, roughness: 1 }));
+    outerGround.rotation.x = -Math.PI / 2; outerGround.position.set(0, -0.03, D / 2 + 40);
+    scene.add(outerGround);
+    const moon = new THREE.PointLight(0xbfd4ff, 0.4, 200);
+    moon.position.set(-30, 60, D / 2 + 60);
+    scene.add(moon);
+
+    // Walk controls — same first-person "tank" scheme the office itself
+    // uses (W/S forward-back relative to facing, A/D turn), simplified: no
+    // player body to render, the camera IS the eye. Movement clamps to the
+    // hangar footprint but is allowed to walk out through the open door
+    // (+Z) into the yard toward the house.
+    const keys = {};
+    const onKeyDown = (e) => { keys[e.key.toLowerCase()] = true; };
+    const onKeyUp = (e) => { keys[e.key.toLowerCase()] = false; };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+    let yaw = Math.PI;
+    const pos = new THREE.Vector3(0, 1.7, D / 2 - 5);
+    const clock = new THREE.Clock();
+    let raf;
+    const animate = () => {
+      if (cancelled) return;
+      raf = requestAnimationFrame(animate);
+      const dt = Math.min(0.05, clock.getDelta());
+      const turn = -((keys["d"] || keys["arrowright"] ? 1 : 0) - (keys["a"] || keys["arrowleft"] ? 1 : 0));
+      yaw += turn * 2.3 * dt;
+      const fwd = (keys["w"] || keys["arrowup"] ? 1 : 0) - (keys["s"] || keys["arrowdown"] ? 1 : 0);
+      const speed = keys["shift"] ? 9 : 5;
+      pos.x += Math.sin(yaw) * fwd * speed * dt;
+      pos.z += Math.cos(yaw) * fwd * speed * dt;
+      pos.x = clamp(pos.x, -W / 2 + 1.2, W / 2 - 1.2);
+      pos.z = clamp(pos.z, -D / 2 + 1.2, D / 2 + 32);
+      camera.position.copy(pos);
+      camera.rotation.order = "YXZ";
+      camera.rotation.y = yaw;
+      renderer.render(scene, camera);
+    };
+    animate();
+
+    const onResize = () => {
+      camera.aspect = mount.clientWidth / mount.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(mount.clientWidth, mount.clientHeight);
+    };
+    window.addEventListener("resize", onResize);
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      scene.traverse((obj) => {
+        if (obj.geometry) obj.geometry.dispose();
+        if (obj.material) {
+          const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+          mats.forEach((m) => { if (m.map) m.map.dispose(); m.dispose(); });
+        }
+      });
+      renderer.dispose();
+      if (renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement);
+    };
+  }, []);
+
+  return (
+    <div className="off3-space-wrap">
+      <div ref={mountRef} className="off3-space-canvas" style={{ cursor: "default" }} />
+      <div className="off3-space-hint">WASD / חצים לתזוזה · A/D לפנייה · Shift לריצה · יציאה מהשער אל הבית</div>
+      <button className="off3-space-return" onClick={onReturn}>🚪 חזרה למשרד</button>
+    </div>
+  );
+}
+
 // Hebrew labels for the God Mode "Super-Detailed" spec panel — every
 // registerEditable() call attaches a metadata object keyed like this.
 const GOD_META_LABELS = {
@@ -2381,6 +2691,13 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   const [nearPlane, setNearPlane] = useState(false);
   const [inFlight, setInFlight] = useState(false);
   useEffect(() => { liveRef.current.setNearPlane = setNearPlane; }, []);
+  // Hangar — a garage-door portal on the west wall leads to a separate
+  // walkable hangar area (Hyperion statue + vehicle bay + the house beyond
+  // its open door), same "walk up, prompt appears" pattern as the plane.
+  const [nearHangar, setNearHangar] = useState(false);
+  const [inHangar, setInHangar] = useState(false);
+  useEffect(() => { liveRef.current.setNearHangar = setNearHangar; }, []);
+  useEffect(() => { liveRef.current.inHangar = inHangar; }, [inHangar]);
   // Real business activity, normalized 0..1 — drives the space portal's
   // orbit speed (busier pipeline = faster orbits), not a random wobble.
   const spacePortalLoad = Math.min(1, ((bizData?.openDeals || 0) + (bizData?.fleetProjects || 0) * 2) / 20);
@@ -4210,6 +4527,35 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       }, undefined, () => { /* model failed to load — podium stays empty */ });
     }
 
+    // ── Hangar bay door, on the west wall — walk up to it and an "Enter
+    // Hangar" prompt appears, opening the hangar overlay (Hyperion statue +
+    // vehicle bay + the house beyond its open door).
+    const HANGAR_POS = { x: -FLOOR_W / 2 + 1.2, z: 5 };
+    scene.userData.hangarSpot = { x: HANGAR_POS.x, z: HANGAR_POS.z };
+    {
+      const doorMat = new THREE.MeshStandardMaterial({ color: 0xe8b93c, roughness: 0.5, metalness: 0.4 });
+      const frame = new THREE.Mesh(new THREE.BoxGeometry(0.25, 3.2, 4.6), doorMat);
+      frame.position.set(HANGAR_POS.x + 0.1, 1.6, HANGAR_POS.z);
+      scene.add(frame);
+      const doorTex = buildHangarWallTexture();
+      doorTex.repeat.set(1.5, 1);
+      const doorPanel = new THREE.Mesh(new THREE.PlaneGeometry(4.3, 2.9), new THREE.MeshStandardMaterial({ map: doorTex, roughness: 0.6, metalness: 0.3 }));
+      doorPanel.rotation.y = Math.PI / 2;
+      doorPanel.position.set(HANGAR_POS.x + 0.24, 1.55, HANGAR_POS.z);
+      scene.add(doorPanel);
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(1.6, 0.03, 8, 40), new THREE.MeshBasicMaterial({ color: 0xe8b93c }));
+      ring.position.set(HANGAR_POS.x + 0.3, 1.55, HANGAR_POS.z);
+      scene.add(ring);
+      const spot = new THREE.PointLight(0xffe2a0, 0.6, 8);
+      spot.position.set(HANGAR_POS.x + 1.5, 2.8, HANGAR_POS.z);
+      scene.add(spot);
+      const sign = buildNeonSign("ההאנגר", 0xe8b93c, 2.2, 0.5);
+      sign.rotation.y = Math.PI / 2;
+      sign.position.set(HANGAR_POS.x + 0.3, 3.5, HANGAR_POS.z);
+      scene.add(sign);
+      obstacles.push({ x: HANGAR_POS.x + 0.8, z: HANGAR_POS.z, r: 1.4 });
+    }
+
     // ── Space portal ─────────────────────────────────────────────────────
     // Placed on the south wall — clear of the desk ring (max radius ~15.84),
     // reception (-13.8, 28.8) and the cafeteria (30.6, 11.2). Walking into
@@ -4638,7 +4984,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       const k = e.key.toLowerCase();
       liveRef.current.keys[k] = true;
       // E toggles sitting on your own office chair (only when near it).
-      if (k === "e") { liveRef.current.toggleSit?.(); liveRef.current.toggleVehicle?.(); liveRef.current.toggleFlight?.(); }
+      if (k === "e") { liveRef.current.toggleSit?.(); liveRef.current.toggleVehicle?.(); liveRef.current.toggleFlight?.(); liveRef.current.toggleHangar?.(); }
       if (k === "escape" && liveRef.current.inVehicle) liveRef.current.setInVehicle?.(false);
     };
     const onKeyUp = (e) => { liveRef.current.keys[e.key.toLowerCase()] = false; };
@@ -5055,6 +5401,14 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         liveRef.current.setNearPlane?.(nearPln);
       }
 
+      // "Enter Hangar" prompt — near the bay door on the west wall.
+      const hangarSpot = scene.userData.hangarSpot;
+      const nearHgr = !!hangarSpot && !liveRef.current.inHangar && Math.hypot(playerH.group.position.x - hangarSpot.x, playerH.group.position.z - hangarSpot.z) < 3.2;
+      if (liveRef.current.nearHangarShown !== nearHgr) {
+        liveRef.current.nearHangarShown = nearHgr;
+        liveRef.current.setNearHangar?.(nearHgr);
+      }
+
       // Truck info sign — standing near a truck's nameplate shows real info
       // about that model (fetched once per truck, cached in React state).
       const trucks = scene.userData.trucks || [];
@@ -5438,6 +5792,10 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     liveRef.current.toggleFlight = () => {
       if (liveRef.current.inFlight) return; // exit only via the overlay's own return button
       if (liveRef.current.nearPlaneShown) liveRef.current.setInFlight?.(true);
+    };
+    liveRef.current.toggleHangar = () => {
+      if (liveRef.current.inHangar) return; // exit only via the overlay's own return button
+      if (liveRef.current.nearHangarShown) liveRef.current.setInHangar?.(true);
     };
 
     // ── God Mode — owner-only admin tools ───────────────────────────────
@@ -6111,6 +6469,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           🛫 צא לטיסה
         </button>
       )}
+      {nearHangar && !inHangar && (
+        <button className="off3-sit" onClick={() => setInHangar(true)} title="היכנס להאנגר (E)">
+          🏗️ היכנס להאנגר
+        </button>
+      )}
       {nearTruck && (
         <div className="off3-subtitle">
           <b style={{ color: "#E4BC63" }}>🚚 {nearTruck.label}</b>
@@ -6379,6 +6742,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       </div>
       {inSpace && <SpaceOverlay onReturn={() => liveRef.current.exitPortal?.()} load={spacePortalLoad} />}
       {inFlight && <FlightOverlay onReturn={() => setInFlight(false)} />}
+      {inHangar && <HangarOverlay onReturn={() => setInHangar(false)} />}
     </div>
   );
 }
