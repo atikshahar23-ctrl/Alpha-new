@@ -1024,6 +1024,37 @@ function resolveCollisions(pos, obstacles) {
   }
 }
 
+// ── Room registry: the fully-walled spaces (each agent's private glass
+// office, the shared conference room, the owner suite) so NPC pathing can
+// funnel through their actual doorway instead of beelining straight through
+// a wall to reach a desk/seat that happens to sit inside one. Every wall in
+// this scene already leaves a doorway gap in its collision-circle list (see
+// buildGlassOffice/buildConferenceRoom/buildOwnerOffice) — this registry
+// just records, per room, its world footprint and the world position of
+// that gap so routing can use it as a waypoint.
+// `box` is defined in the room's own local (pre-rotation) frame: { cx, cz,
+// halfW, halfD, doorX, doorZ, doorNX, doorNZ } — doorN{X,Z} is the outward
+// unit normal of the doorway, used to place an approach point just outside it.
+function registerRoom(rooms, ox, oz, rot, box) {
+  const cr = Math.cos(rot), sr = Math.sin(rot);
+  const toW = (lx, lz) => ({ x: ox + lx * cr + lz * sr, z: oz - lx * sr + lz * cr });
+  rooms.push({
+    ox, oz, rot,
+    lcx: box.cx, lcz: box.cz, halfW: box.halfW, halfD: box.halfD,
+    door: toW(box.doorX, box.doorZ),
+    doorOut: toW(box.doorX + box.doorNX * 0.7, box.doorZ + box.doorNZ * 0.7),
+  });
+}
+function roomContaining(rooms, x, z) {
+  for (const r of rooms) {
+    const dx = x - r.ox, dz = z - r.oz;
+    const cr = Math.cos(r.rot), sr = Math.sin(r.rot);
+    const lx = dx * cr - dz * sr, lz = dx * sr + dz * cr;
+    if (Math.abs(lx - r.lcx) <= r.halfW && Math.abs(lz - r.lcz) <= r.halfD) return r;
+  }
+  return null;
+}
+
 // A glowing neon sign (canvas text on an unlit plane) — cheap way to give
 // the room a real gaming-den identity without any extra lights.
 function buildNeonSign(text, color, w = 3.4, h = 0.8) {
@@ -3037,6 +3068,10 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     const deskMons = [];
     const deskHolos = [];
     const obstacles = [];
+    // Every fully-walled space (private glass offices, conference room, owner
+    // suite) — see registerRoom above — so NPCs walking to a target inside one
+    // of these get funneled through its actual doorway.
+    const rooms = [];
     // Extra non-agent humans (e.g. the receptionist) that still need their
     // animation mixer ticked and to be disposed on unmount.
     const allExtraHumans = [];
@@ -3068,6 +3103,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         scene.add(off.group);
         const cr = Math.cos(offRot), sr = Math.sin(offRot);
         off.obstacles.forEach((o) => obstacles.push({ x: wx + o.x * cr + o.z * sr, z: wz - o.x * sr + o.z * cr, r: o.r }));
+        registerRoom(rooms, wx, wz, offRot, { cx: 0, cz: 0, halfW: 1.65, halfD: 1.55, doorX: 0, doorZ: 1.55, doorNX: 0, doorNZ: 1 });
       }
     });
     // Department zoning — the 13 desks are grouped into three clusters
@@ -3149,6 +3185,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       conf.group.position.set(wx, 0, wz);
       scene.add(conf.group);
       conf.obstacles.forEach((o) => obstacles.push({ x: wx + o.x, z: wz + o.z, r: o.r }));
+      registerRoom(rooms, wx, wz, 0, { cx: 0, cz: 0, halfW: 3.8, halfD: 3.4, doorX: 0, doorZ: 3.4, doorNX: 0, doorNZ: 1 });
 
       // Real chairs under every meeting seat — agents used to sit on thin
       // air at the nook (the classic "floating character" anomaly). Each
@@ -3194,6 +3231,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     ownerOffice.group.position.set(OFFICE_ORIGIN.x, 0, OFFICE_ORIGIN.z);
     scene.add(ownerOffice.group);
     ownerOffice.obstacles.forEach((o) => obstacles.push({ x: OFFICE_ORIGIN.x + o.x, z: OFFICE_ORIGIN.z + o.z, r: o.r }));
+    registerRoom(rooms, OFFICE_ORIGIN.x, OFFICE_ORIGIN.z, 0, { cx: 0.6, cz: -0.15, halfW: 5.9, halfD: 4.15, doorX: -5.3, doorZ: 0.05, doorNX: -1, doorNZ: 0 });
     if (ownerOffice.deskMon) deskMons.push(ownerOffice.deskMon);
     if (ownerOffice.deskHolo) deskHolos.push(ownerOffice.deskHolo);
     const ownerSpinners = ownerOffice.spinners || [];
@@ -4399,16 +4437,32 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         const finalZ = atDesk ? rawTz + Math.cos(drot) * SEAT_BACK : rawTz;
         if (h.destX === undefined || Math.abs(h.destX - finalX) > 0.05 || Math.abs(h.destZ - finalZ) > 0.05) {
           h.destX = finalX; h.destZ = finalZ;
-          h.wpX = h.group.position.x; h.wpZ = finalZ;
+          // Funnel through actual doorways: whenever the walker's current
+          // spot and/or the destination sit inside a walled room (private
+          // office / conference room / owner suite) and it isn't the SAME
+          // room, route out through that room's own door and in through the
+          // destination room's door — instead of a straight/column-row line
+          // that would clip straight through the glass to get there.
+          const curRoom = roomContaining(rooms, h.group.position.x, h.group.position.z);
+          const destRoom = roomContaining(rooms, finalX, finalZ);
+          const gates = [];
+          if (curRoom && curRoom !== destRoom) { gates.push(curRoom.door); gates.push(curRoom.doorOut); }
+          if (destRoom && curRoom !== destRoom) { gates.push(destRoom.doorOut); gates.push(destRoom.door); }
+          h.gates = gates; h.gi = 0;
+          const leg0 = gates.length ? gates[0] : { x: finalX, z: finalZ };
+          h.wpX = h.group.position.x; h.wpZ = leg0.z;
           h.wpDone = false;
         }
+        // The active leg's target: the next pending doorway gate, or the
+        // true final desk/seat once every gate has been passed through.
+        const legTarget = (h.gates && h.gi < h.gates.length) ? h.gates[h.gi] : { x: finalX, z: finalZ };
         // Waypoint arrival must be sticky: the first step toward the final
         // target can be longer than the 0.1 arrival radius (dt is clamped at
         // 0.05s, so below 20fps a step is up to 0.125), and without the flag
         // the walker bounces back to the waypoint forever, jammed mid-route.
         const atWp = h.wpDone || Math.hypot(h.wpX - h.group.position.x, h.wpZ - h.group.position.z) < 0.1;
         h.wpDone = atWp;
-        const tx = atWp ? finalX : h.wpX, tz = atWp ? finalZ : h.wpZ;
+        const tx = atWp ? legTarget.x : h.wpX, tz = atWp ? legTarget.z : h.wpZ;
         const dx = tx - h.group.position.x, dz = tz - h.group.position.z;
         const dist = Math.hypot(dx, dz);
         const distFinal = Math.hypot(finalX - h.group.position.x, finalZ - h.group.position.z);
@@ -4449,6 +4503,15 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           }
         } else {
           h.curSpeed = 0; // arrived / not moving — next departure starts from rest
+        }
+        // Reached the current doorway gate — advance to the next one (or,
+        // once the queue is empty, the remaining movement above already
+        // targets the true final desk/seat directly).
+        if (h.gates && h.gi < h.gates.length && Math.hypot(legTarget.x - h.group.position.x, legTarget.z - h.group.position.z) < 0.15) {
+          h.gi++;
+          const nextLeg = h.gi < h.gates.length ? h.gates[h.gi] : { x: finalX, z: finalZ };
+          h.wpX = h.group.position.x; h.wpZ = nextLeg.z;
+          h.wpDone = false;
         }
         const summoned = c.status === "summoned";
         const targetY = (atDesk || summoned) && distFinal <= 0.03 ? SEAT_DROP : 0;
