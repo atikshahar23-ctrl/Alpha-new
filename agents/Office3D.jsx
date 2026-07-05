@@ -2325,8 +2325,15 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   // embed iframe, reusing the same phoneEmbed viewer as the trade system.
   const [spotifyUrl, setSpotifyUrlState] = useState(() => { try { return localStorage.getItem("alpha:office:spotifyUrl") || ""; } catch { return ""; } });
   const setSpotifyUrl = (u) => { setSpotifyUrlState(u); try { localStorage.setItem("alpha:office:spotifyUrl", u); } catch {} };
-  const toSpotifyEmbedUrl = (url) => {
-    const m = (url || "").match(/open\.spotify\.com\/(?:intl-\w+\/)?(track|album|playlist|show|episode|artist)\/([a-zA-Z0-9]+)/);
+  const toSpotifyEmbedUrl = (input) => {
+    // Accepts a plain share link (open.spotify.com/playlist/ID), an already-
+    // built embed link (open.spotify.com/embed/playlist/ID), or the full
+    // <iframe> snippet Spotify's own "Share → Embed" dialog gives you (which
+    // most people actually copy-paste, not the raw link) — pull the src out
+    // of that first if that's what got pasted in.
+    const srcMatch = (input || "").match(/src=["']([^"']+)["']/);
+    const url = srcMatch ? srcMatch[1] : (input || "");
+    const m = url.match(/open\.spotify\.com\/(?:embed\/)?(?:intl-\w+\/)?(track|album|playlist|show|episode|artist)\/([a-zA-Z0-9]+)/);
     return m ? `https://open.spotify.com/embed/${m[1]}/${m[2]}?theme=0` : null;
   };
   // A brief "biometric unlock" beat plays every time the terminal wakes —
@@ -5783,7 +5790,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
               {spotifyUrl && !toSpotifyEmbedUrl(spotifyUrl) && (
                 <p className="off3-phone-empty">זה לא נראה כמו קישור open.spotify.com תקין (שיר/אלבום/פלייליסט/פודקאסט).</p>
               )}
-              <p className="off3-phone-empty">וידג'ט חינמי ללא התחברות — מנגן פלייליסטים/שירים ציבוריים ששיתפתם מהאפליקציה של ספוטיפי (כפתור "שתף" → "העתק קישור").</p>
+              <p className="off3-phone-empty">וידג'ט חינמי ללא התחברות — מנגן פלייליסטים/שירים ציבוריים. אפשר להדביק גם קישור רגיל (כפתור "שתף" → "העתק קישור") וגם את קוד ה-embed המלא (כפתור "שתף" → "הטמעה") — שניהם עובדים.</p>
             </div>
           )}
           {!phoneEmbed && phoneTab === "ctrl" && (
