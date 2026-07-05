@@ -2039,6 +2039,180 @@ function SpaceOverlay({ onReturn, load = 0 }) {
   );
 }
 
+// A real flyable flight simulator built around the owner's uploaded RQ-180
+// model — its own self-contained scene/camera/render-loop (same pattern as
+// SpaceOverlay above), entered from the plane's showroom spot near a window.
+// Arcade flight model (pitch/roll/yaw + throttle, no stall/lift physics) over
+// an open sky with clouds and a ground plane far below, chase camera, and a
+// live speed/altitude/heading HUD.
+function FlightOverlay({ onReturn }) {
+  const mountRef = useRef(null);
+  const speedRef = useRef(null);
+  const altRef = useRef(null);
+  const hdgRef = useRef(null);
+
+  useEffect(() => {
+    const mount = mountRef.current;
+    if (!mount) return;
+    let cancelled = false;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x8fc7ef);
+    scene.fog = new THREE.Fog(0xbfe3ff, 200, 2600);
+
+    const camera = new THREE.PerspectiveCamera(68, mount.clientWidth / mount.clientHeight, 0.5, 6000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+    renderer.setSize(mount.clientWidth, mount.clientHeight);
+    mount.appendChild(renderer.domElement);
+
+    const sun = new THREE.DirectionalLight(0xffffff, 1.3);
+    sun.position.set(400, 600, 200);
+    scene.add(sun);
+    scene.add(new THREE.AmbientLight(0xbcd6ff, 0.55));
+
+    // Ground far below — a huge flat plane with a soft grid tint so speed and
+    // altitude actually read, plus a horizon-hugging haze color matching fog.
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(9000, 9000, 40, 40),
+      new THREE.MeshStandardMaterial({ color: 0x3f7a55, roughness: 1, wireframe: false })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = -300;
+    scene.add(ground);
+
+    // Soft round cloud sprites scattered through the sky at varying altitude.
+    const cloudCvs = document.createElement("canvas");
+    cloudCvs.width = cloudCvs.height = 128;
+    const cctx = cloudCvs.getContext("2d");
+    const cg = cctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+    cg.addColorStop(0, "rgba(255,255,255,0.95)"); cg.addColorStop(1, "rgba(255,255,255,0)");
+    cctx.fillStyle = cg; cctx.fillRect(0, 0, 128, 128);
+    const cloudTex = new THREE.CanvasTexture(cloudCvs);
+    const cloudMat = new THREE.SpriteMaterial({ map: cloudTex, transparent: true, opacity: 0.85, depthWrite: false });
+    for (let i = 0; i < 140; i++) {
+      const spr = new THREE.Sprite(cloudMat);
+      spr.position.set((Math.random() - 0.5) * 4000, Math.random() * 350 - 60, (Math.random() - 0.5) * 4000);
+      const s = 60 + Math.random() * 180;
+      spr.scale.set(s * 1.6, s, 1);
+      scene.add(spr);
+    }
+
+    // The plane itself — the owner's real RQ-180 model, normalized so its
+    // wingspan (the larger of its own x/z footprint) reads as ~6.5m.
+    const plane = new THREE.Group();
+    scene.add(plane);
+    const base = import.meta.env.BASE_URL || "/";
+    const loader = new GLTFLoader();
+    loader.setMeshoptDecoder(MeshoptDecoder);
+    loader.load(base + "office-models/rq180.glb", (g) => {
+      const m = g.scene;
+      const bb = new THREE.Box3().setFromObject(m);
+      const size = bb.getSize(new THREE.Vector3());
+      const scale = 6.5 / Math.max(size.x, size.z, 0.01);
+      m.scale.setScalar(scale);
+      const bb2 = new THREE.Box3().setFromObject(m);
+      const c2 = bb2.getCenter(new THREE.Vector3());
+      m.position.sub(c2);
+      m.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+      plane.add(m);
+    }, undefined, () => { /* model failed — a blank craft still flies, just invisible */ });
+
+    // Flight state — arcade model: pitch/roll/yaw + throttle, no stall/lift
+    // physics, but a real 3D position you actually fly through.
+    const st = { x: 0, y: 120, z: 0, pitch: 0, roll: 0, yaw: 0, speed: 55 };
+    const keys = {};
+    const onKeyDown = (e) => { keys[e.key.toLowerCase()] = true; };
+    const onKeyUp = (e) => { keys[e.key.toLowerCase()] = false; };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+
+    const clock = new THREE.Clock();
+    let raf;
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+    const animate = () => {
+      if (cancelled) return;
+      raf = requestAnimationFrame(animate);
+      const dt = Math.min(0.05, clock.getDelta());
+
+      const pitchIn = (keys["s"] || keys["arrowdown"] ? 1 : 0) - (keys["w"] || keys["arrowup"] ? 1 : 0);
+      const rollIn = (keys["d"] || keys["arrowright"] ? 1 : 0) - (keys["a"] || keys["arrowleft"] ? 1 : 0);
+      const throttleIn = (keys["shift"] ? 1 : 0) - (keys["control"] ? 1 : 0);
+
+      st.pitch = clamp(st.pitch + pitchIn * dt * 0.7, -0.85, 0.85);
+      st.roll = clamp(st.roll + rollIn * dt * 1.4 - st.roll * dt * 0.8, -1.1, 1.1);
+      st.yaw += st.roll * dt * 0.5;
+      st.speed = clamp(st.speed + throttleIn * dt * 25, 18, 160);
+
+      const dir = new THREE.Vector3(
+        Math.sin(st.yaw) * Math.cos(st.pitch),
+        Math.sin(st.pitch),
+        Math.cos(st.yaw) * Math.cos(st.pitch)
+      );
+      st.x += dir.x * st.speed * dt;
+      st.y += dir.y * st.speed * dt;
+      st.z += dir.z * st.speed * dt;
+      st.y = clamp(st.y, 8, 900);
+
+      plane.position.set(st.x, st.y, st.z);
+      plane.rotation.order = "YXZ";
+      plane.rotation.y = st.yaw + Math.PI;
+      plane.rotation.x = -st.pitch;
+      plane.rotation.z = -st.roll;
+
+      const behind = dir.clone().multiplyScalar(-16);
+      const desired = plane.position.clone().add(behind).add(new THREE.Vector3(0, 4.5, 0));
+      camera.position.lerp(desired, Math.min(1, dt * 4));
+      camera.up.set(0, 1, 0);
+      camera.lookAt(plane.position.clone().add(dir.clone().multiplyScalar(20)));
+
+      if (speedRef.current) speedRef.current.textContent = Math.round(st.speed * 6) + " קמ״ש";
+      if (altRef.current) altRef.current.textContent = Math.round(st.y) + " מ'";
+      if (hdgRef.current) hdgRef.current.textContent = Math.round(((st.yaw * 180 / Math.PI) % 360 + 360) % 360) + "°";
+
+      renderer.render(scene, camera);
+    };
+    animate();
+
+    const onResize = () => {
+      camera.aspect = mount.clientWidth / mount.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(mount.clientWidth, mount.clientHeight);
+    };
+    window.addEventListener("resize", onResize);
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      scene.traverse((obj) => {
+        if (obj.geometry) obj.geometry.dispose();
+        if (obj.material) {
+          const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+          mats.forEach((m) => { if (m.map) m.map.dispose(); m.dispose(); });
+        }
+      });
+      renderer.dispose();
+      if (renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement);
+    };
+  }, []);
+
+  return (
+    <div className="off3-space-wrap">
+      <div ref={mountRef} className="off3-space-canvas" style={{ cursor: "default" }} />
+      <div className="off3-space-hint">W/S להטיה · A/D לגלגול ופנייה · Shift/Ctrl להאצה ולהאטה</div>
+      <div className="off3-flight-hud">
+        <div><span>מהירות</span><b ref={speedRef}>0 קמ״ש</b></div>
+        <div><span>גובה</span><b ref={altRef}>0 מ'</b></div>
+        <div><span>כיוון</span><b ref={hdgRef}>0°</b></div>
+      </div>
+      <button className="off3-space-return" onClick={onReturn}>🚪 חזרה למשרד</button>
+    </div>
+  );
+}
+
 // Hebrew labels for the God Mode "Super-Detailed" spec panel — every
 // registerEditable() call attaches a metadata object keyed like this.
 const GOD_META_LABELS = {
@@ -2071,6 +2245,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, de
   // animate() loop, and the overlay's opaque background + pointer-events
   // hide/block it completely while active.
   const [inSpace, setInSpace] = useState(false);
+  // Flight simulator — walk up to the RQ-180 display near the window and a
+  // "Take Flight" prompt appears, same pattern as the vehicle/space portal.
+  const [nearPlane, setNearPlane] = useState(false);
+  const [inFlight, setInFlight] = useState(false);
+  useEffect(() => { liveRef.current.setNearPlane = setNearPlane; }, []);
   // Real business activity, normalized 0..1 — drives the space portal's
   // orbit speed (busier pipeline = faster orbits), not a random wobble.
   const spacePortalLoad = Math.min(1, ((bizData?.openDeals || 0) + (bizData?.fleetProjects || 0) * 2) / 20);
@@ -2113,6 +2292,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, de
   const [nearVehicle, setNearVehicle] = useState(false);
   const [inVehicle, setInVehicle] = useState(false);
   useEffect(() => { liveRef.current.inVehicle = inVehicle; }, [inVehicle]);
+  useEffect(() => { liveRef.current.inFlight = inFlight; }, [inFlight]);
   useEffect(() => { liveRef.current.setInVehicle = setInVehicle; liveRef.current.setNearVehicle = setNearVehicle; }, []);
   // Truck info signs: standing near a truck's podium sign fetches (and
   // caches) a short real-world blurb about that model from the free
@@ -3803,6 +3983,51 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, de
       }, undefined, () => { /* truck download failed — podium stays as decor */ });
     });
 
+    // ── RQ-180 display, near the east window band — walk up to it and a
+    // "Take Flight" prompt appears, opening the flight simulator overlay.
+    const PLANE_POS = { x: 34.5, z: -14 };
+    scene.userData.planeSpot = { x: PLANE_POS.x, z: PLANE_POS.z };
+    {
+      const podium = new THREE.Mesh(
+        new THREE.CylinderGeometry(2.6, 2.8, 0.14, 40),
+        new THREE.MeshStandardMaterial({ color: 0x14161c, roughness: 0.35, metalness: 0.5 })
+      );
+      podium.position.set(PLANE_POS.x, 0.07, PLANE_POS.z);
+      podium.receiveShadow = true;
+      scene.add(podium);
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(2.7, 0.03, 8, 60), new THREE.MeshBasicMaterial({ color: 0x2ee6ff }));
+      ring.rotation.x = Math.PI / 2;
+      ring.position.set(PLANE_POS.x, 0.15, PLANE_POS.z);
+      scene.add(ring);
+      const spot = new THREE.PointLight(0xcfeaff, 0.7, 9);
+      spot.position.set(PLANE_POS.x, 3.6, PLANE_POS.z);
+      scene.add(spot);
+      obstacles.push({ x: PLANE_POS.x, z: PLANE_POS.z, r: 2.9 });
+      const sign = buildNeonSign("RQ-180", 0x2ee6ff, 2.0, 0.45);
+      sign.position.set(PLANE_POS.x, 3.9, PLANE_POS.z);
+      scene.add(sign);
+      const planeLoader = new GLTFLoader();
+      planeLoader.setMeshoptDecoder(MeshoptDecoder);
+      planeLoader.load(base + "office-models/rq180.glb", (g) => {
+        const model = g.scene;
+        const pb = new THREE.Box3().setFromObject(model);
+        const ps = pb.getSize(new THREE.Vector3());
+        const pc = pb.getCenter(new THREE.Vector3());
+        const s = 4.2 / Math.max(ps.x, ps.z, 0.01);
+        const wrap = new THREE.Group();
+        model.position.set(-pc.x, -pb.min.y, -pc.z);
+        wrap.add(model);
+        wrap.scale.setScalar(s);
+        wrap.position.set(PLANE_POS.x, 0.14, PLANE_POS.z);
+        scene.add(wrap);
+        model.traverse((o) => { if (o.isMesh) o.castShadow = o.receiveShadow = true; });
+        centerSpin.push(wrap);
+        registerEditable(wrap, "RQ-180 (תצוגה)", false, {
+          origin_date: "2024", material_spec: "מרוכב פחמן, ציפוי חמקן", security_level: "מסווג", maintenance_status: "תקין",
+        });
+      }, undefined, () => { /* model failed to load — podium stays empty */ });
+    }
+
     // ── Space portal ─────────────────────────────────────────────────────
     // Placed on the south wall — clear of the desk ring (max radius ~15.84),
     // reception (-13.8, 28.8) and the cafeteria (30.6, 11.2). Walking into
@@ -4224,7 +4449,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, de
       const k = e.key.toLowerCase();
       liveRef.current.keys[k] = true;
       // E toggles sitting on your own office chair (only when near it).
-      if (k === "e") { liveRef.current.toggleSit?.(); liveRef.current.toggleVehicle?.(); }
+      if (k === "e") { liveRef.current.toggleSit?.(); liveRef.current.toggleVehicle?.(); liveRef.current.toggleFlight?.(); }
       if (k === "escape" && liveRef.current.inVehicle) liveRef.current.setInVehicle?.(false);
     };
     const onKeyUp = (e) => { liveRef.current.keys[e.key.toLowerCase()] = false; };
@@ -4615,6 +4840,14 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, de
         liveRef.current.setNearVehicle?.(nearVeh);
       }
 
+      // "Take Flight" prompt — near the RQ-180 display.
+      const planeSpot = scene.userData.planeSpot;
+      const nearPln = !!planeSpot && !liveRef.current.inFlight && Math.hypot(playerH.group.position.x - planeSpot.x, playerH.group.position.z - planeSpot.z) < 3.5;
+      if (liveRef.current.nearPlaneShown !== nearPln) {
+        liveRef.current.nearPlaneShown = nearPln;
+        liveRef.current.setNearPlane?.(nearPln);
+      }
+
       // Truck info sign — standing near a truck's nameplate shows real info
       // about that model (fetched once per truck, cached in React state).
       const trucks = scene.userData.trucks || [];
@@ -4967,6 +5200,10 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, de
     liveRef.current.toggleVehicle = () => {
       if (liveRef.current.inVehicle) { liveRef.current.setInVehicle?.(false); return; }
       if (liveRef.current.nearVehicle) liveRef.current.setInVehicle?.(true);
+    };
+    liveRef.current.toggleFlight = () => {
+      if (liveRef.current.inFlight) return; // exit only via the overlay's own return button
+      if (liveRef.current.nearPlaneShown) liveRef.current.setInFlight?.(true);
     };
 
     // ── God Mode — owner-only admin tools ───────────────────────────────
@@ -5629,6 +5866,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, de
           🚗 היכנס לרכב
         </button>
       )}
+      {nearPlane && !inFlight && (
+        <button className="off3-sit" onClick={() => setInFlight(true)} title="צא לטיסה (E)">
+          🛫 צא לטיסה
+        </button>
+      )}
       {nearTruck && (
         <div className="off3-subtitle">
           <b style={{ color: "#E4BC63" }}>🚚 {nearTruck.label}</b>
@@ -5885,6 +6127,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, de
         </div>
       )}
       {inSpace && <SpaceOverlay onReturn={() => liveRef.current.exitPortal?.()} load={spacePortalLoad} />}
+      {inFlight && <FlightOverlay onReturn={() => setInFlight(false)} />}
     </div>
   );
 }

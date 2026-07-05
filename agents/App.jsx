@@ -4036,6 +4036,12 @@ function StyleTag() {
 .off3-space-focus:hover{border-color:rgba(143,208,255,.6);color:#eaf1ff}
 .off3-space-wrap.focus::after{content:'';position:absolute;inset:0;pointer-events:none;
   background:radial-gradient(ellipse 70% 60% at 50% 50%,transparent 40%,rgba(0,1,7,.85) 100%);animation:acRise .4s ease both}
+/* Flight simulator HUD — reuses off3-space-wrap/canvas/return, adds its own readout. */
+.off3-flight-hud{position:absolute;top:14px;right:14px;z-index:31;display:flex;flex-direction:column;gap:6px;
+  background:rgba(8,12,26,.6);border:1px solid rgba(46,230,255,.3);border-radius:12px;padding:10px 16px;
+  font-family:'Rubik';pointer-events:none}
+.off3-flight-hud div{display:flex;align-items:center;justify-content:space-between;gap:14px;font-size:11px;color:#9fe6f4}
+.off3-flight-hud b{font-size:14px;color:#eaf1ff;font-weight:800}
 .off-floor{flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(2,1fr);gap:12px;padding:14px 14px 28px;align-content:start}
 @media(min-width:680px){.off-floor{grid-template-columns:repeat(3,1fr)}}
 @media(min-width:1000px){.off-floor{grid-template-columns:repeat(4,1fr)}}
