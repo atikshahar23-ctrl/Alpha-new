@@ -421,33 +421,134 @@ async function getAnthropic(key) {
   }
   return anthropicClient;
 }
+/* ── LLM Queue Service ─────────────────────────────────────────────────
+   Every outgoing request to an LLM provider (Claude, Groq, LM Studio) goes
+   through here instead of firing straight off — this is what actually stops
+   the 429 storms, not a per-function retry loop. One queue per provider
+   (each has its own independent rate limit, so a Groq backoff must never
+   delay a Claude call and vice versa): strict FIFO, one request in flight
+   at a time, an enforced minimum gap between calls, and — on a 429 — the
+   request is paused and retried with exponential backoff instead of being
+   dropped or waved through to a different model immediately. ── */
+class LLMQueueService {
+  constructor(name, { minDelayMs = 1500, baseBackoffMs = 2000, maxRetries = 5 } = {}) {
+    this.name = name;
+    this.queue = [];
+    this.processing = false;
+    this.minDelayMs = minDelayMs;
+    this.baseBackoffMs = baseBackoffMs;
+    this.maxRetries = maxRetries;
+    this.lastCallAt = 0;
+    this.status = "idle"; // idle | queued | sending | backoff
+    this.listeners = new Set();
+  }
+  get length() { return this.queue.length; }
+  subscribe(fn) { this.listeners.add(fn); fn(this.snapshot()); return () => this.listeners.delete(fn); }
+  snapshot() { return { name: this.name, length: this.queue.length, status: this.status }; }
+  _emit() { this.listeners.forEach((fn) => { try { fn(this.snapshot()); } catch {} }); }
+  // requestFn: a zero-arg async function that performs the actual network
+  // call and either returns the result or throws (with a 429-detectable
+  // error) — every provider function below supplies its own.
+  enqueue(requestFn) {
+    return new Promise((resolve, reject) => {
+      this.queue.push({ requestFn, resolve, reject, retries: 0 });
+      this.status = this.status === "idle" ? "queued" : this.status;
+      this._emit();
+      this._process();
+    });
+  }
+  async _process() {
+    if (this.processing) return;
+    this.processing = true;
+    while (this.queue.length) {
+      const item = this.queue[0];
+      const wait = this.minDelayMs - (Date.now() - this.lastCallAt);
+      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+      this.status = "sending"; this._emit();
+      try {
+        const result = await item.requestFn();
+        this.lastCallAt = Date.now();
+        this.queue.shift();
+        item.resolve(result);
+      } catch (e) {
+        const is429 = e?.status === 429 || /\b429\b/.test(String(e?.message || ""));
+        if (is429 && item.retries < this.maxRetries) {
+          item.retries++;
+          const backoff = this.baseBackoffMs * Math.pow(2, item.retries - 1);
+          this.status = "backoff"; this._emit();
+          await new Promise((r) => setTimeout(r, backoff));
+          continue; // same item, still at the front — retried, never dropped
+        }
+        this.lastCallAt = Date.now();
+        this.queue.shift();
+        item.reject(e);
+      }
+      this._emit();
+    }
+    this.processing = false;
+    this.status = "idle";
+    this._emit();
+  }
+}
+const groqLLMQueue = new LLMQueueService("groq", { minDelayMs: 1700, baseBackoffMs: 2000, maxRetries: 5 });
+const claudeLLMQueue = new LLMQueueService("claude", { minDelayMs: 1200, baseBackoffMs: 2000, maxRetries: 5 });
+const lmstudioLLMQueue = new LLMQueueService("lmstudio", { minDelayMs: 250, baseBackoffMs: 1000, maxRetries: 3 });
+const ALL_LLM_QUEUES = [groqLLMQueue, claudeLLMQueue, lmstudioLLMQueue];
+const ENGINE_QUEUES = { groq: groqLLMQueue, claude: claudeLLMQueue, lmstudio: lmstudioLLMQueue };
+// Is this engine's queue currently working through a 429 backoff? Used to
+// deprioritize (never fully exclude) an engine that's mid-retry, instead of
+// enqueuing a request we already know will just wait behind the backoff.
+function engineBackingOff(engine) { return ENGINE_QUEUES[engine]?.status === "backoff"; }
+// Subscribe to every provider queue at once — used by the "Secure Uplink"
+// HUD indicator so it lights up no matter which engine is currently talking.
+function subscribeLLMTraffic(onChange) {
+  const state = { groq: groqLLMQueue.snapshot(), claude: claudeLLMQueue.snapshot(), lmstudio: lmstudioLLMQueue.snapshot() };
+  const unsubs = ALL_LLM_QUEUES.map((q) => q.subscribe((snap) => {
+    state[snap.name] = snap;
+    const total = state.groq.length + state.claude.length + state.lmstudio.length;
+    const active = ["groq", "claude", "lmstudio"].find((k) => state[k].status !== "idle");
+    onChange({ total, active: active || null, backoff: ["groq", "claude", "lmstudio"].some((k) => state[k].status === "backoff") });
+  }));
+  return () => unsubs.forEach((u) => u());
+}
+// Tactical HUD indicator — a subtle glowing "Secure Uplink" pill that only
+// shows up while an LLM request is actually queued/in flight/backing off,
+// so the owner can tell the system is thinking (or waiting out a rate
+// limit) instead of wondering if it's frozen.
+function LLMTrafficBadge() {
+  const [traffic, setTraffic] = useState({ total: 0, active: null, backoff: false });
+  useEffect(() => subscribeLLMTraffic(setTraffic), []);
+  if (traffic.total === 0 && !traffic.active) return null;
+  const label = traffic.backoff ? "ממתין (הגבלת קצב)…" : "מעביר נתונים…";
+  return (
+    <span className={"llm-traffic-badge" + (traffic.backoff ? " backoff" : "")} title={`תור: ${traffic.total}`}>
+      <span className="llm-traffic-dot" /> Secure Uplink Active · {label}
+    </span>
+  );
+}
+
 async function askClaude(system, history, user, maxTokens = 800) {
   const key = anthropicKey(); if (!key) throw new Error("NO_KEY");
-  if (isRateLimited("claude")) throw new Error("Claude 429 (cooldown)");
   const client = await getAnthropic(key);
   // Anthropic requires strictly alternating turns starting with "user" —
   // trim any leading assistant message left over from the sliding window.
   let hist = history.slice(-6).filter((m) => m.role === "user" || m.role === "assistant");
   while (hist.length && hist[0].role !== "user") hist = hist.slice(1);
-  let msg;
-  try {
-    msg = await client.messages.create({
-      model: claudeModel(),
-      max_tokens: maxTokens,
-      system,
-      messages: [...hist, { role: "user", content: user }],
-    });
-  } catch (e) {
-    if (e?.status === 429) markRateLimited("claude");
-    throw e;
-  }
+  const msg = await claudeLLMQueue.enqueue(() => client.messages.create({
+    model: claudeModel(),
+    max_tokens: maxTokens,
+    system,
+    messages: [...hist, { role: "user", content: user }],
+  }));
   return (msg.content || []).filter((b) => b.type === "text").map((b) => b.text).join("").trim();
 }
 // Real Claude tool-use loop — for ראובן's trading tools specifically. Every
 // other agent still goes through the plain askClaude/askAI text path above;
 // this one actually lets the model call a function, read the result, and
 // keep going, instead of just describing what it would do. Capped at a few
-// rounds so a confused model can't loop forever burning tokens.
+// rounds so a confused model can't loop forever burning tokens. Each round's
+// request goes through the same Claude queue as every other call, so a
+// multi-round trading conversation can't burst the rate limit either.
 async function askClaudeWithTools(system, history, user, tools, onToolCall, maxTokens = 800) {
   const key = anthropicKey(); if (!key) throw new Error("NO_KEY");
   const client = await getAnthropic(key);
@@ -456,7 +557,7 @@ async function askClaudeWithTools(system, history, user, tools, onToolCall, maxT
   const anthropicTools = tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.parameters }));
   const messages = [...hist, { role: "user", content: user }];
   for (let round = 0; round < 4; round++) {
-    const msg = await client.messages.create({ model: claudeModel(), max_tokens: maxTokens, system, messages, tools: anthropicTools });
+    const msg = await claudeLLMQueue.enqueue(() => client.messages.create({ model: claudeModel(), max_tokens: maxTokens, system, messages, tools: anthropicTools }));
     if (msg.stop_reason !== "tool_use") {
       return (msg.content || []).filter((b) => b.type === "text").map((b) => b.text).join("").trim();
     }
@@ -471,15 +572,6 @@ async function askClaudeWithTools(system, history, user, tools, onToolCall, maxT
   }
   return "ביצעתי כמה פעולות במסחר אבל לא הגעתי לתשובה סופית — תשאל שוב אם צריך פרטים נוספים.";
 }
-// Rate-limit cooldown — a 429 means the account is already over its per-
-// minute token budget, so immediately retrying (another model, another
-// engine call, or the next auto-listen mic cycle) just adds more requests
-// on top of one that's already failing. Remember when an engine last got
-// 429'd and skip it for a short window instead of hammering it again.
-const RATE_LIMIT_COOLDOWN_MS = 30000;
-const rateLimitedUntil = { groq: 0, claude: 0 };
-function isRateLimited(engine) { return (rateLimitedUntil[engine] || 0) > Date.now(); }
-function markRateLimited(engine) { rateLimitedUntil[engine] = Date.now() + RATE_LIMIT_COOLDOWN_MS; }
 const GROQ_MODELS = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "gemma2-9b-it", "llama3-70b-8192"];
 // Real tool-use for ראובן over the FREE Groq engine — same idea as
 // askClaudeWithTools above, just talking the OpenAI-compatible tool-calling
@@ -489,28 +581,26 @@ const GROQ_MODELS = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "gemma2-
 // the plain-chat wheel above aren't reliable tool callers, so they're
 // deliberately left out rather than silently failing mid-trade.
 const GROQ_TOOL_MODELS = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"];
+async function groqFetch(key, body) {
+  return groqLLMQueue.enqueue(async () => {
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw Object.assign(new Error("Groq " + res.status), { status: res.status });
+    return res.json();
+  });
+}
 async function askGroqWithTools(system, history, user, tools, onToolCall, maxTokens = 800) {
   const key = groqKey(); if (!key) throw new Error("NO_KEY");
-  if (isRateLimited("groq")) throw new Error("Groq 429 (cooldown)");
   const groqTools = tools.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.parameters } }));
   let messages = [{ role: "system", content: system }, ...history.slice(-6), { role: "user", content: user }];
   for (const model of GROQ_TOOL_MODELS) {
     try {
       let roundMessages = messages;
       for (let round = 0; round < 4; round++) {
-        const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-          body: JSON.stringify({ model, messages: roundMessages, tools: groqTools, temperature: 0.4, max_tokens: maxTokens }),
-        });
-        if (!res.ok) {
-          // A 429 means the whole account is over budget right now - trying
-          // the next model in the wheel would just fire another doomed
-          // request. Stop immediately and start a cooldown instead.
-          if (res.status === 429) { markRateLimited("groq"); throw new Error("Groq 429"); }
-          throw new Error("Groq " + res.status);
-        }
-        const d = await res.json();
+        const d = await groqFetch(key, { model, messages: roundMessages, tools: groqTools, temperature: 0.4, max_tokens: maxTokens });
         const msg = d.choices?.[0]?.message;
         if (!msg?.tool_calls?.length) return (msg?.content || "").trim();
         roundMessages = [...roundMessages, { role: "assistant", content: msg.content || null, tool_calls: msg.tool_calls }];
@@ -523,51 +613,46 @@ async function askGroqWithTools(system, history, user, tools, onToolCall, maxTok
       }
       return "ביצעתי כמה פעולות במסחר אבל לא הגעתי לתשובה סופית — תשאל שוב אם צריך פרטים נוספים.";
     } catch (e) {
-      if (/429/.test(e.message) || model === GROQ_TOOL_MODELS[GROQ_TOOL_MODELS.length - 1]) throw e;
-      // try the next tool-capable model in the wheel (any non-rate-limit error only)
+      // The queue already retried a 429 with backoff until it gave up -
+      // at that point it's genuinely exhausted, so fall through and try
+      // the next tool-capable model rather than failing the whole request.
+      if (model === GROQ_TOOL_MODELS[GROQ_TOOL_MODELS.length - 1]) throw e;
     }
   }
 }
 async function askGroq(system, history, user, maxTokens = 800) {
   const key = groqKey(); if (!key) throw new Error("NO_KEY");
-  if (isRateLimited("groq")) throw new Error("Groq 429 (cooldown)");
   const messages = [{ role: "system", content: system }, ...history.slice(-6), { role: "user", content: user }];
-  let lastCode = 0;
+  let lastErr = null;
   for (const model of GROQ_MODELS) {
-    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-      body: JSON.stringify({ model, messages, temperature: 0.75, max_tokens: maxTokens }),
-    });
-    if (res.ok) { const d = await res.json(); return d.choices?.[0]?.message?.content?.trim() || ""; }
-    lastCode = res.status;
-    // 429 = the whole account is over its per-minute budget right now -
-    // trying the next model would just fire another request that's also
-    // guaranteed to fail. Stop immediately and start a cooldown instead of
-    // hammering every model in the wheel back-to-back.
-    if (res.status === 401 || res.status === 403 || res.status === 429) {
-      if (res.status === 429) markRateLimited("groq");
-      break;
+    try {
+      const d = await groqFetch(key, { model, messages, temperature: 0.75, max_tokens: maxTokens });
+      return d.choices?.[0]?.message?.content?.trim() || "";
+    } catch (e) {
+      lastErr = e;
+      if (e.status === 401 || e.status === 403) break; // bad key — no point trying other models
     }
   }
-  throw new Error("Groq " + lastCode);
+  throw lastErr || new Error("Groq failed");
 }
 async function askLmStudio(system, history, user, maxTokens = 800) {
   const base = lmsUrl().replace(/\/+$/, "");
   if (!base) throw new Error("NO_LMS");
-  const res = await fetch(base + "/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: lmsModel() || "local-model",
-      messages: [{ role: "system", content: system }, ...history.slice(-6), { role: "user", content: user }],
-      temperature: 0.75,
-      max_tokens: maxTokens,
-    }),
-    signal: AbortSignal.timeout(120000), // local models can be slow on big prompts
+  const d = await lmstudioLLMQueue.enqueue(async () => {
+    const res = await fetch(base + "/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: lmsModel() || "local-model",
+        messages: [{ role: "system", content: system }, ...history.slice(-6), { role: "user", content: user }],
+        temperature: 0.75,
+        max_tokens: maxTokens,
+      }),
+      signal: AbortSignal.timeout(120000), // local models can be slow on big prompts
+    });
+    if (!res.ok) throw Object.assign(new Error("LM Studio " + res.status), { status: res.status });
+    return res.json();
   });
-  if (!res.ok) throw new Error("LM Studio " + res.status);
-  const d = await res.json();
   return d.choices?.[0]?.message?.content?.trim() || "";
 }
 /* ── Smart routing — יהודה (המנכ"ל) מחליט ─────────────────────────────────
@@ -616,7 +701,7 @@ async function askAI(system, history, user, maxTokens = 800) {
   // cooling down from a recent 429 is pushed to the back instead of tried
   // first, so a known-doomed request doesn't eat the first attempt.
   const order = [route.engine, ...available.filter((e) => e !== route.engine)]
-    .sort((a, b) => (isRateLimited(a) ? 1 : 0) - (isRateLimited(b) ? 1 : 0));
+    .sort((a, b) => (engineBackingOff(a) ? 1 : 0) - (engineBackingOff(b) ? 1 : 0));
   let lastErr = null;
   for (let i = 0; i < order.length; i++) {
     const eng = order[i];
@@ -1528,6 +1613,7 @@ function TopBar({ online }) {
         </div>
       </div>
       <div className="ac-top-right">
+        <LLMTrafficBadge />
         <div className={"ac-top-status " + (online ? "on" : "off")}>
           <Radio size={13} /> {online ? (anthropicKey() ? "Claude חי" : "AI חי") : "מצב הדגמה"}
         </div>
@@ -1991,7 +2077,7 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
       // stays on the plain text path above. Groq is tried first since it's
       // free; Claude is the fallback when only that's configured.
       const tradingEngine = agent.id === "finance" && isSimConfigured()
-        ? (groqKey() && !isRateLimited("groq") ? "groq" : anthropicKey() ? "claude" : groqKey() ? "groq" : null)
+        ? (groqKey() && !engineBackingOff("groq") ? "groq" : anthropicKey() ? "claude" : groqKey() ? "groq" : null)
         : null;
       const useTradingTools = !!tradingEngine;
       const tradingPersona = agent.persona + bizContext() + domainContext(agent.id) + SPECIALIST_PROTOCOL + webCtx + langDirective();
@@ -2723,6 +2809,7 @@ function OfficeSim({ onClose, onOpenChat, logActivity, showToast }) {
       <div className="off-top">
         <div className="off-top-l"><span className="off-live"><span className="ac-live-dot" /> חי</span><b>🏢 בניין אלפא · קומת הסוכנים · תלת-ממד</b></div>
         <div className="ofc-clock">{ph.emoji} {ph.label}</div>
+        <LLMTrafficBadge />
         <button className="off-summon-btn" onClick={() => setSummonOpen((v) => !v)} title="קרא סוכן למשרד שלך"><Clock size={16} /> קריאה לפגישה</button>
         <button className="off-close" onClick={onClose}><X size={20} /></button>
       </div>
@@ -3196,6 +3283,10 @@ function StyleTag() {
 .ac-top-status.off{color:var(--s4);background:var(--s9)}
 .ac-top-status svg{animation:acDot 2s ease-in-out infinite}
 .ac-top-right{display:flex;align-items:center;gap:8px}
+.llm-traffic-badge{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:800;padding:6px 11px;border-radius:20px;
+  color:#2ee6ff;border:1px solid rgba(46,230,255,.35);background:rgba(46,230,255,.08);white-space:nowrap;animation:acRise .2s ease both}
+.llm-traffic-badge.backoff{color:#FFD23F;border-color:rgba(255,210,63,.4);background:rgba(255,210,63,.08)}
+.llm-traffic-dot{width:7px;height:7px;border-radius:50%;background:currentColor;box-shadow:0 0 8px currentColor;animation:acDot 1.1s ease-in-out infinite}
 .ac-top-home{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;
   background:var(--s9);border:1px solid var(--s7);color:var(--s4);transition:border-color .15s,color .15s}
 .ac-top-home:hover{border-color:#E4BC63;color:#E4BC63}
