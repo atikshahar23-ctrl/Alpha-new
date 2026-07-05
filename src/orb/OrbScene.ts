@@ -2399,11 +2399,15 @@ function makeThrowPokeball(group: THREE.Group, pikaGroup: THREE.Group, base: str
     });
   }
   function release() { if (ball) ball.visible = false; }
-  // `speed` is the real hand-flick speed from the gesture detector (px/frame,
-  // roughly 0-100 in practice — see app.ts's flick threshold of ~26). A fast
-  // flick makes for a quicker, more aggressive throw with a higher arc and
-  // faster spin; a gentle "hold to summon" (no real flick, speed omitted)
-  // keeps the original soft toss feel this always had.
+  /**
+   * Animate the held pokéball flying from its current position to the orb,
+   * with duration/arc height/spin rate scaled by the real gesture speed so a
+   * hard flick genuinely looks and feels different from a gentle release.
+   * @param onArrive - called once the ball reaches the orb and the arrival burst fires.
+   * @param speed - hand-flick speed from the gesture detector (px/frame, roughly
+   *   0–100 in practice; see app.ts's flick threshold of ~26). Omit for the
+   *   default gentle toss used by "hold to summon" (no real flick occurred).
+   */
   function throwIt(onArrive?: () => void, speed = 30) {
     ensure().then((b) => {
       if (!b || !camera) { onArrive && onArrive(); return; }

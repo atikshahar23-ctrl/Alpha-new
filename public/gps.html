@@ -407,6 +407,18 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
 // silent retries with exponential backoff (2s/5s/10s) instead of just sitting
 // unsynced until the user remembers to open Settings and hit "sync all".
 const RETRY_DELAYS_MS=[2000,5000,10000];
+/**
+ * POST a single trip record to the configured sync webhook, retrying with
+ * exponential backoff on failure (network drop, tunnel, webhook down).
+ * Mutates `rec.synced` in place on success — `rec` is expected to be the
+ * live object already sitting in the `trips` array, not a copy, so callers
+ * (the recorder, "sync all", and the `online` listener) all observe the
+ * same synced flag once it flips.
+ * @param {{id:string, synced:boolean, [k:string]: any}} rec - trip record; mutated on success.
+ * @param {number} [attempt=0] - current retry number (0 = first try); internal, callers omit it.
+ * @returns {Promise<void>} resolves once the attempt (or its scheduled retry) has been dispatched;
+ *   does not reject — a fully exhausted retry chain fails silently, leaving rec.synced === false.
+ */
 async function pushTrip(rec,attempt=0){
   if(!cfg.hook)return;
   try{
