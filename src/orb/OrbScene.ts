@@ -1012,6 +1012,43 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   return { group, head: headGroup, leftEye, rightEye, leftPupil, rightPupil, leftEyelid, rightEyelid, leftEarGroup, rightEarGroup, cheekMatL, cheekMatR, tail, leftArm, rightArm, mouthMesh, tongue, sparks, sparkMats, sparkMeshes, auraMat, coronaMats };
 }
 
+// ============================================================
+// ALPHA BRAIN — default centerpiece (gold holographic energy-ball), shown
+// instead of a Pokemon/robot until the user picks one. Mirrors the "sunGroup"
+// hologram already built for the office app's owner-assistant globe (solid
+// icosahedron core + wireframe shell + canvas-glow sprite + point light) —
+// reproduced procedurally here since the two apps don't share a bundle.
+// ============================================================
+interface AlphaBrainParts {
+  group: THREE.Group;
+  core: THREE.Mesh;
+  wire: THREE.Mesh;
+  light: THREE.PointLight;
+}
+function buildAlphaBrain(): AlphaBrainParts {
+  const gold = 0xE4BC63;
+  const group = new THREE.Group();
+  const core = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(1.1, 2),
+    new THREE.MeshStandardMaterial({ color: gold, emissive: gold, emissiveIntensity: 1.2, roughness: 0.35, metalness: 0.1 }),
+  );
+  group.add(core);
+  const wire = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(1.4, 1),
+    new THREE.MeshBasicMaterial({ color: gold, wireframe: true, transparent: true, opacity: 0.8 }),
+  );
+  group.add(wire);
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: glowTexture(), color: gold, transparent: true, opacity: 0.55,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  }));
+  glow.scale.setScalar(3.2);
+  group.add(glow);
+  const light = new THREE.PointLight(gold, 1.6, 9);
+  group.add(light);
+  return { group, core, wire, light };
+}
+
 // Atmosphere glow shaders — volumetric, animated, multi-fresnel
 const ATMOSPHERE_VERT = /* glsl */`
   varying vec3 vNormal;
@@ -1333,6 +1370,7 @@ const CHAR_BG: Record<string, number> = {
   zapdos:     0x161202, // lightning yellow
   lugia:      0x081020, // deep-sea silver
   'ho-oh':    0x180e03, // sacred gold
+  alphabrain: 0x120d02, // warm near-black, complements the gold hologram
 };
 function charBg(name: string): number { return CHAR_BG[name] ?? 0x0a0620; }
 
@@ -1355,6 +1393,7 @@ const CHAR_ACCENT: Record<string, number> = {
   zapdos:     0xfff04d, // lightning yellow
   lugia:      0x8fb6ff, // deep-sea silver-blue
   'ho-oh':    0xffb020, // sacred gold
+  alphabrain: 0xE4BC63, // Alpha Brain gold
 };
 function charAccent(name: string): number { return CHAR_ACCENT[name] ?? 0xdaa520; }
 
@@ -1852,9 +1891,10 @@ function flashArrival(model: THREE.Object3D) {
   requestAnimationFrame(step);
 }
 
-function collectAccentMats(root: THREE.Object3D, skip: THREE.Object3D): AccentMat[] {
+function collectAccentMats(root: THREE.Object3D, skip: THREE.Object3D | THREE.Object3D[]): AccentMat[] {
   const out: AccentMat[] = [];
-  const underSkip = (o: THREE.Object3D | null) => { while (o) { if (o === skip) return true; o = o.parent; } return false; };
+  const skips = Array.isArray(skip) ? skip : [skip];
+  const underSkip = (o: THREE.Object3D | null) => { while (o) { if (skips.indexOf(o) >= 0) return true; o = o.parent; } return false; };
   root.traverse((o: any) => {
     if (underSkip(o)) return;
     const ms = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
@@ -1892,6 +1932,7 @@ function defaultXform(character: string): CharXform {
     zapdos:     { x: 0,            y: Math.PI, z: 0 },
     lugia:      { x: 0,            y: Math.PI, z: 0 },
     'ho-oh':    { x: 0,            y: Math.PI, z: 0 },
+    alphabrain: { x: 0,            y: 0,       z: 0 },   // symmetric icosahedron — no default tilt needed
   };
   const r = ROT[character] ?? { x: 0, y: Math.PI, z: 0 };
   return { x: r.x, y: r.y, z: r.z, s: 1, px: 0, py: 0, pz: 0 };
@@ -1998,7 +2039,7 @@ function attachAura(host: THREE.Group, character: string): void {
     } catch {}
     (host as any).__aura = null;
   }
-  if (character === 'robot' || character === 'none') return;   // robot keeps its true colours, no aura
+  if (character === 'robot' || character === 'none' || character === 'alphabrain') return;   // robot/alphabrain keep their own look, no aura
   const type: AuraType = POKEMON_ATTACK_TYPE[character] || 'normal';
   const legendary = LEGENDARY.has(character);
   const perfLite = typeof document !== 'undefined' && document.documentElement.classList.contains('perf-lite');
@@ -2487,7 +2528,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     return qTier >= 2 ? Math.min(base, 1) : base;
   };
   renderer.setPixelRatio(prCap());
-  renderer.setClearColor(charBg('robot'), 0);
+  renderer.setClearColor(charBg('alphabrain'), 0);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.65;
   container.appendChild(renderer.domElement);
@@ -2576,9 +2617,9 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   const pikaGroup = pika.group;
   pikaGroup.scale.setScalar(0.95);
   group.add(pikaGroup);
-  // The centerpiece default is the ROBOT — the procedural Pikachu used to
-  // flash first (procedural body → pikachu.glb → robot swap at 600ms), so
-  // its body is hidden from frame 0 and the robot loads directly.
+  // The procedural Pikachu body flashes for a frame before any GLTF swap
+  // finishes loading, so it's hidden from frame 0 regardless of which
+  // character (GLTF or the Alpha Brain hologram) ends up shown.
   pikaGroup.traverse((child) => {
     if (child instanceof THREE.Mesh) {
       const mat = Array.isArray(child.material) ? child.material[0] : child.material;
@@ -2586,10 +2627,14 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
       if (mat instanceof THREE.MeshBasicMaterial && (mat as THREE.MeshBasicMaterial).map) child.visible = false;
     }
   });
-  let mobileCurrentChar = 'robot';
+  // The default centerpiece is the ALPHA BRAIN hologram, not a GLTF character —
+  // no model to load, so pikaGroup just stays hidden until the user picks one.
+  const alphaBrain = buildAlphaBrain();
+  group.add(alphaBrain.group);
+  pikaGroup.visible = false;
+  let mobileCurrentChar = 'alphabrain';
   let mobileCurrentModel: THREE.Object3D | null = null;
   let mobPFX: PFXState | null = null;
-  loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/', 'robot', (m) => { mobileCurrentModel = m; });
   const mobileThrowPokeball = makeThrowPokeball(group, pikaGroup, import.meta.env.BASE_URL || '/', camera);
 
   // ────────────────────────────────────────────
@@ -2872,6 +2917,11 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     const bounce = 1.0 + Math.max(0, Math.sin(time * 3.0)) * 0.008;
     const hopSquash = hopActive ? 1.0 + Math.sin((hopCycle - 7.4) / 0.4 * PI) * 0.04 : 1.0;
     pikaGroup.scale.set(0.95 * breath * (1.0 / bounce) * (1.0 / hopSquash), 0.95 * breath * bounce * hopSquash, 0.95 * breath);
+    // Alpha Brain — slow counter-rotating core/shell, hologram-style idle spin.
+    alphaBrain.core.rotation.y += dt * 0.25;
+    alphaBrain.core.rotation.x += dt * 0.08;
+    alphaBrain.wire.rotation.y -= dt * 0.18;
+    alphaBrain.wire.rotation.x += dt * 0.05;
     if (pika.head) {
       // Curious head tilt — cycles between looking around and tilting curiously
       const curiousCycle = time % 12.0;
@@ -3035,10 +3085,11 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   raf = requestAnimationFrame(frame);
 
   // Collect the gold cage / ring / line materials so the framework recolours to
-  // match the active Pokemon (skips the character model itself).
-  const mobAccentMats = collectAccentMats(group, pikaGroup);
+  // match the active Pokemon (skips the character model itself and the Alpha
+  // Brain hologram, which keeps its own gold regardless of accent swaps).
+  const mobAccentMats = collectAccentMats(group, [pikaGroup, alphaBrain.group]);
   function mobApplyAccent(name: string) { applyAccentToMats(mobAccentMats, charAccent(name)); }
-  mobApplyAccent('pikachu');
+  mobApplyAccent('alphabrain');
 
   return {
     setEnergy(v: number) { ampTarget = Math.max(0, Math.min(1, v)); },
@@ -3066,6 +3117,15 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
       stopCry();
       disposeParticles(mobPFX, scene); mobPFX = null;
       mobileCurrentChar = name;
+      if (name === 'alphabrain') {
+        alphaBrain.group.visible = true;
+        pikaGroup.visible = false;
+        attachAura(pikaGroup, 'none');   // tear down any leftover Pokemon aura
+        renderer.setClearColor(charBg('alphabrain'), 0);
+        mobApplyAccent('alphabrain');
+        return;
+      }
+      alphaBrain.group.visible = false;
       if (name === 'none') {
         pikaGroup.visible = false;
         attachAura(pikaGroup, 'none');   // tear down any aura
@@ -3089,7 +3149,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     setPerfMode(on: boolean) { perfFast = on; resize(); },
     getCharacterTransform() { return getCharXform(mobileCurrentChar); },
     setCharacterTransform(x: number, y: number, z: number, s: number, px: number, py: number, pz: number) {
-      if (mobileCurrentChar === 'robot') x = 0;   // robot must stay upright — X locked at 0
+      if (mobileCurrentChar === 'robot' || mobileCurrentChar === 'alphabrain') x = 0;   // stays upright — X locked at 0
       saveCharXform(mobileCurrentChar, { x, y, z, s, px, py, pz });
       if (mobileCurrentModel) {
         const bt = modelBaseTransform.get(mobileCurrentModel);
@@ -3161,7 +3221,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     return qTier >= 2 ? Math.min(base, 1) : base;
   };
   renderer.setPixelRatio(prCap());
-  renderer.setClearColor(charBg('robot'), 0);
+  renderer.setClearColor(charBg('alphabrain'), 0);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.75;
   container.appendChild(renderer.domElement);
@@ -3255,9 +3315,9 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   const pika = buildPikachu(pikaMats, 1.0);
   const pikaGroup = pika.group;
   group.add(pikaGroup);
-  // The centerpiece default is the ROBOT — the procedural Pikachu used to
-  // flash first (procedural body → pikachu.glb → robot swap at 600ms), so
-  // its body is hidden from frame 0 and the robot loads directly.
+  // The procedural Pikachu body flashes for a frame before any GLTF swap
+  // finishes loading, so it's hidden from frame 0 regardless of which
+  // character (GLTF or the Alpha Brain hologram) ends up shown.
   pikaGroup.traverse((child) => {
     if (child instanceof THREE.Mesh) {
       const mat = Array.isArray(child.material) ? child.material[0] : child.material;
@@ -3265,10 +3325,14 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       if (mat instanceof THREE.MeshBasicMaterial && (mat as THREE.MeshBasicMaterial).map) child.visible = false;
     }
   });
-  let deskCurrentChar = 'robot';
+  // The default centerpiece is the ALPHA BRAIN hologram, not a GLTF character —
+  // no model to load, so pikaGroup just stays hidden until the user picks one.
+  const alphaBrain = buildAlphaBrain();
+  group.add(alphaBrain.group);
+  pikaGroup.visible = false;
+  let deskCurrentChar = 'alphabrain';
   let deskCurrentModel: THREE.Object3D | null = null;
   let deskPFX: PFXState | null = null;
-  loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/', 'robot', (m) => { deskCurrentModel = m; });
   const deskThrowPokeball = makeThrowPokeball(group, pikaGroup, import.meta.env.BASE_URL || '/', camera);
 
 
@@ -3904,6 +3968,11 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     const bounce = 1.0 + Math.max(0, Math.sin(time * 3.0)) * 0.008;
     const hopSquash = hopActive ? 1.0 + Math.sin((hopCycle - 7.4) / 0.4 * PI) * 0.04 : 1.0;
     pikaGroup.scale.set(breath * (1.0 / bounce) * (1.0 / hopSquash), breath * bounce * hopSquash, breath);
+    // Alpha Brain — slow counter-rotating core/shell, hologram-style idle spin.
+    alphaBrain.core.rotation.y += dt * 0.25;
+    alphaBrain.core.rotation.x += dt * 0.08;
+    alphaBrain.wire.rotation.y -= dt * 0.18;
+    alphaBrain.wire.rotation.x += dt * 0.05;
     if (pika.head) {
       // Curious head tilt — cycles between looking around and tilting curiously
       const curiousCycle = time % 12.0;
@@ -4136,10 +4205,11 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   raf = requestAnimationFrame(frame);
 
   // Collect the gold cage / ring / line materials so the whole framework can be
-  // recoloured to match the active Pokemon (skips the character model itself).
-  const deskAccentMats = collectAccentMats(group, pikaGroup);
+  // recoloured to match the active Pokemon (skips the character model itself and
+  // the Alpha Brain hologram, which keeps its own gold regardless of accent swaps).
+  const deskAccentMats = collectAccentMats(group, [pikaGroup, alphaBrain.group]);
   function deskApplyAccent(name: string) { applyAccentToMats(deskAccentMats, charAccent(name)); }
-  deskApplyAccent('pikachu');
+  deskApplyAccent('alphabrain');
 
   return {
     setEnergy(v: number) { ampTarget = Math.max(0, Math.min(1, v)); },
@@ -4178,9 +4248,17 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       stopCry();
       disposeParticles(deskPFX, scene); deskPFX = null;
       deskCurrentChar = name;
+      if (name === 'alphabrain') {
+        alphaBrain.group.visible = true;
+        pikaGroup.visible = false;
+        attachAura(pikaGroup, 'none');   // tear down any leftover Pokemon aura
+        renderer.setClearColor(charBg('alphabrain'), 0);
+        deskApplyAccent('alphabrain');
+        return;
+      }
+      alphaBrain.group.visible = false;
       if (name === 'none') {
-        // No character — hide the model entirely (default state; makes room for the
-        // upcoming holographic figure). Keep a neutral background.
+        // No character — hide the model entirely. Keep a neutral background.
         pikaGroup.visible = false;
         attachAura(pikaGroup, 'none');   // tear down any aura
         renderer.setClearColor(charBg('none'), 0);
@@ -4203,7 +4281,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     setPerfMode(on: boolean) { perfFast = on; resize(); },
     getCharacterTransform() { return getCharXform(deskCurrentChar); },
     setCharacterTransform(x: number, y: number, z: number, s: number, px: number, py: number, pz: number) {
-      if (deskCurrentChar === 'robot') x = 0;   // robot must stay upright — X locked at 0
+      if (deskCurrentChar === 'robot' || deskCurrentChar === 'alphabrain') x = 0;   // stays upright — X locked at 0
       saveCharXform(deskCurrentChar, { x, y, z, s, px, py, pz });
       if (deskCurrentModel) {
         const bt = modelBaseTransform.get(deskCurrentModel);

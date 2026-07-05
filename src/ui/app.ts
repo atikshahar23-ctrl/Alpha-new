@@ -4504,6 +4504,9 @@ export function mountApp(root: HTMLElement) {
   // other models the user provided. Persisted so it survives reloads.
   const MAIN_CHAR_KEY = 'alpha_main_character';
   const MAIN_CHARACTERS = [
+    // Not a Pokemon — no Dex sprite, so its summon-dock thumbnail is blank
+    // (falls back to the pokeball + name, same as any failed sprite fetch).
+    { id: 'robot',      label: 'רובוט',      words: /(רובוט|robot)/i },
     { id: 'pikachu',    label: 'פיקאצ\'ו',   words: /(פיקאצ'?ו|פיקצ'?ו|פיקא|pikachu|pika)/i },
     { id: 'charmander', label: 'צ\'רמנדר',   words: /(צ'?רמנדר|צ'?ארמנדר|charmander|charm)/i },
     { id: 'squirtle',   label: 'סקווירטל',   words: /(סקווירטל|סקוירטל|squirtle|squirt)/i },
