@@ -2131,6 +2131,15 @@ body::after {
   }
   .chip svg { width: 14px; height: 14px; filter: drop-shadow(0 0 4px rgba(218,165,32,.3)); }
   .chip:last-child { font-size: 9px; gap: 5px; }
+  /* comfortModeBtn/declutterBtn use an emoji glyph instead of an <svg> icon
+     (every other chip here does), so the blanket font-size:0 above — meant
+     to hide icon-only chips' text labels — was silently zeroing their emoji
+     too, leaving a completely blank, untappable-looking pill with no visible
+     way to find or undo "מצב חסכוני"/"מסך נקי" on a phone. Restore just
+     enough font-size for the emoji to render, and hide their label span
+     explicitly so they still read as compact icon-only chips like the rest. */
+  #comfortModeBtn, #declutterBtn { font-size: 15px; }
+  #comfortModeBtn span, #declutterBtn span { display: none; }
 
   .right-panel {
     right: 12px; left: 12px;
