@@ -1765,8 +1765,11 @@ function buildOwnerOffice(color, deskTemplate, laptopTemplate, furnitureTemplate
     const holoLight = new THREE.PointLight(color, 0.5, 3.5);
     holoLight.position.y = 1.1; holo.add(holoLight);
     holo.position.set(3.0, 0, -1.4);
+    // Owner request: this globe IS Alpha, the main assistant - bigger and
+    // more present than a decorative desk prop.
+    holo.scale.setScalar(1.7);
     g.add(holo);
-    obstacles.push({ x: 3.0, z: -1.4, r: 0.55 });
+    obstacles.push({ x: 3.0, z: -1.4, r: 0.85 });
 
     // Two server racks against the back wall — dark cabinets with LED rows.
     const ledMat = new THREE.MeshBasicMaterial({ color: 0x33ff88, transparent: true, opacity: 0.85 });
@@ -1827,7 +1830,7 @@ function buildOwnerOffice(color, deskTemplate, laptopTemplate, furnitureTemplate
   const up = new THREE.PointLight(color, 0.8, 7);
   up.position.set(0.5, 0.5, -2.6); g.add(up);
 
-  return { group: g, obstacles, deskMon: desk.monMat, deskHolo: desk.holo, seatLocal, spinners, blinkMats };
+  return { group: g, obstacles, deskMon: desk.monMat, deskHolo: desk.holo, seatLocal, spinners, blinkMats, holoLocal: { x: 3.0, z: -1.4 } };
 }
 
 /* ── Space portal overlay ────────────────────────────────────────────
@@ -3356,6 +3359,54 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, de
     if (ownerOffice.deskHolo) deskHolos.push(ownerOffice.deskHolo);
     const ownerSpinners = ownerOffice.spinners || [];
     const ownerBlinkMats = ownerOffice.blinkMats || [];
+    // Both the in-office holo and the giant one over the showroom (below)
+    // ARE Alpha, the main assistant — walking up to either one starts a
+    // conversation with it, same as approaching any of the tribe agents.
+    const alphaSpots = [];
+    if (ownerOffice.holoLocal) {
+      alphaSpots.push({ x: OFFICE_ORIGIN.x + ownerOffice.holoLocal.x, z: OFFICE_ORIGIN.z + ownerOffice.holoLocal.z });
+    }
+    // A giant version of the same globe, hovering high over the car podium
+    // at the room's center (owner request: "like a small sun") — visible
+    // from almost anywhere on the floor, not competing for the car's own
+    // floor space since it floats well above it.
+    {
+      const sunColor = 0xE4BC63;
+      const sunGroup = new THREE.Group();
+      const core = new THREE.Mesh(
+        new THREE.IcosahedronGeometry(1.8, 2),
+        new THREE.MeshBasicMaterial({ color: 0xfff2d0 })
+      );
+      sunGroup.add(core);
+      const wire = new THREE.Mesh(
+        new THREE.IcosahedronGeometry(2.3, 1),
+        new THREE.MeshBasicMaterial({ color: sunColor, wireframe: true, transparent: true, opacity: 0.8 })
+      );
+      sunGroup.add(wire);
+      const glowSprite = new THREE.Sprite(new THREE.SpriteMaterial({
+        color: sunColor, transparent: true, opacity: 0.5, depthWrite: false,
+        map: (() => {
+          const cvs = document.createElement("canvas"); cvs.width = cvs.height = 256;
+          const cx2 = cvs.getContext("2d");
+          const grd = cx2.createRadialGradient(128, 128, 0, 128, 128, 128);
+          grd.addColorStop(0, "rgba(255,240,200,0.9)"); grd.addColorStop(1, "rgba(255,240,200,0)");
+          cx2.fillStyle = grd; cx2.fillRect(0, 0, 256, 256);
+          return new THREE.CanvasTexture(cvs);
+        })(),
+      }));
+      glowSprite.scale.setScalar(11);
+      sunGroup.add(glowSprite);
+      const sunLight = new THREE.PointLight(sunColor, 1.4, 26);
+      sunGroup.add(sunLight);
+      const sunSign = buildNeonSign("אלפא · העוזר הראשי", sunColor, 4.2, 0.8);
+      sunSign.position.y = -3.2;
+      sunGroup.add(sunSign);
+      sunGroup.position.set(-2.5, 9.5, -1.0);
+      scene.add(sunGroup);
+      ownerSpinners.push(wire, core);
+      alphaSpots.push({ x: -2.5, z: -1.0 });
+    }
+    scene.userData.alphaSpots = alphaSpots;
     // The owner's chair in world coordinates — where the player can sit down.
     const OWNER_SEAT = {
       x: OFFICE_ORIGIN.x + ownerOffice.seatLocal.x,
@@ -4870,6 +4921,13 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, de
         const h = npc[c.id]; if (!h) return;
         const d = playerH.group.position.distanceTo(h.group.position);
         if (d < nearestDist) { nearest = c.id; nearestDist = d; }
+      });
+      // Alpha's two hologram spots (checked on the horizontal plane only —
+      // the giant one hovers well above head height, so a straight 3D
+      // distance would never trigger for it).
+      (scene.userData.alphaSpots || []).forEach((s) => {
+        const d = Math.hypot(playerH.group.position.x - s.x, playerH.group.position.z - s.z);
+        if (d < TALK_DIST + 1.5 && d < nearestDist) { nearest = "alpha"; nearestDist = d; }
       });
       if (liveRef.current.talkTarget !== nearest) {
         liveRef.current.talkTarget = nearest;
