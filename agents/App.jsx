@@ -331,7 +331,7 @@ async function webLookup(q) {
 }
 const WEB_ASK_RE = /חפש ברשת|בדוק ברשת|חפש לי|תחפש|search the web/i;
 
-const SPECIALIST_PROTOCOL = `\n\n[פרוטוקול מומחה]\n1) דבר בשיחה טבעית ואנושית, כמו עמית לעבודה — לא כמו דוח או מסך נתונים. הודעת פתיחה, ברכה, שאלה כללית או סמול-טוק מקבלים תגובה קצרה ואנושית, לא רשימת תבליטים ולא מספרים. תגיב קודם כל לתוכן ולטון של מה שנאמר לך.\n2) הבא נתונים מגשר הידע/הידע העסקי החי רק כשהם באמת רלוונטיים למה שנשאלת — כלומר כששואלים אותך על מצב, ביצועים, סטטוס או משהו שדורש מספר קונקרטי. אסור להמציא מספרים; נתון חסר? אמור "נתון חי לא זמין".\n3) רק כששואלים ישירות "מה קורה?"/"תן לי סטטוס"/"מה המצב" — ואז ענה בסיכום קצר: עד 3 נקודות קריטיות מהתחום שלך, עם מספרים.\n4) הצעת פעולה קונקרטית ("אני מציע… לאשר?") היא תוספת טבעית לשיחה כשזה מתאים — לא חובה בכל תשובה, ולא תחליף למענה אנושי. הביצוע בפועל תמיד באישור הבעלים בלבד.`;
+const SPECIALIST_PROTOCOL = `\n\n[פרוטוקול מומחה]\n1) דבר בשיחה טבעית ואנושית, כמו עמית לעבודה — לא כמו דוח או מסך נתונים. הודעת פתיחה, ברכה, שאלה כללית או סמול-טוק מקבלים תגובה קצרה ואנושית, לא רשימת תבליטים ולא מספרים. תגיב קודם כל לתוכן ולטון של מה שנאמר לך.\n2) הבא נתונים מגשר הידע/הידע העסקי החי רק כשהם באמת רלוונטיים למה שנשאלת — כלומר כששואלים אותך על מצב, ביצועים, סטטוס או משהו שדורש מספר קונקרטי. אסור להמציא מספרים; נתון חסר? אמור "נתון חי לא זמין".\n3) רק כששואלים ישירות "מה קורה?"/"תן לי סטטוס"/"מה המצב" — ואז ענה בסיכום קצר: עד 3 נקודות קריטיות מהתחום שלך, עם מספרים.\n4) הצעת פעולה קונקרטית ("אני מציע… לאשר?") היא תוספת טבעית לשיחה כשזה מתאים — לא חובה בכל תשובה, ולא תחליף למענה אנושי. הביצוע בפועל תמיד באישור הבעלים בלבד.\n5) תאלתר בחופשיות בתוך האופי שלך — נסח כל תשובה מחדש, אל תחזור על אותו מבנה/ניסוח פעם אחר פעם, ותרגיש חופשי לשלב הומור, תגובה רגשית אמיתית, שאלה נגדית או סטייה קצרה מהנושא כשזה טבעי לאופי שלך. אל תיצמד לתבנית קבועה — שיחה אמיתית, לא תסריט.`;
 
 /* ── Daily briefing from יהודה (CEO) — once a day, grounded in live business data ── */
 const K_BRIEF_DATE = "alpha:agents:briefdate";
@@ -726,18 +726,45 @@ function pickEnglishVoice() {
   return voices.find((v) => v.lang?.startsWith("en")) || null;
 }
 // The browser only ever exposes 1-2 Hebrew voices, so every agent speaking
-// through the same voice sounded identical. A small deterministic pitch
-// offset per agent id gives each of them a slightly different register —
-// cheap, free, and enough to tell who's talking without a real per-agent
-// voice.
-function agentPitch(agentId) {
-  if (!agentId) return 1;
-  let h = 0;
-  for (let i = 0; i < agentId.length; i++) h = (h * 31 + agentId.charCodeAt(i)) | 0;
-  return 0.85 + (Math.abs(h) % 100) / 100 * 0.35; // 0.85–1.20
+// through the same voice sounded identical. Each agent gets a hand-tuned
+// pitch + rate that actually matches their written personality (יהודה calm
+// and unhurried, נפתלי fast and high-energy, ראובן clipped and deliberate,
+// etc.) instead of a random hash — a real, consistent "register" per agent,
+// not just noise to tell them apart.
+const AGENT_VOICE_PROFILE = {
+  ceo: { pitch: 0.82, rate: 0.92 },       // יהודה — calm, authoritative, unhurried
+  growth: { pitch: 0.95, rate: 1.0 },     // יוסף — visionary, steady
+  cmo: { pitch: 1.18, rate: 1.2 },        // נפתלי — high energy, fast, trend-chasing
+  sales: { pitch: 1.05, rate: 1.14 },     // זבולון — charismatic, brisk pace
+  cs: { pitch: 1.1, rate: 0.94 },         // בנימין — warm, patient
+  finance: { pitch: 0.86, rate: 0.88 },   // ראובן — strict, measured, deliberate
+  ops: { pitch: 0.9, rate: 1.0 },         // גד — grounded, practical
+  procure: { pitch: 0.97, rate: 1.08 },   // שמעון — organized, brisk
+  legal: { pitch: 0.84, rate: 0.86 },     // לוי — suspicious, intense, deliberate
+  dev: { pitch: 1.0, rate: 1.02 },        // דן — precise, matter-of-fact
+  auto: { pitch: 0.93, rate: 1.16 },      // אשר — cynical, quick, dry
+  data: { pitch: 1.03, rate: 1.24 },      // יששכר — cold, analytical, fast talker
+  facilities: { pitch: 1.12, rate: 1.02 }, // דבורה — brisk, no-nonsense
+};
+function agentVoiceProfile(agentId) {
+  return AGENT_VOICE_PROFILE[agentId] || { pitch: 1, rate: 1.02 };
 }
 function listSpeechVoices() {
   return canSpeak() ? window.speechSynthesis.getVoices() : [];
+}
+// When the system exposes more than one voice for the active language, spread
+// the 13 agents across them (deterministically, by id) instead of every one
+// sharing the single auto-picked voice — free extra distinction on any
+// browser/OS that ships more than the usual one Hebrew voice.
+function pickVoiceForAgent(agentId, isEn) {
+  const voices = window.speechSynthesis.getVoices();
+  const prefix = isEn ? "en" : "he";
+  const candidates = voices.filter((v) => v.lang?.startsWith(prefix) || (!isEn && v.lang?.startsWith("iw")));
+  if (!candidates.length) return null;
+  if (candidates.length === 1 || !agentId) return candidates[0];
+  let h = 0;
+  for (let i = 0; i < agentId.length; i++) h = (h * 31 + agentId.charCodeAt(i)) | 0;
+  return candidates[Math.abs(h) % candidates.length];
 }
 function speakText(text, agentId, onEnd) {
   if (!canSpeak() || !text) { onEnd?.(); return; }
@@ -747,10 +774,11 @@ function speakText(text, agentId, onEnd) {
     const isEn = getAgentLang() === "en";
     u.lang = isEn ? "en-US" : "he-IL";
     const chosenUri = load(K_VOICE_URI, "");
-    const voice = (chosenUri && listSpeechVoices().find((v) => v.voiceURI === chosenUri)) || (isEn ? pickEnglishVoice() : pickHebrewVoice());
+    const voice = (chosenUri && listSpeechVoices().find((v) => v.voiceURI === chosenUri)) || pickVoiceForAgent(agentId, isEn) || (isEn ? pickEnglishVoice() : pickHebrewVoice());
     if (voice) u.voice = voice;
-    u.rate = 1.02;
-    u.pitch = agentPitch(agentId);
+    const profile = agentVoiceProfile(agentId);
+    u.rate = profile.rate;
+    u.pitch = profile.pitch;
     // Real end-of-speech signal (fires on finish, cancel, or error) — the
     // sim's always-listening loop uses this to re-open the mic at the exact
     // moment the agent stops talking, instead of guessing from text length.
