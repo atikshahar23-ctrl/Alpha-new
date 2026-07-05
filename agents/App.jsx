@@ -423,17 +423,24 @@ async function getAnthropic(key) {
 }
 async function askClaude(system, history, user, maxTokens = 800) {
   const key = anthropicKey(); if (!key) throw new Error("NO_KEY");
+  if (isRateLimited("claude")) throw new Error("Claude 429 (cooldown)");
   const client = await getAnthropic(key);
   // Anthropic requires strictly alternating turns starting with "user" —
   // trim any leading assistant message left over from the sliding window.
   let hist = history.slice(-6).filter((m) => m.role === "user" || m.role === "assistant");
   while (hist.length && hist[0].role !== "user") hist = hist.slice(1);
-  const msg = await client.messages.create({
-    model: claudeModel(),
-    max_tokens: maxTokens,
-    system,
-    messages: [...hist, { role: "user", content: user }],
-  });
+  let msg;
+  try {
+    msg = await client.messages.create({
+      model: claudeModel(),
+      max_tokens: maxTokens,
+      system,
+      messages: [...hist, { role: "user", content: user }],
+    });
+  } catch (e) {
+    if (e?.status === 429) markRateLimited("claude");
+    throw e;
+  }
   return (msg.content || []).filter((b) => b.type === "text").map((b) => b.text).join("").trim();
 }
 // Real Claude tool-use loop — for ראובן's trading tools specifically. Every
@@ -464,6 +471,15 @@ async function askClaudeWithTools(system, history, user, tools, onToolCall, maxT
   }
   return "ביצעתי כמה פעולות במסחר אבל לא הגעתי לתשובה סופית — תשאל שוב אם צריך פרטים נוספים.";
 }
+// Rate-limit cooldown — a 429 means the account is already over its per-
+// minute token budget, so immediately retrying (another model, another
+// engine call, or the next auto-listen mic cycle) just adds more requests
+// on top of one that's already failing. Remember when an engine last got
+// 429'd and skip it for a short window instead of hammering it again.
+const RATE_LIMIT_COOLDOWN_MS = 30000;
+const rateLimitedUntil = { groq: 0, claude: 0 };
+function isRateLimited(engine) { return (rateLimitedUntil[engine] || 0) > Date.now(); }
+function markRateLimited(engine) { rateLimitedUntil[engine] = Date.now() + RATE_LIMIT_COOLDOWN_MS; }
 const GROQ_MODELS = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "gemma2-9b-it", "llama3-70b-8192"];
 // Real tool-use for ראובן over the FREE Groq engine — same idea as
 // askClaudeWithTools above, just talking the OpenAI-compatible tool-calling
@@ -475,6 +491,7 @@ const GROQ_MODELS = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "gemma2-
 const GROQ_TOOL_MODELS = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"];
 async function askGroqWithTools(system, history, user, tools, onToolCall, maxTokens = 800) {
   const key = groqKey(); if (!key) throw new Error("NO_KEY");
+  if (isRateLimited("groq")) throw new Error("Groq 429 (cooldown)");
   const groqTools = tools.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.parameters } }));
   let messages = [{ role: "system", content: system }, ...history.slice(-6), { role: "user", content: user }];
   for (const model of GROQ_TOOL_MODELS) {
@@ -486,7 +503,13 @@ async function askGroqWithTools(system, history, user, tools, onToolCall, maxTok
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
           body: JSON.stringify({ model, messages: roundMessages, tools: groqTools, temperature: 0.4, max_tokens: maxTokens }),
         });
-        if (!res.ok) throw new Error("Groq " + res.status);
+        if (!res.ok) {
+          // A 429 means the whole account is over budget right now - trying
+          // the next model in the wheel would just fire another doomed
+          // request. Stop immediately and start a cooldown instead.
+          if (res.status === 429) { markRateLimited("groq"); throw new Error("Groq 429"); }
+          throw new Error("Groq " + res.status);
+        }
         const d = await res.json();
         const msg = d.choices?.[0]?.message;
         if (!msg?.tool_calls?.length) return (msg?.content || "").trim();
@@ -500,13 +523,14 @@ async function askGroqWithTools(system, history, user, tools, onToolCall, maxTok
       }
       return "ביצעתי כמה פעולות במסחר אבל לא הגעתי לתשובה סופית — תשאל שוב אם צריך פרטים נוספים.";
     } catch (e) {
-      if (model === GROQ_TOOL_MODELS[GROQ_TOOL_MODELS.length - 1]) throw e;
-      // try the next tool-capable model in the wheel
+      if (/429/.test(e.message) || model === GROQ_TOOL_MODELS[GROQ_TOOL_MODELS.length - 1]) throw e;
+      // try the next tool-capable model in the wheel (any non-rate-limit error only)
     }
   }
 }
 async function askGroq(system, history, user, maxTokens = 800) {
   const key = groqKey(); if (!key) throw new Error("NO_KEY");
+  if (isRateLimited("groq")) throw new Error("Groq 429 (cooldown)");
   const messages = [{ role: "system", content: system }, ...history.slice(-6), { role: "user", content: user }];
   let lastCode = 0;
   for (const model of GROQ_MODELS) {
@@ -517,7 +541,14 @@ async function askGroq(system, history, user, maxTokens = 800) {
     });
     if (res.ok) { const d = await res.json(); return d.choices?.[0]?.message?.content?.trim() || ""; }
     lastCode = res.status;
-    if (res.status === 401 || res.status === 403) break;
+    // 429 = the whole account is over its per-minute budget right now -
+    // trying the next model would just fire another request that's also
+    // guaranteed to fail. Stop immediately and start a cooldown instead of
+    // hammering every model in the wheel back-to-back.
+    if (res.status === 401 || res.status === 403 || res.status === 429) {
+      if (res.status === 429) markRateLimited("groq");
+      break;
+    }
   }
   throw new Error("Groq " + lastCode);
 }
@@ -581,8 +612,11 @@ async function askAI(system, history, user, maxTokens = 800) {
     groqKey() && "groq",
   ].filter(Boolean);
   // Chosen engine first, then every other connected engine as a rescue —
-  // a conversation never dies because one brain hiccuped.
-  const order = [route.engine, ...available.filter((e) => e !== route.engine)];
+  // a conversation never dies because one brain hiccuped. An engine still
+  // cooling down from a recent 429 is pushed to the back instead of tried
+  // first, so a known-doomed request doesn't eat the first attempt.
+  const order = [route.engine, ...available.filter((e) => e !== route.engine)]
+    .sort((a, b) => (isRateLimited(a) ? 1 : 0) - (isRateLimited(b) ? 1 : 0));
   let lastErr = null;
   for (let i = 0; i < order.length; i++) {
     const eng = order[i];
@@ -747,6 +781,7 @@ const AGENT_VOICE_PROFILE = {
   auto: { pitch: 0.93, rate: 1.16 },      // אשר — cynical, quick, dry
   data: { pitch: 1.03, rate: 1.24 },      // יששכר — cold, analytical, fast talker
   facilities: { pitch: 1.12, rate: 1.02 }, // דבורה — brisk, no-nonsense
+  alpha: { pitch: 0.9, rate: 0.96 },       // אלפא — calm, clear, unhurried system voice
 };
 // Per-agent voice overrides, set from the sim's settings panel — the same
 // depth as the main dashboard's own Voice Studio (voice/speed/pitch), just
@@ -1016,7 +1051,19 @@ const AGENTS = [
     quick: ["ארגני את המשרד", "תכנני שיפוץ", "העבירי את כולם לעמדות חדשות", "מה מצב הסדר במשרד?"],
   },
 ];
-const byId = (id) => AGENTS.find((a) => a.id === id);
+// Alpha itself — the core system intelligence behind the whole product, not
+// one of the 12 tribes. Represented in the 3D sim by the holographic
+// globe (a bigger one in the owner suite, a giant one hovering over the
+// showroom center) — approach either one to talk to Alpha directly, above
+// and across every department rather than owning just one of them.
+const ALPHA_ASSISTANT = {
+  id: "alpha", name: "אלפא", title: "העוזר החכם הראשי", Icon: Brain, color: "#2ee6ff", accent: "#9fe6f4",
+  tagline: "המערכת המרכזית שמחברת בין כל השבטים",
+  domain: "כללי · תיאום־על · תובנות",
+  persona: "אתה אלפא — הבינה המרכזית שמפעילה את כל המערכת, לא שבט ספציפי אלא השכבה שמחברת בין כולם. אתה רואה את כל 12 השבטים בו-זמנית ויכול לענות על כל שאלה כללית, לתת תמונת מצב חוצת-מחלקות, או להפנות את הבעלים לשבט הנכון כשמשהו ספציפי לתחום אחד. אופי: רגוע, יודע-כל אבל לא מתנשא, מדבר בבירור ובקצרה — כמו עוזר אישי אמיתי שתמיד זמין. אינך מחליף אף שבט בתחומו — אתה השכבה שמעליהם.",
+  quick: ["תן לי תמונת מצב כללית", "מי מהצוות הכי עסוק עכשיו?", "למי כדאי לפנות עם זה?", "מה חדש היום?"],
+};
+const byId = (id) => (id === "alpha" ? ALPHA_ASSISTANT : AGENTS.find((a) => a.id === id));
 
 /* ── Faces: locally-generated flat portrait per agent (inline SVG data URI,
    zero network dependency so they always render). ── */
@@ -1944,7 +1991,7 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
       // stays on the plain text path above. Groq is tried first since it's
       // free; Claude is the fallback when only that's configured.
       const tradingEngine = agent.id === "finance" && isSimConfigured()
-        ? (groqKey() ? "groq" : anthropicKey() ? "claude" : null)
+        ? (groqKey() && !isRateLimited("groq") ? "groq" : anthropicKey() ? "claude" : groqKey() ? "groq" : null)
         : null;
       const useTradingTools = !!tradingEngine;
       const tradingPersona = agent.persona + bizContext() + domainContext(agent.id) + SPECIALIST_PROTOCOL + webCtx + langDirective();

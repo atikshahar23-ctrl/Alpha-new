@@ -5332,7 +5332,10 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, de
     rec.lang = "he-IL"; rec.continuous = false; rec.interimResults = false;
     rec.onresult = async (e) => {
       const said = e.results?.[0]?.[0]?.transcript?.trim();
-      if (!said) { setVoiceState("idle"); return; }
+      // Background noise in an always-listening mic often gets misheard as a
+      // stray word or two - filter those out before they turn into a real API
+      // call. A genuine question is essentially never this short.
+      if (!said || said.length < 4 || !said.includes(" ")) { setVoiceState("idle"); return; }
       setVoiceLine({ who: "אתה", text: said, color: "#E4BC63" });
       setVoiceState("thinking");
       let reply = "";
