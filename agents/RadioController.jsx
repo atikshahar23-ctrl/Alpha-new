@@ -115,16 +115,50 @@ const STATIONS = [
 // away. `visible` just hides the panel UI via CSS, it never unmounts the
 // player. `ref` exposes toggle()/state so a compact mini-widget elsewhere
 // in the HUD can control it without the panel being open.
+// Persisted so the radio/ambient-sound setup you leave the office with is
+// exactly what you get back next time — not a reset to defaults every open.
+const K_AMBIENT_ON = "alpha:office:ambientOn";
+const K_AMBIENT_VOL = "alpha:office:ambientVol";
+const K_STATION_IDX = "alpha:office:stationIdx";
+const K_RADIO_VOL = "alpha:office:radioVol";
+const K_RADIO_PLAYING = "alpha:office:radioPlaying";
+const loadPref = (key, fallback) => {
+  try {
+    const v = localStorage.getItem(key);
+    if (v === null) return fallback;
+    const n = JSON.parse(v);
+    return n;
+  } catch { return fallback; }
+};
+const savePref = (key, val) => { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} };
+
 const RadioController = forwardRef(function RadioController({ compact = false, visible = true, onPlayStateChange }, ref) {
-  const [ambientOn, setAmbientOn] = useState(true);
-  const [ambientVol, setAmbientVol] = useState(0.12);
+  const [ambientOn, setAmbientOnState] = useState(() => loadPref(K_AMBIENT_ON, true));
+  const [ambientVol, setAmbientVolState] = useState(() => loadPref(K_AMBIENT_VOL, 0.12));
+  const setAmbientOn = (v) => { setAmbientOnState(v); savePref(K_AMBIENT_ON, v); };
+  const setAmbientVol = (v) => { setAmbientVolState(v); savePref(K_AMBIENT_VOL, v); };
   useAmbientOffice(ambientOn, ambientVol);
 
-  const [stationIdx, setStationIdx] = useState(0);
+  const [stationIdx, setStationIdxState] = useState(() => loadPref(K_STATION_IDX, 0));
   const [playing, setPlaying] = useState(false);
-  const [radioVol, setRadioVol] = useState(0.5);
+  const [radioVol, setRadioVolState] = useState(() => loadPref(K_RADIO_VOL, 0.5));
+  const setRadioVol = (v) => { setRadioVolState(v); savePref(K_RADIO_VOL, v); };
   const [status, setStatus] = useState("idle"); // idle | loading | playing | error
   const audioRef = useRef(null);
+
+  // Resume playback on mount if the radio was left on last time.
+  useEffect(() => {
+    if (loadPref(K_RADIO_PLAYING, false)) {
+      const a = audioRef.current;
+      if (a) {
+        setStatus("loading");
+        a.src = STATIONS[stationIdx]?.url || STATIONS[0].url;
+        a.volume = radioVol;
+        a.play().then(() => { setPlaying(true); setStatus("playing"); }).catch(() => { setStatus("error"); setPlaying(false); });
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const a = audioRef.current;
@@ -145,21 +179,22 @@ const RadioController = forwardRef(function RadioController({ compact = false, v
     setStatus("loading");
     a.src = station.url;
     a.volume = radioVol;
-    a.play().then(() => { setPlaying(true); setStatus("playing"); }).catch(() => { setStatus("error"); setPlaying(false); });
+    a.play().then(() => { setPlaying(true); setStatus("playing"); savePref(K_RADIO_PLAYING, true); }).catch(() => { setStatus("error"); setPlaying(false); savePref(K_RADIO_PLAYING, false); });
   };
   const stop = () => {
     const a = audioRef.current;
     if (a) { a.pause(); a.removeAttribute("src"); a.load(); }
-    setPlaying(false); setStatus("idle");
+    setPlaying(false); setStatus("idle"); savePref(K_RADIO_PLAYING, false);
   };
   const toggle = () => (playing ? stop() : play());
   const switchStation = (idx) => {
-    setStationIdx(idx);
+    setStationIdxState(idx);
+    savePref(K_STATION_IDX, idx);
     if (playing) {
       setStatus("loading");
       const a = audioRef.current;
       a.src = STATIONS[idx].url;
-      a.play().then(() => { setStatus("playing"); setPlaying(true); }).catch(() => { setStatus("error"); setPlaying(false); });
+      a.play().then(() => { setStatus("playing"); setPlaying(true); savePref(K_RADIO_PLAYING, true); }).catch(() => { setStatus("error"); setPlaying(false); savePref(K_RADIO_PLAYING, false); });
     }
   };
 
