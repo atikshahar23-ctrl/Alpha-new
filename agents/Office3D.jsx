@@ -2044,7 +2044,7 @@ const GOD_META_LABELS = {
   coverage_angle: "זווית כיסוי", battery_status: "מצב סוללה", storage: "אחסון", channels: "ערוצים",
 };
 
-export default function Office3D({ chars, byId, phase, phases, deskPositions, deskGroups, seatPositions, dineTablePositions, meetingSpot, bizData, marketRows, weather, voice, onClose, onOpenChat, onAutoFix, onTalkChange }) {
+export default function Office3D({ chars, byId, phase, phases, deskPositions, deskGroups, seatPositions, dineTablePositions, meetingSpot, bizData, marketRows, weather, voice, onClose, onOpenChat, onAutoFix, onTalkChange, agentVoiceDefaults }) {
   const mountRef = useRef(null);
   const liveRef = useRef({ chars, phase, bizData, weather, joyVec: { x: 0, y: 0 }, keys: {}, firstPerson: false });
   const [talkTarget, setTalkTarget] = useState(null);
@@ -2248,6 +2248,18 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, de
   // trading) actually replies in, not just this panel's own labels.
   const [agentLang, setAgentLangState] = useState(() => { try { return localStorage.getItem("alpha:agents:lang") || "he"; } catch { return "he"; } });
   const setAgentLang = (lang) => { setAgentLangState(lang); try { localStorage.setItem("alpha:agents:lang", lang); } catch {} };
+  // Per-agent voice overrides — same localStorage key prefix App.jsx's
+  // speakText()/agentVoiceProfile() read, so a voice/speed/pitch picked here
+  // for one agent actually changes how just that agent sounds everywhere
+  // (sim, chat modal, briefings), not the whole team at once.
+  const [voiceAgentId, setVoiceAgentId] = useState(() => (chars[0] && chars[0].id) || "");
+  const readAgentVoiceCfg = (id) => { try { return JSON.parse(localStorage.getItem("alpha:agents:voiceCfg:" + id) || "null") || {}; } catch { return {}; } };
+  const writeAgentVoiceCfg = (id, patch) => {
+    const cur = readAgentVoiceCfg(id);
+    try { localStorage.setItem("alpha:agents:voiceCfg:" + id, JSON.stringify({ ...cur, ...patch })); } catch {}
+    setVoiceCfgTick((t) => t + 1);
+  };
+  const [, setVoiceCfgTick] = useState(0); // forces a re-render after a localStorage write above
   useEffect(() => {
     if (typeof window === "undefined" || !window.speechSynthesis) return;
     const refresh = () => setVoiceList(window.speechSynthesis.getVoices());
@@ -5584,6 +5596,41 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, de
               <option value="en">English</option>
             </select>
           </div>
+          {chars.length > 0 && (() => {
+            const agentOpts = chars.map((c) => byId(c.id)).filter(Boolean);
+            const va = byId(voiceAgentId) ? voiceAgentId : (agentOpts[0] && agentOpts[0].id) || "";
+            const cfg = readAgentVoiceCfg(va);
+            const dflt = (agentVoiceDefaults && agentVoiceDefaults[va]) || { pitch: 1, rate: 1.02 };
+            const rate = cfg.rate ?? dflt.rate;
+            const pitch = cfg.pitch ?? dflt.pitch;
+            const langPrefix = agentLang === "en" ? "en" : "he";
+            const relevantVoices = voiceList.filter((v) => v.lang?.startsWith(langPrefix) || (langPrefix === "he" && v.lang?.startsWith("iw")));
+            return (
+              <div className="off3-settings-voice">
+                <div className="off3-settings-row off3-settings-select">
+                  <span>🎙️ קול מותאם אישית — סוכן</span>
+                  <select value={va} onChange={(e) => setVoiceAgentId(e.target.value)}>
+                    {agentOpts.map((a) => <option key={a.id} value={a.id}>{a.name} · {a.title}</option>)}
+                  </select>
+                </div>
+                <div className="off3-settings-row off3-settings-select">
+                  <span>קול</span>
+                  <select value={cfg.voiceURI || ""} onChange={(e) => writeAgentVoiceCfg(va, { voiceURI: e.target.value })}>
+                    <option value="">ברירת מחדל (אוטומטי)</option>
+                    {relevantVoices.map((v) => <option key={v.voiceURI} value={v.voiceURI}>{v.name} ({v.lang})</option>)}
+                  </select>
+                </div>
+                <label><span>מהירות</span> <span className="range-val">{rate.toFixed(2)}x</span></label>
+                <input type="range" min="0.6" max="1.6" step="0.02" value={rate} onChange={(e) => writeAgentVoiceCfg(va, { rate: parseFloat(e.target.value) })} />
+                <label><span>גובה צליל</span> <span className="range-val">{pitch.toFixed(2)}</span></label>
+                <input type="range" min="0.5" max="1.6" step="0.02" value={pitch} onChange={(e) => writeAgentVoiceCfg(va, { pitch: parseFloat(e.target.value) })} />
+                <div className="off3-settings-row">
+                  <button className="off3-voice-test" onClick={() => voice?.speak?.(`שלום, אני ${byId(va)?.name}. ככה אני נשמע עכשיו.`, va)}>▶ נסה קול</button>
+                  <button className="off3-voice-test" onClick={() => { try { localStorage.removeItem("alpha:agents:voiceCfg:" + va); } catch {} setVoiceCfgTick((t) => t + 1); }}>↺ אפס לברירת מחדל</button>
+                </div>
+              </div>
+            );
+          })()}
           <p className="off3-settings-note">בגוף ראשון: ↑/W מתקדם ו-↓/S נסוג לפי הכיוון שאתה מסתכל אליו (בלי לסובב את המצלמה), ←/→ או A/D מסובבים אותך (בכיוון הפוך). כל סוכן מדבר בגובה קול מעט שונה כדי שיהיה קל להבחין ביניהם.</p>
         </div>
       )}

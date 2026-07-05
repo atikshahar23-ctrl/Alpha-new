@@ -748,8 +748,23 @@ const AGENT_VOICE_PROFILE = {
   data: { pitch: 1.03, rate: 1.24 },      // יששכר — cold, analytical, fast talker
   facilities: { pitch: 1.12, rate: 1.02 }, // דבורה — brisk, no-nonsense
 };
+// Per-agent voice overrides, set from the sim's settings panel — the same
+// depth as the main dashboard's own Voice Studio (voice/speed/pitch), just
+// scoped to one agent at a time instead of one global voice for the app.
+// Stored as { voiceURI, rate, pitch } per agent id; any field the user
+// hasn't touched falls back to that agent's hand-tuned default above.
+const K_AGENT_VOICE_PREFIX = "alpha:agents:voiceCfg:";
+function getAgentVoiceOverride(agentId) {
+  return load(K_AGENT_VOICE_PREFIX + agentId, null);
+}
+function setAgentVoiceOverride(agentId, patch) {
+  const cur = getAgentVoiceOverride(agentId) || {};
+  save(K_AGENT_VOICE_PREFIX + agentId, { ...cur, ...patch });
+}
 function agentVoiceProfile(agentId) {
-  return AGENT_VOICE_PROFILE[agentId] || { pitch: 1, rate: 1.02 };
+  const base = AGENT_VOICE_PROFILE[agentId] || { pitch: 1, rate: 1.02 };
+  const override = getAgentVoiceOverride(agentId);
+  return override ? { ...base, ...override } : base;
 }
 function listSpeechVoices() {
   return canSpeak() ? window.speechSynthesis.getVoices() : [];
@@ -775,7 +790,10 @@ function speakText(text, agentId, onEnd) {
     const u = new SpeechSynthesisUtterance(text);
     const isEn = getAgentLang() === "en";
     u.lang = isEn ? "en-US" : "he-IL";
-    const chosenUri = load(K_VOICE_URI, "");
+    // Per-agent voice choice takes priority over the one global voice, which
+    // in turn beats the automatic per-agent spread.
+    const agentUri = (agentId && getAgentVoiceOverride(agentId)?.voiceURI) || "";
+    const chosenUri = agentUri || load(K_VOICE_URI, "");
     const voice = (chosenUri && listSpeechVoices().find((v) => v.voiceURI === chosenUri)) || pickVoiceForAgent(agentId, isEn) || (isEn ? pickEnglishVoice() : pickHebrewVoice());
     if (voice) u.voice = voice;
     const profile = agentVoiceProfile(agentId);
@@ -2679,6 +2697,7 @@ function OfficeSim({ onClose, onOpenChat, logActivity, showToast }) {
         weather={weather}
         onAutoFix={(msg) => { showToast?.(msg); logActivity?.("facilities", msg); }}
         onTalkChange={onTalkChange}
+        agentVoiceDefaults={AGENT_VOICE_PROFILE}
         voice={{
           canListen: canListen(),
           canSpeak: canSpeak(),
@@ -3854,6 +3873,14 @@ function StyleTag() {
 .off3-settings-select select{max-width:130px;background:var(--s9);border:1px solid var(--s7);color:var(--silver);border-radius:8px;
   padding:5px 7px;font-family:inherit;font-size:10.5px;outline:none;cursor:pointer}
 .off3-settings-note{font-size:10.5px;line-height:1.6;color:#7e90b8;padding:10px 14px 14px}
+.off3-settings-voice{border-bottom:1px solid rgba(255,255,255,.06);padding:2px 14px 12px}
+.off3-settings-voice label{display:flex;align-items:center;justify-content:space-between;font-size:11px;color:#9fb2d4;margin-top:8px}
+.off3-settings-voice .range-val{font-weight:800;color:#E4BC63}
+.off3-settings-voice input[type="range"]{width:100%;accent-color:#E4BC63;margin-top:2px}
+.off3-settings-voice .off3-settings-row{border-bottom:none;padding:8px 0;cursor:default}
+.off3-voice-test{flex:1;background:rgba(228,188,99,.12);border:1px solid rgba(228,188,99,.3);color:#ffe9b0;
+  font-family:inherit;font-size:10.5px;font-weight:700;padding:7px 10px;border-radius:8px;cursor:pointer}
+.off3-voice-test:hover{background:rgba(228,188,99,.22)}
 /* God Mode admin panel — owner-only scene editor. */
 .off3-god{position:absolute;top:56px;left:10px;z-index:60;width:min(300px,86vw);max-height:80vh;overflow-y:auto;
   background:rgba(10,8,18,.95);backdrop-filter:blur(16px);border:1px solid rgba(228,188,99,.28);border-radius:16px;
