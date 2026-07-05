@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, lazy, Suspense } from "react";
 import {
   Crown, TrendingUp, TrendingDown, Wrench, Megaphone, Code2, Cpu, BarChart3, HeartHandshake,
   Send, X, Sparkles, Activity, Lightbulb, LayoutGrid, Settings as SettingsIcon,
@@ -9,7 +9,12 @@ import {
   Clock, CalendarClock, Hammer, Home,
 } from "lucide-react";
 import * as cloud from "./cloud";
-import Office3D from "./Office3D.jsx";
+// Lazy-loaded: Office3D.jsx is a ~5,500-line Three.js scene that only ever
+// renders once the owner actually opens "המשרד החי" — bundling it into the
+// initial agents.html chunk unconditionally meant every visit paid its full
+// weight even for someone just browsing the CRM/roster and never opening
+// the 3D office.
+const Office3D = lazy(() => import("./Office3D.jsx"));
 import { BOOKS_BY_KEY, BOOKS_LAST_KEY, BOOKS_TOTAL_INCOME } from "../src/modules/books";
 import SimulatorPanel from "./SimulatorPanel.jsx";
 import { AGENT_TOOLS, handleAgentToolCall, isSimConfigured } from "../src/modules/simulatorBridge";
@@ -1346,7 +1351,11 @@ export default function App() {
         />
       )}
 
-      {office && <OfficeSim onClose={() => setOffice(false)} onOpenChat={(id) => { setOffice(false); setChatId(id); }} logActivity={logActivity} showToast={showToast} />}
+      {office && (
+        <Suspense fallback={<div className="ac-office-loading"><RefreshCw size={28} className="ac-spin" /><span>טוען את המשרד…</span></div>}>
+          <OfficeSim onClose={() => setOffice(false)} onOpenChat={(id) => { setOffice(false); setChatId(id); }} logActivity={logActivity} showToast={showToast} />
+        </Suspense>
+      )}
 
       {toast && <div className="ac-toast">{toast}</div>}
     </div>
@@ -3454,6 +3463,8 @@ function StyleTag() {
 /* ── dev console ── */
 .ac-spin{animation:acSpin .8s linear infinite}
 @keyframes acSpin{to{transform:rotate(360deg)}}
+.ac-office-loading{position:fixed;inset:0;z-index:9000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:#05070c;color:var(--s4);font-size:14px}
+.ac-office-loading svg{color:var(--gold)}
 .ac-dev-leo{display:flex;align-items:center;gap:11px;background:linear-gradient(160deg,rgba(20,14,8,.96),rgba(10,8,16,.97));border:1px solid color-mix(in srgb,var(--c) 35%,transparent);border-radius:14px;padding:12px;margin-bottom:12px;box-shadow:0 6px 24px rgba(0,0,0,.4)}
 .ac-dev-orb{width:42px;height:42px;border-radius:12px;overflow:hidden;flex-shrink:0;box-shadow:0 4px 16px color-mix(in srgb,var(--c) 45%,transparent)}
 .ac-dev-leo-txt{flex:1;min-width:0}
