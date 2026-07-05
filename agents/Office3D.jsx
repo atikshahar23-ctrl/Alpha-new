@@ -2019,10 +2019,14 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, de
   // random meeting sweep instead of having other agents interrupt.
   useEffect(() => { onTalkChange?.(talkTarget); }, [talkTarget, onTalkChange]);
   // Sitting on your own chair in your office ("שב"/"קום" button, or E key when
-  // near the chair). While seated the sit animation plays and any movement
-  // input stands you back up.
+  // near the chair). While seated, look input just turns your head/view —
+  // only the explicit stand button (or E) actually gets you up.
   const [sitting, setSitting] = useState(false);
   const [canSit, setCanSit] = useState(false);
+  // "Feet on the desk" — a relaxed recline toggle, only available while
+  // seated (auto-clears the moment you stand).
+  const [feetUp, setFeetUp] = useState(false);
+  useEffect(() => { if (!sitting) setFeetUp(false); }, [sitting]);
   // Space portal (owner request): walk into the glowing ring at the office
   // edge and get whisked into a full solar-system view; a return button
   // brings you back. The office's own renderer/scene keep running quietly
@@ -2206,6 +2210,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, de
   useEffect(() => { liveRef.current.chars = chars; }, [chars]);
   useEffect(() => { liveRef.current.firstPerson = firstPerson; }, [firstPerson]);
   useEffect(() => { liveRef.current.sitting = sitting; }, [sitting]);
+  useEffect(() => { liveRef.current.feetUp = feetUp; }, [feetUp]);
   useEffect(() => { liveRef.current.phase = phase; }, [phase]);
   useEffect(() => { liveRef.current.bizData = bizData; }, [bizData]);
   useEffect(() => { liveRef.current.marketRows = marketRows; }, [marketRows]);
@@ -4417,17 +4422,31 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, de
       // Sitting on your own chair: any movement input stands you up; otherwise
       // glide onto the seat (position, drop, and facing — south, toward the
       // guest chairs) and hold the sit animation.
-      if (liveRef.current.sitting && (mlen > 0.08 || fpTankControls)) {
-        liveRef.current.setSitting?.(false);
-      } else if (liveRef.current.sitting) {
+      if (liveRef.current.sitting) {
         const k = Math.min(1, dt * 6);
-        playerH.group.position.x += (OWNER_SEAT.x - playerH.group.position.x) * k;
-        playerH.group.position.z += (OWNER_SEAT.z - playerH.group.position.z) * k;
-        playerH.group.position.y += (SEAT_DROP - playerH.group.position.y) * k;
-        let dSit = OWNER_SEAT.ry - playerH.group.rotation.y;
-        while (dSit > Math.PI) dSit -= Math.PI * 2;
-        while (dSit < -Math.PI) dSit += Math.PI * 2;
-        playerH.group.rotation.y += dSit * k;
+        const feetUp = liveRef.current.feetUp;
+        // "Feet on the desk": a stylized recline — nudged back and slightly
+        // lower, with a small backward tilt (no dedicated animation clip on
+        // the rig, so this is a pose approximation, not literal crossed legs).
+        const seatX = OWNER_SEAT.x - Math.sin(OWNER_SEAT.ry) * (feetUp ? 0.35 : 0);
+        const seatZ = OWNER_SEAT.z - Math.cos(OWNER_SEAT.ry) * (feetUp ? 0.35 : 0);
+        const seatY = SEAT_DROP - (feetUp ? 0.05 : 0);
+        playerH.group.position.x += (seatX - playerH.group.position.x) * k;
+        playerH.group.position.z += (seatZ - playerH.group.position.z) * k;
+        playerH.group.position.y += (seatY - playerH.group.position.y) * k;
+        // Look around freely while seated — turning your head never stands
+        // you up; only the explicit stand button (or E) does. With no active
+        // turn input, ease back to facing the desk instead of fighting it.
+        if (kTurn) {
+          const TURN_SPEED = 2.6;
+          playerH.group.rotation.y += kTurn * TURN_SPEED * dt;
+        } else {
+          let dSit = OWNER_SEAT.ry - playerH.group.rotation.y;
+          while (dSit > Math.PI) dSit -= Math.PI * 2;
+          while (dSit < -Math.PI) dSit += Math.PI * 2;
+          playerH.group.rotation.y += dSit * Math.min(1, dt * 2);
+        }
+        playerH.group.rotation.x += ((feetUp ? -0.12 : 0) - playerH.group.rotation.x) * k;
         setClip(playerH, CLIP.sit);
       } else if (mlen > 0.08) {
         mx /= mlen; mz /= mlen;
@@ -5429,6 +5448,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, de
       {(canSit || sitting) && (
         <button className={"off3-sit" + (sitting ? " on" : "")} onClick={() => setSitting((v) => !v)} title={sitting ? "קום מהכיסא" : "שב בכיסא שלך (E)"}>
           {sitting ? "🚶 קום" : "🪑 שב בכיסא שלך"}
+        </button>
+      )}
+      {sitting && (
+        <button className={"off3-sit" + (feetUp ? " on" : "")} style={{ top: "58px" }} onClick={() => setFeetUp((v) => !v)} title={feetUp ? "הורד רגליים" : "שים רגליים על השולחן"}>
+          {feetUp ? "🦵 הורד רגליים" : "🦶 רגליים על השולחן"}
         </button>
       )}
       {nearVehicle && !inVehicle && (
