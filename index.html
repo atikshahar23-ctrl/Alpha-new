@@ -25,6 +25,13 @@
   <link rel="manifest" href="%BASE_URL%manifest.json" />
   <link rel="icon" type="image/png" href="%BASE_URL%favicon-bull.png" />
   <link rel="apple-touch-icon" href="%BASE_URL%apple-touch-icon.png" />
+  <meta name="theme-color" content="#daa520" />
+  <!-- iOS ignores most of manifest.json — without these, "Add to Home
+       Screen" saves a plain Safari bookmark instead of a standalone app. -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Alpha" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <!-- Warm the default orb character + pokeball so they appear instantly. -->
   <link rel="preload" as="fetch" type="model/gltf-binary" href="%BASE_URL%ar-models/pikachu.glb" crossorigin="anonymous" />
   <link rel="preload" as="fetch" type="model/gltf-binary" href="%BASE_URL%ar-models/pokeball.glb" crossorigin="anonymous" />

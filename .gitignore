@@ -3,3 +3,4 @@ dist/
 .claude/*
 !.claude/skills/
 __pycache__/
+dist-render/
