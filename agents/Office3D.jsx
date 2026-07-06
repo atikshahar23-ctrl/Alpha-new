@@ -4980,6 +4980,13 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     let podT = 0;      // 1Hz charging-pod meter/charge tick
     let scanT = 0;     // diagnostic sweep timer over the showroom car
     let spatialT = 9;  // spatial-bridge refresh timer (starts ripe)
+    // Third-person chase-cam orbit — the left stick swings the CAMERA around
+    // the player without turning the player's own facing (owner request:
+    // right stick walks, left stick moves the camera, not the character).
+    // Defaults reproduce the old fixed (0, 6.4, 7.6) offset exactly (dist
+    // 9.94, elevation ~40°) so the view is unchanged until the stick is used.
+    let camAz = 0, camEl = 0.6999;
+    const CAM_DIST = 9.94, CAM_EL_MIN = 0.15, CAM_EL_MAX = 1.4;
     // Adaptive perf watchdog — CPU core count / RAM (DeviceProfiler's only
     // real signals) say nothing about GPU strength, and that's exactly the
     // blind spot on older Apple hardware: a 2020 MacBook Pro or an iMac with
@@ -5305,17 +5312,18 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       // is exactly what made it disorienting: once you'd turned away from
       // that heading, pushing "up" no longer walked you where the locked
       // first-person camera was looking. Route the stick into the same
-      // relative forward/turn the keyboard fix above already uses.
+      // relative forward the keyboard fix above already uses — turning is
+      // the left stick's job now (below), not this one's X axis.
       if (!moveLocked && liveRef.current.firstPerson && Math.hypot(jv.x, jv.y) > 0.001) {
         kFwd = kFwd || -jv.y;
-        kTurn = kTurn || -jv.x;
       }
-      // Right stick — dedicated turn/look input, on top of whichever mode
-      // (first person, third person, even sitting) the left stick/keyboard
-      // is already driving movement in.
+      // Left stick — camera control. In first person (and while seated) it
+      // turns your own facing, same as the keyboard's A/D; in third person
+      // it's reserved for orbiting the chase camera around you instead (see
+      // the camera block below) and must NOT touch player rotation here.
       const tv = liveRef.current.turnVec;
-      const rightStickTurn = !moveLocked && Math.hypot(tv.x, tv.y) > 0.001;
-      if (rightStickTurn) kTurn = kTurn || -tv.x;
+      const tvActive = !moveLocked && Math.hypot(tv.x, tv.y) > 0.001;
+      if (tvActive && (liveRef.current.firstPerson || liveRef.current.sitting)) kTurn = kTurn || -tv.x;
       const fpTankControls = liveRef.current.firstPerson && (kFwd !== 0 || kTurn !== 0);
       if (fpTankControls) {
         if (kTurn) {
@@ -5373,12 +5381,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         playerH.group.position.x = clamp(playerH.group.position.x + mx * SPEED * dt, -(FLOOR_W / 2 - 1), FLOOR_W / 2 - 1);
         playerH.group.position.z = clamp(playerH.group.position.z + mz * SPEED * dt, -(FLOOR_D / 2 - 1), FLOOR_D / 2 - 1);
         resolveCollisions(playerH.group.position, obstacles);
-        // Right-stick look overrides the usual "auto-face travel direction"
-        // third-person behaviour — with a dedicated look stick, walking one
-        // way while looking another is expected, not a bug to smooth over.
-        if (rightStickTurn) {
-          playerH.group.rotation.y += kTurn * 2.6 * dt;
-        } else if (!fpTankControls) {
+        if (!fpTankControls) {
           const targetRot = Math.atan2(mx, mz);
           let dRot = targetRot - playerH.group.rotation.y;
           while (dRot > Math.PI) dRot -= Math.PI * 2;
@@ -5394,10 +5397,13 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         if (pact) pact.timeScale = Math.max(0.35, Math.min(1.25, SPEED / 2.5));
       } else {
         liveRef.current.sprinting = false;
-        // Free-look in place: the right stick can turn you while standing
-        // still in third person too, same as it does mid-walk above.
-        if (!fpTankControls && rightStickTurn) playerH.group.rotation.y += kTurn * 2.6 * dt;
         setClip(playerH, fpTankControls && kTurn ? "walk" : "idle");
+      }
+      // Third-person camera orbit — the left stick swings the chase camera
+      // around the player without turning the player's own facing.
+      if (tvActive && !liveRef.current.firstPerson && !liveRef.current.inVehicle) {
+        camAz -= tv.x * 1.8 * dt;
+        camEl = clamp(camEl + tv.y * 1.8 * dt, CAM_EL_MIN, CAM_EL_MAX);
       }
       // "You can sit here" prompt — near your own chair (or already seated).
       const nearSeat = Math.hypot(playerH.group.position.x - OWNER_SEAT.x, playerH.group.position.z - OWNER_SEAT.z) < 3.2;
@@ -5751,7 +5757,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         camera.lookAt(eyePos.x + fx, eyeY, eyePos.z + fz);
       } else {
         playerH.group.visible = true;
-        const camOffset = new THREE.Vector3(0, 6.4, 7.6);
+        const camOffset = new THREE.Vector3(
+          Math.sin(camAz) * Math.cos(camEl) * CAM_DIST,
+          Math.sin(camEl) * CAM_DIST,
+          Math.cos(camAz) * Math.cos(camEl) * CAM_DIST
+        );
         const desired = playerH.group.position.clone().add(camOffset);
         camera.position.lerp(desired, Math.min(1, dt * 5.2));
         camera.lookAt(playerH.group.position.x, 1.1, playerH.group.position.z);
@@ -6212,8 +6222,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     };
     return { onPointerDown: onDown, onPointerMove: onMove, onPointerUp: onUp, onPointerCancel: onUp };
   };
-  const leftStick = makeStick(leftDrag, setLeftKnob, setLeftActive, "joyVec");
-  const rightStick = makeStick(rightDrag, setRightKnob, setRightActive, "turnVec");
+  // Left stick = camera (orbits the view in third person, turns your own
+  // head in first person); right stick = movement — owner-specified split,
+  // opposite of the initial left=move/right=look layout.
+  const leftStick = makeStick(leftDrag, setLeftKnob, setLeftActive, "turnVec");
+  const rightStick = makeStick(rightDrag, setRightKnob, setRightActive, "joyVec");
 
   const talkAgent = talkTarget ? byId(talkTarget) : null;
   const ph = phases[phase];
@@ -6286,7 +6299,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   return (
     <div className="off3-wrap">
       <div ref={mountRef} className="off3-canvas" />
-      <div className="off3-hint">ג'ויסטיק שמאלי לתזוזה · ימני לפנייה/מבט · חצים / WASD במחשב · Shift לספרינט טקטי · התקרב לעובד ודבר איתו · ליד הכיסא שלך: E לשבת · {ph.emoji} {ph.label}</div>
+      <div className="off3-hint">ג'ויסטיק ימני לתזוזה · שמאלי למבט/מצלמה · חצים / WASD במחשב · Shift לספרינט טקטי · התקרב לעובד ודבר איתו · ליד הכיסא שלך: E לשבת · {ph.emoji} {ph.label}</div>
       {autoTurboNotice && (
         <div className="off3-autoturbo">
           🚀 זיהינו שהמכשיר מתקשה — הפעלנו מצב טורבו אוטומטית לתצוגה חלקה. אפשר לכבות בהגדרות.
