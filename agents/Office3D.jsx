@@ -16,6 +16,31 @@ import { MessageCircle, Eye, User, Mic, VolumeX, Volume2, X, Zap, Settings as Se
 import { useDeviceProfile } from "./deviceProfiler.js";
 import RadioController from "./RadioController.jsx";
 
+// Hardware's real max anisotropic filtering — set once the renderer exists
+// (renderer.capabilities.getMaxAnisotropy()); every canvas texture below reads
+// this instead of a hardcoded guess, so distant/oblique surfaces (floors,
+// signage, the wall screens) stay sharp instead of smearing into mush.
+let MAX_ANISO = 8;
+// GLTF-loaded model textures get NO anisotropy from the loader itself (unlike
+// the canvas textures above, which set it explicitly) — exactly the assets
+// most often seen at a distance/oblique angle (statues, characters across the
+// room), so this is the actual biggest source of "distance blur." Call once
+// per loaded template right after MAX_ANISO is known; clones made via
+// SkeletonUtils share the same texture instances, so one call covers every
+// agent built from that template.
+function applyAniso(root) {
+  if (!root) return;
+  root.traverse((o) => {
+    if (!o.isMesh || !o.material) return;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    mats.forEach((m) => {
+      ["map", "normalMap", "roughnessMap", "metalnessMap", "emissiveMap", "aoMap"].forEach((k) => {
+        if (m[k]) m[k].anisotropy = MAX_ANISO;
+      });
+    });
+  });
+}
+
 /* ════════════════════════════════════════════════════════════════════
    3D OFFICE — walk the floor yourself (WASD / joystick), approach a
    coworker and talk to them face to face. Reuses the exact same desk /
@@ -363,7 +388,7 @@ function buildFloorTexture() {
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.repeat.set(FLOOR_W / 4, FLOOR_D / 4);
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 8;
+  tex.anisotropy = MAX_ANISO;
   return tex;
 }
 
@@ -394,7 +419,7 @@ function buildWallTexture(repeatX) {
   tex.wrapS = THREE.RepeatWrapping;
   tex.repeat.set(repeatX, 1);
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 8;
+  tex.anisotropy = MAX_ANISO;
   return tex;
 }
 
@@ -426,7 +451,7 @@ function buildCeilingTexture() {
   ctx.strokeStyle = "#E4BC63"; ctx.lineWidth = 6; ctx.strokeRect(8, 8, 1008, 850);
   const tex = new THREE.CanvasTexture(cvs);
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 8;
+  tex.anisotropy = MAX_ANISO;
   return tex;
 }
 
@@ -1171,7 +1196,7 @@ function buildDoorSign(name, title, color) {
   c.fillText(title, 428, 194);
   const tex = new THREE.CanvasTexture(cvs);
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 8;
+  tex.anisotropy = MAX_ANISO;
   return new THREE.Mesh(new THREE.PlaneGeometry(0.66, 0.33), new THREE.MeshBasicMaterial({ map: tex, toneMapped: false }));
 }
 
@@ -1472,7 +1497,7 @@ function buildOfficeScreenTex(title, color, lines) {
   });
   const tex = new THREE.CanvasTexture(cvs);
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 8;
+  tex.anisotropy = MAX_ANISO;
   return tex;
 }
 
@@ -2674,7 +2699,7 @@ function buildHangarWallTexture() {
   const tex = new THREE.CanvasTexture(cvs);
   tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping;
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 8;
+  tex.anisotropy = MAX_ANISO;
   return tex;
 }
 
@@ -2695,7 +2720,7 @@ function buildHangarFloorTexture() {
   const tex = new THREE.CanvasTexture(cvs);
   tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping;
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 8;
+  tex.anisotropy = MAX_ANISO;
   return tex;
 }
 
@@ -3150,6 +3175,9 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     liveRef.current.setTurbo?.(turbo);
     try { localStorage.setItem("alpha:agents:turbo", turbo ? "1" : "0"); } catch {}
   }, [turbo]);
+  // UV Nightclub Mode — "lights out", blacklight-reactive pods/hologram.
+  const [nightclub, setNightclub] = useState(false);
+  useEffect(() => { liveRef.current.setNightclub?.(nightclub); }, [nightclub]);
   // Adaptive perf watchdog needs the real React setter (distinct from the
   // imperative liveRef.current.setTurbo above, which only pushes an
   // already-decided value INTO the scene) so a sustained-low-FPS detection
@@ -3302,7 +3330,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       // room (reception counter, owner suite, meeting room, floor decal…).
       HG_LOGO_TEX = new THREE.TextureLoader().load(base + "office-models/hg-logo.png");
       HG_LOGO_TEX.colorSpace = THREE.SRGBColorSpace;
-      HG_LOGO_TEX.anisotropy = 8;
+      HG_LOGO_TEX.anisotropy = MAX_ANISO;
       // One shared manager so the loading overlay can show real download
       // progress across all five models instead of an indeterminate spinner.
       const manager = new THREE.LoadingManager();
@@ -3361,7 +3389,14 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // post-processing chain below.)
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.1;
+    // Calibrated down from 1.1 — bright neon/emissive surfaces were crushing
+    // to flat blinding white before the tone-mapper could roll them off.
+    renderer.toneMappingExposure = 0.95;
+    MAX_ANISO = renderer.capabilities.getMaxAnisotropy() || 8;
+    // GLTF character/statue templates ship with no anisotropy set at all —
+    // apply it once per shared template now that the real hardware max is
+    // known (cloned agents reuse these same texture instances).
+    applyAniso(charTemplate); applyAniso(robotTemplate); applyAniso(sophiaTemplate);
     mount.appendChild(renderer.domElement);
     // WebXR — a real VR entry point (not a stub): renderer.xr.enabled plus
     // the standard VRButton, feature-detected so it silently does nothing
@@ -3400,8 +3435,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       composer.addPass(ssaoPass);
     }
     // Mobile gets gentler bloom — post-processing is the first thing to
-    // give up on a phone GPU (per the responsive perf budget).
-    const bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), isMobile ? 0.32 : 0.55, 0.7, 0.85);
+    // give up on a phone GPU (per the responsive perf budget). Lower
+    // threshold + softer strength + wider radius than before: a broad soft
+    // cinematic glow on genuinely bright surfaces instead of a narrow,
+    // blinding halo that was washing out nearby text/detail.
+    const bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), isMobile ? 0.22 : 0.38, 0.9, 0.4);
     composer.addPass(bloomPass);
     composer.addPass(new OutputPass());
     // EffectComposer renders through its own WebGLRenderTargets, so the
@@ -3423,6 +3461,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // with setTurbo, defined once the whole scene exists).
     let gfxHigh = graphicsHigh;
     let turboOn = false;
+    // UV Nightclub Mode — the day/night lerp block below reads this and
+    // targets deep indigo + 5% lights instead of the normal phase sky/sun
+    // whenever it's on, so the switch fades in through the SAME smooth
+    // damping the day/night system already uses (no separate transition code).
+    let nightclubOn = false;
     const applyPasses = () => {
       bloomPass.enabled = gfxHigh && !turboOn;
       if (ssaoPass) ssaoPass.enabled = gfxHigh && !turboOn;
@@ -3825,7 +3868,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     bbCtx.scale(2, 2);
     const bbTex = new THREE.CanvasTexture(bbCvs);
     bbTex.colorSpace = THREE.SRGBColorSpace;
-    bbTex.anisotropy = 8;
+    bbTex.anisotropy = MAX_ANISO;
     // The REAL Heavy Guard logo on the tower ad (repaints the board when the
     // image lands, replacing the old placeholder hexagon).
     let bbLogoImg = null;
@@ -4466,7 +4509,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       const sc = siteCvs.getContext("2d");
       const siteTex = new THREE.CanvasTexture(siteCvs);
       siteTex.colorSpace = THREE.SRGBColorSpace;
-      siteTex.anisotropy = 8;
+      siteTex.anisotropy = MAX_ANISO;
       drawSiteScreen = () => {
         const b = liveRef.current.bizData || {};
         const W = 1104, H = 620;
@@ -5374,11 +5417,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       // even while paused, without touching the color transition itself.
       if (!liveRef.current.godPaused) {
         const ph = phases[liveRef.current.phase] || phases[0];
-        tmpColor.set(ph.sky || "#1b2440");
+        tmpColor.set(nightclubOn ? "#050015" : (ph.sky || "#1b2440"));
         curSky.lerp(tmpColor, Math.min(1, dt * 0.6));
         scene.fog.color.copy(curSky);
         renderer.setClearColor(curSky, 1);
-        const lightMul = liveRef.current.godLightMul || 1;
+        const lightMul = nightclubOn ? 0.05 : (liveRef.current.godLightMul || 1);
         const isNight = liveRef.current.phase >= 3;
         const isEvening = liveRef.current.phase === 2;
         // Real overcast/rain over Rishon LeZion knocks a bit off both
@@ -5401,13 +5444,25 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         // Interior office lights compensate for the dimming sun/ambient so
         // the room itself stays clearly readable after dark — a real office
         // keeps its ceiling lights on regardless of what the sky is doing
-        // outside the window.
-        const roomLightTarget = (isNight ? 1.7 : isEvening ? 1.1 : 0.3) * lightMul;
+        // outside the window. Nightclub mode wants the OPPOSITE — the room
+        // itself goes dark too, so only the UV-reactive glows read.
+        const roomLightTarget = nightclubOn ? 0.06 : (isNight ? 1.7 : isEvening ? 1.1 : 0.3) * lightMul;
         interiorLights.forEach((lt) => {
           lt.intensity += (roomLightTarget - lt.intensity) * Math.min(1, dt * 0.8);
         });
-        const globeGlowTarget = isNight ? 1.4 : isEvening ? 1.1 : 0.9;
+        const globeGlowTarget = nightclubOn ? 1.8 : isNight ? 1.4 : isEvening ? 1.1 : 0.9;
         officeGlobeMat.emissiveIntensity += (globeGlowTarget - officeGlobeMat.emissiveIntensity) * Math.min(1, dt * 0.8);
+        // UV Nightclub Mode: the lobby hologram globe and every charging pod's
+        // glow/ring swap from their normal warm/per-agent colours to
+        // fluorescent purple/magenta/teal — the actual "blacklight" reactive
+        // elements, faded in with the same damping as everything else above.
+        officeGlobeMat.emissive.lerp(tmpColor.set(nightclubOn ? 0x6b1fd6 : 0xffe6b0), Math.min(1, dt * 0.8));
+        chargePods.forEach((pod, pi) => {
+          const uvHex = pi % 2 === 0 ? 0x36e6ff : 0xff2ecb;
+          const podTargetColor = nightclubOn ? uvHex : pod.hex;
+          pod.glowMat.color.lerp(tmpColor.set(podTargetColor), Math.min(1, dt * 0.8));
+          pod.ringMat.color.lerp(tmpColor.set(podTargetColor), Math.min(1, dt * 0.8));
+        });
       }
       // Rain on the glass — fades in/out rather than snapping, matches
       // liveRef.current.weather.isRaining set from the real Rishon LeZion
@@ -6478,6 +6533,14 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       searchGroup.visible = !on && skylineMode === "night";
     };
     liveRef.current.setTurbo(turbo);
+    // UV Nightclub Mode toggle — the actual color/light targets are read
+    // every frame from the `nightclubOn` flag (day/night block above); this
+    // just flips that flag and widens the bloom radius for the softer,
+    // wider "blacklight" glow the mode wants (reverts with it).
+    liveRef.current.setNightclub = (on) => {
+      nightclubOn = on;
+      bloomPass.radius = on ? 0.75 : 0.4;
+    };
     renderer.setAnimationLoop(animate);
 
     const onResize = () => {
@@ -6672,6 +6735,13 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         title={turbo ? "מצב טורבו פעיל — הסימולטור רץ במהירות מקסימלית" : "מצב טורבו — האצה לסימולטור חלק 100%"}
       >
         <Zap size={16} /> {turbo ? "טורבו פעיל" : "טורבו"}
+      </button>
+      <button
+        className={"off3-nightclub" + (nightclub ? " on" : "")}
+        onClick={() => setNightclub((v) => !v)}
+        title={nightclub ? "מצב UV פעיל — כבה את האורות" : "Lights Out — מצב מועדון UV"}
+      >
+        🪩 {nightclub ? "UV פעיל" : "Lights Out"}
       </button>
       {radioPlaying && !(phoneOpen && phoneTab === "radio") && (
         <div className="off3-radio-mini" title={radioStationName}>

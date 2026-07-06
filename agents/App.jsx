@@ -3901,6 +3901,13 @@ function StyleTag() {
   border:1px solid rgba(110,170,240,.3);color:#eaf1ff;font-weight:800;font-size:.75rem;
   cursor:pointer;backdrop-filter:blur(8px);white-space:nowrap;font-family:inherit}
 .off3-turbo:hover{border-color:#3FD79A;color:#b8ffd9}
+.off3-nightclub{position:absolute;top:96px;right:10px;z-index:3;height:34px;padding:0 13px;border-radius:17px;
+  display:flex;align-items:center;justify-content:center;gap:6px;background:rgba(6,9,18,.72);
+  border:1px solid rgba(184,75,255,.3);color:#eaf1ff;font-weight:800;font-size:.75rem;
+  cursor:pointer;backdrop-filter:blur(8px);white-space:nowrap;font-family:inherit}
+.off3-nightclub:hover{border-color:#ff2ecb;color:#ffd7fa}
+.off3-nightclub.on{background:linear-gradient(135deg,rgba(184,75,255,.32),rgba(54,230,255,.16));
+  color:#f3d9ff;border-color:#b84bff;box-shadow:0 0 16px rgba(184,75,255,.4)}
 .off3-phonebtn{position:absolute;top:56px;right:96px;z-index:3;width:34px;height:34px;border-radius:50%;
   display:flex;align-items:center;justify-content:center;background:rgba(6,9,18,.72);
   border:1px solid rgba(46,230,255,.4);font-size:15px;cursor:pointer;backdrop-filter:blur(8px)}
