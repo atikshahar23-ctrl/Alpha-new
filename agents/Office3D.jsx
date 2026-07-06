@@ -2925,11 +2925,30 @@ function FlightOverlay({ onReturn }) {
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
     renderer.setSize(mount.clientWidth, mount.clientHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     mount.appendChild(renderer.domElement);
 
     const sun = new THREE.DirectionalLight(0xffffff, 1.3);
     sun.position.set(400, 600, 200);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(1024, 1024);
+    sun.shadow.camera.near = 10;
+    sun.shadow.camera.far = 900;
+    // Cheap stand-in for a full cascaded-shadow-map/LOD terrain system: the
+    // sun's shadow frustum is small (just enough to cover the jet) and gets
+    // re-centered on the jet's own XZ position every frame further down, so
+    // it stays sharp right under the aircraft without the cost of shadowing
+    // the entire multi-thousand-unit coastline.
+    const SHADOW_SPAN = 140;
+    sun.shadow.camera.left = -SHADOW_SPAN;
+    sun.shadow.camera.right = SHADOW_SPAN;
+    sun.shadow.camera.top = SHADOW_SPAN;
+    sun.shadow.camera.bottom = -SHADOW_SPAN;
+    sun.shadow.camera.updateProjectionMatrix();
+    sun.target.position.set(0, 0, 0);
     scene.add(sun);
+    scene.add(sun.target);
     scene.add(new THREE.AmbientLight(0xbcd6ff, 0.55));
 
     // Ground far below: a real coastline, not a flat green square — a wide
@@ -2942,6 +2961,7 @@ function FlightOverlay({ onReturn }) {
     );
     sea.rotation.x = -Math.PI / 2;
     sea.position.y = -300;
+    sea.receiveShadow = true;
     scene.add(sea);
     const land = new THREE.Mesh(
       new THREE.PlaneGeometry(6000, 9000),
@@ -2949,6 +2969,7 @@ function FlightOverlay({ onReturn }) {
     );
     land.rotation.x = -Math.PI / 2;
     land.position.set(-1200, -299, 0);
+    land.receiveShadow = true;
     scene.add(land);
 
     // Soft round cloud sprites scattered through the sky at varying altitude.
@@ -2972,16 +2993,47 @@ function FlightOverlay({ onReturn }) {
     // above), always visible immediately with no network/model-load step.
     const plane = new THREE.Group();
     scene.add(plane);
-    plane.add(buildFighterJet(0x64707d));
+    const jetMesh = buildFighterJet(0x64707d);
+    jetMesh.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    plane.add(jetMesh);
 
-    // Flight state — arcade model: pitch/roll/yaw + throttle, no stall/lift
-    // physics, but a real 3D position you actually fly through.
-    const st = { x: 0, y: 120, z: 0, pitch: 0, roll: 0, yaw: 0, speed: 55 };
+    // Flight state — a lightweight analytic thrust/drag/lift model rather
+    // than a full rigid-body physics engine (no other part of this app pulls
+    // in a physics library, and this is one arcade mini-mode inside a much
+    // bigger sim — a proper Cannon-es/Rapier integration would be a large,
+    // separate undertaking for a small slice of the experience). Throttle
+    // builds thrust, drag grows with the square of speed, and climbing at
+    // low speed genuinely costs you energy (a soft stall) instead of a flat
+    // pitch→climb mapping, so the stick has real weight without needing a
+    // full rigid-body solver.
+    const st = { x: 0, y: 120, z: 0, pitch: 0, roll: 0, yaw: 0, speed: 55, throttle: 0.55 };
     const keys = {};
     const onKeyDown = (e) => { keys[e.key.toLowerCase()] = true; };
     const onKeyUp = (e) => { keys[e.key.toLowerCase()] = false; };
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
+
+    // Gamepad — same "only trust a real gamepadconnected event" guard used by
+    // the main office scene, so a phantom/stale pad entry can never fly the
+    // jet on its own. Deadzone tight (0.05) with a cubic response curve: fine
+    // control near center, full authority pushed to the edges — standard
+    // flight-stick feel instead of the office scene's linear walk deadzone.
+    let gamepadIndex = null;
+    const onGpConnect = (e) => { gamepadIndex = e.gamepad.index; };
+    const onGpDisconnect = (e) => { if (gamepadIndex === e.gamepad.index) gamepadIndex = null; };
+    window.addEventListener("gamepadconnected", onGpConnect);
+    window.addEventListener("gamepaddisconnected", onGpDisconnect);
+    try {
+      const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+      for (const g of pads) { if (g && g.connected && g.mapping === "standard") { gamepadIndex = g.index; break; } }
+    } catch {}
+    const GP_DEADZONE = 0.05;
+    const gpCurve = (v) => {
+      const s = v < 0 ? -1 : 1, a = Math.min(1, Math.abs(v));
+      if (a < GP_DEADZONE) return 0;
+      const remapped = (a - GP_DEADZONE) / (1 - GP_DEADZONE);
+      return s * remapped * remapped * remapped; // cubic = gentle near center, sharp at the edges
+    };
 
     const clock = new THREE.Clock();
     let raf;
@@ -2991,22 +3043,45 @@ function FlightOverlay({ onReturn }) {
       raf = requestAnimationFrame(animate);
       const dt = Math.min(0.05, clock.getDelta());
 
-      const pitchIn = (keys["s"] || keys["arrowdown"] ? 1 : 0) - (keys["w"] || keys["arrowup"] ? 1 : 0);
-      const rollIn = (keys["d"] || keys["arrowright"] ? 1 : 0) - (keys["a"] || keys["arrowleft"] ? 1 : 0);
-      const throttleIn = (keys["shift"] ? 1 : 0) - (keys["control"] ? 1 : 0);
+      const gp = (gamepadIndex !== null && navigator.getGamepads) ? navigator.getGamepads()[gamepadIndex] : null;
+      const kPitch = (keys["s"] || keys["arrowdown"] ? 1 : 0) - (keys["w"] || keys["arrowup"] ? 1 : 0);
+      const kRoll = (keys["d"] || keys["arrowright"] ? 1 : 0) - (keys["a"] || keys["arrowleft"] ? 1 : 0);
+      const kThrottle = (keys["shift"] ? 1 : 0) - (keys["control"] ? 1 : 0);
+      const gpPitch = gp ? gpCurve(gp.axes[1] || 0) : 0;
+      const gpRoll = gp ? gpCurve(gp.axes[0] || 0) : 0;
+      const gpThrottle = gp ? ((gp.buttons[7] ? gp.buttons[7].value : 0) - (gp.buttons[6] ? gp.buttons[6].value : 0)) : 0;
+      const pitchIn = kPitch || gpPitch;
+      const rollIn = kRoll || gpRoll;
+      const throttleIn = kThrottle || gpThrottle;
 
-      st.pitch = clamp(st.pitch + pitchIn * dt * 0.7, -0.85, 0.85);
-      st.roll = clamp(st.roll + rollIn * dt * 1.4 - st.roll * dt * 0.8, -1.1, 1.1);
+      // Soft stall: below STALL_SPD, nose-up authority mushes out and altitude
+      // bleeds off even while climbing — pulling the stick at low speed costs
+      // you instead of being a free, instant climb.
+      const STALL_SPD = 42;
+      const stallT = clamp((STALL_SPD - st.speed) / STALL_SPD, 0, 1);
+      const pitchAuthority = 1 - stallT * 0.6;
+      st.pitch = clamp(st.pitch + pitchIn * pitchAuthority * dt * 0.7, -0.85, 0.85);
+      st.roll = clamp(st.roll + rollIn * dt * 1.4 - st.roll * dt * 0.8 + (stallT > 0.3 ? (Math.random() - 0.5) * stallT * 0.5 : 0), -1.1, 1.1);
       st.yaw += st.roll * dt * 0.5;
-      st.speed = clamp(st.speed + throttleIn * dt * 25, 18, 160);
 
       const dir = new THREE.Vector3(
         Math.sin(st.yaw) * Math.cos(st.pitch),
         Math.sin(st.pitch),
         Math.cos(st.yaw) * Math.cos(st.pitch)
       );
+
+      // Thrust/drag: throttle builds thrust, drag grows with speed squared,
+      // and climbing/diving trades speed for altitude (and back) instead of
+      // altitude being free. Arcade-simple, but no longer floaty.
+      st.throttle = clamp(st.throttle + throttleIn * dt * 0.7, 0.1, 1);
+      const THRUST_MAX = 70, DRAG_K = 0.0026, MIN_SPEED = 18, MAX_SPEED = 168;
+      const thrustAccel = st.throttle * THRUST_MAX;
+      const dragAccel = st.speed * st.speed * DRAG_K;
+      const gravityAccel = -dir.y * 26;
+      st.speed = clamp(st.speed + (thrustAccel - dragAccel + gravityAccel) * dt, MIN_SPEED, MAX_SPEED);
+
       st.x += dir.x * st.speed * dt;
-      st.y += dir.y * st.speed * dt;
+      st.y += dir.y * st.speed * dt - stallT * 14 * dt;
       st.z += dir.z * st.speed * dt;
       st.y = clamp(st.y, 8, 900);
 
@@ -3022,6 +3097,18 @@ function FlightOverlay({ onReturn }) {
       camera.up.set(0, 1, 0);
       camera.lookAt(plane.position.clone().add(dir.clone().multiplyScalar(20)));
 
+      // Shadow frustum rides along with the jet (see the SHADOW_SPAN comment
+      // at setup) instead of trying to cover the whole coastline.
+      sun.target.position.set(st.x, st.y, st.z);
+      sun.position.set(st.x + 260, st.y + 420, st.z + 140);
+
+      // Atmospheric depth-fog reacts to altitude — hazy and close-in down
+      // low, progressively clearer and farther-reaching up high.
+      const altT = clamp((st.y - 8) / (700 - 8), 0, 1);
+      scene.fog.near = 60 + altT * 380;
+      scene.fog.far = 1100 + altT * 2400;
+      scene.fog.color.setHSL(0.58, 0.5, 0.6 + altT * 0.12);
+
       if (speedRef.current) speedRef.current.textContent = Math.round(st.speed * 6) + " קמ״ש";
       if (altRef.current) altRef.current.textContent = Math.round(st.y) + " מ'";
       if (hdgRef.current) hdgRef.current.textContent = Math.round(((st.yaw * 180 / Math.PI) % 360 + 360) % 360) + "°";
@@ -3030,7 +3117,7 @@ function FlightOverlay({ onReturn }) {
         vspeedRef.current.textContent = (vs > 0 ? "+" : "") + vs + " מ׳/ש";
       }
       if (throttleRef.current) {
-        const pct = clamp((st.speed - 18) / (160 - 18), 0, 1);
+        const pct = clamp((st.speed - MIN_SPEED) / (MAX_SPEED - MIN_SPEED), 0, 1);
         throttleRef.current.style.height = Math.round(pct * 100) + "%";
       }
       // Artificial horizon: a rolling/pitching sky-ground disc behind a fixed
@@ -3075,6 +3162,8 @@ function FlightOverlay({ onReturn }) {
       window.removeEventListener("resize", onResize);
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("gamepadconnected", onGpConnect);
+      window.removeEventListener("gamepaddisconnected", onGpDisconnect);
       scene.traverse((obj) => {
         if (obj.geometry) obj.geometry.dispose();
         if (obj.material) {
@@ -3090,7 +3179,7 @@ function FlightOverlay({ onReturn }) {
   return (
     <div className="off3-space-wrap">
       <div ref={mountRef} className="off3-space-canvas" style={{ cursor: "default" }} />
-      <div className="off3-space-hint">W/S להטיה · A/D לגלגול ופנייה · Shift/Ctrl להאצה ולהאטה</div>
+      <div className="off3-space-hint">W/S להטיה · A/D לגלגול ופנייה · Shift/Ctrl להאצה ולהאטה · תמיכה בג'ויסטיק</div>
       <canvas ref={horizonRef} width={120} height={120} className="off3-flight-horizon" />
       <div className="off3-flight-hud">
         <div><span>מהירות</span><b ref={speedRef}>0 קמ״ש</b></div>
