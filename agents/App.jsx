@@ -4170,6 +4170,21 @@ function StyleTag() {
 .off3-loader-bar i{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg,var(--gold),#7fd7ff);transition:width .25s ease;box-shadow:0 0 14px rgba(228,188,99,.5)}
 .off3-loader span{font-size:12px;font-weight:700;color:#7e90b8}
 @keyframes off3LoaderFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+/* Feature-tour tip card — rotates while the world finishes assembling
+   behind it, so the wait teaches instead of just sitting on a percentage. */
+.off3-loader-tip{display:flex;align-items:center;gap:14px;width:min(420px,84vw);margin-top:10px;
+  padding:16px 18px;border-radius:16px;background:rgba(14,20,36,.6);border:1px solid rgba(228,188,99,.25);
+  backdrop-filter:blur(6px);animation:off3TipIn .35s ease both}
+@keyframes off3TipIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.off3-loader-tip-ic{font-size:30px;flex-shrink:0;width:46px;height:46px;border-radius:12px;
+  display:flex;align-items:center;justify-content:center;background:rgba(228,188,99,.12);border:1px solid rgba(228,188,99,.3)}
+.off3-loader-tip-txt{text-align:right;min-width:0}
+.off3-loader-tip-txt b{display:block;font-family:'Rubik';font-weight:800;font-size:13.5px;color:#ffe9b8;margin-bottom:3px}
+.off3-loader-tip-txt p{margin:0;font-size:11.5px;line-height:1.5;color:#b7c2d9}
+.off3-loader-dots{display:flex;gap:6px;margin-top:2px;flex-wrap:wrap;justify-content:center;max-width:min(420px,84vw)}
+.off3-loader-dot{width:7px;height:7px;padding:0;border-radius:50%;border:none;background:rgba(255,255,255,.18);cursor:pointer;transition:background .2s,transform .2s}
+.off3-loader-dot:hover{background:rgba(228,188,99,.5)}
+.off3-loader-dot.on{background:var(--gold);transform:scale(1.3);box-shadow:0 0 8px rgba(228,188,99,.6)}
 /* Space portal overlay — sits on top of the office canvas, its own scene. */
 .off3-space-wrap{position:absolute;inset:0;z-index:30;background:#000107;animation:acRise .25s ease both}
 .off3-space-canvas{position:absolute;inset:0;cursor:grab}

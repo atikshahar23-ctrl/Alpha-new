@@ -3670,6 +3670,27 @@ const GOD_META_LABELS = {
   coverage_angle: "זווית כיסוי", battery_status: "מצב סוללה", storage: "אחסון", channels: "ערוצים",
 };
 
+// Loading-screen feature tour — shown while the sim finishes assembling, so
+// the wait teaches instead of just sitting on a percentage. Kept as data so
+// it's easy to extend as new systems ship.
+const SIM_TIPS = [
+  { icon: "🕹️", title: "תנועה", desc: "ג'ויסטיק ימני לתזוזה, שמאלי למצלמה/מבט (הפוך בגוף ראשון) · WASD/חצים + Shift לספרינט במחשב · תומך גם בג'ויסטיק פיזי (Xbox/PlayStation)." },
+  { icon: "💬", title: "שיחה עם הצוות", desc: "התקרב לכל סוכן ודבר איתו בקול או בכתיבה — לכל אחד אישיות, תפקיד ונתונים אמיתיים משלו." },
+  { icon: "🛠️", title: "God Mode", desc: "עורך תלת-ממד מלא: גרור, סובב והתאם כל אובייקט בזמן אמת, כולל תאורה ומהירות סוכנים." },
+  { icon: "🔋", title: "קפסולות טעינה", desc: "הרובוטים עוגנים בקפסולה משלהם — מרחפים, זוהרים וניצוצות חשמל כשהם נטענים בפועל." },
+  { icon: "🚛", title: "שולחן המלחמה", desc: "גרור משאית התקנה ליום בלוח השבועי כדי לתזמן — מיכל תאשר בהודעה." },
+  { icon: "₿", title: "איזור המסחר", desc: "נרות תלת-ממד שצומחים מהרצפה לפי מחיר BTC/USDT חי מ-Binance." },
+  { icon: "🐾", title: "משחק לאורי", desc: "לצד הבית שליד ההאנגר — משחק צבעים/צורות ידידותי לגיל 3, ללא כישלון, רק עידוד." },
+  { icon: "📄", title: "ייצוא להנהלת חשבונות", desc: "טרמינל ייעודי מפיק PDF נקי לבדיקת מור מתוך נתוני העסק האמיתיים." },
+  { icon: "🚗", title: "מוסך Tiggo 7", desc: "לוח מידע מרחף ליד הרכב: סוללה, קילומטראז' ומעקב הלוואת בלון." },
+  { icon: "🎉", title: "מצב חגיגה", desc: "סגירת עסקה גדולה ליד שולחן המלחמה מדליקה לייזרים, מחשיכה ומנגנת ביט חגיגי." },
+  { icon: "📹", title: "מצלמת רחפן", desc: "מקש C מנתק למצלמת 360° מדומה עם עיוות עין-דג ורעש CRT, בדיוק כמו במצלמות האמיתיות." },
+  { icon: "⏩", title: "מחוגת זמן", desc: "ב-God Mode: מריצה יום/לילה, יוצרת נרות עתידיים ומתזמנת תחזיות בשולחן המלחמה." },
+  { icon: "🌌", title: "Lights Out", desc: "מצב מועדון UV: התאורה מתעמעמת והקפסולות/ההולוגרמה זוהרות בניאון." },
+  { icon: "🛫", title: "סימולטור טיסה", desc: "מטוס קרב, חוף אמיתי עם ים ויבשה, ולוח מכשירים מלא — מהירות, גובה, קצב טיפוס ואופק מלאכותי." },
+  { icon: "🏛️", title: "ההאנגר והבית", desc: "פסל היפריון, מפרץ רכבים, בית מפורט ופינת פוקימון — כולם נגישים מהמשרד." },
+];
+
 // Module 3: kids color/shape-finding game targets — big, high-contrast,
 // unambiguous shapes for a 3-year-old (Ori) to match against a spoken/
 // written prompt.
@@ -3843,8 +3864,23 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   const rightDrag = useRef(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Model-download progress for the branded loading overlay (0..100, then
-  // null once everything is in and the room is live).
+  // null once the ENTIRE scene — not just the network downloads — is built
+  // and the animate loop has actually started; previously this went null
+  // right after the GLB downloads finished, while the much longer
+  // synchronous scene-construction (hundreds of objects, procedural
+  // textures/shaders, NPC rigging) still had to run, so the sim visibly
+  // popped in/stuttered together for a few seconds right after "loading" said
+  // it was done. loadPhase distinguishes the two stages for the overlay text.
   const [loadPct, setLoadPct] = useState(0);
+  const [loadPhase, setLoadPhase] = useState("download"); // "download" | "build"
+  // Loading-screen feature tour — auto-advances every 4.2s, and doubles as
+  // the "interactive" bit via the clickable dots below it.
+  const [tipIndex, setTipIndex] = useState(0);
+  useEffect(() => {
+    if (loadPct === null) return; // overlay is gone — stop ticking
+    const t = setInterval(() => setTipIndex((i) => (i + 1) % SIM_TIPS.length), 4200);
+    return () => clearInterval(t);
+  }, [loadPct]);
   // DeviceProfiler picks the *first-run* default for graphicsHigh/turbo
   // (iPad/mobile-low starts lean, desktop starts maxed) — a saved manual
   // choice in localStorage always wins over the detected default. "מצב
@@ -4090,7 +4126,8 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         loadGltfFull(base + SOPHIA_MODEL_URL, manager).catch((e) => { console.error("[office3d] sophia model failed to load", e); return null; }),
       ]);
       if (cancelled) return;
-      setLoadPct(null); // room is live
+      setLoadPct(99);
+      setLoadPhase("build"); // downloads are in — the overlay stays up while the world is actually assembled
       const charTemplate = charGltf ? charGltf.scene : null;
       const charClips = charGltf ? charGltf.animations : [];
       // Falls back to the human model/clips if the robot ever fails to load,
@@ -6692,11 +6729,25 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           mz = Math.cos(playerH.group.rotation.y) * kFwd;
         }
       } else if (!liveRef.current.inVehicle && !moveLocked) {
-        if (keys["w"] || keys["arrowup"]) mz -= 1;
-        if (keys["s"] || keys["arrowdown"]) mz += 1;
-        if (keys["a"] || keys["arrowleft"]) mx -= 1;
-        if (keys["d"] || keys["arrowright"]) mx += 1;
-        mx += jv.x; mz += jv.y;
+        // Third-person movement used to be locked to fixed compass directions —
+        // "up" always walked toward -Z no matter which way the chase camera had
+        // been orbited (left stick), so once you spun the camera, pushing the
+        // stick "forward" sent you sideways or backward relative to what you
+        // were looking at. That mismatch is exactly what reads as "flying a
+        // drone" instead of a normal third-person game. Real games walk you
+        // relative to the camera: push forward, you go into the screen,
+        // whichever way the camera is currently facing. Collect the raw
+        // input first, then rotate it by the camera's own azimuth (camAz)
+        // before it becomes a world-space direction.
+        let rawX = 0, rawZ = 0;
+        if (keys["w"] || keys["arrowup"]) rawZ -= 1;
+        if (keys["s"] || keys["arrowdown"]) rawZ += 1;
+        if (keys["a"] || keys["arrowleft"]) rawX -= 1;
+        if (keys["d"] || keys["arrowright"]) rawX += 1;
+        rawX += jv.x; rawZ += jv.y;
+        const caz = Math.sin(camAz), cazC = Math.cos(camAz);
+        mx += rawX * cazC + rawZ * caz;
+        mz += -rawX * caz + rawZ * cazC;
       }
       const mlen = Math.hypot(mx, mz);
       // Sitting on your own chair: any movement input stands you up; otherwise
@@ -7721,6 +7772,10 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     };
     // Module 4: Bookkeeper Export Terminal.
     liveRef.current.exportBookkeeperPdf = () => exportBookkeeperPdf(liveRef.current.bizData);
+    // The world is now actually fully assembled (not just downloaded) and
+    // about to render its first real frame — only now does the loading
+    // overlay come down.
+    setLoadPct(null);
     renderer.setAnimationLoop(animate);
 
     const onResize = () => {
@@ -7894,9 +7949,26 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       {loadPct !== null && (
         <div className="off3-loader">
           <div className="off3-loader-logo">🏢</div>
-          <b>בונה את המשרד החי…</b>
+          <b>{loadPhase === "download" ? "מוריד נכסים…" : "בונה את המשרד החי…"}</b>
           <div className="off3-loader-bar"><i style={{ width: `${Math.max(6, loadPct)}%` }} /></div>
           <span>{loadPct}%</span>
+          <div className="off3-loader-tip" key={tipIndex}>
+            <div className="off3-loader-tip-ic">{SIM_TIPS[tipIndex].icon}</div>
+            <div className="off3-loader-tip-txt">
+              <b>{SIM_TIPS[tipIndex].title}</b>
+              <p>{SIM_TIPS[tipIndex].desc}</p>
+            </div>
+          </div>
+          <div className="off3-loader-dots">
+            {SIM_TIPS.map((_, i) => (
+              <button
+                key={i}
+                className={"off3-loader-dot" + (i === tipIndex ? " on" : "")}
+                onClick={() => setTipIndex(i)}
+                aria-label={SIM_TIPS[i].title}
+              />
+            ))}
+          </div>
         </div>
       )}
       {showLoadPrompt && (

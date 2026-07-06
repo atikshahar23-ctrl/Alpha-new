@@ -253,8 +253,7 @@
         var fbStart=performance.now();
         function fbReveal(){
           if(fbDone) return; fbDone=true;
-          document.documentElement.classList.remove('booting');
-          document.body.classList.add('revealed');
+          revealApp();
           veil.classList.add('gone');
           setTimeout(function(){ veil.parentNode&&veil.parentNode.removeChild(veil); }, 500);
         }
@@ -327,9 +326,16 @@
       function finish(){
         if(ended) return; ended=true;
         if(openSnd){ try{ openSnd.pause(); }catch(e){} }   // sound only spans the videos
-        revealApp();
         ov.classList.add('gone');
         setTimeout(function(){ ov.parentNode && ov.parentNode.removeChild(ov); }, 800);
+        // The cinematic intro used to hand straight off to revealApp() the
+        // instant the vault video ended — but the dashboard's own data/HUD
+        // pass often hadn't finished by then, so the reveal showed a raw,
+        // still-assembling layout for a beat. Same branded veil the repeat-
+        // visit fast-boot path already uses (logo + scan sweep) now bridges
+        // that gap too, gated on window.__alphaReady with the same minimum-
+        // show-time and hard-fallback safety net.
+        showFastBoot();
       }
       var vaultStarted=false;
       function playVault(){
