@@ -1353,7 +1353,74 @@ function buildChargingPod(color, name, title, screenTex) {
     obstacles.push({ x: Math.sin(a + Math.PI) * R, z: Math.cos(a + Math.PI) * R, r: 0.22 });
   }
 
-  return { group: g, obstacles, glowMat, ringMat, meter: { canvas: meterCvs, ctx: meterCvs.getContext("2d"), tex: meterTex } };
+  // Neon high-voltage arcs, shown only while actually docked+charging (wired
+  // up by the animate loop) — hidden by default.
+  const lightning = buildPodLightning(R, H);
+  g.add(lightning.group);
+
+  return { group: g, obstacles, glowMat, ringMat, lightning, meter: { canvas: meterCvs, ctx: meterCvs.getContext("2d"), tex: meterTex } };
+}
+
+// Neon lightning arcs for a charging pod: a handful of jagged strands from
+// the docked agent to fixed anchor points on the inner glass wall (the same
+// wall arc the collision ring above uses, so bolts never reach into the open
+// doorway), regenerated on a flicker timer rather than every frame — bloom
+// (already in the postprocessing chain) supplies the actual glow.
+const POD_LIGHTNING_COLORS = [0x36e6ff, 0xb84bff];
+function buildPodLightning(R, H) {
+  const group = new THREE.Group();
+  group.visible = false;
+  const N = 5;
+  const bolts = [];
+  for (let k = 0; k < N; k++) {
+    const a = Math.PI * 0.3 + ((k + 0.5) / N) * (Math.PI * 1.4);
+    const anchor = new THREE.Vector3(
+      Math.sin(a + Math.PI) * (R - 0.12),
+      0.12 + H * (0.3 + 0.5 * (k / Math.max(1, N - 1))),
+      Math.cos(a + Math.PI) * (R - 0.12)
+    );
+    const segN = 5;
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute("position", new THREE.BufferAttribute(new Float32Array(segN * 3), 3));
+    const mat = new THREE.LineBasicMaterial({
+      color: POD_LIGHTNING_COLORS[k % 2], transparent: true, opacity: 0.8,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    const line = new THREE.Line(geom, mat);
+    group.add(line);
+    bolts.push({ line, mat, anchor });
+  }
+  return { group, bolts };
+}
+
+// Re-jitters every bolt's midpoints between the agent's current (pod-local)
+// position and its fixed wall anchor. Called ~14x/sec per charging pod, not
+// every frame — cheap, and a real per-frame update would look too smooth/CG
+// rather than a crackling arc.
+const _podBoltDir = new THREE.Vector3();
+const _podBoltUp = new THREE.Vector3();
+const _podBoltPerp1 = new THREE.Vector3();
+const _podBoltPerp2 = new THREE.Vector3();
+const _podBoltPt = new THREE.Vector3();
+function updatePodBolt(bolt, originLocal) {
+  const posAttr = bolt.line.geometry.attributes.position;
+  const segN = posAttr.count;
+  _podBoltDir.subVectors(bolt.anchor, originLocal);
+  const dirLen = Math.max(0.001, _podBoltDir.length());
+  _podBoltUp.set(0, 1, 0);
+  if (Math.abs(_podBoltDir.y) > 0.9 * dirLen) _podBoltUp.set(1, 0, 0);
+  _podBoltPerp1.crossVectors(_podBoltDir, _podBoltUp).normalize();
+  _podBoltPerp2.crossVectors(_podBoltDir, _podBoltPerp1).normalize();
+  for (let i = 0; i < segN; i++) {
+    const t = i / (segN - 1);
+    _podBoltPt.lerpVectors(originLocal, bolt.anchor, t);
+    const envelope = Math.sin(Math.PI * t); // pinches to zero at both ends
+    _podBoltPt.addScaledVector(_podBoltPerp1, (Math.random() - 0.5) * 0.24 * envelope);
+    _podBoltPt.addScaledVector(_podBoltPerp2, (Math.random() - 0.5) * 0.24 * envelope);
+    posAttr.setXYZ(i, _podBoltPt.x, _podBoltPt.y, _podBoltPt.z);
+  }
+  posAttr.needsUpdate = true;
+  bolt.mat.opacity = 0.5 + Math.random() * 0.5;
 }
 
 // Battery panel for a charging pod: level bar + % + a ⚡ while docked, in the
@@ -3893,6 +3960,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       const entry = {
         id: owner.id, x: wx, z: wz, hex: owner.color,
         glowMat: pod.glowMat, ringMat: pod.ringMat, meter: pod.meter,
+        podGroup: pod.group, lightning: pod.lightning,
         charge: 55 + Math.random() * 40, charging: false,
       };
       drawPodMeter(entry);
@@ -3902,6 +3970,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // logic branches on this: pod robots stand at pod-center facing out,
     // no chair nudge, no sit drop.
     const podIdSet = new Set(chargePods.map((p) => p.id));
+    const podById = new Map(chargePods.map((p) => [p.id, p]));
     // Department zoning — the 13 desks are grouped into three clusters
     // (declared in that order in AGENTS, zipped 1:1 onto deskPositions):
     // north row = revenue/growth, west column = finance/ops, south row =
@@ -4978,6 +5047,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     let frameNo = 0;
     let secSwitchT = 0;
     let podT = 0;      // 1Hz charging-pod meter/charge tick
+    let lightningT = 0; // ~14Hz pod lightning-bolt flicker tick
     let scanT = 0;     // diagnostic sweep timer over the showroom car
     let spatialT = 9;  // spatial-bridge refresh timer (starts ripe)
     // Third-person chase-cam orbit — the left stick swings the CAMERA around
@@ -5051,6 +5121,35 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         }
       }
       const keys = liveRef.current.keys;
+
+      // ── Gamepad (Xbox / PlayStation, native HTML5 Gamepad API) — feeds the
+      // same joyVec/turnVec channel the touch joysticks use, so every branch
+      // below (movement, first-person look, camera orbit) already works with
+      // no separate control path to keep in sync. Left stick = movement,
+      // right stick = camera/look — standard controller convention; this
+      // runs alongside keyboard/touch, never replacing them, and only
+      // overwrites a vec when its OWN touch stick isn't mid-drag so a
+      // finger on the on-screen stick always wins over a stale controller.
+      const GP_DEADZONE = 0.15;
+      const gpAxis = (v) => (Math.abs(v) < GP_DEADZONE ? 0 : v);
+      const gpList = typeof navigator !== "undefined" && navigator.getGamepads ? navigator.getGamepads() : null;
+      const gp = gpList ? Array.from(gpList).find((g) => g && g.connected) : null;
+      if (gp) {
+        const gx = gpAxis(gp.axes[0] || 0), gy = gpAxis(gp.axes[1] || 0);
+        const gcx = gpAxis(gp.axes[2] || 0), gcy = gpAxis(gp.axes[3] || 0);
+        if (gx || gy) liveRef.current.joyVec = { x: gx, y: gy };
+        else if (!rightDrag.current) liveRef.current.joyVec = { x: 0, y: 0 };
+        if (gcx || gcy) liveRef.current.turnVec = { x: gcx, y: gcy };
+        else if (!leftDrag.current) liveRef.current.turnVec = { x: 0, y: 0 };
+        // Button 0 (Xbox A / PS Cross) — edge-triggered like the "E" key so a
+        // held button fires the interact/talk trigger once per press.
+        const gpBtn0 = !!(gp.buttons[0] && gp.buttons[0].pressed);
+        if (gpBtn0 && !liveRef.current.gpBtn0Prev) {
+          liveRef.current.toggleSit?.(); liveRef.current.toggleVehicle?.(); liveRef.current.toggleFlight?.(); liveRef.current.toggleHangar?.();
+        }
+        liveRef.current.gpBtn0Prev = gpBtn0;
+      }
+
       const jv = liveRef.current.joyVec;
 
       // Day/night: lerp sun/ambient/fog toward the current phase's sky colour
@@ -5461,7 +5560,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       // of cutting a diagonal beeline through every desk in between — reads
       // as deliberate human wayfinding rather than gliding through furniture.
       const liveChars = liveRef.current.chars || [];
-      liveChars.forEach((c) => {
+      liveChars.forEach((c, ci) => {
         const h = npc[c.id]; if (!h) return;
         const atDesk = c.status === "work";
         // Robots dock standing at their charging pod's center — no chair, so
@@ -5557,10 +5656,18 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           h.wpDone = false;
         }
         const summoned = c.status === "summoned";
+        // Docked + actively charging: "gravity" is off, they hover in place
+        // with a gentle continuous sine bob instead of standing flat-footed —
+        // pod.charging itself only ticks at 1Hz (see podT below) but reading
+        // it here every frame is what makes the hover motion actually smooth.
+        const dockedPod = inPod ? podById.get(c.id) : null;
+        const levitating = !!dockedPod && dockedPod.charging && distFinal <= 0.03;
         // Pod robots never take the chair-seat Y drop — they have no sit
         // animation (clipMap falls back to idle), so dropping the standing
         // rig would just sink it into the floor.
-        const targetY = !inPod && (atDesk || summoned) && distFinal <= 0.03 ? SEAT_DROP : 0;
+        const targetY = levitating
+          ? 0.32 + Math.sin(clock.elapsedTime * 1.6 + ci * 1.7) * 0.12
+          : !inPod && (atDesk || summoned) && distFinal <= 0.03 ? SEAT_DROP : 0;
         h.group.position.y += (targetY - h.group.position.y) * Math.min(1, dt * 6);
         h.isWalking = distFinal > 0.03;
         // Perfect-seat settle: once anchored, glide the last residual onto
@@ -5739,6 +5846,22 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       }
       chargePods.forEach((pod) => {
         pod.glowMat.opacity = pod.charging ? 0.16 + Math.abs(Math.sin(clock.elapsedTime * 2.4)) * 0.1 : 0.07;
+      });
+      // Neon arcs: flicker/re-jitter ~14x/sec, only for pods actually
+      // charging right now (typically a handful at once) — visibility and
+      // geometry both skip entirely for idle pods.
+      lightningT += dt;
+      const boltFlick = lightningT >= 0.07;
+      if (boltFlick) lightningT = 0;
+      chargePods.forEach((pod) => {
+        if (!pod.lightning) return;
+        pod.lightning.group.visible = pod.charging;
+        if (!pod.charging || !boltFlick) return;
+        const h = npc[pod.id];
+        if (!h) return;
+        const originWorld = new THREE.Vector3(h.group.position.x, h.group.position.y + 1.05, h.group.position.z);
+        pod.podGroup.worldToLocal(originWorld);
+        pod.lightning.bolts.forEach((b) => updatePodBolt(b, originWorld));
       });
 
       // camera: third-person chase cam by default, or first-person from the
