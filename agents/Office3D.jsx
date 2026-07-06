@@ -2252,17 +2252,199 @@ function SpaceOverlay({ onReturn, load = 0 }) {
   );
 }
 
-// A real flyable flight simulator built around the owner's uploaded RQ-180
-// model — its own self-contained scene/camera/render-loop (same pattern as
-// SpaceOverlay above), entered from the plane's showroom spot near a window.
-// Arcade flight model (pitch/roll/yaw + throttle, no stall/lift physics) over
-// an open sky with clouds and a ground plane far below, chase camera, and a
-// live speed/altitude/heading HUD.
+// Procedural fighter-jet model — no external GLB (the old uploaded RQ-180
+// model rendered as an unlit black slab, likely baked textures that never
+// resolved; owner asked for a from-scratch build instead of debugging it).
+// Delta wings + tail fin are flat extruded shapes (a real triangular
+// silhouette, not a stretched box), fuselage/nose/canopy are primitives, all
+// dressed with a small canvas panel-line + roundel texture for detail.
+function buildJetSkinTexture(hex) {
+  const cvs = document.createElement("canvas");
+  cvs.width = 256; cvs.height = 256;
+  const ctx = cvs.getContext("2d");
+  const hexStr = "#" + new THREE.Color(hex).getHexString();
+  ctx.fillStyle = hexStr; ctx.fillRect(0, 0, 256, 256);
+  const rnd = mulberry32(31);
+  // panel lines
+  ctx.strokeStyle = "rgba(0,0,0,.22)"; ctx.lineWidth = 1.5;
+  for (let i = 0; i < 14; i++) {
+    ctx.beginPath();
+    const y = rnd() * 256;
+    ctx.moveTo(0, y); ctx.lineTo(256, y + (rnd() - 0.5) * 30);
+    ctx.stroke();
+  }
+  for (let i = 0; i < 6; i++) {
+    ctx.beginPath();
+    const x = rnd() * 256;
+    ctx.moveTo(x, 0); ctx.lineTo(x + (rnd() - 0.5) * 20, 256);
+    ctx.stroke();
+  }
+  // subtle weathering streaks
+  for (let i = 0; i < 30; i++) {
+    ctx.fillStyle = `rgba(0,0,0,${(rnd() * 0.08).toFixed(3)})`;
+    ctx.fillRect(rnd() * 256, rnd() * 256, 2 + rnd() * 3, 10 + rnd() * 40);
+  }
+  // roundel insignia
+  ctx.save(); ctx.translate(128, 90);
+  ctx.beginPath(); ctx.arc(0, 0, 22, 0, Math.PI * 2); ctx.fillStyle = "#e4bc63"; ctx.fill();
+  ctx.beginPath(); ctx.arc(0, 0, 14, 0, Math.PI * 2); ctx.fillStyle = "#151a22"; ctx.fill();
+  ctx.beginPath(); ctx.arc(0, 0, 6, 0, Math.PI * 2); ctx.fillStyle = "#e4bc63"; ctx.fill();
+  ctx.restore();
+  const tex = new THREE.CanvasTexture(cvs);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+function jetWingShape(span, sweep, tipCut) {
+  const s = new THREE.Shape();
+  s.moveTo(0, 0);
+  s.lineTo(span, -sweep);
+  s.lineTo(span * tipCut, -sweep - 0.35);
+  s.lineTo(0.25, -0.9);
+  s.closePath();
+  return s;
+}
+function buildFighterJet(hex) {
+  const g = new THREE.Group();
+  const skinTex = buildJetSkinTexture(hex);
+  const bodyMat = new THREE.MeshStandardMaterial({ map: skinTex, roughness: 0.45, metalness: 0.6 });
+  const darkMat = new THREE.MeshStandardMaterial({ color: 0x20242b, roughness: 0.4, metalness: 0.7 });
+  const glassMat = new THREE.MeshStandardMaterial({ color: 0x1a3b52, roughness: 0.1, metalness: 0.3, transparent: true, opacity: 0.78 });
+  const glowMat = new THREE.MeshBasicMaterial({ color: 0xff7a2e });
+
+  // Fuselage — tapered cylinder, nose toward -Z (matches the flight state's
+  // forward-vector convention below: dir points -Z-ish at yaw 0).
+  const fuse = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.58, 6.2, 16), bodyMat);
+  fuse.rotation.x = Math.PI / 2;
+  g.add(fuse);
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.32, 1.1, 16), darkMat);
+  nose.rotation.x = -Math.PI / 2;
+  nose.position.z = -3.65;
+  g.add(nose);
+  const tailCone = new THREE.Mesh(new THREE.ConeGeometry(0.46, 0.9, 16), darkMat);
+  tailCone.rotation.x = Math.PI / 2;
+  tailCone.position.z = 3.55;
+  g.add(tailCone);
+  // engine nozzle + afterburner glow disc
+  const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.36, 0.4, 16), darkMat);
+  nozzle.rotation.x = Math.PI / 2;
+  nozzle.position.z = 4.05;
+  g.add(nozzle);
+  const flame = new THREE.Mesh(new THREE.CircleGeometry(0.26, 16), glowMat);
+  flame.position.z = 4.28;
+  g.add(flame);
+
+  // Bubble canopy over the cockpit.
+  const canopy = new THREE.Mesh(new THREE.SphereGeometry(0.42, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), glassMat);
+  canopy.scale.set(1, 0.85, 1.9);
+  canopy.position.set(0, 0.34, -1.3);
+  g.add(canopy);
+
+  // Delta main wings — flat extruded triangles, mirrored left/right.
+  const wingGeo = new THREE.ExtrudeGeometry(jetWingShape(2.9, 0.6, 0.28), { depth: 0.07, bevelEnabled: false });
+  wingGeo.rotateX(-Math.PI / 2);
+  wingGeo.translate(0, -0.02, 0);
+  [1, -1].forEach((side) => {
+    const wing = new THREE.Mesh(wingGeo, darkMat);
+    wing.position.set(side * 0.5, -0.05, 0.4);
+    wing.scale.x = side;
+    g.add(wing);
+  });
+  // Smaller horizontal stabilizers near the tail.
+  const stabGeo = new THREE.ExtrudeGeometry(jetWingShape(1.3, 0.4, 0.2), { depth: 0.06, bevelEnabled: false });
+  stabGeo.rotateX(-Math.PI / 2);
+  [1, -1].forEach((side) => {
+    const stab = new THREE.Mesh(stabGeo, darkMat);
+    stab.position.set(side * 0.42, 0.05, 3.0);
+    stab.scale.x = side;
+    g.add(stab);
+  });
+  // Vertical tail fin — the same triangular shape, stood upright.
+  const finGeo = new THREE.ExtrudeGeometry(jetWingShape(1.5, 0.55, 0.22), { depth: 0.07, bevelEnabled: false });
+  finGeo.rotateY(Math.PI / 2);
+  const fin = new THREE.Mesh(finGeo, bodyMat);
+  fin.position.set(0, 0.35, 2.5);
+  g.add(fin);
+
+  g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+  return g;
+}
+
+// Ground + sea beneath the flight scene: one big canvas-textured landmass
+// (fields, forest patches, a river) whose texture alpha fades to transparent
+// along one edge, layered a hair above a separate tiled sea plane so the two
+// read as a real coastline instead of a single flat green square.
+function buildFlightLandTexture() {
+  const cvs = document.createElement("canvas");
+  cvs.width = cvs.height = 1024;
+  const ctx = cvs.getContext("2d");
+  const grd = ctx.createLinearGradient(0, 0, 1024, 1024);
+  grd.addColorStop(0, "#4d7a3f"); grd.addColorStop(0.55, "#5c8a46"); grd.addColorStop(1, "#7d8f4d");
+  ctx.fillStyle = grd; ctx.fillRect(0, 0, 1024, 1024);
+  const rnd = mulberry32(77);
+  for (let i = 0; i < 260; i++) {
+    const w = 40 + rnd() * 140, h = 40 + rnd() * 140;
+    ctx.fillStyle = `hsl(${75 + rnd() * 45},${30 + rnd() * 25}%,${26 + rnd() * 20}%)`;
+    ctx.fillRect(rnd() * 1024, rnd() * 1024, w, h);
+  }
+  for (let i = 0; i < 70; i++) {
+    ctx.fillStyle = `rgba(28,58,24,${(0.3 + rnd() * 0.3).toFixed(3)})`;
+    ctx.beginPath(); ctx.arc(rnd() * 1024, rnd() * 1024, 20 + rnd() * 60, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.strokeStyle = "rgba(100,150,195,.55)"; ctx.lineWidth = 7;
+  ctx.beginPath();
+  let rx = 0, ry = 250 + rnd() * 300;
+  ctx.moveTo(rx, ry);
+  while (rx < 1024) { rx += 30 + rnd() * 35; ry += (rnd() - 0.5) * 90; ctx.lineTo(rx, ry); }
+  ctx.stroke();
+  // coastline fade: solid land for ~62% of the plane, transparent past that
+  // so the sea mesh underneath shows through with a soft edge, not a seam.
+  const mask = ctx.createLinearGradient(1024 * 0.58, 0, 1024, 0);
+  mask.addColorStop(0, "rgba(255,255,255,1)");
+  mask.addColorStop(0.18, "rgba(255,255,255,1)");
+  mask.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.globalCompositeOperation = "destination-in";
+  ctx.fillStyle = mask; ctx.fillRect(0, 0, 1024, 1024);
+  ctx.globalCompositeOperation = "source-over";
+  const tex = new THREE.CanvasTexture(cvs);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+function buildFlightSeaTexture() {
+  const cvs = document.createElement("canvas");
+  cvs.width = cvs.height = 256;
+  const ctx = cvs.getContext("2d");
+  const grd = ctx.createLinearGradient(0, 0, 0, 256);
+  grd.addColorStop(0, "#1d5d87"); grd.addColorStop(1, "#0f3452");
+  ctx.fillStyle = grd; ctx.fillRect(0, 0, 256, 256);
+  const rnd = mulberry32(4);
+  ctx.strokeStyle = "rgba(255,255,255,.14)"; ctx.lineWidth = 2;
+  for (let i = 0; i < 46; i++) {
+    const y = rnd() * 256;
+    ctx.beginPath();
+    for (let x = 0; x <= 256; x += 16) ctx.lineTo(x, y + Math.sin(x * 0.05 + i) * 5);
+    ctx.stroke();
+  }
+  const tex = new THREE.CanvasTexture(cvs);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(24, 24);
+  return tex;
+}
+
+// A real flyable flight simulator — its own self-contained scene/camera/
+// render-loop (same pattern as SpaceOverlay above), entered from the plane's
+// showroom spot near a window. Arcade flight model (pitch/roll/yaw +
+// throttle, no stall/lift physics) over an open sky with clouds and a real
+// ground-and-sea coastline far below, chase camera, and a full instrument
+// HUD (speed, altitude, heading, vertical speed, throttle, artificial horizon).
 function FlightOverlay({ onReturn }) {
   const mountRef = useRef(null);
   const speedRef = useRef(null);
   const altRef = useRef(null);
   const hdgRef = useRef(null);
+  const vspeedRef = useRef(null);
+  const throttleRef = useRef(null);
+  const horizonRef = useRef(null);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -2284,15 +2466,24 @@ function FlightOverlay({ onReturn }) {
     scene.add(sun);
     scene.add(new THREE.AmbientLight(0xbcd6ff, 0.55));
 
-    // Ground far below — a huge flat plane with a soft grid tint so speed and
-    // altitude actually read, plus a horizon-hugging haze color matching fog.
-    const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(9000, 9000, 40, 40),
-      new THREE.MeshStandardMaterial({ color: 0x3f7a55, roughness: 1, wireframe: false })
+    // Ground far below: a real coastline, not a flat green square — a wide
+    // sea plane everywhere, with a textured landmass laid a hair above it
+    // whose texture fades to transparent along one edge, so a stretch of sea
+    // is always visible past the coast no matter which way you fly.
+    const sea = new THREE.Mesh(
+      new THREE.PlaneGeometry(9000, 9000),
+      new THREE.MeshStandardMaterial({ map: buildFlightSeaTexture(), roughness: 0.25, metalness: 0.15 })
     );
-    ground.rotation.x = -Math.PI / 2;
-    ground.position.y = -300;
-    scene.add(ground);
+    sea.rotation.x = -Math.PI / 2;
+    sea.position.y = -300;
+    scene.add(sea);
+    const land = new THREE.Mesh(
+      new THREE.PlaneGeometry(6000, 9000),
+      new THREE.MeshStandardMaterial({ map: buildFlightLandTexture(), roughness: 0.95, transparent: true })
+    );
+    land.rotation.x = -Math.PI / 2;
+    land.position.set(-1200, -299, 0);
+    scene.add(land);
 
     // Soft round cloud sprites scattered through the sky at varying altitude.
     const cloudCvs = document.createElement("canvas");
@@ -2311,25 +2502,11 @@ function FlightOverlay({ onReturn }) {
       scene.add(spr);
     }
 
-    // The plane itself — the owner's real RQ-180 model, normalized so its
-    // wingspan (the larger of its own x/z footprint) reads as ~6.5m.
+    // The plane itself — a procedurally built fighter jet (see buildFighterJet
+    // above), always visible immediately with no network/model-load step.
     const plane = new THREE.Group();
     scene.add(plane);
-    const base = import.meta.env.BASE_URL || "/";
-    const loader = new GLTFLoader();
-    loader.setMeshoptDecoder(MeshoptDecoder);
-    loader.load(base + "office-models/rq180.glb", (g) => {
-      const m = g.scene;
-      const bb = new THREE.Box3().setFromObject(m);
-      const size = bb.getSize(new THREE.Vector3());
-      const scale = 6.5 / Math.max(size.x, size.z, 0.01);
-      m.scale.setScalar(scale);
-      const bb2 = new THREE.Box3().setFromObject(m);
-      const c2 = bb2.getCenter(new THREE.Vector3());
-      m.position.sub(c2);
-      m.traverse((o) => { if (o.isMesh) o.castShadow = true; });
-      plane.add(m);
-    }, undefined, () => { /* model failed — a blank craft still flies, just invisible */ });
+    plane.add(buildFighterJet(0x64707d));
 
     // Flight state — arcade model: pitch/roll/yaw + throttle, no stall/lift
     // physics, but a real 3D position you actually fly through.
@@ -2382,6 +2559,38 @@ function FlightOverlay({ onReturn }) {
       if (speedRef.current) speedRef.current.textContent = Math.round(st.speed * 6) + " קמ״ש";
       if (altRef.current) altRef.current.textContent = Math.round(st.y) + " מ'";
       if (hdgRef.current) hdgRef.current.textContent = Math.round(((st.yaw * 180 / Math.PI) % 360 + 360) % 360) + "°";
+      if (vspeedRef.current) {
+        const vs = Math.round(dir.y * st.speed * 6);
+        vspeedRef.current.textContent = (vs > 0 ? "+" : "") + vs + " מ׳/ש";
+      }
+      if (throttleRef.current) {
+        const pct = clamp((st.speed - 18) / (160 - 18), 0, 1);
+        throttleRef.current.style.height = Math.round(pct * 100) + "%";
+      }
+      // Artificial horizon: a rolling/pitching sky-ground disc behind a fixed
+      // aircraft reference chevron — the one instrument every real HUD has.
+      const hz = horizonRef.current;
+      if (hz) {
+        const hctx = hz.getContext("2d");
+        const W = hz.width, H = hz.height, cx = W / 2, cy = H / 2, R = W / 2 - 3;
+        hctx.clearRect(0, 0, W, H);
+        hctx.save();
+        hctx.beginPath(); hctx.arc(cx, cy, R, 0, Math.PI * 2); hctx.clip();
+        hctx.translate(cx, cy);
+        hctx.rotate(-st.roll);
+        hctx.translate(0, st.pitch * 130);
+        hctx.fillStyle = "#2b6cb0"; hctx.fillRect(-W * 1.4, -H * 3, W * 2.8, H * 3);
+        hctx.fillStyle = "#6b4a2b"; hctx.fillRect(-W * 1.4, 0, W * 2.8, H * 3);
+        hctx.strokeStyle = "#eef6ff"; hctx.lineWidth = 2.5;
+        hctx.beginPath(); hctx.moveTo(-W * 1.4, 0); hctx.lineTo(W * 1.4, 0); hctx.stroke();
+        hctx.restore();
+        hctx.strokeStyle = "rgba(230,240,255,.55)"; hctx.lineWidth = 2;
+        hctx.beginPath(); hctx.arc(cx, cy, R, 0, Math.PI * 2); hctx.stroke();
+        hctx.strokeStyle = "#ffd23f"; hctx.lineWidth = 3;
+        hctx.beginPath(); hctx.moveTo(cx - R * 0.5, cy); hctx.lineTo(cx - R * 0.15, cy); hctx.stroke();
+        hctx.beginPath(); hctx.moveTo(cx + R * 0.15, cy); hctx.lineTo(cx + R * 0.5, cy); hctx.stroke();
+        hctx.beginPath(); hctx.moveTo(cx, cy); hctx.lineTo(cx, cy - R * 0.22); hctx.stroke();
+      }
 
       renderer.render(scene, camera);
     };
@@ -2416,10 +2625,15 @@ function FlightOverlay({ onReturn }) {
     <div className="off3-space-wrap">
       <div ref={mountRef} className="off3-space-canvas" style={{ cursor: "default" }} />
       <div className="off3-space-hint">W/S להטיה · A/D לגלגול ופנייה · Shift/Ctrl להאצה ולהאטה</div>
+      <canvas ref={horizonRef} width={120} height={120} className="off3-flight-horizon" />
       <div className="off3-flight-hud">
         <div><span>מהירות</span><b ref={speedRef}>0 קמ״ש</b></div>
         <div><span>גובה</span><b ref={altRef}>0 מ'</b></div>
         <div><span>כיוון</span><b ref={hdgRef}>0°</b></div>
+        <div><span>קצב טיפוס</span><b ref={vspeedRef}>0 מ׳/ש</b></div>
+      </div>
+      <div className="off3-flight-throttle" title="מצערת">
+        <i ref={throttleRef} />
       </div>
       <button className="off3-space-return" onClick={onReturn}>🚪 חזרה למשרד</button>
     </div>

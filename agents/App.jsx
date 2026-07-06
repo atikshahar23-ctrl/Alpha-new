@@ -4137,6 +4137,15 @@ function StyleTag() {
   font-family:'Rubik';pointer-events:none}
 .off3-flight-hud div{display:flex;align-items:center;justify-content:space-between;gap:14px;font-size:11px;color:#9fe6f4}
 .off3-flight-hud b{font-size:14px;color:#eaf1ff;font-weight:800}
+/* Artificial horizon — bottom-left, the one instrument every real flight HUD has. */
+.off3-flight-horizon{position:absolute;bottom:22px;left:14px;z-index:31;border-radius:50%;
+  border:2px solid rgba(46,230,255,.35);box-shadow:0 8px 24px rgba(0,0,0,.5);pointer-events:none;background:#0a1622}
+/* Throttle gauge — a filling vertical bar next to the horizon. */
+.off3-flight-throttle{position:absolute;bottom:22px;left:146px;z-index:31;width:14px;height:120px;
+  border-radius:8px;border:1px solid rgba(46,230,255,.3);background:rgba(8,12,26,.6);overflow:hidden;
+  display:flex;align-items:flex-end;pointer-events:none}
+.off3-flight-throttle i{display:block;width:100%;height:0%;border-radius:6px;
+  background:linear-gradient(0deg,#ff7a2e,#ffd23f);box-shadow:0 0 12px rgba(255,140,40,.5);transition:height .15s linear}
 .off-floor{flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(2,1fr);gap:12px;padding:14px 14px 28px;align-content:start}
 @media(min-width:680px){.off-floor{grid-template-columns:repeat(3,1fr)}}
 @media(min-width:1000px){.off-floor{grid-template-columns:repeat(4,1fr)}}
