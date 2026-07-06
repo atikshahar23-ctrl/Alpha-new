@@ -3850,9 +3850,10 @@ function StyleTag() {
 /* Voice equalizer — tinted to whichever agent is talking, lively while they
    actually speak (no raw audio data exists for speechSynthesis, so this is
    a synced pulse rather than a literal FFT reading). */
-.off3-eq{display:flex;align-items:flex-end;gap:3px;height:20px;padding:0 4px;opacity:.3;transition:opacity .25s}
-.off3-eq i{display:block;width:4px;height:100%;border-radius:2px;background:var(--c);transform:scaleY(.22);transform-origin:bottom}
-.off3-eq.on{opacity:1}
+.off3-eq{display:flex;align-items:flex-end;gap:4px;height:28px;padding:4px 8px;border-radius:8px;
+  background:rgba(10,8,4,.6);border:1px solid color-mix(in srgb,var(--c) 40%,transparent);opacity:.85;transition:opacity .25s,box-shadow .25s}
+.off3-eq i{display:block;width:5px;height:100%;border-radius:2px;background:var(--c);transform:scaleY(.2);transform-origin:bottom}
+.off3-eq.on{opacity:1;box-shadow:0 0 16px color-mix(in srgb,var(--c) 55%,transparent)}
 .off3-eq.on i{animation:off3EqBar .85s ease-in-out infinite}
 .off3-eq i:nth-child(1){animation-delay:0s}
 .off3-eq i:nth-child(2){animation-delay:.14s}

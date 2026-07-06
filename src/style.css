@@ -1177,15 +1177,16 @@ body::after {
    rather than a literal FFT reading), on in the dock next to the status
    label and again inside the office simulator's talk HUD. */
 .voice-eq {
-  display: flex; align-items: flex-end; gap: 2.5px; height: 14px;
-  opacity: .35; transition: opacity .25s;
+  display: flex; align-items: flex-end; gap: 3.5px; height: 20px; padding: 3px 6px;
+  border-radius: 6px; background: rgba(10, 8, 4, .55); border: 1px solid rgba(218,165,32,.3);
+  opacity: .8; transition: opacity .25s, box-shadow .25s;
 }
 .voice-eq i {
-  display: block; width: 3px; height: 100%; border-radius: 2px;
-  background: linear-gradient(180deg, var(--gold), rgba(218,165,32,.4));
-  transform: scaleY(.25); transform-origin: bottom;
+  display: block; width: 4px; height: 100%; border-radius: 2px;
+  background: linear-gradient(180deg, #ffd97a, var(--gold));
+  transform: scaleY(.22); transform-origin: bottom;
 }
-.voice-eq.on { opacity: 1; }
+.voice-eq.on { opacity: 1; box-shadow: 0 0 14px rgba(255, 194, 77, .45); }
 .voice-eq.on i { animation: eqBar .9s ease-in-out infinite; }
 .voice-eq i:nth-child(1) { animation-delay: 0s; }
 .voice-eq i:nth-child(2) { animation-delay: .15s; }
@@ -3432,7 +3433,12 @@ body.ui-dim .hud-col, body.ui-dim .orb-menu, body.ui-dim .holo-tag { opacity: .1
 .hud-col { position: absolute; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 12px; width: clamp(210px, 20vw, 270px);
   /* with the extra panels the columns can outgrow short screens — scroll
      inside the column instead of clipping/overlapping the dock */
-  max-height: calc(100vh - 150px); overflow-y: auto; scrollbar-width: none; }
+  max-height: calc(100vh - 150px); overflow-y: auto; scrollbar-width: none;
+  /* the column itself must opt back into pointer-events (its .hud ancestor is
+     none) so drags/wheel anywhere in the column scroll it, not just the few
+     cards that separately opt in for clicks — otherwise most of the column
+     passes touches straight through to the 3D canvas underneath. */
+  pointer-events: auto; }
 .hud-col::-webkit-scrollbar { display: none; }
 #hudTeamPanel { cursor: pointer; pointer-events: auto; }
 .hud-col.left { left: 18px; }
@@ -3573,8 +3579,11 @@ html.perf-lite .hud-card, html.perf-lite .hud-sc { -webkit-backdrop-filter: none
 .ops-foot{font-size:11px;color:#8a7d5e;text-align:center}
 .ops-empty{text-align:center;color:#8a7d5e;font-size:12.5px;padding:16px}
 .ops-scroll{display:flex;flex-direction:column;gap:7px;max-height:220px;overflow:auto;padding-left:2px}
-.ops-map{width:100%;height:260px;border-radius:11px;overflow:hidden;background:#0a1018;border:1px solid rgba(228,188,99,.14)}
+.ops-map{width:100%;height:260px;border-radius:11px;overflow:hidden;background:#0a1018;border:1px solid rgba(228,188,99,.28);box-shadow:0 0 0 1px rgba(0,0,0,.4),inset 0 0 30px rgba(0,0,0,.35),0 6px 22px rgba(0,0,0,.35)}
 .ops-map .leaflet-container{width:100%;height:100%;background:#0a1018;font-family:inherit}
+.ops-map .leaflet-control-zoom{border:1px solid rgba(228,188,99,.3) !important;border-radius:8px !important;overflow:hidden;box-shadow:0 4px 14px rgba(0,0,0,.4) !important}
+.ops-map .leaflet-control-zoom a{background:rgba(14,11,6,.88) !important;color:#e4bc63 !important;border-color:rgba(228,188,99,.2) !important}
+.ops-map .leaflet-control-zoom a:hover{background:rgba(228,188,99,.18) !important}
 /* trips (reuse fleet look inside ops) */
 .ops-center .fl-add{display:flex;flex-direction:column;gap:7px;background:rgba(228,188,99,.05);border:1px solid rgba(228,188,99,.16);border-radius:11px;padding:10px}
 .ops-center .fl-add input{background:rgba(10,8,6,.6);border:1px solid rgba(218,165,32,.18);color:#f5e6c8;border-radius:9px;padding:9px 11px;font-size:13.5px;font-family:inherit;outline:none;width:100%}

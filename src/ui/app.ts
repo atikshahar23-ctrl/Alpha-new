@@ -3820,9 +3820,14 @@ export function mountApp(root: HTMLElement) {
     if (mapEl) {
       loadLeaflet().then((L) => {
         if (!body.querySelector('#opsMap')) return;   // window closed meanwhile
-        mapInst = L.map(mapEl, { zoomControl: true, attributionControl: false }).setView([31.7, 34.9], 8);
+        // Default view: centered on the actual south-central Israel operating
+        // cluster (where FLEET_GEO's cities sit) at a close-in zoom, instead of
+        // a wide zoom-8 view that shows Gaza/Amman/Cairo before any pins load.
+        mapInst = L.map(mapEl, { zoomControl: true, attributionControl: false }).setView([31.72, 34.78], 10);
         L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18 }).addTo(mapInst);
-        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18, opacity: 0.85 }).addTo(mapInst);
+        // Lighter label overlay — legible city/road names without the busy,
+        // foreign-language clutter a full-opacity reference layer produces.
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18, opacity: 0.55 }).addTo(mapInst);
         const pts = Object.values(ptCount);
         const bounds: any[] = [];
         pts.forEach(({ g, n }) => {
@@ -3831,7 +3836,7 @@ export function mountApp(root: HTMLElement) {
             .addTo(mapInst).bindTooltip(`${g.city} · ${n} התקנות`, { direction: 'top' });
           bounds.push([g.lat, g.lng]);
         });
-        if (bounds.length) { try { mapInst.fitBounds(bounds, { padding: [30, 30], maxZoom: 11 }); } catch {} }
+        if (bounds.length) { try { mapInst.fitBounds(bounds, { padding: [26, 26], maxZoom: 12 }); } catch {} }
         setTimeout(() => { try { mapInst?.invalidateSize(); } catch {} }, 120);
       }).catch(() => { if (mapEl) mapEl.innerHTML = '<div class="ops-empty">מפה לא זמינה (אין רשת)</div>'; });
     }
