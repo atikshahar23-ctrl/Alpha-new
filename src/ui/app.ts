@@ -3896,6 +3896,11 @@ export function mountApp(root: HTMLElement) {
     renderHud(); renderMarkets(); renderNews(); renderFleetPanel();
     renderAgendaPanel(); renderTasksPanel(); renderTeamPanel(); renderWeatherPanel(); renderOnThisDayPanel();
     document.getElementById('hudTeamPanel')?.addEventListener('click', () => { location.href = 'agents.html'; });
+    // Signals index.html's boot veil (both the fast-boot repeat-session path
+    // and, in principle, the full cinematic intro) that the first HUD/data
+    // pass has actually fired — the loading screen won't reveal the app
+    // before this, instead of dumping a half-populated dashboard on screen.
+    (window as any).__alphaReady = true;
     setInterval(() => { renderHud(); renderFleetPanel(); renderAgendaPanel(); renderTasksPanel(); renderTeamPanel(); }, 30000);
     setInterval(renderMarkets, 60000);
     setInterval(renderNews, 300000);
