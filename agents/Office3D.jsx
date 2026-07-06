@@ -1160,9 +1160,13 @@ function buildNeonSign(text, color, w = 3.4, h = 0.8) {
 // (not per-wall clones) keeps draw-state changes down. depthWrite:false is
 // essential — a transparent pane that still writes depth occludes the agents
 // and player standing behind it (the original "everyone is invisible" bug).
+// "Physical Glass" — real transmission/IOR instead of the old flat-opacity
+// fake, so office dividers/pods actually refract and pick up the room's
+// neon the way a real glass panel would (Electric Sanctuary layer 3).
 const OFFICE_GLASS_MAT = new THREE.MeshPhysicalMaterial({
-  color: 0x9fd6ff, transparent: true, opacity: 0.09, roughness: 0.05,
-  metalness: 0.1, side: THREE.DoubleSide, depthWrite: false,
+  color: 0xdcf0ff, metalness: 0, roughness: 0.06,
+  transmission: 0.93, ior: 1.5, thickness: 0.35,
+  transparent: true, opacity: 1, side: THREE.DoubleSide,
 });
 
 // The real Heavy Guard logo (the bull-over-gear brand mark, transparent PNG)
@@ -1451,6 +1455,41 @@ function updatePodBolt(bolt, originLocal) {
   bolt.mat.opacity = 0.5 + Math.random() * 0.5;
 }
 
+// ── Electric Sanctuary layer 2: "High-Voltage Arc" corner pillars ────────
+// A small Tesla-coil-style pillar with a glowing orb on top, arcing 4 jagged
+// bolts down to floor anchors around its base, plus a flickering point
+// light — reuses the same jagged-bolt technique as the charging pods, just
+// standalone rather than tied to a docked agent.
+function buildVoltageArcPillar(hex) {
+  const g = new THREE.Group();
+  const baseMat = new THREE.MeshStandardMaterial({ color: 0x1c2029, roughness: 0.4, metalness: 0.7 });
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.42, 0.3, 16), baseMat);
+  base.position.y = 0.15; g.add(base);
+  const coil = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.18, 1.6, 12), baseMat);
+  coil.position.y = 1.1; g.add(coil);
+  const orbMat = new THREE.MeshBasicMaterial({ color: hex });
+  const orb = new THREE.Mesh(new THREE.SphereGeometry(0.24, 16, 12), orbMat);
+  orb.position.y = 2.0; g.add(orb);
+  const light = new THREE.PointLight(hex, 1.1, 8);
+  light.position.y = 2.0; g.add(light);
+  const N = 4;
+  const bolts = [];
+  for (let k = 0; k < N; k++) {
+    const a = (k / N) * Math.PI * 2;
+    const anchor = new THREE.Vector3(Math.cos(a) * 1.1, 0.05, Math.sin(a) * 1.1);
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute("position", new THREE.BufferAttribute(new Float32Array(5 * 3), 3));
+    const mat = new THREE.LineBasicMaterial({ color: hex, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false });
+    const line = new THREE.Line(geom, mat);
+    g.add(line);
+    bolts.push({ line, mat, anchor, origin: new THREE.Vector3(0, 2.0, 0) });
+  }
+  g.userData.bolts = bolts;
+  g.userData.orbMat = orbMat;
+  g.userData.light = light;
+  return g;
+}
+
 // Small canvas-sprite label (a single letter/short tag) — used by the war
 // table's day grid instead of the fuller buildNameSprite (name+title layout).
 function buildTinyLabelSprite(text, colorHex) {
@@ -1465,6 +1504,45 @@ function buildTinyLabelSprite(text, colorHex) {
   tex.colorSpace = THREE.SRGBColorSpace;
   const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
   return new THREE.Sprite(mat);
+}
+
+// ── Electric Sanctuary layer 5: "Nanotech Hologram" particle cloud ───────
+// A cylinder of drifting, twinkling points hovering over a station — the
+// idea being the hologram reads as "assembled" from suspended digital motes
+// rather than a flat plane. Applied to the war table + algo zone as the
+// demonstrative pass (converting every 2D HUD panel this way is a much
+// larger job left for a follow-up, not attempted here).
+function buildNanoParticleCloud(radius, height, count, hex) {
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(count * 3);
+  const phase = new Float32Array(count);
+  for (let i = 0; i < count; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const r = Math.random() * radius;
+    pos[i * 3] = Math.cos(a) * r;
+    pos[i * 3 + 1] = Math.random() * height;
+    pos[i * 3 + 2] = Math.sin(a) * r;
+    phase[i] = Math.random() * Math.PI * 2;
+  }
+  geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  const mat = new THREE.PointsMaterial({
+    color: hex, size: 0.045, transparent: true, opacity: 0.75,
+    blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
+  });
+  const pts = new THREE.Points(geo, mat);
+  pts.userData.basePos = pos.slice();
+  pts.userData.phase = phase;
+  return pts;
+}
+function updateNanoParticleCloud(pts, t) {
+  const posAttr = pts.geometry.attributes.position;
+  const base = pts.userData.basePos;
+  const phase = pts.userData.phase;
+  for (let i = 0; i < phase.length; i++) {
+    posAttr.array[i * 3 + 1] = base[i * 3 + 1] + Math.sin(t * 1.2 + phase[i]) * 0.15;
+  }
+  posAttr.needsUpdate = true;
+  pts.material.opacity = 0.55 + Math.sin(t * 2 + phase[0]) * 0.25;
 }
 
 // ── Module 1: Heavy Guard Holographic War Table ───────────────────────────
@@ -1706,6 +1784,41 @@ function buildCallerCardTexture(name, phone, tag) {
 }
 
 // ── Module 8: Heavy Guard 360° Drone/CCTV shader ──────────────────────────
+// ── Electric Sanctuary Layer 1: Energy Grid floor overlay ─────────────────
+// A thin additive-blended plane laid a hair above the real floor: a faint
+// circuit-board grid plus concentric pulse rings that travel inward toward
+// the central hologram hub. Speed/intensity scale with uWorkload (0..1,
+// driven by how many agents are actively "working" right now — a real,
+// if simplified, stand-in for API load).
+const EnergyGridShader = {
+  uniforms: {
+    uTime: { value: 0 },
+    uWorkload: { value: 0.15 },
+    uCenter: { value: new THREE.Vector2(0.5, 0.5) },
+    uColorA: { value: new THREE.Color(0x1c8fd6) },
+    uColorB: { value: new THREE.Color(0xe4bc63) },
+  },
+  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: `
+    varying vec2 vUv;
+    uniform float uTime; uniform float uWorkload; uniform vec2 uCenter;
+    uniform vec3 uColorA; uniform vec3 uColorB;
+    void main(){
+      vec2 uv = vUv;
+      float dist = length(uv - uCenter);
+      float gx = pow(abs(sin(uv.x * 90.0)), 160.0);
+      float gy = pow(abs(sin(uv.y * 70.0)), 160.0);
+      float grid = max(gx, gy) * 0.3;
+      float speed = 0.12 + uWorkload * 0.55;
+      float ring = fract(dist * 6.0 - uTime * speed);
+      float pulse = smoothstep(0.14, 0.0, abs(ring - 0.5)) * (0.35 + uWorkload * 0.85);
+      float edgeFade = smoothstep(0.02, 0.12, uv.x) * smoothstep(0.98, 0.88, uv.x) * smoothstep(0.02, 0.12, uv.y) * smoothstep(0.98, 0.88, uv.y);
+      float glow = (grid + pulse) * edgeFade;
+      vec3 col = mix(uColorA, uColorB, pulse);
+      gl_FragColor = vec4(col * glow, glow * 0.6);
+    }`,
+};
+
 // Fisheye barrel distortion + CRT scanlines/static + vignette, toggled onto
 // the composer only while the drone view is active ('C' key).
 const DroneCamShader = {
@@ -3052,45 +3165,190 @@ function buildHangarFloorTexture() {
   return tex;
 }
 
-// A simple house exterior beyond the hangar's open bay door — walls + a
-// pitched roof + a lit door and two glowing windows, entirely procedural.
-// A starting placeholder ("owner request: a house nearby too") rather than
-// a walk-in interior — the same iterate-then-expand approach this project
-// has used for every other new area.
-function buildHouseExterior() {
-  const g = new THREE.Group();
-  const wallCvs = document.createElement("canvas");
-  wallCvs.width = 256; wallCvs.height = 256;
-  const wctx = wallCvs.getContext("2d");
-  wctx.fillStyle = "#c9b79a"; wctx.fillRect(0, 0, 256, 256);
+// Clapboard-siding texture with a painted trim band — the house's upgraded
+// wall material (was a flat noisy tint before).
+function buildHouseSidingTexture() {
+  const cvs = document.createElement("canvas");
+  cvs.width = 256; cvs.height = 256;
+  const ctx = cvs.getContext("2d");
+  ctx.fillStyle = "#d8c9a8"; ctx.fillRect(0, 0, 256, 256);
+  for (let y = 0; y < 256; y += 14) {
+    ctx.strokeStyle = "rgba(0,0,0,.12)"; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(256, y); ctx.stroke();
+    ctx.strokeStyle = "rgba(255,255,255,.15)"; ctx.beginPath(); ctx.moveTo(0, y + 1.5); ctx.lineTo(256, y + 1.5); ctx.stroke();
+  }
   const rnd = mulberry32(31);
   for (let i = 0; i < 500; i++) {
-    wctx.fillStyle = `rgba(0,0,0,${(rnd() * 0.05).toFixed(3)})`;
-    wctx.fillRect(rnd() * 256, rnd() * 256, 1 + rnd() * 2, 1);
+    ctx.fillStyle = `rgba(0,0,0,${(rnd() * 0.05).toFixed(3)})`;
+    ctx.fillRect(rnd() * 256, rnd() * 256, 1 + rnd() * 2, 1);
   }
-  const wallTex = new THREE.CanvasTexture(wallCvs);
-  wallTex.colorSpace = THREE.SRGBColorSpace;
+  ctx.fillStyle = "#6b4a35"; ctx.fillRect(0, 228, 256, 28); // baseboard trim
+  const tex = new THREE.CanvasTexture(cvs);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.anisotropy = MAX_ANISO;
+  return tex;
+}
+// Wood-shingle roof texture — rows of overlapping shingle tabs instead of a
+// flat brown cone.
+function buildHouseShingleTexture() {
+  const cvs = document.createElement("canvas");
+  cvs.width = 256; cvs.height = 256;
+  const ctx = cvs.getContext("2d");
+  ctx.fillStyle = "#4a3226"; ctx.fillRect(0, 0, 256, 256);
+  const rnd = mulberry32(9);
+  for (let row = 0; row < 16; row++) {
+    const y = row * 16;
+    for (let col = 0; col < 12; col++) {
+      const x = col * 22 + (row % 2 ? 11 : 0);
+      const shade = 0.85 + rnd() * 0.3;
+      ctx.fillStyle = `rgb(${Math.round(74 * shade)},${Math.round(50 * shade)},${Math.round(38 * shade)})`;
+      ctx.fillRect(x, y, 20, 14);
+      ctx.strokeStyle = "rgba(0,0,0,.35)"; ctx.strokeRect(x, y, 20, 14);
+    }
+  }
+  const tex = new THREE.CanvasTexture(cvs);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.anisotropy = MAX_ANISO;
+  return tex;
+}
+
+// A real (if still procedural) house exterior beyond the hangar's open bay
+// door — upgraded from the original bare box+cone placeholder to a proper
+// clapboard cottage: covered porch with posts and steps, a real framed door
+// with a handle, mullioned windows with flower boxes, a shingled roof with a
+// smoking chimney, a perimeter fence, and landscaping (bushes + a tree).
+function buildHouseExterior() {
+  const g = new THREE.Group();
+  const sidingTex = buildHouseSidingTexture();
   const W = 9, D = 8, H = 4.4;
-  const body = new THREE.Mesh(new THREE.BoxGeometry(W, H, D), new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.85 }));
+  const wallMat = new THREE.MeshStandardMaterial({ map: sidingTex, roughness: 0.85 });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(W, H, D), wallMat);
   body.position.y = H / 2; body.castShadow = true; body.receiveShadow = true;
   g.add(body);
-  const roof = new THREE.Mesh(new THREE.ConeGeometry(7.2, 2.6, 4), new THREE.MeshStandardMaterial({ color: 0x6b3a2f, roughness: 0.8 }));
+
+  const roofMat = new THREE.MeshStandardMaterial({ map: buildHouseShingleTexture(), roughness: 0.9 });
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(7.2, 2.8, 4), roofMat);
   roof.rotation.y = Math.PI / 4;
-  roof.position.y = H + 1.3;
+  roof.position.y = H + 1.4;
   roof.castShadow = true;
   g.add(roof);
-  // Warm-lit door + two windows facing the hangar.
-  const door = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 2.3), new THREE.MeshStandardMaterial({ color: 0x3a2417, roughness: 0.7 }));
-  door.position.set(0, 1.15, -D / 2 - 0.01);
-  g.add(door);
+
+  // Chimney + a soft drifting smoke puff (sprite trail, not a full particle
+  // system — cheap and reads fine from yard distance).
+  const chimneyMat = new THREE.MeshStandardMaterial({ color: 0x7a5a48, roughness: 0.8 });
+  const chimney = new THREE.Mesh(new THREE.BoxGeometry(0.7, 2.2, 0.7), chimneyMat);
+  chimney.position.set(W / 2 - 1.6, H + 1.6, -D / 2 + 1.6);
+  chimney.castShadow = true;
+  g.add(chimney);
+  const smokeCvs = document.createElement("canvas");
+  smokeCvs.width = smokeCvs.height = 64;
+  const sctx = smokeCvs.getContext("2d");
+  const sg = sctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  sg.addColorStop(0, "rgba(220,220,225,.55)"); sg.addColorStop(1, "rgba(220,220,225,0)");
+  sctx.fillStyle = sg; sctx.fillRect(0, 0, 64, 64);
+  const smokeTex = new THREE.CanvasTexture(smokeCvs);
+  const smokeMat = new THREE.SpriteMaterial({ map: smokeTex, transparent: true, opacity: 0.5, depthWrite: false });
+  const smokePuffs = [];
+  for (let i = 0; i < 5; i++) {
+    const puff = new THREE.Sprite(smokeMat);
+    puff.position.set(chimney.position.x, chimney.position.y + 1.2 + i * 0.5, chimney.position.z);
+    puff.scale.setScalar(0.5 + i * 0.25);
+    puff.userData.phase = i * 1.3;
+    g.add(puff);
+    smokePuffs.push(puff);
+  }
+  g.userData.smokePuffs = smokePuffs;
+
+  // Covered porch — roof overhang on two posts, three steps up to the door.
+  const porchPostMat = new THREE.MeshStandardMaterial({ color: 0xf3ead6, roughness: 0.6 });
   [-1, 1].forEach((s) => {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 2.6, 10), porchPostMat);
+    post.position.set(s * 1.7, 1.3, -D / 2 - 1.3);
+    post.castShadow = true;
+    g.add(post);
+  });
+  const porchRoof = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.15, 2.0), new THREE.MeshStandardMaterial({ color: 0x6b4a35, roughness: 0.8 }));
+  porchRoof.position.set(0, 2.65, -D / 2 - 1.3);
+  porchRoof.castShadow = true;
+  g.add(porchRoof);
+  const porchFloor = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.15, 2.2), new THREE.MeshStandardMaterial({ color: 0x8a6a4a, roughness: 0.75 }));
+  porchFloor.position.set(0, 0.08, -D / 2 - 1.3);
+  porchFloor.receiveShadow = true;
+  g.add(porchFloor);
+  for (let i = 0; i < 3; i++) {
+    const step = new THREE.Mesh(new THREE.BoxGeometry(2.4 - i * 0.3, 0.14, 0.5), new THREE.MeshStandardMaterial({ color: 0x9a8060, roughness: 0.8 }));
+    step.position.set(0, -0.08 - i * 0.15, -D / 2 - 2.4 - i * 0.5);
+    g.add(step);
+  }
+
+  // Real framed door with a handle + porch light above it.
+  const doorFrame = new THREE.Mesh(new THREE.BoxGeometry(1.5, 2.5, 0.12), new THREE.MeshStandardMaterial({ color: 0xf3ead6, roughness: 0.6 }));
+  doorFrame.position.set(0, 1.25, -D / 2 - 0.06);
+  g.add(doorFrame);
+  const door = new THREE.Mesh(new THREE.BoxGeometry(1.25, 2.3, 0.08), new THREE.MeshStandardMaterial({ color: 0x5a2e1f, roughness: 0.55, metalness: 0.1 }));
+  door.position.set(0, 1.15, -D / 2 - 0.02);
+  g.add(door);
+  const handle = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 8), new THREE.MeshStandardMaterial({ color: 0xe8c96a, metalness: 0.8, roughness: 0.3 }));
+  handle.position.set(0.45, 1.15, -D / 2 + 0.05);
+  g.add(handle);
+  const porchLight = new THREE.PointLight(0xffd9a0, 0.7, 5);
+  porchLight.position.set(0, 2.5, -D / 2 - 1.2);
+  g.add(porchLight);
+  const porchLightFixture = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffe9b8 }));
+  porchLightFixture.position.copy(porchLight.position);
+  g.add(porchLightFixture);
+
+  // Mullioned windows with flower boxes, either side of the porch.
+  [-1, 1].forEach((s) => {
+    const frameMat = new THREE.MeshStandardMaterial({ color: 0xf3ead6, roughness: 0.6 });
+    const winFrame = new THREE.Mesh(new THREE.BoxGeometry(1.3, 1.3, 0.1), frameMat);
+    winFrame.position.set(s * 2.8, 2.4, -D / 2 - 0.05);
+    g.add(winFrame);
     const win = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 1.1), new THREE.MeshStandardMaterial({ color: 0xffdf8c, emissive: 0xffcf6a, emissiveIntensity: 1.3 }));
-    win.position.set(s * 2.8, 2.4, -D / 2 - 0.01);
+    win.position.set(s * 2.8, 2.4, -D / 2 - 0.001);
     g.add(win);
+    // cross mullion
+    const mullH = new THREE.Mesh(new THREE.BoxGeometry(1.12, 0.05, 0.02), frameMat);
+    const mullV = new THREE.Mesh(new THREE.BoxGeometry(0.05, 1.12, 0.02), frameMat);
+    mullH.position.set(s * 2.8, 2.4, -D / 2 - 0.01); mullV.position.set(s * 2.8, 2.4, -D / 2 - 0.01);
+    g.add(mullH); g.add(mullV);
     const light = new THREE.PointLight(0xffcf8a, 0.5, 6);
     light.position.set(s * 2.8, 2.4, -D / 2 - 0.6);
     g.add(light);
+    // flower box + a few procedural blooms
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.2, 0.3), new THREE.MeshStandardMaterial({ color: 0x5a3a28, roughness: 0.8 }));
+    box.position.set(s * 2.8, 1.7, -D / 2 - 0.25);
+    g.add(box);
+    const bloomColors = [0xff6b9d, 0xffd23f, 0xff8c42];
+    for (let i = 0; i < 5; i++) {
+      const bloom = new THREE.Mesh(new THREE.SphereGeometry(0.07, 6, 6), new THREE.MeshStandardMaterial({ color: bloomColors[i % bloomColors.length], roughness: 0.6 }));
+      bloom.position.set(s * 2.8 - 0.5 + i * 0.25, 1.85, -D / 2 - 0.25 + (i % 2 ? 0.08 : -0.08));
+      g.add(bloom);
+    }
   });
+
+  // Landscaping — a tree + a few bushes flanking the porch.
+  const bushMat = new THREE.MeshStandardMaterial({ color: 0x3a6b3f, roughness: 0.9 });
+  [[-3.4, -D / 2 - 0.5], [3.4, -D / 2 - 0.5], [-4.2, -D / 2 + 1.5]].forEach(([x, z]) => {
+    const bush = new THREE.Mesh(new THREE.SphereGeometry(0.55 + Math.random() * 0.15, 10, 8), bushMat);
+    bush.position.set(x, 0.5, z); bush.scale.y = 0.8;
+    bush.castShadow = true; bush.receiveShadow = true;
+    g.add(bush);
+  });
+  const treeTrunk = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.3, 3.2, 10), new THREE.MeshStandardMaterial({ color: 0x5a3d28, roughness: 0.85 }));
+  treeTrunk.position.set(5.5, 1.6, -D / 2 - 3);
+  treeTrunk.castShadow = true;
+  g.add(treeTrunk);
+  const foliageMat = new THREE.MeshStandardMaterial({ color: 0x2f6b3a, roughness: 0.9 });
+  [[0, 3.6, 0, 1.4], [0.6, 3.9, 0.4, 1.05], [-0.5, 4.0, -0.3, 1.0]].forEach(([dx, y, dz, r]) => {
+    const foliage = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 8), foliageMat);
+    foliage.position.set(5.5 + dx, y, -D / 2 - 3 + dz);
+    foliage.castShadow = true;
+    g.add(foliage);
+  });
+
   // A little patch of ground + a path leading back toward the hangar.
   const yard = new THREE.Mesh(new THREE.CircleGeometry(16, 24), new THREE.MeshStandardMaterial({ color: 0x2f5c3a, roughness: 1 }));
   yard.rotation.x = -Math.PI / 2; yard.position.y = -0.02; yard.receiveShadow = true;
@@ -3098,7 +3356,91 @@ function buildHouseExterior() {
   const path = new THREE.Mesh(new THREE.PlaneGeometry(3, 20), new THREE.MeshStandardMaterial({ color: 0x8a8478, roughness: 1 }));
   path.rotation.x = -Math.PI / 2; path.position.set(0, -0.01, -D / 2 - 10);
   g.add(path);
+
+  // A simple perimeter fence around the front yard — evenly spaced posts +
+  // horizontal rails, three sides (the hangar-facing side stays open).
+  const fenceMat = new THREE.MeshStandardMaterial({ color: 0xece2cc, roughness: 0.7 });
+  const fenceRadius = 9.5;
+  const postCount = 22;
+  for (let i = 0; i <= postCount; i++) {
+    const a = (i / postCount) * Math.PI * 1.5 - Math.PI * 0.75; // 270° arc, open toward +Z (hangar side)
+    const x = Math.sin(a) * fenceRadius, z = Math.cos(a) * fenceRadius - D / 2 - 2;
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.9, 0.1), fenceMat);
+    post.position.set(x, 0.45, z);
+    g.add(post);
+  }
   return g;
+}
+
+// ── Pokémon Sanctuary — a small landscaped habitat beside the house, built
+// from the project's real Gen-1 GLB library (public/ar-models/, plus the
+// separately-hosted pikachu.glb) rather than placeholders. Each creature is
+// normalized to a friendly, human-scale size and given a gentle idle bob so
+// the area doesn't read as a static diorama.
+const POKEMON_SANCTUARY_ROSTER = [
+  { file: "pikachu.glb", root: true, scale: 0.7 },
+  { file: "eevee.glb", scale: 0.75 },
+  { file: "bulbasaur.glb", scale: 0.75 },
+  { file: "squirtle.glb", scale: 0.7 },
+  { file: "charmander.glb", scale: 0.75 },
+  { file: "jigglypuff.glb", scale: 0.65 },
+  { file: "psyduck.glb", scale: 0.8 },
+  { file: "meowth.glb", scale: 0.75 },
+  { file: "snorlax.glb", scale: 1.6 },
+  { file: "dratini.glb", scale: 0.9 },
+  { file: "clefairy.glb", scale: 0.7 },
+  { file: "vulpix.glb", scale: 0.8 },
+  { file: "growlithe.glb", scale: 0.95 },
+  { file: "ditto.glb", scale: 0.6 },
+];
+function buildPokemonSanctuary(loader, base, center) {
+  const group = new THREE.Group();
+  group.position.set(center.x, 0, center.z);
+  const bobbers = [];
+  // A soft ring fence + a "פינת פוקימון" sign so this reads as a deliberate
+  // habitat, not stray assets scattered on the lawn.
+  const ringMat = new THREE.MeshStandardMaterial({ color: 0xece2cc, roughness: 0.7 });
+  const RING_R = 7.5;
+  for (let i = 0; i < 24; i++) {
+    const a = (i / 24) * Math.PI * 2;
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.6, 8), ringMat);
+    post.position.set(Math.cos(a) * RING_R, 0.3, Math.sin(a) * RING_R);
+    group.add(post);
+  }
+  const signPlate = buildTinyLabelSprite("⚡", "#ffd23f");
+  signPlate.position.set(0, 2.6, -RING_R - 0.5);
+  signPlate.scale.set(1.1, 1.1, 1);
+  group.add(signPlate);
+
+  const slots = POKEMON_SANCTUARY_ROSTER.length;
+  POKEMON_SANCTUARY_ROSTER.forEach((p, i) => {
+    const a = (i / slots) * Math.PI * 2;
+    const r = 3.5 + (i % 3) * 1.3;
+    const px = Math.cos(a) * r, pz = Math.sin(a) * r;
+    const url = (p.root ? base : base + "ar-models/") + p.file;
+    loader.load(url, (g) => {
+      const m = g.scene;
+      m.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      const bb = new THREE.Box3().setFromObject(m);
+      const size = bb.getSize(new THREE.Vector3());
+      const scaleF = p.scale / Math.max(size.y || 0.01, 0.01);
+      m.scale.setScalar(scaleF);
+      const bb2 = new THREE.Box3().setFromObject(m);
+      m.position.x -= (bb2.min.x + bb2.max.x) / 2;
+      m.position.z -= (bb2.min.z + bb2.max.z) / 2;
+      m.position.y -= bb2.min.y;
+      const wrap = new THREE.Group();
+      wrap.add(m);
+      wrap.position.set(px, 0, pz);
+      wrap.rotation.y = Math.random() * Math.PI * 2;
+      wrap.userData.bobPhase = i * 0.7;
+      wrap.userData.baseY = 0;
+      group.add(wrap);
+      bobbers.push(wrap);
+    }, undefined, () => {});
+  });
+  group.userData.bobbers = bobbers;
+  return group;
 }
 
 function HangarOverlay({ onReturn }) {
@@ -3225,6 +3567,9 @@ function HangarOverlay({ onReturn }) {
     const house = buildHouseExterior();
     house.position.set(0, 0, D / 2 + 15);
     scene.add(house);
+    // Pokémon Sanctuary — the real Gen-1 GLB library, beside the house.
+    const sanctuary = buildPokemonSanctuary(loader, base, { x: 11, z: D / 2 + 17 });
+    scene.add(sanctuary);
     // Night sky beyond the door + a big ground plane so the yard doesn't
     // just fall off into the fog color at the edges.
     const outerGround = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshStandardMaterial({ color: 0x1c2b20, roughness: 1 }));
@@ -3265,6 +3610,20 @@ function HangarOverlay({ onReturn }) {
       camera.position.copy(pos);
       camera.rotation.order = "YXZ";
       camera.rotation.y = yaw;
+      // Chimney smoke — each puff drifts up and fades, looping back to the
+      // chimney once it's cleared the roofline.
+      (house.userData.smokePuffs || []).forEach((puff) => {
+        puff.userData.phase += dt * 0.4;
+        const t = puff.userData.phase % 3;
+        puff.position.y += dt * 0.35;
+        puff.position.x += Math.sin(clock.elapsedTime + puff.userData.phase) * dt * 0.15;
+        puff.material.opacity = Math.max(0, 0.5 - t * 0.15);
+        if (t < dt * 0.4) puff.position.y = house.position.y + 4.4 + 1.6 + 1.2;
+      });
+      // Pokémon Sanctuary — a gentle idle bob per creature.
+      (sanctuary.userData.bobbers || []).forEach((wrap) => {
+        wrap.position.y = wrap.userData.baseY + Math.sin(clock.elapsedTime * 1.4 + wrap.userData.bobPhase) * 0.08;
+      });
       renderer.render(scene, camera);
     };
     animate();
@@ -3345,6 +3704,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   // animate() loop, and the overlay's opaque background + pointer-events
   // hide/block it completely while active.
   const [inSpace, setInSpace] = useState(false);
+  useEffect(() => { liveRef.current.inSpace = inSpace; }, [inSpace]);
   // Flight simulator — walk up to the RQ-180 display near the window and a
   // "Take Flight" prompt appears, same pattern as the vehicle/space portal.
   const [nearPlane, setNearPlane] = useState(false);
@@ -3894,9 +4254,12 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // charcoal ground bounce instead of a warm one — for the tactical
     // command-center mood; the day/night phase system (fog/sun, below)
     // still drives the actual lighting swings on top of this base.
-    const ambient = new THREE.AmbientLight(0xc9d9f2, 0.42);
+    // Electric Sanctuary layer 4: darkened base ambient so the room's
+    // emissive/neon sources (pods, arcs, energy grid, screens) actually read
+    // as the light in the room, instead of competing with a bright flat fill.
+    const ambient = new THREE.AmbientLight(0xc9d9f2, 0.3);
     scene.add(ambient);
-    const hemi = new THREE.HemisphereLight(0xbfd4ff, 0x161a24, 0.55);
+    const hemi = new THREE.HemisphereLight(0xbfd4ff, 0x161a24, 0.4);
     scene.add(hemi);
     const sun = new THREE.DirectionalLight(0xfff2df, 1.25);
     sun.position.set(9, 14, 6);
@@ -3960,6 +4323,21 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
     scene.add(floor);
+
+    // Electric Sanctuary layer 1: Energy Grid overlay, converging on the
+    // central hologram (the giant Alpha Brain sun, at SUN_SPOT below — its
+    // literal {-2.5, -1.0} is duplicated here since that const isn't
+    // declared yet this early in the same scope).
+    const energyGridMat = new THREE.ShaderMaterial({
+      ...EnergyGridShader,
+      uniforms: THREE.UniformsUtils.clone(EnergyGridShader.uniforms),
+      transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    energyGridMat.uniforms.uCenter.value.set((-2.5 + FLOOR_W / 2) / FLOOR_W, (-1.0 + FLOOR_D / 2) / FLOOR_D);
+    const energyGrid = new THREE.Mesh(new THREE.PlaneGeometry(FLOOR_W, FLOOR_D), energyGridMat);
+    energyGrid.rotation.x = -Math.PI / 2;
+    energyGrid.position.y = 0.015;
+    scene.add(energyGrid);
 
     // Rugs under the meeting nook and dining room for warmth.
     {
@@ -4618,6 +4996,18 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     const podIdSet = new Set(chargePods.map((p) => p.id));
     const podById = new Map(chargePods.map((p) => [p.id, p]));
 
+    // Electric Sanctuary layer 2: 4 High-Voltage Arc pillars in the corners.
+    const ARC_COLORS = [0x36e6ff, 0xb84bff, 0x36e6ff, 0xb84bff];
+    const arcPillars = [];
+    [[-FLOOR_W / 2 + 3, -FLOOR_D / 2 + 3], [FLOOR_W / 2 - 3, -FLOOR_D / 2 + 3], [-FLOOR_W / 2 + 3, FLOOR_D / 2 - 3], [FLOOR_W / 2 - 3, FLOOR_D / 2 - 3]]
+      .forEach(([x, z], i) => {
+        const pillar = buildVoltageArcPillar(ARC_COLORS[i]);
+        pillar.position.set(x, 0, z);
+        scene.add(pillar);
+        obstacles.push({ x, z, r: 0.5 });
+        arcPillars.push(pillar);
+      });
+
     // ══════════════════════════════════════════════════════════════════
     // ALPHA MEGA-PATCH V1.0 — 9 new modules. Positions below are placed on
     // open floor within the FLOOR_W×FLOOR_D bounds but not exhaustively
@@ -4631,6 +5021,16 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     warTable.group.position.set(warTablePos.x, 0, warTablePos.z);
     scene.add(warTable.group);
     obstacles.push({ x: warTablePos.x, z: warTablePos.z, r: 2.9 });
+    // Electric Sanctuary layer 4: "Smart Interaction Light" — dim by
+    // default, brightens smoothly as the player approaches (updated per
+    // frame below), guiding attention the way a real smart space would.
+    const warTableLight = new THREE.PointLight(0x6fe6ff, 0.3, 9);
+    warTableLight.position.set(warTablePos.x, 3.2, warTablePos.z);
+    scene.add(warTableLight);
+    // Electric Sanctuary layer 5: nano-particle hologram hovering over the grid.
+    const warTableNano = buildNanoParticleCloud(2.6, 1.4, 260, 0x6fe6ff);
+    warTableNano.position.set(warTablePos.x, 1.3, warTablePos.z);
+    scene.add(warTableNano);
     const warTableTiles = warTable.tiles.map((t) => ({ ...t, wx: warTablePos.x + t.x, wz: warTablePos.z + t.z }));
     // Representative demo install tickets (real HeavyGuard ticket data isn't
     // wired into this sim) — drag one onto a day tile to "schedule" it.
@@ -4662,6 +5062,12 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
 
     // ── Module 2: Binance 3D Candlestick Floor ("Algo-Trading Zone") ─────
     const algoZonePos = { x: -18, z: 16 };
+    const algoZoneLight = new THREE.PointLight(0xffd23f, 0.3, 9);
+    algoZoneLight.position.set(algoZonePos.x, 3.2, algoZonePos.z);
+    scene.add(algoZoneLight);
+    const algoZoneNano = buildNanoParticleCloud(2.9, 2.2, 260, 0xffd23f);
+    algoZoneNano.position.set(algoZonePos.x, 0.3, algoZonePos.z);
+    scene.add(algoZoneNano);
     {
       const zoneRing = new THREE.Mesh(new THREE.RingGeometry(2.6, 2.9, 40), new THREE.MeshBasicMaterial({ color: 0xffd23f, transparent: true, opacity: 0.5, side: THREE.DoubleSide }));
       zoneRing.rotation.x = -Math.PI / 2; zoneRing.position.set(algoZonePos.x, 0.02, algoZonePos.z);
@@ -5854,6 +6260,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     let dilationTicketT = 0;
     // Module 3: gamepad-triggered kids game debounce (edge-detect button 1)
     let gpBtn1Prev = false;
+    let workload = 0.15; // smoothed 0..1 "system workload" driving the energy-grid floor
     // Only trust a gamepad index that fired a REAL "gamepadconnected" event —
     // navigator.getGamepads() can return stale/phantom entries (Bluetooth
     // devices, leftover browser state) reporting connected:true with drifting
@@ -5922,6 +6329,15 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     function animate() {
       const rawDt = clock.getDelta();
       const dt = Math.min(0.05, rawDt);
+      // The office scene never actually unmounts while a full-screen overlay
+      // (Hangar / Flight / Space) is open — it just sits hidden behind it —
+      // so without this guard it kept fully simulating AND rendering (SSAO +
+      // bloom + the new Energy Grid/arc-pillar/nano-particle work) every
+      // single frame for a scene nobody can see, competing with the overlay's
+      // own renderer for the same GPU and dragging it down. Skip all of it
+      // while any overlay is active; clock.getDelta() above still gets called
+      // every tick so time doesn't jump when the overlay closes.
+      if (liveRef.current.inHangar || liveRef.current.inFlight || liveRef.current.inSpace) return;
       // Sample real (unclamped) frame time for ~2s starting 6s in — long
       // enough for the initial GLB/texture loads to be done so their one-time
       // hitches don't get mistaken for a sustained low-power GPU. One shot
@@ -6361,6 +6777,17 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         liveRef.current.setNearVehicle?.(nearVeh);
       }
 
+      // Electric Sanctuary layer 4: Smart Interaction Lights — smoothly
+      // brighten as the player approaches the war table / algo zone, dim
+      // otherwise, so the room reads as reacting to presence rather than
+      // sitting at one fixed brightness.
+      const warTableDist = Math.hypot(playerH.group.position.x - warTablePos.x, playerH.group.position.z - warTablePos.z);
+      warTableLight.intensity += ((warTableDist < 8 ? 1.6 : 0.3) - warTableLight.intensity) * Math.min(1, dt * 2);
+      const algoZoneDist = Math.hypot(playerH.group.position.x - algoZonePos.x, playerH.group.position.z - algoZonePos.z);
+      algoZoneLight.intensity += ((algoZoneDist < 8 ? 1.6 : 0.3) - algoZoneLight.intensity) * Math.min(1, dt * 2);
+      updateNanoParticleCloud(warTableNano, clock.elapsedTime);
+      updateNanoParticleCloud(algoZoneNano, clock.elapsedTime);
+
       // ALPHA MEGA-PATCH V1.0 proximity prompts — war table (Modules 1/7),
       // bookkeeper terminal (Module 4), comm-link station (Module 5).
       const nearWar = Math.hypot(playerH.group.position.x - warTablePos.x, playerH.group.position.z - warTablePos.z) < 3.4;
@@ -6417,6 +6844,22 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       // of cutting a diagonal beeline through every desk in between — reads
       // as deliberate human wayfinding rather than gliding through furniture.
       const liveChars = liveRef.current.chars || [];
+      // Electric Sanctuary layer 1: workload = share of agents actively
+      // "working" right now — a real (if simplified) stand-in for API load,
+      // smoothed so the floor pulses ease rather than snap between values.
+      const targetWorkload = liveChars.length
+        ? liveChars.filter((c) => c.status === "work" || c.status === "summoned" || c.status === "meet").length / liveChars.length
+        : 0.15;
+      workload += (targetWorkload - workload) * Math.min(1, dt * 0.5);
+      energyGridMat.uniforms.uTime.value = clock.elapsedTime;
+      energyGridMat.uniforms.uWorkload.value = workload;
+      // Electric Sanctuary layer 4: a low-frequency ambient "hum" — a subtle
+      // ±6% breathing pulse on top of whatever the day/night system already
+      // set, synced to the same workload reading so a busier system visibly
+      // pulses a little faster/harder.
+      const humHz = 0.15 + workload * 0.35;
+      const hum = 1 + Math.sin(clock.elapsedTime * humHz * Math.PI * 2) * 0.06;
+      ambient.intensity *= hum; hemi.intensity *= hum;
       liveChars.forEach((c, ci) => {
         const h = npc[c.id]; if (!h) return;
         // Module 2: the finance/"CFO" agent temporarily takes over his own
@@ -6680,13 +7123,24 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       }
 
       // Slow dust drift — a gentle upward bob + lateral sway per mote.
+      // Electric Sanctuary layer 2 ("Smart Dust"): motes within ~2.2 units
+      // of the player get an extra outward nudge, so walking through the
+      // haze visibly scatters it instead of drifting through it inertly.
       if (!turboOn) {
         const t = clock.elapsedTime;
         const arr = dust.geometry.attributes.position.array;
+        const px = playerH.group.position.x, pz = playerH.group.position.z;
         for (let i = 0; i < dustCount; i++) {
           arr[i * 3 + 1] += Math.sin(t * 0.3 + dustPhase[i]) * dt * 0.06 + dt * 0.02;
           if (arr[i * 3 + 1] > 5.2) arr[i * 3 + 1] = 0.4;
           arr[i * 3] += Math.sin(t * 0.2 + dustPhase[i]) * dt * 0.04;
+          const ddx = arr[i * 3] - px, ddz = arr[i * 3 + 2] - pz;
+          const dd = Math.hypot(ddx, ddz);
+          if (dd < 2.2 && dd > 0.01) {
+            const push = (1 - dd / 2.2) * dt * 1.4;
+            arr[i * 3] += (ddx / dd) * push;
+            arr[i * 3 + 2] += (ddz / dd) * push;
+          }
         }
         dust.geometry.attributes.position.needsUpdate = true;
       }
@@ -6733,6 +7187,15 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         pod.podGroup.worldToLocal(originWorld);
         pod.lightning.bolts.forEach((b) => updatePodBolt(b, originWorld));
       });
+      // Electric Sanctuary layer 2: corner arc pillars flicker on the same
+      // cadence as the pod lightning above.
+      if (boltFlick) {
+        arcPillars.forEach((pillar) => {
+          pillar.userData.bolts.forEach((b) => updatePodBolt(b, b.origin));
+          pillar.userData.light.intensity = 0.8 + Math.random() * 0.7;
+          pillar.userData.orbMat.color.setHSL(0.55 + Math.random() * 0.1, 1, 0.6);
+        });
+      }
 
       // ── Module 2 (cont'd): finance agent's occasional visit to the algo
       // zone — checked once a second, same cadence as the pod bookkeeping.
