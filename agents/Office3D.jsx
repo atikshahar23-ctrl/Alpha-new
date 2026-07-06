@@ -12,6 +12,9 @@ import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPa
 import { SSAOPass } from "three/examples/jsm/postprocessing/SSAOPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { SMAAPass } from "three/examples/jsm/postprocessing/SMAAPass.js";
+import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
+import { DragControls } from "three/examples/jsm/controls/DragControls.js";
+import jsPDF from "jspdf";
 import { MessageCircle, Eye, User, Mic, VolumeX, Volume2, X, Zap, Settings as SettingsIcon, Trash2, Radio, Pause, Lock, Unlock } from "lucide-react";
 import { useDeviceProfile } from "./deviceProfiler.js";
 import RadioController from "./RadioController.jsx";
@@ -1446,6 +1449,331 @@ function updatePodBolt(bolt, originLocal) {
   }
   posAttr.needsUpdate = true;
   bolt.mat.opacity = 0.5 + Math.random() * 0.5;
+}
+
+// Small canvas-sprite label (a single letter/short tag) — used by the war
+// table's day grid instead of the fuller buildNameSprite (name+title layout).
+function buildTinyLabelSprite(text, colorHex) {
+  const cvs = document.createElement("canvas");
+  cvs.width = 128; cvs.height = 128;
+  const ctx = cvs.getContext("2d");
+  ctx.fillStyle = colorHex;
+  ctx.font = "900 84px 'Space Grotesk', system-ui, sans-serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(text, 64, 68);
+  const tex = new THREE.CanvasTexture(cvs);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
+  return new THREE.Sprite(mat);
+}
+
+// ── Module 1: Heavy Guard Holographic War Table ───────────────────────────
+// A table with a 7-day isometric grid on top; truck miniatures (one per
+// pending install ticket) start in a staging row and get DragControls-
+// dragged onto a day tile to schedule them (wiring is in the main effect,
+// where the renderer/camera/DOM element exist).
+function buildWarTable() {
+  const g = new THREE.Group();
+  const top = new THREE.Mesh(new THREE.BoxGeometry(5.4, 0.12, 3.4),
+    new THREE.MeshStandardMaterial({ color: 0x141a24, roughness: 0.3, metalness: 0.6 }));
+  top.position.y = 0.95; top.castShadow = true; top.receiveShadow = true; g.add(top);
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(3.15, 0.03, 8, 40), new THREE.MeshBasicMaterial({ color: 0x2ee6ff, transparent: true, opacity: 0.5 }));
+  rim.rotation.x = Math.PI / 2; rim.scale.set(1, 0.63, 1); rim.position.y = 1.02; g.add(rim);
+  const days = ["א", "ב", "ג", "ד", "ה", "ו", "ש"];
+  const cols = 7;
+  const tileW = 0.66, gap = 0.06;
+  const startX = -((cols - 1) * (tileW + gap)) / 2;
+  const tiles = [];
+  days.forEach((d, i) => {
+    const tile = new THREE.Mesh(new THREE.BoxGeometry(tileW, 0.03, 2.4),
+      new THREE.MeshStandardMaterial({ color: 0x1c2636, roughness: 0.5, emissive: 0x0b3f52, emissiveIntensity: 0.4 }));
+    tile.position.set(startX + i * (tileW + gap), 1.02, 0);
+    g.add(tile);
+    const label = buildTinyLabelSprite(d, "#8fe6ff");
+    label.scale.set(0.28, 0.28, 1);
+    label.position.set(tile.position.x, 1.1, -1.35);
+    g.add(label);
+    tiles.push({ x: tile.position.x, z: 0, day: i, label: d });
+  });
+  const legMat = new THREE.MeshStandardMaterial({ color: 0x10141c, roughness: 0.4, metalness: 0.6 });
+  [[-2.5, -1.4], [2.5, -1.4], [-2.5, 1.4], [2.5, 1.4]].forEach(([x, z]) => {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.95, 0.12), legMat);
+    leg.position.set(x, 0.475, z); g.add(leg);
+  });
+  return { group: g, tiles };
+}
+
+// A single low-poly heavy-truck miniature representing one pending install
+// ticket — cab + trailer + wheels, tinted by ticket status.
+function buildTruckMini(hex) {
+  const g = new THREE.Group();
+  const bodyMat = new THREE.MeshStandardMaterial({ color: hex, roughness: 0.4, metalness: 0.5 });
+  const cab = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.14, 0.12), bodyMat);
+  cab.position.set(0.11, 0.1, 0); g.add(cab);
+  const trailer = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.12, 0.11), new THREE.MeshStandardMaterial({ color: 0xe8e8ec, roughness: 0.5 }));
+  trailer.position.set(-0.1, 0.09, 0); g.add(trailer);
+  const wheelMat = new THREE.MeshStandardMaterial({ color: 0x14161c, roughness: 0.7 });
+  [[0.11, -0.06], [-0.02, -0.06], [-0.18, -0.06], [0.11, 0.06], [-0.02, 0.06], [-0.18, 0.06]].forEach(([x, z]) => {
+    const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.03, 10), wheelMat);
+    wheel.rotation.z = Math.PI / 2;
+    wheel.position.set(x, 0.035, z); g.add(wheel);
+  });
+  g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+  g.userData.isTruckMini = true;
+  return g;
+}
+
+// ── Module 3: Interactive Companion (Kids Mode) ───────────────────────────
+// A friendly Pokémon-x-rescue-pup mascot for Ori: round body, big ears, big
+// eyes, a Paw-Patrol-style rescue vest with a cross badge, and a small
+// lightning-bolt marking. Fully procedural — no external model.
+function buildKidsCompanion() {
+  const g = new THREE.Group();
+  const furMat = new THREE.MeshStandardMaterial({ color: 0xffd166, roughness: 0.75 });
+  const bellyMat = new THREE.MeshStandardMaterial({ color: 0xfff3d6, roughness: 0.8 });
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.34, 20, 16), furMat);
+  body.scale.set(1, 0.92, 1.1); body.position.y = 0.4; g.add(body);
+  const belly = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 14), bellyMat);
+  belly.position.set(0, 0.34, 0.22); g.add(belly);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.24, 18, 14), furMat);
+  head.position.set(0, 0.74, 0.14); g.add(head);
+  [-1, 1].forEach((s) => {
+    const ear = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.22, 10), furMat);
+    ear.position.set(s * 0.18, 0.95, 0.1); ear.rotation.z = s * 0.3; g.add(ear);
+  });
+  const eyeMat = new THREE.MeshBasicMaterial({ color: 0x1a1410 });
+  [-1, 1].forEach((s) => {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), eyeMat);
+    eye.position.set(s * 0.09, 0.78, 0.34); g.add(eye);
+    const glint = new THREE.Mesh(new THREE.SphereGeometry(0.014, 6, 6), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+    glint.position.set(s * 0.09 + 0.014, 0.79, 0.36); g.add(glint);
+  });
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 8), new THREE.MeshBasicMaterial({ color: 0x8a5a3a }));
+  nose.position.set(0, 0.7, 0.38); g.add(nose);
+  const vest = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.32, 0.22, 16, 1, true, 0, Math.PI * 1.6),
+    new THREE.MeshStandardMaterial({ color: 0xff5c50, roughness: 0.6, side: THREE.DoubleSide }));
+  vest.position.y = 0.45; vest.rotation.y = Math.PI * 0.7; g.add(vest);
+  const badgeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const badgeH = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.03, 0.01), badgeMat);
+  const badgeV = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.1, 0.01), badgeMat);
+  badgeH.position.set(0, 0.46, 0.31); badgeV.position.set(0, 0.46, 0.31);
+  g.add(badgeH); g.add(badgeV);
+  const boltShape = new THREE.Shape();
+  boltShape.moveTo(0, 0.06); boltShape.lineTo(0.03, 0.02); boltShape.lineTo(0.01, 0.02);
+  boltShape.lineTo(0.04, -0.06); boltShape.lineTo(0, -0.01); boltShape.lineTo(0.02, -0.01); boltShape.closePath();
+  const bolt = new THREE.Mesh(new THREE.ExtrudeGeometry(boltShape, { depth: 0.01, bevelEnabled: false }),
+    new THREE.MeshBasicMaterial({ color: 0xffe066 }));
+  bolt.position.set(-0.1, 0.42, -0.28); bolt.rotation.y = Math.PI; g.add(bolt);
+  [[-0.16, -0.16], [0.16, -0.16], [-0.16, 0.16], [0.16, 0.16]].forEach(([x, z]) => {
+    const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.1, 4, 8), furMat);
+    leg.position.set(x, 0.12, z); g.add(leg);
+  });
+  g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+  return g;
+}
+
+// ── Module 4: Bookkeeper Export Terminal (prop) ───────────────────────────
+function buildBookkeeperTerminal() {
+  const g = new THREE.Group();
+  const desk = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.75, 0.6), new THREE.MeshStandardMaterial({ color: 0x1b1f28, roughness: 0.5, metalness: 0.4 }));
+  desk.position.y = 0.375; g.add(desk);
+  const screenMat = new THREE.MeshBasicMaterial({ color: 0xeef3ff });
+  const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 0.44), screenMat);
+  screen.position.set(0, 1.05, 0.28); g.add(screen);
+  const bezel = new THREE.Mesh(new THREE.PlaneGeometry(0.78, 0.52), new THREE.MeshStandardMaterial({ color: 0x0a0d12 }));
+  bezel.position.set(0, 1.05, 0.275); g.add(bezel);
+  const stand = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.3, 0.08), new THREE.MeshStandardMaterial({ color: 0x14161c }));
+  stand.position.set(0, 0.9, 0.2); g.add(stand);
+  const glowRing = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.02, 8, 30), new THREE.MeshBasicMaterial({ color: 0xE4BC63, transparent: true, opacity: 0.6 }));
+  glowRing.rotation.x = Math.PI / 2; glowRing.position.y = 0.02; g.add(glowRing);
+  g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+  return { group: g, screenMat };
+}
+
+// Compiles the same figures already tracked in bizData (the app's own real
+// business data — nothing fabricated) into a clean, corporate black-and-
+// white PDF for Mor to review. Drawn directly with jsPDF's text/line API
+// rather than an html2canvas screenshot — a rasterized canvas capture of the
+// 3D scene wouldn't read as a bookkeeping document; crisp vector text does.
+function exportBookkeeperPdf(b) {
+  b = b || {};
+  const money = (n) => "₪" + Math.round(n || 0).toLocaleString();
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const W = doc.internal.pageSize.getWidth();
+  let y = 56;
+  doc.setFont("helvetica", "bold"); doc.setFontSize(18);
+  doc.text("HeavyGuard / Alpha - Financial Summary", W / 2, y, { align: "center" });
+  y += 22;
+  doc.setFont("helvetica", "normal"); doc.setFontSize(11);
+  doc.text(`Prepared for: Mor (Senior Bookkeeper)   |   Date: ${new Date().toLocaleDateString("en-GB")}`, W / 2, y, { align: "center" });
+  y += 30;
+  doc.setDrawColor(0); doc.line(48, y, W - 48, y);
+  y += 26;
+  const rows = [
+    ["Total Revenue", money(b.hgRevenue)],
+    ["Open Pipeline Value", money(b.openVal)],
+    ["Closed This Month", money(b.wonMonth)],
+    ["Open Deals", String(b.openDeals ?? "-")],
+    ["Total Customers", String(b.custCount ?? "-")],
+    ["Total Installs", String(b.installs ?? "-")],
+    ["Stale Deals (needs follow-up)", String(b.staleCount ?? "-")],
+    ["Pricelist Items", String(b.pricelist ?? "-")],
+  ];
+  doc.setFontSize(12);
+  rows.forEach(([label, val]) => {
+    doc.setFont("helvetica", "normal"); doc.text(label, 64, y);
+    doc.setFont("helvetica", "bold"); doc.text(val, W - 64, y, { align: "right" });
+    y += 24;
+  });
+  y += 20;
+  doc.setDrawColor(0); doc.line(48, y, W - 48, y);
+  y += 30;
+  doc.setFont("helvetica", "italic"); doc.setFontSize(10);
+  doc.text("Generated automatically from the Alpha command-center's live business data.", W / 2, y, { align: "center" });
+  doc.save(`heavyguard-financial-summary-${new Date().toISOString().slice(0, 10)}.pdf`);
+}
+
+// ── Module 6: Tiggo 7 PHEV virtual-garage stats ───────────────────────────
+// Battery/mileage are a simulated live feed (a smooth deterministic wander,
+// not a real OBD/telematics connection). Loan figures are PLACEHOLDER
+// EXAMPLE terms for an August-2025 balloon contract — swap in the real
+// principal/rate/term the moment they're known; nothing here is the actual
+// contract.
+const LOAN_START = new Date(2025, 7, 1);
+const LOAN_MONTHS = 36;
+const LOAN_PRINCIPAL = 120000;
+const LOAN_BALLOON = 45000;
+function loanStatus(now) {
+  const monthsElapsed = Math.max(0, (now.getFullYear() - LOAN_START.getFullYear()) * 12 + (now.getMonth() - LOAN_START.getMonth()));
+  const monthsLeft = Math.max(0, LOAN_MONTHS - monthsElapsed);
+  const monthlyPrincipal = (LOAN_PRINCIPAL - LOAN_BALLOON) / LOAN_MONTHS;
+  const paidSoFar = Math.min(LOAN_PRINCIPAL - LOAN_BALLOON, monthlyPrincipal * monthsElapsed);
+  return { monthsLeft, paidSoFar, balloon: LOAN_BALLOON, done: monthsLeft <= 0 };
+}
+function carLiveStats() {
+  const t = Date.now() / 60000;
+  const battery = Math.round(62 + 22 * Math.sin(t * 0.05));
+  const mileage = 18420 + Math.floor(t * 0.8);
+  return { battery: Math.max(15, Math.min(100, battery)), mileage };
+}
+
+// ── Module 5: 'Me' Comm-Link relay station (prop) ─────────────────────────
+// SIMULATED ONLY — there is no real integration with the Me caller-ID app
+// (no API access); the hologram card it shows is generated locally and says
+// so on its own face.
+function buildCommLinkStation() {
+  const g = new THREE.Group();
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.34, 0.14, 20), new THREE.MeshStandardMaterial({ color: 0x161a24, roughness: 0.4, metalness: 0.6 }));
+  base.position.y = 0.07; g.add(base);
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 1.3, 10), new THREE.MeshStandardMaterial({ color: 0x1d2330, roughness: 0.4, metalness: 0.6 }));
+  pole.position.y = 0.75; g.add(pole);
+  const dish = new THREE.Mesh(new THREE.SphereGeometry(0.26, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.55),
+    new THREE.MeshStandardMaterial({ color: 0x2ee6ff, roughness: 0.2, metalness: 0.7, side: THREE.DoubleSide, emissive: 0x0a3540, emissiveIntensity: 0.4 }));
+  dish.rotation.x = Math.PI; dish.position.y = 1.42; g.add(dish);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.015, 6, 26), new THREE.MeshBasicMaterial({ color: 0x2ee6ff, transparent: true, opacity: 0.5 }));
+  ring.position.y = 1.42; g.add(ring);
+  const beacon = new THREE.PointLight(0x2ee6ff, 0.6, 3);
+  beacon.position.y = 1.5; g.add(beacon);
+  g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+  return { group: g, beacon };
+}
+
+// Fake incoming-call hologram card texture — explicitly labelled as a
+// simulation on its own face so it's never mistaken for a real Me lookup.
+function buildCallerCardTexture(name, phone, tag) {
+  const cvs = document.createElement("canvas");
+  cvs.width = 384; cvs.height = 224;
+  const ctx = cvs.getContext("2d");
+  const grd = ctx.createLinearGradient(0, 0, 0, 224);
+  grd.addColorStop(0, "rgba(10,20,35,.94)"); grd.addColorStop(1, "rgba(5,10,18,.94)");
+  ctx.fillStyle = grd; ctx.fillRect(0, 0, 384, 224);
+  ctx.strokeStyle = "rgba(46,230,255,.6)"; ctx.lineWidth = 3; ctx.strokeRect(4, 4, 376, 216);
+  ctx.fillStyle = "#6fe6ff"; ctx.font = "700 15px 'Space Grotesk', sans-serif"; ctx.textAlign = "right";
+  ctx.fillText("📞 שיחה נכנסת · זוהה על ידי Me", 364, 34);
+  ctx.fillStyle = "#eaf6ff"; ctx.font = "900 30px 'Rubik', sans-serif";
+  ctx.fillText(name, 364, 84);
+  ctx.fillStyle = "#9fe6f4"; ctx.font = "600 18px 'Rubik', sans-serif";
+  ctx.fillText(phone, 364, 116);
+  ctx.fillStyle = "#7fd8ea"; ctx.font = "600 14px 'Rubik', sans-serif";
+  ctx.fillText(tag, 364, 146);
+  ctx.fillStyle = "rgba(46,230,255,.15)";
+  ctx.fillRect(20, 170, 344, 34);
+  ctx.fillStyle = "#c9f2ff"; ctx.font = "700 13px 'Rubik', sans-serif"; ctx.textAlign = "center";
+  ctx.fillText("סימולציה בלבד — לא חיבור אמיתי ל-Me", 192, 191);
+  const tex = new THREE.CanvasTexture(cvs);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+// ── Module 8: Heavy Guard 360° Drone/CCTV shader ──────────────────────────
+// Fisheye barrel distortion + CRT scanlines/static + vignette, toggled onto
+// the composer only while the drone view is active ('C' key).
+const DroneCamShader = {
+  uniforms: { tDiffuse: { value: null }, time: { value: 0 }, amount: { value: 0.4 } },
+  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: `
+    uniform sampler2D tDiffuse; uniform float time; uniform float amount; varying vec2 vUv;
+    void main(){
+      vec2 uv = vUv * 2.0 - 1.0;
+      float r2 = dot(uv, uv);
+      vec2 warped = uv * (1.0 + amount * r2);
+      vec2 suv = warped * 0.5 + 0.5;
+      vec3 col;
+      if (suv.x < 0.0 || suv.x > 1.0 || suv.y < 0.0 || suv.y > 1.0) { col = vec3(0.0); }
+      else { col = texture2D(tDiffuse, suv).rgb; }
+      float scan = sin(suv.y * 720.0) * 0.04;
+      col -= scan;
+      float noise = fract(sin(dot(suv * time, vec2(12.9898, 78.233))) * 43758.5453);
+      col += (noise - 0.5) * 0.06;
+      col *= 1.0 - r2 * 0.35;
+      gl_FragColor = vec4(col, 1.0);
+    }`,
+};
+
+// ── Module 7: procedural hype-track (Web Audio) ───────────────────────────
+// A synthesized reggaeton/hip-hop-flavored beat (dembow-ish kick pattern,
+// sub bass, hand claps) — there's no licensed track to embed, so this is a
+// genuine synth performance rather than a stub, same procedural-audio
+// approach the boot sequence already uses for its own SFX.
+function playHypeBeat() {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+    const ctx = new AC();
+    const t0 = ctx.currentTime;
+    const bpm = 96, beat = 60 / bpm;
+    const kick = (t) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = "sine"; o.frequency.setValueAtTime(150, t); o.frequency.exponentialRampToValueAtTime(45, t + 0.12);
+      g.gain.setValueAtTime(0.9, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+      o.connect(g); g.connect(ctx.destination); o.start(t); o.stop(t + 0.25);
+    };
+    const clap = (t) => {
+      const len = Math.floor(ctx.sampleRate * 0.15);
+      const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2);
+      const src = ctx.createBufferSource(); src.buffer = buf;
+      const hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 1200;
+      const g = ctx.createGain(); g.gain.value = 0.5;
+      src.connect(hp); hp.connect(g); g.connect(ctx.destination); src.start(t);
+    };
+    const bass = (t, freq) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = "sawtooth"; o.frequency.value = freq;
+      g.gain.setValueAtTime(0.001, t); g.gain.linearRampToValueAtTime(0.22, t + 0.02); g.gain.exponentialRampToValueAtTime(0.001, t + beat * 0.9);
+      const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 400;
+      o.connect(lp); lp.connect(g); g.connect(ctx.destination); o.start(t); o.stop(t + beat);
+    };
+    const bassLine = [55, 55, 65.4, 61.7];
+    for (let bar = 0; bar < 8; bar++) {
+      const barT = t0 + bar * beat;
+      kick(barT);
+      if (bar % 2 === 1) clap(barT);
+      kick(barT + beat * 0.75);
+      bass(barT, bassLine[bar % bassLine.length]);
+    }
+    setTimeout(() => { try { ctx.close(); } catch {} }, 8000);
+  } catch {}
 }
 
 // Battery panel for a charging pod: level bar + % + a ⚡ while docked, in the
@@ -2983,6 +3311,16 @@ const GOD_META_LABELS = {
   coverage_angle: "זווית כיסוי", battery_status: "מצב סוללה", storage: "אחסון", channels: "ערוצים",
 };
 
+// Module 3: kids color/shape-finding game targets — big, high-contrast,
+// unambiguous shapes for a 3-year-old (Ori) to match against a spoken/
+// written prompt.
+const KIDS_SHAPES = [
+  { id: "orange", label: "כתום", color: "#ff8c42", shape: "circle" },
+  { id: "blue", label: "כחול", color: "#3fc6ff", shape: "square" },
+  { id: "green", label: "ירוק", color: "#3fd79a", shape: "triangle" },
+  { id: "purple", label: "סגול", color: "#b84bff", shape: "star" },
+];
+
 export default function Office3D({ chars, byId, phase, phases, deskPositions, seatPositions, dineTablePositions, meetingSpot, bizData, marketRows, weather, voice, onClose, onOpenChat, onAutoFix, onTalkChange, agentVoiceDefaults }) {
   const mountRef = useRef(null);
   const liveRef = useRef({ chars, phase, bizData, weather, joyVec: { x: 0, y: 0 }, turnVec: { x: 0, y: 0 }, keys: {}, firstPerson: false });
@@ -3178,6 +3516,51 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   // UV Nightclub Mode — "lights out", blacklight-reactive pods/hologram.
   const [nightclub, setNightclub] = useState(false);
   useEffect(() => { liveRef.current.setNightclub?.(nightclub); }, [nightclub]);
+  // ── ALPHA MEGA-PATCH V1.0 — module state ──────────────────────────────
+  const [warToast, setWarToast] = useState(null); // Module 1 — Michal's scheduling toast
+  useEffect(() => {
+    liveRef.current.showToast = (msg) => { setWarToast(msg); };
+  }, []);
+  useEffect(() => {
+    if (!warToast) return;
+    const t = setTimeout(() => setWarToast(null), 3600);
+    return () => clearTimeout(t);
+  }, [warToast]);
+  const [nearWarTable, setNearWarTable] = useState(false); // Module 1/7 proximity
+  useEffect(() => { liveRef.current.setNearWarTable = setNearWarTable; }, []);
+  const [nearBookkeeper, setNearBookkeeper] = useState(false); // Module 4 proximity
+  useEffect(() => { liveRef.current.setNearBookkeeper = setNearBookkeeper; }, []);
+  const [nearCommLink, setNearCommLink] = useState(false); // Module 5 proximity
+  useEffect(() => { liveRef.current.setNearCommLink = setNearCommLink; }, []);
+  const [kidsGame, setKidsGame] = useState(false); // Module 3 minigame overlay
+  const [kidsPrompt, setKidsPrompt] = useState(null);
+  const [kidsFeedback, setKidsFeedback] = useState(null);
+  const [nearKids, setNearKids] = useState(false);
+  useEffect(() => { liveRef.current.setNearKids = setNearKids; }, []);
+  useEffect(() => {
+    liveRef.current.toggleKidsGame = () => setKidsGame((v) => {
+      const next = !v;
+      if (next) setKidsPrompt(KIDS_SHAPES[Math.floor(Math.random() * KIDS_SHAPES.length)].id);
+      return next;
+    });
+  }, []);
+  const pickKidsShape = (id) => {
+    if (id === kidsPrompt) {
+      setKidsFeedback("yay");
+      setTimeout(() => {
+        setKidsFeedback(null);
+        setKidsPrompt(KIDS_SHAPES[Math.floor(Math.random() * KIDS_SHAPES.length)].id);
+      }, 900);
+    } else {
+      setKidsFeedback("try");
+      setTimeout(() => setKidsFeedback(null), 700);
+    }
+  };
+  const [drone, setDrone] = useState(false); // Module 8
+  useEffect(() => { liveRef.current.setDrone?.(drone); }, [drone]);
+  useEffect(() => { liveRef.current.reactSetDrone = setDrone; }, []);
+  const [dilation, setDilationState] = useState(0); // Module 9 — 0..1 slider
+  useEffect(() => { liveRef.current.setTimeDilation?.(dilation); }, [dilation]);
   // Adaptive perf watchdog needs the real React setter (distinct from the
   // imperative liveRef.current.setTurbo above, which only pushes an
   // already-decided value INTO the scene) so a sustained-low-FPS detection
@@ -3454,6 +3837,12 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       smaaPass = new SMAAPass(width * renderer.getPixelRatio(), height * renderer.getPixelRatio());
       composer.addPass(smaaPass);
     }
+    // Module 8: Heavy Guard 360° Drone/CCTV mode — fisheye + CRT static,
+    // applied last (on the final sRGB image) so it reads as a camera/lens
+    // effect, not a scene-lighting change. Off by default; 'C' toggles it.
+    const dronePass = new ShaderPass(DroneCamShader);
+    dronePass.enabled = false;
+    composer.addPass(dronePass);
     // Settings-panel graphics toggle — both passes support .enabled out of
     // the box (base three.js Pass class), so this is a cheap on/off for
     // slower devices without rebuilding the composer chain. Turbo overrides
@@ -4228,6 +4617,155 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // no chair nudge, no sit drop.
     const podIdSet = new Set(chargePods.map((p) => p.id));
     const podById = new Map(chargePods.map((p) => [p.id, p]));
+
+    // ══════════════════════════════════════════════════════════════════
+    // ALPHA MEGA-PATCH V1.0 — 9 new modules. Positions below are placed on
+    // open floor within the FLOOR_W×FLOOR_D bounds but not exhaustively
+    // checked against every existing prop; God Mode's 3D editor can
+    // reposition any of them afterward if something overlaps.
+    // ══════════════════════════════════════════════════════════════════
+
+    // ── Module 1: Heavy Guard Holographic War Table ──────────────────────
+    const warTablePos = { x: 16, z: -20 };
+    const warTable = buildWarTable();
+    warTable.group.position.set(warTablePos.x, 0, warTablePos.z);
+    scene.add(warTable.group);
+    obstacles.push({ x: warTablePos.x, z: warTablePos.z, r: 2.9 });
+    const warTableTiles = warTable.tiles.map((t) => ({ ...t, wx: warTablePos.x + t.x, wz: warTablePos.z + t.z }));
+    // Representative demo install tickets (real HeavyGuard ticket data isn't
+    // wired into this sim) — drag one onto a day tile to "schedule" it.
+    const TICKET_COLORS = [0x2ee6ff, 0xffd23f, 0xff6b6b, 0x3fd79a];
+    const warTickets = [];
+    // Module 9: ghost/"projected" tickets the time-dilation slider spawns —
+    // tracked separately so they can be cleared when the slider resets.
+    const projectedTickets = [];
+    for (let i = 0; i < 6; i++) {
+      const truck = buildTruckMini(TICKET_COLORS[i % TICKET_COLORS.length]);
+      truck.position.set(warTablePos.x - 1.6 + (i % 3) * 1.1, 1.0, warTablePos.z + 2.3 + Math.floor(i / 3) * 0.7);
+      scene.add(truck);
+      warTickets.push(truck);
+    }
+    const warDragControls = new DragControls(warTickets, camera, renderer.domElement);
+    warDragControls.addEventListener("dragstart", (e) => { e.object.userData.dragY = e.object.position.y; });
+    warDragControls.addEventListener("drag", (e) => { e.object.position.y = e.object.userData.dragY; });
+    warDragControls.addEventListener("dragend", (e) => {
+      const obj = e.object;
+      let nearest = null, bestD = Infinity;
+      warTableTiles.forEach((t) => { const d = Math.hypot(obj.position.x - t.wx, obj.position.z - t.wz); if (d < bestD) { bestD = d; nearest = t; } });
+      if (nearest && bestD < 1.3) {
+        obj.position.set(nearest.wx, 1.02, nearest.wz);
+        liveRef.current.showToast?.(`מיכל: 🚛 נקבע ליום ${nearest.label} — ההתקנה מתוזמנת ✓`);
+      } else {
+        obj.position.y = 1.0;
+      }
+    });
+
+    // ── Module 2: Binance 3D Candlestick Floor ("Algo-Trading Zone") ─────
+    const algoZonePos = { x: -18, z: 16 };
+    {
+      const zoneRing = new THREE.Mesh(new THREE.RingGeometry(2.6, 2.9, 40), new THREE.MeshBasicMaterial({ color: 0xffd23f, transparent: true, opacity: 0.5, side: THREE.DoubleSide }));
+      zoneRing.rotation.x = -Math.PI / 2; zoneRing.position.set(algoZonePos.x, 0.02, algoZonePos.z);
+      scene.add(zoneRing);
+      const zoneLabel = buildTinyLabelSprite("₿", "#ffd23f");
+      zoneLabel.scale.set(0.9, 0.9, 1); zoneLabel.position.set(algoZonePos.x, 2.6, algoZonePos.z);
+      scene.add(zoneLabel);
+    }
+    const CANDLE_SLOTS = 14;
+    const candleGroup = new THREE.Group();
+    candleGroup.position.set(algoZonePos.x - (CANDLE_SLOTS - 1) * 0.19, 0, algoZonePos.z);
+    scene.add(candleGroup);
+    const candleMats = {
+      up: new THREE.MeshStandardMaterial({ color: 0x3fd79a, emissive: 0x1f7a52, emissiveIntensity: 0.6 }),
+      down: new THREE.MeshStandardMaterial({ color: 0xff4a3e, emissive: 0x7a231f, emissiveIntensity: 0.6 }),
+    };
+    const candles = [];
+    for (let i = 0; i < CANDLE_SLOTS; i++) {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.1, 0.3), candleMats.up);
+      mesh.position.set(i * 0.38, 0.05, 0);
+      candleGroup.add(mesh);
+      candles.push({ mesh, price: null, predicted: false });
+    }
+    let lastCandlePrice = null;
+    function pushCandle(price, predicted) {
+      const oldest = candles.shift();
+      if (oldest) { candleGroup.remove(oldest.mesh); oldest.mesh.geometry.dispose(); oldest.mesh.material.dispose(); }
+      const up = lastCandlePrice === null || price >= lastCandlePrice;
+      lastCandlePrice = price;
+      const h = 0.12 + Math.random() * 0.1; // real tick deltas vary too widely for a fixed floor scale
+      const mat = (up ? candleMats.up : candleMats.down).clone();
+      if (predicted) { mat.transparent = true; mat.opacity = 0.4; }
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.3, h, 0.3), mat);
+      mesh.position.y = h / 2;
+      candleGroup.add(mesh);
+      candles.push({ mesh, price, predicted });
+      candles.forEach((c, i) => { c.mesh.position.x = i * 0.38; });
+    }
+    // Public Binance stream, no API key needed — silently no-ops if the
+    // network is unavailable (sandboxed/offline preview), same fallback
+    // posture as every other live-data widget in this app.
+    let candleWs = null;
+    try {
+      candleWs = new WebSocket("wss://stream.binance.com:9443/ws/btcusdt@trade");
+      candleWs.onmessage = (ev) => {
+        try { const price = parseFloat(JSON.parse(ev.data).p); if (!isNaN(price)) pushCandle(price, false); } catch {}
+      };
+      candleWs.onerror = () => {};
+    } catch {}
+    // The finance/"CFO" agent (ראובן) periodically walks over to watch the
+    // board instead of a scripted permanent post — a bounded visit that
+    // takes over his position directly (see the early-return in the NPC
+    // walk loop below) rather than fighting the desk/status state machine.
+    let financeVisit = { active: false, t: 0, duration: 0 };
+    let financeVisitCheckT = 0;
+
+    // ── Module 3: Interactive Companion (Kids Mode) ──────────────────────
+    const kidsCompanionPos = { x: -22, z: -16 };
+    const kidsCompanion = buildKidsCompanion();
+    kidsCompanion.position.set(kidsCompanionPos.x, 0, kidsCompanionPos.z);
+    scene.add(kidsCompanion);
+
+    // ── Module 4: Bookkeeper Export Terminal ─────────────────────────────
+    const bookkeeperPos = { x: 4, z: -24 };
+    const bookkeeperTerminal = buildBookkeeperTerminal();
+    bookkeeperTerminal.group.position.set(bookkeeperPos.x, 0, bookkeeperPos.z);
+    scene.add(bookkeeperTerminal.group);
+    obstacles.push({ x: bookkeeperPos.x, z: bookkeeperPos.z, r: 0.75 });
+
+    // ── Module 5: 'Me' Comm-Link Integrator (SIMULATED — see comment on
+    // buildCallerCardTexture) ────────────────────────────────────────────
+    const commLinkPos = { x: -12, z: 22 };
+    const commLink = buildCommLinkStation();
+    commLink.group.position.set(commLinkPos.x, 0, commLinkPos.z);
+    scene.add(commLink.group);
+    obstacles.push({ x: commLinkPos.x, z: commLinkPos.z, r: 0.5 });
+    const callerCardMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, side: THREE.DoubleSide });
+    const callerCard = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.88), callerCardMat);
+    callerCard.position.set(commLinkPos.x, 2.35, commLinkPos.z);
+    callerCard.visible = false;
+    scene.add(callerCard);
+    const FAKE_CALLERS = [
+      ["דוד לוי · אשדוד", "052-XXX-4471", "לקוח פוטנציאלי · התעניין באתמול"],
+      ["רונית כהן · באר שבע", "054-XXX-8820", "לקוח קיים · חוזה מתחדש"],
+      ["משה אברהם · קריית גת", "050-XXX-1193", "פנייה חדשה · התקנת מצלמות"],
+    ];
+    let callerCardT = 0, callerCardShowing = false;
+    function triggerFakeCall() {
+      if (callerCardShowing) return;
+      const [name, phone, tag] = FAKE_CALLERS[Math.floor(Math.random() * FAKE_CALLERS.length)];
+      callerCardMat.map = buildCallerCardTexture(name, phone, tag);
+      callerCardMat.needsUpdate = true;
+      callerCard.visible = true;
+      callerCardShowing = true;
+      callerCardT = 0;
+    }
+    liveRef.current.triggerFakeCall = triggerFakeCall;
+
+    // ── Module 6: Chery Tiggo 7 PHEV Virtual Garage ──────────────────────
+    // Reuses the existing Tiggo 7 display podium (CAR_SPOT/VEHICLE_POS,
+    // built further below) rather than a second duplicate bay — the hovering
+    // battery/mileage/loan readout is rendered as a React overlay gated on
+    // the existing `nearVehicle` proximity flag, further below.
+
     // Department zoning — the 13 desks are grouped into three clusters
     // (declared in that order in AGENTS, zipped 1:1 onto deskPositions):
     // north row = revenue/growth, west column = finance/ops, south row =
@@ -5305,6 +5843,17 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     let secSwitchT = 0;
     let podT = 0;      // 1Hz charging-pod meter/charge tick
     let lightningT = 0; // ~14Hz pod lightning-bolt flicker tick
+    // Module 7: Rap/Reggaeton victory hype mode
+    let hypeOn = false, hypeT = 0, hypeDuration = 0, hypeLasers = null;
+    // Module 8: 360° drone/CCTV camera mode
+    let droneOn = false, droneT = 0;
+    // Module 9: time-dilation slider (0 = normal speed, up to ~40x fast-forward)
+    let timeDilation = 0;
+    let dilationCandleT = 0;
+    let dilationPhaseT = 0;
+    let dilationTicketT = 0;
+    // Module 3: gamepad-triggered kids game debounce (edge-detect button 1)
+    let gpBtn1Prev = false;
     let scanT = 0;     // diagnostic sweep timer over the showroom car
     let spatialT = 9;  // spatial-bridge refresh timer (starts ripe)
     // Third-person chase-cam orbit — the left stick swings the CAMERA around
@@ -5341,6 +5890,8 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       // E toggles sitting on your own office chair (only when near it).
       if (k === "e") { liveRef.current.toggleSit?.(); liveRef.current.toggleVehicle?.(); liveRef.current.toggleFlight?.(); liveRef.current.toggleHangar?.(); }
       if (k === "escape" && liveRef.current.inVehicle) liveRef.current.setInVehicle?.(false);
+      // Module 8: 'C' detaches into the Heavy Guard 360° drone/CCTV cam.
+      if (k === "c") liveRef.current.reactSetDrone?.((v) => !v);
     };
     const onKeyUp = (e) => { liveRef.current.keys[e.key.toLowerCase()] = false; };
     window.addEventListener("keydown", onKeyDown);
@@ -5405,6 +5956,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           liveRef.current.toggleSit?.(); liveRef.current.toggleVehicle?.(); liveRef.current.toggleFlight?.(); liveRef.current.toggleHangar?.();
         }
         liveRef.current.gpBtn0Prev = gpBtn0;
+        // Module 3: Button 1 (Xbox B / PS Circle) — edge-triggered — toggles
+        // Dvora's kids color/shape-finding minigame for Ori, near her companion.
+        const gpBtn1 = !!(gp.buttons[1] && gp.buttons[1].pressed);
+        if (gpBtn1 && !gpBtn1Prev) liveRef.current.toggleKidsGame?.();
+        gpBtn1Prev = gpBtn1;
       }
 
       const jv = liveRef.current.joyVec;
@@ -5788,6 +6344,21 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         liveRef.current.setNearVehicle?.(nearVeh);
       }
 
+      // ALPHA MEGA-PATCH V1.0 proximity prompts — war table (Modules 1/7),
+      // bookkeeper terminal (Module 4), comm-link station (Module 5).
+      const nearWar = Math.hypot(playerH.group.position.x - warTablePos.x, playerH.group.position.z - warTablePos.z) < 3.4;
+      if (liveRef.current.nearWarShown !== nearWar) { liveRef.current.nearWarShown = nearWar; liveRef.current.setNearWarTable?.(nearWar); }
+      const nearBook = Math.hypot(playerH.group.position.x - bookkeeperPos.x, playerH.group.position.z - bookkeeperPos.z) < 1.6;
+      if (liveRef.current.nearBookShown !== nearBook) { liveRef.current.nearBookShown = nearBook; liveRef.current.setNearBookkeeper?.(nearBook); }
+      const nearComm = Math.hypot(playerH.group.position.x - commLinkPos.x, playerH.group.position.z - commLinkPos.z) < 1.8;
+      if (liveRef.current.nearCommShown !== nearComm) {
+        liveRef.current.nearCommShown = nearComm;
+        liveRef.current.setNearCommLink?.(nearComm);
+        if (nearComm) triggerFakeCall();
+      }
+      const nearKidsSpot = Math.hypot(playerH.group.position.x - kidsCompanionPos.x, playerH.group.position.z - kidsCompanionPos.z) < 2.2;
+      if (liveRef.current.nearKidsShown !== nearKidsSpot) { liveRef.current.nearKidsShown = nearKidsSpot; liveRef.current.setNearKids?.(nearKidsSpot); }
+
       // "Take Flight" prompt — near the RQ-180 display.
       const planeSpot = scene.userData.planeSpot;
       const nearPln = !!planeSpot && !liveRef.current.inFlight && Math.hypot(playerH.group.position.x - planeSpot.x, playerH.group.position.z - planeSpot.z) < 3.5;
@@ -5831,6 +6402,19 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       const liveChars = liveRef.current.chars || [];
       liveChars.forEach((c, ci) => {
         const h = npc[c.id]; if (!h) return;
+        // Module 2: the finance/"CFO" agent temporarily takes over his own
+        // position for a bounded visit to the algo-trading zone — an early
+        // return so this never fights the normal desk/status walk logic below.
+        if (c.id === "finance" && financeVisit.active) {
+          financeVisit.t += dt;
+          h.group.position.x = algoZonePos.x + Math.sin(financeVisit.t * 0.6) * 1.6;
+          h.group.position.z = algoZonePos.z + Math.cos(financeVisit.t * 0.4) * 1.2;
+          h.group.rotation.y += dt * 0.3;
+          h.isWalking = true;
+          setClip(h, "walk");
+          if (financeVisit.t >= financeVisit.duration) financeVisit.active = false;
+          return;
+        }
         const atDesk = c.status === "work";
         // Robots dock standing at their charging pod's center — no chair, so
         // the seat-back nudge and the sit-drop below don't apply to them.
@@ -6133,10 +6717,93 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         pod.lightning.bolts.forEach((b) => updatePodBolt(b, originWorld));
       });
 
+      // ── Module 2 (cont'd): finance agent's occasional visit to the algo
+      // zone — checked once a second, same cadence as the pod bookkeeping.
+      financeVisitCheckT += dt;
+      if (financeVisitCheckT >= 1) {
+        financeVisitCheckT = 0;
+        if (!financeVisit.active) {
+          const fc = liveChars.find((c) => c.id === "finance");
+          if (fc && !["work", "meet", "eat", "summoned"].includes(fc.status) && Math.random() < 0.01) {
+            financeVisit = { active: true, t: 0, duration: 8 + Math.random() * 6 };
+          }
+        }
+      }
+
+      // ── Module 5: fake incoming-call hologram auto-dismiss ──────────────
+      if (callerCardShowing) {
+        callerCardT += dt;
+        callerCardMat.opacity = Math.min(1, callerCardT * 3) * (callerCardT > 6 ? Math.max(0, 1 - (callerCardT - 6) * 2) : 1);
+        callerCard.lookAt(camera.position.x, callerCard.position.y, camera.position.z);
+        if (callerCardT > 6.5) { callerCardShowing = false; callerCard.visible = false; }
+      }
+
+      // ── Module 7: victory hype mode — rotating lasers + agent scale-pulse,
+      // for a bounded duration after "סגור עסקה" is pressed near the war table.
+      if (hypeOn) {
+        hypeT += dt;
+        if (hypeLasers) hypeLasers.children.forEach((b, i) => { b.rotation.y += dt * (2 + i * 0.35); });
+        liveChars.forEach((c) => {
+          const h2 = npc[c.id]; if (!h2) return;
+          h2.group.scale.setScalar(1 + Math.sin(hypeT * 6 + h2.group.position.x) * 0.06);
+        });
+        if (hypeT >= hypeDuration) {
+          hypeOn = false;
+          liveChars.forEach((c) => { const h2 = npc[c.id]; if (h2) h2.group.scale.setScalar(1); });
+          if (hypeLasers) { scene.remove(hypeLasers); hypeLasers.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); hypeLasers = null; }
+        }
+      }
+
+      // ── Module 8: 360° drone/CCTV camera mode ('C' key) — handled in the
+      // camera branch below; just ticks the shader's noise/REC timers here.
+      if (droneOn) { droneT += dt; dronePass.uniforms.time.value = droneT; }
+
+      // ── Module 9: time-dilation — fast-forwards the day/night phase clock
+      // (safe to override directly: liveRef.current.phase only gets reset by
+      // the React state mirror when the real clock/God-Mode actually changes
+      // phase, not every frame) and periodically injects a burst of
+      // predictive candles + projected war-table tickets while active.
+      if (timeDilation > 0.01) {
+        dilationPhaseT += dt * timeDilation;
+        if (dilationPhaseT >= 3) {
+          dilationPhaseT = 0;
+          liveRef.current.phase = ((liveRef.current.phase ?? 0) + 1) % (phases?.length || 5);
+        }
+        dilationCandleT += dt * timeDilation;
+        if (dilationCandleT >= 1) {
+          dilationCandleT = 0;
+          const base = lastCandlePrice || 60000;
+          pushCandle(base * (1 + (Math.random() - 0.45) * 0.01), true);
+        }
+        dilationTicketT += dt * timeDilation;
+        if (dilationTicketT >= 1.4 && projectedTickets.length < 24) {
+          dilationTicketT = 0;
+          const tile = warTableTiles[Math.floor(Math.random() * warTableTiles.length)];
+          const ghost = buildTruckMini(0xE4BC63);
+          ghost.traverse((o) => { if (o.isMesh) { o.material = o.material.clone(); o.material.transparent = true; o.material.opacity = 0.4; } });
+          const stack = projectedTickets.filter((t) => t.day === tile.day).length;
+          ghost.position.set(tile.wx, 1.0 + stack * 0.05, tile.wz + 0.5);
+          scene.add(ghost);
+          projectedTickets.push({ day: tile.day, mesh: ghost });
+        }
+      }
+
       // camera: third-person chase cam by default, or first-person from the
       // player's own eyes (toggle button) — own body hidden in first-person
       // so it doesn't block the view from the inside.
-      if (liveRef.current.inVehicle) {
+      if (droneOn) {
+        // Module 8: detached hovering drone view — slow circling orbit over
+        // the player's own position, mimicking a wall-mounted 360° unit.
+        playerH.group.visible = true;
+        const orbitR = 9, orbitH = 7;
+        const ang = droneT * 0.35;
+        camera.position.set(
+          playerH.group.position.x + Math.cos(ang) * orbitR,
+          orbitH,
+          playerH.group.position.z + Math.sin(ang) * orbitR
+        );
+        camera.lookAt(playerH.group.position.x, 1.2, playerH.group.position.z);
+      } else if (liveRef.current.inVehicle) {
         playerH.group.visible = false;
         camera.position.lerp(VEHICLE_CAM, 0.35);
         camera.lookAt(VEHICLE_LOOK);
@@ -6541,6 +7208,39 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       nightclubOn = on;
       bloomPass.radius = on ? 0.75 : 0.4;
     };
+    // Module 7: "סגור עסקה" — one-shot trigger, not a persistent toggle.
+    liveRef.current.triggerHype = () => {
+      if (hypeOn) return;
+      hypeOn = true; hypeT = 0; hypeDuration = 7;
+      hypeLasers = new THREE.Group();
+      const laserColors = [0xff2ecb, 0x36e6ff, 0xffe066, 0x7cff5c];
+      for (let i = 0; i < 6; i++) {
+        const mat = new THREE.MeshBasicMaterial({ color: laserColors[i % laserColors.length], transparent: true, opacity: 0.55 });
+        const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 16, 6), mat);
+        beam.position.set(warTablePos.x, 7, warTablePos.z);
+        beam.rotation.z = Math.PI / 2;
+        beam.rotation.y = (i / 6) * Math.PI * 2;
+        hypeLasers.add(beam);
+      }
+      scene.add(hypeLasers);
+      playHypeBeat();
+    };
+    // Module 8: '360° drone/CCTV' camera mode toggle.
+    liveRef.current.setDrone = (on) => {
+      droneOn = on;
+      dronePass.enabled = on;
+      droneT = 0;
+    };
+    // Module 9: time-dilation slider (0..1 from the HUD, scaled up here).
+    liveRef.current.setTimeDilation = (v) => {
+      timeDilation = v * 40;
+      if (v <= 0.01 && projectedTickets.length) {
+        projectedTickets.forEach((t) => { scene.remove(t.mesh); t.mesh.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); });
+        projectedTickets.length = 0;
+      }
+    };
+    // Module 4: Bookkeeper Export Terminal.
+    liveRef.current.exportBookkeeperPdf = () => exportBookkeeperPdf(liveRef.current.bizData);
     renderer.setAnimationLoop(animate);
 
     const onResize = () => {
@@ -6562,6 +7262,9 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         mount.removeEventListener("click", onGodClick);
         transformControls.dispose();
         clearInterval(autoSaveIv);
+        // ALPHA MEGA-PATCH V1.0 teardown
+        try { warDragControls.dispose(); } catch {}
+        try { candleWs?.close(); } catch {}
         scene.traverse((obj) => {
           if (obj.geometry) obj.geometry.dispose();
           if (obj.material) {
@@ -6905,6 +7608,56 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           🚗 היכנס לרכב
         </button>
       )}
+      {nearVehicle && !inVehicle && (() => {
+        const stats = carLiveStats();
+        const loan = loanStatus(new Date());
+        return (
+          <div className="off3-garage-hud">
+            <b>🔋 Tiggo 7 PHEV · Virtual Garage</b>
+            <div><span>סוללה</span><b>{stats.battery}%</b></div>
+            <div><span>קילומטראז'</span><b>{stats.mileage.toLocaleString()} ק"מ</b></div>
+            <div><span>הלוואת בלון</span><b>{loan.done ? "הסתיימה" : `${loan.monthsLeft} חודשים נותרו`}</b></div>
+            <p>* נתוני סוללה/ק"מ סימולציה; תנאי ההלוואה דוגמה בלבד — עדכן מול החוזה האמיתי.</p>
+          </div>
+        );
+      })()}
+      {nearWarTable && (
+        <div className="off3-wartable-hud">
+          <b>🚛 שולחן מלחמה · Heavy Guard</b>
+          <p>גרור משאית ליום כדי לתזמן התקנה</p>
+          <button className="off3-hype-btn" onClick={() => liveRef.current.triggerHype?.()}>🎉 סגור עסקה — 60 משאיות!</button>
+        </div>
+      )}
+      {nearBookkeeper && (
+        <button className="off3-sit" onClick={() => liveRef.current.exportBookkeeperPdf?.()} title="ייצוא PDF להנהלת חשבונות">
+          📄 ייצוא ל-מור (PDF)
+        </button>
+      )}
+      {nearKids && !kidsGame && (
+        <button className="off3-sit" onClick={() => liveRef.current.toggleKidsGame?.()} title="פתח משחק (או כפתור B בג'ויסטיק)">
+          🐾 משחק לאורי
+        </button>
+      )}
+      {warToast && <div className="off3-war-toast">{warToast}</div>}
+      {drone && (
+        <div className="off3-drone-rec"><i /> REC · Heavy Guard 360°</div>
+      )}
+      {kidsGame && (
+        <div className="off3-kids-overlay">
+          <div className="off3-kids-card">
+            <button className="off3-kids-close" onClick={() => setKidsGame(false)}>✕</button>
+            <h3>🐾 בואי נמצא צבע!</h3>
+            <p>{kidsFeedback === "yay" ? "כל הכבוד אורי! 🎉" : kidsFeedback === "try" ? "כמעט! נסי שוב 💛" : `איפה ה${KIDS_SHAPES.find((s) => s.id === kidsPrompt)?.label}?`}</p>
+            <div className="off3-kids-shapes">
+              {KIDS_SHAPES.map((s) => (
+                <button key={s.id} className={"off3-kids-shape shape-" + s.shape} style={{ "--kc": s.color }} onClick={() => pickKidsShape(s.id)}>
+                  {s.shape === "circle" ? "⬤" : s.shape === "square" ? "■" : s.shape === "triangle" ? "▲" : "★"}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
       {nearPlane && !inFlight && (
         <button className="off3-sit" onClick={() => setInFlight(true)} title="צא לטיסה (E)">
           🛫 צא לטיסה
@@ -7143,6 +7896,12 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           <label className="off3-god-row">
             <span>🏃 מהירות סוכנים</span>
             <input type="range" min="0.3" max="2.5" step="0.1" value={godSpeed} onChange={(e) => setGodSpeed(parseFloat(e.target.value))} />
+          </label>
+          <div className="off3-god-sec">⏩ Module 9 — Time-Dilation</div>
+          <label className="off3-god-row off3-god-dilation">
+            <span>מחוגת זמן — מריצה יום/לילה, יוצרת נרות ותזמונים חזויים</span>
+            <input type="range" min="0" max="1" step="0.02" value={dilation} onChange={(e) => setDilationState(parseFloat(e.target.value))} />
+            <b>{dilation <= 0.01 ? "רגיל" : `x${Math.round(dilation * 40)}`}</b>
           </label>
         </div>
       )}

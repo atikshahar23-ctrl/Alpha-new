@@ -3908,6 +3908,53 @@ function StyleTag() {
 .off3-nightclub:hover{border-color:#ff2ecb;color:#ffd7fa}
 .off3-nightclub.on{background:linear-gradient(135deg,rgba(184,75,255,.32),rgba(54,230,255,.16));
   color:#f3d9ff;border-color:#b84bff;box-shadow:0 0 16px rgba(184,75,255,.4)}
+
+/* ── ALPHA MEGA-PATCH V1.0 — module UI ─────────────────────────────────── */
+.off3-garage-hud{position:absolute;bottom:150px;left:50%;transform:translateX(-50%);z-index:31;
+  min-width:260px;padding:12px 16px;border-radius:14px;background:rgba(8,12,20,.78);
+  border:1px solid rgba(228,188,99,.35);backdrop-filter:blur(8px);font-family:'Rubik';color:#eaf1ff}
+.off3-garage-hud b{display:block;font-size:13px;margin-bottom:6px;color:#E4BC63}
+.off3-garage-hud div{display:flex;align-items:center;justify-content:space-between;font-size:12px;color:#c9d4e8;padding:2px 0}
+.off3-garage-hud div b{display:inline;margin:0;color:#eaf1ff;font-size:12px}
+.off3-garage-hud p{margin-top:8px;font-size:9.5px;color:#8a95ab;line-height:1.4}
+
+.off3-wartable-hud{position:absolute;bottom:150px;left:50%;transform:translateX(-50%);z-index:31;
+  min-width:240px;padding:12px 16px;border-radius:14px;background:rgba(8,12,20,.78);
+  border:1px solid rgba(46,230,255,.35);backdrop-filter:blur(8px);font-family:'Rubik';color:#eaf1ff;text-align:center}
+.off3-wartable-hud b{display:block;font-size:13px;margin-bottom:4px;color:#6fe6ff}
+.off3-wartable-hud p{font-size:11px;color:#9fb6e0;margin-bottom:10px}
+.off3-hype-btn{border:none;border-radius:20px;padding:10px 20px;font-family:'Rubik';font-weight:900;font-size:13px;
+  cursor:pointer;color:#1a1024;background:linear-gradient(135deg,#ffe066,#ff2ecb,#36e6ff);background-size:220% 220%;
+  animation:hypeShift 3s ease infinite;box-shadow:0 8px 22px rgba(255,46,203,.35)}
+@keyframes hypeShift{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+
+.off3-war-toast{position:absolute;top:96px;left:50%;transform:translateX(-50%);z-index:40;
+  padding:10px 20px;border-radius:14px;background:rgba(10,18,12,.9);border:1px solid rgba(63,215,154,.5);
+  color:#d7ffe9;font-family:'Rubik';font-weight:700;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.4);
+  animation:acRise .25s ease both}
+
+.off3-drone-rec{position:absolute;top:14px;left:50%;transform:translateX(-50%);z-index:32;
+  display:flex;align-items:center;gap:8px;padding:8px 16px;border-radius:20px;background:rgba(10,4,4,.75);
+  border:1px solid rgba(255,60,60,.5);color:#ffb3b3;font-family:'Space Grotesk';font-weight:800;font-size:12px;letter-spacing:1px}
+.off3-drone-rec i{width:10px;height:10px;border-radius:50%;background:#ff3c3c;box-shadow:0 0 8px #ff3c3c;animation:recBlink 1s ease-in-out infinite}
+@keyframes recBlink{0%,100%{opacity:1}50%{opacity:.2}}
+
+.off3-kids-overlay{position:absolute;inset:0;z-index:50;background:rgba(10,14,10,.7);
+  display:flex;align-items:center;justify-content:center;animation:acRise .2s ease both}
+.off3-kids-card{position:relative;width:min(420px,88vw);padding:28px 24px;border-radius:26px;text-align:center;
+  background:linear-gradient(165deg,#fff8e8,#ffe9c2);box-shadow:0 20px 60px rgba(0,0,0,.4);font-family:'Rubik'}
+.off3-kids-card h3{margin:0 0 10px;font-size:22px;color:#7a4a1e}
+.off3-kids-card p{margin:0 0 18px;font-size:16px;color:#a5651f;font-weight:700}
+.off3-kids-close{position:absolute;top:12px;left:12px;width:32px;height:32px;border-radius:50%;border:none;
+  background:rgba(0,0,0,.12);color:#7a4a1e;font-size:15px;cursor:pointer}
+.off3-kids-shapes{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.off3-kids-shape{aspect-ratio:1;border-radius:22px;border:none;cursor:pointer;font-size:44px;color:#fff;
+  background:var(--kc);box-shadow:0 8px 18px rgba(0,0,0,.25);transition:transform .12s ease}
+.off3-kids-shape:active{transform:scale(.92)}
+
+.off3-god-dilation{display:flex;flex-direction:column;gap:4px;align-items:stretch}
+.off3-god-dilation span{font-size:10.5px;color:#8a95ab;line-height:1.3}
+.off3-god-dilation b{align-self:flex-end;font-size:11px;color:#E4BC63;font-weight:800}
 .off3-phonebtn{position:absolute;top:56px;right:96px;z-index:3;width:34px;height:34px;border-radius:50%;
   display:flex;align-items:center;justify-content:center;background:rgba(6,9,18,.72);
   border:1px solid rgba(46,230,255,.4);font-size:15px;cursor:pointer;backdrop-filter:blur(8px)}
