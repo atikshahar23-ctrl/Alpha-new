@@ -12,6 +12,7 @@ import BULL_LOGO from './heavyguard-logo.png';
 // dashboard and the agents use, so "cumulative revenue" here matches the
 // bookkeeper exactly (live installs only count after the last statement).
 import { BOOKS_LAST_KEY, bookedIncome, cumulativeIncome } from '../src/modules/books';
+import { fetchLeadsFromCloud, pushLeadsToCloud, leadsCloudConfigured } from './leadsCloud.js';
 // xlsx is large (~400KB). Load it on demand only when the user actually
 // exports, so it stays out of the initial bundle and first paint is faster.
 
@@ -534,12 +535,35 @@ function Leads({ onBack, showToast }) {
   const [statusFilter, setStatusFilter] = useState('');
   const [selectedId, setSelectedId] = useState(null);
   const [page, setPage] = useState(0);
+  const [leadsSource, setLeadsSource] = useState(null); // 'cloud' | 'file' — which one is actually loaded
+  const [cloudBusy, setCloudBusy] = useState(false);
   const PAGE = 60;
 
   useEffect(() => {
     setCrmData(loadCrm());
-    import('./leadsData.json').then(m => setRawLeads(m.default));
+    // The 2MB leadsData.json is a static build-time seed — try the live
+    // Firestore copy first (see leadsCloud.js) so adding/editing leads never
+    // again requires a rebuild + redeploy; fall back to the bundled file
+    // when Firebase isn't configured yet or the cloud copy hasn't been
+    // seeded (via the "העלה לענן" button below).
+    fetchLeadsFromCloud().then((cloudLeads) => {
+      if (cloudLeads) { setRawLeads(cloudLeads); setLeadsSource('cloud'); return; }
+      import('./leadsData.json').then(m => { setRawLeads(m.default); setLeadsSource('file'); });
+    });
   }, []);
+
+  const uploadLeadsToCloud = useCallback(async () => {
+    if (!rawLeads || cloudBusy) return;
+    if (!leadsCloudConfigured()) {
+      showToast && showToast('לא הוגדר חיבור ענן — הגדר Firebase במסך הסוכנים או ה-CRM של איתי קודם');
+      return;
+    }
+    setCloudBusy(true);
+    const chunks = await pushLeadsToCloud(rawLeads);
+    setCloudBusy(false);
+    if (chunks) { setLeadsSource('cloud'); showToast && showToast(`מאגר הלידים הועלה לענן (${chunks} חלקים) ✓`); }
+    else showToast && showToast('העלאה לענן נכשלה');
+  }, [rawLeads, cloudBusy, showToast]);
 
   const leads = useMemo(() => {
     if (!rawLeads) return [];
@@ -592,6 +616,16 @@ function Leads({ onBack, showToast }) {
         <button className="hg2-back" onClick={onBack}><ChevronLeft size={22}/></button>
         <img src={BULL_LOGO} className="crm-head-logo" alt=""/>
         <div><div className="hg2-flowhead-title">ניהול לידים</div><div className="hg2-flowhead-sub">בסיס נתונים עסקי</div></div>
+        <button
+          className="hg2-back"
+          style={{ marginRight: 'auto', display: 'flex', alignItems: 'center', gap: 6, width: 'auto', padding: '0 12px', fontSize: 12 }}
+          onClick={uploadLeadsToCloud}
+          disabled={cloudBusy}
+          title="מאגר הלידים חי בקובץ שדורש בנייה מחדש כדי לעדכן — העלאה לענן הופכת אותו לבסיס נתונים אמיתי שאפשר לעדכן בלי דיפלוי"
+        >
+          <Globe size={14} />
+          {cloudBusy ? 'מעלה…' : leadsSource === 'cloud' ? 'מסונכרן לענן ✓' : 'העלה לענן'}
+        </button>
       </div>
 
       {!rawLeads ? (

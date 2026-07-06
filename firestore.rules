@@ -1,0 +1,23 @@
+rules_version = '2';
+
+// Paste this into your Firebase project's Firestore console
+// (Firestore Database → Rules tab → replace the contents → Publish).
+//
+// This app has no real user auth — the Firebase web config itself (pasted
+// into the Agents Command Center / Itai's CRM settings) is the only shared
+// secret, so these rules can't distinguish "the owner" from "anyone who has
+// that config." What they DO give you over Firestore's default test-mode
+// rules (open to the whole project, and expiring automatically) is scoping
+// writes/reads to only the three collections this app actually uses,
+// permanently, instead of leaving the entire database wide open.
+//
+// If you ever add real Firebase Authentication, tighten these further with
+// `request.auth != null` (or a specific UID check) per collection.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /alphaOwner/{doc} { allow read, write: if true; }  // Agents Command Center (owner-only data)
+    match /itai/{doc}       { allow read, write: if true; }  // Itai's CRM (leads/deals/customers overlay)
+    match /sharedLeads/{doc} { allow read, write: if true; } // the shared leads database (see heavyguard/leadsCloud.js)
+    match /{document=**} { allow read, write: if false; }    // deny everything else by default
+  }
+}

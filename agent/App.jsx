@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import BULL_LOGO from "../heavyguard/heavyguard-logo.png";
 import * as cloud from "./cloud";
+import { fetchLeadsFromCloud } from "../heavyguard/leadsCloud.js";
 // leadsData.json is ~2MB — load it lazily (same pattern as heavyguard/App.jsx)
 // so it doesn't bloat the CRM's initial bundle / first paint.
 
@@ -288,7 +289,15 @@ export default function App() {
   const themeVars = (ITAI_THEMES[theme] || ITAI_THEMES.gold).vars;
 
   const [rawLeads, setRawLeads] = useState([]);
-  useEffect(() => { import("../heavyguard/leadsData.json").then((m) => setRawLeads(m.default)); }, []);
+  useEffect(() => {
+    // Same live-database-over-static-file preference as HeavyGuard's own
+    // Leads screen (see heavyguard/leadsCloud.js) — whichever one of them
+    // uploaded the dataset to the cloud, both apps now read the same copy.
+    fetchLeadsFromCloud().then((cloudLeads) => {
+      if (cloudLeads) { setRawLeads(cloudLeads); return; }
+      import("../heavyguard/leadsData.json").then((m) => setRawLeads(m.default));
+    });
+  }, []);
   const leads = useMemo(() => rawLeads.map((l) => ({
     ...l,
     crmStatus: crm[l.id]?.crmStatus || (l.xStatus === "לקוח" ? "לקוח" : "חדש"),
