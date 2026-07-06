@@ -3552,6 +3552,58 @@ export function mountApp(root: HTMLElement) {
   const escHtml = (s: string) => (s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
   const readTrips = (): any[] => { try { return JSON.parse(localStorage.getItem('hg2:trips') || '[]') || []; } catch { return []; } };
   const writeTrips = (a: any[]) => { try { localStorage.setItem('hg2:trips', JSON.stringify(a)); } catch {} puterSync.scheduleSync?.(); };
+  // Heavy Guard's registered address (also on every invoice/quote) — every
+  // trip is a round trip that starts and ends here, so km can be derived
+  // from the daily install report instead of typed in by hand each time.
+  const HQ_LABEL = 'דן 7, ראשל"צ';
+  const HQ_GEO_KEY = 'ראשון לציון';
+  // Straight-line (haversine) distance undercounts real road km, so a fixed
+  // factor approximates actual driving distance for a rough, automatic figure.
+  const ROAD_FACTOR = 1.3;
+  function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+    const R = 6371;
+    const dLat = (b.lat - a.lat) * Math.PI / 180, dLng = (b.lng - a.lng) * Math.PI / 180;
+    const s = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
+  }
+  function resolveGeo(loc: string): { lat: number; lng: number } | null {
+    const k = (loc || '').trim();
+    if (!k) return null;
+    if (FLEET_GEO[k]) return FLEET_GEO[k];
+    for (const key of Object.keys(FLEET_GEO)) { if (k.includes(key) || key.includes(k)) return FLEET_GEO[key]; }
+    return null;
+  }
+  // Round-trip km from HQ to a reported location and back — null when the
+  // location doesn't resolve to a known city, so callers can fall back to
+  // manual entry instead of showing a made-up number.
+  function roundTripKm(loc: string): number | null {
+    const hq = FLEET_GEO[HQ_GEO_KEY], g = resolveGeo(loc);
+    if (!hq || !g) return null;
+    return Math.round(haversineKm(hq, g) * 2 * ROAD_FACTOR * 10) / 10;
+  }
+  // Turns the daily install report (hg2:index — every "onHgReport" voice/chat
+  // entry, each with its own location + date) into fleet trips: one round
+  // trip HQ→location→HQ per reported day+location that isn't already logged,
+  // with km computed automatically instead of typed in by hand.
+  function syncTripsFromDailyReport(): number {
+    const idx = readIdx();
+    const trips = readTrips();
+    const existing = new Set(trips.map((t: any) => `${t.date}|${t.to}`));
+    let added = 0;
+    idx.forEach((r: any) => {
+      const loc = (r.location || '').trim(), date = r.date || '';
+      if (!loc || !date) return;
+      const key = `${date}|${loc}`;
+      if (existing.has(key)) return;
+      const km = roundTripKm(loc);
+      if (km == null) return;
+      trips.unshift({ id: 'auto-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), from: HQ_LABEL, to: loc, date, km, note: 'מהדיווח היומי · הלוך ושוב' });
+      existing.add(key);
+      added++;
+    });
+    if (added) writeTrips(trips);
+    return added;
+  }
   const readIdx = (): any[] => { try { return JSON.parse(localStorage.getItem('hg2:index') || '[]') || []; } catch { return []; } };
   const readTasks = (): any[] => { try { return JSON.parse(localStorage.getItem('hg2:tasks') || '[]') || []; } catch { return []; } };
   const writeTasks = (a: any[]) => { try { localStorage.setItem('hg2:tasks', JSON.stringify(a)); } catch {} puterSync.scheduleSync?.(); };
@@ -3657,10 +3709,11 @@ export function mountApp(root: HTMLElement) {
         <section class="ops-panel">
           <div class="ops-h">🚚 ניהול צי · נסיעות</div>
           <div class="fl-add">
-            <input id="flFrom" placeholder="מאיפה" dir="rtl"/>
+            <input id="flFrom" placeholder="מאיפה" dir="rtl" value="${escHtml(HQ_LABEL)}"/>
             <input id="flTo" placeholder="לאן (כתובת / עיר)" dir="rtl"/>
-            <div class="fl-add-row"><input id="flDate" type="date" value="${today}"/><input id="flKm" type="number" placeholder='ק&quot;מ' dir="ltr"/></div>
+            <div class="fl-add-row"><input id="flDate" type="date" value="${today}"/><input id="flKm" type="number" placeholder='ק&quot;מ (מחושב אוטומטית)' dir="ltr"/></div>
             <button id="flAdd">+ הוסף נסיעה</button>
+            <button id="flAutoKm" class="fl-auto" title="מוסיף נסיעת הלוך-חזור מ-${escHtml(HQ_LABEL)} לכל מיקום שדווח היום ועדיין לא נוסף">🧮 חשב קילומטראז' מהדיווח היומי</button>
           </div>
           <div class="fl-tot" id="flTot">${trips.length} נסיעות · ${totalKm} ק"מ סה"כ</div>
           <div class="ops-scroll fl-list" id="flList">${trips.map(tripRowHtml).join('') || '<div class="ops-empty">אין נסיעות עדיין — הוסף ונווט ב-Waze</div>'}</div>
@@ -3723,12 +3776,31 @@ export function mountApp(root: HTMLElement) {
       const arr = readTrips();
       arr.unshift({ id: Date.now().toString(36), from: g('flFrom').trim(), to, date: g('flDate'), km: g('flKm'), note: '' });
       writeTrips(arr);
-      (document.getElementById('flFrom') as HTMLInputElement).value = '';
+      // "from" stays HQ — every trip is the same round trip, per the owner.
       (document.getElementById('flTo') as HTMLInputElement).value = '';
       (document.getElementById('flKm') as HTMLInputElement).value = '';
       refreshTripList();
     });
     bindTripDel();
+    // Auto-fill round-trip km as soon as "to" resolves to a known city —
+    // only while the km field hasn't been hand-edited this session, so a
+    // deliberate manual figure is never silently overwritten.
+    let flKmTouched = false;
+    body.querySelector('#flKm')?.addEventListener('input', () => { flKmTouched = true; });
+    body.querySelector('#flTo')?.addEventListener('input', (e) => {
+      if (flKmTouched) return;
+      const km = roundTripKm((e.target as HTMLInputElement).value);
+      const kmEl = body.querySelector('#flKm') as HTMLInputElement | null;
+      if (kmEl && km != null) kmEl.value = String(km);
+    });
+    body.querySelector('#flAutoKm')?.addEventListener('click', (e) => {
+      const btn = e.currentTarget as HTMLButtonElement;
+      const added = syncTripsFromDailyReport();
+      refreshTripList();
+      const original = btn.textContent;
+      btn.textContent = added > 0 ? `✅ נוספו ${added} נסיעות` : 'הכל כבר מעודכן';
+      setTimeout(() => { btn.textContent = original; }, 2200);
+    });
 
     // ── Tasks: toggle done in place (no full re-render) ──
     body.querySelectorAll('.ops-task').forEach((el) => (el as HTMLElement).addEventListener('change', () => {
