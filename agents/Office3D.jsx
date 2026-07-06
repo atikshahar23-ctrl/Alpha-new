@@ -5854,6 +5854,24 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     let dilationTicketT = 0;
     // Module 3: gamepad-triggered kids game debounce (edge-detect button 1)
     let gpBtn1Prev = false;
+    // Only trust a gamepad index that fired a REAL "gamepadconnected" event —
+    // navigator.getGamepads() can return stale/phantom entries (Bluetooth
+    // devices, leftover browser state) reporting connected:true with drifting
+    // or stuck axis values even when no controller was ever actually paired,
+    // which was walking the player on its own with nothing touched.
+    let gamepadIndex = null;
+    const onGamepadConnected = (e) => { gamepadIndex = e.gamepad.index; };
+    const onGamepadDisconnected = (e) => { if (gamepadIndex === e.gamepad.index) gamepadIndex = null; };
+    window.addEventListener("gamepadconnected", onGamepadConnected);
+    window.addEventListener("gamepaddisconnected", onGamepadDisconnected);
+    // A real controller already connected before this component mounted may
+    // never fire its own "gamepadconnected" event again — pick it up now,
+    // but only if it reports the standard mapping (a genuine recognized
+    // controller; phantom/stale entries typically report a blank mapping).
+    try {
+      const existingPads = navigator.getGamepads ? navigator.getGamepads() : [];
+      for (const g of existingPads) { if (g && g.connected && g.mapping === "standard") { gamepadIndex = g.index; break; } }
+    } catch {}
     let scanT = 0;     // diagnostic sweep timer over the showroom car
     let spatialT = 9;  // spatial-bridge refresh timer (starts ripe)
     // Third-person chase-cam orbit — the left stick swings the CAMERA around
@@ -5938,11 +5956,10 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       // runs alongside keyboard/touch, never replacing them, and only
       // overwrites a vec when its OWN touch stick isn't mid-drag so a
       // finger on the on-screen stick always wins over a stale controller.
-      const GP_DEADZONE = 0.15;
+      const GP_DEADZONE = 0.2;
       const gpAxis = (v) => (Math.abs(v) < GP_DEADZONE ? 0 : v);
-      const gpList = typeof navigator !== "undefined" && navigator.getGamepads ? navigator.getGamepads() : null;
-      const gp = gpList ? Array.from(gpList).find((g) => g && g.connected) : null;
-      if (gp) {
+      const gp = (gamepadIndex !== null && navigator.getGamepads) ? navigator.getGamepads()[gamepadIndex] : null;
+      if (gp && gp.connected) {
         const gx = gpAxis(gp.axes[0] || 0), gy = gpAxis(gp.axes[1] || 0);
         const gcx = gpAxis(gp.axes[2] || 0), gcy = gpAxis(gp.axes[3] || 0);
         if (gx || gy) liveRef.current.joyVec = { x: gx, y: gy };
@@ -7265,6 +7282,8 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         // ALPHA MEGA-PATCH V1.0 teardown
         try { warDragControls.dispose(); } catch {}
         try { candleWs?.close(); } catch {}
+        window.removeEventListener("gamepadconnected", onGamepadConnected);
+        window.removeEventListener("gamepaddisconnected", onGamepadDisconnected);
         scene.traverse((obj) => {
           if (obj.geometry) obj.geometry.dispose();
           if (obj.material) {
