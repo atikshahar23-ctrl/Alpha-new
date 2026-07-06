@@ -43,6 +43,17 @@ function applyAniso(root) {
     });
   });
 }
+// Scene-teardown texture disposal — every unmount cleanup used to free only
+// material.map, but the GLTF character/robot/Sophia/Pokemon models loaded
+// into this scene carry a full PBR texture set (normal/roughness/metalness/
+// emissive/ao, same slots applyAniso touches above), so every one of those
+// besides the base color map was leaking on unmount. One shared helper so
+// every cleanup path (main scene + each overlay) disposes the same slots.
+const MATERIAL_TEX_SLOTS = ["map", "normalMap", "roughnessMap", "metalnessMap", "emissiveMap", "aoMap", "alphaMap"];
+function disposeMaterial(m) {
+  MATERIAL_TEX_SLOTS.forEach((k) => { if (m[k]) m[k].dispose(); });
+  m.dispose();
+}
 
 /* ════════════════════════════════════════════════════════════════════
    3D OFFICE — walk the floor yourself (WASD / joystick), approach a
@@ -2699,8 +2710,19 @@ function SpaceOverlay({ onReturn, load = 0 }) {
       mount.removeEventListener("touchstart", onDown);
       mount.removeEventListener("touchmove", onMove);
       mount.removeEventListener("touchend", onUp);
-      starGeo.dispose();
-      nebGeo.dispose();
+      // The sun, stream rings, and all 5 planets + their orbit rings (10 more
+      // geometry/material pairs) were never disposed here — only the two
+      // particle-field geometries were, and not even their own materials.
+      // Every Space-portal visit was leaking a full scene's worth of GPU
+      // buffers. A generic traverse catches all of it, particle fields
+      // included, instead of naming each mesh by hand.
+      scene.traverse((obj) => {
+        if (obj.geometry) obj.geometry.dispose();
+        if (obj.material) {
+          const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+          mats.forEach(disposeMaterial);
+        }
+      });
       renderer.dispose();
       if (renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement);
     };
@@ -3168,7 +3190,7 @@ function FlightOverlay({ onReturn }) {
         if (obj.geometry) obj.geometry.dispose();
         if (obj.material) {
           const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-          mats.forEach((m) => { if (m.map) m.map.dispose(); m.dispose(); });
+          mats.forEach(disposeMaterial);
         }
       });
       renderer.dispose();
@@ -3734,7 +3756,7 @@ function HangarOverlay({ onReturn }) {
         if (obj.geometry) obj.geometry.dispose();
         if (obj.material) {
           const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-          mats.forEach((m) => { if (m.map) m.map.dispose(); m.dispose(); });
+          mats.forEach(disposeMaterial);
         }
       });
       renderer.dispose();
@@ -7895,7 +7917,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           if (obj.geometry) obj.geometry.dispose();
           if (obj.material) {
             const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-            mats.forEach((m) => { if (m.map) m.map.dispose(); m.dispose(); });
+            mats.forEach(disposeMaterial);
           }
         });
         try { composer.dispose(); } catch {}

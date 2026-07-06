@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, lazy, Suspense } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback, memo, lazy, Suspense } from "react";
 import {
   Crown, TrendingUp, TrendingDown, Wrench, Megaphone, Code2, Cpu, BarChart3, HeartHandshake,
   Send, X, Sparkles, Activity, Lightbulb, LayoutGrid, Settings as SettingsIcon,
@@ -1795,7 +1795,19 @@ function RosterView({ onOpen, onOffice, activity }) {
     for (const a of activity) if (!m[a.agentId]) m[a.agentId] = a;
     return m;
   }, [activity]);
-  const actsFor = (id) => activity.filter((x) => x.agentId === id);
+  // actsFor() used to run a fresh activity.filter() per team member on every
+  // render of this view (13 full scans of the activity log each time, times
+  // however often App()'s various polling intervals re-render this tree) —
+  // one grouping pass here instead, memoized on the activity array itself.
+  // AgentPanel needs the full per-agent list (it shows both a total count
+  // and up to 7 rows), so this holds everything, not just AgentCube's top 3.
+  const actsByAgent = useMemo(() => {
+    const m = {};
+    for (const a of activity) (m[a.agentId] ||= []).push(a);
+    return m;
+  }, [activity]);
+  const EMPTY_ACTS = useMemo(() => [], []);
+  const actsFor = (id) => actsByAgent[id] || EMPTY_ACTS;
   const panelAgent = panelId ? byId(panelId) : null;
 
   return (
