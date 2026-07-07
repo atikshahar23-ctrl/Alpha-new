@@ -19,6 +19,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.109.1",
     "@types/three": "^0.184.1",
+    "cannon-es": "^0.20.0",
     "fbx2gltf": "^0.9.7-p1",
     "firebase": "^12.15.0",
     "html2canvas": "^1.4.1",

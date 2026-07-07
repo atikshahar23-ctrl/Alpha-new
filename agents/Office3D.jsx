@@ -14,6 +14,7 @@ import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { SMAAPass } from "three/examples/jsm/postprocessing/SMAAPass.js";
 import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
 import { DragControls } from "three/examples/jsm/controls/DragControls.js";
+import * as CANNON from "cannon-es";
 import jsPDF from "jspdf";
 import { MessageCircle, Eye, User, Mic, VolumeX, Volume2, X, Zap, Settings as SettingsIcon, Trash2, Radio, Pause, Lock, Unlock } from "lucide-react";
 import { useDeviceProfile } from "./deviceProfiler.js";
@@ -3698,6 +3699,115 @@ function buildRoadsideLamp() {
   return g;
 }
 
+// Procedural asphalt normal map — a seeded noise heightfield, box-blurred
+// once for smoother bumps, then converted to a tangent-space normal via
+// central differences (the same principle any offline normal-map bake
+// uses, just done in a canvas instead of an image-editing tool). Gives the
+// track's asphalt real per-pixel light response instead of a flat-shaded
+// color texture, without needing an actual authored PBR asset.
+function buildAsphaltNormalMap() {
+  const size = 128;
+  const height = new Float32Array(size * size);
+  const rnd = mulberry32(53);
+  for (let i = 0; i < size * size; i++) height[i] = rnd();
+  const blurred = new Float32Array(size * size);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      let sum = 0;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        sum += height[((y + dy + size) % size) * size + ((x + dx + size) % size)];
+      }
+      blurred[y * size + x] = sum / 9;
+    }
+  }
+  const cvs = document.createElement("canvas");
+  cvs.width = cvs.height = size;
+  const ctx = cvs.getContext("2d");
+  const img = ctx.createImageData(size, size);
+  const strength = 1.6;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const l = blurred[y * size + ((x - 1 + size) % size)], r = blurred[y * size + ((x + 1) % size)];
+      const u = blurred[((y - 1 + size) % size) * size + x], d = blurred[((y + 1) % size) * size + x];
+      const nx = (l - r) * strength, ny = (u - d) * strength, nz = 1;
+      const len = Math.hypot(nx, ny, nz) || 1;
+      const i = (y * size + x) * 4;
+      img.data[i] = ((nx / len) * 0.5 + 0.5) * 255;
+      img.data[i + 1] = ((ny / len) * 0.5 + 0.5) * 255;
+      img.data[i + 2] = ((nz / len) * 0.5 + 0.5) * 255;
+      img.data[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(cvs);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+// One wheel — tire + rim, cylinder axis rotated onto the local X (axle)
+// axis so it reads as a wheel regardless of which way the car body faces.
+// Driven independently from the RaycastVehicle's own wheelInfos each frame
+// (position, steer angle, spin), not baked into the car's GLB — the model
+// wasn't authored with rigged wheel nodes to hook into.
+function buildCarWheel() {
+  const g = new THREE.Group();
+  const tire = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.24, 20), new THREE.MeshStandardMaterial({ color: 0x141414, roughness: 0.92 }));
+  tire.rotation.z = Math.PI / 2;
+  tire.castShadow = true;
+  const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.19, 0.26, 12), new THREE.MeshStandardMaterial({ color: 0xaeb4bb, roughness: 0.32, metalness: 0.75 }));
+  rim.rotation.z = Math.PI / 2;
+  g.add(tire, rim);
+  return g;
+}
+// 360° tactical camera shader — same fisheye-distortion + scanline family
+// as the office's own DroneCamShader (Module 8), plus a screen-space
+// digital grid overlay for the "tactical" HUD read Heavy Guard's own
+// 360-camera systems use.
+const TacticalCamShader = {
+  uniforms: { tDiffuse: { value: null }, time: { value: 0 }, amount: { value: 0.35 } },
+  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: `
+    uniform sampler2D tDiffuse; uniform float time; uniform float amount; varying vec2 vUv;
+    void main(){
+      vec2 uv = vUv * 2.0 - 1.0;
+      float r2 = dot(uv, uv);
+      vec2 warped = uv * (1.0 + amount * r2);
+      vec2 suv = warped * 0.5 + 0.5;
+      vec3 col;
+      if (suv.x < 0.0 || suv.x > 1.0 || suv.y < 0.0 || suv.y > 1.0) { col = vec3(0.02, 0.05, 0.03); }
+      else { col = texture2D(tDiffuse, suv).rgb; }
+      float gx = abs(fract(suv.x * 24.0) - 0.5);
+      float gy = abs(fract(suv.y * 24.0) - 0.5);
+      float grid = smoothstep(0.485, 0.5, max(gx, gy));
+      col += vec3(0.15, 0.9, 0.5) * grid * 0.22;
+      float scan = sin(suv.y * 720.0 + time * 2.0) * 0.03;
+      col -= scan;
+      col *= 1.0 - r2 * 0.3;
+      gl_FragColor = vec4(col, 1.0);
+    }`,
+};
+// Cheap radial speed-blur — a fixed multi-tap sample toward screen center,
+// intensity driven by the car's own speed. Not true per-object motion-
+// vector blur (that needs a velocity G-buffer and its own render pass —
+// disproportionate for one arcade driving mode), but the same "speed
+// lines toward center" trick racing games have used for decades, and it
+// reads convincingly at speed.
+const SpeedBlurShader = {
+  uniforms: { tDiffuse: { value: null }, amount: { value: 0 } },
+  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: `
+    uniform sampler2D tDiffuse; uniform float amount; varying vec2 vUv;
+    void main(){
+      vec2 dir = vUv - 0.5;
+      vec3 col = vec3(0.0);
+      const int SAMPLES = 8;
+      for (int i = 0; i < SAMPLES; i++) {
+        float t = float(i) / float(SAMPLES - 1);
+        col += texture2D(tDiffuse, vUv - dir * amount * t * 0.06).rgb;
+      }
+      gl_FragColor = vec4(col / float(SAMPLES), 1.0);
+    }`,
+};
+
 function HangarOverlay({ onReturn, liveRef, onDrive }) {
   const mountRef = useRef(null);
   const [nearTiggo, setNearTiggo] = useState(false);
@@ -3971,6 +4081,12 @@ function DriveOverlay({ onReturn, liveRef }) {
   const speedRef = useRef(null);
   const distRef = useRef(null);
   const gaugeRef = useRef(null);
+  const rpmRef = useRef(null);
+  const battRef = useRef(null);
+  const radarRef = useRef(null);
+  const [view360, setView360] = useState(false);
+  const view360Ref = useRef(false);
+  useEffect(() => { view360Ref.current = view360; }, [view360]);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -3982,11 +4098,31 @@ function DriveOverlay({ onReturn, liveRef }) {
     scene.fog = new THREE.Fog(0xbfe3ff, 60, 320);
 
     const camera = new THREE.PerspectiveCamera(66, mount.clientWidth / mount.clientHeight, 0.1, 800);
+    const BASE_FOV = 66;
+    // Top-down "tactical" camera for the 360° view — a separate orthographic
+    // camera (not just a repositioned perspective one) so the bird's-eye
+    // read is genuinely flat/undistorted before the fisheye pass warps it,
+    // the way a real overhead surround-view stitch would be.
+    const ORTHO_SIZE = 14;
+    const camera360 = new THREE.OrthographicCamera(-ORTHO_SIZE, ORTHO_SIZE, ORTHO_SIZE, -ORTHO_SIZE, 0.1, 400);
+    camera360.up.set(0, 0, -1); // looking straight down; keep "car forward" reading as "up" on screen
+
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
     renderer.setSize(mount.clientWidth, mount.clientHeight);
     renderer.shadowMap.enabled = true;
     mount.appendChild(renderer.domElement);
+
+    const composer = new EffectComposer(renderer);
+    const renderPass = new RenderPass(scene, camera);
+    composer.addPass(renderPass);
+    const speedBlurPass = new ShaderPass(SpeedBlurShader);
+    composer.addPass(speedBlurPass);
+    const tacticalPass = new ShaderPass(TacticalCamShader);
+    tacticalPass.enabled = false;
+    composer.addPass(tacticalPass);
+    composer.addPass(new OutputPass());
+    composer.setSize(mount.clientWidth, mount.clientHeight);
 
     const sun = new THREE.DirectionalLight(0xfff2d8, 1.2);
     sun.position.set(60, 90, 40);
@@ -3998,32 +4134,98 @@ function DriveOverlay({ onReturn, liveRef }) {
     scene.add(sun, sun.target);
     scene.add(new THREE.AmbientLight(0xbcd6ff, 0.6));
 
-    // Grass field under and well past the track.
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), new THREE.MeshStandardMaterial({ map: (() => { const t = buildGrassTexture(); t.repeat.set(60, 60); return t; })(), roughness: 1 }));
+    // Grass field under and well past the track — the blades themselves are
+    // InstancedMesh (one draw call for thousands of them) rather than one
+    // mesh each, so the scene can afford real per-blade geometry instead of
+    // a flat texture doing all the work, without tanking frame rate.
+    const grassTex = buildGrassTexture(); grassTex.repeat.set(60, 60);
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), new THREE.MeshStandardMaterial({ map: grassTex, roughness: 1 }));
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     scene.add(ground);
 
-    // The track itself.
+    // The track itself — asphalt color map plus a procedurally-generated
+    // normal map (real per-pixel bump response to the sun, not a flat tint).
     const centerline = buildTrackCenterline(180);
     const trackGeo = buildTrackGeometry(centerline);
-    const trackMat = new THREE.MeshStandardMaterial({ map: buildTrackTexture(), roughness: 0.85, metalness: 0.05, side: THREE.DoubleSide });
+    const trackNormalMap = buildAsphaltNormalMap();
+    trackNormalMap.repeat.set(1, Math.round(TRACK_LENGTH / (TRACK_WIDTH * 2)) * 3);
+    const trackMat = new THREE.MeshStandardMaterial({
+      map: buildTrackTexture(), normalMap: trackNormalMap, normalScale: new THREE.Vector2(0.6, 0.6),
+      roughness: 0.85, metalness: 0.05, side: THREE.DoubleSide,
+    });
     trackMat.map.repeat.set(1, Math.round(TRACK_LENGTH / (TRACK_WIDTH * 2)));
     const track = new THREE.Mesh(trackGeo, trackMat);
     track.receiveShadow = true;
     scene.add(track);
 
-    // Roadside dressing — trees + lamp posts alternating outside the loop,
-    // and simple distant low buildings for atmosphere beyond the field.
+    // Roadside dressing. Trees are the numerous ones (one every 6th sample
+    // around a 180-point loop), so their trunks and leaves are each a single
+    // InstancedMesh — lamps are far fewer and each needs its own PointLight
+    // anyway, so those stay as individual objects. obstaclePts feeds the
+    // 360° view's proximity-sensor arcs later.
+    const obstaclePts = [];
+    const treeMatrices = [];
+    const lampGroups = [];
     for (let i = 0; i < centerline.length; i += 6) {
       const p = centerline[i], pn = centerline[(i + 1) % centerline.length];
       const tx = pn.x - p.x, tz = pn.z - p.z, tl = Math.hypot(tx, tz) || 1;
       const nx = -tz / tl, nz = tx / tl;
       const off = TRACK_WIDTH / 2 + 4.5 + (i % 12 === 0 ? 3 : 0);
-      const obj = i % 12 === 0 ? buildRoadsideLamp() : buildRoadsideTree();
-      obj.position.set(p.x + nx * off, 0, p.z + nz * off);
-      scene.add(obj);
+      const px = p.x + nx * off, pz = p.z + nz * off;
+      obstaclePts.push({ x: px, z: pz });
+      if (i % 12 === 0) {
+        const lamp = buildRoadsideLamp();
+        lamp.position.set(px, 0, pz);
+        scene.add(lamp);
+        lampGroups.push(lamp);
+      } else {
+        const m = new THREE.Matrix4().compose(
+          new THREE.Vector3(px, 0, pz),
+          new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.random() * Math.PI * 2, 0)),
+          new THREE.Vector3(1, 1, 1)
+        );
+        treeMatrices.push(m);
+      }
     }
+    const trunkGeo = new THREE.CylinderGeometry(0.18, 0.24, 2.2, 8);
+    const leavesGeo = new THREE.SphereGeometry(1.5, 10, 10);
+    const trunkMesh = new THREE.InstancedMesh(trunkGeo, new THREE.MeshStandardMaterial({ color: 0x5a4028, roughness: 0.9 }), treeMatrices.length);
+    const leavesMesh = new THREE.InstancedMesh(leavesGeo, new THREE.MeshStandardMaterial({ color: 0x2f6b34, roughness: 0.85 }), treeMatrices.length);
+    treeMatrices.forEach((m, i) => {
+      const trunkM = m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 1.1, 0));
+      trunkMesh.setMatrixAt(i, trunkM);
+      const leavesM = m.clone().multiply(new THREE.Matrix4().compose(new THREE.Vector3(0, 2.8, 0), new THREE.Quaternion(), new THREE.Vector3(1, 1.15, 1)));
+      leavesMesh.setMatrixAt(i, leavesM);
+    });
+    trunkMesh.castShadow = true; leavesMesh.castShadow = true;
+    scene.add(trunkMesh, leavesMesh);
+
+    // Grass blades — thousands of thin double-sided crossed quads, scattered
+    // across the field but skipped within the track's own footprint.
+    const bladeGeo = new THREE.PlaneGeometry(0.06, 0.34, 1, 1);
+    bladeGeo.translate(0, 0.17, 0);
+    const bladeMat = new THREE.MeshStandardMaterial({ color: 0x4a7a3e, roughness: 0.9, side: THREE.DoubleSide });
+    const BLADE_COUNT = 3500;
+    const bladeMesh = new THREE.InstancedMesh(bladeGeo, bladeMat, BLADE_COUNT);
+    {
+      const dummy = new THREE.Object3D();
+      let placed = 0, tries = 0;
+      while (placed < BLADE_COUNT && tries < BLADE_COUNT * 4) {
+        tries++;
+        const bx = (Math.random() - 0.5) * 240, bz = (Math.random() - 0.5) * 240;
+        if (nearestTrackOffset(centerline, bx, bz) < TRACK_WIDTH / 2 + 1.2) continue;
+        dummy.position.set(bx, 0, bz);
+        dummy.rotation.y = Math.random() * Math.PI;
+        const s = 0.7 + Math.random() * 0.8;
+        dummy.scale.set(s, s * (0.8 + Math.random() * 0.6), s);
+        dummy.updateMatrix();
+        bladeMesh.setMatrixAt(placed, dummy.matrix);
+        placed++;
+      }
+    }
+    scene.add(bladeMesh);
+
     const distantBuildingMat = new THREE.MeshStandardMaterial({ color: 0x8a93a8, roughness: 0.9 });
     for (let i = 0; i < 10; i++) {
       const ang = (i / 10) * Math.PI * 2;
@@ -4031,16 +4233,84 @@ function DriveOverlay({ onReturn, liveRef }) {
       const b = new THREE.Mesh(new THREE.BoxGeometry(14 + (i % 4) * 4, 20 + (i % 5) * 8, 14), distantBuildingMat);
       b.position.set(Math.cos(ang) * r, b.geometry.parameters.height / 2, Math.sin(ang) * r);
       scene.add(b);
+      obstaclePts.push({ x: b.position.x, z: b.position.z });
     }
 
+    // ── Physics world (cannon-es) ───────────────────────────────────────
+    // Real vehicle physics instead of a kinematic speed/heading model: a
+    // RaycastVehicle chassis with 4 independently-raycast wheels, each with
+    // its own suspension (stiffness/damping/travel) and tire friction. The
+    // ground is a single infinite physics plane — the visible track/grass
+    // are all coplanar at y=0, so one flat collider covers the whole scene;
+    // no per-mesh collision geometry needed.
+    const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -9.82, 0) });
+    world.defaultContactMaterial.friction = 0.3;
+    // The chassis box and the ground plane must NOT collide with each other:
+    // ground support comes entirely from the RaycastVehicle's own per-wheel
+    // suspension rays. If the chassis rigid shape is also allowed to collide
+    // with the ground, both systems fight for vertical support at once and
+    // the chassis pops/flips on spawn (same filter-group split used in the
+    // upstream cannon-es RaycastVehicle demo).
+    const GROUP_GROUND = 1, GROUP_CHASSIS = 2;
+    const groundBody = new CANNON.Body({ mass: 0, shape: new CANNON.Plane() });
+    groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
+    groundBody.collisionFilterGroup = GROUP_GROUND;
+    groundBody.collisionFilterMask = GROUP_GROUND;
+    world.addBody(groundBody);
+
+    const startP = centerline[0], startNext = centerline[1];
+    // The car used to always spawn facing a fixed heading regardless of
+    // which way the track actually ran at the start line — derive it from
+    // the track's own tangent instead (same fix as before, now applied to
+    // the physics chassis' initial orientation rather than a plain number).
+    const startHeading = Math.atan2(startNext.x - startP.x, startNext.z - startP.z);
+
+    const HALF_W = 0.9, HALF_L = 1.55, CONN_Y = -0.1;
+    const chassisShape = new CANNON.Box(new CANNON.Vec3(0.95, 0.55, 1.95));
+    const chassisBody = new CANNON.Body({ mass: 1400 });
+    chassisBody.addShape(chassisShape);
+    chassisBody.position.set(startP.x, 0.9, startP.z);
+    chassisBody.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), startHeading);
+    chassisBody.angularDamping = 0.6;
+    chassisBody.collisionFilterGroup = GROUP_CHASSIS;
+    chassisBody.collisionFilterMask = GROUP_CHASSIS;
+    world.addBody(chassisBody);
+
+    const vehicle = new CANNON.RaycastVehicle({ chassisBody, indexRightAxis: 0, indexUpAxis: 1, indexForwardAxis: 2 });
+    const wheelOptions = {
+      radius: 0.34,
+      directionLocal: new CANNON.Vec3(0, -1, 0),
+      suspensionStiffness: 32,
+      suspensionRestLength: 0.3,
+      frictionSlip: 1.5,
+      dampingRelaxation: 2.4,
+      dampingCompression: 4.5,
+      maxSuspensionForce: 100000,
+      rollInfluence: 0.012,
+      axleLocal: new CANNON.Vec3(1, 0, 0),
+      chassisConnectionPointLocal: new CANNON.Vec3(1, 0, 0),
+      maxSuspensionTravel: 0.28,
+      customSlidingRotationalSpeed: -32,
+      useCustomSlidingRotationalSpeed: true,
+    };
+    const wheelConn = [
+      { x: -HALF_W, y: CONN_Y, z: HALF_L },  // front-left
+      { x: HALF_W, y: CONN_Y, z: HALF_L },   // front-right
+      { x: -HALF_W, y: CONN_Y, z: -HALF_L }, // rear-left
+      { x: HALF_W, y: CONN_Y, z: -HALF_L },  // rear-right
+    ];
+    wheelConn.forEach((c) => {
+      vehicle.addWheel({ ...wheelOptions, chassisConnectionPointLocal: new CANNON.Vec3(c.x, c.y, c.z) });
+    });
+    vehicle.addToWorld(world);
+
     // The car — same procedural-fit loader pattern used for the vehicle-bay
-    // display models, just driven instead of parked.
+    // display models, just driven by the physics chassis instead of parked.
     const base = import.meta.env.BASE_URL || "/";
     const loader = new GLTFLoader();
     loader.setMeshoptDecoder(MeshoptDecoder);
     const car = new THREE.Group();
     scene.add(car);
-    let carForwardSign = 1; // flipped below once the model's own facing is known
     loader.load(base + "office-models/tiggo7.glb", (g) => {
       const m = g.scene;
       m.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
@@ -4048,37 +4318,54 @@ function DriveOverlay({ onReturn, liveRef }) {
       const size = bb.getSize(new THREE.Vector3());
       const scale = 4.2 / Math.max(size.x, size.z, 0.01);
       m.scale.setScalar(scale);
+      // Same parked orientation used in the Hangar's vehicle bay (rotY=PI/2)
+      // reads as the model's own local +Z being its side, not its nose —
+      // rotate an extra quarter turn so "forward" matches the chassis'
+      // own local +Z (indexForwardAxis above). This MUST happen before the
+      // bounding-box recenter below: centering against the pre-rotation box
+      // and then rotating only the geometry (not the already-computed
+      // offset) left the model visibly displaced from its own origin —
+      // the wheels (driven directly off the physics chassis) stayed put
+      // while the car body rendered a couple of units away from them.
+      m.rotation.y = Math.PI / 2;
       const bb2 = new THREE.Box3().setFromObject(m);
       m.position.x -= (bb2.min.x + bb2.max.x) / 2;
       m.position.z -= (bb2.min.z + bb2.max.z) / 2;
-      m.position.y -= bb2.min.y;
-      // Same parked orientation used in the Hangar's vehicle bay (rotY=PI/2)
-      // reads as the model's own local +Z being its side, not its nose —
-      // rotate an extra quarter turn so "forward" in car-space matches the
-      // heading this component drives it along.
-      m.rotation.y = Math.PI / 2;
+      m.position.y -= bb2.min.y - 0.35; // sit on top of the physics chassis, not sunk into it
       car.add(m);
     }, undefined, () => {});
+    // Wheels are driven independently from the RaycastVehicle's own
+    // wheelInfos every frame — the GLB wasn't authored with rigged wheel
+    // nodes to hook a spin animation into, so these are separate meshes
+    // layered on top instead of hidden ones inside the model.
+    const wheelMeshes = wheelConn.map(() => { const w = buildCarWheel(); scene.add(w); return w; });
 
-    // Driving state — thrust/drag speed model (same family as the flight
-    // overlay's, tuned for a ground vehicle instead of a jet): throttle
-    // builds speed, quadratic drag pulls it back, idle rolling friction
-    // actually coasts to a stop instead of idling forward forever, and
-    // straying off the track onto the grass costs extra drag.
-    // The car used to always spawn facing a fixed heading (0, i.e. +Z) no
-    // matter which way the track actually ran at the start line — on this
-    // oval, the start point sits on a straight running along +X, so the car
-    // (and the chase camera built from its heading) faced 90° away from the
-    // road on load. Derive the initial heading from the track's own tangent
-    // at the start point instead.
-    const startP = centerline[0], startNext = centerline[1];
-    const startHeading = Math.atan2(startNext.x - startP.x, startNext.z - startP.z);
-    const st = { x: startP.x, z: startP.z, heading: startHeading, speed: 0, steer: 0, dist: 0 };
     const keys = {};
-    const onKeyDown = (e) => { keys[e.key.toLowerCase()] = true; };
+    let audioCtx = null, evOsc = null, evGain = null, iceOsc = null, iceGain = null, iceLp = null, audioStarted = false;
+    // PHEV dual-motor audio: a quiet EV hum under ~40 km/h, crossfading into
+    // a deeper combustion note above that (or under hard acceleration) with
+    // a simulated gear-step lowpass sweep. Lazily created on the first real
+    // input — browsers block audio until a user gesture, same pattern the
+    // main dashboard's own boot sound already uses.
+    function ensureAudio() {
+      if (audioStarted) return;
+      const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+      audioStarted = true;
+      audioCtx = new AC();
+      evOsc = audioCtx.createOscillator(); evOsc.type = "sine"; evOsc.frequency.value = 90;
+      evGain = audioCtx.createGain(); evGain.gain.value = 0;
+      evOsc.connect(evGain); evGain.connect(audioCtx.destination); evOsc.start();
+      iceOsc = audioCtx.createOscillator(); iceOsc.type = "sawtooth"; iceOsc.frequency.value = 60;
+      iceLp = audioCtx.createBiquadFilter(); iceLp.type = "lowpass"; iceLp.frequency.value = 700;
+      iceGain = audioCtx.createGain(); iceGain.gain.value = 0;
+      iceOsc.connect(iceLp); iceLp.connect(iceGain); iceGain.connect(audioCtx.destination); iceOsc.start();
+    }
+    const onKeyDown = (e) => { keys[e.key.toLowerCase()] = true; ensureAudio(); };
     const onKeyUp = (e) => { keys[e.key.toLowerCase()] = false; };
+    const onPointerDown = () => ensureAudio();
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
+    mount.addEventListener("pointerdown", onPointerDown);
     let gamepadIndex = null;
     const onGpConnect = (e) => { gamepadIndex = e.gamepad.index; };
     const onGpDisconnect = (e) => { if (gamepadIndex === e.gamepad.index) gamepadIndex = null; };
@@ -4091,6 +4378,22 @@ function DriveOverlay({ onReturn, liveRef }) {
     const GP_DEADZONE = 0.12;
     const gpAxis = (v) => (Math.abs(v) < GP_DEADZONE ? 0 : v);
     const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+    // Simulated hybrid range — not tied to anything mechanical, just a
+    // simple drain/regen model so the HUD's battery/fuel readout means
+    // something: EV power drains the battery, ICE power drains fuel,
+    // braking regenerates a little charge.
+    let battery = 78, fuel = 62;
+    let totalDistM = 0;
+    let steerSmoothed = 0;
+    // Chase-camera spring-damper state (position + velocity) — a real
+    // critically-damped spring follow instead of a plain exponential lerp,
+    // so the camera has actual inertia (lags into corners, settles out of
+    // them) rather than snapping toward the target every frame.
+    const camPos = new THREE.Vector3();
+    const camVel = new THREE.Vector3();
+    let camPosInit = false;
+    const tmpVec = new THREE.Vector3(), tmpVec2 = new THREE.Vector3(), tmpQuat = new THREE.Quaternion();
 
     const clock = new THREE.Clock();
     let raf;
@@ -4107,39 +4410,122 @@ function DriveOverlay({ onReturn, liveRef }) {
       const gpSteer = gp ? -gpAxis(gp.axes[0] || 0) : 0;
       const throttleIn = kThrottle || gpThrottle || (Math.hypot(jv.x, jv.y) > 0.001 ? -jv.y : 0);
       const steerIn = kSteer || gpSteer || (Math.hypot(jv.x, jv.y) > 0.001 ? -jv.x : 0);
+      if (gp && (Math.abs(gpThrottle) > 0.05 || Math.abs(gpAxis(gp.axes[0] || 0)) > 0.05)) ensureAudio();
 
-      st.steer += (steerIn * 0.55 - st.steer) * Math.min(1, dt * 6);
-      const speedFactor = clamp(Math.abs(st.speed) / 6, 0.25, 1);
-      st.heading += st.steer * speedFactor * 1.6 * dt * (st.speed < 0 ? -1 : 1);
+      // Smoothed/progressive steering — no snapping between full-left and
+      // full-right, matches a real steering rack's own response lag.
+      steerSmoothed += (steerIn - steerSmoothed) * Math.min(1, dt * 6);
+      const MAX_STEER = 0.5;
+      vehicle.setSteeringValue(steerSmoothed * MAX_STEER, 0);
+      vehicle.setSteeringValue(steerSmoothed * MAX_STEER, 1);
 
-      const THRUST = 16, DRAG_K = 0.045, ROLL_FRICTION = 3.2;
-      const offset = nearestTrackOffset(centerline, st.x, st.z);
-      const offTrack = offset > TRACK_WIDTH / 2;
-      const dragAccel = st.speed * st.speed * DRAG_K * (st.speed > 0 ? 1 : -1) + ROLL_FRICTION * (st.speed > 0 ? 1 : st.speed < 0 ? -1 : 0) + (offTrack ? Math.abs(st.speed) * 1.8 * (st.speed > 0 ? 1 : -1) : 0);
-      st.speed += (throttleIn * THRUST - dragAccel) * dt;
-      st.speed = clamp(st.speed, -9, 26);
+      // Forward speed signed along the chassis' own local +Z (its forward
+      // axis) — used for both the brake/reverse decision and every display.
+      const fwd = new CANNON.Vec3(0, 0, 1);
+      chassisBody.vectorToWorldFrame(fwd, fwd);
+      const forwardSpeed = chassisBody.velocity.dot(fwd);
 
-      st.x += Math.sin(st.heading) * st.speed * dt * carForwardSign;
-      st.z += Math.cos(st.heading) * st.speed * dt * carForwardSign;
-      st.dist += Math.abs(st.speed) * dt;
+      const MAX_ENGINE = 2600, MAX_BRAKE = 55;
+      let engineForce = 0, brakeForce = 0;
+      if (throttleIn > 0.02) {
+        engineForce = -throttleIn * MAX_ENGINE;
+      } else if (throttleIn < -0.02) {
+        if (forwardSpeed > 0.6) brakeForce = -throttleIn * MAX_BRAKE;
+        else engineForce = -throttleIn * MAX_ENGINE * 0.45;
+      } else {
+        brakeForce = 4; // light idle rolling resistance so it actually coasts to a stop
+      }
+      for (let i = 0; i < 4; i++) {
+        vehicle.applyEngineForce(engineForce, i);
+        vehicle.setBrake(brakeForce, i);
+      }
 
-      car.position.set(st.x, 0, st.z);
-      car.rotation.y = st.heading;
+      // Off-track penalty: extra brake-like drag while on the grass, same
+      // intent as the old kinematic model's off-road cost, just expressed
+      // as a physical brake force on all four wheels this time.
+      const offset = nearestTrackOffset(centerline, chassisBody.position.x, chassisBody.position.z);
+      if (offset > TRACK_WIDTH / 2) for (let i = 0; i < 4; i++) vehicle.setBrake(Math.abs(brakeForce) + 8, i);
 
-      // Chase camera — behind and above the car, lerped, matching the
-      // flight overlay's follow-cam feel but for a ground vehicle.
-      const behind = new THREE.Vector3(-Math.sin(st.heading), 0, -Math.cos(st.heading)).multiplyScalar(8.5 * carForwardSign);
-      const desired = car.position.clone().add(behind).add(new THREE.Vector3(0, 3.6, 0));
-      camera.position.lerp(desired, Math.min(1, dt * 5));
+      world.step(1 / 60, dt, 4);
+
+      car.position.set(chassisBody.position.x, chassisBody.position.y, chassisBody.position.z);
+      car.quaternion.set(chassisBody.quaternion.x, chassisBody.quaternion.y, chassisBody.quaternion.z, chassisBody.quaternion.w);
+      for (let i = 0; i < 4; i++) {
+        vehicle.updateWheelTransform(i);
+        const wt = vehicle.wheelInfos[i].worldTransform;
+        wheelMeshes[i].position.set(wt.position.x, wt.position.y, wt.position.z);
+        wheelMeshes[i].quaternion.set(wt.quaternion.x, wt.quaternion.y, wt.quaternion.z, wt.quaternion.w);
+      }
+
+      const speedKmh = Math.abs(forwardSpeed) * 3.6;
+      totalDistM += Math.abs(forwardSpeed) * dt;
+      const totalDistKm = totalDistM / 1000;
+
+      // PHEV audio crossfade + simulated gear-step lowpass sweep.
+      if (audioStarted && audioCtx) {
+        const now = audioCtx.currentTime;
+        const iceOn = speedKmh > 40 || Math.abs(throttleIn) > 0.7;
+        evOsc.frequency.setTargetAtTime(80 + speedKmh * 2.2, now, 0.05);
+        evGain.gain.setTargetAtTime(iceOn ? 0.025 : Math.min(0.12, 0.02 + speedKmh * 0.0028), now, 0.35);
+        iceGain.gain.setTargetAtTime(iceOn ? Math.min(0.17, 0.05 + speedKmh * 0.0022) : 0, now, 0.45);
+        iceOsc.frequency.setTargetAtTime(50 + speedKmh * 3.2, now, 0.15);
+        const gear = Math.min(4, 1 + Math.floor(speedKmh / 32));
+        iceLp.frequency.setTargetAtTime(450 + gear * 260, now, 0.3);
+        // Simulated PHEV range: EV power drains the battery, ICE drains
+        // fuel, braking regenerates a little charge back into the battery.
+        if (iceOn) fuel = clamp(fuel - speedKmh * 0.0009 * dt, 0, 100);
+        else if (speedKmh > 1) battery = clamp(battery - speedKmh * 0.0018 * dt, 0, 100);
+        if (throttleIn < -0.3 && Math.abs(forwardSpeed) > 1.5) battery = clamp(battery + 6 * dt, 0, 100);
+      }
+
+      // Chase camera — critically-damped spring follow instead of a flat
+      // lerp, plus speed-reactive FOV widening and a subtle high-speed
+      // screen shake, for the "visceral" sense of speed a static FOV can't
+      // give. Reuses the same world-space forward vector computed above
+      // (local +Z rotated into world space) rather than re-deriving it —
+      // an earlier version recomputed it from local -Z here by mistake,
+      // which put the camera in FRONT of the car instead of behind it.
+      const carFwd = tmpVec.set(fwd.x, 0, fwd.z).normalize();
+      const behindTarget = tmpVec2.copy(carFwd).multiplyScalar(-8.5).add(car.position).add(new THREE.Vector3(0, 3.4, 0));
+      if (!camPosInit) { camPos.copy(behindTarget); camPosInit = true; }
+      const springK = 55, springD = 11;
+      const accelX = (behindTarget.x - camPos.x) * springK - camVel.x * springD;
+      const accelY = (behindTarget.y - camPos.y) * springK - camVel.y * springD;
+      const accelZ = (behindTarget.z - camPos.z) * springK - camVel.z * springD;
+      camVel.x += accelX * dt; camVel.y += accelY * dt; camVel.z += accelZ * dt;
+      camPos.x += camVel.x * dt; camPos.y += camVel.y * dt; camPos.z += camVel.z * dt;
+      const speedT = clamp(speedKmh / 150, 0, 1);
+      const shake = speedT > 0.35 ? (speedT - 0.35) * 0.05 : 0;
+      camera.position.set(
+        camPos.x + (Math.random() - 0.5) * shake,
+        camPos.y + (Math.random() - 0.5) * shake,
+        camPos.z + (Math.random() - 0.5) * shake
+      );
       camera.lookAt(car.position.clone().add(new THREE.Vector3(0, 1, 0)));
+      const targetFov = BASE_FOV + speedT * 22;
+      if (Math.abs(camera.fov - targetFov) > 0.05) { camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 3); camera.updateProjectionMatrix(); }
 
-      // st.dist accumulates in raw speed-unit·seconds, not meters — the
-      // same ×12.5 factor that turns st.speed into a km/h display turns
-      // st.dist into real kilometers (÷3600 for the h→s conversion this
-      // time). Dividing straight by 1000 here as if it were already meters
-      // under-reported distance by roughly 3.5x.
-      if (speedRef.current) speedRef.current.textContent = Math.round(Math.abs(st.speed) * 12.5) + " קמ״ש";
-      if (distRef.current) distRef.current.textContent = ((st.dist * 12.5) / 3600).toFixed(2) + " ק״מ";
+      // 360° tactical camera — orthographic, top-down, rotates with the car.
+      if (view360Ref.current) {
+        camera360.position.set(car.position.x, car.position.y + 30, car.position.z);
+        const carYaw = Math.atan2(carFwd.x, carFwd.z);
+        camera360.rotation.set(-Math.PI / 2, 0, 0);
+        camera360.rotateZ(carYaw);
+      }
+      speedBlurPass.uniforms.amount.value = speedT * 1.4;
+      tacticalPass.enabled = view360Ref.current;
+      tacticalPass.uniforms.time.value += dt;
+      renderPass.camera = view360Ref.current ? camera360 : camera;
+
+      if (speedRef.current) speedRef.current.textContent = Math.round(speedKmh) + " קמ״ש";
+      if (distRef.current) distRef.current.textContent = totalDistKm.toFixed(2) + " ק״מ";
+      if (rpmRef.current) {
+        const gear = Math.min(4, 1 + Math.floor(speedKmh / 32));
+        const rpm = Math.round(900 + (speedKmh % 32) / 32 * 5600);
+        rpmRef.current.textContent = rpm.toLocaleString("he-IL") + " · הילוך " + gear;
+      }
+      if (battRef.current) battRef.current.textContent = Math.round(battery) + "% 🔋 · " + Math.round(fuel) + "% ⛽";
+
       const gz = gaugeRef.current;
       if (gz) {
         const gctx = gz.getContext("2d");
@@ -4147,7 +4533,15 @@ function DriveOverlay({ onReturn, liveRef }) {
         gctx.clearRect(0, 0, W, H);
         gctx.strokeStyle = "rgba(230,240,255,.35)"; gctx.lineWidth = 3;
         gctx.beginPath(); gctx.arc(cx, cy, R, Math.PI, 0); gctx.stroke();
-        const pct = clamp(Math.abs(st.speed) / 26, 0, 1);
+        for (let t = 0; t <= 10; t++) {
+          const a = Math.PI + (t / 10) * Math.PI;
+          gctx.strokeStyle = "rgba(230,240,255,.5)"; gctx.lineWidth = 1.5;
+          gctx.beginPath();
+          gctx.moveTo(cx + Math.cos(a) * R * 0.86, cy + Math.sin(a) * R * 0.86);
+          gctx.lineTo(cx + Math.cos(a) * R, cy + Math.sin(a) * R);
+          gctx.stroke();
+        }
+        const pct = clamp(speedKmh / 180, 0, 1);
         gctx.strokeStyle = pct > 0.85 ? "#ff5a4a" : "#ffd23f"; gctx.lineWidth = 4;
         gctx.beginPath(); gctx.arc(cx, cy, R, Math.PI, Math.PI + pct * Math.PI); gctx.stroke();
         const needleA = Math.PI + pct * Math.PI;
@@ -4155,14 +4549,48 @@ function DriveOverlay({ onReturn, liveRef }) {
         gctx.beginPath(); gctx.moveTo(cx, cy); gctx.lineTo(cx + Math.cos(needleA) * R * 0.82, cy + Math.sin(needleA) * R * 0.82); gctx.stroke();
       }
 
-      renderer.render(scene, camera);
+      // Proximity-sensor arcs — only meaningful (and only drawn) in the
+      // 360° tactical view: green/yellow/red rings toward the nearest
+      // roadside object (tree, lamp, building) relative to the car.
+      const rd = radarRef.current;
+      if (rd) {
+        if (view360Ref.current) {
+          const rctx = rd.getContext("2d");
+          const W = rd.width, H = rd.height, cx = W / 2, cy = H / 2, R = Math.min(W, H) / 2 - 4;
+          rctx.clearRect(0, 0, W, H);
+          rctx.strokeStyle = "rgba(120,255,180,.5)"; rctx.lineWidth = 1;
+          rctx.beginPath(); rctx.arc(cx, cy, R, 0, Math.PI * 2); rctx.stroke();
+          let best = Infinity, bestAng = 0;
+          const carYaw2 = Math.atan2(carFwd.x, carFwd.z);
+          obstaclePts.forEach((o) => {
+            const ddx = o.x - car.position.x, ddz = o.z - car.position.z;
+            const d = Math.hypot(ddx, ddz);
+            if (d < best) { best = d; bestAng = Math.atan2(ddx, ddz) - carYaw2; }
+          });
+          if (best < 20) {
+            const color = best < 4 ? "#ff4a3e" : best < 8 ? "#ffd23f" : "#3fd79a";
+            rctx.strokeStyle = color; rctx.lineWidth = 5;
+            const span = 0.5;
+            rctx.beginPath(); rctx.arc(cx, cy, R - 4, -Math.PI / 2 + bestAng - span, -Math.PI / 2 + bestAng + span); rctx.stroke();
+          }
+          rctx.fillStyle = "#eafff2";
+          rctx.beginPath(); rctx.moveTo(cx, cy - 7); rctx.lineTo(cx - 5, cy + 6); rctx.lineTo(cx + 5, cy + 6); rctx.fill();
+        } else {
+          rd.getContext("2d").clearRect(0, 0, rd.width, rd.height);
+        }
+      }
+
+      composer.render();
     };
     animate();
 
     const onResize = () => {
-      camera.aspect = mount.clientWidth / mount.clientHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(mount.clientWidth, mount.clientHeight);
+      const w = mount.clientWidth, h = mount.clientHeight;
+      camera.aspect = w / h; camera.updateProjectionMatrix();
+      camera360.left = -ORTHO_SIZE * (w / h); camera360.right = ORTHO_SIZE * (w / h);
+      camera360.updateProjectionMatrix();
+      renderer.setSize(w, h);
+      composer.setSize(w, h);
     };
     window.addEventListener("resize", onResize);
 
@@ -4172,8 +4600,10 @@ function DriveOverlay({ onReturn, liveRef }) {
       window.removeEventListener("resize", onResize);
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
+      mount.removeEventListener("pointerdown", onPointerDown);
       window.removeEventListener("gamepadconnected", onGpConnect);
       window.removeEventListener("gamepaddisconnected", onGpDisconnect);
+      if (audioCtx) { try { audioCtx.close(); } catch {} }
       scene.traverse((obj) => {
         if (obj.geometry) obj.geometry.dispose();
         if (obj.material) {
@@ -4181,6 +4611,7 @@ function DriveOverlay({ onReturn, liveRef }) {
           mats.forEach(disposeMaterial);
         }
       });
+      composer.dispose();
       renderer.dispose();
       if (renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement);
     };
@@ -4191,10 +4622,16 @@ function DriveOverlay({ onReturn, liveRef }) {
       <div ref={mountRef} className="off3-space-canvas" style={{ cursor: "default" }} />
       <div className="off3-space-hint">W/S להאיץ ולבלום · A/D / ג'ויסטיק להיגוי · מסלול סגור — סעו כמה שתרצו</div>
       <canvas ref={gaugeRef} width={110} height={70} className="off3-drive-gauge" />
+      <canvas ref={radarRef} width={120} height={120} className="off3-drive-radar" />
       <div className="off3-drive-hud">
         <div><span>מהירות</span><b ref={speedRef}>0 קמ״ש</b></div>
+        <div><span>סל״ד</span><b ref={rpmRef}>900 · הילוך 1</b></div>
+        <div><span>סוללה/דלק</span><b ref={battRef}>78% 🔋 · 62% ⛽</b></div>
         <div><span>מרחק</span><b ref={distRef}>0.00 ק״מ</b></div>
       </div>
+      <button className={"off3-sit" + (view360 ? " on" : "")} onClick={() => setView360((v) => !v)} title="מצב מצלמת 360°">
+        📹 {view360 ? "חזרה למצלמה רגילה" : "מצב 360°"}
+      </button>
       <button className="off3-space-return" onClick={onReturn}>🚪 חזרה לאנגר</button>
     </div>
   );

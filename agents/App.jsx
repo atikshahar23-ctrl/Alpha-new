@@ -4252,6 +4252,11 @@ function StyleTag() {
 .off3-drive-hud b{font-size:14px;color:#eaf1ff;font-weight:800}
 .off3-drive-gauge{position:absolute;bottom:22px;left:14px;z-index:31;pointer-events:none;
   background:rgba(10,14,10,.55);border:1px solid rgba(160,220,120,.3);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.5)}
+/* 360° tactical view's proximity-sensor radar — only visually meaningful
+   (drawn) while that mode is on, but always mounted so the canvas ref is
+   stable across the toggle. */
+.off3-drive-radar{position:absolute;bottom:110px;left:14px;z-index:31;pointer-events:none;
+  background:rgba(6,14,10,.55);border:1px solid rgba(63,215,154,.35);border-radius:50%;box-shadow:0 8px 24px rgba(0,0,0,.5)}
 .off-floor{flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(2,1fr);gap:12px;padding:14px 14px 28px;align-content:start}
 @media(min-width:680px){.off-floor{grid-template-columns:repeat(3,1fr)}}
 @media(min-width:1000px){.off-floor{grid-template-columns:repeat(4,1fr)}}
