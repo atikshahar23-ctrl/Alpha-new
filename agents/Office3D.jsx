@@ -3042,7 +3042,12 @@ function FlightOverlay({ onReturn }) {
     // control near center, full authority pushed to the edges — standard
     // flight-stick feel instead of the office scene's linear walk deadzone.
     let gamepadIndex = null;
-    const onGpConnect = (e) => { gamepadIndex = e.gamepad.index; };
+    // Only accept a standard-mapping pad — some Windows HID peripherals
+    // (wireless mouse/keyboard dongles, headset controls) fire a genuine
+    // "gamepadconnected" event with a non-standard mapping and drifting
+    // axis values, which without this check gets treated as a real
+    // controller and spins the camera on its own with nothing plugged in.
+    const onGpConnect = (e) => { if (e.gamepad.mapping === "standard") gamepadIndex = e.gamepad.index; };
     const onGpDisconnect = (e) => { if (gamepadIndex === e.gamepad.index) gamepadIndex = null; };
     window.addEventListener("gamepadconnected", onGpConnect);
     window.addEventListener("gamepaddisconnected", onGpDisconnect);
@@ -3969,7 +3974,12 @@ function HangarOverlay({ onReturn, liveRef, onDrive, onDriveTruck, onPilotRobot 
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
     let gamepadIndex = null;
-    const onGpConnect = (e) => { gamepadIndex = e.gamepad.index; };
+    // Only accept a standard-mapping pad — some Windows HID peripherals
+    // (wireless mouse/keyboard dongles, headset controls) fire a genuine
+    // "gamepadconnected" event with a non-standard mapping and drifting
+    // axis values, which without this check gets treated as a real
+    // controller and spins the camera on its own with nothing plugged in.
+    const onGpConnect = (e) => { if (e.gamepad.mapping === "standard") gamepadIndex = e.gamepad.index; };
     const onGpDisconnect = (e) => { if (gamepadIndex === e.gamepad.index) gamepadIndex = null; };
     window.addEventListener("gamepadconnected", onGpConnect);
     window.addEventListener("gamepaddisconnected", onGpDisconnect);
@@ -4410,7 +4420,12 @@ function DriveOverlay({ onReturn, liveRef, vehicle: vehicleType = "car" }) {
     window.addEventListener("keyup", onKeyUp);
     mount.addEventListener("pointerdown", onPointerDown);
     let gamepadIndex = null;
-    const onGpConnect = (e) => { gamepadIndex = e.gamepad.index; };
+    // Only accept a standard-mapping pad — some Windows HID peripherals
+    // (wireless mouse/keyboard dongles, headset controls) fire a genuine
+    // "gamepadconnected" event with a non-standard mapping and drifting
+    // axis values, which without this check gets treated as a real
+    // controller and spins the camera on its own with nothing plugged in.
+    const onGpConnect = (e) => { if (e.gamepad.mapping === "standard") gamepadIndex = e.gamepad.index; };
     const onGpDisconnect = (e) => { if (gamepadIndex === e.gamepad.index) gamepadIndex = null; };
     window.addEventListener("gamepadconnected", onGpConnect);
     window.addEventListener("gamepaddisconnected", onGpDisconnect);
@@ -4765,7 +4780,12 @@ function RobotPilotOverlay({ onReturn, liveRef }) {
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
     let gamepadIndex = null;
-    const onGpConnect = (e) => { gamepadIndex = e.gamepad.index; };
+    // Only accept a standard-mapping pad — some Windows HID peripherals
+    // (wireless mouse/keyboard dongles, headset controls) fire a genuine
+    // "gamepadconnected" event with a non-standard mapping and drifting
+    // axis values, which without this check gets treated as a real
+    // controller and spins the camera on its own with nothing plugged in.
+    const onGpConnect = (e) => { if (e.gamepad.mapping === "standard") gamepadIndex = e.gamepad.index; };
     const onGpDisconnect = (e) => { if (gamepadIndex === e.gamepad.index) gamepadIndex = null; };
     window.addEventListener("gamepadconnected", onGpConnect);
     window.addEventListener("gamepaddisconnected", onGpDisconnect);
@@ -4999,6 +5019,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   const [selectedObj, setSelectedObj] = useState(null);
   const [godPaused, setGodPaused] = useState(false);
   const [godLight, setGodLight] = useState(1);
+  const [godGlow, setGodGlow] = useState(1); // bloom-strength multiplier — separate from raw light intensity
   const [godSpeed, setGodSpeed] = useState(1); // agent walk-speed multiplier — Command Center dial
   // Blueprint Tactical Mode — God Mode's construction view: the whole scene
   // drops to a cyan wireframe schematic over a laser floor grid, and every
@@ -5288,6 +5309,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   useEffect(() => { liveRef.current.setGizmoMode?.(gizmoMode); }, [gizmoMode]);
   useEffect(() => { liveRef.current.godPaused = godPaused; }, [godPaused]);
   useEffect(() => { liveRef.current.godLightMul = godLight; }, [godLight]);
+  useEffect(() => { liveRef.current.godGlowMul = godGlow; }, [godGlow]);
   useEffect(() => { liveRef.current.godSpeedMul = godSpeed; }, [godSpeed]);
   useEffect(() => { liveRef.current.setSelectedObj = setSelectedObj; }, []);
   useEffect(() => { liveRef.current.setShowLoadPrompt = setShowLoadPrompt; liveRef.current.setLayoutNames = setLayoutNames; }, []);
@@ -5396,9 +5418,13 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     const camera = new THREE.PerspectiveCamera(52, width / height, 0.1, 200);
     const renderer = new THREE.WebGLRenderer({ antialias: !isMobile, powerPreference: "high-performance" });
     renderer.setSize(width, height);
-    // A touch under 2× keeps postprocessing (bloom + SSAO) smooth while still
-    // looking crisp; mobile stays lighter.
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile ? 1.5 : 2));
+    // Desktop renders at its true device pixel ratio (most displays are
+    // 2x, some are higher) rather than a flat 2x cap, for the sharpest
+    // picture the screen can actually show; mobile stays lighter. The
+    // existing auto-turbo safety net below (watches real frame times over
+    // the first several seconds) still catches a GPU that can't keep up
+    // and drops quality automatically, so this doesn't trade away smoothness.
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile ? 1.5 : 3));
     renderer.shadowMap.enabled = !isMobile;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     // Cinematic colour: ACES filmic tone-mapping + sRGB output so the neon /
@@ -5457,7 +5483,8 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // threshold + softer strength + wider radius than before: a broad soft
     // cinematic glow on genuinely bright surfaces instead of a narrow,
     // blinding halo that was washing out nearby text/detail.
-    const bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), isMobile ? 0.22 : 0.38, 0.9, 0.4);
+    const BASE_BLOOM_STRENGTH = isMobile ? 0.22 : 0.38;
+    const bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), BASE_BLOOM_STRENGTH, 0.9, 0.4);
     composer.addPass(bloomPass);
     composer.addPass(new OutputPass());
     // EffectComposer renders through its own WebGLRenderTargets, so the
@@ -7542,7 +7569,12 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // or stuck axis values even when no controller was ever actually paired,
     // which was walking the player on its own with nothing touched.
     let gamepadIndex = null;
-    const onGamepadConnected = (e) => { gamepadIndex = e.gamepad.index; };
+    // Only accept a standard-mapping pad — some Windows HID peripherals
+    // (wireless mouse/keyboard dongles, headset controls) fire a genuine
+    // "gamepadconnected" event with a non-standard mapping and drifting
+    // axis values, which without this check gets treated as a real
+    // controller and spins the camera on its own with nothing plugged in.
+    const onGamepadConnected = (e) => { if (e.gamepad.mapping === "standard") gamepadIndex = e.gamepad.index; };
     const onGamepadDisconnected = (e) => { if (gamepadIndex === e.gamepad.index) gamepadIndex = null; };
     window.addEventListener("gamepadconnected", onGamepadConnected);
     window.addEventListener("gamepaddisconnected", onGamepadDisconnected);
@@ -7679,6 +7711,10 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       // this clock (the lerp targets stop moving); its light slider scales
       // the target intensities so it still visibly reacts to the slider
       // even while paused, without touching the color transition itself.
+      // Bloom strength reacts to its own slider immediately, independent of
+      // the day/night pause state below (glow shouldn't need the clock
+      // running to respond).
+      bloomPass.strength = BASE_BLOOM_STRENGTH * (liveRef.current.godGlowMul || 1);
       if (!liveRef.current.godPaused) {
         const ph = phases[liveRef.current.phase] || phases[0];
         tmpColor.set(nightclubOn ? "#050015" : (ph.sky || "#1b2440"));
@@ -8950,6 +8986,10 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // Lighting override — a 0.4x..1.8x multiplier on top of whatever the
     // real day-phase would set for sun/ambient intensity this frame.
     liveRef.current.godLightMul = 1;
+    // Glow override — separate 0x..2x multiplier on the bloom pass's own
+    // strength, so "how lit" and "how much halo/glow" can be dialed
+    // independently instead of glow only ever following raw brightness.
+    liveRef.current.godGlowMul = 1;
     // Turbo 🚀 — every lever at once: 1x pixel ratio, post chain bypassed
     // (animate renders straight through the renderer), shadows off, dust +
     // sky-life extras hidden, CCTV frozen on its last frame.
@@ -9373,6 +9413,10 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
                 <input type="range" min="0.4" max="1.8" step="0.05" value={godLight} onChange={(e) => setGodLight(parseFloat(e.target.value))} />
               </label>
               <label className="off3-phone-slider">
+                <span>✨ זוהר</span>
+                <input type="range" min="0" max="2" step="0.05" value={godGlow} onChange={(e) => setGodGlow(parseFloat(e.target.value))} />
+              </label>
+              <label className="off3-phone-slider">
                 <span>🏃 מהירות סוכנים</span>
                 <input type="range" min="0.3" max="2.5" step="0.1" value={godSpeed} onChange={(e) => setGodSpeed(parseFloat(e.target.value))} />
               </label>
@@ -9684,6 +9728,10 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           <label className="off3-god-row">
             <span>💡 עוצמת תאורה</span>
             <input type="range" min="0.4" max="1.8" step="0.05" value={godLight} onChange={(e) => setGodLight(parseFloat(e.target.value))} />
+          </label>
+          <label className="off3-god-row">
+            <span>✨ זוהר (Glow)</span>
+            <input type="range" min="0" max="2" step="0.05" value={godGlow} onChange={(e) => setGodGlow(parseFloat(e.target.value))} />
           </label>
           <label className="off3-god-row">
             <span>🏃 מהירות סוכנים</span>

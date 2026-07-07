@@ -4209,7 +4209,12 @@ function StyleTag() {
 .off3-space-canvas{position:absolute;inset:0;cursor:grab}
 .off3-space-canvas:active{cursor:grabbing}
 .off3-space-hint{position:absolute;top:14px;left:50%;transform:translateX(-50%);font-size:11.5px;font-weight:700;color:#9fb6e0;
-  background:rgba(8,12,26,.55);border:1px solid rgba(143,208,255,.25);padding:6px 14px;border-radius:14px;pointer-events:none;white-space:nowrap}
+  background:rgba(8,12,26,.55);border:1px solid rgba(143,208,255,.25);padding:6px 14px;border-radius:14px;pointer-events:none;white-space:nowrap;
+  animation:off3HintFade 9s ease forwards}
+/* The controls caption teaches the layout once, then gets out of the way —
+   it used to sit on screen permanently, reading as a fixed overlay never
+   asked for after the first few seconds. */
+@keyframes off3HintFade{0%,65%{opacity:1}100%{opacity:0;visibility:hidden}}
 .off3-space-return{position:absolute;bottom:22px;left:50%;transform:translateX(-50%);z-index:31;height:44px;padding:0 22px;border-radius:22px;
   border:1px solid rgba(143,208,255,.4);background:linear-gradient(180deg,#1a2b4a,#0c1526);color:#eaf1ff;font-family:'Rubik';font-weight:800;font-size:13.5px;
   cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.5),0 0 20px rgba(143,208,255,.15)}
