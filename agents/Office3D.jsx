@@ -3496,7 +3496,6 @@ const POKEMON_SANCTUARY_ROSTER = [
   { file: "squirtle.glb", scale: 0.7 },
   { file: "charmander.glb", scale: 0.75 },
   { file: "jigglypuff.glb", scale: 0.65 },
-  { file: "psyduck.glb", scale: 0.8 },
   { file: "meowth.glb", scale: 0.75 },
   { file: "snorlax.glb", scale: 1.6 },
   { file: "dratini.glb", scale: 0.9 },
@@ -3748,12 +3747,12 @@ function buildAsphaltNormalMap() {
 // Driven independently from the RaycastVehicle's own wheelInfos each frame
 // (position, steer angle, spin), not baked into the car's GLB — the model
 // wasn't authored with rigged wheel nodes to hook into.
-function buildCarWheel() {
+function buildCarWheel(radius = 0.34, width = 0.24) {
   const g = new THREE.Group();
-  const tire = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.24, 20), new THREE.MeshStandardMaterial({ color: 0x141414, roughness: 0.92 }));
+  const tire = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, width, 20), new THREE.MeshStandardMaterial({ color: 0x141414, roughness: 0.92 }));
   tire.rotation.z = Math.PI / 2;
   tire.castShadow = true;
-  const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.19, 0.26, 12), new THREE.MeshStandardMaterial({ color: 0xaeb4bb, roughness: 0.32, metalness: 0.75 }));
+  const rim = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.56, radius * 0.56, width * 1.08, 12), new THREE.MeshStandardMaterial({ color: 0xaeb4bb, roughness: 0.32, metalness: 0.75 }));
   rim.rotation.z = Math.PI / 2;
   g.add(tire, rim);
   return g;
@@ -3808,9 +3807,11 @@ const SpeedBlurShader = {
     }`,
 };
 
-function HangarOverlay({ onReturn, liveRef, onDrive }) {
+function HangarOverlay({ onReturn, liveRef, onDrive, onDriveTruck, onPilotRobot }) {
   const mountRef = useRef(null);
   const [nearTiggo, setNearTiggo] = useState(false);
+  const [nearTruck, setNearTruck] = useState(false);
+  const [nearHyperion, setNearHyperion] = useState(false);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -3909,9 +3910,10 @@ function HangarOverlay({ onReturn, liveRef, onDrive }) {
     // painted floor spot (the hazard-striped rectangle baked into the floor
     // texture reads as the bay outline; these are just the actual cars).
     const TIGGO_POS = { x: -W / 2 + 4, z: -8 };
+    const TRUCK_POS = { x: -W / 2 + 4.5, z: 4 };
     [
       { url: "tiggo7.glb", x: TIGGO_POS.x, z: TIGGO_POS.z, target: 4.2, rotY: Math.PI / 2 },
-      { url: "volvo_fh16.glb", x: -W / 2 + 4.5, z: 4, target: 6.5, rotY: Math.PI / 2 },
+      { url: "volvo_fh16.glb", x: TRUCK_POS.x, z: TRUCK_POS.z, target: 6.5, rotY: Math.PI / 2 },
     ].forEach((v) => {
       loader.load(base + "office-models/" + v.url, (g) => {
         const m = g.scene;
@@ -3981,6 +3983,8 @@ function HangarOverlay({ onReturn, liveRef, onDrive }) {
 
     let yaw = Math.PI;
     let nearTiggoPrev = false;
+    let nearTruckPrev = false;
+    let nearHyperionPrev = false;
     const pos = new THREE.Vector3(0, 1.7, D / 2 - 5);
     const clock = new THREE.Clock();
     let raf;
@@ -4009,6 +4013,12 @@ function HangarOverlay({ onReturn, liveRef, onDrive }) {
       const tiggoDist = Math.hypot(pos.x - TIGGO_POS.x, pos.z - TIGGO_POS.z);
       const nearTiggoNow = tiggoDist < 4;
       if (nearTiggoNow !== nearTiggoPrev) { nearTiggoPrev = nearTiggoNow; setNearTiggo(nearTiggoNow); }
+      const truckDist = Math.hypot(pos.x - TRUCK_POS.x, pos.z - TRUCK_POS.z);
+      const nearTruckNow = truckDist < 5;
+      if (nearTruckNow !== nearTruckPrev) { nearTruckPrev = nearTruckNow; setNearTruck(nearTruckNow); }
+      const hyperionDist = Math.hypot(pos.x - statuePos.x, pos.z - statuePos.z);
+      const nearHyperionNow = hyperionDist < 5;
+      if (nearHyperionNow !== nearHyperionPrev) { nearHyperionPrev = nearHyperionNow; setNearHyperion(nearHyperionNow); }
       camera.rotation.order = "YXZ";
       camera.rotation.y = yaw;
       // Chimney smoke — each puff drifts up and fades, looping back to the
@@ -4065,6 +4075,16 @@ function HangarOverlay({ onReturn, liveRef, onDrive }) {
           🚗 צא לנסיעה עם הטיגו
         </button>
       )}
+      {nearTruck && (
+        <button className="off3-sit" style={{ top: "58px" }} onClick={onDriveTruck} title="צא לנסיעה עם המשאית (E)">
+          🚛 צא לנסיעה עם המשאית
+        </button>
+      )}
+      {nearHyperion && (
+        <button className="off3-sit" style={{ top: "106px" }} onClick={onPilotRobot} title="הפעל את הענק (E)">
+          🤖 הפעל את הענק
+        </button>
+      )}
       <button className="off3-space-return" onClick={onReturn}>🚪 חזרה למשרד</button>
     </div>
   );
@@ -4076,7 +4096,30 @@ function HangarOverlay({ onReturn, liveRef, onDrive }) {
 // steering model in the same spirit as the fighter jet's flight physics:
 // throttle builds speed, drag pulls it back down, and running onto the
 // grass costs you instead of being free.
-function DriveOverlay({ onReturn, liveRef }) {
+// Per-vehicle physics/visual tuning — same RaycastVehicle rig, different
+// mass/dimensions/power so the truck actually drives like a truck (heavier,
+// taller ride height, bigger wheels, slower to build speed) instead of just
+// being a reskinned car.
+const VEHICLE_CONFIGS = {
+  car: {
+    glb: "tiggo7.glb", targetSize: 4.2, rideY: 0.35, rotYFix: Math.PI / 2, label: "טיגו 7",
+    mass: 1400, halfW: 0.9, halfL: 1.55, connY: -0.1, chassisHalf: { x: 0.95, y: 0.55, z: 1.95 }, startY: 0.9,
+    wheelRadius: 0.34, suspensionStiffness: 32, suspensionRestLength: 0.3, frictionSlip: 1.5,
+    dampingRelaxation: 2.4, dampingCompression: 4.5, maxSuspensionForce: 100000, maxSuspensionTravel: 0.28,
+    rollInfluence: 0.012, maxEngine: 2600, maxBrake: 55, maxSteer: 0.5,
+    camDist: 8.5, camHeight: 3.4, lookHeight: 1,
+  },
+  truck: {
+    glb: "volvo_fh16.glb", targetSize: 6.5, rideY: 0.15, rotYFix: Math.PI / 2, label: "וולוו FH16",
+    mass: 8500, halfW: 1.15, halfL: 2.6, connY: -0.15, chassisHalf: { x: 1.2, y: 1.15, z: 2.9 }, startY: 1.9,
+    wheelRadius: 0.5, suspensionStiffness: 45, suspensionRestLength: 0.35, frictionSlip: 1.35,
+    dampingRelaxation: 2.6, dampingCompression: 4.8, maxSuspensionForce: 220000, maxSuspensionTravel: 0.32,
+    rollInfluence: 0.02, maxEngine: 5200, maxBrake: 110, maxSteer: 0.38,
+    camDist: 13, camHeight: 4.8, lookHeight: 2,
+  },
+};
+function DriveOverlay({ onReturn, liveRef, vehicle: vehicleType = "car" }) {
+  const cfg = VEHICLE_CONFIGS[vehicleType] || VEHICLE_CONFIGS.car;
   const mountRef = useRef(null);
   const speedRef = useRef(null);
   const distRef = useRef(null);
@@ -4265,11 +4308,11 @@ function DriveOverlay({ onReturn, liveRef }) {
     // the physics chassis' initial orientation rather than a plain number).
     const startHeading = Math.atan2(startNext.x - startP.x, startNext.z - startP.z);
 
-    const HALF_W = 0.9, HALF_L = 1.55, CONN_Y = -0.1;
-    const chassisShape = new CANNON.Box(new CANNON.Vec3(0.95, 0.55, 1.95));
-    const chassisBody = new CANNON.Body({ mass: 1400 });
+    const HALF_W = cfg.halfW, HALF_L = cfg.halfL, CONN_Y = cfg.connY;
+    const chassisShape = new CANNON.Box(new CANNON.Vec3(cfg.chassisHalf.x, cfg.chassisHalf.y, cfg.chassisHalf.z));
+    const chassisBody = new CANNON.Body({ mass: cfg.mass });
     chassisBody.addShape(chassisShape);
-    chassisBody.position.set(startP.x, 0.9, startP.z);
+    chassisBody.position.set(startP.x, cfg.startY, startP.z);
     chassisBody.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), startHeading);
     chassisBody.angularDamping = 0.6;
     chassisBody.collisionFilterGroup = GROUP_CHASSIS;
@@ -4278,18 +4321,18 @@ function DriveOverlay({ onReturn, liveRef }) {
 
     const vehicle = new CANNON.RaycastVehicle({ chassisBody, indexRightAxis: 0, indexUpAxis: 1, indexForwardAxis: 2 });
     const wheelOptions = {
-      radius: 0.34,
+      radius: cfg.wheelRadius,
       directionLocal: new CANNON.Vec3(0, -1, 0),
-      suspensionStiffness: 32,
-      suspensionRestLength: 0.3,
-      frictionSlip: 1.5,
-      dampingRelaxation: 2.4,
-      dampingCompression: 4.5,
-      maxSuspensionForce: 100000,
-      rollInfluence: 0.012,
+      suspensionStiffness: cfg.suspensionStiffness,
+      suspensionRestLength: cfg.suspensionRestLength,
+      frictionSlip: cfg.frictionSlip,
+      dampingRelaxation: cfg.dampingRelaxation,
+      dampingCompression: cfg.dampingCompression,
+      maxSuspensionForce: cfg.maxSuspensionForce,
+      rollInfluence: cfg.rollInfluence,
       axleLocal: new CANNON.Vec3(1, 0, 0),
       chassisConnectionPointLocal: new CANNON.Vec3(1, 0, 0),
-      maxSuspensionTravel: 0.28,
+      maxSuspensionTravel: cfg.maxSuspensionTravel,
       customSlidingRotationalSpeed: -32,
       useCustomSlidingRotationalSpeed: true,
     };
@@ -4311,12 +4354,12 @@ function DriveOverlay({ onReturn, liveRef }) {
     loader.setMeshoptDecoder(MeshoptDecoder);
     const car = new THREE.Group();
     scene.add(car);
-    loader.load(base + "office-models/tiggo7.glb", (g) => {
+    loader.load(base + "office-models/" + cfg.glb, (g) => {
       const m = g.scene;
       m.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
       const bb = new THREE.Box3().setFromObject(m);
       const size = bb.getSize(new THREE.Vector3());
-      const scale = 4.2 / Math.max(size.x, size.z, 0.01);
+      const scale = cfg.targetSize / Math.max(size.x, size.z, 0.01);
       m.scale.setScalar(scale);
       // Same parked orientation used in the Hangar's vehicle bay (rotY=PI/2)
       // reads as the model's own local +Z being its side, not its nose —
@@ -4327,18 +4370,18 @@ function DriveOverlay({ onReturn, liveRef }) {
       // offset) left the model visibly displaced from its own origin —
       // the wheels (driven directly off the physics chassis) stayed put
       // while the car body rendered a couple of units away from them.
-      m.rotation.y = Math.PI / 2;
+      m.rotation.y = cfg.rotYFix;
       const bb2 = new THREE.Box3().setFromObject(m);
       m.position.x -= (bb2.min.x + bb2.max.x) / 2;
       m.position.z -= (bb2.min.z + bb2.max.z) / 2;
-      m.position.y -= bb2.min.y - 0.35; // sit on top of the physics chassis, not sunk into it
+      m.position.y -= bb2.min.y - cfg.rideY; // sit on top of the physics chassis, not sunk into it
       car.add(m);
     }, undefined, () => {});
     // Wheels are driven independently from the RaycastVehicle's own
     // wheelInfos every frame — the GLB wasn't authored with rigged wheel
     // nodes to hook a spin animation into, so these are separate meshes
     // layered on top instead of hidden ones inside the model.
-    const wheelMeshes = wheelConn.map(() => { const w = buildCarWheel(); scene.add(w); return w; });
+    const wheelMeshes = wheelConn.map(() => { const w = buildCarWheel(cfg.wheelRadius, cfg.wheelRadius * 0.7); scene.add(w); return w; });
 
     const keys = {};
     let audioCtx = null, evOsc = null, evGain = null, iceOsc = null, iceGain = null, iceLp = null, audioStarted = false;
@@ -4415,7 +4458,7 @@ function DriveOverlay({ onReturn, liveRef }) {
       // Smoothed/progressive steering — no snapping between full-left and
       // full-right, matches a real steering rack's own response lag.
       steerSmoothed += (steerIn - steerSmoothed) * Math.min(1, dt * 6);
-      const MAX_STEER = 0.5;
+      const MAX_STEER = cfg.maxSteer;
       vehicle.setSteeringValue(steerSmoothed * MAX_STEER, 0);
       vehicle.setSteeringValue(steerSmoothed * MAX_STEER, 1);
 
@@ -4425,7 +4468,7 @@ function DriveOverlay({ onReturn, liveRef }) {
       chassisBody.vectorToWorldFrame(fwd, fwd);
       const forwardSpeed = chassisBody.velocity.dot(fwd);
 
-      const MAX_ENGINE = 2600, MAX_BRAKE = 55;
+      const MAX_ENGINE = cfg.maxEngine, MAX_BRAKE = cfg.maxBrake;
       let engineForce = 0, brakeForce = 0;
       if (throttleIn > 0.02) {
         engineForce = -throttleIn * MAX_ENGINE;
@@ -4486,7 +4529,7 @@ function DriveOverlay({ onReturn, liveRef }) {
       // an earlier version recomputed it from local -Z here by mistake,
       // which put the camera in FRONT of the car instead of behind it.
       const carFwd = tmpVec.set(fwd.x, 0, fwd.z).normalize();
-      const behindTarget = tmpVec2.copy(carFwd).multiplyScalar(-8.5).add(car.position).add(new THREE.Vector3(0, 3.4, 0));
+      const behindTarget = tmpVec2.copy(carFwd).multiplyScalar(-cfg.camDist).add(car.position).add(new THREE.Vector3(0, cfg.camHeight, 0));
       if (!camPosInit) { camPos.copy(behindTarget); camPosInit = true; }
       const springK = 55, springD = 11;
       const accelX = (behindTarget.x - camPos.x) * springK - camVel.x * springD;
@@ -4501,7 +4544,7 @@ function DriveOverlay({ onReturn, liveRef }) {
         camPos.y + (Math.random() - 0.5) * shake,
         camPos.z + (Math.random() - 0.5) * shake
       );
-      camera.lookAt(car.position.clone().add(new THREE.Vector3(0, 1, 0)));
+      camera.lookAt(car.position.clone().add(new THREE.Vector3(0, cfg.lookHeight, 0)));
       const targetFov = BASE_FOV + speedT * 22;
       if (Math.abs(camera.fov - targetFov) > 0.05) { camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 3); camera.updateProjectionMatrix(); }
 
@@ -4620,7 +4663,7 @@ function DriveOverlay({ onReturn, liveRef }) {
   return (
     <div className="off3-space-wrap">
       <div ref={mountRef} className="off3-space-canvas" style={{ cursor: "default" }} />
-      <div className="off3-space-hint">W/S להאיץ ולבלום · A/D / ג'ויסטיק להיגוי · מסלול סגור — סעו כמה שתרצו</div>
+      <div className="off3-space-hint">{cfg.label} · W/S להאיץ ולבלום · A/D / ג'ויסטיק להיגוי · מסלול סגור — סעו כמה שתרצו</div>
       <canvas ref={gaugeRef} width={110} height={70} className="off3-drive-gauge" />
       <canvas ref={radarRef} width={120} height={120} className="off3-drive-radar" />
       <div className="off3-drive-hud">
@@ -4632,6 +4675,217 @@ function DriveOverlay({ onReturn, liveRef }) {
       <button className={"off3-sit" + (view360 ? " on" : "")} onClick={() => setView360((v) => !v)} title="מצב מצלמת 360°">
         📹 {view360 ? "חזרה למצלמה רגילה" : "מצב 360°"}
       </button>
+      <button className="off3-space-return" onClick={onReturn}>🚪 חזרה לאנגר</button>
+    </div>
+  );
+}
+
+// Giant-robot piloting mode — entered from beside the Hyperion statue in the
+// Hangar. No vehicle physics needed here (it's a walking mech, not a car):
+// the same camera-relative third-person movement scheme the main office
+// avatar uses (raw input rotated by the camera's own orbit before being
+// applied to position — see CLAUDE.md), just scaled up to a many-meter-tall
+// robot, with a footstep-timed camera thud so the extra mass actually reads.
+function RobotPilotOverlay({ onReturn, liveRef }) {
+  const mountRef = useRef(null);
+  const powerRef = useRef(null);
+
+  useEffect(() => {
+    const mount = mountRef.current;
+    if (!mount) return;
+    let cancelled = false;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1a2436);
+    scene.fog = new THREE.Fog(0x1a2436, 70, 340);
+
+    const camera = new THREE.PerspectiveCamera(62, mount.clientWidth / mount.clientHeight, 0.1, 900);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+    renderer.setSize(mount.clientWidth, mount.clientHeight);
+    renderer.shadowMap.enabled = true;
+    mount.appendChild(renderer.domElement);
+
+    const moon = new THREE.DirectionalLight(0xcfe0ff, 1.1);
+    moon.position.set(-60, 100, 40);
+    moon.castShadow = true;
+    moon.shadow.mapSize.set(1024, 1024);
+    moon.shadow.camera.left = -50; moon.shadow.camera.right = 50;
+    moon.shadow.camera.top = 50; moon.shadow.camera.bottom = -50;
+    moon.shadow.camera.far = 300;
+    scene.add(moon, moon.target);
+    scene.add(new THREE.AmbientLight(0x7c8bb0, 0.65));
+
+    const grassTex = buildGrassTexture(); grassTex.repeat.set(80, 80);
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(700, 700), new THREE.MeshStandardMaterial({ map: grassTex, roughness: 1, color: 0x8fa878 }));
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    // Distant city blocks purely for scale reference — without something
+    // human-scale-ish in the distance a many-meter-tall robot doesn't read
+    // as "giant," it just reads as "normal-sized in an empty field."
+    const buildingMat = new THREE.MeshStandardMaterial({ color: 0x2b3448, roughness: 0.85 });
+    const distantBuildings = [];
+    for (let i = 0; i < 16; i++) {
+      const ang = (i / 16) * Math.PI * 2;
+      const r = 160 + (i % 4) * 30;
+      const h = 16 + (i % 5) * 9;
+      const b = new THREE.Mesh(new THREE.BoxGeometry(12 + (i % 3) * 5, h, 12 + (i % 3) * 5), buildingMat);
+      b.position.set(Math.cos(ang) * r, h / 2, Math.sin(ang) * r);
+      b.castShadow = true; b.receiveShadow = true;
+      scene.add(b);
+      distantBuildings.push(b);
+    }
+
+    const base = import.meta.env.BASE_URL || "/";
+    const loader = new GLTFLoader();
+    loader.setMeshoptDecoder(MeshoptDecoder);
+    const robot = new THREE.Group();
+    robot.position.set(0, 0, 20);
+    scene.add(robot);
+    const ROBOT_HEIGHT = 9; // towers over the distant "buildings" above
+    loader.load(base + "office-models/hyperion.glb", (g) => {
+      const m = g.scene;
+      m.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      const bb = new THREE.Box3().setFromObject(m);
+      const size = bb.getSize(new THREE.Vector3());
+      const scale = ROBOT_HEIGHT / Math.max(size.y, 0.01);
+      m.scale.setScalar(scale);
+      const bb2 = new THREE.Box3().setFromObject(m);
+      m.position.x -= (bb2.min.x + bb2.max.x) / 2;
+      m.position.z -= (bb2.min.z + bb2.max.z) / 2;
+      m.position.y -= bb2.min.y;
+      robot.add(m);
+    }, undefined, () => {});
+
+    const keys = {};
+    const onKeyDown = (e) => { keys[e.key.toLowerCase()] = true; };
+    const onKeyUp = (e) => { keys[e.key.toLowerCase()] = false; };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    let gamepadIndex = null;
+    const onGpConnect = (e) => { gamepadIndex = e.gamepad.index; };
+    const onGpDisconnect = (e) => { if (gamepadIndex === e.gamepad.index) gamepadIndex = null; };
+    window.addEventListener("gamepadconnected", onGpConnect);
+    window.addEventListener("gamepaddisconnected", onGpDisconnect);
+    try {
+      const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+      for (const g of pads) { if (g && g.connected && g.mapping === "standard") { gamepadIndex = g.index; break; } }
+    } catch {}
+    const GP_DEADZONE = 0.15;
+    const gpAxis = (v) => (Math.abs(v) < GP_DEADZONE ? 0 : v);
+
+    // Footstep thud — a heavy low-frequency thump every couple of strides,
+    // timed off distance traveled rather than a fixed interval so it speeds
+    // up and slows down with the robot's own pace.
+    let audioCtx = null;
+    const thud = () => {
+      if (!audioCtx) { const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return; audioCtx = new AC(); }
+      const now = audioCtx.currentTime;
+      const osc = audioCtx.createOscillator(); osc.type = "sine";
+      osc.frequency.setValueAtTime(60, now); osc.frequency.exponentialRampToValueAtTime(28, now + 0.25);
+      const gain = audioCtx.createGain(); gain.gain.setValueAtTime(0.5, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      osc.start(now); osc.stop(now + 0.4);
+    };
+
+    let camAz = Math.PI, camEl = 0.32;
+    let strideDist = 0;
+    let shakeT = 0;
+    let facing = Math.PI;
+    const clock = new THREE.Clock();
+    let raf;
+    const animate = () => {
+      if (cancelled) return;
+      raf = requestAnimationFrame(animate);
+      const dt = Math.min(0.05, clock.getDelta());
+
+      const jv = liveRef?.current?.joyVec || { x: 0, y: 0 };
+      const tv = liveRef?.current?.turnVec || { x: 0, y: 0 };
+      const gp = (gamepadIndex !== null && navigator.getGamepads) ? navigator.getGamepads()[gamepadIndex] : null;
+      const gMoveX = gp ? gpAxis(gp.axes[2] || 0) : 0, gMoveY = gp ? gpAxis(gp.axes[3] || 0) : 0;
+      const gLookX = gp ? gpAxis(gp.axes[0] || 0) : 0;
+      let mx = (keys["d"] || keys["arrowright"] ? 1 : 0) - (keys["a"] || keys["arrowleft"] ? 1 : 0);
+      let mz = (keys["s"] || keys["arrowdown"] ? 1 : 0) - (keys["w"] || keys["arrowup"] ? 1 : 0);
+      if (!mx && !mz) { mx = gMoveX || jv.x; mz = gMoveY || jv.y; }
+      let lookX = (keys["q"] ? -1 : 0) + (keys["e"] ? 1 : 0);
+      if (!lookX) lookX = gLookX || tv.x;
+      camAz += lookX * 1.4 * dt;
+
+      const mag = Math.hypot(mx, mz);
+      const speed = 5.5; // giant strides eat ground fast despite the mass
+      if (mag > 0.05) {
+        // Camera-relative: rotate raw input by the camera's own azimuth
+        // before applying to position (CLAUDE.md convention).
+        const rx = mx * Math.cos(camAz) - mz * Math.sin(camAz);
+        const rz = mx * Math.sin(camAz) + mz * Math.cos(camAz);
+        const nrm = Math.min(1, mag);
+        robot.position.x += (rx / mag) * nrm * speed * dt;
+        robot.position.z += (rz / mag) * nrm * speed * dt;
+        facing = Math.atan2(rx, rz);
+        strideDist += speed * nrm * dt;
+        if (strideDist > 5.5) { strideDist = 0; thud(); shakeT = 1; }
+      }
+      // Shortest-path rotation toward the facing angle.
+      let da = facing - robot.rotation.y;
+      da = ((da + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+      robot.rotation.y += da * Math.min(1, dt * 6);
+
+      shakeT = Math.max(0, shakeT - dt * 3.2);
+      const camDist = 16, camHeight = 7;
+      const camX = robot.position.x - Math.sin(camAz) * camDist * Math.cos(camEl);
+      const camZ = robot.position.z - Math.cos(camAz) * camDist * Math.cos(camEl);
+      const camY = robot.position.y + camHeight + camDist * Math.sin(camEl);
+      const shake = shakeT * 0.25;
+      camera.position.set(
+        camX + (Math.random() - 0.5) * shake,
+        camY + (Math.random() - 0.5) * shake,
+        camZ + (Math.random() - 0.5) * shake
+      );
+      camera.lookAt(robot.position.x, robot.position.y + ROBOT_HEIGHT * 0.55, robot.position.z);
+
+      if (powerRef.current) powerRef.current.textContent = Math.round(70 + Math.sin(clock.elapsedTime * 0.7) * 8) + "%";
+
+      renderer.render(scene, camera);
+    };
+    animate();
+
+    const onResize = () => {
+      camera.aspect = mount.clientWidth / mount.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(mount.clientWidth, mount.clientHeight);
+    };
+    window.addEventListener("resize", onResize);
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("gamepadconnected", onGpConnect);
+      window.removeEventListener("gamepaddisconnected", onGpDisconnect);
+      if (audioCtx) audioCtx.close();
+      scene.traverse((obj) => {
+        if (obj.geometry) obj.geometry.dispose();
+        if (obj.material) {
+          const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+          mats.forEach(disposeMaterial);
+        }
+      });
+      renderer.dispose();
+      if (renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement);
+    };
+  }, []);
+
+  return (
+    <div className="off3-space-wrap">
+      <div ref={mountRef} className="off3-space-canvas" style={{ cursor: "default" }} />
+      <div className="off3-space-hint">היפריון · WASD / ג'ויסטיק ימני לתזוזה · Q/E או ג'ויסטיק שמאלי לסיבוב מצלמה</div>
+      <div className="off3-drive-hud">
+        <div><span>כוח ליבה</span><b ref={powerRef}>70%</b></div>
+      </div>
       <button className="off3-space-return" onClick={onReturn}>🚪 חזרה לאנגר</button>
     </div>
   );
@@ -4716,6 +4970,10 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   // its own top-level pause flag, so the main office scene's existing
   // inHangar pause guard already covers it with no extra wiring.
   const [inDrive, setInDrive] = useState(false);
+  const [driveVehicle, setDriveVehicle] = useState("car");
+  // Giant-robot piloting mode, entered from beside the Hyperion statue —
+  // same nested-under-inHangar reasoning as inDrive above.
+  const [inRobot, setInRobot] = useState(false);
   useEffect(() => { liveRef.current.setNearHangar = setNearHangar; }, []);
   useEffect(() => { liveRef.current.inHangar = inHangar; }, [inHangar]);
   // Real business activity, normalized 0..1 — drives the space portal's
@@ -9476,8 +9734,17 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       </div>
       {inSpace && <SpaceOverlay onReturn={() => liveRef.current.exitPortal?.()} load={spacePortalLoad} />}
       {inFlight && <FlightOverlay onReturn={() => setInFlight(false)} />}
-      {inHangar && !inDrive && <HangarOverlay onReturn={() => setInHangar(false)} liveRef={liveRef} onDrive={() => setInDrive(true)} />}
-      {inDrive && <DriveOverlay onReturn={() => setInDrive(false)} liveRef={liveRef} />}
+      {inHangar && !inDrive && !inRobot && (
+        <HangarOverlay
+          onReturn={() => setInHangar(false)}
+          liveRef={liveRef}
+          onDrive={() => { setDriveVehicle("car"); setInDrive(true); }}
+          onDriveTruck={() => { setDriveVehicle("truck"); setInDrive(true); }}
+          onPilotRobot={() => setInRobot(true)}
+        />
+      )}
+      {inDrive && <DriveOverlay onReturn={() => setInDrive(false)} liveRef={liveRef} vehicle={driveVehicle} />}
+      {inRobot && <RobotPilotOverlay onReturn={() => setInRobot(false)} liveRef={liveRef} />}
     </div>
   );
 }
