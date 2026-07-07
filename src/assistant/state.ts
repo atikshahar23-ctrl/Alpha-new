@@ -274,6 +274,40 @@ export function loadInstallDates(): Set<string> {
   } catch { return new Set(); }
 }
 
+// Quick-edit an event's title straight from the calendar's day-agenda view —
+// writes back into hg2:tasks for HG-sourced ("hg:"-prefixed) events so the
+// rename round-trips to Heavy Guard's own store, same as removeEvent already does.
+export function updateEventTitle(id: string, title: string) {
+  if (id.startsWith('hg:')) {
+    const hgId = id.slice(3);
+    try {
+      const tasks = JSON.parse(localStorage.getItem('hg2:tasks') || '[]');
+      const t = tasks.find((x: { id: string }) => x.id === hgId);
+      if (t) { t.title = title; localStorage.setItem('hg2:tasks', JSON.stringify(tasks)); }
+    } catch {}
+  } else {
+    const ev = loadAlphaEvents();
+    const e = ev.find(x => x.id === id);
+    if (e) { e.title = title; saveEvents(ev); }
+  }
+}
+
+// --- DAY JOURNAL — a free-text diary entry per calendar date, the "planner"
+// half of the calendar (separate from dated events/tasks above).
+const JOURNAL_KEY = 'alpha_journal_v1';
+function loadJournal(): Record<string, string> {
+  try { return JSON.parse(localStorage.getItem(JOURNAL_KEY) || '{}'); } catch { return {}; }
+}
+export function getJournalEntry(date: string): string {
+  return loadJournal()[date] || '';
+}
+export function saveJournalEntry(date: string, text: string) {
+  const j = loadJournal();
+  const trimmed = text.trim();
+  if (trimmed) j[date] = text; else delete j[date];
+  localStorage.setItem(JOURNAL_KEY, JSON.stringify(j));
+}
+
 // --- NOTES ---
 export function loadNotes(): string[] {
   try { return JSON.parse(localStorage.getItem('alpha_notes') || '[]'); } catch { return []; }

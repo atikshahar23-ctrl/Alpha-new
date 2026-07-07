@@ -3842,7 +3842,8 @@ function StyleTag() {
 .off3-canvas canvas{display:block;width:100%!important;height:100%!important}
 .off3-hint{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:2;
   background:rgba(6,9,18,.72);border:1px solid rgba(110,170,240,.25);border-radius:20px;
-  padding:6px 14px;font-size:11.5px;color:#aebde0;backdrop-filter:blur(8px);white-space:nowrap;pointer-events:none}
+  padding:6px 14px;font-size:11.5px;color:#aebde0;backdrop-filter:blur(8px);white-space:nowrap;pointer-events:none;
+  animation:off3HintFade 9s ease forwards}
 /* Talk bar (mic + text-chat) shown when standing next to an agent. */
 .off3-talkbar{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);z-index:3;
   display:flex;align-items:center;gap:10px;animation:acRise .2s ease both}

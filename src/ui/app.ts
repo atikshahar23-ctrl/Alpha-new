@@ -1,6 +1,6 @@
 import { mountOrb, setCryEnabled, type OrbHandle } from '../orb/OrbScene';
 import { mountFlowLines } from '../bg/flowLines';
-import { loadState, saveState, addEvent, addTask, scheduleTask, saveNote, loadEvents, loadTasks, removeEvent, loadHgBacklog, scheduleHgTask, loadInstallDates, loadWallet, saveWallet, type AppState, type TextLang, type AIProvider, type VoiceGender, type UILang } from '../assistant/state';
+import { loadState, saveState, addEvent, addTask, scheduleTask, saveNote, loadEvents, loadTasks, removeEvent, loadHgBacklog, scheduleHgTask, loadInstallDates, loadWallet, saveWallet, updateEventTitle, getJournalEntry, saveJournalEntry, type AppState, type TextLang, type AIProvider, type VoiceGender, type UILang, type CalEvent } from '../assistant/state';
 import { askAIStream, askOnce, askVision, runTags } from '../assistant/gemini';
 import { GEN1 } from '../data/gen1';
 import * as THREE from 'three';
@@ -1576,71 +1576,119 @@ export function mountApp(root: HTMLElement) {
   let calViewYear = new Date().getFullYear();
   let calViewMonth = new Date().getMonth();
 
+  let calJournalTimer: ReturnType<typeof setTimeout> | undefined;
   function renderCalendar(selectedDate?: string) {
     const allEvents = loadEvents();
     const today = new Date().toISOString().slice(0, 10);
     const year = calViewYear;
     const month = calViewMonth;
-    const monthNames = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
-    const dayNames = ['א','ב','ג','ד','ה','ו','ש'];
+    const isHe = state.uiLang === 'he';
+    const monthNames = isHe
+      ? ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר']
+      : ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const dayNames = isHe ? ['א','ב','ג','ד','ה','ו','ש'] : ['Su','Mo','Tu','We','Th','Fr','Sa'];
     const firstDay = new Date(year, month, 1).getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const esc = (s: string) => s.replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]!));
 
-    // Build set of dates that have events, plus Heavy Guard install dates —
-    // so a day HG's own calendar marks (an install happened) shows a marker
-    // here too, even with no Alpha event/task on it.
-    const eventDates = new Set(allEvents.map(e => e.date));
+    // Group events by date, plus Heavy Guard install dates — so a day HG's
+    // own calendar marks (an install happened) shows a marker here too, even
+    // with no Alpha event/task on it.
+    const eventDates = new Map<string, CalEvent[]>();
+    for (const e of allEvents) {
+      if (!eventDates.has(e.date)) eventDates.set(e.date, []);
+      eventDates.get(e.date)!.push(e);
+    }
     const installDates = loadInstallDates();
+    const monthPrefix = `${year}-${String(month + 1).padStart(2, '0')}`;
+    const monthEventCount = allEvents.filter(e => e.date.startsWith(monthPrefix)).length;
+    const openTaskCount = loadTasks().filter(t => !t.done).length + loadHgBacklog().length;
 
-    // Month grid header
-    let html = `<div style="padding:16px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-        <button id="calPrev" style="background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:8px;color:var(--ink);padding:6px 12px;cursor:pointer;font-size:16px">‹</button>
-        <span style="font-size:17px;font-weight:600;color:var(--ink)">${monthNames[month]} ${year}</span>
-        <button id="calNext" style="background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:8px;color:var(--ink);padding:6px 12px;cursor:pointer;font-size:16px">›</button>
+    let html = `<div class="cal-app">
+      <div class="cal-toolbar">
+        <div class="cal-nav">
+          <button id="calPrev" title="${isHe ? 'חודש קודם' : 'Previous month'}">‹</button>
+          <span class="cal-title">${monthNames[month]} ${year}</span>
+          <button id="calNext" title="${isHe ? 'חודש הבא' : 'Next month'}">›</button>
+          <button id="calToday" class="cal-today-btn">${isHe ? 'היום' : 'Today'}</button>
+        </div>
+        <div class="cal-stats">
+          <span>${isHe ? 'אירועים החודש' : 'Events this month'} <b>${monthEventCount}</b></span>
+          <span>${isHe ? 'משימות פתוחות' : 'Open tasks'} <b>${openTaskCount}</b></span>
+        </div>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:8px;text-align:center">
-        ${dayNames.map(d => `<div style="color:var(--dim);font-size:11px;padding:4px">${d}</div>`).join('')}
-      </div>
-      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">
-        ${Array(firstDay).fill('<div></div>').join('')}`;
+      <div class="cal-weekdays">${dayNames.map((d, i) => `<span class="${i >= 5 ? 'weekend' : ''}">${d}</span>`).join('')}</div>
+      <div class="cal-grid">
+        ${Array(firstDay).fill('<div class="cal-day empty"></div>').join('')}`;
 
     for (let d = 1; d <= daysInMonth; d++) {
-      const iso = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const iso = `${monthPrefix}-${String(d).padStart(2, '0')}`;
       const isToday = iso === today;
       const isSelected = iso === selectedDate;
-      const hasEvent = eventDates.has(iso);
+      const dow = new Date(year, month, d).getDay();
+      const dayEvents = eventDates.get(iso) || [];
       const hasInstall = installDates.has(iso);
-      const bg = isSelected ? 'var(--gold)' : isToday ? 'rgba(218,165,32,.18)' : 'rgba(255,255,255,.03)';
-      const color = isSelected ? '#0a0806' : 'var(--ink)';
-      const border = isToday && !isSelected ? '1px solid rgba(218,165,32,.5)' : '1px solid transparent';
-      const dotColor = isSelected ? '#0a0806' : 'var(--gold)';
-      const instColor = isSelected ? '#0a0806' : 'var(--cyan)';
-      html += `<button data-date="${iso}" title="${hasInstall ? (state.uiLang === 'he' ? 'התקנה ב-Heavy Guard ביום זה' : 'Heavy Guard install this day') : ''}" style="aspect-ratio:1;background:${bg};border:${border};border-radius:8px;color:${color};cursor:pointer;font-size:13px;font-weight:${isToday || isSelected ? '700' : '400'};position:relative;padding:0">
-        ${d}<span style="position:absolute;bottom:3px;left:50%;transform:translateX(-50%);display:flex;gap:2px">${hasEvent ? `<span style="width:4px;height:4px;border-radius:50%;background:${dotColor}"></span>` : ''}${hasInstall ? `<span style="width:4px;height:4px;border-radius:50%;background:${instColor}"></span>` : ''}</span>
+      const cls = ['cal-day'];
+      if (dow >= 5) cls.push('weekend');
+      if (isToday) cls.push('today');
+      if (isSelected) cls.push('selected');
+      const shown = dayEvents.slice(0, 2);
+      const extra = dayEvents.length - shown.length;
+      html += `<button type="button" class="${cls.join(' ')}" data-date="${iso}" title="${hasInstall ? (isHe ? 'התקנה ב-Heavy Guard ביום זה' : 'Heavy Guard install this day') : ''}">
+        ${hasInstall ? '<span class="cal-install-dot"></span>' : ''}
+        <span class="cal-daynum">${d}</span>
+        ${shown.map(e => `<span class="cal-chip${e.id.startsWith('hg:') ? ' hg' : ''}">${esc(e.title)}</span>`).join('')}
+        ${extra > 0 ? `<span class="cal-chip-more">+${extra}</span>` : ''}
       </button>`;
     }
     html += `</div>`;
 
-    // If a date is selected, show its events + add form below
+    // Selected-day agenda: events (time-sorted, inline-editable), quick add
+    // for both events and tasks, and a free-text day journal entry.
     if (selectedDate) {
-      const dayEvents = allEvents.filter(e => e.date === selectedDate);
-      html += `<div style="margin-top:16px;border-top:1px solid var(--line);padding-top:16px">
-        <div style="font-size:13px;color:var(--dim);margin-bottom:10px">${selectedDate}</div>
-        ${dayEvents.length === 0 ? '<div style="color:var(--dim);font-style:italic;margin-bottom:12px">אין אירועים</div>' : ''}
-        ${dayEvents.map(e => {
+      const dayEvents = (eventDates.get(selectedDate) || []).slice().sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+      const dowNames = isHe
+        ? ['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת']
+        : ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+      const dowLabel = dowNames[new Date(selectedDate + 'T00:00:00').getDay()];
+
+      html += `<div class="cal-daypanel">
+        <div class="cal-daypanel-head">
+          <span class="cal-daypanel-date">${dowLabel}, ${selectedDate}</span>
+          <span class="cal-daypanel-sub">${dayEvents.length ? (isHe ? `${dayEvents.length} אירועים` : `${dayEvents.length} events`) : (isHe ? 'יום פנוי' : 'Free day')}</span>
+        </div>`;
+
+      if (dayEvents.length === 0) {
+        html += `<div style="color:var(--dim);font-style:italic;font-size:13px;margin-bottom:8px">${isHe ? 'אין אירועים ביום זה' : 'No events scheduled'}</div>`;
+      } else {
+        for (const e of dayEvents) {
           const isHg = e.id.startsWith('hg:');
-          return `<div style="display:flex;gap:10px;align-items:center;padding:10px;background:rgba(255,255,255,.03);border:1px solid ${isHg ? 'rgba(255,194,77,.15)' : 'var(--line)'};border-radius:10px;margin-bottom:6px">
-            ${e.time ? `<span style="color:var(--cyan);font-size:12px;min-width:40px">${e.time}</span>` : ''}
-            <span style="flex:1;font-size:14px">${e.title}</span>
-            <button data-id="${e.id}" class="del" style="background:none;border:none;color:var(--dim);cursor:pointer;font-size:15px">✕</button>
+          html += `<div class="cal-agenda-item${isHg ? ' hg' : ''}">
+            <span class="cal-agenda-dot" style="background:${isHg ? 'var(--cyan)' : 'var(--gold)'}"></span>
+            ${e.time ? `<span class="cal-agenda-time">${e.time}</span>` : ''}
+            <input class="cal-agenda-title" data-edit="${e.id}" value="${esc(e.title)}">
+            <button data-id="${e.id}" class="cal-agenda-del" title="${isHe ? 'מחק' : 'Delete'}">✕</button>
           </div>`;
-        }).join('')}
-        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
-          <input id="evT" placeholder="${state.uiLang === 'he' ? 'כותרת אירוע' : 'Event title'}" style="flex:1;min-width:120px;background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--ink);font-size:13px">
-          <input type="time" id="evTime" style="background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--ink);font-size:13px">
-          <button id="evAdd" style="background:linear-gradient(135deg,var(--gold),#c8953a);border:none;border-radius:8px;padding:8px 16px;cursor:pointer;color:#0a0806;font-weight:600;font-size:13px">+</button>
+        }
+      }
+
+      html += `<div class="cal-quickrow">
+          <input type="text" id="evTitle" placeholder="${isHe ? 'הוסף אירוע…' : 'Add event…'}">
+          <input type="time" id="evTime">
+          <button id="evAdd">+ ${isHe ? 'אירוע' : 'Event'}</button>
         </div>
+        <div class="cal-quickrow">
+          <input type="text" id="taskTitle" placeholder="${isHe ? 'הוסף משימה…' : 'Add task…'}">
+          <select id="taskPriority">
+            <option value="low">${isHe ? 'נמוכה' : 'Low'}</option>
+            <option value="med" selected>${isHe ? 'רגילה' : 'Medium'}</option>
+            <option value="high">${isHe ? 'גבוהה' : 'High'}</option>
+          </select>
+          <button id="taskAdd">+ ${isHe ? 'משימה' : 'Task'}</button>
+        </div>
+        <div class="cal-section-label"><span class="ic">✎</span> ${isHe ? 'יומן היום' : "Day's journal"}</div>
+        <textarea class="cal-journal" id="calJournal" placeholder="${isHe ? 'רשמו כאן מחשבות, סיכום היום, תובנות…' : 'Jot down thoughts, a day summary, insights…'}">${esc(getJournalEntry(selectedDate))}</textarea>
+        <div class="cal-journal-saved" id="calJournalSaved">${isHe ? 'נשמר ✓' : 'Saved ✓'}</div>
       </div>`;
     }
 
@@ -1652,34 +1700,30 @@ export function mountApp(root: HTMLElement) {
     const unscheduled = loadTasks().filter(tk => !tk.done && !tk.due);
     const hgBacklog = loadHgBacklog();
     const totalUnscheduled = unscheduled.length + hgBacklog.length;
-    html += `<div style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px">
-      <div style="font-size:12px;color:var(--dim);margin-bottom:10px;display:flex;align-items:center;gap:6px">
-        <span style="color:var(--gold)">◷</span> ${state.uiLang === 'he' ? 'משימות ללא שיבוץ' : 'Unscheduled tasks'}${totalUnscheduled ? ` (${totalUnscheduled})` : ''}
-      </div>`;
+    html += `<div class="cal-section-label"><span class="ic">◷</span> ${isHe ? 'משימות ללא שיבוץ' : 'Unscheduled tasks'}${totalUnscheduled ? ` (${totalUnscheduled})` : ''}</div>`;
     if (totalUnscheduled === 0) {
-      html += `<div style="color:var(--dim);font-style:italic;font-size:13px">${state.uiLang === 'he' ? 'אין משימות ממתינות לשיבוץ' : 'No tasks waiting to be scheduled'}</div>`;
+      html += `<div style="color:var(--dim);font-style:italic;font-size:13px">${isHe ? 'אין משימות ממתינות לשיבוץ' : 'No tasks waiting to be scheduled'}</div>`;
     } else {
-      const schedTitle = selectedDate ? (state.uiLang === 'he' ? 'שבץ לתאריך הנבחר' : 'Schedule to selected day') : (state.uiLang === 'he' ? 'בחר יום בלוח תחילה' : 'Pick a day first');
+      const schedTitle = selectedDate ? (isHe ? 'שבץ לתאריך הנבחר' : 'Schedule to selected day') : (isHe ? 'בחר יום בלוח תחילה' : 'Pick a day first');
       const schedBg = selectedDate ? 'rgba(218,165,32,.14)' : 'rgba(255,255,255,.03)';
       const schedColor = selectedDate ? 'var(--gold)' : 'var(--dim)';
       const schedCursor = selectedDate ? 'pointer' : 'default';
       for (const tk of unscheduled) {
         const pColor = tk.priority === 'high' ? '#c0432e' : tk.priority === 'low' ? '#5a8a50' : 'var(--gold)';
-        html += `<div style="display:flex;gap:10px;align-items:center;padding:9px 10px;background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:10px;margin-bottom:6px">
-          <span style="width:6px;height:6px;border-radius:50%;background:${pColor};flex-shrink:0"></span>
-          <span style="flex:1;font-size:14px">${tk.text.replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]!))}</span>
+        html += `<div class="cal-agenda-item">
+          <span class="cal-agenda-dot" style="background:${pColor}"></span>
+          <span style="flex:1;font-size:13.5px">${esc(tk.text)}</span>
           <button data-sched="${tk.id}" title="${schedTitle}" ${selectedDate ? '' : 'disabled'} style="background:${schedBg};border:1px solid var(--line);border-radius:8px;color:${schedColor};cursor:${schedCursor};font-size:13px;padding:5px 9px">📅</button>
         </div>`;
       }
       for (const tk of hgBacklog) {
-        html += `<div style="display:flex;gap:10px;align-items:center;padding:9px 10px;background:rgba(255,255,255,.03);border:1px solid rgba(255,194,77,.15);border-radius:10px;margin-bottom:6px">
-          <span style="width:6px;height:6px;border-radius:50%;background:var(--cyan);flex-shrink:0" title="Heavy Guard"></span>
-          <span style="flex:1;font-size:14px">${tk.title.replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]!))}</span>
+        html += `<div class="cal-agenda-item hg">
+          <span class="cal-agenda-dot" style="background:var(--cyan)" title="Heavy Guard"></span>
+          <span style="flex:1;font-size:13.5px">${esc(tk.title)}</span>
           <button data-sched-hg="${tk.id}" title="${schedTitle}" ${selectedDate ? '' : 'disabled'} style="background:${schedBg};border:1px solid var(--line);border-radius:8px;color:${schedColor};cursor:${schedCursor};font-size:13px;padding:5px 9px">📅</button>
         </div>`;
       }
     }
-    html += `</div>`;
 
     html += '</div>';
     $('winBody').innerHTML = html;
@@ -1709,21 +1753,55 @@ export function mountApp(root: HTMLElement) {
       if (calViewMonth === 11) { calViewMonth = 0; calViewYear++; } else calViewMonth++;
       renderCalendar(selectedDate);
     };
+    $('calToday').onclick = () => {
+      calViewYear = new Date().getFullYear();
+      calViewMonth = new Date().getMonth();
+      renderCalendar(new Date().toISOString().slice(0, 10));
+    };
     $('winBody').querySelectorAll<HTMLButtonElement>('[data-date]').forEach(btn => {
       btn.onclick = () => renderCalendar(btn.dataset.date!);
     });
     const evAdd = document.getElementById('evAdd');
     if (evAdd) evAdd.onclick = () => {
-      const title = ($('evT') as HTMLInputElement).value.trim();
+      const title = ($('evTitle') as HTMLInputElement).value.trim();
       const time = ($('evTime') as HTMLInputElement).value;
       if (!title || !selectedDate) return;
       addEvent(title, selectedDate, time);
       updateCalBadge();
       renderCalendar(selectedDate);
     };
-    $('winBody').querySelectorAll<HTMLButtonElement>('.del').forEach(b => {
+    const taskAdd = document.getElementById('taskAdd');
+    if (taskAdd) taskAdd.onclick = () => {
+      const text = ($('taskTitle') as HTMLInputElement).value.trim();
+      const priority = ($('taskPriority') as HTMLSelectElement).value as 'low' | 'med' | 'high';
+      if (!text || !selectedDate) return;
+      addTask(text, priority, selectedDate);
+      updateCalBadge();
+      renderCalendar(selectedDate);
+    };
+    $('winBody').querySelectorAll<HTMLButtonElement>('.cal-agenda-del').forEach(b => {
       b.onclick = () => { removeEvent(b.dataset.id!); updateCalBadge(); renderCalendar(selectedDate); };
     });
+    $('winBody').querySelectorAll<HTMLInputElement>('[data-edit]').forEach(inp => {
+      inp.onblur = () => {
+        const v = inp.value.trim();
+        if (v) updateEventTitle(inp.dataset.edit!, v);
+        renderCalendar(selectedDate);
+      };
+      inp.onkeydown = (ev) => { if (ev.key === 'Enter') inp.blur(); };
+    });
+    const journalEl = document.getElementById('calJournal') as HTMLTextAreaElement | null;
+    if (journalEl && selectedDate) {
+      journalEl.oninput = () => {
+        clearTimeout(calJournalTimer);
+        const date = selectedDate;
+        calJournalTimer = setTimeout(() => {
+          saveJournalEntry(date, journalEl.value);
+          const saved = document.getElementById('calJournalSaved');
+          if (saved) { saved.classList.add('show'); setTimeout(() => saved.classList.remove('show'), 1500); }
+        }, 500);
+      };
+    }
   }
   function openCalendar() {
     calViewYear = new Date().getFullYear();
