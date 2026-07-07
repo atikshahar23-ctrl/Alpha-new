@@ -128,7 +128,7 @@
       animation:fbLoad 1.1s ease-in-out infinite}
     @keyframes fbLoad{0%{transform:translateX(-120%)}100%{transform:translateX(320%)}}
     .fb-txt{font-family:'Space Grotesk',sans-serif;font-size:11.5px;letter-spacing:3px;color:#c9b27a;
-      text-transform:uppercase;opacity:.85}
+      text-transform:uppercase;opacity:.85;max-width:90vw;text-align:center}
     #introVid{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000;transition:opacity .5s ease}
     /* ── James-Bond-style biometric face scan (blue mesh over the face) ── */
     .intro-facemesh{position:absolute;inset:0;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;opacity:0;transition:opacity .35s;pointer-events:none}
@@ -249,25 +249,38 @@
         veil.innerHTML='<div class="fb-logo-wrap"><img src="%BASE_URL%heavyguard-logo.png" class="fb-logo" alt="" /><div class="fb-scan"></div></div>'+
           '<div class="fb-bar"><span></span></div><div class="fb-txt">מאתחל מערכת…</div>';
         document.body.appendChild(veil);
+        var fbTxt=veil.querySelector('.fb-txt');
+        // app.ts announces each system as it actually starts loading (real
+        // progress, not a fake cycling animation) — this is the fix for
+        // "I don't want to see panels loading in front of my face": the veil
+        // now names exactly what's being prepared instead of a static caption
+        // that could sit there while data is still quietly loading behind it.
+        function onBootStep(e){ if(fbTxt) fbTxt.textContent='טוען ' + e.detail + '…'; }
+        window.addEventListener('alpha-boot-step', onBootStep);
         var fbDone=false;
         var fbStart=performance.now();
         function fbReveal(){
           if(fbDone) return; fbDone=true;
+          window.removeEventListener('alpha-boot-step', onBootStep);
           revealApp();
           veil.classList.add('gone');
           setTimeout(function(){ veil.parentNode&&veil.parentNode.removeChild(veil); }, 500);
         }
-        // Real readiness (window.__alphaReady, set by main.ts once the initial
-        // HUD/data pass has fired) gates the reveal, with a small minimum
-        // display time so the veil never just flashes, and a hard fallback so
-        // a slow/failed signal can never leave the app stuck behind it.
+        // Real readiness (window.__alphaReady, set by main.ts once the HUD's
+        // live data — not just the render calls that kick off fetching it —
+        // has actually settled) gates the reveal, with a small minimum
+        // display time so the veil never just flashes. Per explicit owner
+        // request this genuinely waits for real data, no matter how long —
+        // the 32s fallback below is only a last-resort safety net (matches
+        // app.ts's own 30s data-wait ceiling plus margin) for a completely
+        // hung connection, not a normal-path shortcut.
         (function poll(){
           if(fbDone) return;
           var elapsed=performance.now()-fbStart;
           if(window.__alphaReady && elapsed>=450){ fbReveal(); return; }
           setTimeout(poll, 80);
         })();
-        setTimeout(fbReveal, 4000);
+        setTimeout(fbReveal, 32000);
       }
       document.documentElement.classList.add('booting');   // hide app + welcome until reveal
       var vid=document.getElementById('introVid'); var vaultVid=document.getElementById('vaultVid');

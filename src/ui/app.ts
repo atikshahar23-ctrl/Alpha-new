@@ -3982,7 +3982,7 @@ export function mountApp(root: HTMLElement) {
   }
 
   // The HUD "HeavyGuard OS" tile reuses the existing dock handler.
-  setTimeout(() => {
+  setTimeout(async () => {
     document.getElementById('hudHg')?.addEventListener('click', () => document.getElementById('hgBtn')?.click());
     document.getElementById('hudFleet')?.addEventListener('click', openFleet);
     document.getElementById('hudTrade')?.addEventListener('click', (e) => { e.preventDefault(); openTradeSystem(); });
@@ -4000,13 +4000,36 @@ export function mountApp(root: HTMLElement) {
     document.querySelector('#hudMarkets')?.addEventListener('pointerenter', () => { renderMarkets(); });
     document.getElementById('hudOps')?.addEventListener('click', () => { addMsg(businessBriefing(), 'al'); });
     document.getElementById('hudFleetPanel')?.addEventListener('click', openFleet);
-    renderHud(); renderMarkets(); renderNews(); renderFleetPanel();
-    renderAgendaPanel(); renderTasksPanel(); renderTeamPanel(); renderWeatherPanel(); renderOnThisDayPanel();
     document.getElementById('hudTeamPanel')?.addEventListener('click', () => { location.href = 'agents.html'; });
+    // Announces each system as it starts loading, so index.html's boot veil
+    // can show real progress instead of a static "initializing" caption.
+    const bootStep = (label: string) => { try { window.dispatchEvent(new CustomEvent('alpha-boot-step', { detail: label })); } catch {} };
+    renderHud(); renderFleetPanel(); renderAgendaPanel(); renderTasksPanel(); renderTeamPanel();
+    bootStep('שווקים חיים');
+    const pMarkets = renderMarkets();
+    bootStep('חדשות');
+    const pNews = renderNews();
+    bootStep('מזג אוויר');
+    const pWeather = renderWeatherPanel();
+    bootStep('אירועי היום');
+    const pOnThisDay = renderOnThisDayPanel();
+    bootStep('גימור תצוגה');
     // Signals index.html's boot veil (both the fast-boot repeat-session path
-    // and, in principle, the full cinematic intro) that the first HUD/data
-    // pass has actually fired — the loading screen won't reveal the app
-    // before this, instead of dumping a half-populated dashboard on screen.
+    // and the full cinematic intro) that the dashboard's actual data — not
+    // just the render *calls* that kick off their own network fetches — has
+    // settled, so the reveal never shows a placeholder/skeleton state that
+    // then visibly "pops in" real numbers a moment later. Per explicit owner
+    // request this waits for the REAL data no matter how long it takes —
+    // no short "good enough" cap. The 30s ceiling exists purely so a
+    // genuinely hung connection can't wedge the boot forever; it's well
+    // above the worst case of every one of these functions' own internal
+    // fetch timeouts actually firing (news alone can chain two sources
+    // through two proxy fallbacks, each with its own 6-8s timeout).
+    const settle = (p: Promise<unknown>) => p.catch(() => {});
+    await Promise.race([
+      Promise.all([settle(pMarkets), settle(pNews), settle(pWeather), settle(pOnThisDay)]),
+      new Promise((resolve) => setTimeout(resolve, 30000)),
+    ]);
     (window as any).__alphaReady = true;
     setInterval(() => { renderHud(); renderFleetPanel(); renderAgendaPanel(); renderTasksPanel(); renderTeamPanel(); }, 30000);
     setInterval(renderMarkets, 60000);
@@ -7332,19 +7355,10 @@ export function mountApp(root: HTMLElement) {
   function personalGreeting(): string {
     const nm = loadMemory().profile.name;
     if (!nm) return `${state.name} ${t('onlineMsg', state.uiLang)}`;
-    const tasks = loadTasks();
-    const openCount = tasks.filter(t => !t.done).length;
-    const today = new Date().toISOString().slice(0, 10);
-    const todayEvents = loadEvents().filter(e => e.date === today).length;
-    const bits: string[] = [`${greetingPrefix()}, ${nm}.`];
-    if (openCount > 0 || todayEvents > 0) {
-      const parts: string[] = [];
-      if (todayEvents) parts.push(`${todayEvents} ${t('eventsToday', state.uiLang)}`);
-      if (openCount) parts.push(`${openCount} ${t('openTasks', state.uiLang)}`);
-      bits.push(`${t('youHave', state.uiLang)} ${parts.join(` ${t('and', state.uiLang)} `)}.`);
-    }
-    bits.push(t('howCanIHelp', state.uiLang));
-    return bits.join(' ');
+    // Fixed, always-English opening line per owner request — a short,
+    // consistent "I'm awake" moment right as the boot veil drops, rather
+    // than a longer localized briefing.
+    return `I'm awake, ${nm}. How can I help?`;
   }
 
   // ── First-run welcome: ask the user's name so the AI can address them ──
