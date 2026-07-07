@@ -6050,7 +6050,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         c.fillText("HQ · 24/7", 110, 176);
         c.fillStyle = "#9fb2d4"; c.font = "600 17px system-ui";
         c.fillText("13 סוכנים · עיר אחת", 110, 232);
-      } else {
+      } else if (mode === 2) {
         const btc = (liveRef.current.marketRows || []).find((r) => r.name === "Bitcoin");
         c.fillStyle = "#f7931a"; c.font = "900 52px system-ui";
         c.fillText("₿", 110, 92);
@@ -6063,6 +6063,27 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         }
         c.fillStyle = "#5f7d6f"; c.font = "600 14px system-ui";
         c.fillText("LIVE", 110, 290);
+      } else {
+        // Data-center mode — the same tower doubles as an outdoor financial
+        // landmark, cycling real HeavyGuard ops numbers, not just an ad.
+        const b = liveRef.current.bizData || {};
+        c.fillStyle = "#5fd0ff"; c.font = "900 26px system-ui";
+        c.fillText("מרכז נתונים", 110, 56);
+        c.fillStyle = "#8fe3c0"; c.font = "700 15px system-ui";
+        c.fillText("ALPHA · HEAVY GUARD", 110, 82);
+        const rows = [
+          ["התקנות", b.installs ?? "…"],
+          ["הכנסה", b.hgRevenue != null ? "₪" + Math.round(b.hgRevenue).toLocaleString() : "…"],
+          ["לקוחות", b.custCount ?? "…"],
+        ];
+        let ry = 130;
+        rows.forEach(([label, val]) => {
+          c.fillStyle = "#7d93ad"; c.font = "600 15px system-ui"; c.fillText(label, 110, ry);
+          c.fillStyle = "#fff"; c.font = "800 22px system-ui"; c.fillText(String(val), 110, ry + 26);
+          ry += 58;
+        });
+        c.fillStyle = "#5f7d6f"; c.font = "600 14px system-ui";
+        c.fillText("LIVE", 110, 300);
       }
     };
     drawBillboard(0);
@@ -6081,6 +6102,22 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       const billboard = new THREE.Mesh(new THREE.PlaneGeometry(4.5, 6.5), bbMat);
       billboard.position.set(tall.x, tall.h * 0.62, tall.z + tall.d / 2 + 0.09);
       scene.add(billboard);
+      // Owner request: an outdoor "whole futuristic data-center area" —
+      // this tallest tower is the one landmark visible from both the office
+      // window and outside, so it gets a distinct data-center identity:
+      // vertical server-rack LED striping up its face + its own sign, on
+      // top of the ad billboard it already carried.
+      const dcLedMat = new THREE.MeshBasicMaterial({ color: 0x2ee6ff, transparent: true, opacity: 0.55, fog: false });
+      const dcLedMat2 = new THREE.MeshBasicMaterial({ color: 0x3fd79a, transparent: true, opacity: 0.5, fog: false });
+      const dcFace = tall.z + tall.d / 2 + 0.04;
+      for (let row = 0; row < Math.floor(tall.h / 1.4); row++) {
+        const strip = new THREE.Mesh(new THREE.PlaneGeometry(tall.d * 0.7, 0.06), row % 2 === 0 ? dcLedMat : dcLedMat2);
+        strip.position.set(tall.x - 2.9, 0.9 + row * 1.4, dcFace);
+        scene.add(strip);
+      }
+      const dcSign = buildNeonSign("מרכז נתונים · ALPHA", 0x2ee6ff, 3.4, 0.6);
+      dcSign.position.set(tall.x, tall.h + 0.9, tall.z);
+      scene.add(dcSign);
     }
 
     // Helicopter — crosses right-to-left (opposite the airliner), higher.
@@ -7891,7 +7928,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         // The city billboard flips to its next ad every other screen tick.
         bbTick++;
         if (bbTick % 2 === 0) {
-          bbMode = (bbMode + 1) % 3;
+          bbMode = (bbMode + 1) % 4;
           drawBillboard(bbMode);
           bbTex.needsUpdate = true;
         }
