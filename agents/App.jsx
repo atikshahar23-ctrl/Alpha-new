@@ -1559,8 +1559,17 @@ export default function App() {
   return (
     <div className="ac">
       <StyleTag />
-      <TopBar online={hasAI()} />
+      {/* TopBar/BottomNav used to stay mounted the whole time the 3D office
+          was open — BottomNav is position:fixed with z-index:40, HIGHER
+          than the office scene's own joystick/overlay layers (z-index up
+          to 33), so it sat on top of the 3D view the entire time, its
+          bottom strip covering the exact screen region the touch joysticks
+          live in. Hiding both while `office` is true both fixes that and
+          makes the sim genuinely full-screen instead of sitting behind a
+          persistent app chrome it was never meant to share the screen with. */}
+      {!office && <TopBar online={hasAI()} />}
 
+      {!office && (
       <div className="ac-main">
         {view === "roster" && (
           <RosterView
@@ -1576,8 +1585,9 @@ export default function App() {
         {view === "settings" && <SettingsView showToast={showToast} />}
         {view === "simulator" && <SimulatorPanel />}
       </div>
+      )}
 
-      <BottomNav view={view} setView={(v) => { setView(v); setChatId(null); }} ideasCount={ideas.filter((i) => i.status === "new").length} />
+      {!office && <BottomNav view={view} setView={(v) => { setView(v); setChatId(null); }} ideasCount={ideas.filter((i) => i.status === "new").length} />}
 
       {activeAgent && (
         <ChatModal
