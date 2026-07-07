@@ -2333,7 +2333,7 @@ function buildDvrBoxProp() {
 // through the door and sits them down on one, facing the owner. Returns the
 // local seat spots (owner chair + guest chair) so the sim can snap the player
 // and the summoned agent onto them precisely.
-function buildOwnerOffice(color, deskTemplate, laptopTemplate, furnitureTemplate, guestLocal) {
+function buildOwnerOffice(color, deskTemplate, laptopTemplate, furnitureTemplate, guestLocal, rackTradeCanvas, rackHgCanvas) {
   const g = new THREE.Group();
   const obstacles = [];
 
@@ -2435,6 +2435,7 @@ function buildOwnerOffice(color, deskTemplate, laptopTemplate, furnitureTemplate
      so the render loop can animate them. */
   const spinners = [];
   const blinkMats = [];
+  let rackTradeTex = null, rackHgTex = null;
   {
     // Holographic projector — pedestal + wireframe icosahedron + light cone.
     const holo = new THREE.Group();
@@ -2483,6 +2484,31 @@ function buildOwnerOffice(color, deskTemplate, laptopTemplate, furnitureTemplate
       obstacles.push({ x: rx, z: -3.95, r: 0.6 });
     });
 
+    // A real data screen above the racks — live markets + HeavyGuard ops,
+    // the same canvases/draw functions the wall TVs use, not decoration.
+    // Owner request: "the info received there should go into the financial
+    // area in my office" — the racks used to be LED-bar decor only.
+    if (rackTradeCanvas) {
+      rackTradeTex = new THREE.CanvasTexture(rackTradeCanvas);
+      rackTradeTex.colorSpace = THREE.SRGBColorSpace;
+      const bezel = new THREE.Mesh(new THREE.PlaneGeometry(0.82, 0.5), new THREE.MeshBasicMaterial({ color: 0x03040a }));
+      bezel.position.set(-3.4, 2.3, -3.95);
+      g.add(bezel);
+      const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.75, 0.44), new THREE.MeshBasicMaterial({ map: rackTradeTex }));
+      screen.position.set(-3.4, 2.3, -3.94);
+      g.add(screen);
+    }
+    if (rackHgCanvas) {
+      rackHgTex = new THREE.CanvasTexture(rackHgCanvas);
+      rackHgTex.colorSpace = THREE.SRGBColorSpace;
+      const bezel = new THREE.Mesh(new THREE.PlaneGeometry(0.82, 0.5), new THREE.MeshBasicMaterial({ color: 0x03040a }));
+      bezel.position.set(-2.2, 2.3, -3.95);
+      g.add(bezel);
+      const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.75, 0.44), new THREE.MeshBasicMaterial({ map: rackHgTex }));
+      screen.position.set(-2.2, 2.3, -3.94);
+      g.add(screen);
+    }
+
     // IoT control slab angled on the desk — a drawn touch panel.
     const iotCvs = document.createElement("canvas"); iotCvs.width = 128; iotCvs.height = 80;
     const ic = iotCvs.getContext("2d");
@@ -2524,7 +2550,7 @@ function buildOwnerOffice(color, deskTemplate, laptopTemplate, furnitureTemplate
   const up = new THREE.PointLight(color, 0.8, 7);
   up.position.set(0.5, 0.5, -2.6); g.add(up);
 
-  return { group: g, obstacles, deskMon: desk.monMat, deskHolo: desk.holo, seatLocal, spinners, blinkMats, holoLocal: { x: 3.0, z: -1.4 } };
+  return { group: g, obstacles, deskMon: desk.monMat, deskHolo: desk.holo, seatLocal, spinners, blinkMats, holoLocal: { x: 3.0, z: -1.4 }, rackTradeTex, rackHgTex };
 }
 
 /* ── Space portal overlay ────────────────────────────────────────────
@@ -6655,7 +6681,19 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       const [gx, gz] = toWorld(meetingSpot.x, meetingSpot.y);
       return [{ x: gx - OFFICE_ORIGIN.x, z: gz - OFFICE_ORIGIN.z }, { x: gx - OFFICE_ORIGIN.x + 1.7, z: gz - OFFICE_ORIGIN.z }];
     })();
-    const ownerOffice = buildOwnerOffice(0xE4BC63, deskTemplate, laptopTemplate, furnitureTemplate, guestLocal);
+    // The owner-suite rack screens — same live-data pattern as the wall TVs
+    // below, just mounted above the two server racks instead of a separate
+    // TV frame. Canvases live here so the periodic redraw loop can reach
+    // them by plain closure, same as tradeCanvas/hgCanvas.
+    const rackTradeCanvas = document.createElement("canvas");
+    rackTradeCanvas.width = 480; rackTradeCanvas.height = 282;
+    const rackTradeCtx = rackTradeCanvas.getContext("2d");
+    const rackHgCanvas = document.createElement("canvas");
+    rackHgCanvas.width = 480; rackHgCanvas.height = 282;
+    const rackHgCtx = rackHgCanvas.getContext("2d");
+    const ownerOffice = buildOwnerOffice(0xE4BC63, deskTemplate, laptopTemplate, furnitureTemplate, guestLocal, rackTradeCanvas, rackHgCanvas);
+    drawTradeScreen(rackTradeCtx, rackTradeCanvas.width, rackTradeCanvas.height, liveRef.current.marketRows);
+    drawHgScreen(rackHgCtx, rackHgCanvas.width, rackHgCanvas.height, liveRef.current.bizData);
     ownerOffice.group.position.set(OFFICE_ORIGIN.x, 0, OFFICE_ORIGIN.z);
     scene.add(ownerOffice.group);
     ownerOffice.obstacles.forEach((o) => obstacles.push({ x: OFFICE_ORIGIN.x + o.x, z: OFFICE_ORIGIN.z + o.z, r: o.r }));
@@ -7842,6 +7880,10 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         tvTrade.tex.needsUpdate = true;
         drawHgScreen(hgCtx, hgCanvas.width, hgCanvas.height, liveRef.current.bizData);
         tvHg.tex.needsUpdate = true;
+        drawTradeScreen(rackTradeCtx, rackTradeCanvas.width, rackTradeCanvas.height, liveRef.current.marketRows);
+        if (ownerOffice.rackTradeTex) ownerOffice.rackTradeTex.needsUpdate = true;
+        drawHgScreen(rackHgCtx, rackHgCanvas.width, rackHgCanvas.height, liveRef.current.bizData);
+        if (ownerOffice.rackHgTex) ownerOffice.rackHgTex.needsUpdate = true;
         drawOpsWall(opsCtx, opsCanvas.width, opsCanvas.height, liveRef.current.bizData, liveRef.current.securityAlerts);
         opsTex.needsUpdate = true;
         drawSiteScreen(); // wall site-board follows the same live refresh
