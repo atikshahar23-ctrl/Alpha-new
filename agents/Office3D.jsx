@@ -3554,8 +3554,153 @@ function buildPokemonSanctuary(loader, base, center) {
   return group;
 }
 
-function HangarOverlay({ onReturn }) {
+// ── Driving mini-mode helpers ────────────────────────────────────────────
+// A closed-loop "proving ground" oval — two straights joined by two
+// semicircular turns — rather than an open/infinite road: no streaming or
+// procedural-generation complexity, the car never runs out of track, and a
+// fixed layout can be decorated consistently (curbs, lamp posts, trees) all
+// the way around.
+const TRACK_STRAIGHT = 70, TRACK_RADIUS = 20, TRACK_WIDTH = 9;
+const TRACK_LENGTH = 2 * TRACK_STRAIGHT + 2 * Math.PI * TRACK_RADIUS;
+// Centerline sample, evenly spaced by arc length around the whole loop.
+function buildTrackCenterline(n) {
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const s = (i / n) * TRACK_LENGTH;
+    let x, z;
+    if (s < TRACK_STRAIGHT) {
+      x = -TRACK_STRAIGHT / 2 + s; z = -TRACK_RADIUS;
+    } else if (s < TRACK_STRAIGHT + Math.PI * TRACK_RADIUS) {
+      const a = -Math.PI / 2 + (s - TRACK_STRAIGHT) / TRACK_RADIUS;
+      x = TRACK_STRAIGHT / 2 + Math.cos(a) * TRACK_RADIUS; z = Math.sin(a) * TRACK_RADIUS;
+    } else if (s < 2 * TRACK_STRAIGHT + Math.PI * TRACK_RADIUS) {
+      const s2 = s - (TRACK_STRAIGHT + Math.PI * TRACK_RADIUS);
+      x = TRACK_STRAIGHT / 2 - s2; z = TRACK_RADIUS;
+    } else {
+      const s2 = s - (2 * TRACK_STRAIGHT + Math.PI * TRACK_RADIUS);
+      const a = Math.PI / 2 + s2 / TRACK_RADIUS;
+      x = -TRACK_STRAIGHT / 2 + Math.cos(a) * TRACK_RADIUS; z = Math.sin(a) * TRACK_RADIUS;
+    }
+    pts.push({ x, z });
+  }
+  return pts;
+}
+// Asphalt + dashed centerline + red/white curb stripes, sampled once and
+// repeated along the ribbon via wrapT — the road's actual visual detail
+// lives entirely in this texture rather than extra curb/line geometry.
+function buildTrackTexture() {
+  const cvs = document.createElement("canvas");
+  cvs.width = 128; cvs.height = 512;
+  const ctx = cvs.getContext("2d");
+  ctx.fillStyle = "#33363b"; ctx.fillRect(0, 0, 128, 512);
+  const rnd = mulberry32(71);
+  for (let i = 0; i < 900; i++) {
+    ctx.fillStyle = rnd() < 0.5 ? `rgba(255,255,255,${(rnd() * 0.04).toFixed(3)})` : `rgba(0,0,0,${(rnd() * 0.06).toFixed(3)})`;
+    ctx.fillRect(rnd() * 128, rnd() * 512, 1 + rnd() * 2, 1 + rnd() * 2);
+  }
+  // Dashed centerline
+  ctx.fillStyle = "#f2e6a8";
+  for (let y = 0; y < 512; y += 64) ctx.fillRect(60, y, 8, 36);
+  // Curb stripes along both edges (red/white)
+  for (let side = 0; side < 2; side++) {
+    const x0 = side === 0 ? 0 : 118;
+    for (let y = 0; y < 512; y += 48) {
+      ctx.fillStyle = (Math.floor(y / 48) % 2 === 0) ? "#c23b2e" : "#eef0ef";
+      ctx.fillRect(x0, y, 10, 48);
+    }
+  }
+  const tex = new THREE.CanvasTexture(cvs);
+  tex.wrapS = THREE.ClampToEdgeWrapping; tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = MAX_ANISO;
+  return tex;
+}
+function buildGrassTexture() {
+  const cvs = document.createElement("canvas");
+  cvs.width = cvs.height = 256;
+  const ctx = cvs.getContext("2d");
+  ctx.fillStyle = "#3a5c34"; ctx.fillRect(0, 0, 256, 256);
+  const rnd = mulberry32(19);
+  for (let i = 0; i < 2200; i++) {
+    ctx.fillStyle = rnd() < 0.5 ? `rgba(120,170,90,${(0.15 + rnd() * 0.25).toFixed(3)})` : `rgba(30,50,25,${(0.1 + rnd() * 0.2).toFixed(3)})`;
+    ctx.fillRect(rnd() * 256, rnd() * 256, 1 + rnd() * 2, 1 + rnd() * 3);
+  }
+  const tex = new THREE.CanvasTexture(cvs);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = MAX_ANISO;
+  return tex;
+}
+// The road ribbon itself: two vertices (inner/outer edge) per centerline
+// sample, triangulated as a closed strip. UV.v accumulates by arc length so
+// the dashed line/curb texture repeats evenly all the way around the loop.
+function buildTrackGeometry(centerline) {
+  const n = centerline.length;
+  const positions = [], uvs = [], indices = [];
+  let arc = 0;
+  for (let i = 0; i < n; i++) {
+    const p = centerline[i], pNext = centerline[(i + 1) % n], pPrev = centerline[(i - 1 + n) % n];
+    const tx = pNext.x - pPrev.x, tz = pNext.z - pPrev.z;
+    const tlen = Math.hypot(tx, tz) || 1;
+    const nx = -tz / tlen, nz = tx / tlen; // left-hand normal in the XZ plane
+    const hw = TRACK_WIDTH / 2;
+    positions.push(p.x + nx * hw, 0.01, p.z + nz * hw); // outer edge (u=0)
+    positions.push(p.x - nx * hw, 0.01, p.z - nz * hw); // inner edge (u=1)
+    const v = arc / (TRACK_WIDTH * 2);
+    uvs.push(0, v, 1, v);
+    arc += Math.hypot(pNext.x - p.x, pNext.z - p.z);
+  }
+  for (let i = 0; i < n; i++) {
+    const a = i * 2, b = ((i + 1) % n) * 2;
+    indices.push(a, a + 1, b, b, a + 1, b + 1);
+  }
+  // The ribbon is perfectly flat and horizontal by construction, so every
+  // vertex's true normal is exactly straight up — computeVertexNormals()
+  // derives normals from triangle winding instead, and getting that winding
+  // backward anywhere along a hand-built strip like this would quietly
+  // back-face-cull the road invisible from directly above. Set them
+  // directly rather than trust the derivation.
+  const normals = [];
+  for (let i = 0; i < n; i++) normals.push(0, 1, 0, 0, 1, 0);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
+  geo.setIndex(indices);
+  return geo;
+}
+// Nearest signed lateral offset from the car's (x,z) to the track
+// centerline — used for the off-track grass-drag penalty. Coarse linear
+// scan over ~180 samples is cheap enough once a frame.
+function nearestTrackOffset(centerline, x, z) {
+  let best = Infinity;
+  for (const p of centerline) { const d = Math.hypot(x - p.x, z - p.z); if (d < best) best = d; }
+  return best;
+}
+function buildRoadsideTree() {
+  const g = new THREE.Group();
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.24, 2.2, 8), new THREE.MeshStandardMaterial({ color: 0x5a4028, roughness: 0.9 }));
+  trunk.position.y = 1.1; trunk.castShadow = true;
+  const leaves = new THREE.Mesh(new THREE.SphereGeometry(1.5, 10, 10), new THREE.MeshStandardMaterial({ color: 0x2f6b34, roughness: 0.85 }));
+  leaves.position.y = 2.8; leaves.castShadow = true; leaves.scale.set(1, 1.15, 1);
+  g.add(trunk, leaves);
+  return g;
+}
+function buildRoadsideLamp() {
+  const g = new THREE.Group();
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 4.2, 8), new THREE.MeshStandardMaterial({ color: 0x2a2d31, roughness: 0.5, metalness: 0.6 }));
+  pole.position.y = 2.1; pole.castShadow = true;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 10), new THREE.MeshStandardMaterial({ color: 0xfff2d0, emissive: 0xfff2d0, emissiveIntensity: 1.4 }));
+  head.position.y = 4.3;
+  const bulb = new THREE.PointLight(0xfff2d0, 0.7, 12);
+  bulb.position.y = 4.3;
+  g.add(pole, head, bulb);
+  return g;
+}
+
+function HangarOverlay({ onReturn, liveRef, onDrive }) {
   const mountRef = useRef(null);
+  const [nearTiggo, setNearTiggo] = useState(false);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -3653,8 +3798,9 @@ function HangarOverlay({ onReturn }) {
     // Vehicle bay — real models parked along one side wall, each on its own
     // painted floor spot (the hazard-striped rectangle baked into the floor
     // texture reads as the bay outline; these are just the actual cars).
+    const TIGGO_POS = { x: -W / 2 + 4, z: -8 };
     [
-      { url: "tiggo7.glb", x: -W / 2 + 4, z: -8, target: 4.2, rotY: Math.PI / 2 },
+      { url: "tiggo7.glb", x: TIGGO_POS.x, z: TIGGO_POS.z, target: 4.2, rotY: Math.PI / 2 },
       { url: "volvo_fh16.glb", x: -W / 2 + 4.5, z: 4, target: 6.5, rotY: Math.PI / 2 },
     ].forEach((v) => {
       loader.load(base + "office-models/" + v.url, (g) => {
@@ -3695,14 +3841,36 @@ function HangarOverlay({ onReturn }) {
     // player body to render, the camera IS the eye. Movement clamps to the
     // hangar footprint but is allowed to walk out through the open door
     // (+Z) into the yard toward the house.
+    // This used to be keyboard-only — the always-mounted touch joysticks
+    // and any connected gamepad kept working for the main office scene but
+    // did nothing here, so walking the Hangar "like the office" was only
+    // possible with a physical keyboard. liveRef.current.joyVec/turnVec are
+    // the same channel the office's on-screen joysticks write into (those
+    // DOM elements stay mounted and live while this overlay is showing), and
+    // the main scene's own animate loop — which is what normally turns
+    // gamepad axes into that channel — is paused while inHangar is true, so
+    // gamepad needs its own read here too, same phantom-connection guard as
+    // everywhere else in this file.
     const keys = {};
     const onKeyDown = (e) => { keys[e.key.toLowerCase()] = true; };
     const onKeyUp = (e) => { keys[e.key.toLowerCase()] = false; };
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
+    let gamepadIndex = null;
+    const onGpConnect = (e) => { gamepadIndex = e.gamepad.index; };
+    const onGpDisconnect = (e) => { if (gamepadIndex === e.gamepad.index) gamepadIndex = null; };
+    window.addEventListener("gamepadconnected", onGpConnect);
+    window.addEventListener("gamepaddisconnected", onGpDisconnect);
+    try {
+      const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+      for (const g of pads) { if (g && g.connected && g.mapping === "standard") { gamepadIndex = g.index; break; } }
+    } catch {}
+    const GP_DEADZONE = 0.2;
+    const gpAxis = (v) => (Math.abs(v) < GP_DEADZONE ? 0 : v);
     const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
     let yaw = Math.PI;
+    let nearTiggoPrev = false;
     const pos = new THREE.Vector3(0, 1.7, D / 2 - 5);
     const clock = new THREE.Clock();
     let raf;
@@ -3710,15 +3878,27 @@ function HangarOverlay({ onReturn }) {
       if (cancelled) return;
       raf = requestAnimationFrame(animate);
       const dt = Math.min(0.05, clock.getDelta());
-      const turn = -((keys["d"] || keys["arrowright"] ? 1 : 0) - (keys["a"] || keys["arrowleft"] ? 1 : 0));
+      const jv = liveRef?.current?.joyVec || { x: 0, y: 0 };
+      const tv = liveRef?.current?.turnVec || { x: 0, y: 0 };
+      const gp = (gamepadIndex !== null && navigator.getGamepads) ? navigator.getGamepads()[gamepadIndex] : null;
+      // Standard controller convention (same as the main office scene):
+      // left stick = movement, right stick = look/turn.
+      const gy = gp ? gpAxis(gp.axes[1] || 0) : 0;
+      const gcx = gp ? gpAxis(gp.axes[2] || 0) : 0;
+      let turn = -((keys["d"] || keys["arrowright"] ? 1 : 0) - (keys["a"] || keys["arrowleft"] ? 1 : 0));
+      if (!turn) turn = gcx ? -gcx : (Math.hypot(tv.x, tv.y) > 0.001 ? -tv.x : 0);
       yaw += turn * 2.3 * dt;
-      const fwd = (keys["w"] || keys["arrowup"] ? 1 : 0) - (keys["s"] || keys["arrowdown"] ? 1 : 0);
+      let fwd = (keys["w"] || keys["arrowup"] ? 1 : 0) - (keys["s"] || keys["arrowdown"] ? 1 : 0);
+      if (!fwd) fwd = gy ? -gy : (Math.hypot(jv.x, jv.y) > 0.001 ? -jv.y : 0);
       const speed = keys["shift"] ? 9 : 5;
       pos.x += Math.sin(yaw) * fwd * speed * dt;
       pos.z += Math.cos(yaw) * fwd * speed * dt;
       pos.x = clamp(pos.x, -W / 2 + 1.2, W / 2 - 1.2);
       pos.z = clamp(pos.z, -D / 2 + 1.2, D / 2 + 32);
       camera.position.copy(pos);
+      const tiggoDist = Math.hypot(pos.x - TIGGO_POS.x, pos.z - TIGGO_POS.z);
+      const nearTiggoNow = tiggoDist < 4;
+      if (nearTiggoNow !== nearTiggoPrev) { nearTiggoPrev = nearTiggoNow; setNearTiggo(nearTiggoNow); }
       camera.rotation.order = "YXZ";
       camera.rotation.y = yaw;
       // Chimney smoke — each puff drifts up and fades, looping back to the
@@ -3752,6 +3932,8 @@ function HangarOverlay({ onReturn }) {
       window.removeEventListener("resize", onResize);
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("gamepadconnected", onGpConnect);
+      window.removeEventListener("gamepaddisconnected", onGpDisconnect);
       scene.traverse((obj) => {
         if (obj.geometry) obj.geometry.dispose();
         if (obj.material) {
@@ -3767,8 +3949,253 @@ function HangarOverlay({ onReturn }) {
   return (
     <div className="off3-space-wrap">
       <div ref={mountRef} className="off3-space-canvas" style={{ cursor: "default" }} />
-      <div className="off3-space-hint">WASD / חצים לתזוזה · A/D לפנייה · Shift לריצה · יציאה מהשער אל הבית</div>
+      <div className="off3-space-hint">WASD / חצים / ג'ויסטיקים לתזוזה · Shift לריצה · יציאה מהשער אל הבית</div>
+      {nearTiggo && (
+        <button className="off3-sit" onClick={onDrive} title="צא לנסיעה (E)">
+          🚗 צא לנסיעה עם הטיגו
+        </button>
+      )}
       <button className="off3-space-return" onClick={onReturn}>🚪 חזרה למשרד</button>
+    </div>
+  );
+}
+
+// Driving mini-mode — entered from beside the parked Tiggo 7 inside the
+// Hangar. A real closed-loop proving-ground track (not just a parking lot),
+// the actual Tiggo 7 GLB model, and an arcade-but-not-floaty thrust/drag/
+// steering model in the same spirit as the fighter jet's flight physics:
+// throttle builds speed, drag pulls it back down, and running onto the
+// grass costs you instead of being free.
+function DriveOverlay({ onReturn, liveRef }) {
+  const mountRef = useRef(null);
+  const speedRef = useRef(null);
+  const distRef = useRef(null);
+  const gaugeRef = useRef(null);
+
+  useEffect(() => {
+    const mount = mountRef.current;
+    if (!mount) return;
+    let cancelled = false;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x9fd3f0);
+    scene.fog = new THREE.Fog(0xbfe3ff, 60, 320);
+
+    const camera = new THREE.PerspectiveCamera(66, mount.clientWidth / mount.clientHeight, 0.1, 800);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+    renderer.setSize(mount.clientWidth, mount.clientHeight);
+    renderer.shadowMap.enabled = true;
+    mount.appendChild(renderer.domElement);
+
+    const sun = new THREE.DirectionalLight(0xfff2d8, 1.2);
+    sun.position.set(60, 90, 40);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(1024, 1024);
+    sun.shadow.camera.left = -40; sun.shadow.camera.right = 40;
+    sun.shadow.camera.top = 40; sun.shadow.camera.bottom = -40;
+    sun.shadow.camera.near = 10; sun.shadow.camera.far = 260;
+    scene.add(sun, sun.target);
+    scene.add(new THREE.AmbientLight(0xbcd6ff, 0.6));
+
+    // Grass field under and well past the track.
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), new THREE.MeshStandardMaterial({ map: (() => { const t = buildGrassTexture(); t.repeat.set(60, 60); return t; })(), roughness: 1 }));
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    // The track itself.
+    const centerline = buildTrackCenterline(180);
+    const trackGeo = buildTrackGeometry(centerline);
+    const trackMat = new THREE.MeshStandardMaterial({ map: buildTrackTexture(), roughness: 0.85, metalness: 0.05, side: THREE.DoubleSide });
+    trackMat.map.repeat.set(1, Math.round(TRACK_LENGTH / (TRACK_WIDTH * 2)));
+    const track = new THREE.Mesh(trackGeo, trackMat);
+    track.receiveShadow = true;
+    scene.add(track);
+
+    // Roadside dressing — trees + lamp posts alternating outside the loop,
+    // and simple distant low buildings for atmosphere beyond the field.
+    for (let i = 0; i < centerline.length; i += 6) {
+      const p = centerline[i], pn = centerline[(i + 1) % centerline.length];
+      const tx = pn.x - p.x, tz = pn.z - p.z, tl = Math.hypot(tx, tz) || 1;
+      const nx = -tz / tl, nz = tx / tl;
+      const off = TRACK_WIDTH / 2 + 4.5 + (i % 12 === 0 ? 3 : 0);
+      const obj = i % 12 === 0 ? buildRoadsideLamp() : buildRoadsideTree();
+      obj.position.set(p.x + nx * off, 0, p.z + nz * off);
+      scene.add(obj);
+    }
+    const distantBuildingMat = new THREE.MeshStandardMaterial({ color: 0x8a93a8, roughness: 0.9 });
+    for (let i = 0; i < 10; i++) {
+      const ang = (i / 10) * Math.PI * 2;
+      const r = 140 + (i % 3) * 20;
+      const b = new THREE.Mesh(new THREE.BoxGeometry(14 + (i % 4) * 4, 20 + (i % 5) * 8, 14), distantBuildingMat);
+      b.position.set(Math.cos(ang) * r, b.geometry.parameters.height / 2, Math.sin(ang) * r);
+      scene.add(b);
+    }
+
+    // The car — same procedural-fit loader pattern used for the vehicle-bay
+    // display models, just driven instead of parked.
+    const base = import.meta.env.BASE_URL || "/";
+    const loader = new GLTFLoader();
+    loader.setMeshoptDecoder(MeshoptDecoder);
+    const car = new THREE.Group();
+    scene.add(car);
+    let carForwardSign = 1; // flipped below once the model's own facing is known
+    loader.load(base + "office-models/tiggo7.glb", (g) => {
+      const m = g.scene;
+      m.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      const bb = new THREE.Box3().setFromObject(m);
+      const size = bb.getSize(new THREE.Vector3());
+      const scale = 4.2 / Math.max(size.x, size.z, 0.01);
+      m.scale.setScalar(scale);
+      const bb2 = new THREE.Box3().setFromObject(m);
+      m.position.x -= (bb2.min.x + bb2.max.x) / 2;
+      m.position.z -= (bb2.min.z + bb2.max.z) / 2;
+      m.position.y -= bb2.min.y;
+      // Same parked orientation used in the Hangar's vehicle bay (rotY=PI/2)
+      // reads as the model's own local +Z being its side, not its nose —
+      // rotate an extra quarter turn so "forward" in car-space matches the
+      // heading this component drives it along.
+      m.rotation.y = Math.PI / 2;
+      car.add(m);
+    }, undefined, () => {});
+
+    // Driving state — thrust/drag speed model (same family as the flight
+    // overlay's, tuned for a ground vehicle instead of a jet): throttle
+    // builds speed, quadratic drag pulls it back, idle rolling friction
+    // actually coasts to a stop instead of idling forward forever, and
+    // straying off the track onto the grass costs extra drag.
+    // The car used to always spawn facing a fixed heading (0, i.e. +Z) no
+    // matter which way the track actually ran at the start line — on this
+    // oval, the start point sits on a straight running along +X, so the car
+    // (and the chase camera built from its heading) faced 90° away from the
+    // road on load. Derive the initial heading from the track's own tangent
+    // at the start point instead.
+    const startP = centerline[0], startNext = centerline[1];
+    const startHeading = Math.atan2(startNext.x - startP.x, startNext.z - startP.z);
+    const st = { x: startP.x, z: startP.z, heading: startHeading, speed: 0, steer: 0, dist: 0 };
+    const keys = {};
+    const onKeyDown = (e) => { keys[e.key.toLowerCase()] = true; };
+    const onKeyUp = (e) => { keys[e.key.toLowerCase()] = false; };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    let gamepadIndex = null;
+    const onGpConnect = (e) => { gamepadIndex = e.gamepad.index; };
+    const onGpDisconnect = (e) => { if (gamepadIndex === e.gamepad.index) gamepadIndex = null; };
+    window.addEventListener("gamepadconnected", onGpConnect);
+    window.addEventListener("gamepaddisconnected", onGpDisconnect);
+    try {
+      const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+      for (const g of pads) { if (g && g.connected && g.mapping === "standard") { gamepadIndex = g.index; break; } }
+    } catch {}
+    const GP_DEADZONE = 0.12;
+    const gpAxis = (v) => (Math.abs(v) < GP_DEADZONE ? 0 : v);
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+    const clock = new THREE.Clock();
+    let raf;
+    const animate = () => {
+      if (cancelled) return;
+      raf = requestAnimationFrame(animate);
+      const dt = Math.min(0.05, clock.getDelta());
+
+      const jv = liveRef?.current?.joyVec || { x: 0, y: 0 };
+      const gp = (gamepadIndex !== null && navigator.getGamepads) ? navigator.getGamepads()[gamepadIndex] : null;
+      const kThrottle = (keys["w"] || keys["arrowup"] ? 1 : 0) - (keys["s"] || keys["arrowdown"] ? 1 : 0);
+      const kSteer = -((keys["d"] || keys["arrowright"] ? 1 : 0) - (keys["a"] || keys["arrowleft"] ? 1 : 0));
+      const gpThrottle = gp ? ((gp.buttons[7] ? gp.buttons[7].value : 0) - (gp.buttons[6] ? gp.buttons[6].value : 0)) : 0;
+      const gpSteer = gp ? -gpAxis(gp.axes[0] || 0) : 0;
+      const throttleIn = kThrottle || gpThrottle || (Math.hypot(jv.x, jv.y) > 0.001 ? -jv.y : 0);
+      const steerIn = kSteer || gpSteer || (Math.hypot(jv.x, jv.y) > 0.001 ? -jv.x : 0);
+
+      st.steer += (steerIn * 0.55 - st.steer) * Math.min(1, dt * 6);
+      const speedFactor = clamp(Math.abs(st.speed) / 6, 0.25, 1);
+      st.heading += st.steer * speedFactor * 1.6 * dt * (st.speed < 0 ? -1 : 1);
+
+      const THRUST = 16, DRAG_K = 0.045, ROLL_FRICTION = 3.2;
+      const offset = nearestTrackOffset(centerline, st.x, st.z);
+      const offTrack = offset > TRACK_WIDTH / 2;
+      const dragAccel = st.speed * st.speed * DRAG_K * (st.speed > 0 ? 1 : -1) + ROLL_FRICTION * (st.speed > 0 ? 1 : st.speed < 0 ? -1 : 0) + (offTrack ? Math.abs(st.speed) * 1.8 * (st.speed > 0 ? 1 : -1) : 0);
+      st.speed += (throttleIn * THRUST - dragAccel) * dt;
+      st.speed = clamp(st.speed, -9, 26);
+
+      st.x += Math.sin(st.heading) * st.speed * dt * carForwardSign;
+      st.z += Math.cos(st.heading) * st.speed * dt * carForwardSign;
+      st.dist += Math.abs(st.speed) * dt;
+
+      car.position.set(st.x, 0, st.z);
+      car.rotation.y = st.heading;
+
+      // Chase camera — behind and above the car, lerped, matching the
+      // flight overlay's follow-cam feel but for a ground vehicle.
+      const behind = new THREE.Vector3(-Math.sin(st.heading), 0, -Math.cos(st.heading)).multiplyScalar(8.5 * carForwardSign);
+      const desired = car.position.clone().add(behind).add(new THREE.Vector3(0, 3.6, 0));
+      camera.position.lerp(desired, Math.min(1, dt * 5));
+      camera.lookAt(car.position.clone().add(new THREE.Vector3(0, 1, 0)));
+
+      // st.dist accumulates in raw speed-unit·seconds, not meters — the
+      // same ×12.5 factor that turns st.speed into a km/h display turns
+      // st.dist into real kilometers (÷3600 for the h→s conversion this
+      // time). Dividing straight by 1000 here as if it were already meters
+      // under-reported distance by roughly 3.5x.
+      if (speedRef.current) speedRef.current.textContent = Math.round(Math.abs(st.speed) * 12.5) + " קמ״ש";
+      if (distRef.current) distRef.current.textContent = ((st.dist * 12.5) / 3600).toFixed(2) + " ק״מ";
+      const gz = gaugeRef.current;
+      if (gz) {
+        const gctx = gz.getContext("2d");
+        const W = gz.width, H = gz.height, cx = W / 2, cy = H - 6, R = W / 2 - 6;
+        gctx.clearRect(0, 0, W, H);
+        gctx.strokeStyle = "rgba(230,240,255,.35)"; gctx.lineWidth = 3;
+        gctx.beginPath(); gctx.arc(cx, cy, R, Math.PI, 0); gctx.stroke();
+        const pct = clamp(Math.abs(st.speed) / 26, 0, 1);
+        gctx.strokeStyle = pct > 0.85 ? "#ff5a4a" : "#ffd23f"; gctx.lineWidth = 4;
+        gctx.beginPath(); gctx.arc(cx, cy, R, Math.PI, Math.PI + pct * Math.PI); gctx.stroke();
+        const needleA = Math.PI + pct * Math.PI;
+        gctx.strokeStyle = "#eef6ff"; gctx.lineWidth = 2.5;
+        gctx.beginPath(); gctx.moveTo(cx, cy); gctx.lineTo(cx + Math.cos(needleA) * R * 0.82, cy + Math.sin(needleA) * R * 0.82); gctx.stroke();
+      }
+
+      renderer.render(scene, camera);
+    };
+    animate();
+
+    const onResize = () => {
+      camera.aspect = mount.clientWidth / mount.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(mount.clientWidth, mount.clientHeight);
+    };
+    window.addEventListener("resize", onResize);
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("gamepadconnected", onGpConnect);
+      window.removeEventListener("gamepaddisconnected", onGpDisconnect);
+      scene.traverse((obj) => {
+        if (obj.geometry) obj.geometry.dispose();
+        if (obj.material) {
+          const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+          mats.forEach(disposeMaterial);
+        }
+      });
+      renderer.dispose();
+      if (renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement);
+    };
+  }, []);
+
+  return (
+    <div className="off3-space-wrap">
+      <div ref={mountRef} className="off3-space-canvas" style={{ cursor: "default" }} />
+      <div className="off3-space-hint">W/S להאיץ ולבלום · A/D / ג'ויסטיק להיגוי · מסלול סגור — סעו כמה שתרצו</div>
+      <canvas ref={gaugeRef} width={110} height={70} className="off3-drive-gauge" />
+      <div className="off3-drive-hud">
+        <div><span>מהירות</span><b ref={speedRef}>0 קמ״ש</b></div>
+        <div><span>מרחק</span><b ref={distRef}>0.00 ק״מ</b></div>
+      </div>
+      <button className="off3-space-return" onClick={onReturn}>🚪 חזרה לאנגר</button>
     </div>
   );
 }
@@ -3847,6 +4274,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   // its open door), same "walk up, prompt appears" pattern as the plane.
   const [nearHangar, setNearHangar] = useState(false);
   const [inHangar, setInHangar] = useState(false);
+  // Driving mini-mode, entered from beside the parked Tiggo 7 inside the
+  // Hangar — nested under inHangar (stays true the whole time) rather than
+  // its own top-level pause flag, so the main office scene's existing
+  // inHangar pause guard already covers it with no extra wiring.
+  const [inDrive, setInDrive] = useState(false);
   useEffect(() => { liveRef.current.setNearHangar = setNearHangar; }, []);
   useEffect(() => { liveRef.current.inHangar = inHangar; }, [inHangar]);
   // Real business activity, normalized 0..1 — drives the space portal's
@@ -8607,7 +9039,8 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       </div>
       {inSpace && <SpaceOverlay onReturn={() => liveRef.current.exitPortal?.()} load={spacePortalLoad} />}
       {inFlight && <FlightOverlay onReturn={() => setInFlight(false)} />}
-      {inHangar && <HangarOverlay onReturn={() => setInHangar(false)} />}
+      {inHangar && !inDrive && <HangarOverlay onReturn={() => setInHangar(false)} liveRef={liveRef} onDrive={() => setInDrive(true)} />}
+      {inDrive && <DriveOverlay onReturn={() => setInDrive(false)} liveRef={liveRef} />}
     </div>
   );
 }

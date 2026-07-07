@@ -4227,6 +4227,15 @@ function StyleTag() {
   display:flex;align-items:flex-end;pointer-events:none}
 .off3-flight-throttle i{display:block;width:100%;height:0%;border-radius:6px;
   background:linear-gradient(0deg,#ff7a2e,#ffd23f);box-shadow:0 0 12px rgba(255,140,40,.5);transition:height .15s linear}
+/* Driving mini-mode HUD — speed/distance readout + a simple analog gauge,
+   same visual family as the flight HUD above. */
+.off3-drive-hud{position:absolute;top:14px;right:14px;z-index:31;display:flex;flex-direction:column;gap:6px;
+  background:rgba(10,14,10,.6);border:1px solid rgba(160,220,120,.3);border-radius:12px;padding:10px 16px;
+  font-family:'Rubik';pointer-events:none}
+.off3-drive-hud div{display:flex;align-items:center;justify-content:space-between;gap:14px;font-size:11px;color:#bfe8a0}
+.off3-drive-hud b{font-size:14px;color:#eaf1ff;font-weight:800}
+.off3-drive-gauge{position:absolute;bottom:22px;left:14px;z-index:31;pointer-events:none;
+  background:rgba(10,14,10,.55);border:1px solid rgba(160,220,120,.3);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.5)}
 .off-floor{flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(2,1fr);gap:12px;padding:14px 14px 28px;align-content:start}
 @media(min-width:680px){.off-floor{grid-template-columns:repeat(3,1fr)}}
 @media(min-width:1000px){.off-floor{grid-template-columns:repeat(4,1fr)}}
