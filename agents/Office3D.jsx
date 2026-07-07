@@ -1055,7 +1055,7 @@ function buildHuman(color, name, isPlayer, charTemplate, charClips, modelScale =
   ring.position.y = 0.02;
   g.add(ring);
 
-  return { group: g, ring, mixer, actions, current, clipMap };
+  return { group: g, ring, mixer, actions, current, clipMap, nameSprite };
 }
 
 // Crossfade to a named clip — CLIP.walk/CLIP.idle/CLIP.sit used to be passed
@@ -8300,6 +8300,10 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         // it here every frame is what makes the hover motion actually smooth.
         const dockedPod = inPod ? podById.get(c.id) : null;
         const levitating = !!dockedPod && dockedPod.charging && distFinal <= 0.03;
+        // The capsule already carries its own name/title plate right above the
+        // opening — hide the character's own floating head nameplate while
+        // docked there so the two don't render stacked on top of each other.
+        if (h.nameSprite) h.nameSprite.visible = !dockedPod;
         // Pod robots never take the chair-seat Y drop — they have no sit
         // animation (clipMap falls back to idle), so dropping the standing
         // rig would just sink it into the floor.
