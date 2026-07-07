@@ -3993,6 +3993,34 @@ function StyleTag() {
 .off3-phone-closed{width:0;height:0;min-width:0;border:none;box-shadow:none;animation:none;pointer-events:none;opacity:0}
 .off3-phone-body-hidden{position:absolute;width:0;height:0;overflow:hidden;padding:0;margin:0;pointer-events:none}
 .off3-phone-notch{width:86px;height:16px;margin:8px auto 2px;border-radius:9px;background:#020508;border:1px solid rgba(46,230,255,.25)}
+/* Maximize: the small corner terminal grows into a big centered one you can
+   actually work with, closable back to the docked corner view. */
+.off3-phone-maxbtn{position:absolute;top:8px;left:10px;z-index:2;background:rgba(46,230,255,.1);
+  border:1px solid rgba(46,230,255,.35);border-radius:8px;color:#8fd8e8;width:26px;height:22px;
+  cursor:pointer;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center}
+.off3-phone-maxbtn:hover{background:rgba(46,230,255,.22);color:#d7f6ff}
+.off3-phone-max{position:fixed;top:50%;right:auto;left:50%;transform:translate(-50%,-50%);
+  width:min(460px,92vw);max-height:min(88vh,860px);height:min(88vh,860px);
+  box-shadow:0 0 60px rgba(46,230,255,.35),0 30px 90px rgba(0,0,0,.7);z-index:120}
+/* A brief 3D flip-and-scale beat plays while toggling maximize — matches the
+   "phone spins then opens big" effect asked for, pure CSS, no extra deps. */
+@keyframes off3PhoneFlip{
+  0%{transform:translate(0,0) rotateY(0) scale(1)}
+  50%{transform:translate(0,0) rotateY(90deg) scale(.85)}
+  100%{transform:translate(0,0) rotateY(0) scale(1)}
+}
+.off3-phone-max.off3-phone-flip,.off3-phone-flip{
+  animation:off3PhoneFlip .42s ease both;transform-style:preserve-3d;perspective:900px}
+.off3-cam-video{width:100%;aspect-ratio:4/3;border-radius:12px;background:#000;object-fit:cover;
+  border:1px solid rgba(46,230,255,.25)}
+.off3-cam-gallery{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:4px}
+.off3-cam-thumb{position:relative;border-radius:8px;overflow:hidden;aspect-ratio:1;border:1px solid rgba(46,230,255,.2)}
+.off3-cam-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.off3-cam-thumb-actions{position:absolute;inset:0;display:flex;align-items:flex-end;justify-content:space-between;
+  padding:4px;opacity:0;transition:opacity .15s;background:linear-gradient(to top,rgba(0,0,0,.6),transparent 60%)}
+.off3-cam-thumb:hover .off3-cam-thumb-actions{opacity:1}
+.off3-cam-thumb-actions button{background:rgba(6,14,24,.85);border:1px solid rgba(46,230,255,.4);border-radius:6px;
+  color:#d7f6ff;width:22px;height:22px;font-size:11px;cursor:pointer;line-height:1;padding:0}
 .off3-phone-tabs{display:flex;gap:6px;padding:8px 10px 6px}
 .off3-phone-tabs button{flex:1;background:rgba(46,230,255,.06);border:1px solid rgba(46,230,255,.25);border-radius:10px;
   color:#8fd8e8;font-family:inherit;font-size:12px;font-weight:700;padding:7px 4px;cursor:pointer}

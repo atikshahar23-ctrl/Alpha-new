@@ -5106,6 +5106,63 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   // Sandbox mode: HeavyGuard/CRM/TRADE render inside the phone's own iframe
   // instead of navigating away, so the user never leaves the simulation.
   const [phoneEmbed, setPhoneEmbed] = useState(null); // { url, title } | null
+  // Maximize: a short 3D flip-and-scale beat (CSS-driven, see .off3-phone-flip)
+  // bridges the small corner terminal into a big centered one you can actually
+  // work with, then flips back the same way on close/minimize.
+  const [phoneMaximized, setPhoneMaximized] = useState(false);
+  const [phoneFlipping, setPhoneFlipping] = useState(false);
+  const togglePhoneMax = () => {
+    setPhoneFlipping(true);
+    try { navigator.vibrate?.(10); } catch {}
+    setTimeout(() => { setPhoneMaximized((v) => !v); setPhoneFlipping(false); }, 420);
+  };
+  // Camera app — a real getUserMedia preview, snap-to-canvas capture, and a
+  // small saved-photos gallery (persisted so photos survive closing the phone).
+  const camVideoRef = useRef(null);
+  const camStreamRef = useRef(null);
+  const [camError, setCamError] = useState("");
+  const [phonePhotos, setPhonePhotos] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("alpha_phone_photos_v1") || "[]"); } catch { return []; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("alpha_phone_photos_v1", JSON.stringify(phonePhotos.slice(0, 24))); } catch {}
+  }, [phonePhotos]);
+  useEffect(() => {
+    const active = !phoneEmbed && phoneTab === "cam";
+    if (!active) {
+      if (camStreamRef.current) { camStreamRef.current.getTracks().forEach((t) => t.stop()); camStreamRef.current = null; }
+      return;
+    }
+    let cancelled = false;
+    setCamError("");
+    navigator.mediaDevices?.getUserMedia({ video: { facingMode: "user" }, audio: false })
+      .then((stream) => {
+        if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
+        camStreamRef.current = stream;
+        if (camVideoRef.current) camVideoRef.current.srcObject = stream;
+      })
+      .catch(() => { if (!cancelled) setCamError("אין גישה למצלמה — בדוק הרשאות דפדפן"); });
+    return () => {
+      cancelled = true;
+      if (camStreamRef.current) { camStreamRef.current.getTracks().forEach((t) => t.stop()); camStreamRef.current = null; }
+    };
+  }, [phoneTab, phoneEmbed]);
+  const snapPhoto = () => {
+    const v = camVideoRef.current;
+    if (!v || !v.videoWidth) return;
+    const cvs = document.createElement("canvas");
+    cvs.width = v.videoWidth; cvs.height = v.videoHeight;
+    cvs.getContext("2d").drawImage(v, 0, 0);
+    const dataUrl = cvs.toDataURL("image/jpeg", 0.9);
+    setPhonePhotos((p) => [{ id: Date.now() + "_" + Math.random().toString(36).slice(2, 6), dataUrl, ts: new Date().toISOString() }, ...p].slice(0, 24));
+    try { navigator.vibrate?.(18); } catch {}
+  };
+  const downloadPhoto = (p) => {
+    const a = document.createElement("a");
+    a.href = p.dataUrl; a.download = "alpha-" + p.id + ".jpg";
+    document.body.appendChild(a); a.click(); a.remove();
+  };
+  const deletePhoto = (id) => setPhonePhotos((p) => p.filter((x) => x.id !== id));
   useEffect(() => { liveRef.current.phoneOpen = phoneOpen; }, [phoneOpen]);
   useEffect(() => {
     if (!phoneOpen) return;
@@ -9289,7 +9346,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           <button onClick={() => radioRef.current?.toggle()} title="השתק"><Pause size={12} /></button>
         </div>
       )}
-      <button className={"off3-phonebtn" + (phoneOpen ? " on" : "")} onClick={() => setPhoneOpen((v) => !v)} title="הטלפון שלך — שיחה חיה ושליטה במערכות">
+      <button className={"off3-phonebtn" + (phoneOpen ? " on" : "")} onClick={() => { setPhoneOpen((v) => !v); setPhoneMaximized(false); setPhoneFlipping(false); }} title="הטלפון שלך — שיחה חיה ושליטה במערכות">
         📱
       </button>
       {/* Always mounted (CSS-hidden when the phone is closed, not unmounted)
@@ -9298,8 +9355,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           radio when you close the phone — only the JSX conditionals for
           chat/ctrl/embed content still mount-on-demand, they don't need to
           survive being closed. */}
-      <div className={"off3-phone" + (phoneOpen ? "" : " off3-phone-closed")}>
+      <div className={"off3-phone" + (phoneOpen ? "" : " off3-phone-closed") + (phoneMaximized ? " off3-phone-max" : "") + (phoneFlipping ? " off3-phone-flip" : "")}>
           <div className="off3-phone-notch" />
+          <button className="off3-phone-maxbtn" onClick={togglePhoneMax} title={phoneMaximized ? "מזער" : "הגדל מסך"}>
+            {phoneMaximized ? "🗕" : "⤢"}
+          </button>
           <div className="off3-phone-brand">ALPHA-LINK-01 <i>· מוצפן</i></div>
           {phoneUnlocking && (
             <div className="off3-phone-unlock">
@@ -9314,6 +9374,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
             <button className={phoneTab === "ctrl" ? "on" : ""} onClick={() => { setPhoneTab("ctrl"); setPhoneEmbed(null); }} title="שליטה">🎛</button>
             <button className={phoneTab === "radio" ? "on" : ""} onClick={() => { setPhoneTab("radio"); setPhoneEmbed(null); }} title="רדיו">📻</button>
             <button className={phoneTab === "spotify" ? "on" : ""} onClick={() => { setPhoneTab("spotify"); setPhoneEmbed(null); }} title="ספוטיפי">🎵</button>
+            <button className={phoneTab === "cam" ? "on" : ""} onClick={() => { setPhoneTab("cam"); setPhoneEmbed(null); }} title="מצלמה">📷</button>
             <button className={"off3-phone-tab-sec" + (phoneTab === "sec" ? " on" : "")} onClick={() => { setPhoneTab("sec"); setPhoneEmbed(null); }} title="אבטחה">
               🛡{securityAlerts.some((a) => a.level === "high") && <i className="off3-phone-badge" />}
             </button>
@@ -9327,6 +9388,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
                 <button className="off3-phone-app" onClick={() => setPhoneTab("ctrl")}><span>🎛</span>מרכז פיקוד</button>
                 <button className="off3-phone-app" onClick={() => setPhoneTab("radio")}><span>📻</span>רדיו</button>
                 <button className="off3-phone-app" onClick={() => setPhoneTab("spotify")}><span>🎵</span>ספוטיפי</button>
+                <button className="off3-phone-app" onClick={() => setPhoneTab("cam")}><span>📷</span>מצלמה</button>
                 <button className="off3-phone-app" onClick={() => setPhoneTab("sec")}>
                   <span>🛡</span>אבטחה{securityAlerts.some((a) => a.level === "high") && <i className="off3-phone-badge" />}
                 </button>
@@ -9342,6 +9404,30 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
                   <span>{a.text}</span>
                 </div>
               ))}
+            </div>
+          )}
+          {!phoneEmbed && phoneTab === "cam" && (
+            <div className="off3-phone-body off3-cam">
+              <div className="off3-phone-sec">📷 מצלמה</div>
+              {camError
+                ? <p className="off3-phone-empty">{camError}</p>
+                : <video ref={camVideoRef} className="off3-cam-video" autoPlay playsInline muted />}
+              <button className="off3-voice-test" disabled={!!camError} onClick={snapPhoto}>📸 צלם</button>
+              {phonePhotos.length === 0
+                ? <p className="off3-phone-empty">התמונות שתצלמו יישמרו כאן, וגם יורדות למחשב בלחיצת כפתור.</p>
+                : (
+                  <div className="off3-cam-gallery">
+                    {phonePhotos.map((p) => (
+                      <div key={p.id} className="off3-cam-thumb">
+                        <img src={p.dataUrl} alt="" />
+                        <div className="off3-cam-thumb-actions">
+                          <button onClick={() => downloadPhoto(p)} title="הורד">⬇</button>
+                          <button onClick={() => deletePhoto(p.id)} title="מחק">✕</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
             </div>
           )}
           {phoneEmbed && (
