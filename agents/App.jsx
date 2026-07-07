@@ -3885,7 +3885,13 @@ function StyleTag() {
 .off3-subtitle-x:hover{color:#fff;background:rgba(255,255,255,.16)}
 /* Twin-stick walk controls — fixed left (move) / right (turn/look) sticks,
    the standard dual-analog game layout, always on screen in each corner. */
-.off3-joy-fixed{position:absolute;z-index:4;bottom:26px;width:112px;height:112px;border-radius:50%;
+/* z-index:33 — must clear every full-screen overlay's own wrap (.off3-space-wrap
+   is z-index:30, its HUD layers z-index:31-32) or the joysticks sit visually and
+   functionally UNDERNEATH the Hangar/Flight/Space/Drive overlay's opaque
+   background the instant one opens: on a phone, with no keyboard fallback,
+   that reads as "the sim is frozen" — the joystick isn't unresponsive, it's
+   literally covered up and unreachable. */
+.off3-joy-fixed{position:absolute;z-index:33;bottom:26px;width:112px;height:112px;border-radius:50%;
   background:radial-gradient(circle,rgba(255,255,255,.1),rgba(255,255,255,.03));
   border:2px solid rgba(228,188,99,.4);box-shadow:0 0 0 6px rgba(0,0,0,.15),0 8px 26px rgba(0,0,0,.4);
   touch-action:none;backdrop-filter:blur(2px)}
