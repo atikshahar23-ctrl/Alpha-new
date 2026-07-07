@@ -223,18 +223,44 @@ export function removeTask(id: string): Task[] {
 
 // --- PERSONAL WALLET (owner's own finances — separate from HeavyGuard's
 // business revenue/pipeline numbers elsewhere in the app) ---
+// Monthly expenses are tracked as individual named/categorized line items
+// (rent, groceries, insurance, ...) rather than one lump number — the owner
+// explicitly asked for a full breakdown, not "a general figure". monthlyExpenses
+// stays on the record as a derived total (see saveWallet) so existing surplus/
+// ratio math elsewhere doesn't need to re-sum the list itself.
+export interface WalletExpenseItem { id: string; label: string; amount: number; category: string }
+export const EXPENSE_CATEGORIES = ['דיור', 'מזון', 'תחבורה', 'ביטוח', 'מנויים', 'פנאי', 'אחר'];
 export interface WalletData {
   cash: number; bank: number; investments: number; realEstate: number; otherAssets: number;
-  debts: number; monthlyIncome: number; monthlyExpenses: number; notes: string; updated: string;
+  debts: number; monthlyIncome: number; monthlyExpenses: number; expenses: WalletExpenseItem[];
+  notes: string; updated: string;
 }
 const WALLET_KEY = 'alpha_wallet_v1';
 const EMPTY_WALLET: WalletData = {
   cash: 0, bank: 0, investments: 0, realEstate: 0, otherAssets: 0,
-  debts: 0, monthlyIncome: 0, monthlyExpenses: 0, notes: '', updated: '',
+  debts: 0, monthlyIncome: 0, monthlyExpenses: 0, expenses: [], notes: '', updated: '',
 };
 export function loadWallet(): WalletData {
-  try { return { ...EMPTY_WALLET, ...JSON.parse(localStorage.getItem(WALLET_KEY) || '{}') }; }
-  catch { return { ...EMPTY_WALLET }; }
+  let w: WalletData;
+  try { w = { ...EMPTY_WALLET, ...JSON.parse(localStorage.getItem(WALLET_KEY) || '{}') }; }
+  catch { w = { ...EMPTY_WALLET }; }
+  // One-time migration: a pre-existing flat monthlyExpenses number (from
+  // before itemized tracking existed) becomes a single editable line item
+  // instead of silently vanishing from the total.
+  if ((!w.expenses || w.expenses.length === 0) && w.monthlyExpenses > 0) {
+    w.expenses = [{ id: 'legacy', label: 'הוצאות (מספר קודם)', amount: w.monthlyExpenses, category: 'אחר' }];
+  }
+  return w;
+}
+export function addWalletExpense(label: string, amount: number, category: string): WalletData {
+  const w = loadWallet();
+  w.expenses = [...w.expenses, { id: Date.now() + '_' + Math.random().toString(36).slice(2, 6), label, amount, category }];
+  return saveWallet(w);
+}
+export function removeWalletExpense(id: string): WalletData {
+  const w = loadWallet();
+  w.expenses = w.expenses.filter((e) => e.id !== id);
+  return saveWallet(w);
 }
 // Net-worth snapshots — one point per calendar day (re-saving the same day
 // updates that day's point rather than duplicating it), capped to the last
@@ -252,8 +278,9 @@ function pushWalletHistory(netWorth: number) {
   if (hist.length > 24) hist.splice(0, hist.length - 24);
   localStorage.setItem(WALLET_HISTORY_KEY, JSON.stringify(hist));
 }
-export function saveWallet(w: Omit<WalletData, 'updated'>): WalletData {
-  const full: WalletData = { ...w, updated: new Date().toISOString() };
+export function saveWallet(w: Omit<WalletData, 'updated' | 'monthlyExpenses'>): WalletData {
+  const monthlyExpenses = w.expenses.reduce((s, e) => s + (e.amount || 0), 0);
+  const full: WalletData = { ...w, monthlyExpenses, updated: new Date().toISOString() };
   localStorage.setItem(WALLET_KEY, JSON.stringify(full));
   pushWalletHistory(w.cash + w.bank + w.investments + w.realEstate + w.otherAssets - w.debts);
   return full;

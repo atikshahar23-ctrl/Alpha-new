@@ -3597,6 +3597,18 @@ html.perf-lite .hud-card, html.perf-lite .hud-sc { -webkit-backdrop-filter: none
 .wallet-delta-up{color:#5a8a50;font-size:11px;margin-inline-start:6px}
 .wallet-delta-down{color:#c0432e;font-size:11px;margin-inline-start:6px}
 .wallet-spark{display:block;margin:6px 0}
+.wallet-exp-row{display:flex;align-items:center;gap:8px;padding:7px 9px;background:rgba(255,255,255,.03);
+  border:1px solid var(--line);border-radius:8px;margin-bottom:5px;font-size:12.5px}
+.wallet-exp-cat{color:var(--gold);font-size:10.5px;padding:2px 6px;background:rgba(218,165,32,.12);border-radius:5px;flex-shrink:0}
+.wallet-exp-label{flex:1;color:var(--ink);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wallet-exp-amt{color:var(--ink);font-weight:600;flex-shrink:0}
+.wallet-exp-del{background:none;border:none;color:var(--dim);cursor:pointer;font-size:13px;padding:2px 4px;flex-shrink:0}
+.wallet-exp-del:hover{color:#ff5d73}
+.wallet-quickrow{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.wallet-quickrow input,.wallet-quickrow select{background:rgba(20,16,9,.5);border:1px solid rgba(228,188,99,.18);
+  border-radius:8px;padding:7px 9px;color:#f5e6c8;font-size:12.5px;font-family:inherit}
+.wallet-quickrow input[type=text]{flex:1;min-width:110px}
+.wallet-quickrow input[type=number]{width:90px}
 
 /* ===== Calendar / task journal (professional redesign) ===== */
 .cal-app{padding:16px}

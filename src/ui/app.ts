@@ -1,6 +1,6 @@
 import { mountOrb, setCryEnabled, type OrbHandle } from '../orb/OrbScene';
 import { mountFlowLines } from '../bg/flowLines';
-import { loadState, saveState, addEvent, addTask, scheduleTask, saveNote, loadEvents, loadTasks, removeEvent, loadHgBacklog, scheduleHgTask, loadInstallDates, loadWallet, saveWallet, loadWalletHistory, updateEventTitle, getJournalEntry, saveJournalEntry, type AppState, type TextLang, type AIProvider, type VoiceGender, type UILang, type CalEvent } from '../assistant/state';
+import { loadState, saveState, addEvent, addTask, scheduleTask, saveNote, loadEvents, loadTasks, removeEvent, loadHgBacklog, scheduleHgTask, loadInstallDates, loadWallet, saveWallet, loadWalletHistory, addWalletExpense, removeWalletExpense, EXPENSE_CATEGORIES, updateEventTitle, getJournalEntry, saveJournalEntry, type AppState, type TextLang, type AIProvider, type VoiceGender, type UILang, type CalEvent } from '../assistant/state';
 import { askAIStream, askOnce, askVision, runTags } from '../assistant/gemini';
 import { GEN1 } from '../data/gen1';
 import * as THREE from 'three';
@@ -1867,6 +1867,19 @@ export function mountApp(root: HTMLElement) {
     const savingsRatePct = w.monthlyIncome > 0 ? Math.round(surplus / w.monthlyIncome * 100) : 0;
     const cashRunway = w.monthlyExpenses > 0 ? ((w.cash + w.bank) / w.monthlyExpenses).toFixed(1) : '∞';
 
+    // Expense breakdown by category — same allocation-bar visual language as
+    // the asset split above, so the two read as a matched pair.
+    const EXP_COLORS: Record<string, string> = {
+      'דיור': 'var(--gold)', 'מזון': '#4fc3dc', 'תחבורה': '#a78bfa',
+      'ביטוח': '#c0432e', 'מנויים': '#e07b39', 'פנאי': '#5a8a50', 'אחר': 'var(--dim)',
+    };
+    const byCat = new Map<string, number>();
+    for (const e of w.expenses) byCat.set(e.category, (byCat.get(e.category) || 0) + e.amount);
+    const expBreakdown = w.monthlyExpenses > 0
+      ? `<div class="wallet-alloc-bar">${[...byCat].map(([cat, val]) => `<span class="wallet-alloc-seg" style="width:${(val / w.monthlyExpenses * 100).toFixed(2)}%;background:${EXP_COLORS[cat] || 'var(--dim)'}"></span>`).join('')}</div>
+         <div class="wallet-alloc-legend">${[...byCat].map(([cat, val]) => `<span><span class="dot" style="background:${EXP_COLORS[cat] || 'var(--dim)'}"></span>${cat} ${Math.round(val / w.monthlyExpenses * 100)}%</span>`).join('')}</div>`
+      : '<div class="ops-empty">הוסיפו הוצאות כדי לראות פילוח</div>';
+
     body.innerHTML = `<div class="pad ops-center">
       <div class="ops-grid">
         <section class="ops-panel ops-span2">
@@ -1886,9 +1899,23 @@ export function mountApp(root: HTMLElement) {
           </div>
           <div class="wallet-pro-section">
             <div class="wallet-pro-h">🔁 תזרים חודשי</div>
-            <div class="wallet-form">
-              ${field('wIncome', 'הכנסה חודשית', w.monthlyIncome, '⬆️')}
-              ${field('wExpense', 'הוצאה חודשית', w.monthlyExpenses, '⬇️')}
+            <div class="wallet-form">${field('wIncome', 'הכנסה חודשית', w.monthlyIncome, '⬆️')}</div>
+          </div>
+          <div class="wallet-pro-section">
+            <div class="wallet-pro-h">⬇️ הוצאות חודשיות · פירוט מלא (${money(w.monthlyExpenses)})</div>
+            ${w.expenses.length === 0
+              ? '<div class="ops-empty">אין עדיין הוצאות רשומות — הוסיפו למטה</div>'
+              : w.expenses.map((e) => `<div class="wallet-exp-row">
+                  <span class="wallet-exp-cat">${escHtml(e.category)}</span>
+                  <span class="wallet-exp-label">${escHtml(e.label)}</span>
+                  <span class="wallet-exp-amt">${money(e.amount)}</span>
+                  <button data-exp-del="${e.id}" class="wallet-exp-del" title="מחק">✕</button>
+                </div>`).join('')}
+            <div class="wallet-quickrow">
+              <input type="text" id="wExpLabel" placeholder="שם ההוצאה (למשל: שכירות)" />
+              <input type="number" id="wExpAmount" placeholder="סכום" />
+              <select id="wExpCategory">${EXPENSE_CATEGORIES.map((c) => `<option value="${c}">${c}</option>`).join('')}</select>
+              <button class="ops-cta" id="wExpAdd">+ הוסף הוצאה</button>
             </div>
           </div>
           <textarea id="wNotes" class="wallet-notes" placeholder="הערות (למשל: יעדים, תוכניות חיסכון)...">${escHtml(w.notes || '')}</textarea>
@@ -1909,6 +1936,8 @@ export function mountApp(root: HTMLElement) {
           <div class="wallet-ratio-row"><span>מסלול מזומן (חודשים)</span><b>${cashRunway}</b></div>
           <div class="wallet-pro-h" style="margin-top:12px">🥧 פילוח נכסים</div>
           ${allocBar}
+          <div class="wallet-pro-h" style="margin-top:12px">🧾 פילוח הוצאות לפי קטגוריה</div>
+          ${expBreakdown}
           ${w.updated ? `<div class="ops-foot">עודכן ${new Date(w.updated).toLocaleString('he-IL')}</div>` : '<div class="ops-empty">עדיין לא נשמרו נתונים</div>'}
         </section>
       </div>
@@ -1917,15 +1946,27 @@ export function mountApp(root: HTMLElement) {
     $('wSave').onclick = () => {
       saveWallet({
         cash: num('wCash'), bank: num('wBank'), investments: num('wInvest'), realEstate: num('wRe'),
-        otherAssets: num('wOther'), debts: num('wDebts'), monthlyIncome: num('wIncome'), monthlyExpenses: num('wExpense'),
+        otherAssets: num('wOther'), debts: num('wDebts'), monthlyIncome: num('wIncome'), expenses: loadWallet().expenses,
         notes: (document.getElementById('wNotes') as HTMLTextAreaElement).value,
       });
       renderWallet();
     };
+    $('wExpAdd').onclick = () => {
+      const label = (document.getElementById('wExpLabel') as HTMLInputElement).value.trim();
+      const amount = parseFloat((document.getElementById('wExpAmount') as HTMLInputElement).value) || 0;
+      const category = (document.getElementById('wExpCategory') as HTMLSelectElement).value;
+      if (!label || amount <= 0) return;
+      addWalletExpense(label, amount, category);
+      renderWallet();
+    };
+    $('winBody').querySelectorAll<HTMLButtonElement>('[data-exp-del]').forEach((b) => {
+      b.onclick = () => { removeWalletExpense(b.dataset.expDel!); renderWallet(); };
+    });
     $('wAsk').onclick = () => {
       const cur = loadWallet();
       const curAssets = cur.cash + cur.bank + cur.investments + cur.realEstate + cur.otherAssets;
-      const prompt = `אתה יהודה, מנכ"ל המערכת. נתח את הארנק האישי שלי ותן המלצות פיננסיות קונקרטיות: מזומן ${money(cur.cash)}, עו"ש ${money(cur.bank)}, השקעות ${money(cur.investments)}, נדל"ן ${money(cur.realEstate)}, נכסים אחרים ${money(cur.otherAssets)}, חובות ${money(cur.debts)}, הכנסה חודשית ${money(cur.monthlyIncome)}, הוצאה חודשית ${money(cur.monthlyExpenses)}. סה"כ נכסים ${money(curAssets)}, שווי נקי ${money(curAssets - cur.debts)}, עודף חודשי ${money(cur.monthlyIncome - cur.monthlyExpenses)}, יחס חוב לנכסים ${curAssets > 0 ? Math.round(cur.debts / curAssets * 100) : 0}%, קצב חיסכון ${cur.monthlyIncome > 0 ? Math.round((cur.monthlyIncome - cur.monthlyExpenses) / cur.monthlyIncome * 100) : 0}%.`;
+      const expLines = cur.expenses.map((e) => `${e.label} (${e.category}): ${money(e.amount)}`).join(', ');
+      const prompt = `אתה יהודה, מנכ"ל המערכת. נתח את הארנק האישי שלי ותן המלצות פיננסיות קונקרטיות: מזומן ${money(cur.cash)}, עו"ש ${money(cur.bank)}, השקעות ${money(cur.investments)}, נדל"ן ${money(cur.realEstate)}, נכסים אחרים ${money(cur.otherAssets)}, חובות ${money(cur.debts)}, הכנסה חודשית ${money(cur.monthlyIncome)}, הוצאה חודשית ${money(cur.monthlyExpenses)} (פירוט: ${expLines || 'אין'}). סה"כ נכסים ${money(curAssets)}, שווי נקי ${money(curAssets - cur.debts)}, עודף חודשי ${money(cur.monthlyIncome - cur.monthlyExpenses)}, יחס חוב לנכסים ${curAssets > 0 ? Math.round(cur.debts / curAssets * 100) : 0}%, קצב חיסכון ${cur.monthlyIncome > 0 ? Math.round((cur.monthlyIncome - cur.monthlyExpenses) / cur.monthlyIncome * 100) : 0}%.`;
       addMsg(prompt, 'me');
       ask(prompt);
     };
