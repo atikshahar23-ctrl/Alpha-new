@@ -236,9 +236,26 @@ export function loadWallet(): WalletData {
   try { return { ...EMPTY_WALLET, ...JSON.parse(localStorage.getItem(WALLET_KEY) || '{}') }; }
   catch { return { ...EMPTY_WALLET }; }
 }
+// Net-worth snapshots — one point per calendar day (re-saving the same day
+// updates that day's point rather than duplicating it), capped to the last
+// 24 so the wallet panel can show a trend sparkline + a delta since last save.
+export interface WalletHistoryPoint { date: string; netWorth: number }
+const WALLET_HISTORY_KEY = 'alpha_wallet_history_v1';
+export function loadWalletHistory(): WalletHistoryPoint[] {
+  try { return JSON.parse(localStorage.getItem(WALLET_HISTORY_KEY) || '[]'); } catch { return []; }
+}
+function pushWalletHistory(netWorth: number) {
+  const hist = loadWalletHistory();
+  const today = new Date().toISOString().slice(0, 10);
+  if (hist.length && hist[hist.length - 1].date === today) hist[hist.length - 1].netWorth = netWorth;
+  else hist.push({ date: today, netWorth });
+  if (hist.length > 24) hist.splice(0, hist.length - 24);
+  localStorage.setItem(WALLET_HISTORY_KEY, JSON.stringify(hist));
+}
 export function saveWallet(w: Omit<WalletData, 'updated'>): WalletData {
   const full: WalletData = { ...w, updated: new Date().toISOString() };
   localStorage.setItem(WALLET_KEY, JSON.stringify(full));
+  pushWalletHistory(w.cash + w.bank + w.investments + w.realEstate + w.otherAssets - w.debts);
   return full;
 }
 

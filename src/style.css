@@ -3586,6 +3586,17 @@ html.perf-lite .hud-card, html.perf-lite .hud-sc { -webkit-backdrop-filter: none
 .wallet-field input:focus{outline:none;border-color:rgba(228,188,99,.5)}
 .wallet-notes{width:100%;min-height:60px;margin-top:8px;background:rgba(20,16,9,.5);border:1px solid rgba(228,188,99,.18);border-radius:8px;padding:8px 10px;color:#f5e6c8;font-size:12.5px;font-family:inherit;resize:vertical}
 .wallet-notes:focus{outline:none;border-color:rgba(228,188,99,.5)}
+.wallet-pro-section{margin-bottom:14px}
+.wallet-pro-h{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+.wallet-alloc-bar{display:flex;height:10px;border-radius:6px;overflow:hidden;margin-bottom:8px;background:rgba(255,255,255,.04)}
+.wallet-alloc-seg{height:100%}
+.wallet-alloc-legend{display:flex;flex-wrap:wrap;gap:10px;font-size:10.5px;color:var(--dim)}
+.wallet-alloc-legend .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-inline-end:4px}
+.wallet-ratio-row{display:flex;justify-content:space-between;font-size:12px;color:var(--dim);padding:6px 0;border-bottom:1px solid var(--line)}
+.wallet-ratio-row b{color:var(--ink)}
+.wallet-delta-up{color:#5a8a50;font-size:11px;margin-inline-start:6px}
+.wallet-delta-down{color:#c0432e;font-size:11px;margin-inline-start:6px}
+.wallet-spark{display:block;margin:6px 0}
 
 /* ===== Calendar / task journal (professional redesign) ===== */
 .cal-app{padding:16px}

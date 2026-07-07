@@ -1,6 +1,6 @@
 import { mountOrb, setCryEnabled, type OrbHandle } from '../orb/OrbScene';
 import { mountFlowLines } from '../bg/flowLines';
-import { loadState, saveState, addEvent, addTask, scheduleTask, saveNote, loadEvents, loadTasks, removeEvent, loadHgBacklog, scheduleHgTask, loadInstallDates, loadWallet, saveWallet, updateEventTitle, getJournalEntry, saveJournalEntry, type AppState, type TextLang, type AIProvider, type VoiceGender, type UILang, type CalEvent } from '../assistant/state';
+import { loadState, saveState, addEvent, addTask, scheduleTask, saveNote, loadEvents, loadTasks, removeEvent, loadHgBacklog, scheduleHgTask, loadInstallDates, loadWallet, saveWallet, loadWalletHistory, updateEventTitle, getJournalEntry, saveJournalEntry, type AppState, type TextLang, type AIProvider, type VoiceGender, type UILang, type CalEvent } from '../assistant/state';
 import { askAIStream, askOnce, askVision, runTags } from '../assistant/gemini';
 import { GEN1 } from '../data/gen1';
 import * as THREE from 'three';
@@ -1828,21 +1828,68 @@ export function mountApp(root: HTMLElement) {
     const assets = w.cash + w.bank + w.investments + w.realEstate + w.otherAssets;
     const netWorth = assets - w.debts;
     const surplus = w.monthlyIncome - w.monthlyExpenses;
-    const field = (id: string, label: string, val: number) =>
-      `<label class="wallet-field"><span>${label}</span><input type="number" id="${id}" value="${val || ''}" placeholder="0" /></label>`;
+    const field = (id: string, label: string, val: number, icon: string) =>
+      `<label class="wallet-field"><span>${icon} ${label}</span><input type="number" id="${id}" value="${val || ''}" placeholder="0" /></label>`;
+
+    // Asset allocation bar — proportional colored segments + legend.
+    const ALLOC = [
+      { key: 'cash', label: 'מזומן', val: w.cash, color: 'var(--gold)' },
+      { key: 'bank', label: 'עו"ש', val: w.bank, color: '#4fc3dc' },
+      { key: 'investments', label: 'השקעות', val: w.investments, color: '#a78bfa' },
+      { key: 'realEstate', label: 'נדל"ן', val: w.realEstate, color: '#5a8a50' },
+      { key: 'otherAssets', label: 'אחר', val: w.otherAssets, color: 'var(--dim)' },
+    ].filter(a => a.val > 0);
+    const allocBar = assets > 0
+      ? `<div class="wallet-alloc-bar">${ALLOC.map(a => `<span class="wallet-alloc-seg" style="width:${(a.val / assets * 100).toFixed(2)}%;background:${a.color}"></span>`).join('')}</div>
+         <div class="wallet-alloc-legend">${ALLOC.map(a => `<span><span class="dot" style="background:${a.color}"></span>${a.label} ${Math.round(a.val / assets * 100)}%</span>`).join('')}</div>`
+      : '<div class="ops-empty">הוסיפו נכסים כדי לראות פילוח</div>';
+
+    // Net-worth trend — sparkline SVG from the last saved snapshots + delta vs the previous save.
+    const hist = loadWalletHistory();
+    let sparkline = '';
+    let deltaHtml = '';
+    if (hist.length >= 2) {
+      const vals = hist.map(h => h.netWorth);
+      const min = Math.min(...vals), max = Math.max(...vals);
+      const span = max - min || 1;
+      const pts = vals.map((v, i) => `${(i / (vals.length - 1) * 100).toFixed(1)},${(28 - ((v - min) / span) * 26).toFixed(1)}`).join(' ');
+      sparkline = `<svg class="wallet-spark" viewBox="0 0 100 28" preserveAspectRatio="none" width="100%" height="28">
+        <polyline points="${pts}" fill="none" stroke="var(--gold)" stroke-width="2" vector-effect="non-scaling-stroke"/>
+      </svg>`;
+      const delta = vals[vals.length - 1] - vals[vals.length - 2];
+      const cls = delta >= 0 ? 'wallet-delta-up' : 'wallet-delta-down';
+      const arrow = delta >= 0 ? '▲' : '▼';
+      deltaHtml = `<span class="${cls}">${arrow} ${money(Math.abs(delta))}</span>`;
+    }
+
+    // Extra financial ratios a "serious" wallet view should surface.
+    const debtToAssetPct = assets > 0 ? Math.round(w.debts / assets * 100) : 0;
+    const savingsRatePct = w.monthlyIncome > 0 ? Math.round(surplus / w.monthlyIncome * 100) : 0;
+    const cashRunway = w.monthlyExpenses > 0 ? ((w.cash + w.bank) / w.monthlyExpenses).toFixed(1) : '∞';
+
     body.innerHTML = `<div class="pad ops-center">
       <div class="ops-grid">
         <section class="ops-panel ops-span2">
-          <div class="ops-h">💰 נתונים</div>
-          <div class="wallet-form">
-            ${field('wCash', 'מזומן', w.cash)}
-            ${field('wBank', 'עו"ש בנק', w.bank)}
-            ${field('wInvest', 'השקעות', w.investments)}
-            ${field('wRe', 'נדל"ן', w.realEstate)}
-            ${field('wOther', 'נכסים אחרים', w.otherAssets)}
-            ${field('wDebts', 'חובות/הלוואות', w.debts)}
-            ${field('wIncome', 'הכנסה חודשית', w.monthlyIncome)}
-            ${field('wExpense', 'הוצאה חודשית', w.monthlyExpenses)}
+          <div class="wallet-pro-section">
+            <div class="wallet-pro-h">💎 נכסים</div>
+            <div class="wallet-form">
+              ${field('wCash', 'מזומן', w.cash, '💵')}
+              ${field('wBank', 'עו"ש בנק', w.bank, '🏦')}
+              ${field('wInvest', 'השקעות', w.investments, '📈')}
+              ${field('wRe', 'נדל"ן', w.realEstate, '🏠')}
+              ${field('wOther', 'נכסים אחרים', w.otherAssets, '💠')}
+            </div>
+          </div>
+          <div class="wallet-pro-section">
+            <div class="wallet-pro-h">📉 התחייבויות</div>
+            <div class="wallet-form">${field('wDebts', 'חובות/הלוואות', w.debts, '⚠️')}</div>
+          </div>
+          <div class="wallet-pro-section">
+            <div class="wallet-pro-h">🔁 תזרים חודשי</div>
+            <div class="wallet-form">
+              ${field('wIncome', 'הכנסה חודשית', w.monthlyIncome, '⬆️')}
+              ${field('wExpense', 'הוצאה חודשית', w.monthlyExpenses, '⬇️')}
+            </div>
           </div>
           <textarea id="wNotes" class="wallet-notes" placeholder="הערות (למשל: יעדים, תוכניות חיסכון)...">${escHtml(w.notes || '')}</textarea>
           <div class="ops-foot" style="display:flex;gap:10px;margin-top:10px">
@@ -1851,10 +1898,17 @@ export function mountApp(root: HTMLElement) {
           </div>
         </section>
         <section class="ops-panel">
-          <div class="ops-h">📊 סיכום</div>
+          <div class="wallet-pro-h">📊 סיכום</div>
           <div class="hud-stat"><span>סה"כ נכסים</span><b>${money(assets)}</b></div>
-          <div class="hud-stat"><span>שווי נקי</span><b>${money(netWorth)}</b></div>
+          <div class="hud-stat"><span>שווי נקי</span><b>${money(netWorth)}</b> ${deltaHtml}</div>
           <div class="hud-stat"><span>עודף חודשי</span><b>${money(surplus)}</b></div>
+          ${sparkline}
+          <div class="wallet-pro-h" style="margin-top:12px">📐 יחסים</div>
+          <div class="wallet-ratio-row"><span>יחס חוב לנכסים</span><b>${debtToAssetPct}%</b></div>
+          <div class="wallet-ratio-row"><span>קצב חיסכון</span><b>${savingsRatePct}%</b></div>
+          <div class="wallet-ratio-row"><span>מסלול מזומן (חודשים)</span><b>${cashRunway}</b></div>
+          <div class="wallet-pro-h" style="margin-top:12px">🥧 פילוח נכסים</div>
+          ${allocBar}
           ${w.updated ? `<div class="ops-foot">עודכן ${new Date(w.updated).toLocaleString('he-IL')}</div>` : '<div class="ops-empty">עדיין לא נשמרו נתונים</div>'}
         </section>
       </div>
@@ -1871,7 +1925,7 @@ export function mountApp(root: HTMLElement) {
     $('wAsk').onclick = () => {
       const cur = loadWallet();
       const curAssets = cur.cash + cur.bank + cur.investments + cur.realEstate + cur.otherAssets;
-      const prompt = `אתה יהודה, מנכ"ל המערכת. נתח את הארנק האישי שלי ותן המלצות פיננסיות קונקרטיות: מזומן ${money(cur.cash)}, עו"ש ${money(cur.bank)}, השקעות ${money(cur.investments)}, נדל"ן ${money(cur.realEstate)}, נכסים אחרים ${money(cur.otherAssets)}, חובות ${money(cur.debts)}, הכנסה חודשית ${money(cur.monthlyIncome)}, הוצאה חודשית ${money(cur.monthlyExpenses)}. סה"כ נכסים ${money(curAssets)}, שווי נקי ${money(curAssets - cur.debts)}, עודף חודשי ${money(cur.monthlyIncome - cur.monthlyExpenses)}.`;
+      const prompt = `אתה יהודה, מנכ"ל המערכת. נתח את הארנק האישי שלי ותן המלצות פיננסיות קונקרטיות: מזומן ${money(cur.cash)}, עו"ש ${money(cur.bank)}, השקעות ${money(cur.investments)}, נדל"ן ${money(cur.realEstate)}, נכסים אחרים ${money(cur.otherAssets)}, חובות ${money(cur.debts)}, הכנסה חודשית ${money(cur.monthlyIncome)}, הוצאה חודשית ${money(cur.monthlyExpenses)}. סה"כ נכסים ${money(curAssets)}, שווי נקי ${money(curAssets - cur.debts)}, עודף חודשי ${money(cur.monthlyIncome - cur.monthlyExpenses)}, יחס חוב לנכסים ${curAssets > 0 ? Math.round(cur.debts / curAssets * 100) : 0}%, קצב חיסכון ${cur.monthlyIncome > 0 ? Math.round((cur.monthlyIncome - cur.monthlyExpenses) / cur.monthlyIncome * 100) : 0}%.`;
       addMsg(prompt, 'me');
       ask(prompt);
     };
