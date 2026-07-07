@@ -1150,57 +1150,14 @@ const ALPHA_ASSISTANT = {
 };
 const byId = (id) => (id === "alpha" ? ALPHA_ASSISTANT : AGENTS.find((a) => a.id === id));
 
-/* ── Faces: locally-generated flat portrait per agent (inline SVG data URI,
-   zero network dependency so they always render). ── */
-const FACE_PARAMS = {
-  ceo:   { skin: "#E8B98D", hair: "#2B2118", style: "short", beard: "stubble", glasses: false, bg1: "#3a3320", bg2: "#100d06" },
-  sales: { skin: "#F0C49A", hair: "#3A2A1C", style: "short", beard: "none",    glasses: false, bg1: "#163328", bg2: "#08160f" },
-  ops:   { skin: "#D9A06B", hair: "#1A1A22", style: "short", beard: "none",    glasses: false, bg1: "#143140", bg2: "#08161d" },
-  cmo:   { skin: "#F2CBA6", hair: "#4A2E1C", style: "long",  beard: "none",    glasses: false, bg1: "#2c1742", bg2: "#150a22" },
-  dev:   { skin: "#E6B488", hair: "#2B2118", style: "short", beard: "full",    glasses: true,  bg1: "#3a2410", bg2: "#1a0f04" },
-  auto:  { skin: "#EFC197", hair: "#C9A24B", style: "short", beard: "none",    glasses: true,  bg1: "#3a3410", bg2: "#1a1704" },
-  data:  { skin: "#E8B98D", hair: "#1A1A22", style: "long",  beard: "none",    glasses: true,  bg1: "#142a40", bg2: "#08141d" },
-  cs:    { skin: "#F2CBA6", hair: "#5A3A22", style: "short", beard: "none",    glasses: false, bg1: "#40142a", bg2: "#1d0814" },
-  finance:{ skin: "#E8B98D", hair: "#2B2118", style: "short", beard: "stubble",glasses: false, bg1: "#0d3a35", bg2: "#04181a" },
-  procure:{ skin: "#D9A06B", hair: "#3A2A1C", style: "short", beard: "full",   glasses: false, bg1: "#2a3a10", bg2: "#121a04" },
-  legal:  { skin: "#EFC197", hair: "#1A1A22", style: "short", beard: "none",   glasses: true,  bg1: "#241f44", bg2: "#100d22" },
-  growth: { skin: "#E6B488", hair: "#2B2118", style: "short", beard: "stubble",glasses: false, bg1: "#3a1320", bg2: "#1a0810" },
-  facilities: { skin: "#F2CBA6", hair: "#6B3A22", style: "long", beard: "none", glasses: true, bg1: "#40260f", bg2: "#1c1006" },
-};
-function facePortrait(p, shirt) {
-  const dark = (c) => c; // hair shade reused
-  const hairTop = p.style === "long"
-    ? `<path d="M24 44 C20 18 80 18 76 44 L76 60 72 60 C72 40 70 30 50 30 C30 30 28 40 28 60 L24 60 Z" fill="${p.hair}"/>`
-    : `<path d="M27 42 C26 20 74 20 73 42 C70 32 62 27 50 27 C38 27 30 32 27 42 Z" fill="${p.hair}"/>`;
-  const glasses = p.glasses
-    ? `<g stroke="#23252e" stroke-width="2.2" fill="rgba(150,200,255,.12)"><rect x="33" y="46" width="14" height="11" rx="4"/><rect x="53" y="46" width="14" height="11" rx="4"/><path d="M47 50 L53 50" fill="none"/></g>`
-    : "";
-  const beard = p.beard === "full"
-    ? `<path d="M31 56 C31 76 69 76 69 56 C69 70 64 74 50 74 C36 74 31 70 31 56 Z" fill="${p.hair}" opacity=".92"/>`
-    : p.beard === "stubble"
-    ? `<path d="M33 60 C34 72 66 72 67 60 C66 69 60 71 50 71 C40 71 34 69 33 60 Z" fill="${p.hair}" opacity=".28"/>`
-    : "";
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${p.bg1}"/><stop offset="1" stop-color="${p.bg2}"/></linearGradient></defs>`
-    + `<rect width="100" height="100" rx="20" fill="url(#bg)"/>`
-    + `<path d="M30 100 C30 80 40 74 50 74 C60 74 70 80 70 100 Z" fill="${shirt}"/>`
-    + `<path d="M30 100 C30 84 38 78 50 78 C62 78 70 84 70 100 Z" fill="rgba(255,255,255,.12)"/>`
-    + `<rect x="44" y="60" width="12" height="16" rx="6" fill="${p.skin}"/>`
-    + `<ellipse cx="27" cy="50" rx="4" ry="5" fill="${p.skin}"/><ellipse cx="73" cy="50" rx="4" ry="5" fill="${p.skin}"/>`
-    + `<path d="M30 46 C30 26 70 26 70 46 L70 54 C70 70 58 74 50 74 C42 74 30 70 30 54 Z" fill="${p.skin}"/>`
-    + dark(beard)
-    + `<path d="M36 44 C39 41 45 41 47 44" stroke="${p.hair}" stroke-width="2.4" fill="none" stroke-linecap="round"/>`
-    + `<path d="M53 44 C55 41 61 41 64 44" stroke="${p.hair}" stroke-width="2.4" fill="none" stroke-linecap="round"/>`
-    + `<ellipse cx="41" cy="51" rx="3.1" ry="3.6" fill="#fff"/><circle cx="41.3" cy="51.6" r="1.8" fill="#2a2018"/>`
-    + `<ellipse cx="59" cy="51" rx="3.1" ry="3.6" fill="#fff"/><circle cx="59.3" cy="51.6" r="1.8" fill="#2a2018"/>`
-    + glasses
-    + `<path d="M48 55 C49 58 51 58 52 55" stroke="rgba(120,80,50,.5)" stroke-width="1.6" fill="none" stroke-linecap="round"/>`
-    + `<path d="M44 64 C47 67 53 67 56 64" stroke="#9a5b46" stroke-width="2.4" fill="none" stroke-linecap="round"/>`
-    + hairTop
-    + `</svg>`;
-}
+/* ── Faces: a real bust-portrait render of each agent's own character from
+   the 3D office sim (the shared Legendary Robot rig, tinted per agent —
+   or the Sophia model for facilities/דבורה, who has her own distinct
+   model there) — rendered once offline from office-models/*.glb, not a
+   generic illustrated avatar unrelated to what they actually look like
+   in the simulator. ── */
 AGENTS.forEach((a) => {
-  const p = FACE_PARAMS[a.id] || FACE_PARAMS.sales;
-  a.avatar = "data:image/svg+xml;utf8," + encodeURIComponent(facePortrait(p, a.color));
+  a.avatar = import.meta.env.BASE_URL + "agent-portraits/" + a.id + ".png";
 });
 // Leo (dev) is wired to the real codebase — give him repo context so he's accurate.
 { const leo = byId("dev"); if (leo) leo.persona += "\n" + REPO_CONTEXT; }
@@ -1253,6 +1210,19 @@ function seedActivity() {
     acts.push({ id: uid(), agentId: id, text: list[Math.floor(Math.random() * list.length)], ts: now() - i * (1000 * 60 * (3 + Math.floor(Math.random() * 25))) });
   }
   return acts.sort((a, b) => b.ts - a.ts);
+}
+
+// Today's duty checklist per agent — the same per-role task list that
+// seeds the live activity feed (ACTIVITY_TEMPLATES) doubles as "what this
+// agent is supposed to get through today"; whichever of those exact lines
+// already appear in the agent's activity log since midnight count as done.
+function startOfToday() { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); }
+function dailyChecklist(agentId, acts) {
+  const templates = ACTIVITY_TEMPLATES[agentId] || [];
+  const todayTexts = new Set(acts.filter((x) => x.ts >= startOfToday()).map((x) => x.text));
+  const done = templates.filter((t) => todayTexts.has(t));
+  const remaining = templates.filter((t) => !todayTexts.has(t));
+  return { done, remaining };
 }
 
 /* ════════════════════════════════════════════════════════════════════
@@ -1713,6 +1683,7 @@ function AgentCube({ a, acts, onOpen, onPanel }) {
   const { cpu, mem } = agentLoad(a.id);
   const lines = acts.slice(0, 3).map((x) => x.text);
   if (!lines.length) lines.push(a.tagline);
+  const { done: tasksDone, remaining: tasksLeft } = dailyChecklist(a.id, acts);
   return (
     <div ref={ref} className={"ac-cube " + (exec ? "exec" : "online")} style={{ "--c": a.color, "--ac": a.accent }}
       onMouseMove={onMove} onMouseLeave={onLeave} onClick={() => onPanel(a.id)} role="button" tabIndex={0}
@@ -1732,6 +1703,18 @@ function AgentCube({ a, acts, onOpen, onPanel }) {
       <div className="ac-cube-term">
         {lines.map((ln, i) => <div key={i} className="ac-cube-ln"><span className="p">‹</span> {ln}</div>)}
         <div className="ac-cube-ln"><span className="p">‹</span> <span className="ac-caret" /></div>
+      </div>
+      <div className="ac-cube-tasks">
+        <div className="ac-cube-tasks-h">
+          <span>משימות היום</span>
+          <b>{tasksDone.length}/{tasksDone.length + tasksLeft.length}</b>
+        </div>
+        {tasksDone.map((t, i) => (
+          <div key={"d" + i} className="ac-task-row done"><Check size={11} /><span>{t}</span></div>
+        ))}
+        {tasksLeft.map((t, i) => (
+          <div key={"r" + i} className="ac-task-row"><Circle size={11} /><span>{t}</span></div>
+        ))}
       </div>
       <div className="ac-cube-metrics">
         <div className="ac-cube-m"><span>עומס</span><div className="bar"><i style={{ "--w": cpu + "%" }} /></div><b>{cpu}%</b></div>
@@ -3486,6 +3469,14 @@ function StyleTag() {
 .ac-cube-ln .t{color:#4d6183;font-size:.58rem;margin-left:6px}
 .ac-caret{display:inline-block;width:7px;height:11px;background:#7fe6b0;vertical-align:-1px;animation:caretBlink 1s steps(1) infinite}
 @keyframes caretBlink{50%{opacity:0}}
+.ac-cube-tasks{width:100%;background:rgba(3,6,12,.5);border:1px solid rgba(120,160,255,.1);border-radius:10px;position:relative;z-index:2;
+  padding:7px 9px;text-align:right;font-size:.62rem;display:flex;flex-direction:column;gap:4px}
+.ac-cube-tasks-h{display:flex;justify-content:space-between;align-items:center;color:#8ea0c4;font-weight:700;letter-spacing:.2px}
+.ac-cube-tasks-h b{color:var(--c)}
+.ac-task-row{display:flex;align-items:center;gap:5px;color:#c3ceE0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ac-task-row svg{flex-shrink:0;color:#5a6c90}
+.ac-task-row.done{color:#6b7a96;text-decoration:line-through;text-decoration-color:rgba(107,122,150,.5)}
+.ac-task-row.done svg{color:#3fd79a}
 .ac-cube-metrics{width:100%;display:flex;flex-direction:column;gap:4px;position:relative;z-index:2}
 .ac-cube-m{display:flex;align-items:center;gap:7px;font-size:.6rem;color:#8ea0c4}
 .ac-cube-m span{width:36px;text-align:right;flex-shrink:0}
