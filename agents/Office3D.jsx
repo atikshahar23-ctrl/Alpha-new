@@ -1821,9 +1821,12 @@ const EnergyGridShader = {
       float gx = pow(abs(sin(uv.x * 90.0)), 160.0);
       float gy = pow(abs(sin(uv.y * 70.0)), 160.0);
       float grid = max(gx, gy) * 0.3;
-      float speed = 0.12 + uWorkload * 0.55;
+      // Slowed way down and softened — the original fast, sharp-edged
+      // outward pulse read as a spinning/expanding ring under the reflective
+      // floor and caused real vertigo (owner report), not just a style note.
+      float speed = 0.025 + uWorkload * 0.1;
       float ring = fract(dist * 6.0 - uTime * speed);
-      float pulse = smoothstep(0.14, 0.0, abs(ring - 0.5)) * (0.35 + uWorkload * 0.85);
+      float pulse = smoothstep(0.24, 0.0, abs(ring - 0.5)) * (0.12 + uWorkload * 0.28);
       float edgeFade = smoothstep(0.02, 0.12, uv.x) * smoothstep(0.98, 0.88, uv.x) * smoothstep(0.02, 0.12, uv.y) * smoothstep(0.98, 0.88, uv.y);
       float glow = (grid + pulse) * edgeFade;
       vec3 col = mix(uColorA, uColorB, pulse);
@@ -5673,11 +5676,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       // Showroom-polished: a touch glossier + stronger HDRI reflection so
       // the car, agents and neon read in the floor (env-map "SSR" — the
       // real screen-space pass would cost a full extra scene render).
-      // Command-center gloss (owner request): sharper reflections so the
-      // ring of glowing workstations reads in the floor. Metalness stays
-      // below the literal 0.8 asked for — on a textured (non-mirror) wood
-      // map that high a value just multiplies the albedo toward black.
-      new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.2, metalness: 0.45, envMapIntensity: 1.15 })
+      // Toned back down from an earlier "sharper reflections" pass — combined
+      // with the animated energy-grid pulse above, the near-mirror floor was
+      // genuinely disorienting to look at (owner report: dizziness), not
+      // just a style preference. Still glossy, just not swimming.
+      new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.4, metalness: 0.25, envMapIntensity: 0.8 })
     );
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;

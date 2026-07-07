@@ -4000,8 +4000,11 @@ function StyleTag() {
   cursor:pointer;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center}
 .off3-phone-maxbtn:hover{background:rgba(46,230,255,.22);color:#d7f6ff}
 .off3-phone-max{position:fixed;top:50%;right:auto;left:50%;transform:translate(-50%,-50%);
-  width:min(460px,92vw);max-height:min(88vh,860px);height:min(88vh,860px);
+  width:min(720px,96vw);max-height:min(96vh,1100px);height:min(96vh,1100px);
   box-shadow:0 0 60px rgba(46,230,255,.35),0 30px 90px rgba(0,0,0,.7);z-index:120}
+.off3-phone-max .off3-phone-body{font-size:15px}
+.off3-phone-max .off3-phone-apps{grid-template-columns:repeat(3,1fr)}
+.off3-phone-max .off3-cam-gallery{grid-template-columns:repeat(5,1fr)}
 /* A brief 3D flip-and-scale beat plays while toggling maximize — matches the
    "phone spins then opens big" effect asked for, pure CSS, no extra deps. */
 @keyframes off3PhoneFlip{
