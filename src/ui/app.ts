@@ -1,6 +1,6 @@
 import { mountOrb, setCryEnabled, type OrbHandle } from '../orb/OrbScene';
 import { mountFlowLines } from '../bg/flowLines';
-import { loadState, saveState, addEvent, addTask, scheduleTask, saveNote, loadEvents, loadTasks, removeEvent, loadHgBacklog, scheduleHgTask, loadInstallDates, type AppState, type TextLang, type AIProvider, type VoiceGender, type UILang } from '../assistant/state';
+import { loadState, saveState, addEvent, addTask, scheduleTask, saveNote, loadEvents, loadTasks, removeEvent, loadHgBacklog, scheduleHgTask, loadInstallDates, loadWallet, saveWallet, type AppState, type TextLang, type AIProvider, type VoiceGender, type UILang } from '../assistant/state';
 import { askAIStream, askOnce, askVision, runTags } from '../assistant/gemini';
 import { GEN1 } from '../data/gen1';
 import * as THREE from 'three';
@@ -53,6 +53,7 @@ const UI_STRINGS: Record<string, Record<UILang, string>> = {
   music: { he: 'מוזיקה', en: 'Music' },
   search: { he: 'חיפוש', en: 'Search' },
   calendar: { he: 'יומן', en: 'Calendar' },
+  wallet: { he: 'ארנק אישי', en: 'Personal Wallet' },
   joke: { he: 'בדיחה', en: 'Joke' },
   video: { he: 'וידאו', en: 'Video' },
   translate: { he: 'תרגום', en: 'Translate' },
@@ -508,6 +509,10 @@ export function mountApp(root: HTMLElement) {
             <span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
             <span class="dl" data-i18n="calendar">יומן</span>
             <span class="cal-badge" id="calBadge"></span>
+          </button>
+          <button class="dock-item" id="walletBtn">
+            <span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 7a2 2 0 012-2h13a1 1 0 011 1v3M3 7v11a2 2 0 002 2h14a2 2 0 002-2V10a1 1 0 00-1-1H5a2 2 0 01-2-2z"/><circle cx="16" cy="14" r="1.4"/></svg></span>
+            <span class="dl" data-i18n="wallet">ארנק אישי</span>
           </button>
           <button class="dock-item" data-q="Tell me a joke">
             <span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg></span>
@@ -1727,6 +1732,73 @@ export function mountApp(root: HTMLElement) {
     renderCalendar(new Date().toISOString().slice(0, 10));
   }
   (window as any).openCalendar = openCalendar;
+
+  // ── Personal wallet — the owner's own finances (cash/bank/investments/
+  // debts), entirely separate from HeavyGuard's business revenue/pipeline
+  // numbers shown elsewhere. Yehuda (the CEO agent persona) gives the
+  // analysis/recommendations on request, through the same chat pipeline
+  // every other question already goes through — no separate AI wiring.
+  function openWallet() {
+    openWin('ארנק אישי · שחר 💰');
+    renderWallet();
+  }
+  (window as any).openWallet = openWallet;
+  function renderWallet() {
+    const body = $('winBody');
+    const w = loadWallet();
+    const money = (n: number) => '₪' + Math.round(n || 0).toLocaleString('he-IL');
+    const assets = w.cash + w.bank + w.investments + w.realEstate + w.otherAssets;
+    const netWorth = assets - w.debts;
+    const surplus = w.monthlyIncome - w.monthlyExpenses;
+    const field = (id: string, label: string, val: number) =>
+      `<label class="wallet-field"><span>${label}</span><input type="number" id="${id}" value="${val || ''}" placeholder="0" /></label>`;
+    body.innerHTML = `<div class="pad ops-center">
+      <div class="ops-grid">
+        <section class="ops-panel ops-span2">
+          <div class="ops-h">💰 נתונים</div>
+          <div class="wallet-form">
+            ${field('wCash', 'מזומן', w.cash)}
+            ${field('wBank', 'עו"ש בנק', w.bank)}
+            ${field('wInvest', 'השקעות', w.investments)}
+            ${field('wRe', 'נדל"ן', w.realEstate)}
+            ${field('wOther', 'נכסים אחרים', w.otherAssets)}
+            ${field('wDebts', 'חובות/הלוואות', w.debts)}
+            ${field('wIncome', 'הכנסה חודשית', w.monthlyIncome)}
+            ${field('wExpense', 'הוצאה חודשית', w.monthlyExpenses)}
+          </div>
+          <textarea id="wNotes" class="wallet-notes" placeholder="הערות (למשל: יעדים, תוכניות חיסכון)...">${escHtml(w.notes || '')}</textarea>
+          <div class="ops-foot" style="display:flex;gap:10px;margin-top:10px">
+            <button class="ops-cta" id="wSave">💾 שמור</button>
+            <button class="ops-cta" id="wAsk">🧭 נתח עם יהודה</button>
+          </div>
+        </section>
+        <section class="ops-panel">
+          <div class="ops-h">📊 סיכום</div>
+          <div class="hud-stat"><span>סה"כ נכסים</span><b>${money(assets)}</b></div>
+          <div class="hud-stat"><span>שווי נקי</span><b>${money(netWorth)}</b></div>
+          <div class="hud-stat"><span>עודף חודשי</span><b>${money(surplus)}</b></div>
+          ${w.updated ? `<div class="ops-foot">עודכן ${new Date(w.updated).toLocaleString('he-IL')}</div>` : '<div class="ops-empty">עדיין לא נשמרו נתונים</div>'}
+        </section>
+      </div>
+    </div>`;
+    const num = (id: string) => parseFloat((document.getElementById(id) as HTMLInputElement).value) || 0;
+    $('wSave').onclick = () => {
+      saveWallet({
+        cash: num('wCash'), bank: num('wBank'), investments: num('wInvest'), realEstate: num('wRe'),
+        otherAssets: num('wOther'), debts: num('wDebts'), monthlyIncome: num('wIncome'), monthlyExpenses: num('wExpense'),
+        notes: (document.getElementById('wNotes') as HTMLTextAreaElement).value,
+      });
+      renderWallet();
+    };
+    $('wAsk').onclick = () => {
+      const cur = loadWallet();
+      const curAssets = cur.cash + cur.bank + cur.investments + cur.realEstate + cur.otherAssets;
+      const prompt = `אתה יהודה, מנכ"ל המערכת. נתח את הארנק האישי שלי ותן המלצות פיננסיות קונקרטיות: מזומן ${money(cur.cash)}, עו"ש ${money(cur.bank)}, השקעות ${money(cur.investments)}, נדל"ן ${money(cur.realEstate)}, נכסים אחרים ${money(cur.otherAssets)}, חובות ${money(cur.debts)}, הכנסה חודשית ${money(cur.monthlyIncome)}, הוצאה חודשית ${money(cur.monthlyExpenses)}. סה"כ נכסים ${money(curAssets)}, שווי נקי ${money(curAssets - cur.debts)}, עודף חודשי ${money(cur.monthlyIncome - cur.monthlyExpenses)}.`;
+      addMsg(prompt, 'me');
+      ask(prompt);
+    };
+  }
+  (window as any).renderWallet = renderWallet;
 
   let asking = false;
   async function ask(text: string) {
@@ -6280,6 +6352,7 @@ export function mountApp(root: HTMLElement) {
     if (hi) { hi.classList.remove('ar-detecting', 'ar-searching'); hi.textContent = ''; }
   }
   $('calBtn').onclick = () => openCalendar();
+  $('walletBtn').onclick = () => openWallet();
   $('arClose').onclick = closeArCamera;
   $('arAddBall').onclick = () => addArObject('ball');
   $('arAddCube').onclick = () => addArObject('cube');

@@ -221,6 +221,27 @@ export function removeTask(id: string): Task[] {
   return tasks;
 }
 
+// --- PERSONAL WALLET (owner's own finances — separate from HeavyGuard's
+// business revenue/pipeline numbers elsewhere in the app) ---
+export interface WalletData {
+  cash: number; bank: number; investments: number; realEstate: number; otherAssets: number;
+  debts: number; monthlyIncome: number; monthlyExpenses: number; notes: string; updated: string;
+}
+const WALLET_KEY = 'alpha_wallet_v1';
+const EMPTY_WALLET: WalletData = {
+  cash: 0, bank: 0, investments: 0, realEstate: 0, otherAssets: 0,
+  debts: 0, monthlyIncome: 0, monthlyExpenses: 0, notes: '', updated: '',
+};
+export function loadWallet(): WalletData {
+  try { return { ...EMPTY_WALLET, ...JSON.parse(localStorage.getItem(WALLET_KEY) || '{}') }; }
+  catch { return { ...EMPTY_WALLET }; }
+}
+export function saveWallet(w: Omit<WalletData, 'updated'>): WalletData {
+  const full: WalletData = { ...w, updated: new Date().toISOString() };
+  localStorage.setItem(WALLET_KEY, JSON.stringify(full));
+  return full;
+}
+
 // Heavy Guard's own task store ('hg2:tasks') has undated "backlog" items —
 // loadEvents() above only merges the DATED ones onto the calendar, so a
 // backlog task created in Heavy Guard used to be invisible here entirely.

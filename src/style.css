@@ -3578,6 +3578,14 @@ html.perf-lite .hud-card, html.perf-lite .hud-sc { -webkit-backdrop-filter: none
 .ops-h{font-family:"Space Grotesk",sans-serif;font-size:12.5px;letter-spacing:.5px;color:#e4bc63;font-weight:700;display:flex;align-items:center;gap:6px}
 .ops-foot{font-size:11px;color:#8a7d5e;text-align:center}
 .ops-empty{text-align:center;color:#8a7d5e;font-size:12.5px;padding:16px}
+.ops-cta{flex:1;background:linear-gradient(180deg,#e4bc63,#c99a3f);border:none;border-radius:10px;color:#241a06;font-weight:700;font-size:13px;padding:10px 14px;cursor:pointer;font-family:inherit}
+.ops-cta:hover{filter:brightness(1.08)}
+.wallet-form{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.wallet-field{display:flex;flex-direction:column;gap:3px;font-size:11.5px;color:#8a7d5e}
+.wallet-field input{background:rgba(20,16,9,.5);border:1px solid rgba(228,188,99,.18);border-radius:8px;padding:7px 9px;color:#f5e6c8;font-size:13px;font-family:inherit}
+.wallet-field input:focus{outline:none;border-color:rgba(228,188,99,.5)}
+.wallet-notes{width:100%;min-height:60px;margin-top:8px;background:rgba(20,16,9,.5);border:1px solid rgba(228,188,99,.18);border-radius:8px;padding:8px 10px;color:#f5e6c8;font-size:12.5px;font-family:inherit;resize:vertical}
+.wallet-notes:focus{outline:none;border-color:rgba(228,188,99,.5)}
 .ops-scroll{display:flex;flex-direction:column;gap:7px;max-height:220px;overflow:auto;padding-left:2px}
 .ops-map{width:100%;height:260px;border-radius:11px;overflow:hidden;background:#0a1018;border:1px solid rgba(228,188,99,.28);box-shadow:0 0 0 1px rgba(0,0,0,.4),inset 0 0 30px rgba(0,0,0,.35),0 6px 22px rgba(0,0,0,.35)}
 .ops-map .leaflet-container{width:100%;height:100%;background:#0a1018;font-family:inherit}
