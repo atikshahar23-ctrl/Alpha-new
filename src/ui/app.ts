@@ -2991,8 +2991,18 @@ export function mountApp(root: HTMLElement) {
     const gpsRow = gLast && gLast.distanceKm != null
       ? `<div class="hud-stat"><span>🛰️ נסיעת GPS אחרונה</span><b>${Number(gLast.distanceKm).toFixed(1)} ק"מ · ${Math.round(gLast.avgKmh || 0)} קמ"ש</b></div>`
       : '';
+    // Today's driving, computed live from today's install reports rather
+    // than requiring the owner to log a trip by hand first — every trip is
+    // the same round trip (HQ ⇄ job ⇄ HQ), so this is always up to date the
+    // moment a install gets reported, not just after "חשב מהדיווח היומי".
+    const today = new Date().toISOString().slice(0, 10);
+    const todayLocs = [...new Set(readIdx().filter((r: any) => (r.date || '') === today && r.location).map((r: any) => (r.location || '').trim()))];
+    const todayKm = todayLocs.reduce((s: number, loc: string) => s + (roundTripKm(loc) || 0), 0);
+    const todayRow = `<div class="hud-stat"><span>קמ היום (הלוך-חזור מ-${escHtml(HQ_LABEL)})</span><b>${todayKm.toFixed(1)} ק"מ</b></div>` +
+      (todayLocs.length ? `<div class="hud-stat"><span>דיווחתי היום ב</span><b>${todayLocs.map(escHtml).join(', ')}</b></div>` : '');
     el.innerHTML = `
       <div class="hud-stat"><span>מד ק"מ נוכחי</span><b class="cy">${odo.km ? Number(odo.km).toLocaleString('he-IL') : '—'} <button id="hudOdoEdit" title="עדכן ק&quot;מ" style="background:none;border:1px solid rgba(228,188,99,.4);border-radius:6px;color:#E4BC63;font-size:11px;cursor:pointer;padding:1px 7px;vertical-align:2px">✎</button></b></div>
+      ${todayRow}
       <div class="hud-stat"><span>נסיעות · ק"מ</span><b>${trips.length} · ${km.toLocaleString('he-IL')}</b></div>
       ${remindHtml}
       <div class="hud-stat"><span>אחזקה מצטברת</span><b>${money(maintCost)}</b></div>
@@ -3669,6 +3679,21 @@ export function mountApp(root: HTMLElement) {
       <button class="fl-del" data-id="${t.id}">✕</button>
     </div>`;
 
+  // The real GPS tracker (gps.html, a separate self-contained page) records
+  // its own trips straight from the phone's Geolocation API into hg_trips_v1
+  // — a different log than the manually-added/auto-computed hg2:trips above.
+  // Surfaced here read-only so the fleet window shows actual measured drives
+  // alongside the reported/estimated ones, instead of only living on the
+  // main dashboard's small "latest GPS trip" HUD line.
+  const readGpsTrips = (): any[] => { try { return JSON.parse(localStorage.getItem('hg_trips_v1') || '[]') || []; } catch { return []; } };
+  const gpsTripRowHtml = (t: any) => {
+    const d = t.startedAt ? new Date(t.startedAt) : null;
+    const dateStr = d ? d.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '';
+    return `<div class="fl-row">
+      <div class="fl-mid"><b>${Number(t.distanceKm || 0).toFixed(1)} ק"מ</b><span>${dateStr} · ${Math.round(t.avgKmh || 0)} קמ"ש ממוצע${t.synced ? ' · ✓ סונכרן' : ''}</span></div>
+    </div>`;
+  };
+
   let mapInst: any = null;
   function renderFleet() {
     try { winCleanup?.(); } catch {} winCleanup = null;
@@ -3677,6 +3702,9 @@ export function mountApp(root: HTMLElement) {
     const totalKm = trips.reduce((s, t) => s + (Number(t.km) || 0), 0);
     const idx = readIdx();
     const today = new Date().toISOString().slice(0, 10);
+    const gpsTrips = readGpsTrips().slice().sort((a: any, b: any) => (b.startedAt || '').localeCompare(a.startedAt || ''));
+    const gpsTotalKm = gpsTrips.reduce((s: number, t: any) => s + (Number(t.distanceKm) || 0), 0);
+    const gpsTotalH = gpsTrips.reduce((s: number, t: any) => s + (Number(t.durationSec) || 0), 0) / 3600;
 
     // Map points: installs whose location resolves to coordinates, counted per place.
     const ptCount: Record<string, { g: { lat: number; lng: number; city: string }; n: number }> = {};
@@ -3717,6 +3745,13 @@ export function mountApp(root: HTMLElement) {
           </div>
           <div class="fl-tot" id="flTot">${trips.length} נסיעות · ${totalKm} ק"מ סה"כ</div>
           <div class="ops-scroll fl-list" id="flList">${trips.map(tripRowHtml).join('') || '<div class="ops-empty">אין נסיעות עדיין — הוסף ונווט ב-Waze</div>'}</div>
+        </section>
+
+        <section class="ops-panel">
+          <div class="ops-h">🛰️ מעקב GPS · HG Track</div>
+          <div class="fl-tot">${gpsTrips.length} נסיעות נמדדות · ${gpsTotalKm.toFixed(1)} ק"מ · ${gpsTotalH.toFixed(1)} שעות נהיגה</div>
+          <div class="ops-scroll fl-list">${gpsTrips.slice(0, 20).map(gpsTripRowHtml).join('') || '<div class="ops-empty">אין עדיין נסיעות GPS — פתח את המעקב וצא לדרך</div>'}</div>
+          <a class="fl-auto" style="display:block;text-align:center;text-decoration:none;margin-top:8px" href="gps.html" target="_blank" rel="noopener">🛰️ פתח את מעקב הנסיעות</a>
         </section>
 
         <section class="ops-panel">
