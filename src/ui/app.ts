@@ -3208,6 +3208,11 @@ export function mountApp(root: HTMLElement) {
   function renderFleetPanel() {
     const el = document.querySelector('#hudFleetPanel .hud-card-body');
     if (!el) return;
+    // Keep the total trips/km stat live from the location-reports table
+    // itself (same source todayKm already reads), instead of only updating
+    // when the owner manually clicks "חשב מהדיווח היומי" in the full fleet
+    // window — that manual-only path was why this stayed stuck at 0.
+    syncTripsFromDailyReport();
     const trips = readTrips();
     const km = trips.reduce((s: number, t: any) => s + (Number(t.km) || 0), 0);
     let vehicle: any[] = [];
