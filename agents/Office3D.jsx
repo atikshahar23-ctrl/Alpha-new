@@ -62,10 +62,13 @@ function disposeMaterial(m) {
    dining / meeting coordinates as the 2D layout (same OFC_* constants
    passed in as props) so the NPC behaviour scheduler in OfficeSim needs
    no changes — only the rendering + a player avatar are new.
-   A New York-style office shell: a window wall with a skyline view,
-   ceiling light panels + pendant lamps, a wood floor, rugs, plants and a
-   lounge corner, with day/night lighting actually driven by the phase
-   clock (sun colour/intensity, ambient tint and fog all lerp toward it).
+   A starship office shell (owner request — the business "flew to space"):
+   a viewport wall looking out on a starfield/nebula/planet, ceiling strip
+   lighting + pendant lamps, metal deck plating, rugs, plants and a lounge
+   corner, with day/night lighting actually driven by the phase clock (sun
+   colour/intensity, ambient tint and fog all lerp toward it) — reused here
+   as three space moods (bright system / nebula glow / deep space) instead
+   of literal time of day.
    ════════════════════════════════════════════════════════════════════ */
 
 // The floor was doubled (owner request): the same 0–100% layout grid now maps
@@ -381,22 +384,32 @@ function mulberry32(a) {
 }
 
 // Deterministic wood-plank floor — warm, real-office feel instead of flat colour.
+// Starship deck plating: brushed-metal panels with riveted seams and a thin
+// recessed cyan conduit line down each seam — the floor of a ship corridor,
+// not a carpeted office.
 function buildFloorTexture() {
   const cvs = document.createElement("canvas");
   cvs.width = 512; cvs.height = 512;
   const ctx = cvs.getContext("2d");
   const rnd = mulberry32(42);
-  const planks = ["#3a2c1e", "#40311f", "#362a1c", "#443423"];
+  const panels = ["#2a3038", "#2e343d", "#272c34", "#313842"];
   const plankW = 512 / 8;
   for (let col = 0; col < 8; col++) {
-    ctx.fillStyle = planks[Math.floor(rnd() * planks.length)];
+    ctx.fillStyle = panels[Math.floor(rnd() * panels.length)];
     ctx.fillRect(col * plankW, 0, plankW, 512);
-    ctx.strokeStyle = "rgba(0,0,0,.25)"; ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(0,0,0,.4)"; ctx.lineWidth = 2;
     ctx.strokeRect(col * plankW, 0, plankW, 512);
+    // recessed conduit glow down the seam
+    ctx.fillStyle = "rgba(80,220,255,.22)";
+    ctx.fillRect(col * plankW + plankW - 2, 0, 2, 512);
+    // rivets at regular intervals
     for (let s = 0; s < 6; s++) {
-      const y = rnd() * 512;
-      ctx.strokeStyle = "rgba(0,0,0,.12)"; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(col * plankW, y); ctx.lineTo(col * plankW + plankW, y + rnd() * 6 - 3); ctx.stroke();
+      const y = 40 + s * 86;
+      ctx.fillStyle = "rgba(0,0,0,.35)";
+      ctx.beginPath(); ctx.arc(col * plankW + 8, y, 3, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(col * plankW + plankW - 8, y, 3, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,.08)";
+      ctx.beginPath(); ctx.arc(col * plankW + 8, y - 0.6, 1.4, 0, Math.PI * 2); ctx.fill();
     }
   }
   const tex = new THREE.CanvasTexture(cvs);
@@ -407,29 +420,42 @@ function buildFloorTexture() {
   return tex;
 }
 
-// Painted-plaster wall: warm slate-blue paint with subtle roller noise, a
-// darker wainscot band at the bottom and a thin brass trim line between —
-// so the walls read as designed and painted, not a flat untextured fill.
-// The canvas maps the full 6.4m wall height; callers set horizontal repeat.
+// Ship hull wall panel: dark gunmetal bulkhead plating with a recessed
+// horizontal cyan trim line and a darker service-conduit band at the base —
+// same silhouette (trim line + base band) as the old painted-plaster wall so
+// every caller's proportions still line up, just re-skinned for a hull
+// interior instead of drywall. The canvas maps the full 6.4m wall height;
+// callers set horizontal repeat.
 function buildWallTexture(repeatX) {
   const cvs = document.createElement("canvas");
   cvs.width = 512; cvs.height = 512;
   const ctx = cvs.getContext("2d");
   const rnd = mulberry32(7);
   const g = ctx.createLinearGradient(0, 0, 0, 512);
-  g.addColorStop(0, "#3b4a73"); g.addColorStop(0.7, "#33405f"); g.addColorStop(1, "#2a3550");
+  g.addColorStop(0, "#232a36"); g.addColorStop(0.7, "#1b212c"); g.addColorStop(1, "#151a23");
   ctx.fillStyle = g; ctx.fillRect(0, 0, 512, 512);
+  // brushed-metal noise
   for (let i = 0; i < 1500; i++) {
-    ctx.fillStyle = rnd() < 0.5 ? `rgba(255,255,255,${(rnd() * 0.045).toFixed(3)})` : `rgba(0,0,0,${(rnd() * 0.06).toFixed(3)})`;
+    ctx.fillStyle = rnd() < 0.5 ? `rgba(255,255,255,${(rnd() * 0.04).toFixed(3)})` : `rgba(0,0,0,${(rnd() * 0.07).toFixed(3)})`;
     ctx.fillRect(rnd() * 512, rnd() * 512, 1 + rnd() * 3, 2 + rnd() * 16);
   }
-  // wainscot: bottom ~1.1m of the 6.4m wall ≈ 88px
-  ctx.fillStyle = "#151b2c"; ctx.fillRect(0, 512 - 88, 512, 88);
+  // vertical panel seams every ~85px with a rivet at each seam/rail crossing
+  for (let x = 0; x < 512; x += 85) {
+    ctx.fillStyle = "rgba(0,0,0,.35)"; ctx.fillRect(x, 0, 2, 512);
+    for (let y = 30; y < 512; y += 110) {
+      ctx.fillStyle = "rgba(180,200,220,.18)";
+      ctx.beginPath(); ctx.arc(x, y, 2.4, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  // service-conduit band: bottom ~1.1m of the 6.4m wall ≈ 88px
+  ctx.fillStyle = "#0c1016"; ctx.fillRect(0, 512 - 88, 512, 88);
   for (let i = 0; i < 350; i++) {
-    ctx.fillStyle = `rgba(255,255,255,${(rnd() * 0.035).toFixed(3)})`;
+    ctx.fillStyle = `rgba(255,255,255,${(rnd() * 0.03).toFixed(3)})`;
     ctx.fillRect(rnd() * 512, 512 - 88 + rnd() * 88, 2, 1 + rnd() * 7);
   }
-  ctx.fillStyle = "#E4BC63"; ctx.fillRect(0, 512 - 92, 512, 4);
+  // recessed cyan conduit trim line between the bulkhead and the base band
+  ctx.fillStyle = "#2ee6ff"; ctx.fillRect(0, 512 - 92, 512, 3);
+  ctx.fillStyle = "rgba(46,230,255,.35)"; ctx.fillRect(0, 512 - 95, 512, 8);
   const tex = new THREE.CanvasTexture(cvs);
   tex.wrapS = THREE.RepeatWrapping;
   tex.repeat.set(repeatX, 1);
@@ -438,183 +464,146 @@ function buildWallTexture(repeatX) {
   return tex;
 }
 
-// Designed ceiling — dark coffered panels with warm LED light strips and a
-// brass perimeter trim, baked into one canvas so the whole ceiling costs a
-// single textured plane.
+// Ship ceiling — dark coffered hull panels with cyan strip-lighting and
+// exposed conduit piping between bays, baked into one canvas so the whole
+// ceiling costs a single textured plane.
 function buildCeilingTexture() {
   const cvs = document.createElement("canvas");
   cvs.width = 1024; cvs.height = 866; // ≈ FLOOR_W:FLOOR_D
   const ctx = cvs.getContext("2d");
-  ctx.fillStyle = "#10141f"; ctx.fillRect(0, 0, 1024, 866);
+  ctx.fillStyle = "#0a0d13"; ctx.fillRect(0, 0, 1024, 866);
   const cols = 10, rows = 8, cw = 1024 / cols, rh = 866 / rows;
   for (let c = 0; c < cols; c++) for (let r = 0; r < rows; r++) {
     const x = c * cw, y = r * rh;
     const g = ctx.createLinearGradient(x, y, x, y + rh);
-    g.addColorStop(0, "#1b2233"); g.addColorStop(1, "#141a28");
+    g.addColorStop(0, "#131a24"); g.addColorStop(1, "#0d1219");
     ctx.fillStyle = g;
     ctx.fillRect(x + 6, y + 6, cw - 12, rh - 12);
-    ctx.strokeStyle = "rgba(228,188,99,.14)"; ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(46,230,255,.16)"; ctx.lineWidth = 2;
     ctx.strokeRect(x + 6, y + 6, cw - 12, rh - 12);
     if (r % 2 === 1) {
-      // recessed warm LED strip with a soft halo
-      ctx.fillStyle = "rgba(255,237,196,.2)";
+      // recessed cyan strip-light with a soft halo
+      ctx.fillStyle = "rgba(120,235,255,.2)";
       ctx.fillRect(x + cw * 0.16, y + rh / 2 - 10, cw * 0.68, 20);
-      ctx.fillStyle = "#ffedc4";
+      ctx.fillStyle = "#bdf3ff";
       ctx.fillRect(x + cw * 0.22, y + rh / 2 - 4, cw * 0.56, 8);
+    } else {
+      // exposed conduit pipe run across the bay
+      ctx.strokeStyle = "rgba(120,130,145,.5)"; ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.moveTo(x + 10, y + rh * 0.3); ctx.lineTo(x + cw - 10, y + rh * 0.3); ctx.stroke();
     }
   }
-  ctx.strokeStyle = "#E4BC63"; ctx.lineWidth = 6; ctx.strokeRect(8, 8, 1008, 850);
+  ctx.strokeStyle = "#2ee6ff"; ctx.lineWidth = 6; ctx.strokeRect(8, 8, 1008, 850);
   const tex = new THREE.CanvasTexture(cvs);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = MAX_ANISO;
   return tex;
 }
 
-// A real Manhattan reference photo (a spired Empire State-style tower,
-// dense windows, a river catching the light) drove this — a day and a
-// night version of the same skyline, drawn onto a shared canvas and swapped
-// (redrawn + texture.needsUpdate) whenever the office's day/night phase
-// actually changes, so the window isn't a single static image any more.
+// The view from the ship's bridge windows: deep space, a drifting nebula and
+// one lit planet, drawn onto a shared canvas and swapped (redrawn +
+// texture.needsUpdate) whenever the office's day/night phase actually
+// changes — reusing the same three "mode" buckets the office always had
+// (day/sunset/night) as three space moods instead of three times of day:
+// "day" = bright system, close to the star, nebula lit up bright; "sunset" =
+// a warm gas-cloud belt with the planet gold-lit; "night" = deep space, far
+// from any star, dense cold starfield. Same palette family as the Space
+// Portal overlay (SpaceOverlay, above) so both views read as the same universe.
 export function drawSkyline(ctx, W, H, mode) {
   const isDay = mode === "day";
   const isSunset = mode === "sunset";
   const sky = ctx.createLinearGradient(0, 0, 0, H);
   if (isDay) {
-    sky.addColorStop(0, "#6fb3e6"); sky.addColorStop(0.5, "#a9d4ee");
-    sky.addColorStop(0.8, "#d8ecf6"); sky.addColorStop(1, "#eef7fb");
+    sky.addColorStop(0, "#050a18"); sky.addColorStop(0.5, "#0a1226");
+    sky.addColorStop(0.85, "#0d1a2e"); sky.addColorStop(1, "#0f1d33");
   } else if (isSunset) {
-    sky.addColorStop(0, "#3d2f63"); sky.addColorStop(0.45, "#b4507a");
-    sky.addColorStop(0.72, "#f08a4b"); sky.addColorStop(1, "#ffc27a");
+    sky.addColorStop(0, "#0d0a1c"); sky.addColorStop(0.45, "#1c1230");
+    sky.addColorStop(0.75, "#2a1830"); sky.addColorStop(1, "#331a24");
   } else {
-    sky.addColorStop(0, "#0a1230"); sky.addColorStop(0.45, "#122043");
-    sky.addColorStop(0.8, "#1c2f52"); sky.addColorStop(1, "#2c3d5c");
+    sky.addColorStop(0, "#020308"); sky.addColorStop(0.5, "#04060f");
+    sky.addColorStop(0.85, "#050813"); sky.addColorStop(1, "#060a16");
   }
   ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
 
   const rnd = mulberry32(7);
-  const horizon = H * 0.86;
 
-  if (isDay) {
-    const sunGrad = ctx.createRadialGradient(W * 0.78, H * 0.16, 0, W * 0.78, H * 0.16, 150);
-    sunGrad.addColorStop(0, "rgba(255,252,225,.85)");
-    sunGrad.addColorStop(1, "rgba(255,252,225,0)");
-    ctx.fillStyle = sunGrad; ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = "rgba(255,255,255,.7)";
-    for (let i = 0; i < 4; i++) {
-      const cx = rnd() * W, cy = 40 + rnd() * 90, s = 40 + rnd() * 50;
-      ctx.beginPath();
-      ctx.ellipse(cx, cy, s, s * 0.4, 0, 0, Math.PI * 2);
-      ctx.ellipse(cx + s * 0.6, cy + 6, s * 0.7, s * 0.32, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  } else if (isSunset) {
-    // A low, huge sun melting into the skyline + lit cloud streaks.
-    const sunGrad = ctx.createRadialGradient(W * 0.32, H * 0.74, 0, W * 0.32, H * 0.74, 240);
-    sunGrad.addColorStop(0, "rgba(255,214,140,.95)");
-    sunGrad.addColorStop(0.25, "rgba(255,164,84,.6)");
-    sunGrad.addColorStop(1, "rgba(255,150,70,0)");
-    ctx.fillStyle = sunGrad; ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = "rgba(255,215,170,.9)";
-    ctx.beginPath(); ctx.arc(W * 0.32, H * 0.74, 42, 0, Math.PI * 2); ctx.fill();
-    for (let i = 0; i < 5; i++) {
-      const cy = H * (0.2 + rnd() * 0.35), cw = 120 + rnd() * 260;
-      ctx.fillStyle = `rgba(255,${(150 + rnd() * 60) | 0},${(110 + rnd() * 50) | 0},${(0.25 + rnd() * 0.25).toFixed(2)})`;
-      ctx.beginPath();
-      ctx.ellipse(rnd() * W, cy, cw, 7 + rnd() * 9, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  } else {
-    // Moon + a soft halo and a scatter of stars.
-    const mx = W * 0.72, my = H * 0.15;
-    const halo = ctx.createRadialGradient(mx, my, 0, mx, my, 120);
-    halo.addColorStop(0, "rgba(220,235,255,.5)"); halo.addColorStop(1, "rgba(220,235,255,0)");
-    ctx.fillStyle = halo; ctx.fillRect(mx - 130, my - 130, 260, 260);
-    ctx.fillStyle = "#e8f1fb";
-    ctx.beginPath(); ctx.arc(mx, my, 26, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = "rgba(180,200,220,.55)";
-    ctx.beginPath(); ctx.arc(mx - 8, my - 5, 5, 0, Math.PI * 2); ctx.arc(mx + 9, my + 8, 3.4, 0, Math.PI * 2); ctx.arc(mx + 3, my - 12, 2.6, 0, Math.PI * 2); ctx.fill();
-    for (let i = 0; i < 90; i++) {
-      const sx = rnd() * W, sy = rnd() * H * 0.55;
-      ctx.fillStyle = `rgba(255,255,255,${(0.25 + rnd() * 0.6).toFixed(2)})`;
-      ctx.fillRect(sx, sy, rnd() > 0.9 ? 2 : 1, rnd() > 0.9 ? 2 : 1);
+  // Starfield — denser and colder deep in "night" mode, sparser and warmer
+  // close to the star in "day" mode.
+  const starCount = isDay ? 260 : isSunset ? 340 : 520;
+  for (let i = 0; i < starCount; i++) {
+    const sx = rnd() * W, sy = rnd() * H * 0.92;
+    const b = 0.2 + rnd() * 0.75;
+    ctx.fillStyle = `rgba(255,255,255,${b.toFixed(2)})`;
+    const s = rnd() > 0.94 ? 2.4 : rnd() > 0.8 ? 1.6 : 1;
+    ctx.fillRect(sx, sy, s, s);
+    if (rnd() > 0.985) {
+      // occasional bright star with a tiny cross-flare
+      ctx.fillStyle = `rgba(200,225,255,${(0.5 + rnd() * 0.4).toFixed(2)})`;
+      ctx.fillRect(sx - 5, sy, 10, 1); ctx.fillRect(sx, sy - 5, 1, 10);
     }
   }
 
-  // hazy far skyline layer — low-contrast silhouettes for depth.
-  const farColors = isDay ? ["#9fc3de", "#89b3d2", "#b0d0e6"]
-    : isSunset ? ["#5a3f66", "#4e3759", "#684a72"]
-    : ["#1a2338", "#161f30", "#202b44"];
-  let fx = 0;
-  while (fx < W) {
-    const w = 20 + rnd() * 40, h = 40 + rnd() * 90;
-    ctx.fillStyle = farColors[Math.floor(rnd() * farColors.length)];
-    ctx.fillRect(fx, horizon - h, w, h);
-    fx += w + 2 + rnd() * 6;
+  // Nebula bands — soft colored gas clouds drifting across the view.
+  const nebPalette = isDay ? ["rgba(143,208,255,.10)", "rgba(111,224,200,.08)"]
+    : isSunset ? ["rgba(232,111,176,.16)", "rgba(185,143,232,.14)", "rgba(255,164,110,.10)"]
+    : ["rgba(111,140,224,.07)", "rgba(143,111,232,.06)"];
+  for (let i = 0; i < 7; i++) {
+    const cx = rnd() * W, cy = rnd() * H * 0.8, rw = 180 + rnd() * 340, rh = 60 + rnd() * 120;
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(rw, rh));
+    grad.addColorStop(0, nebPalette[Math.floor(rnd() * nebPalette.length)]);
+    grad.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.ellipse(cx, cy, rw, rh, rnd() * Math.PI, 0, Math.PI * 2); ctx.fill();
   }
 
-  // river strip — sunlit ripples by day, molten orange at sunset, warm
-  // reflected light by night.
-  ctx.fillStyle = isDay ? "#5f9dc4" : isSunset ? "#472e42" : "#0d1626";
-  ctx.fillRect(0, horizon, W, H - horizon);
-  for (let i = 0; i < 70; i++) {
-    const rx = rnd() * W, ry = horizon + rnd() * (H - horizon) * 0.7;
-    ctx.fillStyle = isDay
-      ? `rgba(255,255,255,${(0.2 + rnd() * 0.35).toFixed(2)})`
-      : isSunset
-      ? `rgba(255,${(150 + rnd() * 60) | 0},${(80 + rnd() * 50) | 0},${(0.25 + rnd() * 0.35).toFixed(2)})`
-      : `rgba(255,${(190 + rnd() * 40) | 0},${(120 + rnd() * 60) | 0},${(0.15 + rnd() * 0.25).toFixed(2)})`;
-    ctx.fillRect(rx, ry, 2 + rnd() * 3, 1);
-  }
+  // The planet — one big lit sphere, position/light angle varies with mode:
+  // close and bright by "day", low and gold at "sunset", small and dim by
+  // "night" (far system).
+  const planet = isDay ? { x: W * 0.74, y: H * 0.32, r: 190, lit: "#bfe0ff", shadow: "#0a1220", termX: -0.35 }
+    : isSunset ? { x: W * 0.28, y: H * 0.56, r: 150, lit: "#ffcf8a", shadow: "#241226", termX: 0.3 }
+    : { x: W * 0.68, y: H * 0.22, r: 70, lit: "#7f97c9", shadow: "#050810", termX: -0.2 };
+  const pg = ctx.createRadialGradient(
+    planet.x + planet.r * planet.termX, planet.y - planet.r * 0.25, planet.r * 0.1,
+    planet.x, planet.y, planet.r
+  );
+  pg.addColorStop(0, planet.lit);
+  pg.addColorStop(0.55, planet.lit);
+  pg.addColorStop(0.75, planet.shadow);
+  pg.addColorStop(1, planet.shadow);
+  ctx.fillStyle = pg;
+  ctx.beginPath(); ctx.arc(planet.x, planet.y, planet.r, 0, Math.PI * 2); ctx.fill();
+  // faint atmosphere halo
+  const halo = ctx.createRadialGradient(planet.x, planet.y, planet.r * 0.95, planet.x, planet.y, planet.r * 1.18);
+  halo.addColorStop(0, "rgba(180,210,255,.28)"); halo.addColorStop(1, "rgba(180,210,255,0)");
+  ctx.fillStyle = halo;
+  ctx.beginPath(); ctx.arc(planet.x, planet.y, planet.r * 1.18, 0, Math.PI * 2); ctx.fill();
+  // a thin ring
+  ctx.save();
+  ctx.translate(planet.x, planet.y);
+  ctx.rotate(-0.22);
+  ctx.scale(1, 0.22);
+  ctx.strokeStyle = "rgba(230,220,190,.35)"; ctx.lineWidth = planet.r * 0.05;
+  ctx.beginPath(); ctx.arc(0, 0, planet.r * 1.45, 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
 
-  function windows(x, y, w, h, ratio) {
-    for (let wy = y + 6; wy < y + h - 4; wy += 12) {
-      for (let wx = x + 4; wx < x + w - 4; wx += 9) {
-        const r = rnd();
-        if (r < ratio) {
-          ctx.fillStyle = isDay
-            ? (r < ratio * 0.3 ? "rgba(255,255,255,.5)" : "rgba(150,195,220,.35)")
-            : isSunset
-            ? (r < ratio * 0.4 ? "rgba(255,196,120,.8)" : "rgba(90,60,90,.5)")
-            : (r < ratio * 0.12 ? "rgba(150,220,255,.85)" : "rgba(255,206,130,.9)");
-          ctx.fillRect(wx, wy, 3.4, 6.5);
-        }
-      }
+  // Distant asteroid silhouettes drifting along the lower third — reads as
+  // depth/parallax without needing real 3D geometry for every rock.
+  const rockColors = isDay ? ["#1c2536", "#222c40"] : isSunset ? ["#26182c", "#2c1e34"] : ["#0a0d16", "#0d1119"];
+  let rx = 0;
+  while (rx < W) {
+    const rs = 8 + rnd() * 26;
+    const ry = H * (0.78 + rnd() * 0.14);
+    ctx.fillStyle = rockColors[Math.floor(rnd() * rockColors.length)];
+    ctx.beginPath();
+    const pts = 6 + Math.floor(rnd() * 3);
+    for (let p = 0; p < pts; p++) {
+      const ang = (p / pts) * Math.PI * 2;
+      const rr = rs * (0.6 + rnd() * 0.5);
+      const px = rx + Math.cos(ang) * rr, py = ry + Math.sin(ang) * rr * 0.6;
+      if (p === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
     }
-  }
-
-  // main skyline — varied silhouettes, one signature spired tower.
-  const bodyColors = isDay ? ["#5a6b7d", "#6b7c8e", "#4d5c6d", "#7189a0"]
-    : isSunset ? ["#241c38", "#1d1830", "#2a2140", "#171226"]
-    : ["#0c1220", "#0f1626", "#080d18", "#111a2c"];
-  let x = 0, towerPlaced = false;
-  while (x < W) {
-    const w = 34 + rnd() * 70;
-    let h = 110 + rnd() * 240;
-    const placeTower = !towerPlaced && x > W * 0.28 && x < W * 0.42;
-    if (placeTower) { h = H * 0.62; towerPlaced = true; }
-    const bx = x, by = horizon - h;
-    ctx.fillStyle = bodyColors[Math.floor(rnd() * bodyColors.length)];
-
-    if (placeTower) {
-      let ty = by, tw = w;
-      for (let t = 0; t < 4; t++) {
-        const th = h * 0.16;
-        ctx.fillRect(bx + (w - tw) / 2, ty, tw, th);
-        ty += th; tw *= 0.72;
-      }
-      ctx.fillStyle = isDay ? "rgba(255,255,255,.9)" : "rgba(255,230,190,.95)";
-      ctx.fillRect(bx + w / 2 - 1.5, by - 46, 3, 46);
-      ctx.fillStyle = bodyColors[0];
-    } else if (rnd() > 0.6) {
-      ctx.fillRect(bx, by + h * 0.08, w, h * 0.92);
-      ctx.fillRect(bx + w * 0.15, by, w * 0.7, h * 0.1);
-    } else {
-      ctx.fillRect(bx, by, w, h);
-    }
-    if (!placeTower && rnd() > 0.75) { ctx.fillRect(bx + w / 2 - 1, by - 18, 2, 18); }
-
-    windows(bx, by, w, h, 0.4 + rnd() * 0.3);
-    x += w + 3 + rnd() * 7;
+    ctx.closePath(); ctx.fill();
+    rx += rs * 2 + 30 + rnd() * 90;
   }
 }
 function buildSkylineTexture(mode) {
@@ -627,23 +616,23 @@ function buildSkylineTexture(mode) {
   return { canvas: cvs, ctx, tex };
 }
 
-// A real building facade (a tileable window grid) so the skyline outside
-// the window can be genuine 3D geometry instead of a flat painted plane —
-// the actual "depth in the window" fix. Two separate textures, both cloned
-// per building (cheap — shares the image, only `repeat` differs) so each
-// tiles its own grid to its own size: a neutral grey-glass albedo (so
-// buildings read as ordinary daytime glass/concrete, not permanently lit),
-// and a mostly-black emissive layer with only the window squares bright,
-// ramped in at night in animate() so nothing glows unless it's actually dark.
+// A tileable hull-plate + porthole grid so the near-field "buildings" outside
+// the window read as other station modules/derelict hulls drifting nearby —
+// genuine 3D geometry instead of a flat painted plane. Two separate
+// textures, both cloned per module (cheap — shares the image, only `repeat`
+// differs) so each tiles its own grid to its own size: a neutral grey-metal
+// albedo (so modules read as unlit hull plating by default), and a mostly-
+// black emissive layer with only the porthole squares bright, ramped in at
+// "night" in animate() so nothing glows unless the mode is actually dark.
 function buildFacadeAlbedo() {
   const cvs = document.createElement("canvas");
   cvs.width = 128; cvs.height = 128;
   const ctx = cvs.getContext("2d");
   const rnd = mulberry32(4242);
-  ctx.fillStyle = "#48505e"; ctx.fillRect(0, 0, 128, 128);
+  ctx.fillStyle = "#3a3f48"; ctx.fillRect(0, 0, 128, 128);
   for (let y = 6; y < 122; y += 13) {
     for (let x = 6; x < 122; x += 11) {
-      ctx.fillStyle = rnd() > 0.3 ? "#5f7488" : "#333b46";
+      ctx.fillStyle = rnd() > 0.3 ? "#4a5158" : "#24272d";
       ctx.fillRect(x, y, 6, 8);
     }
   }
@@ -656,11 +645,11 @@ function buildFacadeEmissive() {
   const cvs = document.createElement("canvas");
   cvs.width = 128; cvs.height = 128;
   const ctx = cvs.getContext("2d");
-  const rnd = mulberry32(4242); // same seed as the albedo grid so lit windows line up
+  const rnd = mulberry32(4242); // same seed as the albedo grid so lit portholes line up
   ctx.fillStyle = "#000"; ctx.fillRect(0, 0, 128, 128);
   for (let y = 6; y < 122; y += 13) {
     for (let x = 6; x < 122; x += 11) {
-      if (rnd() > 0.3) { ctx.fillStyle = "#ffd696"; ctx.fillRect(x, y, 6, 8); }
+      if (rnd() > 0.3) { ctx.fillStyle = "#8fd0ff"; ctx.fillRect(x, y, 6, 8); }
     }
   }
   const tex = new THREE.CanvasTexture(cvs);
@@ -669,9 +658,10 @@ function buildFacadeEmissive() {
   return tex;
 }
 
-// A thin animated "street" strip layered at the base of the skyline wall —
-// a few colored light streaks crawling left/right — so the window reads as
-// a live city outside, not a painted backdrop. Cheap: a small 1024×48
+// A thin animated debris-streak strip layered at the base of the space
+// view — a few icy light streaks crawling left/right, like distant micro-
+// meteors caught in the ship's running lights — so the window reads as a
+// live starfield outside, not a painted backdrop. Cheap: a small 1024×48
 // canvas redrawn every frame.
 function makeTrafficState() {
   const rnd = mulberry32(555);
@@ -679,7 +669,7 @@ function makeTrafficState() {
     x: rnd() * 1024,
     y: 10 + rnd() * 28,
     speed: (rnd() > 0.5 ? 1 : -1) * (40 + rnd() * 70),
-    color: rnd() > 0.25 ? "#ffcf8a" : "#ff5a4a",
+    color: rnd() > 0.25 ? "#bfe0ff" : "#8fd0ff",
   }));
   return { cars };
 }
@@ -1271,9 +1261,11 @@ function buildGlassOffice(color, name, title, screenTex, decorTemplate) {
   doorSign.position.set(W / 2 - 0.4, 1.45, D / 2 + 0.015);
   g.add(doorSign);
 
-  // A real leafy plant + a little side table (from the user's LP Officeroom
-  // pack) for a lived-in, furnished feel — falls back to the plain
-  // procedural plant if that pack failed to load.
+  // דבורה is the one human crew member left on the bridge (owner request —
+  // she stays the "Sophia" human, not a robot), running the ship as its
+  // ops-center captain. Her station is themed as a command console instead
+  // of an office: a bit of greenery from the crew quarters plus a glowing
+  // holographic ops pedestal where the old wooden side table used to sit.
   const flower = cloneDecorPiece(decorTemplate, "Office2_Flower");
   if (flower) {
     flower.scale.setScalar(OFFICE_DECOR_SCALE);
@@ -1285,11 +1277,33 @@ function buildGlassOffice(color, name, title, screenTex, decorTemplate) {
     plant.position.set(-W / 2 + 0.35, 0, -D / 2 + 0.35);
     g.add(plant);
   }
-  const littleTable = cloneDecorPiece(decorTemplate, "Office2_little_table");
-  if (littleTable) {
-    littleTable.scale.setScalar(OFFICE_DECOR_SCALE);
-    littleTable.position.set(W / 2 - 0.4, 0, -D / 2 + 0.4);
-    g.add(littleTable);
+  // Holographic ops console — a hexagonal pedestal with an emissive top and a
+  // floating tinted holo ring + wire-globe, standing in for the office side
+  // table so the bridge station reads as a control post, not a desk.
+  {
+    const consoleG = new THREE.Group();
+    const pedMat = new THREE.MeshStandardMaterial({ color: 0x14161c, roughness: 0.35, metalness: 0.55 });
+    const ped = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.4, 0.9, 6), pedMat);
+    ped.position.y = 0.45; ped.castShadow = true; consoleG.add(ped);
+    const topGlow = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.36, 0.36, 0.03, 6),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85 })
+    );
+    topGlow.position.y = 0.92; consoleG.add(topGlow);
+    const holoRing = new THREE.Mesh(
+      new THREE.TorusGeometry(0.28, 0.012, 8, 32),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.7 })
+    );
+    holoRing.rotation.x = Math.PI / 2; holoRing.position.y = 1.16; consoleG.add(holoRing);
+    const holoGlobe = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(0.17, 1),
+      new THREE.MeshBasicMaterial({ color, wireframe: true, transparent: true, opacity: 0.55 })
+    );
+    holoGlobe.position.y = 1.16; consoleG.add(holoGlobe);
+    const consoleLight = new THREE.PointLight(color, 0.4, 3.5);
+    consoleLight.position.y = 1.2; consoleG.add(consoleLight);
+    consoleG.position.set(W / 2 - 0.5, 0, -D / 2 + 0.5);
+    g.add(consoleG);
   }
 
   // A small wall-mounted status screen on the back wall showing the agent's
@@ -3982,6 +3996,74 @@ function HangarOverlay({ onReturn, liveRef, onDrive, onDriveTruck, onPilotRobot 
     moon.position.set(-30, 60, D / 2 + 60);
     scene.add(moon);
 
+    // ── Crew Deck annex (+X wall, opposite the vehicle bay) ─────────────────
+    // The office went full spaceship (owner request) and kept only the agent
+    // pods, the central hologram and part of the owner suite on the main
+    // floor — reception, the cafeteria and the kitchen moved bodily out here
+    // since none of them are tied to the agents' break-schedule pathing
+    // (unlike the gym/lounge/dining tables, which agents actually walk to on
+    // a timer and had to stay put in the main scene).
+    const crewDeckSign = buildNeonSign("מחלקת צוות", 0xE4BC63, 3.2, 0.6);
+    crewDeckSign.position.set(W / 2 - 5, 3.6, -20);
+    crewDeckSign.rotation.y = -Math.PI / 2;
+    scene.add(crewDeckSign);
+
+    {
+      const wCvs = document.createElement("canvas"); wCvs.width = 300; wCvs.height = 170;
+      const wctx = wCvs.getContext("2d");
+      const wg = wctx.createLinearGradient(0, 0, 0, 170); wg.addColorStop(0, "#12203a"); wg.addColorStop(1, "#0a1120");
+      wctx.fillStyle = wg; wctx.fillRect(0, 0, 300, 170);
+      wctx.fillStyle = "#E4BC63"; wctx.font = "700 26px system-ui"; wctx.textAlign = "center";
+      wctx.fillText("ברוכים הבאים", 150, 60);
+      wctx.fillStyle = "#9fd6ff"; wctx.font = "600 18px system-ui"; wctx.fillText("בניין אלפא · קומת הסוכנים", 150, 98);
+      wctx.fillStyle = "#7fe6b0"; wctx.font = "600 16px system-ui"; wctx.fillText("● הצוות זמין", 150, 132);
+      const welcomeTex = new THREE.CanvasTexture(wCvs); welcomeTex.colorSpace = THREE.SRGBColorSpace;
+      const reception = buildReception(0xE4BC63, welcomeTex);
+      const RCP = { x: W / 2 - 5, z: -20 };
+      reception.group.position.set(RCP.x, 0, RCP.z);
+      scene.add(reception.group);
+      loader.load(base + "office-models/reception_desk.glb", (g) => {
+        const real = g.scene;
+        const rb = new THREE.Box3().setFromObject(real);
+        const rc = rb.getCenter(new THREE.Vector3());
+        const wrap = new THREE.Group();
+        real.position.set(-rc.x, -rb.min.y, -rc.z);
+        wrap.add(real);
+        real.traverse((o) => { if (o.isMesh) o.castShadow = o.receiveShadow = true; });
+        wrap.position.set(RCP.x, 0, RCP.z);
+        scene.add(wrap);
+        reception.group.visible = false;
+      }, undefined, () => { /* model failed to load — procedural counter stays visible */ });
+      loader.load(base + "office-models/michal_receptionist.glb", (g) => {
+        const m = g.scene;
+        const mb = new THREE.Box3().setFromObject(m);
+        const ms = mb.getSize(new THREE.Vector3());
+        const mc = mb.getCenter(new THREE.Vector3());
+        const s = (1.55 / ms.y) || 1;
+        const wrap = new THREE.Group();
+        m.position.set(-mc.x, -mb.min.y, -mc.z);
+        m.scale.setScalar(s);
+        wrap.add(m);
+        m.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+        const tag = buildNameSprite("מיכל", "#D96A9E", "קבלה");
+        tag.scale.multiplyScalar(1.7);
+        tag.position.y = 1.65;
+        wrap.add(tag);
+        wrap.position.set(RCP.x - reception.seatLocal.x, 0, RCP.z - reception.seatLocal.z);
+        scene.add(wrap);
+      }, undefined, () => { /* model failed to load — desk stays as decor */ });
+    }
+    {
+      const caf = buildCafeteria(0xffb454);
+      caf.group.position.set(W / 2 - 5, 0, -4);
+      scene.add(caf.group);
+    }
+    {
+      const kitchen = buildKitchen(0x3FD79A);
+      kitchen.group.position.set(W / 2 - 5, 0, 12);
+      scene.add(kitchen.group);
+    }
+
     // Walk controls — same first-person "tank" scheme the office itself
     // uses (W/S forward-back relative to facing, A/D turn), simplified: no
     // player body to render, the camera IS the eye. Movement clamps to the
@@ -5783,12 +5865,13 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       });
     }
 
-    // North window wall — a real 3D skyline with actual depth, not a flat
-    // painted picture. The old single texture-plane is pushed far back as a
-    // distant hazy horizon; a cluster of real 3D buildings (boxes with a
-    // tiled window-facade texture) sits between the window and that horizon
-    // so moving the camera gives genuine parallax. A near-transparent glass
-    // pane at the actual window line keeps a slight reflective feel.
+    // North viewport wall — a real 3D starfield with actual depth, not a
+    // flat painted picture. The old single texture-plane is pushed far back
+    // as a distant hazy starfield/nebula backdrop; a cluster of real 3D
+    // modules (boxes with a tiled hull-plate/porthole texture) sits between
+    // the viewport and that backdrop so moving the camera gives genuine
+    // parallax. A near-transparent glass pane at the actual window line
+    // keeps a slight reflective feel.
     let skylineMode = liveRef.current.phase <= 1 ? "day" : "night";
     const skyline = buildSkylineTexture(skylineMode);
     const [nwx, nwz] = [0, -(FLOOR_D / 2) - 0.05];
@@ -5799,20 +5882,21 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     skyWall.position.set(nwx, 14, nwz - 46);
     scene.add(skyWall);
 
-    // Drifting cloud layer — one repeating transparent strip just in front
-    // of the sky wall, scrolled slowly in the render loop for real motion
-    // in the view (opacity retuned per sky mode: bright by day, warm-dim at
-    // sunset, near-invisible at night).
+    // Drifting nebula-wisp layer — one repeating transparent strip just in
+    // front of the star wall, scrolled slowly in the render loop for real
+    // motion in the view (opacity retuned per mode: bright system by "day",
+    // warm gas-cloud glow at "sunset", near-invisible deep in "night" space).
     const cloudCvs = document.createElement("canvas");
     cloudCvs.width = 1024; cloudCvs.height = 200;
     {
       const cctx2 = cloudCvs.getContext("2d");
       const crnd = mulberry32(1234);
+      const wispPalette = ["rgba(143,208,255,", "rgba(185,143,232,", "rgba(232,111,176,", "rgba(111,224,200,"];
       cctx2.clearRect(0, 0, 1024, 200);
       for (let i = 0; i < 9; i++) {
         const cx = crnd() * 1024, cy = 30 + crnd() * 120, s = 45 + crnd() * 75;
-        const a = 0.25 + crnd() * 0.3;
-        cctx2.fillStyle = `rgba(255,255,255,${a.toFixed(2)})`;
+        const a = 0.2 + crnd() * 0.28;
+        cctx2.fillStyle = wispPalette[Math.floor(crnd() * wispPalette.length)] + a.toFixed(2) + ")";
         cctx2.beginPath();
         cctx2.ellipse(cx, cy, s, s * 0.32, 0, 0, Math.PI * 2);
         cctx2.ellipse(cx + s * 0.55, cy + 7, s * 0.62, s * 0.26, 0, 0, Math.PI * 2);
@@ -5823,33 +5907,34 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     const cloudTex = new THREE.CanvasTexture(cloudCvs);
     cloudTex.wrapS = THREE.RepeatWrapping;
     cloudTex.colorSpace = THREE.SRGBColorSpace;
-    const cloudMat = new THREE.MeshBasicMaterial({ map: cloudTex, transparent: true, opacity: 0.85, depthWrite: false, fog: false });
+    const cloudMat = new THREE.MeshBasicMaterial({ map: cloudTex, transparent: true, opacity: 0.85, depthWrite: false, fog: false, blending: THREE.AdditiveBlending });
     const cloudLayer = new THREE.Mesh(new THREE.PlaneGeometry(150, 13), cloudMat);
     cloudLayer.position.set(nwx, 26, nwz - 44.5);
     scene.add(cloudLayer);
 
-    // A tiny airliner crossing the view with a blinking beacon.
+    // A tiny drifting probe/shuttle crossing the view with a blinking nav beacon.
     const planeGroup = new THREE.Group();
-    const planeBody = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.12, 0.12), new THREE.MeshBasicMaterial({ color: 0xd8dde6, fog: false }));
+    const planeBody = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.12, 0.12), new THREE.MeshBasicMaterial({ color: 0x4a5158, fog: false }));
     planeGroup.add(planeBody);
-    const planeWing = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.05, 1.1), new THREE.MeshBasicMaterial({ color: 0xb9c0cc, fog: false }));
+    const planeWing = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.05, 1.1), new THREE.MeshBasicMaterial({ color: 0x3a3f48, fog: false }));
     planeGroup.add(planeWing);
     const planeBeacon = new THREE.Mesh(
       new THREE.SphereGeometry(0.1, 6, 6),
-      new THREE.MeshBasicMaterial({ color: 0xff2a1a, transparent: true, opacity: 0.9, fog: false })
+      new THREE.MeshBasicMaterial({ color: 0x2ee6ff, transparent: true, opacity: 0.9, fog: false })
     );
     planeBeacon.position.set(-0.85, 0.05, 0);
     planeGroup.add(planeBeacon);
     planeGroup.position.set(-60, 25.5, nwz - 40);
     scene.add(planeGroup);
 
-    // A small flock of birds (day only) — three dark 'v' sprites bobbing.
+    // A small cluster of drifting debris/asteroid chunks (bright-system mode
+    // only) — three dark angular sprites tumbling slowly.
     const birdGroup = new THREE.Group();
     for (let i = 0; i < 3; i++) {
       const bc = document.createElement("canvas"); bc.width = bc.height = 32;
       const bx2 = bc.getContext("2d");
-      bx2.strokeStyle = "rgba(20,24,32,.9)"; bx2.lineWidth = 3; bx2.lineCap = "round";
-      bx2.beginPath(); bx2.moveTo(4, 20); bx2.quadraticCurveTo(16, 8, 16, 18); bx2.quadraticCurveTo(16, 8, 28, 20); bx2.stroke();
+      bx2.fillStyle = "rgba(40,44,52,.9)";
+      bx2.beginPath(); bx2.moveTo(6, 22); bx2.lineTo(14, 6); bx2.lineTo(24, 10); bx2.lineTo(27, 22); bx2.lineTo(16, 27); bx2.closePath(); bx2.fill();
       const bt = new THREE.CanvasTexture(bc);
       const bird = new THREE.Sprite(new THREE.SpriteMaterial({ map: bt, transparent: true, fog: false }));
       bird.scale.set(0.9, 0.9, 1);
@@ -5866,54 +5951,10 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     glass.position.set(nwx, 3.2, nwz);
     scene.add(glass);
 
-    // Real-weather rain — a genuine GLSL streak shader on a thin plane just
-    // in front of the window glass, only visible when the owner's real
-    // location (Rishon LeZion, via useWeather in App.jsx) is actually
-    // raining. Multiple layered streak fields at different densities/speeds
-    // for a less mechanical look; opacity is the only thing toggled at
-    // runtime (see animate(), below) so there's no shader recompile cost.
-    const rainMat = new THREE.ShaderMaterial({
-      transparent: true,
-      depthWrite: false,
-      uniforms: { uTime: { value: 0 }, uOpacity: { value: 0 } },
-      vertexShader: `
-        varying vec2 vUv;
-        void main() {
-          vUv = uv;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-      `,
-      fragmentShader: `
-        varying vec2 vUv;
-        uniform float uTime;
-        uniform float uOpacity;
-        float hash(float n) { return fract(sin(n) * 43758.5453123); }
-        float streaks(vec2 uv, float density, float speed, float seed) {
-          vec2 g = vec2(uv.x * density, uv.y);
-          float col = floor(g.x);
-          float off = hash(col + seed);
-          float y = fract(g.y * 2.2 - uTime * speed + off * 7.0);
-          float x = fract(g.x) - 0.5 + (off - 0.5) * 0.4;
-          float streak = smoothstep(0.5, 0.0, abs(x) * 14.0) * smoothstep(0.0, 0.06, y) * smoothstep(0.55, 0.06, y);
-          return streak;
-        }
-        void main() {
-          float s = streaks(vUv, 26.0, 0.55, 0.0) * 0.5;
-          s += streaks(vUv * vec2(1.0, 1.0) + 0.37, 40.0, 0.8, 11.0) * 0.35;
-          s += streaks(vUv * vec2(1.0, 1.0) + 0.71, 17.0, 0.4, 27.0) * 0.4;
-          vec3 dropColor = vec3(0.75, 0.85, 0.95);
-          gl_FragColor = vec4(dropColor, clamp(s, 0.0, 1.0) * uOpacity);
-        }
-      `,
-    });
-    const rainPlane = new THREE.Mesh(new THREE.PlaneGeometry(FLOOR_W, 6.4), rainMat);
-    rainPlane.position.set(nwx, 3.2, nwz + 0.03);
-    scene.add(rainPlane);
-
-    // Real 3D buildings for actual foreground depth/parallax — sparse and
+    // Real 3D modules for actual foreground depth/parallax — sparse and
     // set well back from the glass (12–40 units past the window) so they
-    // read as a skyline in the distance with real sky between them, not a
-    // wall of texture pressed up against the window.
+    // read as other hulls/stations in the distance with real space between
+    // them, not a wall of texture pressed up against the window.
     const facadeAlbedo = buildFacadeAlbedo();
     const facadeEmissive = buildFacadeEmissive();
     const nearBuildingMats = [];
@@ -5931,7 +5972,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           emissiveTex.repeat.copy(albedoTex.repeat);
           albedoTex.needsUpdate = true; emissiveTex.needsUpdate = true;
           const mat = new THREE.MeshStandardMaterial({
-            map: albedoTex, emissiveMap: emissiveTex, emissive: 0xffd8a0, emissiveIntensity: 0,
+            map: albedoTex, emissiveMap: emissiveTex, emissive: 0x8fd0ff, emissiveIntensity: 0,
             roughness: 0.75, metalness: 0.15, fog: false,
           });
           const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
@@ -5944,11 +5985,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       }
     }
 
-    // A second, closer row of buildings for real parallax depth between the
-    // glass and the distant skyline — bolder, sparser silhouettes right up
+    // A second, closer row of modules for real parallax depth between the
+    // glass and the distant starfield — bolder, sparser silhouettes right up
     // against the window instead of one flat depth layer. Skipped on mobile
     // to keep the extra draw calls off weaker GPUs; the far row above still
-    // reads as a full city there.
+    // reads as a full field there.
     if (!isMobile) {
       const cityRnd2 = mulberry32(3131);
       let bx2 = -65;
@@ -5963,7 +6004,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           emissiveTex.repeat.copy(albedoTex.repeat);
           albedoTex.needsUpdate = true; emissiveTex.needsUpdate = true;
           const mat = new THREE.MeshStandardMaterial({
-            map: albedoTex, emissiveMap: emissiveTex, emissive: 0xffd8a0, emissiveIntensity: 0,
+            map: albedoTex, emissiveMap: emissiveTex, emissive: 0x8fd0ff, emissiveIntensity: 0,
             roughness: 0.75, metalness: 0.15, fog: false,
           });
           const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
@@ -5975,8 +6016,9 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       }
     }
 
-    // A blinking red aviation obstruction light on the tallest tower — the
-    // kind of small real-skyline detail that reads as genuine city life.
+    // A blinking red collision-avoidance beacon on the tallest module — the
+    // kind of small real-detail that reads as a genuinely inhabited field
+    // of hulls rather than static decoration.
     let rooftopBeacon = null;
     if (scene.userData.tallB) {
       const tall = scene.userData.tallB;
@@ -5988,15 +6030,16 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       scene.add(rooftopBeacon);
     }
 
-    // A soft warm glow along the horizon behind the skyline, only visible
-    // after dark — real cities cast a "light pollution" dome from below.
+    // A soft cyan glow along the horizon behind the module field, only
+    // visible deep in "night" mode — ambient nebula backlight bleeding
+    // around the hulls, standing in for the old city light-pollution dome.
     const cityGlowCvs = document.createElement("canvas");
     cityGlowCvs.width = 512; cityGlowCvs.height = 128;
     {
       const gctx = cityGlowCvs.getContext("2d");
       const grad = gctx.createLinearGradient(0, 128, 0, 0);
-      grad.addColorStop(0, "rgba(255,188,120,0.6)");
-      grad.addColorStop(1, "rgba(255,188,120,0)");
+      grad.addColorStop(0, "rgba(120,180,255,0.5)");
+      grad.addColorStop(1, "rgba(120,180,255,0)");
       gctx.fillStyle = grad; gctx.fillRect(0, 0, 512, 128);
     }
     const cityGlowTex = new THREE.CanvasTexture(cityGlowCvs);
@@ -6009,12 +6052,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     scene.add(cityGlow);
 
     /* ── Showcase-window life v3 ──────────────────────────────────────────
-       The view out the glass gets a living city layer: a Times-Square-style
-       billboard on the tallest nearby tower cycling REAL content (Heavy
-       Guard ad → ALPHA → live Bitcoin off the market feed), a helicopter
-       with a spinning rotor + strobe crossing opposite the airliner, a
-       striped hot-air balloon drifting by day, and two searchlight beams
-       sweeping the sky at night. All sprite/canvas-cheap. ── */
+       The view out the glass gets a living deep-space layer: a billboard
+       module cycling REAL content (Heavy Guard ad → ALPHA → live Bitcoin
+       off the market feed), a small shuttle/drone crossing opposite the
+       probe, a drifting cargo-pod module by "day", and two beacon-sweep
+       beams from a distant station at "night". All sprite/canvas-cheap. ── */
     const bbCvs = document.createElement("canvas");
     // 2x supersampled (drawn in 220x320 logical coords) so the billboard
     // text and the brand mark stay crisp instead of soft up close.
@@ -6120,31 +6162,32 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       scene.add(dcSign);
     }
 
-    // Helicopter — crosses right-to-left (opposite the airliner), higher.
+    // Patrol shuttle — crosses right-to-left (opposite the probe), higher.
     const heliGroup = new THREE.Group();
-    const heliBodyMat = new THREE.MeshBasicMaterial({ color: 0x11141c, fog: false });
+    const heliBodyMat = new THREE.MeshBasicMaterial({ color: 0x2a3038, fog: false });
     const heliBody = new THREE.Mesh(new THREE.SphereGeometry(0.55, 10, 8), heliBodyMat);
     heliBody.scale.set(1.5, 0.75, 0.7); heliGroup.add(heliBody);
     const heliTail = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.14, 0.12), heliBodyMat);
     heliTail.position.set(-1.2, 0.12, 0); heliGroup.add(heliTail);
-    const heliRotor = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.04, 0.16), new THREE.MeshBasicMaterial({ color: 0x2a3040, transparent: true, opacity: 0.75, fog: false }));
+    const heliRotor = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.04, 0.16), new THREE.MeshBasicMaterial({ color: 0x2ee6ff, transparent: true, opacity: 0.55, fog: false }));
     heliRotor.position.y = 0.52; heliGroup.add(heliRotor);
     const heliStrobe = new THREE.Mesh(new THREE.SphereGeometry(0.11, 6, 6), new THREE.MeshBasicMaterial({ color: 0xff4444, transparent: true, opacity: 0.9, fog: false }));
     heliStrobe.position.set(0.2, -0.42, 0); heliGroup.add(heliStrobe);
     heliGroup.position.set(70, 23, nwz - 24);
     scene.add(heliGroup);
 
-    // Hot-air balloon — striped envelope + basket, drifting slowly, day only.
+    // Drifting cargo-pod module — a small station module + tethered
+    // container, drifting slowly, bright-system mode only.
     const balloonGroup = new THREE.Group();
     {
       const sc = document.createElement("canvas"); sc.width = 64; sc.height = 32;
       const sctx = sc.getContext("2d");
-      const cols = ["#e2504c", "#f2b134", "#f7f4ea", "#3a7bd5"];
+      const cols = ["#3a3f48", "#4a5158", "#2ee6ff", "#24272d"];
       for (let i = 0; i < 8; i++) { sctx.fillStyle = cols[i % cols.length]; sctx.fillRect(i * 8, 0, 8, 32); }
       const st = new THREE.CanvasTexture(sc); st.colorSpace = THREE.SRGBColorSpace;
-      const env = new THREE.Mesh(new THREE.SphereGeometry(1.5, 16, 12), new THREE.MeshStandardMaterial({ map: st, roughness: 0.7, fog: false }));
+      const env = new THREE.Mesh(new THREE.SphereGeometry(1.5, 16, 12), new THREE.MeshStandardMaterial({ map: st, roughness: 0.5, metalness: 0.4, fog: false }));
       env.scale.set(1, 1.15, 1); balloonGroup.add(env);
-      const basket = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.4, 0.5), new THREE.MeshStandardMaterial({ color: 0x6b4a26, roughness: 0.8, fog: false }));
+      const basket = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.4, 0.5), new THREE.MeshStandardMaterial({ color: 0x2a3038, roughness: 0.6, metalness: 0.3, fog: false }));
       basket.position.y = -2.3; balloonGroup.add(basket);
       [[-0.3, -0.3], [0.3, 0.3]].forEach(([rx, rz]) => {
         const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 1.0, 4), heliBodyMat);
@@ -6154,13 +6197,14 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     balloonGroup.position.set(-45, 14, nwz - 30);
     scene.add(balloonGroup);
 
-    // Night searchlights — two additive beams sweeping from behind the city.
+    // Deep-space beacon sweep — two additive cyan beams from a distant
+    // station, only visible in "night" mode.
     const searchGroup = new THREE.Group();
     const mkBeam = (px, tilt) => {
       const bc = document.createElement("canvas"); bc.width = 32; bc.height = 128;
       const bx2 = bc.getContext("2d");
       const grd = bx2.createLinearGradient(0, 128, 0, 0);
-      grd.addColorStop(0, "rgba(210,230,255,.55)"); grd.addColorStop(1, "rgba(210,230,255,0)");
+      grd.addColorStop(0, "rgba(120,220,255,.5)"); grd.addColorStop(1, "rgba(120,220,255,0)");
       bx2.fillStyle = grd; bx2.fillRect(0, 0, 32, 128);
       const bt = new THREE.CanvasTexture(bc);
       const geo = new THREE.PlaneGeometry(1.0, 30);
@@ -6176,8 +6220,8 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     searchGroup.visible = false;
     scene.add(searchGroup);
 
-    // A thin animated street strip at the base — small, cheap, redrawn
-    // every frame — so the window always has some motion in it.
+    // A thin animated debris-streak strip at the base — small, cheap,
+    // redrawn every frame — so the viewport always has some motion in it.
     const trafficCanvas = document.createElement("canvas");
     trafficCanvas.width = 1024; trafficCanvas.height = 48;
     const trafficCtx = trafficCanvas.getContext("2d");
@@ -6221,8 +6265,8 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     scene.add(wallS);
 
     // High clerestory window band on the east wall — a second slice of the
-    // city visible from the dining/owner side, using the same skyline canvas
-    // with its own offset/repeat so it reads as a different part of town.
+    // starfield visible from the dining/owner side, using the same space-view
+    // canvas with its own offset/repeat so it reads as a different patch of sky.
     const eastWinTex = skyline.tex.clone();
     eastWinTex.repeat.set(0.34, 0.42);
     eastWinTex.offset.set(0.42, 0.12);
@@ -7373,86 +7417,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // clear of the car podium and the perimeter offices.
     const dogSpot = () => ({ x: -10 + Math.random() * 15, z: -7 + Math.random() * 12 });
 
-    // ── Reception at the entrance ────────────────────────────────────────
-    // A welcome desk with a receptionist just inside the south entrance, so
-    // walking in reads like arriving at a real company lobby.
-    {
-      const wCvs = document.createElement("canvas"); wCvs.width = 300; wCvs.height = 170;
-      const wx2 = wCvs.getContext("2d");
-      const wg = wx2.createLinearGradient(0, 0, 0, 170); wg.addColorStop(0, "#12203a"); wg.addColorStop(1, "#0a1120");
-      wx2.fillStyle = wg; wx2.fillRect(0, 0, 300, 170);
-      wx2.fillStyle = "#E4BC63"; wx2.font = "700 26px system-ui"; wx2.textAlign = "center";
-      wx2.fillText("ברוכים הבאים", 150, 60);
-      wx2.fillStyle = "#9fd6ff"; wx2.font = "600 18px system-ui"; wx2.fillText("בניין אלפא · קומת הסוכנים", 150, 98);
-      wx2.fillStyle = "#7fe6b0"; wx2.font = "600 16px system-ui"; wx2.fillText("● הצוות זמין", 150, 132);
-      const welcomeTex = new THREE.CanvasTexture(wCvs); welcomeTex.colorSpace = THREE.SRGBColorSpace;
-      const reception = buildReception(0xE4BC63, welcomeTex);
-      const RCP = { x: -13.8, z: 28.8 };
-      // Flipped 180° (owner request): the welcome screen + front face the
-      // room/entrance walkway on the north side, מיכל sits on the south side.
-      reception.group.position.set(RCP.x, 0, RCP.z);
-      reception.group.rotation.y = Math.PI;
-      scene.add(reception.group);
-      reception.obstacles.forEach((o) => obstacles.push({ x: RCP.x - o.x, z: RCP.z - o.z, r: o.r }));
-      // The owner's real reception-desk model replaces the procedural
-      // counter once it loads (same fallback pattern as the meeting table
-      // and the car podium — the procedural box stays visible if it fails).
-      {
-        const deskLoader = new GLTFLoader();
-        deskLoader.setMeshoptDecoder(MeshoptDecoder);
-        deskLoader.load(base + "office-models/reception_desk.glb", (g) => {
-          const real = g.scene;
-          const rb = new THREE.Box3().setFromObject(real);
-          const rs = rb.getSize(new THREE.Vector3());
-          const rc = rb.getCenter(new THREE.Vector3());
-          const wrap = new THREE.Group();
-          real.position.set(-rc.x, -rb.min.y, -rc.z);
-          wrap.add(real);
-          real.traverse((o) => { if (o.isMesh) o.castShadow = o.receiveShadow = true; });
-          wrap.position.set(RCP.x, 0, RCP.z);
-          wrap.rotation.y = Math.PI;
-          scene.add(wrap);
-          reception.group.visible = false;
-        }, undefined, () => { /* model failed to load — procedural counter stays visible */ });
-      }
-      // Receptionist — her own real model (the owner's "posh female" asset,
-      // a proper seated pose baked in — no more the shared male rig tinted
-      // pink with procedural sphere hair). Fully static (no mixer/clips
-      // needed; she never leaves the desk), so she's loaded directly rather
-      // than through buildHuman/allExtraHumans.
-      const recepLoader = new GLTFLoader();
-      recepLoader.setMeshoptDecoder(MeshoptDecoder);
-      recepLoader.load(base + "office-models/michal_receptionist.glb", (g) => {
-        const m = g.scene;
-        const mb = new THREE.Box3().setFromObject(m);
-        const ms = mb.getSize(new THREE.Vector3());
-        const mc = mb.getCenter(new THREE.Vector3());
-        const s = (1.55 / ms.y) || 1; // normalize to a real seated-adult height
-        const wrap = new THREE.Group();
-        m.position.set(-mc.x, -mb.min.y, -mc.z);
-        m.scale.setScalar(s);
-        wrap.add(m);
-        m.traverse((o) => { if (o.isMesh) { o.castShadow = true; } });
-        const tag = buildNameSprite("מיכל", "#D96A9E", "קבלה");
-        tag.scale.multiplyScalar(1.7);
-        tag.position.y = 1.65;
-        wrap.add(tag);
-        wrap.position.set(RCP.x - reception.seatLocal.x, 0, RCP.z - reception.seatLocal.z);
-        wrap.rotation.y = Math.PI; // face the flipped counter front (north)
-        scene.add(wrap);
-      }, undefined, () => { /* model failed to load — desk stays as decor */ });
-    }
-
-    // (Restroom stalls removed — owner request; the SW corner stays open.)
-
-    // ── Cafeteria / coffee counter (beside the dining tables) ────────────
-    {
-      const caf = buildCafeteria(0xffb454);
-      const CAF = { x: 30.6, z: 11.2 };
-      caf.group.position.set(CAF.x, 0, CAF.z);
-      scene.add(caf.group);
-      caf.obstacles.forEach((o) => obstacles.push({ x: CAF.x + o.x, z: CAF.z + o.z, r: o.r }));
-    }
+    // (Reception + the cafeteria moved to the Hangar's new Crew Deck annex —
+    // owner request, full spaceship retheme: neither is tied to the agents'
+    // break-schedule pathing, unlike the gym/lounge/dining tables below,
+    // which stay put since agents actually walk to these exact spots.
+    // Restroom stalls stay removed — the SW corner stays open.)
 
     // ── Mini-gym + lounge (north window strip between the two truck podiums)
     // World coordinates are the toWorld() image of OFC_GYM/OFC_LOUNGE in
@@ -7472,16 +7441,8 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       lounge.obstacles.forEach((o) => obstacles.push({ x: LNG.x + o.x, z: LNG.z + o.z, r: o.r }));
     }
 
-    // ── Kitchen (west wall, decor only — same category as reception/the
-    // fleet podiums: outside the percent-space grid the animated agents
-    // path through, a real amenity to look at rather than a scripted stop).
-    {
-      const kitchen = buildKitchen(0x3FD79A);
-      const KTC = { x: -30, z: 5 };
-      kitchen.group.position.set(KTC.x, 0, KTC.z);
-      scene.add(kitchen.group);
-      kitchen.obstacles.forEach((o) => obstacles.push({ x: KTC.x + o.x, z: KTC.z + o.z, r: o.r }));
-    }
+    // (Kitchen moved to the Hangar's Crew Deck annex too — decor only, same
+    // reasoning as reception/the cafeteria above.)
 
     // ── Wall decor from the user's LP Officeroom pack ────────────────────
     // Real modeled pieces (wall clock, framed art, a record player for the
@@ -7503,10 +7464,9 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       hang("Office2_decoration2", -(FLOOR_W / 2) + 0.12, 2.6, 8.4, Math.PI / 2, 1.4);
       // big framed picture on the east wall near the owner's office
       hang("Office2_picture", FLOOR_W / 2 - 0.12, 1.9, 8.1, Math.PI, 1.2);
-      // record player + vinyls on the cafeteria counter — kept within the
-      // counter top's actual span (z 3.8..7.4) so nothing floats off its edge
-      hang("Office2_Vinyl_players", 15.35, 1.1, 4.7, -Math.PI / 2, 1.0);
-      hang("Office2_Vinyls", 15.35, 1.1, 5.3, -Math.PI / 2, 1.0);
+      // (the record player + vinyls used to sit on the cafeteria counter at
+      // world coords that no longer matched its position after an earlier
+      // move — removed along with the cafeteria rather than left floating.)
     }
 
     // ── The owner's real field photos, framed on the walls ──────────────
@@ -7870,8 +7830,8 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         sun.color.lerp(tmpColor.set(sunTargetHex), Math.min(1, dt * 0.8));
         const ambTargetInt = (isNight ? 0.35 : 0.65) * lightMul * overcastMul;
         ambient.intensity += (ambTargetInt - ambient.intensity) * Math.min(1, dt * 0.8);
-        // Near-building windows light up after dark — same lit-window feel as
-        // the painted skyline behind them, but on real 3D geometry.
+        // Near-module portholes light up after dark — same lit-window feel as
+        // the painted starfield behind them, but on real 3D geometry.
         const buildingGlowTarget = isNight ? 0.85 : isEvening ? 0.4 : 0.02;
         nearBuildingMats.forEach((mat) => {
           mat.emissiveIntensity += (buildingGlowTarget - mat.emissiveIntensity) * Math.min(1, dt * 0.8);
@@ -7899,12 +7859,6 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           pod.ringMat.color.lerp(tmpColor.set(podTargetColor), Math.min(1, dt * 0.8));
         });
       }
-      // Rain on the glass — fades in/out rather than snapping, matches
-      // liveRef.current.weather.isRaining set from the real Rishon LeZion
-      // forecast (App.jsx's useWeather effect, refreshed every 20 minutes).
-      rainMat.uniforms.uTime.value += dt;
-      const rainTarget = liveRef.current.weather?.isRaining ? 0.8 : 0;
-      rainMat.uniforms.uOpacity.value += (rainTarget - rainMat.uniforms.uOpacity.value) * Math.min(1, dt * 0.5);
 
       // Wall TVs — redrawn every few seconds, not every frame; BOTH screens
       // show real data now: the markets TV renders the live CoinGecko/Yahoo
@@ -7925,7 +7879,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         opsTex.needsUpdate = true;
         drawSiteScreen(); // wall site-board follows the same live refresh
         if (scene.userData.drawCarHolo) scene.userData.drawCarHolo(); // car telemetry tag too
-        // The city billboard flips to its next ad every other screen tick.
+        // The billboard module flips to its next ad every other screen tick.
         bbTick++;
         if (bbTick % 2 === 0) {
           bbMode = (bbMode + 1) % 4;
@@ -8040,10 +7994,10 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         if (fixed > 0) liveRef.current.onAutoFix?.(`🔧 דבורה תיקנה את הסביבה אוטומטית: ${fixed} פריטי ריהוט חסרים שוחזרו בחדר הישיבות והצוות עוגן חזרה למקומו`);
       }
 
-      // Skyline window — swap the whole canvas only when the sky mode
-      // actually flips (cheap, rare): full day → golden-hour sunset in the
-      // evening phase → starry night with a moon. The street traffic strip
-      // redraws every frame (tiny canvas) so the view is never static.
+      // Space viewport — swap the whole canvas only when the mode actually
+      // flips (cheap, rare): bright system by "day" → warm nebula glow in
+      // the evening phase → deep starry space at "night". The debris-streak
+      // strip redraws every frame (tiny canvas) so the view is never static.
       const desiredSkyMode = liveRef.current.phase <= 1 ? "day" : liveRef.current.phase === 2 ? "sunset" : "night";
       if (desiredSkyMode !== skylineMode) {
         skylineMode = desiredSkyMode;
