@@ -181,10 +181,21 @@ export function lastSyncTime(): string {
   return localStorage.getItem(LAST_SYNC_KEY) || '';
 }
 
+// Tracks whether the MOST RECENT sync attempt actually succeeded — separate
+// from lastSyncTime(), which only ever holds the last *successful* timestamp.
+// Without this, a periodic sync that starts silently failing (e.g. a stale
+// Puter session that still passes the local isSignedIn() check but rejects
+// every kv call) left the UI showing a green "connected, last sync HH:MM"
+// indefinitely, with no sign anything was wrong.
+let lastSyncError: string | null = null;
+export function getLastSyncError(): string | null {
+  return lastSyncError;
+}
+
 // Upload all localStorage tables to puter.kv
 export async function syncToCloud(onProgress?: (msg: string) => void): Promise<{ ok: boolean; error?: string }> {
-  if (!isPuterAvailable()) return { ok: false, error: 'Puter not available' };
-  if (!isSignedIn()) return { ok: false, error: 'Not signed in' };
+  if (!isPuterAvailable()) { lastSyncError = 'Puter not available'; return { ok: false, error: lastSyncError }; }
+  if (!isSignedIn()) { lastSyncError = 'Not signed in'; return { ok: false, error: lastSyncError }; }
   try {
     const tables = [...new Set(SYNC_TABLES)]; // dedupe
     const snap = loadSnap();
@@ -224,24 +235,27 @@ export async function syncToCloud(onProgress?: (msg: string) => void): Promise<{
     }
 
     // Nothing changed → make zero further requests.
-    if (changed === 0) { onProgress?.('הכל מסונכרן ✓'); return { ok: true }; }
+    if (changed === 0) { lastSyncError = null; onProgress?.('הכל מסונכרן ✓'); return { ok: true }; }
 
     const ts = new Date().toISOString();
     await puter().kv.set(KV_PREFIX + '__meta__', JSON.stringify({ ts, tables: tables.length, media: mediaDone }));
     saveSnap(snap);
     localStorage.setItem(LAST_SYNC_KEY, ts);
     localStorage.removeItem(DIRTY_KEY);
+    lastSyncError = null;
     onProgress?.(`סנכרון הושלם ✓ (${changed} עודכנו)`);
     return { ok: true };
   } catch (e: any) {
-    return { ok: false, error: e?.message || 'שגיאת ענן' };
+    const msg: string = e?.message || 'שגיאת ענן';
+    lastSyncError = msg;
+    return { ok: false, error: msg };
   }
 }
 
 // Download all tables from puter.kv and restore to localStorage
 export async function syncFromCloud(onProgress?: (msg: string) => void): Promise<{ ok: boolean; tables?: number; error?: string }> {
-  if (!isPuterAvailable()) return { ok: false, error: 'Puter not available' };
-  if (!isSignedIn()) return { ok: false, error: 'Not signed in' };
+  if (!isPuterAvailable()) { lastSyncError = 'Puter not available'; return { ok: false, error: lastSyncError }; }
+  if (!isSignedIn()) { lastSyncError = 'Not signed in'; return { ok: false, error: lastSyncError }; }
   try {
     onProgress?.('מוריד נתונים…');
     const tables = [...new Set(SYNC_TABLES)];
@@ -275,10 +289,13 @@ export async function syncFromCloud(onProgress?: (msg: string) => void): Promise
 
     const ts = new Date().toISOString();
     localStorage.setItem(LAST_SYNC_KEY, ts);
+    lastSyncError = null;
     onProgress?.(`שוחזרו ${count} טבלאות + ${mediaCount} תמונות ✓`);
     return { ok: true, tables: count + mediaCount };
   } catch (e: any) {
-    return { ok: false, error: e?.message || 'שגיאת ענן' };
+    const msg: string = e?.message || 'שגיאת ענן';
+    lastSyncError = msg;
+    return { ok: false, error: msg };
   }
 }
 

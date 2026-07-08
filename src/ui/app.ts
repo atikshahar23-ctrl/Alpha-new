@@ -7005,10 +7005,18 @@ export function mountApp(root: HTMLElement) {
       puterSync.getUser().then(u => {
         if (u) $('puterUserLabel').textContent = `מחובר: ${u.username || u.email || 'Google'}`;
       }).catch(() => {});
+      const err = puterSync.getLastSyncError();
       const last = puterSync.lastSyncTime();
-      $('puterStatus').textContent = last
-        ? `סנכרון אחרון: ${new Date(last).toLocaleTimeString('he-IL')} · אוטומטי כל 5 דקות`
-        : 'סנכרון אוטומטי כל 5 דקות';
+      if (err) {
+        // Same "looks connected but hasn't actually synced" case the top-bar
+        // indicator now catches — surfaced here too since this panel is where
+        // the owner actually goes looking when a sync seems stuck.
+        $('puterStatus').innerHTML = `<span style="color:#ff8a80">⚠ הסנכרון האחרון נכשל: ${escHtml(err)}</span>${last ? ` · הצליח לאחרונה ב-${new Date(last).toLocaleTimeString('he-IL')}` : ''}`;
+      } else {
+        $('puterStatus').textContent = last
+          ? `סנכרון אחרון: ${new Date(last).toLocaleTimeString('he-IL')} · אוטומטי כל 2 דקות`
+          : 'סנכרון אוטומטי כל 2 דקות';
+      }
     }
   }
   $('puterSignInBtn').onclick = async () => {
@@ -7662,6 +7670,7 @@ export function mountApp(root: HTMLElement) {
         showLoginScreen();
         return;
       }
+      const hadPriorError = !!puterSync.getLastSyncError();
       (ind as HTMLElement).innerHTML = '🔄 <span id="cloudStatus">מסנכרן…</span>';
       const action = await puterSync.smartSync();
       if (action === 'downloaded') {
@@ -7672,6 +7681,18 @@ export function mountApp(root: HTMLElement) {
         setTimeout(updateCloudIndicator, 2500);
       } else {
         (ind as HTMLElement).innerHTML = '⚠ <span id="cloudStatus">שגיאה</span>';
+        // A retry that fails again while the client still thinks it's signed
+        // in usually means a stale/expired session isSignedIn() can't detect
+        // on its own — offer to reconnect instead of silently retrying forever.
+        if (hadPriorError && puterSync.getLastSyncError()) {
+          const reconnect = confirm(`הסנכרון לענן ממשיך להיכשל (${puterSync.getLastSyncError()}). לרוב זה קורה כשההתחברות פגה. להתחבר מחדש עכשיו?`);
+          if (reconnect) {
+            await puterSync.signOut();
+            sessionStorage.removeItem(LOGIN_SKIP_KEY);
+            await showLoginScreen();
+            return;
+          }
+        }
         setTimeout(updateCloudIndicator, 2500);
       }
     };
@@ -7683,6 +7704,19 @@ export function mountApp(root: HTMLElement) {
     const ind = $('cloudIndicator');
     if (!ind) return;
     if (puterSync.isSignedIn()) {
+      const err = puterSync.getLastSyncError();
+      if (err) {
+        // The client still thinks it's signed in (isSignedIn() is a local
+        // check), but the last actual sync attempt failed — most likely a
+        // stale/expired session the client can't detect on its own. Showing
+        // the old "✓ connected, last sync HH:MM" here would hide a sync
+        // that's been silently failing for hours (exactly what happened:
+        // periodic sync every 2 min kept failing quietly with no visible sign).
+        ind.innerHTML = '⚠ <span id="cloudStatus">סנכרון נכשל — לחץ להתחבר מחדש</span>';
+        (ind as HTMLElement).style.borderColor = 'rgba(224,71,63,.5)';
+        (ind as HTMLElement).style.color = 'rgba(255,138,128,.9)';
+        return;
+      }
       const ts = puterSync.lastSyncTime();
       const ago = ts ? new Date(ts).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }) : '';
       ind.innerHTML = `✓ <span id="cloudStatus">${ago || 'מחובר'}</span>`;
