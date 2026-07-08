@@ -24,10 +24,6 @@
  *   // Read live market data
  *   const data = await sim.getBinanceMulti();
  *
- *   // Place a paper trade
- *   await sim.placeFuturesOrder({ symbol:"BTCUSDT", side:"BUY",
- *                                  type:"MARKET", quantity:0.001 });
- *
  *   // Let the JARVIS / Alpha assistant answer a market question
  *   const ctx = await sim.getMarketContext(); // returns a string
  *   // → pass ctx into the Gemini/Claude prompt as extra context
@@ -191,37 +187,6 @@ export const sim = {
     return simFetch("/crypto/momentum");
   },
 
-  /* ── Paper trading (sim-mode only, never real money) ── */
-
-  /**
-   * Place a paper futures order in the simulator.
-   * The simulator enforces paper-trading mode server-side;
-   * this never touches real Binance funds.
-   */
-  placeFuturesOrder(order: FuturesOrder): Promise<unknown> {
-    return simFetch("/binance/futures/order", {
-      method: "POST",
-      body: JSON.stringify(order),
-    });
-  },
-
-  /** Close a single open paper position by symbol. */
-  closeFuturesPosition(symbol: string): Promise<unknown> {
-    return simFetch(`/binance/futures/order/${encodeURIComponent(symbol)}`, {
-      method: "DELETE",
-    });
-  },
-
-  /** Emergency: close all open paper positions. */
-  closeAllPositions(): Promise<unknown> {
-    return simFetch("/binance/futures/close-all", { method: "POST" });
-  },
-
-  /** Fetch current open paper positions. */
-  getOpenPositions(): Promise<FuturesPosition[]> {
-    return simFetch("/binance/futures/positions");
-  },
-
   /* ── User state ── */
 
   /** Read the simulator user's persisted state (settings, wallet). */
@@ -251,10 +216,11 @@ export const sim = {
    */
   async getMarketContext(): Promise<string> {
     try {
-      const [multi, overview, scalp] = await Promise.allSettled([
+      const [multi, overview, scalp, momentum] = await Promise.allSettled([
         sim.getBinanceMulti(),
         sim.getMarketOverview(),
         sim.getScalpSignals(),
+        sim.getMomentumCoins(),
       ]);
 
       const prices =
@@ -277,7 +243,12 @@ export const sim = {
           ? ` | Top signal: ${scalp.value[0].symbol} ${scalp.value[0].direction} @ ${scalp.value[0].entry} (conf ${Math.round(scalp.value[0].confidence * 100)}%)`
           : "";
 
-      return `Live market snapshot (paper trading simulator):\n${prices}${fg}${topSignal}`;
+      const topMomentum =
+        momentum.status === "fulfilled" && momentum.value.length > 0
+          ? ` | Momentum: ${momentum.value[0].symbol} ${momentum.value[0].direction} (RVol ${momentum.value[0].rvol.toFixed(1)}x)`
+          : "";
+
+      return `Live market snapshot (Reuven's trading fleet, paper simulator):\n${prices}${fg}${topSignal}${topMomentum}`;
     } catch (e) {
       return `Simulator unavailable: ${(e as Error).message}`;
     }
@@ -307,49 +278,12 @@ export const AGENT_TOOLS = [
       "Get a live market snapshot from the HeavyGuard trading simulator: prices, Fear & Greed, and top scalp signal. Call this before answering any trading question.",
     parameters: { type: "object", properties: {}, required: [] },
   },
-  {
-    name: "sim_get_positions",
-    description:
-      "Fetch currently open paper-trading positions in the HeavyGuard simulator.",
-    parameters: { type: "object", properties: {}, required: [] },
-  },
-  {
-    name: "sim_place_order",
-    description:
-      "Place a paper futures order in the HeavyGuard simulator. NEVER use for real money.",
-    parameters: {
-      type: "object",
-      properties: {
-        symbol: { type: "string", description: "e.g. BTCUSDT" },
-        side: { type: "string", enum: ["BUY", "SELL"] },
-        type: { type: "string", enum: ["MARKET", "LIMIT"] },
-        quantity: { type: "number" },
-        price: { type: "number", description: "Required for LIMIT orders" },
-        leverage: { type: "number", description: "1–20, default 1" },
-      },
-      required: ["symbol", "side", "type", "quantity"],
-    },
-  },
-  {
-    name: "sim_close_position",
-    description: "Close a single open paper position by symbol.",
-    parameters: {
-      type: "object",
-      properties: { symbol: { type: "string" } },
-      required: ["symbol"],
-    },
-  },
-  {
-    name: "sim_close_all",
-    description: "Emergency close-all: close every open paper position.",
-    parameters: { type: "object", properties: {}, required: [] },
-  },
 ];
 
 /** Handle a tool call coming back from the LLM for simulator tools. */
 export async function handleAgentToolCall(
   name: string,
-  input: Record<string, unknown>
+  _input: Record<string, unknown>
 ): Promise<string> {
   if (!isSimConfigured()) {
     return "Simulator not connected. Ask the owner to set the Simulator URL in Settings.";
@@ -358,29 +292,6 @@ export async function handleAgentToolCall(
     switch (name) {
       case "sim_market_context":
         return await sim.getMarketContext();
-      case "sim_get_positions": {
-        const pos = await sim.getOpenPositions();
-        return pos.length === 0
-          ? "No open positions."
-          : pos
-              .map(
-                (p) =>
-                  `${p.symbol}: ${p.positionAmt} @ ${p.entryPrice} | PnL ${parseFloat(p.unRealizedProfit).toFixed(2)} USDT`
-              )
-              .join("\n");
-      }
-      case "sim_place_order": {
-        const res = await sim.placeFuturesOrder(input as unknown as FuturesOrder);
-        return `Order placed: ${JSON.stringify(res)}`;
-      }
-      case "sim_close_position": {
-        await sim.closeFuturesPosition(input.symbol as string);
-        return `Position ${input.symbol} closed.`;
-      }
-      case "sim_close_all": {
-        await sim.closeAllPositions();
-        return "All positions closed.";
-      }
       default:
         return `Unknown simulator tool: ${name}`;
     }
