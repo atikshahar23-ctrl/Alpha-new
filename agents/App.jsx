@@ -3297,13 +3297,13 @@ function StyleTag() {
 .ac-face{width:100%;height:100%;object-fit:cover;border-radius:inherit;display:block;user-select:none}
 
 /* ── roster portraits: circular avatar + live dot + role badge ── */
-.ac-avatar-wrap{position:relative;width:46px;height:46px;flex-shrink:0}
+.ac-avatar-wrap{position:relative;width:68px;height:68px;flex-shrink:0}
 .ac-avatar-wrap--xl{width:62px;height:62px}
 .ac-avatar-wrap .ac-orb,.ac-avatar-wrap .ac-ceo-orb{width:100%;height:100%;border-radius:50%}
-.ac-avatar-live{position:absolute;bottom:1px;left:1px;width:13px;height:13px;border-radius:50%;background:#3FD79A;
-  border:2.5px solid #0a0a14;box-shadow:0 0 8px #3FD79A;animation:acDot 1.8s ease-in-out infinite}
-.ac-avatar-badge{position:absolute;top:-3px;right:-3px;width:22px;height:22px;border-radius:50%;background:var(--c);
-  color:#0c0a02;display:flex;align-items:center;justify-content:center;border:2.5px solid #0d0c1a;
+.ac-avatar-live{position:absolute;bottom:1px;left:1px;width:16px;height:16px;border-radius:50%;background:#3FD79A;
+  border:3px solid #0a0a14;box-shadow:0 0 8px #3FD79A;animation:acDot 1.8s ease-in-out infinite}
+.ac-avatar-badge{position:absolute;top:-4px;right:-4px;width:26px;height:26px;border-radius:50%;background:var(--c);
+  color:#0c0a02;display:flex;align-items:center;justify-content:center;border:3px solid #0d0c1a;
   box-shadow:0 2px 8px color-mix(in srgb,var(--c) 55%,transparent)}
 
 /* ── live dot ── */
