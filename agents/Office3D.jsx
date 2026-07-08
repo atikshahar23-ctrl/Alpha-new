@@ -7035,222 +7035,15 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       obj.userData.meta = meta;
       editableObjects.push(obj);
     };
-    {
-      // Car display moved off the room's dead center and out near the
-      // owner's office (owner request) — the floor's actual center is now
-      // the grounded Alpha hologram instead (built further below).
-      const CAR_SPOT = { x: 21, z: 18 };
-      const podium = new THREE.Mesh(
-        new THREE.CylinderGeometry(2.7, 2.9, 0.14, 40),
-        new THREE.MeshStandardMaterial({ color: 0x14161c, roughness: 0.35, metalness: 0.5 })
-      );
-      podium.position.set(CAR_SPOT.x, 0.07, CAR_SPOT.z);
-      podium.receiveShadow = true;
-      scene.add(podium);
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(2.8, 0.035, 8, 60), new THREE.MeshBasicMaterial({ color: 0xE4BC63 }));
-      ring.rotation.x = Math.PI / 2;
-      ring.position.set(CAR_SPOT.x, 0.15, CAR_SPOT.z);
-      scene.add(ring);
-      const spot = new THREE.PointLight(0xfff2d8, 0.7, 9);
-      spot.position.set(CAR_SPOT.x, 3.4, CAR_SPOT.z);
-      scene.add(spot);
-      obstacles.push({ x: CAR_SPOT.x, z: CAR_SPOT.z, r: 3.0 });
-      // Diagnostic "LIDAR" sweep — a glowing ring that rises over the car
-      // every ~18s, like a showroom scanner. One additive torus; the full
-      // post-process scan-line pass the spec asks for would cost more per
-      // frame than the entire car.
-      scanRing = new THREE.Mesh(
-        new THREE.TorusGeometry(2.45, 0.022, 8, 64),
-        new THREE.MeshBasicMaterial({ color: 0x2ee6ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false })
-      );
-      scanRing.rotation.x = Math.PI / 2;
-      scanRing.position.set(CAR_SPOT.x, 0.1, CAR_SPOT.z);
-      scanRing.visible = false;
-      scene.add(scanRing);
-      const carLoader = new GLTFLoader();
-      carLoader.setMeshoptDecoder(MeshoptDecoder);
-      carLoader.load(base + "office-models/tiggo7.glb", (g) => {
-        const car = g.scene;
-        const cb = new THREE.Box3().setFromObject(car);
-        const cs = cb.getSize(new THREE.Vector3());
-        const cc = cb.getCenter(new THREE.Vector3());
-        const s = 4.2 / Math.max(cs.x, cs.z);
-        const wrap = new THREE.Group();
-        car.position.set(-cc.x, -cb.min.y, -cc.z);
-        wrap.add(car);
-        wrap.scale.setScalar(s);
-        wrap.position.set(CAR_SPOT.x, 0.14, CAR_SPOT.z);
-        scene.add(wrap);
-        // Showroom automotive paint: body panels get a physical clearcoat
-        // (the lacquer-over-paint double reflection of real car paint) and
-        // the tinted glass becomes actual thin glass. Materials are shared
-        // palettes after optimization, so upgrades are mapped per-material.
-        const upgraded = new Map();
-        wrap.traverse((o) => {
-          if (!o.isMesh) return;
-          o.castShadow = true; o.matrixAutoUpdate = true;
-          const m = o.material;
-          if (!m || !m.isMeshStandardMaterial || m.isMeshPhysicalMaterial) return;
-          if (!upgraded.has(m)) {
-            const phys = new THREE.MeshPhysicalMaterial({
-              color: m.color ? m.color.clone() : new THREE.Color(0xffffff),
-              map: m.map || null,
-              normalMap: m.normalMap || null,
-              emissive: m.emissive ? m.emissive.clone() : new THREE.Color(0),
-              emissiveMap: m.emissiveMap || null,
-              emissiveIntensity: m.emissiveIntensity ?? 1,
-              side: m.side,
-              transparent: m.transparent,
-              opacity: m.opacity,
-            });
-            if (m.transparent && m.opacity < 0.9) {
-              // window glass — smooth, reflective, barely-there
-              phys.metalness = 0; phys.roughness = 0.05;
-              phys.opacity = Math.min(m.opacity, 0.35);
-              phys.envMapIntensity = 1.4;
-            } else {
-              phys.metalness = Math.max(m.metalness ?? 0, 0.55);
-              phys.roughness = Math.min(m.roughness ?? 1, 0.34);
-              phys.clearcoat = 1;
-              phys.clearcoatRoughness = 0.08;
-              phys.envMapIntensity = 1.1;
-            }
-            upgraded.set(m, phys);
-          }
-          o.material = upgraded.get(m);
-        });
-        centerSpin.push(wrap);
-        registerEditable(wrap, "TIGGO 7", false, {
-          origin_date: "2024", material_spec: "מתכת/פלסטיק, גימור מטאלי", security_level: "רגיל", maintenance_status: "תקין",
-        });
-        // Holographic data anchor — a glowing callout line from the hood up
-        // to a floating telemetry tag showing the REAL odometer reading from
-        // Heavy Guard's shared vehicle record (hg2:odometer), refreshed with
-        // the other live screens.
-        const holoCvs = document.createElement("canvas");
-        holoCvs.width = 512; holoCvs.height = 160;
-        const hx = holoCvs.getContext("2d");
-        const holoTex = new THREE.CanvasTexture(holoCvs);
-        holoTex.colorSpace = THREE.SRGBColorSpace;
-        const drawCarHolo = () => {
-          let odo = null;
-          try { odo = JSON.parse(localStorage.getItem("hg2:odometer") || "null"); } catch {}
-          hx.clearRect(0, 0, 512, 160);
-          hx.fillStyle = "rgba(6,14,24,.78)"; hx.fillRect(0, 0, 512, 160);
-          hx.strokeStyle = "rgba(46,230,255,.8)"; hx.lineWidth = 3; hx.strokeRect(2, 2, 508, 156);
-          hx.fillStyle = "#2ee6ff"; hx.font = "800 40px system-ui"; hx.textAlign = "right";
-          hx.fillText("TIGGO 7 PHEV", 492, 52);
-          hx.fillStyle = "#d7f6ff"; hx.font = "600 30px system-ui";
-          hx.fillText(odo && odo.km ? `ק"מ כולל: ${Number(odo.km).toLocaleString("he-IL")}` : "טלמטריה · Heavy Guard", 492, 100);
-          hx.fillStyle = "#8fd8e8"; hx.font = "500 24px system-ui";
-          hx.fillText((odo && odo.date ? odo.date + " · " : "") + "LIVE", 492, 142);
-          holoTex.needsUpdate = true;
-        };
-        drawCarHolo();
-        const holo = new THREE.Sprite(new THREE.SpriteMaterial({ map: holoTex, transparent: true, opacity: 0.92, depthWrite: false }));
-        holo.scale.set(1.9, 0.6, 1);
-        holo.position.set(-1.15, 2.75, -1.0);
-        scene.add(holo);
-        const anchorLine = new THREE.Line(
-          new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-2.1, 1.1, -1.0), new THREE.Vector3(-1.15, 2.45, -1.0)]),
-          new THREE.LineBasicMaterial({ color: 0x2ee6ff, transparent: true, opacity: 0.65 })
-        );
-        scene.add(anchorLine);
-        scene.userData.drawCarHolo = drawCarHolo;
-      }, undefined, () => { /* car download failed — podium stays as decor */ });
-    }
-
-    // ── Fleet showcase: the owner's real truck models on display podiums ──
-    // Same treatment as the Tiggo (podium + gold ring + spotlight + slow
-    // turn + clearcoat), placed in the two clear front corners flanking the
-    // desk ring — "around, not in the center", per the owner. Truck length
-    // normalized to 5.8 units (vs the car's 4.2 — a tractor unit really is
-    // ~1.4x a crossover). NW/NE corners verified clear: reception lives in
-    // the SW, the meeting nook's north edge is at z≈-19.8 so the NE podium
-    // at z=-26 keeps ~2.5 units of walkway past its 3.7 radius.
-    const TRUCKS = [
-      { url: "office-models/volvo_fh16.glb", x: -27, z: -24, label: "VOLVO FH16" },
-      { url: "office-models/man_tgx.glb", x: 25, z: -26, label: "MAN TGX V8" },
-    ];
-    // Exposed for the per-frame proximity check below (approaching a truck's
-    // sign fetches real info about that model).
-    scene.userData.trucks = TRUCKS.map((t) => ({ x: t.x, z: t.z, label: t.label }));
-    TRUCKS.forEach((t) => {
-      const podium = new THREE.Mesh(
-        new THREE.CylinderGeometry(3.5, 3.7, 0.14, 40),
-        new THREE.MeshStandardMaterial({ color: 0x14161c, roughness: 0.35, metalness: 0.5 })
-      );
-      podium.position.set(t.x, 0.07, t.z);
-      podium.receiveShadow = true;
-      scene.add(podium);
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(3.6, 0.035, 8, 60), new THREE.MeshBasicMaterial({ color: 0xE4BC63 }));
-      ring.rotation.x = Math.PI / 2;
-      ring.position.set(t.x, 0.15, t.z);
-      scene.add(ring);
-      const spot = new THREE.PointLight(0xfff2d8, 0.7, 11);
-      spot.position.set(t.x, 4.2, t.z);
-      scene.add(spot);
-      obstacles.push({ x: t.x, z: t.z, r: 3.8 });
-      const sign = buildNeonSign(t.label, 0xE4BC63, 2.2, 0.45);
-      sign.position.set(t.x, 4.6, t.z);
-      scene.add(sign);
-      const loader = new GLTFLoader();
-      loader.setMeshoptDecoder(MeshoptDecoder);
-      loader.load(base + t.url, (g) => {
-        const truck = g.scene;
-        const tb = new THREE.Box3().setFromObject(truck);
-        const ts = tb.getSize(new THREE.Vector3());
-        const tc = tb.getCenter(new THREE.Vector3());
-        const s = 5.8 / Math.max(ts.x, ts.z);
-        const wrap = new THREE.Group();
-        truck.position.set(-tc.x, -tb.min.y, -tc.z);
-        wrap.add(truck);
-        wrap.scale.setScalar(s);
-        wrap.position.set(t.x, 0.14, t.z);
-        scene.add(wrap);
-        // Same showroom clearcoat upgrade the car gets — paint gets the
-        // lacquer double-reflection, tinted glass becomes actual glass.
-        const upgraded = new Map();
-        wrap.traverse((o) => {
-          if (!o.isMesh) return;
-          o.castShadow = true; o.matrixAutoUpdate = true;
-          const m = o.material;
-          if (!m || !m.isMeshStandardMaterial || m.isMeshPhysicalMaterial) return;
-          if (!upgraded.has(m)) {
-            const phys = new THREE.MeshPhysicalMaterial({
-              color: m.color ? m.color.clone() : new THREE.Color(0xffffff),
-              map: m.map || null,
-              normalMap: m.normalMap || null,
-              metalnessMap: m.metalnessMap || null,
-              roughnessMap: m.roughnessMap || null,
-              emissive: m.emissive ? m.emissive.clone() : new THREE.Color(0),
-              emissiveMap: m.emissiveMap || null,
-              emissiveIntensity: m.emissiveIntensity ?? 1,
-              side: m.side,
-              transparent: m.transparent,
-              opacity: m.opacity,
-            });
-            if (m.transparent && m.opacity < 0.9) {
-              phys.metalness = 0; phys.roughness = 0.05;
-              phys.opacity = Math.min(m.opacity, 0.35);
-              phys.envMapIntensity = 1.4;
-            } else {
-              phys.metalness = m.metalness ?? 0.3;
-              phys.roughness = Math.min(m.roughness ?? 1, 0.5);
-              phys.clearcoat = 0.7;
-              phys.clearcoatRoughness = 0.12;
-              phys.envMapIntensity = 1.0;
-            }
-            upgraded.set(m, phys);
-          }
-          o.material = upgraded.get(m);
-        });
-        centerSpin.push(wrap);
-        registerEditable(wrap, t.label, false, {
-          origin_date: "2024", material_spec: "פלדה/אלומיניום, תא נהג מרופד", security_level: "רגיל", maintenance_status: "תקין",
-        });
-      }, undefined, () => { /* truck download failed — podium stays as decor */ });
-    });
+    // (The Tiggo 7 + fleet-truck showroom podiums that used to stand on the
+    // main floor were moved out to the Hangar's vehicle bay — owner request,
+    // spaceship retheme. The Hangar already parks a drivable Tiggo 7 and
+    // Volvo FH16 there, reached through the office's Hangar door, so the
+    // vehicles live in one place instead of duplicated on bridge podiums.
+    // scanRing / centerSpin stay declared above but empty — the LIDAR sweep
+    // and turntable spin simply have nothing to act on now, and every
+    // consumer already guards on `scanRing`/`centerSpin.length`.)
+    scene.userData.trucks = []; // no bridge truck signs — vehicles are in the Hangar now
 
     // ── RQ-180 display, near the east window band — walk up to it and a
     // "Take Flight" prompt appears, opening the flight simulator overlay.
@@ -8771,10 +8564,12 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       setInSpace(false);
     };
     liveRef.current.toggleSit = () => setSitting((v) => (v ? false : !!liveRef.current.canSit));
-    // Vehicle position is the showroom car's fixed spot (see the GLTF load
-    // above) — a static display piece, so a fixed cockpit offset/look
-    // target is enough; no vehicle rotation to account for.
-    const VEHICLE_POS = { x: 21, z: 18 };
+    // The showroom Tiggo moved to the Hangar's vehicle bay, so there's no
+    // car on the bridge to "enter" — parked far off-grid so the proximity
+    // check below can never fire a ghost prompt where the podium used to be.
+    // (Driving is still available from beside the parked Tiggo in the
+    // Hangar, which has always had its own enter-to-drive flow.)
+    const VEHICLE_POS = { x: 99999, z: 99999 };
     const VEHICLE_CAM = new THREE.Vector3(21, 1.35, 18.85);
     const VEHICLE_LOOK = new THREE.Vector3(21, 1.1, 15.5);
     liveRef.current.toggleVehicle = () => {
