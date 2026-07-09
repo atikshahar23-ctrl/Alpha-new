@@ -6007,21 +6007,66 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // and galaxies" view the ship actually flies through.
     const nearBuildingMats = []; // kept empty — the old night window-glow ramp now no-ops
     const spaceSpin = []; // slow-rotating bodies, ticked in animate()
+    let earthGroup = null; // the orbital Earth (fleet-deploy target), assigned in the block below
     {
-      // Ringed gas giant, large, off to port and set well back.
-      const giant = new THREE.Mesh(
-        new THREE.SphereGeometry(16, 40, 32),
-        new THREE.MeshStandardMaterial({ color: 0x35507e, emissive: 0x0a1730, emissiveIntensity: 0.4, roughness: 1, metalness: 0, fog: false })
+      // ── The planet below: Earth, filling the lower viewport ─────────────
+      // The ship is in orbit; the forward window overlooks a rotating,
+      // atmospheric Earth (Orbital Fleet Deployment). Procedural: an ocean
+      // sphere with green/tan landmass blobs + white poles, a drifting cloud
+      // shell, and an additive atmosphere rim. `earthGroup` is the fleet-drop
+      // target (nodes/lasers parent to it so they rotate with the surface).
+      const earthCvs = document.createElement("canvas"); earthCvs.width = 1024; earthCvs.height = 512;
+      const ex = earthCvs.getContext("2d");
+      const og = ex.createLinearGradient(0, 0, 0, 512);
+      og.addColorStop(0, "#0a2a5e"); og.addColorStop(0.5, "#0e3f79"); og.addColorStop(1, "#0a2a5e");
+      ex.fillStyle = og; ex.fillRect(0, 0, 1024, 512);
+      const eRnd = mulberry32(88);
+      const land = ["#1f6b3a", "#2a7d42", "#3a6a2c", "#6b5a2c", "#7a6636"];
+      for (let i = 0; i < 46; i++) {
+        ex.fillStyle = land[Math.floor(eRnd() * land.length)];
+        const cx = eRnd() * 1024, cy = 60 + eRnd() * 392, blobs = 5 + Math.floor(eRnd() * 7);
+        ex.beginPath();
+        for (let b = 0; b < blobs; b++) {
+          const bx = cx + (eRnd() - 0.5) * 150, by = cy + (eRnd() - 0.5) * 90, br = 12 + eRnd() * 48;
+          ex.moveTo(bx + br, by); ex.arc(bx, by, br, 0, Math.PI * 2);
+        }
+        ex.fill();
+      }
+      // polar caps
+      ex.fillStyle = "rgba(240,248,255,.85)";
+      ex.fillRect(0, 0, 1024, 34); ex.fillRect(0, 478, 1024, 34);
+      const earthTex = new THREE.CanvasTexture(earthCvs); earthTex.colorSpace = THREE.SRGBColorSpace;
+      const EARTH_R = 40, EARTH_POS = new THREE.Vector3(0, -30, nwz - 82);
+      earthGroup = new THREE.Group();
+      earthGroup.position.copy(EARTH_POS);
+      const earthMesh = new THREE.Mesh(
+        new THREE.SphereGeometry(EARTH_R, 64, 48),
+        new THREE.MeshStandardMaterial({ map: earthTex, emissive: 0x0a1a33, emissiveIntensity: 0.35, roughness: 1, metalness: 0, fog: false })
       );
-      giant.position.set(-48, 26, nwz - 72);
-      scene.add(giant); spaceSpin.push(giant);
-      const giantRing = new THREE.Mesh(
-        new THREE.RingGeometry(20, 31, 72),
-        new THREE.MeshBasicMaterial({ color: 0xcdb98a, transparent: true, opacity: 0.38, side: THREE.DoubleSide, fog: false })
+      earthGroup.add(earthMesh);
+      // drifting cloud shell
+      const cloudCvs2 = document.createElement("canvas"); cloudCvs2.width = 1024; cloudCvs2.height = 512;
+      const cx2 = cloudCvs2.getContext("2d");
+      for (let i = 0; i < 70; i++) {
+        cx2.fillStyle = `rgba(255,255,255,${(0.12 + eRnd() * 0.3).toFixed(2)})`;
+        const cwx = eRnd() * 1024, cwy = eRnd() * 512, cwr = 14 + eRnd() * 40;
+        cx2.beginPath(); cx2.ellipse(cwx, cwy, cwr, cwr * 0.5, eRnd() * Math.PI, 0, Math.PI * 2); cx2.fill();
+      }
+      const cloudTex2 = new THREE.CanvasTexture(cloudCvs2); cloudTex2.colorSpace = THREE.SRGBColorSpace;
+      const earthClouds = new THREE.Mesh(
+        new THREE.SphereGeometry(EARTH_R * 1.015, 48, 32),
+        new THREE.MeshStandardMaterial({ map: cloudTex2, transparent: true, opacity: 0.55, roughness: 1, depthWrite: false, fog: false })
       );
-      giantRing.rotation.x = Math.PI / 2.3; giantRing.rotation.z = 0.35;
-      giantRing.position.copy(giant.position);
-      scene.add(giantRing);
+      earthGroup.add(earthClouds);
+      earthGroup.userData.clouds = earthClouds;
+      // additive atmosphere rim (backside shell)
+      const atmo = new THREE.Mesh(
+        new THREE.SphereGeometry(EARTH_R * 1.09, 48, 32),
+        new THREE.MeshBasicMaterial({ color: 0x5aa8ff, transparent: true, opacity: 0.16, side: THREE.BackSide, blending: THREE.AdditiveBlending, depthWrite: false, fog: false })
+      );
+      earthGroup.add(atmo);
+      earthGroup.rotation.z = 0.35; // axial tilt
+      scene.add(earthGroup);
 
       // Spiral galaxy — a glowing disc (procedural spiral canvas) far off to
       // starboard, additive so it reads as light, not a solid plate.
@@ -6089,6 +6134,108 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       scene.add(station);
       scene.userData.tallB = { x: 30, h: 22, z: nwz - 30, d: 4 }; // billboard/beacon anchor
     }
+
+    // ── Orbital Fleet Deployment ─────────────────────────────────────────
+    // The ship deploys Heavy Guard fleets to the planet below: when a big
+    // install ticket is confirmed, glowing drop-pods arc down to Earth, impact
+    // into an expanding shockwave, and leave a permanent "secured" node linked
+    // back to the ship by a live, pulsing telemetry laser. Ticked from the
+    // animate loop via updateFleetOps(dt); triggered by the war-table ticket
+    // schedule (liveRef.current.deployFleet) plus an opening volley.
+    const fleetShipPoint = new THREE.Vector3(0, 2.2, nwz + 3);
+    const fleetPods = [];    // in-flight drop pods
+    const fleetShocks = [];  // expanding impact rings (children of earthGroup)
+    const fleetNodes = [];   // { node, laser, lm } secured surface nodes + telemetry
+    const EARTH_R2 = 40;
+    const podCoreMat = new THREE.MeshBasicMaterial({ color: 0x8fe6ff, fog: false });
+    const nodeCoreMat = new THREE.MeshBasicMaterial({ color: 0x3fd79a, fog: false });
+    const surfacePointLocal = () => {
+      // a point on the hemisphere facing the ship + upper side (visible through
+      // the window), in earthGroup-local coords, on the surface.
+      for (let tries = 0; tries < 16; tries++) {
+        const v = new THREE.Vector3(Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random() * 2 - 1).normalize();
+        if (v.z > 0.25 && v.y > 0.15) return v.multiplyScalar(EARTH_R2);
+      }
+      return new THREE.Vector3(0.2, 0.5, 0.8).normalize().multiplyScalar(EARTH_R2);
+    };
+    const deployDrop = (count = 1) => {
+      if (!earthGroup) return;
+      earthGroup.updateWorldMatrix(true, false);
+      for (let i = 0; i < count; i++) {
+        const local = surfacePointLocal();
+        const pod = new THREE.Mesh(new THREE.SphereGeometry(0.5, 10, 8), podCoreMat);
+        const trail = new THREE.Mesh(
+          new THREE.ConeGeometry(0.32, 2.6, 8),
+          new THREE.MeshBasicMaterial({ color: 0x2ee6ff, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, fog: false })
+        );
+        trail.position.z = -1.5; trail.rotation.x = -Math.PI / 2; pod.add(trail);
+        pod.position.copy(fleetShipPoint);
+        scene.add(pod);
+        const target = earthGroup.localToWorld(local.clone());
+        const ctrl = fleetShipPoint.clone().lerp(target, 0.5).add(new THREE.Vector3((Math.random() - 0.5) * 24, 22 + Math.random() * 10, 4));
+        fleetPods.push({ mesh: pod, t: -i * 0.3, dur: 2.0 + Math.random() * 0.5, p0: fleetShipPoint.clone(), p1: ctrl, p2: target, local });
+      }
+    };
+    const updateFleetOps = (dt) => {
+      if (earthGroup) {
+        earthGroup.rotation.y += dt * 0.03;
+        if (earthGroup.userData.clouds) earthGroup.userData.clouds.rotation.y += dt * 0.006;
+      }
+      for (let i = fleetPods.length - 1; i >= 0; i--) {
+        const p = fleetPods[i];
+        p.t += dt;
+        if (p.t < 0) continue;
+        const u = Math.min(1, p.t / p.dur);
+        const a = p.p0.clone().lerp(p.p1, u), b = p.p1.clone().lerp(p.p2, u);
+        p.mesh.position.copy(a.lerp(b, u));
+        p.mesh.lookAt(p.p2);
+        if (u >= 1) {
+          scene.remove(p.mesh);
+          p.mesh.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
+          const nrm = p.local.clone().normalize();
+          const shock = new THREE.Mesh(
+            new THREE.RingGeometry(0.3, 0.75, 32),
+            new THREE.MeshBasicMaterial({ color: 0x6fffc0, transparent: true, opacity: 0.95, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false, fog: false })
+          );
+          shock.position.copy(p.local);
+          shock.lookAt(p.local.clone().add(nrm));
+          earthGroup.add(shock);
+          fleetShocks.push({ mesh: shock, t: 0 });
+          const node = new THREE.Mesh(new THREE.SphereGeometry(0.55, 10, 8), nodeCoreMat);
+          node.position.copy(p.local.clone().multiplyScalar(1.012));
+          earthGroup.add(node);
+          const lm = new THREE.LineBasicMaterial({ color: 0x3fd79a, transparent: true, opacity: 0.6 });
+          const laser = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()]), lm);
+          scene.add(laser);
+          fleetNodes.push({ node, laser, lm });
+          liveRef.current.showToast?.("🛰️ צי Heavy Guard נפרס — אתר מאובטח ✓");
+          fleetPods.splice(i, 1);
+        }
+      }
+      for (let i = fleetShocks.length - 1; i >= 0; i--) {
+        const s = fleetShocks[i]; s.t += dt;
+        const k = s.t / 1.2;
+        s.mesh.scale.setScalar(1 + k * 10);
+        s.mesh.material.opacity = Math.max(0, 0.95 * (1 - k));
+        if (k >= 1) { earthGroup.remove(s.mesh); s.mesh.geometry.dispose(); s.mesh.material.dispose(); fleetShocks.splice(i, 1); }
+      }
+      if (fleetNodes.length) {
+        const tmp = new THREE.Vector3();
+        for (const fn of fleetNodes) {
+          fn.node.getWorldPosition(tmp);
+          const p0 = tmp.clone(), p2 = fleetShipPoint;
+          const p1 = p0.clone().lerp(p2, 0.5).add(new THREE.Vector3(0, 14, 0));
+          const pts = [];
+          for (let s = 0; s <= 12; s++) { const u = s / 12; const a = p0.clone().lerp(p1, u), b = p1.clone().lerp(p2, u); pts.push(a.lerp(b, u)); }
+          fn.laser.geometry.setFromPoints(pts);
+          fn.lm.opacity = 0.3 + 0.35 * (0.5 + 0.5 * Math.sin(clock.elapsedTime * 3 + p0.x));
+        }
+      }
+    };
+    liveRef.current.deployFleet = deployDrop;
+    // Opening deployment so the orbital command reads as live from the start.
+    deployDrop(2);
+    setTimeout(() => { try { deployDrop(3); } catch {} }, 6500);
 
     // A blinking red collision-avoidance beacon on the tallest module — the
     // kind of small real-detail that reads as a genuinely inhabited field
@@ -6633,6 +6780,8 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       if (nearest && bestD < 1.3) {
         obj.position.set(nearest.wx, 1.02, nearest.wz);
         liveRef.current.showToast?.(`מיכל: 🚛 נקבע ליום ${nearest.label} — ההתקנה מתוזמנת ✓`);
+        // Scheduling a fleet install fires an orbital drop to the planet below.
+        liveRef.current.deployFleet?.(1);
       } else {
         obj.position.y = 1.0;
       }
@@ -7879,6 +8028,9 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       for (let si = 0; si < spaceSpin.length; si++) spaceSpin[si].rotation.y += dt * (0.02 + (si % 5) * 0.006);
       // god-ray shafts breathe softly so the volumetric light feels alive
       for (let gi = 0; gi < godRayMats.length; gi++) godRayMats[gi].opacity = 0.09 + 0.05 * (0.5 + 0.5 * Math.sin(clock.elapsedTime * 0.5 + gi * 0.9));
+      // orbital fleet deployment: Earth spin, drop-pod flight, impact
+      // shockwaves and live telemetry-laser links to the secured nodes
+      updateFleetOps(dt);
       planeGroup.position.x += dt * 3.2;
       if (planeGroup.position.x > 85) planeGroup.position.x = -85 - Math.random() * 160;
       planeBeacon.material.opacity = (Math.sin(clock.elapsedTime * 6) > 0.4) ? 0.95 : 0.08;
