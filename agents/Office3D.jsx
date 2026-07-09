@@ -5840,25 +5840,31 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     ceiling.rotation.x = Math.PI / 2;
     ceiling.position.y = 5.4;
     scene.add(ceiling);
-    // Designer hanging pendant lamps over each desk column — an emissive
-    // glass globe on a slim cord, for a more upscale/luxurious ceiling. Each
-    // column also gets a real, non-shadow-casting PointLight (cheap — no
-    // shadow map) so the room actually stays lit in the evening/night phases
-    // instead of just going dim with the outside sky; ramped in animate()
-    // below alongside the sun/ambient lerp.
-    const officeGlobeMat = new THREE.MeshStandardMaterial({ color: 0xfff2d0, emissive: 0xffe6b0, emissiveIntensity: 0.9, roughness: 0.3 });
+    // Recessed hull strip-lighting flush to the ceiling — cool cyan-white
+    // bars set INTO the ceiling panels (no hanging office pendants, no warm
+    // globes-on-cords, which were the biggest "corporate drop-ceiling" tell).
+    // Each column also gets a cool, non-shadow-casting PointLight so the deck
+    // stays lit in the evening/night phases; ramped in animate() below
+    // alongside the sun/ambient lerp (interiorLights is read there).
+    const stripMat = new THREE.MeshBasicMaterial({ color: 0xbfeeff, toneMapped: false });
     const interiorLights = [];
     {
-      const cordMat = new THREE.MeshStandardMaterial({ color: 0x0c0e13, roughness: 0.5, metalness: 0.6 });
       const cols = [...new Set(deskPositions.map((d) => Math.round(toWorld(d.x, d.y)[0])))];
       cols.forEach((cx) => {
-        [-6.8, 0, 6.8].forEach((cz) => {
-          const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 1.1, 6), cordMat);
-          cord.position.set(cx + 0.8, 4.85, cz); scene.add(cord);
-          const globe = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 12), officeGlobeMat);
-          globe.position.set(cx + 0.8, 4.25, cz); scene.add(globe);
+        [-9, -3, 3, 9].forEach((cz) => {
+          // a flush recessed light bar running across the ceiling (thin, just
+          // below the 5.4m ceiling plane so it reads as an inset panel)
+          const bar = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.05, 0.32), stripMat);
+          bar.position.set(cx + 0.8, 5.33, cz);
+          scene.add(bar);
+          const halo = new THREE.Mesh(
+            new THREE.PlaneGeometry(2.9, 0.8),
+            new THREE.MeshBasicMaterial({ color: 0x9fe6ff, transparent: true, opacity: 0.16, depthWrite: false, toneMapped: false })
+          );
+          halo.rotation.x = Math.PI / 2; halo.position.set(cx + 0.8, 5.28, cz);
+          scene.add(halo);
         });
-        const roomLight = new THREE.PointLight(0xffdba0, 0.3, 15, 1.7);
+        const roomLight = new THREE.PointLight(0xbfe6ff, 0.3, 15, 1.7);
         roomLight.position.set(cx + 0.8, 3.9, 0);
         scene.add(roomLight);
         interiorLights.push(roomLight);
@@ -6234,21 +6240,21 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     );
     trafficStrip.position.set(nwx, 0.42, nwz - 4);
     scene.add(trafficStrip);
-    // Window mullions for structure over the glass.
-    const mullionMat = new THREE.MeshStandardMaterial({ color: 0x0e1220, roughness: 0.6 });
-    for (let i = -5; i <= 5; i++) {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(0.08, 6.4, 0.1), mullionMat);
-      m.position.set(i * (FLOOR_W / 11), 3.2, nwz + 0.03);
-      scene.add(m);
-    }
-    // Painted walls — slate-blue plaster with a dark wainscot + brass trim
-    // (buildWallTexture). The side walls got the paint job, and the south
-    // side finally gets a REAL wall: it never existed, so the big wall
-    // screen and the art there floated against the open sky, which is a
-    // big part of why that side of the room shimmered. Front-side only,
-    // facing in — the chase camera outside the south edge sees through it.
-    const wallMat = new THREE.MeshStandardMaterial({ map: buildWallTexture(5), roughness: 0.85, metalness: 0.05 });
-    const wallL = new THREE.Mesh(new THREE.PlaneGeometry(FLOOR_D, 6.4), wallMat);
+    // ══════════════════════════════════════════════════════════════════
+    // STARSHIP HULL — the structure around the agents is a command deck,
+    // not an office room: dark gunmetal bulkhead walls, chunky viewport
+    // frames onto space, fuselage ribs arching overhead, corner hull
+    // columns and a glowing conduit spine. (Owner: "the whole structure
+    // should look like a futuristic spaceship, not a New York office.")
+    // ══════════════════════════════════════════════════════════════════
+    const hullMat = new THREE.MeshStandardMaterial({ map: buildWallTexture(5), roughness: 0.7, metalness: 0.55 });
+    const hullDark = new THREE.MeshStandardMaterial({ color: 0x0c0f16, roughness: 0.55, metalness: 0.7 });
+    const hullGlow = new THREE.MeshBasicMaterial({ color: 0x2ee6ff });
+    const hullGlowSoft = new THREE.MeshBasicMaterial({ color: 0x2ee6ff, transparent: true, opacity: 0.4 });
+
+    // Side + aft bulkhead walls (kept solid — the forward wall is the big
+    // viewport onto space, built from the skyline plane further up).
+    const wallL = new THREE.Mesh(new THREE.PlaneGeometry(FLOOR_D, 6.4), hullMat);
     wallL.rotation.y = Math.PI / 2;
     wallL.position.set(-(FLOOR_W / 2) - 0.05, 3.2, 0);
     scene.add(wallL);
@@ -6258,76 +6264,118 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     scene.add(wallR);
     const wallS = new THREE.Mesh(
       new THREE.PlaneGeometry(FLOOR_W, 6.4),
-      new THREE.MeshStandardMaterial({ map: buildWallTexture(6), roughness: 0.85, metalness: 0.05 })
+      new THREE.MeshStandardMaterial({ map: buildWallTexture(6), roughness: 0.7, metalness: 0.55 })
     );
     wallS.rotation.y = Math.PI;
     wallS.position.set(0, 3.2, FLOOR_D / 2 + 0.05);
     scene.add(wallS);
 
-    // High clerestory window band on the east wall — a second slice of the
-    // starfield visible from the dining/owner side, using the same space-view
-    // canvas with its own offset/repeat so it reads as a different patch of sky.
-    const eastWinTex = skyline.tex.clone();
-    eastWinTex.repeat.set(0.34, 0.42);
-    eastWinTex.offset.set(0.42, 0.12);
-    eastWinTex.needsUpdate = true;
-    {
-      const bandFrame = new THREE.Mesh(new THREE.PlaneGeometry(13.5, 2.3), new THREE.MeshBasicMaterial({ color: 0x0a0e18 }));
-      bandFrame.rotation.y = -Math.PI / 2;
-      bandFrame.position.set(FLOOR_W / 2 - 0.02, 4.2, -4.5);
-      scene.add(bandFrame);
-      const band = new THREE.Mesh(new THREE.PlaneGeometry(13, 1.9), new THREE.MeshBasicMaterial({ map: eastWinTex, fog: false }));
-      band.rotation.y = -Math.PI / 2;
-      band.position.set(FLOOR_W / 2 - 0.06, 4.2, -4.5);
-      scene.add(band);
-      for (let i = -2; i <= 2; i++) {
-        const m = new THREE.Mesh(new THREE.BoxGeometry(0.09, 2.1, 0.07), mullionMat);
-        m.rotation.y = -Math.PI / 2;
-        m.position.set(FLOOR_W / 2 - 0.08, 4.2, -4.5 + i * 3.25);
-        scene.add(m);
-      }
+    // Chunky forward-viewport frame over the space window (replaces the
+    // thin office window-mullions): a few heavy hull dividers with a cyan
+    // light channel, so the forward wall reads as a bridge canopy.
+    for (let i = -3; i <= 3; i++) {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.28, 6.4, 0.35), hullDark);
+      post.position.set(i * (FLOOR_W / 7), 3.2, nwz + 0.06);
+      scene.add(post);
+      const lightCh = new THREE.Mesh(new THREE.BoxGeometry(0.06, 6.0, 0.02), hullGlowSoft);
+      lightCh.position.set(i * (FLOOR_W / 7), 3.2, nwz + 0.25);
+      scene.add(lightCh);
+    }
+    // Header + sill beams framing the forward canopy top and bottom.
+    [[5.9, 0x0c0f16], [0.5, 0x0c0f16]].forEach(([yy]) => {
+      const beam = new THREE.Mesh(new THREE.BoxGeometry(FLOOR_W, 0.5, 0.4), hullDark);
+      beam.position.set(0, yy, nwz + 0.1);
+      scene.add(beam);
+      const strip = new THREE.Mesh(new THREE.BoxGeometry(FLOOR_W, 0.06, 0.02), hullGlowSoft);
+      strip.position.set(0, yy, nwz + 0.31);
+      scene.add(strip);
+    });
+
+    // Fuselage ribs — shallow structural arches spanning the deck from wall
+    // to wall, the defining "inside a ship's hull" cue. A half-torus (radius
+    // = half the deck width) flattened in Y so it springs from ~2.5m up each
+    // side wall and peaks just under the ceiling, repeated down the length.
+    const ribR = FLOOR_W / 2;
+    const ribBaseY = 2.4;
+    const ribScaleY = (5.4 - ribBaseY) / ribR; // peak just under the 5.4m ceiling
+    for (let z = -FLOOR_D / 2 + 5; z <= FLOOR_D / 2 - 5; z += 9) {
+      const rib = new THREE.Mesh(new THREE.TorusGeometry(ribR, 0.34, 8, 60, Math.PI), hullDark);
+      rib.scale.y = ribScaleY;
+      rib.position.set(0, ribBaseY, z);
+      scene.add(rib);
+      // bright cyan conduit running along the inner edge of the rib, on both
+      // faces, so the arch clearly reads as ship structure from across the deck
+      [z + 0.26, z - 0.26].forEach((cz) => {
+        const conduit = new THREE.Mesh(new THREE.TorusGeometry(ribR - 0.3, 0.07, 6, 60, Math.PI), hullGlow);
+        conduit.scale.y = ribScaleY;
+        conduit.position.set(0, ribBaseY, cz);
+        scene.add(conduit);
+      });
+    }
+    // Longitudinal conduit spine — a glowing line running fore-to-aft along
+    // the ceiling apex, tying the ribs together like a real fuselage keel.
+    const spine = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, FLOOR_D - 6), hullGlow);
+    spine.position.set(0, 5.25, 0);
+    scene.add(spine);
+
+    // Corner hull columns — chunky structural pillars at the four corners
+    // with a vertical cyan light seam, grounding the deck in real structure.
+    [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([sx, sz]) => {
+      const col = new THREE.Mesh(new THREE.BoxGeometry(1.1, 6.4, 1.1), hullDark);
+      col.position.set(sx * (FLOOR_W / 2 - 0.9), 3.2, sz * (FLOOR_D / 2 - 0.9));
+      scene.add(col);
+      const seam = new THREE.Mesh(new THREE.BoxGeometry(0.09, 5.4, 0.09), hullGlowSoft);
+      seam.position.set(sx * (FLOOR_W / 2 - 0.34), 3.0, sz * (FLOOR_D / 2 - 0.34));
+      scene.add(seam);
+    });
+
+    // Side-wall viewports onto space — two tall angled windows per side wall
+    // (port + starboard) so the deck is ringed by stars, not blank bulkhead.
+    const sideWinTex = skyline.tex.clone();
+    sideWinTex.repeat.set(0.3, 0.5);
+    sideWinTex.offset.set(0.4, 0.1);
+    sideWinTex.needsUpdate = true;
+    [-1, 1].forEach((side) => {
+      [-11, 11].forEach((zc) => {
+        const frame = new THREE.Mesh(new THREE.PlaneGeometry(9, 3.0), hullDark);
+        frame.rotation.y = side < 0 ? Math.PI / 2 : -Math.PI / 2;
+        frame.position.set(side * (FLOOR_W / 2 - 0.03), 3.4, zc);
+        scene.add(frame);
+        const win = new THREE.Mesh(new THREE.PlaneGeometry(8.3, 2.4), new THREE.MeshBasicMaterial({ map: sideWinTex, fog: false }));
+        win.rotation.y = frame.rotation.y;
+        win.position.set(side * (FLOOR_W / 2 - 0.07), 3.4, zc);
+        scene.add(win);
+        // glowing frame edge
+        const edge = new THREE.Mesh(new THREE.PlaneGeometry(8.7, 0.08), hullGlowSoft);
+        edge.rotation.y = frame.rotation.y;
+        edge.position.set(side * (FLOOR_W / 2 - 0.06), 4.65, zc);
+        scene.add(edge);
+      });
+    });
+
+    // Radial deck conduits — glowing lines running out from the central
+    // agent/hologram core toward the hull, so the layout literally reads as
+    // "the crew is the heart of the ship." Each is a flat strip parented to
+    // a group that's spun around vertical to point outward (robust vs. the
+    // fragile double-Euler approach). Thin, just above the floor, no collision.
+    for (let a = 0; a < 8; a++) {
+      const ang = (a / 8) * Math.PI * 2;
+      const len = 26, gap = 3.5;
+      const g2 = new THREE.Group();
+      const strip = new THREE.Mesh(new THREE.PlaneGeometry(0.16, len), hullGlowSoft);
+      strip.rotation.x = -Math.PI / 2;
+      strip.position.z = len / 2 + gap;
+      g2.add(strip);
+      g2.position.set(-2.5, 0.03, -1.0); // the central hologram core (SUN_SPOT)
+      g2.rotation.y = ang;
+      scene.add(g2);
     }
 
-    // Lounge corner + bookshelf for a lived-in office feel — the user's own
-    // furniture pack pieces (real sofa, coffee table, floor lamp, wall TV)
-    // replace the earlier procedural couch when the model loads; falls back
-    // to the procedural one so the corner is never empty.
-    if (furnitureTemplate) {
-      placeFurniturePiece(scene, furnitureTemplate, "sofa_001", -14.3, 0, 12.8, Math.PI);
-      placeFurniturePiece(scene, furnitureTemplate, "coffee_table_001", -14.3, 0, 10.7, 0);
-      placeFurniturePiece(scene, furnitureTemplate, "lamp_002", -11.0, 0, 14.0, 0);
-      placeFurniturePiece(scene, furnitureTemplate, "flower_001", -17.9, 0, 13.4, 0);
-      // A little "treat/surprise" — an air-hockey table between the lounge
-      // and dining room, for the cozy-office-with-perks feel.
-      placeFurniturePiece(scene, furnitureTemplate, "air_hockey_001", -5.3, 0, 12.3, Math.PI / 2);
-      // Storage corner (south-east) — closet, dresser, a stacked box, and a
-      // couple of toys tucked by it for a lived-in, playful touch.
-      placeFurniturePiece(scene, furnitureTemplate, "closet_001", 13.5, 0, -14.3, 0);
-      placeFurniturePiece(scene, furnitureTemplate, "dresser_001", 15.9, 0, -14.3, 0);
-      placeFurniturePiece(scene, furnitureTemplate, "box_001", 17.4, 0, -13.8, 0);
-      placeFurniturePiece(scene, furnitureTemplate, "toy_001", 12.5, 0, -12.9, 0.6);
-      placeFurniturePiece(scene, furnitureTemplate, "toy_002", 13.1, 0, -12.3, -0.4);
-      // Break-room kitchenette (east wall) — a counter with small appliances
-      // and clutter, plus a fridge and sink, near the existing dining tables.
-      placeFurniturePiece(scene, furnitureTemplate, "kitchen_table_001", 18.4, 0, 5.6, Math.PI / 2);
-      placeFurniturePiece(scene, furnitureTemplate, "fridge_001", 18.8, 0, 1.5, -Math.PI / 2);
-      placeFurniturePiece(scene, furnitureTemplate, "kitchen_sink_001", 18.8, 0, 7.6, -Math.PI / 2);
-      placeFurniturePiece(scene, furnitureTemplate, "coffee_machine_001", 18.3, 1.036, 5.0, 0);
-      placeFurniturePiece(scene, furnitureTemplate, "microwave_oven_001", 18.5, 1.036, 6.1, 0);
-      placeFurniturePiece(scene, furnitureTemplate, "dish_001", 18.15, 1.036, 5.5, 0);
-      placeFurniturePiece(scene, furnitureTemplate, "dish_002", 18.75, 1.036, 5.8, 0);
-      placeFurniturePiece(scene, furnitureTemplate, "drink_001", 18.25, 1.036, 5.9, 0);
-      placeFurniturePiece(scene, furnitureTemplate, "drink_002", 18.65, 1.036, 5.3, 0);
-    } else {
-      const couch = buildCouch();
-      couch.position.set(-14.3, 0, 12.8);
-      couch.rotation.y = Math.PI;
-      scene.add(couch);
-    }
-    const shelf = buildBookshelf();
-    shelf.position.set(-18.6, 0, 9.8);
-    shelf.rotation.y = Math.PI / 2;
-    scene.add(shelf);
+    // (The "lived-in office" furniture pack — lounge sofa, air-hockey table,
+    // closet/dresser/boxes/toys, break-room kitchenette and bookshelf — was
+    // the biggest remaining "New York office" tell and is gone in the
+    // spaceship retheme. The room around the agents is now hull structure +
+    // viewports, built below, not an office lounge.)
 
     // Two wall TVs for a lived-in "always something on" office feel — a
     // live-markets ticker over the lounge sofa, and the real HeavyGuard/CRM
@@ -6376,15 +6424,8 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     scene.add(opsChain);
     drawOpsWall(opsCtx, opsCanvas.width, opsCanvas.height, liveRef.current.bizData, liveRef.current.securityAlerts);
     let screenT = 0;
-    // (SE corner plant removed — that corner is now the owner's office; the
-    // SW plant moved out of the restrooms footprint.)
-    // (middle plant pulled out of the storage-corner cluster so it doesn't
-    // crowd the dresser/box pieces)
-    [[-11.1, 15.5], [16.2, -11.3], [2.3, 15.6]].forEach(([px, pz]) => {
-      const plant = buildPlant();
-      plant.position.set(px, 0, pz);
-      scene.add(plant);
-    });
+    // (Floor plants removed — potted office greenery was another "office, not
+    // spaceship" tell. The deck stays clear metal + light around the pods.)
 
     // Furniture — each desk is tinted with its owner's own color (same
     // index mapping as chars[i]'s permanent home desk), and fully kitted
@@ -6668,9 +6709,9 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       const [wx, wz] = toWorld(t.x, t.y);
       tbl.position.set(wx, 0, wz);
       scene.add(tbl);
-      const lamp = buildPendantLamp();
-      lamp.position.set(wx, 5.0, wz);
-      scene.add(lamp);
+      // (warm office pendant lamp over each table removed — the recessed hull
+      // strip-lighting overhead covers this area; a hanging globe lamp read
+      // as a break-room, not a ship's mess.)
       obstacles.push({ x: wx, z: wz, r: 1.1 });
     });
     {
@@ -7638,13 +7679,12 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         interiorLights.forEach((lt) => {
           lt.intensity += (roomLightTarget - lt.intensity) * Math.min(1, dt * 0.8);
         });
-        const globeGlowTarget = nightclubOn ? 1.8 : isNight ? 1.4 : isEvening ? 1.1 : 0.9;
-        officeGlobeMat.emissiveIntensity += (globeGlowTarget - officeGlobeMat.emissiveIntensity) * Math.min(1, dt * 0.8);
-        // UV Nightclub Mode: the lobby hologram globe and every charging pod's
-        // glow/ring swap from their normal warm/per-agent colours to
-        // fluorescent purple/magenta/teal — the actual "blacklight" reactive
-        // elements, faded in with the same damping as everything else above.
-        officeGlobeMat.emissive.lerp(tmpColor.set(nightclubOn ? 0x6b1fd6 : 0xffe6b0), Math.min(1, dt * 0.8));
+        // UV Nightclub Mode: the recessed hull strip-lighting swaps from its
+        // normal cyan-white to fluorescent purple — the actual "blacklight"
+        // reactive element, faded in with the same damping as everything else.
+        // (The old warm globe pendants are gone; stripMat is a basic material,
+        // so we lerp its base colour rather than an emissive channel.)
+        stripMat.color.lerp(tmpColor.set(nightclubOn ? 0x8b3fff : 0xbfeeff), Math.min(1, dt * 0.8));
         chargePods.forEach((pod, pi) => {
           const uvHex = pi % 2 === 0 ? 0x36e6ff : 0xff2ecb;
           const podTargetColor = nightclubOn ? uvHex : pod.hex;
@@ -7796,7 +7836,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         skylineMode = desiredSkyMode;
         drawSkyline(skyline.ctx, skyline.canvas.width, skyline.canvas.height, skylineMode);
         skyline.tex.needsUpdate = true;
-        eastWinTex.needsUpdate = true; // same canvas, its own texture instance
+        sideWinTex.needsUpdate = true; // same canvas, its own texture instance
         cloudMat.opacity = skylineMode === "day" ? 0.85 : skylineMode === "sunset" ? 0.5 : 0.16;
         birdGroup.visible = skylineMode === "day";
         balloonGroup.visible = !turboOn && skylineMode === "day";
