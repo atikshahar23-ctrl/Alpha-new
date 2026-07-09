@@ -1102,6 +1102,26 @@ function buildHuman(color, name, isPlayer, charTemplate, charClips, modelScale =
       current = findClip(clipMap.idle);
       if (current && actions[current]) actions[current].play();
     }
+  } else {
+    // Fallback body — if the GLB character template failed to load (a network
+    // hiccup, cache miss or low-memory device), the agent would otherwise be
+    // an INVISIBLE bodiless name-tag: this is what makes "all the agents
+    // disappeared" on some devices while they render fine on others. A
+    // procedural metallic humanoid guarantees every agent always has a visible
+    // body, tinted + softly glowing in its own colour so it reads clearly
+    // against the dark deck. It can't skeletal-animate (no mixer), but it still
+    // walks/turns/docks with the group, which is far better than nothing.
+    const fbGeo = buildHumanoidGeometry();
+    const fbCol = new THREE.Color(color);
+    const fbMat = new THREE.MeshStandardMaterial({
+      color: fbCol, metalness: 0.65, roughness: 0.32,
+      emissive: fbCol.clone().multiplyScalar(0.35), emissiveIntensity: 0.6,
+    });
+    const fbBody = new THREE.Mesh(fbGeo, fbMat);
+    fbBody.position.y = 0.2; // lift the merged geometry's feet onto the floor
+    fbBody.castShadow = true;
+    fbBody.frustumCulled = false;
+    g.add(fbBody);
   }
 
   if (isPlayer) {
