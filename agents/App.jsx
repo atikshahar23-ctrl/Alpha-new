@@ -3867,6 +3867,10 @@ function StyleTag() {
   .off3 .off-summon-btn{padding:6px 8px;font-size:10.5px;margin-right:4px;flex-shrink:0}
   .off3 .off-close{width:30px;height:30px;flex-shrink:0}
   .off3 .off3-wrap{flex:1;min-height:0}
+  /* Thumb-friendly hitboxes (#19) on the most-tapped controls — the bottom
+     talk/mic buttons — without touching the tightly-stacked top-right HUD. */
+  .off3 .off3-mic{min-width:52px;min-height:52px}
+  .off3 .off3-talk{min-height:46px}
 }
 .off3-hint{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:2;
   background:rgba(6,9,18,.72);border:1px solid rgba(110,170,240,.25);border-radius:20px;
