@@ -9228,8 +9228,13 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       updateComms(dt);
       // drone bay: four quad-drones flying an autonomous patrol circuit
       updateDrones(dt);
-      // GOD-TIER MEGA-PATCH V3.0 — tick every registered space-module
-      for (let mi = 0; mi < spaceModules.length; mi++) { const m = spaceModules[mi]; if (m.update) m.update(dt); }
+      // GOD-TIER MEGA-PATCH V3.0 — tick every registered space-module. A
+      // module that throws in update() is auto-disabled (not fatal) so one bad
+      // module can never break the deck's render loop.
+      for (let mi = 0; mi < spaceModules.length; mi++) {
+        const m = spaceModules[mi];
+        if (m.update && !m._broken) { try { m.update(dt); } catch (e) { m._broken = true; console.error("[space-module] update failed — disabled", e); } }
+      }
       planeGroup.position.x += dt * 3.2;
       if (planeGroup.position.x > 85) planeGroup.position.x = -85 - Math.random() * 160;
       planeBeacon.material.opacity = (Math.sin(clock.elapsedTime * 6) > 0.4) ? 0.95 : 0.08;

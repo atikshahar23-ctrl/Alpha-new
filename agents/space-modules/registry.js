@@ -9,31 +9,55 @@
 // Shared context contract (passed to every `create(ctx)`):
 //   ctx.THREE            the Three.js namespace (one shared instance)
 //   ctx.scene            the main command-deck scene
-//   ctx.camera           the deck camera (read-only for most; shake modules opt in)
+//   ctx.camera           the deck camera (read-only for most)
 //   ctx.liveRef          React live-data ref → .bizData, .marketRows,
 //                        .securityAlerts, .radioPlaying, .joyVec, .keys …
 //   ctx.obstacles        walk-collision array (push {x,z,r} for floor props)
 //   ctx.base             import.meta.env.BASE_URL for GLB/asset paths
 //   ctx.markDynamic(obj) opt an animated root OUT of the scene's matrix-freeze
-//                        optimization so its per-frame transforms actually apply
 //   ctx.helpers          { buildNeonSign, disposeMaterial }
 //   ctx.anchors          { sun, warTable, algoZone, droneBay } world {x,z} spots
 //
-// Each factory returns { update(dt)?, dispose()? }. The host calls update()
-// every frame inside the deck's animate loop (which already early-returns while
-// an overlay is open) and dispose() once on unmount. A throwing factory is
-// caught and skipped so one bad module can never blank the whole deck.
+// Each factory returns { update(dt)?, dispose()? }. The host ticks update()
+// every frame (auto-disabling any module that throws) and calls dispose() on
+// unmount. A throwing factory is caught + skipped so one bad module can never
+// blank the whole deck.
 //
 // NOTE: 7 of the V3.0 catalogue's 20 modules already ship inline in Office3D
 // from MEGA-PATCH V2.0 (Crew Holograms #3, Interstellar Comms #4, Orbital Drop
 // #6, Drone Bay #8, Market Radar #11, Quantum Holodeck #18, Musical Core #19).
-// Those stay where they are; new V3.0 modules land here as separate files and
-// get appended below as they're built.
+// The remaining 13 live here as one file each.
 
+import { createIffShield } from "./iff-shield.js";
+import { createQuartermaster } from "./quartermaster.js";
+import { createVipChannel } from "./vip-channel.js";
+import { createBlindspotDrone } from "./blindspot-drone.js";
+import { createHyperspaceDealCloser } from "./hyperspace-deal-closer.js";
+import { createConcretePumpArray } from "./concrete-pump-array.js";
 import { createSolarSails } from "./solar-sails.js";
 import { createSentinelBot } from "./sentinel-bot.js";
+import { createAlliedFleetRadar } from "./allied-fleet-radar.js";
+import { createTimeDilationEngine } from "./time-dilation-engine.js";
+import { createZeroGNursery } from "./zero-g-nursery.js";
+import { createRapBroadcastArray } from "./rap-broadcast-array.js";
+import { createWarpBatteryLink } from "./warp-battery-link.js";
 
 export const SPACE_MODULES = [
-  { id: "solar-sails", create: createSolarSails },   // M12 · Staking & Yield Solar Sails
-  { id: "sentinel-bot", create: createSentinelBot }, // M13 · Auto-Trading Sentinel Bot
+  // ── CORE SYSTEM ALPHA · comms & AI ──
+  { id: "iff-shield", create: createIffShield },                 // M1
+  { id: "quartermaster", create: createQuartermaster },          // M2
+  { id: "vip-channel", create: createVipChannel },               // M5
+  // ── CORE SYSTEM BETA · fleet & logistics ──
+  { id: "blindspot-drone", create: createBlindspotDrone },       // M7
+  { id: "hyperspace-deal-closer", create: createHyperspaceDealCloser }, // M9
+  { id: "concrete-pump-array", create: createConcretePumpArray },// M10
+  // ── CORE SYSTEM GAMMA · finance & trading ──
+  { id: "solar-sails", create: createSolarSails },               // M12
+  { id: "sentinel-bot", create: createSentinelBot },             // M13
+  { id: "allied-fleet-radar", create: createAlliedFleetRadar },  // M14
+  { id: "time-dilation-engine", create: createTimeDilationEngine }, // M15
+  // ── CORE SYSTEM DELTA · immersion ──
+  { id: "zero-g-nursery", create: createZeroGNursery },          // M16
+  { id: "rap-broadcast-array", create: createRapBroadcastArray },// M17
+  { id: "warp-battery-link", create: createWarpBatteryLink },    // M20
 ];
