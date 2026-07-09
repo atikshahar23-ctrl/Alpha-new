@@ -71,6 +71,12 @@ import { createLaserGrid } from "./laser-grid.js";
 import { createVaultOfLegends } from "./vault-of-legends.js";
 import { createVolatilityShield } from "./volatility-shield.js";
 import { createSpaceWhale } from "./space-whale.js";
+// ── DOOMSDAY PAYLOAD · Pack 5 — studio & sound ──
+import { createLyricProjector } from "./lyric-projector.js";
+import { createSubwooferDeck } from "./subwoofer-deck.js";
+import { createStageLighting } from "./stage-lighting.js";
+import { createMicLaserCannon } from "./mic-laser-cannon.js";
+import { createVinylGalaxy } from "./vinyl-galaxy.js";
 
 export const SPACE_MODULES = [
   // ── CORE SYSTEM ALPHA · comms & AI ──
@@ -120,4 +126,10 @@ export const SPACE_MODULES = [
   { id: "vault-of-legends", create: createVaultOfLegends },      // M43 · golden hall of legendary trades
   { id: "volatility-shield", create: createVolatilityShield },   // M44 · VIX deflector dome
   { id: "space-whale", create: createSpaceWhale },               // M45 · whale-alert cosmic leviathan
+  // ── DOOMSDAY PAYLOAD · Pack 5 · studio & sound (M46-50) ──
+  { id: "lyric-projector", create: createLyricProjector },       // M46 · floating 3D lyric typography
+  { id: "subwoofer-deck", create: createSubwooferDeck },         // M47 · bass-ripple membrane floor
+  { id: "stage-lighting", create: createStageLighting },         // M48 · Stromae / Bad Bunny rig
+  { id: "mic-laser-cannon", create: createMicLaserCannon },      // M49 · voice-amplitude bow cannon
+  { id: "vinyl-galaxy", create: createVinylGalaxy },             // M50 · cosmic vinyl backdrop
 ];
