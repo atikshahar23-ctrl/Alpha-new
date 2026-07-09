@@ -47,6 +47,12 @@ import { createCctvMatrix } from "./cctv-matrix.js";
 import { createRedAlert } from "./red-alert.js";
 import { createTiggoTelemetry } from "./tiggo-telemetry.js";
 import { createNeuralCore } from "./neural-core.js";
+// ── DOOMSDAY PAYLOAD · Pack 1 — tactical operations ──
+import { createAmirConstellation } from "./amir-constellation.js";
+import { createIkPump } from "./ik-pump.js";
+import { createThermalVision } from "./thermal-vision.js";
+import { createMaintenanceSkiff } from "./maintenance-skiff.js";
+import { createInstallTimelapse } from "./install-timelapse.js";
 
 export const SPACE_MODULES = [
   // ── CORE SYSTEM ALPHA · comms & AI ──
@@ -72,4 +78,10 @@ export const SPACE_MODULES = [
   { id: "red-alert", create: createRedAlert },                   // M23 · cyber-warfare lockdown (F9)
   { id: "tiggo-telemetry", create: createTiggoTelemetry },       // M24 · Tiggo OBD2 telemetry hub
   { id: "neural-core", create: createNeuralCore },               // M25 · Neural Singularity Core
+  // ── DOOMSDAY PAYLOAD · Pack 1 · tactical operations (M26-30) ──
+  { id: "amir-constellation", create: createAmirConstellation }, // M26 · 60-pump star map
+  { id: "ik-pump", create: createIkPump },                       // M27 · gamepad IK pump arm
+  { id: "thermal-vision", create: createThermalVision },         // M28 · thermal/night-vision (T)
+  { id: "maintenance-skiff", create: createMaintenanceSkiff },   // M29 · welding maintenance drone
+  { id: "install-timelapse", create: createInstallTimelapse },   // M30 · deal-close build time-lapse
 ];
