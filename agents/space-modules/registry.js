@@ -77,6 +77,12 @@ import { createSubwooferDeck } from "./subwoofer-deck.js";
 import { createStageLighting } from "./stage-lighting.js";
 import { createMicLaserCannon } from "./mic-laser-cannon.js";
 import { createVinylGalaxy } from "./vinyl-galaxy.js";
+// ── DOOMSDAY PAYLOAD · Pack 6 — system overrides ──
+import { createCenterRadar } from "./center-radar.js";
+import { createCryoPod } from "./cryo-pod.js";
+import { createZeroGButton } from "./zero-g-button.js";
+import { createAlphaAwakening } from "./alpha-awakening.js";
+import { createSelfDestruct } from "./self-destruct.js";
 
 export const SPACE_MODULES = [
   // ── CORE SYSTEM ALPHA · comms & AI ──
@@ -132,4 +138,10 @@ export const SPACE_MODULES = [
   { id: "stage-lighting", create: createStageLighting },         // M48 · Stromae / Bad Bunny rig
   { id: "mic-laser-cannon", create: createMicLaserCannon },      // M49 · voice-amplitude bow cannon
   { id: "vinyl-galaxy", create: createVinylGalaxy },             // M50 · cosmic vinyl backdrop
+  // ── DOOMSDAY PAYLOAD · Pack 6 · system overrides (M51-55) ──
+  { id: "center-radar", create: createCenterRadar },             // M51 · Bat Yam/Rishon truck radar
+  { id: "cryo-pod", create: createCryoPod },                     // M52 · AFK frost-shader cryo veil
+  { id: "zero-g-button", create: createZeroGButton },            // M53 · "do not press" zero-G anomaly
+  { id: "alpha-awakening", create: createAlphaAwakening },       // M54 · on-demand Alpha Protocol ritual
+  { id: "self-destruct", create: createSelfDestruct },           // M55 · armed-only self-destruct + reload
 ];
