@@ -14,6 +14,8 @@ import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { SMAAPass } from "three/examples/jsm/postprocessing/SMAAPass.js";
 import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
 import { DragControls } from "three/examples/jsm/controls/DragControls.js";
+import { MeshSurfaceSampler } from "three/examples/jsm/math/MeshSurfaceSampler.js";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import * as CANNON from "cannon-es";
 import jsPDF from "jspdf";
 import { MessageCircle, Eye, User, Mic, VolumeX, Volume2, X, Zap, Settings as SettingsIcon, Trash2, Radio, Pause, Lock, Unlock } from "lucide-react";
@@ -982,6 +984,84 @@ function buildNameSprite(name, color, role) {
   else sprite.scale.set(0.9, 0.225, 1);
   sprite.renderOrder = 999;
   return sprite;
+}
+
+// ── Crew Holograms (Module 1) ────────────────────────────────────────────
+// Soft round dot sprite for the particle avatars, built once and shared.
+let _crewDotTex = null;
+function crewDotTex() {
+  if (_crewDotTex) return _crewDotTex;
+  const c = document.createElement("canvas"); c.width = c.height = 32;
+  const x = c.getContext("2d");
+  const g = x.createRadialGradient(16, 16, 0, 16, 16, 16);
+  g.addColorStop(0, "rgba(255,255,255,1)"); g.addColorStop(0.4, "rgba(255,255,255,0.6)"); g.addColorStop(1, "rgba(255,255,255,0)");
+  x.fillStyle = g; x.fillRect(0, 0, 32, 32);
+  _crewDotTex = new THREE.CanvasTexture(c);
+  return _crewDotTex;
+}
+// A simple humanoid built from merged primitives — used only as the surface
+// MeshSurfaceSampler scatters the avatar's particles across (never rendered
+// itself). Rough proportions read clearly as a standing figure.
+function buildHumanoidGeometry() {
+  const parts = [];
+  const add = (geo, x, y, z, rz = 0) => { if (rz) geo.rotateZ(rz); geo.translate(x, y, z); parts.push(geo); };
+  add(new THREE.SphereGeometry(0.15, 14, 14), 0, 1.6, 0);          // head
+  add(new THREE.CylinderGeometry(0.05, 0.05, 0.1, 8), 0, 1.44, 0); // neck
+  add(new THREE.CylinderGeometry(0.19, 0.16, 0.6, 16), 0, 1.12, 0);// torso
+  add(new THREE.SphereGeometry(0.17, 12, 10), 0, 0.82, 0);         // hips
+  [-1, 1].forEach((s) => {
+    add(new THREE.CylinderGeometry(0.055, 0.05, 0.42, 10), s * 0.28, 1.18, 0, s * 0.35); // upper arm
+    add(new THREE.CylinderGeometry(0.045, 0.04, 0.42, 10), s * 0.42, 0.86, 0, s * 0.18); // forearm
+    add(new THREE.CylinderGeometry(0.08, 0.06, 0.5, 10), s * 0.1, 0.5, 0);   // thigh
+    add(new THREE.CylinderGeometry(0.06, 0.045, 0.5, 10), s * 0.1, 0.05, 0); // shin
+  });
+  return mergeGeometries(parts, false);
+}
+// A volumetric particle avatar: MeshSurfaceSampler scatters `count` points
+// over the humanoid surface, rendered as an additive glowing point cloud in
+// the crew member's signature colour. Returns the Points + its material so
+// the animate loop can pulse it (audio/talk-reactive).
+function buildParticleHuman(colorHex, count = 1500) {
+  const geo = buildHumanoidGeometry();
+  const mesh = new THREE.Mesh(geo);
+  const sampler = new MeshSurfaceSampler(mesh).build();
+  const positions = new Float32Array(count * 3);
+  const _v = new THREE.Vector3();
+  for (let i = 0; i < count; i++) { sampler.sample(_v); positions[i * 3] = _v.x; positions[i * 3 + 1] = _v.y; positions[i * 3 + 2] = _v.z; }
+  const pgeo = new THREE.BufferGeometry();
+  pgeo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  const mat = new THREE.PointsMaterial({
+    color: colorHex, size: 0.035, map: crewDotTex(), transparent: true, opacity: 0.85,
+    blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true, fog: false,
+  });
+  const points = new THREE.Points(pgeo, mat);
+  geo.dispose();
+  return { points, mat };
+}
+// One crew hologram: an anti-gravity projector pad (glowing disc + ring), an
+// upward light cone, the floating particle avatar, a name plate and an accent
+// light — all in the member's signature colour.
+function buildCrewHologram(colorHex, name, role) {
+  const g = new THREE.Group();
+  const pad = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.55, 0.62, 0.08, 32),
+    new THREE.MeshStandardMaterial({ color: 0x0c0f16, metalness: 0.6, roughness: 0.4 })
+  );
+  pad.position.y = 0.04; g.add(pad);
+  const padRing = new THREE.Mesh(new THREE.TorusGeometry(0.56, 0.02, 8, 44), new THREE.MeshBasicMaterial({ color: colorHex }));
+  padRing.rotation.x = Math.PI / 2; padRing.position.y = 0.1; g.add(padRing);
+  const beam = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.5, 0.22, 2.3, 24, 1, true),
+    new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 0.07, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false, fog: false })
+  );
+  beam.position.y = 1.25; g.add(beam);
+  const { points, mat } = buildParticleHuman(colorHex);
+  points.position.y = 0.42; // floats above the pad (anti-gravity)
+  g.add(points);
+  const tag = buildNameSprite(name, "#" + colorHex.toString(16).padStart(6, "0"), role);
+  tag.scale.multiplyScalar(1.4); tag.position.y = 2.5; g.add(tag);
+  const light = new THREE.PointLight(colorHex, 0.45, 4.5); light.position.y = 1.4; g.add(light);
+  return { group: g, points, mat, light };
 }
 
 // The real rigged "Casual Male" character (FBX → GLB, temporarily standing
@@ -6963,6 +7043,40 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       } else { lockRing.visible = false; }
     };
 
+    // ── Module 1: Crew Holograms ─────────────────────────────────────────
+    // Volumetric particle-avatar holograms of the crew on anti-gravity pads,
+    // in their signature colours — מיכל (magenta, comms), ראובן (gold, CFO)
+    // and דבורה (cyan, ops). Each pulses/brightens when its agent is the one
+    // being spoken with (liveRef.current.talkTarget) — audio/talk-reactive —
+    // over a gentle idle shimmer. Added alongside the existing pods, not in
+    // place of them.
+    const crewHolos = [];
+    [
+      { color: 0xff3cc7, name: "מיכל", role: "תקשורת", agentId: "cs", x: -27, z: 9 },
+      { color: 0xffcf3a, name: "ראובן", role: "כספים", agentId: "finance", x: -27, z: 1 },
+      { color: 0x2ee6ff, name: "דבורה", role: "ניהול", agentId: "facilities", x: -27, z: -7 },
+    ].forEach((c, i) => {
+      const holo = buildCrewHologram(c.color, c.name, c.role);
+      holo.group.position.set(c.x, 0, c.z);
+      scene.add(holo.group);
+      obstacles.push({ x: c.x, z: c.z, r: 0.7 });
+      crewHolos.push({ ...holo, agentId: c.agentId, phase: i * 2.1, pulse: 0 });
+    });
+    const updateCrew = (dt) => {
+      for (let i = 0; i < crewHolos.length; i++) {
+        const ch = crewHolos[i];
+        ch.points.rotation.y += dt * 0.35;
+        ch.points.position.y = 0.44 + Math.sin(clock.elapsedTime * 1.1 + ch.phase) * 0.05; // anti-grav float
+        const talking = liveRef.current.talkTarget === ch.agentId;
+        ch.pulse += ((talking ? 1 : 0) - ch.pulse) * Math.min(1, dt * 4);
+        // speech flicker while active, steady idle shimmer otherwise
+        const flick = talking ? 0.8 + Math.random() * 0.4 : 1 + 0.06 * Math.sin(clock.elapsedTime * 2 + ch.phase);
+        ch.mat.opacity = (0.72 + ch.pulse * 0.22) * flick;
+        ch.mat.size = 0.035 + ch.pulse * 0.02;
+        ch.light.intensity = 0.4 + ch.pulse * 0.9;
+      }
+    };
+
     // ── Module 3: Interactive Companion (Kids Mode) ──────────────────────
     const kidsCompanionPos = { x: -22, z: -16 };
     const kidsCompanion = buildKidsCompanion();
@@ -8145,6 +8259,8 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       updateFleetOps(dt);
       // deep-space market radar: sphere spin, live "asteroid" motion + lock
       updateRadar(dt);
+      // crew holograms: idle shimmer + talk-reactive pulse per agent
+      updateCrew(dt);
       planeGroup.position.x += dt * 3.2;
       if (planeGroup.position.x > 85) planeGroup.position.x = -85 - Math.random() * 160;
       planeBeacon.material.opacity = (Math.sin(clock.elapsedTime * 6) > 0.4) ? 0.95 : 0.08;
