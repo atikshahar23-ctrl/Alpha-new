@@ -9531,6 +9531,9 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       // dark (the module's red sirens supply the only glow); crush the ambient
       // fill here, after the day/night easing, so it actually stays black.
       if (liveRef.current.redAlert) { ambient.intensity = 0.03; hemi.intensity = 0.02; }
+      // DOOMSDAY M31 — a VIP 'Home' override softly dims the deck (calm, not a
+      // blackout) so the co-captain's private channel takes the room.
+      else if (liveRef.current.vipOverride) { ambient.intensity *= 0.35; hemi.intensity *= 0.4; }
       liveChars.forEach((c, ci) => {
         const h = npc[c.id]; if (!h) return;
         // Module 2: the finance/"CFO" agent temporarily takes over his own

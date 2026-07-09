@@ -53,6 +53,12 @@ import { createIkPump } from "./ik-pump.js";
 import { createThermalVision } from "./thermal-vision.js";
 import { createMaintenanceSkiff } from "./maintenance-skiff.js";
 import { createInstallTimelapse } from "./install-timelapse.js";
+// ── DOOMSDAY PAYLOAD · Pack 2 — crew & relays ──
+import { createMorConsole } from "./mor-console.js";
+import { createSafariBiodome } from "./safari-biodome.js";
+import { createCallerIdInterceptor } from "./caller-id-interceptor.js";
+import { createSnowboarder } from "./snowboarder.js";
+import { createCrewMorale } from "./crew-morale.js";
 
 export const SPACE_MODULES = [
   // ── CORE SYSTEM ALPHA · comms & AI ──
@@ -84,4 +90,10 @@ export const SPACE_MODULES = [
   { id: "thermal-vision", create: createThermalVision },         // M28 · thermal/night-vision (T)
   { id: "maintenance-skiff", create: createMaintenanceSkiff },   // M29 · welding maintenance drone
   { id: "install-timelapse", create: createInstallTimelapse },   // M30 · deal-close build time-lapse
+  // ── DOOMSDAY PAYLOAD · Pack 2 · crew & relays (M31-35) ──
+  { id: "mor-console", create: createMorConsole },               // M31 · VIP override console dim
+  { id: "safari-biodome", create: createSafariBiodome },         // M32 · glass biodome + hide-and-seek
+  { id: "caller-id-interceptor", create: createCallerIdInterceptor }, // M33 · relay sat + caller card
+  { id: "snowboarder", create: createSnowboarder },              // M34 · half-pipe market rider
+  { id: "crew-morale", create: createCrewMorale },               // M35 · pod idle-life props
 ];
