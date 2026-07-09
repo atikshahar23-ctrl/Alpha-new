@@ -83,6 +83,8 @@ import { createCryoPod } from "./cryo-pod.js";
 import { createZeroGButton } from "./zero-g-button.js";
 import { createAlphaAwakening } from "./alpha-awakening.js";
 import { createSelfDestruct } from "./self-destruct.js";
+// ── Owner request · command video wall (CCTV + live data twin screens) ──
+import { createCommandVideoWall } from "./command-video-wall.js";
 
 export const SPACE_MODULES = [
   // ── CORE SYSTEM ALPHA · comms & AI ──
@@ -144,4 +146,6 @@ export const SPACE_MODULES = [
   { id: "zero-g-button", create: createZeroGButton },            // M53 · "do not press" zero-G anomaly
   { id: "alpha-awakening", create: createAlphaAwakening },       // M54 · on-demand Alpha Protocol ritual
   { id: "self-destruct", create: createSelfDestruct },           // M55 · armed-only self-destruct + reload
+  // ── Owner request · twin command monitors in the walkway ──
+  { id: "command-video-wall", create: createCommandVideoWall },  // CCTV place-cams + live markets/HG data
 ];

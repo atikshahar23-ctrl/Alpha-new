@@ -1267,10 +1267,14 @@ function buildNeonSign(text, color, w = 3.4, h = 0.8) {
 // "Physical Glass" — real transmission/IOR instead of the old flat-opacity
 // fake, so office dividers/pods actually refract and pick up the room's
 // neon the way a real glass panel would (Electric Sanctuary layer 3).
+// Frosted, not clear: the owner found the deck "see-through" (the pod
+// capsules + partitions were near-invisible clear glass). Dropping transmission
+// and roughing the surface turns it into solid-reading frosted panels — you can
+// tell there's a wall there — while keeping a faint translucent sci-fi sheen.
 const OFFICE_GLASS_MAT = new THREE.MeshPhysicalMaterial({
-  color: 0xdcf0ff, metalness: 0, roughness: 0.06,
-  transmission: 0.93, ior: 1.5, thickness: 0.35,
-  transparent: true, opacity: 1, side: THREE.DoubleSide,
+  color: 0xbcd4e8, metalness: 0.1, roughness: 0.32,
+  transmission: 0.32, ior: 1.5, thickness: 0.6,
+  transparent: true, opacity: 0.86, side: THREE.DoubleSide,
 });
 
 // The real Heavy Guard logo (the bull-over-gear brand mark, transparent PNG)
