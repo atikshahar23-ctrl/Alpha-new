@@ -5977,6 +5977,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   // conversation text on screen. State (not a ref) so the settings panel can
   // show and toggle it.
   const [autoListen, setAutoListen] = useState(true);
+  // Sticky "the user deliberately turned the mic off" flag. Walking up to an
+  // agent normally re-arms auto-listen (see the approach effect below), but
+  // that must NOT override an explicit off — otherwise the mic toggle "doesn't
+  // turn off" because the very next talkTarget change flips it back on.
+  const micUserOffRef = useRef(false);
   // Mic protocol: while the office radio is broadcasting, the always-
   // listening mic goes quiet (otherwise it'd try to transcribe the
   // stream) — a live recognition session is cut short too. Whatever the
@@ -6072,8 +6077,19 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   useEffect(() => {
     if (!talkTarget) { try { recogRef.current?.stop(); } catch {} setVoiceState("idle"); }
   }, [talkTarget]);
-  // Approaching a new agent re-arms the always-listening mic for them.
-  useEffect(() => { if (talkTarget) setAutoListen(true); }, [talkTarget]);
+  // Approaching a new agent re-arms the always-listening mic for them — but
+  // only if the user hasn't explicitly switched it off.
+  useEffect(() => { if (talkTarget && !micUserOffRef.current) setAutoListen(true); }, [talkTarget]);
+  // Turning auto-listen off must stop the LIVE recognition session right away,
+  // not just prevent the next auto-restart — otherwise the current "מקשיב…"
+  // session keeps running and the mic reads as "won't turn off".
+  useEffect(() => {
+    if (!autoListen) {
+      try { recogRef.current?.stop(); } catch {}
+      try { recogRef.current?.abort?.(); } catch {}
+      setVoiceState((s) => (s === "listening" ? "idle" : s));
+    }
+  }, [autoListen]);
   // The "always listening" loop: whenever you're standing near an agent, the
   // mic is idle, and auto-listen hasn't been paused, start listening on its
   // own — no need to tap the mic every single time you want to talk.
@@ -6312,7 +6328,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         scene.environment = pmrem.fromScene(roomEnv, 0.04).texture;
         // Half strength so the metals catch light (crew visible) without
         // washing out the deep-space "night" mood the deck is going for.
-        scene.environmentIntensity = 0.55;
+        scene.environmentIntensity = 0.72;
         if (roomEnv.dispose) roomEnv.dispose();
         pmrem.dispose();
       } catch (e) { /* keep the procedural lights as the fallback */ }
@@ -10528,12 +10544,13 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     if (!agent || !voice) return;
     if (voiceState === "listening") {
       // Manual tap while listening = the user wants to pause, not restart.
-      if (!auto) setAutoListen(false);
+      if (!auto) { micUserOffRef.current = true; setAutoListen(false); }
       try { recogRef.current?.stop(); } catch {}
+      try { recogRef.current?.abort?.(); } catch {}
       setVoiceState("idle");
       return;
     }
-    if (!auto) setAutoListen(true);
+    if (!auto) { micUserOffRef.current = false; setAutoListen(true); }
     if (!voice.canListen) {
       const line = `שלום, אני ${agent.name}. ${agent.tagline || ""}`;
       setVoiceLine({ who: agent.name, text: line, color: agent.color });
@@ -10930,7 +10947,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
             <span>{firstPerson ? <User size={15} /> : <Eye size={15} />} תצוגה</span>
             <b>{firstPerson ? "גוף ראשון" : "גוף שלישי"}</b>
           </button>
-          <button className="off3-settings-row" onClick={() => setAutoListen((v) => !v)}>
+          <button className="off3-settings-row" onClick={() => setAutoListen((v) => { const nv = !v; micUserOffRef.current = !nv; return nv; })}>
             <span><Mic size={15} /> מיקרופון תמיד מאזין</span>
             <b className={autoListen ? "on" : ""}>{autoListen ? "פעיל" : "כבוי"}</b>
           </button>

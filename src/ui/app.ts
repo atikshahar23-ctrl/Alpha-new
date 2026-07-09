@@ -4264,23 +4264,25 @@ export function mountApp(root: HTMLElement) {
     bootStep('אירועי היום');
     const pOnThisDay = renderOnThisDayPanel();
     bootStep('גימור תצוגה');
-    // Signals index.html's boot veil (both the fast-boot repeat-session path
-    // and the full cinematic intro) that the dashboard's actual data — not
-    // just the render *calls* that kick off their own network fetches — has
-    // settled, so the reveal never shows a placeholder/skeleton state that
-    // then visibly "pops in" real numbers a moment later. Per explicit owner
-    // request this waits for the REAL data no matter how long it takes —
-    // no short "good enough" cap. The 30s ceiling exists purely so a
-    // genuinely hung connection can't wedge the boot forever; it's well
-    // above the worst case of every one of these functions' own internal
-    // fetch timeouts actually firing (news alone can chain two sources
-    // through two proxy fallbacks, each with its own 6-8s timeout).
+    // Signals index.html's boot veil that the dashboard is ready to reveal.
+    // Reworked per owner feedback that the old "wait for ALL live data no
+    // matter how long" gate made startup feel painfully slow: news chains two
+    // proxy sources (6-8s timeout each) and weather adds another, so on a phone
+    // connection the veil could hang ~10-30s over an already-rendered HUD.
+    // Now the reveal only waits on markets (the one number the deck is really
+    // about) with a short 2.2s cap; news / weather / on-this-day keep loading
+    // in the background behind their own panel loaders and pop in when ready —
+    // a beat of pop-in is a fair trade for a boot that feels near-instant.
     const settle = (p: Promise<unknown>) => p.catch(() => {});
     await Promise.race([
-      Promise.all([settle(pMarkets), settle(pNews), settle(pWeather), settle(pOnThisDay)]),
-      new Promise((resolve) => setTimeout(resolve, 30000)),
+      settle(pMarkets),
+      new Promise((resolve) => setTimeout(resolve, 2200)),
     ]);
     (window as any).__alphaReady = true;
+    // The slower panels are intentionally NOT awaited above — keep their
+    // promises alive so an unhandled rejection can't surface, but don't gate
+    // the reveal on them.
+    void Promise.all([settle(pNews), settle(pWeather), settle(pOnThisDay)]);
     setInterval(() => { renderHud(); renderFleetPanel(); renderAgendaPanel(); renderTasksPanel(); renderTeamPanel(); }, 30000);
     setInterval(renderMarkets, 60000);
     setInterval(renderNews, 300000);

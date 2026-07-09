@@ -1544,7 +1544,19 @@ export default function App() {
         {view === "roster" && (
           <RosterView
             onOpen={(id) => setChatId(id)}
-            onOffice={() => setOffice(true)}
+            onOffice={() => {
+              setOffice(true);
+              // Best-effort true fullscreen on phones so the 3D deck uses the
+              // whole screen (hides the browser URL/nav chrome). Fired inside
+              // the tap's user-activation window; iOS Safari ignores it (no
+              // Fullscreen API on non-video elements) and just falls back to
+              // the slim-header layout, which is fine.
+              try {
+                const isPhone = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || ("ontouchstart" in window && window.innerWidth < 900);
+                const el = document.documentElement;
+                if (isPhone && el.requestFullscreen && !document.fullscreenElement) el.requestFullscreen().catch(() => {});
+              } catch {}
+            }}
             activity={activity}
           />
         )}
@@ -1572,7 +1584,7 @@ export default function App() {
 
       {office && (
         <Suspense fallback={<div className="ac-office-loading"><RefreshCw size={28} className="ac-spin" /><span>טוען את המשרד…</span></div>}>
-          <OfficeSim onClose={() => setOffice(false)} onOpenChat={(id) => { setOffice(false); setChatId(id); }} logActivity={logActivity} showToast={showToast} />
+          <OfficeSim onClose={() => { setOffice(false); try { if (document.fullscreenElement) document.exitFullscreen?.(); } catch {} }} onOpenChat={(id) => { setOffice(false); try { if (document.fullscreenElement) document.exitFullscreen?.(); } catch {} setChatId(id); }} logActivity={logActivity} showToast={showToast} />
         </Suspense>
       )}
 
@@ -3808,7 +3820,7 @@ function StyleTag() {
 .ac-office-txt span{display:block;font-size:11.5px;color:#bcd3f5;margin-top:3px}
 
 /* ── office simulator ── */
-.off-overlay{position:fixed;inset:0;z-index:250;display:flex;flex-direction:column;
+.off-overlay{position:fixed;inset:0;height:100vh;height:100dvh;z-index:250;display:flex;flex-direction:column;
   background:radial-gradient(ellipse at 50% 0%,#0e1426,#060912 60%,#04040c);animation:acRise .25s ease both}
 .off-top{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid rgba(110,170,240,.18);background:rgba(6,9,18,.7);backdrop-filter:blur(14px)}
 .off-top-l{display:flex;align-items:center;gap:10px}
@@ -3840,6 +3852,19 @@ function StyleTag() {
 .off3-wrap{flex:1;position:relative;overflow:hidden}
 .off3-canvas{position:absolute;inset:0;touch-action:none}
 .off3-canvas canvas{display:block;width:100%!important;height:100%!important}
+/* Phone: the office title used to wrap to 4 lines and eat ~⅓ of the screen,
+   leaving the 3D view boxed into the middle. Force the whole header onto one
+   slim non-wrapping row so the canvas fills nearly the entire viewport
+   ("על כל המסך") — the HUD buttons stay anchored to .off3-wrap just below it. */
+@media(max-width:640px){
+  .off3 .off-top{flex-wrap:nowrap;gap:6px;padding:calc(env(safe-area-inset-top,0px) + 6px) 10px 6px}
+  .off3 .off-top-l{gap:6px;min-width:0;flex:1}
+  .off3 .off-top-l b{font-size:11.5px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .off3 .off-live{padding:3px 6px;font-size:9.5px;flex-shrink:0}
+  .off3 .off-summon-btn{padding:6px 8px;font-size:10.5px;margin-right:4px;flex-shrink:0}
+  .off3 .off-close{width:30px;height:30px;flex-shrink:0}
+  .off3 .off3-wrap{flex:1;min-height:0}
+}
 .off3-hint{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:2;
   background:rgba(6,9,18,.72);border:1px solid rgba(110,170,240,.25);border-radius:20px;
   padding:6px 14px;font-size:11.5px;color:#aebde0;backdrop-filter:blur(8px);white-space:nowrap;pointer-events:none;
