@@ -5776,19 +5776,21 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     }));
     scene.add(dust);
 
-    // Floor — polished hardwood: warm wood texture + low roughness so it
-    // catches soft reflections of the room + HDRI sky (image-based lighting).
+    // Floor — polished obsidian command-deck plating: a physical clearcoat
+    // over dark brushed metal, so the neon UI, hologram and starfield read in
+    // the floor as reflections (env-map image-based reflection stands in for a
+    // true screen-space pass, which would cost a full extra scene render). The
+    // clearcoat gives the AAA "wet obsidian" double-reflection without pushing
+    // it to a full mirror (a near-mirror floor + the animated energy grid was
+    // genuinely disorienting before — owner reported dizziness), so roughness
+    // stays moderate and the clearcoat carries the gloss.
     const floorTex = buildFloorTexture();
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(FLOOR_W, FLOOR_D),
-      // Showroom-polished: a touch glossier + stronger HDRI reflection so
-      // the car, agents and neon read in the floor (env-map "SSR" — the
-      // real screen-space pass would cost a full extra scene render).
-      // Toned back down from an earlier "sharper reflections" pass — combined
-      // with the animated energy-grid pulse above, the near-mirror floor was
-      // genuinely disorienting to look at (owner report: dizziness), not
-      // just a style preference. Still glossy, just not swimming.
-      new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.4, metalness: 0.25, envMapIntensity: 0.8 })
+      new THREE.MeshPhysicalMaterial({
+        map: floorTex, color: 0x2a2f38, roughness: 0.42, metalness: 0.6,
+        clearcoat: 1.0, clearcoatRoughness: 0.28, envMapIntensity: 1.0,
+      })
     );
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
@@ -5956,6 +5958,47 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     );
     glass.position.set(nwx, 3.2, nwz);
     scene.add(glass);
+
+    // ── Volumetric god-rays through the forward viewport ─────────────────
+    // Soft light shafts raking in from the bridge canopy — several long
+    // additive quads with a bright-at-the-window gradient, fanned across the
+    // window width and raked down into the deck, so starlight/nebula glow
+    // pours in as shafts. Cheap (additive quads, no raymarch) but reads as
+    // the cinematic volumetric light the brief asks for. A slow opacity
+    // breathe is ticked in the animate loop (godRayMats).
+    const godRayMats = [];
+    {
+      const rayCvs = document.createElement("canvas"); rayCvs.width = 16; rayCvs.height = 128;
+      const rc = rayCvs.getContext("2d");
+      const rg = rc.createLinearGradient(0, 0, 0, 128);
+      rg.addColorStop(0, "rgba(180,224,255,0.55)");
+      rg.addColorStop(0.4, "rgba(150,205,255,0.22)");
+      rg.addColorStop(1, "rgba(120,180,255,0)");
+      rc.fillStyle = rg; rc.fillRect(0, 0, 16, 128);
+      // feather the vertical edges so each shaft has soft sides
+      const eg = rc.createLinearGradient(0, 0, 16, 0);
+      eg.addColorStop(0, "rgba(0,0,0,1)"); eg.addColorStop(0.5, "rgba(0,0,0,0)"); eg.addColorStop(1, "rgba(0,0,0,1)");
+      rc.globalCompositeOperation = "destination-out"; rc.fillStyle = eg; rc.fillRect(0, 0, 16, 128);
+      rc.globalCompositeOperation = "source-over";
+      const rayTex = new THREE.CanvasTexture(rayCvs); rayTex.colorSpace = THREE.SRGBColorSpace;
+      const godRays = new THREE.Group();
+      const nShafts = isMobile ? 5 : 9;
+      for (let i = 0; i < nShafts; i++) {
+        const f = (i / (nShafts - 1)) - 0.5; // -0.5..0.5 across the window width
+        const mat = new THREE.MeshBasicMaterial({
+          map: rayTex, transparent: true, opacity: 0.10 + Math.random() * 0.06,
+          blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.DoubleSide,
+        });
+        godRayMats.push(mat);
+        const shaft = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 15), mat);
+        // top anchored high at the window, raked down-and-into the room
+        shaft.position.set(f * FLOOR_W * 0.72, 3.6, nwz + 6.5);
+        shaft.rotation.x = -0.62;                // rake toward the floor
+        shaft.rotation.z = f * 0.28;             // slight fan spread
+        godRays.add(shaft);
+      }
+      scene.add(godRays);
+    }
 
     // Deep-space scenery beyond the bridge windows — real 3D bodies drifting
     // past the glass instead of a city skyline: a ringed gas giant, a spiral
@@ -7834,6 +7877,8 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       // slow drift-spin on the space bodies (gas giant, moon, asteroids) so
       // the deep-space view outside the windows is alive, never a flat matte
       for (let si = 0; si < spaceSpin.length; si++) spaceSpin[si].rotation.y += dt * (0.02 + (si % 5) * 0.006);
+      // god-ray shafts breathe softly so the volumetric light feels alive
+      for (let gi = 0; gi < godRayMats.length; gi++) godRayMats[gi].opacity = 0.09 + 0.05 * (0.5 + 0.5 * Math.sin(clock.elapsedTime * 0.5 + gi * 0.9));
       planeGroup.position.x += dt * 3.2;
       if (planeGroup.position.x > 85) planeGroup.position.x = -85 - Math.random() * 160;
       planeBeacon.material.opacity = (Math.sin(clock.elapsedTime * 6) > 0.4) ? 0.95 : 0.08;
