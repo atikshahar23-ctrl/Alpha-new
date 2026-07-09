@@ -6851,6 +6851,118 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     let financeVisit = { active: false, t: 0, duration: 0 };
     let financeVisitCheckT = 0;
 
+    // ── Module 4: Deep Space Market Radar ────────────────────────────────
+    // A giant rotating transparent radar sphere floating over the trading
+    // zone. Live market rows (liveRef.current.marketRows) become "asteroids"
+    // orbiting inside it: bullish glow green and rise with a comet tail,
+    // bearish glow red, crackle and sink; size scales with how far they've
+    // moved. The biggest mover is auto target-locked with a ring + a floating
+    // HUD of its live stats. Ticked by updateRadar(dt) from the animate loop.
+    const RADAR_R = 2.3;
+    const radarGroup = new THREE.Group();
+    radarGroup.position.set(algoZonePos.x, 3.2, algoZonePos.z);
+    scene.add(radarGroup);
+    radarGroup.add(new THREE.Mesh(
+      new THREE.IcosahedronGeometry(RADAR_R, 2),
+      new THREE.MeshBasicMaterial({ color: 0x2ee6ff, wireframe: true, transparent: true, opacity: 0.13, fog: false })
+    ));
+    // equator + two latitude rings for the radar-scope read
+    [[0, RADAR_R], [1.3, Math.sqrt(RADAR_R * RADAR_R - 1.69)], [-1.3, Math.sqrt(RADAR_R * RADAR_R - 1.69)]].forEach(([yy, rr]) => {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(rr, 0.015, 6, 64), new THREE.MeshBasicMaterial({ color: 0x2ee6ff, transparent: true, opacity: 0.32, fog: false }));
+      ring.rotation.x = Math.PI / 2; ring.position.y = yy; radarGroup.add(ring);
+    });
+    // rotating sweep meridian (bright half-ring)
+    const radarSweep = new THREE.Mesh(new THREE.TorusGeometry(RADAR_R, 0.03, 6, 48, Math.PI), new THREE.MeshBasicMaterial({ color: 0x7ff0ff, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+    radarGroup.add(radarSweep);
+    // target-lock ring (follows the locked asteroid)
+    const lockRing = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.02, 6, 24), new THREE.MeshBasicMaterial({ color: 0xffe066, transparent: true, opacity: 0.9, fog: false }));
+    lockRing.visible = false; radarGroup.add(lockRing);
+    // floating HUD sprite above the sphere
+    const radarHudCvs = document.createElement("canvas"); radarHudCvs.width = 512; radarHudCvs.height = 216;
+    const rhx = radarHudCvs.getContext("2d");
+    const radarHudTex = new THREE.CanvasTexture(radarHudCvs); radarHudTex.colorSpace = THREE.SRGBColorSpace;
+    const radarHud = new THREE.Sprite(new THREE.SpriteMaterial({ map: radarHudTex, transparent: true, depthTest: false, fog: false }));
+    radarHud.scale.set(2.9, 1.22, 1); radarHud.position.set(0, RADAR_R + 1.15, 0);
+    radarGroup.add(radarHud);
+    const radarAsteroids = []; // { mesh, trail, angle, orbitR, speed, y, targetY, chg }
+    let radarLockIdx = -1, radarRefreshT = 99;
+    const radarAstGeo = new THREE.IcosahedronGeometry(1, 0);
+    const makeAsteroid = () => {
+      const mesh = new THREE.Mesh(radarAstGeo, new THREE.MeshBasicMaterial({ color: 0x3fd79a, transparent: true, opacity: 0.95, fog: false }));
+      const trail = new THREE.Mesh(
+        new THREE.ConeGeometry(0.5, 3.2, 8),
+        new THREE.MeshBasicMaterial({ color: 0x3fd79a, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false, fog: false })
+      );
+      trail.position.y = -1.7; trail.rotation.x = Math.PI; // comet tail points down (whence it rose)
+      mesh.add(trail);
+      radarGroup.add(mesh);
+      return { mesh, trail, angle: Math.random() * Math.PI * 2, orbitR: 0.7 + Math.random() * 1.15, speed: 0.18 + Math.random() * 0.3, y: 0, targetY: 0, chg: 0, bull: true };
+    };
+    const drawRadarHud = (lock) => {
+      rhx.clearRect(0, 0, 512, 216);
+      rhx.fillStyle = "rgba(6,16,26,.82)"; rhx.strokeStyle = "rgba(46,230,255,.7)"; rhx.lineWidth = 3;
+      rhx.beginPath(); rhx.roundRect(6, 6, 500, 204, 14); rhx.fill(); rhx.stroke();
+      rhx.fillStyle = "#2ee6ff"; rhx.font = "700 26px system-ui,sans-serif"; rhx.textAlign = "left";
+      rhx.fillText("🎯 TARGET LOCK", 24, 44);
+      if (lock) {
+        const bull = lock.chg >= 0;
+        rhx.fillStyle = "#eaf6ff"; rhx.font = "800 40px system-ui,sans-serif";
+        rhx.fillText(String(lock.name).slice(0, 16), 24, 96);
+        rhx.fillStyle = bull ? "#3fd79a" : "#ff5a4e"; rhx.font = "700 34px 'Courier New',monospace";
+        rhx.fillText(`${lock.price}  ${bull ? "▲" : "▼"}${Math.abs(lock.chg).toFixed(2)}%`, 24, 146);
+        rhx.fillStyle = "#9fd6ff"; rhx.font = "600 24px system-ui,sans-serif";
+        const sug = lock.chg > 2 ? "מומנטום חיובי חזק · הזדמנות לונג" : lock.chg < -2 ? "חולשה · זהירות / שורט" : "יציב · המתנה לאיתות";
+        rhx.fillText(sug, 24, 190);
+      } else {
+        rhx.fillStyle = "#5f7d8f"; rhx.font = "600 24px system-ui,sans-serif";
+        rhx.fillText("סורק שווקים…", 24, 110);
+      }
+      radarHudTex.needsUpdate = true;
+    };
+    drawRadarHud(null);
+    const refreshRadar = () => {
+      const rows = (liveRef.current.marketRows || []).slice(0, 12);
+      while (radarAsteroids.length < rows.length) radarAsteroids.push(makeAsteroid());
+      let lock = null, lockAbs = -1;
+      radarAsteroids.forEach((a, i) => {
+        const r = rows[i];
+        a.mesh.visible = !!r;
+        if (!r) return;
+        a.chg = r.chg || 0; a.bull = a.chg >= 0;
+        const col = a.bull ? 0x3fd79a : 0xff4a3e;
+        a.mesh.material.color.setHex(col); a.trail.material.color.setHex(col);
+        a.trail.visible = a.bull; // comet tail only for risers
+        a.mesh.scale.setScalar(0.12 + Math.min(0.34, Math.abs(a.chg) * 0.045));
+        a.targetY = Math.max(-1.4, Math.min(1.4, a.chg * 0.12));
+        if (Math.abs(a.chg) > lockAbs) { lockAbs = Math.abs(a.chg); lock = { name: r.name, price: r.price, chg: a.chg }; radarLockIdx = i; }
+      });
+      if (!rows.length) radarLockIdx = -1;
+      drawRadarHud(lock);
+    };
+    const updateRadar = (dt) => {
+      radarGroup.rotation.y += dt * 0.08;
+      radarSweep.rotation.y += dt * 0.9;
+      radarRefreshT += dt;
+      if (radarRefreshT >= 4) { radarRefreshT = 0; refreshRadar(); }
+      for (let i = 0; i < radarAsteroids.length; i++) {
+        const a = radarAsteroids[i];
+        if (!a.mesh.visible) continue;
+        a.angle += dt * a.speed;
+        a.y += (a.targetY - a.y) * Math.min(1, dt * 1.4);
+        a.mesh.position.set(Math.cos(a.angle) * a.orbitR, a.y, Math.sin(a.angle) * a.orbitR);
+        a.mesh.rotation.y += dt * 1.1; a.mesh.rotation.x += dt * 0.7;
+        if (!a.bull) a.mesh.material.opacity = 0.65 + Math.random() * 0.35; // bearish electric crackle
+        else a.mesh.material.opacity = 0.95;
+      }
+      if (radarLockIdx >= 0 && radarAsteroids[radarLockIdx]?.mesh.visible) {
+        lockRing.visible = true;
+        lockRing.position.copy(radarAsteroids[radarLockIdx].mesh.position);
+        lockRing.rotation.z += dt * 2.2;
+        const s = 1 + 0.12 * Math.sin(clock.elapsedTime * 4);
+        lockRing.scale.setScalar(s);
+      } else { lockRing.visible = false; }
+    };
+
     // ── Module 3: Interactive Companion (Kids Mode) ──────────────────────
     const kidsCompanionPos = { x: -22, z: -16 };
     const kidsCompanion = buildKidsCompanion();
@@ -8031,6 +8143,8 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       // orbital fleet deployment: Earth spin, drop-pod flight, impact
       // shockwaves and live telemetry-laser links to the secured nodes
       updateFleetOps(dt);
+      // deep-space market radar: sphere spin, live "asteroid" motion + lock
+      updateRadar(dt);
       planeGroup.position.x += dt * 3.2;
       if (planeGroup.position.x > 85) planeGroup.position.x = -85 - Math.random() * 160;
       planeBeacon.material.opacity = (Math.sin(clock.elapsedTime * 6) > 0.4) ? 0.95 : 0.08;
