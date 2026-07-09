@@ -6955,7 +6955,11 @@ export function mountApp(root: HTMLElement) {
 
   // ── Cloud Sync handlers ──
   function updateDriveUI() {
-    const connected = driveSync.isConnected();
+    // "Connected" = we can sync without asking the user again: either a live
+    // token OR prior consent we can silently refresh from. (Before, this was
+    // just the live token, so an hour after sign-in it flipped to "disconnected"
+    // even though sync would auto-reconnect fine.)
+    const connected = driveSync.canAutoConnect();
     const btn = $('driveConnectBtn');
     btn.textContent = connected ? '✓ מחובר' : 'חבר Google Drive';
     btn.classList.toggle('cloud-connected', connected);
@@ -7879,15 +7883,22 @@ export function mountApp(root: HTMLElement) {
       }, 3500); // debounce bursts (e.g. several photos at once)
     });
 
-    // Google Drive fallback
-    if (driveSync.isConnected()) {
-      const hasLocalData = localStorage.getItem('alpha_events') || localStorage.getItem('alpha_tasks') || localStorage.getItem('alpha_brain_memory_v1');
-      if (!hasLocalData) {
-        const r = await driveSync.syncFromCloud();
-        if (r.ok && (r.tables ?? 0) > 0) { setTimeout(() => location.reload(), 500); return; }
+    // Google Drive fallback — gate on canAutoConnect() (consent granted before)
+    // rather than isConnected() (a live, unexpired token). GIS access tokens
+    // die after ~1h, so isConnected() went false an hour after sign-in and the
+    // whole periodic sync never restarted — the "synced at 13:04 then stopped"
+    // bug. ensureToken() silently mints a fresh token before each sync.
+    if (driveSync.canAutoConnect()) {
+      const ok = await driveSync.ensureToken();
+      if (ok) {
+        const hasLocalData = localStorage.getItem('alpha_events') || localStorage.getItem('alpha_tasks') || localStorage.getItem('alpha_brain_memory_v1');
+        if (!hasLocalData) {
+          const r = await driveSync.syncFromCloud();
+          if (r.ok && (r.tables ?? 0) > 0) { setTimeout(() => location.reload(), 500); return; }
+        }
       }
-      setTimeout(() => driveSync.syncToCloud(), 30_000);
-      setInterval(() => { if (driveSync.isConnected()) driveSync.syncToCloud(); }, 5 * 60 * 1000);
+      setTimeout(() => { driveSync.ensureToken().then(t => { if (t) driveSync.syncToCloud(); }); }, 30_000);
+      setInterval(() => { driveSync.ensureToken().then(t => { if (t) driveSync.syncToCloud(); }); }, 5 * 60 * 1000);
     }
   })();
 

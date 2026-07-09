@@ -224,26 +224,30 @@
       // double-load, never an intentional revisit. A deliberate reload later
       // still shows the intro.
       if(window.__alphaIntro){ return; } window.__alphaIntro=true;
-      // Show the intro EXACTLY ONCE per browser session. Any later load in the
-      // same session (a reload, a re-render, or whatever bounced the app back to
-      // the intro) skips it and goes straight to the app. Open a fresh tab to see
-      // the intro again.
+      // Show the big cinematic AT MOST ONCE PER DAY — the first open of the
+      // day gets the full intro, every open after that (same day, new sessions
+      // included) skips straight to the fast branded loading veil. This is the
+      // load-time fix: a fresh app launch no longer forces the ~13s cinematic
+      // every single time, only once a day. (Was: once per browser session,
+      // so every new launch replayed the whole thing.) The skip button still
+      // covers the one daily play.
       try{
-        if(sessionStorage.getItem('alpha_intro_seen')==='1'){
-          // Repeat visit this session — skip the big cinematic, but don't just
-          // dump the half-built dashboard on screen either (cards/hologram
-          // popping in and re-flowing live was the actual complaint: the full
-          // intro looks great, it's every OTHER load that showed raw layout
-          // shift). Hold behind a short branded loading veil instead, until
-          // main.ts signals the first data/HUD pass is actually done.
+        var introDay='';
+        try{ introDay=new Date().toISOString().slice(0,10); }catch(e){ introDay='x'; }
+        if(localStorage.getItem('alpha_intro_day')===introDay){
+          // Already saw the cinematic today — skip it, but don't dump the
+          // half-built dashboard either: hold behind the short branded veil
+          // (with the startup chime) until main.ts signals the first data/HUD
+          // pass is actually done.
           ov.parentNode&&ov.parentNode.removeChild(ov);
           showFastBoot();
           return;
         }
-        sessionStorage.setItem('alpha_intro_seen','1');
+        localStorage.setItem('alpha_intro_day',introDay);
       }catch(e){}
       function showFastBoot(){
         document.documentElement.classList.add('booting');
+        openSound(); // startup chime on the fast (daily) path too — was silent before
         var veil=document.createElement('div');
         veil.id='fastBootVeil';
         veil.innerHTML='<div class="fb-logo-wrap"><img src="%BASE_URL%heavyguard-logo.png" class="fb-logo" alt="" /><div class="fb-scan"></div></div>'+
@@ -291,14 +295,13 @@
       // the videos finish right as the sound ends.
       if(vid){ try{ vid.playbackRate=1.46; }catch(e){} }
       if(vaultVid){ try{ vaultVid.playbackRate=1.46; }catch(e){} }
-      // ── Opening sound: a fully procedural, original cinematic boot theme
-      // (no external audio file) — a rising drone + tension riser, an
-      // ascending arpeggio, a big impact around the face-scan/lock-on gap
-      // between the two videos, a shimmering pad swell, and a closing
-      // activation chime right as the vault video (and the videos'
-      // combined ~13.22s runtime) ends. Built entirely from oscillators/
-      // noise buffers through one master gain so `stopBoot()` can fade the
-      // whole thing out cleanly if the user hits skip early.
+      // ── Opening sound: a short (~3.6s), fully procedural, original startup
+      // chime (no external audio file) in the spirit of a Windows power-on
+      // jingle but distinct — a soft sub, a bright ascending bell chord that
+      // resolves upward, a gentle pad bed and a shimmer sparkle. Plays on
+      // both the daily fast-boot path and the once-a-day cinematic. Built
+      // from oscillators through one master gain so `stopBoot()` can fade it
+      // out cleanly if the user hits skip early.
       var sndStarted=false, bootCtx=null, bootMaster=null;
       function stopBoot(){
         if(!bootCtx) return;
@@ -321,74 +324,55 @@
           var master=ctx.createGain(); master.gain.value=0.9; master.connect(ctx.destination);
           bootMaster=master;
 
-          function noiseBuffer(dur){
-            var len=Math.max(1,Math.floor(ctx.sampleRate*dur)),b=ctx.createBuffer(1,len,ctx.sampleRate),d=b.getChannelData(0);
-            for(var i=0;i<len;i++) d[i]=Math.random()*2-1;
-            return b;
-          }
-          // Deep sub-bass drone — fades in under everything else and holds.
-          var drone=ctx.createOscillator(),droneG=ctx.createGain();
-          drone.type='sine'; drone.frequency.setValueAtTime(38,t); drone.frequency.linearRampToValueAtTime(46,t+8.5);
-          droneG.gain.setValueAtTime(0.0001,t); droneG.gain.exponentialRampToValueAtTime(0.22,t+2.2);
-          droneG.gain.linearRampToValueAtTime(0.16,t+8.5); droneG.gain.exponentialRampToValueAtTime(0.0001,t+13.1);
-          drone.connect(droneG); droneG.connect(master); drone.start(t); drone.stop(t+13.2);
+          // ── Alpha startup chime (~3.6s) ─────────────────────────────────
+          // A short, warm "power-on" signature in the spirit of a Windows
+          // startup jingle but entirely original: a soft sub foundation, a
+          // bright ascending bell chord that resolves upward, a shimmer
+          // sparkle, and a gentle pad bed underneath. No 13s cinematic theme.
+          master.gain.value=0.85;
 
-          // Airy tension riser — highpass-swept noise climbing toward the impact.
-          var riser=ctx.createBufferSource(); riser.buffer=noiseBuffer(5.6); riser.loop=true;
-          var riserHp=ctx.createBiquadFilter(); riserHp.type='highpass';
-          riserHp.frequency.setValueAtTime(300,t); riserHp.frequency.exponentialRampToValueAtTime(5200,t+5.4);
-          var riserG=ctx.createGain(); riserG.gain.setValueAtTime(0.0001,t);
-          riserG.gain.exponentialRampToValueAtTime(0.14,t+5.2); riserG.gain.exponentialRampToValueAtTime(0.0001,t+5.55);
-          riser.connect(riserHp); riserHp.connect(riserG); riserG.connect(master); riser.start(t); riser.stop(t+5.6);
+          // Soft sub foundation — a gentle low swell that gives it weight.
+          var sub=ctx.createOscillator(),subG=ctx.createGain();
+          sub.type='sine'; sub.frequency.setValueAtTime(58,t); sub.frequency.linearRampToValueAtTime(65,t+1.4);
+          subG.gain.setValueAtTime(0.0001,t); subG.gain.exponentialRampToValueAtTime(0.16,t+0.35);
+          subG.gain.linearRampToValueAtTime(0.10,t+1.6); subG.gain.exponentialRampToValueAtTime(0.0001,t+3.0);
+          sub.connect(subG); subG.connect(master); sub.start(t); sub.stop(t+3.1);
 
-          // Ascending sci-fi arpeggio with a light echo, building through the riser.
-          function note(s,freq,d,vol){
-            [0,0.16,0.32].forEach(function(echoDelay,idx){
+          // Signature bell chord — a bright, resolving upward voicing
+          // (G major add9), each note a sine+triangle bell struck in sequence
+          // over ~0.5s, ringing warmly through a soft lowpass.
+          function bell(freq,s,vol){
+            [['sine',1],['triangle',0.5]].forEach(function(v){
               var o=ctx.createOscillator(),g=ctx.createGain(),lp=ctx.createBiquadFilter();
-              lp.type='lowpass'; lp.frequency.value=2600; o.type=idx===0?'sawtooth':'sine';
-              o.frequency.value=freq;
-              var s2=s+echoDelay, v=vol*Math.pow(0.45,idx);
-              g.gain.setValueAtTime(0.0001,t+s2); g.gain.exponentialRampToValueAtTime(v,t+s2+0.03);
-              g.gain.exponentialRampToValueAtTime(0.0001,t+s2+d);
-              o.connect(lp); lp.connect(g); g.connect(master); o.start(t+s2); o.stop(t+s2+d+0.05);
+              o.type=v[0]; o.frequency.value=freq;
+              lp.type='lowpass'; lp.frequency.setValueAtTime(3200,t+s); lp.frequency.exponentialRampToValueAtTime(1400,t+s+1.6);
+              g.gain.setValueAtTime(0.0001,t+s); g.gain.exponentialRampToValueAtTime(vol*v[1],t+s+0.02);
+              g.gain.exponentialRampToValueAtTime(0.0001,t+s+1.9);
+              o.connect(lp); lp.connect(g); g.connect(master); o.start(t+s); o.stop(t+s+2.0);
             });
           }
-          [261.6,329.6,392.0,523.3,659.3].forEach(function(f,i){ note(1.1+i*0.55,f,0.5,0.11); });
+          [[196.0,0.00],[293.66,0.13],[392.0,0.26],[493.88,0.39],[587.33,0.55]]
+            .forEach(function(n,i){ bell(n[0],n[1],0.15-i*0.008); });
 
-          // Impact — sits around the face-scan/lock-on gap between the two
-          // intro videos: sub thump + bright metallic noise burst + clank.
-          var IMPACT=5.55;
-          var thump=ctx.createOscillator(),thumpG=ctx.createGain();
-          thump.type='sine'; thump.frequency.setValueAtTime(120,t+IMPACT); thump.frequency.exponentialRampToValueAtTime(35,t+IMPACT+0.35);
-          thumpG.gain.setValueAtTime(0.5,t+IMPACT); thumpG.gain.exponentialRampToValueAtTime(0.0001,t+IMPACT+0.55);
-          thump.connect(thumpG); thumpG.connect(master); thump.start(t+IMPACT); thump.stop(t+IMPACT+0.6);
-          var hit=ctx.createBufferSource(); hit.buffer=noiseBuffer(0.35);
-          var hitHp=ctx.createBiquadFilter(); hitHp.type='highpass'; hitHp.frequency.value=1800;
-          var hitG=ctx.createGain(); hitG.gain.setValueAtTime(0.32,t+IMPACT); hitG.gain.exponentialRampToValueAtTime(0.0001,t+IMPACT+0.3);
-          hit.connect(hitHp); hitHp.connect(hitG); hitG.connect(master); hit.start(t+IMPACT);
-
-          // Shimmering pad swell — a few detuned voices through a slow lowpass
-          // sweep, filling the space after the impact toward the reveal.
-          [0,-6,7,12].forEach(function(cents,i){
+          // Gentle resolving pad bed under the bells.
+          [196.0,246.94,293.66].forEach(function(f,i){
             var o=ctx.createOscillator(),g=ctx.createGain(),lp=ctx.createBiquadFilter();
-            o.type='triangle'; o.frequency.value=196; o.detune.value=cents*8;
-            lp.type='lowpass'; lp.frequency.setValueAtTime(500,t+IMPACT+0.2); lp.frequency.exponentialRampToValueAtTime(3200,t+12.6);
-            var s3=IMPACT+0.25+i*0.05;
-            g.gain.setValueAtTime(0.0001,t+s3); g.gain.exponentialRampToValueAtTime(0.07,t+s3+2.2);
-            g.gain.linearRampToValueAtTime(0.05,t+12.2); g.gain.exponentialRampToValueAtTime(0.0001,t+13.0);
-            o.connect(lp); lp.connect(g); g.connect(master); o.start(t+s3); o.stop(t+13.05);
+            o.type='triangle'; o.frequency.value=f; o.detune.value=(i-1)*4;
+            lp.type='lowpass'; lp.frequency.setValueAtTime(700,t+0.2); lp.frequency.exponentialRampToValueAtTime(2600,t+2.4);
+            g.gain.setValueAtTime(0.0001,t+0.15); g.gain.exponentialRampToValueAtTime(0.05,t+0.9);
+            g.gain.linearRampToValueAtTime(0.035,t+2.4); g.gain.exponentialRampToValueAtTime(0.0001,t+3.3);
+            o.connect(lp); lp.connect(g); g.connect(master); o.start(t+0.15); o.stop(t+3.35);
           });
 
-          // Closing activation chime — bright, quick, lands right at the
-          // videos' combined runtime as the app reveals.
-          var CHIME=13.0;
-          [880,1318.5,1760].forEach(function(f,i){
+          // Shimmer sparkle — a quick high arpeggio near the resolve.
+          var SPK=1.35;
+          [1174.66,1567.98,1975.53].forEach(function(f,i){
             var o=ctx.createOscillator(),g=ctx.createGain();
             o.type='sine'; o.frequency.value=f;
-            var s4=CHIME+i*0.03;
-            g.gain.setValueAtTime(0.0001,t+s4); g.gain.exponentialRampToValueAtTime(0.16/(i+1),t+s4+0.02);
-            g.gain.exponentialRampToValueAtTime(0.0001,t+s4+0.9);
-            o.connect(g); g.connect(master); o.start(t+s4); o.stop(t+s4+0.95);
+            var s4=SPK+i*0.05;
+            g.gain.setValueAtTime(0.0001,t+s4); g.gain.exponentialRampToValueAtTime(0.09/(i+1),t+s4+0.015);
+            g.gain.exponentialRampToValueAtTime(0.0001,t+s4+0.7);
+            o.connect(g); g.connect(master); o.start(t+s4); o.stop(t+s4+0.75);
           });
 
         }catch(e){}

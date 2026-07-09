@@ -10,6 +10,12 @@ const FOLDER_NAME = 'Alpha Assistant Backup';
 const TOKEN_KEY = 'alpha_gdrive_token';
 const SYNC_TS_KEY = 'alpha_gdrive_last_sync';
 const CLIENT_ID_KEY = 'alpha_gdrive_client_id';
+// Set once the user has interactively granted Drive consent. As long as this
+// is set (and their Google session is alive), we can silently mint a fresh
+// access token without any popup — the fix for "synced at 13:04 then stopped":
+// GIS access tokens expire after ~1h with no refresh token, so without silent
+// re-auth the periodic sync just died an hour after sign-in.
+const CONSENT_KEY = 'alpha_gdrive_consent';
 
 const SYNC_TABLES = [
   'alpha_leads_v1',
@@ -100,30 +106,76 @@ function loadGIS(): Promise<void> {
   });
 }
 
-export async function signIn(): Promise<boolean> {
+// The GIS token client is created once and reused for both the interactive
+// sign-in and every silent refresh. Its single callback resolves whichever
+// request is currently pending.
+let tokenClient: any = null;
+let pendingResolve: ((v: boolean) => void) | null = null;
+
+async function getTokenClient(): Promise<any> {
   const clientId = getClientId();
   if (!clientId) throw new Error('NO_CLIENT_ID');
-
   await loadGIS();
   const google = (window as any).google;
   if (!google?.accounts?.oauth2) throw new Error('GIS_LOAD_FAILED');
-
-  return new Promise((resolve) => {
-    const client = google.accounts.oauth2.initTokenClient({
+  if (!tokenClient) {
+    tokenClient = google.accounts.oauth2.initTokenClient({
       client_id: clientId,
       scope: SCOPES,
       callback: (resp: any) => {
-        if (resp.error) { resolve(false); return; }
-        const token: DriveToken = {
+        const r = pendingResolve; pendingResolve = null;
+        if (resp.error || !resp.access_token) { r?.(false); return; }
+        saveToken({
           access_token: resp.access_token,
           expires_at: Date.now() + (resp.expires_in || 3600) * 1000,
-        };
-        saveToken(token);
-        resolve(true);
+        });
+        try { localStorage.setItem(CONSENT_KEY, '1'); } catch {}
+        r?.(true);
       },
     });
-    client.requestAccessToken();
+  }
+  return tokenClient;
+}
+
+// prompt '' = silent (no UI) — works only if consent was already granted and
+// the Google session is alive; 'consent'/'' handled by GIS. A popup only
+// appears for the interactive sign-in.
+function requestToken(prompt: '' | 'consent'): Promise<boolean> {
+  return new Promise((resolve) => {
+    getTokenClient().then((client) => {
+      // if a request is already pending, don't stomp it
+      if (pendingResolve) { resolve(false); return; }
+      pendingResolve = resolve;
+      try { client.requestAccessToken({ prompt }); }
+      catch { pendingResolve = null; resolve(false); }
+    }).catch(() => resolve(false));
   });
+}
+
+export async function signIn(): Promise<boolean> {
+  // interactive: shows the account/consent popup, then records consent so all
+  // later refreshes can be silent.
+  return requestToken('consent');
+}
+
+// Ensure we hold a usable access token, silently minting a fresh one when the
+// current one is missing or within 2 min of expiry. Returns false only when an
+// interactive sign-in is genuinely required (no prior consent, or the silent
+// refresh was rejected because the Google session ended).
+export async function ensureToken(): Promise<boolean> {
+  const t = getToken();
+  if (t && t.expires_at > Date.now() + 120_000) return true; // valid, with margin
+  if (getClientId() && localStorage.getItem(CONSENT_KEY) === '1') {
+    const ok = await requestToken('');
+    if (ok) return true;
+  }
+  return !!getToken();
+}
+
+// True when a silent (re)connection is possible without user interaction —
+// used to decide whether to auto-start the periodic sync at load.
+export function canAutoConnect(): boolean {
+  return !!getClientId() && (isConnected() || localStorage.getItem(CONSENT_KEY) === '1');
 }
 
 async function driveRequest(path: string, opts: RequestInit = {}): Promise<any> {
@@ -207,7 +259,7 @@ export async function syncToCloud(onProgress?: (msg: string) => void): Promise<{
   if (syncInProgress) return { ok: false, error: 'Sync already in progress' };
   syncInProgress = true;
   try {
-    if (!isConnected()) return { ok: false, error: 'Not connected to Google Drive' };
+    if (!(await ensureToken())) return { ok: false, error: 'Not connected to Google Drive' };
     const pid = await ensureFolder();
     onProgress?.('Uploading data…');
 
@@ -233,7 +285,7 @@ export async function syncFromCloud(onProgress?: (msg: string) => void): Promise
   if (syncInProgress) return { ok: false, error: 'Sync already in progress' };
   syncInProgress = true;
   try {
-    if (!isConnected()) return { ok: false, error: 'Not connected to Google Drive' };
+    if (!(await ensureToken())) return { ok: false, error: 'Not connected to Google Drive' };
     const pid = await ensureFolder();
     onProgress?.('Downloading data…');
 
