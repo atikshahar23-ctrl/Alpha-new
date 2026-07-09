@@ -5967,6 +5967,9 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   const radioRef = useRef(null);
   const [radioPlaying, setRadioPlaying] = useState(false);
   const [radioStationName, setRadioStationName] = useState("");
+  // Mirror the radio-playing state onto liveRef so the in-scene Music Reactor
+  // Core (Module 5) can gate its energy on whether a station is actually on.
+  useEffect(() => { liveRef.current.radioPlaying = radioPlaying; }, [radioPlaying]);
   const handleRadioPlayState = (isPlaying, stationName) => {
     if (stationName) setRadioStationName(stationName);
     // Edge-triggered: switching stations mid-broadcast re-fires this with
@@ -7813,6 +7816,85 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       alphaSpots.push({ x: SUN_SPOT.x, z: SUN_SPOT.z });
     }
     scene.userData.alphaSpots = alphaSpots;
+
+    // ── Module 5: Music Reactor Core ─────────────────────────────────────
+    // A cylindrical equalizer wrapping the central Alpha hologram's stage —
+    // a ring of light-bars that pump to a synthetic spectrum, plus a pulsing
+    // base ring + up-light. The radio streams are cross-origin, so a live
+    // AnalyserNode FFT would be CORS-tainted (zeros, and can mute playback);
+    // instead the bars run off a procedural beat/spectrum whose overall
+    // energy is gated by the live radio-playing state (liveRef.radioPlaying)
+    // and the workload, so the whole core visibly "kicks up" the moment a
+    // station goes on and idles gently when it's off.
+    const REACTOR_SPOT = { x: -2.5, z: -1.0 };
+    const REACTOR_N = 56;
+    const R_RADIUS = 2.6;
+    const reactorBarGeo = new THREE.BoxGeometry(0.17, 1, 0.1);
+    reactorBarGeo.translate(0, 0.5, 0); // pivot at the base so scale.y grows upward
+    const reactorBars = new THREE.InstancedMesh(reactorBarGeo, new THREE.MeshBasicMaterial({ toneMapped: false }), REACTOR_N);
+    reactorBars.position.set(REACTOR_SPOT.x, 0.15, REACTOR_SPOT.z);
+    reactorBars.frustumCulled = false;
+    const reactorBandBase = new Float32Array(REACTOR_N);
+    const reactorBandVal = new Float32Array(REACTOR_N);
+    const reactorDummy = new THREE.Object3D();
+    {
+      const tmpCol = new THREE.Color();
+      for (let i = 0; i < REACTOR_N; i++) {
+        const a = (i / REACTOR_N) * Math.PI * 2;
+        reactorDummy.position.set(Math.cos(a) * R_RADIUS, 0, Math.sin(a) * R_RADIUS);
+        reactorDummy.rotation.set(0, -a, 0);
+        reactorDummy.scale.set(1, 0.2, 1);
+        reactorDummy.updateMatrix();
+        reactorBars.setMatrixAt(i, reactorDummy.matrix);
+        tmpCol.setHSL((i / REACTOR_N) % 1, 0.85, 0.56);
+        reactorBars.setColorAt(i, tmpCol);
+        reactorBandBase[i] = 0.5 + Math.random() * 0.5;
+      }
+      reactorBars.instanceMatrix.needsUpdate = true;
+      if (reactorBars.instanceColor) reactorBars.instanceColor.needsUpdate = true;
+    }
+    scene.add(reactorBars);
+    const reactorRing = new THREE.Mesh(
+      new THREE.TorusGeometry(R_RADIUS, 0.05, 10, 80),
+      new THREE.MeshBasicMaterial({ color: 0x2ee6ff, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, toneMapped: false })
+    );
+    reactorRing.rotation.x = Math.PI / 2;
+    reactorRing.position.set(REACTOR_SPOT.x, 0.2, REACTOR_SPOT.z);
+    scene.add(reactorRing);
+    const reactorLight = new THREE.PointLight(0x2ee6ff, 0.6, 14);
+    reactorLight.position.set(REACTOR_SPOT.x, 1.2, REACTOR_SPOT.z);
+    scene.add(reactorLight);
+    let reactorBeat = 0, reactorBeatClock = 0, reactorEnergy = 0;
+    const updateReactor = (dt) => {
+      const playing = !!liveRef.current.radioPlaying;
+      // Beat generator — faster/harder when a station is on.
+      const beatPeriod = playing ? 0.46 : 0.9;
+      reactorBeatClock += dt;
+      if (reactorBeatClock >= beatPeriod) { reactorBeatClock -= beatPeriod; reactorBeat = 1; }
+      reactorBeat = Math.max(0, reactorBeat - dt * (playing ? 3.4 : 2.2));
+      const targetEnergy = (playing ? 1 : 0.32) * (0.7 + workload * 0.6);
+      reactorEnergy += (targetEnergy - reactorEnergy) * Math.min(1, dt * 3);
+      const now = clock.elapsedTime;
+      for (let i = 0; i < REACTOR_N; i++) {
+        const bass = 0.5 + 0.5 * Math.cos((i / REACTOR_N) * Math.PI * 4); // "low bands" pump hardest on the beat
+        const wobble = 0.5 + 0.5 * Math.sin(now * (2 + (i % 7) * 0.6) + i * 0.5);
+        const target = reactorEnergy * (0.2 + reactorBandBase[i] * wobble * 0.7 + reactorBeat * bass * 0.9);
+        reactorBandVal[i] += (target - reactorBandVal[i]) * Math.min(1, dt * 12);
+        const h = 0.12 + reactorBandVal[i] * 2.4;
+        const a = (i / REACTOR_N) * Math.PI * 2;
+        reactorDummy.position.set(Math.cos(a) * R_RADIUS, 0, Math.sin(a) * R_RADIUS);
+        reactorDummy.rotation.set(0, -a, 0);
+        reactorDummy.scale.set(1, h, 1);
+        reactorDummy.updateMatrix();
+        reactorBars.setMatrixAt(i, reactorDummy.matrix);
+      }
+      reactorBars.instanceMatrix.needsUpdate = true;
+      const pulse = 0.5 + reactorBeat * 0.5 + reactorEnergy * 0.2;
+      reactorRing.scale.setScalar(1 + reactorBeat * 0.05);
+      reactorRing.material.opacity = 0.4 + pulse * 0.45;
+      reactorLight.intensity = 0.4 + reactorBeat * 1.4 * reactorEnergy;
+      reactorLight.color.setHSL((now * 0.05) % 1, 0.7, 0.6);
+    };
     // The owner's chair in world coordinates — where the player can sit down.
     const OWNER_SEAT = {
       x: OFFICE_ORIGIN.x + ownerOffice.seatLocal.x,
@@ -8772,6 +8854,9 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       updateRadar(dt);
       // crew holograms: idle shimmer + talk-reactive pulse per agent
       updateCrew(dt);
+      // music reactor core: equalizer bars pumping to the synthetic spectrum,
+      // energy gated by whether a radio station is actually playing
+      updateReactor(dt);
       planeGroup.position.x += dt * 3.2;
       if (planeGroup.position.x > 85) planeGroup.position.x = -85 - Math.random() * 160;
       planeBeacon.material.opacity = (Math.sin(clock.elapsedTime * 6) > 0.4) ? 0.95 : 0.08;
