@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useMemo } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { SPACE_MODULES } from "./space-modules/registry.js"; // GOD-TIER MEGA-PATCH V3.0
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
 import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
@@ -7873,7 +7874,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       reactorBars.instanceMatrix.needsUpdate = true;
       if (reactorBars.instanceColor) reactorBars.instanceColor.needsUpdate = true;
     }
-    scene.add(reactorBars);
+    scene.add(reactorBars); reactorBars.userData.spaceDynamic = true;
     const reactorRing = new THREE.Mesh(
       new THREE.TorusGeometry(R_RADIUS, 0.05, 10, 80),
       new THREE.MeshBasicMaterial({ color: 0x2ee6ff, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, toneMapped: false })
@@ -7925,7 +7926,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     const VAULT_SPOT = { x: -19, z: -7 };
     const vaultGroup = new THREE.Group();
     vaultGroup.position.set(VAULT_SPOT.x, 0, VAULT_SPOT.z);
-    scene.add(vaultGroup);
+    scene.add(vaultGroup); vaultGroup.userData.spaceDynamic = true;
     obstacles.push({ x: VAULT_SPOT.x, z: VAULT_SPOT.z, r: 2.2 });
     const vaultPlinth = new THREE.Mesh(
       new THREE.CylinderGeometry(1.7, 1.9, 0.5, 36),
@@ -8058,7 +8059,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       const gu = buildGuardian(guardCalm[i].getHex());
       gu.baseAngle = (i / GUARD_N) * Math.PI * 2;
       gu.orbitR = 13; gu.speed = 0.12 + i * 0.03; gu.bob = Math.random() * Math.PI * 2;
-      scene.add(gu.group);
+      scene.add(gu.group); gu.group.userData.spaceDynamic = true;
       guardians.push(gu);
     }
     let guardT = 0;
@@ -8092,7 +8093,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     const COMMS_SPOT = { x: -15, z: 24 };
     const commsGroup = new THREE.Group();
     commsGroup.position.set(COMMS_SPOT.x, 0, COMMS_SPOT.z);
-    scene.add(commsGroup);
+    scene.add(commsGroup); commsGroup.userData.spaceDynamic = true;
     obstacles.push({ x: COMMS_SPOT.x, z: COMMS_SPOT.z, r: 1.0 });
     const commsPylon = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.34, 2.4, 12), new THREE.MeshStandardMaterial({ color: 0x1a1f2a, metalness: 0.7, roughness: 0.35 }));
     commsPylon.position.y = 1.2; commsGroup.add(commsPylon);
@@ -8216,7 +8217,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     for (let i = 0; i < DRONE_N; i++) {
       const d = buildDrone(droneCols[i]);
       d.offset = i / DRONE_N; d.speed = 0.021 + i * 0.0015;
-      scene.add(d.group);
+      scene.add(d.group); d.group.userData.spaceDynamic = true;
       drones.push(d);
     }
     let droneBayT = 0;
@@ -8235,6 +8236,24 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         d.nav.intensity = Math.sin(droneBayT * 6 + i * 1.6) > 0 ? 0.5 : 0.1;
       }
     };
+    // ── GOD-TIER MEGA-PATCH V3.0 — modular space-module loader ───────────
+    // Each module is a self-contained factory in agents/space-modules/*; they
+    // receive one shared context and return { update(dt), dispose() }, ticked
+    // in animate() below and freed on unmount. markDynamic() opts a module's
+    // animated root OUT of the matrix-freeze pass so its transforms apply. A
+    // throwing factory is caught + skipped so one bad module can't blank the
+    // deck. (The 7 V2.0 modules stay inline above; new ones land in the dir.)
+    const spaceModuleCtx = {
+      THREE, scene, camera, liveRef, obstacles,
+      base: import.meta.env.BASE_URL || "/",
+      markDynamic: (o) => { if (o) o.userData.spaceDynamic = true; },
+      helpers: { buildNeonSign, disposeMaterial },
+      anchors: { sun: { x: -2.5, z: -1.0 }, warTable: warTablePos, algoZone: algoZonePos, droneBay: DRONE_BAY },
+    };
+    const spaceModules = SPACE_MODULES.map((m) => {
+      try { return m.create(spaceModuleCtx); } catch (e) { console.error("[space-module] " + m.id + " failed to init", e); return null; }
+    }).filter(Boolean);
+
     // The owner's chair in world coordinates — where the player can sit down.
     const OWNER_SEAT = {
       x: OFFICE_ORIGIN.x + ownerOffice.seatLocal.x,
@@ -8797,7 +8816,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         camera,
       ]);
       const isDynamic = (o) => {
-        for (let p = o; p; p = p.parent) if (dynamicRoots.has(p)) return true;
+        // A root explicitly flagged spaceDynamic (V2.0 in-scene modules +
+        // every V3.0 space-module) keeps its per-frame transforms live instead
+        // of being frozen — otherwise guardians/drones/comms/vault + the new
+        // modules would render at their first-frame pose and never move.
+        for (let p = o; p; p = p.parent) if (dynamicRoots.has(p) || (p.userData && p.userData.spaceDynamic)) return true;
         return false;
       };
       scene.traverse((o) => {
@@ -9205,6 +9228,8 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       updateComms(dt);
       // drone bay: four quad-drones flying an autonomous patrol circuit
       updateDrones(dt);
+      // GOD-TIER MEGA-PATCH V3.0 — tick every registered space-module
+      for (let mi = 0; mi < spaceModules.length; mi++) { const m = spaceModules[mi]; if (m.update) m.update(dt); }
       planeGroup.position.x += dt * 3.2;
       if (planeGroup.position.x > 85) planeGroup.position.x = -85 - Math.random() * 160;
       planeBeacon.material.opacity = (Math.sin(clock.elapsedTime * 6) > 0.4) ? 0.95 : 0.08;
@@ -10383,6 +10408,9 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         mount.removeEventListener("click", onGodClick);
         transformControls.dispose();
         clearInterval(autoSaveIv);
+        // GOD-TIER MEGA-PATCH V3.0 — let every space-module free its own extras
+        // (audio/listeners) before the blanket scene dispose below.
+        for (const m of spaceModules) { try { if (m.dispose) m.dispose(); } catch {} }
         // ALPHA MEGA-PATCH V1.0 teardown
         try { warDragControls.dispose(); } catch {}
         try { candleWs?.close(); } catch {}
