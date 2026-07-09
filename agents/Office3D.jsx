@@ -4,6 +4,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { SPACE_MODULES } from "./space-modules/registry.js"; // GOD-TIER MEGA-PATCH V3.0
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
 import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import { VRButton } from "three/examples/jsm/webxr/VRButton.js";
@@ -6298,6 +6299,23 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           undefined,
           () => { /* offline/blocked — keep the procedural skyline + lights */ }
         );
+    } else {
+      // CRITICAL for phones: the crew are METALLIC PBR robots, and a metal
+      // material with no scene.environment renders pure black — which is why
+      // "the models don't show on the phone". Mobile skips the 2K HDR download
+      // above, so give it a cheap procedural RoomEnvironment instead (no
+      // network, one fast PMREM prefilter) purely as an image-based light
+      // source so the metals actually catch light and the crew is visible.
+      try {
+        const pmrem = new THREE.PMREMGenerator(renderer);
+        const roomEnv = new RoomEnvironment();
+        scene.environment = pmrem.fromScene(roomEnv, 0.04).texture;
+        // Half strength so the metals catch light (crew visible) without
+        // washing out the deep-space "night" mood the deck is going for.
+        scene.environmentIntensity = 0.55;
+        if (roomEnv.dispose) roomEnv.dispose();
+        pmrem.dispose();
+      } catch (e) { /* keep the procedural lights as the fallback */ }
     }
 
     // Sky/ground hemisphere fill for a soft, realistic ambient gradient, on
