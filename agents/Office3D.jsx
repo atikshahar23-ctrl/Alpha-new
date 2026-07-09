@@ -2864,6 +2864,478 @@ function SpaceOverlay({ onReturn, load = 0 }) {
   );
 }
 
+// ── Module 3: Quantum Holodeck ─────────────────────────────────────────────
+// A drivable "light-cycle" hyperspace tunnel entered from a blast-door portal
+// on the bridge. Self-contained overlay (own scene / camera / renderer /
+// composer+bloom / animate / cleanup), mirroring SpaceOverlay + DriveOverlay.
+//
+// The tunnel is a single long BackSide cylinder whose emissive neon-grid
+// texture SCROLLS along its own axis — that texture scroll (not translating a
+// camera down an endless mesh) is what sells "infinite warp", so it can never
+// run out of track or pop. The ship holds station near z=0 and flies around
+// the tube interior with real velocity + wall-riding + banking; glowing energy
+// orbs stream toward the camera to be collected, charging a hyperdrive meter
+// that, when full, kicks a white warp surge. Keyboard, the shared liveRef
+// joystick (right stick = movement, per CLAUDE.md), a standard gamepad, and
+// touch-drag on the canvas all steer — so it's playable on desktop and mobile.
+function HolodeckOverlay({ onReturn, liveRef }) {
+  const mountRef = useRef(null);
+  const chargeFillRef = useRef(null);
+  const scoreRef = useRef(null);
+  const msgRef = useRef(null);
+  const boostHeldRef = useRef(false);
+
+  useEffect(() => {
+    const mount = mountRef.current;
+    if (!mount) return;
+    let cancelled = false;
+    const base = import.meta.env.BASE_URL || "/";
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x03010c);
+    // Linear fog matched to the background so the far end of the tube (and the
+    // additive gate rings streaming in from -z) dissolve into darkness — the
+    // reason the finite 900-unit cylinder reads as endless.
+    scene.fog = new THREE.Fog(0x0a0330, 40, 240);
+
+    const camera = new THREE.PerspectiveCamera(74, mount.clientWidth / mount.clientHeight, 0.1, 1400);
+    camera.position.set(0, 2.2, 11);
+    camera.lookAt(0, 0, -30);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+    renderer.setSize(mount.clientWidth, mount.clientHeight);
+    mount.appendChild(renderer.domElement);
+
+    const composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+    const bloom = new UnrealBloomPass(new THREE.Vector2(mount.clientWidth, mount.clientHeight), 1.15, 0.85, 0.2);
+    composer.addPass(bloom);
+    composer.addPass(new OutputPass());
+    composer.setSize(mount.clientWidth, mount.clientHeight);
+
+    // The GLB ship is PBR, so it needs real lights (the tube/rings/streaks are
+    // all MeshBasic and ignore them).
+    scene.add(new THREE.AmbientLight(0x4060ff, 0.55));
+    const headLight = new THREE.PointLight(0x8fe0ff, 2.4, 40);
+    headLight.position.set(0, 1.4, 12);
+    scene.add(headLight);
+
+    const TUBE_R = 9;
+
+    // ── Neon-grid tube ────────────────────────────────────────────────────
+    const gridCvs = document.createElement("canvas");
+    gridCvs.width = 512; gridCvs.height = 512;
+    {
+      const g = gridCvs.getContext("2d");
+      g.fillStyle = "#040018"; g.fillRect(0, 0, 512, 512);
+      const drawLines = (color, step, w, blur) => {
+        g.strokeStyle = color; g.lineWidth = w; g.shadowColor = color; g.shadowBlur = blur;
+        for (let i = 0; i <= 512; i += step) {
+          g.beginPath(); g.moveTo(i, 0); g.lineTo(i, 512); g.stroke();
+          g.beginPath(); g.moveTo(0, i); g.lineTo(512, i); g.stroke();
+        }
+      };
+      drawLines("rgba(30,220,255,0.9)", 64, 2, 12);
+      drawLines("rgba(255,60,200,0.5)", 128, 3, 16);
+      g.shadowBlur = 0;
+    }
+    const gridTex = new THREE.CanvasTexture(gridCvs);
+    gridTex.wrapS = gridTex.wrapT = THREE.RepeatWrapping;
+    gridTex.repeat.set(10, 40);
+    const tubeGeo = new THREE.CylinderGeometry(TUBE_R, TUBE_R, 900, 72, 1, true);
+    tubeGeo.rotateX(Math.PI / 2); // axis along z
+    const tubeMat = new THREE.MeshBasicMaterial({ map: gridTex, side: THREE.BackSide, color: 0x7fbfff });
+    const tube = new THREE.Mesh(tubeGeo, tubeMat);
+    tube.position.set(0, 0, -400); // camera (z=12) sits inside its +z mouth
+    scene.add(tube);
+
+    // ── Gate rings — bright neon hoops streaming in from -z, recycled ───────
+    const gateRings = [];
+    const GATE_COUNT = 16, GATE_SPACING = 34;
+    for (let i = 0; i < GATE_COUNT; i++) {
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(TUBE_R - 0.35, 0.16, 10, 64),
+        new THREE.MeshBasicMaterial({ color: i % 2 ? 0xff3cc7 : 0x2ee6ff, transparent: true, opacity: 0.92, blending: THREE.AdditiveBlending, depthWrite: false })
+      );
+      ring.position.z = 8 - i * GATE_SPACING;
+      scene.add(ring);
+      gateRings.push(ring);
+    }
+
+    // ── Warp streaks — a point field rushing toward the camera ──────────────
+    const STREAKS = 700;
+    const stPos = new Float32Array(STREAKS * 3);
+    const resetStreak = (i, spread) => {
+      const a = Math.random() * Math.PI * 2;
+      const r = 1.2 + Math.random() * (TUBE_R - 1.2);
+      stPos[i * 3] = Math.cos(a) * r;
+      stPos[i * 3 + 1] = Math.sin(a) * r;
+      stPos[i * 3 + 2] = spread ? -Math.random() * 700 : 10 - Math.random() * 24;
+    };
+    for (let i = 0; i < STREAKS; i++) resetStreak(i, true);
+    const stGeo = new THREE.BufferGeometry();
+    stGeo.setAttribute("position", new THREE.BufferAttribute(stPos, 3));
+    const streaks = new THREE.Points(stGeo, new THREE.PointsMaterial({ color: 0xbfeaff, size: 0.42, transparent: true, opacity: 0.58, blending: THREE.AdditiveBlending, depthWrite: false }));
+    scene.add(streaks);
+
+    // ── Energy orbs — collectible glowing spheres, pooled ───────────────────
+    const orbs = [];
+    const ORB_COUNT = 12;
+    const orbGeo = new THREE.IcosahedronGeometry(0.7, 1);
+    const shellGeo = new THREE.IcosahedronGeometry(1.15, 1);
+    const placeOrb = (o, initial) => {
+      const a = Math.random() * Math.PI * 2;
+      const r = Math.random() * (TUBE_R - 2.2);
+      o.mesh.position.set(Math.cos(a) * r, Math.sin(a) * r, -240 - Math.random() * (initial ? 500 : 320));
+      o.collected = false;
+      o.mesh.visible = true;
+    };
+    for (let i = 0; i < ORB_COUNT; i++) {
+      const col = Math.random() < 0.5 ? 0x3fd79a : 0xE4BC63;
+      const m = new THREE.Mesh(orbGeo, new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending }));
+      const shell = new THREE.Mesh(shellGeo, new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false }));
+      m.add(shell);
+      scene.add(m);
+      const o = { mesh: m, col };
+      placeOrb(o, true);
+      orbs.push(o);
+    }
+
+    // ── Collect-burst pool — a few short-lived additive point puffs ─────────
+    const bursts = [];
+    const spawnBurst = (pos, colorHex) => {
+      const n = 26;
+      const p = new Float32Array(n * 3);
+      const vel = [];
+      for (let i = 0; i < n; i++) {
+        p[i * 3] = pos.x; p[i * 3 + 1] = pos.y; p[i * 3 + 2] = pos.z;
+        const a = Math.random() * Math.PI * 2, e = (Math.random() - 0.5) * Math.PI;
+        const s = 6 + Math.random() * 10;
+        vel.push(new THREE.Vector3(Math.cos(a) * Math.cos(e) * s, Math.sin(e) * s, Math.sin(a) * Math.cos(e) * s + 14));
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(p, 3));
+      const pts = new THREE.Points(geo, new THREE.PointsMaterial({ color: colorHex, size: 0.5, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false }));
+      scene.add(pts);
+      bursts.push({ pts, vel, life: 0.6 });
+    };
+
+    // ── Ship (the Tiggo — "the business flew to space") ─────────────────────
+    let ship = null;
+    const shipHolder = new THREE.Group();
+    scene.add(shipHolder);
+    const engineGlow = new THREE.PointLight(0x66d0ff, 1.8, 16);
+    engineGlow.position.set(0, 0, 2);
+    shipHolder.add(engineGlow);
+    // The Tiggo's rear faces the camera, so a bright additive exhaust flare +
+    // halo on its back is what makes the (otherwise dark, unlit-against-bloom)
+    // ship read clearly against the blazing tunnel — plus a warm key light so
+    // its bodywork catches highlights from the camera side.
+    const thruster = new THREE.Mesh(
+      new THREE.ConeGeometry(0.5, 1.8, 16, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0x66e0ff, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false })
+    );
+    thruster.rotation.x = -Math.PI / 2; // flare points +z, toward the camera
+    thruster.position.set(0, 0.25, 1.7);
+    shipHolder.add(thruster);
+    const thrustHalo = new THREE.Mesh(
+      new THREE.SphereGeometry(0.55, 16, 16),
+      new THREE.MeshBasicMaterial({ color: 0x9ff0ff, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false })
+    );
+    thrustHalo.position.set(0, 0.25, 1.9);
+    shipHolder.add(thrustHalo);
+    const keyLight = new THREE.PointLight(0xfff0d0, 1.4, 22);
+    keyLight.position.set(0, 2.6, 6);
+    shipHolder.add(keyLight);
+    const buildFallbackShip = () => {
+      const grp = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.ConeGeometry(0.8, 3, 6), new THREE.MeshStandardMaterial({ color: 0x1b2340, metalness: 0.7, roughness: 0.3, emissive: 0x2ee6ff, emissiveIntensity: 0.4 }));
+      body.rotation.x = -Math.PI / 2;
+      grp.add(body);
+      const wing = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.12, 0.9), new THREE.MeshStandardMaterial({ color: 0x0e1530, emissive: 0xff3cc7, emissiveIntensity: 0.35, metalness: 0.6, roughness: 0.4 }));
+      wing.position.z = 0.7;
+      grp.add(wing);
+      return grp;
+    };
+    const loader = new GLTFLoader();
+    loader.setMeshoptDecoder(MeshoptDecoder);
+    loader.load(base + "office-models/tiggo7.glb", (g) => {
+      if (cancelled) return;
+      const s = g.scene;
+      const bb = new THREE.Box3().setFromObject(s);
+      const sz = bb.getSize(new THREE.Vector3());
+      const c = bb.getCenter(new THREE.Vector3());
+      const sc = 4.2 / Math.max(sz.x, sz.z, 0.001);
+      s.position.set(-c.x, -bb.min.y - sz.y / 2, -c.z);
+      const wrap = new THREE.Group();
+      wrap.add(s);
+      wrap.scale.setScalar(sc);
+      wrap.rotation.y = Math.PI; // nose into the tunnel (-z)
+      shipHolder.add(wrap);
+      ship = wrap;
+    }, undefined, () => { if (cancelled) return; const f = buildFallbackShip(); shipHolder.add(f); ship = f; });
+
+    // ── Audio — a rising bass drone + collect blip + hyperdrive whoosh ──────
+    let audioCtx = null, bassOsc = null, bassGain = null, bassLp = null;
+    const ensureAudio = () => {
+      if (audioCtx) { if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {}); return; }
+      try {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        bassOsc = audioCtx.createOscillator(); bassOsc.type = "sawtooth"; bassOsc.frequency.value = 55;
+        bassLp = audioCtx.createBiquadFilter(); bassLp.type = "lowpass"; bassLp.frequency.value = 320;
+        bassGain = audioCtx.createGain(); bassGain.gain.value = 0.045;
+        bassOsc.connect(bassLp); bassLp.connect(bassGain); bassGain.connect(audioCtx.destination);
+        bassOsc.start();
+      } catch { audioCtx = null; }
+    };
+    const blip = (freq) => {
+      if (!audioCtx) return;
+      const now = audioCtx.currentTime;
+      const o = audioCtx.createOscillator(); o.type = "sine"; o.frequency.setValueAtTime(freq, now); o.frequency.exponentialRampToValueAtTime(freq * 2, now + 0.12);
+      const gg = audioCtx.createGain(); gg.gain.setValueAtTime(0.0001, now); gg.gain.exponentialRampToValueAtTime(0.12, now + 0.01); gg.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+      o.connect(gg); gg.connect(audioCtx.destination); o.start(now); o.stop(now + 0.24);
+    };
+    const whoosh = () => {
+      if (!audioCtx) return;
+      const now = audioCtx.currentTime;
+      const o = audioCtx.createOscillator(); o.type = "sawtooth"; o.frequency.setValueAtTime(880, now); o.frequency.exponentialRampToValueAtTime(110, now + 0.7);
+      const gg = audioCtx.createGain(); gg.gain.setValueAtTime(0.0001, now); gg.gain.exponentialRampToValueAtTime(0.16, now + 0.03); gg.gain.exponentialRampToValueAtTime(0.0001, now + 0.75);
+      o.connect(gg); gg.connect(audioCtx.destination); o.start(now); o.stop(now + 0.78);
+    };
+    ensureAudio();
+
+    // ── Input ───────────────────────────────────────────────────────────────
+    const keys = {};
+    const onKeyDown = (e) => { keys[e.key.toLowerCase()] = true; if (e.key === " ") e.preventDefault(); ensureAudio(); };
+    const onKeyUp = (e) => { keys[e.key.toLowerCase()] = false; };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+
+    // Touch/mouse drag on the canvas steers the ship (so mobile players who
+    // can't reach the office joysticks under the overlay still fly it).
+    let dragX = 0, dragY = 0, dragging = false, lastPX = 0, lastPY = 0;
+    const onDown = (e) => { dragging = true; const p = e.touches ? e.touches[0] : e; lastPX = p.clientX; lastPY = p.clientY; ensureAudio(); };
+    const onMove = (e) => {
+      if (!dragging) return;
+      const p = e.touches ? e.touches[0] : e;
+      dragX = clamp(dragX + (p.clientX - lastPX) * 0.02, -1, 1);
+      dragY = clamp(dragY - (p.clientY - lastPY) * 0.02, -1, 1);
+      lastPX = p.clientX; lastPY = p.clientY;
+    };
+    const onUp = () => { dragging = false; };
+    mount.addEventListener("mousedown", onDown);
+    mount.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    mount.addEventListener("touchstart", onDown, { passive: true });
+    mount.addEventListener("touchmove", onMove, { passive: true });
+    mount.addEventListener("touchend", onUp);
+
+    // Gamepad — phantom-connection-safe (see CLAUDE.md).
+    let gamepadIndex = null;
+    const onGpConnect = (e) => { gamepadIndex = e.gamepad.index; };
+    const onGpDisconnect = (e) => { if (gamepadIndex === e.gamepad.index) gamepadIndex = null; };
+    window.addEventListener("gamepadconnected", onGpConnect);
+    window.addEventListener("gamepaddisconnected", onGpDisconnect);
+    try {
+      const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+      for (const g of pads) { if (g && g.connected && g.mapping === "standard") { gamepadIndex = g.index; break; } }
+    } catch {}
+    const gpAxis = (v) => (Math.abs(v) < 0.12 ? 0 : v);
+
+    // ── State ───────────────────────────────────────────────────────────────
+    let shipX = 0, shipY = 0, vx = 0, vy = 0;
+    let charge = 0, score = 0, warpSurge = 1, hyperFlash = 0, hueMix = 0;
+    const tubeColA = new THREE.Color(0x7fbfff), tubeColB = new THREE.Color(0xff8fe0);
+    const clock = new THREE.Clock();
+    let raf = null;
+
+    const animate = () => {
+      if (cancelled) return;
+      raf = requestAnimationFrame(animate);
+      const dt = Math.min(0.05, clock.getDelta());
+
+      // Gather steering from every input channel and sum them.
+      const jv = liveRef?.current?.joyVec || { x: 0, y: 0 };
+      const gp = (gamepadIndex !== null && navigator.getGamepads) ? navigator.getGamepads()[gamepadIndex] : null;
+      const kx = (keys["d"] || keys["arrowright"] ? 1 : 0) - (keys["a"] || keys["arrowleft"] ? 1 : 0);
+      const ky = (keys["w"] || keys["arrowup"] ? 1 : 0) - (keys["s"] || keys["arrowdown"] ? 1 : 0);
+      const gpx = gp ? gpAxis(gp.axes[0] || 0) : 0;
+      const gpy = gp ? -gpAxis(gp.axes[1] || 0) : 0;
+      const steerX = clamp(kx + jv.x + gpx + dragX, -1.4, 1.4);
+      const steerY = clamp(ky - jv.y + gpy + dragY, -1.4, 1.4);
+      // Drag input eases back to neutral so a flick nudges rather than sticks.
+      dragX -= dragX * Math.min(1, dt * 2.4);
+      dragY -= dragY * Math.min(1, dt * 2.4);
+
+      const boost = !!(keys[" "] || boostHeldRef.current || (gp && gp.buttons[7] && gp.buttons[7].value > 0.4) || (gp && gp.buttons[0] && gp.buttons[0].pressed));
+
+      // Ship flight — accel + damping, then clamp inside the tube and ride the
+      // wall (kill only the outward velocity component) instead of stopping dead.
+      vx += steerX * 48 * dt; vy += steerY * 48 * dt;
+      vx -= vx * Math.min(1, dt * 3.2); vy -= vy * Math.min(1, dt * 3.2);
+      shipX += vx * dt; shipY += vy * dt;
+      const rr = Math.hypot(shipX, shipY), maxR = TUBE_R - 1.7;
+      if (rr > maxR && rr > 0.001) {
+        const nx = shipX / rr, ny = shipY / rr;
+        shipX = nx * maxR; shipY = ny * maxR;
+        const outv = vx * nx + vy * ny;
+        if (outv > 0) { vx -= outv * nx; vy -= outv * ny; }
+      }
+      shipHolder.position.set(shipX, shipY, 0);
+      shipHolder.rotation.z = clamp(-vx * 0.05, -0.7, 0.7); // bank into the turn
+      shipHolder.rotation.x = clamp(vy * 0.04, -0.5, 0.5);  // pitch
+      engineGlow.intensity = 1.4 + (boost ? 1.6 : 0.5) + Math.random() * 0.3;
+      const flare = 1 + (boost ? 0.9 : 0) + Math.random() * 0.18;
+      thruster.scale.set(1, flare, 1);
+      thrustHalo.scale.setScalar(0.8 + (boost ? 0.6 : 0.15) + Math.random() * 0.15);
+
+      // Warp speed — base creep, big when boosting, huge during a hyper surge.
+      const warp = 62 * (boost ? 1.7 : 1) * warpSurge;
+      gridTex.offset.y -= warp * dt * 0.02;
+      hueMix += (((boost ? 0.6 : 0) + hyperFlash) - hueMix) * Math.min(1, dt * 3);
+      tubeMat.color.copy(tubeColA).lerp(tubeColB, Math.min(1, hueMix));
+
+      // Gate rings toward +z, recycle to the back of the queue.
+      const gateSpan = GATE_COUNT * GATE_SPACING;
+      gateRings.forEach((ring) => {
+        ring.position.z += warp * dt;
+        if (ring.position.z > 14) ring.position.z -= gateSpan;
+        ring.rotation.z += dt * 0.6;
+      });
+
+      // Warp streaks.
+      const sp = stGeo.attributes.position.array;
+      for (let i = 0; i < STREAKS; i++) {
+        sp[i * 3 + 2] += warp * dt * 1.35;
+        if (sp[i * 3 + 2] > 12) resetStreak(i, false);
+      }
+      stGeo.attributes.position.needsUpdate = true;
+
+      // Orbs stream in; collect when they reach the ship's z-band, else recycle.
+      const orbSpeed = warp * 0.9 + 34;
+      orbs.forEach((o) => {
+        o.mesh.position.z += orbSpeed * dt;
+        o.mesh.rotation.x += dt * 1.4; o.mesh.rotation.y += dt * 1.1;
+        if (!o.collected && o.mesh.position.z > -2.5 && o.mesh.position.z < 3) {
+          const d = Math.hypot(o.mesh.position.x - shipX, o.mesh.position.y - shipY);
+          if (d < 2.0) {
+            o.collected = true; o.mesh.visible = false;
+            spawnBurst(o.mesh.position, o.col);
+            blip(o.col === 0x3fd79a ? 660 : 520);
+            score += 1; charge = Math.min(100, charge + 15);
+            if (charge >= 100) { warpSurge = 1.9; hyperFlash = 1; charge = 0; whoosh(); if (msgRef.current) msgRef.current.textContent = "⚡ מנוע-העל פעיל!"; }
+          }
+        }
+        if (o.mesh.position.z > 14) placeOrb(o, false);
+      });
+
+      // Bursts fade + drift.
+      for (let i = bursts.length - 1; i >= 0; i--) {
+        const b = bursts[i];
+        b.life -= dt;
+        const arr = b.pts.geometry.attributes.position.array;
+        for (let k = 0; k < b.vel.length; k++) {
+          arr[k * 3] += b.vel[k].x * dt; arr[k * 3 + 1] += b.vel[k].y * dt; arr[k * 3 + 2] += b.vel[k].z * dt;
+        }
+        b.pts.geometry.attributes.position.needsUpdate = true;
+        b.pts.material.opacity = Math.max(0, b.life / 0.6);
+        if (b.life <= 0) {
+          scene.remove(b.pts); b.pts.geometry.dispose(); b.pts.material.dispose(); bursts.splice(i, 1);
+        }
+      }
+
+      // Meters + surge decay.
+      charge = Math.max(0, charge - 7 * dt);
+      warpSurge += (1 - warpSurge) * Math.min(1, dt * 0.5);
+      hyperFlash = Math.max(0, hyperFlash - dt * 1.4);
+      bloom.strength = 1.0 + hyperFlash * 1.2 + (boost ? 0.15 : 0);
+      if (chargeFillRef.current) chargeFillRef.current.style.width = charge.toFixed(0) + "%";
+      if (scoreRef.current) scoreRef.current.textContent = String(score);
+      if (msgRef.current && hyperFlash <= 0.02 && msgRef.current.textContent) msgRef.current.textContent = "";
+
+      // Audio: bass tracks warp; filter opens on boost.
+      if (audioCtx && bassOsc) {
+        const now = audioCtx.currentTime;
+        bassOsc.frequency.setTargetAtTime(48 + warp * 0.6, now, 0.1);
+        bassLp.frequency.setTargetAtTime(280 + warp * 6 + hyperFlash * 900, now, 0.15);
+        bassGain.gain.setTargetAtTime(0.04 + (boost ? 0.03 : 0) + hyperFlash * 0.05, now, 0.2);
+      }
+
+      // Chase camera — trails the ship's x/y a fraction for parallax, fixed z.
+      camera.position.x += (shipX * 0.5 - camera.position.x) * Math.min(1, dt * 4);
+      camera.position.y += (2.2 + shipY * 0.5 - camera.position.y) * Math.min(1, dt * 4);
+      camera.position.z = 11;
+      camera.rotation.z = clamp(-vx * 0.012, -0.18, 0.18);
+      camera.lookAt(shipX * 0.3, shipY * 0.3 - 0.5, -30);
+      headLight.position.set(shipX, shipY + 1, 11);
+
+      composer.render();
+    };
+    animate();
+
+    const onResize = () => {
+      const w = mount.clientWidth, h = mount.clientHeight;
+      camera.aspect = w / h; camera.updateProjectionMatrix();
+      renderer.setSize(w, h); composer.setSize(w, h);
+    };
+    window.addEventListener("resize", onResize);
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      mount.removeEventListener("mousedown", onDown);
+      mount.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      mount.removeEventListener("touchstart", onDown);
+      mount.removeEventListener("touchmove", onMove);
+      mount.removeEventListener("touchend", onUp);
+      window.removeEventListener("gamepadconnected", onGpConnect);
+      window.removeEventListener("gamepaddisconnected", onGpDisconnect);
+      if (audioCtx) { try { audioCtx.close(); } catch {} }
+      scene.traverse((obj) => {
+        if (obj.geometry) obj.geometry.dispose();
+        if (obj.material) {
+          const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+          mats.forEach(disposeMaterial);
+        }
+      });
+      composer.dispose();
+      renderer.dispose();
+      if (renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement);
+    };
+  }, []);
+
+  return (
+    <div className="off3-space-wrap">
+      <div ref={mountRef} className="off3-space-canvas" />
+      <div className="off3-space-hint">היכל הקוונטים · הטה / גרור כדי לתמרן · אסוף גופי אנרגיה לטעינת מנוע-העל · רווח = האצה</div>
+      <div style={{ position: "absolute", top: 58, left: "50%", transform: "translateX(-50%)", width: "min(46vw,420px)", zIndex: 5, textAlign: "center", pointerEvents: "none" }}>
+        <div style={{ font: "700 12px/1 system-ui", letterSpacing: "2px", color: "#bfeaff", marginBottom: 6, textShadow: "0 0 8px rgba(46,230,255,.8)" }}>
+          מנוע-על · <span ref={scoreRef}>0</span> גופי אנרגיה
+        </div>
+        <div style={{ height: 10, borderRadius: 6, background: "rgba(10,20,45,.7)", border: "1px solid rgba(46,230,255,.5)", overflow: "hidden", boxShadow: "0 0 14px rgba(46,230,255,.4)" }}>
+          <div ref={chargeFillRef} style={{ width: "0%", height: "100%", background: "linear-gradient(90deg,#2ee6ff,#ff3cc7)", transition: "width .12s linear" }} />
+        </div>
+        <div ref={msgRef} style={{ marginTop: 8, font: "800 20px/1 system-ui", color: "#fff", textShadow: "0 0 16px rgba(255,60,200,.9)" }} />
+      </div>
+      <button
+        className="off3-sit"
+        onPointerDown={(e) => { e.preventDefault(); boostHeldRef.current = true; }}
+        onPointerUp={() => { boostHeldRef.current = false; }}
+        onPointerLeave={() => { boostHeldRef.current = false; }}
+        onPointerCancel={() => { boostHeldRef.current = false; }}
+        title="האצה (רווח)"
+      >⚡ האצה</button>
+      <button className="off3-space-return" onClick={onReturn}>🚪 חזרה לגשר</button>
+    </div>
+  );
+}
+
 // Procedural fighter-jet model — no external GLB (the old uploaded RQ-180
 // model rendered as an unlit black slab, likely baked textures that never
 // resolved; owner asked for a from-scratch build instead of debugging it).
@@ -5166,6 +5638,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   // hide/block it completely while active.
   const [inSpace, setInSpace] = useState(false);
   useEffect(() => { liveRef.current.inSpace = inSpace; }, [inSpace]);
+  // Quantum Holodeck (Module 3) — a second blast-door portal launches the
+  // light-cycle hyperspace-tunnel overlay. Same top-level pause-flag pattern
+  // as inSpace above (mirrored onto liveRef so the main animate() can early-out).
+  const [inHolodeck, setInHolodeck] = useState(false);
+  useEffect(() => { liveRef.current.inHolodeck = inHolodeck; }, [inHolodeck]);
   // Flight simulator — walk up to the RQ-180 display near the window and a
   // "Take Flight" prompt appears, same pattern as the vehicle/space portal.
   const [nearPlane, setNearPlane] = useState(false);
@@ -7643,6 +8120,40 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       }, undefined, () => {});
     }
 
+    // ── Quantum Holodeck portal (Module 3) ───────────────────────────────
+    // A second blast-door portal on the south wall, east of the Space ring.
+    // Walking into it (proximity check in animate(), below) launches the
+    // light-cycle hyperspace-tunnel overlay. Built from primitives (no GLB) so
+    // there's no missing-asset risk, and coloured magenta so it reads as a
+    // clearly different destination from the cyan Space portal.
+    const HOLO_PORTAL = { x: 12, z: 29 };
+    scene.userData.holoPortal = HOLO_PORTAL;
+    {
+      const glow = new THREE.PointLight(0xff3cc7, 1.2, 8);
+      glow.position.set(HOLO_PORTAL.x, 1.3, HOLO_PORTAL.z);
+      scene.add(glow);
+      const ringMark = new THREE.Mesh(new THREE.RingGeometry(1.6, 1.9, 40), new THREE.MeshBasicMaterial({ color: 0xff3cc7, transparent: true, opacity: 0.5, side: THREE.DoubleSide }));
+      ringMark.rotation.x = -Math.PI / 2;
+      ringMark.position.set(HOLO_PORTAL.x, 0.02, HOLO_PORTAL.z);
+      scene.add(ringMark);
+      const hoop = new THREE.Mesh(
+        new THREE.TorusGeometry(1.5, 0.14, 12, 48),
+        new THREE.MeshBasicMaterial({ color: 0xff5ad0, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending })
+      );
+      hoop.position.set(HOLO_PORTAL.x, 1.7, HOLO_PORTAL.z);
+      scene.add(hoop);
+      const disc = new THREE.Mesh(
+        new THREE.CircleGeometry(1.42, 48),
+        new THREE.MeshBasicMaterial({ color: 0x2ee6ff, transparent: true, opacity: 0.26, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false })
+      );
+      disc.position.set(HOLO_PORTAL.x, 1.7, HOLO_PORTAL.z);
+      scene.add(disc);
+      scene.userData.holoPortalFx = { hoop, disc };
+      const sign = buildNeonSign("QUANTUM HOLODECK", 0xff3cc7, 2.0, 0.42);
+      sign.position.set(HOLO_PORTAL.x, 3.6, HOLO_PORTAL.z - 1.6);
+      scene.add(sign);
+    }
+
     // (The office pets — ניקי the pomeranian and טיארה — were removed for the
     // starship retheme: live animals wandering the deck broke the "crew on a
     // ship" read. `dogs` stays an empty array so the wander loop + God-Mode
@@ -7972,7 +8483,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       // own renderer for the same GPU and dragging it down. Skip all of it
       // while any overlay is active; clock.getDelta() above still gets called
       // every tick so time doesn't jump when the overlay closes.
-      if (liveRef.current.inHangar || liveRef.current.inFlight || liveRef.current.inSpace) return;
+      if (liveRef.current.inHangar || liveRef.current.inFlight || liveRef.current.inSpace || liveRef.current.inHolodeck) return;
       // Sample real (unclamped) frame time for ~2s starting 6s in — long
       // enough for the initial GLB/texture loads to be done so their one-time
       // hitches don't get mistaken for a sustained low-power GPU. One shot
@@ -8501,6 +9012,19 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         if (nearPortal) liveRef.current.setInSpace?.(true);
       }
 
+      // Quantum Holodeck portal — same edge-triggered launch as the Space
+      // portal above; the return handler steps the player back off the marker
+      // so it re-arms for the next visit. Its hoop/disc spin slowly here (the
+      // main loop is the only tick that runs while no overlay is active).
+      const holoFx = scene.userData.holoPortalFx;
+      if (holoFx) { holoFx.disc.rotation.z += dt * 0.6; holoFx.hoop.rotation.z -= dt * 0.3; }
+      const holoPortal = scene.userData.holoPortal;
+      const nearHolo = holoPortal && Math.hypot(playerH.group.position.x - holoPortal.x, playerH.group.position.z - holoPortal.z) < 1.8;
+      if (liveRef.current.inHolodeckShown !== nearHolo) {
+        liveRef.current.inHolodeckShown = nearHolo;
+        if (nearHolo) liveRef.current.setInHolodeck?.(true);
+      }
+
       // NPCs: walk a simple two-point "aisle" route to their live target
       // (down their column to the destination's row, then across) instead
       // of cutting a diagonal beeline through every desk in between — reads
@@ -9013,6 +9537,14 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       if (portal) playerH.group.position.set(portal.x, 0, portal.z - 3.5); // step north, back toward the room (the south wall sits just past the portal)
       liveRef.current.inSpaceShown = false;
       setInSpace(false);
+    };
+    liveRef.current.setInHolodeck = setInHolodeck;
+    // Same re-arm dance for the Holodeck portal.
+    liveRef.current.exitHolodeck = () => {
+      const p = scene.userData.holoPortal;
+      if (p) playerH.group.position.set(p.x, 0, p.z - 3.5);
+      liveRef.current.inHolodeckShown = false;
+      setInHolodeck(false);
     };
     liveRef.current.toggleSit = () => setSitting((v) => (v ? false : !!liveRef.current.canSit));
     // The showroom Tiggo moved to the Hangar's vehicle bay, so there's no
@@ -10153,6 +10685,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         <div className="off3-joy-knob" style={{ transform: `translate(${rightKnob.x}px, ${rightKnob.y}px)` }} />
       </div>
       {inSpace && <SpaceOverlay onReturn={() => liveRef.current.exitPortal?.()} load={spacePortalLoad} />}
+      {inHolodeck && <HolodeckOverlay onReturn={() => liveRef.current.exitHolodeck?.()} liveRef={liveRef} />}
       {inFlight && <FlightOverlay onReturn={() => setInFlight(false)} />}
       {inHangar && !inDrive && !inRobot && (
         <HangarOverlay
