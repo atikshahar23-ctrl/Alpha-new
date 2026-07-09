@@ -7988,6 +7988,79 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       vaultReadoutT += dt;
       if (vaultReadoutT >= 1.5) { vaultReadoutT = 0; drawVault(liveRef.current.bizData || {}); }
     };
+
+    // ── Module 7: Celestial Guardians ────────────────────────────────────
+    // Three cosmic sentinel constructs that slowly orbit high above the deck,
+    // guarding the crew — a diamond core, counter-rotating halo rings and a
+    // ring of crystalline wing-shards each. Their aura is threat-reactive: a
+    // calm cyan/teal/violet when all's well, shifting toward alert-red as the
+    // real security signal (stale deals in bizData) climbs — so the guardians
+    // visibly "raise shields" when the business actually has stuck work.
+    const GUARD_CX = -2.5, GUARD_CZ = -1.0; // orbit the central Alpha hologram
+    const guardianGlowTex = (() => {
+      const c = document.createElement("canvas"); c.width = c.height = 128;
+      const gx = c.getContext("2d");
+      const grd = gx.createRadialGradient(64, 64, 0, 64, 64, 64);
+      grd.addColorStop(0, "rgba(255,255,255,0.9)"); grd.addColorStop(1, "rgba(255,255,255,0)");
+      gx.fillStyle = grd; gx.fillRect(0, 0, 128, 128);
+      return new THREE.CanvasTexture(c);
+    })();
+    const buildGuardian = (colorHex) => {
+      const g = new THREE.Group();
+      const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.5, 0), new THREE.MeshBasicMaterial({ color: colorHex, toneMapped: false }));
+      g.add(core);
+      const halo1 = new THREE.Mesh(new THREE.TorusGeometry(0.9, 0.05, 8, 40), new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, toneMapped: false }));
+      g.add(halo1);
+      const halo2 = new THREE.Mesh(new THREE.TorusGeometry(1.22, 0.04, 8, 40), new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, toneMapped: false }));
+      halo2.rotation.x = Math.PI / 2;
+      g.add(halo2);
+      const wingMat = new THREE.MeshStandardMaterial({ color: colorHex, emissive: colorHex, emissiveIntensity: 0.4, metalness: 0.6, roughness: 0.3, transparent: true, opacity: 0.85 });
+      for (let i = 0; i < 6; i++) {
+        const w = new THREE.Mesh(new THREE.ConeGeometry(0.12, 1.0, 4), wingMat);
+        const a = (i / 6) * Math.PI * 2;
+        w.position.set(Math.cos(a) * 0.75, 0, Math.sin(a) * 0.75);
+        w.rotation.z = Math.PI / 2; w.rotation.y = -a;
+        g.add(w);
+      }
+      const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: guardianGlowTex, color: colorHex, transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending }));
+      glow.scale.setScalar(4);
+      g.add(glow);
+      const light = new THREE.PointLight(colorHex, 0.6, 14);
+      g.add(light);
+      return { group: g, core, halo1, halo2, glow, light };
+    };
+    const GUARD_N = 3;
+    const guardCalm = [new THREE.Color(0x2ee6ff), new THREE.Color(0x6fe0c8), new THREE.Color(0xb98fe8)];
+    const guardAlert = new THREE.Color(0xff3b3b);
+    const guardTmp = new THREE.Color();
+    const guardians = [];
+    for (let i = 0; i < GUARD_N; i++) {
+      const gu = buildGuardian(guardCalm[i].getHex());
+      gu.baseAngle = (i / GUARD_N) * Math.PI * 2;
+      gu.orbitR = 13; gu.speed = 0.12 + i * 0.03; gu.bob = Math.random() * Math.PI * 2;
+      scene.add(gu.group);
+      guardians.push(gu);
+    }
+    let guardT = 0;
+    const updateGuardians = (dt) => {
+      guardT += dt;
+      const biz = liveRef.current.bizData || {};
+      const threat = Math.min(1, (biz.staleCount || 0) / 5);
+      for (let i = 0; i < guardians.length; i++) {
+        const gu = guardians[i];
+        const ang = gu.baseAngle + guardT * gu.speed;
+        const y = 4.2 + Math.sin(guardT * 0.8 + gu.bob) * 0.35;
+        gu.group.position.set(GUARD_CX + Math.cos(ang) * gu.orbitR, y, GUARD_CZ + Math.sin(ang) * gu.orbitR);
+        gu.group.lookAt(GUARD_CX, y, GUARD_CZ);
+        gu.core.rotation.y += dt * 1.2; gu.core.rotation.x += dt * 0.6;
+        gu.halo1.rotation.z += dt * 0.8; gu.halo2.rotation.x += dt * 0.5;
+        guardTmp.copy(guardCalm[i]).lerp(guardAlert, threat);
+        gu.core.material.color.copy(guardTmp);
+        gu.halo1.material.color.copy(guardTmp); gu.halo2.material.color.copy(guardTmp);
+        gu.glow.material.color.copy(guardTmp); gu.light.color.copy(guardTmp);
+        gu.light.intensity = 0.5 + threat * 0.9 + 0.2 * Math.sin(guardT * 4 + i);
+      }
+    };
     // The owner's chair in world coordinates — where the player can sit down.
     const OWNER_SEAT = {
       x: OFFICE_ORIGIN.x + ownerOffice.seatLocal.x,
@@ -8952,6 +9025,8 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       updateReactor(dt);
       // platinum vault: rotating laser cage + scan-ring, live value readout
       updateVault(dt);
+      // celestial guardians: sentinels orbiting overhead, threat-reactive aura
+      updateGuardians(dt);
       planeGroup.position.x += dt * 3.2;
       if (planeGroup.position.x > 85) planeGroup.position.x = -85 - Math.random() * 160;
       planeBeacon.material.opacity = (Math.sin(clock.elapsedTime * 6) > 0.4) ? 0.95 : 0.08;
