@@ -27,7 +27,7 @@ export function createCommandVideoWall(ctx) {
     const tex = new THREE.CanvasTexture(cvs); tex.colorSpace = THREE.SRGBColorSpace;
     const bezel = new THREE.Mesh(new THREE.PlaneGeometry(w + 0.14, h + 0.14), new THREE.MeshBasicMaterial({ color: 0x04060c }));
     bezel.position.set(x, 3.15, 0); group.add(bezel);
-    const scr = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex, toneMapped: false }));
+    const scr = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
     scr.position.set(x, 3.15, 0.02); group.add(scr);
     const glow = new THREE.Mesh(new THREE.PlaneGeometry(w + 0.3, h + 0.3), new THREE.MeshBasicMaterial({ color: 0x2ee6ff, transparent: true, opacity: 0.05, blending: THREE.AdditiveBlending, depthWrite: false }));
     glow.position.set(x, 3.15, -0.02); group.add(glow);

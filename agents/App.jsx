@@ -3848,7 +3848,10 @@ function StyleTag() {
 .off-summon-status.late{color:#FF9A5C}
 
 /* ── 3D office (walk-around, WASD/joystick) ── */
-.off3{background:#05070f}
+/* Block the browser's native pull-to-refresh / overscroll bounce / pinch-zoom
+   while walking the deck, so a thumb dragging the virtual joystick never
+   reloads the page or scrolls the shell underneath. */
+.off3{background:#05070f;overscroll-behavior:none;touch-action:none;-webkit-user-select:none;user-select:none}
 .off3-wrap{flex:1;position:relative;overflow:hidden}
 .off3-canvas{position:absolute;inset:0;touch-action:none}
 .off3-canvas canvas{display:block;width:100%!important;height:100%!important}
@@ -4024,8 +4027,12 @@ function StyleTag() {
   border:1px solid rgba(46,230,255,.35);border-radius:8px;color:#8fd8e8;width:26px;height:22px;
   cursor:pointer;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center}
 .off3-phone-maxbtn:hover{background:rgba(46,230,255,.22);color:#d7f6ff}
-.off3-phone-max{position:fixed;top:50%;right:auto;left:50%;transform:translate(-50%,-50%);
-  width:min(720px,96vw);max-height:min(96vh,1100px);height:min(96vh,1100px);
+/* Centered via inset:0 + margin:auto (NOT a transform) so the flip animation's
+   rotateY/scale can never clobber the centering — the old translate(-50%,-50%)
+   was being overwritten by the flip keyframe's translate, dumping the panel
+   off the bottom-right of the screen. Fills the phone viewport ("על כל המסך"). */
+.off3-phone-max{position:fixed;inset:0;margin:auto;
+  width:min(720px,96vw);height:min(94dvh,1100px);max-height:94dvh;
   box-shadow:0 0 60px rgba(46,230,255,.35),0 30px 90px rgba(0,0,0,.7);z-index:120}
 .off3-phone-max .off3-phone-body{font-size:15px}
 .off3-phone-max .off3-phone-apps{grid-template-columns:repeat(3,1fr)}
@@ -4033,9 +4040,9 @@ function StyleTag() {
 /* A brief 3D flip-and-scale beat plays while toggling maximize — matches the
    "phone spins then opens big" effect asked for, pure CSS, no extra deps. */
 @keyframes off3PhoneFlip{
-  0%{transform:translate(0,0) rotateY(0) scale(1)}
-  50%{transform:translate(0,0) rotateY(90deg) scale(.85)}
-  100%{transform:translate(0,0) rotateY(0) scale(1)}
+  0%{transform:rotateY(0) scale(1)}
+  50%{transform:rotateY(90deg) scale(.85)}
+  100%{transform:rotateY(0) scale(1)}
 }
 .off3-phone-max.off3-phone-flip,.off3-phone-flip{
   animation:off3PhoneFlip .42s ease both;transform-style:preserve-3d;perspective:900px}

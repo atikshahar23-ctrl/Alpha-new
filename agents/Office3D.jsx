@@ -6348,8 +6348,13 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // as the light in the room, instead of competing with a bright flat fill.
     const ambient = new THREE.AmbientLight(0xc9d9f2, 0.3);
     scene.add(ambient);
-    const hemi = new THREE.HemisphereLight(0xbfd4ff, 0x161a24, 0.4);
+    const hemi = new THREE.HemisphereLight(0xbfd4ff, 0x161a24, isMobile ? 0.62 : 0.4);
     scene.add(hemi);
+    // Phones get a brighter base fill so the metallic robot crew never reads as
+    // a near-black silhouette on a dim phone panel ("I don't see my character").
+    // Desktop keeps the moody deep-space tuning. (The per-frame phase loop drives
+    // ambient toward ambTargetInt, so the real lift is applied there via LIGHT_MOBILE_MUL.)
+    const LIGHT_MOBILE_MUL = isMobile ? 1.5 : 1;
     const sun = new THREE.DirectionalLight(0xfff2df, 1.25);
     sun.position.set(9, 14, 6);
     sun.castShadow = !isMobile;
@@ -9055,7 +9060,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         const sunTargetHex = isNight ? 0x27407a : isEvening ? 0xffb46a : 0xfff2d8;
         sun.intensity += (sunTargetInt - sun.intensity) * Math.min(1, dt * 0.8);
         sun.color.lerp(tmpColor.set(sunTargetHex), Math.min(1, dt * 0.8));
-        const ambTargetInt = (isNight ? 0.35 : 0.65) * lightMul * overcastMul;
+        const ambTargetInt = (isNight ? 0.35 : 0.65) * lightMul * overcastMul * LIGHT_MOBILE_MUL;
         ambient.intensity += (ambTargetInt - ambient.intensity) * Math.min(1, dt * 0.8);
         // Near-module portholes light up after dark — same lit-window feel as
         // the painted starfield behind them, but on real 3D geometry.
@@ -10439,22 +10444,32 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     setLoadPct(null);
     renderer.setAnimationLoop(animate);
 
-    const onResize = () => {
+    // Debounced so a phone rotate / URL-bar collapse (which fire a burst of
+    // resize events) don't thrash the renderer + composer + every pass every
+    // frame of the animation; also re-clamps the device pixel ratio, which can
+    // change when the window moves between displays or the browser zooms.
+    let resizeT = 0;
+    const doResize = () => {
       const w = mount.clientWidth || window.innerWidth, h = mount.clientHeight || window.innerHeight;
       camera.aspect = w / h; camera.updateProjectionMatrix();
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile ? 1.5 : 3));
       renderer.setSize(w, h);
       composer.setSize(w, h);
       bloomPass.setSize(w, h);
       if (ssaoPass) ssaoPass.setSize(w, h);
       if (smaaPass) smaaPass.setSize(w * renderer.getPixelRatio(), h * renderer.getPixelRatio());
     };
+    const onResize = () => { clearTimeout(resizeT); resizeT = setTimeout(doResize, 150); };
     window.addEventListener("resize", onResize);
+    window.addEventListener("orientationchange", onResize);
 
       cleanupFn = () => {
         renderer.setAnimationLoop(null);
         window.removeEventListener("keydown", onKeyDown);
         window.removeEventListener("keyup", onKeyUp);
         window.removeEventListener("resize", onResize);
+        window.removeEventListener("orientationchange", onResize);
+        clearTimeout(resizeT);
         mount.removeEventListener("click", onGodClick);
         transformControls.dispose();
         clearInterval(autoSaveIv);
