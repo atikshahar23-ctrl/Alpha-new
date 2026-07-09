@@ -8061,6 +8061,91 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         gu.light.intensity = 0.5 + threat * 0.9 + 0.2 * Math.sin(guardT * 4 + i);
       }
     };
+
+    // ── Module 8: Interstellar Comms ─────────────────────────────────────
+    // A tall communications array beside the existing comm-link relay: a
+    // rotating parabolic dish that sweeps the deck, a blinking beacon mast,
+    // expanding signal rings, and a holographic transmission feed that streams
+    // LIVE "incoming transmissions" built from real signals — securityAlerts
+    // (stale deals / fleet projects / pipeline) and the top market movers
+    // (marketRows) — refreshed off liveRef every ~2.5s.
+    const COMMS_SPOT = { x: -15, z: 24 };
+    const commsGroup = new THREE.Group();
+    commsGroup.position.set(COMMS_SPOT.x, 0, COMMS_SPOT.z);
+    scene.add(commsGroup);
+    obstacles.push({ x: COMMS_SPOT.x, z: COMMS_SPOT.z, r: 1.0 });
+    const commsPylon = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.34, 2.4, 12), new THREE.MeshStandardMaterial({ color: 0x1a1f2a, metalness: 0.7, roughness: 0.35 }));
+    commsPylon.position.y = 1.2; commsGroup.add(commsPylon);
+    const commsHead = new THREE.Group(); commsHead.position.y = 2.5; commsGroup.add(commsHead);
+    const commsDish = new THREE.Mesh(
+      new THREE.SphereGeometry(0.6, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.5),
+      new THREE.MeshStandardMaterial({ color: 0xd8e2ee, metalness: 0.5, roughness: 0.4, side: THREE.DoubleSide, emissive: 0x11314a, emissiveIntensity: 0.25 })
+    );
+    commsDish.rotation.x = -Math.PI * 0.35; commsDish.position.set(0.25, 0.2, 0); commsHead.add(commsDish);
+    const commsHorn = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.4, 8), new THREE.MeshBasicMaterial({ color: 0x2ee6ff, toneMapped: false }));
+    commsHorn.position.set(0.25, 0.55, 0); commsHorn.rotation.x = Math.PI * 0.65; commsHead.add(commsHorn);
+    const commsMast = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.2, 6), new THREE.MeshStandardMaterial({ color: 0x2a3340, metalness: 0.6, roughness: 0.4 }));
+    commsMast.position.set(-0.25, 3.15, 0); commsGroup.add(commsMast);
+    const commsBeacon = new THREE.Mesh(new THREE.SphereGeometry(0.08, 10, 10), new THREE.MeshBasicMaterial({ color: 0xff3b3b, toneMapped: false }));
+    commsBeacon.position.set(-0.25, 3.8, 0); commsGroup.add(commsBeacon);
+    const commsBeaconLight = new THREE.PointLight(0xff3b3b, 0.5, 5); commsBeaconLight.position.copy(commsBeacon.position); commsGroup.add(commsBeaconLight);
+    const commsRings = [];
+    for (let i = 0; i < 4; i++) {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.35, 0.02, 6, 32), new THREE.MeshBasicMaterial({ color: 0x2ee6ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, toneMapped: false, depthWrite: false }));
+      ring.rotation.x = -Math.PI * 0.35; ring.position.set(0.25, 2.7, 0);
+      commsGroup.add(ring);
+      commsRings.push({ mesh: ring, t: i * 0.5 });
+    }
+    const commsCvs = document.createElement("canvas"); commsCvs.width = 512; commsCvs.height = 320;
+    const commsTex = new THREE.CanvasTexture(commsCvs);
+    const commsSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: commsTex, transparent: true, depthWrite: false }));
+    commsSprite.scale.set(3.4, 2.13, 1); commsSprite.position.set(0, 3.5, 0);
+    commsGroup.add(commsSprite);
+    const commsSign = buildNeonSign("INTERSTELLAR COMMS", 0x2ee6ff, 2.7, 0.5);
+    commsSign.position.set(0, 4.7, 0); commsGroup.add(commsSign);
+    const drawComms = (alerts, rows) => {
+      const g = commsCvs.getContext("2d");
+      g.clearRect(0, 0, 512, 320);
+      const rr = (x, y, w, h, r) => { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); };
+      g.fillStyle = "rgba(6,12,22,0.85)"; rr(6, 6, 500, 308, 20); g.fill();
+      g.strokeStyle = "rgba(46,230,255,0.5)"; g.lineWidth = 3; g.stroke();
+      g.textAlign = "right";
+      g.fillStyle = "#2ee6ff"; g.font = "700 26px system-ui"; g.fillText("📡 תקשורת בין-כוכבית", 486, 44);
+      g.textAlign = "left";
+      g.fillStyle = "#3fd79a"; g.font = "700 18px system-ui"; g.fillText("● LIVE", 26, 42);
+      const lines = [];
+      (alerts || []).slice(0, 3).forEach((a) => lines.push({ ic: a.level === "high" ? "⚠" : a.level === "mid" ? "🛰" : "📶", txt: a.text, col: a.level === "high" ? "#ff6b6b" : a.level === "mid" ? "#E4BC63" : "#8fe0c0" }));
+      (rows || []).slice(0, 3).forEach((r) => { const up = (r.chg || 0) >= 0; lines.push({ ic: "📡", txt: `${r.name} ${up ? "▲" : "▼"} ${Math.abs(r.chg || 0).toFixed(1)}%`, col: up ? "#3fd79a" : "#ff6b6b" }); });
+      g.textAlign = "right";
+      let y = 92;
+      lines.slice(0, 6).forEach((ln) => {
+        g.fillStyle = "rgba(255,255,255,0.04)"; rr(20, y - 22, 472, 32, 8); g.fill();
+        g.fillStyle = ln.col; g.font = "600 21px system-ui";
+        g.fillText(`${ln.txt}  ${ln.ic}`, 480, y);
+        y += 38;
+      });
+      if (!lines.length) { g.fillStyle = "#9fb6e0"; g.font = "600 20px system-ui"; g.fillText("אין שידורים — הערוץ פנוי", 480, 120); }
+      commsTex.needsUpdate = true;
+    };
+    drawComms(liveRef.current.securityAlerts, liveRef.current.marketRows);
+    let commsT = 0, commsRefreshT = 99;
+    const updateComms = (dt) => {
+      commsT += dt;
+      commsHead.rotation.y += dt * 0.5;
+      const blink = Math.sin(commsT * 5) > 0.3;
+      commsBeacon.scale.setScalar(blink ? 1.3 : 0.7);
+      commsBeaconLight.intensity = blink ? 0.8 : 0.1;
+      for (const r of commsRings) {
+        r.t += dt;
+        const life = 2.0;
+        if (r.t > life) r.t -= life;
+        const p = r.t / life;
+        r.mesh.scale.setScalar(0.6 + p * 4.5);
+        r.mesh.material.opacity = Math.max(0, (1 - p) * 0.7);
+      }
+      commsRefreshT += dt;
+      if (commsRefreshT >= 2.5) { commsRefreshT = 0; drawComms(liveRef.current.securityAlerts, liveRef.current.marketRows); }
+    };
     // The owner's chair in world coordinates — where the player can sit down.
     const OWNER_SEAT = {
       x: OFFICE_ORIGIN.x + ownerOffice.seatLocal.x,
@@ -9027,6 +9112,8 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       updateVault(dt);
       // celestial guardians: sentinels orbiting overhead, threat-reactive aura
       updateGuardians(dt);
+      // interstellar comms: dish sweep, beacon blink, signal rings, live feed
+      updateComms(dt);
       planeGroup.position.x += dt * 3.2;
       if (planeGroup.position.x > 85) planeGroup.position.x = -85 - Math.random() * 160;
       planeBeacon.material.opacity = (Math.sin(clock.elapsedTime * 6) > 0.4) ? 0.95 : 0.08;
