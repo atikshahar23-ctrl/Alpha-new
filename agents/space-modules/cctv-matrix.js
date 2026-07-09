@@ -14,7 +14,7 @@ export function createCctvMatrix(ctx) {
   scene.add(group); markDynamic(group);
   obstacles.push({ x: SPOT.x, z: SPOT.z, r: 1.2 });
 
-  const frame = new THREE.Mesh(new THREE.BoxGeometry(4.2, 3.0, 0.2), new THREE.MeshStandardMaterial({ color: 0x0c1018, metalness: 0.6, roughness: 0.4 }));
+  const frame = new THREE.Mesh(new THREE.BoxGeometry(4.7, 3.4, 0.2), new THREE.MeshStandardMaterial({ color: 0x0c1018, metalness: 0.6, roughness: 0.4, emissive: 0x0a1f14, emissiveIntensity: 0.4 }));
   frame.position.set(0, 2.4, 0); group.add(frame);
 
   const glitchVert = "varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }";
@@ -29,9 +29,9 @@ export function createCctvMatrix(ctx) {
       float g = texture2D(tFeed, uv).g;
       float b = texture2D(tFeed, uv - vec2(0.004,0.0)).b;
       vec3 col = vec3(r,g,b);
-      col *= 0.75 + 0.25*sin(uv.y*260.0);                 // scanlines
+      col *= 0.82 + 0.18*sin(uv.y*260.0);                 // scanlines
       col += (rand(uv*uTime)-0.5)*0.10;                    // noise
-      col *= vec3(0.7,1.0,0.85);                           // interstellar green cast
+      col *= vec3(0.75,1.05,0.9) * 1.5;                    // interstellar green cast + gain
       gl_FragColor = vec4(col, 1.0);
     }`;
 
@@ -41,8 +41,8 @@ export function createCctvMatrix(ctx) {
     const cvs = document.createElement("canvas"); cvs.width = 256; cvs.height = 192;
     const tex = new THREE.CanvasTexture(cvs);
     const mat = new THREE.ShaderMaterial({ uniforms: { tFeed: { value: tex }, uTime: { value: 0 } }, vertexShader: glitchVert, fragmentShader: glitchFrag });
-    const screen = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 1.35), mat);
-    screen.position.set((i % 2 ? 1.02 : -1.02), 2.4 + (i < 2 ? 0.7 : -0.7), 0.12);
+    const screen = new THREE.Mesh(new THREE.PlaneGeometry(2.15, 1.55), mat);
+    screen.position.set((i % 2 ? 1.14 : -1.14), 2.4 + (i < 2 ? 0.82 : -0.82), 0.12);
     group.add(screen);
     feeds.push({ cvs, tex, mat, label: LABELS[i], seed: Math.random() * 100, patrol: Math.random() });
   }

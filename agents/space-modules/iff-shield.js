@@ -39,12 +39,12 @@ export function createIffShield(ctx) {
 
   const dome = new THREE.Mesh(
     new THREE.SphereGeometry(RS, 28, 18, 0, Math.PI * 2, 0, Math.PI / 2),
-    new THREE.MeshBasicMaterial({ map: hexTex, color: 0x50c8ff, transparent: true, opacity: 0.16, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false })
+    new THREE.MeshBasicMaterial({ map: hexTex, color: 0x50c8ff, transparent: true, opacity: 0.26, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false })
   );
   dome.rotation.x = -Math.PI / 2; // bulge toward -z (deep space / incoming)
   dome.position.copy(CS);
   group.add(dome);
-  const rim = new THREE.Mesh(new THREE.TorusGeometry(RS, 0.12, 8, 60), new THREE.MeshBasicMaterial({ color: 0x50c8ff, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, toneMapped: false }));
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(RS, 0.2, 8, 60), new THREE.MeshBasicMaterial({ color: 0x7fe0ff, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, toneMapped: false }));
   rim.position.copy(CS); group.add(rim);
   const shieldLight = new THREE.PointLight(0x50c8ff, 0.3, 40); shieldLight.position.copy(CS); group.add(shieldLight);
 
@@ -92,7 +92,7 @@ export function createIffShield(ctx) {
       t += dt;
       dome.rotation.z += dt * 0.05;
       flash = Math.max(0, flash - dt * 2.2);
-      dome.material.opacity = 0.13 + flash * 0.4;
+      dome.material.opacity = 0.22 + flash * 0.4;
       rim.material.opacity = 0.5 + 0.2 * Math.abs(Math.sin(t * 1.5)) + flash * 0.4;
       shieldLight.intensity = 0.25 + flash * 1.5;
 

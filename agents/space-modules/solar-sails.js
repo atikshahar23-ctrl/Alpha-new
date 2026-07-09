@@ -18,8 +18,8 @@ export function createSolarSails(ctx) {
   markDynamic(group);
 
   const SAIL_SPOTS = [
-    { x: -44, y: 8, z: -50 },
-    { x: 44, y: 8, z: -50 },
+    { x: -36, y: 7, z: -40 },
+    { x: 36, y: 7, z: -40 },
   ];
   const panelGeo = new THREE.PlaneGeometry(1, 1);
   const sails = [];
@@ -45,7 +45,7 @@ export function createSolarSails(ctx) {
     // Instanced sail face — a grid of glowing panels.
     const COLS = 6, ROWS = 5, N = COLS * ROWS;
     const CW = 3.0, CH = 3.4;
-    const mat = new THREE.MeshBasicMaterial({ color: 0x2e7bff, transparent: true, opacity: 0.42, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, toneMapped: false, depthWrite: false });
+    const mat = new THREE.MeshBasicMaterial({ color: 0x2e7bff, transparent: true, opacity: 0.55, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, toneMapped: false, depthWrite: false });
     const inst = new THREE.InstancedMesh(panelGeo, mat, N);
     inst.frustumCulled = false;
     const dummy = new THREE.Object3D();
@@ -94,12 +94,12 @@ export function createSolarSails(ctx) {
 
       for (const s of sails) {
         // Expand + brighten with yield; gentle solar-wind sway.
-        const scl = (0.8 + yield01 * 0.5) * breathe;
+        const scl = (1.1 + yield01 * 0.6) * breathe;
         s.sail.scale.setScalar(scl);
         s.sail.rotation.z = Math.sin(t * 0.3 + s.base.x) * 0.05;
-        s.mat.opacity = 0.3 + yield01 * 0.35;
-        s.rim.material.opacity = 0.55 + 0.35 * Math.abs(Math.sin(t * 1.2));
-        s.glow.intensity = 0.4 + yield01 * 1.2;
+        s.mat.opacity = 0.42 + yield01 * 0.4;
+        s.rim.material.opacity = 0.7 + 0.3 * Math.abs(Math.sin(t * 1.2));
+        s.glow.intensity = 0.6 + yield01 * 1.7;
       }
       // Faster pulses when yield is high — the "channelling into the core".
       const speed = 0.25 + yield01 * 0.55;
