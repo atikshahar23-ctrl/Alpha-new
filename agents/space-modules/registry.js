@@ -65,6 +65,12 @@ import { createTiggoDashboard } from "./tiggo-dashboard.js";
 import { createHoverConversion } from "./hover-conversion.js";
 import { createMarsSuspension } from "./mars-suspension.js";
 import { createGhostRacer } from "./ghost-racer.js";
+// ── DOOMSDAY PAYLOAD · Pack 4 — deep crypto ──
+import { createBinanceBlackhole } from "./binance-blackhole.js";
+import { createLaserGrid } from "./laser-grid.js";
+import { createVaultOfLegends } from "./vault-of-legends.js";
+import { createVolatilityShield } from "./volatility-shield.js";
+import { createSpaceWhale } from "./space-whale.js";
 
 export const SPACE_MODULES = [
   // ── CORE SYSTEM ALPHA · comms & AI ──
@@ -108,4 +114,10 @@ export const SPACE_MODULES = [
   { id: "hover-conversion", create: createHoverConversion },     // M38 · wheel-fold hovercraft demo
   { id: "mars-suspension", create: createMarsSuspension },       // M39 · per-wheel suspension rover
   { id: "ghost-racer", create: createGhostRacer },               // M40 · volume-driven ghost race
+  // ── DOOMSDAY PAYLOAD · Pack 4 · deep crypto (M41-45) ──
+  { id: "binance-blackhole", create: createBinanceBlackhole },   // M41 · bear-market lensing singularity
+  { id: "laser-grid", create: createLaserGrid },                 // M42 · trade-fire laser lattice
+  { id: "vault-of-legends", create: createVaultOfLegends },      // M43 · golden hall of legendary trades
+  { id: "volatility-shield", create: createVolatilityShield },   // M44 · VIX deflector dome
+  { id: "space-whale", create: createSpaceWhale },               // M45 · whale-alert cosmic leviathan
 ];
