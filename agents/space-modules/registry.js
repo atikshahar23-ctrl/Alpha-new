@@ -31,7 +31,9 @@
 // get appended below as they're built.
 
 import { createSolarSails } from "./solar-sails.js";
+import { createSentinelBot } from "./sentinel-bot.js";
 
 export const SPACE_MODULES = [
-  { id: "solar-sails", create: createSolarSails }, // M12 · Staking & Yield Solar Sails
+  { id: "solar-sails", create: createSolarSails },   // M12 · Staking & Yield Solar Sails
+  { id: "sentinel-bot", create: createSentinelBot }, // M13 · Auto-Trading Sentinel Bot
 ];
