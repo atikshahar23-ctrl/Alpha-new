@@ -8146,6 +8146,75 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       commsRefreshT += dt;
       if (commsRefreshT >= 2.5) { commsRefreshT = 0; drawComms(liveRef.current.securityAlerts, liveRef.current.marketRows); }
     };
+
+    // ── Module 9: Drone Bay ──────────────────────────────────────────────
+    // A landing bay by the war table from which four quad-drones continuously
+    // fly an autonomous patrol circuit over the deck (a closed Catmull-Rom
+    // path that dips back through the bay each loop), each with a glowing
+    // dome, blurred additive rotor discs, a nav light and a downward scan
+    // beam. Kept independent of the war-table→drop-pod deploy pipe so the two
+    // don't fight over the same trigger. Ticked from the main animate loop.
+    const DRONE_BAY = { x: 22, z: -16 };
+    const bayPad = new THREE.Mesh(new THREE.CylinderGeometry(2.0, 2.2, 0.12, 6), new THREE.MeshStandardMaterial({ color: 0x12151c, metalness: 0.6, roughness: 0.4 }));
+    bayPad.position.set(DRONE_BAY.x, 0.06, DRONE_BAY.z); scene.add(bayPad);
+    obstacles.push({ x: DRONE_BAY.x, z: DRONE_BAY.z, r: 2.2 });
+    const bayRing = new THREE.Mesh(new THREE.TorusGeometry(2.0, 0.04, 8, 48), new THREE.MeshBasicMaterial({ color: 0x2ee6ff, toneMapped: false }));
+    bayRing.rotation.x = Math.PI / 2; bayRing.position.set(DRONE_BAY.x, 0.14, DRONE_BAY.z); scene.add(bayRing);
+    const baySign = buildNeonSign("DRONE BAY", 0x2ee6ff, 2.2, 0.5);
+    baySign.position.set(DRONE_BAY.x, 3.2, DRONE_BAY.z); scene.add(baySign);
+    const buildDrone = (colorHex) => {
+      const g = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.14, 0.4), new THREE.MeshStandardMaterial({ color: 0x1a1f2a, metalness: 0.6, roughness: 0.4 }));
+      g.add(body);
+      const dome = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 8), new THREE.MeshBasicMaterial({ color: colorHex, toneMapped: false }));
+      dome.position.y = 0.1; g.add(dome);
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+        const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.34, 6), new THREE.MeshStandardMaterial({ color: 0x2a3340, metalness: 0.5, roughness: 0.5 }));
+        arm.rotation.z = Math.PI / 2; arm.rotation.y = -a; arm.position.set(Math.cos(a) * 0.26, 0, Math.sin(a) * 0.26); g.add(arm);
+        const rotor = new THREE.Mesh(new THREE.CircleGeometry(0.16, 16), new THREE.MeshBasicMaterial({ color: 0x8fd0ff, transparent: true, opacity: 0.26, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false }));
+        rotor.rotation.x = -Math.PI / 2; rotor.position.set(Math.cos(a) * 0.34, 0.07, Math.sin(a) * 0.34); g.add(rotor);
+      }
+      const nav = new THREE.PointLight(colorHex, 0.4, 4); nav.position.y = 0.1; g.add(nav);
+      const beam = new THREE.Mesh(new THREE.ConeGeometry(0.28, 1.5, 12, 1, true), new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 0.12, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false }));
+      beam.position.y = -0.85; g.add(beam);
+      return { group: g, nav };
+    };
+    const dronePath = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(22, 2.5, -16), // bay
+      new THREE.Vector3(25, 3.2, -2),
+      new THREE.Vector3(12, 3.4, 10),
+      new THREE.Vector3(-6, 3.4, 15),
+      new THREE.Vector3(-20, 3.2, 6),
+      new THREE.Vector3(-18, 3.2, -12),
+      new THREE.Vector3(0, 3.0, -24),
+      new THREE.Vector3(14, 2.8, -22),
+    ], true, "catmullrom", 0.5);
+    const DRONE_N = 4;
+    const droneCols = [0x2ee6ff, 0x3fd79a, 0xE4BC63, 0xff6bd0];
+    const drones = [];
+    for (let i = 0; i < DRONE_N; i++) {
+      const d = buildDrone(droneCols[i]);
+      d.offset = i / DRONE_N; d.speed = 0.021 + i * 0.0015;
+      scene.add(d.group);
+      drones.push(d);
+    }
+    let droneBayT = 0;
+    const droneTmpA = new THREE.Vector3(), droneTmpB = new THREE.Vector3();
+    const updateDrones = (dt) => {
+      droneBayT += dt;
+      bayRing.material.color.setHSL(0.5, 0.8, 0.42 + 0.15 * Math.sin(droneBayT * 2));
+      for (let i = 0; i < drones.length; i++) {
+        const d = drones[i];
+        const t = (droneBayT * d.speed + d.offset) % 1;
+        dronePath.getPointAt(t, droneTmpA);
+        droneTmpA.y += Math.sin(droneBayT * 3 + i) * 0.08;
+        d.group.position.copy(droneTmpA);
+        dronePath.getTangentAt(t, droneTmpB);
+        d.group.lookAt(droneTmpA.x + droneTmpB.x, droneTmpA.y, droneTmpA.z + droneTmpB.z);
+        d.nav.intensity = Math.sin(droneBayT * 6 + i * 1.6) > 0 ? 0.5 : 0.1;
+      }
+    };
     // The owner's chair in world coordinates — where the player can sit down.
     const OWNER_SEAT = {
       x: OFFICE_ORIGIN.x + ownerOffice.seatLocal.x,
@@ -9114,6 +9183,8 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       updateGuardians(dt);
       // interstellar comms: dish sweep, beacon blink, signal rings, live feed
       updateComms(dt);
+      // drone bay: four quad-drones flying an autonomous patrol circuit
+      updateDrones(dt);
       planeGroup.position.x += dt * 3.2;
       if (planeGroup.position.x > 85) planeGroup.position.x = -85 - Math.random() * 160;
       planeBeacon.material.opacity = (Math.sin(clock.elapsedTime * 6) > 0.4) ? 0.95 : 0.08;
