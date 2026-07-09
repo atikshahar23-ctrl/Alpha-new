@@ -5957,69 +5957,94 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     glass.position.set(nwx, 3.2, nwz);
     scene.add(glass);
 
-    // Real 3D modules for actual foreground depth/parallax — sparse and
-    // set well back from the glass (12–40 units past the window) so they
-    // read as other hulls/stations in the distance with real space between
-    // them, not a wall of texture pressed up against the window.
-    const facadeAlbedo = buildFacadeAlbedo();
-    const facadeEmissive = buildFacadeEmissive();
-    const nearBuildingMats = [];
+    // Deep-space scenery beyond the bridge windows — real 3D bodies drifting
+    // past the glass instead of a city skyline: a ringed gas giant, a spiral
+    // galaxy, an asteroid belt, a moon, and the ALPHA orbital station (which
+    // the exterior sign + beacon anchor to). This is the "no buildings, stars
+    // and galaxies" view the ship actually flies through.
+    const nearBuildingMats = []; // kept empty — the old night window-glow ramp now no-ops
+    const spaceSpin = []; // slow-rotating bodies, ticked in animate()
     {
-      const cityRnd = mulberry32(9091);
-      let bx = -70;
-      while (bx < 70) {
-        const w = 3 + cityRnd() * 5, h = 7 + cityRnd() * 20, d = 3 + cityRnd() * 5;
-        const bz = nwz - 12 - cityRnd() * 28;
-        const gap = w + 5 + cityRnd() * 9;
-        if (Math.abs(bx) > 5) {
-          const albedoTex = facadeAlbedo.clone();
-          const emissiveTex = facadeEmissive.clone();
-          albedoTex.repeat.set(Math.max(1, w / 2.2), Math.max(1, h / 3.2));
-          emissiveTex.repeat.copy(albedoTex.repeat);
-          albedoTex.needsUpdate = true; emissiveTex.needsUpdate = true;
-          const mat = new THREE.MeshStandardMaterial({
-            map: albedoTex, emissiveMap: emissiveTex, emissive: 0x8fd0ff, emissiveIntensity: 0,
-            roughness: 0.75, metalness: 0.15, fog: false,
-          });
-          const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-          mesh.position.set(bx, h / 2, bz);
-          scene.add(mesh);
-          nearBuildingMats.push(mat);
-          if (!scene.userData.tallB || h > scene.userData.tallB.h) scene.userData.tallB = { x: bx, h, z: bz, d };
-        }
-        bx += gap;
-      }
-    }
+      // Ringed gas giant, large, off to port and set well back.
+      const giant = new THREE.Mesh(
+        new THREE.SphereGeometry(16, 40, 32),
+        new THREE.MeshStandardMaterial({ color: 0x35507e, emissive: 0x0a1730, emissiveIntensity: 0.4, roughness: 1, metalness: 0, fog: false })
+      );
+      giant.position.set(-48, 26, nwz - 72);
+      scene.add(giant); spaceSpin.push(giant);
+      const giantRing = new THREE.Mesh(
+        new THREE.RingGeometry(20, 31, 72),
+        new THREE.MeshBasicMaterial({ color: 0xcdb98a, transparent: true, opacity: 0.38, side: THREE.DoubleSide, fog: false })
+      );
+      giantRing.rotation.x = Math.PI / 2.3; giantRing.rotation.z = 0.35;
+      giantRing.position.copy(giant.position);
+      scene.add(giantRing);
 
-    // A second, closer row of modules for real parallax depth between the
-    // glass and the distant starfield — bolder, sparser silhouettes right up
-    // against the window instead of one flat depth layer. Skipped on mobile
-    // to keep the extra draw calls off weaker GPUs; the far row above still
-    // reads as a full field there.
-    if (!isMobile) {
-      const cityRnd2 = mulberry32(3131);
-      let bx2 = -65;
-      while (bx2 < 65) {
-        const w = 2.4 + cityRnd2() * 3.4, h = 5 + cityRnd2() * 12, d = 2.4 + cityRnd2() * 3.4;
-        const bz2 = nwz - 6 - cityRnd2() * 6;
-        const gap = w + 9 + cityRnd2() * 13;
-        if (Math.abs(bx2) > 9) {
-          const albedoTex = facadeAlbedo.clone();
-          const emissiveTex = facadeEmissive.clone();
-          albedoTex.repeat.set(Math.max(1, w / 2.2), Math.max(1, h / 3.2));
-          emissiveTex.repeat.copy(albedoTex.repeat);
-          albedoTex.needsUpdate = true; emissiveTex.needsUpdate = true;
-          const mat = new THREE.MeshStandardMaterial({
-            map: albedoTex, emissiveMap: emissiveTex, emissive: 0x8fd0ff, emissiveIntensity: 0,
-            roughness: 0.75, metalness: 0.15, fog: false,
-          });
-          const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-          mesh.position.set(bx2, h / 2, bz2);
-          scene.add(mesh);
-          nearBuildingMats.push(mat);
+      // Spiral galaxy — a glowing disc (procedural spiral canvas) far off to
+      // starboard, additive so it reads as light, not a solid plate.
+      const galCvs = document.createElement("canvas"); galCvs.width = galCvs.height = 256;
+      const gx = galCvs.getContext("2d");
+      const gcore = gx.createRadialGradient(128, 128, 0, 128, 128, 128);
+      gcore.addColorStop(0, "rgba(255,246,220,.95)"); gcore.addColorStop(0.12, "rgba(224,204,255,.6)");
+      gcore.addColorStop(0.5, "rgba(150,120,220,.16)"); gcore.addColorStop(1, "rgba(0,0,0,0)");
+      gx.fillStyle = gcore; gx.fillRect(0, 0, 256, 256);
+      for (let arm = 0; arm < 2; arm++) {
+        for (let t = 0; t < 230; t++) {
+          const a = arm * Math.PI + t * 0.055;
+          const r = 6 + t * 0.5;
+          const px = 128 + Math.cos(a) * r, py = 128 + Math.sin(a) * r;
+          const al = Math.max(0, 0.5 - t / 500);
+          gx.fillStyle = `rgba(${180 + (t % 40)},190,255,${al.toFixed(2)})`;
+          gx.beginPath(); gx.arc(px, py, 2.1, 0, Math.PI * 2); gx.fill();
         }
-        bx2 += gap;
       }
+      const galTex = new THREE.CanvasTexture(galCvs); galTex.colorSpace = THREE.SRGBColorSpace;
+      const galaxy = new THREE.Mesh(
+        new THREE.PlaneGeometry(64, 64),
+        new THREE.MeshBasicMaterial({ map: galTex, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, fog: false })
+      );
+      galaxy.position.set(54, 36, nwz - 98); galaxy.rotation.z = 0.4; galaxy.rotation.x = -0.5;
+      scene.add(galaxy);
+
+      // Small moon, closer in.
+      const moon = new THREE.Mesh(
+        new THREE.SphereGeometry(4.5, 24, 20),
+        new THREE.MeshStandardMaterial({ color: 0x9aa4b4, emissive: 0x11151c, emissiveIntensity: 0.5, roughness: 1, fog: false })
+      );
+      moon.position.set(20, 11, nwz - 42);
+      scene.add(moon); spaceSpin.push(moon);
+
+      // Asteroid belt — a scatter of low-poly rocks drifting at varied depth.
+      const astRnd = mulberry32(555);
+      const astMat = new THREE.MeshStandardMaterial({ color: 0x39414f, roughness: 1, metalness: 0.1, fog: false });
+      for (let i = 0; i < 34; i++) {
+        const rs = 0.4 + astRnd() * 1.8;
+        const rock = new THREE.Mesh(new THREE.IcosahedronGeometry(rs, 0), astMat);
+        rock.position.set(-72 + astRnd() * 144, 3 + astRnd() * 34, nwz - 14 - astRnd() * 46);
+        rock.rotation.set(astRnd() * 6, astRnd() * 6, astRnd() * 6);
+        scene.add(rock); spaceSpin.push(rock);
+      }
+
+      // ALPHA orbital station — a stylised hub the exterior sign/beacon attach
+      // to (it takes over the "tallest module" anchor the billboard used).
+      const station = new THREE.Group();
+      const hubMat = new THREE.MeshStandardMaterial({ color: 0x2a3140, emissive: 0x0a1a2a, emissiveIntensity: 0.5, roughness: 0.5, metalness: 0.6, fog: false });
+      const hub = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.2, 5, 20), hubMat);
+      station.add(hub);
+      const ringMat = new THREE.MeshStandardMaterial({ color: 0x1f2733, emissive: 0x0a1420, emissiveIntensity: 0.4, roughness: 0.5, metalness: 0.6, fog: false });
+      const ring1 = new THREE.Mesh(new THREE.TorusGeometry(4.5, 0.4, 10, 40), ringMat);
+      ring1.rotation.x = Math.PI / 2; station.add(ring1);
+      const winMat = new THREE.MeshBasicMaterial({ color: 0x9fe6ff, fog: false });
+      for (let i = 0; i < 16; i++) {
+        const a = (i / 16) * Math.PI * 2;
+        const w = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.22), winMat);
+        w.position.set(Math.cos(a) * 4.5, 0, Math.sin(a) * 4.5);
+        station.add(w);
+      }
+      station.position.set(30, 22, nwz - 30);
+      station.rotation.z = 0.18;
+      scene.add(station);
+      scene.userData.tallB = { x: 30, h: 22, z: nwz - 30, d: 4 }; // billboard/beacon anchor
     }
 
     // A blinking red collision-avoidance beacon on the tallest module — the
@@ -7200,55 +7225,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       }, undefined, () => {});
     }
 
-    // ── The two office dogs 🐾 — ניקי וטיארה ────────────────────────────
-    // The full pack was removed by request; these two stay, by name: ניקי
-    // the pomeranian (tinted sable like the owner's real dog) and טיארה the
-    // chihuahua (rigged, her baked idle clip keeps her alive). They wander
-    // the open centre floor, pause to sniff, and waddle while walking.
+    // (The office pets — ניקי the pomeranian and טיארה — were removed for the
+    // starship retheme: live animals wandering the deck broke the "crew on a
+    // ship" read. `dogs` stays an empty array so the wander loop + God-Mode
+    // dump that iterate it simply no-op.)
     const dogs = [];
-    {
-      const spawnDog = (template, clips, cfg) => {
-        const skinned = !!(clips && clips.length);
-        const body = skinned ? cloneSkinned(template) : template.clone(true);
-        const db = new THREE.Box3().setFromObject(body);
-        const ds = db.getSize(new THREE.Vector3());
-        const dc = db.getCenter(new THREE.Vector3());
-        const scale = cfg.height / (ds.y || 1);
-        const wrap = new THREE.Group();
-        body.position.set(-dc.x * scale, -db.min.y * scale, -dc.z * scale);
-        body.scale.setScalar(scale);
-        body.traverse((o) => {
-          if (!o.isMesh && !o.isSkinnedMesh) return;
-          o.castShadow = true; o.frustumCulled = false;
-          if (cfg.tint && o.material) { o.material = o.material.clone(); o.material.color = new THREE.Color(cfg.tint); }
-        });
-        wrap.add(body);
-        const tag = buildNameSprite(cfg.name, "#E4BC63", "");
-        tag.scale.multiplyScalar(0.62);
-        tag.position.y = cfg.height + 0.28;
-        wrap.add(tag);
-        wrap.position.set(cfg.x, 0, cfg.z);
-        scene.add(wrap);
-        let mixer = null;
-        if (skinned) {
-          mixer = new THREE.AnimationMixer(body);
-          mixer.clipAction(clips[0]).play();
-        }
-        dogs.push({ group: wrap, mixer, target: null, pauseT: 1 + dogs.length * 1.5, speed: 1.0 + dogs.length * 0.2 });
-      };
-      const dogLoader = new GLTFLoader();
-      dogLoader.setMeshoptDecoder(MeshoptDecoder);
-      dogLoader.load(base + "office-models/pomeranian.glb", (g) => {
-        // The owner's re-uploaded pomeranian (Blender source → GLB, 30MB→185KB)
-        // ships with its own fur textures — no tint, it shows as designed.
-        spawnDog(g.scene, null, { name: "ניקי", height: 0.5, x: -6.5, z: 3.5 });
-      }, undefined, () => {});
-      dogLoader.load(base + "office-models/chihuahua.glb", (g) => {
-        spawnDog(g.scene, g.animations, { name: "טיארה", height: 0.36, x: 1.5, z: 4.5 });
-      }, undefined, () => {});
-    }
-    // A wandering dog's next stop — somewhere on the open centre floor,
-    // clear of the car podium and the perimeter offices.
     const dogSpot = () => ({ x: -10 + Math.random() * 15, z: -7 + Math.random() * 12 });
 
     // (Reception + the cafeteria moved to the Hangar's new Crew Deck annex —
@@ -7850,6 +7831,9 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       // blinking beacon crosses every so often; a small flock of birds bobs
       // across by day. All a handful of sprites — effectively free.
       cloudTex.offset.x = (cloudTex.offset.x + dt * 0.0035) % 1;
+      // slow drift-spin on the space bodies (gas giant, moon, asteroids) so
+      // the deep-space view outside the windows is alive, never a flat matte
+      for (let si = 0; si < spaceSpin.length; si++) spaceSpin[si].rotation.y += dt * (0.02 + (si % 5) * 0.006);
       planeGroup.position.x += dt * 3.2;
       if (planeGroup.position.x > 85) planeGroup.position.x = -85 - Math.random() * 160;
       planeBeacon.material.opacity = (Math.sin(clock.elapsedTime * 6) > 0.4) ? 0.95 : 0.08;
