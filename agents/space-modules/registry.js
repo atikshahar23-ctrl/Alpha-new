@@ -59,6 +59,12 @@ import { createSafariBiodome } from "./safari-biodome.js";
 import { createCallerIdInterceptor } from "./caller-id-interceptor.js";
 import { createSnowboarder } from "./snowboarder.js";
 import { createCrewMorale } from "./crew-morale.js";
+// ── DOOMSDAY PAYLOAD · Pack 3 — vehicle physics ──
+import { createRegenBrake } from "./regen-brake.js";
+import { createTiggoDashboard } from "./tiggo-dashboard.js";
+import { createHoverConversion } from "./hover-conversion.js";
+import { createMarsSuspension } from "./mars-suspension.js";
+import { createGhostRacer } from "./ghost-racer.js";
 
 export const SPACE_MODULES = [
   // ── CORE SYSTEM ALPHA · comms & AI ──
@@ -96,4 +102,10 @@ export const SPACE_MODULES = [
   { id: "caller-id-interceptor", create: createCallerIdInterceptor }, // M33 · relay sat + caller card
   { id: "snowboarder", create: createSnowboarder },              // M34 · half-pipe market rider
   { id: "crew-morale", create: createCrewMorale },               // M35 · pod idle-life props
+  // ── DOOMSDAY PAYLOAD · Pack 3 · vehicle physics (M36-40) ──
+  { id: "regen-brake", create: createRegenBrake },               // M36 · regen charge tower + turbo
+  { id: "tiggo-dashboard", create: createTiggoDashboard },       // M37 · 1:1 PHEV telemetry cluster
+  { id: "hover-conversion", create: createHoverConversion },     // M38 · wheel-fold hovercraft demo
+  { id: "mars-suspension", create: createMarsSuspension },       // M39 · per-wheel suspension rover
+  { id: "ghost-racer", create: createGhostRacer },               // M40 · volume-driven ghost race
 ];
