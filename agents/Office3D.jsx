@@ -9509,6 +9509,10 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       const humHz = 0.15 + workload * 0.35;
       const hum = 1 + Math.sin(clock.elapsedTime * humHz * Math.PI * 2) * 0.06;
       ambient.intensity *= hum; hemi.intensity *= hum;
+      // SINGULARITY BRIDGE M23 — during a cyber-warfare lockdown the deck goes
+      // dark (the module's red sirens supply the only glow); crush the ambient
+      // fill here, after the day/night easing, so it actually stays black.
+      if (liveRef.current.redAlert) { ambient.intensity = 0.03; hemi.intensity = 0.02; }
       liveChars.forEach((c, ci) => {
         const h = npc[c.id]; if (!h) return;
         // Module 2: the finance/"CFO" agent temporarily takes over his own

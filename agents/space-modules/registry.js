@@ -41,6 +41,12 @@ import { createTimeDilationEngine } from "./time-dilation-engine.js";
 import { createZeroGNursery } from "./zero-g-nursery.js";
 import { createRapBroadcastArray } from "./rap-broadcast-array.js";
 import { createWarpBatteryLink } from "./warp-battery-link.js";
+// ── SINGULARITY BRIDGE · reality-bridge modules ──
+import { createChronoSphere } from "./chrono-sphere.js";
+import { createCctvMatrix } from "./cctv-matrix.js";
+import { createRedAlert } from "./red-alert.js";
+import { createTiggoTelemetry } from "./tiggo-telemetry.js";
+import { createNeuralCore } from "./neural-core.js";
 
 export const SPACE_MODULES = [
   // ── CORE SYSTEM ALPHA · comms & AI ──
@@ -60,4 +66,10 @@ export const SPACE_MODULES = [
   { id: "zero-g-nursery", create: createZeroGNursery },          // M16
   { id: "rap-broadcast-array", create: createRapBroadcastArray },// M17
   { id: "warp-battery-link", create: createWarpBatteryLink },    // M20
+  // ── SINGULARITY BRIDGE · reality-bridge (M21-M25) ──
+  { id: "chrono-sphere", create: createChronoSphere },           // M21 · real-world time/weather sync
+  { id: "cctv-matrix", create: createCctvMatrix },               // M22 · live CCTV uplink + glitch shader
+  { id: "red-alert", create: createRedAlert },                   // M23 · cyber-warfare lockdown (F9)
+  { id: "tiggo-telemetry", create: createTiggoTelemetry },       // M24 · Tiggo OBD2 telemetry hub
+  { id: "neural-core", create: createNeuralCore },               // M25 · Neural Singularity Core
 ];
