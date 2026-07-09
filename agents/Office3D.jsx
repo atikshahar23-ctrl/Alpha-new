@@ -7895,6 +7895,99 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       reactorLight.intensity = 0.4 + reactorBeat * 1.4 * reactorEnergy;
       reactorLight.color.setHSL((now * 0.05) % 1, 0.7, 0.6);
     };
+
+    // ── Module 6: Platinum Vault ─────────────────────────────────────────
+    // A laser-caged vault that "packages" the business's real value: a stack
+    // of platinum + gold ingots on a plinth, ringed by a rotating security
+    // laser cage with a vertical scan-ring, plus a floating holo-readout that
+    // shows the LIVE pipeline value + deal/customer/revenue counts from
+    // bizData (refreshed every ~1.5s off liveRef, not baked at build time).
+    const VAULT_SPOT = { x: -19, z: -7 };
+    const vaultGroup = new THREE.Group();
+    vaultGroup.position.set(VAULT_SPOT.x, 0, VAULT_SPOT.z);
+    scene.add(vaultGroup);
+    obstacles.push({ x: VAULT_SPOT.x, z: VAULT_SPOT.z, r: 2.2 });
+    const vaultPlinth = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.7, 1.9, 0.5, 36),
+      new THREE.MeshStandardMaterial({ color: 0x14171e, roughness: 0.35, metalness: 0.7 })
+    );
+    vaultPlinth.position.y = 0.25;
+    vaultGroup.add(vaultPlinth);
+    const vaultPlinthRing = new THREE.Mesh(new THREE.TorusGeometry(1.72, 0.04, 8, 60), new THREE.MeshBasicMaterial({ color: 0xE4BC63, toneMapped: false }));
+    vaultPlinthRing.rotation.x = Math.PI / 2; vaultPlinthRing.position.y = 0.5;
+    vaultGroup.add(vaultPlinthRing);
+    const platMat = new THREE.MeshStandardMaterial({ color: 0xe9eef6, metalness: 0.96, roughness: 0.16, emissive: 0x20304a, emissiveIntensity: 0.12 });
+    const goldMat = new THREE.MeshStandardMaterial({ color: 0xE4BC63, metalness: 0.95, roughness: 0.2, emissive: 0x3a2a06, emissiveIntensity: 0.2 });
+    const ingotGeo = new THREE.BoxGeometry(0.44, 0.2, 0.8);
+    const stackDefs = [
+      [-0.5, 0.62, 0, platMat], [0, 0.62, 0, platMat], [0.5, 0.62, 0, platMat],
+      [-0.5, 0.62, -0.9, platMat], [0, 0.62, -0.9, platMat], [0.5, 0.62, -0.9, platMat],
+      [-0.25, 0.84, -0.45, platMat], [0.25, 0.84, -0.45, platMat],
+      [0, 1.06, -0.45, goldMat],
+    ];
+    stackDefs.forEach(([x, y, z, m]) => {
+      const ing = new THREE.Mesh(ingotGeo, m);
+      ing.position.set(x, y, z);
+      ing.rotation.y = (Math.random() - 0.5) * 0.05;
+      vaultGroup.add(ing);
+    });
+    const vaultSheen = new THREE.PointLight(0xfff4e0, 0.8, 8);
+    vaultSheen.position.set(0, 2.2, 1.2);
+    vaultGroup.add(vaultSheen);
+    const cageGroup = new THREE.Group();
+    vaultGroup.add(cageGroup);
+    const beamMat = new THREE.MeshBasicMaterial({ color: 0xff3b5c, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, toneMapped: false });
+    const CAGE_N = 10, CAGE_R = 1.5;
+    for (let i = 0; i < CAGE_N; i++) {
+      const a = (i / CAGE_N) * Math.PI * 2;
+      const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 2.2, 6), beamMat);
+      beam.position.set(Math.cos(a) * CAGE_R, 1.3, Math.sin(a) * CAGE_R);
+      cageGroup.add(beam);
+    }
+    const vaultScanRing = new THREE.Mesh(new THREE.TorusGeometry(CAGE_R, 0.02, 8, 48), new THREE.MeshBasicMaterial({ color: 0xff5c50, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, toneMapped: false }));
+    vaultScanRing.rotation.x = Math.PI / 2;
+    vaultGroup.add(vaultScanRing);
+    const vaultCvs = document.createElement("canvas"); vaultCvs.width = 512; vaultCvs.height = 256;
+    const vaultTex = new THREE.CanvasTexture(vaultCvs);
+    const vaultSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: vaultTex, transparent: true, depthWrite: false }));
+    vaultSprite.scale.set(3.2, 1.6, 1);
+    vaultSprite.position.set(0, 3.0, 0);
+    vaultGroup.add(vaultSprite);
+    const vaultSign = buildNeonSign("PLATINUM VAULT", 0xE4BC63, 2.4, 0.5);
+    vaultSign.position.set(0, 4.0, 0);
+    vaultGroup.add(vaultSign);
+    const fmtILS = (n) => {
+      n = Number(n) || 0;
+      if (n >= 1e6) return "₪" + (n / 1e6).toFixed(2) + "M";
+      if (n >= 1e3) return "₪" + (n / 1e3).toFixed(0) + "K";
+      return "₪" + Math.round(n);
+    };
+    const drawVault = (biz) => {
+      const g = vaultCvs.getContext("2d");
+      g.clearRect(0, 0, 512, 256);
+      const rr = (x, y, w, h, r) => { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); };
+      g.fillStyle = "rgba(8,11,20,0.82)"; rr(8, 8, 496, 240, 22); g.fill();
+      g.strokeStyle = "rgba(228,188,99,0.6)"; g.lineWidth = 3; g.stroke();
+      g.textAlign = "center";
+      g.fillStyle = "#E4BC63"; g.font = "700 30px system-ui"; g.fillText("🔒 כספת פלטינה", 256, 54);
+      g.fillStyle = "#ffffff"; g.font = "800 62px system-ui"; g.fillText(fmtILS(biz.hgRevenue), 256, 130);
+      g.fillStyle = "#9fb6e0"; g.font = "600 24px system-ui"; g.fillText("שווי מאובטח כולל", 256, 166);
+      g.fillStyle = "#8fe0c0"; g.font = "600 22px system-ui";
+      g.fillText(`צנרת ${fmtILS(biz.openVal)} · ${biz.openDeals || 0} עסקאות · ${biz.custCount || 0} לקוחות`, 256, 210);
+      vaultTex.needsUpdate = true;
+    };
+    drawVault(liveRef.current.bizData || {});
+    let vaultT = 0, vaultReadoutT = 99;
+    const updateVault = (dt) => {
+      vaultT += dt;
+      cageGroup.rotation.y += dt * 0.5;
+      vaultScanRing.position.y = 0.4 + (0.5 + 0.5 * Math.sin(vaultT * 1.4)) * 2.0;
+      vaultScanRing.material.opacity = 0.55 + 0.35 * Math.abs(Math.sin(vaultT * 6));
+      beamMat.opacity = 0.5 + 0.25 * (0.5 + 0.5 * Math.sin(vaultT * 4));
+      vaultPlinthRing.material.color.setHSL(0.12, 0.7, 0.5 + 0.1 * Math.sin(vaultT * 2));
+      vaultReadoutT += dt;
+      if (vaultReadoutT >= 1.5) { vaultReadoutT = 0; drawVault(liveRef.current.bizData || {}); }
+    };
     // The owner's chair in world coordinates — where the player can sit down.
     const OWNER_SEAT = {
       x: OFFICE_ORIGIN.x + ownerOffice.seatLocal.x,
@@ -8857,6 +8950,8 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       // music reactor core: equalizer bars pumping to the synthetic spectrum,
       // energy gated by whether a radio station is actually playing
       updateReactor(dt);
+      // platinum vault: rotating laser cage + scan-ring, live value readout
+      updateVault(dt);
       planeGroup.position.x += dt * 3.2;
       if (planeGroup.position.x > 85) planeGroup.position.x = -85 - Math.random() * 160;
       planeBeacon.material.opacity = (Math.sin(clock.elapsedTime * 6) > 0.4) ? 0.95 : 0.08;
