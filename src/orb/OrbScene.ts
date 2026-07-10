@@ -75,6 +75,36 @@ const GOLD_VIGNETTE_SHADER = {
   `,
 };
 
+// Radial chromatic-aberration "shockwave" pass — off (uStrength 0) by default,
+// punched to a peak value by the jet-turbine ignition sequence below and left
+// to decay back to 0 every frame after.
+const CHROMATIC_SHOCKWAVE_SHADER = {
+  uniforms: {
+    tDiffuse: { value: null as THREE.Texture | null },
+    uStrength: { value: 0.0 },
+  },
+  vertexShader: /* glsl */`
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse;
+    uniform float uStrength;
+    varying vec2 vUv;
+    void main() {
+      vec2 dir = vUv - 0.5;
+      vec2 off = dir * length(dir) * uStrength;
+      float r = texture2D(tDiffuse, vUv - off).r;
+      float g = texture2D(tDiffuse, vUv).g;
+      float b = texture2D(tDiffuse, vUv + off).b;
+      gl_FragColor = vec4(r, g, b, 1.0);
+    }
+  `,
+};
+
 // ============================================================
 // Grid floor shaders — upgraded with data flow + holographic flicker
 // ============================================================
@@ -1010,6 +1040,193 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   }
 
   return { group, head: headGroup, leftEye, rightEye, leftPupil, rightPupil, leftEyelid, rightEyelid, leftEarGroup, rightEarGroup, cheekMatL, cheekMatR, tail, leftArm, rightArm, mouthMesh, tongue, sparks, sparkMats, sparkMeshes, auraMat, coronaMats };
+}
+
+// ============================================================
+// JET-TURBINE IGNITION SEQUENCE — a one-shot "OS boot-up" cinematic that fires
+// once per orb mount: a synthesized (no external audio file, matching the
+// procedural-chime convention already used by index.html's own boot sound)
+// 3-phase jet-turbine spool-up → brownout flicker → ignition shockwave, with
+// camera shake and light intensity driven directly off live Web Audio
+// analyser data rather than a fixed animation curve.
+// ============================================================
+
+// Trauma-based camera shake (Squirrel Eiserloh's GDC pattern): a single
+// `trauma` scalar decays over time; the actual shake offset is trauma^2 so it
+// reads as a sharp rattle that tails off, not a linear wobble. Per-axis
+// "noise" is a couple of desynced sine waves — cheap, smooth, good enough for
+// a screen-space camera jitter (no need for the GPU-only simplex noise here).
+interface CameraShakeRig {
+  addTrauma(amount: number): void;
+  update(dt: number, time: number): { x: number; y: number; roll: number };
+}
+function createCameraShake(): CameraShakeRig {
+  let trauma = 0;
+  const seedX = Math.random() * 100, seedY = Math.random() * 100, seedR = Math.random() * 100;
+  return {
+    addTrauma(amount: number) { trauma = Math.min(1, trauma + amount); },
+    update(dt: number, time: number) {
+      trauma = Math.max(0, trauma - dt * 1.6);
+      const power = trauma * trauma;
+      const freq = 22;
+      const nx = Math.sin(time * freq + seedX) * 0.6 + Math.sin(time * freq * 2.3 + seedX * 1.7) * 0.4;
+      const ny = Math.sin(time * freq * 1.15 + seedY) * 0.6 + Math.sin(time * freq * 2.7 + seedY * 1.3) * 0.4;
+      const nr = Math.sin(time * freq * 0.9 + seedR) * 0.6 + Math.sin(time * freq * 2.1 + seedR * 1.9) * 0.4;
+      return { x: nx * power * 0.06, y: ny * power * 0.05, roll: nr * power * 0.05 };
+    },
+  };
+}
+
+// Per-frame flicker/slam driver for a fixed set of lights, keyed off elapsed
+// seconds since ignite() fired. Phase 2 (2.6-3.1s) is the mechanical
+// "brownout" — a stuttering square-wave dim. Phase 3 (3.1s+) slams every
+// light to a bright peak then eases back down (exponential decay) to its
+// normal operating intensity.
+function createIgnitionLightRig(lights: THREE.Light[]) {
+  const bases = lights.map((l) => l.intensity);
+  return {
+    update(elapsed: number) {
+      if (elapsed >= 2.6 && elapsed < 3.1) {
+        const glitch = Math.random() < 0.5 ? 0.12 + Math.random() * 0.18 : 0.85 + Math.random() * 0.3;
+        lights.forEach((l, i) => { l.intensity = bases[i] * glitch; });
+      } else if (elapsed >= 3.1 && elapsed < 4.0) {
+        const since = elapsed - 3.1;
+        const mult = 1 + 2.4 * Math.exp(-since * 7);
+        lights.forEach((l, i) => { l.intensity = bases[i] * mult; });
+      } else {
+        lights.forEach((l, i) => { l.intensity = bases[i]; });
+      }
+    },
+    settle() { lights.forEach((l, i) => { l.intensity = bases[i]; }); },
+  };
+}
+
+// Synthesized jet-turbine cue — noise through a resonant lowpass (the
+// "20-60Hz weight" the spool-up needs) plus a rising-pitch whine, a
+// stuttering brownout dip, then a boom transient + sub thump at ignition.
+// Routed through a real THREE.PositionalAudio anchored on the plasma core so
+// it's spatialized, and tapped by a THREE.AudioAnalyser so the camera shake
+// and core glow can react to the actual live signal, not a canned curve.
+interface IgnitionAudioRig {
+  analyser: THREE.AudioAnalyser;
+  ignite(): void;
+  dispose(): void;
+}
+function createIgnitionAudioRig(camera: THREE.PerspectiveCamera, coreGroup: THREE.Object3D): IgnitionAudioRig | null {
+  let listener: THREE.AudioListener;
+  let posAudio: THREE.PositionalAudio;
+  try {
+    listener = new THREE.AudioListener();
+    camera.add(listener);
+    posAudio = new THREE.PositionalAudio(listener);
+    posAudio.setRefDistance(3);
+    posAudio.setRolloffFactor(1.5);
+    coreGroup.add(posAudio);
+  } catch {
+    return null; // Web Audio unavailable — ignition runs visual-only.
+  }
+
+  const ctx = listener.context;
+  const master = ctx.createGain();
+  master.gain.value = 0.0001;
+  // BiquadFilterNode lowpass — the "20-60Hz, feel the weight" sub-bass boost.
+  const lowpass = ctx.createBiquadFilter();
+  lowpass.type = 'lowpass';
+  lowpass.frequency.value = 55;
+  lowpass.Q.value = 8;
+  lowpass.connect(master);
+  posAudio.setNodeSource(master);
+
+  const analyser = new THREE.AudioAnalyser(posAudio, 256);
+
+  function makeNoiseBuffer(seconds: number) {
+    const buf = ctx.createBuffer(1, Math.max(1, Math.floor(ctx.sampleRate * seconds)), ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    return buf;
+  }
+
+  function ignite() {
+    // Autoplay policies leave a fresh AudioContext 'suspended' until a user
+    // gesture; resume defensively so the cue isn't silently dropped.
+    if (ctx.state !== 'running') { ctx.resume().catch(() => {}); }
+    const t0 = ctx.currentTime;
+
+    // ── Phase 1 (0-3.0s) — spool-up: noise through the resonant lowpass,
+    // opening up as the "turbine" winds toward ignition, plus a rising whine.
+    const noiseSrc = ctx.createBufferSource();
+    noiseSrc.buffer = makeNoiseBuffer(3.4);
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.setValueAtTime(0.0001, t0);
+    noiseGain.gain.exponentialRampToValueAtTime(0.9, t0 + 3.0);
+    noiseSrc.connect(noiseGain).connect(lowpass);
+    noiseSrc.start(t0);
+    noiseSrc.stop(t0 + 3.4);
+
+    lowpass.frequency.setValueAtTime(55, t0);
+    lowpass.frequency.exponentialRampToValueAtTime(70, t0 + 1.2);
+    lowpass.frequency.exponentialRampToValueAtTime(240, t0 + 2.9);
+
+    const whine = ctx.createOscillator();
+    whine.type = 'sawtooth';
+    whine.frequency.setValueAtTime(60, t0);
+    whine.frequency.exponentialRampToValueAtTime(340, t0 + 3.0);
+    const whineGain = ctx.createGain();
+    whineGain.gain.setValueAtTime(0.0001, t0);
+    whineGain.gain.exponentialRampToValueAtTime(0.32, t0 + 3.0);
+    whine.connect(whineGain).connect(master);
+    whine.start(t0);
+    whine.stop(t0 + 3.2);
+
+    master.gain.setValueAtTime(0.0001, t0);
+    master.gain.exponentialRampToValueAtTime(0.9, t0 + 2.5);
+
+    // ── Phase 2 (2.6-3.1s) — mechanical brownout: a stuttering gain dip.
+    const bT = t0 + 2.6;
+    for (let i = 0; i < 6; i++) {
+      master.gain.setValueAtTime(i % 2 === 0 ? 0.22 : 0.9, bT + i * 0.08);
+    }
+    master.gain.setValueAtTime(0.9, bT + 0.5);
+
+    // ── Phase 3 (3.1s) — ignition boom: noise transient + sub thump, then
+    // the whole cue settles back to silence.
+    const igT = t0 + 3.1;
+    const boomSrc = ctx.createBufferSource();
+    boomSrc.buffer = makeNoiseBuffer(0.6);
+    const boomFilter = ctx.createBiquadFilter();
+    boomFilter.type = 'lowpass';
+    boomFilter.frequency.setValueAtTime(400, igT);
+    boomFilter.frequency.exponentialRampToValueAtTime(60, igT + 0.5);
+    const boomGain = ctx.createGain();
+    boomGain.gain.setValueAtTime(1.3, igT);
+    boomGain.gain.exponentialRampToValueAtTime(0.0001, igT + 0.9);
+    boomSrc.connect(boomFilter).connect(boomGain).connect(master);
+    boomSrc.start(igT);
+    boomSrc.stop(igT + 0.9);
+
+    const thump = ctx.createOscillator();
+    thump.type = 'sine';
+    thump.frequency.setValueAtTime(90, igT);
+    thump.frequency.exponentialRampToValueAtTime(30, igT + 0.4);
+    const thumpGain = ctx.createGain();
+    thumpGain.gain.setValueAtTime(1.0, igT);
+    thumpGain.gain.exponentialRampToValueAtTime(0.0001, igT + 0.6);
+    thump.connect(thumpGain).connect(master);
+    thump.start(igT);
+    thump.stop(igT + 0.7);
+
+    master.gain.setValueAtTime(0.9, igT);
+    master.gain.exponentialRampToValueAtTime(0.0001, igT + 2.2);
+  }
+
+  return {
+    analyser,
+    ignite,
+    dispose() {
+      try { camera.remove(listener); } catch {}
+      try { coreGroup.remove(posAudio); } catch {}
+    },
+  };
 }
 
 // ============================================================
@@ -2667,11 +2884,15 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
   camera.position.set(0, 0, 6);
   camera.lookAt(0, 0, 0);
+  // Camera never otherwise moves on mobile — re-applied every frame as the
+  // base orientation the ignition sequence's camera shake rotates on top of.
+  const mobileBaseCamQuat = camera.quaternion.clone();
 
   // Try full post-processing pipeline; if it fails use direct render
   let composer: EffectComposer | null = null;
   let mBloom: UnrealBloomPass | null = null;
   let mFxaa: ShaderPass | null = null;
+  let mChroma: ShaderPass | null = null;
   let useComposer = false;
   try {
     const pr0 = Math.min(window.devicePixelRatio || 1, 2);
@@ -2691,6 +2912,11 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     const mVignette = new ShaderPass(GOLD_VIGNETTE_SHADER);
     mVignette.uniforms.darkness.value = 0.7;
     composer.addPass(mVignette);
+    // Chromatic-aberration shockwave pass — off (uStrength 0) except during
+    // the ignition sequence's Phase 3 boom. Sits before FXAA so the AA pass
+    // smooths the split-channel edges instead of sharpening them.
+    mChroma = new ShaderPass(CHROMATIC_SHOCKWAVE_SHADER);
+    composer.addPass(mChroma);
     mFxaa = new ShaderPass(FXAAShader);
     composer.addPass(mFxaa);
     composer.addPass(new OutputPass());
@@ -2700,6 +2926,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   } catch {
     composer = null;
     mBloom = null;
+    mChroma = null;
     mFxaa = null;
     useComposer = false;
   }
@@ -2767,6 +2994,14 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   let mobileCurrentChar = 'alphabrain';
   let mobileCurrentModel: THREE.Object3D | null = null;
   let mobPFX: PFXState | null = null;
+
+  // ── JET-TURBINE IGNITION SEQUENCE — one-shot OS boot-up cinematic ──
+  const ignitionShake = createCameraShake();
+  const ignitionAudio = createIgnitionAudioRig(camera, alphaBrain.group);
+  const ignitionLights = createIgnitionLightRig([mKey, mFill, mFront, mRim, mAmbient]);
+  let ignitionPending = true;
+  let ignitionStartTime: number | null = null;
+  let ignitionClimaxFired = false;
   const mobileThrowPokeball = makeThrowPokeball(group, pikaGroup, import.meta.env.BASE_URL || '/', camera);
 
   // ────────────────────────────────────────────
@@ -3058,6 +3293,33 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     // signal already driving the rest of the orb's speaking/listening feedback.
     alphaBrain.coreMat.uniforms.uTime.value = time;
     alphaBrain.coreMat.uniforms.uAudioAmplitude.value = amp;
+
+    // ── Jet-turbine ignition sequence — fires once, right at boot ──
+    if (ignitionPending) { ignitionPending = false; ignitionStartTime = time; ignitionAudio?.ignite(); }
+    if (ignitionStartTime !== null) {
+      const ignElapsed = time - ignitionStartTime;
+      const ignFreq = ignitionAudio ? ignitionAudio.analyser.getAverageFrequency() / 255 : Math.min(1, ignElapsed / 3);
+      if (ignElapsed < 3.1) {
+        ignitionShake.addTrauma(ignFreq * dt * 2.4);
+      } else if (!ignitionClimaxFired) {
+        ignitionClimaxFired = true;
+        ignitionShake.addTrauma(1.0);
+        if (mChroma) mChroma.uniforms.uStrength.value = 0.05;
+      }
+      ignitionLights.update(ignElapsed);
+      const ignCoreBoost = ignElapsed < 3.1 ? ignFreq * 0.85 : Math.max(0, 2.0 * Math.exp(-(ignElapsed - 3.1) * 2.0));
+      alphaBrain.coreMat.uniforms.uAudioAmplitude.value = Math.max(amp, ignCoreBoost);
+      if (ignElapsed > 6.5) { ignitionStartTime = null; ignitionLights.settle(); }
+    }
+    if (mChroma) mChroma.uniforms.uStrength.value *= Math.max(0, 1 - dt * 3.2);
+    // Re-anchor to the resting orientation every frame, then layer the
+    // ignition camera shake on top — keeps the jolt from drifting/compounding.
+    camera.quaternion.copy(mobileBaseCamQuat);
+    const ignShakeMobile = ignitionShake.update(dt, time);
+    camera.rotateX(ignShakeMobile.y);
+    camera.rotateY(ignShakeMobile.x);
+    camera.rotateZ(ignShakeMobile.roll);
+
     if (pika.head) {
       // Curious head tilt — cycles between looking around and tilting curiously
       const curiousCycle = time % 12.0;
@@ -3241,6 +3503,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
       stopCry();
       disposeParticles(mobPFX, scene);
       disposeChu();
+      ignitionAudio?.dispose();
       window.removeEventListener('resize', resize);
       if (envMap) envMap.dispose();
       if (composer) composer.dispose();
@@ -3398,6 +3661,12 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   vignette.uniforms.darkness.value = 0.5;
   composer.addPass(vignette);
 
+  // Chromatic-aberration shockwave pass — off (uStrength 0) except during the
+  // jet-turbine ignition sequence's Phase 3 boom. Before FXAA so the AA pass
+  // smooths the split-channel edges instead of sharpening them.
+  const chroma = new ShaderPass(CHROMATIC_SHOCKWAVE_SHADER);
+  composer.addPass(chroma);
+
   // FXAA — screen-space AA needed because MSAA is lost in EffectComposer
   const fxaa = new ShaderPass(FXAAShader);
   composer.addPass(fxaa);
@@ -3468,6 +3737,14 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   pikaGroup.visible = false;
   let deskCurrentChar = 'alphabrain';
   let deskCurrentModel: THREE.Object3D | null = null;
+
+  // ── JET-TURBINE IGNITION SEQUENCE — one-shot OS boot-up cinematic ──
+  const ignitionShake = createCameraShake();
+  const ignitionAudio = createIgnitionAudioRig(camera, alphaBrain.group);
+  const ignitionLights = createIgnitionLightRig([keyLight, fillLight, rimLight, bottomLight, ambientLight]);
+  let ignitionPending = true;
+  let ignitionStartTime: number | null = null;
+  let ignitionClimaxFired = false;
   let deskPFX: PFXState | null = null;
   const deskThrowPokeball = makeThrowPokeball(group, pikaGroup, import.meta.env.BASE_URL || '/', camera);
 
@@ -4113,6 +4390,25 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     // signal already driving the rest of the orb's speaking/listening feedback.
     alphaBrain.coreMat.uniforms.uTime.value = time;
     alphaBrain.coreMat.uniforms.uAudioAmplitude.value = amp;
+
+    // ── Jet-turbine ignition sequence — fires once, right at boot ──
+    if (ignitionPending) { ignitionPending = false; ignitionStartTime = time; ignitionAudio?.ignite(); }
+    if (ignitionStartTime !== null) {
+      const ignElapsed = time - ignitionStartTime;
+      const ignFreq = ignitionAudio ? ignitionAudio.analyser.getAverageFrequency() / 255 : Math.min(1, ignElapsed / 3);
+      if (ignElapsed < 3.1) {
+        ignitionShake.addTrauma(ignFreq * dt * 2.4);
+      } else if (!ignitionClimaxFired) {
+        ignitionClimaxFired = true;
+        ignitionShake.addTrauma(1.0);
+        chroma.uniforms.uStrength.value = 0.05;
+      }
+      ignitionLights.update(ignElapsed);
+      const ignCoreBoost = ignElapsed < 3.1 ? ignFreq * 0.85 : Math.max(0, 2.0 * Math.exp(-(ignElapsed - 3.1) * 2.0));
+      alphaBrain.coreMat.uniforms.uAudioAmplitude.value = Math.max(amp, ignCoreBoost);
+      if (ignElapsed > 6.5) { ignitionStartTime = null; ignitionLights.settle(); }
+    }
+    chroma.uniforms.uStrength.value *= Math.max(0, 1 - dt * 3.2);
     if (pika.head) {
       // Curious head tilt — cycles between looking around and tilting curiously
       const curiousCycle = time % 12.0;
@@ -4314,6 +4610,12 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     camera.position.x += (tCamX - camera.position.x) * 0.035;
     camera.position.y += (tCamY - camera.position.y) * 0.035;
     camera.lookAt(0, 0, 0);
+    // Ignition camera shake layers on top of the mouse-parallax lookAt that
+    // just ran, so it never fights the orbit/parallax drift.
+    const ignShakeDesktop = ignitionShake.update(dt, time);
+    camera.rotateX(ignShakeDesktop.y);
+    camera.rotateY(ignShakeDesktop.x);
+    camera.rotateZ(ignShakeDesktop.roll);
 
     stMat.uniforms.uTime.value = time;
     starGroup.rotation.y = time * 0.004;
@@ -4375,6 +4677,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       disposeParticles(deskPFX, scene);
       disposeChu();
       stopBodyDetection();
+      ignitionAudio?.dispose();
       window.removeEventListener('resize', resize);
       window.removeEventListener('mousemove', onDeskMouseMove);
       if (envMap) envMap.dispose();
