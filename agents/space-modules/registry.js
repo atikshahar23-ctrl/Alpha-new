@@ -91,6 +91,18 @@ import { createLyricWaterfall } from "./lyric-waterfall.js";
 import { createLiquidEqualizer } from "./liquid-equalizer.js";
 import { createHoloGoldRecords } from "./holo-gold-records.js";
 import { createAmbientLedStrips } from "./ambient-led-strips.js";
+// ── AUDIO-NEURAL WALLS · Sector 2 — Heavy Guard fleet command ──
+import { createHexCamGrid } from "./hex-cam-grid.js";
+import { createAmirProgressCylinder } from "./amir-progress-cylinder.js";
+import { createDvrThermalExhaust } from "./dvr-thermal-exhaust.js";
+import { createBlueprintProjector } from "./blueprint-projector.js";
+import { createBlindspotAlarms } from "./blindspot-alarms.js";
+// ── AUDIO-NEURAL WALLS · Sector 3 — crypto & finance ──
+import { createTickerMarquee } from "./ticker-marquee.js";
+import { createPnlPowerCables } from "./pnl-power-cables.js";
+import { createCandlestickExtrusions } from "./candlestick-extrusions.js";
+import { createWhaleSiren } from "./whale-siren.js";
+import { createGasFeeDials } from "./gas-fee-dials.js";
 
 export const SPACE_MODULES = [
   // ── CORE SYSTEM ALPHA · comms & AI ──
@@ -160,4 +172,16 @@ export const SPACE_MODULES = [
   { id: "liquid-equalizer", create: createLiquidEqualizer },      // bouncing liquid frequency bars
   { id: "holo-gold-records", create: createHoloGoldRecords },     // spinning gold vinyl + milestone sparks
   { id: "ambient-led-strips", create: createAmbientLedStrips },   // BPM-synced baseboard/crown LEDs
+  // ── AUDIO-NEURAL WALLS · Sector 2 · Heavy Guard fleet command ──
+  { id: "hex-cam-grid", create: createHexCamGrid },                // honeycomb truck-cam DVR wall
+  { id: "amir-progress-cylinder", create: createAmirProgressCylinder }, // 60-truck rollout liquid gauge
+  { id: "dvr-thermal-exhaust", create: createDvrThermalExhaust },  // server-heat vent + shimmer
+  { id: "blueprint-projector", create: createBlueprintProjector }, // wireframe pump-truck hologram
+  { id: "blindspot-alarms", create: createBlindspotAlarms },       // wall strobes on blind-spot events
+  // ── AUDIO-NEURAL WALLS · Sector 3 · crypto & finance ──
+  { id: "ticker-marquee", create: createTickerMarquee },           // scrolling LED price ticker
+  { id: "pnl-power-cables", create: createPnlPowerCables },        // green/red flowing wall cables
+  { id: "candlestick-extrusions", create: createCandlestickExtrusions }, // wall candles pushing out
+  { id: "whale-siren", create: createWhaleSiren },                 // rotating beacon + sonar ping
+  { id: "gas-fee-dials", create: createGasFeeDials },               // steampunk gas-fee gauges
 ];
