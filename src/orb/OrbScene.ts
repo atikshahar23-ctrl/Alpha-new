@@ -1384,6 +1384,15 @@ const PLASMA_CORE_FRAG = /* glsl */`
 
     // Fresnel rim reads as atmospheric plasma bleeding off the edge.
     col += hotCyan * fresnel * (0.6 + uAudioAmplitude * 1.4);
+
+    // Phase 3 — Core-Glow: the disc facing the camera (low fresnel = high
+    // facing) burns blinding white-hot at the centre and falls off to the
+    // gold/amber body toward the rim; the hot zone flares brighter with voice.
+    float facing = clamp(1.0 - fresnel, 0.0, 1.0);
+    float coreHot = pow(facing, 3.0);
+    vec3 whiteHot = vec3(1.0, 0.96, 0.88);
+    col = mix(col, whiteHot, coreHot * (0.4 + uAudioAmplitude * 0.6));
+
     // Overall intensity breathes with amplitude so bloom picks out the voice.
     col *= 1.0 + uAudioAmplitude * 0.9 + peak * 0.8;
 
@@ -1391,11 +1400,27 @@ const PLASMA_CORE_FRAG = /* glsl */`
   }
 `;
 
+// Phase 2 — voice-reactive amplitude. The browser's speechSynthesis TTS never
+// routes through Web Audio, so there is no PCM stream to hang a real
+// AnalyserNode on; instead we synthesize the *behaviour* Phase 2 asks for
+// straight off the smoothed speaking/listening energy that already drives the
+// orb: a slow breathing floor in silence, plus fast multi-rate "formant"
+// spikes that only surface as that energy rises — rapid ripples while the
+// assistant talks, a calm pulse when it's idle.
+function voiceReactiveAmp(amp: number, time: number): number {
+  const breathe = 0.06 + 0.025 * Math.sin(time * 1.05);
+  const formant = 0.55 * Math.abs(Math.sin(time * 12.7))
+                + 0.45 * Math.abs(Math.sin(time * 21.3 + 1.7));
+  const speech = amp * (0.45 + 0.55 * formant);
+  return Math.min(1.25, breathe + speech);
+}
+
 interface AlphaBrainParts {
   group: THREE.Group;
   core: THREE.Mesh;
   coreMat: THREE.ShaderMaterial;
   wire: THREE.Mesh;
+  wire2: THREE.Mesh;
   light: THREE.PointLight;
 }
 function buildAlphaBrain(segments = 96): AlphaBrainParts {
@@ -1413,6 +1438,17 @@ function buildAlphaBrain(segments = 96): AlphaBrainParts {
     new THREE.MeshBasicMaterial({ color: gold, wireframe: true, transparent: true, opacity: 0.8 }),
   );
   group.add(wire);
+  // Phase 3 — Containment Field: a second, larger, sparser cyan wireframe
+  // shell (semi-transparent + additive) counter-rotating against the gold one,
+  // reading as an energy-containment ring around the plasma core.
+  const wire2 = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(1.62, 1),
+    new THREE.MeshBasicMaterial({
+      color: 0x5ff0ff, wireframe: true, transparent: true, opacity: 0.32,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    }),
+  );
+  group.add(wire2);
   const glow = new THREE.Sprite(new THREE.SpriteMaterial({
     map: glowTexture(), color: gold, transparent: true, opacity: 0.55,
     blending: THREE.AdditiveBlending, depthWrite: false,
@@ -1421,7 +1457,7 @@ function buildAlphaBrain(segments = 96): AlphaBrainParts {
   group.add(glow);
   const light = new THREE.PointLight(gold, 1.6, 9);
   group.add(light);
-  return { group, core, coreMat, wire, light };
+  return { group, core, coreMat, wire, wire2, light };
 }
 
 // Atmosphere glow shaders — volumetric, animated, multi-fresnel
@@ -3320,10 +3356,14 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     alphaBrain.core.rotation.x += dt * 0.08;
     alphaBrain.wire.rotation.y -= dt * 0.18;
     alphaBrain.wire.rotation.x += dt * 0.05;
-    // Plasma core shader: uAudioAmplitude rides the same smoothed `amp` energy
-    // signal already driving the rest of the orb's speaking/listening feedback.
+    // Phase 3 — containment ring counter-rotates against the gold shell.
+    alphaBrain.wire2.rotation.y += dt * 0.12;
+    alphaBrain.wire2.rotation.z -= dt * 0.09;
+    // Phase 2 — voice-reactive amplitude: breathes in silence, sharp ripples
+    // while speaking, synthesized from the smoothed speaking/listening energy.
+    const coreAmp = voiceReactiveAmp(amp, time);
     alphaBrain.coreMat.uniforms.uTime.value = time;
-    alphaBrain.coreMat.uniforms.uAudioAmplitude.value = amp;
+    alphaBrain.coreMat.uniforms.uAudioAmplitude.value = coreAmp;
 
     // ── Jet-turbine ignition sequence — fires once, right at boot ──
     if (ignitionPending) { ignitionPending = false; ignitionStartTime = time; ignitionAudio?.ignite(); }
@@ -3339,8 +3379,13 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
       }
       ignitionLights.update(ignElapsed);
       const ignCoreBoost = ignElapsed < 3.1 ? ignFreq * 0.85 : Math.max(0, 2.0 * Math.exp(-(ignElapsed - 3.1) * 2.0));
-      alphaBrain.coreMat.uniforms.uAudioAmplitude.value = Math.max(amp, ignCoreBoost);
+      alphaBrain.coreMat.uniforms.uAudioAmplitude.value = Math.max(coreAmp, ignCoreBoost);
       if (ignElapsed > 6.5) { ignitionStartTime = null; ignitionLights.settle(); }
+    }
+    // Phase 4 — a voice peak splits the RGB channels a touch (desktop composer
+    // only); the decay below relaxes it back to zero over the next frames.
+    if (mChroma && coreAmp > 0.6) {
+      mChroma.uniforms.uStrength.value = Math.max(mChroma.uniforms.uStrength.value, (coreAmp - 0.6) * 0.03);
     }
     if (mChroma) mChroma.uniforms.uStrength.value *= Math.max(0, 1 - dt * 3.2);
     // Re-anchor to the resting orientation every frame, then layer the
@@ -4421,10 +4466,14 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     alphaBrain.core.rotation.x += dt * 0.08;
     alphaBrain.wire.rotation.y -= dt * 0.18;
     alphaBrain.wire.rotation.x += dt * 0.05;
-    // Plasma core shader: uAudioAmplitude rides the same smoothed `amp` energy
-    // signal already driving the rest of the orb's speaking/listening feedback.
+    // Phase 3 — containment ring counter-rotates against the gold shell.
+    alphaBrain.wire2.rotation.y += dt * 0.12;
+    alphaBrain.wire2.rotation.z -= dt * 0.09;
+    // Phase 2 — voice-reactive amplitude: breathes in silence, sharp ripples
+    // while speaking, synthesized from the smoothed speaking/listening energy.
+    const coreAmp = voiceReactiveAmp(amp, time);
     alphaBrain.coreMat.uniforms.uTime.value = time;
-    alphaBrain.coreMat.uniforms.uAudioAmplitude.value = amp;
+    alphaBrain.coreMat.uniforms.uAudioAmplitude.value = coreAmp;
 
     // ── Jet-turbine ignition sequence — fires once, right at boot ──
     if (ignitionPending) { ignitionPending = false; ignitionStartTime = time; ignitionAudio?.ignite(); }
@@ -4440,8 +4489,13 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       }
       ignitionLights.update(ignElapsed);
       const ignCoreBoost = ignElapsed < 3.1 ? ignFreq * 0.85 : Math.max(0, 2.0 * Math.exp(-(ignElapsed - 3.1) * 2.0));
-      alphaBrain.coreMat.uniforms.uAudioAmplitude.value = Math.max(amp, ignCoreBoost);
+      alphaBrain.coreMat.uniforms.uAudioAmplitude.value = Math.max(coreAmp, ignCoreBoost);
       if (ignElapsed > 6.5) { ignitionStartTime = null; ignitionLights.settle(); }
+    }
+    // Phase 4 — a voice peak splits the RGB channels a touch; the decay below
+    // relaxes it back to zero over the next frames.
+    if (coreAmp > 0.6) {
+      chroma.uniforms.uStrength.value = Math.max(chroma.uniforms.uStrength.value, (coreAmp - 0.6) * 0.03);
     }
     chroma.uniforms.uStrength.value *= Math.max(0, 1 - dt * 3.2);
     if (pika.head) {
