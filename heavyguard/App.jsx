@@ -4847,7 +4847,10 @@ function Styles() {
   box-shadow:0 0 10px rgba(228,188,99,.6);transition:width .2s ease}
 
 /* Volumetric vault counter — rolling digit reels. */
-.hg2-vault{display:inline-flex;align-items:center;font-variant-numeric:tabular-nums;line-height:1}
+/* direction:ltr is required — the digits are split into per-glyph flex spans,
+   so without it the RTL dashboard lays them out right-to-left and "2,350"
+   renders reversed as "053,2". Numbers are always LTR. */
+.hg2-vault{display:inline-flex;align-items:center;font-variant-numeric:tabular-nums;line-height:1;direction:ltr}
 .hg2-vault-sep{display:inline-block}
 .hg2-vault-digit{display:inline-block;height:1em;overflow:hidden;vertical-align:bottom}
 .hg2-vault-reel{display:flex;flex-direction:column;will-change:transform;
