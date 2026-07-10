@@ -85,6 +85,12 @@ import { createAlphaAwakening } from "./alpha-awakening.js";
 import { createSelfDestruct } from "./self-destruct.js";
 // ── Owner request · command video wall (CCTV + live data twin screens) ──
 import { createCommandVideoWall } from "./command-video-wall.js";
+// ── AUDIO-NEURAL WALLS · Sector 1 — audio & studio matrix ──
+import { createBassDisplacementPanels } from "./bass-displacement-panels.js";
+import { createLyricWaterfall } from "./lyric-waterfall.js";
+import { createLiquidEqualizer } from "./liquid-equalizer.js";
+import { createHoloGoldRecords } from "./holo-gold-records.js";
+import { createAmbientLedStrips } from "./ambient-led-strips.js";
 
 export const SPACE_MODULES = [
   // ── CORE SYSTEM ALPHA · comms & AI ──
@@ -148,4 +154,10 @@ export const SPACE_MODULES = [
   { id: "self-destruct", create: createSelfDestruct },           // M55 · armed-only self-destruct + reload
   // ── Owner request · twin command monitors in the walkway ──
   { id: "command-video-wall", create: createCommandVideoWall },  // CCTV place-cams + live markets/HG data
+  // ── AUDIO-NEURAL WALLS · Sector 1 · audio & studio matrix ──
+  { id: "bass-displacement-panels", create: createBassDisplacementPanels }, // kick-driven wall extrusion
+  { id: "lyric-waterfall", create: createLyricWaterfall },        // scrolling lyric "digital rain"
+  { id: "liquid-equalizer", create: createLiquidEqualizer },      // bouncing liquid frequency bars
+  { id: "holo-gold-records", create: createHoloGoldRecords },     // spinning gold vinyl + milestone sparks
+  { id: "ambient-led-strips", create: createAmbientLedStrips },   // BPM-synced baseboard/crown LEDs
 ];
