@@ -4001,6 +4001,13 @@ function StyleTag() {
 .off3-nightclub:hover{border-color:#ff2ecb;color:#ffd7fa}
 .off3-nightclub.on{background:linear-gradient(135deg,rgba(184,75,255,.32),rgba(54,230,255,.16));
   color:#f3d9ff;border-color:#b84bff;box-shadow:0 0 16px rgba(184,75,255,.4)}
+.off3-party{position:absolute;top:136px;right:10px;z-index:3;height:34px;padding:0 13px;border-radius:17px;
+  display:flex;align-items:center;justify-content:center;gap:6px;background:rgba(6,9,18,.72);
+  border:1px solid rgba(228,188,99,.3);color:#eaf1ff;font-weight:800;font-size:.75rem;
+  cursor:pointer;backdrop-filter:blur(8px);white-space:nowrap;font-family:inherit}
+.off3-party:hover{border-color:#E4BC63;color:#fff3d0}
+.off3-party.on{background:linear-gradient(135deg,rgba(228,188,99,.34),rgba(255,120,80,.16));
+  color:#fff3d0;border-color:#E4BC63;box-shadow:0 0 18px rgba(228,188,99,.45)}
 
 /* ── ALPHA MEGA-PATCH V1.0 — module UI ─────────────────────────────────── */
 .off3-garage-hud{position:absolute;bottom:150px;left:50%;transform:translateX(-50%);z-index:31;

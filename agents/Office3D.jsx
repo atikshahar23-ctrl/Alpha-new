@@ -6019,6 +6019,20 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   // UV Nightclub Mode — "lights out", blacklight-reactive pods/hologram.
   const [nightclub, setNightclub] = useState(false);
   useEffect(() => { liveRef.current.setNightclub?.(nightclub); }, [nightclub]);
+  // 🎉 Party Mode — the master switch for ALL the extra sci-fi "objects" (every
+  // space-module: the DOOMSDAY payload, Audio-Neural Walls, Neural-Quantum
+  // installations, video walls, etc.). OFF by default so the office reads as a
+  // clean, real workplace: the agents + their pods, Dvora and her office, the
+  // owner's (שחר) office, the exit to the Hangar, the DVR screen, Alpha the
+  // assistant and the globe — nothing else. Pressing Party instantiates the
+  // whole fleet of objects; turning it off tears them back down. Persisted.
+  const [partyMode, setPartyMode] = useState(() => {
+    try { return localStorage.getItem("alpha:agents:party") === "1"; } catch { return false; }
+  });
+  useEffect(() => {
+    liveRef.current.setPartyMode?.(partyMode);
+    try { localStorage.setItem("alpha:agents:party", partyMode ? "1" : "0"); } catch {}
+  }, [partyMode]);
   // ── ALPHA MEGA-PATCH V1.0 — module state ──────────────────────────────
   const [warToast, setWarToast] = useState(null); // Module 1 — Michal's scheduling toast
   useEffect(() => {
@@ -7952,14 +7966,50 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       scene.add(sunStageRing);
       obstacles.push({ x: SUN_SPOT.x, z: SUN_SPOT.z, r: 3.0 });
       const sunGroup = new THREE.Group();
-      const core = new THREE.Mesh(
-        new THREE.IcosahedronGeometry(1.8, 2),
-        new THREE.MeshBasicMaterial({ color: 0xfff2d0 })
-      );
-      sunGroup.add(core);
+      // Realistic Earth core — procedural equirectangular day map (oceans,
+      // continents, polar ice, baked city-lights) + a drifting cloud layer +
+      // an additive atmosphere halo. All MeshBasicMaterial so it renders on the
+      // owner's phone GPU (which drops lit PBR to invisible). Wrapped in a
+      // tilted group with an inner spinner so it turns on its own axis.
+      const buildEarthCore = (radius) => {
+        const grp = new THREE.Group();
+        const spin = new THREE.Group(); grp.add(spin);
+        const cvs = document.createElement("canvas"); cvs.width = 1024; cvs.height = 512;
+        const cg = cvs.getContext("2d");
+        const og = cg.createLinearGradient(0, 0, 0, 512);
+        og.addColorStop(0, "#0a2a4a"); og.addColorStop(0.5, "#0e3d68"); og.addColorStop(1, "#0a2a4a");
+        cg.fillStyle = og; cg.fillRect(0, 0, 1024, 512);
+        let seed = 1337; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+        const land = (cx, cy, w, h, col) => {
+          cg.fillStyle = col;
+          for (let i = 0; i < 30; i++) {
+            const a = rnd() * Math.PI * 2, r = rnd();
+            const x = cx + Math.cos(a) * w * r, y = cy + Math.sin(a) * h * r, rr = 12 + rnd() * 42;
+            cg.beginPath(); cg.ellipse(x, y, rr, rr * (0.6 + rnd() * 0.5), rnd() * Math.PI, 0, Math.PI * 2); cg.fill();
+          }
+        };
+        land(185, 175, 95, 75, "#2f7d3a"); land(235, 345, 62, 85, "#357a37"); // Americas
+        land(520, 200, 125, 72, "#4a7d33"); land(545, 335, 72, 62, "#6a5d2a"); // Europe/Africa
+        land(775, 205, 155, 85, "#4a7d33"); land(845, 365, 62, 42, "#7a6a33"); // Asia/Australia
+        cg.fillStyle = "rgba(238,246,255,0.92)"; cg.fillRect(0, 0, 1024, 28); cg.fillRect(0, 484, 1024, 28);
+        cg.fillStyle = "rgba(255,222,150,0.45)";
+        for (let i = 0; i < 280; i++) cg.fillRect(rnd() * 1024, 60 + rnd() * 388, 1.3, 1.3); // baked city-lights
+        const earth = new THREE.Mesh(new THREE.SphereGeometry(radius, 48, 32), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(cvs) }));
+        spin.add(earth);
+        const ccv = document.createElement("canvas"); ccv.width = 1024; ccv.height = 512; const clg = ccv.getContext("2d");
+        for (let i = 0; i < 95; i++) { const x = Math.random() * 1024, y = Math.random() * 512, r = 18 + Math.random() * 70; const gr = clg.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, "rgba(255,255,255,0.55)"); gr.addColorStop(1, "rgba(255,255,255,0)"); clg.fillStyle = gr; clg.beginPath(); clg.arc(x, y, r, 0, Math.PI * 2); clg.fill(); }
+        const clouds = new THREE.Mesh(new THREE.SphereGeometry(radius * 1.012, 48, 32), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(ccv), transparent: true, opacity: 0.5, depthWrite: false }));
+        spin.add(clouds);
+        const atmo = new THREE.Mesh(new THREE.SphereGeometry(radius * 1.07, 32, 24), new THREE.MeshBasicMaterial({ color: 0x5fb0ff, transparent: true, opacity: 0.24, side: THREE.BackSide, blending: THREE.AdditiveBlending, depthWrite: false }));
+        grp.add(atmo);
+        grp.rotation.z = 0.41; // ~23.5° axial tilt
+        return { grp, spin, clouds };
+      };
+      const earthCore = buildEarthCore(1.8);
+      sunGroup.add(earthCore.grp);
       const wire = new THREE.Mesh(
         new THREE.IcosahedronGeometry(2.3, 1),
-        new THREE.MeshBasicMaterial({ color: sunColor, wireframe: true, transparent: true, opacity: 0.8 })
+        new THREE.MeshBasicMaterial({ color: sunColor, wireframe: true, transparent: true, opacity: 0.5 })
       );
       sunGroup.add(wire);
       const glowSprite = new THREE.Sprite(new THREE.SpriteMaterial({
@@ -7986,7 +8036,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       // instead of floating up past the ceiling.
       sunGroup.position.set(SUN_SPOT.x, 2.4, SUN_SPOT.z);
       scene.add(sunGroup);
-      ownerSpinners.push(wire, core);
+      ownerSpinners.push(wire, earthCore.spin);
       alphaSpots.push({ x: SUN_SPOT.x, z: SUN_SPOT.z });
     }
     scene.userData.alphaSpots = alphaSpots;
@@ -8403,9 +8453,24 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       helpers: { buildNeonSign, disposeMaterial },
       anchors: { sun: { x: -2.5, z: -1.0 }, warTable: warTablePos, algoZone: algoZonePos, droneBay: DRONE_BAY },
     };
-    const spaceModules = SPACE_MODULES.map((m) => {
-      try { return m.create(spaceModuleCtx); } catch (e) { console.error("[space-module] " + m.id + " failed to init", e); return null; }
-    }).filter(Boolean);
+    // 🎉 Party Mode gate — the space-modules (all the extra sci-fi objects) are
+    // NOT instantiated by default, so the office stays clean. setPartyMode(true)
+    // builds the whole fleet; setPartyMode(false) disposes it. Toggled live from
+    // the React Party button below (mirrored onto liveRef).
+    let spaceModules = [];
+    const instantiateParty = () => {
+      if (spaceModules.length) return;
+      spaceModules = SPACE_MODULES.map((m) => {
+        try { return m.create(spaceModuleCtx); } catch (e) { console.error("[space-module] " + m.id + " failed to init", e); return null; }
+      }).filter(Boolean);
+    };
+    const disposePartyModules = () => {
+      for (const m of spaceModules) { try { if (m.dispose) m.dispose(); } catch {} }
+      spaceModules = [];
+    };
+    liveRef.current.setPartyMode = (on) => { if (on) instantiateParty(); else disposePartyModules(); };
+    // Honour a persisted "party left on" choice from a previous visit.
+    try { if (localStorage.getItem("alpha:agents:party") === "1") instantiateParty(); } catch {}
 
     // The owner's chair in world coordinates — where the player can sit down.
     const OWNER_SEAT = {
@@ -11043,6 +11108,13 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         title={nightclub ? "מצב UV פעיל — כבה את האורות" : "Lights Out — מצב מועדון UV"}
       >
         🪩 {nightclub ? "UV פעיל" : "Lights Out"}
+      </button>
+      <button
+        className={"off3-party" + (partyMode ? " on" : "")}
+        onClick={() => setPartyMode((v) => !v)}
+        title={partyMode ? "מצב Party פעיל — כל האובייקטים ערים" : "מצב Party — הער את כל האובייקטים במשרד"}
+      >
+        🎉 {partyMode ? "Party פעיל" : "מצב Party"}
       </button>
       {radioPlaying && !(phoneOpen && phoneTab === "radio") && (
         <div className="off3-radio-mini" title={radioStationName}>
