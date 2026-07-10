@@ -5815,6 +5815,12 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   const [godLight, setGodLight] = useState(1);
   const [godGlow, setGodGlow] = useState(DEFAULT_GOD_GLOW); // bloom-strength multiplier — separate from raw light intensity
   const [godSpeed, setGodSpeed] = useState(1); // agent walk-speed multiplier — Command Center dial
+  // The PLAYER's own walk-speed multiplier (separate from the agents' godSpeed).
+  // Owner feedback: default movement felt too fast — this is the personal dial,
+  // persisted so the chosen pace sticks across visits.
+  const [godPlayerSpeed, setGodPlayerSpeed] = useState(() => {
+    try { const v = parseFloat(localStorage.getItem("alpha:office:playerSpeed")); return v > 0 ? v : 1; } catch { return 1; }
+  });
   // Blueprint Tactical Mode — God Mode's construction view: the whole scene
   // drops to a cyan wireframe schematic over a laser floor grid, and every
   // position change snaps to a 0.5m grid for precision placement.
@@ -6185,6 +6191,10 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   useEffect(() => { liveRef.current.godLightMul = godLight; }, [godLight]);
   useEffect(() => { liveRef.current.godGlowMul = godGlow; }, [godGlow]);
   useEffect(() => { liveRef.current.godSpeedMul = godSpeed; }, [godSpeed]);
+  useEffect(() => {
+    liveRef.current.playerSpeedMul = godPlayerSpeed;
+    try { localStorage.setItem("alpha:office:playerSpeed", String(godPlayerSpeed)); } catch {}
+  }, [godPlayerSpeed]);
   useEffect(() => { liveRef.current.setSelectedObj = setSelectedObj; }, []);
   useEffect(() => { liveRef.current.setShowLoadPrompt = setShowLoadPrompt; liveRef.current.setLayoutNames = setLayoutNames; }, []);
   // Stop any live mic / speech when the sim unmounts.
@@ -9805,7 +9815,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         // logic as the professional walk, just faster.
         const sprinting = !!keys["shift"];
         liveRef.current.sprinting = sprinting;
-        const SPEED = (sprinting ? 17.5 : 10.0); // scales with the floor, so crossing time still feels right
+        const SPEED = (sprinting ? 17.5 : 10.0) * (liveRef.current.playerSpeedMul || 1); // × the owner's personal speed dial (God Mode)
         playerH.group.position.x = clamp(playerH.group.position.x + mx * SPEED * dt, -(FLOOR_W / 2 - 1), FLOOR_W / 2 - 1);
         playerH.group.position.z = clamp(playerH.group.position.z + mz * SPEED * dt, -(FLOOR_D / 2 - 1), FLOOR_D / 2 - 1);
         resolveCollisions(playerH.group.position, obstacles);
@@ -11301,6 +11311,10 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
                 <span>🏃 מהירות סוכנים</span>
                 <input type="range" min="0.3" max="2.5" step="0.1" value={godSpeed} onChange={(e) => setGodSpeed(parseFloat(e.target.value))} />
               </label>
+              <label className="off3-phone-slider">
+                <span>🚶 המהירות שלי · {godPlayerSpeed.toFixed(2)}x</span>
+                <input type="range" min="0.3" max="2" step="0.05" value={godPlayerSpeed} onChange={(e) => setGodPlayerSpeed(parseFloat(e.target.value))} />
+              </label>
               <div className="off3-phone-sec">המערכות שלך</div>
               <button className="off3-phone-act" onClick={() => setPhoneEmbed({ url: "heavyguard.html", title: "🛡 HEAVY GUARD OS" })}>🛡 HEAVY GUARD OS</button>
               <button className="off3-phone-act" onClick={() => setPhoneEmbed({ url: "https://heavt-guard-simulator-1.onrender.com/", title: "📈 מערכת מסחר · TRADE" })}>📈 מערכת מסחר · TRADE</button>
@@ -11617,6 +11631,10 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           <label className="off3-god-row">
             <span>🏃 מהירות סוכנים</span>
             <input type="range" min="0.3" max="2.5" step="0.1" value={godSpeed} onChange={(e) => setGodSpeed(parseFloat(e.target.value))} />
+          </label>
+          <label className="off3-god-row">
+            <span>🚶 המהירות שלי · {godPlayerSpeed.toFixed(2)}x</span>
+            <input type="range" min="0.3" max="2" step="0.05" value={godPlayerSpeed} onChange={(e) => setGodPlayerSpeed(parseFloat(e.target.value))} />
           </label>
           <div className="off3-god-sec">⏩ Module 9 — Time-Dilation</div>
           <label className="off3-god-row off3-god-dilation">
