@@ -10465,6 +10465,52 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     };
     // Module 4: Bookkeeper Export Terminal.
     liveRef.current.exportBookkeeperPdf = () => exportBookkeeperPdf(liveRef.current.bizData);
+    // ── Mobile "flat materials" mode — the guaranteed-render path ─────────
+    // On the owner's real phone every LIT material (MeshStandard/Physical —
+    // floor, walls, pods, the whole crew) fails to draw, while every UNLIT
+    // MeshBasicMaterial (neon grid, holograms, signs) renders perfectly —
+    // verified across cache-free incognito loads, with the composer bypassed
+    // and with no env map. So on phones we convert every lit material to a
+    // MeshBasicMaterial carrying the same texture/color: the exact material
+    // type already proven to render on that GPU. Flat-lit, full-bright,
+    // always visible. Desktop keeps the full PBR pipeline.
+    if (isMobile) {
+      try {
+        const gl = renderer.getContext();
+        const dbg = gl.getExtension("WEBGL_debug_renderer_info");
+        if (dbg) console.info("[office3d] GPU:", gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL));
+      } catch {}
+      const flattenMaterials = () => {
+        scene.traverse((o) => {
+          if (!o.isMesh && !o.isSkinnedMesh) return;
+          const mats = Array.isArray(o.material) ? o.material : [o.material];
+          let changed = false;
+          const out = mats.map((m) => {
+            if (!m || !(m.isMeshStandardMaterial || m.isMeshPhysicalMaterial)) return m;
+            if (m.userData.__flat) { changed = true; return m.userData.__flat; }
+            const basic = new THREE.MeshBasicMaterial({
+              map: m.map || null,
+              color: m.map ? 0xffffff : (m.color ? m.color.clone() : 0xffffff),
+              transparent: m.transparent, opacity: m.opacity,
+              side: m.side, alphaTest: m.alphaTest || 0,
+              depthWrite: m.depthWrite, depthTest: m.depthTest,
+            });
+            // Untextured surfaces keep a hint of their glow color so pods/
+            // beacons still read; textured ones show their texture as-authored.
+            try { if (!m.map && m.emissive && (m.emissiveIntensity ?? 1) > 0.15) basic.color.lerp(m.emissive, 0.3); } catch {}
+            m.userData.__flat = basic;
+            changed = true;
+            return basic;
+          });
+          if (changed) o.material = Array.isArray(o.material) ? out : out[0];
+        });
+      };
+      flattenMaterials();
+      // Async-loaded props (reception desk, Hyperion, meeting table…) land
+      // after first paint — sweep again to catch them. Cheap traversals.
+      setTimeout(flattenMaterials, 4000);
+      setTimeout(flattenMaterials, 12000);
+    }
     // The world is now actually fully assembled (not just downloaded) and
     // about to render its first real frame — only now does the loading
     // overlay come down.
