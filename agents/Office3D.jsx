@@ -6262,8 +6262,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // threshold + softer strength + wider radius than before: a broad soft
     // cinematic glow on genuinely bright surfaces instead of a narrow,
     // blinding halo that was washing out nearby text/detail.
-    const BASE_BLOOM_STRENGTH = isMobile ? 0.22 : 0.38;
-    const bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), BASE_BLOOM_STRENGTH, 0.9, 0.4);
+    // Softer bloom (owner: "everything too glowing, reduce the glow"), and a
+    // higher threshold on mobile so only genuinely bright neon blooms instead of
+    // every mid-tone surface hazing over.
+    const BASE_BLOOM_STRENGTH = isMobile ? 0.13 : 0.34;
+    const bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), BASE_BLOOM_STRENGTH, 0.9, isMobile ? 0.6 : 0.4);
     composer.addPass(bloomPass);
     composer.addPass(new OutputPass());
     // EffectComposer renders through its own WebGLRenderTargets, so the
@@ -6357,13 +6360,13 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // as the light in the room, instead of competing with a bright flat fill.
     const ambient = new THREE.AmbientLight(0xc9d9f2, 0.3);
     scene.add(ambient);
-    const hemi = new THREE.HemisphereLight(0xbfd4ff, 0x161a24, isMobile ? 0.62 : 0.4);
+    const hemi = new THREE.HemisphereLight(0xbfd4ff, 0x161a24, isMobile ? 0.46 : 0.4);
     scene.add(hemi);
-    // Phones get a brighter base fill so the metallic robot crew never reads as
-    // a near-black silhouette on a dim phone panel ("I don't see my character").
-    // Desktop keeps the moody deep-space tuning. (The per-frame phase loop drives
-    // ambient toward ambTargetInt, so the real lift is applied there via LIGHT_MOBILE_MUL.)
-    const LIGHT_MOBILE_MUL = isMobile ? 1.5 : 1;
+    // Only a GENTLE mobile fill lift — the earlier 1.5x flooded the deck so hard
+    // that bloom blew the whole scene into a white haze ("everything too glowing").
+    // Character visibility is carried by the crew/player EMISSIVE glow instead, so
+    // the room can stay moody-dark without anyone going invisible.
+    const LIGHT_MOBILE_MUL = isMobile ? 1.12 : 1;
     const sun = new THREE.DirectionalLight(0xfff2df, 1.25);
     sun.position.set(9, 14, 6);
     sun.castShadow = !isMobile;
