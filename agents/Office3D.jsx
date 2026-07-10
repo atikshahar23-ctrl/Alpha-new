@@ -11714,6 +11714,14 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           <button className="off3-talk" style={{ "--c": talkAgent.color }} onClick={() => onOpenChat(talkAgent.id)}>
             <MessageCircle size={18} /> {voiceLabel}
           </button>
+          <button
+            className="off3-mute off3-voicecfg"
+            style={{ "--c": talkAgent.color }}
+            title={`הגדרות קול — ${talkAgent.name}`}
+            onClick={() => { setVoiceAgentId(talkAgent.id); setSettingsOpen(true); }}
+          >
+            <Volume2 size={18} />
+          </button>
         </div>
       )}
       <div className={"off3-joy-fixed off3-joy-left" + (leftActive ? " active" : "")}
