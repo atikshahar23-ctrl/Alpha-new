@@ -7842,6 +7842,25 @@ export function mountApp(root: HTMLElement) {
               המשך עם Google
             </button>
             <div id="loginStatus" style="font-size:11px;color:rgba(218,165,32,.7);margin-top:12px;min-height:16px;text-align:center"></div>
+
+            <button id="loginCidToggle" type="button" style="
+              background:none;border:none;color:rgba(218,165,32,.55);
+              font-size:11px;cursor:pointer;margin-top:12px;text-decoration:underline
+            ">בעיה בהתחברות? הגדר Client ID</button>
+            <div id="loginCidBox" style="display:none;margin-top:10px;text-align:right">
+              <input id="loginCidInput" type="text" dir="ltr" placeholder="xxxx.apps.googleusercontent.com"
+                style="width:100%;box-sizing:border-box;padding:9px 10px;border-radius:8px;
+                       border:1px solid rgba(218,165,32,.3);background:rgba(0,0,0,.3);color:#fff;font-size:11px" />
+              <button id="loginCidSave" style="
+                width:100%;margin-top:8px;padding:10px;border-radius:8px;
+                border:1px solid rgba(218,165,32,.4);background:rgba(218,165,32,.12);
+                color:#daa520;font-size:13px;font-weight:600;cursor:pointer
+              ">שמור ונסה שוב</button>
+              <p style="font-size:10px;color:rgba(255,255,255,.4);margin:8px 0 0;line-height:1.5">
+                ה-Client ID חייב להיות מסוג "Web application" ב-Google Cloud, עם כתובת האפליקציה רשומה תחת
+                Authorized JavaScript origins. שגיאת "OAuth client was not found" = ה-ID לא קיים/נמחק בגוגל.
+              </p>
+            </div>
           </div>
 
           <button id="loginSkipBtn" style="
@@ -7858,6 +7877,25 @@ export function mountApp(root: HTMLElement) {
         if (synced) sessionStorage.removeItem(LOGIN_SKIP_KEY);
       };
 
+      // Client-ID escape hatch — shows the ID the app is actually sending
+      // (which may be a stale/corrupt value cached on this device) and lets the
+      // user correct it. Reload after saving so the cached GIS token client is
+      // rebuilt with the new id instead of the old one.
+      const cidBox = ov.querySelector('#loginCidBox') as HTMLElement;
+      const cidInput = ov.querySelector('#loginCidInput') as HTMLInputElement;
+      cidInput.value = driveSync.getClientId();
+      (ov.querySelector('#loginCidToggle') as HTMLButtonElement).onclick = () => {
+        cidBox.style.display = cidBox.style.display === 'none' ? 'block' : 'none';
+      };
+      (ov.querySelector('#loginCidSave') as HTMLButtonElement).onclick = () => {
+        const v = cidInput.value.trim();
+        if (!v) return;
+        driveSync.setClientId(v);
+        const status = ov.querySelector('#loginStatus') as HTMLElement;
+        status.textContent = '✓ נשמר — טוען מחדש…';
+        setTimeout(() => location.reload(), 500);
+      };
+
       (ov.querySelector('#loginGoogleBtn') as HTMLButtonElement).onclick = async () => {
         const btn = ov.querySelector('#loginGoogleBtn') as HTMLButtonElement;
         const status = ov.querySelector('#loginStatus') as HTMLElement;
@@ -7868,7 +7906,8 @@ export function mountApp(root: HTMLElement) {
         if (!ok) {
           btn.disabled = false;
           btn.style.opacity = '1';
-          status.textContent = 'ההתחברות בוטלה. נסה שוב.';
+          status.textContent = 'ההתחברות לא הושלמה. בדוק שה-Client ID תקין ורשום ב-Google Cloud, או המשך ללא חשבון.';
+          cidBox.style.display = 'block'; // surface the fixer so the user isn't stuck
           return;
         }
         status.textContent = 'מחובר! מוריד נתונים…';
