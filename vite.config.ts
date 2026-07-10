@@ -8,6 +8,23 @@ import { resolve } from 'path';
 // `npm run build:render` below and README-combined-deploy.md.
 export default defineConfig({
   base: process.env.VITE_BASE_PATH || '/Alpha-new/',
+  // Cloudflare Tunnel support (see config.yml at the repo root): cloudflared
+  // proxies requests to the local dev/preview server with the tunnel's public
+  // hostname in the Host header, which Vite rejects by default ("Blocked
+  // request. This host is not allowed"). Strictly opt-in and scoped: with no
+  // TUNNEL_HOST set, nothing changes — loopback bind + Vite's full
+  // host-header (DNS-rebinding) protection stay as-is. Running
+  //   TUNNEL_HOST=alpha.your-domain.com npm run dev   (or vite preview)
+  // allows exactly that one hostname. Production (GitHub Pages/Render builds)
+  // is unaffected either way.
+  server: {
+    host: !!process.env.TUNNEL_HOST,
+    allowedHosts: process.env.TUNNEL_HOST ? [process.env.TUNNEL_HOST] : undefined,
+  },
+  preview: {
+    host: !!process.env.TUNNEL_HOST,
+    allowedHosts: process.env.TUNNEL_HOST ? [process.env.TUNNEL_HOST] : undefined,
+  },
   define: {
     // Compile-time flag read by simulatorBridge.ts: true only in the
     // build:render target, where a same-origin /api/* Rewrite Rule means

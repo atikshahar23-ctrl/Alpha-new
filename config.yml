@@ -1,0 +1,70 @@
+# ═══════════════════════════════════════════════════════════════════════
+# ALPHA — Cloudflare Tunnel Architecture (cloudflared)
+# ═══════════════════════════════════════════════════════════════════════
+# Wraps the whole 13-agent system in one secure HTTPS tunnel from your PC:
+#
+#   https://lm.<הדומיין שלך>      →  LM Studio API        (localhost:1234)
+#   https://alpha.<הדומיין שלך>   →  Alpha frontend build  (localhost:4173)
+#   https://dev.<הדומיין שלך>     →  Vite dev server       (localhost:5173)
+#
+# למה זה שווה זהב: ה-LM Studio שרץ על המחשב שלך הופך למוח חינמי שזמין
+# גם לטלפון מכל מקום — מדביקים את כתובת הטאנל בהגדרות הסוכנים במקום
+# localhost, וכל ה-13 מדברים דרך המחשב שלך בחינם, ללא מפתחות API.
+#
+# ── התקנה חד-פעמית (במחשב שמריץ את LM Studio) ─────────────────────────
+#   1) התקן cloudflared:  winget install Cloudflare.cloudflared
+#      (mac: brew install cloudflared)
+#   2) cloudflared tunnel login              ← נפתח דפדפן, בחר את הדומיין
+#   3) cloudflared tunnel create alpha       ← שומר קובץ credentials (.json)
+#   4) עדכן למטה את tunnel + credentials-file לפי הפלט של שלב 3
+#   5) הפנה DNS (פעם אחת לכל hostname):
+#        cloudflared tunnel route dns alpha lm.<domain>
+#        cloudflared tunnel route dns alpha alpha.<domain>
+#        cloudflared tunnel route dns alpha dev.<domain>
+#   6) הרצה:  cloudflared tunnel --config config.yml run alpha
+#      (כשירות קבוע:  cloudflared service install)
+#   7) את שרת ה-frontend המקומי מריצים עם ה-hostname של הטאנל (אבטחה:
+#      בלי המשתנה הזה השרת נשאר loopback-בלבד עם הגנת Host מלאה):
+#        TUNNEL_HOST=alpha.<domain> npx vite preview --port 4173
+#        TUNNEL_HOST=dev.<domain>   npm run dev
+#
+# ── הגדרות באפליקציה אחרי שהטאנל רץ ───────────────────────────────────
+#   • LM Studio: הפעל את השרת (Developer → Start Server) + הדלק CORS
+#     ב-LM Studio (Settings → Enable CORS), ואז במרכז הסוכנים ⚙ הגדרות →
+#     מנוע AI → כתובת LM Studio הדבק:  https://lm.<domain>/v1
+#     מעכשיו גם הטלפון מדבר עם המוח המקומי שלך.
+#   • Google Login דרך הטאנל: אם תיכנס לאפליקציה דרך hostname של הטאנל,
+#     הוסף אותו ב-Google Cloud Console → Credentials → האימות שלך →
+#     Authorized JavaScript origins (למשל https://alpha.<domain>),
+#     אחרת תקבל שוב invalid_client — בדיוק כמו שקרה עם onrender.
+#   • מגע בטלפון: הפרונטאנד כבר מלא-מגע נטיבית (ג'ויסטיק כפול קבוע:
+#     ימני תנועה / שמאלי מצלמה, טאפ לבחירת סוכן, God-Mode gizmo במגע) —
+#     חוויה 1:1 מול הדסקטופ מכל קישור HTTPS, כולל דרך הטאנל.
+#
+# ── אבטחה ──────────────────────────────────────────────────────────────
+#   מומלץ חד-משמעית לשים את שלושת ה-hostnames מאחורי Cloudflare Access
+#   (Zero Trust → Access → Applications → Self-hosted) עם policy של
+#   האימייל שלך בלבד — כך אף אחד אחר לא מגיע ל-LM Studio או ל-dev server.
+# ═══════════════════════════════════════════════════════════════════════
+
+tunnel: alpha
+credentials-file: ~/.cloudflared/<TUNNEL-UUID>.json   # מהפלט של שלב 3
+
+ingress:
+  # LM Studio — OpenAI-compatible API (המוח המקומי של 13 הסוכנים)
+  - hostname: lm.YOUR-DOMAIN.com
+    service: http://localhost:1234
+    originRequest:
+      noTLSVerify: true
+      connectTimeout: 30s
+
+  # Alpha frontend — production build served locally (npm run build && npx vite preview)
+  - hostname: alpha.YOUR-DOMAIN.com
+    service: http://localhost:4173
+
+  # Vite dev server — hot-reload development from the phone (npm run dev)
+  - hostname: dev.YOUR-DOMAIN.com
+    service: http://localhost:5173
+
+  # everything else
+  - service: http_status:404
