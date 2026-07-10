@@ -1093,6 +1093,15 @@ function buildHuman(color, name, isPlayer, charTemplate, charClips, modelScale =
         // personal touch even though everyone shares one base texture. Skipped
         // for models that already have their own distinct textured outfit.
         if (tintClothes) o.material.color = new THREE.Color(0xffffff).lerp(new THREE.Color(color), 0.2);
+        // The player's OWN avatar kept going invisible on phones — a non-metallic
+        // GLB body on a deliberately dark deck just reads as black. Give the
+        // player (only) a self-illuminated glow so "my character" is always
+        // visible regardless of how dark the room lighting gets, and doubles as
+        // a "that's you" highlight. Agents already glow via their own emissive.
+        if (isPlayer && o.material && "emissive" in o.material) {
+          o.material.emissive = new THREE.Color(color);
+          o.material.emissiveIntensity = 0.45;
+        }
       }
     });
     g.add(model);
@@ -6411,8 +6420,12 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(FLOOR_W, FLOOR_D),
       new THREE.MeshPhysicalMaterial({
-        map: floorTex, color: 0x4b5462, roughness: 0.82, metalness: 0.2,
-        clearcoat: 0.25, clearcoatRoughness: 0.6, envMapIntensity: 0.35,
+        // Solid BLACK deck plate (owner: "floor + walls too transparent, make
+        // them black"). Matte, opaque, near-zero reflection so it never mirrors
+        // the void and reads as a real black floor; the glowing cyan energy grid
+        // laid over it still gives the surface structure so it's not a flat void.
+        map: floorTex, color: 0x090b0f, roughness: 0.94, metalness: 0.1,
+        clearcoat: 0.0, envMapIntensity: 0.12,
       })
     );
     floor.rotation.x = -Math.PI / 2;
@@ -7085,7 +7098,10 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // columns and a glowing conduit spine. (Owner: "the whole structure
     // should look like a futuristic spaceship, not a New York office.")
     // ══════════════════════════════════════════════════════════════════
-    const hullMat = new THREE.MeshStandardMaterial({ map: buildWallTexture(5), roughness: 0.7, metalness: 0.55 });
+    // Near-black hull walls (owner: "walls too transparent, make them black").
+    // The dark colour multiplies the panel texture right down so the side/aft
+    // bulkheads read as solid black walls, not a faint see-through surface.
+    const hullMat = new THREE.MeshStandardMaterial({ map: buildWallTexture(5), color: 0x0a0c11, roughness: 0.72, metalness: 0.5 });
     const hullDark = new THREE.MeshStandardMaterial({ color: 0x0c0f16, roughness: 0.55, metalness: 0.7 });
     const hullGlow = new THREE.MeshBasicMaterial({ color: 0x2ee6ff });
     const hullGlowSoft = new THREE.MeshBasicMaterial({ color: 0x2ee6ff, transparent: true, opacity: 0.4 });
@@ -7102,7 +7118,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     scene.add(wallR);
     const wallS = new THREE.Mesh(
       new THREE.PlaneGeometry(FLOOR_W, 6.4),
-      new THREE.MeshStandardMaterial({ map: buildWallTexture(6), roughness: 0.7, metalness: 0.55 })
+      new THREE.MeshStandardMaterial({ map: buildWallTexture(6), color: 0x0a0c11, roughness: 0.72, metalness: 0.5 })
     );
     wallS.rotation.y = Math.PI;
     wallS.position.set(0, 3.2, FLOOR_D / 2 + 0.05);
