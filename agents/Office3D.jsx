@@ -6432,8 +6432,8 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         // them black"). Matte, opaque, near-zero reflection so it never mirrors
         // the void and reads as a real black floor; the glowing cyan energy grid
         // laid over it still gives the surface structure so it's not a flat void.
-        map: floorTex, color: 0x1b2029, roughness: 0.9, metalness: 0.12,
-        clearcoat: 0.0, envMapIntensity: 0.14,
+        map: floorTex, color: 0x323945, roughness: 0.88, metalness: 0.12,
+        clearcoat: 0.0, transparent: false, opacity: 1, envMapIntensity: 0.16,
       })
     );
     floor.rotation.x = -Math.PI / 2;
@@ -8861,7 +8861,16 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       // shared casual_male template. Both real-textured models carry their
       // own look, so they skip the per-agent colour tint the plain human
       // template uses to differentiate otherwise-identical bodies.
-      const h = a.id === "facilities"
+      // On phones the skinned GLB rigs (robot / Sophia / casual_male) render
+      // INVISIBLE on many real mobile GPUs — a skinned-mesh shader-precision
+      // limitation that desktop + software emulation never hit, which is why the
+      // crew kept "disappearing" only on the phone. Force every agent to the
+      // guaranteed non-skinned procedural glowing body on mobile (charTemplate
+      // =null → buildHuman's always-visible fallback) so the crew is ALWAYS
+      // visible there; desktop keeps the real high-detail models.
+      const h = isMobile
+        ? buildHuman(a.color, a.name, false, null, [], CHAR_SCALE, ROBOT_CENTER_OFFSET, true, a.title)
+        : a.id === "facilities"
         ? buildHuman(a.color, a.name, false, sophiaTemplate, sophiaClips, CHAR_SCALE, SOPHIA_CENTER_OFFSET, false, a.title, sophiaClipMap)
         : buildHuman(a.color, a.name, false, robotTemplate, robotClips, CHAR_SCALE, ROBOT_CENTER_OFFSET, false, a.title, robotClipMap);
       const [wx, wz] = toWorld(c.x, c.y);
