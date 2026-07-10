@@ -103,6 +103,18 @@ import { createPnlPowerCables } from "./pnl-power-cables.js";
 import { createCandlestickExtrusions } from "./candlestick-extrusions.js";
 import { createWhaleSiren } from "./whale-siren.js";
 import { createGasFeeDials } from "./gas-fee-dials.js";
+// ── AUDIO-NEURAL WALLS · Sector 4 — agent uplinks ──
+import { createMichalFunnel } from "./michal-funnel.js";
+import { createCfoDigitalSafe } from "./cfo-digital-safe.js";
+import { createDvoraBiorhythm } from "./dvora-biorhythm.js";
+import { createCallRippleEmitter } from "./call-ripple-emitter.js";
+import { createAgentPowerTethers } from "./agent-power-tethers.js";
+// ── AUDIO-NEURAL WALLS · Sector 5 — smart environment & UX ──
+import { createSmartViewport } from "./smart-viewport.js";
+import { createWeatherSyncNode } from "./weather-sync-node.js";
+import { createVolumetricClock } from "./volumetric-clock.js";
+import { createKineticCalendar } from "./kinetic-calendar.js";
+import { createBiometricDoorScanner } from "./biometric-door-scanner.js";
 
 export const SPACE_MODULES = [
   // ── CORE SYSTEM ALPHA · comms & AI ──
@@ -184,4 +196,16 @@ export const SPACE_MODULES = [
   { id: "candlestick-extrusions", create: createCandlestickExtrusions }, // wall candles pushing out
   { id: "whale-siren", create: createWhaleSiren },                 // rotating beacon + sonar ping
   { id: "gas-fee-dials", create: createGasFeeDials },               // steampunk gas-fee gauges
+  // ── AUDIO-NEURAL WALLS · Sector 4 · agent uplinks ──
+  { id: "michal-funnel", create: createMichalFunnel },              // marketing funnel beside Michal
+  { id: "cfo-digital-safe", create: createCfoDigitalSafe },         // vault door beside Reuven/CFO
+  { id: "dvora-biorhythm", create: createDvoraBiorhythm },          // heartbeat monitor beside Dvora
+  { id: "call-ripple-emitter", create: createCallRippleEmitter },   // ripple burst on incoming call
+  { id: "agent-power-tethers", create: createAgentPowerTethers },   // laser cables to a data spine
+  // ── AUDIO-NEURAL WALLS · Sector 5 · smart environment & UX ──
+  { id: "smart-viewport", create: createSmartViewport },            // opaque-to-glass wall section
+  { id: "weather-sync-node", create: createWeatherSyncNode },       // live Open-Meteo rain/sun/cloud
+  { id: "volumetric-clock", create: createVolumetricClock },        // gaze-aligning shard-digit clock
+  { id: "kinetic-calendar", create: createKineticCalendar },        // week grid, today pushes out
+  { id: "biometric-door-scanner", create: createBiometricDoorScanner }, // entrance laser-grid scan
 ];
