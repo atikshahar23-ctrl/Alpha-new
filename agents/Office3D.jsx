@@ -6384,7 +6384,12 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     const fill = new THREE.DirectionalLight(0x6f9dff, 0.35);
     fill.position.set(-8, 9, -12);
     scene.add(fill);
-    scene.fog = new THREE.Fog(0x11162a, 18, 38);
+    // The deck is 78x66m but the fog used to swallow everything past 38m, so
+    // the walls (~39m away) and far floor faded to black — it read as "no floor,
+    // no walls, just void," and the crew looked like they floated in nothing.
+    // Push the fog way out so the whole room — floor, all four walls, ceiling —
+    // stays visible and the space reads as a properly enclosed office.
+    scene.fog = new THREE.Fog(0x11162a, 55, 165);
 
     // Dust motes drifting through the room — a soft round sprite, additively
     // blended, catching the light for a lived-in, sunbeam feel. Cheap (one
@@ -6427,8 +6432,8 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         // them black"). Matte, opaque, near-zero reflection so it never mirrors
         // the void and reads as a real black floor; the glowing cyan energy grid
         // laid over it still gives the surface structure so it's not a flat void.
-        map: floorTex, color: 0x090b0f, roughness: 0.94, metalness: 0.1,
-        clearcoat: 0.0, envMapIntensity: 0.12,
+        map: floorTex, color: 0x1b2029, roughness: 0.9, metalness: 0.12,
+        clearcoat: 0.0, envMapIntensity: 0.14,
       })
     );
     floor.rotation.x = -Math.PI / 2;
@@ -7104,7 +7109,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // Near-black hull walls (owner: "walls too transparent, make them black").
     // The dark colour multiplies the panel texture right down so the side/aft
     // bulkheads read as solid black walls, not a faint see-through surface.
-    const hullMat = new THREE.MeshStandardMaterial({ map: buildWallTexture(5), color: 0x0a0c11, roughness: 0.72, metalness: 0.5 });
+    const hullMat = new THREE.MeshStandardMaterial({ map: buildWallTexture(5), color: 0x191d26, roughness: 0.74, metalness: 0.48 });
     const hullDark = new THREE.MeshStandardMaterial({ color: 0x0c0f16, roughness: 0.55, metalness: 0.7 });
     const hullGlow = new THREE.MeshBasicMaterial({ color: 0x2ee6ff });
     const hullGlowSoft = new THREE.MeshBasicMaterial({ color: 0x2ee6ff, transparent: true, opacity: 0.4 });
@@ -7121,7 +7126,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     scene.add(wallR);
     const wallS = new THREE.Mesh(
       new THREE.PlaneGeometry(FLOOR_W, 6.4),
-      new THREE.MeshStandardMaterial({ map: buildWallTexture(6), color: 0x0a0c11, roughness: 0.72, metalness: 0.5 })
+      new THREE.MeshStandardMaterial({ map: buildWallTexture(6), color: 0x191d26, roughness: 0.74, metalness: 0.48 })
     );
     wallS.rotation.y = Math.PI;
     wallS.position.set(0, 3.2, FLOOR_D / 2 + 0.05);
