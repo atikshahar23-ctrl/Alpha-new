@@ -6400,20 +6400,19 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     }));
     scene.add(dust);
 
-    // Floor — polished obsidian command-deck plating: a physical clearcoat
-    // over dark brushed metal, so the neon UI, hologram and starfield read in
-    // the floor as reflections (env-map image-based reflection stands in for a
-    // true screen-space pass, which would cost a full extra scene render). The
-    // clearcoat gives the AAA "wet obsidian" double-reflection without pushing
-    // it to a full mirror (a near-mirror floor + the animated energy grid was
-    // genuinely disorienting before — owner reported dizziness), so roughness
-    // stays moderate and the clearcoat carries the gloss.
+    // Floor — solid command-deck plating. The old "polished obsidian" version
+    // (clearcoat 1.0 over dark metal) mirrored the dark ceiling/starfield so
+    // strongly that on a phone it read as a see-through void with no floor at
+    // all (owner: "make a floor so it's not transparent"). Now it's a clearly
+    // solid, matte-satin deck: lighter plating colour, high roughness, low
+    // metalness and only a whisper of clearcoat — you can plainly tell there's
+    // a floor under you, with just a subtle sheen instead of a mirror.
     const floorTex = buildFloorTexture();
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(FLOOR_W, FLOOR_D),
       new THREE.MeshPhysicalMaterial({
-        map: floorTex, color: 0x2a2f38, roughness: 0.42, metalness: 0.6,
-        clearcoat: 1.0, clearcoatRoughness: 0.28, envMapIntensity: 1.0,
+        map: floorTex, color: 0x4b5462, roughness: 0.82, metalness: 0.2,
+        clearcoat: 0.25, clearcoatRoughness: 0.6, envMapIntensity: 0.35,
       })
     );
     floor.rotation.x = -Math.PI / 2;
