@@ -230,7 +230,12 @@ async function driveRequest(path: string, opts: RequestInit = {}): Promise<any> 
   const res = await fetch(`https://www.googleapis.com/drive/v3${path}`, { ...opts, headers });
   if (!res.ok) {
     if (res.status === 401) { disconnect(); throw new Error('TOKEN_EXPIRED'); }
-    throw new Error(`Drive API error: ${res.status}`);
+    // Surface Google's own reason so a 403 is actionable — the most common one
+    // is "Google Drive API has not been used in project … or it is disabled"
+    // (enable it in the Cloud Console), vs rateLimitExceeded / insufficientPermissions.
+    let detail = '';
+    try { const j = await res.clone().json(); detail = j?.error?.message || j?.error?.errors?.[0]?.reason || ''; } catch {}
+    throw new Error(`Drive API error: ${res.status}${detail ? ' — ' + detail : ''}`);
   }
   const ct = res.headers.get('content-type') || '';
   return ct.includes('json') ? res.json() : res.text();
@@ -267,8 +272,9 @@ async function findFile(name: string, parentId: string): Promise<string | null> 
 async function uploadFile(name: string, content: string, parentId: string): Promise<void> {
   const existingId = await findFile(name, parentId);
   const token = getToken()!;
+  let res: Response;
   if (existingId) {
-    await fetch(`https://www.googleapis.com/upload/drive/v3/files/${existingId}?uploadType=media`, {
+    res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${existingId}?uploadType=media`, {
       method: 'PATCH',
       headers: {
         'Authorization': `Bearer ${token.access_token}`,
@@ -281,11 +287,19 @@ async function uploadFile(name: string, content: string, parentId: string): Prom
     const form = new FormData();
     form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
     form.append('file', new Blob([content], { type: 'application/json' }));
-    await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+    res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token.access_token}` },
       body: form,
     });
+  }
+  // A write failure used to be swallowed — the sync looked green while nothing
+  // reached the cloud. Surface it (with Google's reason) so it's actionable.
+  if (!res.ok) {
+    if (res.status === 401) { disconnect(); throw new Error('TOKEN_EXPIRED'); }
+    let detail = '';
+    try { const j = await res.clone().json(); detail = j?.error?.message || j?.error?.errors?.[0]?.reason || ''; } catch {}
+    throw new Error(`Drive upload error: ${res.status}${detail ? ' — ' + detail : ''}`);
   }
 }
 
