@@ -5742,7 +5742,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   // Sitting on your own chair in your office ("שב"/"קום" button, or E key when
   // near the chair). While seated, look input just turns your head/view —
   // only the explicit stand button (or E) actually gets you up.
-  const [sitting, setSitting] = useState(false);
+  // Default to already seated at your own desk when the office opens (owner
+  // request: "the user always starts sitting in their office chair, in first
+  // person") — the player spawns straight into OWNER_SEAT below instead of
+  // walking in from the entrance.
+  const [sitting, setSitting] = useState(true);
   const [canSit, setCanSit] = useState(false);
   // "Feet on the desk" — a relaxed recline toggle, only available while
   // seated (auto-clears the moment you stand).
@@ -5856,7 +5860,8 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   const [leftActive, setLeftActive] = useState(false);
   const [rightKnob, setRightKnob] = useState({ x: 0, y: 0 });
   const [rightActive, setRightActive] = useState(false);
-  const [firstPerson, setFirstPerson] = useState(false);
+  // Default to first-person to match the "already seated at your desk" start.
+  const [firstPerson, setFirstPerson] = useState(true);
   const [voiceState, setVoiceState] = useState("idle"); // idle | listening | thinking | speaking
   const [voiceLine, setVoiceLine] = useState(null);      // { who, text } subtitle — sticky, only the user's own X closes it
   // 📱 ALPHA-LINK-01 — the owner's tactical secure terminal: a HUD handset
@@ -9050,8 +9055,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     playerH.group.add(phoneGrp);
     let lastHoloLine = "";
     let phoneAnimT = 1; // 0→1 raise/flicker-in progress
-    playerH.group.position.set(3.3, 0, 12.9);
-    playerH.group.rotation.y = Math.PI;
+    // Spawn already seated at the owner's own desk (default sitting=true
+    // above) instead of walking in from the entrance — matches SEAT_DROP/
+    // rotation exactly so there's no visible glide-in on the very first frame.
+    playerH.group.position.set(OWNER_SEAT.x, SEAT_DROP, OWNER_SEAT.z);
+    playerH.group.rotation.y = OWNER_SEAT.ry;
     scene.add(playerH.group);
 
     // NPCs — every agent uses the one animated casual model so they all
