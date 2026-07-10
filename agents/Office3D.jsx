@@ -179,6 +179,10 @@ const FURNITURE_MODEL_URL = "office-models/furniture.glb";
 // footprint.
 const OFFICE_DECOR_MODEL_URL = "office-models/officeroom.glb";
 const OFFICE_DECOR_SCALE = 0.55;
+// Default God-Mode "זוהר (Glow)" multiplier on the bloom pass — owner picked a
+// slightly-boosted look (past the 1.0 midpoint) as the baseline, so the office
+// opens with that halo instead of flat 1.0. Slider still spans 0..2.
+const DEFAULT_GOD_GLOW = 1.25;
 function cloneFurniturePiece(template, name) {
   if (!template) return null;
   const node = template.getObjectByName(name);
@@ -5809,7 +5813,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   const [selectedObj, setSelectedObj] = useState(null);
   const [godPaused, setGodPaused] = useState(false);
   const [godLight, setGodLight] = useState(1);
-  const [godGlow, setGodGlow] = useState(1); // bloom-strength multiplier — separate from raw light intensity
+  const [godGlow, setGodGlow] = useState(DEFAULT_GOD_GLOW); // bloom-strength multiplier — separate from raw light intensity
   const [godSpeed, setGodSpeed] = useState(1); // agent walk-speed multiplier — Command Center dial
   // Blueprint Tactical Mode — God Mode's construction view: the whole scene
   // drops to a cyan wireframe schematic over a laser floor grid, and every
@@ -10770,7 +10774,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // Glow override — separate 0x..2x multiplier on the bloom pass's own
     // strength, so "how lit" and "how much halo/glow" can be dialed
     // independently instead of glow only ever following raw brightness.
-    liveRef.current.godGlowMul = 1;
+    liveRef.current.godGlowMul = DEFAULT_GOD_GLOW;
     // Turbo 🚀 — every lever at once: 1x pixel ratio, post chain bypassed
     // (animate renders straight through the renderer), shadows off, dust +
     // sky-life extras hidden, CCTV frozen on its last frame.
