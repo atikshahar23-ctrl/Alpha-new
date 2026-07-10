@@ -8775,7 +8775,15 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // clear of any wall/desk so movement is free and comfortable from the
     // first step, facing north toward the team (the owner's glass office is
     // right there to the east to walk into).
-    const playerH = buildHuman(0xE4BC63, "אתה", true, charTemplate, charClips, CHAR_SCALE, CHAR_CENTER_OFFSET, true, "הבעלים · שחר");
+    // On phones the player kept rendering as a bodiless name-tag — the
+    // casual_male skinned GLB just wasn't showing on the device (while the
+    // robot agents, which glow, did). Force the player to use the guaranteed
+    // procedural glowing body on mobile (charTemplate=null → buildHuman's
+    // always-visible emissive fallback), so "my character" is never invisible.
+    // Desktop keeps the nicer GLB body.
+    const playerTemplate = isMobile ? null : charTemplate;
+    const playerClips = isMobile ? [] : charClips;
+    const playerH = buildHuman(0xE4BC63, "אתה", true, playerTemplate, playerClips, CHAR_SCALE, CHAR_CENTER_OFFSET, true, "הבעלים · שחר");
     // 📱 Phone-in-hand + hologram: whenever a conversation is live (or the
     // phone UI is open), a glowing handset appears at the owner's hand
     // projecting a light cone with the current line of dialogue floating
