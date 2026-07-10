@@ -2217,7 +2217,15 @@ export function mountApp(root: HTMLElement) {
     btn.setAttribute('aria-label', hidden ? 'הצג פנלים' : 'הסתר פנלים');
     btn.classList.toggle('active', hidden);
   };
-  applyPanelsHidden(localStorage.getItem('alpha_panels_hidden') === '1');
+  // Default on the PHONE is a clean screen — just the orb, top bar and bottom
+  // dock (wallet + calendar); the packed data panels start hidden and the
+  // top-bar toggle brings them back. Desktop keeps panels shown by default.
+  // A saved choice (either way) always wins over the default.
+  {
+    const savedPanels = localStorage.getItem('alpha_panels_hidden');
+    const phoneDefault = matchMedia('(max-width: 768px)').matches;
+    applyPanelsHidden(savedPanels === null ? phoneDefault : savedPanels === '1');
+  }
   $('panelsToggleBtn').onclick = () => {
     const hidden = !appEl.classList.contains('panels-hidden');
     localStorage.setItem('alpha_panels_hidden', hidden ? '1' : '0');
