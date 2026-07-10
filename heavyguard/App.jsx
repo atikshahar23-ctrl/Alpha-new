@@ -13,6 +13,8 @@ import BULL_LOGO from './heavyguard-logo.png';
 // bookkeeper exactly (live installs only count after the last statement).
 import { BOOKS_LAST_KEY, bookedIncome, cumulativeIncome } from '../src/modules/books';
 import { fetchLeadsFromCloud, pushLeadsToCloud, leadsCloudConfigured } from './leadsCloud.js';
+// OMEGA CRM — shared FX bus (gesture-gated Web Audio cues + haptics).
+import { unlockAudio, cue, haptic } from './fx.js';
 // xlsx is large (~400KB). Load it on demand only when the user actually
 // exports, so it stays out of the initial bundle and first paint is faster.
 
@@ -223,6 +225,9 @@ function DateField({ value, onChange, placeholder, clearable }) {
 /* ============================ App ============================ */
 export default function App() {
   const [ready, setReady] = useState(false);
+  // OMEGA CRM Phase 1: biometric boot gate — the CRM stays veiled behind the
+  // retinal-scan overlay until it completes (once per session).
+  const [booted, setBooted] = useState(false);
   const [index, setIndex] = useState([]);
   // hub | logger | analytics | customers | pricing | vehicle | suppliers | carstock | invoices | samsonix | marketing | new | detail
   // Deep-link support (e.g. heavyguard.html#marketing) so other apps/dock
@@ -338,7 +343,10 @@ export default function App() {
   return (
     <div className="hg2" dir="rtl">
       <Styles />
-      <div className="hg2-page">
+      {/* OMEGA CRM Phase 1 — CRT scanline veil over the whole terminal. */}
+      <div className="hg2-crt" aria-hidden="true" />
+      {!booted && <BiometricBoot onDone={() => setBooted(true)} />}
+      <div className={"hg2-page" + (booted ? " booted" : " prebooted")}>
         {view === "hub" && <Hub index={index} go={setView} onNew={() => setView("new")} />}
         {view === "logger" && <Home index={index} onBack={() => setView("hub")} onNew={() => setView("new")} onOpen={(id) => { setDetailId(id); setPrevTab("logger"); setView("detail"); }} onResume={(id) => { setResumeId(id); setView("new"); }} showToast={showToast} onReset={resetAll} />}
         {view === "analytics" && <Analytics index={index} onBack={() => setView("hub")} />}
@@ -441,7 +449,7 @@ function Hub({ index, go, onNew }) {
       <div className="hg2-cmd">
         <div className="hg2-cmd-main">
           <span>הכנסה החודש</span>
-          <b><CountUp value={mRevenue} format={(v) => ils(Math.round(v))} /></b>
+          <b><VaultCounter value={mRevenue} format={(v) => ils(Math.round(v))} /></b>
           <em>{mRows.length} התקנות · מצטבר לפי הספרים {ils(revenue)}</em>
           <div className="hg2-trend" title="מגמת הכנסה · 6 חודשים (לפי ספרי הרו״ח)">
             {trend.map((t) => (
@@ -1211,6 +1219,82 @@ function CountUp({ value, format }) {
     raf = requestAnimationFrame(tick); return () => cancelAnimationFrame(raf);
   }, [value]);
   return <>{format ? format(v) : Math.round(v)}</>;
+}
+
+// OMEGA CRM Phase 1 — biometric retinal-scan boot gate. Draws an animated iris
+// + sweeping laser on a canvas, ramps a progress %, then fires the synthesized
+// "Access Granted" cue (gesture-gated) + a haptic pulse and lifts the veil.
+function BiometricBoot({ onDone }) {
+  const cvsRef = useRef(null);
+  const [pct, setPct] = useState(0);
+  const [granted, setGranted] = useState(false);
+  useEffect(() => {
+    unlockAudio();
+    const cvs = cvsRef.current; if (!cvs) { onDone(); return; }
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const size = 220;
+    cvs.width = size * dpr; cvs.height = size * dpr;
+    const g = cvs.getContext("2d"); if (!g) { onDone(); return; }
+    g.scale(dpr, dpr);
+    let raf = 0, start = performance.now(), fired = false;
+    const draw = (now) => {
+      const el = (now - start) / 1000;
+      const p = Math.min(1, el / 2.4);
+      setPct(Math.round(p * 100));
+      g.clearRect(0, 0, size, size);
+      const cx = size / 2, cy = size / 2;
+      g.strokeStyle = "rgba(111,211,240,0.5)"; g.lineWidth = 1.2;
+      for (let i = 1; i <= 5; i++) { g.beginPath(); g.arc(cx, cy, 15 + i * 15, 0, Math.PI * 2); g.stroke(); }
+      g.strokeStyle = "rgba(111,211,240,0.22)"; g.lineWidth = 1;
+      for (let a = 0; a < 12; a++) { const an = (a / 12) * Math.PI * 2 + el * 0.3; g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + Math.cos(an) * 92, cy + Math.sin(an) * 92); g.stroke(); }
+      g.strokeStyle = "rgba(228,188,99,0.85)"; g.lineWidth = 2; g.beginPath(); g.arc(cx, cy, 26, 0, Math.PI * 2); g.stroke();
+      const y = 22 + (Math.sin(el * 3) * 0.5 + 0.5) * (size - 44);
+      const grd = g.createLinearGradient(0, y - 12, 0, y + 12);
+      grd.addColorStop(0, "rgba(228,188,99,0)"); grd.addColorStop(0.5, "rgba(228,188,99,0.85)"); grd.addColorStop(1, "rgba(228,188,99,0)");
+      g.fillStyle = grd; g.fillRect(0, y - 12, size, 24);
+      g.strokeStyle = "rgba(247,232,192,0.95)"; g.lineWidth = 1.5; g.beginPath(); g.moveTo(0, y); g.lineTo(size, y); g.stroke();
+      if (p >= 1 && !fired) { fired = true; setGranted(true); cue("access"); haptic([40, 30, 70]); setTimeout(onDone, 950); return; }
+      raf = requestAnimationFrame(draw);
+    };
+    raf = requestAnimationFrame(draw);
+    const onTap = () => unlockAudio();
+    window.addEventListener("pointerdown", onTap, { once: true });
+    return () => { cancelAnimationFrame(raf); window.removeEventListener("pointerdown", onTap); };
+  }, []);
+  return (
+    <div className={"hg2-bioboot" + (granted ? " granted" : "")} onClick={() => unlockAudio()}>
+      <div className="hg2-bioboot-inner">
+        <canvas ref={cvsRef} className="hg2-bioboot-eye" style={{ width: 220, height: 220 }} />
+        <div className="hg2-bioboot-title">{granted ? "ACCESS GRANTED" : "BIOMETRIC UPLINK"}</div>
+        <div className="hg2-bioboot-sub">{granted ? "זהות אומתה · Heavy Guard OS" : "סריקת רשתית · " + pct + "%"}</div>
+        <div className="hg2-bioboot-bar"><span style={{ width: (granted ? 100 : pct) + "%" }} /></div>
+      </div>
+    </div>
+  );
+}
+
+// OMEGA CRM Phase 1 — volumetric vault counter. Each digit is a 0-9 reel that
+// physically rolls to its target like a mechanical odometer/vault dial when the
+// value changes; separators (₪, commas, spaces) stay static.
+function VaultCounter({ value, format }) {
+  const str = format ? format(Number(value) || 0) : String(Math.round(Number(value) || 0));
+  return (
+    <span className="hg2-vault" aria-label={str}>
+      {str.split("").map((ch, i) => {
+        if (/[0-9]/.test(ch)) {
+          const d = Number(ch);
+          return (
+            <span className="hg2-vault-digit" key={i}>
+              <span className="hg2-vault-reel" style={{ transform: `translateY(${-d * 10}%)` }}>
+                {"0123456789".split("").map((n) => <span key={n}>{n}</span>)}
+              </span>
+            </span>
+          );
+        }
+        return <span className="hg2-vault-sep" key={i}>{ch}</span>;
+      })}
+    </span>
+  );
 }
 function TrendChart({ data, color = "#2BC4F0", fmt }) {
   const [act, setAct] = useState(null);
@@ -4718,5 +4802,56 @@ function Styles() {
 .mkt-post-stats span{display:flex;align-items:center;gap:3px}
 @keyframes mkt-spin{to{transform:rotate(360deg)}}
 .mkt-spin{animation:mkt-spin .7s linear infinite}
+
+/* ═══════════ OMEGA CRM · Phase 1 — Biometric + Smart Glass + Vault ═══════════ */
+/* CRT scanline veil over the whole terminal — subtle, pointer-transparent. */
+.hg2-crt{position:fixed;inset:0;z-index:60;pointer-events:none;
+  background:repeating-linear-gradient(to bottom,rgba(0,0,0,0) 0,rgba(0,0,0,0) 2px,rgba(0,0,0,.12) 3px,rgba(0,0,0,0) 4px);
+  mix-blend-mode:multiply;opacity:.5;animation:hg2-crtflick 5s steps(60) infinite}
+@keyframes hg2-crtflick{0%,97%{opacity:.5}98%{opacity:.36}100%{opacity:.5}}
+@media(prefers-reduced-motion:reduce){.hg2-crt{animation:none}}
+
+/* Smart-glass treatment for the command strip + tiles — floating frosted
+   panes with a gold/cyan glow edge. Layered after the base rules so it wins. */
+.hg2-cmd{background:linear-gradient(135deg,rgba(26,34,48,.55),rgba(16,21,29,.35));
+  -webkit-backdrop-filter:blur(14px) saturate(1.2);backdrop-filter:blur(14px) saturate(1.2);
+  border:1px solid rgba(228,188,99,.35);box-shadow:0 10px 34px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.08),0 0 20px rgba(111,211,240,.06)}
+.hg2-tile{background:linear-gradient(160deg,rgba(26,34,48,.5),rgba(16,21,29,.3));
+  -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+  border:1px solid rgba(111,211,240,.16);transition:border-color .16s,box-shadow .16s,transform .12s}
+.hg2-tile:active{transform:translateY(1px) scale(.99)}
+.hg2-tile.hot{border-color:rgba(228,188,99,.4);box-shadow:0 0 18px rgba(228,188,99,.14),inset 0 1px 0 rgba(255,255,255,.06)}
+.hg2-tile:hover{border-color:rgba(228,188,99,.55);box-shadow:0 0 22px rgba(228,188,99,.2)}
+
+/* Reveal transition once biometric access is granted. */
+.hg2-page.prebooted{opacity:0}
+.hg2-page.booted{opacity:1;animation:hg2-reveal .7s ease}
+@keyframes hg2-reveal{from{opacity:0;transform:translateY(10px) scale(.985);filter:blur(6px)}to{opacity:1;transform:none;filter:none}}
+
+/* Biometric boot overlay. */
+.hg2-bioboot{position:fixed;inset:0;z-index:70;display:flex;align-items:center;justify-content:center;
+  background:radial-gradient(circle at 50% 42%,#0c1420 0,#05080d 70%);animation:hg2-bio-in .3s ease}
+.hg2-bioboot.granted{animation:hg2-bio-out .9s ease forwards}
+@keyframes hg2-bio-in{from{opacity:0}to{opacity:1}}
+@keyframes hg2-bio-out{0%{opacity:1}70%{opacity:1}100%{opacity:0;visibility:hidden}}
+.hg2-bioboot-inner{display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center;padding:20px}
+.hg2-bioboot-eye{filter:drop-shadow(0 0 14px rgba(111,211,240,.4))}
+.hg2-bioboot.granted .hg2-bioboot-eye{filter:drop-shadow(0 0 22px rgba(228,188,99,.7))}
+.hg2-bioboot-title{font-family:'Rubik',sans-serif;font-weight:900;letter-spacing:5px;font-size:19px;
+  color:var(--cyan);text-shadow:0 0 16px rgba(111,211,240,.5)}
+.hg2-bioboot.granted .hg2-bioboot-title{color:var(--champ);text-shadow:0 0 22px rgba(228,188,99,.7);animation:hg2-grant .5s ease}
+@keyframes hg2-grant{0%{transform:scale(.85);opacity:.4}60%{transform:scale(1.08)}100%{transform:scale(1)}}
+.hg2-bioboot-sub{font-size:12px;letter-spacing:2px;color:var(--s4);font-weight:700}
+.hg2-bioboot-bar{width:220px;height:5px;border-radius:4px;background:rgba(111,211,240,.12);overflow:hidden}
+.hg2-bioboot-bar>span{display:block;height:100%;border-radius:4px;background:linear-gradient(90deg,var(--cyan),var(--champ));
+  box-shadow:0 0 10px rgba(228,188,99,.6);transition:width .2s ease}
+
+/* Volumetric vault counter — rolling digit reels. */
+.hg2-vault{display:inline-flex;align-items:center;font-variant-numeric:tabular-nums;line-height:1}
+.hg2-vault-sep{display:inline-block}
+.hg2-vault-digit{display:inline-block;height:1em;overflow:hidden;vertical-align:bottom}
+.hg2-vault-reel{display:flex;flex-direction:column;will-change:transform;
+  transition:transform .8s cubic-bezier(.16,1,.3,1)}
+.hg2-vault-reel>span{height:1em;display:flex;align-items:center;justify-content:center}
 `}</style>;
 }
