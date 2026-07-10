@@ -7718,6 +7718,13 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // being spoken with (liveRef.current.talkTarget) — audio/talk-reactive —
     // over a gentle idle shimmer. Added alongside the existing pods, not in
     // place of them.
+    // These duplicate three agents (מיכל/ראובן/דבורה) as point-cloud
+    // projections. Each of those agents ALREADY stands on the floor as their
+    // real model (robot, and Sophia for דבורה) — so on the clean default deck
+    // the holograms just read as "the agents are generic point clouds instead
+    // of their models" (owner feedback). They belong with the rest of the
+    // sci-fi extras: hidden by default, revealed only in Party Mode. No
+    // collision obstacle either — you can walk straight through a hologram.
     const crewHolos = [];
     [
       { color: 0xff3cc7, name: "מיכל", role: "תקשורת", agentId: "cs", x: -27, z: 9 },
@@ -7726,11 +7733,12 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     ].forEach((c, i) => {
       const holo = buildCrewHologram(c.color, c.name, c.role);
       holo.group.position.set(c.x, 0, c.z);
+      holo.group.visible = false; // Party-Mode-gated (see setPartyMode below)
       scene.add(holo.group);
-      obstacles.push({ x: c.x, z: c.z, r: 0.7 });
       crewHolos.push({ ...holo, agentId: c.agentId, phase: i * 2.1, pulse: 0 });
     });
     const updateCrew = (dt) => {
+      if (!crewHolos[0] || !crewHolos[0].group.visible) return; // hidden unless Party Mode is on
       for (let i = 0; i < crewHolos.length; i++) {
         const ch = crewHolos[i];
         ch.points.rotation.y += dt * 0.35;
@@ -8468,9 +8476,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       for (const m of spaceModules) { try { if (m.dispose) m.dispose(); } catch {} }
       spaceModules = [];
     };
-    liveRef.current.setPartyMode = (on) => { if (on) instantiateParty(); else disposePartyModules(); };
+    // The inline crew-hologram projections ride the same gate as the fleet.
+    const setCrewHolosVisible = (on) => { for (const ch of crewHolos) ch.group.visible = on; };
+    liveRef.current.setPartyMode = (on) => { if (on) instantiateParty(); else disposePartyModules(); setCrewHolosVisible(on); };
     // Honour a persisted "party left on" choice from a previous visit.
-    try { if (localStorage.getItem("alpha:agents:party") === "1") instantiateParty(); } catch {}
+    try { if (localStorage.getItem("alpha:agents:party") === "1") { instantiateParty(); setCrewHolosVisible(true); } } catch {}
 
     // The owner's chair in world coordinates — where the player can sit down.
     const OWNER_SEAT = {
