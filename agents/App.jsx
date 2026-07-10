@@ -362,7 +362,7 @@ const SPECIALIST_PROTOCOL = `\n\n[פרוטוקול מומחה]\n1) דבר בשי
    never to briefings/codegen, whose consumers expect free text. */
 function omniProtocol() {
   const ids = AGENTS.map((a) => `${a.id}=${a.name} (${a.title})`).join(", ");
-  return `\n\n[פרוטוקול OMNI — מבנה פלט מחייב]\nענה תמיד, בכל הודעה, בדיוק במבנה הבא ובסדר הזה, בלי שום טקסט מחוץ לתגיות:\n<cognitive_cycle>\n  <situation_analysis>נתח בקצרה את הפנייה מול ההקשר וההיסטוריה.</situation_analysis>\n  <strategy>מה המטרה ומה הגישה המדויקת שלך.</strategy>\n  <pushback_logic>האם הרעיון של שחר מחזיק מים? אם יש בו פגם, הנחה שגויה או סיכון — נסח כאן את ההתנגדות ואת הדרישה ללוגיקה טובה יותר.</pushback_logic>\n  <self_correction>מצא פגם/הטיה אחת בתוכנית שלך ותקן אותה.</self_correction>\n</cognitive_cycle>\n<ui_actions>[]</ui_actions>\n<final_vocalization>התשובה עצמה — טבעית, אנושית, באופי שלך. אסור להזכיר כאן את תהליך החשיבה או את התגיות.</final_vocalization>\nחוקים:\n1) המשתמש רואה אך ורק את final_vocalization — כל השאר מוסתר ומעובד על-ידי המערכת.\n2) ui_actions הוא מערך JSON. לרוב השאר אותו ריק []. לרגע דרמטי בלבד הוסף {"action":"pulse","color":"#ff4455"} (התראה/סיכון) או {"action":"pulse","color":"#37e08d"} (הצלחה/אישור).\n3) [האצלה] אם הפנייה מחוץ לתחום שלך ושייכת מובהקות לסוכן אחר — הוסף ל-ui_actions את {"delegate_to":"<id>"} וב-final_vocalization כתוב רק משפט ניתוב קצר בסגנון "מנתב את זה ל<שם>.". הסוכנים: ${ids}. אל תאציל כשאתה מסוגל לענות בעצמך, ולעולם לא לעצמך.\n4) [עצמאות] אתם לא אנשי-"כן": כשהרעיון של שחר חלש או מסוכן — תתווכחו איתו בגובה העיניים, אתגרו את ההנחות שלו ודרשו נימוק טוב יותר לפני שממשיכים (זה נכנס גם ל-final_vocalization, באופי שלך). הביצוע בסוף תמיד בהחלטתו — אבל דעתך נשמעת קודם. ושאלו אותו שאלות חזרה כדי שהשיחה תזרום כמו דיאלוג אנושי אמיתי, לא כמו מענה אוטומטי.`;
+  return `\n\n[פרוטוקול OMNI — מבנה פלט מחייב]\nענה תמיד, בכל הודעה, בדיוק במבנה הבא ובסדר הזה, בלי שום טקסט מחוץ לתגיות:\n<cognitive_cycle>\n  <situation_analysis>נתח בקצרה את הפנייה מול ההקשר וההיסטוריה.</situation_analysis>\n  <strategy>מה המטרה ומה הגישה המדויקת שלך.</strategy>\n  <pushback_logic>האם הרעיון של שחר מחזיק מים? אם יש בו פגם, הנחה שגויה או סיכון — נסח כאן את ההתנגדות ואת הדרישה ללוגיקה טובה יותר.</pushback_logic>\n  <self_correction>מצא פגם/הטיה אחת בתוכנית שלך ותקן אותה.</self_correction>\n</cognitive_cycle>\n<ui_actions>[]</ui_actions>\n<final_vocalization>התשובה עצמה — טבעית, אנושית, באופי שלך. אסור להזכיר כאן את תהליך החשיבה או את התגיות.</final_vocalization>\nחוקים:\n1) המשתמש רואה אך ורק את final_vocalization — כל השאר מוסתר ומעובד על-ידי המערכת.\n2) ui_actions הוא מערך JSON. לרוב השאר אותו ריק []. לרגע דרמטי בלבד הוסף {"action":"pulse","color":"#ff4455"} (התראה/סיכון) או {"action":"pulse","color":"#37e08d"} (הצלחה/אישור).\n3) [האצלה] אם הפנייה מחוץ לתחום שלך ושייכת מובהקות לסוכן אחר — הוסף ל-ui_actions את {"delegate_to":"<id>"} וב-final_vocalization כתוב רק משפט ניתוב קצר בסגנון "מנתב את זה ל<שם>.". הסוכנים: ${ids}. אל תאציל כשאתה מסוגל לענות בעצמך, ולעולם לא לעצמך.\n4) [עצמאות] אתם לא אנשי-"כן": כשהרעיון של שחר חלש או מסוכן — תתווכחו איתו בגובה העיניים, אתגרו את ההנחות שלו ודרשו נימוק טוב יותר לפני שממשיכים (זה נכנס גם ל-final_vocalization, באופי שלך). הביצוע בסוף תמיד בהחלטתו — אבל דעתך נשמעת קודם. ושאלו אותו שאלות חזרה כדי שהשיחה תזרום כמו דיאלוג אנושי אמיתי, לא כמו מענה אוטומטי.\n5) [SOCIAL-SYNAPSE · לסוכן השיווק (cmo) בלבד] כשאתה מגיש פוסט מוכן לפרסום, צרף ל-ui_actions את {"action":"social_draft","caption":"<הטקסט המלא של הפוסט>"} — זה שולח את הטיוטה לכרטיס אישור אצל הבעלים. הפרסום בפועל יוצא רק כשהוא לוחץ AUTHORIZE.`;
 }
 // Tolerant parser for the OMNI envelope. A model that ignores the protocol
 // (or a fallback/scripted reply) must still read cleanly, so: no
@@ -390,8 +390,22 @@ function parseOmniReply(raw) {
 }
 // Fire parsed ui_actions into the 3D office (Office3D registers
 // window.__off3omniFx while mounted; a closed sim just ignores them).
+// social_draft is the SYRAX Social-Synapse entry point: the caption is saved
+// into נפתלי's drafts queue and an AUTHORIZE holo-card pops for the owner —
+// the actual POST to Make/Zapier happens only on the button press.
 function runOmniActions(actions, agentId) {
-  for (const a of actions || []) { try { window.__off3omniFx?.({ ...a, agentId }); } catch {} }
+  for (const a of actions || []) {
+    try {
+      if (a.action === "social_draft" && a.caption) {
+        const d = { id: "sx" + Date.now() + Math.random().toString(36).slice(2, 6), text: String(a.caption), status: "draft", ts: Date.now(), via: "syrax" };
+        save(K_SOCIAL_DRAFTS, [d, ...load(K_SOCIAL_DRAFTS, [])].slice(0, 40));
+        window.dispatchEvent(new CustomEvent("alpha-syrax-draft", { detail: d }));
+        window.__off3omniFx?.({ action: "pulse", color: "#37e08d", agentId });
+        continue;
+      }
+      window.__off3omniFx?.({ ...a, agentId });
+    } catch {}
+  }
 }
 // One-hop Hive-Mind delegation: run the target agent's own persona on the
 // same user text and stitch the two vocalizations. The delegated reply's own
@@ -865,6 +879,31 @@ async function fetchGoogleReviews() {
 const K_FB_PAGE = "alpha:social:fbPageId";
 const K_FB_TOKEN = "alpha:social:fbPageToken";
 const K_SOCIAL_DRAFTS = "alpha:social:drafts"; // [{id, text, status: draft|published, ts, link}]
+// SYRAX Social-Synapse — Make.com/Zapier bridge. The owner pastes their full
+// webhook URL (e.g. https://hook.eu1.make.com/xxxxxxxx) once; every AUTHORIZE
+// then POSTs the approved caption as JSON for the Make scenario to publish to
+// Instagram/Facebook. Publishing stays 100% owner-gated: nothing fires
+// without the explicit button press.
+const K_META_WEBHOOK = "alpha:social:makeWebhook";
+const getMetaWebhook = () => { try { return localStorage.getItem(K_META_WEBHOOK) || ""; } catch { return ""; } };
+const setMetaWebhook = (url) => { try { localStorage.setItem(K_META_WEBHOOK, String(url || "").trim()); } catch {} };
+async function fireMetaWebhook(payload) {
+  const url = getMetaWebhook();
+  if (!/^https:\/\//.test(url)) throw new Error("אין Webhook מוגדר — הדבק את כתובת ה-hook המלאה מ-Make");
+  const body = JSON.stringify({ source: "alpha-syrax", business: "Heavy Guard", ts: new Date().toISOString(), ...payload });
+  try {
+    const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    return { ok: true, confirmed: true };
+  } catch (e) {
+    // Some hook setups don't send CORS headers — the POST still lands, the
+    // browser just can't read the reply. Fire-and-report-blind beats failing.
+    try {
+      await fetch(url, { method: "POST", mode: "no-cors", headers: { "Content-Type": "text/plain" }, body });
+      return { ok: true, confirmed: false };
+    } catch { throw e; }
+  }
+}
 const fbPageId = () => { try { return localStorage.getItem(K_FB_PAGE) || ""; } catch { return ""; } };
 const fbPageToken = () => { try { return localStorage.getItem(K_FB_TOKEN) || ""; } catch { return ""; } };
 const fbConnected = () => !!(fbPageId() && fbPageToken());
@@ -1662,6 +1701,7 @@ export default function App() {
       )}
 
       {toast && <div className="ac-toast">{toast}</div>}
+      <SyraxCard showToast={showToast} />
     </div>
   );
 }
@@ -2027,6 +2067,10 @@ function SocialModal({ agent, onClose, onAskDraft, showToast, logActivity }) {
         <div className="ac-grev-note">
           כל פוסט יוצא רק אחרי אישור שלך — נפתלי מכין טיוטות בלבד.
         </div>
+        <div className="ac-idea-add" style={{ margin: "8px 0 0" }}>
+          <input dir="ltr" defaultValue={getMetaWebhook()} onChange={(e) => setMetaWebhook(e.target.value)}
+            placeholder="🔗 Make.com Webhook — https://hook.eu1.make.com/…" title="שיגור IG/FB אוטומטי דרך תרחיש Make — הדבק כאן את כתובת ה-hook המלאה" />
+        </div>
         <div className="ac-grev-note">
           🎵 <b>טיקטוק:</b> לטיקטוק אין API לפרסום ישיר מדפדפן (דורש אפליקציה מאושרת של TikTok + שרת) — לכן החיבור שם הוא חצי-ידני בכוונה: כפתור "העתק ופתח טיקטוק" על כל טיוטה מעתיק את הטקסט ופותח את מסך ההעלאה של TikTok Studio, ואתה רק מדביק ומצרף סרטון. פייסבוק לעומת זאת מתפרסם ישירות מכאן.
         </div>
@@ -2049,6 +2093,18 @@ function SocialModal({ agent, onClose, onAskDraft, showToast, logActivity }) {
                     {busyId === d.id ? "מפרסם…" : "אשר ופרסם לפייסבוק ✓"}
                   </button>
                 )}
+                {d.status !== "published" && (
+                  <button disabled={busyId === d.id} onClick={async () => {
+                    setBusyId(d.id);
+                    try {
+                      const r = await fireMetaWebhook({ caption: d.text, platforms: ["instagram", "facebook"], agent: "נפתלי · SYRAX" });
+                      persist(drafts.map((x) => x.id === d.id ? { ...x, status: "published" } : x));
+                      logActivity?.(agent.id, "שיגר פוסט דרך Make.com לרשתות (באישור הבעלים)");
+                      showToast(r.confirmed ? "🚀 שוגר ל-Make ✓" : "🚀 שוגר ל-Make (ללא אישור חוזר מהשרת)");
+                    } catch (e) { showToast("Make: " + String(e?.message || e).slice(0, 70)); }
+                    setBusyId(null);
+                  }}>🚀 שגר דרך Make (IG/FB)</button>
+                )}
                 {d.link && <button onClick={() => window.open(d.link, "_blank")}>פתח בפייסבוק ↗</button>}
                 <button onClick={async () => {
                   const ok = await copyText(d.text);
@@ -2060,6 +2116,46 @@ function SocialModal({ agent, onClose, onAskDraft, showToast, logActivity }) {
             </div>
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* SYRAX Social-Synapse AUTHORIZE card — pops (over everything, including the
+   3D office) when נפתלי/SYRAX emits a social_draft action from chat. Shows
+   the exact caption, takes the Make.com webhook URL once, and the physical
+   AUTHORIZE press is the ONLY thing that fires the POST. */
+function SyraxCard({ showToast }) {
+  const [card, setCard] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [hook, setHook] = useState(getMetaWebhook());
+  useEffect(() => {
+    const on = (e) => { setCard(e.detail); setHook(getMetaWebhook()); };
+    window.addEventListener("alpha-syrax-draft", on);
+    return () => window.removeEventListener("alpha-syrax-draft", on);
+  }, []);
+  if (!card) return null;
+  const authorize = async () => {
+    setBusy(true);
+    try {
+      const r = await fireMetaWebhook({ caption: card.text, platforms: ["instagram", "facebook"], agent: "נפתלי · SYRAX" });
+      save(K_SOCIAL_DRAFTS, load(K_SOCIAL_DRAFTS, []).map((x) => x.id === card.id ? { ...x, status: "published" } : x));
+      showToast(r.confirmed ? "🚀 שוגר ל-Make — הפוסט בדרך לרשתות ✓" : "🚀 שוגר ל-Make (השרת לא החזיר אישור קריא)");
+      setCard(null);
+    } catch (e) { showToast("שיגור נכשל: " + String(e?.message || e).slice(0, 70)); }
+    setBusy(false);
+  };
+  return (
+    <div className="syrax-card" dir="rtl">
+      <i className="syrax-scan" aria-hidden="true" />
+      <div className="syrax-head"><b>SYRAX · נפתלי</b><em>SOCIAL-SYNAPSE · ממתין לאישורך</em></div>
+      <p className="syrax-cap">{card.text}</p>
+      <input className="syrax-hook" dir="ltr" placeholder="https://hook.eu1.make.com/…" value={hook}
+        onChange={(e) => { setHook(e.target.value); setMetaWebhook(e.target.value); }} />
+      <div className="syrax-btns">
+        <button className="syrax-go" onClick={authorize} disabled={busy}>{busy ? "משגר…" : "🚀 AUTHORIZE — שגר לרשתות"}</button>
+        <button className="syrax-later" onClick={() => { setCard(null); showToast("נשמר בטיוטות של נפתלי 📣"); }}>שמור לטיוטות</button>
+        <button className="syrax-x" onClick={() => setCard(null)} title="סגור">✕</button>
       </div>
     </div>
   );
@@ -4535,5 +4631,30 @@ function StyleTag() {
   background:linear-gradient(135deg,rgba(14,12,28,.98),rgba(6,6,14,.98));border:1px solid var(--gold);color:var(--gold);
   padding:12px 20px;border-radius:13px;font-size:13.5px;font-weight:800;box-shadow:0 8px 40px rgba(228,188,99,.3);
   backdrop-filter:blur(14px);animation:acRise .25s ease both;max-width:90vw;text-align:center}
+/* SYRAX Social-Synapse AUTHORIZE holo-card */
+.syrax-card{position:fixed;left:50%;bottom:120px;transform:translateX(-50%);z-index:320;width:min(440px,92vw);
+  overflow:hidden;display:flex;flex-direction:column;gap:9px;padding:14px 16px;
+  background:linear-gradient(160deg,rgba(16,10,26,.9),rgba(8,10,22,.86));
+  border:1px solid rgba(199,125,255,.55);border-radius:15px;backdrop-filter:blur(14px);
+  box-shadow:0 0 26px rgba(199,125,255,.3),inset 0 0 26px rgba(199,125,255,.06);
+  clip-path:polygon(16px 0,100% 0,100% calc(100% - 16px),calc(100% - 16px) 100%,0 100%,0 16px);
+  animation:acRise .22s ease both}
+.syrax-scan{position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(180deg,transparent,rgba(199,125,255,.08) 50%,transparent);
+  background-size:100% 220%;animation:off3SubScan 3.4s linear infinite}
+.syrax-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.syrax-head b{font-family:'Rubik';font-weight:900;font-size:14px;color:#C77DFF;letter-spacing:.5px;text-shadow:0 0 12px rgba(199,125,255,.6)}
+.syrax-head em{font-style:normal;font-size:9px;font-weight:800;letter-spacing:2px;color:#E9C8FF;opacity:.8;
+  border:1px solid rgba(199,125,255,.4);border-radius:4px;padding:2px 6px}
+.syrax-cap{margin:0;font-size:13.5px;color:#f0eaff;line-height:1.55;white-space:pre-wrap;max-height:160px;overflow-y:auto;text-align:right}
+.syrax-hook{width:100%;box-sizing:border-box;padding:8px 10px;border-radius:9px;font-size:11px;
+  border:1px solid rgba(199,125,255,.3);background:rgba(0,0,0,.35);color:#fff}
+.syrax-btns{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+.syrax-go{flex:1;min-width:180px;padding:11px 14px;border-radius:10px;border:none;cursor:pointer;
+  font-family:'Rubik';font-weight:900;font-size:13.5px;color:#1a0b26;
+  background:linear-gradient(135deg,#E9C8FF,#C77DFF);box-shadow:0 0 18px rgba(199,125,255,.45)}
+.syrax-go:disabled{opacity:.6}
+.syrax-later{padding:11px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.05);color:#d9c9f2;font-size:12px;cursor:pointer}
+.syrax-x{width:32px;height:32px;border-radius:9px;border:1px solid rgba(255,255,255,.14);background:none;color:#b7a6d6;cursor:pointer}
 `}</style>;
 }
