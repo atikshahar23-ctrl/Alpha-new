@@ -4039,13 +4039,35 @@ function StyleTag() {
 .off3-eq i:nth-child(4){animation-delay:.42s}
 .off3-eq i:nth-child(5){animation-delay:.56s}
 @keyframes off3EqBar{0%,100%{transform:scaleY(.22)}25%{transform:scaleY(.95)}50%{transform:scaleY(.4)}75%{transform:scaleY(1)}}
-/* Live conversation subtitle above the talk bar — sticky, stays until the
-   user taps the X (used to auto-clear the moment you stepped away). */
+/* Holo-comm subtitle — the live conversation line, restyled as a HUD comm
+   panel: glass + neon border in the speaker's colour (--vc), sweeping
+   scanline, live voice-bars while listening/speaking, and a status tag.
+   No longer sticky: it fades out ~6s after the conversation settles (and
+   ~1s after walking away) — the X remains as instant manual dismiss. */
 .off3-subtitle{position:absolute;left:50%;bottom:92px;transform:translateX(-50%);z-index:3;max-width:min(560px,86vw);
-  display:flex;flex-direction:column;gap:2px;text-align:center;background:rgba(6,9,18,.82);border:1px solid rgba(255,255,255,.12);
-  border-radius:16px;padding:10px 34px 10px 18px;backdrop-filter:blur(10px);animation:acRise .18s ease both}
-.off3-subtitle b{font-family:'Rubik';font-weight:900;font-size:13px}
+  display:flex;flex-direction:column;gap:3px;text-align:center;overflow:hidden;
+  background:linear-gradient(160deg,rgba(8,12,24,.78),rgba(10,16,30,.62));
+  border:1px solid color-mix(in srgb,var(--vc,#2ee6ff) 55%,transparent);
+  box-shadow:0 0 18px color-mix(in srgb,var(--vc,#2ee6ff) 28%,transparent),inset 0 0 22px rgba(46,230,255,.05);
+  border-radius:14px;padding:10px 34px 11px 18px;backdrop-filter:blur(12px);
+  clip-path:polygon(14px 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%,0 14px);
+  animation:acRise .18s ease both;transition:opacity .55s ease,transform .55s ease}
+.off3-subtitle.out{opacity:0;transform:translateX(-50%) translateY(14px) scale(.96);pointer-events:none}
+.off3-subtitle b{font-family:'Rubik';font-weight:900;font-size:13px;letter-spacing:.4px;text-shadow:0 0 10px color-mix(in srgb,var(--vc,#2ee6ff) 60%,transparent)}
 .off3-subtitle span{font-size:14.5px;color:#eaf1ff;line-height:1.45}
+.off3-sub-head{display:flex;align-items:center;justify-content:center;gap:8px}
+.off3-sub-tag{font-style:normal;font-size:8.5px;font-weight:800;letter-spacing:2px;color:color-mix(in srgb,var(--vc,#2ee6ff) 80%,#fff);
+  border:1px solid color-mix(in srgb,var(--vc,#2ee6ff) 40%,transparent);border-radius:4px;padding:1px 5px;opacity:.85}
+.off3-sub-scan{position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(180deg,transparent 0%,color-mix(in srgb,var(--vc,#2ee6ff) 9%,transparent) 50%,transparent 100%);
+  background-size:100% 220%;animation:off3SubScan 3.2s linear infinite}
+@keyframes off3SubScan{0%{background-position:0 -120%}100%{background-position:0 120%}}
+.off3-sub-eq{display:inline-flex;align-items:flex-end;gap:2px;height:12px}
+.off3-sub-eq i{width:3px;height:100%;border-radius:2px;background:var(--vc,#2ee6ff);transform-origin:bottom;animation:off3EqBar 1s ease-in-out infinite}
+.off3-sub-eq.lis i{background:#ff5f7a}
+.off3-sub-eq i:nth-child(2){animation-delay:.14s}
+.off3-sub-eq i:nth-child(3){animation-delay:.28s}
+.off3-sub-eq i:nth-child(4){animation-delay:.42s}
 .off3-subtitle-x{position:absolute;top:8px;left:8px;background:rgba(255,255,255,.08);border:none;border-radius:50%;
   width:22px;height:22px;display:flex;align-items:center;justify-content:center;color:#aebde0;cursor:pointer}
 .off3-subtitle-x:hover{color:#fff;background:rgba(255,255,255,.16)}

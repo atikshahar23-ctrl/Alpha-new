@@ -5873,7 +5873,24 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   // Default to first-person to match the "already seated at your desk" start.
   const [firstPerson, setFirstPerson] = useState(true);
   const [voiceState, setVoiceState] = useState("idle"); // idle | listening | thinking | speaking
-  const [voiceLine, setVoiceLine] = useState(null);      // { who, text } subtitle — sticky, only the user's own X closes it
+  const [voiceLine, setVoiceLine] = useState(null);      // { who, text } — the live holo-comm subtitle
+  // The subtitle used to be sticky-forever (only the X closed it), so the last
+  // "מקשיב… דבר עכשיו" line stayed glued to the screen long after the chat —
+  // owner feedback. It's live feedback while the conversation is active
+  // (listening/thinking/speaking); once it settles to idle it auto-fades after
+  // a few seconds, and walking away from the agent dismisses it right away.
+  const [subFade, setSubFade] = useState(false);
+  useEffect(() => {
+    if (!voiceLine) { setSubFade(false); return; }
+    setSubFade(false);
+    const dismiss = (fadeAt, killAt) => {
+      const t1 = setTimeout(() => setSubFade(true), fadeAt);
+      const t2 = setTimeout(() => setVoiceLine(null), killAt);
+      return () => { clearTimeout(t1); clearTimeout(t2); };
+    };
+    if (!talkTarget) return dismiss(400, 1000);            // walked away — quick out
+    if (voiceState === "idle") return dismiss(6000, 6600); // settled — linger, then fade
+  }, [voiceLine, voiceState, talkTarget]);
   // 📱 ALPHA-LINK-01 — the owner's tactical secure terminal: a HUD handset
   // that mirrors the live conversation (the same lines the 3D hologram
   // projects) plus a control tab for the main assistant and every system.
@@ -11668,8 +11685,15 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         </div>
       )}
       {voiceLine && (
-        <div className="off3-subtitle">
-          <b style={{ color: voiceLine.color }}>{voiceLine.who}</b>
+        <div className={"off3-subtitle" + (subFade ? " out" : "")} style={{ "--vc": voiceLine.color || "#2ee6ff" }}>
+          <i className="off3-sub-scan" aria-hidden="true" />
+          <div className="off3-sub-head">
+            {(voiceState === "listening" || voiceState === "speaking") && (
+              <span className={"off3-sub-eq" + (voiceState === "listening" ? " lis" : "")} aria-hidden="true"><i /><i /><i /><i /></span>
+            )}
+            <b style={{ color: voiceLine.color }}>{voiceLine.who}</b>
+            <em className="off3-sub-tag">{voiceState === "listening" ? "LIVE·MIC" : voiceState === "speaking" ? "COMM" : voiceState === "thinking" ? "SYNC" : "LOG"}</em>
+          </div>
           <span>{voiceLine.text}</span>
           <button className="off3-subtitle-x" onClick={() => setVoiceLine(null)} title="סגור"><X size={14} /></button>
         </div>
