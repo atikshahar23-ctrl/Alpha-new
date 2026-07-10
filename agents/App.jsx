@@ -2555,7 +2555,12 @@ const OFC_TRUCKS = [{ x: 17, y: 14 }, { x: 80, y: 11 }];
 // guest chair INSIDE the owner's private glass office in the SE corner of
 // the 3D scene (Office3D places that chair exactly on this spot), so the
 // called agent walks in through the door and sits down facing your desk.
-const OFC_MEETING_SPOT = { x: 90, y: 87 };
+// The summon meeting spot doubles as the FIRST GUEST CHAIR position inside the
+// owner suite (Office3D anchors the chair exactly here). The old {90,87} mapped
+// to world (26.4, 24.4) — OUTSIDE the suite's west+north walls, which is why
+// the guest chair sat outside the office. {99.5, 93.5} maps to world
+// (32.67, 28.71) = suite-local (0.17, −0.29): right across the owner's desk.
+const OFC_MEETING_SPOT = { x: 99.5, y: 93.5 };
 const OFC_STATUS = { work: "💻", meet: "👥", break: "☕", eat: "🍽️", roam: "🚶", gym: "🏋️", lounge: "🛋️", trucks: "🚚" };
 // Strict company-wide break windows (Israel time) — agents only leave their
 // desks for the gym/lounge/coffee/lunch inside these 20-minute windows;
@@ -2663,7 +2668,7 @@ function OfficeSim({ onClose, onOpenChat, logActivity, showToast }) {
         dur = next.dur;
         return next;
       }));
-      setSummons((s) => ({ ...s, [id]: { ...(s[id] || {}), calledAt, status: "walking" } }));
+      setSummons((s) => ({ ...s, [id]: { ...(s[id] || {}), calledAt, expectedAt: calledAt + Math.max(dur, 1200) + 250, status: "walking" } }));
       popBubble(id, "בדרך למשרד שלך 🚶", null);
       setTimeout(() => {
         setSummons((s) => {
@@ -2816,6 +2821,7 @@ function OfficeSim({ onClose, onOpenChat, logActivity, showToast }) {
       {summonOpen && (
         <SummonPanel agents={AGENTS} summons={summons} onCall={callToOffice} onClose={() => setSummonOpen(false)} />
       )}
+      <SummonEtaChip summons={summons} />
       <Office3D
         chars={chars}
         byId={byId}
@@ -2863,6 +2869,35 @@ function OfficeSim({ onClose, onOpenChat, logActivity, showToast }) {
 // out — with a live punctuality readout once they arrive. A real action:
 // it actually redirects that agent's position in the simulation.
 const SUMMON_DELAYS = [0, 5, 15, 30];
+/* Live arrival countdown for summoned agents — a floating chip under the
+   header ticking down until the called agent reaches the guest chair across
+   the owner's desk ("I want a timer until he arrives and sits in front of
+   me"). Shows scheduled-departure countdowns too, and a short "sat down ✓"
+   confirmation when they arrive. */
+const fmtMMSS = (ms) => { const s = Math.max(0, Math.ceil(ms / 1000)); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
+function SummonEtaChip({ summons }) {
+  const [, setTick] = useState(0);
+  useEffect(() => { const t = setInterval(() => setTick((v) => v + 1), 500); return () => clearInterval(t); }, []);
+  const now = Date.now();
+  const rows = Object.entries(summons || {}).map(([id, s]) => {
+    if (!s) return null;
+    const a = byId(id); if (!a) return null;
+    if (s.status === "scheduled" && s.scheduledFor > now) return { id, color: a.color, txt: `⏳ ${a.name} מוזמן · יוצא אליך בעוד ${fmtMMSS(s.scheduledFor - now)}` };
+    if (s.status === "walking") {
+      const left = (s.expectedAt || now) - now;
+      return { id, color: a.color, txt: left > 0 ? `🚶 ${a.name} בדרך אליך · מתיישב מולך בעוד ${fmtMMSS(left)}` : `🚶 ${a.name} נכנס ומתיישב…` };
+    }
+    if ((s.status === "onTime" || s.status === "late") && s.arrivedAt && now - s.arrivedAt < 8000) return { id, color: a.color, txt: `🪑 ${a.name} התיישב מולך ✓` };
+    return null;
+  }).filter(Boolean);
+  if (!rows.length) return null;
+  return (
+    <div className="off3-eta-stack">
+      {rows.map((r) => <div key={r.id} className="off3-eta" style={{ "--c": r.color }}>{r.txt}</div>)}
+    </div>
+  );
+}
+
 function SummonPanel({ agents, summons, onCall, onClose }) {
   const statusLabel = (info) => {
     if (!info) return null;
@@ -3830,6 +3865,12 @@ function StyleTag() {
 .off-sub{text-align:center;font-size:11.5px;color:#7e90b8;padding:8px 16px 4px}
 .off-summon-btn{display:flex;align-items:center;gap:6px;background:rgba(228,188,99,.1);border:1px solid rgba(228,188,99,.35);color:var(--gold);border-radius:20px;padding:8px 14px;font-family:inherit;font-size:12px;font-weight:800;cursor:pointer;margin-right:10px;white-space:nowrap}
 .off-summon-btn:hover{background:rgba(228,188,99,.18)}
+.off3-eta-stack{position:absolute;top:56px;left:50%;transform:translateX(-50%);z-index:55;
+  display:flex;flex-direction:column;gap:6px;align-items:center;pointer-events:none}
+.off3-eta{background:rgba(8,11,22,.92);border:1px solid color-mix(in srgb,var(--c,#E4BC63) 55%,transparent);
+  color:#f2e9d4;border-radius:20px;padding:8px 16px;font-size:13px;font-weight:800;white-space:nowrap;
+  box-shadow:0 8px 24px rgba(0,0,0,.5),0 0 14px color-mix(in srgb,var(--c,#E4BC63) 25%,transparent);
+  font-variant-numeric:tabular-nums;animation:acRise .25s ease both}
 .off-summon-panel{position:absolute;top:64px;left:16px;z-index:60;width:min(340px,86vw);max-height:60vh;overflow-y:auto;background:rgba(8,11,22,.94);backdrop-filter:blur(16px);border:1px solid rgba(110,170,240,.22);border-radius:16px;box-shadow:0 18px 44px rgba(0,0,0,.55);animation:acRise .2s ease both}
 .off-summon-head{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:800;color:#eaf1ff;padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.08)}
 .off-summon-head button{margin-right:auto;background:none;border:none;color:#7e90b8;cursor:pointer;display:flex}

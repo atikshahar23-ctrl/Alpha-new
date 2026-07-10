@@ -2469,12 +2469,13 @@ function buildOwnerOffice(color, deskTemplate, laptopTemplate, furnitureTemplate
   // Solid partition — an L in the SE corner. North wall spans the full suite;
   // the west wall has a wide doorway gap (local z −0.8..0.9, ~1.7 wide) that
   // the summoned agent's walk-in route passes through, filled by a real door
-  // leaf below. Owner request: unlike every other office's glass walls, this
-  // one is fully opaque — nobody can see (or shoot a camera) straight through
-  // into the private suite from the floor.
-  const wallMat = new THREE.MeshStandardMaterial({ map: buildWallTexture(4), roughness: 0.8, metalness: 0.08 });
+  // leaf below. Owner request: fully opaque FROM BOTH SIDES — the planes used
+  // to be single-sided (FrontSide), so from outside the suite they simply
+  // didn't render and you could see straight in. DoubleSide + taller 4m walls
+  // close every eye-level sightline from the floor.
+  const wallMat = new THREE.MeshStandardMaterial({ map: buildWallTexture(4), roughness: 0.8, metalness: 0.08, side: THREE.DoubleSide });
   const neonEdge = new THREE.MeshBasicMaterial({ color });
-  const wallH = 2.6;
+  const wallH = 4.0;
   // North wall (runs along x, at local z = -4.3), spanning to the room's east wall.
   const nWall = new THREE.Mesh(new THREE.PlaneGeometry(11.8, wallH), wallMat);
   nWall.position.set(0.6, wallH / 2, -4.3); nWall.receiveShadow = true; g.add(nWall);
@@ -2490,18 +2491,24 @@ function buildOwnerOffice(color, deskTemplate, laptopTemplate, furnitureTemplate
   // reads as an actual door instead of an empty gap in the wall.
   {
     const doorMat = new THREE.MeshStandardMaterial({ color: 0x1c1f28, roughness: 0.4, metalness: 0.3 });
-    const doorW = 1.6, doorT = 0.06;
+    const doorW = 1.6, doorT = 0.06, doorH = 2.52; // human-height leaf even with the taller 4m walls
     const hinge = new THREE.Group();
     hinge.position.set(-5.3, 0, 0.9); // south jamb of the doorway gap
-    const leaf = new THREE.Mesh(new THREE.BoxGeometry(doorT, wallH - 0.08, doorW), doorMat);
-    leaf.position.set(0, (wallH - 0.08) / 2, -doorW / 2);
+    const leaf = new THREE.Mesh(new THREE.BoxGeometry(doorT, doorH, doorW), doorMat);
+    leaf.position.set(0, doorH / 2, -doorW / 2);
     leaf.castShadow = leaf.receiveShadow = true;
     hinge.add(leaf);
     const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.22, 8), new THREE.MeshStandardMaterial({ color: 0xC9A24B, metalness: 0.8, roughness: 0.25 }));
-    handle.rotation.z = Math.PI / 2; handle.position.set(doorT / 2 + 0.02, (wallH - 0.08) / 2, -doorW + 0.12);
+    handle.rotation.z = Math.PI / 2; handle.position.set(doorT / 2 + 0.02, doorH / 2, -doorW + 0.12);
     hinge.add(handle);
     hinge.rotation.y = -0.85; // propped open into the room
     g.add(hinge);
+    // Transom panel sealing the doorway gap from the door top up to the wall
+    // top, so the taller walls leave no see-through slot above the door.
+    const transom = new THREE.Mesh(new THREE.PlaneGeometry(1.7, wallH - doorH), wallMat);
+    transom.rotation.y = Math.PI / 2;
+    transom.position.set(-5.3, doorH + (wallH - doorH) / 2, 0.05);
+    g.add(transom);
   }
   // collision circles along the walls + the door leaf's own swept footprint
   // (doorway gap otherwise left open).
@@ -2555,6 +2562,82 @@ function buildOwnerOffice(color, deskTemplate, laptopTemplate, furnitureTemplate
   plant.scale.setScalar(1.25);
   plant.position.set(5.6, 0, -3.5);
   g.add(plant);
+
+  /* ── Executive luxury pass (owner: "super luxurious boss office") ──
+     Black-marble floor with gold veins across the whole suite, gold skirting
+     along the walls, a gold chandelier ring floating over the desk, two
+     gold-framed wall panels, and a whiskey/drinks cabinet — all cheap
+     primitives + one small canvas texture, no new lights. */
+  {
+    // Marble slab — procedural black marble with gold veining.
+    const mcvs = document.createElement("canvas");
+    mcvs.width = 256; mcvs.height = 256;
+    const mg = mcvs.getContext("2d");
+    mg.fillStyle = "#0d0e13"; mg.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 14; i++) {
+      mg.strokeStyle = i % 3 ? "rgba(201,162,75," + (0.10 + Math.random() * 0.16) + ")" : "rgba(230,235,245,0.08)";
+      mg.lineWidth = 0.6 + Math.random() * 1.4;
+      mg.beginPath();
+      let x = Math.random() * 256, y = 0;
+      mg.moveTo(x, y);
+      while (y < 256) { x += (Math.random() - 0.5) * 46; y += 14 + Math.random() * 22; mg.lineTo(x, y); }
+      mg.stroke();
+    }
+    const marbleTex = new THREE.CanvasTexture(mcvs);
+    marbleTex.wrapS = marbleTex.wrapT = THREE.RepeatWrapping; marbleTex.repeat.set(3, 2);
+    const marble = new THREE.Mesh(
+      new THREE.PlaneGeometry(11.7, 8.2),
+      new THREE.MeshStandardMaterial({ map: marbleTex, roughness: 0.35, metalness: 0.25 })
+    );
+    marble.rotation.x = -Math.PI / 2;
+    marble.position.set(0.6, 0.004, -0.2);
+    marble.receiveShadow = true;
+    g.add(marble);
+    // Gold skirting strips hugging the two built walls.
+    const skirtMat = new THREE.MeshStandardMaterial({ color: 0xC9A24B, metalness: 0.85, roughness: 0.25, emissive: 0x2a2008, emissiveIntensity: 0.5 });
+    const skirtN = new THREE.Mesh(new THREE.BoxGeometry(11.8, 0.12, 0.05), skirtMat);
+    skirtN.position.set(0.6, 0.06, -4.27); g.add(skirtN);
+    [[-2.55, 3.5], [2.45, 3.1]].forEach(([cz, len]) => {
+      const s = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.12, len), skirtMat);
+      s.position.set(-5.27, 0.06, cz); g.add(s);
+    });
+    // Chandelier — gold double ring + warm core, floating over the desk.
+    const chand = new THREE.Group();
+    chand.position.set(0.5, 3.35, -2.0);
+    const ring1 = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.035, 10, 40), skirtMat);
+    ring1.rotation.x = Math.PI / 2; chand.add(ring1);
+    const ring2 = new THREE.Mesh(new THREE.TorusGeometry(0.32, 0.028, 10, 32), skirtMat);
+    ring2.rotation.x = Math.PI / 2; ring2.position.y = -0.22; chand.add(ring2);
+    const chCore = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 10), new THREE.MeshBasicMaterial({ color: 0xffe9b8 }));
+    chCore.position.y = -0.1; chand.add(chCore);
+    const chGlow = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0xffdf9e, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false }));
+    chGlow.scale.setScalar(1.6); chGlow.position.y = -0.1; chand.add(chGlow);
+    const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.6, 8), skirtMat);
+    rod.position.y = 0.3; chand.add(rod);
+    g.add(chand);
+    // Two gold-framed wall panels on the north wall (art + company mark).
+    [[-2.4], [3.4]].forEach(([ax]) => {
+      const frame = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.0, 0.05), skirtMat);
+      frame.position.set(ax, 1.7, -4.24); g.add(frame);
+      const art = new THREE.Mesh(new THREE.PlaneGeometry(1.34, 0.84), new THREE.MeshStandardMaterial({ map: marbleTex, roughness: 0.5, metalness: 0.2 }));
+      art.position.set(ax, 1.7, -4.21); g.add(art);
+    });
+    // Executive drinks cabinet against the north wall, east of the desk.
+    const bar = new THREE.Group();
+    bar.position.set(4.6, 0, -3.9);
+    const cab = new THREE.Mesh(new THREE.BoxGeometry(1.7, 1.0, 0.55), new THREE.MeshStandardMaterial({ color: 0x14161d, roughness: 0.35, metalness: 0.45 }));
+    cab.position.y = 0.5; cab.castShadow = true; bar.add(cab);
+    const barTop = new THREE.Mesh(new THREE.BoxGeometry(1.78, 0.05, 0.62), skirtMat);
+    barTop.position.y = 1.02; bar.add(barTop);
+    [[-0.5, 0xd9a441], [-0.15, 0x8c5a22], [0.2, 0xc9803a], [0.55, 0xe8c26a]].forEach(([bx, bc]) => {
+      const bottle = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.055, 0.3, 10), new THREE.MeshStandardMaterial({ color: bc, roughness: 0.15, metalness: 0.2, emissive: bc, emissiveIntensity: 0.12 }));
+      bottle.position.set(bx, 1.2, 0); bar.add(bottle);
+      const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.02, 0.12, 8), new THREE.MeshStandardMaterial({ color: 0x1a1d24, roughness: 0.3 }));
+      neck.position.set(bx, 1.4, 0); bar.add(neck);
+    });
+    g.add(bar);
+    obstacles.push({ x: 4.6, z: -3.9, r: 0.9 });
+  }
 
   /* ── Command-center upgrades (owner request: "Iron Man"-style suite) ──
      A holographic projector pedestal with a slowly-spinning wireframe
