@@ -8463,6 +8463,138 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       scene.add(bar);
     }
 
+    // ── The boss triple-screen wall (owner request: "in front of me I want 3
+    // screens: 1 business data, 2 trading simulator with open positions, 3 DVR
+    // of the office cameras + one hangar camera"). Mounted on the south hull
+    // wall of the executive suite, facing the desk — exactly what the owner
+    // looks at while sitting. Outer screens angled inward, cockpit-style.
+    let ownerDvrFeed = null;
+    let drawOwnerTrades = () => {};
+    let drawHangarCam = () => {};
+    let ownerBizTex = null, ownerTradeTex = null, hangarCamTex = null, bizScreenCtx = null;
+    {
+      const WALL_Z = FLOOR_D / 2 - 0.22;        // just inside the south hull wall
+      const CX = OFFICE_ORIGIN.x + 0.5;          // centered on the desk's x
+      const SY = 2.15, SW = 2.35, SH = 1.4;
+      const GOLD = 0xC9A24B;
+      const bezelMat = new THREE.MeshStandardMaterial({ color: 0x0a0c12, roughness: 0.4, metalness: 0.6 });
+      const trimMat = new THREE.MeshBasicMaterial({ color: GOLD });
+      const mkScreen = (x, tilt, tex) => {
+        const grp = new THREE.Group();
+        grp.position.set(x, SY, WALL_Z);
+        grp.rotation.y = Math.PI + tilt;
+        const bez = new THREE.Mesh(new THREE.PlaneGeometry(SW + 0.16, SH + 0.16), bezelMat);
+        grp.add(bez);
+        const trim = new THREE.Mesh(new THREE.PlaneGeometry(SW + 0.24, 0.045), trimMat);
+        trim.position.y = (SH + 0.16) / 2 + 0.05; grp.add(trim);
+        if (tex) {
+          const scr = new THREE.Mesh(new THREE.PlaneGeometry(SW, SH), new THREE.MeshBasicMaterial({ map: tex }));
+          scr.position.z = 0.015; grp.add(scr);
+        }
+        scene.add(grp);
+        return grp;
+      };
+      // 1 · Business data (live HeavyGuard numbers — same drawHgScreen the TVs use).
+      const bizCvs = document.createElement("canvas");
+      bizCvs.width = 480; bizCvs.height = 282;
+      bizScreenCtx = bizCvs.getContext("2d");
+      ownerBizTex = new THREE.CanvasTexture(bizCvs);
+      ownerBizTex.colorSpace = THREE.SRGBColorSpace;
+      drawHgScreen(bizScreenCtx, 480, 282, liveRef.current.bizData);
+      mkScreen(CX - 2.6, -0.14, ownerBizTex);
+      // 2 · Trading simulator — open positions with live PnL off marketRows.
+      const trdCvs = document.createElement("canvas");
+      trdCvs.width = 480; trdCvs.height = 282;
+      const trdCtx = trdCvs.getContext("2d");
+      ownerTradeTex = new THREE.CanvasTexture(trdCvs);
+      ownerTradeTex.colorSpace = THREE.SRGBColorSpace;
+      const posBook = []; // stable simulated entries, seeded from the first live rows
+      drawOwnerTrades = () => {
+        const rows = liveRef.current.marketRows || [];
+        if (!posBook.length && rows.length) {
+          rows.slice(0, 4).forEach((r, i) => posBook.push({ sym: (r.sym || r.name || "—").toString().slice(0, 8), side: i % 2 ? "SHORT" : "LONG", entryChg: (r.chg || 0) - (i % 2 ? -0.8 : 0.8), qty: [0.5, 2, 10, 25][i] }));
+        }
+        const g = trdCtx;
+        g.fillStyle = "#060a12"; g.fillRect(0, 0, 480, 282);
+        g.strokeStyle = "rgba(63,215,154,.5)"; g.lineWidth = 3; g.strokeRect(3, 3, 474, 276);
+        g.textAlign = "right"; g.fillStyle = "#3FD79A"; g.font = "800 22px system-ui";
+        g.fillText("📈 סימולטור מסחר · עסקאות פתוחות", 462, 34);
+        g.strokeStyle = "rgba(255,255,255,.12)"; g.lineWidth = 1;
+        g.beginPath(); g.moveTo(14, 48); g.lineTo(466, 48); g.stroke();
+        let y = 78;
+        (posBook.length ? posBook : [{ sym: "טוען…", side: "", entryChg: 0, qty: 0 }]).forEach((p) => {
+          const live = (liveRef.current.marketRows || []).find((r) => ((r.sym || r.name || "").toString().slice(0, 8)) === p.sym);
+          const cur = live ? (live.chg || 0) : p.entryChg;
+          const pnl = (cur - p.entryChg) * (p.side === "SHORT" ? -1 : 1) * 4; // 4x sim leverage
+          const up = pnl >= 0;
+          g.textAlign = "right"; g.fillStyle = "#eaf1ff"; g.font = "700 19px system-ui";
+          g.fillText(p.sym, 462, y);
+          g.fillStyle = p.side === "SHORT" ? "#ff8fa8" : "#8fd8ff"; g.font = "700 15px system-ui";
+          g.fillText(p.side, 372, y);
+          g.fillStyle = "#8ea0c4"; g.font = "600 15px ui-monospace,monospace";
+          g.fillText("×" + p.qty, 306, y);
+          g.textAlign = "left"; g.fillStyle = up ? "#3FD79A" : "#ff5f6d"; g.font = "800 20px ui-monospace,monospace";
+          g.fillText((up ? "▲ +" : "▼ ") + pnl.toFixed(2) + "%", 30, y);
+          y += 44;
+        });
+        const total = posBook.reduce((s, p) => {
+          const live = (liveRef.current.marketRows || []).find((r) => ((r.sym || r.name || "").toString().slice(0, 8)) === p.sym);
+          return s + ((live ? (live.chg || 0) : p.entryChg) - p.entryChg) * (p.side === "SHORT" ? -1 : 1) * 4;
+        }, 0);
+        g.fillStyle = "rgba(255,255,255,.06)"; g.fillRect(14, 248, 452, 26);
+        g.textAlign = "right"; g.fillStyle = "#E4BC63"; g.font = "700 16px system-ui"; g.fillText("PnL כולל", 458, 267);
+        g.textAlign = "left"; g.fillStyle = total >= 0 ? "#3FD79A" : "#ff5f6d"; g.font = "800 18px ui-monospace,monospace";
+        g.fillText((total >= 0 ? "+" : "") + total.toFixed(2) + "%", 24, 267);
+        ownerTradeTex.needsUpdate = true;
+      };
+      drawOwnerTrades();
+      mkScreen(CX, 0, ownerTradeTex);
+      // 3 · DVR — live cycling office cameras (the real secRT feed) plus a
+      // dedicated hangar-camera tile (the hangar is a separate scene, so its
+      // "feed" is a stylised live-look render with clock + REC).
+      const dvr = mkScreen(CX + 2.6, 0.14, null);
+      ownerDvrFeed = new THREE.Mesh(new THREE.PlaneGeometry(1.62, SH - 0.24), new THREE.MeshBasicMaterial({ map: secRT.texture }));
+      ownerDvrFeed.position.set(0.32, -0.09, 0.015); dvr.add(ownerDvrFeed);
+      const dvrBar = new THREE.Mesh(new THREE.PlaneGeometry(1.62, 0.2), new THREE.MeshBasicMaterial({ map: secBarTex, transparent: true }));
+      dvrBar.position.set(0.32, SH / 2 - 0.13, 0.015); dvr.add(dvrBar);
+      const hgrCvs = document.createElement("canvas");
+      hgrCvs.width = 200; hgrCvs.height = 300;
+      const hgrCtx = hgrCvs.getContext("2d");
+      hangarCamTex = new THREE.CanvasTexture(hgrCvs);
+      let hgrBlink = false;
+      drawHangarCam = () => {
+        const g = hgrCtx;
+        g.fillStyle = "#05070c"; g.fillRect(0, 0, 200, 300);
+        // floor perspective grid
+        g.strokeStyle = "rgba(63,120,150,.35)"; g.lineWidth = 1;
+        for (let i = 0; i <= 6; i++) { g.beginPath(); g.moveTo(100 + (i - 3) * 60, 300); g.lineTo(100 + (i - 3) * 16, 150); g.stroke(); }
+        for (let yy = 160; yy <= 290; yy += 26) { g.beginPath(); g.moveTo(10, yy); g.lineTo(190, yy); g.stroke(); }
+        // hangar arch ribs
+        g.strokeStyle = "rgba(120,150,180,.4)"; g.lineWidth = 2;
+        for (let i = 0; i < 3; i++) { g.beginPath(); g.arc(100, 170, 88 - i * 22, Math.PI, 0); g.stroke(); }
+        // Hyperion statue silhouette (gold) + parked car block
+        g.fillStyle = "rgba(201,162,75,.8)";
+        g.fillRect(88, 96, 24, 52); g.beginPath(); g.arc(100, 88, 11, 0, 7); g.fill();
+        g.fillRect(70, 118, 16, 8); g.fillRect(114, 118, 16, 8);
+        g.fillStyle = "rgba(140,160,190,.55)"; g.fillRect(30, 216, 58, 22); g.fillRect(38, 206, 40, 12);
+        // slow sweep line so the feed reads live
+        const sw = (Date.now() / 30) % 300;
+        g.fillStyle = "rgba(143,224,255,.08)"; g.fillRect(0, sw, 200, 8);
+        // header bar
+        g.fillStyle = "rgba(3,5,10,.92)"; g.fillRect(0, 0, 200, 30);
+        g.textAlign = "right"; g.fillStyle = "#3FD79A"; g.font = "700 13px system-ui";
+        g.fillText("🎥 האנגר · CAM-05", 192, 20);
+        hgrBlink = !hgrBlink;
+        if (hgrBlink) { g.fillStyle = "#ff5f6d"; g.beginPath(); g.arc(12, 15, 4, 0, 7); g.fill(); }
+        g.fillStyle = "#8ea0c4"; g.font = "10px ui-monospace,monospace"; g.textAlign = "left";
+        g.fillText(new Date().toLocaleTimeString("he-IL"), 26, 292);
+        hangarCamTex.needsUpdate = true;
+      };
+      drawHangarCam();
+      const hgrTile = new THREE.Mesh(new THREE.PlaneGeometry(0.6, SH - 0.04), new THREE.MeshBasicMaterial({ map: hangarCamTex }));
+      hgrTile.position.set(-0.85, 0, 0.015); dvr.add(hgrTile);
+    }
+
     // The 100-inch wall screen — the old CSS3D iframe is gone: heavyguard.com
     // refuses to be embedded (X-Frame-Options), which left a black hole, and
     // the DOM layer itself flickered against the WebGL canvas on Macs. The
@@ -9211,6 +9343,10 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         if (ownerOffice.rackTradeTex) ownerOffice.rackTradeTex.needsUpdate = true;
         drawHgScreen(rackHgCtx, rackHgCanvas.width, rackHgCanvas.height, liveRef.current.bizData);
         if (ownerOffice.rackHgTex) ownerOffice.rackHgTex.needsUpdate = true;
+        // The boss triple-screen wall follows the same live refresh.
+        if (ownerBizTex) { drawHgScreen(bizScreenCtx, 480, 282, liveRef.current.bizData); ownerBizTex.needsUpdate = true; }
+        drawOwnerTrades();
+        drawHangarCam();
         drawOpsWall(opsCtx, opsCanvas.width, opsCanvas.height, liveRef.current.bizData, liveRef.current.securityAlerts);
         opsTex.needsUpdate = true;
         drawSiteScreen(); // wall site-board follows the same live refresh
@@ -9248,12 +9384,17 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       if (!turboOn && frameNo % 3 === 0) {
         camFrustumMat.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
         camFrustum.setFromProjectionMatrix(camFrustumMat);
-        if (camFrustum.intersectsObject(secScreen)) {
+        // The same live feed now also plays on the boss triple-screen DVR in
+        // the owner suite — capture when EITHER screen is on-camera, hiding
+        // both during the capture pass to avoid a feedback loop.
+        if (camFrustum.intersectsObject(secScreen) || (ownerDvrFeed && camFrustum.intersectsObject(ownerDvrFeed))) {
           secScreen.visible = false;
+          if (ownerDvrFeed) ownerDvrFeed.visible = false;
           renderer.setRenderTarget(secRT);
           renderer.render(scene, secCam);
           renderer.setRenderTarget(null);
           secScreen.visible = true;
+          if (ownerDvrFeed) ownerDvrFeed.visible = true;
         }
       }
       // Center-stage car turns slowly on its podium.
