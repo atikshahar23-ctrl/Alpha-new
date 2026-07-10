@@ -10051,11 +10051,16 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         liveRef.current.setTalkTarget(nearest);
       }
 
-      if (turboOn || renderer.xr.isPresenting) {
+      if (turboOn || renderer.xr.isPresenting || isMobile) {
         // Straight render: skips the SSAO/bloom/output passes — the biggest
         // per-frame GPU cost on weak machines. EffectComposer also isn't
         // XR-aware in this three.js version, so an active VR session always
         // takes this branch regardless of the turbo setting.
+        // Mobile ALWAYS takes this path now: on real phone GPUs the
+        // SSAO/bloom composer chain was blowing the whole frame into a bright
+        // haze and hiding the lit floor + characters (they render fine with a
+        // straight render). This also removes the "everything too glowing"
+        // bloom on phones entirely.
         renderer.render(scene, camera);
       } else {
         composer.render();
