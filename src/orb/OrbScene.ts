@@ -32,6 +32,10 @@ export interface OrbHandle {
   hasPinnedTransform(): boolean;
   attackCharacter(canvas: HTMLCanvasElement): void;
   setPerfMode(on: boolean): void;
+  // Optional: register a 0..1 live audio-level source (e.g. a mic AnalyserNode)
+  // the plasma core polls each frame so it ripples to real voice while
+  // listening. Falls back to state-machine energy when unset / returns 0.
+  attachAudioLevel?(fn: () => number): void;
 }
 
 // ============================================================
@@ -3283,6 +3287,10 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
 
   let time = 0, raf = 0;
   let amp = 0.06, ampTarget = 0.06;
+  // Phase 2 (mic) — optional live 0..1 audio-level source (a real AnalyserNode
+  // off the assistant's mic), polled each frame so the plasma core ripples to
+  // the user's actual voice while listening.
+  let audioLevelFn: (() => number) | null = null;
   let glitchStr = 0, nextGlitch = 3 + Math.random() * 5, glitchTimer = 0;
   let lastFrame = 0;
   let fpsT = 0, fpsN = 0, warmT = 0, lowStreak = 0;
@@ -3361,7 +3369,8 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     alphaBrain.wire2.rotation.z -= dt * 0.09;
     // Phase 2 — voice-reactive amplitude: breathes in silence, sharp ripples
     // while speaking, synthesized from the smoothed speaking/listening energy.
-    const coreAmp = voiceReactiveAmp(amp, time);
+    const micLevel = audioLevelFn ? Math.max(0, Math.min(1, audioLevelFn())) : 0;
+    const coreAmp = voiceReactiveAmp(Math.max(amp, micLevel), time);
     alphaBrain.coreMat.uniforms.uTime.value = time;
     alphaBrain.coreMat.uniforms.uAudioAmplitude.value = coreAmp;
 
@@ -3567,6 +3576,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
 
   return {
     setEnergy(v: number) { ampTarget = Math.max(0, Math.min(1, v)); },
+    attachAudioLevel(fn: () => number) { audioLevelFn = fn; },
     pikaEmote(emote: PikaEmote) {
       pikaEmoteSpeak(emote);
       if (emote === 'excited' || emote === 'happy') { ampTarget = 0.85; setTimeout(() => { ampTarget = 0.06; }, 1200); }
@@ -4391,6 +4401,10 @@ export function mountOrb(container: HTMLElement): OrbHandle {
 
   let time = 0, raf = 0;
   let amp = 0.06, ampTarget = 0.06;
+  // Phase 2 (mic) — optional live 0..1 audio-level source (a real AnalyserNode
+  // off the assistant's mic), polled each frame so the plasma core ripples to
+  // the user's actual voice while listening.
+  let audioLevelFn: (() => number) | null = null;
   let glitchStr = 0, nextGlitch = 3 + Math.random() * 5, glitchTimer = 0;
   let lastFrame = 0;
   let fpsT = 0, fpsN = 0, warmT = 0, lowStreak = 0;
@@ -4471,7 +4485,8 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     alphaBrain.wire2.rotation.z -= dt * 0.09;
     // Phase 2 — voice-reactive amplitude: breathes in silence, sharp ripples
     // while speaking, synthesized from the smoothed speaking/listening energy.
-    const coreAmp = voiceReactiveAmp(amp, time);
+    const micLevel = audioLevelFn ? Math.max(0, Math.min(1, audioLevelFn())) : 0;
+    const coreAmp = voiceReactiveAmp(Math.max(amp, micLevel), time);
     alphaBrain.coreMat.uniforms.uTime.value = time;
     alphaBrain.coreMat.uniforms.uAudioAmplitude.value = coreAmp;
 
@@ -4744,6 +4759,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
 
   return {
     setEnergy(v: number) { ampTarget = Math.max(0, Math.min(1, v)); },
+    attachAudioLevel(fn: () => number) { audioLevelFn = fn; },
     pikaEmote(emote: PikaEmote) {
       pikaEmoteSpeak(emote);
       if (emote === 'excited' || emote === 'happy') {

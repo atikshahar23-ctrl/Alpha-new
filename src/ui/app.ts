@@ -1205,6 +1205,9 @@ export function mountApp(root: HTMLElement) {
 
   const voice = new VoiceEngine(state, (text) => { clearInterim(); addMsg(text, 'me'); ask(text); }, setStatus);
   voice.onInterim = (text) => showInterim(text);
+  // Feed the plasma core a real per-frame mic level so it ripples to the user's
+  // actual voice while listening (Phase 2 — true AnalyserNode reactivity).
+  orb.attachAudioLevel?.(() => voice.getMicLevel());
 
   function updateCalBadge() {
     const events = loadEvents();

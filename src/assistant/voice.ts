@@ -23,6 +23,12 @@ export class VoiceEngine {
   private recRetries = 0;
   private noiseStream: MediaStream | null = null;
   private noiseCtx: AudioContext | null = null;
+  // Live mic level meter — a real AnalyserNode tap off the same mic stream,
+  // read per-frame by the orb so the plasma core ripples to the user's actual
+  // voice while listening. See preWarmMicNoise for why the analyser is safe.
+  private micAnalyser: AnalyserNode | null = null;
+  private micData: Uint8Array | null = null;
+  private micLevel = 0;
   wakeOn = false;
   // Per-character voice modifier — when a non-default main character is the
   // assistant's avatar, its voice colours the spoken replies (e.g. Meowth =
@@ -120,9 +126,11 @@ export class VoiceEngine {
   // Open the microphone with maximum noise-suppression constraints.
   // Chrome's APM applies these at the OS level so SpeechRecognition, which
   // opens the same hardware mic, inherits the cleaned-up signal.
-  // NO AudioContext is created here — connecting the mic to any AudioContext
-  // destination (even at gain=0) routes audio through the speaker pipeline
-  // and causes bass hum / feedback on many systems.
+  // We DO create an AudioContext here now, but ONLY for a terminal AnalyserNode
+  // tap (mic source → analyser, and nothing after it). The hum/feedback trap is
+  // routing the mic to the context's DESTINATION (even at gain=0) — an analyser
+  // that isn't connected onward to destination produces no speaker output at
+  // all, so it's safe. This is the standard VU-meter pattern.
   private async preWarmMicNoise() {
     if (this.noiseStream) return;
     if (!navigator.mediaDevices?.getUserMedia) return;
@@ -137,6 +145,36 @@ export class VoiceEngine {
         }
       });
     } catch {}
+    // Attach the level-meter analyser (best-effort — a failure here must never
+    // break recognition, which is the mic's primary consumer).
+    try {
+      const AC = (window.AudioContext || (window as any).webkitAudioContext);
+      if (AC && this.noiseStream && !this.micAnalyser) {
+        this.noiseCtx = new AC();
+        const src = this.noiseCtx.createMediaStreamSource(this.noiseStream);
+        this.micAnalyser = this.noiseCtx.createAnalyser();
+        this.micAnalyser.fftSize = 256;
+        this.micAnalyser.smoothingTimeConstant = 0.6;
+        this.micData = new Uint8Array(this.micAnalyser.frequencyBinCount);
+        src.connect(this.micAnalyser); // terminal tap — NOT wired to destination
+      }
+    } catch {}
+  }
+
+  // 0..1 smoothed mic loudness for the orb's voice-reactive plasma core.
+  // Returns 0 whenever the meter isn't live (not listening), so the orb falls
+  // back to its own state-machine energy.
+  getMicLevel(): number {
+    if (!this.micAnalyser || !this.micData) return 0;
+    try {
+      this.micAnalyser.getByteFrequencyData(this.micData as Uint8Array<ArrayBuffer>);
+      let sum = 0;
+      for (let i = 0; i < this.micData.length; i++) sum += this.micData[i];
+      const avg = sum / this.micData.length / 255;         // 0..1 average bin
+      const lvl = Math.min(1, Math.max(0, (avg - 0.04) * 2.4)); // gate room noise, lift speech
+      this.micLevel += (lvl - this.micLevel) * 0.5;          // extra visual smoothing
+      return this.micLevel;
+    } catch { return 0; }
   }
 
   private stopNoiseStream() {
@@ -144,6 +182,9 @@ export class VoiceEngine {
     this.noiseStream = null;
     try { this.noiseCtx?.close(); } catch {}
     this.noiseCtx = null;
+    this.micAnalyser = null;
+    this.micData = null;
+    this.micLevel = 0;
   }
 
   private enterCommandMode() {
