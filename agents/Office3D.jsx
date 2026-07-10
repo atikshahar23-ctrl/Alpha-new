@@ -8783,15 +8783,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // clear of any wall/desk so movement is free and comfortable from the
     // first step, facing north toward the team (the owner's glass office is
     // right there to the east to walk into).
-    // On phones the player kept rendering as a bodiless name-tag — the
-    // casual_male skinned GLB just wasn't showing on the device (while the
-    // robot agents, which glow, did). Force the player to use the guaranteed
-    // procedural glowing body on mobile (charTemplate=null → buildHuman's
-    // always-visible emissive fallback), so "my character" is never invisible.
-    // Desktop keeps the nicer GLB body.
-    const playerTemplate = isMobile ? null : charTemplate;
-    const playerClips = isMobile ? [] : charClips;
-    const playerH = buildHuman(0xE4BC63, "אתה", true, playerTemplate, playerClips, CHAR_SCALE, CHAR_CENTER_OFFSET, true, "הבעלים · שחר");
+    const playerH = buildHuman(0xE4BC63, "אתה", true, charTemplate, charClips, CHAR_SCALE, CHAR_CENTER_OFFSET, true, "הבעלים · שחר");
     // 📱 Phone-in-hand + hologram: whenever a conversation is live (or the
     // phone UI is open), a glowing handset appears at the owner's hand
     // projecting a light cone with the current line of dialogue floating
@@ -8861,16 +8853,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       // shared casual_male template. Both real-textured models carry their
       // own look, so they skip the per-agent colour tint the plain human
       // template uses to differentiate otherwise-identical bodies.
-      // On phones the skinned GLB rigs (robot / Sophia / casual_male) render
-      // INVISIBLE on many real mobile GPUs — a skinned-mesh shader-precision
-      // limitation that desktop + software emulation never hit, which is why the
-      // crew kept "disappearing" only on the phone. Force every agent to the
-      // guaranteed non-skinned procedural glowing body on mobile (charTemplate
-      // =null → buildHuman's always-visible fallback) so the crew is ALWAYS
-      // visible there; desktop keeps the real high-detail models.
-      const h = isMobile
-        ? buildHuman(a.color, a.name, false, null, [], CHAR_SCALE, ROBOT_CENTER_OFFSET, true, a.title)
-        : a.id === "facilities"
+      const h = a.id === "facilities"
         ? buildHuman(a.color, a.name, false, sophiaTemplate, sophiaClips, CHAR_SCALE, SOPHIA_CENTER_OFFSET, false, a.title, sophiaClipMap)
         : buildHuman(a.color, a.name, false, robotTemplate, robotClips, CHAR_SCALE, ROBOT_CENTER_OFFSET, false, a.title, robotClipMap);
       const [wx, wz] = toWorld(c.x, c.y);
