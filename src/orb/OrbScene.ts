@@ -1018,20 +1018,150 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
 // hologram already built for the office app's owner-assistant globe (solid
 // icosahedron core + wireframe shell + canvas-glow sprite + point light) —
 // reproduced procedurally here since the two apps don't share a bundle.
+//
+// SENTIENT NEURAL PLASMA CORE — Phase 1 (mesh + fluid shader material).
+// The core mesh went from a static faceted MeshStandardMaterial icosahedron
+// to a high-resolution SphereGeometry displaced in the vertex shader by
+// layered 3D simplex noise (fbm), so the surface undulates continuously
+// like boiling liquid metal instead of sitting rigid. `uAudioAmplitude` is
+// wired to the orb's existing `amp` energy value (already smoothed each
+// frame from the speaking/listening/armed state machine — see
+// `orb.setEnergy()`), so the breathing-vs-spiking behavior works today.
+// Phase 2 (tapping a real AnalyserNode off the TTS output for per-frequency
+// reactivity, replacing this discrete-state proxy) is a separate, awaited
+// follow-up — not wired in yet.
 // ============================================================
+const SIMPLEX_NOISE_GLSL = /* glsl */`
+  // Ashima Arts / Stefan Gustavson 3D simplex noise (MIT-licensed, webgl-noise)
+  vec3 mod289(vec3 x){return x-floor(x*(1.0/289.0))*289.0;}
+  vec4 mod289(vec4 x){return x-floor(x*(1.0/289.0))*289.0;}
+  vec4 permute(vec4 x){return mod289(((x*34.0)+1.0)*x);}
+  vec4 taylorInvSqrt(vec4 r){return 1.79284291400159 - 0.85373472095314 * r;}
+  float snoise(vec3 v){
+    const vec2 C = vec2(1.0/6.0, 1.0/3.0);
+    const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+    vec3 i  = floor(v + dot(v, C.yyy));
+    vec3 x0 = v - i + dot(i, C.xxx);
+    vec3 g = step(x0.yzx, x0.xyz);
+    vec3 l = 1.0 - g;
+    vec3 i1 = min(g.xyz, l.zxy);
+    vec3 i2 = max(g.xyz, l.zxy);
+    vec3 x1 = x0 - i1 + C.xxx;
+    vec3 x2 = x0 - i2 + C.yyy;
+    vec3 x3 = x0 - D.yyy;
+    i = mod289(i);
+    vec4 p = permute(permute(permute(
+              i.z + vec4(0.0, i1.z, i2.z, 1.0))
+            + i.y + vec4(0.0, i1.y, i2.y, 1.0))
+            + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+    float n_ = 0.142857142857;
+    vec3 ns = n_ * D.wyz - D.xzx;
+    vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+    vec4 x_ = floor(j * ns.z);
+    vec4 y_ = floor(j - 7.0 * x_);
+    vec4 x = x_ * ns.x + ns.yyyy;
+    vec4 y = y_ * ns.x + ns.yyyy;
+    vec4 h = 1.0 - abs(x) - abs(y);
+    vec4 b0 = vec4(x.xy, y.xy);
+    vec4 b1 = vec4(x.zw, y.zw);
+    vec4 s0 = floor(b0)*2.0 + 1.0;
+    vec4 s1 = floor(b1)*2.0 + 1.0;
+    vec4 sh = -step(h, vec4(0.0));
+    vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy;
+    vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww;
+    vec3 p0 = vec3(a0.xy, h.x);
+    vec3 p1 = vec3(a0.zw, h.y);
+    vec3 p2 = vec3(a1.xy, h.z);
+    vec3 p3 = vec3(a1.zw, h.w);
+    vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2,p2), dot(p3,p3)));
+    p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
+    vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
+    m = m * m;
+    return 42.0 * dot(m*m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));
+  }
+`;
+
+const PLASMA_CORE_VERT = /* glsl */`
+  ${SIMPLEX_NOISE_GLSL}
+  uniform float uTime;
+  // 0..1 smoothed voice energy. Phase 1 placeholder: driven by the orb's
+  // existing discrete speaking/listening/armed state (see frame() below),
+  // not yet a real per-sample audio analyser — that's Phase 2.
+  uniform float uAudioAmplitude;
+  varying float vDisplacement;
+  varying vec3 vNormal;
+  varying vec3 vWorldPos;
+
+  float fbm(vec3 p) {
+    float v = 0.0, a = 0.5;
+    for (int i = 0; i < 4; i++) {
+      v += a * snoise(p);
+      p *= 2.02;
+      a *= 0.5;
+    }
+    return v;
+  }
+
+  void main() {
+    // Slow baseline swell — always present, even in total silence ("breathing").
+    float breathe = fbm(normal * 1.6 + vec3(0.0, uTime * 0.12, 0.0));
+    // Faster, sharper ripple layer that only really surfaces once amplitude rises.
+    float ripple = fbm(normal * 4.2 + vec3(uTime * 0.9, uTime * 0.7, uTime * 1.1));
+    float displacement = breathe * 0.08 + ripple * 0.22 * uAudioAmplitude;
+    vDisplacement = displacement;
+    vec3 displaced = position + normal * displacement;
+    vNormal = normalize(normalMatrix * normal);
+    vWorldPos = (modelMatrix * vec4(displaced, 1.0)).xyz;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(displaced, 1.0);
+  }
+`;
+
+const PLASMA_CORE_FRAG = /* glsl */`
+  uniform float uTime;
+  uniform float uAudioAmplitude;
+  varying float vDisplacement;
+  varying vec3 vNormal;
+  varying vec3 vWorldPos;
+
+  void main() {
+    vec3 viewDir = normalize(cameraPosition - vWorldPos);
+    vec3 n = normalize(vNormal);
+    float fresnel = pow(1.0 - max(dot(n, viewDir), 0.0), 2.5);
+
+    vec3 amber = vec3(0.85, 0.55, 0.15);
+    vec3 gold = vec3(1.0, 0.78, 0.32);
+    vec3 hotCyan = vec3(0.5, 0.95, 1.0);
+
+    // Displacement peaks flash white-hot cyan; troughs stay a warm gold/amber.
+    float peak = smoothstep(0.05, 0.28, vDisplacement);
+    vec3 base = mix(amber, gold, 0.5 + 0.5 * sin(uTime * 0.6));
+    vec3 col = mix(base, hotCyan, peak);
+
+    // Fresnel rim reads as atmospheric plasma bleeding off the edge.
+    col += hotCyan * fresnel * (0.6 + uAudioAmplitude * 1.4);
+    // Overall intensity breathes with amplitude so bloom picks out the voice.
+    col *= 1.0 + uAudioAmplitude * 0.9 + peak * 0.8;
+
+    gl_FragColor = vec4(col, 1.0);
+  }
+`;
+
 interface AlphaBrainParts {
   group: THREE.Group;
   core: THREE.Mesh;
+  coreMat: THREE.ShaderMaterial;
   wire: THREE.Mesh;
   light: THREE.PointLight;
 }
-function buildAlphaBrain(): AlphaBrainParts {
+function buildAlphaBrain(segments = 96): AlphaBrainParts {
   const gold = 0xE4BC63;
   const group = new THREE.Group();
-  const core = new THREE.Mesh(
-    new THREE.IcosahedronGeometry(1.1, 2),
-    new THREE.MeshStandardMaterial({ color: gold, emissive: gold, emissiveIntensity: 1.2, roughness: 0.35, metalness: 0.1 }),
-  );
+  const coreMat = new THREE.ShaderMaterial({
+    uniforms: { uTime: { value: 0 }, uAudioAmplitude: { value: 0.06 } },
+    vertexShader: PLASMA_CORE_VERT,
+    fragmentShader: PLASMA_CORE_FRAG,
+  });
+  const core = new THREE.Mesh(new THREE.SphereGeometry(1.1, segments, segments), coreMat);
   group.add(core);
   const wire = new THREE.Mesh(
     new THREE.IcosahedronGeometry(1.4, 1),
@@ -1046,7 +1176,7 @@ function buildAlphaBrain(): AlphaBrainParts {
   group.add(glow);
   const light = new THREE.PointLight(gold, 1.6, 9);
   group.add(light);
-  return { group, core, wire, light };
+  return { group, core, coreMat, wire, light };
 }
 
 // Atmosphere glow shaders — volumetric, animated, multi-fresnel
@@ -2629,7 +2759,9 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   });
   // The default centerpiece is the ALPHA BRAIN hologram, not a GLTF character —
   // no model to load, so pikaGroup just stays hidden until the user picks one.
-  const alphaBrain = buildAlphaBrain();
+  // Mobile GPUs get a lower-resolution plasma sphere (48 segments) — still
+  // plenty smooth for the noise displacement, far cheaper than the desktop's.
+  const alphaBrain = buildAlphaBrain(48);
   group.add(alphaBrain.group);
   pikaGroup.visible = false;
   let mobileCurrentChar = 'alphabrain';
@@ -2922,6 +3054,10 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     alphaBrain.core.rotation.x += dt * 0.08;
     alphaBrain.wire.rotation.y -= dt * 0.18;
     alphaBrain.wire.rotation.x += dt * 0.05;
+    // Plasma core shader: uAudioAmplitude rides the same smoothed `amp` energy
+    // signal already driving the rest of the orb's speaking/listening feedback.
+    alphaBrain.coreMat.uniforms.uTime.value = time;
+    alphaBrain.coreMat.uniforms.uAudioAmplitude.value = amp;
     if (pika.head) {
       // Curious head tilt — cycles between looking around and tilting curiously
       const curiousCycle = time % 12.0;
@@ -3327,7 +3463,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   });
   // The default centerpiece is the ALPHA BRAIN hologram, not a GLTF character —
   // no model to load, so pikaGroup just stays hidden until the user picks one.
-  const alphaBrain = buildAlphaBrain();
+  const alphaBrain = buildAlphaBrain(isMobile ? 64 : 128);
   group.add(alphaBrain.group);
   pikaGroup.visible = false;
   let deskCurrentChar = 'alphabrain';
@@ -3973,6 +4109,10 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     alphaBrain.core.rotation.x += dt * 0.08;
     alphaBrain.wire.rotation.y -= dt * 0.18;
     alphaBrain.wire.rotation.x += dt * 0.05;
+    // Plasma core shader: uAudioAmplitude rides the same smoothed `amp` energy
+    // signal already driving the rest of the orb's speaking/listening feedback.
+    alphaBrain.coreMat.uniforms.uTime.value = time;
+    alphaBrain.coreMat.uniforms.uAudioAmplitude.value = amp;
     if (pika.head) {
       // Curious head tilt — cycles between looking around and tilting curiously
       const curiousCycle = time % 12.0;
