@@ -1419,12 +1419,75 @@ function voiceReactiveAmp(amp: number, time: number): number {
   return Math.min(1.25, breathe + speech);
 }
 
+// SINGULARITY CORE — Phase 3: Data-Stream Tendrils. A slow-orbiting shell of
+// glowing motes with a subset wired to the core by faint additive lines that
+// bow tangentially (bezier-ish). On speech the whole lattice brightens and
+// contracts *inward* — reading as data streaming into the singularity. All
+// unlit Points + LineSegments (additive), so it renders identically on the
+// owner's phone (no PBR / no transmission). Geometry is static; only the
+// group transform + material opacity move per frame — cheap enough for mobile.
+interface DataTendrils {
+  group: THREE.Group;
+  update: (dt: number, amp: number, time: number) => void;
+}
+function buildDataTendrils(particleCount: number, tendrilCount: number): DataTendrils {
+  const group = new THREE.Group();
+  const pos = new Float32Array(particleCount * 3);
+  const shell: [number, number, number][] = [];
+  for (let i = 0; i < particleCount; i++) {
+    const r = 1.7 + Math.random() * 1.7;
+    const th = Math.random() * Math.PI * 2;
+    const ph = Math.acos(2 * Math.random() - 1);
+    const x = r * Math.sin(ph) * Math.cos(th);
+    const y = r * Math.sin(ph) * Math.sin(th);
+    const z = r * Math.cos(ph);
+    pos[i * 3] = x; pos[i * 3 + 1] = y; pos[i * 3 + 2] = z;
+    if (shell.length < tendrilCount) shell.push([x, y, z]);
+  }
+  const pgeo = new THREE.BufferGeometry();
+  pgeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const pmat = new THREE.PointsMaterial({
+    color: 0xffe1a0, size: 0.03, transparent: true, opacity: 0.6,
+    blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true, fog: false,
+  });
+  group.add(new THREE.Points(pgeo, pmat));
+  // Tendrils: 2 segments per particle (particle → bowed midpoint → near-core).
+  const seg: number[] = [];
+  for (const [x, y, z] of shell) {
+    const ex = x * 0.26, ey = y * 0.26, ez = z * 0.26;      // inner endpoint, near the core
+    const mx = (x + ex) / 2 - y * 0.14, my = (y + ey) / 2 + x * 0.14, mz = (z + ez) / 2; // tangential bow
+    seg.push(x, y, z, mx, my, mz, mx, my, mz, ex, ey, ez);
+  }
+  const lgeo = new THREE.BufferGeometry();
+  lgeo.setAttribute('position', new THREE.Float32BufferAttribute(seg, 3));
+  const lmat = new THREE.LineBasicMaterial({
+    color: 0x7fe3ff, transparent: true, opacity: 0.18,
+    blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+  });
+  group.add(new THREE.LineSegments(lgeo, lmat));
+  let flow = 0;
+  return {
+    group,
+    update(dt, amp, time) {
+      group.rotation.y += dt * 0.12;
+      group.rotation.x = Math.sin(time * 0.16) * 0.16;
+      const target = amp > 0.5 ? 1 : 0;      // "speaking" → pull the lattice in
+      flow += (target - flow) * Math.min(1, dt * 3);
+      group.scale.setScalar(1 - flow * 0.2 - amp * 0.05);
+      pmat.opacity = 0.4 + amp * 0.5;
+      pmat.size = 0.03 + amp * 0.02;
+      lmat.opacity = 0.14 + flow * 0.5 + amp * 0.28;
+    },
+  };
+}
+
 interface AlphaBrainParts {
   group: THREE.Group;
   core: THREE.Mesh;
   coreMat: THREE.ShaderMaterial;
   wire: THREE.Mesh;
   wire2: THREE.Mesh;
+  tendrils: DataTendrils;
   light: THREE.PointLight;
 }
 function buildAlphaBrain(segments = 96): AlphaBrainParts {
@@ -1453,6 +1516,9 @@ function buildAlphaBrain(segments = 96): AlphaBrainParts {
     }),
   );
   group.add(wire2);
+  // Phase 3 — Data-Stream Tendrils (denser on desktop, lighter on mobile).
+  const tendrils = buildDataTendrils(segments >= 100 ? 2200 : 900, segments >= 100 ? 150 : 80);
+  group.add(tendrils.group);
   const glow = new THREE.Sprite(new THREE.SpriteMaterial({
     map: glowTexture(), color: gold, transparent: true, opacity: 0.55,
     blending: THREE.AdditiveBlending, depthWrite: false,
@@ -1461,7 +1527,7 @@ function buildAlphaBrain(segments = 96): AlphaBrainParts {
   group.add(glow);
   const light = new THREE.PointLight(gold, 1.6, 9);
   group.add(light);
-  return { group, core, coreMat, wire, wire2, light };
+  return { group, core, coreMat, wire, wire2, tendrils, light };
 }
 
 // Atmosphere glow shaders — volumetric, animated, multi-fresnel
@@ -3373,6 +3439,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     const coreAmp = voiceReactiveAmp(Math.max(amp, micLevel), time);
     alphaBrain.coreMat.uniforms.uTime.value = time;
     alphaBrain.coreMat.uniforms.uAudioAmplitude.value = coreAmp;
+    alphaBrain.tendrils.update(dt, coreAmp, time); // data streams into the core on speech
 
     // ── Jet-turbine ignition sequence — fires once, right at boot ──
     if (ignitionPending) { ignitionPending = false; ignitionStartTime = time; ignitionAudio?.ignite(); }
@@ -4489,6 +4556,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     const coreAmp = voiceReactiveAmp(Math.max(amp, micLevel), time);
     alphaBrain.coreMat.uniforms.uTime.value = time;
     alphaBrain.coreMat.uniforms.uAudioAmplitude.value = coreAmp;
+    alphaBrain.tendrils.update(dt, coreAmp, time); // data streams into the core on speech
 
     // ── Jet-turbine ignition sequence — fires once, right at boot ──
     if (ignitionPending) { ignitionPending = false; ignitionStartTime = time; ignitionAudio?.ignite(); }
