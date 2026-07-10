@@ -27,11 +27,26 @@ const SYNC_TABLES = [
   'hg2:index',
   'hg2:quotes',
   'hg2:tasks',
+  'hg2:customers',
+  'hg2:pricelist',
+  'hg2:quoteseq',
   'hg2:trips',
   'hg2:vehicle',
   'hg2:odometer',
   'hg2:projects',
+  'hg2:carstock',
+  'hg2:suppliers',
+  'hg2:invoices',
+  'hg2:wanumber',
+  'hg2:init',
+  'hg2:lastbackup',
+  'hg2:crm_data',
+  'hg2:profile',
+  'hg2:samsonix',
   'alpha:social:drafts',
+  'alpha_name',
+  'char_rot_v3',
+  'alpha_main_character',
   'alpha_brain_memory_v1',
   'alpha_pomodoro_v1',
   'alpha_mood_v1',
@@ -58,8 +73,16 @@ let cachedToken: DriveToken | null = null;
 let folderId: string | null = null;
 let syncInProgress = false;
 
+// Default OAuth client — the SAME Google Cloud project the CRM/agents app uses,
+// so the whole platform authenticates through one Google account and one origin
+// registration. Override per-device by entering a different ID in Settings.
+// NOTE: for sign-in to succeed, the app's origin (e.g. the GitHub Pages URL and
+// http://localhost:5173) must be listed under this client's "Authorized
+// JavaScript origins" in the Google Cloud Console — otherwise Google returns
+// "invalid_client / no registered origin".
+const DEFAULT_CLIENT_ID = '243197444145-4go2os4nmvjadncma2c581tr535hl8lo.apps.googleusercontent.com';
 export function getClientId(): string {
-  return localStorage.getItem(CLIENT_ID_KEY) || '';
+  return localStorage.getItem(CLIENT_ID_KEY) || DEFAULT_CLIENT_ID;
 }
 export function setClientId(id: string) {
   localStorage.setItem(CLIENT_ID_KEY, id.trim());
