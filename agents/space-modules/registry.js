@@ -115,6 +115,12 @@ import { createWeatherSyncNode } from "./weather-sync-node.js";
 import { createVolumetricClock } from "./volumetric-clock.js";
 import { createKineticCalendar } from "./kinetic-calendar.js";
 import { createBiometricDoorScanner } from "./biometric-door-scanner.js";
+// ── AUDIO-NEURAL WALLS · Sector 6 — hangar & easter eggs ──
+import { createTiggoDiagnosticMural } from "./tiggo-diagnostic-mural.js";
+import { createLegendaryNeonSigns } from "./legendary-neon-signs.js";
+import { createGravityOverrideSwitch } from "./gravity-override-switch.js";
+import { createCyberspaceFirewall } from "./cyberspace-firewall.js";
+import { createAlphaNeuralWeb } from "./alpha-neural-web.js";
 
 export const SPACE_MODULES = [
   // ── CORE SYSTEM ALPHA · comms & AI ──
@@ -208,4 +214,10 @@ export const SPACE_MODULES = [
   { id: "volumetric-clock", create: createVolumetricClock },        // gaze-aligning shard-digit clock
   { id: "kinetic-calendar", create: createKineticCalendar },        // week grid, today pushes out
   { id: "biometric-door-scanner", create: createBiometricDoorScanner }, // entrance laser-grid scan
+  // ── AUDIO-NEURAL WALLS · Sector 6 · hangar & easter eggs (workshop-corner substitute — see file comments) ──
+  { id: "tiggo-diagnostic-mural", create: createTiggoDiagnosticMural }, // M26 · PHEV schematic + battery sparks
+  { id: "legendary-neon-signs", create: createLegendaryNeonSigns },     // M27 · Lugia/Ho-Oh neon-tube silhouettes
+  { id: "gravity-override-switch", create: createGravityOverrideSwitch }, // M28 · lever → zero-G (shares M53's flag)
+  { id: "cyberspace-firewall", create: createCyberspaceFirewall },      // M29 · self-shattering hex shield wall
+  { id: "alpha-neural-web", create: createAlphaNeuralWeb },             // M30 · ceiling neuron web, pulses on agent talk
 ];
