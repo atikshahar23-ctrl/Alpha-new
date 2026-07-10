@@ -87,6 +87,15 @@ export function getClientId(): string {
 export function setClientId(id: string) {
   localStorage.setItem(CLIENT_ID_KEY, id.trim());
 }
+// Drop any per-device override so getClientId() falls back to the known-good
+// DEFAULT_CLIENT_ID. Fixes a device that has a stale/wrong client id saved
+// (e.g. a phone that fails with invalid_client while the desktop works).
+export function resetClientId() {
+  localStorage.removeItem(CLIENT_ID_KEY);
+}
+export function isUsingDefaultClientId(): boolean {
+  return !localStorage.getItem(CLIENT_ID_KEY);
+}
 
 export function isConnected(): boolean {
   const t = getToken();

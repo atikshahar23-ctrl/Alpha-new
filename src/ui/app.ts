@@ -7855,9 +7855,15 @@ export function mountApp(root: HTMLElement) {
                 border:1px solid rgba(218,165,32,.4);background:rgba(218,165,32,.12);
                 color:#daa520;font-size:13px;font-weight:600;cursor:pointer
               ">שמור ונסה שוב</button>
+              <button id="loginCidReset" style="
+                width:100%;margin-top:8px;padding:10px;border-radius:8px;
+                border:1px solid rgba(76,175,80,.4);background:rgba(76,175,80,.12);
+                color:#8fe38f;font-size:13px;font-weight:600;cursor:pointer
+              ">🔄 אפס Client ID לברירת המחדל (מומלץ בטלפון)</button>
               <p style="font-size:10px;color:rgba(255,255,255,.4);margin:8px 0 0;line-height:1.5">
-                ה-Client ID חייב להיות מסוג "Web application" ב-Google Cloud, עם כתובת האפליקציה רשומה תחת
-                Authorized JavaScript origins. שגיאת "OAuth client was not found" = ה-ID לא קיים/נמחק בגוגל.
+                אם במחשב מתחבר ובטלפון לא — קרוב לוודאי שבמכשיר הזה שמור Client ID ישן.
+                לחץ "אפס" כדי לחזור לברירת המחדל התקינה. ה-Client ID חייב להיות מסוג
+                "Web application" ב-Google Cloud, עם כתובת האפליקציה רשומה תחת Authorized JavaScript origins.
               </p>
             </div>
           </div>
@@ -7896,6 +7902,12 @@ export function mountApp(root: HTMLElement) {
         driveSync.setClientId(v);
         const status = ov.querySelector('#loginStatus') as HTMLElement;
         status.textContent = '✓ נשמר — טוען מחדש…';
+        setTimeout(() => location.reload(), 500);
+      };
+      (ov.querySelector('#loginCidReset') as HTMLButtonElement).onclick = () => {
+        driveSync.resetClientId();
+        const status = ov.querySelector('#loginStatus') as HTMLElement;
+        status.textContent = '✓ אופס לברירת המחדל — טוען מחדש…';
         setTimeout(() => location.reload(), 500);
       };
 
