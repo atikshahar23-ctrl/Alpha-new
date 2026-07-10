@@ -181,6 +181,16 @@ export async function signIn(): Promise<boolean> {
   return requestToken('consent');
 }
 
+// Load the GIS script and build the token client ahead of any click. On mobile,
+// browsers only allow the OAuth popup to open inside the tap that triggered it;
+// if the script still has to download when the button is pressed, that async gap
+// drops the "user gesture" and the popup is silently blocked (works on desktop,
+// fails on phones). Calling this when the login screen mounts means the client
+// is already live, so signIn() opens the popup with (near) no async gap.
+export async function prewarm(): Promise<void> {
+  try { await getTokenClient(); } catch {}
+}
+
 // Ensure we hold a usable access token, silently minting a fresh one when the
 // current one is missing or within 2 min of expiry. Returns false only when an
 // interactive sign-in is genuinely required (no prior consent, or the silent

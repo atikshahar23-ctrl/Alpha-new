@@ -7869,6 +7869,12 @@ export function mountApp(root: HTMLElement) {
 
       document.body.appendChild(ov);
 
+      // Pre-load Google's client now so the tap on "המשך עם Google" opens the
+      // OAuth popup inside the gesture (mobile blocks popups opened after the
+      // script finishes downloading — the "works on computer, fails on phone"
+      // symptom). Fire-and-forget; signIn() still works if this hasn't finished.
+      driveSync.prewarm();
+
       const dismiss = () => {
         ov.style.opacity = '0';
         setTimeout(() => { ov.remove(); resolve(); updateCloudIndicator(); }, 500);
