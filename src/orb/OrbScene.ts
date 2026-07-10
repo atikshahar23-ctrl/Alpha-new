@@ -1110,6 +1110,8 @@ function createIgnitionLightRig(lights: THREE.Light[]) {
 interface IgnitionAudioRig {
   analyser: THREE.AudioAnalyser;
   ignite(): void;
+  isRunning(): boolean;
+  unlock(): void;
   dispose(): void;
 }
 function createIgnitionAudioRig(camera: THREE.PerspectiveCamera, coreGroup: THREE.Object3D): IgnitionAudioRig | null {
@@ -1222,11 +1224,37 @@ function createIgnitionAudioRig(camera: THREE.PerspectiveCamera, coreGroup: THRE
   return {
     analyser,
     ignite,
+    isRunning() { return ctx.state === 'running'; },
+    // resume() only actually takes effect when called synchronously inside a
+    // real user-gesture handler — which is exactly where armIgnitionOnGesture
+    // invokes this, so the context is running by the time ignite() fires.
+    unlock() { if (ctx.state !== 'running') { ctx.resume().catch(() => {}); } },
     dispose() {
       try { camera.remove(listener); } catch {}
       try { coreGroup.remove(posAudio); } catch {}
     },
   };
+}
+
+// Arm the ignition on the first real user gesture so the synthesized turbine
+// audio — which the browser autoplay policy keeps suspended until a gesture —
+// unlocks and starts exactly in sync with the visuals. If audio is
+// unavailable, or a gesture already unlocked it earlier in the boot flow (the
+// common case, since the user clicks through the biometric intro first), arm
+// immediately. Returns a cleanup fn to drop the listeners if the orb unmounts
+// before any gesture arrives.
+function armIgnitionOnGesture(rig: IgnitionAudioRig | null, arm: () => void): () => void {
+  if (!rig || rig.isRunning()) { arm(); return () => {}; }
+  const cleanup = () => {
+    window.removeEventListener('pointerdown', onGesture);
+    window.removeEventListener('keydown', onGesture);
+    window.removeEventListener('touchstart', onGesture);
+  };
+  const onGesture = () => { cleanup(); rig.unlock(); arm(); };
+  window.addEventListener('pointerdown', onGesture);
+  window.addEventListener('keydown', onGesture);
+  window.addEventListener('touchstart', onGesture);
+  return cleanup;
 }
 
 // ============================================================
@@ -2999,9 +3027,12 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   const ignitionShake = createCameraShake();
   const ignitionAudio = createIgnitionAudioRig(camera, alphaBrain.group);
   const ignitionLights = createIgnitionLightRig([mKey, mFill, mFront, mRim, mAmbient]);
-  let ignitionPending = true;
+  let ignitionPending = false;
   let ignitionStartTime: number | null = null;
   let ignitionClimaxFired = false;
+  // Gate the whole sequence on the first real gesture so audio + visuals fire
+  // together (arms immediately if audio's already unlocked or unavailable).
+  const ignitionGestureCleanup = armIgnitionOnGesture(ignitionAudio, () => { ignitionPending = true; });
   const mobileThrowPokeball = makeThrowPokeball(group, pikaGroup, import.meta.env.BASE_URL || '/', camera);
 
   // ────────────────────────────────────────────
@@ -3503,6 +3534,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
       stopCry();
       disposeParticles(mobPFX, scene);
       disposeChu();
+      ignitionGestureCleanup();
       ignitionAudio?.dispose();
       window.removeEventListener('resize', resize);
       if (envMap) envMap.dispose();
@@ -3742,9 +3774,12 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   const ignitionShake = createCameraShake();
   const ignitionAudio = createIgnitionAudioRig(camera, alphaBrain.group);
   const ignitionLights = createIgnitionLightRig([keyLight, fillLight, rimLight, bottomLight, ambientLight]);
-  let ignitionPending = true;
+  let ignitionPending = false;
   let ignitionStartTime: number | null = null;
   let ignitionClimaxFired = false;
+  // Gate the whole sequence on the first real gesture so audio + visuals fire
+  // together (arms immediately if audio's already unlocked or unavailable).
+  const ignitionGestureCleanup = armIgnitionOnGesture(ignitionAudio, () => { ignitionPending = true; });
   let deskPFX: PFXState | null = null;
   const deskThrowPokeball = makeThrowPokeball(group, pikaGroup, import.meta.env.BASE_URL || '/', camera);
 
@@ -4677,6 +4712,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       disposeParticles(deskPFX, scene);
       disposeChu();
       stopBodyDetection();
+      ignitionGestureCleanup();
       ignitionAudio?.dispose();
       window.removeEventListener('resize', resize);
       window.removeEventListener('mousemove', onDeskMouseMove);
