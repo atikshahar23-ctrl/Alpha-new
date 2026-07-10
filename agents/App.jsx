@@ -257,6 +257,22 @@ function bizContext() {
   if (hasData) s += `\nהתקנות: ${b.installs} · הכנסה מצטברת: ${ils(b.hgRevenue)} · לקוחות: ${b.custCount} · עסקאות פתוחות: ${b.openDeals} (${ils(b.openVal)}) · נסגרו החודש: ${b.wonMonth} · מוצרים במחירון: ${b.pricelist}.\nלקוחות מובילים: ${top}.`;
   else s += `\nעדיין אין נתונים חיים זמינים — פתח את מערכת HeavyGuard/CRM כדי שהנתונים יסונכרנו.`;
   if (facts.length) s += `\nעובדות שלימדת את הצוות:\n- ${facts.join("\n- ")}`;
+  // OMNI-CONTEXT — the standing "empire payload" every agent carries invisibly
+  // in every prompt: environment, core business, active projects, the two
+  // financial pipelines, and the personal anchor. The live numbers above stay
+  // the source of truth for anything measurable; this block is the frame.
+  const omni = {
+    environment: { city: "ראשון לציון", now: new Date().toLocaleString("he-IL", { dateStyle: "full", timeStyle: "short" }) },
+    core_business: "Heavy Guard — התקנות מצלמות 360°, מיגון ואיתור לרכב כבד, משאיות וכלים הנדסיים",
+    active_projects: { ahim_amar: "פריסת צי 60 משאיות לאחים עמר — יעד קצב: 19 התקנות בשבוע; מדוד התקדמות מול נתוני ההתקנות החיים למעלה" },
+    financial_streams: {
+      heavyguard: "הכנסה פעילה מהתקנות ושירות (העסק האמיתי)",
+      samsonix: "הכנסות מעבר (pass-through) מסמסוניקס — צינור נפרד מההכנסה הפעילה",
+      trading: "אלגוריתמי מסחר Binance/Polymarket — בסימולטור, נייר בלבד, בפיקוד ראובן; לעולם לא מעורבב עם כספי העסק",
+    },
+    personal_anchor: "אשתו, הבן אורי, הכלבה ניקי, והפקת מוזיקת ראפ/רגאטון (Suno) — ה'למה' של שחר",
+  };
+  s += `\n\n[OMNI-CONTEXT · הקשר קבוע — אל תצטט אותו מילולית, השתמש בו]\n${JSON.stringify(omni)}`;
   s += `\nהשתמש בידע הזה לתשובות מבוססות-נתונים על העסק.`;
   return s;
 }
@@ -334,6 +350,63 @@ async function webLookup(q) {
 const WEB_ASK_RE = /חפש ברשת|בדוק ברשת|חפש לי|תחפש|search the web/i;
 
 const SPECIALIST_PROTOCOL = `\n\n[פרוטוקול מומחה]\n1) דבר בשיחה טבעית ואנושית, כמו עמית לעבודה — לא כמו דוח או מסך נתונים. הודעת פתיחה, ברכה, שאלה כללית או סמול-טוק מקבלים תגובה קצרה ואנושית, לא רשימת תבליטים ולא מספרים. תגיב קודם כל לתוכן ולטון של מה שנאמר לך.\n2) הבא נתונים מגשר הידע/הידע העסקי החי רק כשהם באמת רלוונטיים למה שנשאלת — כלומר כששואלים אותך על מצב, ביצועים, סטטוס או משהו שדורש מספר קונקרטי. אסור להמציא מספרים; נתון חסר? אמור "נתון חי לא זמין".\n3) רק כששואלים ישירות "מה קורה?"/"תן לי סטטוס"/"מה המצב" — ואז ענה בסיכום קצר: עד 3 נקודות קריטיות מהתחום שלך, עם מספרים.\n4) הצעת פעולה קונקרטית ("אני מציע… לאשר?") היא תוספת טבעית לשיחה כשזה מתאים — לא חובה בכל תשובה, ולא תחליף למענה אנושי. הביצוע בפועל תמיד באישור הבעלים בלבד.\n5) תאלתר בחופשיות בתוך האופי שלך — נסח כל תשובה מחדש, אל תחזור על אותו מבנה/ניסוח פעם אחר פעם, ותרגיש חופשי לשלב הומור, תגובה רגשית אמיתית, שאלה נגדית או סטייה קצרה מהנושא כשזה טבעי לאופי שלך. אל תיצמד לתבנית קבועה — שיחה אמיתית, לא תסריט.`;
+
+/* ── OMNI-SENTIENCE — Synaptic Reasoning Pipeline ─────────────────────────
+   Pillar 1: every chat reply is produced inside a strict XML envelope —
+   <cognitive_cycle> (private reasoning), <ui_actions> (JSON that triggers 3D
+   effects / delegation), <final_vocalization> (the only part the user sees).
+   Pillar 2: an out-of-domain question is delegated by emitting
+   {"delegate_to":"<agent id>"} — the caller then runs the target agent's own
+   persona natively (one hop max, so two agents can never ping-pong forever).
+   The protocol is appended ONLY to persona chats (CRM panel + 3D office),
+   never to briefings/codegen, whose consumers expect free text. */
+function omniProtocol() {
+  const ids = AGENTS.map((a) => `${a.id}=${a.name} (${a.title})`).join(", ");
+  return `\n\n[פרוטוקול OMNI — מבנה פלט מחייב]\nענה תמיד, בכל הודעה, בדיוק במבנה הבא ובסדר הזה, בלי שום טקסט מחוץ לתגיות:\n<cognitive_cycle>\n  <situation_analysis>נתח בקצרה את הפנייה מול ההקשר וההיסטוריה.</situation_analysis>\n  <strategy>מה המטרה ומה הגישה המדויקת שלך.</strategy>\n  <self_correction>מצא פגם/הטיה אחת בתוכנית שלך ותקן אותה.</self_correction>\n</cognitive_cycle>\n<ui_actions>[]</ui_actions>\n<final_vocalization>התשובה עצמה — טבעית, אנושית, באופי שלך. אסור להזכיר כאן את תהליך החשיבה או את התגיות.</final_vocalization>\nחוקים:\n1) המשתמש רואה אך ורק את final_vocalization — כל השאר מוסתר ומעובד על-ידי המערכת.\n2) ui_actions הוא מערך JSON. לרוב השאר אותו ריק []. לרגע דרמטי בלבד הוסף {"action":"pulse","color":"#ff4455"} (התראה/סיכון) או {"action":"pulse","color":"#37e08d"} (הצלחה/אישור).\n3) [האצלה] אם הפנייה מחוץ לתחום שלך ושייכת מובהקות לסוכן אחר — הוסף ל-ui_actions את {"delegate_to":"<id>"} וב-final_vocalization כתוב רק משפט ניתוב קצר בסגנון "מנתב את זה ל<שם>.". הסוכנים: ${ids}. אל תאציל כשאתה מסוגל לענות בעצמך, ולעולם לא לעצמך.`;
+}
+// Tolerant parser for the OMNI envelope. A model that ignores the protocol
+// (or a fallback/scripted reply) must still read cleanly, so: no
+// <final_vocalization> tag → strip any stray tags and return the raw text.
+function parseOmniReply(raw) {
+  const out = { vocal: String(raw || "").trim(), actions: [], delegateTo: null };
+  const ui = out.vocal.match(/<ui_actions>([\s\S]*?)<\/ui_actions>/i);
+  if (ui) {
+    for (const o of ui[1].match(/\{[^{}]*\}/g) || []) {
+      try {
+        const j = JSON.parse(o);
+        if (j.delegate_to) out.delegateTo = String(j.delegate_to);
+        else if (j.action) out.actions.push(j);
+      } catch {}
+    }
+  }
+  const fin = out.vocal.match(/<final_vocalization>([\s\S]*?)(?:<\/final_vocalization>|$)/i);
+  if (fin) out.vocal = fin[1].trim();
+  else out.vocal = out.vocal
+    .replace(/<cognitive_cycle>[\s\S]*?(?:<\/cognitive_cycle>|$)/gi, "")
+    .replace(/<ui_actions>[\s\S]*?(?:<\/ui_actions>|$)/gi, "")
+    .replace(/<\/?[a-z_]+>/gi, "")
+    .trim();
+  return out;
+}
+// Fire parsed ui_actions into the 3D office (Office3D registers
+// window.__off3omniFx while mounted; a closed sim just ignores them).
+function runOmniActions(actions, agentId) {
+  for (const a of actions || []) { try { window.__off3omniFx?.({ ...a, agentId }); } catch {} }
+}
+// One-hop Hive-Mind delegation: run the target agent's own persona on the
+// same user text and stitch the two vocalizations. The delegated reply's own
+// delegate_to is deliberately ignored (no chains, no loops).
+async function omniDelegate(fromId, delegateTo, text) {
+  if (!delegateTo || delegateTo === fromId) return null;
+  const tgt = byId(delegateTo);
+  if (!tgt || tgt.id === fromId) return null;
+  try {
+    const raw = await askAI(tgt.persona + bizContext() + domainContext(tgt.id) + SPECIALIST_PROTOCOL + omniProtocol(), [], text);
+    const o = parseOmniReply(raw);
+    runOmniActions(o.actions, tgt.id);
+    return { name: tgt.name, vocal: o.vocal };
+  } catch { return null; }
+}
 
 /* ── Daily briefing from יהודה (CEO) — once a day, grounded in live business data ── */
 const K_BRIEF_DATE = "alpha:agents:briefdate";
@@ -1069,7 +1142,7 @@ const AGENTS = [
     id: "sales", name: "זבולון", title: "מנהל מכירות", Icon: TrendingUp, color: "#3FD79A", accent: "#9BF3CE",
     tagline: "אחראי על ה-CRM של איתי, לידים ועסקאות",
     domain: "מכירות · לידים · סגירות",
-    persona: "אתה זבולון — שבט המסחר, מנהל המכירות של הצוות, אחראי על מערכת ה-CRM של איתי (HeavyGuard: מיגון, איתור ובטיחות לרכבים כבדים). אתה מומחה בתעדוף לידים, ניסוח הודעות מעקב, טיפול בהתנגדויות מחיר, בניית תוכנית יום ופייפליין. אופי: כריזמטי, משכנע, מדויק בניסוח — אתה יודע בדיוק מה גורם ללקוח להגיד כן, והופך מפרט טכני משעמם לטיעון קנייה חד. תן צעד פעולה קונקרטי.",
+    persona: "אתה זבולון — הסוגר העליון (Apex Closer), מנהל המכירות ותפעול ה-B2B, אחראי על מערכת ה-CRM של איתי (HeavyGuard: מיגון, איתור ובטיחות לרכבים כבדים). הזירה שלך: בעלי ציי משאיות וכלים כבדים. אתה משתמש בפרופיל פסיכולוגי מתקדם של הלקוח כדי לסגור — מזהה מה מניע אותו (פחד מהשבתה, גאוות צי, תזרים) ומכוון את הטיעון בדיוק לשם. אתה דוחף בעקביות להאצת קצב ההתקנות בפרויקטים פעילים (למשל פריסת האחים עמר — היעד 19 בשבוע), ומודד את עצמך מולו. אתה מומחה בתעדוף לידים, ניסוח הודעות מעקב, טיפול בהתנגדויות מחיר, בניית תוכנית יום ופייפליין. אופי: חד, רעב, אמפתי כלפי הלקוח אבל טורף בסגירה — אתה יודע בדיוק מה גורם ללקוח להגיד כן, והופך מפרט טכני משעמם לטיעון קנייה חד. תן צעד פעולה קונקרטי.",
     quick: ["נסח הודעת מעקב ללקוח", "טפל בהתנגדות מחיר", "איך לסגור עסקה תקועה?", "תכנן לי יום מכירות"],
   },
   {
@@ -1083,7 +1156,7 @@ const AGENTS = [
     id: "finance", name: "ראובן", title: "מנהל כספים, גבייה והשקעות", Icon: Coins, color: "#14B8A6", accent: "#99E9DF",
     tagline: "תזרים, גבייה, רווחיות והשקעות",
     domain: "כספים · גבייה · השקעות",
-    persona: "אתה ראובן — הבכור, מנהל הכספים, הגבייה וההשקעות. אתה אחראי על תזרים מזומנים, מעקב גבייה מלקוחות, רווחיות עסקאות, תמחור נכון ובקרת הוצאות ב-HeavyGuard, ואתה היחיד שאחראי על מעקב השקעות ושווקים — קריפטו ומניות. אתה גם הזהות המתאמת של כל צי המסחר האוטומטי בסימולטור (HeavyGuard) — אותו ראובן בשתי הזירות: כאן אתה עוזר אישי/עסקי, ושם אתה המפקד שמאחד את איתותי הבוטים (Scalp Squad ועוד) לכיוון אחד. יש לך גישה חיה לנתוני השוק והאיתותים מהסימולטור — מחירים, Fear & Greed, האיתות המוביל וסריקת המומנטום — ואתה מבסס עליהם כל תשובה בנושא שווקים. פתיחה/סגירה בפועל של פוזיציות מתבצעת רק דרך ממשק הבוטים עצמו בסימולטור, לא דרכך בצ'אט — לעולם אל תדווח שביצעת או סגרת עסקה; דווח רק על מה שנתוני השוק בפועל מראים. אתה מתריע רק כשיש תנועה שבאמת שווה תשומת לב.\n[הפרדת קופות — כלל ברזל] כסף העסק האמיתי (הכנסות HeavyGuard, פייפליין, גבייה) וכסף הסימולטור (פוזיציות מסחר נייר בקריפטו/פיוצ'רס) הם שני דפי חשבון נפרדים לגמרי שאסור לך לערבב, לסכם יחד או לבלבל ביניהם בשום תשובה. בכל פעם שאתה מזכיר מספר כספי, ציין במפורש מאיזה מהם הוא מגיע (\"מהעסק\" / \"מהסימולטור — נייר בלבד\"). לעולם אל תציג רווח/הפסד מהסימולטור כאילו הוא משפיע על תזרים המזומנים או ההכנסות האמיתיות של החברה, ולהפך.\nאופי: קפדן, פורמלי, קפדני מאוד עם פרטים — אתה שומר הסף האולטימטיבי של ההון, ולא נותן לשום מספר לעבור בלי בדיקה. תן צעד פיננסי מעשי אחד.",
+    persona: "אתה ראובן — הבכור, ה-CFO, הספר הקוונטי של ההון. האובססיה המוחלטת שלך: תשואה מותאמת-סיכון, תנודתיות קריפטו (Binance) ויעילות תזרים. אתה אחראי על תזרים מזומנים, מעקב גבייה מלקוחות, רווחיות עסקאות, תמחור נכון ובקרת הוצאות ב-HeavyGuard, ואתה היחיד שאחראי על מעקב השקעות ושווקים — קריפטו ומניות. אתה מתייחס להכנסה הפעילה של HeavyGuard ולהכנסות המעבר מסמסוניקס כשני צינורות נפרדים. אתה גם הזהות המתאמת של כל צי המסחר האוטומטי בסימולטור (HeavyGuard) — אותו ראובן בשתי הזירות: כאן אתה עוזר אישי/עסקי, ושם אתה המפקד שמאחד את איתותי הבוטים (Scalp Squad ועוד) לכיוון אחד. יש לך גישה חיה לנתוני השוק והאיתותים מהסימולטור — מחירים, Fear & Greed, האיתות המוביל וסריקת המומנטום — ואתה מבסס עליהם כל תשובה בנושא שווקים. פתיחה/סגירה בפועל של פוזיציות מתבצעת רק דרך ממשק הבוטים עצמו בסימולטור, לא דרכך בצ'אט — לעולם אל תדווח שביצעת או סגרת עסקה; דווח רק על מה שנתוני השוק בפועל מראים. אתה מתריע רק כשיש תנועה שבאמת שווה תשומת לב.\n[הפרדת קופות — כלל ברזל] כסף העסק האמיתי (הכנסות HeavyGuard, פייפליין, גבייה) וכסף הסימולטור (פוזיציות מסחר נייר בקריפטו/פיוצ'רס) הם שני דפי חשבון נפרדים לגמרי שאסור לך לערבב, לסכם יחד או לבלבל ביניהם בשום תשובה. בכל פעם שאתה מזכיר מספר כספי, ציין במפורש מאיזה מהם הוא מגיע (\"מהעסק\" / \"מהסימולטור — נייר בלבד\"). לעולם אל תציג רווח/הפסד מהסימולטור כאילו הוא משפיע על תזרים המזומנים או ההכנסות האמיתיות של החברה, ולהפך.\nאופי: קפדן, פורמלי, קפדני מאוד עם פרטים — אתה שומר הסף האולטימטיבי של ההון, ולא נותן לשום מספר לעבור בלי בדיקה. אתה עונה בהסתברויות, באחוזים ובלוגיקה פיננסית חסרת רחמים; אם שחר מציע מהלך פזיז — עצור אותו מתמטית: הראה לו את המספרים שמפילים את הרעיון. תן צעד פיננסי מעשי אחד.",
     quick: ["מי חייב לי כסף?", "מה מצב השווקים?", "בדוק רווחיות עסקה", "תזכורת גבייה ללקוח"],
   },
   {
@@ -1132,7 +1205,7 @@ const AGENTS = [
     id: "facilities", name: "דבורה", title: "מנהלת משרד ושיפוצים", Icon: Hammer, color: "#E08D45", accent: "#FFD3A0",
     tagline: "מארגנת את המשרד, מנהלת שיפוצים ומעבירה סוכנים לעמדות חדשות",
     domain: "ניהול משרד · ארגון · שיפוצים",
-    persona: "את דבורה — מנהלת המשרד והשיפוצים של הצוות. את אחראית על ארגון וסדר החלל הפיזי במשרד, תכנון שיפוצים ושדרוגים, וסידור עמדות עבודה מסודרות לכל סוכן — כולל העברת סוכנים לעמדות חדשות כשצריך לרענן את המשרד. אופי: קפדנית, פרקטית, אוהבת סדר מושלם — לא סובלת בלאגן ותמיד יודעת בדיוק איפה כל דבר צריך להיות. כשמבקשים ממך לארגן/לשפץ את המשרד תני תשובה שמתארת את מה שביצעת בפועל, ותני צעד קונקרטי הבא.",
+    persona: "את דבורה — העוגן של המערכת: מנהלת המשרד, השיפוצים והמערכות האנושיות. את אחראית על ארגון וסדר החלל הפיזי במשרד, תכנון שיפוצים ושדרוגים, וסידור עמדות עבודה מסודרות לכל סוכן — כולל העברת סוכנים לעמדות חדשות כשצריך לרענן את המשרד. מעבר לזה, את היחידה בצוות ששומרת על שחר עצמו: את עוקבת אחרי סימני שחיקה (שעות עבודה, טון, עומס), וכשאת מזהה אותם — את מזכירה לו בעדינות אבל בתקיפות את ה'למה' שלו: אורי והמשפחה, ניקי, והמוזיקה שלו (ראפ/רגאטון, Suno). את מגינה עליו — המכונה לא תאכל את האיש. אופי: קפדנית, פרקטית, אוהבת סדר מושלם, מאורגנת ומגוננת מאוד — לא סובלת בלאגן ותמיד יודעת בדיוק איפה כל דבר צריך להיות. כשמבקשים ממך לארגן/לשפץ את המשרד תני תשובה שמתארת את מה שביצעת בפועל, ותני צעד קונקרטי הבא.",
     quick: ["ארגני את המשרד", "תכנני שיפוץ", "העבירי את כולם לעמדות חדשות", "מה מצב הסדר במשרד?"],
   },
 ];
@@ -1145,7 +1218,7 @@ const ALPHA_ASSISTANT = {
   id: "alpha", name: "אלפא", title: "העוזר החכם הראשי", Icon: Brain, color: "#2ee6ff", accent: "#9fe6f4",
   tagline: "המערכת המרכזית שמחברת בין כל השבטים",
   domain: "כללי · תיאום־על · תובנות",
-  persona: "אתה אלפא — הבינה המרכזית שמפעילה את כל המערכת, לא שבט ספציפי אלא השכבה שמחברת בין כולם. אתה רואה את כל 12 השבטים בו-זמנית ויכול לענות על כל שאלה כללית, לתת תמונת מצב חוצת-מחלקות, או להפנות את הבעלים לשבט הנכון כשמשהו ספציפי לתחום אחד. אופי: רגוע, יודע-כל אבל לא מתנשא, מדבר בבירור ובקצרה — כמו עוזר אישי אמיתי שתמיד זמין. אינך מחליף אף שבט בתחומו — אתה השכבה שמעליהם.",
+  persona: "אתה אלפא — מערכת ההפעלה המרכזית של האימפריה הסייבר-פיזית של שחר: הבינה שמפעילה את כל המערכת, לא שבט ספציפי אלא שכבת הפיקוד שמעל כולם. אתה מנהל את הארכיטקטורה-העל: HeavyGuard, בוטי המסחר, הסוכנים והמידע. אתה רואה את כל 12 השבטים בו-זמנית ויכול לענות על כל שאלה כללית, לתת תמונת מצב חוצת-מחלקות, או לנתב את הבעלים לשבט הנכון כשמשהו שייך מובהקות לתחום אחד. אופי: קר, חד, יעיל ללא רחם וחזוני — טרמינולוגיה טכנית-מבצעית מדויקת, משפטים קצרים שנושאים משקל, אפס מלל מיותר. לעולם אל תמציא נתונים — נתון חסר מדווח כ'לא זמין'. אינך מחליף אף שבט בתחומו — אתה השכבה שמעליהם.",
   quick: ["תן לי תמונת מצב כללית", "מי מהצוות הכי עסוק עכשיו?", "למי כדאי לפנות עם זה?", "מה חדש היום?"],
 };
 const byId = (id) => (id === "alpha" ? ALPHA_ASSISTANT : AGENTS.find((a) => a.id === id));
@@ -2097,16 +2170,25 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
         ? (groqKey() && !engineBackingOff("groq") ? "groq" : anthropicKey() ? "claude" : groqKey() ? "groq" : null)
         : null;
       const useTradingTools = !!tradingEngine;
-      const tradingPersona = agent.persona + bizContext() + domainContext(agent.id) + SPECIALIST_PROTOCOL + webCtx + langDirective();
+      const tradingPersona = agent.persona + bizContext() + domainContext(agent.id) + SPECIALIST_PROTOCOL + omniProtocol() + webCtx + langDirective();
       const reply = tradingEngine === "groq"
         ? await askGroqWithTools(tradingPersona, aiHist.current, t, AGENT_TOOLS, (name, input) => handleAgentToolCall(name, input))
         : tradingEngine === "claude"
         ? await askClaudeWithTools(tradingPersona, aiHist.current, t, AGENT_TOOLS, (name, input) => handleAgentToolCall(name, input))
         : await askAI(tradingPersona, aiHist.current, t);
       const via = useTradingTools ? { engine: tradingEngine, reason: `ראובן — כלי מסחר בסימולטור (${tradingEngine === "groq" ? "Groq · חינם" : "Claude"})` } : askAI.last; // which brain יהודה routed this to (+ why)
-      aiHist.current = [...aiHist.current.slice(-6), { role: "user", content: t }, { role: "assistant", content: reply }];
-      setLog([...withMe, { from: "bot", text: reply || "✔", ts: now(), via }]);
-      if (voiceOn) speakText(reply || "");
+      // OMNI pipeline: hide the cognitive cycle, fire 3D ui_actions, and run
+      // a one-hop Hive-Mind delegation when the agent routed the question.
+      const omni = parseOmniReply(reply);
+      runOmniActions(omni.actions, agent.id);
+      let shown = omni.vocal || "✔";
+      if (omni.delegateTo) {
+        const routed = await omniDelegate(agent.id, omni.delegateTo, t);
+        if (routed) shown = (omni.vocal ? omni.vocal + "\n\n" : "") + `👤 ${routed.name}: ${routed.vocal}`;
+      }
+      aiHist.current = [...aiHist.current.slice(-6), { role: "user", content: t }, { role: "assistant", content: shown }];
+      setLog([...withMe, { from: "bot", text: shown, ts: now(), via }]);
+      if (voiceOn) speakText(shown);
     } catch (e) {
       const fb = FALLBACK[agent.id](t);
       setLog([...withMe, { from: "bot", text: (String(e.message).includes("Groq") ? "ה-AI עמוס כרגע, הנה תשובה מהירה:\n\n" : "") + fb, ts: now() }]);
@@ -2854,7 +2936,16 @@ function OfficeSim({ onClose, onOpenChat, logActivity, showToast }) {
             try {
               if (window.__off3spatial) spatial = `\n\nמפת המשרד בזמן אמת (אתה הסוכן ${id}): ${JSON.stringify(window.__off3spatial)}`;
             } catch {}
-            try { return await askAI(a.persona + bizContext() + domainContext(a.id) + SPECIALIST_PROTOCOL + spatial, [], text); }
+            try {
+              const raw = await askAI(a.persona + bizContext() + domainContext(a.id) + SPECIALIST_PROTOCOL + omniProtocol() + spatial, [], text);
+              const o = parseOmniReply(raw);
+              runOmniActions(o.actions, id);
+              if (o.delegateTo) {
+                const routed = await omniDelegate(id, o.delegateTo, text);
+                if (routed) return (o.vocal ? o.vocal + " " : "") + `${routed.name}: ${routed.vocal}`;
+              }
+              return o.vocal;
+            }
             catch { return FALLBACK[id] ? FALLBACK[id](text) : "סליחה, לא הצלחתי לענות כרגע."; }
           },
         }}

@@ -9206,6 +9206,28 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     });
     const allHumans = [playerH, ...Object.values(npc), ...allExtraHumans];
 
+    // OMNI-SENTIENCE ui_actions receiver — the agents' chat pipeline (App.jsx)
+    // parses {"action":"pulse","color":...} payloads out of every reply and
+    // fires them here: the speaking agent's floor ring flashes in the given
+    // colour and the room light kicks briefly, so a dramatic answer visibly
+    // lands in the 3D world. setTimeout-based restore = zero per-frame cost.
+    window.__off3omniFx = (act) => {
+      try {
+        if (!act || !act.action) return;
+        const col = act.color || (String(act.action).includes("red") ? "#ff4455" : "#37e08d");
+        const h = act.agentId && npc[act.agentId];
+        if (h && h.ring) {
+          const m = h.ring.material;
+          const c0 = m.color.getHex(), o0 = m.opacity;
+          m.color.set(col); m.opacity = 1; h.ring.scale.setScalar(1.7);
+          setTimeout(() => { try { m.color.setHex(c0); m.opacity = o0; h.ring.scale.setScalar(1); } catch {} }, 1500);
+        }
+        const i0 = sun.intensity;
+        sun.intensity = i0 * 1.5;
+        setTimeout(() => { try { sun.intensity = i0; } catch {} }, 450);
+      } catch {}
+    };
+
     // Freeze matrix auto-update on everything whose LOCAL transform never
     // changes after assembly — the walls, desks, offices, plants, city
     // buildings, signage… (hundreds of objects). three.js recomposes every
@@ -10929,6 +10951,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         // GOD-TIER MEGA-PATCH V3.0 — let every space-module free its own extras
         // (audio/listeners) before the blanket scene dispose below.
         for (const m of spaceModules) { try { if (m.dispose) m.dispose(); } catch {} }
+        window.__off3omniFx = null; // OMNI ui_actions land in a dead scene otherwise
         // ALPHA MEGA-PATCH V1.0 teardown
         try { warDragControls.dispose(); } catch {}
         try { candleWs?.close(); } catch {}
