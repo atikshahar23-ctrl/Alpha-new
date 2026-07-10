@@ -1200,7 +1200,8 @@ export function mountApp(root: HTMLElement) {
     $('micBtn').classList.toggle('on', s !== '' && voice.wakeOn);
   }
 
-  const voice = new VoiceEngine(state, (text) => { addMsg(text, 'me'); ask(text); }, setStatus);
+  const voice = new VoiceEngine(state, (text) => { clearInterim(); addMsg(text, 'me'); ask(text); }, setStatus);
+  voice.onInterim = (text) => showInterim(text);
 
   function updateCalBadge() {
     const events = loadEvents();
@@ -1356,6 +1357,29 @@ export function mountApp(root: HTMLElement) {
   (window as any).runScreenVision = runScreenVision;
 
   let typingTurn: HTMLElement | null = null;
+
+  // Live interim transcript — a provisional "me" bubble that updates in real
+  // time as the mic hears words, then is replaced by the finalized message.
+  // Kills the old ~2s dead air where nothing appeared until the endpoint flush.
+  let liveUserTurn: HTMLElement | null = null;
+  function showInterim(text: string) {
+    if (!text) return;
+    const chatEl = $('chat');
+    if (!chatEl) return;
+    if (!liveUserTurn) {
+      liveUserTurn = document.createElement('div');
+      liveUserTurn.className = 'turn me interim-turn';
+      liveUserTurn.style.opacity = '0.55';
+      liveUserTurn.innerHTML = `<span class="who">${t('you', state.uiLang)}</span><div class="txt"></div>`;
+      chatEl.appendChild(liveUserTurn);
+    }
+    const txt = liveUserTurn.querySelector<HTMLElement>('.txt');
+    if (txt) txt.textContent = text;
+    chatEl.scrollTop = chatEl.scrollHeight;
+  }
+  function clearInterim() {
+    if (liveUserTurn) { liveUserTurn.remove(); liveUserTurn = null; }
+  }
 
   function showTypingIndicator() {
     const chatEl = $('chat');
@@ -2018,12 +2042,33 @@ export function mountApp(root: HTMLElement) {
         toastInfo(state.uiLang === 'he' ? '💾 נשמר בזיכרון' : '💾 Saved to memory', c);
       }
     } catch {}
+    // Early TTS: start SPEAKING each sentence the moment it's complete in the
+    // stream, instead of waiting for the whole reply — the assistant is heard
+    // from its first sentence. Created lazily on the first real sentence so a
+    // request that errors before any output never strands a speaker; hoisted
+    // here so the catch can still close it. spokenLen tracks queued chars.
+    let speaker: ReturnType<typeof voice.beginSpeak> | null = null;
+    let spokenLen = 0;
     try {
       // Stream tokens into a live bubble (real TTFT). runTags runs on the full
       // reply at the end for side-effects; tags are hidden during streaming.
       const stream = beginStreamMsg();
+      const speakReady = (disp: string) => {
+        const rest = disp.slice(spokenLen);
+        // Match complete sentences (end punctuation, incl. Hebrew/EN, or newline).
+        const re = /[\s\S]*?[.!?…\n]+(?=\s|$)/g;
+        let m: RegExpExecArray | null, consumed = 0;
+        while ((m = re.exec(rest)) !== null) {
+          const s = m[0].trim();
+          if (s) { if (!speaker) speaker = voice.beginSpeak(); speaker.push(s); }
+          consumed = re.lastIndex;
+        }
+        spokenLen += consumed;
+      };
       const reply = await askAIStream(state, text, (full) => {
-        stream.update(stripTagsForDisplay(full));
+        const disp = stripTagsForDisplay(full);
+        stream.update(disp);
+        speakReady(disp);
       });
       const clean = runTags(reply, {
         onVideo: openVideo, onSearch: openWebSearch, onCalendar: openCalendar,
@@ -2091,11 +2136,19 @@ export function mountApp(root: HTMLElement) {
       audio.receive();
       orb.pikaEmote(Math.random() < 0.65 ? 'happy' : 'excited');
       stream.finalize(clean || 'Done.');
-      voice.speak(clean || 'Done.');
+      // Speak any trailing sentence the stream loop didn't reach (no terminal
+      // punctuation), then close the streaming speaker so the mic re-arms. If
+      // nothing streamed at all (empty reply), fall back to speaking 'Done.'.
+      const finalDisp = stripTagsForDisplay(reply);
+      const tail = finalDisp.slice(spokenLen).trim();
+      if (tail) { if (!speaker) speaker = voice.beginSpeak(); speaker.push(tail); }
+      else if (spokenLen === 0) { speaker = voice.beginSpeak(); speaker.push(clean || 'Done.'); }
+      if (speaker) speaker.end(); else voice.speak(clean || 'Done.');
       try { reflectOnReply(clean); } catch {}   // self-check any code it produced
       try { refreshSummary(state.history); } catch {}
     } catch (err: any) {
       removeTypingIndicator();
+      try { speaker?.end(); } catch {}   // close any streaming speaker so it can't strand the mic
       orb.pikaEmote('sad');
       if (voice.wakeOn) setTimeout(() => voice.setWake(true), 500);
       else setStatus('');

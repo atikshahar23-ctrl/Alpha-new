@@ -16,6 +16,10 @@ export class VoiceEngine {
   private state: AppState;
   private onTranscript: (text: string) => void;
   private onStateChange: (s: 'armed' | 'listening' | 'thinking' | 'speaking' | '') => void;
+  // Optional live-transcript sink — fired with the growing text WHILE the user
+  // is still speaking (interim results), so the UI can show what was heard
+  // instantly instead of only after the endpoint silence flush. Set by app.ts.
+  onInterim: ((text: string) => void) | null = null;
   private recRetries = 0;
   private noiseStream: MediaStream | null = null;
   private noiseCtx: AudioContext | null = null;
@@ -60,6 +64,13 @@ export class VoiceEngine {
           }
         }
         if (interim && this.commandMode) this.onStateChange('listening');
+        // Surface the live transcript (finalized-so-far + current interim) the
+        // instant it's heard, so the user sees their words appear in real time
+        // rather than waiting for the endpoint-silence flush.
+        if (this.commandMode && this.onInterim) {
+          const live = (this.speechBuffer + ' ' + interim).trim();
+          if (live) this.onInterim(this.dedupe(live));
+        }
         if (interim) this.resetSilenceTimer();
       };
       this.rec.onend = () => {
@@ -153,11 +164,15 @@ export class VoiceEngine {
   private resetSilenceTimer() {
     clearTimeout(this.silenceTimer);
     if (this.commandMode) {
+      // Endpoint silence: how long to wait after the user stops before firing
+      // the command. Was 2000ms, which added a full ~2s of dead air before the
+      // transcript showed and the request even started — snappier at 900ms
+      // while still tolerating a natural mid-sentence breath.
       this.silenceTimer = window.setTimeout(() => {
         if (this.speechBuffer.trim()) {
           this.flushBuffer();
         }
-      }, 2000);
+      }, 900);
     }
   }
 
@@ -336,16 +351,9 @@ export class VoiceEngine {
     this.suppress = false;
   }
 
-  speak(text: string) {
-    if (!this.state.voiceOn || !this.state.autoSpeak || !('speechSynthesis' in window)) {
-      if (this.wakeOn) this.enterCommandMode();
-      else this.onStateChange('');
-      return;
-    }
-    speechSynthesis.cancel();
-    if (!this.chosenVoice && this.voices.length === 0) {
-      this.loadVoices();
-    }
+  // Build a configured utterance with the user's voice/rate/pitch/volume plus
+  // the calm-professional prosody bias. Shared by speak() and beginSpeak().
+  private makeUtterance(text: string): SpeechSynthesisUtterance {
     const u = new SpeechSynthesisUtterance(text);
     if (this.chosenVoice) { u.voice = this.chosenVoice; u.lang = this.chosenVoice.lang; }
     else u.lang = this.state.replyLang === 'he' ? 'he-IL' : this.state.replyLang === 'es' ? 'es-ES' : 'en-US';
@@ -358,6 +366,20 @@ export class VoiceEngine {
     u.rate = (this.state.voiceSpeed || 1.0) * (cv?.rate ?? 1) * calmBias.rate;
     u.pitch = Math.max(0, Math.min(2, (this.state.voicePitch != null ? this.state.voicePitch : 1.0) * (cv?.pitch ?? 1) * calmBias.pitch));
     u.volume = this.state.voiceVolume != null ? this.state.voiceVolume : 1.0;
+    return u;
+  }
+
+  speak(text: string) {
+    if (!this.state.voiceOn || !this.state.autoSpeak || !('speechSynthesis' in window)) {
+      if (this.wakeOn) this.enterCommandMode();
+      else this.onStateChange('');
+      return;
+    }
+    speechSynthesis.cancel();
+    if (!this.chosenVoice && this.voices.length === 0) {
+      this.loadVoices();
+    }
+    const u = this.makeUtterance(text);
     let finished = false;
     const done = () => {
       if (finished) return;
@@ -375,6 +397,49 @@ export class VoiceEngine {
     u.onerror = () => done();
     speechSynthesis.speak(u);
     setTimeout(() => { if (!finished) { speechSynthesis.cancel(); done(); } }, 30000);
+  }
+
+  // Streaming TTS: speak the reply sentence-by-sentence AS it's generated, so
+  // the assistant is heard starting from its first sentence instead of only
+  // after the whole response finishes. push() queues a chunk (native
+  // SpeechSynthesis queuing plays them back-to-back); end() marks the reply
+  // complete so the mic re-arms once the last chunk finishes. Mirrors speak()'s
+  // suppress/stopRec/re-arm lifecycle exactly, just spread across N utterances.
+  beginSpeak(): { push: (text: string) => void; end: () => void } {
+    if (!this.state.voiceOn || !this.state.autoSpeak || !('speechSynthesis' in window)) {
+      return { push: () => {}, end: () => { if (this.wakeOn) this.enterCommandMode(); else this.onStateChange(''); } };
+    }
+    speechSynthesis.cancel();
+    if (!this.chosenVoice && this.voices.length === 0) this.loadVoices();
+    let started = false, ended = false, pending = 0, spokenAny = false, finishedOnce = false;
+    let guard = 0;
+    const finish = () => {
+      if (finishedOnce || !ended || pending > 0) return;
+      finishedOnce = true;
+      clearTimeout(guard);
+      this.suppress = false;
+      if (this.wakeOn) { setTimeout(() => this.startRec(), 250); this.enterCommandMode(); }
+      else this.onStateChange('');
+    };
+    // Safety: never strand the mic suppressed if the engine drops an end event.
+    guard = window.setTimeout(() => { ended = true; pending = 0; finish(); }, 45000);
+    return {
+      push: (text: string) => {
+        const tx = (text || '').trim();
+        if (!tx || finishedOnce) return;
+        spokenAny = true; pending++;
+        const u = this.makeUtterance(tx);
+        u.onstart = () => { if (!started) { started = true; this.suppress = true; this.stopRec(); this.onStateChange('speaking'); } };
+        u.onend = () => { pending--; finish(); };
+        u.onerror = () => { pending--; finish(); };
+        speechSynthesis.speak(u);
+      },
+      end: () => {
+        ended = true;
+        if (!spokenAny) { clearTimeout(guard); if (this.wakeOn) this.enterCommandMode(); else this.onStateChange(''); }
+        else finish();
+      },
+    };
   }
 
   // Speak a sample immediately for previewing voice settings — bypasses the
