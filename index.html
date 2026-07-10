@@ -224,6 +224,18 @@
       // double-load, never an intentional revisit. A deliberate reload later
       // still shows the intro.
       if(window.__alphaIntro){ return; } window.__alphaIntro=true;
+      // ── Per-session boot gate ──────────────────────────────────────────────
+      // The boot animation + startup chime play ONLY on the first open of the
+      // app session. Opening a sub-app (Heavy Guard / agents) and coming back
+      // reloads index.html, which used to replay the whole veil + sound every
+      // single time. sessionStorage persists across those same-tab navigations
+      // but is cleared when the app is fully closed — so a return within the
+      // same session reveals instantly and silently (no chime, no re-init
+      // theatre), exactly "boot once until you fully close the main app".
+      var __sessBooted=false;
+      try{ __sessBooted=sessionStorage.getItem('alpha_session_booted')==='1'; }catch(e){}
+      try{ sessionStorage.setItem('alpha_session_booted','1'); }catch(e){}
+      if(__sessBooted){ ov.parentNode&&ov.parentNode.removeChild(ov); showFastBoot(true); return; }
       // Show the big cinematic AT MOST ONCE PER DAY — the first open of the
       // day gets the full intro, every open after that (same day, new sessions
       // included) skips straight to the fast branded loading veil. This is the
@@ -245,9 +257,9 @@
         }
         localStorage.setItem('alpha_intro_day',introDay);
       }catch(e){}
-      function showFastBoot(){
+      function showFastBoot(silent){
         document.documentElement.classList.add('booting');
-        openSound(); // startup chime on the fast (daily) path too — was silent before
+        if(!silent) openSound(); // startup chime on the fast (daily) path; skipped on silent same-session returns
         var veil=document.createElement('div');
         veil.id='fastBootVeil';
         veil.innerHTML='<div class="fb-logo-wrap"><img src="%BASE_URL%heavyguard-logo.png" class="fb-logo" alt="" /><div class="fb-scan"></div></div>'+
