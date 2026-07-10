@@ -7739,7 +7739,6 @@ export function mountApp(root: HTMLElement) {
     ind.innerHTML = '☁ <span id="cloudStatus">לא מחובר</span>';
     ind.onclick = async () => {
       if (!puterSync.isSignedIn()) {
-        sessionStorage.removeItem(LOGIN_SKIP_KEY);
         showLoginScreen();
         return;
       }
@@ -7761,7 +7760,6 @@ export function mountApp(root: HTMLElement) {
           const reconnect = confirm(`הסנכרון לענן ממשיך להיכשל (${puterSync.getLastSyncError()}). לרוב זה קורה כשההתחברות פגה. להתחבר מחדש עכשיו?`);
           if (reconnect) {
             await puterSync.signOut();
-            sessionStorage.removeItem(LOGIN_SKIP_KEY);
             await showLoginScreen();
             return;
           }
@@ -7802,9 +7800,10 @@ export function mountApp(root: HTMLElement) {
     }
   }
 
-  // ── Login screen — shown on first open or when signed out ──
-  // Uses sessionStorage so "skip" only lasts for the current browser session.
-  const LOGIN_SKIP_KEY = 'alpha_login_skipped_session';
+  // ── Login screen — private app: Google sign-in is mandatory, there is no
+  // "continue without account" path. The overlay only resolves once the user
+  // is signed in (access itself is restricted to the owner's Google account by
+  // the OAuth consent screen's test-user list). ──
   async function showLoginScreen(): Promise<void> {
     return new Promise((resolve) => {
       const ov = document.createElement('div');
@@ -7863,18 +7862,16 @@ export function mountApp(root: HTMLElement) {
             </div>
           </div>
 
-          <button id="loginSkipBtn" style="
-            background:none;border:none;color:rgba(255,255,255,.3);
-            font-size:12px;cursor:pointer;padding:8px;text-decoration:underline
-          ">המשך ללא חשבון</button>
+          <p style="font-size:11px;color:rgba(255,255,255,.28);margin:6px 0 0;line-height:1.6">
+            🔒 אפליקציה פרטית — הגישה דרך חשבון Google המורשה בלבד.
+          </p>
         </div>`;
 
       document.body.appendChild(ov);
 
-      const dismiss = (synced: boolean) => {
+      const dismiss = () => {
         ov.style.opacity = '0';
         setTimeout(() => { ov.remove(); resolve(); updateCloudIndicator(); }, 500);
-        if (synced) sessionStorage.removeItem(LOGIN_SKIP_KEY);
       };
 
       // Client-ID escape hatch — shows the ID the app is actually sending
@@ -7906,7 +7903,7 @@ export function mountApp(root: HTMLElement) {
         if (!ok) {
           btn.disabled = false;
           btn.style.opacity = '1';
-          status.textContent = 'ההתחברות לא הושלמה. בדוק שה-Client ID תקין ורשום ב-Google Cloud, או המשך ללא חשבון.';
+          status.textContent = 'ההתחברות לא הושלמה. בדוק שה-Client ID תקין ורשום ב-Google Cloud ונסה שוב.';
           cidBox.style.display = 'block'; // surface the fixer so the user isn't stuck
           return;
         }
@@ -7916,18 +7913,13 @@ export function mountApp(root: HTMLElement) {
           const r = await puterSync.syncFromCloud(m => { status.textContent = m; });
           if (r.ok && (r.tables ?? 0) > 0) {
             status.textContent = `✓ שוחזרו ${r.tables} טבלאות`;
-            setTimeout(() => dismiss(true), 900);
+            setTimeout(() => dismiss(), 900);
             setTimeout(() => location.reload(), 1500);
             return;
           }
         }
         status.textContent = '✓ מחובר — הנתונים יסתנכרנו אוטומטית';
-        setTimeout(() => dismiss(true), 800);
-      };
-
-      (ov.querySelector('#loginSkipBtn') as HTMLButtonElement).onclick = () => {
-        sessionStorage.setItem(LOGIN_SKIP_KEY, '1');
-        dismiss(false);
+        setTimeout(() => dismiss(), 800);
       };
     });
   }
@@ -7939,11 +7931,10 @@ export function mountApp(root: HTMLElement) {
     updateCloudIndicator();
 
     if (puterReady) {
-      if (!puterSync.isSignedIn()) {
-        const skippedThisSession = !!sessionStorage.getItem(LOGIN_SKIP_KEY);
-        if (!skippedThisSession) {
-          await showLoginScreen();
-        }
+      // Locked app — Google sign-in is required to get in. Keep showing the
+      // login gate until the user is actually signed in; there is no skip.
+      while (!puterSync.isSignedIn()) {
+        await showLoginScreen();
       }
 
       if (puterSync.isSignedIn()) {
