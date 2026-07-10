@@ -6331,23 +6331,22 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           undefined,
           () => { /* offline/blocked — keep the procedural skyline + lights */ }
         );
-    } else {
-      // CRITICAL for phones: the crew are METALLIC PBR robots, and a metal
-      // material with no scene.environment renders pure black — which is why
-      // "the models don't show on the phone". Mobile skips the 2K HDR download
-      // above, so give it a cheap procedural RoomEnvironment instead (no
-      // network, one fast PMREM prefilter) purely as an image-based light
-      // source so the metals actually catch light and the crew is visible.
-      try {
-        const pmrem = new THREE.PMREMGenerator(renderer);
-        const roomEnv = new RoomEnvironment();
-        scene.environment = pmrem.fromScene(roomEnv, 0.04).texture;
-        // Half strength so the metals catch light (crew visible) without
-        // washing out the deep-space "night" mood the deck is going for.
-        scene.environmentIntensity = 0.72;
-        if (roomEnv.dispose) roomEnv.dispose();
-        pmrem.dispose();
-      } catch (e) { /* keep the procedural lights as the fallback */ }
+    }
+    // NOTE: phones deliberately get NO scene.environment. The PMREM/RoomEnvironment
+    // IBL we used to set here was the real reason "nothing shows on the phone":
+    // the half-float PMREM env map breaks the PBR shader on many mobile GPUs, so
+    // EVERY MeshStandard/MeshPhysical surface (floor, walls, pods, the whole crew)
+    // rendered invisible while only unlit neon/holograms drew. Without it the PBR
+    // shaders compile and render normally; the metalness reduction below keeps the
+    // metals lit by the regular lights instead of going black.
+    if (isMobile) {
+      const deMetal = (tpl) => tpl && tpl.traverse((o) => {
+        if (!o.material) return;
+        (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => {
+          if (m && "metalness" in m) { m.metalness = Math.min(m.metalness ?? 1, 0.2); m.envMapIntensity = 0; m.needsUpdate = true; }
+        });
+      });
+      deMetal(charTemplate); deMetal(robotTemplate); deMetal(sophiaTemplate);
     }
 
     // Sky/ground hemisphere fill for a soft, realistic ambient gradient, on
@@ -6366,7 +6365,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // that bloom blew the whole scene into a white haze ("everything too glowing").
     // Character visibility is carried by the crew/player EMISSIVE glow instead, so
     // the room can stay moody-dark without anyone going invisible.
-    const LIGHT_MOBILE_MUL = isMobile ? 1.12 : 1;
+    const LIGHT_MOBILE_MUL = isMobile ? 1.4 : 1;
     const sun = new THREE.DirectionalLight(0xfff2df, 1.25);
     sun.position.set(9, 14, 6);
     sun.castShadow = !isMobile;
@@ -6432,7 +6431,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         // them black"). Matte, opaque, near-zero reflection so it never mirrors
         // the void and reads as a real black floor; the glowing cyan energy grid
         // laid over it still gives the surface structure so it's not a flat void.
-        map: floorTex, color: 0x323945, roughness: 0.88, metalness: 0.12,
+        map: floorTex, color: 0x424b59, roughness: 0.9, metalness: 0.08,
         clearcoat: 0.0, transparent: false, opacity: 1, envMapIntensity: 0.16,
       })
     );
