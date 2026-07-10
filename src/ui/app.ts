@@ -190,6 +190,10 @@ export function mountApp(root: HTMLElement) {
       <div class="char-ambient" id="charAmbient"></div>
       <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v198 ⚡</div></div></div>
       <div class="chrome topR">
+        <button class="chip apps-chip" id="appsBtn" title="האפליקציות שלי" aria-label="האפליקציות שלי">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="12" cy="19" r="2"/><circle cx="19" cy="19" r="2"/></svg>
+          <span>אפליקציות</span>
+        </button>
         <button class="chip ghost" id="panelsToggleBtn" title="הסתר/הצג פנלים" aria-label="הסתר פנלים">
           <svg class="pt-hide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
           <svg class="pt-show" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-7-11-7a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 7 11 7a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
@@ -206,6 +210,43 @@ export function mountApp(root: HTMLElement) {
         <button class="chip ghost" id="newChat"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> <span data-i18n="newChat">חדש</span></button>
       </div>
       <div class="stage" id="stage"></div>
+
+      <!-- Slide-out app drawer — quick links to all the owner's programs,
+           reachable from the clean phone view (the FAB/HUD shortcuts are
+           hidden there). Opened by #appsBtn in the top bar. -->
+      <div class="app-drawer-scrim" id="appDrawerScrim"></div>
+      <aside class="app-drawer" id="appDrawer" aria-hidden="true" aria-label="האפליקציות שלי">
+        <div class="ad-head">
+          <span>🚀 האפליקציות שלי</span>
+          <button class="ad-close" id="appDrawerClose" aria-label="סגור">✕</button>
+        </div>
+        <div class="ad-grid">
+          <a class="ad-item" href="https://heavt-guard-simulator-1.onrender.com/" target="_blank" rel="noopener">
+            <span class="ad-ic" style="--c:#F7C948"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg></span>
+            <b>מערכת מסחר</b><em>Trading · חי</em>
+          </a>
+          <a class="ad-item" href="${import.meta.env.BASE_URL}heavyguard.html">
+            <span class="ad-ic" style="--c:#4FD1C5"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></span>
+            <b>Heavy Guard</b><em>CRM · ניהול צי</em>
+          </a>
+          <a class="ad-item" href="${import.meta.env.BASE_URL}agents.html">
+            <span class="ad-ic" style="--c:#B794F4"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3.2"/><circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="5" cy="18" r="2"/><circle cx="19" cy="18" r="2"/><path d="M9.5 10.5 6.5 7.5M14.5 10.5l3-3M9.5 13.5l-3 3M14.5 13.5l3 3"/></svg></span>
+            <b>מרכז הסוכנים</b><em>Agents · המשרד החי</em>
+          </a>
+          <a class="ad-item" href="${import.meta.env.BASE_URL}heavyguard.html#marketing">
+            <span class="ad-ic" style="--c:#F687B3"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 11l19-9-9 19-2-8-8-2z"/></svg></span>
+            <b>שיווק</b><em>TikTok · Facebook</em>
+          </a>
+          <a class="ad-item" href="${import.meta.env.BASE_URL}gps.html">
+            <span class="ad-ic" style="--c:#63B3ED"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 10c0 6-9 12-9 12s-9-6-9-12a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg></span>
+            <b>GPS Tracker</b><em>מעקב נסיעות</em>
+          </a>
+          <a class="ad-item" href="${import.meta.env.BASE_URL}agent.html">
+            <span class="ad-ic" style="--c:#68D391"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg></span>
+            <b>עוזר CRM</b><em>הצעות מחיר · לקוחות</em>
+          </a>
+        </div>
+      </aside>
       <canvas id="bgfx" class="bgfx" aria-hidden="true"></canvas>
       <canvas id="charSwapFx" class="char-swap-fx"></canvas>
       <canvas id="attackFx" class="attack-fx"></canvas>
@@ -2235,6 +2276,27 @@ export function mountApp(root: HTMLElement) {
     applyPanelsHidden(hidden);
     try { navigator.vibrate?.(state.haptics ? 15 : 0); } catch {}
   };
+
+  // App drawer — slide-out launcher for the owner's programs.
+  {
+    const drawer = $('appDrawer');
+    const scrim = $('appDrawerScrim');
+    const openDrawer = () => {
+      appEl.classList.add('drawer-open');
+      drawer.setAttribute('aria-hidden', 'false');
+      try { navigator.vibrate?.(state.haptics ? 12 : 0); } catch {}
+    };
+    const closeDrawer = () => {
+      appEl.classList.remove('drawer-open');
+      drawer.setAttribute('aria-hidden', 'true');
+    };
+    $('appsBtn').onclick = openDrawer;
+    $('appDrawerClose').onclick = closeDrawer;
+    scrim.onclick = closeDrawer;
+    // Close after picking an app, and on Escape.
+    drawer.querySelectorAll('.ad-item').forEach((a) => a.addEventListener('click', () => setTimeout(closeDrawer, 120)));
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
+  }
 
   // "מסך נקי" — one click removes the central orb/character animation and
   // the animated backgrounds (flow-lines canvas, bgfx aurora, ambient
