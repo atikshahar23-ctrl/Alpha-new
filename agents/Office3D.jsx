@@ -8477,26 +8477,52 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     let drawOwnerTrades = () => {};
     let drawHangarCam = () => {};
     let ownerBizTex = null, ownerTradeTex = null, hangarCamTex = null, bizScreenCtx = null;
+    // Declared at this outer scope (not inside the block below) so the
+    // per-frame gaze-update loop in animate() can see it.
+    const smartGlassPanels = []; // { paneMat, edgeMat, contentMats[], gaze, pos }
     {
       const WALL_Z = FLOOR_D / 2 - 0.22;        // just inside the south hull wall
       const CX = OFFICE_ORIGIN.x + 0.5;          // centered on the desk's x
       const SY = 2.15, SW = 2.35, SH = 1.4;
       const GOLD = 0xC9A24B;
-      const bezelMat = new THREE.MeshStandardMaterial({ color: 0x0a0c12, roughness: 0.4, metalness: 0.6 });
       const trimMat = new THREE.MeshBasicMaterial({ color: GOLD });
+      // ── NEURAL-QUANTUM OVERRIDE · PHASE 1: Smart Glass ──────────────────
+      // Bezel-less holographic panes — near-invisible until the player looks
+      // straight at them (see the gaze-update loop below), then materialize
+      // with a cyan/magenta edge-glow. Desktop gets real MeshPhysicalMaterial
+      // transmission glass; mobile — where this session proved transmission/
+      // PBR materials render fully INVISIBLE on the owner's real device —
+      // gets a flat additive-blend MeshBasicMaterial fake-glass look instead
+      // (the same trick already proven safe under flat-materials mode), so
+      // "smart glass" can never regress into "actually invisible."
+      const buildSmartGlassPane = (w, h) => {
+        const paneMat = isMobile
+          ? new THREE.MeshBasicMaterial({ color: 0x0a1420, transparent: true, opacity: 0.07, blending: THREE.AdditiveBlending, depthWrite: false })
+          : new THREE.MeshPhysicalMaterial({ color: 0x0a1420, transmission: 0.92, roughness: 0.04, ior: 1.1, thickness: 0.05, transparent: true, opacity: 0.12 });
+        const pane = new THREE.Mesh(new THREE.PlaneGeometry(w, h), paneMat);
+        pane.position.z = -0.012;
+        const edgeMat = new THREE.LineBasicMaterial({ color: 0x2ee6ff, transparent: true, opacity: 0.3, toneMapped: false });
+        const edge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(w, h)), edgeMat);
+        edge.position.z = -0.006;
+        return { pane, edge, paneMat, edgeMat };
+      };
       const mkScreen = (x, tilt, tex) => {
         const grp = new THREE.Group();
         grp.position.set(x, SY, WALL_Z);
         grp.rotation.y = Math.PI + tilt;
-        const bez = new THREE.Mesh(new THREE.PlaneGeometry(SW + 0.16, SH + 0.16), bezelMat);
-        grp.add(bez);
+        const glass = buildSmartGlassPane(SW + 0.16, SH + 0.16);
+        grp.add(glass.pane, glass.edge);
         const trim = new THREE.Mesh(new THREE.PlaneGeometry(SW + 0.24, 0.045), trimMat);
         trim.position.y = (SH + 0.16) / 2 + 0.05; grp.add(trim);
+        const contentMats = [];
         if (tex) {
-          const scr = new THREE.Mesh(new THREE.PlaneGeometry(SW, SH), new THREE.MeshBasicMaterial({ map: tex }));
-          scr.position.z = 0.015; grp.add(scr);
+          const cmat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.1 });
+          const scr = new THREE.Mesh(new THREE.PlaneGeometry(SW, SH), cmat);
+          scr.position.z = 0.02; grp.add(scr);
+          contentMats.push(cmat);
         }
         scene.add(grp);
+        smartGlassPanels.push({ paneMat: glass.paneMat, edgeMat: glass.edgeMat, contentMats, gaze: 0, pos: new THREE.Vector3(x, SY, WALL_Z) });
         return grp;
       };
       // 1 · Business data (live HeavyGuard numbers — same drawHgScreen the TVs use).
@@ -8558,10 +8584,14 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       // dedicated hangar-camera tile (the hangar is a separate scene, so its
       // "feed" is a stylised live-look render with clock + REC).
       const dvr = mkScreen(CX + 2.6, 0.14, null);
-      ownerDvrFeed = new THREE.Mesh(new THREE.PlaneGeometry(1.62, SH - 0.24), new THREE.MeshBasicMaterial({ map: secRT.texture }));
+      const dvrGlass = smartGlassPanels[smartGlassPanels.length - 1];
+      const dvrFeedMat = new THREE.MeshBasicMaterial({ map: secRT.texture, transparent: true, opacity: 0.1 });
+      ownerDvrFeed = new THREE.Mesh(new THREE.PlaneGeometry(1.62, SH - 0.24), dvrFeedMat);
       ownerDvrFeed.position.set(0.32, -0.09, 0.015); dvr.add(ownerDvrFeed);
-      const dvrBar = new THREE.Mesh(new THREE.PlaneGeometry(1.62, 0.2), new THREE.MeshBasicMaterial({ map: secBarTex, transparent: true }));
+      const dvrBarMat = new THREE.MeshBasicMaterial({ map: secBarTex, transparent: true, opacity: 0.1 });
+      const dvrBar = new THREE.Mesh(new THREE.PlaneGeometry(1.62, 0.2), dvrBarMat);
       dvrBar.position.set(0.32, SH / 2 - 0.13, 0.015); dvr.add(dvrBar);
+      dvrGlass.contentMats.push(dvrFeedMat, dvrBarMat);
       const hgrCvs = document.createElement("canvas");
       hgrCvs.width = 200; hgrCvs.height = 300;
       const hgrCtx = hgrCvs.getContext("2d");
@@ -8596,8 +8626,10 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         hangarCamTex.needsUpdate = true;
       };
       drawHangarCam();
-      const hgrTile = new THREE.Mesh(new THREE.PlaneGeometry(0.6, SH - 0.04), new THREE.MeshBasicMaterial({ map: hangarCamTex }));
+      const hgrTileMat = new THREE.MeshBasicMaterial({ map: hangarCamTex, transparent: true, opacity: 0.1 });
+      const hgrTile = new THREE.Mesh(new THREE.PlaneGeometry(0.6, SH - 0.04), hgrTileMat);
       hgrTile.position.set(-0.85, 0, 0.015); dvr.add(hgrTile);
+      dvrGlass.contentMats.push(hgrTileMat);
     }
 
     // The 100-inch wall screen — the old CSS3D iframe is gone: heavyguard.com
@@ -9187,6 +9219,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // frustum check below.
     const camFrustum = new THREE.Frustum();
     const camFrustumMat = new THREE.Matrix4();
+    // Smart-glass gaze detection — reused every frame.
+    const gazeCamDir = new THREE.Vector3();
+    const gazeToPanel = new THREE.Vector3();
+    const gazePanelWorld = new THREE.Vector3();
+    let gazeT = 0;
 
     const onKeyDown = (e) => {
       const k = e.key.toLowerCase();
@@ -9369,6 +9406,28 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         // Security feed: clock + REC blink refresh.
         drawSecurityBar();
         secBarTex.needsUpdate = true;
+      }
+      // Smart-glass gaze update: is the player looking straight at each panel,
+      // within range? Materialize with a cyan→magenta edge-glow pulse when so,
+      // fade back to near-invisible otherwise. Cheap — a handful of dot-products
+      // per frame, no raycasting against scene geometry.
+      if (smartGlassPanels.length) {
+        gazeT += dt;
+        camera.getWorldDirection(gazeCamDir);
+        const hue = (gazeT * 0.15) % 1; // slow cyan<->magenta cycle while active
+        smartGlassPanels.forEach((p) => {
+          gazePanelWorld.copy(p.pos);
+          gazeToPanel.subVectors(gazePanelWorld, camera.position);
+          const dist = gazeToPanel.length();
+          gazeToPanel.normalize();
+          const facing = gazeToPanel.dot(gazeCamDir); // ~1 = dead-on
+          const looking = dist < 7 && facing > 0.88;
+          p.gaze += ((looking ? 1 : 0) - p.gaze) * Math.min(1, dt * 3.5);
+          p.paneMat.opacity = (isMobile ? 0.07 : 0.12) + p.gaze * (isMobile ? 0.22 : 0.5);
+          p.edgeMat.opacity = 0.3 + p.gaze * 0.6;
+          p.edgeMat.color.setHSL(0.5 - hue * 0.5, 0.9, 0.55 + p.gaze * 0.15); // cyan (0.5) <-> magenta (~0.83)
+          p.contentMats.forEach((m) => { m.opacity = 0.1 + p.gaze * 0.88; });
+        });
       }
       // Live CCTV: render the actual office into the security screen's
       // texture every 3rd frame (the screen hides during its own capture to
