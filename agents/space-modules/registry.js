@@ -121,6 +121,11 @@ import { createLegendaryNeonSigns } from "./legendary-neon-signs.js";
 import { createGravityOverrideSwitch } from "./gravity-override-switch.js";
 import { createCyberspaceFirewall } from "./cyberspace-firewall.js";
 import { createAlphaNeuralWeb } from "./alpha-neural-web.js";
+// ── NEURAL-QUANTUM OVERRIDE · Phases 2-5 (Phase 1 Smart Glass ships inline in Office3D) ──
+import { createHgSentinelGrid } from "./hg-sentinel-grid.js";
+import { createPolymorphicAgents } from "./polymorphic-agents.js";
+import { createNeuralDriveUplink } from "./neural-drive-uplink.js";
+import { createOmniEnvironment } from "./omni-environment.js";
 
 export const SPACE_MODULES = [
   // ── CORE SYSTEM ALPHA · comms & AI ──
@@ -220,4 +225,9 @@ export const SPACE_MODULES = [
   { id: "gravity-override-switch", create: createGravityOverrideSwitch }, // M28 · lever → zero-G (shares M53's flag)
   { id: "cyberspace-firewall", create: createCyberspaceFirewall },      // M29 · self-shattering hex shield wall
   { id: "alpha-neural-web", create: createAlphaNeuralWeb },             // M30 · ceiling neuron web, pulses on agent talk
+  // ── NEURAL-QUANTUM OVERRIDE · Phases 2-5 — glassmorphic neural-matrix retheme ──
+  { id: "hg-sentinel-grid", create: createHgSentinelGrid },            // P2 · wireframe Center-District city grid + fleet sparks
+  { id: "polymorphic-agents", create: createPolymorphicAgents },       // P3 · liquid-metal crew shells, shatter-vortex on processing
+  { id: "neural-drive-uplink", create: createNeuralDriveUplink },      // P4 · hover-mag Tiggo + 180° AR HUD on inVehicle
+  { id: "omni-environment", create: createOmniEnvironment },           // P5 · bass-undulating walls + external crypto billboards
 ];
