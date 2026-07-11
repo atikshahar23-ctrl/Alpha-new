@@ -79,5 +79,13 @@ ingress:
       noTLSVerify: true
       connectTimeout: 30s
 
+  # (רשות) ALPHA HOME WORKER — ה-outbox של סבבי העבודה האוטונומיים
+  # (worker/alpha-worker.mjs). נחוץ רק כדי שהטלפון ימשוך תוצרים דרך המנהרה;
+  # בלי זה הם נקלטים בכניסה הבאה מהמחשב הביתי. אם מפעילים: route dns +
+  # Cloudflare Access גם עליו, ובאפליקציה localStorage:
+  # alpha:agents:workerUrl = https://worker.matrix.YOUR-DOMAIN.com
+  # - hostname: worker.matrix.YOUR-DOMAIN.com
+  #   service: http://localhost:8799
+
   # everything else
   - service: http_status:404

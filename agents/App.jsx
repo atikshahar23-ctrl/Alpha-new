@@ -955,6 +955,23 @@ function workRotation() {
   }
   return workRotationCache;
 }
+// The 24/7 home worker (worker/alpha-worker.mjs) runs the same cycles next
+// to LM Studio even when no browser is open. Its outbox address is derived
+// from the LM Studio URL (same machine, port 8799) unless overridden.
+const K_WORKER_URL = "alpha:agents:workerUrl";
+const K_WORKER_ALIVE = "alpha:agents:workerAlive";
+function workerUrl() {
+  try {
+    const w = (localStorage.getItem(K_WORKER_URL) || "").trim();
+    if (w) return w.replace(/\/+$/, "");
+    const u = lmsUrl();
+    if (!u) return "";
+    const parsed = new URL(u);
+    return `${parsed.protocol}//${parsed.hostname}:8799`;
+  } catch { return ""; }
+}
+const workerAlive = () => { try { return now() - +(localStorage.getItem(K_WORKER_ALIVE) || 0) < 12 * 60e3; } catch { return false; } };
+
 function parseAutoWork(raw) {
   const s = String(raw || "");
   if (/^\s*SKIP\b/im.test(s)) return null;
@@ -1646,11 +1663,35 @@ export default function App() {
   // ── מנוע העבודה האוטונומי (see module header near K_SOCIAL_DRAFTS) ────
   const [autoWork, setAutoWork] = useState(() => { try { return localStorage.getItem(K_AUTOWORK) !== "0"; } catch { return true; } });
   useEffect(() => { try { localStorage.setItem(K_AUTOWORK, autoWork ? "1" : "0"); } catch {} }, [autoWork]);
+  // One landing routine for a work product, whether it came from THIS tab's
+  // cycle or from the 24/7 home worker's outbox.
+  const applyWorkAct = (agentId, act, src = "") => {
+    const agent = byId(agentId);
+    const tag = src ? src + " " : "";
+    if (act.type === "draft" && agentId === "cmo") {
+      const drafts = load(K_SOCIAL_DRAFTS, []);
+      save(K_SOCIAL_DRAFTS, [{ id: uid(), text: act.text, status: "draft", ts: now(), via: "autowork" }, ...drafts].slice(0, 40));
+      logActivity(agentId, tag + "📣 סבב יזום — הכין טיוטת פוסט חדשה, ממתינה לאישורך");
+      showToast("📣 " + (agent?.name || "") + " הכין טיוטת פוסט — ממתין לאישורך");
+    } else if (act.type === "alert") {
+      logActivity(agentId, tag + "🚨 " + act.text.slice(0, 150));
+      showToast("🚨 " + act.text.slice(0, 80));
+    } else if (act.type === "note" && agentId === "finance") {
+      logInvest(agentId, act.text.slice(0, 220));
+      logActivity(agentId, tag + "📈 עדכן את דסק ההשקעות: " + act.text.slice(0, 100));
+    } else {
+      addIdea(agentId, act.text.slice(0, 200));
+      logActivity(agentId, tag + "💡 סבב יזום — רעיון חדש על הלוח: " + act.text.slice(0, 90));
+    }
+  };
   useEffect(() => {
     if (!autoWork) return;
     let stopped = false;
     const runCycle = async () => {
       if (stopped || !hasAI()) return;
+      // The 24/7 home worker owns the job while it's reachable — the browser
+      // engine stands down instead of double-working the same rotation.
+      if (workerAlive()) return;
       const st = load(K_AUTOWORK_STATE, { idx: 0, lastRun: 0 });
       if (now() - st.lastRun < AUTOWORK_CYCLE_MS - 10000) return; // another tab / recent reload already worked
       const rotation = workRotation();
@@ -1668,21 +1709,7 @@ export default function App() {
         const raw = await askAI(sys, [], "בצע כעת סבב עבודה יזום בתחומך.", 400);
         const act = parseAutoWork(raw);
         if (!act) { logActivity(agent.id, "🔎 סבב עבודה יזום — נבדק, אין ממצא חדש הפעם"); return; }
-        if (act.type === "draft" && agent.id === "cmo") {
-          const drafts = load(K_SOCIAL_DRAFTS, []);
-          save(K_SOCIAL_DRAFTS, [{ id: uid(), text: act.text, status: "draft", ts: now(), via: "autowork" }, ...drafts].slice(0, 40));
-          logActivity(agent.id, "📣 סבב יזום — הכין טיוטת פוסט חדשה, ממתינה לאישורך");
-          showToast("📣 " + agent.name + " הכין טיוטת פוסט — ממתין לאישורך");
-        } else if (act.type === "alert") {
-          logActivity(agent.id, "🚨 " + act.text.slice(0, 150));
-          showToast("🚨 " + act.text.slice(0, 80));
-        } else if (act.type === "note" && agent.id === "finance") {
-          logInvest(agent.id, act.text.slice(0, 220));
-          logActivity(agent.id, "📈 עדכן את דסק ההשקעות: " + act.text.slice(0, 100));
-        } else {
-          addIdea(agent.id, act.text.slice(0, 200));
-          logActivity(agent.id, "💡 סבב יזום — רעיון חדש על הלוח: " + act.text.slice(0, 90));
-        }
+        applyWorkAct(agent.id, act);
       } catch {} // engine hiccup — the next cycle simply moves to the next agent
     };
     const t0 = setTimeout(runCycle, 45000); // first cycle shortly after boot
@@ -1690,6 +1717,42 @@ export default function App() {
     return () => { stopped = true; clearTimeout(t0); clearInterval(iv); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoWork]);
+  // ── 24/7 home worker bridge — pull its outbox, feed it fresh context ──
+  useEffect(() => {
+    let stopped = false;
+    const pump = async () => {
+      const base = workerUrl();
+      if (stopped || !base) return;
+      try {
+        const r = await fetch(base + "/outbox", { signal: AbortSignal.timeout(6000) });
+        if (!r.ok) return;
+        const { items } = await r.json();
+        try { localStorage.setItem(K_WORKER_ALIVE, String(now())); } catch {}
+        if (Array.isArray(items) && items.length) {
+          for (const it of items.slice(0, 20)) applyWorkAct(it.agentId, { type: it.type, text: String(it.text || "") }, "🏠");
+          await fetch(base + "/ack", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ids: items.slice(0, 20).map((i) => i.id) }),
+            signal: AbortSignal.timeout(6000),
+          });
+          logActivity("ceo", `🏠 ה-Worker הביתי מסר ${Math.min(items.length, 20)} תוצרים מהלילה/מהרקע`);
+        }
+        // Feed the worker a fresh business snapshot so its next cycles are
+        // grounded in real numbers even after this tab closes.
+        let market = "";
+        if (isSimConfigured()) { try { market = await handleAgentToolCall("sim_market_context", {}); } catch {} }
+        await fetch(base + "/context", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ biz: bizContext(), market }),
+          signal: AbortSignal.timeout(6000),
+        }).catch(() => {});
+      } catch {} // worker not running / not reachable — the local engine covers
+    };
+    const t0 = setTimeout(pump, 15000);
+    const iv = setInterval(pump, 120000);
+    return () => { stopped = true; clearTimeout(t0); clearInterval(iv); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // De-duplicated: the exact same idea text never piles up on the board
   // (the autonomous engine used to drop identical cards repeatedly).
   const addIdea = (agentId, text, exec = null) => {
