@@ -488,7 +488,13 @@ const anthropicKey = () => { try { return localStorage.getItem("alpha_anthropic"
    infrastructure — just enable CORS + 'Serve on Local Network' off. */
 const K_LMS_URL = "alpha:agents:lmsUrl";
 const K_LMS_MODEL = "alpha:agents:lmsModel";
+const K_LMS_KEY = "alpha:agents:lmsKey";
 const lmsUrl = () => { try { return (localStorage.getItem(K_LMS_URL) || "").trim(); } catch { return ""; } };
+// Only needed when LM Studio is reached over a public tunnel with "Require
+// Authentication" turned on (e.g. a Cloudflare Quick Tunnel, which has no
+// Access/email gate of its own) — sent as a Bearer token on every request.
+const lmsKey = () => { try { return (localStorage.getItem(K_LMS_KEY) || "").trim(); } catch { return ""; } };
+const lmsHeaders = () => { const k = lmsKey(); return k ? { "Content-Type": "application/json", Authorization: `Bearer ${k}` } : { "Content-Type": "application/json" }; };
 // LM Studio's OWN UI shows "Reachable at: http://<ip>:<port>" with no /v1 —
 // exactly what someone naturally copy-pastes into the settings field — but
 // the OpenAI-compatible chat endpoint actually lives at .../v1/chat/completions.
@@ -740,7 +746,7 @@ async function askLmStudio(system, history, user, maxTokens = 800) {
   const d = await lmstudioLLMQueue.enqueue(async () => {
     const res = await fetch(base + "/chat/completions", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: lmsHeaders(),
       body: JSON.stringify({
         model: lmsModel() || "local-model",
         messages: [{ role: "system", content: system }, ...history.slice(-6), { role: "user", content: user }],
@@ -3291,9 +3297,10 @@ function SettingsView({ showToast }) {
   const [gCid, setGCid] = useState(() => googleCid());
   const [lmsU, setLmsU] = useState(() => lmsUrl());
   const [lmsM, setLmsM] = useState(() => lmsModel());
+  const [lmsK, setLmsK] = useState(() => lmsKey());
   const [lmsStatus, setLmsStatus] = useState("");
   const saveLms = () => {
-    try { localStorage.setItem(K_LMS_URL, lmsU.trim().replace(/\/+$/, "")); localStorage.setItem(K_LMS_MODEL, lmsM.trim()); } catch {}
+    try { localStorage.setItem(K_LMS_URL, lmsU.trim().replace(/\/+$/, "")); localStorage.setItem(K_LMS_MODEL, lmsM.trim()); localStorage.setItem(K_LMS_KEY, lmsK.trim()); } catch {}
     showToast(lmsU.trim() ? "LM Studio חובר ✓" : "הוסר");
   };
   const testLms = async () => {
@@ -3302,10 +3309,10 @@ function SettingsView({ showToast }) {
     if (!base) { setLmsStatus("הזן כתובת קודם"); return; }
     setLmsStatus("בודק חיבור…");
     try {
-      const r = await fetch(base + "/models", { signal: AbortSignal.timeout(6000) });
+      const r = await fetch(base + "/models", { headers: lmsHeaders(), signal: AbortSignal.timeout(6000) });
       const d = await r.json();
       const names = (d.data || []).map((m) => m.id).slice(0, 3).join(", ");
-      setLmsStatus(r.ok ? `מחובר 🟢 מודלים טעונים: ${names || "אין (טען מודל ב-LM Studio)"}` : "שגיאה HTTP " + r.status);
+      setLmsStatus(r.ok ? `מחובר 🟢 מודלים טעונים: ${names || "אין (טען מודל ב-LM Studio)"}` : r.status === 401 ? "שגיאה 401 — נדרש API Key, ודא שהדבקת אותו נכון" : "שגיאה HTTP " + r.status);
     } catch { setLmsStatus("לא מצליח להתחבר — ודא ש-LM Studio רץ, שהשרת הופעל (Developer → Start Server) ושה-CORS מאופשר"); }
   };
   const [fbP, setFbP] = useState(() => fbPageId());
@@ -3416,10 +3423,11 @@ function SettingsView({ showToast }) {
         <p className="ac-set-note">חבר את הסוכנים ל-LM Studio שרץ קבוע במחשב שלך — מוח חינמי, פרטי ובלתי מוגבל. כשהוא מחובר, יהודה מנתב אליו את כל הבקשות הקצרות (במקום Groq), ו-Claude נשאר רק למשימות הגדולות. הגדרה חד-פעמית ב-LM Studio: טאב Developer → הפעל Start Server → הפעל CORS. הדבק בדיוק את הכתובת שמופיעה שם תחת "Reachable at" (למשל http://192.168.1.102:2121) — אין צורך להוסיף ‎/v1‎ בעצמך, המערכת מוסיפה את זה אוטומטית.</p>
         <input className="ac-set-in" value={lmsU} onChange={(e) => setLmsU(e.target.value)} placeholder="http://localhost:1234/v1" dir="ltr" />
         <input className="ac-set-in" value={lmsM} onChange={(e) => setLmsM(e.target.value)} placeholder="שם מודל (רשות — ריק ישתמש במודל הטעון)" dir="ltr" />
+        <input className="ac-set-in" value={lmsK} onChange={(e) => setLmsK(e.target.value)} placeholder="API Key (רשות — רק אם הדלקת Require Authentication ב-LM Studio, למשל דרך מנהרה ציבורית בלי Cloudflare Access)" dir="ltr" type="password" />
         <div className="ac-set-row">
           <button className="ac-set-save" onClick={saveLms}><Check size={16} /> שמור</button>
           <button className="ac-set-save" onClick={testLms}>🔌 בדוק חיבור</button>
-          <button className="ac-set-clear" onClick={() => { try { localStorage.removeItem(K_LMS_URL); localStorage.removeItem(K_LMS_MODEL); } catch {} setLmsU(""); setLmsM(""); setLmsStatus(""); showToast("נמחק"); }}><Trash2 size={15} /></button>
+          <button className="ac-set-clear" onClick={() => { try { localStorage.removeItem(K_LMS_URL); localStorage.removeItem(K_LMS_MODEL); localStorage.removeItem(K_LMS_KEY); } catch {} setLmsU(""); setLmsM(""); setLmsK(""); setLmsStatus(""); showToast("נמחק"); }}><Trash2 size={15} /></button>
         </div>
         {lmsStatus && <p className="ac-set-note" style={{ marginTop: 6 }}>{lmsStatus}</p>}
         <a className="ac-set-link" href="https://lmstudio.ai" target="_blank" rel="noreferrer">הורד LM Studio (חינם) <ArrowUpRight size={13} /></a>
