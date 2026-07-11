@@ -120,25 +120,40 @@
         document.documentElement.classList.remove('booting');
         document.body.classList.add('revealed');   // panels animate in — only now
       }
-      function finish(){
+      function finish(waitReady){
         if(ended) return; ended=true;
-        revealApp();              // video → the live dashboard, nothing between
-        ov.classList.add('gone'); // fades out + pointer-events:none via CSS
-        var reaped=false;
-        var reap=function(){
-          if(reaped) return; reaped=true;
-          try{ if(vid) vid.pause(); }catch(e){}
-          ov.parentNode && ov.parentNode.removeChild(ov);
+        var go=function(){
+          revealApp();              // video → the live dashboard, nothing between
+          ov.classList.add('gone'); // fades out + pointer-events:none via CSS
+          var reaped=false;
+          var reap=function(){
+            if(reaped) return; reaped=true;
+            try{ if(vid) vid.pause(); }catch(e){}
+            ov.parentNode && ov.parentNode.removeChild(ov);
+          };
+          if(vid && !vid.paused && !vid.muted && !vid.__skipped){
+            // The MUSIC rides over the reveal — it's the opening theme. The
+            // faded-out overlay (with the still-playing video inside) stays in
+            // the DOM until the song's own fade-out ends, then gets reaped.
+            vid.addEventListener('ended', reap, {once:true});
+            setTimeout(reap, 31000); // safety cap
+          } else {
+            setTimeout(reap, 800);
+          }
         };
-        if(vid && !vid.paused && !vid.muted && !vid.__skipped){
-          // The MUSIC rides over the reveal — it's the opening theme. The
-          // faded-out overlay (with the still-playing video inside) stays in
-          // the DOM until the song's own fade-out ends, then gets reaped.
-          vid.addEventListener('ended', reap, {once:true});
-          setTimeout(reap, 31000); // safety cap (clip is 28s)
-        } else {
-          setTimeout(reap, 800);
-        }
+        // Timed to the system: the clip ENDS on a frame that looks like the
+        // dashboard itself. If the app needs a moment longer than the 10s
+        // cinematic, HOLD that final frame (no loader, no cut) and reveal the
+        // instant the HUD is actually ready (window.__alphaReady, set by
+        // main.ts once live data settled). 15s cap so a hung connection can
+        // never trap the boot on a frozen frame.
+        if(waitReady && !window.__alphaReady){
+          var t0=performance.now();
+          (function hold(){
+            if(window.__alphaReady || performance.now()-t0>15000){ go(); return; }
+            setTimeout(hold, 80);
+          })();
+        } else { go(); }
       }
       // Fade+stop — the user asked OUT of the intro, sound included.
       function silence(){
@@ -150,7 +165,7 @@
           },60);
         }catch(e){}
       }
-      function skip(){ silence(); finish(); }
+      function skip(){ silence(); finish(false); } // the user wants IN now — no ready-hold
       document.getElementById('introSkip').addEventListener('click', skip);
       // ── The owner's Suno anthem IS the loading screen ────────────────────
       // Play WITH sound when the browser allows it; when autoplay-with-audio
@@ -173,22 +188,33 @@
       }
       if(vid){
         vid.loop=false;
-        vid.addEventListener('ended', finish, {once:true});
-        vid.addEventListener('error', finish, {once:true});
-        vid.muted=false; vid.volume=1;
-        var pr=vid.play && vid.play();
-        if(pr && pr.catch) pr.catch(function(){
-          // autoplay with sound blocked → roll muted + offer one-tap sound
-          vid.muted=true;
-          if(sndBtn) sndBtn.hidden=false;
-          var p2=vid.play && vid.play();
-          if(p2 && p2.catch) p2.catch(function(){ finish(); }); // video itself blocked → straight to the veil
-        });
-        // The cinematic is 10s and ENDS on a frame that looks like the
-        // dashboard itself — so the reveal is a match-cut: play it through
-        // ('ended' → finish above) and land directly on the live app.
-        setTimeout(finish, 13000);   // hard fallback: clip is 10s — never get stuck
-      } else { finish(); }
+        vid.addEventListener('ended', function(){ finish(true); }, {once:true});
+        vid.addEventListener('error', function(){ finish(false); }, {once:true}); // no video to hold on → reveal now
+        // Smoothness: start rolling only once the browser judges it can play
+        // through without stalling (canplaythrough — usually instant: the file
+        // is faststart-muxed and preload=auto), capped at 1.8s so a pessimistic
+        // bandwidth estimate never delays the boot. This front-loads the buffer
+        // on slow cellular connections instead of stuttering mid-clip.
+        var started=false;
+        function startPlayback(){
+          if(started || ended) return; started=true;
+          vid.muted=false; vid.volume=1;
+          var pr=vid.play && vid.play();
+          if(pr && pr.catch) pr.catch(function(){
+            // autoplay with sound blocked → roll muted + offer one-tap sound
+            vid.muted=true;
+            if(sndBtn) sndBtn.hidden=false;
+            var p2=vid.play && vid.play();
+            if(p2 && p2.catch) p2.catch(function(){ finish(false); }); // video itself blocked → straight in
+          });
+          // The cinematic is 10s and ENDS on a frame that looks like the
+          // dashboard itself — so the reveal is a match-cut: play it through
+          // ('ended' → finish above) and land directly on the live app.
+          setTimeout(function(){ finish(true); }, 13000); // hard fallback from actual start — never get stuck
+        }
+        vid.addEventListener('canplaythrough', startPlayback, {once:true});
+        setTimeout(startPlayback, 1800);
+      } else { finish(false); }
     })();
   </script>
   <div id="app"></div>
