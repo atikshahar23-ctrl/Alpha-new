@@ -291,7 +291,11 @@ async function askLmStudioProvider(state: AppState): Promise<string> {
         max_tokens: 2000,
         reasoning_effort: 'low',
       }),
-      signal: AbortSignal.timeout(120000), // local models can be slow on big prompts
+      // 30s total: covers a JIT model load + a short reply. The main ask path
+      // streams (25s-to-first-byte guard) — this blocking call serves the
+      // fallback + askOnce jobs, and must never freeze Alpha for two minutes
+      // when the machine is off.
+      signal: AbortSignal.timeout(30000),
     });
   } catch { throw new Error('PROVIDER_EXHAUSTED'); } // machine off / tunnel down → next provider
   if (!res.ok) throw new Error('PROVIDER_EXHAUSTED');
@@ -534,16 +538,24 @@ function chatMessages(state: AppState) {
 // OpenAI + Grok + LM Studio share the OpenAI-compatible streaming wire format.
 // An empty key skips the Authorization header entirely (LM Studio without
 // "Require Authentication" rejects nothing, but why send an empty Bearer).
+// headerTimeoutMs bounds ONLY the wait for response headers — once the stream
+// starts flowing, the timer is already cleared, so long replies aren't cut.
 async function streamOpenAICompat(
-  url: string, key: string, model: string, state: AppState, onText: (full: string) => void, extra: Record<string, any> = {},
+  url: string, key: string, model: string, state: AppState, onText: (full: string) => void, extra: Record<string, any> = {}, headerTimeoutMs = 0,
 ): Promise<string> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (key) headers.Authorization = `Bearer ${key}`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ model, messages: chatMessages(state), temperature: 0.8, max_tokens: 500, stream: true, ...extra }),
-  });
+  const ctrl = headerTimeoutMs > 0 ? new AbortController() : null;
+  const killer = ctrl ? setTimeout(() => ctrl.abort(), headerTimeoutMs) : null;
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ model, messages: chatMessages(state), temperature: 0.8, max_tokens: 500, stream: true, ...extra }),
+      ...(ctrl ? { signal: ctrl.signal } : {}),
+    });
+  } finally { if (killer) clearTimeout(killer); }
   if (!res.ok || !res.body) {
     if (res.status === 429 || res.status === 401 || res.status === 403) throw new Error('PROVIDER_EXHAUSTED');
     throw new Error('STREAM_FAIL');
@@ -606,8 +618,18 @@ async function streamProvider(provider: AIProvider, state: AppState, onText: (fu
   if (provider === 'lmstudio') {
     const base = lmsBase();
     if (!base) throw new Error('PROVIDER_NO_KEY');
-    return streamOpenAICompat(base + '/chat/completions', lmsApiKey(), lmsModel() || 'local-model', state, onText,
-      { max_tokens: 2000, reasoning_effort: 'low' }); // reasoning models: don't burn the budget thinking
+    try {
+      // 25s to first byte: enough for LM Studio's JIT model load, short enough
+      // that a machine that's off / tunnel that's down doesn't freeze Alpha.
+      const reply = await streamOpenAICompat(base + '/chat/completions', lmsApiKey(), lmsModel() || 'local-model', state, onText,
+        { max_tokens: 2000, reasoning_effort: 'low' }, 25000);
+      if (reply.trim()) return reply;
+    } catch {}
+    // ANY local-brain failure (unreachable machine, mixed-content block,
+    // header timeout, empty stream) → PROVIDER_EXHAUSTED, so the chain
+    // rescues with a cloud engine instead of retrying the dead endpoint
+    // with the slow blocking call.
+    throw new Error('PROVIDER_EXHAUSTED');
   }
   if (provider === 'groq') {
     if (!state.groqKey) throw new Error('PROVIDER_NO_KEY');

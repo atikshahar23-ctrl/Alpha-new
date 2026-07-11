@@ -188,7 +188,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v198 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v199 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip apps-chip" id="appsBtn" title="האפליקציות שלי" aria-label="האפליקציות שלי">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="12" cy="19" r="2"/><circle cx="19" cy="19" r="2"/></svg>
@@ -2220,7 +2220,15 @@ export function mountApp(root: HTMLElement) {
       orb.pikaEmote('sad');
       if (voice.wakeOn) setTimeout(() => voice.setWake(true), 500);
       else setStatus('');
-      addMsg(err.message || t('connectionError', state.uiLang), 'sys');
+      // "All providers exhausted" in English told the owner nothing — say
+      // what actually happened and what to check, in the UI language.
+      const raw = String(err?.message || '');
+      const friendly = /exhausted/i.test(raw)
+        ? (state.uiLang === 'he'
+          ? 'לא הצלחתי להגיע לאף מנוע AI כרגע 🔌 — אם המוח המקומי (LM Studio) כבוי או שהמנהרה סגורה, הדלק אותם; או חבר מפתח Groq חינמי בהגדרות ⚙ ונמשיך.'
+          : 'I could not reach any AI engine 🔌 — if the local brain (LM Studio) is off or the tunnel is down, start them; or add a free Groq key in settings ⚙.')
+        : (raw || t('connectionError', state.uiLang));
+      addMsg(friendly, 'sys');
     } finally {
       asking = false;
     }

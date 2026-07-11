@@ -7,7 +7,6 @@ import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
-import { VRButton } from "three/examples/jsm/webxr/VRButton.js";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
@@ -6074,12 +6073,6 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       if (v === "car" || v === "truck") { setDriveVehicle(v); setInHangar(true); setInDrive(true); }
     } catch {}
   }, []);
-  // VR entry lives in the settings panel now — the floating WebXR button
-  // sat stuck over the phone HUD (owner request to move it). The real
-  // VRButton element still exists (it owns the session lifecycle text/state)
-  // but hidden; the settings row proxies a click into it.
-  const [vrReady, setVrReady] = useState(false);
-  const vrBtnRef = useRef(null);
   // ── Phone feature pack ──────────────────────────────────────────────────
   // Haptic feedback (persisted toggle), sprint lock, photo mode, fast travel.
   const [haptics, setHaptics] = useState(() => { try { return localStorage.getItem("alpha:office:haptics") !== "0"; } catch { return true; } });
@@ -6680,26 +6673,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // known (cloned agents reuse these same texture instances).
     applyAniso(charTemplate); applyAniso(robotTemplate); applyAniso(sophiaTemplate);
     mount.appendChild(renderer.domElement);
-    // WebXR — a real VR entry point (not a stub): renderer.xr.enabled plus
-    // the standard VRButton, feature-detected so it silently does nothing
-    // on a browser/device with no XR support (desktop, most phones) rather
-    // than showing a button that can't work. No hand-controller grabbing —
-    // that's a separate, larger interaction layer — this is "you can put on
-    // a headset and look around the office," the first real step toward it.
-    renderer.xr.enabled = true;
-    if (navigator.xr) {
-      navigator.xr.isSessionSupported("immersive-vr").then((supported) => {
-        if (!supported || cancelled) return;
-        const btn = VRButton.createButton(renderer);
-        // The floating button sat stuck over the phone HUD — it now lives
-        // hidden in the DOM (VRButton owns the XR session lifecycle and its
-        // ENTER/EXIT label) and the settings panel proxies clicks into it.
-        btn.style.display = "none";
-        mount.appendChild(btn);
-        vrBtnRef.current = btn;
-        setVrReady(true);
-      }).catch(() => {});
-    }
+    // (WebXR/VR entry removed entirely — owner request.)
 
     // ── Post-processing chain: RenderPass → SSAO (desktop) → Bloom → Output ──
     // Bloom gives the neon/monitors a soft realistic glow; SSAO grounds every
@@ -11395,8 +11369,6 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         renderer.domElement.removeEventListener("touchmove", onPinchMove);
         renderer.domElement.removeEventListener("touchend", onPinchEnd);
         renderer.domElement.removeEventListener("touchcancel", onPinchEnd);
-        if (vrBtnRef.current?.parentNode) vrBtnRef.current.parentNode.removeChild(vrBtnRef.current);
-        vrBtnRef.current = null;
         if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement);
       };
     })();
@@ -11898,12 +11870,6 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
             <span>🛠 God Mode — עריכת סצנה</span>
             <b className={godOpen ? "on" : ""}>{godOpen ? "פתוח" : "כלים למנהל"}</b>
           </button>
-          {vrReady && (
-            <button className="off3-settings-row" onClick={() => { buzz(20); setSettingsOpen(false); vrBtnRef.current?.click(); }}>
-              <span>🥽 מציאות מדומה (VR)</span>
-              <b className="on">היכנס עם משקפת</b>
-            </button>
-          )}
           <button className="off3-settings-row" onClick={() => setHaptics((v) => !v)}>
             <span>📳 רטט במגע (טלפון)</span>
             <b className={haptics ? "on" : ""}>{haptics ? "פעיל" : "כבוי"}</b>
