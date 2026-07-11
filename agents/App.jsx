@@ -418,7 +418,9 @@ async function omniDelegate(fromId, delegateTo, text) {
     const raw = await askAI(tgt.persona + bizContext() + domainContext(tgt.id) + SPECIALIST_PROTOCOL + omniProtocol(), [], text);
     const o = parseOmniReply(raw);
     runOmniActions(o.actions, tgt.id);
-    return { name: tgt.name, vocal: o.vocal };
+    // An empty delegated answer is a failed delegation — let the caller keep
+    // its own text/fallback rather than showing "👤 X:" followed by nothing.
+    return o.vocal ? { name: tgt.name, vocal: o.vocal } : null;
   } catch { return null; }
 }
 
@@ -751,7 +753,15 @@ async function askLmStudio(system, history, user, maxTokens = 800) {
         model: lmsModel() || "local-model",
         messages: [{ role: "system", content: system }, ...history.slice(-6), { role: "user", content: user }],
         temperature: 0.75,
-        max_tokens: maxTokens,
+        // Reasoning models (GPT-OSS etc.) spend completion tokens on hidden
+        // "thinking" BEFORE any visible text — an 800-token cap can burn
+        // entirely on reasoning and truncate the answer mid-envelope (seen
+        // live: 473 reasoning tokens, 0 content tokens, blank bubble). Local
+        // tokens are free, so floor the budget generously and ask reasoning
+        // models to keep the thinking minimal; non-reasoning models simply
+        // ignore reasoning_effort.
+        max_tokens: Math.max(maxTokens, 2000),
+        reasoning_effort: "low",
       }),
       signal: AbortSignal.timeout(120000), // local models can be slow on big prompts
     });
@@ -2432,11 +2442,17 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
       // a one-hop Hive-Mind delegation when the agent routed the question.
       const omni = parseOmniReply(reply);
       runOmniActions(omni.actions, agent.id);
-      let shown = omni.vocal || "✔";
+      let shown = omni.vocal;
       if (omni.delegateTo) {
         const routed = await omniDelegate(agent.id, omni.delegateTo, t);
         if (routed) shown = (omni.vocal ? omni.vocal + "\n\n" : "") + `👤 ${routed.name}: ${routed.vocal}`;
       }
+      // A reply that survived the engines but yielded no speakable text (a
+      // reasoning model truncating the OMNI envelope before
+      // <final_vocalization>, or an empty delegation) used to render as a
+      // bare "✔" bubble — answer with the scripted persona instead, so the
+      // owner never gets silence for a simple question.
+      if (!shown || !shown.trim()) shown = FALLBACK[agent.id](t);
       aiHist.current = [...aiHist.current.slice(-6), { role: "user", content: t }, { role: "assistant", content: shown }];
       setLog([...withMe, { from: "bot", text: shown, ts: now(), via }]);
       if (voiceOn) speakText(shown, agent.id);
@@ -3199,7 +3215,9 @@ function OfficeSim({ onClose, onOpenChat, logActivity, showToast }) {
                 const routed = await omniDelegate(id, o.delegateTo, text);
                 if (routed) return (o.vocal ? o.vocal + " " : "") + `${routed.name}: ${routed.vocal}`;
               }
-              return o.vocal;
+              // Same guard as the chat panel: never hand the voice loop an
+              // empty line when the envelope came back truncated.
+              return (o.vocal || "").trim() || (FALLBACK[id] ? FALLBACK[id](text) : "סליחה, לא הצלחתי לענות כרגע.");
             }
             catch { return FALLBACK[id] ? FALLBACK[id](text) : "סליחה, לא הצלחתי לענות כרגע."; }
           },
