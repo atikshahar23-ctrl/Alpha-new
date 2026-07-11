@@ -489,6 +489,18 @@ const anthropicKey = () => { try { return localStorage.getItem("alpha_anthropic"
 const K_LMS_URL = "alpha:agents:lmsUrl";
 const K_LMS_MODEL = "alpha:agents:lmsModel";
 const lmsUrl = () => { try { return (localStorage.getItem(K_LMS_URL) || "").trim(); } catch { return ""; } };
+// LM Studio's OWN UI shows "Reachable at: http://<ip>:<port>" with no /v1 —
+// exactly what someone naturally copy-pastes into the settings field — but
+// the OpenAI-compatible chat endpoint actually lives at .../v1/chat/completions.
+// A bare paste used to hit .../chat/completions directly, which LM Studio logs
+// as "Unexpected endpoint or method... Returning 200 anyway" (fragile — it
+// half-works today but isn't the real API surface). Normalize once here so
+// both a bare paste and one that already ends in /v1 land on the right path.
+const lmsBase = () => {
+  let u = lmsUrl().replace(/\/+$/, "");
+  if (u && !/\/v1$/i.test(u)) u += "/v1";
+  return u;
+};
 const lmsModel = () => { try { return (localStorage.getItem(K_LMS_MODEL) || "").trim(); } catch { return ""; } };
 const hasAI = () => !!anthropicKey() || !!groqKey() || !!lmsUrl();
 const K_CLAUDE_MODEL = "alpha:agents:claudeModel";
@@ -723,7 +735,7 @@ async function askGroq(system, history, user, maxTokens = 800) {
   throw lastErr || new Error("Groq failed");
 }
 async function askLmStudio(system, history, user, maxTokens = 800) {
-  const base = lmsUrl().replace(/\/+$/, "");
+  const base = lmsBase();
   if (!base) throw new Error("NO_LMS");
   const d = await lmstudioLLMQueue.enqueue(async () => {
     const res = await fetch(base + "/chat/completions", {
@@ -3277,7 +3289,7 @@ function SettingsView({ showToast }) {
   };
   const testLms = async () => {
     saveLms();
-    const base = lmsU.trim().replace(/\/+$/, "");
+    const base = lmsBase(); // saveLms() just wrote lmsU to storage — reuse the shared /v1 normalizer
     if (!base) { setLmsStatus("הזן כתובת קודם"); return; }
     setLmsStatus("בודק חיבור…");
     try {
@@ -3392,7 +3404,7 @@ function SettingsView({ showToast }) {
         <div className="ac-set-h">🖥 LM Studio · המחשב שלך כמוח 24/7
           <span className={"ac-cloud-pill " + (lmsUrl() ? "on" : "")}>{lmsUrl() ? "מחובר 🟢" : "לא מחובר ⚪"}</span>
         </div>
-        <p className="ac-set-note">חבר את הסוכנים ל-LM Studio שרץ קבוע במחשב שלך — מוח חינמי, פרטי ובלתי מוגבל. כשהוא מחובר, יהודה מנתב אליו את כל הבקשות הקצרות (במקום Groq), ו-Claude נשאר רק למשימות הגדולות. עובד רק בדפדפן על אותו מחשב שבו LM Studio רץ (localhost). הגדרה חד-פעמית ב-LM Studio: טאב Developer → הפעל Start Server → הפעל CORS. כתובת ברירת המחדל: http://localhost:1234/v1</p>
+        <p className="ac-set-note">חבר את הסוכנים ל-LM Studio שרץ קבוע במחשב שלך — מוח חינמי, פרטי ובלתי מוגבל. כשהוא מחובר, יהודה מנתב אליו את כל הבקשות הקצרות (במקום Groq), ו-Claude נשאר רק למשימות הגדולות. הגדרה חד-פעמית ב-LM Studio: טאב Developer → הפעל Start Server → הפעל CORS. הדבק בדיוק את הכתובת שמופיעה שם תחת "Reachable at" (למשל http://192.168.1.102:2121) — אין צורך להוסיף ‎/v1‎ בעצמך, המערכת מוסיפה את זה אוטומטית.</p>
         <input className="ac-set-in" value={lmsU} onChange={(e) => setLmsU(e.target.value)} placeholder="http://localhost:1234/v1" dir="ltr" />
         <input className="ac-set-in" value={lmsM} onChange={(e) => setLmsM(e.target.value)} placeholder="שם מודל (רשות — ריק ישתמש במודל הטעון)" dir="ltr" />
         <div className="ac-set-row">
