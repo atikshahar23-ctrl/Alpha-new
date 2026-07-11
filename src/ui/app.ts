@@ -188,7 +188,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v200 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v201 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip apps-chip" id="appsBtn" title="האפליקציות שלי" aria-label="האפליקציות שלי">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="12" cy="19" r="2"/><circle cx="19" cy="19" r="2"/></svg>
@@ -1252,6 +1252,13 @@ export function mountApp(root: HTMLElement) {
     addMsg(state.uiLang === 'he'
       ? 'הדפדפן חוסם את המיקרופון שלי 🎤 — לחץ על סמל המנעול/ההרשאות בשורת הכתובת, אשר גישה למיקרופון, ונסה שוב.'
       : 'The browser is blocking my microphone 🎤 — click the lock/permissions icon in the address bar, allow microphone access, and try again.', 'sys');
+  };
+  // Recognition erroring repeatedly with no speech ever heard — name the
+  // actual error so the owner (and we) can see WHY the mic "hears nothing".
+  voice.onMicIssue = (err) => {
+    addMsg(state.uiLang === 'he'
+      ? `זיהוי הדיבור נכשל שוב ושוב (שגיאה: ${err}) 🎤 — אם זו network, שירות הדיבור של גוגל חסום/איטי ברשת הזו; נסה רשת אחרת או הקלד בינתיים.`
+      : `Speech recognition keeps failing (error: ${err}) 🎤 — if it's "network", Google's speech service is blocked/slow on this connection; try another network or type instead.`, 'sys');
   };
   voice.onInterim = (text) => showInterim(text);
   // Feed the plasma core a real per-frame mic level so it ripples to the user's

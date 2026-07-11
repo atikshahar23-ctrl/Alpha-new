@@ -30,6 +30,18 @@ export class VoiceEngine {
   // permission denied). Before this, a blocked mic silently flipped wake off
   // with zero feedback — "the assistant just doesn't listen". Set by app.ts.
   onMicBlocked: (() => void) | null = null;
+  // Fired after several consecutive recognition errors with zero results —
+  // the "mic looks on but hears nothing" state (network-blocked speech
+  // service, mic contention). Gives the user a visible diagnosis instead of
+  // an infinite silent retry loop. Set by app.ts.
+  onMicIssue: ((err: string) => void) | null = null;
+  private errStreak = 0;
+  // Android Chrome quirks: continuous sessions go dead after the first
+  // utterance, and a parallel getUserMedia stream (our noise-suppression/
+  // level-meter tap) can starve the recognizer of audio entirely. On Android
+  // we run single-utterance sessions with auto-restart and skip the parallel
+  // mic stream altogether.
+  private isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent || '');
   private recRetries = 0;
   private noiseStream: MediaStream | null = null;
   private noiseCtx: AudioContext | null = null;
@@ -58,11 +70,12 @@ export class VoiceEngine {
     if (SR) {
       this.rec = new SR();
       this.rec.lang = state.micLang === 'he' ? 'he-IL' : state.micLang === 'es' ? 'es-ES' : 'en-US';
-      this.rec.continuous = true;
+      this.rec.continuous = !this.isAndroid; // Android: one utterance per session, auto-restarted in onend
       this.rec.interimResults = true;
       this.rec.maxAlternatives = 1;
       this.rec.onresult = (e: any) => {
         if (this.suppress) return;
+        this.errStreak = 0; // real audio is flowing
         let interim = '';
         // Process each final result EXACTLY once. Chrome (continuous mode) can
         // re-fire onresult and re-report results already marked final, which is
@@ -114,6 +127,10 @@ export class VoiceEngine {
         } else if (this.wakeOn && !this.suppress) {
           // Keep retrying on no-speech / audio-capture / network errors.
           // Cap the back-off at 3 s so the mic stays responsive.
+          // 'no-speech' is normal silence, not a fault — everything else that
+          // repeats with no result in between means the recognizer isn't
+          // actually hearing/working: say so instead of spinning silently.
+          if (ev.error !== 'no-speech' && ++this.errStreak === 3) this.onMicIssue?.(String(ev.error || 'unknown'));
           this.recRetries++;
           const delay = Math.min(500 * this.recRetries, 3000);
           setTimeout(() => this.startRec(), delay);
@@ -325,7 +342,12 @@ export class VoiceEngine {
     this.wakeOn = on;
     this.state.wakeOn = on;
     if (on) {
-      this.preWarmMicNoise(); // engage noise suppression before recognition starts
+      // Android: do NOT open a parallel getUserMedia stream — on many devices
+      // it starves SpeechRecognition of audio entirely (mic looks on, hears
+      // nothing). The orb's mic-level meter simply reads 0 there and falls
+      // back to its state-machine energy.
+      if (!this.isAndroid) this.preWarmMicNoise(); // engage noise suppression before recognition starts
+      this.errStreak = 0;
       this.startRec();
       this.enterCommandMode();
     } else {
