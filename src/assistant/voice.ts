@@ -20,6 +20,10 @@ export class VoiceEngine {
   // is still speaking (interim results), so the UI can show what was heard
   // instantly instead of only after the endpoint silence flush. Set by app.ts.
   onInterim: ((text: string) => void) | null = null;
+  // Fired when recognition dies for a reason the user must act on (mic
+  // permission denied). Before this, a blocked mic silently flipped wake off
+  // with zero feedback — "the assistant just doesn't listen". Set by app.ts.
+  onMicBlocked: (() => void) | null = null;
   private recRetries = 0;
   private noiseStream: MediaStream | null = null;
   private noiseCtx: AudioContext | null = null;
@@ -94,6 +98,7 @@ export class VoiceEngine {
         if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
           this.wakeOn = false;
           this.onStateChange('');
+          this.onMicBlocked?.();
         } else if (this.wakeOn && !this.suppress) {
           // Keep retrying on no-speech / audio-capture / network errors.
           // Cap the back-off at 3 s so the mic stays responsive.

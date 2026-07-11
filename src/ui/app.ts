@@ -1245,6 +1245,14 @@ export function mountApp(root: HTMLElement) {
   }
 
   const voice = new VoiceEngine(state, (text) => { clearInterim(); addMsg(text, 'me'); ask(text); }, setStatus);
+  // A permission-blocked mic used to switch wake off with no feedback at all —
+  // to the user it looked like "the assistant just doesn't listen". Say it.
+  voice.onMicBlocked = () => {
+    $('micBtn').classList.remove('on');
+    addMsg(state.uiLang === 'he'
+      ? 'הדפדפן חוסם את המיקרופון שלי 🎤 — לחץ על סמל המנעול/ההרשאות בשורת הכתובת, אשר גישה למיקרופון, ונסה שוב.'
+      : 'The browser is blocking my microphone 🎤 — click the lock/permissions icon in the address bar, allow microphone access, and try again.', 'sys');
+  };
   voice.onInterim = (text) => showInterim(text);
   // Feed the plasma core a real per-frame mic level so it ripples to the user's
   // actual voice while listening (Phase 2 — true AnalyserNode reactivity).
@@ -2066,7 +2074,18 @@ export function mountApp(root: HTMLElement) {
     // Live screen vision — capture the screen and let the model see it.
     if (isScreenVisionIntent(text)) { await runScreenVision(text); return; }
     const canAI = state.groqKey || state.key || state.grokKey || state.openaiKey;
-    if (!canAI) { openSetup(); return; }
+    if (!canAI) {
+      // Never answer with pure silence — before this, a question with no AI
+      // key configured just popped the setup panel with no explanation, which
+      // over voice felt like the assistant simply ignoring you.
+      const noKeyMsg = state.uiLang === 'he'
+        ? 'כדי לענות על שאלות חופשיות אני צריך מנוע AI מחובר — פתחתי לך את ההגדרות, הדבק שם מפתח (Groq חינמי) ונמשיך.'
+        : 'To answer open questions I need an AI engine connected — I opened the settings, paste a key (Groq is free) and we\'ll continue.';
+      addMsg(noKeyMsg, 'al');
+      voice.speak(noKeyMsg);
+      openSetup();
+      return;
+    }
     if (asking) return;
     asking = true;
     setStatus('thinking');
@@ -4657,7 +4676,7 @@ export function mountApp(root: HTMLElement) {
   // it holds even if the model ignores the prompt rule.
   function isEightCameraRequest(text: string): boolean {
     const s = (text || '').toLowerCase();
-    return /(^|[^\d])8\s*(-?\s*)?(cam|cameras|camera|מצלמות|מצלמה|ערוצים|channels?|ch)\b/.test(s)
+    return /(^|[^\d])8\s*(-?\s*)?(cam|cameras|camera|מצלמות|מצלמה|ערוצים|channels?|ch)(?![A-Za-z0-9_\u0590-\u05FF])/.test(s)
       || /\b8\s*(ch|channel)\b/.test(s)
       || /(8|שמונה)\s*מצלמות/.test(s);
   }

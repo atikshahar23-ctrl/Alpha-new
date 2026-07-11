@@ -269,8 +269,8 @@ export function clearMemory() {
 const FACT_TRIGGERS: RegExp[] = [
   /\b(?:remember that|note that|keep in mind|for the record)\b\s+(.+)/i,
   /\b(?:my|i'm|i am|i prefer|i like|i work|i drive|i own)\b.+/i,
-  /\b(?:תזכור ש|תזכרי ש|זכור ש|שים לב ש|לידיעתך)\b\s*(.+)/,
-  /\b(?:אני|שלי|אני מעדיף|אני אוהב|אני עובד|אני נוהג)\b.+/,
+  /(?:^|[^A-Za-z0-9_\u0590-\u05FF])(?:תזכור ש|תזכרי ש|זכור ש|שים לב ש|לידיעתך)\s*(.+)/,
+  /(?:^|[^A-Za-z0-9_\u0590-\u05FF])(?:אני|שלי|אני מעדיף|אני אוהב|אני עובד|אני נוהג)(?![A-Za-z0-9_\u0590-\u05FF]).+/,
 ];
 
 export function autoCapture(userText: string, module: ModuleId): string | null {
