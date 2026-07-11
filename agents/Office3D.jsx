@@ -5735,6 +5735,19 @@ const KIDS_SHAPES = [
   { id: "purple", label: "סגול", color: "#b84bff", shape: "star" },
 ];
 
+// Fast-travel destinations for the phone quick-menu. The actual coordinates
+// live inside the mount effect (liveRef.current.teleportTo) since they depend
+// on scene-build constants (OWNER_SEAT, the hangar door spot); this is just
+// the display list — keys must match the SPOTS map registered there.
+const TRAVEL_SPOTS = [
+  { key: "desk", emoji: "🪑", label: "השולחן שלי" },
+  { key: "core", emoji: "🌌", label: "ליבת אלפא" },
+  { key: "gym", emoji: "🏋", label: "חדר כושר" },
+  { key: "lounge", emoji: "🛋", label: "לאונג'" },
+  { key: "algo", emoji: "📈", label: "אזור האלגו" },
+  { key: "hangar", emoji: "🏗️", label: "שער ההאנגר" },
+];
+
 export default function Office3D({ chars, byId, phase, phases, deskPositions, seatPositions, dineTablePositions, meetingSpot, bizData, marketRows, weather, voice, onClose, onOpenChat, onAutoFix, onTalkChange, agentVoiceDefaults }) {
   const mountRef = useRef(null);
   const liveRef = useRef({ chars, phase, bizData, weather, joyVec: { x: 0, y: 0 }, turnVec: { x: 0, y: 0 }, keys: {}, firstPerson: false });
@@ -5789,6 +5802,41 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   // same nested-under-inHangar reasoning as inDrive above.
   const [inRobot, setInRobot] = useState(false);
   useEffect(() => { liveRef.current.setNearHangar = setNearHangar; }, []);
+  // VR entry lives in the settings panel now — the floating WebXR button
+  // sat stuck over the phone HUD (owner request to move it). The real
+  // VRButton element still exists (it owns the session lifecycle text/state)
+  // but hidden; the settings row proxies a click into it.
+  const [vrReady, setVrReady] = useState(false);
+  const vrBtnRef = useRef(null);
+  // ── Phone feature pack ──────────────────────────────────────────────────
+  // Haptic feedback (persisted toggle), sprint lock, photo mode, fast travel.
+  const [haptics, setHaptics] = useState(() => { try { return localStorage.getItem("alpha:office:haptics") !== "0"; } catch { return true; } });
+  useEffect(() => { try { localStorage.setItem("alpha:office:haptics", haptics ? "1" : "0"); } catch {} }, [haptics]);
+  const buzz = (ms = 15) => { if (haptics && navigator.vibrate) { try { navigator.vibrate(ms); } catch {} } };
+  const [sprintLock, setSprintLock] = useState(false);
+  useEffect(() => { liveRef.current.sprintLock = sprintLock; }, [sprintLock]);
+  const [photoFlash, setPhotoFlash] = useState(false);
+  const [travelOpen, setTravelOpen] = useState(false);
+  const takePhoto = () => {
+    buzz(20);
+    setPhotoFlash(true);
+    setTimeout(() => setPhotoFlash(false), 320);
+    // Delivered by the animate loop right after the next render — a WebGL
+    // canvas can only be read in the same tick it was drawn (no
+    // preserveDrawingBuffer), so the loop owns the actual capture.
+    liveRef.current.snapRequest = async (blob) => {
+      if (!blob) return;
+      const file = new File([blob], `alpha-office-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.png`, { type: "image/png" });
+      try {
+        if (navigator.canShare?.({ files: [file] })) { await navigator.share({ files: [file] }); return; }
+      } catch (e) { if (e?.name === "AbortError") return; } // share sheet dismissed — don't force a download
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = file.name;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    };
+  };
   useEffect(() => { liveRef.current.inHangar = inHangar; }, [inHangar]);
   // Real business activity, normalized 0..1 — drives the space portal's
   // orbit speed (busier pipeline = faster orbits), not a random wobble.
@@ -6371,12 +6419,13 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       navigator.xr.isSessionSupported("immersive-vr").then((supported) => {
         if (!supported || cancelled) return;
         const btn = VRButton.createButton(renderer);
-        // Default VRButton centers itself at the bottom, right where the
-        // mic/talk bar lives — move it clear, to the bottom-left corner.
-        btn.style.left = "14px";
-        btn.style.right = "auto";
-        btn.style.bottom = "160px";
+        // The floating button sat stuck over the phone HUD — it now lives
+        // hidden in the DOM (VRButton owns the XR session lifecycle and its
+        // ENTER/EXIT label) and the settings panel proxies clicks into it.
+        btn.style.display = "none";
         mount.appendChild(btn);
+        vrBtnRef.current = btn;
+        setVrReady(true);
       }).catch(() => {});
     }
 
@@ -9332,7 +9381,26 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // Defaults reproduce the old fixed (0, 6.4, 7.6) offset exactly (dist
     // 9.94, elevation ~40°) so the view is unchanged until the stick is used.
     let camAz = 0, camEl = 0.6999;
-    const CAM_DIST = 9.94, CAM_EL_MIN = 0.15, CAM_EL_MAX = 1.4;
+    // let (not const): two-finger pinch on the canvas zooms the third-person
+    // camera in/out on touch devices. Joysticks are separate fixed DOM
+    // elements and single-finger tap-to-select only ever sees one touch, so
+    // a two-touch gesture on the canvas is unambiguous.
+    let CAM_DIST = 9.94;
+    const CAM_EL_MIN = 0.15, CAM_EL_MAX = 1.4;
+    const CAM_DIST_MIN = 5, CAM_DIST_MAX = 17;
+    let pinchStartGap = 0, pinchStartDist = 0;
+    const touchGap = (e) => Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+    const onPinchStart = (e) => { if (e.touches.length === 2) { pinchStartGap = touchGap(e); pinchStartDist = CAM_DIST; } };
+    const onPinchMove = (e) => {
+      if (e.touches.length !== 2 || !pinchStartGap) return;
+      e.preventDefault(); // stop the browser's own page pinch-zoom
+      CAM_DIST = Math.min(CAM_DIST_MAX, Math.max(CAM_DIST_MIN, pinchStartDist * (pinchStartGap / touchGap(e))));
+    };
+    const onPinchEnd = (e) => { if (e.touches.length < 2) pinchStartGap = 0; };
+    renderer.domElement.addEventListener("touchstart", onPinchStart, { passive: true });
+    renderer.domElement.addEventListener("touchmove", onPinchMove, { passive: false });
+    renderer.domElement.addEventListener("touchend", onPinchEnd, { passive: true });
+    renderer.domElement.addEventListener("touchcancel", onPinchEnd, { passive: true });
     // Cinematic camera focus — persisted, itself lerped every frame (not just
     // the camera position) so entering/exiting a live conversation never pops;
     // it eases smoothly from the default chase-cam look-at to the framed shot
@@ -9863,7 +9931,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         mx /= mlen; mz /= mlen;
         // Tactical Sprint — hold Shift for a burst pace, same collision/turn
         // logic as the professional walk, just faster.
-        const sprinting = !!keys["shift"];
+        const sprinting = !!keys["shift"] || !!liveRef.current.sprintLock; // sprintLock = the phone HUD's run-toggle (no shift key on touch)
         liveRef.current.sprinting = sprinting;
         const SPEED = (sprinting ? 17.5 : 10.0) * (liveRef.current.playerSpeedMul || 1); // × the owner's personal speed dial (God Mode)
         playerH.group.position.x = clamp(playerH.group.position.x + mx * SPEED * dt, -(FLOOR_W / 2 - 1), FLOOR_W / 2 - 1);
@@ -10520,10 +10588,39 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       } else {
         composer.render();
       }
+      // Photo mode — the WebGL canvas is only readable in the same tick it
+      // was drawn (no preserveDrawingBuffer), so the capture happens here,
+      // right after the render, and the blob is handed back to the React
+      // button's share/download handler.
+      if (liveRef.current.snapRequest) {
+        const deliver = liveRef.current.snapRequest;
+        liveRef.current.snapRequest = null;
+        try { renderer.domElement.toBlob(deliver, "image/png"); } catch { deliver(null); }
+      }
     }
     liveRef.current.setTalkTarget = setTalkTarget;
     liveRef.current.setSitting = setSitting;
     liveRef.current.setCanSit = setCanSit;
+    // Fast-travel spots for the phone quick-menu — registered here because
+    // the coordinates only exist inside the scene build (OWNER_SEAT, the
+    // hangar door in scene.userData). Keys match TRAVEL_SPOTS below.
+    liveRef.current.teleportTo = (key) => {
+      const hangarSpot = scene.userData.hangarSpot;
+      const SPOTS = {
+        desk: { x: OWNER_SEAT.x, z: OWNER_SEAT.z + 1.4, ry: OWNER_SEAT.ry },
+        gym: { x: -11.5, z: -21.8, ry: Math.PI },
+        lounge: { x: 11.5, z: -21.8, ry: Math.PI },
+        algo: { x: -18, z: 13.6, ry: Math.PI },
+        core: { x: 3, z: 3, ry: -Math.PI * 0.75 },
+        hangar: hangarSpot ? { x: hangarSpot.x + 2, z: hangarSpot.z } : null,
+      };
+      const s = SPOTS[key];
+      if (!s) return false;
+      liveRef.current.setSitting?.(false);
+      playerH.group.position.set(s.x, 0, s.z);
+      if (s.ry != null) playerH.group.rotation.y = s.ry;
+      return true;
+    };
     liveRef.current.setInSpace = setInSpace;
     // Called by the space overlay's return button — steps the player back
     // off the portal marker (otherwise nearPortal would stay true and the
@@ -11022,6 +11119,12 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         try { secRT.dispose(); } catch {}
         if (scene.environment) { scene.environment.dispose(); scene.environment = null; }
         renderer.dispose();
+        renderer.domElement.removeEventListener("touchstart", onPinchStart);
+        renderer.domElement.removeEventListener("touchmove", onPinchMove);
+        renderer.domElement.removeEventListener("touchend", onPinchEnd);
+        renderer.domElement.removeEventListener("touchcancel", onPinchEnd);
+        if (vrBtnRef.current?.parentNode) vrBtnRef.current.parentNode.removeChild(vrBtnRef.current);
+        vrBtnRef.current = null;
         if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement);
       };
     })();
@@ -11523,6 +11626,16 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
             <span>🛠 God Mode — עריכת סצנה</span>
             <b className={godOpen ? "on" : ""}>{godOpen ? "פתוח" : "כלים למנהל"}</b>
           </button>
+          {vrReady && (
+            <button className="off3-settings-row" onClick={() => { buzz(20); setSettingsOpen(false); vrBtnRef.current?.click(); }}>
+              <span>🥽 מציאות מדומה (VR)</span>
+              <b className="on">היכנס עם משקפת</b>
+            </button>
+          )}
+          <button className="off3-settings-row" onClick={() => setHaptics((v) => !v)}>
+            <span>📳 רטט במגע (טלפון)</span>
+            <b className={haptics ? "on" : ""}>{haptics ? "פעיל" : "כבוי"}</b>
+          </button>
           {voiceList.length > 0 && (
             <div className="off3-settings-row off3-settings-select">
               <span><Volume2 size={15} /> קול הסוכנים</span>
@@ -11764,15 +11877,36 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         </div>
       )}
       <div className={"off3-joy-fixed off3-joy-left" + (leftActive ? " active" : "")}
-        onPointerDown={leftStick.onPointerDown} onPointerMove={leftStick.onPointerMove}
+        onPointerDown={(e) => { buzz(8); leftStick.onPointerDown(e); }} onPointerMove={leftStick.onPointerMove}
         onPointerUp={leftStick.onPointerUp} onPointerCancel={leftStick.onPointerCancel}>
         <div className="off3-joy-knob" style={{ transform: `translate(${leftKnob.x}px, ${leftKnob.y}px)` }} />
       </div>
       <div className={"off3-joy-fixed off3-joy-right" + (rightActive ? " active" : "")}
-        onPointerDown={rightStick.onPointerDown} onPointerMove={rightStick.onPointerMove}
+        onPointerDown={(e) => { buzz(8); rightStick.onPointerDown(e); }} onPointerMove={rightStick.onPointerMove}
         onPointerUp={rightStick.onPointerUp} onPointerCancel={rightStick.onPointerCancel}>
         <div className="off3-joy-knob" style={{ transform: `translate(${rightKnob.x}px, ${rightKnob.y}px)` }} />
       </div>
+      {/* Phone action bar — touch-only (hidden on fine-pointer devices via CSS) */}
+      <div className="off3-phonebar">
+        <button className={"off3-pb-btn" + (sprintLock ? " on" : "")} onClick={() => { buzz(12); setSprintLock((v) => !v); }} title="ריצה קבועה — בלי להחזיק">🏃</button>
+        <button className="off3-pb-btn" onClick={takePhoto} title="צלם את המסך">📸</button>
+        <button className="off3-pb-btn" onClick={() => { buzz(12); setTravelOpen(true); }} title="מעבר מהיר">🧭</button>
+      </div>
+      {photoFlash && <div className="off3-snapflash" />}
+      {travelOpen && (
+        <div className="off3-travel-scrim" onClick={() => setTravelOpen(false)}>
+          <div className="off3-travel" onClick={(e) => e.stopPropagation()}>
+            <div className="off3-travel-h">🧭 מעבר מהיר<button onClick={() => setTravelOpen(false)}><X size={14} /></button></div>
+            <div className="off3-travel-grid">
+              {TRAVEL_SPOTS.map((s) => (
+                <button key={s.key} className="off3-travel-btn" onClick={() => { if (liveRef.current.teleportTo?.(s.key)) { buzz(25); setTravelOpen(false); } }}>
+                  <i>{s.emoji}</i><span>{s.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
       {inSpace && <SpaceOverlay onReturn={() => liveRef.current.exitPortal?.()} load={spacePortalLoad} />}
       {inHolodeck && <HolodeckOverlay onReturn={() => liveRef.current.exitHolodeck?.()} liveRef={liveRef} />}
       {inFlight && <FlightOverlay onReturn={() => setInFlight(false)} />}

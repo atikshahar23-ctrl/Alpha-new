@@ -4467,6 +4467,30 @@ function StyleTag() {
 .off3-drone-rec i{width:10px;height:10px;border-radius:50%;background:#ff3c3c;box-shadow:0 0 8px #ff3c3c;animation:recBlink 1s ease-in-out infinite}
 @keyframes recBlink{0%,100%{opacity:1}50%{opacity:.2}}
 
+/* Phone action bar (sprint lock / photo / fast travel) — touch devices only */
+.off3-phonebar{position:absolute;z-index:33;bottom:150px;right:22px;display:flex;flex-direction:column;gap:10px}
+@media (hover:hover) and (pointer:fine){.off3-phonebar{display:none}}
+.off3-pb-btn{width:46px;height:46px;border-radius:50%;font-size:20px;cursor:pointer;
+  background:rgba(8,12,20,.72);border:1px solid rgba(120,160,255,.3);backdrop-filter:blur(8px);
+  display:flex;align-items:center;justify-content:center;color:#eaf1ff;transition:.15s}
+.off3-pb-btn.on{background:rgba(63,215,154,.24);border-color:rgba(63,215,154,.65);box-shadow:0 0 14px rgba(63,215,154,.35)}
+.off3-snapflash{position:absolute;inset:0;z-index:60;background:#fff;pointer-events:none;animation:snapFlash .32s ease-out both}
+@keyframes snapFlash{0%{opacity:.85}100%{opacity:0}}
+.off3-travel-scrim{position:absolute;inset:0;z-index:55;background:rgba(2,4,10,.55);backdrop-filter:blur(3px);
+  display:flex;align-items:flex-end;justify-content:center}
+.off3-travel{width:min(430px,96vw);margin-bottom:14px;border-radius:20px;padding:14px;
+  background:linear-gradient(165deg, rgba(14,20,36,.96), rgba(6,9,18,.98));
+  border:1px solid rgba(111,230,255,.3);box-shadow:0 -10px 50px rgba(0,0,0,.5);animation:acRise .22s ease both}
+.off3-travel-h{display:flex;align-items:center;justify-content:space-between;font-family:'Rubik';font-weight:900;
+  font-size:14px;color:#6fe6ff;margin-bottom:10px}
+.off3-travel-h button{background:none;border:none;color:#8a95ab;cursor:pointer;padding:4px}
+.off3-travel-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.off3-travel-btn{display:flex;flex-direction:column;align-items:center;gap:5px;padding:12px 4px;border-radius:14px;
+  background:rgba(10,15,30,.6);border:1px solid rgba(120,160,255,.22);cursor:pointer;transition:.15s;color:#dbe6f8;font-family:'Rubik'}
+.off3-travel-btn i{font-style:normal;font-size:22px}
+.off3-travel-btn span{font-size:11px;font-weight:700}
+.off3-travel-btn:hover{border-color:rgba(111,230,255,.6);box-shadow:0 0 14px rgba(111,230,255,.25)}
+
 .off3-kids-overlay{position:absolute;inset:0;z-index:50;background:rgba(10,14,10,.7);
   display:flex;align-items:center;justify-content:center;animation:acRise .2s ease both}
 .off3-kids-card{position:relative;width:min(420px,88vw);padding:28px 24px;border-radius:26px;text-align:center;
