@@ -49,7 +49,7 @@
             fullscreen with its music as the app's opening — then the panels
             appear. Replaces the old alien/biometric/vault sequence. ── -->
   <div id="introOverlay">
-    <video id="introVid" playsinline preload="auto" src="%BASE_URL%boot-song.mp4"></video>
+    <video id="introVid" playsinline preload="auto" src="%BASE_URL%boot-intro.mp4"></video>
     <div class="intro-brand" aria-hidden="true">A L P H A</div>
     <div class="intro-progress" aria-hidden="true"><span id="introBar"></span></div>
     <button id="introSound" type="button" hidden>🔊 הקש לסאונד</button>
@@ -81,13 +81,12 @@
     @keyframes fbLoad{0%{transform:translateX(-120%)}100%{transform:translateX(320%)}}
     .fb-txt{font-family:'Space Grotesk',sans-serif;font-size:11.5px;letter-spacing:3px;color:#c9b27a;
       text-transform:uppercase;opacity:.85;max-width:90vw;text-align:center}
-    /* The Suno anthem is a 9:16 portrait lyric video on a golden-sunrise
-       gradient. Phones (portrait) get cover — edge to edge. Wide screens
-       get contain, letterboxed on a matching golden radial so the frame
-       reads as intentional set-dressing rather than black bars. */
-    #introOverlay{background:radial-gradient(circle at 50% 42%, #f9b653 0%, #e8931f 55%, #c96f10 100%)}
-    #introVid{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;transition:opacity .5s ease}
-    @media (max-aspect-ratio: 3/4){ #introVid{object-fit:cover} }
+    /* The boot cinematic (starfield → the golden Alpha core igniting → a
+       dashboard match-cut) is 16:9 with its subject dead-center, so cover
+       works on every screen — portrait phones crop the sides, the core
+       stays centered. The dark navy backdrop matches its starfield. */
+    #introOverlay{background:#04070f}
+    #introVid{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:opacity .5s ease}
     .intro-brand{position:absolute;top:max(26px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:3;
       color:rgba(255,248,230,.92);font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:15px;letter-spacing:9px;
       text-shadow:0 1px 12px rgba(120,60,0,.55)}
@@ -242,17 +241,11 @@
           var p2=vid.play && vid.play();
           if(p2 && p2.catch) p2.catch(function(){ finish(); }); // video itself blocked → straight to the veil
         });
-        // The anthem is the LOADING SCREEN, not a blocking cinematic: the
-        // moment the app is genuinely ready (window.__alphaReady) — after a
-        // short minimum so the hook gets heard — the veil fades and the
-        // music keeps playing over the reveal.
-        var t0=performance.now();
-        (function pollReady(){
-          if(ended) return;
-          if(window.__alphaReady && performance.now()-t0>=6500){ finish(); return; }
-          setTimeout(pollReady, 120);
-        })();
-        setTimeout(finish, 31000);   // hard fallback: clip is 28s — never get stuck
+        // The cinematic is 10s and ENDS on a frame that looks like the
+        // dashboard itself — so the reveal is a match-cut: play it through
+        // ('ended' → finish above), and if the app still isn't ready at
+        // that moment the branded veil bridges the difference.
+        setTimeout(finish, 13000);   // hard fallback: clip is 10s — never get stuck
       } else { finish(); }
     })();
   </script>
