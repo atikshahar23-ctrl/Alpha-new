@@ -188,7 +188,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v206 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v207 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip apps-chip" id="appsBtn" title="האפליקציות שלי" aria-label="האפליקציות שלי">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="12" cy="19" r="2"/><circle cx="19" cy="19" r="2"/></svg>
@@ -2297,19 +2297,16 @@ export function mountApp(root: HTMLElement) {
     btn.setAttribute('aria-label', hidden ? 'הצג פנלים' : 'הסתר פנלים');
     btn.classList.toggle('active', hidden);
   };
-  // Default on the PHONE is a clean screen — just the orb, top bar and bottom
-  // dock (wallet + calendar); the packed data panels start hidden and the
-  // top-bar toggle brings them back. Desktop keeps panels shown by default.
-  // A saved choice (either way) always wins over the default.
+  // Owner-specified per-device default, applied on EVERY open: desktop opens
+  // WITH the panels, the phone opens clean (orb + top bar + dock only). The
+  // top-bar toggle is a per-visit override — it is deliberately NOT persisted
+  // anymore, so the next open always lands back on the device default.
   {
-    const savedPanels = localStorage.getItem('alpha_panels_hidden');
-    const phoneDefault = matchMedia('(max-width: 768px)').matches;
-    applyPanelsHidden(savedPanels === null ? phoneDefault : savedPanels === '1');
+    try { localStorage.removeItem('alpha_panels_hidden'); } catch {} // retire the old saved choice
+    applyPanelsHidden(matchMedia('(max-width: 768px)').matches);
   }
   $('panelsToggleBtn').onclick = () => {
-    const hidden = !appEl.classList.contains('panels-hidden');
-    localStorage.setItem('alpha_panels_hidden', hidden ? '1' : '0');
-    applyPanelsHidden(hidden);
+    applyPanelsHidden(!appEl.classList.contains('panels-hidden'));
     try { navigator.vibrate?.(state.haptics ? 15 : 0); } catch {}
   };
 
