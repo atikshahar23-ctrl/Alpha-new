@@ -6,7 +6,7 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
 import { pikaEmoteSpeak } from '../assistant/pikaVoice';
-import { SUN_VERT, SUN_FRAG, buildSunCorona, type SunUniforms } from './sunShader';
+import { buildSunMaterial, buildSunCorona, type SunUniforms } from './sunShader';
 import { readObj, writeObj } from '../util/batchedStore';
 import { GEN1 } from '../data/gen1';
 import { POKEMON_SPRITE_COLOR } from '../data/pokemonColors';
@@ -1373,14 +1373,10 @@ interface AlphaBrainParts {
 function buildAlphaBrain(segments = 96): AlphaBrainParts {
   const gold = 0xE4BC63;
   const group = new THREE.Group();
-  // Photoreal sun core (owner request: "שמש אמיתי לחלוטין") — the shared
-  // sun shader: granulation, sunspots, faculae, limb darkening, differential
-  // rotation and a chromosphere rim, still voice-reactive via uAudioAmplitude.
-  const coreMat = new THREE.ShaderMaterial({
-    uniforms: { uTime: { value: 0 }, uAudioAmplitude: { value: 0.06 } },
-    vertexShader: SUN_VERT,
-    fragmentShader: SUN_FRAG,
-  });
+  // Sun core — the owner's own uploaded sun surface (see sunShader.ts),
+  // wrapped with differential rotation, limb darkening and a chromosphere
+  // rim, still voice-reactive via uAudioAmplitude.
+  const coreMat = buildSunMaterial();
   const core = new THREE.Mesh(new THREE.SphereGeometry(1.1, segments, segments), coreMat);
   group.add(core);
   // Corona streamers share the core's uniform objects — one uTime advance

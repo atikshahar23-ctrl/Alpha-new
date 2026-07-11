@@ -8312,9 +8312,10 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       // granulation, sunspots, faculae, limb darkening, differential rotation
       // and a chromosphere rim, plus corona streamers. A ShaderMaterial is
       // unlit, so it renders identically on the owner's phone GPU.
-      // gain 0.6: this scene runs an UnrealBloomPass (threshold 0.4) — at full
-      // brightness the entire disc blooms and clips to a detail-less white ball.
-      const sunCoreMat = buildSunMaterial(0.6);
+      // gain 0.85: this scene runs an UnrealBloomPass (threshold 0.4) — at
+      // full brightness the disc's bright cells bloom out to a detail-less
+      // white ball; slightly tamed, only the hottest cells glow.
+      const sunCoreMat = buildSunMaterial(0.85);
       const sunCore = new THREE.Mesh(new THREE.SphereGeometry(1.8, 72, 72), sunCoreMat);
       sunGroup.add(sunCore);
       sunGroup.add(buildSunCorona(1.8, sunCoreMat.uniforms));
