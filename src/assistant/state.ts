@@ -2,7 +2,7 @@ export type ReplyLang = 'en' | 'he' | 'es';
 export type MicLang = 'he' | 'en' | 'es';
 export type TextLang = 'en' | 'he' | 'ar' | 'ru' | 'fr' | 'es' | 'de' | 'auto';
 
-export type AIProvider = 'groq' | 'puter' | 'gemini' | 'grok' | 'openai';
+export type AIProvider = 'groq' | 'puter' | 'gemini' | 'grok' | 'openai' | 'lmstudio';
 
 export type VoiceGender = 'female' | 'male' | 'auto';
 

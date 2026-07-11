@@ -1,7 +1,7 @@
 import { mountOrb, setCryEnabled, type OrbHandle } from '../orb/OrbScene';
 import { mountFlowLines } from '../bg/flowLines';
 import { loadState, saveState, addEvent, addTask, scheduleTask, saveNote, loadEvents, loadTasks, removeEvent, loadHgBacklog, scheduleHgTask, loadInstallDates, loadWallet, saveWallet, loadWalletHistory, addWalletExpense, removeWalletExpense, EXPENSE_CATEGORIES, updateEventTitle, getJournalEntry, saveJournalEntry, type AppState, type TextLang, type AIProvider, type VoiceGender, type UILang, type CalEvent } from '../assistant/state';
-import { askAIStream, askOnce, askVision, runTags } from '../assistant/gemini';
+import { askAIStream, askOnce, askVision, runTags, lmsConfigured } from '../assistant/gemini';
 import { GEN1 } from '../data/gen1';
 import * as THREE from 'three';
 import { tryLocalCommand } from '../assistant/local';
@@ -2073,7 +2073,9 @@ export function mountApp(root: HTMLElement) {
     }
     // Live screen vision — capture the screen and let the model see it.
     if (isScreenVisionIntent(text)) { await runScreenVision(text); return; }
-    const canAI = state.groqKey || state.key || state.grokKey || state.openaiKey;
+    // LM Studio counts as a connected engine — the same local brain the
+    // agents center uses (shared settings), no cloud key required.
+    const canAI = state.groqKey || state.key || state.grokKey || state.openaiKey || lmsConfigured();
     if (!canAI) {
       // Never answer with pure silence — before this, a question with no AI
       // key configured just popped the setup panel with no explanation, which
@@ -7746,15 +7748,21 @@ export function mountApp(root: HTMLElement) {
       'gemini': 'VIA GOOGLE',
       'grok': 'VIA XAI',
       'openai': 'VIA OPENAI',
+      'lmstudio': 'LOCAL · LM STUDIO',
     };
     const modelByProvider: Record<string, string> = {
       'groq': 'LLAMA 3.3 70B',
       'gemini': 'GEMINI 2.0 FLASH',
       'grok': 'GROK-3 MINI',
       'openai': 'GPT-4O MINI',
+      'lmstudio': 'LOCAL BRAIN',
     };
-    $('aiModelDisplay').textContent = modelByProvider[state.provider] || (modelNames[state.provider] || '');
-    $('aiProviderDisplay').textContent = providerNames[state.provider] || state.provider.toUpperCase();
+    // When the owner's LM Studio machine is connected it answers first
+    // (free-first chain in gemini.ts) — reflect that in the header display
+    // regardless of which cloud provider is nominally selected.
+    const shown = lmsConfigured() ? 'lmstudio' : state.provider;
+    $('aiModelDisplay').textContent = modelByProvider[shown] || (modelNames[shown] || '');
+    $('aiProviderDisplay').textContent = providerNames[shown] || shown.toUpperCase();
   }
   updateAIDisplay();
 

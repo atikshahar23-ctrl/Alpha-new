@@ -251,11 +251,73 @@ async function askGroqProvider(state: AppState): Promise<string> {
   throw new Error('PROVIDER_EXHAUSTED');                    // whole wheel cooling → next provider
 }
 
+// ─── LM Studio — the owner's own machine as Alpha's local brain ───
+// The EXACT same connection the 13-agent center uses: this reads the same
+// localStorage slots agents/App.jsx writes from its settings panel, so
+// connecting LM Studio there (including through the Cloudflare tunnel)
+// instantly gives the main Alpha assistant the local brain too. Carries the
+// agents' hard-won lessons: /v1 is auto-appended (LM Studio's UI shows the
+// address without it), an optional API key rides as a Bearer token
+// (public-tunnel setups), reasoning models get a generous token floor +
+// low reasoning effort so they don't burn the budget on hidden thinking,
+// and an empty completion THROWS so the provider chain rescues with a
+// cloud engine instead of answering silence.
+function lmsBase(): string {
+  try {
+    let u = (localStorage.getItem('alpha:agents:lmsUrl') || '').trim().replace(/\/+$/, '');
+    if (u && !/\/v1$/i.test(u)) u += '/v1';
+    return u;
+  } catch { return ''; }
+}
+function lmsModel(): string { try { return (localStorage.getItem('alpha:agents:lmsModel') || '').trim(); } catch { return ''; } }
+function lmsApiKey(): string { try { return (localStorage.getItem('alpha:agents:lmsKey') || '').trim(); } catch { return ''; } }
+export function lmsConfigured(): boolean { return !!lmsBase(); }
+
+async function askLmStudioProvider(state: AppState): Promise<string> {
+  const base = lmsBase();
+  if (!base) throw new Error('PROVIDER_NO_KEY');
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const k = lmsApiKey();
+  if (k) headers.Authorization = `Bearer ${k}`;
+  let res: Response;
+  try {
+    res = await fetch(base + '/chat/completions', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model: lmsModel() || 'local-model',
+        messages: chatMessages(state),
+        temperature: 0.8,
+        max_tokens: 2000,
+        reasoning_effort: 'low',
+      }),
+      signal: AbortSignal.timeout(120000), // local models can be slow on big prompts
+    });
+  } catch { throw new Error('PROVIDER_EXHAUSTED'); } // machine off / tunnel down → next provider
+  if (!res.ok) throw new Error('PROVIDER_EXHAUSTED');
+  const data = await res.json();
+  const reply = data.choices?.[0]?.message?.content?.trim() || '';
+  if (!reply) throw new Error('PROVIDER_EXHAUSTED'); // empty completion = failure, not an answer
+  return reply;
+}
+
 // ─── Unified ask with auto-fallback ───
 
 const PROVIDER_ORDER: AIProvider[] = ['groq', 'gemini', 'grok', 'openai'];
 
+// Free-first, same routing philosophy as the agents center: when the owner's
+// own LM Studio machine is connected it answers first, and the cloud keys
+// stay as rescue engines.
+function buildChain(state: AppState): AIProvider[] {
+  const primary = state.provider;
+  const fallbacks = PROVIDER_ORDER.filter(p => p !== primary && hasKey(p, state));
+  let chain: AIProvider[] = [primary, ...fallbacks];
+  if (lmsConfigured()) chain = ['lmstudio', ...chain.filter(p => p !== 'lmstudio')];
+  return chain;
+}
+
 async function askProvider(provider: AIProvider, state: AppState): Promise<string> {
+  if (provider === 'lmstudio') return askLmStudioProvider(state);
   if (provider === 'groq') return askGroqProvider(state);
   if (provider === 'gemini') return askGeminiProvider(state);
   if (provider === 'grok') return askGrokProvider(state);
@@ -263,6 +325,7 @@ async function askProvider(provider: AIProvider, state: AppState): Promise<strin
 }
 
 function hasKey(provider: AIProvider, state: AppState): boolean {
+  if (provider === 'lmstudio') return lmsConfigured();
   if (provider === 'groq') return !!state.groqKey;
   if (provider === 'gemini') return !!state.key;
   if (provider === 'grok') return !!state.grokKey;
@@ -275,9 +338,7 @@ export async function askAI(state: AppState, text: string): Promise<string> {
   state.history.push({ role: 'user', parts: [{ text }] });
 
   try {
-    const primary = state.provider;
-    const fallbacks = PROVIDER_ORDER.filter(p => p !== primary && hasKey(p, state));
-    const chain = [primary, ...fallbacks];
+    const chain = buildChain(state);
 
     for (const provider of chain) {
       if (!hasKey(provider, state)) continue;
@@ -367,10 +428,26 @@ export async function askVision(state: AppState, prompt: string, imageDataUrl: s
 // the provider chain and returns '' if none answer (caller treats '' as no-op).
 export async function askOnce(state: AppState, system: string, user: string): Promise<string> {
   const order = [state.provider, ...PROVIDER_ORDER.filter(p => p !== state.provider)];
+  // Free-first here too: the local machine answers one-shot jobs (briefings,
+  // summaries) before any cloud key is spent.
+  if (lmsConfigured()) order.unshift('lmstudio');
   for (const provider of order) {
     if (!hasKey(provider, state)) continue;
     try {
-      if (provider === 'groq') {
+      if (provider === 'lmstudio') {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        const k = lmsApiKey();
+        if (k) headers.Authorization = `Bearer ${k}`;
+        const res = await fetch(lmsBase() + '/chat/completions', {
+          method: 'POST', headers,
+          body: JSON.stringify({ model: lmsModel() || 'local-model', messages: [{ role: 'system', content: system }, { role: 'user', content: user }], temperature: 0.2, max_tokens: 2000, reasoning_effort: 'low' }),
+          signal: AbortSignal.timeout(120000),
+        });
+        if (!res.ok) continue;
+        const data = await res.json();
+        const t = data.choices?.[0]?.message?.content?.trim();
+        if (t) return t;
+      } else if (provider === 'groq') {
         if (!state.groqKey) continue;
         const res = await fetch(GROQ_URL, {
           method: 'POST',
@@ -454,14 +531,18 @@ function chatMessages(state: AppState) {
   ];
 }
 
-// OpenAI + Grok share the OpenAI-compatible streaming wire format.
+// OpenAI + Grok + LM Studio share the OpenAI-compatible streaming wire format.
+// An empty key skips the Authorization header entirely (LM Studio without
+// "Require Authentication" rejects nothing, but why send an empty Bearer).
 async function streamOpenAICompat(
-  url: string, key: string, model: string, state: AppState, onText: (full: string) => void,
+  url: string, key: string, model: string, state: AppState, onText: (full: string) => void, extra: Record<string, any> = {},
 ): Promise<string> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (key) headers.Authorization = `Bearer ${key}`;
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-    body: JSON.stringify({ model, messages: chatMessages(state), temperature: 0.8, max_tokens: 500, stream: true }),
+    headers,
+    body: JSON.stringify({ model, messages: chatMessages(state), temperature: 0.8, max_tokens: 500, stream: true, ...extra }),
   });
   if (!res.ok || !res.body) {
     if (res.status === 429 || res.status === 401 || res.status === 403) throw new Error('PROVIDER_EXHAUSTED');
@@ -522,6 +603,12 @@ async function streamGeminiChain(state: AppState, onText: (full: string) => void
 }
 
 async function streamProvider(provider: AIProvider, state: AppState, onText: (full: string) => void): Promise<string> {
+  if (provider === 'lmstudio') {
+    const base = lmsBase();
+    if (!base) throw new Error('PROVIDER_NO_KEY');
+    return streamOpenAICompat(base + '/chat/completions', lmsApiKey(), lmsModel() || 'local-model', state, onText,
+      { max_tokens: 2000, reasoning_effort: 'low' }); // reasoning models: don't burn the budget thinking
+  }
   if (provider === 'groq') {
     if (!state.groqKey) throw new Error('PROVIDER_NO_KEY');
     return streamOpenAICompat(GROQ_URL, state.groqKey, GROQ_MODELS[activeGroqModel], state, onText);
@@ -541,9 +628,7 @@ export async function askAIStream(state: AppState, text: string, onText: (full: 
   state.history.push({ role: 'user', parts: [{ text }] });
 
   try {
-    const primary = state.provider;
-    const fallbacks = PROVIDER_ORDER.filter(p => p !== primary && hasKey(p, state));
-    const chain = [primary, ...fallbacks];
+    const chain = buildChain(state);
 
     for (const provider of chain) {
       if (!hasKey(provider, state)) continue;
