@@ -916,6 +916,58 @@ async function fetchGoogleReviews() {
 const K_FB_PAGE = "alpha:social:fbPageId";
 const K_FB_TOKEN = "alpha:social:fbPageToken";
 const K_SOCIAL_DRAFTS = "alpha:social:drafts"; // [{id, text, status: draft|published, ts, link}]
+
+/* ── מנוע העבודה האוטונומי — הצוות מקדם את העסק ברקע ─────────────────────
+   Owner request: with the whole council wired to the home LM Studio server
+   (free tokens), the agents should PROACTIVELY advance the business — real
+   outputs, each in their own domain, not roleplay:
+     IDEA  → a card on the shared ideas board (deduped; some are executable)
+     ALERT → an Alpha Alert into the live activity feed + toast
+     DRAFT → a social-post draft into SYRAX's approval queue (never auto-posts)
+     NOTE  → an investment-desk note (ראובן) on the invest ticker
+   One agent works per cycle, in rotation; ראובן gets every 4th slot and his
+   cycle first pulls the REAL market snapshot from the trading simulator, so
+   his output is grounded in live prices. askAI's own free-first routing
+   sends the tokens to the home server. */
+const K_AUTOWORK = "alpha:agents:autowork";
+const K_AUTOWORK_STATE = "alpha:agents:autowork:state"; // { idx, lastRun } — multi-tab/reload guard
+const AUTOWORK_CYCLE_MS = 8 * 60e3;
+const AUTOWORK_PROTOCOL = `
+
+[סבב עבודה יזום — פרוטוקול]
+אתה מבצע כעת סבב עבודה עצמאי בתחומך, ביוזמתך, בלי שאלה מהבעלים. בחן את הנתונים העסקיים החיים שקיבלת למעלה ובחר תוצר אחד קונקרטי שמקדם את העסק עכשיו. ענה בשורה אחת בלבד, באחת מהתבניות:
+IDEA: <רעיון ביצועי קונקרטי בתחומך, מנוסח כמשימה>
+ALERT: <אזהרה שמבוססת על נתון אמיתי מהמידע למעלה בלבד>
+DRAFT: <טיוטת פוסט שיווקי קצרה עם הוק חזק (רק אם אתה סוכן השיווק)>
+NOTE: <תובנת השקעות מבוססת נתוני השוק שקיבלת (רק אם אתה סוכן הכספים)>
+בלי Markdown, בלי הסברים נוספים. אם אין לך ממצא בעל ערך אמיתי הפעם — ענה בדיוק: SKIP`;
+// ראובן (finance) is injected every 4th slot — the owner asked for extra
+// pressure on the investments desk specifically. Lazy (not a module-level
+// IIFE): this block sits ABOVE the AGENTS declaration in the file, so eager
+// evaluation would read AGENTS before it exists and crash the whole app.
+let workRotationCache = null;
+function workRotation() {
+  if (!workRotationCache) {
+    const ids = AGENTS.filter((a) => a.id !== "finance").map((a) => a.id);
+    const out = [];
+    ids.forEach((id, i) => { out.push(id); if (i % 3 === 2) out.push("finance"); });
+    workRotationCache = out;
+  }
+  return workRotationCache;
+}
+function parseAutoWork(raw) {
+  const s = String(raw || "");
+  if (/^\s*SKIP\b/im.test(s)) return null;
+  const m = s.match(/^\s*(IDEA|ALERT|DRAFT|NOTE)\s*[::]\s*(.+)$/im);
+  if (m) {
+    const text = m[2].trim().replace(/\s+/g, " ");
+    return text ? { type: m[1].toLowerCase(), text } : null;
+  }
+  // A model that ignored the format but said something substantial → treat
+  // the whole reply as an idea rather than dropping the work.
+  const t = s.trim().replace(/\s+/g, " ");
+  return t.length > 12 ? { type: "idea", text: t.slice(0, 220) } : null;
+}
 // SYRAX Social-Synapse — Make.com/Zapier bridge. The owner pastes their full
 // webhook URL (e.g. https://hook.eu1.make.com/xxxxxxxx) once; every AUTHORIZE
 // then POSTs the approved caption as JSON for the Make scenario to publish to
@@ -1590,6 +1642,54 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const logInvest = (agentId, text) => setInvest((p) => [{ id: uid(), agentId, text, ts: now() }, ...p].slice(0, 30));
+
+  // ── מנוע העבודה האוטונומי (see module header near K_SOCIAL_DRAFTS) ────
+  const [autoWork, setAutoWork] = useState(() => { try { return localStorage.getItem(K_AUTOWORK) !== "0"; } catch { return true; } });
+  useEffect(() => { try { localStorage.setItem(K_AUTOWORK, autoWork ? "1" : "0"); } catch {} }, [autoWork]);
+  useEffect(() => {
+    if (!autoWork) return;
+    let stopped = false;
+    const runCycle = async () => {
+      if (stopped || !hasAI()) return;
+      const st = load(K_AUTOWORK_STATE, { idx: 0, lastRun: 0 });
+      if (now() - st.lastRun < AUTOWORK_CYCLE_MS - 10000) return; // another tab / recent reload already worked
+      const rotation = workRotation();
+      save(K_AUTOWORK_STATE, { idx: (st.idx + 1) % rotation.length, lastRun: now() });
+      const agent = byId(rotation[st.idx % rotation.length]);
+      if (!agent) return;
+      try {
+        // ראובן works with LIVE market data from the trading simulator — his
+        // notes are grounded in real prices/signals, not vibes.
+        let marketCtx = "";
+        if (agent.id === "finance" && isSimConfigured()) {
+          try { marketCtx = "\n\n[נתוני שוק חיים מהסימולטור — עכשיו]\n" + (await handleAgentToolCall("sim_market_context", {})); } catch {}
+        }
+        const sys = agent.persona + bizContext() + domainContext(agent.id) + marketCtx + AUTOWORK_PROTOCOL;
+        const raw = await askAI(sys, [], "בצע כעת סבב עבודה יזום בתחומך.", 400);
+        const act = parseAutoWork(raw);
+        if (!act) { logActivity(agent.id, "🔎 סבב עבודה יזום — נבדק, אין ממצא חדש הפעם"); return; }
+        if (act.type === "draft" && agent.id === "cmo") {
+          const drafts = load(K_SOCIAL_DRAFTS, []);
+          save(K_SOCIAL_DRAFTS, [{ id: uid(), text: act.text, status: "draft", ts: now(), via: "autowork" }, ...drafts].slice(0, 40));
+          logActivity(agent.id, "📣 סבב יזום — הכין טיוטת פוסט חדשה, ממתינה לאישורך");
+          showToast("📣 " + agent.name + " הכין טיוטת פוסט — ממתין לאישורך");
+        } else if (act.type === "alert") {
+          logActivity(agent.id, "🚨 " + act.text.slice(0, 150));
+          showToast("🚨 " + act.text.slice(0, 80));
+        } else if (act.type === "note" && agent.id === "finance") {
+          logInvest(agent.id, act.text.slice(0, 220));
+          logActivity(agent.id, "📈 עדכן את דסק ההשקעות: " + act.text.slice(0, 100));
+        } else {
+          addIdea(agent.id, act.text.slice(0, 200));
+          logActivity(agent.id, "💡 סבב יזום — רעיון חדש על הלוח: " + act.text.slice(0, 90));
+        }
+      } catch {} // engine hiccup — the next cycle simply moves to the next agent
+    };
+    const t0 = setTimeout(runCycle, 45000); // first cycle shortly after boot
+    const iv = setInterval(runCycle, AUTOWORK_CYCLE_MS);
+    return () => { stopped = true; clearTimeout(t0); clearInterval(iv); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoWork]);
   // De-duplicated: the exact same idea text never piles up on the board
   // (the autonomous engine used to drop identical cards repeatedly).
   const addIdea = (agentId, text, exec = null) => {
@@ -1725,6 +1825,8 @@ export default function App() {
             }}
             activity={activity}
             showToast={showToast}
+            autoWork={autoWork}
+            setAutoWork={setAutoWork}
           />
         )}
         {view === "activity" && <ActivityView activity={activity} />}
@@ -2079,7 +2181,7 @@ function VoiceStudio({ initialId, onClose, showToast }) {
   );
 }
 
-function RosterView({ onOpen, onOffice, activity, showToast }) {
+function RosterView({ onOpen, onOffice, activity, showToast, autoWork, setAutoWork }) {
   const ceo = AGENTS.find((a) => a.boss);
   const team = AGENTS.filter((a) => !a.boss);
   const [panelId, setPanelId] = useState(null);
@@ -2110,6 +2212,13 @@ function RosterView({ onOpen, onOffice, activity, showToast }) {
         <div className="ac-hero-glow" />
         <h1>הצוות שלך</h1>
         <p>{AGENTS.length} סוכני AI · כל אחד מנהל תחום. לחץ על סוכן לפנל שליטה, או ישר לשיחה.</p>
+        <button
+          className={"ac-autowork" + (autoWork ? " on" : "")}
+          onClick={() => setAutoWork?.((v) => !v)}
+          title={autoWork ? "הצוות מבצע סבבי עבודה יזומים ברקע — סוכן אחר כל כמה דקות. לחץ לכיבוי" : "לחץ להפעלת סבבי עבודה אוטונומיים"}
+        >
+          {autoWork ? "🟢 הצוות עובד ברקע — סבב יזום כל 8 דק׳" : "⚪ עבודה אוטונומית כבויה"}
+        </button>
       </div>
 
       <BriefingBanner ceo={ceo} onOpenChat={onOpen} />
@@ -4507,6 +4616,12 @@ function StyleTag() {
   border:1px solid rgba(255,60,60,.5);color:#ffb3b3;font-family:'Space Grotesk';font-weight:800;font-size:12px;letter-spacing:1px}
 .off3-drone-rec i{width:10px;height:10px;border-radius:50%;background:#ff3c3c;box-shadow:0 0 8px #ff3c3c;animation:recBlink 1s ease-in-out infinite}
 @keyframes recBlink{0%,100%{opacity:1}50%{opacity:.2}}
+
+/* Autonomous work engine — roster hero toggle */
+.ac-autowork{margin-top:12px;padding:8px 18px;border-radius:99px;font-family:'Rubik';font-size:.76rem;font-weight:800;cursor:pointer;transition:.18s;
+  background:rgba(10,15,30,.55);border:1px solid rgba(120,160,255,.22);color:var(--s4)}
+.ac-autowork.on{background:rgba(63,215,154,.12);border-color:rgba(63,215,154,.5);color:#7fe6b0;box-shadow:0 0 16px rgba(63,215,154,.2)}
+.ac-autowork:hover{box-shadow:0 0 14px rgba(120,160,255,.25)}
 
 /* OMNI-CITY drive mode — time-of-day slider */
 .off3-drive-time{position:absolute;top:64px;left:14px;z-index:31;display:flex;flex-direction:column;gap:4px;
