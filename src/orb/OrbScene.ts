@@ -1373,9 +1373,11 @@ interface AlphaBrainParts {
 function buildAlphaBrain(segments = 96): AlphaBrainParts {
   const gold = 0xE4BC63;
   const group = new THREE.Group();
-  // Sun core — the owner's own uploaded sun surface (see sunShader.ts),
-  // wrapped with differential rotation, limb darkening and a chromosphere
-  // rim, still voice-reactive via uAudioAmplitude.
+  // Photoreal sun core (owner request: "שמש אמיתי לחלוטין") — the shared
+  // procedural sun shader (see sunShader.ts): granulation, sunspots, faculae,
+  // limb darkening, differential rotation and a chromosphere rim, still
+  // voice-reactive via uAudioAmplitude. Fragment noise comes from a baked
+  // texture so it also renders on the owner's phone GPU (no fp16 overflow).
   const coreMat = buildSunMaterial();
   const core = new THREE.Mesh(new THREE.SphereGeometry(1.1, segments, segments), coreMat);
   group.add(core);

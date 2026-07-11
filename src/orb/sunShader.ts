@@ -1,22 +1,36 @@
 // ═══════════════════════════════════════════════════════════════════════
-// THE SUN — shared core for the assistant's avatar, used by BOTH the main
-// dashboard orb (src/orb/OrbScene.ts) and the office simulator's giant
-// Alpha hologram (agents/Office3D.jsx).
+// PHOTOREAL SUN — shared shader for the assistant's core, used by BOTH the
+// main dashboard orb (src/orb/OrbScene.ts) and the office simulator's giant
+// Alpha hologram (agents/Office3D.jsx). Owner reference: the boot cinematic's
+// golden sun — "שמש אמיתי לחלוטין כמה שיותר".
 //
-// The photosphere FILL is the owner's own uploaded sun (extracted from
-// uploads Sun.glb → public/sun-surface.jpg, a 2:1 equirectangular surface
-// map) — it replaced the earlier fully-procedural shader per explicit
-// request. The shader wraps that texture with what a flat texture can't do
-// on its own:
-//  • Differential rotation — the surface drifts faster at the equator than
-//    at the poles, like the real sun (plus a counter-drifting second sample
-//    blended in so the surface visibly boils instead of reading as a
-//    rotating wallpaper).
-//  • Limb darkening — edges dimmer than disc center, sells the sphere.
-//  • Chromosphere rim + voice flaring — uAudioAmplitude brightens the whole
-//    disc and the rim while the assistant speaks.
-// Unlit ShaderMaterial → a single draw call, renders identically on the
-// owner's phone GPU (no PBR/light dependence).
+// What makes it read as a real sun (all in one unlit fragment shader — a
+// single draw call, identical on desktop and the owner's phone GPU):
+//  • Granulation — domain-warped fbm convection cells (bright cell centers,
+//    dark intergranular lanes) with a finer second layer riding on top.
+//  • Supergranulation mottling at a lower frequency.
+//  • Sunspots — low-frequency noise wells with a dark umbra and a warmer
+//    penumbra ring, plus bright faculae (plage) hugging their boundaries.
+//  • Limb darkening — the real photosphere effect (edge visibly dimmer/redder
+//    than disc center), approximated with the standard linear law.
+//  • Differential rotation — the surface pattern drifts faster at the equator
+//    than at the poles, like the actual sun.
+//  • Chromosphere rim — a thin warm-red glow hugging the limb.
+//  • Voice reactivity — uAudioAmplitude flares the whole photosphere and
+//    speeds the churn, so the star "speaks" with the assistant.
+//
+// ── PHONE-SAFETY: why the fragment shader samples a noise TEXTURE ──
+// The first version computed Ashima simplex noise arithmetically in the
+// fragment shader. On the owner's phone that rendered as a plain BLACK ball:
+// GPUs that run fragment shaders in mediump (fp16, max ~65504) overflow the
+// simplex permute polynomial ((x*34+1)*x on a 0..289 domain reaches ~2.8M)
+// → Inf/NaN → black. Desktop fragments are highp, so it looked perfect there.
+// The fix that works on EVERY device: bake tileable fbm noise into a small
+// CanvasTexture once at startup (CPU-side, ~256², a few ms) and replace all
+// in-shader noise arithmetic with texture lookups — every value the fragment
+// shader touches then stays in the 0..~20 range, safe at any precision.
+// (The VERTEX shader keeps its simplex displacement: GLSL ES mandates highp
+// support in vertex shaders, so it cannot hit the fp16 overflow.)
 // ═══════════════════════════════════════════════════════════════════════
 import * as THREE from 'three';
 
@@ -98,8 +112,77 @@ export const SUN_VERT = /* glsl */`
   }
 `;
 
+// All fragment "noise" is fetched from the tileable fbm texture (uNoise,
+// wrap-repeat both axes). nz() recenters to the simplex-like -1..1 range.
 export const SUN_FRAG = /* glsl */`
-  uniform sampler2D uMap;
+  uniform sampler2D uNoise;
+  uniform float uTime;
+  uniform float uAudioAmplitude;
+  uniform float uGain;
+  varying vec2 vUv;
+  varying vec3 vNormal;
+  varying vec3 vWorldPos;
+
+  float nz(vec2 p) { return texture2D(uNoise, p).r * 2.0 - 1.0; }
+
+  void main() {
+    vec3 n = normalize(vNormal);
+    vec3 viewDir = normalize(cameraPosition - vWorldPos);
+    float mu = clamp(dot(n, viewDir), 0.0, 1.0);
+
+    // ── Differential rotation: equator drifts faster than the poles ──
+    float lat = (vUv.y - 0.5) * 3.14159265;
+    float drift = uTime * (0.0022 + 0.0016 * cos(lat * 2.0));
+    vec2 p = vec2(vUv.x + drift, vUv.y);
+
+    float churn = uTime * (0.006 + uAudioAmplitude * 0.016);
+
+    // ── Granulation: domain-warped convection cells + fine grain ──
+    vec2 q = vec2(nz(p * 1.5), nz(p * 1.5 + vec2(0.37, 0.71)));
+    float gran = nz(p * 4.0 + q * 0.12 + vec2(0.0, churn));
+    float fine = nz(p * 9.0 + q * 0.07 - vec2(churn, 0.0));
+    float fine2 = nz(p * 21.0 + q * 0.04 + vec2(churn * 0.7, 0.0)); // crisp cell grain
+    float heat = 0.62 + 0.40 * gran + fine * 0.14 + fine2 * 0.09;
+
+    // ── Supergranulation mottling ──
+    heat += nz(p * 1.4 - vec2(churn * 0.4, 0.0)) * 0.15;
+
+    // ── Sunspots: umbra / penumbra / faculae ──
+    float spotN = nz(p * 0.8 + vec2(0.61, 0.13));
+    float umbra    = smoothstep(0.42, 0.60, spotN);
+    float penumbra = smoothstep(0.30, 0.44, spotN) - umbra;
+    float facula   = smoothstep(0.20, 0.30, spotN) * (1.0 - smoothstep(0.30, 0.40, spotN));
+    heat += facula * 0.45;
+    heat *= 1.0 - umbra * 0.82;
+    heat *= 1.0 - penumbra * 0.35;
+
+    // ── Limb darkening (linear law, u≈0.62 like the real photosphere) ──
+    heat *= 0.38 + 0.62 * pow(mu, 0.62);
+
+    // ── Voice: the whole photosphere flares while the assistant speaks ──
+    heat *= 1.0 + uAudioAmplitude * 0.55;
+
+    // ── Blackbody-ish ramp: deep ember → orange → gold → white-hot ──
+    vec3 col = mix(vec3(0.50, 0.11, 0.01), vec3(1.0, 0.44, 0.07), smoothstep(0.0, 0.45, heat));
+    col = mix(col, vec3(1.0, 0.78, 0.30), smoothstep(0.35, 0.85, heat));
+    col = mix(col, vec3(1.0, 0.98, 0.90), smoothstep(0.85, 1.35, heat));
+
+    // ── Chromosphere rim: thin warm-red glow hugging the limb ──
+    float rim = pow(1.0 - mu, 3.0);
+    col += vec3(1.0, 0.34, 0.10) * rim * (0.65 + uAudioAmplitude * 0.8);
+
+    // uGain < 1 tames the disc under a post-processing bloom chain (the sim's
+    // UnrealBloomPass threshold is 0.4 — at full brightness the whole disc
+    // blooms and clips to white, erasing all the surface detail).
+    gl_FragColor = vec4(col * uGain, 1.0);
+  }
+`;
+
+// Corona: an additive back-side shell with animated streamers — shares the
+// SAME uniform objects as the core material, so advancing the core's uTime
+// drives the corona for free (no second per-frame update site needed).
+const CORONA_FRAG = /* glsl */`
+  uniform sampler2D uNoise;
   uniform float uTime;
   uniform float uAudioAmplitude;
   uniform float uGain;
@@ -110,53 +193,9 @@ export const SUN_FRAG = /* glsl */`
   void main() {
     vec3 n = normalize(vNormal);
     vec3 viewDir = normalize(cameraPosition - vWorldPos);
-    float mu = clamp(dot(n, viewDir), 0.0, 1.0);
-
-    // ── Differential rotation: equator drifts faster than the poles ──
-    float lat = (vUv.y - 0.5) * 3.14159265;
-    float churn = 1.0 + uAudioAmplitude * 1.5; // the surface boils harder while speaking
-    vec2 uv = vec2(vUv.x + uTime * (0.0045 + 0.0035 * cos(lat * 2.0)) * churn, vUv.y);
-    vec3 col = texture2D(uMap, uv).rgb;
-
-    // Counter-drifting second sample, blended in — the two layers slide
-    // against each other so the surface churns instead of spinning rigidly.
-    vec2 uv2 = vec2(vUv.x - uTime * 0.0028 * churn, vUv.y);
-    col = mix(col, texture2D(uMap, uv2).rgb, 0.35);
-
-    // ── Limb darkening (the real photosphere effect — sells the sphere) ──
-    col *= 0.52 + 0.48 * pow(mu, 0.62);
-
-    // ── Voice: the whole disc flares while the assistant speaks ──
-    col *= 1.0 + uAudioAmplitude * 0.6;
-
-    // ── Chromosphere rim: thin warm glow hugging the limb ──
-    col += vec3(1.0, 0.38, 0.12) * pow(1.0 - mu, 3.0) * (0.55 + uAudioAmplitude * 0.8);
-
-    // uGain < 1 tames the disc under a post-processing bloom chain (the sim's
-    // UnrealBloomPass threshold is 0.4 — at full brightness the bright cells
-    // bloom to a detail-less white ball).
-    gl_FragColor = vec4(col * uGain, 1.0);
-  }
-`;
-
-// Corona: an additive back-side shell with animated streamers — shares the
-// SAME uniform objects as the core material, so advancing the core's uTime
-// drives the corona for free (no second per-frame update site needed).
-const CORONA_FRAG = /* glsl */`
-  ${NOISE}
-  uniform float uTime;
-  uniform float uAudioAmplitude;
-  uniform float uGain;
-  varying vec3 vNormal;
-  varying vec3 vWorldPos;
-  varying vec3 vObjDir;
-
-  void main() {
-    vec3 n = normalize(vNormal);
-    vec3 viewDir = normalize(cameraPosition - vWorldPos);
     // BackSide shell: the silhouette edge is where |dot| is small.
     float edge = 1.0 - abs(dot(n, viewDir));
-    float streaks = 0.75 + 0.45 * fbm4(normalize(vObjDir) * 4.0 + vec3(0.0, uTime * 0.05, 0.0));
+    float streaks = 0.75 + 0.9 * (texture2D(uNoise, vUv * 1.8 + vec2(0.0, uTime * 0.008)).r - 0.5);
     float a = pow(edge, 2.2) * streaks * (0.5 + uAudioAmplitude * 0.7);
     gl_FragColor = vec4(vec3(1.0, 0.72, 0.32), a * uGain);
   }
@@ -168,51 +207,73 @@ export interface SunUniforms {
   [key: string]: { value: unknown };
 }
 
-// Single shared texture — both surfaces (dashboard orb + sim hologram) reuse
-// the same GPU upload instead of decoding the JPEG twice.
-let sunTexture: THREE.Texture | null = null;
-let sunTexLoaded = false;
-// Materials created BEFORE the JPEG finished decoding — they get the real
-// texture swapped in on load, then the list is dropped (so the sim's
-// mount/unmount cycles never accumulate references here).
-let pendingSunMats: THREE.ShaderMaterial[] = [];
-function getSunTexture(): THREE.Texture {
-  if (sunTexture) return sunTexture;
-  // 1×1 warm placeholder so the core is never black while the JPEG decodes.
-  const px = new Uint8Array([255, 140, 40, 255]);
-  const fallback = new THREE.DataTexture(px, 1, 1);
-  fallback.needsUpdate = true;
-  sunTexture = fallback;
-  const base = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL || '/';
-  new THREE.TextureLoader().load(base + 'sun-surface.jpg', (tex) => {
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.wrapS = THREE.RepeatWrapping; // uv.x drifts forever — no seam pop
-    tex.wrapT = THREE.ClampToEdgeWrapping;
-    tex.anisotropy = 4;
-    sunTexture = tex;
-    sunTexLoaded = true;
-    pendingSunMats.forEach((m) => { m.uniforms.uMap.value = tex; });
-    pendingSunMats = [];
+// ── Tileable fbm noise texture, generated once on the CPU ────────────────
+// 256² · 4 octaves of periodic value noise (lattice wraps at every octave, so
+// the texture tiles seamlessly under the shader's drifting/fract'd UVs).
+let noiseTexture: THREE.Texture | null = null;
+function getNoiseTexture(): THREE.Texture {
+  if (noiseTexture) return noiseTexture;
+  const S = 256;
+  const cvs = document.createElement('canvas');
+  cvs.width = cvs.height = S;
+  const ctx = cvs.getContext('2d')!;
+  const img = ctx.createImageData(S, S);
+  // periodic lattice hash per octave
+  const rand: number[][] = [];
+  let seed = 1337;
+  const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  const octaves = [4, 8, 16, 32]; // lattice periods (all divide S → tileable)
+  octaves.forEach((per) => {
+    const g: number[] = [];
+    for (let i = 0; i < per * per; i++) g.push(rnd());
+    rand.push(g);
   });
-  return sunTexture;
+  const smooth = (t: number) => t * t * (3 - 2 * t);
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      let v = 0, amp = 0.5;
+      for (let o = 0; o < octaves.length; o++) {
+        const per = octaves[o], g = rand[o];
+        const fx = (x / S) * per, fy = (y / S) * per;
+        const x0 = Math.floor(fx) % per, y0 = Math.floor(fy) % per;
+        const x1 = (x0 + 1) % per, y1 = (y0 + 1) % per;
+        const tx = smooth(fx - Math.floor(fx)), ty = smooth(fy - Math.floor(fy));
+        const a = g[y0 * per + x0], b = g[y0 * per + x1];
+        const c = g[y1 * per + x0], d = g[y1 * per + x1];
+        v += amp * ((a + (b - a) * tx) * (1 - ty) + (c + (d - c) * tx) * ty);
+        amp *= 0.5;
+      }
+      // v ∈ ~[0, 0.94] → normalize to full byte range around 0.5
+      const px = Math.max(0, Math.min(255, Math.round(((v - 0.47) * 1.9 + 0.5) * 255)));
+      const i = (y * S + x) * 4;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = px;
+      img.data[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(cvs);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.generateMipmaps = true;
+  noiseTexture = tex;
+  return tex;
 }
 
 // gain < 1 is for scenes that run the sun through a bloom post-pass (the
 // office sim) — it keeps the disc below the bloom threshold so the surface
 // detail survives instead of clipping to a white ball.
 export function buildSunMaterial(gain = 1.0): THREE.ShaderMaterial {
-  const mat = new THREE.ShaderMaterial({
+  return new THREE.ShaderMaterial({
     uniforms: {
       uTime: { value: 0 },
       uAudioAmplitude: { value: 0.06 },
       uGain: { value: gain },
-      uMap: { value: getSunTexture() },
+      uNoise: { value: getNoiseTexture() },
     },
     vertexShader: SUN_VERT,
     fragmentShader: SUN_FRAG,
   });
-  if (!sunTexLoaded) pendingSunMats.push(mat);
-  return mat;
 }
 
 export function buildSunCorona(radius: number, sharedUniforms: SunUniforms): THREE.Mesh {
@@ -221,6 +282,7 @@ export function buildSunCorona(radius: number, sharedUniforms: SunUniforms): THR
       uTime: sharedUniforms.uTime,
       uAudioAmplitude: sharedUniforms.uAudioAmplitude,
       uGain: sharedUniforms.uGain || { value: 1.0 },
+      uNoise: { value: getNoiseTexture() },
     },
     vertexShader: SUN_VERT,
     fragmentShader: CORONA_FRAG,
