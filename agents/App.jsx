@@ -752,7 +752,16 @@ async function askLmStudio(system, history, user, maxTokens = 800) {
     if (!res.ok) throw Object.assign(new Error("LM Studio " + res.status), { status: res.status });
     return res.json();
   });
-  return d.choices?.[0]?.message?.content?.trim() || "";
+  const content = d.choices?.[0]?.message?.content?.trim() || "";
+  // A malformed/unexpected LM Studio response (wrong endpoint, model still
+  // loading, empty completion) can come back HTTP 200 with no usable text —
+  // this silently returned "" before, which askAI() treats as a SUCCESSFUL
+  // reply (no exception -> no rescue to Groq/Claude), producing exactly the
+  // blank chat bubble tagged "מקומי" reported by the owner. Throwing here
+  // instead lets askAI's existing per-engine rescue try the next connected
+  // engine, so the conversation gets a real answer instead of silence.
+  if (!content) throw new Error("LM Studio החזיר תשובה ריקה — ודא שמודל טעון ושהשרת עודכן");
+  return content;
 }
 /* ── Smart routing — יהודה (המנכ"ל) מחליט ─────────────────────────────────
    When BOTH engines are connected, each request is routed by its size and
