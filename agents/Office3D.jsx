@@ -5891,6 +5891,12 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     if (!talkTarget) return dismiss(400, 1000);            // walked away — quick out
     if (voiceState === "idle") return dismiss(6000, 6600); // settled — linger, then fade
   }, [voiceLine, voiceState, talkTarget]);
+  // The mount-once animate loop below only ever reads liveRef.current (its
+  // own closure never sees fresh React state) — mirror voiceState the same
+  // way every other reactive value the loop needs already is, so the
+  // cinematic camera can tell "standing near an agent" apart from "actually
+  // mid-conversation with them."
+  useEffect(() => { liveRef.current.voiceState = voiceState; }, [voiceState]);
   // 📱 ALPHA-LINK-01 — the owner's tactical secure terminal: a HUD handset
   // that mirrors the live conversation (the same lines the 3D hologram
   // projects) plus a control tab for the main assistant and every system.
@@ -9327,6 +9333,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
     // 9.94, elevation ~40°) so the view is unchanged until the stick is used.
     let camAz = 0, camEl = 0.6999;
     const CAM_DIST = 9.94, CAM_EL_MIN = 0.15, CAM_EL_MAX = 1.4;
+    // Cinematic camera focus — persisted, itself lerped every frame (not just
+    // the camera position) so entering/exiting a live conversation never pops;
+    // it eases smoothly from the default chase-cam look-at to the framed shot
+    // and back, purely by changing what this target chases each frame.
+    const camLookSmoothed = new THREE.Vector3(0, 1.1, 0);
     // Adaptive perf watchdog — CPU core count / RAM (DeviceProfiler's only
     // real signals) say nothing about GPU strength, and that's exactly the
     // blind spot on older Apple hardware: a 2020 MacBook Pro or an iMac with
@@ -10440,14 +10451,40 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         camera.lookAt(eyePos.x + fx, eyeY, eyePos.z + fz);
       } else {
         playerH.group.visible = true;
-        const camOffset = new THREE.Vector3(
-          Math.sin(camAz) * Math.cos(camEl) * CAM_DIST,
-          Math.sin(camEl) * CAM_DIST,
-          Math.cos(camAz) * Math.cos(camEl) * CAM_DIST
-        );
-        const desired = playerH.group.position.clone().add(camOffset);
-        camera.position.lerp(desired, Math.min(1, dt * 5.2));
-        camera.lookAt(playerH.group.position.x, 1.1, playerH.group.position.z);
+        // Cinematic focus — while actively mid-conversation (voiceState !=
+        // idle, not merely standing in talk range) with a real agent pod,
+        // ease into an over-the-shoulder framing of them instead of the
+        // plain orbit chase-cam. No separate blend state machine needed:
+        // both camera.position and the look-at target are lerped every
+        // frame regardless of branch, so switching which "desired" they
+        // chase eases smoothly in on the first spoken word and back out the
+        // instant the exchange ends.
+        const cineId = liveRef.current.talkTarget;
+        const cineNpc = cineId && cineId !== "alpha" && liveRef.current.voiceState && liveRef.current.voiceState !== "idle" ? npc[cineId] : null;
+        let desired, lookTarget, lerpK;
+        if (cineNpc) {
+          const toNpc = new THREE.Vector3().subVectors(cineNpc.group.position, playerH.group.position);
+          toNpc.y = 0;
+          if (toNpc.lengthSq() < 0.0001) toNpc.set(0, 0, 1); else toNpc.normalize();
+          const side = new THREE.Vector3(-toNpc.z, 0, toNpc.x);
+          desired = playerH.group.position.clone().addScaledVector(side, 1.3).addScaledVector(toNpc, -2.7);
+          desired.y = playerH.group.position.y + 1.85;
+          lookTarget = cineNpc.group.position.clone();
+          lookTarget.y += 1.42;
+          lerpK = Math.min(1, dt * 2.6); // slower, deliberate — reads as an operated camera, not a snap-cam
+        } else {
+          const camOffset = new THREE.Vector3(
+            Math.sin(camAz) * Math.cos(camEl) * CAM_DIST,
+            Math.sin(camEl) * CAM_DIST,
+            Math.cos(camAz) * Math.cos(camEl) * CAM_DIST
+          );
+          desired = playerH.group.position.clone().add(camOffset);
+          lookTarget = new THREE.Vector3(playerH.group.position.x, 1.1, playerH.group.position.z);
+          lerpK = Math.min(1, dt * 5.2);
+        }
+        camera.position.lerp(desired, lerpK);
+        camLookSmoothed.lerp(lookTarget, lerpK);
+        camera.lookAt(camLookSmoothed);
       }
 
       // proximity → talk prompt
