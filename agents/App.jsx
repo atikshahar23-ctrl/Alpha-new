@@ -6,7 +6,7 @@ import {
   ArrowUpRight, Bot, Radio, Brain, Rocket, ShieldCheck, ClipboardList,
   GitBranch, Terminal, FileCode2, Coins, Package, Scale, Compass,
   Building2, Database, GraduationCap, Globe, Mic, Volume2, VolumeX, LineChart,
-  Clock, CalendarClock, Hammer, Home,
+  Clock, CalendarClock, Hammer, Home, AudioLines, Play, Square, RotateCcw,
 } from "lucide-react";
 import * as cloud from "./cloud";
 // Lazy-loaded: Office3D.jsx is a ~5,500-line Three.js scene that only ever
@@ -1020,6 +1020,9 @@ function setAgentVoiceOverride(agentId, patch) {
   const cur = getAgentVoiceOverride(agentId) || {};
   save(K_AGENT_VOICE_PREFIX + agentId, { ...cur, ...patch });
 }
+function clearAgentVoiceOverride(agentId) {
+  try { localStorage.removeItem(K_AGENT_VOICE_PREFIX + agentId); } catch {}
+}
 function agentVoiceProfile(agentId) {
   const base = AGENT_VOICE_PROFILE[agentId] || { pitch: 1, rate: 1.02 };
   const override = getAgentVoiceOverride(agentId);
@@ -1058,6 +1061,7 @@ function speakText(text, agentId, onEnd) {
     const profile = agentVoiceProfile(agentId);
     u.rate = profile.rate;
     u.pitch = profile.pitch;
+    u.volume = Math.max(0, Math.min(1, profile.volume ?? 1));
     // Real end-of-speech signal (fires on finish, cancel, or error) — the
     // sim's always-listening loop uses this to re-open the mic at the exact
     // moment the agent stops talking, instead of guessing from text length.
@@ -1697,6 +1701,7 @@ export default function App() {
               } catch {}
             }}
             activity={activity}
+            showToast={showToast}
           />
         )}
         {view === "activity" && <ActivityView activity={activity} />}
@@ -1817,7 +1822,7 @@ function agentLoad(id) {
    border that reflects live status (purple pulse = executed something in
    the last couple of minutes, cyan = online). Click opens the control
    panel; the small button jumps straight into chat. */
-function AgentCube({ a, acts, onOpen, onPanel }) {
+function AgentCube({ a, acts, onOpen, onPanel, onVoice }) {
   const ref = useRef(null);
   const onMove = (e) => {
     const el = ref.current; if (!el) return;
@@ -1872,9 +1877,14 @@ function AgentCube({ a, acts, onOpen, onPanel }) {
         <div className="ac-cube-m"><span>עומס</span><div className="bar"><i style={{ "--w": cpu + "%" }} /></div><b>{cpu}%</b></div>
         <div className="ac-cube-m"><span>זיכרון</span><div className="bar mem"><i style={{ "--w": mem + "%" }} /></div><b>{mem}%</b></div>
       </div>
-      <button className="ac-cube-chat" onClick={(e) => { e.stopPropagation(); onOpen(a.id); }}>
-        <MessageSquare size={13} /> שיחה מיידית
-      </button>
+      <div className="ac-cube-btns">
+        <button className="ac-cube-chat" onClick={(e) => { e.stopPropagation(); onOpen(a.id); }}>
+          <MessageSquare size={13} /> שיחה מיידית
+        </button>
+        <button className="ac-cube-voice" onClick={(e) => { e.stopPropagation(); onVoice?.(a.id); }} title="אולפן קול — כוונן את הקול של הסוכן">
+          <AudioLines size={14} />
+        </button>
+      </div>
     </div>
   );
 }
@@ -1882,7 +1892,7 @@ function AgentCube({ a, acts, onOpen, onPanel }) {
 /* The expanded Agent Control Panel — the cube "opens up" into a centred
    glass console: status, full live activity stream with timestamps, stat
    tiles, quick prompts, and the big actions (chat / meet in the office). */
-function AgentPanel({ a, acts, onClose, onOpen, onOffice }) {
+function AgentPanel({ a, acts, onClose, onOpen, onOffice, onVoice }) {
   const exec = acts[0] && Date.now() - acts[0].ts < 150000;
   const { cpu, mem } = agentLoad(a.id);
   const tFmt = (ts) => new Date(ts).toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
@@ -1925,16 +1935,132 @@ function AgentPanel({ a, acts, onClose, onOpen, onOffice }) {
         <div className="ac-panel-actions">
           <button className="main" onClick={() => { onClose(); onOpen(a.id); }}><MessageSquare size={16} /> פתח שיחה</button>
           <button onClick={() => { onClose(); onOffice(); }}><Building2 size={16} /> פגוש במשרד החי</button>
+          <button onClick={() => { onClose(); onVoice?.(a.id); }}><AudioLines size={16} /> אולפן קול</button>
         </div>
       </div>
     </div>
   );
 }
 
-function RosterView({ onOpen, onOffice, activity }) {
+/* ── Voice Studio — אולפן קול פר-סוכן ─────────────────────────────────────
+   Full command over every agent's spoken voice, from the command center
+   itself: system voice, speech rate, pitch and volume — previewed live and
+   saved instantly per agent. Writes the exact override slot the 3D office's
+   own voice panel uses (alpha:agents:voiceCfg:<id>), so a voice tuned here
+   IS the agent's voice everywhere: CRM chat, briefings, and the live sim. */
+function VoiceStudio({ initialId, onClose, showToast }) {
+  const [agentId, setAgentId] = useState(initialId || AGENTS[0].id);
+  const [voices, setVoices] = useState(() => listSpeechVoices());
+  const [, setRev] = useState(0); // bump after write/reset so sliders re-read storage
+  const [speaking, setSpeaking] = useState(false);
+  useEffect(() => {
+    if (!canSpeak()) return;
+    // getVoices() is empty until the browser's async voice list arrives —
+    // especially on mobile — so re-read it on voiceschanged.
+    const refresh = () => setVoices(listSpeechVoices());
+    refresh();
+    window.speechSynthesis.addEventListener?.("voiceschanged", refresh);
+    return () => {
+      window.speechSynthesis.removeEventListener?.("voiceschanged", refresh);
+      try { window.speechSynthesis.cancel(); } catch {}
+    };
+  }, []);
+  const a = byId(agentId) || AGENTS[0];
+  const dflt = AGENT_VOICE_PROFILE[agentId] || { pitch: 1, rate: 1.02 };
+  const override = getAgentVoiceOverride(agentId) || {};
+  const cfg = { rate: dflt.rate, pitch: dflt.pitch, volume: 1, voiceURI: "", ...override };
+  const setCfg = (patch) => { setAgentVoiceOverride(agentId, patch); setRev((r) => r + 1); };
+  const isEn = getAgentLang() === "en";
+  const groups = useMemo(() => {
+    const he = [], en = [], rest = [];
+    for (const v of voices) {
+      if (v.lang?.startsWith("he") || v.lang?.startsWith("iw")) he.push(v);
+      else if (v.lang?.startsWith("en")) en.push(v);
+      else rest.push(v);
+    }
+    return { he, en, rest };
+  }, [voices]);
+  const test = () => {
+    if (speaking) { try { window.speechSynthesis.cancel(); } catch {} setSpeaking(false); return; }
+    const line = isEn
+      ? `Hi, this is ${a.name}. This is exactly how I sound with your current tuning.`
+      : `שלום, כאן ${a.name}. ככה בדיוק אני נשמע עם הכיוון הנוכחי שלך.`;
+    setSpeaking(true);
+    speakText(line, agentId, () => setSpeaking(false));
+  };
+  const reset = () => {
+    try { window.speechSynthesis?.cancel(); } catch {}
+    setSpeaking(false);
+    clearAgentVoiceOverride(agentId);
+    setRev((r) => r + 1);
+    showToast?.(`הקול של ${a.name} חזר לכיול המקורי ↺`);
+  };
+  const switchAgent = (id) => {
+    try { window.speechSynthesis?.cancel(); } catch {}
+    setSpeaking(false);
+    setAgentId(id);
+  };
+  const tuned = !!Object.keys(override).length;
+  const fmtVoice = (v) => `${v.name} · ${v.lang}${v.localService === false ? " ☁" : ""}`;
+  const voiceOptions = (list) => list.map((v) => <option key={v.voiceURI} value={v.voiceURI}>{fmtVoice(v)}</option>);
+  return (
+    <div className="ac-modal" onClick={(e) => { e.stopPropagation(); onClose(); }}>
+      <div className="ac-vstudio" style={{ "--c": a.color, "--ac": a.accent }} onClick={(e) => e.stopPropagation()}>
+        <span className="ac-cube-scan" />
+        <button className="ac-panel-x" onClick={onClose}><X size={16} /></button>
+        <div className="ac-vs-head">
+          <AudioLines size={18} />
+          <b>אולפן קול</b>
+          <span>כיוון מלא לקול של כל סוכן — נשמר מיידית וחל בכל מקום: צ'אט, תדריכים והמשרד החי</span>
+        </div>
+        <div className="ac-switch vs">
+          {AGENTS.map((ag) => (
+            <button key={ag.id} className={"ac-switch-btn " + (ag.id === agentId ? "on" : "")} style={{ "--c": ag.color }} onClick={() => switchAgent(ag.id)} title={ag.name}>
+              <Face agent={ag} fallback={15} />
+            </button>
+          ))}
+        </div>
+        <div className="ac-vs-agent">
+          <div className="ac-chat-orb"><Face agent={a} fallback={20} /><span className="ac-orb-ring" /></div>
+          <div className="ac-vs-agent-id"><b>{a.name}</b><span>{a.title}</span></div>
+          <span className={"ac-vs-badge" + (tuned ? " on" : "")}>{tuned ? "🎛 מכויל אישית" : "✨ כיול מקורי"}</span>
+        </div>
+        <label className="ac-vs-row">
+          <span className="ac-vs-lbl">🗣 קול מערכת</span>
+          <select className="ac-vs-select" value={cfg.voiceURI || ""} onChange={(e) => setCfg({ voiceURI: e.target.value })}>
+            <option value="">אוטומטי — פיזור חכם בין הקולות הזמינים</option>
+            {groups.he.length > 0 && <optgroup label="עברית">{voiceOptions(groups.he)}</optgroup>}
+            {groups.en.length > 0 && <optgroup label="English">{voiceOptions(groups.en)}</optgroup>}
+            {groups.rest.length > 0 && <optgroup label="שפות נוספות">{voiceOptions(groups.rest)}</optgroup>}
+          </select>
+        </label>
+        <label className="ac-vs-row">
+          <span className="ac-vs-lbl">⏩ מהירות דיבור <b>{cfg.rate.toFixed(2)}x</b><i>מקורי {dflt.rate.toFixed(2)}</i></span>
+          <input type="range" min="0.5" max="2" step="0.01" value={cfg.rate} onChange={(e) => setCfg({ rate: parseFloat(e.target.value) })} />
+        </label>
+        <label className="ac-vs-row">
+          <span className="ac-vs-lbl">🎼 גובה צליל <b>{cfg.pitch.toFixed(2)}</b><i>מקורי {dflt.pitch.toFixed(2)}</i></span>
+          <input type="range" min="0.5" max="2" step="0.01" value={cfg.pitch} onChange={(e) => setCfg({ pitch: parseFloat(e.target.value) })} />
+        </label>
+        <label className="ac-vs-row">
+          <span className="ac-vs-lbl">🔊 עוצמת קול <b>{Math.round((cfg.volume ?? 1) * 100)}%</b></span>
+          <input type="range" min="0" max="1" step="0.01" value={cfg.volume ?? 1} onChange={(e) => setCfg({ volume: parseFloat(e.target.value) })} />
+        </label>
+        <div className="ac-vs-actions">
+          <button className="main" onClick={test}>{speaking ? <><Square size={15} /> עצור</> : <><Play size={15} /> השמע בדיקה</>}</button>
+          <button onClick={reset} disabled={!tuned}><RotateCcw size={15} /> אפס לכיול המקורי</button>
+        </div>
+        {!voices.length && <p className="ac-vs-note">הדפדפן עדיין טוען את קולות המערכת… אם הרשימה נשארת ריקה, ודא שמנוע דיבור (TTS) מותקן במכשיר.</p>}
+      </div>
+    </div>
+  );
+}
+
+function RosterView({ onOpen, onOffice, activity, showToast }) {
   const ceo = AGENTS.find((a) => a.boss);
   const team = AGENTS.filter((a) => !a.boss);
   const [panelId, setPanelId] = useState(null);
+  const [voiceId, setVoiceId] = useState(null); // Voice Studio target agent
   const lastByAgent = useMemo(() => {
     const m = {};
     for (const a of activity) if (!m[a.agentId]) m[a.agentId] = a;
@@ -1995,13 +2121,14 @@ function RosterView({ onOpen, onOffice, activity }) {
       <div className="ac-sectitle"><Bot size={15} /> ראשי הצוות</div>
       <div className="ac-grid">
         {team.map((a) => (
-          <AgentCube key={a.id} a={a} acts={actsFor(a.id)} onOpen={onOpen} onPanel={setPanelId} />
+          <AgentCube key={a.id} a={a} acts={actsFor(a.id)} onOpen={onOpen} onPanel={setPanelId} onVoice={setVoiceId} />
         ))}
       </div>
 
       {panelAgent && (
-        <AgentPanel a={panelAgent} acts={actsFor(panelAgent.id)} onClose={() => setPanelId(null)} onOpen={onOpen} onOffice={onOffice} />
+        <AgentPanel a={panelAgent} acts={actsFor(panelAgent.id)} onClose={() => setPanelId(null)} onOpen={onOpen} onOffice={onOffice} onVoice={setVoiceId} />
       )}
+      {voiceId && <VoiceStudio initialId={voiceId} onClose={() => setVoiceId(null)} showToast={showToast} />}
     </div>
   );
 }
@@ -2201,6 +2328,7 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
   const [revOpen, setRevOpen] = useState(false); // Google-reviews window (נפתלי)
   const [socOpen, setSocOpen] = useState(false); // social-publishing window (נפתלי)
   const [voiceOn, setVoiceOn] = useState(() => load(K_VOICE_ON, true) && canSpeak());
+  const [studioOpen, setStudioOpen] = useState(false); // per-agent Voice Studio
   const aiHist = useRef([]);
   const scrollRef = useRef(null);
   const recogRef = useRef(null);
@@ -2252,7 +2380,7 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
       const reply = agent.id === "sales"
         ? `בוצע 💪 ${detail}`
         : `בדקתי מול זבולון (מנהל ה-CRM) והרצנו את זה עכשיו — ${detail}`;
-      setTimeout(() => { setLog([...withMe, { from: "bot", text: reply, ts: now() }]); if (voiceOn) speakText(reply); }, 350);
+      setTimeout(() => { setLog([...withMe, { from: "bot", text: reply, ts: now() }]); if (voiceOn) speakText(reply, agent.id); }, 350);
       return;
     }
 
@@ -2268,13 +2396,13 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
       const reply = agent.id === "facilities"
         ? `בוצע 🧹 ${detail}`
         : `העברתי את זה לדבורה (מנהלת המשרד) והיא כבר טיפלה בזה — ${detail}`;
-      setTimeout(() => { setLog([...withMe, { from: "bot", text: reply, ts: now() }]); if (voiceOn) speakText(reply); }, 350);
+      setTimeout(() => { setLog([...withMe, { from: "bot", text: reply, ts: now() }]); if (voiceOn) speakText(reply, agent.id); }, 350);
       return;
     }
 
     if (!hasAI()) {
       const reply = FALLBACK[agent.id](t);
-      setTimeout(() => { setLog([...withMe, { from: "bot", text: reply, ts: now() }]); if (voiceOn) speakText(reply); }, 350);
+      setTimeout(() => { setLog([...withMe, { from: "bot", text: reply, ts: now() }]); if (voiceOn) speakText(reply, agent.id); }, 350);
       return;
     }
     setBusy(true);
@@ -2311,11 +2439,11 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
       }
       aiHist.current = [...aiHist.current.slice(-6), { role: "user", content: t }, { role: "assistant", content: shown }];
       setLog([...withMe, { from: "bot", text: shown, ts: now(), via }]);
-      if (voiceOn) speakText(shown);
+      if (voiceOn) speakText(shown, agent.id);
     } catch (e) {
       const fb = FALLBACK[agent.id](t);
       setLog([...withMe, { from: "bot", text: (String(e.message).includes("Groq") ? "ה-AI עמוס כרגע, הנה תשובה מהירה:\n\n" : "") + fb, ts: now() }]);
-      if (voiceOn) speakText(fb);
+      if (voiceOn) speakText(fb, agent.id);
     } finally { setBusy(false); }
   };
 
@@ -2335,6 +2463,9 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
             <button className={"ac-chat-x " + (voiceOn ? "on" : "")} onClick={toggleVoice} title={voiceOn ? "כבה קול" : "הפעל קול"}>
               {voiceOn ? <Volume2 size={16} /> : <VolumeX size={16} />}
             </button>
+          )}
+          {canSpeak() && (
+            <button className="ac-chat-x" onClick={() => setStudioOpen(true)} title="אולפן קול — כוונן את הקול של הסוכן"><AudioLines size={16} /></button>
           )}
           <button className="ac-chat-x" onClick={clearChat} title="אפס שיחה"><RefreshCw size={16} /></button>
         </div>
@@ -2426,6 +2557,7 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
           }}
         />
       )}
+      {studioOpen && <VoiceStudio initialId={agent.id} onClose={() => setStudioOpen(false)} showToast={showToast} />}
     </div>
   );
 }
@@ -3754,6 +3886,46 @@ function StyleTag() {
   background:color-mix(in srgb, var(--c) 10%, transparent);color:var(--ac);
   font-family:inherit;font-size:.74rem;font-weight:800;cursor:pointer;transition:.18s}
 .ac-cube-chat:hover{background:color-mix(in srgb, var(--c) 22%, transparent);box-shadow:0 0 14px color-mix(in srgb, var(--c) 30%, transparent)}
+.ac-cube-btns{display:flex;gap:6px;align-items:stretch}
+.ac-cube-btns .ac-cube-chat{flex:1;width:auto}
+.ac-cube-voice{flex-shrink:0;display:flex;align-items:center;justify-content:center;width:38px;margin-top:2px;position:relative;z-index:2;
+  border-radius:11px;border:1px solid color-mix(in srgb, var(--c) 38%, transparent);
+  background:color-mix(in srgb, var(--c) 10%, transparent);color:var(--ac);cursor:pointer;transition:.18s}
+.ac-cube-voice:hover{background:color-mix(in srgb, var(--c) 22%, transparent);box-shadow:0 0 14px color-mix(in srgb, var(--c) 30%, transparent)}
+/* Voice Studio — אולפן קול פר-סוכן */
+.ac-vstudio{position:relative;width:min(480px,94vw);max-height:88vh;overflow-y:auto;overflow-x:hidden;border-radius:24px;padding:20px 18px 16px;isolation:isolate;
+  background:linear-gradient(165deg, rgba(16,22,40,.94), rgba(7,10,20,.97));
+  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  border:1px solid color-mix(in srgb, var(--c) 35%, transparent);
+  box-shadow:0 30px 80px rgba(0,0,0,.6), 0 0 40px color-mix(in srgb, var(--c) 16%, transparent)}
+.ac-vs-head{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:10px;color:var(--ac);position:relative;z-index:2}
+.ac-vs-head b{font-size:1.02rem;font-weight:900}
+.ac-vs-head span{flex-basis:100%;font-size:.7rem;color:var(--s4);line-height:1.5}
+.ac-vstudio .ac-switch.vs{border-bottom:none;padding:4px 0 10px;position:relative;z-index:2}
+.ac-vs-agent{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:14px;margin-bottom:12px;position:relative;z-index:2;
+  background:color-mix(in srgb, var(--c) 8%, transparent);border:1px solid color-mix(in srgb, var(--c) 25%, transparent)}
+.ac-vs-agent-id{display:flex;flex-direction:column;min-width:0;flex:1}
+.ac-vs-agent-id b{font-size:.9rem;font-weight:900;color:#fff}
+.ac-vs-agent-id span{font-size:.68rem;color:var(--s4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ac-vs-badge{flex-shrink:0;font-size:.62rem;font-weight:800;padding:4px 9px;border-radius:99px;color:var(--s4);background:rgba(10,15,30,.6);border:1px solid rgba(120,160,255,.18)}
+.ac-vs-badge.on{color:var(--ac);border-color:color-mix(in srgb, var(--c) 55%, transparent);background:color-mix(in srgb, var(--c) 14%, transparent);box-shadow:0 0 10px color-mix(in srgb, var(--c) 25%, transparent)}
+.ac-vs-row{display:flex;flex-direction:column;gap:7px;margin-bottom:13px;position:relative;z-index:2}
+.ac-vs-lbl{display:flex;align-items:baseline;gap:8px;font-size:.76rem;font-weight:800;color:#cfd8e6}
+.ac-vs-lbl b{color:var(--ac);font-size:.82rem;font-variant-numeric:tabular-nums}
+.ac-vs-lbl i{font-style:normal;font-size:.62rem;color:var(--s5);margin-inline-start:auto}
+.ac-vs-select{width:100%;padding:10px 12px;border-radius:12px;font-family:inherit;font-size:.78rem;color:#e8eefc;cursor:pointer;
+  background:rgba(10,15,30,.7);border:1px solid color-mix(in srgb, var(--c) 30%, transparent)}
+.ac-vs-select:focus{outline:none;border-color:var(--c);box-shadow:0 0 12px color-mix(in srgb, var(--c) 28%, transparent)}
+.ac-vs-row input[type=range]{width:100%;accent-color:var(--c);cursor:pointer;height:22px}
+.ac-vs-actions{display:flex;gap:8px;margin-top:2px;position:relative;z-index:2}
+.ac-vs-actions button{flex:1;display:flex;align-items:center;justify-content:center;gap:7px;padding:12px 0;border-radius:13px;
+  font-family:inherit;font-size:.8rem;font-weight:800;cursor:pointer;transition:.18s;
+  background:rgba(10,15,30,.6);border:1px solid rgba(120,160,255,.2);color:#cfd8e6}
+.ac-vs-actions button.main{background:linear-gradient(135deg, color-mix(in srgb, var(--c) 34%, transparent), color-mix(in srgb, var(--c) 14%, transparent));
+  border-color:color-mix(in srgb, var(--c) 55%, transparent);color:#fff}
+.ac-vs-actions button:hover:not(:disabled){box-shadow:0 0 16px color-mix(in srgb, var(--c) 32%, transparent)}
+.ac-vs-actions button:disabled{opacity:.4;cursor:default}
+.ac-vs-note{font-size:.68rem;color:var(--s4);line-height:1.5;margin:10px 2px 0;position:relative;z-index:2}
 /* Agent control panel */
 .ac-panel{position:relative;width:min(520px,94vw);max-height:88vh;overflow-y:auto;overflow-x:hidden;border-radius:24px;padding:22px 20px 18px;isolation:isolate;
   background:linear-gradient(165deg, rgba(16,22,40,.92), rgba(7,10,20,.95));

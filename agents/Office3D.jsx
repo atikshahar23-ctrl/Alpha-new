@@ -11567,6 +11567,8 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
                 <input type="range" min="0.6" max="1.6" step="0.02" value={rate} onChange={(e) => writeAgentVoiceCfg(va, { rate: parseFloat(e.target.value) })} />
                 <label><span>גובה צליל</span> <span className="range-val">{pitch.toFixed(2)}</span></label>
                 <input type="range" min="0.5" max="1.6" step="0.02" value={pitch} onChange={(e) => writeAgentVoiceCfg(va, { pitch: parseFloat(e.target.value) })} />
+                <label><span>עוצמת קול</span> <span className="range-val">{Math.round((cfg.volume ?? 1) * 100)}%</span></label>
+                <input type="range" min="0" max="1" step="0.01" value={cfg.volume ?? 1} onChange={(e) => writeAgentVoiceCfg(va, { volume: parseFloat(e.target.value) })} />
                 <div className="off3-settings-row">
                   <button className="off3-voice-test" onClick={() => voice?.speak?.(`שלום, אני ${byId(va)?.name}. ככה אני נשמע עכשיו.`, va)}>▶ נסה קול</button>
                   <button className="off3-voice-test" onClick={() => { try { localStorage.removeItem("alpha:agents:voiceCfg:" + va); } catch {} setVoiceCfgTick((t) => t + 1); }}>↺ אפס לברירת מחדל</button>
