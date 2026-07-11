@@ -10,6 +10,12 @@ export class VoiceEngine {
   private cmdTimer: number | undefined;
   private silenceTimer: number | undefined;
   private speechBuffer = '';
+  // Android Chrome delivers ONLY interim results in a continuous session —
+  // the "final" often never arrives until the session is stopped. Desktop
+  // finals flow into speechBuffer; this keeps the freshest interim so the
+  // silence endpoint can send SOMETHING on mobile instead of flushing an
+  // empty buffer and leaving the mic stuck "recording forever".
+  private lastInterim = '';
   private lastFinalIndex = 0;   // guards against Chrome re-delivering final results
   private voices: SpeechSynthesisVoice[] = [];
   private chosenVoice: SpeechSynthesisVoice | null = null;
@@ -73,7 +79,7 @@ export class VoiceEngine {
             interim += res[0].transcript;
           }
         }
-        if (interim && this.commandMode) this.onStateChange('listening');
+        if (interim && this.commandMode) { this.onStateChange('listening'); this.lastInterim = interim.trim(); }
         // Surface the live transcript (finalized-so-far + current interim) the
         // instant it's heard, so the user sees their words appear in real time
         // rather than waiting for the endpoint-silence flush.
@@ -81,12 +87,18 @@ export class VoiceEngine {
           const live = (this.speechBuffer + ' ' + interim).trim();
           if (live) this.onInterim(this.dedupe(live));
         }
+        // Android wake-word: with finals possibly never arriving, "אלפא" must
+        // also be caught in the interim stream, or armed mode never triggers.
+        if (!this.commandMode && interim && this.hasWake(interim)) {
+          this.enterCommandMode();
+          this.lastInterim = interim.trim();
+        }
         if (interim) this.resetSilenceTimer();
       };
       this.rec.onend = () => {
         this.recRunning = false;
         this.recRetries = 0;
-        if (this.commandMode && this.speechBuffer.trim()) {
+        if (this.commandMode && (this.speechBuffer.trim() || this.lastInterim)) {
           this.flushBuffer();
         }
         if (this.wakeOn && !this.suppress) {
@@ -215,7 +227,7 @@ export class VoiceEngine {
       // transcript showed and the request even started — snappier at 900ms
       // while still tolerating a natural mid-sentence breath.
       this.silenceTimer = window.setTimeout(() => {
-        if (this.speechBuffer.trim()) {
+        if (this.speechBuffer.trim() || this.lastInterim) {
           this.flushBuffer();
         }
       }, 900);
@@ -246,12 +258,29 @@ export class VoiceEngine {
   }
 
   private flushBuffer() {
-    const text = this.dedupe(this.speechBuffer.trim());
+    // Finals first; when Android never delivered one, the freshest interim IS
+    // the user's sentence — send it rather than dropping their speech.
+    let text = this.dedupe(this.speechBuffer.trim() || this.lastInterim);
+    // An interim captured from armed mode still carries the wake word itself
+    // ("אלפא מה השעה") — strip it so the command reads clean.
+    if (text && this.hasWake(text)) text = this.stripWake(text) || text;
     this.speechBuffer = '';
+    this.lastInterim = '';
     this.commandMode = false;
     clearTimeout(this.cmdTimer);
     clearTimeout(this.silenceTimer);
-    if (text) this.onTranscript(text);
+    if (text) {
+      // Restart the session: interim-only engines (Android) deliver nothing
+      // more on the old session anyway, and a fresh one re-arms cleanly via
+      // onend → startRec.
+      this.stopRec();
+      this.onTranscript(text);
+    } else if (this.wakeOn) {
+      this.onStateChange('armed');
+      this.stopRec(); // self-heal a stale session instead of "recording forever"
+    } else {
+      this.onStateChange('');
+    }
   }
 
   private hasWake(t: string) {
