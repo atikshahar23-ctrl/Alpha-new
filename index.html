@@ -99,7 +99,7 @@
       padding:8px 16px;border-radius:999px;font-family:Assistant,system-ui,sans-serif;font-size:14px;cursor:pointer;
       animation:sndPulse 1.6s ease-in-out infinite}
     @keyframes sndPulse{0%,100%{box-shadow:0 0 0 0 rgba(255,220,140,.5)}50%{box-shadow:0 0 0 9px rgba(255,220,140,0)}}
-    #introOverlay.gone{opacity:0}
+    #introOverlay.gone{opacity:0;pointer-events:none}
     #introSkip{position:absolute;bottom:max(22px,env(safe-area-inset-bottom));right:22px;z-index:5;
       background:rgba(60,30,4,.55);border:1px solid rgba(255,236,190,.45);color:#fff4d8;
       padding:8px 16px;border-radius:999px;font-family:Assistant,system-ui,sans-serif;font-size:14px;cursor:pointer}
@@ -126,50 +126,14 @@
       var __sessBooted=false;
       try{ __sessBooted=sessionStorage.getItem('alpha_session_booted')==='1'; }catch(e){}
       try{ sessionStorage.setItem('alpha_session_booted','1'); }catch(e){}
-      if(__sessBooted){ ov.parentNode&&ov.parentNode.removeChild(ov); showFastBoot(true); return; }
-      // Show the big cinematic AT MOST ONCE PER DAY — the first open of the
-      // day gets the full intro, every open after that (same day, new sessions
-      // included) skips straight to the fast branded loading veil. This is the
-      // load-time fix: a fresh app launch no longer forces the ~13s cinematic
-      // every single time, only once a day. (Was: once per browser session,
-      // so every new launch replayed the whole thing.) The skip button still
-      // covers the one daily play.
-      try{
-        var introDay='';
-        try{ introDay=new Date().toISOString().slice(0,10); }catch(e){ introDay='x'; }
-        if(localStorage.getItem('alpha_intro_day')===introDay){
-          // Already saw the cinematic today — skip it, but don't dump the
-          // half-built dashboard either: hold behind the short branded veil
-          // (with the startup chime) until main.ts signals the first data/HUD
-          // pass is actually done.
-          ov.parentNode&&ov.parentNode.removeChild(ov);
-          showFastBoot();
-          return;
-        }
-        localStorage.setItem('alpha_intro_day',introDay);
-      }catch(e){}
-      // ── Opening sound: the owner's Suno anthem (first 13.2s, gentle fade)
-      // replaces the old procedural chime. If autoplay is blocked, the first
-      // tap/keypress starts it instead.
-      var sndStarted=false, bootAudio=null;
-      function openSound(){
-        if(sndStarted) return; sndStarted=true;
-        try{
-          bootAudio=new Audio('%BASE_URL%boot-song.m4a');
-          bootAudio.volume=0.9;
-          var p=bootAudio.play();
-          if(p && p.catch) p.catch(function(){
-            var retry=function(){ try{ bootAudio.play().catch(function(){}); }catch(e){} };
-            window.addEventListener('pointerdown', retry, {once:true});
-            window.addEventListener('keydown', retry, {once:true});
-          });
-        }catch(e){}
-      }
-      // (The clip keeps playing over the reveal by design — it IS the app's
-      // opening theme, and it fades itself out at ~13s.)
-      function showFastBoot(silent){
+      if(__sessBooted){ ov.parentNode&&ov.parentNode.removeChild(ov); showFastBoot(); return; }
+      // (No once-a-day gate anymore: the anthem video IS the loading screen
+      // on every fresh open — it dismisses itself the moment the app is
+      // actually ready (with a short minimum so the hook gets heard), so it
+      // never costs more load time than the old branded veil did. The old
+      // alpha_intro_day flag is intentionally ignored.)
+      function showFastBoot(){
         document.documentElement.classList.add('booting');
-        if(!silent) openSound(); // the anthem opening on the fast (daily) path; skipped on silent same-session returns
         var veil=document.createElement('div');
         veil.id='fastBootVeil';
         veil.innerHTML='<div class="fb-logo-wrap"><img src="%BASE_URL%heavyguard-logo.png" class="fb-logo" alt="" /><div class="fb-scan"></div></div>'+
@@ -216,21 +180,35 @@
       }
       function finish(){
         if(ended) return; ended=true;
-        // fade the anthem out with the veil instead of cutting it dead
+        ov.classList.add('gone'); // fades out + pointer-events:none via CSS
+        var reaped=false;
+        var reap=function(){
+          if(reaped) return; reaped=true;
+          try{ if(vid) vid.pause(); }catch(e){}
+          ov.parentNode && ov.parentNode.removeChild(ov);
+        };
+        if(vid && !vid.paused && !vid.muted && !vid.__skipped){
+          // The MUSIC rides over the reveal — it's the opening theme. The
+          // faded-out overlay (with the still-playing video inside) stays in
+          // the DOM until the song's own fade-out ends, then gets reaped.
+          vid.addEventListener('ended', reap, {once:true});
+          setTimeout(reap, 31000); // safety cap (clip is 28s)
+        } else {
+          setTimeout(reap, 800);
+        }
+        showFastBoot();
+      }
+      // Fade+stop — the user asked OUT of the intro, sound included.
+      function silence(){
+        if(vid) vid.__skipped=true;
         try{
           var f=setInterval(function(){
             if(!vid || vid.muted || vid.volume<=0.06){ clearInterval(f); if(vid) vid.pause(); return; }
             vid.volume=Math.max(0,vid.volume-0.12);
           },60);
         }catch(e){}
-        ov.classList.add('gone');
-        setTimeout(function(){ ov.parentNode && ov.parentNode.removeChild(ov); }, 800);
-        // Bridge to the app behind the same branded veil the repeat-visit
-        // path uses, gated on window.__alphaReady — silent: the anthem WAS
-        // the opening sound, no second chime on top of it.
-        showFastBoot(true);
       }
-      function skip(){ finish(); }
+      function skip(){ silence(); finish(); }
       document.getElementById('introSkip').addEventListener('click', skip);
       // ── The owner's Suno anthem IS the loading screen ────────────────────
       // Play WITH sound when the browser allows it; when autoplay-with-audio
@@ -264,6 +242,16 @@
           var p2=vid.play && vid.play();
           if(p2 && p2.catch) p2.catch(function(){ finish(); }); // video itself blocked → straight to the veil
         });
+        // The anthem is the LOADING SCREEN, not a blocking cinematic: the
+        // moment the app is genuinely ready (window.__alphaReady) — after a
+        // short minimum so the hook gets heard — the veil fades and the
+        // music keeps playing over the reveal.
+        var t0=performance.now();
+        (function pollReady(){
+          if(ended) return;
+          if(window.__alphaReady && performance.now()-t0>=6500){ finish(); return; }
+          setTimeout(pollReady, 120);
+        })();
         setTimeout(finish, 31000);   // hard fallback: clip is 28s — never get stuck
       } else { finish(); }
     })();
