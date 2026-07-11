@@ -2353,10 +2353,38 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
     if (!canListen()) { showToast("זיהוי דיבור לא נתמך בדפדפן הזה"); return; }
     if (listening) { recogRef.current?.stop(); return; }
     const rec = new SpeechRecognitionCtor();
-    rec.lang = "he-IL"; rec.continuous = false; rec.interimResults = false;
-    rec.onresult = (e) => { const text = e.results?.[0]?.[0]?.transcript?.trim(); if (text) send(text); };
-    rec.onerror = () => setListening(false);
-    rec.onend = () => setListening(false);
+    rec.lang = getAgentLang() === "en" ? "en-US" : "he-IL";
+    rec.continuous = false; rec.interimResults = true;
+    // Own endpointing. Waiting for the engine's final result only fired after
+    // rec.stop() on mobile Chrome — i.e. the spoken text was sent only when
+    // the user tapped the mic a SECOND time (owner-reported). Instead: watch
+    // the interim transcript live, and once the user goes quiet for ~1s, stop
+    // the session ourselves. The single send happens in onend, which fires on
+    // every path — natural finalization, our silence stop, or a manual tap.
+    let heard = "";
+    let silenceT = null;
+    const armSilence = () => {
+      clearTimeout(silenceT);
+      silenceT = setTimeout(() => { try { rec.stop(); } catch {} }, 1000);
+    };
+    rec.onresult = (e) => {
+      let interim = "", finalTxt = "";
+      for (let i = 0; i < e.results.length; i++) {
+        const r = e.results[i];
+        if (r.isFinal) finalTxt += r[0].transcript;
+        else interim += r[0].transcript;
+      }
+      heard = (finalTxt || interim).trim();
+      if (heard) { setQ(heard); armSilence(); } // live transcript in the input box
+    };
+    rec.onerror = () => { clearTimeout(silenceT); setListening(false); };
+    rec.onend = () => {
+      clearTimeout(silenceT);
+      setListening(false);
+      const text = heard.trim();
+      heard = "";
+      if (text) { setQ(""); send(text); }
+    };
     recogRef.current = rec;
     setListening(true);
     try { rec.start(); } catch { setListening(false); }
