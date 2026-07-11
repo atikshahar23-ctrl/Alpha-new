@@ -448,10 +448,25 @@ export class VoiceEngine {
     this.suppress = false;
   }
 
+  // TTS reads Markdown glyphs OUT LOUD — an LLM reply like "**חשוב**" gets
+  // spoken as "כוכבית כוכבית חשוב". Strip everything that isn't meant for the
+  // ear: markdown symbols, code fences, link syntax (keep the link text), and
+  // emoji (engines read them by name — "פרצוף מחייך" mid-sentence).
+  private cleanForSpeech(text: string): string {
+    return text
+      .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/`([^`]*)`/g, '$1')
+      .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+      .replace(/[*_~#>|•●▪◦]+/g, ' ')
+      .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}]/gu, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+  }
+
   // Build a configured utterance with the user's voice/rate/pitch/volume plus
   // the calm-professional prosody bias. Shared by speak() and beginSpeak().
   private makeUtterance(text: string): SpeechSynthesisUtterance {
-    const u = new SpeechSynthesisUtterance(text);
+    const u = new SpeechSynthesisUtterance(this.cleanForSpeech(text) || text);
     if (this.chosenVoice) { u.voice = this.chosenVoice; u.lang = this.chosenVoice.lang; }
     else u.lang = this.state.replyLang === 'he' ? 'he-IL' : this.state.replyLang === 'es' ? 'es-ES' : 'en-US';
     const cv = this.charVoice;

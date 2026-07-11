@@ -1055,11 +1055,24 @@ function pickVoiceForAgent(agentId, isEn) {
   for (let i = 0; i < agentId.length; i++) h = (h * 31 + agentId.charCodeAt(i)) | 0;
   return candidates[Math.abs(h) % candidates.length];
 }
+// TTS reads Markdown glyphs OUT LOUD ("כוכבית כוכבית חשוב") — strip everything
+// that isn't meant for the ear before speaking: markdown symbols, code fences,
+// link syntax (keep the text), and emoji (read aloud by name mid-sentence).
+function cleanForSpeech(text) {
+  return String(text)
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`([^`]*)`/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/[*_~#>|•●▪◦]+/g, " ")
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}]/gu, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
 function speakText(text, agentId, onEnd) {
   if (!canSpeak() || !text) { onEnd?.(); return; }
   try {
     window.speechSynthesis.cancel(); // don't stack overlapping replies
-    const u = new SpeechSynthesisUtterance(text);
+    const u = new SpeechSynthesisUtterance(cleanForSpeech(text) || text);
     const isEn = getAgentLang() === "en";
     u.lang = isEn ? "en-US" : "he-IL";
     // Per-agent voice choice takes priority over the one global voice, which
