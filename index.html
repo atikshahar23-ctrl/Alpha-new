@@ -45,62 +45,14 @@
   />
 </head>
 <body>
-  <!-- ── Intro: full-screen alien on black → face scan → ACCESS GRANTED →
-            dimension entry → only then the panels appear ── -->
+  <!-- ── Intro: the owner's own Suno anthem (golden-gate lyric video) plays
+            fullscreen with its music as the app's opening — then the panels
+            appear. Replaces the old alien/biometric/vault sequence. ── -->
   <div id="introOverlay">
-    <video id="introVid" muted playsinline preload="auto" src="%BASE_URL%intro-alien.mp4"></video>
-    <!-- cinematic HUD overlays: corner brackets + drifting scanlines + tint -->
-    <div class="intro-hud" aria-hidden="true">
-      <span class="hud-c tl"></span><span class="hud-c tr"></span><span class="hud-c bl"></span><span class="hud-c br"></span>
-      <div class="hud-top">⬡ ALPHA SECURE · BIOMETRIC GATE</div>
-      <div class="hud-bot" id="hudBot">SCANNING…</div>
-    </div>
-    <div class="intro-scanlines" aria-hidden="true"></div>
-    <div class="intro-noise" aria-hidden="true"></div>
-    <!-- movie-style face-recognition: blue mesh over the face + scan line -->
-    <div class="intro-facemesh">
-      <div class="fm-radar" aria-hidden="true"></div>
-      <svg viewBox="0 0 300 360" preserveAspectRatio="xMidYMid meet">
-        <defs><clipPath id="faceClip"><ellipse cx="150" cy="172" rx="92" ry="118"/></clipPath></defs>
-        <g clip-path="url(#faceClip)" class="fm-grid">
-          <line x1="30" y1="80" x2="270" y2="80"/><line x1="30" y1="112" x2="270" y2="112"/>
-          <line x1="30" y1="144" x2="270" y2="144"/><line x1="30" y1="176" x2="270" y2="176"/>
-          <line x1="30" y1="208" x2="270" y2="208"/><line x1="30" y1="240" x2="270" y2="240"/>
-          <line x1="30" y1="272" x2="270" y2="272"/>
-          <line x1="90" y1="40" x2="90" y2="300"/><line x1="120" y1="40" x2="120" y2="300"/>
-          <line x1="150" y1="40" x2="150" y2="300"/><line x1="180" y1="40" x2="180" y2="300"/>
-          <line x1="210" y1="40" x2="210" y2="300"/>
-        </g>
-        <ellipse class="fm-face" cx="150" cy="172" rx="92" ry="118"/>
-        <circle class="fm-dot" cx="120" cy="150" r="3.2"/><circle class="fm-dot" cx="180" cy="150" r="3.2"/>
-        <circle class="fm-dot" cx="150" cy="200" r="3.2"/><circle class="fm-dot" cx="150" cy="240" r="3.2"/>
-        <circle class="fm-dot" cx="105" cy="200" r="2.6"/><circle class="fm-dot" cx="195" cy="200" r="2.6"/>
-        <g class="fm-scan"><line x1="40" y1="0" x2="260" y2="0"/></g>
-        <path class="fm-ret" d="M36 76 V40 H72"/><path class="fm-ret" d="M264 76 V40 H228"/>
-        <path class="fm-ret" d="M36 268 V304 H72"/><path class="fm-ret" d="M264 268 V304 H228"/>
-        <!-- targeting crosshair + lock box that converges on the face -->
-        <g class="fm-cross"><line x1="150" y1="40" x2="150" y2="304"/><line x1="36" y1="172" x2="264" y2="172"/></g>
-        <rect class="fm-lock" x="92" y="92" width="116" height="160" rx="6"/>
-      </svg>
-      <div class="fm-text" id="scanTxt">מאתחל סריקה ביומטרית…</div>
-      <div class="fm-data">
-        <span class="fm-line" style="--i:0">FACE MATCH · 99.7%</span>
-        <span class="fm-line" style="--i:1">RETINA SCAN · OK</span>
-        <span class="fm-line" style="--i:2">PULSE · 72 BPM</span>
-        <span class="fm-line" style="--i:3">VOICE PRINT · OK</span>
-        <span class="fm-line" style="--i:4">BIOMETRIC LOCK · <b id="fmPct">0</b>%</span>
-        <span class="fm-line" style="--i:5">CLEARANCE · ALPHA-1</span>
-      </div>
-    </div>
-    <div class="intro-grant">
-      <div class="grant-wave"></div><div class="grant-wave" style="animation-delay:.22s"></div><div class="grant-wave" style="animation-delay:.44s"></div>
-      <div class="grant-ring"></div>
-      <div class="grant-check">✓</div>
-      <div class="grant-title">זוהו פנים — הגישה אושרה</div>
-      <div class="grant-sub">ALPHA · נכנס למערכת</div>
-    </div>
-    <!-- cinematic vault video → leads into the app -->
-    <video id="vaultVid" class="intro-vaultvid" muted playsinline preload="auto" src="%BASE_URL%intro-vault.mp4"></video>
+    <video id="introVid" playsinline preload="auto" src="%BASE_URL%boot-song.mp4"></video>
+    <div class="intro-brand" aria-hidden="true">A L P H A</div>
+    <div class="intro-progress" aria-hidden="true"><span id="introBar"></span></div>
+    <button id="introSound" type="button" hidden>🔊 הקש לסאונד</button>
     <button id="introSkip" type="button">דלג ⏭</button>
   </div>
   <style>
@@ -129,89 +81,28 @@
     @keyframes fbLoad{0%{transform:translateX(-120%)}100%{transform:translateX(320%)}}
     .fb-txt{font-family:'Space Grotesk',sans-serif;font-size:11.5px;letter-spacing:3px;color:#c9b27a;
       text-transform:uppercase;opacity:.85;max-width:90vw;text-align:center}
-    #introVid{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000;transition:opacity .5s ease}
-    /* ── James-Bond-style biometric face scan (blue mesh over the face) ── */
-    .intro-facemesh{position:absolute;inset:0;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;opacity:0;transition:opacity .35s;pointer-events:none}
-    #introOverlay.scanning .intro-facemesh{opacity:1}
-    .intro-facemesh svg{width:min(44vh,300px);height:auto;filter:drop-shadow(0 0 16px rgba(63,198,255,.6))}
-    .fm-grid line{stroke:rgba(63,198,255,.45);stroke-width:1}
-    #introOverlay.scanning .fm-grid line{animation:fm-flicker 1.8s ease-in-out infinite}
-    @keyframes fm-flicker{0%,100%{opacity:.3}50%{opacity:.78}}
-    .fm-face{fill:none;stroke:#3fc6ff;stroke-width:2}
-    .fm-dot{fill:#cdeeff}
-    .fm-ret{fill:none;stroke:#3fc6ff;stroke-width:3}
-    .fm-scan line{stroke:#dff3ff;stroke-width:2;filter:drop-shadow(0 0 9px #3fc6ff)}
-    .fm-scan{transform-box:fill-box;transform-origin:center}
-    #introOverlay.scanning .fm-scan{animation:fm-sweep 1.5s ease-in-out infinite}
-    @keyframes fm-sweep{0%{transform:translateY(48px)}100%{transform:translateY(290px)}}
-    .fm-text{color:#9fdcff;font-family:'Space Grotesk',monospace,sans-serif;letter-spacing:3px;font-size:15px;text-shadow:0 0 12px rgba(63,198,255,.7)}
-    .fm-data{display:flex;flex-direction:column;gap:5px;align-items:center}
-    .fm-data .fm-line{color:#7fd0f5;font-family:'Space Grotesk',monospace,sans-serif;font-size:12px;letter-spacing:2px;opacity:0}
-    .fm-data .fm-line b{color:#dff3ff;font-weight:700}
-    #introOverlay.scanning .fm-data .fm-line{animation:fm-in .3s ease forwards;animation-delay:calc(.08s + var(--i)*.13s)}
-    @keyframes fm-in{from{opacity:0;transform:translateY(5px)}to{opacity:.95;transform:none}}
-    /* targeting crosshair + lock box converging on the face (James-Bond lock-on) */
-    .fm-cross line{stroke:rgba(63,198,255,.55);stroke-width:1;stroke-dasharray:5 7}
-    #introOverlay.scanning .fm-cross{animation:fm-flicker 1.2s ease-in-out infinite}
-    .fm-lock{fill:none;stroke:#3fc6ff;stroke-width:2.5;opacity:0;transform-box:fill-box;transform-origin:center}
-    #introOverlay.scanning .fm-lock{animation:fm-lockon 1.1s cubic-bezier(.2,.8,.2,1) forwards}
-    @keyframes fm-lockon{0%{opacity:0;transform:scale(1.6)}60%{opacity:.9}100%{opacity:.95;transform:scale(1)}}
-    /* access granted */
-    .intro-grant{position:absolute;inset:0;z-index:3;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;opacity:0;transform:scale(.92);transition:opacity .4s ease,transform .4s ease;pointer-events:none}
-    #introOverlay.granted .intro-grant{opacity:1;transform:scale(1)}
-    .grant-ring{position:absolute;width:210px;height:210px;border:2px solid rgba(63,198,255,.6);border-radius:50%;box-shadow:0 0 44px rgba(63,198,255,.4),inset 0 0 44px rgba(63,198,255,.18);animation:grant-pulse 1s ease infinite}
-    @keyframes grant-pulse{0%,100%{transform:scale(1);opacity:.7}50%{transform:scale(1.08);opacity:1}}
-    .grant-check{font-size:64px;line-height:1;color:#dff3ff;text-shadow:0 0 30px rgba(63,198,255,.9)}
-    .grant-title{color:#fff;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:21px;letter-spacing:1px;text-shadow:0 0 16px rgba(63,198,255,.6)}
-    .grant-sub{color:#3fc6ff;font-size:13px;letter-spacing:5px}
-    /* ── cinematic HUD: corner brackets, scanlines, radar, shockwave ── */
-    .intro-hud{position:absolute;inset:0;z-index:2;pointer-events:none;opacity:0;transition:opacity .4s}
-    #introOverlay.scanning .intro-hud,#introOverlay.granted .intro-hud{opacity:1}
-    .hud-c{position:absolute;width:46px;height:46px;border:2px solid rgba(63,198,255,.85);filter:drop-shadow(0 0 8px rgba(63,198,255,.6));animation:hud-pulse 1.6s ease-in-out infinite}
-    .hud-c.tl{top:20px;left:20px;border-right:0;border-bottom:0}
-    .hud-c.tr{top:20px;right:20px;border-left:0;border-bottom:0}
-    .hud-c.bl{bottom:20px;left:20px;border-right:0;border-top:0}
-    .hud-c.br{bottom:20px;right:20px;border-left:0;border-top:0}
-    @keyframes hud-pulse{0%,100%{opacity:.5}50%{opacity:1}}
-    .hud-top,.hud-bot{position:absolute;left:50%;transform:translateX(-50%);color:#9fdcff;font-family:'Space Grotesk',monospace,sans-serif;font-size:11px;letter-spacing:3px;text-shadow:0 0 10px rgba(63,198,255,.7);white-space:nowrap}
-    .hud-top{top:26px}.hud-bot{bottom:64px;color:#7fd0f5}
-    #introOverlay.granted .hud-bot{color:#7bffb0;text-shadow:0 0 12px rgba(80,255,160,.8)}
-    .intro-scanlines{position:absolute;inset:0;z-index:2;pointer-events:none;opacity:0;transition:opacity .4s;mix-blend-mode:overlay;
-      background:repeating-linear-gradient(0deg,rgba(63,198,255,.10) 0px,rgba(63,198,255,.10) 1px,transparent 2px,transparent 4px)}
-    #introOverlay.scanning .intro-scanlines{opacity:1;animation:scl-drift 6s linear infinite}
-    @keyframes scl-drift{from{background-position:0 0}to{background-position:0 80px}}
-    .intro-noise{position:absolute;inset:0;z-index:2;pointer-events:none;opacity:0;
-      background:radial-gradient(circle at 50% 45%,transparent 40%,rgba(0,10,20,.55) 100%)}
-    #introOverlay.scanning .intro-noise{opacity:1}
-    .fm-radar{position:absolute;width:min(58vh,400px);height:min(58vh,400px);border-radius:50%;
-      border:1px solid rgba(63,198,255,.25);opacity:0;transition:opacity .4s;
-      background:conic-gradient(from 0deg,rgba(63,198,255,.45),transparent 28%)}
-    #introOverlay.scanning .fm-radar{opacity:.85;animation:radar-spin 2.2s linear infinite}
-    @keyframes radar-spin{to{transform:rotate(360deg)}}
-    .grant-wave{position:absolute;width:120px;height:120px;border:2px solid rgba(123,255,176,.7);border-radius:50%;opacity:0}
-    #introOverlay.granted .grant-wave{animation:grant-wave 1.1s ease-out forwards}
-    @keyframes grant-wave{0%{opacity:.8;transform:scale(.5)}100%{opacity:0;transform:scale(3.4)}}
-    /* on grant, flash the lock-on/check to victory green */
-    #introOverlay.granted .grant-check{color:#9bffc6;text-shadow:0 0 34px rgba(80,255,160,.95)}
-    #introOverlay.granted .grant-ring{border-color:rgba(123,255,176,.7);box-shadow:0 0 50px rgba(80,255,160,.5),inset 0 0 44px rgba(80,255,160,.2)}
+    /* The Suno anthem is a 9:16 portrait lyric video on a golden-sunrise
+       gradient. Phones (portrait) get cover — edge to edge. Wide screens
+       get contain, letterboxed on a matching golden radial so the frame
+       reads as intentional set-dressing rather than black bars. */
+    #introOverlay{background:radial-gradient(circle at 50% 42%, #f9b653 0%, #e8931f 55%, #c96f10 100%)}
+    #introVid{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;transition:opacity .5s ease}
+    @media (max-aspect-ratio: 3/4){ #introVid{object-fit:cover} }
+    .intro-brand{position:absolute;top:max(26px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:3;
+      color:rgba(255,248,230,.92);font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:15px;letter-spacing:9px;
+      text-shadow:0 1px 12px rgba(120,60,0,.55)}
+    .intro-progress{position:absolute;left:0;right:0;bottom:0;height:3px;z-index:3;background:rgba(120,60,0,.25)}
+    .intro-progress span{display:block;height:100%;width:0;background:linear-gradient(90deg,#fff2cf,#ffd97a);
+      box-shadow:0 0 10px rgba(255,220,140,.8);transition:width .25s linear}
+    #introSound{position:absolute;bottom:max(22px,env(safe-area-inset-bottom));left:22px;z-index:5;
+      background:rgba(60,30,4,.55);border:1px solid rgba(255,236,190,.55);color:#fff4d8;
+      padding:8px 16px;border-radius:999px;font-family:Assistant,system-ui,sans-serif;font-size:14px;cursor:pointer;
+      animation:sndPulse 1.6s ease-in-out infinite}
+    @keyframes sndPulse{0%,100%{box-shadow:0 0 0 0 rgba(255,220,140,.5)}50%{box-shadow:0 0 0 9px rgba(255,220,140,0)}}
     #introOverlay.gone{opacity:0}
-    /* cinematic vault video → leads into the app */
-    .intro-vaultvid{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000;opacity:0;z-index:4;transition:opacity .45s ease}
-    #introOverlay.vaulting .intro-vaultvid{opacity:1}
     #introSkip{position:absolute;bottom:max(22px,env(safe-area-inset-bottom));right:22px;z-index:5;
-      background:rgba(8,8,10,.6);border:1px solid rgba(228,188,99,.4);color:#F7E8C0;
+      background:rgba(60,30,4,.55);border:1px solid rgba(255,236,190,.45);color:#fff4d8;
       padding:8px 16px;border-radius:999px;font-family:Assistant,system-ui,sans-serif;font-size:14px;cursor:pointer}
-    #introOverlay.granted #introSkip{opacity:0;pointer-events:none}
-    /* intro-vault.mp4 is a 16:9 landscape source. object-fit:cover on a
-       tall phone screen (typically ~9:19.5) forces a ~3x zoom to cover the
-       height, cropping almost all the width — the video reads as an
-       unrecognizable close-up smear instead of the vault reveal. Switch to
-       contain on narrow viewports so the full frame is always visible
-       (letterboxed on black, which already matches the boot sequence's
-       black background). intro-alien.mp4 is already 9:16 and stays cover. */
-    @media (max-width: 768px) {
-      .intro-vaultvid{object-fit:contain}
-    }
   </style>
   <script>
     (function(){
@@ -257,9 +148,28 @@
         }
         localStorage.setItem('alpha_intro_day',introDay);
       }catch(e){}
+      // ── Opening sound: the owner's Suno anthem (first 13.2s, gentle fade)
+      // replaces the old procedural chime. If autoplay is blocked, the first
+      // tap/keypress starts it instead.
+      var sndStarted=false, bootAudio=null;
+      function openSound(){
+        if(sndStarted) return; sndStarted=true;
+        try{
+          bootAudio=new Audio('%BASE_URL%boot-song.m4a');
+          bootAudio.volume=0.9;
+          var p=bootAudio.play();
+          if(p && p.catch) p.catch(function(){
+            var retry=function(){ try{ bootAudio.play().catch(function(){}); }catch(e){} };
+            window.addEventListener('pointerdown', retry, {once:true});
+            window.addEventListener('keydown', retry, {once:true});
+          });
+        }catch(e){}
+      }
+      // (The clip keeps playing over the reveal by design — it IS the app's
+      // opening theme, and it fades itself out at ~13s.)
       function showFastBoot(silent){
         document.documentElement.classList.add('booting');
-        if(!silent) openSound(); // startup chime on the fast (daily) path; skipped on silent same-session returns
+        if(!silent) openSound(); // the anthem opening on the fast (daily) path; skipped on silent same-session returns
         var veil=document.createElement('div');
         veil.id='fastBootVeil';
         veil.innerHTML='<div class="fb-logo-wrap"><img src="%BASE_URL%heavyguard-logo.png" class="fb-logo" alt="" /><div class="fb-scan"></div></div>'+
@@ -299,160 +209,63 @@
         setTimeout(fbReveal, 32000);
       }
       document.documentElement.classList.add('booting');   // hide app + welcome until reveal
-      var vid=document.getElementById('introVid'); var vaultVid=document.getElementById('vaultVid');
-      var scanTxt=document.getElementById('scanTxt'); var hudBot=document.getElementById('hudBot'); var done=false, ended=false;
-      // Both intro videos slowed to ~1.46x so their combined run (alien 8s +
-      // vault 10s = 18s ÷ 1.46 ≈ 12.32s, plus the 0.9s face-scan/lock-on gap
-      // between them ≈ 13.22s) matches the uploaded opening sound (13.22s):
-      // the videos finish right as the sound ends.
-      if(vid){ try{ vid.playbackRate=1.46; }catch(e){} }
-      if(vaultVid){ try{ vaultVid.playbackRate=1.46; }catch(e){} }
-      // ── Opening sound: a short (~3.6s), fully procedural, original startup
-      // chime (no external audio file) in the spirit of a Windows power-on
-      // jingle but distinct — a soft sub, a bright ascending bell chord that
-      // resolves upward, a gentle pad bed and a shimmer sparkle. Plays on
-      // both the daily fast-boot path and the once-a-day cinematic. Built
-      // from oscillators through one master gain so `stopBoot()` can fade it
-      // out cleanly if the user hits skip early.
-      var sndStarted=false, bootCtx=null, bootMaster=null;
-      function stopBoot(){
-        if(!bootCtx) return;
-        try{
-          var now=bootCtx.currentTime;
-          bootMaster.gain.cancelScheduledValues(now);
-          bootMaster.gain.setValueAtTime(bootMaster.gain.value,now);
-          bootMaster.gain.exponentialRampToValueAtTime(0.0001,now+0.25);
-          setTimeout(function(){ try{ bootCtx.close(); }catch(e){} },300);
-        }catch(e){}
-      }
-      function openSound(){
-        if(sndStarted) return;
-        sndStarted=true;
-        try{
-          var AC=window.AudioContext||window.webkitAudioContext; if(!AC) return;
-          var ctx=new AC(); if(ctx.state==='suspended'){ ctx.resume(); }
-          bootCtx=ctx;
-          var t=ctx.currentTime;
-          var master=ctx.createGain(); master.gain.value=0.9; master.connect(ctx.destination);
-          bootMaster=master;
-
-          // ── Alpha startup chime (~3.6s) ─────────────────────────────────
-          // A short, warm "power-on" signature in the spirit of a Windows
-          // startup jingle but entirely original: a soft sub foundation, a
-          // bright ascending bell chord that resolves upward, a shimmer
-          // sparkle, and a gentle pad bed underneath. No 13s cinematic theme.
-          master.gain.value=0.85;
-
-          // Soft sub foundation — a gentle low swell that gives it weight.
-          var sub=ctx.createOscillator(),subG=ctx.createGain();
-          sub.type='sine'; sub.frequency.setValueAtTime(58,t); sub.frequency.linearRampToValueAtTime(65,t+1.4);
-          subG.gain.setValueAtTime(0.0001,t); subG.gain.exponentialRampToValueAtTime(0.16,t+0.35);
-          subG.gain.linearRampToValueAtTime(0.10,t+1.6); subG.gain.exponentialRampToValueAtTime(0.0001,t+3.0);
-          sub.connect(subG); subG.connect(master); sub.start(t); sub.stop(t+3.1);
-
-          // Signature bell chord — a bright, resolving upward voicing
-          // (G major add9), each note a sine+triangle bell struck in sequence
-          // over ~0.5s, ringing warmly through a soft lowpass.
-          function bell(freq,s,vol){
-            [['sine',1],['triangle',0.5]].forEach(function(v){
-              var o=ctx.createOscillator(),g=ctx.createGain(),lp=ctx.createBiquadFilter();
-              o.type=v[0]; o.frequency.value=freq;
-              lp.type='lowpass'; lp.frequency.setValueAtTime(3200,t+s); lp.frequency.exponentialRampToValueAtTime(1400,t+s+1.6);
-              g.gain.setValueAtTime(0.0001,t+s); g.gain.exponentialRampToValueAtTime(vol*v[1],t+s+0.02);
-              g.gain.exponentialRampToValueAtTime(0.0001,t+s+1.9);
-              o.connect(lp); lp.connect(g); g.connect(master); o.start(t+s); o.stop(t+s+2.0);
-            });
-          }
-          [[196.0,0.00],[293.66,0.13],[392.0,0.26],[493.88,0.39],[587.33,0.55]]
-            .forEach(function(n,i){ bell(n[0],n[1],0.15-i*0.008); });
-
-          // Gentle resolving pad bed under the bells.
-          [196.0,246.94,293.66].forEach(function(f,i){
-            var o=ctx.createOscillator(),g=ctx.createGain(),lp=ctx.createBiquadFilter();
-            o.type='triangle'; o.frequency.value=f; o.detune.value=(i-1)*4;
-            lp.type='lowpass'; lp.frequency.setValueAtTime(700,t+0.2); lp.frequency.exponentialRampToValueAtTime(2600,t+2.4);
-            g.gain.setValueAtTime(0.0001,t+0.15); g.gain.exponentialRampToValueAtTime(0.05,t+0.9);
-            g.gain.linearRampToValueAtTime(0.035,t+2.4); g.gain.exponentialRampToValueAtTime(0.0001,t+3.3);
-            o.connect(lp); lp.connect(g); g.connect(master); o.start(t+0.15); o.stop(t+3.35);
-          });
-
-          // Shimmer sparkle — a quick high arpeggio near the resolve.
-          var SPK=1.35;
-          [1174.66,1567.98,1975.53].forEach(function(f,i){
-            var o=ctx.createOscillator(),g=ctx.createGain();
-            o.type='sine'; o.frequency.value=f;
-            var s4=SPK+i*0.05;
-            g.gain.setValueAtTime(0.0001,t+s4); g.gain.exponentialRampToValueAtTime(0.09/(i+1),t+s4+0.015);
-            g.gain.exponentialRampToValueAtTime(0.0001,t+s4+0.7);
-            o.connect(g); g.connect(master); o.start(t+s4); o.stop(t+s4+0.75);
-          });
-
-        }catch(e){}
-      }
-      openSound();
-      window.addEventListener('pointerdown', openSound, {once:true});
-      window.addEventListener('keydown', openSound, {once:true});
+      var vid=document.getElementById('introVid'); var ended=false;
       function revealApp(){
         document.documentElement.classList.remove('booting');
         document.body.classList.add('revealed');   // panels animate in — only now
       }
       function finish(){
         if(ended) return; ended=true;
-        stopBoot();   // sound only spans the videos
+        // fade the anthem out with the veil instead of cutting it dead
+        try{
+          var f=setInterval(function(){
+            if(!vid || vid.muted || vid.volume<=0.06){ clearInterval(f); if(vid) vid.pause(); return; }
+            vid.volume=Math.max(0,vid.volume-0.12);
+          },60);
+        }catch(e){}
         ov.classList.add('gone');
         setTimeout(function(){ ov.parentNode && ov.parentNode.removeChild(ov); }, 800);
-        // The cinematic intro used to hand straight off to revealApp() the
-        // instant the vault video ended — but the dashboard's own data/HUD
-        // pass often hadn't finished by then, so the reveal showed a raw,
-        // still-assembling layout for a beat. Same branded veil the repeat-
-        // visit fast-boot path already uses (logo + scan sweep) now bridges
-        // that gap too, gated on window.__alphaReady with the same minimum-
-        // show-time and hard-fallback safety net.
-        showFastBoot();
+        // Bridge to the app behind the same branded veil the repeat-visit
+        // path uses, gated on window.__alphaReady — silent: the anthem WAS
+        // the opening sound, no second chime on top of it.
+        showFastBoot(true);
       }
-      var vaultStarted=false;
-      function playVault(){
-        if(vaultStarted) return; vaultStarted=true;
-        if(vaultVid){
-          ov.classList.add('vaulting');
-          vaultVid.addEventListener('ended', finish, {once:true});
-          vaultVid.addEventListener('error', finish, {once:true});
-          var pv=vaultVid.play && vaultVid.play();
-          if(pv && pv.catch) pv.catch(function(){ setTimeout(finish, 600); });
-          setTimeout(finish, 13000);   // fallback if the vault video stalls
-        } else { finish(); }
-      }
-      // Biometric-lock % counter (climbs 0→99 during the scan)
-      var pctStarted=false;
-      function startScan(){
-        if(ov.classList.contains('granted')) return;
-        ov.classList.add('scanning');
-        if(pctStarted) return; pctStarted=true;
-        var el=document.getElementById('fmPct'); if(!el) return;
-        var s=performance.now();
-        (function step(now){ var p=Math.min(1,(now-s)/1300); el.textContent=String(Math.round(p*99)); if(p<1) requestAnimationFrame(step); })(performance.now());
-      }
-      // alien (with scan overlay) → ACCESS GRANTED → vault video → panels
-      function sequence(){
-        if(done) return; done=true;
-        startScan();
-        setTimeout(function(){ if(scanTxt) scanTxt.textContent='מזהה פנים…'; if(hudBot) hudBot.textContent='LOCKING ON…'; }, 150);
-        setTimeout(function(){ if(scanTxt) scanTxt.textContent='זוהה ✓'; if(hudBot) hudBot.textContent='ACCESS GRANTED'; ov.classList.remove('scanning'); ov.classList.add('granted'); }, 600);
-        setTimeout(playVault, 900);   // hand off to the vault video
-      }
-      function skip(){ if(!done){ done=true; } finish(); }
+      function skip(){ finish(); }
       document.getElementById('introSkip').addEventListener('click', skip);
+      // ── The owner's Suno anthem IS the loading screen ────────────────────
+      // Play WITH sound when the browser allows it; when autoplay-with-audio
+      // is blocked, keep rolling muted and surface a pulsing 🔊 button — the
+      // first tap anywhere unmutes without restarting.
+      var sndBtn=document.getElementById('introSound');
+      function unmute(){
+        if(!vid) return;
+        vid.muted=false; vid.volume=1;
+        if(sndBtn) sndBtn.hidden=true;
+      }
+      if(sndBtn) sndBtn.addEventListener('click', function(e){ e.stopPropagation(); unmute(); });
+      window.addEventListener('pointerdown', function(){ if(vid && vid.muted && !ended) unmute(); }, {once:true});
+      // bottom progress line — real playback progress, not a fake animation
+      var bar=document.getElementById('introBar');
+      if(vid && bar){
+        vid.addEventListener('timeupdate', function(){
+          if(vid.duration) bar.style.width=Math.min(100,(vid.currentTime/vid.duration)*100)+'%';
+        });
+      }
       if(vid){
         vid.loop=false;
-        vid.addEventListener('ended', sequence, {once:true});
-        vid.addEventListener('error', sequence, {once:true});
+        vid.addEventListener('ended', finish, {once:true});
+        vid.addEventListener('error', finish, {once:true});
+        vid.muted=false; vid.volume=1;
         var pr=vid.play && vid.play();
-        if(pr && pr.catch) pr.catch(function(){ /* autoplay blocked: skip / fallback handle it */ });
-        // Begin the biometric scan OVER the alien video so the lock-on has real
-        // screen time before ACCESS GRANTED (the alien is "being scanned").
-        setTimeout(function(){ if(!done) startScan(); }, 650);
-        setTimeout(sequence, 14000);   // hard fallback so it never gets stuck
-      } else { sequence(); }
+        if(pr && pr.catch) pr.catch(function(){
+          // autoplay with sound blocked → roll muted + offer one-tap sound
+          vid.muted=true;
+          if(sndBtn) sndBtn.hidden=false;
+          var p2=vid.play && vid.play();
+          if(p2 && p2.catch) p2.catch(function(){ finish(); }); // video itself blocked → straight to the veil
+        });
+        setTimeout(finish, 31000);   // hard fallback: clip is 28s — never get stuck
+      } else { finish(); }
     })();
   </script>
   <div id="app"></div>
