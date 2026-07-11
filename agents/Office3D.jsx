@@ -4913,6 +4913,70 @@ const VEHICLE_CONFIGS = {
     camDist: 13, camHeight: 4.8, lookHeight: 2,
   },
 };
+// OMNI-CITY — procedural building facade: dark curtain-wall grid with a
+// random scatter of lit windows. The SAME canvas doubles as the emissiveMap,
+// so the night cycle can raise emissiveIntensity and exactly the lit windows
+// glow (no second texture, no extra draw calls).
+function buildFacadeTexture(tint = "#22304a", litChance = 0.35) {
+  const cvs = document.createElement("canvas");
+  cvs.width = 128; cvs.height = 256;
+  const ctx = cvs.getContext("2d");
+  ctx.fillStyle = tint; ctx.fillRect(0, 0, 128, 256);
+  for (let y = 6; y < 250; y += 14) {
+    for (let x = 6; x < 122; x += 12) {
+      const lit = Math.random() < litChance;
+      ctx.fillStyle = lit ? (Math.random() < 0.5 ? "#ffd98a" : "#bfe0ff") : "#0a0f1c";
+      ctx.fillRect(x, y, 8, 9);
+    }
+  }
+  const tex = new THREE.CanvasTexture(cvs);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+// OMNI-CITY — a simple AI-traffic vehicle: sedan / Heavy-Guard box truck /
+// concrete-pump truck, all cheap primitives (the whole point is that six of
+// them drive themselves around the loop, not museum detail). Returns the
+// group plus the emissive light materials so the day/night engine and the
+// per-vehicle brake logic can drive head/taillights.
+function buildTrafficVehicle(kind) {
+  const g = new THREE.Group();
+  const paint = kind === "hgtruck" ? 0x2a3444 : kind === "pump" ? 0xb8bec9 : [0x8a2f2f, 0x2f5b8a, 0x3d3f46, 0x7a7357][Math.floor(Math.random() * 4)];
+  const bodyMat = new THREE.MeshStandardMaterial({ color: paint, roughness: 0.55, metalness: 0.25 });
+  const darkMat = new THREE.MeshStandardMaterial({ color: 0x14181f, roughness: 0.9 });
+  const headMat = new THREE.MeshStandardMaterial({ color: 0xfff6d8, emissive: 0xffefb0, emissiveIntensity: 0 });
+  const tailMat = new THREE.MeshStandardMaterial({ color: 0x551111, emissive: 0xff2a1a, emissiveIntensity: 0 });
+  const addBox = (mat, w, h, d, x, y, z) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); b.position.set(x, y, z); b.castShadow = true; g.add(b); return b; };
+  if (kind === "sedan") {
+    addBox(bodyMat, 1.7, 0.55, 4.1, 0, 0.55, 0);
+    addBox(new THREE.MeshStandardMaterial({ color: 0x1c2530, roughness: 0.2, metalness: 0.5 }), 1.5, 0.5, 2.0, 0, 1.05, -0.2);
+  } else if (kind === "hgtruck") {
+    addBox(bodyMat, 2.1, 1.7, 2.2, 0, 1.35, 2.2);            // cab
+    const cargo = addBox(new THREE.MeshStandardMaterial({ color: 0xE4BC63, roughness: 0.7 }), 2.2, 2.2, 5.2, 0, 1.6, -1.4); // HG-gold container
+    cargo.receiveShadow = true;
+  } else { // concrete pump truck
+    addBox(bodyMat, 2.1, 1.5, 2.0, 0, 1.2, 2.4);             // cab
+    addBox(darkMat, 2.2, 1.0, 5.0, 0, 0.95, -0.8);           // chassis deck
+    const boom = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.2, 5.4, 8), new THREE.MeshStandardMaterial({ color: 0xd4502a, roughness: 0.6 }));
+    boom.position.set(0, 2.15, -0.6); boom.rotation.x = Math.PI / 2.35; boom.castShadow = true; g.add(boom);
+  }
+  const wheelGeo = new THREE.CylinderGeometry(0.42, 0.42, 0.3, 12);
+  const zs = kind === "sedan" ? [1.35, -1.35] : [2.2, -0.4, -2.4];
+  for (const z of zs) for (const s of [-1, 1]) {
+    const w = new THREE.Mesh(wheelGeo, darkMat);
+    w.rotation.z = Math.PI / 2;
+    w.position.set(s * (kind === "sedan" ? 0.85 : 1.05), 0.42, z);
+    g.add(w);
+  }
+  const front = kind === "sedan" ? 2.06 : kind === "hgtruck" ? 3.31 : 3.41;
+  for (const s of [-0.6, 0.6]) {
+    const hl = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.18), headMat);
+    hl.position.set(s, 0.72, front); g.add(hl);
+    const tl = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.16), tailMat);
+    tl.position.set(s, 0.75, kind === "sedan" ? -2.06 : -4.01); tl.rotation.y = Math.PI; g.add(tl);
+  }
+  return { group: g, headMat, tailMat };
+}
+
 function DriveOverlay({ onReturn, liveRef, vehicle: vehicleType = "car" }) {
   const cfg = VEHICLE_CONFIGS[vehicleType] || VEHICLE_CONFIGS.car;
   const mountRef = useRef(null);
@@ -4925,6 +4989,9 @@ function DriveOverlay({ onReturn, liveRef, vehicle: vehicleType = "car" }) {
   const [view360, setView360] = useState(false);
   const view360Ref = useRef(false);
   useEffect(() => { view360Ref.current = view360; }, [view360]);
+  // Time-Dilation: hour-of-day for the OMNI-CITY day/night engine.
+  const [dayHour, setDayHour] = useState(13);
+  const dayHourRef = useRef(13);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -4951,6 +5018,10 @@ function DriveOverlay({ onReturn, liveRef, vehicle: vehicleType = "car" }) {
     renderer.shadowMap.enabled = true;
     mount.appendChild(renderer.domElement);
 
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // ACES filmic grading — OutputPass applies whatever tone mapping the
+    // renderer declares, so this one line upgrades the whole color pipeline.
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
     const composer = new EffectComposer(renderer);
     const renderPass = new RenderPass(scene, camera);
     composer.addPass(renderPass);
@@ -4970,7 +5041,11 @@ function DriveOverlay({ onReturn, liveRef, vehicle: vehicleType = "car" }) {
     sun.shadow.camera.top = 40; sun.shadow.camera.bottom = -40;
     sun.shadow.camera.near = 10; sun.shadow.camera.far = 260;
     scene.add(sun, sun.target);
-    scene.add(new THREE.AmbientLight(0xbcd6ff, 0.6));
+    const ambient = new THREE.AmbientLight(0xbcd6ff, 0.6);
+    scene.add(ambient);
+    // Day/night palette anchors + a scratch color (no per-frame allocations).
+    const SKY_DAY = new THREE.Color(0x9fd3f0), SKY_DUSK = new THREE.Color(0xff9a5e), SKY_NIGHT = new THREE.Color(0x070b16);
+    const skyTmp = new THREE.Color();
 
     // Grass field under and well past the track — the blades themselves are
     // InstancedMesh (one draw call for thousands of them) rather than one
@@ -5038,6 +5113,20 @@ function DriveOverlay({ onReturn, liveRef, vehicle: vehicleType = "car" }) {
     });
     trunkMesh.castShadow = true; leavesMesh.castShadow = true;
     scene.add(trunkMesh, leavesMesh);
+    // Wind sway (PILLAR 2) — one uniform shared by the tree canopies and the
+    // grass blades, injected into the stock material's vertex stage so the
+    // whole thing stays a single instanced draw call per mesh. Each instance
+    // gets a phase from gl_InstanceID so the field doesn't sway in lockstep.
+    const windUniform = { value: 0 };
+    const addWind = (mat, strength) => {
+      mat.onBeforeCompile = (sh) => {
+        sh.uniforms.uWind = windUniform;
+        sh.vertexShader = sh.vertexShader
+          .replace("#include <common>", "#include <common>\nuniform float uWind;")
+          .replace("#include <begin_vertex>", `#include <begin_vertex>\n  transformed.x += sin(uWind + float(gl_InstanceID) * 1.71) * ${strength.toFixed(3)} * max(transformed.y, 0.0);`);
+      };
+    };
+    addWind(leavesMesh.material, 0.06);
 
     // Grass blades — thousands of thin double-sided crossed quads, scattered
     // across the field but skipped within the track's own footprint.
@@ -5062,17 +5151,70 @@ function DriveOverlay({ onReturn, liveRef, vehicle: vehicleType = "car" }) {
         placed++;
       }
     }
+    addWind(bladeMat, 0.28);
     scene.add(bladeMesh);
 
-    const distantBuildingMat = new THREE.MeshStandardMaterial({ color: 0x8a93a8, roughness: 0.9 });
-    for (let i = 0; i < 10; i++) {
-      const ang = (i / 10) * Math.PI * 2;
-      const r = 140 + (i % 3) * 20;
-      const b = new THREE.Mesh(new THREE.BoxGeometry(14 + (i % 4) * 4, 20 + (i % 5) * 8, 14), distantBuildingMat);
-      b.position.set(Math.cos(ang) * r, b.geometry.parameters.height / 2, Math.sin(ang) * r);
-      scene.add(b);
-      obstaclePts.push({ x: b.position.x, z: b.position.z });
+    // ── OMNI-CITY: procedural urban grid (PILLAR 2) ─────────────────────
+    // Three instanced building families = three draw calls for the whole
+    // city (PILLAR 5): glass towers (commercial), mid-rise blocks, and low
+    // industrial warehouses for the Heavy-Guard flavor. Scattered on a jittered
+    // grid, skipped anywhere near the track footprint so the road stays clear.
+    const facadeGlass = buildFacadeTexture("#1c2a44", 0.4);
+    const facadeConcrete = buildFacadeTexture("#3a3f4a", 0.28);
+    const facadeIndustrial = buildFacadeTexture("#43392c", 0.18);
+    const towerMat = new THREE.MeshStandardMaterial({ map: facadeGlass, emissiveMap: facadeGlass, emissive: 0xffffff, emissiveIntensity: 0.05, roughness: 0.35, metalness: 0.6 });
+    const midMat = new THREE.MeshStandardMaterial({ map: facadeConcrete, emissiveMap: facadeConcrete, emissive: 0xffffff, emissiveIntensity: 0.05, roughness: 0.8, metalness: 0.1 });
+    const wareMat = new THREE.MeshStandardMaterial({ map: facadeIndustrial, emissiveMap: facadeIndustrial, emissive: 0xffffff, emissiveIntensity: 0.05, roughness: 0.9, metalness: 0.15 });
+    const cityWindowMats = [towerMat, midMat, wareMat];
+    const unitBox = new THREE.BoxGeometry(1, 1, 1);
+    unitBox.translate(0, 0.5, 0); // scale from the ground up, not from the middle
+    const cityFamilies = [
+      { mat: towerMat, count: 60, w: [10, 18], h: [26, 68], industrialSide: false },
+      { mat: midMat, count: 90, w: [8, 14], h: [9, 22], industrialSide: false },
+      { mat: wareMat, count: 45, w: [14, 26], h: [5, 9], industrialSide: true },
+    ];
+    const dummy = new THREE.Object3D();
+    for (const fam of cityFamilies) {
+      const inst = new THREE.InstancedMesh(unitBox, fam.mat, fam.count);
+      let placed = 0, tries = 0;
+      while (placed < fam.count && tries < fam.count * 30) {
+        tries++;
+        let bx = (Math.random() - 0.5) * 460, bz = (Math.random() - 0.5) * 460;
+        // industrial zone occupies the city's west side; towers avoid it
+        if (fam.industrialSide) bx = -Math.abs(bx) - 30;
+        else if (bx < -140) continue;
+        const w = fam.w[0] + Math.random() * (fam.w[1] - fam.w[0]);
+        if (nearestTrackOffset(centerline, bx, bz) < TRACK_WIDTH / 2 + w * 0.72 + 6) continue;
+        const h = fam.h[0] + Math.random() * (fam.h[1] - fam.h[0]);
+        dummy.position.set(bx, 0, bz);
+        dummy.rotation.set(0, Math.floor(Math.random() * 4) * (Math.PI / 2), 0);
+        dummy.scale.set(w, h, w * (0.7 + Math.random() * 0.6));
+        dummy.updateMatrix();
+        inst.setMatrixAt(placed, dummy.matrix);
+        if (h > 8) obstaclePts.push({ x: bx, z: bz });
+        placed++;
+      }
+      inst.count = placed;
+      inst.castShadow = placed < 100; // towers/mids cast; keep the shadow pass sane
+      scene.add(inst);
     }
+    // Night sky — a dome of stars that only shows once the sun is down
+    // (opacity driven by the day/night engine below).
+    const starGeo = new THREE.BufferGeometry();
+    {
+      const pos = new Float32Array(600 * 3);
+      for (let i = 0; i < 600; i++) {
+        const a = Math.random() * Math.PI * 2, e = Math.random() * Math.PI * 0.48;
+        const r = 380;
+        pos[i * 3] = Math.cos(a) * Math.cos(e) * r;
+        pos[i * 3 + 1] = Math.sin(e) * r + 10;
+        pos[i * 3 + 2] = Math.sin(a) * Math.cos(e) * r;
+      }
+      starGeo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    }
+    const starMat = new THREE.PointsMaterial({ color: 0xdfe9ff, size: 1.6, sizeAttenuation: false, transparent: true, opacity: 0 });
+    const stars = new THREE.Points(starGeo, starMat);
+    scene.add(stars);
 
     // ── Physics world (cannon-es) ───────────────────────────────────────
     // Real vehicle physics instead of a kinematic speed/heading model: a
@@ -5177,6 +5319,55 @@ function DriveOverlay({ onReturn, liveRef, vehicle: vehicleType = "car" }) {
     // nodes to hook a spin animation into, so these are separate meshes
     // layered on top instead of hidden ones inside the model.
     const wheelMeshes = wheelConn.map(() => { const w = buildCarWheel(cfg.wheelRadius, cfg.wheelRadius * 0.7); scene.add(w); return w; });
+    window.__driveDbg = { car, wheelMeshes, chassis: chassisBody, THREE };
+    // PILLAR-1 body/wheel alignment — armed here, resolved a few frames into
+    // the simulation (see the animate loop) once the suspension has settled.
+    let bodyAligned = false, bodyAlignT = 0;
+    // Player headlights — a real spotlight beam, driven by the night cycle.
+    const playerHead = new THREE.SpotLight(0xffeecb, 0, 36, 0.52, 0.45, 1.1);
+    playerHead.position.set(0, 1.1, HALF_L + 0.5);
+    playerHead.target.position.set(0, 0.1, HALF_L + 15);
+    car.add(playerHead, playerHead.target);
+
+    // ── OMNI-CITY: autonomous AI traffic (PILLAR 3) ─────────────────────
+    // Waypoint followers on the same centerline the track was built from.
+    // One closed loop == one canonical path, so simple arc-length sampling +
+    // two distance rules (brake for the player, keep a gap to the vehicle
+    // ahead) produce believable traffic without a full NavMesh.
+    const cumLen = [0];
+    for (let i = 1; i <= centerline.length; i++) {
+      const a = centerline[(i - 1) % centerline.length], b = centerline[i % centerline.length];
+      cumLen[i] = cumLen[i - 1] + Math.hypot(b.x - a.x, b.z - a.z);
+    }
+    const trackTotal = cumLen[centerline.length];
+    const sampleTrack = (s, out) => {
+      s = ((s % trackTotal) + trackTotal) % trackTotal;
+      let lo = 0, hi = centerline.length;
+      while (lo + 1 < hi) { const mid = (lo + hi) >> 1; if (cumLen[mid] <= s) lo = mid; else hi = mid; }
+      const a = centerline[lo % centerline.length], b = centerline[(lo + 1) % centerline.length];
+      const seg = cumLen[lo + 1] - cumLen[lo] || 1;
+      const t = (s - cumLen[lo]) / seg;
+      out.x = a.x + (b.x - a.x) * t; out.z = a.z + (b.z - a.z) * t;
+      out.tx = (b.x - a.x) / seg; out.tz = (b.z - a.z) / seg;
+      return out;
+    };
+    const AI_KINDS = ["sedan", "hgtruck", "sedan", "pump", "sedan", "hgtruck"];
+    const aiCars = AI_KINDS.map((kind, i) => {
+      const v = buildTrafficVehicle(kind);
+      scene.add(v.group);
+      return {
+        ...v, kind,
+        s: ((i + 1) / (AI_KINDS.length + 1)) * trackTotal,
+        lane: (i % 2 === 0 ? -1 : 1) * TRACK_WIDTH * 0.22,
+        speed: 0,
+        cruise: kind === "sedan" ? 9 + Math.random() * 4 : 6.5 + Math.random() * 2,
+        braking: false,
+      };
+    });
+    const aiSample = { x: 0, z: 0, tx: 0, tz: 1 };
+    // Streetlamp bulbs — collected once so the night cycle can dial them all.
+    const lampLights = [];
+    lampGroups.forEach((g) => g.traverse((o) => { if (o.isPointLight) lampLights.push(o); }));
 
     const keys = {};
     let audioCtx = null, evOsc = null, evGain = null, iceOsc = null, iceGain = null, iceLp = null, audioStarted = false;
@@ -5298,6 +5489,72 @@ function DriveOverlay({ onReturn, liveRef, vehicle: vehicleType = "car" }) {
         const wt = vehicle.wheelInfos[i].worldTransform;
         wheelMeshes[i].position.set(wt.position.x, wt.position.y, wt.position.z);
         wheelMeshes[i].quaternion.set(wt.quaternion.x, wt.quaternion.y, wt.quaternion.z, wt.quaternion.w);
+      }
+      // PILLAR-1 fix (measured live: body bottom y=1.01, wheels y=0.34): the
+      // model bottom used to be placed rideY above the CAR-GROUP ORIGIN — but
+      // that origin is the physics chassis' CENTER, which rests ~0.66m above
+      // the ground, so the body floated in the air while the wheels (driven
+      // straight from the physics rays) sat on the asphalt — the "phantom
+      // wheels trailing the car" glitch. Align once against the real settled
+      // chassis: put the body's bottom exactly rideY above the ground.
+      if (!bodyAligned) {
+        bodyAlignT += dt;
+        if (bodyAlignT > 0.4) {
+          const model = car.children.find((c) => !c.isLight && c !== playerHead.target);
+          if (model) {
+            const bb = new THREE.Box3().setFromObject(model);
+            if (Number.isFinite(bb.min.y)) model.position.y -= bb.min.y - cfg.rideY;
+            bodyAligned = true; // only lock in once the GLB is actually loaded
+          }
+        }
+      }
+
+      // ── OMNI-CITY day/night engine (PILLAR 4) — one slider drives sun,
+      // sky, fog, stars, streetlamps, building windows and vehicle lights.
+      const hour = dayHourRef.current;
+      const sunA = ((hour - 6) / 12) * Math.PI;
+      const elev = Math.sin(sunA);
+      const nightF = clamp(-elev * 3 + 0.25, 0, 1); // 0 = full day → 1 = full night
+      sun.position.set(Math.cos(sunA) * 130, Math.max(elev, -0.25) * 150 + 20, 40);
+      sun.intensity = Math.max(elev, 0) * 1.25 + 0.04;
+      sun.color.setHSL(0.09 + clamp(elev, 0, 1) * 0.045, 0.55, 0.62 + clamp(elev, 0, 1) * 0.28);
+      ambient.intensity = 0.14 + Math.max(elev, 0) * 0.5;
+      skyTmp.copy(SKY_NIGHT).lerp(SKY_DAY, clamp(elev * 1.7 + 0.08, 0, 1));
+      if (Math.abs(elev) < 0.22) skyTmp.lerp(SKY_DUSK, (1 - Math.abs(elev) / 0.22) * 0.7);
+      scene.background.copy(skyTmp);
+      scene.fog.color.copy(skyTmp);
+      starMat.opacity = nightF;
+      // Point/spot lights use physical (candela-scale) units in modern three —
+      // single-digit intensities read as barely-visible dots at night.
+      for (const L of lampLights) L.intensity = nightF * 14;
+      for (const m of cityWindowMats) m.emissiveIntensity = 0.05 + nightF * 1.35;
+      playerHead.intensity = nightF * 80;
+      windUniform.value += dt;
+
+      // ── OMNI-CITY AI traffic (PILLAR 3) — cruise, brake for the player,
+      // keep a gap to the vehicle ahead, brake-lights when actually braking.
+      for (let i = 0; i < aiCars.length; i++) {
+        const ai = aiCars[i];
+        sampleTrack(ai.s, aiSample);
+        const px = aiSample.x + (-aiSample.tz) * ai.lane, pz = aiSample.z + aiSample.tx * ai.lane;
+        const dxp = chassisBody.position.x - px, dzp = chassisBody.position.z - pz;
+        const distP = Math.hypot(dxp, dzp);
+        const playerAhead = dxp * aiSample.tx + dzp * aiSample.tz > 0;
+        let want = ai.cruise;
+        if (distP < 14 && playerAhead) want = distP < 7 ? 0 : ai.cruise * ((distP - 7) / 7);
+        for (let j = 0; j < aiCars.length; j++) {
+          if (j === i) continue;
+          let gap = aiCars[j].s - ai.s;
+          gap = ((gap % trackTotal) + trackTotal) % trackTotal;
+          if (gap > 0.1 && gap < 11 && Math.abs(aiCars[j].lane - ai.lane) < 2.2) want = Math.min(want, Math.max(0, (gap - 5) * 1.2));
+        }
+        ai.braking = want < ai.speed - 0.4;
+        ai.speed += clamp(want - ai.speed, -14 * dt, 5 * dt);
+        ai.s += ai.speed * dt;
+        ai.group.position.set(px, 0, pz);
+        ai.group.rotation.y = Math.atan2(aiSample.tx, aiSample.tz);
+        ai.headMat.emissiveIntensity = nightF * 2.2;
+        ai.tailMat.emissiveIntensity = (ai.braking ? 2.4 : 0) + nightF * 1.1;
       }
 
       const speedKmh = Math.abs(forwardSpeed) * 3.6;
@@ -5447,6 +5704,7 @@ function DriveOverlay({ onReturn, liveRef, vehicle: vehicleType = "car" }) {
       window.removeEventListener("gamepadconnected", onGpConnect);
       window.removeEventListener("gamepaddisconnected", onGpDisconnect);
       if (audioCtx) { try { audioCtx.close(); } catch {} }
+      window.__driveDbg = null;
       scene.traverse((obj) => {
         if (obj.geometry) obj.geometry.dispose();
         if (obj.material) {
@@ -5463,9 +5721,13 @@ function DriveOverlay({ onReturn, liveRef, vehicle: vehicleType = "car" }) {
   return (
     <div className="off3-space-wrap">
       <div ref={mountRef} className="off3-space-canvas" style={{ cursor: "default" }} />
-      <div className="off3-space-hint">{cfg.label} · W/S להאיץ ולבלום · A/D / ג'ויסטיק להיגוי · מסלול סגור — סעו כמה שתרצו</div>
+      <div className="off3-space-hint">{cfg.label} · W/S להאיץ ולבלום · A/D / ג'ויסטיק להיגוי · העיר חיה — זהירות מהתנועה 🚚</div>
       <canvas ref={gaugeRef} width={110} height={70} className="off3-drive-gauge" />
       <canvas ref={radarRef} width={120} height={120} className="off3-drive-radar" />
+      <label className="off3-drive-time" title="שעת היממה — גרור בין יום ללילה">
+        <span>{dayHour < 5 || dayHour >= 21 ? "🌙" : dayHour < 8 || dayHour >= 18 ? "🌆" : "☀️"} {String(Math.floor(dayHour) % 24).padStart(2, "0")}:{String(Math.round((dayHour % 1) * 60)).padStart(2, "0")}</span>
+        <input type="range" min="0" max="24" step="0.25" value={dayHour} onChange={(e) => { const v = parseFloat(e.target.value); setDayHour(v); dayHourRef.current = v; }} />
+      </label>
       <div className="off3-drive-hud">
         <div><span>מהירות</span><b ref={speedRef}>0 קמ״ש</b></div>
         <div><span>סל״ד</span><b ref={rpmRef}>900 · הילוך 1</b></div>
@@ -5802,6 +6064,16 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   // same nested-under-inHangar reasoning as inDrive above.
   const [inRobot, setInRobot] = useState(false);
   useEffect(() => { liveRef.current.setNearHangar = setNearHangar; }, []);
+  // Debug/verification deep-link: agents.html?drive=car|truck jumps straight
+  // into the proving-ground drive mode (inDrive nests under inHangar, so both
+  // flags go up). Used by automated screenshot verification; harmless in
+  // normal use.
+  useEffect(() => {
+    try {
+      const v = new URLSearchParams(window.location.search).get("drive");
+      if (v === "car" || v === "truck") { setDriveVehicle(v); setInHangar(true); setInDrive(true); }
+    } catch {}
+  }, []);
   // VR entry lives in the settings panel now — the floating WebXR button
   // sat stuck over the phone HUD (owner request to move it). The real
   // VRButton element still exists (it owns the session lifecycle text/state)

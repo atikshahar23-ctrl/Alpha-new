@@ -4495,6 +4495,12 @@ function StyleTag() {
 .off3-drone-rec i{width:10px;height:10px;border-radius:50%;background:#ff3c3c;box-shadow:0 0 8px #ff3c3c;animation:recBlink 1s ease-in-out infinite}
 @keyframes recBlink{0%,100%{opacity:1}50%{opacity:.2}}
 
+/* OMNI-CITY drive mode — time-of-day slider */
+.off3-drive-time{position:absolute;top:64px;left:14px;z-index:31;display:flex;flex-direction:column;gap:4px;
+  padding:8px 12px;border-radius:12px;background:rgba(8,12,20,.6);border:1px solid rgba(120,160,255,.25);backdrop-filter:blur(6px)}
+.off3-drive-time span{font-family:'Rubik';font-size:11px;font-weight:800;color:#ffd98a;text-align:center;direction:ltr}
+.off3-drive-time input{width:130px;accent-color:#ffd23f;cursor:pointer}
+
 /* Phone action bar (sprint lock / photo / fast travel) — touch devices only */
 .off3-phonebar{position:absolute;z-index:33;bottom:150px;right:22px;display:flex;flex-direction:column;gap:10px}
 @media (hover:hover) and (pointer:fine){.off3-phonebar{display:none}}
