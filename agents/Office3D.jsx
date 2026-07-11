@@ -19,6 +19,7 @@ import { MeshSurfaceSampler } from "three/examples/jsm/math/MeshSurfaceSampler.j
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import * as CANNON from "cannon-es";
 import jsPDF from "jspdf";
+import { buildSunMaterial, buildSunCorona } from "../src/orb/sunShader";
 import { MessageCircle, Eye, User, Mic, VolumeX, Volume2, X, Zap, Settings as SettingsIcon, Trash2, Radio, Pause, Lock, Unlock } from "lucide-react";
 import { useDeviceProfile } from "./deviceProfiler.js";
 import RadioController from "./RadioController.jsx";
@@ -8306,54 +8307,27 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       scene.add(sunStageRing);
       obstacles.push({ x: SUN_SPOT.x, z: SUN_SPOT.z, r: 3.0 });
       const sunGroup = new THREE.Group();
-      // Realistic Earth core — procedural equirectangular day map (oceans,
-      // continents, polar ice, baked city-lights) + a drifting cloud layer +
-      // an additive atmosphere halo. All MeshBasicMaterial so it renders on the
-      // owner's phone GPU (which drops lit PBR to invisible). Wrapped in a
-      // tilted group with an inner spinner so it turns on its own axis.
-      const buildEarthCore = (radius) => {
-        const grp = new THREE.Group();
-        const spin = new THREE.Group(); grp.add(spin);
-        const cvs = document.createElement("canvas"); cvs.width = 1024; cvs.height = 512;
-        const cg = cvs.getContext("2d");
-        const og = cg.createLinearGradient(0, 0, 0, 512);
-        og.addColorStop(0, "#0a2a4a"); og.addColorStop(0.5, "#0e3d68"); og.addColorStop(1, "#0a2a4a");
-        cg.fillStyle = og; cg.fillRect(0, 0, 1024, 512);
-        let seed = 1337; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-        const land = (cx, cy, w, h, col) => {
-          cg.fillStyle = col;
-          for (let i = 0; i < 30; i++) {
-            const a = rnd() * Math.PI * 2, r = rnd();
-            const x = cx + Math.cos(a) * w * r, y = cy + Math.sin(a) * h * r, rr = 12 + rnd() * 42;
-            cg.beginPath(); cg.ellipse(x, y, rr, rr * (0.6 + rnd() * 0.5), rnd() * Math.PI, 0, Math.PI * 2); cg.fill();
-          }
-        };
-        land(185, 175, 95, 75, "#2f7d3a"); land(235, 345, 62, 85, "#357a37"); // Americas
-        land(520, 200, 125, 72, "#4a7d33"); land(545, 335, 72, 62, "#6a5d2a"); // Europe/Africa
-        land(775, 205, 155, 85, "#4a7d33"); land(845, 365, 62, 42, "#7a6a33"); // Asia/Australia
-        cg.fillStyle = "rgba(238,246,255,0.92)"; cg.fillRect(0, 0, 1024, 28); cg.fillRect(0, 484, 1024, 28);
-        cg.fillStyle = "rgba(255,222,150,0.45)";
-        for (let i = 0; i < 280; i++) cg.fillRect(rnd() * 1024, 60 + rnd() * 388, 1.3, 1.3); // baked city-lights
-        const earth = new THREE.Mesh(new THREE.SphereGeometry(radius, 48, 32), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(cvs) }));
-        spin.add(earth);
-        const ccv = document.createElement("canvas"); ccv.width = 1024; ccv.height = 512; const clg = ccv.getContext("2d");
-        for (let i = 0; i < 95; i++) { const x = Math.random() * 1024, y = Math.random() * 512, r = 18 + Math.random() * 70; const gr = clg.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, "rgba(255,255,255,0.55)"); gr.addColorStop(1, "rgba(255,255,255,0)"); clg.fillStyle = gr; clg.beginPath(); clg.arc(x, y, r, 0, Math.PI * 2); clg.fill(); }
-        const clouds = new THREE.Mesh(new THREE.SphereGeometry(radius * 1.012, 48, 32), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(ccv), transparent: true, opacity: 0.5, depthWrite: false }));
-        spin.add(clouds);
-        const atmo = new THREE.Mesh(new THREE.SphereGeometry(radius * 1.07, 32, 24), new THREE.MeshBasicMaterial({ color: 0x5fb0ff, transparent: true, opacity: 0.24, side: THREE.BackSide, blending: THREE.AdditiveBlending, depthWrite: false }));
-        grp.add(atmo);
-        grp.rotation.z = 0.41; // ~23.5° axial tilt
-        return { grp, spin, clouds };
-      };
-      const earthCore = buildEarthCore(1.8);
-      sunGroup.add(earthCore.grp);
+      // Photoreal SUN core (owner: "שמש אמיתי לחלוטין כמה שיותר", matching the
+      // boot cinematic) — the same shared shader the main dashboard orb uses:
+      // granulation, sunspots, faculae, limb darkening, differential rotation
+      // and a chromosphere rim, plus corona streamers. A ShaderMaterial is
+      // unlit, so it renders identically on the owner's phone GPU.
+      // gain 0.6: this scene runs an UnrealBloomPass (threshold 0.4) — at full
+      // brightness the entire disc blooms and clips to a detail-less white ball.
+      const sunCoreMat = buildSunMaterial(0.6);
+      const sunCore = new THREE.Mesh(new THREE.SphereGeometry(1.8, 72, 72), sunCoreMat);
+      sunGroup.add(sunCore);
+      sunGroup.add(buildSunCorona(1.8, sunCoreMat.uniforms));
+      scene.userData.sunCoreMat = sunCoreMat; // animate() advances uTime + voice amp
       const wire = new THREE.Mesh(
         new THREE.IcosahedronGeometry(2.3, 1),
         new THREE.MeshBasicMaterial({ color: sunColor, wireframe: true, transparent: true, opacity: 0.5 })
       );
       sunGroup.add(wire);
+      // Faint halo only — at 0.5 it washed over the photosphere and (with
+      // bloom on top) flattened the whole sun into a white blob.
       const glowSprite = new THREE.Sprite(new THREE.SpriteMaterial({
-        color: sunColor, transparent: true, opacity: 0.5, depthWrite: false,
+        color: sunColor, transparent: true, opacity: 0.18, depthWrite: false,
         map: (() => {
           const cvs = document.createElement("canvas"); cvs.width = cvs.height = 256;
           const cx2 = cvs.getContext("2d");
@@ -8376,7 +8350,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       // instead of floating up past the ceiling.
       sunGroup.position.set(SUN_SPOT.x, 2.4, SUN_SPOT.z);
       scene.add(sunGroup);
-      ownerSpinners.push(wire, earthCore.spin);
+      ownerSpinners.push(wire); // the sun's own surface motion lives in its shader (differential rotation)
       alphaSpots.push({ x: SUN_SPOT.x, z: SUN_SPOT.z });
     }
     scene.userData.alphaSpots = alphaSpots;
@@ -9982,6 +9956,14 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       // the server-rack LED columns breathe.
       ownerSpinners.forEach((s) => { s.rotation.y += dt * 0.9; s.rotation.x += dt * 0.22; });
       ownerBlinkMats.forEach((m, i) => { m.opacity = 0.45 + Math.abs(Math.sin(clock.elapsedTime * (1.6 + i * 0.7))) * 0.5; });
+      // Photoreal sun core: advance the surface churn, and flare the whole
+      // photosphere while Alpha is actually talking to the owner.
+      if (scene.userData.sunCoreMat) {
+        const sm = scene.userData.sunCoreMat;
+        sm.uniforms.uTime.value = clock.elapsedTime;
+        const talkingAmp = liveRef.current.voiceState === "speaking" ? 0.85 : liveRef.current.voiceState === "listening" ? 0.3 : 0.08;
+        sm.uniforms.uAudioAmplitude.value += (talkingAmp - sm.uniforms.uAudioAmplitude.value) * Math.min(1, dt * 3);
+      }
       // דבורה's watchdog: periodic environment-integrity sweep (missing
       // meeting furniture is respawned and reported) — cheap parent checks.
       integrityT += dt;
