@@ -3639,7 +3639,6 @@ html.perf-lite .hud-card, html.perf-lite .hud-sc { -webkit-backdrop-filter: none
 .cal-chip{display:block;max-width:100%;font-size:9.5px;padding:1.5px 5px;border-radius:5px;background:rgba(218,165,32,.16);color:var(--gold);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.5}
 .cal-chip.hg{background:rgba(240,208,144,.14);color:var(--cyan)}
 .cal-chip-more{font-size:9px;color:var(--dim)}
-.cal-install-dot{position:absolute;top:5px;inset-inline-end:5px;width:5px;height:5px;border-radius:50%;background:var(--cyan)}
 
 .cal-daypanel{margin-top:16px;border-top:1px solid var(--line);padding-top:14px}
 .cal-daypanel-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:4px}

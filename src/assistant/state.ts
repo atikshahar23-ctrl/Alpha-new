@@ -141,7 +141,37 @@ export function loadEvents(): CalEvent[] {
   } catch {}
   const alphaKeys = new Set(alpha.map(e => e.title.toLowerCase() + '|' + e.date));
   const unique = hg.filter(t => !alphaKeys.has(t.title.toLowerCase() + '|' + t.date));
-  return [...alpha, ...unique].sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+  return [...alpha, ...unique, ...loadInstallEvents()].sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+}
+
+// Same short id→display-name map app.ts's Heavy Guard panel uses for
+// contractors — duplicated here (not imported) because state.ts is a plain
+// localStorage data module with no dependency on the UI layer.
+const CONTRACTOR_NAMES: Record<string, string> = {
+  kobi: 'קובי', asi: 'אסי', sagi: 'שגיא מערכות',
+  mb: 'm.b מערכות', sd: 'ס.ד מיגונים', hg: 'Heavy Guard',
+};
+
+// Every completed Heavy Guard vehicle installation ('hg2:index', the daily
+// install-report log) shown as a real, written calendar entry on its actual
+// day — owner request: "שיהיה כתוב את כל ההתקנות שביצעתי", not just a marker.
+// Read-only from the calendar's side (id prefix 'hginst:' — removeEvent/
+// updateEventTitle only touch 'alpha_events'/'hg2:tasks', so these safely
+// no-op if ever passed to either).
+export function loadInstallEvents(): CalEvent[] {
+  try {
+    const rows: { date?: string; location?: string; contractor?: string; price?: number; status?: string }[] =
+      JSON.parse(localStorage.getItem('hg2:index') || '[]');
+    return rows
+      .filter(r => r.date && r.status !== 'running')
+      .map((r, i) => {
+        const loc = (r.location || '').trim();
+        const who = r.contractor ? (CONTRACTOR_NAMES[r.contractor] || r.contractor) : '';
+        const price = Number(r.price) || 0;
+        const parts = ['📦 התקנה', loc, who, price ? `₪${price.toLocaleString('he-IL')}` : ''].filter(Boolean);
+        return { id: `hginst:${r.date}-${i}`, title: parts.join(' · '), date: r.date as string, time: '' };
+      });
+  } catch { return []; }
 }
 
 export function saveEvents(ev: CalEvent[]) {
@@ -306,16 +336,6 @@ export function scheduleHgTask(id: string, due: string) {
     const t = tasks.find((x: { id: string }) => x.id === rawId);
     if (t) { t.date = due; localStorage.setItem('hg2:tasks', JSON.stringify(tasks)); }
   } catch {}
-}
-
-// Days with a Heavy Guard vehicle installation logged ('hg2:index') — so the
-// month grid marks the same "something happened this day" dates Heavy
-// Guard's own calendar marks, not just Alpha-side events/tasks.
-export function loadInstallDates(): Set<string> {
-  try {
-    const rows: { date?: string }[] = JSON.parse(localStorage.getItem('hg2:index') || '[]');
-    return new Set(rows.map(r => r.date).filter((d): d is string => !!d));
-  } catch { return new Set(); }
 }
 
 // Quick-edit an event's title straight from the calendar's day-agenda view —

@@ -1,6 +1,6 @@
 import { mountOrb, setCryEnabled, type OrbHandle } from '../orb/OrbScene';
 import { mountFlowLines } from '../bg/flowLines';
-import { loadState, saveState, addEvent, addTask, scheduleTask, saveNote, loadEvents, loadTasks, removeEvent, loadHgBacklog, scheduleHgTask, loadInstallDates, loadWallet, saveWallet, loadWalletHistory, addWalletExpense, removeWalletExpense, EXPENSE_CATEGORIES, updateEventTitle, getJournalEntry, saveJournalEntry, type AppState, type TextLang, type AIProvider, type VoiceGender, type UILang, type CalEvent } from '../assistant/state';
+import { loadState, saveState, addEvent, addTask, scheduleTask, saveNote, loadEvents, loadTasks, removeEvent, loadHgBacklog, scheduleHgTask, loadWallet, saveWallet, loadWalletHistory, addWalletExpense, removeWalletExpense, EXPENSE_CATEGORIES, updateEventTitle, getJournalEntry, saveJournalEntry, type AppState, type TextLang, type AIProvider, type VoiceGender, type UILang, type CalEvent } from '../assistant/state';
 import { askAIStream, askOnce, askVision, runTags, lmsConfigured } from '../assistant/gemini';
 import { GEN1 } from '../data/gen1';
 import * as THREE from 'three';
@@ -188,7 +188,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v212 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v213 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip apps-chip" id="appsBtn" title="האפליקציות שלי" aria-label="האפליקציות שלי">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="12" cy="19" r="2"/><circle cx="19" cy="19" r="2"/></svg>
@@ -1677,15 +1677,14 @@ export function mountApp(root: HTMLElement) {
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     const esc = (s: string) => s.replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]!));
 
-    // Group events by date, plus Heavy Guard install dates — so a day HG's
-    // own calendar marks (an install happened) shows a marker here too, even
-    // with no Alpha event/task on it.
+    // Group events by date — loadEvents() already merges in every logged
+    // Heavy Guard installation (loadInstallEvents, id-prefixed 'hginst:') as
+    // a real, titled entry on its actual day.
     const eventDates = new Map<string, CalEvent[]>();
     for (const e of allEvents) {
       if (!eventDates.has(e.date)) eventDates.set(e.date, []);
       eventDates.get(e.date)!.push(e);
     }
-    const installDates = loadInstallDates();
     const monthPrefix = `${year}-${String(month + 1).padStart(2, '0')}`;
     const monthEventCount = allEvents.filter(e => e.date.startsWith(monthPrefix)).length;
     const openTaskCount = loadTasks().filter(t => !t.done).length + loadHgBacklog().length;
@@ -1713,17 +1712,15 @@ export function mountApp(root: HTMLElement) {
       const isSelected = iso === selectedDate;
       const dow = new Date(year, month, d).getDay();
       const dayEvents = eventDates.get(iso) || [];
-      const hasInstall = installDates.has(iso);
       const cls = ['cal-day'];
       if (dow >= 5) cls.push('weekend');
       if (isToday) cls.push('today');
       if (isSelected) cls.push('selected');
       const shown = dayEvents.slice(0, 2);
       const extra = dayEvents.length - shown.length;
-      html += `<button type="button" class="${cls.join(' ')}" data-date="${iso}" title="${hasInstall ? (isHe ? 'התקנה ב-Heavy Guard ביום זה' : 'Heavy Guard install this day') : ''}">
-        ${hasInstall ? '<span class="cal-install-dot"></span>' : ''}
+      html += `<button type="button" class="${cls.join(' ')}" data-date="${iso}">
         <span class="cal-daynum">${d}</span>
-        ${shown.map(e => `<span class="cal-chip${e.id.startsWith('hg:') ? ' hg' : ''}">${esc(e.title)}</span>`).join('')}
+        ${shown.map(e => `<span class="cal-chip${e.id.startsWith('hg:') || e.id.startsWith('hginst:') ? ' hg' : ''}">${esc(e.title)}</span>`).join('')}
         ${extra > 0 ? `<span class="cal-chip-more">+${extra}</span>` : ''}
       </button>`;
     }
@@ -1749,6 +1746,18 @@ export function mountApp(root: HTMLElement) {
       } else {
         for (const e of dayEvents) {
           const isHg = e.id.startsWith('hg:');
+          const isInstall = e.id.startsWith('hginst:');
+          if (isInstall) {
+            // Read-only: this is Heavy Guard's own operational log reflected
+            // here, not an Alpha-side event — no edit/delete round-trip exists
+            // for hg2:index (unlike hg:-tasks), so don't offer controls that
+            // would silently no-op.
+            html += `<div class="cal-agenda-item hg">
+              <span class="cal-agenda-dot" style="background:var(--cyan)"></span>
+              <span class="cal-agenda-title">${esc(e.title)}</span>
+            </div>`;
+            continue;
+          }
           html += `<div class="cal-agenda-item${isHg ? ' hg' : ''}">
             <span class="cal-agenda-dot" style="background:${isHg ? 'var(--cyan)' : 'var(--gold)'}"></span>
             ${e.time ? `<span class="cal-agenda-time">${e.time}</span>` : ''}
