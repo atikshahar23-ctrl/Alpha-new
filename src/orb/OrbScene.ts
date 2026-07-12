@@ -6,7 +6,7 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
 import { pikaEmoteSpeak } from '../assistant/pikaVoice';
-import { buildSunMaterial, buildSunCorona, type SunUniforms } from './sunShader';
+import { buildSunMaterial, buildSunCorona, buildWireNodes, buildRaySprite, type SunUniforms } from './sunShader';
 import { readObj, writeObj } from '../util/batchedStore';
 import { GEN1 } from '../data/gen1';
 import { POKEMON_SPRITE_COLOR } from '../data/pokemonColors';
@@ -1388,6 +1388,9 @@ function buildAlphaBrain(segments = 96): AlphaBrainParts {
     new THREE.IcosahedronGeometry(1.4, 1),
     new THREE.MeshBasicMaterial({ color: gold, wireframe: true, transparent: true, opacity: 0.8 }),
   );
+  // Glowing nodes at the cage's own lattice points (owner reference) — a
+  // child of the wire mesh, so it rotates with it for free.
+  wire.add(buildWireNodes(wire.geometry, 0.032, gold));
   group.add(wire);
   // Phase 3 — Containment Field: a second, larger, sparser cyan wireframe
   // shell (semi-transparent + additive) counter-rotating against the gold one,
@@ -1399,7 +1402,10 @@ function buildAlphaBrain(segments = 96): AlphaBrainParts {
       blending: THREE.AdditiveBlending, depthWrite: false,
     }),
   );
+  wire2.add(buildWireNodes(wire2.geometry, 0.028, 0x5ff0ff));
   group.add(wire2);
+  // Radiating light-ray starburst behind everything (owner reference).
+  group.add(buildRaySprite(gold, 7.5));
   // Phase 3 — Data-Stream Tendrils (denser on desktop, lighter on mobile).
   const tendrils = buildDataTendrils(segments >= 100 ? 2200 : 900, segments >= 100 ? 150 : 80);
   group.add(tendrils.group);

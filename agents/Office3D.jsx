@@ -19,7 +19,7 @@ import { MeshSurfaceSampler } from "three/examples/jsm/math/MeshSurfaceSampler.j
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import * as CANNON from "cannon-es";
 import jsPDF from "jspdf";
-import { buildSunMaterial, buildSunCorona } from "../src/orb/sunShader";
+import { buildSunMaterial, buildSunCorona, buildWireNodes, buildRaySprite } from "../src/orb/sunShader";
 import { MessageCircle, Eye, User, Mic, VolumeX, Volume2, X, Zap, Settings as SettingsIcon, Trash2, Radio, Pause, Lock, Unlock } from "lucide-react";
 import { useDeviceProfile } from "./deviceProfiler.js";
 import RadioController from "./RadioController.jsx";
@@ -8323,7 +8323,24 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         new THREE.IcosahedronGeometry(2.3, 1),
         new THREE.MeshBasicMaterial({ color: sunColor, wireframe: true, transparent: true, opacity: 0.5 })
       );
+      wire.add(buildWireNodes(wire.geometry, 0.05, sunColor));
       sunGroup.add(wire);
+      // Second, larger cyan cage counter-rotating against the gold one —
+      // matching the main dashboard orb's "Containment Field" layer and the
+      // owner's reference image (a gold cage + an outer cyan cage with
+      // glowing lattice nodes).
+      const wire2 = new THREE.Mesh(
+        new THREE.IcosahedronGeometry(2.66, 1),
+        new THREE.MeshBasicMaterial({
+          color: 0x5ff0ff, wireframe: true, transparent: true, opacity: 0.32,
+          blending: THREE.AdditiveBlending, depthWrite: false,
+        })
+      );
+      wire2.add(buildWireNodes(wire2.geometry, 0.045, 0x5ff0ff));
+      sunGroup.add(wire2);
+      scene.userData.sunWire2 = wire2; // animate() counter-rotates it against `wire`
+      // Radiating light-ray starburst behind everything (owner reference).
+      sunGroup.add(buildRaySprite(sunColor, 12));
       // Faint halo only — at 0.5 it washed over the photosphere and (with
       // bloom on top) flattened the whole sun into a white blob.
       const glowSprite = new THREE.Sprite(new THREE.SpriteMaterial({
@@ -9963,6 +9980,13 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         sm.uniforms.uTime.value = clock.elapsedTime;
         const talkingAmp = liveRef.current.voiceState === "speaking" ? 0.85 : liveRef.current.voiceState === "listening" ? 0.3 : 0.08;
         sm.uniforms.uAudioAmplitude.value += (talkingAmp - sm.uniforms.uAudioAmplitude.value) * Math.min(1, dt * 3);
+      }
+      // Outer cyan cage counter-rotates against the gold `wire` (which spins
+      // via ownerSpinners above) — same deltas as the main dashboard orb's
+      // wire/wire2 pair, so both surfaces read as the same living object.
+      if (scene.userData.sunWire2) {
+        scene.userData.sunWire2.rotation.y += dt * 0.12;
+        scene.userData.sunWire2.rotation.z -= dt * 0.09;
       }
       // דבורה's watchdog: periodic environment-integrity sweep (missing
       // meeting furniture is respawned and reported) — cheap parent checks.

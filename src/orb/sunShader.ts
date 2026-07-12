@@ -293,3 +293,77 @@ export function buildSunCorona(radius: number, sharedUniforms: SunUniforms): THR
   });
   return new THREE.Mesh(new THREE.SphereGeometry(radius * 1.22, 48, 48), mat);
 }
+
+// Glowing node markers at every vertex of a wireframe cage (owner reference:
+// small bright dots sitting on the cage's lattice points) — one InstancedMesh,
+// one extra draw call regardless of vertex count. Return it as a CHILD of the
+// wire mesh at the call site so it inherits that mesh's rotation for free —
+// no separate per-frame sync needed.
+export function buildWireNodes(geometry: THREE.BufferGeometry, nodeRadius: number, color: number): THREE.InstancedMesh {
+  const pos = geometry.attributes.position;
+  const seen = new Map<string, THREE.Vector3>();
+  const v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    const key = `${v.x.toFixed(2)},${v.y.toFixed(2)},${v.z.toFixed(2)}`;
+    if (!seen.has(key)) seen.set(key, v.clone());
+  }
+  const verts = Array.from(seen.values());
+  const mesh = new THREE.InstancedMesh(
+    new THREE.SphereGeometry(nodeRadius, 8, 8),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }),
+    verts.length,
+  );
+  const m = new THREE.Matrix4();
+  verts.forEach((p, i) => { m.makeTranslation(p.x, p.y, p.z); mesh.setMatrixAt(i, m); });
+  mesh.instanceMatrix.needsUpdate = true;
+  return mesh;
+}
+
+// Radiating light-ray starburst (owner reference: gold streaks shooting
+// outward from the sun) — baked once into a canvas texture (a handful of
+// tapered wedges at varied angles/lengths) and shown as a single camera-
+// facing additive sprite. No per-frame cost, no shader, phone-safe by
+// construction (same technique as the existing radial-gradient glow sprites).
+let rayTexture: THREE.Texture | null = null;
+function getRayTexture(): THREE.Texture {
+  if (rayTexture) return rayTexture;
+  const S = 512;
+  const cvs = document.createElement('canvas');
+  cvs.width = cvs.height = S;
+  const ctx = cvs.getContext('2d')!;
+  ctx.translate(S / 2, S / 2);
+  const rays = 14;
+  for (let i = 0; i < rays; i++) {
+    const ang = (i / rays) * Math.PI * 2 + (Math.random() - 0.5) * 0.35;
+    const len = S * 0.5 * (0.55 + Math.random() * 0.42);
+    const baseW = 2.5 + Math.random() * 5;
+    ctx.save();
+    ctx.rotate(ang);
+    const grad = ctx.createLinearGradient(0, 0, len, 0);
+    grad.addColorStop(0, 'rgba(255,222,150,0.9)');
+    grad.addColorStop(0.35, 'rgba(255,190,100,0.38)');
+    grad.addColorStop(1, 'rgba(255,170,80,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(0, -baseW);
+    ctx.lineTo(len, -0.6);
+    ctx.lineTo(len, 0.6);
+    ctx.lineTo(0, baseW);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+  const tex = new THREE.CanvasTexture(cvs);
+  rayTexture = tex;
+  return tex;
+}
+export function buildRaySprite(color = 0xffdb8c, scale = 9): THREE.Sprite {
+  const mat = new THREE.SpriteMaterial({
+    map: getRayTexture(), color, transparent: true, opacity: 0.55,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.setScalar(scale);
+  return sprite;
+}
