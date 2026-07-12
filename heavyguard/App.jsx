@@ -4821,7 +4821,20 @@ function Styles() {
   border:1px solid rgba(111,211,240,.16);transition:border-color .16s,box-shadow .16s,transform .12s}
 .hg2-tile:active{transform:translateY(1px) scale(.99)}
 .hg2-tile.hot{border-color:rgba(228,188,99,.4);box-shadow:0 0 18px rgba(228,188,99,.14),inset 0 1px 0 rgba(255,255,255,.06)}
-.hg2-tile:hover{border-color:rgba(228,188,99,.55);box-shadow:0 0 22px rgba(228,188,99,.2)}
+.hg2-tile:hover{border-color:rgba(228,188,99,.55);box-shadow:0 0 22px rgba(228,188,99,.2);transform:translateY(-2px)}
+
+/* Bento layout: the app is deliberately phone-frame-width even on desktop
+   (.hg2 max-width:520px above) — a column-count breakpoint would never
+   actually kick in, so the bento effect instead comes from HEIGHT/SPAN
+   variety within the existing 2-column grid: the owner's most-used
+   modules ("hot" tiles) become full-width hero bars (icon beside text)
+   between rows of the regular compact squares, instead of one flat list
+   of uniform tiles. */
+.hg2-tile.hot{grid-column:1/-1;flex-direction:row;align-items:center;gap:14px;padding:18px 20px;position:relative}
+.hg2-tile.hot svg{width:26px;height:26px;flex-shrink:0;margin-bottom:0}
+.hg2-tile.hot b{font-size:16px}
+.hg2-tile.hot::after{content:"";position:absolute;inset-inline-start:0;top:14px;bottom:14px;width:3px;
+  background:linear-gradient(180deg,var(--champ),var(--gold));box-shadow:0 0 10px rgba(228,188,99,.5)}
 
 /* Reveal transition once biometric access is granted. */
 .hg2-page.prebooted{opacity:0}
