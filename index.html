@@ -49,7 +49,7 @@
             fullscreen with its music as the app's opening — then the panels
             appear. Replaces the old alien/biometric/vault sequence. ── -->
   <div id="introOverlay">
-    <video id="introVid" playsinline preload="auto" src="%BASE_URL%boot-intro.mp4"></video>
+    <video id="introVid" playsinline preload="none"></video>
     <div class="intro-brand" aria-hidden="true">A L P H A</div>
     <div class="intro-progress" aria-hidden="true"><span id="introBar"></span></div>
     <button id="introSound" type="button" hidden>🔊 הקש לסאונד</button>
@@ -129,6 +129,7 @@
           var reap=function(){
             if(reaped) return; reaped=true;
             try{ if(vid) vid.pause(); }catch(e){}
+            try{ if(vid && vid.src && vid.src.indexOf('blob:')===0) URL.revokeObjectURL(vid.src); }catch(e){}
             ov.parentNode && ov.parentNode.removeChild(ov);
           };
           if(vid && !vid.paused && !vid.muted && !vid.__skipped){
@@ -179,25 +180,32 @@
       }
       if(sndBtn) sndBtn.addEventListener('click', function(e){ e.stopPropagation(); unmute(); });
       window.addEventListener('pointerdown', function(){ if(vid && vid.muted && !ended) unmute(); }, {once:true});
-      // bottom progress line — real playback progress, not a fake animation
+      // bottom progress line — download progress first, then real playback
+      // progress once the clip is actually rolling (never a fake animation).
       var bar=document.getElementById('introBar');
       if(vid && bar){
         vid.addEventListener('timeupdate', function(){
           if(vid.duration) bar.style.width=Math.min(100,(vid.currentTime/vid.duration)*100)+'%';
         });
       }
+      // ── Stutter-proof playback: fetch the WHOLE clip into memory first ──
+      // The stall the owner hit on phone was mid-clip buffering underrun —
+      // canplaythrough only estimates buffer health, and that estimate is
+      // unreliable on cellular. Playing from a fully-downloaded blob makes a
+      // stall structurally impossible: there is no network in the loop once
+      // playback starts. A lighter, phone-sized encode (boot-intro-m.mp4,
+      // ~1.7MB vs 2.4MB) is used under the mobile breakpoint so the download
+      // itself finishes faster on cellular.
       if(vid){
         vid.loop=false;
         vid.addEventListener('ended', function(){ finish(true); }, {once:true});
         vid.addEventListener('error', function(){ finish(false); }, {once:true}); // no video to hold on → reveal now
-        // Smoothness: start rolling only once the browser judges it can play
-        // through without stalling (canplaythrough — usually instant: the file
-        // is faststart-muxed and preload=auto), capped at 1.8s so a pessimistic
-        // bandwidth estimate never delays the boot. This front-loads the buffer
-        // on slow cellular connections instead of stuttering mid-clip.
+        var isPhone = matchMedia('(max-width: 820px)').matches;
+        var videoUrl = '%BASE_URL%' + (isPhone ? 'boot-intro-m.mp4' : 'boot-intro.mp4');
         var started=false;
-        function startPlayback(){
+        function playFrom(src){
           if(started || ended) return; started=true;
+          vid.src = src;
           vid.muted=false; vid.volume=1;
           var pr=vid.play && vid.play();
           if(pr && pr.catch) pr.catch(function(){
@@ -212,8 +220,49 @@
           // ('ended' → finish above) and land directly on the live app.
           setTimeout(function(){ finish(true); }, 13000); // hard fallback from actual start — never get stuck
         }
-        vid.addEventListener('canplaythrough', startPlayback, {once:true});
-        setTimeout(startPlayback, 1800);
+        // Legacy streaming path — used only if the blob preload itself can't
+        // be attempted (no fetch support). Kept as a last-resort so old
+        // browsers still see SOMETHING rather than a blank boot.
+        function playStreaming(){
+          vid.addEventListener('canplaythrough', function(){ playFrom(videoUrl); }, {once:true});
+          setTimeout(function(){ playFrom(videoUrl); }, 1800);
+        }
+        if(!window.fetch){ playStreaming(); }
+        else {
+          var ctrl = (typeof AbortController!=='undefined') ? new AbortController() : null;
+          var DL_TIMEOUT = 12000;
+          var dlTimer = setTimeout(function(){
+            try{ ctrl && ctrl.abort(); }catch(e){}
+            // A connection too slow to finish a ~2MB fetch in 12s will stutter
+            // on streaming too — better a clean skip than a broken cinematic.
+            finish(false);
+          }, DL_TIMEOUT);
+          fetch(videoUrl, { signal: ctrl && ctrl.signal }).then(function(res){
+            if(!res.ok || !res.body){ throw new Error('bad response'); }
+            var total = +res.headers.get('content-length') || 0;
+            var reader = res.body.getReader();
+            var chunks = []; var received = 0;
+            function pump(){
+              return reader.read().then(function(step){
+                if(step.done){
+                  clearTimeout(dlTimer);
+                  var blob = new Blob(chunks, { type:'video/mp4' });
+                  var blobUrl = URL.createObjectURL(blob);
+                  playFrom(blobUrl);
+                  return;
+                }
+                chunks.push(step.value);
+                received += step.value.length;
+                if(total && bar) bar.style.width = Math.min(100, (received/total)*100) + '%';
+                return pump();
+              });
+            }
+            return pump();
+          }).catch(function(){
+            clearTimeout(dlTimer);
+            if(!started) playStreaming(); // fetch/stream unsupported mid-flight → degrade gracefully
+          });
+        }
       } else { finish(false); }
     })();
   </script>
