@@ -496,7 +496,21 @@ const lmsUrl = () => { try { return (localStorage.getItem(K_LMS_URL) || "").trim
 // Authentication" turned on (e.g. a Cloudflare Quick Tunnel, which has no
 // Access/email gate of its own) — sent as a Bearer token on every request.
 const lmsKey = () => { try { return (localStorage.getItem(K_LMS_KEY) || "").trim(); } catch { return ""; } };
-const lmsHeaders = () => { const k = lmsKey(); return k ? { "Content-Type": "application/json", Authorization: `Bearer ${k}` } : { "Content-Type": "application/json" }; };
+// withBody=false drops Content-Type entirely — a bare GET (the /models
+// connectivity check) with no key configured then carries NO custom headers
+// at all, so the browser treats it as a CORS-"simple" request and skips the
+// OPTIONS preflight altogether. A tunnel/local server that mishandles
+// preflight (seen with some Cloudflare Quick Tunnel + LM Studio pairings)
+// used to fail even a no-auth connectivity check for exactly this reason —
+// Content-Type: application/json alone is enough to force a preflight,
+// same as a real Authorization header would.
+const lmsHeaders = (withBody = true) => {
+  const k = lmsKey();
+  const h = {};
+  if (withBody) h["Content-Type"] = "application/json";
+  if (k) h.Authorization = `Bearer ${k}`;
+  return h;
+};
 // LM Studio's OWN UI shows "Reachable at: http://<ip>:<port>" with no /v1 —
 // exactly what someone naturally copy-pastes into the settings field — but
 // the OpenAI-compatible chat endpoint actually lives at .../v1/chat/completions.
@@ -3672,7 +3686,7 @@ function SettingsView({ showToast }) {
     if (!base) { setLmsStatus("הזן כתובת קודם"); return; }
     setLmsStatus("בודק חיבור…");
     try {
-      const r = await fetch(base + "/models", { headers: lmsHeaders(), signal: AbortSignal.timeout(6000) });
+      const r = await fetch(base + "/models", { headers: lmsHeaders(false), signal: AbortSignal.timeout(6000) });
       const d = await r.json();
       const names = (d.data || []).map((m) => m.id).slice(0, 3).join(", ");
       setLmsStatus(r.ok ? `מחובר 🟢 מודלים טעונים: ${names || "אין (טען מודל ב-LM Studio)"}` : r.status === 401 ? "שגיאה 401 — נדרש API Key, ודא שהדבקת אותו נכון" : "שגיאה HTTP " + r.status);
