@@ -3247,7 +3247,12 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
 
   function frame(now: number) {
     raf = requestAnimationFrame(frame);
-    if (document.hidden || document.body.classList.contains('bg-paused')) return;
+    // The boot intro video plays over this scene at opacity:0 (CSS alone
+    // doesn't stop WebGL work) — full bloom/FXAA/MSAA rendering competing
+    // with video decode for the GPU is exactly what was causing the boot
+    // video to stutter on phones. Stay paused (still scheduling the next
+    // rAF so state resumes instantly) until index.html removes 'booting'.
+    if (document.hidden || document.body.classList.contains('bg-paused') || document.documentElement.classList.contains('booting')) return;
     // Always render at the display's native refresh (60/120Hz) — no fps cap.
     // A hard cap (the old Fast-mode 45fps throttle) reads as "low framerate" on
     // ProMotion iPads; instead we shed *cost per frame* via perfFast + the
@@ -4362,7 +4367,12 @@ export function mountOrb(container: HTMLElement): OrbHandle {
 
   function frame(now: number) {
     raf = requestAnimationFrame(frame);
-    if (document.hidden || document.body.classList.contains('bg-paused')) return;
+    // The boot intro video plays over this scene at opacity:0 (CSS alone
+    // doesn't stop WebGL work) — full bloom/FXAA/MSAA rendering competing
+    // with video decode for the GPU is exactly what was causing the boot
+    // video to stutter on phones. Stay paused (still scheduling the next
+    // rAF so state resumes instantly) until index.html removes 'booting'.
+    if (document.hidden || document.body.classList.contains('bg-paused') || document.documentElement.classList.contains('booting')) return;
     // Always render at the display's native refresh (60/120Hz) — no fps cap.
     // A hard cap (the old Fast-mode 45fps throttle) reads as "low framerate" on
     // ProMotion iPads; instead we shed *cost per frame* via perfFast + the
