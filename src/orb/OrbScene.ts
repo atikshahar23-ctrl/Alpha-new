@@ -2894,14 +2894,20 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   // framerate: 0 = full (post-fx on), 1 = post-fx off, 2 = post-fx off + lower res.
   let qTier = 0;
   const bigTouch = false;   // (desktop-scene only concept; mobile is already light)
+  // DPR 2 was tuned for phone-sized canvases (~1.3M px/frame). An iPad-class
+  // screen at DPR 2 pushes ~5.6M px/frame — 4× a phone — through the same
+  // shaders, which is what actually janks iPads. Cap big touch screens lower;
+  // at these sizes the difference is invisible at arm's length.
+  const bigScreen = Math.min(window.innerWidth, window.innerHeight) >= 700;
   const prCap = () => {
-    const base = Math.min(window.devicePixelRatio || 1, perfFast ? 1 : 2);
+    const base = Math.min(window.devicePixelRatio || 1, perfFast ? 1 : bigScreen ? 1.25 : 2);
     return qTier >= 2 ? Math.min(base, 1) : base;
   };
   renderer.setPixelRatio(prCap());
   renderer.setClearColor(charBg('alphabrain'), 0);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.65;
+  container.dataset.orbMode = 'mobile'; // which scene tier actually mounted (debug/QA)
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
@@ -3637,7 +3643,15 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
 export function mountOrb(container: HTMLElement): OrbHandle {
   let displayPref = 'auto';
   try { displayPref = localStorage.getItem('alpha_display_mode') || 'auto'; } catch {}
-  const autoMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 768;
+  // iPadOS 13+ masquerades as a desktop Mac ("Macintosh" UA), so the UA test
+  // alone routed iPads to the heavy desktop scene (bloom/MSAA composer, 128-seg
+  // brain, full particle counts) — the "central sun freezes my iPad" report.
+  // A Mac UA with ANY touch support is an iPad, never a real Mac
+  // (maxTouchPoints 0 on real Macs, 5 on iPads): give it the same light
+  // mobile scene phones get. An explicit display-mode pref ('desktop')
+  // still overrides.
+  const iPadMasquerade = (navigator.maxTouchPoints || 0) > 0 && /Mac/i.test(navigator.userAgent);
+  const autoMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || iPadMasquerade || window.innerWidth < 768;
   const isMobile = displayPref === 'mobile' ? true : displayPref === 'desktop' ? false : autoMobile;
   if (isMobile) return mountMobileOrb(container);
 
@@ -3672,6 +3686,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   renderer.setClearColor(charBg('alphabrain'), 0);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.75;
+  container.dataset.orbMode = 'desktop'; // which scene tier actually mounted (debug/QA)
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
