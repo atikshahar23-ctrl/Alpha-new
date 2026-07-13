@@ -5,6 +5,8 @@
 // Falls back to manual JSON export/import when not connected.
 // ============================================================
 
+import { mergeTable, tombstonesFirst, TOMBSTONE_KEY } from './syncMerge';
+
 const SCOPES = 'https://www.googleapis.com/auth/drive.file';
 const FOLDER_NAME = 'Alpha Assistant Backup';
 const TOKEN_KEY = 'alpha_gdrive_token';
@@ -25,6 +27,7 @@ const SYNC_TABLES = [
   'alpha_tasks',
   'alpha_notes',
   'hg2:index',
+  TOMBSTONE_KEY,
   'hg2:quotes',
   'hg2:tasks',
   'hg2:customers',
@@ -319,10 +322,29 @@ export async function syncToCloud(onProgress?: (msg: string) => void): Promise<{
     const pid = await ensureFolder();
     onProgress?.('Uploading data…');
 
+    // Merge with what's already in the cloud before writing — a plain
+    // overwrite meant whichever device uploaded last wiped every record the
+    // other device had added (the phone→PC vanishing-installs bug). If the
+    // cloud copy can't be fetched, upload local as-is, same as before.
+    let cloudData: Record<string, any> = {};
+    try {
+      const fid = await findFile('alpha_backup.json', pid);
+      if (fid) {
+        const b = JSON.parse(await downloadFile(fid));
+        if (b && b.data) cloudData = b.data;
+      }
+    } catch {}
+
     const allData: Record<string, any> = {};
-    for (const key of SYNC_TABLES) {
-      const raw = localStorage.getItem(key);
-      if (raw) allData[key] = raw;
+    for (const key of tombstonesFirst(SYNC_TABLES)) {
+      const localRaw = localStorage.getItem(key);
+      const cloudRaw = typeof cloudData[key] === 'string' ? cloudData[key] : null;
+      const merged = mergeTable(key, localRaw, cloudRaw, false);
+      if (merged == null) continue;
+      allData[key] = merged;
+      // Heal the local store with records only the cloud had, so the
+      // periodic upload doubles as a pull for id'd tables.
+      if (merged !== localRaw) { try { localStorage.setItem(key, merged); } catch {} }
     }
     const content = JSON.stringify({ version: 1, timestamp: Date.now(), data: allData }, null, 2);
     await uploadFile('alpha_backup.json', content, pid);
@@ -337,7 +359,7 @@ export async function syncToCloud(onProgress?: (msg: string) => void): Promise<{
   }
 }
 
-export async function syncFromCloud(onProgress?: (msg: string) => void): Promise<{ ok: boolean; error?: string; tables?: number }> {
+export async function syncFromCloud(onProgress?: (msg: string) => void): Promise<{ ok: boolean; error?: string; tables?: number; changed?: number }> {
   if (syncInProgress) return { ok: false, error: 'Sync already in progress' };
   syncInProgress = true;
   try {
@@ -352,16 +374,21 @@ export async function syncFromCloud(onProgress?: (msg: string) => void): Promise
     const backup = JSON.parse(raw);
     if (!backup.data) return { ok: false, error: 'Invalid backup format' };
 
-    let count = 0;
-    for (const [key, value] of Object.entries(backup.data)) {
-      if (SYNC_TABLES.includes(key) && typeof value === 'string') {
-        localStorage.setItem(key, value);
-        count++;
-      }
+    // Record-level merge instead of overwrite: restoring can only ADD
+    // records to id'd tables — installs saved on THIS device but not yet in
+    // the cloud survive a restore intact.
+    let count = 0, changed = 0;
+    for (const key of tombstonesFirst(Object.keys(backup.data))) {
+      const value = backup.data[key];
+      if (!SYNC_TABLES.includes(key) || typeof value !== 'string') continue;
+      const prev = localStorage.getItem(key);
+      const merged = mergeTable(key, prev, value, true);
+      if (merged != null && merged !== prev) { localStorage.setItem(key, merged); changed++; }
+      count++;
     }
     localStorage.setItem(SYNC_TS_KEY, new Date().toISOString());
     onProgress?.(`Restored ${count} tables ✓`);
-    return { ok: true, tables: count };
+    return { ok: true, tables: count, changed };
   } catch (e: any) {
     return { ok: false, error: e.message || 'Unknown error' };
   } finally {
@@ -383,11 +410,12 @@ export function importAllData(json: string): { ok: boolean; tables: number; erro
     const backup = JSON.parse(json);
     if (!backup.data) return { ok: false, tables: 0, error: 'Invalid format' };
     let count = 0;
-    for (const [key, value] of Object.entries(backup.data)) {
-      if (SYNC_TABLES.includes(key) && typeof value === 'string') {
-        localStorage.setItem(key, value);
-        count++;
-      }
+    for (const key of tombstonesFirst(Object.keys(backup.data))) {
+      const value = backup.data[key];
+      if (!SYNC_TABLES.includes(key) || typeof value !== 'string') continue;
+      const merged = mergeTable(key, localStorage.getItem(key), value, true);
+      if (merged != null) localStorage.setItem(key, merged);
+      count++;
     }
     return { ok: true, tables: count };
   } catch (e: any) {

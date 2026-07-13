@@ -304,13 +304,14 @@ export class VoiceEngine {
     const s = t.toLowerCase();
     return (
       s.includes('alpha') || s.includes('alfa') || s.includes('elpha') ||
-      s.includes('אלפא') || s.includes('אלפה')
+      s.includes('system') ||
+      s.includes('אלפא') || s.includes('אלפה') || s.includes('סיסטם')
     );
   }
   private stripWake(raw: string) {
     return raw
-      .replace(/(hey|hi|hello|ok|okay)?\s*(alpha|alfa|elpha)\b[\s,.:!?-]*/i, '')
-      .replace(/(היי|הי|הליי|אלו)?\s*(אלפא|אלפה)[\s,.:!?-]*/, '')
+      .replace(/(hey|hi|hello|ok|okay)?\s*(alpha|alfa|elpha|system)\b[\s,.:!?-]*/i, '')
+      .replace(/(היי|הי|הליי|אלו)?\s*(אלפא|אלפה|סיסטם)[\s,.:!?-]*/, '')
       .replace(/^[\s,.:!?-]+/, '')
       .trim();
   }

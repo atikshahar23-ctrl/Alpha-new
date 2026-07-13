@@ -5,6 +5,8 @@
 // No setup required — just sign in with Google.
 // ============================================================
 
+import { mergeTable, tombstonesFirst, TOMBSTONE_KEY } from './syncMerge';
+
 const KV_PREFIX = 'alpha_sync_v1:';
 const LAST_SYNC_KEY = 'alpha_puter_last_sync';
 const DIRTY_KEY = 'alpha_data_dirty';
@@ -52,6 +54,7 @@ const SYNC_TABLES = [
   'alpha_notes',
   // HeavyGuard — full static dataset
   'hg2:index',
+  TOMBSTONE_KEY,
   'hg2:quotes',
   'hg2:tasks',
   'hg2:customers',
@@ -197,18 +200,28 @@ export async function syncToCloud(onProgress?: (msg: string) => void): Promise<{
   if (!isPuterAvailable()) { lastSyncError = 'Puter not available'; return { ok: false, error: lastSyncError }; }
   if (!isSignedIn()) { lastSyncError = 'Not signed in'; return { ok: false, error: lastSyncError }; }
   try {
-    const tables = [...new Set(SYNC_TABLES)]; // dedupe
+    const tables = tombstonesFirst([...new Set(SYNC_TABLES)]); // dedupe, deletions first
     const snap = loadSnap();
     let changed = 0, i = 0;
     // Only upload tables whose contents actually changed since last sync.
     for (const key of tables) {
-      const val = localStorage.getItem(key);
+      const local = localStorage.getItem(key);
       i++;
-      if (val === null) continue;
-      const h = cheapHash(val);
-      if (snap[key] === h) continue;   // unchanged → skip the request
+      if (local === null) continue;
+      if (snap[key] === cheapHash(local)) continue;   // unchanged → skip the request
+      // Merge with the cloud copy before writing — a whole-key replace
+      // dropped records created on another device since the last pull (the
+      // vanishing-installs bug). If the read fails, upload local as-is.
+      let val = local;
+      try {
+        const cloudRaw = await puter().kv.get(KV_PREFIX + key);
+        const merged = mergeTable(key, local, (cloudRaw ?? null) as string | null, false);
+        if (merged != null) val = merged;
+        // Heal local with records only the cloud had.
+        if (val !== local) { try { localStorage.setItem(key, val); } catch {} }
+      } catch {}
       await puter().kv.set(KV_PREFIX + key, val);
-      snap[key] = h; changed++;
+      snap[key] = cheapHash(val); changed++;
       if (onProgress && changed % 5 === 0) onProgress(`מעלה נתונים… ${Math.round(i / tables.length * 100)}%`);
     }
 
@@ -258,12 +271,17 @@ export async function syncFromCloud(onProgress?: (msg: string) => void): Promise
   if (!isSignedIn()) { lastSyncError = 'Not signed in'; return { ok: false, error: lastSyncError }; }
   try {
     onProgress?.('מוריד נתונים…');
-    const tables = [...new Set(SYNC_TABLES)];
+    const tables = tombstonesFirst([...new Set(SYNC_TABLES)]); // deletions first
     let count = 0;
     for (const key of tables) {
       const val = await puter().kv.get(KV_PREFIX + key);
       if (val !== null && val !== undefined && val !== '') {
-        localStorage.setItem(key, val);
+        // Merge instead of overwrite — a download can only ADD records to
+        // id'd tables, so installs saved locally but not yet uploaded
+        // survive the pull (the vanishing-installs bug).
+        const prev = localStorage.getItem(key);
+        const merged = mergeTable(key, prev, val as string, true);
+        if (merged != null && merged !== prev) localStorage.setItem(key, merged);
         count++;
       }
     }

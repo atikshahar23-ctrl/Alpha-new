@@ -35,6 +35,7 @@ const UI_STRINGS: Record<string, Record<UILang, string>> = {
   appTitle: { he: 'אלפא עוזר אישי', en: 'ALPHA ASSISTANT' },
   settings: { he: 'הגדרות', en: 'SETTINGS' },
   comfortMode: { he: 'מצב חסכוני', en: 'COMFORT MODE' },
+  driveMode: { he: 'מצב נהיגה', en: 'DRIVE MODE' },
   declutter: { he: 'מסך נקי', en: 'CLEAN SCREEN' },
   newChat: { he: 'חדש', en: 'NEW' },
   system: { he: 'מערכת', en: 'SYSTEM' },
@@ -188,7 +189,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v218 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v219 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip apps-chip" id="appsBtn" title="האפליקציות שלי" aria-label="האפליקציות שלי">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="12" cy="19" r="2"/><circle cx="19" cy="19" r="2"/></svg>
@@ -205,6 +206,7 @@ export function mountApp(root: HTMLElement) {
         <button class="chip ghost" id="searchBtn" aria-label="Search (Ctrl+K)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
         <button class="chip ghost" id="muteBtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg></button>
         <button class="chip ghost" id="comfortModeBtn" title="מצב חסכוני — למחשבים חלשים/ישנים, מונע קיפאון של הסימולציה התלת-ממדית">🐢 <span data-i18n="comfortMode">מצב חסכוני</span></button>
+        <button class="chip ghost" id="driveModeBtn" title="מצב נהיגה — כיבוי מלא של התלת-ממד לחיסכון בסוללה, מסך שחור עם ויזואליזציית קול והפעלה קולית בלבד">🚗 <span data-i18n="driveMode">מצב נהיגה</span></button>
         <button class="chip ghost" id="declutterBtn" title="הסרת האנימציה המרכזית וצמצום מהיר של אפקטי הרקע — למסך נקי ומהיר יותר">🌑 <span data-i18n="declutter">מסך נקי</span></button>
         <button class="chip" id="settingsBtn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg> <span data-i18n="settings">הגדרות</span></button>
         <button class="chip ghost" id="newChat"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> <span data-i18n="newChat">חדש</span></button>
@@ -1064,8 +1066,12 @@ export function mountApp(root: HTMLElement) {
         const el = document.querySelector(sel);
         return el && el.classList.contains('show');
       });
-      document.body.classList.toggle('bg-paused', anyOpen || document.hidden);
+      document.body.classList.toggle('bg-paused',
+        anyOpen || document.hidden || document.body.classList.contains('drive-mode'));
     };
+    // Drive mode toggles fire this instead of mutating one of the watched
+    // overlays — same pause path, different trigger.
+    window.addEventListener('alpha:drivemode', update);
     const obs = new MutationObserver(update);
     overlaySelectors.forEach(sel => {
       const el = document.querySelector(sel);
@@ -1242,6 +1248,14 @@ export function mountApp(root: HTMLElement) {
     // "the assistant isn't listening, isn't answering" symptom, with no
     // visible sign anything had gone wrong.
     $('micBtn').classList.toggle('on', s !== '' && voice.wakeOn);
+    // Drive-mode visualizer mirrors the same state machine — one source of
+    // truth, no second listener chain to fall out of sync.
+    const dv = document.getElementById('driveOverlay');
+    if (dv) {
+      dv.dataset.vstate = s || 'idle';
+      const dl = document.getElementById('drvState'); if (dl) dl.textContent = label;
+      document.getElementById('drvMic')?.classList.toggle('on', s !== '' && voice.wakeOn);
+    }
   }
 
   const voice = new VoiceEngine(state, (text) => { clearInterim(); addMsg(text, 'me'); ask(text); }, setStatus);
@@ -2294,6 +2308,73 @@ export function mountApp(root: HTMLElement) {
     addMsg(on ? '🐢 מצב חסכוני כובה — הסימולציה תחזור לאיכות מלאה בפעם הבאה שתיפתח.' : '🐢 מצב חסכוני הופעל — בפעם הבאה שתיפתח את הסימולציה התלת-ממדית היא תיטען קלה משמעותית (בלי HDRI/צללים/SSAO), מותאם למחשבים חלשים או ישנים.', 'sys');
   };
   $('newChat').onclick = () => { state.history = []; $('rpBody').innerHTML = ''; $('chat').innerHTML = ''; clearChatHistory(); addMsg(state.name + ' ' + t('readyMsg', state.uiLang), 'al'); };
+
+  // ── מצב נהיגה (Drive Mode) — battery-first hands-free view for the car /
+  // field. The WebGL orb + flow-lines stop completely (the same `bg-paused`
+  // early-return every fullscreen overlay uses) and #stage is display:none,
+  // replaced by a pure-CSS black voice visualizer that pulses off the same
+  // setStatus state machine as the header equalizer — zero GPU, zero Web
+  // Audio. Screen Wake Lock keeps the display on for navigation/talking.
+  (function setupDriveMode() {
+    const ov = document.createElement('div');
+    ov.id = 'driveOverlay';
+    ov.dir = 'rtl';
+    ov.dataset.vstate = 'idle';
+    ov.innerHTML = `
+      <div class="drv-clock" id="drvClock">--:--</div>
+      <div class="drv-viz" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      <div class="drv-state" id="drvState">${t('standby', state.uiLang)}</div>
+      <div class="drv-hint">אמור "אלפא" או "System" כדי לדבר</div>
+      <div class="drv-row">
+        <button class="drv-btn" id="drvMic" title="מיקרופון">🎤</button>
+        <button class="drv-btn exit" id="drvExit">✕ יציאה ממצב נהיגה</button>
+      </div>`;
+    document.body.appendChild(ov);
+
+    let wakeLock: { release(): Promise<void> } | null = null;
+    const acquireWakeLock = async () => {
+      try { wakeLock = await (navigator as any).wakeLock?.request('screen') ?? null; } catch {}
+    };
+    const releaseWakeLock = () => { try { wakeLock?.release(); } catch {} wakeLock = null; };
+    // The OS silently drops the lock when the tab backgrounds — re-acquire
+    // when it comes back while drive mode is still on.
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && document.body.classList.contains('drive-mode')) acquireWakeLock();
+    });
+
+    let clockTimer = 0;
+    const tickClock = () => {
+      const d = new Date();
+      $('drvClock').textContent = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    };
+
+    const driveModeBtn = $('driveModeBtn');
+    const setDrive = (on: boolean, autoArm: boolean) => {
+      document.body.classList.toggle('drive-mode', on);
+      localStorage.setItem('alpha:driveMode', on ? '1' : '0');
+      driveModeBtn.classList.toggle('on', on);
+      window.dispatchEvent(new Event('alpha:drivemode'));
+      if (on) {
+        acquireWakeLock();
+        tickClock();
+        clockTimer = window.setInterval(tickClock, 5000);
+        // Hands-free means hands-free: arm the wake word on manual entry so
+        // "אלפא…" works without another tap. Mic-permission failures surface
+        // through the existing onMicBlocked feedback.
+        if (autoArm && !voice.wakeOn) $('micBtn').click();
+      } else {
+        releaseWakeLock();
+        clearInterval(clockTimer);
+      }
+    };
+    driveModeBtn.onclick = () => setDrive(!document.body.classList.contains('drive-mode'), true);
+    $('drvExit').onclick = () => setDrive(false, false);
+    $('drvMic').onclick = () => $('micBtn').click();
+    // Mid-drive reloads (car dock, tunnel hiccup) come back straight into the
+    // black screen instead of burning battery on the 3D boot. Wake-word
+    // restore is handled by the existing voice-state boot path, not here.
+    if (localStorage.getItem('alpha:driveMode') === '1') setDrive(true, false);
+  })();
 
   // ── Hide / show all panels — leaves only the top bar + the central orb ──
   // State persists so a "clean view" survives reloads. The toggle button lives
@@ -8118,10 +8199,18 @@ export function mountApp(root: HTMLElement) {
     if (driveSync.canAutoConnect()) {
       const ok = await driveSync.ensureToken();
       if (ok) {
-        const hasLocalData = localStorage.getItem('alpha_events') || localStorage.getItem('alpha_tasks') || localStorage.getItem('alpha_brain_memory_v1');
-        if (!hasLocalData) {
-          const r = await driveSync.syncFromCloud();
-          if (r.ok && (r.tables ?? 0) > 0) { setTimeout(() => location.reload(), 500); return; }
+        // Always merge-pull on boot. This used to be gated on "no local data",
+        // which meant a PC that already had dashboard data NEVER pulled the
+        // phone's Heavy Guard installs — and 30s later its upload clobbered
+        // them in the cloud. Restores are record-level merges now, so pulling
+        // over local data can only add records, never wipe them. Reload once
+        // per session, and only when the pull actually changed something.
+        const r = await driveSync.syncFromCloud();
+        const RELOAD_GUARD = 'alpha_drive_reload_done';
+        if (r.ok && (r.changed ?? 0) > 0 && !sessionStorage.getItem(RELOAD_GUARD)) {
+          sessionStorage.setItem(RELOAD_GUARD, '1');
+          setTimeout(() => location.reload(), 500);
+          return;
         }
       }
       setTimeout(() => { driveSync.ensureToken().then(t => { if (t) driveSync.syncToCloud(); }); }, 30_000);

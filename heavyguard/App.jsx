@@ -81,6 +81,24 @@ const saveIndex = async (arr) => {
   }
   try { await store.set("hg2:index", json); } catch {}
 };
+// Deleted-install tombstones — read by the cloud-sync merge (syncMerge.ts)
+// so a record the user explicitly deleted here stays deleted on every
+// device, instead of resurrecting from a stale copy on the next sync.
+const addTombstones = (ids) => {
+  try {
+    const arr = JSON.parse(localStorage.getItem("hg2:tombstones") || "[]");
+    const seen = new Set(arr.map((t) => t && t.id));
+    for (const id of ids) if (id != null && !seen.has(id)) arr.push({ id, ts: Date.now() });
+    localStorage.setItem("hg2:tombstones", JSON.stringify(arr.slice(-2000)));
+  } catch {}
+};
+const removeTombstone = (id) => {
+  try {
+    const arr = JSON.parse(localStorage.getItem("hg2:tombstones") || "[]");
+    const next = arr.filter((t) => !t || t.id !== id);
+    if (next.length !== arr.length) localStorage.setItem("hg2:tombstones", JSON.stringify(next));
+  } catch {}
+};
 const loadPhoto = async (id) => { try { const r = await store.get("hg2:photo:" + id); return r && r.value ? r.value : null; } catch { return null; } };
 const loadGallery = async (id) => { try { const r = await store.get("hg2:gallery:" + id); return r && r.value ? JSON.parse(r.value) : []; } catch { return []; } };
 const loadVideo = async (id) => { try { const r = await store.get("hg2:video:" + id); return r && r.value ? r.value : null; } catch { return null; } };
@@ -275,6 +293,7 @@ export default function App() {
 
   const resetAll = async () => {
     if (!(await askConfirm("לנקות את כל ההתקנות מהאפליקציה ולהתחיל נקי?\n(הטבלאות שלך ב-Drive לא יושפעו)"))) return;
+    addTombstones(index.map((x) => x.id));
     for (const x of index) { await store.del("hg2:photo:" + x.id); await store.del("hg2:gallery:" + x.id); await store.del("hg2:video:" + x.id); }
     setIndex([]); try { await saveIndex([]); } catch {} try { await store.set("hg2:init", JSON.stringify(true)); } catch {}
     showToast("האפליקציה נוקתה — מוכן לתיעוד חדש");
@@ -297,6 +316,7 @@ export default function App() {
   };
   // Remove a draft that was abandoned via "ביטול" before any real data was entered.
   const discardDraft = async (id) => {
+    addTombstones([id]);
     const next = index.filter((x) => x.id !== id);
     setIndex(next); try { await saveIndex(next); } catch {}
     await store.del("hg2:photo:" + id); await store.del("hg2:gallery:" + id); await store.del("hg2:video:" + id);
@@ -304,6 +324,9 @@ export default function App() {
 
   const addInstall = async (data, photoFull, media = {}, existingId = null) => {
     const id = existingId || uid();
+    // A finalized install must never be filtered out by a stale tombstone
+    // (e.g. its draft was discarded on another device before this save).
+    removeTombstone(id);
     if (photoFull) { try { await store.set("hg2:photo:" + id, photoFull); } catch {} }
     const gf = media.galleryFull || [];
     if (gf.length) { try { await store.set("hg2:gallery:" + id, JSON.stringify(gf)); } catch {} }
@@ -333,6 +356,7 @@ export default function App() {
   };
   const removeInstall = async (id) => {
     if (!(await askConfirm("למחוק את ההתקנה?"))) return;
+    addTombstones([id]);
     const next = index.filter((x) => x.id !== id);
     setIndex(next);
     await store.del("hg2:photo:" + id); await store.del("hg2:gallery:" + id); await store.del("hg2:video:" + id);
