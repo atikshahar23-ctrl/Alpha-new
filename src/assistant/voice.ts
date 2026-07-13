@@ -43,6 +43,16 @@ export class VoiceEngine {
   // mic stream altogether.
   private isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent || '');
   private recRetries = 0;
+  // Recognition liveness watchdog. Browsers (mobile Safari/Chrome especially)
+  // sometimes kill a recognition session WITHOUT firing onend/onerror — after
+  // a TTS handoff, a tab background, or an engine hang. From JS the session
+  // still "looks" running (recRunning true), so startRec() no-ops forever and
+  // the assistant sits on "מאזין" hearing nothing — the recurring
+  // stuck-listening report. Every recognizer event stamps lastRecEvent; a
+  // periodic check force-recycles the recognizer when it goes silent for too
+  // long or died without telling us.
+  private lastRecEvent = 0;
+  private watchdogTimer = 0;
   private noiseStream: MediaStream | null = null;
   private noiseCtx: AudioContext | null = null;
   // Live mic level meter — a real AnalyserNode tap off the same mic stream,
@@ -73,7 +83,11 @@ export class VoiceEngine {
       this.rec.continuous = !this.isAndroid; // Android: one utterance per session, auto-restarted in onend
       this.rec.interimResults = true;
       this.rec.maxAlternatives = 1;
+      this.rec.onstart = () => { this.recRunning = true; this.lastRecEvent = Date.now(); };
+      this.rec.onaudiostart = () => { this.lastRecEvent = Date.now(); };
+      this.rec.onspeechstart = () => { this.lastRecEvent = Date.now(); };
       this.rec.onresult = (e: any) => {
+        this.lastRecEvent = Date.now();
         if (this.suppress) return;
         this.errStreak = 0; // real audio is flowing
         let interim = '';
@@ -109,6 +123,7 @@ export class VoiceEngine {
         if (interim) this.resetSilenceTimer();
       };
       this.rec.onend = () => {
+        this.lastRecEvent = Date.now();
         this.recRunning = false;
         this.recRetries = 0;
         if (this.commandMode && (this.speechBuffer.trim() || this.lastInterim)) {
@@ -119,6 +134,7 @@ export class VoiceEngine {
         }
       };
       this.rec.onerror = (ev: any) => {
+        this.lastRecEvent = Date.now();
         this.recRunning = false;
         if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
           this.wakeOn = false;
@@ -141,6 +157,14 @@ export class VoiceEngine {
     if ('speechSynthesis' in window) {
       speechSynthesis.onvoiceschanged = () => this.loadVoices();
     }
+    // Mobile browsers kill recognition when the tab backgrounds, often with
+    // no onend. Coming back to the foreground, restart immediately instead
+    // of waiting for the watchdog tick.
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && this.wakeOn && !this.suppress && !this.recRunning) {
+        this.startRec();
+      }
+    });
   }
 
   get supported() {
@@ -150,7 +174,55 @@ export class VoiceEngine {
   private startRec() {
     if (!this.rec || this.recRunning || !this.wakeOn) return;
     this.lastFinalIndex = 0;   // results list is per-session — reset the guard
-    try { this.rec.start(); this.recRunning = true; } catch {}
+    try {
+      this.rec.start();
+      this.recRunning = true;
+      this.lastRecEvent = Date.now();
+    } catch {
+      // Usually InvalidStateError: a previous session is still (half-)alive
+      // after a stop() whose onend never fired. Abort it hard and try once
+      // more — otherwise the mic stays dead until a reload.
+      try { this.rec.abort(); } catch {}
+      this.recRunning = false;
+      window.setTimeout(() => {
+        if (!this.wakeOn || this.recRunning) return;
+        try { this.rec.start(); this.recRunning = true; this.lastRecEvent = Date.now(); } catch {}
+      }, 350);
+    }
+  }
+
+  // Force-recycle a recognizer that died without firing onend/onerror (TTS
+  // handoffs and tab backgrounding do this, mobile browsers especially) —
+  // the "stuck on מאזין and hears nothing" failure. abort() is the only call
+  // that reliably tears down a zombie session.
+  private recycleRec() {
+    try { this.rec.abort(); } catch {}
+    this.recRunning = false;
+    window.setTimeout(() => this.startRec(), 300);
+  }
+
+  private startWatchdog() {
+    clearInterval(this.watchdogTimer);
+    this.lastRecEvent = Date.now();
+    this.watchdogTimer = window.setInterval(() => {
+      if (!this.wakeOn || this.suppress) return;
+      const silentFor = Date.now() - this.lastRecEvent;
+      if (!this.recRunning && silentFor > 4000) {
+        // Died and nothing rescheduled it (missed onend, swallowed start()).
+        this.recycleRec();
+      } else if (this.recRunning && silentFor > 25000) {
+        // "Running" but the engine has produced zero events for 25s — even a
+        // healthy idle session emits onend/no-speech cycles well within that.
+        // Treat as a zombie and recycle; if a command was pending with no
+        // speech captured, fall back to armed so the UI stops claiming to
+        // listen through a dead mic.
+        this.recycleRec();
+        if (this.commandMode && !this.speechBuffer.trim() && !this.lastInterim) {
+          this.commandMode = false;
+          this.onStateChange('armed');
+        }
+      }
+    }, 5000);
   }
   private stopRec() {
     if (!this.rec) return;
@@ -231,7 +303,9 @@ export class VoiceEngine {
         this.flushBuffer();
       } else {
         this.commandMode = false;
-        if (this.wakeOn) this.onStateChange('armed');
+        // Always clear the label — leaving it as-is kept a dead "מאזין" on
+        // screen forever when wake was off (or the recognizer had died).
+        this.onStateChange(this.wakeOn ? 'armed' : '');
       }
     }, 20000);
   }
@@ -351,11 +425,13 @@ export class VoiceEngine {
       this.errStreak = 0;
       this.startRec();
       this.enterCommandMode();
+      this.startWatchdog();
     } else {
       this.commandMode = false;
       this.speechBuffer = '';
       clearTimeout(this.cmdTimer);
       clearTimeout(this.silenceTimer);
+      clearInterval(this.watchdogTimer);
       this.onStateChange('');
       this.stopRec();
       this.stopNoiseStream();
