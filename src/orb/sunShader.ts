@@ -367,3 +367,196 @@ export function buildRaySprite(color = 0xffdb8c, scale = 9): THREE.Sprite {
   sprite.scale.setScalar(scale);
   return sprite;
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// CYBER CORE — the owner's chosen central-object look (public/sun-core.html
+// demo, approved for both the main dashboard and the office simulator):
+// a simplex vertex-displaced "boiling" sphere with a white-hot→gold fresnel
+// fragment, an additive back-side halo, and twin sharp edge-line cages with
+// glowing digital nodes at every lattice vertex.
+//
+// The displacement noise runs in the VERTEX stage only — vertex shaders are
+// guaranteed highp on mobile GPUs, while the same Ashima math in an fp16
+// fragment shader overflows to NaN (the phone black-screen bug). The
+// fragment stays noise-free: fresnel + the interpolated vertex noise reused
+// as free "granulation" shading.
+//
+// Uniform contract matches buildSunMaterial (uTime + uAudioAmplitude), so
+// the existing per-frame update code in both mounts drives it unchanged;
+// the demo's gentle scale/brightness "breathing" is derived in-shader from
+// uTime, with uAudioAmplitude flaring it while Alpha speaks.
+// ═══════════════════════════════════════════════════════════════════════
+
+const CYBER_SIMPLEX_GLSL = /* glsl */`
+  vec3 mod289(vec3 x){return x-floor(x*(1.0/289.0))*289.0;}
+  vec4 mod289(vec4 x){return x-floor(x*(1.0/289.0))*289.0;}
+  vec4 permute(vec4 x){return mod289(((x*34.0)+1.0)*x);}
+  vec4 taylorInvSqrt(vec4 r){return 1.79284291400159-0.85373472095314*r;}
+  float snoise(vec3 v){
+    const vec2 C=vec2(1.0/6.0,1.0/3.0); const vec4 D=vec4(0.0,0.5,1.0,2.0);
+    vec3 i=floor(v+dot(v,C.yyy)); vec3 x0=v-i+dot(i,C.xxx);
+    vec3 g=step(x0.yzx,x0.xyz); vec3 l=1.0-g; vec3 i1=min(g.xyz,l.zxy); vec3 i2=max(g.xyz,l.zxy);
+    vec3 x1=x0-i1+C.xxx; vec3 x2=x0-i2+C.yyy; vec3 x3=x0-D.yyy;
+    i=mod289(i);
+    vec4 p=permute(permute(permute(i.z+vec4(0.0,i1.z,i2.z,1.0))+i.y+vec4(0.0,i1.y,i2.y,1.0))+i.x+vec4(0.0,i1.x,i2.x,1.0));
+    float n_=0.142857142857; vec3 ns=n_*D.wyz-D.xzx;
+    vec4 j=p-49.0*floor(p*ns.z*ns.z);
+    vec4 x_=floor(j*ns.z); vec4 y_=floor(j-7.0*x_);
+    vec4 x=x_*ns.x+ns.yyyy; vec4 y=y_*ns.x+ns.yyyy; vec4 h=1.0-abs(x)-abs(y);
+    vec4 b0=vec4(x.xy,y.xy); vec4 b1=vec4(x.zw,y.zw);
+    vec4 s0=floor(b0)*2.0+1.0; vec4 s1=floor(b1)*2.0+1.0; vec4 sh=-step(h,vec4(0.0));
+    vec4 a0=b0.xzyw+s0.xzyw*sh.xxyy; vec4 a1=b1.xzyw+s1.xzyw*sh.zzww;
+    vec3 p0=vec3(a0.xy,h.x); vec3 p1=vec3(a0.zw,h.y); vec3 p2=vec3(a1.xy,h.z); vec3 p3=vec3(a1.zw,h.w);
+    vec4 norm=taylorInvSqrt(vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3)));
+    p0*=norm.x; p1*=norm.y; p2*=norm.z; p3*=norm.w;
+    vec4 m=max(0.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.0); m=m*m;
+    return 42.0*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));
+  }
+`;
+
+// Breathing pulse shared by core + halo, derived purely from the uniforms.
+const CYBER_PULSE_GLSL = /* glsl */`
+  float cyberPulse(float t, float amp) {
+    return 1.0 + sin(t * 1.4) * 0.03 + sin(t * 0.53) * 0.015 + amp * 0.06;
+  }
+`;
+
+export function buildCyberSunMaterial(gain = 1.0): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uAudioAmplitude: { value: 0.06 },
+      uGain: { value: gain },
+    },
+    vertexShader: /* glsl */`
+      uniform float uTime;
+      uniform float uAudioAmplitude;
+      varying vec3 vNormalW;
+      varying vec3 vViewDirW;
+      varying float vDisp;
+      ${CYBER_SIMPLEX_GLSL}
+      ${CYBER_PULSE_GLSL}
+      void main() {
+        float pulse = cyberPulse(uTime, uAudioAmplitude);
+        // Two octaves of slow simplex noise push each vertex along its
+        // normal — the silhouette itself boils instead of reading as a
+        // rigid CG sphere.
+        float n = snoise(normal * 2.2 + vec3(0.0, uTime * 0.25, 0.0)) * 0.6
+                + snoise(normal * 5.5 + vec3(uTime * 0.45)) * 0.4;
+        vDisp = n;
+        vec3 displaced = position * pulse + normal * n * 0.085 * pulse;
+        vec4 worldPos = modelMatrix * vec4(displaced, 1.0);
+        vNormalW  = normalize(mat3(modelMatrix) * normal);
+        vViewDirW = normalize(cameraPosition - worldPos.xyz);
+        gl_Position = projectionMatrix * viewMatrix * worldPos;
+      }
+    `,
+    fragmentShader: /* glsl */`
+      precision highp float;
+      uniform float uTime;
+      uniform float uAudioAmplitude;
+      uniform float uGain;
+      varying vec3 vNormalW;
+      varying vec3 vViewDirW;
+      varying float vDisp;
+      ${CYBER_PULSE_GLSL}
+      void main() {
+        float pulse = cyberPulse(uTime, uAudioAmplitude);
+        // Facing ratio: 1 at the disc center, 0 at the limb.
+        float facing = clamp(dot(normalize(vNormalW), normalize(vViewDirW)), 0.0, 1.0);
+        // White-hot heart -> saturated gold limb, like an over-exposed star.
+        vec3 heart = vec3(1.0, 0.98, 0.90);
+        vec3 gold  = vec3(1.0, 0.72, 0.25);
+        vec3 rim   = vec3(1.0, 0.45, 0.10);
+        vec3 col = mix(rim, gold, smoothstep(0.0, 0.4, facing));
+        col = mix(col, heart, smoothstep(0.55, 0.95, facing));
+        // The interpolated vertex noise doubles as granulation shading.
+        col *= 0.92 + vDisp * 0.22;
+        col *= (1.05 + 0.3 * (pulse - 1.0) * 10.0) * uGain;
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `,
+  });
+}
+
+// Additive back-side halo shell — shares the core's uniform objects so one
+// per-frame uTime/amp update drives both.
+export function buildCyberHalo(radius: number, sharedUniforms: { uTime: { value: number }; uAudioAmplitude: { value: number } }): THREE.Mesh {
+  return new THREE.Mesh(
+    new THREE.SphereGeometry(radius, 48, 48),
+    new THREE.ShaderMaterial({
+      uniforms: { uTime: sharedUniforms.uTime as any, uAudioAmplitude: sharedUniforms.uAudioAmplitude as any },
+      side: THREE.BackSide,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      vertexShader: /* glsl */`
+        varying vec3 vNormalW; varying vec3 vViewDirW;
+        void main() {
+          vec4 worldPos = modelMatrix * vec4(position, 1.0);
+          vNormalW  = normalize(mat3(modelMatrix) * normal);
+          vViewDirW = normalize(cameraPosition - worldPos.xyz);
+          gl_Position = projectionMatrix * viewMatrix * worldPos;
+        }
+      `,
+      fragmentShader: /* glsl */`
+        precision highp float;
+        uniform float uTime;
+        uniform float uAudioAmplitude;
+        varying vec3 vNormalW; varying vec3 vViewDirW;
+        ${CYBER_PULSE_GLSL}
+        void main() {
+          float pulse = cyberPulse(uTime, uAudioAmplitude);
+          float rim = 1.0 - clamp(dot(normalize(-vNormalW), normalize(vViewDirW)), 0.0, 1.0);
+          float a = pow(rim, 3.4) * 0.32 * pulse;
+          gl_FragColor = vec4(vec3(1.0, 0.78, 0.35), a);
+        }
+      `,
+    }),
+  );
+}
+
+// Round soft-dot sprite for the lattice nodes, baked once (no asset files).
+let dotTexture: THREE.CanvasTexture | null = null;
+function getDotTexture(): THREE.CanvasTexture {
+  if (dotTexture) return dotTexture;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d')!;
+  const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grad.addColorStop(0.0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.35, 'rgba(255,255,255,.85)');
+  grad.addColorStop(1.0, 'rgba(255,255,255,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 64, 64);
+  dotTexture = new THREE.CanvasTexture(c);
+  return dotTexture;
+}
+
+// One lattice cage: sharp single-pixel edge lines + a glowing Points node
+// on every unique vertex (icosahedron buffers repeat corners per-face).
+export function buildCageLines(radius: number, detail: number, color: number, nodeSize: number): THREE.Group {
+  const group = new THREE.Group();
+  const geo = new THREE.IcosahedronGeometry(radius, detail);
+  group.add(new THREE.LineSegments(
+    new THREE.EdgesGeometry(geo),
+    new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.38, blending: THREE.AdditiveBlending, depthWrite: false }),
+  ));
+  const pos = geo.attributes.position;
+  const seen = new Set<string>();
+  const verts: number[] = [];
+  const v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    const key = `${v.x.toFixed(3)},${v.y.toFixed(3)},${v.z.toFixed(3)}`;
+    if (!seen.has(key)) { seen.add(key); verts.push(v.x, v.y, v.z); }
+  }
+  geo.dispose(); // only its edges + vertex list survive
+  const nodesGeo = new THREE.BufferGeometry();
+  nodesGeo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+  group.add(new THREE.Points(nodesGeo, new THREE.PointsMaterial({
+    color, size: nodeSize, map: getDotTexture(), transparent: true, opacity: 0.95,
+    blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
+  })));
+  return group;
+}

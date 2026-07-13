@@ -6,7 +6,7 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
 import { pikaEmoteSpeak } from '../assistant/pikaVoice';
-import { buildSunMaterial, buildSunCorona, buildWireNodes, buildRaySprite, type SunUniforms } from './sunShader';
+import { buildCyberSunMaterial, buildCyberHalo, buildCageLines } from './sunShader';
 import { readObj, writeObj } from '../util/batchedStore';
 import { GEN1 } from '../data/gen1';
 import { POKEMON_SPRITE_COLOR } from '../data/pokemonColors';
@@ -1365,56 +1365,33 @@ interface AlphaBrainParts {
   group: THREE.Group;
   core: THREE.Mesh;
   coreMat: THREE.ShaderMaterial;
-  wire: THREE.Mesh;
-  wire2: THREE.Mesh;
+  wire: THREE.Object3D;
+  wire2: THREE.Object3D;
   tendrils: DataTendrils;
   light: THREE.PointLight;
 }
 function buildAlphaBrain(segments = 96): AlphaBrainParts {
   const gold = 0xE4BC63;
   const group = new THREE.Group();
-  // Photoreal sun core (owner request: "שמש אמיתי לחלוטין") — the shared
-  // procedural sun shader (see sunShader.ts): granulation, sunspots, faculae,
-  // limb darkening, differential rotation and a chromosphere rim, still
-  // voice-reactive via uAudioAmplitude. Fragment noise comes from a baked
-  // texture so it also renders on the owner's phone GPU (no fp16 overflow).
-  const coreMat = buildSunMaterial();
+  // Cyber core — the owner's approved central-object look (the
+  // public/sun-core.html demo): simplex vertex-displaced boiling sphere
+  // with a white-hot→gold fresnel, an additive back-side halo, and twin
+  // sharp edge-line cages (pale gold inner, cyan outer) with glowing
+  // digital nodes on every lattice vertex. Same uniform contract as the
+  // old photoreal sun (uTime/uAudioAmplitude), so the mount loops keep
+  // driving it unchanged; the breathing pulse is derived in-shader.
+  const coreMat = buildCyberSunMaterial();
   const core = new THREE.Mesh(new THREE.SphereGeometry(1.1, segments, segments), coreMat);
   group.add(core);
-  // Corona streamers share the core's uniform objects — one uTime advance
-  // drives both, no extra per-frame bookkeeping in the mount loops.
-  group.add(buildSunCorona(1.1, coreMat.uniforms as unknown as SunUniforms));
-  const wire = new THREE.Mesh(
-    new THREE.IcosahedronGeometry(1.4, 1),
-    new THREE.MeshBasicMaterial({ color: gold, wireframe: true, transparent: true, opacity: 0.8 }),
-  );
-  // Glowing nodes at the cage's own lattice points (owner reference) — a
-  // child of the wire mesh, so it rotates with it for free.
-  wire.add(buildWireNodes(wire.geometry, 0.032, gold));
+  group.add(buildCyberHalo(1.1 * 1.28, coreMat.uniforms as any));
+  const wire = buildCageLines(1.55, 1, 0xE8C97A, 0.13);
   group.add(wire);
-  // Phase 3 — Containment Field: a second, larger, sparser cyan wireframe
-  // shell (semi-transparent + additive) counter-rotating against the gold one,
-  // reading as an energy-containment ring around the plasma core.
-  const wire2 = new THREE.Mesh(
-    new THREE.IcosahedronGeometry(1.62, 1),
-    new THREE.MeshBasicMaterial({
-      color: 0x5ff0ff, wireframe: true, transparent: true, opacity: 0.32,
-      blending: THREE.AdditiveBlending, depthWrite: false,
-    }),
-  );
-  wire2.add(buildWireNodes(wire2.geometry, 0.028, 0x5ff0ff));
+  const wire2 = buildCageLines(1.95, 1, 0x59E8FF, 0.12);
   group.add(wire2);
-  // Radiating light-ray starburst behind everything (owner reference).
-  group.add(buildRaySprite(gold, 7.5));
-  // Phase 3 — Data-Stream Tendrils (denser on desktop, lighter on mobile).
+  // Data-Stream Tendrils (denser on desktop, lighter on mobile) — kept:
+  // they fly INTO the core on speech and read naturally with the new look.
   const tendrils = buildDataTendrils(segments >= 100 ? 2200 : 900, segments >= 100 ? 150 : 80);
   group.add(tendrils.group);
-  const glow = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: glowTexture(), color: gold, transparent: true, opacity: 0.55,
-    blending: THREE.AdditiveBlending, depthWrite: false,
-  }));
-  glow.scale.setScalar(3.2);
-  group.add(glow);
   const light = new THREE.PointLight(gold, 1.6, 9);
   group.add(light);
   return { group, core, coreMat, wire, wire2, tendrils, light };

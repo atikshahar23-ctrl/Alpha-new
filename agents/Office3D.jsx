@@ -19,7 +19,7 @@ import { MeshSurfaceSampler } from "three/examples/jsm/math/MeshSurfaceSampler.j
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import * as CANNON from "cannon-es";
 import jsPDF from "jspdf";
-import { buildSunMaterial, buildSunCorona, buildWireNodes, buildRaySprite } from "../src/orb/sunShader";
+import { buildCyberSunMaterial, buildCyberHalo, buildCageLines } from "../src/orb/sunShader";
 import { MessageCircle, Eye, User, Mic, VolumeX, Volume2, X, Zap, Settings as SettingsIcon, Trash2, Radio, Pause, Lock, Unlock } from "lucide-react";
 import { useDeviceProfile } from "./deviceProfiler.js";
 import RadioController from "./RadioController.jsx";
@@ -8307,55 +8307,24 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       scene.add(sunStageRing);
       obstacles.push({ x: SUN_SPOT.x, z: SUN_SPOT.z, r: 3.0 });
       const sunGroup = new THREE.Group();
-      // Photoreal SUN core (owner: "שמש אמיתי לחלוטין כמה שיותר", matching the
-      // boot cinematic) — the same shared shader the main dashboard orb uses:
-      // granulation, sunspots, faculae, limb darkening, differential rotation
-      // and a chromosphere rim, plus corona streamers. A ShaderMaterial is
-      // unlit, so it renders identically on the owner's phone GPU.
-      // gain 0.6: this scene runs an UnrealBloomPass (threshold 0.4) — at full
-      // brightness the entire disc blooms and clips to a detail-less white ball.
-      const sunCoreMat = buildSunMaterial(0.6);
+      // Cyber core — the owner's approved central-object look (the
+      // public/sun-core.html demo, same as the main dashboard orb): simplex
+      // vertex-displaced boiling sphere, white-hot→gold fresnel, additive
+      // back-side halo, twin sharp edge-line cages with glowing nodes.
+      // gain 0.75: this scene runs an UnrealBloomPass — at full brightness
+      // the disc blooms and clips to a detail-less white ball.
+      const sunCoreMat = buildCyberSunMaterial(0.75);
       const sunCore = new THREE.Mesh(new THREE.SphereGeometry(1.8, 72, 72), sunCoreMat);
       sunGroup.add(sunCore);
-      sunGroup.add(buildSunCorona(1.8, sunCoreMat.uniforms));
+      sunGroup.add(buildCyberHalo(1.8 * 1.28, sunCoreMat.uniforms));
       scene.userData.sunCoreMat = sunCoreMat; // animate() advances uTime + voice amp
-      const wire = new THREE.Mesh(
-        new THREE.IcosahedronGeometry(2.3, 1),
-        new THREE.MeshBasicMaterial({ color: sunColor, wireframe: true, transparent: true, opacity: 0.5 })
-      );
-      wire.add(buildWireNodes(wire.geometry, 0.05, sunColor));
+      const wire = buildCageLines(2.3, 1, 0xE8C97A, 0.2);
       sunGroup.add(wire);
       // Second, larger cyan cage counter-rotating against the gold one —
-      // matching the main dashboard orb's "Containment Field" layer and the
-      // owner's reference image (a gold cage + an outer cyan cage with
-      // glowing lattice nodes).
-      const wire2 = new THREE.Mesh(
-        new THREE.IcosahedronGeometry(2.66, 1),
-        new THREE.MeshBasicMaterial({
-          color: 0x5ff0ff, wireframe: true, transparent: true, opacity: 0.32,
-          blending: THREE.AdditiveBlending, depthWrite: false,
-        })
-      );
-      wire2.add(buildWireNodes(wire2.geometry, 0.045, 0x5ff0ff));
+      // matching the main dashboard orb and the owner's reference.
+      const wire2 = buildCageLines(2.66, 1, 0x59E8FF, 0.18);
       sunGroup.add(wire2);
       scene.userData.sunWire2 = wire2; // animate() counter-rotates it against `wire`
-      // Radiating light-ray starburst behind everything (owner reference).
-      sunGroup.add(buildRaySprite(sunColor, 12));
-      // Faint halo only — at 0.5 it washed over the photosphere and (with
-      // bloom on top) flattened the whole sun into a white blob.
-      const glowSprite = new THREE.Sprite(new THREE.SpriteMaterial({
-        color: sunColor, transparent: true, opacity: 0.18, depthWrite: false,
-        map: (() => {
-          const cvs = document.createElement("canvas"); cvs.width = cvs.height = 256;
-          const cx2 = cvs.getContext("2d");
-          const grd = cx2.createRadialGradient(128, 128, 0, 128, 128, 128);
-          grd.addColorStop(0, "rgba(255,240,200,0.9)"); grd.addColorStop(1, "rgba(255,240,200,0)");
-          cx2.fillStyle = grd; cx2.fillRect(0, 0, 256, 256);
-          return new THREE.CanvasTexture(cvs);
-        })(),
-      }));
-      glowSprite.scale.setScalar(11);
-      sunGroup.add(glowSprite);
       const sunLight = new THREE.PointLight(sunColor, 1.4, 26);
       sunGroup.add(sunLight);
       // Nameplate floats just above the ball (under the 5.4m ceiling)
