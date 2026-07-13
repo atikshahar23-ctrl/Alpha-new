@@ -2873,14 +2873,20 @@ function SamsonixModal({ initial, onClose, onSave }) {
 function inRange(d, from, to) { if (from && d < from) return false; if (to && d > to) return false; return true; }
 const BASE = { name: "ראשון לציון (בסיס)", lat: 31.964, lng: 34.805 };
 function havKm(a, b) { const R = 6371, dLat = (b.lat - a.lat) * Math.PI / 180, dLng = (b.lng - a.lng) * Math.PI / 180; const s = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * Math.sin(dLng / 2) ** 2; return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s)); }
+// Follow the REAL order the installs were logged that day: יציאה בבוקר
+// מהבסיס (ראשון לציון) → ההתקנה הראשונה → ממנה להתקנה הבאה → ... → חזרה
+// לבסיס מהנקודה האחרונה. The old version re-ordered the stops by
+// nearest-neighbour and deduped repeat visits — not how the day was
+// actually driven, so the km came out wrong.
 function buildDayRoute(locNames) {
   const pts = locNames.map((n) => GEO[n] ? { name: n, lat: GEO[n].lat, lng: GEO[n].lng } : null).filter(Boolean);
-  const seen = {}; const uniq = pts.filter((p) => seen[p.name] ? false : (seen[p.name] = true));
-  const legs = []; let cur = BASE; const rem = [...uniq];
-  while (rem.length) { let bi = 0, bd = 1e9; rem.forEach((p, i) => { const d = havKm(cur, p); if (d < bd) { bd = d; bi = i; } }); const nx = rem.splice(bi, 1)[0]; legs.push({ name: nx.name, km: havKm(cur, nx) * 1.3 }); cur = nx; }
+  // Back-to-back installs at the same place add 0 km — keep one stop.
+  const stops = pts.filter((p, i) => i === 0 || p.name !== pts[i - 1].name);
+  const legs = []; let cur = BASE;
+  for (const p of stops) { legs.push({ name: p.name, km: havKm(cur, p) * 1.3 }); cur = p; }
   const backKm = havKm(cur, BASE) * 1.3;
   const totalKm = legs.reduce((s, l) => s + l.km, 0) + backKm;
-  return { legs, backKm, totalKm, stops: uniq.length };
+  return { legs, backKm, totalKm, stops: stops.length };
 }
 const kmMin = (km) => Math.round(km / 50 * 60);
 const ISR_BORDER = [
@@ -3036,16 +3042,23 @@ function TripsMap({ index }) {
   const trips = useMemo(() => index.filter((x) => x.location && x.date && GEO[x.location.trim()] && inRange(x.date, from, to)), [index, from, to]);
   const agg = useMemo(() => { const m = {}; trips.forEach((t) => { const k = t.location.trim(); const g = GEO[k]; if (!g) return; (m[k] = m[k] || { c: 0, g }); m[k].c++; }); return m; }, [trips]);
   const byDate = useMemo(() => {
-    const m = {}; trips.forEach((t) => { (m[t.date] = m[t.date] || []).push(t.location.trim()); });
-    return Object.entries(m).sort((a, b) => b[0].localeCompare(a[0])).map(([d, locs]) => { const cc = {}; locs.forEach((l) => cc[l] = (cc[l] || 0) + 1); return { date: d, items: Object.entries(cc) }; });
+    const m = {}; trips.forEach((t) => { (m[t.date] = m[t.date] || []).push(t); });
+    return Object.entries(m).sort((a, b) => b[0].localeCompare(a[0])).map(([d, list]) => {
+      // seq = the day's stops in the order they were actually driven:
+      // startTs when recorded; the index array is newest-first, so reversing
+      // it preserves logged order for old records without a startTs.
+      const seq = list.slice().reverse().sort((a, b) => (a.startTs || 0) - (b.startTs || 0)).map((t) => t.location.trim());
+      const cc = {}; seq.forEach((l) => cc[l] = (cc[l] || 0) + 1);
+      return { date: d, items: Object.entries(cc), seq };
+    });
   }, [trips]);
   const destCount = useMemo(() => new Set(trips.map((t) => t.location.trim())).size, [trips]);
 
   // Per-day estimated km (round trip from base via nearest-neighbour route).
   const dayStats = useMemo(() => byDate.map((d) => {
-    const r = buildDayRoute(d.items.map(([loc]) => loc));
+    const r = buildDayRoute(d.seq);
     const tripsN = d.items.reduce((s, [, n]) => s + n, 0);
-    return { date: d.date, items: d.items, km: r.totalKm, trips: tripsN };
+    return { date: d.date, items: d.items, seq: d.seq, km: r.totalKm, trips: tripsN };
   }), [byDate]);
   const totalKm = useMemo(() => dayStats.reduce((s, d) => s + d.km, 0), [dayStats]);
   const fuelCost = kmpl > 0 ? totalKm / kmpl * price : 0;
@@ -3119,13 +3132,13 @@ function TripsMap({ index }) {
             </div>
           ))}
       </div>
-      <div className="hg2-footnote" style={{ marginTop: 8 }}>הק"מ והעלות הם <b>הערכה</b> — המרחק מחושב לפי קרבה בין היעדים (יציאה וחזרה מהבסיס × מקדם דרך), ועלות הדלק לפי הצריכה והמחיר שהגדרת. גע בנקודה במפה לשם היעד; לחיצה על יום מציגה מסלול.</div>
+      <div className="hg2-footnote" style={{ marginTop: 8 }}>הק"מ והעלות הם <b>הערכה</b> — המסלול נבנה לפי סדר ההתקנות שנרשמו בפועל (יציאה מראשון לציון בבוקר, מהתקנה להתקנה, וחזרה הביתה מהנקודה האחרונה), מרחק אווירי × מקדם דרך. עלות הדלק לפי הצריכה והמחיר שהגדרת. לחיצה על יום מציגה מסלול.</div>
       {routeDay && <DayRoute day={routeDay} onClose={() => setRouteDay(null)} />}
     </div>
   );
 }
 function DayRoute({ day, onClose }) {
-  const r = useMemo(() => buildDayRoute(day.items.map(([loc]) => loc)), [day]);
+  const r = useMemo(() => buildDayRoute(day.seq || day.items.map(([loc]) => loc)), [day]);
   return (
     <div className="hg2-overlay" onClick={onClose}>
       <div className="hg2-modal" onClick={(e) => e.stopPropagation()}>
@@ -3150,7 +3163,7 @@ function DayRoute({ day, onClose }) {
               <span className="hg2-rdot" /><div><b>חזרה לראשון לציון</b><em>סיום היום</em></div>
             </div>
           </div>
-          <div className="hg2-footnote" style={{ marginTop: 12 }}>הסדר, הק"מ והזמן הם <b>הערכה</b> — סדר העצירות מחושב לפי קרבה (יציאה מראשון וחזרה אליו), המרחק לפי מקדם דרך והזמן לפי מהירות ממוצעת. אין שעות אמת בנתונים.</div>
+          <div className="hg2-footnote" style={{ marginTop: 12 }}>העצירות מוצגות <b>לפי סדר רישום ההתקנות בפועל</b> — יציאה מראשון לציון בבוקר, מהתקנה להתקנה, וחזרה הביתה מהנקודה האחרונה. הק"מ והזמן הם הערכה: מרחק אווירי × מקדם דרך, זמן לפי מהירות ממוצעת.</div>
         </div>
       </div>
     </div>
