@@ -59,9 +59,27 @@ const loadIndex = async () => {
   try { const r = await store.get("hg2:index"); return r && r.value ? JSON.parse(r.value) : []; }
   catch { try { return JSON.parse(localStorage.getItem("hg2:index") || '[]'); } catch { return []; } }
 };
-const saveIndex = (arr) => {
-  try { localStorage.setItem("hg2:index", JSON.stringify(arr)); } catch {}
-  return store.set("hg2:index", JSON.stringify(arr)).catch(() => {});
+// Writes hg2:index and THROWS if the write didn't actually stick (quota
+// exceeded, private-mode silent no-op, etc.) so callers never report success
+// on a save that was actually lost. Every install's compressed thumbnail is
+// embedded inline in this array and never pruned, so it can eventually
+// exceed the browser's localStorage quota; on first failure we retry once
+// after stripping thumbnails from all but the most recent entries to free
+// space, rather than silently dropping the whole write.
+const writeIndexJson = (json) => {
+  localStorage.setItem("hg2:index", json);
+  if (localStorage.getItem("hg2:index") !== json) throw new Error("hg2:index write did not persist");
+};
+const saveIndex = async (arr) => {
+  let json = JSON.stringify(arr);
+  try {
+    writeIndexJson(json);
+  } catch (e) {
+    const stripped = arr.map((x, i) => (i < 15 || !x.thumb ? x : { ...x, thumb: null }));
+    json = JSON.stringify(stripped);
+    writeIndexJson(json); // still throws (propagates to caller) if even this doesn't fit
+  }
+  try { await store.set("hg2:index", json); } catch {}
 };
 const loadPhoto = async (id) => { try { const r = await store.get("hg2:photo:" + id); return r && r.value ? r.value : null; } catch { return null; } };
 const loadGallery = async (id) => { try { const r = await store.get("hg2:gallery:" + id); return r && r.value ? JSON.parse(r.value) : []; } catch { return []; } };
@@ -247,7 +265,7 @@ export default function App() {
       let idx = await loadIndex();
       if (!init && idx.length === 0) {
         const { default: SEED } = await import("./seedData.json");
-        idx = SEED; await saveIndex(idx);
+        idx = SEED; try { await saveIndex(idx); } catch {}
         try { await store.set("hg2:init", JSON.stringify(true)); } catch {}
       }
       setIndex(idx); setReady(true);
@@ -258,7 +276,7 @@ export default function App() {
   const resetAll = async () => {
     if (!(await askConfirm("לנקות את כל ההתקנות מהאפליקציה ולהתחיל נקי?\n(הטבלאות שלך ב-Drive לא יושפעו)"))) return;
     for (const x of index) { await store.del("hg2:photo:" + x.id); await store.del("hg2:gallery:" + x.id); await store.del("hg2:video:" + x.id); }
-    setIndex([]); await saveIndex([]); try { await store.set("hg2:init", JSON.stringify(true)); } catch {}
+    setIndex([]); try { await saveIndex([]); } catch {} try { await store.set("hg2:init", JSON.stringify(true)); } catch {}
     showToast("האפליקציה נוקתה — מוכן לתיעוד חדש");
   };
 
@@ -274,13 +292,13 @@ export default function App() {
       hasVideo: false, videoStored: false, videoPoster: null, durationSec: 0,
     };
     const next = [entry, ...index];
-    setIndex(next); await saveIndex(next);
+    setIndex(next); try { await saveIndex(next); } catch {}
     return entry;
   };
   // Remove a draft that was abandoned via "ביטול" before any real data was entered.
   const discardDraft = async (id) => {
     const next = index.filter((x) => x.id !== id);
-    setIndex(next); await saveIndex(next);
+    setIndex(next); try { await saveIndex(next); } catch {}
     await store.del("hg2:photo:" + id); await store.del("hg2:gallery:" + id); await store.del("hg2:video:" + id);
   };
 
@@ -303,17 +321,23 @@ export default function App() {
     delete entry.status; // finalizing → no longer an in-progress draft
     const exists = index.some((x) => x.id === id);
     const next = exists ? index.map((x) => x.id === id ? entry : x) : [entry, ...index];
-    setIndex(next); await saveIndex(next);
+    setIndex(next);
     setResumeId(null);
     setView("logger");
-    showToast("ההתקנה נשמרה · " + cName(data.contractor));
+    try {
+      await saveIndex(next);
+      showToast("ההתקנה נשמרה · " + cName(data.contractor));
+    } catch (e) {
+      showToast("⚠️ השמירה נכשלה (הזיכרון מלא) — נקה תמונות/גיבוי ונסה שוב", "warn");
+    }
   };
   const removeInstall = async (id) => {
     if (!(await askConfirm("למחוק את ההתקנה?"))) return;
     const next = index.filter((x) => x.id !== id);
-    setIndex(next); await saveIndex(next);
+    setIndex(next);
     await store.del("hg2:photo:" + id); await store.del("hg2:gallery:" + id); await store.del("hg2:video:" + id);
-    setView("logger"); showToast("נמחק");
+    setView("logger");
+    try { await saveIndex(next); showToast("נמחק"); } catch (e) { showToast("⚠️ המחיקה לא נשמרה — נסה שוב", "warn"); }
   };
   const updateInstall = async (id, data, ops = {}) => {
     if (ops.galleryChanged) {
@@ -334,8 +358,12 @@ export default function App() {
     }
     let computed = null;
     setIndex((prev) => { computed = prev.map((x) => x.id === id ? { ...x, ...data } : x); return computed; });
-    if (computed) { try { await saveIndex(computed); } catch {} }
-    showToast("השינויים נשמרו");
+    if (computed) {
+      try { await saveIndex(computed); showToast("השינויים נשמרו"); }
+      catch (e) { showToast("⚠️ השמירה נכשלה (הזיכרון מלא) — נקה תמונות/גיבוי ונסה שוב", "warn"); }
+    } else {
+      showToast("השינויים נשמרו");
+    }
   };
 
   if (!ready) return <div className="hg2"><Styles /><div className="hg2-splash"><img src={LOGO} className="hg2-splash-logo" alt="" /><div className="hg2-splash-bar"><span /></div></div></div>;
