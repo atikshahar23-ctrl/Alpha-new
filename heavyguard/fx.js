@@ -23,7 +23,17 @@ export function unlockAudio() {
   return !!c;
 }
 
+// Chrome blocks navigator.vibrate (with a console error) until the user has
+// tapped the page at least once — the boot sequence fired one before any
+// gesture. Gate haptics on the first real interaction instead.
+let userTapped = false;
+if (typeof window !== "undefined") {
+  const mark = () => { userTapped = true; };
+  window.addEventListener("pointerdown", mark, { once: true, passive: true });
+  window.addEventListener("keydown", mark, { once: true, passive: true });
+}
 export function haptic(pattern) {
+  if (!userTapped) return;
   try { if (navigator.vibrate) navigator.vibrate(pattern); } catch {}
 }
 

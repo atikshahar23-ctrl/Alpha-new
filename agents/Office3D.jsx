@@ -18,7 +18,6 @@ import { DragControls } from "three/examples/jsm/controls/DragControls.js";
 import { MeshSurfaceSampler } from "three/examples/jsm/math/MeshSurfaceSampler.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import * as CANNON from "cannon-es";
-import jsPDF from "jspdf";
 import { buildCyberSunMaterial, buildCyberHalo, buildCageLines } from "../src/orb/sunShader";
 import { MessageCircle, Eye, User, Mic, VolumeX, Volume2, X, Zap, Settings as SettingsIcon, Trash2, Radio, Pause, Lock, Unlock } from "lucide-react";
 import { useDeviceProfile } from "./deviceProfiler.js";
@@ -1818,8 +1817,11 @@ function buildBookkeeperTerminal() {
 // white PDF for Mor to review. Drawn directly with jsPDF's text/line API
 // rather than an html2canvas screenshot — a rasterized canvas capture of the
 // 3D scene wouldn't read as a bookkeeping document; crisp vector text does.
-function exportBookkeeperPdf(b) {
+// jsPDF (~150KB) is loaded on demand here — the only consumer in the whole
+// agents bundle — so it stays out of the page's static graph and first paint.
+async function exportBookkeeperPdf(b) {
   b = b || {};
+  const { default: jsPDF } = await import("jspdf");
   const money = (n) => "₪" + Math.round(n || 0).toLocaleString();
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const W = doc.internal.pageSize.getWidth();

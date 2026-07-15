@@ -33,8 +33,14 @@
   <meta name="apple-mobile-web-app-title" content="Alpha" />
   <meta name="mobile-web-app-capable" content="yes" />
   <!-- Warm the default orb character + pokeball so they appear instantly. -->
-  <link rel="preload" as="fetch" type="model/gltf-binary" href="%BASE_URL%ar-models/pikachu.glb" crossorigin="anonymous" />
-  <link rel="preload" as="fetch" type="model/gltf-binary" href="%BASE_URL%ar-models/pokeball.glb" crossorigin="anonymous" />
+  <!-- prefetch (NOT preload): pikachu.glb (318KB) + pokeball.glb (2.2MB) are
+       only needed when a character is summoned, but as rel=preload they were
+       fetched at FULL priority on every boot, competing with the app bundle
+       and the intro video for bandwidth — 2.5MB of critical-path waste.
+       rel=prefetch warms the cache at idle priority after load instead, so
+       the first summon stays fast without slowing the boot at all. -->
+  <link rel="prefetch" as="fetch" type="model/gltf-binary" href="%BASE_URL%ar-models/pikachu.glb" crossorigin="anonymous" />
+  <link rel="prefetch" as="fetch" type="model/gltf-binary" href="%BASE_URL%ar-models/pokeball.glb" crossorigin="anonymous" />
   <!-- Puter removed — cloud sync is Google Drive only (the owner's Google
        account), and the AI provider is Groq/Gemini/Claude via API key. -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
