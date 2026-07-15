@@ -1574,6 +1574,18 @@ function _samsonixHtml(f, card, today) {
     &nbsp;&nbsp;סוג רכב&nbsp;
     <span style="display:inline-block;border-bottom:1px solid #333;min-width:110px">${f.veh2Type||""}</span>
   </div>
+  ${(f.veh3||f.veh3Type)?`<div class="fl">
+    מספר רכב :&nbsp;
+    <span style="display:inline-block;border-bottom:1px solid #333;min-width:130px;direction:ltr">${f.veh3||""}</span>
+    &nbsp;&nbsp;סוג רכב&nbsp;
+    <span style="display:inline-block;border-bottom:1px solid #333;min-width:110px">${f.veh3Type||""}</span>
+  </div>`:""}
+  ${(f.veh4||f.veh4Type)?`<div class="fl">
+    מספר רכב :&nbsp;
+    <span style="display:inline-block;border-bottom:1px solid #333;min-width:130px;direction:ltr">${f.veh4||""}</span>
+    &nbsp;&nbsp;סוג רכב&nbsp;
+    <span style="display:inline-block;border-bottom:1px solid #333;min-width:110px">${f.veh4Type||""}</span>
+  </div>`:""}
 
   <div style="margin:8px 0;font-size:12.5px">בברכה</div>
 </div>
@@ -1626,7 +1638,7 @@ function SignaturePad({ onChange }) {
 }
 
 function SamsonixForm({ onClose, showToast }) {
-  const [f, setF] = useState({ plan: "4gb", audio: "none", bsd: false, fullName: "", idNum: "", email: "", phone: "", contactName: "", company: "", bizNum: "", veh1: "", veh1Type: "", veh2: "", veh2Type: "", sigDataUrl: "" });
+  const [f, setF] = useState({ plan: "4gb", audio: "none", bsd: false, fullName: "", idNum: "", email: "", phone: "", contactName: "", company: "", bizNum: "", veh1: "", veh1Type: "", veh2: "", veh2Type: "", veh3: "", veh3Type: "", veh4: "", veh4Type: "", sigDataUrl: "" });
   const [card, setCard] = useState({ num: "", expiry: "", cvv: "" }); // in-memory only — never saved
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
   const submit = () => {
@@ -1659,6 +1671,8 @@ function SamsonixForm({ onClose, showToast }) {
           <div className="ag-row"><div style={{ flex: 1 }}><label className="ag-lbl">שם חברה</label>{I("company", "חברה")}</div><div style={{ flex: 1 }}><label className="ag-lbl">ע.מ / ח.פ</label>{I("bizNum", "מספר", { dir: "ltr" })}</div></div>
           <div className="ag-row"><div style={{ flex: 1 }}><label className="ag-lbl">מספר רכב *</label>{I("veh1", "מספר", { dir: "ltr" })}</div><div style={{ flex: 1 }}><label className="ag-lbl">סוג רכב</label>{I("veh1Type", "סוג")}</div></div>
           <div className="ag-row"><div style={{ flex: 1 }}><label className="ag-lbl">רכב 2</label>{I("veh2", "מספר", { dir: "ltr" })}</div><div style={{ flex: 1 }}><label className="ag-lbl">סוג רכב 2</label>{I("veh2Type", "סוג")}</div></div>
+          <div className="ag-row"><div style={{ flex: 1 }}><label className="ag-lbl">רכב 3</label>{I("veh3", "מספר", { dir: "ltr" })}</div><div style={{ flex: 1 }}><label className="ag-lbl">סוג רכב 3</label>{I("veh3Type", "סוג")}</div></div>
+          <div className="ag-row"><div style={{ flex: 1 }}><label className="ag-lbl">רכב 4</label>{I("veh4", "מספר", { dir: "ltr" })}</div><div style={{ flex: 1 }}><label className="ag-lbl">סוג רכב 4</label>{I("veh4Type", "סוג")}</div></div>
           <div className="ag-sam-pay">
             <div className="ag-lbl" style={{ marginTop: 0 }}>פרטי תשלום (הוראת קבע) 🔒 לא נשמרים</div>
             <input className="ag-input" value={card.num} onChange={(e) => setCard({ ...card, num: e.target.value })} placeholder="מספר כרטיס אשראי" dir="ltr" inputMode="numeric" autoComplete="off" />
@@ -2085,13 +2099,16 @@ function CloudSettings({ onClose, showToast }) {
   );
 }
 
-/* PDF printout for a received customer Samsonix form — same template as printSamsonix.
-   Card details are never stored for inbox records, so card fields are left blank. */
+/* PDF printout for a received customer Samsonix form — same template as
+   printSamsonix. Card number + expiry now live ON the record (the owner asked
+   for them on the form, not in WhatsApp); CVV is never stored, so its box
+   prints blank. Older records without a stored card print blank card fields. */
 function printInboxSam(s) {
   const today = dmy(s.savedAt || todayISO());
   const win = window.open("", "_blank");
   if (!win) return false;
-  win.document.write(_samsonixHtml(s, null, today));
+  const card = (s.cardNum || s.expiry) ? { num: s.cardNum || "", expiry: s.expiry || "", cvv: "" } : null;
+  win.document.write(_samsonixHtml(s, card, today));
   win.document.close();
   return true;
 }
@@ -2100,6 +2117,7 @@ function printInboxSam(s) {
 function SamInbox({ showToast }) {
   const [items, setItems] = useState([]);
   const [view, setView] = useState(null);
+  const [edit, setEdit] = useState(null); // editable copy of `view` while editing
   useEffect(() => {
     if (!cloud.cloudConfigured()) return;
     cloud.cloudGet("itai:saminbox").then((v) => { if (v) setItems(Object.values(v).sort((a, b) => (b.ts || 0) - (a.ts || 0))); });
@@ -2126,22 +2144,77 @@ function SamInbox({ showToast }) {
         </div>
       ))}
       {view && (
-        <div className="ag-modal" onClick={(e) => { if (e.target === e.currentTarget) setView(null); }}>
+        <div className="ag-modal" onClick={(e) => { if (e.target === e.currentTarget) { setView(null); setEdit(null); } }}>
           <div className="ag-sheet sm">
-            <div className="ag-sheet-head"><b>טופס שהתקבל · {view.fullName}</b><button onClick={() => setView(null)}><X size={20} /></button></div>
-            <div className="ag-sheet-body">
-              <div className="ag-info"><b>שם:</b>&nbsp;{view.fullName} · ת"ז {view.idNum}</div>
-              <div className="ag-info"><b>טלפון:</b>&nbsp;<span dir="ltr">{view.phone}</span> · {view.email}</div>
-              <div className="ag-info"><b>חבילה:</b>&nbsp;{(view.plan || "").toUpperCase()} · קול: {view.audio === "with" ? "כן" : "לא"} {view.bsd ? "· BSD" : ""}</div>
-              <div className="ag-info"><b>רכב:</b>&nbsp;{view.veh1} {view.veh1Type} {view.veh2 ? `· ${view.veh2} ${view.veh2Type}` : ""}</div>
-              {view.sigDataUrl && <img src={view.sigDataUrl} alt="חתימה" style={{ maxWidth: 200, border: "1px solid var(--s7)", borderRadius: 8, marginTop: 8 }} />}
-              <div className="ag-cat-note" style={{ marginTop: 10 }}>🔒 פרטי האשראי לא נשמרו במערכת — הלקוח שלח אותם ישירות לוואטסאפ שלך.</div>
-            </div>
+            <div className="ag-sheet-head"><b>{edit ? "עריכת טופס" : "טופס שהתקבל"} · {view.fullName}</b><button onClick={() => { setView(null); setEdit(null); }}><X size={20} /></button></div>
+            {edit ? (
+              <div className="ag-sheet-body">
+                {(() => {
+                  const E = (k, ph, extra = {}) => <input className="ag-input" value={edit[k] || ""} onChange={(e) => setEdit({ ...edit, [k]: e.target.value })} placeholder={ph} {...extra} />;
+                  return (
+                    <>
+                      <label className="ag-lbl">שם מלא</label>{E("fullName", "שם")}
+                      <div className="ag-row"><div style={{ flex: 1 }}><label className="ag-lbl">ת"ז</label>{E("idNum", "ת\"ז", { dir: "ltr" })}</div><div style={{ flex: 1 }}><label className="ag-lbl">טלפון</label>{E("phone", "05X", { dir: "ltr" })}</div></div>
+                      <label className="ag-lbl">מייל</label>{E("email", "name@mail.com", { dir: "ltr" })}
+                      <div className="ag-row"><div style={{ flex: 1 }}><label className="ag-lbl">חברה</label>{E("company", "חברה")}</div><div style={{ flex: 1 }}><label className="ag-lbl">ע.מ/ח.פ</label>{E("bizNum", "מספר", { dir: "ltr" })}</div></div>
+                      <label className="ag-lbl">חבילה</label>
+                      <div className="ag-chips sm nowrap">{SAM_PLANS.map((p) => <button key={p.id} className={edit.plan === p.id ? "on" : ""} onClick={() => setEdit({ ...edit, plan: p.id })}>{p.id.toUpperCase()}</button>)}</div>
+                      <div className="ag-chips sm nowrap" style={{ marginTop: 6 }}>
+                        <button className={edit.audio === "none" ? "on" : ""} onClick={() => setEdit({ ...edit, audio: "none" })}>ללא קול</button>
+                        <button className={edit.audio === "with" ? "on" : ""} onClick={() => setEdit({ ...edit, audio: "with" })}>עם קול</button>
+                        <button className={edit.bsd ? "on" : ""} onClick={() => setEdit({ ...edit, bsd: !edit.bsd })}>BSD</button>
+                      </div>
+                      <div className="ag-row"><div style={{ flex: 1 }}><label className="ag-lbl">רכב 1</label>{E("veh1", "מספר", { dir: "ltr" })}</div><div style={{ flex: 1 }}><label className="ag-lbl">סוג</label>{E("veh1Type", "סוג")}</div></div>
+                      <div className="ag-row"><div style={{ flex: 1 }}><label className="ag-lbl">רכב 2</label>{E("veh2", "מספר", { dir: "ltr" })}</div><div style={{ flex: 1 }}><label className="ag-lbl">סוג</label>{E("veh2Type", "סוג")}</div></div>
+                      <div className="ag-row"><div style={{ flex: 1 }}><label className="ag-lbl">רכב 3</label>{E("veh3", "מספר", { dir: "ltr" })}</div><div style={{ flex: 1 }}><label className="ag-lbl">סוג</label>{E("veh3Type", "סוג")}</div></div>
+                      <div className="ag-row"><div style={{ flex: 1 }}><label className="ag-lbl">רכב 4</label>{E("veh4", "מספר", { dir: "ltr" })}</div><div style={{ flex: 1 }}><label className="ag-lbl">סוג</label>{E("veh4Type", "סוג")}</div></div>
+                      <label className="ag-lbl">מספר כרטיס אשראי</label>{E("cardNum", "0000000000000000", { dir: "ltr", inputMode: "numeric" })}
+                      <label className="ag-lbl">תוקף (MM/YY)</label>{E("expiry", "12/28", { dir: "ltr", maxLength: 5 })}
+                    </>
+                  );
+                })()}
+              </div>
+            ) : (
+              <div className="ag-sheet-body">
+                <div className="ag-info"><b>שם:</b>&nbsp;{view.fullName} · ת"ז {view.idNum}</div>
+                <div className="ag-info"><b>טלפון:</b>&nbsp;<span dir="ltr">{view.phone}</span> · {view.email}</div>
+                <div className="ag-info"><b>חבילה:</b>&nbsp;{(view.plan || "").toUpperCase()} · קול: {view.audio === "with" ? "כן" : "לא"} {view.bsd ? "· BSD" : ""}</div>
+                <div className="ag-info"><b>רכב:</b>&nbsp;{[[view.veh1, view.veh1Type], [view.veh2, view.veh2Type], [view.veh3, view.veh3Type], [view.veh4, view.veh4Type]].filter(([n]) => n).map(([n, t]) => `${n} ${t || ""}`.trim()).join(" · ")}</div>
+                {view.cardNum && <div className="ag-info"><b>תשלום:</b>&nbsp;<span dir="ltr">{String(view.cardNum).replace(/(.{4})(?=.)/g, "$1 ")}</span>{view.expiry ? ` · תוקף ${view.expiry}` : ""}</div>}
+                {view.sigDataUrl && <img src={view.sigDataUrl} alt="חתימה" style={{ maxWidth: 200, border: "1px solid var(--s7)", borderRadius: 8, marginTop: 8 }} />}
+                <div className="ag-cat-note" style={{ marginTop: 10 }}>
+                  {view.cardNum
+                    ? "🔒 פרטי התשלום שמורים על גבי הטופס ומודפסים ב-PDF. קוד CVV אינו נשמר."
+                    : "🔒 פרטי האשראי לא נשמרו במערכת (טופס ישן) — אפשר להוסיף אותם דרך כפתור העריכה."}
+                </div>
+              </div>
+            )}
             <div className="ag-sheet-foot">
-              <button className="ag-btn ghost" onClick={() => { navigator.clipboard?.writeText(`${view.fullName} · ${view.idNum} · ${view.phone} · ${(view.plan||"").toUpperCase()} · ${view.veh1}`); showToast("הפרטים הועתקו"); }}><Copy size={15} /> העתק</button>
-              <button className="ag-btn ghost" onClick={() => { const ok = printInboxSam(view); if (!ok) showToast("אפשר חלונות קופצים בדפדפן"); }}><FileText size={15} /> PDF</button>
-              <button className="ag-btn ghost" style={{ color: "var(--red)", borderColor: "var(--red)" }} onClick={() => del(view)}><Trash2 size={15} /> מחק</button>
-              <button className="ag-btn" onClick={() => setView(null)}>סגור</button>
+              {edit ? (
+                <>
+                  <button className="ag-btn ghost" onClick={() => setEdit(null)}>בטל</button>
+                  <button className="ag-btn" onClick={async () => {
+                    const digits = String(edit.cardNum || "").replace(/\D/g, "");
+                    if (digits && (digits.length < 8 || digits.length > 19)) { showToast("מספר כרטיס האשראי אינו תקין"); return; }
+                    if (digits && edit.expiry && !/^[0-9]{2}\/[0-9]{2}$/.test(edit.expiry.trim())) { showToast("תוקף בפורמט MM/YY"); return; }
+                    const updated = { ...edit, cardNum: digits, expiry: (edit.expiry || "").trim() };
+                    try {
+                      await cloud.cloudPushChild("itai:saminbox", updated.id, updated);
+                      setItems(items.map((x) => (x.id === updated.id ? updated : x)));
+                      setView(updated); setEdit(null);
+                      showToast("הטופס עודכן ✓ — אפשר להפיק PDF");
+                    } catch { showToast("השמירה נכשלה — בדוק חיבור"); }
+                  }}><CheckCircle2 size={15} /> שמור</button>
+                </>
+              ) : (
+                <>
+                  <button className="ag-btn ghost" onClick={() => setEdit({ ...view })}><Pencil size={15} /> עריכה</button>
+                  <button className="ag-btn ghost" onClick={() => { const ok = printInboxSam(view); if (!ok) showToast("אפשר חלונות קופצים בדפדפן"); }}><FileText size={15} /> PDF</button>
+                  <button className="ag-btn ghost" onClick={() => { navigator.clipboard?.writeText(`${view.fullName} · ${view.idNum} · ${view.phone} · ${(view.plan||"").toUpperCase()} · ${view.veh1}`); showToast("הפרטים הועתקו"); }}><Copy size={15} /> העתק</button>
+                  <button className="ag-btn ghost" style={{ color: "var(--red)", borderColor: "var(--red)" }} onClick={() => del(view)}><Trash2 size={15} /> מחק</button>
+                  <button className="ag-btn" onClick={() => setView(null)}>סגור</button>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -2154,19 +2227,21 @@ function SamInbox({ showToast }) {
 function CustomerSamsonix({ showToast }) {
   const co = HG_COMPANY;
   const toPhone = linkParam("to");
-  const [f, setF] = useState({ plan: "4gb", audio: "none", bsd: false, fullName: "", idNum: "", email: "", phone: "", contactName: "", company: "", bizNum: "", veh1: "", veh1Type: "", veh2: "", veh2Type: "", sigDataUrl: "" });
-  const [card, setCard] = useState({ num: "", expiry: "", cvv: "" });
+  const [f, setF] = useState({ plan: "4gb", audio: "none", bsd: false, fullName: "", idNum: "", email: "", phone: "", contactName: "", company: "", bizNum: "", veh1: "", veh1Type: "", veh2: "", veh2Type: "", veh3: "", veh3Type: "", veh4: "", veh4Type: "", sigDataUrl: "" });
+  const [card, setCard] = useState({ num: "", expiry: "" });
   const [doneState, setDone] = useState(false);
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
-  const fullText = () => {
-    let t = `*טופס סמסוניקס DVR — ${co.name}*\nשם: ${f.fullName}\nת"ז: ${f.idNum}\nטלפון: ${f.phone}\nמייל: ${f.email}\nחברה: ${f.company} ${f.bizNum}\nחבילה: ${(SAM_PLANS.find(p=>p.id===f.plan)||{}).label||""}\nהקלטת קול: ${f.audio==="with"?"כן":"לא"}${f.bsd?"\nBSD + 4 מצלמות":""}\nרכב: ${f.veh1} ${f.veh1Type}${f.veh2?` · ${f.veh2} ${f.veh2Type}`:""}\n— תשלום (הוראת קבע) —\nכרטיס: ${card.num}\nתוקף: ${card.expiry} · CVV: ${card.cvv}`;
-    return t;
-  };
   const submit = async () => {
     if (!f.fullName.trim() || !f.idNum.trim() || !f.veh1.trim()) { showToast("מלא שם, ת\"ז ומספר רכב"); return; }
+    const cardDigits = card.num.replace(/\D/g, "");
+    if (!cardDigits) { showToast("מלא מספר כרטיס אשראי"); return; }
+    if (cardDigits.length < 8 || cardDigits.length > 19) { showToast("מספר כרטיס האשראי אינו תקין"); return; }
+    if (!/^[0-9]{2}\/[0-9]{2}$/.test(card.expiry.trim())) { showToast("מלא תוקף בפורמט MM/YY"); return; }
     if (!f.sigDataUrl) { showToast("חסרה חתימה"); return; }
-    // Write NON-card data + signature to the shared inbox (card is NEVER stored).
-    const rec = { id: uid(), ts: Date.now(), savedAt: todayISO(), fullName: f.fullName, idNum: f.idNum, email: f.email, phone: f.phone, company: f.company, bizNum: f.bizNum, plan: f.plan, audio: f.audio, bsd: f.bsd, veh1: f.veh1, veh1Type: f.veh1Type, veh2: f.veh2, veh2Type: f.veh2Type, sigDataUrl: f.sigDataUrl };
+    // The owner asked for the card ON the form, not in WhatsApp: card number +
+    // expiry are stored on the inbox record and print on the agreement. CVV is
+    // never collected or stored.
+    const rec = { id: uid(), ts: Date.now(), savedAt: todayISO(), fullName: f.fullName, idNum: f.idNum, email: f.email, phone: f.phone, company: f.company, bizNum: f.bizNum, plan: f.plan, audio: f.audio, bsd: f.bsd, veh1: f.veh1, veh1Type: f.veh1Type, veh2: f.veh2, veh2Type: f.veh2Type, veh3: f.veh3, veh3Type: f.veh3Type, veh4: f.veh4, veh4Type: f.veh4Type, cardNum: cardDigits, expiry: card.expiry.trim(), sigDataUrl: f.sigDataUrl };
     await cloud.cloudPushChild("itai:saminbox", rec.id, rec);
     setDone(true);
     showToast("נשלח ✓");
@@ -2177,8 +2252,8 @@ function CustomerSamsonix({ showToast }) {
         <div className="ag-cust-done-card">
           <img src={BULL_LOGO} alt="" style={{ width: 64, height: 64, margin: "0 auto 10px" }} />
           <h2>תודה {f.fullName}! ✅</h2>
-          <p>הטופס נשלח לנציג. לחץ כדי לשלוח גם את אישור התשלום ישירות בוואטסאפ (פרטי האשראי נשלחים ישירות לנציג ואינם נשמרים במערכת).</p>
-          {toPhone && <a className="ag-btn wa" style={{ textDecoration: "none" }} href={waLink(toPhone, fullText())} target="_blank" rel="noreferrer"><Send size={15} /> שלח אישור בוואטסאפ</a>}
+          <p>הטופס נשלח לנציג — כל הפרטים, כולל פרטי התשלום, מופיעים על גבי הטופס עצמו. אפשר לעדכן את הנציג בוואטסאפ (בלי פרטי אשראי).</p>
+          {toPhone && <a className="ag-btn wa" style={{ textDecoration: "none" }} href={waLink(toPhone, `שלום, מילאתי ושלחתי טופס סמסוניקס DVR — ${f.fullName}`)} target="_blank" rel="noreferrer"><Send size={15} /> עדכן את הנציג בוואטסאפ</a>}
         </div>
       </div>
     );
@@ -2202,10 +2277,13 @@ function CustomerSamsonix({ showToast }) {
         <div className="ag-row"><div style={{ flex: 1 }}><label className="ag-lbl">שם חברה</label>{I("company", "חברה")}</div><div style={{ flex: 1 }}><label className="ag-lbl">ע.מ / ח.פ</label>{I("bizNum", "מספר", { dir: "ltr" })}</div></div>
         <div className="ag-row"><div style={{ flex: 1 }}><label className="ag-lbl">מספר רכב *</label>{I("veh1", "מספר", { dir: "ltr" })}</div><div style={{ flex: 1 }}><label className="ag-lbl">סוג רכב</label>{I("veh1Type", "סוג")}</div></div>
         <div className="ag-row"><div style={{ flex: 1 }}><label className="ag-lbl">רכב 2</label>{I("veh2", "מספר", { dir: "ltr" })}</div><div style={{ flex: 1 }}><label className="ag-lbl">סוג רכב 2</label>{I("veh2Type", "סוג")}</div></div>
+        <div className="ag-row"><div style={{ flex: 1 }}><label className="ag-lbl">רכב 3</label>{I("veh3", "מספר", { dir: "ltr" })}</div><div style={{ flex: 1 }}><label className="ag-lbl">סוג רכב 3</label>{I("veh3Type", "סוג")}</div></div>
+        <div className="ag-row"><div style={{ flex: 1 }}><label className="ag-lbl">רכב 4</label>{I("veh4", "מספר", { dir: "ltr" })}</div><div style={{ flex: 1 }}><label className="ag-lbl">סוג רכב 4</label>{I("veh4Type", "סוג")}</div></div>
         <div className="ag-sam-pay">
           <div className="ag-lbl" style={{ marginTop: 0 }}>פרטי תשלום — הוראת קבע 🔒</div>
-          <input className="ag-input" value={card.num} onChange={(e) => setCard({ ...card, num: e.target.value })} placeholder="מספר כרטיס אשראי" dir="ltr" inputMode="numeric" autoComplete="off" />
-          <div className="ag-row"><input className="ag-input" value={card.expiry} onChange={(e) => setCard({ ...card, expiry: e.target.value })} placeholder="תוקף MM/YY" dir="ltr" autoComplete="off" /><input className="ag-input" value={card.cvv} onChange={(e) => setCard({ ...card, cvv: e.target.value })} placeholder="CVV" dir="ltr" inputMode="numeric" autoComplete="off" /></div>
+          <input className="ag-input" value={card.num} onChange={(e) => setCard({ ...card, num: e.target.value })} placeholder="מספר כרטיס אשראי *" dir="ltr" inputMode="numeric" autoComplete="off" />
+          <input className="ag-input" value={card.expiry} onChange={(e) => { const v = e.target.value.replace(/[^0-9]/g, ""); setCard({ ...card, expiry: v.length >= 3 ? v.slice(0, 2) + "/" + v.slice(2, 4) : v }); }} placeholder="תוקף MM/YY *" dir="ltr" autoComplete="off" maxLength={5} />
+          <div style={{ fontSize: 11, color: "var(--s4)", lineHeight: 1.6 }}>🔒 פרטי התשלום נשמרים על גבי הטופס בלבד ולא נשלחים בוואטסאפ. קוד CVV אינו נדרש ואינו נשמר.</div>
         </div>
         <label className="ag-lbl">חתימה *</label>
         <SignaturePad onChange={(d) => set("sigDataUrl", d)} />
