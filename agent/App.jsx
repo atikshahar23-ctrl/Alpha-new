@@ -1538,16 +1538,20 @@ function _samsonixHtml(f, card, today) {
 
   <div class="fl" style="margin-top:10px">
     מס כרטיס אשראי:&nbsp;
-    <span class="cc-seg">${g(0)}</span>&nbsp;-&nbsp;
-    <span class="cc-seg">${g(1)}</span>&nbsp;-&nbsp;
-    <span class="cc-seg">${g(2)}</span>&nbsp;-&nbsp;
-    <span class="cc-seg">${g(3)}</span>
+    <span style="direction:ltr;display:inline-block;unicode-bidi:isolate">
+      <span class="cc-seg">${g(0)}</span>&nbsp;-&nbsp;
+      <span class="cc-seg">${g(1)}</span>&nbsp;-&nbsp;
+      <span class="cc-seg">${g(2)}</span>&nbsp;-&nbsp;
+      <span class="cc-seg">${g(3)}</span>
+    </span>
   </div>
   <div class="fl">
     תוקף:&nbsp;
-    <span class="cc-seg" style="min-width:44px">${ccExp.split("/")[0]||""}</span>
-    &nbsp;/&nbsp;
-    <span class="cc-seg" style="min-width:44px">${ccExp.split("/")[1]||""}</span>
+    <span style="direction:ltr;display:inline-block;unicode-bidi:isolate">
+      <span class="cc-seg" style="min-width:44px">${ccExp.split("/")[0]||""}</span>
+      &nbsp;/&nbsp;
+      <span class="cc-seg" style="min-width:44px">${ccExp.split("/")[1]||""}</span>
+    </span>
     &nbsp;&nbsp;&nbsp;&nbsp;
     3 הספרות בגב הכרטיס(CVV):&nbsp;<span class="cc-seg" style="min-width:44px">${ccCvv||""}</span>
   </div>
@@ -2107,7 +2111,7 @@ function printInboxSam(s) {
   const today = dmy(s.savedAt || todayISO());
   const win = window.open("", "_blank");
   if (!win) return false;
-  const card = (s.cardNum || s.expiry) ? { num: s.cardNum || "", expiry: s.expiry || "", cvv: "" } : null;
+  const card = (s.cardNum || s.expiry) ? { num: s.cardNum || "", expiry: s.expiry || "", cvv: s.cvv || "" } : null;
   win.document.write(_samsonixHtml(s, card, today));
   win.document.close();
   return true;
@@ -2169,7 +2173,10 @@ function SamInbox({ showToast }) {
                       <div className="ag-row"><div style={{ flex: 1 }}><label className="ag-lbl">רכב 3</label>{E("veh3", "מספר", { dir: "ltr" })}</div><div style={{ flex: 1 }}><label className="ag-lbl">סוג</label>{E("veh3Type", "סוג")}</div></div>
                       <div className="ag-row"><div style={{ flex: 1 }}><label className="ag-lbl">רכב 4</label>{E("veh4", "מספר", { dir: "ltr" })}</div><div style={{ flex: 1 }}><label className="ag-lbl">סוג</label>{E("veh4Type", "סוג")}</div></div>
                       <label className="ag-lbl">מספר כרטיס אשראי</label>{E("cardNum", "0000000000000000", { dir: "ltr", inputMode: "numeric" })}
-                      <label className="ag-lbl">תוקף (MM/YY)</label>{E("expiry", "12/28", { dir: "ltr", maxLength: 5 })}
+                      <div className="ag-row">
+                        <div style={{ flex: 1 }}><label className="ag-lbl">תוקף (MM/YY)</label>{E("expiry", "12/28", { dir: "ltr", maxLength: 5 })}</div>
+                        <div style={{ flex: 1 }}><label className="ag-lbl">CVV</label>{E("cvv", "123", { dir: "ltr", inputMode: "numeric", maxLength: 4 })}</div>
+                      </div>
                     </>
                   );
                 })()}
@@ -2180,7 +2187,7 @@ function SamInbox({ showToast }) {
                 <div className="ag-info"><b>טלפון:</b>&nbsp;<span dir="ltr">{view.phone}</span> · {view.email}</div>
                 <div className="ag-info"><b>חבילה:</b>&nbsp;{(view.plan || "").toUpperCase()} · קול: {view.audio === "with" ? "כן" : "לא"} {view.bsd ? "· BSD" : ""}</div>
                 <div className="ag-info"><b>רכב:</b>&nbsp;{[[view.veh1, view.veh1Type], [view.veh2, view.veh2Type], [view.veh3, view.veh3Type], [view.veh4, view.veh4Type]].filter(([n]) => n).map(([n, t]) => `${n} ${t || ""}`.trim()).join(" · ")}</div>
-                {view.cardNum && <div className="ag-info"><b>תשלום:</b>&nbsp;<span dir="ltr">{String(view.cardNum).replace(/(.{4})(?=.)/g, "$1 ")}</span>{view.expiry ? ` · תוקף ${view.expiry}` : ""}</div>}
+                {view.cardNum && <div className="ag-info"><b>תשלום:</b>&nbsp;<span dir="ltr">{String(view.cardNum).replace(/(.{4})(?=.)/g, "$1 ")}</span>{view.expiry ? ` · תוקף ${view.expiry}` : ""}{view.cvv ? ` · CVV ${view.cvv}` : ""}</div>}
                 {view.sigDataUrl && <img src={view.sigDataUrl} alt="חתימה" style={{ maxWidth: 200, border: "1px solid var(--s7)", borderRadius: 8, marginTop: 8 }} />}
                 <div className="ag-cat-note" style={{ marginTop: 10 }}>
                   {view.cardNum
@@ -2228,7 +2235,7 @@ function CustomerSamsonix({ showToast }) {
   const co = HG_COMPANY;
   const toPhone = linkParam("to");
   const [f, setF] = useState({ plan: "4gb", audio: "none", bsd: false, fullName: "", idNum: "", email: "", phone: "", contactName: "", company: "", bizNum: "", veh1: "", veh1Type: "", veh2: "", veh2Type: "", veh3: "", veh3Type: "", veh4: "", veh4Type: "", sigDataUrl: "" });
-  const [card, setCard] = useState({ num: "", expiry: "" });
+  const [card, setCard] = useState({ num: "", expiry: "", cvv: "" });
   const [doneState, setDone] = useState(false);
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
   const submit = async () => {
@@ -2237,11 +2244,13 @@ function CustomerSamsonix({ showToast }) {
     if (!cardDigits) { showToast("מלא מספר כרטיס אשראי"); return; }
     if (cardDigits.length < 8 || cardDigits.length > 19) { showToast("מספר כרטיס האשראי אינו תקין"); return; }
     if (!/^[0-9]{2}\/[0-9]{2}$/.test(card.expiry.trim())) { showToast("מלא תוקף בפורמט MM/YY"); return; }
+    if (!/^[0-9]{3,4}$/.test(card.cvv.trim())) { showToast("מלא CVV (3 ספרות בגב הכרטיס)"); return; }
     if (!f.sigDataUrl) { showToast("חסרה חתימה"); return; }
-    // The owner asked for the card ON the form, not in WhatsApp: card number +
-    // expiry are stored on the inbox record and print on the agreement. CVV is
-    // never collected or stored.
-    const rec = { id: uid(), ts: Date.now(), savedAt: todayISO(), fullName: f.fullName, idNum: f.idNum, email: f.email, phone: f.phone, company: f.company, bizNum: f.bizNum, plan: f.plan, audio: f.audio, bsd: f.bsd, veh1: f.veh1, veh1Type: f.veh1Type, veh2: f.veh2, veh2Type: f.veh2Type, veh3: f.veh3, veh3Type: f.veh3Type, veh4: f.veh4, veh4Type: f.veh4Type, cardNum: cardDigits, expiry: card.expiry.trim(), sigDataUrl: f.sigDataUrl };
+    // The owner asked for the full payment details ON the form, not in
+    // WhatsApp: card number, expiry and CVV are stored on the inbox record
+    // and print on the agreement (the Samsonix standing-order form requires
+    // the CVV box filled).
+    const rec = { id: uid(), ts: Date.now(), savedAt: todayISO(), fullName: f.fullName, idNum: f.idNum, email: f.email, phone: f.phone, company: f.company, bizNum: f.bizNum, plan: f.plan, audio: f.audio, bsd: f.bsd, veh1: f.veh1, veh1Type: f.veh1Type, veh2: f.veh2, veh2Type: f.veh2Type, veh3: f.veh3, veh3Type: f.veh3Type, veh4: f.veh4, veh4Type: f.veh4Type, cardNum: cardDigits, expiry: card.expiry.trim(), cvv: card.cvv.trim(), sigDataUrl: f.sigDataUrl };
     await cloud.cloudPushChild("itai:saminbox", rec.id, rec);
     setDone(true);
     showToast("נשלח ✓");
@@ -2282,8 +2291,11 @@ function CustomerSamsonix({ showToast }) {
         <div className="ag-sam-pay">
           <div className="ag-lbl" style={{ marginTop: 0 }}>פרטי תשלום — הוראת קבע 🔒</div>
           <input className="ag-input" value={card.num} onChange={(e) => setCard({ ...card, num: e.target.value })} placeholder="מספר כרטיס אשראי *" dir="ltr" inputMode="numeric" autoComplete="off" />
-          <input className="ag-input" value={card.expiry} onChange={(e) => { const v = e.target.value.replace(/[^0-9]/g, ""); setCard({ ...card, expiry: v.length >= 3 ? v.slice(0, 2) + "/" + v.slice(2, 4) : v }); }} placeholder="תוקף MM/YY *" dir="ltr" autoComplete="off" maxLength={5} />
-          <div style={{ fontSize: 11, color: "var(--s4)", lineHeight: 1.6 }}>🔒 פרטי התשלום נשמרים על גבי הטופס בלבד ולא נשלחים בוואטסאפ. קוד CVV אינו נדרש ואינו נשמר.</div>
+          <div className="ag-row">
+            <input className="ag-input" value={card.expiry} onChange={(e) => { const v = e.target.value.replace(/[^0-9]/g, ""); setCard({ ...card, expiry: v.length >= 3 ? v.slice(0, 2) + "/" + v.slice(2, 4) : v }); }} placeholder="תוקף MM/YY *" dir="ltr" autoComplete="off" maxLength={5} />
+            <input className="ag-input" value={card.cvv} onChange={(e) => setCard({ ...card, cvv: e.target.value.replace(/[^0-9]/g, "") })} placeholder="CVV *" dir="ltr" inputMode="numeric" autoComplete="off" maxLength={4} />
+          </div>
+          <div style={{ fontSize: 11, color: "var(--s4)", lineHeight: 1.6 }}>🔒 פרטי התשלום נשמרים על גבי הטופס בלבד ולא נשלחים בוואטסאפ.</div>
         </div>
         <label className="ag-lbl">חתימה *</label>
         <SignaturePad onChange={(d) => set("sigDataUrl", d)} />

@@ -2484,9 +2484,10 @@ h2{font-size:16px;text-align:center;color:#f7c800;margin-bottom:20px}
     <div class="field"><label>מספר כרטיס אשראי *</label><input type="text" id="cardNum" inputmode="numeric" maxlength="19" placeholder="0000000000000000" style="direction:ltr;text-align:right"></div>
     <div class="row2">
       <div class="field"><label>תוקף (MM/YY) *</label><input type="text" id="expiry" inputmode="numeric" maxlength="5" placeholder="12/28" style="direction:ltr;text-align:right"></div>
-      <div class="field"><label>ת.ז. בעל הכרטיס</label><input type="text" id="cardHolderId" inputmode="numeric" placeholder="אם שונה מהמזמין"></div>
+      <div class="field"><label>CVV (בגב הכרטיס) *</label><input type="text" id="cvv" inputmode="numeric" maxlength="4" placeholder="123" style="direction:ltr;text-align:right"></div>
     </div>
-    <div style="font-size:11px;color:#666;line-height:1.7">🔒 פרטי התשלום מועברים כקוד מקודד — לא כטקסט גלוי בהודעה — ומודפסים על גבי טופס ההזמנה בלבד. קוד CVV אינו נדרש ואינו נשמר.</div>
+    <div class="field"><label>ת.ז. בעל הכרטיס</label><input type="text" id="cardHolderId" inputmode="numeric" placeholder="אם שונה מהמזמין"></div>
+    <div style="font-size:11px;color:#666;line-height:1.7">🔒 פרטי התשלום מועברים כקוד מקודד — לא כטקסט גלוי בהודעה — ומודפסים על גבי טופס ההזמנה בלבד.</div>
   </div>
 
   <div class="card">
@@ -2586,17 +2587,19 @@ function doSubmit(){
   var veh2Type=document.getElementById('veh2Type').value.trim();
   var cardNum=document.getElementById('cardNum').value.replace(/[^0-9]/g,'');
   var expiry=document.getElementById('expiry').value.trim();
+  var cvv=document.getElementById('cvv').value.replace(/[^0-9]/g,'');
   var cardHolderId=document.getElementById('cardHolderId').value.trim();
   var agree=document.getElementById('agree').checked;
   if(!veh1){alert('נא למלא לפחות מספר רכב אחד');return;}
   if(!cardNum){alert('נא למלא מספר כרטיס אשראי');return;}
   if(cardNum.length<8||cardNum.length>19){alert('מספר כרטיס האשראי אינו תקין');return;}
   if(!/^[0-9]{2}\\/[0-9]{2}$/.test(expiry)){alert('נא למלא תוקף בפורמט MM/YY');return;}
+  if(!/^[0-9]{3,4}$/.test(cvv)){alert('נא למלא CVV (3 ספרות בגב הכרטיס)');return;}
   if(!agree){alert('נא לאשר את ההזמנה');return;}
   if(!sigHasMark){document.getElementById('sigErr').style.display='block';sigCvs.scrollIntoView({behavior:'smooth',block:'center'});return;}
   document.getElementById('sigErr').style.display='none';
   var sigData=getSigDataUrl();
-  var data={formId:FORM_ID,idNum:idNum,address:address,veh1:veh1,veh1Type:veh1Type,veh2:veh2,veh2Type:veh2Type,cardNum:cardNum,expiry:expiry,cardHolderId:cardHolderId,sig:sigData,signedAt:new Date().toISOString()};
+  var data={formId:FORM_ID,idNum:idNum,address:address,veh1:veh1,veh1Type:veh1Type,veh2:veh2,veh2Type:veh2Type,cardNum:cardNum,expiry:expiry,cvv:cvv,cardHolderId:cardHolderId,sig:sigData,signedAt:new Date().toISOString()};
   var encoded=btoa(unescape(encodeURIComponent(JSON.stringify(data))));
   var sxText='SX:'+encoded;
 
@@ -2683,7 +2686,7 @@ h2{text-align:center;font-size:17px;text-decoration:underline;margin:12px 0 8px;
 <div class="sec"><div class="sectl">פרטי הלקוח</div><div class="grid">${fv("שם מלא",f.fullName)}${fv("ת.ז.",f.idNum)}${fv("כתובת",f.address)}${fv("טלפון",f.phone)}${fv("חברה",f.company)}${fv("ח.פ./עוסק",f.bizNum)}</div></div>
 <div class="sec"><div class="sectl">המסלול הנבחר</div><div class="prod">${planLabel}</div><div class="row">${box(f.audio==="with")} כולל אודיו &nbsp;&nbsp; ${box(!!f.bsd)} ב.ס.ד</div></div>
 <div class="sec"><div class="sectl">פרטי הרכב/ים</div><div class="grid">${fv("רכב 1",f.veh1)}${fv("סוג רכב 1",f.veh1Type)}${fv("רכב 2",f.veh2)}${fv("סוג רכב 2",f.veh2Type)}</div></div>
-${(f.cardNum||f.expiry)?`<div class="sec"><div class="sectl">פרטי תשלום</div><div class="grid">${fv("מספר כרטיס",maskedCard)}${fv("תוקף",f.expiry)}${f.cardHolderId?fv("ת.ז. בעל הכרטיס",f.cardHolderId):""}</div><div style="font-size:10px;color:#2d7a2d;margin-top:6px">🔒 קוד האבטחה (CVV) אינו נשמר במערכת.</div></div>`:""}
+${(f.cardNum||f.expiry)?`<div class="sec"><div class="sectl">פרטי תשלום</div><div class="grid">${fv("מספר כרטיס",`<span dir="ltr" style="unicode-bidi:isolate">${maskedCard}</span>`)}${fv("תוקף",`<span dir="ltr" style="unicode-bidi:isolate">${f.expiry||""}</span>`)}${f.cvv?fv("CVV",f.cvv):""}${f.cardHolderId?fv("ת.ז. בעל הכרטיס",f.cardHolderId):""}</div></div>`:""}
 <div class="sig">
   <div class="sigline">
     ${f.sig ? `<img src="${f.sig}" style="height:60px;max-width:220px;display:block;margin-bottom:4px;border:1px solid #ddd;border-radius:4px;background:#f8f8f8">` : '<div style="height:60px"></div>'}
@@ -2841,7 +2844,7 @@ function SamsonixModal({ initial, onClose, onSave }) {
     fullName: "", phone: "", company: "", bizNum: "",
     plan: "4gb", audio: "none", bsd: false, notes: "",
     idNum: "", address: "", veh1: "", veh1Type: "", veh2: "", veh2Type: "",
-    cardNum: "", expiry: "", cardHolderId: "",
+    cardNum: "", expiry: "", cvv: "", cardHolderId: "",
   });
   const [err, setErr] = useState("");
   const up = (k, v) => { setF((prev) => ({ ...prev, [k]: v })); setErr(""); };
@@ -2908,8 +2911,9 @@ function SamsonixModal({ initial, onClose, onSave }) {
           <Field icon={DollarSign} label="מספר כרטיס אשראי"><input value={f.cardNum || ""} onChange={(e) => up("cardNum", e.target.value)} dir="ltr" style={{ textAlign: "right" }} inputMode="numeric" placeholder="0000000000000000" /></Field>
           <div className="hg2-row2">
             <Field icon={Calendar} label="תוקף (MM/YY)"><input value={f.expiry || ""} onChange={(e) => up("expiry", e.target.value)} dir="ltr" style={{ textAlign: "right" }} placeholder="12/28" /></Field>
-            <Field icon={Hash} label="ת.ז. בעל הכרטיס"><input value={f.cardHolderId || ""} onChange={(e) => up("cardHolderId", e.target.value)} dir="ltr" style={{ textAlign: "right" }} placeholder="אם שונה" /></Field>
+            <Field icon={Hash} label="CVV"><input value={f.cvv || ""} onChange={(e) => up("cvv", e.target.value.replace(/[^0-9]/g, ""))} dir="ltr" style={{ textAlign: "right" }} inputMode="numeric" placeholder="123" /></Field>
           </div>
+          <Field icon={Hash} label="ת.ז. בעל הכרטיס"><input value={f.cardHolderId || ""} onChange={(e) => up("cardHolderId", e.target.value)} dir="ltr" style={{ textAlign: "right" }} placeholder="אם שונה" /></Field>
           {err && <div style={{ color: "#e63946", fontSize: 12, padding: "4px 2px" }}>{err}</div>}
         </div>
         <div className="hg2-modal-foot">
