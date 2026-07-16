@@ -36,9 +36,62 @@ const C_COLORS = { kobi: "#F0A22E", asi: "#2BC4F0", sagi: "#35D08A", mb: "#B98CF
 const cColor = (id) => C_COLORS[id] || "#7C8A99";
 
 /* ---------------- storage (write-through cache) ---------------- */
+// Media records (full photos, galleries, videos, invoice scans) used to live
+// in localStorage, whose ~5MB per-origin cap they blew through after enough
+// installs with photos — the "אין מקום באחסון" save failures. They now live
+// in IndexedDB (browser-managed quota, effectively gigabytes). The small
+// structured tables (hg2:index etc.) stay in localStorage so cloud sync and
+// the main dashboard keep reading them exactly as before.
+const MEDIA_RE = /^hg2:(photo|gallery|video|inv):/;
+let _idb = null;
+function idbOpen() {
+  if (_idb) return _idb;
+  _idb = new Promise((res, rej) => {
+    const rq = indexedDB.open("hg2-media", 1);
+    rq.onupgradeneeded = () => rq.result.createObjectStore("kv");
+    rq.onsuccess = () => res(rq.result);
+    rq.onerror = () => rej(rq.error);
+  });
+  return _idb;
+}
+const idbCall = (mode, fn) => idbOpen().then((db) => new Promise((res, rej) => {
+  const rq = fn(db.transaction("kv", mode).objectStore("kv"));
+  rq.onsuccess = () => res(rq.result);
+  rq.onerror = () => rej(rq.error);
+}));
+const idbGet = (k) => idbCall("readonly", (s) => s.get(k));
+const idbSet = (k, v) => idbCall("readwrite", (s) => s.put(v, k));
+const idbDel = (k) => idbCall("readwrite", (s) => s.delete(k));
+
+// One-time sweep: move every legacy media record out of localStorage into
+// IndexedDB, freeing the quota immediately so saves stop failing.
+async function migrateMediaToIdb() {
+  try {
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && MEDIA_RE.test(k)) keys.push(k);
+    }
+    for (const k of keys) {
+      const v = localStorage.getItem(k);
+      if (v == null) continue;
+      await idbSet(k, v);          // throws → stop, keep the LS copy intact
+      localStorage.removeItem(k);
+    }
+    return keys.length;
+  } catch { return 0; }
+}
+
 const mem = {};
 const store = {
   async get(k) {
+    if (MEDIA_RE.test(k)) {
+      try { const v = await idbGet(k); if (v != null) return { value: v }; } catch {}
+      // Legacy copy still in localStorage — serve it and migrate it out.
+      const ls = localStorage.getItem(k);
+      if (ls != null) { try { await idbSet(k, ls); localStorage.removeItem(k); } catch {} return { value: ls }; }
+      throw new Error("nf");
+    }
     if (typeof window !== "undefined" && window.storage) {
       try { const r = await window.storage.get(k); if (r && r.value != null) { mem[k] = r.value; return r; } } catch {}
     }
@@ -46,11 +99,21 @@ const store = {
     throw new Error("nf");
   },
   async set(k, v) {
+    if (MEDIA_RE.test(k)) {
+      await idbSet(k, v);
+      try { localStorage.removeItem(k); } catch {} // never leave a stale LS copy
+      return { value: v };
+    }
     mem[k] = v;
     if (typeof window !== "undefined" && window.storage) { try { return await window.storage.set(k, v); } catch {} }
     return { value: v };
   },
   async del(k) {
+    if (MEDIA_RE.test(k)) {
+      try { await idbDel(k); } catch {}
+      try { localStorage.removeItem(k); } catch {}
+      return;
+    }
     delete mem[k];
     if (typeof window !== "undefined" && window.storage) { try { return await window.storage.delete(k); } catch {} }
   },
@@ -278,6 +341,9 @@ export default function App() {
 
   useEffect(() => {
     (async () => {
+      // Free the localStorage quota FIRST: legacy photos/videos move to
+      // IndexedDB before anything tries to write (the "אין מקום" failures).
+      await migrateMediaToIdb();
       let init = false;
       try { const r = await store.get("hg2:init"); init = r && r.value ? JSON.parse(r.value) : false; } catch { init = false; }
       let idx = await loadIndex();
