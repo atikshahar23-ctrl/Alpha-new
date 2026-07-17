@@ -477,6 +477,7 @@ export default function App() {
         {view === "carstock" && <CarStock onBack={() => setView("hub")} showToast={showToast} />}
         {view === "invoices" && <Invoices onBack={() => setView("hub")} showToast={showToast} />}
         {view === "samsonix" && <Samsonix onBack={() => setView("hub")} showToast={showToast} />}
+        {view === "acct" && <Accountant onBack={() => setView("hub")} showToast={showToast} />}
         {view === "marketing" && <MarketingView onBack={() => setView("hub")} showToast={showToast} />}
         {view === "backup" && <Backup onBack={() => setView("hub")} showToast={showToast} />}
         {view === "finance" && <Finance index={index} onBack={() => setView("hub")} />}
@@ -550,6 +551,7 @@ function Hub({ index, go, onNew }) {
     { id: "suppliers", icon: Scale, title: "השוואת ספקים", sub: "מחירי רכש" },
     { id: "carstock", icon: Boxes, title: "מלאי ברכב", sub: "מלאי נייד" },
     { id: "invoices", icon: Receipt, title: "חשבוניות", sub: "חשבונות ותשלומים" },
+    { id: "acct", icon: Scale, title: "רואה חשבון AI", sub: "צילום הוצאה → ניתוח מס מיידי", hot: true },
     { id: "samsonix", icon: ClipboardList, title: "טפסי סמסוניק", sub: "טופס DVR · שליחה ומעקב" },
     { id: "marketing", icon: Megaphone, title: "שיווק", sub: "TikTok · Facebook" },
     { id: "leads", icon: Target, title: "ניהול לידים", sub: "6,452 לידים עסקיים", hot: true },
@@ -2454,6 +2456,202 @@ function InvoiceModal({ onClose, onSave, showToast }) {
           </div>
         </div>
         <div className="hg2-modal-foot"><button className="hg2-btn ghost" onClick={onClose}>ביטול</button><button className="hg2-btn primary" onClick={() => iv.title.trim() && onSave({ ...iv, title: iv.title.trim(), supplier: iv.supplier.trim(), amount: Number(iv.amount) || 0, thumb }, photoFull)}>שמירה</button></div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================ AI Accountant ============================ */
+// Upload a photo of an expense (receipt/invoice) → a Groq vision model reads
+// it and returns an Israeli-accountant analysis: how much is deductible for
+// VAT and for income tax, the shekel value of each, and the questions worth
+// raising with the REAL accountant — the owner's cross-check on his
+// bookkeeper. The shekel math is recomputed client-side from the model's
+// percentages so a hallucinated total can't silently skew the numbers.
+const ACCT_KEY = "hg2:acct";
+const ACCT_CFG_KEY = "hg2:acct_cfg";
+const ACCT_MODELS = ["meta-llama/llama-4-scout-17b-16e-instruct", "meta-llama/llama-4-maverick-17b-128e-instruct"];
+const acctGroqKey = () => { try { return localStorage.getItem("alpha_groq") || ""; } catch { return ""; } };
+
+async function acctAnalyze(imageDataUrl, bizType) {
+  const key = acctGroqKey();
+  if (!key) throw new Error("NO_KEY");
+  const prompt = `אתה רואה חשבון ישראלי מומחה ומנוסה. נתונה תמונה של חשבונית/קבלה של הוצאה עסקית.
+העסק: ${bizType === "company" ? 'חברה בע"מ' : "עוסק מורשה"} בתחום התקנות מיגון ואיתור לרכב כבד (עבודה עם רכב עבודה, נסיעות לאתרי לקוחות).
+קרא את המסמך וחשב לפי דיני המס בישראל (מע"מ 18%):
+1. פרטי המסמך: ספק, תאריך, סכום כולל, סכום מע"מ (אם לא מפורט — חשב מתוך הסה"כ), קטגוריית ההוצאה.
+2. אחוז ההכרה במע"מ (למשל: דלק לרכב עבודה 100%, רכב פרטי 2/3, כיבוד 0%, טלפון נייד לפי שימוש עסקי).
+3. אחוז ההכרה במס הכנסה (למשל: כיבוד 80%, ביגוד עבודה, אחזקת רכב לפי סוגו).
+4. הערות מקצועיות קצרות + אילו שאלות לשאול את הרו"ח.
+החזר JSON בלבד, בלי טקסט נוסף, במבנה המדויק:
+{"supplier":"","date":"","total":0,"vat":0,"category":"","vat_pct":100,"income_tax_pct":100,"notes":"","warnings":[],"ask_accountant":[]}`;
+  let lastErr = null;
+  for (const model of ACCT_MODELS) {
+    try {
+      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+        body: JSON.stringify({
+          model,
+          temperature: 0.2,
+          max_tokens: 900,
+          messages: [{ role: "user", content: [
+            { type: "text", text: prompt },
+            { type: "image_url", image_url: { url: imageDataUrl } },
+          ] }],
+        }),
+      });
+      if (res.status === 429) { lastErr = new Error("RATE"); continue; }
+      if (!res.ok) { lastErr = new Error("HTTP " + res.status); continue; }
+      const j = await res.json();
+      const txt = j?.choices?.[0]?.message?.content || "";
+      const m = txt.match(/\{[\s\S]*\}/);
+      if (!m) { lastErr = new Error("NO_JSON"); continue; }
+      return JSON.parse(m[0]);
+    } catch (e) { lastErr = e; }
+  }
+  throw lastErr || new Error("FAILED");
+}
+
+function Accountant({ onBack, showToast }) {
+  const [cfg, setCfg] = useState(() => { try { return JSON.parse(localStorage.getItem(ACCT_CFG_KEY) || '{"biz":"osek","rate":35}'); } catch { return { biz: "osek", rate: 35 }; } });
+  const [hist, setHist] = useState(() => { try { return JSON.parse(localStorage.getItem(ACCT_KEY) || "[]"); } catch { return []; } });
+  const [img, setImg] = useState(null);        // compressed dataURL awaiting analysis
+  const [busy, setBusy] = useState(false);
+  const [res, setRes] = useState(null);        // last analysis (record shape)
+  const [err, setErr] = useState("");
+  const fileRef = useRef(null);
+  const camRef = useRef(null);
+
+  const saveCfg = (c) => { setCfg(c); try { localStorage.setItem(ACCT_CFG_KEY, JSON.stringify(c)); } catch {} };
+  const taxRate = cfg.biz === "company" ? 23 : (cfg.rate || 35);
+
+  const onPick = async (e) => {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!f) return;
+    try { setImg(await compress(f, 1280, 0.78)); setRes(null); setErr(""); }
+    catch { showToast("לא ניתן לקרוא את התמונה", "warn"); }
+  };
+
+  const analyze = async () => {
+    if (!img || busy) return;
+    if (!acctGroqKey()) { setErr('אין מפתח Groq מוגדר. פתח את מרכז הסוכנים (Agents) → הגדרות, הזן מפתח חינמי מ-console.groq.com — והכלי יעבוד גם כאן.'); return; }
+    setBusy(true); setErr("");
+    try {
+      const a = await acctAnalyze(img, cfg.biz);
+      const total = Number(a.total) || 0;
+      // If the model didn't isolate VAT, derive it from an 18%-inclusive total.
+      const vat = Number(a.vat) > 0 ? Number(a.vat) : Math.round(total - total / 1.18);
+      const vatPct = Math.max(0, Math.min(100, Number(a.vat_pct) ?? 100));
+      const itPct = Math.max(0, Math.min(100, Number(a.income_tax_pct) ?? 100));
+      // Shekel math is OURS, not the model's: deterministic from its percentages.
+      const vatBack = Math.round(vat * vatPct / 100);
+      const base = total - vat;                       // net expense
+      const itSave = Math.round(base * itPct / 100 * taxRate / 100);
+      const rec = {
+        id: uid(), ts: Date.now(), savedAt: todayISO(),
+        supplier: a.supplier || "", docDate: a.date || "", category: a.category || "",
+        total, vat, vatPct, itPct, vatBack, itSave, benefit: vatBack + itSave,
+        notes: a.notes || "", warnings: a.warnings || [], ask: a.ask_accountant || [],
+        biz: cfg.biz, rate: taxRate,
+      };
+      // Scan goes to IndexedDB via the media route (hg2:inv:*), never localStorage.
+      try { await store.set("hg2:inv:acct_" + rec.id, img); rec.hasScan = true; } catch {}
+      const next = [rec, ...hist].slice(0, 200);
+      setHist(next); try { localStorage.setItem(ACCT_KEY, JSON.stringify(next)); } catch {}
+      setRes(rec);
+      showToast("הניתוח מוכן ✓");
+    } catch (e) {
+      setErr(e.message === "NO_KEY" ? "אין מפתח Groq מוגדר" : "הניתוח נכשל — בדוק חיבור ונסה שוב (" + (e.message || "") + ")");
+    } finally { setBusy(false); }
+  };
+
+  const openHist = async (r) => {
+    setRes(r); setErr("");
+    try { const v = await store.get("hg2:inv:acct_" + r.id); setImg(v && v.value ? v.value : null); } catch { setImg(null); }
+  };
+  const delHist = async (r) => {
+    if (!(await askConfirm("למחוק ניתוח זה?"))) return;
+    const next = hist.filter((x) => x.id !== r.id);
+    setHist(next); try { localStorage.setItem(ACCT_KEY, JSON.stringify(next)); } catch {}
+    await store.del("hg2:inv:acct_" + r.id);
+    if (res && res.id === r.id) { setRes(null); setImg(null); }
+  };
+
+  const R = res;
+  return (
+    <div className="hg2-flow">
+      <FlowHead title="רואה חשבון AI" sub="צלם הוצאה → הוצאה מוכרת · מע״מ · חיסכון מס" onBack={onBack} />
+
+      <div className="hg2-secttl"><Settings size={14} /> פרופיל מס</div>
+      <div className="hg2-row2" style={{ marginBottom: 10 }}>
+        <div className="hg2-field"><div className="hg2-flabel">סוג העסק</div>
+          <div className="hg2-seg">
+            <button className={cfg.biz === "osek" ? "on" : ""} onClick={() => saveCfg({ ...cfg, biz: "osek" })}>עוסק מורשה</button>
+            <button className={cfg.biz === "company" ? "on" : ""} onClick={() => saveCfg({ ...cfg, biz: "company" })}>חברה בע״מ</button>
+          </div>
+        </div>
+        <div className="hg2-field"><div className="hg2-flabel">{cfg.biz === "company" ? "מס חברות" : "מדרגת מס שולי"}</div>
+          {cfg.biz === "company"
+            ? <div style={{ padding: "10px 4px", fontWeight: 700 }}>23%</div>
+            : <div className="hg2-seg">{[20, 31, 35, 47].map((r) => <button key={r} className={cfg.rate === r ? "on" : ""} onClick={() => saveCfg({ ...cfg, rate: r })}>{r}%</button>)}</div>}
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+        <button className="hg2-mini" style={{ flex: 1 }} onClick={() => camRef.current?.click()}><Camera size={14} /> צלם הוצאה</button>
+        <button className="hg2-mini" style={{ flex: 1 }} onClick={() => fileRef.current?.click()}><ImageIcon size={14} /> מהגלריה</button>
+        <input ref={camRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={onPick} />
+        <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onPick} />
+      </div>
+
+      {img && (
+        <div style={{ marginBottom: 10 }}>
+          <img src={img} alt="" style={{ width: "100%", maxHeight: 260, objectFit: "contain", borderRadius: 12, border: "1px solid var(--s7)", background: "#000" }} />
+          {!R && <button className="hg2-btn primary" style={{ width: "100%", marginTop: 8 }} disabled={busy} onClick={analyze}>{busy ? "מנתח… ⏳" : "🧮 נתח כמו רואה חשבון"}</button>}
+        </div>
+      )}
+      {err && <div className="hg2-empty" style={{ padding: 14, color: "var(--amber)", fontSize: 13, lineHeight: 1.7 }}>{err}</div>}
+
+      {R && (
+        <div className="hg2-list" style={{ marginBottom: 12 }}>
+          <div className="hg2-stat" style={{ padding: 14 }}>
+            <span>{R.supplier || "ספק לא מזוהה"}{R.docDate ? " · " + R.docDate : ""}</span>
+            <b style={{ fontSize: 20 }}>{ils(R.total)}</b>
+            <span>{R.category}{R.vat ? ` · מע״מ בחשבונית ${ils(R.vat)}` : ""}</span>
+          </div>
+          <div className="hg2-stats" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
+            <div className="hg2-stat"><span>מע״מ להחזר ({R.vatPct}%)</span><b className="cy">{ils(R.vatBack)}</b></div>
+            <div className="hg2-stat"><span>חיסכון מס הכנסה ({R.itPct}% · {R.rate}%)</span><b className="cy">{ils(R.itSave)}</b></div>
+            <div className="hg2-stat"><span>סה״כ תועלת מס</span><b className="paid">{ils(R.benefit)}</b></div>
+          </div>
+          {R.notes && <div className="hg2-empty" style={{ padding: 12, fontSize: 13, lineHeight: 1.8, textAlign: "right" }}>📋 {R.notes}</div>}
+          {R.warnings && R.warnings.length > 0 && (
+            <div className="hg2-empty" style={{ padding: 12, fontSize: 12.5, lineHeight: 1.8, textAlign: "right", color: "var(--amber)" }}>
+              {R.warnings.map((w, i) => <div key={i}>⚠️ {w}</div>)}
+            </div>
+          )}
+          {R.ask && R.ask.length > 0 && (
+            <div className="hg2-empty" style={{ padding: 12, fontSize: 12.5, lineHeight: 1.8, textAlign: "right" }}>
+              <b>לשאול את הרו״ח שלך:</b>
+              {R.ask.map((q, i) => <div key={i}>❓ {q}</div>)}
+            </div>
+          )}
+          <div className="hg2-footnote">הערכת AI לבדיקה מול הרו״ח — לא ייעוץ מס מחייב. החישוב: החזר מע״מ = מע״מ × אחוז הכרה; חיסכון מס = (סכום ללא מע״מ) × אחוז הכרה × מדרגת המס שלך.</div>
+        </div>
+      )}
+
+      <div className="hg2-secttl"><Receipt size={14} /> ניתוחים שמורים{hist.length ? ` · ${hist.length}` : ""}</div>
+      <div className="hg2-list">
+        {hist.length === 0 && <div className="hg2-empty"><Scale size={28} /><div>אין ניתוחים עדיין</div><p>צלם חשבונית או קבלה וקבל ניתוח מס מיידי</p></div>}
+        {hist.map((r) => (
+          <div className="hg2-crow" key={r.id} style={{ cursor: "pointer" }} onClick={() => openHist(r)}>
+            <div className="hg2-crow-thumb"><Scale size={18} /></div>
+            <div className="hg2-crow-mid"><b>{r.supplier || r.category || "הוצאה"}</b><span>{dmy(r.savedAt)} · {ils(r.total)} · תועלת {ils(r.benefit)}</span></div>
+            <div className="hg2-crow-acts"><button className="hg2-icbtn2 d" onClick={(e) => { e.stopPropagation(); delHist(r); }}><Trash2 size={14} /></button></div>
+          </div>
+        ))}
       </div>
     </div>
   );
