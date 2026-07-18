@@ -6,7 +6,7 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
 import { pikaEmoteSpeak } from '../assistant/pikaVoice';
-import { buildCyberSunMaterial, buildCyberHalo, buildCageLines } from './sunShader';
+import { buildCyberSunMaterial, buildCyberHalo, buildCageLines, applyCyberPalette, tintCage, CYBER_GOLD, CYBER_GOAT, type CyberPalette } from './sunShader';
 import { readObj, writeObj } from '../util/batchedStore';
 import { GEN1 } from '../data/gen1';
 import { POKEMON_SPRITE_COLOR } from '../data/pokemonColors';
@@ -37,6 +37,9 @@ export interface OrbHandle {
   // the plasma core polls each frame so it ripples to real voice while
   // listening. Falls back to state-machine energy when unset / returns 0.
   attachAudioLevel?(fn: () => number): void;
+  // GOAT Protocol — swap the Alpha Brain core between the default gold look
+  // and the Argentina/Messi Albiceleste palette, live (no rebuild).
+  setGoatTheme?(on: boolean): void;
 }
 
 // ============================================================
@@ -1369,6 +1372,7 @@ interface AlphaBrainParts {
   wire2: THREE.Object3D;
   tendrils: DataTendrils;
   light: THREE.PointLight;
+  setPalette(p: CyberPalette): void;
 }
 function buildAlphaBrain(segments = 96): AlphaBrainParts {
   const gold = 0xE4BC63;
@@ -1380,21 +1384,31 @@ function buildAlphaBrain(segments = 96): AlphaBrainParts {
   // digital nodes on every lattice vertex. Same uniform contract as the
   // old photoreal sun (uTime/uAudioAmplitude), so the mount loops keep
   // driving it unchanged; the breathing pulse is derived in-shader.
+  // (buildCyberSunMaterial/buildCyberHalo self-apply the GOAT palette when
+  // alpha_mood==='goat' is already persisted — setPalette is the LIVE swap.)
   const coreMat = buildCyberSunMaterial();
   const core = new THREE.Mesh(new THREE.SphereGeometry(1.1, segments, segments), coreMat);
   group.add(core);
-  group.add(buildCyberHalo(1.1 * 1.28, coreMat.uniforms as any));
-  const wire = buildCageLines(1.55, 1, 0xE8C97A, 0.13);
+  const halo = buildCyberHalo(1.1 * 1.28, coreMat.uniforms as any);
+  group.add(halo);
+  const goat = (() => { try { return localStorage.getItem('alpha_mood') === 'goat'; } catch { return false; } })();
+  const wire = buildCageLines(1.55, 1, goat ? CYBER_GOAT.cageInner : 0xE8C97A, 0.13);
   group.add(wire);
-  const wire2 = buildCageLines(1.95, 1, 0x59E8FF, 0.12);
+  const wire2 = buildCageLines(1.95, 1, goat ? CYBER_GOAT.cageOuter : 0x59E8FF, 0.12);
   group.add(wire2);
   // Data-Stream Tendrils (denser on desktop, lighter on mobile) — kept:
   // they fly INTO the core on speech and read naturally with the new look.
   const tendrils = buildDataTendrils(segments >= 100 ? 2200 : 900, segments >= 100 ? 150 : 80);
   group.add(tendrils.group);
-  const light = new THREE.PointLight(gold, 1.6, 9);
+  const light = new THREE.PointLight(goat ? CYBER_GOAT.light : gold, 1.6, 9);
   group.add(light);
-  return { group, core, coreMat, wire, wire2, tendrils, light };
+  const setPalette = (p: CyberPalette) => {
+    applyCyberPalette(coreMat, p, halo.material as THREE.ShaderMaterial);
+    tintCage(wire, p.cageInner);
+    tintCage(wire2, p.cageOuter);
+    light.color.setHex(p.light);
+  };
+  return { group, core, coreMat, wire, wire2, tendrils, light, setPalette };
 }
 
 // Atmosphere glow shaders — volumetric, animated, multi-fresnel
@@ -3522,6 +3536,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   return {
     setEnergy(v: number) { ampTarget = Math.max(0, Math.min(1, v)); },
     attachAudioLevel(fn: () => number) { audioLevelFn = fn; },
+    setGoatTheme(on: boolean) { alphaBrain.setPalette(on ? CYBER_GOAT : CYBER_GOLD); },
     pikaEmote(emote: PikaEmote) {
       pikaEmoteSpeak(emote);
       if (emote === 'excited' || emote === 'happy') { ampTarget = 0.85; setTimeout(() => { ampTarget = 0.06; }, 1200); }
@@ -4720,6 +4735,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   return {
     setEnergy(v: number) { ampTarget = Math.max(0, Math.min(1, v)); },
     attachAudioLevel(fn: () => number) { audioLevelFn = fn; },
+    setGoatTheme(on: boolean) { alphaBrain.setPalette(on ? CYBER_GOAT : CYBER_GOLD); },
     pikaEmote(emote: PikaEmote) {
       pikaEmoteSpeak(emote);
       if (emote === 'excited' || emote === 'happy') {

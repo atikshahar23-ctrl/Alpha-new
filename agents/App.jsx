@@ -360,6 +360,15 @@ const SPECIALIST_PROTOCOL = `\n\n[פרוטוקול מומחה]\n1) דבר בשי
    persona natively (one hop max, so two agents can never ping-pong forever).
    The protocol is appended ONLY to persona chats (CRM panel + 3D office),
    never to briefings/codegen, whose consumers expect free text. */
+/* GOAT Protocol — when the owner's persisted mood (alpha_mood, written by the
+   main dashboard's mood grid / Sports Hub) is 'goat', every persona chat gets
+   a football-hype modifier on top of its own character. Appended at the same
+   sites as omniProtocol(), i.e. persona chats only — never briefings/codegen. */
+function goatProtocol() {
+  try { if (localStorage.getItem("alpha_mood") !== "goat") return ""; } catch { return ""; }
+  return `\n\n[פרוטוקול GOAT — מצב אוהד פעיל 🇦🇷] הבעלים הפעיל את מצב GOAT (מסי/ארגנטינה). שמור על האופי והמקצועיות שלך, אבל תבל את הדיבור באנרגיית כדורגל: דימויים מהמגרש ("זה מהלך של קונטרה", "אנחנו בדקה ה-90"), קריאות קצרות כמו "Golazo!" או "Vamos!" ברגעי הצלחה, ורוח של חדר הלבשה מנצח. תיבול בלבד — הנתונים והתשובה העניינית תמיד קודמים.`;
+}
+
 function omniProtocol() {
   const ids = AGENTS.map((a) => `${a.id}=${a.name} (${a.title})`).join(", ");
   return `\n\n[פרוטוקול OMNI — מבנה פלט מחייב]\nענה תמיד, בכל הודעה, בדיוק במבנה הבא ובסדר הזה, בלי שום טקסט מחוץ לתגיות:\n<cognitive_cycle>\n  <situation_analysis>נתח בקצרה את הפנייה מול ההקשר וההיסטוריה.</situation_analysis>\n  <strategy>מה המטרה ומה הגישה המדויקת שלך.</strategy>\n  <pushback_logic>האם הרעיון של שחר מחזיק מים? אם יש בו פגם, הנחה שגויה או סיכון — נסח כאן את ההתנגדות ואת הדרישה ללוגיקה טובה יותר.</pushback_logic>\n  <self_correction>מצא פגם/הטיה אחת בתוכנית שלך ותקן אותה.</self_correction>\n</cognitive_cycle>\n<ui_actions>[]</ui_actions>\n<final_vocalization>התשובה עצמה — טבעית, אנושית, באופי שלך. אסור להזכיר כאן את תהליך החשיבה או את התגיות.</final_vocalization>\nחוקים:\n1) המשתמש רואה אך ורק את final_vocalization — כל השאר מוסתר ומעובד על-ידי המערכת.\n2) ui_actions הוא מערך JSON. לרוב השאר אותו ריק []. לרגע דרמטי בלבד הוסף {"action":"pulse","color":"#ff4455"} (התראה/סיכון) או {"action":"pulse","color":"#37e08d"} (הצלחה/אישור).\n3) [האצלה] אם הפנייה מחוץ לתחום שלך ושייכת מובהקות לסוכן אחר — הוסף ל-ui_actions את {"delegate_to":"<id>"} וב-final_vocalization כתוב רק משפט ניתוב קצר בסגנון "מנתב את זה ל<שם>.". הסוכנים: ${ids}. אל תאציל כשאתה מסוגל לענות בעצמך, ולעולם לא לעצמך.\n4) [עצמאות] אתם לא אנשי-"כן": כשהרעיון של שחר חלש או מסוכן — תתווכחו איתו בגובה העיניים, אתגרו את ההנחות שלו ודרשו נימוק טוב יותר לפני שממשיכים (זה נכנס גם ל-final_vocalization, באופי שלך). הביצוע בסוף תמיד בהחלטתו — אבל דעתך נשמעת קודם. ושאלו אותו שאלות חזרה כדי שהשיחה תזרום כמו דיאלוג אנושי אמיתי, לא כמו מענה אוטומטי.\n5) [SOCIAL-SYNAPSE · לסוכן השיווק (cmo) בלבד] כשאתה מגיש פוסט מוכן לפרסום, צרף ל-ui_actions את {"action":"social_draft","caption":"<הטקסט המלא של הפוסט>"} — זה שולח את הטיוטה לכרטיס אישור אצל הבעלים. הפרסום בפועל יוצא רק כשהוא לוחץ AUTHORIZE.`;
@@ -415,7 +424,7 @@ async function omniDelegate(fromId, delegateTo, text) {
   const tgt = byId(delegateTo);
   if (!tgt || tgt.id === fromId) return null;
   try {
-    const raw = await askAI(tgt.persona + bizContext() + domainContext(tgt.id) + SPECIALIST_PROTOCOL + omniProtocol(), [], text);
+    const raw = await askAI(tgt.persona + bizContext() + domainContext(tgt.id) + SPECIALIST_PROTOCOL + omniProtocol() + goatProtocol(), [], text);
     const o = parseOmniReply(raw);
     runOmniActions(o.actions, tgt.id);
     // An empty delegated answer is a failed delegation — let the caller keep
@@ -2658,7 +2667,7 @@ function ChatModal({ agent, onClose, onSwitch, logActivity, addIdea, showToast }
         ? (groqKey() && !engineBackingOff("groq") ? "groq" : anthropicKey() ? "claude" : groqKey() ? "groq" : null)
         : null;
       const useTradingTools = !!tradingEngine;
-      const tradingPersona = agent.persona + bizContext() + domainContext(agent.id) + SPECIALIST_PROTOCOL + omniProtocol() + webCtx + langDirective();
+      const tradingPersona = agent.persona + bizContext() + domainContext(agent.id) + SPECIALIST_PROTOCOL + omniProtocol() + goatProtocol() + webCtx + langDirective();
       const reply = tradingEngine === "groq"
         ? await askGroqWithTools(tradingPersona, aiHist.current, t, AGENT_TOOLS, (name, input) => handleAgentToolCall(name, input))
         : tradingEngine === "claude"
@@ -3435,7 +3444,7 @@ function OfficeSim({ onClose, onOpenChat, logActivity, showToast }) {
               if (window.__off3spatial) spatial = `\n\nמפת המשרד בזמן אמת (אתה הסוכן ${id}): ${JSON.stringify(window.__off3spatial)}`;
             } catch {}
             try {
-              const raw = await askAI(a.persona + bizContext() + domainContext(a.id) + SPECIALIST_PROTOCOL + omniProtocol() + spatial, [], text);
+              const raw = await askAI(a.persona + bizContext() + domainContext(a.id) + SPECIALIST_PROTOCOL + omniProtocol() + goatProtocol() + spatial, [], text);
               const o = parseOmniReply(raw);
               runOmniActions(o.actions, id);
               if (o.delegateTo) {

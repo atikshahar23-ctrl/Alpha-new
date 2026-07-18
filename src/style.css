@@ -3822,6 +3822,26 @@ body.is-mobile-ui.mobile-min .fab-group{
 :root[data-theme="emerald"]{--gold:#36D399;--cyan:#a7f3d0;--fire:#5fe0ad;--purple:#3fb98a;--white-glow:#e7fff4;--line:rgba(54,211,153,.12);--glass-border:rgba(54,211,153,.16);--glass-hover:rgba(54,211,153,.08)}
 :root[data-theme="royal"]{--gold:#A78BFA;--cyan:#d6c8ff;--fire:#b89bff;--purple:#9a7ff0;--white-glow:#f1ebff;--line:rgba(167,139,250,.14);--glass-border:rgba(167,139,250,.18);--glass-hover:rgba(167,139,250,.09)}
 :root[data-theme="crimson"]{--gold:#FF6B6B;--cyan:#ffc7b8;--fire:#ff8a5b;--purple:#e06a6a;--white-glow:#fff0ec;--line:rgba(255,107,107,.13);--glass-border:rgba(255,107,107,.17);--glass-hover:rgba(255,107,107,.08)}
+/* GOAT Protocol — Argentina/Messi: Albiceleste sky-blue + white + World-Cup gold */
+:root[data-theme="goat"]{--gold:#43A1D5;--cyan:#eaf6ff;--fire:#D4AF37;--purple:#7cc0e8;--white-glow:#f4fbff;--line:rgba(67,161,213,.15);--glass-border:rgba(67,161,213,.19);--glass-hover:rgba(67,161,213,.09)}
+/* GOAT deep-skin: the main HUD chrome predates the CSS vars (hardcoded gold),
+   so the stadium look needs targeted overrides for the most visible surfaces.
+   Other mood themes deliberately stay var-only — GOAT is a full "protocol". */
+/* !important mirrors the later "deeper glass"/logo polish block, which also
+   uses !important — without it the warm gold chrome wins the cascade. */
+:root[data-theme="goat"] .hud-card{color:#E7F4FC;background:linear-gradient(160deg,rgba(10,20,28,.8),rgba(4,9,14,.6)) !important;border:1px solid rgba(67,161,213,.4) !important;box-shadow:0 4px 24px rgba(0,0,0,.55),0 0 40px rgba(67,161,213,.08),inset 0 1px 0 rgba(255,255,255,.06) !important}
+:root[data-theme="goat"] .hud-card-h{color:#7CC4EA;border-bottom-color:rgba(67,161,213,.3)}
+:root[data-theme="goat"] .hud-card-h i{background:#43A1D5;box-shadow:0 0 8px #43A1D5}
+:root[data-theme="goat"] .hud-stat{color:#b9d6e8}
+:root[data-theme="goat"] .hud-stat b.cy{color:#D4EFFF}
+:root[data-theme="goat"] .hud-line{background:linear-gradient(90deg,transparent,rgba(67,161,213,.5),transparent)}
+:root[data-theme="goat"] .hud-pbar{background:rgba(67,161,213,.16)}
+:root[data-theme="goat"] .hud-pbar i{background:linear-gradient(90deg,#2a7db0,#D4EFFF)}
+:root[data-theme="goat"] .hud-sc{background:linear-gradient(135deg,rgba(212,239,255,.2),rgba(67,161,213,.12)) !important;border:1px solid rgba(67,161,213,.5) !important;color:#D4EFFF !important;box-shadow:0 2px 12px rgba(0,0,0,.3),0 0 16px rgba(67,161,213,.1) !important}
+:root[data-theme="goat"] .hud-sc:hover{background:linear-gradient(135deg,rgba(212,239,255,.35),rgba(67,161,213,.22)) !important;border-color:#D4EFFF !important}
+:root[data-theme="goat"] .topL .wm{background:linear-gradient(135deg,#2a7db0,#43A1D5,#ffffff,#bfe6f9,#43A1D5,#2a7db0) !important;background-size:400% 100% !important;-webkit-background-clip:text !important;background-clip:text !important;-webkit-text-fill-color:transparent !important;filter:drop-shadow(0 0 28px rgba(67,161,213,.5)) !important}
+:root[data-theme="goat"] .chip{border-color:rgba(67,161,213,.2);box-shadow:0 1px 2px rgba(0,0,0,.3),0 4px 12px rgba(0,0,0,.15),0 0 0 .5px rgba(67,161,213,.08),inset 0 1px 0 rgba(255,255,255,.05),inset 0 -1px 0 rgba(0,0,0,.1)}
+:root[data-theme="goat"] .chip svg{filter:drop-shadow(0 0 3px rgba(67,161,213,.3))}
 .mood-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:6px}
 .mood-opt{display:flex;align-items:center;gap:7px;background:var(--glass-hover);border:1px solid var(--glass-border);color:var(--ink);border-radius:11px;padding:9px 10px;font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
 .mood-opt.on{border-color:var(--gold);background:rgba(218,165,32,.1);box-shadow:0 0 10px var(--glass-border)}

@@ -18,7 +18,7 @@ import { DragControls } from "three/examples/jsm/controls/DragControls.js";
 import { MeshSurfaceSampler } from "three/examples/jsm/math/MeshSurfaceSampler.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import * as CANNON from "cannon-es";
-import { buildCyberSunMaterial, buildCyberHalo, buildCageLines } from "../src/orb/sunShader";
+import { buildCyberSunMaterial, buildCyberHalo, buildCageLines, isGoatMode, CYBER_GOAT } from "../src/orb/sunShader";
 import { MessageCircle, Eye, User, Mic, VolumeX, Volume2, X, Zap, Settings as SettingsIcon, Trash2, Radio, Pause, Lock, Unlock } from "lucide-react";
 import { useDeviceProfile } from "./deviceProfiler.js";
 import RadioController from "./RadioController.jsx";
@@ -8315,16 +8315,22 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       // back-side halo, twin sharp edge-line cages with glowing nodes.
       // gain 0.75: this scene runs an UnrealBloomPass — at full brightness
       // the disc blooms and clips to a detail-less white ball.
+      // GOAT Protocol: when the owner's persisted mood is 'goat', the core
+      // material/halo self-apply the Albiceleste palette — the cages and
+      // light are colored at construction, so they pick it here. The sim
+      // remounts on every entry, so construction-time is enough (no live
+      // toggle path needed inside the office).
+      const simGoat = isGoatMode();
       const sunCoreMat = buildCyberSunMaterial(0.75);
       const sunCore = new THREE.Mesh(new THREE.SphereGeometry(1.8, 72, 72), sunCoreMat);
       sunGroup.add(sunCore);
       sunGroup.add(buildCyberHalo(1.8 * 1.28, sunCoreMat.uniforms));
       scene.userData.sunCoreMat = sunCoreMat; // animate() advances uTime + voice amp
-      const wire = buildCageLines(2.3, 1, 0xE8C97A, 0.2);
+      const wire = buildCageLines(2.3, 1, simGoat ? CYBER_GOAT.cageInner : 0xE8C97A, 0.2);
       sunGroup.add(wire);
       // Second, larger cyan cage counter-rotating against the gold one —
       // matching the main dashboard orb and the owner's reference.
-      const wire2 = buildCageLines(2.66, 1, 0x59E8FF, 0.18);
+      const wire2 = buildCageLines(2.66, 1, simGoat ? CYBER_GOAT.cageOuter : 0x59E8FF, 0.18);
       sunGroup.add(wire2);
       scene.userData.sunWire2 = wire2; // animate() counter-rotates it against `wire`
       const sunLight = new THREE.PointLight(sunColor, 1.4, 26);

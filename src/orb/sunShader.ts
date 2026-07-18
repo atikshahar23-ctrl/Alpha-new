@@ -421,12 +421,46 @@ const CYBER_PULSE_GLSL = /* glsl */`
   }
 `;
 
+// ── Palettes ─────────────────────────────────────────────────────────────
+// The cyber core's colors are uniforms (not literals) so the whole look can
+// be re-skinned live. CYBER_GOLD is the default Alpha look; CYBER_GOAT is
+// the "GOAT Protocol" Argentina/Messi theme (Albiceleste sky-blue + white +
+// World-Cup gold) the owner toggles from the mood grid / Sports Hub.
+export interface CyberPalette {
+  heart: number;      // disc-center hot color
+  mid: number;        // main body color
+  rim: number;        // limb color
+  halo: number;       // back-side halo shell
+  cageInner: number;  // inner lattice cage (lines + nodes)
+  cageOuter: number;  // outer lattice cage
+  light: number;      // point light the core casts on its surroundings
+}
+export const CYBER_GOLD: CyberPalette = {
+  heart: 0xFFFAE6, mid: 0xFFB840, rim: 0xFF7319,
+  halo: 0xFFC759, cageInner: 0xE8C97A, cageOuter: 0x59E8FF, light: 0xE4BC63,
+};
+export const CYBER_GOAT: CyberPalette = {
+  heart: 0xFFFFFF, mid: 0x43A1D5, rim: 0x1D6FA8,
+  halo: 0x7CC4EA, cageInner: 0xFFFFFF, cageOuter: 0x43A1D5, light: 0x43A1D5,
+};
+
+// Both the dashboard orb and the office sim read the same persisted mood key
+// the main UI writes (applyMood in src/ui/app.ts), so the GOAT theme follows
+// the owner across surfaces without any cross-app plumbing.
+export function isGoatMode(): boolean {
+  try { return localStorage.getItem('alpha_mood') === 'goat'; } catch { return false; }
+}
+
 export function buildCyberSunMaterial(gain = 1.0): THREE.ShaderMaterial {
+  const p = isGoatMode() ? CYBER_GOAT : CYBER_GOLD;
   return new THREE.ShaderMaterial({
     uniforms: {
       uTime: { value: 0 },
       uAudioAmplitude: { value: 0.06 },
       uGain: { value: gain },
+      uHeart: { value: new THREE.Color(p.heart) },
+      uMid: { value: new THREE.Color(p.mid) },
+      uRim: { value: new THREE.Color(p.rim) },
     },
     vertexShader: /* glsl */`
       uniform float uTime;
@@ -456,6 +490,9 @@ export function buildCyberSunMaterial(gain = 1.0): THREE.ShaderMaterial {
       uniform float uTime;
       uniform float uAudioAmplitude;
       uniform float uGain;
+      uniform vec3 uHeart;
+      uniform vec3 uMid;
+      uniform vec3 uRim;
       varying vec3 vNormalW;
       varying vec3 vViewDirW;
       varying float vDisp;
@@ -464,10 +501,10 @@ export function buildCyberSunMaterial(gain = 1.0): THREE.ShaderMaterial {
         float pulse = cyberPulse(uTime, uAudioAmplitude);
         // Facing ratio: 1 at the disc center, 0 at the limb.
         float facing = clamp(dot(normalize(vNormalW), normalize(vViewDirW)), 0.0, 1.0);
-        // White-hot heart -> saturated gold limb, like an over-exposed star.
-        vec3 heart = vec3(1.0, 0.98, 0.90);
-        vec3 gold  = vec3(1.0, 0.72, 0.25);
-        vec3 rim   = vec3(1.0, 0.45, 0.10);
+        // Hot heart -> saturated limb, like an over-exposed star.
+        vec3 heart = uHeart;
+        vec3 gold  = uMid;
+        vec3 rim   = uRim;
         vec3 col = mix(rim, gold, smoothstep(0.0, 0.4, facing));
         col = mix(col, heart, smoothstep(0.55, 0.95, facing));
         // The interpolated vertex noise doubles as granulation shading.
@@ -485,7 +522,11 @@ export function buildCyberHalo(radius: number, sharedUniforms: { uTime: { value:
   return new THREE.Mesh(
     new THREE.SphereGeometry(radius, 48, 48),
     new THREE.ShaderMaterial({
-      uniforms: { uTime: sharedUniforms.uTime as any, uAudioAmplitude: sharedUniforms.uAudioAmplitude as any },
+      uniforms: {
+        uTime: sharedUniforms.uTime as any,
+        uAudioAmplitude: sharedUniforms.uAudioAmplitude as any,
+        uColor: { value: new THREE.Color(isGoatMode() ? CYBER_GOAT.halo : CYBER_GOLD.halo) },
+      },
       side: THREE.BackSide,
       transparent: true,
       depthWrite: false,
@@ -503,13 +544,14 @@ export function buildCyberHalo(radius: number, sharedUniforms: { uTime: { value:
         precision highp float;
         uniform float uTime;
         uniform float uAudioAmplitude;
+        uniform vec3 uColor;
         varying vec3 vNormalW; varying vec3 vViewDirW;
         ${CYBER_PULSE_GLSL}
         void main() {
           float pulse = cyberPulse(uTime, uAudioAmplitude);
           float rim = 1.0 - clamp(dot(normalize(-vNormalW), normalize(vViewDirW)), 0.0, 1.0);
           float a = pow(rim, 3.4) * 0.32 * pulse;
-          gl_FragColor = vec4(vec3(1.0, 0.78, 0.35), a);
+          gl_FragColor = vec4(uColor, a);
         }
       `,
     }),
@@ -559,4 +601,23 @@ export function buildCageLines(radius: number, detail: number, color: number, no
     blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
   })));
   return group;
+}
+
+// Recolor a cage group in place (LineSegments + Points children) — cage colors
+// are fixed at construction, so a live theme swap has to walk the materials.
+export function tintCage(cage: THREE.Object3D, color: number): void {
+  cage.traverse((o) => {
+    const mat = (o as THREE.Mesh).material as { color?: THREE.Color } | undefined;
+    if (mat && mat.color) mat.color.setHex(color);
+  });
+}
+
+// Live-recolor an already-built cyber core (core gradient + optional halo).
+// Cage groups and point lights are the caller's to tint — they live outside
+// the shader materials.
+export function applyCyberPalette(coreMat: THREE.ShaderMaterial, palette: CyberPalette, haloMat?: THREE.ShaderMaterial): void {
+  (coreMat.uniforms.uHeart.value as THREE.Color).setHex(palette.heart);
+  (coreMat.uniforms.uMid.value as THREE.Color).setHex(palette.mid);
+  (coreMat.uniforms.uRim.value as THREE.Color).setHex(palette.rim);
+  if (haloMat && haloMat.uniforms.uColor) (haloMat.uniforms.uColor.value as THREE.Color).setHex(palette.halo);
 }

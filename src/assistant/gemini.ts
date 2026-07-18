@@ -75,7 +75,17 @@ USER'S ECOSYSTEM — You manage:
 
 When briefing the user, be proactive: mention overdue follow-ups, upcoming events, pending tasks, and actionable insights. Think like a chief of staff who anticipates needs.
 
-Calendar: ${upcomingText()}.${conversationBlock()}${brainBlock()}${tradingBlock()}`;
+Calendar: ${upcomingText()}.${conversationBlock()}${brainBlock()}${tradingBlock()}${goatBlock()}`;
+}
+
+// GOAT Protocol — when the owner switches the mood theme to 'goat'
+// (Argentina/Messi mode, toggled from the mood grid / Sports Hub), the
+// assistant picks up football-hype energy on top of its normal persona.
+function goatBlock(): string {
+  try {
+    if (localStorage.getItem('alpha_mood') !== 'goat') return '';
+    return `\n\n[GOAT PROTOCOL — מצב אוהד פעיל 🇦🇷] המשתמש הפעיל את מצב GOAT (מסי/ארגנטינה). שלב בתשובות אנרגיה של כדורגל: דימויים קצרים מעולם המגרש ("זו התקפה מתפרצת", "כדור למרחב"), קריאות כמו "Golazo!" או "Vamos!" ברגעי הצלחה או בשורה טובה, וגישה של קבוצה מנצחת. זה תיבול בלבד — הדיוק, הנתונים והמענה המקצועי תמיד קודמים; אל תהפוך תשובה עסקית לפטפוט ספורט.`;
+  } catch { return ''; }
 }
 
 function conversationBlock(): string {

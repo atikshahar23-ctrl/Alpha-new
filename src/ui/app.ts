@@ -189,7 +189,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v230 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v231 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip apps-chip" id="appsBtn" title="האפליקציות שלי" aria-label="האפליקציות שלי">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="12" cy="19" r="2"/><circle cx="19" cy="19" r="2"/></svg>
@@ -246,6 +246,10 @@ export function mountApp(root: HTMLElement) {
           <a class="ad-item" href="${import.meta.env.BASE_URL}agent.html">
             <span class="ad-ic" style="--c:#68D391"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg></span>
             <b>עוזר CRM</b><em>הצעות מחיר · לקוחות</em>
+          </a>
+          <a class="ad-item" href="#" id="sportsHubBtn">
+            <span class="ad-ic" style="--c:#43A1D5"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="10"/><path d="M12 7l4.2 3-1.6 5h-5.2L7.8 10z"/><path d="M12 2v5M20.5 8.5 16.2 10M19 19.5 14.6 15M9.4 15 5 19.5M3.5 8.5 7.8 10"/></svg></span>
+            <b>Sports Hub</b><em>מסי · מכבי ת״א · ריאל · NBA</em>
           </a>
         </div>
       </aside>
@@ -626,6 +630,7 @@ export function mountApp(root: HTMLElement) {
             <button class="mood-opt" data-mood="emerald"><span class="mood-dot" style="background:#36D399"></span>אמרלד</button>
             <button class="mood-opt" data-mood="royal"><span class="mood-dot" style="background:#A78BFA"></span>מלכותי</button>
             <button class="mood-opt" data-mood="crimson"><span class="mood-dot" style="background:#FF6B6B"></span>אש</button>
+            <button class="mood-opt" data-mood="goat"><span class="mood-dot" style="background:linear-gradient(90deg,#43A1D5 33%,#fff 33%,#fff 67%,#43A1D5 67%)"></span>⚽ GOAT</button>
           </div>
         </div>
 
@@ -2444,16 +2449,117 @@ export function mountApp(root: HTMLElement) {
   };
 
   // ── Mood color themes — recolor the whole UI via a data-theme attribute ──
+  // 'goat' is the GOAT Protocol (Argentina/Messi): besides the CSS palette it
+  // live-recolors the 3D core (the office sim + assistant prompts read the
+  // same persisted alpha_mood key on their own).
   const applyMood = (mood: string) => {
     document.documentElement.setAttribute('data-theme', mood);
     localStorage.setItem('alpha_mood', mood);
     document.querySelectorAll('#moodGrid .mood-opt').forEach(b =>
       b.classList.toggle('on', (b as HTMLElement).dataset.mood === mood));
+    try { orb.setGoatTheme?.(mood === 'goat'); } catch {}
   };
   applyMood(localStorage.getItem('alpha_mood') || 'gold');
   document.querySelectorAll('#moodGrid .mood-opt').forEach(btn => {
     (btn as HTMLElement).onclick = () => { applyMood((btn as HTMLElement).dataset.mood || 'gold'); try { navigator.vibrate?.(state.haptics ? 12 : 0); } catch {} };
   });
+
+  // ── Sports Hub — GOAT Protocol toggle + football/NBA cards ─────────────
+  // Cards render instantly from curated data (works fully offline); live
+  // lines (next/last match, NBA scores) fill in from TheSportsDB's free
+  // tier afterwards and simply stay hidden when the network/API fails.
+  {
+    const goatOn = () => localStorage.getItem('alpha_mood') === 'goat';
+    const esc = (s: unknown) => String(s ?? '').replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c] as string));
+    const sdb = async (path: string): Promise<any | null> => {
+      // Free/test API keys — try the current one first, fall back to the old.
+      for (const key of ['123', '3']) {
+        const ctl = new AbortController();
+        const t = setTimeout(() => ctl.abort(), 8000);
+        try {
+          const r = await fetch(`https://www.thesportsdb.com/api/v1/json/${key}/${path}`, { signal: ctl.signal });
+          if (r.ok) { clearTimeout(t); return await r.json(); }
+        } catch {}
+        clearTimeout(t);
+      }
+      return null;
+    };
+    const card = (accent: string, flag: string, title: string, sub: string, body: string) => `
+      <div style="background:var(--glass-hover);border:1px solid var(--glass-border);border-right:3px solid ${accent};border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:20px">${flag}</span>
+          <div><b style="font-size:14px">${title}</b><div style="font-size:11px;color:var(--dim)">${sub}</div></div>
+        </div>
+        <div style="font-size:12.5px;line-height:1.7">${body}</div>
+      </div>`;
+    const liveSlot = (id: string) => `<div id="${id}" style="font-size:12px;color:var(--dim);margin-top:2px">⏳ טוען נתונים חיים…</div>`;
+    const fillTeam = async (elId: string, teamName: string) => {
+      const d = await sdb('searchteams.php?t=' + encodeURIComponent(teamName));
+      const t = (d?.teams || []).find((x: any) => x.strSport === 'Soccer');
+      const el = document.getElementById(elId);
+      if (!el) return;
+      if (!t) { el.textContent = 'נתונים חיים לא זמינים כרגע.'; return; }
+      let matchLine = '';
+      const nxt = await sdb('eventsnext.php?id=' + t.idTeam);
+      const ev = nxt?.events?.[0];
+      if (ev) matchLine = `<div>⚽ המשחק הבא: <b>${esc(ev.strEvent)}</b> · ${esc(ev.dateEvent)}</div>`;
+      else {
+        const last = await sdb('eventslast.php?id=' + t.idTeam);
+        const lv = last?.results?.[0];
+        if (lv) matchLine = `<div>⚽ משחק אחרון: <b>${esc(lv.strEvent)}</b>${lv.intHomeScore != null ? ` · <b style="direction:ltr;unicode-bidi:isolate">${esc(lv.intHomeScore)}-${esc(lv.intAwayScore)}</b>` : ''}</div>`;
+      }
+      const el2 = document.getElementById(elId);
+      if (el2) el2.innerHTML = `<div>🏟️ ${esc(t.strStadium)} · ${esc(t.strLeague)}${t.intFormedYear ? ` · נוסד ${esc(t.intFormedYear)}` : ''}</div>${matchLine}`;
+    };
+    const fillNBA = async () => {
+      const d = await sdb('eventspastleague.php?id=4387');
+      const el = document.getElementById('shNBA');
+      if (!el) return;
+      const evs = (d?.events || []).filter((e: any) => e && e.strEvent).slice(0, 4);
+      if (!evs.length) { el.textContent = 'תוצאות חיות לא זמינות כרגע.'; return; }
+      el.innerHTML = evs.map((ev: any) =>
+        `<div style="display:flex;justify-content:space-between;gap:8px"><span>${esc(ev.strEvent)}</span><b style="direction:ltr;unicode-bidi:isolate">${ev.intHomeScore ?? '–'}:${ev.intAwayScore ?? '–'}</b></div>`).join('');
+    };
+    const renderSportsHub = () => {
+      const on = goatOn();
+      $('winBody').innerHTML = `
+        <div class="pad" style="display:flex;flex-direction:column;gap:12px">
+          <button id="goatToggle" style="all:unset;cursor:pointer;text-align:center;padding:13px 16px;border-radius:14px;font-weight:800;font-size:14px;letter-spacing:.5px;
+            background:${on ? 'linear-gradient(135deg,#43A1D5,#2a7db0)' : 'var(--glass-hover)'};color:${on ? '#fff' : 'var(--ink)'};
+            border:1px solid ${on ? '#43A1D5' : 'var(--glass-border)'};box-shadow:${on ? '0 0 18px rgba(67,161,213,.45)' : 'none'}">
+            ${on ? '⚽ GOAT PROTOCOL פעיל — 🇦🇷 VAMOS! (לחץ לכיבוי)' : '⚽ הפעל GOAT PROTOCOL — מצב מסי/ארגנטינה'}
+          </button>
+          <div style="font-size:11.5px;color:var(--dim);text-align:center">מצב GOAT צובע את כל הממשק, את ליבת התלת-ממד ואת אישיות הסוכנים בצבעי הנבחרת 🇦🇷</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(235px,1fr));gap:12px">
+            ${card('#43A1D5', '🐐', 'Lionel Messi · The GOAT', 'La Pulga · מספר 10', `
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 10px">
+                <span>🏆 מונדיאל</span><b>2022 🇦🇷</b>
+                <span>✨ כדורי זהב</span><b>8</b>
+                <span>🏆 ליגת האלופות</span><b>4</b>
+                <span>🥇 תארים בקריירה</span><b>45+</b>
+                <span>⚽ שערים בקריירה</span><b>850+</b>
+              </div>`)}
+            ${card('#FFD400', '🟡', 'מכבי תל אביב', 'ליגת העל · האלופה', liveSlot('shMaccabi'))}
+            ${card('#D4AF37', '⚪', 'ריאל מדריד', 'Los Blancos · לה ליגה', liveSlot('shReal'))}
+            ${card('#C9082A', '🏀', 'NBA', 'תוצאות אחרונות', liveSlot('shNBA'))}
+          </div>
+        </div>`;
+      const tg = document.getElementById('goatToggle');
+      if (tg) tg.onclick = () => {
+        applyMood(goatOn() ? 'gold' : 'goat');
+        try { navigator.vibrate?.(state.haptics ? 20 : 0); } catch {}
+        renderSportsHub();
+      };
+      fillTeam('shMaccabi', 'Maccabi Tel Aviv');
+      fillTeam('shReal', 'Real Madrid');
+      fillNBA();
+    };
+    $('sportsHubBtn').addEventListener('click', (e) => {
+      e.preventDefault();
+      openWin('⚽ Sports Hub');
+      renderSportsHub();
+    });
+  }
 
   // (The mobile "minimal mode" — panels auto-hiding after 10s, leaving only a
   //  central record button — was removed per user request. On mobile the panels
