@@ -40,6 +40,9 @@ export interface OrbHandle {
   // GOAT Protocol — swap the Alpha Brain core between the default gold look
   // and the Argentina/Messi Albiceleste palette, live (no rebuild).
   setGoatTheme?(on: boolean): void;
+  // Oriki Protocol — kid-safe mode: bright toon post-process + tap-to-bounce
+  // toy vehicles, toggled live (no rebuild).
+  setOrikiMode?(on: boolean): void;
 }
 
 // ============================================================
@@ -112,6 +115,139 @@ const CHROMATIC_SHOCKWAVE_SHADER = {
     }
   `,
 };
+
+// Posterize/saturation-boost pass — the "Oriki Protocol" kid-safe mode's
+// bright cartoonish look. uStrength lerps 0→1 on entry/exit rather than a
+// hard cut, same pattern as CHROMATIC_SHOCKWAVE_SHADER's decay above.
+const TOON_POSTERIZE_SHADER = {
+  uniforms: { tDiffuse: { value: null as THREE.Texture | null }, uStrength: { value: 0.0 } },
+  vertexShader: /* glsl */`
+    varying vec2 vUv;
+    void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+  `,
+  fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse;
+    uniform float uStrength;
+    varying vec2 vUv;
+    void main() {
+      vec4 texel = texture2D(tDiffuse, vUv);
+      vec3 hsv = texel.rgb;
+      float maxc = max(max(hsv.r, hsv.g), hsv.b);
+      vec3 boosted = mix(vec3(maxc), texel.rgb, 1.6); // punch up saturation
+      const float bands = 5.0;
+      vec3 toon = floor(boosted * bands) / bands;
+      gl_FragColor = vec4(mix(texel.rgb, clamp(toon, 0.0, 1.0), uStrength), texel.a);
+    }
+  `,
+};
+
+// Hard-banded 3-tone gradient for MeshToonMaterial — flat cel-shaded toy look.
+let _toonGradientMap: THREE.DataTexture | null = null;
+function toonGradientMap(): THREE.DataTexture {
+  if (_toonGradientMap) return _toonGradientMap;
+  const data = new Uint8Array([70, 70, 70, 255, 165, 165, 165, 255, 255, 255, 255, 255]);
+  const tex = new THREE.DataTexture(data, 3, 1, THREE.RGBAFormat);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  tex.needsUpdate = true;
+  _toonGradientMap = tex;
+  return tex;
+}
+
+// One friendly original toy rescue vehicle — round cartoon eyes on the hood,
+// bright toon-shaded body. Deliberately an original design (not a licensed
+// character) built the same way this file bakes every other canvas decal.
+function buildToyVehicle(bodyColor: number, capColor: number): THREE.Group {
+  const gradientMap = toonGradientMap();
+  const g = new THREE.Group();
+  const bodyMat = new THREE.MeshToonMaterial({ color: bodyColor, gradientMap });
+  const capMat = new THREE.MeshToonMaterial({ color: capColor, gradientMap });
+  const wheelMat = new THREE.MeshToonMaterial({ color: 0x1c1c1c, gradientMap });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.28, 0.34), bodyMat);
+  body.position.y = 0.22;
+  g.add(body);
+  const cab = new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.22, 0.30), capMat);
+  cab.position.set(-0.06, 0.42, 0);
+  g.add(cab);
+  const wheelGeo = new THREE.CylinderGeometry(0.11, 0.11, 0.08, 14);
+  ([[-0.2, -0.19], [0.2, -0.19], [-0.2, 0.19], [0.2, 0.19]] as [number, number][]).forEach(([x, z]) => {
+    const w = new THREE.Mesh(wheelGeo, wheelMat);
+    w.rotation.z = Math.PI / 2;
+    w.position.set(x, 0.11, z);
+    g.add(w);
+  });
+  const eyeCvs = document.createElement('canvas'); eyeCvs.width = 128; eyeCvs.height = 64;
+  const ectx = eyeCvs.getContext('2d')!;
+  ectx.fillStyle = '#fff';
+  ectx.beginPath(); ectx.ellipse(38, 32, 22, 22, 0, 0, PI2); ectx.ellipse(90, 32, 22, 22, 0, 0, PI2); ectx.fill();
+  ectx.fillStyle = '#20242c';
+  ectx.beginPath(); ectx.ellipse(42, 30, 10, 10, 0, 0, PI2); ectx.ellipse(94, 30, 10, 10, 0, 0, PI2); ectx.fill();
+  const eyeTex = new THREE.CanvasTexture(eyeCvs);
+  const eyes = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.17), new THREE.MeshBasicMaterial({ map: eyeTex, transparent: true }));
+  eyes.position.set(0.32, 0.25, 0);
+  eyes.rotation.y = PI / 2;
+  g.add(eyes);
+  g.scale.setScalar(0.85);
+  return g;
+}
+
+interface ToyPhysics { mesh: THREE.Group; vel: THREE.Vector3; angVel: number; spawn: THREE.Vector3; }
+interface ToyPlayground {
+  group: THREE.Group;
+  update(dt: number): void;
+  handleTap(ndcX: number, ndcY: number, camera: THREE.Camera): void;
+  setActive(on: boolean): void;
+}
+// Three original toy rescue vehicles that bounce with simple gravity + floor-
+// bounce physics when tapped — the "Oriki Protocol" play toy for a locked-
+// down kid-safe mode. Self-contained: mounts add/remove its own raycast tap
+// listener only while active, so it never competes with normal-mode gestures.
+function createToyPlayground(): ToyPlayground {
+  const group = new THREE.Group();
+  group.position.set(0, -1.35, 1.4);
+  group.visible = false;
+  const specs: [number, number][] = [[0x3E8EF7, 0xffffff], [0xFF5A4E, 0xffe27a], [0xFFC93C, 0x2fbf71]];
+  const toys: ToyPhysics[] = specs.map((c, i) => {
+    const mesh = buildToyVehicle(c[0], c[1]);
+    const spawn = new THREE.Vector3((i - 1) * 1.15, 0, 0);
+    mesh.position.copy(spawn);
+    group.add(mesh);
+    return { mesh, vel: new THREE.Vector3(), angVel: 0, spawn };
+  });
+  const raycaster = new THREE.Raycaster();
+  const GRAVITY = 6.4;
+  const update = (dt: number) => {
+    toys.forEach((t) => {
+      t.vel.y -= GRAVITY * dt;
+      t.mesh.position.addScaledVector(t.vel, dt);
+      t.mesh.rotation.y += t.angVel * dt;
+      if (t.mesh.position.y < 0) {
+        t.mesh.position.y = 0;
+        if (t.vel.y < 0) t.vel.y *= -0.55;
+        t.vel.x *= 0.85; t.vel.z *= 0.85; t.angVel *= 0.85;
+        if (Math.abs(t.vel.y) < 0.15 && Math.abs(t.vel.x) < 0.05 && Math.abs(t.vel.z) < 0.05) { t.vel.set(0, 0, 0); t.angVel = 0; }
+      }
+    });
+  };
+  const handleTap = (ndcX: number, ndcY: number, cam: THREE.Camera) => {
+    if (!group.visible) return;
+    raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), cam);
+    const hits = raycaster.intersectObjects(group.children, true);
+    if (!hits.length) return;
+    let obj: THREE.Object3D | null = hits[0].object;
+    while (obj && obj.parent !== group) obj = obj.parent;
+    const toy = toys.find((t) => t.mesh === obj);
+    if (toy) {
+      toy.vel.set((Math.random() - 0.5) * 2.6, 3.6 + Math.random() * 1.3, (Math.random() - 0.5) * 1.6);
+      toy.angVel = (Math.random() - 0.5) * 10;
+    }
+  };
+  const setActive = (on: boolean) => {
+    group.visible = on;
+    if (on) toys.forEach((t) => { t.mesh.position.copy(t.spawn); t.mesh.rotation.set(0, 0, 0); t.vel.set(0, 0, 0); t.angVel = 0; });
+  };
+  return { group, update, handleTap, setActive };
+}
 
 // ============================================================
 // Grid floor shaders — upgraded with data flow + holographic flicker
@@ -2914,6 +3050,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   let mBloom: UnrealBloomPass | null = null;
   let mFxaa: ShaderPass | null = null;
   let mChroma: ShaderPass | null = null;
+  let mToon: ShaderPass | null = null;
   let useComposer = false;
   try {
     const pr0 = Math.min(window.devicePixelRatio || 1, 2);
@@ -2938,6 +3075,10 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     // smooths the split-channel edges instead of sharpening them.
     mChroma = new ShaderPass(CHROMATIC_SHOCKWAVE_SHADER);
     composer.addPass(mChroma);
+    // Oriki Protocol toon pass — before FXAA so the posterize bands still
+    // get smoothed, off (uStrength 0) outside kid-safe mode.
+    mToon = new ShaderPass(TOON_POSTERIZE_SHADER);
+    composer.addPass(mToon);
     mFxaa = new ShaderPass(FXAAShader);
     composer.addPass(mFxaa);
     composer.addPass(new OutputPass());
@@ -3015,6 +3156,19 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   let mobileCurrentChar = 'alphabrain';
   let mobileCurrentModel: THREE.Object3D | null = null;
   let mobPFX: PFXState | null = null;
+
+  // Oriki Protocol — kid-safe toy vehicles, spawned into the scene but
+  // hidden/inert until setOrikiMode(true).
+  const toyPlayground = createToyPlayground();
+  group.add(toyPlayground.group);
+  let oriToonTarget = 0;
+  let oriActive = false;
+  const onOriTap = (e: PointerEvent) => {
+    const rect = renderer.domElement.getBoundingClientRect();
+    const ndcX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    const ndcY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    toyPlayground.handleTap(ndcX, ndcY, camera);
+  };
 
   // ── JET-TURBINE IGNITION SEQUENCE — one-shot OS boot-up cinematic ──
   const ignitionShake = createCameraShake();
@@ -3517,6 +3671,10 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
       const cfg = POKEMON_PFX[mobileCurrentChar]; if (cfg) updateParticles(mobPFX, cfg);
     }
 
+    // Oriki Protocol — toy physics + toon-look lerp, both no-ops when off.
+    if (oriActive) toyPlayground.update(dt);
+    if (mToon) mToon.uniforms.uStrength.value += (oriToonTarget - mToon.uniforms.uStrength.value) * Math.min(1, dt * 4);
+
     if (useComposer && composer && !perfFast && qTier === 0) {
       try { composer.render(); } catch { useComposer = false; }
     } else {
@@ -3537,6 +3695,13 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     setEnergy(v: number) { ampTarget = Math.max(0, Math.min(1, v)); },
     attachAudioLevel(fn: () => number) { audioLevelFn = fn; },
     setGoatTheme(on: boolean) { alphaBrain.setPalette(on ? CYBER_GOAT : CYBER_GOLD); },
+    setOrikiMode(on: boolean) {
+      oriActive = on;
+      oriToonTarget = on ? 1 : 0;
+      toyPlayground.setActive(on);
+      if (on) renderer.domElement.addEventListener('pointerdown', onOriTap);
+      else renderer.domElement.removeEventListener('pointerdown', onOriTap);
+    },
     pikaEmote(emote: PikaEmote) {
       pikaEmoteSpeak(emote);
       if (emote === 'excited' || emote === 'happy') { ampTarget = 0.85; setTimeout(() => { ampTarget = 0.06; }, 1200); }
@@ -3552,6 +3717,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
       ignitionGestureCleanup();
       ignitionAudio?.dispose();
       window.removeEventListener('resize', resize);
+      renderer.domElement.removeEventListener('pointerdown', onOriTap);
       if (envMap) envMap.dispose();
       if (composer) composer.dispose();
       renderer.dispose();
@@ -3723,6 +3889,10 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   const chroma = new ShaderPass(CHROMATIC_SHOCKWAVE_SHADER);
   composer.addPass(chroma);
 
+  // Oriki Protocol toon pass — off (uStrength 0) outside kid-safe mode.
+  const toonPass = new ShaderPass(TOON_POSTERIZE_SHADER);
+  composer.addPass(toonPass);
+
   // FXAA — screen-space AA needed because MSAA is lost in EffectComposer
   const fxaa = new ShaderPass(FXAAShader);
   composer.addPass(fxaa);
@@ -3789,6 +3959,17 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   // The default centerpiece is the ALPHA BRAIN hologram, not a GLTF character —
   // no model to load, so pikaGroup just stays hidden until the user picks one.
   const alphaBrain = buildAlphaBrain(isMobile ? 64 : 128);
+  // Oriki Protocol — kid-safe toy vehicles, hidden/inert until setOrikiMode(true).
+  const toyPlayground = createToyPlayground();
+  group.add(toyPlayground.group);
+  let oriToonTarget = 0;
+  let oriActive = false;
+  const onOriTap = (e: PointerEvent) => {
+    const rect = renderer.domElement.getBoundingClientRect();
+    const ndcX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    const ndcY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    toyPlayground.handleTap(ndcX, ndcY, camera);
+  };
   group.add(alphaBrain.group);
   pikaGroup.visible = false;
   let deskCurrentChar = 'alphabrain';
@@ -4717,6 +4898,10 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       const cfg = POKEMON_PFX[deskCurrentChar]; if (cfg) updateParticles(deskPFX, cfg);
     }
 
+    // Oriki Protocol — toy physics + toon-look lerp, both no-ops when off.
+    if (oriActive) toyPlayground.update(dt);
+    toonPass.uniforms.uStrength.value += (oriToonTarget - toonPass.uniforms.uStrength.value) * Math.min(1, dt * 4);
+
     // Fast mode skips the whole post-processing pipeline (bloom/vignette/FXAA) —
     // the single biggest GPU cost — and renders the scene straight to screen.
     if (perfFast || qTier > 0) renderer.render(scene, camera);
@@ -4736,6 +4921,13 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     setEnergy(v: number) { ampTarget = Math.max(0, Math.min(1, v)); },
     attachAudioLevel(fn: () => number) { audioLevelFn = fn; },
     setGoatTheme(on: boolean) { alphaBrain.setPalette(on ? CYBER_GOAT : CYBER_GOLD); },
+    setOrikiMode(on: boolean) {
+      oriActive = on;
+      oriToonTarget = on ? 1 : 0;
+      toyPlayground.setActive(on);
+      if (on) renderer.domElement.addEventListener('pointerdown', onOriTap);
+      else renderer.domElement.removeEventListener('pointerdown', onOriTap);
+    },
     pikaEmote(emote: PikaEmote) {
       pikaEmoteSpeak(emote);
       if (emote === 'excited' || emote === 'happy') {
@@ -4762,6 +4954,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       ignitionAudio?.dispose();
       window.removeEventListener('resize', resize);
       window.removeEventListener('mousemove', onDeskMouseMove);
+      renderer.domElement.removeEventListener('pointerdown', onOriTap);
       if (envMap) envMap.dispose();
       renderer.dispose();
       composer.dispose();

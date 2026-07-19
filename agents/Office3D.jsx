@@ -4531,11 +4531,239 @@ const SpeedBlurShader = {
     }`,
 };
 
+// ═══════════════════════════════════════════════════════════════════════
+// GOAT PROTOCOL — La Scaloneta corner of the Hangar (Argentina flags + a
+// Hall-of-Fame squad corridor + the Messi shrine). Built once, only when
+// isGoatMode() is true when the Hangar mounts (the overlay remounts fresh
+// every time it's opened, same as the office core reading the same flag —
+// see agents/Office3D.jsx's SUN_SPOT block — so no live-toggle path is
+// needed here). Everything is procedural canvas/geometry, matching every
+// other set-piece in this file — no external assets, nothing licensed.
+// ═══════════════════════════════════════════════════════════════════════
+function buildArgentinaFlagTexture() {
+  const cvs = document.createElement("canvas");
+  cvs.width = 512; cvs.height = 320;
+  const ctx = cvs.getContext("2d");
+  const bandH = cvs.height / 3;
+  ctx.fillStyle = "#75AADB";
+  ctx.fillRect(0, 0, cvs.width, bandH);
+  ctx.fillRect(0, bandH * 2, cvs.width, bandH);
+  ctx.fillStyle = "#FFFFFF";
+  ctx.fillRect(0, bandH, cvs.width, bandH);
+  // Sol de Mayo — a simplified radiant sun disc, not a traced reproduction.
+  const cx = cvs.width / 2, cy = cvs.height / 2, rays = 16, outerR = 46, innerR = 30;
+  ctx.fillStyle = "#F6B40E";
+  ctx.beginPath();
+  for (let i = 0; i < rays * 2; i++) {
+    const ang = (i / (rays * 2)) * Math.PI * 2;
+    const r = i % 2 === 0 ? outerR : innerR;
+    const x = cx + Math.cos(ang) * r, y = cy + Math.sin(ang) * r;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#D4900A";
+  ctx.beginPath(); ctx.arc(cx, cy, 24, 0, Math.PI * 2); ctx.fill();
+  const tex = new THREE.CanvasTexture(cvs);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+// Cloth-ish flag: a segmented plane whose vertices are pushed along Z each
+// frame by a two-frequency sine wave, amplitude growing from zero at the
+// pole edge to full at the free edge — the standard cheap "flag in the
+// wind" approximation (real verlet cloth is massive overkill for two small
+// flags rendered at a distance, and CPU-side on ~330 verts costs nothing).
+function buildWavingFlag(width, height) {
+  const geo = new THREE.PlaneGeometry(width, height, 22, 14);
+  const mat = new THREE.MeshStandardMaterial({ map: buildArgentinaFlagTexture(), side: THREE.DoubleSide, roughness: 0.75, metalness: 0.05 });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.userData.basePositions = geo.attributes.position.array.slice();
+  mesh.userData.width = width;
+  return mesh;
+}
+function updateWavingFlag(mesh, time, phase) {
+  const pos = mesh.geometry.attributes.position;
+  const base = mesh.userData.basePositions;
+  const w = mesh.userData.width;
+  for (let i = 0; i < pos.count; i++) {
+    const bx = base[i * 3], by = base[i * 3 + 1];
+    const t = (bx + w / 2) / w; // 0 at the pole, 1 at the free edge
+    const amp = 0.05 + t * 0.16;
+    const wave = Math.sin(time * 3.2 - bx * 2.4 + phase) * amp
+               + Math.sin(time * 1.7 - bx * 4.1 + phase * 1.3) * amp * 0.4;
+    pos.setZ(i, wave);
+    pos.setY(i, by - t * t * 0.05);
+  }
+  pos.needsUpdate = true;
+  mesh.geometry.computeVertexNormals();
+}
+function buildFlagPole(height) {
+  const g = new THREE.Group();
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, height, 10), new THREE.MeshStandardMaterial({ color: 0x2b2f36, metalness: 0.6, roughness: 0.4 }));
+  pole.position.y = height / 2;
+  g.add(pole);
+  const cap = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 10), new THREE.MeshStandardMaterial({ color: 0xD4AF37, metalness: 0.7, roughness: 0.25 }));
+  cap.position.y = height;
+  g.add(cap);
+  return g;
+}
+
+// Floating gold plaque — same canvas-texture recipe as buildNeonSign but
+// multi-line, used for the Messi shrine's stat block.
+function buildStatPlaque(lines, w = 2.7, h = 1.5) {
+  const cvs = document.createElement("canvas");
+  cvs.width = 640; cvs.height = 360;
+  const ctx = cvs.getContext("2d");
+  ctx.textAlign = "center";
+  lines.forEach((line, i) => {
+    const y = 66 + i * 62;
+    ctx.shadowColor = "#F6B40E"; ctx.shadowBlur = 18;
+    ctx.fillStyle = i === 0 ? "#fff" : "#F6B40E";
+    ctx.font = i === 0 ? "900 44px 'Arial Black', system-ui" : "700 32px system-ui";
+    ctx.fillText(line, 320, y);
+  });
+  const tex = new THREE.CanvasTexture(cvs);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex, transparent: true, toneMapped: false }));
+}
+
+// Original-design glowing jersey projection — number + name only, no crest
+// or brand marks, so nothing here traces a licensed logo.
+function buildJerseyProjection() {
+  const cvs = document.createElement("canvas");
+  cvs.width = 420; cvs.height = 520;
+  const ctx = cvs.getContext("2d");
+  ctx.translate(210, 0);
+  const bodyW = 260, bodyH = 380;
+  ctx.fillStyle = "rgba(117,170,219,0.28)";
+  for (let x = -bodyW / 2; x < bodyW / 2; x += 34) { ctx.fillRect(x, 60, 17, bodyH); }
+  ctx.fillStyle = "rgba(255,255,255,0.16)";
+  ctx.fillRect(-bodyW / 2, 60, bodyW, bodyH);
+  ctx.strokeStyle = "rgba(255,255,255,0.5)"; ctx.lineWidth = 3;
+  ctx.strokeRect(-bodyW / 2, 60, bodyW, bodyH);
+  ctx.textAlign = "center";
+  ctx.shadowColor = "#F6B40E"; ctx.shadowBlur = 30;
+  ctx.fillStyle = "#fff";
+  ctx.font = "900 190px 'Arial Black', system-ui";
+  ctx.fillText("10", 0, 330);
+  ctx.font = "700 40px system-ui";
+  ctx.fillStyle = "#F6B40E";
+  ctx.fillText("M E S S I", 0, 470);
+  const tex = new THREE.CanvasTexture(cvs);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return new THREE.Mesh(new THREE.PlaneGeometry(2.1, 2.6), new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false }));
+}
+
+// Cheap fake-volumetric spotlight cone — a canvas vertical-gradient texture
+// on a hollow additive cone, same trick as sunShader.ts's ray sprite; paired
+// with a real THREE.SpotLight so the pedestal is actually lit too.
+function buildGodRayCone(radius, height) {
+  const cvs = document.createElement("canvas");
+  cvs.width = 64; cvs.height = 256;
+  const ctx = cvs.getContext("2d");
+  const g = ctx.createLinearGradient(0, 0, 0, 256);
+  g.addColorStop(0, "rgba(255,244,200,0.5)");
+  g.addColorStop(0.6, "rgba(255,220,140,0.16)");
+  g.addColorStop(1, "rgba(255,220,140,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 64, 256);
+  const tex = new THREE.CanvasTexture(cvs);
+  const geo = new THREE.ConeGeometry(radius, height, 24, 1, true);
+  return new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false }));
+}
+
+function buildGoatShrineComplex(centerX, centerZ) {
+  const group = new THREE.Group();
+  group.position.set(centerX, 0, centerZ);
+
+  // ── Pedestal + Messi shrine ──
+  const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(1.05, 1.25, 0.55, 28), new THREE.MeshStandardMaterial({ color: 0x1c1f24, roughness: 0.35, metalness: 0.55 }));
+  pedestal.position.y = 0.275;
+  group.add(pedestal);
+  const pedestalRing = new THREE.Mesh(new THREE.TorusGeometry(1.15, 0.045, 8, 48), new THREE.MeshBasicMaterial({ color: 0xF6B40E }));
+  pedestalRing.rotation.x = Math.PI / 2;
+  pedestalRing.position.y = 0.56;
+  group.add(pedestalRing);
+
+  const jersey = buildJerseyProjection();
+  jersey.position.set(0, 2.55, -0.02);
+  group.add(jersey);
+
+  const plaque = buildStatPlaque(["LIONEL MESSI · THE GOAT", "🏆 מונדיאל 2022", "✨ 8 כדורי זהב", "🏆 4 ליגות אלופות", "⚽ 850+ שערים בקריירה"]);
+  plaque.position.set(0, 4.55, 0.9);
+  group.add(plaque);
+
+  const spot = new THREE.SpotLight(0xfff2d0, 3.6, 12, Math.PI / 8, 0.45, 1.3);
+  spot.position.set(0, 6.4, 0.3);
+  spot.target.position.set(0, 0.6, 0);
+  group.add(spot, spot.target);
+  const rayCone = buildGodRayCone(1.6, 6.0);
+  rayCone.position.set(0, 3.2, 0.3);
+  group.add(rayCone);
+
+  // 8 Ballon d'Or spheres, orbiting the pedestal at head height.
+  const ballonMat = new THREE.MeshStandardMaterial({ color: 0xF6B40E, metalness: 0.9, roughness: 0.15, emissive: 0x3a2400, emissiveIntensity: 0.25 });
+  const ballonGeo = new THREE.SphereGeometry(0.13, 16, 16);
+  const ballons = [];
+  for (let i = 0; i < 8; i++) {
+    const b = new THREE.Mesh(ballonGeo, ballonMat);
+    group.add(b);
+    ballons.push(b);
+  }
+
+  // ── Twin waving Argentina flags flanking the shrine ──
+  const flags = [];
+  [-2.6, 2.6].forEach((fx, i) => {
+    const poleH = 4.6;
+    const pole = buildFlagPole(poleH);
+    pole.position.set(fx, 0, -1.4);
+    group.add(pole);
+    const flag = buildWavingFlag(1.9, 1.2);
+    flag.position.set(fx + (fx < 0 ? 0.95 : -0.95), poleH - 0.7, -1.4);
+    group.add(flag);
+    flags.push({ mesh: flag, phase: i * 1.7 });
+  });
+
+  // ── Hall-of-Fame corridor — squad name plaques leading up to the shrine ──
+  const squad = [
+    ["Emiliano “Dibu” Martínez", 0x75AADB],
+    ["Rodrigo De Paul", 0xF6B40E],
+    ["Enzo Fernández", 0x75AADB],
+    ["Alexis Mac Allister", 0xF6B40E],
+    ["Julián Álvarez", 0x75AADB],
+    ["Cristian “Cuti” Romero", 0xF6B40E],
+  ];
+  const plaques = [];
+  squad.forEach((s, i) => {
+    const sign = buildNeonSign(s[0], s[1], 2.4, 0.5);
+    const side = i % 2 === 0 ? -1 : 1;
+    sign.position.set(side * 2.5, 2.3, -6.5 + Math.floor(i / 2) * 2.6);
+    sign.rotation.y = side < 0 ? Math.PI / 2.6 : -Math.PI / 2.6;
+    group.add(sign);
+    plaques.push({ mesh: sign, phase: i * 0.6 });
+  });
+
+  const update = (dt, time) => {
+    flags.forEach((f) => updateWavingFlag(f.mesh, time, f.phase));
+    ballons.forEach((b, i) => {
+      const a = time * 0.55 + (i / 8) * Math.PI * 2;
+      b.position.set(Math.cos(a) * 1.7, 2.35 + Math.sin(time * 0.9 + i) * 0.08, Math.sin(a) * 1.7);
+    });
+    jersey.position.y = 2.55 + Math.sin(time * 0.7) * 0.06;
+    jersey.rotation.y = Math.sin(time * 0.35) * 0.15;
+    plaques.forEach((p) => { p.mesh.position.y = 2.3 + Math.sin(time * 0.8 + p.phase) * 0.05; });
+  };
+
+  return { group, update, worldPos: { x: centerX, z: centerZ } };
+}
+
 function HangarOverlay({ onReturn, liveRef, onDrive, onDriveTruck, onPilotRobot }) {
   const mountRef = useRef(null);
   const [nearTiggo, setNearTiggo] = useState(false);
   const [nearTruck, setNearTruck] = useState(false);
   const [nearHyperion, setNearHyperion] = useState(false);
+  const [nearShrine, setNearShrine] = useState(false);
+  const flyToRef = useRef(null); // GOAT shrine camera-lerp trigger (see animate() below)
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -4740,6 +4968,18 @@ function HangarOverlay({ onReturn, liveRef, onDrive, onDriveTruck, onPilotRobot 
       scene.add(kitchen.group);
     }
 
+    // GOAT Protocol — La Scaloneta corner: open center-floor strip between
+    // the crew-deck row (+X wall) and the vehicle bay (-X wall), just short
+    // of the open bay door, only built when the owner's persisted mood is
+    // 'goat' (read once at Hangar mount — the overlay remounts fresh every
+    // time it's opened, so no live in-scene toggle is needed).
+    const GOAT_SPOT = { x: 0, z: 16 };
+    let goatShrine = null;
+    if (isGoatMode()) {
+      goatShrine = buildGoatShrineComplex(GOAT_SPOT.x, GOAT_SPOT.z);
+      scene.add(goatShrine.group);
+    }
+
     // Walk controls — same first-person "tank" scheme the office itself
     // uses (W/S forward-back relative to facing, A/D turn), simplified: no
     // player body to render, the camera IS the eye. Movement clamps to the
@@ -4782,30 +5022,51 @@ function HangarOverlay({ onReturn, liveRef, onDrive, onDriveTruck, onPilotRobot 
     let nearTiggoPrev = false;
     let nearTruckPrev = false;
     let nearHyperionPrev = false;
+    let nearShrinePrev = false;
     const pos = new THREE.Vector3(0, 1.7, D / 2 - 5);
     const clock = new THREE.Clock();
+    // Cinematic camera-lerp — Pillar 4's "smooth transitions" without any
+    // camera library: a short eased fly-to the shrine, triggered by the
+    // "visit shrine" button (flyToRef flips to `true`, animate() below turns
+    // that into a start/target snapshot on the very next frame and consumes
+    // it over `dur` ms, then hands control back to the player).
+    let flyState = null;
     let raf;
     const animate = () => {
       if (cancelled) return;
       raf = requestAnimationFrame(animate);
       const dt = Math.min(0.05, clock.getDelta());
-      const jv = liveRef?.current?.joyVec || { x: 0, y: 0 };
-      const tv = liveRef?.current?.turnVec || { x: 0, y: 0 };
-      const gp = (gamepadIndex !== null && navigator.getGamepads) ? navigator.getGamepads()[gamepadIndex] : null;
-      // Standard controller convention (same as the main office scene):
-      // left stick = movement, right stick = look/turn.
-      const gy = gp ? gpAxis(gp.axes[1] || 0) : 0;
-      const gcx = gp ? gpAxis(gp.axes[2] || 0) : 0;
-      let turn = -((keys["d"] || keys["arrowright"] ? 1 : 0) - (keys["a"] || keys["arrowleft"] ? 1 : 0));
-      if (!turn) turn = gcx ? -gcx : (Math.hypot(tv.x, tv.y) > 0.001 ? -tv.x : 0);
-      yaw += turn * 2.3 * dt;
-      let fwd = (keys["w"] || keys["arrowup"] ? 1 : 0) - (keys["s"] || keys["arrowdown"] ? 1 : 0);
-      if (!fwd) fwd = gy ? -gy : (Math.hypot(jv.x, jv.y) > 0.001 ? -jv.y : 0);
-      const speed = keys["shift"] ? 9 : 5;
-      pos.x += Math.sin(yaw) * fwd * speed * dt;
-      pos.z += Math.cos(yaw) * fwd * speed * dt;
-      pos.x = clamp(pos.x, -W / 2 + 1.2, W / 2 - 1.2);
-      pos.z = clamp(pos.z, -D / 2 + 1.2, D / 2 + 32);
+      if (flyToRef.current === true && goatShrine) {
+        const targetPos = new THREE.Vector3(GOAT_SPOT.x, 1.7, GOAT_SPOT.z - 3.4);
+        const targetYaw = Math.atan2(GOAT_SPOT.x - pos.x, GOAT_SPOT.z - pos.z);
+        flyState = { startPos: pos.clone(), targetPos, startYaw: yaw, targetYaw, t0: performance.now(), dur: 1300 };
+        flyToRef.current = flyState;
+      }
+      if (flyState) {
+        const t = Math.min(1, (performance.now() - flyState.t0) / flyState.dur);
+        const ease = 1 - Math.pow(1 - t, 3);
+        pos.lerpVectors(flyState.startPos, flyState.targetPos, ease);
+        yaw = flyState.startYaw + (flyState.targetYaw - flyState.startYaw) * ease;
+        if (t >= 1) { flyState = null; flyToRef.current = null; }
+      } else {
+        const jv = liveRef?.current?.joyVec || { x: 0, y: 0 };
+        const tv = liveRef?.current?.turnVec || { x: 0, y: 0 };
+        const gp = (gamepadIndex !== null && navigator.getGamepads) ? navigator.getGamepads()[gamepadIndex] : null;
+        // Standard controller convention (same as the main office scene):
+        // left stick = movement, right stick = look/turn.
+        const gy = gp ? gpAxis(gp.axes[1] || 0) : 0;
+        const gcx = gp ? gpAxis(gp.axes[2] || 0) : 0;
+        let turn = -((keys["d"] || keys["arrowright"] ? 1 : 0) - (keys["a"] || keys["arrowleft"] ? 1 : 0));
+        if (!turn) turn = gcx ? -gcx : (Math.hypot(tv.x, tv.y) > 0.001 ? -tv.x : 0);
+        yaw += turn * 2.3 * dt;
+        let fwd = (keys["w"] || keys["arrowup"] ? 1 : 0) - (keys["s"] || keys["arrowdown"] ? 1 : 0);
+        if (!fwd) fwd = gy ? -gy : (Math.hypot(jv.x, jv.y) > 0.001 ? -jv.y : 0);
+        const speed = keys["shift"] ? 9 : 5;
+        pos.x += Math.sin(yaw) * fwd * speed * dt;
+        pos.z += Math.cos(yaw) * fwd * speed * dt;
+        pos.x = clamp(pos.x, -W / 2 + 1.2, W / 2 - 1.2);
+        pos.z = clamp(pos.z, -D / 2 + 1.2, D / 2 + 32);
+      }
       camera.position.copy(pos);
       const tiggoDist = Math.hypot(pos.x - TIGGO_POS.x, pos.z - TIGGO_POS.z);
       const nearTiggoNow = tiggoDist < 4;
@@ -4816,6 +5077,12 @@ function HangarOverlay({ onReturn, liveRef, onDrive, onDriveTruck, onPilotRobot 
       const hyperionDist = Math.hypot(pos.x - statuePos.x, pos.z - statuePos.z);
       const nearHyperionNow = hyperionDist < 5;
       if (nearHyperionNow !== nearHyperionPrev) { nearHyperionPrev = nearHyperionNow; setNearHyperion(nearHyperionNow); }
+      if (goatShrine) {
+        const shrineDist = Math.hypot(pos.x - GOAT_SPOT.x, pos.z - GOAT_SPOT.z);
+        const nearShrineNow = shrineDist < 6;
+        if (nearShrineNow !== nearShrinePrev) { nearShrinePrev = nearShrineNow; setNearShrine(nearShrineNow); }
+        goatShrine.update(dt, clock.elapsedTime);
+      }
       camera.rotation.order = "YXZ";
       camera.rotation.y = yaw;
       // Chimney smoke — each puff drifts up and fades, looping back to the
@@ -4880,6 +5147,11 @@ function HangarOverlay({ onReturn, liveRef, onDrive, onDriveTruck, onPilotRobot 
       {nearHyperion && (
         <button className="off3-sit" style={{ top: "106px" }} onClick={onPilotRobot} title="הפעל את הענק (E)">
           🤖 הפעל את הענק
+        </button>
+      )}
+      {nearShrine && (
+        <button className="off3-sit" style={{ top: "154px" }} onClick={() => { flyToRef.current = true; }} title="מצלמה קולנועית אל המקדש">
+          🐐 בקר במקדש מסי
         </button>
       )}
       <button className="off3-space-return" onClick={onReturn}>🚪 חזרה למשרד</button>

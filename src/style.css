@@ -754,7 +754,12 @@ body::after {
   transform-origin: center center;
 }
 
-.topL { top: 20px; left: 24px; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+/* z-index:6 (above .hud's 5) — .topL sits earlier in the DOM than .hud, so at
+   equal z-index the HUD's own cards (e.g. #hudOps "GLOBAL OPERATIONS") paint
+   over the wordmark/clock/build-badge corner and swallow clicks meant for it
+   (found while wiring the Oriki Protocol's build-badge long-press trigger —
+   real bug independent of that feature, just never noticed before). */
+.topL { top: 20px; left: 24px; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; z-index: 6; }
 .lp-brand {
   display: flex; justify-content: center; align-items: center;
   padding: 16px 0 12px;
@@ -3822,6 +3827,22 @@ body.is-mobile-ui.mobile-min .fab-group{
 :root[data-theme="emerald"]{--gold:#36D399;--cyan:#a7f3d0;--fire:#5fe0ad;--purple:#3fb98a;--white-glow:#e7fff4;--line:rgba(54,211,153,.12);--glass-border:rgba(54,211,153,.16);--glass-hover:rgba(54,211,153,.08)}
 :root[data-theme="royal"]{--gold:#A78BFA;--cyan:#d6c8ff;--fire:#b89bff;--purple:#9a7ff0;--white-glow:#f1ebff;--line:rgba(167,139,250,.14);--glass-border:rgba(167,139,250,.18);--glass-hover:rgba(167,139,250,.09)}
 :root[data-theme="crimson"]{--gold:#FF6B6B;--cyan:#ffc7b8;--fire:#ff8a5b;--purple:#e06a6a;--white-glow:#fff0ec;--line:rgba(255,107,107,.13);--glass-border:rgba(255,107,107,.17);--glass-hover:rgba(255,107,107,.08)}
+/* ── Oriki Protocol — kid-safe locked play mode: hides every business/
+   settings/navigation surface, leaving only the (now toon-shaded) 3D stage
+   and the lock pill injected by app.ts. Chosen selectors are the top-level
+   chrome containers, not individual buttons, so nothing can be missed. */
+body.oriki-mode .chrome.topL,
+body.oriki-mode .chrome.topR,
+body.oriki-mode .hud,
+body.oriki-mode .dock,
+body.oriki-mode .fab-group,
+body.oriki-mode .bar,
+body.oriki-mode .app-drawer,
+body.oriki-mode .app-drawer-scrim,
+body.oriki-mode .win,
+body.oriki-mode .overlay,
+body.oriki-mode .welcome-overlay { display: none !important; }
+
 /* GOAT Protocol — Argentina/Messi: Albiceleste sky-blue + white + World-Cup gold */
 :root[data-theme="goat"]{--gold:#43A1D5;--cyan:#eaf6ff;--fire:#D4AF37;--purple:#7cc0e8;--white-glow:#f4fbff;--line:rgba(67,161,213,.15);--glass-border:rgba(67,161,213,.19);--glass-hover:rgba(67,161,213,.09)}
 /* GOAT deep-skin: the main HUD chrome predates the CSS vars (hardcoded gold),

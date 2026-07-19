@@ -189,7 +189,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v231 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v232 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip apps-chip" id="appsBtn" title="האפליקציות שלי" aria-label="האפליקציות שלי">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="12" cy="19" r="2"/><circle cx="19" cy="19" r="2"/></svg>
@@ -2559,6 +2559,126 @@ export function mountApp(root: HTMLElement) {
       openWin('⚽ Sports Hub');
       renderSportsHub();
     });
+  }
+
+  // ── Oriki Protocol — kid-safe locked play mode ──────────────────────────
+  // Entry is a secret long-press (parent-only, nothing to tap for a child to
+  // stumble into); exit always requires the PIN the parent set on first use.
+  // The 3D stage itself switches to a bright toon look with tap-to-bounce toy
+  // vehicles via orb.setOrikiMode — everything else (HeavyGuard, trading,
+  // settings, the app drawer) is hidden at the CSS layer (body.oriki-mode).
+  {
+    const PIN_KEY = 'alpha:oriki:pin';
+    const ON_KEY = 'alpha:oriki:on';
+    const CHILD_NAME = 'אורי';
+
+    const applyOrikiChrome = (on: boolean) => {
+      document.body.classList.toggle('oriki-mode', on);
+      try { orb.setOrikiMode?.(on); } catch {}
+    };
+
+    let lockPill: HTMLButtonElement | null = null;
+    const showLockPill = () => {
+      if (lockPill) return;
+      lockPill = document.createElement('button');
+      lockPill.id = 'orikiExitPill';
+      lockPill.style.cssText = 'position:fixed;bottom:22px;left:50%;transform:translateX(-50%);z-index:9998;padding:12px 22px;border-radius:999px;border:1px solid rgba(255,255,255,.25);background:rgba(20,16,10,.75);color:#fff;font-size:13px;font-weight:700;cursor:pointer;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)';
+      lockPill.textContent = '🔒 יציאה — למבוגרים';
+      lockPill.onclick = () => promptPin('exit');
+      document.body.appendChild(lockPill);
+    };
+    const hideLockPill = () => { lockPill?.remove(); lockPill = null; };
+
+    function promptPin(mode: 'set' | 'exit'): void {
+      const ov = document.createElement('div');
+      ov.style.cssText = 'position:fixed;inset:0;z-index:99998;background:rgba(6,4,2,.86);display:flex;align-items:center;justify-content:center;padding:20px';
+      const isSet = mode === 'set';
+      ov.innerHTML = `
+        <div style="max-width:320px;width:100%;background:#16110a;border:1px solid rgba(218,165,32,.3);border-radius:18px;padding:26px 22px;text-align:center">
+          <div style="font-size:15px;font-weight:700;color:#daa520;margin-bottom:6px">${isSet ? '🐾 הגדרת קוד יציאה' : '🔒 קוד יציאה'}</div>
+          <p id="orikiPinSub" style="font-size:12px;color:rgba(255,255,255,.6);margin:0 0 16px">${isSet ? 'קוד בן 4 ספרות שרק אתה יודע — יידרש כדי לצאת ממצב אורי' : `הזן את קוד היציאה כדי לצאת ממצב ${CHILD_NAME}`}</p>
+          <input id="orikiPinInput" type="password" inputmode="numeric" maxlength="4" pattern="[0-9]*" autocomplete="off"
+            style="width:100%;box-sizing:border-box;text-align:center;letter-spacing:10px;font-size:22px;padding:12px;border-radius:10px;border:1px solid rgba(218,165,32,.35);background:rgba(0,0,0,.35);color:#fff;margin-bottom:10px" />
+          <div id="orikiPinErr" style="font-size:11px;color:#ff8a7a;min-height:16px;margin-bottom:8px"></div>
+          <button id="orikiPinGo" style="width:100%;padding:12px;border-radius:10px;border:none;background:linear-gradient(135deg,#daa520,#ffdb8c);color:#1a1408;font-weight:800;font-size:14px;cursor:pointer;margin-bottom:8px">${isSet ? 'המשך' : 'אישור'}</button>
+          <button id="orikiPinCancel" style="width:100%;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,.15);background:transparent;color:rgba(255,255,255,.5);font-size:12px;cursor:pointer">ביטול</button>
+        </div>`;
+      document.body.appendChild(ov);
+      const input = ov.querySelector('#orikiPinInput') as HTMLInputElement;
+      const err = ov.querySelector('#orikiPinErr') as HTMLElement;
+      const sub = ov.querySelector('#orikiPinSub') as HTMLElement;
+      input.focus();
+      let firstPin: string | null = null; // two-step confirm, "set" flow only
+      const close = () => ov.remove();
+      (ov.querySelector('#orikiPinCancel') as HTMLElement).onclick = close;
+      ov.addEventListener('click', (e) => { if (e.target === ov) close(); });
+      const go = () => {
+        const v = input.value.trim();
+        if (!/^\d{4}$/.test(v)) { err.textContent = 'קוד חייב להיות 4 ספרות'; return; }
+        if (isSet) {
+          if (!firstPin) {
+            firstPin = v;
+            input.value = '';
+            err.textContent = '';
+            sub.textContent = 'הזן שוב לאישור';
+            return;
+          }
+          if (v !== firstPin) { err.textContent = 'הקודים לא תואמים — נסה שוב'; firstPin = null; input.value = ''; return; }
+          localStorage.setItem(PIN_KEY, v);
+          localStorage.setItem(ON_KEY, '1');
+          applyOrikiChrome(true);
+          showLockPill();
+          try { voice.speak(`היי ${CHILD_NAME}! בואי נשחק — תיגע ברכבים כדי לראות אותם מקפצים!`); } catch {}
+          close();
+        } else {
+          const saved = localStorage.getItem(PIN_KEY);
+          if (v !== saved) { err.textContent = 'קוד שגוי'; input.value = ''; return; }
+          localStorage.setItem(ON_KEY, '0');
+          applyOrikiChrome(false);
+          hideLockPill();
+          close();
+        }
+      };
+      (ov.querySelector('#orikiPinGo') as HTMLElement).onclick = go;
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+    }
+
+    // Secret trigger: long-press the build-version badge (low-visibility
+    // corner a parent can find on purpose, a child won't stumble into).
+    const badge = document.getElementById('buildVer');
+    if (badge) {
+      let pressTimer: number | null = null;
+      const start = () => {
+        pressTimer = window.setTimeout(() => {
+          try { navigator.vibrate?.(state.haptics ? [15, 40, 15] : 0); } catch {}
+          if (document.body.classList.contains('oriki-mode')) return; // already locked in — use the exit pill
+          if (localStorage.getItem(PIN_KEY)) {
+            localStorage.setItem(ON_KEY, '1');
+            applyOrikiChrome(true);
+            showLockPill();
+            try { voice.speak(`היי ${CHILD_NAME}! בואי נשחק — תיגע ברכבים כדי לראות אותם מקפצים!`); } catch {}
+          } else {
+            promptPin('set');
+          }
+        }, 1100);
+      };
+      const cancel = () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } };
+      badge.addEventListener('pointerdown', start);
+      badge.addEventListener('pointerup', cancel);
+      // Deliberately NOT pointerleave: a couple of stray pixels of pointer
+      // drift mid-press (touch jitter, a live clock re-layout under the
+      // finger) shouldn't cancel an otherwise-held long-press. pointercancel
+      // (the browser aborting the gesture — e.g. a scroll taking over) is
+      // the correct signal to give up on.
+      badge.addEventListener('pointercancel', cancel);
+    }
+
+    // Re-apply the lock across reloads — a curious kid refreshing the page
+    // must not be an escape hatch.
+    if (localStorage.getItem(ON_KEY) === '1') {
+      applyOrikiChrome(true);
+      showLockPill();
+    }
   }
 
   // (The mobile "minimal mode" — panels auto-hiding after 10s, leaving only a
@@ -8341,7 +8461,11 @@ export function mountApp(root: HTMLElement) {
   }
 
   const knownName = loadMemory().profile.name;
-  if (!knownName) showWelcome();
+  // Skip while a locked Oriki session is booting: the overlay would only be
+  // CSS-hidden (body.oriki-mode), not dismissed, and would pop back up the
+  // moment the parent exits the lock — a name-onboarding prompt is not
+  // something the locked session should ever be carrying underneath it.
+  if (!knownName && localStorage.getItem('alpha:oriki:on') !== '1') showWelcome();
   else if (prevHistory.length === 0) addMsg(personalGreeting(), 'al');
 
   // (Spoken "מה המצב" entry greeting removed per user request — the app no
