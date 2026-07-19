@@ -5251,6 +5251,417 @@ function buildTrafficVehicle(kind) {
   return { group: g, headMat, tailMat };
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// COPA GLORIA — THE VIRTUAL PITCH. A self-contained holographic five-a-side
+// pitch reached from a standing HUD toggle (no walk-up spot needed — same
+// always-on-button convention as off3-turbo/nightclub/party below). Real
+// physics via cannon-es — the same library already driving DriveOverlay's
+// RaycastVehicle just below this — not a hand-rolled approximation: a
+// mass:1 ball body with a ground/post contact material (restitution 0.78),
+// kicked by a velocity impulse aimed by the camera's own orbit angle.
+// World Cup Final atmosphere: continuous Albiceleste/gold confetti, a
+// procedural crowd-roar loop + goal horn (WebAudio, no asset files, same
+// self-contained-context idiom as HolodeckOverlay's ensureAudio()), and
+// buildJerseyProjection() — the same #10 hologram built for the GOAT
+// shrine — rising over the crossbar on every goal.
+// ═══════════════════════════════════════════════════════════════════════
+function buildPitchTexture() {
+  const cvs = document.createElement("canvas");
+  cvs.width = 512; cvs.height = 768;
+  const ctx = cvs.getContext("2d");
+  const stripeH = cvs.height / 12;
+  for (let i = 0; i < 12; i++) {
+    ctx.fillStyle = i % 2 === 0 ? "#0f5c2a" : "#136b31";
+    ctx.fillRect(0, i * stripeH, cvs.width, stripeH);
+  }
+  ctx.strokeStyle = "rgba(255,255,255,.9)";
+  ctx.lineWidth = 4;
+  ctx.strokeRect(14, 14, cvs.width - 28, cvs.height - 28);
+  ctx.beginPath(); ctx.moveTo(14, cvs.height / 2); ctx.lineTo(cvs.width - 14, cvs.height / 2); ctx.stroke();
+  ctx.beginPath(); ctx.arc(cvs.width / 2, cvs.height / 2, 72, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeRect(cvs.width / 2 - 130, 14, 260, 130);
+  ctx.strokeRect(cvs.width / 2 - 60, 14, 120, 50);
+  const tex = new THREE.CanvasTexture(cvs);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+function buildPitchGlowLines(w, d) {
+  // A separate additive-blended outline layered a hair above the paint —
+  // the "holographic" accent the office's other set-pieces (grid floors,
+  // neon signs) all use rather than making the base texture itself glow.
+  const group = new THREE.Group();
+  const mat = new THREE.LineBasicMaterial({ color: 0x59E8FF, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending });
+  const rectPts = [[-w / 2, -d / 2], [w / 2, -d / 2], [w / 2, d / 2], [-w / 2, d / 2], [-w / 2, -d / 2]]
+    .map(([x, z]) => new THREE.Vector3(x, 0.02, z));
+  group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(rectPts), mat));
+  const circlePts = [];
+  for (let i = 0; i <= 48; i++) { const a = (i / 48) * Math.PI * 2; circlePts.push(new THREE.Vector3(Math.cos(a) * 2.6, 0.02, Math.sin(a) * 2.6)); }
+  group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(circlePts), mat));
+  return group;
+}
+function buildNetTexture() {
+  const cvs = document.createElement("canvas");
+  cvs.width = cvs.height = 256;
+  const ctx = cvs.getContext("2d");
+  ctx.strokeStyle = "rgba(255,255,255,.6)";
+  ctx.lineWidth = 1.4;
+  for (let x = -256; x < 512; x += 18) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x + 256, 256); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x, 256); ctx.lineTo(x - 256, 256); ctx.stroke();
+  }
+  const tex = new THREE.CanvasTexture(cvs);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(3, 1.5);
+  return tex;
+}
+function buildSoccerBallTexture() {
+  const cvs = document.createElement("canvas");
+  cvs.width = 512; cvs.height = 256;
+  const ctx = cvs.getContext("2d");
+  ctx.fillStyle = "#f2f2f2"; ctx.fillRect(0, 0, 512, 256);
+  ctx.fillStyle = "#161616";
+  const pentagon = (cx, cy, r, rot) => {
+    ctx.beginPath();
+    for (let i = 0; i < 5; i++) {
+      const a = rot + (i / 5) * Math.PI * 2 - Math.PI / 2;
+      const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.closePath(); ctx.fill();
+  };
+  [[90, 64, 0.1], [280, 50, 0.6], [430, 90, 1.2], [150, 190, 0.3], [350, 200, 0.9], [60, 220, 1.6]].forEach(([x, y, r]) => pentagon(x, y, 28, r));
+  const tex = new THREE.CanvasTexture(cvs);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+function buildGoalGroup(goalW, goalH) {
+  const group = new THREE.Group();
+  const postMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3, metalness: 0.1, emissive: 0x1a2838, emissiveIntensity: 0.2 });
+  const postGeo = new THREE.CylinderGeometry(0.09, 0.09, goalH, 12);
+  [-goalW / 2, goalW / 2].forEach((x) => { const p = new THREE.Mesh(postGeo, postMat); p.position.set(x, goalH / 2, 0); group.add(p); });
+  const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, goalW + 0.18, 12), postMat);
+  bar.rotation.z = Math.PI / 2; bar.position.set(0, goalH, 0); group.add(bar);
+  const netMat = new THREE.MeshBasicMaterial({ map: buildNetTexture(), transparent: true, side: THREE.DoubleSide, opacity: 0.85 });
+  const back = new THREE.Mesh(new THREE.PlaneGeometry(goalW, goalH), netMat);
+  back.position.set(0, goalH / 2, -0.9); group.add(back);
+  const roof = new THREE.Mesh(new THREE.PlaneGeometry(goalW, 0.95), netMat);
+  roof.rotation.x = Math.PI / 2.6; roof.position.set(0, goalH - 0.05, -0.4); group.add(roof);
+  return group;
+}
+
+function FifaOverlay({ onReturn, liveRef }) {
+  const mountRef = useRef(null);
+  const [goals, setGoals] = useState(0);
+
+  useEffect(() => {
+    const mount = mountRef.current;
+    if (!mount) return;
+    let cancelled = false;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x060a14);
+    scene.fog = new THREE.Fog(0x060a14, 24, 70);
+    const camera = new THREE.PerspectiveCamera(62, mount.clientWidth / mount.clientHeight, 0.1, 200);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+    renderer.setSize(mount.clientWidth, mount.clientHeight);
+    mount.appendChild(renderer.domElement);
+
+    scene.add(new THREE.AmbientLight(0x8f9bbf, 0.6));
+    const sun = new THREE.DirectionalLight(0xfff2d8, 0.75);
+    sun.position.set(10, 22, 10);
+    scene.add(sun);
+    // Stadium floodlights — four warm point lights ringing the pitch.
+    [[-11, -14], [11, -14], [-11, 12], [11, 12]].forEach(([x, z]) => {
+      const fl = new THREE.PointLight(0xfff2d0, 1.1, 30);
+      fl.position.set(x, 9, z);
+      scene.add(fl);
+    });
+
+    const PITCH_W = 20, PITCH_D = 30, GOAL_W = 6, GOAL_H = 2.3, GOAL_Z = -PITCH_D / 2 + 2, BALL_R = 0.4;
+    const KICKOFF = new THREE.Vector3(0, BALL_R, 5);
+
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(PITCH_W, PITCH_D), new THREE.MeshStandardMaterial({ map: buildPitchTexture(), roughness: 0.85 }));
+    floor.rotation.x = -Math.PI / 2;
+    scene.add(floor);
+    scene.add(buildPitchGlowLines(PITCH_W, PITCH_D));
+
+    const goal = buildGoalGroup(GOAL_W, GOAL_H);
+    goal.position.set(0, 0, GOAL_Z);
+    scene.add(goal);
+
+    const ballMesh = new THREE.Mesh(new THREE.SphereGeometry(BALL_R, 24, 24), new THREE.MeshStandardMaterial({ map: buildSoccerBallTexture(), roughness: 0.45 }));
+    ballMesh.position.copy(KICKOFF);
+    scene.add(ballMesh);
+
+    // GOAT Protocol's jersey hologram, reused verbatim — hidden until scored.
+    const jersey = buildJerseyProjection();
+    jersey.position.set(0, GOAL_H + 1.6, GOAL_Z);
+    jersey.visible = false;
+    scene.add(jersey);
+    const goalSign = buildNeonSign("⚽ GOAL! ⚽", 0xF6B40E, 5.4, 1.1);
+    goalSign.position.set(0, 4.2, 1);
+    goalSign.visible = false;
+    scene.add(goalSign);
+
+    // ── Continuous World-Cup-Final confetti (Albiceleste + gold) ──
+    const CONF_N = 220;
+    const confColors = [0x75AADB, 0xffffff, 0xF6B40E];
+    const confGeo = new THREE.BufferGeometry();
+    const confPos = new Float32Array(CONF_N * 3);
+    const confVel = new Float32Array(CONF_N * 3);
+    const confCol = new Float32Array(CONF_N * 3);
+    const tmpColor = new THREE.Color();
+    for (let i = 0; i < CONF_N; i++) {
+      confPos[i * 3] = (Math.random() - 0.5) * PITCH_W * 1.3;
+      confPos[i * 3 + 1] = Math.random() * 14 + 4;
+      confPos[i * 3 + 2] = (Math.random() - 0.5) * PITCH_D * 1.15;
+      confVel[i * 3] = (Math.random() - 0.5) * 0.6;
+      confVel[i * 3 + 1] = -(1.2 + Math.random() * 1.4);
+      confVel[i * 3 + 2] = (Math.random() - 0.5) * 0.6;
+      tmpColor.setHex(confColors[i % 3]);
+      confCol[i * 3] = tmpColor.r; confCol[i * 3 + 1] = tmpColor.g; confCol[i * 3 + 2] = tmpColor.b;
+    }
+    confGeo.setAttribute("position", new THREE.BufferAttribute(confPos, 3));
+    confGeo.setAttribute("color", new THREE.BufferAttribute(confCol, 3));
+    const confetti = new THREE.Points(confGeo, new THREE.PointsMaterial({ size: 0.22, vertexColors: true, transparent: true, opacity: 0.92, depthWrite: false }));
+    scene.add(confetti);
+
+    // ── Procedural stadium audio — own AudioContext, closed on unmount,
+    // same self-contained idiom HolodeckOverlay uses (no shared engine
+    // exists in this file — see the class-level comment at file top). ──
+    let audioCtx = null, crowdSrc = null, crowdGain = null;
+    const noiseBuffer = (ctx, seconds) => {
+      const n = Math.max(1, Math.floor(ctx.sampleRate * seconds));
+      const buf = ctx.createBuffer(1, n, ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+      return buf;
+    };
+    const ensureAudio = () => {
+      if (audioCtx) { if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {}); return; }
+      try {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const src = audioCtx.createBufferSource();
+        src.buffer = noiseBuffer(audioCtx, 4); src.loop = true;
+        const bp = audioCtx.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 900; bp.Q.value = 0.6;
+        crowdGain = audioCtx.createGain(); crowdGain.gain.value = 0.05;
+        src.connect(bp).connect(crowdGain).connect(audioCtx.destination);
+        src.start();
+        crowdSrc = src;
+      } catch { audioCtx = null; }
+    };
+    const playHorn = () => {
+      if (!audioCtx) return;
+      const t = audioCtx.currentTime;
+      const o = audioCtx.createOscillator(); o.type = "sawtooth";
+      o.frequency.setValueAtTime(233, t); o.frequency.linearRampToValueAtTime(235, t + 1.1);
+      const g = audioCtx.createGain();
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.22, t + 0.08); g.gain.exponentialRampToValueAtTime(0.0001, t + 1.2);
+      o.connect(g).connect(audioCtx.destination); o.start(t); o.stop(t + 1.25);
+    };
+    const playGoalRoar = () => {
+      if (!audioCtx) return;
+      const t = audioCtx.currentTime;
+      const nz = audioCtx.createBufferSource(); nz.buffer = noiseBuffer(audioCtx, 2.2);
+      const bp = audioCtx.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 1200; bp.Q.value = 0.5;
+      const g = audioCtx.createGain();
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.5, t + 0.15); g.gain.exponentialRampToValueAtTime(0.0001, t + 2.2);
+      nz.connect(bp).connect(g).connect(audioCtx.destination); nz.start(t); nz.stop(t + 2.2);
+      if (crowdGain) {
+        crowdGain.gain.setValueAtTime(0.05, t);
+        crowdGain.gain.linearRampToValueAtTime(0.16, t + 0.2);
+        crowdGain.gain.linearRampToValueAtTime(0.05, t + 3);
+      }
+    };
+    ensureAudio(); // the toggle button that mounted this overlay was itself a user gesture
+
+    // ── Physics — real cannon-es, the same engine driving DriveOverlay's
+    // RaycastVehicle just below this component (see world.step there). ──
+    const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -9.82, 0) });
+    const groundMat = new CANNON.Material("ground");
+    const ballMat = new CANNON.Material("ball");
+    const postMat = new CANNON.Material("post");
+    world.addContactMaterial(new CANNON.ContactMaterial(groundMat, ballMat, { restitution: 0.78, friction: 0.35 }));
+    world.addContactMaterial(new CANNON.ContactMaterial(postMat, ballMat, { restitution: 0.55, friction: 0.2 }));
+    const groundBody = new CANNON.Body({ mass: 0, shape: new CANNON.Plane(), material: groundMat });
+    groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
+    world.addBody(groundBody);
+    const ballBody = new CANNON.Body({ mass: 1, shape: new CANNON.Sphere(BALL_R), material: ballMat, linearDamping: 0.28, angularDamping: 0.4 });
+    ballBody.position.set(KICKOFF.x, KICKOFF.y, KICKOFF.z);
+    world.addBody(ballBody);
+    [-GOAL_W / 2, GOAL_W / 2].forEach((px) => {
+      const postBody = new CANNON.Body({ mass: 0, shape: new CANNON.Cylinder(0.09, 0.09, GOAL_H, 10), material: postMat });
+      postBody.position.set(px, GOAL_H / 2, GOAL_Z);
+      world.addBody(postBody);
+    });
+    const barBody = new CANNON.Body({ mass: 0, shape: new CANNON.Cylinder(0.09, 0.09, GOAL_W, 10), material: postMat });
+    barBody.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 0, 1), Math.PI / 2);
+    barBody.position.set(0, GOAL_H, GOAL_Z);
+    world.addBody(barBody);
+
+    let scored = false;
+    let settleTimer = 0;
+    const clampNum = (v, a, b) => Math.max(a, Math.min(b, v));
+    const resetBall = () => {
+      ballBody.velocity.set(0, 0, 0);
+      ballBody.angularVelocity.set(0, 0, 0);
+      ballBody.position.set(KICKOFF.x, KICKOFF.y, KICKOFF.z);
+      ballBody.quaternion.set(0, 0, 0, 1);
+      scored = false;
+      settleTimer = 0;
+      goalSign.visible = false;
+    };
+    const onGoal = () => {
+      scored = true;
+      setGoals((g) => g + 1);
+      playGoalRoar();
+      playHorn();
+      jersey.visible = true;
+      jerseyTimer = 3.4;
+      goalSign.visible = true;
+      setTimeout(() => { if (!cancelled) resetBall(); }, 1900);
+    };
+    let jerseyTimer = 0;
+    // Aim + kick — the ball only accepts a fresh kick once it's basically at
+    // rest, and the shot direction is straight at the goal PLUS whatever
+    // offset the player dialed in with the camera orbit (camAz below):
+    // the literal "calculate the camera's current viewing angle" ask.
+    const kick = () => {
+      if (ballBody.velocity.length() > 0.6) return;
+      const aimOffset = clampNum(camAz - Math.PI, -0.42, 0.42);
+      const angle = Math.PI + aimOffset;
+      const power = 15.5;
+      ballBody.velocity.set(Math.sin(angle) * power, 7.2, Math.cos(angle) * power);
+      ballBody.angularVelocity.set((Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6);
+    };
+    liveRef.current.fifaKick = kick;
+
+    // ── Camera-orbit aim (left stick / A-D — same channel+convention as
+    // every other overlay's look control) + keyboard/gamepad + touch-tap-
+    // the-ball kicking. ──
+    const keys = {};
+    const onKeyDown = (e) => {
+      keys[e.key.toLowerCase()] = true;
+      if (e.key === " ") kick();
+    };
+    const onKeyUp = (e) => { keys[e.key.toLowerCase()] = false; };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    let gamepadIndex = null;
+    const onGpConnect = (e) => { if (e.gamepad.mapping === "standard") gamepadIndex = e.gamepad.index; };
+    const onGpDisconnect = (e) => { if (gamepadIndex === e.gamepad.index) gamepadIndex = null; };
+    window.addEventListener("gamepadconnected", onGpConnect);
+    window.addEventListener("gamepaddisconnected", onGpDisconnect);
+    try {
+      const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+      for (const g of pads) { if (g && g.connected && g.mapping === "standard") { gamepadIndex = g.index; break; } }
+    } catch {}
+    const GP_DEADZONE = 0.2;
+    const gpAxis = (v) => (Math.abs(v) < GP_DEADZONE ? 0 : v);
+
+    const raycaster = new THREE.Raycaster();
+    const onPointerDown = (e) => {
+      const rect = renderer.domElement.getBoundingClientRect();
+      const ndc = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+      raycaster.setFromCamera(ndc, camera);
+      if (raycaster.intersectObject(ballMesh).length) kick();
+    };
+    renderer.domElement.addEventListener("pointerdown", onPointerDown);
+
+    let camAz = Math.PI; // facing the goal (-Z) at kickoff
+    const clock = new THREE.Clock();
+    let raf;
+    const animate = () => {
+      if (cancelled) return;
+      raf = requestAnimationFrame(animate);
+      const dt = Math.min(0.05, clock.getDelta());
+
+      const tv = liveRef?.current?.turnVec || { x: 0, y: 0 };
+      const gp = (gamepadIndex !== null && navigator.getGamepads) ? navigator.getGamepads()[gamepadIndex] : null;
+      const gcx = gp ? gpAxis(gp.axes[2] || 0) : 0;
+      let turn = -((keys["d"] || keys["arrowright"] ? 1 : 0) - (keys["a"] || keys["arrowleft"] ? 1 : 0));
+      if (!turn) turn = gcx ? -gcx : (Math.hypot(tv.x, tv.y) > 0.001 ? -tv.x : 0);
+      camAz = clampNum(camAz + turn * 1.4 * dt, Math.PI - 0.42, Math.PI + 0.42);
+
+      world.step(1 / 60, dt, 4);
+      ballMesh.position.set(ballBody.position.x, ballBody.position.y, ballBody.position.z);
+      ballMesh.quaternion.set(ballBody.quaternion.x, ballBody.quaternion.y, ballBody.quaternion.z, ballBody.quaternion.w);
+
+      if (!scored) {
+        if (ballBody.position.z < GOAL_Z + 0.55 && ballBody.position.z > GOAL_Z - 1.4 &&
+            Math.abs(ballBody.position.x) < GOAL_W / 2 - 0.15 && ballBody.position.y < GOAL_H - 0.1) {
+          onGoal();
+        } else if (ballBody.position.z < -PITCH_D / 2 - 3 || Math.abs(ballBody.position.x) > PITCH_W / 2 + 3 || ballBody.position.z > PITCH_D / 2 + 3) {
+          resetBall();
+        } else {
+          const atRest = ballBody.velocity.length() < 0.15;
+          const awayFromSpot = Math.hypot(ballBody.position.x - KICKOFF.x, ballBody.position.z - KICKOFF.z) > 1;
+          settleTimer = atRest && awayFromSpot ? settleTimer + dt : 0;
+          if (settleTimer > 1.8) resetBall();
+        }
+      }
+
+      if (jerseyTimer > 0) { jerseyTimer -= dt; jersey.position.y = GOAL_H + 1.6 + Math.sin(clock.elapsedTime * 0.8) * 0.08; if (jerseyTimer <= 0) jersey.visible = false; }
+
+      const cp = confGeo.attributes.position;
+      for (let i = 0; i < CONF_N; i++) {
+        let y = cp.getY(i) + confVel[i * 3 + 1] * dt;
+        let x = cp.getX(i) + confVel[i * 3] * dt;
+        let z = cp.getZ(i) + confVel[i * 3 + 2] * dt;
+        if (y < 0) { y = 14 + Math.random() * 4; x = (Math.random() - 0.5) * PITCH_W * 1.3; z = (Math.random() - 0.5) * PITCH_D * 1.15; }
+        cp.setXYZ(i, x, y, z);
+      }
+      cp.needsUpdate = true;
+
+      camera.position.set(KICKOFF.x - Math.sin(camAz) * 5, KICKOFF.y + 2.3, KICKOFF.z - Math.cos(camAz) * 5);
+      camera.lookAt(ballMesh.position.x, ballMesh.position.y + 0.3, ballMesh.position.z);
+
+      renderer.render(scene, camera);
+    };
+    animate();
+
+    const onResize = () => {
+      camera.aspect = mount.clientWidth / mount.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(mount.clientWidth, mount.clientHeight);
+    };
+    window.addEventListener("resize", onResize);
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("gamepadconnected", onGpConnect);
+      window.removeEventListener("gamepaddisconnected", onGpDisconnect);
+      renderer.domElement.removeEventListener("pointerdown", onPointerDown);
+      if (crowdSrc) { try { crowdSrc.stop(); } catch {} }
+      if (audioCtx) { try { audioCtx.close(); } catch {} }
+      scene.traverse((obj) => {
+        if (obj.geometry) obj.geometry.dispose();
+        if (obj.material) {
+          const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+          mats.forEach(disposeMaterial);
+        }
+      });
+      renderer.dispose();
+      if (renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement);
+    };
+  }, []);
+
+  return (
+    <div className="off3-space-wrap">
+      <div ref={mountRef} className="off3-space-canvas" style={{ cursor: "default", touchAction: "manipulation" }} />
+      <div className="off3-fifa-hud">⚽ שערים: {goals}</div>
+      <div className="off3-hint">🎥 שמאלה/ימינה לכיוון · SHOOT או לחיצה על הכדור לבעיטה</div>
+      <button className="off3-fifa-shoot" onClick={() => liveRef.current.fifaKick?.()} title="בעיטה">⚽ SHOOT</button>
+      <button className="off3-space-return" onClick={onReturn}>🚪 חזרה למשרד</button>
+    </div>
+  );
+}
+
 function DriveOverlay({ onReturn, liveRef, vehicle: vehicleType = "car" }) {
   const cfg = VEHICLE_CONFIGS[vehicleType] || VEHICLE_CONFIGS.car;
   const mountRef = useRef(null);
@@ -6328,6 +6739,11 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   // its open door), same "walk up, prompt appears" pattern as the plane.
   const [nearHangar, setNearHangar] = useState(false);
   const [inHangar, setInHangar] = useState(false);
+  // Copa Gloria — the Virtual Pitch, entered from a standing HUD toggle
+  // (off3-fifa-btn below) rather than a walk-up spot, so it needs its own
+  // top-level pause flag mirrored onto liveRef the same way inHangar is.
+  const [inPitch, setInPitch] = useState(false);
+  useEffect(() => { liveRef.current.inPitch = inPitch; }, [inPitch]);
   // Driving mini-mode, entered from beside the parked Tiggo 7 inside the
   // Hangar — nested under inHangar (stays true the whole time) rather than
   // its own top-level pause flag, so the main office scene's existing
@@ -9946,7 +10362,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       // own renderer for the same GPU and dragging it down. Skip all of it
       // while any overlay is active; clock.getDelta() above still gets called
       // every tick so time doesn't jump when the overlay closes.
-      if (liveRef.current.inHangar || liveRef.current.inFlight || liveRef.current.inSpace || liveRef.current.inHolodeck) return;
+      if (liveRef.current.inHangar || liveRef.current.inFlight || liveRef.current.inSpace || liveRef.current.inHolodeck || liveRef.current.inPitch) return;
       // Sample real (unclamped) frame time for ~2s starting 6s in — long
       // enough for the initial GLB/texture loads to be done so their one-time
       // hitches don't get mistaken for a sustained low-power GPU. One shot
@@ -11819,6 +12235,9 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       >
         🎉 {partyMode ? "Party פעיל" : "מצב Party"}
       </button>
+      <button className="off3-fifa-btn" onClick={() => setInPitch(true)} title="כניסה למגרש הוירטואלי — Copa Gloria">
+        ⚽ מגרש וירטואלי
+      </button>
       {radioPlaying && !(phoneOpen && phoneTab === "radio") && (
         <div className="off3-radio-mini" title={radioStationName}>
           <Radio size={13} />
@@ -12403,6 +12822,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       {inSpace && <SpaceOverlay onReturn={() => liveRef.current.exitPortal?.()} load={spacePortalLoad} />}
       {inHolodeck && <HolodeckOverlay onReturn={() => liveRef.current.exitHolodeck?.()} liveRef={liveRef} />}
       {inFlight && <FlightOverlay onReturn={() => setInFlight(false)} />}
+      {inPitch && <FifaOverlay onReturn={() => setInPitch(false)} liveRef={liveRef} />}
       {inHangar && !inDrive && !inRobot && (
         <HangarOverlay
           onReturn={() => setInHangar(false)}

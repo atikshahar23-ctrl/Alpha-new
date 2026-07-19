@@ -4672,6 +4672,28 @@ function StyleTag() {
 .off3-party:hover{border-color:#E4BC63;color:#fff3d0}
 .off3-party.on{background:linear-gradient(135deg,rgba(228,188,99,.34),rgba(255,120,80,.16));
   color:#fff3d0;border-color:#E4BC63;box-shadow:0 0 18px rgba(228,188,99,.45)}
+.off3-fifa-btn{position:absolute;top:176px;right:10px;z-index:3;height:34px;padding:0 13px;border-radius:17px;
+  display:flex;align-items:center;justify-content:center;gap:6px;background:rgba(6,9,18,.72);
+  border:1px solid rgba(117,170,219,.35);color:#eaf1ff;font-weight:800;font-size:.75rem;
+  cursor:pointer;backdrop-filter:blur(8px);white-space:nowrap;font-family:inherit}
+.off3-fifa-btn:hover{border-color:#75AADB;color:#d7ecff}
+
+/* ── Copa Gloria — Virtual Pitch HUD ──────────────────────────────────────
+   Score readout and hint share the overlay's own z-index:31 tier (same as
+   every other overlay's HUD — .off3-flight-hud etc.), never above the
+   always-mounted joysticks' z-index:33. SHOOT sits low-right, well clear of
+   the right joystick's own bottom:26px/right:22px 112×112 box (Pillar 1's
+   "keep the simulator controls perfectly positioned, center unobstructed"
+   ask) and gets touch-action:manipulation so a fast double-tap shoot never
+   triggers a page zoom on mobile (Pillar 4). */
+.off3-fifa-hud{position:absolute;top:14px;left:14px;z-index:31;height:36px;padding:0 18px;border-radius:18px;
+  display:flex;align-items:center;background:rgba(8,12,20,.78);border:1px solid rgba(246,180,14,.4);
+  color:#fff3d0;font-weight:800;font-size:.85rem;backdrop-filter:blur(8px);font-family:'Rubik'}
+.off3-fifa-shoot{position:absolute;bottom:170px;right:22px;z-index:31;width:92px;height:92px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;background:rgba(246,180,14,.22);
+  border:2px solid rgba(246,180,14,.65);color:#fff3d0;font-weight:900;font-size:.95rem;
+  cursor:pointer;backdrop-filter:blur(6px);touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.off3-fifa-shoot:active{background:rgba(246,180,14,.4);transform:scale(.94)}
 
 /* ── ALPHA MEGA-PATCH V1.0 — module UI ─────────────────────────────────── */
 .off3-garage-hud{position:absolute;bottom:150px;left:50%;transform:translateX(-50%);z-index:31;
