@@ -621,3 +621,125 @@ export function applyCyberPalette(coreMat: THREE.ShaderMaterial, palette: CyberP
   (coreMat.uniforms.uRim.value as THREE.Color).setHex(palette.rim);
   if (haloMat && haloMat.uniforms.uColor) (haloMat.uniforms.uColor.value as THREE.Color).setHex(palette.halo);
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// GHOST IN THE CORE — the "Syrax" holographic figure reaching into the
+// plasma core (owner reference: a translucent gold/cyan wireframe-scan
+// silhouette standing beside the sun, one arm extended toward it). Built
+// the same way every character rig in this codebase is built — a handful
+// of capsule/sphere proxies, no skinned mesh or GLB needed — all sharing
+// ONE ShaderMaterial for a single draw-call-cheap hologram look.
+//
+// The material takes the CORE's own uTime/uAudioAmplitude uniform OBJECTS
+// (not copies), so her scanline sweep and glow brighten in lockstep with
+// Alpha's voice for free — the existing per-frame uAudioAmplitude update
+// (driven by TTS/mic amplitude, see buildAlphaBrain's animate-loop callers)
+// already drives this without any new audio wiring.
+// ═══════════════════════════════════════════════════════════════════════
+export function buildSyraxMaterial(sharedUniforms: { uTime: { value: number }; uAudioAmplitude: { value: number } }): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: sharedUniforms.uTime as any,
+      uAudioAmplitude: sharedUniforms.uAudioAmplitude as any,
+    },
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending,
+    vertexShader: /* glsl */`
+      varying vec3 vNormalW;
+      varying vec3 vViewDirW;
+      varying float vLocalY;
+      void main() {
+        vec4 worldPos = modelMatrix * vec4(position, 1.0);
+        vNormalW  = normalize(mat3(modelMatrix) * normal);
+        vViewDirW = normalize(cameraPosition - worldPos.xyz);
+        vLocalY = position.y;
+        gl_Position = projectionMatrix * viewMatrix * worldPos;
+      }
+    `,
+    fragmentShader: /* glsl */`
+      precision highp float;
+      uniform float uTime;
+      uniform float uAudioAmplitude;
+      varying vec3 vNormalW;
+      varying vec3 vViewDirW;
+      varying float vLocalY;
+      ${CYBER_PULSE_GLSL}
+      void main() {
+        float pulse = cyberPulse(uTime, uAudioAmplitude);
+        float fresnel = pow(1.0 - clamp(dot(normalize(vNormalW), normalize(vViewDirW)), 0.0, 1.0), 2.2);
+        vec3 gold = vec3(1.0, 0.78, 0.28);
+        vec3 cyan = vec3(0.25, 0.92, 1.0);
+        vec3 col = mix(gold, cyan, fresnel);
+        // A scanline band sweeps her body continuously — faster and
+        // brighter while she "speaks" (uAudioAmplitude), settling to a
+        // slow idle sweep when silent.
+        float speed = 0.35 + uAudioAmplitude * 1.6;
+        float scanY = fract(vLocalY * 0.55 - uTime * speed);
+        float scan = smoothstep(0.97, 1.0, scanY) + smoothstep(0.05, 0.0, scanY) * 0.6;
+        // Kept deliberately dim in the body (mostly-transparent construct,
+        // not a solid figure) — many overlapping additive-blended limb
+        // meshes stack fast, so headroom here is what keeps her reading as
+        // glowing edges + a scanline sweep instead of a blown-out white
+        // silhouette once bloom picks it up.
+        float body = 0.16 + fresnel * 0.38;
+        float glow = (body + scan * (0.45 + uAudioAmplitude * 1.1)) * pulse * (0.65 + uAudioAmplitude * 0.55);
+        gl_FragColor = vec4(col * glow, clamp(0.14 + fresnel * 0.3 + scan * 0.26, 0.0, 0.55));
+      }
+    `,
+  });
+}
+
+export interface SyraxHologram {
+  group: THREE.Group;
+  update(time: number): void;
+}
+
+// A low-poly primitive rig — head/torso/hips/legs plus two shoulder-pivot
+// arm groups (the right one pre-rotated to reach up and across toward the
+// core at the parent group's origin) — every mesh shares the one material
+// above. update(time) drives a slow idle sway/breathing motion so she
+// reads as alive even when uAudioAmplitude is at rest.
+export function buildSyraxHologram(sharedUniforms: { uTime: { value: number }; uAudioAmplitude: { value: number } }): SyraxHologram {
+  const mat = buildSyraxMaterial(sharedUniforms);
+  const group = new THREE.Group();
+  const cap = (r: number, len: number) => new THREE.CapsuleGeometry(r, len, 4, 8);
+  const sph = (r: number) => new THREE.SphereGeometry(r, 12, 12);
+
+  const head = new THREE.Mesh(sph(0.155), mat); head.position.y = 2.32; group.add(head);
+  const neck = new THREE.Mesh(cap(0.055, 0.08), mat); neck.position.y = 2.16; group.add(neck);
+  const torso = new THREE.Mesh(cap(0.21, 0.5), mat); torso.position.y = 1.78; group.add(torso);
+  const hips = new THREE.Mesh(sph(0.2), mat); hips.position.y = 1.38; hips.scale.set(1, 0.72, 0.85); group.add(hips);
+
+  // Legs — standing, slight contrapposto.
+  const thighL = new THREE.Mesh(cap(0.09, 0.46), mat); thighL.position.set(-0.1, 1.02, 0.02); thighL.rotation.z = 0.03; group.add(thighL);
+  const shinL = new THREE.Mesh(cap(0.075, 0.46), mat); shinL.position.set(-0.1, 0.54, 0.02); group.add(shinL);
+  const footL = new THREE.Mesh(sph(0.09), mat); footL.position.set(-0.1, 0.08, 0.08); footL.scale.set(1, 0.6, 1.5); group.add(footL);
+  const thighR = new THREE.Mesh(cap(0.09, 0.46), mat); thighR.position.set(0.11, 1.0, -0.03); thighR.rotation.z = -0.08; group.add(thighR);
+  const shinR = new THREE.Mesh(cap(0.075, 0.46), mat); shinR.position.set(0.15, 0.53, -0.05); shinR.rotation.z = -0.05; group.add(shinR);
+  const footR = new THREE.Mesh(sph(0.09), mat); footR.position.set(0.16, 0.08, 0.02); footR.scale.set(1, 0.6, 1.5); group.add(footR);
+
+  // Left arm — relaxed at her side.
+  const shoulderL = new THREE.Group(); shoulderL.position.set(-0.27, 1.95, 0); group.add(shoulderL);
+  const upperArmL = new THREE.Mesh(cap(0.065, 0.34), mat); upperArmL.position.y = -0.2; upperArmL.rotation.z = 0.18; shoulderL.add(upperArmL);
+  const foreArmL = new THREE.Mesh(cap(0.055, 0.32), mat); foreArmL.position.set(-0.06, -0.52, 0); foreArmL.rotation.z = 0.1; shoulderL.add(foreArmL);
+  const handL = new THREE.Mesh(sph(0.06), mat); handL.position.set(-0.09, -0.78, 0); shoulderL.add(handL);
+
+  // Right arm — reaching up and inward toward the core at [0,0,0].
+  const shoulderR = new THREE.Group(); shoulderR.position.set(0.27, 1.95, 0); group.add(shoulderR);
+  const upperArmR = new THREE.Mesh(cap(0.065, 0.34), mat); upperArmR.position.y = -0.17; shoulderR.add(upperArmR);
+  const foreArmR = new THREE.Mesh(cap(0.055, 0.32), mat); foreArmR.position.set(0, -0.35, 0); shoulderR.add(foreArmR);
+  const handR = new THREE.Mesh(sph(0.065), mat); handR.position.set(0, -0.5, 0); shoulderR.add(handR);
+  shoulderR.rotation.z = -1.15;
+  shoulderR.rotation.x = 0.35;
+
+  const update = (time: number) => {
+    group.rotation.y = Math.sin(time * 0.18) * 0.05;
+    shoulderR.rotation.z = -1.15 + Math.sin(time * 0.6) * 0.04;
+    shoulderL.rotation.z = 0.18 + Math.sin(time * 0.5 + 1.3) * 0.02;
+    head.rotation.y = Math.sin(time * 0.4) * 0.06;
+  };
+
+  return { group, update };
+}

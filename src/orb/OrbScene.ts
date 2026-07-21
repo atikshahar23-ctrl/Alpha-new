@@ -6,7 +6,7 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
 import { pikaEmoteSpeak } from '../assistant/pikaVoice';
-import { buildCyberSunMaterial, buildCyberHalo, buildCageLines, applyCyberPalette, tintCage, CYBER_GOLD, CYBER_GOAT, type CyberPalette } from './sunShader';
+import { buildCyberSunMaterial, buildCyberHalo, buildCageLines, applyCyberPalette, tintCage, buildSyraxHologram, CYBER_GOLD, CYBER_GOAT, type CyberPalette, type SyraxHologram } from './sunShader';
 import { readObj, writeObj } from '../util/batchedStore';
 import { GEN1 } from '../data/gen1';
 import { POKEMON_SPRITE_COLOR } from '../data/pokemonColors';
@@ -1508,6 +1508,7 @@ interface AlphaBrainParts {
   wire2: THREE.Object3D;
   tendrils: DataTendrils;
   light: THREE.PointLight;
+  syrax: SyraxHologram;
   setPalette(p: CyberPalette): void;
 }
 function buildAlphaBrain(segments = 96): AlphaBrainParts {
@@ -1538,13 +1539,21 @@ function buildAlphaBrain(segments = 96): AlphaBrainParts {
   group.add(tendrils.group);
   const light = new THREE.PointLight(goat ? CYBER_GOAT.light : gold, 1.6, 9);
   group.add(light);
+  // "Ghost in the Core" — the Syrax hologram reaching into the plasma core,
+  // sharing the CORE's own uTime/uAudioAmplitude uniform objects so her
+  // scanline pulse brightens with Alpha's voice for free (see per-frame
+  // uAudioAmplitude updates in both mounts' animate loops below).
+  const syrax = buildSyraxHologram(coreMat.uniforms as any);
+  syrax.group.position.set(-1.55, -1.05, 0.2);
+  syrax.group.scale.setScalar(0.85);
+  group.add(syrax.group);
   const setPalette = (p: CyberPalette) => {
     applyCyberPalette(coreMat, p, halo.material as THREE.ShaderMaterial);
     tintCage(wire, p.cageInner);
     tintCage(wire2, p.cageOuter);
     light.color.setHex(p.light);
   };
-  return { group, core, coreMat, wire, wire2, tendrils, light, setPalette };
+  return { group, core, coreMat, wire, wire2, tendrils, light, syrax, setPalette };
 }
 
 // Atmosphere glow shaders — volumetric, animated, multi-fresnel
@@ -3486,6 +3495,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     alphaBrain.coreMat.uniforms.uTime.value = time;
     alphaBrain.coreMat.uniforms.uAudioAmplitude.value = coreAmp;
     alphaBrain.tendrils.update(dt, coreAmp, time); // data streams into the core on speech
+    alphaBrain.syrax.update(time); // "Ghost in the Core" idle sway + reach
 
     // ── Jet-turbine ignition sequence — fires once, right at boot ──
     if (ignitionPending) { ignitionPending = false; ignitionStartTime = time; ignitionAudio?.ignite(); }
@@ -4645,6 +4655,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     alphaBrain.coreMat.uniforms.uTime.value = time;
     alphaBrain.coreMat.uniforms.uAudioAmplitude.value = coreAmp;
     alphaBrain.tendrils.update(dt, coreAmp, time); // data streams into the core on speech
+    alphaBrain.syrax.update(time); // "Ghost in the Core" idle sway + reach
 
     // ── Jet-turbine ignition sequence — fires once, right at boot ──
     if (ignitionPending) { ignitionPending = false; ignitionStartTime = time; ignitionAudio?.ignite(); }

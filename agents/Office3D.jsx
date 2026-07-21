@@ -18,7 +18,7 @@ import { DragControls } from "three/examples/jsm/controls/DragControls.js";
 import { MeshSurfaceSampler } from "three/examples/jsm/math/MeshSurfaceSampler.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import * as CANNON from "cannon-es";
-import { buildCyberSunMaterial, buildCyberHalo, buildCageLines, isGoatMode, CYBER_GOAT } from "../src/orb/sunShader";
+import { buildCyberSunMaterial, buildCyberHalo, buildCageLines, buildSyraxHologram, isGoatMode, CYBER_GOAT } from "../src/orb/sunShader";
 import { MessageCircle, Eye, User, Mic, VolumeX, Volume2, X, Zap, Settings as SettingsIcon, Trash2, Radio, Pause, Lock, Unlock } from "lucide-react";
 import { useDeviceProfile } from "./deviceProfiler.js";
 import RadioController from "./RadioController.jsx";
@@ -9023,6 +9023,13 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
       scene.userData.sunWire2 = wire2; // animate() counter-rotates it against `wire`
       const sunLight = new THREE.PointLight(sunColor, 1.4, 26);
       sunGroup.add(sunLight);
+      // "Ghost in the Core" — the Syrax hologram, scaled up to match this
+      // giant office sun (1.8 vs. the dashboard orb's 1.1 core radius).
+      const sunSyrax = buildSyraxHologram(sunCoreMat.uniforms);
+      sunSyrax.group.position.set(-2.55, -1.75, 0.35);
+      sunSyrax.group.scale.setScalar(1.4);
+      sunGroup.add(sunSyrax.group);
+      scene.userData.sunSyrax = sunSyrax; // animate() drives her idle sway
       // Nameplate floats just above the ball (under the 5.4m ceiling)
       // instead of below it now that the ball itself sits near the floor.
       const sunSign = buildNeonSign("אלפא · העוזר הראשי", sunColor, 4.2, 0.8);
@@ -10646,6 +10653,7 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
         const talkingAmp = liveRef.current.voiceState === "speaking" ? 0.85 : liveRef.current.voiceState === "listening" ? 0.3 : 0.08;
         sm.uniforms.uAudioAmplitude.value += (talkingAmp - sm.uniforms.uAudioAmplitude.value) * Math.min(1, dt * 3);
       }
+      if (scene.userData.sunSyrax) scene.userData.sunSyrax.update(clock.elapsedTime);
       // Outer cyan cage counter-rotates against the gold `wire` (which spins
       // via ownerSpinners above) — same deltas as the main dashboard orb's
       // wire/wire2 pair, so both surfaces read as the same living object.
