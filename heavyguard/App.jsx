@@ -387,6 +387,33 @@ export default function App() {
     setIndex(next); try { await saveIndex(next); } catch {}
     await store.del("hg2:photo:" + id); await store.del("hg2:gallery:" + id); await store.del("hg2:video:" + id);
   };
+  // A running draft's typed fields/photos live only in NewInstall's local
+  // state until the user finishes — if they exit early (back arrow) instead
+  // of pressing "סיים ושמור", that in-progress work must be written into the
+  // stored draft or it's gone the next time they resume it, even though the
+  // draft row itself now survives the cancel()-emptiness check above.
+  const updateDraftProgress = async (id, data, photoFull, media = {}) => {
+    if (photoFull) { try { await store.set("hg2:photo:" + id, photoFull); } catch {} }
+    else { await store.del("hg2:photo:" + id); }
+    const gf = media.galleryFull || [];
+    if (gf.length) { try { await store.set("hg2:gallery:" + id, JSON.stringify(gf)); } catch {} }
+    else { await store.del("hg2:gallery:" + id); }
+    let videoStored = false;
+    if (media.video && media.video.stored && media.video.dataUrl) {
+      try { await store.set("hg2:video:" + id, media.video.dataUrl); videoStored = true; } catch { videoStored = false; }
+    } else { await store.del("hg2:video:" + id); }
+    let computed = null;
+    setIndex((prev) => {
+      computed = prev.map((x) => x.id === id ? {
+        ...x, ...data, status: "running", thumb: data.thumb || null, hasPhoto: !!photoFull,
+        photoThumbs: media.galleryThumbs || [], photoCount: gf.length,
+        videoPoster: media.video ? media.video.poster || null : null,
+        hasVideo: !!(media.video && (media.video.poster || videoStored)), videoStored,
+      } : x);
+      return computed;
+    });
+    if (computed) { try { await saveIndex(computed); } catch {} }
+  };
 
   const addInstall = async (data, photoFull, media = {}, existingId = null) => {
     const id = existingId || uid();
@@ -483,7 +510,7 @@ export default function App() {
         {view === "finance" && <Finance index={index} onBack={() => setView("hub")} />}
         {view === "leads" && <Leads onBack={() => setView("hub")} showToast={showToast} />}
         {view === "settings" && <SettingsView onBack={() => setView("hub")} showToast={showToast} />}
-        {view === "new" && <NewInstall onCancel={() => setView("logger")} onSave={addInstall} onStartDraft={startDraft} onDiscardDraft={discardDraft} resumeEntry={resumeId ? index.find((x) => x.id === resumeId) : null} customers={customerDirectory(index)} showToast={showToast} />}
+        {view === "new" && <NewInstall onCancel={() => setView("logger")} onSave={addInstall} onStartDraft={startDraft} onDiscardDraft={discardDraft} onUpdateDraft={updateDraftProgress} resumeEntry={resumeId ? index.find((x) => x.id === resumeId) : null} customers={customerDirectory(index)} showToast={showToast} />}
         {view === "detail" && <Detail entry={index.find((x) => x.id === detailId)} onBack={() => setView(prevTab)} onDelete={removeInstall} onUpdate={updateInstall} customers={customerDirectory(index)} showToast={showToast} />}
       </div>
       {toast && <div className={"hg2-toast " + toast.kind}>{toast.kind === "ok" ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}{toast.msg}</div>}
@@ -3663,7 +3690,7 @@ function customerDirectory(index) {
 }
 
 /* ============================ New installation ============================ */
-function NewInstall({ onCancel, onSave, onStartDraft, onDiscardDraft, resumeEntry, customers, showToast }) {
+function NewInstall({ onCancel, onSave, onStartDraft, onDiscardDraft, onUpdateDraft, resumeEntry, customers, showToast }) {
   const r = resumeEntry || null;
   const [contractor, setContractor] = useState(r ? r.contractor : null);
   const [phase, setPhase] = useState(r ? "running" : "pick"); // pick | running | done
@@ -3686,6 +3713,27 @@ function NewInstall({ onCancel, onSave, onStartDraft, onDiscardDraft, resumeEntr
     : { location: "", idType: "רישוי", idNumber: "", installType: "", manufacturer: "", vehicleType: "", price: "", phone: "", customer: "", date: todayISO(), withItai: false });
 
   useEffect(() => {
+    // Resuming a draft only restores its text fields (from `r` above) — the
+    // photo/gallery/video live in IndexedDB under the draft's id and were
+    // never loaded into local state, so finalizing a resumed draft would
+    // silently save it with no media even though the files are still there.
+    if (!r) return;
+    if (r.hasPhoto) loadPhoto(r.id).then((full) => { if (full) setPhotoFull(full); });
+    if (r.photoCount > 0) {
+      loadGallery(r.id).then((fulls) => {
+        const thumbs = r.photoThumbs || [];
+        setGallery((fulls || []).map((full, i) => ({ full, thumb: thumbs[i] || full })));
+      });
+    }
+    if (r.videoStored) {
+      loadVideo(r.id).then((dataUrl) => { if (dataUrl) setVideo({ dataUrl, poster: r.videoPoster || null, stored: true }); });
+    } else if (r.videoPoster) {
+      setVideo({ dataUrl: null, poster: r.videoPoster, stored: false });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
     if (phase !== "running") return;
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
@@ -3704,9 +3752,37 @@ function NewInstall({ onCancel, onSave, onStartDraft, onDiscardDraft, resumeEntr
   };
   const finish = () => { setEndTs(Date.now()); setPhase("done"); };
   const cancel = async () => {
-    // Discard an empty draft on explicit cancel; keep it if real data was entered
-    if (draftId && onDiscardDraft && !f.vehicleType && !f.idNumber && !f.location && !(Number(f.price) > 0)) {
+    // Discard an empty draft on explicit cancel; keep it if ANY real data was
+    // entered. This used to check only vehicleType/idNumber/location/price —
+    // a contractor whose jobs get logged mainly by photo + installType/
+    // manufacturer (heavy machinery with no standard license plate, say)
+    // would have that real work silently tombstoned the instant the user
+    // pressed back, with no error shown, because none of those 4 specific
+    // fields happened to be filled. Treat every field the form actually
+    // collects, plus any attached photo/gallery/video, as "real data".
+    const isEmpty = !f.vehicleType && !f.idNumber && !f.location && !(Number(f.price) > 0)
+      && !f.installType && !f.manufacturer && !f.customer && !f.phone
+      && !photoFull && gallery.length === 0 && !video;
+    if (draftId && isEmpty && onDiscardDraft) {
       try { await onDiscardDraft(draftId); } catch {}
+    } else if (draftId && !isEmpty && onUpdateDraft) {
+      // Real data was typed/photographed but the user is leaving before
+      // pressing "סיים ושמור" — write the current form state into the
+      // stored draft (status stays "running") so it isn't lost the next
+      // time they resume, since it only ever lived in this component's
+      // local state until now.
+      try {
+        await onUpdateDraft(draftId, {
+          contractor, location: f.location.trim(), idType: f.idType, idNumber: f.idNumber.trim(),
+          installType: f.installType.trim(), manufacturer: f.manufacturer.trim(), vehicleType: f.vehicleType.trim(),
+          price: Number(f.price) || 0, phone: f.phone.trim(), customer: f.customer.trim(), date: f.date,
+          startTs, thumb, withItai: f.withItai,
+        }, photoFull, {
+          galleryFull: gallery.map((g) => g.full),
+          galleryThumbs: gallery.map((g) => g.thumb),
+          video: video ? { dataUrl: video.dataUrl, poster: video.poster, stored: video.stored } : null,
+        });
+      } catch {}
     }
     onCancel();
   };
