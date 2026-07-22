@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-  <title>Alpha Assistant</title>
+  <title>Alpha OS · Heavy Guard</title>
   <script>
     // Force-clear old service workers and caches on every load
     (function(){
@@ -45,10 +45,17 @@
        account), and the AI provider is Groq/Gemini/Claude via API key. -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <!-- Non-blocking font CSS: loaded as print media then swapped to all once
+       fetched, so a slow fonts.googleapis.com response can never delay the
+       first paint of the boot screen. display=swap already guarantees text
+       shows in a fallback face until the webfonts land. -->
   <link
     href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Assistant:wght@300;400;500;600&display=swap"
-    rel="stylesheet"
+    rel="stylesheet" media="print" onload="this.media='all'"
   />
+  <noscript>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Assistant:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  </noscript>
 </head>
 <body>
   <!-- ── Intro: the owner's own Suno anthem (golden-gate lyric video) plays
@@ -56,7 +63,7 @@
             appear. Replaces the old alien/biometric/vault sequence. ── -->
   <div id="introOverlay">
     <video id="introVid" playsinline preload="none"></video>
-    <div class="intro-brand" aria-hidden="true">A L P H A</div>
+    <div class="intro-brand" aria-hidden="true">A L P H A<span class="intro-hg">HEAVY GUARD OS</span></div>
     <div class="intro-progress" aria-hidden="true"><span id="introBar"></span></div>
     <button id="introSound" type="button" hidden>🔊 הקש לסאונד</button>
     <button id="introSkip" type="button">דלג ⏭</button>
@@ -76,7 +83,9 @@
     #introVid{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:opacity .5s ease}
     .intro-brand{position:absolute;top:max(26px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:3;
       color:rgba(255,248,230,.92);font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:15px;letter-spacing:9px;
-      text-shadow:0 1px 12px rgba(120,60,0,.55)}
+      text-shadow:0 1px 12px rgba(120,60,0,.55);text-align:center;white-space:nowrap}
+    .intro-brand .intro-hg{display:block;margin-top:7px;font-size:9px;font-weight:600;letter-spacing:5px;
+      color:rgba(255,217,122,.85);text-shadow:0 0 10px rgba(255,200,90,.45)}
     .intro-progress{position:absolute;left:0;right:0;bottom:0;height:3px;z-index:3;background:rgba(120,60,0,.25)}
     .intro-progress span{display:block;height:100%;width:0;background:linear-gradient(90deg,#fff2cf,#ffd97a);
       box-shadow:0 0 10px rgba(255,220,140,.8);transition:width .25s linear}

@@ -786,6 +786,14 @@ body::after {
   0%, 100% { background-position: 0% 50%; }
   50% { background-position: 100% 50%; }
 }
+/* Heavy Guard brand line — the business identity, permanently under the
+   Alpha wordmark on the main screen. */
+.topL .wm-hg {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 10px; font-weight: 600; letter-spacing: 5px;
+  color: var(--gold); opacity: .78; text-transform: uppercase;
+  text-shadow: 0 0 12px rgba(255, 194, 77, .35);
+}
 .topL .clk {
   font-size: 13px; letter-spacing: 2px; margin-top: 4px;
   color: var(--gold); opacity: .5;
@@ -2149,6 +2157,9 @@ body::after {
      phones — hide it here (the welcome card already greets by name) and keep a
      compact clock + version stamp. */
   .topL .wm { display: none; }
+  /* On phones the Alpha wordmark is hidden — the Heavy Guard line becomes the
+     corner's brand mark, compacted so it never crowds the clock. */
+  .topL .wm-hg { font-size: 8px; letter-spacing: 3px; }
   .topL .clk { font-size: 11px; letter-spacing: 2px; margin-top: 0;
     color: rgba(218,165,32,.7); }
   /* Contained, right-aligned band between the clock and the edge — extra

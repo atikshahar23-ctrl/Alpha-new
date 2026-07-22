@@ -3846,7 +3846,13 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   // framerate: 0 = full (post-fx on), 1 = post-fx off, 2 = post-fx off + lower res.
   let qTier = 0;
   const prCap = () => {
-    const cap = perfFast ? 1 : (bigTouch ? 1.0 : 1.5);
+    // True desktops render the main object at native retina sharpness (DPR 2)
+    // — the orb is the centerpiece of the whole dashboard and a 1.5 cap
+    // visibly softens it on 2x displays. This is safe because the adaptive
+    // qTier watchdog below sheds post-fx and then resolution the moment the
+    // GPU can't hold ~55fps, so weaker machines settle exactly where they
+    // rendered before; iPad-class (bigTouch) and Fast mode keep their hard caps.
+    const cap = perfFast ? 1 : (bigTouch ? 1.0 : 2);
     const base = Math.min(window.devicePixelRatio || 1, cap);
     return qTier >= 2 ? Math.min(base, 1) : base;
   };
