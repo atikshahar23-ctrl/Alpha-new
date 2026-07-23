@@ -11,6 +11,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Rubik:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root{
+    --lyric-font: 19px;
     --bg:#08090d;
     --bg-elevated:#12141b;
     --bg-elevated-2:#1a1d27;
@@ -177,6 +178,11 @@
     background:var(--bg-elevated-2);
   }
   .chk input{accent-color:var(--cyan); width:16px; height:16px; cursor:pointer;}
+  .font-slider-row{display:flex; align-items:center; gap:10px;}
+  .font-slider-row input[type=range]{
+    flex:1; accent-color:var(--cyan); height:4px; cursor:pointer;
+  }
+  .font-slider-row .icon-btn{width:32px; height:32px; font-size:17px; font-weight:700; flex-shrink:0;}
   .sub-eyebrow{
     font-family:'Chakra Petch',sans-serif; letter-spacing:.12em; font-size:10.5px;
     color:var(--text-faint); text-transform:uppercase; direction:ltr; text-align:right;
@@ -270,8 +276,8 @@
     transition:color .2s ease;
   }
   .lyric-row .trans{
-    font-size:19px; font-weight:600; color:var(--text-dim);
-    transition:color .2s ease, opacity .3s ease;
+    font-size:var(--lyric-font); line-height:1.4; font-weight:600; color:var(--text-dim);
+    transition:color .2s ease, opacity .3s ease, font-size .1s ease;
   }
   .lyric-row .trans.pending{opacity:.42; font-weight:400;}
   .lyric-row[dir="rtl"] .trans{text-align:right;}
@@ -294,17 +300,14 @@
 
   /* ── Settings-driven display modes ── */
   .stage.hide-orig .orig{display:none;}
-  .stage.fs-s .trans{font-size:15px;}
-  .stage.fs-l .trans{font-size:26px; line-height:1.45;}
 
-  /* ── Karaoke mode: only the song header + lyrics, everything else gone ── */
+  /* ── Karaoke mode: only the song header + lyrics, everything else gone ──
+     Font size is controlled by the same slider in both modes (the user
+     dials it exactly where they want it); karaoke just strips the chrome. */
   body.karaoke .settings-panel,
   body.karaoke .manual-panel,
   body.karaoke footer{display:none !important;}
   body.karaoke .stage{max-height:calc(100vh - 220px);}
-  body.karaoke .stage .trans{font-size:27px; line-height:1.5;}
-  body.karaoke .stage.fs-s .trans{font-size:21px;}
-  body.karaoke .stage.fs-l .trans{font-size:34px;}
   #karaokeBtn.on{border-color:var(--border-strong); box-shadow:0 0 14px rgba(0,229,255,.3); color:var(--cyan);}
 
   .manual-nav{display:flex; gap:8px; justify-content:center; padding:10px 0 2px;}
@@ -366,14 +369,15 @@
           <option value="mymemory">MyMemory (גיבוי)</option>
         </select>
       </div>
-      <div class="field-row" style="margin:0;">
-        <label>גודל המילים</label>
-        <select id="fontSel">
-          <option value="s">קטן</option>
-          <option value="m" selected>בינוני</option>
-          <option value="l">גדול</option>
-        </select>
+    </div>
+    <div class="field-row">
+      <label>גודל המילים המתורגמות — <span id="fontSizeVal">19px</span></label>
+      <div class="font-slider-row">
+        <button type="button" id="fontMinus" class="icon-btn" aria-label="הקטן טקסט">−</button>
+        <input type="range" id="fontSizeSlider" min="14" max="140" step="1" value="19" aria-label="גודל טקסט">
+        <button type="button" id="fontPlus" class="icon-btn" aria-label="הגדל טקסט">+</button>
       </div>
+      <div class="hint">אפשר להגדיל עד כמה שרוצים — נוח למסך גדול או להקרנה מרחוק.</div>
     </div>
     <div class="hint">כל ההגדרות נשמרות במכשיר ומוחלות מיידית. מנוע Google מתרגם את כל השיר בבת אחת עם זיהוי שפת מקור אוטומטי; MyMemory משמש כגיבוי אוטומטי אם Google לא זמין.</div>
 
@@ -516,7 +520,10 @@
   const eqToggle = $('eqToggle');
   const origToggle = $('origToggle');
   const engineSel = $('engineSel');
-  const fontSel = $('fontSel');
+  const fontSizeSlider = $('fontSizeSlider');
+  const fontSizeVal = $('fontSizeVal');
+  const fontMinus = $('fontMinus');
+  const fontPlus = $('fontPlus');
   const karaokeBtn = $('karaokeBtn');
 
   redirectUriDisplay.value = REDIRECT_URI;
@@ -556,30 +563,39 @@
 
   // ================= DISPLAY SETTINGS (applied live) =================
   const prefersReducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const FONT_MIN = 14, FONT_MAX = 140;
   const settings = {
     eq: store.get('lt:eq_on'),
     showOrig: store.get('lt:show_orig'),
-    fontSize: store.get('lt:font_size') || 'm',
+    fontPx: store.get('lt:font_px') || 19,
     engine: store.get('lt:engine') || 'google',
   };
   if(settings.eq === null || settings.eq === undefined) settings.eq = !prefersReducedMotion;
   if(settings.showOrig === null || settings.showOrig === undefined) settings.showOrig = true;
+  settings.fontPx = Math.min(FONT_MAX, Math.max(FONT_MIN, Number(settings.fontPx) || 19));
 
   function applyDisplaySettings(){
     eqToggle.checked = !!settings.eq;
     origToggle.checked = !!settings.showOrig;
     engineSel.value = settings.engine;
-    fontSel.value = settings.fontSize;
+    fontSizeSlider.value = settings.fontPx;
+    fontSizeVal.textContent = settings.fontPx + 'px';
+    document.documentElement.style.setProperty('--lyric-font', settings.fontPx + 'px');
     stage.classList.toggle('hide-orig', !settings.showOrig);
-    stage.classList.toggle('fs-s', settings.fontSize === 's');
-    stage.classList.toggle('fs-l', settings.fontSize === 'l');
     eqCanvas.style.display = settings.eq ? '' : 'none';
     if(settings.eq) startEq(); else stopEq();
+  }
+  function setFontPx(px){
+    settings.fontPx = Math.min(FONT_MAX, Math.max(FONT_MIN, Math.round(px)));
+    store.set('lt:font_px', settings.fontPx);
+    applyDisplaySettings();
   }
   eqToggle.addEventListener('change', ()=>{ settings.eq = eqToggle.checked; store.set('lt:eq_on', settings.eq); applyDisplaySettings(); });
   origToggle.addEventListener('change', ()=>{ settings.showOrig = origToggle.checked; store.set('lt:show_orig', settings.showOrig); applyDisplaySettings(); });
   engineSel.addEventListener('change', ()=>{ settings.engine = engineSel.value; store.set('lt:engine', settings.engine); });
-  fontSel.addEventListener('change', ()=>{ settings.fontSize = fontSel.value; store.set('lt:font_size', settings.fontSize); applyDisplaySettings(); });
+  fontSizeSlider.addEventListener('input', ()=> setFontPx(Number(fontSizeSlider.value)));
+  fontMinus.addEventListener('click', ()=> setFontPx(settings.fontPx - 2));
+  fontPlus.addEventListener('click', ()=> setFontPx(settings.fontPx + 2));
   karaokeBtn.addEventListener('click', ()=>{
     document.body.classList.toggle('karaoke');
     karaokeBtn.classList.toggle('on', document.body.classList.contains('karaoke'));
@@ -898,9 +914,18 @@
 
   function currentLineIndex(progressMs){
     if(state.synced){
-      let idx = 0;
-      for(let i=0;i<state.lines.length;i++){
-        if(state.lines[i].t != null && state.lines[i].t <= progressMs) idx = i; else if(state.lines[i].t != null) break;
+      // Lines are in ascending time order (LRC is authored top-to-bottom).
+      // Binary search for the last line whose timestamp has passed — O(log n)
+      // instead of a linear scan on every 250ms tick, and correct at the
+      // start of the song: previously this defaulted to line 0 immediately,
+      // highlighting the first lyric before the real timestamp of the first
+      // line arrived (e.g. during an instrumental intro). -1 now means
+      // "no line yet", matching actual playback position.
+      let lo = 0, hi = state.lines.length - 1, idx = -1;
+      while(lo <= hi){
+        const mid = (lo + hi) >> 1;
+        if(state.lines[mid].t != null && state.lines[mid].t <= progressMs){ idx = mid; lo = mid + 1; }
+        else hi = mid - 1;
       }
       return idx;
     }
@@ -1184,7 +1209,17 @@
   }
 
   function setActiveLine(idx){
-    if(idx === state.activeIndex || idx < 0 || idx >= state.lines.length) return;
+    if(idx === state.activeIndex) return;
+    if(idx < 0 || idx >= state.lines.length){
+      // A backward seek to before the first line's real timestamp (or a
+      // song with no lines yet) should clear the highlight, not leave a
+      // stale line marked active — that's stale info, not "close enough".
+      if(idx < 0 && state.activeIndex >= 0){
+        stage.querySelectorAll('.lyric-row.active').forEach(r=>r.classList.remove('active'));
+        state.activeIndex = -1;
+      }
+      return;
+    }
     state.activeIndex = idx;
     const rows = stage.querySelectorAll('.lyric-row');
     rows.forEach(r=>r.classList.remove('active'));
