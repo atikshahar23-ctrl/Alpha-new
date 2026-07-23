@@ -169,6 +169,19 @@
   .redirect-copy{display:flex; gap:8px; align-items:center;}
   .redirect-copy input{flex:1; direction:ltr; text-align:left; font-family:'JetBrains Mono',monospace; font-size:12px;}
   .hint{font-size:12px; color:var(--text-faint); line-height:1.6; margin-top:4px;}
+  .settings-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:10px 18px; margin-bottom:14px;}
+  .chk{
+    display:flex; align-items:center; gap:9px;
+    font-size:13.5px; color:var(--text); cursor:pointer;
+    padding:9px 12px; border:1px solid var(--border); border-radius:var(--radius-sm);
+    background:var(--bg-elevated-2);
+  }
+  .chk input{accent-color:var(--cyan); width:16px; height:16px; cursor:pointer;}
+  .sub-eyebrow{
+    font-family:'Chakra Petch',sans-serif; letter-spacing:.12em; font-size:10.5px;
+    color:var(--text-faint); text-transform:uppercase; direction:ltr; text-align:right;
+    margin:16px 0 8px; border-top:1px solid var(--border); padding-top:14px;
+  }
 
   .now-playing{
     display:flex; align-items:center; gap:16px;
@@ -185,14 +198,55 @@
   .progress{height:4px; background:var(--bg-elevated-2); border-radius:2px; margin-top:10px; overflow:hidden;}
   .progress-bar{height:100%; width:0%; background:linear-gradient(90deg,var(--cyan),var(--violet)); transition:width .25s linear;}
   .np-time{font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--text-faint); margin-top:5px; direction:ltr; text-align:right;}
+  .sync-badge{
+    display:none; align-items:center; gap:5px;
+    font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:.08em;
+    border:1px solid var(--border-strong); color:var(--cyan);
+    border-radius:999px; padding:3px 9px; margin-top:7px; width:max-content;
+  }
+  .sync-badge.est{border-color:rgba(255,176,32,.4); color:var(--amber);}
+  .sync-badge.show{display:inline-flex;}
+  .progress{cursor:pointer;}
+
+  /* ── Spotify player controls (Premium required by Spotify for control) ── */
+  /* [hidden] and .np-controls{display:flex} have equal specificity, and
+     author rules beat the UA stylesheet on a tie — without this explicit
+     override the hidden attribute is silently defeated and the controls
+     show even when JS set hidden=true (e.g. in manual mode). */
+  .np-controls[hidden]{display:none;}
+  .np-controls{display:flex; align-items:center; gap:8px; flex-shrink:0;}
+  .ctl-btn{
+    width:42px; height:42px; padding:0; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .ctl-btn svg{width:19px; height:19px;}
+  .ctl-play{
+    width:52px; height:52px;
+    background:linear-gradient(135deg,var(--cyan),var(--violet));
+    border:none; color:#05060a;
+    box-shadow:0 0 18px rgba(0,229,255,0.3);
+  }
+  .ctl-play:hover{box-shadow:0 0 26px rgba(0,229,255,0.45);}
+  .ctl-play svg{width:22px; height:22px;}
+  .ctl-hint{font-size:12px; color:var(--amber); margin-top:10px; display:none;}
+  .ctl-hint.show{display:block;}
+  @media (max-width:560px){
+    .np-controls{width:100%; justify-content:center; margin-top:4px;}
+  }
 
   .search-row{display:flex; gap:8px; flex-wrap:wrap;}
   .search-row input{flex:1; min-width:140px;}
 
+  .stage-wrap{position:relative; border-radius:var(--radius); overflow:hidden;}
+  .eq-canvas{
+    position:absolute; inset:0; width:100%; height:100%;
+    pointer-events:none; z-index:0; opacity:.85;
+  }
   .stage{
+    position:relative; z-index:1;
     border:1px solid var(--border);
     border-radius:var(--radius);
-    background:linear-gradient(180deg, rgba(255,255,255,0.015), transparent 12%), var(--bg-elevated);
+    background:linear-gradient(180deg, rgba(255,255,255,0.015), transparent 12%), rgba(18,20,27,.62);
     max-height:56vh;
     overflow-y:auto;
     scroll-behavior:smooth;
@@ -217,8 +271,9 @@
   }
   .lyric-row .trans{
     font-size:19px; font-weight:600; color:var(--text-dim);
-    transition:color .2s ease;
+    transition:color .2s ease, opacity .3s ease;
   }
+  .lyric-row .trans.pending{opacity:.42; font-weight:400;}
   .lyric-row[dir="rtl"] .trans{text-align:right;}
   .lyric-row[dir="ltr"] .trans{text-align:left;}
   .lyric-row.active{
@@ -236,6 +291,21 @@
     animation:beam 1.8s ease-in-out infinite;
   }
   @keyframes beam{0%,100%{opacity:.55;}50%{opacity:1;}}
+
+  /* ── Settings-driven display modes ── */
+  .stage.hide-orig .orig{display:none;}
+  .stage.fs-s .trans{font-size:15px;}
+  .stage.fs-l .trans{font-size:26px; line-height:1.45;}
+
+  /* ── Karaoke mode: only the song header + lyrics, everything else gone ── */
+  body.karaoke .settings-panel,
+  body.karaoke .manual-panel,
+  body.karaoke footer{display:none !important;}
+  body.karaoke .stage{max-height:calc(100vh - 220px);}
+  body.karaoke .stage .trans{font-size:27px; line-height:1.5;}
+  body.karaoke .stage.fs-s .trans{font-size:21px;}
+  body.karaoke .stage.fs-l .trans{font-size:34px;}
+  #karaokeBtn.on{border-color:var(--border-strong); box-shadow:0 0 14px rgba(0,229,255,.3); color:var(--cyan);}
 
   .manual-nav{display:flex; gap:8px; justify-content:center; padding:10px 0 2px;}
   footer{
@@ -275,6 +345,9 @@
       <select id="targetLang" aria-label="שפת תרגום"></select>
       <span class="status-pill" id="spotifyStatus"><span class="dot" id="spotifyDot"></span><span id="spotifyStatusText">לא מחובר</span></span>
       <button id="connectBtn" class="btn-primary">התחבר לספוטיפיי</button>
+      <button id="karaokeBtn" class="icon-btn" aria-label="מצב קריוקי" title="מצב קריוקי — מילים בלבד">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 3H5a2 2 0 00-2 2v3M16 3h3a2 2 0 012 2v3M8 21H5a2 2 0 01-2-2v-3M16 21h3a2 2 0 002-2v-3"/></svg>
+      </button>
       <button id="settingsBtn" class="icon-btn" aria-label="הגדרות" title="הגדרות">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
       </button>
@@ -282,8 +355,30 @@
   </header>
 
   <div class="panel settings-panel" id="settingsPanel">
-    <div class="eyebrow">הגדרות חיבור</div>
-    <div class="field-row" style="margin-top:12px;">
+    <div class="eyebrow">הגדרות תצוגה ותרגום</div>
+    <div class="settings-grid" style="margin-top:12px;">
+      <label class="chk"><input type="checkbox" id="eqToggle" checked> אקולייזר מאחורי המילים</label>
+      <label class="chk"><input type="checkbox" id="origToggle" checked> הצג את שורת המקור</label>
+      <div class="field-row" style="margin:0;">
+        <label>מנוע תרגום</label>
+        <select id="engineSel">
+          <option value="google">Google (מהיר, מומלץ)</option>
+          <option value="mymemory">MyMemory (גיבוי)</option>
+        </select>
+      </div>
+      <div class="field-row" style="margin:0;">
+        <label>גודל המילים</label>
+        <select id="fontSel">
+          <option value="s">קטן</option>
+          <option value="m" selected>בינוני</option>
+          <option value="l">גדול</option>
+        </select>
+      </div>
+    </div>
+    <div class="hint">כל ההגדרות נשמרות במכשיר ומוחלות מיידית. מנוע Google מתרגם את כל השיר בבת אחת עם זיהוי שפת מקור אוטומטי; MyMemory משמש כגיבוי אוטומטי אם Google לא זמין.</div>
+
+    <div class="sub-eyebrow">Spotify Connection</div>
+    <div class="field-row">
       <label>Spotify Client ID</label>
       <input type="text" id="clientIdInput" placeholder="הדבק כאן את ה-Client ID מהדשבורד של Spotify" style="direction:ltr; text-align:left; font-family:'JetBrains Mono',monospace;">
     </div>
@@ -293,10 +388,6 @@
         <input type="text" id="redirectUriDisplay" readonly>
         <button id="copyRedirectBtn">העתק</button>
       </div>
-    </div>
-    <div class="field-row">
-      <label>מנוע מילים (Lyrics provider)</label>
-      <div class="hint" id="lyricsProviderNote">כרגע מחובר לספק חינמי (ללא מפתח) — כיסוי חלקי בלבד. פרטי החלפה למפתח בתשלום נמצאים ב-LYRICS-SETUP.md שבמאגר.</div>
     </div>
     <button id="saveSettingsBtn" class="btn-primary">שמור</button>
     <div class="hint" style="margin-top:10px;">ההוראות המלאות להקמת Spotify Client ID נמצאות בקובץ LYRICS-SETUP.md שבמאגר. האפליקציה כבר רצה משרת (הפלטפורמה) — אין צורך בשרת מקומי.</div>
@@ -308,13 +399,26 @@
       <div class="np-info">
         <div class="np-title" id="npTitle">אין שיר מזוהה כרגע</div>
         <div class="np-artist" id="npArtist">התחבר לספוטיפיי או הזן שיר ידנית למטה</div>
-        <div class="progress"><div class="progress-bar" id="progressBar"></div></div>
+        <div class="progress" id="progressTrack" title="לחץ כדי לדלג לנקודה בשיר"><div class="progress-bar" id="progressBar"></div></div>
         <div class="np-time" id="npTime"></div>
+        <span class="sync-badge" id="syncBadge"></span>
+      </div>
+      <div class="np-controls" id="npControls" hidden>
+        <button class="ctl-btn" id="ctlPrev" title="השיר הקודם" aria-label="השיר הקודם">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zM20 6l-10 6 10 6z"/></svg>
+        </button>
+        <button class="ctl-btn ctl-play" id="ctlPlay" title="נגן / השהה" aria-label="נגן או השהה">
+          <svg id="ctlPlayIcon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        </button>
+        <button class="ctl-btn" id="ctlNext" title="השיר הבא" aria-label="השיר הבא">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM4 6l10 6-10 6z"/></svg>
+        </button>
       </div>
     </div>
+    <div class="ctl-hint" id="ctlHint"></div>
   </div>
 
-  <div class="panel">
+  <div class="panel manual-panel">
     <div class="eyebrow" style="margin-bottom:10px;">חיפוש ידני (ליוטיוב או כל מקור אחר)</div>
     <div class="search-row">
       <input type="text" id="manualArtist" placeholder="שם האמן">
@@ -323,10 +427,13 @@
     </div>
   </div>
 
-  <div class="stage" id="stage">
-    <div class="empty-state" id="emptyState">
-      <div class="big">אין מילים להצגה</div>
-      <div>התחבר לספוטיפיי או חפש שיר ידנית כדי להתחיל</div>
+  <div class="stage-wrap">
+    <canvas class="eq-canvas" id="eqCanvas" aria-hidden="true"></canvas>
+    <div class="stage" id="stage">
+      <div class="empty-state" id="emptyState">
+        <div class="big">אין מילים להצגה</div>
+        <div>התחבר לספוטיפיי או חפש שיר ידנית כדי להתחיל</div>
+      </div>
     </div>
   </div>
   <div class="manual-nav" id="manualNav" style="display:none;">
@@ -335,8 +442,8 @@
   </div>
 
   <footer>
-    מילים מתקבלות בזמן אמת משירות חיצוני וייתכן שלא יימצאו לכל שיר — זו מגבלת כיסוי של הספק, לא של האפליקציה.<br>
-    תרגום אוטומטי עשוי להכיל אי-דיוקים.
+    מילים: LRCLIB (מסונכרן) עם גיבוי lyrics.ovh · תרגום: Google (חינם) עם גיבוי MyMemory · הכול ללא מפתחות וללא תשלום.<br>
+    שירים שכבר תורגמו נשמרים במכשיר ונטענים מיידית. תרגום אוטומטי עשוי להכיל אי-דיוקים.
   </footer>
 </div>
 
@@ -359,15 +466,17 @@
   ];
   const SPOTIFY_AUTH_URL = 'https://accounts.spotify.com/authorize';
   const SPOTIFY_TOKEN_URL = 'https://accounts.spotify.com/api/token';
-  const SPOTIFY_SCOPES = 'user-read-currently-playing user-read-playback-state';
+  const SPOTIFY_SCOPES = 'user-read-currently-playing user-read-playback-state user-modify-playback-state';
   const REDIRECT_URI = window.location.origin + window.location.pathname;
   const POLL_MS = 4000;
   const TICK_MS = 250;
+  const CACHE_KEY = 'lt:cache:v1';
+  const CACHE_MAX = 30;
 
   // ---------- storage helpers ----------
   const store = {
     get(k){ try{ return JSON.parse(localStorage.getItem(k)); }catch(e){ return null; } },
-    set(k,v){ localStorage.setItem(k, JSON.stringify(v)); },
+    set(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} },
     del(k){ localStorage.removeItem(k); }
   };
 
@@ -387,15 +496,28 @@
   const npTitle = $('npTitle');
   const npArtist = $('npArtist');
   const progressBar = $('progressBar');
+  const progressTrack = $('progressTrack');
   const npTime = $('npTime');
+  const syncBadge = $('syncBadge');
+  const npControls = $('npControls');
+  const ctlHint = $('ctlHint');
+  const ctlPrev = $('ctlPrev');
+  const ctlPlay = $('ctlPlay');
+  const ctlPlayIcon = $('ctlPlayIcon');
+  const ctlNext = $('ctlNext');
   const manualArtist = $('manualArtist');
   const manualTitle = $('manualTitle');
   const manualSearchBtn = $('manualSearchBtn');
   const stage = $('stage');
-  const emptyState = $('emptyState');
   const manualNav = $('manualNav');
   const prevLineBtn = $('prevLineBtn');
   const nextLineBtn = $('nextLineBtn');
+  const eqCanvas = $('eqCanvas');
+  const eqToggle = $('eqToggle');
+  const origToggle = $('origToggle');
+  const engineSel = $('engineSel');
+  const fontSel = $('fontSel');
+  const karaokeBtn = $('karaokeBtn');
 
   redirectUriDisplay.value = REDIRECT_URI;
 
@@ -408,20 +530,113 @@
   targetLangSel.value = store.get('lt:target_lang') || 'he';
   targetLangSel.addEventListener('change', ()=>{
     store.set('lt:target_lang', targetLangSel.value);
-    if(state.lines.length) renderLines();
+    if(state.rawTitle) loadLyricsFor(state.rawArtist, state.rawTitle); // re-translate current song
   });
 
   // ---------- app state ----------
   const state = {
     mode: null,           // 'spotify' | 'manual'
-    lines: [],            // [{orig, trans}]
+    lines: [],            // [{t:ms|null, orig, trans}]
+    synced: false,        // true when LRCLIB gave real timestamps
     activeIndex: -1,
     durationMs: 0,
     serverProgressMs: 0,
     fetchedAt: 0,
     isPlaying: false,
     currentTrackKey: null,
+    rawArtist: '', rawTitle: '',
+    loadSeq: 0,           // guards against out-of-order async loads
   };
+  // Declared here (not in the "CURRENTLY PLAYING" section below, where
+  // startPolling/stopPolling are defined) because handleAuthRedirect() can
+  // call startPolling() synchronously during initial script execution, on
+  // page load with an already-stored token — a `let` declared later in
+  // source order would still be in its temporal dead zone at that point.
+  let pollTimer = null, tickTimer = null;
+
+  // ================= DISPLAY SETTINGS (applied live) =================
+  const prefersReducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const settings = {
+    eq: store.get('lt:eq_on'),
+    showOrig: store.get('lt:show_orig'),
+    fontSize: store.get('lt:font_size') || 'm',
+    engine: store.get('lt:engine') || 'google',
+  };
+  if(settings.eq === null || settings.eq === undefined) settings.eq = !prefersReducedMotion;
+  if(settings.showOrig === null || settings.showOrig === undefined) settings.showOrig = true;
+
+  function applyDisplaySettings(){
+    eqToggle.checked = !!settings.eq;
+    origToggle.checked = !!settings.showOrig;
+    engineSel.value = settings.engine;
+    fontSel.value = settings.fontSize;
+    stage.classList.toggle('hide-orig', !settings.showOrig);
+    stage.classList.toggle('fs-s', settings.fontSize === 's');
+    stage.classList.toggle('fs-l', settings.fontSize === 'l');
+    eqCanvas.style.display = settings.eq ? '' : 'none';
+    if(settings.eq) startEq(); else stopEq();
+  }
+  eqToggle.addEventListener('change', ()=>{ settings.eq = eqToggle.checked; store.set('lt:eq_on', settings.eq); applyDisplaySettings(); });
+  origToggle.addEventListener('change', ()=>{ settings.showOrig = origToggle.checked; store.set('lt:show_orig', settings.showOrig); applyDisplaySettings(); });
+  engineSel.addEventListener('change', ()=>{ settings.engine = engineSel.value; store.set('lt:engine', settings.engine); });
+  fontSel.addEventListener('change', ()=>{ settings.fontSize = fontSel.value; store.set('lt:font_size', settings.fontSize); applyDisplaySettings(); });
+  karaokeBtn.addEventListener('click', ()=>{
+    document.body.classList.toggle('karaoke');
+    karaokeBtn.classList.toggle('on', document.body.classList.contains('karaoke'));
+  });
+
+  // ================= EQUALIZER (procedural, behind the lyrics) =================
+  // No audio stream is available from Spotify's Web API, so the equalizer is a
+  // procedural visualization: bars chase random targets on a musical-feeling
+  // cadence, breathe quietly when paused, and surge while a track is playing.
+  const eq = { raf: 0, bars: 44, vals: [], targets: [], lastRetarget: 0, grad: null, w: 0, h: 0 };
+  function eqResize(){
+    const dpr = Math.min(devicePixelRatio || 1, 2);
+    const w = eqCanvas.clientWidth, h = eqCanvas.clientHeight;
+    if(!w || !h) return;
+    if(eqCanvas.width !== Math.floor(w*dpr) || eqCanvas.height !== Math.floor(h*dpr)){
+      eqCanvas.width = Math.floor(w*dpr); eqCanvas.height = Math.floor(h*dpr);
+      const g = eqCanvas.getContext('2d');
+      g.setTransform(dpr,0,0,dpr,0,0);
+      eq.grad = g.createLinearGradient(0,h,0,0);
+      eq.grad.addColorStop(0,'rgba(0,229,255,0.34)');
+      eq.grad.addColorStop(0.65,'rgba(178,75,243,0.20)');
+      eq.grad.addColorStop(1,'rgba(178,75,243,0.05)');
+      eq.w = w; eq.h = h;
+    }
+  }
+  function eqFrame(ts){
+    eq.raf = requestAnimationFrame(eqFrame);
+    if(document.hidden) return;
+    eqResize();
+    const g = eqCanvas.getContext('2d');
+    if(!eq.w) return;
+    const playing = state.isPlaying || state.mode === 'manual';
+    const energy = playing ? 1 : 0.3;
+    if(!eq.vals.length){
+      for(let i=0;i<eq.bars;i++){ eq.vals.push(0.1); eq.targets.push(Math.random()); }
+    }
+    // retarget on a beat-ish cadence (~330ms), center bars livelier than edges
+    if(ts - eq.lastRetarget > 330){
+      eq.lastRetarget = ts;
+      for(let i=0;i<eq.bars;i++){
+        const centerBoost = 0.45 + 0.55 * Math.sin((i/(eq.bars-1)) * Math.PI);
+        eq.targets[i] = Math.random() * centerBoost;
+      }
+    }
+    g.clearRect(0,0,eq.w,eq.h);
+    const gap = 3;
+    const bw = (eq.w - gap*(eq.bars-1)) / eq.bars;
+    g.fillStyle = eq.grad;
+    for(let i=0;i<eq.bars;i++){
+      eq.vals[i] += (eq.targets[i]*energy - eq.vals[i]) * 0.09;
+      const bh = Math.max(2, eq.vals[i] * eq.h * 0.92);
+      const x = i * (bw + gap);
+      g.fillRect(x, eq.h - bh, bw, bh);
+    }
+  }
+  function startEq(){ if(!eq.raf && !prefersReducedMotion) eq.raf = requestAnimationFrame(eqFrame); }
+  function stopEq(){ if(eq.raf){ cancelAnimationFrame(eq.raf); eq.raf = 0; } const g = eqCanvas.getContext('2d'); if(eq.w) g.clearRect(0,0,eq.w,eq.h); }
 
   // ================= SPOTIFY PKCE AUTH =================
   function randomString(len){
@@ -529,7 +744,60 @@
     spotifyDot.classList.toggle('live', connected);
     spotifyStatusText.textContent = connected ? 'מחובר' : 'לא מחובר';
     connectBtn.textContent = connected ? 'מנותק ספוטיפיי' : 'התחבר לספוטיפיי';
+    npControls.hidden = !connected;
+    if(!connected) ctlHint.classList.remove('show');
   }
+
+  // ================= PLAYBACK CONTROL (play/pause/skip/seek) =================
+  // Requires Spotify Premium on the account's side — Spotify's own API
+  // rejects control calls (403) for Free accounts; the UI surfaces that
+  // plainly instead of failing silently.
+  const PLAY_PATH = '<path d="M8 5v14l11-7z"/>';
+  const PAUSE_PATH = '<path d="M7 5h4v14H7zM13 5h4v14h-4z"/>';
+  function setPlayIcon(isPlaying){ ctlPlayIcon.innerHTML = isPlaying ? PAUSE_PATH : PLAY_PATH; }
+
+  async function spotifyControl(method, path){
+    const token = await getValidAccessToken();
+    if(!token) return null;
+    try{
+      return await fetch('https://api.spotify.com/v1/me/player' + path, {
+        method, headers:{ Authorization:'Bearer ' + token },
+      });
+    }catch(e){ return null; }
+  }
+  let hintTimer = 0;
+  function showCtlHint(msg){
+    ctlHint.textContent = msg;
+    ctlHint.classList.add('show');
+    clearTimeout(hintTimer);
+    hintTimer = setTimeout(()=> ctlHint.classList.remove('show'), 5000);
+  }
+  async function afterControl(res){
+    if(res && (res.ok || res.status === 204)){ setTimeout(pollOnce, 250); return true; }
+    if(res && res.status === 404) showCtlHint('אין מכשיר ספוטיפיי פעיל — פתח ספוטיפיי בטלפון/מחשב, נגן משהו, ונסה שוב.');
+    else if(res && res.status === 403) showCtlHint('שליטה בנגן דורשת חשבון Spotify Premium.');
+    else showCtlHint('הפעולה נכשלה — נסה שוב.');
+    return false;
+  }
+  ctlPlay.addEventListener('click', async ()=>{
+    const wasPlaying = state.isPlaying;
+    setPlayIcon(!wasPlaying); // optimistic flip
+    const res = await spotifyControl('PUT', wasPlaying ? '/pause' : '/play');
+    const ok = await afterControl(res);
+    if(!ok) setPlayIcon(wasPlaying);
+    else state.isPlaying = !wasPlaying;
+  });
+  ctlPrev.addEventListener('click', async ()=> afterControl(await spotifyControl('POST', '/previous')));
+  ctlNext.addEventListener('click', async ()=> afterControl(await spotifyControl('POST', '/next')));
+  progressTrack.addEventListener('click', async (e)=>{
+    if(state.mode !== 'spotify' || !state.durationMs) return;
+    const rect = progressTrack.getBoundingClientRect();
+    const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    const posMs = Math.round(ratio * state.durationMs);
+    state.serverProgressMs = posMs; state.fetchedAt = Date.now(); // optimistic
+    progressBar.style.width = (ratio*100).toFixed(2) + '%';
+    await afterControl(await spotifyControl('PUT', '/seek?position_ms=' + posMs));
+  });
 
   connectBtn.addEventListener('click', async ()=>{
     const tokens = store.get('lt:spotify_tokens');
@@ -595,8 +863,6 @@
   });
 
   // ================= CURRENTLY PLAYING (SPOTIFY) =================
-  let pollTimer = null, tickTimer = null;
-
   async function pollOnce(){
     const token = await getValidAccessToken();
     if(!token){ setSpotifyStatus(false); return; }
@@ -606,6 +872,7 @@
       });
       if(res.status === 204){ // nothing playing
         state.isPlaying = false;
+        setPlayIcon(false);
         return;
       }
       if(!res.ok) return;
@@ -616,6 +883,7 @@
       state.durationMs = data.item.duration_ms;
       state.serverProgressMs = data.progress_ms;
       state.fetchedAt = Date.now();
+      setPlayIcon(state.isPlaying);
 
       npTitle.textContent = data.item.name;
       npArtist.textContent = data.item.artists.map(a=>a.name).join(', ');
@@ -623,9 +891,21 @@
 
       if(trackKey !== state.currentTrackKey){
         state.currentTrackKey = trackKey;
-        await loadLyricsFor(data.item.artists[0].name, data.item.name);
+        await loadLyricsFor(data.item.artists[0].name, data.item.name, Math.round(data.item.duration_ms/1000));
       }
     }catch(e){ console.error(e); }
+  }
+
+  function currentLineIndex(progressMs){
+    if(state.synced){
+      let idx = 0;
+      for(let i=0;i<state.lines.length;i++){
+        if(state.lines[i].t != null && state.lines[i].t <= progressMs) idx = i; else if(state.lines[i].t != null) break;
+      }
+      return idx;
+    }
+    if(!state.durationMs) return -1;
+    return Math.min(state.lines.length-1, Math.floor((progressMs/state.durationMs) * state.lines.length));
   }
 
   function tick(){
@@ -635,8 +915,8 @@
     progressBar.style.width = (estProgress / state.durationMs * 100).toFixed(2) + '%';
     npTime.textContent = fmtTime(estProgress) + ' / ' + fmtTime(state.durationMs);
     if(state.lines.length){
-      const idx = Math.min(state.lines.length-1, Math.floor((estProgress/state.durationMs) * state.lines.length));
-      setActiveLine(idx);
+      const idx = currentLineIndex(estProgress);
+      if(idx >= 0) setActiveLine(idx);
     }
   }
   function fmtTime(ms){
@@ -669,6 +949,8 @@
     albumArt.src = '';
     progressBar.style.width = '0%';
     npTime.textContent = '';
+    npControls.hidden = true; // playback control only applies to a real Spotify session
+    ctlHint.classList.remove('show');
     manualNav.style.display = 'flex';
     await loadLyricsFor(artist, title);
     setActiveLine(0);
@@ -676,18 +958,102 @@
   prevLineBtn.addEventListener('click', ()=> setActiveLine(Math.max(0, state.activeIndex-1)));
   nextLineBtn.addEventListener('click', ()=> setActiveLine(Math.min(state.lines.length-1, state.activeIndex+1)));
 
-  // ================= LYRICS + TRANSLATION =================
-  async function fetchRawLyrics(artist, title){
+  // ================= LYRICS PROVIDERS =================
+  // Primary: LRCLIB — free, keyless, CORS-open, and returns REAL per-line
+  // timestamps (synced lyrics), which upgrades the highlight from a
+  // progress-based estimate to true sync. Fallback: lyrics.ovh (plain text).
+  function parseLrc(lrc){
+    const out = [];
+    for(const raw of lrc.split('\n')){
+      const m = raw.match(/^\s*\[(\d+):(\d+(?:\.\d+)?)\]\s*(.*)$/);
+      if(!m) continue;
+      const t = (parseInt(m[1],10)*60 + parseFloat(m[2])) * 1000;
+      const text = m[3].trim();
+      if(text) out.push({ t, orig: text });
+    }
+    return out;
+  }
+
+  async function fetchLrclib(artist, title, durationSec){
+    try{
+      let url = 'https://lrclib.net/api/get?artist_name=' + encodeURIComponent(artist) + '&track_name=' + encodeURIComponent(title);
+      if(durationSec) url += '&duration=' + durationSec;
+      let res = await fetch(url);
+      if(!res.ok && durationSec){ // exact-duration miss → retry without it
+        res = await fetch('https://lrclib.net/api/get?artist_name=' + encodeURIComponent(artist) + '&track_name=' + encodeURIComponent(title));
+      }
+      if(!res.ok){
+        // last try: fuzzy search, take the best hit
+        const sr = await fetch('https://lrclib.net/api/search?artist_name=' + encodeURIComponent(artist) + '&track_name=' + encodeURIComponent(title));
+        if(!sr.ok) return null;
+        const list = await sr.json();
+        if(!Array.isArray(list) || !list.length) return null;
+        return lrclibRecordToLines(list[0]);
+      }
+      return lrclibRecordToLines(await res.json());
+    }catch(e){ return null; }
+  }
+  function lrclibRecordToLines(rec){
+    if(!rec) return null;
+    if(rec.syncedLyrics){
+      const lines = parseLrc(rec.syncedLyrics);
+      if(lines.length) return { lines, synced: true };
+    }
+    if(rec.plainLyrics){
+      const lines = rec.plainLyrics.split('\n').map(l=>l.trim()).filter(Boolean).map(orig=>({ t: null, orig }));
+      if(lines.length) return { lines, synced: false };
+    }
+    return null;
+  }
+
+  async function fetchLyricsOvh(artist, title){
     try{
       const res = await fetch('https://api.lyrics.ovh/v1/' + encodeURIComponent(artist) + '/' + encodeURIComponent(title));
       if(!res.ok) return null;
       const data = await res.json();
       if(!data.lyrics) return null;
-      return data.lyrics.split('\n').map(l=>l.trim()).filter(l=>l.length>0);
+      const lines = data.lyrics.split('\n').map(l=>l.trim()).filter(l=>l.length>0).map(orig=>({ t: null, orig }));
+      return lines.length ? { lines, synced: false } : null;
     }catch(e){ return null; }
   }
 
-  async function translateLine(line, target){
+  // ================= TRANSLATION ENGINES =================
+  // Google's free gtx endpoint: whole-song batches (one or two requests
+  // instead of one per line), auto source-language detection, no key.
+  // MyMemory stays as the automatic fallback, upgraded from strictly
+  // sequential to small parallel groups.
+  function gtxLang(code){ return code === 'he' ? 'iw' : code; }
+
+  async function googleTranslateChunk(text, target){
+    const url = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=' + gtxLang(target) + '&dt=t&q=' + encodeURIComponent(text);
+    const res = await fetch(url);
+    if(!res.ok) throw new Error('gtx ' + res.status);
+    const data = await res.json();
+    if(!data || !Array.isArray(data[0])) throw new Error('gtx shape');
+    return data[0].map(seg => (seg && seg[0]) ? seg[0] : '').join('');
+  }
+
+  async function googleBatch(texts, target, onChunk){
+    // pack lines into few requests, keeping each URL comfortably short
+    const chunks = []; let cur = [], curLen = 0, curStart = 0;
+    texts.forEach((line, i)=>{
+      if(cur.length && curLen + line.length > 1500){ chunks.push({ start: curStart, lines: cur }); cur = []; curLen = 0; curStart = i; }
+      cur.push(line); curLen += line.length + 1;
+    });
+    if(cur.length) chunks.push({ start: curStart, lines: cur });
+    await Promise.all(chunks.map(async (c)=>{
+      const joined = c.lines.join('\n');
+      const translated = await googleTranslateChunk(joined, target);
+      let parts = translated.split('\n');
+      if(parts.length !== c.lines.length){
+        // separator got eaten — retry that chunk line-by-line in parallel
+        parts = await Promise.all(c.lines.map(l => googleTranslateChunk(l, target).catch(()=>l)));
+      }
+      onChunk(c.start, parts.map(p => p.trim()));
+    }));
+  }
+
+  async function myMemoryLine(line, target){
     try{
       const url = 'https://api.mymemory.translated.net/get?q=' + encodeURIComponent(line) + '&langpair=en|' + target;
       const res = await fetch(url);
@@ -695,31 +1061,97 @@
       return (data && data.responseData && data.responseData.translatedText) ? data.responseData.translatedText : line;
     }catch(e){ return line; }
   }
+  async function myMemoryBatch(texts, target, onChunk){
+    const GROUP = 5;
+    for(let i=0;i<texts.length;i+=GROUP){
+      const group = texts.slice(i, i+GROUP);
+      const translated = await Promise.all(group.map(l => myMemoryLine(l, target)));
+      onChunk(i, translated);
+    }
+  }
 
-  async function loadLyricsFor(artist, title){
-    renderLoading();
-    const rawLines = await fetchRawLyrics(artist, title);
-    if(!rawLines || !rawLines.length){
-      renderNotFound();
-      state.lines = [];
+  // ================= SONG CACHE (repeat plays are instant) =================
+  function cacheGet(key){
+    const c = store.get(CACHE_KEY) || {};
+    return c[key] || null;
+  }
+  function cacheSet(key, entry){
+    const c = store.get(CACHE_KEY) || {};
+    c[key] = entry;
+    const keys = Object.keys(c);
+    if(keys.length > CACHE_MAX){
+      keys.sort((a,b)=>(c[a].ts||0)-(c[b].ts||0));
+      for(let i=0;i<keys.length-CACHE_MAX;i++) delete c[keys[i]];
+    }
+    store.set(CACHE_KEY, c);
+  }
+
+  // ================= LOAD + PROGRESSIVE RENDER =================
+  async function loadLyricsFor(artist, title, durationSec){
+    const seq = ++state.loadSeq;
+    state.rawArtist = artist; state.rawTitle = title;
+    const target = targetLangSel.value;
+    const cacheKey = (artist + '|' + title + '|' + target).toLowerCase();
+
+    const cached = cacheGet(cacheKey);
+    if(cached){
+      state.lines = cached.lines.map(l=>({ ...l }));
+      state.synced = !!cached.synced;
+      renderLines(); setSyncBadge();
       return;
     }
-    const target = targetLangSel.value;
-    // translate with a small stagger to be gentle on the free API
-    const translated = [];
-    for(let i=0;i<rawLines.length;i++){
-      translated.push(await translateLine(rawLines[i], target));
-      if(i % 6 === 5) await new Promise(r=>setTimeout(r, 150));
+
+    renderLoading();
+    let got = await fetchLrclib(artist, title, durationSec);
+    if(!got) got = await fetchLyricsOvh(artist, title);
+    if(seq !== state.loadSeq) return; // a newer song took over mid-fetch
+    if(!got || !got.lines.length){
+      renderNotFound();
+      state.lines = []; state.synced = false; setSyncBadge();
+      return;
     }
-    state.lines = rawLines.map((orig,i)=>({orig, trans: translated[i]}));
-    renderLines();
+
+    state.lines = got.lines.map(l=>({ t: l.t, orig: l.orig, trans: null }));
+    state.synced = got.synced;
+    renderLines(); setSyncBadge();   // originals appear IMMEDIATELY, translations stream in
+
+    const texts = state.lines.map(l=>l.orig);
+    const onChunk = (start, translated)=>{
+      if(seq !== state.loadSeq) return;
+      translated.forEach((tr, j)=> updateRowTranslation(start + j, tr));
+    };
+    try{
+      if(settings.engine === 'google'){
+        await googleBatch(texts, target, onChunk);
+      } else {
+        await myMemoryBatch(texts, target, onChunk);
+      }
+    }catch(e){
+      // Google unreachable → automatic MyMemory fallback
+      try{ await myMemoryBatch(texts, target, onChunk); }catch(e2){}
+    }
+    if(seq !== state.loadSeq) return;
+    // anything still untranslated keeps its original text
+    state.lines.forEach((l,i)=>{ if(l.trans == null){ l.trans = l.orig; updateRowTranslation(i, l.orig); } });
+    cacheSet(cacheKey, { lines: state.lines, synced: state.synced, ts: Date.now() });
+  }
+
+  function setSyncBadge(){
+    if(!state.lines.length){ syncBadge.className = 'sync-badge'; return; }
+    if(state.synced){
+      syncBadge.textContent = '⏱ SYNCED · תזמון אמיתי';
+      syncBadge.className = 'sync-badge show';
+    } else {
+      syncBadge.textContent = '~ EST · תזמון משוער';
+      syncBadge.className = 'sync-badge est show';
+    }
   }
 
   function renderLoading(){
-    stage.innerHTML = '<div class="empty-state"><div class="big">טוען מילות שיר ומתרגם…</div><div>זה עשוי לקחת כמה שניות</div></div>';
+    stage.innerHTML = '<div class="empty-state"><div class="big">מאתר מילות שיר…</div><div>המקור מוצג מיד — התרגום נטען ברקע</div></div>';
   }
   function renderNotFound(){
-    stage.innerHTML = '<div class="empty-state"><div class="big">לא נמצאו מילים לשיר הזה</div><div>הספק החינמי לא תמיד מכסה כל שיר — נסה שיר אחר או חבר מפתח API בהגדרות</div></div>';
+    stage.innerHTML = '<div class="empty-state"><div class="big">לא נמצאו מילים לשיר הזה</div><div>הספקים החינמיים לא תמיד מכסים כל שיר — נסה שיר אחר</div></div>';
   }
 
   function renderLines(){
@@ -732,11 +1164,23 @@
       row.dataset.i = i;
       row.tabIndex = 0;
       row.setAttribute('dir', dir);
-      row.innerHTML = '<div class="orig">'+escapeHtml(line.orig)+'</div><div class="trans">'+escapeHtml(line.trans)+'</div>';
+      const transText = line.trans != null ? line.trans : line.orig;
+      const pending = line.trans == null ? ' pending' : '';
+      row.innerHTML = '<div class="orig">'+escapeHtml(line.orig)+'</div><div class="trans'+pending+'">'+escapeHtml(transText)+'</div>';
       row.addEventListener('click', ()=> setActiveLine(i));
       stage.appendChild(row);
     });
     state.activeIndex = -1;
+  }
+
+  function updateRowTranslation(i, text){
+    if(!state.lines[i]) return;
+    state.lines[i].trans = text;
+    const row = stage.querySelector('.lyric-row[data-i="'+i+'"]');
+    if(row){
+      const t = row.querySelector('.trans');
+      if(t){ t.textContent = text; t.classList.remove('pending'); }
+    }
   }
 
   function setActiveLine(idx){
@@ -756,6 +1200,9 @@
     d.textContent = s;
     return d.innerHTML;
   }
+
+  // boot
+  applyDisplaySettings();
 
 })();
 </script>
