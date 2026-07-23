@@ -41,6 +41,7 @@ export default defineConfig({
         heavyguard: resolve(__dirname, 'heavyguard.html'),
         agent: resolve(__dirname, 'agent.html'),
         agents: resolve(__dirname, 'agents.html'),
+        lyrics: resolve(__dirname, 'lyrics.html'),
         widget: resolve(__dirname, 'widget.html'),
         chatwidget: resolve(__dirname, 'chat-widget.html'),
       },

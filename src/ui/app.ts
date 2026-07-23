@@ -189,7 +189,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="wm-hg">HEAVY GUARD OS</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v236 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="wm-hg">HEAVY GUARD OS</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v237 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip apps-chip" id="appsBtn" title="האפליקציות שלי" aria-label="האפליקציות שלי">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="12" cy="19" r="2"/><circle cx="19" cy="19" r="2"/></svg>
@@ -246,6 +246,10 @@ export function mountApp(root: HTMLElement) {
           <a class="ad-item" href="${import.meta.env.BASE_URL}agent.html">
             <span class="ad-ic" style="--c:#68D391"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg></span>
             <b>עוזר CRM</b><em>הצעות מחיר · לקוחות</em>
+          </a>
+          <a class="ad-item" href="${import.meta.env.BASE_URL}lyrics.html">
+            <span class="ad-ic" style="--c:#00E5FF"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></span>
+            <b>מילים בתרגום חי</b><em>Spotify · Lyrics Translator</em>
           </a>
           <a class="ad-item" href="#" id="sportsHubBtn">
             <span class="ad-ic" style="--c:#43A1D5"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="10"/><path d="M12 7l4.2 3-1.6 5h-5.2L7.8 10z"/><path d="M12 2v5M20.5 8.5 16.2 10M19 19.5 14.6 15M9.4 15 5 19.5M3.5 8.5 7.8 10"/></svg></span>
