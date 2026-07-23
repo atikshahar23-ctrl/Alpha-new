@@ -22,6 +22,7 @@ import { buildCyberSunMaterial, buildCyberHalo, buildCageLines, buildSyraxHologr
 import { MessageCircle, Eye, User, Mic, VolumeX, Volume2, X, Zap, Settings as SettingsIcon, Trash2, Radio, Pause, Lock, Unlock } from "lucide-react";
 import { useDeviceProfile } from "./deviceProfiler.js";
 import RadioController from "./RadioController.jsx";
+import SpotifyPanel from "./SpotifyController.jsx";
 
 // Hardware's real max anisotropic filtering — set once the renderer exists
 // (renderer.capabilities.getMaxAnisotropy()); every canvas texture below reads
@@ -6912,6 +6913,10 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
   // embed iframe, reusing the same phoneEmbed viewer as the trade system.
   const [spotifyUrl, setSpotifyUrlState] = useState(() => { try { return localStorage.getItem("alpha:office:spotifyUrl") || ""; } catch { return ""; } });
   const setSpotifyUrl = (u) => { setSpotifyUrlState(u); try { localStorage.setItem("alpha:office:spotifyUrl", u); } catch {} };
+  // Real connected-account player (play/pause/skip/playlists) vs. the no-login
+  // public-link embed below — two different tools for two different needs,
+  // kept as tabs within the same phone screen rather than replacing either.
+  const [spotifyMode, setSpotifyMode] = useState("account"); // account | link
   const toSpotifyEmbedUrl = (input) => {
     // Accepts a plain share link (open.spotify.com/playlist/ID), an already-
     // built embed link (open.spotify.com/embed/playlist/ID), or the full
@@ -12371,26 +12376,36 @@ export default function Office3D({ chars, byId, phase, phases, deskPositions, se
           </div>
           {!phoneEmbed && phoneTab === "spotify" && (
             <div className="off3-phone-body off3-spotify">
-              <div className="off3-phone-sec">🎵 ספוטיפי — הדבק קישור לשיר/פלייליסט/אלבום ציבורי</div>
-              <input
-                className="off3-spotify-input"
-                type="text"
-                dir="ltr"
-                placeholder="https://open.spotify.com/playlist/..."
-                value={spotifyUrl}
-                onChange={(e) => setSpotifyUrl(e.target.value)}
-              />
-              <button
-                className="off3-voice-test"
-                disabled={!toSpotifyEmbedUrl(spotifyUrl)}
-                onClick={() => { const u = toSpotifyEmbedUrl(spotifyUrl); if (u) setPhoneEmbed({ title: "ספוטיפי", url: u }); }}
-              >
-                ▶ פתח נגן ספוטיפי
-              </button>
-              {spotifyUrl && !toSpotifyEmbedUrl(spotifyUrl) && (
-                <p className="off3-phone-empty">זה לא נראה כמו קישור open.spotify.com תקין (שיר/אלבום/פלייליסט/פודקאסט).</p>
+              <div className="off3-phone-tabs off3-spotify-modetabs">
+                <button className={spotifyMode === "account" ? "on" : ""} onClick={() => setSpotifyMode("account")}>🎧 החשבון שלי</button>
+                <button className={spotifyMode === "link" ? "on" : ""} onClick={() => setSpotifyMode("link")}>🔗 קישור ציבורי</button>
+              </div>
+              {spotifyMode === "account" ? (
+                <SpotifyPanel visible={!phoneEmbed && phoneTab === "spotify" && spotifyMode === "account"} />
+              ) : (
+                <>
+                  <div className="off3-phone-sec">🎵 הדבק קישור לשיר/פלייליסט/אלבום ציבורי</div>
+                  <input
+                    className="off3-spotify-input"
+                    type="text"
+                    dir="ltr"
+                    placeholder="https://open.spotify.com/playlist/..."
+                    value={spotifyUrl}
+                    onChange={(e) => setSpotifyUrl(e.target.value)}
+                  />
+                  <button
+                    className="off3-voice-test"
+                    disabled={!toSpotifyEmbedUrl(spotifyUrl)}
+                    onClick={() => { const u = toSpotifyEmbedUrl(spotifyUrl); if (u) setPhoneEmbed({ title: "ספוטיפי", url: u }); }}
+                  >
+                    ▶ פתח נגן ספוטיפי
+                  </button>
+                  {spotifyUrl && !toSpotifyEmbedUrl(spotifyUrl) && (
+                    <p className="off3-phone-empty">זה לא נראה כמו קישור open.spotify.com תקין (שיר/אלבום/פלייליסט/פודקאסט).</p>
+                  )}
+                  <p className="off3-phone-empty">וידג'ט חינמי ללא התחברות — מנגן פלייליסטים/שירים ציבוריים. אפשר להדביק גם קישור רגיל (כפתור "שתף" → "העתק קישור") וגם את קוד ה-embed המלא (כפתור "שתף" → "הטמעה") — שניהם עובדים.</p>
+                </>
               )}
-              <p className="off3-phone-empty">וידג'ט חינמי ללא התחברות — מנגן פלייליסטים/שירים ציבוריים. אפשר להדביק גם קישור רגיל (כפתור "שתף" → "העתק קישור") וגם את קוד ה-embed המלא (כפתור "שתף" → "הטמעה") — שניהם עובדים.</p>
             </div>
           )}
           {!phoneEmbed && phoneTab === "ctrl" && (
