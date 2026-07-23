@@ -243,6 +243,29 @@
   .search-row{display:flex; gap:8px; flex-wrap:wrap;}
   .search-row input{flex:1; min-width:140px;}
 
+  /* ── Hero: the 3D groove-avatar centerpiece ── */
+  .hero-wrap{
+    position:relative; border-radius:var(--radius); overflow:hidden;
+    height:min(50vh,380px); margin-bottom:16px;
+    background:radial-gradient(ellipse 90% 70% at 50% 30%, rgba(80,25,140,.28), var(--bg) 72%);
+    border:1px solid var(--border);
+  }
+  .hero-avatar{position:absolute; inset:0;}
+  .hero-avatar canvas{display:block; width:100%; height:100%;}
+  .hero-caption{
+    position:absolute; bottom:10px; left:0; right:0; text-align:center;
+    font-family:'Chakra Petch',sans-serif; font-size:10.5px; letter-spacing:.14em;
+    color:rgba(210,225,255,.55); text-transform:uppercase; pointer-events:none;
+  }
+  .hero-wrap.off{display:none;}
+  @media (max-width:560px){ .hero-wrap{height:min(40vh,280px);} }
+
+  /* Everything below the hero/settings stays hidden for a beat after load —
+     "the words are seen only after [the avatar]" per the owner's request —
+     then fades/slides in once the scene has had a moment to establish. */
+  .reveal-gate{opacity:0; transform:translateY(14px); transition:opacity .9s ease, transform .9s ease;}
+  .reveal-gate.show{opacity:1; transform:translateY(0);}
+
   .stage-wrap{position:relative; border-radius:var(--radius); overflow:hidden;}
   .eq-canvas{
     position:absolute; inset:0; width:100%; height:100%;
@@ -362,9 +385,15 @@
     </div>
   </header>
 
+  <div class="hero-wrap" id="heroWrap">
+    <div class="hero-avatar" id="heroAvatar"></div>
+    <div class="hero-caption">🎭 רוקד לקצב השיר</div>
+  </div>
+
   <div class="panel settings-panel" id="settingsPanel">
     <div class="eyebrow">הגדרות תצוגה ותרגום</div>
     <div class="settings-grid" style="margin-top:12px;">
+      <label class="chk"><input type="checkbox" id="avatarToggle" checked> אווטאר תלת-מימד רוקד</label>
       <label class="chk"><input type="checkbox" id="eqToggle" checked> אקולייזר מאחורי המילים</label>
       <label class="chk"><input type="checkbox" id="origToggle" checked> הצג את שורת המקור</label>
       <div class="field-row" style="margin:0;">
@@ -402,6 +431,7 @@
     <div class="hint" style="margin-top:10px;">ההוראות המלאות להקמת Spotify Client ID נמצאות בקובץ LYRICS-SETUP.md שבמאגר. האפליקציה כבר רצה משרת (הפלטפורמה) — אין צורך בשרת מקומי.</div>
   </div>
 
+  <div class="reveal-gate" id="revealGate">
   <div class="panel">
     <div class="now-playing">
       <img class="art" id="albumArt" alt="">
@@ -454,6 +484,7 @@
     מילים: LRCLIB (מסונכרן) עם גיבוי lyrics.ovh · תרגום: Google (חינם) עם גיבוי MyMemory · הכול ללא מפתחות וללא תשלום.<br>
     שירים שכבר תורגמו נשמרים במכשיר ונטענים מיידית. תרגום אוטומטי עשוי להכיל אי-דיוקים.
   </footer>
+  </div>
 </div>
 
 <script>
@@ -810,8 +841,8 @@
     setPlayIcon(!wasPlaying); // optimistic flip
     const res = await spotifyControl('PUT', wasPlaying ? '/pause' : '/play');
     const ok = await afterControl(res);
-    if(!ok) setPlayIcon(wasPlaying);
-    else state.isPlaying = !wasPlaying;
+    if(!ok) { setPlayIcon(wasPlaying); window.__lyricsAvatarBridge?.setEnergy(wasPlaying); }
+    else { state.isPlaying = !wasPlaying; window.__lyricsAvatarBridge?.setEnergy(state.isPlaying); }
   });
   ctlPrev.addEventListener('click', async ()=> afterControl(await spotifyControl('POST', '/previous')));
   ctlNext.addEventListener('click', async ()=> afterControl(await spotifyControl('POST', '/next')));
@@ -831,6 +862,7 @@
       store.del('lt:spotify_tokens');
       setSpotifyStatus(false);
       state.mode = null;
+      window.__lyricsAvatarBridge?.setEnergy(false);
     } else {
       beginSpotifyAuth();
     }
@@ -899,6 +931,7 @@
       if(res.status === 204){ // nothing playing
         state.isPlaying = false;
         setPlayIcon(false);
+        window.__lyricsAvatarBridge?.setEnergy(false);
         return;
       }
       if(!res.ok) return;
@@ -910,6 +943,7 @@
       state.serverProgressMs = data.progress_ms;
       state.fetchedAt = Date.now();
       setPlayIcon(state.isPlaying);
+      window.__lyricsAvatarBridge?.setEnergy(state.isPlaying);
 
       npTitle.textContent = data.item.name;
       npArtist.textContent = data.item.artists.map(a=>a.name).join(', ');
@@ -979,6 +1013,7 @@
     stopPolling();
     state.mode = 'manual';
     state.currentTrackKey = null;
+    window.__lyricsAvatarBridge?.setEnergy(true);
     npTitle.textContent = title;
     npArtist.textContent = artist;
     albumArt.src = '';
@@ -1236,7 +1271,17 @@
     const row = rows[idx];
     if(row){
       row.classList.add('active');
-      row.scrollIntoView({block:'center', behavior:'smooth'});
+      // scrollIntoView({block:'center'}) recenters the row in its NEAREST
+      // scrolling ancestor — but if .stage itself isn't fully inside the
+      // viewport, the browser keeps walking up and scrolls the whole PAGE
+      // to bring .stage more into view too. Every line change (i.e. every
+      // beat of the song) was yanking the entire page up/down regardless
+      // of what the user was doing — reading settings, scrolled away, etc.
+      // Scroll ONLY .stage's own internal scrollbar instead.
+      const stageRect = stage.getBoundingClientRect();
+      const rowRect = row.getBoundingClientRect();
+      const delta = (rowRect.top + rowRect.height / 2) - (stageRect.top + stage.clientHeight / 2);
+      stage.scrollBy({ top: delta, behavior: 'smooth' });
     }
   }
 
@@ -1250,6 +1295,58 @@
   applyDisplaySettings();
 
 })();
+</script>
+<script type="module">
+  // ── 3D groove-avatar hero, bridged into the classic script above via a
+  // tiny window-level object (window.__lyricsAvatarBridge). Kept as a
+  // separate module script so the working IIFE above doesn't need to be
+  // restructured just to get an ES-module import. ──
+  import { mountLyricsAvatar } from '/src/lyrics/avatarScene.ts';
+
+  const heroWrap = document.getElementById('heroWrap');
+  const heroAvatar = document.getElementById('heroAvatar');
+  const avatarToggle = document.getElementById('avatarToggle');
+  const revealGate = document.getElementById('revealGate');
+
+  let handle = null;
+  let lastEnergy = false;
+  function mount() {
+    if (handle) return;
+    handle = mountLyricsAvatar(heroAvatar);
+    handle.setEnergy(lastEnergy);
+  }
+  function unmount() {
+    if (!handle) return;
+    handle.dispose();
+    handle = null;
+  }
+
+  const AVATAR_KEY = 'lt:avatar_on';
+  let avatarOn;
+  try { avatarOn = JSON.parse(localStorage.getItem(AVATAR_KEY)); } catch { avatarOn = null; }
+  if (avatarOn === null || avatarOn === undefined) avatarOn = !matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function applyAvatarSetting() {
+    avatarToggle.checked = !!avatarOn;
+    heroWrap.classList.toggle('off', !avatarOn);
+    if (avatarOn) mount(); else unmount();
+  }
+  avatarToggle.addEventListener('change', () => {
+    avatarOn = avatarToggle.checked;
+    try { localStorage.setItem(AVATAR_KEY, JSON.stringify(avatarOn)); } catch {}
+    applyAvatarSetting();
+  });
+  applyAvatarSetting();
+
+  // The classic script calls this whenever playback state changes (poll
+  // result, manual-mode search) — kept optional-chained there so this
+  // module loading a beat later never throws.
+  window.__lyricsAvatarBridge = {
+    setEnergy(playing) { lastEnergy = !!playing; if (handle) handle.setEnergy(lastEnergy); },
+  };
+
+  // "The words are seen only after [the avatar]" — reveal the lyrics/search
+  // panel once the scene has had a moment to establish itself.
+  setTimeout(() => revealGate.classList.add('show'), 1400);
 </script>
 </body>
 </html>
