@@ -272,8 +272,13 @@
     border:1px solid transparent;
   }
   .lyric-row .orig{
-    font-size:13px; color:var(--text-faint); direction:ltr; text-align:left;
-    transition:color .2s ease;
+    /* Scales with the same slider as the translation (not a fixed 13px) —
+       at large font sizes the source line was staying tiny and unreadable
+       next to a huge translation. Floor of 11px keeps it legible at the
+       slider's smallest setting. */
+    font-size:max(11px, calc(var(--lyric-font) * 0.6));
+    color:var(--text-faint); direction:ltr; text-align:left;
+    transition:color .2s ease, font-size .1s ease;
   }
   .lyric-row .trans{
     font-size:var(--lyric-font); line-height:1.4; font-weight:600; color:var(--text-dim);
@@ -470,7 +475,7 @@
   ];
   const SPOTIFY_AUTH_URL = 'https://accounts.spotify.com/authorize';
   const SPOTIFY_TOKEN_URL = 'https://accounts.spotify.com/api/token';
-  const SPOTIFY_SCOPES = 'user-read-currently-playing user-read-playback-state user-modify-playback-state';
+  const SPOTIFY_SCOPES = 'user-read-currently-playing user-read-playback-state user-modify-playback-state playlist-read-private playlist-read-collaborative';
   const REDIRECT_URI = window.location.origin + window.location.pathname;
   const POLL_MS = 4000;
   const TICK_MS = 250;
@@ -651,7 +656,12 @@
       g.fillRect(x, eq.h - bh, bw, bh);
     }
   }
-  function startEq(){ if(!eq.raf && !prefersReducedMotion) eq.raf = requestAnimationFrame(eqFrame); }
+  // Only settings.eq (the checkbox) gates this now. prefersReducedMotion is
+  // still respected for the INITIAL default (see settings.eq init below),
+  // but a redundant check here meant that once someone with that OS setting
+  // explicitly turned the checkbox ON, startEq() silently refused to start
+  // anyway — the toggle looked checked but nothing ever animated.
+  function startEq(){ if(!eq.raf) eq.raf = requestAnimationFrame(eqFrame); }
   function stopEq(){ if(eq.raf){ cancelAnimationFrame(eq.raf); eq.raf = 0; } const g = eqCanvas.getContext('2d'); if(eq.w) g.clearRect(0,0,eq.w,eq.h); }
 
   // ================= SPOTIFY PKCE AUTH =================
