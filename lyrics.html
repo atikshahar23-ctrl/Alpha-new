@@ -277,6 +277,18 @@
   .hero-wrap.off{display:none;}
   @media (max-width:560px){ .hero-wrap{height:min(40vh,280px);} }
 
+  /* Ambient "LED" screen-edge glow, pulsing/color-cycling on the same beat
+     clock (tempoMs) as the avatar/equalizer/lyric pulse — a virtual mood-
+     light effect around THIS screen. Note: this does not control real
+     smart-home LED hardware (Philips Hue, Govee, etc.) — that would need a
+     separate integration with that system's own bridge/API. */
+  .led-frame{
+    position:fixed; inset:0; z-index:9999; pointer-events:none;
+    box-shadow:inset 0 0 30px 10px rgba(178,75,243,0.12);
+    transition:box-shadow .12s ease;
+  }
+  .led-frame.off{display:none;}
+
   /* Everything below the hero/settings stays hidden for a beat after load —
      "the words are seen only after [the avatar]" per the owner's request —
      then fades/slides in once the scene has had a moment to establish. */
@@ -376,6 +388,7 @@
 </style>
 </head>
 <body>
+<div class="led-frame" id="ledFrame" aria-hidden="true"></div>
 <div class="wrap">
 
   <header>
@@ -414,6 +427,8 @@
     <div class="eyebrow">הגדרות תצוגה ותרגום</div>
     <div class="settings-grid" style="margin-top:12px;">
       <label class="chk"><input type="checkbox" id="avatarToggle" checked> אווטאר תלת-מימד רוקד</label>
+      <label class="chk"><input type="checkbox" id="ledToggle" checked> תאורת LED מסביב למסך</label>
+      <label class="chk"><input type="checkbox" id="wakeLockToggle" checked> השאר את המסך דלוק</label>
       <label class="chk"><input type="checkbox" id="eqToggle" checked> אקולייזר מאחורי המילים</label>
       <label class="chk"><input type="checkbox" id="origToggle" checked> הצג את שורת המקור</label>
       <div class="field-row" style="margin:0;">
@@ -1429,6 +1444,81 @@
     activeTrans.style.transform = 'scale(' + s.toFixed(4) + ')';
   }
   beatPulseRaf = requestAnimationFrame(beatPulseFrame);
+
+  // ================= AMBIENT "LED" SCREEN-EDGE GLOW =================
+  // A virtual mood-light effect around THIS screen, color-cycling and
+  // pulsing on the same beat clock as everything else. This does NOT
+  // control real smart-home LED hardware (Philips Hue, Govee, etc.) — that
+  // would need a separate integration with that system's own bridge/API,
+  // which isn't wired up here.
+  const ledFrame = $('ledFrame');
+  const ledToggle = $('ledToggle');
+  const LED_COLORS = ['178,75,243', '0,229,255', '255,80,180', '255,176,32'];
+  let ledOn = store.get('lt:led_on');
+  if(ledOn === null || ledOn === undefined) ledOn = true;
+  let ledLastBeat = 0, ledPulse = 0, ledColorIdx = 0, ledRaf = 0;
+  function applyLedSetting(){
+    ledToggle.checked = !!ledOn;
+    ledFrame.classList.toggle('off', !ledOn);
+  }
+  ledToggle.addEventListener('change', ()=>{
+    ledOn = ledToggle.checked;
+    store.set('lt:led_on', ledOn);
+    applyLedSetting();
+  });
+  applyLedSetting();
+  function ledFrameLoop(now){
+    ledRaf = requestAnimationFrame(ledFrameLoop);
+    if(document.hidden || !ledOn) return;
+    const playing = state.isPlaying || state.mode === 'manual';
+    if(playing && now - ledLastBeat > tempoMs){
+      ledLastBeat = now; ledPulse = 1;
+      ledColorIdx = (ledColorIdx + 1) % LED_COLORS.length;
+    }
+    ledPulse *= 0.88;
+    const energy = playing ? 1 : 0.15;
+    const blur = Math.round(30 + ledPulse * 90 * energy);
+    const spread = Math.round(14 + ledPulse * 55 * energy);
+    const alpha = (0.12 + ledPulse * 0.5 * energy).toFixed(3);
+    ledFrame.style.boxShadow = 'inset 0 0 ' + blur + 'px ' + spread + 'px rgba(' + LED_COLORS[ledColorIdx] + ',' + alpha + ')';
+  }
+  ledRaf = requestAnimationFrame(ledFrameLoop);
+
+  // ================= KEEP SCREEN AWAKE =================
+  // This app is meant to sit propped up and watched (a party display, a
+  // karaoke screen) — the OS dimming/locking the screen mid-song is exactly
+  // the failure mode a "screen off" complaint describes. The Wake Lock API
+  // auto-releases the moment the tab is backgrounded and must be manually
+  // re-acquired when it becomes visible again — handled below.
+  const wakeLockToggle = $('wakeLockToggle');
+  let wakeLock = null;
+  let wakeLockOn = store.get('lt:wake_lock_on');
+  if(wakeLockOn === null || wakeLockOn === undefined) wakeLockOn = true;
+  async function requestWakeLock(){
+    if(!wakeLockOn || !('wakeLock' in navigator) || document.hidden) return;
+    try{
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', ()=>{ wakeLock = null; });
+    }catch(e){ wakeLock = null; }
+  }
+  function releaseWakeLock(){
+    try{ wakeLock && wakeLock.release(); }catch(e){}
+    wakeLock = null;
+  }
+  wakeLockToggle.addEventListener('change', ()=>{
+    wakeLockOn = wakeLockToggle.checked;
+    store.set('lt:wake_lock_on', wakeLockOn);
+    if(wakeLockOn) requestWakeLock(); else releaseWakeLock();
+  });
+  wakeLockToggle.checked = !!wakeLockOn;
+  if(!('wakeLock' in navigator)){
+    wakeLockToggle.disabled = true;
+    wakeLockToggle.parentElement.title = 'הדפדפן הזה לא תומך בתכונת מניעת כיבוי מסך';
+  }
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.visibilityState === 'visible' && wakeLockOn) requestWakeLock();
+  });
+  requestWakeLock();
 
   // boot
   applyDisplaySettings();
