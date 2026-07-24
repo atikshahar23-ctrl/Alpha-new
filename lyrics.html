@@ -590,6 +590,40 @@
     rawArtist: '', rawTitle: '',
     loadSeq: 0,           // guards against out-of-order async loads
   };
+  // Shared beat clock for the equalizer, the 3D avatar, and the lyric pulse —
+  // derived per-song from real LRC line timestamps (see estimateTempoMs),
+  // not a generic guess. Spotify's own tempo/BPM endpoint (Audio Features)
+  // was restricted by Spotify in late 2024 to apps with pre-existing
+  // extended quota, so a freshly created Client ID like this one's can't
+  // reach it — this sidesteps that entirely using data already on hand.
+  let tempoMs = 560;
+  function estimateTempoMs(lines){
+    const times = (lines||[]).map(l=>l.t).filter(t=>t!=null);
+    if(times.length < 4) return 560;
+    const deltas = [];
+    for(let i=1;i<times.length;i++){
+      const d = times[i]-times[i-1];
+      if(d > 150 && d < 6000) deltas.push(d); // drop near-zero/instrumental-gap outliers
+    }
+    if(!deltas.length) return 560;
+    deltas.sort((a,b)=>a-b);
+    const median = deltas[Math.floor(deltas.length/2)];
+    // A song's line-to-line gap is usually a small multiple of its real
+    // beat — test a few integer divisors and keep whichever lands closest
+    // to a comfortable dance-tempo center (~120bpm / 500ms).
+    let best = median, bestScore = Infinity;
+    for(const div of [1,2,3,4]){
+      const cand = median/div;
+      if(cand < 250 || cand > 900) continue;
+      const score = Math.abs(cand-500);
+      if(score < bestScore){ bestScore = score; best = cand; }
+    }
+    return Math.max(280, Math.min(900, Math.round(best)));
+  }
+  function applyTempo(ms){
+    tempoMs = ms;
+    window.__lyricsAvatarBridge?.setTempo(ms);
+  }
   // Declared here (not in the "CURRENTLY PLAYING" section below, where
   // startPolling/stopPolling are defined) because handleAuthRedirect() can
   // call startPolling() synchronously during initial script execution, on
@@ -668,8 +702,11 @@
     if(!eq.vals.length){
       for(let i=0;i<eq.bars;i++){ eq.vals.push(0.1); eq.targets.push(Math.random()); }
     }
-    // retarget on a beat-ish cadence (~330ms), center bars livelier than edges
-    if(ts - eq.lastRetarget > 330){
+    // retarget on the real song's own beat cadence (tempoMs, derived from its
+    // synced-lyric line timing — see estimateTempoMs) instead of a fixed
+    // guess, so the equalizer, the avatar, and the lyric pulse all breathe
+    // on the same clock.
+    if(ts - eq.lastRetarget > tempoMs){
       eq.lastRetarget = ts;
       for(let i=0;i<eq.bars;i++){
         const centerBoost = 0.45 + 0.55 * Math.sin((i/(eq.bars-1)) * Math.PI);
@@ -1167,6 +1204,7 @@
     if(cached){
       state.lines = cached.lines.map(l=>({ ...l }));
       state.synced = !!cached.synced;
+      applyTempo(estimateTempoMs(state.lines));
       renderLines(); setSyncBadge();
       return;
     }
@@ -1183,6 +1221,7 @@
 
     state.lines = got.lines.map(l=>({ t: l.t, orig: l.orig, trans: null }));
     state.synced = got.synced;
+    applyTempo(estimateTempoMs(state.lines));
     renderLines(); setSyncBadge();   // originals appear IMMEDIATELY, translations stream in
 
     const texts = state.lines.map(l=>l.orig);
@@ -1291,6 +1330,25 @@
     return d.innerHTML;
   }
 
+  // ================= BEAT-SYNCED LYRIC PULSE =================
+  // The highlighted line breathes on the exact same tempoMs clock driving
+  // the equalizer and the 3D avatar — "the words" visibly tied to "the
+  // rhythm", not just a static highlight. Runs continuously (harmless when
+  // nothing is active) so it works the same in Spotify and manual mode.
+  let beatPulseRaf = 0;
+  function beatPulseFrame(now){
+    beatPulseRaf = requestAnimationFrame(beatPulseFrame);
+    if(document.hidden) return;
+    const activeTrans = stage.querySelector('.lyric-row.active .trans');
+    if(!activeTrans){ return; }
+    const playing = state.isPlaying || state.mode === 'manual';
+    const amt = playing ? 0.045 : 0.015;
+    const phase = (now % tempoMs) / tempoMs;
+    const s = 1 + Math.sin(phase * Math.PI * 2) * amt;
+    activeTrans.style.transform = 'scale(' + s.toFixed(4) + ')';
+  }
+  beatPulseRaf = requestAnimationFrame(beatPulseFrame);
+
   // boot
   applyDisplaySettings();
 
@@ -1310,10 +1368,12 @@
 
   let handle = null;
   let lastEnergy = false;
+  let lastTempo = 560;
   function mount() {
     if (handle) return;
     handle = mountLyricsAvatar(heroAvatar);
     handle.setEnergy(lastEnergy);
+    handle.setTempo(lastTempo);
   }
   function unmount() {
     if (!handle) return;
@@ -1342,6 +1402,7 @@
   // module loading a beat later never throws.
   window.__lyricsAvatarBridge = {
     setEnergy(playing) { lastEnergy = !!playing; if (handle) handle.setEnergy(lastEnergy); },
+    setTempo(ms) { lastTempo = ms; if (handle) handle.setTempo(lastTempo); },
   };
 
   // "The words are seen only after [the avatar]" — reveal the lyrics/search

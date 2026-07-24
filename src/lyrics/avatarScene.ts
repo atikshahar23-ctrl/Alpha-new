@@ -1,7 +1,8 @@
 // ═══════════════════════════════════════════════════════════════════════
 // LYRICS::TRANSLATOR hero visual — a Tulum/Zamna-festival-style centerpiece:
 // a dark humanoid silhouette groove-dancing inside a vertical shaft of
-// light, flanked by two walls of pulsing light fins, haze, and bloom.
+// light, flanked by two walls of pulsing light fins, a flowing cape,
+// drifting spark particles, a floor glow, haze, and bloom.
 // Owner reference: a festival stage photo (backlit figure suspended in a
 // light shaft between two illuminated walls, purple/blue haze, crowd below).
 //
@@ -9,15 +10,20 @@
 // freeze-frame (a performer mid-fall on a wire). The user's actual ask was
 // "a character that can move to the beat" — a static falling pose can't
 // groove — so the pose here is a standing/grooving rig (bounce, arm-pump,
-// hip sway) that keeps the reference's LIGHTING language (vertical beam,
-// side light fins, purple/cyan haze) while actually being danceable.
+// hip sway, a fluttering cape) that keeps the reference's LIGHTING
+// language (vertical beam, side light fins, purple/cyan haze) while
+// actually being danceable.
 //
 // No real audio stream exists to analyze (Spotify's Web API exposes only
 // track metadata + transport, never PCM/frequency data) — same constraint
-// already solved for the 2D equalizer elsewhere in this app. The beat here
-// is a procedural rhythm generator (fixed tempo pulse + per-fin chase),
-// identical in spirit to that equalizer's "chase random targets on a
-// beat-ish cadence" approach, just driving a 3D rig instead of 2D bars.
+// already solved for the 2D equalizer elsewhere in this app. Spotify's
+// Audio Features endpoint (which used to expose a real `tempo` BPM) was
+// restricted by Spotify in late 2024 to apps that already had extended
+// quota approved — a freshly created Client ID like this app uses gets a
+// 403, so it can't be relied on either. Instead, setTempo() is driven by
+// the CALLER analyzing the real per-line LRC timestamps we already have
+// (median gap between synced lines) — a per-song-specific rhythm derived
+// from real data, not a generic guess, without needing any extra API scope.
 // ═══════════════════════════════════════════════════════════════════════
 import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
@@ -27,23 +33,24 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 
 export interface LyricsAvatarHandle {
   setEnergy(playing: boolean): void;
+  setTempo(ms: number): void;
   dispose(): void;
 }
 
-const TEMPO_MS = 560; // ~107bpm — a comfortable, generic dance-pulse cadence
+const DEFAULT_TEMPO_MS = 560; // ~107bpm fallback, used until setTempo() supplies a real per-song value
 
 function buildFigureMaterial() {
   return new THREE.ShaderMaterial({
-    uniforms: {
-      uPulse: { value: 0 },
-    },
+    uniforms: { uPulse: { value: 0 } },
     vertexShader: /* glsl */`
       varying vec3 vNormalW;
       varying vec3 vViewDirW;
+      varying vec3 vWorldPos;
       void main() {
         vec4 worldPos = modelMatrix * vec4(position, 1.0);
         vNormalW = normalize(mat3(modelMatrix) * normal);
         vViewDirW = normalize(cameraPosition - worldPos.xyz);
+        vWorldPos = worldPos.xyz;
         gl_Position = projectionMatrix * viewMatrix * worldPos;
       }
     `,
@@ -52,25 +59,67 @@ function buildFigureMaterial() {
       uniform float uPulse;
       varying vec3 vNormalW;
       varying vec3 vViewDirW;
+      varying vec3 vWorldPos;
       void main() {
         // Solid dark silhouette (reads as backlit, like the reference) with
-        // a thin additive rim in a violet→cyan gradient that brightens on
-        // the beat pulse.
-        float fresnel = pow(1.0 - clamp(dot(normalize(vNormalW), normalize(vViewDirW)), 0.0, 1.0), 2.6);
-        vec3 violet = vec3(0.56, 0.22, 0.95);
-        vec3 cyan = vec3(0.2, 0.85, 1.0);
-        vec3 rim = mix(violet, cyan, fresnel) * fresnel * (0.9 + uPulse * 1.4);
-        vec3 fill = vec3(0.015, 0.01, 0.03);
+        // a rim in a violet→cyan gradient that brightens on the beat pulse,
+        // plus a soft vertical sheen so the body isn't perfectly flat black.
+        float fresnel = pow(1.0 - clamp(dot(normalize(vNormalW), normalize(vViewDirW)), 0.0, 1.0), 2.3);
+        vec3 violet = vec3(0.58, 0.24, 0.97);
+        vec3 cyan = vec3(0.22, 0.87, 1.0);
+        vec3 rim = mix(violet, cyan, fresnel) * fresnel * (0.95 + uPulse * 1.5);
+        float sheen = smoothstep(-0.3, 1.8, vWorldPos.y) * 0.05;
+        vec3 fill = vec3(0.02, 0.014, 0.04) + vec3(0.3, 0.2, 0.5) * sheen;
         gl_FragColor = vec4(fill + rim, 1.0);
       }
     `,
   });
 }
 
-function buildFigureRig(mat: THREE.ShaderMaterial) {
+function buildCapeMaterial() {
+  return new THREE.ShaderMaterial({
+    uniforms: { uTime: { value: 0 }, uSway: { value: 0 } },
+    transparent: true,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    vertexShader: /* glsl */`
+      uniform float uTime;
+      uniform float uSway;
+      varying vec3 vNormalW;
+      varying vec3 vViewDirW;
+      varying float vDrop;
+      void main() {
+        vDrop = 1.0 - uv.y; // 0 at collar, 1 at the free-flowing hem
+        vec3 p = position;
+        float sway = sin(uTime * 2.2 - p.y * 2.4) * uSway * vDrop * vDrop;
+        p.x += sway;
+        p.z += sway * 0.5;
+        vec4 worldPos = modelMatrix * vec4(p, 1.0);
+        vNormalW = normalize(mat3(modelMatrix) * normal);
+        vViewDirW = normalize(cameraPosition - worldPos.xyz);
+        gl_Position = projectionMatrix * viewMatrix * worldPos;
+      }
+    `,
+    fragmentShader: /* glsl */`
+      precision highp float;
+      varying vec3 vNormalW;
+      varying vec3 vViewDirW;
+      varying float vDrop;
+      void main() {
+        float fresnel = pow(1.0 - clamp(abs(dot(normalize(vNormalW), normalize(vViewDirW))), 0.0, 1.0), 1.4);
+        vec3 violet = vec3(0.4, 0.15, 0.7);
+        vec3 base = mix(vec3(0.01, 0.008, 0.02), violet, 0.25 + fresnel * 0.5);
+        float alpha = (0.55 + fresnel * 0.35) * (1.0 - vDrop * 0.25);
+        gl_FragColor = vec4(base, alpha);
+      }
+    `,
+  });
+}
+
+function buildFigureRig(mat: THREE.ShaderMaterial, capeMat: THREE.ShaderMaterial) {
   const group = new THREE.Group();
-  const cap = (r: number, len: number) => new THREE.CapsuleGeometry(r, len, 4, 8);
-  const sph = (r: number) => new THREE.SphereGeometry(r, 14, 14);
+  const cap = (r: number, len: number) => new THREE.CapsuleGeometry(r, len, 6, 12);
+  const sph = (r: number) => new THREE.SphereGeometry(r, 20, 20);
 
   const head = new THREE.Mesh(sph(0.16), mat); head.position.y = 1.62; group.add(head);
   const neck = new THREE.Mesh(cap(0.055, 0.06), mat); neck.position.y = 1.46; group.add(neck);
@@ -97,8 +146,16 @@ function buildFigureRig(mat: THREE.ShaderMaterial) {
   const foreArmMeshR = new THREE.Mesh(cap(0.06, 0.32), mat); foreArmMeshR.position.y = -0.17; foreArmR.add(foreArmMeshR);
   const handR = new THREE.Mesh(sph(0.065), mat); handR.position.y = -0.36; foreArmR.add(handR);
 
-  group.position.y = -0.05;
-  return { group, legL, legR, shoulderL, shoulderR, foreArmL, foreArmR, torso, head, hips };
+  // A flowing cape hung from the collar — cheap, big visual payoff: gives
+  // the silhouette a distinct read (vs. a bare mannequin) and its own
+  // beat-driven sway sells "movement" even during held poses.
+  const capeGeo = new THREE.PlaneGeometry(0.62, 1.05, 1, 10);
+  const cape = new THREE.Mesh(capeGeo, capeMat);
+  cape.position.set(0, 1.0, -0.13);
+  cape.rotation.x = 0.12;
+  group.add(cape);
+
+  return { group, legL, legR, shoulderL, shoulderR, foreArmL, foreArmR, torso, head, hips, cape };
 }
 
 function buildBeamMaterial() {
@@ -134,33 +191,47 @@ function buildBeamMaterial() {
   });
 }
 
-function buildFinMaterial() {
-  return new THREE.MeshBasicMaterial({
-    color: new THREE.Color(0.75, 0.92, 1.0),
-    transparent: true,
-    opacity: 0.5,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-  });
+// Soft-edged vertical light bar (a gradient texture on a plane) instead of
+// a hard-edged box — reads as a glowing light tube rather than a flat panel.
+function buildFinTexture() {
+  const c = document.createElement('canvas'); c.width = 32; c.height = 128;
+  const g = c.getContext('2d')!;
+  const grad = g.createLinearGradient(0, 0, 32, 0);
+  grad.addColorStop(0, 'rgba(255,255,255,0)');
+  grad.addColorStop(0.5, 'rgba(255,255,255,1)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grad; g.fillRect(0, 0, 32, 128);
+  return new THREE.CanvasTexture(c);
+}
+
+function buildSparkTexture() {
+  const c = document.createElement('canvas'); c.width = c.height = 32;
+  const g = c.getContext('2d')!;
+  const grad = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+  grad.addColorStop(0, 'rgba(255,255,255,0.9)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grad; g.fillRect(0, 0, 32, 32);
+  return new THREE.CanvasTexture(c);
 }
 
 export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'low-power' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.05;
+  renderer.toneMappingExposure = 1.1;
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0x0a0518, 0.09);
+  scene.fog = new THREE.FogExp2(0x0a0518, 0.085);
 
   const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 50);
-  camera.position.set(0, 1.15, 4.4);
+  const camBase = new THREE.Vector3(0, 1.15, 4.4);
+  camera.position.copy(camBase);
   camera.lookAt(0, 1.05, 0);
 
   const composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
-  const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.85, 0.55, 0.25);
+  const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 1.05, 0.6, 0.22);
   composer.addPass(bloom);
   composer.addPass(new OutputPass());
 
@@ -183,15 +254,24 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   beam.position.set(0, 1.1, -0.8);
   scene.add(beam);
 
-  // ── Two walls of thin vertical light fins flanking the figure — same
+  // ── Floor glow disc grounding the figure ──
+  const floorTex = buildSparkTexture();
+  const floorMat = new THREE.MeshBasicMaterial({ map: floorTex, color: new THREE.Color(0.55, 0.35, 1.0), transparent: true, opacity: 0.4, blending: THREE.AdditiveBlending, depthWrite: false });
+  const floorGlow = new THREE.Mesh(new THREE.CircleGeometry(0.9, 32), floorMat);
+  floorGlow.rotation.x = -Math.PI / 2;
+  floorGlow.position.set(0, -0.02, 0);
+  scene.add(floorGlow);
+
+  // ── Two walls of soft vertical light fins flanking the figure — same
   // "chase a random target" procedural rhythm as the 2D equalizer, just
-  // rendered as 3D emissive bars instead of canvas rectangles. ──
+  // rendered as glowing 3D bars instead of canvas rectangles. ──
+  const finTex = buildFinTexture();
   const FIN_COUNT = 9;
   const fins: { mesh: THREE.Mesh; mat: THREE.MeshBasicMaterial; val: number; target: number }[] = [];
-  const finGeo = new THREE.BoxGeometry(0.045, 1, 0.045);
+  const finGeo = new THREE.PlaneGeometry(0.09, 1);
   for (const side of [-1, 1]) {
     for (let i = 0; i < FIN_COUNT; i++) {
-      const mat = buildFinMaterial();
+      const mat = new THREE.MeshBasicMaterial({ map: finTex, color: new THREE.Color(0.75, 0.92, 1.0), transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
       const mesh = new THREE.Mesh(finGeo, mat);
       const x = side * (1.55 + i * 0.14);
       mesh.position.set(x, 1.3, -1.6 - i * 0.35);
@@ -203,8 +283,26 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
 
   // ── The figure ──
   const figMat = buildFigureMaterial();
-  const rig = buildFigureRig(figMat);
+  const capeMat = buildCapeMaterial();
+  const rig = buildFigureRig(figMat, capeMat);
   scene.add(rig.group);
+
+  // ── Drifting spark particles rising through the beam ──
+  const SPARK_COUNT = 40;
+  const sparkTex = buildSparkTexture();
+  const sparkGeo = new THREE.BufferGeometry();
+  const sparkPos = new Float32Array(SPARK_COUNT * 3);
+  const sparkSpeed = new Float32Array(SPARK_COUNT);
+  for (let i = 0; i < SPARK_COUNT; i++) {
+    sparkPos[i * 3] = (Math.random() - 0.5) * 1.6;
+    sparkPos[i * 3 + 1] = Math.random() * 3.2;
+    sparkPos[i * 3 + 2] = -0.9 + (Math.random() - 0.5) * 0.6;
+    sparkSpeed[i] = 0.15 + Math.random() * 0.35;
+  }
+  sparkGeo.setAttribute('position', new THREE.BufferAttribute(sparkPos, 3));
+  const sparkMat = new THREE.PointsMaterial({ map: sparkTex, size: 0.05, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false, color: new THREE.Color(0.8, 0.9, 1.0) });
+  const sparks = new THREE.Points(sparkGeo, sparkMat);
+  scene.add(sparks);
 
   // ── Soft drifting haze sprites for atmosphere ──
   const hazeTex = (() => {
@@ -227,8 +325,9 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
 
   let playing = false;
   let energy = 0.25; // smoothed 0..1, drives everything below
+  let tempoMs = DEFAULT_TEMPO_MS;
   let raf = 0;
-  let start = performance.now();
+  const start = performance.now();
   let lastBeat = 0;
   let beatPulse = 0; // decays after each beat tick
 
@@ -239,9 +338,12 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     const targetEnergy = playing ? 1 : 0.25;
     energy += (targetEnergy - energy) * 0.04;
 
-    // Procedural beat: a pulse fires every TEMPO_MS while playing, decays
+    // Procedural beat: a pulse fires every tempoMs while playing, decays
     // exponentially — drives the fins' chase target refresh + a bounce.
-    if (playing && now - lastBeat > TEMPO_MS) {
+    // tempoMs is set by the caller from the real song's LRC line timing
+    // (see setTempo), so this locks to the actual track instead of a
+    // one-size-fits-all guess.
+    if (playing && now - lastBeat > tempoMs) {
       lastBeat = now;
       beatPulse = 1;
       for (const f of fins) f.target = 0.35 + Math.random() * 0.65;
@@ -251,6 +353,9 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     figMat.uniforms.uPulse.value = beatPulse * energy;
     beamMat.uniforms.uTime.value = t;
     beamMat.uniforms.uPulse.value = beatPulse * energy;
+    capeMat.uniforms.uTime.value = t;
+    capeMat.uniforms.uSway.value = (0.05 + beatPulse * 0.09) * (0.3 + energy * 0.7);
+    (floorMat as THREE.MeshBasicMaterial).opacity = 0.25 + beatPulse * energy * 0.3;
 
     for (const f of fins) {
       f.val += (f.target * energy - f.val) * 0.15;
@@ -261,7 +366,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     // Groove: bounce + arm pump + hip sway, amplitude scaled by energy so a
     // paused/idle state settles to a gentle breathing sway instead of
     // freezing dead.
-    const bounceCycle = ((now - lastBeat) / TEMPO_MS);
+    const bounceCycle = ((now - lastBeat) / tempoMs);
     const bounce = Math.max(0, Math.sin(Math.PI * Math.min(1, bounceCycle * 1.4))) * energy;
     rig.group.position.y = -0.05 - bounce * 0.09;
     rig.hips.rotation.z = Math.sin(t * 2.1) * 0.06 * (0.4 + energy * 0.6);
@@ -274,10 +379,25 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     rig.foreArmL.rotation.z = Math.sin(t * 2.4 + 1) * 0.3 * energy;
     rig.foreArmR.rotation.z = -Math.sin(t * 2.4 + 1.4) * 0.3 * energy;
 
+    // Sparks drift upward through the beam, looping back to the floor.
+    const posAttr = sparkGeo.getAttribute('position') as THREE.BufferAttribute;
+    for (let i = 0; i < SPARK_COUNT; i++) {
+      let y = posAttr.getY(i) + sparkSpeed[i] * energy * 0.016;
+      if (y > 3.2) y = 0;
+      posAttr.setY(i, y);
+    }
+    posAttr.needsUpdate = true;
+    sparkMat.opacity = 0.25 + energy * 0.4;
+
     for (let i = 0; i < hazeSprites.length; i++) {
       hazeSprites[i].position.x += Math.sin(t * 0.15 + i) * 0.0015;
       (hazeSprites[i].material as THREE.SpriteMaterial).opacity = 0.06 + Math.sin(t * 0.3 + i) * 0.03;
     }
+
+    // Subtle cinematic camera sway instead of a fully static frame.
+    camera.position.x = camBase.x + Math.sin(t * 0.12) * 0.08;
+    camera.position.y = camBase.y + Math.sin(t * 0.09 + 1) * 0.04;
+    camera.lookAt(0, 1.05, 0);
 
     composer.render();
   }
@@ -285,6 +405,9 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
 
   return {
     setEnergy(p: boolean) { playing = p; },
+    setTempo(ms: number) {
+      if (Number.isFinite(ms) && ms > 0) tempoMs = ms;
+    },
     dispose() {
       cancelAnimationFrame(raf);
       ro.disconnect();
@@ -301,6 +424,9 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
         }
       });
       hazeTex.dispose();
+      finTex.dispose();
+      sparkTex.dispose();
+      floorTex.dispose();
       renderer.dispose();
       composer.dispose();
       if (renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement);
