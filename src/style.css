@@ -760,6 +760,18 @@ body::after {
    (found while wiring the Oriki Protocol's build-badge long-press trigger —
    real bug independent of that feature, just never noticed before). */
 .topL { top: 20px; left: 24px; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; z-index: 6; }
+/* Holographic multi-layer depth — the wordmark stack's layers ride at
+   different translateZ depths inside the parallax tilt (the parent .topL
+   gets a perspective() transform each frame from uiDepthTick in app.ts).
+   translateZ has no visual effect while the parent is untransformed, so
+   this is free when parallax is off (reduced-motion / perf-lite / no gyro).
+   Deliberately NOT applied to .topR — its .chip buttons animate their own
+   transform on hover/active, and a static depth rule here would clobber it. */
+.topL, .topL .topL-txt { transform-style: preserve-3d; }
+.topL .wm { transform: translateZ(26px); }
+.topL .wm-hg { transform: translateZ(18px); }
+.topL .clk { transform: translateZ(12px); }
+.topL .build-ver { transform: translateZ(7px); }
 .lp-brand {
   display: flex; justify-content: center; align-items: center;
   padding: 16px 0 12px;

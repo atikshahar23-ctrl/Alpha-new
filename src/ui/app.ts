@@ -189,7 +189,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="wm-hg">HEAVY GUARD OS</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v248 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="wm-hg">HEAVY GUARD OS</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v249 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip apps-chip" id="appsBtn" title="האפליקציות שלי" aria-label="האפליקציות שלי">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="12" cy="19" r="2"/><circle cx="19" cy="19" r="2"/></svg>
@@ -2296,6 +2296,7 @@ export function mountApp(root: HTMLElement) {
     voice.setWake(turningOn);
     $('micBtn').classList.toggle('on', turningOn);
     if (turningOn) audio.micOn(); else audio.micOff();
+    if (turningOn) { try { orb.pulseGlitch?.(0.14); } catch {} }
   };
   $('muteBtn').onclick = () => { audio.toggleMute(); };
   // מצב חסכוני — a persistent flag the office 3D sim (agents.html) reads
@@ -2880,6 +2881,7 @@ export function mountApp(root: HTMLElement) {
     const applyOrikiChrome = (on: boolean) => {
       document.body.classList.toggle('oriki-mode', on);
       try { orb.setOrikiMode?.(on); } catch {}
+      try { orb.pulseGlitch?.(0.18); } catch {}
     };
 
     let lockPill: HTMLButtonElement | null = null;
@@ -8776,22 +8778,33 @@ export function mountApp(root: HTMLElement) {
   // (Spoken "מה המצב" entry greeting removed per user request — the app no
   //  longer speaks a greeting on entry.)
 
-  // ── 3D Depth — perspective-based UI panel transforms (mouse only) ──
-  // Skip entirely on touch / iPad / perf-lite: there's no mouse to drive the
-  // parallax, so it's a constant rAF for nothing AND the perspective() transforms
-  // can leave the panels looking subtly tilted/"stuck" on iPad. Mouse desktops
-  // keep the effect.
+  // ── Holographic 3D depth — perspective-based UI panel parallax ──
+  // Desktop: driven by mouse position. Mobile/tablet: driven by device tilt
+  // (gyroscope). The .topL/.topR containers additionally use
+  // transform-style:preserve-3d with per-child translateZ steps (style.css),
+  // so the wordmark/clock/badge layers shift independently inside the tilt —
+  // real multi-layer depth, not a flat monolith rotating.
+  //
+  // The gyro path only spins up its rAF loop after the FIRST real
+  // deviceorientation reading arrives, so devices that never fire one
+  // (no sensor, iOS permission not granted) never pay for an idle loop.
+  // A slow-tracking baseline high-passes the tilt signal: holding the phone
+  // at any sustained angle relaxes back to neutral, so panels react to
+  // *changes* in tilt rather than staying stuck tilted (the iPad bug that
+  // got the old always-on version disabled on touch devices entirely).
+  // NOTE: deliberately NOT gated on perf-lite — perf-lite exists to strip
+  // backdrop-filter blur (its real cost driver), and it's auto-on for every
+  // touch phone/tablet, i.e. exactly the devices the gyro path serves. Five
+  // composited transform writes per frame are negligible next to the WebGL
+  // scene, and with blur already stripped there's no re-blur amplification.
   {
-    const perfLite = document.documentElement.classList.contains('perf-lite');
+    const reduced = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     const isTouch = (navigator.maxTouchPoints || 0) > 0 || 'ontouchstart' in window;
-    const isMob = perfLite || isTouch || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 900;
-    if (!isMob) {
-      let uiMX = 0, uiMY = 0;
-      let uiSX = 0, uiSY = 0;
-      document.addEventListener('mousemove', (e) => {
-        uiMX = (e.clientX / window.innerWidth - 0.5) * 2;
-        uiMY = (e.clientY / window.innerHeight - 0.5) * 2;
-      });
+    const isMob = isTouch || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 900;
+    if (!reduced) {
+      let uiMX = 0, uiMY = 0; // target, -1..1
+      let uiSX = 0, uiSY = 0; // smoothed
+      let running = false;
       const lp = root.querySelector('.left-panel') as HTMLElement;
       const rp = root.querySelector('.right-panel') as HTMLElement;
       const dk = root.querySelector('.dock') as HTMLElement;
@@ -8809,7 +8822,27 @@ export function mountApp(root: HTMLElement) {
         if (tr) tr.style.transform = `perspective(1200px) rotateY(${ry * 0.3}deg) translateZ(4px)`;
         requestAnimationFrame(uiDepthTick);
       }
-      requestAnimationFrame(uiDepthTick);
+      const start = () => { if (!running) { running = true; requestAnimationFrame(uiDepthTick); } };
+      if (!isMob) {
+        document.addEventListener('mousemove', (e) => {
+          uiMX = (e.clientX / window.innerWidth - 0.5) * 2;
+          uiMY = (e.clientY / window.innerHeight - 0.5) * 2;
+        });
+        start();
+      } else {
+        let baseB: number | null = null, baseG = 0;
+        window.addEventListener('deviceorientation', (e) => {
+          if (e.beta == null || e.gamma == null) return;
+          if (baseB === null) { baseB = e.beta; baseG = e.gamma; }
+          // slow-follow baseline (~3s time constant at 60Hz): sustained tilt
+          // becomes the new "neutral", only tilt *changes* drive parallax
+          baseB += (e.beta - baseB) * 0.005;
+          baseG += (e.gamma - baseG) * 0.005;
+          uiMX = Math.max(-1, Math.min(1, (e.gamma - baseG) / 18));
+          uiMY = Math.max(-1, Math.min(1, (e.beta - baseB) / 18));
+          start();
+        });
+      }
     }
   }
 }

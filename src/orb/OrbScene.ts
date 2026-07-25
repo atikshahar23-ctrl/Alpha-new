@@ -43,6 +43,9 @@ export interface OrbHandle {
   // Oriki Protocol — kid-safe mode: bright toon post-process + tap-to-bounce
   // toy vehicles, toggled live (no rebuild).
   setOrikiMode?(on: boolean): void;
+  // One-shot chromatic-aberration "glitch" burst (voice activation, mode
+  // switches). The per-frame decay already in the render loop fades it out.
+  pulseGlitch?(strength?: number): void;
 }
 
 // ============================================================
@@ -3705,6 +3708,9 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     setEnergy(v: number) { ampTarget = Math.max(0, Math.min(1, v)); },
     attachAudioLevel(fn: () => number) { audioLevelFn = fn; },
     setGoatTheme(on: boolean) { alphaBrain.setPalette(on ? CYBER_GOAT : CYBER_GOLD); },
+    pulseGlitch(strength = 0.12) {
+      if (mChroma) mChroma.uniforms.uStrength.value = Math.max(mChroma.uniforms.uStrength.value, strength);
+    },
     setOrikiMode(on: boolean) {
       oriActive = on;
       oriToonTarget = on ? 1 : 0;
@@ -4938,6 +4944,9 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     setEnergy(v: number) { ampTarget = Math.max(0, Math.min(1, v)); },
     attachAudioLevel(fn: () => number) { audioLevelFn = fn; },
     setGoatTheme(on: boolean) { alphaBrain.setPalette(on ? CYBER_GOAT : CYBER_GOLD); },
+    pulseGlitch(strength = 0.12) {
+      chroma.uniforms.uStrength.value = Math.max(chroma.uniforms.uStrength.value, strength);
+    },
     setOrikiMode(on: boolean) {
       oriActive = on;
       oriToonTarget = on ? 1 : 0;
