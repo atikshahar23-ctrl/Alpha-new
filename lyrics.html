@@ -1289,6 +1289,12 @@
   // mapping robust even if the model drops blank lines; if fewer than 80%
   // of lines come back parseable, the MT translation is kept untouched.
   const HE_CHAR_RE = /[\u0590-\u05FF]/;
+  // Strips a leading "\u05EA\u05E8\u05D2\u05D5\u05DD:" / "Translation:" label a model may prepend.
+  // Used on fresh LLM output AND on cache load, so songs that were cached
+  // with the label before this fix clean themselves up on next play.
+  function stripTransLabel(t){
+    return String(t == null ? '' : t).replace(/^(?:\u05EA\u05E8\u05D2\u05D5\u05DD|translation)\s*[:\uFF1A\-\u2013]\s*/i, '').trim();
+  }
   function mostlyHebrew(lines){
     let n = 0; lines.forEach(l=>{ if(HE_CHAR_RE.test(l)) n++; });
     return n > lines.length * 0.6;
@@ -1296,7 +1302,9 @@
   const SMART_HE_PROMPT = [
     'Translate the following song lyrics into natural, fluent Hebrew.',
     'Rules:',
-    '- Output EXACTLY one line per input line, formatted N|תרגום using the same number N as the input line.',
+    '- Output EXACTLY one line per input line. Each output line is the line number, a | character, and then the Hebrew translation text itself and nothing else.',
+    '- Example: input line `7|I miss you at night` → output line `7|אני מתגעגע אלייך בלילות`.',
+    '- Never add labels or prefixes such as "תרגום:" or "Translation:" — only the translated words themselves after the |.',
     '- Write real, idiomatic Hebrew — natural word order and everyday phrasing. Use Israeli slang where the original is slangy. Never translate word-for-word.',
     '- Preserve the meaning, tone and emotion of each line. Keep names and untranslatable interjections as they are.',
     '- No explanations and no extra lines — output only the numbered translations.',
@@ -1340,7 +1348,8 @@
         const m = line.match(/^\s*(\d+)\s*\|\s*(.+)$/);
         if(m){
           const idx = Number(m[1]) - 1;
-          const tr = m[2].trim();
+          // Defensive: some models still prefix a label despite the prompt.
+          const tr = stripTransLabel(m[2]);
           if(idx >= 0 && idx < texts.length && tr){ map[idx] = tr; matched++; }
         }
       });
@@ -1390,7 +1399,9 @@
 
     const cached = cacheGet(cacheKey);
     if(cached){
-      state.lines = cached.lines.map(l=>({ ...l }));
+      // stripTransLabel: self-heal entries cached with a "תרגום:" prefix
+      // before that label bug was fixed.
+      state.lines = cached.lines.map(l=>({ ...l, trans: l.trans != null ? stripTransLabel(l.trans) : l.trans }));
       state.synced = !!cached.synced;
       applyTempo(estimateTempoMs(state.lines));
       renderLines(); setSyncBadge();
