@@ -1,0 +1,1636 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lyrics Translator</title>
+<meta name="description" content="תרגום מילות שירים בזמן אמת, מסונכרן עם ספוטיפיי" />
+<meta name="theme-color" content="#08090d" />
+<link rel="manifest" href="./manifest.json" />
+<link rel="icon" type="image/png" href="./icon-192.png" />
+<link rel="apple-touch-icon" href="./icon-192.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Rubik:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --lyric-font: 19px;
+    --bg:#08090d;
+    --bg-elevated:#12141b;
+    --bg-elevated-2:#1a1d27;
+    --border:rgba(255,255,255,0.08);
+    --border-strong:rgba(0,229,255,0.35);
+    --text:#f2f3f7;
+    --text-dim:#868c99;
+    --text-faint:#4d525e;
+    --cyan:#00e5ff;
+    --violet:#b24bf3;
+    --amber:#ffb020;
+    --danger:#ff4d6d;
+    --radius:16px;
+    --radius-sm:10px;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    background:
+      radial-gradient(1200px 600px at 15% -10%, rgba(0,229,255,0.08), transparent 60%),
+      radial-gradient(1000px 500px at 110% 10%, rgba(178,75,243,0.08), transparent 60%),
+      var(--bg);
+    color:var(--text);
+    font-family:'Rubik', sans-serif;
+    min-height:100vh;
+    position:relative;
+    overflow-x:hidden;
+  }
+  body::before{
+    content:'';
+    position:fixed; inset:0;
+    background-image:linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+                      linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+    background-size:42px 42px;
+    pointer-events:none;
+    mask-image:radial-gradient(ellipse 80% 60% at 50% 20%, black 10%, transparent 75%);
+    z-index:0;
+  }
+  .wrap{
+    position:relative; z-index:1;
+    max-width:920px;
+    margin:0 auto;
+    padding:20px 18px 60px;
+  }
+  .eyebrow{
+    font-family:'Chakra Petch',sans-serif;
+    letter-spacing:0.14em;
+    font-size:11px;
+    color:var(--text-dim);
+    text-transform:uppercase;
+    direction:ltr; text-align:right;
+  }
+  header{
+    display:flex; align-items:center; justify-content:space-between;
+    gap:12px; flex-wrap:wrap;
+    padding:14px 0 22px;
+    border-bottom:1px solid var(--border);
+    margin-bottom:22px;
+  }
+  .logo{
+    display:flex; align-items:center; gap:10px;
+  }
+  .logo-mark{
+    width:34px;height:34px;border-radius:9px;
+    background:linear-gradient(135deg,var(--cyan),var(--violet));
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:0 0 22px rgba(0,229,255,0.35);
+    flex-shrink:0;
+  }
+  .logo-mark svg{width:18px;height:18px;}
+  .logo-text{
+    font-family:'Chakra Petch',sans-serif;
+    font-weight:700; font-size:16px; letter-spacing:0.04em;
+    direction:ltr;
+  }
+  .logo-text span{color:var(--cyan);}
+  .help-btn{
+    display:inline-flex; align-items:center; gap:5px;
+    font-family:'Rubik',sans-serif; font-weight:600; font-size:13px;
+    color:var(--amber); background:none; text-decoration:none; cursor:pointer;
+    border:1px solid rgba(255,176,32,.35); border-radius:var(--radius-sm);
+    padding:8px 13px;
+    transition:border-color .12s ease, box-shadow .12s ease;
+  }
+  .help-btn:hover{border-color:var(--amber); box-shadow:0 0 14px rgba(255,176,32,.25);}
+  .header-controls{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
+  select, input[type=text]{
+    background:var(--bg-elevated);
+    border:1px solid var(--border);
+    color:var(--text);
+    border-radius:var(--radius-sm);
+    padding:9px 12px;
+    font-family:'Rubik',sans-serif;
+    font-size:13.5px;
+    outline:none;
+  }
+  select:focus, input[type=text]:focus{border-color:var(--border-strong);}
+  button{
+    font-family:'Rubik',sans-serif;
+    font-weight:600;
+    font-size:13.5px;
+    border-radius:var(--radius-sm);
+    border:1px solid var(--border);
+    background:var(--bg-elevated);
+    color:var(--text);
+    padding:9px 14px;
+    cursor:pointer;
+    transition:transform .12s ease, border-color .12s ease, box-shadow .12s ease;
+  }
+  button:hover{border-color:var(--border-strong); transform:translateY(-1px);}
+  button:active{transform:translateY(0);}
+  button:focus-visible, select:focus-visible, input:focus-visible, .lyric-row:focus-visible{
+    outline:2px solid var(--cyan); outline-offset:2px;
+  }
+  .btn-primary{
+    background:linear-gradient(135deg,var(--cyan),var(--violet));
+    color:#05060a; border:none;
+    box-shadow:0 0 18px rgba(0,229,255,0.25);
+  }
+  .btn-primary:hover{box-shadow:0 0 26px rgba(0,229,255,0.4);}
+  .status-pill{
+    display:flex; align-items:center; gap:7px;
+    font-size:12px; color:var(--text-dim);
+    border:1px solid var(--border);
+    border-radius:999px; padding:7px 12px;
+    font-family:'JetBrains Mono',monospace;
+  }
+  .dot{width:7px;height:7px;border-radius:50%; background:var(--text-faint); flex-shrink:0;}
+  .dot.live{background:var(--cyan); box-shadow:0 0 8px var(--cyan); animation:pulse 1.6s infinite;}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.45;}}
+
+  .icon-btn{
+    width:36px;height:36px; padding:0;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .icon-btn svg{width:17px;height:17px;}
+
+  .panel{
+    background:var(--bg-elevated);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:18px;
+    margin-bottom:16px;
+  }
+  .settings-panel{display:none;}
+  .settings-panel.open{display:block;}
+  .field-row{display:flex; flex-direction:column; gap:6px; margin-bottom:14px;}
+  .field-row label{font-size:12px; color:var(--text-dim);}
+  .redirect-copy{display:flex; gap:8px; align-items:center;}
+  .redirect-copy input{flex:1; direction:ltr; text-align:left; font-family:'JetBrains Mono',monospace; font-size:12px;}
+  .hint{font-size:12px; color:var(--text-faint); line-height:1.6; margin-top:4px;}
+  .settings-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:10px 18px; margin-bottom:14px;}
+  .chk{
+    display:flex; align-items:center; gap:9px;
+    font-size:13.5px; color:var(--text); cursor:pointer;
+    padding:9px 12px; border:1px solid var(--border); border-radius:var(--radius-sm);
+    background:var(--bg-elevated-2);
+  }
+  .chk input{accent-color:var(--cyan); width:16px; height:16px; cursor:pointer;}
+  .font-slider-row{display:flex; align-items:center; gap:10px;}
+  .font-slider-row input[type=range]{
+    flex:1; accent-color:var(--cyan); height:4px; cursor:pointer;
+  }
+  .font-slider-row .icon-btn{width:32px; height:32px; font-size:17px; font-weight:700; flex-shrink:0;}
+  .sub-eyebrow{
+    font-family:'Chakra Petch',sans-serif; letter-spacing:.12em; font-size:10.5px;
+    color:var(--text-faint); text-transform:uppercase; direction:ltr; text-align:right;
+    margin:16px 0 8px; border-top:1px solid var(--border); padding-top:14px;
+  }
+  .help-steps{margin:12px 0; padding-inline-start:20px; display:flex; flex-direction:column; gap:10px;}
+  .help-steps li{font-size:13px; line-height:1.6; color:var(--text-dim);}
+  .help-steps a{color:var(--cyan);}
+
+  .now-playing{
+    display:flex; align-items:center; gap:16px;
+  }
+  .art{
+    width:64px;height:64px;border-radius:10px;
+    background:var(--bg-elevated-2);
+    flex-shrink:0; object-fit:cover;
+    border:1px solid var(--border);
+  }
+  .np-info{flex:1; min-width:0;}
+  .np-title{font-weight:700; font-size:16px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .np-artist{font-size:13px; color:var(--text-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .progress{height:4px; background:var(--bg-elevated-2); border-radius:2px; margin-top:10px; overflow:hidden;}
+  .progress-bar{height:100%; width:0%; background:linear-gradient(90deg,var(--cyan),var(--violet)); transition:width .25s linear;}
+  .np-time{font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--text-faint); margin-top:5px; direction:ltr; text-align:right;}
+  .sync-badge{
+    display:none; align-items:center; gap:5px;
+    font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:.08em;
+    border:1px solid var(--border-strong); color:var(--cyan);
+    border-radius:999px; padding:3px 9px; margin-top:7px; width:max-content;
+  }
+  .sync-badge.est{border-color:rgba(255,176,32,.4); color:var(--amber);}
+  .sync-badge.show{display:inline-flex;}
+  .progress{cursor:pointer;}
+
+  /* ── Spotify player controls (Premium required by Spotify for control) ── */
+  /* [hidden] and .np-controls{display:flex} have equal specificity, and
+     author rules beat the UA stylesheet on a tie — without this explicit
+     override the hidden attribute is silently defeated and the controls
+     show even when JS set hidden=true (e.g. in manual mode). */
+  .np-controls[hidden]{display:none;}
+  .np-controls{display:flex; align-items:center; gap:8px; flex-shrink:0;}
+  .ctl-btn{
+    width:42px; height:42px; padding:0; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .ctl-btn svg{width:19px; height:19px;}
+  .ctl-play{
+    width:52px; height:52px;
+    background:linear-gradient(135deg,var(--cyan),var(--violet));
+    border:none; color:#05060a;
+    box-shadow:0 0 18px rgba(0,229,255,0.3);
+  }
+  .ctl-play:hover{box-shadow:0 0 26px rgba(0,229,255,0.45);}
+  .ctl-play svg{width:22px; height:22px;}
+  .ctl-hint{font-size:12px; color:var(--amber); margin-top:10px; display:none;}
+  .ctl-hint.show{display:block;}
+  @media (max-width:560px){
+    .np-controls{width:100%; justify-content:center; margin-top:4px;}
+  }
+
+  /* ── Playlists ── */
+  #playlistsList{display:flex; flex-direction:column; gap:6px; max-height:340px; overflow-y:auto;}
+  .playlist-item{
+    display:flex; align-items:center; gap:10px; width:100%;
+    background:var(--bg-elevated-2); border:1px solid var(--border); border-radius:var(--radius-sm);
+    padding:8px 10px; cursor:pointer; text-align:right; font-family:'Rubik',sans-serif; color:var(--text);
+  }
+  .playlist-item:hover{border-color:var(--border-strong); background:rgba(0,229,255,0.06);}
+  .playlist-item img{width:40px; height:40px; border-radius:7px; object-fit:cover; flex-shrink:0;}
+  .playlist-ph{
+    width:40px; height:40px; border-radius:7px; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    background:rgba(0,229,255,0.08); font-size:18px;
+  }
+  .playlist-item span{flex:1; min-width:0; font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .playlist-item em{font-style:normal; font-size:11px; color:var(--text-faint); flex-shrink:0;}
+
+  .search-row{display:flex; gap:8px; flex-wrap:wrap;}
+  .search-row input{flex:1; min-width:140px;}
+
+  /* ── Hero: the 3D groove-avatar centerpiece ── */
+  .hero-wrap{
+    position:relative; border-radius:var(--radius); overflow:hidden;
+    height:min(50vh,380px); margin-bottom:16px;
+    background:radial-gradient(ellipse 90% 70% at 50% 30%, rgba(80,25,140,.28), var(--bg) 72%);
+    border:1px solid var(--border);
+  }
+  .hero-avatar{position:absolute; inset:0;}
+  .hero-avatar canvas{display:block; width:100%; height:100%;}
+  .hero-caption{
+    position:absolute; bottom:10px; left:0; right:0; text-align:center;
+    font-family:'Chakra Petch',sans-serif; font-size:10.5px; letter-spacing:.14em;
+    color:rgba(210,225,255,.55); text-transform:uppercase; pointer-events:none;
+  }
+  .hero-wrap.off{display:none;}
+  @media (max-width:560px){ .hero-wrap{height:min(40vh,280px);} }
+
+  /* Ambient "LED" screen-edge glow, pulsing/color-cycling on the same beat
+     clock (tempoMs) as the avatar/equalizer/lyric pulse — a virtual mood-
+     light effect around THIS screen. Note: this does not control real
+     smart-home LED hardware (Philips Hue, Govee, etc.) — that would need a
+     separate integration with that system's own bridge/API. */
+  .led-frame{
+    position:fixed; inset:0; z-index:9999; pointer-events:none;
+    box-shadow:inset 0 0 30px 10px rgba(178,75,243,0.12);
+    transition:box-shadow .12s ease;
+  }
+  .led-frame.off{display:none;}
+
+  /* Everything below the hero/settings stays hidden for a beat after load —
+     "the words are seen only after [the avatar]" per the owner's request —
+     then fades/slides in once the scene has had a moment to establish. */
+  .reveal-gate{opacity:0; transform:translateY(14px); transition:opacity .9s ease, transform .9s ease;}
+  .reveal-gate.show{opacity:1; transform:translateY(0);}
+
+  .stage-wrap{position:relative; border-radius:var(--radius); overflow:hidden;}
+  .eq-canvas{
+    position:absolute; inset:0; width:100%; height:100%;
+    pointer-events:none; z-index:0; opacity:.85;
+  }
+  .stage{
+    position:relative; z-index:1;
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    background:linear-gradient(180deg, rgba(255,255,255,0.015), transparent 12%), rgba(18,20,27,.62);
+    max-height:56vh;
+    overflow-y:auto;
+    scroll-behavior:smooth;
+    padding:10px;
+  }
+  .empty-state{
+    padding:50px 20px; text-align:center; color:var(--text-dim);
+  }
+  .empty-state .big{font-family:'Chakra Petch',sans-serif; font-size:14px; letter-spacing:.06em; color:var(--text); margin-bottom:6px;}
+  .lyric-row{
+    position:relative;
+    display:flex; flex-direction:column; gap:3px;
+    padding:12px 16px 12px 20px;
+    margin:3px 0;
+    border-radius:var(--radius-sm);
+    cursor:pointer;
+    border:1px solid transparent;
+  }
+  .lyric-row .orig{
+    /* Scales with the same slider as the translation (not a fixed 13px) —
+       at large font sizes the source line was staying tiny and unreadable
+       next to a huge translation. Floor of 11px keeps it legible at the
+       slider's smallest setting. */
+    font-size:max(11px, calc(var(--lyric-font) * 0.6));
+    color:var(--text-faint); direction:ltr; text-align:left;
+    transition:color .2s ease, font-size .1s ease;
+  }
+  .lyric-row .trans{
+    font-size:var(--lyric-font); line-height:1.4; font-weight:600; color:var(--text-dim);
+    transition:color .2s ease, opacity .3s ease, font-size .1s ease;
+  }
+  .lyric-row .trans.pending{opacity:.42; font-weight:400;}
+  .lyric-row[dir="rtl"] .trans{text-align:right;}
+  .lyric-row[dir="ltr"] .trans{text-align:left;}
+  .lyric-row.active{
+    background:linear-gradient(90deg, rgba(0,229,255,0.08), rgba(178,75,243,0.06));
+    border-color:var(--border-strong);
+  }
+  .lyric-row.active .trans{color:var(--text); text-shadow:0 0 18px rgba(0,229,255,0.25);}
+  .lyric-row.active .orig{color:var(--text-dim);}
+  .lyric-row.active::before{
+    content:'';
+    position:absolute; right:0; top:6px; bottom:6px; width:3px;
+    border-radius:3px;
+    background:linear-gradient(180deg,var(--cyan),var(--violet));
+    box-shadow:0 0 12px var(--cyan);
+    animation:beam 1.8s ease-in-out infinite;
+  }
+  @keyframes beam{0%,100%{opacity:.55;}50%{opacity:1;}}
+
+  /* ── Settings-driven display modes ── */
+  .stage.hide-orig .orig{display:none;}
+
+  /* ── Karaoke mode: only the song header + lyrics, everything else gone ──
+     Font size is controlled by the same slider in both modes (the user
+     dials it exactly where they want it); karaoke just strips the chrome. */
+  body.karaoke .settings-panel,
+  body.karaoke .manual-panel,
+  body.karaoke footer{display:none !important;}
+  body.karaoke .stage{max-height:calc(100vh - 220px);}
+  #karaokeBtn.on{border-color:var(--border-strong); box-shadow:0 0 14px rgba(0,229,255,.3); color:var(--cyan);}
+
+  .manual-nav{display:flex; gap:8px; justify-content:center; padding:10px 0 2px;}
+  footer{
+    margin-top:14px;
+    font-size:12px; color:var(--text-faint);
+    line-height:1.7;
+    text-align:center;
+  }
+  footer a{color:var(--text-dim);}
+  ::-webkit-scrollbar{width:8px;}
+  ::-webkit-scrollbar-thumb{background:var(--bg-elevated-2); border-radius:8px;}
+
+  @media (prefers-reduced-motion: reduce){
+    .dot.live, .lyric-row.active::before{animation:none;}
+  }
+  @media (max-width:560px){
+    .now-playing{flex-wrap:wrap;}
+    header{gap:10px;}
+  }
+</style>
+</head>
+<body>
+<div class="led-frame" id="ledFrame" aria-hidden="true"></div>
+<div class="wrap">
+
+  <header>
+    <div class="logo">
+      <div class="logo-mark">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M4 12h2l2-7 3 14 3-10 2 3h4" stroke="#05060a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <div>
+        <div class="logo-text">LYRICS<span>::</span>TRANSLATOR</div>
+      </div>
+    </div>
+    <div class="header-controls">
+      <button class="help-btn" id="helpBtn" title="עזרה — איך מתחברים">❓ עזרה</button>
+      <select id="targetLang" aria-label="שפת תרגום"></select>
+      <span class="status-pill" id="spotifyStatus"><span class="dot" id="spotifyDot"></span><span id="spotifyStatusText">לא מחובר</span></span>
+      <button id="connectBtn" class="btn-primary">התחבר לספוטיפיי</button>
+      <button id="playlistsBtn" class="icon-btn" aria-label="הפלייליסטים שלי" title="הפלייליסטים שלי">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+      </button>
+      <button id="karaokeBtn" class="icon-btn" aria-label="מצב קריוקי" title="מצב קריוקי — מילים בלבד">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 3H5a2 2 0 00-2 2v3M16 3h3a2 2 0 012 2v3M8 21H5a2 2 0 01-2-2v-3M16 21h3a2 2 0 002-2v-3"/></svg>
+      </button>
+      <button id="settingsBtn" class="icon-btn" aria-label="הגדרות" title="הגדרות">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="hero-wrap" id="heroWrap">
+    <div class="hero-avatar" id="heroAvatar"></div>
+    <div class="hero-caption">🎭 רוקד לקצב השיר</div>
+  </div>
+
+  <div class="panel settings-panel" id="settingsPanel">
+    <div class="eyebrow">הגדרות תצוגה ותרגום</div>
+    <div class="settings-grid" style="margin-top:12px;">
+      <label class="chk"><input type="checkbox" id="avatarToggle" checked> אווטאר תלת-מימד רוקד</label>
+      <label class="chk"><input type="checkbox" id="ledToggle" checked> תאורת LED מסביב למסך</label>
+      <label class="chk"><input type="checkbox" id="wakeLockToggle" checked> השאר את המסך דלוק</label>
+      <label class="chk"><input type="checkbox" id="eqToggle" checked> אקולייזר מאחורי המילים</label>
+      <label class="chk"><input type="checkbox" id="origToggle" checked> הצג את שורת המקור</label>
+      <div class="field-row" style="margin:0;">
+        <label>מנוע תרגום</label>
+        <select id="engineSel">
+          <option value="google">Google (מהיר, מומלץ)</option>
+          <option value="mymemory">MyMemory (גיבוי)</option>
+        </select>
+      </div>
+    </div>
+    <div class="field-row">
+      <label>גודל המילים המתורגמות — <span id="fontSizeVal">19px</span></label>
+      <div class="font-slider-row">
+        <button type="button" id="fontMinus" class="icon-btn" aria-label="הקטן טקסט">−</button>
+        <input type="range" id="fontSizeSlider" min="14" max="140" step="1" value="19" aria-label="גודל טקסט">
+        <button type="button" id="fontPlus" class="icon-btn" aria-label="הגדל טקסט">+</button>
+      </div>
+      <div class="hint">אפשר להגדיל עד כמה שרוצים — נוח למסך גדול או להקרנה מרחוק.</div>
+    </div>
+    <div class="hint">כל ההגדרות נשמרות במכשיר ומוחלות מיידית. מנוע Google מתרגם את כל השיר בבת אחת עם זיהוי שפת מקור אוטומטי; MyMemory משמש כגיבוי אוטומטי אם Google לא זמין.</div>
+
+    <div class="sub-eyebrow">Spotify Connection</div>
+    <div class="field-row">
+      <label>Spotify Client ID</label>
+      <input type="text" id="clientIdInput" placeholder="הדבק כאן את ה-Client ID מהדשבורד של Spotify" style="direction:ltr; text-align:left; font-family:'JetBrains Mono',monospace;">
+    </div>
+    <div class="field-row">
+      <label>Redirect URI לרישום ב-Spotify Dashboard (העתק בדיוק כמו שהוא)</label>
+      <div class="redirect-copy">
+        <input type="text" id="redirectUriDisplay" readonly>
+        <button id="copyRedirectBtn">העתק</button>
+      </div>
+    </div>
+    <button id="saveSettingsBtn" class="btn-primary">שמור</button>
+    <div class="hint" style="margin-top:10px;">ההוראות המלאות להקמת Spotify Client ID נמצאות במסך העזרה (❓ בכותרת).</div>
+  </div>
+
+  <div class="panel settings-panel" id="helpPanel">
+    <div class="eyebrow">❓ עזרה — חיבור לספוטיפיי</div>
+    <ol class="help-steps">
+      <li>
+        היכנס ל־<a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener">developer.spotify.com/dashboard</a> עם חשבון הספוטיפיי הרגיל שלך ולחץ <b>Create app</b>.
+      </li>
+      <li>מלא שם ותיאור חופשיים (למשל: <span dir="ltr">Lyrics Translator</span>).</li>
+      <li>
+        בשדה <b>Redirect URIs</b> הדבק את הכתובת המוצגת למטה תחת "Redirect URI לרישום" (יש כפתור העתקה בפאנל ההגדרות ⚙️), סמן <b>Web API</b>, אשר את התנאים ולחץ <b>Save</b>.
+      </li>
+      <li>בעמוד ההגדרות של האפליקציה שנוצרה תמצא <b>Client ID</b> — העתק אותו.</li>
+      <li>פתח כאן את פאנל ההגדרות (⚙️), הדבק את ה-Client ID בשדה המתאים, ולחץ <b>שמור</b>.</li>
+      <li>לחץ <b>התחבר לספוטיפיי</b> בכותרת — מרגע זה האפליקציה תזהה אוטומטית מה מתנגן ותציג את המילים המתורגמות, כולל שליטה בנגן ובפלייליסטים.</li>
+    </ol>
+    <div class="hint">בלי חיבור לספוטיפיי אפשר עדיין להשתמש בחיפוש הידני (שם אמן + שם שיר) בתחתית המסך.</div>
+    <div class="hint" style="margin-top:6px;">מגבלת כיסוי: המילים מגיעות מספקים חינמיים (LRCLIB, lyrics.ovh) — לא כל שיר יימצא, בעיקר שירים נדירים או חדשים מאוד.</div>
+    <button class="btn-primary" id="closeHelpBtn" style="margin-top:12px;">הבנתי, סגור</button>
+  </div>
+
+  <div class="reveal-gate" id="revealGate">
+  <div class="panel">
+    <div class="now-playing">
+      <img class="art" id="albumArt" alt="">
+      <div class="np-info">
+        <div class="np-title" id="npTitle">אין שיר מזוהה כרגע</div>
+        <div class="np-artist" id="npArtist">התחבר לספוטיפיי או הזן שיר ידנית למטה</div>
+        <div class="progress" id="progressTrack" title="לחץ כדי לדלג לנקודה בשיר"><div class="progress-bar" id="progressBar"></div></div>
+        <div class="np-time" id="npTime"></div>
+        <span class="sync-badge" id="syncBadge"></span>
+      </div>
+      <div class="np-controls" id="npControls" hidden>
+        <button class="ctl-btn" id="ctlPrev" title="השיר הקודם" aria-label="השיר הקודם">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zM20 6l-10 6 10 6z"/></svg>
+        </button>
+        <button class="ctl-btn ctl-play" id="ctlPlay" title="נגן / השהה" aria-label="נגן או השהה">
+          <svg id="ctlPlayIcon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        </button>
+        <button class="ctl-btn" id="ctlNext" title="השיר הבא" aria-label="השיר הבא">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM4 6l10 6-10 6z"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="ctl-hint" id="ctlHint"></div>
+  </div>
+
+  <div class="panel playlists-panel" id="playlistsPanel" style="display:none;">
+    <div class="eyebrow" style="margin-bottom:10px;">📃 הפלייליסטים שלי</div>
+    <div id="playlistsList"></div>
+  </div>
+
+  <div class="panel manual-panel">
+    <div class="eyebrow" style="margin-bottom:10px;">חיפוש ידני (ליוטיוב או כל מקור אחר)</div>
+    <div class="search-row">
+      <input type="text" id="manualArtist" placeholder="שם האמן">
+      <input type="text" id="manualTitle" placeholder="שם השיר">
+      <button id="manualSearchBtn" class="btn-primary">הצג מילים</button>
+    </div>
+  </div>
+
+  <div class="stage-wrap">
+    <canvas class="eq-canvas" id="eqCanvas" aria-hidden="true"></canvas>
+    <div class="stage" id="stage">
+      <div class="empty-state" id="emptyState">
+        <div class="big">אין מילים להצגה</div>
+        <div>התחבר לספוטיפיי או חפש שיר ידנית כדי להתחיל</div>
+      </div>
+    </div>
+  </div>
+  <div class="manual-nav" id="manualNav" style="display:none;">
+    <button id="prevLineBtn">◂ שורה קודמת</button>
+    <button id="nextLineBtn">שורה הבאה ▸</button>
+  </div>
+
+  <footer>
+    מילים: LRCLIB (מסונכרן) עם גיבוי lyrics.ovh · תרגום: Google (חינם) עם גיבוי MyMemory · הכול ללא מפתחות וללא תשלום.<br>
+    שירים שכבר תורגמו נשמרים במכשיר ונטענים מיידית. תרגום אוטומטי עשוי להכיל אי-דיוקים.
+  </footer>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------- config ----------
+  const LANGS = [
+    {code:'he', name:'עברית', rtl:true},
+    {code:'en', name:'English', rtl:false},
+    {code:'es', name:'Español', rtl:false},
+    {code:'fr', name:'Français', rtl:false},
+    {code:'ar', name:'العربية', rtl:true},
+    {code:'ru', name:'Русский', rtl:false},
+    {code:'de', name:'Deutsch', rtl:false},
+    {code:'pt', name:'Português', rtl:false},
+    {code:'it', name:'Italiano', rtl:false},
+    {code:'ja', name:'日本語', rtl:false},
+  ];
+  const SPOTIFY_AUTH_URL = 'https://accounts.spotify.com/authorize';
+  const SPOTIFY_TOKEN_URL = 'https://accounts.spotify.com/api/token';
+  const SPOTIFY_SCOPES = 'user-read-currently-playing user-read-playback-state user-modify-playback-state playlist-read-private playlist-read-collaborative';
+  const REDIRECT_URI = window.location.origin + window.location.pathname;
+  const POLL_MS = 4000;
+  const TICK_MS = 250;
+  const CACHE_KEY = 'lt:cache:v1';
+  const CACHE_MAX = 30;
+
+  // ---------- storage helpers ----------
+  const store = {
+    get(k){ try{ return JSON.parse(localStorage.getItem(k)); }catch(e){ return null; } },
+    set(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} },
+    del(k){ localStorage.removeItem(k); }
+  };
+
+  // ---------- dom refs ----------
+  const $ = (id) => document.getElementById(id);
+  const targetLangSel = $('targetLang');
+  const connectBtn = $('connectBtn');
+  const spotifyDot = $('spotifyDot');
+  const spotifyStatusText = $('spotifyStatusText');
+  const settingsBtn = $('settingsBtn');
+  const settingsPanel = $('settingsPanel');
+  const clientIdInput = $('clientIdInput');
+  const redirectUriDisplay = $('redirectUriDisplay');
+  const copyRedirectBtn = $('copyRedirectBtn');
+  const saveSettingsBtn = $('saveSettingsBtn');
+  const albumArt = $('albumArt');
+  const npTitle = $('npTitle');
+  const npArtist = $('npArtist');
+  const progressBar = $('progressBar');
+  const progressTrack = $('progressTrack');
+  const npTime = $('npTime');
+  const syncBadge = $('syncBadge');
+  const npControls = $('npControls');
+  const ctlHint = $('ctlHint');
+  const ctlPrev = $('ctlPrev');
+  const ctlPlay = $('ctlPlay');
+  const ctlPlayIcon = $('ctlPlayIcon');
+  const ctlNext = $('ctlNext');
+  const playlistsBtn = $('playlistsBtn');
+  const playlistsPanel = $('playlistsPanel');
+  const playlistsList = $('playlistsList');
+  const manualArtist = $('manualArtist');
+  const manualTitle = $('manualTitle');
+  const manualSearchBtn = $('manualSearchBtn');
+  const stage = $('stage');
+  const manualNav = $('manualNav');
+  const prevLineBtn = $('prevLineBtn');
+  const nextLineBtn = $('nextLineBtn');
+  const eqCanvas = $('eqCanvas');
+  const eqToggle = $('eqToggle');
+  const origToggle = $('origToggle');
+  const engineSel = $('engineSel');
+  const fontSizeSlider = $('fontSizeSlider');
+  const fontSizeVal = $('fontSizeVal');
+  const fontMinus = $('fontMinus');
+  const fontPlus = $('fontPlus');
+  const karaokeBtn = $('karaokeBtn');
+
+  redirectUriDisplay.value = REDIRECT_URI;
+
+  // populate language selector
+  LANGS.forEach(l=>{
+    const opt = document.createElement('option');
+    opt.value = l.code; opt.textContent = l.name;
+    targetLangSel.appendChild(opt);
+  });
+  targetLangSel.value = store.get('lt:target_lang') || 'he';
+  targetLangSel.addEventListener('change', ()=>{
+    store.set('lt:target_lang', targetLangSel.value);
+    if(state.rawTitle) loadLyricsFor(state.rawArtist, state.rawTitle); // re-translate current song
+  });
+
+  // ---------- app state ----------
+  const state = {
+    mode: null,           // 'spotify' | 'manual'
+    lines: [],            // [{t:ms|null, orig, trans}]
+    synced: false,        // true when LRCLIB gave real timestamps
+    activeIndex: -1,
+    durationMs: 0,
+    serverProgressMs: 0,
+    fetchedAt: 0,
+    isPlaying: false,
+    currentTrackKey: null,
+    rawArtist: '', rawTitle: '',
+    loadSeq: 0,           // guards against out-of-order async loads
+  };
+  // Shared beat clock for the equalizer, the 3D avatar, and the lyric pulse —
+  // derived per-song from real LRC line timestamps (see estimateTempoMs),
+  // not a generic guess. Spotify's own tempo/BPM endpoint (Audio Features)
+  // was restricted by Spotify in late 2024 to apps with pre-existing
+  // extended quota, so a freshly created Client ID like this one's can't
+  // reach it — this sidesteps that entirely using data already on hand.
+  let tempoMs = 560;
+  function estimateTempoMs(lines){
+    const times = (lines||[]).map(l=>l.t).filter(t=>t!=null);
+    if(times.length < 4) return 560;
+    const deltas = [];
+    for(let i=1;i<times.length;i++){
+      const d = times[i]-times[i-1];
+      if(d > 150 && d < 6000) deltas.push(d); // drop near-zero/instrumental-gap outliers
+    }
+    if(!deltas.length) return 560;
+    deltas.sort((a,b)=>a-b);
+    const median = deltas[Math.floor(deltas.length/2)];
+    // A song's line-to-line gap is usually a small multiple of its real
+    // beat — test a few integer divisors and keep whichever lands closest
+    // to a comfortable dance-tempo center (~120bpm / 500ms).
+    let best = median, bestScore = Infinity;
+    for(const div of [1,2,3,4]){
+      const cand = median/div;
+      if(cand < 250 || cand > 900) continue;
+      const score = Math.abs(cand-500);
+      if(score < bestScore){ bestScore = score; best = cand; }
+    }
+    return Math.max(280, Math.min(900, Math.round(best)));
+  }
+  function applyTempo(ms){
+    tempoMs = ms;
+    window.__lyricsAvatarBridge?.setTempo(ms);
+  }
+  // Declared here (not in the "CURRENTLY PLAYING" section below, where
+  // startPolling/stopPolling are defined) because handleAuthRedirect() can
+  // call startPolling() synchronously during initial script execution, on
+  // page load with an already-stored token — a `let` declared later in
+  // source order would still be in its temporal dead zone at that point.
+  let pollTimer = null, tickTimer = null;
+
+  // ================= DISPLAY SETTINGS (applied live) =================
+  const prefersReducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const FONT_MIN = 14, FONT_MAX = 140;
+  const settings = {
+    eq: store.get('lt:eq_on'),
+    showOrig: store.get('lt:show_orig'),
+    fontPx: store.get('lt:font_px') || 19,
+    engine: store.get('lt:engine') || 'google',
+  };
+  if(settings.eq === null || settings.eq === undefined) settings.eq = !prefersReducedMotion;
+  if(settings.showOrig === null || settings.showOrig === undefined) settings.showOrig = true;
+  settings.fontPx = Math.min(FONT_MAX, Math.max(FONT_MIN, Number(settings.fontPx) || 19));
+
+  function applyDisplaySettings(){
+    eqToggle.checked = !!settings.eq;
+    origToggle.checked = !!settings.showOrig;
+    engineSel.value = settings.engine;
+    fontSizeSlider.value = settings.fontPx;
+    fontSizeVal.textContent = settings.fontPx + 'px';
+    document.documentElement.style.setProperty('--lyric-font', settings.fontPx + 'px');
+    stage.classList.toggle('hide-orig', !settings.showOrig);
+    eqCanvas.style.display = settings.eq ? '' : 'none';
+    if(settings.eq) startEq(); else stopEq();
+  }
+  function setFontPx(px){
+    settings.fontPx = Math.min(FONT_MAX, Math.max(FONT_MIN, Math.round(px)));
+    store.set('lt:font_px', settings.fontPx);
+    applyDisplaySettings();
+  }
+  eqToggle.addEventListener('change', ()=>{ settings.eq = eqToggle.checked; store.set('lt:eq_on', settings.eq); applyDisplaySettings(); });
+  origToggle.addEventListener('change', ()=>{ settings.showOrig = origToggle.checked; store.set('lt:show_orig', settings.showOrig); applyDisplaySettings(); });
+  engineSel.addEventListener('change', ()=>{ settings.engine = engineSel.value; store.set('lt:engine', settings.engine); });
+  fontSizeSlider.addEventListener('input', ()=> setFontPx(Number(fontSizeSlider.value)));
+  fontMinus.addEventListener('click', ()=> setFontPx(settings.fontPx - 2));
+  fontPlus.addEventListener('click', ()=> setFontPx(settings.fontPx + 2));
+  karaokeBtn.addEventListener('click', ()=>{
+    document.body.classList.toggle('karaoke');
+    karaokeBtn.classList.toggle('on', document.body.classList.contains('karaoke'));
+  });
+
+  // ================= EQUALIZER (procedural, behind the lyrics) =================
+  // No audio stream is available from Spotify's Web API, so the equalizer is a
+  // procedural visualization: bars chase random targets on a musical-feeling
+  // cadence, breathe quietly when paused, and surge while a track is playing.
+  const eq = { raf: 0, bars: 44, vals: [], targets: [], lastRetarget: 0, grad: null, w: 0, h: 0 };
+  function eqResize(){
+    const dpr = Math.min(devicePixelRatio || 1, 2);
+    const w = eqCanvas.clientWidth, h = eqCanvas.clientHeight;
+    if(!w || !h) return;
+    if(eqCanvas.width !== Math.floor(w*dpr) || eqCanvas.height !== Math.floor(h*dpr)){
+      eqCanvas.width = Math.floor(w*dpr); eqCanvas.height = Math.floor(h*dpr);
+      const g = eqCanvas.getContext('2d');
+      g.setTransform(dpr,0,0,dpr,0,0);
+      eq.grad = g.createLinearGradient(0,h,0,0);
+      eq.grad.addColorStop(0,'rgba(0,229,255,0.34)');
+      eq.grad.addColorStop(0.65,'rgba(178,75,243,0.20)');
+      eq.grad.addColorStop(1,'rgba(178,75,243,0.05)');
+      eq.w = w; eq.h = h;
+    }
+  }
+  function eqFrame(ts){
+    eq.raf = requestAnimationFrame(eqFrame);
+    if(document.hidden) return;
+    eqResize();
+    const g = eqCanvas.getContext('2d');
+    if(!eq.w) return;
+    const playing = state.isPlaying || state.mode === 'manual';
+    const energy = playing ? 1 : 0.3;
+    if(!eq.vals.length){
+      for(let i=0;i<eq.bars;i++){ eq.vals.push(0.1); eq.targets.push(Math.random()); }
+    }
+    // retarget on the real song's own beat cadence (tempoMs, derived from its
+    // synced-lyric line timing — see estimateTempoMs) instead of a fixed
+    // guess, so the equalizer, the avatar, and the lyric pulse all breathe
+    // on the same clock.
+    if(ts - eq.lastRetarget > tempoMs){
+      eq.lastRetarget = ts;
+      for(let i=0;i<eq.bars;i++){
+        const centerBoost = 0.45 + 0.55 * Math.sin((i/(eq.bars-1)) * Math.PI);
+        eq.targets[i] = Math.random() * centerBoost;
+      }
+    }
+    g.clearRect(0,0,eq.w,eq.h);
+    const gap = 3;
+    const bw = (eq.w - gap*(eq.bars-1)) / eq.bars;
+    g.fillStyle = eq.grad;
+    for(let i=0;i<eq.bars;i++){
+      eq.vals[i] += (eq.targets[i]*energy - eq.vals[i]) * 0.09;
+      const bh = Math.max(2, eq.vals[i] * eq.h * 0.92);
+      const x = i * (bw + gap);
+      g.fillRect(x, eq.h - bh, bw, bh);
+    }
+  }
+  // Only settings.eq (the checkbox) gates this now. prefersReducedMotion is
+  // still respected for the INITIAL default (see settings.eq init below),
+  // but a redundant check here meant that once someone with that OS setting
+  // explicitly turned the checkbox ON, startEq() silently refused to start
+  // anyway — the toggle looked checked but nothing ever animated.
+  function startEq(){ if(!eq.raf) eq.raf = requestAnimationFrame(eqFrame); }
+  function stopEq(){ if(eq.raf){ cancelAnimationFrame(eq.raf); eq.raf = 0; } const g = eqCanvas.getContext('2d'); if(eq.w) g.clearRect(0,0,eq.w,eq.h); }
+
+  // ================= SPOTIFY PKCE AUTH =================
+  function randomString(len){
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+    const vals = crypto.getRandomValues(new Uint8Array(len));
+    let out = '';
+    vals.forEach(v => out += chars[v % chars.length]);
+    return out;
+  }
+  function base64url(buf){
+    let str = '';
+    new Uint8Array(buf).forEach(b => str += String.fromCharCode(b));
+    return btoa(str).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  }
+  async function codeChallengeFor(verifier){
+    const data = new TextEncoder().encode(verifier);
+    const digest = await crypto.subtle.digest('SHA-256', data);
+    return base64url(digest);
+  }
+
+  async function beginSpotifyAuth(){
+    const clientId = store.get('lt:spotify_client_id');
+    if(!clientId){
+      openSettings();
+      alert('קודם הזן את ה-Spotify Client ID בהגדרות (הכפתור עם גלגל השיניים).');
+      return;
+    }
+    const verifier = randomString(64);
+    const challenge = await codeChallengeFor(verifier);
+    const authState = randomString(24);
+    store.set('lt:pkce_verifier', verifier);
+    store.set('lt:oauth_state', authState);
+
+    const url = new URL(SPOTIFY_AUTH_URL);
+    url.searchParams.set('client_id', clientId);
+    url.searchParams.set('response_type', 'code');
+    url.searchParams.set('redirect_uri', REDIRECT_URI);
+    url.searchParams.set('code_challenge_method', 'S256');
+    url.searchParams.set('code_challenge', challenge);
+    url.searchParams.set('scope', SPOTIFY_SCOPES);
+    url.searchParams.set('state', authState);
+    window.location.href = url.toString();
+  }
+
+  async function exchangeCodeForToken(code){
+    const clientId = store.get('lt:spotify_client_id');
+    const verifier = store.get('lt:pkce_verifier');
+    const body = new URLSearchParams({
+      grant_type:'authorization_code',
+      code,
+      redirect_uri: REDIRECT_URI,
+      client_id: clientId,
+      code_verifier: verifier
+    });
+    const res = await fetch(SPOTIFY_TOKEN_URL, {
+      method:'POST',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body
+    });
+    if(!res.ok) throw new Error('token exchange failed');
+    const data = await res.json();
+    saveTokens(data);
+  }
+
+  async function refreshAccessToken(){
+    const clientId = store.get('lt:spotify_client_id');
+    const tokens = store.get('lt:spotify_tokens');
+    if(!tokens || !tokens.refresh_token) return null;
+    const body = new URLSearchParams({
+      grant_type:'refresh_token',
+      refresh_token: tokens.refresh_token,
+      client_id: clientId
+    });
+    const res = await fetch(SPOTIFY_TOKEN_URL, {
+      method:'POST',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body
+    });
+    if(!res.ok) return null;
+    const data = await res.json();
+    if(!data.refresh_token) data.refresh_token = tokens.refresh_token;
+    saveTokens(data);
+    return data.access_token;
+  }
+
+  function saveTokens(data){
+    store.set('lt:spotify_tokens', {
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+      expires_at: Date.now() + (data.expires_in*1000)
+    });
+    setSpotifyStatus(true);
+  }
+
+  async function getValidAccessToken(){
+    const tokens = store.get('lt:spotify_tokens');
+    if(!tokens) return null;
+    if(Date.now() > tokens.expires_at - 15000){
+      return await refreshAccessToken();
+    }
+    return tokens.access_token;
+  }
+
+  function setSpotifyStatus(connected){
+    spotifyDot.classList.toggle('live', connected);
+    spotifyStatusText.textContent = connected ? 'מחובר' : 'לא מחובר';
+    connectBtn.textContent = connected ? 'מנותק ספוטיפיי' : 'התחבר לספוטיפיי';
+    npControls.hidden = !connected;
+    if(!connected) ctlHint.classList.remove('show');
+  }
+
+  // ================= PLAYBACK CONTROL (play/pause/skip/seek) =================
+  // Requires Spotify Premium on the account's side — Spotify's own API
+  // rejects control calls (403) for Free accounts; the UI surfaces that
+  // plainly instead of failing silently.
+  const PLAY_PATH = '<path d="M8 5v14l11-7z"/>';
+  const PAUSE_PATH = '<path d="M7 5h4v14H7zM13 5h4v14h-4z"/>';
+  function setPlayIcon(isPlaying){ ctlPlayIcon.innerHTML = isPlaying ? PAUSE_PATH : PLAY_PATH; }
+
+  async function spotifyControl(method, path){
+    const token = await getValidAccessToken();
+    if(!token) return null;
+    try{
+      return await fetch('https://api.spotify.com/v1/me/player' + path, {
+        method, headers:{ Authorization:'Bearer ' + token },
+      });
+    }catch(e){ return null; }
+  }
+  let hintTimer = 0;
+  function showCtlHint(msg){
+    ctlHint.textContent = msg;
+    ctlHint.classList.add('show');
+    clearTimeout(hintTimer);
+    hintTimer = setTimeout(()=> ctlHint.classList.remove('show'), 5000);
+  }
+  async function afterControl(res){
+    if(res && (res.ok || res.status === 204)){ setTimeout(pollOnce, 250); return true; }
+    if(res && res.status === 404) showCtlHint('אין מכשיר ספוטיפיי פעיל — פתח ספוטיפיי בטלפון/מחשב, נגן משהו, ונסה שוב.');
+    else if(res && res.status === 403) showCtlHint('שליטה בנגן דורשת חשבון Spotify Premium.');
+    else showCtlHint('הפעולה נכשלה — נסה שוב.');
+    return false;
+  }
+  ctlPlay.addEventListener('click', async ()=>{
+    const wasPlaying = state.isPlaying;
+    setPlayIcon(!wasPlaying); // optimistic flip
+    const res = await spotifyControl('PUT', wasPlaying ? '/pause' : '/play');
+    const ok = await afterControl(res);
+    if(!ok) { setPlayIcon(wasPlaying); window.__lyricsAvatarBridge?.setEnergy(wasPlaying); }
+    else { state.isPlaying = !wasPlaying; window.__lyricsAvatarBridge?.setEnergy(state.isPlaying); }
+  });
+  ctlPrev.addEventListener('click', async ()=> afterControl(await spotifyControl('POST', '/previous')));
+  ctlNext.addEventListener('click', async ()=> afterControl(await spotifyControl('POST', '/next')));
+  progressTrack.addEventListener('click', async (e)=>{
+    if(state.mode !== 'spotify' || !state.durationMs) return;
+    const rect = progressTrack.getBoundingClientRect();
+    const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    const posMs = Math.round(ratio * state.durationMs);
+    state.serverProgressMs = posMs; state.fetchedAt = Date.now(); // optimistic
+    progressBar.style.width = (ratio*100).toFixed(2) + '%';
+    await afterControl(await spotifyControl('PUT', '/seek?position_ms=' + posMs));
+  });
+
+  // ================= PLAYLISTS =================
+  // Needs playlist-read-private (+ collaborative) — part of SPOTIFY_SCOPES
+  // above. A token from before that scope was added won't have it; reconnect
+  // once and the 403 clears up.
+  async function spotifyApiFetch(url, opts){
+    const token = await getValidAccessToken();
+    if(!token) return null;
+    try{ return await fetch(url, { ...(opts||{}), headers:{ ...((opts&&opts.headers)||{}), Authorization:'Bearer '+token } }); }
+    catch(e){ return null; }
+  }
+  let playlistsCache = null;
+  async function loadPlaylists(){
+    playlistsList.innerHTML = '<p class="hint">טוען פלייליסטים…</p>';
+    const res = await spotifyApiFetch('https://api.spotify.com/v1/me/playlists?limit=50');
+    if(!res){ playlistsList.innerHTML = '<p class="hint">התחבר לספוטיפיי כדי לראות את הפלייליסטים שלך.</p>'; return; }
+    if(!res.ok){
+      playlistsList.innerHTML = res.status === 403
+        ? '<p class="hint">נדרשת הרשאת פלייליסטים — נתק והתחבר מחדש לספוטיפיי כדי לאשר אותה.</p>'
+        : '<p class="hint">טעינת הפלייליסטים נכשלה — נסה שוב.</p>';
+      return;
+    }
+    const data = await res.json();
+    playlistsCache = (data.items||[]).map(p=>({
+      id:p.id, name:p.name, uri:p.uri,
+      image:(p.images&&p.images[0]&&p.images[0].url)||'',
+      tracks:p.tracks?p.tracks.total:0,
+    }));
+    renderPlaylists();
+  }
+  function renderPlaylists(){
+    if(!playlistsCache || !playlistsCache.length){ playlistsList.innerHTML = '<p class="hint">לא נמצאו פלייליסטים בחשבון.</p>'; return; }
+    playlistsList.innerHTML = '';
+    playlistsCache.forEach(p=>{
+      const btn = document.createElement('button');
+      btn.className = 'playlist-item';
+      btn.innerHTML = (p.image ? '<img src="'+p.image+'" alt="">' : '<div class="playlist-ph">🎵</div>')
+        + '<span>'+escapeHtml(p.name)+'</span><em>'+p.tracks+' שירים</em>';
+      btn.addEventListener('click', async ()=>{
+        const res = await spotifyApiFetch('https://api.spotify.com/v1/me/player/play', {
+          method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ context_uri: p.uri }),
+        });
+        const ok = await afterControl(res);
+        if(ok){ playlistsPanel.style.display = 'none'; window.__lyricsAvatarBridge?.setEnergy(true); }
+      });
+      playlistsList.appendChild(btn);
+    });
+  }
+  playlistsBtn.addEventListener('click', ()=>{
+    const opening = playlistsPanel.style.display === 'none';
+    playlistsPanel.style.display = opening ? 'block' : 'none';
+    if(opening && playlistsCache === null) loadPlaylists();
+  });
+
+  connectBtn.addEventListener('click', async ()=>{
+    const tokens = store.get('lt:spotify_tokens');
+    if(tokens){
+      store.del('lt:spotify_tokens');
+      setSpotifyStatus(false);
+      state.mode = null;
+      window.__lyricsAvatarBridge?.setEnergy(false);
+    } else {
+      beginSpotifyAuth();
+    }
+  });
+
+  // handle redirect back from Spotify
+  (async function handleAuthRedirect(){
+    const params = new URLSearchParams(window.location.search);
+    if(params.get('error')){
+      window.history.replaceState({}, '', REDIRECT_URI);
+      return;
+    }
+    const code = params.get('code');
+    const returnedState = params.get('state');
+    if(code){
+      const savedState = store.get('lt:oauth_state');
+      window.history.replaceState({}, '', REDIRECT_URI);
+      if(returnedState !== savedState){
+        console.warn('OAuth state mismatch — aborting.');
+        return;
+      }
+      try{
+        await exchangeCodeForToken(code);
+        state.mode = 'spotify';
+        startPolling();
+      }catch(e){
+        console.error(e);
+        setSpotifyStatus(false);
+      }
+    } else if(store.get('lt:spotify_tokens')){
+      setSpotifyStatus(true);
+      state.mode = 'spotify';
+      startPolling();
+    }
+  })();
+
+  // ================= SETTINGS PANEL =================
+  function openSettings(){
+    clientIdInput.value = store.get('lt:spotify_client_id') || '';
+    settingsPanel.classList.add('open');
+  }
+  settingsBtn.addEventListener('click', ()=>{
+    $('helpPanel').classList.remove('open');
+    settingsPanel.classList.toggle('open');
+    if(settingsPanel.classList.contains('open')) clientIdInput.value = store.get('lt:spotify_client_id') || '';
+  });
+  saveSettingsBtn.addEventListener('click', ()=>{
+    store.set('lt:spotify_client_id', clientIdInput.value.trim());
+    settingsPanel.classList.remove('open');
+  });
+
+  // ================= HELP PANEL =================
+  const helpBtn = $('helpBtn');
+  const helpPanel = $('helpPanel');
+  const closeHelpBtn = $('closeHelpBtn');
+  helpBtn.addEventListener('click', ()=>{
+    settingsPanel.classList.remove('open');
+    helpPanel.classList.toggle('open');
+  });
+  closeHelpBtn.addEventListener('click', ()=> helpPanel.classList.remove('open'));
+  copyRedirectBtn.addEventListener('click', async ()=>{
+    try{
+      await navigator.clipboard.writeText(REDIRECT_URI);
+      copyRedirectBtn.textContent = 'הועתק ✓';
+      setTimeout(()=> copyRedirectBtn.textContent = 'העתק', 1500);
+    }catch(e){ /* clipboard may be unavailable over non-secure context */ }
+  });
+
+  // ================= CURRENTLY PLAYING (SPOTIFY) =================
+  async function pollOnce(){
+    const token = await getValidAccessToken();
+    if(!token){ setSpotifyStatus(false); return; }
+    try{
+      const res = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
+        headers:{ Authorization: 'Bearer ' + token }
+      });
+      if(res.status === 204){ // nothing playing
+        state.isPlaying = false;
+        setPlayIcon(false);
+        window.__lyricsAvatarBridge?.setEnergy(false);
+        return;
+      }
+      if(!res.ok) return;
+      const data = await res.json();
+      if(!data || !data.item) return;
+      const trackKey = data.item.id;
+      state.isPlaying = data.is_playing;
+      state.durationMs = data.item.duration_ms;
+      state.serverProgressMs = data.progress_ms;
+      state.fetchedAt = Date.now();
+      setPlayIcon(state.isPlaying);
+      window.__lyricsAvatarBridge?.setEnergy(state.isPlaying);
+
+      npTitle.textContent = data.item.name;
+      npArtist.textContent = data.item.artists.map(a=>a.name).join(', ');
+      albumArt.src = (data.item.album.images[0] && data.item.album.images[0].url) || '';
+
+      if(trackKey !== state.currentTrackKey){
+        state.currentTrackKey = trackKey;
+        await loadLyricsFor(data.item.artists[0].name, data.item.name, Math.round(data.item.duration_ms/1000));
+      }
+    }catch(e){ console.error(e); }
+  }
+
+  function currentLineIndex(progressMs){
+    if(state.synced){
+      // Lines are in ascending time order (LRC is authored top-to-bottom).
+      // Binary search for the last line whose timestamp has passed — O(log n)
+      // instead of a linear scan on every 250ms tick, and correct at the
+      // start of the song: previously this defaulted to line 0 immediately,
+      // highlighting the first lyric before the real timestamp of the first
+      // line arrived (e.g. during an instrumental intro). -1 now means
+      // "no line yet", matching actual playback position.
+      let lo = 0, hi = state.lines.length - 1, idx = -1;
+      while(lo <= hi){
+        const mid = (lo + hi) >> 1;
+        if(state.lines[mid].t != null && state.lines[mid].t <= progressMs){ idx = mid; lo = mid + 1; }
+        else hi = mid - 1;
+      }
+      return idx;
+    }
+    if(!state.durationMs) return -1;
+    return Math.min(state.lines.length-1, Math.floor((progressMs/state.durationMs) * state.lines.length));
+  }
+
+  function tick(){
+    if(state.mode !== 'spotify' || !state.durationMs) return;
+    const elapsed = state.isPlaying ? (Date.now() - state.fetchedAt) : 0;
+    const estProgress = Math.min(state.durationMs, state.serverProgressMs + elapsed);
+    progressBar.style.width = (estProgress / state.durationMs * 100).toFixed(2) + '%';
+    npTime.textContent = fmtTime(estProgress) + ' / ' + fmtTime(state.durationMs);
+    if(state.lines.length){
+      const idx = currentLineIndex(estProgress);
+      if(idx >= 0) setActiveLine(idx);
+    }
+  }
+  function fmtTime(ms){
+    const s = Math.floor(ms/1000);
+    return Math.floor(s/60) + ':' + String(s%60).padStart(2,'0');
+  }
+
+  function startPolling(){
+    stopPolling();
+    manualNav.style.display = 'none';
+    pollOnce();
+    pollTimer = setInterval(pollOnce, POLL_MS);
+    tickTimer = setInterval(tick, TICK_MS);
+  }
+  function stopPolling(){
+    if(pollTimer) clearInterval(pollTimer);
+    if(tickTimer) clearInterval(tickTimer);
+  }
+
+  // ================= MANUAL MODE =================
+  manualSearchBtn.addEventListener('click', async ()=>{
+    const artist = manualArtist.value.trim();
+    const title = manualTitle.value.trim();
+    if(!artist || !title) return;
+    stopPolling();
+    state.mode = 'manual';
+    state.currentTrackKey = null;
+    window.__lyricsAvatarBridge?.setEnergy(true);
+    npTitle.textContent = title;
+    npArtist.textContent = artist;
+    albumArt.src = '';
+    progressBar.style.width = '0%';
+    npTime.textContent = '';
+    npControls.hidden = true; // playback control only applies to a real Spotify session
+    ctlHint.classList.remove('show');
+    manualNav.style.display = 'flex';
+    await loadLyricsFor(artist, title);
+    setActiveLine(0);
+  });
+  prevLineBtn.addEventListener('click', ()=> setActiveLine(Math.max(0, state.activeIndex-1)));
+  nextLineBtn.addEventListener('click', ()=> setActiveLine(Math.min(state.lines.length-1, state.activeIndex+1)));
+
+  // ================= LYRICS PROVIDERS =================
+  // Primary: LRCLIB — free, keyless, CORS-open, and returns REAL per-line
+  // timestamps (synced lyrics), which upgrades the highlight from a
+  // progress-based estimate to true sync. Fallback: lyrics.ovh (plain text).
+  function parseLrc(lrc){
+    const out = [];
+    for(const raw of lrc.split('\n')){
+      const m = raw.match(/^\s*\[(\d+):(\d+(?:\.\d+)?)\]\s*(.*)$/);
+      if(!m) continue;
+      const t = (parseInt(m[1],10)*60 + parseFloat(m[2])) * 1000;
+      const text = m[3].trim();
+      if(text) out.push({ t, orig: text });
+    }
+    return out;
+  }
+
+  async function fetchLrclib(artist, title, durationSec){
+    try{
+      let url = 'https://lrclib.net/api/get?artist_name=' + encodeURIComponent(artist) + '&track_name=' + encodeURIComponent(title);
+      if(durationSec) url += '&duration=' + durationSec;
+      let res = await fetch(url);
+      if(!res.ok && durationSec){ // exact-duration miss → retry without it
+        res = await fetch('https://lrclib.net/api/get?artist_name=' + encodeURIComponent(artist) + '&track_name=' + encodeURIComponent(title));
+      }
+      if(!res.ok){
+        // last try: fuzzy search, take the best hit
+        const sr = await fetch('https://lrclib.net/api/search?artist_name=' + encodeURIComponent(artist) + '&track_name=' + encodeURIComponent(title));
+        if(!sr.ok) return null;
+        const list = await sr.json();
+        if(!Array.isArray(list) || !list.length) return null;
+        return lrclibRecordToLines(list[0]);
+      }
+      return lrclibRecordToLines(await res.json());
+    }catch(e){ return null; }
+  }
+  function lrclibRecordToLines(rec){
+    if(!rec) return null;
+    if(rec.syncedLyrics){
+      const lines = parseLrc(rec.syncedLyrics);
+      if(lines.length) return { lines, synced: true };
+    }
+    if(rec.plainLyrics){
+      const lines = rec.plainLyrics.split('\n').map(l=>l.trim()).filter(Boolean).map(orig=>({ t: null, orig }));
+      if(lines.length) return { lines, synced: false };
+    }
+    return null;
+  }
+
+  async function fetchLyricsOvh(artist, title){
+    try{
+      const res = await fetch('https://api.lyrics.ovh/v1/' + encodeURIComponent(artist) + '/' + encodeURIComponent(title));
+      if(!res.ok) return null;
+      const data = await res.json();
+      if(!data.lyrics) return null;
+      const lines = data.lyrics.split('\n').map(l=>l.trim()).filter(l=>l.length>0).map(orig=>({ t: null, orig }));
+      return lines.length ? { lines, synced: false } : null;
+    }catch(e){ return null; }
+  }
+
+  // ================= TRANSLATION ENGINES =================
+  // Google's free gtx endpoint: whole-song batches (one or two requests
+  // instead of one per line), auto source-language detection, no key.
+  // MyMemory stays as the automatic fallback, upgraded from strictly
+  // sequential to small parallel groups.
+  function gtxLang(code){ return code === 'he' ? 'iw' : code; }
+
+  async function googleTranslateChunk(text, target){
+    const url = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=' + gtxLang(target) + '&dt=t&q=' + encodeURIComponent(text);
+    const res = await fetch(url);
+    if(!res.ok) throw new Error('gtx ' + res.status);
+    const data = await res.json();
+    if(!data || !Array.isArray(data[0])) throw new Error('gtx shape');
+    return data[0].map(seg => (seg && seg[0]) ? seg[0] : '').join('');
+  }
+
+  async function googleBatch(texts, target, onChunk){
+    // pack lines into few requests, keeping each URL comfortably short
+    const chunks = []; let cur = [], curLen = 0, curStart = 0;
+    texts.forEach((line, i)=>{
+      if(cur.length && curLen + line.length > 1500){ chunks.push({ start: curStart, lines: cur }); cur = []; curLen = 0; curStart = i; }
+      cur.push(line); curLen += line.length + 1;
+    });
+    if(cur.length) chunks.push({ start: curStart, lines: cur });
+    await Promise.all(chunks.map(async (c)=>{
+      const joined = c.lines.join('\n');
+      const translated = await googleTranslateChunk(joined, target);
+      let parts = translated.split('\n');
+      if(parts.length !== c.lines.length){
+        // separator got eaten — retry that chunk line-by-line in parallel
+        parts = await Promise.all(c.lines.map(l => googleTranslateChunk(l, target).catch(()=>l)));
+      }
+      onChunk(c.start, parts.map(p => p.trim()));
+    }));
+  }
+
+  async function myMemoryLine(line, target){
+    try{
+      const url = 'https://api.mymemory.translated.net/get?q=' + encodeURIComponent(line) + '&langpair=en|' + target;
+      const res = await fetch(url);
+      const data = await res.json();
+      return (data && data.responseData && data.responseData.translatedText) ? data.responseData.translatedText : line;
+    }catch(e){ return line; }
+  }
+  async function myMemoryBatch(texts, target, onChunk){
+    const GROUP = 5;
+    for(let i=0;i<texts.length;i+=GROUP){
+      const group = texts.slice(i, i+GROUP);
+      const translated = await Promise.all(group.map(l => myMemoryLine(l, target)));
+      onChunk(i, translated);
+    }
+  }
+
+  // ================= SONG CACHE (repeat plays are instant) =================
+  function cacheGet(key){
+    const c = store.get(CACHE_KEY) || {};
+    return c[key] || null;
+  }
+  function cacheSet(key, entry){
+    const c = store.get(CACHE_KEY) || {};
+    c[key] = entry;
+    const keys = Object.keys(c);
+    if(keys.length > CACHE_MAX){
+      keys.sort((a,b)=>(c[a].ts||0)-(c[b].ts||0));
+      for(let i=0;i<keys.length-CACHE_MAX;i++) delete c[keys[i]];
+    }
+    store.set(CACHE_KEY, c);
+  }
+
+  // ================= LOAD + PROGRESSIVE RENDER =================
+  async function loadLyricsFor(artist, title, durationSec){
+    const seq = ++state.loadSeq;
+    state.rawArtist = artist; state.rawTitle = title;
+    const target = targetLangSel.value;
+    const cacheKey = (artist + '|' + title + '|' + target).toLowerCase();
+
+    const cached = cacheGet(cacheKey);
+    if(cached){
+      state.lines = cached.lines.map(l=>({ ...l }));
+      state.synced = !!cached.synced;
+      applyTempo(estimateTempoMs(state.lines));
+      renderLines(); setSyncBadge();
+      return;
+    }
+
+    renderLoading();
+    let got = await fetchLrclib(artist, title, durationSec);
+    if(!got) got = await fetchLyricsOvh(artist, title);
+    if(seq !== state.loadSeq) return; // a newer song took over mid-fetch
+    if(!got || !got.lines.length){
+      renderNotFound();
+      state.lines = []; state.synced = false; setSyncBadge();
+      return;
+    }
+
+    state.lines = got.lines.map(l=>({ t: l.t, orig: l.orig, trans: null }));
+    state.synced = got.synced;
+    applyTempo(estimateTempoMs(state.lines));
+    renderLines(); setSyncBadge();   // originals appear IMMEDIATELY, translations stream in
+
+    const texts = state.lines.map(l=>l.orig);
+    const onChunk = (start, translated)=>{
+      if(seq !== state.loadSeq) return;
+      translated.forEach((tr, j)=> updateRowTranslation(start + j, tr));
+    };
+    try{
+      if(settings.engine === 'google'){
+        await googleBatch(texts, target, onChunk);
+      } else {
+        await myMemoryBatch(texts, target, onChunk);
+      }
+    }catch(e){
+      // Google unreachable → automatic MyMemory fallback
+      try{ await myMemoryBatch(texts, target, onChunk); }catch(e2){}
+    }
+    if(seq !== state.loadSeq) return;
+    // anything still untranslated keeps its original text
+    state.lines.forEach((l,i)=>{ if(l.trans == null){ l.trans = l.orig; updateRowTranslation(i, l.orig); } });
+    cacheSet(cacheKey, { lines: state.lines, synced: state.synced, ts: Date.now() });
+  }
+
+  function setSyncBadge(){
+    if(!state.lines.length){ syncBadge.className = 'sync-badge'; return; }
+    if(state.synced){
+      syncBadge.textContent = '⏱ SYNCED · תזמון אמיתי';
+      syncBadge.className = 'sync-badge show';
+    } else {
+      syncBadge.textContent = '~ EST · תזמון משוער';
+      syncBadge.className = 'sync-badge est show';
+    }
+  }
+
+  function renderLoading(){
+    stage.innerHTML = '<div class="empty-state"><div class="big">מאתר מילות שיר…</div><div>המקור מוצג מיד — התרגום נטען ברקע</div></div>';
+  }
+  function renderNotFound(){
+    stage.innerHTML = '<div class="empty-state"><div class="big">לא נמצאו מילים לשיר הזה</div><div>הספקים החינמיים לא תמיד מכסים כל שיר — נסה שיר אחר</div></div>';
+  }
+
+  function renderLines(){
+    const targetMeta = LANGS.find(l=>l.code===targetLangSel.value);
+    const dir = targetMeta && targetMeta.rtl ? 'rtl' : 'ltr';
+    stage.innerHTML = '';
+    state.lines.forEach((line, i)=>{
+      const row = document.createElement('div');
+      row.className = 'lyric-row';
+      row.dataset.i = i;
+      row.tabIndex = 0;
+      row.setAttribute('dir', dir);
+      const transText = line.trans != null ? line.trans : line.orig;
+      const pending = line.trans == null ? ' pending' : '';
+      row.innerHTML = '<div class="orig">'+escapeHtml(line.orig)+'</div><div class="trans'+pending+'">'+escapeHtml(transText)+'</div>';
+      row.addEventListener('click', ()=> setActiveLine(i));
+      stage.appendChild(row);
+    });
+    state.activeIndex = -1;
+  }
+
+  function updateRowTranslation(i, text){
+    if(!state.lines[i]) return;
+    state.lines[i].trans = text;
+    const row = stage.querySelector('.lyric-row[data-i="'+i+'"]');
+    if(row){
+      const t = row.querySelector('.trans');
+      if(t){ t.textContent = text; t.classList.remove('pending'); }
+    }
+  }
+
+  function setActiveLine(idx){
+    if(idx === state.activeIndex) return;
+    if(idx < 0 || idx >= state.lines.length){
+      // A backward seek to before the first line's real timestamp (or a
+      // song with no lines yet) should clear the highlight, not leave a
+      // stale line marked active — that's stale info, not "close enough".
+      if(idx < 0 && state.activeIndex >= 0){
+        stage.querySelectorAll('.lyric-row.active').forEach(r=>r.classList.remove('active'));
+        state.activeIndex = -1;
+      }
+      return;
+    }
+    state.activeIndex = idx;
+    const rows = stage.querySelectorAll('.lyric-row');
+    rows.forEach(r=>r.classList.remove('active'));
+    const row = rows[idx];
+    if(row){
+      row.classList.add('active');
+      // scrollIntoView({block:'center'}) recenters the row in its NEAREST
+      // scrolling ancestor — but if .stage itself isn't fully inside the
+      // viewport, the browser keeps walking up and scrolls the whole PAGE
+      // to bring .stage more into view too. Every line change (i.e. every
+      // beat of the song) was yanking the entire page up/down regardless
+      // of what the user was doing — reading settings, scrolled away, etc.
+      // Scroll ONLY .stage's own internal scrollbar instead.
+      // Still respects a user who's manually scrolled the lyrics panel
+      // themselves in the last few seconds (reading ahead, checking an
+      // earlier line) — auto-follow snapping back mid-read would just be
+      // the same "it keeps yanking me" complaint one level down.
+      if(Date.now() - lastManualScrollAt > SCROLL_LOCK_MS){
+        const stageRect = stage.getBoundingClientRect();
+        const rowRect = row.getBoundingClientRect();
+        const delta = (rowRect.top + rowRect.height / 2) - (stageRect.top + stage.clientHeight / 2);
+        stage.scrollBy({ top: delta, behavior: 'smooth' });
+      }
+    }
+  }
+  // wheel/touch are genuine user-intent signals; the generic 'scroll' event
+  // would also fire from our OWN scrollBy() call above and immediately
+  // re-lock auto-follow against itself.
+  let lastManualScrollAt = 0;
+  const SCROLL_LOCK_MS = 4000;
+  const markManualScroll = () => { lastManualScrollAt = Date.now(); };
+  stage.addEventListener('wheel', markManualScroll, { passive: true });
+  stage.addEventListener('touchstart', markManualScroll, { passive: true });
+  stage.addEventListener('touchmove', markManualScroll, { passive: true });
+
+  function escapeHtml(s){
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  // ================= BEAT-SYNCED LYRIC PULSE =================
+  // The highlighted line breathes on the exact same tempoMs clock driving
+  // the equalizer and the 3D avatar — "the words" visibly tied to "the
+  // rhythm", not just a static highlight. Runs continuously (harmless when
+  // nothing is active) so it works the same in Spotify and manual mode.
+  let beatPulseRaf = 0;
+  function beatPulseFrame(now){
+    beatPulseRaf = requestAnimationFrame(beatPulseFrame);
+    if(document.hidden) return;
+    const activeTrans = stage.querySelector('.lyric-row.active .trans');
+    if(!activeTrans){ return; }
+    const playing = state.isPlaying || state.mode === 'manual';
+    const amt = playing ? 0.045 : 0.015;
+    const phase = (now % tempoMs) / tempoMs;
+    const s = 1 + Math.sin(phase * Math.PI * 2) * amt;
+    activeTrans.style.transform = 'scale(' + s.toFixed(4) + ')';
+  }
+  beatPulseRaf = requestAnimationFrame(beatPulseFrame);
+
+  // ================= AMBIENT "LED" SCREEN-EDGE GLOW =================
+  // A virtual mood-light effect around THIS screen, color-cycling and
+  // pulsing on the same beat clock as everything else. This does NOT
+  // control real smart-home LED hardware (Philips Hue, Govee, etc.) — that
+  // would need a separate integration with that system's own bridge/API,
+  // which isn't wired up here.
+  const ledFrame = $('ledFrame');
+  const ledToggle = $('ledToggle');
+  const LED_COLORS = ['178,75,243', '0,229,255', '255,80,180', '255,176,32'];
+  let ledOn = store.get('lt:led_on');
+  if(ledOn === null || ledOn === undefined) ledOn = true;
+  let ledLastBeat = 0, ledPulse = 0, ledColorIdx = 0, ledRaf = 0;
+  function applyLedSetting(){
+    ledToggle.checked = !!ledOn;
+    ledFrame.classList.toggle('off', !ledOn);
+  }
+  ledToggle.addEventListener('change', ()=>{
+    ledOn = ledToggle.checked;
+    store.set('lt:led_on', ledOn);
+    applyLedSetting();
+  });
+  applyLedSetting();
+  function ledFrameLoop(now){
+    ledRaf = requestAnimationFrame(ledFrameLoop);
+    if(document.hidden || !ledOn) return;
+    const playing = state.isPlaying || state.mode === 'manual';
+    if(playing && now - ledLastBeat > tempoMs){
+      ledLastBeat = now; ledPulse = 1;
+      ledColorIdx = (ledColorIdx + 1) % LED_COLORS.length;
+    }
+    ledPulse *= 0.88;
+    const energy = playing ? 1 : 0.15;
+    const blur = Math.round(30 + ledPulse * 90 * energy);
+    const spread = Math.round(14 + ledPulse * 55 * energy);
+    const alpha = (0.12 + ledPulse * 0.5 * energy).toFixed(3);
+    ledFrame.style.boxShadow = 'inset 0 0 ' + blur + 'px ' + spread + 'px rgba(' + LED_COLORS[ledColorIdx] + ',' + alpha + ')';
+  }
+  ledRaf = requestAnimationFrame(ledFrameLoop);
+
+  // ================= KEEP SCREEN AWAKE =================
+  // This app is meant to sit propped up and watched (a party display, a
+  // karaoke screen) — the OS dimming/locking the screen mid-song is exactly
+  // the failure mode a "screen off" complaint describes. The Wake Lock API
+  // auto-releases the moment the tab is backgrounded and must be manually
+  // re-acquired when it becomes visible again — handled below.
+  const wakeLockToggle = $('wakeLockToggle');
+  let wakeLock = null;
+  let wakeLockOn = store.get('lt:wake_lock_on');
+  if(wakeLockOn === null || wakeLockOn === undefined) wakeLockOn = true;
+  async function requestWakeLock(){
+    if(!wakeLockOn || !('wakeLock' in navigator) || document.hidden) return;
+    try{
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', ()=>{ wakeLock = null; });
+    }catch(e){ wakeLock = null; }
+  }
+  function releaseWakeLock(){
+    try{ wakeLock && wakeLock.release(); }catch(e){}
+    wakeLock = null;
+  }
+  wakeLockToggle.addEventListener('change', ()=>{
+    wakeLockOn = wakeLockToggle.checked;
+    store.set('lt:wake_lock_on', wakeLockOn);
+    if(wakeLockOn) requestWakeLock(); else releaseWakeLock();
+  });
+  wakeLockToggle.checked = !!wakeLockOn;
+  if(!('wakeLock' in navigator)){
+    wakeLockToggle.disabled = true;
+    wakeLockToggle.parentElement.title = 'הדפדפן הזה לא תומך בתכונת מניעת כיבוי מסך';
+  }
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.visibilityState === 'visible' && wakeLockOn) requestWakeLock();
+  });
+  requestWakeLock();
+
+  // boot
+  applyDisplaySettings();
+
+})();
+</script>
+<script type="module">
+  // ── 3D groove-avatar hero, bridged into the classic script above via a
+  // tiny window-level object (window.__lyricsAvatarBridge). Kept as a
+  // separate module script so the working IIFE above doesn't need to be
+  // restructured just to get an ES-module import. ──
+  import { mountLyricsAvatar } from '/src/avatarScene.ts';
+
+  const heroWrap = document.getElementById('heroWrap');
+  const heroAvatar = document.getElementById('heroAvatar');
+  const avatarToggle = document.getElementById('avatarToggle');
+  const revealGate = document.getElementById('revealGate');
+
+  let handle = null;
+  let lastEnergy = false;
+  let lastTempo = 560;
+  function mount() {
+    if (handle) return;
+    handle = mountLyricsAvatar(heroAvatar);
+    handle.setEnergy(lastEnergy);
+    handle.setTempo(lastTempo);
+  }
+  function unmount() {
+    if (!handle) return;
+    handle.dispose();
+    handle = null;
+  }
+
+  const AVATAR_KEY = 'lt:avatar_on';
+  let avatarOn;
+  try { avatarOn = JSON.parse(localStorage.getItem(AVATAR_KEY)); } catch { avatarOn = null; }
+  if (avatarOn === null || avatarOn === undefined) avatarOn = !matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function applyAvatarSetting() {
+    avatarToggle.checked = !!avatarOn;
+    heroWrap.classList.toggle('off', !avatarOn);
+    if (avatarOn) mount(); else unmount();
+  }
+  avatarToggle.addEventListener('change', () => {
+    avatarOn = avatarToggle.checked;
+    try { localStorage.setItem(AVATAR_KEY, JSON.stringify(avatarOn)); } catch {}
+    applyAvatarSetting();
+  });
+  applyAvatarSetting();
+
+  // The classic script calls this whenever playback state changes (poll
+  // result, manual-mode search) — kept optional-chained there so this
+  // module loading a beat later never throws.
+  window.__lyricsAvatarBridge = {
+    setEnergy(playing) { lastEnergy = !!playing; if (handle) handle.setEnergy(lastEnergy); },
+    setTempo(ms) { lastTempo = ms; if (handle) handle.setTempo(lastTempo); },
+  };
+
+  // "The words are seen only after [the avatar]" — reveal the lyrics/search
+  // panel once the scene has had a moment to establish itself.
+  setTimeout(() => revealGate.classList.add('show'), 1400);
+
+  // Real caching service worker for PWA installability (required for the
+  // Play Store TWA path) — unlike Alpha's main site, this app is NOT on an
+  // origin that force-unregisters service workers, so it can actually stay
+  // installed and work offline for the app shell.
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => { navigator.serviceWorker.register('./sw.js').catch(() => {}); });
+  }
+</script>
+</body>
+</html>
