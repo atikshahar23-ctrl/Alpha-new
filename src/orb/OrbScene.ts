@@ -6,7 +6,7 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
 import { pikaEmoteSpeak } from '../assistant/pikaVoice';
-import { buildCyberSunMaterial, buildCyberHalo, buildCageLines, applyCyberPalette, tintCage, buildSyraxHologram, CYBER_GOLD, CYBER_GOAT, type CyberPalette, type SyraxHologram } from './sunShader';
+import { buildCyberSunMaterial, buildCyberHalo, buildCageLines, applyCyberPalette, tintCage, CYBER_GOLD, CYBER_GOAT, type CyberPalette } from './sunShader';
 import { readObj, writeObj } from '../util/batchedStore';
 import { GEN1 } from '../data/gen1';
 import { POKEMON_SPRITE_COLOR } from '../data/pokemonColors';
@@ -1602,7 +1602,6 @@ interface AlphaBrainParts {
   wire2: THREE.Object3D;
   tendrils: DataTendrils;
   light: THREE.PointLight;
-  syrax: SyraxHologram;
   setPalette(p: CyberPalette): void;
 }
 function buildAlphaBrain(segments = 96): AlphaBrainParts {
@@ -1633,21 +1632,15 @@ function buildAlphaBrain(segments = 96): AlphaBrainParts {
   group.add(tendrils.group);
   const light = new THREE.PointLight(goat ? CYBER_GOAT.light : gold, 1.6, 9);
   group.add(light);
-  // "Ghost in the Core" — the Syrax hologram reaching into the plasma core,
-  // sharing the CORE's own uTime/uAudioAmplitude uniform objects so her
-  // scanline pulse brightens with Alpha's voice for free (see per-frame
-  // uAudioAmplitude updates in both mounts' animate loops below).
-  const syrax = buildSyraxHologram(coreMat.uniforms as any);
-  syrax.group.position.set(-1.55, -1.05, 0.2);
-  syrax.group.scale.setScalar(0.85);
-  group.add(syrax.group);
+  // (The "Ghost in the Core" Syrax hologram that used to stand beside the
+  //  core was removed per user request — fewer draw calls, cleaner frame.)
   const setPalette = (p: CyberPalette) => {
     applyCyberPalette(coreMat, p, halo.material as THREE.ShaderMaterial);
     tintCage(wire, p.cageInner);
     tintCage(wire2, p.cageOuter);
     light.color.setHex(p.light);
   };
-  return { group, core, coreMat, wire, wire2, tendrils, light, syrax, setPalette };
+  return { group, core, coreMat, wire, wire2, tendrils, light, setPalette };
 }
 
 // Atmosphere glow shaders — volumetric, animated, multi-fresnel
@@ -3161,7 +3154,10 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     const mRT = new THREE.WebGLRenderTarget(
       Math.max(1, Math.floor((container.clientWidth || window.innerWidth) * pr0)),
       Math.max(1, Math.floor((container.clientHeight || window.innerHeight) * pr0)),
-      { samples: 4 },
+      // 2x MSAA (not 4x): FXAA later in the chain already smooths what's
+      // left, and halving the multisample count is a real bandwidth win at
+      // retina pixel ratios — this was a "feels stuck" contributor.
+      { samples: 2 },
     );
     composer = new EffectComposer(renderer, mRT);
     composer.addPass(new RenderPass(scene, camera));
@@ -3544,7 +3540,9 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
         // iPad-class drops quality after a single slow window (fast relief); others
         // wait for two so a momentary dip doesn't permanently lower quality.
         const need = bigTouch ? 1 : 2;
-        if (fps < 55) { if (++lowStreak >= need) { lowStreak = 0; qTier++; resize(); } }
+        // <40fps is unambiguous — shed immediately instead of waiting for a
+        // second slow window (a full extra second of visible jank).
+        if (fps < 55) { if (fps < 40 || ++lowStreak >= need) { lowStreak = 0; qTier++; resize(); } }
         else lowStreak = 0;
       }
     }
@@ -3594,7 +3592,6 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     alphaBrain.coreMat.uniforms.uTime.value = time;
     alphaBrain.coreMat.uniforms.uAudioAmplitude.value = coreAmp;
     alphaBrain.tendrils.update(dt, coreAmp, time); // data streams into the core on speech
-    alphaBrain.syrax.update(time); // "Ghost in the Core" idle sway + reach
 
     // ── Jet-turbine ignition sequence — fires once, right at boot ──
     if (ignitionPending) { ignitionPending = false; ignitionStartTime = time; ignitionAudio?.ignite(); }
@@ -3990,7 +3987,9 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   const deskRT = new THREE.WebGLRenderTarget(
     Math.max(1, Math.floor((container.clientWidth || window.innerWidth) * dpr0)),
     Math.max(1, Math.floor((container.clientHeight || window.innerHeight) * dpr0)),
-    { samples: 4 },
+    // 2x MSAA (not 4x) — FXAA already smooths the remainder; halving the
+    // multisample bandwidth at dpr≤2 is a real per-frame win on mid GPUs.
+    { samples: 2 },
   );
   const composer = new EffectComposer(renderer, deskRT);
   composer.addPass(new RenderPass(scene, camera));
@@ -4719,7 +4718,9 @@ export function mountOrb(container: HTMLElement): OrbHandle {
         // iPad-class drops quality after a single slow window (fast relief); others
         // wait for two so a momentary dip doesn't permanently lower quality.
         const need = bigTouch ? 1 : 2;
-        if (fps < 55) { if (++lowStreak >= need) { lowStreak = 0; qTier++; resize(); } }
+        // <40fps is unambiguous — shed immediately instead of waiting for a
+        // second slow window (a full extra second of visible jank).
+        if (fps < 55) { if (fps < 40 || ++lowStreak >= need) { lowStreak = 0; qTier++; resize(); } }
         else lowStreak = 0;
       }
     }
@@ -4771,7 +4772,6 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     alphaBrain.coreMat.uniforms.uTime.value = time;
     alphaBrain.coreMat.uniforms.uAudioAmplitude.value = coreAmp;
     alphaBrain.tendrils.update(dt, coreAmp, time); // data streams into the core on speech
-    alphaBrain.syrax.update(time); // "Ghost in the Core" idle sway + reach
 
     // ── Jet-turbine ignition sequence — fires once, right at boot ──
     if (ignitionPending) { ignitionPending = false; ignitionStartTime = time; ignitionAudio?.ignite(); }

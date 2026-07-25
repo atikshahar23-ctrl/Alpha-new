@@ -189,7 +189,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="wm-hg">HEAVY GUARD OS</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v250 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="wm-hg">HEAVY GUARD OS</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v251 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip apps-chip" id="appsBtn" title="האפליקציות שלי" aria-label="האפליקציות שלי">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="12" cy="19" r="2"/><circle cx="19" cy="19" r="2"/></svg>
@@ -8813,13 +8813,21 @@ export function mountApp(root: HTMLElement) {
       function uiDepthTick() {
         uiSX += (uiMX - uiSX) * 0.06;
         uiSY += (uiMY - uiSY) * 0.06;
-        const rx = uiSY * -0.8;
-        const ry = uiSX * 1.2;
-        if (lp) lp.style.transform = `perspective(1200px) rotateY(${ry * 0.6}deg) rotateX(${rx * 0.5}deg) translateZ(8px)`;
-        if (rp) rp.style.transform = `perspective(1200px) rotateY(${ry * 0.5}deg) rotateX(${rx * 0.4}deg) translateZ(6px)`;
-        if (dk) dk.style.transform = `translateX(-50%) perspective(1200px) rotateX(${rx * -1.2}deg) translateZ(12px)`;
-        if (tl) tl.style.transform = `perspective(1200px) rotateY(${ry * 0.3}deg) translateZ(4px)`;
-        if (tr) tr.style.transform = `perspective(1200px) rotateY(${ry * 0.3}deg) translateZ(4px)`;
+        // Rest gate: once the smoothed value settles, STOP touching style —
+        // rewriting a transform on a backdrop-filter panel forces the
+        // compositor to re-raster the blurred layer every frame, which reads
+        // as "everything feels slightly stuck" on desktop. Static panels are
+        // free; we only pay while the parallax is actually moving.
+        const moved = Math.abs(uiMX - uiSX) + Math.abs(uiMY - uiSY) > 0.0015;
+        if (moved) {
+          const rx = uiSY * -0.8;
+          const ry = uiSX * 1.2;
+          if (lp) lp.style.transform = `perspective(1200px) rotateY(${ry * 0.6}deg) rotateX(${rx * 0.5}deg) translateZ(8px)`;
+          if (rp) rp.style.transform = `perspective(1200px) rotateY(${ry * 0.5}deg) rotateX(${rx * 0.4}deg) translateZ(6px)`;
+          if (dk) dk.style.transform = `translateX(-50%) perspective(1200px) rotateX(${rx * -1.2}deg) translateZ(12px)`;
+          if (tl) tl.style.transform = `perspective(1200px) rotateY(${ry * 0.3}deg) translateZ(4px)`;
+          if (tr) tr.style.transform = `perspective(1200px) rotateY(${ry * 0.3}deg) translateZ(4px)`;
+        }
         requestAnimationFrame(uiDepthTick);
       }
       const start = () => { if (!running) { running = true; requestAnimationFrame(uiDepthTick); } };
