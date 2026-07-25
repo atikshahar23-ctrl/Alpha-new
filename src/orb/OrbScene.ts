@@ -46,6 +46,12 @@ export interface OrbHandle {
   // One-shot chromatic-aberration "glitch" burst (voice activation, mode
   // switches). The per-frame decay already in the render loop fades it out.
   pulseGlitch?(strength?: number): void;
+  // Revenue Data-Tornado — gold particle helix around the core whose filled
+  // height is the month's HeavyGuard revenue vs. target (0..1).
+  setRevenueFill?(v: number): void;
+  // Ingestion burst — explosion of light on the tornado when a new
+  // installation is logged.
+  revenueIngest?(): void;
 }
 
 // ============================================================
@@ -143,6 +149,91 @@ const TOON_POSTERIZE_SHADER = {
     }
   `,
 };
+
+// ── Revenue Data-Tornado ────────────────────────────────────────────────
+// A helix column of gold particles orbiting the Alpha core: its filled
+// height IS the month's HeavyGuard revenue (uFill = revenue / target).
+// All motion is computed in the vertex shader from uTime — zero per-frame
+// CPU attribute writes, one draw call. burst() (fired when a new install
+// is logged) spikes uBurst → size/brightness surge the bloom pass turns
+// into an explosion of light, decaying with the same *= 1-dt·k pattern as
+// the chromatic shockwave.
+function buildRevenueTornado(count: number, rBase: number, rSpread: number) {
+  const geo = new THREE.BufferGeometry();
+  const seeds = new Float32Array(count), radii = new Float32Array(count);
+  const speeds = new Float32Array(count), phases = new Float32Array(count);
+  for (let i = 0; i < count; i++) {
+    seeds[i] = Math.random();
+    radii[i] = rBase + Math.random() * rSpread;
+    speeds[i] = 0.25 + Math.random() * 0.5;
+    phases[i] = Math.random() * PI2;
+  }
+  // three requires a position attribute to know the vertex count; the
+  // shader derives the real position from the per-particle attributes.
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
+  geo.setAttribute('aSeed', new THREE.BufferAttribute(seeds, 1));
+  geo.setAttribute('aRadius', new THREE.BufferAttribute(radii, 1));
+  geo.setAttribute('aSpeed', new THREE.BufferAttribute(speeds, 1));
+  geo.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
+  const mat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uFill: { value: 0.35 },
+      uBurst: { value: 0 },
+      uPx: { value: Math.min(window.devicePixelRatio || 1, 2) },
+    },
+    vertexShader: /* glsl */`
+      attribute float aSeed;
+      attribute float aRadius;
+      attribute float aSpeed;
+      attribute float aPhase;
+      uniform float uTime;
+      uniform float uFill;
+      uniform float uBurst;
+      uniform float uPx;
+      varying float vGlow;
+      void main() {
+        const float H = 4.2;
+        float fill = max(uFill, 0.06);
+        float yN = fract(aSeed + uTime * 0.045 * (0.5 + aSpeed));
+        float y = yN * H * fill - 1.9;
+        float pinch = 1.0 - 0.38 * pow(yN, 2.0);      // tornado silhouette
+        float ang = aPhase + uTime * aSpeed * (1.0 + uBurst * 1.5);
+        float r = aRadius * pinch;
+        vec4 mv = modelViewMatrix * vec4(cos(ang) * r, y, sin(ang) * r, 1.0);
+        float tip = smoothstep(0.72, 1.0, yN);        // brightest at the live edge
+        vGlow = (0.30 + 0.70 * tip) * (1.0 + uBurst * 2.2);
+        gl_PointSize = (1.6 + aSeed * 2.2) * (1.0 + uBurst * 1.2) * uPx * (6.0 / max(0.5, -mv.z));
+        gl_Position = projectionMatrix * mv;
+      }
+    `,
+    fragmentShader: /* glsl */`
+      varying float vGlow;
+      void main() {
+        float a = smoothstep(0.5, 0.08, length(gl_PointCoord - 0.5));
+        vec3 col = mix(vec3(0.35, 0.22, 0.02), vec3(1.0, 0.85, 0.45), min(vGlow, 1.0));
+        gl_FragColor = vec4(col * vGlow, a * 0.8);
+      }
+    `,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  const points = new THREE.Points(geo, mat);
+  points.frustumCulled = false; // positions live in the shader; default bounds would cull it
+  let time = 0;
+  return {
+    points,
+    update(dt: number) {
+      time += dt;
+      mat.uniforms.uTime.value = time;
+      mat.uniforms.uBurst.value *= Math.max(0, 1 - dt * 2.2);
+    },
+    setFill(v: number) { mat.uniforms.uFill.value = Math.max(0, Math.min(1, v)); },
+    burst() { mat.uniforms.uBurst.value = 1; },
+    dispose() { geo.dispose(); mat.dispose(); },
+  };
+}
 
 // Hard-banded 3-tone gradient for MeshToonMaterial — flat cel-shaded toy look.
 let _toonGradientMap: THREE.DataTexture | null = null;
@@ -3105,6 +3196,11 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     useComposer = false;
   }
 
+  // Revenue Data-Tornado — smaller radius than desktop so the column stays
+  // inside a phone's narrow horizontal frustum (visible width ≈2.8 units).
+  const revTornado = buildRevenueTornado(1200, 1.55, 0.4);
+  scene.add(revTornado.points);
+
   function resize() {
     const w = container.clientWidth || window.innerWidth;
     const h = container.clientHeight || window.innerHeight;
@@ -3523,6 +3619,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
       mChroma.uniforms.uStrength.value = Math.max(mChroma.uniforms.uStrength.value, (coreAmp - 0.6) * 0.03);
     }
     if (mChroma) mChroma.uniforms.uStrength.value *= Math.max(0, 1 - dt * 3.2);
+    revTornado.update(dt);
     // Re-anchor to the resting orientation every frame, then layer the
     // ignition camera shake on top — keeps the jolt from drifting/compounding.
     camera.quaternion.copy(mobileBaseCamQuat);
@@ -3711,6 +3808,8 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     pulseGlitch(strength = 0.12) {
       if (mChroma) mChroma.uniforms.uStrength.value = Math.max(mChroma.uniforms.uStrength.value, strength);
     },
+    setRevenueFill(v: number) { revTornado.setFill(v); },
+    revenueIngest() { revTornado.burst(); },
     setOrikiMode(on: boolean) {
       oriActive = on;
       oriToonTarget = on ? 1 : 0;
@@ -3734,6 +3833,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
       ignitionAudio?.dispose();
       window.removeEventListener('resize', resize);
       renderer.domElement.removeEventListener('pointerdown', onOriTap);
+      revTornado.dispose();
       if (envMap) envMap.dispose();
       if (composer) composer.dispose();
       renderer.dispose();
@@ -3920,6 +4020,10 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   composer.addPass(fxaa);
 
   composer.addPass(new OutputPass());
+
+  // Revenue Data-Tornado — wide-radius gold helix framing the core.
+  const revTornado = buildRevenueTornado(2200, 2.35, 0.55);
+  scene.add(revTornado.points);
 
   function resize() {
     const w = container.clientWidth || window.innerWidth;
@@ -4692,6 +4796,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       chroma.uniforms.uStrength.value = Math.max(chroma.uniforms.uStrength.value, (coreAmp - 0.6) * 0.03);
     }
     chroma.uniforms.uStrength.value *= Math.max(0, 1 - dt * 3.2);
+    revTornado.update(dt);
     if (pika.head) {
       // Curious head tilt — cycles between looking around and tilting curiously
       const curiousCycle = time % 12.0;
@@ -4947,6 +5052,8 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     pulseGlitch(strength = 0.12) {
       chroma.uniforms.uStrength.value = Math.max(chroma.uniforms.uStrength.value, strength);
     },
+    setRevenueFill(v: number) { revTornado.setFill(v); },
+    revenueIngest() { revTornado.burst(); },
     setOrikiMode(on: boolean) {
       oriActive = on;
       oriToonTarget = on ? 1 : 0;
@@ -4981,6 +5088,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       window.removeEventListener('resize', resize);
       window.removeEventListener('mousemove', onDeskMouseMove);
       renderer.domElement.removeEventListener('pointerdown', onOriTap);
+      revTornado.dispose();
       if (envMap) envMap.dispose();
       renderer.dispose();
       composer.dispose();

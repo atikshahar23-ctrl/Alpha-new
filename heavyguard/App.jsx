@@ -1623,6 +1623,18 @@ function CustModal({ cust, onClose, onSave }) {
 const COMPANY = { name: "Heavy Guard", address: "דן 7, ראשל\"צ", taxId: "305794067", phone: "054-771-9070", bank: "בנק לאומי (10) סניף 739, חשבון 1087434" };
 const QUOTE_NOTES = ["דמי מנוי בכרטיס אשראי לחברת סמסוניקס +₪60+מע\"מ", "התקנה בבית הלקוח", "אחריות לשנה על המוצרים וההתקנה"];
 const QUOTE_PAY = "ניתן לשלם באשראי או בהעברה בנקאית לחשבון 1087434, בנק לאומי (10) סניף 739. עד 3 תשלומים ללא ריבית.";
+// ── Sentinel gates — hardcoded Heavy Guard business rules ──
+// Gate 1: a quote containing a 4-camera kit must state the monthly remote-
+// viewing subscription fee as its own separate line in the notes — the
+// builder flashes a warning and refuses to save until it's there.
+// Gate 2: a standalone in-cabin monitor/display is always an optional
+// add-on — tagged in the builder, in the styled quote, and in the WhatsApp
+// text. Combo products that merely mention a screen ("מצלמת רוורס + מסך",
+// "סט מסך חכם 4 מצלמות") are NOT standalone monitors and are excluded.
+const FOURCAM_RE = /4\s*מצלמות/;
+const SUBSCRIPTION_RE = /מנוי/;
+const isMonitorAddon = (name) => /(מסך|צג)/.test(name || "") && !/מצלמ|סט/.test(name || "");
+const OPT_ADDON_LABEL = "תוספת אופציונלית";
 const PROFILE_DEFAULT = { name: COMPANY.name, brand: "HEAVY GUARD", address: COMPANY.address, taxId: COMPANY.taxId, phone: COMPANY.phone, bank: COMPANY.bank, website: "", tiktok: "", facebook: "", instagram: "", quoteNotes: QUOTE_NOTES.join("\n"), quotePay: QUOTE_PAY };
 const loadProfile = () => store.get("hg2:profile").then((r) => r && r.value ? { ...PROFILE_DEFAULT, ...JSON.parse(r.value) } : PROFILE_DEFAULT).catch(() => PROFILE_DEFAULT);
 const DEFAULT_PRICES = [
@@ -1728,6 +1740,9 @@ function QuoteBuilder({ items, profile = PROFILE_DEFAULT, onSave, showToast }) {
   const rm = (id) => setLines(lines.filter((l) => l.id !== id));
   const subtotal = lines.reduce((s, l) => s + l.price * l.qty, 0);
   const vat = Math.round(subtotal * vatRate / 100); const total = subtotal + vat;
+  const hasFourCam = lines.some((l) => FOURCAM_RE.test(l.name || ""));
+  const gate1Violated = hasFourCam && !SUBSCRIPTION_RE.test(notes) && !SUBSCRIPTION_RE.test(note);
+  const restoreSubscriptionNote = () => setNotes((notes.trim() ? notes.trim() + "\n" : "") + QUOTE_NOTES[0]);
   const validUntil = () => { const d = new Date(date || todayISO()); d.setDate(d.getDate() + 7); return d.toISOString().slice(0, 10); };
   const build = () => ({ client: { name: client.trim(), phone: phone.trim() }, date: date || todayISO(), validUntil: validUntil(), lines: lines.map((l) => ({ name: l.name, qty: l.qty, price: l.price })), vatRate, subtotal, vat, total, note: note.trim(), notes: notes.split("\n").map((s) => s.trim()).filter(Boolean), pay: pay.trim() });
 
@@ -1744,7 +1759,7 @@ function QuoteBuilder({ items, profile = PROFILE_DEFAULT, onSave, showToast }) {
       <div className="hg2-complist">
         {lines.map((l) => (
           <div className="hg2-qline" key={l.id}>
-            <span className="hg2-qline-name">{l.name}</span>
+            <span className="hg2-qline-name">{l.name}{isMonitorAddon(l.name) && <span className="hg2-opt-tag">{OPT_ADDON_LABEL}</span>}</span>
             <button className="hg2-icbtn2" onClick={() => rm(l.id)}><X size={13} /></button>
             <label>כמות<input type="number" min="1" value={l.qty} onChange={(e) => upd(l.id, "qty", e.target.value)} /></label>
             <label>מחיר<input type="number" value={l.price} onChange={(e) => upd(l.id, "price", e.target.value)} /></label>
@@ -1760,8 +1775,18 @@ function QuoteBuilder({ items, profile = PROFILE_DEFAULT, onSave, showToast }) {
           <div className="tot"><span>סה"כ לתשלום</span><b>{ils(total)}</b></div>
         </div>
         <Field icon={Pencil} label="הערות (שורה לכל הערה)"><textarea className="hg2-ta" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
+        {gate1Violated && (
+          <div className="hg2-gatewarn">
+            <b>⚠️ חוק Heavy Guard — סט 4 מצלמות:</b> דמי המנוי החודשיים לצפייה מרחוק חייבים להופיע כשורה נפרדת מהמחיר. ההצעה לא תישמר בלעדיה.
+            <button onClick={restoreSubscriptionNote}>החזר את שורת המנוי</button>
+          </div>
+        )}
         <Field icon={DollarSign} label="דרכי תשלום"><textarea className="hg2-ta" rows={2} value={pay} onChange={(e) => setPay(e.target.value)} /></Field>
-        <button className="hg2-btn primary" style={{ width: "100%" }} onClick={() => { if (!client.trim()) { showToast("הזן שם לקוח", "warn"); return; } onSave(build()); }}><FileSpreadsheet size={17} /> צור הצעה מעוצבת</button>
+        <button className="hg2-btn primary" style={{ width: "100%" }} onClick={() => {
+          if (!client.trim()) { showToast("הזן שם לקוח", "warn"); return; }
+          if (gate1Violated) { showToast("חוק Heavy Guard: הוסף את שורת דמי המנוי החודשיים להערות לפני שמירה", "warn"); return; }
+          onSave(build());
+        }}><FileSpreadsheet size={17} /> צור הצעה מעוצבת</button>
       </>}
     </div>
   );
@@ -1772,7 +1797,7 @@ function QuoteView({ quote, profile = PROFILE_DEFAULT, onBack, showToast }) {
     let t = `*הצעת מחיר מספר ${q.number}* — ${co.name}\nלכבוד: ${q.client?.name || ""}\nתאריך: ${dmy(q.date)}`;
     if (q.validUntil) t += `\nבתוקף עד: ${dmy(q.validUntil)}`;
     t += `\n\n`;
-    q.lines.forEach((l) => { t += `• ${l.name}${l.qty > 1 ? " ×" + l.qty : ""} — ${ils(l.price * l.qty)}\n`; });
+    q.lines.forEach((l) => { t += `• ${l.name}${isMonitorAddon(l.name) ? ` (${OPT_ADDON_LABEL})` : ""}${l.qty > 1 ? " ×" + l.qty : ""} — ${ils(l.price * l.qty)}\n`; });
     t += `\nסה"כ לפני מע"מ: ${ils(q.subtotal)}\n*סה"כ כולל ${q.vatRate}% מע"מ: ${ils(q.total)}*\n`;
     t += `\n${(q.pay || co.quotePay || QUOTE_PAY)}\n\n${co.name} · ${co.address} · נייד ${co.phone}`;
     return t;
@@ -1800,7 +1825,7 @@ function QuoteView({ quote, profile = PROFILE_DEFAULT, onBack, showToast }) {
 
         <table className="hg2-qd-table">
           <thead><tr><th>תיאור הפריט</th><th>מחיר ליחידה</th><th>כמות</th><th>סה"כ</th></tr></thead>
-          <tbody>{q.lines.map((l, i) => <tr key={i}><td>{l.name}</td><td>{ils(l.price)}</td><td>{l.qty}</td><td>{ils(l.price * l.qty)}</td></tr>)}</tbody>
+          <tbody>{q.lines.map((l, i) => <tr key={i}><td>{l.name}{isMonitorAddon(l.name) ? ` (${OPT_ADDON_LABEL})` : ""}</td><td>{ils(l.price)}</td><td>{l.qty}</td><td>{ils(l.price * l.qty)}</td></tr>)}</tbody>
         </table>
         <div className="hg2-qd-sums">
           <div><span>סה"כ לפני מע"מ</span><b>{ils(q.subtotal)}</b></div>
@@ -4831,6 +4856,11 @@ function Styles() {
 .hg2-qline label:nth-of-type(2){grid-area:price}
 .hg2-qline label input{background:var(--void);border:1px solid var(--s7);border-radius:8px;padding:8px;color:var(--silver);font-family:inherit;font-size:14px;width:100%;outline:none}
 .hg2-qline-sum{grid-area:sum;text-align:left;font-family:ui-monospace,monospace;font-weight:700;color:var(--cyan);border-top:1px dashed var(--s7);padding-top:7px}
+.hg2-opt-tag{display:inline-block;margin-inline-start:8px;font-size:10px;font-weight:800;letter-spacing:.3px;color:#ffd98c;background:rgba(218,165,32,.14);border:1px solid rgba(218,165,32,.4);border-radius:999px;padding:2px 8px;vertical-align:middle}
+.hg2-gatewarn{display:flex;flex-direction:column;gap:9px;background:rgba(255,60,60,.1);border:1px solid rgba(255,80,80,.55);border-radius:12px;padding:12px 14px;font-size:13px;line-height:1.6;animation:hg2GateFlash 1.1s ease-in-out infinite}
+.hg2-gatewarn b{color:#ff9a8a}
+.hg2-gatewarn button{align-self:flex-start;background:linear-gradient(135deg,#ff6b5e,#d0342b);border:none;border-radius:9px;color:#fff;font-family:inherit;font-size:12.5px;font-weight:800;padding:8px 14px;cursor:pointer}
+@keyframes hg2GateFlash{0%,100%{box-shadow:0 0 0 rgba(255,80,80,0)}50%{box-shadow:0 0 22px rgba(255,80,80,.45),inset 0 0 12px rgba(255,80,80,.12)}}
 .hg2-vatrow{display:flex;align-items:center;justify-content:space-between;background:var(--s8);border:1px solid var(--s7);border-radius:11px;padding:10px 14px;margin-top:6px}
 .hg2-vatrow input{width:70px;background:var(--void);border:1px solid var(--s7);border-radius:8px;padding:7px;color:var(--silver);font-family:inherit;text-align:center;font-size:15px;outline:none}
 .hg2-totals{background:var(--s9);border:1px solid var(--s7);border-radius:12px;padding:13px 15px;margin-top:8px}

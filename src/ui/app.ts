@@ -189,7 +189,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="wm-hg">HEAVY GUARD OS</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v249 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="wm-hg">HEAVY GUARD OS</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v250 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip apps-chip" id="appsBtn" title="האפליקציות שלי" aria-label="האפליקציות שלי">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="12" cy="19" r="2"/><circle cx="19" cy="19" r="2"/></svg>
@@ -8844,5 +8844,34 @@ export function mountApp(root: HTMLElement) {
         });
       }
     }
+  }
+
+  // ── Revenue Data-Tornado feed — real HeavyGuard numbers ─────────────────
+  // The gold particle helix around the core fills to this month's install
+  // revenue (hg2:index rows, written by heavyguard.html to localStorage) vs.
+  // a monthly target. A cross-tab storage event on hg2:index means a new
+  // install was just logged → fire the ingestion light-burst live.
+  {
+    const REV_TARGET = () => {
+      const t = Number(localStorage.getItem('alpha:rev_target'));
+      return Number.isFinite(t) && t > 0 ? t : 40000; // ₪/month default
+    };
+    const feedRevenue = () => {
+      try {
+        const idx = JSON.parse(localStorage.getItem('hg2:index') || '[]');
+        if (!Array.isArray(idx)) return;
+        const mKey = new Date().toISOString().slice(0, 7);
+        const monthly = idx.reduce((s: number, x: any) =>
+          s + (String(x?.date || '').slice(0, 7) === mKey ? (Number(x?.price) || 0) : 0), 0);
+        orb.setRevenueFill?.(Math.min(1, monthly / REV_TARGET()));
+      } catch {}
+    };
+    feedRevenue();
+    window.addEventListener('storage', (e) => {
+      if (e.key === 'hg2:index') {
+        feedRevenue();
+        try { orb.revenueIngest?.(); } catch {}
+      }
+    });
   }
 }
