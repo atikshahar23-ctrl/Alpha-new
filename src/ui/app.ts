@@ -189,7 +189,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="wm-hg">HEAVY GUARD OS</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v246 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="wm-hg">HEAVY GUARD OS</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v247 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip apps-chip" id="appsBtn" title="האפליקציות שלי" aria-label="האפליקציות שלי">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="12" cy="19" r="2"/><circle cx="19" cy="19" r="2"/></svg>
@@ -253,7 +253,7 @@ export function mountApp(root: HTMLElement) {
           </a>
           <a class="ad-item" href="#" id="sportsHubBtn">
             <span class="ad-ic" style="--c:#43A1D5"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="10"/><path d="M12 7l4.2 3-1.6 5h-5.2L7.8 10z"/><path d="M12 2v5M20.5 8.5 16.2 10M19 19.5 14.6 15M9.4 15 5 19.5M3.5 8.5 7.8 10"/></svg></span>
-            <b>Sports Hub</b><em>מסי · מכבי ת״א · ריאל · NBA</em>
+            <b>Sports Hub</b><em>בחר את הקבוצות שלך · כל הספורט</em>
           </a>
         </div>
       </aside>
@@ -2468,10 +2468,12 @@ export function mountApp(root: HTMLElement) {
     (btn as HTMLElement).onclick = () => { applyMood((btn as HTMLElement).dataset.mood || 'gold'); try { navigator.vibrate?.(state.haptics ? 12 : 0); } catch {} };
   });
 
-  // ── Sports Hub — GOAT Protocol toggle + football/NBA cards ─────────────
+  // ── Sports Hub — GOAT Protocol + a real multi-sport, pick-your-teams app ──
   // Cards render instantly from curated data (works fully offline); live
-  // lines (next/last match, NBA scores) fill in from TheSportsDB's free
-  // tier afterwards and simply stay hidden when the network/API fails.
+  // lines (next/last match, scores) fill in from TheSportsDB's free tier
+  // afterwards and simply stay hidden when the network/API fails. Users pick
+  // which teams matter to them, across every sport in the catalog — not a
+  // hardcoded football+NBA set.
   {
     const goatOn = () => localStorage.getItem('alpha_mood') === 'goat';
     const esc = (s: unknown) => String(s ?? '').replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c] as string));
@@ -2488,6 +2490,60 @@ export function mountApp(root: HTMLElement) {
       }
       return null;
     };
+
+    type SportKey = 'soccer' | 'nba' | 'nfl' | 'mlb' | 'nhl' | 'f1';
+    type SportTeam = { id: string; name: string; sub: string; sport: SportKey; flag: string; accent: string; search: string };
+
+    const SPORT_META: Record<SportKey, { label: string; icon: string; apiSport: string }> = {
+      soccer: { label: 'כדורגל', icon: '⚽', apiSport: 'Soccer' },
+      nba: { label: 'כדורסל (NBA)', icon: '🏀', apiSport: 'Basketball' },
+      nfl: { label: 'פוטבול אמריקאי (NFL)', icon: '🏈', apiSport: 'American Football' },
+      mlb: { label: 'בייסבול (MLB)', icon: '⚾', apiSport: 'Baseball' },
+      nhl: { label: 'הוקי קרח (NHL)', icon: '🏒', apiSport: 'Ice Hockey' },
+      f1: { label: 'פורמולה 1', icon: '🏎️', apiSport: 'Motorsport' },
+    };
+
+    const SPORT_CATALOG: SportTeam[] = [
+      // כדורגל
+      { id: 'maccabi_ta', name: 'מכבי תל אביב', sub: 'ליגת העל · האלופה', sport: 'soccer', flag: '🟡', accent: '#FFD400', search: 'Maccabi Tel Aviv' },
+      { id: 'hapoel_be', name: 'הפועל באר שבע', sub: 'ליגת העל', sport: 'soccer', flag: '🔴', accent: '#D0021B', search: 'Hapoel Beer Sheva' },
+      { id: 'maccabi_haifa', name: 'מכבי חיפה', sub: 'ליגת העל', sport: 'soccer', flag: '🟢', accent: '#0BA84A', search: 'Maccabi Haifa' },
+      { id: 'beitar_yr', name: 'בית״ר ירושלים', sub: 'ליגת העל', sport: 'soccer', flag: '🟡', accent: '#FFCC00', search: 'Beitar Jerusalem' },
+      { id: 'real_madrid', name: 'ריאל מדריד', sub: 'Los Blancos · לה ליגה', sport: 'soccer', flag: '⚪', accent: '#D4AF37', search: 'Real Madrid' },
+      { id: 'barcelona', name: 'ברצלונה', sub: 'לה ליגה', sport: 'soccer', flag: '🔵', accent: '#A50044', search: 'Barcelona' },
+      { id: 'man_city', name: 'מנצ׳סטר סיטי', sub: 'פרמייר ליג', sport: 'soccer', flag: '🩵', accent: '#6CABDD', search: 'Manchester City' },
+      { id: 'liverpool', name: 'ליברפול', sub: 'פרמייר ליג', sport: 'soccer', flag: '🔴', accent: '#C8102E', search: 'Liverpool' },
+      { id: 'psg', name: 'פריז סן ז׳רמן', sub: 'ליג 1', sport: 'soccer', flag: '🔵', accent: '#004170', search: 'Paris Saint-Germain' },
+      { id: 'inter_miami', name: 'אינטר מיאמי', sub: 'MLS · מסי', sport: 'soccer', flag: '🩷', accent: '#F7B5CD', search: 'Inter Miami' },
+      // כדורסל NBA
+      { id: 'lakers', name: 'לוס אנג׳לס לייקרס', sub: 'NBA', sport: 'nba', flag: '💜', accent: '#552583', search: 'Los Angeles Lakers' },
+      { id: 'warriors', name: 'גולדן סטייט ווריורס', sub: 'NBA', sport: 'nba', flag: '💛', accent: '#1D428A', search: 'Golden State Warriors' },
+      { id: 'celtics', name: 'בוסטון סלטיקס', sub: 'NBA', sport: 'nba', flag: '☘️', accent: '#007A33', search: 'Boston Celtics' },
+      { id: 'bucks', name: 'מילווקי באקס', sub: 'NBA', sport: 'nba', flag: '🦌', accent: '#00471B', search: 'Milwaukee Bucks' },
+      { id: 'nuggets', name: 'דנוור נאגטס', sub: 'NBA', sport: 'nba', flag: '⛏️', accent: '#0E2240', search: 'Denver Nuggets' },
+      // פוטבול אמריקאי
+      { id: 'chiefs', name: 'קנזס סיטי צ׳יפס', sub: 'NFL', sport: 'nfl', flag: '🔴', accent: '#E31837', search: 'Kansas City Chiefs' },
+      { id: 'eagles', name: 'פילדלפיה איגלס', sub: 'NFL', sport: 'nfl', flag: '🦅', accent: '#004C54', search: 'Philadelphia Eagles' },
+      { id: 'cowboys', name: 'דאלאס קאובויס', sub: 'NFL', sport: 'nfl', flag: '⭐', accent: '#041E42', search: 'Dallas Cowboys' },
+      { id: '49ers', name: 'סן פרנסיסקו 49ers', sub: 'NFL', sport: 'nfl', flag: '🔴', accent: '#AA0000', search: 'San Francisco 49ers' },
+      // בייסבול
+      { id: 'yankees', name: 'ניו יורק יאנקיז', sub: 'MLB', sport: 'mlb', flag: '⚾', accent: '#132448', search: 'New York Yankees' },
+      { id: 'dodgers', name: 'לוס אנג׳לס דודג׳רס', sub: 'MLB', sport: 'mlb', flag: '⚾', accent: '#005A9C', search: 'Los Angeles Dodgers' },
+      // הוקי קרח
+      { id: 'rangers', name: 'ניו יורק ריינג׳רס', sub: 'NHL', sport: 'nhl', flag: '🏒', accent: '#0038A8', search: 'New York Rangers' },
+      { id: 'oilers', name: 'אדמונטון אויילרס', sub: 'NHL', sport: 'nhl', flag: '🏒', accent: '#FF4C00', search: 'Edmonton Oilers' },
+      // פורמולה 1
+      { id: 'redbull_f1', name: 'רד בול רייסינג', sub: 'פורמולה 1', sport: 'f1', flag: '🏎️', accent: '#1E5BC6', search: 'Red Bull Racing' },
+      { id: 'ferrari_f1', name: 'סקודריה פרארי', sub: 'פורמולה 1', sport: 'f1', flag: '🏎️', accent: '#DC0000', search: 'Scuderia Ferrari' },
+    ];
+
+    const FAV_KEY = 'alpha:sports:favs';
+    const DEFAULT_FAVS = ['maccabi_ta', 'real_madrid', 'lakers'];
+    const getFavs = (): string[] => {
+      try { const raw = localStorage.getItem(FAV_KEY); return raw ? JSON.parse(raw) : DEFAULT_FAVS.slice(); } catch { return DEFAULT_FAVS.slice(); }
+    };
+    const setFavs = (ids: string[]) => localStorage.setItem(FAV_KEY, JSON.stringify(ids));
+
     const card = (accent: string, flag: string, title: string, sub: string, body: string) => `
       <div style="background:var(--glass-hover);border:1px solid var(--glass-border);border-right:3px solid ${accent};border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:8px">
         <div style="display:flex;align-items:center;gap:8px">
@@ -2497,35 +2553,31 @@ export function mountApp(root: HTMLElement) {
         <div style="font-size:12.5px;line-height:1.7">${body}</div>
       </div>`;
     const liveSlot = (id: string) => `<div id="${id}" style="font-size:12px;color:var(--dim);margin-top:2px">⏳ טוען נתונים חיים…</div>`;
-    const fillTeam = async (elId: string, teamName: string) => {
-      const d = await sdb('searchteams.php?t=' + encodeURIComponent(teamName));
-      const t = (d?.teams || []).find((x: any) => x.strSport === 'Soccer');
+
+    const fillTeam = async (elId: string, t: SportTeam) => {
+      const d = await sdb('searchteams.php?t=' + encodeURIComponent(t.search));
+      const meta = SPORT_META[t.sport];
+      const found = (d?.teams || []).find((x: any) => x.strSport === meta.apiSport) || (d?.teams || [])[0];
       const el = document.getElementById(elId);
       if (!el) return;
-      if (!t) { el.textContent = 'נתונים חיים לא זמינים כרגע.'; return; }
+      if (!found) { el.textContent = 'נתונים חיים לא זמינים כרגע.'; return; }
       let matchLine = '';
-      const nxt = await sdb('eventsnext.php?id=' + t.idTeam);
+      const nxt = await sdb('eventsnext.php?id=' + found.idTeam);
       const ev = nxt?.events?.[0];
-      if (ev) matchLine = `<div>⚽ המשחק הבא: <b>${esc(ev.strEvent)}</b> · ${esc(ev.dateEvent)}</div>`;
+      if (ev) matchLine = `<div>${meta.icon} המשחק הבא: <b>${esc(ev.strEvent)}</b> · ${esc(ev.dateEvent)}</div>`;
       else {
-        const last = await sdb('eventslast.php?id=' + t.idTeam);
+        const last = await sdb('eventslast.php?id=' + found.idTeam);
         const lv = last?.results?.[0];
-        if (lv) matchLine = `<div>⚽ משחק אחרון: <b>${esc(lv.strEvent)}</b>${lv.intHomeScore != null ? ` · <b style="direction:ltr;unicode-bidi:isolate">${esc(lv.intHomeScore)}-${esc(lv.intAwayScore)}</b>` : ''}</div>`;
+        if (lv) matchLine = `<div>${meta.icon} משחק אחרון: <b>${esc(lv.strEvent)}</b>${lv.intHomeScore != null ? ` · <b style="direction:ltr;unicode-bidi:isolate">${esc(lv.intHomeScore)}-${esc(lv.intAwayScore)}</b>` : ''}</div>`;
       }
       const el2 = document.getElementById(elId);
-      if (el2) el2.innerHTML = `<div>🏟️ ${esc(t.strStadium)} · ${esc(t.strLeague)}${t.intFormedYear ? ` · נוסד ${esc(t.intFormedYear)}` : ''}</div>${matchLine}`;
+      if (el2) el2.innerHTML = `<div>🏟️ ${esc(found.strStadium || found.strLeague || '')}${found.strLeague ? ` · ${esc(found.strLeague)}` : ''}${found.intFormedYear ? ` · נוסד ${esc(found.intFormedYear)}` : ''}</div>${matchLine}`;
     };
-    const fillNBA = async () => {
-      const d = await sdb('eventspastleague.php?id=4387');
-      const el = document.getElementById('shNBA');
-      if (!el) return;
-      const evs = (d?.events || []).filter((e: any) => e && e.strEvent).slice(0, 4);
-      if (!evs.length) { el.textContent = 'תוצאות חיות לא זמינות כרגע.'; return; }
-      el.innerHTML = evs.map((ev: any) =>
-        `<div style="display:flex;justify-content:space-between;gap:8px"><span>${esc(ev.strEvent)}</span><b style="direction:ltr;unicode-bidi:isolate">${ev.intHomeScore ?? '–'}:${ev.intAwayScore ?? '–'}</b></div>`).join('');
-    };
+
     const renderSportsHub = () => {
       const on = goatOn();
+      const favs = getFavs();
+      const favTeams = favs.map(id => SPORT_CATALOG.find(t => t.id === id)).filter(Boolean) as SportTeam[];
       $('winBody').innerHTML = `
         <div class="pad" style="display:flex;flex-direction:column;gap:12px">
           <button id="goatToggle" style="all:unset;cursor:pointer;text-align:center;padding:13px 16px;border-radius:14px;font-weight:800;font-size:14px;letter-spacing:.5px;
@@ -2534,6 +2586,10 @@ export function mountApp(root: HTMLElement) {
             ${on ? '⚽ GOAT PROTOCOL פעיל — 🇦🇷 VAMOS! (לחץ לכיבוי)' : '⚽ הפעל GOAT PROTOCOL — מצב מסי/ארגנטינה'}
           </button>
           <div style="font-size:11.5px;color:var(--dim);text-align:center">מצב GOAT צובע את כל הממשק, את ליבת התלת-ממד ואת אישיות הסוכנים בצבעי הנבחרת 🇦🇷</div>
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding-top:4px;border-top:1px solid var(--glass-border)">
+            <b style="font-size:13px">⭐ הקבוצות שלי</b>
+            <button id="editFavsBtn" style="all:unset;cursor:pointer;font-size:12px;padding:8px 14px;border-radius:10px;background:var(--glass-hover);border:1px solid var(--glass-border);color:var(--ink);font-weight:700">⚙️ בחר קבוצות · כל הספורט</button>
+          </div>
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(235px,1fr));gap:12px">
             ${card('#43A1D5', '🐐', 'Lionel Messi · The GOAT', 'La Pulga · מספר 10', `
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 10px">
@@ -2543,9 +2599,9 @@ export function mountApp(root: HTMLElement) {
                 <span>🥇 תארים בקריירה</span><b>45+</b>
                 <span>⚽ שערים בקריירה</span><b>850+</b>
               </div>`)}
-            ${card('#FFD400', '🟡', 'מכבי תל אביב', 'ליגת העל · האלופה', liveSlot('shMaccabi'))}
-            ${card('#D4AF37', '⚪', 'ריאל מדריד', 'Los Blancos · לה ליגה', liveSlot('shReal'))}
-            ${card('#C9082A', '🏀', 'NBA', 'תוצאות אחרונות', liveSlot('shNBA'))}
+            ${favTeams.length
+              ? favTeams.map(t => card(t.accent, t.flag, t.name, `${SPORT_META[t.sport].icon} ${t.sub}`, liveSlot('sh_' + t.id))).join('')
+              : `<div style="grid-column:1/-1;text-align:center;padding:26px 12px;color:var(--dim);font-size:13px">עדיין לא נבחרו קבוצות — לחץ "⚙️ בחר קבוצות · כל הספורט" כדי להוסיף את הקבוצות שמעניינות אותך</div>`}
           </div>
         </div>`;
       const tg = document.getElementById('goatToggle');
@@ -2554,10 +2610,49 @@ export function mountApp(root: HTMLElement) {
         try { navigator.vibrate?.(state.haptics ? 20 : 0); } catch {}
         renderSportsHub();
       };
-      fillTeam('shMaccabi', 'Maccabi Tel Aviv');
-      fillTeam('shReal', 'Real Madrid');
-      fillNBA();
+      const editBtn = document.getElementById('editFavsBtn');
+      if (editBtn) editBtn.onclick = () => renderFavPicker();
+      favTeams.forEach(t => fillTeam('sh_' + t.id, t));
     };
+
+    const renderFavPicker = () => {
+      const favs = new Set(getFavs());
+      const sports = Object.keys(SPORT_META) as SportKey[];
+      $('winBody').innerHTML = `
+        <div class="pad" style="display:flex;flex-direction:column;gap:16px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <b style="font-size:14px">בחר את הקבוצות שמעניינות אותך — בכל ענפי הספורט</b>
+            <button id="favBackBtn" style="all:unset;cursor:pointer;font-size:12px;padding:8px 14px;border-radius:10px;background:var(--glass-hover);border:1px solid var(--glass-border);color:var(--ink);font-weight:700">↩ חזרה</button>
+          </div>
+          ${sports.map(s => `
+            <div>
+              <div style="font-size:12.5px;font-weight:800;color:var(--dim);margin-bottom:8px">${SPORT_META[s].icon} ${SPORT_META[s].label}</div>
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px">
+                ${SPORT_CATALOG.filter(t => t.sport === s).map(t => `
+                  <label style="display:flex;align-items:center;gap:8px;padding:9px 11px;border-radius:10px;background:var(--glass-hover);border:1px solid var(--glass-border);cursor:pointer;font-size:12.5px">
+                    <input type="checkbox" class="favChk" data-id="${t.id}" ${favs.has(t.id) ? 'checked' : ''} style="accent-color:${t.accent};width:16px;height:16px;flex:none" />
+                    <span>${t.flag} ${esc(t.name)}</span>
+                  </label>`).join('')}
+              </div>
+            </div>`).join('')}
+          <button id="favSaveBtn" style="all:unset;cursor:pointer;text-align:center;padding:13px;border-radius:14px;font-weight:800;font-size:13.5px;background:linear-gradient(135deg,#daa520,#ffdb8c);color:#1a1408">💾 שמור וחזור</button>
+        </div>`;
+      $('winBody').querySelectorAll<HTMLInputElement>('.favChk').forEach(chk => {
+        chk.addEventListener('change', () => {
+          const id = chk.dataset.id as string;
+          if (chk.checked) favs.add(id); else favs.delete(id);
+        });
+      });
+      const back = document.getElementById('favBackBtn');
+      if (back) back.onclick = () => renderSportsHub();
+      const save = document.getElementById('favSaveBtn');
+      if (save) save.onclick = () => {
+        setFavs(Array.from(favs));
+        try { navigator.vibrate?.(state.haptics ? 12 : 0); } catch {}
+        renderSportsHub();
+      };
+    };
+
     $('sportsHubBtn').addEventListener('click', (e) => {
       e.preventDefault();
       openWin('⚽ Sports Hub');
