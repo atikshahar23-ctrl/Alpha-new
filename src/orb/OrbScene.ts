@@ -231,6 +231,7 @@ function buildRevenueTornado(count: number, rBase: number, rSpread: number) {
     },
     setFill(v: number) { mat.uniforms.uFill.value = Math.max(0, Math.min(1, v)); },
     burst() { mat.uniforms.uBurst.value = 1; },
+    burstLevel() { return mat.uniforms.uBurst.value as number; },
     dispose() { geo.dispose(); mat.dispose(); },
   };
 }
@@ -3470,6 +3471,21 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   const particles = new THREE.Points(pGeo, pMat);
   group.add(particles);
 
+  // ── Minimal-orb mode (default ON) — only the central object is active ──
+  // Every decorative layer around it (rings, halo sprites, pulse waves,
+  // ambient particles) is hidden outright: transparent additive overdraw is
+  // the single biggest GPU cost in this scene, and visible=false pays zero,
+  // unlike "update less". The characters themselves (Alpha core + cages,
+  // Pikachu, Oriki toys) and anything added later (pokeball throw, Pokemon
+  // FX) stay live. Escape hatch: localStorage alpha:orb_minimal = '0'.
+  const orbMinimal = (() => { try { return localStorage.getItem('alpha:orb_minimal') !== '0'; } catch { return true; } })();
+  if (orbMinimal) {
+    const keep = new Set<THREE.Object3D>([pikaGroup, alphaBrain.group, toyPlayground.group]);
+    group.children.forEach((c) => { if (!keep.has(c)) c.visible = false; });
+    alphaBrain.tendrils.group.visible = false;
+    revTornado.points.visible = false; // reappears only during an ingestion burst
+  }
+
   // ────────────────────────────────────────────
   // ANIMATION — maximum flow
   // ────────────────────────────────────────────
@@ -3617,6 +3633,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     }
     if (mChroma) mChroma.uniforms.uStrength.value *= Math.max(0, 1 - dt * 3.2);
     revTornado.update(dt);
+    if (orbMinimal) revTornado.points.visible = revTornado.burstLevel() > 0.03;
     // Re-anchor to the resting orientation every frame, then layer the
     // ignition camera shake on top — keeps the jolt from drifting/compounding.
     camera.quaternion.copy(mobileBaseCamQuat);
@@ -4539,6 +4556,24 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   const dustParticles = new THREE.Points(dustGeo, dustMat);
   scene.add(dustParticles);
 
+  // ── Minimal-orb mode (default ON) — only the central object is active ──
+  // Hides all ~13 decorative systems (orbital rings, pulse waves, energy
+  // tendrils, lens flares, glow sprites, network nodes, grid floor, DNA
+  // helix, 200 motes, atmosphere shell, 500 surface particles, far stars,
+  // dust): their transparent additive overdraw is the reason the orb here
+  // never felt as smooth as single-orb assistants. The characters (Alpha
+  // core + cages, Pikachu, Oriki toys) and lazily-added FX (pokeball throw,
+  // Pokemon particles) stay live. Escape: localStorage alpha:orb_minimal='0'.
+  const orbMinimal = (() => { try { return localStorage.getItem('alpha:orb_minimal') !== '0'; } catch { return true; } })();
+  if (orbMinimal) {
+    const keep = new Set<THREE.Object3D>([pikaGroup, alphaBrain.group, toyPlayground.group]);
+    group.children.forEach((c) => { if (!keep.has(c)) c.visible = false; });
+    starGroup.visible = false;
+    dustParticles.visible = false;
+    alphaBrain.tendrils.group.visible = false;
+    revTornado.points.visible = false; // reappears only during an ingestion burst
+  }
+
   // ────────────────────────────────────────────
   // BODY DETECTION (MediaPipe)
   // ────────────────────────────────────────────
@@ -4797,6 +4832,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     }
     chroma.uniforms.uStrength.value *= Math.max(0, 1 - dt * 3.2);
     revTornado.update(dt);
+    if (orbMinimal) revTornado.points.visible = revTornado.burstLevel() > 0.03;
     if (pika.head) {
       // Curious head tilt — cycles between looking around and tilting curiously
       const curiousCycle = time % 12.0;

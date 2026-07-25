@@ -189,7 +189,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="wm-hg">HEAVY GUARD OS</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v251 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="wm-hg">HEAVY GUARD OS</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v252 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip apps-chip" id="appsBtn" title="האפליקציות שלי" aria-label="האפליקציות שלי">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="12" cy="19" r="2"/><circle cx="19" cy="19" r="2"/></svg>
@@ -972,11 +972,21 @@ export function mountApp(root: HTMLElement) {
   setCharacterVoiceEnabled(state.pikaVoiceOn);   // gate all character cries on startup
   setCryEnabled(state.pikaVoiceOn);
 
+  // ── Minimal-scene mode (default ON) — "only the orb is active". The full
+  // stack used to run THREE whole-screen animation systems every frame (the
+  // WebGL orb scene + the #bgfx aurora/constellation canvas + the flowLines
+  // cinematic canvas, both 2D canvases on the main thread) — that stack is
+  // why the orb never felt as smooth as single-orb assistants. In minimal
+  // mode the two 2D canvases never even start, and the orb scene itself
+  // hides its decorative layers (see OrbScene's orbMinimal sweeps).
+  // Escape hatch: localStorage alpha:orb_minimal = '0'.
+  const ORB_MINIMAL = (() => { try { return localStorage.getItem('alpha:orb_minimal') !== '0'; } catch { return true; } })();
+
   let orb: OrbHandle;
   try {
     orb = mountOrb($('stage'));
     buildOrbitalMenu();
-    startBgFx();
+    if (!ORB_MINIMAL) startBgFx();
     runBootSequence();
     startParallax();
     // JARVIS focus mode: while the user grabs the 3D stage (rotating or
@@ -1009,7 +1019,7 @@ export function mountApp(root: HTMLElement) {
   const _unlockOnce = () => { unlockAudio(); document.removeEventListener('pointerdown', _unlockOnce); };
   document.addEventListener('pointerdown', _unlockOnce);
 
-  mountFlowLines(root.querySelector('.app')!);
+  if (!ORB_MINIMAL) mountFlowLines(root.querySelector('.app')!);
 
   function applyUILang(lang: UILang) {
     root.querySelectorAll<HTMLElement>('[data-i18n]').forEach(el => {
