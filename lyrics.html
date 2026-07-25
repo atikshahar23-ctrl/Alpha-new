@@ -431,6 +431,7 @@
       <label class="chk"><input type="checkbox" id="wakeLockToggle" checked> השאר את המסך דלוק</label>
       <label class="chk"><input type="checkbox" id="eqToggle" checked> אקולייזר מאחורי המילים</label>
       <label class="chk"><input type="checkbox" id="origToggle" checked> הצג את שורת המקור</label>
+      <label class="chk"><input type="checkbox" id="smartHeToggle" checked> ✨ עברית טבעית (AI) — ליטוש התרגום שיישמע אמיתי</label>
       <div class="field-row" style="margin:0;">
         <label>מנוע תרגום</label>
         <select id="engineSel">
@@ -449,6 +450,7 @@
       <div class="hint">אפשר להגדיל עד כמה שרוצים — נוח למסך גדול או להקרנה מרחוק.</div>
     </div>
     <div class="hint">כל ההגדרות נשמרות במכשיר ומוחלות מיידית. מנוע Google מתרגם את כל השיר בבת אחת עם זיהוי שפת מקור אוטומטי; MyMemory משמש כגיבוי אוטומטי אם Google לא זמין.</div>
+    <div class="hint">✨ עברית טבעית: אחרי התרגום המהיר, מעבר AI מלטש את כל השיר לעברית אמיתית — משמעות, סלנג וזרימה במקום תרגום מילולי. משתמש במפתח Groq או Gemini שכבר מוגדר בהגדרות של אלפא (אותו דפדפן) — בלי מפתח, נשאר התרגום הרגיל.</div>
 
     <div class="sub-eyebrow">Spotify Connection</div>
     <div class="field-row">
@@ -599,6 +601,7 @@
   const eqToggle = $('eqToggle');
   const origToggle = $('origToggle');
   const engineSel = $('engineSel');
+  const smartHeToggle = $('smartHeToggle');
   const fontSizeSlider = $('fontSizeSlider');
   const fontSizeVal = $('fontSizeVal');
   const fontMinus = $('fontMinus');
@@ -682,14 +685,17 @@
     showOrig: store.get('lt:show_orig'),
     fontPx: store.get('lt:font_px') || 19,
     engine: store.get('lt:engine') || 'google',
+    smartHe: store.get('lt:smart_he'),
   };
   if(settings.eq === null || settings.eq === undefined) settings.eq = !prefersReducedMotion;
   if(settings.showOrig === null || settings.showOrig === undefined) settings.showOrig = true;
+  if(settings.smartHe === null || settings.smartHe === undefined) settings.smartHe = true;
   settings.fontPx = Math.min(FONT_MAX, Math.max(FONT_MIN, Number(settings.fontPx) || 19));
 
   function applyDisplaySettings(){
     eqToggle.checked = !!settings.eq;
     origToggle.checked = !!settings.showOrig;
+    smartHeToggle.checked = !!settings.smartHe;
     engineSel.value = settings.engine;
     fontSizeSlider.value = settings.fontPx;
     fontSizeVal.textContent = settings.fontPx + 'px';
@@ -706,6 +712,7 @@
   eqToggle.addEventListener('change', ()=>{ settings.eq = eqToggle.checked; store.set('lt:eq_on', settings.eq); applyDisplaySettings(); });
   origToggle.addEventListener('change', ()=>{ settings.showOrig = origToggle.checked; store.set('lt:show_orig', settings.showOrig); applyDisplaySettings(); });
   engineSel.addEventListener('change', ()=>{ settings.engine = engineSel.value; store.set('lt:engine', settings.engine); });
+  smartHeToggle.addEventListener('change', ()=>{ settings.smartHe = smartHeToggle.checked; store.set('lt:smart_he', settings.smartHe); });
   fontSizeSlider.addEventListener('input', ()=> setFontPx(Number(fontSizeSlider.value)));
   fontMinus.addEventListener('click', ()=> setFontPx(settings.fontPx - 2));
   fontPlus.addEventListener('click', ()=> setFontPx(settings.fontPx + 2));
@@ -1273,6 +1280,91 @@
     }
   }
 
+  // ================= SMART HEBREW REFINE (AI) =================
+  // The free MT engines translate word-by-word, so Hebrew comes out stilted.
+  // When a Groq/Gemini key exists (shared with the Alpha dashboard — same
+  // origin, same localStorage), one LLM pass rewrites the WHOLE song as
+  // natural, idiomatic Hebrew after the fast MT lines are already on screen.
+  // A numbered-line protocol (N|text in, N|תרגום out) keeps the 1:1 line
+  // mapping robust even if the model drops blank lines; if fewer than 80%
+  // of lines come back parseable, the MT translation is kept untouched.
+  const HE_CHAR_RE = /[\u0590-\u05FF]/;
+  function mostlyHebrew(lines){
+    let n = 0; lines.forEach(l=>{ if(HE_CHAR_RE.test(l)) n++; });
+    return n > lines.length * 0.6;
+  }
+  const SMART_HE_PROMPT = [
+    'Translate the following song lyrics into natural, fluent Hebrew.',
+    'Rules:',
+    '- Output EXACTLY one line per input line, formatted N|תרגום using the same number N as the input line.',
+    '- Write real, idiomatic Hebrew — natural word order and everyday phrasing. Use Israeli slang where the original is slangy. Never translate word-for-word.',
+    '- Preserve the meaning, tone and emotion of each line. Keep names and untranslatable interjections as they are.',
+    '- No explanations and no extra lines — output only the numbered translations.',
+  ].join('\n');
+  async function smartRefineHebrew(texts, seq){
+    try{
+      if(!settings.smartHe) return false;
+      if(targetLangSel.value !== 'he') return false;
+      if(!texts.length || texts.length > 220) return false;
+      if(mostlyHebrew(texts)) return false; // already a Hebrew song — nothing to refine
+      const groqKey = (localStorage.getItem('alpha_groq') || '').trim();
+      const gemKey = (localStorage.getItem('alpha_key') || '').trim();
+      if(!groqKey && !gemKey) return false;
+      const payload = SMART_HE_PROMPT + '\n\n' + texts.map((l,i)=>(i+1)+'|'+l).join('\n');
+      let out = null;
+      if(groqKey){
+        out = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method:'POST',
+          headers:{ 'Content-Type':'application/json', Authorization:'Bearer ' + groqKey },
+          body: JSON.stringify({ model:'llama-3.3-70b-versatile', temperature:0.4, max_tokens:6000, messages:[{ role:'user', content: payload }] }),
+        }).then(r=>r.ok ? r.json() : null)
+          .then(d=>(d && d.choices && d.choices[0] && d.choices[0].message && d.choices[0].message.content) || null)
+          .catch(()=>null);
+      }
+      if(!out && gemKey){
+        out = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent', {
+          method:'POST',
+          headers:{ 'Content-Type':'application/json', 'x-goog-api-key': gemKey },
+          body: JSON.stringify({ contents:[{ parts:[{ text: payload }] }] }),
+        }).then(r=>r.ok ? r.json() : null)
+          .then(d=>{
+            const parts = d && d.candidates && d.candidates[0] && d.candidates[0].content && d.candidates[0].content.parts;
+            return parts ? parts.map(p=>p.text||'').join('') : null;
+          })
+          .catch(()=>null);
+      }
+      if(!out || seq !== state.loadSeq) return false;
+      const map = {};
+      let matched = 0;
+      out.split('\n').forEach(line=>{
+        const m = line.match(/^\s*(\d+)\s*\|\s*(.+)$/);
+        if(m){
+          const idx = Number(m[1]) - 1;
+          const tr = m[2].trim();
+          if(idx >= 0 && idx < texts.length && tr){ map[idx] = tr; matched++; }
+        }
+      });
+      if(matched < texts.length * 0.8) return false; // model broke the format — keep MT
+      Object.keys(map).forEach(k=>{ const i = Number(k); updateRowTranslation(i, map[i]); });
+      showMiniToast('✨ התרגום לוטש לעברית טבעית');
+      return true;
+    }catch(e){ return false; }
+  }
+  let miniToastT = null;
+  function showMiniToast(msg){
+    let el = document.getElementById('miniToast');
+    if(!el){
+      el = document.createElement('div');
+      el.id = 'miniToast';
+      el.style.cssText = 'position:fixed;bottom:26px;left:50%;transform:translateX(-50%);z-index:9999;background:rgba(10,12,18,.92);border:1px solid rgba(0,229,255,.35);color:#e8fbff;font-size:13px;font-weight:600;padding:10px 18px;border-radius:999px;box-shadow:0 6px 24px rgba(0,0,0,.45);opacity:0;transition:opacity .3s;pointer-events:none';
+      document.body.appendChild(el);
+    }
+    el.textContent = msg;
+    requestAnimationFrame(()=>{ el.style.opacity = '1'; });
+    if(miniToastT) clearTimeout(miniToastT);
+    miniToastT = setTimeout(()=>{ el.style.opacity = '0'; }, 2600);
+  }
+
   // ================= SONG CACHE (repeat plays are instant) =================
   function cacheGet(key){
     const c = store.get(CACHE_KEY) || {};
@@ -1302,6 +1394,15 @@
       state.synced = !!cached.synced;
       applyTempo(estimateTempoMs(state.lines));
       renderLines(); setSyncBadge();
+      // Older cache entries hold raw MT — upgrade them in place to natural
+      // Hebrew once, then remember so the next play is instant AND polished.
+      if(!cached.smart){
+        smartRefineHebrew(state.lines.map(l=>l.orig), seq).then((refined)=>{
+          if(refined && seq === state.loadSeq){
+            cacheSet(cacheKey, { lines: state.lines, synced: state.synced, smart: true, ts: Date.now() });
+          }
+        });
+      }
       return;
     }
 
@@ -1338,7 +1439,11 @@
     if(seq !== state.loadSeq) return;
     // anything still untranslated keeps its original text
     state.lines.forEach((l,i)=>{ if(l.trans == null){ l.trans = l.orig; updateRowTranslation(i, l.orig); } });
-    cacheSet(cacheKey, { lines: state.lines, synced: state.synced, ts: Date.now() });
+    // AI polish pass — the fast MT lines are already on screen; this swaps
+    // them for natural, idiomatic Hebrew as soon as the model responds.
+    const refined = await smartRefineHebrew(texts, seq);
+    if(seq !== state.loadSeq) return;
+    cacheSet(cacheKey, { lines: state.lines, synced: state.synced, smart: refined, ts: Date.now() });
   }
 
   function setSyncBadge(){
