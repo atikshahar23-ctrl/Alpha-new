@@ -1413,12 +1413,27 @@
       // beat of the song) was yanking the entire page up/down regardless
       // of what the user was doing — reading settings, scrolled away, etc.
       // Scroll ONLY .stage's own internal scrollbar instead.
-      const stageRect = stage.getBoundingClientRect();
-      const rowRect = row.getBoundingClientRect();
-      const delta = (rowRect.top + rowRect.height / 2) - (stageRect.top + stage.clientHeight / 2);
-      stage.scrollBy({ top: delta, behavior: 'smooth' });
+      // Still respects a user who's manually scrolled the lyrics panel
+      // themselves in the last few seconds (reading ahead, checking an
+      // earlier line) — auto-follow snapping back mid-read would just be
+      // the same "it keeps yanking me" complaint one level down.
+      if(Date.now() - lastManualScrollAt > SCROLL_LOCK_MS){
+        const stageRect = stage.getBoundingClientRect();
+        const rowRect = row.getBoundingClientRect();
+        const delta = (rowRect.top + rowRect.height / 2) - (stageRect.top + stage.clientHeight / 2);
+        stage.scrollBy({ top: delta, behavior: 'smooth' });
+      }
     }
   }
+  // wheel/touch are genuine user-intent signals; the generic 'scroll' event
+  // would also fire from our OWN scrollBy() call above and immediately
+  // re-lock auto-follow against itself.
+  let lastManualScrollAt = 0;
+  const SCROLL_LOCK_MS = 4000;
+  const markManualScroll = () => { lastManualScrollAt = Date.now(); };
+  stage.addEventListener('wheel', markManualScroll, { passive: true });
+  stage.addEventListener('touchstart', markManualScroll, { passive: true });
+  stage.addEventListener('touchmove', markManualScroll, { passive: true });
 
   function escapeHtml(s){
     const d = document.createElement('div');

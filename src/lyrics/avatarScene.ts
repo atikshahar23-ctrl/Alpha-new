@@ -138,13 +138,22 @@ function buildFigureRig(mat: THREE.ShaderMaterial, capeMat: THREE.ShaderMaterial
   const torso = new THREE.Mesh(cap(0.22, 0.46), mat); torso.position.y = 1.1; group.add(torso);
   const hips = new THREE.Mesh(sph(0.21), mat); hips.position.y = 0.72; hips.scale.set(1, 0.7, 0.88); group.add(hips);
 
-  const thighL = new THREE.Mesh(cap(0.095, 0.42), mat); const legL = new THREE.Group(); legL.position.set(-0.11, 0.5, 0); legL.add(thighL); thighL.position.y = -0.21; group.add(legL);
-  const shinL = new THREE.Mesh(cap(0.08, 0.42), mat); shinL.position.set(0, -0.63, 0); legL.add(shinL);
-  const footL = new THREE.Mesh(sph(0.09), mat); footL.position.set(0, -0.86, 0.07); footL.scale.set(1, 0.6, 1.5); legL.add(footL);
+  // Real hip→knee→ankle chains (previously thigh+shin+foot were flat
+  // siblings under one hip pivot, so the whole leg swung rigidly with no
+  // knee bend at all — the "bounce" read as a stiff bob, not a squat).
+  // kneeL/kneeR bend independently now, so the groove/jump actually
+  // compresses and releases like a real dance move.
+  const legL = new THREE.Group(); legL.position.set(-0.11, 0.5, 0); group.add(legL);
+  const thighL = new THREE.Mesh(cap(0.095, 0.42), mat); thighL.position.y = -0.21; legL.add(thighL);
+  const kneeL = new THREE.Group(); kneeL.position.set(0, -0.42, 0); legL.add(kneeL);
+  const shinL = new THREE.Mesh(cap(0.08, 0.42), mat); shinL.position.y = -0.21; kneeL.add(shinL);
+  const footL = new THREE.Mesh(sph(0.09), mat); footL.position.set(0, -0.44, 0.07); footL.scale.set(1, 0.6, 1.5); kneeL.add(footL);
 
-  const thighR = new THREE.Mesh(cap(0.095, 0.42), mat); const legR = new THREE.Group(); legR.position.set(0.11, 0.5, 0); legR.add(thighR); thighR.position.y = -0.21; group.add(legR);
-  const shinR = new THREE.Mesh(cap(0.08, 0.42), mat); shinR.position.set(0, -0.63, 0); legR.add(shinR);
-  const footR = new THREE.Mesh(sph(0.09), mat); footR.position.set(0, -0.86, 0.07); footR.scale.set(1, 0.6, 1.5); legR.add(footR);
+  const legR = new THREE.Group(); legR.position.set(0.11, 0.5, 0); group.add(legR);
+  const thighR = new THREE.Mesh(cap(0.095, 0.42), mat); thighR.position.y = -0.21; legR.add(thighR);
+  const kneeR = new THREE.Group(); kneeR.position.set(0, -0.42, 0); legR.add(kneeR);
+  const shinR = new THREE.Mesh(cap(0.08, 0.42), mat); shinR.position.y = -0.21; kneeR.add(shinR);
+  const footR = new THREE.Mesh(sph(0.09), mat); footR.position.set(0, -0.44, 0.07); footR.scale.set(1, 0.6, 1.5); kneeR.add(footR);
 
   const shoulderL = new THREE.Group(); shoulderL.position.set(-0.29, 1.32, 0); group.add(shoulderL);
   const upperArmL = new THREE.Mesh(cap(0.07, 0.34), mat); upperArmL.position.y = -0.19; shoulderL.add(upperArmL);
@@ -167,7 +176,7 @@ function buildFigureRig(mat: THREE.ShaderMaterial, capeMat: THREE.ShaderMaterial
   cape.rotation.x = 0.12;
   group.add(cape);
 
-  return { group, legL, legR, shoulderL, shoulderR, foreArmL, foreArmR, torso, head, hips, cape };
+  return { group, legL, legR, kneeL, kneeR, shoulderL, shoulderR, foreArmL, foreArmR, torso, head, hips, cape };
 }
 
 function buildBeamMaterial() {
@@ -425,9 +434,31 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   let beatPulse = 0; // decays after each beat tick
   let beatCount = 0;
 
+  // Adaptive quality — same pattern used for the other 3D scenes in this
+  // codebase (Office3D.jsx, src/orb/OrbScene.ts): watch real frame times
+  // and shed cost (bloom first, then resolution) if a weaker device can't
+  // sustain a smooth framerate, instead of a fixed one-size-fits-all
+  // quality level. Sticky downgrade only, never auto-upgrades back.
+  let qTier = 0;
+  let lastFrameTime = 0, warmT = 0, fpsT = 0, fpsN = 0, lowStreak = 0;
+  function applyQTier() {
+    if (qTier >= 1) bloom.enabled = false;
+    if (qTier >= 2) renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1));
+  }
+
   function frame(now: number) {
     raf = requestAnimationFrame(frame);
     if (document.hidden) return;
+    const dt = lastFrameTime ? Math.min((now - lastFrameTime) / 1000, 0.05) : 0.016;
+    lastFrameTime = now;
+    if (qTier < 2) {
+      warmT += dt; fpsT += dt; fpsN++;
+      if (warmT > 2.5 && fpsT >= 1) {
+        const fps = fpsN / fpsT; fpsT = 0; fpsN = 0;
+        if (fps < 40) { if (++lowStreak >= 2) { lowStreak = 0; qTier++; applyQTier(); } }
+        else lowStreak = 0;
+      }
+    }
     const t = (now - start) / 1000;
     const targetEnergy = playing ? 1 : 0.25;
     energy += (targetEnergy - energy) * 0.04;
@@ -485,8 +516,10 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       rig.group.rotation.y = Math.sin(t * 0.3) * 0.08;
       rig.hips.rotation.z = Math.sin(t * 2.1) * 0.06 * (0.4 + energy * 0.6);
       rig.torso.rotation.y = Math.sin(t * 1.3) * 0.1 * (0.4 + energy * 0.6);
-      rig.legL.rotation.x = -bounce * 0.35;
-      rig.legR.rotation.x = bounce * 0.2;
+      rig.legL.rotation.x = -bounce * 0.18;
+      rig.legR.rotation.x = bounce * 0.1;
+      rig.kneeL.rotation.x = bounce * 0.55;
+      rig.kneeR.rotation.x = bounce * 0.4;
       rig.shoulderL.rotation.z = 0.3 + Math.sin(t * 2.4) * 0.25 * (0.3 + energy * 0.7);
       rig.shoulderR.rotation.z = -0.3 - Math.sin(t * 2.4 + 0.5) * 0.25 * (0.3 + energy * 0.7);
       rig.foreArmL.rotation.z = Math.sin(t * 2.4 + 1) * 0.3 * energy;
@@ -497,8 +530,10 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       rig.group.rotation.y = Math.sin(t * 0.5) * 0.05;
       rig.hips.rotation.z = Math.sin(t * 1.6) * 0.09 * energy;
       rig.torso.rotation.z = Math.sin(t * 1.6) * 0.08 * energy;
-      rig.legL.rotation.x = -bounce * 0.15;
-      rig.legR.rotation.x = bounce * 0.1;
+      rig.legL.rotation.x = -bounce * 0.08;
+      rig.legR.rotation.x = bounce * 0.05;
+      rig.kneeL.rotation.x = bounce * 0.35;
+      rig.kneeR.rotation.x = bounce * 0.28;
       rig.shoulderL.rotation.z = 2.6 + Math.sin(t * 1.8) * 0.15 * energy;
       rig.shoulderR.rotation.z = -2.6 - Math.sin(t * 1.8 + 0.4) * 0.15 * energy;
       rig.foreArmL.rotation.z = Math.sin(t * 1.8 + 0.6) * 0.2 * energy;
@@ -509,8 +544,10 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       rig.group.rotation.y += 0.012 * energy;
       rig.hips.rotation.z = Math.sin(t * 1.4) * 0.04;
       rig.torso.rotation.y = 0;
-      rig.legL.rotation.x = -bounce * 0.1;
-      rig.legR.rotation.x = bounce * 0.1;
+      rig.legL.rotation.x = -bounce * 0.05;
+      rig.legR.rotation.x = bounce * 0.05;
+      rig.kneeL.rotation.x = bounce * 0.22;
+      rig.kneeR.rotation.x = bounce * 0.22;
       rig.shoulderL.rotation.z = 1.35 + Math.sin(t * 1.2) * 0.1;
       rig.shoulderR.rotation.z = -1.35 - Math.sin(t * 1.2 + 0.3) * 0.1;
       rig.foreArmL.rotation.z = 0.1;
