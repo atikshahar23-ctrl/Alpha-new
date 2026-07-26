@@ -171,13 +171,15 @@ function buildFigureRig(mat: THREE.ShaderMaterial, capeMat: THREE.ShaderMaterial
   const shinR = new THREE.Mesh(cap(0.08, 0.42), mat); shinR.position.y = -0.21; kneeR.add(shinR);
   const footR = new THREE.Mesh(sph(0.09), mat); footR.position.set(0, -0.44, 0.07); footR.scale.set(1, 0.6, 1.5); kneeR.add(footR);
 
-  const shoulderL = new THREE.Group(); shoulderL.position.set(-0.29, 1.32, 0); group.add(shoulderL);
+  // Shoulder pivots sit wide of the torso capsule (r=0.22) so raised arms
+  // sweep OUTSIDE the body instead of clipping through it.
+  const shoulderL = new THREE.Group(); shoulderL.position.set(-0.33, 1.34, 0); group.add(shoulderL);
   const upperArmL = new THREE.Mesh(cap(0.07, 0.34), mat); upperArmL.position.y = -0.19; shoulderL.add(upperArmL);
   const foreArmL = new THREE.Group(); foreArmL.position.set(0, -0.4, 0); shoulderL.add(foreArmL);
   const foreArmMeshL = new THREE.Mesh(cap(0.06, 0.32), mat); foreArmMeshL.position.y = -0.17; foreArmL.add(foreArmMeshL);
   const handL = new THREE.Mesh(sph(0.065), mat); handL.position.y = -0.36; foreArmL.add(handL);
 
-  const shoulderR = new THREE.Group(); shoulderR.position.set(0.29, 1.32, 0); group.add(shoulderR);
+  const shoulderR = new THREE.Group(); shoulderR.position.set(0.33, 1.34, 0); group.add(shoulderR);
   const upperArmR = new THREE.Mesh(cap(0.07, 0.34), mat); upperArmR.position.y = -0.19; shoulderR.add(upperArmR);
   const foreArmR = new THREE.Group(); foreArmR.position.set(0, -0.4, 0); shoulderR.add(foreArmR);
   const foreArmMeshR = new THREE.Mesh(cap(0.06, 0.32), mat); foreArmMeshR.position.y = -0.17; foreArmR.add(foreArmMeshR);
@@ -522,6 +524,50 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       shRz: a < 0 ? -1.9 : -0.4, fARz: a < 0 ? -0.05 : -0.9,
       hipsRz: a * 0.08,
     }; },
+    // 9 · Running man — alternating knee lifts with opposed arm swing.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      legLx: a > 0 ? -0.75 : 0.3, kneeLx: a > 0 ? 1.0 : 0.1,
+      legRx: a < 0 ? -0.75 : 0.3, kneeRx: a < 0 ? 1.0 : 0.1,
+      rootY: -0.09, torsoRx: 0.12,
+      shLx: a * 0.55, shRx: -a * 0.55, fALz: 0.95, fARz: -0.95,
+      headRx: 0.06,
+    }; },
+    // 10 · Disco point — Saturday-night diagonal points, hand on hip between.
+    (s) => { const a = s % 4 < 2 ? 1 : -1; return {
+      shRz: a > 0 ? -2.35 : -0.35, fARz: a > 0 ? -0.1 : -1.15, shRx: a > 0 ? -0.25 : 0,
+      shLz: a < 0 ? 2.35 : 0.35, fALz: a < 0 ? 0.1 : 1.15, shLx: a < 0 ? -0.25 : 0,
+      headRy: a * 0.3, headRx: -0.14, torsoRz: -a * 0.12, hipsRz: a * 0.15,
+      kneeLx: 0.25, kneeRx: 0.25, rootY: -0.04,
+    }; },
+    // 11 · Body wave — chest rolls forward/up in sequence, arms low and loose.
+    (s): Pose => { const q = s % 4; return q === 0
+      ? { torsoRx: 0.28, headRx: 0.2, rootY: -0.1, kneeLx: 0.45, kneeRx: 0.45, legLx: -0.15, legRx: -0.15, shLz: 0.5, shRz: -0.5, fALz: 0.5, fARz: -0.5 }
+      : q === 1
+      ? { torsoRx: -0.22, headRx: -0.16, rootY: -0.01, kneeLx: 0.1, kneeRx: 0.1, shLz: 0.65, shRz: -0.65, fALz: 0.2, fARz: -0.2 }
+      : { torsoRx: 0.05, rootY: -0.05, kneeLx: 0.28, kneeRx: 0.28, hipsRz: (q === 2 ? 1 : -1) * 0.1, shLz: 0.45, shRz: -0.45, fALz: 0.7, fARz: -0.7 };
+    },
+    // 12 · Salsa side-step — hips leading hard, bent arms alternating.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      rootX: a * 0.2, hipsRz: a * 0.22, torsoRz: -a * 0.14, torsoRy: a * 0.16,
+      legLx: a > 0 ? -0.25 : 0, legRx: a < 0 ? -0.25 : 0,
+      kneeLx: a > 0 ? 0.45 : 0.15, kneeRx: a < 0 ? 0.45 : 0.15,
+      shLz: 0.55, shRz: -0.55, fALz: a > 0 ? 1.25 : 0.5, fARz: a < 0 ? -1.25 : -0.5,
+      fALx: -0.3, fARx: -0.3, headRy: a * 0.18, rootY: -0.05,
+    }; },
+    // 13 · Kick & punch — front kicks with the opposite arm punching forward.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      legLx: a > 0 ? -0.85 : 0.05, kneeLx: a > 0 ? 0.12 : 0.3,
+      legRx: a < 0 ? -0.85 : 0.05, kneeRx: a < 0 ? 0.12 : 0.3,
+      shLx: a < 0 ? -1.15 : 0.25, fALx: a < 0 ? -0.25 : 0, fALz: a < 0 ? 0.1 : 0.8,
+      shRx: a > 0 ? -1.15 : 0.25, fARx: a > 0 ? -0.25 : 0, fARz: a > 0 ? -0.1 : -0.8,
+      rootY: -0.06, torsoRx: 0.08, torsoRy: -a * 0.14,
+    }; },
+    // 14 · Drop & freeze — deep low groove drop, one arm flung high; holds,
+    // then pops back up. Big dynamic-range contrast against the fast moves.
+    (s): Pose => s % 4 < 2
+      ? { rootY: -0.24, kneeLx: 1.25, kneeRx: 1.25, legLx: -0.5, legRx: -0.5, torsoRx: 0.15, torsoRz: 0.14,
+          shLz: 2.15, fALz: 0.15, shRz: -0.5, fARz: -1.0, headRy: 0.25, headRx: -0.12, hipsRz: 0.1 }
+      : { rootY: -0.02, kneeLx: 0.15, kneeRx: 0.15, shLz: 0.6, shRz: -0.6, fALz: 0.4, fARz: -0.4, torsoRz: -0.06 },
   ];
   let movePlaylist = shuffleMoves(MOVES.map((_, i) => i));
   let moveCursor = 0;
@@ -646,10 +692,16 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     rig.torso.rotation.z = S.torsoRz;
     rig.head.rotation.x = S.headRx + Math.sin(t * 1.7) * 0.02;
     rig.head.rotation.y = S.headRy + Math.sin(t * 1.1 + 0.4) * 0.06;
-    rig.shoulderL.rotation.z = S.shLz; rig.shoulderL.rotation.x = S.shLx;
-    rig.shoulderR.rotation.z = S.shRz; rig.shoulderR.rotation.x = S.shRx;
-    rig.foreArmL.rotation.z = S.fALz; rig.foreArmL.rotation.x = S.fALx;
-    rig.foreArmR.rotation.z = S.fARz; rig.foreArmR.rotation.x = S.fARx;
+    // Sign flip on the Z axes: poses are authored as "positive = raise the
+    // arm", but +Z rotation swings a hanging left arm INWARD through the
+    // torso (this was the "body swallows the arms" bug). Negating here
+    // makes every raise sweep OUTWARD around the body; for arms already
+    // overhead, an authored negative (e.g. the clap) correctly curls
+    // inward above the head where there is nothing to clip through.
+    rig.shoulderL.rotation.z = -S.shLz; rig.shoulderL.rotation.x = S.shLx;
+    rig.shoulderR.rotation.z = -S.shRz; rig.shoulderR.rotation.x = S.shRx;
+    rig.foreArmL.rotation.z = -S.fALz; rig.foreArmL.rotation.x = S.fALx;
+    rig.foreArmR.rotation.z = -S.fARz; rig.foreArmR.rotation.x = S.fARx;
     rig.legL.rotation.x = S.legLx; rig.legL.rotation.z = S.legLz;
     rig.legR.rotation.x = S.legRx; rig.legR.rotation.z = S.legRz;
     rig.kneeL.rotation.x = S.kneeLx + bounce * 0.25;
