@@ -664,13 +664,312 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       rootY: hi ? 0.02 : -0.12, kneeLx: hi ? 0.1 : 0.55, kneeRx: hi ? 0.1 : 0.55,
       torsoRx: hi ? -0.06 : 0.1, headRx: hi ? -0.15 : 0.05,
     }; },
+
+    // ═══════ HIP-HOP / STREET (19-28) ═══════
+    // 19 · Bounce rock — two-beat lean rock, fists riding low.
+    (s) => { const a = s % 4 < 2 ? 1 : -1; return {
+      hipsRz: a * 0.16, torsoRz: -a * 0.12, torsoRy: a * 0.18, rootX: a * 0.08,
+      shLz: 0.5, shRz: -0.5, fALz: 1.0, fARz: -1.0, headRy: a * 0.2, rootY: -0.07, kneeLx: 0.35, kneeRx: 0.35,
+    }; },
+    // 20 · Shoulder bounce — dipping shoulders alternately, arms loose.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      torsoRz: a * 0.14, hipsRz: -a * 0.06, shLz: 0.4 + (a > 0 ? 0.25 : 0), shRz: -0.4 - (a < 0 ? 0.25 : 0),
+      fALz: 0.35, fARz: -0.35, headRy: a * 0.1, rootY: -0.05 + (s % 2 ? -0.03 : 0), kneeLx: 0.28, kneeRx: 0.28,
+    }; },
+    // 21 · Swag cross — forearms crossed in FRONT of the chest (x brings
+    // them forward off the torso plane, so no clipping), head cocked.
+    (s) => { const a = s % 4 < 2 ? 1 : -1; return {
+      shLz: 0.85, shRz: -0.85, shLx: -0.55, shRx: -0.55, fALx: -0.9, fARx: -0.9, fALz: -0.28, fARz: 0.28,
+      headRy: a * 0.28, headRx: 0.08, torsoRz: a * 0.08, rootY: -0.06, kneeLx: 0.3, kneeRx: 0.3, hipsRz: a * 0.1,
+    }; },
+    // 22 · Chest pop — sharp rib-cage pops on every beat.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      torsoRx: a > 0 ? -0.22 : 0.16, headRx: a > 0 ? 0.1 : -0.06, rootY: a > 0 ? -0.02 : -0.09,
+      shLz: 0.7, shRz: -0.7, fALz: 0.7, fARz: -0.7, shLx: a > 0 ? 0.2 : -0.15, shRx: a > 0 ? 0.2 : -0.15, kneeLx: 0.25, kneeRx: 0.25,
+    }; },
+    // 23 · Arm wave chain — the raise travels from one arm to the other.
+    (s) => { const q = s % 4; return {
+      shLz: q === 0 ? 1.6 : q === 1 ? 0.9 : 0.35, fALz: q === 0 ? 0.2 : 0.8,
+      shRz: q === 2 ? -1.6 : q === 3 ? -0.9 : -0.35, fARz: q === 2 ? -0.2 : -0.8,
+      torsoRz: q < 2 ? 0.1 : -0.1, headRy: q < 2 ? 0.2 : -0.2, rootY: -0.04, kneeLx: 0.2, kneeRx: 0.2,
+    }; },
+    // 24 · Toprock — b-boy standing cross-steps, arms opening wide.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      legLx: a > 0 ? -0.55 : 0.1, kneeLx: a > 0 ? 0.35 : 0.2, legRx: a < 0 ? -0.55 : 0.1, kneeRx: a < 0 ? 0.35 : 0.2,
+      shLz: a > 0 ? 1.5 : 0.5, shRz: a < 0 ? -1.5 : -0.5, fALz: 0.3, fARz: -0.3,
+      torsoRy: a * 0.22, rootY: -0.08, hipsRz: a * 0.08, headRy: a * 0.15,
+    }; },
+    // 25 · Low freeze — deep crouch, one hand planted low, one flung high.
+    (s): Pose => s % 4 < 2
+      ? { rootY: -0.28, kneeLx: 1.3, kneeRx: 1.3, legLx: -0.5, legRx: -0.6, torsoRz: 0.22, torsoRx: 0.18,
+          shLz: 0.15, shLx: 0.35, fALz: 0.1, shRz: -2.5, fARz: -0.1, headRy: -0.3, hipsRz: 0.12 }
+      : { rootY: -0.05, kneeLx: 0.25, kneeRx: 0.25, shLz: 0.55, shRz: -0.55, fALz: 0.5, fARz: -0.5 },
+    // 26 · Krump — aggressive chest hits and arm slams.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      torsoRx: a > 0 ? 0.2 : -0.1, rootY: a > 0 ? -0.12 : -0.04,
+      shLx: a > 0 ? -1.0 : 0.2, fALx: a > 0 ? -1.1 : 0, fALz: a > 0 ? -0.2 : 0.9,
+      shRz: a < 0 ? -1.7 : -0.5, fARz: a < 0 ? -0.15 : -0.9,
+      legLx: a > 0 ? -0.35 : 0, kneeLx: a > 0 ? 0.55 : 0.25, kneeRx: 0.3, headRx: 0.12, torsoRy: a * 0.18,
+    }; },
+    // 27 · Kick-out lean — quick low kicks with a cocky lean-back.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      torsoRx: -0.14, headRx: -0.08,
+      legLx: a > 0 ? -0.7 : 0.05, kneeLx: a > 0 ? 0.05 : 0.3, legRx: a < 0 ? -0.7 : 0.05, kneeRx: a < 0 ? 0.05 : 0.3,
+      shLz: 0.9, shRz: -0.9, fALz: 0.8, fARz: -0.8, rootY: -0.07, hipsRz: -a * 0.08,
+    }; },
+    // 28 · Windmill arms — both arms sweep the same big circle together.
+    (s) => { const q = s % 4; return {
+      shLz: q === 0 ? 2.4 : q === 1 ? 1.5 : q === 2 ? 0.4 : 1.5,
+      shRz: q === 0 ? -0.4 : q === 1 ? -1.5 : q === 2 ? -2.4 : -1.5,
+      fALz: 0.25, fARz: -0.25, torsoRz: q === 0 ? 0.15 : q === 2 ? -0.15 : 0,
+      rootY: -0.05, kneeLx: 0.25, kneeRx: 0.25, headRy: q < 2 ? 0.15 : -0.15,
+    }; },
+
+    // ═══════ LATIN (29-36) ═══════
+    // 29 · Salsa quarter turns — hips rolling through each turn.
+    (s) => ({
+      rootRy: (Math.PI / 2) * (s % 4 < 2 ? 0 : 1), hipsRz: (s % 2 ? 1 : -1) * 0.2, torsoRz: (s % 2 ? -1 : 1) * 0.1,
+      shLz: 0.8, shRz: -0.8, fALz: 0.9, fARz: -0.9, rootY: -0.05, kneeLx: 0.3, kneeRx: 0.3, headRy: (s % 2 ? 1 : -1) * 0.12,
+    }),
+    // 30 · Bachata side steps — glide, glide, HIP POP on the fourth.
+    (s) => { const q = s % 4; const pop = q === 3; return {
+      rootX: q < 2 ? -0.18 : 0.18, hipsRz: pop ? 0.32 : (q % 2 ? 0.12 : -0.12), torsoRz: pop ? -0.18 : 0,
+      shLz: 0.6, shRz: -0.6, fALz: 0.85, fARz: -0.85, rootY: pop ? -0.09 : -0.04, kneeLx: 0.25, kneeRx: 0.25, headRy: pop ? 0.2 : 0,
+    }; },
+    // 31 · Merengue march — quick small marching lifts, hips never stop.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      legLx: a > 0 ? -0.3 : 0, kneeLx: a > 0 ? 0.5 : 0.2, legRx: a < 0 ? -0.3 : 0, kneeRx: a < 0 ? 0.5 : 0.2,
+      hipsRz: a * 0.24, torsoRz: -a * 0.1, shLz: 0.7, shRz: -0.7, fALz: 1.0, fARz: -1.0, rootY: -0.05,
+    }; },
+    // 32 · Cumbia back-step — one foot sweeps back, arms swinging free.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      legLx: a > 0 ? 0.5 : -0.1, kneeLx: a > 0 ? 0.4 : 0.15, legRx: a < 0 ? 0.5 : -0.1, kneeRx: a < 0 ? 0.4 : 0.15,
+      torsoRx: 0.1, hipsRz: a * 0.14, shLx: a * 0.5, shRx: -a * 0.5, fALz: 0.6, fARz: -0.6, rootY: -0.06, headRy: a * 0.1,
+    }; },
+    // 33 · Samba bounce — rapid knee pulses, arms out low and loose.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      rootY: a > 0 ? -0.11 : -0.03, kneeLx: a > 0 ? 0.6 : 0.2, kneeRx: a > 0 ? 0.55 : 0.2,
+      hipsRz: a * 0.18, shLz: 1.1, shRz: -1.1, fALz: 0.45, fARz: -0.45, torsoRz: -a * 0.08, headRx: 0.05,
+    }; },
+    // 34 · Reggaeton dembow — deep grounded hip hits.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      rootY: -0.14, kneeLx: 0.7, kneeRx: 0.7, legLx: -0.2, legRx: -0.2,
+      hipsRz: a * 0.28, torsoRx: 0.14, torsoRz: -a * 0.12, headRx: 0.1,
+      shLz: 0.45, shRz: -0.45, fALz: 0.95, fARz: -0.95, rootX: a * 0.05,
+    }; },
+    // 35 · Rumba — slow sweeping figure, arms carving graceful arcs.
+    (s) => { const q = s % 4; return {
+      hipsRz: q < 2 ? 0.22 : -0.22, torsoRz: q < 2 ? -0.14 : 0.14, rootX: q < 2 ? 0.1 : -0.1,
+      shLz: q < 2 ? 1.7 : 0.6, fALz: q < 2 ? 0.35 : 0.75, shRz: q < 2 ? -0.6 : -1.7, fARz: q < 2 ? -0.75 : -0.35,
+      headRy: q < 2 ? 0.2 : -0.2, rootY: -0.04, kneeLx: 0.2, kneeRx: 0.2,
+    }; },
+    // 36 · Cha-cha — two quick side hits then a held stretch.
+    (s): Pose => { const q = s % 4; return q < 2
+      ? { rootX: (q ? 1 : -1) * 0.14, hipsRz: (q ? 1 : -1) * 0.18, kneeLx: 0.35, kneeRx: 0.35, rootY: -0.07, shLz: 0.7, shRz: -0.7, fALz: 0.8, fARz: -0.8 }
+      : { rootX: 0, hipsRz: q === 2 ? 0.26 : -0.26, torsoRz: q === 2 ? -0.15 : 0.15, shLz: q === 2 ? 1.9 : 0.5, shRz: q === 2 ? -0.5 : -1.9, fALz: 0.3, fARz: -0.3, rootY: -0.03, headRy: q === 2 ? 0.25 : -0.25 };
+    },
+
+    // ═══════ DISCO / FUNK (37-42) ═══════
+    // 37 · Double sky points — both hands shoot up, then down to the hips.
+    (s) => { const up = s % 2 === 0; return {
+      shLz: up ? 2.45 : 0.4, shRz: up ? -2.45 : -0.4, fALz: up ? 0.1 : 1.15, fARz: up ? -0.1 : -1.15,
+      rootY: up ? -0.02 : -0.09, torsoRx: up ? -0.08 : 0.08, headRx: up ? -0.2 : 0.05, kneeLx: up ? 0.12 : 0.4, kneeRx: up ? 0.12 : 0.4, hipsRz: (s % 4 < 2 ? 1 : -1) * 0.1,
+    }; },
+    // 38 · Funky chicken — elbows out, wings flapping on every beat.
+    (s) => { const flap = s % 2 === 0; return {
+      shLz: 1.3, shRz: -1.3, fALz: flap ? 1.45 : 0.6, fARz: flap ? -1.45 : -0.6,
+      rootY: flap ? -0.08 : -0.03, kneeLx: flap ? 0.45 : 0.15, kneeRx: flap ? 0.45 : 0.15,
+      headRx: flap ? 0.12 : -0.05, torsoRx: 0.1, hipsRz: (s % 4 < 2 ? 1 : -1) * 0.08,
+    }; },
+    // 39 · Hustle roll — fists rolling around each other in front.
+    (s) => { const q = s % 4; return {
+      shLx: -0.7, shRx: -0.7, shLz: 0.5, shRz: -0.5,
+      fALx: q < 2 ? -1.2 : -0.5, fARx: q < 2 ? -0.5 : -1.2, fALz: 0.2, fARz: -0.2,
+      torsoRy: (q < 2 ? 1 : -1) * 0.12, rootY: -0.05, kneeLx: 0.3, kneeRx: 0.3, hipsRz: (q % 2 ? 1 : -1) * 0.1,
+    }; },
+    // 40 · Half-spin point — spin halfway, land in a full point.
+    (s): Pose => { const q = s % 4; return q < 2
+      ? { rootRy: Math.PI * (q === 1 ? 1 : 0.4), shLz: 1.2, shRz: -1.2, kneeLx: 0.3, kneeRx: 0.3, rootY: -0.05 }
+      : { rootRy: q === 2 ? Math.PI * 1.6 : Math.PI * 2, shRz: -2.3, shRx: -0.3, fARz: -0.1, shLz: 0.4, fALz: 1.1, headRy: -0.25, rootY: -0.04, kneeLx: 0.2, kneeRx: 0.3, hipsRz: 0.12 };
+    },
+    // 41 · Hip bump — side hip smashes with the opposite arm flung up.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      hipsRz: a * 0.3, rootX: a * 0.12, torsoRz: -a * 0.18,
+      shLz: a > 0 ? 2.1 : 0.5, fALz: a > 0 ? 0.2 : 0.9, shRz: a < 0 ? -2.1 : -0.5, fARz: a < 0 ? -0.2 : -0.9,
+      rootY: -0.06, kneeLx: 0.3, kneeRx: 0.3, headRy: -a * 0.15,
+    }; },
+    // 42 · Strut — walking in place with big arm swings and a head nod.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      legLx: a > 0 ? -0.4 : 0.1, kneeLx: a > 0 ? 0.6 : 0.15, legRx: a < 0 ? -0.4 : 0.1, kneeRx: a < 0 ? 0.6 : 0.15,
+      shLx: a * 0.6, shRx: -a * 0.6, fALz: 0.5, fARz: -0.5, headRx: a > 0 ? 0.1 : -0.05,
+      torsoRx: -0.06, rootY: -0.05, hipsRz: a * 0.06,
+    }; },
+
+    // ═══════ ELECTRONIC / RAVE (43-50) ═══════
+    // 43 · Shuffle T-step — fast feet, arms riding low and tight.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      legLx: a > 0 ? -0.45 : 0.2, kneeLx: a > 0 ? 0.7 : 0.05, legRx: a < 0 ? -0.45 : 0.2, kneeRx: a < 0 ? 0.7 : 0.05,
+      legLz: a > 0 ? 0.12 : 0, legRz: a < 0 ? -0.12 : 0,
+      rootY: -0.08, shLz: 0.45, shRz: -0.45, fALz: 0.9, fARz: -0.9, torsoRx: 0.08, hipsRz: a * 0.1,
+    }; },
+    // 44 · Big fish — cast both arms wide, then reel them in.
+    (s): Pose => s % 4 < 2
+      ? { shLz: 1.6, shRz: -1.6, fALz: 0.15, fARz: -0.15, torsoRx: -0.08, rootY: -0.03, kneeLx: 0.2, kneeRx: 0.2, headRx: -0.1 }
+      : { shLz: 0.7, shRz: -0.7, fALz: 1.35, fARz: -1.35, shLx: -0.4, shRx: -0.4, torsoRx: 0.12, rootY: -0.08, kneeLx: 0.4, kneeRx: 0.4, headRx: 0.08 },
+    // 45 · Sky punches — alternating fists hammering the air upward.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      shLz: a > 0 ? 2.5 : 0.6, fALz: a > 0 ? 0.05 : 1.1, shRz: a < 0 ? -2.5 : -0.6, fARz: a < 0 ? -0.05 : -1.1,
+      rootY: a > 0 ? -0.02 : -0.08, kneeLx: 0.3, kneeRx: 0.3, torsoRz: a * 0.1, headRx: -0.12, hipsRz: -a * 0.08,
+    }; },
+    // 46 · Hardstyle kicks — high snap kicks with a hop.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      legLx: a > 0 ? -1.0 : 0.15, kneeLx: a > 0 ? 0.1 : 0.4, legRx: a < 0 ? -1.0 : 0.15, kneeRx: a < 0 ? 0.1 : 0.4,
+      rootY: a > 0 ? 0.04 : -0.08, shLz: 0.8, shRz: -0.8, fALz: 0.9, fARz: -0.9, torsoRx: -0.06,
+    }; },
+    // 47 · Gloving — hands weaving small circles in front of the face.
+    (s) => { const q = s % 4; return {
+      shLz: 1.5, shRz: -1.5, shLx: -0.5, shRx: -0.5,
+      fALx: q % 2 ? -1.15 : -0.75, fARx: q % 2 ? -0.75 : -1.15, fALz: q < 2 ? -0.15 : 0.25, fARz: q < 2 ? -0.25 : 0.15,
+      headRx: -0.06, rootY: -0.04, kneeLx: 0.2, kneeRx: 0.2, torsoRy: (q < 2 ? 1 : -1) * 0.08,
+    }; },
+    // 48 · Pogo — straight vertical jumps, arms snapping up on the fourth.
+    (s): Pose => { const q = s % 4; return q === 3
+      ? { rootY: 0.12, shLz: 2.4, shRz: -2.4, kneeLx: 0.5, kneeRx: 0.5, headRx: -0.15 }
+      : { rootY: q % 2 ? -0.1 : 0.02, shLz: 0.4, shRz: -0.4, fALz: 0.8, fARz: -0.8, kneeLx: q % 2 ? 0.5 : 0.15, kneeRx: q % 2 ? 0.5 : 0.15 };
+    },
+    // 49 · Headbang — full head-and-torso dips into a low stance.
+    (s) => { const dn = s % 2 === 0; return {
+      headRx: dn ? 0.45 : -0.25, torsoRx: dn ? 0.3 : -0.08, rootY: dn ? -0.12 : -0.03,
+      kneeLx: dn ? 0.6 : 0.2, kneeRx: dn ? 0.6 : 0.2, shLz: 0.7, shRz: -0.7, fALz: 0.9, fARz: -0.9, legLx: -0.15, legRx: -0.15,
+    }; },
+    // 50 · Rave sway — both arms high, waving in opposite phases.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      shLz: 2.3 + a * 0.2, shRz: -2.3 + a * 0.2, fALz: a * 0.4, fARz: a * 0.4,
+      torsoRz: a * 0.12, hipsRz: -a * 0.1, rootY: -0.04, kneeLx: 0.25, kneeRx: 0.25, headRy: a * 0.12, headRx: -0.1,
+    }; },
+
+    // ═══════ POP / CLASSICS (51-58) ═══════
+    // 51 · Moonwalk illusion — leaning glide, stiff legs alternating.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      rootX: -0.1 * (s % BEATS_PER_PATTERN) / 2 + 0.2, torsoRx: 0.16, headRx: -0.12,
+      legLx: a > 0 ? 0.35 : -0.15, kneeLx: a > 0 ? 0.05 : 0.35, legRx: a < 0 ? 0.35 : -0.15, kneeRx: a < 0 ? 0.05 : 0.35,
+      shLx: a * 0.35, shRx: -a * 0.35, fALz: 0.3, fARz: -0.3, rootY: -0.06,
+    }; },
+    // 52 · Thriller claws — clawed hands stalking side to side.
+    (s) => { const a = s % 4 < 2 ? 1 : -1; return {
+      shLz: 1.35, shRz: -1.35, shLx: -0.55, shRx: -0.55, fALx: -0.85, fARx: -0.85, fALz: 0.3, fARz: -0.3,
+      torsoRz: a * 0.16, rootX: a * 0.14, headRy: a * 0.3, headRx: 0.1, rootY: -0.07, kneeLx: 0.35, kneeRx: 0.35, hipsRz: -a * 0.1,
+    }; },
+    // 53 · Vogue frames — sharp hand frames around the face, snapping.
+    (s) => { const q = s % 4; return {
+      shLz: q === 0 || q === 3 ? 2.0 : 1.1, shRz: q === 1 || q === 2 ? -2.0 : -1.1,
+      fALx: q < 2 ? -1.0 : -0.3, fARx: q >= 2 ? -1.0 : -0.3, fALz: -0.2, fARz: 0.2,
+      headRy: (q % 2 ? 1 : -1) * 0.3, headRx: -0.08, torsoRz: (q < 2 ? 1 : -1) * 0.1, rootY: -0.03, kneeLx: 0.15, kneeRx: 0.15,
+    }; },
+    // 54 · Robot arm sequence — shoulder, then elbow, then snap down.
+    (s): Pose => { const q = s % 4; return q === 0
+      ? { shLz: 1.55, fALz: 1.2, shRz: -0.3, kneeLx: 0.1, kneeRx: 0.1, headRy: 0.3 }
+      : q === 1
+      ? { shLz: 1.55, fALz: 0.1, shRz: -0.3, headRy: 0.3, kneeLx: 0.1, kneeRx: 0.1 }
+      : q === 2
+      ? { shRz: -1.55, fARz: -1.2, shLz: 0.3, headRy: -0.3, kneeLx: 0.1, kneeRx: 0.1 }
+      : { shRz: -1.55, fARz: -0.1, shLz: 0.3, headRy: -0.3, kneeLx: 0.1, kneeRx: 0.1 };
+    },
+    // 55 · Sprinkler — one arm behind the head, the other ratcheting out.
+    (s) => { const q = s % 4; return {
+      shRz: -1.9, fARx: -1.25, // right hand tucked behind the head
+      shLz: 0.5 + q * 0.35, fALz: 0.25, torsoRy: -0.1 - q * 0.08,
+      rootY: -0.06, kneeLx: 0.3, kneeRx: 0.3, hipsRz: (q % 2 ? 1 : -1) * 0.1, headRy: 0.2,
+    }; },
+    // 56 · Lawnmower — grab the cord and YANK, twice per block.
+    (s): Pose => { const q = s % 4; return q < 2
+      ? { torsoRx: 0.2, rootY: -0.12, shRx: -0.8, fARz: -0.9, shLz: 0.4, kneeLx: 0.5, kneeRx: 0.5, headRx: 0.15 }
+      : { torsoRx: -0.1, torsoRy: -0.3, rootY: -0.03, shRx: 0.7, shRz: -0.9, fARz: -0.5, shLz: 0.4, kneeLx: 0.2, kneeRx: 0.2, headRy: -0.25 };
+    },
+    // 57 · Shopping cart — pushing the cart, plucking off the shelves.
+    (s): Pose => { const q = s % 4; return q < 2
+      ? { shLx: -0.85, shRx: -0.85, fALz: 0.35, fARz: -0.35, torsoRx: 0.1, rootY: -0.05, kneeLx: 0.3, kneeRx: 0.3, legLx: q ? -0.3 : 0 }
+      : { shLx: -0.85, fALz: 0.35, shRz: q === 2 ? -1.9 : -0.6, fARz: q === 2 ? -0.2 : -1.2, torsoRy: -0.2, headRy: -0.25, rootY: -0.04, kneeLx: 0.2, kneeRx: 0.2 };
+    },
+    // 58 · The Twist — knees pivoting together, arms counter-swinging.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      rootRy: a * 0.35, hipsRz: a * 0.14, torsoRy: -a * 0.3,
+      shLx: a * 0.55, shRx: a * 0.55, fALz: 0.85, fARz: -0.85,
+      rootY: s % 4 < 2 ? -0.04 : -0.12, kneeLx: s % 4 < 2 ? 0.2 : 0.55, kneeRx: s % 4 < 2 ? 0.2 : 0.55,
+    }; },
+
+    // ═══════ BALLROOM / WORLD (59-68) ═══════
+    // 59 · Waltz sway — grand three-count sways with a rise.
+    (s): Pose => { const q = s % 4; return q === 3
+      ? { rootY: 0.02, shLz: 1.6, shRz: -1.6, fALz: 0.3, fARz: -0.3, torsoRx: -0.06, headRx: -0.1 }
+      : { rootX: (q === 0 ? -1 : q === 1 ? 1 : 0) * 0.16, torsoRz: (q === 0 ? 1 : q === 1 ? -1 : 0) * 0.14, hipsRz: (q === 0 ? -1 : q === 1 ? 1 : 0) * 0.1,
+          shLz: 1.3, shRz: -1.3, fALz: 0.5, fARz: -0.5, rootY: -0.05, kneeLx: 0.2, kneeRx: 0.2 };
+    },
+    // 60 · Tango — sharp lunge, frame arms, head SNAP.
+    (s): Pose => s % 4 < 2
+      ? { legLx: -0.65, kneeLx: 0.75, legRx: 0.2, kneeRx: 0.1, torsoRy: 0.3, headRy: 0.45,
+          shLz: 1.4, fALz: 0.4, shRz: -0.9, fARz: -1.1, shRx: -0.5, rootY: -0.1, hipsRz: 0.1 }
+      : { legRx: -0.65, kneeRx: 0.75, legLx: 0.2, kneeLx: 0.1, torsoRy: -0.3, headRy: -0.45,
+          shRz: -1.4, fARz: -0.4, shLz: 0.9, fALz: 1.1, shLx: -0.5, rootY: -0.1, hipsRz: -0.1 },
+    // 61 · Flamenco — arms carving high curves, a proud stomp on the beat.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      shLz: a > 0 ? 2.35 : 1.2, fALz: a > 0 ? -0.35 : 0.5, shRz: a < 0 ? -2.35 : -1.2, fARz: a < 0 ? 0.35 : -0.5,
+      torsoRz: a * 0.12, headRx: -0.15, headRy: a * 0.2, hipsRz: -a * 0.08,
+      legLx: a > 0 ? -0.3 : 0, kneeLx: a > 0 ? 0.45 : 0.15, kneeRx: 0.15, rootY: -0.05,
+    }; },
+    // 62 · Bollywood bulbs — wrists screwing lightbulbs overhead.
+    (s) => { const q = s % 4; return {
+      shLz: 2.1, shRz: -2.1, fALz: q % 2 ? -0.45 : 0.15, fARz: q % 2 ? 0.45 : -0.15,
+      hipsRz: (q < 2 ? 1 : -1) * 0.22, torsoRz: (q < 2 ? -1 : 1) * 0.12, headRy: (q < 2 ? 1 : -1) * 0.25,
+      rootY: -0.06, kneeLx: 0.35, kneeRx: 0.35, rootX: (q < 2 ? 1 : -1) * 0.08,
+    }; },
+    // 63 · Dabke — line-dance stomps with linked-arm posture.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      shLz: 0.35, shRz: -0.35, fALz: 0.2, fARz: -0.2, torsoRz: a * 0.08,
+      legLx: a > 0 ? -0.75 : 0.05, kneeLx: a > 0 ? 0.35 : 0.2, legRx: a < 0 ? -0.75 : 0.05, kneeRx: a < 0 ? 0.35 : 0.2,
+      rootY: a > 0 ? -0.03 : -0.1, rootX: a * 0.1, headRy: a * 0.1, hipsRz: a * 0.1,
+    }; },
+    // 64 · Hora bounce — festive circle-dance spring, arms lifted wide.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      rootY: a > 0 ? 0.0 : -0.1, kneeLx: a > 0 ? 0.2 : 0.5, kneeRx: a > 0 ? 0.2 : 0.5,
+      shLz: 1.75, shRz: -1.75, fALz: 0.25, fARz: -0.25, rootX: a * 0.14,
+      torsoRz: a * 0.08, headRx: -0.08, hipsRz: -a * 0.06, legLx: a > 0 ? -0.25 : 0, legRx: a < 0 ? -0.25 : 0,
+    }; },
+    // 65 · Cossack squat kicks — impossibly low, legs firing forward.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      rootY: -0.3, torsoRx: 0.12,
+      legLx: a > 0 ? -0.95 : -0.35, kneeLx: a > 0 ? 0.05 : 1.35, legRx: a < 0 ? -0.95 : -0.35, kneeRx: a < 0 ? 0.05 : 1.35,
+      shLx: -0.6, shRx: -0.6, fALz: -0.25, fARz: 0.25, headRx: -0.05,
+    }; },
+    // 66 · Grounded pulse — wide stance, deep earth-driven knee drives.
+    (s) => { const dn = s % 2 === 0; return {
+      legLz: 0.22, legRz: -0.22, rootY: dn ? -0.16 : -0.06, kneeLx: dn ? 0.8 : 0.35, kneeRx: dn ? 0.8 : 0.35,
+      torsoRx: dn ? 0.18 : 0.05, shLz: 0.7, shRz: -0.7, fALz: dn ? 1.2 : 0.5, fARz: dn ? -1.2 : -0.5, headRx: dn ? 0.12 : 0,
+    }; },
+    // 67 · Haka — wide power stance, alternating chest slaps, fierce.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      legLz: 0.25, legRz: -0.25, rootY: -0.14, kneeLx: 0.65, kneeRx: 0.65, torsoRx: 0.16, headRx: 0.14,
+      shLx: a > 0 ? -0.95 : 0.1, fALx: a > 0 ? -1.05 : 0, fALz: a > 0 ? -0.2 : 0.6,
+      shRx: a < 0 ? -0.95 : 0.1, fARx: a < 0 ? -1.05 : 0, fARz: a < 0 ? 0.2 : -0.6,
+      torsoRy: a * 0.12,
+    }; },
+    // 68 · Capoeira ginga — rocking guard lunges, one arm shielding.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      legLx: a > 0 ? -0.5 : 0.4, kneeLx: a > 0 ? 0.7 : 0.2, legRx: a < 0 ? -0.5 : 0.4, kneeRx: a < 0 ? 0.7 : 0.2,
+      rootY: -0.12, rootX: a * 0.14, torsoRy: a * 0.35, torsoRx: 0.1,
+      shLz: a > 0 ? 0.4 : 1.0, shLx: a > 0 ? -0.9 : 0.2, fALx: a > 0 ? -1.0 : 0,
+      shRz: a < 0 ? -0.4 : -1.0, shRx: a < 0 ? -0.9 : 0.2, fARx: a < 0 ? -1.0 : 0,
+      headRy: a * 0.25, hipsRz: a * 0.1,
+    }; },
   ];
   // ── Style pools — the move set follows the track's energy: fast tracks
-  // pull from the aggressive hip-hop/popping set, mid tempo from groove/
-  // disco, slow tempo from latin/smooth. Indexes into MOVES above.
-  const POOL_FAST = [2, 8, 12, 16, 5, 15];   // robot, running man, kicks, stomp, jump-freeze, floss
-  const POOL_MID = [0, 3, 9, 10, 14, 17, 6]; // groove, turn, disco, body wave, arm waves, praise, claps
-  const POOL_SLOW = [1, 4, 7, 11, 13, 10];   // hands-up, skate, lunge, salsa, drop-freeze, body wave
+  // pull from the aggressive hip-hop/rave/percussive set, mid tempo from
+  // groove/disco/pop, slow tempo from latin/ballroom/smooth. Indexes into
+  // the 68-move library above.
+  // (0-based array indexes — the // N labels in the move comments are 1-based)
+  const POOL_FAST = [2, 8, 12, 16, 5, 15, 23, 25, 26, 30, 32, 35, 42, 44, 45, 47, 48, 57, 62, 65, 66];
+  const POOL_MID = [0, 3, 9, 10, 14, 17, 6, 18, 19, 20, 21, 22, 27, 36, 37, 40, 41, 43, 49, 51, 52, 53, 54, 55, 56, 61, 63, 67];
+  const POOL_SLOW = [1, 4, 7, 11, 13, 10, 24, 28, 29, 31, 33, 34, 38, 39, 46, 50, 58, 59, 60, 64];
   const poolForTempo = () => (tempoMs < 460 ? POOL_FAST : tempoMs <= 580 ? POOL_MID : POOL_SLOW);
   let currentMoveIdx = 0;
 
