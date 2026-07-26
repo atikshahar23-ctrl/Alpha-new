@@ -299,6 +299,14 @@
   }
   .hero-btn.on{border-color:var(--border-strong); box-shadow:0 0 16px rgba(0,229,255,.4);}
   .hero-btn.stage-exit{left:auto; right:10px;}
+  .avatar-colors{display:flex; flex-wrap:wrap; gap:8px; padding:4px 0;}
+  .av-dot{
+    width:30px; height:30px; border-radius:999px; cursor:pointer;
+    border:2px solid rgba(255,255,255,.14); padding:0; flex:none;
+    transition:transform .12s, border-color .12s, box-shadow .12s;
+  }
+  .av-dot:hover{transform:scale(1.12);}
+  .av-dot.on{border-color:#fff; box-shadow:0 0 12px rgba(0,229,255,.55); transform:scale(1.12);}
   /* Stage mode — the hero takes over the whole screen (party display /
      landscape phone propped up). The live line + LED frame stay on top. */
   body.stage-mode .hero-wrap{position:fixed; inset:0; z-index:80; height:100vh; height:100dvh; margin:0; border-radius:0; border:none;}
@@ -475,6 +483,10 @@
     <div class="eyebrow">הגדרות תצוגה ותרגום</div>
     <div class="settings-grid" style="margin-top:12px;">
       <label class="chk"><input type="checkbox" id="avatarToggle" checked> אווטאר תלת-מימד רוקד</label>
+      <div class="field-row" style="margin:0;">
+        <label>צבע האווטאר</label>
+        <div class="avatar-colors" id="avatarColors"></div>
+      </div>
       <label class="chk"><input type="checkbox" id="ledToggle" checked> תאורת LED מסביב למסך</label>
       <label class="chk"><input type="checkbox" id="wakeLockToggle" checked> השאר את המסך דלוק</label>
       <label class="chk"><input type="checkbox" id="eqToggle" checked> אקולייזר מאחורי המילים</label>
@@ -1854,7 +1866,7 @@
   // tiny window-level object (window.__lyricsAvatarBridge). Kept as a
   // separate module script so the working IIFE above doesn't need to be
   // restructured just to get an ES-module import. ──
-  import { mountLyricsAvatar } from '/src/lyrics/avatarScene.ts';
+  import { mountLyricsAvatar, AVATAR_THEMES } from '/src/lyrics/avatarScene.ts';
 
   const heroWrap = document.getElementById('heroWrap');
   const heroAvatar = document.getElementById('heroAvatar');
@@ -1870,12 +1882,15 @@
     if (pm !== null) lastParty = Math.max(0, Math.min(2, Number(pm) || 0));
     else if (localStorage.getItem('lt:party_on') === '1') lastParty = 1; // migrate old boolean
   } catch {}
+  let lastTheme = 0;
+  try { lastTheme = Math.max(0, Math.min(AVATAR_THEMES.length - 1, Number(localStorage.getItem('lt:avatar_theme')) || 0)); } catch {}
   function mount() {
     if (handle) return;
     handle = mountLyricsAvatar(heroAvatar);
     handle.setEnergy(lastEnergy);
     handle.setTempo(lastTempo);
     handle.setParty?.(lastParty);
+    handle.setTheme?.(lastTheme);
   }
   function unmount() {
     if (!handle) return;
@@ -1922,6 +1937,27 @@
     applyPartyUI();
   });
   applyPartyUI();
+
+  // Avatar color picker — one swatch per theme, gradient-filled from the
+  // theme's own rim colors, applied live and persisted.
+  const colorsWrap = document.getElementById('avatarColors');
+  const rgb = (v) => 'rgb(' + Math.round(v[0] * 255) + ',' + Math.round(v[1] * 255) + ',' + Math.round(v[2] * 255) + ')';
+  AVATAR_THEMES.forEach((th, i) => {
+    const dot = document.createElement('button');
+    dot.type = 'button';
+    dot.className = 'av-dot' + (i === lastTheme ? ' on' : '');
+    dot.title = th.name;
+    dot.style.background = th.rainbow
+      ? 'conic-gradient(red, yellow, lime, cyan, blue, magenta, red)'
+      : 'linear-gradient(135deg, ' + rgb(th.a) + ', ' + rgb(th.b) + ' 60%, ' + rgb(th.c) + ')';
+    dot.addEventListener('click', () => {
+      lastTheme = i;
+      try { localStorage.setItem('lt:avatar_theme', String(i)); } catch {}
+      handle?.setTheme?.(i);
+      colorsWrap.querySelectorAll('.av-dot').forEach((d, j) => d.classList.toggle('on', j === i));
+    });
+    colorsWrap.appendChild(dot);
+  });
 
   // "The words are seen only after [the avatar]" — reveal the lyrics/search
   // panel once the scene has had a moment to establish itself.

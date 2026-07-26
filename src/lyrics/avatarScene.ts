@@ -40,15 +40,43 @@ export interface LyricsAvatarHandle {
   // per-dancer beat offset, periodic perfect unison) · 2 = BIG PARTY —
   // a 30-alien crowd + DJ on a glowing dance floor.
   setParty?(mode: boolean | number): void;
+  // Avatar color theme — index into AVATAR_THEMES.
+  setTheme?(idx: number): void;
   dispose(): void;
 }
 
 const DEFAULT_TEMPO_MS = 560; // ~107bpm fallback, used until setTempo() supplies a real per-song value
 const BEATS_PER_PATTERN = 8; // choreography switches every N beats
 
+// ── Avatar color themes — user-selectable. a/b = the rim gradient pair,
+// c = the hot accent at grazing angles, eye = eyes/antenna-tips/energy-core
+// tint. "rainbow" ignores a/b/c and cycles the full spectrum in-shader. ──
+export interface AvatarTheme { name: string; a: [number, number, number]; b: [number, number, number]; c: [number, number, number]; eye: [number, number, number]; rainbow?: boolean }
+export const AVATAR_THEMES: AvatarTheme[] = [
+  { name: 'נאון קלאסי', a: [0.58, 0.24, 0.97], b: [0.16, 0.85, 1.0], c: [0.98, 0.22, 0.66], eye: [0.35, 1.0, 0.85] },
+  { name: 'זהב מלכותי', a: [1.0, 0.72, 0.2], b: [1.0, 0.9, 0.55], c: [1.0, 0.45, 0.1], eye: [1.0, 0.85, 0.4] },
+  { name: 'להבה', a: [1.0, 0.2, 0.05], b: [1.0, 0.55, 0.1], c: [1.0, 0.85, 0.3], eye: [1.0, 0.6, 0.25] },
+  { name: 'חייזר ירוק', a: [0.15, 0.95, 0.3], b: [0.6, 1.0, 0.4], c: [0.1, 0.8, 0.6], eye: [0.5, 1.0, 0.5] },
+  { name: 'קרח', a: [0.35, 0.65, 1.0], b: [0.8, 0.95, 1.0], c: [0.5, 0.8, 1.0], eye: [0.75, 0.95, 1.0] },
+  { name: 'ורוד ניאון', a: [1.0, 0.15, 0.65], b: [1.0, 0.5, 0.85], c: [0.8, 0.3, 1.0], eye: [1.0, 0.6, 0.9] },
+  { name: 'טורקיז', a: [0.05, 0.85, 0.75], b: [0.3, 1.0, 0.9], c: [0.1, 0.6, 0.9], eye: [0.4, 1.0, 0.9] },
+  { name: 'גלקסיה', a: [0.35, 0.15, 0.9], b: [0.15, 0.4, 1.0], c: [0.9, 0.3, 0.9], eye: [0.65, 0.55, 1.0] },
+  { name: 'כסוף זוהר', a: [0.85, 0.9, 1.0], b: [1.0, 1.0, 1.0], c: [0.6, 0.75, 1.0], eye: [0.95, 0.98, 1.0] },
+  { name: 'מטריקס', a: [0.05, 0.75, 0.2], b: [0.3, 1.0, 0.45], c: [0.7, 1.0, 0.6], eye: [0.4, 1.0, 0.4] },
+  { name: 'שקיעה', a: [1.0, 0.4, 0.15], b: [1.0, 0.2, 0.5], c: [0.7, 0.25, 0.9], eye: [1.0, 0.65, 0.45] },
+  { name: '🌈 קשת חיה', a: [1, 0, 0], b: [0, 1, 0], c: [0, 0, 1], eye: [1.0, 1.0, 1.0], rainbow: true },
+];
+
 function buildFigureMaterial() {
+  const t0 = AVATAR_THEMES[0];
   return new THREE.ShaderMaterial({
-    uniforms: { uPulse: { value: 0 }, uTime: { value: 0 } },
+    uniforms: {
+      uPulse: { value: 0 }, uTime: { value: 0 },
+      uColA: { value: new THREE.Vector3(...t0.a) },
+      uColB: { value: new THREE.Vector3(...t0.b) },
+      uColC: { value: new THREE.Vector3(...t0.c) },
+      uRainbow: { value: 0 },
+    },
     vertexShader: /* glsl */`
       varying vec3 vNormalW;
       varying vec3 vViewDirW;
@@ -73,6 +101,10 @@ function buildFigureMaterial() {
       precision highp float;
       uniform float uPulse;
       uniform float uTime;
+      uniform vec3 uColA;
+      uniform vec3 uColB;
+      uniform vec3 uColC;
+      uniform float uRainbow;
       varying vec3 vNormalW;
       varying vec3 vViewDirW;
       varying vec3 vWorldPos;
@@ -81,15 +113,21 @@ function buildFigureMaterial() {
         // (reads sharp instead of the old washed-out ghost), an animated
         // iridescent hue drift, and a real specular highlight from a fixed
         // key light so the limbs read as solid curved surfaces, not fog.
+        // Rim colors are user-selectable theme uniforms; rainbow mode
+        // cycles the full spectrum via a cosine palette.
         vec3 n = normalize(vNormalW);
         vec3 v = normalize(vViewDirW);
         float ndv = clamp(dot(n, v), 0.0, 1.0);
         float fresnel = pow(1.0 - ndv, 3.2);
         float hueDrift = sin(uTime * 0.25) * 0.5 + 0.5;
-        vec3 violet = vec3(0.58, 0.24, 0.97);
-        vec3 cyan = vec3(0.16, 0.85, 1.0);
-        vec3 magenta = vec3(0.98, 0.22, 0.66);
-        vec3 grad = mix(mix(violet, cyan, hueDrift), magenta, smoothstep(0.75, 1.0, fresnel) * 0.5);
+        vec3 cA = uColA, cB = uColB, cC = uColC;
+        if (uRainbow > 0.5) {
+          float hh = uTime * 0.12;
+          cA = 0.5 + 0.5 * cos(6.2832 * (hh + vec3(0.0, 0.33, 0.67)));
+          cB = 0.5 + 0.5 * cos(6.2832 * (hh + 0.25 + vec3(0.0, 0.33, 0.67)));
+          cC = 0.5 + 0.5 * cos(6.2832 * (hh + 0.5 + vec3(0.0, 0.33, 0.67)));
+        }
+        vec3 grad = mix(mix(cA, cB, hueDrift), cC, smoothstep(0.75, 1.0, fresnel) * 0.5);
         vec3 rim = grad * fresnel * (1.35 + uPulse * 2.2);
         // key-light specular (fixed light up-left-front) — the "real material" read
         vec3 lightDir = normalize(vec3(-0.35, 0.9, 0.55));
@@ -231,7 +269,25 @@ function buildFigureRig(mat: THREE.ShaderMaterial, capeMat: THREE.ShaderMaterial
   cape.rotation.x = 0.12;
   group.add(cape);
 
-  return { group, legL, legR, kneeL, kneeR, shoulderL, shoulderR, foreArmL, foreArmR, torso, head, hips, cape };
+  // Premium detailing: a pulsing energy core in the chest + small glow
+  // nodes on the shoulder/knee joints — theme-tinted with the eyes, they
+  // sell "engineered alien tech" instead of plain rubber limbs.
+  const core = new THREE.Mesh(sph(0.055), eyeMat);
+  core.position.set(0, 1.24, 0.185);
+  core.scale.set(1, 1.25, 0.5);
+  group.add(core);
+  for (const jt of [shoulderL, shoulderR] as THREE.Group[]) {
+    const dot = new THREE.Mesh(sph(0.028), eyeMat);
+    jt.add(dot);
+  }
+  for (const jt of [kneeL, kneeR] as THREE.Group[]) {
+    const dot = new THREE.Mesh(sph(0.024), eyeMat);
+    jt.add(dot);
+  }
+
+  // accents = every additive glow material on this rig (eyes, antenna
+  // tips, chest core, joint dots) — the theme system tints them together.
+  return { group, legL, legR, kneeL, kneeR, shoulderL, shoulderR, foreArmL, foreArmR, torso, head, hips, cape, accents: [eyeMat, antTipMat] };
 }
 
 function buildBeamMaterial() {
@@ -641,6 +697,44 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   let movePlaylist = shuffleMoves(MOVES.map((_, i) => i));
   let moveCursor = 0;
 
+  // ── Theme system — one place tints the figure shader + every additive
+  // accent material (eyes, antenna tips, chest cores, joint dots, crowd
+  // eyes), including materials created lazily later (backups, crowd). ──
+  let currentTheme = AVATAR_THEMES[0];
+  const accentMats: THREE.MeshBasicMaterial[] = [];
+  function tintAccent(m: THREE.MeshBasicMaterial) { m.color.setRGB(currentTheme.eye[0], currentTheme.eye[1], currentTheme.eye[2]); }
+  function registerAccents(mats: THREE.MeshBasicMaterial[]) { for (const m of mats) { accentMats.push(m); tintAccent(m); } }
+  function applyTheme(idx: number) {
+    currentTheme = AVATAR_THEMES[Math.max(0, Math.min(AVATAR_THEMES.length - 1, Math.round(idx)))] || AVATAR_THEMES[0];
+    (figMat.uniforms.uColA.value as THREE.Vector3).set(...currentTheme.a);
+    (figMat.uniforms.uColB.value as THREE.Vector3).set(...currentTheme.b);
+    (figMat.uniforms.uColC.value as THREE.Vector3).set(...currentTheme.c);
+    figMat.uniforms.uRainbow.value = currentTheme.rainbow ? 1 : 0;
+    for (const m of accentMats) tintAccent(m);
+  }
+  registerAccents(rig.accents);
+
+  // Soft contact shadow under each lead dancer — grounds the figure to the
+  // floor (jumps visibly lift off it), a big "actually standing there" cue.
+  const shadowTex = (() => {
+    const c = document.createElement('canvas'); c.width = c.height = 128;
+    const g = c.getContext('2d')!;
+    const grad = g.createRadialGradient(64, 64, 6, 64, 64, 64);
+    grad.addColorStop(0, 'rgba(0,0,0,0.85)'); grad.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = grad; g.fillRect(0, 0, 128, 128);
+    return new THREE.CanvasTexture(c);
+  })();
+  const dancerShadows: THREE.Mesh[] = [];
+  function mkShadow(bx: number, bz: number) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.42), new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, opacity: 0.34, depthWrite: false }));
+    m.rotation.x = -Math.PI / 2;
+    m.position.set(bx, -0.045, bz + 0.05);
+    scene.add(m);
+    dancerShadows.push(m);
+    return m;
+  }
+  mkShadow(0, 0);
+
   // Lead dancer + lazily-built party backups (hidden until party mode 1+).
   const dancers: Dancer[] = [mkDancer(rig, 0, 0, 0, 0)];
   let partyMode = 0; // 0 solo · 1 crew of 3 · 2 BIG PARTY (crowd + DJ)
@@ -654,6 +748,8 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       r.group.visible = false;
       scene.add(r.group);
       dancers.push(mkDancer(r, off, bx, bz, off * 2.1));
+      registerAccents(r.accents);
+      mkShadow(bx, bz).visible = false;
     }
   }
   const activeDancers = () => (partyMode >= 1 ? dancers : [dancers[0]]);
@@ -690,6 +786,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     const eyesGeo = new THREE.SphereGeometry(0.085, 8, 8); eyesGeo.scale(1, 0.4, 0.5);
     const body = mk(bodyGeo, figMat), head = mk(headGeo, figMat), armL = mk(armGeo, figMat), armR = mk(armGeo, figMat), legs = mk(legsGeo, figMat);
     const eyeMatI = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.35, 1.0, 0.85), transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false });
+    registerAccents([eyeMatI]); // crowd eyes follow the avatar color theme
     const eyes = mk(eyesGeo, eyeMatI);
     const data: CrowdD[] = [];
     for (let i = 0; i < CROWD_N; i++) {
@@ -912,10 +1009,24 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     // the micro-motion so the crew doesn't breathe in eerie unison.
     const bounceCycle = ((now - lastBeat) / tempoMs);
     const bounce = Math.max(0, Math.sin(Math.PI * Math.min(1, bounceCycle * 1.4))) * energy;
-    for (const d of activeDancers()) {
+    // Theme accents (eyes/cores/joints) breathe with the beat.
+    for (const m of accentMats) m.opacity = 0.72 + beatPulse * 0.28;
+    const actD = activeDancers();
+    for (let di = 0; di < actD.length; di++) {
+      const d = actD[di];
       const S = d.cur;
       const dg = d.rig;
       const tp = t + d.microPhase;
+      // contact shadow tracks the dancer, fading/shrinking as they leave
+      // the floor (jump) and darkening in a crouch
+      const sh = dancerShadows[di];
+      if (sh) {
+        sh.position.x = d.baseX + S.rootX;
+        const lift = Math.max(0, S.rootY);
+        const shScale = Math.max(0.55, 1 - lift * 1.6);
+        sh.scale.set(shScale, shScale, 1);
+        (sh.material as THREE.MeshBasicMaterial).opacity = Math.max(0.08, (0.34 - lift * 0.7 - S.rootY * 0.15)) * (0.5 + energy * 0.5);
+      }
       dg.group.position.y = -0.05 + S.rootY - bounce * 0.06;
       dg.group.position.x = d.baseX + S.rootX;
       dg.group.position.z = d.baseZ;
@@ -992,10 +1103,14 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     setParty(mode: boolean | number) {
       partyMode = mode === true ? 1 : mode === false ? 0 : Math.max(0, Math.min(2, Math.round(mode)));
       if (partyMode >= 1) ensureBackups();
-      for (let i = 1; i < dancers.length; i++) dancers[i].rig.group.visible = partyMode >= 1;
+      for (let i = 1; i < dancers.length; i++) {
+        dancers[i].rig.group.visible = partyMode >= 1;
+        if (dancerShadows[i]) dancerShadows[i].visible = partyMode >= 1;
+      }
       if (partyMode === 2) ensureCrowd();
       setCrowdVisible(partyMode === 2);
     },
+    setTheme(idx: number) { applyTheme(idx); },
     dispose() {
       cancelAnimationFrame(raf);
       ro.disconnect();
