@@ -144,13 +144,69 @@ function buildFigureMaterial() {
         // soft cool bounce fill from below so the underside isn't a void
         float below = clamp(-n.y, 0.0, 1.0) * 0.03;
         vec3 fill = vec3(0.008, 0.006, 0.016) + vec3(0.25, 0.3, 0.55) * below;
-        gl_FragColor = vec4(fill + rim + vec3(0.85, 0.92, 1.0) * spec, 1.0);
+
+        // ── Biomechanical neon circuitry veins ──────────────────────────
+        // Thin glowing lines running along the body surface, energy pulses
+        // travelling up them, cycling purple → cyan → green. Two crossing
+        // vein fields (vertical-ish + diagonal) give a woven-circuit read;
+        // a bright travelling pulse rides each vein and flares on the beat.
+        float vy = vWorldPos.y * 7.0;
+        float vx = (vWorldPos.x + vWorldPos.z) * 5.0;
+        float veinA = pow(0.5 + 0.5 * sin(vy + sin(vx * 0.6) * 1.4), 22.0);        // near-vertical traces
+        float veinB = pow(0.5 + 0.5 * sin(vx * 1.3 + vy * 0.35 + 1.7), 26.0);      // diagonal traces
+        float flow = 0.5 + 0.5 * sin(vWorldPos.y * 4.0 - uTime * 3.5);             // energy travelling upward
+        float veins = (veinA + veinB) * (0.35 + flow * 0.9);
+        vec3 vPurple = vec3(0.75, 0.0, 1.0);
+        vec3 vCyan   = vec3(0.0, 0.9, 1.0);
+        vec3 vGreen  = vec3(0.0, 1.0, 0.25);
+        float cph = fract(uTime * 0.12 + vWorldPos.y * 0.15);
+        vec3 veinCol = cph < 0.33 ? mix(vPurple, vCyan, cph / 0.33)
+                     : cph < 0.66 ? mix(vCyan, vGreen, (cph - 0.33) / 0.33)
+                                  : mix(vGreen, vPurple, (cph - 0.66) / 0.34);
+        vec3 veinGlow = veinCol * veins * (0.9 + uPulse * 2.6);
+
+        gl_FragColor = vec4(fill + rim + veinGlow + vec3(0.85, 0.92, 1.0) * spec, 1.0);
       }
     `,
   });
 }
 
-function buildFigureRig(mat: THREE.ShaderMaterial) {
+// The glowing audio waveform strung between the two antenna tips — a Line
+// whose vertices are displaced into a live sine wave in the vertex shader
+// (amplitude rides uEnergy/uPulse), so it reads as a signal arcing across
+// the antennae. Additive + theme-tinted.
+function buildWaveMaterial() {
+  return new THREE.ShaderMaterial({
+    uniforms: { uTime: { value: 0 }, uEnergy: { value: 0.3 }, uPulse: { value: 0 }, uCol: { value: new THREE.Vector3(0.35, 1.0, 0.85) } },
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    vertexShader: /* glsl */`
+      attribute float aT;
+      uniform float uTime; uniform float uEnergy; uniform float uPulse;
+      varying float vT;
+      void main() {
+        vT = aT;
+        vec3 p = position;
+        float amp = 0.028 * (0.3 + uEnergy) + uPulse * 0.03;
+        // taper the wave to zero at both antenna tips so it "attaches"
+        float taper = sin(aT * 3.14159);
+        p.y += sin(aT * 22.0 - uTime * 9.0) * amp * taper;
+        p.z += cos(aT * 15.0 - uTime * 7.0) * amp * 0.6 * taper;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */`
+      precision highp float;
+      uniform vec3 uCol; uniform float uPulse;
+      varying float vT;
+      void main() {
+        float edge = sin(vT * 3.14159);
+        gl_FragColor = vec4(uCol * (1.2 + uPulse * 1.5), edge * 0.9);
+      }
+    `,
+  });
+}
+
+function buildFigureRig(mat: THREE.ShaderMaterial, waveMat: THREE.ShaderMaterial) {
   const group = new THREE.Group();
   const cap = (r: number, len: number) => new THREE.CapsuleGeometry(r, len, 6, 12);
   const sph = (r: number) => new THREE.SphereGeometry(r, 20, 20);
@@ -178,6 +234,23 @@ function buildFigureRig(mat: THREE.ShaderMaterial) {
     const tip = new THREE.Mesh(sph(0.026), antTipMat);
     tip.position.y = 0.1;
     ant.add(tip);
+  }
+  // Audio waveform arcing between the two antenna tips (head-local coords;
+  // tips resolve to ≈(±0.094, 0.284) after the antennae's outward tilt).
+  {
+    const N = 28;
+    const pos = new Float32Array(N * 3), aT = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      const f = i / (N - 1);
+      pos[i * 3] = -0.094 + f * 0.188;
+      pos[i * 3 + 1] = 0.284;
+      pos[i * 3 + 2] = 0.02;
+      aT[i] = f;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('aT', new THREE.BufferAttribute(aT, 1));
+    head.add(new THREE.Line(g, waveMat));
   }
 
   const neck = new THREE.Mesh(cap(0.055, 0.06), mat); neck.position.y = 1.46; group.add(neck);
@@ -447,9 +520,73 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     spots.push({ mesh, mat, phase, colIdx });
   }
 
+  // ── Wet-asphalt reflective floor (PILLAR 2/4) — a real Reflector doubles
+  // the whole render (fatal with 30 crowd dancers), so this fakes the "wet
+  // black puddle" look in one cheap shader plane: near-black base, a bright
+  // vertical smear directly under the light beam (the beam's reflection),
+  // grazing-angle sheen, and a slow animated ripple. ──
+  const floorReflMat = new THREE.ShaderMaterial({
+    uniforms: { uTime: { value: 0 }, uPulse: { value: 0 }, uCol: { value: new THREE.Vector3(0.3, 0.55, 1.0) } },
+    transparent: true, depthWrite: false,
+    vertexShader: /* glsl */`
+      varying vec2 vUv; varying vec3 vWpos;
+      void main() { vUv = uv; vec4 wp = modelMatrix * vec4(position, 1.0); vWpos = wp.xyz; gl_Position = projectionMatrix * viewMatrix * wp; }
+    `,
+    fragmentShader: /* glsl */`
+      precision highp float;
+      uniform float uTime; uniform float uPulse; uniform vec3 uCol;
+      varying vec2 vUv; varying vec3 vWpos;
+      void main() {
+        // distance from the stage centerline (x≈0) — the beam's wet smear
+        float cx = abs(vWpos.x);
+        float smear = exp(-cx * cx * 2.2);
+        // depth fade to the horizon + a rolling ripple shimmer
+        float depth = smoothstep(1.0, 0.0, vUv.y);
+        float ripple = 0.5 + 0.5 * sin(vWpos.z * 9.0 - uTime * 2.0 + sin(vWpos.x * 6.0) * 1.5);
+        vec3 col = uCol * (smear * (0.5 + ripple * 0.5) * (0.6 + uPulse * 0.9));
+        float a = (0.06 + smear * 0.5) * depth;
+        gl_FragColor = vec4(col, a);
+      }
+    `,
+  });
+  const floorRefl = new THREE.Mesh(new THREE.PlaneGeometry(14, 8), floorReflMat);
+  floorRefl.rotation.x = -Math.PI / 2;
+  floorRefl.position.set(0, -0.06, -1.6);
+  scene.add(floorRefl);
+
+  // ── Subwoofer monoliths (PILLAR 2) — two tall sci-fi speaker cabinets
+  // flanking the stage, each with two cones that punch forward (+Z) on the
+  // beat and a grille glow that flares with the bass. ──
+  const subs: { cones: THREE.Mesh[]; glow: THREE.MeshBasicMaterial }[] = [];
+  for (const sx of [-2.85, 2.85]) {
+    const cabinet = new THREE.Mesh(
+      new THREE.BoxGeometry(1.1, 2.6, 0.9),
+      new THREE.MeshBasicMaterial({ color: 0x0a0a12 }),
+    );
+    cabinet.position.set(sx, 1.1, -1.9);
+    scene.add(cabinet);
+    const glowMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.2, 0.6, 1.0), transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false });
+    const cones: THREE.Mesh[] = [];
+    for (const cy of [1.55, 0.65]) {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.05, 8, 24), glowMat);
+      ring.position.set(sx, cy, -1.44);
+      scene.add(ring);
+      const cone = new THREE.Mesh(
+        new THREE.SphereGeometry(0.3, 20, 16, 0, Math.PI * 2, 0, Math.PI * 0.5),
+        new THREE.MeshBasicMaterial({ color: 0x14141f }),
+      );
+      cone.rotation.x = Math.PI / 2; // dome faces +Z (toward the viewer)
+      cone.position.set(sx, cy, -1.45);
+      scene.add(cone);
+      cones.push(cone);
+    }
+    subs.push({ cones, glow: glowMat });
+  }
+
   // ── The figure ──
   const figMat = buildFigureMaterial();
-  const rig = buildFigureRig(figMat);
+  const waveMat = buildWaveMaterial(); // shared antenna-waveform material
+  const rig = buildFigureRig(figMat, waveMat);
   scene.add(rig.group);
 
   // ── Drifting spark particles rising through the beam ──
@@ -996,6 +1133,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     (figMat.uniforms.uColB.value as THREE.Vector3).set(...currentTheme.b);
     (figMat.uniforms.uColC.value as THREE.Vector3).set(...currentTheme.c);
     figMat.uniforms.uRainbow.value = currentTheme.rainbow ? 1 : 0;
+    (waveMat.uniforms.uCol.value as THREE.Vector3).set(...currentTheme.eye);
     for (const m of accentMats) tintAccent(m);
   }
   registerAccents(rig.accents);
@@ -1028,7 +1166,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     if (dancers.length > 1) return;
     const spots: [number, number, number][] = [[-1.0, -0.5, 1], [1.0, -0.5, 2]]; // x, z, beat offset
     for (const [bx, bz, off] of spots) {
-      const r = buildFigureRig(figMat);
+      const r = buildFigureRig(figMat, waveMat);
       r.group.position.set(bx, -0.05, bz);
       r.group.scale.setScalar(0.8);
       r.group.visible = false;
@@ -1288,6 +1426,9 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     figMat.uniforms.uTime.value = t;
     beamMat.uniforms.uTime.value = t;
     beamMat.uniforms.uPulse.value = beatPulse * energy;
+    waveMat.uniforms.uTime.value = t;
+    waveMat.uniforms.uEnergy.value = energy;
+    waveMat.uniforms.uPulse.value = beatPulse * energy;
     (floorMat as THREE.MeshBasicMaterial).opacity = 0.25 + beatPulse * energy * 0.3;
 
     for (const f of fins) {
@@ -1303,6 +1444,17 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       sp.mat.opacity = (0.035 + beatPulse * 0.15) * energy;
       const c = sp.colIdx === 0 ? currentTheme.c : currentTheme.b;
       sp.mat.color.setRGB(c[0], c[1], c[2]);
+    }
+
+    // Wet floor + subwoofer cones react to the theme + bass.
+    floorReflMat.uniforms.uTime.value = t;
+    floorReflMat.uniforms.uPulse.value = beatPulse * energy;
+    (floorReflMat.uniforms.uCol.value as THREE.Vector3).set(currentTheme.b[0], currentTheme.b[1], currentTheme.b[2]);
+    const punch = 1 + beatPulse * energy * 0.7; // cones jump forward on the beat
+    for (const sub of subs) {
+      for (const cone of sub.cones) cone.scale.z = punch;
+      sub.glow.opacity = 0.2 + beatPulse * energy * 0.6;
+      sub.glow.color.setRGB(currentTheme.c[0], currentTheme.c[1], currentTheme.c[2]);
     }
 
     // Apply spring pose + a continuous micro-groove layer (breathing sway,
