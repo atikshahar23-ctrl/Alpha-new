@@ -275,6 +275,21 @@
     color:rgba(210,225,255,.55); text-transform:uppercase; pointer-events:none;
   }
   .hero-wrap.off{display:none;}
+  /* The currently-heard line, projected over the stage itself — the words
+     live inside the atmosphere instead of below the fold. */
+  .hero-line{position:absolute; bottom:18px; left:12px; right:12px; text-align:center; pointer-events:none; z-index:2;}
+  .hero-line .hl-orig{
+    font-size:clamp(11px, 2.4vw, 15px); color:rgba(195,210,235,.68); margin-bottom:5px;
+    text-shadow:0 1px 8px rgba(0,0,0,.85); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .hero-line .hl-trans{
+    font-family:'Rubik',sans-serif; font-weight:800;
+    font-size:clamp(18px, 4.6vw, 30px); line-height:1.35; color:#fff;
+    text-shadow:0 0 18px rgba(0,229,255,.55), 0 0 42px rgba(178,75,243,.4), 0 2px 10px rgba(0,0,0,.9);
+  }
+  .hero-line.pop .hl-trans{animation:hlPop .45s cubic-bezier(.2,1.4,.3,1);}
+  @keyframes hlPop{0%{transform:translateY(14px) scale(.94); opacity:0;}100%{transform:none; opacity:1;}}
+  .hero-wrap.has-line .hero-caption{display:none;}
   @media (max-width:560px){ .hero-wrap{height:min(40vh,280px);} }
 
   /* Ambient "LED" screen-edge glow, pulsing/color-cycling on the same beat
@@ -420,6 +435,10 @@
 
   <div class="hero-wrap" id="heroWrap">
     <div class="hero-avatar" id="heroAvatar"></div>
+    <div class="hero-line" id="heroLine">
+      <div class="hl-orig" id="heroLineOrig" dir="auto"></div>
+      <div class="hl-trans" id="heroLineTrans" dir="auto"></div>
+    </div>
     <div class="hero-caption">🎭 רוקד לקצב השיר</div>
   </div>
 
@@ -602,6 +621,10 @@
   const origToggle = $('origToggle');
   const engineSel = $('engineSel');
   const smartHeToggle = $('smartHeToggle');
+  const heroWrapEl = $('heroWrap');
+  const heroLineEl = $('heroLine');
+  const heroLineOrig = $('heroLineOrig');
+  const heroLineTrans = $('heroLineTrans');
   const fontSizeSlider = $('fontSizeSlider');
   const fontSizeVal = $('fontSizeVal');
   const fontMinus = $('fontMinus');
@@ -1394,6 +1417,8 @@
   async function loadLyricsFor(artist, title, durationSec){
     const seq = ++state.loadSeq;
     state.rawArtist = artist; state.rawTitle = title;
+    state.activeIndex = -1;
+    updateHeroLine(-1);
     const target = targetLangSel.value;
     const cacheKey = (artist + '|' + title + '|' + target).toLowerCase();
 
@@ -1502,6 +1527,31 @@
       const t = row.querySelector('.trans');
       if(t){ t.textContent = text; t.classList.remove('pending'); }
     }
+    // If this is the line currently on the hero stage, refresh it live
+    // (translation streaming in / AI polish swapping the text).
+    if(i === state.activeIndex && heroWrapEl && heroWrapEl.classList.contains('has-line')){
+      heroLineTrans.textContent = text;
+      heroLineOrig.textContent = settings.showOrig ? (state.lines[i].orig || '') : '';
+    }
+  }
+
+  // The currently-heard line, projected over the avatar stage itself — so
+  // the words + the atmosphere share one screen (no scrolling down needed).
+  function updateHeroLine(idx){
+    if(!heroWrapEl) return;
+    const l = idx >= 0 ? state.lines[idx] : null;
+    if(!l){
+      heroWrapEl.classList.remove('has-line');
+      heroLineTrans.textContent = '';
+      heroLineOrig.textContent = '';
+      return;
+    }
+    heroWrapEl.classList.add('has-line');
+    heroLineTrans.textContent = l.trans || l.orig || '';
+    heroLineOrig.textContent = settings.showOrig && l.trans ? (l.orig || '') : '';
+    heroLineEl.classList.remove('pop');
+    void heroLineEl.offsetWidth; // restart the pop animation
+    heroLineEl.classList.add('pop');
   }
 
   function setActiveLine(idx){
@@ -1513,10 +1563,12 @@
       if(idx < 0 && state.activeIndex >= 0){
         stage.querySelectorAll('.lyric-row.active').forEach(r=>r.classList.remove('active'));
         state.activeIndex = -1;
+        updateHeroLine(-1);
       }
       return;
     }
     state.activeIndex = idx;
+    updateHeroLine(idx);
     const rows = stage.querySelectorAll('.lyric-row');
     rows.forEach(r=>r.classList.remove('active'));
     const row = rows[idx];

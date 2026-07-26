@@ -44,7 +44,7 @@ const BEATS_PER_PATTERN = 8; // choreography switches every N beats
 
 function buildFigureMaterial() {
   return new THREE.ShaderMaterial({
-    uniforms: { uPulse: { value: 0 } },
+    uniforms: { uPulse: { value: 0 }, uTime: { value: 0 } },
     vertexShader: /* glsl */`
       varying vec3 vNormalW;
       varying vec3 vViewDirW;
@@ -60,23 +60,33 @@ function buildFigureMaterial() {
     fragmentShader: /* glsl */`
       precision highp float;
       uniform float uPulse;
+      uniform float uTime;
       varying vec3 vNormalW;
       varying vec3 vViewDirW;
       varying vec3 vWorldPos;
       void main() {
-        // Solid dark silhouette (reads as backlit, like the reference) with
-        // a rim in a violet→cyan→magenta gradient that brightens on the
-        // beat pulse, plus a soft vertical sheen so the body isn't flat black.
-        float fresnel = pow(1.0 - clamp(dot(normalize(vNormalW), normalize(vViewDirW)), 0.0, 1.0), 2.3);
+        // Glossy black-glass android: near-black body with a TIGHT neon rim
+        // (reads sharp instead of the old washed-out ghost), an animated
+        // iridescent hue drift, and a real specular highlight from a fixed
+        // key light so the limbs read as solid curved surfaces, not fog.
+        vec3 n = normalize(vNormalW);
+        vec3 v = normalize(vViewDirW);
+        float ndv = clamp(dot(n, v), 0.0, 1.0);
+        float fresnel = pow(1.0 - ndv, 3.2);
+        float hueDrift = sin(uTime * 0.25) * 0.5 + 0.5;
         vec3 violet = vec3(0.58, 0.24, 0.97);
-        vec3 cyan = vec3(0.22, 0.87, 1.0);
-        vec3 magenta = vec3(0.95, 0.25, 0.7);
-        vec3 grad = mix(violet, cyan, clamp(fresnel * 1.4, 0.0, 1.0));
-        grad = mix(grad, magenta, smoothstep(0.7, 1.0, fresnel) * 0.4);
-        vec3 rim = grad * fresnel * (0.95 + uPulse * 1.6);
-        float sheen = smoothstep(-0.3, 1.8, vWorldPos.y) * 0.05;
-        vec3 fill = vec3(0.02, 0.014, 0.04) + vec3(0.3, 0.2, 0.5) * sheen;
-        gl_FragColor = vec4(fill + rim, 1.0);
+        vec3 cyan = vec3(0.16, 0.85, 1.0);
+        vec3 magenta = vec3(0.98, 0.22, 0.66);
+        vec3 grad = mix(mix(violet, cyan, hueDrift), magenta, smoothstep(0.75, 1.0, fresnel) * 0.5);
+        vec3 rim = grad * fresnel * (1.35 + uPulse * 2.2);
+        // key-light specular (fixed light up-left-front) — the "real material" read
+        vec3 lightDir = normalize(vec3(-0.35, 0.9, 0.55));
+        vec3 h = normalize(lightDir + v);
+        float spec = pow(clamp(dot(n, h), 0.0, 1.0), 42.0) * 0.5;
+        // soft cool bounce fill from below so the underside isn't a void
+        float below = clamp(-n.y, 0.0, 1.0) * 0.03;
+        vec3 fill = vec3(0.008, 0.006, 0.016) + vec3(0.25, 0.3, 0.55) * below;
+        gl_FragColor = vec4(fill + rim + vec3(0.85, 0.92, 1.0) * spec, 1.0);
       }
     `,
   });
@@ -128,6 +138,12 @@ function buildFigureRig(mat: THREE.ShaderMaterial, capeMat: THREE.ShaderMaterial
   const sph = (r: number) => new THREE.SphereGeometry(r, 20, 20);
 
   const head = new THREE.Mesh(sph(0.16), mat); head.position.y = 1.62; group.add(head);
+  // Glowing visor band — an instantly-readable "face" that keeps the
+  // android silhouette premium instead of a blank ghost head.
+  const visorMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.45, 0.95, 1.0), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
+  // (phiStart centers the band on +Z — the direction the figure faces.)
+  const visor = new THREE.Mesh(new THREE.SphereGeometry(0.162, 24, 8, Math.PI * 0.22, Math.PI * 0.56, Math.PI * 0.42, Math.PI * 0.14), visorMat);
+  head.add(visor);
 
   // A wide-brim festival hat — cheap silhouette read, very "Tulum".
   const hatGroup = new THREE.Group(); hatGroup.position.set(0, 1.74, 0); head.add(hatGroup);
@@ -271,7 +287,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'low-power' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.1;
+  renderer.toneMappingExposure = 1.05;
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
@@ -284,7 +300,10 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
 
   const composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
-  const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 1.15, 0.62, 0.2);
+  // Tighter bloom than before (threshold up, strength down): the figure was
+  // getting washed into a white ghost on phones — the neon rim should GLOW,
+  // not dissolve the silhouette.
+  const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.95, 0.55, 0.3);
   composer.addPass(bloom);
   composer.addPass(new OutputPass());
 
@@ -425,6 +444,88 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     hazeSprites.push(s);
   }
 
+  // ── Choreography engine — pose-target springs that "hit" on the beat ──
+  // Instead of the old continuous sine washes, every beat sets a TARGET
+  // POSE from the current move's step chart, and underdamped springs snap
+  // each joint to it: fast attack, slight overshoot, micro-settle — the
+  // anticipation/hit/release shape real dancers (and animators) use. Moves
+  // rotate every BEATS_PER_PATTERN beats through a shuffled playlist so the
+  // dance never visibly loops.
+  type Pose = Record<string, number>;
+  const POSE_KEYS = ['rootY', 'rootX', 'rootRy', 'hipsRz', 'torsoRx', 'torsoRy', 'torsoRz', 'headRx', 'headRy',
+    'shLz', 'shLx', 'shRz', 'shRx', 'fALz', 'fALx', 'fARz', 'fARx',
+    'legLx', 'legLz', 'legRx', 'legRz', 'kneeLx', 'kneeRx'];
+  const BASE_POSE: Pose = { shLz: 0.35, shRz: -0.35, fALz: 0.25, fARz: -0.25 };
+  const springCur: Pose = {}, springVel: Pose = {}, springTgt: Pose = {};
+  for (const k of POSE_KEYS) { springCur[k] = BASE_POSE[k] || 0; springVel[k] = 0; springTgt[k] = BASE_POSE[k] || 0; }
+  const setPose = (p: Pose) => { for (const k of POSE_KEYS) springTgt[k] = (k in p) ? p[k] : (BASE_POSE[k] || 0); };
+  function shuffleMoves(arr: number[]) {
+    for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; }
+    return arr;
+  }
+  // Each move maps a step (0..7 inside its 8-beat block) to a target pose.
+  const MOVES: ((s: number) => Pose)[] = [
+    // 1 · Groove pump — weight shifts side to side, elbows pumping.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      hipsRz: a * 0.14, torsoRz: -a * 0.1, torsoRy: a * 0.12, headRy: a * 0.14,
+      shLz: 0.55 + (a > 0 ? 0.5 : 0), shRz: -0.55 - (a < 0 ? 0.5 : 0),
+      fALz: 1.15 - (a > 0 ? 0.55 : 0), fARz: -1.15 + (a < 0 ? 0.55 : 0),
+      kneeLx: 0.32, kneeRx: 0.32, legLx: -0.12, legRx: -0.12, rootY: -0.045,
+    }; },
+    // 2 · Hands-up festival sway.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      shLz: 2.55, shRz: -2.55, fALz: a * 0.35, fARz: a * 0.35,
+      torsoRz: a * 0.15, hipsRz: -a * 0.12, headRx: -0.12, rootY: -0.02,
+      kneeLx: 0.18, kneeRx: 0.18, legLx: -0.06, legRx: -0.06,
+    }; },
+    // 3 · Robot isolations — sharp asymmetric angles snapping per beat.
+    (s) => { const q = s % 4; return {
+      shLz: q < 2 ? 1.55 : 0.4, shRz: q >= 2 ? -1.55 : -0.4,
+      fALx: q < 2 ? -1.35 : 0, fARx: q >= 2 ? -1.35 : 0,
+      fALz: q < 2 ? 0.15 : 1.0, fARz: q >= 2 ? -0.15 : -1.0,
+      headRy: (q === 1 || q === 2 ? 1 : -1) * 0.38, torsoRy: (q < 2 ? 1 : -1) * 0.22,
+      kneeLx: 0.15, kneeRx: 0.15,
+    }; },
+    // 4 · Full turn — one clean 360° over six beats, arms wide, ends front
+    // (rootRy is wrapped back to 0 at the move switch, see the beat handler).
+    (s) => ({
+      rootRy: Math.PI * 2 * Math.min(1, (s + 1) / 6),
+      shLz: 1.45, shRz: -1.45, fALz: 0.1, fARz: -0.1,
+      kneeLx: 0.25, kneeRx: 0.25, rootY: -0.03, hipsRz: (s % 2 ? 1 : -1) * 0.08,
+    }),
+    // 5 · Skate slide — the whole body glides side to side, arms opposed.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      rootX: a * 0.32, hipsRz: -a * 0.1, torsoRz: a * 0.08,
+      legLx: a > 0 ? -0.5 : 0.15, legRx: a < 0 ? -0.5 : 0.15,
+      kneeLx: a > 0 ? 0.75 : 0.2, kneeRx: a < 0 ? 0.75 : 0.2,
+      shLx: a * 0.65, shRx: a * 0.65, fALz: 0.6, fARz: -0.6, headRy: a * 0.2, rootY: -0.06,
+    }; },
+    // 6 · Jump & freeze — crouch, explode up, then hold a pointed pose.
+    (s): Pose => {
+      if (s < 2) return { rootY: -0.16, kneeLx: 0.95, kneeRx: 0.95, legLx: -0.4, legRx: -0.4, torsoRx: 0.18, shLz: 0.5, shRz: -0.5, fALz: 0.9, fARz: -0.9 };
+      if (s === 2) return { rootY: 0.3, kneeLx: 1.15, kneeRx: 1.15, legLx: -0.55, legRx: -0.55, shLz: 2.3, shRz: -2.3 };
+      return { rootY: -0.02, shRz: -2.15, shRx: -0.3, fARz: -0.2, headRy: -0.25, headRx: -0.1, hipsRz: 0.12, torsoRz: -0.1, kneeLx: 0.2, kneeRx: 0.3, legRx: -0.15 };
+    },
+    // 7 · Overhead clap — arms gather and clap on every other beat.
+    (s) => { const clap = s % 2 === 1; return {
+      shLz: clap ? 2.35 : 1.7, shRz: clap ? -2.35 : -1.7,
+      fALz: clap ? -0.5 : 0.2, fARz: clap ? 0.5 : -0.2,
+      rootY: clap ? -0.02 : -0.06, kneeLx: clap ? 0.15 : 0.35, kneeRx: clap ? 0.15 : 0.35,
+      torsoRx: clap ? -0.06 : 0.08, headRx: clap ? -0.15 : 0.05,
+    }; },
+    // 8 · Lunge & point — deep lunge pointing to the crowd, alternating sides.
+    (s) => { const a = s % 4 < 2 ? 1 : -1; return {
+      legLx: a > 0 ? -0.6 : 0.1, kneeLx: a > 0 ? 0.85 : 0.2,
+      legRx: a < 0 ? -0.6 : 0.1, kneeRx: a < 0 ? 0.85 : 0.2,
+      rootY: -0.1, torsoRy: a * 0.3, headRy: a * 0.32,
+      shLz: a > 0 ? 1.9 : 0.4, fALz: a > 0 ? 0.05 : 0.9,
+      shRz: a < 0 ? -1.9 : -0.4, fARz: a < 0 ? -0.05 : -0.9,
+      hipsRz: a * 0.08,
+    }; },
+  ];
+  let movePlaylist = shuffleMoves(MOVES.map((_, i) => i));
+  let moveCursor = 0;
+
   let playing = false;
   let energy = 0.25; // smoothed 0..1, drives everything below
   let tempoMs = DEFAULT_TEMPO_MS;
@@ -475,8 +576,33 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       beatCount++;
       firedBeat = true;
       for (const f of fins) f.target = 0.35 + Math.random() * 0.65;
+      // Choreography: on each beat, set the target pose from the current
+      // move's step chart; every BEATS_PER_PATTERN beats advance to the
+      // next move in the shuffled playlist (reshuffling when exhausted).
+      const step = beatCount % BEATS_PER_PATTERN;
+      if (step === 0) {
+        // Wrap any accumulated full turn so the next move starts facing
+        // front instead of spring-unwinding backwards through 360°.
+        const wrap = Math.round(springCur.rootRy / (Math.PI * 2)) * Math.PI * 2;
+        springCur.rootRy -= wrap; springTgt.rootRy -= wrap;
+        moveCursor++;
+        if (moveCursor >= movePlaylist.length) { movePlaylist = shuffleMoves(movePlaylist); moveCursor = 0; }
+      }
+      setPose(MOVES[movePlaylist[moveCursor]](step));
     }
+    if (!playing) setPose(BASE_POSE); // paused → relax to a calm idle stance
     beatPulse *= 0.9;
+
+    // Integrate the pose springs — underdamped (slight overshoot) so every
+    // pose change lands with a physical "hit" instead of a linear glide.
+    {
+      const kSpring = 130, damp = 15;
+      for (const key of POSE_KEYS) {
+        springVel[key] += (springTgt[key] - springCur[key]) * kSpring * dt;
+        springVel[key] *= Math.exp(-damp * dt);
+        springCur[key] += springVel[key] * dt;
+      }
+    }
 
     if (firedBeat) {
       const r = rings[ringCursor];
@@ -492,6 +618,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     }
 
     figMat.uniforms.uPulse.value = beatPulse * energy;
+    figMat.uniforms.uTime.value = t;
     beamMat.uniforms.uTime.value = t;
     beamMat.uniforms.uPulse.value = beatPulse * energy;
     capeMat.uniforms.uTime.value = t;
@@ -504,56 +631,29 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       f.mesh.scale.y = 0.8 + f.val * 1.8;
     }
 
-    // Choreography: cycle through a few distinct dance patterns instead of
-    // one repeating loop, switching every BEATS_PER_PATTERN beats.
-    const pattern = Math.floor(beatCount / BEATS_PER_PATTERN) % 3;
+    // Apply spring pose + a continuous micro-groove layer (breathing sway,
+    // beat throb in the knees/root) so the body never fully freezes even
+    // during held poses.
     const bounceCycle = ((now - lastBeat) / tempoMs);
     const bounce = Math.max(0, Math.sin(Math.PI * Math.min(1, bounceCycle * 1.4))) * energy;
-
-    if (pattern === 0) {
-      // Groove: bounce + arm pump + hip sway.
-      rig.group.position.y = -0.05 - bounce * 0.09;
-      rig.group.rotation.y = Math.sin(t * 0.3) * 0.08;
-      rig.hips.rotation.z = Math.sin(t * 2.1) * 0.06 * (0.4 + energy * 0.6);
-      rig.torso.rotation.y = Math.sin(t * 1.3) * 0.1 * (0.4 + energy * 0.6);
-      rig.legL.rotation.x = -bounce * 0.18;
-      rig.legR.rotation.x = bounce * 0.1;
-      rig.kneeL.rotation.x = bounce * 0.55;
-      rig.kneeR.rotation.x = bounce * 0.4;
-      rig.shoulderL.rotation.z = 0.3 + Math.sin(t * 2.4) * 0.25 * (0.3 + energy * 0.7);
-      rig.shoulderR.rotation.z = -0.3 - Math.sin(t * 2.4 + 0.5) * 0.25 * (0.3 + energy * 0.7);
-      rig.foreArmL.rotation.z = Math.sin(t * 2.4 + 1) * 0.3 * energy;
-      rig.foreArmR.rotation.z = -Math.sin(t * 2.4 + 1.4) * 0.3 * energy;
-    } else if (pattern === 1) {
-      // Arms overhead, swaying side to side — a "hands up" festival moment.
-      rig.group.position.y = -0.05 - bounce * 0.05;
-      rig.group.rotation.y = Math.sin(t * 0.5) * 0.05;
-      rig.hips.rotation.z = Math.sin(t * 1.6) * 0.09 * energy;
-      rig.torso.rotation.z = Math.sin(t * 1.6) * 0.08 * energy;
-      rig.legL.rotation.x = -bounce * 0.08;
-      rig.legR.rotation.x = bounce * 0.05;
-      rig.kneeL.rotation.x = bounce * 0.35;
-      rig.kneeR.rotation.x = bounce * 0.28;
-      rig.shoulderL.rotation.z = 2.6 + Math.sin(t * 1.8) * 0.15 * energy;
-      rig.shoulderR.rotation.z = -2.6 - Math.sin(t * 1.8 + 0.4) * 0.15 * energy;
-      rig.foreArmL.rotation.z = Math.sin(t * 1.8 + 0.6) * 0.2 * energy;
-      rig.foreArmR.rotation.z = -Math.sin(t * 1.8 + 1.0) * 0.2 * energy;
-    } else {
-      // Slow spin, arms out — a full-body turn.
-      rig.group.position.y = -0.05 - bounce * 0.04;
-      rig.group.rotation.y += 0.012 * energy;
-      rig.hips.rotation.z = Math.sin(t * 1.4) * 0.04;
-      rig.torso.rotation.y = 0;
-      rig.legL.rotation.x = -bounce * 0.05;
-      rig.legR.rotation.x = bounce * 0.05;
-      rig.kneeL.rotation.x = bounce * 0.22;
-      rig.kneeR.rotation.x = bounce * 0.22;
-      rig.shoulderL.rotation.z = 1.35 + Math.sin(t * 1.2) * 0.1;
-      rig.shoulderR.rotation.z = -1.35 - Math.sin(t * 1.2 + 0.3) * 0.1;
-      rig.foreArmL.rotation.z = 0.1;
-      rig.foreArmR.rotation.z = -0.1;
-    }
-    rig.head.rotation.y = Math.sin(t * 1.1 + 0.4) * 0.12;
+    const S = springCur;
+    rig.group.position.y = -0.05 + S.rootY - bounce * 0.06;
+    rig.group.position.x = S.rootX;
+    rig.group.rotation.y = S.rootRy + Math.sin(t * 0.4) * 0.04 * energy;
+    rig.hips.rotation.z = S.hipsRz + Math.sin(t * 2.0) * 0.02 * energy;
+    rig.torso.rotation.x = S.torsoRx;
+    rig.torso.rotation.y = S.torsoRy + Math.sin(t * 1.1) * 0.03 * energy;
+    rig.torso.rotation.z = S.torsoRz;
+    rig.head.rotation.x = S.headRx + Math.sin(t * 1.7) * 0.02;
+    rig.head.rotation.y = S.headRy + Math.sin(t * 1.1 + 0.4) * 0.06;
+    rig.shoulderL.rotation.z = S.shLz; rig.shoulderL.rotation.x = S.shLx;
+    rig.shoulderR.rotation.z = S.shRz; rig.shoulderR.rotation.x = S.shRx;
+    rig.foreArmL.rotation.z = S.fALz; rig.foreArmL.rotation.x = S.fALx;
+    rig.foreArmR.rotation.z = S.fARz; rig.foreArmR.rotation.x = S.fARx;
+    rig.legL.rotation.x = S.legLx; rig.legL.rotation.z = S.legLz;
+    rig.legR.rotation.x = S.legRx; rig.legR.rotation.z = S.legRz;
+    rig.kneeL.rotation.x = S.kneeLx + bounce * 0.25;
+    rig.kneeR.rotation.x = S.kneeRx + bounce * 0.2;
 
     // Sparks drift upward through the beam, looping back to the floor.
     const posAttr = sparkGeo.getAttribute('position') as THREE.BufferAttribute;
