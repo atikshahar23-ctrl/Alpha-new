@@ -36,6 +36,9 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 export interface LyricsAvatarHandle {
   setEnergy(playing: boolean): void;
   setTempo(ms: number): void;
+  // Party mode — two backup dancers join the stage, dancing the same move
+  // as the lead with a per-dancer beat offset (a choreographed crew wave).
+  setParty?(on: boolean): void;
   dispose(): void;
 }
 
@@ -458,9 +461,13 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     'shLz', 'shLx', 'shRz', 'shRx', 'fALz', 'fALx', 'fARz', 'fARx',
     'legLx', 'legLz', 'legRx', 'legRz', 'kneeLx', 'kneeRx'];
   const BASE_POSE: Pose = { shLz: 0.35, shRz: -0.35, fALz: 0.25, fARz: -0.25 };
-  const springCur: Pose = {}, springVel: Pose = {}, springTgt: Pose = {};
-  for (const k of POSE_KEYS) { springCur[k] = BASE_POSE[k] || 0; springVel[k] = 0; springTgt[k] = BASE_POSE[k] || 0; }
-  const setPose = (p: Pose) => { for (const k of POSE_KEYS) springTgt[k] = (k in p) ? p[k] : (BASE_POSE[k] || 0); };
+  type Dancer = { rig: ReturnType<typeof buildFigureRig>; cur: Pose; vel: Pose; tgt: Pose; stepOffset: number; baseX: number; baseZ: number; microPhase: number };
+  function mkDancer(drig: ReturnType<typeof buildFigureRig>, stepOffset: number, baseX: number, baseZ: number, microPhase: number): Dancer {
+    const cur: Pose = {}, vel: Pose = {}, tgt: Pose = {};
+    for (const k of POSE_KEYS) { cur[k] = BASE_POSE[k] || 0; vel[k] = 0; tgt[k] = BASE_POSE[k] || 0; }
+    return { rig: drig, cur, vel, tgt, stepOffset, baseX, baseZ, microPhase };
+  }
+  const setPoseFor = (d: Dancer, p: Pose) => { for (const k of POSE_KEYS) d.tgt[k] = (k in p) ? p[k] : (BASE_POSE[k] || 0); };
   function shuffleMoves(arr: number[]) {
     for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; }
     return arr;
@@ -572,6 +579,23 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   let movePlaylist = shuffleMoves(MOVES.map((_, i) => i));
   let moveCursor = 0;
 
+  // Lead dancer + lazily-built party backups (hidden until setParty(true)).
+  const dancers: Dancer[] = [mkDancer(rig, 0, 0, 0, 0)];
+  let partyOn = false;
+  function ensureBackups() {
+    if (dancers.length > 1) return;
+    const spots: [number, number, number][] = [[-1.0, -0.5, 1], [1.0, -0.5, 2]]; // x, z, beat offset
+    for (const [bx, bz, off] of spots) {
+      const r = buildFigureRig(figMat, capeMat);
+      r.group.position.set(bx, -0.05, bz);
+      r.group.scale.setScalar(0.8);
+      r.group.visible = false;
+      scene.add(r.group);
+      dancers.push(mkDancer(r, off, bx, bz, off * 2.1));
+    }
+  }
+  const activeDancers = () => (partyOn ? dancers : [dancers[0]]);
+
   let playing = false;
   let energy = 0.25; // smoothed 0..1, drives everything below
   let tempoMs = DEFAULT_TEMPO_MS;
@@ -625,28 +649,35 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       // Choreography: on each beat, set the target pose from the current
       // move's step chart; every BEATS_PER_PATTERN beats advance to the
       // next move in the shuffled playlist (reshuffling when exhausted).
+      // Party backups run the same move at a per-dancer beat offset — a
+      // choreographed crew wave rather than three clones in lockstep.
       const step = beatCount % BEATS_PER_PATTERN;
       if (step === 0) {
         // Wrap any accumulated full turn so the next move starts facing
         // front instead of spring-unwinding backwards through 360°.
-        const wrap = Math.round(springCur.rootRy / (Math.PI * 2)) * Math.PI * 2;
-        springCur.rootRy -= wrap; springTgt.rootRy -= wrap;
+        for (const d of dancers) {
+          const wrap = Math.round(d.cur.rootRy / (Math.PI * 2)) * Math.PI * 2;
+          d.cur.rootRy -= wrap; d.tgt.rootRy -= wrap;
+        }
         moveCursor++;
         if (moveCursor >= movePlaylist.length) { movePlaylist = shuffleMoves(movePlaylist); moveCursor = 0; }
       }
-      setPose(MOVES[movePlaylist[moveCursor]](step));
+      const moveFn = MOVES[movePlaylist[moveCursor]];
+      for (const d of activeDancers()) setPoseFor(d, moveFn((step + d.stepOffset) % BEATS_PER_PATTERN));
     }
-    if (!playing) setPose(BASE_POSE); // paused → relax to a calm idle stance
+    if (!playing) for (const d of activeDancers()) setPoseFor(d, BASE_POSE); // paused → calm idle
     beatPulse *= 0.9;
 
     // Integrate the pose springs — underdamped (slight overshoot) so every
     // pose change lands with a physical "hit" instead of a linear glide.
     {
       const kSpring = 130, damp = 15;
-      for (const key of POSE_KEYS) {
-        springVel[key] += (springTgt[key] - springCur[key]) * kSpring * dt;
-        springVel[key] *= Math.exp(-damp * dt);
-        springCur[key] += springVel[key] * dt;
+      for (const d of activeDancers()) {
+        for (const key of POSE_KEYS) {
+          d.vel[key] += (d.tgt[key] - d.cur[key]) * kSpring * dt;
+          d.vel[key] *= Math.exp(-damp * dt);
+          d.cur[key] += d.vel[key] * dt;
+        }
       }
     }
 
@@ -679,33 +710,39 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
 
     // Apply spring pose + a continuous micro-groove layer (breathing sway,
     // beat throb in the knees/root) so the body never fully freezes even
-    // during held poses.
+    // during held poses. Runs per active dancer, with a per-dancer phase on
+    // the micro-motion so the crew doesn't breathe in eerie unison.
     const bounceCycle = ((now - lastBeat) / tempoMs);
     const bounce = Math.max(0, Math.sin(Math.PI * Math.min(1, bounceCycle * 1.4))) * energy;
-    const S = springCur;
-    rig.group.position.y = -0.05 + S.rootY - bounce * 0.06;
-    rig.group.position.x = S.rootX;
-    rig.group.rotation.y = S.rootRy + Math.sin(t * 0.4) * 0.04 * energy;
-    rig.hips.rotation.z = S.hipsRz + Math.sin(t * 2.0) * 0.02 * energy;
-    rig.torso.rotation.x = S.torsoRx;
-    rig.torso.rotation.y = S.torsoRy + Math.sin(t * 1.1) * 0.03 * energy;
-    rig.torso.rotation.z = S.torsoRz;
-    rig.head.rotation.x = S.headRx + Math.sin(t * 1.7) * 0.02;
-    rig.head.rotation.y = S.headRy + Math.sin(t * 1.1 + 0.4) * 0.06;
-    // Sign flip on the Z axes: poses are authored as "positive = raise the
-    // arm", but +Z rotation swings a hanging left arm INWARD through the
-    // torso (this was the "body swallows the arms" bug). Negating here
-    // makes every raise sweep OUTWARD around the body; for arms already
-    // overhead, an authored negative (e.g. the clap) correctly curls
-    // inward above the head where there is nothing to clip through.
-    rig.shoulderL.rotation.z = -S.shLz; rig.shoulderL.rotation.x = S.shLx;
-    rig.shoulderR.rotation.z = -S.shRz; rig.shoulderR.rotation.x = S.shRx;
-    rig.foreArmL.rotation.z = -S.fALz; rig.foreArmL.rotation.x = S.fALx;
-    rig.foreArmR.rotation.z = -S.fARz; rig.foreArmR.rotation.x = S.fARx;
-    rig.legL.rotation.x = S.legLx; rig.legL.rotation.z = S.legLz;
-    rig.legR.rotation.x = S.legRx; rig.legR.rotation.z = S.legRz;
-    rig.kneeL.rotation.x = S.kneeLx + bounce * 0.25;
-    rig.kneeR.rotation.x = S.kneeRx + bounce * 0.2;
+    for (const d of activeDancers()) {
+      const S = d.cur;
+      const dg = d.rig;
+      const tp = t + d.microPhase;
+      dg.group.position.y = -0.05 + S.rootY - bounce * 0.06;
+      dg.group.position.x = d.baseX + S.rootX;
+      dg.group.position.z = d.baseZ;
+      dg.group.rotation.y = S.rootRy + Math.sin(tp * 0.4) * 0.04 * energy;
+      dg.hips.rotation.z = S.hipsRz + Math.sin(tp * 2.0) * 0.02 * energy;
+      dg.torso.rotation.x = S.torsoRx;
+      dg.torso.rotation.y = S.torsoRy + Math.sin(tp * 1.1) * 0.03 * energy;
+      dg.torso.rotation.z = S.torsoRz;
+      dg.head.rotation.x = S.headRx + Math.sin(tp * 1.7) * 0.02;
+      dg.head.rotation.y = S.headRy + Math.sin(tp * 1.1 + 0.4) * 0.06;
+      // Sign flip on the Z axes: poses are authored as "positive = raise
+      // the arm", but +Z rotation swings a hanging left arm INWARD through
+      // the torso (this was the "body swallows the arms" bug). Negating
+      // here makes every raise sweep OUTWARD around the body; authored
+      // negatives (e.g. the overhead clap) correctly curl inward above the
+      // head where there is nothing to clip through.
+      dg.shoulderL.rotation.z = -S.shLz; dg.shoulderL.rotation.x = S.shLx;
+      dg.shoulderR.rotation.z = -S.shRz; dg.shoulderR.rotation.x = S.shRx;
+      dg.foreArmL.rotation.z = -S.fALz; dg.foreArmL.rotation.x = S.fALx;
+      dg.foreArmR.rotation.z = -S.fARz; dg.foreArmR.rotation.x = S.fARx;
+      dg.legL.rotation.x = S.legLx; dg.legL.rotation.z = S.legLz;
+      dg.legR.rotation.x = S.legRx; dg.legR.rotation.z = S.legRz;
+      dg.kneeL.rotation.x = S.kneeLx + bounce * 0.25;
+      dg.kneeR.rotation.x = S.kneeRx + bounce * 0.2;
+    }
 
     // Sparks drift upward through the beam, looping back to the floor.
     const posAttr = sparkGeo.getAttribute('position') as THREE.BufferAttribute;
@@ -727,7 +764,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       confAttr.setX(i, x);
     }
     confAttr.needsUpdate = true;
-    confettiMat.opacity = 0.15 + energy * 0.55;
+    confettiMat.opacity = Math.min(1, (0.15 + energy * 0.55) * (partyOn ? 1.5 : 1));
 
     for (let i = 0; i < hazeSprites.length; i++) {
       hazeSprites[i].position.x += Math.sin(t * 0.15 + i) * 0.0015;
@@ -749,6 +786,11 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     setEnergy(p: boolean) { playing = p; },
     setTempo(ms: number) {
       if (Number.isFinite(ms) && ms > 0) tempoMs = ms;
+    },
+    setParty(on: boolean) {
+      partyOn = !!on;
+      if (partyOn) ensureBackups();
+      for (let i = 1; i < dancers.length; i++) dancers[i].rig.group.visible = partyOn;
     },
     dispose() {
       cancelAnimationFrame(raf);

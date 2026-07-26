@@ -290,6 +290,30 @@
   .hero-line.pop .hl-trans{animation:hlPop .45s cubic-bezier(.2,1.4,.3,1);}
   @keyframes hlPop{0%{transform:translateY(14px) scale(.94); opacity:0;}100%{transform:none; opacity:1;}}
   .hero-wrap.has-line .hero-caption{display:none;}
+  .hero-btn{
+    position:absolute; top:10px; left:10px; z-index:4;
+    width:40px; height:40px; border-radius:12px; cursor:pointer;
+    background:rgba(10,12,20,.55); border:1px solid var(--border);
+    color:var(--text); font-size:18px; backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .hero-btn.on{border-color:var(--border-strong); box-shadow:0 0 16px rgba(0,229,255,.4);}
+  .hero-btn.stage-exit{left:auto; right:10px;}
+  /* Stage mode — the hero takes over the whole screen (party display /
+     landscape phone propped up). The live line + LED frame stay on top. */
+  body.stage-mode .hero-wrap{position:fixed; inset:0; z-index:80; height:100vh; height:100dvh; margin:0; border-radius:0; border:none;}
+  body.stage-mode .led-frame{z-index:90;}
+  body.stage-mode .hero-line .hl-trans{font-size:clamp(24px, 5.2vw, 46px);}
+  .info-card{
+    background:var(--bg-elevated); border:1px solid var(--border); border-radius:var(--radius);
+    padding:16px 18px; margin-top:16px;
+  }
+  .info-head{font-family:'Chakra Petch',sans-serif; font-size:13px; letter-spacing:.12em; color:var(--cyan); margin-bottom:10px;}
+  .info-body{font-size:14px; line-height:1.85; color:var(--text);}
+  .info-body .info-sec{font-weight:800; color:var(--amber); margin:10px 0 4px;}
+  .info-body .info-sec:first-child{margin-top:0;}
+  .info-body p{margin:0 0 6px;}
+  .info-foot{font-size:10.5px; color:var(--text-faint); margin-top:10px;}
   @media (max-width:560px){ .hero-wrap{height:min(40vh,280px);} }
 
   /* Ambient "LED" screen-edge glow, pulsing/color-cycling on the same beat
@@ -427,6 +451,9 @@
       <button id="karaokeBtn" class="icon-btn" aria-label="מצב קריוקי" title="מצב קריוקי — מילים בלבד">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 3H5a2 2 0 00-2 2v3M16 3h3a2 2 0 012 2v3M8 21H5a2 2 0 01-2-2v-3M16 21h3a2 2 0 002-2v-3"/></svg>
       </button>
+      <button id="rotateBtn" class="icon-btn" aria-label="מצב במה — מסך מלא לרוחב" title="מצב במה — מסך מלא לרוחב">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M12 18v3M8 21h8"/></svg>
+      </button>
       <button id="settingsBtn" class="icon-btn" aria-label="הגדרות" title="הגדרות">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
       </button>
@@ -439,6 +466,8 @@
       <div class="hl-orig" id="heroLineOrig" dir="auto"></div>
       <div class="hl-trans" id="heroLineTrans" dir="auto"></div>
     </div>
+    <button class="hero-btn" id="partyBtn" title="מצב מסיבה — להקת רקדנים">🎉</button>
+    <button class="hero-btn stage-exit" id="stageExitBtn" title="יציאה ממסך מלא" hidden>✕</button>
     <div class="hero-caption">🎭 רוקד לקצב השיר</div>
   </div>
 
@@ -540,6 +569,12 @@
     <button id="prevLineBtn">◂ שורה קודמת</button>
     <button id="nextLineBtn">שורה הבאה ▸</button>
   </div>
+
+  <section class="info-card" id="songInfoCard" hidden>
+    <div class="info-head">🎼 על השיר והאמן</div>
+    <div class="info-body" id="songInfoBody"></div>
+    <div class="info-foot">נכתב על ידי AI לפי מילות השיר — ייתכנו אי-דיוקים</div>
+  </section>
 
   <footer>
     מילים: LRCLIB (מסונכרן) עם גיבוי lyrics.ovh · תרגום: Google (חינם) עם גיבוי MyMemory · הכול ללא מפתחות וללא תשלום.<br>
@@ -739,6 +774,33 @@
   fontSizeSlider.addEventListener('input', ()=> setFontPx(Number(fontSizeSlider.value)));
   fontMinus.addEventListener('click', ()=> setFontPx(settings.fontPx - 2));
   fontPlus.addEventListener('click', ()=> setFontPx(settings.fontPx + 2));
+  // ── Stage mode — fullscreen landscape "party display": the avatar stage
+  // takes over the whole screen with the live line on it. orientation.lock
+  // works on Android once fullscreen; iOS Safari has no lock API, so there
+  // the fullscreen stage simply follows however the phone is held.
+  const rotateBtn = $('rotateBtn');
+  const stageExitBtn = $('stageExitBtn');
+  async function enterStageMode(){
+    document.body.classList.add('stage-mode');
+    stageExitBtn.hidden = false;
+    rotateBtn.classList.add('on');
+    try{ await document.documentElement.requestFullscreen(); }catch(e){}
+    try{ await screen.orientation.lock('landscape'); }catch(e){}
+  }
+  function exitStageMode(){
+    document.body.classList.remove('stage-mode');
+    stageExitBtn.hidden = true;
+    rotateBtn.classList.remove('on');
+    try{ screen.orientation.unlock(); }catch(e){}
+    if(document.fullscreenElement) document.exitFullscreen().catch(()=>{});
+  }
+  rotateBtn.addEventListener('click', ()=>{ if(document.body.classList.contains('stage-mode')) exitStageMode(); else enterStageMode(); });
+  stageExitBtn.addEventListener('click', exitStageMode);
+  document.addEventListener('fullscreenchange', ()=>{
+    // OS back-gesture / Esc exits fullscreen without our button — mirror it.
+    if(!document.fullscreenElement && document.body.classList.contains('stage-mode')) exitStageMode();
+  });
+
   karaokeBtn.addEventListener('click', ()=>{
     document.body.classList.toggle('karaoke');
     karaokeBtn.classList.toggle('on', document.body.classList.contains('karaoke'));
@@ -1382,6 +1444,65 @@
       return true;
     }catch(e){ return false; }
   }
+  // ================= SONG INFO CARD (AI) =================
+  // "What is this song about / who is the artist" — a listener's context
+  // card under the lyrics, written by the same Groq/Gemini key the smart
+  // translation uses and cached onto the song's cache entry. The prompt
+  // demands "only what you know for sure" for artist facts so the model
+  // declines instead of inventing biography.
+  const songInfoCard = $('songInfoCard');
+  const songInfoBody = $('songInfoBody');
+  function renderSongInfo(text){
+    if(!text){ songInfoCard.hidden = true; songInfoBody.innerHTML = ''; return; }
+    const escI = (s)=>String(s).replace(/[<>&]/g, c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+    songInfoBody.innerHTML = String(text).split('\n').map(line=>{
+      const l = line.trim();
+      if(!l) return '';
+      const h = l.match(/^#{2,4}\s*(.+)$/) || l.match(/^\*\*(.+)\*\*$/);
+      if(h) return '<div class="info-sec">' + escI(h[1]) + '</div>';
+      return '<p>' + escI(l.replace(/^[-•*]\s*/, '• ')) + '</p>';
+    }).join('');
+    songInfoCard.hidden = false;
+  }
+  async function loadSongInfo(artist, title, texts, seq, cacheKey){
+    try{
+      const groqKey = (localStorage.getItem('alpha_groq') || '').trim();
+      const gemKey = (localStorage.getItem('alpha_key') || '').trim();
+      if(!groqKey && !gemKey) return;
+      const prompt = 'אתה עורך מוזיקה. עבור השיר "' + title + '" של ' + artist + ':\n' +
+        'כתוב בדיוק בפורמט הבא, בעברית, בלי שום דבר נוסף:\n' +
+        '### על השיר\n2-3 משפטים על מה השיר מדבר לפי המילים המצורפות — משמעות, אווירה, נושא.\n' +
+        '### על האמן\n2-3 עובדות קצרות ומעניינות על האמן — רק דברים שאתה יודע בוודאות; אם אינך מכיר את האמן כתוב "אין לי מידע ודאי על האמן הזה".\n\n' +
+        'מילות השיר:\n' + texts.slice(0, 40).join('\n');
+      let out = null;
+      if(groqKey){
+        out = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method:'POST',
+          headers:{ 'Content-Type':'application/json', Authorization:'Bearer ' + groqKey },
+          body: JSON.stringify({ model:'llama-3.3-70b-versatile', temperature:0.35, max_tokens:700, messages:[{ role:'user', content: prompt }] }),
+        }).then(r=>r.ok ? r.json() : null)
+          .then(d=>(d && d.choices && d.choices[0] && d.choices[0].message && d.choices[0].message.content) || null)
+          .catch(()=>null);
+      }
+      if(!out && gemKey){
+        out = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent', {
+          method:'POST',
+          headers:{ 'Content-Type':'application/json', 'x-goog-api-key': gemKey },
+          body: JSON.stringify({ contents:[{ parts:[{ text: prompt }] }] }),
+        }).then(r=>r.ok ? r.json() : null)
+          .then(d=>{
+            const parts = d && d.candidates && d.candidates[0] && d.candidates[0].content && d.candidates[0].content.parts;
+            return parts ? parts.map(p=>p.text||'').join('') : null;
+          })
+          .catch(()=>null);
+      }
+      if(!out || seq !== state.loadSeq) return;
+      renderSongInfo(out);
+      const c = cacheGet(cacheKey);
+      if(c){ c.info = out; cacheSet(cacheKey, c); }
+    }catch(e){}
+  }
+
   let miniToastT = null;
   function showMiniToast(msg){
     let el = document.getElementById('miniToast');
@@ -1419,6 +1540,7 @@
     state.rawArtist = artist; state.rawTitle = title;
     state.activeIndex = -1;
     updateHeroLine(-1);
+    renderSongInfo(null); // previous song's info card is stale for this one
     const target = targetLangSel.value;
     const cacheKey = (artist + '|' + title + '|' + target).toLowerCase();
 
@@ -1435,10 +1557,12 @@
       if(!cached.smart){
         smartRefineHebrew(state.lines.map(l=>l.orig), seq).then((refined)=>{
           if(refined && seq === state.loadSeq){
-            cacheSet(cacheKey, { lines: state.lines, synced: state.synced, smart: true, ts: Date.now() });
+            cacheSet(cacheKey, { lines: state.lines, synced: state.synced, smart: true, info: cached.info, ts: Date.now() });
           }
         });
       }
+      if(cached.info) renderSongInfo(cached.info);
+      else loadSongInfo(artist, title, state.lines.map(l=>l.orig), seq, cacheKey);
       return;
     }
 
@@ -1480,6 +1604,7 @@
     const refined = await smartRefineHebrew(texts, seq);
     if(seq !== state.loadSeq) return;
     cacheSet(cacheKey, { lines: state.lines, synced: state.synced, smart: refined, ts: Date.now() });
+    loadSongInfo(artist, title, texts, seq, cacheKey);
   }
 
   function setSyncBadge(){
@@ -1636,13 +1761,13 @@
   // which isn't wired up here.
   const ledFrame = $('ledFrame');
   const ledToggle = $('ledToggle');
-  const LED_COLORS = ['178,75,243', '0,229,255', '255,80,180', '255,176,32'];
   let ledOn = store.get('lt:led_on');
   if(ledOn === null || ledOn === undefined) ledOn = true;
-  let ledLastBeat = 0, ledPulse = 0, ledColorIdx = 0, ledRaf = 0;
+  let ledLastBeat = 0, ledLastHalf = 0, ledPulse = 0, ledHalfPulse = 0, ledHue = 265, ledRaf = 0, ledPrevTs = 0;
   function applyLedSetting(){
     ledToggle.checked = !!ledOn;
     ledFrame.classList.toggle('off', !ledOn);
+    if(!ledOn) ledFrame.style.boxShadow = '';
   }
   ledToggle.addEventListener('change', ()=>{
     ledOn = ledToggle.checked;
@@ -1650,20 +1775,36 @@
     applyLedSetting();
   });
   applyLedSetting();
+  // Upgraded strip: continuous hue rotation with a hard hue KICK on each
+  // beat, sharp attack + exponential decay (real LED-strip behavior, not a
+  // slow throb), a softer half-beat echo pulse, and a two-tone glow — the
+  // main hue plus its offset partner layered as separate shadows so the
+  // frame reads like a real multi-zone strip.
   function ledFrameLoop(now){
     ledRaf = requestAnimationFrame(ledFrameLoop);
     if(document.hidden || !ledOn) return;
+    const dt = ledPrevTs ? Math.min((now - ledPrevTs) / 1000, 0.05) : 0.016;
+    ledPrevTs = now;
     const playing = state.isPlaying || state.mode === 'manual';
     if(playing && now - ledLastBeat > tempoMs){
-      ledLastBeat = now; ledPulse = 1;
-      ledColorIdx = (ledColorIdx + 1) % LED_COLORS.length;
+      ledLastBeat = now; ledLastHalf = now; ledPulse = 1;
+      ledHue = (ledHue + 47) % 360; // hue kick on the beat
+    } else if(playing && now - ledLastHalf > tempoMs / 2){
+      ledLastHalf = now; ledHalfPulse = 0.55; // softer off-beat echo
     }
-    ledPulse *= 0.88;
+    ledPulse *= Math.exp(-dt * 5.2);
+    ledHalfPulse *= Math.exp(-dt * 7);
+    ledHue = (ledHue + dt * 14) % 360; // slow continuous drift between kicks
     const energy = playing ? 1 : 0.15;
-    const blur = Math.round(30 + ledPulse * 90 * energy);
-    const spread = Math.round(14 + ledPulse * 55 * energy);
-    const alpha = (0.12 + ledPulse * 0.5 * energy).toFixed(3);
-    ledFrame.style.boxShadow = 'inset 0 0 ' + blur + 'px ' + spread + 'px rgba(' + LED_COLORS[ledColorIdx] + ',' + alpha + ')';
+    const p = Math.min(1, ledPulse + ledHalfPulse * 0.5);
+    const blur1 = Math.round(34 + p * 110 * energy);
+    const spread1 = Math.round(15 + p * 62 * energy);
+    const a1 = (0.14 + p * 0.55 * energy).toFixed(3);
+    const blur2 = Math.round(70 + p * 60 * energy);
+    const a2 = (0.08 + p * 0.3 * energy).toFixed(3);
+    ledFrame.style.boxShadow =
+      'inset 0 0 ' + blur1 + 'px ' + spread1 + 'px hsla(' + ledHue.toFixed(0) + ',95%,60%,' + a1 + '),' +
+      'inset 0 0 ' + blur2 + 'px ' + Math.round(spread1 * 0.5) + 'px hsla(' + ((ledHue + 70) % 360).toFixed(0) + ',95%,55%,' + a2 + ')';
   }
   ledRaf = requestAnimationFrame(ledFrameLoop);
 
@@ -1723,11 +1864,14 @@
   let handle = null;
   let lastEnergy = false;
   let lastTempo = 560;
+  let lastParty = false;
+  try { lastParty = localStorage.getItem('lt:party_on') === '1'; } catch {}
   function mount() {
     if (handle) return;
     handle = mountLyricsAvatar(heroAvatar);
     handle.setEnergy(lastEnergy);
     handle.setTempo(lastTempo);
+    handle.setParty?.(lastParty);
   }
   function unmount() {
     if (!handle) return;
@@ -1757,7 +1901,19 @@
   window.__lyricsAvatarBridge = {
     setEnergy(playing) { lastEnergy = !!playing; if (handle) handle.setEnergy(lastEnergy); },
     setTempo(ms) { lastTempo = ms; if (handle) handle.setTempo(lastTempo); },
+    setParty(on) { lastParty = !!on; if (handle) handle.setParty?.(lastParty); },
   };
+
+  // 🎉 Party mode — backup dancers join the lead, persisted across visits.
+  const partyBtn = document.getElementById('partyBtn');
+  function applyPartyUI() { partyBtn.classList.toggle('on', lastParty); }
+  partyBtn.addEventListener('click', () => {
+    lastParty = !lastParty;
+    try { localStorage.setItem('lt:party_on', lastParty ? '1' : '0'); } catch {}
+    if (handle) handle.setParty?.(lastParty);
+    applyPartyUI();
+  });
+  applyPartyUI();
 
   // "The words are seen only after [the avatar]" — reveal the lyrics/search
   // panel once the scene has had a moment to establish itself.
