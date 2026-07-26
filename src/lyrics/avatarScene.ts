@@ -44,6 +44,30 @@ export interface LyricsAvatarHandle {
   setTheme?(idx: number): void;
   // Avatar size — camera-distance zoom (1 = default, >1 = bigger avatars).
   setZoom?(z: number): void;
+  // Neon circuitry vein glow strength (0 = off, 1 = default, up to 2).
+  setVeinIntensity?(v: number): void;
+  // Choreography step rate vs. the song's real tempo (0.4-2.5x).
+  setDanceSpeed?(mult: number): void;
+  // Flip the whole stage horizontally.
+  setMirror?(on: boolean): void;
+  // Non-stadium camera behavior: 0 cinematic sway · 1 static · 2 handheld.
+  setCameraStyle?(mode: number): void;
+  // Bass-drop camera-shake strength multiplier (0-3).
+  setShakeIntensity?(v: number): void;
+  setConfettiIntensity?(v: number): void;
+  setSparkIntensity?(v: number): void;
+  setHazeIntensity?(v: number): void;
+  setBeamIntensity?(v: number): void;
+  setFinIntensity?(v: number): void;
+  // Stadium crowd point cap (e.g. 20000/50000/80000); -1 = no user cap
+  // (device auto-quality still applies).
+  setStadiumDensity?(n: number): void;
+  // Stadium camera: 0 drone orbit · 1 fixed wide · 2 stage-cam close.
+  setStadiumCameraStyle?(mode: number): void;
+  // Backup dancers shown in crew/BIG PARTY modes (0-6).
+  setCrewSize?(n: number): void;
+  // Renderer tone-mapping exposure — overall scene brightness (0.3-2).
+  setExposure?(v: number): void;
   // LIVE beat engine — real onsets detected from the microphone (the room's
   // actual Spotify audio). liveBeatTick() fires the show's beat exactly on
   // a detected onset (overrides the internal clock until the mic goes
@@ -86,6 +110,7 @@ function buildFigureMaterial() {
       uColB: { value: new THREE.Vector3(...t0.b) },
       uColC: { value: new THREE.Vector3(...t0.c) },
       uRainbow: { value: 0 },
+      uVeinIntensity: { value: 1 },
     },
     vertexShader: /* glsl */`
       varying vec3 vNormalW;
@@ -115,6 +140,7 @@ function buildFigureMaterial() {
       uniform vec3 uColB;
       uniform vec3 uColC;
       uniform float uRainbow;
+      uniform float uVeinIntensity;
       varying vec3 vNormalW;
       varying vec3 vViewDirW;
       varying vec3 vWorldPos;
@@ -165,7 +191,7 @@ function buildFigureMaterial() {
         vec3 veinCol = cph < 0.33 ? mix(vPurple, vCyan, cph / 0.33)
                      : cph < 0.66 ? mix(vCyan, vGreen, (cph - 0.33) / 0.33)
                                   : mix(vGreen, vPurple, (cph - 0.66) / 0.34);
-        vec3 veinGlow = veinCol * veins * (0.9 + uPulse * 2.6);
+        vec3 veinGlow = veinCol * veins * (0.9 + uPulse * 2.6) * uVeinIntensity;
 
         gl_FragColor = vec4(fill + rim + veinGlow + vec3(0.85, 0.92, 1.0) * spec, 1.0);
       }
@@ -1118,15 +1144,129 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       shRz: a < 0 ? -0.4 : -1.0, shRx: a < 0 ? -0.9 : 0.2, fARx: a < 0 ? -1.0 : 0,
       headRy: a * 0.25, hipsRz: a * 0.1,
     }; },
+
+    // ═══════ AFROBEATS / VIRAL (69-78) ═══════
+    // 69 · Afro shoki — grounded shoulder shakes over a low bounce.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      rootY: -0.14, kneeLx: 0.55, kneeRx: 0.55, torsoRz: a * 0.16, shLz: a > 0 ? 0.85 : 0.4, shRz: a < 0 ? -0.85 : -0.4,
+      fALz: 0.5, fARz: -0.5, headRy: a * 0.1, hipsRz: -a * 0.14, rootX: a * 0.05,
+    }; },
+    // 70 · Zanku leg work — sharp alternating leg flicks, torso upright and cool.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      legLx: a > 0 ? -0.4 : 0.5, kneeLx: a > 0 ? 0.15 : 1.1, legRx: a < 0 ? -0.4 : 0.5, kneeRx: a < 0 ? 0.15 : 1.1,
+      rootY: -0.1, shLz: 0.6, shRz: -0.6, fALz: 0.65, fARz: -0.65, torsoRy: a * 0.1, headRx: 0.05,
+    }; },
+    // 71 · Gwara gwara — hips carve a wide circle, upper body leans with it.
+    (s) => { const q = s % 4; const ang = [0.18, 0.05, -0.18, 0.05][q]; return {
+      hipsRz: ang, torsoRz: -ang * 0.7, rootX: ang * 0.6, torsoRy: ang * 0.5,
+      shLz: 0.5, shRz: -0.5, fALz: 0.4, fARz: -0.4, headRy: ang * 0.8, rootY: -0.06, kneeLx: 0.3, kneeRx: 0.3,
+    }; },
+    // 72 · Woah — sudden hard freeze-snap of the head/shoulders on the beat.
+    (s) => { const hit = s % 2 === 0; return {
+      headRx: hit ? -0.35 : 0.05, headRy: hit ? 0.3 : 0, torsoRz: hit ? 0.2 : 0,
+      shLz: hit ? 0.3 : 0.9, shRz: hit ? -1.1 : -0.4, fALz: hit ? 0.6 : 0.2, fARz: hit ? -0.2 : -0.7,
+      rootY: hit ? -0.1 : -0.03, kneeLx: 0.3, kneeRx: 0.3,
+    }; },
+    // 73 · Dougie lean — loose shoulder roll with a deep side lean.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      torsoRz: a * 0.24, hipsRz: -a * 0.1, rootX: a * 0.16, shLz: 0.45, shRz: -0.45,
+      fALz: 0.55, fARz: -0.55, headRy: -a * 0.2, headRx: 0.05, kneeLx: 0.3, kneeRx: 0.3, rootY: -0.06,
+    }; },
+    // 74 · Shoot dance — arm mimes a bow-and-arrow pull, hips punctuate.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      shLx: a > 0 ? -1.2 : 0.3, fALx: a > 0 ? -0.9 : 0, fALz: a > 0 ? 0.1 : 0.7,
+      shRz: a > 0 ? -0.4 : -1.3, fARz: a > 0 ? -0.7 : -0.05, hipsRz: a * 0.16,
+      torsoRy: a * 0.2, rootY: -0.06, kneeLx: 0.3, kneeRx: 0.3, headRy: a * 0.15,
+    }; },
+    // 75 · Viral tutting — sharp geometric arm folds, robotic but grounded.
+    (s) => { const q = s % 4; return {
+      shLz: q === 0 ? 1.1 : q === 1 ? 1.1 : 0.5, shLx: q === 1 ? -0.9 : -0.2, fALx: q >= 1 ? -1.1 : 0, fALz: q >= 2 ? 0.15 : 0.7,
+      shRz: q === 2 ? -1.1 : q === 3 ? -1.1 : -0.5, shRx: q === 3 ? -0.9 : -0.2, fARx: q >= 3 ? -1.1 : 0, fARz: q === 0 ? -0.7 : -0.15,
+      headRy: (q < 2 ? 1 : -1) * 0.2, rootY: -0.04, kneeLx: 0.2, kneeRx: 0.2,
+    }; },
+    // 76 · Bounce clap combo — two-beat bounce with an overhead clap topper.
+    (s): Pose => { const clap = s % 4 === 3; return clap
+      ? { shLz: 2.2, shRz: -2.2, fALz: -0.4, fARz: 0.4, rootY: -0.01, kneeLx: 0.15, kneeRx: 0.15, headRx: -0.1 }
+      : { rootY: s % 2 ? -0.15 : -0.05, kneeLx: s % 2 ? 0.7 : 0.25, kneeRx: s % 2 ? 0.7 : 0.25, shLz: 0.6, shRz: -0.6, fALz: 0.55, fARz: -0.55, hipsRz: (s % 2 ? 1 : -1) * 0.1 };
+    },
+    // 77 · Shaku shaku — foot-tap shuffle with hands rowing forward.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      legLx: a > 0 ? -0.3 : 0.1, legRx: a < 0 ? -0.3 : 0.1, kneeLx: 0.25, kneeRx: 0.25,
+      shLx: -0.5, shRx: -0.5, fALx: a > 0 ? -0.6 : -0.2, fARx: a < 0 ? -0.6 : -0.2, fALz: 0.5, fARz: -0.5,
+      torsoRy: a * 0.14, rootY: -0.07, headRy: a * 0.12,
+    }; },
+    // 78 · Amapiano glide — smooth slow-drag steps, arms low and languid.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      rootX: a * 0.28, legLx: a > 0 ? -0.35 : 0.1, legRx: a < 0 ? -0.35 : 0.1,
+      kneeLx: a > 0 ? 0.4 : 0.15, kneeRx: a < 0 ? 0.4 : 0.15, torsoRz: a * 0.1,
+      shLz: 0.35, shRz: -0.35, fALz: 0.75, fARz: -0.75, headRy: a * 0.15, rootY: -0.04,
+    }; },
+
+    // ═══════ CONTEMPORARY / VOGUE (79-88) ═══════
+    // 79 · Vogue hand performance — sharp geometric hand frames near the face.
+    (s) => { const q = s % 4; return {
+      shLz: q < 2 ? 1.9 : 1.2, shLx: q === 1 ? -0.6 : -0.1, fALx: q >= 1 ? -1.2 : -0.3, fALz: q < 2 ? 0.2 : 0.6,
+      shRz: q >= 2 ? -1.9 : -1.2, shRx: q === 3 ? -0.6 : -0.1, fARx: q >= 3 ? -1.2 : -0.3, fARz: q >= 2 ? -0.2 : -0.6,
+      headRx: -0.1, headRy: (q < 2 ? 1 : -1) * 0.22, rootY: -0.02, kneeLx: 0.15, kneeRx: 0.15,
+    }; },
+    // 80 · Duckwalk strut — runway walk with an exaggerated hip roll.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      rootX: a * 0.1, hipsRz: a * 0.26, torsoRy: -a * 0.1, torsoRz: -a * 0.08,
+      legLx: a > 0 ? -0.3 : 0.15, legRx: a < 0 ? -0.3 : 0.15, kneeLx: 0.25, kneeRx: 0.25,
+      shLz: 0.4, shRz: -0.4, fALz: 0.3, fARz: -0.3, headRy: -a * 0.1, rootY: -0.03,
+    }; },
+    // 81 · Dip drop — a controlled floor dip and smooth recovery.
+    (s): Pose => s % 4 < 3
+      ? { rootY: -0.05 - (s % 4) * 0.08, kneeLx: 0.3 + (s % 4) * 0.3, kneeRx: 0.3 + (s % 4) * 0.3, torsoRx: (s % 4) * 0.08,
+          shLz: 1.6, shRz: -1.6, fALz: 0.2, fARz: -0.2, headRx: -0.05 }
+      : { rootY: -0.02, kneeLx: 0.15, kneeRx: 0.15, torsoRx: -0.05, shLz: 2.2, shRz: -2.2, fALz: -0.1, fARz: 0.1, headRx: -0.15 },
+    // 82 · Contemporary reach — a long diagonal reach with a spiraling torso.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      shLz: a > 0 ? 2.6 : 0.5, fALz: a > 0 ? 0.15 : 0.5, shRz: a < 0 ? -2.6 : -0.5, fARz: a < 0 ? -0.15 : -0.5,
+      torsoRy: a * 0.32, torsoRx: -0.08, hipsRz: -a * 0.1, headRy: a * 0.3, rootY: -0.04, kneeLx: 0.2, kneeRx: 0.2,
+    }; },
+    // 83 · Catwalk pivot — crisp quarter-turn pivot every four beats, chin high.
+    (s) => ({
+      rootRy: (Math.PI / 2) * Math.floor(s / 4) + (Math.PI / 2) * Math.min(1, (s % 4) / 3),
+      shLz: 0.4, shRz: -0.4, fALz: 0.2, fARz: -0.2, headRx: -0.12, rootY: -0.02, kneeLx: 0.15, kneeRx: 0.15,
+    }),
+    // 84 · Floor ripple — a seated-height ripple traveling torso to fingertips.
+    (s): Pose => { const q = s % 4; return q === 0
+      ? { rootY: -0.22, torsoRx: 0.2, kneeLx: 1.0, kneeRx: 1.0, legLx: -0.3, legRx: -0.3, shLz: 0.3, shRz: -0.3, fALz: 0.3, fARz: -0.3 }
+      : q === 1
+      ? { rootY: -0.14, torsoRx: -0.1, kneeLx: 0.6, kneeRx: 0.6, shLz: 0.9, shRz: -0.9, fALz: 0.5, fARz: -0.5 }
+      : { rootY: -0.03, torsoRx: 0.05, kneeLx: 0.2, kneeRx: 0.2, shLz: 1.7, shRz: -1.7, fALz: 0.6, fARz: -0.6, headRx: -0.1 };
+    },
+    // 85 · Isolation box — chest/hips/head isolate independently in sequence.
+    (s) => { const q = s % 4; return {
+      torsoRx: q === 0 ? 0.2 : 0, hipsRz: q === 1 ? 0.2 : q === 3 ? -0.2 : 0,
+      headRy: q === 2 ? 0.3 : q === 0 ? -0.1 : 0, shLz: 0.6, shRz: -0.6, fALz: 0.5, fARz: -0.5,
+      rootY: -0.05, kneeLx: 0.25, kneeRx: 0.25,
+    }; },
+    // 86 · Lyrical fall — a soft controlled collapse and rise, arms trailing.
+    (s): Pose => s % 4 < 2
+      ? { rootY: -0.05 - (s % 2) * 0.14, torsoRx: (s % 2) * 0.22, shLz: 1.9 - (s % 2) * 0.9, shRz: -1.4 + (s % 2) * 0.5,
+          fALz: 0.2, fARz: -0.3, kneeLx: 0.2 + (s % 2) * 0.5, kneeRx: 0.2 + (s % 2) * 0.5, headRx: (s % 2) * 0.15 }
+      : { rootY: -0.02, torsoRx: -0.06, shLz: 2.3, shRz: -0.7, fALz: 0.1, fARz: -0.4, kneeLx: 0.15, kneeRx: 0.15, headRx: -0.1, headRy: 0.15 },
+    // 87 · Sharp jazz kick — a crisp high kick with a spotting head snap.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      legLx: a > 0 ? -1.1 : 0.05, kneeLx: a > 0 ? 0.0 : 0.25, legRx: a < 0 ? -1.1 : 0.05, kneeRx: a < 0 ? 0.0 : 0.25,
+      torsoRx: -0.1, headRy: a * 0.35, headRx: -0.08, shLz: 1.5, shRz: -1.5, fALz: 0.3, fARz: -0.3, rootY: 0.02,
+    }; },
+    // 88 · Grand finale pose — big open stance, chest out, both arms crowning up.
+    (s) => { const breathe = Math.sin(s * 0.9) * 0.05; return {
+      shLz: 2.75, shRz: -2.75, fALz: 0.1 + breathe, fARz: -0.1 - breathe,
+      torsoRx: -0.12, headRx: -0.18, rootY: 0.04 + breathe * 0.4, kneeLx: 0.1, kneeRx: 0.1, hipsRz: 0,
+    }; },
   ];
   // ── Style pools — the move set follows the track's energy: fast tracks
   // pull from the aggressive hip-hop/rave/percussive set, mid tempo from
   // groove/disco/pop, slow tempo from latin/ballroom/smooth. Indexes into
-  // the 68-move library above.
+  // the 88-move library above.
   // (0-based array indexes — the // N labels in the move comments are 1-based)
-  const POOL_FAST = [2, 8, 12, 16, 5, 15, 23, 25, 26, 30, 32, 35, 42, 44, 45, 47, 48, 57, 62, 65, 66];
-  const POOL_MID = [0, 3, 9, 10, 14, 17, 6, 18, 19, 20, 21, 22, 27, 36, 37, 40, 41, 43, 49, 51, 52, 53, 54, 55, 56, 61, 63, 67];
-  const POOL_SLOW = [1, 4, 7, 11, 13, 10, 24, 28, 29, 31, 33, 34, 38, 39, 46, 50, 58, 59, 60, 64];
+  const POOL_FAST = [2, 8, 12, 16, 5, 15, 23, 25, 26, 30, 32, 35, 42, 44, 45, 47, 48, 57, 62, 65, 66, 69, 71, 73, 74, 86];
+  const POOL_MID = [0, 3, 9, 10, 14, 17, 6, 18, 19, 20, 21, 22, 27, 36, 37, 40, 41, 43, 49, 51, 52, 53, 54, 55, 56, 61, 63, 67, 68, 70, 72, 75, 76, 79, 84];
+  const POOL_SLOW = [1, 4, 7, 11, 13, 10, 24, 28, 29, 31, 33, 34, 38, 39, 46, 50, 58, 59, 60, 64, 77, 78, 80, 81, 82, 83, 85, 87];
   const poolForTempo = () => (tempoMs < 460 ? POOL_FAST : tempoMs <= 580 ? POOL_MID : POOL_SLOW);
   let currentMoveIdx = 0;
 
@@ -1182,10 +1322,18 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   // Lead dancer + lazily-built party backups (hidden until party mode 1+).
   const dancers: Dancer[] = [mkDancer(rig, 0, 0, 0, 0)];
   let partyMode = 0; // 0 solo · 1 crew of 3 · 2 BIG PARTY (crowd + DJ)
+  // All possible backup spots (x, z, beat offset), built once; ensureBackups
+  // grows/shows however many crewSize currently calls for (2, 4, or 6),
+  // hiding the rest — so changing crew size mid-show needs no rebuild.
+  const ALL_BACKUP_SPOTS: [number, number, number][] = [
+    [-1.0, -0.5, 1], [1.0, -0.5, 2],
+    [-1.9, -1.0, 3], [1.9, -1.0, 4],
+    [-2.7, -1.5, 5], [2.7, -1.5, 6],
+  ];
   function ensureBackups() {
-    if (dancers.length > 1) return;
-    const spots: [number, number, number][] = [[-1.0, -0.5, 1], [1.0, -0.5, 2]]; // x, z, beat offset
-    for (const [bx, bz, off] of spots) {
+    const want = Math.max(0, Math.min(ALL_BACKUP_SPOTS.length, crewSize));
+    while (dancers.length - 1 < want) {
+      const [bx, bz, off] = ALL_BACKUP_SPOTS[dancers.length - 1];
       const r = buildFigureRig(figMat, waveMat);
       r.group.position.set(bx, -0.05, bz);
       r.group.scale.setScalar(0.8);
@@ -1297,33 +1445,45 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     stadiumGroup.visible = false;
     scene.add(stadiumGroup);
 
-    // 80K crowd lights across three elliptical tiers.
+    // 80K crowd lights across three elliptical tiers — laid out with real
+    // STRUCTURE, not a random scatter: 16 angular sections separated by
+    // dark aisles, and a dark gap between each of the 3 tiers. A borderless
+    // random cloud of 80,000 dots reads as a fuzzy haze no matter how the
+    // shading is tuned (found via testing — "too much light, unclear" was
+    // the actual complaint); real gaps are what make the eye parse it as
+    // "stadium seating" instead of "glowing mist".
+    const SECTIONS = 16;
+    const AISLE_FRAC = 0.13; // fraction of each section's angular width left empty
+    const sectionSpan = (Math.PI * 2) / SECTIONS;
     const pos = new Float32Array(STADIUM_N * 3);
     const phase = new Float32Array(STADIUM_N);
     const size = new Float32Array(STADIUM_N);
     const col = new Float32Array(STADIUM_N * 3);
     for (let i = 0; i < STADIUM_N; i++) {
       const tier = i % 3;
-      const f = Math.random(); // radial spread inside the tier band
+      const f = Math.random() * 0.82; // stop short of the tier's outer edge → a real gap before the next tier
       // Tight bowl — the stands start right at the field's edge (Super
       // Bowl close-crowd feel), climbing outward/upward in three tiers.
-      const a = 4.6 + tier * 1.8 + f * 1.6;   // x semi-axis: 4.6 → 9.8
+      const a = 4.6 + tier * 2.1 + f * 1.6;   // x semi-axis, gap baked in via the 2.1 step vs 1.6*0.82 max fill
       const b = a * 0.72;                      // z semi-axis
-      const ang = Math.random() * Math.PI * 2;
+      const section = Math.floor(Math.random() * SECTIONS);
+      const ang = section * sectionSpan + (Math.random() * (1 - AISLE_FRAC) + AISLE_FRAC / 2) * sectionSpan;
       pos[i * 3] = Math.cos(ang) * a;
-      pos[i * 3 + 1] = 0.9 + tier * 1.45 + f * 1.15 + Math.random() * 0.18;
+      pos[i * 3 + 1] = 0.9 + tier * 1.75 + f * 1.15 + Math.random() * 0.14;
       pos[i * 3 + 2] = Math.sin(ang) * b - 0.6;
       phase[i] = Math.random();
-      size[i] = 0.9 + Math.random() * 1.1;
-      // Color mix pulled back from mostly-white (0.62) to a real mixed
-      // crowd — with NormalBlending each dot shows its OWN color at full
-      // brightness, so a white-dominant mix reads as a flat white mass at
-      // any real density. More color variety keeps individual dots legible.
-      const k = Math.random();
-      if (k < 0.32) { col[i * 3] = 1.0; col[i * 3 + 1] = 0.93; col[i * 3 + 2] = 0.8; }        // warm phone light
-      else if (k < 0.58) { col[i * 3] = 0.45; col[i * 3 + 1] = 0.8; col[i * 3 + 2] = 1.0; }   // cool blue
-      else if (k < 0.8) { col[i * 3] = 0.8; col[i * 3 + 1] = 0.5; col[i * 3 + 2] = 1.0; }     // violet
-      else { col[i * 3] = 1.0; col[i * 3 + 1] = 0.45; col[i * 3 + 2] = 0.75; }                // pink
+      size[i] = 0.85 + Math.random() * 0.75;
+      // Each of the 16 sections gets ONE dominant color (like real stadium
+      // card-stunt blocks / team-colored sections) with a little per-dot
+      // variance, instead of fully random per-dot color — reads as
+      // organized crowd sections rather than confetti noise.
+      const SECTION_COLORS: [number, number, number][] = [
+        [1.0, 0.93, 0.8], [0.45, 0.8, 1.0], [0.8, 0.5, 1.0], [1.0, 0.45, 0.75],
+        [1.0, 0.93, 0.8], [0.4, 1.0, 0.7], [0.45, 0.8, 1.0], [1.0, 0.8, 0.3],
+      ];
+      const sc = SECTION_COLORS[section % SECTION_COLORS.length];
+      const v = 0.85 + Math.random() * 0.15;
+      col[i * 3] = sc[0] * v; col[i * 3 + 1] = sc[1] * v; col[i * 3 + 2] = sc[2] * v;
     }
     const ptsGeo = new THREE.BufferGeometry();
     ptsGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
@@ -1349,14 +1509,16 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
         void main() {
           vec3 p = position;
           // every fan bounces to the shared beat clock with their own phase
-          p.y += sin(uTime * (1.6 + fract(aPhase * 3.1) * 1.4) + aPhase * 40.0) * 0.14 * uEnergy;
+          // (toned down from the first pass — a smaller bob keeps sections
+          // reading as steady blocks instead of a shimmering blur)
+          p.y += sin(uTime * (1.6 + fract(aPhase * 3.1) * 1.4) + aPhase * 40.0) * 0.07 * uEnergy;
           vCol = aCol;
-          vTw = 0.5 + 0.5 * sin(uTime * (2.0 + fract(aPhase * 7.3) * 3.0) + aPhase * 80.0);
+          vTw = 0.65 + 0.35 * sin(uTime * (2.0 + fract(aPhase * 7.3) * 3.0) + aPhase * 80.0);
           vec4 mv = modelViewMatrix * vec4(p, 1.0);
           // Near-fade: insurance in case the drone ever grazes the stands
           // (the flight path is kept outside the bowl radius on purpose).
           vNear = smoothstep(1.0, 3.0, -mv.z);
-          gl_PointSize = min(aSize * (70.0 / max(1.0, -mv.z)), 12.0);
+          gl_PointSize = min(aSize * (52.0 / max(1.0, -mv.z)), 7.0);
           gl_Position = projectionMatrix * mv;
         }
       `,
@@ -1366,12 +1528,17 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
         varying vec3 vCol; varying float vTw; varying float vNear;
         void main() {
           float d = length(gl_PointCoord - 0.5);
-          float a = smoothstep(0.5, 0.1, d);
+          // Sharp-edged dot (tight falloff band, not a soft cloud): with
+          // 80,000 of these on screen, a wide soft edge is what made
+          // neighboring dots visually melt into one glowing haze. A crisp
+          // edge keeps each one legible as an individual point of light —
+          // still with a thin anti-aliased rim so it doesn't look pixelated.
+          float a = smoothstep(0.5, 0.4, d);
           // NormalBlending composites rather than sums, so full brightness
           // is safe here regardless of how many dots overlap on screen —
           // each pixel settles on whichever dot(s) actually cover it.
-          vec3 c = vCol * (0.65 + vTw * 0.5 + uPulse * 0.35);
-          gl_FragColor = vec4(c, a * 0.85 * vNear);
+          vec3 c = vCol * (0.75 + vTw * 0.4 + uPulse * 0.3);
+          gl_FragColor = vec4(c, a * 0.95 * vNear);
         }
       `,
     });
@@ -1420,6 +1587,31 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       head.position.set(tx, 7.3, tz);
       stadiumGroup.add(head);
       registerAccents([headMat]);
+    }
+
+    // Distant backdrop wall — reads as "this is an enclosed arena, not
+    // dots floating in a void" without repeating the earlier mistake (a
+    // solid cylinder that the drone's own flight path clipped through,
+    // which looked exactly like a black-screen bug). Placed at radius 20,
+    // far outside the drone's absolute worst-case reach (R maxes out
+    // around ~15 only at minimum zoom) — the camera can never touch it —
+    // and built from 16 separate vertical light strips (matching the
+    // crowd's section layout) plus dark filler panels, so it reads as
+    // structure with real gaps, not another big flat sheet.
+    const backdropMat = new THREE.MeshBasicMaterial({ color: 0x07060d, side: THREE.DoubleSide });
+    const stripMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false });
+    registerAccents([stripMat]);
+    const backdropR = 20;
+    for (let s = 0; s < SECTIONS; s++) {
+      const midAng = (s + 0.5) * sectionSpan;
+      const panel = new THREE.Mesh(new THREE.PlaneGeometry(backdropR * sectionSpan * 0.94, 9), backdropMat);
+      panel.position.set(Math.cos(midAng) * backdropR, 4.5, Math.sin(midAng) * backdropR * 0.72 - 0.6);
+      panel.rotation.y = -midAng + Math.PI / 2;
+      stadiumGroup.add(panel);
+      const edgeAng = s * sectionSpan;
+      const strip = new THREE.Mesh(new THREE.BoxGeometry(0.12, 9.2, 0.12), stripMat);
+      strip.position.set(Math.cos(edgeAng) * backdropR, 4.5, Math.sin(edgeAng) * backdropR * 0.72 - 0.6);
+      stadiumGroup.add(strip);
     }
 
     // Two mega screens flanking the stage (grayscale gradient canvas,
@@ -1516,12 +1708,30 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   let qTier = 0;
   let camParty = 0; // smoothed 0..1 — camera pull-back for big party
   let userZoom = 1; // 🔍 button — >1 brings the avatars closer/bigger
+  // Settings-panel-driven tuning knobs — all default to a neutral value so
+  // an app that never calls these setters looks identical to before.
+  let danceSpeedMult = 1;      // dance step rate vs. the song's real tempo
+  let mirrorOn = false;        // flip the whole stage horizontally
+  let cameraStyleMode = 0;     // 0 cinematic sway · 1 static · 2 handheld
+  let shakeMult = 1;           // bass-drop camera-shake multiplier
+  let confettiMult = 1, sparkMult = 1, hazeMult = 1, beamMult = 1, finMult = 1;
+  let stadiumDensityOverride = -1; // -1 = auto (qTier), else 20000/50000/80000
+  let stadiumCamStyle = 0;     // 0 drone orbit · 1 fixed wide · 2 stage-cam close
+  let crewSize = 2;            // backup dancers in crew/party modes (2, 4, or 6)
   let lastFrameTime = 0, warmT = 0, fpsT = 0, fpsN = 0, lowStreak = 0;
   function applyQTier() {
     if (qTier >= 1) bloom.enabled = false;
     if (qTier >= 2) renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1));
-    // Weak devices also shed stadium crowd density (80K → 36K → 14K points).
-    if (stadiumPtsGeo) stadiumPtsGeo.setDrawRange(0, qTier >= 2 ? 14000 : qTier >= 1 ? 36000 : STADIUM_N);
+    applyStadiumDensity();
+  }
+  // Weak devices auto-shed stadium crowd density (80K → 36K → 14K); the
+  // user's own density preference (settings panel) is a further cap on top
+  // of whatever the device can handle, never an override that fights it.
+  function applyStadiumDensity() {
+    if (!stadiumPtsGeo) return;
+    const autoCapacity = qTier >= 2 ? 14000 : qTier >= 1 ? 36000 : STADIUM_N;
+    const userCap = stadiumDensityOverride >= 0 ? stadiumDensityOverride : STADIUM_N;
+    stadiumPtsGeo.setDrawRange(0, Math.min(autoCapacity, userCap));
   }
 
   // One beat of the show: pulse the lights, ripple the floor under the
@@ -1592,7 +1802,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     if (playing) {
       if (liveMode) {
         if (now - lastLiveTick > 2500) liveMode = false; // mic went quiet → internal clock resumes
-      } else if (now - lastBeat > tempoMs) {
+      } else if (now - lastBeat > tempoMs / danceSpeedMult) {
         fireBeat(now);
       }
     }
@@ -1623,7 +1833,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     figMat.uniforms.uPulse.value = beatPulse * energy;
     figMat.uniforms.uTime.value = t;
     beamMat.uniforms.uTime.value = t;
-    beamMat.uniforms.uPulse.value = beatPulse * energy;
+    beamMat.uniforms.uPulse.value = beatPulse * energy * beamMult;
     waveMat.uniforms.uTime.value = t;
     waveMat.uniforms.uEnergy.value = energy;
     waveMat.uniforms.uPulse.value = beatPulse * energy;
@@ -1631,7 +1841,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
 
     for (const f of fins) {
       f.val += (f.target * energy - f.val) * 0.15;
-      f.mat.opacity = 0.15 + f.val * 0.65;
+      f.mat.opacity = (0.15 + f.val * 0.65) * finMult;
       f.mesh.scale.y = 0.8 + f.val * 1.8;
     }
 
@@ -1682,6 +1892,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       dg.group.position.y = -0.05 + S.rootY - bounce * 0.06;
       dg.group.position.x = d.baseX + S.rootX;
       dg.group.position.z = d.baseZ;
+      dg.group.scale.x = mirrorOn ? -Math.abs(dg.group.scale.x || 1) : Math.abs(dg.group.scale.x || 1);
       dg.group.rotation.y = S.rootRy + Math.sin(tp * 0.4) * 0.04 * energy;
       dg.hips.rotation.z = S.hipsRz + Math.sin(tp * 2.0) * 0.02 * energy;
       dg.torso.rotation.x = S.torsoRx;
@@ -1713,7 +1924,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       posAttr.setY(i, y);
     }
     posAttr.needsUpdate = true;
-    sparkMat.opacity = 0.25 + energy * 0.4;
+    sparkMat.opacity = (0.25 + energy * 0.4) * sparkMult;
 
     // Confetti falls and drifts sideways, recycling to the top.
     const confAttr = confettiGeo.getAttribute('position') as THREE.BufferAttribute;
@@ -1725,11 +1936,11 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       confAttr.setX(i, x);
     }
     confAttr.needsUpdate = true;
-    confettiMat.opacity = Math.min(1, (0.15 + energy * 0.55) * (partyMode === 2 ? 1.9 : partyMode === 1 ? 1.5 : 1));
+    confettiMat.opacity = Math.min(1, (0.15 + energy * 0.55) * (partyMode === 2 ? 1.9 : partyMode === 1 ? 1.5 : 1) * confettiMult);
 
     for (let i = 0; i < hazeSprites.length; i++) {
       hazeSprites[i].position.x += Math.sin(t * 0.15 + i) * 0.0015;
-      (hazeSprites[i].material as THREE.SpriteMaterial).opacity = 0.06 + Math.sin(t * 0.3 + i) * 0.03;
+      (hazeSprites[i].material as THREE.SpriteMaterial).opacity = (0.06 + Math.sin(t * 0.3 + i) * 0.03) * hazeMult;
     }
 
     if (partyMode >= 2) updateCrowd(now, t); // floor crowd dances in stadium too
@@ -1748,34 +1959,51 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     }
 
     if (partyMode === 3) {
-      // STADIUM drone camera — a continuous broadcast-style flight: the
-      // orbit angle advances steadily while the radius breathes between a
-      // stage-side pass (R≈5.2 — still outside the crowd bowl, which
-      // starts at 4.6) and a high sweep over the whole bowl (R≈11.2), with
-      // the altitude on its own slower rhythm. The lookAt pans gently off
-      // the stage center so it feels hand-flown, and a touch of beat bob
-      // sells the bass hitting the gimbal. Kept outside the bowl radius on
-      // purpose — a real broadcast drone circles the stadium, it doesn't
-      // fly into the stands (also avoids grazing the dense point cloud).
-      const ft = t * 0.9;
-      const R = (8.2 + 3.0 * Math.sin(ft * 0.055)) / Math.max(0.75, userZoom);
-      const ang = ft * 0.11;
-      const camY = 1.15 + (Math.sin(ft * 0.041) + 1) * 2.35;
-      camera.position.set(
-        Math.sin(ang) * R,
-        camY + beatPulse * energy * 0.06,
-        Math.cos(ang) * R * 0.78 + 0.4,
-      );
-      camera.lookAt(Math.sin(ft * 0.09) * 0.8, 1.0 + Math.sin(ft * 0.06) * 0.3, -0.4);
+      // stadiumCamStyle: 0 drone orbit (default broadcast flight) · 1 fixed
+      // wide (steady high overview, no flight — for a calmer "poster shot")
+      // · 2 stage-cam close (low, near the performers, crowd as backdrop).
+      if (stadiumCamStyle === 1) {
+        const bob = Math.sin(t * 0.15) * 0.3;
+        camera.position.set(Math.sin(t * 0.04) * 1.2, 6.4 + bob, 9.5);
+        camera.lookAt(0, 1.6, -1.2);
+      } else if (stadiumCamStyle === 2) {
+        camera.position.set(Math.sin(t * 0.2) * 1.6, 1.4 + beatPulse * energy * 0.05, 3.6 / Math.max(0.75, userZoom));
+        camera.lookAt(0, 1.1, -1.5);
+      } else {
+        // STADIUM drone camera — a continuous broadcast-style flight: the
+        // orbit angle advances steadily while the radius breathes between a
+        // stage-side pass (R≈5.2 — still outside the crowd bowl, which
+        // starts at 4.6) and a high sweep over the whole bowl (R≈11.2), with
+        // the altitude on its own slower rhythm. The lookAt pans gently off
+        // the stage center so it feels hand-flown, and a touch of beat bob
+        // sells the bass hitting the gimbal. Kept outside the bowl radius on
+        // purpose — a real broadcast drone circles the stadium, it doesn't
+        // fly into the stands (also avoids grazing the dense point cloud).
+        const ft = t * 0.9;
+        const R = (8.2 + 3.0 * Math.sin(ft * 0.055)) / Math.max(0.75, userZoom);
+        const ang = ft * 0.11;
+        const camY = 1.15 + (Math.sin(ft * 0.041) + 1) * 2.35;
+        camera.position.set(
+          Math.sin(ang) * R,
+          camY + beatPulse * energy * 0.06,
+          Math.cos(ang) * R * 0.78 + 0.4,
+        );
+        camera.lookAt(Math.sin(ft * 0.09) * 0.8, 1.0 + Math.sin(ft * 0.06) * 0.3, -0.4);
+      }
     } else {
       // Subtle cinematic camera sway + a gentle breathing zoom on the beat.
       // Big party pulls the camera back and up so the whole dance floor,
       // crowd and DJ booth frame together. userZoom (the 🔍 button) scales
       // the final distance so the avatars can be made bigger or smaller.
+      // cameraStyleMode: 0 cinematic sway (default) · 1 static (locked off)
+      // · 2 handheld (bigger, faster jitter, like a phone filming the show).
       camParty += ((partyMode === 2 ? 1 : 0) - camParty) * Math.min(1, dt * 2);
-      camera.position.x = camBase.x + Math.sin(t * 0.12) * 0.08;
-      camera.position.y = camBase.y + Math.sin(t * 0.09 + 1) * 0.04 + camParty * 0.5;
-      camera.position.z = (camBase.z + camParty * 1.6) / userZoom - beatPulse * energy * 0.06;
+      const swaySc = cameraStyleMode === 1 ? 0 : cameraStyleMode === 2 ? 2.4 : 1;
+      const swayFreqSc = cameraStyleMode === 2 ? 3.1 : 1;
+      const jitter = cameraStyleMode === 2 ? (Math.sin(t * 17.3) * 0.012 + Math.sin(t * 23.7) * 0.008) : 0;
+      camera.position.x = camBase.x + (Math.sin(t * 0.12 * swayFreqSc) * 0.08 + jitter) * swaySc;
+      camera.position.y = camBase.y + (Math.sin(t * 0.09 * swayFreqSc + 1) * 0.04 + jitter * 0.7) * swaySc + camParty * 0.5;
+      camera.position.z = (camBase.z + camParty * 1.6) / userZoom - beatPulse * energy * 0.06 * shakeMult;
       camera.lookAt(0, 1.05 - camParty * 0.3, -camParty * 0.9);
     }
 
@@ -1792,8 +2020,9 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       partyMode = mode === true ? 1 : mode === false ? 0 : Math.max(0, Math.min(3, Math.round(mode)));
       if (partyMode >= 1) ensureBackups();
       for (let i = 1; i < dancers.length; i++) {
-        dancers[i].rig.group.visible = partyMode >= 1;
-        if (dancerShadows[i]) dancerShadows[i].visible = partyMode >= 1;
+        const on = partyMode >= 1 && i <= crewSize;
+        dancers[i].rig.group.visible = on;
+        if (dancerShadows[i]) dancerShadows[i].visible = on;
       }
       if (partyMode >= 2) ensureCrowd();
       setCrowdVisible(partyMode >= 2); // the floor crowd stays for stadium
@@ -1813,6 +2042,28 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       resize(); // recompute bloom.strength from the new base immediately
     },
     setTheme(idx: number) { applyTheme(idx); },
+    setVeinIntensity(v: number) { figMat.uniforms.uVeinIntensity.value = Math.max(0, Math.min(2, v)); },
+    setDanceSpeed(mult: number) { if (Number.isFinite(mult)) danceSpeedMult = Math.max(0.4, Math.min(2.5, mult)); },
+    setMirror(on: boolean) { mirrorOn = !!on; },
+    setCameraStyle(mode: number) { cameraStyleMode = Math.max(0, Math.min(2, Math.round(mode))); },
+    setShakeIntensity(v: number) { shakeMult = Math.max(0, Math.min(3, v)); },
+    setConfettiIntensity(v: number) { confettiMult = Math.max(0, Math.min(2.5, v)); },
+    setSparkIntensity(v: number) { sparkMult = Math.max(0, Math.min(2.5, v)); },
+    setHazeIntensity(v: number) { hazeMult = Math.max(0, Math.min(2.5, v)); },
+    setBeamIntensity(v: number) { beamMult = Math.max(0, Math.min(2.5, v)); },
+    setFinIntensity(v: number) { finMult = Math.max(0, Math.min(2.5, v)); },
+    setStadiumDensity(n: number) { stadiumDensityOverride = n < 0 ? -1 : Math.round(n); applyStadiumDensity(); },
+    setStadiumCameraStyle(mode: number) { stadiumCamStyle = Math.max(0, Math.min(2, Math.round(mode))); },
+    setCrewSize(n: number) {
+      crewSize = Math.max(0, Math.min(ALL_BACKUP_SPOTS.length, Math.round(n)));
+      if (partyMode >= 1) ensureBackups();
+      for (let i = 1; i < dancers.length; i++) {
+        const on = partyMode >= 1 && i <= crewSize;
+        dancers[i].rig.group.visible = on;
+        if (dancerShadows[i]) dancerShadows[i].visible = on;
+      }
+    },
+    setExposure(v: number) { if (Number.isFinite(v)) renderer.toneMappingExposure = Math.max(0.3, Math.min(2, v)); },
     setZoom(z: number) { if (Number.isFinite(z)) userZoom = Math.max(0.6, Math.min(1.8, z)); },
     liveBeatTick() {
       const n = performance.now();

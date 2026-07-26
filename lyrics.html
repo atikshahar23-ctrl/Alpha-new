@@ -188,6 +188,13 @@
     color:var(--text-faint); text-transform:uppercase; direction:ltr; text-align:right;
     margin:16px 0 8px; border-top:1px solid var(--border); padding-top:14px;
   }
+  /* Generic labeled slider row, reused across the many new tuning knobs
+     below — same visual language as the existing font-size slider. */
+  .range-row{display:flex; flex-direction:column; gap:5px; margin-bottom:12px;}
+  .range-row .rr-head{display:flex; justify-content:space-between; font-size:12px; color:var(--text-dim);}
+  .range-row .rr-head b{color:var(--cyan); font-family:'JetBrains Mono',monospace; font-weight:600;}
+  .range-row input[type=range]{width:100%; accent-color:var(--cyan); height:4px; cursor:pointer;}
+  .settings-cols{display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:4px 20px;}
 
   .now-playing{
     display:flex; align-items:center; gap:16px;
@@ -290,6 +297,15 @@
   .hero-line.pop .hl-trans{animation:hlPop .45s cubic-bezier(.2,1.4,.3,1);}
   @keyframes hlPop{0%{transform:translateY(14px) scale(.94); opacity:0;}100%{transform:none; opacity:1;}}
   .hero-wrap.has-line .hero-caption{display:none;}
+  .stats-hud{
+    position:absolute; top:10px; right:10px; z-index:4;
+    display:flex; gap:6px; pointer-events:none;
+  }
+  .stats-hud span{
+    font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:600;
+    color:var(--cyan); background:rgba(10,12,20,.6); border:1px solid var(--border);
+    border-radius:8px; padding:3px 8px;
+  }
   .hero-btn{
     position:absolute; top:10px; left:10px; z-index:4;
     width:40px; height:40px; border-radius:12px; cursor:pointer;
@@ -412,6 +428,18 @@
 
   /* ── Settings-driven display modes ── */
   .stage.hide-orig .orig{display:none;}
+  body.bold-lyrics .lyric-row .trans{font-weight:900;}
+  body.bold-lyrics .hero-line .hl-trans{font-weight:900;}
+  body:not(.readable-bg-off) .lyric-row.active{background:linear-gradient(90deg, rgba(0,229,255,0.08), rgba(178,75,243,0.06));}
+  body.readable-bg-off .lyric-row.active{background:none;}
+  body.high-contrast{ --text-dim:#d8dce4; --text-faint:#aab0bd; }
+  body.high-contrast .lyric-row .orig{color:#c8ced9;}
+  body.high-contrast .lyric-row.active .trans{color:#fff; text-shadow:none;}
+  body.high-contrast .lyric-row.active{background:rgba(0,0,0,.55); border-color:#fff;}
+  body.force-reduce-motion *{animation:none !important; transition:none !important;}
+  body:not(.show-footer) footer{display:none !important;}
+  body.karaoke .lyric-row .trans{font-size:calc(var(--lyric-font) * var(--karaoke-font-mult, 1));}
+  body.karaoke .lyric-row .orig{font-size:max(11px, calc(var(--lyric-font) * 0.6 * var(--karaoke-font-mult, 1)));}
 
   /* ── Karaoke mode: only the song header + lyrics, everything else gone ──
      Font size is controlled by the same slider in both modes (the user
@@ -487,6 +515,10 @@
     <button class="hero-btn zoom-btn" id="zoomBtn" title="גודל האווטרים">🔍</button>
     <button class="hero-btn stage-exit" id="stageExitBtn" title="יציאה ממסך מלא" hidden>✕</button>
     <div class="hero-caption">🎭 רוקד לקצב השיר</div>
+    <div class="stats-hud" id="statsHud" hidden>
+      <span id="hudBpm" hidden></span>
+      <span id="hudFps" hidden></span>
+    </div>
   </div>
 
   <div class="panel settings-panel" id="settingsPanel">
@@ -521,6 +553,133 @@
     </div>
     <div class="hint">כל ההגדרות נשמרות במכשיר ומוחלות מיידית. מנוע Google מתרגם את כל השיר בבת אחת עם זיהוי שפת מקור אוטומטי; MyMemory משמש כגיבוי אוטומטי אם Google לא זמין.</div>
     <div class="hint">✨ עברית טבעית: אחרי התרגום המהיר, מעבר AI מלטש את כל השיר לעברית אמיתית — משמעות, סלנג וזרימה במקום תרגום מילולי. משתמש במפתח Groq או Gemini שכבר מוגדר בהגדרות של אלפא (אותו דפדפן) — בלי מפתח, נשאר התרגום הרגיל.</div>
+
+    <div class="sub-eyebrow">🕺 אווטאר וריקוד</div>
+    <div class="settings-cols">
+      <div class="range-row">
+        <div class="rr-head"><span>מהירות ריקוד</span><b id="danceSpeedVal">1.0x</b></div>
+        <input type="range" id="danceSpeedSlider" min="0.5" max="2" step="0.1" value="1">
+      </div>
+      <div class="range-row">
+        <div class="rr-head"><span>עוצמת ורידי אנרגיה</span><b id="veinVal">100%</b></div>
+        <input type="range" id="veinSlider" min="0" max="200" step="10" value="100">
+      </div>
+      <div class="field-row" style="margin:0;">
+        <label>גודל הלהקה (מצב מסיבה)</label>
+        <select id="crewSizeSel">
+          <option value="2" selected>2 רקדנים</option>
+          <option value="4">4 רקדנים</option>
+          <option value="6">6 רקדנים</option>
+        </select>
+      </div>
+      <label class="chk"><input type="checkbox" id="mirrorToggle"> מצב מראה — הפוך את הבמה</label>
+    </div>
+
+    <div class="sub-eyebrow">🎥 מצלמה</div>
+    <div class="settings-cols">
+      <div class="field-row" style="margin:0;">
+        <label>סגנון מצלמה</label>
+        <select id="cameraStyleSel">
+          <option value="0" selected>קולנועי (נדנוד עדין)</option>
+          <option value="1">סטטי</option>
+          <option value="2">מצלמת יד (רועד)</option>
+        </select>
+      </div>
+      <div class="range-row">
+        <div class="rr-head"><span>עוצמת רעידה בבאס-דרופ</span><b id="shakeVal">100%</b></div>
+        <input type="range" id="shakeSlider" min="0" max="300" step="10" value="100">
+      </div>
+      <div class="field-row" style="margin:0;">
+        <label>מצלמת איצטדיון</label>
+        <select id="stadiumCamSel">
+          <option value="0" selected>רחפן מרחף (ברירת מחדל)</option>
+          <option value="1">רחבה קבועה מלמעלה</option>
+          <option value="2">קרוב לבמה</option>
+        </select>
+      </div>
+      <div class="field-row" style="margin:0;">
+        <label>צפיפות קהל באיצטדיון</label>
+        <select id="stadiumDensitySel">
+          <option value="80000" selected>גבוהה (80,000)</option>
+          <option value="50000">בינונית (50,000)</option>
+          <option value="20000">נמוכה (20,000)</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="sub-eyebrow">✨ אפקטים חזותיים</div>
+    <div class="settings-cols">
+      <div class="range-row">
+        <div class="rr-head"><span>עוצמת קונפטי</span><b id="confettiVal">100%</b></div>
+        <input type="range" id="confettiSlider" min="0" max="200" step="10" value="100">
+      </div>
+      <div class="range-row">
+        <div class="rr-head"><span>עוצמת ניצוצות</span><b id="sparkVal">100%</b></div>
+        <input type="range" id="sparkSlider" min="0" max="200" step="10" value="100">
+      </div>
+      <div class="range-row">
+        <div class="rr-head"><span>עוצמת ערפל אווירה</span><b id="hazeVal">100%</b></div>
+        <input type="range" id="hazeSlider" min="0" max="200" step="10" value="100">
+      </div>
+      <div class="range-row">
+        <div class="rr-head"><span>בהירות קרן האור</span><b id="beamVal">100%</b></div>
+        <input type="range" id="beamSlider" min="0" max="200" step="10" value="100">
+      </div>
+      <div class="range-row">
+        <div class="rr-head"><span>עוצמת עמודי האור</span><b id="finVal">100%</b></div>
+        <input type="range" id="finSlider" min="0" max="200" step="10" value="100">
+      </div>
+      <div class="range-row">
+        <div class="rr-head"><span>בהירות כללית (חשיפה)</span><b id="exposureVal">100%</b></div>
+        <input type="range" id="exposureSlider" min="40" max="180" step="5" value="100">
+      </div>
+      <div class="range-row">
+        <div class="rr-head"><span>מהירות תאורת LED</span><b id="ledSpeedVal">1.0x</b></div>
+        <input type="range" id="ledSpeedSlider" min="0.4" max="2.5" step="0.1" value="1">
+      </div>
+    </div>
+
+    <div class="sub-eyebrow">🖥️ תצוגה ונגישות</div>
+    <div class="settings-cols">
+      <label class="chk"><input type="checkbox" id="boldLyricsToggle"> מילים מודגשות (קריאות גבוהה)</label>
+      <label class="chk"><input type="checkbox" id="readableBgToggle" checked> רקע כהה מאחורי השורה החיה</label>
+      <label class="chk"><input type="checkbox" id="highContrastToggle"> מצב ניגודיות גבוהה</label>
+      <label class="chk"><input type="checkbox" id="forceReduceMotionToggle"> כפה הפחתת תנועה (עצור אנימציות)</label>
+      <label class="chk"><input type="checkbox" id="autoFullscreenToggle"> מסך מלא אוטומטי כשמתחילים לנגן</label>
+      <label class="chk"><input type="checkbox" id="autoPartyToggle"> העלאת מסיבה אוטומטית באנרגיה גבוהה</label>
+      <label class="chk"><input type="checkbox" id="showBpmToggle"> הצג מד קצב (BPM) על המסך</label>
+      <label class="chk"><input type="checkbox" id="showFpsToggle"> הצג מד ביצועים (FPS)</label>
+      <label class="chk"><input type="checkbox" id="showFooterToggle" checked> הצג קרדיטים בתחתית</label>
+      <label class="chk"><input type="checkbox" id="startInCrewToggle"> התחל תמיד במצב להקה</label>
+      <div class="range-row">
+        <div class="rr-head"><span>גודל טקסט קריוקי (נפרד)</span><b id="karaokeFontVal">1.0x</b></div>
+        <input type="range" id="karaokeFontSlider" min="0.6" max="2" step="0.1" value="1">
+      </div>
+    </div>
+
+    <div class="sub-eyebrow">🎵 מוזיקה ומידע</div>
+    <div class="settings-cols">
+      <div class="field-row" style="margin:0;">
+        <label>קצב ידני (BPM) — ריק = זיהוי אוטומטי</label>
+        <input type="text" id="manualBpmInput" placeholder="לדוגמה: 128" inputmode="numeric" style="direction:ltr; text-align:left; font-family:'JetBrains Mono',monospace;">
+      </div>
+      <label class="chk"><input type="checkbox" id="autoReplayToggle"> חזרה אוטומטית על השיר בסיום</label>
+      <div class="field-row" style="margin:0;">
+        <label>שפת כרטיס "על השיר והאמן"</label>
+        <select id="infoLangSel">
+          <option value="he" selected>עברית</option>
+          <option value="en">English</option>
+        </select>
+      </div>
+      <div class="field-row" style="margin:0;">
+        <label>עומק כרטיס המידע</label>
+        <select id="infoDepthSel">
+          <option value="short" selected>קצר</option>
+          <option value="detailed">מפורט</option>
+        </select>
+      </div>
+    </div>
+    <div class="hint">כל ההגדרות החדשות נשמרות במכשיר ומוחלות מיידית על האווטאר, האיצטדיון והבמה.</div>
 
     <div class="sub-eyebrow">Spotify Connection</div>
     <div class="field-row">
@@ -598,7 +757,7 @@
     <div class="info-foot">נכתב על ידי AI לפי מילות השיר — ייתכנו אי-דיוקים</div>
   </section>
 
-  <footer>
+  <footer id="pageFooter">
     מילים: LRCLIB (מסונכרן) עם גיבוי lyrics.ovh · תרגום: Google (חינם) עם גיבוי MyMemory · הכול ללא מפתחות וללא תשלום.<br>
     שירים שכבר תורגמו נשמרים במכשיר ונטענים מיידית. תרגום אוטומטי עשוי להכיל אי-דיוקים.
   </footer>
@@ -687,6 +846,25 @@
   const fontMinus = $('fontMinus');
   const fontPlus = $('fontPlus');
   const karaokeBtn = $('karaokeBtn');
+  const boldLyricsToggle = $('boldLyricsToggle');
+  const readableBgToggle = $('readableBgToggle');
+  const highContrastToggle = $('highContrastToggle');
+  const forceReduceMotionToggle = $('forceReduceMotionToggle');
+  const autoFullscreenToggle = $('autoFullscreenToggle');
+  const autoPartyToggle = $('autoPartyToggle');
+  const showBpmToggle = $('showBpmToggle');
+  const showFpsToggle = $('showFpsToggle');
+  const showFooterToggle = $('showFooterToggle');
+  const startInCrewToggle = $('startInCrewToggle');
+  const karaokeFontSlider = $('karaokeFontSlider');
+  const karaokeFontVal = $('karaokeFontVal');
+  const manualBpmInput = $('manualBpmInput');
+  const autoReplayToggle = $('autoReplayToggle');
+  const infoLangSel = $('infoLangSel');
+  const infoDepthSel = $('infoDepthSel');
+  const statsHud = $('statsHud');
+  const hudBpm = $('hudBpm');
+  const hudFps = $('hudFps');
 
   redirectUriDisplay.value = REDIRECT_URI;
 
@@ -723,7 +901,10 @@
   // extended quota, so a freshly created Client ID like this one's can't
   // reach it — this sidesteps that entirely using data already on hand.
   let tempoMs = 560;
+  let showBpmOn = false, showFpsOn = false;
   function estimateTempoMs(lines){
+    const manualBpm = parseFloat(store.get('lt:manual_bpm'));
+    if(Number.isFinite(manualBpm) && manualBpm >= 40 && manualBpm <= 240) return Math.round(60000 / manualBpm);
     const times = (lines||[]).map(l=>l.t).filter(t=>t!=null);
     if(times.length < 4) return 560;
     const deltas = [];
@@ -749,6 +930,7 @@
   function applyTempo(ms){
     tempoMs = ms;
     window.__lyricsAvatarBridge?.setTempo(ms);
+    if(showBpmOn && hudBpm) hudBpm.textContent = Math.round(60000 / ms) + ' BPM';
   }
   // Declared here (not in the "CURRENTLY PLAYING" section below, where
   // startPolling/stopPolling are defined) because handleAuthRedirect() can
@@ -796,6 +978,107 @@
   fontSizeSlider.addEventListener('input', ()=> setFontPx(Number(fontSizeSlider.value)));
   fontMinus.addEventListener('click', ()=> setFontPx(settings.fontPx - 2));
   fontPlus.addEventListener('click', ()=> setFontPx(settings.fontPx + 2));
+
+  // ================= ACCESSIBILITY / DISPLAY EXTRAS =================
+  function boolSetting(key, def){ const v = store.get(key); return (v === null || v === undefined) ? def : !!v; }
+  function applyExtraDisplaySettings(){
+    const bold = boolSetting('lt:bold_lyrics', false);
+    boldLyricsToggle.checked = bold;
+    document.body.classList.toggle('bold-lyrics', bold);
+
+    const readableBg = boolSetting('lt:readable_bg', true);
+    readableBgToggle.checked = readableBg;
+    document.body.classList.toggle('readable-bg-off', !readableBg);
+
+    const highContrast = boolSetting('lt:high_contrast', false);
+    highContrastToggle.checked = highContrast;
+    document.body.classList.toggle('high-contrast', highContrast);
+
+    const forceReduce = boolSetting('lt:force_reduce_motion', false);
+    forceReduceMotionToggle.checked = forceReduce;
+    document.body.classList.toggle('force-reduce-motion', forceReduce);
+
+    const showFooter = boolSetting('lt:show_footer', true);
+    showFooterToggle.checked = showFooter;
+    document.body.classList.toggle('show-footer', showFooter);
+
+    showBpmOn = boolSetting('lt:show_bpm', false);
+    showBpmToggle.checked = showBpmOn;
+    showFpsOn = boolSetting('lt:show_fps', false);
+    showFpsToggle.checked = showFpsOn;
+    hudBpm.hidden = !showBpmOn;
+    hudFps.hidden = !showFpsOn;
+    statsHud.hidden = !(showBpmOn || showFpsOn);
+    if(showBpmOn) hudBpm.textContent = Math.round(60000 / tempoMs) + ' BPM';
+
+    autoFullscreenToggle.checked = boolSetting('lt:auto_fullscreen', false);
+    autoPartyToggle.checked = boolSetting('lt:auto_party', false);
+    startInCrewToggle.checked = boolSetting('lt:start_in_crew', false);
+    autoReplayToggle.checked = boolSetting('lt:auto_replay', false);
+
+    const kFont = Number(store.get('lt:karaoke_font')) || 1;
+    karaokeFontSlider.value = kFont;
+    karaokeFontVal.textContent = kFont.toFixed(1) + 'x';
+    document.documentElement.style.setProperty('--karaoke-font-mult', String(kFont));
+
+    infoLangSel.value = store.get('lt:info_lang') || 'he';
+    infoDepthSel.value = store.get('lt:info_depth') || 'short';
+    manualBpmInput.value = store.get('lt:manual_bpm') || '';
+  }
+  boldLyricsToggle.addEventListener('change', ()=>{ store.set('lt:bold_lyrics', boldLyricsToggle.checked); applyExtraDisplaySettings(); });
+  readableBgToggle.addEventListener('change', ()=>{ store.set('lt:readable_bg', readableBgToggle.checked); applyExtraDisplaySettings(); });
+  highContrastToggle.addEventListener('change', ()=>{ store.set('lt:high_contrast', highContrastToggle.checked); applyExtraDisplaySettings(); });
+  forceReduceMotionToggle.addEventListener('change', ()=>{ store.set('lt:force_reduce_motion', forceReduceMotionToggle.checked); applyExtraDisplaySettings(); });
+  showFooterToggle.addEventListener('change', ()=>{ store.set('lt:show_footer', showFooterToggle.checked); applyExtraDisplaySettings(); });
+  showBpmToggle.addEventListener('change', ()=>{ store.set('lt:show_bpm', showBpmToggle.checked); applyExtraDisplaySettings(); });
+  showFpsToggle.addEventListener('change', ()=>{ store.set('lt:show_fps', showFpsToggle.checked); applyExtraDisplaySettings(); });
+  autoFullscreenToggle.addEventListener('change', ()=> store.set('lt:auto_fullscreen', autoFullscreenToggle.checked));
+  autoPartyToggle.addEventListener('change', ()=> store.set('lt:auto_party', autoPartyToggle.checked));
+  startInCrewToggle.addEventListener('change', ()=> store.set('lt:start_in_crew', startInCrewToggle.checked));
+  autoReplayToggle.addEventListener('change', ()=> store.set('lt:auto_replay', autoReplayToggle.checked));
+  karaokeFontSlider.addEventListener('input', ()=>{ store.set('lt:karaoke_font', Number(karaokeFontSlider.value)); applyExtraDisplaySettings(); });
+  infoLangSel.addEventListener('change', ()=> store.set('lt:info_lang', infoLangSel.value));
+  infoDepthSel.addEventListener('change', ()=> store.set('lt:info_depth', infoDepthSel.value));
+  manualBpmInput.addEventListener('change', ()=>{
+    const bpm = parseFloat(manualBpmInput.value);
+    if(Number.isFinite(bpm) && bpm >= 40 && bpm <= 240){
+      store.set('lt:manual_bpm', String(Math.round(bpm)));
+      applyTempo(60000 / bpm);
+    } else {
+      store.set('lt:manual_bpm', '');
+    }
+  });
+  applyExtraDisplaySettings();
+
+  // Lightweight on-screen FPS counter — only does its rAF-diff work while
+  // the toggle is actually on, so it costs nothing for everyone else.
+  let fpsFrames = 0, fpsLastT = performance.now();
+  (function fpsLoop(now){
+    requestAnimationFrame(fpsLoop);
+    if(!showFpsOn) return;
+    fpsFrames++;
+    const elapsed = now - fpsLastT;
+    if(elapsed >= 500){
+      hudFps.textContent = Math.round(fpsFrames * 1000 / elapsed) + ' FPS';
+      fpsFrames = 0; fpsLastT = now;
+    }
+  })(performance.now());
+
+  // Auto-fullscreen / auto-party: fire once per playback session (guarded by
+  // _autoTriggeredForPlay), reset the moment playback stops so the next play
+  // triggers again.
+  let _autoTriggeredForPlay = false;
+  function notifyPlaybackActive(){
+    if(_autoTriggeredForPlay) return;
+    _autoTriggeredForPlay = true;
+    if(boolSetting('lt:auto_fullscreen', false) && !document.body.classList.contains('stage-mode')) enterStageMode();
+    if(boolSetting('lt:auto_party', false)){
+      const btn = document.getElementById('partyBtn');
+      if(btn && !btn.classList.contains('on')) btn.click();
+    }
+  }
+  function notifyPlaybackStopped(){ _autoTriggeredForPlay = false; }
+
   // ── Stage mode — fullscreen landscape "party display": the avatar stage
   // takes over the whole screen with the live line on it. orientation.lock
   // works on Android once fullscreen; iOS Safari has no lock API, so there
@@ -1036,7 +1319,11 @@
     const res = await spotifyControl('PUT', wasPlaying ? '/pause' : '/play');
     const ok = await afterControl(res);
     if(!ok) { setPlayIcon(wasPlaying); window.__lyricsAvatarBridge?.setEnergy(wasPlaying); }
-    else { state.isPlaying = !wasPlaying; window.__lyricsAvatarBridge?.setEnergy(state.isPlaying); }
+    else {
+      state.isPlaying = !wasPlaying;
+      window.__lyricsAvatarBridge?.setEnergy(state.isPlaying);
+      if(state.isPlaying) notifyPlaybackActive(); else notifyPlaybackStopped();
+    }
   });
   ctlPrev.addEventListener('click', async ()=> afterControl(await spotifyControl('POST', '/previous')));
   ctlNext.addEventListener('click', async ()=> afterControl(await spotifyControl('POST', '/next')));
@@ -1092,7 +1379,7 @@
           method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ context_uri: p.uri }),
         });
         const ok = await afterControl(res);
-        if(ok){ playlistsPanel.style.display = 'none'; window.__lyricsAvatarBridge?.setEnergy(true); }
+        if(ok){ playlistsPanel.style.display = 'none'; window.__lyricsAvatarBridge?.setEnergy(true); notifyPlaybackActive(); }
       });
       playlistsList.appendChild(btn);
     });
@@ -1179,6 +1466,7 @@
         state.isPlaying = false;
         setPlayIcon(false);
         window.__lyricsAvatarBridge?.setEnergy(false);
+        notifyPlaybackStopped();
         return;
       }
       if(!res.ok) return;
@@ -1191,6 +1479,7 @@
       state.fetchedAt = Date.now();
       setPlayIcon(state.isPlaying);
       window.__lyricsAvatarBridge?.setEnergy(state.isPlaying);
+      if(state.isPlaying) notifyPlaybackActive(); else notifyPlaybackStopped();
 
       npTitle.textContent = data.item.name;
       npArtist.textContent = data.item.artists.map(a=>a.name).join(', ');
@@ -1261,6 +1550,7 @@
     state.mode = 'manual';
     state.currentTrackKey = null;
     window.__lyricsAvatarBridge?.setEnergy(true);
+    notifyPlaybackActive();
     npTitle.textContent = title;
     npArtist.textContent = artist;
     albumArt.src = '';
@@ -1273,7 +1563,13 @@
     setActiveLine(0);
   });
   prevLineBtn.addEventListener('click', ()=> setActiveLine(Math.max(0, state.activeIndex-1)));
-  nextLineBtn.addEventListener('click', ()=> setActiveLine(Math.min(state.lines.length-1, state.activeIndex+1)));
+  nextLineBtn.addEventListener('click', ()=>{
+    if(state.activeIndex >= state.lines.length-1){
+      if(store.get('lt:auto_replay')) setActiveLine(0); // loop back to the top instead of doing nothing
+      return;
+    }
+    setActiveLine(state.activeIndex+1);
+  });
 
   // ================= LYRICS PROVIDERS =================
   // Primary: LRCLIB — free, keyless, CORS-open, and returns REAL per-line
@@ -1491,11 +1787,26 @@
       const groqKey = (localStorage.getItem('alpha_groq') || '').trim();
       const gemKey = (localStorage.getItem('alpha_key') || '').trim();
       if(!groqKey && !gemKey) return;
-      const prompt = 'אתה עורך מוזיקה. עבור השיר "' + title + '" של ' + artist + ':\n' +
-        'כתוב בדיוק בפורמט הבא, בעברית, בלי שום דבר נוסף:\n' +
-        '### על השיר\n2-3 משפטים על מה השיר מדבר לפי המילים המצורפות — משמעות, אווירה, נושא.\n' +
-        '### על האמן\n2-3 עובדות קצרות ומעניינות על האמן — רק דברים שאתה יודע בוודאות; אם אינך מכיר את האמן כתוב "אין לי מידע ודאי על האמן הזה".\n\n' +
-        'מילות השיר:\n' + texts.slice(0, 40).join('\n');
+      const infoLang = store.get('lt:info_lang') || 'he';
+      const infoDepth = store.get('lt:info_depth') || 'short';
+      const isEn = infoLang === 'en';
+      const depthLine = infoDepth === 'detailed'
+        ? (isEn ? '4-6 sentences' : '4-6 משפטים')
+        : (isEn ? '2-3 sentences' : '2-3 משפטים');
+      const factsLine = infoDepth === 'detailed'
+        ? (isEn ? '4-6 short, interesting facts' : '4-6 עובדות קצרות ומעניינות')
+        : (isEn ? '2-3 short, interesting facts' : '2-3 עובדות קצרות ומעניינות');
+      const prompt = isEn
+        ? 'You are a music editor. For the song "' + title + '" by ' + artist + ':\n' +
+          'Write exactly in this format, in English, with nothing else:\n' +
+          '### About the song\n' + depthLine + ' about what the song is about based on the attached lyrics — meaning, mood, theme.\n' +
+          '### About the artist\n' + factsLine + ' about the artist — only things you know for certain; if you do not know the artist write "I have no reliable information about this artist."\n\n' +
+          'Lyrics:\n' + texts.slice(0, 40).join('\n')
+        : 'אתה עורך מוזיקה. עבור השיר "' + title + '" של ' + artist + ':\n' +
+          'כתוב בדיוק בפורמט הבא, בעברית, בלי שום דבר נוסף:\n' +
+          '### על השיר\n' + depthLine + ' על מה השיר מדבר לפי המילים המצורפות — משמעות, אווירה, נושא.\n' +
+          '### על האמן\n' + factsLine + ' על האמן — רק דברים שאתה יודע בוודאות; אם אינך מכיר את האמן כתוב "אין לי מידע ודאי על האמן הזה".\n\n' +
+          'מילות השיר:\n' + texts.slice(0, 40).join('\n');
       let out = null;
       if(groqKey){
         out = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -1786,14 +2097,24 @@
   let ledOn = store.get('lt:led_on');
   if(ledOn === null || ledOn === undefined) ledOn = true;
   let ledLastBeat = 0, ledLastHalf = 0, ledPulse = 0, ledHalfPulse = 0, ledHue = 265, ledRaf = 0, ledPrevTs = 0;
+  let ledSpeedMult = Number(store.get('lt:led_speed')) || 1;
+  const ledSpeedSlider = $('ledSpeedSlider');
+  const ledSpeedVal = $('ledSpeedVal');
   function applyLedSetting(){
     ledToggle.checked = !!ledOn;
     ledFrame.classList.toggle('off', !ledOn);
     if(!ledOn) ledFrame.style.boxShadow = '';
+    ledSpeedSlider.value = ledSpeedMult;
+    ledSpeedVal.textContent = ledSpeedMult.toFixed(1) + 'x';
   }
   ledToggle.addEventListener('change', ()=>{
     ledOn = ledToggle.checked;
     store.set('lt:led_on', ledOn);
+    applyLedSetting();
+  });
+  ledSpeedSlider.addEventListener('input', ()=>{
+    ledSpeedMult = Number(ledSpeedSlider.value);
+    store.set('lt:led_speed', ledSpeedMult);
     applyLedSetting();
   });
   applyLedSetting();
@@ -1808,10 +2129,11 @@
     const dt = ledPrevTs ? Math.min((now - ledPrevTs) / 1000, 0.05) : 0.016;
     ledPrevTs = now;
     const playing = state.isPlaying || state.mode === 'manual';
-    if(playing && now - ledLastBeat > tempoMs){
+    const ledBeatMs = tempoMs / ledSpeedMult;
+    if(playing && now - ledLastBeat > ledBeatMs){
       ledLastBeat = now; ledLastHalf = now; ledPulse = 1;
       ledHue = (ledHue + 47) % 360; // hue kick on the beat
-    } else if(playing && now - ledLastHalf > tempoMs / 2){
+    } else if(playing && now - ledLastHalf > ledBeatMs / 2){
       ledLastHalf = now; ledHalfPulse = 0.55; // softer off-beat echo
     }
     ledPulse *= Math.exp(-dt * 5.2);
@@ -1968,6 +2290,7 @@
     const pm = localStorage.getItem('lt:party_mode');
     if (pm !== null) lastParty = Math.max(0, Math.min(3, Number(pm) || 0));
     else if (localStorage.getItem('lt:party_on') === '1') lastParty = 1; // migrate old boolean
+    if (localStorage.getItem('lt:start_in_crew') === '1' && lastParty === 0) lastParty = 1;
   } catch {}
   let lastTheme = 0;
   try { lastTheme = Math.max(0, Math.min(AVATAR_THEMES.length - 1, Number(localStorage.getItem('lt:avatar_theme')) || 0)); } catch {}
@@ -2050,6 +2373,92 @@
     applyZoomUI();
   });
   applyZoomUI();
+
+  // ── New tuning-knob settings — every slider/select below follows the
+  // same pattern: read a persisted value (or a default), apply it live to
+  // the avatar scene the moment `handle` exists (mount() also re-applies
+  // all of these once on first mount, via applyAllTuning below), and save
+  // on change. Kept as small self-contained blocks rather than one giant
+  // shared abstraction — each knob's default/range/setter name differs
+  // enough that a generic helper would need as many parameters as just
+  // writing the four lines directly. ──
+  function numSetting(key, def) { const v = parseFloat(localStorage.getItem(key)); return Number.isFinite(v) ? v : def; }
+  function wireSlider(sliderId, valId, key, def, fmt, apply) {
+    const el = document.getElementById(sliderId);
+    const valEl = document.getElementById(valId);
+    let v = numSetting(key, def);
+    el.value = v;
+    valEl.textContent = fmt(v);
+    apply(v);
+    el.addEventListener('input', () => {
+      v = parseFloat(el.value);
+      valEl.textContent = fmt(v);
+      try { localStorage.setItem(key, String(v)); } catch {}
+      apply(v);
+    });
+  }
+  const pct = (v) => Math.round(v * 100) + '%';
+  const xFmt = (v) => v.toFixed(1) + 'x';
+  wireSlider('danceSpeedSlider', 'danceSpeedVal', 'lt:dance_speed', 1, xFmt, (v) => handle?.setDanceSpeed?.(v));
+  wireSlider('veinSlider', 'veinVal', 'lt:vein_intensity', 100, (v) => Math.round(v) + '%', (v) => handle?.setVeinIntensity?.(v / 100));
+  wireSlider('shakeSlider', 'shakeVal', 'lt:shake_intensity', 100, (v) => Math.round(v) + '%', (v) => handle?.setShakeIntensity?.(v / 100));
+  wireSlider('confettiSlider', 'confettiVal', 'lt:confetti_intensity', 100, (v) => Math.round(v) + '%', (v) => handle?.setConfettiIntensity?.(v / 100));
+  wireSlider('sparkSlider', 'sparkVal', 'lt:spark_intensity', 100, (v) => Math.round(v) + '%', (v) => handle?.setSparkIntensity?.(v / 100));
+  wireSlider('hazeSlider', 'hazeVal', 'lt:haze_intensity', 100, (v) => Math.round(v) + '%', (v) => handle?.setHazeIntensity?.(v / 100));
+  wireSlider('beamSlider', 'beamVal', 'lt:beam_intensity', 100, (v) => Math.round(v) + '%', (v) => handle?.setBeamIntensity?.(v / 100));
+  wireSlider('finSlider', 'finVal', 'lt:fin_intensity', 100, (v) => Math.round(v) + '%', (v) => handle?.setFinIntensity?.(v / 100));
+  wireSlider('exposureSlider', 'exposureVal', 'lt:exposure', 100, (v) => Math.round(v) + '%', (v) => handle?.setExposure?.(v / 100));
+
+  function wireSelect(selId, key, def, apply) {
+    const el = document.getElementById(selId);
+    let v = localStorage.getItem(key);
+    if (v === null) v = String(def);
+    el.value = v;
+    apply(v);
+    el.addEventListener('change', () => {
+      try { localStorage.setItem(key, el.value); } catch {}
+      apply(el.value);
+    });
+  }
+  wireSelect('crewSizeSel', 'lt:crew_size', 2, (v) => handle?.setCrewSize?.(Number(v)));
+  wireSelect('cameraStyleSel', 'lt:camera_style', 0, (v) => handle?.setCameraStyle?.(Number(v)));
+  wireSelect('stadiumCamSel', 'lt:stadium_cam', 0, (v) => handle?.setStadiumCameraStyle?.(Number(v)));
+  wireSelect('stadiumDensitySel', 'lt:stadium_density', 80000, (v) => handle?.setStadiumDensity?.(Number(v)));
+
+  function wireCheck(chkId, key, def, apply) {
+    const el = document.getElementById(chkId);
+    let v = localStorage.getItem(key);
+    const on = v === null ? def : v === '1';
+    el.checked = on;
+    apply(on);
+    el.addEventListener('change', () => {
+      try { localStorage.setItem(key, el.checked ? '1' : '0'); } catch {}
+      apply(el.checked);
+    });
+  }
+  wireCheck('mirrorToggle', 'lt:mirror', false, (on) => handle?.setMirror?.(on));
+
+  // Re-apply every tuning knob once the avatar scene actually mounts (the
+  // avatarToggle checkbox can be off at first paint, so `handle` may not
+  // exist yet when the code above ran).
+  const _origMount = mount;
+  mount = function () {
+    _origMount();
+    handle?.setDanceSpeed?.(numSetting('lt:dance_speed', 1));
+    handle?.setVeinIntensity?.(numSetting('lt:vein_intensity', 100) / 100);
+    handle?.setShakeIntensity?.(numSetting('lt:shake_intensity', 100) / 100);
+    handle?.setConfettiIntensity?.(numSetting('lt:confetti_intensity', 100) / 100);
+    handle?.setSparkIntensity?.(numSetting('lt:spark_intensity', 100) / 100);
+    handle?.setHazeIntensity?.(numSetting('lt:haze_intensity', 100) / 100);
+    handle?.setBeamIntensity?.(numSetting('lt:beam_intensity', 100) / 100);
+    handle?.setFinIntensity?.(numSetting('lt:fin_intensity', 100) / 100);
+    handle?.setExposure?.(numSetting('lt:exposure', 100) / 100);
+    handle?.setCrewSize?.(Number(localStorage.getItem('lt:crew_size') || 2));
+    handle?.setCameraStyle?.(Number(localStorage.getItem('lt:camera_style') || 0));
+    handle?.setStadiumCameraStyle?.(Number(localStorage.getItem('lt:stadium_cam') || 0));
+    handle?.setStadiumDensity?.(Number(localStorage.getItem('lt:stadium_density') || 80000));
+    handle?.setMirror?.(localStorage.getItem('lt:mirror') === '1');
+  };
 
   // Avatar color picker — one swatch per theme, gradient-filled from the
   // theme's own rim colors, applied live and persisted.
