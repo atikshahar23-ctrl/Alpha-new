@@ -299,6 +299,9 @@
   }
   .hero-btn.on{border-color:var(--border-strong); box-shadow:0 0 16px rgba(0,229,255,.4);}
   .hero-btn.stage-exit{left:auto; right:10px;}
+  .hero-btn.live-beat{top:58px;}
+  .hero-btn.live-beat.on{border-color:rgba(255,80,120,.7); box-shadow:0 0 16px rgba(255,80,120,.5); animation:liveBeatPulse 1s ease-in-out infinite;}
+  @keyframes liveBeatPulse{0%,100%{transform:scale(1);}50%{transform:scale(1.1);}}
   .avatar-colors{display:flex; flex-wrap:wrap; gap:8px; padding:4px 0;}
   .av-dot{
     width:30px; height:30px; border-radius:999px; cursor:pointer;
@@ -475,6 +478,7 @@
       <div class="hl-trans" id="heroLineTrans" dir="auto"></div>
     </div>
     <button class="hero-btn" id="partyBtn" title="מצב מסיבה — להקת רקדנים">🎉</button>
+    <button class="hero-btn live-beat" id="liveBeatBtn" title="ביט חי מהמיקרופון — הרקדן שומע את המוזיקה בחדר">🎤</button>
     <button class="hero-btn stage-exit" id="stageExitBtn" title="יציאה ממסך מלא" hidden>✕</button>
     <div class="hero-caption">🎭 רוקד לקצב השיר</div>
   </div>
@@ -1820,6 +1824,83 @@
   }
   ledRaf = requestAnimationFrame(ledFrameLoop);
 
+  // ================= LIVE BEAT — real audio-reactive engine =================
+  // Spotify never exposes its audio stream (DRM blocks AnalyserNode routing,
+  // and the BPM API is closed to new apps) — but the music is playing OUT
+  // LOUD in the room. So the mic listens to the room: an AnalyserNode tracks
+  // the bass band (~40-160Hz), an adaptive-threshold onset detector fires
+  // the avatar's beat exactly on real hits, a median of onset gaps becomes a
+  // live BPM that retunes the whole show (avatar, LEDs, EQ), and a sudden
+  // sustained bass spike triggers the avatar's bass-drop accent move.
+  const liveBeatBtn = $('liveBeatBtn');
+  let liveAudio = null;
+  async function startLiveBeat(){
+    if(liveAudio) return;
+    let stream;
+    try{
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+    }catch(e){
+      showMiniToast('אין גישה למיקרופון — אשר הרשאה כדי להפעיל ביט חי');
+      return;
+    }
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const src = ctx.createMediaStreamSource(stream);
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 2048;
+    analyser.smoothingTimeConstant = 0.35;
+    src.connect(analyser);
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    const st = { ctx, stream, analyser, raf: 0, env: 0, envSlow: 0.05, lastOnset: 0, lastDrop: 0, intervals: [], lastBpmPush: 0 };
+    const binHz = ctx.sampleRate / analyser.fftSize;
+    const lo = Math.max(1, Math.round(40 / binHz)), hi = Math.max(lo + 1, Math.round(160 / binHz));
+    function tick(now){
+      st.raf = requestAnimationFrame(tick);
+      analyser.getByteFrequencyData(data);
+      let bass = 0;
+      for(let i = lo; i <= hi; i++) bass += data[i];
+      bass /= (hi - lo + 1) * 255;
+      st.env += (bass - st.env) * 0.5;          // fast envelope
+      st.envSlow += (bass - st.envSlow) * 0.03; // slow adaptive baseline
+      const onset = st.env > st.envSlow * 1.35 && st.env > 0.1 && now - st.lastOnset > 240;
+      if(onset){
+        const gap = now - st.lastOnset;
+        st.lastOnset = now;
+        window.__lyricsAvatarBridge?.liveBeat?.();
+        if(gap > 240 && gap < 1500){
+          st.intervals.push(gap);
+          if(st.intervals.length > 12) st.intervals.shift();
+        }
+        // live BPM: the median onset gap retunes the entire show
+        if(st.intervals.length >= 6 && now - st.lastBpmPush > 2500){
+          st.lastBpmPush = now;
+          const sorted = st.intervals.slice().sort((a, b) => a - b);
+          const med = sorted[Math.floor(sorted.length / 2)];
+          applyTempo(med);
+        }
+        // bass drop: envelope far above the adaptive baseline
+        if(st.env > st.envSlow * 2.2 && st.env > 0.28 && now - st.lastDrop > 2000){
+          st.lastDrop = now;
+          window.__lyricsAvatarBridge?.bassDrop?.();
+        }
+      }
+    }
+    st.raf = requestAnimationFrame(tick);
+    liveAudio = st;
+    liveBeatBtn.classList.add('on');
+    showMiniToast('🎤 ביט חי פעיל — הרקדן שומע את המוזיקה בחדר');
+  }
+  function stopLiveBeat(){
+    if(!liveAudio) return;
+    cancelAnimationFrame(liveAudio.raf);
+    liveAudio.stream.getTracks().forEach(tr => tr.stop());
+    liveAudio.ctx.close().catch(()=>{});
+    liveAudio = null;
+    liveBeatBtn.classList.remove('on');
+    window.__lyricsAvatarBridge?.liveBeatOff?.();
+  }
+  liveBeatBtn.addEventListener('click', ()=>{ if(liveAudio) stopLiveBeat(); else startLiveBeat(); });
+  document.addEventListener('visibilitychange', ()=>{ if(document.hidden) stopLiveBeat(); });
+
   // ================= KEEP SCREEN AWAKE =================
   // This app is meant to sit propped up and watched (a party display, a
   // karaoke screen) — the OS dimming/locking the screen mid-song is exactly
@@ -1921,6 +2002,9 @@
     setEnergy(playing) { lastEnergy = !!playing; if (handle) handle.setEnergy(lastEnergy); },
     setTempo(ms) { lastTempo = ms; if (handle) handle.setTempo(lastTempo); },
     setParty(mode) { lastParty = mode === true ? 1 : Number(mode) || 0; if (handle) handle.setParty?.(lastParty); },
+    liveBeat() { handle?.liveBeatTick?.(); },
+    bassDrop() { handle?.bassDrop?.(); },
+    liveBeatOff() { handle?.setLiveBeat?.(false); },
   };
 
   // Party button cycles: solo → 🎉 crew of 3 → 🪩 BIG PARTY (30 aliens + DJ).

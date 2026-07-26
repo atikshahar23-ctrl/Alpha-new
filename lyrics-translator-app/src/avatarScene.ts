@@ -42,6 +42,14 @@ export interface LyricsAvatarHandle {
   setParty?(mode: boolean | number): void;
   // Avatar color theme — index into AVATAR_THEMES.
   setTheme?(idx: number): void;
+  // LIVE beat engine — real onsets detected from the microphone (the room's
+  // actual Spotify audio). liveBeatTick() fires the show's beat exactly on
+  // a detected onset (overrides the internal clock until the mic goes
+  // quiet); bassDrop() slams a two-beat high-impact accent pose + triple
+  // floor shockwave; setLiveBeat(false) hands control back to the clock.
+  liveBeatTick?(): void;
+  bassDrop?(): void;
+  setLiveBeat?(on: boolean): void;
   dispose(): void;
 }
 
@@ -425,6 +433,20 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     }
   }
 
+  // ── Volumetric spotlights — two cones hanging over the stage, sweeping
+  // and strobing exactly on the beat, tinted from the active color theme
+  // (one takes the theme's hot accent, the other its secondary). ──
+  const spotGeo = new THREE.ConeGeometry(0.95, 3.6, 20, 1, true);
+  spotGeo.translate(0, -1.8, 0); // apex at origin → the cone hangs downward
+  const spots: { mesh: THREE.Mesh; mat: THREE.MeshBasicMaterial; phase: number; colIdx: 0 | 1 }[] = [];
+  for (const [sx, phase, colIdx] of [[-1.7, 0, 0], [1.7, Math.PI * 0.7, 1]] as [number, number, 0 | 1][]) {
+    const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.06, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+    const mesh = new THREE.Mesh(spotGeo, mat);
+    mesh.position.set(sx, 3.3, -0.6);
+    scene.add(mesh);
+    spots.push({ mesh, mat, phase, colIdx });
+  }
+
   // ── The figure ──
   const figMat = buildFigureMaterial();
   const rig = buildFigureRig(figMat);
@@ -511,10 +533,6 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     return { rig: drig, cur, vel, tgt, stepOffset, baseX, baseZ, microPhase };
   }
   const setPoseFor = (d: Dancer, p: Pose) => { for (const k of POSE_KEYS) d.tgt[k] = (k in p) ? p[k] : (BASE_POSE[k] || 0); };
-  function shuffleMoves(arr: number[]) {
-    for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; }
-    return arr;
-  }
   // Each move maps a step (0..7 inside its 8-beat block) to a target pose.
   const MOVES: ((s: number) => Pose)[] = [
     // 1 · Groove pump — weight shifts side to side, elbows pumping.
@@ -647,8 +665,24 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       torsoRx: hi ? -0.06 : 0.1, headRx: hi ? -0.15 : 0.05,
     }; },
   ];
-  let movePlaylist = shuffleMoves(MOVES.map((_, i) => i));
-  let moveCursor = 0;
+  // ── Style pools — the move set follows the track's energy: fast tracks
+  // pull from the aggressive hip-hop/popping set, mid tempo from groove/
+  // disco, slow tempo from latin/smooth. Indexes into MOVES above.
+  const POOL_FAST = [2, 8, 12, 16, 5, 15];   // robot, running man, kicks, stomp, jump-freeze, floss
+  const POOL_MID = [0, 3, 9, 10, 14, 17, 6]; // groove, turn, disco, body wave, arm waves, praise, claps
+  const POOL_SLOW = [1, 4, 7, 11, 13, 10];   // hands-up, skate, lunge, salsa, drop-freeze, body wave
+  const poolForTempo = () => (tempoMs < 460 ? POOL_FAST : tempoMs <= 580 ? POOL_MID : POOL_SLOW);
+  let currentMoveIdx = 0;
+
+  // Bass-drop accents — high-impact poses held for two beats when the live
+  // mic detector registers a heavy low-frequency hit.
+  const ACCENTS: Pose[] = [
+    { rootY: -0.26, kneeLx: 1.3, kneeRx: 1.3, legLx: -0.55, legRx: -0.55, shLz: 2.6, shRz: -2.6, torsoRx: 0.2, headRx: -0.2 },
+    { rootY: -0.12, legRx: -0.7, kneeRx: 0.2, shRz: -2.3, shRx: -0.4, torsoRz: -0.18, headRy: -0.3, shLz: 0.3, fALz: 1.2 },
+    { rootY: 0.05, shLz: 2.4, shRz: -2.4, fALz: -0.4, fARz: 0.4, kneeLx: 0.1, kneeRx: 0.1, torsoRx: -0.12, headRx: -0.25 },
+  ];
+  let accentHold = 0;
+  let liveMode = false, lastLiveTick = 0;
 
   // ── Theme system — one place tints the figure shader + every additive
   // accent material (eyes, antenna tips, chest cores, joint dots, crowd
@@ -861,6 +895,42 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     if (qTier >= 2) renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1));
   }
 
+  // One beat of the show: pulse the lights, ripple the floor under the
+  // lead's alternating feet, and drive the choreography step chart.
+  function fireBeat(now2: number) {
+    lastBeat = now2;
+    beatPulse = Math.max(beatPulse, 1);
+    beatCount++;
+    for (const f of fins) f.target = 0.35 + Math.random() * 0.65;
+    // Footstep ripple — spawns under the lead dancer's alternating foot,
+    // not the stage center, so the floor visibly reacts to the footwork.
+    const r = rings[ringCursor];
+    ringCursor = (ringCursor + 1) % RING_COUNT;
+    r.age = 0;
+    const lead = dancers[0];
+    r.mesh.position.x = lead.baseX + lead.cur.rootX + (beatCount % 2 ? 0.13 : -0.13);
+    if (accentHold > 0) { accentHold--; return; } // holding a bass-drop pose
+    const step = beatCount % BEATS_PER_PATTERN;
+    if (step === 0) {
+      // Wrap any accumulated full turn so the next move starts facing
+      // front instead of spring-unwinding backwards through 360°.
+      for (const d of dancers) {
+        const wrap = Math.round(d.cur.rootRy / (Math.PI * 2)) * Math.PI * 2;
+        d.cur.rootRy -= wrap; d.tgt.rootRy -= wrap;
+      }
+      const pool = poolForTempo();
+      let mi = pool[Math.floor(Math.random() * pool.length)];
+      if (mi === currentMoveIdx && pool.length > 1) mi = pool[(pool.indexOf(mi) + 1) % pool.length];
+      currentMoveIdx = mi;
+    }
+    const moveFn = MOVES[currentMoveIdx];
+    // Every 4th move block the crew snaps into PERFECT unison (offset 0
+    // for everyone) — the classic "drop" moment; the other blocks keep
+    // the offset wave so the routine breathes between the two.
+    const unison = Math.floor(beatCount / BEATS_PER_PATTERN) % 4 === 3;
+    for (const d of activeDancers()) setPoseFor(d, moveFn((step + (unison ? 0 : d.stepOffset)) % BEATS_PER_PATTERN));
+  }
+
   function frame(now: number) {
     raf = requestAnimationFrame(frame);
     if (document.hidden) return;
@@ -878,40 +948,18 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     const targetEnergy = playing ? 1 : 0.25;
     energy += (targetEnergy - energy) * 0.04;
 
-    // Procedural beat: a pulse fires every tempoMs while playing, decays
-    // exponentially — drives the fins' chase target refresh, the floor
-    // shockwave rings, and the choreography-pattern counter. tempoMs is set
-    // by the caller from the real song's LRC line timing (see setTempo), so
-    // this locks to the actual track instead of a one-size-fits-all guess.
-    let firedBeat = false;
-    if (playing && now - lastBeat > tempoMs) {
-      lastBeat = now;
-      beatPulse = 1;
-      beatCount++;
-      firedBeat = true;
-      for (const f of fins) f.target = 0.35 + Math.random() * 0.65;
-      // Choreography: on each beat, set the target pose from the current
-      // move's step chart; every BEATS_PER_PATTERN beats advance to the
-      // next move in the shuffled playlist (reshuffling when exhausted).
-      // Party backups run the same move at a per-dancer beat offset — a
-      // choreographed crew wave rather than three clones in lockstep.
-      const step = beatCount % BEATS_PER_PATTERN;
-      if (step === 0) {
-        // Wrap any accumulated full turn so the next move starts facing
-        // front instead of spring-unwinding backwards through 360°.
-        for (const d of dancers) {
-          const wrap = Math.round(d.cur.rootRy / (Math.PI * 2)) * Math.PI * 2;
-          d.cur.rootRy -= wrap; d.tgt.rootRy -= wrap;
-        }
-        moveCursor++;
-        if (moveCursor >= movePlaylist.length) { movePlaylist = shuffleMoves(movePlaylist); moveCursor = 0; }
+    // Beat sources, in priority order:
+    // 1. LIVE — real onsets detected from the microphone (the room's actual
+    //    Spotify audio) via liveBeatTick(); overrides the internal clock and
+    //    falls back automatically if the mic goes quiet for a while.
+    // 2. Internal — a pulse every tempoMs (derived from the song's real LRC
+    //    line timing, or from the live BPM estimate when the mic runs).
+    if (playing) {
+      if (liveMode) {
+        if (now - lastLiveTick > 2500) liveMode = false; // mic went quiet → internal clock resumes
+      } else if (now - lastBeat > tempoMs) {
+        fireBeat(now);
       }
-      const moveFn = MOVES[movePlaylist[moveCursor]];
-      // Every 4th move block the crew snaps into PERFECT unison (offset 0
-      // for everyone) — the classic "drop" moment; the other blocks keep
-      // the offset wave so the routine breathes between the two.
-      const unison = Math.floor(beatCount / BEATS_PER_PATTERN) % 4 === 3;
-      for (const d of activeDancers()) setPoseFor(d, moveFn((step + (unison ? 0 : d.stepOffset)) % BEATS_PER_PATTERN));
     }
     if (!playing) for (const d of activeDancers()) setPoseFor(d, BASE_POSE); // paused → calm idle
     beatPulse *= 0.9;
@@ -929,11 +977,6 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       }
     }
 
-    if (firedBeat) {
-      const r = rings[ringCursor];
-      ringCursor = (ringCursor + 1) % RING_COUNT;
-      r.age = 0;
-    }
     for (const r of rings) {
       r.age += 1 / 60;
       const life = Math.min(1, r.age / 0.9);
@@ -952,6 +995,15 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       f.val += (f.target * energy - f.val) * 0.15;
       f.mat.opacity = 0.15 + f.val * 0.65;
       f.mesh.scale.y = 0.8 + f.val * 1.8;
+    }
+
+    // Spotlights sweep continuously and strobe hard on the beat.
+    for (const sp of spots) {
+      sp.mesh.rotation.z = Math.sin(t * 0.65 + sp.phase) * 0.38;
+      sp.mesh.rotation.x = Math.sin(t * 0.42 + sp.phase * 2) * 0.2;
+      sp.mat.opacity = (0.035 + beatPulse * 0.15) * energy;
+      const c = sp.colIdx === 0 ? currentTheme.c : currentTheme.b;
+      sp.mat.color.setRGB(c[0], c[1], c[2]);
     }
 
     // Apply spring pose + a continuous micro-groove layer (breathing sway,
@@ -1062,6 +1114,20 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       setCrowdVisible(partyMode === 2);
     },
     setTheme(idx: number) { applyTheme(idx); },
+    liveBeatTick() {
+      const n = performance.now();
+      lastLiveTick = n; liveMode = true;
+      if (n - lastBeat < 200) return; // debounce double-onsets
+      fireBeat(n);
+    },
+    bassDrop() {
+      accentHold = 2;
+      beatPulse = Math.max(beatPulse, 1.35);
+      const pose = ACCENTS[Math.floor(Math.random() * ACCENTS.length)];
+      for (const d of activeDancers()) setPoseFor(d, pose);
+      for (const r of rings) r.age = 0; // triple shockwave
+    },
+    setLiveBeat(on: boolean) { liveMode = !!on; if (!on) lastLiveTick = 0; },
     dispose() {
       cancelAnimationFrame(raf);
       ro.disconnect();
