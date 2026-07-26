@@ -438,6 +438,9 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.95, 0.55, 0.3);
   composer.addPass(bloom);
   composer.addPass(new OutputPass());
+  // Base strength resize() scales by resolution; setParty(3) lowers this
+  // while the 80,000-dot stadium crowd is up (see there for why).
+  let bloomBaseStrength = 0.95;
 
   function resize() {
     const w = container.clientWidth || 1;
@@ -460,7 +463,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     // stack washes into a white wall. Scale strength down continuously
     // with pixel count: full 0.95 up to ~0.5MP (phone hero card), easing
     // to ~0.3 at 5MP.
-    bloom.strength = 0.95 * Math.max(0.32, Math.min(1, Math.sqrt(500000 / Math.max(1, w * h))));
+    bloom.strength = bloomBaseStrength * Math.max(0.32, Math.min(1, Math.sqrt(500000 / Math.max(1, w * h))));
     camera.updateProjectionMatrix();
   }
   resize();
@@ -1276,6 +1279,175 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     if (djBooth) djBooth.visible = on;
     if (danceFloor) danceFloor.visible = on;
   }
+
+  // ── STADIUM mode (party mode 3) — a Super-Bowl-halftime bowl: ~80,000
+  // crowd "phone lights" as ONE animated Points draw call (each dot bobs
+  // and twinkles per-vertex in the shader — zero CPU per frame), a dark
+  // elliptical bowl shell with a glowing rim, four light towers, two mega
+  // screens, stage-edge glow bars, and a drone camera that flies the bowl.
+  const STADIUM_N = 80000;
+  let stadiumGroup: THREE.Group | null = null;
+  let stadiumPtsMat: THREE.ShaderMaterial | null = null;
+  let stadiumPtsGeo: THREE.BufferGeometry | null = null;
+  let stadiumScreens: THREE.MeshBasicMaterial | null = null;
+  let stadiumRimMat: THREE.MeshBasicMaterial | null = null;
+  function ensureStadium() {
+    if (stadiumGroup) return;
+    stadiumGroup = new THREE.Group();
+    stadiumGroup.visible = false;
+    scene.add(stadiumGroup);
+
+    // 80K crowd lights across three elliptical tiers.
+    const pos = new Float32Array(STADIUM_N * 3);
+    const phase = new Float32Array(STADIUM_N);
+    const size = new Float32Array(STADIUM_N);
+    const col = new Float32Array(STADIUM_N * 3);
+    for (let i = 0; i < STADIUM_N; i++) {
+      const tier = i % 3;
+      const f = Math.random(); // radial spread inside the tier band
+      // Tight bowl — the stands start right at the field's edge (Super
+      // Bowl close-crowd feel), climbing outward/upward in three tiers.
+      const a = 4.6 + tier * 1.8 + f * 1.6;   // x semi-axis: 4.6 → 9.8
+      const b = a * 0.72;                      // z semi-axis
+      const ang = Math.random() * Math.PI * 2;
+      pos[i * 3] = Math.cos(ang) * a;
+      pos[i * 3 + 1] = 0.9 + tier * 1.45 + f * 1.15 + Math.random() * 0.18;
+      pos[i * 3 + 2] = Math.sin(ang) * b - 0.6;
+      phase[i] = Math.random();
+      size[i] = 0.9 + Math.random() * 1.1;
+      // Color mix pulled back from mostly-white (0.62) to a real mixed
+      // crowd — with NormalBlending each dot shows its OWN color at full
+      // brightness, so a white-dominant mix reads as a flat white mass at
+      // any real density. More color variety keeps individual dots legible.
+      const k = Math.random();
+      if (k < 0.32) { col[i * 3] = 1.0; col[i * 3 + 1] = 0.93; col[i * 3 + 2] = 0.8; }        // warm phone light
+      else if (k < 0.58) { col[i * 3] = 0.45; col[i * 3 + 1] = 0.8; col[i * 3 + 2] = 1.0; }   // cool blue
+      else if (k < 0.8) { col[i * 3] = 0.8; col[i * 3 + 1] = 0.5; col[i * 3 + 2] = 1.0; }     // violet
+      else { col[i * 3] = 1.0; col[i * 3 + 1] = 0.45; col[i * 3 + 2] = 0.75; }                // pink
+    }
+    const ptsGeo = new THREE.BufferGeometry();
+    ptsGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    ptsGeo.setAttribute('aPhase', new THREE.BufferAttribute(phase, 1));
+    ptsGeo.setAttribute('aSize', new THREE.BufferAttribute(size, 1));
+    ptsGeo.setAttribute('aCol', new THREE.BufferAttribute(col, 3));
+    // NormalBlending, not additive: 80,000 overlapping additive dots have
+    // NO ceiling — however dim each one is, enough overlap always sums to
+    // white (found via testing: shrinking size/alpha again and again never
+    // fully fixed it, because the accumulation is unbounded by construction).
+    // Normal alpha blending composites instead of summing, so it's immune
+    // to overdraw regardless of density — the correct tool for a crowd this
+    // size, same reason real "starfield" crowd shaders use it.
+    stadiumPtsMat = new THREE.ShaderMaterial({
+      uniforms: { uTime: { value: 0 }, uEnergy: { value: 0.3 }, uPulse: { value: 0 } },
+      transparent: true, depthWrite: false, blending: THREE.NormalBlending,
+      vertexShader: /* glsl */`
+        attribute float aPhase;
+        attribute float aSize;
+        attribute vec3 aCol;
+        uniform float uTime; uniform float uEnergy;
+        varying vec3 vCol; varying float vTw; varying float vNear;
+        void main() {
+          vec3 p = position;
+          // every fan bounces to the shared beat clock with their own phase
+          p.y += sin(uTime * (1.6 + fract(aPhase * 3.1) * 1.4) + aPhase * 40.0) * 0.14 * uEnergy;
+          vCol = aCol;
+          vTw = 0.5 + 0.5 * sin(uTime * (2.0 + fract(aPhase * 7.3) * 3.0) + aPhase * 80.0);
+          vec4 mv = modelViewMatrix * vec4(p, 1.0);
+          // Near-fade: insurance in case the drone ever grazes the stands
+          // (the flight path is kept outside the bowl radius on purpose).
+          vNear = smoothstep(1.0, 3.0, -mv.z);
+          gl_PointSize = min(aSize * (70.0 / max(1.0, -mv.z)), 12.0);
+          gl_Position = projectionMatrix * mv;
+        }
+      `,
+      fragmentShader: /* glsl */`
+        precision highp float;
+        uniform float uPulse;
+        varying vec3 vCol; varying float vTw; varying float vNear;
+        void main() {
+          float d = length(gl_PointCoord - 0.5);
+          float a = smoothstep(0.5, 0.1, d);
+          // NormalBlending composites rather than sums, so full brightness
+          // is safe here regardless of how many dots overlap on screen —
+          // each pixel settles on whichever dot(s) actually cover it.
+          vec3 c = vCol * (0.65 + vTw * 0.5 + uPulse * 0.35);
+          gl_FragColor = vec4(c, a * 0.85 * vNear);
+        }
+      `,
+    });
+    const pts = new THREE.Points(ptsGeo, stadiumPtsMat);
+    pts.frustumCulled = false;
+    stadiumGroup.add(pts);
+    stadiumPtsGeo = ptsGeo;
+
+    // Stadium ground — a huge near-black disc so the space between field
+    // and stands reads as pitch, not a void.
+    const ground = new THREE.Mesh(
+      new THREE.CircleGeometry(15, 48),
+      new THREE.MeshBasicMaterial({ color: 0x0b0b16 }),
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.scale.y = 0.72; // (post-rotation this squashes world Z — elliptical pitch)
+    ground.position.set(0, -0.08, -0.6);
+    stadiumGroup.add(ground);
+
+    // NOTE: an earlier version of this bowl had a big solid cylinder "wall"
+    // meshing the whole stand structure — removed. The flying drone camera
+    // orbits (R 5.2-11.2) regularly crossed its DoubleSide surface, and a
+    // huge unlit dark backface filling the frame is indistinguishable from
+    // "the scene went black" (this was the actual bug, found via a debug
+    // probe: camera/fog/bloom values all looked correct while the canvas
+    // still rendered solid black). The 80,000-dot crowd + rim ring already
+    // read as a stadium shape without a solid prop the camera can clip.
+    // NOT registered as a generic accent on purpose: registerAccents' beat
+    // breathing (opacity → up to ~1.0) was tuned for tiny eye/joint dots —
+    // applied to a torus with a 67-unit circumference under additive
+    // blending, it read as a solid white sheet across most of the frame
+    // (the actual cause of a "washed out" bowl, more than the point count).
+    // Kept deliberately thin and dim, with its own small independent pulse.
+    stadiumRimMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false });
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(10.7, 0.035, 8, 64), stadiumRimMat);
+    rim.rotation.x = Math.PI / 2; rim.scale.y = 0.72; rim.position.set(0, 5.4, -0.6);
+    stadiumGroup.add(rim);
+
+    // Four light towers with glowing heads.
+    for (const [tx, tz] of [[-9.6, -6.4], [9.6, -6.4], [-9.6, 5.2], [9.6, 5.2]] as [number, number][]) {
+      const tower = new THREE.Mesh(new THREE.BoxGeometry(0.22, 7.2, 0.22), new THREE.MeshBasicMaterial({ color: 0x0a0a14 }));
+      tower.position.set(tx, 3.6, tz);
+      stadiumGroup.add(tower);
+      const headMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.3, 10, 10), headMat);
+      head.position.set(tx, 7.3, tz);
+      stadiumGroup.add(head);
+      registerAccents([headMat]);
+    }
+
+    // Two mega screens flanking the stage (grayscale gradient canvas,
+    // tinted live from the theme + pulsing on the beat).
+    const sc = document.createElement('canvas'); sc.width = 128; sc.height = 64;
+    const sg = sc.getContext('2d')!;
+    const sgrad = sg.createLinearGradient(0, 64, 0, 0);
+    sgrad.addColorStop(0, '#333'); sgrad.addColorStop(0.5, '#bbb'); sgrad.addColorStop(1, '#666');
+    sg.fillStyle = sgrad; sg.fillRect(0, 0, 128, 64);
+    const screenTex = new THREE.CanvasTexture(sc);
+    stadiumScreens = new THREE.MeshBasicMaterial({ map: screenTex, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+    for (const sx of [-6.8, 6.8]) {
+      const screen = new THREE.Mesh(new THREE.PlaneGeometry(4.2, 2.3), stadiumScreens);
+      screen.position.set(sx, 3.6, -4.6);
+      screen.rotation.y = sx > 0 ? -0.5 : 0.5;
+      stadiumGroup.add(screen);
+    }
+
+    // Stage-edge glow bars around the performance floor.
+    const edgeMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false });
+    registerAccents([edgeMat]);
+    for (const [w2, d2, ex, ez] of [[4.6, 0.07, 0, 1.45], [4.6, 0.07, 0, -2.6], [0.07, 4.12, -2.3, -0.58], [0.07, 4.12, 2.3, -0.58]] as [number, number, number, number][]) {
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(w2, 0.05, d2), edgeMat);
+      bar.position.set(ex, -0.03, ez);
+      stadiumGroup.add(bar);
+    }
+    applyQTier(); // a device that already shed quality gets the thinner crowd immediately
+  }
   // Per-frame crowd animation — cheap parametric motion per dancer (no
   // springs): hop/lean/arm-raise computed from the shared beat clock and
   // the dancer's archetype, then written as instance matrices.
@@ -1348,6 +1520,8 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   function applyQTier() {
     if (qTier >= 1) bloom.enabled = false;
     if (qTier >= 2) renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1));
+    // Weak devices also shed stadium crowd density (80K → 36K → 14K points).
+    if (stadiumPtsGeo) stadiumPtsGeo.setDrawRange(0, qTier >= 2 ? 14000 : qTier >= 1 ? 36000 : STADIUM_N);
   }
 
   // One beat of the show: pulse the lights, ripple the floor under the
@@ -1389,10 +1563,16 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   function frame(now: number) {
     raf = requestAnimationFrame(frame);
     if (document.hidden) return;
-    const dt = lastFrameTime ? Math.min((now - lastFrameTime) / 1000, 0.05) : 0.016;
+    // rawDt for the fps watchdog, clamped dt for animation: the clamp keeps
+    // a GC pause from making the scene leap, but feeding CLAMPED time into
+    // the watchdog makes its clock run 10x slow at very low framerates —
+    // exactly when it's needed most (found at 2fps under SwiftShader: the
+    // shed that should fire in ~5s took minutes).
+    const rawDt = lastFrameTime ? (now - lastFrameTime) / 1000 : 0.016;
+    const dt = Math.min(rawDt, 0.05);
     lastFrameTime = now;
     if (qTier < 2) {
-      warmT += dt; fpsT += dt; fpsN++;
+      warmT += rawDt; fpsT += rawDt; fpsN++;
       if (warmT > 2.5 && fpsT >= 1) {
         const fps = fpsN / fpsT; fpsT = 0; fpsN = 0;
         if (fps < 40) { if (++lowStreak >= 2) { lowStreak = 0; qTier++; applyQTier(); } }
@@ -1552,17 +1732,52 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       (hazeSprites[i].material as THREE.SpriteMaterial).opacity = 0.06 + Math.sin(t * 0.3 + i) * 0.03;
     }
 
-    if (partyMode === 2) updateCrowd(now, t);
+    if (partyMode >= 2) updateCrowd(now, t); // floor crowd dances in stadium too
+    if (partyMode === 3 && stadiumPtsMat) {
+      stadiumPtsMat.uniforms.uTime.value = t;
+      stadiumPtsMat.uniforms.uEnergy.value = energy;
+      stadiumPtsMat.uniforms.uPulse.value = beatPulse * energy;
+      if (stadiumScreens) {
+        stadiumScreens.opacity = 0.3 + beatPulse * energy * 0.45;
+        stadiumScreens.color.setRGB(currentTheme.b[0], currentTheme.b[1], currentTheme.b[2]);
+      }
+      if (stadiumRimMat) {
+        stadiumRimMat.opacity = 0.14 + beatPulse * energy * 0.16; // small, deliberate pulse
+        stadiumRimMat.color.setRGB(currentTheme.eye[0], currentTheme.eye[1], currentTheme.eye[2]);
+      }
+    }
 
-    // Subtle cinematic camera sway + a gentle breathing zoom on the beat.
-    // Big party pulls the camera back and up so the whole dance floor,
-    // crowd and DJ booth frame together. userZoom (the 🔍 button) scales
-    // the final distance so the avatars can be made bigger or smaller.
-    camParty += ((partyMode === 2 ? 1 : 0) - camParty) * Math.min(1, dt * 2);
-    camera.position.x = camBase.x + Math.sin(t * 0.12) * 0.08;
-    camera.position.y = camBase.y + Math.sin(t * 0.09 + 1) * 0.04 + camParty * 0.5;
-    camera.position.z = (camBase.z + camParty * 1.6) / userZoom - beatPulse * energy * 0.06;
-    camera.lookAt(0, 1.05 - camParty * 0.3, -camParty * 0.9);
+    if (partyMode === 3) {
+      // STADIUM drone camera — a continuous broadcast-style flight: the
+      // orbit angle advances steadily while the radius breathes between a
+      // stage-side pass (R≈5.2 — still outside the crowd bowl, which
+      // starts at 4.6) and a high sweep over the whole bowl (R≈11.2), with
+      // the altitude on its own slower rhythm. The lookAt pans gently off
+      // the stage center so it feels hand-flown, and a touch of beat bob
+      // sells the bass hitting the gimbal. Kept outside the bowl radius on
+      // purpose — a real broadcast drone circles the stadium, it doesn't
+      // fly into the stands (also avoids grazing the dense point cloud).
+      const ft = t * 0.9;
+      const R = (8.2 + 3.0 * Math.sin(ft * 0.055)) / Math.max(0.75, userZoom);
+      const ang = ft * 0.11;
+      const camY = 1.15 + (Math.sin(ft * 0.041) + 1) * 2.35;
+      camera.position.set(
+        Math.sin(ang) * R,
+        camY + beatPulse * energy * 0.06,
+        Math.cos(ang) * R * 0.78 + 0.4,
+      );
+      camera.lookAt(Math.sin(ft * 0.09) * 0.8, 1.0 + Math.sin(ft * 0.06) * 0.3, -0.4);
+    } else {
+      // Subtle cinematic camera sway + a gentle breathing zoom on the beat.
+      // Big party pulls the camera back and up so the whole dance floor,
+      // crowd and DJ booth frame together. userZoom (the 🔍 button) scales
+      // the final distance so the avatars can be made bigger or smaller.
+      camParty += ((partyMode === 2 ? 1 : 0) - camParty) * Math.min(1, dt * 2);
+      camera.position.x = camBase.x + Math.sin(t * 0.12) * 0.08;
+      camera.position.y = camBase.y + Math.sin(t * 0.09 + 1) * 0.04 + camParty * 0.5;
+      camera.position.z = (camBase.z + camParty * 1.6) / userZoom - beatPulse * energy * 0.06;
+      camera.lookAt(0, 1.05 - camParty * 0.3, -camParty * 0.9);
+    }
 
     composer.render();
   }
@@ -1574,14 +1789,28 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       if (Number.isFinite(ms) && ms > 0) tempoMs = ms;
     },
     setParty(mode: boolean | number) {
-      partyMode = mode === true ? 1 : mode === false ? 0 : Math.max(0, Math.min(2, Math.round(mode)));
+      partyMode = mode === true ? 1 : mode === false ? 0 : Math.max(0, Math.min(3, Math.round(mode)));
       if (partyMode >= 1) ensureBackups();
       for (let i = 1; i < dancers.length; i++) {
         dancers[i].rig.group.visible = partyMode >= 1;
         if (dancerShadows[i]) dancerShadows[i].visible = partyMode >= 1;
       }
-      if (partyMode === 2) ensureCrowd();
-      setCrowdVisible(partyMode === 2);
+      if (partyMode >= 2) ensureCrowd();
+      setCrowdVisible(partyMode >= 2); // the floor crowd stays for stadium
+      if (partyMode === 3) ensureStadium();
+      if (stadiumGroup) stadiumGroup.visible = partyMode === 3;
+      // The bowl sits ~10-20 units out — the default stage fog would erase
+      // it, so thin the fog while the stadium is up.
+      (scene.fog as THREE.FogExp2).density = partyMode === 3 ? 0.026 : 0.085;
+      // The overdraw fix that actually matters is the crowd dot footprint
+      // (see the point vertex shader) — that alone tames 80,000 additive
+      // dots. bloom.threshold is a SCENE-WIDE knob: cranking it hard also
+      // killed bloom on the dancer/beam/spotlights (found via testing —
+      // "washed white" flipped straight to "everything went black"). Only
+      // a mild nudge here, so the stage keeps its normal glow.
+      bloom.threshold = partyMode === 3 ? 0.38 : 0.3;
+      bloomBaseStrength = partyMode === 3 ? 0.8 : 0.95;
+      resize(); // recompute bloom.strength from the new base immediately
     },
     setTheme(idx: number) { applyTheme(idx); },
     setZoom(z: number) { if (Number.isFinite(z)) userZoom = Math.max(0.6, Math.min(1.8, z)); },

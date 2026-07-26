@@ -3539,7 +3539,10 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     // backgrounded tab or GC pause can't make the scene leap). This also restores the
     // authored cadence — "hop every ~8s", blinks, etc. — which the old fixed 0.016
     // step ran in slow-motion once the framerate was capped.
-    const dt = lastFrame ? Math.min((now - lastFrame) / 1000, 0.05) : 0.016;
+    // rawDt feeds the fps watchdog (clamped time makes its clock run 10x
+    // slow exactly when frames are slowest); clamped dt drives animation.
+    const rawDt = lastFrame ? (now - lastFrame) / 1000 : 0.016;
+    const dt = Math.min(rawDt, 0.05);
     lastFrame = now;
     time += dt;
     { const __mx = (pikaGroup as any).__mixer as THREE.AnimationMixer | undefined; if (__mx) __mx.update(dt); }
@@ -3550,7 +3553,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     // Skipped when the user has forced Fast mode (perfFast handles it). A 3s warm-up
     // ignores the initial model-load spike.
     if (!perfFast && qTier < 2) {
-      warmT += dt; fpsT += dt; fpsN++;
+      warmT += rawDt; fpsT += rawDt; fpsN++;
       if (warmT > 3 && fpsT >= 1) {
         const fps = fpsN / fpsT; fpsT = 0; fpsN = 0;
         // iPad-class drops quality after a single slow window (fast relief); others
@@ -4736,7 +4739,10 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     // backgrounded tab or GC pause can't make the scene leap). This also restores the
     // authored cadence — "hop every ~8s", blinks, etc. — which the old fixed 0.016
     // step ran in slow-motion once the framerate was capped.
-    const dt = lastFrame ? Math.min((now - lastFrame) / 1000, 0.05) : 0.016;
+    // rawDt feeds the fps watchdog (clamped time makes its clock run 10x
+    // slow exactly when frames are slowest); clamped dt drives animation.
+    const rawDt = lastFrame ? (now - lastFrame) / 1000 : 0.016;
+    const dt = Math.min(rawDt, 0.05);
     lastFrame = now;
     time += dt;
     { const __mx = (pikaGroup as any).__mixer as THREE.AnimationMixer | undefined; if (__mx) __mx.update(dt); }
@@ -4747,7 +4753,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     // Skipped when the user has forced Fast mode (perfFast handles it). A 3s warm-up
     // ignores the initial model-load spike.
     if (!perfFast && qTier < 2) {
-      warmT += dt; fpsT += dt; fpsN++;
+      warmT += rawDt; fpsT += rawDt; fpsN++;
       if (warmT > 3 && fpsT >= 1) {
         const fps = fpsN / fpsT; fpsT = 0; fpsN = 0;
         // iPad-class drops quality after a single slow window (fast relief); others
