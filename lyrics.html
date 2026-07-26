@@ -300,6 +300,8 @@
   .hero-btn.on{border-color:var(--border-strong); box-shadow:0 0 16px rgba(0,229,255,.4);}
   .hero-btn.stage-exit{left:auto; right:10px;}
   .hero-btn.live-beat{top:58px;}
+  .hero-btn.zoom-btn{top:106px; font-size:15px;}
+  .hero-btn.zoom-btn .zlabel{position:absolute; bottom:2px; right:4px; font-size:8px; font-weight:800; color:var(--cyan);}
   .hero-btn.live-beat.on{border-color:rgba(255,80,120,.7); box-shadow:0 0 16px rgba(255,80,120,.5); animation:liveBeatPulse 1s ease-in-out infinite;}
   @keyframes liveBeatPulse{0%,100%{transform:scale(1);}50%{transform:scale(1.1);}}
   .avatar-colors{display:flex; flex-wrap:wrap; gap:8px; padding:4px 0;}
@@ -312,7 +314,10 @@
   .av-dot.on{border-color:#fff; box-shadow:0 0 12px rgba(0,229,255,.55); transform:scale(1.12);}
   /* Stage mode — the hero takes over the whole screen (party display /
      landscape phone propped up). The live line + LED frame stay on top. */
-  body.stage-mode .hero-wrap{position:fixed; inset:0; z-index:80; height:100vh; height:100dvh; margin:0; border-radius:0; border:none;}
+  body.stage-mode .hero-wrap{position:fixed; inset:0; z-index:80; height:100vh; height:100dvh; margin:0; border-radius:0; border:none;
+    /* solid backing: the hero's radial gradient has a translucent center,
+       and in stage-mode the page underneath was bleeding through it */
+    background-color:#08090d;}
   body.stage-mode .led-frame{z-index:90;}
   body.stage-mode .hero-line .hl-trans{font-size:clamp(24px, 5.2vw, 46px);}
   .info-card{
@@ -479,6 +484,7 @@
     </div>
     <button class="hero-btn" id="partyBtn" title="מצב מסיבה — להקת רקדנים">🎉</button>
     <button class="hero-btn live-beat" id="liveBeatBtn" title="ביט חי מהמיקרופון — הרקדן שומע את המוזיקה בחדר">🎤</button>
+    <button class="hero-btn zoom-btn" id="zoomBtn" title="גודל האווטרים">🔍</button>
     <button class="hero-btn stage-exit" id="stageExitBtn" title="יציאה ממסך מלא" hidden>✕</button>
     <div class="hero-caption">🎭 רוקד לקצב השיר</div>
   </div>
@@ -1965,6 +1971,9 @@
   } catch {}
   let lastTheme = 0;
   try { lastTheme = Math.max(0, Math.min(AVATAR_THEMES.length - 1, Number(localStorage.getItem('lt:avatar_theme')) || 0)); } catch {}
+  const ZOOMS = [1, 1.18, 1.38, 0.85]; // cycle: default → bigger → biggest → smaller
+  let lastZoomIdx = 0;
+  try { lastZoomIdx = Math.max(0, Math.min(ZOOMS.length - 1, Number(localStorage.getItem('lt:stage_zoom_idx')) || 0)); } catch {}
   function mount() {
     if (handle) return;
     handle = mountLyricsAvatar(heroAvatar);
@@ -1972,6 +1981,7 @@
     handle.setTempo(lastTempo);
     handle.setParty?.(lastParty);
     handle.setTheme?.(lastTheme);
+    handle.setZoom?.(ZOOMS[lastZoomIdx]);
   }
   function unmount() {
     if (!handle) return;
@@ -2021,6 +2031,21 @@
     applyPartyUI();
   });
   applyPartyUI();
+
+  // 🔍 Avatar size — cycles default → bigger → biggest → smaller, persisted.
+  const zoomBtn = document.getElementById('zoomBtn');
+  function applyZoomUI() {
+    const z = ZOOMS[lastZoomIdx];
+    zoomBtn.innerHTML = '🔍<span class="zlabel">' + (z === 1 ? '1x' : z + 'x') + '</span>';
+    zoomBtn.classList.toggle('on', z !== 1);
+  }
+  zoomBtn.addEventListener('click', () => {
+    lastZoomIdx = (lastZoomIdx + 1) % ZOOMS.length;
+    try { localStorage.setItem('lt:stage_zoom_idx', String(lastZoomIdx)); } catch {}
+    handle?.setZoom?.(ZOOMS[lastZoomIdx]);
+    applyZoomUI();
+  });
+  applyZoomUI();
 
   // Avatar color picker — one swatch per theme, gradient-filled from the
   // theme's own rim colors, applied live and persisted.

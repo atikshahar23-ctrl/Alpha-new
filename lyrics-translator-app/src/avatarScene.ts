@@ -42,6 +42,8 @@ export interface LyricsAvatarHandle {
   setParty?(mode: boolean | number): void;
   // Avatar color theme — index into AVATAR_THEMES.
   setTheme?(idx: number): void;
+  // Avatar size — camera-distance zoom (1 = default, >1 = bigger avatars).
+  setZoom?(z: number): void;
   // LIVE beat engine — real onsets detected from the microphone (the room's
   // actual Spotify audio). liveBeatTick() fires the show's beat exactly on
   // a detected onset (overrides the internal clock until the mic goes
@@ -444,6 +446,21 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     composer.setSize(w, h);
     bloom.setSize(w, h);
     camera.aspect = w / h;
+    // Aspect-aware framing: the vertical FOV is fixed, so on tall/narrow
+    // viewports (portrait phones, a rotated 34" monitor at 1440×3440) the
+    // horizontal frame shrinks until the figure spills past the edges and
+    // the bloom blows up into a blurry wall. Push the camera back until
+    // the stage's core width (~2.35 units — dancer with arms out + margin)
+    // fits horizontally; wide screens keep the classic 4.4 distance.
+    const halfFovTan = Math.tan((42 * Math.PI / 180) / 2);
+    const fitDist = 2.35 / (2 * halfFovTan * Math.max(0.3, camera.aspect));
+    camBase.z = Math.max(4.4, Math.min(9.5, fitDist));
+    // UnrealBloom accumulates more mip levels as resolution grows — on a
+    // large canvas (fullscreen stage mode on a 34" monitor) the additive
+    // stack washes into a white wall. Scale strength down continuously
+    // with pixel count: full 0.95 up to ~0.5MP (phone hero card), easing
+    // to ~0.3 at 5MP.
+    bloom.strength = 0.95 * Math.max(0.32, Math.min(1, Math.sqrt(500000 / Math.max(1, w * h))));
     camera.updateProjectionMatrix();
   }
   resize();
@@ -1326,6 +1343,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   // quality level. Sticky downgrade only, never auto-upgrades back.
   let qTier = 0;
   let camParty = 0; // smoothed 0..1 — camera pull-back for big party
+  let userZoom = 1; // 🔍 button — >1 brings the avatars closer/bigger
   let lastFrameTime = 0, warmT = 0, fpsT = 0, fpsN = 0, lowStreak = 0;
   function applyQTier() {
     if (qTier >= 1) bloom.enabled = false;
@@ -1538,11 +1556,12 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
 
     // Subtle cinematic camera sway + a gentle breathing zoom on the beat.
     // Big party pulls the camera back and up so the whole dance floor,
-    // crowd and DJ booth frame together.
+    // crowd and DJ booth frame together. userZoom (the 🔍 button) scales
+    // the final distance so the avatars can be made bigger or smaller.
     camParty += ((partyMode === 2 ? 1 : 0) - camParty) * Math.min(1, dt * 2);
     camera.position.x = camBase.x + Math.sin(t * 0.12) * 0.08;
     camera.position.y = camBase.y + Math.sin(t * 0.09 + 1) * 0.04 + camParty * 0.5;
-    camera.position.z = camBase.z - beatPulse * energy * 0.06 + camParty * 1.6;
+    camera.position.z = (camBase.z + camParty * 1.6) / userZoom - beatPulse * energy * 0.06;
     camera.lookAt(0, 1.05 - camParty * 0.3, -camParty * 0.9);
 
     composer.render();
@@ -1565,6 +1584,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       setCrowdVisible(partyMode === 2);
     },
     setTheme(idx: number) { applyTheme(idx); },
+    setZoom(z: number) { if (Number.isFinite(z)) userZoom = Math.max(0.6, Math.min(1.8, z)); },
     liveBeatTick() {
       const n = performance.now();
       lastLiveTick = n; liveMode = true;
