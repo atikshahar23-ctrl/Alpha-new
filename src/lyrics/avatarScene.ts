@@ -36,9 +36,10 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 export interface LyricsAvatarHandle {
   setEnergy(playing: boolean): void;
   setTempo(ms: number): void;
-  // Party mode — two backup dancers join the stage, dancing the same move
-  // as the lead with a per-dancer beat offset (a choreographed crew wave).
-  setParty?(on: boolean): void;
+  // Party modes: 0/false = solo · 1/true = crew of three (same move,
+  // per-dancer beat offset, periodic perfect unison) · 2 = BIG PARTY —
+  // a 30-alien crowd + DJ on a glowing dance floor.
+  setParty?(mode: boolean | number): void;
   dispose(): void;
 }
 
@@ -53,8 +54,16 @@ function buildFigureMaterial() {
       varying vec3 vViewDirW;
       varying vec3 vWorldPos;
       void main() {
-        vec4 worldPos = modelMatrix * vec4(position, 1.0);
-        vNormalW = normalize(mat3(modelMatrix) * normal);
+        // USE_INSTANCING is defined automatically by three whenever this
+        // material renders on an InstancedMesh (the big-party crowd);
+        // the lead dancers keep the plain path.
+        #ifdef USE_INSTANCING
+          vec4 worldPos = modelMatrix * instanceMatrix * vec4(position, 1.0);
+          vNormalW = normalize(mat3(modelMatrix) * mat3(instanceMatrix) * normal);
+        #else
+          vec4 worldPos = modelMatrix * vec4(position, 1.0);
+          vNormalW = normalize(mat3(modelMatrix) * normal);
+        #endif
         vViewDirW = normalize(cameraPosition - worldPos.xyz);
         vWorldPos = worldPos.xyz;
         gl_Position = projectionMatrix * viewMatrix * worldPos;
@@ -140,18 +149,30 @@ function buildFigureRig(mat: THREE.ShaderMaterial, capeMat: THREE.ShaderMaterial
   const cap = (r: number, len: number) => new THREE.CapsuleGeometry(r, len, 6, 12);
   const sph = (r: number) => new THREE.SphereGeometry(r, 20, 20);
 
-  const head = new THREE.Mesh(sph(0.16), mat); head.position.y = 1.62; group.add(head);
-  // Glowing visor band — an instantly-readable "face" that keeps the
-  // android silhouette premium instead of a blank ghost head.
-  const visorMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.45, 0.95, 1.0), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
-  // (phiStart centers the band on +Z — the direction the figure faces.)
-  const visor = new THREE.Mesh(new THREE.SphereGeometry(0.162, 24, 8, Math.PI * 0.22, Math.PI * 0.56, Math.PI * 0.42, Math.PI * 0.14), visorMat);
-  head.add(visor);
-
-  // A wide-brim festival hat — cheap silhouette read, very "Tulum".
-  const hatGroup = new THREE.Group(); hatGroup.position.set(0, 1.74, 0); head.add(hatGroup);
-  const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.26, 0.02, 24), mat); hatGroup.add(brim);
-  const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.15, 0.13, 16), mat); crown.position.y = 0.07; hatGroup.add(crown);
+  // Alien head: elongated egg skull, two big glossy almond eyes (classic
+  // "grey" read, angled outward), and glowing-tip antennae — less robot,
+  // more extraterrestrial. The old visor band + festival hat are gone.
+  const head = new THREE.Mesh(sph(0.15), mat);
+  head.position.y = 1.64; head.scale.set(0.95, 1.35, 1.0); group.add(head);
+  const eyeMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.35, 1.0, 0.85), transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false });
+  for (const side of [-1, 1]) {
+    const eye = new THREE.Mesh(sph(0.052), eyeMat);
+    // counter the head's Y-stretch so the eyes stay almond, not egg-shaped
+    eye.scale.set(1.15, 0.62 / 1.35, 0.5);
+    eye.position.set(side * 0.072, 0.015, 0.125);
+    eye.rotation.z = side * -0.45; // outer corners swept upward
+    head.add(eye);
+  }
+  const antTipMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.55, 1.0, 0.9), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
+  for (const side of [-1, 1]) {
+    const ant = new THREE.Mesh(new THREE.CapsuleGeometry(0.012, 0.16, 3, 6), mat);
+    ant.position.set(side * 0.06, 0.19, 0);
+    ant.rotation.z = side * -0.35;
+    head.add(ant);
+    const tip = new THREE.Mesh(sph(0.026), antTipMat);
+    tip.position.y = 0.1;
+    ant.add(tip);
+  }
 
   const neck = new THREE.Mesh(cap(0.055, 0.06), mat); neck.position.y = 1.46; group.add(neck);
   const torso = new THREE.Mesh(cap(0.22, 0.46), mat); torso.position.y = 1.1; group.add(torso);
@@ -180,13 +201,26 @@ function buildFigureRig(mat: THREE.ShaderMaterial, capeMat: THREE.ShaderMaterial
   const upperArmL = new THREE.Mesh(cap(0.07, 0.34), mat); upperArmL.position.y = -0.19; shoulderL.add(upperArmL);
   const foreArmL = new THREE.Group(); foreArmL.position.set(0, -0.4, 0); shoulderL.add(foreArmL);
   const foreArmMeshL = new THREE.Mesh(cap(0.06, 0.32), mat); foreArmMeshL.position.y = -0.17; foreArmL.add(foreArmMeshL);
-  const handL = new THREE.Mesh(sph(0.065), mat); handL.position.y = -0.36; foreArmL.add(handL);
+  // Long three-fingered alien hands — a small palm with fingers fanned out,
+  // continuing the forearm's direction so they read in silhouette.
+  const addAlienHand = (parent: THREE.Group) => {
+    const palm = new THREE.Mesh(sph(0.05), mat); palm.position.y = -0.36; palm.scale.set(1, 0.75, 0.6); parent.add(palm);
+    // fingers hang from the forearm group itself (not the squashed palm)
+    // so they keep their long thin proportions
+    for (const [fx, rz] of [[-0.034, 0.32], [0, 0], [0.034, -0.32]] as [number, number][]) {
+      const finger = new THREE.Mesh(new THREE.CapsuleGeometry(0.013, 0.085, 3, 6), mat);
+      finger.position.set(fx, -0.435, 0.006);
+      finger.rotation.z = rz;
+      parent.add(finger);
+    }
+  };
+  addAlienHand(foreArmL);
 
   const shoulderR = new THREE.Group(); shoulderR.position.set(0.33, 1.34, 0); group.add(shoulderR);
   const upperArmR = new THREE.Mesh(cap(0.07, 0.34), mat); upperArmR.position.y = -0.19; shoulderR.add(upperArmR);
   const foreArmR = new THREE.Group(); foreArmR.position.set(0, -0.4, 0); shoulderR.add(foreArmR);
   const foreArmMeshR = new THREE.Mesh(cap(0.06, 0.32), mat); foreArmMeshR.position.y = -0.17; foreArmR.add(foreArmMeshR);
-  const handR = new THREE.Mesh(sph(0.065), mat); handR.position.y = -0.36; foreArmR.add(handR);
+  addAlienHand(foreArmR);
 
   // A flowing cape hung from the collar — cheap, big visual payoff: gives
   // the silhouette a distinct read (vs. a bare mannequin) and its own
@@ -575,13 +609,41 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       ? { rootY: -0.24, kneeLx: 1.25, kneeRx: 1.25, legLx: -0.5, legRx: -0.5, torsoRx: 0.15, torsoRz: 0.14,
           shLz: 2.15, fALz: 0.15, shRz: -0.5, fARz: -1.0, headRy: 0.25, headRx: -0.12, hipsRz: 0.1 }
       : { rootY: -0.02, kneeLx: 0.15, kneeRx: 0.15, shLz: 0.6, shRz: -0.6, fALz: 0.4, fARz: -0.4, torsoRz: -0.06 },
+    // 15 · Big arm waves — one arm sweeps a huge overhead arc per beat.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      shLz: a > 0 ? 2.7 : 0.9, fALz: a > 0 ? 0.35 : 0.9,
+      shRz: a < 0 ? -2.7 : -0.9, fARz: a < 0 ? -0.35 : -0.9,
+      torsoRz: a * 0.18, hipsRz: -a * 0.12, headRy: a * 0.2,
+      kneeLx: 0.25, kneeRx: 0.25, rootY: -0.05,
+    }; },
+    // 16 · Floss-ish — both arms swing to the same side, hips counter.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      shLz: a > 0 ? 1.0 : 0.15, shRz: a > 0 ? 0.35 : -1.0,
+      fALz: 0.55, fARz: -0.55, shLx: a * 0.25, shRx: a * 0.25,
+      hipsRz: -a * 0.2, torsoRz: a * 0.12, rootX: a * 0.06,
+      kneeLx: 0.3, kneeRx: 0.3, rootY: -0.06, headRy: -a * 0.12,
+    }; },
+    // 17 · Stomp march — hard alternating stomps, fists pumping low.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      legLx: a > 0 ? -0.55 : 0.05, kneeLx: a > 0 ? 0.9 : 0.25,
+      legRx: a < 0 ? -0.55 : 0.05, kneeRx: a < 0 ? 0.9 : 0.25,
+      rootY: -0.09, torsoRx: 0.1, hipsRz: a * 0.08,
+      shLz: 0.5, shRz: -0.5, fALz: a > 0 ? 1.3 : 0.5, fARz: a < 0 ? -1.3 : -0.5,
+      headRx: 0.06,
+    }; },
+    // 18 · Praise bounce — both arms pinned high, double-time body pops.
+    (s) => { const hi = s % 2 === 0; return {
+      shLz: 2.5, shRz: -2.5, fALz: hi ? 0.15 : 0.45, fARz: hi ? -0.15 : -0.45,
+      rootY: hi ? 0.02 : -0.12, kneeLx: hi ? 0.1 : 0.55, kneeRx: hi ? 0.1 : 0.55,
+      torsoRx: hi ? -0.06 : 0.1, headRx: hi ? -0.15 : 0.05,
+    }; },
   ];
   let movePlaylist = shuffleMoves(MOVES.map((_, i) => i));
   let moveCursor = 0;
 
-  // Lead dancer + lazily-built party backups (hidden until setParty(true)).
+  // Lead dancer + lazily-built party backups (hidden until party mode 1+).
   const dancers: Dancer[] = [mkDancer(rig, 0, 0, 0, 0)];
-  let partyOn = false;
+  let partyMode = 0; // 0 solo · 1 crew of 3 · 2 BIG PARTY (crowd + DJ)
   function ensureBackups() {
     if (dancers.length > 1) return;
     const spots: [number, number, number][] = [[-1.0, -0.5, 1], [1.0, -0.5, 2]]; // x, z, beat offset
@@ -594,7 +656,138 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       dancers.push(mkDancer(r, off, bx, bz, off * 2.1));
     }
   }
-  const activeDancers = () => (partyOn ? dancers : [dancers[0]]);
+  const activeDancers = () => (partyMode >= 1 ? dancers : [dancers[0]]);
+
+  // ── BIG PARTY crowd — 30 alien dancers + a DJ, rendered as six
+  // InstancedMeshes (one per body part): the whole crowd costs six draw
+  // calls, not six hundred. Each crowd dancer gets an archetype (bounce /
+  // sway / hands-up / jumper), its own phase and scale — everyone locked to
+  // the same beat clock as the lead, nobody doing the exact same thing. ──
+  const CROWD_N = 30;
+  type CrowdD = { x: number; z: number; s: number; face: number; type: number; phase: number };
+  let bigCrowd: { parts: THREE.InstancedMesh[]; body: THREE.InstancedMesh; head: THREE.InstancedMesh; armL: THREE.InstancedMesh; armR: THREE.InstancedMesh; legs: THREE.InstancedMesh; eyes: THREE.InstancedMesh; data: CrowdD[] } | null = null;
+  let djStripMat: THREE.MeshBasicMaterial | null = null;
+  let djBooth: THREE.Group | null = null;
+  let danceFloor: THREE.Mesh | null = null;
+  const crowdDummy = new THREE.Object3D();
+  function ensureCrowd() {
+    if (bigCrowd) return;
+    const N = CROWD_N + 1; // +1 = the DJ
+    const mk = (geo: THREE.BufferGeometry, material: THREE.Material) => {
+      const m = new THREE.InstancedMesh(geo, material, N);
+      m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      m.frustumCulled = false;
+      m.visible = false;
+      scene.add(m);
+      return m;
+    };
+    // Parts are authored with the pivot at their attachment point, so a
+    // single instance matrix (position=joint, rotation=swing) animates them.
+    const bodyGeo = new THREE.CapsuleGeometry(0.15, 0.3, 4, 8);
+    const headGeo = new THREE.SphereGeometry(0.1, 10, 10); headGeo.scale(0.95, 1.35, 1);
+    const armGeo = new THREE.CapsuleGeometry(0.045, 0.28, 3, 6); armGeo.translate(0, -0.17, 0);
+    const legsGeo = new THREE.CapsuleGeometry(0.11, 0.4, 4, 8); legsGeo.translate(0, -0.28, 0);
+    const eyesGeo = new THREE.SphereGeometry(0.085, 8, 8); eyesGeo.scale(1, 0.4, 0.5);
+    const body = mk(bodyGeo, figMat), head = mk(headGeo, figMat), armL = mk(armGeo, figMat), armR = mk(armGeo, figMat), legs = mk(legsGeo, figMat);
+    const eyeMatI = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.35, 1.0, 0.85), transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false });
+    const eyes = mk(eyesGeo, eyeMatI);
+    const data: CrowdD[] = [];
+    for (let i = 0; i < CROWD_N; i++) {
+      // scatter across the floor, keeping front-center stage for the leads
+      let x = 0, z = 0, tries = 0;
+      do {
+        x = (Math.random() - 0.5) * 6.4;
+        z = -0.7 - Math.random() * 2.3;
+        tries++;
+      } while (Math.abs(x) < 1.35 && z > -1.5 && tries < 12);
+      const s = (0.62 + Math.random() * 0.14) * (1 + (z + 3) * 0.045);
+      data.push({ x, z, s, face: (Math.random() - 0.5) * 0.8, type: i % 4, phase: (i % 3) * 0.16 });
+    }
+    data.push({ x: 0, z: -3.55, s: 0.95, face: 0, type: 4, phase: 0 }); // the DJ
+    bigCrowd = { parts: [body, head, armL, armR, legs, eyes], body, head, armL, armR, legs, eyes, data };
+
+    // DJ booth — dark slab with a beat-pulsing glow strip.
+    djBooth = new THREE.Group();
+    const booth = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.6, 0.45), new THREE.MeshBasicMaterial({ color: 0x0a0a18 }));
+    booth.position.set(0, 0.3, -3.15);
+    djBooth.add(booth);
+    djStripMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.5, 0.9, 1.0), transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false });
+    const strip = new THREE.Mesh(new THREE.PlaneGeometry(1.66, 0.1), djStripMat);
+    strip.position.set(0, 0.34, -2.92);
+    djBooth.add(strip);
+    djBooth.visible = false;
+    scene.add(djBooth);
+
+    // Glowing checkerboard dance floor under everyone.
+    const fc = document.createElement('canvas'); fc.width = fc.height = 256;
+    const fg = fc.getContext('2d')!;
+    for (let yy = 0; yy < 8; yy++) for (let xx = 0; xx < 8; xx++) {
+      fg.fillStyle = (xx + yy) % 2 ? 'rgba(120,60,255,0.55)' : 'rgba(0,180,255,0.35)';
+      fg.fillRect(xx * 32, yy * 32, 30, 30);
+    }
+    const floorTexP = new THREE.CanvasTexture(fc);
+    danceFloor = new THREE.Mesh(new THREE.PlaneGeometry(7.2, 3.6), new THREE.MeshBasicMaterial({ map: floorTexP, transparent: true, opacity: 0.14, blending: THREE.AdditiveBlending, depthWrite: false }));
+    danceFloor.rotation.x = -Math.PI / 2;
+    danceFloor.position.set(0, -0.02, -2.0);
+    danceFloor.visible = false;
+    scene.add(danceFloor);
+  }
+  function setCrowdVisible(on: boolean) {
+    if (!bigCrowd) return;
+    for (const p of bigCrowd.parts) p.visible = on;
+    if (djBooth) djBooth.visible = on;
+    if (danceFloor) danceFloor.visible = on;
+  }
+  // Per-frame crowd animation — cheap parametric motion per dancer (no
+  // springs): hop/lean/arm-raise computed from the shared beat clock and
+  // the dancer's archetype, then written as instance matrices.
+  function updateCrowd(now2: number, t2: number) {
+    if (!bigCrowd) return;
+    const bp = Math.min(1, (now2 - lastBeat) / tempoMs);
+    const even = beatCount % 2 === 0;
+    for (let i = 0; i < bigCrowd.data.length; i++) {
+      const d = bigCrowd.data[i];
+      const cyc = (bp + d.phase) % 1;
+      const pulse = Math.sin(Math.PI * cyc);
+      const sway = Math.sin((t2 * 0.7 + d.phase * 7) * 1.3) * 0.05;
+      let hop = 0, lean = 0, raiseL = 0.35, raiseR = 0.35, bob = 0;
+      if (d.type === 0) { hop = pulse * 0.07; raiseL = 0.5 + pulse * 0.5; raiseR = 0.5 + (1 - pulse) * 0.5; lean = (even ? 1 : -1) * pulse * 0.08; }
+      else if (d.type === 1) { lean = (even ? 1 : -1) * pulse * 0.16; hop = pulse * 0.03; raiseL = 0.4; raiseR = 0.4; }
+      else if (d.type === 2) { raiseL = 2.5 + Math.sin(t2 * 2 + d.phase * 9) * 0.25; raiseR = 2.5 + Math.cos(t2 * 2.2 + d.phase * 9) * 0.25; hop = pulse * 0.05; }
+      else if (d.type === 3) { const dbl = even ? pulse : 0; hop = dbl * 0.16; raiseL = 0.9 + dbl * 1.4; raiseR = 0.9 + dbl * 1.4; }
+      else { hop = pulse * 0.02; bob = pulse * 0.06; raiseL = 0.9 + (even ? pulse : 0) * 0.5; raiseR = 0.9 + (even ? 0 : pulse) * 0.5; lean = sway; } // DJ scratching
+      hop *= energy;
+      lean = lean * energy + sway * 0.4;
+      const hipY = 0.66 * d.s + hop;
+      crowdDummy.scale.setScalar(d.s);
+      crowdDummy.position.set(d.x, hipY, d.z);
+      crowdDummy.rotation.set(0, d.face, lean * 0.4);
+      crowdDummy.updateMatrix();
+      bigCrowd.legs.setMatrixAt(i, crowdDummy.matrix);
+      crowdDummy.position.set(d.x, hipY + 0.3 * d.s, d.z);
+      crowdDummy.rotation.set(0, d.face, lean);
+      crowdDummy.updateMatrix();
+      bigCrowd.body.setMatrixAt(i, crowdDummy.matrix);
+      crowdDummy.position.set(d.x, hipY + (0.62 + bob) * d.s, d.z);
+      crowdDummy.rotation.set(0, d.face, lean * 1.3);
+      crowdDummy.updateMatrix();
+      bigCrowd.head.setMatrixAt(i, crowdDummy.matrix);
+      crowdDummy.position.set(d.x + Math.sin(d.face) * 0.085 * d.s, hipY + (0.63 + bob) * d.s, d.z + Math.cos(d.face) * 0.085 * d.s);
+      crowdDummy.updateMatrix();
+      bigCrowd.eyes.setMatrixAt(i, crowdDummy.matrix);
+      crowdDummy.position.set(d.x - 0.19 * d.s * Math.cos(d.face), hipY + 0.42 * d.s, d.z + 0.19 * d.s * Math.sin(d.face));
+      crowdDummy.rotation.set(0, d.face, -raiseL + lean);
+      crowdDummy.updateMatrix();
+      bigCrowd.armL.setMatrixAt(i, crowdDummy.matrix);
+      crowdDummy.position.set(d.x + 0.19 * d.s * Math.cos(d.face), hipY + 0.42 * d.s, d.z - 0.19 * d.s * Math.sin(d.face));
+      crowdDummy.rotation.set(0, d.face, raiseR + lean);
+      crowdDummy.updateMatrix();
+      bigCrowd.armR.setMatrixAt(i, crowdDummy.matrix);
+    }
+    for (const p of bigCrowd.parts) p.instanceMatrix.needsUpdate = true;
+    if (djStripMat) djStripMat.opacity = 0.3 + beatPulse * 0.5;
+    if (danceFloor) (danceFloor.material as THREE.MeshBasicMaterial).opacity = 0.1 + beatPulse * energy * 0.18;
+  }
 
   let playing = false;
   let energy = 0.25; // smoothed 0..1, drives everything below
@@ -611,6 +804,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   // sustain a smooth framerate, instead of a fixed one-size-fits-all
   // quality level. Sticky downgrade only, never auto-upgrades back.
   let qTier = 0;
+  let camParty = 0; // smoothed 0..1 — camera pull-back for big party
   let lastFrameTime = 0, warmT = 0, fpsT = 0, fpsN = 0, lowStreak = 0;
   function applyQTier() {
     if (qTier >= 1) bloom.enabled = false;
@@ -663,7 +857,11 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
         if (moveCursor >= movePlaylist.length) { movePlaylist = shuffleMoves(movePlaylist); moveCursor = 0; }
       }
       const moveFn = MOVES[movePlaylist[moveCursor]];
-      for (const d of activeDancers()) setPoseFor(d, moveFn((step + d.stepOffset) % BEATS_PER_PATTERN));
+      // Every 4th move block the crew snaps into PERFECT unison (offset 0
+      // for everyone) — the classic "drop" moment; the other blocks keep
+      // the offset wave so the routine breathes between the two.
+      const unison = Math.floor(beatCount / BEATS_PER_PATTERN) % 4 === 3;
+      for (const d of activeDancers()) setPoseFor(d, moveFn((step + (unison ? 0 : d.stepOffset)) % BEATS_PER_PATTERN));
     }
     if (!playing) for (const d of activeDancers()) setPoseFor(d, BASE_POSE); // paused → calm idle
     beatPulse *= 0.9;
@@ -764,19 +962,23 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       confAttr.setX(i, x);
     }
     confAttr.needsUpdate = true;
-    confettiMat.opacity = Math.min(1, (0.15 + energy * 0.55) * (partyOn ? 1.5 : 1));
+    confettiMat.opacity = Math.min(1, (0.15 + energy * 0.55) * (partyMode === 2 ? 1.9 : partyMode === 1 ? 1.5 : 1));
 
     for (let i = 0; i < hazeSprites.length; i++) {
       hazeSprites[i].position.x += Math.sin(t * 0.15 + i) * 0.0015;
       (hazeSprites[i].material as THREE.SpriteMaterial).opacity = 0.06 + Math.sin(t * 0.3 + i) * 0.03;
     }
 
-    // Subtle cinematic camera sway + a gentle breathing zoom on the beat,
-    // instead of a fully static frame.
+    if (partyMode === 2) updateCrowd(now, t);
+
+    // Subtle cinematic camera sway + a gentle breathing zoom on the beat.
+    // Big party pulls the camera back and up so the whole dance floor,
+    // crowd and DJ booth frame together.
+    camParty += ((partyMode === 2 ? 1 : 0) - camParty) * Math.min(1, dt * 2);
     camera.position.x = camBase.x + Math.sin(t * 0.12) * 0.08;
-    camera.position.y = camBase.y + Math.sin(t * 0.09 + 1) * 0.04;
-    camera.position.z = camBase.z - beatPulse * energy * 0.06;
-    camera.lookAt(0, 1.05, 0);
+    camera.position.y = camBase.y + Math.sin(t * 0.09 + 1) * 0.04 + camParty * 0.5;
+    camera.position.z = camBase.z - beatPulse * energy * 0.06 + camParty * 1.6;
+    camera.lookAt(0, 1.05 - camParty * 0.3, -camParty * 0.9);
 
     composer.render();
   }
@@ -787,10 +989,12 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     setTempo(ms: number) {
       if (Number.isFinite(ms) && ms > 0) tempoMs = ms;
     },
-    setParty(on: boolean) {
-      partyOn = !!on;
-      if (partyOn) ensureBackups();
-      for (let i = 1; i < dancers.length; i++) dancers[i].rig.group.visible = partyOn;
+    setParty(mode: boolean | number) {
+      partyMode = mode === true ? 1 : mode === false ? 0 : Math.max(0, Math.min(2, Math.round(mode)));
+      if (partyMode >= 1) ensureBackups();
+      for (let i = 1; i < dancers.length; i++) dancers[i].rig.group.visible = partyMode >= 1;
+      if (partyMode === 2) ensureCrowd();
+      setCrowdVisible(partyMode === 2);
     },
     dispose() {
       cancelAnimationFrame(raf);

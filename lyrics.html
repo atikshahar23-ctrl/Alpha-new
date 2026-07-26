@@ -1864,8 +1864,12 @@
   let handle = null;
   let lastEnergy = false;
   let lastTempo = 560;
-  let lastParty = false;
-  try { lastParty = localStorage.getItem('lt:party_on') === '1'; } catch {}
+  let lastParty = 0; // 0 solo · 1 crew · 2 big party
+  try {
+    const pm = localStorage.getItem('lt:party_mode');
+    if (pm !== null) lastParty = Math.max(0, Math.min(2, Number(pm) || 0));
+    else if (localStorage.getItem('lt:party_on') === '1') lastParty = 1; // migrate old boolean
+  } catch {}
   function mount() {
     if (handle) return;
     handle = mountLyricsAvatar(heroAvatar);
@@ -1901,15 +1905,19 @@
   window.__lyricsAvatarBridge = {
     setEnergy(playing) { lastEnergy = !!playing; if (handle) handle.setEnergy(lastEnergy); },
     setTempo(ms) { lastTempo = ms; if (handle) handle.setTempo(lastTempo); },
-    setParty(on) { lastParty = !!on; if (handle) handle.setParty?.(lastParty); },
+    setParty(mode) { lastParty = mode === true ? 1 : Number(mode) || 0; if (handle) handle.setParty?.(lastParty); },
   };
 
-  // 🎉 Party mode — backup dancers join the lead, persisted across visits.
+  // Party button cycles: solo → 🎉 crew of 3 → 🪩 BIG PARTY (30 aliens + DJ).
   const partyBtn = document.getElementById('partyBtn');
-  function applyPartyUI() { partyBtn.classList.toggle('on', lastParty); }
+  function applyPartyUI() {
+    partyBtn.classList.toggle('on', lastParty > 0);
+    partyBtn.textContent = lastParty === 2 ? '🪩' : '🎉';
+    partyBtn.title = lastParty === 0 ? 'מצב מסיבה — להקת רקדנים' : lastParty === 1 ? 'להקה פעילה — לחץ ל-BIG PARTY' : 'BIG PARTY פעיל — לחץ לכיבוי';
+  }
   partyBtn.addEventListener('click', () => {
-    lastParty = !lastParty;
-    try { localStorage.setItem('lt:party_on', lastParty ? '1' : '0'); } catch {}
+    lastParty = (lastParty + 1) % 3;
+    try { localStorage.setItem('lt:party_mode', String(lastParty)); } catch {}
     if (handle) handle.setParty?.(lastParty);
     applyPartyUI();
   });
