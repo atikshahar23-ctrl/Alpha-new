@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 // LYRICS::TRANSLATOR hero visual — a Tulum/Zamna-festival-style centerpiece:
 // a dark humanoid silhouette dancing inside a vertical shaft of light,
-// flanked by two walls of pulsing light fins, a flowing cape, a festival
+// flanked by two walls of pulsing light fins, a festival
 // hat, drifting sparks + confetti, beat-synced floor shockwave rings, a
 // crowd silhouette, haze, and bloom.
 // Owner reference: a festival stage photo (backlit figure suspended in a
@@ -142,47 +142,7 @@ function buildFigureMaterial() {
   });
 }
 
-function buildCapeMaterial() {
-  return new THREE.ShaderMaterial({
-    uniforms: { uTime: { value: 0 }, uSway: { value: 0 } },
-    transparent: true,
-    side: THREE.DoubleSide,
-    depthWrite: false,
-    vertexShader: /* glsl */`
-      uniform float uTime;
-      uniform float uSway;
-      varying vec3 vNormalW;
-      varying vec3 vViewDirW;
-      varying float vDrop;
-      void main() {
-        vDrop = 1.0 - uv.y; // 0 at collar, 1 at the free-flowing hem
-        vec3 p = position;
-        float sway = sin(uTime * 2.2 - p.y * 2.4) * uSway * vDrop * vDrop;
-        p.x += sway;
-        p.z += sway * 0.5;
-        vec4 worldPos = modelMatrix * vec4(p, 1.0);
-        vNormalW = normalize(mat3(modelMatrix) * normal);
-        vViewDirW = normalize(cameraPosition - worldPos.xyz);
-        gl_Position = projectionMatrix * viewMatrix * worldPos;
-      }
-    `,
-    fragmentShader: /* glsl */`
-      precision highp float;
-      varying vec3 vNormalW;
-      varying vec3 vViewDirW;
-      varying float vDrop;
-      void main() {
-        float fresnel = pow(1.0 - clamp(abs(dot(normalize(vNormalW), normalize(vViewDirW))), 0.0, 1.0), 1.4);
-        vec3 violet = vec3(0.4, 0.15, 0.7);
-        vec3 base = mix(vec3(0.01, 0.008, 0.02), violet, 0.25 + fresnel * 0.5);
-        float alpha = (0.55 + fresnel * 0.35) * (1.0 - vDrop * 0.25);
-        gl_FragColor = vec4(base, alpha);
-      }
-    `,
-  });
-}
-
-function buildFigureRig(mat: THREE.ShaderMaterial, capeMat: THREE.ShaderMaterial) {
+function buildFigureRig(mat: THREE.ShaderMaterial) {
   const group = new THREE.Group();
   const cap = (r: number, len: number) => new THREE.CapsuleGeometry(r, len, 6, 12);
   const sph = (r: number) => new THREE.SphereGeometry(r, 20, 20);
@@ -260,14 +220,8 @@ function buildFigureRig(mat: THREE.ShaderMaterial, capeMat: THREE.ShaderMaterial
   const foreArmMeshR = new THREE.Mesh(cap(0.06, 0.32), mat); foreArmMeshR.position.y = -0.17; foreArmR.add(foreArmMeshR);
   addAlienHand(foreArmR);
 
-  // A flowing cape hung from the collar — cheap, big visual payoff: gives
-  // the silhouette a distinct read (vs. a bare mannequin) and its own
-  // beat-driven sway sells "movement" even during held poses.
-  const capeGeo = new THREE.PlaneGeometry(0.62, 1.05, 1, 10);
-  const cape = new THREE.Mesh(capeGeo, capeMat);
-  cape.position.set(0, 1.0, -0.13);
-  cape.rotation.x = 0.12;
-  group.add(cape);
+  // (The cape plane was removed per user request — the semi-transparent
+  // violet sheet behind the torso read as a floating purple box.)
 
   // Premium detailing: a pulsing energy core in the chest + small glow
   // nodes on the shoulder/knee joints — theme-tinted with the eyes, they
@@ -287,7 +241,7 @@ function buildFigureRig(mat: THREE.ShaderMaterial, capeMat: THREE.ShaderMaterial
 
   // accents = every additive glow material on this rig (eyes, antenna
   // tips, chest core, joint dots) — the theme system tints them together.
-  return { group, legL, legR, kneeL, kneeR, shoulderL, shoulderR, foreArmL, foreArmR, torso, head, hips, cape, accents: [eyeMat, antTipMat] };
+  return { group, legL, legR, kneeL, kneeR, shoulderL, shoulderR, foreArmL, foreArmR, torso, head, hips, accents: [eyeMat, antTipMat] };
 }
 
 function buildBeamMaterial() {
@@ -473,8 +427,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
 
   // ── The figure ──
   const figMat = buildFigureMaterial();
-  const capeMat = buildCapeMaterial();
-  const rig = buildFigureRig(figMat, capeMat);
+  const rig = buildFigureRig(figMat);
   scene.add(rig.group);
 
   // ── Drifting spark particles rising through the beam ──
@@ -742,7 +695,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     if (dancers.length > 1) return;
     const spots: [number, number, number][] = [[-1.0, -0.5, 1], [1.0, -0.5, 2]]; // x, z, beat offset
     for (const [bx, bz, off] of spots) {
-      const r = buildFigureRig(figMat, capeMat);
+      const r = buildFigureRig(figMat);
       r.group.position.set(bx, -0.05, bz);
       r.group.scale.setScalar(0.8);
       r.group.visible = false;
@@ -993,8 +946,6 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     figMat.uniforms.uTime.value = t;
     beamMat.uniforms.uTime.value = t;
     beamMat.uniforms.uPulse.value = beatPulse * energy;
-    capeMat.uniforms.uTime.value = t;
-    capeMat.uniforms.uSway.value = (0.05 + beatPulse * 0.09) * (0.3 + energy * 0.7);
     (floorMat as THREE.MeshBasicMaterial).opacity = 0.25 + beatPulse * energy * 0.3;
 
     for (const f of fins) {
