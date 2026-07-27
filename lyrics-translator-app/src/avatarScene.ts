@@ -63,6 +63,8 @@ export interface LyricsAvatarHandle {
   // Pyro pack master gain (0-2.5): fireworks bursts, the sweeping laser fan,
   // and the stage-corner flame jets.
   setPyroIntensity?(v: number): void;
+  // Stage weather: 0 off · 1 snow · 2 rain · 3 shooting stars.
+  setWeather?(mode: number): void;
   // Stadium crowd point cap (e.g. 20000/50000/80000); -1 = no user cap
   // (device auto-quality still applies).
   setStadiumDensity?(n: number): void;
@@ -129,6 +131,18 @@ export const AVATAR_THEMES: AvatarTheme[] = [
   { name: 'מטריקס', a: [0.05, 0.75, 0.2], b: [0.3, 1.0, 0.45], c: [0.7, 1.0, 0.6], eye: [0.4, 1.0, 0.4] },
   { name: 'שקיעה', a: [1.0, 0.4, 0.15], b: [1.0, 0.2, 0.5], c: [0.7, 0.25, 0.9], eye: [1.0, 0.65, 0.45] },
   { name: '🌈 קשת חיה', a: [1, 0, 0], b: [0, 1, 0], c: [0, 0, 1], eye: [1.0, 1.0, 1.0], rainbow: true },
+  { name: 'לבה', a: [1.0, 0.25, 0.0], b: [1.0, 0.6, 0.0], c: [1.0, 0.1, 0.1], eye: [1.0, 0.7, 0.3] },
+  { name: 'אוקיינוס עמוק', a: [0.0, 0.25, 0.7], b: [0.0, 0.55, 0.9], c: [0.2, 0.9, 1.0], eye: [0.5, 0.9, 1.0] },
+  { name: 'סגול מלכותי', a: [0.45, 0.1, 0.75], b: [0.7, 0.35, 1.0], c: [0.95, 0.6, 1.0], eye: [0.85, 0.6, 1.0] },
+  { name: 'נחושת', a: [0.8, 0.45, 0.2], b: [1.0, 0.65, 0.35], c: [0.6, 0.3, 0.15], eye: [1.0, 0.75, 0.5] },
+  { name: 'ליים חומצי', a: [0.6, 1.0, 0.0], b: [0.85, 1.0, 0.3], c: [0.3, 0.9, 0.1], eye: [0.8, 1.0, 0.4] },
+  { name: 'אלמוג', a: [1.0, 0.5, 0.45], b: [1.0, 0.7, 0.6], c: [1.0, 0.35, 0.5], eye: [1.0, 0.75, 0.65] },
+  { name: 'חצות', a: [0.15, 0.15, 0.45], b: [0.3, 0.35, 0.8], c: [0.55, 0.6, 1.0], eye: [0.6, 0.65, 1.0] },
+  { name: 'ורוד-זהב', a: [0.95, 0.6, 0.55], b: [1.0, 0.8, 0.7], c: [0.9, 0.45, 0.5], eye: [1.0, 0.85, 0.75] },
+  { name: 'רעל', a: [0.35, 0.9, 0.1], b: [0.7, 0.3, 0.9], c: [0.15, 1.0, 0.4], eye: [0.6, 1.0, 0.3] },
+  { name: 'שמיים בהירים', a: [0.5, 0.8, 1.0], b: [0.8, 0.95, 1.0], c: [0.3, 0.6, 1.0], eye: [0.85, 0.95, 1.0] },
+  { name: 'ענבר', a: [1.0, 0.68, 0.1], b: [1.0, 0.85, 0.35], c: [0.95, 0.5, 0.05], eye: [1.0, 0.85, 0.45] },
+  { name: 'ניאון כפול', a: [1.0, 0.1, 0.9], b: [0.1, 1.0, 0.9], c: [1.0, 0.9, 0.1], eye: [0.95, 1.0, 0.95] },
 ];
 // Not in the user-facing swatch list — applied automatically (or by the
 // manual singer-gender setting) to instantly recolor the whole stage as
@@ -744,6 +758,64 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     jets.push({ mesh: jmesh, mat: jm });
   }
   let jetPower = 0;
+
+  // ── Disco mirror ball 💿 — hangs above the stage on a thin rod, spinning;
+  // a shell of sparkle points glints off it while a ring of "reflected"
+  // light dots orbits the floor the opposite way. Pure classic. ──
+  const ballGroup = new THREE.Group();
+  ballGroup.position.set(0, 3.05, -0.5);
+  const ballCore = new THREE.Mesh(new THREE.SphereGeometry(0.24, 18, 18), new THREE.MeshBasicMaterial({ color: 0x8a93a8 }));
+  ballGroup.add(ballCore);
+  const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.9, 6), new THREE.MeshBasicMaterial({ color: 0x232733 }));
+  rod.position.y = 0.66;
+  ballGroup.add(rod);
+  const BALL_SPARKS = 90;
+  const bsGeo = new THREE.BufferGeometry();
+  {
+    const bp = new Float32Array(BALL_SPARKS * 3);
+    for (let i = 0; i < BALL_SPARKS; i++) {
+      const th = Math.random() * Math.PI * 2, ph = Math.acos(Math.random() * 2 - 1);
+      bp[i * 3] = Math.sin(ph) * Math.cos(th) * 0.26;
+      bp[i * 3 + 1] = Math.cos(ph) * 0.26;
+      bp[i * 3 + 2] = Math.sin(ph) * Math.sin(th) * 0.26;
+    }
+    bsGeo.setAttribute('position', new THREE.BufferAttribute(bp, 3));
+  }
+  const ballSparkMat = new THREE.PointsMaterial({ map: floorTex, size: 0.07, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, color: new THREE.Color(1, 1, 1) });
+  ballGroup.add(new THREE.Points(bsGeo, ballSparkMat));
+  scene.add(ballGroup);
+  const discoDots: { mesh: THREE.Mesh; mat: THREE.MeshBasicMaterial; ang: number; r: number }[] = [];
+  const dotGeo = new THREE.CircleGeometry(0.09, 10);
+  for (let i = 0; i < 10; i++) {
+    const dm = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+    const dmesh = new THREE.Mesh(dotGeo, dm);
+    dmesh.rotation.x = -Math.PI / 2;
+    dmesh.position.y = -0.045;
+    scene.add(dmesh);
+    discoDots.push({ mesh: dmesh, mat: dm, ang: (i / 10) * Math.PI * 2, r: 1.1 + (i % 3) * 0.45 });
+  }
+
+  // ── Stage weather 🌨️ — one reusable 320-point system with four modes:
+  // 0 off · 1 snow (slow white drift) · 2 rain (fast cyan streaks) ·
+  // 3 shooting stars (sparse darting streaks high above the stage). ──
+  let weatherMode = 0;
+  const WEATHER_N = 320;
+  const wxGeo = new THREE.BufferGeometry();
+  const wxPos = new Float32Array(WEATHER_N * 3);
+  const wxSpeed = new Float32Array(WEATHER_N);
+  const wxDrift = new Float32Array(WEATHER_N);
+  for (let i = 0; i < WEATHER_N; i++) {
+    wxPos[i * 3] = (Math.random() - 0.5) * 7;
+    wxPos[i * 3 + 1] = Math.random() * 4;
+    wxPos[i * 3 + 2] = -2.6 + Math.random() * 3.2;
+    wxSpeed[i] = 0.5 + Math.random();
+    wxDrift[i] = (Math.random() - 0.5);
+  }
+  wxGeo.setAttribute('position', new THREE.BufferAttribute(wxPos, 3));
+  const wxMat = new THREE.PointsMaterial({ map: floorTex, size: 0.05, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, color: new THREE.Color(1, 1, 1) });
+  const wxPts = new THREE.Points(wxGeo, wxMat);
+  wxPts.visible = false;
+  scene.add(wxPts);
 
   // ── Wet-asphalt reflective floor (PILLAR 2/4) — a real Reflector doubles
   // the whole render (fatal with 30 crowd dancers), so this fakes the "wet
@@ -1620,15 +1692,123 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       legLx: up ? -0.3 : -0.2, legRx: up ? -0.3 : -0.2,
       shLz: 2.6, shRz: -2.6, fALz: 0.15, fARz: -0.15, headRx: -0.18, torsoRx: up ? -0.08 : 0.1,
     }; },
+
+    // ═══════ VIRAL / METAL / CLASSICS II (105-120) ═══════
+    // 105 · Moonwalk glide — the body slides one way while the steps "walk"
+    // the other; lean-back cool.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      rootX: -0.28 + (s / 8) * 0.56, torsoRx: -0.1, headRx: -0.06,
+      legLx: a > 0 ? 0.35 : -0.2, kneeLx: a > 0 ? 0.5 : 0.1, legRx: a < 0 ? 0.35 : -0.2, kneeRx: a < 0 ? 0.5 : 0.1,
+      shLz: 0.45, shRz: -0.45, fALz: 0.4, fARz: -0.4, rootY: -0.03, hipsRz: a * 0.05,
+    }; },
+    // 106 · The Robot — hard 90° segments snapping between stations, head ticks.
+    (s) => { const q = s % 4; return {
+      shLz: q < 2 ? 1.55 : 0.6, fALx: q === 0 ? -1.5 : q === 1 ? -0.75 : 0, fALz: 0.1,
+      shRz: q >= 2 ? -1.55 : -0.6, fARx: q === 2 ? -1.5 : q === 3 ? -0.75 : 0, fARz: -0.1,
+      headRy: (q === 1 || q === 3 ? 1 : -1) * 0.42, torsoRy: (q < 2 ? 1 : -1) * 0.14,
+      rootY: -0.04, kneeLx: 0.18, kneeRx: 0.18, hipsRz: 0,
+    }; },
+    // 107 · Sprinkler — one arm out stiff, the other fanning across in ticks.
+    (s) => { const q = s % 4; return {
+      shRz: -1.5, fARz: -0.05, shRx: -0.15,
+      shLz: 1.2, shLx: -0.3 - q * 0.28, fALx: -0.5, fALz: 0.2,
+      torsoRy: 0.15 + q * 0.08, headRy: 0.25, rootY: -0.06, kneeLx: 0.3, kneeRx: 0.3, hipsRz: -0.08,
+    }; },
+    // 108 · Air guitar — crouched shredding: strum arm hammering, headbang.
+    (s) => { const dn = s % 2 === 0; return {
+      rootY: -0.14, kneeLx: 0.7, kneeRx: 0.55, legLx: -0.3, legRx: -0.1,
+      shLz: 0.95, shLx: -0.55, fALx: -0.9, fALz: -0.1,
+      shRz: -0.5, shRx: dn ? -0.9 : -0.35, fARx: dn ? -0.7 : -0.2, fARz: -0.3,
+      torsoRx: dn ? 0.3 : 0.1, headRx: dn ? 0.42 : -0.15, hipsRz: -0.06,
+    }; },
+    // 109 · Shopping cart — pushing the cart, grabbing off both shelves.
+    (s) => { const q = s % 4; const grabL = q === 1, grabR = q === 3; return {
+      shLx: grabL ? -0.4 : -0.75, shLz: grabL ? 1.7 : 0.6, fALx: grabL ? -0.3 : -0.75, fALz: grabL ? 0.2 : -0.1,
+      shRx: grabR ? -0.4 : -0.75, shRz: grabR ? -1.7 : -0.6, fARx: grabR ? -0.3 : -0.75, fARz: grabR ? -0.2 : 0.1,
+      torsoRy: grabL ? 0.3 : grabR ? -0.3 : 0, rootX: (q < 2 ? 1 : -1) * 0.08,
+      rootY: -0.05, kneeLx: 0.28, kneeRx: 0.28, headRy: grabL ? 0.3 : grabR ? -0.3 : 0,
+    }; },
+    // 110 · Headbang — deep metal fold from the waist, hair-flip energy.
+    (s) => { const dn = s % 2 === 0; return {
+      torsoRx: dn ? 0.55 : -0.15, headRx: dn ? 0.5 : -0.25, rootY: dn ? -0.1 : -0.02,
+      shLz: 0.8, shRz: -0.8, fALz: 0.6, fARz: -0.6, kneeLx: dn ? 0.5 : 0.2, kneeRx: dn ? 0.5 : 0.2,
+      legLz: 0.12, legRz: -0.12,
+    }; },
+    // 111 · Shuffle cross-kick — fast crossing kicks with opposed arm whips.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      legLx: a > 0 ? -0.7 : 0.2, legLz: a > 0 ? -0.25 : 0, kneeLx: a > 0 ? 0.15 : 0.4,
+      legRx: a < 0 ? -0.7 : 0.2, legRz: a < 0 ? 0.25 : 0, kneeRx: a < 0 ? 0.15 : 0.4,
+      rootY: -0.08, rootX: a * 0.12, shLx: a * 0.6, shRx: -a * 0.6, fALz: 0.8, fARz: -0.8,
+      torsoRz: a * 0.08, headRy: a * 0.15,
+    }; },
+    // 112 · Egyptian walk — flat geometric arms, sharp profile head.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      shLz: 0.9, shLx: -0.9, fALx: 0.0, fALz: 1.35,
+      shRz: -0.9, shRx: 0.35, fARx: -1.35, fARz: -0.1,
+      headRy: 0.55, torsoRy: a * 0.1, rootX: a * 0.14,
+      legLx: a > 0 ? -0.35 : 0.05, legRx: a < 0 ? -0.35 : 0.05, kneeLx: 0.25, kneeRx: 0.25, rootY: -0.05,
+    }; },
+    // 113 · Raise the roof — double palms pumping the ceiling, bounce under it.
+    (s) => { const up = s % 2 === 0; return {
+      shLz: up ? 2.35 : 1.9, shRz: up ? -2.35 : -1.9, fALx: -0.5, fARx: -0.5, fALz: up ? 0.1 : 0.35, fARz: up ? -0.1 : -0.35,
+      rootY: up ? -0.02 : -0.12, kneeLx: up ? 0.15 : 0.5, kneeRx: up ? 0.15 : 0.5,
+      torsoRx: up ? -0.08 : 0.06, headRx: -0.2, hipsRz: (s % 4 < 2 ? 1 : -1) * 0.08,
+    }; },
+    // 114 · Windmill arms — both arms sweeping huge opposing circles.
+    (s) => { const p = (s % 4) / 4 * Math.PI * 2; return {
+      shLz: 1.3 + Math.sin(p) * 1.2, fALz: 0.2, shLx: Math.cos(p) * 0.7,
+      shRz: -1.3 - Math.sin(p + Math.PI) * 1.2, fARz: -0.2, shRx: Math.cos(p + Math.PI) * 0.7,
+      torsoRz: Math.sin(p) * 0.15, rootY: -0.05, kneeLx: 0.3, kneeRx: 0.3, headRy: Math.sin(p) * 0.2,
+    }; },
+    // 115 · Kick-ball-change — jazz triple-step with show arms.
+    (s): Pose => { const q = s % 4; return q === 0
+      ? { legRx: -0.6, kneeRx: 0.1, rootY: -0.04, shLz: 1.6, shRz: -0.6, fALz: 0.3, fARz: -0.8, torsoRy: -0.15, headRy: -0.2 }
+      : q === 1
+      ? { rootY: -0.1, kneeLx: 0.5, kneeRx: 0.5, shLz: 0.7, shRz: -0.7, fALz: 0.5, fARz: -0.5 }
+      : { legLx: q === 2 ? -0.3 : 0.05, legRx: q === 3 ? -0.3 : 0.05, kneeLx: 0.3, kneeRx: 0.3, rootY: -0.05,
+          shLz: q === 2 ? 0.5 : 1.9, shRz: q === 2 ? -1.9 : -0.5, fALz: 0.4, fARz: -0.4, torsoRy: (q === 2 ? -1 : 1) * 0.18, headRy: (q === 2 ? -1 : 1) * 0.22 };
+    },
+    // 116 · Standing worm — a fast chest-to-hips ripple, arms trailing loose.
+    (s) => { const q = s % 4; return {
+      torsoRx: [0.32, -0.2, 0.1, -0.05][q], headRx: [0.15, -0.2, 0.05, -0.1][q],
+      rootY: [-0.1, -0.02, -0.07, -0.04][q], kneeLx: [0.5, 0.15, 0.35, 0.2][q], kneeRx: [0.5, 0.15, 0.35, 0.2][q],
+      shLz: 0.55, shRz: -0.55, fALz: [0.8, 0.3, 0.6, 0.4][q], fARz: [-0.8, -0.3, -0.6, -0.4][q], hipsRz: (q % 2 ? 1 : -1) * 0.07,
+    }; },
+    // 117 · Funk salute & march — snapping salutes over a strutting march.
+    (s) => { const a = s % 2 ? 1 : -1; const sal = s % 4 < 2; return {
+      legLx: a > 0 ? -0.6 : 0.05, kneeLx: a > 0 ? 0.85 : 0.2, legRx: a < 0 ? -0.6 : 0.05, kneeRx: a < 0 ? 0.85 : 0.2,
+      shRz: sal ? -1.35 : -0.5, shRx: sal ? -0.6 : 0.1, fARx: sal ? -1.25 : 0, fARz: sal ? 0.15 : -0.7,
+      shLz: 0.5, fALz: a > 0 ? 1.1 : 0.4, rootY: -0.07, torsoRx: 0.06, headRy: sal ? 0.2 : 0, hipsRz: a * 0.07,
+    }; },
+    // 118 · Heart hands — arms curve overhead into a heart, swaying; made for
+    // dedications and weddings.
+    (s) => { const w = Math.sin((s / 8) * Math.PI * 2); return {
+      shLz: 2.05, shRz: -2.05, fALz: -0.85, fARz: 0.85, fALx: -0.25, fARx: -0.25,
+      torsoRz: w * 0.1, hipsRz: -w * 0.07, rootX: w * 0.1, headRx: -0.1, headRy: w * 0.12,
+      rootY: -0.04 + Math.abs(w) * -0.02, kneeLx: 0.22, kneeRx: 0.22,
+    }; },
+    // 119 · Superman — one fist punched to the sky, chest out, held flight lean.
+    (s): Pose => s % 8 < 5
+      ? { shRz: -2.7, fARz: -0.05, shRx: -0.1, shLz: 0.35, shLx: 0.3, fALz: 0.4,
+          torsoRx: -0.16, headRx: -0.22, rootY: 0.0, kneeLx: 0.12, kneeRx: 0.3, legLx: -0.15, hipsRz: 0.08 }
+      : { shLz: 0.7, shRz: -0.7, fALz: 0.5, fARz: -0.5, rootY: -0.07, kneeLx: 0.35, kneeRx: 0.35, torsoRx: 0.05 },
+    // 120 · Slide & snap — smooth side glide landing on a snapped point.
+    (s): Pose => { const q = s % 4; return q < 2
+      ? { rootX: (q === 0 ? -1 : 1) * 0.3, legLx: q === 0 ? -0.45 : 0.1, legRx: q === 1 ? -0.45 : 0.1,
+          kneeLx: q === 0 ? 0.6 : 0.2, kneeRx: q === 1 ? 0.6 : 0.2, torsoRz: (q === 0 ? 1 : -1) * 0.12,
+          shLz: 0.8, shRz: -0.8, fALz: 0.5, fARz: -0.5, rootY: -0.07 }
+      : { shRz: q === 2 ? -2.2 : -0.5, fARz: -0.1, shLz: q === 3 ? 2.2 : 0.5, fALz: 0.1,
+          headRy: (q === 2 ? -1 : 1) * 0.3, torsoRy: (q === 2 ? -1 : 1) * 0.2, rootY: -0.03, kneeLx: 0.2, kneeRx: 0.2 };
+    },
   ];
   // ── Style pools — the move set follows the track's energy: fast tracks
   // pull from the aggressive hip-hop/rave/percussive set, mid tempo from
   // groove/disco/pop, slow tempo from latin/ballroom/smooth. Indexes into
   // the 88-move library above.
   // (0-based array indexes — the // N labels in the move comments are 1-based)
-  const POOL_FAST = [2, 8, 12, 16, 5, 15, 23, 25, 26, 30, 32, 35, 42, 44, 45, 47, 48, 57, 62, 65, 66, 69, 71, 73, 74, 86];
-  const POOL_MID = [0, 3, 9, 10, 14, 17, 6, 18, 19, 20, 21, 22, 27, 36, 37, 40, 41, 43, 49, 51, 52, 53, 54, 55, 56, 61, 63, 67, 68, 70, 72, 75, 76, 79, 84];
-  const POOL_SLOW = [1, 4, 7, 11, 13, 10, 24, 28, 29, 31, 33, 34, 38, 39, 46, 50, 58, 59, 60, 64, 77, 78, 80, 81, 82, 83, 85, 87];
+  const POOL_FAST = [2, 8, 12, 16, 5, 15, 23, 25, 26, 30, 32, 35, 42, 44, 45, 47, 48, 57, 62, 65, 66, 69, 71, 73, 74, 86, 109, 110, 113, 115];
+  const POOL_MID = [0, 3, 9, 10, 14, 17, 6, 18, 19, 20, 21, 22, 27, 36, 37, 40, 41, 43, 49, 51, 52, 53, 54, 55, 56, 61, 63, 67, 68, 70, 72, 75, 76, 79, 84, 104, 105, 106, 107, 108, 112, 114, 116, 119];
+  const POOL_SLOW = [1, 4, 7, 11, 13, 10, 24, 28, 29, 31, 33, 34, 38, 39, 46, 50, 58, 59, 60, 64, 77, 78, 80, 81, 82, 83, 85, 87, 111, 117, 118];
   // Chill vibe — the flowing/breath-paced set (moves 89-98). SHANTI is the
   // calmest subset (sway/breathe/lantern/cradle), CHILL adds the slightly
   // more expansive flows (lotus, tai-chi, waves, reaches, slow turn).
@@ -1638,17 +1818,17 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   // jumps, freezes, kicks, floor drops, huge reaches). Every energetic phrase
   // is guaranteed a couple of these interleaved with the grooves, at ANY
   // tempo — without it the mid pool alone reads as endless upper-body sway.
-  const SPICE = [3, 5, 13, 24, 25, 8, 12, 16, 65, 87, 82, 84, 44, 47, 14, 62, 66];
+  const SPICE = [3, 5, 13, 24, 25, 8, 12, 16, 65, 87, 82, 84, 44, 47, 14, 62, 66, 107, 109, 113, 118];
   // Moves whose interest lives across a full 8 beats (a whole spin, a slow
   // wave/reach) must hold the full pattern; everything else changes every 4
   // beats so the dance turns over TWICE as often (the "not varied" fix).
-  const LONG_MOVES = new Set([3, 4, 10, 11, 82, 83, 84, 88, 89, 90, 91, 92, 93, 95, 96, 97, 98, 100]);
+  const LONG_MOVES = new Set([3, 4, 10, 11, 82, 83, 84, 88, 89, 90, 91, 92, 93, 95, 96, 97, 98, 100, 104, 117]);
   // Wedding mode — the couple dances the romantic set (embrace, twirl, dip,
   // promenade + the graceful waltz/sway moves), the crew circles them with
   // the hora set (hora kick/bounce, dabke, lift bounce, claps).
-  const POOL_WEDDING_COUPLE = [98, 99, 100, 101, 58, 88, 95];
+  const POOL_WEDDING_COUPLE = [98, 99, 100, 101, 58, 88, 95, 117];
   const POOL_WEDDING_SLOW = [98, 58, 88, 93, 101];   // the first-dance set
-  const POOL_HORA = [102, 63, 62, 103, 75, 6];
+  const POOL_HORA = [102, 63, 62, 103, 75, 6, 112];
   let currentMoveIdx = 0;
 
   // ── Choreography sequencer ──────────────────────────────────────────────
@@ -1670,7 +1850,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   let routineRepeats = 1; // how many times to repeat THIS phrase (chorus = 2)
   // Big "hero" moments a phrase can climax on: jump&freeze, drop&freeze, low
   // freeze, full turn, starlit turn, grand finale pose, lift bounce.
-  const SIGNATURES = [5, 13, 24, 3, 96, 87, 103];
+  const SIGNATURES = [5, 13, 24, 3, 96, 87, 103, 118];
   function pickN(pool: number[], n: number): number[] {
     const bag = pool.slice(), out: number[] = [];
     for (let i = 0; i < n && bag.length; i++) { const j = Math.floor(Math.random() * bag.length); out.push(bag[j]); bag.splice(j, 1); }
@@ -2566,6 +2746,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     beatCount++;
     if (beatCount % 4 === 0) beatPulse = Math.max(beatPulse, 1.15); // downbeat accent (every bar)
     if (beatCount % 16 === 0) launchFirework(); // a firework every 4 bars keeps the sky alive
+    if (vibeMode === 4 && beatCount % 8 === 0) launchFirework(); // hyper: double the sky
     for (const f of fins) f.target = 0.35 + Math.random() * 0.65;
     // Footstep ripple — spawns under the lead dancer's alternating foot,
     // not the stage center, so the floor visibly reacts to the footwork.
@@ -2644,7 +2825,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     // song's tempo (fast → energetic, slow → calm). Eased slowly so switching
     // vibe (or a tempo change between songs) melts between the two looks.
     let calmTarget: number;
-    if (vibeMode === 1) calmTarget = 0;
+    if (vibeMode === 1 || vibeMode === 4) calmTarget = 0; // party & hyper both run hot
     else if (vibeMode === 2) calmTarget = 0.65;
     else if (vibeMode === 3) calmTarget = 1;
     // Auto engages calm only for genuinely slow songs (tempo ≥ ~620ms/beat);
@@ -2668,7 +2849,8 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     if (playing) {
       if (liveMode) {
         if (now - lastLiveTick > 2500) liveMode = false; // mic went quiet → internal clock resumes
-      } else if (now - lastBeat > (tempoMs / danceSpeedMult) * (1 + Math.max(0, calm - 0.45) * 1.6)) {
+      } else if (now - lastBeat > (tempoMs / danceSpeedMult) * (vibeMode === 4 ? 0.72 : 1) * (1 + Math.max(0, calm - 0.45) * 1.6)) {
+        // hyper vibe (4) pushes the whole show ~40% faster
         // Only genuine chill/shanti stretches the beat into languid holds;
         // mild auto-calm keeps the full-rate groove.
         fireBeat(now);
@@ -2758,6 +2940,34 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     for (const J of jets) {
       J.mesh.scale.set(1, 0.25 + jetPower * 1.7, 1);
       J.mat.opacity = jetPower * 0.55 * pyroMult;
+    }
+    // Disco ball spin + its floor-light ring orbiting the other way.
+    ballGroup.rotation.y = t * 0.9;
+    ballSparkMat.opacity = (0.35 + energy * 0.45 + beatPulse * 0.35) * (partyMode === 3 ? 0 : 1);
+    ballGroup.visible = partyMode !== 3; // the stadium has its own sky
+    for (const D of discoDots) {
+      const a2 = D.ang - t * 0.9;
+      D.mesh.position.x = Math.cos(a2) * D.r;
+      D.mesh.position.z = -0.5 + Math.sin(a2) * D.r * 0.7;
+      D.mat.opacity = partyMode === 3 ? 0 : (0.05 + energy * 0.14 + beatPulse * 0.1);
+      D.mat.color.setRGB(currentTheme.b[0], currentTheme.b[1], currentTheme.b[2]);
+    }
+    // Stage weather.
+    if (weatherMode > 0) {
+      const wp = wxGeo.getAttribute('position') as THREE.BufferAttribute;
+      for (let i = 0; i < WEATHER_N; i++) {
+        let y = wp.getY(i), x = wp.getX(i);
+        if (weatherMode === 1) { y -= wxSpeed[i] * dt * 0.45; x += Math.sin(t * 0.8 + i) * dt * 0.18; }          // snow
+        else if (weatherMode === 2) { y -= wxSpeed[i] * dt * 6.5; }                                                // rain
+        else { x -= wxSpeed[i] * dt * 3.2; y -= wxSpeed[i] * dt * 0.9; }                                           // shooting stars
+        if (y < -0.05) { y = 3.6 + Math.random() * 0.6; x = (Math.random() - 0.5) * 7; }
+        if (x < -3.6) x = 3.6;
+        wp.setX(i, x); wp.setY(i, y);
+      }
+      wp.needsUpdate = true;
+      if (weatherMode === 1) { wxMat.size = 0.055; wxMat.opacity = 0.75; wxMat.color.setRGB(1, 1, 1); }
+      else if (weatherMode === 2) { wxMat.size = 0.035; wxMat.opacity = 0.55; wxMat.color.setRGB(0.5, 0.8, 1); }
+      else { wxMat.size = 0.06; wxMat.opacity = 0.8; wxMat.color.setRGB(1, 0.95, 0.75); }
     }
 
     // Wet floor + subwoofer cones react to the theme + bass.
@@ -2954,6 +3164,11 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
         // stage-edge, below the stands rather than among them).
         camera.position.set(Math.sin(t * 0.2) * 1.6, 1.4 + beatPulse * energy * 0.05, 4.2 / Math.max(0.75, userZoom));
         camera.lookAt(0, 1.1, -1.2);
+      } else if (stadiumCamStyle === 3) {
+        // Fan cam — shot from inside the front stands: low, off-axis, with a
+        // slight handheld tremble, the stage glowing across the pitch.
+        camera.position.set(10.5 + Math.sin(t * 1.3) * 0.12, 3.2 + Math.sin(t * 1.7) * 0.1, 7.8);
+        camera.lookAt(0, 1.4, -0.6);
       } else {
         // STADIUM drone — a broadcast heli/drone flying HIGH ABOVE the rim and
         // OUTSIDE the bowl, gimbal tilted down onto the lit stage. Altitude
@@ -2979,15 +3194,26 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       // crowd and DJ booth frame together. userZoom (the 🔍 button) scales
       // the final distance so the avatars can be made bigger or smaller.
       // cameraStyleMode: 0 cinematic sway (default) · 1 static (locked off)
-      // · 2 handheld (bigger, faster jitter, like a phone filming the show).
+      // · 2 handheld (phone-filming jitter) · 3 orbit 360° (slow full circle
+      // around the stage) · 4 low hero cam (looking up — larger than life).
       camParty += ((partyMode === 2 ? 1 : 0) - camParty) * Math.min(1, dt * 2);
-      const swaySc = cameraStyleMode === 1 ? 0 : cameraStyleMode === 2 ? 2.4 : 1;
-      const swayFreqSc = (cameraStyleMode === 2 ? 3.1 : 1) * (1 - calm * 0.45); // calm → slower drift
-      const jitter = cameraStyleMode === 2 ? (Math.sin(t * 17.3) * 0.012 + Math.sin(t * 23.7) * 0.008) : 0;
-      camera.position.x = camBase.x + (Math.sin(t * 0.12 * swayFreqSc) * 0.08 + jitter) * swaySc;
-      camera.position.y = camBase.y + (Math.sin(t * 0.09 * swayFreqSc + 1) * 0.04 + jitter * 0.7) * swaySc + camParty * 0.5;
-      camera.position.z = (camBase.z + camParty * 1.6) / userZoom - beatPulse * energy * 0.06 * shakeMult;
-      camera.lookAt(0, 1.05 - camParty * 0.3, -camParty * 0.9);
+      if (cameraStyleMode === 3) {
+        const R = (camBase.z * 0.92 + camParty * 1.6) / userZoom;
+        const oa = t * 0.14 * (1 - calm * 0.4);
+        camera.position.set(Math.sin(oa) * R, 1.25 + Math.sin(t * 0.3) * 0.12 + camParty * 0.5, Math.cos(oa) * R);
+        camera.lookAt(0, 1.0 - camParty * 0.25, 0);
+      } else if (cameraStyleMode === 4) {
+        camera.position.set(Math.sin(t * 0.1) * 0.35, 0.42, (camBase.z * 0.78 + camParty * 1.4) / userZoom - beatPulse * energy * 0.06 * shakeMult);
+        camera.lookAt(0, 1.45 - camParty * 0.2, -camParty * 0.6);
+      } else {
+        const swaySc = cameraStyleMode === 1 ? 0 : cameraStyleMode === 2 ? 2.4 : 1;
+        const swayFreqSc = (cameraStyleMode === 2 ? 3.1 : 1) * (1 - calm * 0.45); // calm → slower drift
+        const jitter = cameraStyleMode === 2 ? (Math.sin(t * 17.3) * 0.012 + Math.sin(t * 23.7) * 0.008) : 0;
+        camera.position.x = camBase.x + (Math.sin(t * 0.12 * swayFreqSc) * 0.08 + jitter) * swaySc;
+        camera.position.y = camBase.y + (Math.sin(t * 0.09 * swayFreqSc + 1) * 0.04 + jitter * 0.7) * swaySc + camParty * 0.5;
+        camera.position.z = (camBase.z + camParty * 1.6) / userZoom - beatPulse * energy * 0.06 * shakeMult;
+        camera.lookAt(0, 1.05 - camParty * 0.3, -camParty * 0.9);
+      }
     }
 
     composer.render();
@@ -3028,7 +3254,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     setVeinIntensity(v: number) { figMat.uniforms.uVeinIntensity.value = Math.max(0, Math.min(2, v)); },
     setDanceSpeed(mult: number) { if (Number.isFinite(mult)) danceSpeedMult = Math.max(0.4, Math.min(2.5, mult)); },
     setMirror(on: boolean) { mirrorOn = !!on; },
-    setCameraStyle(mode: number) { cameraStyleMode = Math.max(0, Math.min(2, Math.round(mode))); },
+    setCameraStyle(mode: number) { cameraStyleMode = Math.max(0, Math.min(4, Math.round(mode))); },
     setShakeIntensity(v: number) { shakeMult = Math.max(0, Math.min(3, v)); },
     setConfettiIntensity(v: number) { confettiMult = Math.max(0, Math.min(2.5, v)); },
     setSparkIntensity(v: number) { sparkMult = Math.max(0, Math.min(2.5, v)); },
@@ -3036,9 +3262,14 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     setBeamIntensity(v: number) { beamMult = Math.max(0, Math.min(2.5, v)); },
     setFinIntensity(v: number) { finMult = Math.max(0, Math.min(2.5, v)); },
     setPyroIntensity(v: number) { pyroMult = Math.max(0, Math.min(2.5, v)); },
+    setWeather(mode: number) {
+      weatherMode = Math.max(0, Math.min(3, Math.round(mode)));
+      wxPts.visible = weatherMode > 0;
+      if (weatherMode === 0) wxMat.opacity = 0;
+    },
     setStadiumDensity(n: number) { stadiumDensityOverride = n < 0 ? -1 : Math.round(n); applyStadiumDensity(); },
-    setStadiumCameraStyle(mode: number) { stadiumCamStyle = Math.max(0, Math.min(2, Math.round(mode))); },
-    setVibe(mode: number) { vibeMode = Math.max(0, Math.min(3, Math.round(mode))); },
+    setStadiumCameraStyle(mode: number) { stadiumCamStyle = Math.max(0, Math.min(3, Math.round(mode))); },
+    setVibe(mode: number) { vibeMode = Math.max(0, Math.min(4, Math.round(mode))); },
     setPerformerGender(g: number) {
       // The lead is styled to read as THE performer of the song, on sight:
       // 1 = male singer → an immediate cool blue recolor, 2 = female singer

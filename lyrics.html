@@ -603,6 +603,7 @@
           <option value="1">מסיבה אנרגטית 🎉</option>
           <option value="2">צ'יל רגוע 🌊</option>
           <option value="3">אמביינט / שאנטי 🧘</option>
+          <option value="4">היפר — הכל כפול 🚀</option>
         </select>
       </div>
       <div class="range-row">
@@ -633,6 +634,8 @@
           <option value="0" selected>קולנועי (נדנוד עדין)</option>
           <option value="1">סטטי</option>
           <option value="2">מצלמת יד (רועד)</option>
+          <option value="3">סיבוב 360° סביב הבמה</option>
+          <option value="4">זווית גיבור (מלמטה)</option>
         </select>
       </div>
       <div class="range-row">
@@ -645,6 +648,7 @@
           <option value="0" selected>רחפן מרחף (ברירת מחדל)</option>
           <option value="1">רחבה קבועה מלמעלה</option>
           <option value="2">קרוב לבמה</option>
+          <option value="3">מצלמת אוהד (מתוך הקהל)</option>
         </select>
       </div>
       <div class="field-row" style="margin:0;">
@@ -691,6 +695,15 @@
       <div class="range-row">
         <div class="rr-head"><span>🎆 פירוטכניקה — זיקוקים, לייזרים ולהבות</span><b id="pyroVal">100%</b></div>
         <input type="range" id="pyroSlider" min="0" max="250" step="10" value="100">
+      </div>
+      <div class="field-row" style="margin:0;">
+        <label>מזג אוויר על הבמה</label>
+        <select id="weatherSel">
+          <option value="0" selected>ללא</option>
+          <option value="1">שלג ❄️</option>
+          <option value="2">גשם 🌧️</option>
+          <option value="3">כוכבים נופלים 🌠</option>
+        </select>
       </div>
     </div>
 
@@ -2654,13 +2667,14 @@
   // fixed wide overview → stage-cam close), sharing the same storage key so
   // both controls always agree.
   const stadCamBtn = document.getElementById('stadCamBtn');
-  const STADCAM_ICONS = ['🚁', '🎥', '🎬'];
+  const STADCAM_ICONS = ['🚁', '🎥', '🎬', '🤳'];
   const STADCAM_TITLES = [
     'מצלמת איצטדיון: רחפן מרחף — לחץ למעבר לרחבה קבועה',
     'מצלמת איצטדיון: רחבה קבועה מלמעלה — לחץ למעבר למצלמת במה',
-    'מצלמת איצטדיון: קרוב לבמה — לחץ לחזרה לרחפן',
+    'מצלמת איצטדיון: קרוב לבמה — לחץ למצלמת אוהד',
+    'מצלמת איצטדיון: מצלמת אוהד מתוך הקהל — לחץ לחזרה לרחפן',
   ];
-  let stadCamIdx = Math.max(0, Math.min(2, Number(localStorage.getItem('lt:stadium_cam')) || 0));
+  let stadCamIdx = Math.max(0, Math.min(3, Number(localStorage.getItem('lt:stadium_cam')) || 0));
   function applyStadCamUI() {
     stadCamBtn.textContent = STADCAM_ICONS[stadCamIdx];
     stadCamBtn.title = STADCAM_TITLES[stadCamIdx];
@@ -2669,7 +2683,7 @@
     if (sel) sel.value = String(stadCamIdx);
   }
   stadCamBtn.addEventListener('click', () => {
-    stadCamIdx = (stadCamIdx + 1) % 3;
+    stadCamIdx = (stadCamIdx + 1) % 4;
     window.ltSave('lt:stadium_cam', String(stadCamIdx));
     handle?.setStadiumCameraStyle?.(stadCamIdx);
     applyStadCamUI();
@@ -2761,6 +2775,7 @@
   wireSlider('beamSlider', 'beamVal', 'lt:beam_intensity', 100, (v) => Math.round(v) + '%', (v) => handle?.setBeamIntensity?.(v / 100));
   wireSlider('finSlider', 'finVal', 'lt:fin_intensity', 100, (v) => Math.round(v) + '%', (v) => handle?.setFinIntensity?.(v / 100));
   wireSlider('pyroSlider', 'pyroVal', 'lt:pyro_intensity', 100, (v) => Math.round(v) + '%', (v) => handle?.setPyroIntensity?.(v / 100));
+  wireSelect('weatherSel', 'lt:weather', 0, (v) => handle?.setWeather?.(Number(v)));
   wireSlider('exposureSlider', 'exposureVal', 'lt:exposure', 100, (v) => Math.round(v) + '%', (v) => handle?.setExposure?.(v / 100));
 
   function wireSelect(selId, key, def, apply) {
@@ -2821,6 +2836,7 @@
     handle?.setBeamIntensity?.(numSetting('lt:beam_intensity', 100) / 100);
     handle?.setFinIntensity?.(numSetting('lt:fin_intensity', 100) / 100);
     handle?.setPyroIntensity?.(numSetting('lt:pyro_intensity', 100) / 100);
+    handle?.setWeather?.(Number(localStorage.getItem('lt:weather') || 0));
     handle?.setExposure?.(numSetting('lt:exposure', 100) / 100);
     handle?.setCrewSize?.(Number(localStorage.getItem('lt:crew_size') || 2));
     handle?.setCameraStyle?.(Number(localStorage.getItem('lt:camera_style') || 0));
@@ -2862,6 +2878,24 @@
     });
     colorsWrap.appendChild(dot);
   });
+  // 🎲 surprise-me — jumps to a random theme that isn't the current one, via
+  // the exact same click path as a manual swatch pick (so persistence and
+  // the selected-ring stay correct for free).
+  {
+    const shuffle = document.createElement('button');
+    shuffle.type = 'button';
+    shuffle.className = 'av-dot';
+    shuffle.textContent = '🎲';
+    shuffle.title = 'הפתע אותי — ערכת צבע אקראית';
+    shuffle.style.background = 'rgba(20,24,36,.9)';
+    shuffle.style.fontSize = '13px';
+    shuffle.addEventListener('click', () => {
+      let r = lastTheme;
+      while (r === lastTheme) r = Math.floor(Math.random() * AVATAR_THEMES.length);
+      colorsWrap.querySelectorAll('.av-dot')[r]?.click();
+    });
+    colorsWrap.appendChild(shuffle);
+  }
 
   // "The words are seen only after [the avatar]" — reveal the lyrics/search
   // panel once the scene has had a moment to establish itself.
