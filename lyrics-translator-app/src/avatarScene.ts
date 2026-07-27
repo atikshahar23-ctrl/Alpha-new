@@ -1351,14 +1351,57 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   // more expansive flows (lotus, tai-chi, waves, reaches, slow turn).
   const POOL_SHANTI = [88, 89, 93, 94, 96];        // ocean sway, lotus, breathe, lantern, cradle
   const POOL_CHILL = [88, 89, 90, 91, 92, 93, 94, 95, 96, 97]; // the whole flowing family
-  const poolForTempo = () => {
-    // The calm vibe takes over the move set regardless of tempo — a ballad in
-    // crew mode should sway, not b-boy. Deepest calm pulls the tightest set.
-    if (calm > 0.75) return POOL_SHANTI;
-    if (calm > 0.5) return POOL_CHILL;
-    return tempoMs < 460 ? POOL_FAST : tempoMs <= 580 ? POOL_MID : POOL_SLOW;
-  };
   let currentMoveIdx = 0;
+
+  // ── Choreography sequencer ──────────────────────────────────────────────
+  // The show is danced as curated, REPEATING phrases — a combo of moves
+  // danced, then danced AGAIN — instead of a fresh random move every block.
+  // Repetition is what makes motion read as *rehearsed choreography* rather
+  // than shuffling: the eye recognizes "they're doing the combo again". On
+  // top of that the routine alternates verse/chorus intensity (choruses pull
+  // the flashy pool) and every fourth phrase ends on a held "signature" hero
+  // move — so each song plays out as a performance with a shape, not a loop.
+  let routine: number[] = [];
+  let routinePos = 0;   // index within the current phrase
+  let routinePass = 0;  // which repeat of the phrase we're on
+  let phraseNo = 0;     // phrases danced so far this session (drives the arc)
+  const PHRASE_REPEATS = 2; // dance each phrase twice before moving on
+  // Big "hero" moments a phrase can climax on: jump&freeze, drop&freeze, low
+  // freeze, full turn, starlit turn, grand finale pose.
+  const SIGNATURES = [5, 13, 24, 3, 96, 87];
+  function pickN(pool: number[], n: number): number[] {
+    const bag = pool.slice(), out: number[] = [];
+    for (let i = 0; i < n && bag.length; i++) { const j = Math.floor(Math.random() * bag.length); out.push(bag[j]); bag.splice(j, 1); }
+    return out;
+  }
+  function buildRoutine(): number[] {
+    // Vibe/calm wins first — calm songs flow through the chill family and
+    // never escalate into the aggressive pools.
+    if (calm > 0.75) return pickN(POOL_SHANTI, Math.min(4, POOL_SHANTI.length));
+    if (calm > 0.5) return pickN(POOL_CHILL, 4);
+    // Verse/chorus arc: every other pair of phrases is a "chorus" that goes
+    // bigger and longer, the rest are calmer "verse" grooves.
+    const chorus = Math.floor(phraseNo / 2) % 2 === 1;
+    const bigPool = tempoMs < 520 ? POOL_FAST : POOL_MID;
+    const versePool = tempoMs > 600 ? POOL_SLOW : POOL_MID;
+    const phrase = pickN(chorus ? bigPool : versePool, chorus ? 4 : 3);
+    if (phraseNo % 4 === 3) { // cap every 4th phrase with a held signature
+      const sig = SIGNATURES[Math.floor(Math.random() * SIGNATURES.length)];
+      phrase.push(sig, sig); // twice → ~16-beat hold, the hero beat
+    }
+    return phrase;
+  }
+  function nextMoveIdx(): number {
+    if (routine.length === 0 || routinePos >= routine.length) {
+      if (routine.length && routinePass < PHRASE_REPEATS - 1) {
+        routinePass++; routinePos = 0; // dance the SAME phrase again
+      } else {
+        phraseNo++; routine = buildRoutine(); routinePos = 0; routinePass = 0;
+        if (routine.length === 0) routine = [currentMoveIdx];
+      }
+    }
+    return routine[routinePos++];
+  }
 
   // Bass-drop accents — high-impact poses held for two beats when the live
   // mic detector registers a heavy low-frequency hit.
@@ -1855,10 +1898,13 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
         const wrap = Math.round(d.cur.rootRy / (Math.PI * 2)) * Math.PI * 2;
         d.cur.rootRy -= wrap; d.tgt.rootRy -= wrap;
       }
-      const pool = poolForTempo();
-      let mi = pool[Math.floor(Math.random() * pool.length)];
-      if (mi === currentMoveIdx && pool.length > 1) mi = pool[(pool.indexOf(mi) + 1) % pool.length];
-      currentMoveIdx = mi;
+      currentMoveIdx = nextMoveIdx();
+      // A signature "hero" block lands with an extra visual punch + a fresh
+      // floor shockwave so the choreography's peak moments read as peaks.
+      if (SIGNATURES.includes(currentMoveIdx)) {
+        beatPulse = Math.max(beatPulse, 1.2);
+        for (const rr of rings) if (rr.age > 0.5) { rr.age = 0; break; }
+      }
     }
     const moveFn = MOVES[currentMoveIdx];
     // Every 4th move block the crew snaps into PERFECT unison (offset 0
