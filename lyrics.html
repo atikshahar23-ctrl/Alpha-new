@@ -814,10 +814,26 @@
   const CACHE_MAX = 30;
 
   // ---------- storage helpers ----------
+  // Probe whether localStorage actually WORKS on this device — some contexts
+  // (private/incognito windows, and the in-app browsers inside Instagram /
+  // WhatsApp / Facebook / Telegram) either throw on write or wipe everything
+  // the moment the view closes. When that's the case, settings genuinely
+  // "don't save at all" — so we detect it up front and tell the user the
+  // truth instead of silently swallowing every write (and lying with a
+  // "saved ✓" toast). store.set returns whether the value really persisted.
+  const STORAGE_OK = (() => {
+    try {
+      const k = 'lt:__probe';
+      localStorage.setItem(k, '1');
+      const ok = localStorage.getItem(k) === '1';
+      localStorage.removeItem(k);
+      return ok;
+    } catch (e) { return false; }
+  })();
   const store = {
     get(k){ try{ return JSON.parse(localStorage.getItem(k)); }catch(e){ return null; } },
-    set(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} },
-    del(k){ localStorage.removeItem(k); }
+    set(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); return true; }catch(e){ return false; } },
+    del(k){ try{ localStorage.removeItem(k); }catch(e){} }
   };
 
   // ---------- dom refs ----------
@@ -1484,8 +1500,23 @@
   settingsPanel.addEventListener('change', (e)=>{
     if(e.target && e.target.id === 'clientIdInput') return;
     if(settingsToastT) clearTimeout(settingsToastT);
-    settingsToastT = setTimeout(()=> showMiniToast('✓ נשמר — יופעל גם בפתיחה הבאה'), 350);
+    // Tell the TRUTH: only claim it's saved when storage actually works on
+    // this device; otherwise warn that nothing will survive a reload here.
+    settingsToastT = setTimeout(()=> showMiniToast(
+      STORAGE_OK ? '✓ נשמר — יופעל גם בפתיחה הבאה'
+                 : '⚠️ הדפדפן חוסם שמירה — ההגדרה לא תישמר לפתיחה הבאה'
+    ), 350);
   });
+  // When storage is blocked, surface a clear, persistent explanation at the
+  // top of the settings panel (this is the actual cause of "settings don't
+  // save at all") + a one-time toast so it isn't missed.
+  if(!STORAGE_OK){
+    const warn = document.createElement('div');
+    warn.style.cssText = 'margin:0 0 12px; padding:10px 12px; border-radius:10px; background:rgba(255,150,60,.12); border:1px solid rgba(255,150,60,.5); color:#ffd0a0; font-size:12.5px; line-height:1.6;';
+    warn.innerHTML = '⚠️ <b>הדפדפן הזה חוסם שמירת הגדרות.</b><br>ההגדרות פועלות עכשיו אבל <b>לא יישמרו לפתיחה הבאה</b> — זה קורה בגלישה פרטית/סתר, או כשפותחים את הקישור מתוך אפליקציה (אינסטגרם/ווטסאפ/פייסבוק/טלגרם). כדי לשמור: פִּתחו את הכתובת ב<b>דפדפן רגיל</b> (Chrome/Safari) ולא בגלישה פרטית.';
+    settingsPanel.insertBefore(warn, settingsPanel.firstChild);
+    setTimeout(()=> showMiniToast('⚠️ הדפדפן חוסם שמירה — פִּתחו בדפדפן רגיל'), 1500);
+  }
   copyRedirectBtn.addEventListener('click', async ()=>{
     try{
       await navigator.clipboard.writeText(REDIRECT_URI);
