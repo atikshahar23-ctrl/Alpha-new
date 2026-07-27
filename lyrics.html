@@ -2036,6 +2036,10 @@
     }
     state.activeIndex = idx;
     updateHeroLine(idx);
+    // A new sung line just became active — the tightest musical-sync signal
+    // we have. Tell the avatar so its choreography turns over exactly on the
+    // vocal (re-anchoring its beat grid to the song).
+    window.__lyricsAvatarBridge?.syncLine?.();
     const rows = stage.querySelectorAll('.lyric-row');
     rows.forEach(r=>r.classList.remove('active'));
     const row = rows[idx];
@@ -2347,6 +2351,7 @@
     liveBeat() { handle?.liveBeatTick?.(); },
     bassDrop() { handle?.bassDrop?.(); },
     liveBeatOff() { handle?.setLiveBeat?.(false); },
+    syncLine() { handle?.syncLine?.(); },
   };
 
   // Party button cycles: solo → 🎉 crew of 3 → 🪩 BIG PARTY (30 aliens +

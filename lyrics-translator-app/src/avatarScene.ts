@@ -81,6 +81,11 @@ export interface LyricsAvatarHandle {
   liveBeatTick?(): void;
   bassDrop?(): void;
   setLiveBeat?(on: boolean): void;
+  // A real sung lyric line just started (from the LRC line timestamps) — the
+  // tightest musical-sync signal available. Re-anchors the beat grid to the
+  // vocal and turns the choreography over on the word, so the dance reads as
+  // perfectly synced to the song rather than running on a free clock.
+  syncLine?(): void;
   dispose(): void;
 }
 
@@ -1365,6 +1370,9 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   let routinePos = 0;   // index within the current phrase
   let routinePass = 0;  // which repeat of the phrase we're on
   let phraseNo = 0;     // phrases danced so far this session (drives the arc)
+  let stepInPattern = 0; // beat within the current move (decoupled from beatCount
+                         // so a lyric line can start a fresh move mid-count)
+  let lastLineAt = 0;    // last time a real sung lyric line arrived (syncLine)
   const PHRASE_REPEATS = 2; // dance each phrase twice before moving on
   // Big "hero" moments a phrase can climax on: jump&freeze, drop&freeze, low
   // freeze, full turn, starlit turn, grand finale pose.
@@ -1875,12 +1883,44 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     stadiumPtsGeo.setDrawRange(0, Math.min(autoCapacity, userCap));
   }
 
+  // Begin the next move in the routine, from step 0. Called on the 8-beat
+  // auto-boundary OR forced early by a sung lyric line (syncLine) so the
+  // choreography turns over exactly with the vocal.
+  function startNewMove() {
+    // Wrap any accumulated full turn so the next move starts facing front
+    // instead of spring-unwinding backwards through 360°.
+    for (const d of dancers) {
+      const wrap = Math.round(d.cur.rootRy / (Math.PI * 2)) * Math.PI * 2;
+      d.cur.rootRy -= wrap; d.tgt.rootRy -= wrap;
+    }
+    currentMoveIdx = nextMoveIdx();
+    stepInPattern = 0;
+    // A signature "hero" move lands with an extra visual punch + a fresh
+    // floor shockwave so the choreography's peak moments read as peaks.
+    if (SIGNATURES.includes(currentMoveIdx)) {
+      beatPulse = Math.max(beatPulse, 1.2);
+      for (const rr of rings) if (rr.age > 0.5) { rr.age = 0; break; }
+    }
+  }
+
+  // Apply the current move at the current step to every active dancer.
+  function applyStep() {
+    const moveFn = MOVES[currentMoveIdx];
+    const step = stepInPattern % BEATS_PER_PATTERN;
+    // Every 4th move block the crew snaps into PERFECT unison (offset 0 for
+    // everyone) — the classic "drop"; other blocks keep the offset wave so
+    // the routine breathes between the two.
+    const unison = phraseNo % 4 === 3;
+    for (const d of activeDancers()) setPoseFor(d, moveFn((step + (unison ? 0 : d.stepOffset)) % BEATS_PER_PATTERN));
+  }
+
   // One beat of the show: pulse the lights, ripple the floor under the
   // lead's alternating feet, and drive the choreography step chart.
   function fireBeat(now2: number) {
     lastBeat = now2;
     beatPulse = Math.max(beatPulse, 1);
     beatCount++;
+    if (beatCount % 4 === 0) beatPulse = Math.max(beatPulse, 1.15); // downbeat accent (every bar)
     for (const f of fins) f.target = 0.35 + Math.random() * 0.65;
     // Footstep ripple — spawns under the lead dancer's alternating foot,
     // not the stage center, so the floor visibly reacts to the footwork.
@@ -1890,28 +1930,35 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     const lead = dancers[0];
     r.mesh.position.x = lead.baseX + lead.cur.rootX + (beatCount % 2 ? 0.13 : -0.13);
     if (accentHold > 0) { accentHold--; return; } // holding a bass-drop pose
-    const step = beatCount % BEATS_PER_PATTERN;
-    if (step === 0) {
-      // Wrap any accumulated full turn so the next move starts facing
-      // front instead of spring-unwinding backwards through 360°.
-      for (const d of dancers) {
-        const wrap = Math.round(d.cur.rootRy / (Math.PI * 2)) * Math.PI * 2;
-        d.cur.rootRy -= wrap; d.tgt.rootRy -= wrap;
-      }
-      currentMoveIdx = nextMoveIdx();
-      // A signature "hero" block lands with an extra visual punch + a fresh
-      // floor shockwave so the choreography's peak moments read as peaks.
-      if (SIGNATURES.includes(currentMoveIdx)) {
-        beatPulse = Math.max(beatPulse, 1.2);
-        for (const rr of rings) if (rr.age > 0.5) { rr.age = 0; break; }
-      }
-    }
-    const moveFn = MOVES[currentMoveIdx];
-    // Every 4th move block the crew snaps into PERFECT unison (offset 0
-    // for everyone) — the classic "drop" moment; the other blocks keep
-    // the offset wave so the routine breathes between the two.
-    const unison = Math.floor(beatCount / BEATS_PER_PATTERN) % 4 === 3;
-    for (const d of activeDancers()) setPoseFor(d, moveFn((step + (unison ? 0 : d.stepOffset)) % BEATS_PER_PATTERN));
+    // When real sung lines are arriving (syncLine fired recently) THEY drive
+    // move changes, so the dance turns over on the vocal; the beat clock then
+    // only auto-advances a move if a line hasn't come for a while (a long
+    // instrumental stretch). With no synced lyrics, fall back to a clean
+    // 8-beat auto-advance so an instrumental / manual song still choreographs.
+    const lineDriven = now2 - lastLineAt < 9000;
+    const autoCap = lineDriven ? 16 : BEATS_PER_PATTERN;
+    if (stepInPattern >= autoCap) startNewMove();
+    applyStep();
+    stepInPattern++;
+  }
+
+  // A real musical phrase boundary: a new sung lyric line just started. This
+  // is the tightest sync signal the app has (LRC line timestamps), so lock
+  // the choreography to it — re-anchor the beat grid to the vocal and turn
+  // the move over exactly on the word, giving a "perfectly on the song" read.
+  function syncLine() {
+    const n = performance.now();
+    if (!playing) return;
+    if (n - lastLineAt < 350) return; // debounce rapid re-fires
+    lastLineAt = n;
+    // Re-anchor the beat phase so the next internal beat lands just after the
+    // line instead of drifting — keeps the groove locked to the vocal.
+    lastBeat = n - Math.min(tempoMs * 0.2, 90);
+    beatPulse = Math.max(beatPulse, 0.95); // accent the line
+    if (accentHold > 0) return; // don't stomp a held bass-drop pose
+    startNewMove();
+    applyStep();
+    stepInPattern++;
   }
 
   function frame(now: number) {
@@ -2241,6 +2288,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       for (const r of rings) r.age = 0; // triple shockwave
     },
     setLiveBeat(on: boolean) { liveMode = !!on; if (!on) lastLiveTick = 0; },
+    syncLine() { syncLine(); },
     dispose() {
       cancelAnimationFrame(raf);
       ro.disconnect();
