@@ -719,11 +719,14 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     'shLz', 'shLx', 'shRz', 'shRx', 'fALz', 'fALx', 'fARz', 'fARx',
     'legLx', 'legLz', 'legRx', 'legRz', 'kneeLx', 'kneeRx'];
   const BASE_POSE: Pose = { shLz: 0.35, shRz: -0.35, fALz: 0.25, fARz: -0.25 };
-  type Dancer = { rig: ReturnType<typeof buildFigureRig>; cur: Pose; vel: Pose; tgt: Pose; stepOffset: number; baseX: number; baseZ: number; microPhase: number };
+  // moveIdx/stepIn/phraseLen let each BACKUP dancer run its OWN move on its
+  // own little phrase clock — a crew freestyling different moves at once,
+  // snapping to the lead only for the unison "drop" — instead of clones.
+  type Dancer = { rig: ReturnType<typeof buildFigureRig>; cur: Pose; vel: Pose; tgt: Pose; stepOffset: number; baseX: number; baseZ: number; microPhase: number; moveIdx: number; stepIn: number; phraseLen: number };
   function mkDancer(drig: ReturnType<typeof buildFigureRig>, stepOffset: number, baseX: number, baseZ: number, microPhase: number): Dancer {
     const cur: Pose = {}, vel: Pose = {}, tgt: Pose = {};
     for (const k of POSE_KEYS) { cur[k] = BASE_POSE[k] || 0; vel[k] = 0; tgt[k] = BASE_POSE[k] || 0; }
-    return { rig: drig, cur, vel, tgt, stepOffset, baseX, baseZ, microPhase };
+    return { rig: drig, cur, vel, tgt, stepOffset, baseX, baseZ, microPhase, moveIdx: 0, stepIn: 0, phraseLen: 6 + Math.floor(Math.random() * 5) };
   }
   const setPoseFor = (d: Dancer, p: Pose) => { for (const k of POSE_KEYS) d.tgt[k] = (k in p) ? p[k] : (BASE_POSE[k] || 0); };
   // Each move maps a step (0..7 inside its 8-beat block) to a target pose.
@@ -1373,7 +1376,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   let stepInPattern = 0; // beat within the current move (decoupled from beatCount
                          // so a lyric line can start a fresh move mid-count)
   let lastLineAt = 0;    // last time a real sung lyric line arrived (syncLine)
-  const PHRASE_REPEATS = 2; // dance each phrase twice before moving on
+  let routineRepeats = 1; // how many times to repeat THIS phrase (chorus = 2)
   // Big "hero" moments a phrase can climax on: jump&freeze, drop&freeze, low
   // freeze, full turn, starlit turn, grand finale pose.
   const SIGNATURES = [5, 13, 24, 3, 96, 87];
@@ -1382,17 +1385,26 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     for (let i = 0; i < n && bag.length; i++) { const j = Math.floor(Math.random() * bag.length); out.push(bag[j]); bag.splice(j, 1); }
     return out;
   }
-  function buildRoutine(): number[] {
-    // Vibe/calm wins first — calm songs flow through the chill family and
-    // never escalate into the aggressive pools.
-    if (calm > 0.75) return pickN(POOL_SHANTI, Math.min(4, POOL_SHANTI.length));
-    if (calm > 0.5) return pickN(POOL_CHILL, 4);
-    // Verse/chorus arc: every other pair of phrases is a "chorus" that goes
-    // bigger and longer, the rest are calmer "verse" grooves.
+  // The eligible move set right now — vibe/calm first, then the verse/chorus
+  // energy arc. Shared by the lead's phrase builder AND the backups' freestyle
+  // so the whole crew pulls from the same energy without cloning each other.
+  function activePool(): number[] {
+    if (calm > 0.75) return POOL_SHANTI;
+    if (calm > 0.5) return POOL_CHILL;
     const chorus = Math.floor(phraseNo / 2) % 2 === 1;
     const bigPool = tempoMs < 520 ? POOL_FAST : POOL_MID;
     const versePool = tempoMs > 600 ? POOL_SLOW : POOL_MID;
-    const phrase = pickN(chorus ? bigPool : versePool, chorus ? 4 : 3);
+    return chorus ? bigPool : versePool;
+  }
+  function buildRoutine(): number[] {
+    const chorus = calm <= 0.5 && Math.floor(phraseNo / 2) % 2 === 1;
+    // Verses FLOW through many unique moves (no repeat) so the dance never
+    // feels like the same handful of steps; only the chorus repeats, because
+    // a repeated hook is what the ear/eye WANTS to recognize. Calm vibes flow
+    // through a longer chill sweep.
+    if (calm > 0.5) { routineRepeats = 1; return pickN(activePool(), Math.min(6, POOL_CHILL.length)); }
+    routineRepeats = chorus ? 2 : 1;
+    const phrase = pickN(activePool(), chorus ? 4 : 6); // verses draw MORE distinct moves
     if (phraseNo % 4 === 3) { // cap every 4th phrase with a held signature
       const sig = SIGNATURES[Math.floor(Math.random() * SIGNATURES.length)];
       phrase.push(sig, sig); // twice → ~16-beat hold, the hero beat
@@ -1401,8 +1413,8 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   }
   function nextMoveIdx(): number {
     if (routine.length === 0 || routinePos >= routine.length) {
-      if (routine.length && routinePass < PHRASE_REPEATS - 1) {
-        routinePass++; routinePos = 0; // dance the SAME phrase again
+      if (routine.length && routinePass < routineRepeats - 1) {
+        routinePass++; routinePos = 0; // dance the SAME phrase again (chorus hook)
       } else {
         phraseNo++; routine = buildRoutine(); routinePos = 0; routinePass = 0;
         if (routine.length === 0) routine = [currentMoveIdx];
@@ -1903,15 +1915,21 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     }
   }
 
-  // Apply the current move at the current step to every active dancer.
+  // Apply each dancer's CURRENT move at its current step. The lead (dancer 0)
+  // dances the choreographed routine; backups freestyle their own moves —
+  // EXCEPT during the unison window (every 4th phrase) when the whole crew
+  // snaps to the lead's move on the same step: the classic "everyone hits the
+  // drop together" moment, made powerful precisely because the rest of the
+  // time they're all doing different things.
   function applyStep() {
-    const moveFn = MOVES[currentMoveIdx];
-    const step = stepInPattern % BEATS_PER_PATTERN;
-    // Every 4th move block the crew snaps into PERFECT unison (offset 0 for
-    // everyone) — the classic "drop"; other blocks keep the offset wave so
-    // the routine breathes between the two.
     const unison = phraseNo % 4 === 3;
-    for (const d of activeDancers()) setPoseFor(d, moveFn((step + (unison ? 0 : d.stepOffset)) % BEATS_PER_PATTERN));
+    const act = activeDancers();
+    for (let i = 0; i < act.length; i++) {
+      const d = act[i];
+      if (i === 0) { setPoseFor(d, MOVES[currentMoveIdx](stepInPattern % BEATS_PER_PATTERN)); continue; }
+      if (unison) { d.moveIdx = currentMoveIdx; d.stepIn = stepInPattern; } // lock to lead
+      setPoseFor(d, MOVES[d.moveIdx](d.stepIn % BEATS_PER_PATTERN));
+    }
   }
 
   // One beat of the show: pulse the lights, ripple the floor under the
@@ -1938,8 +1956,17 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     const lineDriven = now2 - lastLineAt < 9000;
     const autoCap = lineDriven ? 16 : BEATS_PER_PATTERN;
     if (stepInPattern >= autoCap) startNewMove();
+    // Each backup that just finished its own little phrase grabs a FRESH random
+    // move from the same energy pool → the crew is always doing a mix.
+    const pool = activePool();
+    for (let i = 1; i < dancers.length; i++) {
+      const d = dancers[i];
+      if (!d.rig.group.visible) continue;
+      if (d.stepIn >= d.phraseLen) { d.moveIdx = pool[Math.floor(Math.random() * pool.length)]; d.stepIn = 0; d.phraseLen = 6 + Math.floor(Math.random() * 5); }
+    }
     applyStep();
     stepInPattern++;
+    for (let i = 1; i < dancers.length; i++) { const d = dancers[i]; if (d.rig.group.visible) d.stepIn++; }
   }
 
   // A real musical phrase boundary: a new sung lyric line just started. This
