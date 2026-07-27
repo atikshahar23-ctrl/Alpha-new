@@ -181,10 +181,29 @@ function buildFigureMaterial() {
         }
         vec3 grad = mix(mix(cA, cB, hueDrift), cC, smoothstep(0.75, 1.0, fresnel) * 0.5);
         vec3 rim = grad * fresnel * (1.35 + uPulse * 2.2);
-        // key-light specular (fixed light up-left-front) — the "real material" read
-        vec3 lightDir = normalize(vec3(-0.35, 0.9, 0.55));
+        // ── Studio lighting rig (the "expensive figure" read) ──────────────
+        // A real photo-studio setup faked in-shader: key light + cool kicker
+        // + soft top fill, each with its own specular lobe; a horizontal
+        // softbox reflection band riding the reflection vector (what makes
+        // glossy product shots look expensive); and a tight clearcoat ping.
+        vec3 lightDir = normalize(vec3(-0.35, 0.9, 0.55));   // warm key, up-left-front
         vec3 h = normalize(lightDir + v);
-        float spec = pow(clamp(dot(n, h), 0.0, 1.0), 42.0) * 0.5;
+        float ndh = clamp(dot(n, h), 0.0, 1.0);
+        float spec = pow(ndh, 42.0) * 0.5;
+        float coat = pow(ndh, 240.0) * 0.55;                  // clearcoat ping on top of the key
+        vec3 kickDir = normalize(vec3(0.7, 0.25, -0.55));     // cool kicker from back-right
+        float kick = pow(clamp(dot(n, normalize(kickDir + v)), 0.0, 1.0), 34.0) * 0.32;
+        vec3 topDir = normalize(vec3(0.05, 1.0, 0.1));        // soft top fill
+        float topFill = pow(clamp(dot(n, normalize(topDir + v)), 0.0, 1.0), 8.0) * 0.06;
+        // softbox reflection band — a bright horizontal stripe in the
+        // reflection vector, like a studio light panel mirrored in gloss
+        vec3 refl = reflect(-v, n);
+        float box = smoothstep(0.05, 0.3, refl.y) * smoothstep(0.75, 0.35, refl.y);
+        vec3 softbox = mix(vec3(0.5, 0.6, 0.8), grad, 0.45) * box * 0.16;
+        // faint warm backlight bleed (cheap subsurface read on thin edges)
+        float sss = pow(clamp(dot(n, -lightDir), 0.0, 1.0), 2.5) * fresnel * 0.18;
+        // vertical tone — legs sit a touch darker, chest/head catch the light
+        float tone = mix(0.82, 1.12, smoothstep(0.15, 1.55, vWorldPos.y));
         // soft cool bounce fill from below so the underside isn't a void
         float below = clamp(-n.y, 0.0, 1.0) * 0.03;
         vec3 fill = vec3(0.008, 0.006, 0.016) + vec3(0.25, 0.3, 0.55) * below;
@@ -209,7 +228,11 @@ function buildFigureMaterial() {
                                   : mix(vGreen, vPurple, (cph - 0.66) / 0.34);
         vec3 veinGlow = veinCol * veins * (0.9 + uPulse * 2.6) * uVeinIntensity;
 
-        gl_FragColor = vec4(fill + rim + veinGlow + vec3(0.85, 0.92, 1.0) * spec, 1.0);
+        vec3 lit = fill + (rim + softbox + grad * sss) * tone
+                 + vec3(0.85, 0.92, 1.0) * (spec + coat)
+                 + vec3(0.55, 0.75, 1.0) * kick
+                 + vec3(0.8, 0.85, 1.0) * topFill;
+        gl_FragColor = vec4(lit + veinGlow, 1.0);
       }
     `,
   });
@@ -269,6 +292,35 @@ function buildFigureRig(mat: THREE.ShaderMaterial, waveMat: THREE.ShaderMaterial
     eye.rotation.z = side * -0.45; // outer corners swept upward
     head.add(eye);
   }
+  // Face 2.0 — pupils + catchlights give the glowing eyes a focused gaze
+  // instead of a blank sheen, brow ridges catch the rim light for
+  // expression, and a mouth glow-line "sings" (driven per-frame from the
+  // lyric-line pulse). All face extras live in a counter-scaled group so
+  // the head's egg-stretch doesn't distort them.
+  const faceGrp = new THREE.Group();
+  faceGrp.scale.set(1 / 0.95, 1 / 1.35, 1);
+  head.add(faceGrp);
+  const pupilMat = new THREE.MeshBasicMaterial({ color: 0x05070c });
+  const catchMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, depthWrite: false });
+  for (const side of [-1, 1]) {
+    const pupil = new THREE.Mesh(sph(0.02), pupilMat);
+    pupil.scale.set(1.1, 0.75, 0.45);
+    pupil.position.set(side * 0.072, 0.02, 0.153);
+    faceGrp.add(pupil);
+    const catchlight = new THREE.Mesh(sph(0.0065), catchMat);
+    catchlight.position.set(side * 0.072 + 0.012, 0.033, 0.163);
+    faceGrp.add(catchlight);
+    const brow = new THREE.Mesh(new THREE.CapsuleGeometry(0.0075, 0.05, 3, 6), mat);
+    brow.position.set(side * 0.072, 0.078, 0.138);
+    brow.rotation.z = side * -0.55 + Math.PI / 2;
+    brow.rotation.y = side * 0.25;
+    faceGrp.add(brow);
+  }
+  const mouthMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.0, 0.75, 0.9), transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false });
+  const mouth = new THREE.Mesh(new THREE.CapsuleGeometry(0.01, 0.05, 3, 8), mouthMat);
+  mouth.rotation.z = Math.PI / 2;
+  mouth.position.set(0, -0.088, 0.143);
+  faceGrp.add(mouth);
   const antTipMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.55, 1.0, 0.9), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
   for (const side of [-1, 1]) {
     const ant = new THREE.Mesh(new THREE.CapsuleGeometry(0.012, 0.16, 3, 6), mat);
@@ -298,7 +350,22 @@ function buildFigureRig(mat: THREE.ShaderMaterial, waveMat: THREE.ShaderMaterial
   }
 
   const neck = new THREE.Mesh(cap(0.055, 0.06), mat); neck.position.y = 1.46; group.add(neck);
-  const torso = new THREE.Mesh(cap(0.22, 0.46), mat); torso.position.y = 1.1; group.add(torso);
+  // Torso 2.0 — a sculpted multi-piece chest instead of one blank capsule:
+  // core mass + pec plate + defined abdominal block + a tapering waist +
+  // clavicle bridges out to the shoulders. The group pivot keeps the same
+  // y=1.1 position/rotation semantics the whole move library was authored
+  // against, so all 104 moves read identically — just on a better body.
+  const torso = new THREE.Group(); torso.position.y = 1.1; group.add(torso);
+  const chestCore = new THREE.Mesh(cap(0.21, 0.44), mat); torso.add(chestCore);
+  const pecs = new THREE.Mesh(sph(0.16), mat); pecs.scale.set(1.28, 0.62, 0.66); pecs.position.set(0, 0.13, 0.06); torso.add(pecs);
+  const abs = new THREE.Mesh(sph(0.14), mat); abs.scale.set(1.0, 0.8, 0.62); abs.position.set(0, -0.16, 0.055); torso.add(abs);
+  const waist = new THREE.Mesh(new THREE.CylinderGeometry(0.155, 0.13, 0.16, 14), mat); waist.position.y = -0.3; torso.add(waist);
+  for (const side of [-1, 1]) {
+    const clav = new THREE.Mesh(cap(0.028, 0.16), mat);
+    clav.position.set(side * 0.16, 0.245, 0.03);
+    clav.rotation.z = side * 1.28;
+    torso.add(clav);
+  }
   const hips = new THREE.Mesh(sph(0.21), mat); hips.position.y = 0.72; hips.scale.set(1, 0.7, 0.88); group.add(hips);
 
   // Real hip→knee→ankle chains (previously thigh+shin+foot were flat
@@ -306,24 +373,36 @@ function buildFigureRig(mat: THREE.ShaderMaterial, waveMat: THREE.ShaderMaterial
   // knee bend at all — the "bounce" read as a stiff bob, not a squat).
   // kneeL/kneeR bend independently now, so the groove/jump actually
   // compresses and releases like a real dance move.
-  const legL = new THREE.Group(); legL.position.set(-0.11, 0.5, 0); group.add(legL);
-  const thighL = new THREE.Mesh(cap(0.095, 0.42), mat); thighL.position.y = -0.21; legL.add(thighL);
-  const kneeL = new THREE.Group(); kneeL.position.set(0, -0.42, 0); legL.add(kneeL);
-  const shinL = new THREE.Mesh(cap(0.08, 0.42), mat); shinL.position.y = -0.21; kneeL.add(shinL);
-  const footL = new THREE.Mesh(sph(0.09), mat); footL.position.set(0, -0.44, 0.07); footL.scale.set(1, 0.6, 1.5); kneeL.add(footL);
-
-  const legR = new THREE.Group(); legR.position.set(0.11, 0.5, 0); group.add(legR);
-  const thighR = new THREE.Mesh(cap(0.095, 0.42), mat); thighR.position.y = -0.21; legR.add(thighR);
-  const kneeR = new THREE.Group(); kneeR.position.set(0, -0.42, 0); legR.add(kneeR);
-  const shinR = new THREE.Mesh(cap(0.08, 0.42), mat); shinR.position.y = -0.21; kneeR.add(shinR);
-  const footR = new THREE.Mesh(sph(0.09), mat); footR.position.set(0, -0.44, 0.07); footR.scale.set(1, 0.6, 1.5); kneeR.add(footR);
+  // Legs 2.0 — anatomically tapered (thick thigh → knee → calf bulge →
+  // slim ankle) with visible knee/hip joint caps, replacing the uniform
+  // sausage capsules. Same pivots, same move compatibility.
+  const mkLeg = (side: number) => {
+    const leg = new THREE.Group(); leg.position.set(side * 0.11, 0.5, 0); group.add(leg);
+    const hipCap = new THREE.Mesh(sph(0.1), mat); hipCap.scale.set(1, 0.85, 1); leg.add(hipCap);
+    const thigh = new THREE.Mesh(new THREE.CylinderGeometry(0.098, 0.07, 0.44, 14), mat); thigh.position.y = -0.21; leg.add(thigh);
+    const knee = new THREE.Group(); knee.position.set(0, -0.42, 0); leg.add(knee);
+    const kneeCap = new THREE.Mesh(sph(0.072), mat); knee.add(kneeCap);
+    const shin = new THREE.Mesh(new THREE.CylinderGeometry(0.062, 0.045, 0.42, 12), mat); shin.position.y = -0.21; knee.add(shin);
+    const calf = new THREE.Mesh(sph(0.06), mat); calf.scale.set(0.95, 1.55, 0.95); calf.position.set(0, -0.13, -0.018); knee.add(calf);
+    const ankle = new THREE.Mesh(sph(0.048), mat); ankle.position.y = -0.42; knee.add(ankle);
+    const foot = new THREE.Mesh(sph(0.09), mat); foot.position.set(0, -0.44, 0.07); foot.scale.set(1, 0.6, 1.5); knee.add(foot);
+    return { leg, knee };
+  };
+  const { leg: legL, knee: kneeL } = mkLeg(-1);
+  const { leg: legR, knee: kneeR } = mkLeg(1);
 
   // Shoulder pivots sit wide of the torso capsule (r=0.22) so raised arms
   // sweep OUTSIDE the body instead of clipping through it.
+  const mkArmSegs = (shoulder: THREE.Group, foreArm: THREE.Group) => {
+    const shoulderCap = new THREE.Mesh(sph(0.085), mat); shoulder.add(shoulderCap);
+    const upperArm = new THREE.Mesh(new THREE.CylinderGeometry(0.072, 0.052, 0.36, 12), mat); upperArm.position.y = -0.19; shoulder.add(upperArm);
+    const elbow = new THREE.Mesh(sph(0.058), mat); foreArm.add(elbow);
+    const foreMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.038, 0.32, 12), mat); foreMesh.position.y = -0.17; foreArm.add(foreMesh);
+    const wrist = new THREE.Mesh(sph(0.042), mat); wrist.position.y = -0.335; foreArm.add(wrist);
+  };
   const shoulderL = new THREE.Group(); shoulderL.position.set(-0.33, 1.34, 0); group.add(shoulderL);
-  const upperArmL = new THREE.Mesh(cap(0.07, 0.34), mat); upperArmL.position.y = -0.19; shoulderL.add(upperArmL);
   const foreArmL = new THREE.Group(); foreArmL.position.set(0, -0.4, 0); shoulderL.add(foreArmL);
-  const foreArmMeshL = new THREE.Mesh(cap(0.06, 0.32), mat); foreArmMeshL.position.y = -0.17; foreArmL.add(foreArmMeshL);
+  mkArmSegs(shoulderL, foreArmL);
   // Long three-fingered alien hands — a small palm with fingers fanned out,
   // continuing the forearm's direction so they read in silhouette.
   const addAlienHand = (parent: THREE.Group) => {
@@ -340,9 +419,8 @@ function buildFigureRig(mat: THREE.ShaderMaterial, waveMat: THREE.ShaderMaterial
   addAlienHand(foreArmL);
 
   const shoulderR = new THREE.Group(); shoulderR.position.set(0.33, 1.34, 0); group.add(shoulderR);
-  const upperArmR = new THREE.Mesh(cap(0.07, 0.34), mat); upperArmR.position.y = -0.19; shoulderR.add(upperArmR);
   const foreArmR = new THREE.Group(); foreArmR.position.set(0, -0.4, 0); shoulderR.add(foreArmR);
-  const foreArmMeshR = new THREE.Mesh(cap(0.06, 0.32), mat); foreArmMeshR.position.y = -0.17; foreArmR.add(foreArmMeshR);
+  mkArmSegs(shoulderR, foreArmR);
   addAlienHand(foreArmR);
 
   // (The cape plane was removed per user request — the semi-transparent
@@ -366,7 +444,7 @@ function buildFigureRig(mat: THREE.ShaderMaterial, waveMat: THREE.ShaderMaterial
 
   // accents = every additive glow material on this rig (eyes, antenna
   // tips, chest core, joint dots) — the theme system tints them together.
-  return { group, legL, legR, kneeL, kneeR, shoulderL, shoulderR, foreArmL, foreArmR, torso, head, hips, accents: [eyeMat, antTipMat] };
+  return { group, legL, legR, kneeL, kneeR, shoulderL, shoulderR, foreArmL, foreArmR, torso, head, hips, accents: [eyeMat, antTipMat], mouthMat };
 }
 
 function buildBeamMaterial() {
@@ -736,7 +814,17 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     for (const k of POSE_KEYS) { cur[k] = BASE_POSE[k] || 0; vel[k] = 0; tgt[k] = BASE_POSE[k] || 0; }
     return { rig: drig, cur, vel, tgt, stepOffset, baseX, baseZ, microPhase, moveIdx: 0, stepIn: 0, phraseLen: 6 + Math.floor(Math.random() * 5), faceOff: 0 };
   }
-  const setPoseFor = (d: Dancer, p: Pose) => { for (const k of POSE_KEYS) d.tgt[k] = (k in p) ? p[k] : (BASE_POSE[k] || 0); };
+  // Amplitude exaggeration: authored poses get scaled up with energy (up to
+  // ~+25%) so a playing track reads BIG from across a room / on a projector;
+  // calm pulls it back toward the authored value. rootRy is exempt — full
+  // turns are authored as exact multiples of 2π and must stay exact.
+  const setPoseFor = (d: Dancer, p: Pose) => {
+    const amp = 1 + (1 - calm) * 0.25 * energy;
+    for (const k of POSE_KEYS) {
+      const v = (k in p) ? p[k] : (BASE_POSE[k] || 0);
+      d.tgt[k] = (k === 'rootRy' || !(k in p)) ? v : v * amp;
+    }
+  };
   // Each move maps a step (0..7 inside its 8-beat block) to a target pose.
   const MOVES: ((s: number) => Pose)[] = [
     // 1 · Groove pump — weight shifts side to side, elbows pumping.
@@ -1433,6 +1521,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   let stepInPattern = 0; // beat within the current move (decoupled from beatCount
                          // so a lyric line can start a fresh move mid-count)
   let lastLineAt = 0;    // last time a real sung lyric line arrived (syncLine)
+  let mouthPulse = 0;    // mouth glow flare — spikes on each sung line, decays
   let routineRepeats = 1; // how many times to repeat THIS phrase (chorus = 2)
   // Big "hero" moments a phrase can climax on: jump&freeze, drop&freeze, low
   // freeze, full turn, starlit turn, grand finale pose, lift bounce.
@@ -1517,6 +1606,10 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     for (const m of accentMats) tintAccent(m);
   }
   registerAccents(rig.accents);
+  // Every figure's mouth glow, driven together per-frame: a base glow that
+  // breathes with energy plus a hard flare each time a lyric line fires —
+  // the dancers visibly SING the song's lines.
+  const mouthMats: THREE.MeshBasicMaterial[] = [rig.mouthMat];
 
   // Soft contact shadow under each lead dancer — grounds the figure to the
   // floor (jumps visibly lift off it), a big "actually standing there" cue.
@@ -1561,6 +1654,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       scene.add(r.group);
       dancers.push(mkDancer(r, off, bx, bz, off * 2.1));
       registerAccents(r.accents);
+      mouthMats.push(r.mouthMat);
       mkShadow(bx, bz).visible = false;
     }
   }
@@ -1592,6 +1686,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     brideMat.uniforms.uVeinIntensity.value = 0.25; // subtle circuitry under the "dress"
     const bRig = buildFigureRig(brideMat, waveMat);
     for (const m of bRig.accents) m.color.setRGB(1.0, 0.85, 0.6); // warm gold eyes/core
+    mouthMats.push(bRig.mouthMat);
     // Dress skirt — a soft glowing cone flaring from the hips.
     const skirtMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.0, 0.95, 0.9), transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
     const skirt = new THREE.Mesh(new THREE.ConeGeometry(0.42, 0.62, 24, 1, true), skirtMat);
@@ -2180,6 +2275,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     if (!playing) return;
     if (n - lastLineAt < 350) return; // debounce rapid re-fires
     lastLineAt = n;
+    mouthPulse = 1; // the dancers visibly "sing" the new line
     // Re-anchor the beat phase so the next internal beat lands just after the
     // line instead of drifting — keeps the groove locked to the vocal.
     lastBeat = n - Math.min(tempoMs * 0.2, 90);
@@ -2217,7 +2313,10 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     if (vibeMode === 1) calmTarget = 0;
     else if (vibeMode === 2) calmTarget = 0.65;
     else if (vibeMode === 3) calmTarget = 1;
-    else calmTarget = Math.max(0, Math.min(1, (tempoMs - 500) / 200)) * 0.85; // auto
+    // Auto engages calm only for genuinely slow songs (tempo ≥ ~620ms/beat);
+    // the old (tempo-500)/200 curve was damping ordinary pop tracks too —
+    // softer springs + slower beats compounded into "barely dancing".
+    else calmTarget = Math.max(0, Math.min(1, (tempoMs - 620) / 220)) * 0.8; // auto
     calm += (calmTarget - calm) * Math.min(1, dt * 1.2);
     // Calm pulls the energy ceiling down so lights/motion stay gentle but alive.
     const targetEnergy = playing ? 1 - calm * 0.38 : 0.25;
@@ -2235,8 +2334,9 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     if (playing) {
       if (liveMode) {
         if (now - lastLiveTick > 2500) liveMode = false; // mic went quiet → internal clock resumes
-      } else if (now - lastBeat > (tempoMs / danceSpeedMult) * (1 + calm * 0.9)) {
-        // Calm stretches the gap between move changes → longer, languid holds.
+      } else if (now - lastBeat > (tempoMs / danceSpeedMult) * (1 + Math.max(0, calm - 0.45) * 1.6)) {
+        // Only genuine chill/shanti stretches the beat into languid holds;
+        // mild auto-calm keeps the full-rate groove.
         fireBeat(now);
       }
     }
@@ -2312,6 +2412,10 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     const bounce = Math.max(0, Math.sin(Math.PI * Math.min(1, bounceCycle * 1.4))) * energy;
     // Theme accents (eyes/cores/joints) breathe with the beat.
     for (const m of accentMats) m.opacity = 0.72 + beatPulse * 0.28;
+    // Mouths glow with the music and flare hard on each sung lyric line.
+    mouthPulse *= Math.exp(-dt * 2.4);
+    const mOp = 0.16 + energy * 0.24 + mouthPulse * 0.6;
+    for (const m of mouthMats) m.opacity = mOp;
     const actD = activeDancers();
     for (let di = 0; di < actD.length; di++) {
       const d = actD[di];
@@ -2328,7 +2432,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
         sh.scale.set(shScale, shScale, 1);
         (sh.material as THREE.MeshBasicMaterial).opacity = Math.max(0.08, (0.34 - lift * 0.7 - S.rootY * 0.15)) * (0.5 + energy * 0.5);
       }
-      dg.group.position.y = -0.05 + S.rootY - bounce * 0.06;
+      dg.group.position.y = -0.05 + S.rootY - bounce * 0.09;
       dg.group.position.x = d.baseX + S.rootX;
       dg.group.position.z = d.baseZ;
       dg.group.scale.x = mirrorOn ? -Math.abs(dg.group.scale.x || 1) : Math.abs(dg.group.scale.x || 1);
@@ -2337,8 +2441,20 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       dg.torso.rotation.x = S.torsoRx;
       dg.torso.rotation.y = S.torsoRy + Math.sin(tp * 1.1) * 0.03 * energy;
       dg.torso.rotation.z = S.torsoRz;
+      // Visible breathing — the ribcage swells on a slow cycle, stronger at
+      // rest, subtler mid-performance.
+      const breath = (Math.sin(tp * 1.9) + 1) * 0.5 * (1 - energy * 0.4);
+      dg.torso.scale.set(1 + breath * 0.022, 1 + breath * 0.012, 1 + breath * 0.03);
       dg.head.rotation.x = S.headRx + Math.sin(tp * 1.7) * 0.02;
-      dg.head.rotation.y = S.headRy + Math.sin(tp * 1.1 + 0.4) * 0.06;
+      // The lead "works the camera" — between big head moves the gaze eases
+      // toward the audience, the stage-performer's connection trick.
+      let gaze = 0;
+      if (di === 0) {
+        const yawToCam = Math.atan2(camera.position.x - (d.baseX + S.rootX), camera.position.z - d.baseZ);
+        const rel = yawToCam - (S.rootRy + d.faceOff);
+        gaze = Math.max(-0.5, Math.min(0.5, rel)) * 0.3;
+      }
+      dg.head.rotation.y = S.headRy + gaze + Math.sin(tp * 1.1 + 0.4) * 0.06;
       // Sign flip on the Z axes: poses are authored as "positive = raise
       // the arm", but +Z rotation swings a hanging left arm INWARD through
       // the torso (this was the "body swallows the arms" bug). Negating
@@ -2351,8 +2467,8 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       dg.foreArmR.rotation.z = -S.fARz; dg.foreArmR.rotation.x = S.fARx;
       dg.legL.rotation.x = S.legLx; dg.legL.rotation.z = S.legLz;
       dg.legR.rotation.x = S.legRx; dg.legR.rotation.z = S.legRz;
-      dg.kneeL.rotation.x = S.kneeLx + bounce * 0.25;
-      dg.kneeR.rotation.x = S.kneeRx + bounce * 0.2;
+      dg.kneeL.rotation.x = S.kneeLx + bounce * 0.34;
+      dg.kneeR.rotation.x = S.kneeRx + bounce * 0.28;
     }
     // The bride's contact shadow tracks her separately (she lives outside the
     // dancerShadows index mapping).
