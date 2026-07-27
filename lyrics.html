@@ -187,7 +187,15 @@
     font-family:'Chakra Petch',sans-serif; letter-spacing:.12em; font-size:10.5px;
     color:var(--text-faint); text-transform:uppercase; direction:ltr; text-align:right;
     margin:16px 0 8px; border-top:1px solid var(--border); padding-top:14px;
+    display:flex; align-items:center; justify-content:flex-end; gap:8px; cursor:pointer; user-select:none;
   }
+  .sub-eyebrow:hover{color:var(--text-dim);}
+  .sub-eyebrow .chev{
+    display:inline-block; font-size:11px; transition:transform .18s ease; flex-shrink:0; order:-1;
+  }
+  .sub-eyebrow.collapsed .chev{transform:rotate(-90deg);}
+  .settings-section{overflow:hidden;}
+  .settings-section.collapsed{display:none;}
   /* Generic labeled slider row, reused across the many new tuning knobs
      below — same visual language as the existing font-size slider. */
   .range-row{display:flex; flex-direction:column; gap:5px; margin-bottom:12px;}
@@ -319,6 +327,8 @@
   .hero-btn.zoom-btn{top:106px; font-size:15px;}
   .hero-btn.wedding-btn{top:154px;}
   .hero-btn.wedding-btn.on{border-color:rgba(255,200,120,.75); box-shadow:0 0 16px rgba(255,190,110,.55); color:#ffd88a;}
+  .hero-btn.stadcam-btn{top:202px; font-size:16px;}
+  .hero-btn.stadcam-btn.on{border-color:var(--border-strong); box-shadow:0 0 16px rgba(0,229,255,.4);}
   .hero-btn.zoom-btn .zlabel{position:absolute; bottom:2px; right:4px; font-size:8px; font-weight:800; color:var(--cyan);}
   .hero-btn.live-beat.on{border-color:rgba(255,80,120,.7); box-shadow:0 0 16px rgba(255,80,120,.5); animation:liveBeatPulse 1s ease-in-out infinite;}
   @keyframes liveBeatPulse{0%,100%{transform:scale(1);}50%{transform:scale(1.1);}}
@@ -516,6 +526,7 @@
     <button class="hero-btn live-beat" id="liveBeatBtn" title="ביט חי מהמיקרופון — הרקדן שומע את המוזיקה בחדר">🎤</button>
     <button class="hero-btn zoom-btn" id="zoomBtn" title="גודל האווטרים">🔍</button>
     <button class="hero-btn wedding-btn" id="weddingBtn" title="מצב חתונה — חתן, כלה, חופה והורה 💍">💍</button>
+    <button class="hero-btn stadcam-btn" id="stadCamBtn" title="מצלמת איצטדיון — רחפן מרחף" hidden>🚁</button>
     <button class="hero-btn stage-exit" id="stageExitBtn" title="יציאה ממסך מלא" hidden>✕</button>
     <div class="hero-caption">🎭 רוקד לקצב השיר</div>
     <div class="stats-hud" id="statsHud" hidden>
@@ -1093,6 +1104,10 @@
   // visible immediately, not only on the next song.
   singerGenderSel.addEventListener('change', ()=>{
     store.set('lt:singer_gender', singerGenderSel.value);
+    // Explicit choice → the avatar reads as that performer immediately,
+    // without waiting for a translation round-trip.
+    if(singerGenderSel.value === 'male') window.__lyricsAvatarBridge?.setPerformerGender?.(1);
+    else if(singerGenderSel.value === 'female') window.__lyricsAvatarBridge?.setPerformerGender?.(2);
     if(state.lines && state.lines.length && !mostlyHebrew(state.lines.map(l=>l.orig)) && targetLangSel.value === 'he'){
       smartRefineHebrew(state.lines.map(l=>l.orig), state.loadSeq);
     }
@@ -1537,6 +1552,46 @@
     settingsPanel.insertBefore(warn, settingsPanel.firstChild);
     setTimeout(()=> showMiniToast('⚠️ הדפדפן חוסם שמירה — פִּתחו בדפדפן רגיל'), 1500);
   }
+
+  // ── Collapsible settings sections ── the panel had grown into one long
+  // scroll (translation + avatar/dance + camera + effects + accessibility +
+  // music/info + Spotify, ALL fully expanded at once) — the "very cumbersome"
+  // UI complaint. Turn every `.sub-eyebrow` group into an accordion: purely
+  // structural (wraps the existing siblings, doesn't touch any control's id
+  // or behavior), each section's open/closed state persists per device. The
+  // first two sections (avatar/dance, camera — what a DJ tunes mid-show)
+  // start open; the rest start collapsed to cut the scroll dramatically.
+  (function initSettingsAccordion(){
+    const headers = Array.from(settingsPanel.querySelectorAll('.sub-eyebrow'));
+    headers.forEach((header, i) => {
+      const body = document.createElement('div');
+      body.className = 'settings-section';
+      let n = header.nextSibling;
+      while(n && !(n.nodeType === 1 && n.classList && n.classList.contains('sub-eyebrow'))){
+        const next = n.nextSibling;
+        body.appendChild(n);
+        n = next;
+      }
+      header.insertAdjacentElement('afterend', body);
+      const chev = document.createElement('span');
+      chev.className = 'chev';
+      chev.textContent = '▾';
+      header.appendChild(chev);
+      const key = 'lt:panel_open_' + i;
+      let open = store.get(key);
+      if(open === null || open === undefined) open = i < 2;
+      function apply(){
+        header.classList.toggle('collapsed', !open);
+        body.classList.toggle('collapsed', !open);
+      }
+      apply();
+      header.addEventListener('click', ()=>{
+        open = !open;
+        store.set(key, open);
+        apply();
+      });
+    });
+  })();
   copyRedirectBtn.addEventListener('click', async ()=>{
     try{
       await navigator.clipboard.writeText(REDIRECT_URI);
@@ -1805,7 +1860,8 @@
     '  (1) the SINGER / speaker — infer from the performing artist and the lyrics. A female singer uses feminine first person (אני אוהבת, אני יודעת, שמחתי), a male singer masculine (אני אוהב, אני יודע).',
     '  (2) the person being ADDRESSED as "you" — infer from the story/context. Addressing a woman uses feminine second person (את, שלךְ, יפה, בואי, תשמעי); addressing a man uses masculine (אתה, שלךָ, יפֶה, בוא, תשמע).',
     '  When context clearly points to a gender (a love song from a man to a woman, or a woman singing about herself), you MUST use that gender — do NOT default everything to masculine. Only fall back to masculine when the gender is genuinely unknowable.',
-    '- No explanations and no extra lines — output only the numbered translations.',
+    '- After ALL the numbered translation lines, output exactly one more final line in this EXACT format: GENDER:male or GENDER:female — your best-guess of the SINGER\'s gender (the same one you used for rule (1) above). Always include this line, even if you had to guess.',
+    '- No explanations and no other extra lines — only the numbered translations, then the one GENDER line.',
   ].join('\n');
   async function smartRefineHebrew(texts, seq){
     try{
@@ -1858,6 +1914,13 @@
           if(idx >= 0 && idx < texts.length && tr){ map[idx] = tr; matched++; }
         }
       });
+      // Auto-detected singer gender (see SMART_HE_PROMPT's trailing GENDER
+      // line) instantly recolors the avatar — but only in "auto" mode; an
+      // explicit manual choice always wins and is never overridden here.
+      const genderM = out.match(/GENDER:\s*(male|female)/i);
+      if(genderM && singerGenderSel.value === 'auto'){
+        window.__lyricsAvatarBridge?.setPerformerGender?.(genderM[1].toLowerCase() === 'female' ? 2 : 1);
+      }
       if(matched < texts.length * 0.8) return false; // model broke the format — keep MT
       Object.keys(map).forEach(k=>{ const i = Number(k); updateRowTranslation(i, map[i]); });
       showMiniToast('✨ התרגום לוטש לעברית טבעית');
@@ -1952,6 +2015,11 @@
     if(miniToastT) clearTimeout(miniToastT);
     miniToastT = setTimeout(()=>{ el.style.opacity = '0'; }, 2600);
   }
+  // The avatar-control code lives in a separate <script type="module"> (it
+  // needs an ES import) and can't see this IIFE's function declarations —
+  // share the toast so both scripts show the exact same one instead of a
+  // second implementation drifting out of sync.
+  window.showMiniToast = showMiniToast;
 
   // ================= SONG CACHE (repeat plays are instant) =================
   function cacheGet(key){
@@ -2440,11 +2508,12 @@
   window.__lyricsAvatarBridge = {
     setEnergy(playing) { lastEnergy = !!playing; if (handle) handle.setEnergy(lastEnergy); },
     setTempo(ms) { lastTempo = ms; if (handle) handle.setTempo(lastTempo); },
-    setParty(mode) { lastParty = mode === true ? 1 : Number(mode) || 0; if (handle) handle.setParty?.(lastParty); },
+    setParty(mode) { lastParty = mode === true ? 1 : Number(mode) || 0; if (handle) handle.setParty?.(lastParty); applyPartyUI(); },
     liveBeat() { handle?.liveBeatTick?.(); },
     bassDrop() { handle?.bassDrop?.(); },
     liveBeatOff() { handle?.setLiveBeat?.(false); },
     syncLine() { handle?.syncLine?.(); },
+    setPerformerGender(g) { handle?.setPerformerGender?.(g); },
   };
 
   // Party button cycles: solo → 🎉 crew of 3 → 🪩 BIG PARTY (30 aliens +
@@ -2457,6 +2526,7 @@
       : lastParty === 1 ? 'להקה פעילה — לחץ ל-BIG PARTY'
       : lastParty === 2 ? 'BIG PARTY פעיל — לחץ למצב איצטדיון'
       : 'איצטדיון פעיל — 80,000 בקהל — לחץ לכיבוי';
+    stadCamBtn.hidden = lastParty !== 3;
   }
   partyBtn.addEventListener('click', () => {
     lastParty = (lastParty + 1) % 4;
@@ -2464,6 +2534,33 @@
     if (handle) handle.setParty?.(lastParty);
     applyPartyUI();
   });
+
+  // 🚁 Stadium camera — only shown once the stadium itself is up (party mode
+  // 3). Cycles the same 3 styles as the settings-panel select (drone orbit →
+  // fixed wide overview → stage-cam close), sharing the same storage key so
+  // both controls always agree.
+  const stadCamBtn = document.getElementById('stadCamBtn');
+  const STADCAM_ICONS = ['🚁', '🎥', '🎬'];
+  const STADCAM_TITLES = [
+    'מצלמת איצטדיון: רחפן מרחף — לחץ למעבר לרחבה קבועה',
+    'מצלמת איצטדיון: רחבה קבועה מלמעלה — לחץ למעבר למצלמת במה',
+    'מצלמת איצטדיון: קרוב לבמה — לחץ לחזרה לרחפן',
+  ];
+  let stadCamIdx = Math.max(0, Math.min(2, Number(localStorage.getItem('lt:stadium_cam')) || 0));
+  function applyStadCamUI() {
+    stadCamBtn.textContent = STADCAM_ICONS[stadCamIdx];
+    stadCamBtn.title = STADCAM_TITLES[stadCamIdx];
+    stadCamBtn.classList.toggle('on', stadCamIdx !== 0);
+    const sel = document.getElementById('stadiumCamSel');
+    if (sel) sel.value = String(stadCamIdx);
+  }
+  stadCamBtn.addEventListener('click', () => {
+    stadCamIdx = (stadCamIdx + 1) % 3;
+    try { localStorage.setItem('lt:stadium_cam', String(stadCamIdx)); } catch {}
+    handle?.setStadiumCameraStyle?.(stadCamIdx);
+    applyStadCamUI();
+  });
+  applyStadCamUI();
   applyPartyUI();
 
   // 🔍 Avatar size — cycles default → bigger → biggest → smaller, persisted.
@@ -2491,9 +2588,25 @@
     weddingBtn.classList.toggle('on', weddingOn);
     weddingBtn.title = weddingOn ? 'מצב חתונה פעיל — לחץ לכיבוי' : 'מצב חתונה — חתן, כלה, חופה והורה 💍';
   }
+  // Wedding mode's bride is always the neon-alien figure in bridal dress —
+  // she was authored to pair visually with an alien groom, not a
+  // photorealistic human or a sci-fi robot. Pairing a GLB groom with her
+  // reads as broken (mismatched character styles standing side by side), so
+  // the two settings are mutually exclusive: turning wedding ON forces the
+  // avatar style back to the alien, and picking a GLB style while wedding is
+  // on turns wedding off. Both directions explain themselves with a toast.
   weddingBtn.addEventListener('click', () => {
     weddingOn = !weddingOn;
     try { localStorage.setItem('lt:wedding', weddingOn ? '1' : '0'); } catch {}
+    if (weddingOn) {
+      const styleSel = document.getElementById('avatarStyleSel');
+      if (styleSel && styleSel.value !== '0') {
+        styleSel.value = '0';
+        try { localStorage.setItem('lt:avatar_style', '0'); } catch {}
+        handle?.setAvatarStyle?.(0);
+        window.showMiniToast?.('💍 מצב חתונה משתמש בזוג החייזרים — סגנון האווטאר אופס');
+      }
+    }
     handle?.setWedding?.(weddingOn);
     applyWeddingUI();
   });
@@ -2547,10 +2660,22 @@
     });
   }
   wireSelect('vibeSel', 'lt:vibe', 0, (v) => handle?.setVibe?.(Number(v)));
-  wireSelect('avatarStyleSel', 'lt:avatar_style', 0, (v) => handle?.setAvatarStyle?.(Number(v)));
+  wireSelect('avatarStyleSel', 'lt:avatar_style', 0, (v) => {
+    handle?.setAvatarStyle?.(Number(v));
+    // See the weddingBtn handler — the bride only pairs visually with the
+    // alien groom, so picking a real-body style while a wedding is running
+    // turns wedding off instead of leaving a mismatched couple on stage.
+    if (Number(v) !== 0 && weddingOn) {
+      weddingOn = false;
+      try { localStorage.setItem('lt:wedding', '0'); } catch {}
+      handle?.setWedding?.(false);
+      applyWeddingUI();
+      window.showMiniToast?.('💍 מצב חתונה כובה — לא תואם לסגנון האווטאר הזה');
+    }
+  });
   wireSelect('crewSizeSel', 'lt:crew_size', 2, (v) => handle?.setCrewSize?.(Number(v)));
   wireSelect('cameraStyleSel', 'lt:camera_style', 0, (v) => handle?.setCameraStyle?.(Number(v)));
-  wireSelect('stadiumCamSel', 'lt:stadium_cam', 0, (v) => handle?.setStadiumCameraStyle?.(Number(v)));
+  wireSelect('stadiumCamSel', 'lt:stadium_cam', 0, (v) => { handle?.setStadiumCameraStyle?.(Number(v)); stadCamIdx = Number(v); applyStadCamUI(); });
   wireSelect('stadiumDensitySel', 'lt:stadium_density', 80000, (v) => handle?.setStadiumDensity?.(Number(v)));
 
   function wireCheck(chkId, key, def, apply) {
@@ -2586,8 +2711,18 @@
     handle?.setStadiumCameraStyle?.(Number(localStorage.getItem('lt:stadium_cam') || 0));
     handle?.setStadiumDensity?.(Number(localStorage.getItem('lt:stadium_density') || 80000));
     handle?.setVibe?.(Number(localStorage.getItem('lt:vibe') || 0));
-    handle?.setAvatarStyle?.(Number(localStorage.getItem('lt:avatar_style') || 0));
-    handle?.setWedding?.(localStorage.getItem('lt:wedding') === '1');
+    // A saved manual male/female choice re-tints the lead the instant it
+    // mounts, so a returning DJ doesn't see the wrong-color performer for
+    // even one frame while waiting on a translation pass.
+    const savedGender = localStorage.getItem('lt:singer_gender');
+    if(savedGender === 'male') handle?.setPerformerGender?.(1);
+    else if(savedGender === 'female') handle?.setPerformerGender?.(2);
+    // Wedding + a GLB avatar style is a mismatched pairing (see the
+    // weddingBtn/avatarStyleSel handlers) — if a stale/conflicting save has
+    // both set, wedding wins on load so the couple always renders coherent.
+    const savedWedding = localStorage.getItem('lt:wedding') === '1';
+    handle?.setAvatarStyle?.(savedWedding ? 0 : Number(localStorage.getItem('lt:avatar_style') || 0));
+    handle?.setWedding?.(savedWedding);
     handle?.setMirror?.(localStorage.getItem('lt:mirror') === '1');
   };
 

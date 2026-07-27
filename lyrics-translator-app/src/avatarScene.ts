@@ -70,6 +70,11 @@ export interface LyricsAvatarHandle {
   // show — springs, haze, sweep speed, energy ceiling, and move pool — toward
   // calm, so slow/atmospheric songs read as calm instead of frantic.
   setVibe?(mode: number): void;
+  // Instantly recolors the lead to read as the song's performer: 1 = male
+  // singer (blue), 2 = female singer (pink). A one-shot reaction to gender
+  // detection/selection, not a persistent lock — picking an avatar color
+  // theme afterward overrides it normally.
+  setPerformerGender?(g: number): void;
   // Avatar style — which character dances lead. 0 = the procedural neon
   // alien; 1-3 load the simulator's own rigged GLB agents (casual male /
   // legendary robot / Sophia) and drive their skeletons directly from the
@@ -122,6 +127,12 @@ export const AVATAR_THEMES: AvatarTheme[] = [
   { name: 'שקיעה', a: [1.0, 0.4, 0.15], b: [1.0, 0.2, 0.5], c: [0.7, 0.25, 0.9], eye: [1.0, 0.65, 0.45] },
   { name: '🌈 קשת חיה', a: [1, 0, 0], b: [0, 1, 0], c: [0, 0, 1], eye: [1.0, 1.0, 1.0], rainbow: true },
 ];
+// Not in the user-facing swatch list — applied automatically (or by the
+// manual singer-gender setting) to instantly recolor the whole stage as
+// "this is a male/female performer", the same way any AVATAR_THEMES entry
+// recolors everything via setCurrentTheme.
+const PERFORMER_MALE_THEME: AvatarTheme = { name: '', a: [0.1, 0.45, 1.0], b: [0.3, 0.75, 1.0], c: [0.05, 0.85, 1.0], eye: [0.35, 0.75, 1.0] };
+const PERFORMER_FEMALE_THEME: AvatarTheme = { name: '', a: [1.0, 0.12, 0.62], b: [1.0, 0.45, 0.82], c: [0.9, 0.2, 0.72], eye: [1.0, 0.5, 0.82] };
 
 function buildFigureMaterial() {
   const t0 = AVATAR_THEMES[0];
@@ -392,10 +403,10 @@ function buildFigureRig(mat: THREE.ShaderMaterial, waveMat: THREE.ShaderMaterial
     const calf = new THREE.Mesh(sph(0.06), mat); calf.scale.set(0.95, 1.55, 0.95); calf.position.set(0, -0.13, -0.018); knee.add(calf);
     const ankle = new THREE.Mesh(sph(0.048), mat); ankle.position.y = -0.42; knee.add(ankle);
     const foot = new THREE.Mesh(sph(0.09), mat); foot.position.set(0, -0.44, 0.07); foot.scale.set(1, 0.6, 1.5); knee.add(foot);
-    return { leg, knee };
+    return { leg, knee, foot };
   };
-  const { leg: legL, knee: kneeL } = mkLeg(-1);
-  const { leg: legR, knee: kneeR } = mkLeg(1);
+  const { leg: legL, knee: kneeL, foot: footL } = mkLeg(-1);
+  const { leg: legR, knee: kneeR, foot: footR } = mkLeg(1);
 
   // Shoulder pivots sit wide of the torso capsule (r=0.22) so raised arms
   // sweep OUTSIDE the body instead of clipping through it.
@@ -450,7 +461,7 @@ function buildFigureRig(mat: THREE.ShaderMaterial, waveMat: THREE.ShaderMaterial
 
   // accents = every additive glow material on this rig (eyes, antenna
   // tips, chest core, joint dots) — the theme system tints them together.
-  return { group, legL, legR, kneeL, kneeR, shoulderL, shoulderR, foreArmL, foreArmR, torso, head, hips, accents: [eyeMat, antTipMat], mouthMat };
+  return { group, legL, legR, kneeL, kneeR, footL, footR, shoulderL, shoulderR, foreArmL, foreArmR, torso, head, hips, accents: [eyeMat, antTipMat], mouthMat };
 }
 
 function buildBeamMaterial() {
@@ -1669,14 +1680,23 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   const accentMats: THREE.MeshBasicMaterial[] = [];
   function tintAccent(m: THREE.MeshBasicMaterial) { m.color.setRGB(currentTheme.eye[0], currentTheme.eye[1], currentTheme.eye[2]); }
   function registerAccents(mats: THREE.MeshBasicMaterial[]) { for (const m of mats) { accentMats.push(m); tintAccent(m); } }
-  function applyTheme(idx: number) {
-    currentTheme = AVATAR_THEMES[Math.max(0, Math.min(AVATAR_THEMES.length - 1, Math.round(idx)))] || AVATAR_THEMES[0];
+  // Single source of truth for "what color is the show right now" — every
+  // per-frame consumer (spotlights, wet floor, subwoofer glow, LED floor,
+  // stadium screens/rim) reads `currentTheme` directly, so routing a color
+  // change through THIS function (rather than only touching figMat) is what
+  // makes it read as an obvious, whole-stage color change instead of a
+  // subtle rim-tint nobody notices past the spotlights.
+  function setCurrentTheme(theme: AvatarTheme) {
+    currentTheme = theme;
     (figMat.uniforms.uColA.value as THREE.Vector3).set(...currentTheme.a);
     (figMat.uniforms.uColB.value as THREE.Vector3).set(...currentTheme.b);
     (figMat.uniforms.uColC.value as THREE.Vector3).set(...currentTheme.c);
     figMat.uniforms.uRainbow.value = currentTheme.rainbow ? 1 : 0;
     (waveMat.uniforms.uCol.value as THREE.Vector3).set(...currentTheme.eye);
     for (const m of accentMats) tintAccent(m);
+  }
+  function applyTheme(idx: number) {
+    setCurrentTheme(AVATAR_THEMES[Math.max(0, Math.min(AVATAR_THEMES.length - 1, Math.round(idx)))] || AVATAR_THEMES[0]);
   }
   registerAccents(rig.accents);
   // Every figure's mouth glow, driven together per-frame: a base glow that
@@ -1898,6 +1918,9 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   let glbLights: THREE.Object3D[] = [];
   let glbLoadSeq = 0;
   const _gE = new THREE.Euler(), _gQ = new THREE.Quaternion(), _gQ2 = new THREE.Quaternion();
+  const _footL = new THREE.Vector3(), _footR = new THREE.Vector3();
+  const FOOT_R = 0.054; // foot sphere's vertical radius (sph(0.09) scaled y=0.6) — center-to-sole distance
+  const FLOOR_Y = -0.05; // the LED/glow floor plane's height
   function disposeGlbGroup(g: THREE.Object3D) {
     g.traverse((obj) => {
       const mesh = obj as THREE.Mesh;
@@ -2707,6 +2730,19 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       dg.legR.rotation.x = S.legRx; dg.legR.rotation.z = S.legRz;
       dg.kneeL.rotation.x = S.kneeLx + bounce * 0.34;
       dg.kneeR.rotation.x = S.kneeRx + bounce * 0.28;
+      // Floor grounding clamp — poses are authored by hand (crouches, deep
+      // knee bends, lunges) and the forward kinematics of a bent leg don't
+      // automatically keep the foot planted at floor height; the amplitude
+      // exaggeration (setPoseFor's `amp`) can push it further. Rather than
+      // hand-tuning every one of the 104 moves, read where the feet ACTUALLY
+      // ended up after this frame's rotations and nudge the whole dancer up
+      // if either foot would poke through the floor. Never pushes down (a
+      // jump's lifted foot is left alone), so it's a pure anti-clip clamp.
+      dg.group.updateMatrixWorld(true);
+      const flY = _footL.setFromMatrixPosition(dg.footL.matrixWorld).y;
+      const frY = _footR.setFromMatrixPosition(dg.footR.matrixWorld).y;
+      const footBottom = Math.min(flY, frY) - FOOT_R;
+      if (footBottom < FLOOR_Y) dg.group.position.y += (FLOOR_Y - footBottom);
     }
     // The bride's contact shadow tracks her separately (she lives outside the
     // dancerShadows index mapping).
@@ -2889,6 +2925,18 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     setStadiumDensity(n: number) { stadiumDensityOverride = n < 0 ? -1 : Math.round(n); applyStadiumDensity(); },
     setStadiumCameraStyle(mode: number) { stadiumCamStyle = Math.max(0, Math.min(2, Math.round(mode))); },
     setVibe(mode: number) { vibeMode = Math.max(0, Math.min(3, Math.round(mode))); },
+    setPerformerGender(g: number) {
+      // The lead is styled to read as THE performer of the song, on sight:
+      // 1 = male singer → an immediate cool blue recolor, 2 = female singer
+      // → an immediate warm pink recolor. Goes through setCurrentTheme (the
+      // same path a manual color-swatch pick uses) so the WHOLE stage reads
+      // the new color — spotlights, wet floor, subwoofer glow, LED floor —
+      // not just a rim-tint on the figure that the spotlights would drown
+      // out. One-shot: picking a color swatch afterward overrides it again
+      // via the normal setTheme() path, exactly like any other theme swap.
+      if (g === 1) setCurrentTheme(PERFORMER_MALE_THEME);
+      else if (g === 2) setCurrentTheme(PERFORMER_FEMALE_THEME);
+    },
     setAvatarStyle(style: number) {
       const s = Math.max(0, Math.min(GLB_STYLES.length - 1, Math.round(style)));
       if (s === avatarStyle) return;
