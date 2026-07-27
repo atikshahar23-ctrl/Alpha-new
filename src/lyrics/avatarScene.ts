@@ -64,6 +64,11 @@ export interface LyricsAvatarHandle {
   setStadiumDensity?(n: number): void;
   // Stadium camera: 0 drone orbit · 1 fixed wide · 2 stage-cam close.
   setStadiumCameraStyle?(mode: number): void;
+  // Vibe / atmosphere: 0 auto (from tempo) · 1 party (energetic) · 2 chill
+  // (lounge/flowing) · 3 shanti (deep ambient/meditative). Eases the whole
+  // show — springs, haze, sweep speed, energy ceiling, and move pool — toward
+  // calm, so slow/atmospheric songs read as calm instead of frantic.
+  setVibe?(mode: number): void;
   // Backup dancers shown in crew/BIG PARTY modes (0-6).
   setCrewSize?(n: number): void;
   // Renderer tone-mapping exposure — overall scene brightness (0.3-2).
@@ -1258,6 +1263,80 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       shLz: 2.75, shRz: -2.75, fALz: 0.1 + breathe, fARz: -0.1 - breathe,
       torsoRx: -0.12, headRx: -0.18, rootY: 0.04 + breathe * 0.4, kneeLx: 0.1, kneeRx: 0.1, hipsRz: 0,
     }; },
+
+    // ═══════ CHILL / AMBIENT / SHANTI (89-98) ═══════
+    // Slow, flowing, breath-paced. Authored as smooth functions of the whole
+    // 8-beat block (phase p = s/8) rather than per-beat "hits", so the soft
+    // chill springs (see the frame loop) glide the body through them like
+    // water instead of snapping. Meant for the calm vibe — ballads, lounge,
+    // meditative and world-ambient music.
+    // 89 · Ocean sway — a long weight shift side to side, arms drifting like kelp.
+    (s) => { const w = Math.sin((s / 8) * Math.PI * 2); return {
+      rootX: w * 0.16, hipsRz: w * 0.12, torsoRz: -w * 0.1, torsoRy: w * 0.14,
+      shLz: 0.9 + w * 0.2, shRz: -0.9 + w * 0.2, fALz: 0.5 + w * 0.15, fARz: -0.5 + w * 0.15,
+      headRy: w * 0.16, headRx: -0.05, rootY: -0.05 - Math.abs(w) * 0.03, kneeLx: 0.28, kneeRx: 0.28,
+    }; },
+    // 90 · Lotus bloom — both arms rise slowly from the heart and open overhead.
+    (s) => { const p = s / 8; const rise = Math.sin(p * Math.PI); return {
+      shLz: 0.7 + rise * 1.9, shRz: -0.7 - rise * 1.9, fALz: 0.6 - rise * 0.45, fARz: -0.6 + rise * 0.45,
+      shLx: -0.1, shRx: -0.1, torsoRx: -rise * 0.1, headRx: -rise * 0.16,
+      rootY: -0.06 + rise * 0.04, kneeLx: 0.22, kneeRx: 0.22, hipsRz: Math.sin(p * Math.PI * 2) * 0.05,
+    }; },
+    // 91 · Tai-chi push — weight sinks as one palm presses slowly forward, then swaps.
+    (s) => { const a = s % 8 < 4 ? 1 : -1; const p = (s % 4) / 4; return {
+      rootY: -0.1, kneeLx: a > 0 ? 0.5 : 0.3, kneeRx: a < 0 ? 0.5 : 0.3,
+      legLx: a > 0 ? -0.2 : 0.05, legRx: a < 0 ? -0.2 : 0.05, torsoRy: a * 0.18,
+      shLx: a > 0 ? -0.9 - p * 0.4 : 0.1, fALx: a > 0 ? -0.5 : 0, fALz: 0.3,
+      shRx: a < 0 ? -0.9 - p * 0.4 : 0.1, fARx: a < 0 ? -0.5 : 0, fARz: -0.3,
+      headRy: a * 0.2, hipsRz: -a * 0.08,
+    }; },
+    // 92 · Slow body wave — one very long chest-to-fingertip ripple over the block.
+    (s) => { const p = s / 8; return {
+      torsoRx: Math.sin(p * Math.PI * 2) * 0.18, headRx: Math.sin(p * Math.PI * 2 - 0.6) * 0.14,
+      shLz: 1.0 + Math.sin(p * Math.PI * 2 - 1.0) * 0.5, shRz: -1.0 - Math.sin(p * Math.PI * 2 - 1.0) * 0.5,
+      fALz: 0.4 + Math.sin(p * Math.PI * 2 - 1.6) * 0.35, fARz: -0.4 - Math.sin(p * Math.PI * 2 - 1.6) * 0.35,
+      rootY: -0.05 + Math.sin(p * Math.PI * 2) * 0.03, kneeLx: 0.26, kneeRx: 0.26,
+    }; },
+    // 93 · Moon reach — a slow long reach up toward one side, torso spiraling after it.
+    (s) => { const a = s % 8 < 4 ? 1 : -1; const rise = Math.sin(((s % 4) / 4) * Math.PI); return {
+      shLz: a > 0 ? 1.4 + rise * 1.2 : 0.6, fALz: a > 0 ? 0.1 : 0.5,
+      shRz: a < 0 ? -1.4 - rise * 1.2 : -0.6, fARz: a < 0 ? -0.1 : -0.5,
+      torsoRy: a * rise * 0.25, torsoRz: a * rise * 0.1, headRy: a * 0.2, headRx: -rise * 0.14,
+      rootY: -0.04 + rise * 0.03, kneeLx: 0.2, kneeRx: 0.2, hipsRz: -a * 0.06,
+    }; },
+    // 94 · Breathe & sway — the minimal one: tiny sway with a visible breath in
+    // the chest, arms hanging soft. The "barely dancing, just feeling it" pose.
+    (s) => { const p = s / 8; const br = Math.sin(p * Math.PI * 2); return {
+      rootY: -0.05 + br * 0.035, torsoRx: -br * 0.06, headRx: -br * 0.05,
+      rootX: Math.sin(p * Math.PI) * 0.06, torsoRz: Math.sin(p * Math.PI) * 0.05,
+      shLz: 0.5 + br * 0.12, shRz: -0.5 - br * 0.12, fALz: 0.55, fARz: -0.55,
+      kneeLx: 0.24 + br * 0.05, kneeRx: 0.24 + br * 0.05,
+    }; },
+    // 95 · Lantern hands — hands float up in front as if cupping a light, slow tilt.
+    (s) => { const p = s / 8; const lift = 0.5 + Math.sin(p * Math.PI) * 0.4; return {
+      shLz: 1.1, shRz: -1.1, shLx: -0.7, shRx: -0.7, fALx: -1.0, fARx: -1.0,
+      fALz: -0.15 - lift * 0.2, fARz: 0.15 + lift * 0.2, torsoRx: -0.05,
+      headRx: -0.1 + Math.sin(p * Math.PI * 2) * 0.06, headRy: Math.sin(p * Math.PI * 2) * 0.1,
+      rootY: -0.05, kneeLx: 0.24, kneeRx: 0.24,
+    }; },
+    // 96 · Starlit turn — a single very slow half-turn drift, arms open to the sky.
+    (s) => ({
+      rootRy: Math.PI * (s / 8), shLz: 1.7, shRz: -1.7, fALz: 0.25, fARz: -0.25,
+      shLx: -0.1, shRx: -0.1, headRx: -0.14, torsoRx: -0.04,
+      rootY: -0.04, kneeLx: 0.2, kneeRx: 0.2, hipsRz: Math.sin((s / 8) * Math.PI * 2) * 0.06,
+    }),
+    // 97 · Cradle rock — arms cradled in front, rocking softly, head resting to the lift.
+    (s) => { const w = Math.sin((s / 8) * Math.PI * 2); return {
+      shLz: 0.9, shRz: -0.9, shLx: -0.55, shRx: -0.55, fALx: -0.95, fARx: -0.95, fALz: -0.2, fARz: 0.2,
+      rootX: w * 0.1, torsoRz: w * 0.14, hipsRz: -w * 0.07, headRy: w * 0.16, headRx: -0.06,
+      rootY: -0.06, kneeLx: 0.26, kneeRx: 0.26,
+    }; },
+    // 98 · Sun salutation — a slow reach overhead, a hint of a forward fold, and rise.
+    (s) => { const p = s / 8; const fold = Math.sin(p * Math.PI); return {
+      shLz: 2.0 - fold * 0.6, shRz: -2.0 + fold * 0.6, fALz: 0.15 + fold * 0.3, fARz: -0.15 - fold * 0.3,
+      torsoRx: fold * 0.28, headRx: fold * 0.2, rootY: -0.04 - fold * 0.08,
+      kneeLx: 0.2 + fold * 0.3, kneeRx: 0.2 + fold * 0.3, hipsRz: 0,
+    }; },
   ];
   // ── Style pools — the move set follows the track's energy: fast tracks
   // pull from the aggressive hip-hop/rave/percussive set, mid tempo from
@@ -1267,7 +1346,18 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   const POOL_FAST = [2, 8, 12, 16, 5, 15, 23, 25, 26, 30, 32, 35, 42, 44, 45, 47, 48, 57, 62, 65, 66, 69, 71, 73, 74, 86];
   const POOL_MID = [0, 3, 9, 10, 14, 17, 6, 18, 19, 20, 21, 22, 27, 36, 37, 40, 41, 43, 49, 51, 52, 53, 54, 55, 56, 61, 63, 67, 68, 70, 72, 75, 76, 79, 84];
   const POOL_SLOW = [1, 4, 7, 11, 13, 10, 24, 28, 29, 31, 33, 34, 38, 39, 46, 50, 58, 59, 60, 64, 77, 78, 80, 81, 82, 83, 85, 87];
-  const poolForTempo = () => (tempoMs < 460 ? POOL_FAST : tempoMs <= 580 ? POOL_MID : POOL_SLOW);
+  // Chill vibe — the flowing/breath-paced set (moves 89-98). SHANTI is the
+  // calmest subset (sway/breathe/lantern/cradle), CHILL adds the slightly
+  // more expansive flows (lotus, tai-chi, waves, reaches, slow turn).
+  const POOL_SHANTI = [88, 89, 93, 94, 96];        // ocean sway, lotus, breathe, lantern, cradle
+  const POOL_CHILL = [88, 89, 90, 91, 92, 93, 94, 95, 96, 97]; // the whole flowing family
+  const poolForTempo = () => {
+    // The calm vibe takes over the move set regardless of tempo — a ballad in
+    // crew mode should sway, not b-boy. Deepest calm pulls the tightest set.
+    if (calm > 0.75) return POOL_SHANTI;
+    if (calm > 0.5) return POOL_CHILL;
+    return tempoMs < 460 ? POOL_FAST : tempoMs <= 580 ? POOL_MID : POOL_SLOW;
+  };
   let currentMoveIdx = 0;
 
   // Bass-drop accents — high-impact poses held for two beats when the live
@@ -1718,6 +1808,14 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   let stadiumDensityOverride = -1; // -1 = auto (qTier), else 20000/50000/80000
   let stadiumCamStyle = 0;     // 0 drone orbit · 1 fixed wide · 2 stage-cam close
   let crewSize = 2;            // backup dancers in crew/party modes (2, 4, or 6)
+  // Vibe / atmosphere — how energetic vs. calm the whole show reads.
+  //   0 auto (derive calm from the song's tempo) · 1 party (always energetic)
+  //   2 chill (lounge/flowing) · 3 shanti (deep ambient/meditative).
+  // `calm` is the smoothed 0..1 result that actually drives softer springs,
+  // thicker atmosphere haze, slower sweeps, a mellower energy ceiling, and
+  // the flowing chill move pool — so vibe changes ease in instead of snapping.
+  let vibeMode = 0;
+  let calm = 0;
   let lastFrameTime = 0, warmT = 0, fpsT = 0, fpsN = 0, lowStreak = 0;
   function applyQTier() {
     if (qTier >= 1) bloom.enabled = false;
@@ -1790,8 +1888,21 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       }
     }
     const t = (now - start) / 1000;
-    const targetEnergy = playing ? 1 : 0.25;
+    // Vibe → calm: party is always 0; chill/shanti are fixed; auto reads the
+    // song's tempo (fast → energetic, slow → calm). Eased slowly so switching
+    // vibe (or a tempo change between songs) melts between the two looks.
+    let calmTarget: number;
+    if (vibeMode === 1) calmTarget = 0;
+    else if (vibeMode === 2) calmTarget = 0.65;
+    else if (vibeMode === 3) calmTarget = 1;
+    else calmTarget = Math.max(0, Math.min(1, (tempoMs - 500) / 200)) * 0.85; // auto
+    calm += (calmTarget - calm) * Math.min(1, dt * 1.2);
+    // Calm pulls the energy ceiling down so lights/motion stay gentle but alive.
+    const targetEnergy = playing ? 1 - calm * 0.38 : 0.25;
     energy += (targetEnergy - energy) * 0.04;
+    // Calm thickens the stage haze into a dreamy atmospheric depth (left thin
+    // in the stadium, where the far bowl must stay visible).
+    if (scene.fog) (scene.fog as THREE.FogExp2).density = partyMode === 3 ? 0.026 : 0.085 * (1 + calm * 0.5);
 
     // Beat sources, in priority order:
     // 1. LIVE — real onsets detected from the microphone (the room's actual
@@ -1802,7 +1913,8 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     if (playing) {
       if (liveMode) {
         if (now - lastLiveTick > 2500) liveMode = false; // mic went quiet → internal clock resumes
-      } else if (now - lastBeat > tempoMs / danceSpeedMult) {
+      } else if (now - lastBeat > (tempoMs / danceSpeedMult) * (1 + calm * 0.9)) {
+        // Calm stretches the gap between move changes → longer, languid holds.
         fireBeat(now);
       }
     }
@@ -1812,7 +1924,9 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     // Integrate the pose springs — underdamped (slight overshoot) so every
     // pose change lands with a physical "hit" instead of a linear glide.
     {
-      const kSpring = 130, damp = 15;
+      // Calm softens the springs: lower stiffness + higher damping turns the
+      // sharp "hit with overshoot" into a smooth, flowing glide (no snap).
+      const kSpring = 130 - calm * 72, damp = 15 + calm * 11;
       for (const d of activeDancers()) {
         for (const key of POSE_KEYS) {
           d.vel[key] += (d.tgt[key] - d.cur[key]) * kSpring * dt;
@@ -1846,10 +1960,11 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     }
 
     // Spotlights sweep continuously and strobe hard on the beat.
+    const spotSweep = 1 - calm * 0.55; // calm → slow, lazy spotlight drift
     for (const sp of spots) {
-      sp.mesh.rotation.z = Math.sin(t * 0.65 + sp.phase) * 0.38;
-      sp.mesh.rotation.x = Math.sin(t * 0.42 + sp.phase * 2) * 0.2;
-      sp.mat.opacity = (0.035 + beatPulse * 0.15) * energy;
+      sp.mesh.rotation.z = Math.sin(t * 0.65 * spotSweep + sp.phase) * 0.38;
+      sp.mesh.rotation.x = Math.sin(t * 0.42 * spotSweep + sp.phase * 2) * 0.2;
+      sp.mat.opacity = (0.035 + calm * 0.03 + beatPulse * 0.15 * (1 - calm * 0.5)) * energy;
       const c = sp.colIdx === 0 ? currentTheme.c : currentTheme.b;
       sp.mat.color.setRGB(c[0], c[1], c[2]);
     }
@@ -1936,11 +2051,11 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       confAttr.setX(i, x);
     }
     confAttr.needsUpdate = true;
-    confettiMat.opacity = Math.min(1, (0.15 + energy * 0.55) * (partyMode === 2 ? 1.9 : partyMode === 1 ? 1.5 : 1) * confettiMult);
+    confettiMat.opacity = Math.min(1, (0.15 + energy * 0.55) * (partyMode === 2 ? 1.9 : partyMode === 1 ? 1.5 : 1) * confettiMult * (1 - calm * 0.85));
 
     for (let i = 0; i < hazeSprites.length; i++) {
       hazeSprites[i].position.x += Math.sin(t * 0.15 + i) * 0.0015;
-      (hazeSprites[i].material as THREE.SpriteMaterial).opacity = (0.06 + Math.sin(t * 0.3 + i) * 0.03) * hazeMult;
+      (hazeSprites[i].material as THREE.SpriteMaterial).opacity = (0.06 + Math.sin(t * 0.3 + i) * 0.03) * hazeMult * (1 + calm * 1.6);
     }
 
     if (partyMode >= 2) updateCrowd(now, t); // floor crowd dances in stadium too
@@ -1999,7 +2114,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       // · 2 handheld (bigger, faster jitter, like a phone filming the show).
       camParty += ((partyMode === 2 ? 1 : 0) - camParty) * Math.min(1, dt * 2);
       const swaySc = cameraStyleMode === 1 ? 0 : cameraStyleMode === 2 ? 2.4 : 1;
-      const swayFreqSc = cameraStyleMode === 2 ? 3.1 : 1;
+      const swayFreqSc = (cameraStyleMode === 2 ? 3.1 : 1) * (1 - calm * 0.45); // calm → slower drift
       const jitter = cameraStyleMode === 2 ? (Math.sin(t * 17.3) * 0.012 + Math.sin(t * 23.7) * 0.008) : 0;
       camera.position.x = camBase.x + (Math.sin(t * 0.12 * swayFreqSc) * 0.08 + jitter) * swaySc;
       camera.position.y = camBase.y + (Math.sin(t * 0.09 * swayFreqSc + 1) * 0.04 + jitter * 0.7) * swaySc + camParty * 0.5;
@@ -2054,6 +2169,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     setFinIntensity(v: number) { finMult = Math.max(0, Math.min(2.5, v)); },
     setStadiumDensity(n: number) { stadiumDensityOverride = n < 0 ? -1 : Math.round(n); applyStadiumDensity(); },
     setStadiumCameraStyle(mode: number) { stadiumCamStyle = Math.max(0, Math.min(2, Math.round(mode))); },
+    setVibe(mode: number) { vibeMode = Math.max(0, Math.min(3, Math.round(mode))); },
     setCrewSize(n: number) {
       crewSize = Math.max(0, Math.min(ALL_BACKUP_SPOTS.length, Math.round(n)));
       if (partyMode >= 1) ensureBackups();
