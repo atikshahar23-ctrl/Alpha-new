@@ -551,7 +551,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   const scene = new THREE.Scene();
   scene.fog = new THREE.FogExp2(0x0a0518, 0.085);
 
-  const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 50);
+  const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 260); // far reaches the scaled stadium bowl + backdrop
   const camBase = new THREE.Vector3(0, 1.15, 4.4);
   camera.position.copy(camBase);
   camera.lookAt(0, 1.05, 0);
@@ -2030,6 +2030,14 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     if (stadiumGroup) return;
     stadiumGroup = new THREE.Group();
     stadiumGroup.visible = false;
+    // The entire bowl (crowd points, rim, towers, backdrop, screens, ground)
+    // lives in this group — the STAGE (dancers/beam/floor/spots) does NOT — so
+    // scaling the group blows the arena up to true stadium size around a
+    // normal-size stage at the center. Bigger bowl also means the 80k dots
+    // spread over far more pixels, so per-dot overdraw (the old white-wall
+    // washout) drops for free.
+    const ST = 2.6;
+    stadiumGroup.scale.setScalar(ST);
     scene.add(stadiumGroup);
 
     // 80K crowd lights across three elliptical tiers — laid out with real
@@ -2217,12 +2225,15 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       stadiumGroup.add(screen);
     }
 
-    // Stage-edge glow bars around the performance floor.
+    // Stage-edge glow bars around the performance floor. These frame the
+    // real (unscaled) stage, so divide out the group scale on both size and
+    // position — otherwise they'd blow up into a huge floor outline.
     const edgeMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false });
     registerAccents([edgeMat]);
     for (const [w2, d2, ex, ez] of [[4.6, 0.07, 0, 1.45], [4.6, 0.07, 0, -2.6], [0.07, 4.12, -2.3, -0.58], [0.07, 4.12, 2.3, -0.58]] as [number, number, number, number][]) {
       const bar = new THREE.Mesh(new THREE.BoxGeometry(w2, 0.05, d2), edgeMat);
-      bar.position.set(ex, -0.03, ez);
+      bar.position.set(ex / ST, -0.03 / ST, ez / ST);
+      bar.scale.setScalar(1 / ST);
       stadiumGroup.add(bar);
     }
     applyQTier(); // a device that already shed quality gets the thinner crowd immediately
@@ -2695,33 +2706,41 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       // stadiumCamStyle: 0 drone orbit (default broadcast flight) · 1 fixed
       // wide (steady high overview, no flight — for a calmer "poster shot")
       // · 2 stage-cam close (low, near the performers, crowd as backdrop).
+      // The bowl was scaled up (see ensureStadium's ST): the crowd now tops
+      // out around y≈14 and its outer edge around R≈26 (x) / 19 (z). Every
+      // stadium camera must therefore fly ABOVE that height and OUTSIDE that
+      // radius, tilted down at the stage — the old rig sat at y 1–6 / R 5–11,
+      // i.e. level with and INSIDE the stands, which is exactly the "camera is
+      // behind the stands" the user hit.
       if (stadiumCamStyle === 1) {
-        const bob = Math.sin(t * 0.15) * 0.3;
-        camera.position.set(Math.sin(t * 0.04) * 1.2, 6.4 + bob, 9.5);
-        camera.lookAt(0, 1.6, -1.2);
+        // Fixed high overview — a steady press-box shot looking down.
+        const bob = Math.sin(t * 0.15) * 0.6;
+        camera.position.set(Math.sin(t * 0.04) * 3, 22 + bob, 30);
+        camera.lookAt(0, 2, -1.2);
       } else if (stadiumCamStyle === 2) {
-        camera.position.set(Math.sin(t * 0.2) * 1.6, 1.4 + beatPulse * energy * 0.05, 3.6 / Math.max(0.75, userZoom));
-        camera.lookAt(0, 1.1, -1.5);
+        // Stage-cam close — low and near the performers, crowd as a backdrop
+        // wall (intentionally the one "inside" shot; still starts outside the
+        // stage-edge, below the stands rather than among them).
+        camera.position.set(Math.sin(t * 0.2) * 1.6, 1.4 + beatPulse * energy * 0.05, 4.2 / Math.max(0.75, userZoom));
+        camera.lookAt(0, 1.1, -1.2);
       } else {
-        // STADIUM drone camera — a continuous broadcast-style flight: the
-        // orbit angle advances steadily while the radius breathes between a
-        // stage-side pass (R≈5.2 — still outside the crowd bowl, which
-        // starts at 4.6) and a high sweep over the whole bowl (R≈11.2), with
-        // the altitude on its own slower rhythm. The lookAt pans gently off
-        // the stage center so it feels hand-flown, and a touch of beat bob
-        // sells the bass hitting the gimbal. Kept outside the bowl radius on
-        // purpose — a real broadcast drone circles the stadium, it doesn't
-        // fly into the stands (also avoids grazing the dense point cloud).
+        // STADIUM drone — a broadcast heli/drone flying HIGH ABOVE the rim and
+        // OUTSIDE the bowl, gimbal tilted down onto the lit stage. Altitude
+        // (18–28) always clears the crowd top (~14); radius (30–42, never less
+        // than 28) always clears the bowl's outer edge, so the drone is over
+        // the stands looking down, never buried in them. The orbit angle
+        // advances steadily; radius/altitude breathe on their own slow
+        // rhythms; the lookAt drifts a touch so it feels hand-flown.
         const ft = t * 0.9;
-        const R = (8.2 + 3.0 * Math.sin(ft * 0.055)) / Math.max(0.75, userZoom);
+        const R = Math.max(28, (36 + 6 * Math.sin(ft * 0.055)) / Math.max(0.85, userZoom));
         const ang = ft * 0.11;
-        const camY = 1.15 + (Math.sin(ft * 0.041) + 1) * 2.35;
+        const camY = 18 + (Math.sin(ft * 0.041) + 1) * 5; // 18..28, always above the crowd
         camera.position.set(
           Math.sin(ang) * R,
-          camY + beatPulse * energy * 0.06,
-          Math.cos(ang) * R * 0.78 + 0.4,
+          camY + beatPulse * energy * 0.15,
+          Math.cos(ang) * R * 0.8 + 0.4,
         );
-        camera.lookAt(Math.sin(ft * 0.09) * 0.8, 1.0 + Math.sin(ft * 0.06) * 0.3, -0.4);
+        camera.lookAt(Math.sin(ft * 0.09) * 2.0, 2.0 + Math.sin(ft * 0.06) * 0.6, -0.6);
       }
     } else {
       // Subtle cinematic camera sway + a gentle breathing zoom on the beat.
