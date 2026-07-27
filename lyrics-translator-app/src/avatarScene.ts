@@ -700,6 +700,42 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   floorRefl.position.set(0, -0.06, -1.6);
   scene.add(floorRefl);
 
+  // ── LED dance-floor grid — a real glowing tile grid the dancer stands ON,
+  // present in EVERY mode (it lives in `scene`, not any mode group). Tiles
+  // light in a travelling checker wave and flare white on the beat; the whole
+  // grid is theme-tinted. Sits a hair below the feet plane so the figures
+  // read as standing exactly on it. ──
+  const ledFloorMat = new THREE.ShaderMaterial({
+    uniforms: { uTime: { value: 0 }, uPulse: { value: 0 }, uEnergy: { value: 0.3 }, uCol: { value: new THREE.Vector3(0.3, 0.7, 1.0) } },
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    vertexShader: /* glsl */`
+      varying vec3 vW;
+      void main() { vec4 wp = modelMatrix * vec4(position, 1.0); vW = wp.xyz; gl_Position = projectionMatrix * viewMatrix * wp; }
+    `,
+    fragmentShader: /* glsl */`
+      precision highp float;
+      uniform float uTime; uniform float uPulse; uniform float uEnergy; uniform vec3 uCol;
+      varying vec3 vW;
+      void main() {
+        vec2 g = vW.xz * 1.25;                       // ~0.8-unit tiles
+        vec2 f = abs(fract(g) - 0.5);
+        float grid = smoothstep(0.42, 0.5, max(f.x, f.y)); // bright seams
+        vec2 cell = floor(g);
+        // travelling checker wave across the tiles + a per-cell twinkle
+        float wave = 0.5 + 0.5 * sin(uTime * 2.2 + (cell.x + cell.y) * 0.7);
+        float fill = (0.06 + wave * 0.14 * uEnergy) * mod(cell.x + cell.y, 2.0); // lit checker cells
+        float lit = grid * (0.3 + wave * 0.5 + uPulse * 1.1) + fill;
+        float rad = smoothstep(7.5, 0.4, length(vW.xz + vec2(0.0, 0.6))); // fade out from stage center
+        vec3 col = uCol * lit * rad * (0.7 + uPulse * 0.8);
+        gl_FragColor = vec4(col, lit * rad);
+      }
+    `,
+  });
+  const ledFloor = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), ledFloorMat);
+  ledFloor.rotation.x = -Math.PI / 2;
+  ledFloor.position.set(0, -0.05, -0.6);
+  scene.add(ledFloor);
+
   // ── Subwoofer monoliths (PILLAR 2) — two tall sci-fi speaker cabinets
   // flanking the stage, each with two cones that punch forward (+Z) on the
   // beat and a grille glow that flares with the bass. ──
@@ -831,6 +867,21 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       d.tgt[k] = (k === 'rootRy' || !(k in p)) ? v : v * amp;
     }
   };
+  // Arm anti-clip — the body is SOLID: a hand can't pass through the belly.
+  // Unless a pose deliberately brings the arm FORWARD (negative shLx/fALx
+  // lifts it off the torso plane, e.g. a cross-in-front), keep the shoulder
+  // abducted at least `m` and the forearm from curling hard into the chest,
+  // so a lowered/inward arm hugs the side of the torso instead of vanishing
+  // into it. `m` is bigger for the bulkier GLB characters. Returns the four
+  // clamped arm-Z angles; callers pass the rest of the pose straight through.
+  function armClear(S: Pose, m: number) {
+    return {
+      shLz: (S.shLx ?? 0) < -0.4 ? S.shLz : Math.max(S.shLz, m),
+      shRz: (S.shRx ?? 0) < -0.4 ? S.shRz : Math.min(S.shRz, -m),
+      fALz: (S.fALx ?? 0) < -0.35 ? S.fALz : Math.max(S.fALz, -0.12),
+      fARz: (S.fARx ?? 0) < -0.35 ? S.fARz : Math.min(S.fARz, 0.12),
+    };
+  }
   // Each move maps a step (0..7 inside its 8-beat block) to a target pose.
   const MOVES: ((s: number) => Pose)[] = [
     // 1 · Groove pump — weight shifts side to side, elbows pumping.
@@ -1504,6 +1555,15 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   // more expansive flows (lotus, tai-chi, waves, reaches, slow turn).
   const POOL_SHANTI = [88, 89, 93, 94, 96];        // ocean sway, lotus, breathe, lantern, cradle
   const POOL_CHILL = [88, 89, 90, 91, 92, 93, 94, 95, 96, 97]; // the whole flowing family
+  // SPICE — the visually DRAMATIC moves (big level/silhouette changes: spins,
+  // jumps, freezes, kicks, floor drops, huge reaches). Every energetic phrase
+  // is guaranteed a couple of these interleaved with the grooves, at ANY
+  // tempo — without it the mid pool alone reads as endless upper-body sway.
+  const SPICE = [3, 5, 13, 24, 25, 8, 12, 16, 65, 87, 82, 84, 44, 47, 14, 62, 66];
+  // Moves whose interest lives across a full 8 beats (a whole spin, a slow
+  // wave/reach) must hold the full pattern; everything else changes every 4
+  // beats so the dance turns over TWICE as often (the "not varied" fix).
+  const LONG_MOVES = new Set([3, 4, 10, 11, 82, 83, 84, 88, 89, 90, 91, 92, 93, 95, 96, 97, 98, 100]);
   // Wedding mode — the couple dances the romantic set (embrace, twirl, dip,
   // promenade + the graceful waltz/sway moves), the crew circles them with
   // the hora set (hora kick/bounce, dabke, lift bounce, claps).
@@ -1566,10 +1626,17 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     // through a longer chill sweep.
     if (calm > 0.5) { routineRepeats = 1; return pickN(activePool(), Math.min(6, POOL_CHILL.length)); }
     routineRepeats = chorus ? 2 : 1;
-    const phrase = pickN(activePool(), chorus ? 4 : 6); // verses draw MORE distinct moves
-    if (phraseNo % 4 === 3) { // cap every 4th phrase with a held signature
+    // Interleave groove moves from the tempo pool with GUARANTEED dramatic
+    // SPICE (spins/jumps/freezes/kicks/floor drops), so every phrase has big
+    // silhouette changes instead of all upper-body sway — then shuffle so the
+    // spice isn't predictably last. Choruses land bigger (more spice).
+    const grooves = pickN(activePool(), chorus ? 3 : 4);
+    const spice = pickN(SPICE, chorus ? 3 : 2);
+    const phrase = grooves.concat(spice);
+    for (let i = phrase.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [phrase[i], phrase[j]] = [phrase[j], phrase[i]]; }
+    if (phraseNo % 4 === 3) { // cap every 4th phrase with a held signature hero beat
       const sig = SIGNATURES[Math.floor(Math.random() * SIGNATURES.length)];
-      phrase.push(sig, sig); // twice → ~16-beat hold, the hero beat
+      phrase.push(sig, sig);
     }
     return phrase;
   }
@@ -1916,13 +1983,15 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
         .multiply(b.userData.p as THREE.Quaternion).multiply(b.userData.bind as THREE.Quaternion);
       b.quaternion.copy(_gQ2);
     };
+    // Bulkier body → wider clearance so hands hug the sides, never the belly.
+    const ac = armClear(S, 0.42);
     rot('hips', 0, 0, S.hipsRz * 0.55);
     rot('torso', S.torsoRx, S.torsoRy, S.torsoRz);
     rot('head', S.headRx, S.headRy, 0);
-    rot('shL', S.shLx, 0, glbArmDown - S.shLz);
-    rot('shR', S.shRx, 0, -glbArmDown - S.shRz);
-    rot('fAL', S.fALx, 0, -S.fALz);
-    rot('fAR', S.fARx, 0, -S.fARz);
+    rot('shL', S.shLx, 0, glbArmDown - ac.shLz);
+    rot('shR', S.shRx, 0, -glbArmDown - ac.shRz);
+    rot('fAL', S.fALx, 0, -ac.fALz);
+    rot('fAR', S.fARx, 0, -ac.fARz);
     rot('legL', S.legLx, 0, S.legLz);
     rot('legR', S.legRx, 0, S.legRz);
     rot('kneeL', S.kneeLx + bounce * 0.34, 0, 0);
@@ -2357,6 +2426,9 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     }
     currentMoveIdx = nextMoveIdx();
     stepInPattern = 0;
+    // Punchy moves hold only 4 beats (turn over twice as fast → twice the
+    // variety); long moves (a full spin, a slow wave) keep the full 8.
+    curMoveHold = LONG_MOVES.has(currentMoveIdx) ? 8 : 4;
     // A signature "hero" move lands with an extra visual punch + a fresh
     // floor shockwave so the choreography's peak moments read as peaks.
     if (SIGNATURES.includes(currentMoveIdx)) {
@@ -2364,6 +2436,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       for (const rr of rings) if (rr.age > 0.5) { rr.age = 0; break; }
     }
   }
+  let curMoveHold = 8;
 
   // Apply each dancer's CURRENT move at its current step. The lead (dancer 0)
   // dances the choreographed routine; backups freestyle their own moves —
@@ -2406,7 +2479,10 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     // instrumental stretch). With no synced lyrics, fall back to a clean
     // 8-beat auto-advance so an instrumental / manual song still choreographs.
     const lineDriven = now2 - lastLineAt < 9000;
-    const autoCap = lineDriven ? 16 : BEATS_PER_PATTERN;
+    // Auto-advance on the move's own hold (4 for punchy, 8 for long moves).
+    // When lyric lines are driving, give a longer safety cap so a sparse
+    // instrumental stretch still turns the move over.
+    const autoCap = lineDriven ? Math.max(12, curMoveHold * 2) : curMoveHold;
     if (stepInPattern >= autoCap) startNewMove();
     // Each backup that just finished its own little phrase grabs a FRESH random
     // move from the same energy pool → the crew is always doing a mix. At a
@@ -2530,6 +2606,11 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     waveMat.uniforms.uEnergy.value = energy;
     waveMat.uniforms.uPulse.value = beatPulse * energy;
     (floorMat as THREE.MeshBasicMaterial).opacity = 0.25 + beatPulse * energy * 0.3;
+    ledFloorMat.uniforms.uTime.value = t;
+    ledFloorMat.uniforms.uPulse.value = beatPulse * energy;
+    ledFloorMat.uniforms.uEnergy.value = energy;
+    if (weddingMode) (ledFloorMat.uniforms.uCol.value as THREE.Vector3).set(1.0, 0.78, 0.4);
+    else (ledFloorMat.uniforms.uCol.value as THREE.Vector3).set(currentTheme.b[0], currentTheme.b[1], currentTheme.b[2]);
 
     for (const f of fins) {
       f.val += (f.target * energy - f.val) * 0.15;
@@ -2617,10 +2698,11 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       // here makes every raise sweep OUTWARD around the body; authored
       // negatives (e.g. the overhead clap) correctly curl inward above the
       // head where there is nothing to clip through.
-      dg.shoulderL.rotation.z = -S.shLz; dg.shoulderL.rotation.x = S.shLx;
-      dg.shoulderR.rotation.z = -S.shRz; dg.shoulderR.rotation.x = S.shRx;
-      dg.foreArmL.rotation.z = -S.fALz; dg.foreArmL.rotation.x = S.fALx;
-      dg.foreArmR.rotation.z = -S.fARz; dg.foreArmR.rotation.x = S.fARx;
+      const ac = armClear(S, 0.14);
+      dg.shoulderL.rotation.z = -ac.shLz; dg.shoulderL.rotation.x = S.shLx;
+      dg.shoulderR.rotation.z = -ac.shRz; dg.shoulderR.rotation.x = S.shRx;
+      dg.foreArmL.rotation.z = -ac.fALz; dg.foreArmL.rotation.x = S.fALx;
+      dg.foreArmR.rotation.z = -ac.fARz; dg.foreArmR.rotation.x = S.fARx;
       dg.legL.rotation.x = S.legLx; dg.legL.rotation.z = S.legLz;
       dg.legR.rotation.x = S.legRx; dg.legR.rotation.z = S.legRz;
       dg.kneeL.rotation.x = S.kneeLx + bounce * 0.34;

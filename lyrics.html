@@ -1118,31 +1118,32 @@
   }
   function notifyPlaybackStopped(){ _autoTriggeredForPlay = false; }
 
-  // ── Stage mode — fullscreen landscape "party display": the avatar stage
-  // takes over the whole screen with the live line on it. orientation.lock
-  // works on Android once fullscreen; iOS Safari has no lock API, so there
-  // the fullscreen stage simply follows however the phone is held.
+  // ── Stage mode — a "party display" that fills the BROWSER WINDOW (an
+  // absolutely-positioned overlay over the page), NOT the whole monitor.
+  // The user explicitly wanted the button to expand within the window and
+  // keep the rest of the desktop visible, so it deliberately does NOT call
+  // the OS Fullscreen API — the .stage-mode CSS overlay (position:fixed;
+  // inset:0) already covers exactly the browser viewport. On touch devices
+  // it still tries to lock landscape orientation (harmless/no-op elsewhere).
   const rotateBtn = $('rotateBtn');
   const stageExitBtn = $('stageExitBtn');
-  async function enterStageMode(){
+  function enterStageMode(){
     document.body.classList.add('stage-mode');
     stageExitBtn.hidden = false;
     rotateBtn.classList.add('on');
-    try{ await document.documentElement.requestFullscreen(); }catch(e){}
-    try{ await screen.orientation.lock('landscape'); }catch(e){}
+    try{ screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape'); }catch(e){}
   }
   function exitStageMode(){
     document.body.classList.remove('stage-mode');
     stageExitBtn.hidden = true;
     rotateBtn.classList.remove('on');
-    try{ screen.orientation.unlock(); }catch(e){}
-    if(document.fullscreenElement) document.exitFullscreen().catch(()=>{});
+    try{ screen.orientation && screen.orientation.unlock && screen.orientation.unlock(); }catch(e){}
   }
   rotateBtn.addEventListener('click', ()=>{ if(document.body.classList.contains('stage-mode')) exitStageMode(); else enterStageMode(); });
   stageExitBtn.addEventListener('click', exitStageMode);
-  document.addEventListener('fullscreenchange', ()=>{
-    // OS back-gesture / Esc exits fullscreen without our button — mirror it.
-    if(!document.fullscreenElement && document.body.classList.contains('stage-mode')) exitStageMode();
+  // Esc key exits the window-fill stage (mirrors the old OS-fullscreen Esc).
+  document.addEventListener('keydown', (e)=>{
+    if(e.key === 'Escape' && document.body.classList.contains('stage-mode')) exitStageMode();
   });
 
   function applyKaraokeMode(on){
