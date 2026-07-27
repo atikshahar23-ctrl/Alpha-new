@@ -695,6 +695,15 @@
         </select>
       </div>
       <div class="field-row" style="margin:0;">
+        <label>מגדר הדובר בשיר (לתרגום עברית מדויק)</label>
+        <select id="singerGenderSel">
+          <option value="auto" selected>זיהוי אוטומטי לפי האמן והשיר</option>
+          <option value="male">זכר — "אני אוהב"</option>
+          <option value="female">נקבה — "אני אוהבת"</option>
+        </select>
+        <div class="hint">עברית מבחינה בין זכר לנקבה בפעלים ובכינויים — הזיהוי האוטומטי מסיק מהאמן והמילים, ואפשר לכפות ידנית.</div>
+      </div>
+      <div class="field-row" style="margin:0;">
         <label>עומק כרטיס המידע</label>
         <select id="infoDepthSel">
           <option value="short" selected>קצר</option>
@@ -901,6 +910,7 @@
   const autoReplayToggle = $('autoReplayToggle');
   const infoLangSel = $('infoLangSel');
   const infoDepthSel = $('infoDepthSel');
+  const singerGenderSel = $('singerGenderSel');
   const statsHud = $('statsHud');
   const hudBpm = $('hudBpm');
   const hudFps = $('hudFps');
@@ -1062,6 +1072,7 @@
 
     infoLangSel.value = store.get('lt:info_lang') || 'he';
     infoDepthSel.value = store.get('lt:info_depth') || 'short';
+    singerGenderSel.value = store.get('lt:singer_gender') || 'auto';
     manualBpmInput.value = store.get('lt:manual_bpm') || '';
   }
   boldLyricsToggle.addEventListener('change', ()=>{ store.set('lt:bold_lyrics', boldLyricsToggle.checked); applyExtraDisplaySettings(); });
@@ -1078,6 +1089,14 @@
   karaokeFontSlider.addEventListener('input', ()=>{ store.set('lt:karaoke_font', Number(karaokeFontSlider.value)); applyExtraDisplaySettings(); });
   infoLangSel.addEventListener('change', ()=> store.set('lt:info_lang', infoLangSel.value));
   infoDepthSel.addEventListener('change', ()=> store.set('lt:info_depth', infoDepthSel.value));
+  // Changing the singer's gender re-refines the current song so the fix is
+  // visible immediately, not only on the next song.
+  singerGenderSel.addEventListener('change', ()=>{
+    store.set('lt:singer_gender', singerGenderSel.value);
+    if(state.lines && state.lines.length && !mostlyHebrew(state.lines.map(l=>l.orig)) && targetLangSel.value === 'he'){
+      smartRefineHebrew(state.lines.map(l=>l.orig), state.loadSeq);
+    }
+  });
   manualBpmInput.addEventListener('change', ()=>{
     const bpm = parseFloat(manualBpmInput.value);
     if(Number.isFinite(bpm) && bpm >= 40 && bpm <= 240){
@@ -1782,6 +1801,10 @@
     '- Never add labels or prefixes such as "תרגום:" or "Translation:" — only the translated words themselves after the |.',
     '- Write real, idiomatic Hebrew — natural word order and everyday phrasing. Use Israeli slang where the original is slangy. Never translate word-for-word.',
     '- Preserve the meaning, tone and emotion of each line. Keep names and untranslatable interjections as they are.',
+    '- HEBREW GENDER (critical): Hebrew inflects verbs, adjectives, pronouns and possessives by gender. Decide TWO genders and apply them CONSISTENTLY across ALL lines:',
+    '  (1) the SINGER / speaker — infer from the performing artist and the lyrics. A female singer uses feminine first person (אני אוהבת, אני יודעת, שמחתי), a male singer masculine (אני אוהב, אני יודע).',
+    '  (2) the person being ADDRESSED as "you" — infer from the story/context. Addressing a woman uses feminine second person (את, שלךְ, יפה, בואי, תשמעי); addressing a man uses masculine (אתה, שלךָ, יפֶה, בוא, תשמע).',
+    '  When context clearly points to a gender (a love song from a man to a woman, or a woman singing about herself), you MUST use that gender — do NOT default everything to masculine. Only fall back to masculine when the gender is genuinely unknowable.',
     '- No explanations and no extra lines — output only the numbered translations.',
   ].join('\n');
   async function smartRefineHebrew(texts, seq){
@@ -1793,7 +1816,14 @@
       const groqKey = (localStorage.getItem('alpha_groq') || '').trim();
       const gemKey = (localStorage.getItem('alpha_key') || '').trim();
       if(!groqKey && !gemKey) return false;
-      const payload = SMART_HE_PROMPT + '\n\n' + texts.map((l,i)=>(i+1)+'|'+l).join('\n');
+      // Context header so the model can infer the singer's gender (and thus
+      // the right Hebrew forms). A manual override wins over auto-inference.
+      const g = store.get('lt:singer_gender') || 'auto';
+      const ctx = [];
+      if(state.rawArtist || state.rawTitle) ctx.push('SONG: "' + (state.rawTitle||'') + '" by ' + (state.rawArtist||'') + '.');
+      if(g === 'male') ctx.push('The singer is MALE — use masculine first person throughout.');
+      else if(g === 'female') ctx.push('The singer is FEMALE — use feminine first person throughout.');
+      const payload = SMART_HE_PROMPT + '\n\n' + (ctx.length ? ctx.join(' ') + '\n\n' : '') + texts.map((l,i)=>(i+1)+'|'+l).join('\n');
       let out = null;
       if(groqKey){
         out = await fetch('https://api.groq.com/openai/v1/chat/completions', {
