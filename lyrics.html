@@ -1120,10 +1120,16 @@
     if(!document.fullscreenElement && document.body.classList.contains('stage-mode')) exitStageMode();
   });
 
+  function applyKaraokeMode(on){
+    document.body.classList.toggle('karaoke', on);
+    karaokeBtn.classList.toggle('on', on);
+  }
   karaokeBtn.addEventListener('click', ()=>{
-    document.body.classList.toggle('karaoke');
-    karaokeBtn.classList.toggle('on', document.body.classList.contains('karaoke'));
+    const on = !document.body.classList.contains('karaoke');
+    store.set('lt:karaoke_on', on);
+    applyKaraokeMode(on);
   });
+  applyKaraokeMode(!!store.get('lt:karaoke_on'));
 
   // ================= EQUALIZER (procedural, behind the lyrics) =================
   // No audio stream is available from Spotify's Web API, so the equalizer is a
@@ -1459,6 +1465,17 @@
   saveSettingsBtn.addEventListener('click', ()=>{
     store.set('lt:spotify_client_id', clientIdInput.value.trim());
     settingsPanel.classList.remove('open');
+  });
+  // Every control in the panel already saves itself the moment it changes —
+  // this just SAYS so, so nobody wonders whether their setup will survive a
+  // reload. One delegated listener covers both scripts' controls; 'change'
+  // fires once per committed value (slider release, checkbox click, select
+  // pick). The Spotify Client ID is excluded — it only saves via its button.
+  let settingsToastT = null;
+  settingsPanel.addEventListener('change', (e)=>{
+    if(e.target && e.target.id === 'clientIdInput') return;
+    if(settingsToastT) clearTimeout(settingsToastT);
+    settingsToastT = setTimeout(()=> showMiniToast('✓ נשמר — יופעל גם בפתיחה הבאה'), 350);
   });
   copyRedirectBtn.addEventListener('click', async ()=>{
     try{
