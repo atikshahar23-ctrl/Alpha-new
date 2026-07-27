@@ -60,6 +60,9 @@ export interface LyricsAvatarHandle {
   setHazeIntensity?(v: number): void;
   setBeamIntensity?(v: number): void;
   setFinIntensity?(v: number): void;
+  // Pyro pack master gain (0-2.5): fireworks bursts, the sweeping laser fan,
+  // and the stage-corner flame jets.
+  setPyroIntensity?(v: number): void;
   // Stadium crowd point cap (e.g. 20000/50000/80000); -1 = no user cap
   // (device auto-quality still applies).
   setStadiumDensity?(n: number): void;
@@ -676,6 +679,71 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     scene.add(mesh);
     spots.push({ mesh, mat, phase, colIdx });
   }
+
+  // ── PYRO PACK — fireworks, a sweeping laser fan, and side flame jets ────
+  // The "arena spectacle" layer: all procedural, all additive, all gated on
+  // pyroMult (a user slider) and the beat. Fireworks launch on signature
+  // moves / bass drops / every 16th beat; lasers sweep continuously while
+  // the music plays; the flame jets erupt on drops.
+  // Laser fan — 7 razor-thin beams fanning from behind the stage floor,
+  // each pivoting at its base with its own phase.
+  const laserGeo = new THREE.PlaneGeometry(0.022, 9);
+  laserGeo.translate(0, 4.5, 0); // pivot at the beam's base
+  const lasers: { mesh: THREE.Mesh; mat: THREE.MeshBasicMaterial; phase: number }[] = [];
+  for (let i = 0; i < 7; i++) {
+    const lm = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+    const beamMesh = new THREE.Mesh(laserGeo, lm);
+    beamMesh.position.set((i - 3) * 0.32, -0.04, -2.5);
+    scene.add(beamMesh);
+    lasers.push({ mesh: beamMesh, mat: lm, phase: i * 0.9 });
+  }
+  // Fireworks — a pool of 3 reusable radial bursts (160 points each) with
+  // per-burst color, simple gravity, and age-based fade.
+  const FW_N = 160;
+  const fireworks: { pts: THREE.Points; mat: THREE.PointsMaterial; geo: THREE.BufferGeometry; vel: Float32Array; age: number }[] = [];
+  for (let b = 0; b < 3; b++) {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(FW_N * 3), 3));
+    const mat = new THREE.PointsMaterial({ map: floorTex, size: 0.17, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, color: new THREE.Color(1, 0.8, 0.4) });
+    const pts = new THREE.Points(geo, mat);
+    pts.visible = false;
+    scene.add(pts);
+    fireworks.push({ pts, mat, geo, vel: new Float32Array(FW_N * 3), age: 9 });
+  }
+  const FW_COLORS: [number, number, number][] = [[1, 0.82, 0.35], [0.4, 0.85, 1], [1, 0.45, 0.7], [0.65, 1, 0.5], [0.8, 0.55, 1]];
+  function launchFirework() {
+    if (qTier >= 2 || pyroMult <= 0.01) return; // weak devices / user opted out
+    const fw = fireworks.find((f) => f.age >= 1) || fireworks[0];
+    const cx = (Math.random() - 0.5) * 4.4, cy = 1.9 + Math.random() * 0.9, cz = -1.8 + Math.random() * 1.4;
+    const pos = fw.geo.getAttribute('position') as THREE.BufferAttribute;
+    for (let i = 0; i < FW_N; i++) {
+      pos.setXYZ(i, cx, cy, cz);
+      // uniform-ish sphere burst
+      const th = Math.random() * Math.PI * 2, ph = Math.acos(Math.random() * 2 - 1);
+      const sp = 1.1 + Math.random() * 1.4;
+      fw.vel[i * 3] = Math.sin(ph) * Math.cos(th) * sp;
+      fw.vel[i * 3 + 1] = Math.cos(ph) * sp;
+      fw.vel[i * 3 + 2] = Math.sin(ph) * Math.sin(th) * sp * 0.6;
+    }
+    pos.needsUpdate = true;
+    const c = FW_COLORS[Math.floor(Math.random() * FW_COLORS.length)];
+    fw.mat.color.setRGB(c[0], c[1], c[2]);
+    fw.age = 0;
+    fw.pts.visible = true;
+  }
+  // Flame jets — two additive cones at the stage's front corners that erupt
+  // upward on bass drops and hero moves.
+  const jetGeo = new THREE.ConeGeometry(0.16, 1.5, 12, 1, true);
+  jetGeo.translate(0, 0.75, 0);
+  const jets: { mesh: THREE.Mesh; mat: THREE.MeshBasicMaterial }[] = [];
+  for (const jx of [-2.15, 2.15]) {
+    const jm = new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 0.62, 0.18), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+    const jmesh = new THREE.Mesh(jetGeo, jm);
+    jmesh.position.set(jx, -0.05, 0.6);
+    scene.add(jmesh);
+    jets.push({ mesh: jmesh, mat: jm });
+  }
+  let jetPower = 0;
 
   // ── Wet-asphalt reflective floor (PILLAR 2/4) — a real Reflector doubles
   // the whole render (fatal with 30 crowd dancers), so this fakes the "wet
@@ -1921,6 +1989,12 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   const _footL = new THREE.Vector3(), _footR = new THREE.Vector3();
   const FOOT_R = 0.054; // foot sphere's vertical radius (sph(0.09) scaled y=0.6) — center-to-sole distance
   const FLOOR_Y = -0.05; // the LED/glow floor plane's height
+  // The lead's group Y BEFORE the proc-foot grounding lift. The GLB
+  // character must ground from THIS + its own feet (its soles sit at wrapper
+  // local y=0 after normalization) — inheriting the proc rig's lift (tuned
+  // to the alien's much lower foot pivots) left the human/robot floating
+  // ~0.35 units above the floor.
+  let leadPreClampY = -0.05;
   function disposeGlbGroup(g: THREE.Object3D) {
     g.traverse((obj) => {
       const mesh = obj as THREE.Mesh;
@@ -2405,6 +2479,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   let cameraStyleMode = 0;     // 0 cinematic sway · 1 static · 2 handheld
   let shakeMult = 1;           // bass-drop camera-shake multiplier
   let confettiMult = 1, sparkMult = 1, hazeMult = 1, beamMult = 1, finMult = 1;
+  let pyroMult = 1;            // fireworks / laser fan / flame jets master gain
   let stadiumDensityOverride = -1; // -1 = auto (qTier), else 20000/50000/80000
   let stadiumCamStyle = 0;     // 0 drone orbit · 1 fixed wide · 2 stage-cam close
   let crewSize = 2;            // backup dancers in crew/party modes (2, 4, or 6)
@@ -2453,10 +2528,13 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     // variety); long moves (a full spin, a slow wave) keep the full 8.
     curMoveHold = LONG_MOVES.has(currentMoveIdx) ? 8 : 4;
     // A signature "hero" move lands with an extra visual punch + a fresh
-    // floor shockwave so the choreography's peak moments read as peaks.
+    // floor shockwave + fireworks and flame jets, so the choreography's
+    // peak moments read as PEAKS.
     if (SIGNATURES.includes(currentMoveIdx)) {
       beatPulse = Math.max(beatPulse, 1.2);
       for (const rr of rings) if (rr.age > 0.5) { rr.age = 0; break; }
+      launchFirework();
+      jetPower = 1;
     }
   }
   let curMoveHold = 8;
@@ -2487,6 +2565,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     beatPulse = Math.max(beatPulse, 1);
     beatCount++;
     if (beatCount % 4 === 0) beatPulse = Math.max(beatPulse, 1.15); // downbeat accent (every bar)
+    if (beatCount % 16 === 0) launchFirework(); // a firework every 4 bars keeps the sky alive
     for (const f of fins) f.target = 0.35 + Math.random() * 0.65;
     // Footstep ripple — spawns under the lead dancer's alternating foot,
     // not the stage center, so the floor visibly reacts to the footwork.
@@ -2651,6 +2730,36 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       sp.mat.color.setRGB(c[0], c[1], c[2]);
     }
 
+    // ── Pyro pack animation ──
+    // Laser fan — sweeps only while the music plays, alternating theme
+    // colors, kicking brighter on the beat; calm slows the sweep.
+    const laserOn = playing && qTier < 2 ? 1 : 0;
+    for (let li = 0; li < lasers.length; li++) {
+      const L = lasers[li];
+      L.mesh.rotation.z = Math.sin(t * (0.55 - calm * 0.25) + L.phase) * 1.05;
+      L.mat.opacity = (0.028 + beatPulse * 0.09) * energy * pyroMult * laserOn * (1 - calm * 0.6);
+      const lc = li % 2 === 0 ? currentTheme.c : currentTheme.b;
+      L.mat.color.setRGB(lc[0], lc[1], lc[2]);
+    }
+    // Fireworks — integrate active bursts (gravity + fade), park spent ones.
+    for (const fw of fireworks) {
+      if (fw.age >= 1) { if (fw.pts.visible) fw.pts.visible = false; continue; }
+      fw.age += dt / 2.3;
+      const pos = fw.geo.getAttribute('position') as THREE.BufferAttribute;
+      for (let i = 0; i < FW_N; i++) {
+        fw.vel[i * 3 + 1] -= 1.9 * dt; // gravity
+        pos.setXYZ(i, pos.getX(i) + fw.vel[i * 3] * dt, pos.getY(i) + fw.vel[i * 3 + 1] * dt, pos.getZ(i) + fw.vel[i * 3 + 2] * dt);
+      }
+      pos.needsUpdate = true;
+      fw.mat.opacity = Math.max(0, 1 - fw.age) * 0.9 * pyroMult;
+    }
+    // Flame jets — sharp attack on drops, fast exponential decay.
+    jetPower = Math.max(0, jetPower - dt * 1.7);
+    for (const J of jets) {
+      J.mesh.scale.set(1, 0.25 + jetPower * 1.7, 1);
+      J.mat.opacity = jetPower * 0.55 * pyroMult;
+    }
+
     // Wet floor + subwoofer cones react to the theme + bass.
     floorReflMat.uniforms.uTime.value = t;
     floorReflMat.uniforms.uPulse.value = beatPulse * energy;
@@ -2738,6 +2847,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       // ended up after this frame's rotations and nudge the whole dancer up
       // if either foot would poke through the floor. Never pushes down (a
       // jump's lifted foot is left alone), so it's a pure anti-clip clamp.
+      if (di === 0) leadPreClampY = dg.group.position.y;
       dg.group.updateMatrixWorld(true);
       const flY = _footL.setFromMatrixPosition(dg.footL.matrixWorld).y;
       const frY = _footR.setFromMatrixPosition(dg.footR.matrixWorld).y;
@@ -2755,6 +2865,9 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     // transform onto the wrapper, then retarget the pose onto the skeleton.
     if (avatarStyle !== 0 && glbGroup && glbBones) {
       glbGroup.position.copy(rig.group.position);
+      // Ground from the character's OWN soles (wrapper local y=0), not the
+      // proc rig's clamp — never below the floor, jumps still lift.
+      glbGroup.position.y = Math.max(leadPreClampY, FLOOR_Y);
       glbGroup.rotation.y = rig.group.rotation.y;
       const sgn = mirrorOn ? -1 : 1;
       glbGroup.scale.set(glbBaseScale * sgn, glbBaseScale, glbBaseScale);
@@ -2922,6 +3035,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     setHazeIntensity(v: number) { hazeMult = Math.max(0, Math.min(2.5, v)); },
     setBeamIntensity(v: number) { beamMult = Math.max(0, Math.min(2.5, v)); },
     setFinIntensity(v: number) { finMult = Math.max(0, Math.min(2.5, v)); },
+    setPyroIntensity(v: number) { pyroMult = Math.max(0, Math.min(2.5, v)); },
     setStadiumDensity(n: number) { stadiumDensityOverride = n < 0 ? -1 : Math.round(n); applyStadiumDensity(); },
     setStadiumCameraStyle(mode: number) { stadiumCamStyle = Math.max(0, Math.min(2, Math.round(mode))); },
     setVibe(mode: number) { vibeMode = Math.max(0, Math.min(3, Math.round(mode))); },
@@ -2993,6 +3107,8 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       const pose = ACCENTS[Math.floor(Math.random() * ACCENTS.length)];
       for (const d of activeDancers()) setPoseFor(d, pose);
       for (const r of rings) r.age = 0; // triple shockwave
+      launchFirework(); launchFirework(); // double burst on the drop
+      jetPower = 1;
     },
     setLiveBeat(on: boolean) { liveMode = !!on; if (!on) lastLiveTick = 0; },
     syncLine() { syncLine(); },

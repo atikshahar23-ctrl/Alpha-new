@@ -688,6 +688,10 @@
         <div class="rr-head"><span>מהירות תאורת LED</span><b id="ledSpeedVal">1.0x</b></div>
         <input type="range" id="ledSpeedSlider" min="0.4" max="2.5" step="0.1" value="1">
       </div>
+      <div class="range-row">
+        <div class="rr-head"><span>🎆 פירוטכניקה — זיקוקים, לייזרים ולהבות</span><b id="pyroVal">100%</b></div>
+        <input type="range" id="pyroSlider" min="0" max="250" step="10" value="100">
+      </div>
     </div>
 
     <div class="sub-eyebrow">🖥️ תצוגה ונגישות</div>
@@ -2756,6 +2760,7 @@
   wireSlider('hazeSlider', 'hazeVal', 'lt:haze_intensity', 100, (v) => Math.round(v) + '%', (v) => handle?.setHazeIntensity?.(v / 100));
   wireSlider('beamSlider', 'beamVal', 'lt:beam_intensity', 100, (v) => Math.round(v) + '%', (v) => handle?.setBeamIntensity?.(v / 100));
   wireSlider('finSlider', 'finVal', 'lt:fin_intensity', 100, (v) => Math.round(v) + '%', (v) => handle?.setFinIntensity?.(v / 100));
+  wireSlider('pyroSlider', 'pyroVal', 'lt:pyro_intensity', 100, (v) => Math.round(v) + '%', (v) => handle?.setPyroIntensity?.(v / 100));
   wireSlider('exposureSlider', 'exposureVal', 'lt:exposure', 100, (v) => Math.round(v) + '%', (v) => handle?.setExposure?.(v / 100));
 
   function wireSelect(selId, key, def, apply) {
@@ -2815,6 +2820,7 @@
     handle?.setHazeIntensity?.(numSetting('lt:haze_intensity', 100) / 100);
     handle?.setBeamIntensity?.(numSetting('lt:beam_intensity', 100) / 100);
     handle?.setFinIntensity?.(numSetting('lt:fin_intensity', 100) / 100);
+    handle?.setPyroIntensity?.(numSetting('lt:pyro_intensity', 100) / 100);
     handle?.setExposure?.(numSetting('lt:exposure', 100) / 100);
     handle?.setCrewSize?.(Number(localStorage.getItem('lt:crew_size') || 2));
     handle?.setCameraStyle?.(Number(localStorage.getItem('lt:camera_style') || 0));
