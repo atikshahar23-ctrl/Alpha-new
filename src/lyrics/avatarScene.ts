@@ -28,6 +28,7 @@
 // from real data, not a generic guess, without needing any extra API scope.
 // ═══════════════════════════════════════════════════════════════════════
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
@@ -69,6 +70,11 @@ export interface LyricsAvatarHandle {
   // show — springs, haze, sweep speed, energy ceiling, and move pool — toward
   // calm, so slow/atmospheric songs read as calm instead of frantic.
   setVibe?(mode: number): void;
+  // Avatar style — which character dances lead. 0 = the procedural neon
+  // alien; 1-3 load the simulator's own rigged GLB agents (casual male /
+  // legendary robot / Sophia) and drive their skeletons directly from the
+  // same pose-spring choreography engine (all moves + lyric sync carry over).
+  setAvatarStyle?(style: number): void;
   // Wedding mode — bride & groom center stage dancing couple choreography
   // (embrace, twirl, dip, promenade), the crew circling them with the hora,
   // a flower chuppah, floating hearts, rose petals, and a warm gold light
@@ -1783,6 +1789,145 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     weddingGroup.visible = false;
     scene.add(weddingGroup);
   }
+  // ── AVATAR STYLE — the simulator's own agent characters as the lead ─────
+  // The Office3D GLB characters (casual male / legendary robot / Sophia) all
+  // carry full humanoid skeletons, so instead of playing their baked clips we
+  // DRIVE THEIR BONES directly from the same pose-spring engine — every one
+  // of the 104 moves, the lyric sync, the springs, all of it, on a real
+  // skinned character. The lead dancer's spring state (dancers[0].cur) stays
+  // the single source of truth; the hidden procedural rig keeps computing so
+  // switching styles is instant and lossless.
+  //
+  // Rotation math: each pose key is authored in the procedural rig's frame,
+  // where every pivot's local axes are world-aligned at rest. For a GLB bone
+  // (arbitrary bind orientation + bone roll) the equivalent rotation is
+  // applied in the PARENT's frame about the bind-time world axes:
+  //   q_local = pInv · q_world(euler) · p · q_bind
+  // where p is the parent's bind world quaternion. This transfers the whole
+  // move library without per-bone axis hand-tuning.
+  interface GlbStyleCfg { url: string; suffix: boolean; armDown: number; yaw: number; map: Record<string, string> }
+  const GLB_STYLES: (GlbStyleCfg | null)[] = [
+    null, // 0 = the procedural neon alien
+    { url: 'office-models/casual_male.glb', suffix: false, armDown: 1.3, yaw: 0, map: {
+      hips: 'Hips', torso: 'Chest', head: 'Head',
+      shL: 'Upper_Arm_L', shR: 'Upper_Arm_R', fAL: 'Lower_Arm_L', fAR: 'Lower_Arm_R',
+      legL: 'Upper_Leg_L', legR: 'Upper_Leg_R', kneeL: 'Lower_Leg_L', kneeR: 'Lower_Leg_R',
+    } },
+    // The robot's bind pose already hangs arms-down (unlike the T-posed
+    // human), so it needs only a small settle offset.
+    { url: 'office-models/legendary_robot.glb', suffix: false, armDown: 0.2, yaw: 0, map: {
+      hips: 'pelvis', torso: 'spine_02', head: 'head',
+      shL: 'upperarm_L', shR: 'upperarm_R', fAL: 'lowerarm_L', fAR: 'lowerarm_R',
+      legL: 'thigh_L', legR: 'thigh_R', kneeL: 'calf_L', kneeR: 'calf_R',
+    } },
+    // (sophia.glb was evaluated too — its RenderPeople rig explodes under
+    // bone retargeting, so it stays out until that bind pose is solved.)
+  ];
+  let avatarStyle = 0;
+  let glbGroup: THREE.Group | null = null;
+  let glbBones: Record<string, THREE.Bone> | null = null;
+  let glbBaseScale = 1;
+  let glbArmDown = 1.3;
+  let glbLights: THREE.Object3D[] = [];
+  let glbLoadSeq = 0;
+  const _gE = new THREE.Euler(), _gQ = new THREE.Quaternion(), _gQ2 = new THREE.Quaternion();
+  function disposeGlbGroup(g: THREE.Object3D) {
+    g.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (mesh.geometry) mesh.geometry.dispose();
+      if (mesh.material) {
+        for (const m of (Array.isArray(mesh.material) ? mesh.material : [mesh.material]) as THREE.MeshStandardMaterial[]) {
+          m.map?.dispose(); m.normalMap?.dispose(); m.roughnessMap?.dispose();
+          m.metalnessMap?.dispose(); m.emissiveMap?.dispose(); m.aoMap?.dispose();
+          m.dispose();
+        }
+      }
+    });
+  }
+  function clearGlbCharacter() {
+    if (glbGroup) { scene.remove(glbGroup); disposeGlbGroup(glbGroup); glbGroup = null; glbBones = null; }
+    for (const l of glbLights) scene.remove(l);
+    glbLights = [];
+    rig.group.visible = true;
+  }
+  function loadGlbCharacter(style: number) {
+    const cfg = GLB_STYLES[style];
+    if (!cfg) return;
+    const seq = ++glbLoadSeq;
+    new GLTFLoader().load(cfg.url, (gltf) => {
+      if (seq !== glbLoadSeq) { disposeGlbGroup(gltf.scene); return; } // user switched again mid-load
+      const wrap = new THREE.Group();
+      wrap.add(gltf.scene);
+      // Normalize: ground the feet at y=0 inside the wrapper and scale the
+      // character to the procedural dancer's height so the camera/stage fit.
+      const bbox = new THREE.Box3().setFromObject(gltf.scene);
+      const h = Math.max(0.01, bbox.max.y - bbox.min.y);
+      glbBaseScale = 1.78 / h;
+      gltf.scene.position.y = -bbox.min.y;
+      wrap.scale.setScalar(glbBaseScale);
+      wrap.rotation.y = cfg.yaw;
+      // Collect the mapped bones + bind-pose quaternions for the retarget.
+      const bones: Record<string, THREE.Bone> = {};
+      gltf.scene.updateMatrixWorld(true);
+      gltf.scene.traverse((obj) => {
+        if (!(obj as THREE.Bone).isBone) return;
+        const n = obj.name;
+        for (const key of Object.keys(cfg.map)) {
+          const want = cfg.map[key];
+          const hit = cfg.suffix ? n.toLowerCase().endsWith(want) : n === want;
+          if (hit && !bones[key]) bones[key] = obj as THREE.Bone;
+        }
+        const mesh = obj as unknown as THREE.Mesh;
+        if (mesh.isMesh) mesh.frustumCulled = false;
+      });
+      gltf.scene.traverse((obj) => { const m = obj as THREE.Mesh; if (m.isMesh) m.frustumCulled = false; });
+      for (const key of Object.keys(bones)) {
+        const b = bones[key];
+        const p = new THREE.Quaternion();
+        (b.parent || b).getWorldQuaternion(p);
+        b.userData.p = p;
+        b.userData.pInv = p.clone().invert();
+        b.userData.bind = b.quaternion.clone();
+      }
+      glbBones = bones;
+      glbArmDown = cfg.armDown;
+      glbGroup = wrap;
+      scene.add(wrap);
+      // PBR characters need real lights (the whole neon stage is unlit
+      // materials) — a compact concert rig, added only while a GLB is up.
+      const hemi = new THREE.HemisphereLight(0x99aaff, 0x2a1440, 1.35);
+      const key = new THREE.DirectionalLight(0xffffff, 1.6); key.position.set(2.2, 4.2, 3.2);
+      const rim = new THREE.PointLight(0x00e5ff, 14, 9); rim.position.set(-2.4, 2.2, -1.4);
+      glbLights = [hemi, key, rim];
+      for (const l of glbLights) scene.add(l);
+      rig.group.visible = false; // the star hands the stage to the character
+    }, undefined, () => { /* load failed → keep the alien */ });
+  }
+  // Apply the lead's spring state onto the character's skeleton.
+  function applyPoseToBones(bounce: number) {
+    if (!glbBones) return;
+    const S = dancers[0].cur;
+    const rot = (key: string, ex: number, ey: number, ez: number) => {
+      const b = glbBones![key];
+      if (!b) return;
+      _gE.set(ex, ey, ez, 'XYZ');
+      _gQ.setFromEuler(_gE);
+      _gQ2.copy(b.userData.pInv as THREE.Quaternion).multiply(_gQ)
+        .multiply(b.userData.p as THREE.Quaternion).multiply(b.userData.bind as THREE.Quaternion);
+      b.quaternion.copy(_gQ2);
+    };
+    rot('hips', 0, 0, S.hipsRz * 0.55);
+    rot('torso', S.torsoRx, S.torsoRy, S.torsoRz);
+    rot('head', S.headRx, S.headRy, 0);
+    rot('shL', S.shLx, 0, glbArmDown - S.shLz);
+    rot('shR', S.shRx, 0, -glbArmDown - S.shRz);
+    rot('fAL', S.fALx, 0, -S.fALz);
+    rot('fAR', S.fARx, 0, -S.fARz);
+    rot('legL', S.legLx, 0, S.legLz);
+    rot('legR', S.legRx, 0, S.legRz);
+    rot('kneeL', S.kneeLx + bounce * 0.34, 0, 0);
+    rot('kneeR', S.kneeRx + bounce * 0.28, 0, 0);
+  }
   const activeDancers = () => {
     const base = partyMode >= 1 ? dancers : [dancers[0]];
     return weddingMode && brideD ? base.concat(brideD) : base;
@@ -2477,6 +2622,15 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       const bLift = Math.max(0, brideD.cur.rootY);
       (brideShadow.material as THREE.MeshBasicMaterial).opacity = Math.max(0.08, 0.3 - bLift * 0.6);
     }
+    // GLB character lead — mirror the (hidden) procedural lead's root
+    // transform onto the wrapper, then retarget the pose onto the skeleton.
+    if (avatarStyle !== 0 && glbGroup && glbBones) {
+      glbGroup.position.copy(rig.group.position);
+      glbGroup.rotation.y = rig.group.rotation.y;
+      const sgn = mirrorOn ? -1 : 1;
+      glbGroup.scale.set(glbBaseScale * sgn, glbBaseScale, glbBaseScale);
+      applyPoseToBones(bounce);
+    }
 
     // Sparks drift upward through the beam, looping back to the floor.
     const posAttr = sparkGeo.getAttribute('position') as THREE.BufferAttribute;
@@ -2634,6 +2788,13 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     setStadiumDensity(n: number) { stadiumDensityOverride = n < 0 ? -1 : Math.round(n); applyStadiumDensity(); },
     setStadiumCameraStyle(mode: number) { stadiumCamStyle = Math.max(0, Math.min(2, Math.round(mode))); },
     setVibe(mode: number) { vibeMode = Math.max(0, Math.min(3, Math.round(mode))); },
+    setAvatarStyle(style: number) {
+      const s = Math.max(0, Math.min(GLB_STYLES.length - 1, Math.round(style)));
+      if (s === avatarStyle) return;
+      avatarStyle = s;
+      clearGlbCharacter(); // also restores the procedural alien immediately
+      if (s !== 0) loadGlbCharacter(s); // alien stays visible until the swap lands
+    },
     setWedding(on: boolean) {
       weddingMode = !!on;
       if (weddingMode) ensureWedding();

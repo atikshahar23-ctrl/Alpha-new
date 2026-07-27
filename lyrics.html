@@ -560,6 +560,15 @@
     <div class="sub-eyebrow">🕺 אווטאר וריקוד</div>
     <div class="settings-cols">
       <div class="field-row" style="margin:0;">
+        <label>סגנון האווטאר הראשי</label>
+        <select id="avatarStyleSel">
+          <option value="0" selected>👽 חייזר ניאון (מקורי)</option>
+          <option value="1">🕺 רקדן אנושי</option>
+          <option value="2">🤖 רובוט אגדי</option>
+        </select>
+        <div class="hint">דמויות הסוכנים מהסימולטור — נטענות ברקע ורוקדות את כל הכוריאוגרפיה עם תאורת במה אמיתית.</div>
+      </div>
+      <div class="field-row" style="margin:0;">
         <label>אווירה / וייב 🌙</label>
         <select id="vibeSel">
           <option value="0" selected>אוטומטי — לפי קצב השיר</option>
@@ -2476,6 +2485,7 @@
     });
   }
   wireSelect('vibeSel', 'lt:vibe', 0, (v) => handle?.setVibe?.(Number(v)));
+  wireSelect('avatarStyleSel', 'lt:avatar_style', 0, (v) => handle?.setAvatarStyle?.(Number(v)));
   wireSelect('crewSizeSel', 'lt:crew_size', 2, (v) => handle?.setCrewSize?.(Number(v)));
   wireSelect('cameraStyleSel', 'lt:camera_style', 0, (v) => handle?.setCameraStyle?.(Number(v)));
   wireSelect('stadiumCamSel', 'lt:stadium_cam', 0, (v) => handle?.setStadiumCameraStyle?.(Number(v)));
@@ -2514,6 +2524,7 @@
     handle?.setStadiumCameraStyle?.(Number(localStorage.getItem('lt:stadium_cam') || 0));
     handle?.setStadiumDensity?.(Number(localStorage.getItem('lt:stadium_density') || 80000));
     handle?.setVibe?.(Number(localStorage.getItem('lt:vibe') || 0));
+    handle?.setAvatarStyle?.(Number(localStorage.getItem('lt:avatar_style') || 0));
     handle?.setWedding?.(localStorage.getItem('lt:wedding') === '1');
     handle?.setMirror?.(localStorage.getItem('lt:mirror') === '1');
   };
