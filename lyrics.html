@@ -317,6 +317,8 @@
   .hero-btn.stage-exit{left:auto; right:10px;}
   .hero-btn.live-beat{top:58px;}
   .hero-btn.zoom-btn{top:106px; font-size:15px;}
+  .hero-btn.wedding-btn{top:154px;}
+  .hero-btn.wedding-btn.on{border-color:rgba(255,200,120,.75); box-shadow:0 0 16px rgba(255,190,110,.55); color:#ffd88a;}
   .hero-btn.zoom-btn .zlabel{position:absolute; bottom:2px; right:4px; font-size:8px; font-weight:800; color:var(--cyan);}
   .hero-btn.live-beat.on{border-color:rgba(255,80,120,.7); box-shadow:0 0 16px rgba(255,80,120,.5); animation:liveBeatPulse 1s ease-in-out infinite;}
   @keyframes liveBeatPulse{0%,100%{transform:scale(1);}50%{transform:scale(1.1);}}
@@ -513,6 +515,7 @@
     <button class="hero-btn" id="partyBtn" title="מצב מסיבה — להקת רקדנים">🎉</button>
     <button class="hero-btn live-beat" id="liveBeatBtn" title="ביט חי מהמיקרופון — הרקדן שומע את המוזיקה בחדר">🎤</button>
     <button class="hero-btn zoom-btn" id="zoomBtn" title="גודל האווטרים">🔍</button>
+    <button class="hero-btn wedding-btn" id="weddingBtn" title="מצב חתונה — חתן, כלה, חופה והורה 💍">💍</button>
     <button class="hero-btn stage-exit" id="stageExitBtn" title="יציאה ממסך מלא" hidden>✕</button>
     <div class="hero-caption">🎭 רוקד לקצב השיר</div>
     <div class="stats-hud" id="statsHud" hidden>
@@ -2390,6 +2393,25 @@
   });
   applyZoomUI();
 
+  // 💍 Wedding mode — bride & groom couple choreography + chuppah + hearts +
+  // warm gold light grade, for DJs projecting the show at real weddings.
+  // Works layered over every party mode (solo couple → crew hora → stadium).
+  const weddingBtn = document.getElementById('weddingBtn');
+  let weddingOn = false;
+  try { weddingOn = localStorage.getItem('lt:wedding') === '1'; } catch {}
+  function applyWeddingUI() {
+    weddingBtn.classList.toggle('on', weddingOn);
+    weddingBtn.title = weddingOn ? 'מצב חתונה פעיל — לחץ לכיבוי' : 'מצב חתונה — חתן, כלה, חופה והורה 💍';
+  }
+  weddingBtn.addEventListener('click', () => {
+    weddingOn = !weddingOn;
+    try { localStorage.setItem('lt:wedding', weddingOn ? '1' : '0'); } catch {}
+    handle?.setWedding?.(weddingOn);
+    applyWeddingUI();
+  });
+  applyWeddingUI();
+  if (weddingOn) handle?.setWedding?.(true);
+
   // ── New tuning-knob settings — every slider/select below follows the
   // same pattern: read a persisted value (or a default), apply it live to
   // the avatar scene the moment `handle` exists (mount() also re-applies
@@ -2475,6 +2497,7 @@
     handle?.setStadiumCameraStyle?.(Number(localStorage.getItem('lt:stadium_cam') || 0));
     handle?.setStadiumDensity?.(Number(localStorage.getItem('lt:stadium_density') || 80000));
     handle?.setVibe?.(Number(localStorage.getItem('lt:vibe') || 0));
+    handle?.setWedding?.(localStorage.getItem('lt:wedding') === '1');
     handle?.setMirror?.(localStorage.getItem('lt:mirror') === '1');
   };
 

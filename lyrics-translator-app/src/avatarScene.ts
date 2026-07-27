@@ -69,6 +69,12 @@ export interface LyricsAvatarHandle {
   // show — springs, haze, sweep speed, energy ceiling, and move pool — toward
   // calm, so slow/atmospheric songs read as calm instead of frantic.
   setVibe?(mode: number): void;
+  // Wedding mode — bride & groom center stage dancing couple choreography
+  // (embrace, twirl, dip, promenade), the crew circling them with the hora,
+  // a flower chuppah, floating hearts, rose petals, and a warm gold light
+  // grade. Built for DJs projecting the show at real weddings. Works in
+  // every party mode (solo couple → crew hora → big party → stadium).
+  setWedding?(on: boolean): void;
   // Backup dancers shown in crew/BIG PARTY modes (0-6).
   setCrewSize?(n: number): void;
   // Renderer tone-mapping exposure — overall scene brightness (0.3-2).
@@ -722,11 +728,13 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   // moveIdx/stepIn/phraseLen let each BACKUP dancer run its OWN move on its
   // own little phrase clock — a crew freestyling different moves at once,
   // snapping to the lead only for the unison "drop" — instead of clones.
-  type Dancer = { rig: ReturnType<typeof buildFigureRig>; cur: Pose; vel: Pose; tgt: Pose; stepOffset: number; baseX: number; baseZ: number; microPhase: number; moveIdx: number; stepIn: number; phraseLen: number };
+  // faceOff = a constant extra Y rotation applied on top of the pose — used
+  // by wedding mode to angle the groom and bride toward each other.
+  type Dancer = { rig: ReturnType<typeof buildFigureRig>; cur: Pose; vel: Pose; tgt: Pose; stepOffset: number; baseX: number; baseZ: number; microPhase: number; moveIdx: number; stepIn: number; phraseLen: number; faceOff: number };
   function mkDancer(drig: ReturnType<typeof buildFigureRig>, stepOffset: number, baseX: number, baseZ: number, microPhase: number): Dancer {
     const cur: Pose = {}, vel: Pose = {}, tgt: Pose = {};
     for (const k of POSE_KEYS) { cur[k] = BASE_POSE[k] || 0; vel[k] = 0; tgt[k] = BASE_POSE[k] || 0; }
-    return { rig: drig, cur, vel, tgt, stepOffset, baseX, baseZ, microPhase, moveIdx: 0, stepIn: 0, phraseLen: 6 + Math.floor(Math.random() * 5) };
+    return { rig: drig, cur, vel, tgt, stepOffset, baseX, baseZ, microPhase, moveIdx: 0, stepIn: 0, phraseLen: 6 + Math.floor(Math.random() * 5), faceOff: 0 };
   }
   const setPoseFor = (d: Dancer, p: Pose) => { for (const k of POSE_KEYS) d.tgt[k] = (k in p) ? p[k] : (BASE_POSE[k] || 0); };
   // Each move maps a step (0..7 inside its 8-beat block) to a target pose.
@@ -1345,6 +1353,49 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       torsoRx: fold * 0.28, headRx: fold * 0.2, rootY: -0.04 - fold * 0.08,
       kneeLx: 0.2 + fold * 0.3, kneeRx: 0.2 + fold * 0.3, hipsRz: 0,
     }; },
+
+    // ═══════ WEDDING (99-104 · couple dances + hora) ═══════
+    // Danced by the groom AND bride in unison (she mirrors via her facing
+    // angle), while the crew circles them with the hora set.
+    // 99 · Embrace sway — arms curved forward as if holding a partner close,
+    // a gentle box-step weight shift. THE first-dance pose.
+    (s) => { const w = Math.sin((s / 8) * Math.PI * 2); return {
+      shLz: 0.85, shRz: -0.85, shLx: -0.75, shRx: -0.75, fALx: -0.7, fARx: -0.7, fALz: -0.1, fARz: 0.1,
+      rootX: w * 0.12, torsoRz: w * 0.08, hipsRz: -w * 0.06, headRy: w * 0.12, headRx: -0.04,
+      torsoRy: w * 0.1, rootY: -0.04 - Math.abs(w) * 0.02, kneeLx: 0.2, kneeRx: 0.2,
+    }; },
+    // 100 · Wedding twirl — one full graceful spin, one arm crowned high.
+    (s) => ({
+      rootRy: Math.PI * 2 * Math.min(1, (s + 1) / 6),
+      shLz: 2.5, fALz: 0.2, shRz: -0.8, fARz: -0.6,
+      headRx: -0.1, rootY: -0.02, kneeLx: 0.2, kneeRx: 0.2, hipsRz: (s % 2 ? 1 : -1) * 0.06,
+    }),
+    // 101 · The dip — a held romantic lean-back, one arm flung high; rise, repeat.
+    (s): Pose => s % 8 < 3
+      ? { torsoRx: -0.42, headRx: -0.3, rootY: -0.14, kneeLx: 0.55, kneeRx: 0.85, legRx: -0.35,
+          shLz: 0.6, fALz: 0.5, shRz: -2.4, fARz: -0.2, hipsRz: -0.08 }
+      : { rootY: -0.03, shLz: 0.9, shRz: -0.9, shLx: -0.6, shRx: -0.6, fALx: -0.6, fARx: -0.6, kneeLx: 0.2, kneeRx: 0.2 },
+    // 102 · Promenade — side-steps hand-in-hand, inside arm to the partner,
+    // outside arm sweeping wide.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      rootX: a * 0.18, legLx: a > 0 ? -0.3 : 0.1, legRx: a < 0 ? -0.3 : 0.1,
+      kneeLx: a > 0 ? 0.4 : 0.15, kneeRx: a < 0 ? 0.4 : 0.15,
+      shLx: -0.85, fALx: -0.55, fALz: -0.1,
+      shRz: a < 0 ? -1.9 : -0.7, fARz: a < 0 ? -0.2 : -0.6,
+      torsoRy: a * 0.14, headRy: a * 0.16, rootY: -0.05, hipsRz: a * 0.08,
+    }; },
+    // 103 · Hora kick — the wedding circle-dance kick-step, arms linked wide.
+    (s) => { const a = s % 2 ? 1 : -1; return {
+      shLz: 1.15, shRz: -1.15, shLx: -0.25, shRx: -0.25, fALz: 0.15, fARz: -0.15,
+      legLx: a > 0 ? -0.85 : 0.1, kneeLx: a > 0 ? 0.1 : 0.3, legRx: a < 0 ? -0.85 : 0.1, kneeRx: a < 0 ? 0.1 : 0.3,
+      rootY: a > 0 ? -0.02 : -0.1, rootX: a * 0.1, torsoRx: 0.06, headRx: -0.05, hipsRz: a * 0.08,
+    }; },
+    // 104 · Lift bounce — the "raised on chairs" moment: huge joyous V-arm leaps.
+    (s) => { const up = s % 2 === 0; return {
+      rootY: up ? 0.34 : -0.12, kneeLx: up ? 0.5 : 0.95, kneeRx: up ? 0.5 : 0.95,
+      legLx: up ? -0.3 : -0.2, legRx: up ? -0.3 : -0.2,
+      shLz: 2.6, shRz: -2.6, fALz: 0.15, fARz: -0.15, headRx: -0.18, torsoRx: up ? -0.08 : 0.1,
+    }; },
   ];
   // ── Style pools — the move set follows the track's energy: fast tracks
   // pull from the aggressive hip-hop/rave/percussive set, mid tempo from
@@ -1359,6 +1410,12 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   // more expansive flows (lotus, tai-chi, waves, reaches, slow turn).
   const POOL_SHANTI = [88, 89, 93, 94, 96];        // ocean sway, lotus, breathe, lantern, cradle
   const POOL_CHILL = [88, 89, 90, 91, 92, 93, 94, 95, 96, 97]; // the whole flowing family
+  // Wedding mode — the couple dances the romantic set (embrace, twirl, dip,
+  // promenade + the graceful waltz/sway moves), the crew circles them with
+  // the hora set (hora kick/bounce, dabke, lift bounce, claps).
+  const POOL_WEDDING_COUPLE = [98, 99, 100, 101, 58, 88, 95];
+  const POOL_WEDDING_SLOW = [98, 58, 88, 93, 101];   // the first-dance set
+  const POOL_HORA = [102, 63, 62, 103, 75, 6];
   let currentMoveIdx = 0;
 
   // ── Choreography sequencer ──────────────────────────────────────────────
@@ -1378,8 +1435,8 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   let lastLineAt = 0;    // last time a real sung lyric line arrived (syncLine)
   let routineRepeats = 1; // how many times to repeat THIS phrase (chorus = 2)
   // Big "hero" moments a phrase can climax on: jump&freeze, drop&freeze, low
-  // freeze, full turn, starlit turn, grand finale pose.
-  const SIGNATURES = [5, 13, 24, 3, 96, 87];
+  // freeze, full turn, starlit turn, grand finale pose, lift bounce.
+  const SIGNATURES = [5, 13, 24, 3, 96, 87, 103];
   function pickN(pool: number[], n: number): number[] {
     const bag = pool.slice(), out: number[] = [];
     for (let i = 0; i < n && bag.length; i++) { const j = Math.floor(Math.random() * bag.length); out.push(bag[j]); bag.splice(j, 1); }
@@ -1397,6 +1454,16 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     return chorus ? bigPool : versePool;
   }
   function buildRoutine(): number[] {
+    if (weddingMode) {
+      // The couple's routine: romantic combos that repeat (a first dance has
+      // a hook you recognize), a slow-set when the vibe is calm, and every
+      // third phrase climaxing on the chair-lift bounce.
+      routineRepeats = 2;
+      if (calm > 0.5) return pickN(POOL_WEDDING_SLOW, 4);
+      const phrase = pickN(POOL_WEDDING_COUPLE, 4);
+      if (phraseNo % 3 === 2) phrase.push(103, 103);
+      return phrase;
+    }
     const chorus = calm <= 0.5 && Math.floor(phraseNo / 2) % 2 === 1;
     // Verses FLOW through many unique moves (no repeat) so the dance never
     // feels like the same handful of steps; only the chorus repeats, because
@@ -1497,7 +1564,134 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       mkShadow(bx, bz).visible = false;
     }
   }
-  const activeDancers = () => (partyMode >= 1 ? dancers : [dancers[0]]);
+  // ── WEDDING MODE — bride & groom + chuppah + floating hearts ─────────────
+  // For DJs projecting at real weddings: the lead becomes the groom (top hat
+  // + bow tie), a bride in an ivory-champagne glow dress joins him center
+  // stage, a flower-covered chuppah arch rises behind them, rose-tinted
+  // petals fall and hearts float up — and the whole light rig goes warm gold.
+  // Built lazily on first activation; visibility-toggled after that.
+  let brideD: Dancer | null = null;
+  let brideShadow: THREE.Mesh | null = null;
+  let weddingGroup: THREE.Group | null = null;
+  let groomHat: THREE.Group | null = null;
+  let groomTie: THREE.Group | null = null;
+  let heartTex: THREE.CanvasTexture | null = null;
+  let heartsGeo: THREE.BufferGeometry | null = null;
+  let heartsMat: THREE.PointsMaterial | null = null;
+  let heartSpeed: Float32Array | null = null;
+  const HEART_N = 26;
+  function ensureWedding() {
+    if (weddingGroup) return;
+    // Bride — her own figure material, frozen to an ivory/champagne/rose
+    // palette (deliberately NOT theme-registered, so user theme changes
+    // restyle the groom + crew while the bride stays bridal white).
+    const brideMat = buildFigureMaterial();
+    (brideMat.uniforms.uColA.value as THREE.Vector3).set(1.0, 0.97, 0.92);
+    (brideMat.uniforms.uColB.value as THREE.Vector3).set(1.0, 0.85, 0.55);
+    (brideMat.uniforms.uColC.value as THREE.Vector3).set(1.0, 0.62, 0.75);
+    brideMat.uniforms.uVeinIntensity.value = 0.25; // subtle circuitry under the "dress"
+    const bRig = buildFigureRig(brideMat, waveMat);
+    for (const m of bRig.accents) m.color.setRGB(1.0, 0.85, 0.6); // warm gold eyes/core
+    // Dress skirt — a soft glowing cone flaring from the hips.
+    const skirtMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.0, 0.95, 0.9), transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+    const skirt = new THREE.Mesh(new THREE.ConeGeometry(0.42, 0.62, 24, 1, true), skirtMat);
+    skirt.position.y = 0.41;
+    bRig.group.add(skirt);
+    // Veil — a translucent cone draping back off the head — plus a tiny tiara.
+    // (children of the head inherit its egg-stretch scale; counter it.)
+    const headWear = new THREE.Group();
+    headWear.scale.set(1 / 0.95, 1 / 1.35, 1);
+    const veil = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.42, 12, 1, true), skirtMat);
+    veil.position.set(0, -0.02, -0.1);
+    veil.rotation.x = 0.5;
+    headWear.add(veil);
+    const tiaraMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.0, 0.85, 0.45), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
+    const tiara = new THREE.Mesh(new THREE.TorusGeometry(0.085, 0.011, 8, 24), tiaraMat);
+    tiara.position.y = 0.14;
+    tiara.rotation.x = Math.PI / 2 - 0.25;
+    headWear.add(tiara);
+    bRig.head.add(headWear);
+    bRig.group.position.set(0.42, -0.05, 0);
+    bRig.group.scale.setScalar(0.97);
+    bRig.group.visible = false;
+    scene.add(bRig.group);
+    brideD = mkDancer(bRig, 0, 0.42, 0, 1.3);
+    brideD.faceOff = -0.5; // angled toward the groom
+    brideShadow = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.42), new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, opacity: 0.3, depthWrite: false }));
+    brideShadow.rotation.x = -Math.PI / 2;
+    brideShadow.position.set(0.42, -0.045, 0.05);
+    brideShadow.visible = false;
+    scene.add(brideShadow);
+    // Groom accessories on the lead rig — a top hat with a gold band + bow tie.
+    const darkMat = new THREE.MeshBasicMaterial({ color: 0x0d0d16 });
+    const goldMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.0, 0.8, 0.4), transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false });
+    groomHat = new THREE.Group();
+    groomHat.scale.set(1 / 0.95, 1 / 1.35, 1);
+    const hatTop = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.15, 16), darkMat);
+    hatTop.position.y = 0.235;
+    const hatBrim = new THREE.Mesh(new THREE.CylinderGeometry(0.165, 0.165, 0.015, 20), darkMat);
+    hatBrim.position.y = 0.16;
+    const hatBand = new THREE.Mesh(new THREE.CylinderGeometry(0.103, 0.103, 0.03, 16), goldMat);
+    hatBand.position.y = 0.185;
+    groomHat.add(hatTop, hatBrim, hatBand);
+    groomHat.rotation.z = 0.07;
+    groomHat.visible = false;
+    rig.head.add(groomHat);
+    groomTie = new THREE.Group();
+    const tieL = new THREE.Mesh(new THREE.ConeGeometry(0.032, 0.06, 3), darkMat);
+    tieL.rotation.z = Math.PI / 2; tieL.position.x = -0.037;
+    const tieR = new THREE.Mesh(new THREE.ConeGeometry(0.032, 0.06, 3), darkMat);
+    tieR.rotation.z = -Math.PI / 2; tieR.position.x = 0.037;
+    const knot = new THREE.Mesh(new THREE.SphereGeometry(0.02, 10, 10), goldMat);
+    groomTie.add(tieL, tieR, knot);
+    groomTie.position.set(0, 0.31, 0.16);
+    groomTie.visible = false;
+    rig.torso.add(groomTie);
+    // Chuppah — a glowing golden arch on two posts, covered in flower blobs.
+    weddingGroup = new THREE.Group();
+    const archMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.0, 0.82, 0.45), transparent: true, opacity: 0.75, blending: THREE.AdditiveBlending, depthWrite: false });
+    const arch = new THREE.Mesh(new THREE.TorusGeometry(1.35, 0.045, 10, 40, Math.PI), archMat);
+    arch.position.set(0, 0.9, -1.35);
+    weddingGroup.add(arch);
+    for (const px of [-1.35, 1.35]) {
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.055, 0.95, 10), archMat);
+      post.position.set(px, 0.43, -1.35);
+      weddingGroup.add(post);
+    }
+    const flowerCols = [new THREE.Color(1.0, 0.75, 0.8), new THREE.Color(1.0, 0.95, 0.9), new THREE.Color(1.0, 0.55, 0.65)];
+    for (let i = 0; i < 15; i++) {
+      const th = (i / 14) * Math.PI;
+      const fm = new THREE.MeshBasicMaterial({ color: flowerCols[i % 3], transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false });
+      const fl = new THREE.Mesh(new THREE.SphereGeometry(0.05 + (i % 3) * 0.012, 8, 8), fm);
+      fl.position.set(Math.cos(th) * 1.35, 0.9 + Math.sin(th) * 1.35, -1.33);
+      weddingGroup.add(fl);
+    }
+    // Floating hearts — emoji-on-canvas texture, gently rising points.
+    const hc = document.createElement('canvas'); hc.width = hc.height = 64;
+    const hg = hc.getContext('2d')!;
+    hg.font = '44px serif'; hg.textAlign = 'center'; hg.textBaseline = 'middle';
+    hg.shadowColor = 'rgba(255,90,140,0.9)'; hg.shadowBlur = 10;
+    hg.fillText('❤', 32, 34);
+    heartTex = new THREE.CanvasTexture(hc);
+    heartsGeo = new THREE.BufferGeometry();
+    const hp = new Float32Array(HEART_N * 3);
+    heartSpeed = new Float32Array(HEART_N);
+    for (let i = 0; i < HEART_N; i++) {
+      hp[i * 3] = (Math.random() - 0.5) * 4.6;
+      hp[i * 3 + 1] = Math.random() * 3.2;
+      hp[i * 3 + 2] = -1.7 + Math.random() * 2.2;
+      heartSpeed[i] = 0.12 + Math.random() * 0.22;
+    }
+    heartsGeo.setAttribute('position', new THREE.BufferAttribute(hp, 3));
+    heartsMat = new THREE.PointsMaterial({ map: heartTex, size: 0.17, transparent: true, opacity: 0.8, depthWrite: false });
+    weddingGroup.add(new THREE.Points(heartsGeo, heartsMat));
+    weddingGroup.visible = false;
+    scene.add(weddingGroup);
+  }
+  const activeDancers = () => {
+    const base = partyMode >= 1 ? dancers : [dancers[0]];
+    return weddingMode && brideD ? base.concat(brideD) : base;
+  };
 
   // ── BIG PARTY crowd — 30 alien dancers + a DJ, rendered as six
   // InstancedMeshes (one per body part): the whole crowd costs six draw
@@ -1879,6 +2073,11 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   // the flowing chill move pool — so vibe changes ease in instead of snapping.
   let vibeMode = 0;
   let calm = 0;
+  // Wedding mode — bride & groom couple choreography, hora crew, chuppah,
+  // hearts, and a warm gold/rose grade over the whole light rig.
+  let weddingMode = false;
+  const WED_GOLD: [number, number, number] = [1.0, 0.78, 0.35];
+  const WED_ROSE: [number, number, number] = [1.0, 0.55, 0.6];
   let lastFrameTime = 0, warmT = 0, fpsT = 0, fpsN = 0, lowStreak = 0;
   function applyQTier() {
     if (qTier >= 1) bloom.enabled = false;
@@ -1926,7 +2125,9 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     const act = activeDancers();
     for (let i = 0; i < act.length; i++) {
       const d = act[i];
-      if (i === 0) { setPoseFor(d, MOVES[currentMoveIdx](stepInPattern % BEATS_PER_PATTERN)); continue; }
+      // The bride dances the couple routine WITH the groom, same move same
+      // step — their inward facing + close spacing sells "dancing together".
+      if (i === 0 || (weddingMode && d === brideD)) { setPoseFor(d, MOVES[currentMoveIdx](stepInPattern % BEATS_PER_PATTERN)); continue; }
       if (unison) { d.moveIdx = currentMoveIdx; d.stepIn = stepInPattern; } // lock to lead
       setPoseFor(d, MOVES[d.moveIdx](d.stepIn % BEATS_PER_PATTERN));
     }
@@ -1957,8 +2158,9 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     const autoCap = lineDriven ? 16 : BEATS_PER_PATTERN;
     if (stepInPattern >= autoCap) startNewMove();
     // Each backup that just finished its own little phrase grabs a FRESH random
-    // move from the same energy pool → the crew is always doing a mix.
-    const pool = activePool();
+    // move from the same energy pool → the crew is always doing a mix. At a
+    // wedding the crew circles the couple with the hora set instead.
+    const pool = weddingMode ? POOL_HORA : activePool();
     for (let i = 1; i < dancers.length; i++) {
       const d = dancers[i];
       if (!d.rig.group.visible) continue;
@@ -2085,19 +2287,21 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       sp.mesh.rotation.z = Math.sin(t * 0.65 * spotSweep + sp.phase) * 0.38;
       sp.mesh.rotation.x = Math.sin(t * 0.42 * spotSweep + sp.phase * 2) * 0.2;
       sp.mat.opacity = (0.035 + calm * 0.03 + beatPulse * 0.15 * (1 - calm * 0.5)) * energy;
-      const c = sp.colIdx === 0 ? currentTheme.c : currentTheme.b;
+      const c = weddingMode ? (sp.colIdx === 0 ? WED_GOLD : WED_ROSE) : (sp.colIdx === 0 ? currentTheme.c : currentTheme.b);
       sp.mat.color.setRGB(c[0], c[1], c[2]);
     }
 
     // Wet floor + subwoofer cones react to the theme + bass.
     floorReflMat.uniforms.uTime.value = t;
     floorReflMat.uniforms.uPulse.value = beatPulse * energy;
-    (floorReflMat.uniforms.uCol.value as THREE.Vector3).set(currentTheme.b[0], currentTheme.b[1], currentTheme.b[2]);
+    if (weddingMode) (floorReflMat.uniforms.uCol.value as THREE.Vector3).set(1.0, 0.75, 0.42);
+    else (floorReflMat.uniforms.uCol.value as THREE.Vector3).set(currentTheme.b[0], currentTheme.b[1], currentTheme.b[2]);
     const punch = 1 + beatPulse * energy * 0.7; // cones jump forward on the beat
     for (const sub of subs) {
       for (const cone of sub.cones) cone.scale.z = punch;
       sub.glow.opacity = 0.2 + beatPulse * energy * 0.6;
-      sub.glow.color.setRGB(currentTheme.c[0], currentTheme.c[1], currentTheme.c[2]);
+      if (weddingMode) sub.glow.color.setRGB(WED_GOLD[0], WED_GOLD[1], WED_GOLD[2]);
+      else sub.glow.color.setRGB(currentTheme.c[0], currentTheme.c[1], currentTheme.c[2]);
     }
 
     // Apply spring pose + a continuous micro-groove layer (breathing sway,
@@ -2128,7 +2332,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       dg.group.position.x = d.baseX + S.rootX;
       dg.group.position.z = d.baseZ;
       dg.group.scale.x = mirrorOn ? -Math.abs(dg.group.scale.x || 1) : Math.abs(dg.group.scale.x || 1);
-      dg.group.rotation.y = S.rootRy + Math.sin(tp * 0.4) * 0.04 * energy;
+      dg.group.rotation.y = S.rootRy + d.faceOff + Math.sin(tp * 0.4) * 0.04 * energy;
       dg.hips.rotation.z = S.hipsRz + Math.sin(tp * 2.0) * 0.02 * energy;
       dg.torso.rotation.x = S.torsoRx;
       dg.torso.rotation.y = S.torsoRy + Math.sin(tp * 1.1) * 0.03 * energy;
@@ -2149,6 +2353,13 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       dg.legR.rotation.x = S.legRx; dg.legR.rotation.z = S.legRz;
       dg.kneeL.rotation.x = S.kneeLx + bounce * 0.25;
       dg.kneeR.rotation.x = S.kneeRx + bounce * 0.2;
+    }
+    // The bride's contact shadow tracks her separately (she lives outside the
+    // dancerShadows index mapping).
+    if (weddingMode && brideD && brideShadow) {
+      brideShadow.position.x = brideD.baseX + brideD.cur.rootX;
+      const bLift = Math.max(0, brideD.cur.rootY);
+      (brideShadow.material as THREE.MeshBasicMaterial).opacity = Math.max(0.08, 0.3 - bLift * 0.6);
     }
 
     // Sparks drift upward through the beam, looping back to the floor.
@@ -2178,6 +2389,21 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       (hazeSprites[i].material as THREE.SpriteMaterial).opacity = (0.06 + Math.sin(t * 0.3 + i) * 0.03) * hazeMult * (1 + calm * 1.6);
     }
 
+    // Wedding hearts drift upward with a gentle side-sway, pulsing with the
+    // beat, recycling to the floor when they clear the top of the stage.
+    if (weddingMode && heartsGeo && heartsMat && heartSpeed) {
+      const hAttr = heartsGeo.getAttribute('position') as THREE.BufferAttribute;
+      for (let i = 0; i < HEART_N; i++) {
+        let y = hAttr.getY(i) + heartSpeed[i] * 0.016;
+        if (y > 3.4) y = -0.1;
+        hAttr.setY(i, y);
+        hAttr.setX(i, hAttr.getX(i) + Math.sin(t * 0.7 + i * 1.7) * 0.0022);
+      }
+      hAttr.needsUpdate = true;
+      heartsMat.opacity = 0.55 + beatPulse * energy * 0.4;
+      heartsMat.size = 0.15 + beatPulse * energy * 0.05;
+    }
+
     if (partyMode >= 2) updateCrowd(now, t); // floor crowd dances in stadium too
     if (partyMode === 3 && stadiumPtsMat) {
       stadiumPtsMat.uniforms.uTime.value = t;
@@ -2185,11 +2411,13 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       stadiumPtsMat.uniforms.uPulse.value = beatPulse * energy;
       if (stadiumScreens) {
         stadiumScreens.opacity = 0.3 + beatPulse * energy * 0.45;
-        stadiumScreens.color.setRGB(currentTheme.b[0], currentTheme.b[1], currentTheme.b[2]);
+        if (weddingMode) stadiumScreens.color.setRGB(WED_GOLD[0], WED_GOLD[1], WED_GOLD[2]);
+        else stadiumScreens.color.setRGB(currentTheme.b[0], currentTheme.b[1], currentTheme.b[2]);
       }
       if (stadiumRimMat) {
         stadiumRimMat.opacity = 0.14 + beatPulse * energy * 0.16; // small, deliberate pulse
-        stadiumRimMat.color.setRGB(currentTheme.eye[0], currentTheme.eye[1], currentTheme.eye[2]);
+        if (weddingMode) stadiumRimMat.color.setRGB(WED_ROSE[0], WED_ROSE[1], WED_ROSE[2]);
+        else stadiumRimMat.color.setRGB(currentTheme.eye[0], currentTheme.eye[1], currentTheme.eye[2]);
       }
     }
 
@@ -2290,6 +2518,32 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     setStadiumDensity(n: number) { stadiumDensityOverride = n < 0 ? -1 : Math.round(n); applyStadiumDensity(); },
     setStadiumCameraStyle(mode: number) { stadiumCamStyle = Math.max(0, Math.min(2, Math.round(mode))); },
     setVibe(mode: number) { vibeMode = Math.max(0, Math.min(3, Math.round(mode))); },
+    setWedding(on: boolean) {
+      weddingMode = !!on;
+      if (weddingMode) ensureWedding();
+      if (weddingGroup) weddingGroup.visible = weddingMode;
+      if (brideD) brideD.rig.group.visible = weddingMode;
+      if (brideShadow) brideShadow.visible = weddingMode;
+      if (groomHat) groomHat.visible = weddingMode;
+      if (groomTie) groomTie.visible = weddingMode;
+      // The groom steps aside so the couple shares center stage, both angled
+      // slightly toward each other.
+      dancers[0].baseX = weddingMode ? -0.42 : 0;
+      dancers[0].faceOff = weddingMode ? 0.5 : 0;
+      // Warm the dressing: rose-gold petals (confetti is vertex-colored, the
+      // material color multiplies it), gold floor glow, champagne fins.
+      if (weddingMode) {
+        confettiMat.color.setRGB(1.0, 0.82, 0.72);
+        floorMat.color.setRGB(1.0, 0.72, 0.42);
+        for (const f of fins) f.mat.color.setRGB(1.0, 0.9, 0.7);
+      } else {
+        confettiMat.color.setRGB(1, 1, 1);
+        floorMat.color.setRGB(0.55, 0.35, 1.0);
+        for (const f of fins) f.mat.color.setRGB(0.75, 0.92, 1.0);
+      }
+      // Restart the routine so the couple/hora pools take over immediately.
+      routine = []; routinePos = 0; routinePass = 0;
+    },
     setCrewSize(n: number) {
       crewSize = Math.max(0, Math.min(ALL_BACKUP_SPOTS.length, Math.round(n)));
       if (partyMode >= 1) ensureBackups();
@@ -2332,6 +2586,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
         }
       });
       hazeTex.dispose();
+      heartTex?.dispose();
       finTex.dispose();
       sparkTex.dispose();
       floorTex.dispose();
