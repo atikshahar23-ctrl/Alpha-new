@@ -304,6 +304,23 @@
   }
   .hero-line.pop .hl-trans{animation:hlPop .45s cubic-bezier(.2,1.4,.3,1);}
   @keyframes hlPop{0%{transform:translateY(14px) scale(.94); opacity:0;}100%{transform:none; opacity:1;}}
+  /* ── Karaoke word-sweep ── the live line fills gold right-to-left (Hebrew
+     reading direction) over exactly the line's real duration (from the LRC
+     timestamps), like a pro karaoke machine. Uses background-clip:text with
+     a hard 50% gradient stop on a 200%-wide background: animating
+     background-position slides the gold/white boundary across the glyphs.
+     text-shadow keeps painting from the glyph shape, so the neon glow
+     survives the transparent fill color. */
+  .hero-line .hl-trans.sweep{
+    color:transparent;
+    background-image:linear-gradient(to left, #ffd24a 50%, #ffffff 50%);
+    -webkit-background-clip:text; background-clip:text;
+    background-size:200% 100%;
+    background-position-x:0%;
+    animation:hlSweep var(--sweep-dur, 3s) linear forwards;
+  }
+  .hero-line.pop .hl-trans.sweep{animation:hlPop .45s cubic-bezier(.2,1.4,.3,1), hlSweep var(--sweep-dur, 3s) linear forwards;}
+  @keyframes hlSweep{from{background-position-x:0%;}to{background-position-x:100%;}}
   .hero-wrap.has-line .hero-caption{display:none;}
   .stats-hud{
     position:absolute; top:10px; right:10px; z-index:4;
@@ -831,7 +848,13 @@
   const POLL_MS = 4000;
   const TICK_MS = 250;
   const CACHE_KEY = 'lt:cache:v1';
-  const CACHE_MAX = 30;
+  // 12, not 30: the song cache is BY FAR the biggest localStorage consumer
+  // on this page (a translated song can run tens of KB — 30 of them plus the
+  // main Alpha app's own data on the SAME origin was walking the whole
+  // origin into its ~5MB quota, at which point EVERY settings write throws
+  // QuotaExceededError into a silent try/catch = the user's recurring
+  // "settings never save". Songs are re-fetchable; settings are not.
+  const CACHE_MAX = 12;
 
   // ---------- storage helpers ----------
   // Probe whether localStorage actually WORKS on this device — some contexts
@@ -850,11 +873,86 @@
       return ok;
     } catch (e) { return false; }
   })();
+
+  // ── Quota-proof, wipe-proof settings storage ──────────────────────────
+  // Two independent failure modes have produced real "settings don't save"
+  // reports, and each gets its own defense:
+  //  1. QUOTA — the origin is shared with the main Alpha app; when its data
+  //     (chat/memory/sync) plus our song cache approach the ~5MB quota,
+  //     setItem throws. Defense: on a failed write, evict the song cache
+  //     (the one big expendable blob) and retry — a tiny settings key must
+  //     always win over cached songs.
+  //  2. WIPE — anything that clears localStorage out from under us (browser
+  //     "free up space" eviction, a site-data cleanup). Defense: every lt:*
+  //     write is mirrored into IndexedDB (separate, much larger quota); on
+  //     boot, any lt:* key present in the mirror but missing from
+  //     localStorage is restored, and the page reloads once so the restored
+  //     values are picked up by all the init code that already ran.
+  let idb = null;
+  const idbReady = new Promise((res)=>{
+    try{
+      const req = indexedDB.open('lt-settings-backup', 1);
+      req.onupgradeneeded = ()=>{ req.result.createObjectStore('kv'); };
+      req.onsuccess = ()=>{ idb = req.result; res(); };
+      req.onerror = ()=>res();
+    }catch(e){ res(); }
+  });
+  function idbMirror(k, rawValue){
+    if(!idb || !String(k).startsWith('lt:') || k === CACHE_KEY) return;
+    try{
+      const tx = idb.transaction('kv', 'readwrite');
+      if(rawValue === null) tx.objectStore('kv').delete(k);
+      else tx.objectStore('kv').put(rawValue, k);
+    }catch(e){}
+  }
+  function freeUpQuota(){
+    try{ localStorage.removeItem(CACHE_KEY); return true; }catch(e){ return false; }
+  }
+  // Raw quota-safe writer — shared with the module script (which manages the
+  // avatar/stage settings) so BOTH scripts get eviction-retry + mirroring.
+  function ltSave(k, rawValue){
+    try{ localStorage.setItem(k, rawValue); idbMirror(k, rawValue); return true; }
+    catch(e){
+      if(freeUpQuota()){
+        try{ localStorage.setItem(k, rawValue); idbMirror(k, rawValue); return true; }catch(e2){}
+      }
+      idbMirror(k, rawValue); // at least the durable mirror has it for next boot
+      return false;
+    }
+  }
+  window.ltSave = ltSave;
   const store = {
     get(k){ try{ return JSON.parse(localStorage.getItem(k)); }catch(e){ return null; } },
-    set(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); return true; }catch(e){ return false; } },
-    del(k){ try{ localStorage.removeItem(k); }catch(e){} }
+    set(k,v){ return ltSave(k, JSON.stringify(v)); },
+    del(k){ try{ localStorage.removeItem(k); }catch(e){} idbMirror(k, null); }
   };
+  // Boot-time restore from the mirror (async — reloads once if it recovered
+  // anything, so the sync init code re-reads the restored values).
+  idbReady.then(()=>{
+    if(!idb) return;
+    try{
+      const tx = idb.transaction('kv', 'readonly');
+      const os = tx.objectStore('kv');
+      const keysReq = os.getAllKeys();
+      const valsReq = os.getAll();
+      tx.oncomplete = ()=>{
+        const keys = keysReq.result || [], vals = valsReq.result || [];
+        let restored = 0;
+        for(let i = 0; i < keys.length; i++){
+          try{
+            if(localStorage.getItem(keys[i]) === null && vals[i] != null){
+              localStorage.setItem(keys[i], vals[i]);
+              restored++;
+            }
+          }catch(e){ break; }
+        }
+        if(restored > 0 && !sessionStorage.getItem('lt:restored_once')){
+          try{ sessionStorage.setItem('lt:restored_once', '1'); }catch(e){}
+          location.reload();
+        }
+      };
+    }catch(e){}
+  });
 
   // ---------- dom refs ----------
   const $ = (id) => document.getElementById(id);
@@ -2177,9 +2275,21 @@
     heroWrapEl.classList.add('has-line');
     heroLineTrans.textContent = l.trans || l.orig || '';
     heroLineOrig.textContent = settings.showOrig && l.trans ? (l.orig || '') : '';
+    // Karaoke sweep — fill duration comes from the REAL gap to the next
+    // synced line, so the gold reaches the end exactly when the next line
+    // arrives. Without timestamps (manual/unsynced), approximate with the
+    // beat clock (8 beats ≈ one sung line).
+    const next = state.lines[idx + 1];
+    let durS = state.synced && l.t != null && next && next.t != null
+      ? (next.t - l.t) / 1000
+      : (tempoMs * 8) / 1000;
+    durS = Math.max(1, Math.min(14, durS));
+    heroLineTrans.style.setProperty('--sweep-dur', durS.toFixed(2) + 's');
+    heroLineTrans.classList.remove('sweep');
     heroLineEl.classList.remove('pop');
-    void heroLineEl.offsetWidth; // restart the pop animation
+    void heroLineEl.offsetWidth; // restart the pop + sweep animations
     heroLineEl.classList.add('pop');
+    heroLineTrans.classList.add('sweep');
   }
 
   function setActiveLine(idx){
@@ -2497,7 +2607,7 @@
   }
   avatarToggle.addEventListener('change', () => {
     avatarOn = avatarToggle.checked;
-    try { localStorage.setItem(AVATAR_KEY, JSON.stringify(avatarOn)); } catch {}
+    window.ltSave(AVATAR_KEY, JSON.stringify(avatarOn));
     applyAvatarSetting();
   });
   applyAvatarSetting();
@@ -2530,7 +2640,7 @@
   }
   partyBtn.addEventListener('click', () => {
     lastParty = (lastParty + 1) % 4;
-    try { localStorage.setItem('lt:party_mode', String(lastParty)); } catch {}
+    window.ltSave('lt:party_mode', String(lastParty));
     if (handle) handle.setParty?.(lastParty);
     applyPartyUI();
   });
@@ -2556,7 +2666,7 @@
   }
   stadCamBtn.addEventListener('click', () => {
     stadCamIdx = (stadCamIdx + 1) % 3;
-    try { localStorage.setItem('lt:stadium_cam', String(stadCamIdx)); } catch {}
+    window.ltSave('lt:stadium_cam', String(stadCamIdx));
     handle?.setStadiumCameraStyle?.(stadCamIdx);
     applyStadCamUI();
   });
@@ -2572,7 +2682,7 @@
   }
   zoomBtn.addEventListener('click', () => {
     lastZoomIdx = (lastZoomIdx + 1) % ZOOMS.length;
-    try { localStorage.setItem('lt:stage_zoom_idx', String(lastZoomIdx)); } catch {}
+    window.ltSave('lt:stage_zoom_idx', String(lastZoomIdx));
     handle?.setZoom?.(ZOOMS[lastZoomIdx]);
     applyZoomUI();
   });
@@ -2597,12 +2707,12 @@
   // on turns wedding off. Both directions explain themselves with a toast.
   weddingBtn.addEventListener('click', () => {
     weddingOn = !weddingOn;
-    try { localStorage.setItem('lt:wedding', weddingOn ? '1' : '0'); } catch {}
+    window.ltSave('lt:wedding', weddingOn ? '1' : '0');
     if (weddingOn) {
       const styleSel = document.getElementById('avatarStyleSel');
       if (styleSel && styleSel.value !== '0') {
         styleSel.value = '0';
-        try { localStorage.setItem('lt:avatar_style', '0'); } catch {}
+        window.ltSave('lt:avatar_style', '0');
         handle?.setAvatarStyle?.(0);
         window.showMiniToast?.('💍 מצב חתונה משתמש בזוג החייזרים — סגנון האווטאר אופס');
       }
@@ -2632,7 +2742,7 @@
     el.addEventListener('input', () => {
       v = parseFloat(el.value);
       valEl.textContent = fmt(v);
-      try { localStorage.setItem(key, String(v)); } catch {}
+      window.ltSave(key, String(v));
       apply(v);
     });
   }
@@ -2655,7 +2765,7 @@
     el.value = v;
     apply(v);
     el.addEventListener('change', () => {
-      try { localStorage.setItem(key, el.value); } catch {}
+      window.ltSave(key, el.value);
       apply(el.value);
     });
   }
@@ -2667,7 +2777,7 @@
     // turns wedding off instead of leaving a mismatched couple on stage.
     if (Number(v) !== 0 && weddingOn) {
       weddingOn = false;
-      try { localStorage.setItem('lt:wedding', '0'); } catch {}
+      window.ltSave('lt:wedding', '0');
       handle?.setWedding?.(false);
       applyWeddingUI();
       window.showMiniToast?.('💍 מצב חתונה כובה — לא תואם לסגנון האווטאר הזה');
@@ -2685,7 +2795,7 @@
     el.checked = on;
     apply(on);
     el.addEventListener('change', () => {
-      try { localStorage.setItem(key, el.checked ? '1' : '0'); } catch {}
+      window.ltSave(key, el.checked ? '1' : '0');
       apply(el.checked);
     });
   }
@@ -2740,7 +2850,7 @@
       : 'linear-gradient(135deg, ' + rgb(th.a) + ', ' + rgb(th.b) + ' 60%, ' + rgb(th.c) + ')';
     dot.addEventListener('click', () => {
       lastTheme = i;
-      try { localStorage.setItem('lt:avatar_theme', String(i)); } catch {}
+      window.ltSave('lt:avatar_theme', String(i));
       handle?.setTheme?.(i);
       colorsWrap.querySelectorAll('.av-dot').forEach((d, j) => d.classList.toggle('on', j === i));
     });
