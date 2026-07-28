@@ -621,6 +621,14 @@
         <div class="hint">דמויות הסוכנים מהסימולטור — נטענות ברקע ורוקדות את כל הכוריאוגרפיה עם תאורת במה אמיתית.</div>
       </div>
       <div class="field-row" style="margin:0;">
+        <label>סביבת הבמה 🏙️</label>
+        <select id="venueSel">
+          <option value="0" selected>מועדון ניאון (ברירת מחדל)</option>
+          <option value="1">מסיבת רחוב באמצע העיר 🏙️</option>
+          <option value="2">מסיבה ליד הים 🏖️</option>
+        </select>
+      </div>
+      <div class="field-row" style="margin:0;">
         <label>אווירה / וייב 🌙</label>
         <select id="vibeSel">
           <option value="0" selected>אוטומטי — לפי קצב השיר</option>
@@ -2569,6 +2577,11 @@
     const st = { ctx, stream, analyser, raf: 0, env: 0, envSlow: 0.05, lastOnset: 0, lastDrop: 0, intervals: [], lastBpmPush: 0 };
     const binHz = ctx.sampleRate / analyser.fftSize;
     const lo = Math.max(1, Math.round(40 / binHz)), hi = Math.max(lo + 1, Math.round(160 / binHz));
+    // Treble band (~2-8kHz — vocals, hats, synth leads): its energy drives
+    // the dancers' arm flourish intricacy, so busy vocal/synth passages get
+    // visibly faster, richer hand work while bass alone drives the feet.
+    const tLo = Math.max(hi + 1, Math.round(2000 / binHz)), tHi = Math.min(data.length - 1, Math.round(8000 / binHz));
+    let lastTreblePush = 0;
     function tick(now){
       st.raf = requestAnimationFrame(tick);
       analyser.getByteFrequencyData(data);
@@ -2577,6 +2590,13 @@
       bass /= (hi - lo + 1) * 255;
       st.env += (bass - st.env) * 0.5;          // fast envelope
       st.envSlow += (bass - st.envSlow) * 0.03; // slow adaptive baseline
+      if(now - lastTreblePush > 180){
+        lastTreblePush = now;
+        let treb = 0;
+        for(let i = tLo; i <= tHi; i++) treb += data[i];
+        treb /= (tHi - tLo + 1) * 255;
+        window.__lyricsAvatarBridge?.setTreble?.(treb);
+      }
       const onset = st.env > st.envSlow * 1.35 && st.env > 0.1 && now - st.lastOnset > 240;
       if(onset){
         const gap = now - st.lastOnset;
@@ -2728,6 +2748,7 @@
     liveBeatOff() { handle?.setLiveBeat?.(false); },
     syncLine() { handle?.syncLine?.(); },
     setPerformerGender(g) { handle?.setPerformerGender?.(g); },
+    setTreble(v) { handle?.setTreble?.(v); },
   };
 
   // Party button cycles: solo → 🎉 crew of 3 → 🪩 BIG PARTY (30 aliens +
@@ -2863,6 +2884,7 @@
   wireSlider('finSlider', 'finVal', 'lt:fin_intensity', 100, (v) => Math.round(v) + '%', (v) => handle?.setFinIntensity?.(v / 100));
   wireSlider('pyroSlider', 'pyroVal', 'lt:pyro_intensity', 100, (v) => Math.round(v) + '%', (v) => handle?.setPyroIntensity?.(v / 100));
   wireSelect('weatherSel', 'lt:weather', 0, (v) => handle?.setWeather?.(Number(v)));
+  wireSelect('venueSel', 'lt:venue', 0, (v) => handle?.setVenue?.(Number(v)));
   wireSlider('exposureSlider', 'exposureVal', 'lt:exposure', 100, (v) => Math.round(v) + '%', (v) => handle?.setExposure?.(v / 100));
 
   function wireSelect(selId, key, def, apply) {
@@ -2924,6 +2946,7 @@
     handle?.setFinIntensity?.(numSetting('lt:fin_intensity', 100) / 100);
     handle?.setPyroIntensity?.(numSetting('lt:pyro_intensity', 100) / 100);
     handle?.setWeather?.(Number(localStorage.getItem('lt:weather') || 0));
+    handle?.setVenue?.(Number(localStorage.getItem('lt:venue') || 0));
     handle?.setExposure?.(numSetting('lt:exposure', 100) / 100);
     handle?.setCrewSize?.(Number(localStorage.getItem('lt:crew_size') || 2));
     handle?.setCameraStyle?.(Number(localStorage.getItem('lt:camera_style') || 0));

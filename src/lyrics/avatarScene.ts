@@ -65,6 +65,8 @@ export interface LyricsAvatarHandle {
   setPyroIntensity?(v: number): void;
   // Stage weather: 0 off · 1 snow · 2 rain · 3 shooting stars.
   setWeather?(mode: number): void;
+  // Stage venue: 0 club (default) · 1 city street party · 2 beach party.
+  setVenue?(mode: number): void;
   // Stadium crowd point cap (e.g. 20000/50000/80000); -1 = no user cap
   // (device auto-quality still applies).
   setStadiumDensity?(n: number): void;
@@ -103,6 +105,9 @@ export interface LyricsAvatarHandle {
   liveBeatTick?(): void;
   bassDrop?(): void;
   setLiveBeat?(on: boolean): void;
+  // Live high-band (vocal/synth) energy 0..1 from the mic analyser — drives
+  // fast intricate forearm flourishes on top of the choreography.
+  setTreble?(v: number): void;
   // A real sung lyric line just started (from the LRC line timestamps) — the
   // tightest musical-sync signal available. Re-anchors the beat grid to the
   // vocal and turns the choreography over on the word, so the dance reads as
@@ -816,6 +821,130 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   const wxPts = new THREE.Points(wxGeo, wxMat);
   wxPts.visible = false;
   scene.add(wxPts);
+
+  // ── VENUES 🏙️🏖️ — the stage can leave the club: a city street party
+  // (building silhouettes full of lit windows + warm street lamps) or a
+  // beach party (moonlit animated sea + palm silhouettes). Built lazily on
+  // first selection; both hidden in stadium mode, which is its own world. ──
+  let venueMode = 0; // 0 club (default) · 1 city street · 2 beach
+  let venueStreet: THREE.Group | null = null;
+  let venueBeach: THREE.Group | null = null;
+  let seaMat: THREE.ShaderMaterial | null = null;
+  const lampMats: THREE.MeshBasicMaterial[] = [];
+  function buildWindowsTex() {
+    const c = document.createElement('canvas'); c.width = 32; c.height = 64;
+    const g = c.getContext('2d')!;
+    g.fillStyle = '#05060c'; g.fillRect(0, 0, 32, 64);
+    for (let y = 2; y < 62; y += 4) for (let x = 2; x < 30; x += 5) {
+      if (Math.random() < 0.36) {
+        g.fillStyle = Math.random() < 0.75 ? 'rgba(255,214,140,0.92)' : 'rgba(160,220,255,0.85)';
+        g.fillRect(x, y, 3, 2);
+      }
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.magFilter = THREE.NearestFilter;
+    return t;
+  }
+  function ensureStreet() {
+    if (venueStreet) return;
+    venueStreet = new THREE.Group();
+    for (let i = 0; i < 9; i++) {
+      const w = 1.2 + Math.random() * 1.5, h = 2.6 + Math.random() * 3.6;
+      const bld = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.9), new THREE.MeshBasicMaterial({ map: buildWindowsTex() }));
+      bld.position.set(-7.6 + i * 1.9 + (Math.random() - 0.5) * 0.5, h / 2 - 0.05, -5.6 - (i % 3) * 0.9);
+      venueStreet.add(bld);
+    }
+    for (const lx of [-2.9, 2.9]) {
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.045, 2.6, 8), new THREE.MeshBasicMaterial({ color: 0x11141d }));
+      pole.position.set(lx, 1.25, -2.3);
+      venueStreet.add(pole);
+      const lampMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 0.75, 0.4), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
+      const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 10), lampMat);
+      bulb.position.set(lx, 2.6, -2.3);
+      venueStreet.add(bulb);
+      const glowCone = new THREE.Mesh(new THREE.ConeGeometry(0.72, 2.3, 14, 1, true), new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 0.8, 0.5), transparent: true, opacity: 0.05, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+      glowCone.position.set(lx, 1.45, -2.3);
+      venueStreet.add(glowCone);
+      lampMats.push(lampMat);
+    }
+    venueStreet.visible = false;
+    scene.add(venueStreet);
+  }
+  function ensureBeach() {
+    if (venueBeach) return;
+    venueBeach = new THREE.Group();
+    // Moonlit sea — dark rolling water with a shimmering moon-glint column.
+    seaMat = new THREE.ShaderMaterial({
+      uniforms: { uTime: { value: 0 } },
+      transparent: true, depthWrite: false,
+      vertexShader: /* glsl */`
+        varying vec2 vUv; varying vec3 vW;
+        void main() { vUv = uv; vec4 wp = modelMatrix * vec4(position, 1.0); vW = wp.xyz; gl_Position = projectionMatrix * viewMatrix * wp; }
+      `,
+      fragmentShader: /* glsl */`
+        precision highp float;
+        uniform float uTime;
+        varying vec2 vUv; varying vec3 vW;
+        void main() {
+          vec3 deep = vec3(0.015, 0.05, 0.11);
+          float wave = sin(vW.x * 2.1 + uTime * 0.7) * sin(vW.z * 3.3 - uTime * 0.9);
+          float glint = pow(0.5 + 0.5 * wave, 6.0);
+          float moonCol = exp(-vW.x * vW.x * 0.55); // the moon's silver path on the water
+          float horizon = smoothstep(0.0, 0.18, vUv.y);
+          vec3 col = deep * 1.6 + vec3(0.55, 0.68, 0.78) * glint * (0.22 + moonCol * 0.9);
+          gl_FragColor = vec4(col, 0.92 * horizon);
+        }
+      `,
+    });
+    const sea = new THREE.Mesh(new THREE.PlaneGeometry(26, 10), seaMat);
+    sea.rotation.x = -Math.PI / 2;
+    sea.position.set(0, -0.055, -8.2);
+    venueBeach.add(sea);
+    const moonMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 0.96, 0.85), transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
+    const moon = new THREE.Mesh(new THREE.CircleGeometry(0.55, 24), moonMat);
+    moon.position.set(0, 4.6, -12.5);
+    venueBeach.add(moon);
+    const moonHalo = new THREE.Mesh(new THREE.CircleGeometry(1.15, 24), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.8, 0.85, 1), transparent: true, opacity: 0.12, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+    moonHalo.position.set(0, 4.6, -12.6);
+    venueBeach.add(moonHalo);
+    // Palm silhouettes — bent trunks + a fan of drooping fronds.
+    const palmMat = new THREE.MeshBasicMaterial({ color: 0x1c2a22 });
+    const frondMat = new THREE.MeshBasicMaterial({ color: 0x27503a });
+    for (const px of [-3.4, 3.5]) {
+      const lean = px > 0 ? -0.16 : 0.16;
+      let ty = 0;
+      for (let seg = 0; seg < 3; seg++) {
+        const tr = new THREE.Mesh(new THREE.CylinderGeometry(0.055 - seg * 0.012, 0.07 - seg * 0.012, 0.85, 8), palmMat);
+        tr.position.set(px + lean * seg * 0.8, ty + 0.4, -3.6);
+        tr.rotation.z = lean * (seg + 1);
+        venueBeach.add(tr);
+        ty += 0.78;
+      }
+      const topX = px + lean * 2.1, topY = ty + 0.25;
+      for (let f = 0; f < 7; f++) {
+        const frond = new THREE.Mesh(new THREE.ConeGeometry(0.09, 1.25, 6), frondMat);
+        const fa = (f / 7) * Math.PI * 2;
+        frond.position.set(topX + Math.cos(fa) * 0.45, topY + 0.06, -3.6 + Math.sin(fa) * 0.35);
+        frond.rotation.z = Math.cos(fa) * 1.35 + Math.PI / 2 * 0;
+        frond.rotation.x = Math.sin(fa) * 1.2;
+        venueBeach.add(frond);
+      }
+    }
+    // String lights between the palm tops — the instant "beach party" read.
+    const BULBS = 13;
+    for (let i = 0; i < BULBS; i++) {
+      const f = i / (BULBS - 1);
+      const bx = -3.4 + f * 6.9;
+      const sag = Math.sin(f * Math.PI) * -0.7;
+      const bulbMat = new THREE.MeshBasicMaterial({ color: i % 3 === 0 ? new THREE.Color(1, 0.72, 0.35) : i % 3 === 1 ? new THREE.Color(1, 0.45, 0.6) : new THREE.Color(0.5, 0.85, 1), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
+      const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 8), bulbMat);
+      bulb.position.set(bx, 2.75 + sag, -3.55);
+      venueBeach.add(bulb);
+      lampMats.push(bulbMat);
+    }
+    venueBeach.visible = false;
+    scene.add(venueBeach);
+  }
 
   // ── Wet-asphalt reflective floor (PILLAR 2/4) — a real Reflector doubles
   // the whole render (fatal with 30 crowd dancers), so this fakes the "wet
@@ -1800,6 +1929,24 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       : { shRz: q === 2 ? -2.2 : -0.5, fARz: -0.1, shLz: q === 3 ? 2.2 : 0.5, fALz: 0.1,
           headRy: (q === 2 ? -1 : 1) * 0.3, torsoRy: (q === 2 ? -1 : 1) * 0.2, rootY: -0.03, kneeLx: 0.2, kneeRx: 0.2 };
     },
+
+    // ═══════ FRONTMAN MIC MOVES (121-122 · lead-only, never pooled) ═══════
+    // 121 · Mic ballad — fist held to the mouth, the free arm slowly
+    // sweeping across the crowd; the singer moment.
+    (s) => { const w = Math.sin((s / 8) * Math.PI * 2); return {
+      shRz: -0.5, shRx: -1.05, fARx: -1.6, fARz: -0.12,
+      shLz: 0.9 + w * 0.8, fALz: 0.35, shLx: -0.25,
+      torsoRy: w * 0.18, headRy: w * 0.12, headRx: -0.06,
+      rootY: -0.04, kneeLx: 0.22, kneeRx: 0.22, hipsRz: w * 0.06,
+    }; },
+    // 122 · Mic hype — mic punched to the sky, then snapped back to the
+    // mouth; the free arm pumps the crowd.
+    (s): Pose => { const up = s % 4 < 2; return up
+      ? { shRz: -2.3, shRx: -0.2, fARx: -0.3, fARz: -0.2, shLz: 0.4, fALz: 0.9,
+          rootY: -0.1, kneeLx: 0.5, kneeRx: 0.5, torsoRx: 0.06, headRx: 0.05 }
+      : { shRz: -0.5, shRx: -1.05, fARx: -1.6, fARz: -0.12, shLz: 1.6, fALz: 0.2,
+          rootY: -0.03, kneeLx: 0.2, kneeRx: 0.2, torsoRx: -0.08, headRx: -0.12 };
+    },
   ];
   // ── Style pools — the move set follows the track's energy: fast tracks
   // pull from the aggressive hip-hop/rave/percussive set, mid tempo from
@@ -1822,7 +1969,10 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   // Moves whose interest lives across a full 8 beats (a whole spin, a slow
   // wave/reach) must hold the full pattern; everything else changes every 4
   // beats so the dance turns over TWICE as often (the "not varied" fix).
-  const LONG_MOVES = new Set([3, 4, 10, 11, 82, 83, 84, 88, 89, 90, 91, 92, 93, 95, 96, 97, 98, 100, 104, 117]);
+  const LONG_MOVES = new Set([3, 4, 10, 11, 82, 83, 84, 88, 89, 90, 91, 92, 93, 95, 96, 97, 98, 100, 104, 117, 120]);
+  // Frontman mic moves — injected into the LEAD's routine only (never in any
+  // freestyle pool), so only the star "sings" while the crew keeps dancing.
+  const MIC_MOVES = [120, 121];
   // Wedding mode — the couple dances the romantic set (embrace, twirl, dip,
   // promenade + the graceful waltz/sway moves), the crew circles them with
   // the hora set (hora kick/bounce, dabke, lift bounce, claps).
@@ -1892,6 +2042,8 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     const grooves = pickN(activePool(), chorus ? 3 : 4);
     const spice = pickN(SPICE, chorus ? 3 : 2);
     const phrase = grooves.concat(spice);
+    // The frontman moment — the lead grabs the mic and sings to the crowd.
+    if (Math.random() < 0.4) phrase.push(MIC_MOVES[Math.floor(Math.random() * MIC_MOVES.length)]);
     for (let i = phrase.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [phrase[i], phrase[j]] = [phrase[j], phrase[i]]; }
     if (phraseNo % 4 === 3) { // cap every 4th phrase with a held signature hero beat
       const sig = SIGNATURES[Math.floor(Math.random() * SIGNATURES.length)];
@@ -2267,8 +2419,9 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     rot('head', S.headRx, S.headRy, 0);
     rot('shL', S.shLx, 0, glbArmDown - ac.shLz);
     rot('shR', S.shRx, 0, -glbArmDown - ac.shRz);
-    rot('fAL', S.fALx, 0, -ac.fALz);
-    rot('fAR', S.fARx, 0, -ac.fARz);
+    const gflo = trebleE * 0.12;
+    rot('fAL', S.fALx + Math.sin(performance.now() * 0.0086) * gflo, 0, -ac.fALz);
+    rot('fAR', S.fARx + Math.sin(performance.now() * 0.0093 + 1.7) * gflo, 0, -ac.fARz);
     rot('legL', S.legLx, 0, S.legLz);
     rot('legR', S.legRx, 0, S.legRz);
     rot('kneeL', S.kneeLx + bounce * 0.34, 0, 0);
@@ -2400,6 +2553,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     const phase = new Float32Array(STADIUM_N);
     const size = new Float32Array(STADIUM_N);
     const col = new Float32Array(STADIUM_N * 3);
+    const sec = new Float32Array(STADIUM_N);
     for (let i = 0; i < STADIUM_N; i++) {
       const tier = i % 3;
       const f = Math.random() * 0.82; // stop short of the tier's outer edge → a real gap before the next tier
@@ -2408,6 +2562,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       const a = 4.6 + tier * 2.1 + f * 1.6;   // x semi-axis, gap baked in via the 2.1 step vs 1.6*0.82 max fill
       const b = a * 0.72;                      // z semi-axis
       const section = Math.floor(Math.random() * SECTIONS);
+      sec[i] = section;
       const ang = section * sectionSpan + (Math.random() * (1 - AISLE_FRAC) + AISLE_FRAC / 2) * sectionSpan;
       pos[i * 3] = Math.cos(ang) * a;
       pos[i * 3 + 1] = 0.9 + tier * 1.75 + f * 1.15 + Math.random() * 0.14;
@@ -2431,6 +2586,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     ptsGeo.setAttribute('aPhase', new THREE.BufferAttribute(phase, 1));
     ptsGeo.setAttribute('aSize', new THREE.BufferAttribute(size, 1));
     ptsGeo.setAttribute('aCol', new THREE.BufferAttribute(col, 3));
+    ptsGeo.setAttribute('aSec', new THREE.BufferAttribute(sec, 1));
     // NormalBlending, not additive: 80,000 overlapping additive dots have
     // NO ceiling — however dim each one is, enough overlap always sums to
     // white (found via testing: shrinking size/alpha again and again never
@@ -2439,21 +2595,30 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     // to overdraw regardless of density — the correct tool for a crowd this
     // size, same reason real "starfield" crowd shaders use it.
     stadiumPtsMat = new THREE.ShaderMaterial({
-      uniforms: { uTime: { value: 0 }, uEnergy: { value: 0.3 }, uPulse: { value: 0 } },
+      uniforms: { uTime: { value: 0 }, uEnergy: { value: 0.3 }, uPulse: { value: 0 }, uHue: { value: 0 } },
       transparent: true, depthWrite: false, blending: THREE.NormalBlending,
       vertexShader: /* glsl */`
         attribute float aPhase;
         attribute float aSize;
         attribute vec3 aCol;
-        uniform float uTime; uniform float uEnergy;
+        attribute float aSec;
+        uniform float uTime; uniform float uEnergy; uniform float uHue;
         varying vec3 vCol; varying float vTw; varying float vNear;
+        // Rodrigues rotation of the color about the grey axis = cheap hue spin.
+        vec3 hueRotate(vec3 c, float a) {
+          const vec3 k = vec3(0.57735);
+          float ca = cos(a), sa = sin(a);
+          return clamp(c * ca + cross(k, c) * sa + k * dot(k, c) * (1.0 - ca), 0.0, 1.0);
+        }
         void main() {
           vec3 p = position;
           // every fan bounces to the shared beat clock with their own phase
           // (toned down from the first pass — a smaller bob keeps sections
           // reading as steady blocks instead of a shimmering blur)
           p.y += sin(uTime * (1.6 + fract(aPhase * 3.1) * 1.4) + aPhase * 40.0) * 0.07 * uEnergy;
-          vCol = aCol;
+          // The music drives the stands: uHue advances on every bar, offset
+          // per section, so color waves travel around the bowl with the beat.
+          vCol = hueRotate(aCol, uHue + aSec * 0.39);
           vTw = 0.65 + 0.35 * sin(uTime * (2.0 + fract(aPhase * 7.3) * 3.0) + aPhase * 80.0);
           vec4 mv = modelViewMatrix * vec4(p, 1.0);
           // Near-fade: insurance in case the drone ever grazes the stands
@@ -2660,7 +2825,9 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   let shakeMult = 1;           // bass-drop camera-shake multiplier
   let confettiMult = 1, sparkMult = 1, hazeMult = 1, beamMult = 1, finMult = 1;
   let pyroMult = 1;            // fireworks / laser fan / flame jets master gain
+  let trebleE = 0;             // live high-band (vocal/synth) energy → arm flourish
   let stadiumDensityOverride = -1; // -1 = auto (qTier), else 20000/50000/80000
+  let stadiumHue = 0, stadiumHueTarget = 0; // crowd color waves — advance per bar, eased
   let stadiumCamStyle = 0;     // 0 drone orbit · 1 fixed wide · 2 stage-cam close
   let crewSize = 2;            // backup dancers in crew/party modes (2, 4, or 6)
   // Vibe / atmosphere — how energetic vs. calm the whole show reads.
@@ -2746,6 +2913,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     beatCount++;
     if (beatCount % 4 === 0) beatPulse = Math.max(beatPulse, 1.15); // downbeat accent (every bar)
     if (beatCount % 16 === 0) launchFirework(); // a firework every 4 bars keeps the sky alive
+    if (partyMode === 3 && beatCount % 4 === 0) stadiumHueTarget += 0.65; // stands change color every bar
     if (vibeMode === 4 && beatCount % 8 === 0) launchFirework(); // hyper: double the sky
     for (const f of fins) f.target = 0.35 + Math.random() * 0.65;
     // Footstep ripple — spawns under the lead dancer's alternating foot,
@@ -2777,6 +2945,8 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       if (d.stepIn >= d.phraseLen) { d.moveIdx = pool[Math.floor(Math.random() * pool.length)]; d.stepIn = 0; d.phraseLen = 6 + Math.floor(Math.random() * 5); }
     }
     applyStep();
+    // While the lead holds the mic, the mouth glow "sings" on every beat.
+    if (MIC_MOVES.includes(currentMoveIdx)) mouthPulse = Math.max(mouthPulse, 0.85);
     stepInPattern++;
     for (let i = 1; i < dancers.length; i++) { const d = dancers[i]; if (d.rig.group.visible) d.stepIn++; }
   }
@@ -2952,6 +3122,12 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       D.mat.opacity = partyMode === 3 ? 0 : (0.05 + energy * 0.14 + beatPulse * 0.1);
       D.mat.color.setRGB(currentTheme.b[0], currentTheme.b[1], currentTheme.b[2]);
     }
+    // Venues — visibility follows mode (stadium replaces every venue), the
+    // sea rolls, the street lamps breathe with the beat.
+    if (venueStreet) venueStreet.visible = venueMode === 1 && partyMode !== 3;
+    if (venueBeach) venueBeach.visible = venueMode === 2 && partyMode !== 3;
+    if (seaMat && venueBeach && venueBeach.visible) seaMat.uniforms.uTime.value = t;
+    for (const lm of lampMats) lm.opacity = 0.65 + beatPulse * energy * 0.35;
     // Stage weather.
     if (weatherMode > 0) {
       const wp = wxGeo.getAttribute('position') as THREE.BufferAttribute;
@@ -2992,6 +3168,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     // Theme accents (eyes/cores/joints) breathe with the beat.
     for (const m of accentMats) m.opacity = 0.72 + beatPulse * 0.28;
     // Mouths glow with the music and flare hard on each sung lyric line.
+    trebleE *= Math.exp(-dt * 0.5); // treble flourish fades if the mic goes quiet
     mouthPulse *= Math.exp(-dt * 2.4);
     const mOp = 0.16 + energy * 0.24 + mouthPulse * 0.6;
     for (const m of mouthMats) m.opacity = mOp;
@@ -3041,10 +3218,14 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       // negatives (e.g. the overhead clap) correctly curl inward above the
       // head where there is nothing to clip through.
       const ac = armClear(S, 0.14);
+      // CHOREO-PRIME treble channel: vocal/synth energy (from the live mic's
+      // 2-8kHz band) adds fast, intricate forearm work on top of the pose.
+      const flo = trebleE * 0.14 * energy;
+      const wigL = Math.sin(tp * 8.6) * flo, wigR = Math.sin(tp * 9.3 + 1.7) * flo;
       dg.shoulderL.rotation.z = -ac.shLz; dg.shoulderL.rotation.x = S.shLx;
       dg.shoulderR.rotation.z = -ac.shRz; dg.shoulderR.rotation.x = S.shRx;
-      dg.foreArmL.rotation.z = -ac.fALz; dg.foreArmL.rotation.x = S.fALx;
-      dg.foreArmR.rotation.z = -ac.fARz; dg.foreArmR.rotation.x = S.fARx;
+      dg.foreArmL.rotation.z = -ac.fALz - wigL; dg.foreArmL.rotation.x = S.fALx + wigL * 0.6;
+      dg.foreArmR.rotation.z = -ac.fARz + wigR; dg.foreArmR.rotation.x = S.fARx + wigR * 0.6;
       dg.legL.rotation.x = S.legLx; dg.legL.rotation.z = S.legLz;
       dg.legR.rotation.x = S.legRx; dg.legR.rotation.z = S.legRz;
       dg.kneeL.rotation.x = S.kneeLx + bounce * 0.34;
@@ -3131,6 +3312,8 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       stadiumPtsMat.uniforms.uTime.value = t;
       stadiumPtsMat.uniforms.uEnergy.value = energy;
       stadiumPtsMat.uniforms.uPulse.value = beatPulse * energy;
+      stadiumHue += (stadiumHueTarget - stadiumHue) * Math.min(1, dt * 2.5);
+      stadiumPtsMat.uniforms.uHue.value = stadiumHue;
       if (stadiumScreens) {
         stadiumScreens.opacity = 0.3 + beatPulse * energy * 0.45;
         if (weddingMode) stadiumScreens.color.setRGB(WED_GOLD[0], WED_GOLD[1], WED_GOLD[2]);
@@ -3246,8 +3429,12 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       // killed bloom on the dancer/beam/spotlights (found via testing —
       // "washed white" flipped straight to "everything went black"). Only
       // a mild nudge here, so the stage keeps its normal glow.
-      bloom.threshold = partyMode === 3 ? 0.38 : 0.3;
-      bloomBaseStrength = partyMode === 3 ? 0.8 : 0.95;
+      // Stadium runs a much tighter bloom (0.5/0.5 vs the stage's 0.3/0.95):
+      // with the whole crowd + fireworks + LED grid additively stacked, the
+      // old 0.38/0.8 washed close-ups into pure glow (the "too much glow in
+      // stadium" report — figures barely readable at stage-cam range).
+      bloom.threshold = partyMode === 3 ? 0.5 : 0.3;
+      bloomBaseStrength = partyMode === 3 ? 0.5 : 0.95;
       resize(); // recompute bloom.strength from the new base immediately
     },
     setTheme(idx: number) { applyTheme(idx); },
@@ -3266,6 +3453,12 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       weatherMode = Math.max(0, Math.min(3, Math.round(mode)));
       wxPts.visible = weatherMode > 0;
       if (weatherMode === 0) wxMat.opacity = 0;
+    },
+    setVenue(mode: number) {
+      venueMode = Math.max(0, Math.min(2, Math.round(mode)));
+      if (venueMode === 1) ensureStreet();
+      if (venueMode === 2) ensureBeach();
+      // visibility is applied per-frame (stadium overrides every venue)
     },
     setStadiumDensity(n: number) { stadiumDensityOverride = n < 0 ? -1 : Math.round(n); applyStadiumDensity(); },
     setStadiumCameraStyle(mode: number) { stadiumCamStyle = Math.max(0, Math.min(3, Math.round(mode))); },
@@ -3342,6 +3535,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       jetPower = 1;
     },
     setLiveBeat(on: boolean) { liveMode = !!on; if (!on) lastLiveTick = 0; },
+    setTreble(v: number) { if (Number.isFinite(v)) trebleE += (Math.max(0, Math.min(1, v)) - trebleE) * 0.5; },
     syncLine() { syncLine(); },
     dispose() {
       cancelAnimationFrame(raf);
