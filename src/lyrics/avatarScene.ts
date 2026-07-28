@@ -2831,6 +2831,12 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   // page HUD mirrors it via 'lt-hype' / 'lt-wild' window events.
   let hype = 0, wildPunch = 0, lastHypePush = 0;
   let lastEnergyOnAt = 0;
+  // Attract mode — a projector should never look dead: after ~45s of
+  // silence the stage runs a slow self-showcase (soft chill choreography +
+  // a lazy orbiting camera) and snaps back the instant real music plays.
+  // ?attract=<ms> overrides the delay (used by tests / demo booths).
+  let lastPlayingAt = performance.now();
+  const ATTRACT_MS = (() => { try { const m = /[?&]attract=(\d+)/.exec(location.search); return m ? +m[1] : 45000; } catch { return 45000; } })();
   let stadiumDensityOverride = -1; // -1 = auto (qTier), else 20000/50000/80000
   let stadiumHue = 0, stadiumHueTarget = 0; // crowd color waves — advance per bar, eased
   let stadiumCamStyle = 0;     // 0 drone orbit · 1 fixed wide · 2 stage-cam close
@@ -2876,6 +2882,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     }
     currentMoveIdx = nextMoveIdx();
     stepInPattern = 0;
+    announceFamily(currentMoveIdx);
     // Punchy moves hold only 4 beats (turn over twice as fast → twice the
     // variety); long moves (a full spin, a slow wave) keep the full 8.
     curMoveHold = LONG_MOVES.has(currentMoveIdx) ? 8 : 4;
@@ -2890,6 +2897,22 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     }
   }
   let curMoveHold = 8;
+  // Dance-family label for the on-stage style badge — the audience can SEE
+  // the choreographer switching styles ('lt-style' events, page-side pill).
+  const FAMILIES: [number, string][] = [
+    [0, 'קלאסיקות מסיבה'], [18, 'היפ-הופ'], [28, 'לטיני'], [36, 'דיסקו-פאנק'],
+    [42, 'ראייב'], [50, 'פופ'], [58, 'ריקודי עולם'], [68, 'אפרו-ויראלי'],
+    [78, 'קונטמפוררי-ווג'], [88, 'צ׳יל'], [98, 'חתונה 💍'], [104, 'ויראלי'], [120, 'מיקרופון 🎤'],
+  ];
+  let lastFam = '';
+  function announceFamily(idx: number) {
+    let fam = FAMILIES[0][1];
+    for (const [start, name] of FAMILIES) if (idx >= start) fam = name;
+    if (fam !== lastFam) {
+      lastFam = fam;
+      try { window.dispatchEvent(new CustomEvent('lt-style', { detail: fam })); } catch { /* noop */ }
+    }
+  }
 
   // Apply each dancer's CURRENT move at its current step. The lead (dancer 0)
   // dances the choreographed routine; backups freestyle their own moves —
@@ -3008,6 +3031,11 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       }
     }
     const t = (now - start) / 1000;
+    // Attract mode: after ATTRACT_MS of silence the stage keeps itself alive —
+    // a soft chill self-showcase with a slow orbit camera — so an idle screen
+    // at a gig never looks dead. Snaps back the instant real playback starts.
+    if (playing) lastPlayingAt = now;
+    const attract = !playing && now - lastPlayingAt > ATTRACT_MS;
     // Vibe → calm: party is always 0; chill/shanti are fixed; auto reads the
     // song's tempo (fast → energetic, slow → calm). Eased slowly so switching
     // vibe (or a tempo change between songs) melts between the two looks.
@@ -3019,9 +3047,10 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     // the old (tempo-500)/200 curve was damping ordinary pop tracks too —
     // softer springs + slower beats compounded into "barely dancing".
     else calmTarget = Math.max(0, Math.min(1, (tempoMs - 620) / 220)) * 0.8; // auto
+    if (attract) calmTarget = Math.max(calmTarget, 0.85); // idle showcase is always mellow
     calm += (calmTarget - calm) * Math.min(1, dt * 1.2);
     // Calm pulls the energy ceiling down so lights/motion stay gentle but alive.
-    const targetEnergy = playing ? 1 - calm * 0.38 : 0.25;
+    const targetEnergy = playing ? 1 - calm * 0.38 : attract ? 0.45 : 0.25;
     energy += (targetEnergy - energy) * 0.04;
     // Calm thickens the stage haze into a dreamy atmospheric depth (left thin
     // in the stadium, where the far bowl must stay visible).
@@ -3042,8 +3071,10 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
         // mild auto-calm keeps the full-rate groove.
         fireBeat(now);
       }
+    } else if (attract && now - lastBeat > 1150) {
+      fireBeat(now); // idle showcase keeps a slow, languid groove going
     }
-    if (!playing) for (const d of activeDancers()) setPoseFor(d, BASE_POSE); // paused → calm idle
+    if (!playing && !attract) for (const d of activeDancers()) setPoseFor(d, BASE_POSE); // paused → calm idle
     beatPulse *= 0.9;
 
     // Integrate the pose springs — underdamped (slight overshoot) so every
@@ -3403,7 +3434,13 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       // · 2 handheld (phone-filming jitter) · 3 orbit 360° (slow full circle
       // around the stage) · 4 low hero cam (looking up — larger than life).
       camParty += ((partyMode === 2 ? 1 : 0) - camParty) * Math.min(1, dt * 2);
-      if (cameraStyleMode === 3) {
+      if (attract) {
+        // Idle showcase: a very slow full orbit, slightly high — gallery view.
+        const R = (camBase.z * 0.95) / userZoom;
+        const oa = t * 0.07;
+        camera.position.set(Math.sin(oa) * R, 1.6 + Math.sin(t * 0.18) * 0.2, Math.cos(oa) * R);
+        camera.lookAt(0, 1.0, 0);
+      } else if (cameraStyleMode === 3) {
         const R = (camBase.z * 0.92 + camParty * 1.6) / userZoom;
         const oa = t * 0.14 * (1 - calm * 0.4);
         camera.position.set(Math.sin(oa) * R, 1.25 + Math.sin(t * 0.3) * 0.12 + camParty * 0.5, Math.cos(oa) * R);

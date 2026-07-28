@@ -434,6 +434,39 @@
     animation:wildPop 1.8s cubic-bezier(.2,1.5,.3,1) both;
   }
   @keyframes wildPop{0%{transform:scale(.4); opacity:0;}12%{transform:scale(1.12); opacity:1;}22%{transform:scale(1);}80%{opacity:1;}100%{opacity:0; transform:scale(1.05);}}
+  /* Live style badge — the engine names the dance family it's performing
+     (hip-hop, latin, wedding…) and the pill announces it, bottom-left. */
+  .style-badge{
+    position:absolute; left:12px; bottom:8px; z-index:5;
+    font-size:12px; font-weight:700; color:var(--text);
+    background:rgba(10,12,20,.66); border:1px solid var(--border); border-radius:999px;
+    padding:5px 13px; backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
+    pointer-events:none; opacity:0; transform:translateY(6px);
+    transition:opacity .3s ease, transform .3s ease; white-space:nowrap;
+  }
+  .style-badge.show{opacity:1; transform:none;}
+  /* DJ setlist — queue songs, click to play, ✕ to remove; persisted. */
+  .btn-ghost{
+    background:rgba(255,255,255,.04); border:1px solid var(--border); color:var(--text);
+    font-weight:600; border-radius:10px; padding:9px 14px; cursor:pointer;
+  }
+  .btn-ghost:hover{border-color:var(--border-strong); background:rgba(255,255,255,.07);}
+  .setlist-empty{font-size:12px; color:var(--text-dim); margin-top:10px; text-align:center;}
+  .setlist-item{
+    display:flex; align-items:center; gap:10px; padding:9px 12px; margin-top:8px;
+    background:rgba(255,255,255,.03); border:1px solid var(--border); border-radius:10px;
+    cursor:pointer; transition:border-color .12s, background .12s;
+  }
+  .setlist-item:hover{border-color:var(--border-strong); background:rgba(138,92,255,.1);}
+  .setlist-item .sl-num{font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--cyan); flex:none; width:20px;}
+  .setlist-item .sl-name{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px;}
+  .setlist-item .sl-name b{font-weight:700;}
+  .setlist-item .sl-name span{color:var(--text-dim); font-size:12px;}
+  .setlist-item .sl-del{
+    flex:none; width:26px; height:26px; border-radius:8px; border:1px solid var(--border);
+    background:transparent; color:var(--text-dim); cursor:pointer; font-size:14px; line-height:1;
+  }
+  .setlist-item .sl-del:hover{border-color:rgba(255,77,109,.7); color:#ff4d6d;}
   .hero-btn.stadcam-btn.on{border-color:var(--border-strong); box-shadow:0 0 16px rgba(0,229,255,.4);}
   .hero-btn.zoom-btn .zlabel{position:absolute; bottom:2px; right:4px; font-size:8px; font-weight:800; color:var(--cyan);}
   .hero-btn.live-beat.on{border-color:rgba(255,80,120,.7); box-shadow:0 0 16px rgba(255,80,120,.5); animation:liveBeatPulse 1s ease-in-out infinite;}
@@ -454,6 +487,13 @@
     background-color:#08090d;}
   body.stage-mode .led-frame{z-index:90;}
   body.stage-mode .hero-line .hl-trans{font-size:clamp(24px, 5.2vw, 46px);}
+  /* Chrome auto-hide — after a few idle seconds in stage mode the control
+     buttons and cursor fade away for a clean projected display; any mouse
+     move brings them back. The now-playing pill + live line stay visible. */
+  body.stage-mode.chrome-hidden{cursor:none;}
+  body.stage-mode.chrome-hidden .hero-btn,
+  body.stage-mode.chrome-hidden .hype-rail{opacity:0; pointer-events:none; transition:opacity .5s ease;}
+  body.stage-mode .hero-btn, body.stage-mode .hype-rail{transition:opacity .3s ease;}
   .info-card{
     background:var(--bg-elevated); border:1px solid var(--border); border-radius:var(--radius);
     padding:16px 18px; margin-top:16px;
@@ -647,6 +687,7 @@
     <button class="hero-btn rec-btn" id="recBtn" title="הקלט קליפ של 8 שניות מהבמה 🎬">📹</button>
     <div class="hype-rail" aria-hidden="true"><div class="hype-fill" id="hypeFill"></div></div>
     <div class="wild-caption" id="wildCaption" hidden>🔥 הקהל משתגע!! 🔥</div>
+    <div class="style-badge" id="styleBadge">🎛️ <span id="styleBadgeText"></span></div>
     <button class="hero-btn stage-exit" id="stageExitBtn" title="יציאה ממסך מלא" hidden>✕</button>
     <div class="hero-caption">🎭 רוקד לקצב השיר</div>
     <div class="np-pill" id="npPill" hidden>🎵 <span id="npPillText"></span></div>
@@ -932,6 +973,18 @@
       <input type="text" id="manualTitle" placeholder="שם השיר">
       <button id="manualSearchBtn" class="btn-primary">הצג מילים</button>
     </div>
+  </div>
+
+  <div class="panel setlist-panel" id="setlistPanel">
+    <div class="eyebrow" style="margin-bottom:10px;">🎚️ הסטליסט שלי (לדיג׳יי)</div>
+    <div class="search-row">
+      <input type="text" id="setlistArtist" placeholder="שם האמן">
+      <input type="text" id="setlistTitle" placeholder="שם השיר">
+      <button id="setlistAddBtn" class="btn-primary">➕ הוסף</button>
+    </div>
+    <button id="setlistAddCurrentBtn" class="btn-ghost" style="margin-top:8px; width:100%;">➕ הוסף את השיר הנוכחי</button>
+    <div id="setlistList" style="margin-top:12px;"></div>
+    <div id="setlistEmpty" class="setlist-empty">הסטליסט ריק — הוסיפו שירים ולחצו עליהם כדי לנגן ברצף בהופעה.</div>
   </div>
 
   <div class="stage-wrap">
@@ -1412,9 +1465,12 @@
     stageExitBtn.hidden = false;
     rotateBtn.classList.add('on');
     try{ screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape'); }catch(e){}
+    if(typeof revealChrome === 'function') revealChrome(); // arm the auto-hide idle timer
   }
   function exitStageMode(){
     document.body.classList.remove('stage-mode');
+    document.body.classList.remove('chrome-hidden');
+    if(typeof chromeHideT !== 'undefined' && chromeHideT) clearTimeout(chromeHideT);
     stageExitBtn.hidden = true;
     rotateBtn.classList.remove('on');
     try{ screen.orientation && screen.orientation.unlock && screen.orientation.unlock(); }catch(e){}
@@ -1523,6 +1579,117 @@
       showMiniToast('ההקלטה נכשלה בדפדפן הזה');
     }
   });
+
+  // ── Live style badge ── the avatar engine names the dance family it's
+  // currently performing (hip-hop, latin, wedding…); the pill announces it
+  // for ~2.6s so the crowd/DJ can read what the stage is doing right now.
+  const styleBadge = $('styleBadge');
+  const styleBadgeText = $('styleBadgeText');
+  let styleBadgeT = null;
+  window.addEventListener('lt-style', (e)=>{
+    if(!styleBadge || !styleBadgeText) return;
+    styleBadgeText.textContent = 'סגנון: ' + (e.detail || '');
+    styleBadge.classList.add('show');
+    if(styleBadgeT) clearTimeout(styleBadgeT);
+    styleBadgeT = setTimeout(()=>{ styleBadge.classList.remove('show'); }, 2600);
+  });
+
+  // ── 🎚️ DJ setlist ── queue songs, click one to load & play it, ✕ removes,
+  // whole list persists (lt:setlist) so a DJ's set survives a page reload.
+  const setlistArtist = $('setlistArtist');
+  const setlistTitle = $('setlistTitle');
+  const setlistAddBtn = $('setlistAddBtn');
+  const setlistAddCurrentBtn = $('setlistAddCurrentBtn');
+  const setlistList = $('setlistList');
+  const setlistEmpty = $('setlistEmpty');
+  let setlist = (()=>{ const s = store.get('lt:setlist'); return Array.isArray(s) ? s : []; })();
+  const saveSetlist = ()=> store.set('lt:setlist', setlist);
+  function renderSetlist(){
+    setlistList.innerHTML = '';
+    setlistEmpty.style.display = setlist.length ? 'none' : 'block';
+    setlist.forEach((song, i)=>{
+      const row = document.createElement('div');
+      row.className = 'setlist-item';
+      row.innerHTML = '<span class="sl-num">' + (i+1) + '</span>' +
+        '<span class="sl-name"><b>' + escapeHtml(song.title) + '</b> <span>· ' + escapeHtml(song.artist) + '</span></span>' +
+        '<button class="sl-del" title="הסר מהסטליסט" aria-label="הסר">✕</button>';
+      row.addEventListener('click', (ev)=>{
+        if(ev.target.closest('.sl-del')) return;
+        playSetlistSong(song);
+      });
+      row.querySelector('.sl-del').addEventListener('click', (ev)=>{
+        ev.stopPropagation();
+        setlist.splice(i, 1); saveSetlist(); renderSetlist();
+      });
+      setlistList.appendChild(row);
+    });
+  }
+  function addSong(artist, title){
+    artist = (artist || '').trim(); title = (title || '').trim();
+    if(!artist || !title) return false;
+    if(setlist.some(s=> s.artist === artist && s.title === title)){
+      showMiniToast('השיר כבר בסטליסט');
+      return false;
+    }
+    setlist.push({ artist, title }); saveSetlist(); renderSetlist();
+    return true;
+  }
+  setlistAddBtn.addEventListener('click', ()=>{
+    if(addSong(setlistArtist.value, setlistTitle.value)){
+      setlistArtist.value = ''; setlistTitle.value = '';
+      showMiniToast('🎚️ נוסף לסטליסט');
+    }
+  });
+  setlistAddCurrentBtn.addEventListener('click', ()=>{
+    if(!state.rawArtist || !state.rawTitle){ showMiniToast('אין שיר פעיל להוספה'); return; }
+    if(addSong(state.rawArtist, state.rawTitle)) showMiniToast('🎚️ השיר הנוכחי נוסף לסטליסט');
+  });
+  for(const el of [setlistArtist, setlistTitle]){
+    el.addEventListener('keydown', (e)=>{ if(e.key === 'Enter'){ e.preventDefault(); setlistAddBtn.click(); } });
+  }
+  // Load & play a queued song — mirrors the manual-search flow so a setlist
+  // pick behaves exactly like typing it into the manual search fields.
+  async function playSetlistSong(song){
+    stopPolling();
+    state.mode = 'manual';
+    state.currentTrackKey = null;
+    window.__lyricsAvatarBridge?.setEnergy(true);
+    notifyPlaybackActive();
+    npTitle.textContent = song.title;
+    npArtist.textContent = song.artist;
+    albumArt.src = '';
+    progressBar.style.width = '0%';
+    npTime.textContent = '';
+    npControls.hidden = true;
+    ctlHint.classList.remove('show');
+    manualNav.style.display = 'flex';
+    await loadLyricsFor(song.artist, song.title);
+    setActiveLine(0);
+  }
+  renderSetlist();
+
+  // ── Double-click the stage → toggle stage (full-window) mode ── a fast,
+  // discoverable gesture for the projector display. Ignores clicks on the
+  // control buttons so it never fights the 🎉/🔍/💍 taps.
+  heroWrap.addEventListener('dblclick', (e)=>{
+    if(e.target.closest('.hero-btn')) return;
+    rotateBtn.click();
+  });
+
+  // ── Stage-mode chrome auto-hide ── after ~3s idle the control buttons and
+  // cursor fade for a clean projected view; any mouse move brings them back.
+  let chromeHideT = null;
+  function revealChrome(){
+    document.body.classList.remove('chrome-hidden');
+    if(chromeHideT) clearTimeout(chromeHideT);
+    if(document.body.classList.contains('stage-mode')){
+      chromeHideT = setTimeout(()=>{
+        if(document.body.classList.contains('stage-mode')) document.body.classList.add('chrome-hidden');
+      }, 3000);
+    }
+  }
+  document.addEventListener('mousemove', ()=>{ if(document.body.classList.contains('stage-mode')) revealChrome(); });
+  document.addEventListener('touchstart', ()=>{ if(document.body.classList.contains('stage-mode')) revealChrome(); }, {passive:true});
 
   // ── Album-art ambient color ── the LED frame re-anchors its hue to the
   // current album cover's dominant color, so the whole room light matches
