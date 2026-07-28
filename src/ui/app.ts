@@ -189,7 +189,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="wm-hg">HEAVY GUARD OS</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v283 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="wm-hg">HEAVY GUARD OS</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v284 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip apps-chip" id="appsBtn" title="האפליקציות שלי" aria-label="האפליקציות שלי">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="12" cy="19" r="2"/><circle cx="19" cy="19" r="2"/></svg>
@@ -2194,7 +2194,8 @@ export function mountApp(root: HTMLElement) {
           const tasks = await hgLoad('hg2:tasks');
           const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
           tasks.unshift({ id, title, date, done: false, ts: Date.now() });
-          localStorage.setItem('hg2:tasks', JSON.stringify(tasks));
+          const saved = await hgPersist('hg2:tasks', tasks);
+          if (!saved) addMsg('⚠️ המשימה לא נשמרה — האחסון במכשיר מלא.', 'sys');
           puterSync.markDirty();
           puterSync.scheduleSync(() => updateCloudIndicator());
         },
@@ -2215,10 +2216,12 @@ export function mountApp(root: HTMLElement) {
           };
           const index = await hgLoad('hg2:index');
           index.unshift(record);
-          localStorage.setItem('hg2:index', JSON.stringify(index));
+          const saved = await hgPersist('hg2:index', index);
           puterSync.markDirty();
           const timeStr = new Date(record.reportedAt).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' });
-          addMsg(`✅ התקנה נשמרה — ${record.idNumber || 'ללא מספר'} · דווח ב-${timeStr}`, 'sys');
+          addMsg(saved
+            ? `✅ התקנה נשמרה — ${record.idNumber || 'ללא מספר'} · דווח ב-${timeStr}`
+            : `⚠️ הדיווח לא נשמר — האחסון במכשיר מלא. פנו מקום (נקו נתוני אתרים ישנים) ודווחו שוב.`, 'sys');
           puterSync.scheduleSync(() => updateCloudIndicator());
         },
         onArCamera: openArCamera,
@@ -3915,6 +3918,32 @@ export function mountApp(root: HTMLElement) {
   async function hgLoad(key: string): Promise<any[]> {
     try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch { return []; }
   }
+  // Persist a Heavy Guard table from the DASHBOARD side so it can never
+  // silently vanish (the user's "every install report disappears" bug):
+  //  · verified write — read back and compare, because a quota-exceeded
+  //    setItem throws into silent catch blocks and a private-mode write can
+  //    no-op; on failure, evict the lyrics song cache (the one big
+  //    expendable blob on this shared origin) and retry;
+  //  · mirror into window.storage when the platform provides it — the
+  //    Heavy Guard app reads that copy FIRST, and before this mirror its
+  //    next save would overwrite localStorage with a stale list, erasing
+  //    every install reported here (its loadIndex now also merges, so the
+  //    two fixes back each other up);
+  //  · report the truth back to the caller so the chat can say "not saved"
+  //    instead of a false ✅.
+  async function hgPersist(key: string, arr: any[]): Promise<boolean> {
+    const json = JSON.stringify(arr);
+    const tryWrite = () => {
+      try { localStorage.setItem(key, json); return localStorage.getItem(key) === json; } catch { return false; }
+    };
+    let ok = tryWrite();
+    if (!ok) {
+      try { localStorage.removeItem('lt:cache:v1'); } catch { /* nothing to evict */ }
+      ok = tryWrite();
+    }
+    try { await (window as any).storage?.set?.(key, json); } catch { /* platform KV optional */ }
+    return ok;
+  }
 
   const CONTRACTORS: Record<string, string> = {
     kobi: 'קובי', asi: 'אסי', sagi: 'שגיא מערכות',
@@ -5345,8 +5374,8 @@ export function mountApp(root: HTMLElement) {
     };
     const quotes = await hgLoad('hg2:quotes');
     quotes.unshift(newQuote);
-    localStorage.setItem('hg2:quotes', JSON.stringify(quotes));
-    addMsg(`הצעת מחיר נוצרה עבור ${customer || 'לקוח'}`, 'sys');
+    const saved = await hgPersist('hg2:quotes', quotes);
+    addMsg(saved ? `הצעת מחיר נוצרה עבור ${customer || 'לקוח'}` : '⚠️ הצעת המחיר לא נשמרה — האחסון במכשיר מלא.', 'sys');
     puterSync.scheduleSync(() => updateCloudIndicator());
   }
 

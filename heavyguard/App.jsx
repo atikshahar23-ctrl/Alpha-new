@@ -118,9 +118,42 @@ const store = {
     if (typeof window !== "undefined" && window.storage) { try { return await window.storage.delete(k); } catch {} }
   },
 };
+// ── THE "vanishing install reports" fix ────────────────────────────────
+// Installs are written from TWO places: this app (which saves to BOTH
+// localStorage and window.storage) and the Alpha dashboard's chat/voice
+// report flow (which historically wrote localStorage only). On the hosted
+// platform window.storage is a real cloud KV, so loading ONLY from
+// store.get() returned a stale pre-chat-report copy — and the very next
+// save here overwrote localStorage with that stale list, permanently
+// erasing every install reported through the chat. loadIndex now reads
+// BOTH copies and, whenever they differ, MERGES them (union by id,
+// tombstoned ids dropped, localStorage order first, store-only records
+// appended) and immediately persists the merged list back to both stores —
+// so no matter which side wrote last, nothing is ever dropped again.
+const mergeIndexCopies = (lsArr, storeArr) => {
+  let dead = new Set();
+  try { dead = new Set((JSON.parse(localStorage.getItem("hg2:tombstones") || "[]") || []).map((t) => t && t.id)); } catch { }
+  const seen = new Set();
+  const out = [];
+  for (const r of [...(lsArr || []), ...(storeArr || [])]) {
+    if (!r || r.id == null || dead.has(r.id) || seen.has(r.id)) continue;
+    seen.add(r.id);
+    out.push(r);
+  }
+  return out;
+};
 const loadIndex = async () => {
-  try { const r = await store.get("hg2:index"); return r && r.value ? JSON.parse(r.value) : []; }
-  catch { try { return JSON.parse(localStorage.getItem("hg2:index") || '[]'); } catch { return []; } }
+  let fromStore = null, fromLS = null;
+  try { const r = await store.get("hg2:index"); if (r && r.value) fromStore = JSON.parse(r.value); } catch { }
+  try { const v = localStorage.getItem("hg2:index"); if (v) fromLS = JSON.parse(v); } catch { }
+  if (fromStore && fromLS) {
+    const merged = mergeIndexCopies(fromLS, fromStore);
+    if (merged.length !== fromLS.length || merged.length !== fromStore.length) {
+      try { await saveIndex(merged); } catch { } // heal both copies on the spot
+    }
+    return merged;
+  }
+  return fromLS || fromStore || [];
 };
 // Writes hg2:index and THROWS if the write didn't actually stick (quota
 // exceeded, private-mode silent no-op, etc.) so callers never report success
@@ -354,6 +387,20 @@ export default function App() {
       }
       setIndex(idx); setReady(true);
     })();
+    // Live cross-tab merge — an install reported from the Alpha dashboard
+    // while THIS app is open in another tab lands in localStorage and fires
+    // a storage event here. Merge it into the live list, otherwise our next
+    // save would overwrite it with the in-memory (stale) copy — the last
+    // remaining way a chat-reported install could still vanish.
+    const onStorage = (e) => {
+      if (e.key !== "hg2:index" || !e.newValue) return;
+      let incoming = null;
+      try { incoming = JSON.parse(e.newValue); } catch { return; }
+      if (!Array.isArray(incoming)) return;
+      setIndex((prev) => mergeIndexCopies(incoming, prev));
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, []);
   const showToast = useCallback((msg, kind = "ok") => { setToast({ msg, kind }); setTimeout(() => setToast(null), 3000); }, []);
 
