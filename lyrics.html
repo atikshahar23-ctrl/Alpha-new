@@ -322,6 +322,23 @@
   .hero-line.pop .hl-trans.sweep{animation:hlPop .45s cubic-bezier(.2,1.4,.3,1), hlSweep var(--sweep-dur, 3s) linear forwards;}
   @keyframes hlSweep{from{background-position-x:0%;}to{background-position-x:100%;}}
   .hero-wrap.has-line .hero-caption{display:none;}
+  /* "Now playing" pill — the projected screen always names the song. */
+  .np-pill{
+    position:absolute; top:10px; left:50%; transform:translateX(-50%); z-index:4;
+    max-width:min(60%, 420px); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    font-size:12px; font-weight:600; color:var(--text);
+    background:rgba(10,12,20,.62); border:1px solid var(--border); border-radius:999px;
+    padding:5px 14px; backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
+    pointer-events:none;
+  }
+  /* Micro-interactions — buttons visibly respond to the press. */
+  .hero-btn:active, .icon-btn:active, .manual-nav button:active{transform:scale(.9); transition:transform .08s;}
+  /* Fresh lyric rows fade-slide in instead of popping. */
+  .lyric-row{animation:rowIn .35s ease both;}
+  @keyframes rowIn{from{opacity:0; transform:translateY(6px);}to{opacity:1; transform:none;}}
+  /* Song-change flash — one bright pulse over the stage on a new track. */
+  .hero-wrap.stage-flash{animation:stageFlash .55s ease;}
+  @keyframes stageFlash{0%{filter:brightness(2) saturate(1.4);}100%{filter:none;}}
   .stats-hud{
     position:absolute; top:10px; right:10px; z-index:4;
     display:flex; gap:6px; pointer-events:none;
@@ -492,7 +509,13 @@
 
   @media (prefers-reduced-motion: reduce){
     .dot.live, .lyric-row.active::before{animation:none;}
+    /* sweep relies on an animation — without it the fill must fall back to
+       plain white text, never stay transparent */
+    .hero-line .hl-trans.sweep{animation:none; color:#fff; background:none;}
+    .lyric-row{animation:none;}
+    .hero-wrap.stage-flash{animation:none;}
   }
+  body.force-reduce-motion .hero-line .hl-trans.sweep{color:#fff !important; background:none !important;}
   @media (max-width:560px){
     .now-playing{flex-wrap:wrap;}
     header{gap:10px;}
@@ -546,6 +569,7 @@
     <button class="hero-btn stadcam-btn" id="stadCamBtn" title="מצלמת איצטדיון — רחפן מרחף" hidden>🚁</button>
     <button class="hero-btn stage-exit" id="stageExitBtn" title="יציאה ממסך מלא" hidden>✕</button>
     <div class="hero-caption">🎭 רוקד לקצב השיר</div>
+    <div class="np-pill" id="npPill" hidden>🎵 <span id="npPillText"></span></div>
     <div class="stats-hud" id="statsHud" hidden>
       <span id="hudBpm" hidden></span>
       <span id="hudFps" hidden></span>
@@ -818,8 +842,9 @@
     <canvas class="eq-canvas" id="eqCanvas" aria-hidden="true"></canvas>
     <div class="stage" id="stage">
       <div class="empty-state" id="emptyState">
-        <div class="big">אין מילים להצגה</div>
-        <div>התחבר לספוטיפיי או חפש שיר ידנית כדי להתחיל</div>
+        <div class="big">🎤 מוכנים להופעה</div>
+        <div>התחברו לספוטיפיי או חפשו שיר ידנית — המילים, התרגום והבמה יעלו לבד.</div>
+        <div style="margin-top:10px; font-size:11px; opacity:.75;">קיצורים: רווח ניגון/השהיה · K קריוקי · F מסך במה · חיצים לדפדוף שורות</div>
       </div>
     </div>
   </div>
@@ -1305,6 +1330,56 @@
     applyKaraokeMode(on);
   });
   applyKaraokeMode(!!store.get('lt:karaoke_on'));
+
+  // ── DJ keyboard shortcuts ── Space play/pause (Spotify) · arrows step
+  // lines (manual mode; ← is "next" in RTL) · K/ק karaoke · F/כ stage mode.
+  // Never fires while typing in a field, and never hijacks browser combos.
+  document.addEventListener('keydown', (e)=>{
+    const tag = (e.target && e.target.tagName) || '';
+    if(tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.metaKey || e.ctrlKey || e.altKey) return;
+    if(e.key === ' '){
+      if(state.mode === 'spotify' && !npControls.hidden){ e.preventDefault(); ctlPlay.click(); }
+    } else if(e.key === 'ArrowLeft'){
+      if(state.mode === 'manual') nextLineBtn.click();
+    } else if(e.key === 'ArrowRight'){
+      if(state.mode === 'manual') prevLineBtn.click();
+    } else if(e.key === 'k' || e.key === 'K' || e.key === 'ק'){
+      karaokeBtn.click();
+    } else if(e.key === 'f' || e.key === 'F' || e.key === 'כ'){
+      rotateBtn.click();
+    }
+  });
+
+  // Enter submits the manual song search from either field.
+  for(const el of [manualArtist, manualTitle]){
+    el.addEventListener('keydown', (e)=>{ if(e.key === 'Enter'){ e.preventDefault(); manualSearchBtn.click(); } });
+  }
+
+  // ── Album-art ambient color ── the LED frame re-anchors its hue to the
+  // current album cover's dominant color, so the whole room light matches
+  // the song's artwork. Downscale-sample via canvas; CORS failures (or a
+  // near-grey cover) silently keep the default hue cycle.
+  albumArt.crossOrigin = 'anonymous';
+  albumArt.addEventListener('load', ()=>{
+    try{
+      if(!albumArt.naturalWidth) return;
+      const c = document.createElement('canvas'); c.width = c.height = 8;
+      const g = c.getContext('2d');
+      g.drawImage(albumArt, 0, 0, 8, 8);
+      const d = g.getImageData(0, 0, 8, 8).data;
+      let r = 0, gg = 0, b = 0, n = 0;
+      for(let i = 0; i < d.length; i += 4){ r += d[i]; gg += d[i+1]; b += d[i+2]; n++; }
+      r /= n; gg /= n; b /= n;
+      const mx = Math.max(r, gg, b), mn = Math.min(r, gg, b);
+      if(mx - mn < 14) return; // grey-ish cover — keep the normal color cycle
+      let h;
+      if(mx === r) h = ((gg - b) / (mx - mn)) % 6;
+      else if(mx === gg) h = (b - r) / (mx - mn) + 2;
+      else h = (r - gg) / (mx - mn) + 4;
+      h = Math.round(h * 60); if(h < 0) h += 360;
+      ledHue = h;
+    }catch(err){ /* canvas tainted (no CORS) — ambient tint just skips */ }
+  });
 
   // ================= EQUALIZER (procedural, behind the lyrics) =================
   // No audio stream is available from Spotify's Web API, so the equalizer is a
@@ -2159,6 +2234,18 @@
     state.activeIndex = -1;
     updateHeroLine(-1);
     renderSongInfo(null); // previous song's info card is stale for this one
+    // Finish-pass song-change moment: the stage flashes once, the on-stage
+    // pill + browser tab name the new track, and a toast announces it.
+    const npPill = document.getElementById('npPill');
+    const npPillText = document.getElementById('npPillText');
+    if(npPill && npPillText){ npPillText.textContent = title + ' · ' + artist; npPill.hidden = false; }
+    document.title = title + ' — ' + artist + ' · Alpha Lyrics';
+    if(heroWrapEl){
+      heroWrapEl.classList.remove('stage-flash');
+      void heroWrapEl.offsetWidth;
+      heroWrapEl.classList.add('stage-flash');
+    }
+    showMiniToast('🎵 עכשיו מתנגן: ' + title + ' — ' + artist);
     const target = targetLangSel.value;
     const cacheKey = (artist + '|' + title + '|' + target).toLowerCase();
 
