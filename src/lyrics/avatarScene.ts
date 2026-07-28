@@ -2826,6 +2826,11 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   let confettiMult = 1, sparkMult = 1, hazeMult = 1, beamMult = 1, finMult = 1;
   let pyroMult = 1;            // fireworks / laser fan / flame jets master gain
   let trebleE = 0;             // live high-band (vocal/synth) energy → arm flourish
+  // Crowd-hype meter: beats/drops/sung lines charge it; at full charge the
+  // show erupts (firework volley, jets, camera punch) and it resets. The
+  // page HUD mirrors it via 'lt-hype' / 'lt-wild' window events.
+  let hype = 0, wildPunch = 0, lastHypePush = 0;
+  let lastEnergyOnAt = 0;
   let stadiumDensityOverride = -1; // -1 = auto (qTier), else 20000/50000/80000
   let stadiumHue = 0, stadiumHueTarget = 0; // crowd color waves — advance per bar, eased
   let stadiumCamStyle = 0;     // 0 drone orbit · 1 fixed wide · 2 stage-cam close
@@ -2905,6 +2910,15 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     }
   }
 
+  function crowdWild() {
+    hype = 0.15;
+    wildPunch = 1;
+    beatPulse = Math.max(beatPulse, 1.5);
+    for (let i = 0; i < 5; i++) setTimeout(launchFirework, i * 180); // volley
+    jetPower = 1;
+    try { window.dispatchEvent(new CustomEvent('lt-wild')); } catch { /* SSR-safe */ }
+  }
+
   // One beat of the show: pulse the lights, ripple the floor under the
   // lead's alternating feet, and drive the choreography step chart.
   function fireBeat(now2: number) {
@@ -2912,6 +2926,8 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     beatPulse = Math.max(beatPulse, 1);
     beatCount++;
     if (beatCount % 4 === 0) beatPulse = Math.max(beatPulse, 1.15); // downbeat accent (every bar)
+    hype = Math.min(1, hype + 0.045);
+    if (hype >= 1) crowdWild();
     if (beatCount % 16 === 0) launchFirework(); // a firework every 4 bars keeps the sky alive
     if (partyMode === 3 && beatCount % 4 === 0) stadiumHueTarget += 0.65; // stands change color every bar
     if (vibeMode === 4 && beatCount % 8 === 0) launchFirework(); // hyper: double the sky
@@ -2960,6 +2976,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     if (!playing) return;
     if (n - lastLineAt < 350) return; // debounce rapid re-fires
     lastLineAt = n;
+    hype = Math.min(1, hype + 0.03);
     mouthPulse = 1; // the dancers visibly "sing" the new line
     // Re-anchor the beat phase so the next internal beat lands just after the
     // line instead of drifting — keeps the groove locked to the vocal.
@@ -3169,6 +3186,12 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     for (const m of accentMats) m.opacity = 0.72 + beatPulse * 0.28;
     // Mouths glow with the music and flare hard on each sung lyric line.
     trebleE *= Math.exp(-dt * 0.5); // treble flourish fades if the mic goes quiet
+    hype = Math.max(0, hype - dt * (playing ? 0.012 : 0.06)); // slow build, fast fade at silence
+    wildPunch = Math.max(0, wildPunch - dt * 1.3);
+    if (now - lastHypePush > 200) {
+      lastHypePush = now;
+      try { window.dispatchEvent(new CustomEvent('lt-hype', { detail: hype })); } catch { /* noop */ }
+    }
     mouthPulse *= Math.exp(-dt * 2.4);
     const mOp = 0.16 + energy * 0.24 + mouthPulse * 0.6;
     for (const m of mouthMats) m.opacity = mOp;
@@ -3394,7 +3417,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
         const jitter = cameraStyleMode === 2 ? (Math.sin(t * 17.3) * 0.012 + Math.sin(t * 23.7) * 0.008) : 0;
         camera.position.x = camBase.x + (Math.sin(t * 0.12 * swayFreqSc) * 0.08 + jitter) * swaySc;
         camera.position.y = camBase.y + (Math.sin(t * 0.09 * swayFreqSc + 1) * 0.04 + jitter * 0.7) * swaySc + camParty * 0.5;
-        camera.position.z = (camBase.z + camParty * 1.6) / userZoom - beatPulse * energy * 0.06 * shakeMult;
+        camera.position.z = (camBase.z + camParty * 1.6) / userZoom - beatPulse * energy * 0.06 * shakeMult - wildPunch * 0.55;
         camera.lookAt(0, 1.05 - camParty * 0.3, -camParty * 0.9);
       }
     }
@@ -3404,7 +3427,19 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   raf = requestAnimationFrame(frame);
 
   return {
-    setEnergy(p: boolean) { playing = p; },
+    setEnergy(p: boolean) {
+      const was = playing;
+      playing = p;
+      // Entrance bow — music starting after a real pause: the whole cast
+      // takes a short bow before the first move lands. Pure showmanship.
+      const n2 = performance.now();
+      if (p && !was && n2 - lastEnergyOnAt > 5000) {
+        lastEnergyOnAt = n2;
+        accentHold = 2;
+        const BOW: Pose = { torsoRx: 0.55, headRx: 0.35, shLz: 0.5, shRz: -0.5, fALz: 0.35, fARz: -0.35, shLx: 0.25, shRx: 0.25, kneeLx: 0.25, kneeRx: 0.25, rootY: -0.06 };
+        for (const d of activeDancers()) setPoseFor(d, BOW);
+      }
+    },
     setTempo(ms: number) {
       if (Number.isFinite(ms) && ms > 0) tempoMs = ms;
     },
@@ -3533,6 +3568,8 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       for (const r of rings) r.age = 0; // triple shockwave
       launchFirework(); launchFirework(); // double burst on the drop
       jetPower = 1;
+      hype = Math.min(1, hype + 0.22);
+      if (hype >= 1) crowdWild();
     },
     setLiveBeat(on: boolean) { liveMode = !!on; if (!on) lastLiveTick = 0; },
     setTreble(v: number) { if (Number.isFinite(v)) trebleE += (Math.max(0, Math.min(1, v)) - trebleE) * 0.5; },

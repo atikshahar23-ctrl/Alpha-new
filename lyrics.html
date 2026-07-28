@@ -407,6 +407,33 @@
   .hero-btn.wedding-btn{top:154px;}
   .hero-btn.wedding-btn.on{border-color:rgba(255,200,120,.75); box-shadow:0 0 16px rgba(255,190,110,.55); color:#ffd88a;}
   .hero-btn.stadcam-btn{top:202px; font-size:16px;}
+  .hero-btn.rec-btn{top:250px; font-size:15px;}
+  .hero-btn.rec-btn.rec-on{
+    border-color:rgba(255,77,109,.8); color:#ff4d6d;
+    box-shadow:0 0 18px rgba(255,77,109,.5);
+    animation:recPulse 1s ease-in-out infinite;
+  }
+  @keyframes recPulse{0%,100%{opacity:1;}50%{opacity:.55;}}
+  /* Crowd-hype meter — charges with beats/drops until the show erupts. */
+  .hype-rail{
+    position:absolute; left:12px; bottom:16%; width:7px; height:52%;
+    border:1px solid var(--border); border-radius:999px; overflow:hidden;
+    background:rgba(8,10,18,.55); z-index:4; pointer-events:none;
+  }
+  .hype-fill{
+    position:absolute; bottom:0; left:0; right:0; height:0%;
+    background:linear-gradient(0deg, var(--cyan), var(--violet) 55%, var(--magenta));
+    border-radius:999px;
+    transition:height .25s ease;
+  }
+  .wild-caption{
+    position:absolute; top:38%; left:0; right:0; text-align:center; z-index:5;
+    font-family:'Rubik',sans-serif; font-weight:900;
+    font-size:clamp(26px, 6vw, 52px); color:#fff; pointer-events:none;
+    text-shadow:0 0 24px rgba(255,61,154,.8), 0 0 50px rgba(138,92,255,.6), 0 2px 12px rgba(0,0,0,.9);
+    animation:wildPop 1.8s cubic-bezier(.2,1.5,.3,1) both;
+  }
+  @keyframes wildPop{0%{transform:scale(.4); opacity:0;}12%{transform:scale(1.12); opacity:1;}22%{transform:scale(1);}80%{opacity:1;}100%{opacity:0; transform:scale(1.05);}}
   .hero-btn.stadcam-btn.on{border-color:var(--border-strong); box-shadow:0 0 16px rgba(0,229,255,.4);}
   .hero-btn.zoom-btn .zlabel{position:absolute; bottom:2px; right:4px; font-size:8px; font-weight:800; color:var(--cyan);}
   .hero-btn.live-beat.on{border-color:rgba(255,80,120,.7); box-shadow:0 0 16px rgba(255,80,120,.5); animation:liveBeatPulse 1s ease-in-out infinite;}
@@ -617,6 +644,9 @@
     <button class="hero-btn zoom-btn" id="zoomBtn" title="גודל האווטרים">🔍</button>
     <button class="hero-btn wedding-btn" id="weddingBtn" title="מצב חתונה — חתן, כלה, חופה והורה 💍">💍</button>
     <button class="hero-btn stadcam-btn" id="stadCamBtn" title="מצלמת איצטדיון — רחפן מרחף" hidden>🚁</button>
+    <button class="hero-btn rec-btn" id="recBtn" title="הקלט קליפ של 8 שניות מהבמה 🎬">📹</button>
+    <div class="hype-rail" aria-hidden="true"><div class="hype-fill" id="hypeFill"></div></div>
+    <div class="wild-caption" id="wildCaption" hidden>🔥 הקהל משתגע!! 🔥</div>
     <button class="hero-btn stage-exit" id="stageExitBtn" title="יציאה ממסך מלא" hidden>✕</button>
     <div class="hero-caption">🎭 רוקד לקצב השיר</div>
     <div class="np-pill" id="npPill" hidden>🎵 <span id="npPillText"></span></div>
@@ -1430,6 +1460,69 @@
   for(const el of [manualArtist, manualTitle]){
     el.addEventListener('keydown', (e)=>{ if(e.key === 'Enter'){ e.preventDefault(); manualSearchBtn.click(); } });
   }
+
+  // ── Crowd-hype HUD ── the avatar engine pushes its hype meter (charged by
+  // beats, drops and sung lines) via window events; the rail fills, and at
+  // full charge the "crowd goes wild" caption erupts with the show.
+  const hypeFill = $('hypeFill');
+  const wildCaption = $('wildCaption');
+  window.addEventListener('lt-hype', (e)=>{
+    if(hypeFill) hypeFill.style.height = Math.round((e.detail || 0) * 100) + '%';
+  });
+  let wildT = null;
+  window.addEventListener('lt-wild', ()=>{
+    if(!wildCaption) return;
+    wildCaption.hidden = false;
+    // restart the pop animation
+    wildCaption.style.animation = 'none';
+    void wildCaption.offsetWidth;
+    wildCaption.style.animation = '';
+    if(wildT) clearTimeout(wildT);
+    wildT = setTimeout(()=>{ wildCaption.hidden = true; }, 1900);
+  });
+
+  // ── 📹 Stage clip recorder ── 8 seconds of the live 3D stage straight to
+  // a downloadable webm — made for sharing the drop. Click again to stop
+  // early. Records the canvas only (no mic audio — no permissions needed).
+  const recBtn = $('recBtn');
+  let mediaRec = null, recChunks = [], recTimer = null;
+  recBtn.addEventListener('click', ()=>{
+    if(mediaRec){ try{ mediaRec.stop(); }catch(e){} return; }
+    const canvas = document.querySelector('#heroAvatar canvas');
+    if(!canvas || !canvas.captureStream || typeof MediaRecorder === 'undefined'){
+      showMiniToast('הדפדפן הזה לא תומך בהקלטת קליפים');
+      return;
+    }
+    try{
+      const stream = canvas.captureStream(30);
+      let mime = 'video/webm;codecs=vp9';
+      if(!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm';
+      mediaRec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 6000000 });
+      recChunks = [];
+      mediaRec.ondataavailable = (e)=>{ if(e.data && e.data.size) recChunks.push(e.data); };
+      mediaRec.onstop = ()=>{
+        if(recTimer){ clearTimeout(recTimer); recTimer = null; }
+        const blob = new Blob(recChunks, { type: 'video/webm' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'alpha-stage-clip.webm';
+        a.click();
+        setTimeout(()=> URL.revokeObjectURL(a.href), 5000);
+        mediaRec = null;
+        recBtn.classList.remove('rec-on');
+        recBtn.textContent = '📹';
+        showMiniToast('🎬 הקליפ ירד — מוכן לשיתוף');
+      };
+      mediaRec.start();
+      recBtn.classList.add('rec-on');
+      recBtn.textContent = '⏺';
+      showMiniToast('⏺ מקליט 8 שניות מהבמה… (לחיצה נוספת עוצרת)');
+      recTimer = setTimeout(()=>{ if(mediaRec && mediaRec.state !== 'inactive') mediaRec.stop(); }, 8000);
+    }catch(err){
+      mediaRec = null;
+      showMiniToast('ההקלטה נכשלה בדפדפן הזה');
+    }
+  });
 
   // ── Album-art ambient color ── the LED frame re-anchors its hue to the
   // current album cover's dominant color, so the whole room light matches
