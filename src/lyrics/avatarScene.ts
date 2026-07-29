@@ -124,6 +124,9 @@ export interface LyricsAvatarHandle {
   // Slow-motion — scales the whole show's time (pose springs + beat clock).
   // 1 = normal, 0.4 ≈ cinematic slow-mo, clamped to [0.2, 1].
   setTimeScale?(x: number): void;
+  // Crew formation — how the backup dancers arrange around the lead:
+  // 0 arrowhead (default) · 1 line · 2 V-wedge · 3 circle.
+  setFormation?(mode: number): void;
   dispose(): void;
 }
 
@@ -2161,6 +2164,29 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       mouthMats.push(r.mouthMat);
       mkShadow(bx, bz).visible = false;
     }
+    applyFormation(); // new dancers snap into the current formation
+  }
+  // ── Crew formations — the backup dancers rearrange around the lead. Each
+  // formation is 6 [x, z] spots (parallel to ALL_BACKUP_SPOTS); setFormation
+  // reassigns every backup's base position and its contact shadow. Formation
+  // 0 is the default staggered arrowhead.
+  const FORMATIONS: [number, number][][] = [
+    [[-1.0, -0.5], [1.0, -0.5], [-1.9, -1.0], [1.9, -1.0], [-2.7, -1.5], [2.7, -1.5]], // 0 arrowhead
+    [[-1.2, -1.0], [1.2, -1.0], [-2.4, -1.0], [2.4, -1.0], [-3.6, -1.0], [3.6, -1.0]], // 1 line
+    [[-0.9, -0.7], [0.9, -0.7], [-1.8, -1.5], [1.8, -1.5], [-2.7, -2.3], [2.7, -2.3]], // 2 V-wedge
+    [[1.1, -1.9], [-1.1, -1.9], [2.2, 0.0], [-2.2, 0.0], [1.1, 1.7], [-1.1, 1.7]],      // 3 circle
+  ];
+  let formationMode = 0;
+  function applyFormation() {
+    const spots = FORMATIONS[formationMode] || FORMATIONS[0];
+    for (let i = 1; i < dancers.length; i++) {
+      const s = spots[i - 1];
+      if (!s) continue;
+      dancers[i].baseX = s[0];
+      dancers[i].baseZ = s[1];
+      const sh = dancerShadows[i];
+      if (sh) sh.position.z = s[1]; // x tracks baseX per-frame; z is set here
+    }
   }
   // ── WEDDING MODE — bride & groom + chuppah + floating hearts ─────────────
   // For DJs projecting at real weddings: the lead becomes the groom (top hat
@@ -3632,6 +3658,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     syncLine() { syncLine(); },
     burst() { crowdWild(); },
     setTimeScale(x: number) { if (Number.isFinite(x)) timeScale = Math.max(0.2, Math.min(1, x)); },
+    setFormation(mode: number) { formationMode = Math.max(0, Math.min(FORMATIONS.length - 1, Math.round(mode))); applyFormation(); },
     photoFreeze(on: boolean) {
       photoFrozen = !!on;
       if (photoFrozen) {

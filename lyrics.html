@@ -569,6 +569,8 @@
   .btn-insane:hover{box-shadow:0 0 28px rgba(255,90,120,.55);}
   .btn-insane:active{transform:scale(.96);}
   @keyframes insaneHue{from{background-position:0% 50%;}to{background-position:280% 50%;}}
+  .dir-row{display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:13px; color:var(--text);}
+  .dir-row select{flex:none; min-width:150px;}
   .dir-toggle{display:flex; align-items:center; gap:9px; cursor:pointer; font-size:13px; color:var(--text); user-select:none;}
   .dir-toggle input{width:16px; height:16px; accent-color:var(--cyan); flex:none;}
   .dir-toggle span{line-height:1.35;}
@@ -1161,8 +1163,21 @@
       <input type="checkbox" id="slowmoChk">
       <span>🐌 סלואו-מושן — הרקדנים בהילוך איטי דרמטי</span>
     </label>
+    <div class="dir-row" style="margin-top:12px;">
+      <span>🕺 פורמציית להקה</span>
+      <select id="formationSel">
+        <option value="0">חוד חנית (ברירת מחדל)</option>
+        <option value="1">שורה</option>
+        <option value="2">V פתוח</option>
+        <option value="3">מעגל סביב הסולן</option>
+      </select>
+    </div>
     <button id="finaleBtn" class="btn-ghost" style="margin-top:12px; width:100%;">🎆 גרנד פינאלה — רצף סיום מטורף</button>
     <button id="insaneBtn" class="btn-insane" style="margin-top:10px; width:100%;">🤯 מצב INSANE — הכל על מקסימום</button>
+    <label class="dir-toggle" style="margin-top:12px;">
+      <input type="checkbox" id="autoShowChk">
+      <span>🎭 מופע אוטומטי — מחליף סצנה שלמה כל 20 שניות</span>
+    </label>
     <div class="setlist-empty" style="margin-top:8px;">💥 פוצץ (B) · ❄️ פריז לתמונה (Z) · 📸 פוסטר (P)</div>
   </div>
 
@@ -2073,6 +2088,36 @@
     runFinale();
     showMiniToast('🤯 INSANE! הכל על מקסימום');
   });
+
+  // ── 🕺 Crew formation ── rearranges the backup dancers around the lead
+  // (arrowhead / line / V / circle). Persisted (lt:formation) and re-applied
+  // once the engine is mounted.
+  const formationSel = $('formationSel');
+  formationSel.value = String(Math.max(0, Math.min(3, Number(store.get('lt:formation')) || 0)));
+  function applyFormationSel(){ window.__lyricsAvatarBridge?.setFormation?.(Number(formationSel.value)); }
+  formationSel.addEventListener('change', ()=>{ store.set('lt:formation', Number(formationSel.value)); applyFormationSel(); });
+  setTimeout(applyFormationSel, 1200); // apply saved formation after mount
+
+  // ── 🎭 Auto-show ── the full hands-free VJ: every 20s it rolls the whole
+  // stage to the next scene preset (which itself sets vibe/venue/weather/pyro/
+  // color). Turns a solo laptop into an unattended visual show. Persisted.
+  const autoShowChk = $('autoShowChk');
+  let autoShowTimer = null, autoShowIdx = 0;
+  function stepAutoShow(){
+    autoShowIdx = (autoShowIdx + 1) % SCENES.length;
+    applyScene(SCENES[autoShowIdx]);
+  }
+  function setAutoShow(on){
+    if(autoShowTimer){ clearInterval(autoShowTimer); autoShowTimer = null; }
+    if(on) autoShowTimer = setInterval(stepAutoShow, 20000);
+  }
+  autoShowChk.checked = store.get('lt:auto_show') === true;
+  autoShowChk.addEventListener('change', ()=>{
+    store.set('lt:auto_show', autoShowChk.checked);
+    setAutoShow(autoShowChk.checked);
+    showMiniToast(autoShowChk.checked ? '🎭 מופע אוטומטי פעיל' : '⏸️ מופע אוטומטי כבוי');
+  });
+  setTimeout(()=>{ if(autoShowChk.checked) setAutoShow(true); }, 1400);
 
   // ── 🎬 Song title card ── a broadcast-style lower-third that slides in when
   // a song loads and slides out after ~4.5s. Called from loadLyricsFor.
@@ -3639,6 +3684,7 @@
     burst() { handle?.burst?.(); },
     photoFreeze(on) { handle?.photoFreeze?.(on); },
     setTimeScale(x) { handle?.setTimeScale?.(x); },
+    setFormation(mode) { handle?.setFormation?.(mode); },
   };
 
   // Party button cycles: solo → 🎉 crew of 3 → 🪩 BIG PARTY (30 aliens +
