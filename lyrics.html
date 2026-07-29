@@ -481,6 +481,43 @@
   }
   .beat-strobe.hit{animation:strobeHit .12s ease-out;}
   @keyframes strobeHit{0%{opacity:.55;}100%{opacity:0;}}
+  /* One-tap scene presets — each bundles vibe + venue + weather + pyro + color. */
+  .scene-grid{display:grid; grid-template-columns:repeat(auto-fit, minmax(96px, 1fr)); gap:8px;}
+  .scene-btn{
+    display:flex; flex-direction:column; align-items:center; gap:3px; cursor:pointer;
+    padding:11px 6px; border-radius:14px; border:1px solid var(--border);
+    background:rgba(255,255,255,.04); color:var(--text); font-weight:700; font-size:12px;
+    transition:transform .1s, border-color .18s, box-shadow .18s; text-align:center;
+  }
+  .scene-btn .se{font-size:22px; line-height:1;}
+  .scene-btn:hover{border-color:var(--border-strong); transform:translateY(-2px);}
+  .scene-btn.on{border-color:var(--cyan); box-shadow:0 0 16px rgba(0,229,255,.35);}
+  .scene-btn:active{transform:scale(.94);}
+  /* Crowd-reaction emoji rain — taps drop a shower of that emoji over the stage. */
+  .emoji-row{display:flex; gap:8px; flex-wrap:wrap;}
+  .emoji-btn{
+    font-size:20px; width:42px; height:42px; border-radius:12px; cursor:pointer;
+    border:1px solid var(--border); background:rgba(255,255,255,.04);
+    transition:transform .1s, border-color .18s;
+  }
+  .emoji-btn:hover{border-color:var(--border-strong);}
+  .emoji-btn:active{transform:scale(.86);}
+  .emoji-rain{position:absolute; inset:0; z-index:6; pointer-events:none; overflow:hidden;}
+  .emoji-drop{position:absolute; top:-8%; font-size:clamp(20px, 3vw, 38px); will-change:transform, opacity;
+    animation:emojiFall var(--fall, 2.6s) cubic-bezier(.3,.4,.5,1) forwards;}
+  @keyframes emojiFall{
+    0%{transform:translateY(0) rotate(0deg); opacity:0;}
+    12%{opacity:1;}
+    100%{transform:translateY(112%) rotate(var(--spin, 40deg)); opacity:0;}
+  }
+  /* 3-2-1 countdown-to-drop veil. */
+  .countdown-veil{position:absolute; inset:0; z-index:9; display:flex; align-items:center; justify-content:center;
+    background:radial-gradient(circle at 50% 45%, rgba(8,9,16,.5), rgba(8,9,16,.82)); pointer-events:none;}
+  .countdown-num{font-weight:900; font-size:clamp(80px, 22vh, 220px); line-height:1;
+    background:linear-gradient(135deg, #ffd88a, #ff7ab6, #00e5ff); -webkit-background-clip:text; background-clip:text; color:transparent;
+    text-shadow:0 0 40px rgba(255,150,200,.4);}
+  .countdown-num.pop{animation:cdPop .9s ease-out;}
+  @keyframes cdPop{0%{transform:scale(.3); opacity:0;}25%{transform:scale(1.08); opacity:1;}70%{transform:scale(1); opacity:1;}100%{transform:scale(1.5); opacity:0;}}
   .dir-toggle{display:flex; align-items:center; gap:9px; cursor:pointer; font-size:13px; color:var(--text); user-select:none;}
   .dir-toggle input{width:16px; height:16px; accent-color:var(--cyan); flex:none;}
   .dir-toggle span{line-height:1.35;}
@@ -732,6 +769,8 @@
     <div class="style-badge" id="styleBadge">🎛️ <span id="styleBadgeText"></span></div>
     <div class="dedication-bar" id="dedicationBar" hidden><div class="dedication-scroll" id="dedicationScroll"></div></div>
     <div class="beat-strobe" id="beatStrobe" aria-hidden="true"></div>
+    <div class="emoji-rain" id="emojiRain" aria-hidden="true"></div>
+    <div class="countdown-veil" id="countdownVeil" hidden><div class="countdown-num" id="countdownNum"></div></div>
     <button class="hero-btn stage-exit" id="stageExitBtn" title="יציאה ממסך מלא" hidden>✕</button>
     <div class="hero-caption">🎭 רוקד לקצב השיר</div>
     <div class="np-pill" id="npPill" hidden>🎵 <span id="npPillText"></span></div>
@@ -1019,6 +1058,11 @@
     </div>
   </div>
 
+  <div class="panel scenes-panel" id="scenesPanel">
+    <div class="eyebrow" style="margin-bottom:10px;">🎬 סצנות מוכנות — לחיצה אחת</div>
+    <div class="scene-grid" id="sceneGrid"></div>
+  </div>
+
   <div class="panel setlist-panel" id="setlistPanel">
     <div class="eyebrow" style="margin-bottom:10px;">🎚️ הסטליסט שלי (לדיג׳יי)</div>
     <div class="search-row">
@@ -1046,6 +1090,9 @@
       <input type="checkbox" id="strobeChk">
       <span>⚡ סטרוב לקצב — הבזקי אור על כל ביט</span>
     </label>
+    <div style="margin-top:16px; padding-top:12px; border-top:1px solid var(--border); font-size:12px; color:var(--text-dim); text-align:right;">👏 תגובות קהל</div>
+    <div class="emoji-row" id="emojiRow" style="margin-top:8px;"></div>
+    <button id="countdownBtn" class="btn-ghost" style="margin-top:10px; width:100%;">🎬 ספירה לאחור לדרופ (3־2־1)</button>
     <div class="setlist-empty" style="margin-top:8px;">💥 פוצץ (B) · ❄️ פריז לתמונה (Z) · 📸 פוסטר (P)</div>
   </div>
 
@@ -1726,6 +1773,94 @@
     if(!strobeOn) return;
     beatStrobe.classList.remove('hit'); void beatStrobe.offsetWidth; beatStrobe.classList.add('hit');
   });
+
+  // ── 🎬 Scene presets ── one tap bundles a whole mood: vibe + venue +
+  // weather + pyro gain + color theme. Each preset just drives the EXISTING
+  // settings controls (sets value + dispatches their event), so persistence
+  // and the engine wiring are reused verbatim — no parallel state. The last
+  // chosen scene is remembered (lt:scene) and re-highlighted on load.
+  const SCENES = [
+    { id:'romantic', label:'רומנטי', emoji:'💗', vibe:2, venue:0, weather:0, pyro:60,  theme:19 },
+    { id:'rave',     label:'רייב',   emoji:'🔥', vibe:4, venue:0, weather:0, pyro:220, theme:23 },
+    { id:'sunset',   label:'שקיעה',  emoji:'🌅', vibe:2, venue:2, weather:3, pyro:90,  theme:10 },
+    { id:'chill',    label:'צ׳יל',   emoji:'❄️', vibe:3, venue:0, weather:1, pyro:40,  theme:4  },
+    { id:'street',   label:'רחוב',   emoji:'🎊', vibe:1, venue:1, weather:0, pyro:150, theme:1  },
+  ];
+  const sceneGrid = $('sceneGrid');
+  function setSelectVal(id, v){ const el = document.getElementById(id); if(el){ el.value = String(v); el.dispatchEvent(new Event('change')); } }
+  function setSliderVal(id, v){ const el = document.getElementById(id); if(el){ el.value = String(v); el.dispatchEvent(new Event('input')); } }
+  function applyScene(s){
+    setSelectVal('vibeSel', s.vibe);
+    setSelectVal('venueSel', s.venue);
+    setSelectVal('weatherSel', s.weather);
+    setSliderVal('pyroSlider', s.pyro);
+    document.querySelectorAll('#avatarColors .av-dot')[s.theme]?.click();
+    store.set('lt:scene', s.id);
+    sceneGrid.querySelectorAll('.scene-btn').forEach(b=> b.classList.toggle('on', b.dataset.scene === s.id));
+    showMiniToast(s.emoji + ' סצנה: ' + s.label);
+  }
+  const savedScene = store.get('lt:scene');
+  SCENES.forEach(s=>{
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'scene-btn' + (s.id === savedScene ? ' on' : '');
+    b.dataset.scene = s.id;
+    b.innerHTML = '<span class="se">' + s.emoji + '</span><span>' + s.label + '</span>';
+    b.addEventListener('click', ()=> applyScene(s));
+    sceneGrid.appendChild(b);
+  });
+
+  // ── 👏 Crowd-reaction emoji rain ── a tap drops a shower of that emoji
+  // over the stage; a live "reaction" the DJ or crowd can fire any time.
+  const emojiRain = $('emojiRain');
+  const emojiRow = $('emojiRow');
+  const REACTIONS = ['❤️','🔥','🎉','👏','🌟','😍','🙌','💃'];
+  function rainEmoji(ch, n){
+    for(let i = 0; i < (n || 14); i++){
+      const d = document.createElement('div');
+      d.className = 'emoji-drop'; d.textContent = ch;
+      d.style.left = (Math.random() * 96) + '%';
+      d.style.setProperty('--fall', (2 + Math.random() * 1.8).toFixed(2) + 's');
+      d.style.setProperty('--spin', (Math.random() * 160 - 80).toFixed(0) + 'deg');
+      d.style.animationDelay = (Math.random() * 0.5).toFixed(2) + 's';
+      emojiRain.appendChild(d);
+      setTimeout(()=> d.remove(), 4600);
+    }
+  }
+  REACTIONS.forEach(ch=>{
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'emoji-btn'; b.textContent = ch;
+    b.title = 'שגר ' + ch + ' על הבמה';
+    b.addEventListener('click', ()=> rainEmoji(ch));
+    emojiRow.appendChild(b);
+  });
+
+  // ── 🎬 Countdown-to-drop ── a big "3-2-1" over the stage that fires the
+  // burst on zero — the classic build-up-and-drop moment for a DJ set.
+  const countdownBtn = $('countdownBtn');
+  const countdownVeil = $('countdownVeil');
+  const countdownNum = $('countdownNum');
+  let counting = false;
+  function runCountdown(){
+    if(counting) return;
+    counting = true;
+    countdownVeil.hidden = false;
+    let n = 3;
+    const tick = ()=>{
+      if(n > 0){
+        countdownNum.textContent = String(n);
+        countdownNum.classList.remove('pop'); void countdownNum.offsetWidth; countdownNum.classList.add('pop');
+        n--; setTimeout(tick, 900);
+      } else {
+        countdownNum.textContent = 'DROP!';
+        countdownNum.classList.remove('pop'); void countdownNum.offsetWidth; countdownNum.classList.add('pop');
+        window.__lyricsAvatarBridge?.burst?.();
+        rainEmoji('🔥', 20);
+        setTimeout(()=>{ countdownVeil.hidden = true; counting = false; }, 900);
+      }
+    };
+    tick();
+  }
+  countdownBtn.addEventListener('click', runCountdown);
 
   // ── Live style badge ── the avatar engine names the dance family it's
   // currently performing (hip-hop, latin, wedding…); the pill announces it
