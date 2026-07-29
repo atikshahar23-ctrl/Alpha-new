@@ -462,6 +462,9 @@
     background:linear-gradient(0deg, rgba(8,9,16,.82), rgba(8,9,16,0));
     display:flex; align-items:center;
   }
+  /* An author `display` rule beats the UA [hidden]{display:none}; restore it so
+     these flex overlays actually hide when their `hidden` attribute is set. */
+  .dedication-bar[hidden], .countdown-veil[hidden], .shortcuts-modal[hidden]{display:none;}
   .dedication-scroll{
     white-space:nowrap; will-change:transform;
     font-weight:900; font-size:clamp(18px, 3.4vh, 40px); letter-spacing:.5px;
@@ -525,6 +528,39 @@
     text-shadow:0 0 40px rgba(255,150,200,.4);}
   .countdown-num.pop{animation:cdPop .9s ease-out;}
   @keyframes cdPop{0%{transform:scale(.3); opacity:0;}25%{transform:scale(1.08); opacity:1;}70%{transform:scale(1); opacity:1;}100%{transform:scale(1.5); opacity:0;}}
+  /* Song title card — a broadcast-style lower-third that slides in on song load. */
+  .title-card{position:absolute; left:0; bottom:14%; z-index:8; padding:12px 22px 12px 26px; pointer-events:none;
+    background:linear-gradient(90deg, rgba(8,9,16,.86), rgba(8,9,16,0)); border-left:3px solid var(--cyan);
+    max-width:80%; animation:tcIn .5s cubic-bezier(.2,.9,.3,1) both;}
+  .title-card.out{animation:tcOut .5s ease forwards;}
+  @keyframes tcIn{from{transform:translateX(-24px); opacity:0;}to{transform:none; opacity:1;}}
+  @keyframes tcOut{to{transform:translateX(-24px); opacity:0;}}
+  .title-card .tc-eyebrow{font-size:11px; letter-spacing:.14em; color:var(--cyan); text-transform:uppercase; margin-bottom:2px;}
+  .title-card .tc-title{font-weight:900; font-size:clamp(18px, 3.2vh, 34px); color:#fff; line-height:1.1;}
+  .title-card .tc-artist{font-size:clamp(12px, 1.8vh, 18px); color:var(--text-dim); margin-top:2px;}
+  /* Keyboard-shortcuts help. */
+  .shortcuts-fab{position:fixed; bottom:14px; left:14px; z-index:60; width:40px; height:40px; border-radius:12px;
+    border:1px solid var(--border); background:rgba(12,14,22,.8); color:var(--text); font-size:17px; cursor:pointer;
+    backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); transition:border-color .18s, transform .1s;}
+  .shortcuts-fab:hover{border-color:var(--border-strong);}
+  .shortcuts-fab:active{transform:scale(.9);}
+  .shortcuts-modal{position:fixed; inset:0; z-index:120;
+    background:rgba(4,5,10,.62); backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px);}
+  /* Centered via top/left + translate rather than flex: a transformed ancestor
+     turns this fixed element's containing block into the app frame, which
+     collapses flex cross-axis centering to the top. This is robust to that. */
+  .shortcuts-card{position:fixed; top:50%; left:50%; width:min(92vw, 400px);
+    background:rgba(16,18,28,.98); border:1px solid var(--border-strong);
+    border-radius:18px; padding:20px 22px; box-shadow:0 24px 80px rgba(0,0,0,.6); animation:scIn .28s ease both;}
+  @keyframes scIn{from{transform:translate(-50%,-46%); opacity:0;}to{transform:translate(-50%,-50%); opacity:1;}}
+  .sc-title-row{display:flex; align-items:center; justify-content:space-between; font-weight:800; font-size:15px; margin-bottom:14px;}
+  .sc-close{width:28px; height:28px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--text-dim); cursor:pointer;}
+  .sc-close:hover{border-color:rgba(255,77,109,.7); color:#ff4d6d;}
+  .sc-list{display:flex; flex-direction:column; gap:9px;}
+  .sc-line{display:flex; align-items:center; gap:12px; font-size:13.5px; color:var(--text); justify-content:flex-end; text-align:right;}
+  .sc-line span{flex:1;}
+  .sc-line kbd{flex:none; min-width:44px; text-align:center; font-family:'JetBrains Mono',monospace; font-size:12px;
+    padding:4px 9px; border-radius:7px; border:1px solid var(--border-strong); background:rgba(255,255,255,.05); color:var(--cyan);}
   .dir-toggle{display:flex; align-items:center; gap:9px; cursor:pointer; font-size:13px; color:var(--text); user-select:none;}
   .dir-toggle input{width:16px; height:16px; accent-color:var(--cyan); flex:none;}
   .dir-toggle span{line-height:1.35;}
@@ -550,6 +586,12 @@
     background:transparent; color:var(--text-dim); cursor:pointer; font-size:14px; line-height:1;
   }
   .setlist-item .sl-del:hover{border-color:rgba(255,77,109,.7); color:#ff4d6d;}
+  .setlist-item .sl-move{
+    flex:none; width:22px; height:26px; border-radius:8px; border:1px solid var(--border);
+    background:transparent; color:var(--text-dim); cursor:pointer; font-size:11px; line-height:1;
+  }
+  .setlist-item .sl-move:hover:not([disabled]){border-color:var(--cyan); color:var(--cyan);}
+  .setlist-item .sl-move[disabled]{opacity:.28; cursor:default;}
   .hero-btn.stadcam-btn.on{border-color:var(--border-strong); box-shadow:0 0 16px rgba(0,229,255,.4);}
   .hero-btn.zoom-btn .zlabel{position:absolute; bottom:2px; right:4px; font-size:8px; font-weight:800; color:var(--cyan);}
   .hero-btn.live-beat.on{border-color:rgba(255,80,120,.7); box-shadow:0 0 16px rgba(255,80,120,.5); animation:liveBeatPulse 1s ease-in-out infinite;}
@@ -778,6 +820,7 @@
     <div class="beat-strobe" id="beatStrobe" aria-hidden="true"></div>
     <div class="emoji-rain" id="emojiRain" aria-hidden="true"></div>
     <div class="countdown-veil" id="countdownVeil" hidden><div class="countdown-num" id="countdownNum"></div></div>
+    <div class="title-card" id="titleCard" hidden><div class="tc-eyebrow">▶ מתנגן עכשיו</div><div class="tc-title" id="tcTitle"></div><div class="tc-artist" id="tcArtist"></div></div>
     <button class="hero-btn stage-exit" id="stageExitBtn" title="יציאה ממסך מלא" hidden>✕</button>
     <div class="hero-caption">🎭 רוקד לקצב השיר</div>
     <div class="np-pill" id="npPill" hidden>🎵 <span id="npPillText"></span></div>
@@ -1107,6 +1150,23 @@
     <button id="tapTempoBtn" class="btn-ghost" style="margin-top:12px; width:100%;">🥁 הקש קצב — <b id="tapBpm">קליק לפי המוזיקה</b></button>
     <button id="countdownBtn" class="btn-ghost" style="margin-top:10px; width:100%;">🎬 ספירה לאחור לדרופ (3־2־1)</button>
     <div class="setlist-empty" style="margin-top:8px;">💥 פוצץ (B) · ❄️ פריז לתמונה (Z) · 📸 פוסטר (P)</div>
+  </div>
+
+  <button id="shortcutsBtn" class="shortcuts-fab" title="קיצורי מקלדת (?)">⌨️</button>
+  <div class="shortcuts-modal" id="shortcutsModal" hidden>
+    <div class="shortcuts-card">
+      <div class="sc-title-row"><span>⌨️ קיצורי מקלדת</span><button id="shortcutsClose" class="sc-close" aria-label="סגור">✕</button></div>
+      <div class="sc-list">
+        <div class="sc-line"><kbd>רווח</kbd><span>ניגון / השהיה</span></div>
+        <div class="sc-line"><kbd>K</kbd><span>מצב קריוקי</span></div>
+        <div class="sc-line"><kbd>F</kbd><span>מסך במה מלא</span></div>
+        <div class="sc-line"><kbd>B</kbd><span>💥 פוצץ — זיקוקים ולהבות</span></div>
+        <div class="sc-line"><kbd>Z</kbd><span>❄️ פריז לתמונה</span></div>
+        <div class="sc-line"><kbd>P</kbd><span>📸 צילום פוסטר</span></div>
+        <div class="sc-line"><kbd>← →</kbd><span>דפדוף שורות (מצב ידני)</span></div>
+        <div class="sc-line"><kbd>?</kbd><span>פתיחת חלון זה</span></div>
+      </div>
+    </div>
   </div>
 
   <div class="stage-wrap">
@@ -1601,6 +1661,7 @@
   stageExitBtn.addEventListener('click', exitStageMode);
   // Esc key exits the window-fill stage (mirrors the old OS-fullscreen Esc).
   document.addEventListener('keydown', (e)=>{
+    if(e.key === 'Escape' && !shortcutsModal.hidden){ toggleShortcuts(false); return; }
     if(e.key === 'Escape' && document.body.classList.contains('stage-mode')) exitStageMode();
   });
 
@@ -1637,6 +1698,8 @@
       setFrozen(!frozen);
     } else if(e.key === 'p' || e.key === 'P' || e.key === 'פ'){
       grabPoster();
+    } else if(e.key === '?'){
+      toggleShortcuts();
     }
   });
 
@@ -1956,6 +2019,45 @@
     }
   });
 
+  // ── 🎬 Song title card ── a broadcast-style lower-third that slides in when
+  // a song loads and slides out after ~4.5s. Called from loadLyricsFor.
+  const titleCard = $('titleCard');
+  const tcTitle = $('tcTitle');
+  const tcArtist = $('tcArtist');
+  let tcTimer = null, tcOutTimer = null;
+  function showTitleCard(title, artist){
+    if(!titleCard) return;
+    if(tcTimer) clearTimeout(tcTimer);
+    if(tcOutTimer) clearTimeout(tcOutTimer);
+    tcTitle.textContent = title || '';
+    tcArtist.textContent = artist || '';
+    titleCard.classList.remove('out');
+    titleCard.hidden = false;
+    void titleCard.offsetWidth; // restart the slide-in animation
+    tcTimer = setTimeout(()=>{
+      titleCard.classList.add('out');
+      tcOutTimer = setTimeout(()=>{ titleCard.hidden = true; titleCard.classList.remove('out'); }, 500);
+    }, 4500);
+  }
+  window.showTitleCard = showTitleCard; // loadLyricsFor (classic script) calls it
+
+  // ── ⌨️ Keyboard-shortcuts help ── the ? key or the corner button opens a
+  // cheat-sheet modal; Esc or a click on the backdrop closes it.
+  const shortcutsBtn = $('shortcutsBtn');
+  const shortcutsModal = $('shortcutsModal');
+  const shortcutsClose = $('shortcutsClose');
+  // Reparent to <body> so the fixed-position backdrop/card escape any
+  // transformed/filtered ancestor (which would otherwise become their
+  // containing block and break viewport centering).
+  document.body.appendChild(shortcutsModal);
+  function toggleShortcuts(show){
+    const on = show === undefined ? shortcutsModal.hidden : show;
+    shortcutsModal.hidden = !on;
+  }
+  shortcutsBtn.addEventListener('click', ()=> toggleShortcuts(true));
+  shortcutsClose.addEventListener('click', ()=> toggleShortcuts(false));
+  shortcutsModal.addEventListener('click', (e)=>{ if(e.target === shortcutsModal) toggleShortcuts(false); });
+
   // ── Live style badge ── the avatar engine names the dance family it's
   // currently performing (hip-hop, latin, wedding…); the pill announces it
   // for ~2.6s so the crowd/DJ can read what the stage is doing right now.
@@ -1992,15 +2094,24 @@
       row.className = 'setlist-item';
       row.innerHTML = '<span class="sl-num">' + (i+1) + '</span>' +
         '<span class="sl-name"><b>' + escapeHtml(song.title) + '</b> <span>· ' + escapeHtml(song.artist) + '</span></span>' +
+        '<button class="sl-move" data-dir="up" title="הזז למעלה" aria-label="למעלה"' + (i === 0 ? ' disabled' : '') + '>▲</button>' +
+        '<button class="sl-move" data-dir="down" title="הזז למטה" aria-label="למטה"' + (i === setlist.length - 1 ? ' disabled' : '') + '>▼</button>' +
         '<button class="sl-del" title="הסר מהסטליסט" aria-label="הסר">✕</button>';
       row.addEventListener('click', (ev)=>{
-        if(ev.target.closest('.sl-del')) return;
+        if(ev.target.closest('.sl-del') || ev.target.closest('.sl-move')) return;
         playSetlistSong(song, i);
       });
       row.querySelector('.sl-del').addEventListener('click', (ev)=>{
         ev.stopPropagation();
         setlist.splice(i, 1); saveSetlist(); renderSetlist();
       });
+      row.querySelectorAll('.sl-move').forEach(btn=> btn.addEventListener('click', (ev)=>{
+        ev.stopPropagation();
+        const j = btn.dataset.dir === 'up' ? i - 1 : i + 1;
+        if(j < 0 || j >= setlist.length) return;
+        [setlist[i], setlist[j]] = [setlist[j], setlist[i]];
+        saveSetlist(); renderSetlist();
+      }));
       setlistList.appendChild(row);
     });
   }
@@ -2967,6 +3078,7 @@
     const npPill = document.getElementById('npPill');
     const npPillText = document.getElementById('npPillText');
     if(npPill && npPillText){ npPillText.textContent = title + ' · ' + artist; npPill.hidden = false; }
+    window.showTitleCard?.(title, artist);
     document.title = title + ' — ' + artist + ' · Alpha Lyrics';
     if(heroWrapEl){
       heroWrapEl.classList.remove('stage-flash');
