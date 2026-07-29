@@ -113,6 +113,14 @@ export interface LyricsAvatarHandle {
   // vocal and turns the choreography over on the word, so the dance reads as
   // perfectly synced to the song rather than running on a free clock.
   syncLine?(): void;
+  // Manual crowd-wild burst — the DJ's "GO!" button. Fires the same all-out
+  // reaction the hype meter triggers at full charge (firework volley, flame
+  // jets, camera punch-in, 'lt-wild' caption), on demand.
+  burst?(): void;
+  // Photo-freeze — the crew snaps to a big hero pose and holds it dead still
+  // (beat clock paused) so the crowd can grab a group photo; call again with
+  // false to release them back into the groove.
+  photoFreeze?(on: boolean): void;
   dispose(): void;
 }
 
@@ -2801,6 +2809,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   }
 
   let playing = false;
+  let photoFrozen = false; // photo-freeze: crew held dead-still in a hero pose
   let energy = 0.25; // smoothed 0..1, drives everything below
   let tempoMs = DEFAULT_TEMPO_MS;
   let raf = 0;
@@ -2948,6 +2957,8 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     lastBeat = now2;
     beatPulse = Math.max(beatPulse, 1);
     beatCount++;
+    // Page-side FX (beat strobe, now-playing pulse) sync to the real beat.
+    try { window.dispatchEvent(new CustomEvent('lt-beat', { detail: beatCount })); } catch { /* noop */ }
     if (beatCount % 4 === 0) beatPulse = Math.max(beatPulse, 1.15); // downbeat accent (every bar)
     hype = Math.min(1, hype + 0.045);
     if (hype >= 1) crowdWild();
@@ -3035,7 +3046,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     // a soft chill self-showcase with a slow orbit camera — so an idle screen
     // at a gig never looks dead. Snaps back the instant real playback starts.
     if (playing) lastPlayingAt = now;
-    const attract = !playing && now - lastPlayingAt > ATTRACT_MS;
+    const attract = !playing && !photoFrozen && now - lastPlayingAt > ATTRACT_MS;
     // Vibe → calm: party is always 0; chill/shanti are fixed; auto reads the
     // song's tempo (fast → energetic, slow → calm). Eased slowly so switching
     // vibe (or a tempo change between songs) melts between the two looks.
@@ -3062,7 +3073,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     //    falls back automatically if the mic goes quiet for a while.
     // 2. Internal — a pulse every tempoMs (derived from the song's real LRC
     //    line timing, or from the live BPM estimate when the mic runs).
-    if (playing) {
+    if (playing && !photoFrozen) {
       if (liveMode) {
         if (now - lastLiveTick > 2500) liveMode = false; // mic went quiet → internal clock resumes
       } else if (now - lastBeat > (tempoMs / danceSpeedMult) * (vibeMode === 4 ? 0.72 : 1) * (1 + Math.max(0, calm - 0.45) * 1.6)) {
@@ -3074,7 +3085,8 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     } else if (attract && now - lastBeat > 1150) {
       fireBeat(now); // idle showcase keeps a slow, languid groove going
     }
-    if (!playing && !attract) for (const d of activeDancers()) setPoseFor(d, BASE_POSE); // paused → calm idle
+    // paused → calm idle (but not while a photo-freeze hero pose is held)
+    if (!playing && !attract && !photoFrozen) for (const d of activeDancers()) setPoseFor(d, BASE_POSE);
     beatPulse *= 0.9;
 
     // Integrate the pose springs — underdamped (slight overshoot) so every
@@ -3611,6 +3623,19 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     setLiveBeat(on: boolean) { liveMode = !!on; if (!on) lastLiveTick = 0; },
     setTreble(v: number) { if (Number.isFinite(v)) trebleE += (Math.max(0, Math.min(1, v)) - trebleE) * 0.5; },
     syncLine() { syncLine(); },
+    burst() { crowdWild(); },
+    photoFreeze(on: boolean) {
+      photoFrozen = !!on;
+      if (photoFrozen) {
+        // Both arms thrown up in a wide victory-V, chest lifted, tall stance —
+        // a clean group-photo hero pose the whole crew holds dead still.
+        const HERO: Pose = {
+          shLz: 1.9, shRz: -1.9, fALz: 0.2, fARz: -0.2, shLx: -0.12, shRx: -0.12,
+          torsoRx: -0.06, headRx: -0.08, kneeLx: 0.12, kneeRx: 0.12, rootY: 0,
+        };
+        for (const d of activeDancers()) setPoseFor(d, HERO);
+      }
+    },
     dispose() {
       cancelAnimationFrame(raf);
       ro.disconnect();

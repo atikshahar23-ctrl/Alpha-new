@@ -376,6 +376,9 @@
     padding:5px 14px; backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
     pointer-events:none;
   }
+  /* On-beat pulse — glow only (no transform, to keep the translateX centering). */
+  .np-pill.beat{animation:npBeat .18s ease-out;}
+  @keyframes npBeat{0%{box-shadow:0 0 0 rgba(0,229,255,0); border-color:var(--cyan);}40%{box-shadow:0 0 14px rgba(0,229,255,.55);}100%{box-shadow:0 0 0 rgba(0,229,255,0); border-color:var(--border);}}
   /* Micro-interactions — buttons visibly respond to the press. */
   .hero-btn:active, .icon-btn:active, .manual-nav button:active{transform:scale(.9); transition:transform .08s;}
   /* Fresh lyric rows fade-slide in instead of popping. */
@@ -408,6 +411,12 @@
   .hero-btn.wedding-btn.on{border-color:rgba(255,200,120,.75); box-shadow:0 0 16px rgba(255,190,110,.55); color:#ffd88a;}
   .hero-btn.stadcam-btn{top:202px; font-size:16px;}
   .hero-btn.rec-btn{top:250px; font-size:15px;}
+  .hero-btn.burst-btn{top:298px; font-size:16px;}
+  .hero-btn.freeze-btn{top:346px; font-size:16px;}
+  .hero-btn.freeze-btn.on{border-color:rgba(120,220,255,.8); box-shadow:0 0 18px rgba(120,220,255,.6); color:#bff0ff;}
+  .hero-btn.poster-btn{top:394px; font-size:15px;}
+  @keyframes burstFlash{0%{transform:scale(1);}40%{transform:scale(1.35); box-shadow:0 0 26px rgba(255,120,180,.9);}100%{transform:scale(1);}}
+  .hero-btn.burst-btn.flash{animation:burstFlash .5s ease;}
   .hero-btn.rec-btn.rec-on{
     border-color:rgba(255,77,109,.8); color:#ff4d6d;
     box-shadow:0 0 18px rgba(255,77,109,.5);
@@ -445,6 +454,36 @@
     transition:opacity .3s ease, transform .3s ease; white-space:nowrap;
   }
   .style-badge.show{opacity:1; transform:none;}
+  /* Dedication marquee — a DJ shout-out / wedding "mazal tov" that scrolls
+     across the bottom of the stage; projected full-screen it reads big. */
+  .dedication-bar{
+    position:absolute; left:0; right:0; bottom:0; z-index:8; height:clamp(34px, 6vh, 64px);
+    overflow:hidden; pointer-events:none;
+    background:linear-gradient(0deg, rgba(8,9,16,.82), rgba(8,9,16,0));
+    display:flex; align-items:center;
+  }
+  .dedication-scroll{
+    white-space:nowrap; will-change:transform;
+    font-weight:900; font-size:clamp(18px, 3.4vh, 40px); letter-spacing:.5px;
+    background:linear-gradient(90deg, #ffd88a, #ff7ab6, #8a5cff, #00e5ff, #ffd88a);
+    background-size:220% 100%; -webkit-background-clip:text; background-clip:text;
+    color:transparent; text-shadow:0 0 18px rgba(255,180,220,.25);
+    animation:dediScroll var(--dedi-dur, 16s) linear infinite, dediHue 6s linear infinite;
+    padding-left:100%;
+  }
+  @keyframes dediScroll{from{transform:translateX(0);}to{transform:translateX(-100%);}}
+  @keyframes dediHue{from{background-position:0% 50%;}to{background-position:220% 50%;}}
+  /* Beat strobe — a brief full-stage white veil pulsed on each real beat. */
+  .beat-strobe{
+    position:absolute; inset:0; z-index:7; pointer-events:none;
+    background:radial-gradient(circle at 50% 42%, rgba(255,255,255,.9), rgba(255,255,255,0) 62%);
+    opacity:0; mix-blend-mode:screen;
+  }
+  .beat-strobe.hit{animation:strobeHit .12s ease-out;}
+  @keyframes strobeHit{0%{opacity:.55;}100%{opacity:0;}}
+  .dir-toggle{display:flex; align-items:center; gap:9px; cursor:pointer; font-size:13px; color:var(--text); user-select:none;}
+  .dir-toggle input{width:16px; height:16px; accent-color:var(--cyan); flex:none;}
+  .dir-toggle span{line-height:1.35;}
   /* DJ setlist — queue songs, click to play, ✕ to remove; persisted. */
   .btn-ghost{
     background:rgba(255,255,255,.04); border:1px solid var(--border); color:var(--text);
@@ -685,9 +724,14 @@
     <button class="hero-btn wedding-btn" id="weddingBtn" title="מצב חתונה — חתן, כלה, חופה והורה 💍">💍</button>
     <button class="hero-btn stadcam-btn" id="stadCamBtn" title="מצלמת איצטדיון — רחפן מרחף" hidden>🚁</button>
     <button class="hero-btn rec-btn" id="recBtn" title="הקלט קליפ של 8 שניות מהבמה 🎬">📹</button>
+    <button class="hero-btn burst-btn" id="burstBtn" title="פוצץ! זיקוקים ולהבות עכשיו (B) 💥">💥</button>
+    <button class="hero-btn freeze-btn" id="freezeBtn" title="פריז לתמונה — הרקדנים קופאים בפוזה (Z) ❄️">❄️</button>
+    <button class="hero-btn poster-btn" id="posterBtn" title="צלם פוסטר של הבמה — הורדת PNG (P) 📸">📸</button>
     <div class="hype-rail" aria-hidden="true"><div class="hype-fill" id="hypeFill"></div></div>
     <div class="wild-caption" id="wildCaption" hidden>🔥 הקהל משתגע!! 🔥</div>
     <div class="style-badge" id="styleBadge">🎛️ <span id="styleBadgeText"></span></div>
+    <div class="dedication-bar" id="dedicationBar" hidden><div class="dedication-scroll" id="dedicationScroll"></div></div>
+    <div class="beat-strobe" id="beatStrobe" aria-hidden="true"></div>
     <button class="hero-btn stage-exit" id="stageExitBtn" title="יציאה ממסך מלא" hidden>✕</button>
     <div class="hero-caption">🎭 רוקד לקצב השיר</div>
     <div class="np-pill" id="npPill" hidden>🎵 <span id="npPillText"></span></div>
@@ -985,6 +1029,24 @@
     <button id="setlistAddCurrentBtn" class="btn-ghost" style="margin-top:8px; width:100%;">➕ הוסף את השיר הנוכחי</button>
     <div id="setlistList" style="margin-top:12px;"></div>
     <div id="setlistEmpty" class="setlist-empty">הסטליסט ריק — הוסיפו שירים ולחצו עליהם כדי לנגן ברצף בהופעה.</div>
+    <label class="dir-toggle" style="margin-top:12px;">
+      <input type="checkbox" id="autoAdvanceChk">
+      <span>⏭️ נגן אוטומטית את השיר הבא כשהנוכחי נגמר</span>
+    </label>
+  </div>
+
+  <div class="panel director-panel" id="directorPanel">
+    <div class="eyebrow" style="margin-bottom:10px;">🎬 במאי הבמה</div>
+    <div class="search-row">
+      <input type="text" id="dedicationInput" placeholder="הקדשה / שאוט-אאוט — למשל: מזל טוב לדני ומיכל! 💍" maxlength="120">
+      <button id="dedicationSetBtn" class="btn-primary">📣 הצג</button>
+    </div>
+    <button id="dedicationClearBtn" class="btn-ghost" style="margin-top:8px; width:100%;">✖️ הסר הקדשה</button>
+    <label class="dir-toggle" style="margin-top:12px;">
+      <input type="checkbox" id="strobeChk">
+      <span>⚡ סטרוב לקצב — הבזקי אור על כל ביט</span>
+    </label>
+    <div class="setlist-empty" style="margin-top:8px;">💥 פוצץ (B) · ❄️ פריז לתמונה (Z) · 📸 פוסטר (P)</div>
   </div>
 
   <div class="stage-wrap">
@@ -1509,6 +1571,12 @@
       karaokeBtn.click();
     } else if(e.key === 'f' || e.key === 'F' || e.key === 'כ'){
       rotateBtn.click();
+    } else if(e.key === 'b' || e.key === 'B' || e.key === 'נ'){
+      fireBurst();
+    } else if(e.key === 'z' || e.key === 'Z' || e.key === 'ז'){
+      setFrozen(!frozen);
+    } else if(e.key === 'p' || e.key === 'P' || e.key === 'פ'){
+      grabPoster();
     }
   });
 
@@ -1580,6 +1648,85 @@
     }
   });
 
+  // ── 💥 Burst ── the DJ's "GO!" — fires the full crowd-wild reaction
+  // (firework volley, flame jets, camera punch, caption) on demand.
+  const burstBtn = $('burstBtn');
+  function fireBurst(){
+    window.__lyricsAvatarBridge?.burst?.();
+    burstBtn.classList.remove('flash'); void burstBtn.offsetWidth; burstBtn.classList.add('flash');
+  }
+  burstBtn.addEventListener('click', fireBurst);
+
+  // ── ❄️ Photo-freeze ── the whole crew snaps to a victory-V hero pose and
+  // holds it dead still for a group photo; toggle off to release the groove.
+  const freezeBtn = $('freezeBtn');
+  let frozen = false;
+  function setFrozen(on){
+    frozen = !!on;
+    window.__lyricsAvatarBridge?.photoFreeze?.(frozen);
+    freezeBtn.classList.toggle('on', frozen);
+    freezeBtn.textContent = frozen ? '📸' : '❄️';
+    showMiniToast(frozen ? '❄️ פריז! הרקדנים קפואים לתמונה — לחיצה נוספת משחררת' : '▶️ חוזרים לרקוד');
+  }
+  freezeBtn.addEventListener('click', ()=> setFrozen(!frozen));
+
+  // ── 📸 Poster ── grab the current stage frame as a downloadable PNG still.
+  const posterBtn = $('posterBtn');
+  function grabPoster(){
+    const canvas = document.querySelector('#heroAvatar canvas');
+    if(!canvas || !canvas.toDataURL){ showMiniToast('אין במה לצלם — הפעילו את האווטר'); return; }
+    try{
+      const url = canvas.toDataURL('image/png');
+      const a = document.createElement('a');
+      a.href = url; a.download = 'alpha-stage-poster.png'; a.click();
+      showMiniToast('📸 הפוסטר ירד');
+    }catch(err){ showMiniToast('צילום הפוסטר נכשל בדפדפן הזה'); }
+  }
+  posterBtn.addEventListener('click', grabPoster);
+
+  // ── 📣 Dedication marquee ── a DJ shout-out / wedding "mazal tov" scrolls
+  // across the bottom of the stage; persisted (lt:dedication) so it survives
+  // a reload mid-event. Scroll duration scales with text length so long and
+  // short messages both cross at a readable pace.
+  const dedicationBar = $('dedicationBar');
+  const dedicationScroll = $('dedicationScroll');
+  const dedicationInput = $('dedicationInput');
+  const dedicationSetBtn = $('dedicationSetBtn');
+  const dedicationClearBtn = $('dedicationClearBtn');
+  function applyDedication(text){
+    const t = (text || '').trim();
+    if(!t){ dedicationBar.hidden = true; dedicationScroll.textContent = ''; return; }
+    dedicationScroll.textContent = t;
+    dedicationScroll.style.setProperty('--dedi-dur', Math.max(10, Math.min(30, t.length * 0.45)) + 's');
+    dedicationBar.hidden = false;
+  }
+  dedicationSetBtn.addEventListener('click', ()=>{
+    const t = dedicationInput.value.trim();
+    applyDedication(t); store.set('lt:dedication', t);
+    if(t) showMiniToast('📣 ההקדשה עולה על הבמה');
+  });
+  dedicationClearBtn.addEventListener('click', ()=>{
+    dedicationInput.value = ''; applyDedication(''); store.set('lt:dedication', '');
+  });
+  dedicationInput.addEventListener('keydown', (e)=>{ if(e.key === 'Enter'){ e.preventDefault(); dedicationSetBtn.click(); } });
+  (()=>{ const saved = store.get('lt:dedication'); if(typeof saved === 'string' && saved){ dedicationInput.value = saved; applyDedication(saved); } })();
+
+  // ── ⚡ Beat strobe ── flashes a full-stage white veil on each real beat
+  // (the engine fires 'lt-beat' from its beat clock). Off by default; the
+  // toggle persists (lt:strobe).
+  const beatStrobe = $('beatStrobe');
+  const strobeChk = $('strobeChk');
+  const npPillEl = $('npPill');
+  let strobeOn = store.get('lt:strobe') === true;
+  strobeChk.checked = strobeOn;
+  strobeChk.addEventListener('change', ()=>{ strobeOn = strobeChk.checked; store.set('lt:strobe', strobeOn); });
+  window.addEventListener('lt-beat', ()=>{
+    // now-playing pill gives a subtle on-beat pulse whether or not strobe is on
+    if(npPillEl && !npPillEl.hidden){ npPillEl.classList.remove('beat'); void npPillEl.offsetWidth; npPillEl.classList.add('beat'); }
+    if(!strobeOn) return;
+    beatStrobe.classList.remove('hit'); void beatStrobe.offsetWidth; beatStrobe.classList.add('hit');
+  });
+
   // ── Live style badge ── the avatar engine names the dance family it's
   // currently performing (hip-hop, latin, wedding…); the pill announces it
   // for ~2.6s so the crowd/DJ can read what the stage is doing right now.
@@ -1603,7 +1750,11 @@
   const setlistList = $('setlistList');
   const setlistEmpty = $('setlistEmpty');
   let setlist = (()=>{ const s = store.get('lt:setlist'); return Array.isArray(s) ? s : []; })();
+  let setlistIndex = -1; // which queued song is currently on stage (for ⏭️ auto-advance)
   const saveSetlist = ()=> store.set('lt:setlist', setlist);
+  const autoAdvanceChk = $('autoAdvanceChk');
+  autoAdvanceChk.checked = store.get('lt:auto_advance') === true;
+  autoAdvanceChk.addEventListener('change', ()=> store.set('lt:auto_advance', autoAdvanceChk.checked));
   function renderSetlist(){
     setlistList.innerHTML = '';
     setlistEmpty.style.display = setlist.length ? 'none' : 'block';
@@ -1615,7 +1766,7 @@
         '<button class="sl-del" title="הסר מהסטליסט" aria-label="הסר">✕</button>';
       row.addEventListener('click', (ev)=>{
         if(ev.target.closest('.sl-del')) return;
-        playSetlistSong(song);
+        playSetlistSong(song, i);
       });
       row.querySelector('.sl-del').addEventListener('click', (ev)=>{
         ev.stopPropagation();
@@ -1649,7 +1800,8 @@
   }
   // Load & play a queued song — mirrors the manual-search flow so a setlist
   // pick behaves exactly like typing it into the manual search fields.
-  async function playSetlistSong(song){
+  async function playSetlistSong(song, idx){
+    setlistIndex = typeof idx === 'number' ? idx : setlist.findIndex(s=> s.artist === song.artist && s.title === song.title);
     stopPolling();
     state.mode = 'manual';
     state.currentTrackKey = null;
@@ -1665,6 +1817,16 @@
     manualNav.style.display = 'flex';
     await loadLyricsFor(song.artist, song.title);
     setActiveLine(0);
+  }
+  // Auto-advance: when the current queued song reaches its last line, roll
+  // straight into the next song in the setlist. Returns true if it advanced.
+  function playNextInSetlist(){
+    if(!autoAdvanceChk.checked) return false;
+    if(setlistIndex < 0 || setlistIndex + 1 >= setlist.length) return false;
+    const next = setlist[setlistIndex + 1];
+    showMiniToast('⏭️ עובר לשיר הבא: ' + next.title);
+    playSetlistSong(next, setlistIndex + 1);
+    return true;
   }
   renderSetlist();
 
@@ -2237,6 +2399,7 @@
   prevLineBtn.addEventListener('click', ()=> setActiveLine(Math.max(0, state.activeIndex-1)));
   nextLineBtn.addEventListener('click', ()=>{
     if(state.activeIndex >= state.lines.length-1){
+      if(playNextInSetlist()) return; // roll into the next queued song
       if(store.get('lt:auto_replay')) setActiveLine(0); // loop back to the top instead of doing nothing
       return;
     }
@@ -3077,6 +3240,8 @@
     syncLine() { handle?.syncLine?.(); },
     setPerformerGender(g) { handle?.setPerformerGender?.(g); },
     setTreble(v) { handle?.setTreble?.(v); },
+    burst() { handle?.burst?.(); },
+    photoFreeze(on) { handle?.photoFreeze?.(on); },
   };
 
   // Party button cycles: solo → 🎉 crew of 3 → 🪩 BIG PARTY (30 aliens +
