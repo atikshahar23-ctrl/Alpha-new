@@ -569,6 +569,7 @@
   .btn-insane:hover{box-shadow:0 0 28px rgba(255,90,120,.55);}
   .btn-insane:active{transform:scale(.96);}
   @keyframes insaneHue{from{background-position:0% 50%;}to{background-position:280% 50%;}}
+  .btn-ghost.on{border-color:var(--cyan); box-shadow:0 0 14px rgba(0,229,255,.3); color:var(--cyan);}
   .dir-row{display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:13px; color:var(--text);}
   .dir-row select{flex:none; min-width:150px;}
   .dir-toggle{display:flex; align-items:center; gap:9px; cursor:pointer; font-size:13px; color:var(--text); user-select:none;}
@@ -1172,6 +1173,7 @@
         <option value="3">מעגל סביב הסולן</option>
       </select>
     </div>
+    <button id="bulletBtn" class="btn-ghost" style="margin-top:12px; width:100%;">🕶️ בולט-טיים (T) — הקפאה ומצלמה שטסה</button>
     <button id="finaleBtn" class="btn-ghost" style="margin-top:12px; width:100%;">🎆 גרנד פינאלה — רצף סיום מטורף</button>
     <button id="insaneBtn" class="btn-insane" style="margin-top:10px; width:100%;">🤯 מצב INSANE — הכל על מקסימום</button>
     <label class="dir-toggle" style="margin-top:12px;">
@@ -1192,6 +1194,7 @@
         <div class="sc-line"><kbd>B</kbd><span>💥 פוצץ — זיקוקים ולהבות</span></div>
         <div class="sc-line"><kbd>Z</kbd><span>❄️ פריז לתמונה</span></div>
         <div class="sc-line"><kbd>P</kbd><span>📸 צילום פוסטר</span></div>
+        <div class="sc-line"><kbd>T</kbd><span>🕶️ בולט-טיים</span></div>
         <div class="sc-line"><kbd>← →</kbd><span>דפדוף שורות (מצב ידני)</span></div>
         <div class="sc-line"><kbd>?</kbd><span>פתיחת חלון זה</span></div>
       </div>
@@ -1727,6 +1730,8 @@
       setFrozen(!frozen);
     } else if(e.key === 'p' || e.key === 'P' || e.key === 'פ'){
       grabPoster();
+    } else if(e.key === 't' || e.key === 'T' || e.key === 'א'){
+      setBullet(!bulletOn);
     } else if(e.key === '?'){
       toggleShortcuts();
     }
@@ -2055,6 +2060,23 @@
   slowmoChk.checked = store.get('lt:slowmo') === true;
   slowmoChk.addEventListener('change', ()=>{ store.set('lt:slowmo', slowmoChk.checked); applySlowmo(); showMiniToast(slowmoChk.checked ? '🐌 סלואו-מושן פעיל' : '▶️ מהירות רגילה'); });
   setTimeout(applySlowmo, 1200); // apply saved state once the engine is mounted
+
+  // ── 🕶️ Bullet-time ── freezes the crew mid-motion while the engine camera
+  // whips around them (Matrix). A toggle; also on the T key. Auto-releases
+  // after 12s so it can never get stuck holding the show.
+  const bulletBtn = $('bulletBtn');
+  let bulletOn = false, bulletAutoT = null;
+  function setBullet(on){
+    bulletOn = !!on;
+    window.__lyricsAvatarBridge?.setBulletTime?.(bulletOn);
+    bulletBtn.classList.toggle('on', bulletOn);
+    if(bulletAutoT){ clearTimeout(bulletAutoT); bulletAutoT = null; }
+    if(bulletOn){
+      showMiniToast('🕶️ בולט-טיים — לחיצה נוספת משחררת');
+      bulletAutoT = setTimeout(()=> setBullet(false), 12000);
+    }
+  }
+  bulletBtn.addEventListener('click', ()=> setBullet(!bulletOn));
 
   // ── 🎆 Grand finale ── a scripted ~4s closing sequence: a rolling volley of
   // bursts with a firework-emoji shower — the end-of-set money shot.
@@ -3685,6 +3707,7 @@
     photoFreeze(on) { handle?.photoFreeze?.(on); },
     setTimeScale(x) { handle?.setTimeScale?.(x); },
     setFormation(mode) { handle?.setFormation?.(mode); },
+    setBulletTime(on) { handle?.setBulletTime?.(on); },
   };
 
   // Party button cycles: solo → 🎉 crew of 3 → 🪩 BIG PARTY (30 aliens +

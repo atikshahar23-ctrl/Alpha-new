@@ -127,6 +127,9 @@ export interface LyricsAvatarHandle {
   // Crew formation — how the backup dancers arrange around the lead:
   // 0 arrowhead (default) · 1 line · 2 V-wedge · 3 circle.
   setFormation?(mode: number): void;
+  // Bullet-time — freeze the crew mid-motion while the camera whips around
+  // them (Matrix-style). Call with false to release back into the groove.
+  setBulletTime?(on: boolean): void;
   dispose(): void;
 }
 
@@ -2839,6 +2842,8 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
 
   let playing = false;
   let photoFrozen = false; // photo-freeze: crew held dead-still in a hero pose
+  let bulletTime = false;  // Matrix-style: crew frozen mid-motion, camera orbits
+  let bulletStart = 0;     // performance.now() when bullet-time engaged
   let timeScale = 1; // 1 = normal; <1 = slow-motion (scales dt + beat clock)
   let energy = 0.25; // smoothed 0..1, drives everything below
   let tempoMs = DEFAULT_TEMPO_MS;
@@ -3079,7 +3084,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     // a soft chill self-showcase with a slow orbit camera — so an idle screen
     // at a gig never looks dead. Snaps back the instant real playback starts.
     if (playing) lastPlayingAt = now;
-    const attract = !playing && !photoFrozen && now - lastPlayingAt > ATTRACT_MS;
+    const attract = !playing && !photoFrozen && !bulletTime && now - lastPlayingAt > ATTRACT_MS;
     // Vibe → calm: party is always 0; chill/shanti are fixed; auto reads the
     // song's tempo (fast → energetic, slow → calm). Eased slowly so switching
     // vibe (or a tempo change between songs) melts between the two looks.
@@ -3106,7 +3111,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     //    falls back automatically if the mic goes quiet for a while.
     // 2. Internal — a pulse every tempoMs (derived from the song's real LRC
     //    line timing, or from the live BPM estimate when the mic runs).
-    if (playing && !photoFrozen) {
+    if (playing && !photoFrozen && !bulletTime) {
       if (liveMode) {
         if (now - lastLiveTick > 2500) liveMode = false; // mic went quiet → internal clock resumes
       } else if (now - lastBeat > (tempoMs / danceSpeedMult) * (vibeMode === 4 ? 0.72 : 1) * (1 + Math.max(0, calm - 0.45) * 1.6) / timeScale) {
@@ -3119,12 +3124,14 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       fireBeat(now); // idle showcase keeps a slow, languid groove going
     }
     // paused → calm idle (but not while a photo-freeze hero pose is held)
-    if (!playing && !attract && !photoFrozen) for (const d of activeDancers()) setPoseFor(d, BASE_POSE);
+    if (!playing && !attract && !photoFrozen && !bulletTime) for (const d of activeDancers()) setPoseFor(d, BASE_POSE);
     beatPulse *= 0.9;
 
     // Integrate the pose springs — underdamped (slight overshoot) so every
     // pose change lands with a physical "hit" instead of a linear glide.
-    {
+    // Bullet-time freezes the crew mid-motion (springs paused) while the
+    // camera keeps flying, so it's held out of the integration entirely.
+    if (!bulletTime) {
       // Calm softens the springs: lower stiffness + higher damping turns the
       // sharp "hit with overshoot" into a smooth, flowing glide (no snap).
       const kSpring = 130 - calm * 72, damp = 15 + calm * 11;
@@ -3479,7 +3486,16 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       // · 2 handheld (phone-filming jitter) · 3 orbit 360° (slow full circle
       // around the stage) · 4 low hero cam (looking up — larger than life).
       camParty += ((partyMode === 2 ? 1 : 0) - camParty) * Math.min(1, dt * 2);
-      if (attract) {
+      if (bulletTime) {
+        // Matrix bullet-time: the crew is frozen mid-motion; the camera whips
+        // around them in a fast, slightly-swooping orbit. Uses wall-clock time
+        // (not the scaled dt) so the fly-around stays smooth regardless.
+        const bt = (now - bulletStart) / 1000;
+        const R = (camBase.z * 0.82) / userZoom;
+        const oa = bt * 1.5;
+        camera.position.set(Math.sin(oa) * R, 1.15 + Math.sin(bt * 0.9) * 0.35, Math.cos(oa) * R);
+        camera.lookAt(0, 1.1, 0);
+      } else if (attract) {
         // Idle showcase: a very slow full orbit, slightly high — gallery view.
         const R = (camBase.z * 0.95) / userZoom;
         const oa = t * 0.07;
@@ -3659,6 +3675,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     burst() { crowdWild(); },
     setTimeScale(x: number) { if (Number.isFinite(x)) timeScale = Math.max(0.2, Math.min(1, x)); },
     setFormation(mode: number) { formationMode = Math.max(0, Math.min(FORMATIONS.length - 1, Math.round(mode))); applyFormation(); },
+    setBulletTime(on: boolean) { bulletTime = !!on; if (bulletTime) bulletStart = performance.now(); },
     photoFreeze(on: boolean) {
       photoFrozen = !!on;
       if (photoFrozen) {
