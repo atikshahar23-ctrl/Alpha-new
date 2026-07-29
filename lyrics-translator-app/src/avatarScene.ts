@@ -121,6 +121,9 @@ export interface LyricsAvatarHandle {
   // (beat clock paused) so the crowd can grab a group photo; call again with
   // false to release them back into the groove.
   photoFreeze?(on: boolean): void;
+  // Slow-motion — scales the whole show's time (pose springs + beat clock).
+  // 1 = normal, 0.4 ≈ cinematic slow-mo, clamped to [0.2, 1].
+  setTimeScale?(x: number): void;
   dispose(): void;
 }
 
@@ -2810,6 +2813,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
 
   let playing = false;
   let photoFrozen = false; // photo-freeze: crew held dead-still in a hero pose
+  let timeScale = 1; // 1 = normal; <1 = slow-motion (scales dt + beat clock)
   let energy = 0.25; // smoothed 0..1, drives everything below
   let tempoMs = DEFAULT_TEMPO_MS;
   let raf = 0;
@@ -3031,7 +3035,10 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     // exactly when it's needed most (found at 2fps under SwiftShader: the
     // shed that should fire in ~5s took minutes).
     const rawDt = lastFrameTime ? (now - lastFrameTime) / 1000 : 0.016;
-    const dt = Math.min(rawDt, 0.05);
+    // timeScale (<1 = dramatic slow-motion) scales the frame delta that drives
+    // the pose springs, fireworks, weather and every dt-based integrator, so
+    // the whole crew moves in slow-mo. The beat clock below is slowed to match.
+    const dt = Math.min(rawDt, 0.05) * timeScale;
     lastFrameTime = now;
     if (qTier < 2) {
       warmT += rawDt; fpsT += rawDt; fpsN++;
@@ -3076,7 +3083,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     if (playing && !photoFrozen) {
       if (liveMode) {
         if (now - lastLiveTick > 2500) liveMode = false; // mic went quiet → internal clock resumes
-      } else if (now - lastBeat > (tempoMs / danceSpeedMult) * (vibeMode === 4 ? 0.72 : 1) * (1 + Math.max(0, calm - 0.45) * 1.6)) {
+      } else if (now - lastBeat > (tempoMs / danceSpeedMult) * (vibeMode === 4 ? 0.72 : 1) * (1 + Math.max(0, calm - 0.45) * 1.6) / timeScale) {
         // hyper vibe (4) pushes the whole show ~40% faster
         // Only genuine chill/shanti stretches the beat into languid holds;
         // mild auto-calm keeps the full-rate groove.
@@ -3624,6 +3631,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     setTreble(v: number) { if (Number.isFinite(v)) trebleE += (Math.max(0, Math.min(1, v)) - trebleE) * 0.5; },
     syncLine() { syncLine(); },
     burst() { crowdWild(); },
+    setTimeScale(x: number) { if (Number.isFinite(x)) timeScale = Math.max(0.2, Math.min(1, x)); },
     photoFreeze(on: boolean) {
       photoFrozen = !!on;
       if (photoFrozen) {

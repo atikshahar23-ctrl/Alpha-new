@@ -561,6 +561,14 @@
   .sc-line span{flex:1;}
   .sc-line kbd{flex:none; min-width:44px; text-align:center; font-family:'JetBrains Mono',monospace; font-size:12px;
     padding:4px 9px; border-radius:7px; border:1px solid var(--border-strong); background:rgba(255,255,255,.05); color:var(--cyan);}
+  .btn-insane{
+    border:1px solid rgba(255,80,120,.6); border-radius:12px; cursor:pointer; color:#fff; font-weight:800; font-size:14px;
+    padding:11px 14px; background:linear-gradient(90deg, #ff4d6d, #ff8a3d, #ffd166, #ff4d6d); background-size:280% 100%;
+    animation:insaneHue 3s linear infinite; box-shadow:0 0 20px rgba(255,90,120,.35); transition:transform .1s;
+  }
+  .btn-insane:hover{box-shadow:0 0 28px rgba(255,90,120,.55);}
+  .btn-insane:active{transform:scale(.96);}
+  @keyframes insaneHue{from{background-position:0% 50%;}to{background-position:280% 50%;}}
   .dir-toggle{display:flex; align-items:center; gap:9px; cursor:pointer; font-size:13px; color:var(--text); user-select:none;}
   .dir-toggle input{width:16px; height:16px; accent-color:var(--cyan); flex:none;}
   .dir-toggle span{line-height:1.35;}
@@ -1149,6 +1157,12 @@
     <div class="emoji-row" id="emojiRow" style="margin-top:8px;"></div>
     <button id="tapTempoBtn" class="btn-ghost" style="margin-top:12px; width:100%;">🥁 הקש קצב — <b id="tapBpm">קליק לפי המוזיקה</b></button>
     <button id="countdownBtn" class="btn-ghost" style="margin-top:10px; width:100%;">🎬 ספירה לאחור לדרופ (3־2־1)</button>
+    <label class="dir-toggle" style="margin-top:12px;">
+      <input type="checkbox" id="slowmoChk">
+      <span>🐌 סלואו-מושן — הרקדנים בהילוך איטי דרמטי</span>
+    </label>
+    <button id="finaleBtn" class="btn-ghost" style="margin-top:12px; width:100%;">🎆 גרנד פינאלה — רצף סיום מטורף</button>
+    <button id="insaneBtn" class="btn-insane" style="margin-top:10px; width:100%;">🤯 מצב INSANE — הכל על מקסימום</button>
     <div class="setlist-empty" style="margin-top:8px;">💥 פוצץ (B) · ❄️ פריז לתמונה (Z) · 📸 פוסטר (P)</div>
   </div>
 
@@ -2017,6 +2031,47 @@
     } else {
       tapBpm.textContent = 'עוד קליק…';
     }
+  });
+
+  // ── 🐌 Slow-motion ── scales the whole show's time in the engine; a toggle
+  // for dramatic cinematic slow-mo. Persisted (lt:slowmo).
+  const slowmoChk = $('slowmoChk');
+  function applySlowmo(){ window.__lyricsAvatarBridge?.setTimeScale?.(slowmoChk.checked ? 0.4 : 1); }
+  slowmoChk.checked = store.get('lt:slowmo') === true;
+  slowmoChk.addEventListener('change', ()=>{ store.set('lt:slowmo', slowmoChk.checked); applySlowmo(); showMiniToast(slowmoChk.checked ? '🐌 סלואו-מושן פעיל' : '▶️ מהירות רגילה'); });
+  setTimeout(applySlowmo, 1200); // apply saved state once the engine is mounted
+
+  // ── 🎆 Grand finale ── a scripted ~4s closing sequence: a rolling volley of
+  // bursts with a firework-emoji shower — the end-of-set money shot.
+  const finaleBtn = $('finaleBtn');
+  let finaleRunning = false;
+  function runFinale(){
+    if(finaleRunning) return;
+    finaleRunning = true;
+    showMiniToast('🎆 גרנד פינאלה!');
+    const marks = ['🎆','🎇','⭐','🔥','🎉','✨'];
+    let k = 0;
+    const boom = ()=>{
+      fireBurst();
+      rainEmoji(marks[k % marks.length], 10);
+      if(++k < 6){ setTimeout(boom, 640); } else { setTimeout(()=>{ finaleRunning = false; }, 800); }
+    };
+    boom();
+  }
+  finaleBtn.addEventListener('click', runFinale);
+
+  // ── 🤯 INSANE mode ── everything cranked at once: hyper vibe, max pyro,
+  // rainbow avatars, BIG PARTY crowd, beat strobe, then a burst + finale.
+  const insaneBtn = $('insaneBtn');
+  insaneBtn.addEventListener('click', ()=>{
+    setSelectVal('vibeSel', 4);      // hyper
+    setSliderVal('pyroSlider', 250); // max pyro
+    document.querySelectorAll('#avatarColors .av-dot')[11]?.click(); // 🌈 rainbow theme
+    const sc = document.getElementById('strobeChk'); if(sc){ sc.checked = true; sc.dispatchEvent(new Event('change')); }
+    window.__lyricsAvatarBridge?.setParty?.(2); // BIG PARTY crowd
+    fireBurst();
+    runFinale();
+    showMiniToast('🤯 INSANE! הכל על מקסימום');
   });
 
   // ── 🎬 Song title card ── a broadcast-style lower-third that slides in when
@@ -3583,6 +3638,7 @@
     setTreble(v) { handle?.setTreble?.(v); },
     burst() { handle?.burst?.(); },
     photoFreeze(on) { handle?.photoFreeze?.(on); },
+    setTimeScale(x) { handle?.setTimeScale?.(x); },
   };
 
   // Party button cycles: solo → 🎉 crew of 3 → 🪩 BIG PARTY (30 aliens +
