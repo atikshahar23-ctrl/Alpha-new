@@ -538,6 +538,18 @@
   .title-card .tc-eyebrow{font-size:11px; letter-spacing:.14em; color:var(--cyan); text-transform:uppercase; margin-bottom:2px;}
   .title-card .tc-title{font-weight:900; font-size:clamp(18px, 3.2vh, 34px); color:#fff; line-height:1.1;}
   .title-card .tc-artist{font-size:clamp(12px, 1.8vh, 18px); color:var(--text-dim); margin-top:2px;}
+  /* DJ brand logo watermark — top-right of the stage, projected on the show. */
+  .brand-logo{position:absolute; top:12px; right:12px; z-index:6; max-width:22%; max-height:16%;
+    object-fit:contain; pointer-events:none; opacity:.92; filter:drop-shadow(0 2px 10px rgba(0,0,0,.6));}
+  /* Event countdown clock — big, centered, for weddings / NYE / event start. */
+  .event-clock{position:absolute; top:12%; left:0; right:0; z-index:8; text-align:center; pointer-events:none;}
+  .event-clock .ev-label{font-size:clamp(13px, 2.4vh, 24px); font-weight:700; color:#fff; text-shadow:0 2px 12px rgba(0,0,0,.7); margin-bottom:4px;}
+  .event-clock .ev-time{font-family:'JetBrains Mono',monospace; font-weight:900; font-size:clamp(34px, 9vh, 92px); line-height:1;
+    background:linear-gradient(135deg, #ffd88a, #ff7ab6, #00e5ff); -webkit-background-clip:text; background-clip:text; color:transparent;
+    text-shadow:0 0 40px rgba(255,150,200,.35);}
+  .logo-upload{flex:none; cursor:pointer; font-size:13px; padding:7px 12px; border-radius:9px;
+    border:1px solid var(--border); background:rgba(255,255,255,.04); color:var(--text);}
+  .logo-upload:hover{border-color:var(--border-strong);}
   /* Keyboard-shortcuts help. */
   .shortcuts-fab{position:fixed; bottom:14px; left:14px; z-index:60; width:40px; height:40px; border-radius:12px;
     border:1px solid var(--border); background:rgba(12,14,22,.8); color:var(--text); font-size:17px; cursor:pointer;
@@ -832,6 +844,8 @@
     <div class="emoji-rain" id="emojiRain" aria-hidden="true"></div>
     <div class="countdown-veil" id="countdownVeil" hidden><div class="countdown-num" id="countdownNum"></div></div>
     <div class="title-card" id="titleCard" hidden><div class="tc-eyebrow">▶ מתנגן עכשיו</div><div class="tc-title" id="tcTitle"></div><div class="tc-artist" id="tcArtist"></div></div>
+    <img class="brand-logo" id="brandLogo" alt="" hidden>
+    <div class="event-clock" id="eventClock" hidden><div class="ev-label" id="evLabel"></div><div class="ev-time" id="evTime"></div></div>
     <button class="hero-btn stage-exit" id="stageExitBtn" title="יציאה ממסך מלא" hidden>✕</button>
     <div class="hero-caption">🎭 רוקד לקצב השיר</div>
     <div class="np-pill" id="npPill" hidden>🎵 <span id="npPillText"></span></div>
@@ -1180,7 +1194,24 @@
       <input type="checkbox" id="autoShowChk">
       <span>🎭 מופע אוטומטי — מחליף סצנה שלמה כל 20 שניות</span>
     </label>
-    <div class="setlist-empty" style="margin-top:8px;">💥 פוצץ (B) · ❄️ פריז לתמונה (Z) · 📸 פוסטר (P)</div>
+    <div class="setlist-empty" style="margin-top:8px;">💥 פוצץ (B) · ❄️ פריז לתמונה (Z) · 📸 פוסטר (P) · 🕶️ בולט-טיים (T)</div>
+  </div>
+
+  <div class="panel branding-panel" id="brandingPanel">
+    <div class="eyebrow" style="margin-bottom:10px;">🏷️ מיתוג ואירוע</div>
+    <div class="dir-row"><span>לוגו הדיג׳יי על הבמה</span>
+      <label class="logo-upload">📁 העלה לוגו<input type="file" id="brandLogoInput" accept="image/*" hidden></label>
+    </div>
+    <button id="brandLogoClear" class="btn-ghost" style="margin-top:8px; width:100%; display:none;">✖️ הסר לוגו</button>
+    <div style="margin-top:16px; padding-top:12px; border-top:1px solid var(--border); font-size:12px; color:var(--text-dim); text-align:right;">🕛 שעון ספירה לאירוע</div>
+    <div class="search-row" style="margin-top:8px;">
+      <input type="text" id="eventLabelInput" placeholder="שם האירוע — למשל: כניסת החתן והכלה" maxlength="60">
+    </div>
+    <div class="search-row" style="margin-top:8px;">
+      <input type="datetime-local" id="eventTimeInput" style="direction:ltr; text-align:left;">
+      <button id="eventStartBtn" class="btn-primary">🕛 התחל</button>
+    </div>
+    <button id="eventClearBtn" class="btn-ghost" style="margin-top:8px; width:100%; display:none;">✖️ בטל ספירה</button>
   </div>
 
   <button id="shortcutsBtn" class="shortcuts-fab" title="קיצורי מקלדת (?)">⌨️</button>
@@ -2140,6 +2171,96 @@
     showMiniToast(autoShowChk.checked ? '🎭 מופע אוטומטי פעיל' : '⏸️ מופע אוטומטי כבוי');
   });
   setTimeout(()=>{ if(autoShowChk.checked) setAutoShow(true); }, 1400);
+
+  // ── 🏷️ DJ brand logo ── an uploaded logo shows as a watermark in the top
+  // corner of the stage (projected on the show). Downscaled to ≤256px so the
+  // stored data-URL stays small (quota-safe), persisted (lt:brand_logo).
+  const brandLogo = $('brandLogo');
+  const brandLogoInput = $('brandLogoInput');
+  const brandLogoClear = $('brandLogoClear');
+  function showBrandLogo(dataUrl){
+    if(dataUrl){ brandLogo.src = dataUrl; brandLogo.hidden = false; brandLogoClear.style.display = 'block'; }
+    else { brandLogo.removeAttribute('src'); brandLogo.hidden = true; brandLogoClear.style.display = 'none'; }
+  }
+  brandLogoInput.addEventListener('change', ()=>{
+    const file = brandLogoInput.files && brandLogoInput.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = ()=>{
+      const img = new Image();
+      img.onload = ()=>{
+        const max = 256; let w = img.naturalWidth || 256, h = img.naturalHeight || 256;
+        const sc = Math.min(1, max / Math.max(w, h));
+        w = Math.max(1, Math.round(w * sc)); h = Math.max(1, Math.round(h * sc));
+        const c = document.createElement('canvas'); c.width = w; c.height = h;
+        c.getContext('2d').drawImage(img, 0, 0, w, h);
+        let out; try{ out = c.toDataURL('image/png'); }catch(e){ out = reader.result; }
+        showBrandLogo(out);
+        const ok = store.set('lt:brand_logo', out);
+        showMiniToast(ok ? '🏷️ הלוגו הועלה ומוצג על הבמה' : '🏷️ הלוגו מוצג (לא נשמר — אחסון מלא)');
+      };
+      img.onerror = ()=> showMiniToast('קובץ התמונה לא נתמך');
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+  brandLogoClear.addEventListener('click', ()=>{ showBrandLogo(null); store.del('lt:brand_logo'); });
+  (()=>{ const saved = store.get('lt:brand_logo'); if(typeof saved === 'string' && saved) showBrandLogo(saved); })();
+
+  // ── 🕛 Event countdown clock ── a big centered countdown on the stage for a
+  // wedding entrance / NYE midnight / event start; fires the burst + finale at
+  // zero. Target time + label persisted (lt:event) so it survives a reload.
+  const eventClock = $('eventClock');
+  const evLabel = $('evLabel');
+  const evTime = $('evTime');
+  const eventLabelInput = $('eventLabelInput');
+  const eventTimeInput = $('eventTimeInput');
+  const eventStartBtn = $('eventStartBtn');
+  const eventClearBtn = $('eventClearBtn');
+  let eventTarget = null, eventTimer = null, eventLabel = '';
+  function fmtCountdown(ms){
+    if(ms < 0) ms = 0;
+    const s = Math.floor(ms / 1000);
+    const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60;
+    const pad = (n)=> String(n).padStart(2, '0');
+    return (d > 0 ? d + ':' : '') + pad(h) + ':' + pad(m) + ':' + pad(ss);
+  }
+  function tickEvent(){
+    if(eventTarget == null) return;
+    const rem = eventTarget - Date.now();
+    evLabel.textContent = eventLabel || '';
+    evTime.textContent = fmtCountdown(rem);
+    if(rem <= 0){
+      stopEvent(true);
+      eventClock.hidden = false; evTime.textContent = '🎉'; evLabel.textContent = eventLabel || '';
+      fireBurst(); runFinale(); rainEmoji('🎉', 24);
+      setTimeout(()=>{ eventClock.hidden = true; }, 6000);
+    }
+  }
+  function startEvent(targetMs, label, persist){
+    eventTarget = targetMs; eventLabel = label || '';
+    eventClock.hidden = false; eventClearBtn.style.display = 'block';
+    if(eventTimer) clearInterval(eventTimer);
+    tickEvent();
+    eventTimer = setInterval(tickEvent, 1000);
+    if(persist) store.set('lt:event', { t: targetMs, label: eventLabel });
+  }
+  function stopEvent(keepStore){
+    if(eventTimer){ clearInterval(eventTimer); eventTimer = null; }
+    eventTarget = null; eventClearBtn.style.display = 'none';
+    if(!keepStore){ eventClock.hidden = true; store.del('lt:event'); }
+  }
+  eventStartBtn.addEventListener('click', ()=>{
+    const v = eventTimeInput.value;
+    if(!v){ showMiniToast('בחרו תאריך ושעה לאירוע'); return; }
+    const t = new Date(v).getTime();
+    if(isNaN(t)){ showMiniToast('תאריך לא תקין'); return; }
+    if(t - Date.now() <= 0){ showMiniToast('בחרו זמן עתידי'); return; }
+    startEvent(t, eventLabelInput.value.trim(), true);
+    showMiniToast('🕛 ספירה לאחור התחילה');
+  });
+  eventClearBtn.addEventListener('click', ()=> stopEvent(false));
+  (()=>{ const saved = store.get('lt:event'); if(saved && saved.t){ if(saved.t - Date.now() > 0){ eventLabelInput.value = saved.label || ''; startEvent(saved.t, saved.label, false); } else { store.del('lt:event'); } } })();
 
   // ── 🎬 Song title card ── a broadcast-style lower-third that slides in when
   // a song loads and slides out after ~4.5s. Called from loadLyricsFor.
