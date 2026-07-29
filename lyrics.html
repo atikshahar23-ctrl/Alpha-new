@@ -493,6 +493,13 @@
   .scene-btn:hover{border-color:var(--border-strong); transform:translateY(-2px);}
   .scene-btn.on{border-color:var(--cyan); box-shadow:0 0 16px rgba(0,229,255,.35);}
   .scene-btn:active{transform:scale(.94);}
+  .scene-btn.custom{position:relative;}
+  .scene-btn .sc-del{
+    position:absolute; top:3px; right:4px; font-size:10px; line-height:1; color:var(--text-faint);
+    width:16px; height:16px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    background:rgba(0,0,0,.35);
+  }
+  .scene-btn .sc-del:hover{color:#ff4d6d; background:rgba(255,77,109,.15);}
   /* Crowd-reaction emoji rain — taps drop a shower of that emoji over the stage. */
   .emoji-row{display:flex; gap:8px; flex-wrap:wrap;}
   .emoji-btn{
@@ -1061,6 +1068,11 @@
   <div class="panel scenes-panel" id="scenesPanel">
     <div class="eyebrow" style="margin-bottom:10px;">🎬 סצנות מוכנות — לחיצה אחת</div>
     <div class="scene-grid" id="sceneGrid"></div>
+    <button id="saveSceneBtn" class="btn-ghost" style="margin-top:10px; width:100%;">💾 שמור את התצוגה הנוכחית כסצנה</button>
+    <label class="dir-toggle" style="margin-top:12px;">
+      <input type="checkbox" id="autoVjChk">
+      <span>🤖 VJ אוטומטי — מחליף מראה לבד כל 32 ביטים</span>
+    </label>
   </div>
 
   <div class="panel setlist-panel" id="setlistPanel">
@@ -1092,6 +1104,7 @@
     </label>
     <div style="margin-top:16px; padding-top:12px; border-top:1px solid var(--border); font-size:12px; color:var(--text-dim); text-align:right;">👏 תגובות קהל</div>
     <div class="emoji-row" id="emojiRow" style="margin-top:8px;"></div>
+    <button id="tapTempoBtn" class="btn-ghost" style="margin-top:12px; width:100%;">🥁 הקש קצב — <b id="tapBpm">קליק לפי המוזיקה</b></button>
     <button id="countdownBtn" class="btn-ghost" style="margin-top:10px; width:100%;">🎬 ספירה לאחור לדרופ (3־2־1)</button>
     <div class="setlist-empty" style="margin-top:8px;">💥 פוצץ (B) · ❄️ פריז לתמונה (Z) · 📸 פוסטר (P)</div>
   </div>
@@ -1861,6 +1874,87 @@
     tick();
   }
   countdownBtn.addEventListener('click', runCountdown);
+
+  // ── 💾 Custom scenes ── the DJ tunes the look (vibe/venue/weather/pyro/
+  // color) then saves it as their own reusable chip in the scene row; each
+  // custom chip carries a ✕ to delete it. Persisted (lt:custom_scenes).
+  const saveSceneBtn = $('saveSceneBtn');
+  let customScenes = (()=>{ const s = store.get('lt:custom_scenes'); return Array.isArray(s) ? s : []; })();
+  function captureView(){
+    const dots = [...document.querySelectorAll('#avatarColors .av-dot')];
+    return {
+      vibe: Number(document.getElementById('vibeSel')?.value || 0),
+      venue: Number(document.getElementById('venueSel')?.value || 0),
+      weather: Number(document.getElementById('weatherSel')?.value || 0),
+      pyro: Number(document.getElementById('pyroSlider')?.value || 100),
+      theme: Math.max(0, dots.findIndex(d=> d.classList.contains('on'))),
+    };
+  }
+  function renderCustomScenes(){
+    sceneGrid.querySelectorAll('.scene-btn.custom').forEach(b=> b.remove());
+    const cur = store.get('lt:scene');
+    customScenes.forEach(s=>{
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'scene-btn custom' + (s.id === cur ? ' on' : '');
+      b.dataset.scene = s.id;
+      b.innerHTML = '<span class="se">' + s.emoji + '</span><span>' + escapeHtml(s.label) + '</span><span class="sc-del" title="הסר סצנה">✕</span>';
+      b.addEventListener('click', (ev)=>{
+        if(ev.target.closest('.sc-del')){
+          ev.stopPropagation();
+          customScenes = customScenes.filter(x=> x.id !== s.id);
+          store.set('lt:custom_scenes', customScenes); renderCustomScenes();
+          return;
+        }
+        applyScene(s);
+      });
+      sceneGrid.appendChild(b);
+    });
+  }
+  renderCustomScenes();
+  saveSceneBtn.addEventListener('click', ()=>{
+    const s = Object.assign({ id: 'custom-' + Date.now(), label: 'שלי ' + (customScenes.length + 1), emoji: '⭐' }, captureView());
+    customScenes.push(s); store.set('lt:custom_scenes', customScenes); renderCustomScenes();
+    showMiniToast('💾 הסצנה נשמרה: ' + s.label);
+  });
+
+  // ── 🤖 Auto-VJ ── hands-free light show: on every 32nd beat, jump the color
+  // theme to a fresh random one so a solo DJ's visuals keep evolving without
+  // any input. Rides the engine's 'lt-beat' clock. Persisted (lt:auto_vj).
+  const autoVjChk = $('autoVjChk');
+  autoVjChk.checked = store.get('lt:auto_vj') === true;
+  autoVjChk.addEventListener('change', ()=> store.set('lt:auto_vj', autoVjChk.checked));
+  let vjBeat = 0;
+  window.addEventListener('lt-beat', ()=>{
+    if(!autoVjChk.checked) return;
+    if(++vjBeat % 32 !== 0) return;
+    const dots = document.querySelectorAll('#avatarColors .av-dot');
+    const n = Math.min(dots.length, 24); // skip the trailing 🎲 shuffle control
+    if(n > 1){ let r = Math.floor(Math.random() * n); dots[r]?.click(); }
+  });
+
+  // ── 🥁 Tap-tempo ── tap the button in time with the music to set the beat
+  // tempo by hand (for instrumental / no-LRC tracks). ≥2 taps → averaged
+  // interval → setTempo; a >2s gap resets the tap window.
+  const tapTempoBtn = $('tapTempoBtn');
+  const tapBpm = $('tapBpm');
+  let taps = [];
+  tapTempoBtn.addEventListener('click', ()=>{
+    const now = performance.now();
+    if(taps.length && now - taps[taps.length-1] > 2000) taps = []; // stale → restart
+    taps.push(now);
+    if(taps.length > 8) taps.shift();
+    if(taps.length >= 2){
+      let sum = 0; for(let i = 1; i < taps.length; i++) sum += taps[i] - taps[i-1];
+      const avg = sum / (taps.length - 1);
+      const bpm = Math.round(60000 / avg);
+      if(bpm >= 40 && bpm <= 220){
+        tapBpm.textContent = bpm + ' BPM';
+        window.__lyricsAvatarBridge?.setTempo?.(avg);
+      }
+    } else {
+      tapBpm.textContent = 'עוד קליק…';
+    }
+  });
 
   // ── Live style badge ── the avatar engine names the dance family it's
   // currently performing (hip-hop, latin, wedding…); the pill announces it
