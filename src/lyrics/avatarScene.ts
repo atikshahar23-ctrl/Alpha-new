@@ -130,6 +130,9 @@ export interface LyricsAvatarHandle {
   // Bullet-time — freeze the crew mid-motion while the camera whips around
   // them (Matrix-style). Call with false to release back into the groove.
   setBulletTime?(on: boolean): void;
+  // Move soundboard — force a specific choreography move on the whole crew
+  // right now (index into the move library). The DJ's "hit it!" button.
+  doMove?(idx: number): void;
   dispose(): void;
 }
 
@@ -2977,6 +2980,22 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     }
   }
 
+  // DJ move soundboard — force a specific hero move on the whole crew right
+  // now (the "everybody hit it" button). Holds briefly even while paused so a
+  // triggered pose doesn't snap straight back to idle.
+  let manualMoveUntil = 0;
+  function doMove(idx: number) {
+    currentMoveIdx = Math.max(0, Math.min(MOVES.length - 1, Math.round(idx)));
+    stepInPattern = 0;
+    curMoveHold = LONG_MOVES.has(currentMoveIdx) ? 8 : 6;
+    for (let i = 1; i < dancers.length; i++) { dancers[i].moveIdx = currentMoveIdx; dancers[i].stepIn = 0; }
+    announceFamily(currentMoveIdx);
+    beatPulse = Math.max(beatPulse, 1.3);
+    launchFirework(); jetPower = 1;
+    manualMoveUntil = performance.now() + 2500;
+    applyStep();
+  }
+
   function crowdWild() {
     hype = 0.15;
     wildPunch = 1;
@@ -3124,7 +3143,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       fireBeat(now); // idle showcase keeps a slow, languid groove going
     }
     // paused → calm idle (but not while a photo-freeze hero pose is held)
-    if (!playing && !attract && !photoFrozen && !bulletTime) for (const d of activeDancers()) setPoseFor(d, BASE_POSE);
+    if (!playing && !attract && !photoFrozen && !bulletTime && now > manualMoveUntil) for (const d of activeDancers()) setPoseFor(d, BASE_POSE);
     beatPulse *= 0.9;
 
     // Integrate the pose springs — underdamped (slight overshoot) so every
@@ -3676,6 +3695,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     setTimeScale(x: number) { if (Number.isFinite(x)) timeScale = Math.max(0.2, Math.min(1, x)); },
     setFormation(mode: number) { formationMode = Math.max(0, Math.min(FORMATIONS.length - 1, Math.round(mode))); applyFormation(); },
     setBulletTime(on: boolean) { bulletTime = !!on; if (bulletTime) bulletStart = performance.now(); },
+    doMove(idx: number) { doMove(idx); },
     photoFreeze(on: boolean) {
       photoFrozen = !!on;
       if (photoFrozen) {

@@ -567,6 +567,13 @@
     text-shadow:0 0 50px rgba(255,120,180,.4);}
   .shout-text.pop{animation:shoutPop 1.1s cubic-bezier(.2,.8,.3,1) forwards;}
   @keyframes shoutPop{0%{opacity:0; transform:scale(.3) rotate(-6deg);}18%{opacity:1; transform:scale(1.12) rotate(2deg);}60%{opacity:1; transform:scale(1) rotate(0);}100%{opacity:0; transform:scale(1.35);}}
+  .move-row{display:flex; gap:8px; flex-wrap:wrap;}
+  .move-chip{display:flex; flex-direction:column; align-items:center; gap:2px; cursor:pointer; min-width:58px;
+    padding:8px 6px; border-radius:11px; border:1px solid var(--border); background:rgba(255,255,255,.04);
+    color:var(--text); font-size:11px; font-weight:600; transition:border-color .18s, transform .1s;}
+  .move-chip .mv-e{font-size:19px; line-height:1;}
+  .move-chip:hover{border-color:var(--border-strong); transform:translateY(-2px);}
+  .move-chip:active{transform:scale(.9);}
   .shout-row{display:flex; gap:8px; flex-wrap:wrap;}
   .shout-chip{cursor:pointer; font-size:13px; font-weight:700; padding:7px 13px; border-radius:999px;
     border:1px solid var(--border); background:rgba(255,255,255,.04); color:var(--text); transition:border-color .18s, transform .1s;}
@@ -1226,6 +1233,8 @@
       </select>
     </div>
     <button id="bulletBtn" class="btn-ghost" style="margin-top:12px; width:100%;">🕶️ בולט-טיים (T) — הקפאה ומצלמה שטסה</button>
+    <div style="margin-top:14px; font-size:12px; color:var(--text-dim); text-align:right;">🕺 מהלכי-על — לחצו והלהקה מבצעת מיד</div>
+    <div class="move-row" id="moveRow" style="margin-top:8px;"></div>
     <button id="finaleBtn" class="btn-ghost" style="margin-top:12px; width:100%;">🎆 גרנד פינאלה — רצף סיום מטורף</button>
     <button id="insaneBtn" class="btn-insane" style="margin-top:10px; width:100%;">🤯 מצב INSANE — הכל על מקסימום</button>
     <label class="dir-toggle" style="margin-top:12px;">
@@ -2177,6 +2186,21 @@
     }
   }
   bulletBtn.addEventListener('click', ()=> setBullet(!bulletOn));
+
+  // ── 🕺 Move soundboard ── tap a button and the whole crew hits that hero
+  // move immediately (the DJ's live "everybody hit it!" control).
+  const moveRow = $('moveRow');
+  const MOVES_SB = [
+    ['🕺','קפיצה',5], ['🌀','סיבוב',24], ['🌊','גל',96],
+    ['🔻','צלילה',13], ['🙌','פוזה',87], ['🎤','מיקרופון',121],
+  ];
+  MOVES_SB.forEach(([emoji, label, idx])=>{
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'move-chip';
+    b.innerHTML = '<span class="mv-e">' + emoji + '</span><span>' + label + '</span>';
+    b.addEventListener('click', ()=> window.__lyricsAvatarBridge?.doMove?.(idx));
+    moveRow.appendChild(b);
+  });
 
   // ── 🎆 Grand finale ── a scripted ~4s closing sequence: a rolling volley of
   // bursts with a firework-emoji shower — the end-of-set money shot.
@@ -3983,6 +4007,7 @@
     setTimeScale(x) { handle?.setTimeScale?.(x); },
     setFormation(mode) { handle?.setFormation?.(mode); },
     setBulletTime(on) { handle?.setBulletTime?.(on); },
+    doMove(idx) { handle?.doMove?.(idx); },
   };
 
   // Party button cycles: solo → 🎉 crew of 3 → 🪩 BIG PARTY (30 aliens +
