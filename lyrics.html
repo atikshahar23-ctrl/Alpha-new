@@ -8,7 +8,7 @@
 <link rel="icon" type="image/png" href="%BASE_URL%favicon-bull.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Rubik:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Rubik:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&family=Karantina:wght@400;700&display=swap" rel="stylesheet">
 <style>
   :root{
     --lyric-font: 19px;
@@ -339,8 +339,9 @@
      live inside the atmosphere instead of below the fold. */
   .hero-line{position:absolute; bottom:18px; left:12px; right:12px; text-align:center; pointer-events:none; z-index:2;}
   .hero-line .hl-orig{
-    font-size:clamp(11px, 2.4vw, 15px); color:rgba(195,210,235,.68); margin-bottom:5px;
-    text-shadow:0 1px 8px rgba(0,0,0,.85); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    font-size:clamp(16px, 3.6vw, 26px); font-weight:600; color:rgba(226,236,254,.92); margin-bottom:6px;
+    text-shadow:0 1px 10px rgba(0,0,0,.9), 0 0 22px rgba(34,228,255,.25);
+    overflow:hidden; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; line-height:1.3;
   }
   .hero-line .hl-trans{
     font-family:'Rubik',sans-serif; font-weight:800;
@@ -687,6 +688,7 @@
     background-color:#08090d;}
   body.stage-mode .led-frame{z-index:90;}
   body.stage-mode .hero-line .hl-trans{font-size:clamp(24px, 5.2vw, 46px);}
+  body.stage-mode .hero-line .hl-orig{font-size:clamp(20px, 3.4vw, 36px);}
   /* Chrome auto-hide — after a few idle seconds in stage mode the control
      buttons and cursor fade away for a clean projected display; any mouse
      move brings them back. The now-playing pill + live line stay visible. */
@@ -837,6 +839,72 @@
     .now-playing{flex-wrap:wrap;}
     header{gap:10px;}
   }
+
+  /* ═══════════════ "NEON ARENA" REDESIGN (v302) ═══════════════
+     A complete visual re-skin layered as end-of-sheet overrides: a hotter
+     synthwave palette, sharp stage-rig panels with hard neon offset shadows,
+     a dual-sun horizon + scrolling perspective floor grid, and Karantina
+     condensed display type for Hebrew headings. Variable NAMES are unchanged,
+     so the gold/ice skins and every component keep working untouched. */
+  :root{
+    --bg:#040111;
+    --bg-elevated:rgba(14,10,34,.74);
+    --bg-elevated-2:rgba(24,16,52,.62);
+    --border:rgba(148,120,255,.17);
+    --border-strong:rgba(0,255,224,.55);
+    --cyan:#00ffe0; --violet:#7b2bff; --magenta:#ff2e88; --amber:#ffb300;
+    --radius:12px; --radius-sm:8px;
+    --glass-blur:blur(14px) saturate(1.5);
+  }
+  body::after{ /* dual-sun horizon glow */
+    inset:-20%;
+    background:
+      radial-gradient(50% 42% at 50% -6%, rgba(123,43,255,.34), transparent 70%),
+      radial-gradient(34% 30% at 16% 20%, rgba(0,255,224,.13), transparent 70%),
+      radial-gradient(40% 34% at 84% 14%, rgba(255,46,136,.17), transparent 70%);
+    filter:blur(34px);
+  }
+  body::before{ /* perspective floor grid, slowly scrolling toward the viewer */
+    background-image:
+      repeating-linear-gradient(rgba(0,255,224,.055) 0 1px, transparent 1px 44px),
+      repeating-linear-gradient(90deg, rgba(123,43,255,.07) 0 1px, transparent 1px 44px);
+    background-size:100% 44px, 44px 100%;
+    mask-image:linear-gradient(to bottom, transparent 26%, black 80%);
+    animation:gridScroll 8s linear infinite;
+  }
+  @keyframes gridScroll{from{background-position:0 0, 0 0;}to{background-position:0 44px, 0 0;}}
+  header{position:relative; overflow:visible;}
+  header::after{
+    content:''; position:absolute; left:14px; right:14px; bottom:-2px; height:2.5px;
+    background:var(--tri); border-radius:3px; opacity:.85; pointer-events:none;
+    box-shadow:0 0 16px rgba(0,255,224,.4);
+  }
+  .logo-mark{border-radius:8px; transform:rotate(-7deg); box-shadow:4px 4px 0 rgba(255,46,136,.5), 0 0 22px rgba(0,255,224,.4);}
+  .logo-text{font-size:19px; letter-spacing:.08em;}
+  .eyebrow, .sub-eyebrow{
+    font-family:'Karantina','Chakra Petch',sans-serif;
+    font-size:24px; letter-spacing:.03em; font-weight:700; text-transform:none;
+    background:var(--tri); -webkit-background-clip:text; background-clip:text; color:transparent;
+  }
+  .sub-eyebrow{font-size:21px;}
+  .sub-eyebrow .chev{background:none; color:var(--cyan); -webkit-text-fill-color:var(--cyan);}
+  .panel{
+    box-shadow:10px 10px 0 rgba(123,43,255,.12), 0 24px 60px rgba(0,0,0,.55);
+    border:1px solid var(--border);
+  }
+  .panel::before{height:3px; opacity:.95;}
+  button:hover{transform:translate(-1px,-2px); box-shadow:4px 4px 0 rgba(0,255,224,.22);}
+  button:active{transform:translate(1px,1px); box-shadow:none;}
+  .btn-primary{color:#02020a; box-shadow:5px 5px 0 rgba(255,46,136,.4);}
+  .btn-primary:hover{box-shadow:7px 7px 0 rgba(255,46,136,.5), 0 0 22px rgba(0,255,224,.3);}
+  select:focus, input[type=text]:focus{box-shadow:0 0 0 3px rgba(0,255,224,.16);}
+  .hero-wrap{
+    box-shadow:12px 12px 0 rgba(0,255,224,.08), 0 24px 60px rgba(0,0,0,.55), 0 0 44px rgba(123,43,255,.28), inset 0 1px 0 rgba(255,255,255,.06);
+    border:1px solid rgba(0,255,224,.28);
+  }
+  .scene-btn.on{box-shadow:5px 5px 0 rgba(0,255,224,.25);}
+  .btn-insane{box-shadow:6px 6px 0 rgba(255,46,136,.45);}
+  body.stage-mode .hero-wrap{box-shadow:none; border:none;} /* projection stays clean */
 </style>
 </head>
 <body>
