@@ -550,6 +550,28 @@
   .logo-upload{flex:none; cursor:pointer; font-size:13px; padding:7px 12px; border-radius:9px;
     border:1px solid var(--border); background:rgba(255,255,255,.04); color:var(--text);}
   .logo-upload:hover{border-color:var(--border-strong);}
+  /* 🌀 Stage VFX — CSS post-filters on the whole 3D canvas. Cheap, GPU-composited,
+     zero engine risk. Applied to the avatar container so it cascades to the canvas. */
+  .hero-avatar{transition:filter .4s ease;}
+  .hero-avatar.vfx-psy{filter:saturate(2.2) contrast(1.15) hue-rotate(0deg); animation:vfxHue 6s linear infinite;}
+  @keyframes vfxHue{from{filter:saturate(2.2) contrast(1.15) hue-rotate(0deg);}to{filter:saturate(2.2) contrast(1.15) hue-rotate(360deg);}}
+  .hero-avatar.vfx-neon{filter:invert(1) hue-rotate(180deg) saturate(1.6) contrast(1.1);}
+  .hero-avatar.vfx-dream{filter:blur(1.4px) brightness(1.25) saturate(1.5) drop-shadow(0 0 18px rgba(180,120,255,.5));}
+  .hero-avatar.vfx-vhs{filter:sepia(.5) saturate(1.8) contrast(1.3) hue-rotate(-15deg);}
+  .hero-avatar.vfx-chroma{filter:saturate(3) contrast(1.4) hue-rotate(0deg); animation:vfxHue 1.4s steps(6) infinite;}
+  /* 🔊 Giant shout words — a word POPS huge across the stage then fades. */
+  .shout-text{position:absolute; inset:0; z-index:9; display:flex; align-items:center; justify-content:center;
+    pointer-events:none; opacity:0; font-weight:900; text-align:center; padding:0 6%;
+    font-size:clamp(40px, 13vh, 150px); line-height:.95; letter-spacing:-1px;
+    background:linear-gradient(135deg, #ffd166, #ff4d6d, #8a5cff, #00e5ff); -webkit-background-clip:text; background-clip:text; color:transparent;
+    text-shadow:0 0 50px rgba(255,120,180,.4);}
+  .shout-text.pop{animation:shoutPop 1.1s cubic-bezier(.2,.8,.3,1) forwards;}
+  @keyframes shoutPop{0%{opacity:0; transform:scale(.3) rotate(-6deg);}18%{opacity:1; transform:scale(1.12) rotate(2deg);}60%{opacity:1; transform:scale(1) rotate(0);}100%{opacity:0; transform:scale(1.35);}}
+  .shout-row{display:flex; gap:8px; flex-wrap:wrap;}
+  .shout-chip{cursor:pointer; font-size:13px; font-weight:700; padding:7px 13px; border-radius:999px;
+    border:1px solid var(--border); background:rgba(255,255,255,.04); color:var(--text); transition:border-color .18s, transform .1s;}
+  .shout-chip:hover{border-color:var(--border-strong);}
+  .shout-chip:active{transform:scale(.9);}
   /* Keyboard-shortcuts help. */
   .shortcuts-fab{position:fixed; bottom:14px; left:14px; z-index:60; width:40px; height:40px; border-radius:12px;
     border:1px solid var(--border); background:rgba(12,14,22,.8); color:var(--text); font-size:17px; cursor:pointer;
@@ -846,6 +868,7 @@
     <div class="title-card" id="titleCard" hidden><div class="tc-eyebrow">▶ מתנגן עכשיו</div><div class="tc-title" id="tcTitle"></div><div class="tc-artist" id="tcArtist"></div></div>
     <img class="brand-logo" id="brandLogo" alt="" hidden>
     <div class="event-clock" id="eventClock" hidden><div class="ev-label" id="evLabel"></div><div class="ev-time" id="evTime"></div></div>
+    <div class="shout-text" id="shoutText" aria-hidden="true"></div>
     <button class="hero-btn stage-exit" id="stageExitBtn" title="יציאה ממסך מלא" hidden>✕</button>
     <div class="hero-caption">🎭 רוקד לקצב השיר</div>
     <div class="np-pill" id="npPill" hidden>🎵 <span id="npPillText"></span></div>
@@ -1212,6 +1235,27 @@
       <button id="eventStartBtn" class="btn-primary">🕛 התחל</button>
     </div>
     <button id="eventClearBtn" class="btn-ghost" style="margin-top:8px; width:100%; display:none;">✖️ בטל ספירה</button>
+  </div>
+
+  <div class="panel chaos-panel" id="chaosPanel">
+    <div class="eyebrow" style="margin-bottom:10px;">🎪 כאוס מסיבה</div>
+    <div class="dir-row">
+      <span>🌀 אפקט חזותי לבמה</span>
+      <select id="vfxSel">
+        <option value="none">רגיל</option>
+        <option value="psy">פסיכדלי 🌈</option>
+        <option value="neon">ניאון הפוך</option>
+        <option value="dream">חלום זוהר</option>
+        <option value="vhs">רטרו VHS</option>
+        <option value="chroma">כרומטי מטורף</option>
+      </select>
+    </div>
+    <div style="margin-top:16px; padding-top:12px; border-top:1px solid var(--border); font-size:12px; color:var(--text-dim); text-align:right;">🔊 מילות-קריאה ענקיות</div>
+    <div class="shout-row" id="shoutRow"></div>
+    <div class="search-row" style="margin-top:8px;">
+      <input type="text" id="shoutInput" placeholder="מילה משלך… (למשל: יאללה!)" maxlength="24">
+      <button id="shoutBtn" class="btn-primary">🔊 שגר</button>
+    </div>
   </div>
 
   <button id="shortcutsBtn" class="shortcuts-fab" title="קיצורי מקלדת (?)">⌨️</button>
@@ -2261,6 +2305,44 @@
   });
   eventClearBtn.addEventListener('click', ()=> stopEvent(false));
   (()=>{ const saved = store.get('lt:event'); if(saved && saved.t){ if(saved.t - Date.now() > 0){ eventLabelInput.value = saved.label || ''; startEvent(saved.t, saved.label, false); } else { store.del('lt:event'); } } })();
+
+  // ── 🌀 Stage VFX ── CSS post-filters over the whole 3D canvas (psychedelic
+  // hue-cycle, neon invert, dream glow, retro VHS, chromatic). GPU-composited,
+  // zero engine cost. Persisted (lt:vfx).
+  const vfxSel = $('vfxSel');
+  const heroAvatarVfx = $('heroAvatar');
+  const VFX_CLASSES = ['vfx-psy','vfx-neon','vfx-dream','vfx-vhs','vfx-chroma'];
+  function applyVfx(v){
+    heroAvatarVfx.classList.remove(...VFX_CLASSES);
+    if(v && v !== 'none') heroAvatarVfx.classList.add('vfx-' + v);
+  }
+  vfxSel.value = store.get('lt:vfx') || 'none';
+  applyVfx(vfxSel.value);
+  vfxSel.addEventListener('change', ()=>{ store.set('lt:vfx', vfxSel.value); applyVfx(vfxSel.value); });
+
+  // ── 🔊 Giant shout words ── a word POPS huge across the stage then fades —
+  // preset hype calls plus a custom field. Pure crowd-energy fun.
+  const shoutText = $('shoutText');
+  const shoutRow = $('shoutRow');
+  const shoutInput = $('shoutInput');
+  const shoutBtn = $('shoutBtn');
+  const SHOUTS = ['יאללה! 🔥', 'מסיבה! 🎉', "LET'S GO!", 'כולם לקפוץ!', '🔥🔥🔥', 'אווו! 🙌'];
+  let shoutT = null;
+  function popShout(txt){
+    const t = (txt || '').trim(); if(!t) return;
+    shoutText.textContent = t;
+    shoutText.classList.remove('pop'); void shoutText.offsetWidth; shoutText.classList.add('pop');
+    if(shoutT) clearTimeout(shoutT);
+    shoutT = setTimeout(()=>{ shoutText.classList.remove('pop'); }, 1200);
+  }
+  SHOUTS.forEach(w=>{
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'shout-chip'; b.textContent = w;
+    b.addEventListener('click', ()=> popShout(w));
+    shoutRow.appendChild(b);
+  });
+  shoutBtn.addEventListener('click', ()=>{ if(shoutInput.value.trim()) popShout(shoutInput.value); });
+  shoutInput.addEventListener('keydown', (e)=>{ if(e.key === 'Enter'){ e.preventDefault(); shoutBtn.click(); } });
 
   // ── 🎬 Song title card ── a broadcast-style lower-third that slides in when
   // a song loads and slides out after ~4.5s. Called from loadLyricsFor.
