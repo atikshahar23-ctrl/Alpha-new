@@ -3531,8 +3531,29 @@
     return data[0].map(seg => (seg && seg[0]) ? seg[0] : '').join('');
   }
 
-  async function googleBatch(texts, target, onChunk){
-    // pack lines into few requests, keeping each URL comfortably short
+  // Lingva — community-hosted Google Translate proxies with open CORS. A
+  // third engine matters in the real world: gtx and MyMemory rate-limit BY
+  // IP, and mobile carriers put thousands of users behind one shared IP
+  // (CGNAT) — on an iPad over cellular both can be dead on arrival.
+  const LINGVA_HOSTS = ['https://lingva.ml', 'https://translate.plausibility.cloud'];
+  async function lingvaChunk(text, target){
+    let lastErr = null;
+    for(const host of LINGVA_HOSTS){
+      try{
+        const res = await fetchT(host + '/api/v1/auto/' + gtxLang(target) + '/' + encodeURIComponent(text), 9000);
+        if(!res.ok) throw new Error('lingva ' + res.status);
+        const d = await res.json();
+        if(d && typeof d.translation === 'string' && d.translation) return d.translation;
+        throw new Error('lingva shape');
+      }catch(e){ lastErr = e; }
+    }
+    throw lastErr || new Error('lingva down');
+  }
+
+  // Shared batcher: pack lines into few requests (URL kept comfortably
+  // short), translate each chunk with the given engine, and fall back to
+  // line-by-line for a chunk whose newline separators got eaten.
+  async function packBatch(texts, target, onChunk, chunkFn){
     const chunks = []; let cur = [], curLen = 0, curStart = 0;
     texts.forEach((line, i)=>{
       if(cur.length && curLen + line.length > 1500){ chunks.push({ start: curStart, lines: cur }); cur = []; curLen = 0; curStart = i; }
@@ -3541,15 +3562,17 @@
     if(cur.length) chunks.push({ start: curStart, lines: cur });
     await Promise.all(chunks.map(async (c)=>{
       const joined = c.lines.join('\n');
-      const translated = await googleTranslateChunk(joined, target);
+      const translated = await chunkFn(joined, target);
       let parts = translated.split('\n');
       if(parts.length !== c.lines.length){
         // separator got eaten — retry that chunk line-by-line in parallel
-        parts = await Promise.all(c.lines.map(l => googleTranslateChunk(l, target).catch(()=>l)));
+        parts = await Promise.all(c.lines.map(l => chunkFn(l, target).catch(()=>l)));
       }
       onChunk(c.start, parts.map(p => p.trim()));
     }));
   }
+  const googleBatch = (texts, target, onChunk) => packBatch(texts, target, onChunk, googleTranslateChunk);
+  const lingvaBatch = (texts, target, onChunk) => packBatch(texts, target, onChunk, lingvaChunk);
 
   // MyMemory needs a REAL source language ('auto' is invalid, and it was
   // hardcoded to English — Spanish/Hebrew/Russian songs came back garbled),
@@ -3603,7 +3626,10 @@
   // Used on fresh LLM output AND on cache load, so songs that were cached
   // with the label before this fix clean themselves up on next play.
   function stripTransLabel(t){
-    return String(t == null ? '' : t).replace(/^(?:\u05EA\u05E8\u05D2\u05D5\u05DD|translation)\s*[:\uFF1A\-\u2013]\s*/i, '').trim();
+    // Colon separators ONLY: a hyphen/dash here was also eating legitimate
+    // translations whose first word happens to be "\u05EA\u05E8\u05D2\u05D5\u05DD-..." \u2014 the label
+    // models prepend is always "\u05EA\u05E8\u05D2\u05D5\u05DD:" / "Translation:".
+    return String(t == null ? '' : t).replace(/^(?:\u05EA\u05E8\u05D2\u05D5\u05DD|translation)\s*[:\uFF1A]\s*/i, '').trim();
   }
   function mostlyHebrew(lines){
     let n = 0; lines.forEach(l=>{ if(HE_CHAR_RE.test(l)) n++; });
@@ -3881,43 +3907,61 @@
       if(inTargetScript(t, target)) updateRowTranslation(i, t);
       else needIdx.push(i);
     });
-    const subTexts = needIdx.map(i=>texts[i]);
-    const onChunk = (start, translated)=>{
-      if(seq !== state.loadSeq) return;
-      translated.forEach((tr, j)=> updateRowTranslation(needIdx[start + j], tr));
-    };
+    // Engine chain, preferred engine first. Each pass only re-sends the
+    // lines that are still untranslated, so a partial success by one engine
+    // is kept and the next engine just fills the holes. In the real world
+    // this matters a lot: gtx and MyMemory rate-limit by IP, and shared
+    // carrier IPs (iPad on cellular) regularly kill BOTH — Lingva is the
+    // third leg, and the LLM rescue below is the fourth.
+    const remainingIdx = ()=> needIdx.filter(i => state.lines[i].trans == null || state.lines[i].trans === state.lines[i].orig);
     const runEngines = async ()=>{
-      try{
-        if(settings.engine === 'google'){
-          await googleBatch(subTexts, target, onChunk);
-        } else {
-          await myMemoryBatch(subTexts, target, onChunk);
-        }
-      }catch(e){
-        // Google unreachable → automatic MyMemory fallback
-        try{ await myMemoryBatch(subTexts, target, onChunk); }catch(e2){}
+      const chain = settings.engine === 'mymemory'
+        ? [myMemoryBatch, googleBatch, lingvaBatch]
+        : [googleBatch, lingvaBatch, myMemoryBatch];
+      for(const engine of chain){
+        const rem = remainingIdx();
+        if(rem.length <= Math.max(1, needIdx.length * 0.1)) return; // good enough
+        const remTexts = rem.map(i=>texts[i]);
+        const cb = (start, translated)=>{
+          if(seq !== state.loadSeq) return;
+          translated.forEach((tr, j)=> updateRowTranslation(rem[start + j], tr));
+        };
+        try{ await engine(remTexts, target, cb); }catch(e){ /* next engine */ }
+        if(seq !== state.loadSeq) return;
       }
     };
-    if(subTexts.length) await runEngines();
+    if(needIdx.length) await runEngines();
     if(seq !== state.loadSeq) return;
     // anything still untranslated keeps its original text
     state.lines.forEach((l,i)=>{ if(l.trans == null){ l.trans = l.orig; updateRowTranslation(i, l.orig); } });
     // If most lines that NEEDED translating still show their original text,
-    // the engines failed (offline / rate-limited). Say so, retry once in the
-    // background, and — critically — do NOT cache the failure: it used to be
-    // cached as "translated", so the song stayed untranslated forever.
-    const failedCount = ()=> needIdx.filter(i => state.lines[i].trans === state.lines[i].orig).length;
+    // every MT engine failed (offline / rate-limited). Do NOT cache the
+    // failure (it used to be cached as "translated", so the song stayed
+    // untranslated forever). First try the LLM as a full translator — the
+    // smart-Hebrew pass translates from the ORIGINALS, so with a Groq/Gemini
+    // key it can carry the whole song even with every MT engine down. Only
+    // if that can't run either: warn and retry the chain in the background.
+    const failedCount = ()=> remainingIdx().length;
     if(needIdx.length >= 4 && failedCount() > needIdx.length * 0.6){
+      const rescued = await smartRefineHebrew(texts, seq);
+      if(seq !== state.loadSeq) return;
+      if(rescued){
+        cacheSet(cacheKey, { lines: state.lines, synced: state.synced, smart: true, ts: Date.now() });
+        loadSongInfo(artist, title, texts, seq, cacheKey);
+        return;
+      }
       showMiniToast('⚠️ שרתי התרגום לא ענו — מנסה שוב ברקע…');
       setTimeout(async ()=>{
         if(seq !== state.loadSeq) return;
         await runEngines();
         if(seq !== state.loadSeq) return;
         state.lines.forEach((l,i)=>{ if(l.trans == null){ l.trans = l.orig; updateRowTranslation(i, l.orig); } });
-        if(failedCount() <= needIdx.length * 0.6){
-          const refined2 = await smartRefineHebrew(texts, seq);
-          if(seq !== state.loadSeq) return;
-          cacheSet(cacheKey, { lines: state.lines, synced: state.synced, smart: refined2, ts: Date.now() });
+        // One LLM pass either polishes a now-working MT result or fully
+        // translates if MT is still down — a single call covers both.
+        const refined2 = await smartRefineHebrew(texts, seq);
+        if(seq !== state.loadSeq) return;
+        if(refined2 || failedCount() <= needIdx.length * 0.6){
+          cacheSet(cacheKey, { lines: state.lines, synced: state.synced, smart: !!refined2, ts: Date.now() });
           loadSongInfo(artist, title, texts, seq, cacheKey);
           showMiniToast('✅ התרגום הושלם');
         }
