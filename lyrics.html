@@ -3423,10 +3423,26 @@
   // MyMemory stays as the automatic fallback, upgraded from strictly
   // sequential to small parallel groups.
   function gtxLang(code){ return code === 'he' ? 'iw' : code; }
+  // fetch with a hard timeout — a hung translation server must fail FAST so
+  // the fallback engine actually gets its turn (it used to stall forever,
+  // leaving the whole song untranslated with no error).
+  function fetchT(url, ms){
+    const ctl = new AbortController();
+    const t = setTimeout(()=> ctl.abort(), ms || 8000);
+    return fetch(url, { signal: ctl.signal }).finally(()=> clearTimeout(t));
+  }
+  // Lines already written in the target language's script don't need MT at
+  // all — pushing a Hebrew song through the engines with a Hebrew target was
+  // coming back garbled. Shared by the fresh-load path and cache healing.
+  const TARGET_SCRIPT = { he:/[\u0590-\u05FF]/, ar:/[\u0600-\u06FF]/, ru:/[\u0400-\u04FF]/, el:/[\u0370-\u03FF]/ };
+  function inTargetScript(line, target){
+    const re = TARGET_SCRIPT[target];
+    return !!(re && re.test(line) && !/[A-Za-z]{3,}/.test(line));
+  }
 
   async function googleTranslateChunk(text, target){
     const url = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=' + gtxLang(target) + '&dt=t&q=' + encodeURIComponent(text);
-    const res = await fetch(url);
+    const res = await fetchT(url, 8000);
     if(!res.ok) throw new Error('gtx ' + res.status);
     const data = await res.json();
     if(!data || !Array.isArray(data[0])) throw new Error('gtx shape');
@@ -3453,12 +3469,34 @@
     }));
   }
 
+  // MyMemory needs a REAL source language ('auto' is invalid, and it was
+  // hardcoded to English — Spanish/Hebrew/Russian songs came back garbled),
+  // and it reports quota/errors as HTTP-200 "translations" ("MYMEMORY
+  // WARNING: YOU USED ALL AVAILABLE FREE TRANSLATIONS…"), which were being
+  // shown to the user as the actual lyrics. Guess the source per line from
+  // its script, skip same-language lines, and reject the warning strings.
+  const MM_JUNK_RE = /MYMEMORY WARNING|IS AN INVALID|INVALID (?:SOURCE|TARGET)|QUERY LENGTH LIMIT|PLEASE SELECT TWO DISTINCT|NO QUERY SPECIFIED/i;
+  function guessSrcLang(line){
+    if(/[\u0590-\u05FF]/.test(line)) return 'he';
+    if(/[\u0600-\u06FF]/.test(line)) return 'ar';
+    if(/[\u0400-\u04FF]/.test(line)) return 'ru';
+    if(/[\u0370-\u03FF]/.test(line)) return 'el';
+    if(/[\u3040-\u30FF]/.test(line)) return 'ja';
+    if(/[\uAC00-\uD7AF]/.test(line)) return 'ko';
+    if(/[\u4E00-\u9FFF]/.test(line)) return 'zh-CN';
+    return 'en';
+  }
   async function myMemoryLine(line, target){
     try{
-      const url = 'https://api.mymemory.translated.net/get?q=' + encodeURIComponent(line) + '&langpair=en|' + target;
-      const res = await fetch(url);
+      const src = guessSrcLang(line);
+      if(src === target || src.slice(0, 2) === target) return line; // already in the target language
+      const url = 'https://api.mymemory.translated.net/get?q=' + encodeURIComponent(line) + '&langpair=' + src + '|' + target;
+      const res = await fetchT(url, 8000);
       const data = await res.json();
-      return (data && data.responseData && data.responseData.translatedText) ? data.responseData.translatedText : line;
+      if(!data || (data.responseStatus != null && Number(data.responseStatus) !== 200)) return line;
+      const tr = data.responseData && data.responseData.translatedText;
+      if(!tr || MM_JUNK_RE.test(tr)) return line;
+      return tr;
     }catch(e){ return line; }
   }
   async function myMemoryBatch(texts, target, onChunk){
@@ -3702,7 +3740,20 @@
     const cacheKey = (artist + '|' + title + '|' + target).toLowerCase();
 
     const cached = cacheGet(cacheKey);
-    if(cached){
+    // Poisoned-cache self-heal: entries saved while the translation servers
+    // were down (every line = its original) or containing MyMemory warning
+    // strings used to be served forever as "translated". Detect them, warn,
+    // and fall through to a full re-translate that overwrites the bad entry.
+    let cacheHealthy = !!(cached && Array.isArray(cached.lines) && cached.lines.length);
+    if(cacheHealthy){
+      const junk = cached.lines.some(l => l.trans && MM_JUNK_RE.test(l.trans));
+      const untr = cached.lines.filter(l => l.trans === l.orig && !inTargetScript(l.orig, target)).length;
+      if(junk || (cached.lines.length >= 4 && untr > cached.lines.length * 0.6)){
+        cacheHealthy = false;
+        showMiniToast('🔄 מתרגם מחדש — התרגום השמור היה פגום');
+      }
+    }
+    if(cacheHealthy){
       // stripTransLabel: self-heal entries cached with a "תרגום:" prefix
       // before that label bug was fixed.
       state.lines = cached.lines.map(l=>({ ...l, trans: l.trans != null ? stripTransLabel(l.trans) : l.trans }));
@@ -3739,23 +3790,58 @@
     renderLines(); setSyncBadge();   // originals appear IMMEDIATELY, translations stream in
 
     const texts = state.lines.map(l=>l.orig);
+    // Lines already in the target language's script skip MT entirely (a
+    // Hebrew song with a Hebrew target was being round-tripped through the
+    // engines and coming back mangled); only the rest go out, and chunk
+    // offsets are remapped back to their real line indexes.
+    const needIdx = [];
+    texts.forEach((t, i)=>{
+      if(inTargetScript(t, target)) updateRowTranslation(i, t);
+      else needIdx.push(i);
+    });
+    const subTexts = needIdx.map(i=>texts[i]);
     const onChunk = (start, translated)=>{
       if(seq !== state.loadSeq) return;
-      translated.forEach((tr, j)=> updateRowTranslation(start + j, tr));
+      translated.forEach((tr, j)=> updateRowTranslation(needIdx[start + j], tr));
     };
-    try{
-      if(settings.engine === 'google'){
-        await googleBatch(texts, target, onChunk);
-      } else {
-        await myMemoryBatch(texts, target, onChunk);
+    const runEngines = async ()=>{
+      try{
+        if(settings.engine === 'google'){
+          await googleBatch(subTexts, target, onChunk);
+        } else {
+          await myMemoryBatch(subTexts, target, onChunk);
+        }
+      }catch(e){
+        // Google unreachable → automatic MyMemory fallback
+        try{ await myMemoryBatch(subTexts, target, onChunk); }catch(e2){}
       }
-    }catch(e){
-      // Google unreachable → automatic MyMemory fallback
-      try{ await myMemoryBatch(texts, target, onChunk); }catch(e2){}
-    }
+    };
+    if(subTexts.length) await runEngines();
     if(seq !== state.loadSeq) return;
     // anything still untranslated keeps its original text
     state.lines.forEach((l,i)=>{ if(l.trans == null){ l.trans = l.orig; updateRowTranslation(i, l.orig); } });
+    // If most lines that NEEDED translating still show their original text,
+    // the engines failed (offline / rate-limited). Say so, retry once in the
+    // background, and — critically — do NOT cache the failure: it used to be
+    // cached as "translated", so the song stayed untranslated forever.
+    const failedCount = ()=> needIdx.filter(i => state.lines[i].trans === state.lines[i].orig).length;
+    if(needIdx.length >= 4 && failedCount() > needIdx.length * 0.6){
+      showMiniToast('⚠️ שרתי התרגום לא ענו — מנסה שוב ברקע…');
+      setTimeout(async ()=>{
+        if(seq !== state.loadSeq) return;
+        await runEngines();
+        if(seq !== state.loadSeq) return;
+        state.lines.forEach((l,i)=>{ if(l.trans == null){ l.trans = l.orig; updateRowTranslation(i, l.orig); } });
+        if(failedCount() <= needIdx.length * 0.6){
+          const refined2 = await smartRefineHebrew(texts, seq);
+          if(seq !== state.loadSeq) return;
+          cacheSet(cacheKey, { lines: state.lines, synced: state.synced, smart: refined2, ts: Date.now() });
+          loadSongInfo(artist, title, texts, seq, cacheKey);
+          showMiniToast('✅ התרגום הושלם');
+        }
+      }, 6000);
+      return;
+    }
     // AI polish pass — the fast MT lines are already on screen; this swaps
     // them for natural, idiomatic Hebrew as soon as the model responds.
     const refined = await smartRefineHebrew(texts, seq);
