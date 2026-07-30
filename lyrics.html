@@ -572,6 +572,21 @@
     border:1px solid var(--border); background:rgba(255,255,255,.04); color:var(--text); transition:border-color .18s, transform .1s;}
   .shout-chip:hover{border-color:var(--border-strong);}
   .shout-chip:active{transform:scale(.9);}
+  /* ⚡ Full-page beat flash — an edge vignette that pulses on every beat. */
+  .page-flash{position:fixed; inset:0; z-index:115; pointer-events:none; opacity:0;
+    box-shadow:inset 0 0 120px 30px rgba(0,229,255,.55), inset 0 0 40px 6px rgba(255,120,200,.4);}
+  .page-flash.hit{animation:pageFlashHit .16s ease-out;}
+  @keyframes pageFlashHit{0%{opacity:.7;}100%{opacity:0;}}
+  /* 🖼️ Poster gallery — thumbnails of captured stage stills; click to re-download. */
+  .poster-gallery{display:flex; gap:8px; flex-wrap:wrap; margin-top:4px;}
+  .poster-gallery:empty{display:none;}
+  .poster-thumb{position:relative; width:74px; height:52px; border-radius:8px; overflow:hidden; cursor:pointer;
+    border:1px solid var(--border); background:#000;}
+  .poster-thumb img{width:100%; height:100%; object-fit:cover; display:block;}
+  .poster-thumb:hover{border-color:var(--cyan);}
+  .poster-thumb .pt-dl{position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    background:rgba(0,0,0,.45); color:#fff; font-size:16px; opacity:0; transition:opacity .15s;}
+  .poster-thumb:hover .pt-dl{opacity:1;}
   /* Keyboard-shortcuts help. */
   .shortcuts-fab{position:fixed; bottom:14px; left:14px; z-index:60; width:40px; height:40px; border-radius:12px;
     border:1px solid var(--border); background:rgba(12,14,22,.8); color:var(--text); font-size:17px; cursor:pointer;
@@ -1256,8 +1271,17 @@
       <input type="text" id="shoutInput" placeholder="מילה משלך… (למשל: יאללה!)" maxlength="24">
       <button id="shoutBtn" class="btn-primary">🔊 שגר</button>
     </div>
+    <button id="surpriseBtn" class="btn-insane" style="margin-top:14px; width:100%;">🎲 הפתע אותי — הגרל הכל!</button>
+    <label class="dir-toggle" style="margin-top:12px;">
+      <input type="checkbox" id="pageFlashChk">
+      <span>⚡ הבזק מסך מלא על כל ביט</span>
+    </label>
+    <div style="margin-top:16px; padding-top:12px; border-top:1px solid var(--border); font-size:12px; color:var(--text-dim); text-align:right;">🖼️ גלריית פוסטרים (📸)</div>
+    <div class="poster-gallery" id="posterGallery"></div>
+    <div id="posterGalleryEmpty" class="setlist-empty">צלמו פוסטר (📸 או P) והוא יופיע כאן — לחיצה מורידה שוב.</div>
   </div>
 
+  <div class="page-flash" id="pageFlash" aria-hidden="true"></div>
   <button id="shortcutsBtn" class="shortcuts-fab" title="קיצורי מקלדת (?)">⌨️</button>
   <div class="shortcuts-modal" id="shortcutsModal" hidden>
     <div class="shortcuts-card">
@@ -1911,7 +1935,8 @@
       const url = canvas.toDataURL('image/png');
       const a = document.createElement('a');
       a.href = url; a.download = 'alpha-stage-poster.png'; a.click();
-      showMiniToast('📸 הפוסטר ירד');
+      addPosterToGallery(url); // also collect it into the session gallery
+      showMiniToast('📸 הפוסטר ירד ונוסף לגלריה');
     }catch(err){ showMiniToast('צילום הפוסטר נכשל בדפדפן הזה'); }
   }
   posterBtn.addEventListener('click', grabPoster);
@@ -2343,6 +2368,53 @@
   });
   shoutBtn.addEventListener('click', ()=>{ if(shoutInput.value.trim()) popShout(shoutInput.value); });
   shoutInput.addEventListener('keydown', (e)=>{ if(e.key === 'Enter'){ e.preventDefault(); shoutBtn.click(); } });
+
+  // ── 🎲 Surprise ── one tap randomizes the whole look: scene preset, crew
+  // formation, stage VFX, and color theme. Instant chaos.
+  const surpriseBtn = $('surpriseBtn');
+  const rand = (n)=> Math.floor(Math.random() * n);
+  surpriseBtn.addEventListener('click', ()=>{
+    applyScene(SCENES[rand(SCENES.length)]);
+    setSelectVal('formationSel', rand(4)); store.set('lt:formation', Number(formationSel.value));
+    const vfxOpts = ['none','psy','neon','dream','vhs','chroma'];
+    vfxSel.value = vfxOpts[rand(vfxOpts.length)]; store.set('lt:vfx', vfxSel.value); applyVfx(vfxSel.value);
+    const dots = document.querySelectorAll('#avatarColors .av-dot');
+    if(dots.length > 1) dots[rand(Math.min(dots.length, 24))]?.click();
+    popShout('🎲 הפתעה!');
+  });
+
+  // ── ⚡ Full-page beat flash ── an edge vignette pulses on every engine beat
+  // ('lt-beat'). Off by default; persisted (lt:page_flash).
+  const pageFlash = $('pageFlash');
+  document.body.appendChild(pageFlash); // escape any transformed ancestor → true full-viewport flash
+  const pageFlashChk = $('pageFlashChk');
+  let pageFlashOn = store.get('lt:page_flash') === true;
+  pageFlashChk.checked = pageFlashOn;
+  pageFlashChk.addEventListener('change', ()=>{ pageFlashOn = pageFlashChk.checked; store.set('lt:page_flash', pageFlashOn); });
+  window.addEventListener('lt-beat', ()=>{
+    if(!pageFlashOn) return;
+    pageFlash.classList.remove('hit'); void pageFlash.offsetWidth; pageFlash.classList.add('hit');
+  });
+
+  // ── 🖼️ Poster gallery ── captured stage stills collect into a thumbnail
+  // strip (session-scoped — not persisted, images are large); click one to
+  // re-download it.
+  const posterGallery = $('posterGallery');
+  const posterGalleryEmpty = $('posterGalleryEmpty');
+  function addPosterToGallery(dataUrl){
+    posterGalleryEmpty.style.display = 'none';
+    const thumb = document.createElement('div');
+    thumb.className = 'poster-thumb';
+    thumb.title = 'הורד שוב';
+    thumb.innerHTML = '<img alt="פוסטר"><span class="pt-dl">⬇️</span>';
+    thumb.querySelector('img').src = dataUrl;
+    thumb.addEventListener('click', ()=>{
+      const a = document.createElement('a');
+      a.href = dataUrl; a.download = 'alpha-stage-poster.png'; a.click();
+    });
+    posterGallery.insertBefore(thumb, posterGallery.firstChild);
+    while(posterGallery.children.length > 12) posterGallery.removeChild(posterGallery.lastChild); // cap memory
+  }
 
   // ── 🎬 Song title card ── a broadcast-style lower-third that slides in when
   // a song loads and slides out after ~4.5s. Called from loadLyricsFor.
