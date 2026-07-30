@@ -579,6 +579,14 @@
     border:1px solid var(--border); background:rgba(255,255,255,.04); color:var(--text); transition:border-color .18s, transform .1s;}
   .shout-chip:hover{border-color:var(--border-strong);}
   .shout-chip:active{transform:scale(.9);}
+  .sfx-row{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;}
+  /* ✨ Tap sparkles — a little burst pops right where the stage is clicked. */
+  .tap-spark{position:absolute; z-index:10; pointer-events:none; font-size:15px; line-height:1;
+    transform:translate(-50%,-50%) scale(1); animation:tapSpark .85s cubic-bezier(.2,.7,.4,1) forwards;}
+  @keyframes tapSpark{
+    from{transform:translate(-50%,-50%) scale(1); opacity:1;}
+    to{transform:translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(.4); opacity:0;}
+  }
   /* ⚡ Full-page beat flash — an edge vignette that pulses on every beat. */
   .page-flash{position:fixed; inset:0; z-index:115; pointer-events:none; opacity:0;
     box-shadow:inset 0 0 120px 30px rgba(0,229,255,.55), inset 0 0 40px 6px rgba(255,120,200,.4);}
@@ -1280,6 +1288,8 @@
       <input type="text" id="shoutInput" placeholder="מילה משלך… (למשל: יאללה!)" maxlength="24">
       <button id="shoutBtn" class="btn-primary">🔊 שגר</button>
     </div>
+    <div style="margin-top:16px; padding-top:12px; border-top:1px solid var(--border); font-size:12px; color:var(--text-dim); text-align:right;">📯 אפקטי סאונד לדיג׳יי (בלי קבצים — מסונתז חי)</div>
+    <div class="sfx-row" id="sfxRow"></div>
     <button id="surpriseBtn" class="btn-insane" style="margin-top:14px; width:100%;">🎲 הפתע אותי — הגרל הכל!</button>
     <label class="dir-toggle" style="margin-top:12px;">
       <input type="checkbox" id="pageFlashChk">
@@ -2392,6 +2402,119 @@
   });
   shoutBtn.addEventListener('click', ()=>{ if(shoutInput.value.trim()) popShout(shoutInput.value); });
   shoutInput.addEventListener('keydown', (e)=>{ if(e.key === 'Enter'){ e.preventDefault(); shoutBtn.click(); } });
+
+  // ── 📯 DJ sound FX ── the classic party sounds (air horn, siren, applause,
+  // boom) synthesized live with the Web Audio API — zero audio files, zero
+  // network, and volumes kept polite. The context is created lazily on the
+  // first tap (satisfies autoplay policies).
+  let sfxCtx = null;
+  function sfxAC(){
+    if(!sfxCtx){ try{ sfxCtx = new (window.AudioContext || window.webkitAudioContext)(); }catch(e){ return null; } }
+    if(sfxCtx && sfxCtx.state === 'suspended') sfxCtx.resume();
+    return sfxCtx;
+  }
+  function sfxEnv(g, t0, attack, total, peak){
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(peak, t0 + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + total);
+  }
+  function sfxAirhorn(){
+    const c = sfxAC(); if(!c) return;
+    const t = c.currentTime + 0.02;
+    for(let blast = 0; blast < 3; blast++){
+      const s = t + blast * 0.38;
+      for(const det of [-6, 0, 8]){ // detuned saw stack = the fat horn
+        const o = c.createOscillator(), g = c.createGain();
+        o.type = 'sawtooth';
+        o.frequency.setValueAtTime(392, s);
+        o.frequency.exponentialRampToValueAtTime(466, s + 0.28);
+        o.detune.value = det;
+        sfxEnv(g, s, 0.015, 0.3, 0.07);
+        o.connect(g); g.connect(c.destination);
+        o.start(s); o.stop(s + 0.33);
+      }
+    }
+  }
+  function sfxSiren(){
+    const c = sfxAC(); if(!c) return;
+    const t = c.currentTime + 0.02;
+    const o = c.createOscillator(), g = c.createGain();
+    o.type = 'square';
+    o.frequency.setValueAtTime(600, t);
+    for(let i = 0; i < 4; i++){
+      o.frequency.linearRampToValueAtTime(1150, t + i * 0.6 + 0.3);
+      o.frequency.linearRampToValueAtTime(600, t + i * 0.6 + 0.6);
+    }
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.045, t + 0.05);
+    g.gain.setValueAtTime(0.045, t + 2.2);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 2.4);
+    o.connect(g); g.connect(c.destination);
+    o.start(t); o.stop(t + 2.45);
+  }
+  function sfxApplause(){
+    const c = sfxAC(); if(!c) return;
+    const t = c.currentTime + 0.02;
+    const len = 1.6, buf = c.createBuffer(1, Math.floor(c.sampleRate * len), c.sampleRate);
+    const d = buf.getChannelData(0);
+    for(let i = 0; i < d.length; i++){
+      const p = i / d.length;
+      // clapping = bursty noise spikes that thin out toward the end
+      d[i] = (Math.random() * 2 - 1) * (Math.random() < 0.35 ? 1 : 0.25) * (1 - p * 0.6);
+    }
+    const src = c.createBufferSource(); src.buffer = buf;
+    const f = c.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1800; f.Q.value = 0.7;
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.15, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+    src.connect(f); f.connect(g); g.connect(c.destination);
+    src.start(t);
+  }
+  function sfxBoom(){
+    const c = sfxAC(); if(!c) return;
+    const t = c.currentTime + 0.02;
+    const o = c.createOscillator(), g = c.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(150, t);
+    o.frequency.exponentialRampToValueAtTime(38, t + 0.5);
+    sfxEnv(g, t, 0.008, 0.6, 0.3);
+    o.connect(g); g.connect(c.destination);
+    o.start(t); o.stop(t + 0.65);
+    const nb = c.createBuffer(1, Math.floor(c.sampleRate * 0.15), c.sampleRate);
+    const nd = nb.getChannelData(0);
+    for(let i = 0; i < nd.length; i++) nd[i] = (Math.random() * 2 - 1) * (1 - i / nd.length);
+    const ns = c.createBufferSource(); ns.buffer = nb;
+    const ng = c.createGain(); ng.gain.value = 0.1;
+    ns.connect(ng); ng.connect(c.destination); ns.start(t);
+  }
+  const sfxRow = $('sfxRow');
+  const SFX = [['📯','אייר-הורן',sfxAirhorn], ['🚨','סירנה',sfxSiren], ['👏','מחיאות',sfxApplause], ['💥','בום',sfxBoom]];
+  SFX.forEach(([emoji, label, fn])=>{
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'shout-chip'; b.textContent = emoji + ' ' + label;
+    b.addEventListener('click', ()=>{ try{ fn(); }catch(e){} });
+    sfxRow.appendChild(b);
+  });
+
+  // ── ✨ Tap sparkles ── clicking/tapping anywhere on the stage pops a spark
+  // burst right at that point — the crowd can literally poke the show.
+  const SPARKS = ['✨','⭐','💫','🌟'];
+  heroWrapEl.addEventListener('pointerdown', (e)=>{
+    if(e.target.closest('button, select, input, a')) return;
+    const r = heroWrapEl.getBoundingClientRect();
+    const x = e.clientX - r.left, y = e.clientY - r.top;
+    for(let i = 0; i < 9; i++){
+      const s = document.createElement('span');
+      s.className = 'tap-spark';
+      s.textContent = SPARKS[Math.floor(Math.random() * SPARKS.length)];
+      s.style.left = x + 'px'; s.style.top = y + 'px';
+      const ang = Math.random() * Math.PI * 2, dist = 34 + Math.random() * 66;
+      s.style.setProperty('--dx', (Math.cos(ang) * dist).toFixed(0) + 'px');
+      s.style.setProperty('--dy', (Math.sin(ang) * dist - 22).toFixed(0) + 'px');
+      heroWrapEl.appendChild(s);
+      setTimeout(()=> s.remove(), 900);
+    }
+  });
 
   // ── 🎲 Surprise ── one tap randomizes the whole look: scene preset, crew
   // formation, stage VFX, and color theme. Instant chaos.
