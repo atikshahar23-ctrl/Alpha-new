@@ -1166,6 +1166,10 @@
     </div>
 
     <div class="sub-eyebrow">🎵 מוזיקה ומידע</div>
+    <div class="range-row" style="margin-bottom:12px;">
+      <div class="rr-head"><span>⏱️ כיול סנכרון מילים — מכשיר/רשת איטיים (חיובי = המילים מקדימות)</span><b id="syncOffVal">0ms</b></div>
+      <input type="range" id="syncOffSlider" min="-2000" max="2000" step="50" value="0">
+    </div>
     <div class="settings-cols">
       <div class="field-row" style="margin:0;">
         <label>קצב ידני (BPM) — ריק = זיהוי אוטומטי</label>
@@ -3246,6 +3250,7 @@
     const token = await getValidAccessToken();
     if(!token){ setSpotifyStatus(false); return; }
     try{
+      const t0 = Date.now();
       const res = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
         headers:{ Authorization: 'Bearer ' + token }
       });
@@ -3263,7 +3268,11 @@
       state.isPlaying = data.is_playing;
       state.durationMs = data.item.duration_ms;
       state.serverProgressMs = data.progress_ms;
-      state.fetchedAt = Date.now();
+      // NTP-style midpoint anchor: progress_ms is sampled server-side mid-
+      // request, so anchoring at response ARRIVAL made the whole sync lag by
+      // up to a full network round-trip — the "iPad lyrics always late"
+      // report (slow wifi/cellular RTTs of 300-1500ms are common there).
+      state.fetchedAt = (t0 + Date.now()) / 2;
       setPlayIcon(state.isPlaying);
       window.__lyricsAvatarBridge?.setEnergy(state.isPlaying);
       if(state.isPlaying) notifyPlaybackActive(); else notifyPlaybackStopped();
@@ -3300,6 +3309,23 @@
     return Math.min(state.lines.length-1, Math.floor((progressMs/state.durationMs) * state.lines.length));
   }
 
+  // Manual sync calibration (settings → מוזיקה): a persistent ±2s nudge for
+  // devices/networks where the estimate still lands off — positive shows the
+  // lyrics EARLIER. Applied to the line highlight only; the progress bar and
+  // clock keep showing true playback position.
+  let syncOffsetMs = Number(localStorage.getItem('lt:sync_offset')) || 0;
+  {
+    const sl = $('syncOffSlider'), sv = $('syncOffVal');
+    const fmtOff = (v)=> (v > 0 ? '+' : '') + v + 'ms';
+    if(sl && sv){
+      sl.value = String(syncOffsetMs); sv.textContent = fmtOff(syncOffsetMs);
+      sl.addEventListener('input', ()=>{
+        syncOffsetMs = Number(sl.value) || 0;
+        sv.textContent = fmtOff(syncOffsetMs);
+        window.ltSave('lt:sync_offset', String(syncOffsetMs));
+      });
+    }
+  }
   function tick(){
     if(state.mode !== 'spotify' || !state.durationMs) return;
     const elapsed = state.isPlaying ? (Date.now() - state.fetchedAt) : 0;
@@ -3307,7 +3333,7 @@
     progressBar.style.width = (estProgress / state.durationMs * 100).toFixed(2) + '%';
     npTime.textContent = fmtTime(estProgress) + ' / ' + fmtTime(state.durationMs);
     if(state.lines.length){
-      const idx = currentLineIndex(estProgress);
+      const idx = currentLineIndex(Math.max(0, estProgress + syncOffsetMs));
       if(idx >= 0) setActiveLine(idx);
     }
   }
@@ -3316,17 +3342,33 @@
     return Math.floor(s/60) + ':' + String(s%60).padStart(2,'0');
   }
 
+  // The line highlight is driven by requestAnimationFrame, not the 250ms
+  // interval: iOS/iPadOS clamps setInterval hard (Low Power Mode → 1s+),
+  // which made line changes land visibly late on iPad. rAF fires every
+  // display frame while visible, and since tick() computes from the anchored
+  // timestamp (never accumulates), each frame is exactly on time. The
+  // interval stays as a background fallback for the progress bar.
+  let rafId = 0;
+  function rafTick(){ tick(); rafId = requestAnimationFrame(rafTick); }
   function startPolling(){
     stopPolling();
     manualNav.style.display = 'none';
     pollOnce();
     pollTimer = setInterval(pollOnce, POLL_MS);
     tickTimer = setInterval(tick, TICK_MS);
+    rafId = requestAnimationFrame(rafTick);
   }
   function stopPolling(){
-    if(pollTimer) clearInterval(pollTimer);
-    if(tickTimer) clearInterval(tickTimer);
+    if(pollTimer){ clearInterval(pollTimer); pollTimer = null; }
+    if(tickTimer){ clearInterval(tickTimer); tickTimer = null; }
+    if(rafId){ cancelAnimationFrame(rafId); rafId = 0; }
   }
+  // iPad/iOS freezes all timers the moment the tab loses focus or the screen
+  // locks; on return the poll anchor can be seconds stale (wrong if the user
+  // paused/skipped meanwhile). Re-poll immediately when the page comes back.
+  document.addEventListener('visibilitychange', ()=>{
+    if(!document.hidden && state.mode === 'spotify' && pollTimer) pollOnce();
+  });
 
   // ================= MANUAL MODE =================
   manualSearchBtn.addEventListener('click', async ()=>{
