@@ -1427,6 +1427,7 @@
     {code:'fr', name:'Français', rtl:false},
     {code:'ar', name:'العربية', rtl:true},
     {code:'ru', name:'Русский', rtl:false},
+    {code:'el', name:'Ελληνικά', rtl:false},
     {code:'de', name:'Deutsch', rtl:false},
     {code:'pt', name:'Português', rtl:false},
     {code:'it', name:'Italiano', rtl:false},
@@ -3374,6 +3375,14 @@
     return out;
   }
 
+  // Among search hits, prefer one that actually HAS synced lyrics, then one
+  // with plain lyrics — blindly taking hits[0] was landing on instrumental /
+  // empty records and showing "no lyrics" for songs LRCLIB does cover
+  // (reported with Greek songs, where fielded matching is weakest).
+  function pickLrclibHit(list){
+    if(!Array.isArray(list) || !list.length) return null;
+    return list.find(r => r && r.syncedLyrics) || list.find(r => r && r.plainLyrics) || null;
+  }
   async function fetchLrclib(artist, title, durationSec){
     try{
       let url = 'https://lrclib.net/api/get?artist_name=' + encodeURIComponent(artist) + '&track_name=' + encodeURIComponent(title);
@@ -3382,15 +3391,24 @@
       if(!res.ok && durationSec){ // exact-duration miss → retry without it
         res = await fetch('https://lrclib.net/api/get?artist_name=' + encodeURIComponent(artist) + '&track_name=' + encodeURIComponent(title));
       }
-      if(!res.ok){
-        // last try: fuzzy search, take the best hit
-        const sr = await fetch('https://lrclib.net/api/search?artist_name=' + encodeURIComponent(artist) + '&track_name=' + encodeURIComponent(title));
-        if(!sr.ok) return null;
-        const list = await sr.json();
-        if(!Array.isArray(list) || !list.length) return null;
-        return lrclibRecordToLines(list[0]);
+      if(res.ok){
+        const direct = lrclibRecordToLines(await res.json());
+        if(direct) return direct;
       }
-      return lrclibRecordToLines(await res.json());
+      // fielded fuzzy search
+      try{
+        const sr = await fetch('https://lrclib.net/api/search?artist_name=' + encodeURIComponent(artist) + '&track_name=' + encodeURIComponent(title));
+        if(sr.ok){
+          const got = lrclibRecordToLines(pickLrclibHit(await sr.json()));
+          if(got) return got;
+        }
+      }catch(e){}
+      // LAST fallback: free-text search — catches Greek/Russian/Arabic songs
+      // whose fielded artist/title spelling doesn't match LRCLIB's records
+      // (transliteration differences, "feat." suffixes, etc.).
+      const qr = await fetch('https://lrclib.net/api/search?q=' + encodeURIComponent(artist + ' ' + title));
+      if(!qr.ok) return null;
+      return lrclibRecordToLines(pickLrclibHit(await qr.json()));
     }catch(e){ return null; }
   }
   function lrclibRecordToLines(rec){
@@ -3434,7 +3452,7 @@
   // Lines already written in the target language's script don't need MT at
   // all — pushing a Hebrew song through the engines with a Hebrew target was
   // coming back garbled. Shared by the fresh-load path and cache healing.
-  const TARGET_SCRIPT = { he:/[\u0590-\u05FF]/, ar:/[\u0600-\u06FF]/, ru:/[\u0400-\u04FF]/, el:/[\u0370-\u03FF]/ };
+  const TARGET_SCRIPT = { he:/[\u0590-\u05FF]/, ar:/[\u0600-\u06FF]/, ru:/[\u0400-\u04FF]/, el:/[\u0370-\u03FF\u1F00-\u1FFF]/ };
   function inTargetScript(line, target){
     const re = TARGET_SCRIPT[target];
     return !!(re && re.test(line) && !/[A-Za-z]{3,}/.test(line));
@@ -3480,7 +3498,7 @@
     if(/[\u0590-\u05FF]/.test(line)) return 'he';
     if(/[\u0600-\u06FF]/.test(line)) return 'ar';
     if(/[\u0400-\u04FF]/.test(line)) return 'ru';
-    if(/[\u0370-\u03FF]/.test(line)) return 'el';
+    if(/[\u0370-\u03FF\u1F00-\u1FFF]/.test(line)) return 'el';
     if(/[\u3040-\u30FF]/.test(line)) return 'ja';
     if(/[\uAC00-\uD7AF]/.test(line)) return 'ko';
     if(/[\u4E00-\u9FFF]/.test(line)) return 'zh-CN';
