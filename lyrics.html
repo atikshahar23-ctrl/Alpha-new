@@ -3283,7 +3283,14 @@
 
       if(trackKey !== state.currentTrackKey){
         state.currentTrackKey = trackKey;
-        await loadLyricsFor(data.item.artists[0].name, data.item.name, Math.round(data.item.duration_ms/1000));
+        // Spotify has no official lyrics API (the in-app lyrics are a
+        // cookie-locked internal Musixmatch endpoint) — but its metadata is
+        // rich: hand the album + ALL credited artists to the lyric search so
+        // the ladder can try every angle a human would.
+        await loadLyricsFor(data.item.artists[0].name, data.item.name, Math.round(data.item.duration_ms/1000), {
+          album: data.item.album && data.item.album.name,
+          artists: data.item.artists.map(a=>a.name),
+        });
       }
     }catch(e){ console.error(e); }
   }
@@ -3443,7 +3450,7 @@
       return lrclibRecordToLines(pickLrclibHit(await res.json()));
     }catch(e){ return null; }
   }
-  async function fetchLrclib(artist, title, durationSec){
+  async function fetchLrclib(artist, title, durationSec, meta){
     try{
       let url = 'https://lrclib.net/api/get?artist_name=' + encodeURIComponent(artist) + '&track_name=' + encodeURIComponent(title);
       if(durationSec) url += '&duration=' + durationSec;
@@ -3459,14 +3466,20 @@
     // Search ladder, most→least specific. Fielded search needs near-exact
     // spelling (which transliterated Greek/Russian metadata rarely matches),
     // so free-text q= variants — including a cleaned title and title-only —
-    // do the heavy lifting for foreign songs.
+    // do the heavy lifting for foreign songs. Spotify metadata (album, ALL
+    // credited artists) adds the angles a human would try by hand: a track
+    // may be indexed under the featured artist or found via its album.
     const enc = encodeURIComponent;
     const ct = cleanTitle(title);
+    const extraArtists = (meta && Array.isArray(meta.artists) ? meta.artists : []).filter(a => a && a !== artist);
+    const album = meta && meta.album ? cleanTitle(meta.album) : '';
     const tries = [
       'artist_name=' + enc(artist) + '&track_name=' + enc(title),
       ct && ct !== title ? 'artist_name=' + enc(artist) + '&track_name=' + enc(ct) : null,
       'q=' + enc(artist + ' ' + title),
       ct && ct !== title ? 'q=' + enc(artist + ' ' + ct) : null,
+      ...extraArtists.slice(0, 2).map(a => 'q=' + enc(a + ' ' + (ct || title))),
+      album ? 'track_name=' + enc(ct || title) + '&album_name=' + enc(album) : null,
       'q=' + enc(ct || title), // title only — the strongest net for foreign metadata
     ].filter(Boolean);
     for(const p of tries){
@@ -3825,7 +3838,7 @@
   }
 
   // ================= LOAD + PROGRESSIVE RENDER =================
-  async function loadLyricsFor(artist, title, durationSec){
+  async function loadLyricsFor(artist, title, durationSec, meta){
     const seq = ++state.loadSeq;
     state.rawArtist = artist; state.rawTitle = title;
     state.activeIndex = -1;
@@ -3883,7 +3896,7 @@
     }
 
     renderLoading();
-    let got = await fetchLrclib(artist, title, durationSec);
+    let got = await fetchLrclib(artist, title, durationSec, meta);
     if(!got) got = await fetchLyricsOvh(artist, title);
     if(seq !== state.loadSeq) return; // a newer song took over mid-fetch
     if(!got || !got.lines.length){
