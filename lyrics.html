@@ -3383,6 +3383,24 @@
     if(!Array.isArray(list) || !list.length) return null;
     return list.find(r => r && r.syncedLyrics) || list.find(r => r && r.plainLyrics) || null;
   }
+  // Strip release noise that wrecks lyric matching — "(feat. X)", "- Live",
+  // "- Remastered 2011", fancy quotes/apostrophes. Greek/foreign titles from
+  // Spotify carry these constantly, and LRCLIB's records rarely do.
+  function cleanTitle(t){
+    return String(t || '')
+      .replace(/[«»"“”„]/g, '')
+      .replace(/[’ʼ‘]/g, "'")
+      .replace(/\s*[\(\[][^\)\]]*(?:feat\.?|ft\.?|with |remaster|version|live|edit|mix|remix)[^\)\]]*[\)\]]/gi, '')
+      .replace(/\s*-\s*(?:feat\.?|ft\.?|remaster(?:ed)?(?:\s*\d{4})?|live.*|radio edit|single version|extended.*|remix.*)$/i, '')
+      .replace(/\s{2,}/g, ' ').trim();
+  }
+  async function lrcSearch(params){
+    try{
+      const res = await fetch('https://lrclib.net/api/search?' + params);
+      if(!res.ok) return null;
+      return lrclibRecordToLines(pickLrclibHit(await res.json()));
+    }catch(e){ return null; }
+  }
   async function fetchLrclib(artist, title, durationSec){
     try{
       let url = 'https://lrclib.net/api/get?artist_name=' + encodeURIComponent(artist) + '&track_name=' + encodeURIComponent(title);
@@ -3395,21 +3413,25 @@
         const direct = lrclibRecordToLines(await res.json());
         if(direct) return direct;
       }
-      // fielded fuzzy search
-      try{
-        const sr = await fetch('https://lrclib.net/api/search?artist_name=' + encodeURIComponent(artist) + '&track_name=' + encodeURIComponent(title));
-        if(sr.ok){
-          const got = lrclibRecordToLines(pickLrclibHit(await sr.json()));
-          if(got) return got;
-        }
-      }catch(e){}
-      // LAST fallback: free-text search — catches Greek/Russian/Arabic songs
-      // whose fielded artist/title spelling doesn't match LRCLIB's records
-      // (transliteration differences, "feat." suffixes, etc.).
-      const qr = await fetch('https://lrclib.net/api/search?q=' + encodeURIComponent(artist + ' ' + title));
-      if(!qr.ok) return null;
-      return lrclibRecordToLines(pickLrclibHit(await qr.json()));
-    }catch(e){ return null; }
+    }catch(e){ /* fall through to the search ladder */ }
+    // Search ladder, most→least specific. Fielded search needs near-exact
+    // spelling (which transliterated Greek/Russian metadata rarely matches),
+    // so free-text q= variants — including a cleaned title and title-only —
+    // do the heavy lifting for foreign songs.
+    const enc = encodeURIComponent;
+    const ct = cleanTitle(title);
+    const tries = [
+      'artist_name=' + enc(artist) + '&track_name=' + enc(title),
+      ct && ct !== title ? 'artist_name=' + enc(artist) + '&track_name=' + enc(ct) : null,
+      'q=' + enc(artist + ' ' + title),
+      ct && ct !== title ? 'q=' + enc(artist + ' ' + ct) : null,
+      'q=' + enc(ct || title), // title only — the strongest net for foreign metadata
+    ].filter(Boolean);
+    for(const p of tries){
+      const got = await lrcSearch(p);
+      if(got) return got;
+    }
+    return null;
   }
   function lrclibRecordToLines(rec){
     if(!rec) return null;
@@ -3797,7 +3819,7 @@
     if(!got) got = await fetchLyricsOvh(artist, title);
     if(seq !== state.loadSeq) return; // a newer song took over mid-fetch
     if(!got || !got.lines.length){
-      renderNotFound();
+      renderNotFound(artist, title);
       state.lines = []; state.synced = false; setSyncBadge();
       return;
     }
@@ -3882,8 +3904,13 @@
   function renderLoading(){
     stage.innerHTML = '<div class="empty-state"><div class="big">מאתר מילות שיר…</div><div>המקור מוצג מיד — התרגום נטען ברקע</div></div>';
   }
-  function renderNotFound(){
-    stage.innerHTML = '<div class="empty-state"><div class="big">לא נמצאו מילים לשיר הזה</div><div>הספקים החינמיים לא תמיד מכסים כל שיר — נסה שיר אחר</div></div>';
+  function renderNotFound(artist, title){
+    const what = artist || title
+      ? '<div style="margin:6px 0; font-family:\'JetBrains Mono\',monospace; font-size:12px; opacity:.8; direction:ltr;">' + escapeHtml((artist||'') + ' — ' + (title||'')) + '</div>'
+      : '';
+    stage.innerHTML = '<div class="empty-state"><div class="big">לא נמצאו מילים לשיר הזה</div>' + what +
+      '<div>מאגרי המילים החינמיים לא מכסים כל שיר — במיוחד להיטים לא-אנגליים חדשים.</div>' +
+      '<div style="margin-top:8px;">💡 נסו בחיפוש הידני איות אחר של שם האמן/שיר (למשל ביוונית/באנגלית), או בלי תוספות כמו "feat." ו-"Live".</div></div>';
   }
 
   function renderLines(){
