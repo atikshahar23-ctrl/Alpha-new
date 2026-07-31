@@ -189,7 +189,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="wm-hg">HEAVY GUARD OS</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v309 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="wm-hg">HEAVY GUARD OS</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v310 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip apps-chip" id="appsBtn" title="האפליקציות שלי" aria-label="האפליקציות שלי">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="12" cy="19" r="2"/><circle cx="19" cy="19" r="2"/></svg>
@@ -250,6 +250,10 @@ export function mountApp(root: HTMLElement) {
           <a class="ad-item" href="${import.meta.env.BASE_URL}lyrics.html">
             <span class="ad-ic" style="--c:#00E5FF"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></span>
             <b>מילים בתרגום חי</b><em>Spotify · Lyrics Translator</em>
+          </a>
+          <a class="ad-item" href="${import.meta.env.BASE_URL}arena.html">
+            <span class="ad-ic" style="--c:#FF2FD6"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 2l3 5 5.5.8-4 3.9.9 5.6L12 14.8 6.6 17.3l.9-5.6-4-3.9L9 7z"/></svg></span>
+            <b>NEXUS·ARENA</b><em>עולם מסחר תלת-ממדי · קריפטו חי</em>
           </a>
           <a class="ad-item" href="#" id="sportsHubBtn">
             <span class="ad-ic" style="--c:#43A1D5"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="10"/><path d="M12 7l4.2 3-1.6 5h-5.2L7.8 10z"/><path d="M12 2v5M20.5 8.5 16.2 10M19 19.5 14.6 15M9.4 15 5 19.5M3.5 8.5 7.8 10"/></svg></span>
