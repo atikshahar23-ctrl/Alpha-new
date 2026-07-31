@@ -44,6 +44,7 @@ export default defineConfig({
         lyrics: resolve(__dirname, 'lyrics.html'),
         arena: resolve(__dirname, 'arena.html'),
         octopus: resolve(__dirname, 'octopus.html'),
+        doggy: resolve(__dirname, 'doggy.html'),
         widget: resolve(__dirname, 'widget.html'),
         chatwidget: resolve(__dirname, 'chat-widget.html'),
       },
