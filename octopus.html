@@ -368,6 +368,13 @@ if(renderer){
     t.reachTarget=pulling?1:0;
     if(!pulling && found) t.flash=1;
   };
+  // Called by the data layer when a story crosses the breaking-news
+  // threshold (3+ independent sources) — a decaying pulse (1→0) that the
+  // creature visibly reacts to: faster spin, a gold-red shield/body flash.
+  let breakingPulse=0;
+  const shieldBaseColor=new THREE.Color(0x00f0ff), alertColor=new THREE.Color(0xffb020);
+  const coreBaseColor=new THREE.Color(0x9dfcff);
+  window.__octoBreaking=function(){ breakingPulse=1; };
   function jointPositions(t,time){
     const pts=[]; const baseLen=1.15, reach=t.reach;
     const len=baseLen+reach*2.5;
@@ -393,16 +400,20 @@ if(renderer){
   function animate(){
     requestAnimationFrame(animate);
     const time=performance.now()*0.001;
-    // continuous slow turntable spin — reads as a displayed hologram,
-    // not a creature nervously swaying in place
-    rot+=0.0026; scene.rotation.y=rot;
+    breakingPulse*=0.985; // decays back to calm over a couple of seconds
+    // continuous slow turntable spin — reads as a displayed hologram, not a
+    // creature nervously swaying in place — briefly speeding up on breaking news
+    rot+=0.0026+breakingPulse*0.02; scene.rotation.y=rot;
     pedGroup.rotation.y-=0.006; // pedestal + scan sweep rotate opposite the body for a layered-motion feel
     body.position.y=0.95+Math.sin(time*1.3)*0.03;
     mantle.position.y=1.55+Math.sin(time*1.3)*0.03;
     core.position.y=mantle.position.y;
     core.material.opacity=0.6+Math.sin(time*2.4)*0.25; // pulsing "neural core" glow
-    core.scale.setScalar(1+Math.sin(time*2.4)*0.08);
-    shield.material.opacity=0.05+Math.sin(time*0.9)*0.02;
+    core.material.color.copy(coreBaseColor).lerp(alertColor,breakingPulse);
+    core.scale.setScalar(1+Math.sin(time*2.4)*0.08+breakingPulse*0.35);
+    bodyMat.emissiveIntensity=0.4+breakingPulse*0.9;
+    shield.material.opacity=0.05+Math.sin(time*0.9)*0.02+breakingPulse*0.24;
+    shield.material.color.copy(shieldBaseColor).lerp(alertColor,breakingPulse);
     // drifting motes — loop upward through the shield volume
     const mp=motes.geometry.attributes.position.array;
     for(let i=0;i<MOTE_N;i++){
@@ -681,6 +692,7 @@ function checkBreaking(){
       notifiedBreaking.add(key);
       ensureAC(); beep([[880,0.1],[1108,0.12],[1318,0.16]]);
       showBreakingBanner(c);
+      if(window.__octoBreaking) window.__octoBreaking();
     }
   });
 }

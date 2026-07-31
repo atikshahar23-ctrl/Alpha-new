@@ -97,8 +97,20 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 #ticket{position:fixed;bottom:calc(16px + env(safe-area-inset-bottom));right:16px;width:248px;padding:12px 15px}
 #ticket .th{font-size:11px;letter-spacing:2px;color:var(--gold);display:flex;justify-content:space-between;align-items:center;font-weight:600}
 #sessStat{font-size:10px;color:var(--dim)}
+.wallet-row{display:flex;justify-content:space-between;gap:8px;margin:8px 0;padding:7px 9px;
+  background:rgba(255,209,102,.06);border:1px solid rgba(255,209,102,.2)}
+.wallet-row>div{text-align:center;flex:1}
+.wallet-row .wk{display:block;font-size:9px;color:var(--dim);letter-spacing:.5px;margin-bottom:2px}
+.wallet-row b{font-size:13px}
 .trow{display:flex;justify-content:space-between;font-size:12px;margin:3.5px 0}
 .tk{color:var(--dim)} .tv{font-weight:600}
+.sizeRow{margin:8px 0 0}
+.sizeRow label{display:flex;justify-content:space-between;font-size:10.5px;color:var(--dim);margin-bottom:3px}
+.sizeRow input[type=range]{width:100%;accent-color:var(--cyan)}
+.levBtns{display:flex;gap:5px}
+.levBtns button{flex:1;padding:5px 0;font-size:11px;font-weight:700;cursor:pointer;
+  background:rgba(6,12,26,.6);color:var(--dim);border:1px solid rgba(0,240,255,.18);font-family:'JetBrains Mono',monospace}
+.levBtns button.on{color:#02141a;background:linear-gradient(120deg,var(--cyan),#7dfbff);border-color:var(--cyan)}
 #sugNote{font-size:10.5px;color:var(--gold);text-align:center;margin:7px 0 2px;letter-spacing:.3px}
 .btnRow{display:flex;gap:8px;margin-top:8px}
 .btn{flex:1;padding:11px 6px;font-weight:800;font-size:14px;cursor:pointer;border:none;
@@ -267,17 +279,20 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 #chartPanel .cp-legend b{color:var(--txt);font-weight:700;margin-inline-start:4px}
 #chartPanel .cp-legend .sw{display:inline-block;width:8px;height:8px;border-radius:2px;margin-inline-end:5px;vertical-align:middle}
 #chartPanel .cp-legend .sw.hi{background:var(--up)} #chartPanel .cp-legend .sw.lo{background:var(--down)}
-#logPanel{position:fixed;z-index:33;top:50%;left:50%;transform:translate(-50%,-50%);
+#logPanel,#portfolioPanel{position:fixed;z-index:33;top:50%;left:50%;transform:translate(-50%,-50%);
   width:min(94vw,420px);max-height:80vh;overflow-y:auto;padding:14px 16px 12px}
-#logPanel .lg-h{font-size:11px;letter-spacing:1.5px;color:var(--cyan);font-weight:600;margin-bottom:10px;display:flex;align-items:center}
-#logPanel .lg-stats{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;font-size:11px}
-#logPanel .lg-stats b{display:block;font-size:15px;color:var(--txt)}
-#logPanel .lg-stats span{color:var(--dim)}
-#logPanel .lg-row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;
+#logPanel .lg-h,#portfolioPanel .lg-h{font-size:11px;letter-spacing:1.5px;color:var(--cyan);font-weight:600;margin-bottom:10px;display:flex;align-items:center}
+#logPanel .lg-stats,#portfolioPanel .lg-stats{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;font-size:11px}
+#logPanel .lg-stats b,#portfolioPanel .lg-stats b{display:block;font-size:15px;color:var(--txt)}
+#logPanel .lg-stats span,#portfolioPanel .lg-stats span{color:var(--dim)}
+#logPanel .lg-row,#portfolioPanel .lg-row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;
   border-bottom:1px solid rgba(0,240,255,.1);font-size:12px}
-#logPanel .lg-row .lg-sym{color:var(--txt);font-weight:600}
-#logPanel .lg-row .lg-t{font-size:10px;color:var(--dim)}
-#logPanel .lg-empty{text-align:center;color:var(--dim);font-size:12px;padding:20px 0}
+#logPanel .lg-row .lg-sym,#portfolioPanel .lg-row .lg-sym{color:var(--txt);font-weight:600}
+#logPanel .lg-row .lg-t,#portfolioPanel .lg-row .lg-t{font-size:10px;color:var(--dim)}
+#logPanel .lg-empty,#portfolioPanel .lg-empty{text-align:center;color:var(--dim);font-size:12px;padding:20px 0}
+#portfolioPanel .pf-x{flex:none;background:rgba(255,61,110,.1);border:1px solid rgba(255,61,110,.4);color:#ffb0c0;
+  font-size:12px;font-weight:700;cursor:pointer;padding:4px 9px;border-radius:2px}
+#portfolioPanel .pf-x:hover{border-color:var(--down);color:#fff}
 #chartPanel .cp-legend .sw.now{background:var(--gold)}
 .mobTab{display:none}
 @media (max-width:720px), (max-height:520px){
@@ -401,11 +416,22 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 
   <div id="ticket" class="panel clip">
     <div class="th"><span>כרטיס מסחר · דמו</span><span id="sessStat" class="num"></span></div>
+    <div class="wallet-row">
+      <div><span class="wk">יתרה בארנק</span><b id="walletBal" class="num">$0</b></div>
+      <div><span class="wk">שווי כולל</span><b id="walletEq" class="num up">$0</b></div>
+    </div>
     <div id="sugBox">
       <div class="trow"><span class="tk">כניסה</span><span class="tv num" id="tEntry">—</span></div>
       <div class="trow"><span class="tk">יעד רווח</span><span class="tv num" id="tTp">—</span></div>
       <div class="trow"><span class="tk">סטופ הגנה</span><span class="tv num" id="tSl">—</span></div>
       <div class="trow"><span class="tk">סיכוי / סיכון</span><span class="tv num">1 : 1.7</span></div>
+      <div class="sizeRow"><label><span>מרג׳ין</span><span id="szMarginV" class="num">$500</span></label>
+        <input type="range" id="szMargin" min="100" max="5000" step="100" value="500"></div>
+      <div class="sizeRow"><label><span>מינוף</span></label>
+        <div class="levBtns" id="levBtns">
+          <button data-lev="1">x1</button><button data-lev="5" class="on">x5</button><button data-lev="10">x10</button><button data-lev="20">x20</button>
+        </div>
+      </div>
       <div id="sugNote">ממתין לאות ברור…</div>
       <div class="btnRow">
         <button class="btn long" id="btnLong">קנייה ▲</button>
@@ -448,6 +474,9 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
     </div>
     <div class="tgl" id="btnLog" title="יומן עסקאות והישגים">
       <span style="font-size:15px">📜</span><span style="font-size:8px">יומן</span>
+    </div>
+    <div class="tgl" id="btnPortfolio" title="תיק — כל העמדות הפתוחות">
+      <span style="font-size:15px">💼</span><span style="font-size:8px">תיק</span>
     </div>
     <div class="tgl" id="btnFav" title="הצג רק שווקים מועדפים">
       <span style="font-size:15px">⭐</span><span style="font-size:8px">מועדף</span>
@@ -507,6 +536,18 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
     <div><b id="lgBest">—</b><span>שיא עסקה</span></div>
   </div>
   <div id="lgList"></div>
+</div>
+
+<div id="portfolioPanel" class="panel clip" style="display:none">
+  <div class="lg-h"><span>💼 תיק · עמדות פתוחות (<span id="pfCount">0</span>)</span><button class="mp-close" id="pfClose" style="margin-inline-start:auto">✕</button></div>
+  <div class="lg-stats">
+    <div><b id="pfBalRef">$0</b><span>יתרה זמינה</span></div>
+    <div><b id="pfEqRef">$0</b><span>שווי כולל</span></div>
+  </div>
+  <div id="pfList"></div>
+  <div class="st-btnrow">
+    <button id="walletReset" class="st-reset">↺ איפוס ארנק ($25,000)</button>
+  </div>
 </div>
 
 <div id="settingsPanel" class="panel clip" style="display:none">
@@ -583,7 +624,7 @@ const TF_SEC = {'1m':60,'5m':300,'15m':900,'1h':3600,'4h':14400,'1d':86400};
 // ---------- settings (persisted, all wired to real behavior) ----------
 const NA_DEFAULTS={
   qualityMode:'auto',      // אוטומטי · מקסימלית · בינונית · נמוכה
-  exposure:1.25,           // renderer.toneMappingExposure (active only with bloom)
+  exposure:1.0,            // renderer.toneMappingExposure (active only with bloom) — kept modest to avoid glare on real displays
   showMotes:true, showComets:true, showStreams:true,
   walkSpeed:18, lookSens:1.0, invertY:false,
   alertsEnabled:true, alertPct:3,
@@ -609,7 +650,42 @@ const state = {
 };
 let feed=null, ind=null, lastSignal=null;
 const sig={relClosed:0, prevScore:null, lastFire:0};
-let pos=null;
+// ---------- wallet + portfolio (demo) — one position per symbol, tracked
+// concurrently using the same live pod prices that already drive the
+// floating market orbs, so a position keeps ticking even while the ticket
+// is focused on a different symbol ----------
+// When offline (no real Binance data), BOTH the focused "battle" feed and
+// the background pod feed fall back to independent simulated random walks
+// for the same symbol — each one re-seeding on its own start would let a
+// position's entry price and its background pod price disagree by several
+// percent for no real reason, phantom-triggering TP/SL. simAnchor is a
+// shared last-known-price cache both sim generators start from, so they
+// track the same imaginary market instead of two unrelated ones.
+const simAnchor={};
+function loadWallet(){
+  try{
+    const raw=JSON.parse(localStorage.getItem('na:wallet')||'null');
+    if(raw && typeof raw.balance==='number') return raw;
+  }catch{}
+  return {balance:25000};
+}
+const wallet=loadWallet();
+function saveWallet(){ try{ localStorage.setItem('na:wallet',JSON.stringify(wallet)); }catch{} }
+function loadPositions(){
+  try{
+    const raw=JSON.parse(localStorage.getItem('na:positions')||'null');
+    if(raw && typeof raw==='object') return raw;
+  }catch{}
+  return {};
+}
+let positions=loadPositions();
+function savePositions(){ try{ localStorage.setItem('na:positions',JSON.stringify(positions)); }catch{} }
+let tradeMargin=500, tradeLev=5;
+function livePriceFor(sym){
+  if(sym===state.sym) return state.lastPrice||null;
+  const p=pods.find(x=>x.kind==='crypto'&&x.id===sym);
+  return p&&p.price!=null? p.price : null;
+}
 function loadSession(){
   try{
     const raw=JSON.parse(localStorage.getItem('na:session')||'null');
@@ -630,6 +706,26 @@ const $=id=>document.getElementById(id);
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const lerp=(a,b,t)=>a+(b-a)*t;
 const rnd=(a=1,b)=> b===undefined? Math.random()*a : a+Math.random()*(b-a);
+// price-level labels (S/R, entry/tp/sl) sit at their true price position by
+// default, but in low-volatility moments those prices bunch close together
+// and the floating text overlaps into an illegible mess — this keeps every
+// item's ORDER but pushes pairs apart symmetrically until they all clear a
+// minimum gap, converging in a few passes since the list is always small
+function declutterY(rawYs,minGap){
+  const n=rawYs.length;
+  const order=rawYs.map((_,i)=>i).sort((a,b)=>rawYs[a]-rawYs[b]);
+  const y=rawYs.slice();
+  for(let pass=0;pass<n;pass++){
+    let moved=false;
+    for(let k=1;k<order.length;k++){
+      const i=order[k], j=order[k-1];
+      const gap=y[i]-y[j];
+      if(gap<minGap){ const d=(minGap-gap)/2; y[i]+=d; y[j]-=d; moved=true; }
+    }
+    if(!moved) break;
+  }
+  return y;
+}
 function fmtP(p){ const d=SYMBOLS[state.sym].dec;
   return p.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d}); }
 function fmtPct(x){ return (x>=0?'+':'')+x.toFixed(2)+'%'; }
@@ -749,7 +845,8 @@ function startSim(f){
   const cfg=SYMBOLS[state.sym];
   const tfS=TF_SEC[state.tf];
   const sv=cfg.vol*Math.sqrt(tfS/60);
-  let price=cfg.base*rnd(0.94,1.06), mu=0;
+  const sym=state.sym;
+  let price=simAnchor[sym] || cfg.base*rnd(0.94,1.06), mu=0;
 
   const cs=[]; let t=Date.now()-N*tfS*1000;
   for(let i=0;i<N;i++){
@@ -823,6 +920,7 @@ function onInit(cs){
   retargetScale(true);
   state.lastPrice=cs[cs.length-1].c;
   state.prevPrice=state.lastPrice;
+  simAnchor[state.sym]=state.lastPrice;
   computeSignals();
   if(ind){
     const n=state.candles.length;
@@ -834,6 +932,7 @@ function onInit(cs){
 function onTick(c){
   state.prevPrice=state.lastPrice;
   state.lastPrice=c.c;
+  simAnchor[state.sym]=c.c;
   retargetScale(false);
   indDirty=true;
 }
@@ -990,21 +1089,26 @@ function fireSignal(side,str,why){
 //  PAPER TRADING (demo)
 // ============================================================
 function openPos(side){
-  if(pos || !state.candles.length) return;
+  if(positions[state.sym] || !state.candles.length) return;
+  if(tradeMargin>wallet.balance){ toast('אין מספיק יתרה בארנק','down'); return; }
   ensureAC();
   const p=state.lastPrice;
   const A=ind? ind.A : p*0.01;
-  pos = side==='long'
-    ? {side, entry:p, sl:p-1.5*A, tp:p+2.5*A, notional:10000}
-    : {side, entry:p, sl:p+1.5*A, tp:p-2.5*A, notional:10000};
-  toast(`עמדת ${side==='long'?'לונג':'שורט'} נפתחה @ ${fmtP(p)}`, side==='long'?'up':'down');
+  const margin=tradeMargin, lev=tradeLev, notional=margin*lev;
+  positions[state.sym] = side==='long'
+    ? {side, entry:p, sl:p-1.5*A, tp:p+2.5*A, margin, lev, notional}
+    : {side, entry:p, sl:p+1.5*A, tp:p-2.5*A, margin, lev, notional};
+  wallet.balance-=margin; saveWallet(); savePositions();
+  toast(`עמדת ${side==='long'?'לונג':'שורט'} נפתחה @ ${fmtP(p)} · מרג׳ין $${margin} · x${lev}`, side==='long'?'up':'down');
   beep([[520,0.1],[660,0.12]]);
   flareBoost(1, side==='long'?'buy':'sell');
   spawnRipple(side==='long'?'buy':'sell', p, 0.8);
-  renderTicket();
+  renderTicket(); renderPortfolio();
 }
-function posPnlPct(){
-  return (state.lastPrice/pos.entry-1)*100*(pos.side==='long'?1:-1);
+function posPnlPct(P,sym){
+  const lp=livePriceFor(sym);
+  if(lp==null) return 0;
+  return (lp/P.entry-1)*100*(P.side==='long'?1:-1);
 }
 function checkAchievements(win,pct){
   const t=session.trades;
@@ -1018,48 +1122,105 @@ function checkAchievements(win,pct){
   if(pct>session.bestPct) badges.push(['🏆 שיא אישי חדש',`${fmtPct(pct)} בעסקה אחת`]);
   badges.forEach(([h,s],i)=>setTimeout(()=>toast(`${h} · ${s}`,'up'),i*1400+900));
 }
-function closePos(reason){
-  if(!pos) return;
-  const pct=posPnlPct(), usd=pos.notional*pct/100;
+function closePos(sym,reason){
+  const P=positions[sym]; if(!P) return;
+  const pct=posPnlPct(P,sym), usd=P.notional*pct/100;
   const win=usd>=0;
+  wallet.balance+=P.margin+usd; saveWallet();
   session.pnl+=usd; session.trades++; if(win) session.wins++;
   session.streak = win? session.streak+1 : 0;
   if(session.streak>session.bestStreak) session.bestStreak=session.streak;
-  session.log.unshift({sym:state.sym,side:pos.side,entry:pos.entry,exit:state.lastPrice,pct,usd,at:Date.now()});
+  session.log.unshift({sym,side:P.side,entry:P.entry,exit:livePriceFor(sym)||P.entry,pct,usd,at:Date.now()});
   session.log=session.log.slice(0,30);
   const isRecord = pct>session.bestPct;
   if(isRecord) session.bestPct=pct;
   saveSession();
   checkAchievements(win,pct);
-  const head=reason==='tp'?'🎯 יעד הושג':reason==='sl'?'🛑 סטופ הופעל':reason==='switch'?'עמדה נסגרה (החלפה)':'עמדה נסגרה';
-  toast(`${head} · ${win?'+':'−'}$${Math.abs(usd).toFixed(0)} (${fmtPct(pct)})`, win?'up':'down');
+  delete positions[sym]; savePositions();
+  const head=reason==='tp'?'🎯 יעד הושג':reason==='sl'?'🛑 סטופ הופעל':'עמדה נסגרה';
+  toast(`${sym} · ${head} · ${win?'+':'−'}$${Math.abs(usd).toFixed(0)} (${fmtPct(pct)})`, win?'up':'down');
   beep(win?[[523,0.09],[659,0.09],[784,0.14]]:[[220,0.16],[160,0.2]]);
-  pos=null; renderTicket(); renderLog();
+  renderTicket(); renderLog(); renderPortfolio();
 }
-function checkPos(){
-  if(!pos) return;
-  const p=state.lastPrice;
-  if(pos.side==='long'){ if(p>=pos.tp) closePos('tp'); else if(p<=pos.sl) closePos('sl'); }
-  else { if(p<=pos.tp) closePos('tp'); else if(p>=pos.sl) closePos('sl'); }
+function closeAllPositions(){
+  Object.keys(positions).forEach(sym=>closePos(sym,'manual'));
+}
+function checkAllPositions(){
+  Object.keys(positions).forEach(sym=>{
+    const P=positions[sym], lp=livePriceFor(sym);
+    if(lp==null) return;
+    if(P.side==='long'){ if(lp>=P.tp) closePos(sym,'tp'); else if(lp<=P.sl) closePos(sym,'sl'); }
+    else { if(lp<=P.tp) closePos(sym,'tp'); else if(lp>=P.sl) closePos(sym,'sl'); }
+  });
 }
 function renderTicket(){
-  $('sugBox').style.display = pos? 'none':'block';
-  $('posBox').style.display = pos? 'block':'none';
-  if(pos){
+  const P=positions[state.sym];
+  $('sugBox').style.display = P? 'none':'block';
+  $('posBox').style.display = P? 'block':'none';
+  if(P){
     const e=$('pSide');
-    e.textContent = pos.side==='long'?'לונג ▲':'שורט ▼';
-    e.className = 'tv '+(pos.side==='long'?'up':'down');
-    $('pEntry').textContent=fmtP(pos.entry);
-    $('pTp').textContent=fmtP(pos.tp);
-    $('pSl').textContent=fmtP(pos.sl);
+    e.textContent = (P.side==='long'?'לונג ▲':'שורט ▼')+' · x'+P.lev;
+    e.className = 'tv '+(P.side==='long'?'up':'down');
+    $('pEntry').textContent=fmtP(P.entry);
+    $('pTp').textContent=fmtP(P.tp);
+    $('pSl').textContent=fmtP(P.sl);
   }
+  const lockedMargin=Object.keys(positions).reduce((s,sym)=>s+positions[sym].margin,0);
+  const equity=wallet.balance+Object.keys(positions).reduce((sum,sym)=>{
+    const Pi=positions[sym]; return sum+Pi.margin+Pi.notional*posPnlPct(Pi,sym)/100;
+  },0);
+  $('walletBal').textContent='$'+wallet.balance.toFixed(0);
+  $('walletEq').textContent='$'+equity.toFixed(0);
+  $('walletEq').className='num '+(equity>=wallet.balance+lockedMargin?'up':'down');
   $('sessStat').textContent = session.trades
     ? `${session.pnl>=0?'+':'−'}$${Math.abs(session.pnl).toFixed(0)} · ${session.trades}`
     : '';
 }
+function renderPortfolio(){
+  const list=$('pfList'); if(!list) return;
+  const syms=Object.keys(positions);
+  $('pfCount').textContent=syms.length;
+  $('pfBalRef').textContent='$'+wallet.balance.toFixed(0);
+  const equity=wallet.balance+syms.reduce((sum,sym)=>{
+    const P=positions[sym]; return sum+P.margin+P.notional*posPnlPct(P,sym)/100;
+  },0);
+  $('pfEqRef').textContent='$'+equity.toFixed(0);
+  if(!syms.length){ list.innerHTML='<div class="lg-empty">אין עמדות פתוחות</div>'; return; }
+  list.innerHTML=syms.map(sym=>{
+    const P=positions[sym], pct=posPnlPct(P,sym), usd=P.notional*pct/100, win=usd>=0;
+    return `<div class="lg-row"><span><span class="lg-sym">${sym}</span> ${P.side==='long'?'▲':'▼'} x${P.lev}<br>`
+      +`<span class="lg-t">כניסה ${fmtP(P.entry)} · מרג׳ין $${P.margin}</span></span>`
+      +`<span style="display:flex;align-items:center;gap:8px">`
+      +`<span class="num ${win?'up':'down'}">${win?'+':'−'}$${Math.abs(usd).toFixed(0)} (${fmtPct(pct)})</span>`
+      +`<button class="pf-x" data-sym="${sym}">✕</button></span></div>`;
+  }).join('');
+  list.querySelectorAll('.pf-x').forEach(btn=>{
+    btn.onclick=()=>closePos(btn.dataset.sym,'manual');
+  });
+}
 $('btnLong').addEventListener('click',()=>openPos('long'));
 $('btnShort').addEventListener('click',()=>openPos('short'));
-$('btnClose').addEventListener('click',()=>closePos('manual'));
+$('btnClose').addEventListener('click',()=>{ if(positions[state.sym]) closePos(state.sym,'manual'); });
+$('szMargin').addEventListener('input',e=>{ tradeMargin=parseInt(e.target.value,10); $('szMarginV').textContent='$'+tradeMargin; });
+$('levBtns').querySelectorAll('button').forEach(b=>{
+  b.onclick=()=>{ tradeLev=parseInt(b.dataset.lev,10);
+    $('levBtns').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b)); };
+});
+let portfolioOpen=false;
+function setPortfolio(on){
+  portfolioOpen=on;
+  $('portfolioPanel').style.display=on?'block':'none';
+  $('btnPortfolio').classList.toggle('on',on);
+  if(on) renderPortfolio();
+}
+$('btnPortfolio').onclick=()=>setPortfolio(!portfolioOpen);
+$('pfClose').onclick=()=>setPortfolio(false);
+$('walletReset').onclick=()=>{
+  closeAllPositions();
+  wallet.balance=25000; saveWallet();
+  toast('הארנק אופס ל-$25,000','up');
+  renderTicket(); renderPortfolio();
+};
 
 // ============================================================
 //  THREE — the arena
@@ -1103,7 +1264,7 @@ try{
     const FX=window.__FX;
     composer=new FX.EffectComposer(renderer);
     composer.addPass(new FX.RenderPass(scene,camera));
-    bloomPass=new FX.UnrealBloomPass(new THREE.Vector2(innerWidth/2,innerHeight/2),0.72,0.55,0.8);
+    bloomPass=new FX.UnrealBloomPass(new THREE.Vector2(innerWidth/2,innerHeight/2),0.55,0.6,0.86);
     composer.addPass(bloomPass);
     composer.addPass(new FX.OutputPass());
     // Filmic grade ONLY together with bloom: ACES rolls highlights off like
@@ -1421,7 +1582,7 @@ function updateWorld(dt,now){
   state.impactE*=Math.pow(0.05,dt);
   const sq=state.impactE;
   coreG.scale.set(1+sq*0.22, 1-sq*0.15, 1+sq*0.22);
-  const gs=9+state.flare*6+Math.sin(t*3)*0.7;
+  const gs=9+state.flare*6+Math.sin(t*3)*0.4;
   coreGlow.scale.set(gs,gs,1);
   state.flare*=Math.pow(0.35,dt);
   state.flareCol.lerp(C_CY,0.02);
@@ -1449,40 +1610,50 @@ function updateWorld(dt,now){
     gate.rotation.y+=dt*0.8;
     gate.material.color.copy(ind.score>0?C_UP:C_DN);
     gateFlash*=Math.pow(0.2,dt);
-    gate.material.opacity=0.45+0.2*Math.sin(t*4)+gateFlash*0.5;
+    gate.material.opacity=0.4+0.12*Math.sin(t*4)+gateFlash*0.35;
     const gsc=1+gateFlash*0.5;
     gate.scale.set(gsc,gsc,gsc);
   }
 
-  // S/R rings
+  // S/R rings + entry/tp/sl rings — collected into labelItems so their text
+  // labels can be decluttered together right after (rings themselves always
+  // stay at the true price height; only the floating text nudges apart)
+  const labelItems=[];
   for(let j=0;j<srRings.length;j++){
     const rg=srRings[j];
     const lv=showSig && ind.levels[j];
     if(lv){
       rg.grp.visible=true;
-      rg.grp.position.y=yFor(lv.p);
+      const y=yFor(lv.p);
+      rg.grp.position.y=y;
       const above=lv.p>state.lastPrice;
       rg.setColor(above?0xff3d6e:0x00ffa6);
-      rg.ring.material.opacity=0.22+0.08*Math.sin(t*2+j);
+      rg.ring.material.opacity=0.2+0.04*Math.sin(t*2+j);
       rg.lb.draw((above?'התנגדות ':'תמיכה ')+fmtP(lv.p), above?'#ff3d6e':'#00ffa6');
+      labelItems.push({lb:rg.lb, rawY:y});
     } else rg.grp.visible=false;
   }
 
-  // entry / tp / sl rings + chevrons
-  const src=pos || (showSig && ind.sug) || null;
+  // entry / tp / sl rings + chevrons — src is the portfolio position open on
+  // the CURRENTLY FOCUSED symbol (other symbols' positions still tick in the
+  // background via checkAllPositions, they just don't draw rings here)
+  const P=positions[state.sym];
+  const src=P || (showSig && ind.sug) || null;
   tpRing.grp.visible=slRing.grp.visible=enRing.grp.visible=!!src && state.showSig;
   chevMesh.visible=!!src && state.showSig;
   if(src && state.showSig){
-    tpRing.grp.position.y=yFor(src.tp);
-    slRing.grp.position.y=yFor(src.sl);
-    enRing.grp.position.y=yFor(src.entry);
-    enRing.setColor(pos?0xffd166:0x00f0ff);
+    const yTp=yFor(src.tp), ySl=yFor(src.sl), yEn=yFor(src.entry);
+    tpRing.grp.position.y=yTp;
+    slRing.grp.position.y=ySl;
+    enRing.grp.position.y=yEn;
+    enRing.setColor(P?0xffd166:0x00f0ff);
     tpRing.lb.draw('יעד רווח  '+fmtP(src.tp),'#00ffa6');
     slRing.lb.draw('סטופ הגנה  '+fmtP(src.sl),'#ff3d6e');
-    enRing.lb.draw((pos?'הכניסה שלך  ':'כניסה מוצעת  ')+fmtP(src.entry), pos?'#ffd166':'#00f0ff');
+    enRing.lb.draw((P?'הכניסה שלך  ':'כניסה מוצעת  ')+fmtP(src.entry), P?'#ffd166':'#00f0ff');
+    labelItems.push({lb:tpRing.lb, rawY:yTp},{lb:slRing.lb, rawY:ySl},{lb:enRing.lb, rawY:yEn});
     const up=src.side==='long';
     chevMesh.material.color.copy(up?C_UP:C_DN);
-    const y1=yFor(src.entry), y2=yFor(src.tp);
+    const y1=yEn, y2=yTp;
     for(let i=0;i<CHN;i++){
       const k=((t*0.32)+(i/CHN))%1;
       const y=lerp(y1,y2,k);
@@ -1493,6 +1664,10 @@ function updateWorld(dt,now){
       dummy.updateMatrix(); chevMesh.setMatrixAt(i,dummy.matrix);
     }
     chevMesh.instanceMatrix.needsUpdate=true;
+  }
+  if(labelItems.length){
+    const adjY=declutterY(labelItems.map(x=>x.rawY),1.9);
+    labelItems.forEach((it,i)=>{ it.lb.sp.position.y=0.7+(adjY[i]-it.rawY); });
   }
 
   // whale shields
@@ -1681,7 +1856,7 @@ function startPodFeeds(){
         const d=m.data||{}; if(!d.s) return;
         const sym=d.s.replace('USDT','');
         const p=pods.find(x=>x.kind==='crypto'&&x.id===sym); if(!p) return;
-        p.price=+d.c; p.chg=((+d.c)-(+d.o))/(+d.o)*100; p.sim=false;
+        p.price=+d.c; p.chg=((+d.c)-(+d.o))/(+d.o)*100; p.sim=false; simAnchor[p.id]=p.price;
         p.hi=+d.h; p.lo=+d.l; p.volQ=+d.q;
         podHist(p);
       };
@@ -1720,7 +1895,10 @@ function stopPodFeeds(){
 }
 function cryptoPodSim(){
   pods.filter(p=>p.kind==='crypto'&&p.price==null).forEach(p=>{
-    p.sim=true; p.price=WORLD_CRYPTO[p.id].base*(1+rnd(-0.01,0.01)); p.chg=rnd(-2.5,2.5);
+    p.sim=true;
+    p.price=simAnchor[p.id] || WORLD_CRYPTO[p.id].base*(1+rnd(-0.01,0.01));
+    simAnchor[p.id]=p.price;
+    p.chg=rnd(-2.5,2.5);
   });
 }
 let pmMarkets=null;
@@ -1937,10 +2115,9 @@ function focusNearestPod(){
       const nowT=performance.now();
       if(nowT-walk.lastFocus>2500){
         walk.lastFocus=nowT;
-        if(pos) closePos('switch');
         state.sym=best.id; $('symLabel').textContent=best.id+' / USDT';
         state.stats=null; state.bigQ=1;
-        buildPills(); startFeed();
+        buildPills(); startFeed(); renderTicket(); renderPortfolio();
         toast('⚔️ נכנסת לזירת '+best.id);
       }
     }
@@ -2382,7 +2559,7 @@ $('settingsReset').onclick=()=>{
   Object.assign(naSettings,NA_DEFAULTS); // mutate in place — window.__naSettings stays a valid live reference
   saveNaSettings();
   applyQuality('auto'); gfxTier=0; window.__gfx.tier=0; // fully release the manual override back to auto
-  if(bloomPass) bloomPass.strength=0.72;
+  if(bloomPass) bloomPass.strength=0.55;
   if(composer){ window.__gfx.bloom=true; renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=naSettings.exposure; }
   applyVisualToggles();
   buildSettingsPanel();
@@ -2499,10 +2676,9 @@ function buildPills(){
     const fav=watchlist.has(s);
     b.innerHTML=`<span class="dot" style="background:${SYMBOLS[s].dot}"></span>${s}<span class="fav${fav?' on':''}" title="הוסף/הסר מהמועדפים">${fav?'★':'☆'}</span>`;
     b.onclick=()=>{ if(state.sym===s) return;
-      if(pos) closePos('switch');
       state.sym=s; $('symLabel').textContent=s+' / USDT';
       state.stats=null; state.bigQ=1;
-      buildPills(); startFeed();
+      buildPills(); startFeed(); renderTicket(); renderPortfolio();
       if(naSettings.chartAutoOpen && typeof setChart==='function') setChart(true); };
     b.querySelector('.fav').onclick=(e)=>{
       e.stopPropagation();
@@ -2517,7 +2693,6 @@ function buildPills(){
     b.className='pill'+(tf===state.tf?' on':'');
     b.textContent=label;
     b.onclick=()=>{ if(state.tf===tf) return;
-      if(pos) closePos('switch');
       state.tf=tf; buildPills(); startFeed(); };
     tr.appendChild(b);
   });
@@ -2618,12 +2793,14 @@ function updateHud(now){
   }
 
   // ticket
-  if(pos){
-    const pct=posPnlPct(), usd=pos.notional*pct/100, win=pct>=0;
+  const focusedPos=positions[state.sym];
+  if(focusedPos){
+    const pct=posPnlPct(focusedPos,state.sym), usd=focusedPos.notional*pct/100, win=pct>=0;
     const pb2=$('pnlBig');
     pb2.textContent=fmtPct(pct);
     pb2.className='num '+(win?'up':'down');
     $('pnlUsd').textContent=(win?'+':'−')+'$'+Math.abs(usd).toFixed(0);
+    $('walletBal').textContent='$'+wallet.balance.toFixed(0);
   } else if(ind && ind.sug){
     $('tEntry').textContent=fmtP(ind.sug.entry);
     $('tTp').textContent=fmtP(ind.sug.tp);
@@ -2634,6 +2811,15 @@ function updateHud(now){
   } else {
     $('tEntry').textContent='—'; $('tTp').textContent='—'; $('tSl').textContent='—';
     $('sugNote').textContent='ממתין לאות ברור…';
+  }
+  const openSyms=Object.keys(positions);
+  if(openSyms.length){
+    const equity=wallet.balance+openSyms.reduce((sum,sym)=>{
+      const P2=positions[sym]; return sum+P2.margin+P2.notional*posPnlPct(P2,sym)/100;
+    },0);
+    $('walletEq').textContent='$'+equity.toFixed(0);
+    $('walletEq').className='num '+(equity>=wallet.balance+openSyms.reduce((s,sym)=>s+positions[sym].margin,0)?'up':'down');
+    if(portfolioOpen) renderPortfolio();
   }
 }
 
@@ -2654,7 +2840,7 @@ function gfxGuard(dt){
   if(gfxT>=1){
     const fps=gfxN/gfxT; gfxT=0; gfxN=0;
     if(fps<32){ if(++gfxSlow>=2){ gfxSlow=0; gfxTier++; window.__gfx.tier=gfxTier;
-      if(gfxTier===1 && bloomPass) bloomPass.strength=0.42;
+      if(gfxTier===1 && bloomPass) bloomPass.strength=0.32;
       if(gfxTier>=2){ window.__gfx.bloom=false; renderer.toneMapping=THREE.NoToneMapping; if(motes.pts) motes.pts.visible=false; }
     } }
     else gfxSlow=0;
@@ -2667,7 +2853,7 @@ function applyQuality(mode){
   if(mode==='auto') return; // gfxGuard resumes driving gfxTier itself
   const tierByMode={max:0,medium:1,low:2};
   gfxTier=tierByMode[mode]??0; window.__gfx.tier=gfxTier;
-  if(bloomPass) bloomPass.strength=gfxTier===1?0.42:0.72;
+  if(bloomPass) bloomPass.strength=gfxTier===1?0.32:0.55;
   if(gfxTier>=2){ window.__gfx.bloom=false; if(renderer.toneMapping!==undefined) renderer.toneMapping=THREE.NoToneMapping; }
   else if(composer){ window.__gfx.bloom=true; renderer.toneMapping=THREE.ACESFilmicToneMapping; }
 }
@@ -2697,7 +2883,7 @@ function loop(){
   try{
     gfxGuard(dt);
     if(indDirty && now-lastInd>350){ computeSignals(); indDirty=false; lastInd=now; }
-    checkPos();
+    checkAllPositions();
     updateWorld(dt,now);
     updatePods(dt,now);
     applyCam(dt);
