@@ -53,6 +53,13 @@ header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 16px
 #refreshBtn.spin{color:var(--cyan);pointer-events:none}
 
 /* situation strip */
+/* 3D octopus stage — a small living hero: tentacles reach out per active
+   arm while it's fetching and glow the arm's topic color; a brief bright
+   flash on the tip when that arm's sources came back with news. */
+#octoStage{position:relative;height:190px;margin-bottom:14px;overflow:hidden;padding:0}
+#octoCv{display:block;width:100%;height:100%}
+#octoCaption{position:absolute;bottom:9px;left:0;right:0;text-align:center;font-size:11px;
+  color:var(--cyan);letter-spacing:1px;font-weight:600;pointer-events:none;text-shadow:0 0 10px rgba(0,240,255,.5)}
 #situation{padding:13px 16px;margin-bottom:14px}
 #situation .sh{font-size:11px;letter-spacing:2px;color:var(--cyan);font-weight:700;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
 #situation .sh .upd{font-size:10px;color:var(--dim);letter-spacing:.5px;font-weight:400}
@@ -125,13 +132,18 @@ header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 16px
       <span class="oct">🐙</span>
       <div class="tt">
         <div class="name">OCTOPUS</div>
-        <div class="sub">מנוע חדשות עתידני · מצליב מידע מ-8 זרועות · מגבש תמונה · מנתח</div>
+        <div class="sub">מנוע חדשות עתידני · 8 זרועות · 21 מקורות חינמיים · מצליב · מגבש תמונה · מנתח</div>
       </div>
     </div>
     <div id="arms" title="מצב הזרועות"></div>
     <span id="armsLbl">זרועות</span>
     <button id="refreshBtn">🔄 רענן</button>
   </header>
+
+  <section id="octoStage" class="panel clip">
+    <canvas id="octoCv"></canvas>
+    <div id="octoCaption">🐙 מתעורר…</div>
+  </section>
 
   <section id="situation" class="panel clip">
     <div class="sh">🛰️ תמונת מצב <span class="upd" id="updLbl">—</span></div>
@@ -162,6 +174,115 @@ header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 16px
   </div>
 </div>
 
+<script type="module">
+/* ============================================================
+   🐙 3D OCTOPUS — a living creature, not a logo. Eight tentacles
+   ring a soft glowing body; each tentacle belongs to one of the
+   eight ARM_GROUPS below (same order, same colors). While that
+   arm's sources are being fetched, its tentacle stretches out and
+   brightens; the instant it lands, the tip flashes and the arm
+   coils back — the octopus visibly "goes looking" for news.
+   Independent of the main script's timing (guards on window.__octoReach
+   existing), so data flow never waits on the render loop or vice versa.
+   ============================================================ */
+import * as THREE from 'three';
+const cv=document.getElementById('octoCv');
+const W=()=>cv.clientWidth||220, H=()=>cv.clientHeight||190;
+let renderer;
+try{ renderer=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true}); }
+catch(e){ document.getElementById('octoStage').style.display='none'; }
+if(renderer){
+  renderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1));
+  renderer.setSize(W(),H(),false);
+  const scene=new THREE.Scene();
+  const camera=new THREE.PerspectiveCamera(40,W()/H(),0.1,100);
+  camera.position.set(0,1.9,7.6); camera.lookAt(0,0.55,0);
+  scene.add(new THREE.AmbientLight(0x224466,1.3));
+  const key=new THREE.PointLight(0x00f0ff,2.2,30); key.position.set(3,5,4); scene.add(key);
+  const rim=new THREE.PointLight(0xff2fd6,1.5,30); rim.position.set(-4,2,-3); scene.add(rim);
+
+  const bodyMat=new THREE.MeshStandardMaterial({color:0x0c2a3a,emissive:0x0aa6c2,emissiveIntensity:0.4,roughness:0.35,metalness:0.15});
+  const body=new THREE.Mesh(new THREE.SphereGeometry(1.02,32,24),bodyMat);
+  body.scale.set(1,0.84,1.04); body.position.y=0.95; scene.add(body);
+  const mantle=new THREE.Mesh(new THREE.SphereGeometry(0.62,24,18),new THREE.MeshStandardMaterial({color:0x123344,emissive:0x0a5a70,emissiveIntensity:0.3,roughness:0.4}));
+  mantle.position.y=1.55; mantle.scale.set(1,1.15,1); scene.add(mantle);
+  const eyeGeo=new THREE.SphereGeometry(0.125,16,16), eyeMat=new THREE.MeshBasicMaterial({color:0x9dfcff});
+  const eyeL=new THREE.Mesh(eyeGeo,eyeMat); eyeL.position.set(-0.33,1.08,0.86); scene.add(eyeL);
+  const eyeR=eyeL.clone(); eyeR.position.x=0.33; scene.add(eyeR);
+  const pupL=new THREE.Mesh(new THREE.SphereGeometry(0.05,8,8),new THREE.MeshBasicMaterial({color:0x022}));
+  pupL.position.set(-0.33,1.08,0.96); scene.add(pupL);
+  const pupR=pupL.clone(); pupR.position.x=0.33; scene.add(pupR);
+
+  const COLORS=[0x00f0ff,0xffd166,0x00ffa6,0xff2fd6,0x8a5cff,0xff3d6e,0x7fb3d5,0xf0b90b];
+  const N=8, SEG=9;
+  const tentacles=[];
+  for(let i=0;i<N;i++){
+    const ang=(i/N)*Math.PI*2;
+    const mat=new THREE.MeshStandardMaterial({color:COLORS[i],emissive:COLORS[i],emissiveIntensity:0.5,roughness:0.4,metalness:0.1,transparent:true,opacity:0.94});
+    const seed=new THREE.CatmullRomCurve3([new THREE.Vector3(0,0.9,0),new THREE.Vector3(0,0.8,0)]);
+    const mesh=new THREE.Mesh(new THREE.TubeGeometry(seed,SEG,0.09,6,false),mat);
+    scene.add(mesh);
+    const tip=new THREE.Mesh(new THREE.SphereGeometry(0.075,10,10),new THREE.MeshBasicMaterial({color:COLORS[i],transparent:true}));
+    scene.add(tip);
+    tentacles.push({ang,mesh,mat,tip,reach:0,reachTarget:0,flash:0,phase:Math.random()*10});
+  }
+  // Called by the data layer: gi = arm/group index, pulling = fetch in
+  // flight, found = that arm's pull landed with at least one story.
+  window.__octoReach=function(gi,pulling,found){
+    const t=tentacles[gi]; if(!t) return;
+    t.reachTarget=pulling?1:0;
+    if(!pulling && found) t.flash=1;
+  };
+  function jointPositions(t,time){
+    const pts=[]; const baseLen=1.15, reach=t.reach;
+    const len=baseLen+reach*2.5;
+    for(let s=0;s<=SEG;s++){
+      const f=s/SEG, r=f*len;
+      const curl=Math.sin(time*1.6+t.phase+f*3.1)*0.24*(0.35+f)*(1-reach*0.55);
+      const droop=-f*f*0.5*(1-reach*0.65);
+      const x=Math.cos(t.ang)*r+Math.cos(t.ang+Math.PI/2)*curl;
+      const z=Math.sin(t.ang)*r+Math.sin(t.ang+Math.PI/2)*curl;
+      const y=0.85+droop+Math.sin(time*2+t.phase)*0.05*(1-reach);
+      pts.push(new THREE.Vector3(x,y,z));
+    }
+    return pts;
+  }
+  let rot=0, capT=0;
+  const captionEl=document.getElementById('octoCaption');
+  function updateCaption(){
+    const active=tentacles.map((t,i)=>({t,i})).filter(x=>x.t.reachTarget>0);
+    if(!window.ARM_GROUPS){ captionEl.textContent='🐙 מתעורר…'; return; }
+    if(active.length) captionEl.textContent='🐙 מחפש: '+active.map(x=>window.ARM_GROUPS[x.i][0]).join(' · ');
+    else captionEl.textContent='🐙 8 זרועות · 21 מקורות · ממתין לרענון הבא';
+  }
+  function animate(){
+    requestAnimationFrame(animate);
+    const time=performance.now()*0.001;
+    rot+=0.0022; scene.rotation.y=Math.sin(rot*0.6)*0.32;
+    body.position.y=0.95+Math.sin(time*1.3)*0.03;
+    mantle.position.y=1.55+Math.sin(time*1.3)*0.03;
+    capT+=0.016; if(capT>0.5){ capT=0; updateCaption(); }
+    tentacles.forEach(t=>{
+      t.reach+=(t.reachTarget-t.reach)*0.06;
+      t.flash=Math.max(0,t.flash-0.02);
+      const pts=jointPositions(t,time);
+      const curve=new THREE.CatmullRomCurve3(pts);
+      t.mesh.geometry.dispose();
+      t.mesh.geometry=new THREE.TubeGeometry(curve,SEG,0.085+t.reach*0.02,6,false);
+      t.tip.position.copy(pts[pts.length-1]);
+      t.mat.emissiveIntensity=0.4+t.reach*1.1+t.flash*1.4;
+      t.tip.material.opacity=0.85+t.flash*0.15;
+      t.tip.scale.setScalar(1+t.flash*0.9);
+    });
+    renderer.render(scene,camera);
+  }
+  animate();
+  addEventListener('resize',()=>{
+    renderer.setSize(W(),H(),false);
+    camera.aspect=W()/H(); camera.updateProjectionMatrix();
+  });
+}
+</script>
 <script>
 'use strict';
 /* ============================================================
@@ -175,16 +296,57 @@ header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 16px
    synthesis. Offline → SIM feed so the app never goes dark.
    ============================================================ */
 const $=id=>document.getElementById(id);
-const ARMS=[
-  ['ynet','https://www.ynet.co.il/Integration/StoryRss2.xml'],
-  ['וואלה','https://rss.walla.co.il/feed/1'],
-  ['כלכליסט','https://www.calcalist.co.il/GeneralRSS/0,16335,L-8,00.xml'],
-  ['גלובס','https://www.globes.co.il/webservice/rss/rssfeeder.asmx/FeederNode?iID=2'],
-  ['ynet כלכלה','https://www.ynet.co.il/Integration/StoryRss6.xml'],
-  ['CoinDesk','https://www.coindesk.com/arc/outboundfeeds/rss/'],
-  ['Cointelegraph','https://cointelegraph.com/rss'],
-  ['Yahoo Fin','https://finance.yahoo.com/news/rssindex'],
+// 8 THEMATIC ARMS × 2-3 free sources each = 20 sources total. Each arm is
+// one tentacle of the octopus and one topic domain; every source inside an
+// arm is pulled in parallel, so one arm going quiet doesn't blind the whole
+// limb. This is the same free/keyless technique the rest of the platform
+// uses (RSS through a public CORS proxy) — no paid news API anywhere.
+const ARM_GROUPS=[
+  ['חדשות ישראל', ['📰',0x00f0ff], [
+    ['ynet', 'https://www.ynet.co.il/Integration/StoryRss2.xml'],
+    ['וואלה', 'https://rss.walla.co.il/feed/1'],
+    ['מאקו', 'https://www.mako.co.il/Rss/news-israel/pages/israel.xml'],
+  ]],
+  ['כלכלה ועסקים', ['💰',0xffd166], [
+    ['כלכליסט', 'https://www.calcalist.co.il/GeneralRSS/0,16335,L-8,00.xml'],
+    ['גלובס', 'https://www.globes.co.il/webservice/rss/rssfeeder.asmx/FeederNode?iID=2'],
+    ['ynet כלכלה', 'https://www.ynet.co.il/Integration/StoryRss6.xml'],
+  ]],
+  ['שוקי הון עולמיים', ['📈',0x00ffa6], [
+    ['Yahoo Finance', 'https://finance.yahoo.com/news/rssindex'],
+    ['MarketWatch', 'https://feeds.content.dowjones.io/public/rss/mw_topstories'],
+    ['Investing.com', 'https://www.investing.com/rss/news.rss'],
+  ]],
+  ['קריפטו', ['🪙',0xff2fd6], [
+    ['CoinDesk', 'https://www.coindesk.com/arc/outboundfeeds/rss/'],
+    ['Cointelegraph', 'https://cointelegraph.com/rss'],
+    ['Decrypt', 'https://decrypt.co/feed'],
+  ]],
+  ['טכנולוגיה', ['💻',0x8a5cff], [
+    ['TechCrunch', 'https://techcrunch.com/feed/'],
+    ['The Verge', 'https://www.theverge.com/rss/index.xml'],
+    ['גיקטיים', 'https://www.geektime.co.il/feed/'],
+  ]],
+  ['ביטחון ומזה"ת', ['🛡️',0xff3d6e], [
+    ['ynet חדשות', 'https://www.ynet.co.il/Integration/StoryRss3.xml'],
+    ['Times of Israel', 'https://www.timesofisrael.com/feed/'],
+  ]],
+  ['עולם', ['🌍',0x7fb3d5], [
+    ['BBC World', 'http://feeds.bbci.co.uk/news/world/rss.xml'],
+    ['Reuters World', 'https://www.reutersagency.com/feed/?best-topics=world&post_type=best'],
+  ]],
+  ['ספורט ותרבות', ['🎭',0xf0b90b], [
+    ['ynet ספורט', 'https://www.ynet.co.il/Integration/StoryRss5.xml'],
+    ['וואלה ספורט', 'https://rss.walla.co.il/feed/22'],
+  ]],
 ];
+// flattened source list — kept for the arm-status dots / live counter, in
+// ARM_GROUPS order so index i belongs to whichever group contains it
+const ARMS=ARM_GROUPS.flatMap(([gname,,srcs])=>srcs.map(([n,u])=>[n,u,gname]));
+const armGroupOf=i=>{ let n=0; for(const g of ARM_GROUPS){ if(i<n+g[2].length) return g; n+=g[2].length; } return ARM_GROUPS[0]; };
+let armPulling=new Array(ARM_GROUPS.length).fill(false); // drives the 3D octopus tentacles
+window.ARM_GROUPS=ARM_GROUPS; // read by the 3D-octopus module for its caption text
+
 const TOPICS=[
   ['קריפטו',['ביטקוין','קריפטו','אתריום','bitcoin','crypto','ethereum','btc','eth','בלוקצ','טוקן','solana']],
   ['שווקים',['בורסה','מניה','מניות','נאסד','וול סטריט','מדד','s&p','nasdaq','stock','market','דאו','תשואה','אג"ח']],
@@ -202,7 +364,7 @@ function fetchT(url,ms){
   const ctl=new AbortController(); const t=setTimeout(()=>ctl.abort(),ms||9000);
   return fetch(url,{signal:ctl.signal}).finally(()=>clearTimeout(t));
 }
-async function pullArm(i){
+async function pullOneSource(i){
   const [name,url]=ARMS[i];
   try{
     const r=await fetchT('https://api.allorigins.win/raw?url='+encodeURIComponent(url),9000);
@@ -219,6 +381,18 @@ async function pullArm(i){
     armState[i]='ok';
     return got;
   }catch(e){ armState[i]='off'; return []; }
+}
+// One tentacle per thematic group: all sources in the group are pulled in
+// parallel, and armPulling[groupIdx] flags the 3D octopus to reach that arm
+// out while the request is in flight (and retract when it lands).
+async function pullGroup(gi){
+  const group=ARM_GROUPS[gi];
+  let base=0; for(let k=0;k<gi;k++) base+=ARM_GROUPS[k][2].length;
+  armPulling[gi]=true; if(window.__octoReach) window.__octoReach(gi,true);
+  const idxs=group[2].map((_,k)=>base+k);
+  const results=await Promise.all(idxs.map(pullOneSource));
+  armPulling[gi]=false; if(window.__octoReach) window.__octoReach(gi,false, results.some(r=>r.length));
+  return [].concat.apply([],results);
 }
 function simFeed(){
   const now=Date.now(), m=60000;
@@ -283,13 +457,18 @@ function fmtAgo(at){
 }
 function renderArms(){
   const el=$('arms'); el.innerHTML='';
-  armState.forEach((st,i)=>{
+  let base=0;
+  ARM_GROUPS.forEach((g,gi)=>{
+    const n=g[2].length, states=armState.slice(base,base+n);
+    const okN=states.filter(s=>s==='ok').length;
     const d=document.createElement('span');
-    d.className='arm '+(st==='ok'?'ok':st==='sim'?'sim':'');
-    d.title=ARMS[i][0];
+    d.className='arm '+(okN>0?'ok':states.some(s=>s==='sim')?'sim':'');
+    d.title=g[0]+' — '+okN+'/'+n+' מקורות חיים';
     el.appendChild(d);
+    base+=n;
   });
-  $('stArms').textContent=armState.filter(a=>a==='ok').length+'/8';
+  const okTotal=armState.filter(a=>a==='ok').length;
+  $('stArms').textContent=okTotal+'/'+ARMS.length;
 }
 function renderSituation(){
   $('stStories').textContent=items.length;
@@ -406,17 +585,29 @@ $('anaWrap').addEventListener('click',e=>{ if(e.target===$('anaWrap')) $('anaWra
 addEventListener('keydown',e=>{ if(e.key==='Escape') $('anaWrap').classList.remove('open'); });
 
 // ---------- main pull ----------
-async function pullAll(){
-  $('refreshBtn').classList.add('spin'); $('refreshBtn').textContent='🐙 שולח זרועות…';
-  const arms=await Promise.all(ARMS.map((_,i)=>pullArm(i)));
-  let merged=[].concat.apply([],arms);
-  if(!merged.length){ merged=simFeed(); armState=armState.map(()=>'sim'); }
+function mergeAndRender(){
   const seen=new Set();
-  items=merged.filter(n=>{ const k=n.title.slice(0,70); if(seen.has(k)) return false; seen.add(k); return true; })
-    .sort((a,b)=>b.at-a.at).slice(0,120);
+  items=items.filter(n=>{ const k=n.title.slice(0,70); if(seen.has(k)) return false; seen.add(k); return true; })
+    .sort((a,b)=>b.at-a.at).slice(0,160);
   lastPull=Date.now();
   buildClusters();
   renderArms(); renderSituation(); renderClusters();
+}
+async function pullAll(){
+  $('refreshBtn').classList.add('spin'); $('refreshBtn').textContent='🐙 שולח זרועות…';
+  items=[];
+  // Each of the 8 arms/groups resolves independently — as soon as one comes
+  // back, its catch merges into the picture immediately (the tentacle that
+  // found news retracts and lights up right away, not after the slowest
+  // arm times out).
+  await Promise.all(ARM_GROUPS.map((_,gi)=>
+    pullGroup(gi).then(got=>{ items=items.concat(got); mergeAndRender(); })
+  ));
+  if(!items.length){
+    items=simFeed(); armState=armState.map(()=>'sim');
+    if(window.__octoReach) ARM_GROUPS.forEach((_,gi)=>window.__octoReach(gi,false,true));
+    mergeAndRender();
+  }
   $('refreshBtn').classList.remove('spin'); $('refreshBtn').textContent='🔄 רענן';
 }
 $('refreshBtn').onclick=pullAll;
