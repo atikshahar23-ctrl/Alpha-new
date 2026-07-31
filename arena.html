@@ -134,17 +134,21 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 #bBear{background:linear-gradient(90deg,#e02a5f,#ff5d7e);box-shadow:0 0 14px rgba(255,61,110,.55);transition:width .45s;flex:1}
 .blabels{display:flex;justify-content:space-between;font-size:11.5px;font-weight:800;margin-top:5px}
 
-/* toggles — vertically centered, but capped so a long button column (it's
-   grown a lot over time) can never overlap the header; it scrolls internally
-   past that cap instead, same pattern the mobile breakpoints already use */
-#toggles{position:fixed;top:50%;transform:translateY(-50%);left:12px;display:flex;flex-direction:column;gap:8px;
-  max-height:calc(100vh - 160px);overflow-y:auto;scrollbar-width:none}
+/* toggles — a compact 2-column control-panel grid (was a single tall
+   column that, after growing to 17+ buttons over the project's life, read
+   as a bolted-on list rather than a deliberate panel). Vertically centered
+   but capped so it can never overlap the header, scrolling internally past
+   that cap — same pattern the mobile breakpoints already used. */
+#toggles{position:fixed;top:50%;transform:translateY(-50%);left:12px;
+  display:grid;grid-template-columns:repeat(2,52px);gap:7px;
+  max-height:calc(100vh - 160px);overflow-y:auto;scrollbar-width:none;padding:2px}
 #toggles::-webkit-scrollbar{display:none}
 .tgl{width:52px;height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
   cursor:pointer;font-size:9.5px;letter-spacing:.5px;color:var(--dim);text-decoration:none;
   background:rgba(6,12,26,.66);border:1px solid rgba(0,240,255,.16);backdrop-filter:blur(8px);
-  clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px);transition:all .18s}
+  border-radius:9px;transition:all .18s}
 .tgl svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.7}
+.tgl:hover{border-color:rgba(0,240,255,.4);color:var(--txt)}
 .tgl.on{color:var(--cyan);border-color:var(--cyan);box-shadow:0 0 16px rgba(0,240,255,.35);background:rgba(0,60,70,.5)}
 .tgl:active{transform:scale(.94)}
 
@@ -318,7 +322,7 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
   .pills{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;padding-bottom:2px}
   .pills::-webkit-scrollbar{display:none}
   .pill{padding:6px 10px;font-size:11px;flex:none}
-  #toggles{left:6px;gap:5px;max-height:72vh;overflow-y:auto;scrollbar-width:none}
+  #toggles{left:6px;gap:5px;grid-template-columns:repeat(2,42px);max-height:72vh;overflow-y:auto;scrollbar-width:none}
   #toggles::-webkit-scrollbar{display:none}
   .tgl{width:42px;height:37px;gap:1px}
   .tgl span{font-size:12px !important}
@@ -349,7 +353,7 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
   #joyHint{bottom:calc(30px + env(safe-area-inset-bottom))}
 }
 @media (max-height:520px){
-  #toggles{max-height:94vh;gap:4px}
+  #toggles{max-height:94vh;gap:4px;grid-template-columns:repeat(2,38px)}
   .tgl{width:38px;height:30px}
   .tgl span:last-child{display:none}
   #top{row-gap:4px}
@@ -873,6 +877,39 @@ async function fetchStats(f){
   }catch(e){}
 }
 
+// ---------- existing-trading-system bridge — heavy-guard-simulator, the
+// platform's own trading backend (already used elsewhere in Alpha via
+// src/modules/simulatorBridge.ts). When the user has configured it in
+// Settings (same localStorage keys that module reads: alpha:sim:url /
+// alpha:sim:apiKey), its confirmed mark price is treated as the accuracy
+// ground-truth for the focused CRYPTO symbol — periodically snapping our
+// own price to it. Silent no-op when unconfigured/unreachable; it only
+// covers crypto, so stocks keep their own Yahoo/sim path untouched. ----
+function simBridgeUrl(){ try{ return (localStorage.getItem('alpha:sim:url')||'').replace(/\/$/,''); }catch{ return ''; } }
+function simBridgeKey(){ try{ return localStorage.getItem('alpha:sim:apiKey')||''; }catch{ return ''; } }
+let simBridgeTimer=null;
+async function simBridgeTick(){
+  if(state.market!=='crypto') return;
+  const base=simBridgeUrl(); if(!base) return;
+  const sym=state.sym;
+  try{
+    const key=simBridgeKey();
+    const r=await fetch(`${base}/api/crypto/binance?symbol=${sym}USDT`,
+      { headers: key? {Authorization:'Bearer '+key} : {} });
+    if(!r.ok) return;
+    const d=await r.json();
+    const p=parseFloat(d&&d.markPrice);
+    if(!isFinite(p)||p<=0||sym!==state.sym||!state.candles.length) return;
+    const cur=state.candles[state.candles.length-1];
+    cur.c=p; cur.h=Math.max(cur.h,p); cur.l=Math.min(cur.l,p);
+    onTick(cur);
+  }catch(e){}
+}
+function startSimBridgeSync(){
+  if(simBridgeTimer) clearInterval(simBridgeTimer);
+  simBridgeTimer=setInterval(simBridgeTick,8000);
+}
+
 // ---------- stocks — Yahoo Finance chart API, same endpoint the pods
 // already poll for background prices. No public stock WS exists, so "live"
 // here means short-interval REST polling for the latest bar instead of a
@@ -936,6 +973,13 @@ function startSim(f){
   const tfS=TF_SEC[state.tf];
   const sv=cfg.vol*Math.sqrt(tfS/60);
   const sym=state.sym;
+  // real stock markets don't jitter tick-to-tick anywhere near as fast as
+  // crypto — the same vol/tick math read as "moving at a crypto pace" when
+  // ticking every 150ms, so stocks tick, close candles, and refresh the
+  // book noticeably slower here (still simulated, just paced like a calmer
+  // market instead of a 24/7 one)
+  const isStock=state.market==='stock';
+  const tickMs=isStock?520:150, closeMs=isStock?9000:5200, bookMs=isStock?760:340;
   let price=simAnchor[sym] || cfg.base*rnd(0.94,1.06), mu=0;
 
   const cs=[]; let t=Date.now()-N*tfS*1000;
@@ -974,14 +1018,14 @@ function startSim(f){
         if(state.showFx) spawnBolt(q,side);
       }
     }
-  },150));
+  },tickMs));
 
   f.timers.push(setInterval(()=>{
     cur={t:Date.now(),o:price,h:price,l:price,c:price,v:0};
     state.candles.push(cur); if(state.candles.length>N) state.candles.shift();
     indDirty=true;
     updateCandleAnalysis();
-  },5200));
+  },closeMs));
 
   f.timers.push(setInterval(()=>{
     const step=price*0.00045, bids=[], asks=[];
@@ -995,7 +1039,7 @@ function startSim(f){
     }
     state.book={bids,asks};
     digestBook();
-  },340));
+  },bookMs));
 
   f.timers.push(setInterval(()=>{
     const cs2=state.candles; if(cs2.length<2) return;
@@ -3202,6 +3246,7 @@ bootStep('buildWorldUI',buildWorldUI);
 bootStep('rebuildPods',rebuildPods);
 bootStep('startPodFeeds',startPodFeeds);
 bootStep('startFeed',startFeed);
+bootStep('startSimBridgeSync',startSimBridgeSync);
 bootStep('applyQuality',()=>applyQuality(naSettings.qualityMode));
 bootStep('applyVisualToggles',applyVisualToggles);
 bootStep('buildSettingsPanel',buildSettingsPanel);
