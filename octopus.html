@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>OCTOPUS · מנוע חדשות עתידני</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;600;800&family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#04060d; --cyan:#00f0ff; --magenta:#ff2fd6; --gold:#ffd166;
+  --up:#00ffa6; --down:#ff3d6e;
+  --panel:rgba(8,14,30,.82); --panel2:rgba(5,9,20,.66);
+  --line:rgba(0,240,255,.24); --txt:#d9f4ff; --dim:#6d90a8;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{background:var(--bg)}
+body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);min-height:100vh;
+  background:
+    radial-gradient(60% 40% at 80% -5%, rgba(255,47,214,.10), transparent 70%),
+    radial-gradient(55% 45% at 10% 0%, rgba(0,240,255,.10), transparent 70%),
+    var(--bg)}
+body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:linear-gradient(rgba(0,240,255,.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,240,255,.03) 1px, transparent 1px);
+  background-size:44px 44px;
+  mask-image:radial-gradient(ellipse 90% 60% at 50% 0%, black 10%, transparent 80%)}
+.num{direction:ltr;unicode-bidi:isolate;font-family:'Orbitron',monospace}
+.clip{clip-path:polygon(12px 0,100% 0,100% calc(100% - 12px),calc(100% - 12px) 100%,0 100%,0 12px)}
+.panel{background:linear-gradient(150deg,var(--panel),var(--panel2));
+  border:1px solid var(--line);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  box-shadow:0 0 26px rgba(0,240,255,.08)}
+.wrap{position:relative;z-index:1;max-width:860px;margin:0 auto;padding:14px 14px 60px}
+
+/* header */
+header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 16px;margin-bottom:14px}
+.brand{display:flex;align-items:center;gap:11px}
+.brand .oct{font-size:30px;filter:drop-shadow(0 0 12px rgba(255,47,214,.6))}
+.brand .tt{line-height:1.1}
+.brand .name{font-family:'Orbitron',monospace;font-weight:900;font-size:21px;letter-spacing:3px;direction:ltr;
+  background:linear-gradient(90deg,var(--magenta),#ff8af0 45%,var(--cyan));
+  -webkit-background-clip:text;background-clip:text;color:transparent}
+.brand .sub{font-size:11px;color:var(--dim);letter-spacing:1px}
+#arms{display:flex;gap:5px;margin-inline-start:auto;align-items:center}
+#arms .arm{width:9px;height:9px;border-radius:50%;background:rgba(109,144,168,.35);transition:all .3s}
+#arms .arm.ok{background:var(--up);box-shadow:0 0 8px var(--up)}
+#arms .arm.sim{background:var(--gold);box-shadow:0 0 8px var(--gold)}
+#armsLbl{font-size:10px;color:var(--dim);letter-spacing:1px;margin-inline-start:7px}
+#refreshBtn{border:1px solid var(--line);background:rgba(6,12,26,.6);color:var(--txt);cursor:pointer;
+  font-family:'Heebo',sans-serif;font-size:12px;font-weight:600;padding:7px 13px;
+  clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px)}
+#refreshBtn:hover{border-color:var(--cyan);color:var(--cyan)}
+#refreshBtn.spin{color:var(--cyan);pointer-events:none}
+
+/* situation strip */
+#situation{padding:13px 16px;margin-bottom:14px}
+#situation .sh{font-size:11px;letter-spacing:2px;color:var(--cyan);font-weight:700;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+#situation .sh .upd{font-size:10px;color:var(--dim);letter-spacing:.5px;font-weight:400}
+#stats{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:10px}
+#stats .st b{font-family:'Orbitron',monospace;font-size:19px;color:#eaffff;text-shadow:0 0 12px rgba(0,240,255,.4)}
+#stats .st span{font-size:10.5px;color:var(--dim);display:block;letter-spacing:.5px}
+#topics{display:flex;gap:6px;flex-wrap:wrap}
+.tchip{font-size:11.5px;font-weight:600;cursor:pointer;padding:5px 11px;color:var(--dim);
+  background:rgba(6,12,26,.6);border:1px solid rgba(0,240,255,.14);transition:all .15s;
+  clip-path:polygon(7px 0,100% 0,100% calc(100% - 7px),calc(100% - 7px) 100%,0 100%,0 7px)}
+.tchip b{color:var(--cyan);font-weight:700;margin-inline-start:4px}
+.tchip:hover{color:var(--txt)}
+.tchip.on{color:#02141a;background:linear-gradient(120deg,var(--cyan),#7dfbff);border-color:var(--cyan)}
+.tchip.on b{color:#02141a}
+
+/* clusters */
+.cluster{padding:13px 15px;margin-bottom:11px;cursor:pointer;transition:border-color .15s, box-shadow .15s}
+.cluster:hover{border-color:rgba(255,47,214,.45);box-shadow:0 0 22px rgba(255,47,214,.10)}
+.cluster .c-top{display:flex;align-items:center;gap:8px;margin-bottom:5px;flex-wrap:wrap}
+.cluster .c-topic{font-size:9.5px;font-weight:700;letter-spacing:1px;color:var(--magenta);
+  border:1px solid rgba(255,47,214,.4);padding:2px 8px}
+.cluster .c-angles{font-size:9.5px;font-weight:700;letter-spacing:.5px;color:#02141a;
+  background:linear-gradient(120deg,var(--gold),#ffe9a8);padding:2px 8px}
+.cluster .c-time{font-size:10px;color:var(--dim);margin-inline-start:auto}
+.cluster h3{font-size:15.5px;font-weight:800;line-height:1.45;color:#eaffff}
+.cluster .c-srcs{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px}
+.cluster .src{font-size:9.5px;font-weight:700;letter-spacing:.5px;color:var(--cyan);
+  border:1px solid rgba(0,240,255,.3);padding:2px 7px}
+.cluster .c-hint{font-size:10px;color:var(--dim);margin-top:7px;letter-spacing:.5px}
+#clusters .empty{text-align:center;color:var(--dim);font-size:13px;padding:40px 0}
+
+/* analysis modal */
+#anaWrap{position:fixed;inset:0;z-index:50;display:none;align-items:flex-start;justify-content:center;
+  background:rgba(2,4,10,.7);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);overflow-y:auto;padding:26px 12px}
+#anaWrap.open{display:flex}
+#ana{width:min(96vw,640px);padding:18px 20px;margin-bottom:30px}
+#ana .a-h{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+#ana .a-badge{font-size:10px;font-weight:800;letter-spacing:2px;color:var(--magenta);border:1px solid rgba(255,47,214,.45);padding:3px 9px}
+#ana .a-close{margin-inline-start:auto;width:30px;height:30px;border:1px solid var(--line);background:transparent;
+  color:var(--dim);cursor:pointer;font-size:14px}
+#ana .a-close:hover{color:var(--down);border-color:var(--down)}
+#ana h2{font-size:18px;font-weight:800;line-height:1.4;margin:8px 0 12px;color:#eaffff}
+.a-sec{margin-top:13px}
+.a-sec .s-t{font-size:11px;letter-spacing:2px;color:var(--cyan);font-weight:700;margin-bottom:7px}
+.a-angle{padding:8px 11px;margin-bottom:6px;background:rgba(6,12,26,.55);border-right:2px solid var(--cyan);font-size:12.5px;line-height:1.5}
+.a-angle .src{color:var(--gold);font-weight:700;font-size:10.5px;letter-spacing:.5px;margin-inline-end:7px}
+.a-angle a{color:inherit;text-decoration:none}
+.a-angle a:hover{color:var(--cyan)}
+.a-kv{display:flex;gap:6px;flex-wrap:wrap}
+.a-ent{font-size:11px;font-weight:600;color:#bfeeff;background:rgba(0,240,255,.08);border:1px solid rgba(0,240,255,.2);padding:3px 9px}
+#anaAiBody{font-size:13px;line-height:1.75;color:var(--txt);white-space:pre-wrap}
+#anaAiBody:empty::after{content:'—'}
+.a-note{font-size:10px;color:var(--dim);margin-top:10px;letter-spacing:.4px}
+.a-spin{color:var(--cyan);font-size:12px;letter-spacing:1px;animation:blink 1.1s infinite}
+@keyframes blink{50%{opacity:.35}}
+
+@media (max-width:560px){
+  header{padding:10px 12px}
+  .brand .name{font-size:17px;letter-spacing:2px}
+  #arms{width:100%;margin:2px 0 0}
+  #stats{gap:12px}
+  .cluster h3{font-size:14px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="panel clip">
+    <div class="brand">
+      <span class="oct">🐙</span>
+      <div class="tt">
+        <div class="name">OCTOPUS</div>
+        <div class="sub">מנוע חדשות עתידני · מצליב מידע מ-8 זרועות · מגבש תמונה · מנתח</div>
+      </div>
+    </div>
+    <div id="arms" title="מצב הזרועות"></div>
+    <span id="armsLbl">זרועות</span>
+    <button id="refreshBtn">🔄 רענן</button>
+  </header>
+
+  <section id="situation" class="panel clip">
+    <div class="sh">🛰️ תמונת מצב <span class="upd" id="updLbl">—</span></div>
+    <div id="stats">
+      <div class="st"><b id="stStories" class="num">0</b><span>כתבות</span></div>
+      <div class="st"><b id="stClusters" class="num">0</b><span>סיפורים</span></div>
+      <div class="st"><b id="stCross" class="num">0</b><span>הצלבות רב-זוויתיות</span></div>
+      <div class="st"><b id="stArms" class="num">0/8</b><span>זרועות חיות</span></div>
+    </div>
+    <div id="topics"></div>
+  </section>
+
+  <main id="clusters"><div class="empty">🐙 שולח זרועות…</div></main>
+</div>
+
+<div id="anaWrap">
+  <div id="ana" class="panel clip">
+    <div class="a-h">
+      <span class="a-badge">ניתוח OCTOPUS</span>
+      <span class="a-badge" id="anaTopic" style="color:var(--gold);border-color:rgba(255,209,102,.45)"></span>
+      <button class="a-close" id="anaClose">✕</button>
+    </div>
+    <h2 id="anaTitle"></h2>
+    <div class="a-sec"><div class="s-t">📡 הזוויות — מי מדווח ומה</div><div id="anaAngles"></div></div>
+    <div class="a-sec"><div class="s-t">🔑 מוקדי הסיפור</div><div class="a-kv" id="anaEnts"></div></div>
+    <div class="a-sec"><div class="s-t">🧠 תמונה כוללת · ניתוח AI</div><div id="anaAiBody"></div></div>
+    <div class="a-note" id="anaNote"></div>
+  </div>
+</div>
+
+<script>
+'use strict';
+/* ============================================================
+   🐙 OCTOPUS — a standalone futuristic news engine.
+   Eight arms fetch in parallel; stories are CROSS-REFERENCED:
+   similar headlines from different sources merge into one
+   cluster ("the same story from several angles"). The engine
+   builds an overall situation picture (topics, counts, live
+   arms) and analyzes any story — locally always, and with the
+   platform's Groq/Gemini key it writes a real multi-angle
+   synthesis. Offline → SIM feed so the app never goes dark.
+   ============================================================ */
+const $=id=>document.getElementById(id);
+const ARMS=[
+  ['ynet','https://www.ynet.co.il/Integration/StoryRss2.xml'],
+  ['וואלה','https://rss.walla.co.il/feed/1'],
+  ['כלכליסט','https://www.calcalist.co.il/GeneralRSS/0,16335,L-8,00.xml'],
+  ['גלובס','https://www.globes.co.il/webservice/rss/rssfeeder.asmx/FeederNode?iID=2'],
+  ['ynet כלכלה','https://www.ynet.co.il/Integration/StoryRss6.xml'],
+  ['CoinDesk','https://www.coindesk.com/arc/outboundfeeds/rss/'],
+  ['Cointelegraph','https://cointelegraph.com/rss'],
+  ['Yahoo Fin','https://finance.yahoo.com/news/rssindex'],
+];
+const TOPICS=[
+  ['קריפטו',['ביטקוין','קריפטו','אתריום','bitcoin','crypto','ethereum','btc','eth','בלוקצ','טוקן','solana']],
+  ['שווקים',['בורסה','מניה','מניות','נאסד','וול סטריט','מדד','s&p','nasdaq','stock','market','דאו','תשואה','אג"ח']],
+  ['כלכלה',['ריבית','אינפלציה','בנק ישראל','הפד','fed','שקל','דולר','מחירים','משכנתא','תקציב','מס']],
+  ['טכנולוגיה',['בינה מלאכותית','ai','סטארט','טק','אפליקצי','גוגל','אפל','מיקרוסופט','nvidia','שבב','סייבר']],
+  ['ביטחון',['צה"ל','חיזבאללה','חמאס','עזה','לבנון','איראן','פיגוע','טיל','כטב"ם','מבצע']],
+  ['פוליטיקה',['כנסת','ממשלה','בחירות','ראש הממשלה','שר ','ח"כ','קואליציה','אופוזיציה','בג"ץ']],
+  ['עולם',['ארה"ב','טראמפ','אירופה','רוסיה','אוקראינה','סין','האו"ם','נשיא']],
+];
+let items=[], clusters=[], armState=new Array(ARMS.length).fill('off');
+let topicFilter=null, lastPull=0;
+
+// ---------- fetch ----------
+function fetchT(url,ms){
+  const ctl=new AbortController(); const t=setTimeout(()=>ctl.abort(),ms||9000);
+  return fetch(url,{signal:ctl.signal}).finally(()=>clearTimeout(t));
+}
+async function pullArm(i){
+  const [name,url]=ARMS[i];
+  try{
+    const r=await fetchT('https://api.allorigins.win/raw?url='+encodeURIComponent(url),9000);
+    if(!r.ok) throw 0;
+    const doc=new DOMParser().parseFromString(await r.text(),'text/xml');
+    const got=[...doc.querySelectorAll('item')].slice(0,10).map(it=>({
+      src:name,
+      title:(it.querySelector('title')?.textContent||'').trim(),
+      link:(it.querySelector('link')?.textContent||'#').trim(),
+      desc:(it.querySelector('description')?.textContent||'').replace(/<[^>]*>/g,' ').trim().slice(0,400),
+      at:Date.parse(it.querySelector('pubDate')?.textContent||'')||Date.now(),
+    })).filter(x=>x.title);
+    if(!got.length) throw 0;
+    armState[i]='ok';
+    return got;
+  }catch(e){ armState[i]='off'; return []; }
+}
+function simFeed(){
+  const now=Date.now(), m=60000;
+  return [
+    {src:'רויטרס·SIM',title:'הפד הותיר את הריבית ללא שינוי — רומז על הפחתה ברבעון הבא',link:'#',desc:'הבנק המרכזי האמריקאי שמר על טווח הריבית והדגיש תלות בנתוני האינפלציה.',at:now-4*m},
+    {src:'בלומברג·SIM',title:'הפד הותיר את הריבית ללא שינוי; השווקים מתמחרים הפחתה קרובה',link:'#',desc:'החלטת הפד עמדה בציפיות; תשואות האג"ח ירדו מעט.',at:now-6*m},
+    {src:'גלובס·SIM',title:'הפד לא שינה את הריבית — וול סטריט הגיבה בעליות',link:'#',desc:'המדדים המובילים עלו לאחר ההודעה; הדולר נחלש.',at:now-8*m},
+    {src:'CoinDesk·SIM',title:'ביטקוין מזנק לשיא חודשי על רקע החלטת הריבית',link:'#',desc:'המטבע הדיגיטלי הגיב בעליה חדה; מחזורי המסחר קפצו.',at:now-3*m},
+    {src:'Cointelegraph·SIM',title:'Bitcoin surges to monthly high after Fed decision',link:'#',desc:'BTC jumped as traders priced in easier policy ahead.',at:now-5*m},
+    {src:'כלכליסט·SIM',title:'ענקיות השבבים מפתיעות בדוחות — תחזית שנתית הועלתה',link:'#',desc:'עונת הדוחות ממשיכה חזקה בסקטור השבבים.',at:now-15*m},
+    {src:'ynet·SIM',title:'גל חום קיצוני צפוי בסוף השבוע — שיא של עשור',link:'#',desc:'השירות המטאורולוגי מזהיר מטמפרטורות חריגות.',at:now-22*m},
+    {src:'וואלה·SIM',title:'שיא חום של עשור: אזהרות חום כבד ברחבי הארץ בסופ"ש',link:'#',desc:'המשרד להגנת הסביבה קורא להיערך מראש.',at:now-25*m},
+  ];
+}
+
+// ---------- cross-reference clustering ----------
+const STOP=new Set(['של','על','עם','את','לא','זה','גם','אבל','או','כי','מה','יש','אין','בין','אחרי','לפני','the','a','to','of','in','on','and','for','as','after','is','are']);
+function tokens(t){
+  return new Set(String(t).toLowerCase().replace(/["'״׳,.:;!?()\-–—]/g,' ').split(/\s+/)
+    .map(w=>w.replace(/^[בלמהוכש]/,'')).filter(w=>w.length>1&&!STOP.has(w)));
+}
+function similar(a,b){
+  let inter=0; for(const w of a) if(b.has(w)) inter++;
+  const jac=inter/Math.max(1,(a.size+b.size-inter));
+  const containment=inter/Math.max(1,Math.min(a.size,b.size));
+  // Jaccard alone misses a short headline contained in a longer one — the
+  // containment ratio catches "same story, different verbosity".
+  return jac>=0.28 || containment>=0.55;
+}
+function buildClusters(){
+  const list=items.map(it=>({it,tok:tokens(it.title)}));
+  const used=new Array(list.length).fill(false);
+  clusters=[];
+  for(let i=0;i<list.length;i++){
+    if(used[i]) continue;
+    const grp=[list[i].it]; used[i]=true;
+    for(let j=i+1;j<list.length;j++){
+      if(used[j]) continue;
+      if(similar(list[i].tok,list[j].tok)){ grp.push(list[j].it); used[j]=true; }
+    }
+    grp.sort((a,b)=>b.at-a.at);
+    clusters.push({head:grp[0],angles:grp,topic:classify(grp),at:grp[0].at});
+  }
+  clusters.sort((a,b)=>(b.angles.length-a.angles.length)||(b.at-a.at));
+}
+function classify(grp){
+  const text=grp.map(g=>g.title+' '+(g.desc||'')).join(' ').toLowerCase();
+  let best='כללי', bestN=0;
+  for(const [name,keys] of TOPICS){
+    let n=0; for(const k of keys) if(text.includes(k)) n++;
+    if(n>bestN){ bestN=n; best=name; }
+  }
+  return best;
+}
+
+// ---------- render ----------
+function fmtAgo(at){
+  const m=Math.max(0,Math.round((Date.now()-at)/60000));
+  if(m<60) return 'לפני '+m+' ד׳';
+  const h=Math.round(m/60); if(h<24) return 'לפני '+h+' ש׳';
+  return 'לפני '+Math.round(h/24)+' ימים';
+}
+function renderArms(){
+  const el=$('arms'); el.innerHTML='';
+  armState.forEach((st,i)=>{
+    const d=document.createElement('span');
+    d.className='arm '+(st==='ok'?'ok':st==='sim'?'sim':'');
+    d.title=ARMS[i][0];
+    el.appendChild(d);
+  });
+  $('stArms').textContent=armState.filter(a=>a==='ok').length+'/8';
+}
+function renderSituation(){
+  $('stStories').textContent=items.length;
+  $('stClusters').textContent=clusters.length;
+  $('stCross').textContent=clusters.filter(c=>c.angles.length>1).length;
+  $('updLbl').textContent=lastPull?('עודכן '+fmtAgo(lastPull)):'—';
+  const counts={};
+  clusters.forEach(c=>{ counts[c.topic]=(counts[c.topic]||0)+1; });
+  const tp=$('topics'); tp.innerHTML='';
+  const all=document.createElement('span');
+  all.className='tchip'+(topicFilter===null?' on':'');
+  all.innerHTML='הכל<b>'+clusters.length+'</b>';
+  all.onclick=()=>{ topicFilter=null; renderSituation(); renderClusters(); };
+  tp.appendChild(all);
+  Object.keys(counts).sort((a,b)=>counts[b]-counts[a]).forEach(t=>{
+    const c=document.createElement('span');
+    c.className='tchip'+(topicFilter===t?' on':'');
+    c.innerHTML=t+'<b>'+counts[t]+'</b>';
+    c.onclick=()=>{ topicFilter=topicFilter===t?null:t; renderSituation(); renderClusters(); };
+    tp.appendChild(c);
+  });
+}
+const escH=s=>String(s||'').replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+function renderClusters(){
+  const el=$('clusters'); el.innerHTML='';
+  const list=clusters.filter(c=>!topicFilter||c.topic===topicFilter);
+  if(!list.length){ el.innerHTML='<div class="empty">אין סיפורים בסינון הזה</div>'; return; }
+  list.slice(0,40).forEach((c,i)=>{
+    const d=document.createElement('article');
+    d.className='cluster panel clip';
+    d.innerHTML='<div class="c-top"><span class="c-topic">'+c.topic+'</span>'
+      +(c.angles.length>1?'<span class="c-angles">⚡ '+c.angles.length+' זוויות</span>':'')
+      +'<span class="c-time">'+fmtAgo(c.at)+'</span></div>'
+      +'<h3>'+escH(c.head.title)+'</h3>'
+      +'<div class="c-srcs">'+[...new Set(c.angles.map(a=>a.src))].map(s=>'<span class="src">'+escH(s)+'</span>').join('')+'</div>'
+      +'<div class="c-hint">👆 הקשה — ניתוח מלא והצלבת הזוויות</div>';
+    d.onclick=()=>openAnalysis(c);
+    el.appendChild(d);
+  });
+}
+
+// ---------- analysis (מנתח כתבות) ----------
+function extractEntities(c){
+  const freq={};
+  c.angles.forEach(a=>{
+    for(const w of tokens(a.title+' '+(a.desc||''))){
+      if(w.length>2) freq[w]=(freq[w]||0)+1;
+    }
+  });
+  return Object.keys(freq).sort((a,b)=>freq[b]-freq[a]).slice(0,8);
+}
+async function openAnalysis(c){
+  $('anaWrap').classList.add('open');
+  $('anaTitle').textContent=c.head.title;
+  $('anaTopic').textContent=c.topic;
+  $('anaAngles').innerHTML=c.angles.map(a=>{
+    const href=/^https?:/.test(a.link)?a.link:null;
+    const t=escH(a.title)+(a.desc?'<br><span style="color:var(--dim);font-size:11px">'+escH(a.desc.slice(0,140))+'…</span>':'');
+    return '<div class="a-angle"><span class="src">'+escH(a.src)+'</span>'+(href?'<a href="'+href+'" target="_blank" rel="noopener">'+t+'</a>':t)+'</div>';
+  }).join('');
+  $('anaEnts').innerHTML=extractEntities(c).map(e=>'<span class="a-ent">'+escH(e)+'</span>').join('');
+  // AI synthesis — with the platform's shared key; local fallback otherwise
+  const body=$('anaAiBody'), note=$('anaNote');
+  const groq=(localStorage.getItem('alpha_groq')||'').trim();
+  const gem=(localStorage.getItem('alpha_key')||'').trim();
+  if(!groq&&!gem){
+    body.textContent=localSynthesis(c);
+    note.textContent='ניתוח מקומי. חיבור מפתח Groq/Gemini בדשבורד אלפא משדרג לניתוח AI מלא.';
+    return;
+  }
+  body.innerHTML='<span class="a-spin">🐙 OCTOPUS מנתח…</span>';
+  note.textContent='';
+  const prompt='אתה OCTOPUS — אנליסט חדשות שמצליב מקורות. לפניך אותו סיפור כפי שדווח בכמה מקורות:\n\n'
+    +c.angles.map((a,i)=>(i+1)+'. ['+a.src+'] '+a.title+(a.desc?' — '+a.desc.slice(0,200):'')).join('\n')
+    +'\n\nכתוב בעברית, בקצרה ובחדות:\n1) התמונה הכוללת (2-3 משפטים).\n2) מה כל זווית מוסיפה או מדגישה אחרת (שורה לזווית, אם יש הבדל אמיתי).\n3) משמעות/השלכות (2 משפטים).\nללא כותרות מנופחות, בלי המצאות — רק מה שנתמך בכותרות.';
+  let out=null;
+  try{
+    if(groq){
+      const r=await fetch('https://api.groq.com/openai/v1/chat/completions',{
+        method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+groq},
+        body:JSON.stringify({model:'llama-3.3-70b-versatile',temperature:0.3,max_tokens:600,messages:[{role:'user',content:prompt}]})});
+      if(r.ok){ const d=await r.json(); out=d&&d.choices&&d.choices[0]&&d.choices[0].message&&d.choices[0].message.content; }
+    }
+    if(!out&&gem){
+      const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',{
+        method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':gem},
+        body:JSON.stringify({contents:[{parts:[{text:prompt}]}]})});
+      if(r.ok){ const d=await r.json(); const parts=d&&d.candidates&&d.candidates[0]&&d.candidates[0].content&&d.candidates[0].content.parts;
+        out=parts?parts.map(p=>p.text||'').join(''):null; }
+    }
+  }catch(e){}
+  if(out){ body.textContent=out.trim(); note.textContent='נותח ע"י OCTOPUS AI · הוצלבו '+c.angles.length+' זוויות'; }
+  else { body.textContent=localSynthesis(c); note.textContent='ה-AI לא זמין כרגע — מוצג ניתוח מקומי.'; }
+}
+function localSynthesis(c){
+  const srcs=[...new Set(c.angles.map(a=>a.src))];
+  const lines=[];
+  lines.push('הסיפור סוקר ע"י '+srcs.length+' מקורות ('+srcs.join(', ')+') בקטגוריית '+c.topic+'.');
+  if(c.angles.length>1){
+    lines.push('נקודת ההסכמה: '+c.head.title);
+    const extra=c.angles.slice(1).map(a=>{
+      const diff=[...tokens(a.title)].filter(w=>!tokens(c.head.title).has(w)).slice(0,4).join(', ');
+      return diff?('• '+a.src+' מוסיף: '+diff):null;
+    }).filter(Boolean);
+    if(extra.length) lines.push('מה כל זווית מוסיפה:\n'+extra.join('\n'));
+  } else {
+    lines.push('דווח בינתיים ממקור אחד — עוד לא נמצאו הצלבות.');
+  }
+  lines.push('מוקדי הסיפור: '+extractEntities(c).slice(0,5).join(' · ')+'.');
+  return lines.join('\n\n');
+}
+$('anaClose').onclick=()=>$('anaWrap').classList.remove('open');
+$('anaWrap').addEventListener('click',e=>{ if(e.target===$('anaWrap')) $('anaWrap').classList.remove('open'); });
+addEventListener('keydown',e=>{ if(e.key==='Escape') $('anaWrap').classList.remove('open'); });
+
+// ---------- main pull ----------
+async function pullAll(){
+  $('refreshBtn').classList.add('spin'); $('refreshBtn').textContent='🐙 שולח זרועות…';
+  const arms=await Promise.all(ARMS.map((_,i)=>pullArm(i)));
+  let merged=[].concat.apply([],arms);
+  if(!merged.length){ merged=simFeed(); armState=armState.map(()=>'sim'); }
+  const seen=new Set();
+  items=merged.filter(n=>{ const k=n.title.slice(0,70); if(seen.has(k)) return false; seen.add(k); return true; })
+    .sort((a,b)=>b.at-a.at).slice(0,120);
+  lastPull=Date.now();
+  buildClusters();
+  renderArms(); renderSituation(); renderClusters();
+  $('refreshBtn').classList.remove('spin'); $('refreshBtn').textContent='🔄 רענן';
+}
+$('refreshBtn').onclick=pullAll;
+setInterval(()=>{ if(Date.now()-lastPull>300000) pullAll(); },60000);
+renderArms();
+pullAll();
+</script>
+</body>
+</html>
