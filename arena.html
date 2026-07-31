@@ -202,7 +202,7 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 #tape .tup{color:var(--up);font-style:normal} #tape .tdn{color:var(--down);font-style:normal}
 #tape .tsep{color:rgba(0,240,255,.35);margin:0 12px}
 /* world pulse */
-#pulsePanel{position:fixed;z-index:12;top:104px;left:16px;width:198px;padding:10px 12px}
+#pulsePanel{position:fixed;z-index:12;top:104px;left:76px;width:198px;padding:10px 12px}
 #pulsePanel .pp-h{font-size:11px;letter-spacing:2px;color:var(--magenta);font-weight:600;margin-bottom:6px}
 .pl-row{display:flex;align-items:center;gap:7px;font-size:12px;padding:4px 2px;cursor:pointer;border-radius:3px}
 .pl-row:hover{background:rgba(0,240,255,.08)}
@@ -429,7 +429,12 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 // with the app, and matches the rest of the platform. The classic app script
 // below waits for this to land on window.
 import * as THREE_NS from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 window.THREE = THREE_NS;
+window.__FX = { EffectComposer, RenderPass, UnrealBloomPass, OutputPass };
 window.dispatchEvent(new Event('three-ready'));
 </script>
 <script>
@@ -915,12 +920,45 @@ renderer.setPixelRatio(Math.min(devicePixelRatio,2));
 renderer.setSize(innerWidth,innerHeight);
 if(THREE.sRGBEncoding !== undefined) renderer.outputEncoding = THREE.sRGBEncoding;
 else renderer.outputColorSpace = THREE.SRGBColorSpace; // three ≥0.152
+
 $('stage').appendChild(renderer.domElement);
 
 scene=new THREE.Scene();
 scene.background=new THREE.Color(0x04060d);
 scene.fog=new THREE.FogExp2(0x040711,0.0075);
 camera=new THREE.PerspectiveCamera(58,innerWidth/innerHeight,0.1,1400);
+// ── MAX-GRAPHICS pipeline: UnrealBloom over the whole neon world, run at
+// half resolution (all our light is soft glow anyway — half-res bloom is
+// visually identical and twice as fast, which phones need). An FPS guard
+// below steps quality down instead of letting the world stutter. ──
+let composer=null, bloomPass=null, gfxTier=0;
+window.__gfx={bloom:false,tier:0};
+// Software renderers (SwiftShader/llvmpipe — very weak or headless devices)
+// mangle the bloom render targets AND can't afford them; detect and skip.
+// ?nofx=1 forces plain rendering manually.
+function softwareGL(){
+  try{
+    const gl=renderer.getContext();
+    const ext=gl.getExtension('WEBGL_debug_renderer_info');
+    const rn=ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):'';
+    return /swiftshader|llvmpipe|software/i.test(String(rn));
+  }catch(e){ return false; }
+}
+try{
+  if(window.__FX && !/[?&]nofx=1/.test(location.search) && !softwareGL()){
+    const FX=window.__FX;
+    composer=new FX.EffectComposer(renderer);
+    composer.addPass(new FX.RenderPass(scene,camera));
+    bloomPass=new FX.UnrealBloomPass(new THREE.Vector2(innerWidth/2,innerHeight/2),0.72,0.55,0.8);
+    composer.addPass(bloomPass);
+    composer.addPass(new FX.OutputPass());
+    // Filmic grade ONLY together with bloom: ACES rolls highlights off like
+    // a camera, and bloom lifts the dim glows ACES would otherwise crush.
+    renderer.toneMapping=THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure=1.25;
+    window.__gfx.bloom=true;
+  }
+}catch(e){ composer=null; }
 
 const addMat=(hex,op)=>new THREE.MeshBasicMaterial({color:hex,transparent:true,opacity:op,blending:THREE.AdditiveBlending,depthWrite:false});
 
@@ -1437,6 +1475,9 @@ function makePod(id,kind,label,dot){
   const g=new THREE.Group();
   const col=new THREE.Mesh(new THREE.BoxGeometry(0.5,16,0.5),addMat(0x00f0ff,0.5));
   col.position.y=8; g.add(col);
+  // volumetric light cone — an open additive cylinder flaring to the floor
+  const cone=new THREE.Mesh(new THREE.CylinderGeometry(0.5,2.9,16,20,1,true),addMat(0x00f0ff,0.10));
+  cone.position.y=8; g.add(cone);
   const glow=new THREE.Sprite(new THREE.SpriteMaterial({map:glowTex,color:new THREE.Color(dot),transparent:true,opacity:0.8,blending:THREE.AdditiveBlending,depthWrite:false}));
   glow.position.y=17; glow.scale.set(7,7,1); g.add(glow);
   // a flat floor ring (a Sprite would billboard toward the camera)
@@ -1449,7 +1490,7 @@ function makePod(id,kind,label,dot){
   const valS=textSprite(512,96,13,2.4);
   valS.sp.position.y=13.4; g.add(valS.sp);
   podGroup.add(g);
-  return { id,kind,label,dot,g,col,glow,ring,nameS,valS,
+  return { id,kind,label,dot,g,col,cone,glow,ring,nameS,valS,
     price:null, chg:0, sim:false, phase:Math.random()*6.28, extra:null };
 }
 function rebuildPods(){
@@ -1590,6 +1631,7 @@ function updatePods(dt,now){
     const up=p.chg>=0;
     tmpC.copy(up?C_UP:C_DN);
     p.col.material.color.copy(tmpC);
+    if(p.cone) p.cone.material.color.copy(tmpC);
     p.glow.material.color.copy(tmpC).lerp(new THREE.Color(p.dot),0.45);
     if(p.alertT>0) p.alertT=Math.max(0,p.alertT-dt*0.45); // alert flare decays
     const pulse=(1+Math.sin(t*2+p.phase)*0.08+Math.min(0.5,Math.abs(p.chg)*0.03))*(1+(p.alertT||0)*1.6);
@@ -1604,6 +1646,7 @@ function updatePods(dt,now){
   updateWalk(dt);
   updateMoodSky(dt);
   updateComets(dt);
+  updateAmbience(dt,now);
   updateStreams(now);
   if(now-(updatePods._alertAt||0)>2000){ updatePods._alertAt=now; checkWorldAlerts(now); }
   if(now-lastTape>5000){ lastTape=now; renderTape(); renderPulse(); }
@@ -1671,7 +1714,7 @@ function renderPulse(){
 }
 
 // ---- first-person walk mode ----
-const walk={ on:false, pos:new THREE.Vector3(0,2.3,96), yaw:Math.PI, pitch:-0.04,
+const walk={ on:false, pos:new THREE.Vector3(0,2.3,96), yaw:0, pitch:-0.04,
   keys:{}, moveVec:{x:0,y:0}, lookPtr:null, movePtr:null, focusId:null, lastFocus:0 };
 function applyWalkCam(dt){
   const sp=18;
@@ -1681,10 +1724,12 @@ function applyWalkCam(dt){
   if(walk.keys.a||walk.keys.ArrowLeft) mx-=1;
   if(walk.keys.d||walk.keys.ArrowRight) mx+=1;
   const L=Math.hypot(mx,mz); if(L>1){ mx/=L; mz/=L; }
-  // camera-relative movement (forward = away from camera)
+  // camera-relative movement, aligned with the LOOK direction: forward is
+  // exactly where the camera faces (F = (-sin yaw, -cos yaw)), right is
+  // F×up. The previous math had forward inverted — W walked you backwards.
   const sy=Math.sin(walk.yaw), cy=Math.cos(walk.yaw);
-  walk.pos.x+=(mx*cy - mz*sy)*sp*dt;
-  walk.pos.z+=(mx*-sy - mz*cy)*sp*dt;
+  walk.pos.x+=(mx*cy + mz*sy)*sp*dt;
+  walk.pos.z+=(-mx*sy + mz*cy)*sp*dt;
   const R=Math.hypot(walk.pos.x,walk.pos.z);
   if(R>130){ walk.pos.x*=130/R; walk.pos.z*=130/R; } // world edge
   walk.pos.y=2.3+Math.sin(performance.now()*0.006)*0.04*(L>0.1?1:0); // step bob
@@ -1828,6 +1873,63 @@ function updateTour(dt){
 // any manual input cancels the tour
 addEventListener('keydown',e=>{ if(tour.on&&['w','a','s','d','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key.length===1?e.key.toLowerCase():e.key)) setTour(false); });
 renderer.domElement.addEventListener('pointerdown',()=>{ if(tour.on) setTour(false); });
+
+// ---- MAX-GRAPHICS ambience: energy waves ripple out of the central arena,
+// god-ray streaks slowly wheel behind the core, dust motes drift in the air —
+// depth and scale the flat version never had. ----
+function streakTexture(){
+  const c=document.createElement('canvas'); c.width=c.height=512;
+  const g=c.getContext('2d');
+  g.translate(256,256);
+  for(let i=0;i<26;i++){
+    g.rotate(Math.PI*2/26);
+    const gr=g.createLinearGradient(0,0,250,0);
+    gr.addColorStop(0,'rgba(255,255,255,.5)'); gr.addColorStop(1,'rgba(255,255,255,0)');
+    g.fillStyle=gr;
+    g.fillRect(20,-1.6,230,3.2);
+  }
+  return new THREE.CanvasTexture(c);
+}
+const streakSp=new THREE.Sprite(new THREE.SpriteMaterial({map:streakTexture(),color:0x2a8fbf,transparent:true,opacity:0.30,blending:THREE.AdditiveBlending,depthWrite:false}));
+streakSp.position.set(0,26,0); streakSp.scale.set(120,120,1); scene.add(streakSp);
+const waves=[];
+for(let wi=0;wi<4;wi++){
+  const m=new THREE.Mesh(new THREE.TorusGeometry(1,0.16,6,90),addMat(0x00f0ff,0.0));
+  m.rotation.x=Math.PI/2; m.position.y=0.25; scene.add(m);
+  waves.push({m,off:wi/4});
+}
+const motes={n:340};
+{
+  const pos=new Float32Array(motes.n*3), col=new Float32Array(motes.n*3);
+  for(let i=0;i<motes.n;i++){
+    const r=Math.sqrt(Math.random())*125, a=Math.random()*Math.PI*2;
+    pos[i*3]=Math.cos(a)*r; pos[i*3+1]=Math.random()*9; pos[i*3+2]=Math.sin(a)*r;
+    const b=0.35+Math.random()*0.65;
+    col[i*3]=b*0.55; col[i*3+1]=b*0.9; col[i*3+2]=b;
+  }
+  const gg=new THREE.BufferGeometry();
+  gg.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  gg.setAttribute('color',new THREE.BufferAttribute(col,3));
+  motes.pts=new THREE.Points(gg,new THREE.PointsMaterial({size:1.1,map:glowTex,vertexColors:true,transparent:true,opacity:0.5,blending:THREE.AdditiveBlending,depthWrite:false,sizeAttenuation:true}));
+  scene.add(motes.pts);
+}
+function updateAmbience(dt,now){
+  streakSp.material.rotation+=dt*0.02;
+  const moodUp=(scene.fog&&scene.fog.color.g>scene.fog.color.r);
+  streakSp.material.color.lerp(moodUp?new THREE.Color(0x1f8f6a):new THREE.Color(0x8f2a4a),0.02);
+  for(const w of waves){
+    const t=((now*0.00011)+w.off)%1;
+    const r=2+t*95;
+    w.m.scale.set(r,r,1);
+    w.m.material.opacity=(1-t)*0.16;
+  }
+  const parr=motes.pts.geometry.attributes.position.array;
+  for(let i=0;i<motes.n;i++){
+    parr[i*3+1]+=dt*0.35;
+    if(parr[i*3+1]>9) parr[i*3+1]=0;
+  }
+  motes.pts.geometry.attributes.position.needsUpdate=true;
+}
 
 // ---- shared teleport ----
 function teleportToPod(p){
@@ -2156,23 +2258,41 @@ setTimeout(()=>$('hint').classList.add('hide'),10000);
 //  main loop
 // ============================================================
 let prevT=performance.now(), running=true;
+// FPS guard: bloom is gorgeous but must never cost smoothness. After a 3s
+// warmup, two consecutive slow seconds step quality down one tier:
+// tier 0 full bloom → tier 1 gentler bloom → tier 2 bloom off + motes off.
+let gfxWarm=0, gfxT=0, gfxN=0, gfxSlow=0;
+function gfxGuard(dt){
+  gfxWarm+=dt; if(gfxWarm<3||gfxTier>=2) return;
+  gfxT+=dt; gfxN++;
+  if(gfxT>=1){
+    const fps=gfxN/gfxT; gfxT=0; gfxN=0;
+    if(fps<32){ if(++gfxSlow>=2){ gfxSlow=0; gfxTier++; window.__gfx.tier=gfxTier;
+      if(gfxTier===1 && bloomPass) bloomPass.strength=0.42;
+      if(gfxTier>=2){ window.__gfx.bloom=false; renderer.toneMapping=THREE.NoToneMapping; if(motes.pts) motes.pts.visible=false; }
+    } }
+    else gfxSlow=0;
+  }
+}
 function loop(){
   requestAnimationFrame(loop);
   if(!running) return;
   const now=performance.now();
   const dt=Math.min(0.05,(now-prevT)/1000); prevT=now;
+  gfxGuard(dt);
   if(indDirty && now-lastInd>350){ computeSignals(); indDirty=false; lastInd=now; }
   checkPos();
   updateWorld(dt,now);
   updatePods(dt,now);
   applyCam(dt);
   updateHud(now);
-  renderer.render(scene,camera);
+  if(composer && gfxTier<2) composer.render(); else renderer.render(scene,camera);
 }
 document.addEventListener('visibilitychange',()=>{ running=!document.hidden; prevT=performance.now(); });
 addEventListener('resize',()=>{
   camera.aspect=innerWidth/innerHeight;
   camera.updateProjectionMatrix();
+  if(composer) composer.setSize(innerWidth,innerHeight);
   renderer.setSize(innerWidth,innerHeight);
 });
 
