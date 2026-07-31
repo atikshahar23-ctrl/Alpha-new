@@ -1,0 +1,1826 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>NEXUS·ARENA — זירת הקרב של השוק</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;600;800&family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#04060d; --cyan:#00f0ff; --magenta:#ff2fd6;
+  --up:#00ffa6; --down:#ff3d6e; --gold:#ffd166;
+  --panel:rgba(8,14,30,.80); --panel2:rgba(5,9,20,.64);
+  --line:rgba(0,240,255,.28); --txt:#d9f4ff; --dim:#6d90a8;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;background:var(--bg)}
+body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none;-webkit-user-select:none}
+.num{direction:ltr;unicode-bidi:isolate;font-family:'Orbitron','JetBrains Mono',monospace}
+
+#stage{position:fixed;inset:0;touch-action:none}
+#stage canvas{display:block}
+#scan{position:fixed;inset:0;pointer-events:none;z-index:5;opacity:.5;
+  background:repeating-linear-gradient(to bottom, rgba(255,255,255,.022) 0 1px, transparent 1px 3px)}
+#vig{position:fixed;inset:0;pointer-events:none;z-index:5;
+  background:radial-gradient(120% 90% at 50% 45%, transparent 55%, rgba(0,0,0,.55) 100%)}
+
+.hud{position:fixed;inset:0;z-index:10;pointer-events:none}
+.hud > *{pointer-events:auto}
+.clip{clip-path:polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px)}
+.panel{background:linear-gradient(150deg,var(--panel),var(--panel2));
+  border:1px solid var(--line);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  box-shadow:0 0 28px rgba(0,240,255,.10), inset 0 0 22px rgba(0,240,255,.05)}
+
+/* header */
+#top{position:fixed;top:0;right:0;left:0;display:flex;align-items:center;gap:14px;padding:10px 16px;flex-wrap:wrap}
+#brand{display:flex;flex-direction:column;line-height:1.05}
+#brand .eyebrow{font-size:9px;letter-spacing:4px;color:var(--dim);font-weight:600}
+#brand .name{font-family:'Orbitron',monospace;font-weight:900;font-size:19px;letter-spacing:2px;
+  background:linear-gradient(90deg,var(--cyan),#8affff 45%,var(--magenta));
+  -webkit-background-clip:text;background-clip:text;color:transparent;direction:ltr}
+#brand .sub{font-size:10px;color:var(--dim);letter-spacing:1px}
+#mode{display:flex;align-items:center;gap:7px;padding:6px 12px;font-size:11px;font-weight:600;letter-spacing:1px}
+#modeDot{width:8px;height:8px;border-radius:50%;background:var(--gold);box-shadow:0 0 10px var(--gold);animation:pulse 1.4s infinite}
+#mode.live #modeDot{background:var(--up);box-shadow:0 0 12px var(--up)}
+#mode.live{color:var(--up)} #mode.sim{color:var(--gold)}
+@keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(.6);opacity:.5}}
+.pills{display:flex;gap:6px;flex-wrap:wrap}
+.pill{padding:7px 13px;font-size:12px;font-weight:600;letter-spacing:.5px;cursor:pointer;
+  color:var(--dim);background:rgba(6,12,26,.6);border:1px solid rgba(0,240,255,.14);
+  transition:all .18s;display:flex;align-items:center;gap:6px;
+  clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px)}
+.pill .dot{width:6px;height:6px;border-radius:50%}
+.pill:hover{color:var(--txt);border-color:var(--line)}
+.pill.on{color:#02141a;background:linear-gradient(120deg,var(--cyan),#7dfbff);
+  border-color:var(--cyan);box-shadow:0 0 18px rgba(0,240,255,.45)}
+.pill.on .dot{background:#02141a !important}
+#rows{display:flex;flex-direction:column;gap:6px;margin-inline-start:auto;align-items:flex-end}
+
+/* ORACLE */
+#oracle{position:fixed;top:104px;right:16px;width:248px;padding:12px 14px}
+#oracle .oh{font-size:11px;letter-spacing:2px;color:var(--cyan);display:flex;align-items:center;gap:7px;font-weight:600}
+#oracle .odot{width:7px;height:7px;border-radius:50%;background:var(--cyan);box-shadow:0 0 10px var(--cyan);animation:pulse 1.2s infinite}
+#gaugeWrap{position:relative;margin-top:4px}
+#gauge{width:100%;display:block}
+#needle{transform-box:view-box;transform-origin:100px 102px;transition:transform .6s cubic-bezier(.2,.8,.2,1)}
+#scoreNum{position:absolute;bottom:2px;left:50%;transform:translateX(-50%);font-size:21px;font-weight:700;color:#eaffff;text-shadow:0 0 14px rgba(0,240,255,.5)}
+#verdict{font-size:21px;font-weight:800;text-align:center;letter-spacing:1px;margin-top:2px}
+.v-buy{color:var(--up);text-shadow:0 0 16px rgba(0,255,166,.5)}
+.v-sell{color:var(--down);text-shadow:0 0 16px rgba(255,61,110,.5)}
+.v-wait{color:var(--gold);text-shadow:0 0 14px rgba(255,209,102,.4)}
+.v-strong{animation:vpulse 1.1s infinite}
+@keyframes vpulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
+#reasons{margin-top:7px}
+.chip{font-size:10.5px;color:#bfeeff;background:rgba(0,240,255,.07);border:1px solid rgba(0,240,255,.18);
+  padding:4px 9px;margin-top:4px;display:block;
+  clip-path:polygon(6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%,0 6px)}
+#lastSig{font-size:10px;color:var(--dim);margin-top:7px;text-align:center;letter-spacing:.3px}
+
+/* price panel */
+#pricePanel{position:fixed;bottom:calc(16px + env(safe-area-inset-bottom));left:16px;min-width:246px;padding:13px 17px}
+#symName{font-size:12px;color:var(--dim);letter-spacing:2px;font-weight:600}
+#priceBig{font-family:'Orbitron',monospace;font-weight:700;font-size:clamp(24px,4.2vw,36px);
+  letter-spacing:1px;margin:2px 0;direction:ltr;text-align:left;text-shadow:0 0 22px rgba(0,240,255,.35)}
+#chg{font-size:14px;font-weight:800;direction:ltr;text-align:left;font-family:'Orbitron',monospace}
+.up{color:var(--up);text-shadow:0 0 14px rgba(0,255,166,.45)}
+.down{color:var(--down);text-shadow:0 0 14px rgba(255,61,110,.45)}
+#stats{display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;margin-top:9px;
+  border-top:1px solid rgba(0,240,255,.15);padding-top:8px}
+#stats .k{font-size:10px;color:var(--dim);letter-spacing:1px}
+#stats .v{font-size:12px;font-weight:600;direction:ltr;text-align:left;font-family:'Orbitron',monospace;color:#bfeeff}
+
+/* ticket */
+#ticket{position:fixed;bottom:calc(16px + env(safe-area-inset-bottom));right:16px;width:248px;padding:12px 15px}
+#ticket .th{font-size:11px;letter-spacing:2px;color:var(--gold);display:flex;justify-content:space-between;align-items:center;font-weight:600}
+#sessStat{font-size:10px;color:var(--dim)}
+.trow{display:flex;justify-content:space-between;font-size:12px;margin:3.5px 0}
+.tk{color:var(--dim)} .tv{font-weight:600}
+#sugNote{font-size:10.5px;color:var(--gold);text-align:center;margin:7px 0 2px;letter-spacing:.3px}
+.btnRow{display:flex;gap:8px;margin-top:8px}
+.btn{flex:1;padding:11px 6px;font-weight:800;font-size:14px;cursor:pointer;border:none;
+  font-family:'Heebo',sans-serif;letter-spacing:1px;transition:transform .12s;
+  clip-path:polygon(9px 0,100% 0,100% calc(100% - 9px),calc(100% - 9px) 100%,0 100%,0 9px)}
+.btn:active{transform:scale(.95)}
+.btn.long{background:linear-gradient(120deg,#00c885,#00ffa6);color:#02251a;box-shadow:0 0 18px rgba(0,255,166,.4)}
+.btn.short{background:linear-gradient(120deg,#e02a5f,#ff5d7e);color:#2a0512;box-shadow:0 0 18px rgba(255,61,110,.4)}
+.btn.closeb{background:linear-gradient(120deg,#ffb84d,#ffd166);color:#241a02;box-shadow:0 0 18px rgba(255,209,102,.4);margin-top:8px}
+#pnlBig{font-size:27px;font-weight:700;text-align:center;margin-top:6px}
+#pnlUsd{text-align:center;font-size:13px;color:#bfeeff;margin-bottom:2px}
+.disc{font-size:9px;color:var(--dim);text-align:center;margin-top:8px;letter-spacing:.3px}
+
+/* battle bar */
+#battle{position:fixed;bottom:calc(70px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);
+  width:min(380px,62vw);padding:8px 16px;text-align:center}
+.btitle{font-size:9.5px;color:var(--dim);letter-spacing:3px;margin-bottom:6px}
+.bbar{display:flex;height:10px;direction:rtl;overflow:hidden;background:rgba(255,255,255,.05);
+  clip-path:polygon(5px 0,100% 0,100% calc(100% - 5px),calc(100% - 5px) 100%,0 100%,0 5px)}
+#bBull{background:linear-gradient(90deg,#00ffa6,#00c885);box-shadow:0 0 14px rgba(0,255,166,.65);transition:width .45s;width:50%}
+#bBear{background:linear-gradient(90deg,#e02a5f,#ff5d7e);box-shadow:0 0 14px rgba(255,61,110,.55);transition:width .45s;flex:1}
+.blabels{display:flex;justify-content:space-between;font-size:11.5px;font-weight:800;margin-top:5px}
+
+/* toggles */
+#toggles{position:fixed;top:50%;transform:translateY(-50%);left:12px;display:flex;flex-direction:column;gap:8px}
+.tgl{width:52px;height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  cursor:pointer;font-size:9.5px;letter-spacing:.5px;color:var(--dim);
+  background:rgba(6,12,26,.66);border:1px solid rgba(0,240,255,.16);backdrop-filter:blur(8px);
+  clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px);transition:all .18s}
+.tgl svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.7}
+.tgl.on{color:var(--cyan);border-color:var(--cyan);box-shadow:0 0 16px rgba(0,240,255,.35);background:rgba(0,60,70,.5)}
+.tgl:active{transform:scale(.94)}
+
+/* banner + toast */
+#banner{position:fixed;top:70px;left:50%;transform:translate(-50%,-160%);z-index:30;
+  padding:12px 28px;font-size:18px;font-weight:800;letter-spacing:1px;display:flex;gap:10px;align-items:center;
+  transition:transform .4s cubic-bezier(.2,.9,.25,1.2)}
+#banner.show{transform:translate(-50%,0)}
+#banner.buy{border-color:var(--up);color:var(--up);box-shadow:0 0 34px rgba(0,255,166,.35), inset 0 0 22px rgba(0,255,166,.08)}
+#banner.sell{border-color:var(--down);color:var(--down);box-shadow:0 0 34px rgba(255,61,110,.35), inset 0 0 22px rgba(255,61,110,.08)}
+#bIcon{font-size:22px;animation:vpulse .8s infinite}
+#toast{position:fixed;bottom:168px;left:50%;transform:translateX(-50%) translateY(20px);opacity:0;z-index:30;
+  padding:9px 20px;font-size:13px;font-weight:700;transition:all .3s;white-space:nowrap}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+#toast.up{border-color:var(--up);color:var(--up)}
+#toast.down{border-color:var(--down);color:var(--down)}
+
+#hint{position:fixed;bottom:calc(12px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);
+  font-size:11px;color:var(--dim);letter-spacing:.5px;padding:6px 15px;white-space:nowrap;
+  background:rgba(4,8,18,.6);border:1px solid rgba(0,240,255,.12);backdrop-filter:blur(8px);
+  transition:opacity 1s;border-radius:2px;z-index:8}
+#hint.hide{opacity:0;pointer-events:none}
+
+#loader{position:fixed;inset:0;z-index:50;background:var(--bg);display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:18px;transition:opacity .7s}
+#loader.hide{opacity:0;pointer-events:none}
+#loader .ring{width:64px;height:64px;border-radius:50%;border:2px solid rgba(0,240,255,.15);
+  border-top-color:var(--cyan);animation:spin 1s linear infinite;box-shadow:0 0 30px rgba(0,240,255,.2)}
+@keyframes spin{to{transform:rotate(360deg)}}
+#loader .t{font-family:'Orbitron',monospace;letter-spacing:5px;font-size:15px;color:var(--cyan);direction:ltr}
+#loader .s{font-size:12px;color:var(--dim);letter-spacing:2px}
+
+@media (max-width:760px){
+  #oracle{width:198px;top:118px;right:10px;padding:10px 11px}
+  #verdict{font-size:17px} #scoreNum{font-size:17px}
+  #ticket{width:198px;right:10px;padding:10px 12px}
+  #pricePanel{min-width:0;left:10px;padding:10px 13px}
+  #battle{width:56vw;bottom:calc(64px + env(safe-area-inset-bottom))}
+  #toggles{left:8px}
+  #brand .name{font-size:16px}
+  #hint{display:none}
+  #banner{font-size:14px;padding:10px 18px;white-space:nowrap}
+}
+
+/* WORLD — picker, focus plate, walk hints */
+#worldPanel{position:fixed;z-index:30;top:70px;left:50%;transform:translateX(-50%);
+  width:min(94vw,560px);max-height:72vh;overflow-y:auto;padding:16px 18px}
+.wp-title{font-size:15px;font-weight:800;letter-spacing:1px;color:var(--cyan);margin-bottom:10px;text-align:center}
+.wp-sec{margin-top:12px}
+.wp-h{font-size:11px;color:var(--dim);letter-spacing:2px;font-weight:600;margin-bottom:7px}
+.wp-grid{display:flex;flex-wrap:wrap;gap:7px}
+.wp-item{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;cursor:pointer;
+  padding:7px 12px;color:var(--dim);background:rgba(6,12,26,.6);border:1px solid rgba(0,240,255,.14);
+  clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px);transition:all .15s}
+.wp-item .dot{width:7px;height:7px;border-radius:50%}
+.wp-item:hover{color:var(--txt)}
+.wp-item.on{color:#02141a;background:linear-gradient(120deg,var(--cyan),#7dfbff);border-color:var(--cyan)}
+.wp-item.on .dot{background:#02141a !important}
+.wp-close{margin-top:14px;text-align:center;font-size:12px;color:var(--dim);cursor:pointer;padding:7px}
+.wp-close:hover{color:var(--txt)}
+#focusPlate{position:fixed;z-index:20;bottom:calc(120px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);
+  padding:10px 18px;text-align:center;pointer-events:none;min-width:220px}
+#focusPlate b{display:block;font-size:14px;letter-spacing:.5px}
+#focusPlate .num{display:block;font-size:16px;font-weight:700;margin-top:2px}
+#focusPlate i{display:block;font-size:10px;color:var(--gold);margin-top:3px;font-style:normal;letter-spacing:1px}
+#joyHint{position:fixed;z-index:20;bottom:calc(8px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);
+  font-size:10px;color:var(--dim);letter-spacing:1px;pointer-events:none}
+</style>
+</head>
+<body>
+
+<div id="stage"></div>
+<div id="scan"></div>
+<div id="vig"></div>
+
+<div class="hud">
+  <div id="top">
+    <div id="brand">
+      <span class="eyebrow">HG·LABS</span>
+      <span class="name">NEXUS·ARENA</span>
+      <span class="sub">זירת הקרב של השוק · קונים נגד מוכרים</span>
+    </div>
+    <div id="mode" class="panel clip"><span id="modeDot"></span><span id="modeTxt">מתחבר…</span></div>
+    <div id="rows">
+      <div class="pills" id="symRow"></div>
+      <div class="pills" id="tfRow"></div>
+    </div>
+  </div>
+
+  <div id="oracle" class="panel clip">
+    <div class="oh"><span class="odot"></span>ORACLE · ליבת אותות</div>
+    <div id="gaugeWrap">
+      <svg id="gauge" viewBox="0 0 200 112">
+        <defs>
+          <linearGradient id="gg" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="#ff3d6e"/>
+            <stop offset="0.5" stop-color="#ffd166"/>
+            <stop offset="1" stop-color="#00ffa6"/>
+          </linearGradient>
+        </defs>
+        <path d="M16 102 A86 86 0 0 1 184 102" fill="none" stroke="rgba(0,240,255,.10)" stroke-width="14" stroke-linecap="round"/>
+        <path d="M16 102 A86 86 0 0 1 184 102" fill="none" stroke="url(#gg)" stroke-width="7" stroke-linecap="round" opacity="0.9"/>
+        <g id="needle">
+          <line x1="100" y1="102" x2="100" y2="30" stroke="#eaffff" stroke-width="3" stroke-linecap="round"/>
+          <circle cx="100" cy="102" r="6" fill="#0a6a7a" stroke="#eaffff"/>
+        </g>
+      </svg>
+      <div id="scoreNum" class="num">0</div>
+    </div>
+    <div id="verdict" class="v-wait">המתנה</div>
+    <div id="reasons"></div>
+    <div id="lastSig"></div>
+  </div>
+
+  <div id="pricePanel" class="panel clip">
+    <div id="symName"><span id="symLabel">BTC / USDT</span></div>
+    <div id="priceBig" class="num">—</div>
+    <div id="chg" class="num">—</div>
+    <div id="stats">
+      <div><div class="k">גבוה 24ש׳</div><div class="v num" id="statHi">—</div></div>
+      <div><div class="k">נמוך 24ש׳</div><div class="v num" id="statLo">—</div></div>
+      <div><div class="k">מחזור 24ש׳</div><div class="v num" id="statVol">—</div></div>
+      <div><div class="k">ספרד</div><div class="v num" id="statSpread">—</div></div>
+    </div>
+  </div>
+
+  <div id="battle" class="panel clip">
+    <div class="btitle">מאזן כוחות חי</div>
+    <div class="bbar"><div id="bBull"></div><div id="bBear"></div></div>
+    <div class="blabels"><span class="up" id="bBullTxt">קונים 50%</span><span class="down" id="bBearTxt">מוכרים 50%</span></div>
+  </div>
+
+  <div id="ticket" class="panel clip">
+    <div class="th"><span>כרטיס מסחר · דמו</span><span id="sessStat" class="num"></span></div>
+    <div id="sugBox">
+      <div class="trow"><span class="tk">כניסה</span><span class="tv num" id="tEntry">—</span></div>
+      <div class="trow"><span class="tk">יעד רווח</span><span class="tv num" id="tTp">—</span></div>
+      <div class="trow"><span class="tk">סטופ הגנה</span><span class="tv num" id="tSl">—</span></div>
+      <div class="trow"><span class="tk">סיכוי / סיכון</span><span class="tv num">1 : 1.7</span></div>
+      <div id="sugNote">ממתין לאות ברור…</div>
+      <div class="btnRow">
+        <button class="btn long" id="btnLong">קנייה ▲</button>
+        <button class="btn short" id="btnShort">שורט ▼</button>
+      </div>
+    </div>
+    <div id="posBox" style="display:none">
+      <div class="trow"><span class="tk">עמדה</span><span class="tv" id="pSide">—</span></div>
+      <div class="trow"><span class="tk">כניסה</span><span class="tv num" id="pEntry">—</span></div>
+      <div id="pnlBig" class="num up">+0.00%</div>
+      <div id="pnlUsd" class="num">$0</div>
+      <div class="trow"><span class="tk">יעד רווח</span><span class="tv num" id="pTp">—</span></div>
+      <div class="trow"><span class="tk">סטופ הגנה</span><span class="tv num" id="pSl">—</span></div>
+      <button class="btn closeb" id="btnClose">סגור עמדה</button>
+    </div>
+    <div class="disc">אותות אלגוריתמיים להמחשה בלבד · אינם ייעוץ השקעות</div>
+  </div>
+
+  <div id="toggles">
+    <div class="tgl" id="btnWalk" title="מצב הליכה — סיור בעולם המסחר">
+      <span style="font-size:15px">🚶</span><span style="font-size:8px">סיור</span>
+    </div>
+    <div class="tgl" id="btnWorld" title="בחר אילו שווקים בעולם">
+      <span style="font-size:15px">🌍</span><span style="font-size:8px">עולם</span>
+    </div>
+    <div class="tgl on" id="btnAuto" title="טיסה אוטומטית">
+      <svg viewBox="0 0 24 24"><path d="M12 3l3 7h6l-5 4 2 7-6-4-6 4 2-7-5-4h6z"/></svg><span>טיסה</span>
+    </div>
+    <div class="tgl on" id="btnSig" title="שכבת אותות">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg><span>אותות</span>
+    </div>
+    <div class="tgl on" id="btnTail" title="שובל תנועה">
+      <svg viewBox="0 0 24 24"><path d="M21 6c-5 0-7 3-10 3S6 7 3 7"/><path d="M21 12c-5 0-7 3-10 3s-5-2-8-2"/><path d="M21 18c-5 0-7 3-10 3"/></svg><span>שובל</span>
+    </div>
+    <div class="tgl on" id="btnShield" title="חומות לווייתנים">
+      <svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></svg><span>מגנים</span>
+    </div>
+    <div class="tgl on" id="btnFx" title="הבזקי עסקאות">
+      <svg viewBox="0 0 24 24"><path d="M13 2L4 14h6l-1 8 9-12h-6z"/></svg><span>אפקט</span>
+    </div>
+    <div class="tgl on" id="btnSnd" title="צלילי אותות">
+      <svg viewBox="0 0 24 24"><path d="M4 9v6h4l6 5V4L8 9H4z"/><path d="M17 8a6 6 0 0 1 0 8"/></svg><span>צליל</span>
+    </div>
+  </div>
+
+  <div id="banner" class="panel clip"><span id="bIcon">⚡</span><span id="bTxt"></span></div>
+  <div id="toast" class="panel clip"></div>
+  <div id="hint">גרירה — סיבוב · צביטה — זום · הקשה כפולה — טיסה · הבזק ירוק = קנייה אמיתית · אדום = מכירה</div>
+</div>
+
+<div id="worldPanel" class="panel clip" style="display:none"></div>
+<div id="focusPlate" class="panel clip" style="display:none"></div>
+<div id="joyHint" style="display:none">אצבע ימין — תנועה · אצבע שמאל — מבט</div>
+
+<div id="loader">
+  <div class="ring"></div>
+  <div class="t">NEXUS·ARENA</div>
+  <div class="s">מעלה את הזירה…</div>
+</div>
+
+<script type="module">
+// Bundled three (0.184) instead of the r128 CDN build — works offline, ships
+// with the app, and matches the rest of the platform. The classic app script
+// below waits for this to land on window.
+import * as THREE_NS from 'three';
+window.THREE = THREE_NS;
+window.dispatchEvent(new Event('three-ready'));
+</script>
+<script>
+window.addEventListener('three-ready', function(){
+/*APP*/
+'use strict';
+
+/* ============================================================
+   NEXUS·ARENA — the market as a live battle. No charts.
+   A price CORE floats on a vertical energy column between
+   two titans: BUYERS (green) vs SELLERS (red). Every real
+   trade is a bolt striking the core. Whale walls are shields.
+   ORACLE marks entry / target / stop as holographic rings.
+   Live Binance feed with automatic simulation fallback.
+   ============================================================ */
+
+// ---------- config ----------
+const N = 140;
+const Y0 = 9, YSPAN = 34;
+const SYMBOLS = {
+  BTC:{base:132400, vol:0.0011, lot:2.2,    big:1.8,    dec:1, dot:'#f7931a'},
+  ETH:{base:4870,   vol:0.0014, lot:42,     big:38,     dec:2, dot:'#9b8cff'},
+  SOL:{base:296.4,  vol:0.0019, lot:950,    big:720,    dec:2, dot:'#14f195'},
+  BNB:{base:1122,   vol:0.0012, lot:120,    big:92,     dec:2, dot:'#f0b90b'},
+  XRP:{base:3.142,  vol:0.0017, lot:420000, big:260000, dec:4, dot:'#7fb3d5'},
+  DOGE:{base:0.41,  vol:0.0021, lot:2.6e6,  big:1.8e6,  dec:5, dot:'#c2a633'},
+  ADA:{base:1.21,   vol:0.0018, lot:900000, big:600000, dec:4, dot:'#2a71d0'},
+  AVAX:{base:52.3,  vol:0.0019, lot:22000,  big:15000,  dec:2, dot:'#e84142'},
+  LINK:{base:31.2,  vol:0.0018, lot:38000,  big:26000,  dec:2, dot:'#2a5ada'},
+  TON:{base:6.8,    vol:0.0018, lot:160000, big:110000, dec:3, dot:'#0098ea'},
+  TRX:{base:0.28,   vol:0.0014, lot:3.4e6,  big:2.2e6,  dec:5, dot:'#ff060a'},
+  DOT:{base:9.4,    vol:0.0018, lot:120000, big:80000,  dec:3, dot:'#e6007a'},
+  NEAR:{base:7.1,   vol:0.0019, lot:150000, big:100000, dec:3, dot:'#00ec97'},
+  LTC:{base:132,    vol:0.0016, lot:9000,   big:6000,   dec:2, dot:'#b8b8b8'}
+};
+const TFS = [['1m','1ד'],['5m','5ד'],['15m','15ד'],['1h','1ש'],['4h','4ש'],['1d','יום']];
+const TF_SEC = {'1m':60,'5m':300,'15m':900,'1h':3600,'4h':14400,'1d':86400};
+
+// ---------- state ----------
+const state = {
+  sym:'BTC', tf:'1m',
+  candles:[], bigQ:1,
+  book:{bids:[],asks:[]}, stats:null,
+  sMin:0, sMax:1, tMin:0, tMax:1, winHi:0, winLo:0,
+  bookBid:0, bookAsk:0, wallBid:null, wallAsk:null,
+  buyAcc:1, sellAcc:1, bullPct:50,
+  flare:0, flareCol:new THREE.Color(0x00f0ff), impactE:0,
+  auto:true, showSig:true, showTail:true, showShield:true, showFx:true,
+  lastPrice:0, prevPrice:0
+};
+let feed=null, ind=null, lastSignal=null;
+const sig={relClosed:0, prevScore:null, lastFire:0};
+let pos=null;
+const session={pnl:0,trades:0,wins:0};
+let indDirty=false, lastInd=0;
+
+// ---------- utils ----------
+const $=id=>document.getElementById(id);
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const lerp=(a,b,t)=>a+(b-a)*t;
+const rnd=(a=1,b)=> b===undefined? Math.random()*a : a+Math.random()*(b-a);
+function fmtP(p){ const d=SYMBOLS[state.sym].dec;
+  return p.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d}); }
+function fmtPct(x){ return (x>=0?'+':'')+x.toFixed(2)+'%'; }
+function fmtUsd(v){
+  if(v>=1e9) return '$'+(v/1e9).toFixed(2)+'B';
+  if(v>=1e6) return '$'+(v/1e6).toFixed(1)+'M';
+  if(v>=1e3) return '$'+(v/1e3).toFixed(1)+'K';
+  return '$'+v.toFixed(0);
+}
+function fmtT(ts){ return new Date(ts).toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'}); }
+const yFor = p => (p-state.sMin)/Math.max(1e-9,(state.sMax-state.sMin))*YSPAN + Y0;
+
+// ---------- sound ----------
+let AC=null, soundOn=true;
+function ensureAC(){
+  if(!AC){ try{ AC=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} }
+  if(AC && AC.state==='suspended') AC.resume();
+}
+function beep(seq){
+  if(!soundOn||!AC) return;
+  let t=AC.currentTime;
+  seq.forEach(([f,d])=>{
+    const o=AC.createOscillator(), g=AC.createGain();
+    o.type='sine'; o.frequency.value=f; o.connect(g); g.connect(AC.destination);
+    g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(0.11,t+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+d);
+    o.start(t); o.stop(t+d+0.03); t+=d*0.8;
+  });
+}
+document.addEventListener('pointerdown',ensureAC,{once:true});
+
+// ============================================================
+//  DATA LAYER — live Binance, fallback to accelerated demo sim
+// ============================================================
+function setBadge(mode){
+  const el=$('mode'); el.className='panel clip '+mode;
+  $('modeTxt').textContent = mode==='live' ? 'LIVE · בזמן אמת'
+    : mode==='sim' ? 'הדגמה · שוק מדומה' : 'מתחבר…';
+}
+function startFeed(){
+  stopFeed();
+  const f={stopped:false,ws:null,timers:[],mode:'connecting'};
+  feed=f; setBadge('connecting');
+  state.candles=[]; ind=null; lastSignal=null;
+  state.buyAcc=1; state.sellAcc=1;
+  sig.relClosed=0; sig.prevScore=null; sig.lastFire=0;
+  tailSamples.length=0;
+  tryLive(f).catch(()=>{ if(!f.stopped) startSim(f); });
+}
+function stopFeed(){
+  if(!feed) return;
+  feed.stopped=true;
+  feed.timers.forEach(t=>clearInterval(t));
+  if(feed.ws){ try{ feed.ws.onclose=null; feed.ws.close(); }catch(e){} }
+  feed=null;
+}
+async function tryLive(f){
+  const sym=state.sym+'USDT';
+  const ctrl=new AbortController();
+  const to=setTimeout(()=>ctrl.abort(),3500);
+  const r=await fetch(`https://api.binance.com/api/v3/klines?symbol=${sym}&interval=${state.tf}&limit=${N}`,{signal:ctrl.signal});
+  clearTimeout(to);
+  if(!r.ok) throw new Error('http');
+  const raw=await r.json();
+  if(f.stopped) return;
+  onInit(raw.map(k=>({t:k[0],o:+k[1],h:+k[2],l:+k[3],c:+k[4],v:+k[5]})));
+  f.mode='live'; setBadge('live');
+  openWS(f);
+  fetchStats(f);
+  f.timers.push(setInterval(()=>fetchStats(f),60000));
+}
+function openWS(f){
+  const s=(state.sym+'usdt').toLowerCase();
+  const url=`wss://stream.binance.com:9443/stream?streams=${s}@kline_${state.tf}/${s}@aggTrade/${s}@depth20`;
+  const ws=new WebSocket(url); f.ws=ws;
+  let burst=0, burstT=0;
+  ws.onmessage=ev=>{
+    if(f.stopped) return;
+    let m; try{ m=JSON.parse(ev.data); }catch(e){ return; }
+    const st=m.stream||'', d=m.data||{};
+    if(st.includes('kline')){
+      const k=d.k, cs=state.candles, last=cs[cs.length-1];
+      const cd={t:k.t,o:+k.o,h:+k.h,l:+k.l,c:+k.c,v:+k.v};
+      if(last && last.t===cd.t) cs[cs.length-1]=cd;
+      else { cs.push(cd); if(cs.length>N) cs.shift(); }
+      onTick(cd);
+    } else if(st.includes('aggTrade')){
+      const q=+d.q; if(q>state.bigQ) state.bigQ=q;
+      const side=d.m?'sell':'buy';
+      if(side==='buy') state.buyAcc+=q; else state.sellAcc+=q;
+      const now=performance.now();
+      if(now-burstT>140){ burstT=now; burst=0; }
+      if(burst<3 && state.showFx){ burst++; spawnBolt(q,side); }
+      else flareBoost(clamp(q/state.bigQ,0,1)*0.25, side);
+    } else if(st.includes('depth')){
+      state.book={ bids:(d.bids||[]).map(x=>[+x[0],+x[1]]),
+                   asks:(d.asks||[]).map(x=>[+x[0],+x[1]]) };
+      digestBook();
+    }
+  };
+  ws.onclose=()=>{ if(f.stopped) return; setBadge('connecting');
+    setTimeout(()=>{ if(!f.stopped) openWS(f); },4000); };
+}
+async function fetchStats(f){
+  try{
+    const r=await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${state.sym}USDT`);
+    if(!r.ok) return; const d=await r.json();
+    if(f.stopped) return;
+    state.stats={chg:+d.priceChangePercent, hi:+d.highPrice, lo:+d.lowPrice, vol:+d.quoteVolume};
+  }catch(e){}
+}
+
+// ---------- simulation (accelerated demo market) ----------
+function startSim(f){
+  f.mode='sim'; setBadge('sim');
+  const cfg=SYMBOLS[state.sym];
+  const tfS=TF_SEC[state.tf];
+  const sv=cfg.vol*Math.sqrt(tfS/60);
+  let price=cfg.base*rnd(0.94,1.06), mu=0;
+
+  const cs=[]; let t=Date.now()-N*tfS*1000;
+  for(let i=0;i<N;i++){
+    const o=price; let h=o,l=o,c=o;
+    mu=mu*0.9+(Math.random()-0.5)*sv*0.5;
+    if(Math.random()<0.02) mu+=(Math.random()<0.5?-1:1)*sv*2.2;
+    for(let s2=0;s2<8;s2++){
+      c*=1+mu*0.14+(Math.random()-0.5)*sv*0.42;
+      h=Math.max(h,c); l=Math.min(l,c);
+    }
+    const v=cfg.lot*(4+Math.random()*10)*(1+Math.abs(c-o)/(o*sv+1e-9));
+    cs.push({t,o,h,l,c,v}); t+=tfS*1000; price=c;
+  }
+  onInit(cs);
+
+  let cur={t:Date.now(),o:price,h:price,l:price,c:price,v:0};
+  state.candles.push(cur); if(state.candles.length>N) state.candles.shift();
+
+  f.timers.push(setInterval(()=>{
+    mu=mu*0.986+(Math.random()-0.5)*sv*0.09;
+    if(Math.random()<0.006) mu+=(Math.random()<0.5?-1:1)*sv*1.6;
+    let rr=mu*0.3+(Math.random()-0.5)*sv*0.22;
+    if(Math.random()<0.004) rr+=(Math.random()<0.5?-1:1)*rnd(0.004,0.012);
+    price*=1+rr;
+    cur.c=price; cur.h=Math.max(cur.h,price); cur.l=Math.min(cur.l,price);
+    cur.v+=Math.pow(Math.random(),2)*cfg.lot*1.6;
+    onTick(cur);
+    const nT=Math.random()<0.7?1:2;
+    for(let i=0;i<nT;i++){
+      if(Math.random()<0.8){
+        const q=Math.pow(Math.random(),3)*cfg.big;
+        if(q>state.bigQ) state.bigQ=q;
+        const side=(rr+mu*0.5+(Math.random()-0.5)*sv)>=0?'buy':'sell';
+        if(side==='buy') state.buyAcc+=q; else state.sellAcc+=q;
+        if(state.showFx) spawnBolt(q,side);
+      }
+    }
+  },150));
+
+  f.timers.push(setInterval(()=>{
+    cur={t:Date.now(),o:price,h:price,l:price,c:price,v:0};
+    state.candles.push(cur); if(state.candles.length>N) state.candles.shift();
+    indDirty=true;
+  },5200));
+
+  f.timers.push(setInterval(()=>{
+    const step=price*0.00045, bids=[], asks=[];
+    let wall=Math.random()<0.14? 2+((Math.random()*16)|0) : -1;
+    for(let i=0;i<20;i++){
+      let bq=cfg.big*0.7*Math.exp(-i*0.1)*rnd(0.35,1.4);
+      let aq=cfg.big*0.7*Math.exp(-i*0.1)*rnd(0.35,1.4);
+      if(i===wall){ if(Math.random()<0.5) bq*=6; else aq*=6; }
+      bids.push([price-step*(i+1),bq]);
+      asks.push([price+step*(i+1),aq]);
+    }
+    state.book={bids,asks};
+    digestBook();
+  },340));
+
+  f.timers.push(setInterval(()=>{
+    const cs2=state.candles; if(cs2.length<2) return;
+    let hi=-1e18, lo=1e18, vol=0;
+    for(const c of cs2){ hi=Math.max(hi,c.h); lo=Math.min(lo,c.l); vol+=c.v*c.c; }
+    state.stats={chg:(cs2[cs2.length-1].c/cs2[0].o-1)*100, hi, lo, vol};
+  },1000));
+}
+
+// ---------- data callbacks ----------
+function onInit(cs){
+  state.candles=cs.slice(-N);
+  retargetScale(true);
+  state.lastPrice=cs[cs.length-1].c;
+  state.prevPrice=state.lastPrice;
+  computeSignals();
+  if(ind){
+    const n=state.candles.length;
+    sig.relClosed=Math.sign(ind.e9raw[n-2]-ind.e21raw[n-2]);
+  }
+  renderTicket();
+  $('loader').classList.add('hide');
+}
+function onTick(c){
+  state.prevPrice=state.lastPrice;
+  state.lastPrice=c.c;
+  retargetScale(false);
+  indDirty=true;
+}
+function digestBook(){
+  let bs=0, as=0, wb=null, wa=null;
+  for(const x of state.book.bids){ bs+=x[1]; if(!wb||x[1]>wb.q) wb={p:x[0],q:x[1]}; }
+  for(const x of state.book.asks){ as+=x[1]; if(!wa||x[1]>wa.q) wa={p:x[0],q:x[1]}; }
+  state.bookBid=bs; state.bookAsk=as;
+  state.wallBid=wb; state.wallAsk=wa;
+  indDirty=true;
+}
+function retargetScale(hard){
+  const cs=state.candles; if(!cs.length) return;
+  let lo=1e18, hi=-1e18;
+  for(const c of cs){ lo=Math.min(lo,c.l); hi=Math.max(hi,c.h); }
+  state.winHi=hi; state.winLo=lo;
+  const pad=(hi-lo)*0.14+hi*1e-6;
+  state.tMin=lo-pad; state.tMax=hi+pad;
+  if(hard){ state.sMin=state.tMin; state.sMax=state.tMax; }
+}
+
+// ============================================================
+//  ORACLE — indicators + plain-language signal engine
+// ============================================================
+function emaArr(v,p){
+  const k=2/(p+1), o=new Array(v.length); let e=v[0];
+  for(let i=0;i<v.length;i++){ e=i? v[i]*k+e*(1-k) : v[0]; o[i]=e; }
+  return o;
+}
+function rsiArr(c,p){
+  const o=new Array(c.length).fill(50); let g=0,l=0;
+  for(let i=1;i<c.length;i++){
+    const d=c[i]-c[i-1];
+    if(i<=p){ if(d>0)g+=d; else l-=d;
+      if(i===p){ g/=p; l/=p; o[i]=100-100/(1+g/(l||1e-9)); } }
+    else{ g=(g*(p-1)+Math.max(d,0))/p; l=(l*(p-1)+Math.max(-d,0))/p;
+      o[i]=100-100/(1+g/(l||1e-9)); }
+  }
+  return o;
+}
+function atrVal(cs,p){
+  let a=0,n2=0;
+  for(let i=Math.max(1,cs.length-p);i<cs.length;i++){
+    const tr=Math.max(cs[i].h-cs[i].l,Math.abs(cs[i].h-cs[i-1].c),Math.abs(cs[i].l-cs[i-1].c));
+    a+=tr; n2++;
+  }
+  return n2? a/n2 : (cs.length? cs[cs.length-1].c*0.005 : 1);
+}
+function bollNow(c,p,k){
+  const n=c.length, s=Math.max(0,n-p);
+  let m=0, cnt=n-s;
+  for(let j=s;j<n;j++) m+=c[j]; m/=cnt;
+  let v=0; for(let j=s;j<n;j++){ const d=c[j]-m; v+=d*d; }
+  const sd=Math.sqrt(v/cnt);
+  return {up:m+k*sd, lo:m-k*sd};
+}
+function macdHistArr(c){
+  const e12=emaArr(c,12), e26=emaArr(c,26);
+  const m=c.map((_,i)=>e12[i]-e26[i]);
+  const s=emaArr(m,9);
+  return m.map((x,i)=>x-s[i]);
+}
+function findLevels(cs,A){
+  const n=cs.length, piv=[];
+  for(let i=3;i<n-3;i++){
+    let hi=true, lo=true;
+    for(let j=i-3;j<=i+3;j++){
+      if(j===i) continue;
+      if(cs[j].h>=cs[i].h) hi=false;
+      if(cs[j].l<=cs[i].l) lo=false;
+    }
+    if(hi) piv.push({p:cs[i].h,i});
+    if(lo) piv.push({p:cs[i].l,i});
+  }
+  piv.sort((a,b)=>a.p-b.p);
+  const tol=A*0.7, cl=[];
+  for(const pv of piv){
+    const last=cl[cl.length-1];
+    if(last && Math.abs(pv.p-last.p)<tol){
+      last.p=(last.p*last.n+pv.p)/(last.n+1); last.n++; last.i=Math.max(last.i,pv.i);
+    } else cl.push({p:pv.p,n:1,i:pv.i});
+  }
+  return cl.filter(x=>x.n>=2)
+    .sort((a,b)=>(b.n*2+b.i/n)-(a.n*2+a.i/n)).slice(0,4);
+}
+
+function computeSignals(){
+  const cs=state.candles, n=cs.length;
+  if(n<30){ ind=null; return; }
+  const closes=cs.map(c=>c.c);
+  const e9=emaArr(closes,9), e21=emaArr(closes,21);
+  const rsi=rsiArr(closes,14), R=rsi[n-1];
+  const bb=bollNow(closes,20,2);
+  const hist=macdHistArr(closes), H=hist[n-1], Hp=hist[n-2]||0;
+  const A=Math.max(atrVal(cs,14), closes[n-1]*1e-6);
+  const levels=findLevels(cs,A);
+  const p=closes[n-1];
+
+  const trend=clamp((e9[n-1]-e21[n-1])/A*22 + (e21[n-1]-e21[Math.max(0,n-5)])/A*6, -30, 30);
+  const rsiS=clamp(R<32?(32-R)*1.3 : R>68? -(R-68)*1.3 : (50-R)*0.18, -20, 20);
+  const macdS=clamp(H/(A*0.35)*12, -14, 14) + (H>Hp?4:-4);
+  const bbPos=clamp((p-bb.lo)/Math.max(1e-9,bb.up-bb.lo),0,1);
+  const bbS=clamp(bbPos<0.12?12 : bbPos>0.88? -12 : (0.5-bbPos)*10, -15, 15);
+  const tot=state.bookBid+state.bookAsk;
+  const imbPct=tot>0? Math.round(state.bookBid/tot*100) : 50;
+  const bookS=tot>0? clamp((state.bookBid-state.bookAsk)/tot*38,-15,15) : 0;
+
+  const score=Math.round(clamp(trend+rsiS+macdS+bbS+bookS,-100,100));
+  const verdict=score>=55?'קנייה חזקה':score>=20?'קנייה':score<=-55?'מכירה חזקה':score<=-20?'מכירה':'המתנה';
+
+  const rs=[];
+  rs.push({w:Math.abs(trend), t:trend>0?'המגמה עולה · הקונים מובילים':'המגמה יורדת · המוכרים מובילים'});
+  rs.push({w:Math.abs(rsiS), t:R<32?`נמכר חזק מדי · קפיץ למעלה (RSI ${R|0})`:R>68?`נקנה חזק מדי · צפוי קירור (RSI ${R|0})`:`מחיר מאוזן (RSI ${R|0})`});
+  rs.push({w:Math.abs(macdS), t:H>0?'המומנטום מתחזק':'המומנטום נחלש'});
+  rs.push({w:Math.abs(bookS), t:imbPct>=50?`לחץ קונים ${imbPct}% בספר`:`לחץ מוכרים ${100-imbPct}% בספר`});
+  rs.push({w:Math.abs(bbS), t:bbPos<0.12?'בתחתית הטווח · זול יחסית':bbPos>0.88?'בתקרת הטווח · יקר יחסית':'באמצע טווח המחירים'});
+  rs.sort((a,b)=>b.w-a.w);
+
+  let sug=null;
+  if(score>=20) sug={side:'long', entry:p, sl:p-1.5*A, tp:p+2.5*A};
+  else if(score<=-20) sug={side:'short', entry:p, sl:p+1.5*A, tp:p-2.5*A};
+
+  ind={e9raw:e9, e21raw:e21, A, levels, score, verdict,
+       reasons:rs.slice(0,3).map(x=>x.t), sug};
+  detectEvents(cs,n,e9,e21,score);
+}
+function detectEvents(cs,n,e9,e21,score){
+  const relC=Math.sign(e9[n-2]-e21[n-2]);
+  if(sig.relClosed!==0 && relC!==0 && relC!==sig.relClosed){
+    fireSignal(relC>0?'buy':'sell', Math.max(30,Math.abs(score)),
+      relC>0?'הקונים תפסו שליטה':'המוכרים תפסו שליטה');
+  }
+  if(relC!==0) sig.relClosed=relC;
+  const now=performance.now();
+  if(sig.prevScore!==null && now-sig.lastFire>9000){
+    if(score>=45 && sig.prevScore<45)
+      fireSignal('buy',score,'כל הכוחות מצביעים למעלה');
+    else if(score<=-45 && sig.prevScore>-45)
+      fireSignal('sell',-score,'כל הכוחות מצביעים למטה');
+  }
+  sig.prevScore=score;
+}
+function fireSignal(side,str,why){
+  sig.lastFire=performance.now();
+  lastSignal={side,why,t:Date.now()};
+  gateFlash=1;
+  showBanner(side,str,why);
+  flareBoost(1.6,side);
+  spawnRipple(side, state.lastPrice, 1);
+  beep(side==='buy'?[[660,0.12],[990,0.18]]:[[440,0.12],[300,0.2]]);
+}
+
+// ============================================================
+//  PAPER TRADING (demo)
+// ============================================================
+function openPos(side){
+  if(pos || !state.candles.length) return;
+  ensureAC();
+  const p=state.lastPrice;
+  const A=ind? ind.A : p*0.01;
+  pos = side==='long'
+    ? {side, entry:p, sl:p-1.5*A, tp:p+2.5*A, notional:10000}
+    : {side, entry:p, sl:p+1.5*A, tp:p-2.5*A, notional:10000};
+  toast(`עמדת ${side==='long'?'לונג':'שורט'} נפתחה @ ${fmtP(p)}`, side==='long'?'up':'down');
+  beep([[520,0.1],[660,0.12]]);
+  flareBoost(1, side==='long'?'buy':'sell');
+  spawnRipple(side==='long'?'buy':'sell', p, 0.8);
+  renderTicket();
+}
+function posPnlPct(){
+  return (state.lastPrice/pos.entry-1)*100*(pos.side==='long'?1:-1);
+}
+function closePos(reason){
+  if(!pos) return;
+  const pct=posPnlPct(), usd=pos.notional*pct/100;
+  session.pnl+=usd; session.trades++; if(usd>0) session.wins++;
+  const win=usd>=0;
+  const head=reason==='tp'?'🎯 יעד הושג':reason==='sl'?'🛑 סטופ הופעל':reason==='switch'?'עמדה נסגרה (החלפה)':'עמדה נסגרה';
+  toast(`${head} · ${win?'+':'−'}$${Math.abs(usd).toFixed(0)} (${fmtPct(pct)})`, win?'up':'down');
+  beep(win?[[523,0.09],[659,0.09],[784,0.14]]:[[220,0.16],[160,0.2]]);
+  pos=null; renderTicket();
+}
+function checkPos(){
+  if(!pos) return;
+  const p=state.lastPrice;
+  if(pos.side==='long'){ if(p>=pos.tp) closePos('tp'); else if(p<=pos.sl) closePos('sl'); }
+  else { if(p<=pos.tp) closePos('tp'); else if(p>=pos.sl) closePos('sl'); }
+}
+function renderTicket(){
+  $('sugBox').style.display = pos? 'none':'block';
+  $('posBox').style.display = pos? 'block':'none';
+  if(pos){
+    const e=$('pSide');
+    e.textContent = pos.side==='long'?'לונג ▲':'שורט ▼';
+    e.className = 'tv '+(pos.side==='long'?'up':'down');
+    $('pEntry').textContent=fmtP(pos.entry);
+    $('pTp').textContent=fmtP(pos.tp);
+    $('pSl').textContent=fmtP(pos.sl);
+  }
+  $('sessStat').textContent = session.trades
+    ? `${session.pnl>=0?'+':'−'}$${Math.abs(session.pnl).toFixed(0)} · ${session.trades}`
+    : '';
+}
+$('btnLong').addEventListener('click',()=>openPos('long'));
+$('btnShort').addEventListener('click',()=>openPos('short'));
+$('btnClose').addEventListener('click',()=>closePos('manual'));
+
+// ============================================================
+//  THREE — the arena
+// ============================================================
+let renderer, scene, camera;
+try{ renderer=new THREE.WebGLRenderer({antialias:true,alpha:false}); }
+catch(e){
+  document.body.innerHTML='<div style="color:#d9f4ff;font-family:sans-serif;padding:40px;direction:rtl">הדפדפן לא תומך WebGL</div>';
+  throw e;
+}
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+if(THREE.sRGBEncoding !== undefined) renderer.outputEncoding = THREE.sRGBEncoding;
+else renderer.outputColorSpace = THREE.SRGBColorSpace; // three ≥0.152
+$('stage').appendChild(renderer.domElement);
+
+scene=new THREE.Scene();
+scene.background=new THREE.Color(0x04060d);
+scene.fog=new THREE.FogExp2(0x040711,0.0075);
+camera=new THREE.PerspectiveCamera(58,innerWidth/innerHeight,0.1,1400);
+
+const addMat=(hex,op)=>new THREE.MeshBasicMaterial({color:hex,transparent:true,opacity:op,blending:THREE.AdditiveBlending,depthWrite:false});
+
+function radialTex(inner,outer){
+  const c=document.createElement('canvas'); c.width=c.height=256;
+  const g=c.getContext('2d');
+  const gr=g.createRadialGradient(128,128,0,128,128,128);
+  gr.addColorStop(0,inner); gr.addColorStop(1,outer);
+  g.fillStyle=gr; g.fillRect(0,0,256,256);
+  return new THREE.CanvasTexture(c);
+}
+const glowTex=radialTex('rgba(255,255,255,1)','rgba(255,255,255,0)');
+function ringTexture(){
+  const c=document.createElement('canvas'); c.width=c.height=256;
+  const g=c.getContext('2d');
+  g.strokeStyle='rgba(255,255,255,1)'; g.lineWidth=10;
+  g.beginPath(); g.arc(128,128,110,0,Math.PI*2); g.stroke();
+  g.strokeStyle='rgba(255,255,255,0.35)'; g.lineWidth=24;
+  g.beginPath(); g.arc(128,128,94,0,Math.PI*2); g.stroke();
+  return new THREE.CanvasTexture(c);
+}
+const ringTex=ringTexture();
+
+function textSprite(w,h,sx,sy){
+  const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+  const ctx=cv.getContext('2d');
+  const tex=new THREE.CanvasTexture(cv);
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true,depthWrite:false}));
+  sp.scale.set(sx,sy,1);
+  return {sp,ctx,tex,w,h,last:'',
+    draw(txt,css,font){
+      if(txt===this.last) return; this.last=txt;
+      const c=this.ctx;
+      c.clearRect(0,0,this.w,this.h);
+      c.font=font||"700 30px 'Heebo', sans-serif";
+      c.textAlign='center'; c.textBaseline='middle'; c.direction='rtl';
+      c.shadowColor=css; c.shadowBlur=16; c.fillStyle='#eaffff';
+      c.fillText(txt,this.w/2,this.h/2);
+      this.tex.needsUpdate=true;
+    }};
+}
+
+// stars
+{
+  const n=900, posA=new Float32Array(n*3), col=new Float32Array(n*3);
+  for(let i=0;i<n;i++){
+    const r=rnd(260,950), th=rnd(Math.PI*2), ph=Math.acos(rnd(-1,1));
+    posA[i*3]=r*Math.sin(ph)*Math.cos(th);
+    posA[i*3+1]=Math.abs(r*Math.cos(ph))*0.7+2;
+    posA[i*3+2]=r*Math.sin(ph)*Math.sin(th);
+    const b=rnd(0.4,1), t=Math.random();
+    col[i*3]=b*(t<0.7?0.7:1); col[i*3+1]=b*0.9; col[i*3+2]=b;
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.BufferAttribute(posA,3));
+  g.setAttribute('color',new THREE.BufferAttribute(col,3));
+  scene.add(new THREE.Points(g,new THREE.PointsMaterial({size:1.7,vertexColors:true,transparent:true,opacity:0.85,sizeAttenuation:true})));
+}
+function nebula(color,x,y,z,s){
+  const m=new THREE.SpriteMaterial({map:glowTex,color,transparent:true,opacity:0.16,blending:THREE.AdditiveBlending,depthWrite:false});
+  const sp=new THREE.Sprite(m); sp.position.set(x,y,z); sp.scale.set(s,s,1); scene.add(sp);
+}
+nebula(0x0a4bff,-220,110,-260,560);
+nebula(0xff2fd6, 240, 70,-300,480);
+nebula(0x00f0ff, -40,160, 260,520);
+function halo(r,color,op,rx){
+  const m=new THREE.Mesh(new THREE.TorusGeometry(r,0.8,8,140),addMat(color,op));
+  m.rotation.x=rx; m.position.y=40; scene.add(m); return m;
+}
+const halo1=halo(230,0x00f0ff,0.10,1.32);
+const halo2=halo(310,0xff2fd6,0.07,1.72);
+{
+  const g1=new THREE.GridHelper(420,42,0x0b4a5c,0x072633);
+  g1.material.transparent=true; g1.material.opacity=0.55; scene.add(g1);
+  const g2=new THREE.GridHelper(1400,28,0x06202b,0x051720);
+  g2.material.transparent=true; g2.material.opacity=0.3; g2.position.y=-0.05; scene.add(g2);
+}
+
+const world=new THREE.Group(); scene.add(world);
+const dummy=new THREE.Object3D();
+const C_UP=new THREE.Color(0x00ffa6), C_DN=new THREE.Color(0xff3d6e), C_CY=new THREE.Color(0x00f0ff);
+const tmpC=new THREE.Color();
+
+// ---- price column (the elevator) ----
+const COL_B=Y0-3, COL_T=Y0+YSPAN+4;
+{
+  const colM=new THREE.Mesh(new THREE.BoxGeometry(0.22,COL_T-COL_B,0.22),addMat(0x00f0ff,0.28));
+  colM.position.y=(COL_T+COL_B)/2; world.add(colM);
+  const capT=new THREE.Mesh(new THREE.TorusGeometry(1.6,0.08,8,40),addMat(0x00f0ff,0.5));
+  capT.rotation.x=Math.PI/2; capT.position.y=COL_T; world.add(capT);
+  const capB=capT.clone(); capB.position.y=COL_B; world.add(capB);
+}
+const hiLbl=textSprite(256,64,8.5,2.1); hiLbl.sp.position.set(0,COL_T+1.6,0); world.add(hiLbl.sp);
+const loLbl=textSprite(256,64,8.5,2.1); loLbl.sp.position.set(0,COL_B-1.6,0); world.add(loLbl.sp);
+
+// ---- the CORE ----
+const coreG=new THREE.Group(); world.add(coreG);
+const coreInner=new THREE.Mesh(new THREE.SphereGeometry(1.55,24,20),
+  new THREE.MeshBasicMaterial({color:0x9be8ff,transparent:true,opacity:0.95}));
+coreG.add(coreInner);
+const coreShell=new THREE.Mesh(new THREE.IcosahedronGeometry(2.35,1),
+  new THREE.MeshBasicMaterial({color:0x00f0ff,wireframe:true,transparent:true,opacity:0.6,blending:THREE.AdditiveBlending,depthWrite:false}));
+coreG.add(coreShell);
+const coreGlow=new THREE.Sprite(new THREE.SpriteMaterial({map:glowTex,color:0x00f0ff,transparent:true,opacity:0.85,blending:THREE.AdditiveBlending,depthWrite:false}));
+coreGlow.scale.set(9,9,1); coreG.add(coreGlow);
+
+// price hologram beside the core
+const priceHolo=textSprite(512,128,15,3.75);
+world.add(priceHolo.sp);
+
+// verdict hologram above the column
+const verdictHolo=textSprite(512,128,22,5.5);
+verdictHolo.sp.position.set(0,COL_T+5.5,0);
+world.add(verdictHolo.sp);
+
+// signal gate around the core
+const gate=new THREE.Mesh(new THREE.TorusGeometry(4.6,0.14,10,60),addMat(0x00ffa6,0.7));
+world.add(gate); gate.visible=false;
+let gateFlash=0;
+
+// ---- titans: BUYERS vs SELLERS ----
+function mkTitan(hex,x,name,css){
+  const g=new THREE.Group(); g.position.x=x; world.add(g);
+  const base=new THREE.Mesh(new THREE.TorusGeometry(3.1,0.16,8,44),addMat(hex,0.55));
+  base.rotation.x=Math.PI/2; base.position.y=0.25; g.add(base);
+  const py=new THREE.Mesh(new THREE.CylinderGeometry(0.9,1.7,1,6),
+    new THREE.MeshBasicMaterial({color:hex,transparent:true,opacity:0.5,blending:THREE.AdditiveBlending,depthWrite:false}));
+  g.add(py);
+  const tip=new THREE.Mesh(new THREE.OctahedronGeometry(1.15),addMat(hex,0.9));
+  g.add(tip);
+  const glow=new THREE.Sprite(new THREE.SpriteMaterial({map:glowTex,color:hex,transparent:true,opacity:0.5,blending:THREE.AdditiveBlending,depthWrite:false}));
+  glow.scale.set(10,10,1); g.add(glow);
+  const label=textSprite(256,64,9.5,2.4); g.add(label.sp); label.draw(name,css);
+  const pct=textSprite(256,64,7.5,1.9); g.add(pct.sp);
+  return {g,py,tip,glow,label,pct,h:7,css};
+}
+const bullT=mkTitan(0x00ffa6,-17,'קונים','#00ffa6');
+const bearT=mkTitan(0xff3d6e, 17,'מוכרים','#ff3d6e');
+function layoutTitan(T,h,t){
+  T.h=lerp(T.h,h,0.06);
+  const H=T.h;
+  T.py.scale.y=H; T.py.position.y=H/2+0.4;
+  T.tip.position.y=H+1.3+0.25*Math.sin(t*2.4+T.g.position.x);
+  T.tip.rotation.y+=0.01;
+  T.glow.position.y=H+1.3;
+  T.label.sp.position.y=H+4.6;
+  T.pct.sp.position.y=H+3.1;
+}
+
+// ---- whale shields ----
+function mkShield(hex){
+  const grp=new THREE.Group(); world.add(grp); grp.visible=false;
+  const disc=new THREE.Mesh(new THREE.CircleGeometry(5.8,44),
+    new THREE.MeshBasicMaterial({color:hex,transparent:true,opacity:0.13,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide}));
+  disc.rotation.x=-Math.PI/2; grp.add(disc);
+  const rim=new THREE.Mesh(new THREE.TorusGeometry(5.8,0.09,8,50),addMat(hex,0.6));
+  rim.rotation.x=Math.PI/2; grp.add(rim);
+  const lb=textSprite(256,64,9.5,2.4); lb.sp.position.set(0,1.1,0); grp.add(lb.sp);
+  return {grp,disc,rim,lb};
+}
+const askShield=mkShield(0xff3d6e);
+const bidShield=mkShield(0x00ffa6);
+
+// ---- holo rings: target / stop / entry + S/R ----
+function holoRing(hex,r,tube,side){
+  const grp=new THREE.Group(); world.add(grp); grp.visible=false;
+  const ring=new THREE.Mesh(new THREE.TorusGeometry(r,tube,10,60),addMat(hex,0.7));
+  ring.rotation.x=Math.PI/2; grp.add(ring);
+  const lb=textSprite(256,64,9,2.25);
+  lb.sp.position.set(side*(r+3.6),0.7,0); grp.add(lb.sp);
+  return {grp,ring,lb,setColor(h){ring.material.color.set(h);}};
+}
+const tpRing=holoRing(0x00ffa6,5.4,0.11,1);
+const slRing=holoRing(0xff3d6e,5.4,0.11,1);
+const enRing=holoRing(0x00f0ff,4.8,0.09,-1);
+const srRings=[];
+for(let i=0;i<4;i++) srRings.push(holoRing(0xffd166,4.2,0.05,-1));
+
+// ---- direction chevrons ----
+const CHN=10;
+const chevMesh=new THREE.InstancedMesh(new THREE.ConeGeometry(0.55,1.1,4),addMat(0x00ffa6,0.75),CHN);
+world.add(chevMesh);
+
+// ---- bolts (real trades) ----
+const PMAX=320;
+const pPos=new Float32Array(PMAX*3), pCol=new Float32Array(PMAX*3),
+      pSize=new Float32Array(PMAX), pAlpha=new Float32Array(PMAX);
+const pVel=new Float32Array(PMAX*3), pLife=new Float32Array(PMAX), pSide=new Uint8Array(PMAX), pQ=new Float32Array(PMAX);
+const PARTICLE_VS=`
+  attribute float aSize; attribute float aAlpha; attribute vec3 aColor;
+  varying float vA; varying vec3 vC;
+  void main(){
+    vA=aAlpha; vC=aColor;
+    vec4 mv=modelViewMatrix*vec4(position,1.0);
+    gl_PointSize=aSize*(150.0/max(1.0,-mv.z));
+    gl_Position=projectionMatrix*mv;
+  }`;
+const PARTICLE_FS=`
+  varying float vA; varying vec3 vC;
+  void main(){
+    vec2 uv=gl_PointCoord-0.5;
+    float d=length(uv);
+    float a=smoothstep(0.5,0.04,d)*vA;
+    gl_FragColor=vec4(vC,a);
+  }`;
+function mkPoints(pool){
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.BufferAttribute(pool.pos,3));
+  g.setAttribute('aColor',new THREE.BufferAttribute(pool.col,3));
+  g.setAttribute('aSize',new THREE.BufferAttribute(pool.size,1));
+  g.setAttribute('aAlpha',new THREE.BufferAttribute(pool.alpha,1));
+  const m=new THREE.ShaderMaterial({transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,
+    vertexShader:PARTICLE_VS,fragmentShader:PARTICLE_FS});
+  const pts=new THREE.Points(g,m); pts.frustumCulled=false; world.add(pts);
+  return {pts,g};
+}
+const boltPool={pos:pPos,col:pCol,size:pSize,alpha:pAlpha};
+const bolts=mkPoints(boltPool);
+let pCursor=0;
+const BUY_C=new THREE.Color(0x37ffb0), SELL_C=new THREE.Color(0xff5d7e);
+function spawnBolt(q,side){
+  const i=pCursor; pCursor=(pCursor+1)%PMAX;
+  const qn=clamp(q/Math.max(1e-9,state.bigQ),0.02,1);
+  const T=side==='buy'?bullT:bearT;
+  const sx=T.g.position.x+rnd(-1.4,1.4), sy=T.h+1.3+rnd(-0.8,0.8), sz=rnd(-1.6,1.6);
+  pPos[i*3]=sx; pPos[i*3+1]=sy; pPos[i*3+2]=sz;
+  const ty=yFor(state.lastPrice)+rnd(-0.6,0.6);
+  const dx=0-sx, dy=ty-sy, dz=0-sz;
+  const dist=Math.max(0.1,Math.sqrt(dx*dx+dy*dy+dz*dz));
+  const spd=rnd(24,38)*(0.7+qn*0.6);
+  pVel[i*3]=dx/dist*spd; pVel[i*3+1]=dy/dist*spd; pVel[i*3+2]=dz/dist*spd;
+  pLife[i]=dist/spd;
+  pQ[i]=qn; pSide[i]=side==='buy'?1:0;
+  const c=side==='buy'?BUY_C:SELL_C;
+  pCol[i*3]=c.r; pCol[i*3+1]=c.g; pCol[i*3+2]=c.b;
+  pSize[i]=6+qn*26; pAlpha[i]=0.95;
+}
+function flareBoost(amount,side){
+  state.flare=Math.min(2.4,state.flare+amount);
+  state.flareCol.lerp(side==='buy'?BUY_C:SELL_C,0.35);
+}
+
+// ---- ripples ----
+const ripples=[];
+for(let i=0;i<10;i++){
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:ringTex,color:0x00ffa6,transparent:true,opacity:0,blending:THREE.AdditiveBlending,depthWrite:false}));
+  sp.visible=false; world.add(sp); ripples.push({sp,life:0});
+}
+let ripCursor=0;
+function spawnRipple(side,price,power){
+  const r=ripples[ripCursor]; ripCursor=(ripCursor+1)%ripples.length;
+  r.life=1; r.power=power||0.5;
+  r.sp.visible=true;
+  r.sp.material.color.set(side==='buy'?0x00ffa6:0xff3d6e);
+  r.sp.position.set(0,yFor(price),0);
+}
+
+// ---- motion tail ----
+const TMAX=220;
+const tPos=new Float32Array(TMAX*3), tCol=new Float32Array(TMAX*3),
+      tSize=new Float32Array(TMAX), tAlpha=new Float32Array(TMAX);
+const tailPool={pos:tPos,col:tCol,size:tSize,alpha:tAlpha};
+const tail=mkPoints(tailPool);
+const tailSamples=[];
+let lastSampleT=0;
+
+// ============================================================
+//  per-frame world
+// ============================================================
+function updateWorld(dt,now){
+  if(!state.candles.length) return;
+  const t=now*0.001;
+
+  state.sMin=lerp(state.sMin,state.tMin,0.05);
+  state.sMax=lerp(state.sMax,state.tMax,0.05);
+
+  // battle balance
+  state.buyAcc*=Math.exp(-dt/8); state.sellAcc*=Math.exp(-dt/8);
+  const flowTot=state.buyAcc+state.sellAcc;
+  const flowPct=flowTot>0? state.buyAcc/flowTot*100 : 50;
+  const bookTot=state.bookBid+state.bookAsk;
+  const bookPct=bookTot>0? state.bookBid/bookTot*100 : 50;
+  state.bullPct=lerp(state.bullPct, 0.55*bookPct+0.45*flowPct, 0.05);
+
+  layoutTitan(bullT, 3+state.bullPct/100*12, t);
+  layoutTitan(bearT, 3+(100-state.bullPct)/100*12, t);
+  bullT.glow.material.opacity=0.3+state.bullPct/100*0.5;
+  bearT.glow.material.opacity=0.3+(100-state.bullPct)/100*0.5;
+
+  // core
+  const yH=yFor(state.lastPrice);
+  coreG.position.y=lerp(coreG.position.y||yH, yH, 0.25);
+  coreShell.rotation.y+=dt*0.7; coreShell.rotation.x+=dt*0.3;
+  // momentum tint from ~4s ago
+  let mom=0;
+  if(tailSamples.length>3){
+    const old=tailSamples[Math.max(0,tailSamples.length-14)];
+    const ret=(state.lastPrice/old.price-1);
+    const ref=(ind?ind.A:state.lastPrice*0.004)/state.lastPrice*1.4;
+    mom=clamp(ret/Math.max(1e-9,ref),-1,1);
+  }
+  tmpC.copy(C_CY).lerp(mom>=0?C_UP:C_DN,Math.abs(mom)*0.9);
+  coreInner.material.color.copy(tmpC).lerp(new THREE.Color(0xffffff),0.35);
+  coreShell.material.color.copy(tmpC);
+  coreGlow.material.color.copy(tmpC).lerp(state.flareCol,0.4);
+  state.impactE*=Math.pow(0.05,dt);
+  const sq=state.impactE;
+  coreG.scale.set(1+sq*0.22, 1-sq*0.15, 1+sq*0.22);
+  const gs=9+state.flare*6+Math.sin(t*3)*0.7;
+  coreGlow.scale.set(gs,gs,1);
+  state.flare*=Math.pow(0.35,dt);
+  state.flareCol.lerp(C_CY,0.02);
+
+  priceHolo.sp.position.set(7.6,yH+2.6,0);
+  priceHolo.draw(fmtP(state.lastPrice), mom>=0?'#00ffa6':'#ff3d6e', "700 56px 'Orbitron', monospace");
+
+  // hi / lo labels
+  hiLbl.draw('שיא  '+fmtP(state.winHi),'#7dfbff');
+  loLbl.draw('שפל  '+fmtP(state.winLo),'#7dfbff');
+
+  // signal layers
+  const showSig=state.showSig && !!ind;
+  verdictHolo.sp.visible=showSig;
+  if(showSig){
+    const s=ind.score;
+    const vTxt = s>=20?'▲ קנה עכשיו': s<=-20?'▼ מכור עכשיו':'ממתן · אין אות';
+    const vCss = s>=20?'#00ffa6': s<=-20?'#ff3d6e':'#ffd166';
+    verdictHolo.draw(vTxt,vCss,"800 62px 'Heebo', sans-serif");
+    verdictHolo.sp.position.y=COL_T+5.5+0.4*Math.sin(t*2);
+  }
+  gate.visible=showSig && Math.abs(ind?ind.score:0)>=20;
+  if(gate.visible){
+    gate.position.y=yH;
+    gate.rotation.y+=dt*0.8;
+    gate.material.color.copy(ind.score>0?C_UP:C_DN);
+    gateFlash*=Math.pow(0.2,dt);
+    gate.material.opacity=0.45+0.2*Math.sin(t*4)+gateFlash*0.5;
+    const gsc=1+gateFlash*0.5;
+    gate.scale.set(gsc,gsc,gsc);
+  }
+
+  // S/R rings
+  for(let j=0;j<srRings.length;j++){
+    const rg=srRings[j];
+    const lv=showSig && ind.levels[j];
+    if(lv){
+      rg.grp.visible=true;
+      rg.grp.position.y=yFor(lv.p);
+      const above=lv.p>state.lastPrice;
+      rg.setColor(above?0xff3d6e:0x00ffa6);
+      rg.ring.material.opacity=0.22+0.08*Math.sin(t*2+j);
+      rg.lb.draw((above?'התנגדות ':'תמיכה ')+fmtP(lv.p), above?'#ff3d6e':'#00ffa6');
+    } else rg.grp.visible=false;
+  }
+
+  // entry / tp / sl rings + chevrons
+  const src=pos || (showSig && ind.sug) || null;
+  tpRing.grp.visible=slRing.grp.visible=enRing.grp.visible=!!src && state.showSig;
+  chevMesh.visible=!!src && state.showSig;
+  if(src && state.showSig){
+    tpRing.grp.position.y=yFor(src.tp);
+    slRing.grp.position.y=yFor(src.sl);
+    enRing.grp.position.y=yFor(src.entry);
+    enRing.setColor(pos?0xffd166:0x00f0ff);
+    tpRing.lb.draw('יעד רווח  '+fmtP(src.tp),'#00ffa6');
+    slRing.lb.draw('סטופ הגנה  '+fmtP(src.sl),'#ff3d6e');
+    enRing.lb.draw((pos?'הכניסה שלך  ':'כניסה מוצעת  ')+fmtP(src.entry), pos?'#ffd166':'#00f0ff');
+    const up=src.side==='long';
+    chevMesh.material.color.copy(up?C_UP:C_DN);
+    const y1=yFor(src.entry), y2=yFor(src.tp);
+    for(let i=0;i<CHN;i++){
+      const k=((t*0.32)+(i/CHN))%1;
+      const y=lerp(y1,y2,k);
+      const s2=Math.sin(k*Math.PI)*1.15+0.15;
+      dummy.position.set(3.6,y,0);
+      dummy.scale.set(s2,s2,s2);
+      dummy.rotation.set(up?0:Math.PI,0,0);
+      dummy.updateMatrix(); chevMesh.setMatrixAt(i,dummy.matrix);
+    }
+    chevMesh.instanceMatrix.needsUpdate=true;
+  }
+
+  // whale shields
+  const shOn=state.showShield;
+  const refQ=Math.max(state.bigQ,1e-9);
+  if(shOn && state.wallAsk){
+    askShield.grp.visible=true;
+    askShield.grp.position.y=clamp(yFor(state.wallAsk.p),COL_B+1,COL_T-1);
+    const rel=clamp(state.wallAsk.q/(refQ*3),0.15,1);
+    askShield.disc.material.opacity=0.06+rel*0.22;
+    askShield.rim.material.opacity=0.3+rel*0.5;
+    askShield.lb.draw('חומת מכירה · '+fmtP(state.wallAsk.p),'#ff3d6e');
+  } else askShield.grp.visible=false;
+  if(shOn && state.wallBid){
+    bidShield.grp.visible=true;
+    bidShield.grp.position.y=clamp(yFor(state.wallBid.p),COL_B+1,COL_T-1);
+    const rel=clamp(state.wallBid.q/(refQ*3),0.15,1);
+    bidShield.disc.material.opacity=0.06+rel*0.22;
+    bidShield.rim.material.opacity=0.3+rel*0.5;
+    bidShield.lb.draw('חומת קנייה · '+fmtP(state.wallBid.p),'#00ffa6');
+  } else bidShield.grp.visible=false;
+
+  // bolts
+  bolts.pts.visible=state.showFx;
+  if(state.showFx){
+    for(let i=0;i<PMAX;i++){
+      if(pLife[i]<=0){ if(pAlpha[i]>0){ pAlpha[i]=0; pSize[i]=0; } continue; }
+      pLife[i]-=dt;
+      pPos[i*3]+=pVel[i*3]*dt; pPos[i*3+1]+=pVel[i*3+1]*dt; pPos[i*3+2]+=pVel[i*3+2]*dt;
+      pAlpha[i]=clamp(pLife[i]*2.4,0,0.95);
+      if(pLife[i]<=0.03 || Math.abs(pPos[i*3])<1.5){
+        pLife[i]=0; pAlpha[i]=0; pSize[i]=0;
+        state.impactE=Math.min(1,state.impactE+0.12+pQ[i]*0.5);
+        flareBoost(0.1+pQ[i]*0.5, pSide[i]?'buy':'sell');
+        if(pQ[i]>0.55) spawnRipple(pSide[i]?'buy':'sell', state.lastPrice, pQ[i]);
+      }
+    }
+    bolts.g.attributes.position.needsUpdate=true;
+    bolts.g.attributes.aAlpha.needsUpdate=true;
+    bolts.g.attributes.aSize.needsUpdate=true;
+    bolts.g.attributes.aColor.needsUpdate=true;
+  }
+
+  // ripples
+  for(const r of ripples){
+    if(r.life>0){
+      r.life-=dt*1.1;
+      if(r.life<=0){ r.sp.visible=false; continue; }
+      const sc=3+(1-r.life)*(18+r.power*20);
+      r.sp.scale.set(sc,sc,1);
+      r.sp.material.opacity=r.life*0.85;
+    }
+  }
+
+  // motion tail
+  if(now-lastSampleT>300){
+    lastSampleT=now;
+    const prev=tailSamples[tailSamples.length-1];
+    tailSamples.push({tms:now, price:state.lastPrice, up:!prev||state.lastPrice>=prev.price});
+    if(tailSamples.length>TMAX) tailSamples.shift();
+  }
+  tail.pts.visible=state.showTail;
+  if(state.showTail){
+    for(let i=0;i<TMAX;i++){
+      const s=tailSamples[i];
+      if(!s){ tAlpha[i]=0; tSize[i]=0; continue; }
+      const age=(now-s.tms)/1000;
+      if(age>62){ tAlpha[i]=0; tSize[i]=0; continue; }
+      tPos[i*3]=-2.3*age-2.5;
+      tPos[i*3+1]=yFor(s.price);
+      tPos[i*3+2]=0;
+      const f=1-age/62;
+      tAlpha[i]=Math.pow(f,1.3)*0.85;
+      tSize[i]=2.5+7*f;
+      const c=s.up?BUY_C:SELL_C;
+      tCol[i*3]=c.r; tCol[i*3+1]=c.g; tCol[i*3+2]=c.b;
+    }
+    tail.g.attributes.position.needsUpdate=true;
+    tail.g.attributes.aAlpha.needsUpdate=true;
+    tail.g.attributes.aSize.needsUpdate=true;
+    tail.g.attributes.aColor.needsUpdate=true;
+  }
+
+  halo1.rotation.z+=dt*0.02;
+  halo2.rotation.z-=dt*0.015;
+}
+
+
+// ============================================================
+//  WORLD — first-person multi-market trading city.
+//  Pods (one per selected market) surround the central battle
+//  arena: crypto pods ride the SAME Binance feeds as the main
+//  trading system, stock pods poll the dashboard's Yahoo chart
+//  endpoint, Polymarket pods poll the public gamma API — each
+//  with an automatic sim fallback so the world never dies.
+// ============================================================
+const WORLD_CRYPTO = {
+  BTC:{name:'Bitcoin', dot:'#f7931a', base:132400, dec:1},
+  ETH:{name:'Ethereum', dot:'#9b8cff', base:4870, dec:2},
+  SOL:{name:'Solana', dot:'#14f195', base:296, dec:2},
+  BNB:{name:'BNB', dot:'#f0b90b', base:1122, dec:2},
+  XRP:{name:'XRP', dot:'#7fb3d5', base:3.14, dec:4},
+  DOGE:{name:'Dogecoin', dot:'#c2a633', base:0.41, dec:5},
+  ADA:{name:'Cardano', dot:'#2a71d0', base:1.21, dec:4},
+  AVAX:{name:'Avalanche', dot:'#e84142', base:52.3, dec:2},
+  LINK:{name:'Chainlink', dot:'#2a5ada', base:31.2, dec:2},
+  TON:{name:'Toncoin', dot:'#0098ea', base:6.8, dec:3},
+  TRX:{name:'Tron', dot:'#ff060a', base:0.28, dec:5},
+  DOT:{name:'Polkadot', dot:'#e6007a', base:9.4, dec:3},
+  NEAR:{name:'NEAR', dot:'#00ec97', base:7.1, dec:3},
+  LTC:{name:'Litecoin', dot:'#b8b8b8', base:132, dec:2},
+};
+const WORLD_STOCKS = {
+  '^GSPC':{name:'S&P 500', dot:'#7dd3fc', base:6120},
+  '^IXIC':{name:'NASDAQ', dot:'#a78bfa', base:20150},
+  '^DJI':{name:'Dow Jones', dot:'#93c5fd', base:44980},
+  'GC=F':{name:'זהב', dot:'#ffd166', base:2710},
+  'CL=F':{name:'נפט', dot:'#4d5b6a', base:71.4},
+  AAPL:{name:'Apple', dot:'#e2e8f0', base:243},
+  NVDA:{name:'Nvidia', dot:'#76b900', base:141},
+  TSLA:{name:'Tesla', dot:'#e82127', base:412},
+  MSFT:{name:'Microsoft', dot:'#00a4ef', base:448},
+  GOOGL:{name:'Google', dot:'#fbbc05', base:196},
+};
+const WORLD_KEY='na:world:v1';
+let worldSel=(()=>{ try{ const w=JSON.parse(localStorage.getItem(WORLD_KEY)); if(w && w.crypto) return w; }catch(e){}
+  return { crypto:['BTC','ETH','SOL','BNB','XRP'], stocks:['^GSPC','NVDA','GC=F'], pm:true }; })();
+function saveWorld(){ try{ localStorage.setItem(WORLD_KEY, JSON.stringify(worldSel)); }catch(e){} }
+
+// ---- pods ----
+const podGroup=new THREE.Group(); scene.add(podGroup);
+let pods=[];
+function makePod(id,kind,label,dot){
+  const g=new THREE.Group();
+  const col=new THREE.Mesh(new THREE.BoxGeometry(0.5,16,0.5),addMat(0x00f0ff,0.5));
+  col.position.y=8; g.add(col);
+  const glow=new THREE.Sprite(new THREE.SpriteMaterial({map:glowTex,color:new THREE.Color(dot),transparent:true,opacity:0.8,blending:THREE.AdditiveBlending,depthWrite:false}));
+  glow.position.y=17; glow.scale.set(7,7,1); g.add(glow);
+  // a flat floor ring (a Sprite would billboard toward the camera)
+  const ring=new THREE.Mesh(new THREE.PlaneGeometry(11,11),
+    new THREE.MeshBasicMaterial({map:ringTex,color:new THREE.Color(dot),transparent:true,opacity:0.5,depthWrite:false,side:THREE.DoubleSide}));
+  ring.rotation.x=-Math.PI/2; ring.position.y=0.12; g.add(ring);
+  const nameS=textSprite(512,96,16,3);
+  nameS.sp.position.y=20.5; g.add(nameS.sp);
+  nameS.draw(label, dot, "800 44px 'Heebo', sans-serif");
+  const valS=textSprite(512,96,13,2.4);
+  valS.sp.position.y=13.4; g.add(valS.sp);
+  podGroup.add(g);
+  return { id,kind,label,dot,g,col,glow,ring,nameS,valS,
+    price:null, chg:0, sim:false, phase:Math.random()*6.28, extra:null };
+}
+function rebuildPods(){
+  pods.forEach(p=>{ podGroup.remove(p.g); p.g.traverse(o=>{ if(o.material&&o.material.map&&o.material.map.dispose&&o.material.map!==glowTex&&o.material.map!==ringTex) o.material.map.dispose(); if(o.material&&o.material.dispose) o.material.dispose(); if(o.geometry&&o.geometry.dispose) o.geometry.dispose(); }); });
+  pods=[];
+  const list=[];
+  worldSel.crypto.forEach(c=>{ if(WORLD_CRYPTO[c]) list.push(makePod(c,'crypto',c,WORLD_CRYPTO[c].dot)); });
+  worldSel.stocks.forEach(sm=>{ if(WORLD_STOCKS[sm]) list.push(makePod(sm,'stock',WORLD_STOCKS[sm].name,WORLD_STOCKS[sm].dot)); });
+  if(worldSel.pm) for(let i=0;i<6;i++) list.push(makePod('pm'+i,'pm','Polymarket','#ff2fd6'));
+  // two rings around the central battle arena
+  list.forEach((p,i)=>{
+    const ring=i<10?0:1, idxIn=ring===0? i : i-10, count=ring===0? Math.min(10,list.length) : list.length-10;
+    const R=ring===0?52:82;
+    const a=(idxIn/Math.max(1,count))*Math.PI*2 + ring*0.35;
+    p.g.position.set(Math.cos(a)*R,0,Math.sin(a)*R);
+  });
+  pods=list;
+  pmAssign();
+}
+// ---- pod data feeds (independent of the battle feed) ----
+let podWS=null, podTimers=[];
+function startPodFeeds(){
+  stopPodFeeds();
+  // crypto — one combined miniTicker stream for every crypto pod (same
+  // Binance source the main trading system uses)
+  const cs=pods.filter(p=>p.kind==='crypto');
+  if(cs.length){
+    try{
+      const streams=cs.map(p=>p.id.toLowerCase()+'usdt@miniTicker').join('/');
+      const ws=new WebSocket('wss://stream.binance.com:9443/stream?streams='+streams);
+      podWS=ws;
+      ws.onmessage=ev=>{ let m; try{ m=JSON.parse(ev.data); }catch(e){ return; }
+        const d=m.data||{}; if(!d.s) return;
+        const sym=d.s.replace('USDT','');
+        const p=pods.find(x=>x.kind==='crypto'&&x.id===sym); if(!p) return;
+        p.price=+d.c; p.chg=((+d.c)-(+d.o))/(+d.o)*100; p.sim=false;
+      };
+      ws.onerror=()=>{ cryptoPodSim(); };
+    }catch(e){ cryptoPodSim(); }
+    // if nothing arrived in 6s → sim drift
+    podTimers.push(setTimeout(()=>{ if(pods.some(p=>p.kind==='crypto'&&p.price==null)) cryptoPodSim(); },6000));
+  }
+  // stocks — the dashboard's own Yahoo chart endpoint, staggered polls
+  const st=pods.filter(p=>p.kind==='stock');
+  st.forEach((p,i)=>{
+    const pull=async()=>{
+      try{
+        const r=await fetch('https://query1.finance.yahoo.com/v8/finance/chart/'+encodeURIComponent(p.id)+'?interval=1d&range=2d');
+        if(!r.ok) throw 0;
+        const d=await r.json();
+        const meta=d&&d.chart&&d.chart.result&&d.chart.result[0]&&d.chart.result[0].meta;
+        if(!meta||!meta.regularMarketPrice) throw 0;
+        p.price=meta.regularMarketPrice;
+        const prev=meta.chartPreviousClose||meta.previousClose||p.price;
+        p.chg=prev?((p.price-prev)/prev*100):0; p.sim=false;
+      }catch(e){ if(p.price==null){ p.sim=true; p.price=WORLD_STOCKS[p.id].base*(1+rnd(-0.01,0.01)); p.chg=rnd(-1.6,1.6); } }
+    };
+    podTimers.push(setTimeout(pull, i*700));
+    podTimers.push(setInterval(pull, 90000));
+  });
+  // polymarket — public gamma API, top markets by 24h volume
+  if(pods.some(p=>p.kind==='pm')) pmPull();
+  podTimers.push(setInterval(()=>{ if(pods.some(p=>p.kind==='pm')) pmPull(); },120000));
+}
+function stopPodFeeds(){
+  if(podWS){ try{ podWS.onclose=null; podWS.close(); }catch(e){} podWS=null; }
+  podTimers.forEach(t=>{ clearTimeout(t); clearInterval(t); }); podTimers=[];
+}
+function cryptoPodSim(){
+  pods.filter(p=>p.kind==='crypto'&&p.price==null).forEach(p=>{
+    p.sim=true; p.price=WORLD_CRYPTO[p.id].base*(1+rnd(-0.01,0.01)); p.chg=rnd(-2.5,2.5);
+  });
+}
+let pmMarkets=null;
+async function pmPull(){
+  try{
+    const r=await fetch('https://gamma-api.polymarket.com/markets?active=true&closed=false&limit=10&order=volume24hr&ascending=false');
+    if(!r.ok) throw 0;
+    const list=await r.json();
+    if(!Array.isArray(list)||!list.length) throw 0;
+    pmMarkets=list.map(m=>{
+      let prob=0.5; try{ const op=JSON.parse(m.outcomePrices||'[]'); if(op.length) prob=+op[0]; }catch(e){}
+      return { q:(m.question||'?'), prob, vol:+m.volume24hr||0, sim:false };
+    });
+  }catch(e){
+    if(!pmMarkets) pmMarkets=[
+      {q:'ביטקוין מעל $150K עד סוף השנה?',prob:0.34,vol:2.1e6,sim:true},
+      {q:'הפד יוריד ריבית ברבעון הקרוב?',prob:0.62,vol:1.4e6,sim:true},
+      {q:'ETH מעל $6K החודש?',prob:0.27,vol:8.8e5,sim:true},
+      {q:'סולנה מעל $400 עד הרבעון הבא?',prob:0.19,vol:6.4e5,sim:true},
+      {q:'הכרזת רגולציית קריפטו בארה״ב השנה?',prob:0.55,vol:5.2e5,sim:true},
+      {q:'שיא חדש ב-S&P 500 החודש?',prob:0.71,vol:4.9e5,sim:true},
+    ];
+  }
+  pmAssign();
+}
+function pmAssign(){
+  if(!pmMarkets) return;
+  const pmPods=pods.filter(p=>p.kind==='pm');
+  pmPods.forEach((p,i)=>{
+    const m=pmMarkets[i%pmMarkets.length]; if(!m) return;
+    p.extra=m; p.sim=m.sim;
+    p.price=m.prob*100; p.chg=(m.prob-0.5)*40;
+    const q=m.q.length>34? m.q.slice(0,32)+'…' : m.q;
+    p.nameS.draw(q, '#ff2fd6', "700 30px 'Heebo', sans-serif");
+  });
+}
+function fmtPodVal(p){
+  if(p.kind==='pm') return (p.price!=null? p.price.toFixed(0):'—')+'% YES'+(p.sim?' · SIM':'');
+  if(p.price==null) return '…';
+  const dec=p.kind==='crypto'? WORLD_CRYPTO[p.id].dec : 2;
+  return '$'+p.price.toLocaleString('en-US',{minimumFractionDigits:dec>2?2:dec,maximumFractionDigits:dec})
+    +' '+(p.chg>=0?'+':'')+p.chg.toFixed(2)+'%'+(p.sim?' · SIM':'');
+}
+function updatePods(dt,now){
+  const t=now*0.001;
+  for(const p of pods){
+    if(p.sim && p.price!=null){ // gentle offline drift so sim pods stay alive
+      p.price*=1+Math.sin(t*0.6+p.phase)*0.00015;
+      p.chg+=Math.sin(t*0.35+p.phase)*0.002;
+    }
+    const up=p.chg>=0;
+    tmpC.copy(up?C_UP:C_DN);
+    p.col.material.color.copy(tmpC);
+    p.glow.material.color.copy(tmpC).lerp(new THREE.Color(p.dot),0.45);
+    const pulse=1+Math.sin(t*2+p.phase)*0.08+Math.min(0.5,Math.abs(p.chg)*0.03);
+    p.glow.scale.set(7*pulse,7*pulse,1);
+    p.col.scale.y=0.7+Math.min(1.1,Math.abs(p.chg)*0.09);
+    p.valS.draw(fmtPodVal(p), up?'#00ffa6':'#ff3d6e', "700 40px 'Orbitron', monospace");
+    if(walk.on){ // billboard labels matter only up close
+      const d=p.g.position.distanceTo(walk.pos);
+      p.nameS.sp.material.opacity=clamp(1.6-d/60,0.25,1);
+    }
+  }
+  updateWalk(dt);
+}
+
+// ---- first-person walk mode ----
+const walk={ on:false, pos:new THREE.Vector3(0,2.3,96), yaw:Math.PI, pitch:-0.04,
+  keys:{}, moveVec:{x:0,y:0}, lookPtr:null, movePtr:null, focusId:null, lastFocus:0 };
+function applyWalkCam(dt){
+  const sp=18;
+  let mx=walk.moveVec.x, mz=walk.moveVec.y;
+  if(walk.keys.w||walk.keys.ArrowUp) mz-=1;
+  if(walk.keys.s||walk.keys.ArrowDown) mz+=1;
+  if(walk.keys.a||walk.keys.ArrowLeft) mx-=1;
+  if(walk.keys.d||walk.keys.ArrowRight) mx+=1;
+  const L=Math.hypot(mx,mz); if(L>1){ mx/=L; mz/=L; }
+  // camera-relative movement (forward = away from camera)
+  const sy=Math.sin(walk.yaw), cy=Math.cos(walk.yaw);
+  walk.pos.x+=(mx*cy - mz*sy)*sp*dt;
+  walk.pos.z+=(mx*-sy - mz*cy)*sp*dt;
+  const R=Math.hypot(walk.pos.x,walk.pos.z);
+  if(R>130){ walk.pos.x*=130/R; walk.pos.z*=130/R; } // world edge
+  walk.pos.y=2.3+Math.sin(performance.now()*0.006)*0.04*(L>0.1?1:0); // step bob
+  camera.position.copy(walk.pos);
+  const cp=Math.cos(walk.pitch);
+  camera.lookAt(walk.pos.x - Math.sin(walk.yaw)*cp, walk.pos.y + Math.sin(walk.pitch), walk.pos.z - Math.cos(walk.yaw)*cp);
+  focusNearestPod();
+}
+function focusNearestPod(){
+  let best=null, bd=1e9;
+  for(const p of pods){ const d=p.g.position.distanceTo(walk.pos); if(d<bd){ bd=d; best=p; } }
+  const plate=$('focusPlate');
+  if(best && bd<12){
+    plate.style.display='block';
+    plate.innerHTML='<b style="color:'+best.dot+'">'+ (best.kind==='pm'? (best.extra?best.extra.q:'Polymarket') : best.label) +'</b><span class="num" style="color:'+(best.chg>=0?'var(--up)':'var(--down)')+'">'+fmtPodVal(best)+'</span>'
+      + (best.kind==='crypto' && best.id!==state.sym && SYMBOLS[best.id] ? '<i>כניסה לזירה…</i>' : best.kind==='crypto' && best.id===state.sym ? '<i>הזירה הפעילה</i>' : '');
+    // walking INTO a crypto pod re-aims the central battle arena at it
+    if(best.kind==='crypto' && bd<6 && best.id!==state.sym && SYMBOLS[best.id]){
+      const nowT=performance.now();
+      if(nowT-walk.lastFocus>2500){
+        walk.lastFocus=nowT;
+        if(pos) closePos('switch');
+        state.sym=best.id; $('symLabel').textContent=best.id+' / USDT';
+        state.stats=null; state.bigQ=1;
+        buildPills(); startFeed();
+        toast('⚔️ נכנסת לזירת '+best.id);
+      }
+    }
+  } else plate.style.display='none';
+}
+function walkPointerDown(e){
+  // touch twin-stick: RIGHT half = movement stick, LEFT half = camera stick
+  if(e.pointerType==='touch'){
+    if(e.clientX>innerWidth/2 && walk.movePtr==null) walk.movePtr={id:e.pointerId,x0:e.clientX,y0:e.clientY};
+    else if(walk.lookPtr==null) walk.lookPtr=e.pointerId;
+  }
+}
+function walkPointerMove(id,dx,dy){
+  if(walk.movePtr && id===walk.movePtr.id){
+    const cur=ptrs.get(id);
+    const ox=cur.x-walk.movePtr.x0, oy=cur.y-walk.movePtr.y0;
+    walk.moveVec.x=clamp(ox/70,-1,1); walk.moveVec.y=clamp(oy/70,-1,1);
+  } else {
+    walk.yaw-=dx*0.0042; walk.pitch=clamp(walk.pitch-dy*0.003,-0.9,0.9);
+  }
+}
+function walkPointerUp(id){
+  if(walk.movePtr && id===walk.movePtr.id){ walk.movePtr=null; walk.moveVec.x=0; walk.moveVec.y=0; }
+  if(walk.lookPtr===id) walk.lookPtr=null;
+}
+function updateWalk(dt){ /* reserved for future collisions */ }
+addEventListener('keydown',e=>{ const k=e.key.length===1?e.key.toLowerCase():e.key; walk.keys[k]=true; });
+addEventListener('keyup',e=>{ const k=e.key.length===1?e.key.toLowerCase():e.key; walk.keys[k]=false; });
+// desktop mouse-look via pointer lock (renderer.domElement — the shared
+// `el` alias is declared later in the camera section, after this module)
+renderer.domElement.addEventListener('click',()=>{ if(walk.on && !('ontouchstart' in window)){ try{ renderer.domElement.requestPointerLock(); }catch(e){} } });
+document.addEventListener('mousemove',e=>{
+  if(walk.on && document.pointerLockElement===renderer.domElement){
+    walk.yaw-=e.movementX*0.0028; walk.pitch=clamp(walk.pitch-e.movementY*0.0022,-0.9,0.9);
+  }
+});
+function setWalk(on){
+  walk.on=on;
+  $('btnWalk').classList.toggle('on',on);
+  $('joyHint').style.display=on&&('ontouchstart' in window)?'block':'none';
+  $('hint').textContent=on
+    ? 'WASD/גרירה ימנית — תנועה · עכבר/גרירה שמאלית — מבט · התקרבו לעמוד כדי להיכנס לזירה שלו'
+    : 'גרירה — סיבוב · צביטה — זום · הקשה כפולה — טיסה · הבזק ירוק = קנייה אמיתית · אדום = מכירה';
+  if(on){ state.auto=false; syncAutoBtn(); }
+  try{ localStorage.setItem('na:walk', on?'1':'0'); }catch(e){}
+  if(!on && document.pointerLockElement===el) document.exitPointerLock();
+}
+
+// ---- world picker UI ----
+function buildWorldUI(){
+  const wp=$('worldPanel');
+  const sec=(title,html)=>'<div class="wp-sec"><div class="wp-h">'+title+'</div><div class="wp-grid">'+html+'</div></div>';
+  const chk=(kind,id,label,dot,on)=>'<label class="wp-item'+(on?' on':'')+'" data-kind="'+kind+'" data-id="'+id+'"><span class="dot" style="background:'+dot+'"></span>'+label+'</label>';
+  wp.innerHTML='<div class="wp-title">🌍 בנה את עולם המסחר שלך</div>'
+    + sec('קריפטו — Binance חי', Object.keys(WORLD_CRYPTO).map(c=>chk('crypto',c,c,WORLD_CRYPTO[c].dot,worldSel.crypto.includes(c))).join(''))
+    + sec('שוק ההון — Yahoo', Object.keys(WORLD_STOCKS).map(sm=>chk('stocks',sm,WORLD_STOCKS[sm].name,WORLD_STOCKS[sm].dot,worldSel.stocks.includes(sm))).join(''))
+    + sec('שווקי חיזוי', chk('pm','pm','Polymarket — טופ שווקים','#ff2fd6',worldSel.pm))
+    + '<div class="wp-close" id="wpClose">✕ סגור</div>';
+  wp.querySelectorAll('.wp-item').forEach(item=>{
+    item.onclick=()=>{
+      const kind=item.dataset.kind, id=item.dataset.id;
+      if(kind==='pm') worldSel.pm=!worldSel.pm;
+      else {
+        const arr=worldSel[kind];
+        const i=arr.indexOf(id);
+        if(i>=0){ if(kind==='crypto'&&arr.length<=1){ toast('חייב להישאר לפחות מטבע אחד'); return; } arr.splice(i,1); }
+        else arr.push(id);
+      }
+      saveWorld(); buildWorldUI(); rebuildPods(); startPodFeeds(); buildPills();
+    };
+  });
+  $('wpClose').onclick=()=>{ wp.style.display='none'; };
+}
+
+// ============================================================
+//  camera + input
+// ============================================================
+const cam={theta:1.02,phi:1.08,radius:56,target:new THREE.Vector3(0,24,0)};
+function applyCam(dt){
+  if(walk.on){ applyWalkCam(dt); return; }
+  const yH=state.candles.length? yFor(state.lastPrice):24;
+  const tgt=new THREE.Vector3(0,clamp(yH,17,34),0);
+  cam.target.lerp(tgt,1-Math.pow(0.03,dt));
+  if(state.auto){
+    const t=performance.now()*0.001;
+    cam.theta+=dt*0.05;
+    cam.phi=1.04+0.14*Math.sin(t*0.2);
+    cam.radius=lerp(cam.radius,54+8*Math.sin(t*0.12),0.02);
+  }
+  cam.phi=clamp(cam.phi,0.2,1.42);
+  cam.radius=clamp(cam.radius,18,170);
+  const sp=Math.sin(cam.phi), x=cam.radius*sp*Math.cos(cam.theta),
+        z=cam.radius*sp*Math.sin(cam.theta), y=cam.radius*Math.cos(cam.phi);
+  camera.position.set(cam.target.x+x,cam.target.y+y,cam.target.z+z);
+  camera.lookAt(cam.target);
+}
+const ptrs=new Map(); let lastPinch=0, lastTap=0, downPos=null, moved=false;
+const el=renderer.domElement;
+el.style.touchAction='none';
+el.addEventListener('pointerdown',e=>{
+  ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  downPos={x:e.clientX,y:e.clientY}; moved=false;
+  el.setPointerCapture(e.pointerId);
+  if(walk.on) walkPointerDown(e);
+});
+el.addEventListener('pointermove',e=>{
+  if(!ptrs.has(e.pointerId)) return;
+  const p=ptrs.get(e.pointerId);
+  const dx=e.clientX-p.x, dy=e.clientY-p.y;
+  p.x=e.clientX; p.y=e.clientY;
+  if(Math.abs(e.clientX-(downPos?downPos.x:0))>6||Math.abs(e.clientY-(downPos?downPos.y:0))>6) moved=true;
+  if(walk.on){ walkPointerMove(e.pointerId, dx, dy); return; }
+  if(ptrs.size===1){
+    state.auto=false; syncAutoBtn();
+    cam.theta+=dx*0.0052;
+    cam.phi-=dy*0.0045;
+  } else if(ptrs.size===2){
+    const a=[...ptrs.values()];
+    const d=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);
+    if(lastPinch>0){ cam.radius*=lastPinch/d; state.auto=false; syncAutoBtn(); }
+    lastPinch=d;
+  }
+});
+function endPtr(e){
+  if(walk.on) walkPointerUp(e.pointerId);
+  ptrs.delete(e.pointerId);
+  if(ptrs.size<2) lastPinch=0;
+  if(ptrs.size===0 && !moved){
+    const now=performance.now();
+    if(now-lastTap<300){ state.auto=!state.auto; syncAutoBtn(); lastTap=0; }
+    else lastTap=now;
+  }
+}
+el.addEventListener('pointerup',endPtr);
+el.addEventListener('pointercancel',endPtr);
+el.addEventListener('wheel',e=>{
+  e.preventDefault();
+  if(walk.on) return;
+  cam.radius*=1+Math.sign(e.deltaY)*0.09;
+  state.auto=false; syncAutoBtn();
+},{passive:false});
+
+// ============================================================
+//  HUD
+// ============================================================
+function buildPills(){
+  const sr=$('symRow'); sr.innerHTML='';
+  const pillSyms=(typeof worldSel!=='undefined'&&worldSel.crypto.length?worldSel.crypto:Object.keys(SYMBOLS)).filter(k=>SYMBOLS[k]);
+  pillSyms.forEach(s=>{
+    const b=document.createElement('div');
+    b.className='pill'+(s===state.sym?' on':'');
+    b.innerHTML=`<span class="dot" style="background:${SYMBOLS[s].dot}"></span>${s}`;
+    b.onclick=()=>{ if(state.sym===s) return;
+      if(pos) closePos('switch');
+      state.sym=s; $('symLabel').textContent=s+' / USDT';
+      state.stats=null; state.bigQ=1;
+      buildPills(); startFeed(); };
+    sr.appendChild(b);
+  });
+  const tr=$('tfRow'); tr.innerHTML='';
+  TFS.forEach(([tf,label])=>{
+    const b=document.createElement('div');
+    b.className='pill'+(tf===state.tf?' on':'');
+    b.textContent=label;
+    b.onclick=()=>{ if(state.tf===tf) return;
+      if(pos) closePos('switch');
+      state.tf=tf; buildPills(); startFeed(); };
+    tr.appendChild(b);
+  });
+}
+function syncAutoBtn(){ $('btnAuto').classList.toggle('on',state.auto); }
+$('btnAuto').onclick=()=>{ if(walk.on) setWalk(false); state.auto=!state.auto; syncAutoBtn(); };
+$('btnWalk').onclick=()=>{ setWalk(!walk.on); };
+$('btnWorld').onclick=()=>{ const wp=$('worldPanel'); wp.style.display=wp.style.display==='none'?'block':'none'; };
+try{ if(localStorage.getItem('na:walk')==='1') setTimeout(()=>setWalk(true),400); }catch(e){}
+$('btnSig').onclick=()=>{ state.showSig=!state.showSig; $('btnSig').classList.toggle('on',state.showSig); };
+$('btnTail').onclick=()=>{ state.showTail=!state.showTail; $('btnTail').classList.toggle('on',state.showTail); };
+$('btnShield').onclick=()=>{ state.showShield=!state.showShield; $('btnShield').classList.toggle('on',state.showShield); };
+$('btnFx').onclick=()=>{ state.showFx=!state.showFx; $('btnFx').classList.toggle('on',state.showFx); };
+$('btnSnd').onclick=()=>{ soundOn=!soundOn; $('btnSnd').classList.toggle('on',soundOn); if(soundOn) ensureAC(); };
+
+let bannerTO=null;
+function showBanner(side,str,why){
+  const b=$('banner');
+  $('bIcon').textContent=side==='buy'?'⚡':'⚠';
+  $('bTxt').textContent=`אות ${side==='buy'?'קנייה':'מכירה'} · ${why} · עוצמה ${Math.round(str)}`;
+  b.className='panel clip show '+side;
+  clearTimeout(bannerTO);
+  bannerTO=setTimeout(()=>b.classList.remove('show'),4200);
+}
+let toastTO=null;
+function toast(txt,cls){
+  const e=$('toast');
+  e.textContent=txt;
+  e.className='panel clip show '+(cls||'');
+  clearTimeout(toastTO);
+  toastTO=setTimeout(()=>e.classList.remove('show'),3400);
+}
+
+let lastHud=0, lastReasons='';
+function updateHud(now){
+  if(now-lastHud<250) return; lastHud=now;
+  if(!state.candles.length) return;
+  const p=state.lastPrice, up=p>=state.prevPrice;
+  const pb=$('priceBig'); pb.textContent=fmtP(p);
+  pb.style.textShadow=up?'0 0 22px rgba(0,255,166,.4)':'0 0 22px rgba(255,61,110,.4)';
+  if(state.stats){
+    const s=state.stats, ce=$('chg');
+    ce.textContent=fmtPct(s.chg)+(s.chg>=0?' ▲':' ▼');
+    ce.className='num '+(s.chg>=0?'up':'down');
+    $('statHi').textContent=fmtP(s.hi);
+    $('statLo').textContent=fmtP(s.lo);
+    $('statVol').textContent=fmtUsd(s.vol);
+  }
+  const bb=state.book.bids[0], ba=state.book.asks[0];
+  if(bb&&ba) $('statSpread').textContent=fmtP(Math.max(0,ba[0]-bb[0]));
+
+  // battle bar
+  const bp=Math.round(state.bullPct);
+  $('bBull').style.width=bp+'%';
+  $('bBullTxt').textContent=`קונים ${bp}%`;
+  $('bBearTxt').textContent=`מוכרים ${100-bp}%`;
+  bullT.pct.draw(Math.round(state.bullPct)+'%','#00ffa6',"700 40px 'Orbitron', monospace");
+  bearT.pct.draw(Math.round(100-state.bullPct)+'%','#ff3d6e',"700 40px 'Orbitron', monospace");
+
+  // oracle
+  if(ind){
+    $('needle').style.transform=`rotate(${ind.score*0.88}deg)`;
+    $('scoreNum').textContent=(ind.score>0?'+':'')+ind.score;
+    const v=$('verdict');
+    v.textContent=ind.verdict;
+    const strong=Math.abs(ind.score)>=55;
+    v.className=(ind.score>=20?'v-buy':ind.score<=-20?'v-sell':'v-wait')+(strong?' v-strong':'');
+    const rHtml=ind.reasons.map(x=>`<span class="chip">${x}</span>`).join('');
+    if(rHtml!==lastReasons){ lastReasons=rHtml; $('reasons').innerHTML=rHtml; }
+    $('lastSig').textContent=lastSignal
+      ? `אות אחרון: ${lastSignal.side==='buy'?'קנייה':'מכירה'} · ${fmtT(lastSignal.t)} · ${lastSignal.why}`
+      : 'טרם נורה אות בסשן זה';
+  }
+
+  // ticket
+  if(pos){
+    const pct=posPnlPct(), usd=pos.notional*pct/100, win=pct>=0;
+    const pb2=$('pnlBig');
+    pb2.textContent=fmtPct(pct);
+    pb2.className='num '+(win?'up':'down');
+    $('pnlUsd').textContent=(win?'+':'−')+'$'+Math.abs(usd).toFixed(0);
+  } else if(ind && ind.sug){
+    $('tEntry').textContent=fmtP(ind.sug.entry);
+    $('tTp').textContent=fmtP(ind.sug.tp);
+    $('tSl').textContent=fmtP(ind.sug.sl);
+    $('sugNote').textContent=ind.sug.side==='long'
+      ? 'האות: קנייה · הטבעות מסומנות בזירה'
+      : 'האות: שורט · הטבעות מסומנות בזירה';
+  } else {
+    $('tEntry').textContent='—'; $('tTp').textContent='—'; $('tSl').textContent='—';
+    $('sugNote').textContent='ממתין לאות ברור…';
+  }
+}
+
+setTimeout(()=>$('hint').classList.add('hide'),10000);
+
+// ============================================================
+//  main loop
+// ============================================================
+let prevT=performance.now(), running=true;
+function loop(){
+  requestAnimationFrame(loop);
+  if(!running) return;
+  const now=performance.now();
+  const dt=Math.min(0.05,(now-prevT)/1000); prevT=now;
+  if(indDirty && now-lastInd>350){ computeSignals(); indDirty=false; lastInd=now; }
+  checkPos();
+  updateWorld(dt,now);
+  updatePods(dt,now);
+  applyCam(dt);
+  updateHud(now);
+  renderer.render(scene,camera);
+}
+document.addEventListener('visibilitychange',()=>{ running=!document.hidden; prevT=performance.now(); });
+addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+});
+
+buildPills();
+buildWorldUI();
+rebuildPods();
+startPodFeeds();
+startFeed();
+loop();
+}); // end three-ready wrapper
+</script>
+</body>
+</html>

@@ -42,6 +42,7 @@ export default defineConfig({
         agent: resolve(__dirname, 'agent.html'),
         agents: resolve(__dirname, 'agents.html'),
         lyrics: resolve(__dirname, 'lyrics.html'),
+        arena: resolve(__dirname, 'arena.html'),
         widget: resolve(__dirname, 'widget.html'),
         chatwidget: resolve(__dirname, 'chat-widget.html'),
       },
