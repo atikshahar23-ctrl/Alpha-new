@@ -44,6 +44,7 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 #modeDot{width:8px;height:8px;border-radius:50%;background:var(--gold);box-shadow:0 0 10px var(--gold);animation:pulse 1.4s infinite}
 #mode.live #modeDot{background:var(--up);box-shadow:0 0 12px var(--up)}
 #mode.live{color:var(--up)} #mode.sim{color:var(--gold)}
+#mode.closed{color:var(--dim)} #mode.closed #modeDot{background:var(--dim);box-shadow:none;animation:none}
 @keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(.6);opacity:.5}}
 .pills{display:flex;gap:6px;flex-wrap:wrap}
 .pill{padding:7px 13px;font-size:12px;font-weight:600;letter-spacing:.5px;cursor:pointer;
@@ -655,6 +656,17 @@ const SYMBOLS = {
 // market-agnostic instead of hardcoding SYMBOLS everywhere.
 const symCfg=sym=>SYMBOLS[sym]||WORLD_STOCKS[sym];
 const symLabelText=sym=>state.market==='crypto'? sym+' / USDT' : sym;
+// real-world NYSE/NASDAQ hours (09:30–16:00 America/New_York, Mon–Fri) —
+// crypto trades 24/7 so this only ever gates the stock market. Skips a full
+// US-holiday calendar (diminishing returns for a demo) but nights/weekends,
+// the overwhelming majority of "closed" time, are covered exactly.
+const usMarketFmt=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',weekday:'short',hour:'2-digit',minute:'2-digit',hour12:false});
+function usMarketOpen(){
+  const parts={}; usMarketFmt.formatToParts(new Date()).forEach(p=>parts[p.type]=p.value);
+  if(parts.weekday==='Sat'||parts.weekday==='Sun') return false;
+  const mins=(+parts.hour)*60+(+parts.minute);
+  return mins>=9*60+30 && mins<16*60;
+}
 const TFS = [['1m','1ד'],['5m','5ד'],['15m','15ד'],['1h','1ש'],['4h','4ש'],['1d','יום']];
 const TF_SEC = {'1m':60,'5m':300,'15m':900,'1h':3600,'4h':14400,'1d':86400};
 
@@ -662,7 +674,7 @@ const TF_SEC = {'1m':60,'5m':300,'15m':900,'1h':3600,'4h':14400,'1d':86400};
 const NA_DEFAULTS={
   qualityMode:'auto',      // אוטומטי · מקסימלית · בינונית · נמוכה
   exposure:1.0,            // renderer.toneMappingExposure (active only with bloom) — kept modest to avoid glare on real displays
-  showMotes:true, showComets:true, showStreams:true,
+  showMotes:true, showComets:true, showStreams:true, showWeather:true,
   walkSpeed:18, lookSens:1.0, invertY:false,
   alertsEnabled:true, alertPct:3,
   chartAutoOpen:false, chartDefaultTf:'1m',
@@ -801,7 +813,8 @@ document.addEventListener('pointerdown',ensureAC,{once:true});
 function setBadge(mode){
   const el=$('mode'); el.className='panel clip '+mode;
   $('modeTxt').textContent = mode==='live' ? 'LIVE · בזמן אמת'
-    : mode==='sim' ? 'הדגמה · שוק מדומה' : 'מתחבר…';
+    : mode==='sim' ? 'הדגמה · שוק מדומה'
+    : mode==='closed' ? '🔒 השוק סגור · מחוץ לשעות המסחר' : 'מתחבר…';
 }
 function startFeed(){
   stopFeed();
@@ -938,9 +951,14 @@ async function tryLiveStock(f){
   const cs=await fetchStockChart(sym,tf);
   if(f.stopped) return;
   onInit(cs);
-  f.mode='live'; setBadge('live');
+  // real Yahoo data already freezes at the last trade outside market hours
+  // on its own — this just makes the badge say so instead of misleadingly
+  // reading "LIVE" while nothing is actually moving
+  f.mode=usMarketOpen()?'live':'closed'; setBadge(f.mode);
   f.timers.push(setInterval(async()=>{
     if(f.stopped) return;
+    const nowMode=usMarketOpen()?'live':'closed';
+    if(nowMode!==f.mode){ f.mode=nowMode; setBadge(f.mode); }
     try{
       const fresh=await fetchStockChart(sym,tf);
       if(f.stopped||sym!==state.sym) return;
@@ -968,7 +986,8 @@ async function fetchStockStats(f){
 
 // ---------- simulation (accelerated demo market) ----------
 function startSim(f){
-  f.mode='sim'; setBadge('sim');
+  const closedNow=state.market==='stock' && !usMarketOpen();
+  f.mode=closedNow?'closed':'sim'; setBadge(f.mode);
   const cfg=symCfg(state.sym);
   const tfS=TF_SEC[state.tf];
   const sv=cfg.vol*Math.sqrt(tfS/60);
@@ -999,7 +1018,14 @@ function startSim(f){
   let cur={t:Date.now(),o:price,h:price,l:price,c:price,v:0};
   state.candles.push(cur); if(state.candles.length>N) state.candles.shift();
 
+  let wasClosed=closedNow;
   f.timers.push(setInterval(()=>{
+    // real stock prices don't move outside trading hours — checked live
+    // (not just once at feed start) so a tab left open across the opening
+    // bell picks the market back up without needing a manual refresh
+    const shut=isStock && !usMarketOpen();
+    if(shut!==wasClosed){ wasClosed=shut; f.mode=shut?'closed':'sim'; setBadge(f.mode); }
+    if(shut){ onTick(cur); return; } // frozen — no walk, no fake prints
     mu=mu*0.986+(Math.random()-0.5)*sv*0.09;
     if(Math.random()<0.006) mu+=(Math.random()<0.5?-1:1)*sv*1.6;
     let rr=mu*0.3+(Math.random()-0.5)*sv*0.22;
@@ -1021,6 +1047,8 @@ function startSim(f){
   },tickMs));
 
   f.timers.push(setInterval(()=>{
+    // a flat o=h=l=c candle with zero volume IS the accurate picture of a
+    // period with no trading — not a bug to work around, the correct read
     cur={t:Date.now(),o:price,h:price,l:price,c:price,v:0};
     state.candles.push(cur); if(state.candles.length>N) state.candles.shift();
     indDirty=true;
@@ -2214,8 +2242,9 @@ function fmtPodVal(p){
   if(p.kind==='pm') return (p.price!=null? p.price.toFixed(0):'—')+'% YES'+(p.sim?' · SIM':'');
   if(p.price==null) return '…';
   const dec=p.kind==='crypto'? WORLD_CRYPTO[p.id].dec : 2;
-  return '$'+p.price.toLocaleString('en-US',{minimumFractionDigits:dec>2?2:dec,maximumFractionDigits:dec})
-    +' '+(p.chg>=0?'+':'')+p.chg.toFixed(2)+'%'+(p.sim?' · SIM':'');
+  const priceTxt='$'+p.price.toLocaleString('en-US',{minimumFractionDigits:dec>2?2:dec,maximumFractionDigits:dec});
+  if(p.kind==='stock' && !usMarketOpen()) return priceTxt+' · שוק סגור 🔒';
+  return priceTxt+' '+(p.chg>=0?'+':'')+p.chg.toFixed(2)+'%'+(p.sim?' · SIM':'');
 }
 // rolling per-pod price history (feeds the holo sparkline + info plate)
 function podHist(p){
@@ -2228,8 +2257,13 @@ function podHist(p){
 }
 function updatePods(dt,now){
   const t=now*0.001;
+  const stocksClosed=!usMarketOpen();
   for(const p of pods){
-    if(p.sim && p.price!=null){ // gentle offline drift so sim pods stay alive
+    // a stock pod outside real trading hours must not drift at all — even
+    // the small "stay alive" cosmetic wobble reads as a market that's still
+    // trading when the real one flat-out isn't
+    const frozen=p.kind==='stock' && stocksClosed;
+    if(p.sim && p.price!=null && !frozen){ // gentle offline drift so sim pods stay alive
       p.price*=1+Math.sin(t*0.6+p.phase)*0.00015;
       p.chg+=Math.sin(t*0.35+p.phase)*0.002;
       podHist(p);
@@ -2240,9 +2274,12 @@ function updatePods(dt,now){
     if(p.cone) p.cone.material.color.copy(tmpC);
     p.glow.material.color.copy(tmpC).lerp(new THREE.Color(p.dot),0.45);
     if(p.alertT>0) p.alertT=Math.max(0,p.alertT-dt*0.45); // alert flare decays
-    const pulse=(1+Math.sin(t*2+p.phase)*0.08+Math.min(0.5,Math.abs(p.chg)*0.03))*(1+(p.alertT||0)*1.6);
+    // a closed stock reads as dormant — a slow, small, near-static glow
+    // instead of the same lively pulse an actively-trading pod gets
+    const pulse=frozen ? 1+Math.sin(t*0.4+p.phase)*0.02
+      : (1+Math.sin(t*2+p.phase)*0.08+Math.min(0.5,Math.abs(p.chg)*0.03))*(1+(p.alertT||0)*1.6);
     p.glow.scale.set(7*pulse,7*pulse,1);
-    p.col.scale.y=0.7+Math.min(1.1,Math.abs(p.chg)*0.09);
+    p.col.scale.y=frozen? 0.7 : 0.7+Math.min(1.1,Math.abs(p.chg)*0.09);
     p.valS.draw(fmtPodVal(p), up?'#00ffa6':'#ff3d6e', "700 40px 'Orbitron', monospace");
     if(walk.on){ // billboard labels matter only up close
       const d=p.g.position.distanceTo(walk.pos);
@@ -2253,6 +2290,7 @@ function updatePods(dt,now){
   updateMoodSky(dt);
   updateComets(dt);
   updateAmbience(dt,now);
+  updateWeather(dt,now);
   updateStreams(now);
   if(now-(updatePods._alertAt||0)>2000){ updatePods._alertAt=now; checkWorldAlerts(now); }
   if(now-lastTape>5000){ lastTape=now; renderTape(); renderPulse(); }
@@ -2307,9 +2345,10 @@ function renderPulse(){
   const live=pods.filter(p=>p.price!=null&&p.kind!=='pm');
   const sorted=live.slice().sort((a,b)=>b.chg-a.chg);
   const rows=sorted.slice(0,3).concat(sorted.slice(-2)).filter((v,i,arr)=>arr.indexOf(v)===i);
+  const stocksClosed=!usMarketOpen();
   pl.innerHTML=rows.map(p=>{
-    const up=p.chg>=0;
-    return '<div class="pl-row" data-pod="'+p.id+'"><span class="dot" style="background:'+p.dot+'"></span><b>'+(p.kind==='crypto'?p.id:p.label)+'</b><i class="num '+(up?'tup':'tdn')+'">'+(up?'+':'')+p.chg.toFixed(2)+'%</i></div>';
+    const up=p.chg>=0, closed=p.kind==='stock'&&stocksClosed;
+    return '<div class="pl-row" data-pod="'+p.id+'"><span class="dot" style="background:'+p.dot+'"></span><b>'+(closed?'🔒 ':'')+(p.kind==='crypto'?p.id:p.label)+'</b><i class="num '+(closed?'':(up?'tup':'tdn'))+'" style="'+(closed?'color:var(--dim)':'')+'">'+(closed?'סגור':(up?'+':'')+p.chg.toFixed(2)+'%')+'</i></div>';
   }).join('');
   pl.querySelectorAll('.pl-row').forEach(r=>{
     r.onclick=()=>{
@@ -2520,6 +2559,60 @@ const motes={n:340};
   gg.setAttribute('color',new THREE.BufferAttribute(col,3));
   motes.pts=new THREE.Points(gg,new THREE.PointsMaterial({size:1.1,map:glowTex,vertexColors:true,transparent:true,opacity:0.5,blending:THREE.AdditiveBlending,depthWrite:false,sizeAttenuation:true}));
   scene.add(motes.pts);
+}
+// ---- market weather — a whole-sky ambient system reading the overall mood
+// (average % change across every pod in the world) and turning it into
+// weather: a red storm with rare lightning on a falling world, a rising
+// gold/green aurora on a rising one. Pure atmosphere — never touches a
+// number, only how the world FEELS. Fades in/out smoothly with the mood
+// so it never snaps abruptly, and respects naSettings.showWeather.
+let weatherPts=null, weatherMode='calm', lightningT=0;
+{
+  const wn=260;
+  const pos=new Float32Array(wn*3), col=new Float32Array(wn*3);
+  for(let i=0;i<wn;i++){
+    const r=Math.sqrt(Math.random())*140, a=Math.random()*Math.PI*2;
+    pos[i*3]=Math.cos(a)*r; pos[i*3+1]=20+Math.random()*120; pos[i*3+2]=Math.sin(a)*r;
+    col[i*3]=1; col[i*3+1]=1; col[i*3+2]=1;
+  }
+  const gg=new THREE.BufferGeometry();
+  gg.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  gg.setAttribute('color',new THREE.BufferAttribute(col,3));
+  weatherPts=new THREE.Points(gg,new THREE.PointsMaterial({size:1.6,map:glowTex,vertexColors:true,transparent:true,opacity:0,blending:THREE.AdditiveBlending,depthWrite:false,sizeAttenuation:true}));
+  scene.add(weatherPts);
+}
+const lightningLight=new THREE.PointLight(0xbfe0ff,0,420,0);
+lightningLight.position.set(0,140,0); scene.add(lightningLight);
+function updateWeather(dt,now){
+  if(!weatherPts) return;
+  let sum=0,n=0;
+  for(const p of pods){ if(p.price!=null){ sum+=clamp(p.chg,-6,6); n++; } }
+  const mood=n? sum/n/6 : 0; // -1..1
+  weatherMode = mood<-0.32?'storm' : mood>0.32?'aurora' : 'calm';
+  const on=naSettings.showWeather && weatherMode!=='calm';
+  weatherPts.material.opacity+=((on?0.55:0)-weatherPts.material.opacity)*Math.min(1,dt*1.5);
+  const pos=weatherPts.geometry.attributes.position.array;
+  const col=weatherPts.geometry.attributes.color.array;
+  const wn=pos.length/3, storm=weatherMode==='storm';
+  for(let i=0;i<wn;i++){
+    if(storm){
+      pos[i*3+1]-=dt*(60+((i*7)%40)); // falling rain, staggered per-particle speed
+      if(pos[i*3+1]<0) pos[i*3+1]=120+((i*13)%30);
+      col[i*3]=0.9; col[i*3+1]=0.25; col[i*3+2]=0.35;
+    } else {
+      pos[i*3+1]+=dt*(6+((i*3)%4)); // rising aurora
+      pos[i*3]+=Math.sin(now*0.0006+i)*dt*2;
+      if(pos[i*3+1]>150) pos[i*3+1]=20;
+      col[i*3]=0.5; col[i*3+1]=1.0; col[i*3+2]=0.75;
+    }
+  }
+  weatherPts.geometry.attributes.position.needsUpdate=true;
+  weatherPts.geometry.attributes.color.needsUpdate=true;
+  if(storm && on){
+    lightningT-=dt;
+    if(lightningT<=0 && Math.random()<0.006){ lightningT=0.18; lightningLight.intensity=6; }
+  }
+  if(lightningLight.intensity>0) lightningLight.intensity=Math.max(0,lightningLight.intensity-dt*22);
 }
 function updateAmbience(dt,now){
   streakSp.material.rotation+=dt*0.02;
@@ -2767,6 +2860,7 @@ const SETTINGS_SCHEMA=[
     {key:'showMotes', type:'checkbox', label:'אבק אור מרחף', desc:'חלקיקי זוהר עדינים באוויר'},
     {key:'showComets', type:'checkbox', label:'כוכבים נופלים', desc:'שביטים איטיים בשמיים'},
     {key:'showStreams', type:'checkbox', label:'זרמי נתונים', desc:'חלקיקי אור מכל פוד אל הזירה המרכזית'},
+    {key:'showWeather', type:'checkbox', label:'מזג אוויר של השוק', desc:'סופה בירידות, זוהר צפוני בעליות — לפי מצב הרוח הכללי'},
   ]},
   {sec:'🕹️ שליטה ותנועה', items:[
     {key:'walkSpeed', type:'range', label:'מהירות הליכה', min:6,max:32,step:1, fmt:v=>v+''},
@@ -2789,7 +2883,7 @@ function onSettingChanged(key){
   saveNaSettings();
   if(key==='qualityMode') applyQuality(naSettings.qualityMode);
   if(key==='exposure' && renderer.toneMapping!==THREE.NoToneMapping) renderer.toneMappingExposure=naSettings.exposure;
-  if(key==='showMotes'||key==='showComets'||key==='showStreams'||key==='tapeSpeedSec') applyVisualToggles();
+  if(key==='showMotes'||key==='showComets'||key==='showStreams'||key==='showWeather'||key==='tapeSpeedSec') applyVisualToggles();
 }
 function buildSettingsPanel(){
   const body=$('settingsBody'); if(!body) return;
@@ -3164,6 +3258,7 @@ function applyVisualToggles(){
   if(motes.pts) motes.pts.visible=naSettings.showMotes;
   comets.forEach(c=>{ c.sp.visible=naSettings.showComets; });
   if(typeof streamGroup!=='undefined') streamGroup.visible=naSettings.showStreams;
+  if(typeof weatherPts!=='undefined' && weatherPts) weatherPts.visible=naSettings.showWeather;
   const tapeIn=document.getElementById('tapeIn');
   if(tapeIn) tapeIn.style.animationDuration=naSettings.tapeSpeedSec+'s';
   window.__naDebug={comets,motes,streamGroup:(typeof streamGroup!=='undefined'?streamGroup:null)}; // test hook

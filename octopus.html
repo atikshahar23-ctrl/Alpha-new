@@ -60,6 +60,19 @@ header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 16px
   transition:all .15s;padding:0}
 .icon-btn:hover{border-color:var(--cyan);box-shadow:0 0 14px rgba(0,240,255,.3)}
 .icon-btn.on{background:rgba(0,240,255,.15)}
+.tl-row{display:flex;align-items:center;gap:10px;padding:5px 0;font-size:12px;border-bottom:1px solid rgba(0,240,255,.08)}
+.tl-row .tl-when{color:var(--dim);font-size:10.5px;flex:none;width:74px}
+.tl-row .tl-lag{margin-inline-start:auto;font-size:10.5px;color:var(--gold)}
+#hotEntities{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 2px;align-items:center}
+#hotEntities .he-lbl{font-size:10px;color:var(--gold);letter-spacing:.5px;font-weight:700}
+#hotEntities .he-chip{font-size:11px;font-weight:600;cursor:pointer;padding:3px 9px;color:var(--txt);
+  background:rgba(255,209,102,.07);border:1px solid rgba(255,209,102,.25);transition:all .15s}
+#hotEntities .he-chip b{color:var(--gold);margin-inline-start:4px;font-size:10px}
+#hotEntities .he-chip:hover{border-color:var(--gold)}
+body.compact .cluster{padding:8px 12px;margin-bottom:6px}
+body.compact .cluster h3{font-size:13px;margin:2px 0}
+body.compact .cluster .c-hint{display:none}
+body.compact .cluster .c-srcs{margin-top:2px}
 #searchRow{display:flex;gap:8px;margin:10px 0}
 #searchBox{flex:1;min-width:0;background:rgba(6,12,26,.6);color:var(--txt);border:1px solid var(--line);
   padding:8px 12px;font-size:12.5px;font-family:'Heebo',sans-serif;border-radius:2px}
@@ -187,7 +200,7 @@ header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 16px
       <span class="oct">🐙</span>
       <div class="tt">
         <div class="name">OCTOPUS</div>
-        <div class="sub">מנוע חדשות עתידני · 10 זרועות · 27 מקורות חינמיים · מצליב · מגבש תמונה · מנתח</div>
+        <div class="sub">מנוע חדשות עתידני · 13 זרועות · 57 מקורות חינמיים · מצליב · מגבש תמונה · מנתח</div>
       </div>
     </div>
     <div id="arms" title="מצב הזרועות"></div>
@@ -207,12 +220,13 @@ header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 16px
       <div class="st"><b id="stStories" class="num">0</b><span>כתבות</span></div>
       <div class="st"><b id="stClusters" class="num">0</b><span>סיפורים</span></div>
       <div class="st"><b id="stCross" class="num">0</b><span>הצלבות רב-זוויתיות</span></div>
-      <div class="st"><b id="stArms" class="num">0/10</b><span>זרועות חיות</span></div>
+      <div class="st"><b id="stArms" class="num">0/13</b><span>זרועות חיות</span></div>
     </div>
     <div id="searchRow">
       <input id="searchBox" type="text" placeholder="🔍 חיפוש בכותרות ובמקורות…">
       <span id="bookmarkFilter" class="tchip">⭐ מועדפים</span>
     </div>
+    <div id="hotEntities" title="המילים הבולטות בכל הסיפורים כרגע — הקשה מסננת"></div>
     <div id="topics"></div>
   </section>
 
@@ -234,6 +248,7 @@ header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 16px
     </div>
     <h2 id="anaTitle"></h2>
     <div class="a-sec"><div class="s-t">📡 הזוויות — מי מדווח ומה</div><div id="anaAngles"></div></div>
+    <div class="a-sec"><div class="s-t">⏱️ ציר זמן הדיווח</div><div id="anaTimeline"></div></div>
     <div class="a-sec"><div class="s-t">🔑 מוקדי הסיפור</div><div class="a-kv" id="anaEnts"></div></div>
     <div class="a-sec"><div class="s-t">🧠 תמונה כוללת · ניתוח AI</div><div id="anaAiBody"></div></div>
     <div class="a-note" id="anaNote"></div>
@@ -479,7 +494,8 @@ if(renderer){
    ============================================================ */
 const $=id=>document.getElementById(id);
 // ---------- settings (persisted control room, parity with NEXUS·ARENA) ----------
-const OCTO_DEFAULTS={autoRefresh:true,refreshMin:5,soundOn:true,breakingAlerts:true,showSentiment:true,disabledArms:[]};
+const OCTO_DEFAULTS={autoRefresh:true,refreshMin:5,soundOn:true,breakingAlerts:true,showSentiment:true,
+  maxStories:160,clusterSens:'normal',fontScale:1,compactMode:false,showEntities:true,disabledArms:[]};
 function loadOctoSettings(){
   try{
     const raw=JSON.parse(localStorage.getItem('octo:settings')||'null');
@@ -519,48 +535,84 @@ const ARM_GROUPS=[
     ['ynet', 'https://www.ynet.co.il/Integration/StoryRss2.xml'],
     ['וואלה', 'https://rss.walla.co.il/feed/1'],
     ['מאקו', 'https://www.mako.co.il/Rss/news-israel/pages/israel.xml'],
+    ['סרוגים', 'https://www.srugim.co.il/feed'],
+    ['כיפה', 'https://www.kipa.co.il/feed/'],
   ]],
   ['כלכלה ועסקים', ['💰',0xffd166], [
     ['כלכליסט', 'https://www.calcalist.co.il/GeneralRSS/0,16335,L-8,00.xml'],
     ['גלובס', 'https://www.globes.co.il/webservice/rss/rssfeeder.asmx/FeederNode?iID=2'],
     ['ynet כלכלה', 'https://www.ynet.co.il/Integration/StoryRss6.xml'],
+    ['Business Insider', 'https://www.businessinsider.com/rss'],
+    ['CNBC', 'https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114'],
   ]],
   ['שוקי הון עולמיים', ['📈',0x00ffa6], [
     ['Yahoo Finance', 'https://finance.yahoo.com/news/rssindex'],
     ['MarketWatch', 'https://feeds.content.dowjones.io/public/rss/mw_topstories'],
     ['Investing.com', 'https://www.investing.com/rss/news.rss'],
+    ['Seeking Alpha', 'https://seekingalpha.com/market_currents.xml'],
   ]],
   ['קריפטו', ['🪙',0xff2fd6], [
     ['CoinDesk', 'https://www.coindesk.com/arc/outboundfeeds/rss/'],
     ['Cointelegraph', 'https://cointelegraph.com/rss'],
     ['Decrypt', 'https://decrypt.co/feed'],
+    ['Bitcoin Magazine', 'https://bitcoinmagazine.com/feed'],
+    ['The Block', 'https://www.theblock.co/rss.xml'],
   ]],
   ['טכנולוגיה', ['💻',0x8a5cff], [
     ['TechCrunch', 'https://techcrunch.com/feed/'],
     ['The Verge', 'https://www.theverge.com/rss/index.xml'],
     ['גיקטיים', 'https://www.geektime.co.il/feed/'],
     ['Ars Technica', 'https://feeds.arstechnica.com/arstechnica/index'],
+    ['Engadget', 'https://www.engadget.com/rss.xml'],
+    ['Wired', 'https://www.wired.com/feed/rss'],
+  ]],
+  ['בינה מלאכותית', ['🤖',0x36d7ff], [
+    ['VentureBeat AI', 'https://venturebeat.com/category/ai/feed/'],
+    ['MIT Tech Review', 'https://www.technologyreview.com/feed/'],
+    ['AI News', 'https://www.artificialintelligence-news.com/feed/'],
   ]],
   ['ביטחון ומזה"ת', ['🛡️',0xff3d6e], [
     ['ynet חדשות', 'https://www.ynet.co.il/Integration/StoryRss3.xml'],
     ['Times of Israel', 'https://www.timesofisrael.com/feed/'],
+    ['Jerusalem Post', 'https://www.jpost.com/rss/rssfeedsfrontpage.aspx'],
+    ['Al-Monitor', 'https://www.al-monitor.com/rss'],
   ]],
   ['עולם', ['🌍',0x7fb3d5], [
     ['BBC World', 'http://feeds.bbci.co.uk/news/world/rss.xml'],
     ['Reuters World', 'https://www.reutersagency.com/feed/?best-topics=world&post_type=best'],
     ['Guardian World', 'https://www.theguardian.com/world/rss'],
+    ['AP World', 'https://rsshub.app/apnews/topics/world-news'],
+    ['France24', 'https://www.france24.com/en/rss'],
+    ['DW', 'https://rss.dw.com/rdf/rss-en-all'],
   ]],
   ['ספורט ותרבות', ['🎭',0xf0b90b], [
     ['ynet ספורט', 'https://www.ynet.co.il/Integration/StoryRss5.xml'],
     ['וואלה ספורט', 'https://rss.walla.co.il/feed/22'],
+    ['ESPN', 'https://www.espn.com/espn/rss/news'],
+    ['BBC Sport', 'http://feeds.bbci.co.uk/sport/rss.xml'],
   ]],
   ['מדע ובריאות', ['🔬',0x00e0a0], [
     ['Live Science', 'https://www.livescience.com/feeds/all'],
     ['ScienceDaily', 'https://www.sciencedaily.com/rss/all.xml'],
+    ['Nature', 'https://www.nature.com/nature.rss'],
+    ['Phys.org', 'https://phys.org/rss-feed/'],
+    ['Space.com', 'https://www.space.com/feeds/all'],
   ]],
   ['גיימינג', ['🎮',0xc770ff], [
     ['IGN', 'https://feeds.ign.com/ign/all'],
     ['Polygon', 'https://www.polygon.com/rss/index.xml'],
+    ['GameSpot', 'https://www.gamespot.com/feeds/mashup/'],
+    ['PC Gamer', 'https://www.pcgamer.com/rss/'],
+  ]],
+  ['רכב ותחבורה', ['🚗',0x9ae6b4], [
+    ['Electrek', 'https://electrek.co/feed/'],
+    ['InsideEVs', 'https://insideevs.com/rss/articles/all/'],
+    ['Autoblog', 'https://www.autoblog.com/rss.xml'],
+  ]],
+  ['בידור וקולנוע', ['🎬',0xf687b3], [
+    ['Variety', 'https://variety.com/feed/'],
+    ['Hollywood Reporter', 'https://www.hollywoodreporter.com/feed/'],
+    ['Deadline', 'https://deadline.com/feed/'],
   ]],
 ];
 // flattened source list — kept for the arm-status dots / live counter, in
@@ -580,6 +632,9 @@ const TOPICS=[
   ['עולם',['ארה"ב','טראמפ','אירופה','רוסיה','אוקראינה','סין','האו"ם','נשיא']],
   ['מדע',['מחקר','חלל','נאס"א','nasa','מדענים','study','research','space','גילוי','אבולוצי','כוכב']],
   ['גיימינג',['משחק','גיימינג','פלייסטיישן','אקסבוקס','nintendo','playstation','xbox','steam','גיימר','קונסולה']],
+  ['AI',['בינה מלאכותית','artificial intelligence','openai','chatgpt','claude','gemini','llm','machine learning','deep learning','anthropic','מודל שפה']],
+  ['רכב',['רכב חשמלי','טסלה','tesla','ev','רכב אוטונומי','electric vehicle','charging','battery','מכונית']],
+  ['בידור',['סרט','סדרה','נטפליקס','netflix','קולנוע','במאי','שחקן','hollywood','box office','טריילר','פרס']],
 ];
 // simple keyword-based sentiment tag — not a claim of real NLP, just a quick
 // visual cue (rises/gains/wins read positive, falls/crises/deaths read
@@ -656,13 +711,17 @@ function tokens(t){
   return new Set(String(t).toLowerCase().replace(/["'״׳,.:;!?()\-–—]/g,' ').split(/\s+/)
     .map(w=>w.replace(/^[בלמהוכש]/,'')).filter(w=>w.length>1&&!STOP.has(w)));
 }
+// thresholds by user-selected sensitivity — loose merges more aggressively
+// (more cross-references, some false merges), strict only merges near-twins
+const SENS={loose:[0.2,0.45], normal:[0.28,0.55], strict:[0.38,0.7]};
 function similar(a,b){
   let inter=0; for(const w of a) if(b.has(w)) inter++;
   const jac=inter/Math.max(1,(a.size+b.size-inter));
   const containment=inter/Math.max(1,Math.min(a.size,b.size));
   // Jaccard alone misses a short headline contained in a longer one — the
   // containment ratio catches "same story, different verbosity".
-  return jac>=0.28 || containment>=0.55;
+  const [jT,cT]=SENS[octoSettings.clusterSens]||SENS.normal;
+  return jac>=jT || containment>=cT;
 }
 function buildClusters(){
   const list=items.map(it=>({it,tok:tokens(it.title)}));
@@ -734,6 +793,32 @@ function renderArms(){
     base+=n;
   });
   $('stArms').textContent=liveArms+'/'+ARM_GROUPS.length;
+}
+// hot entities — the most-mentioned meaningful words across every current
+// story, weighted extra when they appear in multi-angle (cross-referenced)
+// clusters. Clicking one drops it into the search box as a live filter.
+function renderHotEntities(){
+  const el=$('hotEntities'); if(!el) return;
+  if(!octoSettings.showEntities){ el.style.display='none'; return; }
+  el.style.display='flex';
+  const freq={};
+  clusters.forEach(c=>{
+    const w8=1+Math.min(3,c.angles.length-1);
+    for(const w of tokens(c.head.title)) if(w.length>2) freq[w]=(freq[w]||0)+w8;
+  });
+  const top=Object.keys(freq).sort((a,b)=>freq[b]-freq[a]).slice(0,8);
+  if(!top.length){ el.innerHTML=''; return; }
+  el.innerHTML='<span class="he-lbl">🔥 חם עכשיו:</span>'+top.map(w=>
+    '<span class="he-chip" data-w="'+escH(w)+'">'+escH(w)+'<b>'+freq[w]+'</b></span>').join('');
+  el.querySelectorAll('.he-chip').forEach(ch=>{
+    ch.onclick=()=>{
+      const w=ch.dataset.w;
+      const box=$('searchBox');
+      box.value = box.value===w? '' : w;
+      searchQuery=box.value.toLowerCase();
+      renderClusters();
+    };
+  });
 }
 function renderSituation(){
   $('stStories').textContent=items.length;
@@ -809,6 +894,15 @@ async function openAnalysis(c){
     const t=escH(a.title)+(a.desc?'<br><span style="color:var(--dim);font-size:11px">'+escH(a.desc.slice(0,140))+'…</span>':'');
     return '<div class="a-angle"><span class="src">'+escH(a.src)+'</span>'+(href?'<a href="'+href+'" target="_blank" rel="noopener">'+t+'</a>':t)+'</div>';
   }).join('');
+  // chronological "who reported when" — the earliest report first, so the
+  // spread of a story across outlets is readable at a glance
+  const chrono=c.angles.slice().sort((a,b)=>a.at-b.at);
+  const t0=chrono[0].at;
+  $('anaTimeline').innerHTML=chrono.map((a,i)=>{
+    const lag=Math.round((a.at-t0)/60000);
+    const lagTxt=i===0?'⚡ ראשון לדווח':(lag<1?'באותה דקה':'+'+(lag<60?lag+' ד׳':Math.round(lag/60)+' ש׳'));
+    return '<div class="tl-row"><span class="tl-when num">'+fmtAgo(a.at)+'</span><span class="src">'+escH(a.src)+'</span><span class="tl-lag">'+lagTxt+'</span></div>';
+  }).join('');
   $('anaEnts').innerHTML=extractEntities(c).map(e=>'<span class="a-ent">'+escH(e)+'</span>').join('');
   // AI synthesis — with the platform's shared key; local fallback otherwise
   const body=$('anaAiBody'), note=$('anaNote');
@@ -868,10 +962,10 @@ addEventListener('keydown',e=>{ if(e.key==='Escape') $('anaWrap').classList.remo
 function mergeAndRender(){
   const seen=new Set();
   items=items.filter(n=>{ const k=n.title.slice(0,70); if(seen.has(k)) return false; seen.add(k); return true; })
-    .sort((a,b)=>b.at-a.at).slice(0,160);
+    .sort((a,b)=>b.at-a.at).slice(0,octoSettings.maxStories||160);
   lastPull=Date.now();
   buildClusters();
-  renderArms(); renderSituation(); renderClusters();
+  renderArms(); renderSituation(); renderClusters(); renderHotEntities();
 }
 async function pullAll(){
   $('refreshBtn').classList.add('spin'); $('refreshBtn').textContent='🐙 שולח זרועות…';
@@ -896,14 +990,33 @@ const OS_SCHEMA=[
   {sec:'🔄 רענון ועדכון', items:[
     {key:'autoRefresh', type:'checkbox', label:'רענון אוטומטי', desc:'משיכת חדשות מחדש כל כמה דקות'},
     {key:'refreshMin', type:'range', label:'תדירות רענון', min:2,max:30,step:1, fmt:v=>v+' דק׳'},
+    {key:'maxStories', type:'range', label:'מקסימום כתבות בזיכרון', desc:'יותר כתבות = יותר הצלבות, אבל עמוד עמוס יותר', min:60,max:400,step:20, fmt:v=>v+''},
+  ]},
+  {sec:'🧠 ניתוח והצלבה', items:[
+    {key:'clusterSens', type:'select', label:'רגישות הצלבה', desc:'כמה דומות צריכות להיות כותרות כדי להתמזג לסיפור אחד',
+      options:[['loose','רחבה — ממזג יותר'],['normal','רגילה'],['strict','קפדנית — רק כמעט-זהות']]},
+    {key:'showSentiment', type:'checkbox', label:'תגית מצב-רוח', desc:'חיובי/שלילי/ניטרלי לפי מילות מפתח'},
+    {key:'showEntities', type:'checkbox', label:'מוקדי שיחה חמים', desc:'שורת המילים הבולטות בכל הסיפורים כרגע'},
   ]},
   {sec:'🔔 התראות וצליל', items:[
     {key:'breakingAlerts', type:'checkbox', label:'התראת חדשות מתפתחות', desc:'כאשר סיפור מצטלב ב-3+ מקורות'},
     {key:'soundOn', type:'checkbox', label:'צליל התראה'},
-    {key:'showSentiment', type:'checkbox', label:'תגית מצב-רוח', desc:'חיובי/שלילי/ניטרלי לפי מילות מפתח'},
+  ]},
+  {sec:'🎨 תצוגה', items:[
+    {key:'fontScale', type:'range', label:'גודל כתב', min:0.85,max:1.4,step:0.05, fmt:v=>Math.round(v*100)+'%'},
+    {key:'compactMode', type:'checkbox', label:'מצב קומפקטי', desc:'כרטיסים צפופים — יותר סיפורים על המסך'},
   ]},
 ];
-function onOctoSettingChanged(){ saveOctoSettings(); }
+function applyDisplaySettings(){
+  document.documentElement.style.fontSize=(octoSettings.fontScale*100)+'%';
+  document.body.classList.toggle('compact',!!octoSettings.compactMode);
+  const he=$('hotEntities'); if(he) he.style.display=octoSettings.showEntities?'flex':'none';
+}
+function onOctoSettingChanged(key){
+  saveOctoSettings();
+  if(key==='fontScale'||key==='compactMode'||key==='showEntities') applyDisplaySettings();
+  if(key==='clusterSens'||key==='maxStories'){ buildClusters(); renderSituation(); renderClusters(); renderHotEntities(); }
+}
 function buildSettingsPanel(){
   const body=$('osBody'); if(!body) return;
   body.innerHTML=OS_SCHEMA.map(group=>
@@ -912,6 +1025,7 @@ function buildSettingsPanel(){
       const descHtml=it.desc?'<span class="os-desc">'+it.desc+'</span>':'';
       let ctrl='';
       if(it.type==='checkbox') ctrl='<input type="checkbox" data-key="'+it.key+'" '+(octoSettings[it.key]?'checked':'')+'>';
+      else if(it.type==='select') ctrl='<select data-key="'+it.key+'">'+it.options.map(([v,l])=>'<option value="'+v+'"'+(octoSettings[it.key]===v?' selected':'')+'>'+l+'</option>').join('')+'</select>';
       else if(it.type==='range') ctrl='<input type="range" data-key="'+it.key+'" min="'+it.min+'" max="'+it.max+'" step="'+it.step+'" value="'+octoSettings[it.key]+'">'+
         '<span class="os-val" data-valfor="'+it.key+'">'+(it.fmt?it.fmt(octoSettings[it.key]):octoSettings[it.key])+'</span>';
       return '<div class="os-row"><label>'+it.label+descHtml+'</label>'+ctrl+'</div>';
@@ -925,11 +1039,12 @@ function buildSettingsPanel(){
     const key=el.dataset.key, it=schemaByKey[key];
     const handler=()=>{
       if(el.type==='checkbox') octoSettings[key]=el.checked;
+      else if(el.tagName==='SELECT') octoSettings[key]=el.value;
       else{ octoSettings[key]=parseFloat(el.value);
         const vEl=body.querySelector('[data-valfor="'+key+'"]');
         if(vEl) vEl.textContent=it.fmt?it.fmt(octoSettings[key]):octoSettings[key];
       }
-      onOctoSettingChanged();
+      onOctoSettingChanged(key);
     };
     el.addEventListener(el.type==='range'?'input':'change',handler);
   });
@@ -955,6 +1070,7 @@ $('refreshBtn').onclick=pullAll;
 setInterval(()=>{ if(octoSettings.autoRefresh && Date.now()-lastPull>octoSettings.refreshMin*60000) pullAll(); },60000);
 renderArms();
 buildSettingsPanel();
+applyDisplaySettings();
 pullAll();
 </script>
 </body>
