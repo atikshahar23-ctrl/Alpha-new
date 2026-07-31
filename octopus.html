@@ -73,6 +73,13 @@ header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 16px
 .hl-item .hl-meta{flex:none;margin-inline-start:auto;font-size:10px;color:var(--dim);white-space:nowrap}
 .hl-item .hl-x{color:var(--cyan);font-weight:700}
 .tr-mark{font-size:10px;opacity:.55;margin-inline-start:3px}
+.voice-btn{flex:none;margin-inline-start:auto;background:rgba(138,92,255,.12);border:1px solid rgba(138,92,255,.4);
+  color:#c9b3ff;font-size:13px;cursor:pointer;padding:4px 9px;border-radius:4px;line-height:1}
+.voice-btn:hover{border-color:#8a5cff;color:#fff}
+.voice-btn.speaking{background:rgba(138,92,255,.32);box-shadow:0 0 12px rgba(138,92,255,.5);animation:pulse 1s infinite}
+#headlines .hl-h .voice-btn{margin-inline-start:auto}
+#timeRow{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 2px}
+.c-new{font-size:10px;font-weight:800;color:var(--up);padding:2px 7px;border:1px solid rgba(0,255,166,.45);letter-spacing:.5px}
 .tl-row{display:flex;align-items:center;gap:10px;padding:5px 0;font-size:12px;border-bottom:1px solid rgba(0,240,255,.08)}
 .tl-row .tl-when{color:var(--dim);font-size:10.5px;flex:none;width:74px}
 .tl-row .tl-lag{margin-inline-start:auto;font-size:10.5px;color:var(--gold)}
@@ -239,12 +246,19 @@ body.compact .cluster .c-srcs{margin-top:2px}
       <input id="searchBox" type="text" placeholder="🔍 חיפוש בכותרות ובמקורות…">
       <span id="bookmarkFilter" class="tchip">⭐ מועדפים</span>
     </div>
+    <div id="timeRow">
+      <span class="tchip tf on" data-h="0">כל הזמנים</span>
+      <span class="tchip tf" data-h="1">שעה אחרונה</span>
+      <span class="tchip tf" data-h="6">6 שעות</span>
+      <span class="tchip tf" data-h="24">היום</span>
+    </div>
     <div id="hotEntities" title="המילים הבולטות בכל הסיפורים כרגע — הקשה מסננת"></div>
     <div id="topics"></div>
   </section>
 
   <section id="headlines" class="panel clip" style="display:none">
-    <div class="hl-h">🗞️ הכותרות הראשיות עכשיו <span class="hl-sub">מדורג לפי הצלבות + טריות</span></div>
+    <div class="hl-h">🗞️ הכותרות הראשיות עכשיו <span class="hl-sub">מדורג לפי הצלבות + טריות</span>
+      <button id="hlVoice" class="voice-btn" title="🎙 מהדורה קולית — הקראת חמש הכותרות">🎙</button></div>
     <div id="hlList"></div>
   </section>
 
@@ -262,6 +276,7 @@ body.compact .cluster .c-srcs{margin-top:2px}
     <div class="a-h">
       <span class="a-badge">ניתוח OCTOPUS</span>
       <span class="a-badge" id="anaTopic" style="color:var(--gold);border-color:rgba(255,209,102,.45)"></span>
+      <button id="anaVoice" class="voice-btn" title="🔊 הקראת הכתבה והניתוח">🔊</button>
       <button class="a-close" id="anaClose">✕</button>
     </div>
     <h2 id="anaTitle"></h2>
@@ -691,6 +706,7 @@ const ARM_GROUPS=[
 const ARMS=ARM_GROUPS.flatMap(([gname,,srcs])=>srcs.map(([n,u])=>[n,u,gname]));
 const armGroupOf=i=>{ let n=0; for(const g of ARM_GROUPS){ if(i<n+g[2].length) return g; n+=g[2].length; } return ARM_GROUPS[0]; };
 let armPulling=new Array(ARM_GROUPS.length).fill(false); // drives the 3D octopus tentacles
+const srcStats=ARMS.map(()=>({ok:0,fail:0,last:0})); // per-source pull health, shown in settings
 window.ARM_GROUPS=ARM_GROUPS; // read by the 3D-octopus module for its caption text
 
 const TOPICS=[
@@ -777,6 +793,46 @@ function translateFeedItems(){
 const dispTitle=n=>(octoSettings.translateHe&&n.titleHe)? n.titleHe : n.title;
 const trMark=n=>(octoSettings.translateHe&&n.titleHe)? ' <span class="tr-mark" title="תורגם אוטומטית מאנגלית">🌐</span>' : '';
 
+// ---------- voice — the same built-in speech synthesis the arena's chart
+// lesson uses (no key, works offline). One speaker at a time; clicking the
+// active button again stops it.
+function octoSpeak(text,btn){
+  if(!('speechSynthesis' in window)) return;
+  const wasBtn=octoSpeak._btn;
+  if(speechSynthesis.speaking){
+    speechSynthesis.cancel();
+    if(wasBtn) wasBtn.classList.remove('speaking');
+    octoSpeak._btn=null;
+    if(wasBtn===btn) return; // same button = toggle off
+  }
+  const u=new SpeechSynthesisUtterance(text);
+  u.lang='he-IL'; u.rate=1.02;
+  const v=speechSynthesis.getVoices().find(x=>x.lang&&x.lang.toLowerCase().startsWith('he'));
+  if(v) u.voice=v;
+  octoSpeak._btn=btn||null;
+  if(btn) btn.classList.add('speaking');
+  u.onend=u.onerror=()=>{ if(btn) btn.classList.remove('speaking'); octoSpeak._btn=null; };
+  speechSynthesis.speak(u);
+}
+
+// ---------- "what's new since my last visit" — story keys seen on previous
+// sessions; anything not in that set gets a 🆕 badge this session
+let prevSeen=new Set();
+try{ prevSeen=new Set(JSON.parse(localStorage.getItem('octo:seen')||'[]')); }catch{}
+const firstVisit=prevSeen.size===0;
+const seenKey=t=>String(t||'').slice(0,70);
+function persistSeen(){
+  try{
+    const keys=new Set(prevSeen);
+    items.forEach(n=>keys.add(seenKey(n.title)));
+    localStorage.setItem('octo:seen',JSON.stringify([...keys].slice(-800)));
+  }catch{}
+}
+const isNewCluster=c=>!firstVisit&&!prevSeen.has(seenKey(c.head.title));
+
+// ---------- per-source health counters (rendered in the settings panel)
+let timeFilterH=0;
+
 async function pullOneSource(i){
   const [name,url]=ARMS[i];
   try{
@@ -792,8 +848,9 @@ async function pullOneSource(i){
     })).filter(x=>x.title);
     if(!got.length) throw 0;
     armState[i]='ok';
+    srcStats[i].ok++; srcStats[i].last=Date.now();
     return got;
-  }catch(e){ armState[i]='off'; return []; }
+  }catch(e){ armState[i]='off'; srcStats[i].fail++; return []; }
 }
 // One tentacle per thematic group: all sources in the group are pulled in
 // parallel, and armPulling[groupIdx] flags the 3D octopus to reach that arm
@@ -925,6 +982,7 @@ function headlineScore(c){
 function renderHeadlines(){
   const sec=$('headlines'); if(!sec) return;
   const top=clusters.slice().sort((a,b)=>headlineScore(b)-headlineScore(a)).slice(0,5);
+  renderHeadlines._top=top; // the voice briefing reads exactly what's shown
   if(!top.length){ sec.style.display='none'; return; }
   sec.style.display='block';
   $('hlList').innerHTML=top.map((c,i)=>
@@ -990,6 +1048,7 @@ function clusterKey(c){ return c.head.title.slice(0,70); }
 function renderClusters(){
   const el=$('clusters'); el.innerHTML='';
   let list=clusters.filter(c=>!topicFilter||c.topic===topicFilter);
+  if(timeFilterH) list=list.filter(c=>Date.now()-c.at<timeFilterH*3600e3);
   if(bookmarkFilterOn) list=list.filter(c=>bookmarks.has(clusterKey(c)));
   if(searchQuery) list=list.filter(c=>
     c.head.title.toLowerCase().includes(searchQuery) ||
@@ -1002,6 +1061,7 @@ function renderClusters(){
     d.innerHTML='<div class="c-top"><span class="c-topic">'+c.topic+'</span>'
       +(octoSettings.showSentiment?'<span class="c-sentiment '+c.sentiment+'">'+SENT_LABEL[c.sentiment]+'</span>':'')
       +(breaking?'<span class="c-breaking">🔥 מתפתח</span>':'')
+      +(isNewCluster(c)?'<span class="c-new">🆕 חדש</span>':'')
       +(c.angles.length>1?'<span class="c-angles">⚡ '+c.angles.length+' זוויות</span>':'')
       +'<span class="c-time">'+fmtAgo(c.at)+'</span>'
       +'<span class="c-star'+(starred?' on':'')+'" title="שמור למועדפים">'+(starred?'★':'☆')+'</span></div>'
@@ -1029,6 +1089,7 @@ function extractEntities(c){
   return Object.keys(freq).sort((a,b)=>freq[b]-freq[a]).slice(0,8);
 }
 async function openAnalysis(c){
+  openAnalysis._cur=c; // the read-aloud button speaks whatever is open
   $('anaWrap').classList.add('open');
   $('anaTitle').textContent=dispTitle(c.head);
   $('anaTopic').textContent=c.topic;
@@ -1143,6 +1204,7 @@ async function pullAll(){
     mergeAndRender();
   }
   $('refreshBtn').classList.remove('spin'); $('refreshBtn').textContent='🔄 רענן';
+  persistSeen(); // everything currently on screen counts as "seen" from the next visit on
 }
 // ---------- settings panel — schema-driven controls + a dynamic per-arm
 // enable/disable list built straight off ARM_GROUPS ----------
@@ -1195,6 +1257,18 @@ function buildSettingsPanel(){
   ).join('') + '<div class="os-sec"><div class="os-h">🐙 זרועות פעילות</div>'
     + ARM_GROUPS.map((g,gi)=>'<div class="os-arm"><input type="checkbox" data-arm="'+gi+'" '
       +(octoSettings.disabledArms.includes(gi)?'':'checked')+'><span>'+g[1][0]+' '+g[0]+'</span></div>').join('')
+    + '</div>'
+    // live per-arm health — sums of the per-source pull counters this session
+    + '<div class="os-sec"><div class="os-h">📊 בריאות מקורות (הסשן הנוכחי)</div>'
+    + (()=>{ let base=0; return ARM_GROUPS.map(g=>{
+        const n=g[2].length, sl=srcStats.slice(base,base+n); base+=n;
+        const ok=sl.reduce((s,x)=>s+x.ok,0), fail=sl.reduce((s,x)=>s+x.fail,0);
+        const lastAt=Math.max.apply(null,sl.map(x=>x.last));
+        const lastTxt=lastAt>0? fmtAgo(lastAt) : 'טרם נמשך';
+        const okCol=ok>0?'var(--up)':fail>0?'var(--down)':'var(--dim)';
+        return '<div class="os-arm"><span style="color:'+okCol+'">●</span><span>'+g[1][0]+' '+g[0]
+          +'</span><span style="margin-inline-start:auto;color:var(--dim);font-size:11px">✓'+ok+' · ✗'+fail+' · '+lastTxt+'</span></div>';
+      }).join(''); })()
     + '</div>';
   const schemaByKey={}; OS_SCHEMA.forEach(g=>g.items.forEach(it=>schemaByKey[it.key]=it));
   body.querySelectorAll('[data-key]').forEach(el=>{
@@ -1227,6 +1301,27 @@ $('osClose').onclick=()=>setSettingsPanel(false);
 // ---------- search + bookmarks ----------
 $('searchBox').addEventListener('input',e=>{ searchQuery=e.target.value.trim().toLowerCase(); renderClusters(); });
 $('bookmarkFilter').onclick=()=>{ bookmarkFilterOn=!bookmarkFilterOn; $('bookmarkFilter').classList.toggle('on',bookmarkFilterOn); renderClusters(); };
+document.querySelectorAll('#timeRow .tf').forEach(el=>{
+  el.onclick=()=>{
+    timeFilterH=+el.dataset.h;
+    document.querySelectorAll('#timeRow .tf').forEach(x=>x.classList.toggle('on',x===el));
+    renderClusters();
+  };
+});
+$('hlVoice').onclick=()=>{
+  const top=renderHeadlines._top||[];
+  if(!top.length) return;
+  const text='מהדורת הכותרות של אוקטופוס. '
+    +top.map((c,i)=>'כותרת '+(i+1)+': '+dispTitle(c.head)
+      +(c.angles.length>1?'. דווח ב-'+c.angles.length+' מקורות.':'.')).join(' ')
+    +' עד כאן המהדורה.';
+  octoSpeak(text,$('hlVoice'));
+};
+$('anaVoice').onclick=()=>{
+  const c=openAnalysis._cur; if(!c) return;
+  const body=$('anaAiBody').textContent||'';
+  octoSpeak(dispTitle(c.head)+'. '+body,$('anaVoice'));
+};
 
 $('refreshBtn').onclick=pullAll;
 setInterval(()=>{ if(octoSettings.autoRefresh && Date.now()-lastPull>octoSettings.refreshMin*60000) pullAll(); },60000);

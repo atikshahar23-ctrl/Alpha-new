@@ -536,6 +536,9 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
     <div class="tgl" id="btnCandle" title="מנתח נרות — סוג הנר והתבנית האחרונה">
       <span style="font-size:15px">🕯️</span><span style="font-size:8px">נרות</span>
     </div>
+    <div class="tgl" id="btnCenter" title="החלף את תצוגת המודל המרכזי (11 מצבים)">
+      <span style="font-size:15px">🎭</span><span style="font-size:8px">מרכז</span>
+    </div>
     <div class="tgl" id="btnLog" title="יומן עסקאות והישגים">
       <span style="font-size:15px">📜</span><span style="font-size:8px">יומן</span>
     </div>
@@ -736,7 +739,7 @@ const NA_DEFAULTS={
   showMotes:true, showComets:true, showStreams:true, showWeather:true, showPulse:true,
   walkSpeed:18, lookSens:1.0, invertY:false,
   alertsEnabled:true, alertPct:3,
-  chartStyle:'classic',
+  chartStyle:'classic', centerMode:'classic',
   chartAutoOpen:false, chartDefaultTf:'1m',
   tourHoldSec:4, tapeSpeedSec:40,
   spawnWalkOnLoad:false,
@@ -1811,6 +1814,192 @@ coreG.add(coreShell);
 const coreGlow=new THREE.Sprite(new THREE.SpriteMaterial({map:glowTex,color:0x00f0ff,transparent:true,opacity:0.85,blending:THREE.AdditiveBlending,depthWrite:false}));
 coreGlow.scale.set(9,9,1); coreG.add(coreGlow);
 
+// ============================================================
+//  INTERCHANGEABLE CENTER VISUALIZATIONS — 10 alternative ways the main
+//  model can DISPLAY the live price besides the classic orb. Every mode is
+//  a small build/update/dispose rig fed by the exact same signals (price
+//  height yFor, momentum tint, candle history) — a different body for the
+//  same organism, never different data. Built lazily on first use and
+//  fully disposed on switch, so inactive modes cost nothing.
+// ============================================================
+const CENTER_MODES=[
+  ['classic','⚛️ ליבה קלאסית'], ['helix','🧬 סליל DNA'], ['geyser','🌋 גייזר חלקיקים'],
+  ['bolt','⚡ עמוד ברקים'], ['planet','🪐 כוכב טבעות'], ['crystal','🧊 קריסטל צף'],
+  ['ribbon','🌀 סליל היסטוריה'], ['flame','🔥 להבת שוק'], ['hole','🕳 חור שחור'],
+  ['radar','📡 רדאר'], ['obelisk','🗿 אובליסק'],
+];
+let centerRig=null;
+function disposeCenterRig(){
+  if(!centerRig) return;
+  world.remove(centerRig.group);
+  centerRig.group.traverse(o=>{
+    if(o.geometry) o.geometry.dispose();
+    if(o.material) (Array.isArray(o.material)?o.material:[o.material]).forEach(m=>{ if(m.map&&m.map!==glowTex) m.map.dispose(); m.dispose(); });
+  });
+  centerRig=null;
+}
+function centerPts(n){ // helper: one Points cloud + its seed array + writable buffer
+  const pos=new Float32Array(n*3), seed=new Float32Array(n);
+  for(let i=0;i<n;i++) seed[i]=Math.random();
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  const pts=new THREE.Points(geo,new THREE.PointsMaterial({size:0.5,map:glowTex,color:0x00f0ff,transparent:true,opacity:0.85,blending:THREE.AdditiveBlending,depthWrite:false,sizeAttenuation:true}));
+  return {pts,pos,seed,n};
+}
+function centerGlowSprite(scale,hex){
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:glowTex,color:hex,transparent:true,opacity:0.7,blending:THREE.AdditiveBlending,depthWrite:false}));
+  sp.scale.set(scale,scale,1); return sp;
+}
+function buildCenterRig(mode){
+  disposeCenterRig();
+  const group=new THREE.Group(); world.add(group);
+  const rig={mode,group,update(){},};
+  if(mode==='helix'){
+    const cloud=centerPts(150); group.add(cloud.pts);
+    const top=centerGlowSprite(7,0x00f0ff); group.add(top);
+    rig.update=(dt,t,yH,col)=>{
+      for(let i=0;i<cloud.n;i++){
+        const f=i/cloud.n, strand=i%2, a=f*Math.PI*6+t*0.9+strand*Math.PI;
+        cloud.pos[i*3]=Math.cos(a)*3.1; cloud.pos[i*3+1]=f*yH; cloud.pos[i*3+2]=Math.sin(a)*3.1;
+      }
+      cloud.pts.geometry.attributes.position.needsUpdate=true;
+      cloud.pts.material.color.copy(col);
+      top.position.y=yH; top.material.color.copy(col);
+    };
+  } else if(mode==='geyser'){
+    const cloud=centerPts(160); group.add(cloud.pts);
+    rig.update=(dt,t,yH,col)=>{
+      for(let i=0;i<cloud.n;i++){
+        const f=(cloud.seed[i]+t*(0.14+cloud.seed[i]*0.1))%1;
+        const r=(1-f)*1.6+0.2, a=cloud.seed[i]*97+t*0.6;
+        cloud.pos[i*3]=Math.cos(a)*r; cloud.pos[i*3+1]=f*yH; cloud.pos[i*3+2]=Math.sin(a)*r;
+      }
+      cloud.pts.geometry.attributes.position.needsUpdate=true;
+      cloud.pts.material.color.copy(col);
+    };
+  } else if(mode==='bolt'){
+    const SEGS=16;
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute('position',new THREE.BufferAttribute(new Float32Array((SEGS+1)*3),3));
+    const line=new THREE.Line(geo,new THREE.LineBasicMaterial({color:0x9be8ff,transparent:true,opacity:0.9,blending:THREE.AdditiveBlending}));
+    group.add(line);
+    const top=centerGlowSprite(8,0x9be8ff); group.add(top);
+    let jT=0;
+    rig.update=(dt,t,yH,col)=>{
+      jT-=dt;
+      if(jT<=0){ jT=0.09;
+        const p=line.geometry.attributes.position.array;
+        for(let i=0;i<=SEGS;i++){
+          const f=i/SEGS, amp=(i===0||i===SEGS)?0:2.2*Math.sin(f*Math.PI);
+          p[i*3]=rnd(-amp,amp); p[i*3+1]=f*yH; p[i*3+2]=rnd(-amp,amp);
+        }
+        line.geometry.attributes.position.needsUpdate=true;
+      }
+      line.material.color.copy(col);
+      top.position.y=yH; top.material.color.copy(col);
+    };
+  } else if(mode==='planet'){
+    const body=new THREE.Mesh(new THREE.SphereGeometry(1.7,24,20),new THREE.MeshBasicMaterial({color:0x9be8ff,transparent:true,opacity:0.9}));
+    group.add(body);
+    const rings=[2.6,3.3,4.0].map((r,i)=>{
+      const m=new THREE.Mesh(new THREE.RingGeometry(r-0.09,r,60),addMat(0x00f0ff,0.5-i*0.12));
+      m.rotation.x=1.15; group.add(m); return m;
+    });
+    rig.update=(dt,t,yH,col)=>{
+      group.position.y=lerp(group.position.y||yH,yH,0.25);
+      body.material.color.copy(col).lerp(new THREE.Color(0xffffff),0.3);
+      rings.forEach((m,i)=>{ m.rotation.z+=dt*(0.5+i*0.3); m.material.color.copy(col); });
+    };
+  } else if(mode==='crystal'){
+    const wire=new THREE.Mesh(new THREE.IcosahedronGeometry(2.8,0),new THREE.MeshBasicMaterial({color:0x00f0ff,wireframe:true,transparent:true,opacity:0.75,blending:THREE.AdditiveBlending,depthWrite:false}));
+    const inner=new THREE.Mesh(new THREE.IcosahedronGeometry(1.5,0),new THREE.MeshBasicMaterial({color:0x9be8ff,transparent:true,opacity:0.85}));
+    const glow=centerGlowSprite(9,0x00f0ff);
+    group.add(wire,inner,glow);
+    rig.update=(dt,t,yH,col)=>{
+      group.position.y=lerp(group.position.y||yH, yH+Math.sin(t*1.4)*0.5, 0.25);
+      wire.rotation.y+=dt*0.9; wire.rotation.x+=dt*0.35;
+      inner.rotation.y-=dt*1.3;
+      wire.material.color.copy(col); inner.material.color.copy(col).lerp(new THREE.Color(0xffffff),0.4);
+      glow.material.color.copy(col);
+    };
+  } else if(mode==='ribbon'){
+    const NPT=110;
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute('position',new THREE.BufferAttribute(new Float32Array(NPT*3),3));
+    const line=new THREE.Line(geo,new THREE.LineBasicMaterial({color:0x00f0ff,transparent:true,opacity:0.85,blending:THREE.AdditiveBlending}));
+    group.add(line);
+    const head=centerGlowSprite(6,0x00f0ff); group.add(head);
+    rig.update=(dt,t,yH,col)=>{
+      const cs=state.candles, p=line.geometry.attributes.position.array;
+      const n=Math.min(NPT,cs.length);
+      for(let i=0;i<NPT;i++){
+        const ci=cs.length-n+Math.min(i,n-1);
+        const a=(i/NPT)*Math.PI*4+t*0.12, y=cs.length?yFor(cs[Math.max(0,ci)].c):0;
+        p[i*3]=Math.cos(a)*6.4; p[i*3+1]=y; p[i*3+2]=Math.sin(a)*6.4;
+      }
+      line.geometry.attributes.position.needsUpdate=true;
+      line.material.color.copy(col);
+      head.position.set(p[(NPT-1)*3],p[(NPT-1)*3+1],p[(NPT-1)*3+2]);
+      head.material.color.copy(col);
+    };
+  } else if(mode==='flame'){
+    const cloud=centerPts(90); cloud.pts.material.size=0.8; group.add(cloud.pts);
+    rig.update=(dt,t,yH,col)=>{
+      for(let i=0;i<cloud.n;i++){
+        const f=(cloud.seed[i]+t*(0.25+cloud.seed[i]*0.2))%1;
+        const r=(1-f)*1.4, a=cloud.seed[i]*53+t;
+        cloud.pos[i*3]=Math.cos(a)*r*Math.sin(f*9+t); cloud.pos[i*3+1]=yH-2+f*7; cloud.pos[i*3+2]=Math.sin(a)*r;
+      }
+      cloud.pts.geometry.attributes.position.needsUpdate=true;
+      cloud.pts.material.color.copy(col);
+    };
+  } else if(mode==='hole'){
+    const bh=new THREE.Mesh(new THREE.SphereGeometry(1.6,24,20),new THREE.MeshBasicMaterial({color:0x000000}));
+    const halo=centerGlowSprite(11,0x8a5cff); halo.material.opacity=0.4;
+    const disk=centerPts(170); disk.pts.material.size=0.42;
+    group.add(halo,bh,disk.pts);
+    rig.update=(dt,t,yH,col)=>{
+      group.position.y=lerp(group.position.y||yH,yH,0.25);
+      for(let i=0;i<disk.n;i++){
+        const r=2.2+disk.seed[i]*3.4;
+        const a=disk.seed[i]*997+t*(3.4-(r-2.2)*0.55); // inner orbits spin faster — accretion physics, loosely
+        disk.pos[i*3]=Math.cos(a)*r; disk.pos[i*3+1]=Math.sin(a*0.5+disk.seed[i]*9)*0.25; disk.pos[i*3+2]=Math.sin(a)*r;
+      }
+      disk.pts.geometry.attributes.position.needsUpdate=true;
+      disk.pts.material.color.copy(col);
+    };
+  } else if(mode==='radar'){
+    const rings=[3,5.2].map(r=>{
+      const m=new THREE.Mesh(new THREE.RingGeometry(r-0.07,r,64),addMat(0x00f0ff,0.4));
+      m.rotation.x=-Math.PI/2; group.add(m); return m;
+    });
+    const sweep=new THREE.Mesh(new THREE.CircleGeometry(5.2,40,0,Math.PI*0.25),addMat(0x00f0ff,0.3));
+    sweep.rotation.x=-Math.PI/2; group.add(sweep);
+    const blip=centerGlowSprite(3,0x00ffa6);
+    group.add(blip);
+    rig.update=(dt,t,yH,col)=>{
+      group.position.y=lerp(group.position.y||yH,yH,0.25);
+      sweep.rotation.z+=dt*1.8;
+      rings.forEach(m=>m.material.color.copy(col));
+      sweep.material.color.copy(col);
+      const ba=t*1.8; blip.position.set(Math.cos(-ba)*4.1,0.3,Math.sin(-ba)*4.1);
+      blip.material.opacity=0.4+0.5*Math.abs(Math.sin(t*3));
+    };
+  } else if(mode==='obelisk'){
+    const wire=new THREE.Mesh(new THREE.ConeGeometry(2.4,6.4,4),new THREE.MeshBasicMaterial({color:0x00f0ff,wireframe:true,transparent:true,opacity:0.8,blending:THREE.AdditiveBlending,depthWrite:false}));
+    const inner=new THREE.Mesh(new THREE.ConeGeometry(1.3,4.2,4),new THREE.MeshBasicMaterial({color:0x9be8ff,transparent:true,opacity:0.85}));
+    const tip=centerGlowSprite(6,0x00f0ff); tip.position.y=3.6;
+    group.add(wire,inner,tip);
+    rig.update=(dt,t,yH,col)=>{
+      group.position.y=lerp(group.position.y||yH,yH,0.25);
+      wire.rotation.y+=dt*0.7; inner.rotation.y-=dt*0.5;
+      wire.material.color.copy(col); inner.material.color.copy(col).lerp(new THREE.Color(0xffffff),0.35);
+      tip.material.color.copy(col);
+    };
+  }
+  centerRig=rig;
+}
+
 // price hologram beside the core
 const priceHolo=textSprite(512,128,15,3.75);
 world.add(priceHolo.sp);
@@ -2017,6 +2206,15 @@ function updateWorld(dt,now){
   coreGlow.scale.set(gs,gs,1);
   state.flare*=Math.pow(0.35,dt);
   state.flareCol.lerp(C_CY,0.02);
+
+  // alternative center visualization — swap the classic orb for whichever
+  // rig the user picked; built on first use, disposed the moment it's left
+  const altCenter=naSettings.centerMode&&naSettings.centerMode!=='classic';
+  coreG.visible=!altCenter;
+  if(altCenter){
+    if(!centerRig||centerRig.mode!==naSettings.centerMode) buildCenterRig(naSettings.centerMode);
+    centerRig.update(dt,t,yH,tmpC);
+  } else if(centerRig) disposeCenterRig();
 
   priceHolo.sp.position.set(7.6,yH+2.6,0);
   priceHolo.draw(fmtP(state.lastPrice), mom>=0?'#00ffa6':'#ff3d6e', "700 56px 'Orbitron', monospace");
@@ -3292,6 +3490,12 @@ $('btnCandle').onclick=()=>{ setCandlePanel($('candlePanel').style.display!=='bl
 $('candleClose').onclick=()=>{ setCandlePanel(false); };
 $('caAiBtn').onclick=runAgentAI;
 $('pulseHide').onclick=()=>{ naSettings.showPulse=false; saveNaSettings(); applyVisualToggles(); toast('דופק העולם הוסתר — ניתן להחזיר דרך ⚙️ הגדרות'); };
+$('btnCenter').onclick=()=>{
+  const i=CENTER_MODES.findIndex(([id])=>id===naSettings.centerMode);
+  const [id,label]=CENTER_MODES[(i+1)%CENTER_MODES.length];
+  naSettings.centerMode=id; saveNaSettings();
+  toast('תצוגת מרכז: '+label);
+};
 
 // ---- settings panel — schema-driven so every control here is both a real
 // wired behavior AND a persisted preference, without hand-writing 15
@@ -3310,6 +3514,7 @@ const SETTINGS_SCHEMA=[
     {key:'showStreams', type:'checkbox', label:'זרמי נתונים', desc:'חלקיקי אור מכל פוד אל הזירה המרכזית'},
     {key:'showWeather', type:'checkbox', label:'מזג אוויר של השוק', desc:'סופה בירידות, זוהר צפוני בעליות — לפי מצב הרוח הכללי'},
     {key:'showPulse', type:'checkbox', label:'פאנל דופק העולם', desc:'המובילים והמפסידים בפינה השמאלית'},
+    {key:'centerMode', type:'select', label:'תצוגת המודל המרכזי', desc:'איך המחיר החי מוצג בלב הזירה', options:CENTER_MODES},
   ]},
   {sec:'🕹️ שליטה ותנועה', items:[
     {key:'walkSpeed', type:'range', label:'מהירות הליכה', min:6,max:32,step:1, fmt:v=>v+''},
