@@ -292,7 +292,19 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 #chartPanel #cpSym{font-size:15px;font-weight:700;color:var(--txt);letter-spacing:.5px}
 #chartPanel #cpTf{font-size:11px;color:var(--cyan);border:1px solid rgba(0,240,255,.3);padding:2px 8px}
 #chartPanel #cpBadge{font-size:10px;color:var(--dim);letter-spacing:.3px;margin-inline-end:auto}
-#chartCv{display:block;width:100%;height:min(52vh,360px);cursor:crosshair;background:rgba(2,4,10,.4);border-radius:6px}
+#chartPanel #cpVoice{flex:none;background:rgba(138,92,255,.12);border:1px solid rgba(138,92,255,.4);color:#c9b3ff;
+  font-size:14px;cursor:pointer;padding:5px 9px;border-radius:4px;line-height:1}
+#chartPanel #cpVoice:hover{border-color:#8a5cff;color:#fff}
+#chartPanel #cpVoice.speaking{background:rgba(138,92,255,.3);box-shadow:0 0 12px rgba(138,92,255,.5);animation:pulse 1s infinite}
+.cp-ind-legend{display:flex;flex-wrap:wrap;gap:11px;font-size:10px;color:var(--dim);margin-bottom:6px}
+.cp-ind-legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-inline-end:4px;vertical-align:middle}
+.cp-cv-wrap{position:relative}
+#chartCv{display:block;width:100%;height:min(62vh,440px);cursor:crosshair;background:rgba(2,4,10,.4);border-radius:6px}
+#cpCaption{position:absolute;inset:auto 8px 10px 8px;padding:10px 13px;background:rgba(6,10,20,.92);
+  border:1px solid rgba(138,92,255,.45);border-radius:6px;font-size:12px;line-height:1.6;color:var(--txt);
+  max-height:60%;overflow-y:auto;opacity:0;pointer-events:none;transition:opacity .3s;backdrop-filter:blur(6px)}
+#cpCaption.show{opacity:1;pointer-events:auto}
+#cpCaption b{color:#c9b3ff}
 #chartPanel .cp-legend{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;margin-top:10px;font-size:11.5px;color:var(--dim)}
 #chartPanel .cp-legend b{color:var(--txt);font-weight:700;margin-inline-start:4px}
 #chartPanel .cp-legend .sw{display:inline-block;width:8px;height:8px;border-radius:2px;margin-inline-end:5px;vertical-align:middle}
@@ -563,9 +575,21 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
     <span id="cpSym" class="num">BTC/USDT</span>
     <span id="cpTf" class="num">1m</span>
     <span id="cpBadge">נתוני אמת · אותם נרות שמניעים את הקרב</span>
+    <button id="cpVoice" title="שיעור AI קצר — מה קורה עכשיו בגרף">🔊</button>
     <button class="mp-close" id="chartClose">✕</button>
   </div>
-  <canvas id="chartCv"></canvas>
+  <div class="cp-ind-legend">
+    <span><i style="background:#5fd0ff"></i>EMA 9</span>
+    <span><i style="background:#ff8ae0"></i>EMA 21</span>
+    <span><i style="background:rgba(140,190,255,.55)"></i>רצועות בולינגר</span>
+    <span><i style="background:#ffd166"></i>תמיכה / התנגדות</span>
+    <span><i style="background:#8a5cff"></i>RSI</span>
+    <span><i style="background:rgba(157,196,216,.5)"></i>נפח</span>
+  </div>
+  <div class="cp-cv-wrap">
+    <canvas id="chartCv"></canvas>
+    <div id="cpCaption"></div>
+  </div>
   <div class="cp-legend">
     <span><i class="sw hi"></i>גבוה <b id="cpHi" class="num">—</b></span>
     <span><i class="sw lo"></i>נמוך <b id="cpLo" class="num">—</b></span>
@@ -2890,6 +2914,19 @@ function niceStep(range,target){
   const step=(norm<1.5?1:norm<3?2:norm<7?5:10)*mag;
   return step||1;
 }
+// rolling Bollinger bands (bollNow only gives the latest point — the chart
+// needs the whole series to draw a band, not just today's width)
+function bollArr(closes,p,k){
+  const up=new Array(closes.length), lo=new Array(closes.length);
+  for(let i=0;i<closes.length;i++){
+    const s=Math.max(0,i-p+1); let m=0; const cnt=i-s+1;
+    for(let j=s;j<=i;j++) m+=closes[j]; m/=cnt;
+    let v=0; for(let j=s;j<=i;j++){ const d=closes[j]-m; v+=d*d; }
+    const sd=Math.sqrt(v/cnt);
+    up[i]=m+k*sd; lo[i]=m-k*sd;
+  }
+  return {up,lo};
+}
 function drawChart(){
   const cv=$('chartCv'); if(!cv) return;
   const rect=cv.getBoundingClientRect();
@@ -2908,16 +2945,22 @@ function drawChart(){
     return;
   }
   const dec=(symCfg(state.sym)||{}).dec??2;
-  const padL=8,padR=64,padT=10,padB=20;
-  const plotW=W-padL-padR, plotH=H-padT-padB;
+  const padL=8,padR=64,padT=10,padB=20, rsiH=cs.length>=15?48:0, gapZ=rsiH?8:0;
+  const plotW=W-padL-padR, priceH=H-padT-padB-rsiH-gapZ;
+  const priceBottom=padT+priceH, rsiTop=priceBottom+gapZ;
   let hi=-Infinity,lo=Infinity;
   for(const c of cs){ if(c.h>hi) hi=c.h; if(c.l<lo) lo=c.l; }
   const last=state.lastPrice||cs[cs.length-1].c;
   hi=Math.max(hi,last); lo=Math.min(lo,last);
   const span=Math.max(1e-9,hi-lo), pad=span*0.08;
   hi+=pad; lo-=pad;
-  const yFor2=p=>padT+(1-(p-lo)/(hi-lo))*plotH;
+  const yFor2=p=>padT+(1-(p-lo)/(hi-lo))*priceH;
   const cw=plotW/cs.length;
+  const closes=cs.map(c=>c.c);
+  const e9=emaArr(closes,9), e21=emaArr(closes,21);
+  const boll=cs.length>=20?bollArr(closes,20,2):null;
+  const rsi=rsiH?rsiArr(closes,14):null;
+  const xAt=i=>padL+i*cw+cw/2;
   // gridlines + price labels — the core "read it at a glance" upgrade
   g.strokeStyle='rgba(0,240,255,.10)'; g.fillStyle='rgba(157,196,216,.7)';
   g.font="10.5px 'JetBrains Mono',monospace"; g.textAlign='left'; g.textBaseline='middle';
@@ -2928,9 +2971,50 @@ function drawChart(){
     g.beginPath(); g.moveTo(padL,y); g.lineTo(padL+plotW,y); g.stroke();
     g.fillText(p.toLocaleString('en-US',{maximumFractionDigits:dec}),padL+plotW+6,y);
   }
-  // candles
+  // volume histogram — thin bars anchored to the price zone's floor, behind
+  // everything else, so it reads as context rather than competing for focus
+  let maxVol=1e-9; for(const c of cs) if(c.v>maxVol) maxVol=c.v;
   cs.forEach((c,i)=>{
-    const x=padL+i*cw+cw/2;
+    const x=xAt(i), up=c.c>=c.o;
+    const vh=(c.v/maxVol)*priceH*0.16;
+    g.fillStyle=up?'rgba(0,255,166,.16)':'rgba(255,61,110,.16)';
+    const bw=Math.max(1.5,cw*0.62);
+    g.fillRect(x-bw/2,priceBottom-vh,bw,vh);
+  });
+  // Bollinger bands — a shaded volatility envelope behind the candles
+  if(boll){
+    g.beginPath();
+    for(let i=0;i<cs.length;i++){ const x=xAt(i),y=yFor2(boll.up[i]); i?g.lineTo(x,y):g.moveTo(x,y); }
+    for(let i=cs.length-1;i>=0;i--){ g.lineTo(xAt(i),yFor2(boll.lo[i])); }
+    g.closePath(); g.fillStyle='rgba(140,190,255,.06)'; g.fill();
+    g.strokeStyle='rgba(140,190,255,.28)'; g.lineWidth=1;
+    [boll.up,boll.lo].forEach(arr=>{
+      g.beginPath();
+      arr.forEach((v,i)=>{ const x=xAt(i),y=yFor2(v); i?g.lineTo(x,y):g.moveTo(x,y); });
+      g.stroke();
+    });
+  }
+  // S/R levels from the same indicator engine driving the 3D arena — dashed
+  // gold lines with a compact tag, red-tinted above price / green below
+  if(ind&&ind.levels) ind.levels.forEach(lv=>{
+    if(lv.p<lo||lv.p>hi) return;
+    const y=yFor2(lv.p), above=lv.p>last;
+    g.save();
+    g.strokeStyle=above?'rgba(255,61,110,.4)':'rgba(0,255,166,.4)'; g.setLineDash([3,4]); g.lineWidth=1;
+    g.beginPath(); g.moveTo(padL,y); g.lineTo(padL+plotW,y); g.stroke();
+    g.restore();
+  });
+  // EMA 9 / EMA 21 — the trend-reading pair every technical trader glances
+  // at first: 9 above 21 and rising = momentum with you, crossing = a flip
+  g.lineWidth=1.6;
+  [[e9,'#5fd0ff'],[e21,'#ff8ae0']].forEach(([arr,col])=>{
+    g.strokeStyle=col; g.beginPath();
+    arr.forEach((v,i)=>{ const x=xAt(i),y=yFor2(v); i?g.lineTo(x,y):g.moveTo(x,y); });
+    g.stroke();
+  });
+  // candles — drawn last among price-zone layers so they stay legible on top
+  cs.forEach((c,i)=>{
+    const x=xAt(i);
     const up=c.c>=c.o;
     g.strokeStyle=g.fillStyle=up?'#00ffa6':'#ff3d6e';
     g.lineWidth=1;
@@ -2949,6 +3033,30 @@ function drawChart(){
   g.strokeStyle='rgba(255,209,102,.6)'; g.strokeRect(padL+plotW+2,ly-8,padR-6,16);
   g.fillStyle='#ffd166'; g.font="10.5px 'JetBrains Mono',monospace"; g.textAlign='left'; g.textBaseline='middle';
   g.fillText(last.toLocaleString('en-US',{maximumFractionDigits:dec}),padL+plotW+6,ly);
+  // RSI subplot — momentum's own scale (0-100), oversold/overbought bands
+  // shaded so an extreme reading is visible without reading the number
+  if(rsi){
+    g.strokeStyle='rgba(0,240,255,.08)'; g.lineWidth=1;
+    g.beginPath(); g.moveTo(padL,rsiTop); g.lineTo(padL+plotW,rsiTop); g.stroke();
+    g.beginPath(); g.moveTo(padL,rsiTop+rsiH); g.lineTo(padL+plotW,rsiTop+rsiH); g.stroke();
+    const yForRsi=v=>rsiTop+(1-v/100)*rsiH;
+    g.fillStyle='rgba(255,61,110,.05)'; g.fillRect(padL,rsiTop,plotW,yForRsi(70)-rsiTop);
+    g.fillStyle='rgba(0,255,166,.05)'; g.fillRect(padL,yForRsi(30),plotW,rsiTop+rsiH-yForRsi(30));
+    g.strokeStyle='rgba(255,61,110,.25)'; g.setLineDash([2,3]);
+    g.beginPath(); g.moveTo(padL,yForRsi(70)); g.lineTo(padL+plotW,yForRsi(70)); g.stroke();
+    g.strokeStyle='rgba(0,255,166,.25)';
+    g.beginPath(); g.moveTo(padL,yForRsi(30)); g.lineTo(padL+plotW,yForRsi(30)); g.stroke();
+    g.setLineDash([]);
+    g.strokeStyle='#8a5cff'; g.lineWidth=1.5; g.beginPath();
+    rsi.forEach((v,i)=>{ const x=xAt(i),y=yForRsi(clamp(v,0,100)); i?g.lineTo(x,y):g.moveTo(x,y); });
+    g.stroke();
+    g.fillStyle='rgba(157,196,216,.6)'; g.font="9px 'JetBrains Mono',monospace"; g.textAlign='left'; g.textBaseline='top';
+    g.fillText('RSI 14',padL,rsiTop+1);
+    const rv=rsi[rsi.length-1];
+    g.fillStyle=rv>70?'#ff3d6e':rv<30?'#00ffa6':'#8a5cff'; g.textAlign='left'; g.textBaseline='middle';
+    g.font="10.5px 'JetBrains Mono',monospace";
+    g.fillText(rv.toFixed(0),padL+plotW+6,yForRsi(clamp(rv,0,100)));
+  }
   // time axis — first/last candle labels
   g.fillStyle='rgba(157,196,216,.55)'; g.font="9.5px 'JetBrains Mono',monospace"; g.textBaseline='alphabetic';
   g.textAlign='left'; g.fillText(fmtT(cs[0].t),padL,H-6);
@@ -2965,8 +3073,58 @@ function setChart(on){
   $('btnChart').classList.toggle('on',on);
   if(chartTimer){ clearInterval(chartTimer); chartTimer=null; }
   if(on){ drawChart(); chartTimer=setInterval(drawChart,500); }
+  else stopVoiceLesson();
 }
 addEventListener('resize',()=>{ if(chartOpen) drawChart(); });
+
+// ---- 🔊 AI voice lesson — reads the SAME data already computed for the
+// oracle/agent (ind, candleAnalysis, S/R levels) and turns it into a short
+// spoken Hebrew briefing via the browser's built-in speech synthesis (no
+// API key, works offline) plus a synced caption shown right on the chart.
+function chartBriefingText(){
+  if(!ind||!state.candles.length) return 'עדיין אין מספיק נתונים לניתוח.';
+  const p=state.lastPrice, sym=symLabelText(state.sym);
+  const trendUp=ind.e9raw[ind.e9raw.length-1]>ind.e21raw[ind.e21raw.length-1];
+  const rsi=rsiArr(state.candles.map(c=>c.c),14); const rv=rsi[rsi.length-1];
+  const parts=[];
+  parts.push(`הגרף של ${sym}, מחיר נוכחי ${fmtP(p)}.`);
+  parts.push(`ה-EMA המהיר ${trendUp?'מעל':'מתחת ל'}-EMA האיטי — זה קורא כמגמת ${trendUp?'עלייה':'ירידה'} לטווח הקצר.`);
+  if(rv>70) parts.push(`ה-RSI עומד על ${rv.toFixed(0)}, אזור קנייתי-יתר — לעיתים מבשר קירור זמני.`);
+  else if(rv<30) parts.push(`ה-RSI עומד על ${rv.toFixed(0)}, אזור מכירת-יתר — לעיתים מבשר קפיצה חזרה למעלה.`);
+  else parts.push(`ה-RSI עומד על ${rv.toFixed(0)}, איזור ניטרלי, לא קיצוני לשום כיוון.`);
+  if(candleAnalysis){
+    const hit=candleAnalysis.pattern||candleAnalysis.single;
+    parts.push(`הנר האחרון שנסגר: ${hit.label}. ${hit.desc}.`);
+  }
+  if(ind.levels&&ind.levels.length){
+    const nearest=ind.levels.slice().sort((a,b)=>Math.abs(a.p-p)-Math.abs(b.p-p))[0];
+    if(nearest) parts.push(`הרמה הקרובה ביותר על הגרף היא ${fmtP(nearest.p)}, ${nearest.p>p?'התנגדות מעל':'תמיכה מתחת ל'}מחיר הנוכחי.`);
+  }
+  parts.push(`הציון הכללי של המערכת: ${ind.score>0?'פלוס':''}${ind.score}, ${ind.verdict}.`);
+  parts.push('זכור: זו הדגמה אלגוריתמית ולא ייעוץ השקעות.');
+  return parts.join(' ');
+}
+function stopVoiceLesson(){
+  try{ speechSynthesis.cancel(); }catch(e){}
+  $('cpVoice').classList.remove('speaking');
+  $('cpCaption').classList.remove('show');
+}
+function speakBriefing(){
+  if(!('speechSynthesis' in window)){ toast('הדפדפן הזה לא תומך בקריינות','down'); return; }
+  if(speechSynthesis.speaking){ stopVoiceLesson(); return; }
+  const text=chartBriefingText();
+  $('cpCaption').innerHTML=text.replace(/(\d[\d,.]*%?)/g,'<b>$1</b>');
+  $('cpCaption').classList.add('show');
+  $('cpVoice').classList.add('speaking');
+  const u=new SpeechSynthesisUtterance(text);
+  u.lang='he-IL'; u.rate=0.98; u.pitch=1;
+  const voices=speechSynthesis.getVoices();
+  const heVoice=voices.find(v=>v.lang&&v.lang.toLowerCase().startsWith('he'));
+  if(heVoice) u.voice=heVoice;
+  u.onend=u.onerror=()=>{ $('cpVoice').classList.remove('speaking'); setTimeout(()=>{ if(!speechSynthesis.speaking) $('cpCaption').classList.remove('show'); },4000); };
+  try{ speechSynthesis.cancel(); speechSynthesis.speak(u); }catch(e){ stopVoiceLesson(); }
+}
+$('cpVoice').onclick=speakBriefing;
 
 // ---- trade log & achievements panel — reads straight off the persisted
 // `session` object (localStorage['na:session']) so career stats survive
