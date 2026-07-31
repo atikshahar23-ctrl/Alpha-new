@@ -34,6 +34,11 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 
 /* header */
 #top{position:fixed;top:0;right:0;left:0;display:flex;align-items:center;gap:14px;padding:10px 16px;flex-wrap:wrap}
+#navBtns{display:flex;gap:6px;flex:none}
+.nav-btn{width:34px;height:34px;display:flex;align-items:center;justify-content:center;font-size:15px;
+  color:var(--dim);text-decoration:none;cursor:pointer;background:rgba(6,12,26,.6)}
+.nav-btn:hover{color:var(--cyan);border-color:var(--cyan)}
+.nav-btn.on{color:var(--cyan);border-color:var(--cyan);box-shadow:0 0 12px rgba(0,240,255,.35)}
 #brand{display:flex;flex-direction:column;line-height:1.05}
 #brand .eyebrow{font-size:9px;letter-spacing:4px;color:var(--dim);font-weight:600}
 #brand .name{font-family:'Orbitron',monospace;font-weight:900;font-size:19px;letter-spacing:2px;
@@ -186,6 +191,28 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 .wp-item.on .dot{background:#02141a !important}
 .wp-close{margin-top:14px;text-align:center;font-size:12px;color:var(--dim);cursor:pointer;padding:7px}
 .wp-close:hover{color:var(--txt)}
+/* ── settings panel — a real, persisted control room for the arena. Every
+   row here is wired to an actual behavior (graphics, movement feel, world
+   analysis, alerts) — no decorative-only toggles. ── */
+#settingsPanel{position:fixed;z-index:34;top:60px;left:50%;transform:translateX(-50%);
+  width:min(94vw,520px);max-height:80vh;overflow-y:auto;padding:16px 18px}
+.st-sec{margin-top:14px}
+.st-sec:first-child{margin-top:4px}
+.st-h{font-size:11px;color:var(--magenta);letter-spacing:2px;font-weight:700;margin-bottom:9px;
+  border-bottom:1px solid rgba(255,47,214,.18);padding-bottom:5px}
+.st-row{display:flex;align-items:center;gap:10px;justify-content:space-between;margin-bottom:10px;font-size:12.5px}
+.st-row label{color:var(--txt);flex:1;min-width:0}
+.st-row .st-desc{display:block;font-size:10px;color:var(--dim);margin-top:1px;font-weight:400}
+.st-row input[type=range]{flex:none;width:120px;accent-color:var(--cyan)}
+.st-row input[type=checkbox]{flex:none;width:17px;height:17px;accent-color:var(--cyan);cursor:pointer}
+.st-row select{flex:none;background:rgba(6,12,26,.7);color:var(--txt);border:1px solid rgba(0,240,255,.25);
+  padding:5px 8px;font-size:12px;font-family:'Heebo',sans-serif}
+.st-val{flex:none;width:44px;text-align:left;font-family:'Orbitron',monospace;font-size:11px;color:var(--cyan)}
+.st-btnrow{display:flex;align-items:center;justify-content:space-between;margin-top:16px;gap:10px}
+.st-reset{background:rgba(255,61,110,.08);border:1px solid rgba(255,61,110,.35);color:#ffb0c0;
+  font-size:11.5px;font-weight:600;cursor:pointer;padding:8px 14px;
+  clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px)}
+.st-reset:hover{border-color:var(--down);color:#fff}
 #focusPlate{position:fixed;z-index:20;bottom:calc(120px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);
   padding:10px 18px;text-align:center;pointer-events:none;min-width:220px}
 #focusPlate b{display:block;font-size:14px;letter-spacing:.5px}
@@ -279,6 +306,8 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
   #worldPanel{top:8px;max-height:84vh}
   #chartPanel{top:8px;transform:translateX(-50%);width:94vw}
   #chartPanel #cpBadge{display:none}
+  #settingsPanel{top:8px;max-height:88vh;width:94vw}
+  .st-row input[type=range]{width:88px}
   #joyHint{bottom:calc(30px + env(safe-area-inset-bottom))}
 }
 @media (max-height:520px){
@@ -306,6 +335,10 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 
 <div class="hud">
   <div id="top">
+    <div id="navBtns">
+      <a class="nav-btn panel clip" href="./" title="חזרה לאלפא">⌂</a>
+      <div class="nav-btn panel clip" id="btnSettings" title="הגדרות NEXUS·ARENA">⚙️</div>
+    </div>
     <div id="brand">
       <span class="eyebrow">HG·LABS</span>
       <span class="name">NEXUS·ARENA</span>
@@ -447,6 +480,15 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
     <span>נרות <b id="cpN" class="num">0</b></span>
   </div>
 </div>
+
+<div id="settingsPanel" class="panel clip" style="display:none">
+  <div class="wp-title">⚙️ הגדרות NEXUS·ARENA</div>
+  <div id="settingsBody"></div>
+  <div class="st-btnrow">
+    <button id="settingsReset" class="st-reset">↺ איפוס לברירת מחדל</button>
+    <div class="wp-close" id="settingsClose">✕ סגור</div>
+  </div>
+</div>
 <div class="mobTab panel clip" id="oracleTab">🔮</div>
 <div class="mobTab panel clip" id="ticketTab">🎫</div>
 <div id="tape"><div id="tapeIn"></div></div>
@@ -510,9 +552,24 @@ const SYMBOLS = {
 const TFS = [['1m','1ד'],['5m','5ד'],['15m','15ד'],['1h','1ש'],['4h','4ש'],['1d','יום']];
 const TF_SEC = {'1m':60,'5m':300,'15m':900,'1h':3600,'4h':14400,'1d':86400};
 
+// ---------- settings (persisted, all wired to real behavior) ----------
+const NA_DEFAULTS={
+  qualityMode:'auto',      // אוטומטי · מקסימלית · בינונית · נמוכה
+  exposure:1.25,           // renderer.toneMappingExposure (active only with bloom)
+  showMotes:true, showComets:true, showStreams:true,
+  walkSpeed:18, lookSens:1.0, invertY:false,
+  alertsEnabled:true, alertPct:3,
+  chartAutoOpen:false, chartDefaultTf:'1m',
+  tourHoldSec:4, tapeSpeedSec:40,
+  spawnWalkOnLoad:false,
+};
+let naSettings=Object.assign({},NA_DEFAULTS);
+try{ Object.assign(naSettings, JSON.parse(localStorage.getItem('na:settings')||'{}')); }catch(e){}
+window.__naSettings=naSettings; // live reference — reflects in-place mutations, incl. after reset
+
 // ---------- state ----------
 const state = {
-  sym:'BTC', tf:'1m',
+  sym:'BTC', tf:(TF_SEC[naSettings.chartDefaultTf]?naSettings.chartDefaultTf:'1m'),
   candles:[], bigQ:1,
   book:{bids:[],asks:[]}, stats:null,
   sMin:0, sMax:1, tMin:0, tMax:1, winHi:0, winLo:0,
@@ -992,7 +1049,7 @@ try{
     // Filmic grade ONLY together with bloom: ACES rolls highlights off like
     // a camera, and bloom lifts the dim glows ACES would otherwise crush.
     renderer.toneMapping=THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure=1.25;
+    renderer.toneMappingExposure=naSettings.exposure;
     window.__gfx.bloom=true;
   }
 }catch(e){ composer=null; }
@@ -1754,7 +1811,7 @@ function renderPulse(){
 const walk={ on:false, pos:new THREE.Vector3(0,2.3,96), yaw:0, pitch:-0.04,
   keys:{}, moveVec:{x:0,y:0}, lookPtr:null, movePtr:null, focusId:null, lastFocus:0 };
 function applyWalkCam(dt){
-  const sp=18;
+  const sp=naSettings.walkSpeed;
   let mx=walk.moveVec.x, mz=walk.moveVec.y;
   if(walk.keys.w||walk.keys.ArrowUp) mz-=1;
   if(walk.keys.s||walk.keys.ArrowDown) mz+=1;
@@ -1842,7 +1899,8 @@ function walkPointerMove(id,dx,dy){
     const ox=cur.x-walk.movePtr.x0, oy=cur.y-walk.movePtr.y0;
     walk.moveVec.x=clamp(ox/70,-1,1); walk.moveVec.y=clamp(oy/70,-1,1);
   } else {
-    walk.yaw-=dx*0.0042; walk.pitch=clamp(walk.pitch-dy*0.003,-0.9,0.9);
+    const s=naSettings.lookSens, iy=naSettings.invertY?-1:1;
+    walk.yaw-=dx*0.0042*s; walk.pitch=clamp(walk.pitch-dy*0.003*s*iy,-0.9,0.9);
   }
 }
 function walkPointerUp(id){
@@ -1857,7 +1915,8 @@ addEventListener('keyup',e=>{ const k=e.key.length===1?e.key.toLowerCase():e.key
 renderer.domElement.addEventListener('click',()=>{ if(walk.on && !('ontouchstart' in window)){ try{ renderer.domElement.requestPointerLock(); }catch(e){} } });
 document.addEventListener('mousemove',e=>{
   if(walk.on && document.pointerLockElement===renderer.domElement){
-    walk.yaw-=e.movementX*0.0028; walk.pitch=clamp(walk.pitch-e.movementY*0.0022,-0.9,0.9);
+    const s=naSettings.lookSens, iy=naSettings.invertY?-1:1;
+    walk.yaw-=e.movementX*0.0028*s; walk.pitch=clamp(walk.pitch-e.movementY*0.0022*s*iy,-0.9,0.9);
   }
 });
 function setWalk(on){
@@ -1898,7 +1957,7 @@ function updateTour(dt){
     tour.hold=0;
   } else {
     tour.hold+=dt;
-    if(tour.hold>4){ tour.idx=(tour.idx+1)%pods.length; tour.hold=0; }
+    if(tour.hold>naSettings.tourHoldSec){ tour.idx=(tour.idx+1)%pods.length; tour.hold=0; }
   }
   // ease the gaze onto the pod
   const wantYaw=Math.atan2(walk.pos.x-p.g.position.x, walk.pos.z-p.g.position.z);
@@ -1987,11 +2046,13 @@ function fireWorldAlert(p){
 }
 window.__naAlert=id=>{ const p=pods.find(x=>x.id===id); if(p) fireWorldAlert(p); }; // test hook
 function checkWorldAlerts(now){
+  if(!naSettings.alertsEnabled) return;
+  const thr=naSettings.alertPct;
   for(const p of pods){
     if(p.price==null||p.kind==='pm') continue;
-    const hot=Math.abs(p.chg)>=3;
+    const hot=Math.abs(p.chg)>=thr;
     if(hot && !p.alerted && (!p.alertAt || now-p.alertAt>90000)){ p.alerted=true; fireWorldAlert(p); }
-    else if(!hot && Math.abs(p.chg)<2.5) p.alerted=false;
+    else if(!hot && Math.abs(p.chg)<Math.max(0.2,thr-0.5)) p.alerted=false;
   }
 }
 
@@ -2147,6 +2208,97 @@ function setChart(on){
 }
 addEventListener('resize',()=>{ if(chartOpen) drawChart(); });
 
+// ---- settings panel — schema-driven so every control here is both a real
+// wired behavior AND a persisted preference, without hand-writing 15
+// near-identical HTML blocks. Applying a setting never requires a reload:
+// each control's onchange calls the exact function that already reacts to
+// that state elsewhere in the app (applyQuality, applyVisualToggles, …). ----
+function saveNaSettings(){ try{ localStorage.setItem('na:settings',JSON.stringify(naSettings)); }catch(e){} }
+const SETTINGS_SCHEMA=[
+  {sec:'🖥️ תצוגה וגרפיקה', items:[
+    {key:'qualityMode', type:'select', label:'איכות גרפית', desc:'אוטומטי מתאים את עצמו לפי קצב פריימים בפועל',
+      options:[['auto','אוטומטי'],['max','מקסימלית'],['medium','בינונית'],['low','נמוכה (ביצועים)']]},
+    {key:'exposure', type:'range', label:'בהירות סצנה (חשיפה)', desc:'משפיע רק כאשר אפקט הזוהר פעיל', min:0.6,max:2,step:0.05,
+      fmt:v=>v.toFixed(2)},
+    {key:'showMotes', type:'checkbox', label:'אבק אור מרחף', desc:'חלקיקי זוהר עדינים באוויר'},
+    {key:'showComets', type:'checkbox', label:'כוכבים נופלים', desc:'שביטים איטיים בשמיים'},
+    {key:'showStreams', type:'checkbox', label:'זרמי נתונים', desc:'חלקיקי אור מכל פוד אל הזירה המרכזית'},
+  ]},
+  {sec:'🕹️ שליטה ותנועה', items:[
+    {key:'walkSpeed', type:'range', label:'מהירות הליכה', min:6,max:32,step:1, fmt:v=>v+''},
+    {key:'lookSens', type:'range', label:'רגישות מבט (עכבר/מגע)', min:0.4,max:2.5,step:0.1, fmt:v=>v.toFixed(1)+'x'},
+    {key:'invertY', type:'checkbox', label:'היפוך ציר מבט (Invert Y)'},
+  ]},
+  {sec:'🛰️ עולם וניתוח', items:[
+    {key:'alertsEnabled', type:'checkbox', label:'התראות שוק', desc:'הבזק + טוסט + צליל על תנועה חדה'},
+    {key:'alertPct', type:'range', label:'סף התראה', desc:'אחוז שינוי יומי שנחשב "תנועה חדה"', min:1,max:10,step:0.5, fmt:v=>'±'+v.toFixed(1)+'%'},
+    {key:'chartAutoOpen', type:'checkbox', label:'פתיחת גרף אוטומטית', desc:'בכל מעבר בין מטבעות בזירה'},
+    {key:'chartDefaultTf', type:'select', label:'מסגרת זמן ברירת מחדל', options:TFS.map(([v,l])=>[v,l])},
+    {key:'tourHoldSec', type:'range', label:'עצירה בטיסת סיור', min:2,max:10,step:1, fmt:v=>v+' שנ׳'},
+  ]},
+  {sec:'⚙️ כללי', items:[
+    {key:'tapeSpeedSec', type:'range', label:'מהירות גלילת הטיקר', min:15,max:70,step:5, fmt:v=>v+' שנ׳/סבב'},
+    {key:'spawnWalkOnLoad', type:'checkbox', label:'כניסה למצב הליכה מיד בטעינה'},
+  ]},
+];
+function onSettingChanged(key){
+  saveNaSettings();
+  if(key==='qualityMode') applyQuality(naSettings.qualityMode);
+  if(key==='exposure' && renderer.toneMapping!==THREE.NoToneMapping) renderer.toneMappingExposure=naSettings.exposure;
+  if(key==='showMotes'||key==='showComets'||key==='showStreams'||key==='tapeSpeedSec') applyVisualToggles();
+}
+function buildSettingsPanel(){
+  const body=$('settingsBody'); if(!body) return;
+  body.innerHTML=SETTINGS_SCHEMA.map(group=>
+    '<div class="st-sec"><div class="st-h">'+group.sec+'</div>'+
+    group.items.map(it=>{
+      const descHtml=it.desc?'<span class="st-desc">'+it.desc+'</span>':'';
+      let ctrl='';
+      if(it.type==='checkbox'){
+        ctrl='<input type="checkbox" data-key="'+it.key+'" '+(naSettings[it.key]?'checked':'')+'>';
+      } else if(it.type==='select'){
+        ctrl='<select data-key="'+it.key+'">'+it.options.map(([v,l])=>'<option value="'+v+'"'+(naSettings[it.key]===v?' selected':'')+'>'+l+'</option>').join('')+'</select>';
+      } else if(it.type==='range'){
+        ctrl='<input type="range" data-key="'+it.key+'" min="'+it.min+'" max="'+it.max+'" step="'+it.step+'" value="'+naSettings[it.key]+'">'+
+          '<span class="st-val" data-valfor="'+it.key+'">'+(it.fmt?it.fmt(naSettings[it.key]):naSettings[it.key])+'</span>';
+      }
+      return '<div class="st-row"><label>'+it.label+descHtml+'</label>'+ctrl+'</div>';
+    }).join('')+
+    '</div>'
+  ).join('');
+  const schemaByKey={}; SETTINGS_SCHEMA.forEach(g=>g.items.forEach(it=>schemaByKey[it.key]=it));
+  body.querySelectorAll('[data-key]').forEach(el=>{
+    const key=el.dataset.key, it=schemaByKey[key];
+    const handler=()=>{
+      if(el.type==='checkbox') naSettings[key]=el.checked;
+      else if(el.tagName==='SELECT') naSettings[key]=el.value;
+      else { naSettings[key]=parseFloat(el.value);
+        const vEl=body.querySelector('[data-valfor="'+key+'"]');
+        if(vEl) vEl.textContent=it.fmt?it.fmt(naSettings[key]):naSettings[key];
+      }
+      onSettingChanged(key);
+    };
+    el.addEventListener(el.type==='range'?'input':'change',handler);
+  });
+}
+function setSettingsPanel(on){
+  $('settingsPanel').style.display=on?'block':'none';
+  $('btnSettings').classList.toggle('on',on);
+  if(on) buildSettingsPanel();
+}
+$('btnSettings').onclick=()=>{ setSettingsPanel($('settingsPanel').style.display==='none'||!$('settingsPanel').style.display); };
+$('settingsClose').onclick=()=>setSettingsPanel(false);
+$('settingsReset').onclick=()=>{
+  Object.assign(naSettings,NA_DEFAULTS); // mutate in place — window.__naSettings stays a valid live reference
+  saveNaSettings();
+  applyQuality('auto'); gfxTier=0; window.__gfx.tier=0; // fully release the manual override back to auto
+  if(bloomPass) bloomPass.strength=0.72;
+  if(composer){ window.__gfx.bloom=true; renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=naSettings.exposure; }
+  applyVisualToggles();
+  buildSettingsPanel();
+  toast('↺ ההגדרות אופסו לברירת המחדל');
+};
+
 // ---- world picker UI ----
 function buildWorldUI(){
   const wp=$('worldPanel');
@@ -2255,7 +2407,8 @@ function buildPills(){
       if(pos) closePos('switch');
       state.sym=s; $('symLabel').textContent=s+' / USDT';
       state.stats=null; state.bigQ=1;
-      buildPills(); startFeed(); };
+      buildPills(); startFeed();
+      if(naSettings.chartAutoOpen && typeof setChart==='function') setChart(true); };
     sr.appendChild(b);
   });
   const tr=$('tfRow'); tr.innerHTML='';
@@ -2394,6 +2547,7 @@ let prevT=performance.now(), running=true;
 // tier 0 full bloom → tier 1 gentler bloom → tier 2 bloom off + motes off.
 let gfxWarm=0, gfxT=0, gfxN=0, gfxSlow=0;
 function gfxGuard(dt){
+  if(naSettings.qualityMode!=='auto') return; // manual quality — the auto-stepper stands down entirely
   gfxWarm+=dt; if(gfxWarm<3||gfxTier>=2) return;
   gfxT+=dt; gfxN++;
   if(gfxT>=1){
@@ -2404,6 +2558,29 @@ function gfxGuard(dt){
     } }
     else gfxSlow=0;
   }
+}
+// Manual quality override (settings panel): sets gfxTier directly and skips
+// the auto-stepper above entirely, so a user's choice always sticks instead
+// of being silently re-adjusted by the FPS guard a few seconds later.
+function applyQuality(mode){
+  if(mode==='auto') return; // gfxGuard resumes driving gfxTier itself
+  const tierByMode={max:0,medium:1,low:2};
+  gfxTier=tierByMode[mode]??0; window.__gfx.tier=gfxTier;
+  if(bloomPass) bloomPass.strength=gfxTier===1?0.42:0.72;
+  if(gfxTier>=2){ window.__gfx.bloom=false; if(renderer.toneMapping!==undefined) renderer.toneMapping=THREE.NoToneMapping; }
+  else if(composer){ window.__gfx.bloom=true; renderer.toneMapping=THREE.ACESFilmicToneMapping; }
+}
+// The three cheap ambience layers are pure taste — independent of
+// performance quality, so a user can strip visual noise for a cleaner
+// analytical view (or keep them even on low-power quality) without the two
+// settings fighting each other.
+function applyVisualToggles(){
+  if(motes.pts) motes.pts.visible=naSettings.showMotes;
+  comets.forEach(c=>{ c.sp.visible=naSettings.showComets; });
+  if(typeof streamGroup!=='undefined') streamGroup.visible=naSettings.showStreams;
+  const tapeIn=document.getElementById('tapeIn');
+  if(tapeIn) tapeIn.style.animationDuration=naSettings.tapeSpeedSec+'s';
+  window.__naDebug={comets,motes,streamGroup:(typeof streamGroup!=='undefined'?streamGroup:null)}; // test hook
 }
 function loop(){
   requestAnimationFrame(loop);
@@ -2432,6 +2609,10 @@ buildWorldUI();
 rebuildPods();
 startPodFeeds();
 startFeed();
+applyQuality(naSettings.qualityMode);
+applyVisualToggles();
+buildSettingsPanel();
+if(naSettings.spawnWalkOnLoad) setTimeout(()=>setWalk(true),900);
 loop();
 }); // end three-ready wrapper
 </script>
