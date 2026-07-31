@@ -216,6 +216,52 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 @media (max-width:720px){ #pulsePanel{display:none} }
 #joyHint{position:fixed;z-index:20;bottom:calc(8px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);
   font-size:10px;color:var(--dim);letter-spacing:1px;pointer-events:none}
+
+/* ═══════════ MOBILE LAYER (≤720px) ═══════════
+   Phones can't host four fixed panels at once: the oracle and the trade
+   ticket collapse behind tap-tabs, the price panel goes compact, the pill
+   rows become one horizontal scroller, and everything clears the tape. */
+.mobTab{display:none}
+@media (max-width:720px){
+  #top{padding:6px 8px;gap:8px}
+  #brand .name{font-size:15px}
+  #brand .sub{display:none}
+  #mode{padding:4px 8px;font-size:9.5px}
+  #rows{width:100%;margin:0;align-items:stretch}
+  .pills{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;padding-bottom:2px}
+  .pills::-webkit-scrollbar{display:none}
+  .pill{padding:6px 10px;font-size:11px;flex:none}
+  #toggles{left:6px;gap:5px;max-height:72vh;overflow-y:auto;scrollbar-width:none}
+  #toggles::-webkit-scrollbar{display:none}
+  .tgl{width:42px;height:37px;gap:1px}
+  .tgl span{font-size:12px !important}
+  .tgl span:last-child{font-size:7px !important}
+  #pricePanel{left:8px;bottom:calc(34px + env(safe-area-inset-bottom));min-width:0;width:46vw;max-width:210px;padding:9px 11px}
+  #priceBig{font-size:clamp(17px,5.6vw,24px)}
+  #chg{font-size:12px}
+  #stats{gap:2px 8px;margin-top:6px;padding-top:5px}
+  #stats .k{font-size:8.5px} #stats .v{font-size:10px}
+  #oracle{top:auto;bottom:calc(34px + env(safe-area-inset-bottom));right:8px;width:min(78vw,250px);display:none;z-index:26}
+  #oracle.mob-open{display:block}
+  #ticket{right:8px;bottom:calc(34px + env(safe-area-inset-bottom));width:min(78vw,250px);display:none;z-index:26}
+  #ticket.mob-open{display:block}
+  .mobTab{display:flex;align-items:center;justify-content:center;position:fixed;z-index:25;
+    width:44px;height:44px;font-size:19px;cursor:pointer;right:8px}
+  #oracleTab{bottom:calc(94px + env(safe-area-inset-bottom))}
+  #ticketTab{bottom:calc(42px + env(safe-area-inset-bottom))}
+  .mobTab.on{border-color:var(--cyan);box-shadow:0 0 16px rgba(0,240,255,.4)}
+  #focusPlate{bottom:calc(150px + env(safe-area-inset-bottom));min-width:0;width:min(88vw,260px);padding:8px 12px}
+  #focusPlate #fpSpark{width:200px;height:38px}
+  #hint{display:none}
+  #banner{left:8px;right:8px;transform:none;width:auto}
+  #worldPanel{top:8px;max-height:84vh}
+  #joyHint{bottom:calc(30px + env(safe-area-inset-bottom))}
+}
+@media (max-height:440px){
+  #toggles{max-height:92vh}
+  .tgl{height:30px}
+  .tgl span:last-child{display:none}
+}
 </style>
 </head>
 <body>
@@ -313,6 +359,9 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
     <div class="tgl" id="btnWorld" title="בחר אילו שווקים בעולם">
       <span style="font-size:15px">🌍</span><span style="font-size:8px">עולם</span>
     </div>
+    <div class="tgl" id="btnTour" title="טיסת סיור אוטומטית מעל העולם">
+      <span style="font-size:15px">🛸</span><span style="font-size:8px">מסע</span>
+    </div>
     <div class="tgl on" id="btnAuto" title="טיסה אוטומטית">
       <svg viewBox="0 0 24 24"><path d="M12 3l3 7h6l-5 4 2 7-6-4-6 4 2-7-5-4h6z"/></svg><span>טיסה</span>
     </div>
@@ -338,6 +387,8 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
   <div id="hint">גרירה — סיבוב · צביטה — זום · הקשה כפולה — טיסה · הבזק ירוק = קנייה אמיתית · אדום = מכירה</div>
 </div>
 
+<div class="mobTab panel clip" id="oracleTab">🔮</div>
+<div class="mobTab panel clip" id="ticketTab">🎫</div>
 <div id="tape"><div id="tapeIn"></div></div>
 <div id="pulsePanel" class="panel clip"><div class="pp-h">💓 דופק העולם</div><div id="pulseList"></div></div>
 <div id="worldPanel" class="panel clip" style="display:none"></div>
@@ -1693,7 +1744,7 @@ function walkPointerUp(id){
   if(walk.movePtr && id===walk.movePtr.id){ walk.movePtr=null; walk.moveVec.x=0; walk.moveVec.y=0; }
   if(walk.lookPtr===id) walk.lookPtr=null;
 }
-function updateWalk(dt){ /* reserved for future collisions */ }
+function updateWalk(dt){ updateTour(dt); }
 addEventListener('keydown',e=>{ const k=e.key.length===1?e.key.toLowerCase():e.key; walk.keys[k]=true; });
 addEventListener('keyup',e=>{ const k=e.key.length===1?e.key.toLowerCase():e.key; walk.keys[k]=false; });
 // desktop mouse-look via pointer lock (renderer.domElement — the shared
@@ -1715,6 +1766,45 @@ function setWalk(on){
   try{ localStorage.setItem('na:walk', on?'1':'0'); }catch(e){}
   if(!on && document.pointerLockElement===el) document.exitPointerLock();
 }
+
+// ---- tour mode: a cinematic auto-flight that glides from pod to pod,
+// hovering at each one so its plate (with the sparkline) can be read.
+// Great on phones — the world shows itself with zero input. ----
+const tour={ on:false, idx:0, t:0, hold:0 };
+function setTour(on){
+  tour.on=on;
+  $('btnTour').classList.toggle('on',on);
+  if(on){
+    if(!walk.on) setWalk(true);
+    tour.idx=0; tour.t=0; tour.hold=0;
+    toast('🛸 טיסת סיור — כל הקשה מפסיקה');
+  }
+}
+function updateTour(dt){
+  if(!tour.on||!pods.length) return;
+  const p=pods[tour.idx%pods.length];
+  const dir=p.g.position.clone(); dir.y=0;
+  const L=dir.length()||1; dir.multiplyScalar(1/L);
+  const tx=p.g.position.x+dir.x*10, tz=p.g.position.z+dir.z*10;
+  const dx=tx-walk.pos.x, dz=tz-walk.pos.z, d=Math.hypot(dx,dz);
+  if(d>2){
+    const sp=Math.min(14,4+d*0.35);
+    walk.pos.x+=dx/d*sp*dt; walk.pos.z+=dz/d*sp*dt;
+    tour.hold=0;
+  } else {
+    tour.hold+=dt;
+    if(tour.hold>4){ tour.idx=(tour.idx+1)%pods.length; tour.hold=0; }
+  }
+  // ease the gaze onto the pod
+  const wantYaw=Math.atan2(walk.pos.x-p.g.position.x, walk.pos.z-p.g.position.z);
+  let dy=wantYaw-walk.yaw;
+  while(dy>Math.PI) dy-=Math.PI*2; while(dy<-Math.PI) dy+=Math.PI*2;
+  walk.yaw+=dy*Math.min(1,dt*2.2);
+  walk.pitch+=(0.06-walk.pitch)*Math.min(1,dt*2);
+}
+// any manual input cancels the tour
+addEventListener('keydown',e=>{ if(tour.on&&['w','a','s','d','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key.length===1?e.key.toLowerCase():e.key)) setTour(false); });
+renderer.domElement.addEventListener('pointerdown',()=>{ if(tour.on) setTour(false); });
 
 // ---- world picker UI ----
 function buildWorldUI(){
@@ -1842,6 +1932,14 @@ function syncAutoBtn(){ $('btnAuto').classList.toggle('on',state.auto); }
 $('btnAuto').onclick=()=>{ if(walk.on) setWalk(false); state.auto=!state.auto; syncAutoBtn(); };
 $('btnWalk').onclick=()=>{ setWalk(!walk.on); };
 $('btnWorld').onclick=()=>{ const wp=$('worldPanel'); wp.style.display=wp.style.display==='none'?'block':'none'; };
+// mobile tap-tabs: oracle + trade ticket collapse behind these on phones
+$('oracleTab').onclick=()=>{ const o=$('oracle'); const on=!o.classList.contains('mob-open');
+  o.classList.toggle('mob-open',on); $('ticket').classList.remove('mob-open');
+  $('oracleTab').classList.toggle('on',on); $('ticketTab').classList.remove('on'); };
+$('ticketTab').onclick=()=>{ const t=$('ticket'); const on=!t.classList.contains('mob-open');
+  t.classList.toggle('mob-open',on); $('oracle').classList.remove('mob-open');
+  $('ticketTab').classList.toggle('on',on); $('oracleTab').classList.remove('on'); };
+$('btnTour').onclick=()=>{ setTour(!tour.on); };
 try{ if(localStorage.getItem('na:walk')==='1') setTimeout(()=>setWalk(true),400); }catch(e){}
 $('btnSig').onclick=()=>{ state.showSig=!state.showSig; $('btnSig').classList.toggle('on',state.showSig); };
 $('btnTail').onclick=()=>{ state.showTail=!state.showTail; $('btnTail').classList.toggle('on',state.showTail); };
