@@ -213,7 +213,7 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 /* focus plate internals */
 #focusPlate #fpSpark{display:block;margin:6px auto 2px;width:230px;height:44px}
 #focusPlate #fpStats{font-size:10px;color:var(--dim);letter-spacing:.4px;margin-top:3px}
-@media (max-width:720px){ #pulsePanel{display:none} }
+@media (max-width:720px), (max-height:520px){ #pulsePanel{display:none} }
 #joyHint{position:fixed;z-index:20;bottom:calc(8px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);
   font-size:10px;color:var(--dim);letter-spacing:1px;pointer-events:none}
 
@@ -221,8 +221,13 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
    Phones can't host four fixed panels at once: the oracle and the trade
    ticket collapse behind tap-tabs, the price panel goes compact, the pill
    rows become one horizontal scroller, and everything clears the tape. */
+#mapPanel{position:fixed;z-index:32;top:50%;left:50%;transform:translate(-50%,-50%);padding:14px 16px;text-align:center}
+#mapPanel .mp-h{font-size:11px;letter-spacing:1.5px;color:var(--cyan);font-weight:600;margin-bottom:8px}
+#mapCv{display:block;width:min(76vw,280px);height:min(76vw,280px);cursor:crosshair}
+#mapPanel .mp-close{margin-top:8px;font-size:12px;color:var(--dim);cursor:pointer;padding:5px}
+#mapPanel .mp-close:hover{color:var(--txt)}
 .mobTab{display:none}
-@media (max-width:720px){
+@media (max-width:720px), (max-height:520px){
   #top{padding:6px 8px;gap:8px}
   #brand .name{font-size:15px}
   #brand .sub{display:none}
@@ -257,10 +262,20 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
   #worldPanel{top:8px;max-height:84vh}
   #joyHint{bottom:calc(30px + env(safe-area-inset-bottom))}
 }
-@media (max-height:440px){
-  #toggles{max-height:92vh}
-  .tgl{height:30px}
+@media (max-height:520px){
+  #toggles{max-height:94vh;gap:4px}
+  .tgl{width:38px;height:30px}
   .tgl span:last-child{display:none}
+  #top{row-gap:4px}
+  #brand .name{font-size:13px}
+  #pricePanel{width:180px;padding:7px 10px;bottom:calc(30px + env(safe-area-inset-bottom))}
+  #stats{display:none}
+  #oracleTab{bottom:auto;top:calc(50% - 50px)}
+  #ticketTab{bottom:auto;top:calc(50% + 2px)}
+  #oracle{bottom:8px;top:auto;max-height:86vh;overflow-y:auto}
+  #ticket{bottom:8px;max-height:86vh;overflow-y:auto}
+  #focusPlate{bottom:calc(36px + env(safe-area-inset-bottom));left:auto;right:60px;transform:none}
+  #banner{top:4px}
 }
 </style>
 </head>
@@ -362,6 +377,9 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
     <div class="tgl" id="btnTour" title="טיסת סיור אוטומטית מעל העולם">
       <span style="font-size:15px">🛸</span><span style="font-size:8px">מסע</span>
     </div>
+    <div class="tgl" id="btnMap" title="מפת העולם — הקשה מטלפרטת">
+      <span style="font-size:15px">🗺️</span><span style="font-size:8px">מפה</span>
+    </div>
     <div class="tgl on" id="btnAuto" title="טיסה אוטומטית">
       <svg viewBox="0 0 24 24"><path d="M12 3l3 7h6l-5 4 2 7-6-4-6 4 2-7-5-4h6z"/></svg><span>טיסה</span>
     </div>
@@ -387,6 +405,11 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
   <div id="hint">גרירה — סיבוב · צביטה — זום · הקשה כפולה — טיסה · הבזק ירוק = קנייה אמיתית · אדום = מכירה</div>
 </div>
 
+<div id="mapPanel" class="panel clip" style="display:none">
+  <div class="mp-h">🗺️ מפת העולם — הקשה על זירה מטלפרטת</div>
+  <canvas id="mapCv" width="280" height="280"></canvas>
+  <div class="mp-close" id="mapClose">✕ סגור</div>
+</div>
 <div class="mobTab panel clip" id="oracleTab">🔮</div>
 <div class="mobTab panel clip" id="ticketTab">🎫</div>
 <div id="tape"><div id="tapeIn"></div></div>
@@ -1445,6 +1468,7 @@ function rebuildPods(){
   });
   pods=list;
   pmAssign();
+  rebuildStreams();
 }
 // ---- pod data feeds (independent of the battle feed) ----
 let podWS=null, podTimers=[];
@@ -1567,7 +1591,8 @@ function updatePods(dt,now){
     tmpC.copy(up?C_UP:C_DN);
     p.col.material.color.copy(tmpC);
     p.glow.material.color.copy(tmpC).lerp(new THREE.Color(p.dot),0.45);
-    const pulse=1+Math.sin(t*2+p.phase)*0.08+Math.min(0.5,Math.abs(p.chg)*0.03);
+    if(p.alertT>0) p.alertT=Math.max(0,p.alertT-dt*0.45); // alert flare decays
+    const pulse=(1+Math.sin(t*2+p.phase)*0.08+Math.min(0.5,Math.abs(p.chg)*0.03))*(1+(p.alertT||0)*1.6);
     p.glow.scale.set(7*pulse,7*pulse,1);
     p.col.scale.y=0.7+Math.min(1.1,Math.abs(p.chg)*0.09);
     p.valS.draw(fmtPodVal(p), up?'#00ffa6':'#ff3d6e', "700 40px 'Orbitron', monospace");
@@ -1579,6 +1604,8 @@ function updatePods(dt,now){
   updateWalk(dt);
   updateMoodSky(dt);
   updateComets(dt);
+  updateStreams(now);
+  if(now-(updatePods._alertAt||0)>2000){ updatePods._alertAt=now; checkWorldAlerts(now); }
   if(now-lastTape>5000){ lastTape=now; renderTape(); renderPulse(); }
 }
 // market-mood sky: the whole heaven leans green on a rising world and red on
@@ -1638,11 +1665,7 @@ function renderPulse(){
   pl.querySelectorAll('.pl-row').forEach(r=>{
     r.onclick=()=>{
       const p=pods.find(x=>x.id===r.dataset.pod); if(!p) return;
-      if(!walk.on) setWalk(true);
-      const dir=p.g.position.clone().normalize();
-      walk.pos.set(p.g.position.x+dir.x*9, 2.3, p.g.position.z+dir.z*9);
-      walk.yaw=Math.atan2(walk.pos.x-p.g.position.x, walk.pos.z-p.g.position.z);
-      toast('🛸 טלפורט אל '+(p.kind==='crypto'?p.id:p.label));
+      teleportToPod(p);
     };
   });
 }
@@ -1806,6 +1829,93 @@ function updateTour(dt){
 addEventListener('keydown',e=>{ if(tour.on&&['w','a','s','d','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key.length===1?e.key.toLowerCase():e.key)) setTour(false); });
 renderer.domElement.addEventListener('pointerdown',()=>{ if(tour.on) setTour(false); });
 
+// ---- shared teleport ----
+function teleportToPod(p){
+  if(!walk.on) setWalk(true);
+  const dir=p.g.position.clone().normalize();
+  walk.pos.set(p.g.position.x+dir.x*9, 2.3, p.g.position.z+dir.z*9);
+  walk.yaw=Math.atan2(walk.pos.x-p.g.position.x, walk.pos.z-p.g.position.z);
+  toast('🛸 טלפורט אל '+(p.kind==='crypto'?p.id:p.label));
+}
+
+// ---- world alerts: a pod whose 24h move crosses ±3% SHOUTS — visual flare
+// on the pod itself + a toast, with hysteresis so it fires once per surge ----
+function fireWorldAlert(p){
+  p.alertT=1; p.alertAt=performance.now();
+  const nm=p.kind==='crypto'?p.id:p.label;
+  toast((p.chg>=0?'🚀 ':'🩸 ')+nm+' '+(p.chg>=0?'+':'')+p.chg.toFixed(2)+'% — תנועה חדה!');
+  beep(p.chg>=0?[[880,0.09],[1174,0.14]]:[[440,0.09],[330,0.16]]);
+}
+window.__naAlert=id=>{ const p=pods.find(x=>x.id===id); if(p) fireWorldAlert(p); }; // test hook
+function checkWorldAlerts(now){
+  for(const p of pods){
+    if(p.price==null||p.kind==='pm') continue;
+    const hot=Math.abs(p.chg)>=3;
+    if(hot && !p.alerted && (!p.alertAt || now-p.alertAt>90000)){ p.alerted=true; fireWorldAlert(p); }
+    else if(!hot && Math.abs(p.chg)<2.5) p.alerted=false;
+  }
+}
+
+// ---- data streams: motes of light flowing from every pod into the central
+// arena — the world's data made visible ----
+const streamGroup=new THREE.Group(); scene.add(streamGroup);
+let streams=[];
+function rebuildStreams(){
+  streams.forEach(st=>{ streamGroup.remove(st.sp); st.sp.material.dispose(); });
+  streams=[];
+  pods.forEach(p=>{
+    const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:glowTex,color:new THREE.Color(p.dot),transparent:true,opacity:0,blending:THREE.AdditiveBlending,depthWrite:false}));
+    sp.scale.set(1.7,1.7,1); streamGroup.add(sp);
+    streams.push({sp,p,off:Math.random()});
+  });
+}
+function updateStreams(now){
+  for(const st of streams){
+    const t=(now*0.00016+st.off)%1;
+    const px=st.p.g.position.x, pz=st.p.g.position.z;
+    st.sp.position.set(px*(1-t), 0.7+Math.sin(Math.PI*t)*3.2, pz*(1-t));
+    st.sp.material.opacity=Math.sin(Math.PI*t)*0.5;
+  }
+}
+
+// ---- holo map: the world from above; tapping a pod teleports ----
+let mapOpen=false, mapTimer=null;
+function drawMap(){
+  const cv=$('mapCv'), g=cv.getContext('2d');
+  const W=cv.width, C=W/2, SC=(W/2-14)/135;
+  g.clearRect(0,0,W,W);
+  // rings
+  g.strokeStyle='rgba(0,240,255,.18)';
+  [52,82,130].forEach(r=>{ g.beginPath(); g.arc(C,C,r*SC,0,Math.PI*2); g.stroke(); });
+  // central arena
+  g.fillStyle='rgba(0,240,255,.85)';
+  g.shadowColor='#00f0ff'; g.shadowBlur=12;
+  g.beginPath(); g.arc(C,C,6,0,Math.PI*2); g.fill();
+  // pods
+  for(const p of pods){
+    const x=C+p.g.position.x*SC, y=C+p.g.position.z*SC;
+    g.shadowColor=p.chg>=0?'#00ffa6':'#ff3d6e'; g.shadowBlur=10;
+    g.fillStyle=p.dot;
+    g.beginPath(); g.arc(x,y,4.6,0,Math.PI*2); g.fill();
+  }
+  // player
+  if(walk.on){
+    const x=C+walk.pos.x*SC, y=C+walk.pos.z*SC;
+    g.shadowColor='#ffd166'; g.shadowBlur=12; g.fillStyle='#ffd166';
+    g.save(); g.translate(x,y); g.rotate(-walk.yaw);
+    g.beginPath(); g.moveTo(0,-7); g.lineTo(4.6,5); g.lineTo(-4.6,5); g.closePath(); g.fill();
+    g.restore();
+  }
+  g.shadowBlur=0;
+}
+function setMap(on){
+  mapOpen=on;
+  $('mapPanel').style.display=on?'block':'none';
+  $('btnMap').classList.toggle('on',on);
+  if(mapTimer){ clearInterval(mapTimer); mapTimer=null; }
+  if(on){ drawMap(); mapTimer=setInterval(drawMap,500); }
+}
+
 // ---- world picker UI ----
 function buildWorldUI(){
   const wp=$('worldPanel');
@@ -1940,6 +2050,20 @@ $('ticketTab').onclick=()=>{ const t=$('ticket'); const on=!t.classList.contains
   t.classList.toggle('mob-open',on); $('oracle').classList.remove('mob-open');
   $('ticketTab').classList.toggle('on',on); $('oracleTab').classList.remove('on'); };
 $('btnTour').onclick=()=>{ setTour(!tour.on); };
+$('btnMap').onclick=()=>{ setMap(!mapOpen); };
+$('mapClose').onclick=()=>{ setMap(false); };
+$('mapCv').addEventListener('pointerdown',e=>{
+  const cv=$('mapCv'), r=cv.getBoundingClientRect();
+  const mx=(e.clientX-r.left)*(cv.width/r.width), my=(e.clientY-r.top)*(cv.height/r.height);
+  const C=cv.width/2, SC=(cv.width/2-14)/135;
+  let best=null,bd=1e9;
+  for(const p of pods){
+    const x=C+p.g.position.x*SC, y=C+p.g.position.z*SC;
+    const d=Math.hypot(mx-x,my-y);
+    if(d<bd){ bd=d; best=p; }
+  }
+  if(best && bd<20){ teleportToPod(best); setMap(false); }
+});
 try{ if(localStorage.getItem('na:walk')==='1') setTimeout(()=>setWalk(true),400); }catch(e){}
 $('btnSig').onclick=()=>{ state.showSig=!state.showSig; $('btnSig').classList.toggle('on',state.showSig); };
 $('btnTail').onclick=()=>{ state.showTail=!state.showTail; $('btnTail').classList.toggle('on',state.showTail); };
