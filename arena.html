@@ -296,6 +296,11 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
   font-size:14px;cursor:pointer;padding:5px 9px;border-radius:4px;line-height:1}
 #chartPanel #cpVoice:hover{border-color:#8a5cff;color:#fff}
 #chartPanel #cpVoice.speaking{background:rgba(138,92,255,.3);box-shadow:0 0 12px rgba(138,92,255,.5);animation:pulse 1s infinite}
+.cp-styles{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px}
+.cp-styles .cst{font-size:10.5px;font-weight:600;cursor:pointer;padding:4px 9px;color:var(--dim);
+  background:rgba(6,12,26,.6);border:1px solid rgba(0,240,255,.14);border-radius:999px;transition:all .15s}
+.cp-styles .cst:hover{color:var(--txt);border-color:rgba(0,240,255,.4)}
+.cp-styles .cst.on{color:#02141a;background:linear-gradient(120deg,var(--cyan),#7dfbff);border-color:var(--cyan)}
 .cp-ind-legend{display:flex;flex-wrap:wrap;gap:11px;font-size:10px;color:var(--dim);margin-bottom:6px}
 .cp-ind-legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-inline-end:4px;vertical-align:middle}
 .cp-cv-wrap{position:relative}
@@ -578,6 +583,7 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
     <button id="cpVoice" title="שיעור AI קצר — מה קורה עכשיו בגרף">🔊</button>
     <button class="mp-close" id="chartClose">✕</button>
   </div>
+  <div class="cp-styles" id="cpStyles"></div>
   <div class="cp-ind-legend">
     <span><i style="background:#5fd0ff"></i>EMA 9</span>
     <span><i style="background:#ff8ae0"></i>EMA 21</span>
@@ -730,6 +736,7 @@ const NA_DEFAULTS={
   showMotes:true, showComets:true, showStreams:true, showWeather:true, showPulse:true,
   walkSpeed:18, lookSens:1.0, invertY:false,
   alertsEnabled:true, alertPct:3,
+  chartStyle:'classic',
   chartAutoOpen:false, chartDefaultTf:'1m',
   tourHoldSec:4, tapeSpeedSec:40,
   spawnWalkOnLoad:false,
@@ -2927,6 +2934,46 @@ function bollArr(closes,p,k){
   }
   return {up,lo};
 }
+// ---- 10 futuristic display styles for the central chart + the classic
+// default. Each entry only overrides LOOK (colors, background, candle
+// geometry, ambient fx) — the analysis layers (EMA/Bollinger/S-R/RSI/volume)
+// stay identical in every style, so switching skins never changes what the
+// data says. Heikin-Ashi is the one semi-exception: it re-shapes the candle
+// bodies via the standard HA smoothing transform, while indicators still
+// run on the real closes (standard practice on trading platforms).
+const CHART_STYLES=[
+  {id:'classic', label:'⚡ קלאסי',      up:'#00ffa6', dn:'#ff3d6e', mode:'candle'},
+  {id:'holo',    label:'🔮 הולוגרמה',   up:'#7dfbff', dn:'#0e7d9d', mode:'candle', glow:8,  bg:['#020a12','#04141f'], fx:'scan'},
+  {id:'ha',      label:'🌊 הייקין-אשי', up:'#2dd4bf', dn:'#fb923c', mode:'ha'},
+  {id:'neon',    label:'💠 קו ניאון',   up:'#00f0ff', dn:'#ff2fd6', mode:'line', glow:12, bg:['#04040d','#0a0518']},
+  {id:'matrix',  label:'🟩 מטריקס',     up:'#00ff41', dn:'#0a7d24', mode:'candle', glow:6,  bg:['#000600','#001200'], fx:'cols'},
+  {id:'laser',   label:'🔺 לייזר',      up:'#c8ff00', dn:'#ff2020', mode:'bars', glow:7,  bg:['#000','#050505']},
+  {id:'nebula',  label:'🌌 ערפילית',    up:'#c084fc', dn:'#f472b6', mode:'candle', glow:9,  bg:['#0b0416','#1b0a2e'], fx:'stars'},
+  {id:'synth',   label:'🌅 סינת׳-רטרו', up:'#22d3ee', dn:'#f472b6', mode:'candle', bg:['#160726','#3b0f3f'], fx:'grid'},
+  {id:'depth',   label:'🧊 תלת-מימד',   up:'#00ffa6', dn:'#ff3d6e', mode:'candle', fx:'depth'},
+  {id:'glass',   label:'💎 קריסטל',     up:'rgba(0,255,166,.35)', dn:'rgba(255,61,110,.35)', mode:'candle', fx:'glass'},
+  {id:'heat',    label:'🔥 מפת חום',    up:'#ffd166', dn:'#ff7a3d', mode:'candle', fx:'heat'},
+];
+function chartStyleCfg(){ return CHART_STYLES.find(s=>s.id===naSettings.chartStyle)||CHART_STYLES[0]; }
+function buildChartStyles(){
+  const row=$('cpStyles'); if(!row) return;
+  row.innerHTML=CHART_STYLES.map(s=>`<span class="cst${s.id===naSettings.chartStyle?' on':''}" data-cs="${s.id}">${s.label}</span>`).join('');
+  row.querySelectorAll('.cst').forEach(el=>{
+    el.onclick=()=>{ naSettings.chartStyle=el.dataset.cs; saveNaSettings(); buildChartStyles(); drawChart(); };
+  });
+}
+// standard Heikin-Ashi smoothing — each body averages the raw OHLC so noise
+// cancels out and runs of trend read as unbroken same-color candles
+function heikinAshi(cs){
+  const out=[]; let po=cs[0].o, pc=cs[0].c;
+  for(const c of cs){
+    const hc=(c.o+c.h+c.l+c.c)/4;
+    const ho=out.length? (po+pc)/2 : (c.o+c.c)/2;
+    out.push({t:c.t, o:ho, h:Math.max(c.h,ho,hc), l:Math.min(c.l,ho,hc), c:hc, v:c.v});
+    po=ho; pc=hc;
+  }
+  return out;
+}
 function drawChart(){
   const cv=$('chartCv'); if(!cv) return;
   const rect=cv.getBoundingClientRect();
@@ -2936,6 +2983,12 @@ function drawChart(){
   const g=cv.getContext('2d');
   g.setTransform(dpr,0,0,dpr,0,0);
   g.clearRect(0,0,W,H);
+  const sty=chartStyleCfg();
+  if(sty.bg){
+    const bgGrad=g.createLinearGradient(0,0,0,H);
+    bgGrad.addColorStop(0,sty.bg[0]); bgGrad.addColorStop(1,sty.bg[1]);
+    g.fillStyle=bgGrad; g.fillRect(0,0,W,H);
+  }
   const cs=state.candles;
   $('cpSym').textContent=symLabelText(state.sym);
   $('cpTf').textContent=(TFS.find(t=>t[0]===state.tf)||[,state.tf])[1];
@@ -2971,15 +3024,53 @@ function drawChart(){
     g.beginPath(); g.moveTo(padL,y); g.lineTo(padL+plotW,y); g.stroke();
     g.fillText(p.toLocaleString('en-US',{maximumFractionDigits:dec}),padL+plotW+6,y);
   }
+  // ambient style fx that live UNDER the data layers
+  if(sty.fx==='stars'){
+    g.fillStyle='rgba(255,255,255,.5)';
+    for(let i=0;i<46;i++){
+      const sx=padL+(Math.abs(Math.sin(i*97.7))%1)*plotW, sy=padT+(Math.abs(Math.sin(i*31.3))%1)*priceH;
+      g.globalAlpha=0.12+(Math.abs(Math.sin(i*7.1))%1)*0.35;
+      g.fillRect(sx,sy,i%5===0?1.6:1,i%5===0?1.6:1);
+    }
+    g.globalAlpha=1;
+  }
+  if(sty.fx==='grid'){
+    // synthwave horizon — converging perspective lines in the lower third
+    const horizonY=priceBottom-priceH*0.30;
+    g.strokeStyle='rgba(244,114,182,.18)'; g.lineWidth=1;
+    for(let k=0;k<6;k++){
+      const y=horizonY+Math.pow(k/5,1.7)*(priceBottom-horizonY);
+      g.beginPath(); g.moveTo(padL,y); g.lineTo(padL+plotW,y); g.stroke();
+    }
+    for(let k=0;k<=8;k++){
+      const xTop=padL+plotW*(0.5+(k/8-0.5)*0.35), xBot=padL+plotW*(k/8);
+      g.beginPath(); g.moveTo(xTop,horizonY); g.lineTo(xBot,priceBottom); g.stroke();
+    }
+  }
+  if(sty.fx==='cols'){
+    g.strokeStyle='rgba(0,255,65,.06)'; g.lineWidth=1;
+    for(let x=padL;x<padL+plotW;x+=13){ g.beginPath(); g.moveTo(x,padT); g.lineTo(x,priceBottom); g.stroke(); }
+  }
+  if(sty.fx==='heat'){
+    // per-candle heat column — the hotter the move, the warmer the glow
+    let maxMove=1e-9; for(const c of cs) maxMove=Math.max(maxMove,Math.abs(c.c-c.o));
+    cs.forEach((c,i)=>{
+      const heat=Math.abs(c.c-c.o)/maxMove;
+      g.fillStyle=c.c>=c.o?`rgba(255,209,102,${heat*0.16})`:`rgba(255,80,40,${heat*0.18})`;
+      g.fillRect(padL+i*cw,padT,cw,priceH);
+    });
+  }
   // volume histogram — thin bars anchored to the price zone's floor, behind
   // everything else, so it reads as context rather than competing for focus
   let maxVol=1e-9; for(const c of cs) if(c.v>maxVol) maxVol=c.v;
   cs.forEach((c,i)=>{
     const x=xAt(i), up=c.c>=c.o;
     const vh=(c.v/maxVol)*priceH*0.16;
-    g.fillStyle=up?'rgba(0,255,166,.16)':'rgba(255,61,110,.16)';
+    g.save(); g.globalAlpha=0.17;
+    g.fillStyle=up?sty.up:sty.dn;
     const bw=Math.max(1.5,cw*0.62);
     g.fillRect(x-bw/2,priceBottom-vh,bw,vh);
+    g.restore();
   });
   // Bollinger bands — a shaded volatility envelope behind the candles
   if(boll){
@@ -3012,17 +3103,59 @@ function drawChart(){
     arr.forEach((v,i)=>{ const x=xAt(i),y=yFor2(v); i?g.lineTo(x,y):g.moveTo(x,y); });
     g.stroke();
   });
-  // candles — drawn last among price-zone layers so they stay legible on top
-  cs.forEach((c,i)=>{
-    const x=xAt(i);
-    const up=c.c>=c.o;
-    g.strokeStyle=g.fillStyle=up?'#00ffa6':'#ff3d6e';
-    g.lineWidth=1;
-    g.beginPath(); g.moveTo(x,yFor2(c.h)); g.lineTo(x,yFor2(c.l)); g.stroke();
-    const yo=yFor2(c.o),yc=yFor2(c.c);
-    const bw=Math.max(1.5,cw*0.62);
-    g.fillRect(x-bw/2,Math.min(yo,yc),bw,Math.max(1,Math.abs(yc-yo)));
-  });
+  // price layer — drawn last among price-zone layers so it stays legible on
+  // top, in whichever geometry the active style calls for
+  g.save();
+  if(sty.glow){ g.shadowBlur=sty.glow; }
+  if(sty.mode==='line'){
+    // neon line + soft area fill under it — price as a single glowing wire
+    const grad=g.createLinearGradient(0,padT,0,priceBottom);
+    grad.addColorStop(0,'rgba(0,240,255,.22)'); grad.addColorStop(1,'rgba(255,47,214,.02)');
+    g.beginPath();
+    cs.forEach((c,i)=>{ const x=xAt(i),y=yFor2(c.c); i?g.lineTo(x,y):g.moveTo(x,y); });
+    g.lineTo(xAt(cs.length-1),priceBottom); g.lineTo(xAt(0),priceBottom); g.closePath();
+    g.fillStyle=grad; g.fill();
+    g.beginPath();
+    cs.forEach((c,i)=>{ const x=xAt(i),y=yFor2(c.c); i?g.lineTo(x,y):g.moveTo(x,y); });
+    g.strokeStyle=sty.up; g.shadowColor=sty.up; g.lineWidth=2.2; g.stroke();
+  } else {
+    const disp=sty.mode==='ha'? heikinAshi(cs) : cs;
+    disp.forEach((c,i)=>{
+      const x=xAt(i);
+      const up=c.c>=c.o;
+      const col=up?sty.up:sty.dn;
+      if(sty.fx==='depth'){ // cheap extrusion — a dark offset ghost behind each candle
+        g.save(); g.shadowBlur=0; g.fillStyle='rgba(0,0,0,.55)';
+        const yo2=yFor2(c.o),yc2=yFor2(c.c), bw2=Math.max(1.5,cw*0.62);
+        g.fillRect(x-bw2/2+2.5,Math.min(yo2,yc2)+2.5,bw2,Math.max(1,Math.abs(yc2-yo2)));
+        g.restore();
+      }
+      g.strokeStyle=g.fillStyle=col;
+      if(sty.glow) g.shadowColor=col;
+      g.lineWidth=sty.mode==='bars'?1.6:1;
+      if(sty.mode==='bars'){
+        // OHLC laser bars: the full range as one beam, open/close as ticks
+        g.beginPath(); g.moveTo(x,yFor2(c.h)); g.lineTo(x,yFor2(c.l));
+        g.moveTo(x,yFor2(c.o)); g.lineTo(x-cw*0.32,yFor2(c.o));
+        g.moveTo(x,yFor2(c.c)); g.lineTo(x+cw*0.32,yFor2(c.c));
+        g.stroke();
+        return;
+      }
+      g.beginPath(); g.moveTo(x,yFor2(c.h)); g.lineTo(x,yFor2(c.l)); g.stroke();
+      const yo=yFor2(c.o),yc=yFor2(c.c);
+      const bw=Math.max(1.5,cw*0.62);
+      g.fillRect(x-bw/2,Math.min(yo,yc),bw,Math.max(1,Math.abs(yc-yo)));
+      if(sty.fx==='glass'){ // crystal outline over the translucent body
+        g.strokeStyle='rgba(255,255,255,.55)'; g.lineWidth=0.8;
+        g.strokeRect(x-bw/2,Math.min(yo,yc),bw,Math.max(1,Math.abs(yc-yo)));
+      }
+    });
+  }
+  g.restore();
+  if(sty.fx==='scan'){ // hologram scanlines over the finished price zone
+    g.fillStyle='rgba(0,0,0,.16)';
+    for(let y=padT;y<priceBottom;y+=4) g.fillRect(padL,y,plotW,1.2);
+  }
   // live price line — dashed gold, with a value tag on the right margin
   const ly=yFor2(last);
   g.save();
@@ -3072,7 +3205,7 @@ function setChart(on){
   $('chartPanel').style.display=on?'block':'none';
   $('btnChart').classList.toggle('on',on);
   if(chartTimer){ clearInterval(chartTimer); chartTimer=null; }
-  if(on){ drawChart(); chartTimer=setInterval(drawChart,500); }
+  if(on){ buildChartStyles(); drawChart(); chartTimer=setInterval(drawChart,500); }
   else stopVoiceLesson();
 }
 addEventListener('resize',()=>{ if(chartOpen) drawChart(); });
