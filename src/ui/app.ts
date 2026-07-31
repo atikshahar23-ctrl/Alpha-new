@@ -189,7 +189,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="wm-hg">HEAVY GUARD OS</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v326 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="wm-hg">HEAVY GUARD OS</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v327 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip apps-chip" id="appsBtn" title="האפליקציות שלי" aria-label="האפליקציות שלי">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="12" cy="19" r="2"/><circle cx="19" cy="19" r="2"/></svg>
@@ -2910,6 +2910,36 @@ export function mountApp(root: HTMLElement) {
       const m = Math.max(0, Math.round((Date.now() - at) / 60000));
       return m < 60 ? `לפני ${m} ד׳` : m < 1440 ? `לפני ${Math.round(m / 60)} ש׳` : `לפני ${Math.round(m / 1440)} ימים`;
     };
+    // English headlines get translated to Hebrew progressively after render —
+    // same free gtx endpoint the Lyrics app and OCTOPUS use, cached so each
+    // headline costs at most one request ever.
+    const trSportsCache: Map<string, string> = (() => {
+      try { return new Map(Object.entries(JSON.parse(localStorage.getItem('alpha:sports:trCache') || '{}'))); } catch { return new Map(); }
+    })();
+    const translateSportsTitles = async (items: SportsNewsItem[]) => {
+      const needs = (t: string) => !/[֐-׿]/.test(t) && /[A-Za-z]{3,}/.test(t);
+      for (let i = 0; i < items.length; i++) {
+        const n = items[i];
+        if (!needs(n.title)) continue;
+        let he = trSportsCache.get(n.title) || null;
+        if (!he) {
+          try {
+            const ctl = new AbortController();
+            const t = setTimeout(() => ctl.abort(), 8000);
+            const r = await fetch('https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=iw&dt=t&q=' + encodeURIComponent(n.title), { signal: ctl.signal });
+            clearTimeout(t);
+            if (r.ok) { const d = await r.json(); if (d && Array.isArray(d[0])) he = d[0].map((s: any) => (s && s[0]) ? s[0] : '').join('') || null; }
+          } catch { }
+          if (he) {
+            trSportsCache.set(n.title, he);
+            try { localStorage.setItem('alpha:sports:trCache', JSON.stringify(Object.fromEntries([...trSportsCache.entries()].slice(-300)))); } catch { }
+          }
+        }
+        if (!he || activeTab !== 'news') { if (!he) continue; else return; }
+        const el = document.querySelector(`#shNewsList a[data-ni="${i}"] .sn-title`);
+        if (el) el.innerHTML = `${i === 0 ? '🔥 ' : ''}${esc(he)} <span style="font-size:9px;opacity:.55">🌐</span>`;
+      }
+    };
     const renderSportsNews = async () => {
       $('winBody').innerHTML = `
         <div class="pad" style="display:flex;flex-direction:column;gap:14px">
@@ -2924,10 +2954,11 @@ export function mountApp(root: HTMLElement) {
       if (!listEl || activeTab !== 'news') return;
       if (!items.length) { listEl.innerHTML = '<div style="text-align:center;padding:24px;color:var(--dim);font-size:13px">אין חיבור למקורות החדשות כרגע — נסו רענון בעוד רגע.</div>'; return; }
       listEl.innerHTML = items.map((n, i) => `
-        <a href="${esc(n.link)}" target="_blank" rel="noopener" style="display:block;text-decoration:none;color:inherit;padding:${i === 0 ? '14px' : '10px'} 12px;border-radius:12px;background:var(--glass-hover);border:1px solid var(--glass-border)${i === 0 ? ';border-right:3px solid #daa520' : ''}">
-          <div style="font-size:${i === 0 ? '15px' : '12.5px'};font-weight:${i === 0 ? '800' : '700'};line-height:1.35">${i === 0 ? '🔥 ' : ''}${esc(n.title)}</div>
+        <a href="${esc(n.link)}" target="_blank" rel="noopener" data-ni="${i}" style="display:block;text-decoration:none;color:inherit;padding:${i === 0 ? '14px' : '10px'} 12px;border-radius:12px;background:var(--glass-hover);border:1px solid var(--glass-border)${i === 0 ? ';border-right:3px solid #daa520' : ''}">
+          <div class="sn-title" style="font-size:${i === 0 ? '15px' : '12.5px'};font-weight:${i === 0 ? '800' : '700'};line-height:1.35">${i === 0 ? '🔥 ' : ''}${esc(n.title)}</div>
           <div style="font-size:10px;color:var(--dim);margin-top:3px">${esc(n.src)} · ${sportsAgo(n.at)}</div>
         </a>`).join('');
+      translateSportsTitles(items);
     };
 
     const renderActiveTab = () => {

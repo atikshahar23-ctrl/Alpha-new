@@ -72,6 +72,7 @@ header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 16px
 .hl-item.first .hl-t{font-size:19px;font-weight:800}
 .hl-item .hl-meta{flex:none;margin-inline-start:auto;font-size:10px;color:var(--dim);white-space:nowrap}
 .hl-item .hl-x{color:var(--cyan);font-weight:700}
+.tr-mark{font-size:10px;opacity:.55;margin-inline-start:3px}
 .tl-row{display:flex;align-items:center;gap:10px;padding:5px 0;font-size:12px;border-bottom:1px solid rgba(0,240,255,.08)}
 .tl-row .tl-when{color:var(--dim);font-size:10.5px;flex:none;width:74px}
 .tl-row .tl-lag{margin-inline-start:auto;font-size:10.5px;color:var(--gold)}
@@ -565,7 +566,7 @@ if(renderer){
 const $=id=>document.getElementById(id);
 // ---------- settings (persisted control room, parity with NEXUS·ARENA) ----------
 const OCTO_DEFAULTS={autoRefresh:true,refreshMin:5,soundOn:true,breakingAlerts:true,showSentiment:true,
-  maxStories:160,clusterSens:'normal',fontScale:1,compactMode:false,showEntities:true,disabledArms:[]};
+  maxStories:160,clusterSens:'normal',fontScale:1,compactMode:false,showEntities:true,translateHe:true,disabledArms:[]};
 function loadOctoSettings(){
   try{
     const raw=JSON.parse(localStorage.getItem('octo:settings')||'null');
@@ -727,6 +728,55 @@ function fetchT(url,ms){
   const ctl=new AbortController(); const t=setTimeout(()=>ctl.abort(),ms||9000);
   return fetch(url,{signal:ctl.signal}).finally(()=>clearTimeout(t));
 }
+
+// ---------- Hebrew translation of English stories — the same proven
+// two-engine chain the Lyrics app uses (Google's free gtx endpoint, Lingva
+// as fallback since both rate-limit by IP), serialized so we never hammer
+// a free service, and cached persistently so a headline is translated at
+// most once ever. Purely additive: originals stay untouched (clustering
+// already ran on them) — titleHe is display-only.
+const HEB_RE=/[֐-׿]/;
+const needsHe=t=>!HEB_RE.test(t)&&/[A-Za-z]{3,}/.test(String(t||''));
+let trCache=new Map();
+try{ trCache=new Map(Object.entries(JSON.parse(localStorage.getItem('octo:trCache')||'{}'))); }catch{}
+function saveTrCache(){
+  try{ localStorage.setItem('octo:trCache',JSON.stringify(Object.fromEntries([...trCache.entries()].slice(-500)))); }catch{}
+}
+async function trOne(text){
+  if(trCache.has(text)) return trCache.get(text);
+  let out=null;
+  try{
+    const r=await fetchT('https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=iw&dt=t&q='+encodeURIComponent(text),8000);
+    if(r.ok){ const d=await r.json(); if(d&&Array.isArray(d[0])) out=d[0].map(s=>s&&s[0]?s[0]:'').join('')||null; }
+  }catch{}
+  if(!out){
+    try{
+      const r=await fetchT('https://lingva.ml/api/v1/auto/he/'+encodeURIComponent(text),9000);
+      if(r.ok){ const d=await r.json(); if(d&&typeof d.translation==='string'&&d.translation) out=d.translation; }
+    }catch{}
+  }
+  if(out){ trCache.set(text,out); saveTrCache(); }
+  return out;
+}
+let trQueue=Promise.resolve(), trDirty=false;
+function translateFeedItems(){
+  if(!octoSettings.translateHe) return;
+  const pending=items.filter(n=>!n.titleHe&&needsHe(n.title)).slice(0,40);
+  if(!pending.length) return;
+  pending.forEach(n=>{
+    trQueue=trQueue.then(async()=>{
+      if(n.titleHe||!octoSettings.translateHe) return;
+      const t=await trOne(n.title);
+      if(t){ n.titleHe=t; trDirty=true; }
+    });
+  });
+  trQueue=trQueue.then(()=>{
+    if(trDirty){ trDirty=false; renderClusters(); renderHeadlines(); }
+  });
+}
+const dispTitle=n=>(octoSettings.translateHe&&n.titleHe)? n.titleHe : n.title;
+const trMark=n=>(octoSettings.translateHe&&n.titleHe)? ' <span class="tr-mark" title="תורגם אוטומטית מאנגלית">🌐</span>' : '';
+
 async function pullOneSource(i){
   const [name,url]=ARMS[i];
   try{
@@ -880,7 +930,7 @@ function renderHeadlines(){
   $('hlList').innerHTML=top.map((c,i)=>
     '<div class="hl-item'+(i===0?' first':'')+'" data-i="'+i+'">'
     +'<span class="hl-rank">'+(i+1)+'</span>'
-    +'<span class="hl-t">'+escH(c.head.title)+'</span>'
+    +'<span class="hl-t">'+escH(dispTitle(c.head))+trMark(c.head)+'</span>'
     +'<span class="hl-meta">'+(c.angles.length>1?'<span class="hl-x">⚡'+c.angles.length+'</span> · ':'')+fmtAgo(c.at)+'</span>'
     +'</div>').join('');
   sec.querySelectorAll('.hl-item').forEach(el=>{
@@ -955,7 +1005,7 @@ function renderClusters(){
       +(c.angles.length>1?'<span class="c-angles">⚡ '+c.angles.length+' זוויות</span>':'')
       +'<span class="c-time">'+fmtAgo(c.at)+'</span>'
       +'<span class="c-star'+(starred?' on':'')+'" title="שמור למועדפים">'+(starred?'★':'☆')+'</span></div>'
-      +'<h3>'+escH(c.head.title)+'</h3>'
+      +'<h3>'+escH(dispTitle(c.head))+trMark(c.head)+'</h3>'
       +'<div class="c-srcs">'+[...new Set(c.angles.map(a=>a.src))].map(s=>'<span class="src">'+escH(s)+'</span>').join('')+'</div>'
       +'<div class="c-hint">👆 הקשה — ניתוח מלא והצלבת הזוויות</div>';
     d.querySelector('.c-star').onclick=(e)=>{
@@ -980,13 +1030,29 @@ function extractEntities(c){
 }
 async function openAnalysis(c){
   $('anaWrap').classList.add('open');
-  $('anaTitle').textContent=c.head.title;
+  $('anaTitle').textContent=dispTitle(c.head);
   $('anaTopic').textContent=c.topic;
-  $('anaAngles').innerHTML=c.angles.map(a=>{
-    const href=/^https?:/.test(a.link)?a.link:null;
-    const t=escH(a.title)+(a.desc?'<br><span style="color:var(--dim);font-size:11px">'+escH(a.desc.slice(0,140))+'…</span>':'');
-    return '<div class="a-angle"><span class="src">'+escH(a.src)+'</span>'+(href?'<a href="'+href+'" target="_blank" rel="noopener">'+t+'</a>':t)+'</div>';
-  }).join('');
+  const renderAngles=()=>{
+    $('anaAngles').innerHTML=c.angles.map(a=>{
+      const href=/^https?:/.test(a.link)?a.link:null;
+      const desc=(octoSettings.translateHe&&a.descHe)? a.descHe : a.desc;
+      const t=escH(dispTitle(a))+trMark(a)+(desc?'<br><span style="color:var(--dim);font-size:11px">'+escH(desc.slice(0,140))+'…</span>':'');
+      return '<div class="a-angle"><span class="src">'+escH(a.src)+'</span>'+(href?'<a href="'+href+'" target="_blank" rel="noopener">'+t+'</a>':t)+'</div>';
+    }).join('');
+  };
+  renderAngles();
+  // article-body translation happens lazily, only for the story actually
+  // being read — headlines are cheap, full descs are not
+  if(octoSettings.translateHe){
+    c.angles.slice(0,6).forEach(a=>{
+      if(a.descHe||!needsHe(a.desc||'')) return;
+      trQueue=trQueue.then(async()=>{
+        if(a.descHe) return;
+        const t=await trOne(a.desc.slice(0,320));
+        if(t){ a.descHe=t; if($('anaWrap').classList.contains('open')) renderAngles(); }
+      });
+    });
+  }
   // chronological "who reported when" — the earliest report first, so the
   // spread of a story across outlets is readable at a glance
   const chrono=c.angles.slice().sort((a,b)=>a.at-b.at);
@@ -1059,6 +1125,7 @@ function mergeAndRender(){
   lastPull=Date.now();
   buildClusters();
   renderArms(); renderSituation(); renderClusters(); renderHotEntities(); renderHeadlines();
+  translateFeedItems();
 }
 async function pullAll(){
   $('refreshBtn').classList.add('spin'); $('refreshBtn').textContent='🐙 שולח זרועות…';
@@ -1090,6 +1157,7 @@ const OS_SCHEMA=[
       options:[['loose','רחבה — ממזג יותר'],['normal','רגילה'],['strict','קפדנית — רק כמעט-זהות']]},
     {key:'showSentiment', type:'checkbox', label:'תגית מצב-רוח', desc:'חיובי/שלילי/ניטרלי לפי מילות מפתח'},
     {key:'showEntities', type:'checkbox', label:'מוקדי שיחה חמים', desc:'שורת המילים הבולטות בכל הסיפורים כרגע'},
+    {key:'translateHe', type:'checkbox', label:'תרגום אוטומטי לעברית', desc:'כותרות וכתבות באנגלית מוצגות בעברית (🌐)'},
   ]},
   {sec:'🔔 התראות וצליל', items:[
     {key:'breakingAlerts', type:'checkbox', label:'התראת חדשות מתפתחות', desc:'כאשר סיפור מצטלב ב-3+ מקורות'},
@@ -1109,6 +1177,7 @@ function onOctoSettingChanged(key){
   saveOctoSettings();
   if(key==='fontScale'||key==='compactMode'||key==='showEntities') applyDisplaySettings();
   if(key==='clusterSens'||key==='maxStories'){ buildClusters(); renderSituation(); renderClusters(); renderHotEntities(); }
+  if(key==='translateHe'){ renderClusters(); renderHeadlines(); if(octoSettings.translateHe) translateFeedItems(); }
 }
 function buildSettingsPanel(){
   const body=$('osBody'); if(!body) return;
