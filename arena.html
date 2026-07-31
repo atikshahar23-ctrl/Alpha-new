@@ -221,6 +221,17 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
    Phones can't host four fixed panels at once: the oracle and the trade
    ticket collapse behind tap-tabs, the price panel goes compact, the pill
    rows become one horizontal scroller, and everything clears the tape. */
+#newsPanel{position:fixed;z-index:32;top:50%;left:50%;transform:translate(-50%,-50%);
+  width:min(94vw,460px);max-height:78vh;display:flex;flex-direction:column;padding:14px 16px}
+#newsPanel .np-h{font-size:12px;letter-spacing:2px;color:var(--magenta);font-weight:700;margin-bottom:9px;text-align:center}
+#newsList{overflow-y:auto;flex:1;min-height:0}
+.np-row{display:block;padding:7px 9px;margin-bottom:5px;text-decoration:none;color:var(--txt);
+  background:rgba(6,12,26,.55);border:1px solid rgba(0,240,255,.12);font-size:12.5px;line-height:1.45;
+  clip-path:polygon(7px 0,100% 0,100% calc(100% - 7px),calc(100% - 7px) 100%,0 100%,0 7px)}
+.np-row:hover{border-color:var(--line);background:rgba(0,240,255,.07)}
+.np-row .np-src{display:inline-block;font-size:9px;font-weight:700;letter-spacing:1px;color:var(--cyan);
+  border:1px solid rgba(0,240,255,.3);padding:1px 6px;margin-inline-start:8px;vertical-align:middle}
+.np-empty{font-size:12px;color:var(--dim);text-align:center;padding:18px 0}
 #mapPanel{position:fixed;z-index:32;top:50%;left:50%;transform:translate(-50%,-50%);padding:14px 16px;text-align:center}
 #mapPanel .mp-h{font-size:11px;letter-spacing:1.5px;color:var(--cyan);font-weight:600;margin-bottom:8px}
 #mapCv{display:block;width:min(76vw,280px);height:min(76vw,280px);cursor:crosshair}
@@ -380,6 +391,9 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
     <div class="tgl" id="btnMap" title="מפת העולם — הקשה מטלפרטת">
       <span style="font-size:15px">🗺️</span><span style="font-size:8px">מפה</span>
     </div>
+    <div class="tgl" id="btnNews" title="OCTOPUS — מנוע חדשות 8 זרועות">
+      <span style="font-size:15px">🐙</span><span style="font-size:8px">חדשות</span>
+    </div>
     <div class="tgl on" id="btnAuto" title="טיסה אוטומטית">
       <svg viewBox="0 0 24 24"><path d="M12 3l3 7h6l-5 4 2 7-6-4-6 4 2-7-5-4h6z"/></svg><span>טיסה</span>
     </div>
@@ -405,6 +419,11 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
   <div id="hint">גרירה — סיבוב · צביטה — זום · הקשה כפולה — טיסה · הבזק ירוק = קנייה אמיתית · אדום = מכירה</div>
 </div>
 
+<div id="newsPanel" class="panel clip" style="display:none">
+  <div class="np-h">🐙 OCTOPUS · מנוע חדשות — 8 זרועות</div>
+  <div id="newsList"><div class="np-empty">טוען זרועות…</div></div>
+  <div class="mp-close" id="newsClose">✕ סגור</div>
+</div>
 <div id="mapPanel" class="panel clip" style="display:none">
   <div class="mp-h">🗺️ מפת העולם — הקשה על זירה מטלפרטת</div>
   <canvas id="mapCv" width="280" height="280"></canvas>
@@ -1605,6 +1624,7 @@ function updatePods(dt,now){
   updateMoodSky(dt);
   updateComets(dt);
   updateStreams(now);
+  updateNewsBanner(now);
   if(now-(updatePods._alertAt||0)>2000){ updatePods._alertAt=now; checkWorldAlerts(now); }
   if(now-lastTape>5000){ lastTape=now; renderTape(); renderPulse(); }
 }
@@ -1916,6 +1936,84 @@ function setMap(on){
   if(on){ drawMap(); mapTimer=setInterval(drawMap,500); }
 }
 
+// ---- 🐙 OCTOPUS — the 8-arm news engine. Eight feeds (Israel, economy,
+// crypto, world markets) pulled in parallel through a CORS proxy, parsed
+// client-side, deduped and time-sorted. Headlines surface in two places:
+// the tappable news panel, and a holographic banner orbiting the arena. ----
+const OCTO_ARMS = [
+  ['ynet',    'https://www.ynet.co.il/Integration/StoryRss2.xml'],
+  ['וואלה',   'https://rss.walla.co.il/feed/1'],
+  ['כלכליסט', 'https://www.calcalist.co.il/GeneralRSS/0,16335,L-8,00.xml'],
+  ['גלובס',   'https://www.globes.co.il/webservice/rss/rssfeeder.asmx/FeederNode?iID=2'],
+  ['ynet כלכלה', 'https://www.ynet.co.il/Integration/StoryRss6.xml'],
+  ['CoinDesk','https://www.coindesk.com/arc/outboundfeeds/rss/'],
+  ['Cointelegraph','https://cointelegraph.com/rss'],
+  ['Yahoo Finance','https://finance.yahoo.com/news/rssindex'],
+];
+let octoNews=[], octoAt=0;
+async function octoArm(name,url){
+  try{
+    const ctl=new AbortController(); const to=setTimeout(()=>ctl.abort(),9000);
+    const r=await fetch('https://api.allorigins.win/raw?url='+encodeURIComponent(url),{signal:ctl.signal});
+    clearTimeout(to);
+    if(!r.ok) return [];
+    const doc=new DOMParser().parseFromString(await r.text(),'text/xml');
+    return [...doc.querySelectorAll('item')].slice(0,8).map(it=>({
+      src:name,
+      title:(it.querySelector('title')?.textContent||'').trim(),
+      link:(it.querySelector('link')?.textContent||'#').trim(),
+      at:Date.parse(it.querySelector('pubDate')?.textContent||'')||0,
+    })).filter(x=>x.title);
+  }catch(e){ return []; }
+}
+async function octoPull(){
+  const arms=await Promise.all(OCTO_ARMS.map(a=>octoArm(a[0],a[1])));
+  const merged=[].concat.apply([],arms);
+  if(merged.length){
+    const seen=new Set();
+    octoNews=merged.filter(n=>{ const k=n.title.slice(0,60); if(seen.has(k)) return false; seen.add(k); return true; })
+      .sort((a,b)=>b.at-a.at).slice(0,40);
+  } else if(!octoNews.length){
+    octoNews=[
+      {src:'SIM',title:'ביטקוין חוצה רף חדש — הקהילה עוקבת אחרי אזור ההתנגדות',link:'#',at:Date.now()},
+      {src:'SIM',title:'וול סטריט ננעלה מעורב; מדדי הטכנולוגיה בלטו',link:'#',at:Date.now()},
+      {src:'SIM',title:'הבנקים המרכזיים שומרים על ריבית — השווקים מתמחרים הפחתה',link:'#',at:Date.now()},
+      {src:'SIM',title:'עונת הדוחות: ענקיות השבבים מפתיעות לטובה',link:'#',at:Date.now()},
+      {src:'SIM',title:'שוקי החיזוי מתמחרים תנודתיות גבוהה לקראת סוף הרבעון',link:'#',at:Date.now()},
+    ];
+  }
+  octoAt=Date.now();
+  renderNewsPanel();
+}
+function renderNewsPanel(){
+  const nl=$('newsList'); if(!nl) return;
+  if(!octoNews.length){ nl.innerHTML='<div class="np-empty">אין חדשות כרגע</div>'; return; }
+  nl.innerHTML=octoNews.slice(0,26).map(n=>{
+    const href=/^https?:/.test(n.link)?n.link:'#';
+    return '<a class="np-row" href="'+href+'" target="_blank" rel="noopener">'+n.title.replace(/</g,'&lt;')+'<span class="np-src">'+n.src+'</span></a>';
+  }).join('');
+}
+setInterval(()=>{ if(Date.now()-octoAt>300000) octoPull(); },60000);
+octoPull();
+
+// holographic headline banner — orbits above the central arena, cycling the
+// freshest OCTOPUS headlines so the news literally floats over the market
+const newsBanner=textSprite(1024,84,42,3.4);
+newsBanner.sp.position.set(0,49,0); scene.add(newsBanner.sp);
+let bannerIdx=0, bannerAt=0;
+function updateNewsBanner(now){
+  if(!octoNews.length){ newsBanner.sp.material.opacity=0; return; }
+  newsBanner.sp.material.opacity=0.92;
+  if(now-bannerAt>8000){
+    bannerAt=now; bannerIdx=(bannerIdx+1)%Math.min(octoNews.length,12);
+    const n=octoNews[bannerIdx];
+    let t=n.title; if(t.length>64) t=t.slice(0,62)+'…';
+    newsBanner.draw('🐙 '+t, '#ff2fd6', "700 34px 'Heebo', sans-serif");
+  }
+  const a=now*0.00012;
+  newsBanner.sp.position.set(Math.cos(a)*24, 49+Math.sin(now*0.0009)*1.4, Math.sin(a)*24);
+}
+
 // ---- world picker UI ----
 function buildWorldUI(){
   const wp=$('worldPanel');
@@ -2051,6 +2149,10 @@ $('ticketTab').onclick=()=>{ const t=$('ticket'); const on=!t.classList.contains
   $('ticketTab').classList.toggle('on',on); $('oracleTab').classList.remove('on'); };
 $('btnTour').onclick=()=>{ setTour(!tour.on); };
 $('btnMap').onclick=()=>{ setMap(!mapOpen); };
+$('btnNews').onclick=()=>{ const np=$('newsPanel'); const on=np.style.display==='none';
+  np.style.display=on?'flex':'none'; $('btnNews').classList.toggle('on',on);
+  if(on) renderNewsPanel(); };
+$('newsClose').onclick=()=>{ $('newsPanel').style.display='none'; $('btnNews').classList.remove('on'); };
 $('mapClose').onclick=()=>{ setMap(false); };
 $('mapCv').addEventListener('pointerdown',e=>{
   const cv=$('mapCv'), r=cv.getBoundingClientRect();
