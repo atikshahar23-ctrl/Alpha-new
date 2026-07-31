@@ -34,11 +34,6 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 
 /* header */
 #top{position:fixed;top:0;right:0;left:0;display:flex;align-items:center;gap:14px;padding:10px 16px;flex-wrap:wrap}
-#navBtns{display:flex;gap:6px;flex:none}
-.nav-btn{width:34px;height:34px;display:flex;align-items:center;justify-content:center;font-size:15px;
-  color:var(--dim);text-decoration:none;cursor:pointer;background:rgba(6,12,26,.6)}
-.nav-btn:hover{color:var(--cyan);border-color:var(--cyan)}
-.nav-btn.on{color:var(--cyan);border-color:var(--cyan);box-shadow:0 0 12px rgba(0,240,255,.35)}
 #brand{display:flex;flex-direction:column;line-height:1.05}
 #brand .eyebrow{font-size:9px;letter-spacing:4px;color:var(--dim);font-weight:600}
 #brand .name{font-family:'Orbitron',monospace;font-weight:900;font-size:19px;letter-spacing:2px;
@@ -127,7 +122,7 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 /* toggles */
 #toggles{position:fixed;top:50%;transform:translateY(-50%);left:12px;display:flex;flex-direction:column;gap:8px}
 .tgl{width:52px;height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
-  cursor:pointer;font-size:9.5px;letter-spacing:.5px;color:var(--dim);
+  cursor:pointer;font-size:9.5px;letter-spacing:.5px;color:var(--dim);text-decoration:none;
   background:rgba(6,12,26,.66);border:1px solid rgba(0,240,255,.16);backdrop-filter:blur(8px);
   clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px);transition:all .18s}
 .tgl svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.7}
@@ -335,10 +330,6 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 
 <div class="hud">
   <div id="top">
-    <div id="navBtns">
-      <a class="nav-btn panel clip" href="./" title="חזרה לאלפא">⌂</a>
-      <div class="nav-btn panel clip" id="btnSettings" title="הגדרות NEXUS·ARENA">⚙️</div>
-    </div>
     <div id="brand">
       <span class="eyebrow">HG·LABS</span>
       <span class="name">NEXUS·ARENA</span>
@@ -420,6 +411,12 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
   </div>
 
   <div id="toggles">
+    <a class="tgl" id="btnHome" href="./" title="חזרה לאלפא" style="color:var(--gold);border-color:rgba(255,209,102,.4)">
+      <span style="font-size:17px">⌂</span><span style="font-size:8px">אלפא</span>
+    </a>
+    <div class="tgl" id="btnSettings" title="הגדרות NEXUS·ARENA">
+      <span style="font-size:15px">⚙️</span><span style="font-size:8px">הגדרות</span>
+    </div>
     <div class="tgl" id="btnWalk" title="מצב הליכה — סיור בעולם המסחר">
       <span style="font-size:15px">🚶</span><span style="font-size:8px">סיור</span>
     </div>
@@ -1026,7 +1023,7 @@ camera=new THREE.PerspectiveCamera(58,innerWidth/innerHeight,0.1,1400);
 // visually identical and twice as fast, which phones need). An FPS guard
 // below steps quality down instead of letting the world stutter. ──
 let composer=null, bloomPass=null, gfxTier=0;
-window.__gfx={bloom:false,tier:0};
+window.__gfx={bloom:false,tier:0,loopFailN:0,loopHardFail:false};
 // Software renderers (SwiftShader/llvmpipe — very weak or headless devices)
 // mangle the bloom render targets AND can't afford them; detect and skip.
 // ?nofx=1 forces plain rendering manually.
@@ -2582,21 +2579,66 @@ function applyVisualToggles(){
   if(tapeIn) tapeIn.style.animationDuration=naSettings.tapeSpeedSec+'s';
   window.__naDebug={comets,motes,streamGroup:(typeof streamGroup!=='undefined'?streamGroup:null)}; // test hook
 }
+// Real mobile GPUs vary wildly (unlike the software renderer used to test
+// this app) — a driver quirk anywhere in a frame (most often the bloom
+// composer's multi-render-target ping-pong) must never leave the world
+// stuck fully black or flickering forever. One bad frame is caught, logged
+// once, and permanently drops to plain rendering (no composer, no crash
+// risk) instead of repeating the same failure 60 times a second.
 function loop(){
   requestAnimationFrame(loop);
-  if(!running) return;
+  if(!running||window.__gfx.loopHardFail) return;
   const now=performance.now();
   const dt=Math.min(0.05,(now-prevT)/1000); prevT=now;
-  gfxGuard(dt);
-  if(indDirty && now-lastInd>350){ computeSignals(); indDirty=false; lastInd=now; }
-  checkPos();
-  updateWorld(dt,now);
-  updatePods(dt,now);
-  applyCam(dt);
-  updateHud(now);
-  if(composer && gfxTier<2) composer.render(); else renderer.render(scene,camera);
+  try{
+    gfxGuard(dt);
+    if(indDirty && now-lastInd>350){ computeSignals(); indDirty=false; lastInd=now; }
+    checkPos();
+    updateWorld(dt,now);
+    updatePods(dt,now);
+    applyCam(dt);
+    updateHud(now);
+    if(composer && gfxTier<2) composer.render(); else renderer.render(scene,camera);
+  }catch(e){
+    window.__gfx.loopFailN++;
+    console.error('NEXUS·ARENA frame error',e);
+    if(window.__gfx.loopFailN===1){
+      // one bad frame: drop bloom immediately and keep going — most driver
+      // quirks are in the composer/bloom path, so this alone usually heals it
+      gfxTier=2; window.__gfx.tier=2; window.__gfx.bloom=false;
+      try{ renderer.toneMapping=THREE.NoToneMapping; }catch(e2){}
+      try{ toast('⚠️ עבר למצב תצוגה בטוח (ללא זוהר) לאחר שגיאת רינדור'); }catch(e3){}
+    }
+    if(window.__gfx.loopFailN>=6){
+      // still failing even without bloom — stop touching the world/composer
+      // logic entirely and just try a bare render every frame so SOMETHING
+      // shows instead of a black, frozen, or endlessly-erroring canvas
+      window.__gfx.loopHardFail=true;
+      try{ toast('⚠️ מצב תצוגה מינימלי — רק הבמה הבסיסית מוצגת'); }catch(e4){}
+    }
+    try{ renderer.render(scene,camera); }catch(e5){ /* even the bare render failed — nothing more we can safely do */ }
+  }
 }
+function safeLoopFallback(){
+  // Entered only if loop() itself hard-failed repeatedly; keeps the canvas
+  // alive with a bare render loop with none of the heavier per-frame logic.
+  requestAnimationFrame(safeLoopFallback);
+  if(!window.__gfx.loopHardFail) return;
+  try{ renderer.render(scene,camera); }catch(e){}
+}
+requestAnimationFrame(safeLoopFallback);
 document.addEventListener('visibilitychange',()=>{ running=!document.hidden; prevT=performance.now(); });
+// Actual GPU context loss (common on mobile under memory pressure or after
+// backgrounding) is distinct from a JS exception — handle it explicitly so
+// the tab doesn't just sit on a dead black canvas forever.
+renderer.domElement.addEventListener('webglcontextlost',e=>{
+  e.preventDefault(); running=false;
+  try{ toast('⚠️ החיבור הגרפי אבד — ממתין לשחזור...'); }catch(err){}
+});
+renderer.domElement.addEventListener('webglcontextrestored',()=>{
+  running=true; prevT=performance.now(); window.__gfx.loopFailN=0; window.__gfx.loopHardFail=false;
+  try{ toast('✅ התצוגה התאוששה'); }catch(err){}
+});
 addEventListener('resize',()=>{
   camera.aspect=innerWidth/innerHeight;
   camera.updateProjectionMatrix();
@@ -2604,15 +2646,21 @@ addEventListener('resize',()=>{
   renderer.setSize(innerWidth,innerHeight);
 });
 
-buildPills();
-buildWorldUI();
-rebuildPods();
-startPodFeeds();
-startFeed();
-applyQuality(naSettings.qualityMode);
-applyVisualToggles();
-buildSettingsPanel();
-if(naSettings.spawnWalkOnLoad) setTimeout(()=>setWalk(true),900);
+// Boot sequence — each step wrapped individually: a failure in any ONE of
+// these (most at risk: the newer settings/world-picker/quality code) must
+// never prevent loop() from starting, or the canvas stays black forever
+// with zero 3D content ever drawn (the exact "flickers / nothing shows"
+// failure mode this hardening exists for).
+function bootStep(name,fn){ try{ fn(); }catch(e){ console.error('NEXUS·ARENA boot step failed: '+name,e); } }
+bootStep('buildPills',buildPills);
+bootStep('buildWorldUI',buildWorldUI);
+bootStep('rebuildPods',rebuildPods);
+bootStep('startPodFeeds',startPodFeeds);
+bootStep('startFeed',startFeed);
+bootStep('applyQuality',()=>applyQuality(naSettings.qualityMode));
+bootStep('applyVisualToggles',applyVisualToggles);
+bootStep('buildSettingsPanel',buildSettingsPanel);
+bootStep('spawnWalkOnLoad',()=>{ if(naSettings.spawnWalkOnLoad) setTimeout(()=>setWalk(true),900); });
 loop();
 }); // end three-ready wrapper
 </script>

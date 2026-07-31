@@ -46,10 +46,10 @@ header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 16px
 #arms .arm.ok{background:var(--up);box-shadow:0 0 8px var(--up)}
 #arms .arm.sim{background:var(--gold);box-shadow:0 0 8px var(--gold)}
 #armsLbl{font-size:10px;color:var(--dim);letter-spacing:1px;margin-inline-start:7px}
-.home-btn{width:32px;height:32px;flex:none;display:flex;align-items:center;justify-content:center;
-  font-size:15px;color:var(--dim);text-decoration:none;border:1px solid var(--line);
-  background:rgba(6,12,26,.6);cursor:pointer;transition:all .15s}
-.home-btn:hover{color:var(--cyan);border-color:var(--cyan)}
+.home-btn{flex:none;display:flex;align-items:center;gap:6px;padding:8px 13px;
+  font-size:13px;font-weight:700;color:var(--gold);text-decoration:none;
+  border:1px solid rgba(255,209,102,.4);background:rgba(6,12,26,.6);cursor:pointer;transition:all .15s}
+.home-btn:hover{border-color:var(--gold);box-shadow:0 0 14px rgba(255,209,102,.3)}
 #refreshBtn{border:1px solid var(--line);background:rgba(6,12,26,.6);color:var(--txt);cursor:pointer;
   font-family:'Heebo',sans-serif;font-size:12px;font-weight:600;padding:7px 13px;
   clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px)}
@@ -60,7 +60,8 @@ header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 16px
 /* 3D octopus stage — a small living hero: tentacles reach out per active
    arm while it's fetching and glow the arm's topic color; a brief bright
    flash on the tip when that arm's sources came back with news. */
-#octoStage{position:relative;height:190px;margin-bottom:14px;overflow:hidden;padding:0}
+#octoStage{position:relative;height:270px;margin-bottom:14px;overflow:hidden;padding:0;
+  background:radial-gradient(ellipse 70% 60% at 50% 62%, rgba(0,240,255,.07), transparent 70%)}
 #octoCv{display:block;width:100%;height:100%}
 #octoCaption{position:absolute;bottom:9px;left:0;right:0;text-align:center;font-size:11px;
   color:var(--cyan);letter-spacing:1px;font-weight:600;pointer-events:none;text-shadow:0 0 10px rgba(0,240,255,.5)}
@@ -132,12 +133,12 @@ header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 16px
 <body>
 <div class="wrap">
   <header class="panel clip">
-    <a class="home-btn" href="./" title="חזרה לאלפא">⌂</a>
+    <a class="home-btn" href="./" title="חזרה לאלפא">⌂ אלפא</a>
     <div class="brand">
       <span class="oct">🐙</span>
       <div class="tt">
         <div class="name">OCTOPUS</div>
-        <div class="sub">מנוע חדשות עתידני · 8 זרועות · 21 מקורות חינמיים · מצליב · מגבש תמונה · מנתח</div>
+        <div class="sub">מנוע חדשות עתידני · 10 זרועות · 27 מקורות חינמיים · מצליב · מגבש תמונה · מנתח</div>
       </div>
     </div>
     <div id="arms" title="מצב הזרועות"></div>
@@ -156,7 +157,7 @@ header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 16px
       <div class="st"><b id="stStories" class="num">0</b><span>כתבות</span></div>
       <div class="st"><b id="stClusters" class="num">0</b><span>סיפורים</span></div>
       <div class="st"><b id="stCross" class="num">0</b><span>הצלבות רב-זוויתיות</span></div>
-      <div class="st"><b id="stArms" class="num">0/8</b><span>זרועות חיות</span></div>
+      <div class="st"><b id="stArms" class="num">0/10</b><span>זרועות חיות</span></div>
     </div>
     <div id="topics"></div>
   </section>
@@ -181,36 +182,65 @@ header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 16px
 
 <script type="module">
 /* ============================================================
-   🐙 3D OCTOPUS — a living creature, not a logo. Eight tentacles
-   ring a soft glowing body; each tentacle belongs to one of the
-   eight ARM_GROUPS below (same order, same colors). While that
-   arm's sources are being fetched, its tentacle stretches out and
-   brightens; the instant it lands, the tip flashes and the arm
-   coils back — the octopus visibly "goes looking" for news.
-   Independent of the main script's timing (guards on window.__octoReach
-   existing), so data flow never waits on the render loop or vice versa.
+   🐙 3D OCTOPUS — a living holographic creature, not a logo.
+   A body wrapped in a soft energy-shield aura, hovering over a
+   scanning holo-pedestal, drifting bioluminescent data motes in
+   the air, and one tentacle per news arm ringed around it. While
+   that arm's sources are being fetched, its tentacle stretches
+   out, brightens, and its suckers light up in sequence toward the
+   tip; the instant results land, the tip flashes bright and the
+   arm coils back in — the creature visibly "goes looking" for
+   news, one arm at a time, exactly matching which arm is active.
+   Sizes itself from window.ARM_GROUPS (falls back to 8 defaults
+   if that isn't ready yet), so it always has one tentacle per
+   real news arm regardless of how many arms the engine defines.
+   Independent of the main script's timing (guards on
+   window.__octoReach existing), so data flow never waits on the
+   render loop or vice versa.
    ============================================================ */
 import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 const cv=document.getElementById('octoCv');
-const W=()=>cv.clientWidth||220, H=()=>cv.clientHeight||190;
+const W=()=>cv.clientWidth||220, H=()=>cv.clientHeight||270;
 let renderer;
 try{ renderer=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true}); }
 catch(e){ document.getElementById('octoStage').style.display='none'; }
 if(renderer){
   renderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1));
   renderer.setSize(W(),H(),false);
+  renderer.toneMapping=THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure=1.15;
   const scene=new THREE.Scene();
-  const camera=new THREE.PerspectiveCamera(40,W()/H(),0.1,100);
-  camera.position.set(0,1.9,7.6); camera.lookAt(0,0.55,0);
-  scene.add(new THREE.AmbientLight(0x224466,1.3));
-  const key=new THREE.PointLight(0x00f0ff,2.2,30); key.position.set(3,5,4); scene.add(key);
-  const rim=new THREE.PointLight(0xff2fd6,1.5,30); rim.position.set(-4,2,-3); scene.add(rim);
+  const camera=new THREE.PerspectiveCamera(38,W()/H(),0.1,100);
+  camera.position.set(0,2.05,8.6); camera.lookAt(0,0.65,0);
+  scene.add(new THREE.AmbientLight(0x224466,1.2));
+  const key=new THREE.PointLight(0x00f0ff,2.4,32); key.position.set(3,5,4); scene.add(key);
+  const rim=new THREE.PointLight(0xff2fd6,1.6,32); rim.position.set(-4,2,-3); scene.add(rim);
+  const under=new THREE.PointLight(0x00ffa6,0.9,20); under.position.set(0,-0.5,2); scene.add(under);
 
+  function radialTex(inner,outer){
+    const c=document.createElement('canvas'); c.width=c.height=128;
+    const g=c.getContext('2d');
+    const gr=g.createRadialGradient(64,64,0,64,64,64);
+    gr.addColorStop(0,inner); gr.addColorStop(1,outer);
+    g.fillStyle=gr; g.fillRect(0,0,128,128);
+    return new THREE.CanvasTexture(c);
+  }
+  const glowTex=radialTex('rgba(255,255,255,1)','rgba(255,255,255,0)');
+
+  // ── body + glowing mantle with a visible pulsing core inside ──
   const bodyMat=new THREE.MeshStandardMaterial({color:0x0c2a3a,emissive:0x0aa6c2,emissiveIntensity:0.4,roughness:0.35,metalness:0.15});
   const body=new THREE.Mesh(new THREE.SphereGeometry(1.02,32,24),bodyMat);
   body.scale.set(1,0.84,1.04); body.position.y=0.95; scene.add(body);
-  const mantle=new THREE.Mesh(new THREE.SphereGeometry(0.62,24,18),new THREE.MeshStandardMaterial({color:0x123344,emissive:0x0a5a70,emissiveIntensity:0.3,roughness:0.4}));
+  const mantle=new THREE.Mesh(new THREE.SphereGeometry(0.62,24,18),
+    new THREE.MeshStandardMaterial({color:0x123344,emissive:0x0a5a70,emissiveIntensity:0.3,roughness:0.4,transparent:true,opacity:0.62}));
   mantle.position.y=1.55; mantle.scale.set(1,1.15,1); scene.add(mantle);
+  const core=new THREE.Mesh(new THREE.SphereGeometry(0.22,16,16),
+    new THREE.MeshBasicMaterial({color:0x9dfcff,transparent:true,opacity:0.85}));
+  core.position.y=1.55; scene.add(core);
   const eyeGeo=new THREE.SphereGeometry(0.125,16,16), eyeMat=new THREE.MeshBasicMaterial({color:0x9dfcff});
   const eyeL=new THREE.Mesh(eyeGeo,eyeMat); eyeL.position.set(-0.33,1.08,0.86); scene.add(eyeL);
   const eyeR=eyeL.clone(); eyeR.position.x=0.33; scene.add(eyeR);
@@ -218,8 +248,43 @@ if(renderer){
   pupL.position.set(-0.33,1.08,0.96); scene.add(pupL);
   const pupR=pupL.clone(); pupR.position.x=0.33; scene.add(pupR);
 
-  const COLORS=[0x00f0ff,0xffd166,0x00ffa6,0xff2fd6,0x8a5cff,0xff3d6e,0x7fb3d5,0xf0b90b];
-  const N=8, SEG=9;
+  // ── energy-shield aura — a larger backside-lit shell around the whole
+  // creature, the classic cheap sci-fi "force field" look ──
+  const shield=new THREE.Mesh(new THREE.SphereGeometry(1.55,24,18),
+    new THREE.MeshBasicMaterial({color:0x00f0ff,transparent:true,opacity:0.07,side:THREE.BackSide,blending:THREE.AdditiveBlending,depthWrite:false}));
+  shield.position.y=1.1; shield.scale.set(1,1.05,1); scene.add(shield);
+
+  // ── holo pedestal — concentric scan rings on the floor + a rotating
+  // radar sweep, so the octopus reads as a projected hologram on display ──
+  const pedGroup=new THREE.Group(); pedGroup.position.y=-0.02; scene.add(pedGroup);
+  [1.3,1.75,2.15].forEach((r,i)=>{
+    const ring=new THREE.Mesh(new THREE.RingGeometry(r-0.02,r,64),
+      new THREE.MeshBasicMaterial({color:0x00f0ff,transparent:true,opacity:0.16-i*0.03,side:THREE.DoubleSide,blending:THREE.AdditiveBlending,depthWrite:false}));
+    ring.rotation.x=-Math.PI/2; pedGroup.add(ring);
+  });
+  const sweep=new THREE.Mesh(new THREE.CircleGeometry(2.15,48,0,Math.PI*0.22),
+    new THREE.MeshBasicMaterial({color:0x00f0ff,transparent:true,opacity:0.14,side:THREE.DoubleSide,blending:THREE.AdditiveBlending,depthWrite:false}));
+  sweep.rotation.x=-Math.PI/2; pedGroup.add(sweep);
+
+  // ── ambient bioluminescent data motes drifting through the air ──
+  const MOTE_N=70;
+  const motePos=new Float32Array(MOTE_N*3), moteVel=new Float32Array(MOTE_N);
+  for(let i=0;i<MOTE_N;i++){
+    const r=Math.sqrt(Math.random())*2.1, a=Math.random()*Math.PI*2;
+    motePos[i*3]=Math.cos(a)*r; motePos[i*3+1]=Math.random()*2.6; motePos[i*3+2]=Math.sin(a)*r;
+    moteVel[i]=0.12+Math.random()*0.22;
+  }
+  const moteGeo=new THREE.BufferGeometry();
+  moteGeo.setAttribute('position',new THREE.BufferAttribute(motePos,3));
+  const motes=new THREE.Points(moteGeo,new THREE.PointsMaterial({size:0.055,map:glowTex,color:0x7dfbff,transparent:true,opacity:0.55,blending:THREE.AdditiveBlending,depthWrite:false,sizeAttenuation:true}));
+  scene.add(motes);
+
+  // ── tentacles — sized to the REAL arm count (window.ARM_GROUPS), each
+  // carrying a few bioluminescent "sucker" markers that light up in
+  // sequence toward the tip while that arm is actively reaching ──
+  const FALLBACK_COLORS=[0x00f0ff,0xffd166,0x00ffa6,0xff2fd6,0x8a5cff,0xff3d6e,0x7fb3d5,0xf0b90b];
+  const COLORS=(window.ARM_GROUPS&&window.ARM_GROUPS.length? window.ARM_GROUPS.map(g=>g[1][1]) : FALLBACK_COLORS);
+  const N=COLORS.length, SEG=10, SUCKERS=4;
   const tentacles=[];
   for(let i=0;i<N;i++){
     const ang=(i/N)*Math.PI*2;
@@ -229,7 +294,12 @@ if(renderer){
     scene.add(mesh);
     const tip=new THREE.Mesh(new THREE.SphereGeometry(0.075,10,10),new THREE.MeshBasicMaterial({color:COLORS[i],transparent:true}));
     scene.add(tip);
-    tentacles.push({ang,mesh,mat,tip,reach:0,reachTarget:0,flash:0,phase:Math.random()*10});
+    const suckers=[];
+    for(let s=0;s<SUCKERS;s++){
+      const su=new THREE.Mesh(new THREE.SphereGeometry(0.032,8,8),new THREE.MeshBasicMaterial({color:COLORS[i],transparent:true,opacity:0.3}));
+      scene.add(su); suckers.push(su);
+    }
+    tentacles.push({ang,mesh,mat,tip,suckers,reach:0,reachTarget:0,flash:0,phase:Math.random()*10});
   }
   // Called by the data layer: gi = arm/group index, pulling = fetch in
   // flight, found = that arm's pull landed with at least one story.
@@ -258,14 +328,28 @@ if(renderer){
     const active=tentacles.map((t,i)=>({t,i})).filter(x=>x.t.reachTarget>0);
     if(!window.ARM_GROUPS){ captionEl.textContent='🐙 מתעורר…'; return; }
     if(active.length) captionEl.textContent='🐙 מחפש: '+active.map(x=>window.ARM_GROUPS[x.i][0]).join(' · ');
-    else captionEl.textContent='🐙 8 זרועות · 21 מקורות · ממתין לרענון הבא';
+    else captionEl.textContent='🐙 '+N+' זרועות · ממתין לרענון הבא';
   }
   function animate(){
     requestAnimationFrame(animate);
     const time=performance.now()*0.001;
-    rot+=0.0022; scene.rotation.y=Math.sin(rot*0.6)*0.32;
+    // continuous slow turntable spin — reads as a displayed hologram,
+    // not a creature nervously swaying in place
+    rot+=0.0026; scene.rotation.y=rot;
+    pedGroup.rotation.y-=0.006; // pedestal + scan sweep rotate opposite the body for a layered-motion feel
     body.position.y=0.95+Math.sin(time*1.3)*0.03;
     mantle.position.y=1.55+Math.sin(time*1.3)*0.03;
+    core.position.y=mantle.position.y;
+    core.material.opacity=0.6+Math.sin(time*2.4)*0.25; // pulsing "neural core" glow
+    core.scale.setScalar(1+Math.sin(time*2.4)*0.08);
+    shield.material.opacity=0.05+Math.sin(time*0.9)*0.02;
+    // drifting motes — loop upward through the shield volume
+    const mp=motes.geometry.attributes.position.array;
+    for(let i=0;i<MOTE_N;i++){
+      mp[i*3+1]+=moteVel[i]*0.016;
+      if(mp[i*3+1]>2.6) mp[i*3+1]=0;
+    }
+    motes.geometry.attributes.position.needsUpdate=true;
     capT+=0.016; if(capT>0.5){ capT=0; updateCaption(); }
     tentacles.forEach(t=>{
       t.reach+=(t.reachTarget-t.reach)*0.06;
@@ -278,13 +362,35 @@ if(renderer){
       t.mat.emissiveIntensity=0.4+t.reach*1.1+t.flash*1.4;
       t.tip.material.opacity=0.85+t.flash*0.15;
       t.tip.scale.setScalar(1+t.flash*0.9);
+      // suckers light up in sequence toward the tip while the arm reaches —
+      // the visible "searching" detail along the limb, not just at its end
+      t.suckers.forEach((su,si)=>{
+        const f=(si+1)/(t.suckers.length+1);
+        const idx=Math.round(f*SEG);
+        su.position.copy(pts[Math.min(idx,pts.length-1)]);
+        const litPhase=clamp01((t.reach*1.3)-f*0.6);
+        su.material.opacity=0.22+litPhase*0.7+t.flash*0.3;
+        su.scale.setScalar(0.8+litPhase*0.7);
+      });
     });
-    renderer.render(scene,camera);
+    if(composerAvail) composer.render(); else renderer.render(scene,camera);
   }
+  const clamp01=v=>Math.max(0,Math.min(1,v));
+  let composerAvail=false, composer=null;
+  try{
+    composer=new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene,camera));
+    const bloom=new UnrealBloomPass(new THREE.Vector2(W(),H()),0.85,0.55,0.72);
+    composer.addPass(bloom);
+    composer.addPass(new OutputPass());
+    composer.setSize(W(),H());
+    composerAvail=true;
+  }catch(e){ composerAvail=false; }
   animate();
   addEventListener('resize',()=>{
     renderer.setSize(W(),H(),false);
     camera.aspect=W()/H(); camera.updateProjectionMatrix();
+    if(composerAvail) composer.setSize(W(),H());
   });
 }
 </script>
@@ -331,6 +437,7 @@ const ARM_GROUPS=[
     ['TechCrunch', 'https://techcrunch.com/feed/'],
     ['The Verge', 'https://www.theverge.com/rss/index.xml'],
     ['גיקטיים', 'https://www.geektime.co.il/feed/'],
+    ['Ars Technica', 'https://feeds.arstechnica.com/arstechnica/index'],
   ]],
   ['ביטחון ומזה"ת', ['🛡️',0xff3d6e], [
     ['ynet חדשות', 'https://www.ynet.co.il/Integration/StoryRss3.xml'],
@@ -339,10 +446,19 @@ const ARM_GROUPS=[
   ['עולם', ['🌍',0x7fb3d5], [
     ['BBC World', 'http://feeds.bbci.co.uk/news/world/rss.xml'],
     ['Reuters World', 'https://www.reutersagency.com/feed/?best-topics=world&post_type=best'],
+    ['Guardian World', 'https://www.theguardian.com/world/rss'],
   ]],
   ['ספורט ותרבות', ['🎭',0xf0b90b], [
     ['ynet ספורט', 'https://www.ynet.co.il/Integration/StoryRss5.xml'],
     ['וואלה ספורט', 'https://rss.walla.co.il/feed/22'],
+  ]],
+  ['מדע ובריאות', ['🔬',0x00e0a0], [
+    ['Live Science', 'https://www.livescience.com/feeds/all'],
+    ['ScienceDaily', 'https://www.sciencedaily.com/rss/all.xml'],
+  ]],
+  ['גיימינג', ['🎮',0xc770ff], [
+    ['IGN', 'https://feeds.ign.com/ign/all'],
+    ['Polygon', 'https://www.polygon.com/rss/index.xml'],
   ]],
 ];
 // flattened source list — kept for the arm-status dots / live counter, in
@@ -360,6 +476,8 @@ const TOPICS=[
   ['ביטחון',['צה"ל','חיזבאללה','חמאס','עזה','לבנון','איראן','פיגוע','טיל','כטב"ם','מבצע']],
   ['פוליטיקה',['כנסת','ממשלה','בחירות','ראש הממשלה','שר ','ח"כ','קואליציה','אופוזיציה','בג"ץ']],
   ['עולם',['ארה"ב','טראמפ','אירופה','רוסיה','אוקראינה','סין','האו"ם','נשיא']],
+  ['מדע',['מחקר','חלל','נאס"א','nasa','מדענים','study','research','space','גילוי','אבולוצי','כוכב']],
+  ['גיימינג',['משחק','גיימינג','פלייסטיישן','אקסבוקס','nintendo','playstation','xbox','steam','גיימר','קונסולה']],
 ];
 let items=[], clusters=[], armState=new Array(ARMS.length).fill('off');
 let topicFilter=null, lastPull=0;
@@ -462,18 +580,18 @@ function fmtAgo(at){
 }
 function renderArms(){
   const el=$('arms'); el.innerHTML='';
-  let base=0;
+  let base=0, liveArms=0;
   ARM_GROUPS.forEach((g,gi)=>{
     const n=g[2].length, states=armState.slice(base,base+n);
     const okN=states.filter(s=>s==='ok').length;
+    if(okN>0) liveArms++;
     const d=document.createElement('span');
     d.className='arm '+(okN>0?'ok':states.some(s=>s==='sim')?'sim':'');
     d.title=g[0]+' — '+okN+'/'+n+' מקורות חיים';
     el.appendChild(d);
     base+=n;
   });
-  const okTotal=armState.filter(a=>a==='ok').length;
-  $('stArms').textContent=okTotal+'/'+ARMS.length;
+  $('stArms').textContent=liveArms+'/'+ARM_GROUPS.length;
 }
 function renderSituation(){
   $('stStories').textContent=items.length;
