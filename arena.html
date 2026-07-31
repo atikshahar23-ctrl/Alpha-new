@@ -134,8 +134,12 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 #bBear{background:linear-gradient(90deg,#e02a5f,#ff5d7e);box-shadow:0 0 14px rgba(255,61,110,.55);transition:width .45s;flex:1}
 .blabels{display:flex;justify-content:space-between;font-size:11.5px;font-weight:800;margin-top:5px}
 
-/* toggles */
-#toggles{position:fixed;top:50%;transform:translateY(-50%);left:12px;display:flex;flex-direction:column;gap:8px}
+/* toggles — vertically centered, but capped so a long button column (it's
+   grown a lot over time) can never overlap the header; it scrolls internally
+   past that cap instead, same pattern the mobile breakpoints already use */
+#toggles{position:fixed;top:50%;transform:translateY(-50%);left:12px;display:flex;flex-direction:column;gap:8px;
+  max-height:calc(100vh - 160px);overflow-y:auto;scrollbar-width:none}
+#toggles::-webkit-scrollbar{display:none}
 .tgl{width:52px;height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
   cursor:pointer;font-size:9.5px;letter-spacing:.5px;color:var(--dim);text-decoration:none;
   background:rgba(6,12,26,.66);border:1px solid rgba(0,240,255,.16);backdrop-filter:blur(8px);
@@ -279,9 +283,9 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 #chartPanel .cp-legend b{color:var(--txt);font-weight:700;margin-inline-start:4px}
 #chartPanel .cp-legend .sw{display:inline-block;width:8px;height:8px;border-radius:2px;margin-inline-end:5px;vertical-align:middle}
 #chartPanel .cp-legend .sw.hi{background:var(--up)} #chartPanel .cp-legend .sw.lo{background:var(--down)}
-#logPanel,#portfolioPanel{position:fixed;z-index:33;top:50%;left:50%;transform:translate(-50%,-50%);
+#logPanel,#portfolioPanel,#candlePanel{position:fixed;z-index:33;top:50%;left:50%;transform:translate(-50%,-50%);
   width:min(94vw,420px);max-height:80vh;overflow-y:auto;padding:14px 16px 12px}
-#logPanel .lg-h,#portfolioPanel .lg-h{font-size:11px;letter-spacing:1.5px;color:var(--cyan);font-weight:600;margin-bottom:10px;display:flex;align-items:center}
+#logPanel .lg-h,#portfolioPanel .lg-h,#candlePanel .lg-h{font-size:11px;letter-spacing:1.5px;color:var(--cyan);font-weight:600;margin-bottom:10px;display:flex;align-items:center}
 #logPanel .lg-stats,#portfolioPanel .lg-stats{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;font-size:11px}
 #logPanel .lg-stats b,#portfolioPanel .lg-stats b{display:block;font-size:15px;color:var(--txt)}
 #logPanel .lg-stats span,#portfolioPanel .lg-stats span{color:var(--dim)}
@@ -293,6 +297,16 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 #portfolioPanel .pf-x{flex:none;background:rgba(255,61,110,.1);border:1px solid rgba(255,61,110,.4);color:#ffb0c0;
   font-size:12px;font-weight:700;cursor:pointer;padding:4px 9px;border-radius:2px}
 #portfolioPanel .pf-x:hover{border-color:var(--down);color:#fff}
+#candlePanel .ca-main{font-size:19px;font-weight:800;text-align:center;margin:10px 0 4px;color:var(--txt)}
+#candlePanel .ca-main.up{color:var(--up)} #candlePanel .ca-main.down{color:var(--down)}
+#candlePanel .ca-desc{font-size:12px;color:var(--dim);text-align:center;line-height:1.5;margin-bottom:14px}
+#candlePanel .ca-striph{font-size:10px;color:var(--dim);letter-spacing:.5px;margin-bottom:6px}
+#candlePanel .ca-strip{display:flex;gap:5px}
+#candlePanel .ca-chip{flex:1;height:30px;border-radius:2px;display:flex;align-items:center;justify-content:center;
+  background:rgba(6,12,26,.6);border:1px solid rgba(0,240,255,.15);cursor:default}
+#candlePanel .ca-chip i{width:6px;height:16px;border-radius:2px;display:block}
+#candlePanel .ca-chip.up i{background:var(--up)} #candlePanel .ca-chip.down i{background:var(--down)}
+#candlePanel .ca-chip.neu i{background:var(--dim)}
 #chartPanel .cp-legend .sw.now{background:var(--gold)}
 .mobTab{display:none}
 @media (max-width:720px), (max-height:520px){
@@ -366,6 +380,7 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
     </div>
     <div id="mode" class="panel clip"><span id="modeDot"></span><span id="modeTxt">מתחבר…</span></div>
     <div id="rows">
+      <div class="pills" id="marketRow"></div>
       <div class="pills" id="symRow"></div>
       <div class="pills" id="tfRow"></div>
     </div>
@@ -472,6 +487,9 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
     <div class="tgl" id="btnChart" title="גרף נרות מלא — הנתונים האמיתיים שמניעים את הקרב">
       <span style="font-size:15px">📊</span><span style="font-size:8px">גרף</span>
     </div>
+    <div class="tgl" id="btnCandle" title="מנתח נרות — סוג הנר והתבנית האחרונה">
+      <span style="font-size:15px">🕯️</span><span style="font-size:8px">נרות</span>
+    </div>
     <div class="tgl" id="btnLog" title="יומן עסקאות והישגים">
       <span style="font-size:15px">📜</span><span style="font-size:8px">יומן</span>
     </div>
@@ -525,6 +543,14 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
     <span><i class="sw now"></i>אחרון <b id="cpLast" class="num">—</b></span>
     <span>נרות <b id="cpN" class="num">0</b></span>
   </div>
+</div>
+
+<div id="candlePanel" class="panel clip" style="display:none">
+  <div class="lg-h"><span>🕯️ מנתח נרות · <span id="caSym">BTC / USDT</span></span><button class="mp-close" id="candleClose" style="margin-inline-start:auto">✕</button></div>
+  <div id="caMain" class="ca-main">ממתין לנתוני נרות…</div>
+  <div id="caDesc" class="ca-desc"></div>
+  <div class="ca-striph">8 הנרות האחרונים שנסגרו</div>
+  <div id="caStrip" class="ca-strip"></div>
 </div>
 
 <div id="logPanel" class="panel clip" style="display:none">
@@ -616,8 +642,15 @@ const SYMBOLS = {
   TRX:{base:0.28,   vol:0.0014, lot:3.4e6,  big:2.2e6,  dec:5, dot:'#ff060a'},
   DOT:{base:9.4,    vol:0.0018, lot:120000, big:80000,  dec:3, dot:'#e6007a'},
   NEAR:{base:7.1,   vol:0.0019, lot:150000, big:100000, dec:3, dot:'#00ec97'},
-  LTC:{base:132,    vol:0.0016, lot:9000,   big:6000,   dec:2, dot:'#b8b8b8'}
+  LTC:{base:132,    vol:0.0016, lot:9000,   big:6000,   dec:2, dot:'#b8b8b8'},
 };
+// One lookup for the whole battle arena — crypto (SYMBOLS) and stocks
+// (WORLD_STOCKS, defined further down but already loaded by the time this
+// is actually called) share the same {base,vol,lot,big,dec,dot} shape, so
+// every generic system (sim engine, price formatter, pill builder) can stay
+// market-agnostic instead of hardcoding SYMBOLS everywhere.
+const symCfg=sym=>SYMBOLS[sym]||WORLD_STOCKS[sym];
+const symLabelText=sym=>state.market==='crypto'? sym+' / USDT' : sym;
 const TFS = [['1m','1ד'],['5m','5ד'],['15m','15ד'],['1h','1ש'],['4h','4ש'],['1d','יום']];
 const TF_SEC = {'1m':60,'5m':300,'15m':900,'1h':3600,'4h':14400,'1d':86400};
 
@@ -638,7 +671,7 @@ window.__naSettings=naSettings; // live reference — reflects in-place mutation
 
 // ---------- state ----------
 const state = {
-  sym:'BTC', tf:(TF_SEC[naSettings.chartDefaultTf]?naSettings.chartDefaultTf:'1m'),
+  sym:'BTC', market:'crypto', tf:(TF_SEC[naSettings.chartDefaultTf]?naSettings.chartDefaultTf:'1m'),
   candles:[], bigQ:1,
   book:{bids:[],asks:[]}, stats:null,
   sMin:0, sMax:1, tMin:0, tMax:1, winHi:0, winLo:0,
@@ -683,7 +716,7 @@ function savePositions(){ try{ localStorage.setItem('na:positions',JSON.stringif
 let tradeMargin=500, tradeLev=5;
 function livePriceFor(sym){
   if(sym===state.sym) return state.lastPrice||null;
-  const p=pods.find(x=>x.kind==='crypto'&&x.id===sym);
+  const p=pods.find(x=>(x.kind==='crypto'||x.kind==='stock')&&x.id===sym);
   return p&&p.price!=null? p.price : null;
 }
 function loadSession(){
@@ -726,7 +759,7 @@ function declutterY(rawYs,minGap){
   }
   return y;
 }
-function fmtP(p){ const d=SYMBOLS[state.sym].dec;
+function fmtP(p){ const d=symCfg(state.sym).dec;
   return p.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d}); }
 function fmtPct(x){ return (x>=0?'+':'')+x.toFixed(2)+'%'; }
 function fmtUsd(v){
@@ -774,7 +807,8 @@ function startFeed(){
   state.buyAcc=1; state.sellAcc=1;
   sig.relClosed=0; sig.prevScore=null; sig.lastFire=0;
   tailSamples.length=0;
-  tryLive(f).catch(()=>{ if(!f.stopped) startSim(f); });
+  const goLive = state.market==='crypto'? tryLive(f) : tryLiveStock(f);
+  goLive.catch(()=>{ if(!f.stopped) startSim(f); });
 }
 function stopFeed(){
   if(!feed) return;
@@ -811,7 +845,7 @@ function openWS(f){
       const k=d.k, cs=state.candles, last=cs[cs.length-1];
       const cd={t:k.t,o:+k.o,h:+k.h,l:+k.l,c:+k.c,v:+k.v};
       if(last && last.t===cd.t) cs[cs.length-1]=cd;
-      else { cs.push(cd); if(cs.length>N) cs.shift(); }
+      else { cs.push(cd); if(cs.length>N) cs.shift(); updateCandleAnalysis(); }
       onTick(cd);
     } else if(st.includes('aggTrade')){
       const q=+d.q; if(q>state.bigQ) state.bigQ=q;
@@ -839,10 +873,66 @@ async function fetchStats(f){
   }catch(e){}
 }
 
+// ---------- stocks — Yahoo Finance chart API, same endpoint the pods
+// already poll for background prices. No public stock WS exists, so "live"
+// here means short-interval REST polling for the latest bar instead of a
+// push stream; everything downstream (onInit/onTick/candle analyzer/
+// indicators/positions) is market-agnostic and doesn't know the difference.
+const STOCK_TF_INTERVAL={'1m':'1m','5m':'5m','15m':'15m','1h':'60m','4h':'60m','1d':'1d'};
+const STOCK_TF_RANGE={'1m':'1d','5m':'5d','15m':'5d','1h':'1mo','4h':'1mo','1d':'6mo'};
+async function fetchStockChart(sym,tf){
+  const interval=STOCK_TF_INTERVAL[tf]||'15m', range=STOCK_TF_RANGE[tf]||'5d';
+  const r=await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=${interval}&range=${range}`);
+  if(!r.ok) throw new Error('http');
+  const d=await r.json();
+  const res=d&&d.chart&&d.chart.result&&d.chart.result[0];
+  if(!res||!res.timestamp) throw new Error('no data');
+  const ts=res.timestamp, q=(res.indicators&&res.indicators.quote&&res.indicators.quote[0])||{};
+  const cs=[];
+  for(let i=0;i<ts.length;i++){
+    if(q.open==null||q.open[i]==null||q.close[i]==null) continue;
+    cs.push({t:ts[i]*1000, o:q.open[i], h:q.high[i]??q.open[i], l:q.low[i]??q.open[i], c:q.close[i], v:q.volume[i]||0});
+  }
+  if(!cs.length) throw new Error('empty');
+  return cs;
+}
+async function tryLiveStock(f){
+  const sym=state.sym, tf=state.tf;
+  const cs=await fetchStockChart(sym,tf);
+  if(f.stopped) return;
+  onInit(cs);
+  f.mode='live'; setBadge('live');
+  f.timers.push(setInterval(async()=>{
+    if(f.stopped) return;
+    try{
+      const fresh=await fetchStockChart(sym,tf);
+      if(f.stopped||sym!==state.sym) return;
+      const cd=fresh[fresh.length-1];
+      const cs2=state.candles, last=cs2[cs2.length-1];
+      if(last && last.t===cd.t) cs2[cs2.length-1]=cd;
+      else { cs2.push(cd); if(cs2.length>N) cs2.shift(); updateCandleAnalysis(); }
+      onTick(cd);
+    }catch(e){}
+  },15000));
+  fetchStockStats(f);
+  f.timers.push(setInterval(()=>fetchStockStats(f),60000));
+}
+async function fetchStockStats(f){
+  try{
+    const r=await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(state.sym)}?interval=1d&range=2d`);
+    if(!r.ok) return; const d=await r.json();
+    if(f.stopped) return;
+    const meta=d&&d.chart&&d.chart.result&&d.chart.result[0]&&d.chart.result[0].meta;
+    if(!meta||!meta.regularMarketPrice) return;
+    const prev=meta.chartPreviousClose||meta.previousClose||meta.regularMarketPrice;
+    state.stats={chg:prev?((meta.regularMarketPrice-prev)/prev*100):0, hi:meta.regularMarketDayHigh, lo:meta.regularMarketDayLow, vol:0};
+  }catch(e){}
+}
+
 // ---------- simulation (accelerated demo market) ----------
 function startSim(f){
   f.mode='sim'; setBadge('sim');
-  const cfg=SYMBOLS[state.sym];
+  const cfg=symCfg(state.sym);
   const tfS=TF_SEC[state.tf];
   const sv=cfg.vol*Math.sqrt(tfS/60);
   const sym=state.sym;
@@ -890,6 +980,7 @@ function startSim(f){
     cur={t:Date.now(),o:price,h:price,l:price,c:price,v:0};
     state.candles.push(cur); if(state.candles.length>N) state.candles.shift();
     indDirty=true;
+    updateCandleAnalysis();
   },5200));
 
   f.timers.push(setInterval(()=>{
@@ -927,6 +1018,7 @@ function onInit(cs){
     sig.relClosed=Math.sign(ind.e9raw[n-2]-ind.e21raw[n-2]);
   }
   renderTicket();
+  updateCandleAnalysis();
   $('loader').classList.add('hide');
 }
 function onTick(c){
@@ -1058,6 +1150,87 @@ function computeSignals(){
   ind={e9raw:e9, e21raw:e21, A, levels, score, verdict,
        reasons:rs.slice(0,3).map(x=>x.t), sug};
   detectEvents(cs,n,e9,e21,score);
+}
+
+// ============================================================
+//  CANDLE ANALYZER — classifies the shape of the most recently CLOSED
+//  candle (doji/hammer/marubozu/…) and scans the last 2-3 closed candles
+//  for a named multi-candle pattern (engulfing/harami/star/soldiers).
+//  Re-runs every time a candle actually closes (see updateCandleAnalysis
+//  call sites in the live/sim/stock feed handlers below), never on the
+//  currently-forming candle, so a pattern only ever reads as "confirmed."
+// ============================================================
+let candleAnalysis=null;
+function classifyCandle(c){
+  const range=Math.max(1e-9,c.h-c.l);
+  const body=Math.abs(c.c-c.o);
+  const bodyPct=body/range;
+  const bull=c.c>=c.o;
+  const upperWick=c.h-Math.max(c.o,c.c);
+  const lowerWick=Math.min(c.o,c.c)-c.l;
+  if(bodyPct<0.08) return {label:"דוג'י", bull:null, desc:'פתיחה וסגירה כמעט זהות — חוסר החלטיות, הכוחות מאוזנים'};
+  if(bodyPct>0.85) return {label:bull?'מארובוזו עולה':'מארובוזו יורד', bull, desc:bull?'לחץ קנייה נטו לאורך כל הנר, כמעט ללא צל':'לחץ מכירה נטו לאורך כל הנר, כמעט ללא צל'};
+  if(lowerWick>body*2 && upperWick<body*0.6) return {label:bull?'פטיש (Hammer)':'פטיש הפוך (Hanging Man)', bull:true, desc:'צל תחתון ארוך — המחיר נדחה מטה וחזר, קונים השתלטו לקראת הסגירה'};
+  if(upperWick>body*2 && lowerWick<body*0.6) return {label:'כוכב יורה (Shooting Star)', bull:false, desc:'צל עליון ארוך — המחיר נדחה מלמעלה, מוכרים נכנסו לקראת הסגירה'};
+  if(bodyPct<0.35) return {label:bull?'סביבון עולה':'סביבון יורד', bull, desc:'גוף קטן עם צללים משני הצדדים — חוסר ודאות בין הצדדים'};
+  return {label:bull?'נר עולה':'נר יורד', bull, desc:bull?'סגירה מעל הפתיחה — יתרון לקונים בנר הזה':'סגירה מתחת לפתיחה — יתרון למוכרים בנר הזה'};
+}
+function classifyPattern(cs){
+  const n=cs.length; if(n<2) return null;
+  const [cA,cB]=cs.slice(-2);
+  const bodyA=Math.abs(cA.c-cA.o), bodyB=Math.abs(cB.c-cB.o);
+  const bullA=cA.c>=cA.o, bullB=cB.c>=cB.o;
+  if(!bullA && bullB && cB.c>cA.o && cB.o<cA.c && bodyB>bodyA)
+    return {label:'בליעה עולה (Bullish Engulfing)', bull:true, desc:'הנר האחרון בולע לגמרי את קודמו היורד — היפוך אפשרי כלפי מעלה'};
+  if(bullA && !bullB && cB.o>cA.c && cB.c<cA.o && bodyB>bodyA)
+    return {label:'בליעה יורדת (Bearish Engulfing)', bull:false, desc:'הנר האחרון בולע לגמרי את קודמו העולה — היפוך אפשרי כלפי מטה'};
+  if(!bullA && bullB && cB.o>cA.c && cB.c<cA.o && bodyB<bodyA*0.6)
+    return {label:'הראמי עולה (Bullish Harami)', bull:true, desc:'נר קטן בתוך גוף הנר היורד הקודם — האטה במגמה היורדת'};
+  if(bullA && !bullB && cB.o<cA.c && cB.c>cA.o && bodyB<bodyA*0.6)
+    return {label:'הראמי יורד (Bearish Harami)', bull:false, desc:'נר קטן בתוך גוף הנר העולה הקודם — האטה במגמה העולה'};
+  if(n>=3){
+    const [cX,cY,cZ]=cs.slice(-3);
+    const bodyX=Math.abs(cX.c-cX.o), bodyY=Math.abs(cY.c-cY.o);
+    const midX=(cX.o+cX.c)/2;
+    if(cX.c<cX.o && bodyY<bodyX*0.4 && cZ.c>cZ.o && cZ.c>midX)
+      return {label:'כוכב הבוקר (Morning Star)', bull:true, desc:'3 נרות: ירידה, היסוס קטן, ואז עלייה שסוגרת מעל אמצע הנר הראשון — סימן היפוך חזק כלפי מעלה'};
+    if(cX.c>cX.o && bodyY<bodyX*0.4 && cZ.c<cZ.o && cZ.c<midX)
+      return {label:'כוכב הערב (Evening Star)', bull:false, desc:'3 נרות: עלייה, היסוס קטן, ואז ירידה שסוגרת מתחת לאמצע הנר הראשון — סימן היפוך חזק כלפי מטה'};
+    if(cX.c>cX.o && cY.c>cY.o && cZ.c>cZ.o && cY.c>cX.c && cZ.c>cY.c)
+      return {label:'שלושה חיילים לבנים (Three White Soldiers)', bull:true, desc:'שלושה נרות עולים רצופים עם סגירות גבוהות יותר — מומנטום שורי חזק ועקבי'};
+    if(cX.c<cX.o && cY.c<cY.o && cZ.c<cZ.o && cY.c<cX.c && cZ.c<cY.c)
+      return {label:'שלושה עורבים שחורים (Three Black Crows)', bull:false, desc:'שלושה נרות יורדים רצופים עם סגירות נמוכות יותר — מומנטום דובי חזק ועקבי'};
+  }
+  return null;
+}
+function updateCandleAnalysis(){
+  const closed=state.candles.slice(0,-1); // exclude the currently-forming candle
+  if(!closed.length) return;
+  const last=closed[closed.length-1];
+  const recent=closed.slice(-8).map(c=>({c, single:classifyCandle(c)}));
+  candleAnalysis={ single:classifyCandle(last), pattern:classifyPattern(closed), at:last.t, recent };
+  renderCandleAnalysis();
+}
+function renderCandleAnalysis(){
+  const panel=$('candlePanel'); if(!panel||panel.style.display==='none') { candleDirty=true; return; }
+  candleDirty=false;
+  if(!candleAnalysis){ $('caMain').textContent='ממתין לנתוני נרות…'; $('caDesc').textContent=''; $('caStrip').innerHTML=''; return; }
+  const hit=candleAnalysis.pattern||candleAnalysis.single;
+  const bullClass=hit.bull===true?'up':hit.bull===false?'down':'';
+  $('caMain').textContent=hit.label;
+  $('caMain').className='ca-main '+bullClass;
+  $('caDesc').textContent=hit.desc;
+  $('caSym').textContent=symLabelText(state.sym);
+  $('caStrip').innerHTML=candleAnalysis.recent.map(({c,single})=>{
+    const cls=single.bull===true?'up':single.bull===false?'down':'neu';
+    return `<div class="ca-chip ${cls}" title="${single.label} — ${fmtP(c.c)}"><i></i></div>`;
+  }).join('');
+}
+let candleDirty=false;
+function setCandlePanel(on){
+  $('candlePanel').style.display=on?'block':'none';
+  $('btnCandle').classList.toggle('on',on);
+  if(on && candleDirty) renderCandleAnalysis();
 }
 function detectEvents(cs,n,e9,e21,score){
   const relC=Math.sign(e9[n-2]-e21[n-2]);
@@ -1780,17 +1953,74 @@ const WORLD_CRYPTO = {
   NEAR:{name:'NEAR', dot:'#00ec97', base:7.1, dec:3},
   LTC:{name:'Litecoin', dot:'#b8b8b8', base:132, dec:2},
 };
+// Every entry also carries vol/lot/big/dec — the same shape SYMBOLS (crypto)
+// uses — so the sim engine, price formatter, and battle arena work on a
+// stock symbol exactly like they do on a crypto one (see symCfg()).
 const WORLD_STOCKS = {
-  '^GSPC':{name:'S&P 500', dot:'#7dd3fc', base:6120},
-  '^IXIC':{name:'NASDAQ', dot:'#a78bfa', base:20150},
-  '^DJI':{name:'Dow Jones', dot:'#93c5fd', base:44980},
-  'GC=F':{name:'זהב', dot:'#ffd166', base:2710},
-  'CL=F':{name:'נפט', dot:'#4d5b6a', base:71.4},
-  AAPL:{name:'Apple', dot:'#e2e8f0', base:243},
-  NVDA:{name:'Nvidia', dot:'#76b900', base:141},
-  TSLA:{name:'Tesla', dot:'#e82127', base:412},
-  MSFT:{name:'Microsoft', dot:'#00a4ef', base:448},
-  GOOGL:{name:'Google', dot:'#fbbc05', base:196},
+  // indices & commodities
+  '^GSPC':{name:'S&P 500',    dot:'#7dd3fc', base:6120,  vol:0.00035, lot:40,   big:32,   dec:2},
+  '^IXIC':{name:'NASDAQ',     dot:'#a78bfa', base:20150, vol:0.00045, lot:60,   big:48,   dec:2},
+  '^DJI': {name:'Dow Jones',  dot:'#93c5fd', base:44980, vol:0.00032, lot:35,   big:28,   dec:2},
+  '^RUT': {name:'Russell 2000', dot:'#67e8f9', base:2340, vol:0.0005, lot:50,  big:40,   dec:2},
+  '^VIX': {name:'VIX', dot:'#f97316', base:15.2, vol:0.0022, lot:120,  big:90,   dec:2},
+  'GC=F': {name:'זהב',        dot:'#ffd166', base:2710,  vol:0.00055, lot:12,   big:9,    dec:2},
+  'SI=F': {name:'כסף',        dot:'#c7c7d1', base:31.4,  vol:0.0009,  lot:400,  big:300,  dec:3},
+  'CL=F': {name:'נפט',        dot:'#4d5b6a', base:71.4,  vol:0.0009,  lot:180,  big:140,  dec:2},
+  'NG=F': {name:'גז טבעי',    dot:'#8ec5ff', base:3.2,   vol:0.0016,  lot:900,  big:700,  dec:3},
+  'BTC=F':{name:'עתידי ביטקוין', dot:'#f7931a', base:132400, vol:0.0013, lot:2, big:1.6,  dec:1},
+  // tech
+  AAPL: {name:'Apple',      dot:'#e2e8f0', base:243, vol:0.0007, lot:500,  big:390, dec:2},
+  NVDA: {name:'Nvidia',     dot:'#76b900', base:141, vol:0.0011, lot:900,  big:700, dec:2},
+  MSFT: {name:'Microsoft',  dot:'#00a4ef', base:448, vol:0.0006, lot:320,  big:250, dec:2},
+  GOOGL:{name:'Google',     dot:'#fbbc05', base:196, vol:0.0008, lot:450,  big:350, dec:2},
+  AMZN: {name:'Amazon',     dot:'#ff9900', base:228, vol:0.0009, lot:480,  big:370, dec:2},
+  META: {name:'Meta',       dot:'#0866ff', base:612, vol:0.0011, lot:220,  big:170, dec:2},
+  AMD:  {name:'AMD',        dot:'#ed1c24', base:138, vol:0.0013, lot:700,  big:540, dec:2},
+  INTC: {name:'Intel',      dot:'#0071c5', base:24,  vol:0.0014, lot:1800, big:1400,dec:2},
+  ORCL: {name:'Oracle',     dot:'#f80000', base:186, vol:0.0009, lot:400,  big:310, dec:2},
+  CRM:  {name:'Salesforce', dot:'#00a1e0', base:334, vol:0.0009, lot:280,  big:220, dec:2},
+  ADBE: {name:'Adobe',      dot:'#fa0f00', base:520, vol:0.0009, lot:180,  big:140, dec:2},
+  NFLX: {name:'Netflix',    dot:'#e50914', base:920, vol:0.001,  lot:110,  big:85,  dec:2},
+  PYPL: {name:'PayPal',     dot:'#003087', base:82,  vol:0.001,  lot:600,  big:460, dec:2},
+  UBER: {name:'Uber',       dot:'#000000', base:72,  vol:0.001,  lot:650,  big:500, dec:2},
+  SHOP: {name:'Shopify',    dot:'#95bf47', base:112, vol:0.0013, lot:520,  big:400, dec:2},
+  IBM:  {name:'IBM',        dot:'#054ada', base:238, vol:0.0006, lot:260,  big:200, dec:2},
+  QCOM: {name:'Qualcomm',   dot:'#3253dc', base:168, vol:0.0009, lot:350,  big:270, dec:2},
+  TXN:  {name:'Texas Instruments', dot:'#cc0000', base:198, vol:0.0007, lot:300, big:230, dec:2},
+  AVGO: {name:'Broadcom',   dot:'#cc092f', base:236, vol:0.0011, lot:280,  big:220, dec:2},
+  MU:   {name:'Micron',     dot:'#00539b', base:104, vol:0.0016, lot:600,  big:460, dec:2},
+  // finance
+  JPM:  {name:'JPMorgan',   dot:'#5a6d81', base:248, vol:0.0006, lot:280,  big:220, dec:2},
+  BAC:  {name:'BofA',       dot:'#012169', base:46,  vol:0.0007, lot:1400, big:1080,dec:2},
+  GS:   {name:'Goldman Sachs', dot:'#7396c4', base:600, vol:0.0007, lot:120, big:95, dec:2},
+  V:    {name:'Visa',       dot:'#1a1f71', base:318, vol:0.0006, lot:220,  big:170, dec:2},
+  MA:   {name:'Mastercard', dot:'#eb001b', base:522, vol:0.0006, lot:150,  big:115, dec:2},
+  'BRK-B':{name:'Berkshire Hathaway', dot:'#7a7a7a', base:472, vol:0.0004, lot:150, big:115, dec:2},
+  // healthcare
+  JNJ:  {name:'Johnson & Johnson', dot:'#d51900', base:154, vol:0.0004, lot:320, big:250, dec:2},
+  PFE:  {name:'Pfizer',     dot:'#0093d0', base:26,  vol:0.0006, lot:1600, big:1240,dec:2},
+  UNH:  {name:'UnitedHealth', dot:'#002677', base:512, vol:0.0007, lot:130, big:100, dec:2},
+  LLY:  {name:'Eli Lilly',  dot:'#d52b1e', base:780, vol:0.0008, lot:90,   big:70,  dec:2},
+  ABBV: {name:'AbbVie',     dot:'#071d49', base:182, vol:0.0005, lot:280,  big:220, dec:2},
+  // energy
+  XOM:  {name:'Exxon Mobil', dot:'#ed1c24', base:118, vol:0.0005, lot:400, big:310, dec:2},
+  CVX:  {name:'Chevron',    dot:'#0055a4', base:158, vol:0.0005, lot:300,  big:230, dec:2},
+  // consumer
+  WMT:  {name:'Walmart',    dot:'#0071ce', base:92,  vol:0.0004, lot:600,  big:460, dec:2},
+  COST: {name:'Costco',     dot:'#e01a2b', base:930, vol:0.0005, lot:90,   big:70,  dec:2},
+  KO:   {name:'Coca-Cola',  dot:'#f40009', base:63,  vol:0.0003, lot:800,  big:620, dec:2},
+  PEP:  {name:'PepsiCo',    dot:'#004b93', base:152, vol:0.0004, lot:380,  big:290, dec:2},
+  MCD:  {name:"McDonald's", dot:'#ffc72c', base:298, vol:0.0004, lot:230,  big:180, dec:2},
+  NKE:  {name:'Nike',       dot:'#111111', base:76,  vol:0.0007, lot:600,  big:460, dec:2},
+  DIS:  {name:'Disney',     dot:'#113ccf', base:112, vol:0.0006, lot:420,  big:320, dec:2},
+  HD:   {name:'Home Depot', dot:'#f96302', base:396, vol:0.0005, lot:150,  big:115, dec:2},
+  TSLA: {name:'Tesla',      dot:'#e82127', base:412, vol:0.0016, lot:400,  big:310, dec:2},
+  // industrials & telecom
+  BA:   {name:'Boeing',     dot:'#0033a0', base:172, vol:0.001,  lot:280,  big:220, dec:2},
+  CAT:  {name:'Caterpillar', dot:'#ffcd11', base:376, vol:0.0006, lot:150, big:115, dec:2},
+  GE:   {name:'GE Aerospace', dot:'#0870d8', base:196, vol:0.0007, lot:250, big:190, dec:2},
+  T:    {name:'AT&T',       dot:'#00a8e0', base:23,  vol:0.0004, lot:1600, big:1240,dec:2},
+  VZ:   {name:'Verizon',    dot:'#cd040b', base:41,  vol:0.0004, lot:1200, big:930, dec:2},
 };
 const WORLD_KEY='na:world:v1';
 let worldSel=(()=>{ try{ const w=JSON.parse(localStorage.getItem(WORLD_KEY)); if(w && w.crypto) return w; }catch(e){}
@@ -1877,10 +2107,10 @@ function startPodFeeds(){
         if(!meta||!meta.regularMarketPrice) throw 0;
         p.price=meta.regularMarketPrice;
         const prev=meta.chartPreviousClose||meta.previousClose||p.price;
-        p.chg=prev?((p.price-prev)/prev*100):0; p.sim=false;
+        p.chg=prev?((p.price-prev)/prev*100):0; p.sim=false; simAnchor[p.id]=p.price;
         p.hi=meta.regularMarketDayHigh||null; p.lo=meta.regularMarketDayLow||null;
         podHist(p);
-      }catch(e){ if(p.price==null){ p.sim=true; p.price=WORLD_STOCKS[p.id].base*(1+rnd(-0.01,0.01)); p.chg=rnd(-1.6,1.6); } }
+      }catch(e){ if(p.price==null){ p.sim=true; p.price=simAnchor[p.id]||WORLD_STOCKS[p.id].base*(1+rnd(-0.01,0.01)); simAnchor[p.id]=p.price; p.chg=rnd(-1.6,1.6); } }
     };
     podTimers.push(setTimeout(pull, i*700));
     podTimers.push(setInterval(pull, 90000));
@@ -2096,8 +2326,9 @@ function focusNearestPod(){
     if(best.volQ) stats.push('מחזור '+fmtUsd(best.volQ));
     if(best.sim) stats.push('SIM');
     $('fpStats').textContent=stats.join('  ·  ');
-    $('fpHint').textContent = best.kind==='crypto' && best.id!==state.sym && SYMBOLS[best.id] ? 'כניסה לזירה…'
-      : best.kind==='crypto' && best.id===state.sym ? 'הזירה הפעילה' : '';
+    const focusable=(best.kind==='crypto'||best.kind==='stock') && symCfg(best.id);
+    $('fpHint').textContent = focusable && best.id!==state.sym ? 'כניסה לזירה…'
+      : focusable && best.id===state.sym ? 'הזירה הפעילה' : '';
     // holo sparkline of the pod's rolling history (throttled)
     const nowT=performance.now();
     if(best.hist && best.hist.length>2 && nowT-fpSparkAt>300){
@@ -2110,12 +2341,12 @@ function focusNearestPod(){
       g.strokeStyle=up?'#00ffa6':'#ff3d6e'; g.lineWidth=2;
       g.shadowColor=g.strokeStyle; g.shadowBlur=8; g.stroke();
     }
-    // walking INTO a crypto pod re-aims the central battle arena at it
-    if(best.kind==='crypto' && bd<6 && best.id!==state.sym && SYMBOLS[best.id]){
+    // walking INTO a crypto or stock pod re-aims the central battle arena at it
+    if((best.kind==='crypto'||best.kind==='stock') && bd<6 && best.id!==state.sym && symCfg(best.id)){
       const nowT=performance.now();
       if(nowT-walk.lastFocus>2500){
         walk.lastFocus=nowT;
-        state.sym=best.id; $('symLabel').textContent=best.id+' / USDT';
+        state.market=best.kind; state.sym=best.id; $('symLabel').textContent=symLabelText(best.id);
         state.stats=null; state.bigQ=1;
         buildPills(); startFeed(); renderTicket(); renderPortfolio();
         toast('⚔️ נכנסת לזירת '+best.id);
@@ -2377,14 +2608,14 @@ function drawChart(){
   g.setTransform(dpr,0,0,dpr,0,0);
   g.clearRect(0,0,W,H);
   const cs=state.candles;
-  $('cpSym').textContent=state.sym+' / USDT';
+  $('cpSym').textContent=symLabelText(state.sym);
   $('cpTf').textContent=(TFS.find(t=>t[0]===state.tf)||[,state.tf])[1];
   if(!cs||cs.length<2){
     g.fillStyle='rgba(157,196,216,.5)'; g.font="13px 'Heebo',sans-serif"; g.textAlign='center';
     g.fillText('טוען נתוני נרות…',W/2,H/2);
     return;
   }
-  const dec=(SYMBOLS[state.sym]||{}).dec??2;
+  const dec=(symCfg(state.sym)||{}).dec??2;
   const padL=8,padR=64,padT=10,padB=20;
   const plotW=W-padL-padR, plotH=H-padT-padB;
   let hi=-Infinity,lo=Infinity;
@@ -2474,6 +2705,8 @@ function setLog(on){
 }
 $('btnLog').onclick=()=>{ setLog(!logOpen); };
 $('logClose').onclick=()=>{ setLog(false); };
+$('btnCandle').onclick=()=>{ setCandlePanel($('candlePanel').style.display!=='block'); };
+$('candleClose').onclick=()=>{ setCandlePanel(false); };
 
 // ---- settings panel — schema-driven so every control here is both a real
 // wired behavior AND a persisted preference, without hand-writing 15
@@ -2664,8 +2897,29 @@ el.addEventListener('wheel',e=>{
 //  HUD
 // ============================================================
 function buildPills(){
+  const mr=$('marketRow'); mr.innerHTML='';
+  [['crypto','🪙 קריפטו'],['stock','📈 מניות']].forEach(([mk,label])=>{
+    const b=document.createElement('div');
+    b.className='pill'+(state.market===mk?' on':'');
+    b.textContent=label;
+    b.onclick=()=>{ if(state.market===mk) return;
+      state.market=mk;
+      const list=mk==='crypto'
+        ? (worldSel.crypto.length? worldSel.crypto : Object.keys(SYMBOLS))
+        : (worldSel.stocks.length? worldSel.stocks : Object.keys(WORLD_STOCKS));
+      state.sym=list[0];
+      $('symLabel').textContent=symLabelText(state.sym);
+      state.stats=null; state.bigQ=1;
+      buildPills(); startFeed(); renderTicket(); renderPortfolio();
+    };
+    mr.appendChild(b);
+  });
+
   const sr=$('symRow'); sr.innerHTML='';
-  let pillSyms=(typeof worldSel!=='undefined'&&worldSel.crypto.length?worldSel.crypto:Object.keys(SYMBOLS)).filter(k=>SYMBOLS[k]);
+  const table=state.market==='crypto'? SYMBOLS : WORLD_STOCKS;
+  let pillSyms=state.market==='crypto'
+    ? (worldSel.crypto.length? worldSel.crypto : Object.keys(SYMBOLS)).filter(k=>SYMBOLS[k])
+    : (worldSel.stocks.length? worldSel.stocks : Object.keys(WORLD_STOCKS)).filter(k=>WORLD_STOCKS[k]);
   if(favOnly){
     const favd=pillSyms.filter(s=>watchlist.has(s));
     pillSyms = favd.length? favd : pillSyms; // never filter down to nothing — fall back to full list
@@ -2674,9 +2928,10 @@ function buildPills(){
     const b=document.createElement('div');
     b.className='pill'+(s===state.sym?' on':'');
     const fav=watchlist.has(s);
-    b.innerHTML=`<span class="dot" style="background:${SYMBOLS[s].dot}"></span>${s}<span class="fav${fav?' on':''}" title="הוסף/הסר מהמועדפים">${fav?'★':'☆'}</span>`;
+    const label=state.market==='crypto'? s : (table[s].name||s);
+    b.innerHTML=`<span class="dot" style="background:${table[s].dot}"></span>${label}<span class="fav${fav?' on':''}" title="הוסף/הסר מהמועדפים">${fav?'★':'☆'}</span>`;
     b.onclick=()=>{ if(state.sym===s) return;
-      state.sym=s; $('symLabel').textContent=s+' / USDT';
+      state.sym=s; $('symLabel').textContent=symLabelText(s);
       state.stats=null; state.bigQ=1;
       buildPills(); startFeed(); renderTicket(); renderPortfolio();
       if(naSettings.chartAutoOpen && typeof setChart==='function') setChart(true); };
