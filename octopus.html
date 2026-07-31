@@ -55,6 +55,51 @@ header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 16px
   clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px)}
 #refreshBtn:hover{border-color:var(--cyan);color:var(--cyan)}
 #refreshBtn.spin{color:var(--cyan);pointer-events:none}
+.icon-btn{flex:none;display:flex;align-items:center;justify-content:center;width:34px;height:34px;
+  color:var(--cyan);border:1px solid var(--line);background:rgba(6,12,26,.6);cursor:pointer;font-size:15px;
+  transition:all .15s;padding:0}
+.icon-btn:hover{border-color:var(--cyan);box-shadow:0 0 14px rgba(0,240,255,.3)}
+.icon-btn.on{background:rgba(0,240,255,.15)}
+#searchRow{display:flex;gap:8px;margin:10px 0}
+#searchBox{flex:1;min-width:0;background:rgba(6,12,26,.6);color:var(--txt);border:1px solid var(--line);
+  padding:8px 12px;font-size:12.5px;font-family:'Heebo',sans-serif;border-radius:2px}
+#searchBox::placeholder{color:var(--dim)}
+#searchBox:focus{outline:none;border-color:var(--cyan)}
+#bookmarkFilter{flex:none}
+.c-star{cursor:pointer;font-size:15px;opacity:.55;transition:opacity .15s}
+.c-star:hover{opacity:.9}
+.c-star.on{opacity:1;color:var(--gold)}
+.c-sentiment{font-size:10px;font-weight:700;padding:2px 7px;letter-spacing:.5px}
+.c-sentiment.pos{color:var(--up);border:1px solid rgba(0,255,166,.35)}
+.c-sentiment.neg{color:var(--down);border:1px solid rgba(255,61,110,.35)}
+.c-sentiment.neu{color:var(--dim);border:1px solid rgba(109,144,168,.3)}
+.cluster.breaking{border-color:rgba(255,209,102,.55);box-shadow:0 0 20px rgba(255,209,102,.15)}
+.c-breaking{font-size:10px;font-weight:700;color:var(--gold);padding:2px 7px;border:1px solid rgba(255,209,102,.4);
+  animation:pulse 1.4s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
+/* ── settings panel — same schema-driven control-room pattern as NEXUS·ARENA ── */
+#octoSettingsPanel{position:fixed;z-index:40;top:60px;left:50%;transform:translateX(-50%);
+  width:min(94vw,480px);max-height:80vh;overflow-y:auto;padding:16px 18px;display:none}
+.os-title{font-size:15px;font-weight:800;letter-spacing:1px;color:var(--cyan);margin-bottom:10px;text-align:center}
+.os-sec{margin-top:14px}
+.os-sec:first-child{margin-top:4px}
+.os-h{font-size:11px;color:var(--magenta);letter-spacing:2px;font-weight:700;margin-bottom:9px;
+  border-bottom:1px solid rgba(255,47,214,.18);padding-bottom:5px}
+.os-row{display:flex;align-items:center;gap:10px;justify-content:space-between;margin-bottom:10px;font-size:12.5px}
+.os-row label{color:var(--txt);flex:1;min-width:0}
+.os-row .os-desc{display:block;font-size:10px;color:var(--dim);margin-top:1px;font-weight:400}
+.os-row input[type=range]{flex:none;width:110px;accent-color:var(--cyan)}
+.os-row input[type=checkbox]{flex:none;width:17px;height:17px;accent-color:var(--cyan);cursor:pointer}
+.os-val{flex:none;width:50px;text-align:left;font-family:'Orbitron',monospace;font-size:11px;color:var(--cyan)}
+.os-arm{display:flex;align-items:center;gap:8px;font-size:12px;padding:4px 0}
+.os-close{margin-top:14px;text-align:center;font-size:12px;color:var(--dim);cursor:pointer;padding:7px}
+.os-close:hover{color:var(--txt)}
+#breakingBanner{position:fixed;z-index:50;top:-80px;left:50%;transform:translateX(-50%);
+  width:min(94vw,560px);padding:11px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  border-color:rgba(255,209,102,.5);box-shadow:0 0 26px rgba(255,209,102,.25);transition:top .4s ease}
+#breakingBanner.show{top:12px}
+#breakingBanner .bb-tag{flex:none;font-size:11px;font-weight:800;color:var(--gold);letter-spacing:.5px}
+#breakingBanner #breakingText{font-size:12.5px;color:var(--txt);font-weight:600}
 
 /* situation strip */
 /* 3D octopus stage — a small living hero: tentacles reach out per active
@@ -131,6 +176,10 @@ header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 16px
 </style>
 </head>
 <body>
+<div id="breakingBanner" class="panel clip">
+  <span class="bb-tag">🔥 מתפתח — הצטלב כבר ב-3 מקורות</span>
+  <span id="breakingText"></span>
+</div>
 <div class="wrap">
   <header class="panel clip">
     <a class="home-btn" href="./" title="חזרה לאלפא">⌂ אלפא</a>
@@ -143,6 +192,7 @@ header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 16px
     </div>
     <div id="arms" title="מצב הזרועות"></div>
     <span id="armsLbl">זרועות</span>
+    <button id="settingsBtn" class="icon-btn" title="הגדרות OCTOPUS">⚙️</button>
     <button id="refreshBtn">🔄 רענן</button>
   </header>
 
@@ -159,10 +209,20 @@ header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 16px
       <div class="st"><b id="stCross" class="num">0</b><span>הצלבות רב-זוויתיות</span></div>
       <div class="st"><b id="stArms" class="num">0/10</b><span>זרועות חיות</span></div>
     </div>
+    <div id="searchRow">
+      <input id="searchBox" type="text" placeholder="🔍 חיפוש בכותרות ובמקורות…">
+      <span id="bookmarkFilter" class="tchip">⭐ מועדפים</span>
+    </div>
     <div id="topics"></div>
   </section>
 
   <main id="clusters"><div class="empty">🐙 שולח זרועות…</div></main>
+</div>
+
+<div id="octoSettingsPanel" class="panel clip">
+  <div class="os-title">⚙️ הגדרות OCTOPUS</div>
+  <div id="osBody"></div>
+  <div class="os-close" id="osClose">✕ סגור</div>
 </div>
 
 <div id="anaWrap">
@@ -407,6 +467,37 @@ if(renderer){
    synthesis. Offline → SIM feed so the app never goes dark.
    ============================================================ */
 const $=id=>document.getElementById(id);
+// ---------- settings (persisted control room, parity with NEXUS·ARENA) ----------
+const OCTO_DEFAULTS={autoRefresh:true,refreshMin:5,soundOn:true,breakingAlerts:true,showSentiment:true,disabledArms:[]};
+function loadOctoSettings(){
+  try{
+    const raw=JSON.parse(localStorage.getItem('octo:settings')||'null');
+    if(raw && typeof raw==='object') return Object.assign({},OCTO_DEFAULTS,raw,{disabledArms:Array.isArray(raw.disabledArms)?raw.disabledArms:[]});
+  }catch{}
+  return Object.assign({},OCTO_DEFAULTS,{disabledArms:[]});
+}
+const octoSettings=loadOctoSettings();
+function saveOctoSettings(){ try{ localStorage.setItem('octo:settings',JSON.stringify(octoSettings)); }catch{} }
+let bookmarks=new Set();
+try{ bookmarks=new Set(JSON.parse(localStorage.getItem('octo:bookmarks')||'[]')); }catch{}
+function saveBookmarks(){ try{ localStorage.setItem('octo:bookmarks',JSON.stringify([...bookmarks])); }catch{} }
+let bookmarkFilterOn=false, searchQuery='';
+// minimal WebAudio beep for breaking-news alerts — gated by octoSettings.soundOn
+let AC=null;
+function ensureAC(){ if(!AC){ try{ AC=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } if(AC&&AC.state==='suspended') AC.resume(); }
+document.addEventListener('pointerdown',ensureAC,{once:true});
+function beep(seq){
+  if(!octoSettings.soundOn||!AC) return;
+  let t=AC.currentTime;
+  seq.forEach(([f,d])=>{
+    const o=AC.createOscillator(), g=AC.createGain();
+    o.type='sine'; o.frequency.value=f; o.connect(g); g.connect(AC.destination);
+    g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(0.1,t+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+d);
+    o.start(t); o.stop(t+d+0.03); t+=d*0.8;
+  });
+}
 // 8 THEMATIC ARMS × 2-3 free sources each = 20 sources total. Each arm is
 // one tentacle of the octopus and one topic domain; every source inside an
 // arm is pulled in parallel, so one arm going quiet doesn't blind the whole
@@ -479,8 +570,21 @@ const TOPICS=[
   ['מדע',['מחקר','חלל','נאס"א','nasa','מדענים','study','research','space','גילוי','אבולוצי','כוכב']],
   ['גיימינג',['משחק','גיימינג','פלייסטיישן','אקסבוקס','nintendo','playstation','xbox','steam','גיימר','קונסולה']],
 ];
+// simple keyword-based sentiment tag — not a claim of real NLP, just a quick
+// visual cue (rises/gains/wins read positive, falls/crises/deaths read
+// negative) so a skimmed situation picture also carries a mood, not just topics
+const SENT_POS=['עולה','עליה','זינוק','שיא','ניצחון','הישג','פריצת דרך','שיפור','הסכם','רווח','גדל','חדשנות','פתרון'];
+const SENT_NEG=['נופל','ירידה','קריסה','משבר','אסון','פיגוע','מלחמה','הפסד','אזהרה','סכנה','קורבנות','נהרג','פשיטת רגל','פיטורים'];
+function sentimentOf(grp){
+  const text=grp.map(g=>g.title+' '+(g.desc||'')).join(' ').toLowerCase();
+  let pos=0,neg=0;
+  for(const k of SENT_POS) if(text.includes(k)) pos++;
+  for(const k of SENT_NEG) if(text.includes(k)) neg++;
+  if(pos>neg) return 'pos'; if(neg>pos) return 'neg'; return 'neu';
+}
 let items=[], clusters=[], armState=new Array(ARMS.length).fill('off');
 let topicFilter=null, lastPull=0;
+const notifiedBreaking=new Set();
 
 // ---------- fetch ----------
 function fetchT(url,ms){
@@ -511,8 +615,12 @@ async function pullOneSource(i){
 async function pullGroup(gi){
   const group=ARM_GROUPS[gi];
   let base=0; for(let k=0;k<gi;k++) base+=ARM_GROUPS[k][2].length;
-  armPulling[gi]=true; if(window.__octoReach) window.__octoReach(gi,true);
   const idxs=group[2].map((_,k)=>base+k);
+  if(octoSettings.disabledArms.includes(gi)){
+    idxs.forEach(i=>armState[i]='off');
+    return [];
+  }
+  armPulling[gi]=true; if(window.__octoReach) window.__octoReach(gi,true);
   const results=await Promise.all(idxs.map(pullOneSource));
   armPulling[gi]=false; if(window.__octoReach) window.__octoReach(gi,false, results.some(r=>r.length));
   return [].concat.apply([],results);
@@ -557,9 +665,31 @@ function buildClusters(){
       if(similar(list[i].tok,list[j].tok)){ grp.push(list[j].it); used[j]=true; }
     }
     grp.sort((a,b)=>b.at-a.at);
-    clusters.push({head:grp[0],angles:grp,topic:classify(grp),at:grp[0].at});
+    clusters.push({head:grp[0],angles:grp,topic:classify(grp),sentiment:sentimentOf(grp),at:grp[0].at});
   }
   clusters.sort((a,b)=>(b.angles.length-a.angles.length)||(b.at-a.at));
+  checkBreaking();
+}
+// a story that's crossed 3+ independent sources is treated as "breaking" the
+// first time it reaches that threshold — notifiedBreaking guards against
+// re-alerting on every re-render of the same still-growing cluster
+function checkBreaking(){
+  if(!octoSettings.breakingAlerts) return;
+  clusters.forEach(c=>{
+    const key=c.head.title.slice(0,70);
+    if(c.angles.length>=3 && !notifiedBreaking.has(key)){
+      notifiedBreaking.add(key);
+      ensureAC(); beep([[880,0.1],[1108,0.12],[1318,0.16]]);
+      showBreakingBanner(c);
+    }
+  });
+}
+function showBreakingBanner(c){
+  const b=$('breakingBanner'); if(!b) return;
+  $('breakingText').textContent=c.head.title;
+  b.classList.add('show');
+  clearTimeout(showBreakingBanner._t);
+  showBreakingBanner._t=setTimeout(()=>b.classList.remove('show'),6000);
 }
 function classify(grp){
   const text=grp.map(g=>g.title+' '+(g.desc||'')).join(' ').toLowerCase();
@@ -615,19 +745,34 @@ function renderSituation(){
   });
 }
 const escH=s=>String(s||'').replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+const SENT_LABEL={pos:'📈 חיובי',neg:'📉 שלילי',neu:'◦ ניטרלי'};
+function clusterKey(c){ return c.head.title.slice(0,70); }
 function renderClusters(){
   const el=$('clusters'); el.innerHTML='';
-  const list=clusters.filter(c=>!topicFilter||c.topic===topicFilter);
+  let list=clusters.filter(c=>!topicFilter||c.topic===topicFilter);
+  if(bookmarkFilterOn) list=list.filter(c=>bookmarks.has(clusterKey(c)));
+  if(searchQuery) list=list.filter(c=>
+    c.head.title.toLowerCase().includes(searchQuery) ||
+    c.angles.some(a=>a.src.toLowerCase().includes(searchQuery)));
   if(!list.length){ el.innerHTML='<div class="empty">אין סיפורים בסינון הזה</div>'; return; }
   list.slice(0,40).forEach((c,i)=>{
+    const key=clusterKey(c), starred=bookmarks.has(key), breaking=c.angles.length>=3;
     const d=document.createElement('article');
-    d.className='cluster panel clip';
+    d.className='cluster panel clip'+(breaking?' breaking':'');
     d.innerHTML='<div class="c-top"><span class="c-topic">'+c.topic+'</span>'
+      +(octoSettings.showSentiment?'<span class="c-sentiment '+c.sentiment+'">'+SENT_LABEL[c.sentiment]+'</span>':'')
+      +(breaking?'<span class="c-breaking">🔥 מתפתח</span>':'')
       +(c.angles.length>1?'<span class="c-angles">⚡ '+c.angles.length+' זוויות</span>':'')
-      +'<span class="c-time">'+fmtAgo(c.at)+'</span></div>'
+      +'<span class="c-time">'+fmtAgo(c.at)+'</span>'
+      +'<span class="c-star'+(starred?' on':'')+'" title="שמור למועדפים">'+(starred?'★':'☆')+'</span></div>'
       +'<h3>'+escH(c.head.title)+'</h3>'
       +'<div class="c-srcs">'+[...new Set(c.angles.map(a=>a.src))].map(s=>'<span class="src">'+escH(s)+'</span>').join('')+'</div>'
       +'<div class="c-hint">👆 הקשה — ניתוח מלא והצלבת הזוויות</div>';
+    d.querySelector('.c-star').onclick=(e)=>{
+      e.stopPropagation();
+      if(bookmarks.has(key)) bookmarks.delete(key); else bookmarks.add(key);
+      saveBookmarks(); renderClusters();
+    };
     d.onclick=()=>openAnalysis(c);
     el.appendChild(d);
   });
@@ -733,9 +878,71 @@ async function pullAll(){
   }
   $('refreshBtn').classList.remove('spin'); $('refreshBtn').textContent='🔄 רענן';
 }
+// ---------- settings panel — schema-driven controls + a dynamic per-arm
+// enable/disable list built straight off ARM_GROUPS ----------
+const OS_SCHEMA=[
+  {sec:'🔄 רענון ועדכון', items:[
+    {key:'autoRefresh', type:'checkbox', label:'רענון אוטומטי', desc:'משיכת חדשות מחדש כל כמה דקות'},
+    {key:'refreshMin', type:'range', label:'תדירות רענון', min:2,max:30,step:1, fmt:v=>v+' דק׳'},
+  ]},
+  {sec:'🔔 התראות וצליל', items:[
+    {key:'breakingAlerts', type:'checkbox', label:'התראת חדשות מתפתחות', desc:'כאשר סיפור מצטלב ב-3+ מקורות'},
+    {key:'soundOn', type:'checkbox', label:'צליל התראה'},
+    {key:'showSentiment', type:'checkbox', label:'תגית מצב-רוח', desc:'חיובי/שלילי/ניטרלי לפי מילות מפתח'},
+  ]},
+];
+function onOctoSettingChanged(){ saveOctoSettings(); }
+function buildSettingsPanel(){
+  const body=$('osBody'); if(!body) return;
+  body.innerHTML=OS_SCHEMA.map(group=>
+    '<div class="os-sec"><div class="os-h">'+group.sec+'</div>'+
+    group.items.map(it=>{
+      const descHtml=it.desc?'<span class="os-desc">'+it.desc+'</span>':'';
+      let ctrl='';
+      if(it.type==='checkbox') ctrl='<input type="checkbox" data-key="'+it.key+'" '+(octoSettings[it.key]?'checked':'')+'>';
+      else if(it.type==='range') ctrl='<input type="range" data-key="'+it.key+'" min="'+it.min+'" max="'+it.max+'" step="'+it.step+'" value="'+octoSettings[it.key]+'">'+
+        '<span class="os-val" data-valfor="'+it.key+'">'+(it.fmt?it.fmt(octoSettings[it.key]):octoSettings[it.key])+'</span>';
+      return '<div class="os-row"><label>'+it.label+descHtml+'</label>'+ctrl+'</div>';
+    }).join('')+'</div>'
+  ).join('') + '<div class="os-sec"><div class="os-h">🐙 זרועות פעילות</div>'
+    + ARM_GROUPS.map((g,gi)=>'<div class="os-arm"><input type="checkbox" data-arm="'+gi+'" '
+      +(octoSettings.disabledArms.includes(gi)?'':'checked')+'><span>'+g[1][0]+' '+g[0]+'</span></div>').join('')
+    + '</div>';
+  const schemaByKey={}; OS_SCHEMA.forEach(g=>g.items.forEach(it=>schemaByKey[it.key]=it));
+  body.querySelectorAll('[data-key]').forEach(el=>{
+    const key=el.dataset.key, it=schemaByKey[key];
+    const handler=()=>{
+      if(el.type==='checkbox') octoSettings[key]=el.checked;
+      else{ octoSettings[key]=parseFloat(el.value);
+        const vEl=body.querySelector('[data-valfor="'+key+'"]');
+        if(vEl) vEl.textContent=it.fmt?it.fmt(octoSettings[key]):octoSettings[key];
+      }
+      onOctoSettingChanged();
+    };
+    el.addEventListener(el.type==='range'?'input':'change',handler);
+  });
+  body.querySelectorAll('[data-arm]').forEach(el=>{
+    el.addEventListener('change',()=>{
+      const gi=parseInt(el.dataset.arm,10);
+      octoSettings.disabledArms = el.checked
+        ? octoSettings.disabledArms.filter(x=>x!==gi)
+        : [...new Set([...octoSettings.disabledArms,gi])];
+      saveOctoSettings();
+    });
+  });
+}
+function setSettingsPanel(on){ $('octoSettingsPanel').style.display=on?'block':'none'; $('settingsBtn').classList.toggle('on',on); }
+$('settingsBtn').onclick=()=>setSettingsPanel($('octoSettingsPanel').style.display!=='block');
+$('osClose').onclick=()=>setSettingsPanel(false);
+
+// ---------- search + bookmarks ----------
+$('searchBox').addEventListener('input',e=>{ searchQuery=e.target.value.trim().toLowerCase(); renderClusters(); });
+$('bookmarkFilter').onclick=()=>{ bookmarkFilterOn=!bookmarkFilterOn; $('bookmarkFilter').classList.toggle('on',bookmarkFilterOn); renderClusters(); };
+
 $('refreshBtn').onclick=pullAll;
-setInterval(()=>{ if(Date.now()-lastPull>300000) pullAll(); },60000);
+setInterval(()=>{ if(octoSettings.autoRefresh && Date.now()-lastPull>octoSettings.refreshMin*60000) pullAll(); },60000);
 renderArms();
+buildSettingsPanel();
 pullAll();
 </script>
 </body>

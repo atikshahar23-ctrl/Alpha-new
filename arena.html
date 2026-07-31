@@ -51,6 +51,9 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
   transition:all .18s;display:flex;align-items:center;gap:6px;
   clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px)}
 .pill .dot{width:6px;height:6px;border-radius:50%}
+.pill .fav{opacity:.4;margin-inline-start:1px;font-size:12px}
+.pill .fav.on{opacity:1;color:var(--gold)}
+.pill .fav:hover{opacity:.8}
 .pill:hover{color:var(--txt);border-color:var(--line)}
 .pill.on{color:#02141a;background:linear-gradient(120deg,var(--cyan),#7dfbff);
   border-color:var(--cyan);box-shadow:0 0 18px rgba(0,240,255,.45)}
@@ -264,6 +267,17 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 #chartPanel .cp-legend b{color:var(--txt);font-weight:700;margin-inline-start:4px}
 #chartPanel .cp-legend .sw{display:inline-block;width:8px;height:8px;border-radius:2px;margin-inline-end:5px;vertical-align:middle}
 #chartPanel .cp-legend .sw.hi{background:var(--up)} #chartPanel .cp-legend .sw.lo{background:var(--down)}
+#logPanel{position:fixed;z-index:33;top:50%;left:50%;transform:translate(-50%,-50%);
+  width:min(94vw,420px);max-height:80vh;overflow-y:auto;padding:14px 16px 12px}
+#logPanel .lg-h{font-size:11px;letter-spacing:1.5px;color:var(--cyan);font-weight:600;margin-bottom:10px;display:flex;align-items:center}
+#logPanel .lg-stats{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;font-size:11px}
+#logPanel .lg-stats b{display:block;font-size:15px;color:var(--txt)}
+#logPanel .lg-stats span{color:var(--dim)}
+#logPanel .lg-row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;
+  border-bottom:1px solid rgba(0,240,255,.1);font-size:12px}
+#logPanel .lg-row .lg-sym{color:var(--txt);font-weight:600}
+#logPanel .lg-row .lg-t{font-size:10px;color:var(--dim)}
+#logPanel .lg-empty{text-align:center;color:var(--dim);font-size:12px;padding:20px 0}
 #chartPanel .cp-legend .sw.now{background:var(--gold)}
 .mobTab{display:none}
 @media (max-width:720px), (max-height:520px){
@@ -432,6 +446,12 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
     <div class="tgl" id="btnChart" title="גרף נרות מלא — הנתונים האמיתיים שמניעים את הקרב">
       <span style="font-size:15px">📊</span><span style="font-size:8px">גרף</span>
     </div>
+    <div class="tgl" id="btnLog" title="יומן עסקאות והישגים">
+      <span style="font-size:15px">📜</span><span style="font-size:8px">יומן</span>
+    </div>
+    <div class="tgl" id="btnFav" title="הצג רק שווקים מועדפים">
+      <span style="font-size:15px">⭐</span><span style="font-size:8px">מועדף</span>
+    </div>
     <div class="tgl on" id="btnAuto" title="טיסה אוטומטית">
       <svg viewBox="0 0 24 24"><path d="M12 3l3 7h6l-5 4 2 7-6-4-6 4 2-7-5-4h6z"/></svg><span>טיסה</span>
     </div>
@@ -476,6 +496,17 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
     <span><i class="sw now"></i>אחרון <b id="cpLast" class="num">—</b></span>
     <span>נרות <b id="cpN" class="num">0</b></span>
   </div>
+</div>
+
+<div id="logPanel" class="panel clip" style="display:none">
+  <div class="lg-h"><span>📜 יומן עסקאות · דמו</span><button class="mp-close" id="logClose" style="margin-inline-start:auto">✕</button></div>
+  <div class="lg-stats">
+    <div><b id="lgPnl">$0</b><span>רווח/הפסד מצטבר</span></div>
+    <div><b id="lgWr">—</b><span>אחוז הצלחה</span></div>
+    <div><b id="lgStreak">0</b><span>רצף נוכחי</span></div>
+    <div><b id="lgBest">—</b><span>שיא עסקה</span></div>
+  </div>
+  <div id="lgList"></div>
 </div>
 
 <div id="settingsPanel" class="panel clip" style="display:none">
@@ -579,7 +610,19 @@ const state = {
 let feed=null, ind=null, lastSignal=null;
 const sig={relClosed:0, prevScore:null, lastFire:0};
 let pos=null;
-const session={pnl:0,trades:0,wins:0};
+function loadSession(){
+  try{
+    const raw=JSON.parse(localStorage.getItem('na:session')||'null');
+    if(raw && typeof raw==='object') return Object.assign({pnl:0,trades:0,wins:0,streak:0,bestStreak:0,bestPct:-Infinity,log:[]},raw);
+  }catch{}
+  return {pnl:0,trades:0,wins:0,streak:0,bestStreak:0,bestPct:-Infinity,log:[]};
+}
+const session=loadSession();
+function saveSession(){ try{ localStorage.setItem('na:session',JSON.stringify(session)); }catch{} }
+let watchlist=new Set();
+try{ watchlist=new Set(JSON.parse(localStorage.getItem('na:watchlist')||'[]')); }catch{}
+function saveWatchlist(){ try{ localStorage.setItem('na:watchlist',JSON.stringify([...watchlist])); }catch{} }
+let favOnly=false;
 let indDirty=false, lastInd=0;
 
 // ---------- utils ----------
@@ -963,15 +1006,35 @@ function openPos(side){
 function posPnlPct(){
   return (state.lastPrice/pos.entry-1)*100*(pos.side==='long'?1:-1);
 }
+function checkAchievements(win,pct){
+  const t=session.trades;
+  const badges=[];
+  if(t===1) badges.push(['🎫 עסקה ראשונה','ברוך הבא לזירת המסחר!']);
+  if(t===10) badges.push(['🔟 10 עסקאות','אתה כבר לא טירון']);
+  if(t===50) badges.push(['💯 50 עסקאות','סוחר ותיק']);
+  if(win && session.streak===3) badges.push(['🔥 רצף 3 ניצחונות','חם חם חם']);
+  if(win && session.streak===5) badges.push(['⚡ רצף 5 ניצחונות','בלתי עצור']);
+  if(win && session.streak===10) badges.push(['👑 רצף 10 ניצחונות','אגדה']);
+  if(pct>session.bestPct) badges.push(['🏆 שיא אישי חדש',`${fmtPct(pct)} בעסקה אחת`]);
+  badges.forEach(([h,s],i)=>setTimeout(()=>toast(`${h} · ${s}`,'up'),i*1400+900));
+}
 function closePos(reason){
   if(!pos) return;
   const pct=posPnlPct(), usd=pos.notional*pct/100;
-  session.pnl+=usd; session.trades++; if(usd>0) session.wins++;
   const win=usd>=0;
+  session.pnl+=usd; session.trades++; if(win) session.wins++;
+  session.streak = win? session.streak+1 : 0;
+  if(session.streak>session.bestStreak) session.bestStreak=session.streak;
+  session.log.unshift({sym:state.sym,side:pos.side,entry:pos.entry,exit:state.lastPrice,pct,usd,at:Date.now()});
+  session.log=session.log.slice(0,30);
+  const isRecord = pct>session.bestPct;
+  if(isRecord) session.bestPct=pct;
+  saveSession();
+  checkAchievements(win,pct);
   const head=reason==='tp'?'🎯 יעד הושג':reason==='sl'?'🛑 סטופ הופעל':reason==='switch'?'עמדה נסגרה (החלפה)':'עמדה נסגרה';
   toast(`${head} · ${win?'+':'−'}$${Math.abs(usd).toFixed(0)} (${fmtPct(pct)})`, win?'up':'down');
   beep(win?[[523,0.09],[659,0.09],[784,0.14]]:[[220,0.16],[160,0.2]]);
-  pos=null; renderTicket();
+  pos=null; renderTicket(); renderLog();
 }
 function checkPos(){
   if(!pos) return;
@@ -2205,6 +2268,36 @@ function setChart(on){
 }
 addEventListener('resize',()=>{ if(chartOpen) drawChart(); });
 
+// ---- trade log & achievements panel — reads straight off the persisted
+// `session` object (localStorage['na:session']) so career stats survive
+// reloads, unlike the ephemeral #sessStat strip in the ticket ----
+function renderLog(){
+  const wr=session.trades? Math.round(100*session.wins/session.trades)+'%':'—';
+  $('lgPnl').textContent=(session.pnl>=0?'+':'−')+'$'+Math.abs(session.pnl).toFixed(0);
+  $('lgPnl').className='num '+(session.pnl>=0?'up':'down');
+  $('lgWr').textContent=wr;
+  $('lgStreak').textContent=session.streak;
+  $('lgBest').textContent=session.bestPct>-Infinity? fmtPct(session.bestPct):'—';
+  const list=$('lgList');
+  if(!session.log.length){ list.innerHTML='<div class="lg-empty">עדיין אין עסקאות סגורות</div>'; return; }
+  list.innerHTML=session.log.map(t=>{
+    const win=t.usd>=0;
+    const ago=Math.max(0,Math.round((Date.now()-t.at)/60000));
+    const agoTxt=ago<60? `לפני ${ago} ד׳` : `לפני ${Math.round(ago/60)} ש׳`;
+    return `<div class="lg-row"><span><span class="lg-sym">${t.sym}</span> ${t.side==='long'?'▲':'▼'}<br><span class="lg-t">${agoTxt}</span></span>`
+      +`<span class="num ${win?'up':'down'}">${win?'+':'−'}$${Math.abs(t.usd).toFixed(0)} (${fmtPct(t.pct)})</span></div>`;
+  }).join('');
+}
+let logOpen=false;
+function setLog(on){
+  logOpen=on;
+  $('logPanel').style.display=on?'block':'none';
+  $('btnLog').classList.toggle('on',on);
+  if(on) renderLog();
+}
+$('btnLog').onclick=()=>{ setLog(!logOpen); };
+$('logClose').onclick=()=>{ setLog(false); };
+
 // ---- settings panel — schema-driven so every control here is both a real
 // wired behavior AND a persisted preference, without hand-writing 15
 // near-identical HTML blocks. Applying a setting never requires a reload:
@@ -2395,17 +2488,27 @@ el.addEventListener('wheel',e=>{
 // ============================================================
 function buildPills(){
   const sr=$('symRow'); sr.innerHTML='';
-  const pillSyms=(typeof worldSel!=='undefined'&&worldSel.crypto.length?worldSel.crypto:Object.keys(SYMBOLS)).filter(k=>SYMBOLS[k]);
+  let pillSyms=(typeof worldSel!=='undefined'&&worldSel.crypto.length?worldSel.crypto:Object.keys(SYMBOLS)).filter(k=>SYMBOLS[k]);
+  if(favOnly){
+    const favd=pillSyms.filter(s=>watchlist.has(s));
+    pillSyms = favd.length? favd : pillSyms; // never filter down to nothing — fall back to full list
+  }
   pillSyms.forEach(s=>{
     const b=document.createElement('div');
     b.className='pill'+(s===state.sym?' on':'');
-    b.innerHTML=`<span class="dot" style="background:${SYMBOLS[s].dot}"></span>${s}`;
+    const fav=watchlist.has(s);
+    b.innerHTML=`<span class="dot" style="background:${SYMBOLS[s].dot}"></span>${s}<span class="fav${fav?' on':''}" title="הוסף/הסר מהמועדפים">${fav?'★':'☆'}</span>`;
     b.onclick=()=>{ if(state.sym===s) return;
       if(pos) closePos('switch');
       state.sym=s; $('symLabel').textContent=s+' / USDT';
       state.stats=null; state.bigQ=1;
       buildPills(); startFeed();
       if(naSettings.chartAutoOpen && typeof setChart==='function') setChart(true); };
+    b.querySelector('.fav').onclick=(e)=>{
+      e.stopPropagation();
+      if(watchlist.has(s)) watchlist.delete(s); else watchlist.add(s);
+      saveWatchlist(); buildPills();
+    };
     sr.appendChild(b);
   });
   const tr=$('tfRow'); tr.innerHTML='';
@@ -2420,6 +2523,7 @@ function buildPills(){
   });
 }
 function syncAutoBtn(){ $('btnAuto').classList.toggle('on',state.auto); }
+$('btnFav').onclick=()=>{ favOnly=!favOnly; $('btnFav').classList.toggle('on',favOnly); buildPills(); };
 $('btnAuto').onclick=()=>{ if(walk.on) setWalk(false); state.auto=!state.auto; syncAutoBtn(); };
 $('btnWalk').onclick=()=>{ setWalk(!walk.on); };
 $('btnWorld').onclick=()=>{ const wp=$('worldPanel'); wp.style.display=wp.style.display==='none'?'block':'none'; };
