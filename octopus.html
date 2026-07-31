@@ -60,6 +60,18 @@ header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 16px
   transition:all .15s;padding:0}
 .icon-btn:hover{border-color:var(--cyan);box-shadow:0 0 14px rgba(0,240,255,.3)}
 .icon-btn.on{background:rgba(0,240,255,.15)}
+/* top headlines — the "front page" strip: #1 story huge, the rest ranked */
+#headlines{padding:14px 18px;margin-bottom:14px;border-color:rgba(255,209,102,.35)}
+#headlines .hl-h{font-size:12px;letter-spacing:1.5px;color:var(--gold);font-weight:800;margin-bottom:10px;display:flex;align-items:baseline;gap:10px}
+#headlines .hl-sub{font-size:10px;color:var(--dim);font-weight:400;letter-spacing:.3px}
+.hl-item{display:flex;align-items:baseline;gap:10px;padding:7px 0;cursor:pointer;border-bottom:1px solid rgba(255,209,102,.12)}
+.hl-item:last-child{border-bottom:none}
+.hl-item .hl-rank{flex:none;font-family:'Orbitron',monospace;font-size:13px;color:var(--gold);width:22px;text-align:center}
+.hl-item .hl-t{font-size:14px;font-weight:700;color:var(--txt);line-height:1.35}
+.hl-item:hover .hl-t{color:var(--gold)}
+.hl-item.first .hl-t{font-size:19px;font-weight:800}
+.hl-item .hl-meta{flex:none;margin-inline-start:auto;font-size:10px;color:var(--dim);white-space:nowrap}
+.hl-item .hl-x{color:var(--cyan);font-weight:700}
 .tl-row{display:flex;align-items:center;gap:10px;padding:5px 0;font-size:12px;border-bottom:1px solid rgba(0,240,255,.08)}
 .tl-row .tl-when{color:var(--dim);font-size:10.5px;flex:none;width:74px}
 .tl-row .tl-lag{margin-inline-start:auto;font-size:10.5px;color:var(--gold)}
@@ -230,6 +242,11 @@ body.compact .cluster .c-srcs{margin-top:2px}
     <div id="topics"></div>
   </section>
 
+  <section id="headlines" class="panel clip" style="display:none">
+    <div class="hl-h">🗞️ הכותרות הראשיות עכשיו <span class="hl-sub">מדורג לפי הצלבות + טריות</span></div>
+    <div id="hlList"></div>
+  </section>
+
   <main id="clusters"><div class="empty">🐙 שולח זרועות…</div></main>
 </div>
 
@@ -322,6 +339,29 @@ if(renderer){
   const pupL=new THREE.Mesh(new THREE.SphereGeometry(0.05,8,8),new THREE.MeshBasicMaterial({color:0x022}));
   pupL.position.set(-0.33,1.08,0.96); scene.add(pupL);
   const pupR=pupL.clone(); pupR.position.x=0.33; scene.add(pupR);
+  // ── personality: pupils follow the reader's pointer, eyes blink, and a
+  // random arm occasionally twitches with "curiosity" — a pet, not a logo ──
+  let lookX=0, lookY=0, blinkT=2.5+Math.random()*4, blinkPhase=0, curioT=4+Math.random()*5;
+  addEventListener('pointermove',e=>{
+    lookX=(e.clientX/innerWidth)*2-1;
+    lookY=(e.clientY/innerHeight)*2-1;
+  },{passive:true});
+  // ── ink burst — a puff of dark droplets ejected on breaking news ──
+  const INK_N=18;
+  const inkPos=new Float32Array(INK_N*3), inkVel=new Float32Array(INK_N*3);
+  const inkGeo=new THREE.BufferGeometry();
+  inkGeo.setAttribute('position',new THREE.BufferAttribute(inkPos,3));
+  const ink=new THREE.Points(inkGeo,new THREE.PointsMaterial({size:0.16,map:glowTex,color:0x1a2f66,transparent:true,opacity:0,depthWrite:false,sizeAttenuation:true}));
+  scene.add(ink);
+  let inkLife=0;
+  function fireInk(){
+    inkLife=1;
+    for(let i=0;i<INK_N;i++){
+      const a=Math.random()*Math.PI*2, up=Math.random()*0.7+0.2, sp=0.9+Math.random()*1.4;
+      inkPos[i*3]=0; inkPos[i*3+1]=1.1; inkPos[i*3+2]=0;
+      inkVel[i*3]=Math.cos(a)*sp; inkVel[i*3+1]=up*sp; inkVel[i*3+2]=Math.sin(a)*sp;
+    }
+  }
 
   // ── energy-shield aura — a larger backside-lit shell around the whole
   // creature, the classic cheap sci-fi "force field" look ──
@@ -389,7 +429,7 @@ if(renderer){
   let breakingPulse=0;
   const shieldBaseColor=new THREE.Color(0x00f0ff), alertColor=new THREE.Color(0xffb020);
   const coreBaseColor=new THREE.Color(0x9dfcff);
-  window.__octoBreaking=function(){ breakingPulse=1; };
+  window.__octoBreaking=function(){ breakingPulse=1; fireInk(); };
   function jointPositions(t,time){
     const pts=[]; const baseLen=1.15, reach=t.reach;
     const len=baseLen+reach*2.5;
@@ -429,6 +469,36 @@ if(renderer){
     bodyMat.emissiveIntensity=0.4+breakingPulse*0.9;
     shield.material.opacity=0.05+Math.sin(time*0.9)*0.02+breakingPulse*0.24;
     shield.material.color.copy(shieldBaseColor).lerp(alertColor,breakingPulse);
+    // pupils track the pointer (small parallax so it stays subtle from the
+    // fixed camera), and both eyes blink together every few seconds
+    pupL.position.x=-0.33+lookX*0.045; pupR.position.x=0.33+lookX*0.045;
+    pupL.position.y=pupR.position.y=1.08-lookY*0.04;
+    blinkT-=0.016;
+    if(blinkT<=0){ blinkPhase=1; blinkT=2.5+Math.random()*5; }
+    if(blinkPhase>0){
+      blinkPhase=Math.max(0,blinkPhase-0.13);
+      const lid=Math.abs(blinkPhase-0.5)*2; // 1→0→1: closes then reopens
+      eyeL.scale.y=eyeR.scale.y=Math.max(0.08,lid);
+      pupL.visible=pupR.visible=lid>0.35;
+    }
+    // idle curiosity — an occasional small self-initiated tentacle reach
+    curioT-=0.016;
+    if(curioT<=0){
+      curioT=4+Math.random()*7;
+      const t=tentacles[(Math.random()*tentacles.length)|0];
+      if(t && t.reachTarget===0){ t.reachTarget=0.4; setTimeout(()=>{ if(t.reachTarget===0.4) t.reachTarget=0; },1100); }
+    }
+    // ink droplets — gravity-arced puff that fades as it spreads
+    if(inkLife>0){
+      inkLife=Math.max(0,inkLife-0.014);
+      for(let i=0;i<INK_N;i++){
+        inkVel[i*3+1]-=0.03;
+        inkPos[i*3]+=inkVel[i*3]*0.016; inkPos[i*3+1]+=inkVel[i*3+1]*0.016; inkPos[i*3+2]+=inkVel[i*3+2]*0.016;
+      }
+      ink.geometry.attributes.position.needsUpdate=true;
+      ink.material.opacity=inkLife*0.85;
+      ink.material.size=0.16+(1-inkLife)*0.3;
+    } else ink.material.opacity=0;
     // drifting motes — loop upward through the shield volume
     const mp=motes.geometry.attributes.position.array;
     for(let i=0;i<MOTE_N;i++){
@@ -794,6 +864,29 @@ function renderArms(){
   });
   $('stArms').textContent=liveArms+'/'+ARM_GROUPS.length;
 }
+// front-page ranking — what a human editor would put on top: how many
+// independent sources converged on the story (weight 3 per extra angle),
+// how fresh it is, and a small bonus for a clear (non-neutral) mood.
+function headlineScore(c){
+  const ageMin=Math.max(0,(Date.now()-c.at)/60000);
+  const fresh=ageMin<45?4:ageMin<180?2.5:ageMin<720?1:0;
+  return (c.angles.length-1)*3 + fresh + (c.sentiment!=='neu'?0.5:0);
+}
+function renderHeadlines(){
+  const sec=$('headlines'); if(!sec) return;
+  const top=clusters.slice().sort((a,b)=>headlineScore(b)-headlineScore(a)).slice(0,5);
+  if(!top.length){ sec.style.display='none'; return; }
+  sec.style.display='block';
+  $('hlList').innerHTML=top.map((c,i)=>
+    '<div class="hl-item'+(i===0?' first':'')+'" data-i="'+i+'">'
+    +'<span class="hl-rank">'+(i+1)+'</span>'
+    +'<span class="hl-t">'+escH(c.head.title)+'</span>'
+    +'<span class="hl-meta">'+(c.angles.length>1?'<span class="hl-x">⚡'+c.angles.length+'</span> · ':'')+fmtAgo(c.at)+'</span>'
+    +'</div>').join('');
+  sec.querySelectorAll('.hl-item').forEach(el=>{
+    el.onclick=()=>openAnalysis(top[+el.dataset.i]);
+  });
+}
 // hot entities — the most-mentioned meaningful words across every current
 // story, weighted extra when they appear in multi-angle (cross-referenced)
 // clusters. Clicking one drops it into the search box as a live filter.
@@ -965,7 +1058,7 @@ function mergeAndRender(){
     .sort((a,b)=>b.at-a.at).slice(0,octoSettings.maxStories||160);
   lastPull=Date.now();
   buildClusters();
-  renderArms(); renderSituation(); renderClusters(); renderHotEntities();
+  renderArms(); renderSituation(); renderClusters(); renderHotEntities(); renderHeadlines();
 }
 async function pullAll(){
   $('refreshBtn').classList.add('spin'); $('refreshBtn').textContent='🐙 שולח זרועות…';

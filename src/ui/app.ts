@@ -189,7 +189,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="wm-hg">HEAVY GUARD OS</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v325 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="wm-hg">HEAVY GUARD OS</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v326 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip apps-chip" id="appsBtn" title="האפליקציות שלי" aria-label="האפליקציות שלי">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="12" cy="19" r="2"/><circle cx="19" cy="19" r="2"/></svg>
@@ -2662,9 +2662,9 @@ export function mountApp(root: HTMLElement) {
       if (el2) el2.innerHTML = matchLine || 'אין נתוני משחקים זמינים כרגע.';
     };
 
-    type TabKey = 'mine' | 'discover' | 'schedule';
+    type TabKey = 'mine' | 'discover' | 'schedule' | 'news';
     let activeTab: TabKey = 'mine';
-    const TABS: [TabKey, string][] = [['mine', '⭐ הקבוצות שלי'], ['discover', '🌍 גלה קבוצות'], ['schedule', '📅 לוח משחקים']];
+    const TABS: [TabKey, string][] = [['mine', '⭐ הקבוצות שלי'], ['discover', '🌍 גלה קבוצות'], ['schedule', '📅 לוח משחקים'], ['news', '📰 חדשות']];
     const tabBarHtml = () => `
       <div style="display:flex;gap:5px;padding:4px;background:rgba(0,0,0,.25);border-radius:14px">
         ${TABS.map(([key, label]) => `
@@ -2874,9 +2874,66 @@ export function mountApp(root: HTMLElement) {
         </div>`).join('');
     };
 
+    // ── sports headlines — the same free RSS-through-CORS-proxy technique
+    // OCTOPUS uses, scoped to sport desks. Cached for 5 minutes so tab
+    // flips don't refetch; fully graceful offline (shows what it has).
+    type SportsNewsItem = { src: string; title: string; link: string; at: number };
+    let sportsNewsCache: { at: number; items: SportsNewsItem[] } | null = null;
+    const SPORTS_FEEDS: [string, string][] = [
+      ['ynet ספורט', 'https://www.ynet.co.il/Integration/StoryRss5.xml'],
+      ['ESPN', 'https://www.espn.com/espn/rss/news'],
+      ['BBC Sport', 'http://feeds.bbci.co.uk/sport/rss.xml'],
+      ['Sky Sports', 'https://www.skysports.com/rss/12040'],
+    ];
+    const pullSportsNews = async (): Promise<SportsNewsItem[]> => {
+      if (sportsNewsCache && Date.now() - sportsNewsCache.at < 300000) return sportsNewsCache.items;
+      const all = await Promise.allSettled(SPORTS_FEEDS.map(async ([src, url]) => {
+        const ctl = new AbortController();
+        const t = setTimeout(() => ctl.abort(), 9000);
+        try {
+          const r = await fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(url), { signal: ctl.signal });
+          if (!r.ok) return [];
+          const doc = new DOMParser().parseFromString(await r.text(), 'text/xml');
+          return [...doc.querySelectorAll('item')].slice(0, 10).map((it) => ({
+            src,
+            title: (it.querySelector('title')?.textContent || '').trim(),
+            link: (it.querySelector('link')?.textContent || '#').trim(),
+            at: Date.parse(it.querySelector('pubDate')?.textContent || '') || Date.now(),
+          })).filter((x) => x.title);
+        } catch { return []; } finally { clearTimeout(t); }
+      }));
+      const items = all.flatMap((p) => p.status === 'fulfilled' ? p.value : []).sort((a, b) => b.at - a.at).slice(0, 30);
+      if (items.length) sportsNewsCache = { at: Date.now(), items };
+      return items;
+    };
+    const sportsAgo = (at: number) => {
+      const m = Math.max(0, Math.round((Date.now() - at) / 60000));
+      return m < 60 ? `לפני ${m} ד׳` : m < 1440 ? `לפני ${Math.round(m / 60)} ש׳` : `לפני ${Math.round(m / 1440)} ימים`;
+    };
+    const renderSportsNews = async () => {
+      $('winBody').innerHTML = `
+        <div class="pad" style="display:flex;flex-direction:column;gap:14px">
+          ${tabBarHtml()}
+          <div id="shNewsList" style="display:flex;flex-direction:column;gap:8px">
+            <div style="text-align:center;padding:16px;color:var(--dim);font-size:12.5px">📡 מושך כותרות ספורט מ-${SPORTS_FEEDS.length} מקורות…</div>
+          </div>
+        </div>`;
+      bindTabBar();
+      const items = await pullSportsNews();
+      const listEl = document.getElementById('shNewsList');
+      if (!listEl || activeTab !== 'news') return;
+      if (!items.length) { listEl.innerHTML = '<div style="text-align:center;padding:24px;color:var(--dim);font-size:13px">אין חיבור למקורות החדשות כרגע — נסו רענון בעוד רגע.</div>'; return; }
+      listEl.innerHTML = items.map((n, i) => `
+        <a href="${esc(n.link)}" target="_blank" rel="noopener" style="display:block;text-decoration:none;color:inherit;padding:${i === 0 ? '14px' : '10px'} 12px;border-radius:12px;background:var(--glass-hover);border:1px solid var(--glass-border)${i === 0 ? ';border-right:3px solid #daa520' : ''}">
+          <div style="font-size:${i === 0 ? '15px' : '12.5px'};font-weight:${i === 0 ? '800' : '700'};line-height:1.35">${i === 0 ? '🔥 ' : ''}${esc(n.title)}</div>
+          <div style="font-size:10px;color:var(--dim);margin-top:3px">${esc(n.src)} · ${sportsAgo(n.at)}</div>
+        </a>`).join('');
+    };
+
     const renderActiveTab = () => {
       if (activeTab === 'mine') renderMyTeams();
       else if (activeTab === 'discover') renderDiscover();
+      else if (activeTab === 'news') renderSportsNews();
       else renderSchedule();
     };
 

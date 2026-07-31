@@ -100,6 +100,13 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 #sessStat{font-size:10px;color:var(--dim)}
 .wallet-row{display:flex;justify-content:space-between;gap:8px;margin:8px 0;padding:7px 9px;
   background:rgba(255,209,102,.06);border:1px solid rgba(255,209,102,.2)}
+.alert-row{display:flex;align-items:center;gap:7px;margin:7px 0 3px;font-size:11px}
+.alert-row input{flex:1;min-width:0;background:rgba(6,12,26,.7);color:var(--txt);border:1px solid rgba(0,240,255,.22);
+  padding:6px 8px;font-size:12px;font-family:'Orbitron',monospace;direction:ltr}
+.alert-row input::placeholder{font-family:'Heebo',sans-serif;color:var(--dim)}
+.alert-row button{flex:none;background:rgba(0,240,255,.1);border:1px solid rgba(0,240,255,.35);color:var(--cyan);
+  font-size:11px;font-weight:700;cursor:pointer;padding:6px 12px;font-family:'Heebo',sans-serif}
+.alert-row button.armed{background:rgba(255,209,102,.12);border-color:var(--gold);color:var(--gold)}
 .wallet-row>div{text-align:center;flex:1}
 .wallet-row .wk{display:block;font-size:9px;color:var(--dim);letter-spacing:.5px;margin-bottom:2px}
 .wallet-row b{font-size:13px}
@@ -440,6 +447,11 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
       <div><span class="wk">יתרה בארנק</span><b id="walletBal" class="num">$0</b></div>
       <div><span class="wk">שווי כולל</span><b id="walletEq" class="num up">$0</b></div>
     </div>
+    <div class="alert-row">
+      <span class="tk">🔔 התראת מחיר</span>
+      <input id="alertPrice" type="number" inputmode="decimal" placeholder="מחיר יעד">
+      <button id="alertSet" title="קבע התראה כשהמחיר חוצה את היעד">קבע</button>
+    </div>
     <div id="sugBox">
       <div class="trow"><span class="tk">כניסה</span><span class="tv num" id="tEntry">—</span></div>
       <div class="trow"><span class="tk">יעד רווח</span><span class="tv num" id="tTp">—</span></div>
@@ -730,6 +742,36 @@ function loadPositions(){
 let positions=loadPositions();
 function savePositions(){ try{ localStorage.setItem('na:positions',JSON.stringify(positions)); }catch{} }
 let tradeMargin=500, tradeLev=5;
+// ---------- custom price alerts — one armed target per symbol. Fires once
+// when the live price CROSSES the target (direction recorded at arm time,
+// so "alert me at 130k" from below only fires on the way up), then clears.
+function loadPriceAlerts(){
+  try{ const raw=JSON.parse(localStorage.getItem('na:priceAlerts')||'null'); if(raw&&typeof raw==='object') return raw; }catch{}
+  return {};
+}
+const priceAlerts=loadPriceAlerts();
+function savePriceAlerts(){ try{ localStorage.setItem('na:priceAlerts',JSON.stringify(priceAlerts)); }catch{} }
+function renderAlertRow(){
+  const a=priceAlerts[state.sym], btn=$('alertSet'), inp=$('alertPrice');
+  if(!btn) return;
+  btn.textContent=a?'בטל':'קבע';
+  btn.classList.toggle('armed',!!a);
+  inp.placeholder=a? 'יעד: '+fmtP(a.price) : 'מחיר יעד';
+  if(!a) inp.value='';
+}
+function checkPriceAlerts(){
+  for(const sym of Object.keys(priceAlerts)){
+    const a=priceAlerts[sym], lp=livePriceFor(sym);
+    if(lp==null) continue;
+    const crossed = a.fromBelow? lp>=a.price : lp<=a.price;
+    if(crossed){
+      delete priceAlerts[sym]; savePriceAlerts();
+      ensureAC(); beep([[880,0.12],[1174,0.16],[880,0.12]]);
+      toast(`🔔 ${sym} חצה את יעד ההתראה ${fmtP(a.price)} · עכשיו ${fmtP(lp)}`, a.fromBelow?'up':'down');
+      if(sym===state.sym) renderAlertRow();
+    }
+  }
+}
 function livePriceFor(sym){
   if(sym===state.sym) return state.lastPrice||null;
   const p=pods.find(x=>(x.kind==='crypto'||x.kind==='stock')&&x.id===sym);
@@ -1420,6 +1462,7 @@ function renderTicket(){
   $('sessStat').textContent = session.trades
     ? `${session.pnl>=0?'+':'−'}$${Math.abs(session.pnl).toFixed(0)} · ${session.trades}`
     : '';
+  renderAlertRow();
 }
 function renderPortfolio(){
   const list=$('pfList'); if(!list) return;
@@ -1446,6 +1489,14 @@ function renderPortfolio(){
 $('btnLong').addEventListener('click',()=>openPos('long'));
 $('btnShort').addEventListener('click',()=>openPos('short'));
 $('btnClose').addEventListener('click',()=>{ if(positions[state.sym]) closePos(state.sym,'manual'); });
+$('alertSet').addEventListener('click',()=>{
+  if(priceAlerts[state.sym]){ delete priceAlerts[state.sym]; savePriceAlerts(); renderAlertRow(); toast('התראת המחיר בוטלה'); return; }
+  const v=parseFloat($('alertPrice').value);
+  if(!isFinite(v)||v<=0||!state.lastPrice){ toast('הזן מחיר יעד תקין','down'); return; }
+  priceAlerts[state.sym]={price:v, fromBelow:state.lastPrice<v, at:Date.now()};
+  savePriceAlerts(); renderAlertRow();
+  toast(`🔔 התראה נקבעה: ${state.sym} @ ${fmtP(v)}`,'up');
+});
 $('szMargin').addEventListener('input',e=>{ tradeMargin=parseInt(e.target.value,10); $('szMarginV').textContent='$'+tradeMargin; });
 $('levBtns').querySelectorAll('button').forEach(b=>{
   b.onclick=()=>{ tradeLev=parseInt(b.dataset.lev,10);
@@ -3278,6 +3329,7 @@ function loop(){
     gfxGuard(dt);
     if(indDirty && now-lastInd>350){ computeSignals(); indDirty=false; lastInd=now; }
     checkAllPositions();
+    checkPriceAlerts();
     updateWorld(dt,now);
     updatePods(dt,now);
     applyCam(dt);
