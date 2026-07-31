@@ -226,6 +226,23 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 #mapCv{display:block;width:min(76vw,280px);height:min(76vw,280px);cursor:crosshair}
 #mapPanel .mp-close{margin-top:8px;font-size:12px;color:var(--dim);cursor:pointer;padding:5px}
 #mapPanel .mp-close:hover{color:var(--txt)}
+/* ── price chart panel — a real, readable candlestick chart drawn straight
+   from state.candles (the exact OHLC feed already driving the battle), so
+   the abstract 3D metaphor always has a plain, analyzable chart one tap
+   away. Deliberately plain/high-contrast: this is the "just show me the
+   numbers clearly" surface, not another neon showpiece. ── */
+#chartPanel{position:fixed;z-index:33;top:50%;left:50%;transform:translate(-50%,-50%);
+  width:min(94vw,680px);padding:14px 16px 12px;text-align:center}
+#chartPanel .cp-h{display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap}
+#chartPanel #cpSym{font-size:15px;font-weight:700;color:var(--txt);letter-spacing:.5px}
+#chartPanel #cpTf{font-size:11px;color:var(--cyan);border:1px solid rgba(0,240,255,.3);padding:2px 8px}
+#chartPanel #cpBadge{font-size:10px;color:var(--dim);letter-spacing:.3px;margin-inline-end:auto}
+#chartCv{display:block;width:100%;height:min(52vh,360px);cursor:crosshair;background:rgba(2,4,10,.4);border-radius:6px}
+#chartPanel .cp-legend{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;margin-top:10px;font-size:11.5px;color:var(--dim)}
+#chartPanel .cp-legend b{color:var(--txt);font-weight:700;margin-inline-start:4px}
+#chartPanel .cp-legend .sw{display:inline-block;width:8px;height:8px;border-radius:2px;margin-inline-end:5px;vertical-align:middle}
+#chartPanel .cp-legend .sw.hi{background:var(--up)} #chartPanel .cp-legend .sw.lo{background:var(--down)}
+#chartPanel .cp-legend .sw.now{background:var(--gold)}
 .mobTab{display:none}
 @media (max-width:720px), (max-height:520px){
   #top{padding:6px 8px;gap:8px}
@@ -260,6 +277,8 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
   #hint{display:none}
   #banner{left:8px;right:8px;transform:none;width:auto}
   #worldPanel{top:8px;max-height:84vh}
+  #chartPanel{top:8px;transform:translateX(-50%);width:94vw}
+  #chartPanel #cpBadge{display:none}
   #joyHint{bottom:calc(30px + env(safe-area-inset-bottom))}
 }
 @media (max-height:520px){
@@ -380,6 +399,9 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
     <div class="tgl" id="btnMap" title="מפת העולם — הקשה מטלפרטת">
       <span style="font-size:15px">🗺️</span><span style="font-size:8px">מפה</span>
     </div>
+    <div class="tgl" id="btnChart" title="גרף נרות מלא — הנתונים האמיתיים שמניעים את הקרב">
+      <span style="font-size:15px">📊</span><span style="font-size:8px">גרף</span>
+    </div>
     <div class="tgl on" id="btnAuto" title="טיסה אוטומטית">
       <svg viewBox="0 0 24 24"><path d="M12 3l3 7h6l-5 4 2 7-6-4-6 4 2-7-5-4h6z"/></svg><span>טיסה</span>
     </div>
@@ -409,6 +431,21 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
   <div class="mp-h">🗺️ מפת העולם — הקשה על זירה מטלפרטת</div>
   <canvas id="mapCv" width="280" height="280"></canvas>
   <div class="mp-close" id="mapClose">✕ סגור</div>
+</div>
+<div id="chartPanel" class="panel clip" style="display:none">
+  <div class="cp-h">
+    <span id="cpSym" class="num">BTC/USDT</span>
+    <span id="cpTf" class="num">1m</span>
+    <span id="cpBadge">נתוני אמת · אותם נרות שמניעים את הקרב</span>
+    <button class="mp-close" id="chartClose">✕</button>
+  </div>
+  <canvas id="chartCv"></canvas>
+  <div class="cp-legend">
+    <span><i class="sw hi"></i>גבוה <b id="cpHi" class="num">—</b></span>
+    <span><i class="sw lo"></i>נמוך <b id="cpLo" class="num">—</b></span>
+    <span><i class="sw now"></i>אחרון <b id="cpLast" class="num">—</b></span>
+    <span>נרות <b id="cpN" class="num">0</b></span>
+  </div>
 </div>
 <div class="mobTab panel clip" id="oracleTab">🔮</div>
 <div class="mobTab panel clip" id="ticketTab">🎫</div>
@@ -2018,6 +2055,98 @@ function setMap(on){
   if(on){ drawMap(); mapTimer=setInterval(drawMap,500); }
 }
 
+// ---- price chart panel — a real, readable candlestick chart drawn directly
+// from state.candles (the SAME OHLC series that drives the abstract battle
+// visualization) plus the live estimated price, so the numbers behind the
+// battle are always one tap away in plain, analyzable form: gridlines with
+// price labels, colored candle bodies + wicks, a live "now" price line, and
+// high/low/last stat chips. High-DPI aware; redraws at 2Hz while open. ----
+let chartOpen=false, chartTimer=null;
+function niceStep(range,target){
+  const raw=range/target;
+  const mag=Math.pow(10,Math.floor(Math.log10(Math.max(1e-9,raw))));
+  const norm=raw/mag;
+  const step=(norm<1.5?1:norm<3?2:norm<7?5:10)*mag;
+  return step||1;
+}
+function drawChart(){
+  const cv=$('chartCv'); if(!cv) return;
+  const rect=cv.getBoundingClientRect();
+  const dpr=Math.min(2,window.devicePixelRatio||1);
+  const W=Math.max(280,Math.round(rect.width)), H=Math.max(160,Math.round(rect.height));
+  if(cv.width!==W*dpr||cv.height!==H*dpr){ cv.width=W*dpr; cv.height=H*dpr; }
+  const g=cv.getContext('2d');
+  g.setTransform(dpr,0,0,dpr,0,0);
+  g.clearRect(0,0,W,H);
+  const cs=state.candles;
+  $('cpSym').textContent=state.sym+' / USDT';
+  $('cpTf').textContent=(TFS.find(t=>t[0]===state.tf)||[,state.tf])[1];
+  if(!cs||cs.length<2){
+    g.fillStyle='rgba(157,196,216,.5)'; g.font="13px 'Heebo',sans-serif"; g.textAlign='center';
+    g.fillText('טוען נתוני נרות…',W/2,H/2);
+    return;
+  }
+  const dec=(SYMBOLS[state.sym]||{}).dec??2;
+  const padL=8,padR=64,padT=10,padB=20;
+  const plotW=W-padL-padR, plotH=H-padT-padB;
+  let hi=-Infinity,lo=Infinity;
+  for(const c of cs){ if(c.h>hi) hi=c.h; if(c.l<lo) lo=c.l; }
+  const last=state.lastPrice||cs[cs.length-1].c;
+  hi=Math.max(hi,last); lo=Math.min(lo,last);
+  const span=Math.max(1e-9,hi-lo), pad=span*0.08;
+  hi+=pad; lo-=pad;
+  const yFor2=p=>padT+(1-(p-lo)/(hi-lo))*plotH;
+  const cw=plotW/cs.length;
+  // gridlines + price labels — the core "read it at a glance" upgrade
+  g.strokeStyle='rgba(0,240,255,.10)'; g.fillStyle='rgba(157,196,216,.7)';
+  g.font="10.5px 'JetBrains Mono',monospace"; g.textAlign='left'; g.textBaseline='middle';
+  const step=niceStep(hi-lo,5);
+  const first=Math.ceil(lo/step)*step;
+  for(let p=first;p<=hi;p+=step){
+    const y=yFor2(p);
+    g.beginPath(); g.moveTo(padL,y); g.lineTo(padL+plotW,y); g.stroke();
+    g.fillText(p.toLocaleString('en-US',{maximumFractionDigits:dec}),padL+plotW+6,y);
+  }
+  // candles
+  cs.forEach((c,i)=>{
+    const x=padL+i*cw+cw/2;
+    const up=c.c>=c.o;
+    g.strokeStyle=g.fillStyle=up?'#00ffa6':'#ff3d6e';
+    g.lineWidth=1;
+    g.beginPath(); g.moveTo(x,yFor2(c.h)); g.lineTo(x,yFor2(c.l)); g.stroke();
+    const yo=yFor2(c.o),yc=yFor2(c.c);
+    const bw=Math.max(1.5,cw*0.62);
+    g.fillRect(x-bw/2,Math.min(yo,yc),bw,Math.max(1,Math.abs(yc-yo)));
+  });
+  // live price line — dashed gold, with a value tag on the right margin
+  const ly=yFor2(last);
+  g.save();
+  g.strokeStyle='rgba(255,209,102,.8)'; g.setLineDash([4,4]); g.lineWidth=1;
+  g.beginPath(); g.moveTo(padL,ly); g.lineTo(padL+plotW,ly); g.stroke();
+  g.restore();
+  g.fillStyle='#02141a'; g.fillRect(padL+plotW+2,ly-8,padR-6,16);
+  g.strokeStyle='rgba(255,209,102,.6)'; g.strokeRect(padL+plotW+2,ly-8,padR-6,16);
+  g.fillStyle='#ffd166'; g.font="10.5px 'JetBrains Mono',monospace"; g.textAlign='left'; g.textBaseline='middle';
+  g.fillText(last.toLocaleString('en-US',{maximumFractionDigits:dec}),padL+plotW+6,ly);
+  // time axis — first/last candle labels
+  g.fillStyle='rgba(157,196,216,.55)'; g.font="9.5px 'JetBrains Mono',monospace"; g.textBaseline='alphabetic';
+  g.textAlign='left'; g.fillText(fmtT(cs[0].t),padL,H-6);
+  g.textAlign='right'; g.fillText(fmtT(cs[cs.length-1].t),padL+plotW,H-6);
+  // legend chips
+  $('cpHi').textContent=(hi-pad).toLocaleString('en-US',{maximumFractionDigits:dec});
+  $('cpLo').textContent=(lo+pad).toLocaleString('en-US',{maximumFractionDigits:dec});
+  $('cpLast').textContent=last.toLocaleString('en-US',{maximumFractionDigits:dec});
+  $('cpN').textContent=cs.length;
+}
+function setChart(on){
+  chartOpen=on;
+  $('chartPanel').style.display=on?'block':'none';
+  $('btnChart').classList.toggle('on',on);
+  if(chartTimer){ clearInterval(chartTimer); chartTimer=null; }
+  if(on){ drawChart(); chartTimer=setInterval(drawChart,500); }
+}
+addEventListener('resize',()=>{ if(chartOpen) drawChart(); });
+
 // ---- world picker UI ----
 function buildWorldUI(){
   const wp=$('worldPanel');
@@ -2154,6 +2283,8 @@ $('ticketTab').onclick=()=>{ const t=$('ticket'); const on=!t.classList.contains
 $('btnTour').onclick=()=>{ setTour(!tour.on); };
 $('btnMap').onclick=()=>{ setMap(!mapOpen); };
 $('mapClose').onclick=()=>{ setMap(false); };
+$('btnChart').onclick=()=>{ setChart(!chartOpen); };
+$('chartClose').onclick=()=>{ setChart(false); };
 $('mapCv').addEventListener('pointerdown',e=>{
   const cv=$('mapCv'), r=cv.getBoundingClientRect();
   const mx=(e.clientX-r.left)*(cv.width/r.width), my=(e.clientY-r.top)*(cv.height/r.height);
