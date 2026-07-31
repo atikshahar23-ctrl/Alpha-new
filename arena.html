@@ -191,6 +191,29 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 #focusPlate b{display:block;font-size:14px;letter-spacing:.5px}
 #focusPlate .num{display:block;font-size:16px;font-weight:700;margin-top:2px}
 #focusPlate i{display:block;font-size:10px;color:var(--gold);margin-top:3px;font-style:normal;letter-spacing:1px}
+/* ticker tape */
+#tape{position:fixed;z-index:9;bottom:0;left:0;right:0;height:26px;overflow:hidden;
+  background:linear-gradient(0deg,rgba(3,6,14,.92),rgba(3,6,14,.55));border-top:1px solid rgba(0,240,255,.18);
+  direction:ltr;pointer-events:none}
+#tapeIn{position:absolute;white-space:nowrap;font-size:12px;line-height:26px;padding-left:100%;
+  animation:tapeMove 40s linear infinite;font-family:'Orbitron',monospace}
+@keyframes tapeMove{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+#tape .tp b{color:#bfeeff;font-weight:600;letter-spacing:.5px}
+#tape .tup{color:var(--up);font-style:normal} #tape .tdn{color:var(--down);font-style:normal}
+#tape .tsep{color:rgba(0,240,255,.35);margin:0 12px}
+/* world pulse */
+#pulsePanel{position:fixed;z-index:12;top:104px;left:16px;width:198px;padding:10px 12px}
+#pulsePanel .pp-h{font-size:11px;letter-spacing:2px;color:var(--magenta);font-weight:600;margin-bottom:6px}
+.pl-row{display:flex;align-items:center;gap:7px;font-size:12px;padding:4px 2px;cursor:pointer;border-radius:3px}
+.pl-row:hover{background:rgba(0,240,255,.08)}
+.pl-row .dot{width:7px;height:7px;border-radius:50%;flex:none}
+.pl-row b{flex:1;font-weight:600;color:#bfeeff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pl-row i{font-style:normal;font-weight:700;font-size:11px}
+.tup{color:var(--up)} .tdn{color:var(--down)}
+/* focus plate internals */
+#focusPlate #fpSpark{display:block;margin:6px auto 2px;width:230px;height:44px}
+#focusPlate #fpStats{font-size:10px;color:var(--dim);letter-spacing:.4px;margin-top:3px}
+@media (max-width:720px){ #pulsePanel{display:none} }
 #joyHint{position:fixed;z-index:20;bottom:calc(8px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);
   font-size:10px;color:var(--dim);letter-spacing:1px;pointer-events:none}
 </style>
@@ -315,6 +338,8 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
   <div id="hint">גרירה — סיבוב · צביטה — זום · הקשה כפולה — טיסה · הבזק ירוק = קנייה אמיתית · אדום = מכירה</div>
 </div>
 
+<div id="tape"><div id="tapeIn"></div></div>
+<div id="pulsePanel" class="panel clip"><div class="pp-h">💓 דופק העולם</div><div id="pulseList"></div></div>
 <div id="worldPanel" class="panel clip" style="display:none"></div>
 <div id="focusPlate" class="panel clip" style="display:none"></div>
 <div id="joyHint" style="display:none">אצבע ימין — תנועה · אצבע שמאל — מבט</div>
@@ -1387,6 +1412,8 @@ function startPodFeeds(){
         const sym=d.s.replace('USDT','');
         const p=pods.find(x=>x.kind==='crypto'&&x.id===sym); if(!p) return;
         p.price=+d.c; p.chg=((+d.c)-(+d.o))/(+d.o)*100; p.sim=false;
+        p.hi=+d.h; p.lo=+d.l; p.volQ=+d.q;
+        podHist(p);
       };
       ws.onerror=()=>{ cryptoPodSim(); };
     }catch(e){ cryptoPodSim(); }
@@ -1406,6 +1433,8 @@ function startPodFeeds(){
         p.price=meta.regularMarketPrice;
         const prev=meta.chartPreviousClose||meta.previousClose||p.price;
         p.chg=prev?((p.price-prev)/prev*100):0; p.sim=false;
+        p.hi=meta.regularMarketDayHigh||null; p.lo=meta.regularMarketDayLow||null;
+        podHist(p);
       }catch(e){ if(p.price==null){ p.sim=true; p.price=WORLD_STOCKS[p.id].base*(1+rnd(-0.01,0.01)); p.chg=rnd(-1.6,1.6); } }
     };
     podTimers.push(setTimeout(pull, i*700));
@@ -1454,6 +1483,7 @@ function pmAssign(){
     const m=pmMarkets[i%pmMarkets.length]; if(!m) return;
     p.extra=m; p.sim=m.sim;
     p.price=m.prob*100; p.chg=(m.prob-0.5)*40;
+    p.volQ=m.vol; podHist(p);
     const q=m.q.length>34? m.q.slice(0,32)+'…' : m.q;
     p.nameS.draw(q, '#ff2fd6', "700 30px 'Heebo', sans-serif");
   });
@@ -1465,12 +1495,22 @@ function fmtPodVal(p){
   return '$'+p.price.toLocaleString('en-US',{minimumFractionDigits:dec>2?2:dec,maximumFractionDigits:dec})
     +' '+(p.chg>=0?'+':'')+p.chg.toFixed(2)+'%'+(p.sim?' · SIM':'');
 }
+// rolling per-pod price history (feeds the holo sparkline + info plate)
+function podHist(p){
+  const nowT=performance.now();
+  if(p._histAt && nowT-p._histAt<2200) return;
+  p._histAt=nowT;
+  if(!p.hist) p.hist=[];
+  p.hist.push(p.price);
+  if(p.hist.length>90) p.hist.shift();
+}
 function updatePods(dt,now){
   const t=now*0.001;
   for(const p of pods){
     if(p.sim && p.price!=null){ // gentle offline drift so sim pods stay alive
       p.price*=1+Math.sin(t*0.6+p.phase)*0.00015;
       p.chg+=Math.sin(t*0.35+p.phase)*0.002;
+      podHist(p);
     }
     const up=p.chg>=0;
     tmpC.copy(up?C_UP:C_DN);
@@ -1486,6 +1526,74 @@ function updatePods(dt,now){
     }
   }
   updateWalk(dt);
+  updateMoodSky(dt);
+  updateComets(dt);
+  if(now-lastTape>5000){ lastTape=now; renderTape(); renderPulse(); }
+}
+// market-mood sky: the whole heaven leans green on a rising world and red on
+// a falling one — ambient information you can FEEL
+const moodC=new THREE.Color(0x040711);
+function updateMoodSky(dt){
+  let sum=0,n=0;
+  for(const p of pods){ if(p.price!=null){ sum+=clamp(p.chg,-6,6); n++; } }
+  const mood=n? sum/n/6 : 0; // -1..1
+  tmpC.setRGB(0.016+Math.max(0,-mood)*0.05, 0.028+Math.max(0,mood)*0.05, 0.043);
+  moodC.lerp(tmpC,1-Math.pow(0.2,dt));
+  if(scene.fog) scene.fog.color.copy(moodC);
+  halo1.material.color.lerp(mood>=0?C_UP:C_DN, 0.02);
+}
+// comets — slow shooting stars for pure magic
+const comets=[];
+for(let ci=0;ci<3;ci++){
+  const cm=new THREE.Sprite(new THREE.SpriteMaterial({map:glowTex,color:0xbfefff,transparent:true,opacity:0,blending:THREE.AdditiveBlending,depthWrite:false}));
+  cm.scale.set(6,2.2,1); scene.add(cm);
+  comets.push({sp:cm,vx:0,vy:0,vz:0,life:0,delay:rnd(4,14)});
+}
+function updateComets(dt){
+  for(const c of comets){
+    if(c.life<=0){
+      c.delay-=dt; if(c.delay>0) continue;
+      c.delay=rnd(6,18); c.life=rnd(2.4,4);
+      c.sp.position.set(rnd(-320,320), rnd(120,220), rnd(-320,320));
+      c.vx=rnd(-55,55); c.vy=rnd(-16,-7); c.vz=rnd(-55,55);
+    }
+    c.life-=dt;
+    c.sp.position.x+=c.vx*dt; c.sp.position.y+=c.vy*dt; c.sp.position.z+=c.vz*dt;
+    c.sp.material.opacity=clamp(Math.min(c.life,0.8),0,0.8)*0.7;
+  }
+}
+// ticker tape — every market in the world, scrolling like a trading floor
+let lastTape=0;
+function renderTape(){
+  const tp=document.getElementById('tapeIn'); if(!tp) return;
+  const cells=pods.filter(p=>p.price!=null).map(p=>{
+    const up=p.chg>=0;
+    const nm=p.kind==='pm'?(p.extra?p.extra.q.slice(0,26):'PM'):(p.kind==='crypto'?p.id:p.label);
+    return '<span class="tp"><b>'+nm+'</b> <i class="'+(up?'tup':'tdn')+'">'+fmtPodVal(p)+'</i></span>';
+  }).join('<span class="tsep">◆</span>');
+  if(!cells){ tp.innerHTML=''; return; }
+  tp.innerHTML=cells+'<span class="tsep">◆</span>'+cells+'<span class="tsep">◆</span>';
+}
+// world pulse — top movers; tapping one teleports you to its pod
+function renderPulse(){
+  const pl=document.getElementById('pulseList'); if(!pl) return;
+  const live=pods.filter(p=>p.price!=null&&p.kind!=='pm');
+  const sorted=live.slice().sort((a,b)=>b.chg-a.chg);
+  const rows=sorted.slice(0,3).concat(sorted.slice(-2)).filter((v,i,arr)=>arr.indexOf(v)===i);
+  pl.innerHTML=rows.map(p=>{
+    const up=p.chg>=0;
+    return '<div class="pl-row" data-pod="'+p.id+'"><span class="dot" style="background:'+p.dot+'"></span><b>'+(p.kind==='crypto'?p.id:p.label)+'</b><i class="num '+(up?'tup':'tdn')+'">'+(up?'+':'')+p.chg.toFixed(2)+'%</i></div>';
+  }).join('');
+  pl.querySelectorAll('.pl-row').forEach(r=>{
+    r.onclick=()=>{
+      const p=pods.find(x=>x.id===r.dataset.pod); if(!p) return;
+      if(!walk.on) setWalk(true);
+      const dir=p.g.position.clone().normalize();
+      walk.pos.set(p.g.position.x+dir.x*9, 2.3, p.g.position.z+dir.z*9);
+      walk.yaw=Math.atan2(walk.pos.x-p.g.position.x, walk.pos.z-p.g.position.z);
+      toast('🛸 טלפורט אל '+(p.kind==='crypto'?p.id:p.label));
+    };
+  });
 }
 
 // ---- first-person walk mode ----
@@ -1511,14 +1619,46 @@ function applyWalkCam(dt){
   camera.lookAt(walk.pos.x - Math.sin(walk.yaw)*cp, walk.pos.y + Math.sin(walk.pitch), walk.pos.z - Math.cos(walk.yaw)*cp);
   focusNearestPod();
 }
+let fpPodId=null, fpSparkAt=0;
 function focusNearestPod(){
   let best=null, bd=1e9;
   for(const p of pods){ const d=p.g.position.distanceTo(walk.pos); if(d<bd){ bd=d; best=p; } }
   const plate=$('focusPlate');
   if(best && bd<12){
     plate.style.display='block';
-    plate.innerHTML='<b style="color:'+best.dot+'">'+ (best.kind==='pm'? (best.extra?best.extra.q:'Polymarket') : best.label) +'</b><span class="num" style="color:'+(best.chg>=0?'var(--up)':'var(--down)')+'">'+fmtPodVal(best)+'</span>'
-      + (best.kind==='crypto' && best.id!==state.sym && SYMBOLS[best.id] ? '<i>כניסה לזירה…</i>' : best.kind==='crypto' && best.id===state.sym ? '<i>הזירה הפעילה</i>' : '');
+    if(fpPodId!==best.id){ // rebuild skeleton only when the pod changes
+      fpPodId=best.id;
+      plate.innerHTML='<b id="fpName"></b><span class="num" id="fpVal"></span>'
+        +'<canvas id="fpSpark" width="230" height="44"></canvas>'
+        +'<div id="fpStats"></div><i id="fpHint"></i>';
+      fpSparkAt=0;
+    }
+    const up=best.chg>=0;
+    const nameEl=$('fpName'), valEl=$('fpVal');
+    nameEl.textContent=best.kind==='pm'? (best.extra?best.extra.q:'Polymarket') : best.label;
+    nameEl.style.color=best.dot;
+    valEl.textContent=fmtPodVal(best);
+    valEl.style.color=up?'var(--up)':'var(--down)';
+    // rich stats line — the accessible-info layer
+    const stats=[];
+    if(best.hi!=null&&best.lo!=null) stats.push('גבוה '+(+best.hi).toLocaleString('en-US',{maximumFractionDigits:2})+' · נמוך '+(+best.lo).toLocaleString('en-US',{maximumFractionDigits:2}));
+    if(best.volQ) stats.push('מחזור '+fmtUsd(best.volQ));
+    if(best.sim) stats.push('SIM');
+    $('fpStats').textContent=stats.join('  ·  ');
+    $('fpHint').textContent = best.kind==='crypto' && best.id!==state.sym && SYMBOLS[best.id] ? 'כניסה לזירה…'
+      : best.kind==='crypto' && best.id===state.sym ? 'הזירה הפעילה' : '';
+    // holo sparkline of the pod's rolling history (throttled)
+    const nowT=performance.now();
+    if(best.hist && best.hist.length>2 && nowT-fpSparkAt>300){
+      fpSparkAt=nowT;
+      const cv=$('fpSpark'), g=cv.getContext('2d');
+      g.clearRect(0,0,cv.width,cv.height);
+      const h=best.hist, mn=Math.min.apply(null,h), mx=Math.max.apply(null,h), rng=Math.max(1e-9,mx-mn);
+      g.beginPath();
+      h.forEach((v,i)=>{ const x=i/(h.length-1)*cv.width, y=cv.height-4-((v-mn)/rng)*(cv.height-8); i?g.lineTo(x,y):g.moveTo(x,y); });
+      g.strokeStyle=up?'#00ffa6':'#ff3d6e'; g.lineWidth=2;
+      g.shadowColor=g.strokeStyle; g.shadowBlur=8; g.stroke();
+    }
     // walking INTO a crypto pod re-aims the central battle arena at it
     if(best.kind==='crypto' && bd<6 && best.id!==state.sym && SYMBOLS[best.id]){
       const nowT=performance.now();
