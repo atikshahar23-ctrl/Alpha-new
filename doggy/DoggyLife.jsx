@@ -527,6 +527,35 @@ const ProgressBar = ({ pct, color = C.amber }) => (
   </div>
 );
 
+/* One search field for every list in the app — same look as the animal-index
+   search, plus a clear (X) button so touch users aren't stuck backspacing */
+const hitQ = (query, ...fields) => {
+  const q = String(query || "").trim().toLowerCase();
+  return !q || fields.join(" ").toLowerCase().includes(q);
+};
+
+const SearchBox = ({ value, onChange, placeholder }) => (
+  <div className="relative mb-3">
+    <Search size={15} className="absolute top-1/2 -translate-y-1/2 right-3 pointer-events-none" style={{ color: C.inkSoft }} />
+    <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} type="search" inputMode="search"
+      className="w-full rounded-xl border pr-9 pl-9 py-2.5 text-[13px] outline-none focus:border-[#D98E32]"
+      style={{ borderColor: "#EFE6D6", background: "#FCFAF4" }} />
+    {value && (
+      <button onClick={() => onChange("")} aria-label="ניקוי חיפוש"
+        className="absolute top-1/2 -translate-y-1/2 left-2 w-6 h-6 rounded-full flex items-center justify-center"
+        style={{ background: "#EFE6D6", color: C.inkSoft }}>
+        <X size={13} />
+      </button>
+    )}
+  </div>
+);
+
+const NoResults = ({ q }) => (
+  <p className="text-[12.5px] text-center py-4" style={{ color: C.inkSoft }}>
+    לא נמצאו תוצאות ל-"{q}" 🐾
+  </p>
+);
+
 /* ---------- Main App ---------- */
 export default function DoggyLife() {
   const [tab, setTab] = useState("home");
@@ -595,6 +624,14 @@ export default function DoggyLife() {
   /* Animal index */
   const [idxSearch, setIdxSearch] = useState("");
   const [openCat, setOpenCat] = useState("dogs");
+
+  /* Per-category search — one query per tab so switching tabs keeps context */
+  const [parkSearch, setParkSearch] = useState("");
+  const [shopSearch, setShopSearch] = useState("");
+  const [foodSearch, setFoodSearch] = useState("");
+  const [trainSearch, setTrainSearch] = useState("");
+  const [orgSearch, setOrgSearch] = useState("");
+  const [matchSearch, setMatchSearch] = useState("");
 
   /* Dashboard */
   const [firstWeek, setFirstWeek] = useState(FIRST_WEEK_INIT);
@@ -1251,8 +1288,10 @@ export default function DoggyLife() {
             {/* Pooch Coach */}
             <Card className="p-4">
               <SectionTitle icon={Trophy}>Pooch Coach · מודולי אימון</SectionTitle>
+              <SearchBox value={trainSearch} onChange={setTrainSearch} placeholder='חיפוש אימון או תרגיל: שב, נשיכה, שירותים...' />
               <div className="space-y-2.5">
-                {TRAINING.map((m) => {
+                {!TRAINING.some((m) => hitQ(trainSearch, m.title, m.level, m.steps.join(" "))) && <NoResults q={trainSearch} />}
+                {TRAINING.filter((m) => hitQ(trainSearch, m.title, m.level, m.steps.join(" "))).map((m) => {
                   const open = openModule === m.id;
                   const done = Object.values(stepDone[m.id] || {}).filter(Boolean).length;
                   const pct = (done / m.steps.length) * 100;
@@ -1447,8 +1486,9 @@ export default function DoggyLife() {
           <>
             <Card className="p-4">
               <SectionTitle icon={Trees}>גינות כלבים בסביבה</SectionTitle>
+              <SearchBox value={parkSearch} onChange={setParkSearch} placeholder='חיפוש פארק, מתקן או קבוצה: מגודר, ברזיית מים, גולדנים...' />
               <div className="space-y-3">
-                {parks.map((p) => {
+                {parks.filter((p) => hitQ(parkSearch, p.name, p.dist, p.features.join(" "))).map((p) => {
                   const inHere = checkedIn === p.id;
                   return (
                     <div key={p.id} className="rounded-xl border p-3" style={{ borderColor: inHere ? C.pine : "#EFE6D6", background: inHere ? "#F4F9F6" : "#fff" }}>
@@ -1477,6 +1517,7 @@ export default function DoggyLife() {
                     </div>
                   );
                 })}
+                {!parks.some((p) => hitQ(parkSearch, p.name, p.dist, p.features.join(" "))) && <NoResults q={parkSearch} />}
               </div>
             </Card>
 
@@ -1500,7 +1541,8 @@ export default function DoggyLife() {
               )}
 
               <div className="space-y-2.5">
-                {groups.map((g) => (
+                {!groups.some((g) => hitQ(parkSearch, g.name, g.when)) && <NoResults q={parkSearch} />}
+                {groups.filter((g) => hitQ(parkSearch, g.name, g.when)).map((g) => (
                   <div key={g.id} className="flex items-center gap-3 rounded-xl border p-3" style={{ borderColor: "#EFE6D6" }}>
                     <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg shrink-0" style={{ background: C.blueSoft }}>🐶</div>
                     <div className="flex-1 min-w-0">
@@ -1524,6 +1566,7 @@ export default function DoggyLife() {
           <>
             <Card className="p-4">
               <SectionTitle icon={Gift}>לוח שיתוף אוכל שכונתי</SectionTitle>
+              <SearchBox value={foodSearch} onChange={setFoodSearch} placeholder='חיפוש בלוח ובמרכז הידע: מזון, חטיפים, שוקולד...' />
               <div className="flex gap-2 mb-3">
                 <input value={newListing} onChange={(e) => setNewListing(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addListing()}
                   placeholder='מה יש לכם לשתף? למשל: "שק מזון פתוח"'
@@ -1531,7 +1574,8 @@ export default function DoggyLife() {
                 <button onClick={addListing} className="rounded-lg px-4 text-[12.5px] font-extrabold text-white" style={{ background: C.amber }}>פרסום</button>
               </div>
               <div className="space-y-2.5">
-                {listings.map((l) => (
+                {!listings.some((l) => hitQ(foodSearch, l.title, l.note, l.user, l.tag, l.price)) && <NoResults q={foodSearch} />}
+                {listings.filter((l) => hitQ(foodSearch, l.title, l.note, l.user, l.tag, l.price)).map((l) => (
                   <div key={l.id} className="rounded-xl border p-3" style={{ borderColor: "#EFE6D6", opacity: l.claimed ? 0.65 : 1 }}>
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
@@ -1568,13 +1612,14 @@ export default function DoggyLife() {
                 </button>
               </div>
               <div className="grid grid-cols-2 gap-2">
-                {(knowledgeTab === "toxic" ? TOXIC : HEALTHY).map((f) => (
+                {(knowledgeTab === "toxic" ? TOXIC : HEALTHY).filter((f) => hitQ(foodSearch, f)).map((f) => (
                   <div key={f} className="rounded-lg px-3 py-2 text-[12.5px] font-semibold flex items-center gap-2"
                     style={{ background: knowledgeTab === "toxic" ? "#FDF3F1" : "#F2F8F4", color: knowledgeTab === "toxic" ? C.red : C.pine }}>
                     {knowledgeTab === "toxic" ? "⛔" : "✅"} {f}
                   </div>
                 ))}
               </div>
+              {!(knowledgeTab === "toxic" ? TOXIC : HEALTHY).some((f) => hitQ(foodSearch, f)) && <NoResults q={foodSearch} />}
               <p className="mt-3 text-[11.5px] rounded-lg p-2.5 leading-relaxed" style={{ background: C.blueSoft, color: "#2F5A73" }}>
                 💡 טיפ: מעבר בין סוגי מזון עושים בהדרגה לאורך 7 ימים — מערבבים מהחדש עם הישן ביחס גדל, כדי למנוע בעיות עיכול.
               </p>
@@ -1587,8 +1632,10 @@ export default function DoggyLife() {
           <>
             <Card className="p-4">
               <SectionTitle icon={ShoppingBag}>חנויות מומלצות בסביבה</SectionTitle>
+              <SearchBox value={shopSearch} onChange={setShopSearch} placeholder="חיפוש חנות: שם, מרחק או התמחות..." />
               <div className="space-y-2.5">
-                {SHOPS.map((s) => (
+                {!SHOPS.some((s) => hitQ(shopSearch, s.name, s.dist, s.note)) && <NoResults q={shopSearch} />}
+                {SHOPS.filter((s) => hitQ(shopSearch, s.name, s.dist, s.note)).map((s) => (
                   <div key={s.id} className="flex items-center gap-3 rounded-xl border p-3" style={{ borderColor: "#EFE6D6" }}>
                     <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg shrink-0" style={{ background: C.amberSoft }}>🏪</div>
                     <div className="flex-1 min-w-0">
@@ -1709,6 +1756,8 @@ export default function DoggyLife() {
                 טבלת התאמה
               </SectionTitle>
 
+              <SearchBox value={matchSearch} onChange={setMatchSearch} placeholder='חיפוש גזע או תכונה בטבלה: פודל, רגוע, קטן...' />
+
               {/* header row */}
               <div className="grid grid-cols-[1fr_auto_auto_auto] gap-2 px-3 pb-1.5 text-[10px] font-extrabold" style={{ color: C.inkSoft }}>
                 <span>גזע / מין</span>
@@ -1718,7 +1767,8 @@ export default function DoggyLife() {
               </div>
 
               <div className="rounded-xl border overflow-hidden" style={{ borderColor: "#EFE6D6" }}>
-                {ranked.map((p, i) => {
+                {!ranked.some((p) => hitQ(matchSearch, p.name, p.size, p.life, p.note || "")) && <NoResults q={matchSearch} />}
+                {ranked.filter((p) => hitQ(matchSearch, p.name, p.size, p.life, p.note || "")).map((p, i) => {
                   const open = openBreed === p.name;
                   const tone = p.score >= 85 ? C.pine : p.score >= 65 ? C.amber : C.red;
                   const toneBg = p.score >= 85 ? C.pineSoft : p.score >= 65 ? C.amberSoft : C.redSoft;
@@ -1799,8 +1849,10 @@ export default function DoggyLife() {
             {/* NGO list */}
             <Card className="p-4">
               <SectionTitle icon={HeartHandshake}>עמותות למען בעלי חיים</SectionTitle>
+              <SearchBox value={orgSearch} onChange={setOrgSearch} placeholder='חיפוש עמותה, עיר, תחום או הטבה: אימוץ, וטרינר, חיפה...' />
               <div className="space-y-3">
-                {ORGS.map((o) => {
+                {!ORGS.some((o) => hitQ(orgSearch, o.name, o.city, o.desc, o.focus.join(" "))) && <NoResults q={orgSearch} />}
+                {ORGS.filter((o) => hitQ(orgSearch, o.name, o.city, o.desc, o.focus.join(" "))).map((o) => {
                   const active = donations[o.id];
                   const sel = pickAmount[o.id] ?? AMOUNTS[1];
                   return (
@@ -1861,7 +1913,8 @@ export default function DoggyLife() {
                 עסקים מקומיים שבחרו לתת הנחה לתורמים קבועים — הם מקבלים חשיפה בקהילה, אתם חוסכים, והעמותות מקבלות תמיכה יציבה. כולם מרוויחים 🐾
               </p>
               <div className="space-y-2.5">
-                {BENEFITS.map((b) => (
+                {!BENEFITS.some((b) => hitQ(orgSearch, b.name, b.kind, b.deal)) && <NoResults q={orgSearch} />}
+                {BENEFITS.filter((b) => hitQ(orgSearch, b.name, b.kind, b.deal)).map((b) => (
                   <div key={b.id} className="rounded-xl border p-3" style={{ borderColor: "#EFE6D6", opacity: isDonor ? 1 : 0.75 }}>
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg shrink-0" style={{ background: C.amberSoft }}>{b.icon}</div>
