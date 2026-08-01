@@ -189,6 +189,17 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 #ticket::after{background:linear-gradient(90deg,transparent,rgba(255,209,102,.85),transparent)}
 @keyframes edgeSheen{0%,100%{opacity:.2}50%{opacity:.95}}
 
+#fundPanel{position:fixed;z-index:34;top:50%;left:50%;transform:translate(-50%,-50%);
+  width:min(480px,92vw);padding:16px 18px}
+#fundPanel .fd-row{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;
+  padding:8px 10px;border-radius:9px;cursor:pointer;border:1px solid transparent}
+#fundPanel .fd-row.on{background:rgba(0,240,255,.07);border-color:rgba(0,240,255,.25)}
+#fundPanel .fd-row:hover{background:rgba(0,240,255,.05)}
+#fundPanel .fd-name{font-size:12.5px;color:var(--txt);font-weight:600}
+#fundPanel .fd-val{font-size:15px;font-weight:700}
+#fundPanel .fd-cls{font-size:10.5px}
+#fundExp{margin-top:12px;padding:11px 13px;border:1px dashed rgba(0,240,255,.25);border-radius:10px;
+  font-size:12.5px;line-height:1.7;color:var(--txt)}
 /* cinema mode: pure 3D, HUD hidden (toggles stay so you can exit) */
 body.cinema #oracle,body.cinema #pricePanel,body.cinema #ticket,body.cinema #pulsePanel,
 body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important}
@@ -637,6 +648,12 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
   <div id="hint">גרירה — סיבוב · צביטה — זום · הקשה כפולה — טיסה · הבזק ירוק = קנייה אמיתית · אדום = מכירה</div>
 </div>
 
+<div id="fundPanel" class="panel clip" style="display:none">
+  <div class="lg-h"><span>🧮 פונדמנטלס · <span id="fundSym"></span></span><button class="mp-close" id="fundClose" style="margin-inline-start:auto">✕</button></div>
+  <div id="fundRows"></div>
+  <div id="fundExp"></div>
+  <div class="disc" style="margin-top:10px">נתוני ייחוס ≈ · להמחשה ולימוד בלבד · אינם ייעוץ השקעות</div>
+</div>
 <div id="mapPanel" class="panel clip" style="display:none">
   <div class="mp-h">🗺️ מפת העולם — הקשה על זירה מטלפרטת</div>
   <canvas id="mapCv" width="280" height="280"></canvas>
@@ -2145,6 +2162,16 @@ world.add(priceHolo.sp);
 const nowRing=new THREE.Mesh(new THREE.TorusGeometry(6.6,0.05,6,72),
   new THREE.MeshBasicMaterial({color:0x00f0ff,transparent:true,opacity:0.75,blending:THREE.AdditiveBlending,depthWrite:false}));
 nowRing.rotation.x=Math.PI/2; world.add(nowRing);
+// fundamental satellites — P/E · P/B · P/S · EPS orbiting the focused stock,
+// tappable for a full explanation. Hidden for crypto/indices/commodities.
+const FUND_KINDS=['pe','pb','ps','eps'];
+const fundSats=FUND_KINDS.map((kind,i)=>{
+  const lb=textSprite(300,72,10.5,2.5);
+  lb.sp.userData.fundKind=kind;
+  lb.sp.visible=false;
+  world.add(lb.sp);
+  return {kind,lb,off:[3.4,1.15,-1.15,-3.4][i]};
+});
 
 // verdict hologram above the column
 const verdictHolo=textSprite(512,128,22,5.5);
@@ -2370,6 +2397,17 @@ function updateWorld(dt,now){
   nowRing.position.y=yH;
   nowRing.material.color.copy(tmpC);
   nowRing.material.opacity=0.55+0.2*Math.sin(t*2.4);
+  const fnd=state.market==='stock'? FUNDAMENTALS[state.sym] : null;
+  fundSats.forEach((fs,i)=>{
+    fs.lb.sp.visible=!!fnd;
+    if(!fnd) return;
+    const a=t*0.16+i*Math.PI/2;
+    fs.lb.sp.position.set(Math.cos(a)*12.5, yH+fs.off, Math.sin(a)*12.5);
+    const v=fnd[fs.kind], cls=fundClass(fs.kind,v);
+    const vTxt=v==null?'—':fs.kind==='eps'?('$'+v.toFixed(2)):v.toFixed(1);
+    const kName={pe:'P/E',pb:'P/B',ps:'P/S',eps:'EPS'}[fs.kind];
+    fs.lb.draw(kName+'  '+vTxt+' · '+cls.t, cls.c, "700 26px 'Heebo', sans-serif", true);
+  });
   priceHolo.sp.position.set(-9.8,yH+2.4,0);
   priceHolo.draw('עכשיו  '+fmtP(state.lastPrice), mom>=0?'#00ffa6':'#ff3d6e', "700 52px 'Orbitron', monospace", true);
 
@@ -2634,6 +2672,55 @@ const WORLD_STOCKS = {
   GE:   {name:'GE Aerospace', dot:'#0870d8', base:196, vol:0.0007, lot:250, big:190, dec:2},
   T:    {name:'AT&T',       dot:'#00a8e0', base:23,  vol:0.0004, lot:1600, big:1240,dec:2},
   VZ:   {name:'Verizon',    dot:'#cd040b', base:41,  vol:0.0004, lot:1200, big:930, dec:2},
+};
+// ---- fundamentals per equity (reference values, early 2026) ----
+// pe=P/E (trailing), pb=P/B, ps=P/S, eps=trailing EPS in $.
+// null = not meaningful (loss-making / negative equity).
+const FUNDAMENTALS={
+  AAPL:{pe:32,pb:47,ps:8.5,eps:7.4},   NVDA:{pe:48,pb:50,ps:26,eps:2.9},
+  MSFT:{pe:34,pb:11,ps:12.5,eps:12.9}, GOOGL:{pe:24,pb:7,ps:6.5,eps:8.0},
+  AMZN:{pe:42,pb:8.5,ps:3.9,eps:5.3},  META:{pe:27,pb:9,ps:10,eps:23.5},
+  AMD:{pe:45,pb:4,ps:8.6,eps:3.1},     INTC:{pe:null,pb:0.9,ps:1.9,eps:-1.2},
+  ORCL:{pe:42,pb:38,ps:9.5,eps:4.4},   CRM:{pe:52,pb:5.4,ps:8.5,eps:6.4},
+  ADBE:{pe:42,pb:16,ps:11,eps:12.4},   NFLX:{pe:46,pb:18,ps:10.5,eps:20},
+  PYPL:{pe:19,pb:4,ps:2.7,eps:4.3},    UBER:{pe:32,pb:12,ps:3.4,eps:2.2},
+  SHOP:{pe:90,pb:13,ps:15,eps:1.25},   IBM:{pe:38,pb:8.5,ps:3.5,eps:6.3},
+  QCOM:{pe:18,pb:7,ps:4.6,eps:9.3},    TXN:{pe:38,pb:10.5,ps:11.5,eps:5.2},
+  AVGO:{pe:95,pb:16,ps:20,eps:2.5},    MU:{pe:28,pb:2.6,ps:4.6,eps:3.7},
+  JPM:{pe:14.5,pb:2.4,ps:4.4,eps:17.1},BAC:{pe:14,pb:1.3,ps:3.5,eps:3.3},
+  GS:{pe:15.5,pb:1.9,ps:4.2,eps:38.7}, V:{pe:32,pb:16,ps:17.5,eps:10},
+  MA:{pe:38,pb:65,ps:18.5,eps:13.7},   'BRK-B':{pe:23,pb:1.6,ps:2.8,eps:20.5},
+  JNJ:{pe:22,pb:5.4,ps:4.3,eps:7.0},   PFE:{pe:18,pb:1.6,ps:2.4,eps:1.45},
+  UNH:{pe:33,pb:5.1,ps:1.2,eps:15.5},  LLY:{pe:75,pb:55,ps:17,eps:10.4},
+  ABBV:{pe:60,pb:50,ps:5.8,eps:3.0},   XOM:{pe:14.5,pb:1.9,ps:1.4,eps:8.1},
+  CVX:{pe:16,pb:1.8,ps:1.5,eps:9.9},   WMT:{pe:38,pb:8.2,ps:1.1,eps:2.4},
+  COST:{pe:55,pb:16,ps:1.6,eps:17},    KO:{pe:26,pb:10.5,ps:5.8,eps:2.4},
+  PEP:{pe:22,pb:11,ps:2.3,eps:6.9},    MCD:{pe:26,pb:null,ps:8.3,eps:11.5},
+  NKE:{pe:25,pb:8,ps:2.3,eps:3.0},     DIS:{pe:22,pb:2,ps:2.2,eps:5.1},
+  HD:{pe:26,pb:66,ps:2.6,eps:15},      TSLA:{pe:200,pb:17,ps:13.5,eps:2.1},
+  BA:{pe:null,pb:null,ps:1.6,eps:-5.6},CAT:{pe:17,pb:9.5,ps:2.8,eps:21.9},
+  GE:{pe:38,pb:11,ps:5.5,eps:5.2},     T:{pe:12,pb:1.5,ps:1.3,eps:1.9},
+  VZ:{pe:10,pb:1.7,ps:1.3,eps:4.1},
+};
+// one consistent visual language for expensive AND cheap: green=low/cheap,
+// amber=typical, red=high/expensive, grey=not meaningful
+function fundClass(kind,v){
+  if(v==null||!isFinite(v)) return {t:kind==='eps'?'—':'לא רלוונטי',c:'#8a94a8'};
+  if(kind==='eps') return v>=0?{t:'רווחית',c:'#00ffa6'}:{t:'הפסדית',c:'#ff3d6e'};
+  const th={pe:[15,30],pb:[1.5,5],ps:[2,6]}[kind];
+  return v<th[0]?{t:'נמוך · זול יחסית',c:'#00ffa6'}
+       : v<=th[1]?{t:'סביר',c:'#ffd166'}
+       : {t:'גבוה · יקר יחסית',c:'#ff3d6e'};
+}
+const FUND_INFO={
+  pe:{name:'P/E · מכפיל רווח', what:'כמה דולרים משלמים על כל דולר רווח שנתי. המדד הקלאסי לתמחור.',
+      read:'מתחת ל-15 נחשב זול יחסית · 15–30 טווח סביר · מעל 30 יקר יחסית (או שהשוק מצפה לצמיחה גדולה). חברה מפסידה — אין מכפיל.'},
+  pb:{name:'P/B · מכפיל הון', what:'שווי השוק ביחס להון העצמי בספרים. חשוב במיוחד בבנקים ובחברות עתירות נכסים.',
+      read:'מתחת ל-1.5 זול יחסית · 1.5–5 סביר · מעל 5 יקר יחסית. בחברות טכנולוגיה המכפיל טבעית גבוה בהרבה.'},
+  ps:{name:'P/S · מכפיל מכירות', what:'שווי השוק ביחס להכנסות. שימושי כשעדיין אין רווח יציב.',
+      read:'מתחת ל-2 זול יחסית · 2–6 סביר · מעל 6 יקר יחסית — השוק מתמחר צמיחה חזקה בהכנסות.'},
+  eps:{name:'EPS · רווח למניה', what:'כמה דולרים של רווח נקי מיוצרים עבור כל מניה בשנה.',
+      read:'חיובי = חברה רווחית; ככל שגבוה יותר ביחס למחיר המניה, המכפיל (P/E) נמוך יותר. שלילי = הפסד.'},
 };
 const WORLD_KEY='na:world:v1';
 let worldSel=(()=>{ try{ const w=JSON.parse(localStorage.getItem(WORLD_KEY)); if(w && w.crypto) return w; }catch(e){}
@@ -3646,6 +3733,7 @@ function setLog(on){
 }
 $('btnLog').onclick=()=>{ setLog(!logOpen); };
 $('logClose').onclick=()=>{ setLog(false); };
+$('fundClose').onclick=()=>{ $('fundPanel').style.display='none'; };
 $('btnCandle').onclick=()=>{ setCandlePanel($('candlePanel').style.display!=='block'); };
 $('candleClose').onclick=()=>{ setCandlePanel(false); };
 $('caAiBtn').onclick=runAgentAI;
@@ -3847,11 +3935,37 @@ function endPtr(e){
   ptrs.delete(e.pointerId);
   if(ptrs.size<2) lastPinch=0;
   if(ptrs.size===0 && !moved){
+    // a tap on a fundamental satellite opens its explanation instead of
+    // toggling auto-flight
+    if(fundSats[0].lb.sp.visible){
+      const rc=new THREE.Raycaster();
+      rc.setFromCamera(new THREE.Vector2((e.clientX/innerWidth)*2-1,-(e.clientY/innerHeight)*2+1),camera);
+      const hits=rc.intersectObjects(fundSats.map(f=>f.lb.sp));
+      if(hits.length){ openFundPanel(hits[0].object.userData.fundKind); return; }
+    }
     const now=performance.now();
     if(now-lastTap<300){ state.auto=!state.auto; syncAutoBtn(); lastTap=0; }
     else lastTap=now;
   }
 }
+function openFundPanel(kind){
+  const fnd=FUNDAMENTALS[state.sym]; if(!fnd) return;
+  const pnl=$('fundPanel');
+  $('fundSym').textContent=symCfg(state.sym)?.name||state.sym;
+  $('fundRows').innerHTML=FUND_KINDS.map(k=>{
+    const v=fnd[k], cls=fundClass(k,v);
+    const vTxt=v==null?'—':k==='eps'?('$'+v.toFixed(2)):v.toFixed(1);
+    return '<div class="fd-row'+(k===kind?' on':'')+'" data-k="'+k+'">'
+      +'<span class="fd-name">'+FUND_INFO[k].name+'</span>'
+      +'<span class="fd-val num" style="color:'+cls.c+'">'+vTxt+'</span>'
+      +'<span class="fd-cls" style="color:'+cls.c+'">'+cls.t+'</span></div>';
+  }).join('');
+  const info=FUND_INFO[kind];
+  $('fundExp').innerHTML='<b>'+info.name+'</b><br>'+info.what+'<br><span style="color:var(--dim)">'+info.read+'</span>';
+  pnl.style.display='block';
+  pnl.querySelectorAll('.fd-row').forEach(r=>{ r.onclick=()=>openFundPanel(r.dataset.k); });
+}
+window.__naFund=openFundPanel; // debug/test hook, same pattern as __naDebug
 el.addEventListener('pointerup',endPtr);
 el.addEventListener('pointercancel',endPtr);
 el.addEventListener('wheel',e=>{
