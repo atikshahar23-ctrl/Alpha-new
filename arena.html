@@ -3,6 +3,24 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta http-equiv="Pragma" content="no-cache" />
+<meta http-equiv="Expires" content="0" />
+<script>
+/* Same cache/service-worker purge index.html already does. Without it an
+   iPad can keep serving a stale copy of THIS page, which then loads an old
+   JS bundle — the reason freshly-shipped fixes appeared not to work on
+   device even though the deploy had gone out. */
+(function(){
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.getRegistrations().then(function(rs){rs.forEach(function(r){r.unregister();});}).catch(function(){});
+  }
+  if('caches' in window){
+    caches.keys().then(function(ks){ks.forEach(function(k){caches.delete(k);});}).catch(function(){});
+  }
+})();
+</script>
+
 <title>NEXUS·ARENA — זירת הקרב של השוק</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <!-- non-blocking: media=print keeps the webfont off the critical path (it was holding first paint hostage on slow/cellular iPads); onload swaps it in -->
@@ -395,7 +413,16 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
   #focusPlate{bottom:calc(150px + env(safe-area-inset-bottom));min-width:0;width:min(88vw,260px);padding:8px 12px}
   #focusPlate #fpSpark{width:200px;height:38px}
   #hint{display:none}
-  #banner{left:8px;right:8px;transform:none;width:auto}
+  /* The banner hides itself by translating off the top and slides in only
+     while a signal is live. This rule used to say `transform:none`, which
+     cancelled that hiding transform — so on phones an EMPTY banner sat
+     permanently at top:70px, covering the symbol pills. Positioned with
+     left/right here, so the hidden state only needs the Y translate. */
+  /* -160% of the banner's OWN height isn't enough to clear top:70px once it
+     wraps narrow, which left a sliver of empty panel stuck at the top edge.
+     Subtracting a fixed 80px as well hides it fully at any height. */
+  #banner{left:8px;right:8px;transform:translateY(calc(-100% - 80px));width:auto}
+  #banner.show{transform:translateY(0)}
   #worldPanel{top:8px;max-height:84vh}
   #chartPanel{top:8px;transform:translateX(-50%);width:94vw}
   #chartPanel #cpBadge{display:none}

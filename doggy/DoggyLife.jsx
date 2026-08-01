@@ -84,8 +84,20 @@ const loadRoster = (fallback) => {
   } catch {}
   return { roster: fallback, activeId: fallback[0].id };
 };
+// Returns null on success, or a human-readable reason. A silent catch here
+// would let pets vanish on reload with nothing to tell the owner why, so the
+// caller surfaces the failure — and we first retry without photos, since the
+// photos are the only large part and half a save beats none.
 const saveRoster = (roster, activeId) => {
-  try { localStorage.setItem(ROSTER_KEY, JSON.stringify({ roster, activeId })); } catch {}
+  const write = (r) => localStorage.setItem(ROSTER_KEY, JSON.stringify({ roster: r, activeId }));
+  try { write(roster); return null; } catch (e) {
+    try {
+      write(roster.map((p) => ({ ...p, photo: null })));
+      return "אין מספיק מקום בדפדפן לתמונות — הפרטים נשמרו, התמונות לא.";
+    } catch {
+      return "הדפדפן חוסם שמירה מקומית (למשל גלישה פרטית) — השינויים לא יישמרו אחרי רענון.";
+    }
+  }
 };
 
 /* ---------- Mock data ---------- */
@@ -524,7 +536,8 @@ export default function DoggyLife() {
   const [persisted] = useState(() => loadRoster(ROSTER_INIT));
   const [roster, setRoster] = useState(persisted.roster);
   const [activeId, setActiveId] = useState(persisted.activeId);
-  useEffect(() => { saveRoster(roster, activeId); }, [roster, activeId]);
+  const [saveWarn, setSaveWarn] = useState("");
+  useEffect(() => { setSaveWarn(saveRoster(roster, activeId) || ""); }, [roster, activeId]);
   const P = roster.find((p) => p.id === activeId) ?? roster[0];
   const fem = P.sex === "נקבה";
   const petAdoptionDate = new Date(Date.now() - P.adoptedDaysAgo * DAY);
@@ -2147,6 +2160,12 @@ export default function DoggyLife() {
             {/* My pets */}
             <Card className="p-4">
               <SectionTitle icon={PawPrint} extra={<Chip tone="amber">{roster.length} חיות</Chip>}>החיות שלי</SectionTitle>
+              {saveWarn && (
+                <div className="mb-3 rounded-xl p-3 text-[12px] font-bold flex items-start gap-2"
+                  style={{ background: C.redSoft, color: C.red, border: `1px solid ${C.red}33` }}>
+                  <AlertTriangle size={15} className="shrink-0 mt-[1px]" /><span>{saveWarn}</span>
+                </div>
+              )}
               <div className="space-y-2.5">
                 {roster.map((p) => {
                   const on = p.id === activeId;

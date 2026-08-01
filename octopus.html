@@ -3,6 +3,24 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta http-equiv="Pragma" content="no-cache" />
+<meta http-equiv="Expires" content="0" />
+<script>
+/* Same cache/service-worker purge index.html already does. Without it an
+   iPad can keep serving a stale copy of THIS page, which then loads an old
+   JS bundle — the reason freshly-shipped fixes appeared not to work on
+   device even though the deploy had gone out. */
+(function(){
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.getRegistrations().then(function(rs){rs.forEach(function(r){r.unregister();});}).catch(function(){});
+  }
+  if('caches' in window){
+    caches.keys().then(function(ks){ks.forEach(function(k){caches.delete(k);});}).catch(function(){});
+  }
+})();
+</script>
+
 <title>OCTOPUS · מנוע חדשות עתידני</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <!-- non-blocking: media=print keeps the webfont off the critical path (it was holding first paint hostage on slow/cellular iPads); onload swaps it in -->
