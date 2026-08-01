@@ -721,9 +721,9 @@ const ARM_GROUPS=[
   ]],
   ['עולם', ['🌍',0x7fb3d5], [
     ['BBC World', 'http://feeds.bbci.co.uk/news/world/rss.xml'],
-    ['Reuters World', 'https://www.reutersagency.com/feed/?best-topics=world&post_type=best'],
+    ['Al Jazeera', 'https://www.aljazeera.com/xml/rss/all.xml'],
     ['Guardian World', 'https://www.theguardian.com/world/rss'],
-    ['AP World', 'https://rsshub.app/apnews/topics/world-news'],
+    ['NPR World', 'https://feeds.npr.org/1004/rss.xml'],
     ['France24', 'https://www.france24.com/en/rss'],
     ['DW', 'https://rss.dw.com/rdf/rss-en-all'],
   ]],
@@ -755,6 +755,19 @@ const ARM_GROUPS=[
     ['Variety', 'https://variety.com/feed/'],
     ['Hollywood Reporter', 'https://www.hollywoodreporter.com/feed/'],
     ['Deadline', 'https://deadline.com/feed/'],
+  ]],
+  ['אסיה ואוקיאניה', ['🌏',0x4dd2ff], [
+    ['SCMP', 'https://www.scmp.com/rss/91/feed'],
+    ['Times of India', 'https://timesofindia.indiatimes.com/rssfeedstopstories.cms'],
+    ['ABC Australia', 'https://www.abc.net.au/news/feed/51120/rss.xml'],
+    ['Japan Times', 'https://www.japantimes.co.jp/feed/'],
+  ]],
+  ['אירופה ואמריקות', ['🗺️',0xffa94d], [
+    ['Euronews', 'https://www.euronews.com/rss'],
+    ['Sky News World', 'https://feeds.skynews.com/feeds/rss/world.xml'],
+    ['CNN World', 'http://rss.cnn.com/rss/edition_world.rss'],
+    ['CBC World', 'https://www.cbc.ca/webfeed/rss/rss-world'],
+    ['Politico Europe', 'https://www.politico.eu/feed/'],
   ]],
 ];
 // flattened source list — kept for the arm-status dots / live counter, in
@@ -889,24 +902,50 @@ const isNewCluster=c=>!firstVisit&&!prevSeen.has(seenKey(c.head.title));
 // ---------- per-source health counters (rendered in the settings panel)
 let timeFilterH=0;
 
-async function pullOneSource(i){
-  const [name,url]=ARMS[i];
-  try{
-    const r=await fetchT('https://api.allorigins.win/raw?url='+encodeURIComponent(url),9000);
-    if(!r.ok) throw 0;
-    const doc=new DOMParser().parseFromString(await r.text(),'text/xml');
-    const got=[...doc.querySelectorAll('item')].slice(0,10).map(it=>({
+// Several public CORS relays instead of one: a single dead / rate-limited /
+// cache-happy proxy was the reason the same headlines kept coming back — if
+// one relay fails or returns stale XML, the next takes over. Each source
+// remembers which relay served it last (sticky), and the allorigins URL gets
+// a timestamp param so its edge cache can never freeze a feed.
+const CORS_PROXIES=[
+  u=>'https://api.allorigins.win/raw?url='+encodeURIComponent(u)+'&_ts='+Math.floor(Date.now()/60000),
+  u=>'https://corsproxy.io/?url='+encodeURIComponent(u),
+  u=>'https://api.codetabs.com/v1/proxy?quest='+encodeURIComponent(u),
+  u=>'https://cors.isomorphic-git.org/'+u,
+];
+const srcProxyPref=ARMS.map(()=>0);
+// RSS <item> AND Atom <entry> — The Verge, Politico and other Atom feeds
+// used to fail silently because only <item> was parsed
+function parseFeedDoc(doc,name){
+  return [...doc.querySelectorAll('item,entry')].slice(0,10).map(it=>{
+    const linkEl=it.querySelector('link');
+    return {
       src:name,
       title:(it.querySelector('title')?.textContent||'').trim(),
-      link:(it.querySelector('link')?.textContent||'#').trim(),
-      desc:(it.querySelector('description')?.textContent||'').replace(/<[^>]*>/g,' ').trim().slice(0,400),
-      at:Date.parse(it.querySelector('pubDate')?.textContent||'')||Date.now(),
-    })).filter(x=>x.title);
-    if(!got.length) throw 0;
-    armState[i]='ok';
-    srcStats[i].ok++; srcStats[i].last=Date.now();
-    return got;
-  }catch(e){ armState[i]='off'; srcStats[i].fail++; return []; }
+      link:((linkEl?.getAttribute('href'))||linkEl?.textContent||'#').trim(),
+      desc:((it.querySelector('description')||it.querySelector('summary')||it.querySelector('content'))?.textContent||'')
+        .replace(/<[^>]*>/g,' ').trim().slice(0,400),
+      at:Date.parse((it.querySelector('pubDate')||it.querySelector('updated')||it.querySelector('published'))?.textContent||'')||Date.now(),
+    };
+  }).filter(x=>x.title);
+}
+async function pullOneSource(i){
+  const [name,url]=ARMS[i];
+  const start=srcProxyPref[i];
+  for(let k=0;k<CORS_PROXIES.length;k++){
+    const pi=(start+k)%CORS_PROXIES.length;
+    try{
+      const r=await fetchT(CORS_PROXIES[pi](url),k===0?8000:5500);
+      if(!r.ok) throw 0;
+      const got=parseFeedDoc(new DOMParser().parseFromString(await r.text(),'text/xml'),name);
+      if(!got.length) throw 0;
+      srcProxyPref[i]=pi;
+      armState[i]='ok';
+      srcStats[i].ok++; srcStats[i].last=Date.now();
+      return got;
+    }catch(e){ /* next relay */ }
+  }
+  armState[i]='off'; srcStats[i].fail++; return [];
 }
 // One tentacle per thematic group: all sources in the group are pulled in
 // parallel, and armPulling[groupIdx] flags the 3D octopus to reach that arm
