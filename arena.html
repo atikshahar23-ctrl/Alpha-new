@@ -207,6 +207,18 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 .tgl:hover{border-color:rgba(0,240,255,.55);box-shadow:0 0 14px rgba(0,240,255,.18)}
 #mapLegend{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;margin:9px 2px 4px;font-size:10.5px;color:var(--dim)}
 #mapLegend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-inline-end:5px;vertical-align:middle}
+/* live positions strip — every running trade, always on screen */
+#posStrip{position:fixed;z-index:29;bottom:88px;left:50%;transform:translateX(-50%);
+  display:flex;gap:7px;flex-wrap:wrap;justify-content:center;max-width:92vw}
+.ps-chip{display:flex;align-items:center;gap:6px;padding:6px 11px;border-radius:999px;cursor:pointer;
+  font-size:11.5px;font-weight:700;color:var(--txt);
+  background:rgba(4,10,20,.78);border:1px solid rgba(0,240,255,.3);
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 4px 14px rgba(0,0,0,.4)}
+.ps-chip.focused{border-color:rgba(255,209,102,.7)}
+.ps-chip .num{font-size:12px}
+body.cinema #posStrip{display:flex!important}
+@media (max-width:720px){ #posStrip{bottom:104px} .ps-chip{font-size:10.5px;padding:5px 9px} }
 /* live commentator caption bar — the sports-caster line over the arena */
 #commBar{position:fixed;z-index:30;bottom:46px;left:50%;transform:translateX(-50%);
   max-width:min(680px,92vw);display:flex;align-items:center;gap:9px;
@@ -668,6 +680,7 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
 
   <div id="vignette" aria-hidden="true"></div>
   <div id="banner" class="panel clip"><span id="bIcon">⚡</span><span id="bTxt"></span></div>
+  <div id="posStrip" style="display:none"></div>
   <div id="commBar" class="panel clip" style="display:none"><span id="commIc">🎙️</span><span id="commTxt"></span></div>
   <div id="toast" class="panel clip"></div>
   <div id="hint">גרירה — סיבוב · צביטה — זום · הקשה כפולה — טיסה · הבזק ירוק = קנייה אמיתית · אדום = מכירה</div>
@@ -790,8 +803,10 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 window.THREE = THREE_NS;
-window.__FX = { EffectComposer, RenderPass, UnrealBloomPass, OutputPass };
+window.__FX = { EffectComposer, RenderPass, UnrealBloomPass, OutputPass, ShaderPass, SMAAPass };
 window.dispatchEvent(new Event('three-ready'));
 </script>
 <script>
@@ -1901,17 +1916,23 @@ function commTick(){
     if(Math.abs(sc)<20&&Math.abs(commPrev.score)>=20) lines.push({p:6,t:'Signal cooled off — back to wait mode. A genius trader knows: no trade IS a trade.'});
   }
 
-  // ---- position coaching: when to close (genius risk management) ----
-  if(P){
-    const pct=posPnlPct(P,state.sym);
-    const tpSpan=Math.abs(P.tp-P.entry)||1e-9, slSpan=Math.abs(P.entry-P.sl)||1e-9;
-    const toTp=P.side==='long'?(P.tp-lp)/tpSpan:(lp-P.tp)/tpSpan;
-    const toSl=P.side==='long'?(lp-P.sl)/slSpan:(P.sl-lp)/slSpan;
-    if(toTp<=0.15&&toTp>0) lines.push({p:13,t:'Almost at target! Take the money — close it here or trail your stop to breakeven. Never let a winner turn into a loser.'});
-    else if(toSl<=0.25&&toSl>0) lines.push({p:13,t:'Careful! Price is breathing on your stop. No immediate reclaim — cut it manually. Small losses keep you in the game.'});
-    else if(pct>0.3&&((P.side==='long'&&sc<=-20)||(P.side==='short'&&sc>=20)))
+  // ---- position coaching across the ENTIRE portfolio — the caster tracks
+  // every running trade, not just the one on stage, and names the symbol ----
+  for(const psym of Object.keys(positions)){
+    const PP=positions[psym];
+    const plp=psym===state.sym? lp : livePriceFor(psym);
+    if(plp==null) continue;
+    const tag=psym===state.sym? '' : (' on '+psym);
+    const pct=posPnlPct(PP,psym);
+    const tpSpan=Math.abs(PP.tp-PP.entry)||1e-9, slSpan=Math.abs(PP.entry-PP.sl)||1e-9;
+    const toTp=PP.side==='long'?(PP.tp-plp)/tpSpan:(plp-PP.tp)/tpSpan;
+    const toSl=PP.side==='long'?(plp-PP.sl)/slSpan:(PP.sl-plp)/slSpan;
+    if(toTp<=0.15&&toTp>0) lines.push({p:13,t:'Almost at target'+tag+'! Take the money — close it or trail the stop to breakeven. Never let a winner turn into a loser.'});
+    else if(toSl<=0.25&&toSl>0) lines.push({p:13,t:'Careful — price is breathing on your stop'+tag+'. No immediate reclaim, cut it manually. Small losses keep you in the game.'});
+    else if(pct>0.3&&psym===state.sym&&((PP.side==='long'&&sc<=-20)||(PP.side==='short'&&sc>=20)))
       lines.push({p:12,t:'Momentum just flipped against your position! Bank the '+fmtPct(pct)+' while it is still on the table.'});
-    else if(pct>1.2&&toTp>0.5) lines.push({p:9,t:'Position deep in profit — consider moving the stop to breakeven. Free trades are how pros sleep at night.'});
+    else if(pct>1.2&&toTp>0.5) lines.push({p:9,t:'Deep in profit'+tag+' ('+fmtPct(pct)+') — consider moving the stop to breakeven. Free trades are how pros sleep at night.'});
+    else if(pct<-1.5&&toSl>0.4) lines.push({p:8,t:'The '+psym+' trade is bleeding ('+fmtPct(pct)+') with no reversal signal — respect the stop, do not move it wider.'});
   }
   if(!commPrev.pos&&P) lines.push({p:11,t:(P.side==='long'?'We are LONG ':'We are SHORT ')+state.sym+' from '+fmtP(P.entry)+'. Target '+fmtP(P.tp)+', stop '+fmtP(P.sl)+' — risk-reward one to '+(Math.abs(P.tp-P.entry)/Math.max(1e-9,Math.abs(P.entry-P.sl))).toFixed(1)+'. Plan the trade, trade the plan.'});
   if(commPrev.pos&&!P&&commPrev.posSym===state.sym) lines.push({p:11,t:'Trade closed. Breathe, review, and wait for the next clean setup.'});
@@ -1960,7 +1981,10 @@ function commTick(){
   let chosen=lines[0]||null;
   const nowT=Date.now();
   if(!chosen&&nowT-commColorAt>26000){
+    const allSyms=Object.keys(positions);
+    const netUsd=allSyms.reduce((sum,sy)=>{ const PP=positions[sy]; return sum+PP.notional*posPnlPct(PP,sy)/100; },0);
     const color=[
+      ...(allSyms.length>1?['Portfolio check: '+allSyms.length+' trades running ('+allSyms.join(', ')+'), net '+(netUsd>=0?'plus ':'minus ')+Math.abs(netUsd).toFixed(0)+' dollars. Diversification is protection.']:[]),
       'Order flow check: '+Math.round(state.bullPct)+' percent buyers versus '+Math.round(100-state.bullPct)+' percent sellers.',
       state.sym+' trading around '+fmtP(lp)+(vwap!=null?(lp>=vwap?', holding above VWAP — buyers in control of the session.':', stuck below VWAP — sellers own this session.'):'.'),
       'RSI at '+(R|0)+' — '+(R>60?'bulls in charge.':R<40?'bears pressing.':'balanced tape. Patience pays: the best trades come to you.'),
@@ -1988,6 +2012,46 @@ function setComm(on){
   }
 }
 $('btnComm').onclick=()=>setComm(!commOn);
+// every running trade as a live chip — symbol, direction, live P&L.
+// Tapping a chip teleports the arena to that symbol.
+function renderPosStrip(){
+  const el=$('posStrip'); if(!el) return;
+  const syms=Object.keys(positions);
+  if(!syms.length){ el.style.display='none'; el.innerHTML=''; return; }
+  el.style.display='flex';
+  // update chips IN PLACE — rebuilding innerHTML every tick detached the
+  // nodes mid-tap, so user taps (and Playwright's) landed on dead elements
+  const seen=new Set();
+  for(const sym of syms){
+    seen.add(sym);
+    let ch=el.querySelector(`[data-ps="${CSS.escape(sym)}"]`);
+    const P=positions[sym];
+    if(!ch){
+      ch=document.createElement('span');
+      ch.className='ps-chip'; ch.dataset.ps=sym;
+      ch.innerHTML=`<span class="ps-h"></span><b class="num"></b>`;
+      el.appendChild(ch);
+    }
+    ch.classList.toggle('focused',sym===state.sym);
+    const pct=posPnlPct(P,sym), usd=P.notional*pct/100, win=usd>=0;
+    ch.querySelector('.ps-h').textContent=(P.side==='long'?'▲ ':'▼ ')+sym;
+    const b=ch.querySelector('b');
+    b.className='num '+(win?'up':'down');
+    b.textContent=(win?'+':'−')+'$'+Math.abs(usd).toFixed(0)+' · '+fmtPct(pct);
+  }
+  el.querySelectorAll('.ps-chip').forEach(ch=>{ if(!seen.has(ch.dataset.ps)) ch.remove(); });
+}
+// one delegated listener — chips can update freely without losing taps
+$('posStrip').addEventListener('click',e=>{
+  const ch=e.target.closest('.ps-chip'); if(!ch) return;
+  const sym=ch.dataset.ps;
+  if(sym===state.sym){ setPortfolio(true); return; }
+  state.market=WORLD_STOCKS[sym]?'stock':'crypto';
+  state.sym=sym; $('symLabel').textContent=symLabelText(sym);
+  state.stats=null; state.bigQ=1;
+  buildPills(); startFeed(); renderTicket(); renderPortfolio();
+  toast('⚔️ עברנו לזירת '+sym);
+});
 $('logCsv').onclick=()=>{
   if(!session.log.length){ toast('אין עסקאות ביומן עדיין','down'); return; }
   const rows=[['symbol','side','entry','exit','pct','usd','time']].concat(
@@ -2042,13 +2106,51 @@ function softwareGL(){
     return /swiftshader|llvmpipe|software/i.test(String(rn));
   }catch(e){ return false; }
 }
+let smaaPass=null, gradePass=null;
 try{
-  if(window.__FX && !/[?&]nofx=1/.test(location.search) && !softwareGL()){
+  if(window.__FX && !/[?&]nofx=1/.test(location.search) && (!softwareGL() || /[?&]fx=1/.test(location.search))){
     const FX=window.__FX;
     composer=new FX.EffectComposer(renderer);
     composer.addPass(new FX.RenderPass(scene,camera));
-    bloomPass=new FX.UnrealBloomPass(new THREE.Vector2(innerWidth/2,innerHeight/2),0.55,0.6,0.86);
+    // FULL-resolution bloom — the half-res buffer left blocky halo edges
+    // around every glow; on the medium tier applyQuality drops it back down
+    bloomPass=new FX.UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight),0.55,0.6,0.86);
     composer.addPass(bloomPass);
+    // Cinematic grade — one cheap fullscreen pass: edge chromatic
+    // aberration, animated film grain, and a gentle saturation lift. This
+    // is the "shot on a camera" layer sitting between bloom and output.
+    if(FX.ShaderPass){
+      gradePass=new FX.ShaderPass({
+        uniforms:{ tDiffuse:{value:null}, uTime:{value:0}, uStrength:{value:1} },
+        vertexShader:'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+        fragmentShader:`
+          uniform sampler2D tDiffuse; uniform float uTime; uniform float uStrength;
+          varying vec2 vUv;
+          float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+          void main(){
+            vec2 c=vUv-0.5;
+            float r2=dot(c,c);
+            // chromatic aberration grows toward the edges only
+            vec2 off=c*r2*0.045*uStrength;
+            float cr=texture2D(tDiffuse,vUv+off).r;
+            vec2 gb=texture2D(tDiffuse,vUv-off*0.5).gb;
+            vec3 col=vec3(cr,gb);
+            // saturation lift
+            float l=dot(col,vec3(0.299,0.587,0.114));
+            col=mix(vec3(l),col,1.12);
+            // animated fine grain
+            col+=(hash(vUv*vec2(1920.0,1080.0)+fract(uTime)*7.0)-0.5)*0.028*uStrength;
+            gl_FragColor=vec4(col,1.0);
+          }`,
+      });
+      composer.addPass(gradePass);
+    }
+    // SMAA — the composer path bypasses MSAA entirely, so without this every
+    // glowing edge was raw-aliased; SMAA restores crisp geometry for ~1ms
+    if(FX.SMAAPass){
+      smaaPass=new FX.SMAAPass(innerWidth*renderer.getPixelRatio(),innerHeight*renderer.getPixelRatio());
+      composer.addPass(smaaPass);
+    }
     composer.addPass(new FX.OutputPass());
     // Filmic grade ONLY together with bloom: ACES rolls highlights off like
     // a camera, and bloom lifts the dim glows ACES would otherwise crush.
@@ -4498,6 +4600,12 @@ function applyQuality(mode){
   const tierByMode={max:0,medium:1,low:2};
   gfxTier=tierByMode[mode]??0; window.__gfx.tier=gfxTier;
   if(bloomPass) bloomPass.strength=gfxTier===1?0.32:0.55;
+  // per-tier post stack: max keeps full-res bloom + SMAA + full grade;
+  // medium halves bloom, drops SMAA, softens grain; low = raw render
+  if(bloomPass) bloomPass.resolution.set(gfxTier===0?innerWidth:innerWidth/2, gfxTier===0?innerHeight:innerHeight/2);
+  if(smaaPass) smaaPass.enabled=gfxTier===0;
+  if(gradePass){ gradePass.enabled=gfxTier<2; gradePass.uniforms.uStrength.value=gfxTier===0?1:0.55; }
+  renderer.setPixelRatio(Math.min(devicePixelRatio, gfxTier===0?2.5:2));
   if(gfxTier>=2){ window.__gfx.bloom=false; if(renderer.toneMapping!==undefined) renderer.toneMapping=THREE.NoToneMapping; }
   else if(composer){ window.__gfx.bloom=true; renderer.toneMapping=THREE.ACESFilmicToneMapping; }
 }
@@ -4531,12 +4639,13 @@ function loop(){
     gfxGuard(dt);
     if(indDirty && now-lastInd>350){ computeSignals(); indDirty=false; lastInd=now; }
     checkAllPositions();
+    if(now-(renderPosStrip._at||0)>900){ renderPosStrip(); renderPosStrip._at=now; }
     checkPriceAlerts();
     updateWorld(dt,now);
     updatePods(dt,now);
     applyCam(dt);
     updateHud(now);
-    if(composer && gfxTier<2) composer.render(); else renderer.render(scene,camera);
+    if(composer && gfxTier<2){ if(gradePass) gradePass.uniforms.uTime.value=t; composer.render(); } else renderer.render(scene,camera);
     if(window.__naSnapReq){
       window.__naSnapReq=false;
       try{
