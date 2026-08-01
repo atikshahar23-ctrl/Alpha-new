@@ -200,6 +200,17 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 #fundPanel .fd-cls{font-size:10.5px}
 #fundExp{margin-top:12px;padding:11px 13px;border:1px dashed rgba(0,240,255,.25);border-radius:10px;
   font-size:12.5px;line-height:1.7;color:var(--txt)}
+/* live commentator caption bar — the sports-caster line over the arena */
+#commBar{position:fixed;z-index:30;bottom:46px;left:50%;transform:translateX(-50%);
+  max-width:min(680px,92vw);display:flex;align-items:center;gap:9px;
+  padding:9px 16px;font-size:13.5px;font-weight:600;color:var(--txt);
+  border:1px solid rgba(0,240,255,.35)}
+#commBar #commIc{font-size:16px}
+#commBar.urgent{border-color:rgba(255,209,102,.85);box-shadow:0 0 18px rgba(255,209,102,.3);
+  animation:commPulse 1.2s ease-in-out 2}
+@keyframes commPulse{0%,100%{transform:translateX(-50%) scale(1)}50%{transform:translateX(-50%) scale(1.03)}}
+body.cinema #commBar{display:flex!important}
+@media (max-width:720px){ #commBar{bottom:64px;font-size:12px;padding:8px 12px} }
 /* cinema mode: pure 3D, HUD hidden (toggles stay so you can exit) */
 body.cinema #oracle,body.cinema #pricePanel,body.cinema #ticket,body.cinema #pulsePanel,
 body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important}
@@ -641,9 +652,13 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
     <div class="tgl" id="btnSnap" title="צילום הזירה — שמירת PNG של הפריים הבא">
       <span style="font-size:15px">📸</span><span style="font-size:8px">צילום</span>
     </div>
+    <div class="tgl" id="btnComm" title="פרשן חי — משדר את הקרב בקול וממליץ מתי לקנות, למכור ולסגור">
+      <span style="font-size:15px">🎙️</span><span style="font-size:8px">פרשן</span>
+    </div>
   </div>
 
   <div id="banner" class="panel clip"><span id="bIcon">⚡</span><span id="bTxt"></span></div>
+  <div id="commBar" class="panel clip" style="display:none"><span id="commIc">🎙️</span><span id="commTxt"></span></div>
   <div id="toast" class="panel clip"></div>
   <div id="hint">גרירה — סיבוב · צביטה — זום · הקשה כפולה — טיסה · הבזק ירוק = קנייה אמיתית · אדום = מכירה</div>
 </div>
@@ -1798,6 +1813,117 @@ $('btnFull').onclick=async()=>{
 };
 document.addEventListener('fullscreenchange',()=>{ $('btnFull').classList.toggle('on',!!document.fullscreenElement); });
 $('btnSnap').onclick=()=>{ window.__naSnapReq=true; toast('📸 מצלם את הפריים הבא...'); };
+// ============================================================
+//  LIVE COMMENTATOR — a sports-caster for the chart. Watches every tick
+//  for state TRANSITIONS (verdict flips, EMA crosses, RSI zone entries,
+//  monster candles, S/R contact, position risk) and calls them out loud
+//  in Hebrew, including explicit buy/sell/close-the-trade calls. Color
+//  commentary fills the quiet stretches so the broadcast never dies.
+// ============================================================
+let commOn=false, commLastSaid='', commLastAt=0, commColorAt=0, commColorIdx=0;
+let commPrev={score:null,rsiZone:'',ema:'',pos:false,posSym:''};
+function commSay(txt,urgent){
+  const bar=$('commBar');
+  bar.style.display='flex';
+  $('commTxt').textContent=txt;
+  bar.classList.remove('urgent'); if(urgent) void bar.offsetWidth, bar.classList.add('urgent');
+  if('speechSynthesis' in window){
+    try{
+      if(urgent) speechSynthesis.cancel();
+      if(!speechSynthesis.speaking){
+        const u=new SpeechSynthesisUtterance(txt);
+        u.lang='he-IL'; u.rate=1.15; u.pitch=1.05;
+        speechSynthesis.speak(u);
+      }
+    }catch(e){}
+  }
+}
+function commTick(){
+  if(!commOn||!ind) return;
+  const cs=state.candles; if(!cs||cs.length<25) return;
+  const lp=state.lastPrice; if(!lp) return;
+  const lines=[];
+  const sc=ind.score, P=positions[state.sym];
+
+  // ---- explicit trade calls on verdict transitions ----
+  if(commPrev.score!=null && !ind.closed){
+    if(sc>=55&&commPrev.score<55) lines.push({p:12,t:'קנייה חזקה! כל האינדיקטורים מתיישרים למעלה — '+ind.reasons[0]});
+    else if(sc>=20&&commPrev.score<20) lines.push({p:10,t:'אות קנייה! הציון עלה ל-'+(sc>0?'+':'')+sc+' — '+ind.reasons[0]});
+    if(sc<=-55&&commPrev.score>-55) lines.push({p:12,t:'מכירה חזקה! לחץ כבד על המחיר — '+ind.reasons[0]});
+    else if(sc<=-20&&commPrev.score>-20) lines.push({p:10,t:'אות מכירה! הציון ירד ל-'+sc+' — '+ind.reasons[0]});
+    if(Math.abs(sc)<20&&Math.abs(commPrev.score)>=20) lines.push({p:6,t:'האות התקרר — חזרנו להמתנה, לא רודפים אחרי השוק'});
+  }
+
+  // ---- position coaching: when to close ----
+  if(P){
+    const pct=posPnlPct(P,state.sym);
+    const tpSpan=Math.abs(P.tp-P.entry)||1e-9, slSpan=Math.abs(P.entry-P.sl)||1e-9;
+    const toTp=P.side==='long'?(P.tp-lp)/tpSpan:(lp-P.tp)/tpSpan;
+    const toSl=P.side==='long'?(lp-P.sl)/slSpan:(P.sl-lp)/slSpan;
+    if(toTp<=0.15&&toTp>0) lines.push({p:13,t:'כמעט ביעד! עוד '+fmtPct(Math.abs(toTp*tpSpan/lp*100))+' — שקול לסגור עכשיו ולקחת את הרווח'});
+    else if(toSl<=0.25&&toSl>0) lines.push({p:13,t:'זהירות! המחיר נושם על הסטופ — אם אין התאוששות מיידית, עדיף לצאת ביד'});
+    else if(pct>0.3&&((P.side==='long'&&sc<=-20)||(P.side==='short'&&sc>=20)))
+      lines.push({p:12,t:'המומנטום התהפך נגד העסקה! סגור עם הרווח שביד ('+fmtPct(pct)+') — אל תיתן לו להתאדות'});
+  }
+  if(!commPrev.pos&&P) lines.push({p:11,t:(P.side==='long'?'נכנסנו ללונג':'נכנסנו לשורט')+' על '+state.sym+' ב-'+fmtP(P.entry)+' — יעד '+fmtP(P.tp)+', סטופ '+fmtP(P.sl)+'. בהצלחה!'});
+  if(commPrev.pos&&!P&&commPrev.posSym===state.sym) lines.push({p:11,t:'העסקה נסגרה. נושמים, מסתכלים על הגרף מחדש'});
+
+  // ---- indicator drama ----
+  const closes=cs.map(c=>c.c);
+  const R=rsiArr(closes,14)[closes.length-1];
+  const zone=R>70?'high':R<30?'low':'mid';
+  if(commPrev.rsiZone&&zone!==commPrev.rsiZone){
+    if(zone==='high') lines.push({p:8,t:'ה-RSI נכנס לקניית יתר ('+(R|0)+') — הראלי מתחמם, לא רודפים כאן'});
+    if(zone==='low') lines.push({p:8,t:'ה-RSI במכירת יתר ('+(R|0)+') — הקפיץ נמתח, תיקון למעלה מתבשל'});
+  }
+  const e9=ind.e9raw[ind.e9raw.length-1], e21=ind.e21raw[ind.e21raw.length-1];
+  const ema=e9>=e21?'up':'down';
+  if(commPrev.ema&&ema!==commPrev.ema)
+    lines.push({p:9,t:ema==='up'?'חיתוך שורי! ממוצע 9 חצה את 21 מלמטה — הפתיחה של מהלך עולה':'חיתוך דובי — ממוצע 9 שבר את 21 למטה, הדובים לוקחים פיקוד'});
+  const lastC=cs[cs.length-2];
+  if(lastC&&lastC.o){
+    const mv=lastC.c-lastC.o;
+    if(Math.abs(mv)>ind.A*1.6) lines.push({p:7,t:mv>0?'איזה נר ירוק! הקונים דרסו את כל ההיצע בנר אחד':'נר אדום כבד נסגר — המוכרים הראו מי הבוס'});
+  }
+  for(const lv of (ind.levels||[])){
+    if(Math.abs(lp-lv.p)<ind.A*0.5){
+      lines.push({p:5,t:(lv.p>lp?'מתקרבים להתנגדות ב-':'נלחמים על התמיכה ב-')+fmtP(lv.p)+' — כאן ייקבע הקרב הבא'});
+      break;
+    }
+  }
+
+  // ---- color commentary when nothing is burning ----
+  lines.sort((a,b)=>b.p-a.p);
+  let chosen=lines[0]||null;
+  const nowT=Date.now();
+  if(!chosen&&nowT-commColorAt>26000){
+    const color=[
+      'מאזן הכוחות כרגע: '+Math.round(state.bullPct)+'% קונים מול '+Math.round(100-state.bullPct)+'% מוכרים',
+      state.sym+' נסחר סביב '+fmtP(lp)+' · המצב: '+ind.verdict,
+      'RSI על '+(R|0)+' — '+(R>60?'הקונים בשליטה':R<40?'המוכרים לוחצים':'שוק מאוזן, מחכים לניצוץ'),
+    ];
+    chosen={p:0,t:color[(commColorIdx++)%color.length]};
+    commColorAt=nowT;
+  }
+  if(chosen&&chosen.t!==commLastSaid&&(chosen.p>=10||nowT-commLastAt>9000)){
+    commLastSaid=chosen.t; commLastAt=nowT;
+    commSay(chosen.t,chosen.p>=10);
+  }
+  commPrev={score:sc,rsiZone:zone,ema,pos:!!P,posSym:P?state.sym:''};
+}
+setInterval(commTick,3000);
+function setComm(on){
+  commOn=on;
+  $('btnComm').classList.toggle('on',on);
+  if(on){
+    commSay('הפרשן באוויר! צמוד ל-'+state.sym+' — אני אגיד לך מתי לקנות, מתי למכור ומתי לברוח',true);
+  } else {
+    $('commBar').style.display='none';
+    commLastSaid='';
+    try{ if('speechSynthesis' in window) speechSynthesis.cancel(); }catch(e){}
+  }
+}
+$('btnComm').onclick=()=>setComm(!commOn);
 $('logCsv').onclick=()=>{
   if(!session.log.length){ toast('אין עסקאות ביומן עדיין','down'); return; }
   const rows=[['symbol','side','entry','exit','pct','usd','time']].concat(
