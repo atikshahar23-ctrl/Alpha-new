@@ -675,6 +675,8 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
     <span><i style="background:#ffd166"></i>תמיכה / התנגדות</span>
     <span><i style="background:#8a5cff"></i>RSI</span>
     <span><i style="background:rgba(157,196,216,.5)"></i>נפח</span>
+    <span><i style="background:#ffd166"></i>VWAP</span>
+    <span id="cpReadout" style="margin-inline-start:auto"></span>
   </div>
   <div class="cp-cv-wrap">
     <canvas id="chartCv"></canvas>
@@ -1145,6 +1147,7 @@ async function tryLiveStock(f){
   const sym=state.sym, tf=state.tf;
   const cs=await fetchStockChart(sym,tf);
   if(f.stopped) return;
+  f.src='yahoo';
   onInit(cs);
   // real Yahoo data already freezes at the last trade outside market hours
   // on its own — this just makes the badge say so instead of misleadingly
@@ -1182,7 +1185,7 @@ async function fetchStockStats(f){
 // ---------- simulation (accelerated demo market) ----------
 function startSim(f){
   const closedNow=state.market==='stock' && !usMarketOpen();
-  f.mode=closedNow?'closed':'sim'; setBadge(f.mode);
+  f.mode=closedNow?'closed':'sim'; f.src='sim'; setBadge(f.mode);
   const cfg=symCfg(state.sym);
   const tfS=TF_SEC[state.tf];
   const sv=cfg.vol*Math.sqrt(tfS/60);
@@ -1395,27 +1398,57 @@ function computeSignals(){
   const macdS=clamp(H/(A*0.35)*12, -14, 14) + (H>Hp?4:-4);
   const bbPos=clamp((p-bb.lo)/Math.max(1e-9,bb.up-bb.lo),0,1);
   const bbS=clamp(bbPos<0.12?12 : bbPos>0.88? -12 : (0.5-bbPos)*10, -15, 15);
+  const isStock=state.market==='stock';
   const tot=state.bookBid+state.bookAsk;
   const imbPct=tot>0? Math.round(state.bookBid/tot*100) : 50;
-  const bookS=tot>0? clamp((state.bookBid-state.bookAsk)/tot*38,-15,15) : 0;
+  // trader-accuracy: there is NO real order book for stocks here (crypto's
+  // comes from the live Binance depth stream) — a fabricated book must never
+  // move the score or appear as a "reason". Stocks score real relative
+  // VOLUME on the last closed candle instead.
+  const bookS=isStock? 0 : (tot>0? clamp((state.bookBid-state.bookAsk)/tot*38,-15,15) : 0);
+  let volS=0, volTxt=null;
+  if(isStock && n>=22){
+    const hist20=cs.slice(n-21,n-1).map(c=>c.v).filter(v=>v>0);
+    const vAvg=hist20.length? hist20.reduce((a,b)=>a+b,0)/hist20.length : 0;
+    const vLast=cs[n-2]? cs[n-2].v : 0;
+    if(vAvg>0 && vLast>0){
+      const rel=vLast/vAvg;
+      volS=clamp((rel-1)*8,-10,10);
+      volTxt=rel>=1.5?`מחזור חריג · פי ${rel.toFixed(1)} מהממוצע — תנועה אמינה`
+           : rel>=1.05?'מחזור מעל הממוצע · תומך במהלך'
+           : rel<=0.7?'מחזור דל · מהלך בעוצמה נמוכה'
+           : 'מחזור מסחר רגיל';
+    }
+  }
 
-  const score=Math.round(clamp(trend+rsiS+macdS+bbS+bookS,-100,100));
-  const verdict=score>=55?'קנייה חזקה':score>=20?'קנייה':score<=-55?'מכירה חזקה':score<=-20?'מכירה':'המתנה';
+  const score=Math.round(clamp(trend+rsiS+macdS+bbS+bookS+volS,-100,100));
+  const closedStock=isStock && !usMarketOpen();
+  const simData=feed && feed.src==='sim';
+  const verdict=closedStock? '🔒 שוק סגור · ניתוח בלבד'
+    : score>=55?'קנייה חזקה':score>=20?'קנייה':score<=-55?'מכירה חזקה':score<=-20?'מכירה':'המתנה';
 
   const rs=[];
   rs.push({w:Math.abs(trend), t:trend>0?'המגמה עולה · הקונים מובילים':'המגמה יורדת · המוכרים מובילים'});
   rs.push({w:Math.abs(rsiS), t:R<32?`נמכר חזק מדי · קפיץ למעלה (RSI ${R|0})`:R>68?`נקנה חזק מדי · צפוי קירור (RSI ${R|0})`:`מחיר מאוזן (RSI ${R|0})`});
   rs.push({w:Math.abs(macdS), t:H>0?'המומנטום מתחזק':'המומנטום נחלש'});
-  rs.push({w:Math.abs(bookS), t:imbPct>=50?`לחץ קונים ${imbPct}% בספר`:`לחץ מוכרים ${100-imbPct}% בספר`});
+  if(isStock){ if(volTxt) rs.push({w:Math.abs(volS)+0.01, t:volTxt}); }
+  else rs.push({w:Math.abs(bookS), t:imbPct>=50?`לחץ קונים ${imbPct}% בספר`:`לחץ מוכרים ${100-imbPct}% בספר`});
   rs.push({w:Math.abs(bbS), t:bbPos<0.12?'בתחתית הטווח · זול יחסית':bbPos>0.88?'בתקרת הטווח · יקר יחסית':'באמצע טווח המחירים'});
   rs.sort((a,b)=>b.w-a.w);
 
+  // no actionable entry while the exchange is closed — analysis stays,
+  // "buy now at this price" does not
   let sug=null;
-  if(score>=20) sug={side:'long', entry:p, sl:p-1.5*A, tp:p+2.5*A};
-  else if(score<=-20) sug={side:'short', entry:p, sl:p+1.5*A, tp:p-2.5*A};
+  if(!closedStock){
+    if(score>=20) sug={side:'long', entry:p, sl:p-1.5*A, tp:p+2.5*A};
+    else if(score<=-20) sug={side:'short', entry:p, sl:p+1.5*A, tp:p-2.5*A};
+  }
 
+  const reasons=rs.slice(0,3).map(x=>x.t);
+  if(simData) reasons.push('⚠️ נתוני הדגמה (SIM) — האותות להמחשה בלבד');
+  else if(isStock) reasons.push('✓ מחושב על נרות אמת (Yahoo Finance)');
   ind={e9raw:e9, e21raw:e21, A, levels, score, verdict,
-       reasons:rs.slice(0,3).map(x=>x.t), sug};
+       reasons, sug, closed:closedStock, quality:simData?'sim':'real'};
   detectEvents(cs,n,e9,e21,score);
 }
 
@@ -3388,6 +3421,7 @@ function bollArr(closes,p,k){
 // run on the real closes (standard practice on trading platforms).
 const CHART_STYLES=[
   {id:'classic', label:'⚡ קלאסי',      up:'#00ffa6', dn:'#ff3d6e', mode:'candle'},
+  {id:'pro',     label:'📊 נרות מקצועי', up:'#26a69a', dn:'#ef5350', mode:'candle', bg:['#0b0e14','#0b0e14']},
   {id:'holo',    label:'🔮 הולוגרמה',   up:'#7dfbff', dn:'#0e7d9d', mode:'candle', glow:8,  bg:['#020a12','#04141f'], fx:'scan'},
   {id:'ha',      label:'🌊 הייקין-אשי', up:'#2dd4bf', dn:'#fb923c', mode:'ha'},
   {id:'neon',    label:'💠 קו ניאון',   up:'#00f0ff', dn:'#ff2fd6', mode:'line', glow:12, bg:['#04040d','#0a0518']},
@@ -3639,6 +3673,70 @@ function drawChart(){
   g.fillStyle='rgba(157,196,216,.55)'; g.font="9.5px 'JetBrains Mono',monospace"; g.textBaseline='alphabetic';
   g.textAlign='left'; g.fillText(fmtT(cs[0].t),padL,H-6);
   g.textAlign='right'; g.fillText(fmtT(cs[cs.length-1].t),padL+plotW,H-6);
+  // VWAP — the institutional "fair price" line for the loaded window
+  let vwapArr=null;
+  if(cs.some(c=>c.v>0)){
+    vwapArr=[]; let cpv=0, cv2=0;
+    for(const c of cs){ const tp=(c.h+c.l+c.c)/3; cpv+=tp*(c.v||0); cv2+=(c.v||0); vwapArr.push(cv2>0?cpv/cv2:c.c); }
+    g.save();
+    g.strokeStyle='rgba(255,209,102,.85)'; g.lineWidth=1.4; g.setLineDash([7,4]);
+    g.beginPath();
+    vwapArr.forEach((v,i)=>{ const x=xAt(i),y=yFor2(v); i?g.lineTo(x,y):g.moveTo(x,y); });
+    g.stroke(); g.restore();
+    g.fillStyle='rgba(255,209,102,.9)'; g.font="9px 'JetBrains Mono',monospace"; g.textAlign='left'; g.textBaseline='bottom';
+    g.fillText('VWAP',xAt(0)+2,yFor2(vwapArr[0])-2);
+  }
+  // trader readout row — ATR / MACD / VWAP live values in the legend strip
+  {
+    const ro=$('cpReadout');
+    if(ro){
+      const atr=atrVal(cs,14);
+      const mh=macdHistArr(closes), mNow=mh[mh.length-1]||0, mPrev=mh[mh.length-2]||0;
+      const vNow=vwapArr? vwapArr[vwapArr.length-1] : null;
+      ro.innerHTML=
+        `ATR14 <b class="num">${atr.toLocaleString('en-US',{maximumFractionDigits:dec})}</b> · `
+        +`MACD <b class="num" style="color:${mNow>=0?'#00ffa6':'#ff3d6e'}">${mNow>=0?'+':''}${mNow.toLocaleString('en-US',{maximumFractionDigits:dec})}${mNow>mPrev?' ▲':' ▼'}</b>`
+        +(vNow!=null?` · VWAP <b class="num" style="color:${last>=vNow?'#00ffa6':'#ff3d6e'}">${vNow.toLocaleString('en-US',{maximumFractionDigits:dec})} · ${last>=vNow?'מעל':'מתחת'}</b>`:'');
+    }
+  }
+  // crosshair + per-candle OHLCV readout — the basic tool every trader
+  // expects: point anywhere, read the exact candle
+  if(chartCross && chartCross.x>=padL && chartCross.x<=padL+plotW){
+    const ci=clamp(Math.floor((chartCross.x-padL)/cw),0,cs.length-1);
+    const c=cs[ci], x=xAt(ci);
+    g.save();
+    g.strokeStyle='rgba(157,196,216,.55)'; g.setLineDash([3,3]); g.lineWidth=1;
+    g.beginPath(); g.moveTo(x,padT); g.lineTo(x,priceBottom); g.stroke();
+    if(chartCross.y>=padT&&chartCross.y<=priceBottom){
+      g.beginPath(); g.moveTo(padL,chartCross.y); g.lineTo(padL+plotW,chartCross.y); g.stroke();
+      const cp=lo+(1-(chartCross.y-padT)/priceH)*(hi-lo);
+      g.setLineDash([]);
+      g.fillStyle='#02141a'; g.fillRect(padL+plotW+2,chartCross.y-8,padR-6,16);
+      g.strokeStyle='rgba(157,196,216,.5)'; g.strokeRect(padL+plotW+2,chartCross.y-8,padR-6,16);
+      g.fillStyle='#cfe9f5'; g.font="10px 'JetBrains Mono',monospace"; g.textAlign='left'; g.textBaseline='middle';
+      g.fillText(cp.toLocaleString('en-US',{maximumFractionDigits:dec}),padL+plotW+6,chartCross.y);
+    }
+    g.setLineDash([]);
+    const up=c.c>=c.o, chgP=c.o?((c.c-c.o)/c.o*100):0;
+    const lines=[
+      fmtT(c.t)+(ci===cs.length-1?' · נוכחי':''),
+      'O '+c.o.toLocaleString('en-US',{maximumFractionDigits:dec})+'  H '+c.h.toLocaleString('en-US',{maximumFractionDigits:dec}),
+      'L '+c.l.toLocaleString('en-US',{maximumFractionDigits:dec})+'  C '+c.c.toLocaleString('en-US',{maximumFractionDigits:dec}),
+      (up?'+':'')+chgP.toFixed(2)+'%'+(c.v?'  · Vol '+Math.round(c.v).toLocaleString('en-US'):''),
+    ];
+    g.font="10.5px 'JetBrains Mono',monospace";
+    let bw2=0; for(const ln of lines) bw2=Math.max(bw2,g.measureText(ln).width);
+    const bx=x+10+bw2+14>padL+plotW? x-10-bw2-14 : x+10, by=padT+6;
+    g.fillStyle='rgba(2,10,18,.92)'; g.fillRect(bx,by,bw2+14,lines.length*15+10);
+    g.strokeStyle=up?'rgba(0,255,166,.5)':'rgba(255,61,110,.5)'; g.lineWidth=1;
+    g.strokeRect(bx,by,bw2+14,lines.length*15+10);
+    g.textAlign='left'; g.textBaseline='top';
+    lines.forEach((ln,li)=>{
+      g.fillStyle=li===3?(up?'#00ffa6':'#ff3d6e'):'#cfe9f5';
+      g.fillText(ln,bx+7,by+6+li*15);
+    });
+    g.restore();
+  }
   // legend chips
   $('cpHi').textContent=(hi-pad).toLocaleString('en-US',{maximumFractionDigits:dec});
   $('cpLo').textContent=(lo+pad).toLocaleString('en-US',{maximumFractionDigits:dec});
@@ -3654,6 +3752,20 @@ function setChart(on){
   else stopVoiceLesson();
 }
 addEventListener('resize',()=>{ if(chartOpen) drawChart(); });
+// trader crosshair — hover/drag any candle to read its exact OHLCV
+let chartCross=null;
+{
+  const cv=$('chartCv');
+  let rafPending=false;
+  const upd=e=>{
+    const r=cv.getBoundingClientRect();
+    chartCross={x:e.clientX-r.left, y:e.clientY-r.top};
+    if(!rafPending){ rafPending=true; requestAnimationFrame(()=>{ rafPending=false; if(chartOpen) drawChart(); }); }
+  };
+  cv.addEventListener('pointermove',upd);
+  cv.addEventListener('pointerdown',upd);
+  cv.addEventListener('pointerleave',()=>{ chartCross=null; if(chartOpen) drawChart(); });
+}
 
 // ---- 🔊 AI voice lesson — reads the SAME data already computed for the
 // oracle/agent (ind, candleAnalysis, S/R levels) and turns it into a short
