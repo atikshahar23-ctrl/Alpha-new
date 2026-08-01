@@ -928,6 +928,16 @@ const rnd=(a=1,b)=> b===undefined? Math.random()*a : a+Math.random()*(b-a);
 // and the floating text overlaps into an illegible mess — this keeps every
 // item's ORDER but pushes pairs apart symmetrically until they all clear a
 // minimum gap, converging in a few passes since the list is always small
+// "how far is this level from where we are NOW" — appended to every level
+// label so the arena reads like a precise instrument, not floating numbers
+function distTxt(p){
+  if(!state.lastPrice||!p||!isFinite(p)) return '';
+  const d=(p/state.lastPrice-1)*100;
+  if(!isFinite(d)) return '';
+  const a=Math.abs(d);
+  const st=a>=10?a.toFixed(0):a>=1?a.toFixed(1):a.toFixed(2);
+  return ' · '+(d>=0?'+':'-')+st+'%';
+}
 function declutterY(rawYs,minGap){
   const n=rawYs.length;
   const order=rawYs.map((_,i)=>i).sort((a,b)=>rawYs[a]-rawYs[b]);
@@ -1834,16 +1844,37 @@ function textSprite(w,h,sx,sy){
   const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
   const ctx=cv.getContext('2d');
   const tex=new THREE.CanvasTexture(cv);
-  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true,depthWrite:false}));
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true,depthWrite:false,depthTest:false}));
+  sp.renderOrder=40; // price/level labels must never hide behind the core or rings
   sp.scale.set(sx,sy,1);
   return {sp,ctx,tex,w,h,last:'',
-    draw(txt,css,font){
-      if(txt===this.last) return; this.last=txt;
+    draw(txt,css,font,plate){
+      const key=txt+'|'+css+'|'+(plate?1:0);
+      if(key===this.last) return; this.last=key;
       const c=this.ctx;
       c.clearRect(0,0,this.w,this.h);
-      c.font=font||"700 30px 'Heebo', sans-serif";
+      let f=font||"700 30px 'Heebo', sans-serif";
+      c.font=f;
+      // shrink-to-fit: precision labels (level + distance %) must never clip
+      let m=c.measureText(txt).width;
+      if(m>this.w-20){
+        const sz=parseFloat((f.match(/(\d+(?:\.\d+)?)px/)||[0,30])[1]);
+        const ns=Math.max(13,Math.floor(sz*(this.w-20)/m));
+        f=f.replace(/(\d+(?:\.\d+)?)px/,ns+'px');
+        c.font=f; m=c.measureText(txt).width;
+      }
+      if(plate){
+        // dark rounded plate + thin colored border — readable over any glow
+        const sz=parseFloat((f.match(/(\d+(?:\.\d+)?)px/)||[0,30])[1]);
+        const pw=Math.min(this.w-4,m+30), ph=Math.min(this.h-4,sz*1.75);
+        const x=(this.w-pw)/2, y=(this.h-ph)/2, r=Math.min(ph/2,14);
+        c.beginPath();
+        if(c.roundRect) c.roundRect(x,y,pw,ph,r); else c.rect(x,y,pw,ph);
+        c.fillStyle='rgba(3,9,20,0.84)'; c.fill();
+        c.lineWidth=2.5; c.strokeStyle=css; c.globalAlpha=0.9; c.stroke(); c.globalAlpha=1;
+      }
       c.textAlign='center'; c.textBaseline='middle'; c.direction='rtl';
-      c.shadowColor=css; c.shadowBlur=16; c.fillStyle='#eaffff';
+      c.shadowColor=css; c.shadowBlur=plate?7:16; c.fillStyle='#f2ffff';
       c.fillText(txt,this.w/2,this.h/2);
       this.tex.needsUpdate=true;
     }};
@@ -2109,6 +2140,11 @@ function buildCenterRig(mode){
 // price hologram beside the core
 const priceHolo=textSprite(512,128,15,3.75);
 world.add(priceHolo.sp);
+// crisp "you are HERE" ring at the exact live-price height — the anchor the
+// eye needs to read every other level against
+const nowRing=new THREE.Mesh(new THREE.TorusGeometry(6.6,0.05,6,72),
+  new THREE.MeshBasicMaterial({color:0x00f0ff,transparent:true,opacity:0.75,blending:THREE.AdditiveBlending,depthWrite:false}));
+nowRing.rotation.x=Math.PI/2; world.add(nowRing);
 
 // verdict hologram above the column
 const verdictHolo=textSprite(512,128,22,5.5);
@@ -2157,7 +2193,7 @@ function mkShield(hex){
   disc.rotation.x=-Math.PI/2; grp.add(disc);
   const rim=new THREE.Mesh(new THREE.TorusGeometry(5.8,0.09,8,50),addMat(hex,0.6));
   rim.rotation.x=Math.PI/2; grp.add(rim);
-  const lb=textSprite(256,64,9.5,2.4); lb.sp.position.set(0,1.1,0); grp.add(lb.sp);
+  const lb=textSprite(256,64,9.5,2.4); lb.sp.position.set(9.2,1.1,0); grp.add(lb.sp);
   return {grp,disc,rim,lb};
 }
 const askShield=mkShield(0xff3d6e);
@@ -2169,7 +2205,9 @@ function holoRing(hex,r,tube,side){
   const ring=new THREE.Mesh(new THREE.TorusGeometry(r,tube,10,60),addMat(hex,0.7));
   ring.rotation.x=Math.PI/2; grp.add(ring);
   const lb=textSprite(256,64,9,2.25);
-  lb.sp.position.set(side*(r+3.6),0.7,0); grp.add(lb.sp);
+  // every level label lives on the same right-side "ruler" x — one aligned
+  // column of plates instead of text scattered around the core
+  lb.sp.position.set(9.2,0.7,0); grp.add(lb.sp);
   return {grp,ring,lb,setColor(h){ring.material.color.set(h);}};
 }
 const tpRing=holoRing(0x00ffa6,5.4,0.11,1);
@@ -2329,12 +2367,15 @@ function updateWorld(dt,now){
     centerRig.update(dt,t,yH,tmpC);
   } else if(centerRig) disposeCenterRig();
 
-  priceHolo.sp.position.set(7.6,yH+2.6,0);
-  priceHolo.draw(fmtP(state.lastPrice), mom>=0?'#00ffa6':'#ff3d6e', "700 56px 'Orbitron', monospace");
+  nowRing.position.y=yH;
+  nowRing.material.color.copy(tmpC);
+  nowRing.material.opacity=0.55+0.2*Math.sin(t*2.4);
+  priceHolo.sp.position.set(-9.8,yH+2.4,0);
+  priceHolo.draw('עכשיו  '+fmtP(state.lastPrice), mom>=0?'#00ffa6':'#ff3d6e', "700 52px 'Orbitron', monospace", true);
 
   // hi / lo labels
-  hiLbl.draw('שיא  '+fmtP(state.winHi),'#7dfbff');
-  loLbl.draw('שפל  '+fmtP(state.winLo),'#7dfbff');
+  hiLbl.draw('שיא  '+fmtP(state.winHi)+distTxt(state.winHi),'#7dfbff',null,true);
+  loLbl.draw('שפל  '+fmtP(state.winLo)+distTxt(state.winLo),'#7dfbff',null,true);
 
   // signal layers
   const showSig=state.showSig && !!ind;
@@ -2371,7 +2412,7 @@ function updateWorld(dt,now){
       const above=lv.p>state.lastPrice;
       rg.setColor(above?0xff3d6e:0x00ffa6);
       rg.ring.material.opacity=0.2+0.04*Math.sin(t*2+j);
-      rg.lb.draw((above?'התנגדות ':'תמיכה ')+fmtP(lv.p), above?'#ff3d6e':'#00ffa6');
+      rg.lb.draw((above?'התנגדות ':'תמיכה ')+fmtP(lv.p)+distTxt(lv.p), above?'#ff3d6e':'#00ffa6', null, true);
       labelItems.push({lb:rg.lb, rawY:y});
     } else rg.grp.visible=false;
   }
@@ -2389,9 +2430,9 @@ function updateWorld(dt,now){
     slRing.grp.position.y=ySl;
     enRing.grp.position.y=yEn;
     enRing.setColor(P?0xffd166:0x00f0ff);
-    tpRing.lb.draw('יעד רווח  '+fmtP(src.tp),'#00ffa6');
-    slRing.lb.draw('סטופ הגנה  '+fmtP(src.sl),'#ff3d6e');
-    enRing.lb.draw((P?'הכניסה שלך  ':'כניסה מוצעת  ')+fmtP(src.entry), P?'#ffd166':'#00f0ff');
+    tpRing.lb.draw('יעד רווח  '+fmtP(src.tp)+distTxt(src.tp),'#00ffa6', null, true);
+    slRing.lb.draw('סטופ הגנה  '+fmtP(src.sl)+distTxt(src.sl),'#ff3d6e', null, true);
+    enRing.lb.draw((P?'הכניסה שלך  ':'כניסה מוצעת  ')+fmtP(src.entry)+distTxt(src.entry), P?'#ffd166':'#00f0ff', null, true);
     labelItems.push({lb:tpRing.lb, rawY:yTp},{lb:slRing.lb, rawY:ySl},{lb:enRing.lb, rawY:yEn});
     const up=src.side==='long';
     chevMesh.material.color.copy(up?C_UP:C_DN);
@@ -2407,11 +2448,6 @@ function updateWorld(dt,now){
     }
     chevMesh.instanceMatrix.needsUpdate=true;
   }
-  if(labelItems.length){
-    const adjY=declutterY(labelItems.map(x=>x.rawY),1.9);
-    labelItems.forEach((it,i)=>{ it.lb.sp.position.y=0.7+(adjY[i]-it.rawY); });
-  }
-
   // whale shields
   const shOn=state.showShield;
   const refQ=Math.max(state.bigQ,1e-9);
@@ -2421,7 +2457,7 @@ function updateWorld(dt,now){
     const rel=clamp(state.wallAsk.q/(refQ*3),0.15,1);
     askShield.disc.material.opacity=0.06+rel*0.22;
     askShield.rim.material.opacity=0.3+rel*0.5;
-    askShield.lb.draw('חומת מכירה · '+fmtP(state.wallAsk.p),'#ff3d6e');
+    askShield.lb.draw('חומת מכירה · '+fmtP(state.wallAsk.p)+distTxt(state.wallAsk.p),'#ff3d6e', null, true);
   } else askShield.grp.visible=false;
   if(shOn && state.wallBid){
     bidShield.grp.visible=true;
@@ -2429,8 +2465,16 @@ function updateWorld(dt,now){
     const rel=clamp(state.wallBid.q/(refQ*3),0.15,1);
     bidShield.disc.material.opacity=0.06+rel*0.22;
     bidShield.rim.material.opacity=0.3+rel*0.5;
-    bidShield.lb.draw('חומת קנייה · '+fmtP(state.wallBid.p),'#00ffa6');
+    bidShield.lb.draw('חומת קנייה · '+fmtP(state.wallBid.p)+distTxt(state.wallBid.p),'#00ffa6', null, true);
   } else bidShield.grp.visible=false;
+  if(shOn && state.wallAsk) labelItems.push({lb:askShield.lb, rawY:askShield.grp.position.y, base:1.1});
+  if(shOn && state.wallBid) labelItems.push({lb:bidShield.lb, rawY:bidShield.grp.position.y, base:1.1});
+  // one shared declutter pass for every plate on the ruler — S/R, entry,
+  // TP/SL AND whale walls — so no two plates can ever overlap
+  if(labelItems.length){
+    const adjY=declutterY(labelItems.map(x=>x.rawY),2.35);
+    labelItems.forEach((it,i)=>{ it.lb.sp.position.y=(it.base||0.7)+(adjY[i]-it.rawY); });
+  }
 
   // bolts
   bolts.pts.visible=state.showFx;
