@@ -7,11 +7,14 @@ import {
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import * as Tone from 'tone';
 
+// beatHz = the real binaural difference between the ears (the entrainment
+// frequency of the state itself); breath = the state's guided breathing
+// pattern in seconds [inhale, hold, exhale, hold]
 const STATES = {
-  gamma: { label: 'GAMMA', freq: '40Hz', desc: 'מיקוד-על קוגניטיבי', hue: 285, hex: '#e879f9', icon: Zap, amplitude: 12, frequency: 0.08, note: 329.63 },
-  alpha: { label: 'ALPHA', freq: '12Hz', desc: 'רגיעה מודעת וזרימה', hue: 158, hex: '#34d399', icon: Compass, amplitude: 6, frequency: 0.03, note: 220 },
-  theta: { label: 'THETA', freq: '6Hz', desc: 'מדיטציה עמוקה וחלום', hue: 199, hex: '#22d3ee', icon: Activity, amplitude: 4, frequency: 0.015, note: 174.61 },
-  delta: { label: 'DELTA', freq: '1.5Hz', desc: 'ריפוי תאי ושינה עמוקה', hue: 43, hex: '#fbbf24', icon: Shield, amplitude: 2, frequency: 0.005, note: 130.81 },
+  gamma: { label: 'GAMMA', freq: '40Hz', desc: 'מיקוד-על קוגניטיבי', hue: 285, hex: '#e879f9', icon: Zap, amplitude: 12, frequency: 0.08, note: 329.63, beatHz: 40, breath: [2, 0, 2, 0], breathName: 'נשימה ממריצה 2-2' },
+  alpha: { label: 'ALPHA', freq: '12Hz', desc: 'רגיעה מודעת וזרימה', hue: 158, hex: '#34d399', icon: Compass, amplitude: 6, frequency: 0.03, note: 220, beatHz: 12, breath: [5.5, 0, 5.5, 0], breathName: 'נשימה קוהרנטית 5.5-5.5' },
+  theta: { label: 'THETA', freq: '6Hz', desc: 'מדיטציה עמוקה וחלום', hue: 199, hex: '#22d3ee', icon: Activity, amplitude: 4, frequency: 0.015, note: 174.61, beatHz: 6, breath: [4, 4, 4, 4], breathName: 'נשימת קופסה 4-4-4-4' },
+  delta: { label: 'DELTA', freq: '1.5Hz', desc: 'ריפוי תאי ושינה עמוקה', hue: 43, hex: '#fbbf24', icon: Shield, amplitude: 2, frequency: 0.005, note: 130.81, beatHz: 1.5, breath: [4, 7, 8, 0], breathName: 'נשימת 4-7-8 להרפיה' },
 };
 
 const NAV = [
@@ -80,13 +83,22 @@ function StatCard({ icon: Icon, label, value, hex }) {
   );
 }
 
+const PREFS_KEY = 'neuro:prefs:v1';
+const loadPrefs = () => {
+  try { const v = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}'); return v && typeof v === 'object' ? v : {}; } catch { return {}; }
+};
+
 export default function NeuroSomaticInterface() {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
+  const prefs = useRef(loadPrefs()).current;
   const [view, setView] = useState('console');
-  const [brainState, setBrainState] = useState('theta');
-  const [particleCount, setParticleCount] = useState(1500);
-  const [flowIntensity, setFlowIntensity] = useState(0.5);
+  const [brainState, setBrainState] = useState(STATES[prefs.brainState] ? prefs.brainState : 'theta');
+  const [particleCount, setParticleCount] = useState(Number.isFinite(prefs.particleCount) ? prefs.particleCount : 1500);
+  const [flowIntensity, setFlowIntensity] = useState(Number.isFinite(prefs.flowIntensity) ? prefs.flowIntensity : 0.5);
+  const [breathOn, setBreathOn] = useState(false);
+  const [breathPhase, setBreathPhase] = useState({ label: '', t: 0, scale: 1 });
+  const [targetMin, setTargetMin] = useState(Number.isFinite(prefs.targetMin) ? prefs.targetMin : 0);
   const [metrics, setMetrics] = useState({ coherence: 88, entropy: 12, neuroplasticity: 94 });
 
   const [sessionActive, setSessionActive] = useState(false);
@@ -98,7 +110,10 @@ export default function NeuroSomaticInterface() {
   }, [sessionHistory]);
 
   const [audioEnabled, setAudioEnabled] = useState(false);
-  const [volume, setVolume] = useState(40);
+  const [volume, setVolume] = useState(Number.isFinite(prefs.volume) ? prefs.volume : 40);
+  useEffect(() => {
+    try { localStorage.setItem(PREFS_KEY, JSON.stringify({ brainState, particleCount, flowIntensity, volume, targetMin })); } catch {}
+  }, [brainState, particleCount, flowIntensity, volume, targetMin]);
   const [audioError, setAudioError] = useState(null);
   const synthRef = useRef(null);
 
@@ -262,12 +277,50 @@ export default function NeuroSomaticInterface() {
     return () => clearInterval(id);
   }, [sessionActive]);
 
+  // Breathing pacer — cycles inhale/hold/exhale/hold on the active state's
+  // authored pattern; drives both the on-screen circle and the phase label.
+  useEffect(() => {
+    if (!breathOn || view !== 'console') return;
+    let raf; const t0 = performance.now();
+    const tick = (now) => {
+      const [inh, h1, exh, h2] = STATES[stateRef.current.brainState].breath;
+      const total = inh + h1 + exh + h2;
+      const t = ((now - t0) / 1000) % total;
+      let label, frac, scale;
+      if (t < inh) { label = 'שאפו...'; frac = inh - t; scale = 1 + (t / inh) * 0.55; }
+      else if (t < inh + h1) { label = 'החזיקו'; frac = inh + h1 - t; scale = 1.55; }
+      else if (t < inh + h1 + exh) { const e = t - inh - h1; label = 'נשפו...'; frac = inh + h1 + exh - t; scale = 1.55 - (e / exh) * 0.55; }
+      else { label = 'החזיקו'; frac = total - t; scale = 1; }
+      setBreathPhase({ label, t: Math.ceil(frac), scale });
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [breathOn, view]);
+
   const startSession = () => {
     sessionAccumRef.current = { sum: { coherence: 0, entropy: 0, neuroplasticity: 0 }, count: 0 };
     sessionStartRef.current = Date.now();
     setElapsed(0);
     setSessionActive(true);
   };
+
+  // target reached mid-session → soft chime (when audio is on) + pulse
+  const targetHitRef = useRef(false);
+  useEffect(() => { if (sessionActive) targetHitRef.current = false; }, [sessionActive]);
+  useEffect(() => {
+    if (!sessionActive || !targetMin || targetHitRef.current) return;
+    if (elapsed >= targetMin * 60) {
+      targetHitRef.current = true;
+      try {
+        if (audioEnabled) {
+          const bell = new Tone.Oscillator(880, 'sine').toDestination();
+          bell.volume.value = -18; bell.start(); bell.stop('+0.6');
+          setTimeout(() => { try { bell.dispose(); } catch {} }, 1200);
+        }
+      } catch {}
+    }
+  }, [elapsed, sessionActive, targetMin, audioEnabled]);
 
   const endSession = () => {
     const dur = Math.floor((Date.now() - sessionStartRef.current) / 1000);
@@ -277,6 +330,8 @@ export default function NeuroSomaticInterface() {
       date: Date.now(),
       state: brainState,
       duration: dur,
+      goalMin: targetMin || 0,
+      goalHit: targetMin ? dur >= targetMin * 60 : false,
       avgCoherence: count ? sum.coherence / count : metrics.coherence,
       avgEntropy: count ? sum.entropy / count : metrics.entropy,
       avgPlasticity: count ? sum.neuroplasticity / count : metrics.neuroplasticity,
@@ -296,12 +351,17 @@ export default function NeuroSomaticInterface() {
           const reverb = new Tone.Reverb({ decay: 5, wet: 0.35 }).connect(filter);
           const startDb = volume <= 0 ? -60 : Tone.gainToDb(volume / 100);
           const vol = new Tone.Volume(startDb).connect(reverb);
-          const note = STATES[brainState].note;
-          const osc1 = new Tone.Oscillator(note, 'sine').connect(vol);
-          const osc2 = new Tone.Oscillator(note * 1.005, 'sine').connect(vol);
+          // TRUE binaural beats: base tone in the left ear, base+state-frequency
+          // in the right — the brain perceives the difference (40/12/6/1.5Hz)
+          // as the entrainment rhythm. Needs headphones to work.
+          const panL = new Tone.Panner(-1).connect(vol);
+          const panR = new Tone.Panner(1).connect(vol);
+          const st = STATES[brainState];
+          const osc1 = new Tone.Oscillator(st.note, 'sine').connect(panL);
+          const osc2 = new Tone.Oscillator(st.note + st.beatHz, 'sine').connect(panR);
           osc1.start();
           osc2.start();
-          synthRef.current = { filter, reverb, vol, osc1, osc2 };
+          synthRef.current = { filter, reverb, vol, panL, panR, osc1, osc2 };
         }
         setAudioEnabled(true);
       } catch (err) {
@@ -314,6 +374,8 @@ export default function NeuroSomaticInterface() {
           synthRef.current.osc2.stop();
           synthRef.current.osc1.dispose();
           synthRef.current.osc2.dispose();
+          synthRef.current.panL?.dispose();
+          synthRef.current.panR?.dispose();
           synthRef.current.vol.dispose();
           synthRef.current.reverb.dispose();
           synthRef.current.filter.dispose();
@@ -326,9 +388,9 @@ export default function NeuroSomaticInterface() {
 
   useEffect(() => {
     if (audioEnabled && synthRef.current) {
-      const note = STATES[brainState].note;
-      synthRef.current.osc1.frequency.rampTo(note, 1.2);
-      synthRef.current.osc2.frequency.rampTo(note * 1.005, 1.2);
+      const st = STATES[brainState];
+      synthRef.current.osc1.frequency.rampTo(st.note, 1.2);
+      synthRef.current.osc2.frequency.rampTo(st.note + st.beatHz, 1.2);
     }
   }, [brainState, audioEnabled]);
 
@@ -347,6 +409,8 @@ export default function NeuroSomaticInterface() {
           synthRef.current.osc2.stop();
           synthRef.current.osc1.dispose();
           synthRef.current.osc2.dispose();
+          synthRef.current.panL?.dispose();
+          synthRef.current.panR?.dispose();
           synthRef.current.vol.dispose();
           synthRef.current.reverb.dispose();
           synthRef.current.filter.dispose();
@@ -422,10 +486,24 @@ export default function NeuroSomaticInterface() {
             </nav>
 
             <div className="flex items-center gap-2">
+              {!sessionActive && (
+                <select
+                  value={targetMin}
+                  onChange={(e) => setTargetMin(Number(e.target.value))}
+                  className="bg-slate-950/60 border border-slate-800 rounded-full px-2.5 py-1.5 text-[11px] font-bold text-slate-400 focus-visible:outline-none"
+                  title="יעד משך המפגש">
+                  <option value={0}>ללא יעד</option>
+                  <option value={5}>יעד 5 דק׳</option>
+                  <option value={10}>יעד 10 דק׳</option>
+                  <option value={20}>יעד 20 דק׳</option>
+                </select>
+              )}
               {sessionActive && (
                 <span className="font-mono-eng text-xs flex items-center gap-1.5 tabular-nums" style={{ color: active.hex }}>
                   <span className="w-1.5 h-1.5 rounded-full motion-safe:animate-pulse" style={{ backgroundColor: active.hex }} />
-                  {fmtTime(elapsed)}
+                  {fmtTime(elapsed)}{targetMin > 0 && (elapsed >= targetMin * 60
+                    ? ' · 🎯 היעד הושג!'
+                    : ' / ' + fmtTime(targetMin * 60))}
                 </span>
               )}
               <button
@@ -552,6 +630,37 @@ export default function NeuroSomaticInterface() {
               <div className="absolute top-3 left-9 font-mono-eng text-[10px] text-slate-600 hidden sm:block">
                 הזז את העכבר להשפיע על השדה
               </div>
+
+              {/* breathing pacer — a guided circle breathing at the active state's pattern */}
+              <button
+                onClick={() => setBreathOn((b) => !b)}
+                className="absolute bottom-3 right-9 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold border transition-all focus-visible:outline-none focus-visible:ring-2"
+                style={{
+                  borderColor: breathOn ? active.hex : 'rgb(51 65 85)',
+                  color: breathOn ? active.hex : 'rgb(100 116 139)',
+                  backgroundColor: breathOn ? `${active.hex}1a` : 'rgba(2,6,23,0.6)',
+                }}>
+                🫁 {breathOn ? active.breathName : 'מדריך נשימה'}
+              </button>
+              {breathOn && (
+                <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                  <div
+                    className="rounded-full border-2 flex items-center justify-center"
+                    style={{
+                      width: 150, height: 150,
+                      transform: `scale(${breathPhase.scale})`,
+                      borderColor: active.hex,
+                      background: `radial-gradient(circle, ${active.hex}22, transparent 70%)`,
+                      boxShadow: `0 0 40px ${active.hex}40`,
+                      transition: 'transform 120ms linear',
+                    }}>
+                    <div className="text-center">
+                      <p className="text-lg font-black" style={{ color: active.hex }}>{breathPhase.label}</p>
+                      <p className="font-mono-eng text-2xl font-bold tabular-nums text-slate-200">{breathPhase.t}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -605,7 +714,14 @@ export default function NeuroSomaticInterface() {
                         <div className="flex items-center gap-3">
                           <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: s.hex }} />
                           <div>
-                            <p className="text-xs font-bold">{s.label} · {fmtTime(r.duration)}</p>
+                            <p className="text-xs font-bold">
+                              {s.label} · {fmtTime(r.duration)}
+                              {r.goalMin > 0 && (
+                                <span className="mr-1.5 text-[9px] font-mono-eng" style={{ color: r.goalHit ? '#34d399' : '#64748b' }}>
+                                  {r.goalHit ? '🎯 יעד ' + r.goalMin + ' דק׳ הושג' : 'יעד ' + r.goalMin + ' דק׳'}
+                                </span>
+                              )}
+                            </p>
                             <p className="text-[10px] text-slate-500 font-mono-eng">{fmtDate(r.date)}</p>
                           </div>
                         </div>
@@ -632,8 +748,10 @@ export default function NeuroSomaticInterface() {
               </div>
               <div className="flex items-center justify-between p-4 rounded-xl border border-slate-800 bg-slate-900/40">
                 <div>
-                  <p className="text-sm font-bold">גוון אמביינט סינתטי</p>
-                  <p className="text-[11px] text-slate-500 mt-0.5">מגוון לפי התדר הפעיל · {active.label}</p>
+                  <p className="text-sm font-bold">🎧 ביניורל ביטס אמיתי</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    {active.note.toFixed(0)}Hz באוזן שמאל · {(active.note + active.beatHz).toFixed(1)}Hz בימין → המוח שומע הפרש {active.beatHz}Hz ({active.label}) · חובה אוזניות
+                  </p>
                 </div>
                 <button
                   onClick={toggleAudio}
