@@ -571,6 +571,20 @@ const Ring = ({ pct, size = 44, stroke = 5, color = C.amber, track = "rgba(255,2
   );
 };
 
+/* Generic persisted state — everything the owner records is real data and
+   must survive a reload. `revive` rebuilds Dates lost in JSON. */
+const usePersist = (key, init, revive) => {
+  const [val, setVal] = useState(() => {
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw != null) { const v = JSON.parse(raw); return revive ? revive(v) : v; }
+    } catch {}
+    return typeof init === "function" ? init() : init;
+  });
+  useEffect(() => { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} }, [key, val]);
+  return [val, setVal];
+};
+
 const Card = ({ children, className = "" }) => (
   <div className={`bg-white rounded-2xl border border-[#EFE6D6] shadow-[0_2px_10px_rgba(90,70,40,0.06)] transition-all duration-300 hover:-translate-y-[2px] hover:shadow-[0_12px_32px_rgba(90,70,40,0.13)] ${className}`}>{children}</div>
 );
@@ -746,15 +760,24 @@ export default function DoggyLife() {
   const [matchSearch, setMatchSearch] = useState("");
 
   /* Dashboard */
-  const [firstWeek, setFirstWeek] = useState(FIRST_WEEK_INIT);
-  const [vaccines, setVaccines] = useState(VACCINES_INIT);
+  const [firstWeek, setFirstWeek] = usePersist("doggy:firstweek:v1", FIRST_WEEK_INIT);
+  const [vaccines, setVaccines] = usePersist("doggy:vax:v1", VACCINES_INIT,
+    (v) => v.map((x) => ({ ...x, date: new Date(x.date) })));
+  const [newVax, setNewVax] = useState({ name: "", days: "" });
 
-  /* Training + routine */
+  /* Training + routine — the daily routine rolls over at midnight (fresh
+     checklist every day) while training progress persists forever */
   const [openModule, setOpenModule] = useState(null);
-  const [stepDone, setStepDone] = useState({}); // {moduleId: Set-like obj}
-  const [meals, setMeals] = useState({ morning: true, evening: false });
-  const [walks, setWalks] = useState([true, false, false]);
-  const [water, setWater] = useState(false);
+  const [stepDone, setStepDone] = usePersist("doggy:training:v1", {});
+  const todayKey = today.toISOString().slice(0, 10);
+  const ROUTINE_FRESH = { date: todayKey, meals: { morning: false, evening: false }, walks: [false, false, false], water: false };
+  const [routine, setRoutine] = usePersist("doggy:routine:v1", { ...ROUTINE_FRESH, meals: { morning: true, evening: false }, walks: [true, false, false] });
+  useEffect(() => { if (routine.date !== todayKey) setRoutine({ ...ROUTINE_FRESH }); }, []);
+  const meals = routine.meals, walks = routine.walks, water = routine.water;
+  const setMeals = (f) => setRoutine((r) => ({ ...r, meals: typeof f === "function" ? f(r.meals) : f }));
+  const setWalks = (f) => setRoutine((r) => ({ ...r, walks: typeof f === "function" ? f(r.walks) : f }));
+  const setWater = (v) => setRoutine((r) => ({ ...r, water: typeof v === "function" ? v(r.water) : v }));
+  const [streak, setStreak] = usePersist("doggy:streak:v1", { count: 0, last: "" });
 
   /* Parks + community */
   const [parks, setParks] = useState(PARKS_INIT);
@@ -867,12 +890,14 @@ export default function DoggyLife() {
   };
 
   /* Health journal */
-  const [weights, setWeights] = useState(WEIGHTS_INIT);
+  const [weights, setWeights] = usePersist("doggy:weights:v1", WEIGHTS_INIT,
+    (v) => v.map((x) => ({ ...x, date: new Date(x.date) })));
   const [newKg, setNewKg] = useState("");
-  const [care, setCare] = useState(CARE_INIT);
+  const [care, setCare] = usePersist("doggy:care:v1", CARE_INIT,
+    (v) => v.map((x) => ({ ...x, last: new Date(x.last) })));
   const [moodToday, setMoodToday] = useState(null);
   const [healthNote, setHealthNote] = useState("");
-  const [healthLog, setHealthLog] = useState([
+  const [healthLog, setHealthLog] = usePersist("doggy:healthlog:v1", [
     { id: 1, mood: "great", note: "רצה בפארק חצי שעה בלי להתעייף", time: "אתמול" },
   ]);
 
@@ -888,7 +913,8 @@ export default function DoggyLife() {
 
   const logMood = () => {
     if (!moodToday) return;
-    setHealthLog((l) => [{ id: Date.now(), mood: moodToday, note: healthNote.trim() || "ללא הערות", time: "היום" }, ...l]);
+    setHealthLog((l) => [{ id: Date.now(), mood: moodToday, note: healthNote.trim() || "ללא הערות",
+      time: new Date().toLocaleDateString("he-IL", { day: "numeric", month: "short" }) + " " + new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }) }, ...l].slice(0, 60));
     setMoodToday(null); setHealthNote("");
   };
 
@@ -984,6 +1010,12 @@ export default function DoggyLife() {
 
   const doneCount = firstWeek.filter((t) => t.done).length;
   const routineDone = [meals.morning, meals.evening, ...walks, water].filter(Boolean).length;
+  useEffect(() => {
+    if (routineDone === 6 && streak.last !== todayKey) {
+      const yest = new Date(Date.now() - DAY).toISOString().slice(0, 10);
+      setStreak({ count: streak.last === yest ? streak.count + 1 : 1, last: todayKey });
+    }
+  }, [routineDone]);
   const nextVaccine = useMemo(
     () => vaccines.filter((v) => !v.done && daysLeft(v.date) >= 0).sort((a, b) => a.date - b.date)[0],
     [vaccines]
@@ -1325,6 +1357,28 @@ export default function DoggyLife() {
                   );
                 })}
               </div>
+              {/* add a custom appointment — persists like everything else */}
+              <div className="flex gap-2 mt-3">
+                <input value={newVax.name} onChange={(e) => setNewVax((x) => ({ ...x, name: e.target.value }))}
+                  placeholder='תור חדש: למשל "חיסון כלבת שנתי"'
+                  className="flex-1 rounded-lg border px-3 py-2 text-[13px] outline-none focus:border-[#2F4A40]"
+                  style={{ borderColor: "#EFE6D6", background: "#FCFAF4" }} />
+                <input value={newVax.days} onChange={(e) => setNewVax((x) => ({ ...x, days: e.target.value }))}
+                  type="number" inputMode="numeric" placeholder="בעוד X ימים"
+                  className="w-28 rounded-lg border px-3 py-2 text-[13px] outline-none focus:border-[#2F4A40]"
+                  style={{ borderColor: "#EFE6D6", background: "#FCFAF4" }} />
+                <button onClick={() => {
+                    const d = parseInt(newVax.days, 10);
+                    if (!newVax.name.trim() || !isFinite(d) || d < 0) return;
+                    setVaccines((l) => [...l, { id: Date.now(), name: newVax.name.trim(), date: new Date(Date.now() + d * DAY), done: false, place: vet.name.split("—")[0].trim() }]);
+                    setNewVax({ name: "", days: "" });
+                  }}
+                  disabled={!newVax.name.trim() || newVax.days === ""}
+                  className="rounded-lg px-4 text-[12.5px] font-extrabold text-white"
+                  style={{ background: newVax.name.trim() && newVax.days !== "" ? C.pine : "#DBCFC0" }}>
+                  הוספה
+                </button>
+              </div>
             </Card>
           </>
         )}
@@ -1426,7 +1480,13 @@ export default function DoggyLife() {
           <>
             {/* Daily routine */}
             <Card className="p-4">
-              <SectionTitle icon={Clock} extra={<Chip tone="amber">{routineDone}/6</Chip>}>שגרה יומית · {today.toLocaleDateString("he-IL", { weekday: "long" })}</SectionTitle>
+              <SectionTitle icon={Clock}
+                extra={<span className="flex items-center gap-1.5">
+                  {streak.count > 0 && <Chip tone="pine">🔥 רצף {streak.count} ימים</Chip>}
+                  <Chip tone="amber">{routineDone}/6</Chip>
+                </span>}>
+                שגרה יומית · {today.toLocaleDateString("he-IL", { weekday: "long" })}
+              </SectionTitle>
               <ProgressBar pct={(routineDone / 6) * 100} color={C.pine} />
 
               <div className="grid grid-cols-2 gap-2.5 mt-3">

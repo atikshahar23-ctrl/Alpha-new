@@ -805,10 +805,20 @@ const NA_DEFAULTS={
   chartAutoOpen:false, chartDefaultTf:'1m',
   tourHoldSec:4, tapeSpeedSec:40,
   spawnWalkOnLoad:false,
+  pushNotify:false,        // התראות דפדפן אמיתיות (מחוץ לטאב) על יעדי מחיר וסגירת עמדות
 };
 let naSettings=Object.assign({},NA_DEFAULTS);
 try{ Object.assign(naSettings, JSON.parse(localStorage.getItem('na:settings')||'{}')); }catch(e){}
 window.__naSettings=naSettings; // live reference — reflects in-place mutations, incl. after reset
+// real browser notification — only when the user opted in AND the tab is hidden
+// (when you're looking at the arena the toast+beep already tell the story)
+function pushNote(title,body){
+  try{
+    if(!naSettings.pushNotify||typeof Notification==='undefined') return;
+    if(Notification.permission!=='granted'||document.visibilityState==='visible') return;
+    new Notification(title,{body,icon:'./favicon.ico',tag:'nexus-arena'});
+  }catch{}
+}
 
 // ---------- state ----------
 const state = {
@@ -881,6 +891,7 @@ function checkPriceAlerts(){
       delete priceAlerts[sym]; savePriceAlerts();
       ensureAC(); beep([[880,0.12],[1174,0.16],[880,0.12]]);
       toast(`🔔 ${sym} חצה את יעד ההתראה ${fmtP(a.price)} · עכשיו ${fmtP(lp)}`, a.fromBelow?'up':'down');
+      pushNote('🔔 NEXUS·ARENA · '+sym, 'המחיר חצה את היעד '+fmtP(a.price)+' — עכשיו '+fmtP(lp));
       if(sym===state.sym) renderAlertRow();
     }
   }
@@ -1626,6 +1637,7 @@ function closePos(sym,reason){
   delete positions[sym]; savePositions();
   const head=reason==='tp'?'🎯 יעד הושג':reason==='sl'?'🛑 סטופ הופעל':'עמדה נסגרה';
   toast(`${sym} · ${head} · ${win?'+':'−'}$${Math.abs(usd).toFixed(0)} (${fmtPct(pct)})`, win?'up':'down');
+  if(reason!=='manual') pushNote(head+' · '+sym, (win?'+':'−')+'$'+Math.abs(usd).toFixed(0)+' ('+fmtPct(pct)+')');
   beep(win?[[523,0.09],[659,0.09],[784,0.14]]:[[220,0.16],[160,0.2]]);
   renderTicket(); renderLog(); renderPortfolio();
 }
@@ -3622,6 +3634,7 @@ const SETTINGS_SCHEMA=[
   ]},
   {sec:'🛰️ עולם וניתוח', items:[
     {key:'alertsEnabled', type:'checkbox', label:'התראות שוק', desc:'הבזק + טוסט + צליל על תנועה חדה'},
+    {key:'pushNotify', type:'checkbox', label:'התראות דפדפן', desc:'יעד מחיר או TP/SL שנסגר מקפיצים התראה גם כשהטאב ברקע'},
     {key:'alertPct', type:'range', label:'סף התראה', desc:'אחוז שינוי יומי שנחשב "תנועה חדה"', min:1,max:10,step:0.5, fmt:v=>'±'+v.toFixed(1)+'%'},
     {key:'chartAutoOpen', type:'checkbox', label:'פתיחת גרף אוטומטית', desc:'בכל מעבר בין מטבעות בזירה'},
     {key:'chartDefaultTf', type:'select', label:'מסגרת זמן ברירת מחדל', options:TFS.map(([v,l])=>[v,l])},
@@ -3634,6 +3647,9 @@ const SETTINGS_SCHEMA=[
 ];
 function onSettingChanged(key){
   saveNaSettings();
+  if(key==='pushNotify'&&naSettings.pushNotify&&typeof Notification!=='undefined'&&Notification.permission==='default'){
+    Notification.requestPermission().then(p=>{ if(p!=='granted'){ naSettings.pushNotify=false; saveNaSettings(); toast('הדפדפן לא אישר התראות','down'); } });
+  }
   if(key==='qualityMode') applyQuality(naSettings.qualityMode);
   if(key==='exposure' && renderer.toneMapping!==THREE.NoToneMapping) renderer.toneMappingExposure=naSettings.exposure;
   if(key==='showMotes'||key==='showComets'||key==='showStreams'||key==='showWeather'||key==='showPulse'||key==='tapeSpeedSec') applyVisualToggles();

@@ -637,7 +637,7 @@ const $=id=>document.getElementById(id);
 // ---------- settings (persisted control room, parity with NEXUS·ARENA) ----------
 const OCTO_DEFAULTS={autoRefresh:true,refreshMin:5,soundOn:true,breakingAlerts:true,showSentiment:true,
   maxStories:160,clusterSens:'normal',fontScale:1,compactMode:false,showEntities:true,translateHe:true,
-  muteWords:'',watchWords:'',hideStage:false,disabledArms:[]};
+  muteWords:'',watchWords:'',hideStage:false,pushNotify:false,disabledArms:[]};
 function loadOctoSettings(){
   try{
     const raw=JSON.parse(localStorage.getItem('octo:settings')||'null');
@@ -984,6 +984,12 @@ function checkBreaking(){
       notifiedBreaking.add(key);
       ensureAC(); beep([[880,0.1],[1108,0.12],[1318,0.16]]);
       showBreakingBanner(c);
+      try{
+        if(octoSettings.pushNotify&&typeof Notification!=='undefined'
+          &&Notification.permission==='granted'&&document.visibilityState!=='visible'){
+          new Notification('🔥 אוקטופוס · חדשות מתפתחות',{body:dispTitle(c.head)+' ('+c.angles.length+' מקורות)',tag:'octo-breaking'});
+        }
+      }catch{}
       if(window.__octoBreaking) window.__octoBreaking();
     }
   });
@@ -1291,6 +1297,7 @@ const OS_SCHEMA=[
   ]},
   {sec:'🔔 התראות וצליל', items:[
     {key:'breakingAlerts', type:'checkbox', label:'התראת חדשות מתפתחות', desc:'כאשר סיפור מצטלב ב-3+ מקורות'},
+    {key:'pushNotify', type:'checkbox', label:'התראות דפדפן', desc:'סיפור מתפתח מקפיץ התראה אמיתית גם כשהטאב ברקע'},
     {key:'soundOn', type:'checkbox', label:'צליל התראה'},
   ]},
   {sec:'🎨 תצוגה', items:[
@@ -1312,6 +1319,9 @@ function onOctoSettingChanged(key){
   if(key==='translateHe'){ renderClusters(); renderHeadlines(); if(octoSettings.translateHe) translateFeedItems(); }
   if(key==='muteWords'||key==='watchWords'){ renderClusters(); renderHeadlines(); }
   if(key==='hideStage'){ const st=$('octoStage'); if(st) st.style.display=octoSettings.hideStage?'none':''; }
+  if(key==='pushNotify'&&octoSettings.pushNotify&&typeof Notification!=='undefined'&&Notification.permission==='default'){
+    Notification.requestPermission().then(p=>{ if(p!=='granted'){ octoSettings.pushNotify=false; saveOctoSettings(); } });
+  }
 }
 function buildSettingsPanel(){
   const body=$('osBody'); if(!body) return;
