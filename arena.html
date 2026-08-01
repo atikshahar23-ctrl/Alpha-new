@@ -2977,6 +2977,9 @@ function setWalk(on){
   if(on){ state.auto=false; syncAutoBtn(); }
   try{ localStorage.setItem('na:walk', on?'1':'0'); }catch(e){}
   if(!on && document.pointerLockElement===el) document.exitPointerLock();
+  // the proximity plate only updates inside the walk loop — leaving walk/tour
+  // next to a pod used to strand it in the middle of the screen forever
+  if(!on){ $('focusPlate').style.display='none'; fpPodId=null; }
 }
 
 // ---- tour mode: a cinematic auto-flight that glides from pod to pod,
