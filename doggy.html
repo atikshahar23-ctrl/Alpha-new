@@ -8,11 +8,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;900&display=swap" rel="stylesheet" />
-<!-- The DoggyLife prototype is written against Tailwind utility classes;
-     the Play CDN compiles them at runtime, same external-CDN pattern the
-     platform already uses for fonts. If it fails to load the app still
-     runs — just visually flat. -->
-<script src="https://cdn.tailwindcss.com"></script>
+<!-- Tailwind is compiled at BUILD time (doggy/tailwind.css → PostCSS), not
+     pulled from the Play CDN: the app then styles correctly offline and
+     doesn't depend on an external host staying reachable. -->
 <style>
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: #FAF5EC; font-family: 'Heebo', sans-serif; }

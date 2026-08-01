@@ -32,6 +32,62 @@ const today = new Date();
 const fmt = (d) => d.toLocaleDateString("he-IL", { day: "numeric", month: "short" });
 const daysLeft = (d) => Math.ceil((d.getTime() - Date.now()) / DAY);
 
+/* ---------- Pet profile helpers (age / weight / photo) ---------- */
+// "18 חודשים" is fine for a puppy and useless for a 9-year-old dog — past a
+// year we say years (plus remaining months) the way an owner actually talks.
+const fmtAge = (m) => {
+  const months = Math.max(0, Math.round(Number(m) || 0));
+  if (months < 12) return `${months} חודשים`;
+  const y = Math.floor(months / 12), r = months % 12;
+  const yTxt = y === 1 ? "שנה" : y === 2 ? "שנתיים" : `${y} שנים`;
+  return r ? `${yTxt} ו-${r} חודשים` : yTxt;
+};
+const fmtWeight = (w) => {
+  const kg = Number(w) || 0;
+  // a 90-gram parakeet reads as "0 ק"ג" at one decimal — small pets get grams
+  return kg > 0 && kg < 1 ? `${Math.round(kg * 1000)} גרם` : `${(Math.round(kg * 10) / 10)} ק"ג`;
+};
+
+// A phone photo is 3-10MB as a raw data URL — that alone blows the ~5MB
+// localStorage quota. Downscale to a 256px square thumbnail (center-cropped,
+// JPEG q.82 ≈ 15-25KB) so a full roster of photos still persists comfortably.
+const PHOTO_PX = 256;
+function fileToAvatar(file) {
+  return new Promise((resolve, reject) => {
+    if (!file || !/^image\//.test(file.type)) return reject(new Error("not an image"));
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("read failed"));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("decode failed"));
+      img.onload = () => {
+        try {
+          const side = Math.min(img.width, img.height); // center square crop
+          const cv = document.createElement("canvas");
+          cv.width = cv.height = PHOTO_PX;
+          const g = cv.getContext("2d");
+          g.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, PHOTO_PX, PHOTO_PX);
+          resolve(cv.toDataURL("image/jpeg", 0.82));
+        } catch (e) { reject(e); }
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+const ROSTER_KEY = "doggy:roster:v1";
+const loadRoster = (fallback) => {
+  try {
+    const raw = JSON.parse(localStorage.getItem(ROSTER_KEY) || "null");
+    if (raw && Array.isArray(raw.roster) && raw.roster.length) return raw;
+  } catch {}
+  return { roster: fallback, activeId: fallback[0].id };
+};
+const saveRoster = (roster, activeId) => {
+  try { localStorage.setItem(ROSTER_KEY, JSON.stringify({ roster, activeId })); } catch {}
+};
+
 /* ---------- Mock data ---------- */
 const EMERGENCY = "מוקד חירום וטרינרי 24/7: *3888";
 
@@ -414,6 +470,18 @@ const Card = ({ children, className = "" }) => (
   <div className={`bg-white rounded-2xl border border-[#EFE6D6] shadow-[0_2px_10px_rgba(90,70,40,0.06)] transition-all duration-300 hover:-translate-y-[2px] hover:shadow-[0_12px_32px_rgba(90,70,40,0.13)] ${className}`}>{children}</div>
 );
 
+// One avatar for the whole app: a real profile photo when the owner uploaded
+// one, the species emoji otherwise — so header, switcher and roster list all
+// stay in sync automatically instead of each re-deciding.
+const PetAvatar = ({ pet, size = 44, radius = 16, fontScale = 0.52, className = "", style = {} }) => (
+  <span className={`inline-flex items-center justify-center overflow-hidden shrink-0 ${className}`}
+    style={{ width: size, height: size, borderRadius: radius, background: pet.photo ? "#EFE6D6" : C.amberSoft, ...style }}>
+    {pet.photo
+      ? <img src={pet.photo} alt={pet.name} className="w-full h-full object-cover" style={{ display: "block" }} />
+      : <span style={{ fontSize: Math.round(size * fontScale), lineHeight: 1 }}>{pet.emoji}</span>}
+  </span>
+);
+
 const SectionTitle = ({ icon: Icon, children, extra }) => (
   <div className="flex items-center justify-between mb-3">
     <div className="flex items-center gap-2">
@@ -451,9 +519,12 @@ const ProgressBar = ({ pct, color = C.amber }) => (
 export default function DoggyLife() {
   const [tab, setTab] = useState("home");
 
-  /* Multi-pet roster */
-  const [roster, setRoster] = useState(ROSTER_INIT);
-  const [activeId, setActiveId] = useState(1);
+  /* Multi-pet roster — persisted, so uploaded photos and edited ages/weights
+     survive a reload instead of resetting to the demo animals every visit */
+  const [persisted] = useState(() => loadRoster(ROSTER_INIT));
+  const [roster, setRoster] = useState(persisted.roster);
+  const [activeId, setActiveId] = useState(persisted.activeId);
+  useEffect(() => { saveRoster(roster, activeId); }, [roster, activeId]);
   const P = roster.find((p) => p.id === activeId) ?? roster[0];
   const fem = P.sex === "נקבה";
   const petAdoptionDate = new Date(Date.now() - P.adoptedDaysAgo * DAY);
@@ -466,23 +537,46 @@ export default function DoggyLife() {
   const [notifVax, setNotifVax] = useState(true);
   const [notifCommunity, setNotifCommunity] = useState(false);
   const [motionOff, setMotionOff] = useState(false);
-  const [newPet, setNewPet] = useState({ name: "", species: SPECIES_OPTIONS[0], breed: "" });
+  const NEW_PET_INIT = { name: "", species: SPECIES_OPTIONS[0], breed: "", years: "", months: "", weight: "", photo: null };
+  const [newPet, setNewPet] = useState(NEW_PET_INIT);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoErr, setPhotoErr] = useState("");
+  const [editId, setEditId] = useState(null); // which roster row has its edit panel open
+
+  // years + months inputs → the single ageMonths the rest of the app uses
+  const toAgeMonths = (years, months) =>
+    Math.max(0, Math.round((Number(years) || 0) * 12 + (Number(months) || 0)));
+
+  const pickPhoto = async (file, apply) => {
+    if (!file) return;
+    setPhotoErr(""); setPhotoBusy(true);
+    try { apply(await fileToAvatar(file)); }
+    catch { setPhotoErr("לא הצלחנו לקרוא את התמונה — נסו קובץ תמונה אחר"); }
+    finally { setPhotoBusy(false); }
+  };
 
   const addPet = () => {
     if (!newPet.name.trim()) return;
     const id = Date.now();
+    const ageMonths = toAgeMonths(newPet.years, newPet.months);
     setRoster((r) => [...r, {
       id, name: newPet.name.trim(), emoji: newPet.species.emoji, species: newPet.species.label,
       breed: newPet.breed.trim() || "מעורב", sex: /ה$/.test(newPet.species.label) ? "נקבה" : "זכר",
-      ageMonths: 6, weight: 5, chip: "941-" + String(id).slice(-9), adoptedDaysAgo: 0,
+      ageMonths: ageMonths || 6,
+      weight: Number(newPet.weight) > 0 ? Number(newPet.weight) : 5,
+      photo: newPet.photo || null,
+      chip: "941-" + String(id).slice(-9), adoptedDaysAgo: 0,
     }]);
     setActiveId(id);
-    setNewPet({ name: "", species: SPECIES_OPTIONS[0], breed: "" });
+    setNewPet(NEW_PET_INIT);
+    setPhotoErr("");
   };
+  const updatePet = (id, patch) => setRoster((r) => r.map((p) => (p.id === id ? { ...p, ...patch } : p)));
   const removePet = (id) => {
     if (roster.length <= 1) return;
     setRoster((r) => r.filter((p) => p.id !== id));
     if (activeId === id) setActiveId(roster.find((p) => p.id !== id).id);
+    if (editId === id) setEditId(null);
   };
 
   /* Animal index */
@@ -631,7 +725,7 @@ export default function DoggyLife() {
 אתה לא וטרינר: בכל חשש רפואי ממשי — תן סימנים שכדאי לשים לב אליהם והפנה לווטרינרית הקבועה (${vet.name}, ${vet.phone}). לעולם אל תאבחן בוודאות ואל תמליץ על תרופות ומינונים.
 
 הפרופיל החי של החיה הפעילה (נתונים אמיתיים מהאפליקציה כרגע):
-- שם: ${P.name} · ${P.species} · ${P.breed} · ${P.sex} · גיל ${P.ageMonths} חודשים · בבית כבר ${petDays} ימים
+- שם: ${P.name} · ${P.species} · ${P.breed} · ${P.sex} · גיל ${fmtAge(P.ageMonths)} · משקל ${fmtWeight(P.weight)} · בבית כבר ${petDays} ימים
 - משקל נוכחי: ${lastKg} ק"ג (שינוי שבועי: ${weeklyGain} ק"ג)
 - החיסון הקרוב: ${nextVaccine ? `${nextVaccine.name} בעוד ${daysLeft(nextVaccine.date)} ימים` : "אין חיסון ממתין"}
 - טיפולים מונעים באיחור: ${overdue.length ? overdue.join(", ") : "אין"}
@@ -804,12 +898,16 @@ export default function DoggyLife() {
               {/* avatar with rotating aura ring */}
               <div className="relative w-[68px] h-[68px] shrink-0">
                 <div className="absolute -inset-[5px] rounded-[24px]" style={{ background: "conic-gradient(from 0deg,#D98E32,#F2C879,#7BAE7F,#4E8FB5,#D98E32)", animation: "spinSlow 7s linear infinite", filter: "blur(7px)", opacity: .85 }} />
-                <div className="absolute inset-0 rounded-[20px] flex items-center justify-center text-4xl shadow-xl" style={{ background: "linear-gradient(145deg,#F9E8C9,#F2D5A3)" }}>{P.emoji}</div>
+                <div className="absolute inset-0 rounded-[20px] overflow-hidden flex items-center justify-center text-4xl shadow-xl" style={{ background: "linear-gradient(145deg,#F9E8C9,#F2D5A3)" }}>
+                  {P.photo
+                    ? <img src={P.photo} alt={P.name} className="w-full h-full object-cover" style={{ display: "block" }} />
+                    : P.emoji}
+                </div>
               </div>
               <div>
                 <p className="font-display text-[12px] tracking-widest" style={{ background: "linear-gradient(90deg,#F2C879,#E8A957)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>DOGGYLIFE · דוגילייף</p>
                 <h1 className="font-display text-[26px] text-white leading-none mt-0.5">{P.name}</h1>
-                <p className="text-[12px] mt-1 font-medium" style={{ color: "#B9D2C4" }}>{P.breed} · {P.ageMonths} חודשים · {P.weight} ק"ג</p>
+                <p className="text-[12px] mt-1 font-medium" style={{ color: "#B9D2C4" }}>{P.breed} · {fmtAge(P.ageMonths)} · {fmtWeight(P.weight)}</p>
               </div>
             </div>
             <div className="text-center rounded-2xl px-4 py-2.5 shimmer" style={{ background: "rgba(255,255,255,.10)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", border: "1px solid rgba(255,255,255,.16)" }}>
@@ -828,7 +926,8 @@ export default function DoggyLife() {
                   style={on
                     ? { background: "linear-gradient(145deg,#F2C879,#D98E32)", color: "#2A1C08", boxShadow: "0 4px 14px rgba(217,142,50,.4)" }
                     : { background: "rgba(255,255,255,.09)", color: "#CFE1D6", border: "1px solid rgba(255,255,255,.14)" }}>
-                  <span className="w-6 h-6 rounded-full flex items-center justify-center text-[13px]" style={{ background: on ? "rgba(255,255,255,.4)" : "rgba(255,255,255,.12)" }}>{p.emoji}</span>
+                  <PetAvatar pet={p} size={24} radius={999} fontScale={0.54}
+                    style={{ background: on ? "rgba(255,255,255,.4)" : "rgba(255,255,255,.12)" }} />
                   <span className="text-[11.5px] font-extrabold">{p.name}</span>
                 </button>
               );
@@ -896,7 +995,7 @@ export default function DoggyLife() {
                   <p className="text-[11px] font-bold" style={{ color: C.amber }}>ברוכים הבאים הביתה 🎉</p>
                   <h2 className="text-lg font-extrabold mt-0.5">{P.name} {fem ? "הצטרפה" : "הצטרף"} למשפחה!</h2>
                   <p className="text-[13px] mt-1" style={{ color: C.inkSoft }}>
-                    {fem ? "אומצה" : "אומץ"} ב-{fmt(petAdoptionDate)} · {P.breed} · גיל {P.ageMonths} חודשים · {P.weight} ק"ג
+                    {fem ? "אומצה" : "אומץ"} ב-{fmt(petAdoptionDate)} · {P.breed} · גיל {fmtAge(P.ageMonths)} · {fmtWeight(P.weight)}
                   </p>
                 </div>
                 <PartyPopper size={26} style={{ color: C.amber }} />
@@ -1227,7 +1326,7 @@ export default function DoggyLife() {
               </div>
               {isDog && (
                 <p className="mt-2 text-[11px] leading-relaxed" style={{ color: C.inkSoft }}>
-                  💡 גור {P.breed} בגיל {P.ageMonths} חודשים אמור לעלות כ-0.4–0.9 ק"ג בשבוע. קצב חריג לשני הכיוונים — שווה שיחה עם הווטרינר.
+                  💡 גור {P.breed} בגיל {fmtAge(P.ageMonths)} אמור לעלות כ-0.4–0.9 ק"ג בשבוע. קצב חריג לשני הכיוונים — שווה שיחה עם הווטרינר.
                 </p>
               )}
             </Card>
@@ -2051,24 +2150,98 @@ export default function DoggyLife() {
               <div className="space-y-2.5">
                 {roster.map((p) => {
                   const on = p.id === activeId;
+                  const editing = editId === p.id;
                   return (
-                    <div key={p.id} className="flex items-center gap-3 rounded-xl border p-3" style={{ borderColor: on ? C.amber : "#EFE6D6", background: on ? "#FEF8ED" : "#fff" }}>
-                      <span className="w-11 h-11 rounded-2xl flex items-center justify-center text-2xl shrink-0" style={{ background: C.amberSoft }}>{p.emoji}</span>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[13.5px] font-extrabold flex items-center gap-2">{p.name} {on && <Chip tone="amber">פעיל/ה ✓</Chip>}</p>
-                        <p className="text-[11.5px]" style={{ color: C.inkSoft }}>{p.species} · {p.breed} · {p.ageMonths} חודשים · {p.weight} ק"ג</p>
-                      </div>
-                      {!on && (
-                        <button onClick={() => setActiveId(p.id)} className="rounded-lg px-3 py-1.5 text-[11.5px] font-extrabold shrink-0" style={{ background: C.pineSoft, color: C.pine }}>
-                          מעבר
+                    <div key={p.id} className="rounded-xl border p-3" style={{ borderColor: on ? C.amber : "#EFE6D6", background: on ? "#FEF8ED" : "#fff" }}>
+                      <div className="flex items-center gap-3">
+                        <PetAvatar pet={p} size={44} radius={14} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[13.5px] font-extrabold flex items-center gap-2">{p.name} {on && <Chip tone="amber">פעיל/ה ✓</Chip>}</p>
+                          <p className="text-[11.5px]" style={{ color: C.inkSoft }}>{p.species} · {p.breed} · {fmtAge(p.ageMonths)} · {fmtWeight(p.weight)}</p>
+                        </div>
+                        {!on && (
+                          <button onClick={() => setActiveId(p.id)} className="rounded-lg px-3 py-1.5 text-[11.5px] font-extrabold shrink-0" style={{ background: C.pineSoft, color: C.pine }}>
+                            מעבר
+                          </button>
+                        )}
+                        <button onClick={() => setEditId(editing ? null : p.id)}
+                          className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                          style={{ background: editing ? C.pine : C.pineSoft, color: editing ? "#fff" : C.pine }}
+                          title="עריכת פרטים">
+                          <SlidersHorizontal size={14} />
                         </button>
+                        <button onClick={() => removePet(p.id)} disabled={roster.length <= 1}
+                          className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                          style={{ background: C.redSoft, color: C.red, opacity: roster.length <= 1 ? 0.4 : 1 }}
+                          title="הסרה">
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+
+                      {editing && (
+                        <div className="mt-3 pt-3 border-t" style={{ borderColor: "#EFE6D6" }}>
+                          {/* profile photo */}
+                          <div className="flex items-center gap-3">
+                            <PetAvatar pet={p} size={56} radius={16} />
+                            <div className="flex-1">
+                              <p className="text-[11.5px] font-extrabold mb-1.5">תמונת פרופיל</p>
+                              <div className="flex gap-1.5 flex-wrap">
+                                <label className="rounded-lg px-3 py-1.5 text-[11.5px] font-extrabold cursor-pointer flex items-center gap-1.5"
+                                  style={{ background: C.blueSoft, color: C.blue }}>
+                                  <Camera size={13} /> {p.photo ? "החלפת תמונה" : "העלאת תמונה"}
+                                  <input type="file" accept="image/*" className="hidden"
+                                    onChange={(e) => { pickPhoto(e.target.files?.[0], (d) => updatePet(p.id, { photo: d })); e.target.value = ""; }} />
+                                </label>
+                                {p.photo && (
+                                  <button onClick={() => updatePet(p.id, { photo: null })}
+                                    className="rounded-lg px-3 py-1.5 text-[11.5px] font-extrabold" style={{ background: C.redSoft, color: C.red }}>
+                                    הסרה
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* name / breed */}
+                          <div className="flex gap-2 mt-3">
+                            <div className="flex-1">
+                              <p className="text-[11px] font-bold mb-1" style={{ color: C.inkSoft }}>שם</p>
+                              <input value={p.name} onChange={(e) => updatePet(p.id, { name: e.target.value })}
+                                className="w-full rounded-lg border px-3 py-2 text-[13px] outline-none focus:border-[#D98E32]" style={{ borderColor: "#EFE6D6", background: "#fff" }} />
+                            </div>
+                            <div className="flex-1">
+                              <p className="text-[11px] font-bold mb-1" style={{ color: C.inkSoft }}>גזע</p>
+                              <input value={p.breed} onChange={(e) => updatePet(p.id, { breed: e.target.value })}
+                                className="w-full rounded-lg border px-3 py-2 text-[13px] outline-none focus:border-[#D98E32]" style={{ borderColor: "#EFE6D6", background: "#fff" }} />
+                            </div>
+                          </div>
+
+                          {/* age + weight */}
+                          <div className="flex gap-2 mt-2 items-end">
+                            <div className="w-20">
+                              <p className="text-[11px] font-bold mb-1" style={{ color: C.inkSoft }}>שנים</p>
+                              <input type="number" min="0" max="40" inputMode="numeric" value={Math.floor((p.ageMonths || 0) / 12)}
+                                onChange={(e) => updatePet(p.id, { ageMonths: toAgeMonths(e.target.value, (p.ageMonths || 0) % 12) })}
+                                className="w-full rounded-lg border px-3 py-2 text-[13px] outline-none focus:border-[#D98E32]" style={{ borderColor: "#EFE6D6", background: "#fff" }} />
+                            </div>
+                            <div className="w-20">
+                              <p className="text-[11px] font-bold mb-1" style={{ color: C.inkSoft }}>חודשים</p>
+                              <input type="number" min="0" max="11" inputMode="numeric" value={(p.ageMonths || 0) % 12}
+                                onChange={(e) => updatePet(p.id, { ageMonths: toAgeMonths(Math.floor((p.ageMonths || 0) / 12), e.target.value) })}
+                                className="w-full rounded-lg border px-3 py-2 text-[13px] outline-none focus:border-[#D98E32]" style={{ borderColor: "#EFE6D6", background: "#fff" }} />
+                            </div>
+                            <div className="flex-1">
+                              <p className="text-[11px] font-bold mb-1" style={{ color: C.inkSoft }}>משקל (ק"ג)</p>
+                              <input type="number" min="0" step="0.1" inputMode="decimal" value={p.weight}
+                                onChange={(e) => updatePet(p.id, { weight: Number(e.target.value) || 0 })}
+                                className="w-full rounded-lg border px-3 py-2 text-[13px] outline-none focus:border-[#D98E32]" style={{ borderColor: "#EFE6D6", background: "#fff" }} />
+                            </div>
+                          </div>
+                          <p className="text-[11px] mt-2" style={{ color: C.inkSoft }}>
+                            {fmtAge(p.ageMonths)} · {fmtWeight(p.weight)} · נשמר אוטומטית ✓
+                          </p>
+                        </div>
                       )}
-                      <button onClick={() => removePet(p.id)} disabled={roster.length <= 1}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-                        style={{ background: C.redSoft, color: C.red, opacity: roster.length <= 1 ? 0.4 : 1 }}
-                        title="הסרה">
-                        <Trash2 size={14} />
-                      </button>
                     </div>
                   );
                 })}
@@ -2089,13 +2262,47 @@ export default function DoggyLife() {
                 <div className="flex gap-2 mt-2">
                   <input value={newPet.name} onChange={(e) => setNewPet((n) => ({ ...n, name: e.target.value }))}
                     placeholder="שם" className="w-28 rounded-lg border px-3 py-2 text-[13px] outline-none focus:border-[#D98E32]" style={{ borderColor: "#EFE6D6", background: "#fff" }} />
-                  <input value={newPet.breed} onChange={(e) => setNewPet((n) => ({ ...n, breed: e.target.value }))} onKeyDown={(e) => e.key === "Enter" && addPet()}
+                  <input value={newPet.breed} onChange={(e) => setNewPet((n) => ({ ...n, breed: e.target.value }))}
                     placeholder="גזע (אופציונלי)" className="flex-1 rounded-lg border px-3 py-2 text-[13px] outline-none focus:border-[#D98E32]" style={{ borderColor: "#EFE6D6", background: "#fff" }} />
+                </div>
+
+                {/* age + weight */}
+                <div className="flex gap-2 mt-2">
+                  <input type="number" min="0" max="40" inputMode="numeric" value={newPet.years}
+                    onChange={(e) => setNewPet((n) => ({ ...n, years: e.target.value }))}
+                    placeholder="שנים" className="w-[72px] rounded-lg border px-3 py-2 text-[13px] outline-none focus:border-[#D98E32]" style={{ borderColor: "#EFE6D6", background: "#fff" }} />
+                  <input type="number" min="0" max="11" inputMode="numeric" value={newPet.months}
+                    onChange={(e) => setNewPet((n) => ({ ...n, months: e.target.value }))}
+                    placeholder="חודשים" className="w-[86px] rounded-lg border px-3 py-2 text-[13px] outline-none focus:border-[#D98E32]" style={{ borderColor: "#EFE6D6", background: "#fff" }} />
+                  <input type="number" min="0" step="0.1" inputMode="decimal" value={newPet.weight}
+                    onChange={(e) => setNewPet((n) => ({ ...n, weight: e.target.value }))} onKeyDown={(e) => e.key === "Enter" && addPet()}
+                    placeholder='משקל בק"ג' className="flex-1 rounded-lg border px-3 py-2 text-[13px] outline-none focus:border-[#D98E32]" style={{ borderColor: "#EFE6D6", background: "#fff" }} />
+                </div>
+
+                {/* profile photo + submit */}
+                <div className="flex gap-2 mt-2 items-center">
+                  <PetAvatar pet={{ photo: newPet.photo, emoji: newPet.species.emoji, name: "חדש" }} size={44} radius={14} />
+                  <label className="rounded-lg px-3 py-2 text-[12px] font-extrabold cursor-pointer flex items-center gap-1.5"
+                    style={{ background: C.blueSoft, color: C.blue }}>
+                    <Camera size={14} /> {photoBusy ? "טוען…" : newPet.photo ? "החלפת תמונה" : "תמונת פרופיל"}
+                    <input type="file" accept="image/*" className="hidden"
+                      onChange={(e) => { pickPhoto(e.target.files?.[0], (d) => setNewPet((n) => ({ ...n, photo: d }))); e.target.value = ""; }} />
+                  </label>
+                  {newPet.photo && (
+                    <button onClick={() => setNewPet((n) => ({ ...n, photo: null }))}
+                      className="rounded-lg px-2.5 py-2 text-[12px] font-extrabold" style={{ background: C.redSoft, color: C.red }}>
+                      <X size={13} />
+                    </button>
+                  )}
                   <button onClick={addPet} disabled={!newPet.name.trim()}
-                    className="rounded-lg px-4 text-[12.5px] font-extrabold text-white" style={{ background: newPet.name.trim() ? C.pine : "#DBCFC0" }}>
+                    className="flex-1 rounded-lg px-4 py-2 text-[12.5px] font-extrabold text-white" style={{ background: newPet.name.trim() ? C.pine : "#DBCFC0" }}>
                     הוספה
                   </button>
                 </div>
+                {photoErr && <p className="text-[11px] mt-1.5 font-bold" style={{ color: C.red }}>{photoErr}</p>}
+                <p className="text-[10.5px] mt-1.5" style={{ color: C.inkSoft }}>
+                  גיל ומשקל אופציונליים — אפשר להשלים בכל רגע דרך ✎ בכרטיס החיה
+                </p>
               </div>
             </Card>
 
@@ -2168,8 +2375,8 @@ export default function DoggyLife() {
 
                 <div className="grid grid-cols-3 gap-2 mt-4">
                   {[
-                    ["גיל", `${P.ageMonths} חודשים`],
-                    ["משקל", `${P.weight} ק"ג`],
+                    ["גיל", fmtAge(P.ageMonths)],
+                    ["משקל", fmtWeight(P.weight)],
                     ["אימוץ", fmt(petAdoptionDate)],
                   ].map(([k, v]) => (
                     <div key={k} className="rounded-xl p-2.5 text-center" style={{ background: "#FCFAF4", border: "1px solid #EFE6D6" }}>
