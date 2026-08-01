@@ -200,6 +200,13 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 #fundPanel .fd-cls{font-size:10.5px}
 #fundExp{margin-top:12px;padding:11px 13px;border:1px dashed rgba(0,240,255,.25);border-radius:10px;
   font-size:12.5px;line-height:1.7;color:var(--txt)}
+/* ── premium finish: cinematic vignette + glass depth on every panel ── */
+#vignette{position:fixed;inset:0;z-index:5;pointer-events:none;
+  background:radial-gradient(ellipse at center,transparent 58%,rgba(0,4,10,.42) 100%)}
+.panel{box-shadow:inset 0 1px 0 rgba(255,255,255,.055), inset 0 -1px 0 rgba(0,0,0,.35), 0 10px 34px rgba(0,0,0,.45)}
+.tgl:hover{border-color:rgba(0,240,255,.55);box-shadow:0 0 14px rgba(0,240,255,.18)}
+#mapLegend{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;margin:9px 2px 4px;font-size:10.5px;color:var(--dim)}
+#mapLegend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-inline-end:5px;vertical-align:middle}
 /* live commentator caption bar — the sports-caster line over the arena */
 #commBar{position:fixed;z-index:30;bottom:46px;left:50%;transform:translateX(-50%);
   max-width:min(680px,92vw);display:flex;align-items:center;gap:9px;
@@ -538,6 +545,8 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
       <div><div class="k">נמוך 24ש׳</div><div class="v num" id="statLo">—</div></div>
       <div><div class="k">מחזור 24ש׳</div><div class="v num" id="statVol">—</div></div>
       <div><div class="k">ספרד</div><div class="v num" id="statSpread">—</div></div>
+      <div id="statPrevW" style="display:none"><div class="k">סגירה קודמת</div><div class="v num" id="statPrev">—</div></div>
+      <div id="statOpenW" style="display:none"><div class="k">פתיחת היום</div><div class="v num" id="statOpen">—</div></div>
     </div>
   </div>
 
@@ -657,6 +666,7 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
     </div>
   </div>
 
+  <div id="vignette" aria-hidden="true"></div>
   <div id="banner" class="panel clip"><span id="bIcon">⚡</span><span id="bTxt"></span></div>
   <div id="commBar" class="panel clip" style="display:none"><span id="commIc">🎙️</span><span id="commTxt"></span></div>
   <div id="toast" class="panel clip"></div>
@@ -672,6 +682,14 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
 <div id="mapPanel" class="panel clip" style="display:none">
   <div class="mp-h">🗺️ מפת העולם — הקשה על זירה מטלפרטת</div>
   <canvas id="mapCv" width="280" height="280"></canvas>
+  <div id="mapLegend">
+    <span><i style="background:#f7931a"></i>קריפטו</span>
+    <span><i style="background:#7dd3fc"></i>מניות ומדדים</span>
+    <span><i style="background:#ff2fd6"></i>Polymarket</span>
+    <span><i style="background:#00f0ff;border-radius:50%"></i>הזירה הפעילה</span>
+    <span><i style="background:#00ffa6"></i>עולה היום</span>
+    <span><i style="background:#ff3d6e"></i>יורד היום</span>
+  </div>
   <div class="mp-close" id="mapClose">✕ סגור</div>
 </div>
 <div id="chartPanel" class="panel clip" style="display:none">
@@ -1110,6 +1128,18 @@ async function fetchStats(f){
 // ground-truth for the focused CRYPTO symbol — periodically snapping our
 // own price to it. Silent no-op when unconfigured/unreachable; it only
 // covers crypto, so stocks keep their own Yahoo/sim path untouched. ----
+// Last REAL price ever seen per symbol (Yahoo quote/chart, Binance tick,
+// heavy-guard mark) — persisted, so even a fully-offline session anchors its
+// simulation to the last true market price instead of a stale hardcoded base.
+let lastRealPx={};
+try{ lastRealPx=JSON.parse(localStorage.getItem('na:lastreal')||'{}')||{}; }catch(e){}
+function noteRealPx(sym,px){
+  const p=parseFloat(px);
+  if(!isFinite(p)||p<=0||!sym) return;
+  lastRealPx[sym]=p; simAnchor[sym]=p;
+  clearTimeout(noteRealPx._t);
+  noteRealPx._t=setTimeout(()=>{ try{ localStorage.setItem('na:lastreal',JSON.stringify(lastRealPx)); }catch(e){} },1200);
+}
 function simBridgeUrl(){ try{ return (localStorage.getItem('alpha:sim:url')||'').replace(/\/$/,''); }catch{ return ''; } }
 function simBridgeKey(){ try{ return localStorage.getItem('alpha:sim:apiKey')||''; }catch{ return ''; } }
 let simBridgeTimer=null;
@@ -1163,6 +1193,7 @@ async function tryLiveStock(f){
   const cs=await fetchStockChart(sym,tf);
   if(f.stopped) return;
   f.src='yahoo';
+  noteRealPx(sym,cs[cs.length-1].c);
   onInit(cs);
   // real Yahoo data already freezes at the last trade outside market hours
   // on its own — this just makes the badge say so instead of misleadingly
@@ -1193,7 +1224,9 @@ async function fetchStockStats(f){
     const meta=d&&d.chart&&d.chart.result&&d.chart.result[0]&&d.chart.result[0].meta;
     if(!meta||!meta.regularMarketPrice) return;
     const prev=meta.chartPreviousClose||meta.previousClose||meta.regularMarketPrice;
-    state.stats={chg:prev?((meta.regularMarketPrice-prev)/prev*100):0, hi:meta.regularMarketDayHigh, lo:meta.regularMarketDayLow, vol:0};
+    noteRealPx(state.sym,meta.regularMarketPrice);
+    state.stats={chg:prev?((meta.regularMarketPrice-prev)/prev*100):0, hi:meta.regularMarketDayHigh, lo:meta.regularMarketDayLow, vol:0,
+      prevClose:prev, open:meta.regularMarketOpen||null};
   }catch(e){}
 }
 
@@ -1212,7 +1245,7 @@ function startSim(f){
   // market instead of a 24/7 one)
   const isStock=state.market==='stock';
   const tickMs=isStock?520:150, closeMs=isStock?9000:5200, bookMs=isStock?760:340;
-  let price=simAnchor[sym] || cfg.base*rnd(0.94,1.06), mu=0;
+  let price=simAnchor[sym] || lastRealPx[sym] || cfg.base*rnd(0.94,1.06), mu=0;
 
   const cs=[]; let t=Date.now()-N*tfS*1000;
   for(let i=0;i<N;i++){
@@ -1260,8 +1293,10 @@ function startSim(f){
   },tickMs));
 
   f.timers.push(setInterval(()=>{
-    // a flat o=h=l=c candle with zero volume IS the accurate picture of a
-    // period with no trading — not a bug to work around, the correct read
+    // when the exchange is CLOSED, time isn't printing candles — pushing
+    // flat ones made the chart visibly scroll while nothing was trading
+    // (the reported "the chart moves while the market is closed" bug)
+    if(isStock && !usMarketOpen()) return;
     cur={t:Date.now(),o:price,h:price,l:price,c:price,v:0};
     state.candles.push(cur); if(state.candles.length>N) state.candles.shift();
     indDirty=true;
@@ -2966,10 +3001,10 @@ function startPodFeeds(){
         if(!meta||!meta.regularMarketPrice) throw 0;
         p.price=meta.regularMarketPrice;
         const prev=meta.chartPreviousClose||meta.previousClose||p.price;
-        p.chg=prev?((p.price-prev)/prev*100):0; p.sim=false; simAnchor[p.id]=p.price;
+        p.chg=prev?((p.price-prev)/prev*100):0; p.sim=false; noteRealPx(p.id,p.price);
         p.hi=meta.regularMarketDayHigh||null; p.lo=meta.regularMarketDayLow||null;
         podHist(p);
-      }catch(e){ if(p.price==null){ p.sim=true; p.price=simAnchor[p.id]||WORLD_STOCKS[p.id].base*(1+rnd(-0.01,0.01)); simAnchor[p.id]=p.price; p.chg=rnd(-1.6,1.6); } }
+      }catch(e){ if(p.price==null){ p.sim=true; p.price=simAnchor[p.id]||lastRealPx[p.id]||WORLD_STOCKS[p.id].base*(1+rnd(-0.01,0.01)); simAnchor[p.id]=p.price; p.chg=rnd(-1.6,1.6); } }
     };
     podTimers.push(setTimeout(pull, i*700));
     podTimers.push(setInterval(pull, 90000));
@@ -4340,6 +4375,11 @@ function updateHud(now){
     $('statHi').textContent=fmtP(s.hi);
     $('statLo').textContent=fmtP(s.lo);
     $('statVol').textContent=fmtUsd(s.vol);
+    // stocks carry two extra real datapoints from the Yahoo meta
+    const showX=state.market==='stock'&&s.prevClose;
+    $('statPrevW').style.display=showX?'block':'none';
+    $('statOpenW').style.display=showX&&s.open?'block':'none';
+    if(showX){ $('statPrev').textContent=fmtP(s.prevClose); if(s.open) $('statOpen').textContent=fmtP(s.open); }
   }
   const bb=state.book.bids[0], ba=state.book.asks[0];
   if(bb&&ba) $('statSpread').textContent=fmtP(Math.max(0,ba[0]-bb[0]));
