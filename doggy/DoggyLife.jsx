@@ -77,12 +77,15 @@ function fileToAvatar(file) {
 }
 
 const ROSTER_KEY = "doggy:roster:v1";
+const withAdoptedAt = (roster) =>
+  roster.map((p) => (p.adoptedAt ? p : { ...p, adoptedAt: Date.now() - (p.adoptedDaysAgo || 0) * DAY }));
 const loadRoster = (fallback) => {
   try {
     const raw = JSON.parse(localStorage.getItem(ROSTER_KEY) || "null");
-    if (raw && Array.isArray(raw.roster) && raw.roster.length) return raw;
+    if (raw && Array.isArray(raw.roster) && raw.roster.length)
+      return { ...raw, roster: withAdoptedAt(raw.roster) };
   } catch {}
-  return { roster: fallback, activeId: fallback[0].id };
+  return { roster: withAdoptedAt(fallback), activeId: fallback[0].id };
 };
 // Returns null on success, or a human-readable reason. A silent catch here
 // would let pets vanish on reload with nothing to tell the owner why, so the
@@ -695,8 +698,10 @@ export default function DoggyLife() {
   useEffect(() => { setSaveWarn(saveRoster(roster, activeId) || ""); }, [roster, activeId]);
   const P = roster.find((p) => p.id === activeId) ?? roster[0];
   const fem = P.sex === "נקבה";
-  const petAdoptionDate = new Date(Date.now() - P.adoptedDaysAgo * DAY);
-  const petDays = P.adoptedDaysAgo;
+  const petAdoptedAt = P.adoptedAt ?? (Date.now() - (P.adoptedDaysAgo || 0) * DAY);
+  const petAdoptionDate = new Date(petAdoptedAt);
+  const petDays = Math.max(0, Math.floor((Date.now() - petAdoptedAt) / DAY));
+  const dateToInput = (ms) => { try { return new Date(ms).toISOString().slice(0, 10); } catch { return ""; } };
   const isDog = P.species.includes("כלב");
 
   /* Settings */
@@ -705,7 +710,7 @@ export default function DoggyLife() {
   const [notifVax, setNotifVax] = useState(true);
   const [notifCommunity, setNotifCommunity] = useState(false);
   const [motionOff, setMotionOff] = useState(false);
-  const NEW_PET_INIT = { name: "", species: SPECIES_OPTIONS[0], breed: "", years: "", months: "", weight: "", photo: null };
+  const NEW_PET_INIT = { name: "", species: SPECIES_OPTIONS[0], breed: "", years: "", months: "", weight: "", photo: null, since: "" };
   const [newPet, setNewPet] = useState(NEW_PET_INIT);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoErr, setPhotoErr] = useState("");
@@ -734,6 +739,7 @@ export default function DoggyLife() {
       weight: Number(newPet.weight) > 0 ? Number(newPet.weight) : 5,
       photo: newPet.photo || null,
       chip: "941-" + String(id).slice(-9), adoptedDaysAgo: 0,
+      adoptedAt: (() => { const t = Date.parse(newPet.since); return isFinite(t) && t <= Date.now() ? t : Date.now(); })(),
     }]);
     setActiveId(id);
     setNewPet(NEW_PET_INIT);
@@ -2632,6 +2638,15 @@ export default function DoggyLife() {
                                 className="w-full rounded-lg border px-3 py-2 text-[13px] outline-none focus:border-[#D98E32]" style={{ borderColor: "#EFE6D6", background: "#fff" }} />
                             </div>
                           </div>
+                          {/* since when — the "days together" counter follows this date */}
+                          <div className="flex gap-2 mt-2 items-center">
+                            <p className="text-[11px] font-bold shrink-0" style={{ color: C.inkSoft }}>🏠 אצלכם מאז</p>
+                            <input type="date" max={new Date().toISOString().slice(0, 10)}
+                              value={dateToInput(p.adoptedAt ?? (Date.now() - (p.adoptedDaysAgo || 0) * DAY))}
+                              onChange={(e) => { const t = Date.parse(e.target.value); if (isFinite(t) && t <= Date.now()) updatePet(p.id, { adoptedAt: t }); }}
+                              className="flex-1 rounded-lg border px-3 py-2 text-[13px] outline-none focus:border-[#D98E32]" style={{ borderColor: "#EFE6D6", background: "#fff" }} />
+                            <Chip tone="amber">{Math.max(0, Math.floor((Date.now() - (p.adoptedAt ?? Date.now())) / DAY))} ימים ביחד</Chip>
+                          </div>
                           <p className="text-[11px] mt-2" style={{ color: C.inkSoft }}>
                             {fmtAge(p.ageMonths)} · {fmtWeight(p.weight)} · נשמר אוטומטית ✓
                           </p>
@@ -2672,6 +2687,14 @@ export default function DoggyLife() {
                   <input type="number" min="0" step="0.1" inputMode="decimal" value={newPet.weight}
                     onChange={(e) => setNewPet((n) => ({ ...n, weight: e.target.value }))} onKeyDown={(e) => e.key === "Enter" && addPet()}
                     placeholder='משקל בק"ג' className="flex-1 rounded-lg border px-3 py-2 text-[13px] outline-none focus:border-[#D98E32]" style={{ borderColor: "#EFE6D6", background: "#fff" }} />
+                </div>
+
+                {/* since when — drives the "days together" counter */}
+                <div className="flex gap-2 mt-2 items-center">
+                  <p className="text-[11.5px] font-bold shrink-0" style={{ color: C.inkSoft }}>🏠 אצלכם מאז</p>
+                  <input type="date" value={newPet.since} max={new Date().toISOString().slice(0, 10)}
+                    onChange={(e) => setNewPet((n) => ({ ...n, since: e.target.value }))}
+                    className="flex-1 rounded-lg border px-3 py-2 text-[13px] outline-none focus:border-[#D98E32]" style={{ borderColor: "#EFE6D6", background: "#fff" }} />
                 </div>
 
                 {/* profile photo + submit */}
