@@ -1206,6 +1206,50 @@ export default function DoggyLife() {
               </div>
             </Card>
 
+            {/* What's next — the closest care/vaccine deadlines + birthday, computed live */}
+            <Card className="p-4">
+              <SectionTitle icon={Calendar}>מה הבא אצל {P.name}?</SectionTitle>
+              <div className="space-y-2">
+                {(() => {
+                  const items = [];
+                  care.forEach((c) => {
+                    const dl = daysLeft(new Date(c.last.getTime() + c.everyDays * DAY));
+                    items.push({ emoji: c.emoji, label: c.name, dl, kind: "טיפול" });
+                  });
+                  vaccines.filter((v) => !v.done).forEach((v) => {
+                    items.push({ emoji: "💉", label: v.name, dl: daysLeft(v.date), kind: "חיסון" });
+                  });
+                  items.sort((a, b) => a.dl - b.dl);
+                  return items.slice(0, 3).map((it, i) => (
+                    <div key={i} className="flex items-center gap-2.5 rounded-lg px-3 py-2"
+                      style={{ background: it.dl < 0 ? "#FDF3F1" : it.dl <= 5 ? "#FDF7EC" : "#FCFAF4", border: "1px solid #F3EDE0" }}>
+                      <span className="text-lg shrink-0">{it.emoji}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[12.5px] font-extrabold truncate">{it.label}</p>
+                        <p className="text-[10.5px]" style={{ color: C.inkSoft }}>{it.kind}</p>
+                      </div>
+                      <span className="text-[12px] font-extrabold shrink-0"
+                        style={{ color: it.dl < 0 ? C.red : it.dl <= 5 ? "#8A5714" : C.pine }}>
+                        {it.dl < 0 ? `${-it.dl} ימים באיחור!` : it.dl === 0 ? "היום!" : `בעוד ${it.dl} ימים`}
+                      </span>
+                    </div>
+                  ));
+                })()}
+                {(() => {
+                  const nextAge = Math.floor(P.ageMonths / 12) + 1;
+                  const monthsLeft = 12 - (P.ageMonths % 12);
+                  return (
+                    <div className="flex items-center gap-2.5 rounded-lg px-3 py-2" style={{ background: C.amberSoft, border: "1px solid #F0DDBC" }}>
+                      <span className="text-lg shrink-0">🎂</span>
+                      <p className="flex-1 text-[12.5px] font-extrabold" style={{ color: "#8A5714" }}>
+                        {monthsLeft === 12 ? `יום ההולדת ${nextAge} בעוד שנה בערך` : `עוד כ-${monthsLeft} חודשים ${P.name} ${fem ? "חוגגת" : "חוגג"} ${nextAge}!`}
+                      </p>
+                    </div>
+                  );
+                })()}
+              </div>
+            </Card>
+
             {/* AI daily insight */}
             <div className="rounded-2xl p-4 border" style={{ background: "linear-gradient(135deg,#FFF9EE,#FDF2DC)", borderColor: "#F0DDBC" }}>
               <div className="flex items-center justify-between gap-3">
@@ -2632,6 +2676,46 @@ export default function DoggyLife() {
               <p className="text-[11px] mt-2" style={{ color: C.inkSoft }}>
                 הפרטים מתעדכנים מיד בתעודה הדיגיטלית ואצל פאבל ה-AI 🤖
               </p>
+            </Card>
+
+            {/* Backup & restore — a JSON file of every doggy:* key, so real
+                user data (pets, photos, groups, cached places) can move
+                between devices or survive a browser wipe */}
+            <Card className="p-4">
+              <SectionTitle icon={LifeBuoy}>גיבוי ושחזור</SectionTitle>
+              <p className="text-[12px] -mt-1 mb-3 leading-relaxed" style={{ color: C.inkSoft }}>
+                כל הנתונים האמיתיים שלכם — חיות, תמונות, קבוצות ומקומות — בקובץ אחד. שמרו אותו, והעבירו למכשיר אחר בלחיצה.
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={() => {
+                    const data = {};
+                    for (let i = 0; i < localStorage.length; i++) {
+                      const k = localStorage.key(i);
+                      if (k && k.startsWith("doggy:")) data[k] = localStorage.getItem(k);
+                    }
+                    const a = document.createElement("a");
+                    a.download = `doggylife-backup-${new Date().toISOString().slice(0, 10)}.json`;
+                    a.href = "data:application/json;charset=utf-8," + encodeURIComponent(JSON.stringify({ app: "DoggyLife", at: Date.now(), data }, null, 2));
+                    a.click();
+                  }}
+                  className="rounded-xl py-2.5 text-[12.5px] font-extrabold text-white" style={{ background: C.pine }}>
+                  ⬇ ייצוא גיבוי
+                </button>
+                <label className="rounded-xl py-2.5 text-[12.5px] font-extrabold text-center cursor-pointer" style={{ background: C.amberSoft, color: "#8A5714" }}>
+                  ⬆ שחזור מגיבוי
+                  <input type="file" accept="application/json,.json" className="hidden" onChange={async (e) => {
+                    const f = e.target.files?.[0]; e.target.value = "";
+                    if (!f) return;
+                    try {
+                      const j = JSON.parse(await f.text());
+                      if (j?.app !== "DoggyLife" || !j.data) throw new Error("bad");
+                      Object.entries(j.data).forEach(([k, v]) => { if (k.startsWith("doggy:")) localStorage.setItem(k, v); });
+                      alert("הגיבוי שוחזר! האפליקציה תיטען מחדש 🐾");
+                      location.reload();
+                    } catch { alert("הקובץ אינו גיבוי DoggyLife תקין"); }
+                  }} />
+                </label>
+              </div>
             </Card>
 
             <p className="text-[11px] text-center" style={{ color: C.inkSoft }}>

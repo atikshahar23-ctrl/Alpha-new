@@ -189,6 +189,9 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 #ticket::after{background:linear-gradient(90deg,transparent,rgba(255,209,102,.85),transparent)}
 @keyframes edgeSheen{0%,100%{opacity:.2}50%{opacity:.95}}
 
+/* cinema mode: pure 3D, HUD hidden (toggles stay so you can exit) */
+body.cinema #oracle,body.cinema #pricePanel,body.cinema #ticket,body.cinema #pulsePanel,
+body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important}
 /* banner + toast */
 #banner{position:fixed;top:70px;left:50%;transform:translate(-50%,-160%);z-index:30;
   padding:12px 28px;font-size:18px;font-weight:800;letter-spacing:1px;display:flex;gap:10px;align-items:center;
@@ -616,6 +619,15 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
     <div class="tgl on" id="btnSnd" title="צלילי אותות">
       <svg viewBox="0 0 24 24"><path d="M4 9v6h4l6 5V4L8 9H4z"/><path d="M17 8a6 6 0 0 1 0 8"/></svg><span>צליל</span>
     </div>
+    <div class="tgl" id="btnCinema" title="מצב קולנוע — הסתרת כל הפאנלים לתצוגת 3D נקייה">
+      <span style="font-size:15px">🎬</span><span style="font-size:8px">קולנוע</span>
+    </div>
+    <div class="tgl" id="btnFull" title="מסך מלא">
+      <span style="font-size:15px">⛶</span><span style="font-size:8px">מסך</span>
+    </div>
+    <div class="tgl" id="btnSnap" title="צילום הזירה — שמירת PNG של הפריים הבא">
+      <span style="font-size:15px">📸</span><span style="font-size:8px">צילום</span>
+    </div>
   </div>
 
   <div id="banner" class="panel clip"><span id="bIcon">⚡</span><span id="bTxt"></span></div>
@@ -671,7 +683,7 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 </div>
 
 <div id="logPanel" class="panel clip" style="display:none">
-  <div class="lg-h"><span>📜 יומן עסקאות · דמו</span><button class="mp-close" id="logClose" style="margin-inline-start:auto">✕</button></div>
+  <div class="lg-h"><span>📜 יומן עסקאות · דמו</span><button id="logCsv" title="הורדת כל היומן כקובץ CSV" style="margin-inline-start:auto;background:none;border:1px solid rgba(0,240,255,.35);color:var(--cyan);border-radius:6px;font-size:10px;padding:2px 8px;cursor:pointer">⬇ CSV</button><button class="mp-close" id="logClose" style="margin-inline-start:8px">✕</button></div>
   <div class="lg-stats">
     <div><b id="lgPnl">$0</b><span>רווח/הפסד מצטבר</span></div>
     <div><b id="lgWr">—</b><span>אחוז הצלחה</span></div>
@@ -1698,6 +1710,29 @@ function setPortfolio(on){
   if(on) renderPortfolio();
 }
 $('btnPortfolio').onclick=()=>setPortfolio(!portfolioOpen);
+$('btnCinema').onclick=()=>{
+  const on=document.body.classList.toggle('cinema');
+  $('btnCinema').classList.toggle('on',on);
+  toast(on?'🎬 מצב קולנוע — הקש שוב כדי להחזיר את הפאנלים':'הפאנלים חזרו');
+};
+$('btnFull').onclick=async()=>{
+  try{
+    if(document.fullscreenElement){ await document.exitFullscreen(); $('btnFull').classList.remove('on'); }
+    else if(document.documentElement.requestFullscreen){ await document.documentElement.requestFullscreen(); $('btnFull').classList.add('on'); }
+    else toast('הדפדפן הזה לא תומך במסך מלא','down');
+  }catch{ toast('הדפדפן חסם מעבר למסך מלא','down'); }
+};
+document.addEventListener('fullscreenchange',()=>{ $('btnFull').classList.toggle('on',!!document.fullscreenElement); });
+$('btnSnap').onclick=()=>{ window.__naSnapReq=true; toast('📸 מצלם את הפריים הבא...'); };
+$('logCsv').onclick=()=>{
+  if(!session.log.length){ toast('אין עסקאות ביומן עדיין','down'); return; }
+  const rows=[['symbol','side','entry','exit','pct','usd','time']].concat(
+    session.log.map(l=>[l.sym,l.side,l.entry,l.exit,(+l.pct).toFixed(2),(+l.usd).toFixed(2),new Date(l.at).toISOString()]));
+  const a=document.createElement('a');
+  a.download='nexus-trades.csv';
+  a.href='data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent(rows.map(r=>r.join(',')).join('\n'));
+  a.click(); toast('⬇ היומן ירד כקובץ CSV','up');
+};
 $('pfClose').onclick=()=>setPortfolio(false);
 $('walletReset').onclick=()=>{
   closeAllPositions();
@@ -4016,6 +4051,15 @@ function loop(){
     applyCam(dt);
     updateHud(now);
     if(composer && gfxTier<2) composer.render(); else renderer.render(scene,camera);
+    if(window.__naSnapReq){
+      window.__naSnapReq=false;
+      try{
+        const a=document.createElement('a');
+        a.download='nexus-arena-'+new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')+'.png';
+        a.href=renderer.domElement.toDataURL('image/png');
+        a.click(); toast('📸 הצילום נשמר','up');
+      }catch{ toast('הצילום נכשל בדפדפן הזה','down'); }
+    }
   }catch(e){
     window.__gfx.loopFailN++;
     console.error('NEXUS·ARENA frame error',e);

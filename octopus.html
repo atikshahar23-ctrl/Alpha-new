@@ -131,6 +131,9 @@ body.compact .cluster .c-srcs{margin-top:2px}
   animation:pulse 1.4s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
 /* ── settings panel — same schema-driven control-room pattern as NEXUS·ARENA ── */
+.os-act{background:rgba(0,240,255,.08);border:1px solid rgba(0,240,255,.35);color:var(--cyan);
+  border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;font-family:inherit}
+.os-act:hover{background:rgba(0,240,255,.16)}
 #octoSettingsPanel{position:fixed;z-index:40;top:60px;left:50%;transform:translateX(-50%);
   width:min(94vw,480px);max-height:80vh;overflow-y:auto;padding:16px 18px;display:none}
 .os-title{font-size:15px;font-weight:800;letter-spacing:1px;color:var(--cyan);margin-bottom:10px;text-align:center}
@@ -181,6 +184,8 @@ body.compact .cluster .c-srcs{margin-top:2px}
 /* clusters */
 .cluster{padding:13px 15px;margin-bottom:11px;cursor:pointer;transition:border-color .15s, box-shadow .2s, transform .2s}
 .cluster:hover{border-color:rgba(255,47,214,.45);box-shadow:0 8px 30px rgba(255,47,214,.14);transform:translateY(-2px)}
+.cluster.watched{border-color:rgba(255,209,102,.55);box-shadow:0 0 14px rgba(255,209,102,.12)}
+.c-watch{font-size:10px;color:var(--gold);border:1px solid rgba(255,209,102,.4);border-radius:20px;padding:2px 8px}
 /* first-load entrance: cards rise into place once, staggered. The class is
    added only on the first successful render (see renderClusters) so the
    frequent per-arm re-renders during a pull don't strobe the whole feed. */
@@ -631,7 +636,8 @@ if(renderer){
 const $=id=>document.getElementById(id);
 // ---------- settings (persisted control room, parity with NEXUS·ARENA) ----------
 const OCTO_DEFAULTS={autoRefresh:true,refreshMin:5,soundOn:true,breakingAlerts:true,showSentiment:true,
-  maxStories:160,clusterSens:'normal',fontScale:1,compactMode:false,showEntities:true,translateHe:true,disabledArms:[]};
+  maxStories:160,clusterSens:'normal',fontScale:1,compactMode:false,showEntities:true,translateHe:true,
+  muteWords:'',watchWords:'',hideStage:false,disabledArms:[]};
 function loadOctoSettings(){
   try{
     const raw=JSON.parse(localStorage.getItem('octo:settings')||'null');
@@ -1103,13 +1109,22 @@ function renderClusters(){
   if(searchQuery) list=list.filter(c=>
     c.head.title.toLowerCase().includes(searchQuery) ||
     c.angles.some(a=>a.src.toLowerCase().includes(searchQuery)));
+  const words=k=>(octoSettings[k]||'').split(',').map(w=>w.trim().toLowerCase()).filter(Boolean);
+  const cTxt=c=>(dispTitle(c.head)+' '+c.head.title).toLowerCase();
+  const mutes=words('muteWords');
+  if(mutes.length) list=list.filter(c=>!mutes.some(w=>cTxt(c).includes(w)));
+  const watches=words('watchWords');
+  const isWatched=c=>watches.some(w=>cTxt(c).includes(w));
+  if(watches.length) list=[...list.filter(isWatched),...list.filter(c=>!isWatched(c))];
   if(!list.length){ el.innerHTML='<div class="empty">אין סיפורים בסינון הזה</div>'; return; }
   if(!renderClusters._animated){ renderClusters._animated=true; el.classList.add('first-load'); setTimeout(()=>el.classList.remove('first-load'),2400); }
   list.slice(0,40).forEach((c,i)=>{
     const key=clusterKey(c), starred=bookmarks.has(key), breaking=c.angles.length>=3;
+    const watched=watches.length&&isWatched(c);
     const d=document.createElement('article');
-    d.className='cluster panel clip'+(breaking?' breaking':'');
+    d.className='cluster panel clip'+(breaking?' breaking':'')+(watched?' watched':'');
     d.innerHTML='<div class="c-top"><span class="c-topic">'+c.topic+'</span>'
+      +(watched?'<span class="c-watch">📌 במעקב</span>':'')
       +(octoSettings.showSentiment?'<span class="c-sentiment '+c.sentiment+'">'+SENT_LABEL[c.sentiment]+'</span>':'')
       +(breaking?'<span class="c-breaking">🔥 מתפתח</span>':'')
       +(isNewCluster(c)?'<span class="c-new">🆕 חדש</span>':'')
@@ -1271,6 +1286,8 @@ const OS_SCHEMA=[
     {key:'showSentiment', type:'checkbox', label:'תגית מצב-רוח', desc:'חיובי/שלילי/ניטרלי לפי מילות מפתח'},
     {key:'showEntities', type:'checkbox', label:'מוקדי שיחה חמים', desc:'שורת המילים הבולטות בכל הסיפורים כרגע'},
     {key:'translateHe', type:'checkbox', label:'תרגום אוטומטי לעברית', desc:'כותרות וכתבות באנגלית מוצגות בעברית (🌐)'},
+    {key:'watchWords', type:'text', label:'📌 מילים במעקב', desc:'סיפורים שמכילים אותן מוצמדים לראש הרשימה (מופרד בפסיקים)', ph:'ביטקוין, מכבי, נאסא'},
+    {key:'muteWords', type:'text', label:'🔇 מילים מושתקות', desc:'סיפורים שמכילים אותן מוסתרים לגמרי (מופרד בפסיקים)', ph:'ספוילר, ריאליטי'},
   ]},
   {sec:'🔔 התראות וצליל', items:[
     {key:'breakingAlerts', type:'checkbox', label:'התראת חדשות מתפתחות', desc:'כאשר סיפור מצטלב ב-3+ מקורות'},
@@ -1279,18 +1296,22 @@ const OS_SCHEMA=[
   {sec:'🎨 תצוגה', items:[
     {key:'fontScale', type:'range', label:'גודל כתב', min:0.85,max:1.4,step:0.05, fmt:v=>Math.round(v*100)+'%'},
     {key:'compactMode', type:'checkbox', label:'מצב קומפקטי', desc:'כרטיסים צפופים — יותר סיפורים על המסך'},
+    {key:'hideStage', type:'checkbox', label:'מצב קריאה — הסתרת התמנון', desc:'מסתיר את במת ה-3D, כל המסך לחדשות'},
   ]},
 ];
 function applyDisplaySettings(){
   document.documentElement.style.fontSize=(octoSettings.fontScale*100)+'%';
   document.body.classList.toggle('compact',!!octoSettings.compactMode);
   const he=$('hotEntities'); if(he) he.style.display=octoSettings.showEntities?'flex':'none';
+  const st=$('octoStage'); if(st&&octoSettings.hideStage) st.style.display='none';
 }
 function onOctoSettingChanged(key){
   saveOctoSettings();
   if(key==='fontScale'||key==='compactMode'||key==='showEntities') applyDisplaySettings();
   if(key==='clusterSens'||key==='maxStories'){ buildClusters(); renderSituation(); renderClusters(); renderHotEntities(); }
   if(key==='translateHe'){ renderClusters(); renderHeadlines(); if(octoSettings.translateHe) translateFeedItems(); }
+  if(key==='muteWords'||key==='watchWords'){ renderClusters(); renderHeadlines(); }
+  if(key==='hideStage'){ const st=$('octoStage'); if(st) st.style.display=octoSettings.hideStage?'none':''; }
 }
 function buildSettingsPanel(){
   const body=$('osBody'); if(!body) return;
@@ -1303,12 +1324,18 @@ function buildSettingsPanel(){
       else if(it.type==='select') ctrl='<select data-key="'+it.key+'">'+it.options.map(([v,l])=>'<option value="'+v+'"'+(octoSettings[it.key]===v?' selected':'')+'>'+l+'</option>').join('')+'</select>';
       else if(it.type==='range') ctrl='<input type="range" data-key="'+it.key+'" min="'+it.min+'" max="'+it.max+'" step="'+it.step+'" value="'+octoSettings[it.key]+'">'+
         '<span class="os-val" data-valfor="'+it.key+'">'+(it.fmt?it.fmt(octoSettings[it.key]):octoSettings[it.key])+'</span>';
+      else if(it.type==='text') ctrl='<input type="text" data-key="'+it.key+'" data-txt="1" value="'+escH(octoSettings[it.key]||'')+'" placeholder="'+(it.ph||'')+'" style="flex:1;min-width:150px;background:rgba(6,12,26,.6);border:1px solid var(--line);border-radius:8px;color:var(--txt);padding:6px 9px;font-size:12px;font-family:inherit">';
       return '<div class="os-row"><label>'+it.label+descHtml+'</label>'+ctrl+'</div>';
     }).join('')+'</div>'
   ).join('') + '<div class="os-sec"><div class="os-h">🐙 זרועות פעילות</div>'
     + ARM_GROUPS.map((g,gi)=>'<div class="os-arm"><input type="checkbox" data-arm="'+gi+'" '
       +(octoSettings.disabledArms.includes(gi)?'':'checked')+'><span>'+g[1][0]+' '+g[0]+'</span></div>').join('')
     + '</div>'
+    + '<div class="os-sec"><div class="os-h">🧰 פעולות</div>'
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
+    + '<button id="osMarkRead" class="os-act">✓ סמן הכל כנקרא</button>'
+    + '<button id="osExportMarks" class="os-act">⬇ ייצוא מועדפים</button>'
+    + '</div></div>'
     // live per-arm health — sums of the per-source pull counters this session
     + '<div class="os-sec"><div class="os-h">📊 בריאות מקורות (הסשן הנוכחי)</div>'
     + (()=>{ let base=0; return ARM_GROUPS.map(g=>{
@@ -1326,14 +1353,14 @@ function buildSettingsPanel(){
     const key=el.dataset.key, it=schemaByKey[key];
     const handler=()=>{
       if(el.type==='checkbox') octoSettings[key]=el.checked;
-      else if(el.tagName==='SELECT') octoSettings[key]=el.value;
+      else if(el.tagName==='SELECT'||el.dataset.txt) octoSettings[key]=el.value;
       else{ octoSettings[key]=parseFloat(el.value);
         const vEl=body.querySelector('[data-valfor="'+key+'"]');
         if(vEl) vEl.textContent=it.fmt?it.fmt(octoSettings[key]):octoSettings[key];
       }
       onOctoSettingChanged(key);
     };
-    el.addEventListener(el.type==='range'?'input':'change',handler);
+    el.addEventListener(el.type==='range'||el.dataset.txt?'input':'change',handler);
   });
   body.querySelectorAll('[data-arm]').forEach(el=>{
     el.addEventListener('change',()=>{
@@ -1344,6 +1371,21 @@ function buildSettingsPanel(){
       saveOctoSettings();
     });
   });
+  const mk=$('osMarkRead');
+  if(mk) mk.onclick=()=>{
+    clusters.forEach(c=>prevSeen.add(seenKey(c.head.title)));
+    persistSeen(); renderClusters();
+    mk.textContent='✓ סומן!'; setTimeout(()=>{ mk.textContent='✓ סמן הכל כנקרא'; },1500);
+  };
+  const ex=$('osExportMarks');
+  if(ex) ex.onclick=()=>{
+    const marked=clusters.filter(c=>bookmarks.has(clusterKey(c)))
+      .map(c=>({title:dispTitle(c.head),original:c.head.title,sources:[...new Set(c.angles.map(a=>a.src))],link:c.head.link||'',at:new Date(c.at).toISOString()}));
+    const a=document.createElement('a');
+    a.download='octopus-bookmarks.json';
+    a.href='data:application/json;charset=utf-8,'+encodeURIComponent(JSON.stringify(marked,null,2));
+    a.click();
+  };
 }
 function setSettingsPanel(on){ $('octoSettingsPanel').style.display=on?'block':'none'; $('settingsBtn').classList.toggle('on',on); }
 $('settingsBtn').onclick=()=>setSettingsPanel($('octoSettingsPanel').style.display!=='block');
