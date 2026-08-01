@@ -403,7 +403,9 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
   .pills{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;padding-bottom:2px}
   .pills::-webkit-scrollbar{display:none}
   .pill{padding:6px 10px;font-size:11px;flex:none}
-  #toggles{left:6px;gap:5px;grid-template-columns:repeat(2,42px);max-height:72vh;overflow-y:auto;scrollbar-width:none}
+  /* 21 buttons now — on phones the rail must stop well above the price
+     panel (it was burying it) and scroll internally instead */
+  #toggles{left:6px;top:44%;gap:5px;grid-template-columns:repeat(2,42px);max-height:52vh;overflow-y:auto;scrollbar-width:none}
   #toggles::-webkit-scrollbar{display:none}
   .tgl{width:42px;height:37px;gap:1px}
   .tgl span{font-size:12px !important}

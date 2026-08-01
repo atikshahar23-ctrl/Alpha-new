@@ -131,6 +131,12 @@ body.compact .cluster .c-srcs{margin-top:2px}
   animation:pulse 1.4s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
 /* ── settings panel — same schema-driven control-room pattern as NEXUS·ARENA ── */
+@media (max-width:520px){
+  #octoStage{height:185px}
+  html{font-size:93%}
+}
+#simNotice{margin:0 0 12px;padding:10px 14px;border:1px solid rgba(255,209,102,.5);border-radius:12px;
+  background:rgba(255,209,102,.08);color:var(--gold);font-size:12.5px;font-weight:600}
 .os-act{background:rgba(0,240,255,.08);border:1px solid rgba(0,240,255,.35);color:var(--cyan);
   border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;font-family:inherit}
 .os-act:hover{background:rgba(0,240,255,.16)}
@@ -275,7 +281,7 @@ body::after{content:'';position:fixed;inset:-20%;z-index:-1;pointer-events:none;
       <span class="oct">🐙</span>
       <div class="tt">
         <div class="name">OCTOPUS</div>
-        <div class="sub">מנוע חדשות עתידני · 13 זרועות · 57 מקורות חינמיים · מצליב · מגבש תמונה · מנתח</div>
+        <div class="sub" id="octoSub">מנוע חדשות עתידני · מצליב · מגבש תמונה · מנתח</div>
       </div>
     </div>
     <div id="arms" title="מצב הזרועות"></div>
@@ -317,6 +323,7 @@ body::after{content:'';position:fixed;inset:-20%;z-index:-1;pointer-events:none;
     <div id="hlList"></div>
   </section>
 
+  <div id="simNotice" style="display:none">⚠️ אין כרגע חיבור למקורות החדשות — מוצגות כתבות הדגמה. בדקו חיבור לרשת ולחצו 🔄 רענן.</div>
   <main id="clusters"><div class="empty">🐙 שולח זרועות…</div></main>
 </div>
 
@@ -908,11 +915,34 @@ let timeFilterH=0;
 // remembers which relay served it last (sticky), and the allorigins URL gets
 // a timestamp param so its edge cache can never freeze a feed.
 const CORS_PROXIES=[
-  u=>'https://api.allorigins.win/raw?url='+encodeURIComponent(u)+'&_ts='+Math.floor(Date.now()/60000),
-  u=>'https://corsproxy.io/?url='+encodeURIComponent(u),
-  u=>'https://api.codetabs.com/v1/proxy?quest='+encodeURIComponent(u),
-  u=>'https://cors.isomorphic-git.org/'+u,
+  {mk:u=>'https://api.allorigins.win/raw?url='+encodeURIComponent(u)+'&_ts='+Math.floor(Date.now()/60000), kind:'xml'},
+  {mk:u=>'https://corsproxy.io/?url='+encodeURIComponent(u), kind:'xml'},
+  {mk:u=>'https://api.codetabs.com/v1/proxy?quest='+encodeURIComponent(u), kind:'xml'},
+  {mk:u=>'https://api.rss2json.com/v1/api.json?rss_url='+encodeURIComponent(u), kind:'json'},
 ];
+// rss2json parses the feed server-side and returns clean JSON — a lifeline
+// when every raw-XML relay is down or serving garbage
+function parseRss2json(j,name){
+  if(j?.status!=='ok'||!Array.isArray(j.items)) return [];
+  return j.items.slice(0,10).map(it=>({
+    src:name,
+    title:String(it.title||'').trim(),
+    link:String(it.link||'#').trim(),
+    desc:String(it.description||'').replace(/<[^>]*>/g,' ').trim().slice(0,400),
+    at:Date.parse(it.pubDate||'')||Date.now(),
+  })).filter(x=>x.title);
+}
+// gentle global throttle: free relays rate-limit per IP (codetabs ~5/s) —
+// firing all ~70 sources at once just converts them into 429s
+let pullSlots=0; const pullQueue=[];
+function withPullSlot(fn){
+  return new Promise((resolve)=>{
+    const run=async()=>{ pullSlots++;
+      try{ resolve(await fn()); }
+      finally{ pullSlots--; const n=pullQueue.shift(); if(n) n(); } };
+    if(pullSlots<7) run(); else pullQueue.push(run);
+  });
+}
 const srcProxyPref=ARMS.map(()=>0);
 // RSS <item> AND Atom <entry> — The Verge, Politico and other Atom feeds
 // used to fail silently because only <item> was parsed
@@ -929,23 +959,28 @@ function parseFeedDoc(doc,name){
     };
   }).filter(x=>x.title);
 }
-async function pullOneSource(i){
-  const [name,url]=ARMS[i];
-  const start=srcProxyPref[i];
-  for(let k=0;k<CORS_PROXIES.length;k++){
-    const pi=(start+k)%CORS_PROXIES.length;
-    try{
-      const r=await fetchT(CORS_PROXIES[pi](url),k===0?8000:5500);
-      if(!r.ok) throw 0;
-      const got=parseFeedDoc(new DOMParser().parseFromString(await r.text(),'text/xml'),name);
-      if(!got.length) throw 0;
-      srcProxyPref[i]=pi;
-      armState[i]='ok';
-      srcStats[i].ok++; srcStats[i].last=Date.now();
-      return got;
-    }catch(e){ /* next relay */ }
-  }
-  armState[i]='off'; srcStats[i].fail++; return [];
+function pullOneSource(i){
+  return withPullSlot(async()=>{
+    const [name,url]=ARMS[i];
+    const start=srcProxyPref[i];
+    for(let k=0;k<CORS_PROXIES.length;k++){
+      const pi=(start+k)%CORS_PROXIES.length;
+      const relay=CORS_PROXIES[pi];
+      try{
+        const r=await fetchT(relay.mk(url),k===0?8000:5500);
+        if(!r.ok) throw 0;
+        const got=relay.kind==='json'
+          ? parseRss2json(await r.json(),name)
+          : parseFeedDoc(new DOMParser().parseFromString(await r.text(),'text/xml'),name);
+        if(!got.length) throw 0;
+        srcProxyPref[i]=pi;
+        armState[i]='ok';
+        srcStats[i].ok++; srcStats[i].last=Date.now();
+        return got;
+      }catch(e){ /* next relay */ }
+    }
+    armState[i]='off'; srcStats[i].fail++; return [];
+  });
 }
 // One tentacle per thematic group: all sources in the group are pulled in
 // parallel, and armPulling[groupIdx] flags the 3D octopus to reach that arm
@@ -1299,21 +1334,31 @@ function mergeAndRender(){
   renderArms(); renderSituation(); renderClusters(); renderHotEntities(); renderHeadlines();
   translateFeedItems();
 }
+function saveNewsPool(){
+  try{ localStorage.setItem('octo:lastitems',JSON.stringify(items.slice(0,120))); }catch{}
+}
 async function pullAll(){
   $('refreshBtn').classList.add('spin'); $('refreshBtn').textContent='🐙 שולח זרועות…';
-  items=[];
-  // Each of the 8 arms/groups resolves independently — as soon as one comes
-  // back, its catch merges into the picture immediately (the tentacle that
-  // found news retracts and lights up right away, not after the slowest
-  // arm times out).
+  // Keep what we already have: a failed refresh must never throw away real
+  // news and drop to the demo feed — that was exactly the "same 7 stories
+  // forever" loop. Fresh items land first so mergeAndRender's dedupe keeps
+  // the newest copy of each story.
+  const prevItems=items.filter(n=>!/·SIM$/.test(n.src));
+  let fresh=[];
   await Promise.all(ARM_GROUPS.map((_,gi)=>
-    pullGroup(gi).then(got=>{ items=items.concat(got); mergeAndRender(); })
+    pullGroup(gi).then(got=>{ if(got.length){ fresh=fresh.concat(got); items=fresh.concat(prevItems); mergeAndRender(); } })
   ));
-  if(!items.length){
+  if(fresh.length){
+    items=fresh.concat(prevItems);
+    mergeAndRender(); saveNewsPool();
+  } else if(!prevItems.length){
     items=simFeed(); armState=armState.map(()=>'sim');
     if(window.__octoReach) ARM_GROUPS.forEach((_,gi)=>window.__octoReach(gi,false,true));
     mergeAndRender();
   }
+  const simActive=!fresh.length&&!prevItems.length;
+  const note=$('simNotice');
+  if(note) note.style.display=simActive?'block':'none';
   $('refreshBtn').classList.remove('spin'); $('refreshBtn').textContent='🔄 רענן';
   persistSeen(); // everything currently on screen counts as "seen" from the next visit on
 }
@@ -1468,8 +1513,15 @@ $('anaVoice').onclick=()=>{
 $('refreshBtn').onclick=pullAll;
 setInterval(()=>{ if(octoSettings.autoRefresh && Date.now()-lastPull>octoSettings.refreshMin*60000) pullAll(); },60000);
 renderArms();
+$('octoSub').textContent='מנוע חדשות עתידני · '+ARM_GROUPS.length+' זרועות · '+ARMS.length+' מקורות מכל העולם · מצליב · מגבש תמונה · מנתח';
 buildSettingsPanel();
 applyDisplaySettings();
+// boot with the last real news pool instantly (and as a safety net when every
+// relay is down), then pull fresh on top of it
+try{
+  const savedPool=JSON.parse(localStorage.getItem('octo:lastitems')||'[]');
+  if(Array.isArray(savedPool)&&savedPool.length){ items=savedPool; mergeAndRender(); }
+}catch{}
 pullAll();
 </script>
 </body>
