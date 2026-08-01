@@ -8,7 +8,9 @@
 <link rel="icon" type="image/png" href="%BASE_URL%favicon-bull.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Rubik:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&family=Karantina:wght@400;700&display=swap" rel="stylesheet">
+<!-- non-blocking: media=print keeps the webfont off the critical path (it was holding first paint hostage on slow/cellular iPads); onload swaps it in -->
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Rubik:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&family=Karantina:wght@400;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Rubik:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&family=Karantina:wght@400;700&display=swap" rel="stylesheet"></noscript>
 <style>
   :root{
     --lyric-font: 19px;
@@ -97,7 +99,7 @@
     padding:14px 18px;
     margin-bottom:22px;
     background:var(--bg-elevated);
-    backdrop-filter:var(--glass-blur); -webkit-backdrop-filter:var(--glass-blur);
+    backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blur);
     border:1px solid var(--border);
     border-radius:var(--radius);
     box-shadow:0 18px 44px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.07);
@@ -139,7 +141,7 @@
   .header-controls{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
   select, input[type=text]{
     background:var(--bg-elevated);
-    backdrop-filter:var(--glass-blur); -webkit-backdrop-filter:var(--glass-blur);
+    backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blur);
     border:1px solid var(--border);
     color:var(--text);
     border-radius:var(--radius-sm);
@@ -157,7 +159,7 @@
     border-radius:var(--radius-sm);
     border:1px solid var(--border);
     background:var(--bg-elevated);
-    backdrop-filter:var(--glass-blur); -webkit-backdrop-filter:var(--glass-blur);
+    backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blur);
     color:var(--text);
     padding:9px 14px;
     cursor:pointer;
@@ -193,7 +195,7 @@
 
   .panel{
     background:var(--bg-elevated);
-    backdrop-filter:var(--glass-blur); -webkit-backdrop-filter:var(--glass-blur);
+    backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blur);
     border:1px solid var(--border);
     border-radius:var(--radius);
     padding:18px;
@@ -374,7 +376,7 @@
     max-width:min(60%, 420px); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
     font-size:12px; font-weight:600; color:var(--text);
     background:rgba(10,12,20,.62); border:1px solid var(--border); border-radius:999px;
-    padding:5px 14px; backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
+    padding:5px 14px; backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
     pointer-events:none;
   }
   /* On-beat pulse — glow only (no transform, to keep the translateX centering). */
@@ -401,7 +403,7 @@
     position:absolute; top:10px; left:10px; z-index:4;
     width:40px; height:40px; border-radius:12px; cursor:pointer;
     background:rgba(10,12,20,.55); border:1px solid var(--border);
-    color:var(--text); font-size:18px; backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
+    color:var(--text); font-size:18px; backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
     display:flex; align-items:center; justify-content:center;
   }
   .hero-btn.on{border-color:var(--border-strong); box-shadow:0 0 16px rgba(0,229,255,.4);}
@@ -450,7 +452,7 @@
     position:absolute; left:12px; bottom:8px; z-index:5;
     font-size:12px; font-weight:700; color:var(--text);
     background:rgba(10,12,20,.66); border:1px solid var(--border); border-radius:999px;
-    padding:5px 13px; backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
+    padding:5px 13px; backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
     pointer-events:none; opacity:0; transform:translateY(6px);
     transition:opacity .3s ease, transform .3s ease; white-space:nowrap;
   }
@@ -606,11 +608,11 @@
   /* Keyboard-shortcuts help. */
   .shortcuts-fab{position:fixed; bottom:14px; left:14px; z-index:60; width:40px; height:40px; border-radius:12px;
     border:1px solid var(--border); background:rgba(12,14,22,.8); color:var(--text); font-size:17px; cursor:pointer;
-    backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); transition:border-color .18s, transform .1s;}
+    backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px); transition:border-color .18s, transform .1s;}
   .shortcuts-fab:hover{border-color:var(--border-strong);}
   .shortcuts-fab:active{transform:scale(.9);}
   .shortcuts-modal{position:fixed; inset:0; z-index:120;
-    background:rgba(4,5,10,.62); backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px);}
+    background:rgba(4,5,10,.62); backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);}
   /* Centered via top/left + translate rather than flex: a transformed ancestor
      turns this fixed element's containing block into the app frame, which
      collapses flex cross-axis centering to the top. This is robust to that. */
@@ -772,7 +774,7 @@
   .lyric-row[dir="ltr"] .trans{text-align:left;}
   .lyric-row.active{
     background:var(--bg-elevated-2);
-    backdrop-filter:var(--glass-blur); -webkit-backdrop-filter:var(--glass-blur);
+    backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blur);
     border-color:var(--border-strong);
     box-shadow:0 8px 26px rgba(0,0,0,.35), 0 0 18px rgba(34,228,255,.08);
   }
@@ -809,7 +811,7 @@
   body.karaoke .settings-panel,
   body.karaoke .manual-panel,
   body.karaoke footer{display:none !important;}
-  body.karaoke .stage{max-height:calc(100vh - 220px);}
+  body.karaoke .stage{max-height:calc(100vh - 220px);max-height:calc(100dvh - 220px);}
   #karaokeBtn.on{border-color:var(--border-strong); box-shadow:0 0 14px rgba(0,229,255,.3); color:var(--cyan);}
 
   .manual-nav{display:flex; gap:8px; justify-content:center; padding:10px 0 2px;}

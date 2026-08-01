@@ -5,7 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>NEXUS·ARENA — זירת הקרב של השוק</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;600;800&family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet">
+<!-- non-blocking: media=print keeps the webfont off the critical path (it was holding first paint hostage on slow/cellular iPads); onload swaps it in -->
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;600;800&family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;600;800&family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet"></noscript>
 <style>
 :root{
   --bg:#04060d; --cyan:#00f0ff; --magenta:#ff2fd6;
@@ -149,11 +151,11 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
    that cap — same pattern the mobile breakpoints already used. */
 #toggles{position:fixed;top:50%;transform:translateY(-50%);left:12px;
   display:grid;grid-template-columns:repeat(2,52px);gap:7px;
-  max-height:calc(100vh - 160px);overflow-y:auto;scrollbar-width:none;padding:2px}
+  max-height:calc(100vh - 160px);max-height:calc(100dvh - 160px);overflow-y:auto;scrollbar-width:none;padding:2px}
 #toggles::-webkit-scrollbar{display:none}
 .tgl{width:52px;height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
   cursor:pointer;font-size:9.5px;letter-spacing:.5px;color:var(--dim);text-decoration:none;
-  background:rgba(6,12,26,.66);border:1px solid rgba(0,240,255,.16);backdrop-filter:blur(8px);
+  background:rgba(6,12,26,.66);border:1px solid rgba(0,240,255,.16);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
   border-radius:9px;transition:all .18s}
 .tgl svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.7}
 .tgl:hover{border-color:rgba(0,240,255,.4);color:var(--txt)}
@@ -176,7 +178,7 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 
 #hint{position:fixed;bottom:calc(12px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);
   font-size:11px;color:var(--dim);letter-spacing:.5px;padding:6px 15px;white-space:nowrap;
-  background:rgba(4,8,18,.6);border:1px solid rgba(0,240,255,.12);backdrop-filter:blur(8px);
+  background:rgba(4,8,18,.6);border:1px solid rgba(0,240,255,.12);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
   transition:opacity 1s;border-radius:2px;z-index:8}
 #hint.hide{opacity:0;pointer-events:none}
 
@@ -307,7 +309,7 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 #chartCv{display:block;width:100%;height:min(62vh,440px);cursor:crosshair;background:rgba(2,4,10,.4);border-radius:6px}
 #cpCaption{position:absolute;inset:auto 8px 10px 8px;padding:10px 13px;background:rgba(6,10,20,.92);
   border:1px solid rgba(138,92,255,.45);border-radius:6px;font-size:12px;line-height:1.6;color:var(--txt);
-  max-height:60%;overflow-y:auto;opacity:0;pointer-events:none;transition:opacity .3s;backdrop-filter:blur(6px)}
+  max-height:60%;overflow-y:auto;opacity:0;pointer-events:none;transition:opacity .3s;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
 #cpCaption.show{opacity:1;pointer-events:auto}
 #cpCaption b{color:#c9b3ff}
 #chartPanel .cp-legend{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;margin-top:10px;font-size:11.5px;color:var(--dim)}
@@ -349,6 +351,18 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 #candlePanel .ca-aiout{margin-top:10px;font-size:12.5px;line-height:1.65;color:var(--txt);white-space:pre-line;
   background:rgba(138,92,255,.07);border:1px solid rgba(138,92,255,.25);padding:10px 12px}
 #chartPanel .cp-legend .sw.now{background:var(--gold)}
+/* Tablet collision fix: the toggle rail is fixed at the left edge (~127px
+   wide) while these panels are centred on the viewport. On a desktop the
+   centred panel clears the rail easily, but on an iPad (834px) a 680px
+   chart panel spans x77-757 and lands right on top of it — every rail
+   button, including the one that closes the panel, became untappable.
+   Shifting the panels clear of the rail keeps them reachable. */
+@media (min-width:721px) and (max-width:1000px){
+  #chartPanel,#candlePanel,#logPanel,#portfolioPanel,#settingsPanel{
+    left:calc(50% + 68px);
+    max-width:calc(100vw - 150px);
+  }
+}
 .mobTab{display:none}
 @media (max-width:720px), (max-height:520px){
   #top{padding:6px 8px;gap:8px}
