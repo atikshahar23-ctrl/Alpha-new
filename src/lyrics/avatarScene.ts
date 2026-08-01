@@ -133,6 +133,10 @@ export interface LyricsAvatarHandle {
   // Move soundboard — force a specific choreography move on the whole crew
   // right now (index into the move library). The DJ's "hit it!" button.
   doMove?(idx: number): void;
+  // Lock the whole crew into a move pool (a single move or a style family)
+  // until explicitly cleared with null — the choreographer stops overriding
+  // the user's choice. null = back to automatic energy-driven choreography.
+  setDancePool?(pool: number[] | null): void;
   dispose(): void;
 }
 
@@ -2920,6 +2924,11 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   // Begin the next move in the routine, from step 0. Called on the 8-beat
   // auto-boundary OR forced early by a sung lyric line (syncLine) so the
   // choreography turns over exactly with the vocal.
+  // User-locked move pool: when set, BOTH the lead's move turnover and the
+  // backups' freestyle draw only from here — auto choreography never sneaks
+  // back in until the user clears the lock (the old behavior reverted to
+  // auto after one 6-8 beat hold, which read as "it ignores my choice").
+  let lockedPool: number[] | null = null;
   function startNewMove() {
     // Wrap any accumulated full turn so the next move starts facing front
     // instead of spring-unwinding backwards through 360°.
@@ -2927,7 +2936,9 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
       const wrap = Math.round(d.cur.rootRy / (Math.PI * 2)) * Math.PI * 2;
       d.cur.rootRy -= wrap; d.tgt.rootRy -= wrap;
     }
-    currentMoveIdx = nextMoveIdx();
+    currentMoveIdx = lockedPool && lockedPool.length
+      ? lockedPool[Math.floor(Math.random() * lockedPool.length)]
+      : nextMoveIdx();
     stepInPattern = 0;
     announceFamily(currentMoveIdx);
     // Punchy moves hold only 4 beats (turn over twice as fast → twice the
@@ -2984,8 +2995,23 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
   // now (the "everybody hit it" button). Holds briefly even while paused so a
   // triggered pose doesn't snap straight back to idle.
   let manualMoveUntil = 0;
+  function setDancePool(pool: number[] | null) {
+    lockedPool = pool && pool.length ? pool.filter((i) => i >= 0 && i < MOVES.length) : null;
+    if (lockedPool && !lockedPool.length) lockedPool = null;
+    if (lockedPool) {
+      // land in the chosen style immediately, not on the next 8-beat boundary
+      currentMoveIdx = lockedPool[Math.floor(Math.random() * lockedPool.length)];
+      stepInPattern = 0;
+      curMoveHold = LONG_MOVES.has(currentMoveIdx) ? 8 : 4;
+      for (let i = 1; i < dancers.length; i++) { dancers[i].moveIdx = lockedPool[Math.floor(Math.random() * lockedPool.length)]; dancers[i].stepIn = 0; }
+      announceFamily(currentMoveIdx);
+      beatPulse = Math.max(beatPulse, 1.2);
+      applyStep();
+    }
+  }
   function doMove(idx: number) {
     currentMoveIdx = Math.max(0, Math.min(MOVES.length - 1, Math.round(idx)));
+    lockedPool = [currentMoveIdx]; // stays until the user picks auto
     stepInPattern = 0;
     curMoveHold = LONG_MOVES.has(currentMoveIdx) ? 8 : 6;
     for (let i = 1; i < dancers.length; i++) { dancers[i].moveIdx = currentMoveIdx; dancers[i].stepIn = 0; }
@@ -3042,7 +3068,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     // Each backup that just finished its own little phrase grabs a FRESH random
     // move from the same energy pool → the crew is always doing a mix. At a
     // wedding the crew circles the couple with the hora set instead.
-    const pool = weddingMode ? POOL_HORA : activePool();
+    const pool = (lockedPool && lockedPool.length) ? lockedPool : (weddingMode ? POOL_HORA : activePool());
     for (let i = 1; i < dancers.length; i++) {
       const d = dancers[i];
       if (!d.rig.group.visible) continue;
@@ -3696,6 +3722,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     setFormation(mode: number) { formationMode = Math.max(0, Math.min(FORMATIONS.length - 1, Math.round(mode))); applyFormation(); },
     setBulletTime(on: boolean) { bulletTime = !!on; if (bulletTime) bulletStart = performance.now(); },
     doMove(idx: number) { doMove(idx); },
+    setDancePool(pool: number[] | null) { setDancePool(pool); },
     photoFreeze(on: boolean) {
       photoFrozen = !!on;
       if (photoFrozen) {

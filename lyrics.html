@@ -595,6 +595,8 @@
   .move-chip .mv-e{font-size:19px; line-height:1;}
   .move-chip:hover{border-color:var(--border-strong); transform:translateY(-2px);}
   .move-chip:active{transform:scale(.9);}
+  .move-chip.on{border-color:var(--accent,#7c5cff); background:rgba(124,92,255,.16);
+    box-shadow:0 0 12px rgba(124,92,255,.35);}
   .shout-row{display:flex; gap:8px; flex-wrap:wrap;}
   .shout-chip{cursor:pointer; font-size:13px; font-weight:700; padding:7px 13px; border-radius:999px;
     border:1px solid var(--border); background:rgba(255,255,255,.04); color:var(--text); transition:border-color .18s, transform .1s;}
@@ -1335,6 +1337,7 @@
     <button id="bulletBtn" class="btn-ghost" style="margin-top:12px; width:100%;">🕶️ בולט-טיים (T) — הקפאה ומצלמה שטסה</button>
     <div style="margin-top:14px; font-size:12px; color:var(--text-dim); text-align:right;">🕺 מהלכי-על — לחצו והלהקה מבצעת מיד</div>
     <div class="move-row" id="moveRow" style="margin-top:8px;"></div>
+    <div class="move-row" id="styleRow" style="margin-top:6px;"></div>
     <button id="finaleBtn" class="btn-ghost" style="margin-top:12px; width:100%;">🎆 גרנד פינאלה — רצף סיום מטורף</button>
     <button id="insaneBtn" class="btn-insane" style="margin-top:10px; width:100%;">🤯 מצב INSANE — הכל על מקסימום</button>
     <label class="dir-toggle" style="margin-top:12px;">
@@ -2290,20 +2293,44 @@
   }
   bulletBtn.addEventListener('click', ()=> setBullet(!bulletOn));
 
-  // ── 🕺 Move soundboard ── tap a button and the whole crew hits that hero
-  // move immediately (the DJ's live "everybody hit it!" control).
+  // ── 🕺 Move & style soundboard ── a chip LOCKS the crew on that move or
+  // style until you tap it again (or tap 🤖 אוטו) — the choreographer never
+  // silently drifts back to automatic anymore.
   const moveRow = $('moveRow');
-  const MOVES_SB = [
-    ['🕺','קפיצה',5], ['🌀','סיבוב',24], ['🌊','גל',96],
-    ['🔻','צלילה',13], ['🙌','פוזה',87], ['🎤','מיקרופון',121],
-  ];
-  MOVES_SB.forEach(([emoji, label, idx])=>{
+  const styleRow = $('styleRow');
+  let activeChip = null;
+  function selectChip(chip, pool, label){
+    if (activeChip === chip){ // tapping the active chip releases the lock
+      chip.classList.remove('on'); activeChip = null;
+      window.__lyricsAvatarBridge?.setDancePool?.(null);
+      showMiniToast('🤖 חזרנו לכוריאוגרפיה אוטומטית');
+      return;
+    }
+    document.querySelectorAll('#moveRow .move-chip.on, #styleRow .move-chip.on').forEach(c=>c.classList.remove('on'));
+    chip.classList.add('on'); activeChip = chip;
+    window.__lyricsAvatarBridge?.setDancePool?.(pool);
+    showMiniToast('🔒 רוקדים רק ' + label + ' — הקשה נוספת משחררת');
+  }
+  function mkChip(row, emoji, label, pool){
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'move-chip';
     b.innerHTML = '<span class="mv-e">' + emoji + '</span><span>' + label + '</span>';
-    b.addEventListener('click', ()=> window.__lyricsAvatarBridge?.doMove?.(idx));
-    moveRow.appendChild(b);
-  });
+    b.addEventListener('click', ()=> selectChip(b, pool, label));
+    row.appendChild(b);
+    return b;
+  }
+  [['🕺','קפיצה',[5]], ['🌀','סיבוב',[24]], ['🌊','גל',[96]],
+   ['🔻','צלילה',[13]], ['🙌','פוזה',[87]], ['🎤','מיקרופון',[121]]]
+    .forEach(([e,l,p])=> mkChip(moveRow, e, l, p));
+  // 10 full dance STYLES — each locks the whole crew inside one authored
+  // family of the move library (the ranges match the on-stage style badge)
+  const range=(a,b)=>Array.from({length:b-a+1},(_,i)=>a+i);
+  [['🎧','היפ-הופ',range(18,27)], ['💃','לטיני',range(28,35)],
+   ['🪩','דיסקו-פאנק',range(36,41)], ['⚡','ראייב',range(42,49)],
+   ['🎵','פופ',range(50,57)], ['🌍','ריקודי עולם',range(58,67)],
+   ['🔥','אפרו-ויראלי',range(68,77)], ['🖐️','ווג',range(78,87)],
+   ['🌙','צ\'יל',range(88,97)], ['📱','ויראלי',range(104,119)]]
+    .forEach(([e,l,p])=> mkChip(styleRow, e, l, p));
 
   // ── 🎆 Grand finale ── a scripted ~4s closing sequence: a rolling volley of
   // bursts with a firework-emoji shower — the end-of-set money shot.
@@ -4399,6 +4426,7 @@
   const ZOOMS = [1, 1.18, 1.38, 0.85]; // cycle: default → bigger → biggest → smaller
   let lastZoomIdx = 0;
   try { lastZoomIdx = Math.max(0, Math.min(ZOOMS.length - 1, Number(localStorage.getItem('lt:stage_zoom_idx')) || 0)); } catch {}
+  let lastDancePool = null;
   function mount() {
     if (handle) return;
     handle = mountLyricsAvatar(heroAvatar);
@@ -4407,6 +4435,7 @@
     handle.setParty?.(lastParty);
     handle.setTheme?.(lastTheme);
     handle.setZoom?.(ZOOMS[lastZoomIdx]);
+    if (lastDancePool) handle.setDancePool?.(lastDancePool);
   }
   function unmount() {
     if (!handle) return;
@@ -4448,7 +4477,8 @@
     setTimeScale(x) { handle?.setTimeScale?.(x); },
     setFormation(mode) { handle?.setFormation?.(mode); },
     setBulletTime(on) { handle?.setBulletTime?.(on); },
-    doMove(idx) { handle?.doMove?.(idx); },
+    doMove(idx) { lastDancePool = [idx]; handle?.doMove?.(idx); },
+    setDancePool(pool) { lastDancePool = pool; handle?.setDancePool?.(pool); },
   };
 
   // Party button cycles: solo → 🎉 crew of 3 → 🪩 BIG PARTY (30 aliens +
