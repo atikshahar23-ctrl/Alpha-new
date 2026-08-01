@@ -1867,75 +1867,104 @@ function commSay(txt,urgent){
       if(urgent) speechSynthesis.cancel();
       if(!speechSynthesis.speaking){
         const u=new SpeechSynthesisUtterance(txt);
-        u.lang='he-IL'; u.rate=1.15; u.pitch=1.05;
+        u.lang='en-US'; u.rate=1.08; u.pitch=1.0;
         speechSynthesis.speak(u);
       }
     }catch(e){}
   }
 }
+// English pattern name for the caster (the analyzer's labels carry the
+// English term in parentheses)
+function patternEn(hit){ if(!hit) return null; const m=hit.label.match(/\(([^)]+)\)/); return m?m[1]:null; }
 function commTick(){
   if(!commOn||!ind) return;
   const cs=state.candles; if(!cs||cs.length<25) return;
   const lp=state.lastPrice; if(!lp) return;
   const lines=[];
   const sc=ind.score, P=positions[state.sym];
+  const closes=cs.map(c=>c.c);
+  const R=rsiArr(closes,14)[closes.length-1];
+  // session VWAP over the loaded window — the institutional anchor
+  let vwap=null; { let pv=0,vv=0; for(const c of cs){ const tp=(c.h+c.l+c.c)/3; pv+=tp*(c.v||0); vv+=c.v||0; } if(vv>0) vwap=pv/vv; }
 
-  // ---- explicit trade calls on verdict transitions ----
+  // ---- explicit trade calls on verdict transitions (with R:R + confluence) ----
   if(commPrev.score!=null && !ind.closed){
-    if(sc>=55&&commPrev.score<55) lines.push({p:12,t:'קנייה חזקה! כל האינדיקטורים מתיישרים למעלה — '+ind.reasons[0]});
-    else if(sc>=20&&commPrev.score<20) lines.push({p:10,t:'אות קנייה! הציון עלה ל-'+(sc>0?'+':'')+sc+' — '+ind.reasons[0]});
-    if(sc<=-55&&commPrev.score>-55) lines.push({p:12,t:'מכירה חזקה! לחץ כבד על המחיר — '+ind.reasons[0]});
-    else if(sc<=-20&&commPrev.score>-20) lines.push({p:10,t:'אות מכירה! הציון ירד ל-'+sc+' — '+ind.reasons[0]});
-    if(Math.abs(sc)<20&&Math.abs(commPrev.score)>=20) lines.push({p:6,t:'האות התקרר — חזרנו להמתנה, לא רודפים אחרי השוק'});
+    const conf=[];
+    if(vwap!=null) conf.push(lp>=vwap?'price above VWAP':'price below VWAP');
+    const patEn=patternEn(candleAnalysis&&(candleAnalysis.pattern||candleAnalysis.single));
+    if(patEn) conf.push(patEn+' on the candles');
+    const confTxt=conf.length?' Confluence: '+conf.join(', ')+'.':'';
+    if(sc>=55&&commPrev.score<55) lines.push({p:12,t:'STRONG BUY! Every indicator is aligned to the upside. This is an A-plus setup — risk one to make one point seven.'+confTxt});
+    else if(sc>=20&&commPrev.score<20) lines.push({p:10,t:'Buy signal! Score just crossed to plus '+sc+'. Suggested entry '+fmtP(lp)+', stop below at one and a half ATR.'+confTxt});
+    if(sc<=-55&&commPrev.score>-55) lines.push({p:12,t:'STRONG SELL! Heavy pressure across the board — momentum, trend and range all pointing down.'+confTxt});
+    else if(sc<=-20&&commPrev.score>-20) lines.push({p:10,t:'Sell signal! Score dropped to '+sc+'. Shorts have the edge here.'+confTxt});
+    if(Math.abs(sc)<20&&Math.abs(commPrev.score)>=20) lines.push({p:6,t:'Signal cooled off — back to wait mode. A genius trader knows: no trade IS a trade.'});
   }
 
-  // ---- position coaching: when to close ----
+  // ---- position coaching: when to close (genius risk management) ----
   if(P){
     const pct=posPnlPct(P,state.sym);
     const tpSpan=Math.abs(P.tp-P.entry)||1e-9, slSpan=Math.abs(P.entry-P.sl)||1e-9;
     const toTp=P.side==='long'?(P.tp-lp)/tpSpan:(lp-P.tp)/tpSpan;
     const toSl=P.side==='long'?(lp-P.sl)/slSpan:(P.sl-lp)/slSpan;
-    if(toTp<=0.15&&toTp>0) lines.push({p:13,t:'כמעט ביעד! עוד '+fmtPct(Math.abs(toTp*tpSpan/lp*100))+' — שקול לסגור עכשיו ולקחת את הרווח'});
-    else if(toSl<=0.25&&toSl>0) lines.push({p:13,t:'זהירות! המחיר נושם על הסטופ — אם אין התאוששות מיידית, עדיף לצאת ביד'});
+    if(toTp<=0.15&&toTp>0) lines.push({p:13,t:'Almost at target! Take the money — close it here or trail your stop to breakeven. Never let a winner turn into a loser.'});
+    else if(toSl<=0.25&&toSl>0) lines.push({p:13,t:'Careful! Price is breathing on your stop. No immediate reclaim — cut it manually. Small losses keep you in the game.'});
     else if(pct>0.3&&((P.side==='long'&&sc<=-20)||(P.side==='short'&&sc>=20)))
-      lines.push({p:12,t:'המומנטום התהפך נגד העסקה! סגור עם הרווח שביד ('+fmtPct(pct)+') — אל תיתן לו להתאדות'});
+      lines.push({p:12,t:'Momentum just flipped against your position! Bank the '+fmtPct(pct)+' while it is still on the table.'});
+    else if(pct>1.2&&toTp>0.5) lines.push({p:9,t:'Position deep in profit — consider moving the stop to breakeven. Free trades are how pros sleep at night.'});
   }
-  if(!commPrev.pos&&P) lines.push({p:11,t:(P.side==='long'?'נכנסנו ללונג':'נכנסנו לשורט')+' על '+state.sym+' ב-'+fmtP(P.entry)+' — יעד '+fmtP(P.tp)+', סטופ '+fmtP(P.sl)+'. בהצלחה!'});
-  if(commPrev.pos&&!P&&commPrev.posSym===state.sym) lines.push({p:11,t:'העסקה נסגרה. נושמים, מסתכלים על הגרף מחדש'});
+  if(!commPrev.pos&&P) lines.push({p:11,t:(P.side==='long'?'We are LONG ':'We are SHORT ')+state.sym+' from '+fmtP(P.entry)+'. Target '+fmtP(P.tp)+', stop '+fmtP(P.sl)+' — risk-reward one to '+(Math.abs(P.tp-P.entry)/Math.max(1e-9,Math.abs(P.entry-P.sl))).toFixed(1)+'. Plan the trade, trade the plan.'});
+  if(commPrev.pos&&!P&&commPrev.posSym===state.sym) lines.push({p:11,t:'Trade closed. Breathe, review, and wait for the next clean setup.'});
+
+  // ---- RSI divergence — the professional reversal tell ----
+  if(cs.length>=42){
+    const rsiA=rsiArr(closes,14);
+    const seg1=closes.slice(-40,-20), seg2=closes.slice(-20);
+    const h1=Math.max(...seg1), h2=Math.max(...seg2);
+    const l1=Math.min(...seg1), l2=Math.min(...seg2);
+    const r1=rsiA.slice(-40,-20), r2=rsiA.slice(-20);
+    const div = h2>h1 && Math.max(...r2)<Math.max(...r1)-3 ? 'bear'
+              : l2<l1 && Math.min(...r2)>Math.min(...r1)+3 ? 'bull' : '';
+    if(div&&div!==commPrev.div){
+      lines.push({p:9,t:div==='bear'
+        ?'Bearish divergence forming — price printed a higher high but RSI did not confirm. Smart money watches this closely.'
+        :'Bullish divergence! Lower low in price, higher low in RSI — sellers are running out of fuel.'});
+    }
+    commPrev.div=div;
+  }
 
   // ---- indicator drama ----
-  const closes=cs.map(c=>c.c);
-  const R=rsiArr(closes,14)[closes.length-1];
   const zone=R>70?'high':R<30?'low':'mid';
   if(commPrev.rsiZone&&zone!==commPrev.rsiZone){
-    if(zone==='high') lines.push({p:8,t:'ה-RSI נכנס לקניית יתר ('+(R|0)+') — הראלי מתחמם, לא רודפים כאן'});
-    if(zone==='low') lines.push({p:8,t:'ה-RSI במכירת יתר ('+(R|0)+') — הקפיץ נמתח, תיקון למעלה מתבשל'});
+    if(zone==='high') lines.push({p:8,t:'RSI just entered overbought at '+(R|0)+'. The rally is hot — chasing here is amateur hour.'});
+    if(zone==='low') lines.push({p:8,t:'RSI oversold at '+(R|0)+'. The spring is loaded — mean reversion setups start appearing.'});
   }
   const e9=ind.e9raw[ind.e9raw.length-1], e21=ind.e21raw[ind.e21raw.length-1];
   const ema=e9>=e21?'up':'down';
   if(commPrev.ema&&ema!==commPrev.ema)
-    lines.push({p:9,t:ema==='up'?'חיתוך שורי! ממוצע 9 חצה את 21 מלמטה — הפתיחה של מהלך עולה':'חיתוך דובי — ממוצע 9 שבר את 21 למטה, הדובים לוקחים פיקוד'});
+    lines.push({p:9,t:ema==='up'?'Bullish cross! The 9 EMA just cut through the 21 from below — trend ignition.':'Bearish cross — 9 EMA broke under the 21. The bears take the wheel.'});
   const lastC=cs[cs.length-2];
   if(lastC&&lastC.o){
     const mv=lastC.c-lastC.o;
-    if(Math.abs(mv)>ind.A*1.6) lines.push({p:7,t:mv>0?'איזה נר ירוק! הקונים דרסו את כל ההיצע בנר אחד':'נר אדום כבד נסגר — המוכרים הראו מי הבוס'});
+    if(Math.abs(mv)>ind.A*1.6) lines.push({p:7,t:mv>0?'Monster green candle! Buyers just ate the entire book in one bar.':'Heavy red candle closed — distribution, plain and simple.'});
   }
   for(const lv of (ind.levels||[])){
     if(Math.abs(lp-lv.p)<ind.A*0.5){
-      lines.push({p:5,t:(lv.p>lp?'מתקרבים להתנגדות ב-':'נלחמים על התמיכה ב-')+fmtP(lv.p)+' — כאן ייקבע הקרב הבא'});
+      lines.push({p:5,t:(lv.p>lp?'Approaching resistance at ':'Defending support at ')+fmtP(lv.p)+' — this is where the next battle gets decided.'});
       break;
     }
   }
 
-  // ---- color commentary when nothing is burning ----
+  // ---- color commentary + trading wisdom when nothing is burning ----
   lines.sort((a,b)=>b.p-a.p);
   let chosen=lines[0]||null;
   const nowT=Date.now();
   if(!chosen&&nowT-commColorAt>26000){
     const color=[
-      'מאזן הכוחות כרגע: '+Math.round(state.bullPct)+'% קונים מול '+Math.round(100-state.bullPct)+'% מוכרים',
-      state.sym+' נסחר סביב '+fmtP(lp)+' · המצב: '+ind.verdict,
-      'RSI על '+(R|0)+' — '+(R>60?'הקונים בשליטה':R<40?'המוכרים לוחצים':'שוק מאוזן, מחכים לניצוץ'),
+      'Order flow check: '+Math.round(state.bullPct)+' percent buyers versus '+Math.round(100-state.bullPct)+' percent sellers.',
+      state.sym+' trading around '+fmtP(lp)+(vwap!=null?(lp>=vwap?', holding above VWAP — buyers in control of the session.':', stuck below VWAP — sellers own this session.'):'.'),
+      'RSI at '+(R|0)+' — '+(R>60?'bulls in charge.':R<40?'bears pressing.':'balanced tape. Patience pays: the best trades come to you.'),
+      'Remember: amateurs focus on how much they can make, professionals on how much they can lose.',
     ];
     chosen={p:0,t:color[(commColorIdx++)%color.length]};
     commColorAt=nowT;
@@ -1944,14 +1973,14 @@ function commTick(){
     commLastSaid=chosen.t; commLastAt=nowT;
     commSay(chosen.t,chosen.p>=10);
   }
-  commPrev={score:sc,rsiZone:zone,ema,pos:!!P,posSym:P?state.sym:''};
+  commPrev={score:sc,rsiZone:zone,ema,pos:!!P,posSym:P?state.sym:'',div:commPrev.div};
 }
 setInterval(commTick,3000);
 function setComm(on){
   commOn=on;
   $('btnComm').classList.toggle('on',on);
   if(on){
-    commSay('הפרשן באוויר! צמוד ל-'+state.sym+' — אני אגיד לך מתי לקנות, מתי למכור ומתי לברוח',true);
+    commSay('Live from the arena! I am on '+state.sym+' — I will call the buys, the sells, and exactly when to close. Let us trade.',true);
   } else {
     $('commBar').style.display='none';
     commLastSaid='';
