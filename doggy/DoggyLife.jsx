@@ -100,6 +100,99 @@ const saveRoster = (roster, activeId) => {
   }
 };
 
+/* ---------- Real data: breed photos from Wikipedia ---------- */
+// Every index entry gets a real photograph, resolved lazily against Hebrew
+// Wikipedia (search API + pageimages, CORS-open, no key). Results — including
+// definite misses — persist in localStorage so the whole index costs one
+// network pass ever; a network failure is NOT cached so it retries next time.
+const IMG_KEY = "doggy:breedimg:v1";
+let imgCache = {};
+try { imgCache = JSON.parse(localStorage.getItem(IMG_KEY) || "{}") || {}; } catch {}
+let imgSaveT = null;
+const persistImgCache = () => {
+  clearTimeout(imgSaveT);
+  imgSaveT = setTimeout(() => { try { localStorage.setItem(IMG_KEY, JSON.stringify(imgCache)); } catch {} }, 800);
+};
+const imgInflight = {};
+const imgQueue = [];
+let imgActive = 0;
+const pumpImgQueue = () => { while (imgActive < 4 && imgQueue.length) { imgActive++; imgQueue.shift()(); } };
+function getBreedImg(name, override) {
+  const key = override || name;
+  if (key in imgCache) return Promise.resolve(imgCache[key] || null);
+  if (imgInflight[key]) return imgInflight[key];
+  imgInflight[key] = new Promise((resolve) => {
+    imgQueue.push(async () => {
+      let url = "";
+      try {
+        const api = "https://he.wikipedia.org/w/api.php?action=query&format=json&origin=*&redirects=1"
+          + "&prop=pageimages&piprop=thumbnail&pithumbsize=280&generator=search&gsrlimit=1&gsrnamespace=0"
+          + "&gsrsearch=" + encodeURIComponent(key);
+        const j = await (await fetch(api)).json();
+        const first = Object.values(j?.query?.pages || {})[0];
+        url = first?.thumbnail?.source || "";
+        imgCache[key] = url; persistImgCache();
+      } catch { /* offline / blocked — leave uncached for a future retry */ }
+      imgActive--; pumpImgQueue();
+      delete imgInflight[key];
+      resolve(url || null);
+    });
+    pumpImgQueue();
+  });
+  return imgInflight[key];
+}
+
+/* ---------- Real data: nearby places from OpenStreetMap ---------- */
+// One Overpass query brings back every mapped dog park, pet shop and vet
+// within 7km of the user's real location — actual places, not demo rows.
+const OSM_KEY = "doggy:osm:v1";
+const kmBetween = (a, b, c, d) => {
+  const rad = Math.PI / 180;
+  const h = Math.sin((c - a) * rad / 2) ** 2 + Math.cos(a * rad) * Math.cos(c * rad) * Math.sin((d - b) * rad / 2) ** 2;
+  return 6371 * 2 * Math.asin(Math.sqrt(h));
+};
+const fmtKm = (km) => (km < 1 ? `${Math.round(km * 1000)} מ'` : `${km.toFixed(1)} ק"מ`);
+const osmParkFeatures = (t = {}) => {
+  const f = [];
+  if (t.fenced === "yes" || t.barrier) f.push("מגודר");
+  if (t.drinking_water === "yes") f.push("ברזיית מים");
+  if (t.lit === "yes") f.push("תאורת לילה");
+  if (t.dog === "unleashed") f.push("מותר בלי רצועה");
+  if (t.opening_hours === "24/7") f.push("פתוח 24/7");
+  return f.length ? f : ["מופה ב-OSM"];
+};
+async function fetchNearbyOSM(lat, lon) {
+  const q = `[out:json][timeout:20];(
+    nwr["leisure"="dog_park"](around:7000,${lat},${lon});
+    nwr["shop"="pet"](around:7000,${lat},${lon});
+    nwr["amenity"="veterinary"](around:7000,${lat},${lon});
+  );out center tags 60;`;
+  const r = await fetch("https://overpass-api.de/api/interpreter", {
+    method: "POST", body: "data=" + encodeURIComponent(q),
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+  });
+  if (!r.ok) throw new Error("overpass " + r.status);
+  const j = await r.json();
+  const parks = [], shops = [];
+  for (const el of j.elements || []) {
+    const t = el.tags || {};
+    const la = el.lat ?? el.center?.lat, lo = el.lon ?? el.center?.lon;
+    if (la == null || lo == null) continue;
+    const km = kmBetween(lat, lon, la, lo);
+    if (t.leisure === "dog_park") {
+      parks.push({ id: "osm" + el.id, name: t.name || "גינת כלבים (ללא שם במפה)", dist: fmtKm(km), km, features: osmParkFeatures(t), osm: true });
+    } else {
+      shops.push({
+        id: "osm" + el.id, name: t.name || (t.amenity === "veterinary" ? "מרפאה וטרינרית" : "חנות חיות"),
+        dist: fmtKm(km), km, kind: t.amenity === "veterinary" ? "וטרינר" : "חנות חיות",
+        phone: t.phone || t["contact:phone"] || "", osm: true,
+      });
+    }
+  }
+  parks.sort((x, y) => x.km - y.km); shops.sort((x, y) => x.km - y.km);
+  return { parks: parks.slice(0, 12), shops: shops.slice(0, 15), at: Date.now(), lat, lon };
+}
+
 /* ---------- Mock data ---------- */
 const EMERGENCY = "מוקד חירום וטרינרי 24/7: *3888";
 
@@ -124,18 +217,18 @@ const ANIMAL_INDEX = [
         { n: "יורקשייר טרייר", t: "פרווה משיית, כמעט לא נושר" }, { n: "מלטז", t: "רגוע, מושלם לדירה ולמבוגרים" },
         { n: "שיצו", t: "מלך הספה — רגיש לחום הישראלי" }, { n: "פודל ננסי", t: "מהחכמים בעולם, היפואלרגני" },
         { n: "פינצ'ר ננסי", t: "קטן, חד ושומר מעולה" }, { n: "פאג", t: "קומיקאי — זקוק להשגחה בקיץ" },
-        { n: "ג'ק ראסל טרייר", t: "טיל אנרגיה — חייב תעסוקה" }, { n: "תחש (דשהונד)", t: "נקניקייה אמיצה — לשמור על הגב" },
+        { n: "ג'ק ראסל טרייר", t: "טיל אנרגיה — חייב תעסוקה" }, { n: "תחש (דשהונד)", w: "כלב תחש", t: "נקניקייה אמיצה — לשמור על הגב" },
       ]},
       { g: "בינוניים (10–25 ק\"ג)", items: [
         { n: "כלב כנעני", t: "הגזע הלאומי — בנוי לאקלים שלנו", tag: "ישראלי" }, { n: "ביגל", t: "אף-על — חברותי אך בורח אחרי ריחות" },
         { n: "קוקר ספנייל", t: "עדין ומשפחתי, אוזניים דורשות טיפול" }, { n: "בורדר קולי", t: "החכם בעולם — לספורטאים בלבד" },
         { n: "בולדוג צרפתי", t: "כוכב הדירות — רגיש מאוד לחום", tag: "רגיש לחום" }, { n: "בולדוג אנגלי", t: "רגוע ועקשן, נחירות מובטחות" },
         { n: "שיבא אינו", t: "עצמאי כמו חתול, נקי להפליא" }, { n: "רועה אוסטרלי", t: "יפהפה והיפראקטיבי" },
-        { n: "ויזלה", t: "צל אנושי — נצמד לבעלים 24/7" }, { n: "אמסטף", t: "מסור ומחייך — דורש חינוך עקבי", tag: "רישוי מיוחד" },
+        { n: "ויזלה", t: "צל אנושי — נצמד לבעלים 24/7" }, { n: "אמסטף", w: "אמריקן סטאפורדשייר טרייר", t: "מסור ומחייך — דורש חינוך עקבי", tag: "רישוי מיוחד" },
       ]},
       { g: "גדולים (25 ק\"ג ומעלה)", items: [
         { n: "גולדן רטריבר", t: "כלב המשפחה האולטימטיבי" }, { n: "לברדור", t: "חבר הכי טוב + שואב אבק של אוכל" },
-        { n: "רועה גרמני", t: "עבודה, נאמנות, אינטליגנציה" }, { n: "מלינואה (רועה בלגי)", t: "כלב היחידות — לא לחובבנים", tag: "מנוסים בלבד" },
+        { n: "רועה גרמני", t: "עבודה, נאמנות, אינטליגנציה" }, { n: "מלינואה (רועה בלגי)", w: "רועה בלגי", t: "כלב היחידות — לא לחובבנים", tag: "מנוסים בלבד" },
         { n: "האסקי סיבירי", t: "יפה ובורח — סובל בקיץ הישראלי", tag: "רגיש לחום" }, { n: "רוטוויילר", t: "שומר עוצמתי עם לב זהב", tag: "רישוי מיוחד" },
         { n: "דוברמן", t: "אלגנטי, אתלטי ומגונן" }, { n: "בוקסר", t: "ילד נצחי — ליצן עד גיל מבוגר" },
         { n: "קאנה קורסו", t: "שומר איטלקי אדיר — יד מנוסה", tag: "רישוי מיוחד" }, { n: "דני ענק", t: "סוס עדין שחושב שהוא כלב חיק" },
@@ -167,11 +260,11 @@ const ANIMAL_INDEX = [
         { n: "דררה", t: "יפהפייה — נפוצה גם בטבע הישראלי" }, { n: "קוואקר (נזירי)", t: "מדבר מצוין, בונה קנים" },
         { n: "ז'אקו (אפריקני אפור)", t: "אינטליגנציה של ילד בן 5", tag: "התחייבות 40+ שנה" },
         { n: "קקדו", t: "רגשן קולני — דורש נוכחות מלאה", tag: "התחייבות 40+ שנה" },
-        { n: "ארה (מקאו)", t: "קשת בענן ענקית ורועשת", tag: "דורש היתר" }, { n: "לוריקיט", t: "צבעוני ושתיין צוף" },
+        { n: "ארה (מקאו)", w: "ארה (תוכי)", t: "קשת בענן ענקית ורועשת", tag: "דורש היתר" }, { n: "לוריקיט", t: "צבעוני ושתיין צוף" },
       ]},
       { g: "ציפורי שיר וחצר", items: [
         { n: "קנרית", t: "זמר האופרה של הכלוב" }, { n: "פינק זברה", t: "צפצוף עליז — חיים בזוגות" },
-        { n: "אהבנית (Lovebird)", t: "רומנטיקן צבעוני וקנאי" }, { n: "יונה ביתית", t: "שקטה, נאמנה וקלה לגידול" },
+        { n: "אהבנית (Lovebird)", w: "אהבנית", t: "רומנטיקן צבעוני וקנאי" }, { n: "יונה ביתית", t: "שקטה, נאמנה וקלה לגידול" },
       ]},
     ],
   },
@@ -209,11 +302,11 @@ const ANIMAL_INDEX = [
     groups: [
       { g: "מים מתוקים", items: [
         { n: "דג זהב", t: "זקוק לאקווריום אמיתי, לא קערה" }, { n: "גופי", t: "צבעוני ומתרבה בטירוף" },
-        { n: "בטא (לוחם סיאמי)", t: "יפהפה — אך גר לבד" }, { n: "נאון טטרה", t: "ניאון כחול בלהקות" },
+        { n: "בטא (לוחם סיאמי)", w: "דג קרב סיאמי", t: "יפהפה — אך גר לבד" }, { n: "נאון טטרה", t: "ניאון כחול בלהקות" },
         { n: "סקלר (אנג'ל)", t: "אציל שקט של האקווריום" }, { n: "קוריידורס", t: "שואב הרצפה החרוץ" },
       ]},
       { g: "בריכות נוי", items: [
-        { n: "קוי", t: "מלך הבריכה — חי עשרות שנים" }, { n: "שבוט (קומט)", t: "זנב שביט לבריכה ביתית" },
+        { n: "קוי", t: "מלך הבריכה — חי עשרות שנים" }, { n: "שבוט (קומט)", w: "דג זהב", t: "זנב שביט לבריכה ביתית" },
       ]},
     ],
   },
@@ -221,7 +314,7 @@ const ANIMAL_INDEX = [
     id: "farm", cat: "חצר ומשק", emoji: "🐔",
     groups: [
       { g: "עופות חצר", items: [
-        { n: "תרנגולת (ברהמה/לגהורן)", t: "ביצים טריות כל בוקר" }, { n: "ברווז ביתי", t: "שומר מפני חלזונות — צריך מקווה מים" },
+        { n: "תרנגולת (ברהמה/לגהורן)", w: "תרנגול הבית", t: "ביצים טריות כל בוקר" }, { n: "ברווז ביתי", t: "שומר מפני חלזונות — צריך מקווה מים" },
         { n: "שליו יפני", t: "ביצי שליו במרפסת" },
       ]},
       { g: "מכוסות פרווה", items: [
@@ -494,6 +587,25 @@ const PetAvatar = ({ pet, size = 44, radius = 16, fontScale = 0.52, className = 
   </span>
 );
 
+// Real photo per breed (Wikipedia thumbnail), species emoji until it loads /
+// when the article has no image or the device is offline.
+const BreedPhoto = ({ name, wiki, emoji, size = 46 }) => {
+  const [url, setUrl] = useState(() => imgCache[wiki || name] || null);
+  useEffect(() => {
+    let on = true;
+    if (!url) getBreedImg(name, wiki).then((u) => { if (on && u) setUrl(u); });
+    return () => { on = false; };
+  }, [name, wiki]);
+  return (
+    <span className="inline-flex items-center justify-center overflow-hidden shrink-0"
+      style={{ width: size, height: size, borderRadius: 12, background: "#F5F1E8", border: "1px solid #EFE6D6" }}>
+      {url
+        ? <img src={url} alt={name} loading="lazy" className="w-full h-full object-cover" style={{ display: "block" }} />
+        : <span style={{ fontSize: Math.round(size * 0.5), lineHeight: 1 }}>{emoji}</span>}
+    </span>
+  );
+};
+
 const SectionTitle = ({ icon: Icon, children, extra }) => (
   <div className="flex items-center justify-between mb-3">
     <div className="flex items-center gap-2">
@@ -646,10 +758,39 @@ export default function DoggyLife() {
 
   /* Parks + community */
   const [parks, setParks] = useState(PARKS_INIT);
-  const [checkedIn, setCheckedIn] = useState(null);
-  const [groups, setGroups] = useState(GROUPS_INIT);
-  const [newGroup, setNewGroup] = useState("");
+  const [checkedIn, setCheckedIn] = useState(() => { try { return JSON.parse(localStorage.getItem("doggy:checkin") || "null"); } catch { return null; } });
+  useEffect(() => { try { localStorage.setItem("doggy:checkin", JSON.stringify(checkedIn)); } catch {} }, [checkedIn]);
+
+  /* Walking groups — real user data, persisted (created groups + membership survive reload) */
+  const GROUPS_KEY = "doggy:groups:v1";
+  const [groups, setGroups] = useState(() => {
+    try { const g = JSON.parse(localStorage.getItem(GROUPS_KEY) || "null"); if (Array.isArray(g) && g.length) return g; } catch {}
+    return GROUPS_INIT;
+  });
+  useEffect(() => { try { localStorage.setItem(GROUPS_KEY, JSON.stringify(groups)); } catch {} }, [groups]);
+  const [newGroup, setNewGroup] = useState({ name: "", when: "", where: "", desc: "" });
   const [showGroupForm, setShowGroupForm] = useState(false);
+
+  /* Real nearby places (OpenStreetMap via geolocation) — cached across visits */
+  const [osm, setOsm] = useState(() => { try { return JSON.parse(localStorage.getItem(OSM_KEY) || "null"); } catch { return null; } });
+  const [osmBusy, setOsmBusy] = useState(false);
+  const [osmErr, setOsmErr] = useState("");
+  const locateReal = () => {
+    setOsmErr(""); setOsmBusy(true);
+    if (!navigator.geolocation) { setOsmErr("הדפדפן לא תומך באיתור מיקום"); setOsmBusy(false); return; }
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+      try {
+        const data = await fetchNearbyOSM(pos.coords.latitude, pos.coords.longitude);
+        setOsm(data);
+        try { localStorage.setItem(OSM_KEY, JSON.stringify(data)); } catch {}
+        if (!data.parks.length && !data.shops.length) setOsmErr('המפה לא מכירה פארקים או חנויות ברדיוס 7 ק"מ — מציגים דמו בינתיים');
+      } catch { setOsmErr("שרת המפות (Overpass) לא זמין כרגע — נסו שוב בעוד רגע"); }
+      setOsmBusy(false);
+    }, () => { setOsmErr("לא אושרה גישה למיקום — מציגים נתוני דמו"); setOsmBusy(false); },
+    { enableHighAccuracy: false, timeout: 12000, maximumAge: 600000 });
+  };
+  const realParks = osm?.parks?.length ? osm.parks : null;
+  const realShops = osm?.shops?.length ? osm.shops : null;
 
   /* Food share */
   const [listings, setListings] = useState(FOOD_SHARE_INIT);
@@ -869,11 +1010,16 @@ export default function DoggyLife() {
     setGroups((gs) => gs.map((g) => (g.id === id ? { ...g, joined: !g.joined, members: g.members + (g.joined ? -1 : 1) } : g)));
 
   const addGroup = () => {
-    if (!newGroup.trim()) return;
-    setGroups((gs) => [...gs, { id: Date.now(), name: newGroup.trim(), members: 1, when: "טרם נקבע", joined: true }]);
-    setNewGroup("");
+    if (!newGroup.name.trim()) return;
+    setGroups((gs) => [{
+      id: Date.now(), name: newGroup.name.trim(), members: 1,
+      when: [newGroup.when.trim(), newGroup.where.trim()].filter(Boolean).join(" · ") || "טרם נקבע",
+      desc: newGroup.desc.trim(), joined: true, mine: true,
+    }, ...gs]);
+    setNewGroup({ name: "", when: "", where: "", desc: "" });
     setShowGroupForm(false);
   };
+  const removeGroup = (id) => setGroups((gs) => gs.filter((g) => g.id !== id));
 
   const claim = (id) => setListings((ls) => ls.map((l) => (l.id === id ? { ...l, claimed: !l.claimed } : l)));
   const addListing = () => {
@@ -1485,10 +1631,26 @@ export default function DoggyLife() {
         {tab === "parks" && (
           <>
             <Card className="p-4">
-              <SectionTitle icon={Trees}>גינות כלבים בסביבה</SectionTitle>
+              <SectionTitle icon={Trees}
+                extra={realParks
+                  ? <Chip tone="pine">✓ נתונים אמיתיים · OpenStreetMap</Chip>
+                  : <Chip tone="amber">נתוני דמו</Chip>}>
+                גינות כלבים בסביבה
+              </SectionTitle>
+
+              {/* real-location switch: one tap → geolocation → every mapped dog
+                  park within 7km, sorted by true distance */}
+              <button onClick={locateReal} disabled={osmBusy}
+                className="w-full mb-3 rounded-xl py-2.5 text-[12.5px] font-extrabold flex items-center justify-center gap-2 transition-all"
+                style={{ background: osmBusy ? "#F5F1E8" : C.blueSoft, color: osmBusy ? C.inkSoft : "#2F5A73" }}>
+                <MapPin size={15} /> {osmBusy ? "מאתר פארקים אמיתיים סביבך..." : realParks ? "רענון לפי המיקום הנוכחי שלי" : "מצאו פארקים אמיתיים לפי המיקום שלי 📍"}
+              </button>
+              {osmErr && <p className="mb-3 text-[11.5px] rounded-lg p-2.5 font-semibold" style={{ background: C.amberSoft, color: "#8A5714" }}>{osmErr}</p>}
+              {realParks && <p className="mb-3 text-[10.5px]" style={{ color: C.inkSoft }}>מקור: OpenStreetMap · רדיוס 7 ק"מ · עודכן {fmt(new Date(osm.at))}</p>}
+
               <SearchBox value={parkSearch} onChange={setParkSearch} placeholder='חיפוש פארק, מתקן או קבוצה: מגודר, ברזיית מים, גולדנים...' />
               <div className="space-y-3">
-                {parks.filter((p) => hitQ(parkSearch, p.name, p.dist, p.features.join(" "))).map((p) => {
+                {(realParks || parks).filter((p) => hitQ(parkSearch, p.name, p.dist, p.features.join(" "))).map((p) => {
                   const inHere = checkedIn === p.id;
                   return (
                     <div key={p.id} className="rounded-xl border p-3" style={{ borderColor: inHere ? C.pine : "#EFE6D6", background: inHere ? "#F4F9F6" : "#fff" }}>
@@ -1496,18 +1658,20 @@ export default function DoggyLife() {
                         <div className="min-w-0">
                           <p className="text-[14px] font-extrabold">{p.name}</p>
                           <p className="text-[11.5px] flex items-center gap-1 mt-0.5" style={{ color: C.inkSoft }}>
-                            <MapPin size={11} /> {p.dist} · <Stars value={p.rating} />
+                            <MapPin size={11} /> {p.dist}{p.rating ? <> · <Stars value={p.rating} /></> : null}
                           </p>
                           <div className="flex flex-wrap gap-1.5 mt-2">
                             {p.features.map((f) => <Chip key={f} tone={f.includes("מים") ? "blue" : "pine"}>{f}</Chip>)}
                           </div>
                         </div>
-                        <div className="text-center shrink-0">
-                          <div className="rounded-xl px-3 py-1.5" style={{ background: C.amberSoft }}>
-                            <p className="font-display text-[19px] leading-none" style={{ color: "#8A5714" }}>{p.dogs}</p>
-                            <p className="text-[9px] font-bold" style={{ color: "#8A5714" }}>כלבים עכשיו</p>
+                        {typeof p.dogs === "number" && (
+                          <div className="text-center shrink-0">
+                            <div className="rounded-xl px-3 py-1.5" style={{ background: C.amberSoft }}>
+                              <p className="font-display text-[19px] leading-none" style={{ color: "#8A5714" }}>{p.dogs}</p>
+                              <p className="text-[9px] font-bold" style={{ color: "#8A5714" }}>כלבים עכשיו</p>
+                            </div>
                           </div>
-                        </div>
+                        )}
                       </div>
                       <button onClick={() => checkIn(p.id)}
                         className="mt-3 w-full rounded-lg py-2 text-[12.5px] font-extrabold transition-all"
@@ -1517,7 +1681,7 @@ export default function DoggyLife() {
                     </div>
                   );
                 })}
-                {!parks.some((p) => hitQ(parkSearch, p.name, p.dist, p.features.join(" "))) && <NoResults q={parkSearch} />}
+                {!(realParks || parks).some((p) => hitQ(parkSearch, p.name, p.dist, p.features.join(" "))) && <NoResults q={parkSearch} />}
               </div>
             </Card>
 
@@ -1532,23 +1696,48 @@ export default function DoggyLife() {
               </SectionTitle>
 
               {showGroupForm && (
-                <div className="flex gap-2 mb-3">
-                  <input value={newGroup} onChange={(e) => setNewGroup(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addGroup()}
-                    placeholder='שם הקבוצה, למשל: "גולדנים של מודיעין"'
-                    className="flex-1 rounded-lg border px-3 py-2 text-[13px] outline-none focus:border-[#D98E32]" style={{ borderColor: "#EFE6D6", background: "#FCFAF4" }} />
-                  <button onClick={addGroup} className="rounded-lg px-4 text-[12.5px] font-extrabold text-white" style={{ background: C.pine }}>יצירה</button>
+                <div className="mb-3 rounded-xl border p-3 space-y-2" style={{ borderColor: C.pineSoft, background: "#FCFAF4" }}>
+                  <input value={newGroup.name} onChange={(e) => setNewGroup((g) => ({ ...g, name: e.target.value }))}
+                    placeholder='שם הקבוצה, למשל: "גולדנים של מודיעין" *'
+                    className="w-full rounded-lg border px-3 py-2 text-[13px] outline-none focus:border-[#D98E32]" style={{ borderColor: "#EFE6D6", background: "#fff" }} />
+                  <div className="grid grid-cols-2 gap-2">
+                    <input value={newGroup.when} onChange={(e) => setNewGroup((g) => ({ ...g, when: e.target.value }))}
+                      placeholder="מתי? למשל: שבת 08:00"
+                      className="rounded-lg border px-3 py-2 text-[13px] outline-none focus:border-[#D98E32]" style={{ borderColor: "#EFE6D6", background: "#fff" }} />
+                    <input value={newGroup.where} onChange={(e) => setNewGroup((g) => ({ ...g, where: e.target.value }))}
+                      placeholder="איפה? למשל: פארק ענבה"
+                      className="rounded-lg border px-3 py-2 text-[13px] outline-none focus:border-[#D98E32]" style={{ borderColor: "#EFE6D6", background: "#fff" }} />
+                  </div>
+                  <input value={newGroup.desc} onChange={(e) => setNewGroup((g) => ({ ...g, desc: e.target.value }))} onKeyDown={(e) => e.key === "Enter" && addGroup()}
+                    placeholder="כמה מילים: למי הקבוצה מתאימה? (לא חובה)"
+                    className="w-full rounded-lg border px-3 py-2 text-[13px] outline-none focus:border-[#D98E32]" style={{ borderColor: "#EFE6D6", background: "#fff" }} />
+                  <button onClick={addGroup} disabled={!newGroup.name.trim()}
+                    className="w-full rounded-lg py-2 text-[12.5px] font-extrabold text-white"
+                    style={{ background: newGroup.name.trim() ? C.pine : "#DBCFC0" }}>
+                    הקמת הקבוצה 🐾
+                  </button>
+                  <p className="text-[10.5px]" style={{ color: C.inkSoft }}>הקבוצה נשמרת במכשיר שלכם ותישאר כאן גם אחרי רענון</p>
                 </div>
               )}
 
               <div className="space-y-2.5">
-                {!groups.some((g) => hitQ(parkSearch, g.name, g.when)) && <NoResults q={parkSearch} />}
-                {groups.filter((g) => hitQ(parkSearch, g.name, g.when)).map((g) => (
-                  <div key={g.id} className="flex items-center gap-3 rounded-xl border p-3" style={{ borderColor: "#EFE6D6" }}>
+                {!groups.some((g) => hitQ(parkSearch, g.name, g.when, g.desc || "")) && <NoResults q={parkSearch} />}
+                {groups.filter((g) => hitQ(parkSearch, g.name, g.when, g.desc || "")).map((g) => (
+                  <div key={g.id} className="flex items-center gap-3 rounded-xl border p-3" style={{ borderColor: g.mine ? C.pineSoft : "#EFE6D6", background: g.mine ? "#F7FBF8" : "#fff" }}>
                     <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg shrink-0" style={{ background: C.blueSoft }}>🐶</div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-[13.5px] font-extrabold truncate">{g.name}</p>
+                      <p className="text-[13.5px] font-extrabold truncate flex items-center gap-1.5">
+                        {g.name} {g.mine && <Chip tone="pine">הקבוצה שלי</Chip>}
+                      </p>
                       <p className="text-[11.5px]" style={{ color: C.inkSoft }}>{g.members} חברים · {g.when}</p>
+                      {g.desc && <p className="text-[11px] truncate" style={{ color: C.inkSoft }}>{g.desc}</p>}
                     </div>
+                    {g.mine && (
+                      <button onClick={() => removeGroup(g.id)} aria-label="מחיקת הקבוצה"
+                        className="rounded-lg p-2 shrink-0" style={{ background: C.redSoft, color: C.red }}>
+                        <Trash2 size={14} />
+                      </button>
+                    )}
                     <button onClick={() => toggleJoin(g.id)}
                       className="rounded-lg px-3 py-1.5 text-[11.5px] font-extrabold shrink-0"
                       style={{ background: g.joined ? C.pineSoft : C.amber, color: g.joined ? C.pine : "#fff" }}>
@@ -1631,26 +1820,44 @@ export default function DoggyLife() {
         {tab === "shops" && (
           <>
             <Card className="p-4">
-              <SectionTitle icon={ShoppingBag}>חנויות מומלצות בסביבה</SectionTitle>
-              <SearchBox value={shopSearch} onChange={setShopSearch} placeholder="חיפוש חנות: שם, מרחק או התמחות..." />
+              <SectionTitle icon={ShoppingBag}
+                extra={realShops
+                  ? <Chip tone="pine">✓ נתונים אמיתיים · OpenStreetMap</Chip>
+                  : <Chip tone="amber">נתוני דמו</Chip>}>
+                חנויות ווטרינרים בסביבה
+              </SectionTitle>
+              <button onClick={locateReal} disabled={osmBusy}
+                className="w-full mb-3 rounded-xl py-2.5 text-[12.5px] font-extrabold flex items-center justify-center gap-2 transition-all"
+                style={{ background: osmBusy ? "#F5F1E8" : C.blueSoft, color: osmBusy ? C.inkSoft : "#2F5A73" }}>
+                <MapPin size={15} /> {osmBusy ? "מאתר חנויות ווטרינרים סביבך..." : realShops ? "רענון לפי המיקום הנוכחי שלי" : "מצאו חנויות אמיתיות לפי המיקום שלי 📍"}
+              </button>
+              {osmErr && <p className="mb-3 text-[11.5px] rounded-lg p-2.5 font-semibold" style={{ background: C.amberSoft, color: "#8A5714" }}>{osmErr}</p>}
+              <SearchBox value={shopSearch} onChange={setShopSearch} placeholder="חיפוש חנות או וטרינר: שם, מרחק או התמחות..." />
               <div className="space-y-2.5">
-                {!SHOPS.some((s) => hitQ(shopSearch, s.name, s.dist, s.note)) && <NoResults q={shopSearch} />}
-                {SHOPS.filter((s) => hitQ(shopSearch, s.name, s.dist, s.note)).map((s) => (
+                {!(realShops || SHOPS).some((s) => hitQ(shopSearch, s.name, s.dist, s.note || s.kind || "")) && <NoResults q={shopSearch} />}
+                {(realShops || SHOPS).filter((s) => hitQ(shopSearch, s.name, s.dist, s.note || s.kind || "")).map((s) => (
                   <div key={s.id} className="flex items-center gap-3 rounded-xl border p-3" style={{ borderColor: "#EFE6D6" }}>
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg shrink-0" style={{ background: C.amberSoft }}>🏪</div>
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg shrink-0" style={{ background: s.kind === "וטרינר" ? C.pineSoft : C.amberSoft }}>
+                      {s.kind === "וטרינר" ? "🩺" : "🏪"}
+                    </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-[13.5px] font-extrabold">{s.name}</p>
                       <p className="text-[11.5px] flex items-center gap-1.5" style={{ color: C.inkSoft }}>
-                        <MapPin size={11} /> {s.dist} · <Stars value={s.rating} />
+                        <MapPin size={11} /> {s.dist}{s.rating ? <> · <Stars value={s.rating} /></> : null}
                       </p>
                     </div>
                     <div className="flex flex-col items-end gap-1">
-                      <Chip tone="pine">{s.note}</Chip>
+                      {s.kind && <Chip tone={s.kind === "וטרינר" ? "blue" : "pine"}>{s.kind}</Chip>}
+                      {s.note && <Chip tone="pine">{s.note}</Chip>}
+                      {s.phone && (
+                        <a href={`tel:${s.phone}`} className="text-[11px] font-extrabold" style={{ color: C.blue }}>📞 {s.phone}</a>
+                      )}
                       {isDonor && s.id === 1 && <Chip tone="amber">💛 10%- לתורמים</Chip>}
                     </div>
                   </div>
                 ))}
               </div>
+              {realShops && <p className="mt-2 text-[10.5px]" style={{ color: C.inkSoft }}>מקור: OpenStreetMap · רדיוס 7 ק"מ · עודכן {fmt(new Date(osm.at))}</p>}
             </Card>
 
             <Card className="p-4">
@@ -2148,7 +2355,7 @@ export default function DoggyLife() {
                       <p className="text-[11.5px] font-bold" style={{ color: C.inkSoft }}>{hits.length} תוצאות עבור "{q}"</p>
                       {hits.map((h, i) => (
                         <div key={i} className="rounded-xl border p-3 flex items-start gap-3" style={{ borderColor: "#EFE6D6" }}>
-                          <span className="text-xl shrink-0">{h.emoji}</span>
+                          <BreedPhoto name={h.n} wiki={h.w} emoji={h.emoji} size={52} />
                           <div className="min-w-0">
                             <p className="text-[13.5px] font-extrabold flex items-center gap-2 flex-wrap">
                               {h.n}
@@ -2191,12 +2398,15 @@ export default function DoggyLife() {
                             </p>
                             <div className="grid sm:grid-cols-2 gap-1.5">
                               {g.items.map((it) => (
-                                <div key={it.n} className="rounded-lg bg-white border px-2.5 py-2" style={{ borderColor: "#EFE6D6" }}>
-                                  <p className="text-[12.5px] font-extrabold flex items-center gap-1.5 flex-wrap">
-                                    {it.n}
-                                    {it.tag && <Chip tone={it.tag.includes("היתר") || it.tag.includes("רישוי") || it.tag.includes("מוגן") || it.tag.includes("אסור") ? "red" : it.tag === "ישראלי" ? "pine" : "blue"}>{it.tag}</Chip>}
-                                  </p>
-                                  <p className="text-[11px] leading-snug" style={{ color: C.inkSoft }}>{it.t}</p>
+                                <div key={it.n} className="rounded-lg bg-white border px-2.5 py-2 flex items-center gap-2.5" style={{ borderColor: "#EFE6D6" }}>
+                                  <BreedPhoto name={it.n} wiki={it.w} emoji={c.emoji} size={46} />
+                                  <div className="min-w-0">
+                                    <p className="text-[12.5px] font-extrabold flex items-center gap-1.5 flex-wrap">
+                                      {it.n}
+                                      {it.tag && <Chip tone={it.tag.includes("היתר") || it.tag.includes("רישוי") || it.tag.includes("מוגן") || it.tag.includes("אסור") ? "red" : it.tag === "ישראלי" ? "pine" : "blue"}>{it.tag}</Chip>}
+                                    </p>
+                                    <p className="text-[11px] leading-snug" style={{ color: C.inkSoft }}>{it.t}</p>
+                                  </div>
                                 </div>
                               ))}
                             </div>
@@ -2211,6 +2421,7 @@ export default function DoggyLife() {
 
             <p className="text-[11px] text-center leading-relaxed" style={{ color: C.inkSoft }}>
               ⚖️ שימו לב: החזקת חיות בר, זוחלים מסוימים וגזעי כלבים מסוכנים כפופה בישראל להיתרים — בדקו מול משרד החקלאות ורט"ג
+              <br />📷 התמונות אמיתיות — נטענות מוויקיפדיה ונשמרות במכשיר לצפייה גם בלי רשת
             </p>
           </>
         )}
