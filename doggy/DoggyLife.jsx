@@ -881,6 +881,14 @@ export default function DoggyLife() {
         .shimmer::after{content:'';position:absolute;inset:0;background:linear-gradient(110deg,transparent 32%,rgba(255,255,255,.35) 50%,transparent 68%);background-size:220% 100%;animation:shimmer 2.8s infinite;pointer-events:none}
         @keyframes dockIn{from{opacity:0;transform:translate(-50%,26px)}to{opacity:1;transform:translate(-50%,0)}}
         @keyframes glowPulse{0%,100%{opacity:.55}50%{opacity:.95}}
+        /* aurora: a soft band of golden-hour light drifting across the pine
+           header, like late sun through trees — the header feels alive
+           without a single JS frame */
+        .dl-header::after{content:'';position:absolute;inset:0;pointer-events:none;
+          background:linear-gradient(115deg,transparent 30%,rgba(242,200,121,.16) 46%,rgba(123,174,127,.13) 56%,transparent 72%);
+          background-size:260% 100%;animation:auroraSweep 9s ease-in-out infinite}
+        @keyframes auroraSweep{0%,100%{background-position:130% 0}50%{background-position:-30% 0}}
+        @keyframes navGlow{0%,100%{box-shadow:0 6px 18px rgba(217,142,50,.45)}50%{box-shadow:0 6px 26px rgba(242,200,121,.75)}}
         button{transition:transform .15s ease, box-shadow .25s ease, filter .2s ease}
         button:active{transform:scale(.96)}
         .no-scrollbar::-webkit-scrollbar{display:none}
@@ -890,7 +898,7 @@ export default function DoggyLife() {
       `}</style>
 
       {/* ===== Hero header ===== */}
-      <header className="relative overflow-hidden px-4 pt-7 pb-7" style={{ background: "linear-gradient(150deg,#18332B 0%,#2F4A40 48%,#41675A 100%)" }}>
+      <header className="dl-header relative overflow-hidden px-4 pt-7 pb-7" style={{ background: "linear-gradient(150deg,#18332B 0%,#2F4A40 48%,#41675A 100%)" }}>
         {/* ambient glow + floating paws */}
         <div className="absolute -top-24 left-10 w-72 h-72 rounded-full pointer-events-none" style={{ background: "radial-gradient(circle, rgba(217,142,50,.35), transparent 65%)", animation: "glowPulse 5s ease-in-out infinite" }} />
         <div className="absolute -bottom-28 right-6 w-80 h-80 rounded-full pointer-events-none" style={{ background: "radial-gradient(circle, rgba(123,174,127,.28), transparent 65%)" }} />
@@ -986,7 +994,7 @@ export default function DoggyLife() {
                 onClick={() => setTab(id)}
                 className="flex-1 min-w-[62px] flex flex-col items-center gap-0.5 py-2 px-1 rounded-[20px] text-[10px] font-extrabold transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F2C879]"
                 style={active
-                  ? { background: "linear-gradient(145deg,#F2C879,#D98E32)", color: "#2A1C08", boxShadow: "0 6px 18px rgba(217,142,50,.45)" }
+                  ? { background: "linear-gradient(145deg,#F2C879,#D98E32)", color: "#2A1C08", animation: "navGlow 2.8s ease-in-out infinite" }
                   : { color: "#9FB8AB" }}
               >
                 <Icon size={17} strokeWidth={active ? 2.6 : 2} />

@@ -179,8 +179,38 @@ body.compact .cluster .c-srcs{margin-top:2px}
 .tchip.on b{color:#02141a}
 
 /* clusters */
-.cluster{padding:13px 15px;margin-bottom:11px;cursor:pointer;transition:border-color .15s, box-shadow .15s}
-.cluster:hover{border-color:rgba(255,47,214,.45);box-shadow:0 0 22px rgba(255,47,214,.10)}
+.cluster{padding:13px 15px;margin-bottom:11px;cursor:pointer;transition:border-color .15s, box-shadow .2s, transform .2s}
+.cluster:hover{border-color:rgba(255,47,214,.45);box-shadow:0 8px 30px rgba(255,47,214,.14);transform:translateY(-2px)}
+/* first-load entrance: cards rise into place once, staggered. The class is
+   added only on the first successful render (see renderClusters) so the
+   frequent per-arm re-renders during a pull don't strobe the whole feed. */
+.first-load .cluster{animation:cardIn .55s cubic-bezier(.2,.75,.25,1) both}
+.first-load .cluster:nth-child(1){animation-delay:.04s}.first-load .cluster:nth-child(2){animation-delay:.1s}
+.first-load .cluster:nth-child(3){animation-delay:.16s}.first-load .cluster:nth-child(4){animation-delay:.22s}
+.first-load .cluster:nth-child(5){animation-delay:.28s}.first-load .cluster:nth-child(6){animation-delay:.34s}
+@keyframes cardIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+/* deep-space nebula — two vast color fields drifting behind everything */
+body::after{content:'';position:fixed;inset:-20%;z-index:-1;pointer-events:none;
+  background:
+    radial-gradient(42% 34% at 18% 22%, rgba(0,240,255,.075), transparent 70%),
+    radial-gradient(46% 40% at 82% 74%, rgba(255,47,214,.07), transparent 70%),
+    radial-gradient(30% 26% at 60% 12%, rgba(138,92,255,.06), transparent 70%);
+  animation:nebulaDrift 46s ease-in-out infinite alternate}
+@keyframes nebulaDrift{from{transform:translate(-2.5%,-2%) scale(1)}to{transform:translate(2.5%,2.5%) scale(1.07)}}
+/* the octopus stage breathes — its frame pulses between the two brand colors */
+#octoStage{animation:stagePulse 7s ease-in-out infinite}
+@keyframes stagePulse{
+  0%,100%{border-color:rgba(0,240,255,.24);box-shadow:0 0 26px rgba(0,240,255,.10)}
+  50%{border-color:rgba(255,47,214,.38);box-shadow:0 0 34px rgba(255,47,214,.14)}}
+/* gold light sweeps across the front-page strip every few seconds */
+#headlines{position:relative;overflow:hidden}
+#headlines::after{content:'';position:absolute;top:0;bottom:0;width:34%;left:-40%;pointer-events:none;
+  background:linear-gradient(105deg,transparent,rgba(255,209,102,.09),transparent);
+  animation:goldSweep 6.5s ease-in-out infinite}
+@keyframes goldSweep{0%,55%{left:-40%}90%,100%{left:110%}}
+@media (prefers-reduced-motion:reduce){
+  body::after,#octoStage,#headlines::after,.first-load .cluster{animation:none}
+}
 .cluster .c-top{display:flex;align-items:center;gap:8px;margin-bottom:5px;flex-wrap:wrap}
 .cluster .c-topic{font-size:9.5px;font-weight:700;letter-spacing:1px;color:var(--magenta);
   border:1px solid rgba(255,47,214,.4);padding:2px 8px}
@@ -1074,6 +1104,7 @@ function renderClusters(){
     c.head.title.toLowerCase().includes(searchQuery) ||
     c.angles.some(a=>a.src.toLowerCase().includes(searchQuery)));
   if(!list.length){ el.innerHTML='<div class="empty">אין סיפורים בסינון הזה</div>'; return; }
+  if(!renderClusters._animated){ renderClusters._animated=true; el.classList.add('first-load'); setTimeout(()=>el.classList.remove('first-load'),2400); }
   list.slice(0,40).forEach((c,i)=>{
     const key=clusterKey(c), starred=bookmarks.has(key), breaking=c.angles.length>=3;
     const d=document.createElement('article');

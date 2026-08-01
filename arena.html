@@ -180,6 +180,15 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 .tgl.on{color:var(--cyan);border-color:var(--cyan);box-shadow:0 0 16px rgba(0,240,255,.35);background:rgba(0,60,70,.5)}
 .tgl:active{transform:scale(.94)}
 
+/* breathing neon edge on the main HUD panels — a 1px light strip along each
+   panel's top that swells and fades, so the cockpit reads as powered-on */
+#oracle::after,#pricePanel::after,#ticket::after,#pulsePanel::after{
+  content:'';position:absolute;top:0;left:12%;right:12%;height:1px;pointer-events:none;
+  background:linear-gradient(90deg,transparent,rgba(0,240,255,.9),transparent);
+  animation:edgeSheen 5s ease-in-out infinite}
+#ticket::after{background:linear-gradient(90deg,transparent,rgba(255,209,102,.85),transparent)}
+@keyframes edgeSheen{0%,100%{opacity:.2}50%{opacity:.95}}
+
 /* banner + toast */
 #banner{position:fixed;top:70px;left:50%;transform:translate(-50%,-160%);z-index:30;
   padding:12px 28px;font-size:18px;font-weight:800;letter-spacing:1px;display:flex;gap:10px;align-items:center;
@@ -1854,6 +1863,13 @@ const coreShell=new THREE.Mesh(new THREE.IcosahedronGeometry(2.35,1),
 coreG.add(coreShell);
 const coreGlow=new THREE.Sprite(new THREE.SpriteMaterial({map:glowTex,color:0x00f0ff,transparent:true,opacity:0.85,blending:THREE.AdditiveBlending,depthWrite:false}));
 coreGlow.scale.set(9,9,1); coreG.add(coreGlow);
+// light spill — the pool of colored light the core casts on the arena floor.
+// One flat additive plane, tinted by the same momentum color as the core and
+// brightening when the core drops low or a trade flare fires: the cheap trick
+// that makes the whole scene read as physically lit rather than pasted on.
+const spill=new THREE.Mesh(new THREE.PlaneGeometry(26,26),
+  new THREE.MeshBasicMaterial({map:glowTex,color:0x00f0ff,transparent:true,opacity:0.26,blending:THREE.AdditiveBlending,depthWrite:false}));
+spill.rotation.x=-Math.PI/2; spill.position.y=0.14; world.add(spill);
 
 // ============================================================
 //  INTERCHANGEABLE CENTER VISUALIZATIONS — 10 alternative ways the main
@@ -2247,6 +2263,13 @@ function updateWorld(dt,now){
   coreGlow.scale.set(gs,gs,1);
   state.flare*=Math.pow(0.35,dt);
   state.flareCol.lerp(C_CY,0.02);
+
+  // floor light-spill follows the core's color, breathes gently, and gets
+  // brighter the lower the core hangs (closer light = stronger pool)
+  spill.material.color.copy(tmpC).lerp(state.flareCol,0.3);
+  spill.material.opacity=0.16+clamp((40-yH)*0.005,0,0.14)+state.flare*0.22;
+  const spillS=1+Math.sin(t*1.6)*0.05+state.flare*0.4;
+  spill.scale.set(spillS,spillS,1);
 
   // alternative center visualization — swap the classic orb for whichever
   // rig the user picked; built on first use, disposed the moment it's left
@@ -3662,12 +3685,23 @@ function buildWorldUI(){
 //  camera + input
 // ============================================================
 const cam={theta:1.02,phi:1.08,radius:56,target:new THREE.Vector3(0,24,0)};
+// cinematic fly-in — the first thing a visitor sees: the camera starts in a
+// far, high orbit and sweeps down into the arena over ~4s. Any pointer
+// interaction cancels it instantly so it never fights the user for control.
+let camIntro=0;
+cam.radius=168; cam.phi=0.46; cam.theta=-0.5;
 function applyCam(dt){
   if(walk.on){ applyWalkCam(dt); return; }
   const yH=state.candles.length? yFor(state.lastPrice):24;
   const tgt=new THREE.Vector3(0,clamp(yH,17,34),0);
   cam.target.lerp(tgt,1-Math.pow(0.03,dt));
-  if(state.auto){
+  if(camIntro<1){
+    camIntro=Math.min(1,camIntro+dt/4);
+    const e=1-Math.pow(1-camIntro,3); // easeOutCubic — fast approach, soft landing
+    cam.radius=lerp(168,56,e);
+    cam.phi=lerp(0.46,1.08,e);
+    cam.theta=lerp(-0.5,1.02,e);
+  } else if(state.auto){
     const t=performance.now()*0.001;
     cam.theta+=dt*0.05;
     cam.phi=1.04+0.14*Math.sin(t*0.2);
@@ -3682,6 +3716,7 @@ function applyCam(dt){
 }
 const ptrs=new Map(); let lastPinch=0, lastTap=0, downPos=null, moved=false;
 const el=renderer.domElement;
+el.addEventListener('pointerdown',()=>{ camIntro=1; },{once:true}); // user takes over → intro yields
 el.style.touchAction='none';
 el.addEventListener('pointerdown',e=>{
   ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
