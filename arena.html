@@ -273,6 +273,56 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 .lg-dgrid b{color:var(--txt);font-weight:600}
 .lg-why{margin-top:7px;padding-top:7px;border-top:1px dashed rgba(0,240,255,.18);line-height:1.7;color:var(--dim)}
 .lg-why b{color:var(--gold)}
+/* ── COCKPIT — the trader's command deck: a canopy frame, corner
+   brackets and two instrument rails of precision readouts ── */
+#cockpit{position:fixed;inset:0;z-index:28;pointer-events:none;
+  font-family:'Heebo',sans-serif;animation:ckIn .5s ease}
+@keyframes ckIn{from{opacity:0}to{opacity:1}}
+.ck-canopy{position:absolute;inset:0;
+  background:radial-gradient(ellipse 78% 66% at 50% 48%,transparent 62%,rgba(0,240,255,.07) 88%,rgba(0,20,32,.55) 100%);
+  box-shadow:inset 0 0 180px rgba(0,240,255,.09)}
+.ck-canopy::after{content:'';position:absolute;inset:0;opacity:.5;
+  background:repeating-linear-gradient(0deg,rgba(0,240,255,.05) 0 1px,transparent 1px 4px)}
+.ck-brk{position:absolute;width:56px;height:56px;border:2px solid rgba(0,240,255,.55)}
+.ck-brk.tl{top:74px;left:132px;border-right:0;border-bottom:0}
+.ck-brk.tr{top:74px;right:16px;border-left:0;border-bottom:0}
+.ck-brk.bl{bottom:16px;left:132px;border-right:0;border-top:0}
+.ck-brk.br{bottom:16px;right:16px;border-left:0;border-top:0}
+.ck-top{position:absolute;top:96px;left:50%;transform:translateX(-50%);
+  display:flex;align-items:center;gap:12px;padding:8px 20px;
+  background:rgba(2,10,18,.72);border:1px solid rgba(0,240,255,.4);border-radius:12px;
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);white-space:nowrap}
+.ck-top .ck-tgt{color:var(--cyan);font-size:16px;animation:ckSpin 4s linear infinite}
+@keyframes ckSpin{to{transform:rotate(360deg)}}
+.ck-top #ckSym{font-size:12px;color:var(--dim);letter-spacing:1px}
+.ck-top #ckPx{font-size:21px;font-family:'JetBrains Mono',monospace;color:#eaffff}
+.ck-top #ckTick{font-size:12px;font-family:'JetBrains Mono',monospace}
+.ck-top #ckVerdict{font-size:12px;font-weight:700;padding:2px 10px;border-radius:20px;border:1px solid currentColor}
+.ck-rail{position:absolute;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:7px;width:150px}
+.ck-rail.ck-left{left:132px} .ck-rail.ck-right{right:16px}
+.ck-i{background:rgba(2,10,18,.72);border:1px solid rgba(0,240,255,.22);border-radius:9px;
+  padding:6px 9px;font-size:10px;color:var(--dim);
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.ck-i b{display:block;font-size:14px;color:var(--txt);font-family:'JetBrains Mono',monospace;margin-top:1px}
+.ck-bar{height:5px;border-radius:3px;background:rgba(255,255,255,.08);margin:4px 0 2px;overflow:hidden}
+.ck-bar i{display:block;height:100%;background:linear-gradient(90deg,#00ffa6,#ffd166,#ff3d6e);width:0}
+.ck-gauge{position:relative;background:rgba(2,10,18,.72);border:1px solid rgba(0,240,255,.22);
+  border-radius:9px;padding:7px;text-align:center;
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.ck-gauge svg{width:58px;height:58px;transform:rotate(-90deg)}
+.ck-gauge circle{fill:none;stroke-width:5}
+.ck-gauge .bg{stroke:rgba(255,255,255,.08)}
+.ck-gauge .fg{stroke:var(--cyan);stroke-linecap:round;stroke-dasharray:170;transition:stroke-dashoffset .3s linear}
+.ck-gauge b{position:absolute;top:26px;left:0;right:0;font-family:'JetBrains Mono',monospace;font-size:13px;color:#eaffff}
+.ck-gauge span{display:block;font-size:9.5px;color:var(--dim);margin-top:2px}
+body.cockpit-on #hint,body.cockpit-on #banner{display:none!important}
+@media (max-width:900px){
+  .ck-rail{width:112px} .ck-rail.ck-left{left:66px}
+  .ck-brk{width:34px;height:34px} .ck-brk.tl,.ck-brk.tr{top:150px}
+  .ck-brk.tl,.ck-brk.bl{left:62px}
+  .ck-top{top:150px;gap:8px;padding:6px 12px}
+  .ck-top #ckPx{font-size:16px}
+}
 /* opportunity scout card — the assistant's trade offer */
 #scoutCard{position:fixed;z-index:36;top:96px;right:16px;width:min(340px,88vw);
   padding:12px 14px;border:1px solid rgba(255,209,102,.55);
@@ -790,6 +840,9 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
     <div class="tgl" id="btnComm" title="פרשן חי — משדר את הקרב בקול וממליץ מתי לקנות, למכור ולסגור">
       <span style="font-size:15px">🎙️</span><span style="font-size:8px">פרשן</span>
     </div>
+    <div class="tgl" id="btnCockpit" title="מצב קוקפיט — תא טייס של סוחר עם מכשירי דיוק">
+      <span style="font-size:15px">🛩️</span><span style="font-size:8px">קוקפיט</span>
+    </div>
     <div class="tgl" id="btnRecs" title="מרכז המלצות — ספר אותות, מדד דיוק ומחשבון גודל פוזיציה">
       <span style="font-size:15px">📋</span><span style="font-size:8px">המלצות</span>
     </div>
@@ -797,6 +850,33 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
 
   <div id="vignette" aria-hidden="true"></div>
   <div id="banner" class="panel clip"><span id="bIcon">⚡</span><span id="bTxt"></span></div>
+  <div id="cockpit" style="display:none" aria-hidden="true">
+    <div class="ck-canopy"></div>
+    <div class="ck-brk tl"></div><div class="ck-brk tr"></div>
+    <div class="ck-brk bl"></div><div class="ck-brk br"></div>
+    <div class="ck-top">
+      <span class="ck-tgt">◎</span>
+      <span id="ckSym">—</span>
+      <b id="ckPx" class="num">—</b>
+      <span id="ckTick" class="num">—</span>
+      <span id="ckVerdict">—</span>
+    </div>
+    <div class="ck-rail ck-left">
+      <div class="ck-gauge"><svg viewBox="0 0 64 64"><circle class="bg" cx="32" cy="32" r="27"/><circle id="ckBarRing" class="fg" cx="32" cy="32" r="27"/></svg><b id="ckCd">—</b><span>נר הבא</span></div>
+      <div class="ck-i"><span>ספרד</span><b id="ckSpread" class="num">—</b></div>
+      <div class="ck-i"><span>תנודתיות ATR</span><b id="ckAtr" class="num">—</b></div>
+      <div class="ck-i"><span>עוצמת מגמה</span><b id="ckAdx" class="num">—</b></div>
+      <div class="ck-i"><span>מקור נתונים</span><b id="ckSrc">—</b></div>
+    </div>
+    <div class="ck-rail ck-right">
+      <div class="ck-i"><span>ניצול מרג׳ין</span><div class="ck-bar"><i id="ckMarg"></i></div><b id="ckMargV" class="num">—</b></div>
+      <div class="ck-i"><span>חשיפה כוללת</span><b id="ckExp" class="num">—</b></div>
+      <div class="ck-i"><span>עסקאות פתוחות</span><b id="ckOpen" class="num">0</b></div>
+      <div class="ck-i"><span>רווח הסשן</span><b id="ckPnl" class="num">—</b></div>
+      <div class="ck-i"><span>אחוז הצלחה</span><b id="ckWr" class="num">—</b></div>
+      <div class="ck-i"><span>סיכון בעסקה</span><b id="ckRisk" class="num">—</b></div>
+    </div>
+  </div>
   <div id="scoutCard" class="panel clip" style="display:none"></div>
   <div id="posStrip" style="display:none"></div>
   <div id="commBar" class="panel clip" style="display:none"><span id="commIc">🎙️</span><span id="commTxt"></span></div>
@@ -2332,6 +2412,17 @@ function setRecs(on){
   $('btnRecs').classList.toggle('on',on);
   if(on) renderRecs();
 }
+let cockpitOn=false;
+function setCockpit(on){
+  cockpitOn=on;
+  $('cockpit').style.display=on?'block':'none';
+  $('btnCockpit').classList.toggle('on',on);
+  document.body.classList.toggle('cockpit-on',on);
+  if(on){ toast('🛩️ מצב קוקפיט — מכשירי הדיוק פעילים'); beep([[440,0.07],[660,0.09],[880,0.11]]); }
+}
+$('btnCockpit').onclick=()=>setCockpit(!cockpitOn);
+// the board is recomputed at most twice a second and shared with the cockpit
+setInterval(()=>{ if(cockpitOn){ try{ window.__ckBoard=indicatorBoard(); }catch(e){} } },500);
 $('btnRecs').onclick=()=>setRecs(!recsOpen);
 $('recsClose').onclick=()=>setRecs(false);
 $('rcClear').onclick=()=>{ sigLedger=[]; saveSigLedger(); renderRecs(); toast('ספר האותות נוקה'); };
@@ -6016,6 +6107,49 @@ function updateHud(now){
       : 'טרם נורה אות בסשן זה';
   }
 
+  // ── cockpit instruments — every readout is a real measurement, no dressing
+  if(cockpitOn){
+    const bd0=window.__ckBoard;
+    const p2=state.lastPrice||0, prev=state.prevPrice||p2;
+    $('ckSym').textContent=symLabelText(state.sym);
+    $('ckPx').textContent=fmtP(p2);
+    const tickD=p2-prev;
+    const tk=$('ckTick');
+    tk.textContent=(tickD>=0?'▲ +':'▼ ')+Math.abs(tickD).toFixed((symCfg(state.sym)||{}).dec??2);
+    tk.style.color=tickD>=0?'var(--up)':'var(--down)';
+    const vd=$('ckVerdict');
+    if(ind){ vd.textContent=ind.verdict; vd.style.color=ind.score>=20?'#00ffa6':ind.score<=-20?'#ff3d6e':'#ffd166'; }
+    // countdown to the next candle close — the scalper's metronome
+    const tfS=TF_SEC[state.tf]||60;
+    const cs2=state.candles, cur=cs2&&cs2[cs2.length-1];
+    const elapsed=cur? Math.max(0,(Date.now()-cur.t)/1000) : 0;
+    const left=Math.max(0,tfS-(elapsed%tfS));
+    $('ckCd').textContent=left>=60? Math.floor(left/60)+':'+String(Math.floor(left%60)).padStart(2,'0') : Math.ceil(left)+'ש';
+    const ring=$('ckBarRing');
+    if(ring) ring.style.strokeDashoffset=String(170*(left/tfS));
+    const bb2=state.book.bids[0], ba2=state.book.asks[0];
+    $('ckSpread').textContent=(bb2&&ba2)? fmtP(Math.max(0,ba2[0]-bb2[0])) : '—';
+    $('ckAtr').textContent=ind? ind.A.toFixed(ind.A<1?4:2) : '—';
+    $('ckAdx').textContent=bd0? bd0.adx.toFixed(0) : '—';
+    const srcTxt=(feed&&feed.src==='sim')?'⚠️ סימולציה':(feed&&feed.src==='yahoo')?'✓ Yahoo אמת':'✓ Binance אמת';
+    const se=$('ckSrc'); se.textContent=srcTxt;
+    se.style.color=(feed&&feed.src==='sim')?'#ffd166':'#00ffa6';
+    // risk block
+    const ids2=Object.keys(positions);
+    const locked=ids2.reduce((a,k)=>a+positions[k].margin,0);
+    const expo=ids2.reduce((a,k)=>a+positions[k].notional,0);
+    const use=wallet.balance+locked>0? locked/(wallet.balance+locked)*100 : 0;
+    $('ckMarg').style.width=Math.min(100,use).toFixed(0)+'%';
+    $('ckMargV').textContent=use.toFixed(0)+'%';
+    $('ckExp').textContent='$'+expo.toFixed(0);
+    $('ckOpen').textContent=ids2.length;
+    const pe=$('ckPnl');
+    pe.textContent=(session.pnl>=0?'+':'−')+'$'+Math.abs(session.pnl).toFixed(0);
+    pe.style.color=session.pnl>=0?'var(--up)':'var(--down)';
+    $('ckWr').textContent=session.trades? Math.round(100*session.wins/session.trades)+'%' : '—';
+    const riskUsd=ind&&ind.sug? (tradeMargin*tradeLev)*Math.abs(ind.sug.entry-ind.sug.sl)/ind.sug.entry : 0;
+    $('ckRisk').textContent=riskUsd? '−$'+riskUsd.toFixed(0) : '—';
+  }
   // ticket
   const focusedPos=posOn(state.sym);
   if(focusedPos){
