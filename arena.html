@@ -523,9 +523,18 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
    right while it is open (see worldShiftTarget) — so the chart never
    sits on top of the central model any more. */
 #chartPanel{position:fixed;z-index:33;top:50%;left:136px;transform:translateY(-50%);
-  width:min(42vw,560px);padding:14px 16px 12px;text-align:center}
+  width:min(42vw,560px);padding:14px 16px 12px;text-align:center;
+  /* the panel now carries window stats, timeframe agreement and the backtest
+     report — without a cap it grows past the screen and takes its own close
+     button with it */
+  max-height:calc(100vh - 20px);max-height:calc(100dvh - 20px);
+  overflow-y:auto;overscroll-behavior:contain}
+#chartPanel::-webkit-scrollbar{width:6px}
+#chartPanel::-webkit-scrollbar-thumb{background:rgba(0,240,255,.25);border-radius:3px}
+#chartPanel .cp-h{position:sticky;top:-14px;z-index:3;
+  background:rgba(6,11,24,.97);margin:-14px -16px 8px;padding:12px 16px 8px}
 @media (min-width:1500px){ #chartPanel{width:min(40vw,680px)} }
-#chartPanel .cp-h{display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap}
+#chartPanel .cp-h{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 #chartPanel #cpSym{font-size:15px;font-weight:700;color:var(--txt);letter-spacing:.5px}
 #chartPanel #cpTf{font-size:11px;color:var(--cyan);border:1px solid rgba(0,240,255,.3);padding:2px 8px}
 #chartPanel #cpBadge{font-size:10px;color:var(--dim);letter-spacing:.3px;margin-inline-end:auto}
@@ -542,6 +551,33 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
 .cp-ind-legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-inline-end:4px;vertical-align:middle}
 .cp-cv-wrap{position:relative}
 /* window-analysis strip — describes the slice of tape currently on screen */
+/* multi-timeframe strip + backtest report */
+#cpMtf{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:7px 0 0;font-size:10.5px;color:var(--dim)}
+.mtf{display:flex;align-items:center;gap:5px;padding:3px 9px;border-radius:7px;
+  border:1px solid rgba(0,240,255,.18);background:rgba(0,240,255,.04)}
+.mtf b{font-family:'JetBrains Mono',monospace}
+.mtf.up{border-color:rgba(0,255,166,.45);color:var(--up)}
+.mtf.down{border-color:rgba(255,61,110,.45);color:var(--down)}
+.mtf-v{margin-inline-start:auto;font-weight:800;padding:3px 10px;border-radius:7px}
+#cpBt{margin-top:8px;padding:9px 11px;border:1px solid rgba(138,92,255,.3);border-radius:9px;
+  background:rgba(138,92,255,.05);font-size:11px}
+.bt-h{font-weight:800;color:#c9b3ff;margin-bottom:7px;font-size:11.5px}
+.bt-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:5px}
+.bt-grid span{display:flex;flex-direction:column;gap:1px;padding:5px 7px;border-radius:6px;
+  background:rgba(0,0,0,.25);color:var(--dim);font-size:10px}
+.bt-grid b{font-size:13px;color:var(--txt);font-family:'JetBrains Mono',monospace}
+.bt-grid b.up{color:var(--up)} .bt-grid b.down{color:var(--down)}
+.bt-verdict{margin:7px 0;padding:6px 9px;border-radius:7px;font-weight:700;font-size:11px}
+.bt-verdict.ok{background:rgba(0,255,166,.1);color:var(--up)}
+.bt-verdict.bad{background:rgba(255,209,102,.1);color:var(--gold)}
+.bt-list{display:flex;flex-direction:column;gap:3px;max-height:150px;overflow-y:auto}
+.bt-row{display:flex;align-items:center;gap:9px;padding:3px 7px;border-radius:5px;background:rgba(0,0,0,.22);font-size:10px}
+.bt-row i{font-style:normal;font-weight:700;min-width:52px}
+.bt-row i.up{color:var(--up)} .bt-row i.down{color:var(--down)}
+.bt-row b{margin-inline-start:auto;font-family:'JetBrains Mono',monospace}
+.bt-row b.up{color:var(--up)} .bt-row b.down{color:var(--down)}
+.bt-why{color:var(--dim)}
+.bt-empty,.bt-note{color:var(--dim);font-size:10px;line-height:1.6;margin-top:6px}
 #cpWin{display:flex;flex-wrap:wrap;gap:6px 12px;margin:7px 0 2px;font-size:10.5px;color:var(--dim);
   padding:7px 9px;border:1px solid rgba(0,240,255,.16);border-radius:8px;background:rgba(0,240,255,.035)}
 #cpWin b{color:var(--txt);font-family:'JetBrains Mono',monospace;font-weight:700}
@@ -960,6 +996,7 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
     <button class="ct" id="ctFwd" title="קדימה בזמן">⏩ קדימה</button>
     <button class="ct" id="ctLive" title="חזרה לנר החי">🔴 חי</button>
     <button class="ct" id="ctFit" title="להציג את כל ההיסטוריה השמורה">⤢ הכל</button>
+    <button class="ct" id="ctBt" title="להריץ את כללי המערכת על ההיסטוריה ולראות אם הם היו מרוויחים">🧪 בקטסט</button>
     <span class="ct-lbl">✏️ כלי סוחר</span>
     <button class="ct" data-tool="none" title="ניווט רגיל — קרוסהייר">🖱️ ניווט</button>
     <button class="ct" data-tool="hline" title="קו מחיר אופקי — הקש על הגובה הרצוי">➖ קו מחיר</button>
@@ -985,6 +1022,8 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
     <div id="cpCaption"></div>
   </div>
   <div id="cpWin"></div>
+  <div id="cpMtf"></div>
+  <div id="cpBt" style="display:none"></div>
   <div id="cpRating"></div>
   <div id="cpBoard"></div>
   <div class="cp-legend">
@@ -1993,6 +2032,16 @@ function detectManipulation(cs,A,levels){
   }
   return out.slice(0,4);
 }
+// the multi-timeframe read is aggregated from hundreds of candles — cached
+// for five seconds so the 350ms signal pass never pays for it twice
+let mtfCache={t:0,sym:'',tf:'',v:null};
+function mtfCached(){
+  const now=Date.now();
+  if(mtfCache.v&&mtfCache.sym===state.sym&&mtfCache.tf===state.tf&&now-mtfCache.t<5000) return mtfCache.v;
+  let v=null; try{ v=mtfBoard(); }catch(e){}
+  mtfCache={t:now,sym:state.sym,tf:state.tf,v};
+  return v;
+}
 function computeSignals(){
   const cs=state.candles, n=cs.length;
   if(n<30){ ind=null; return; }
@@ -2074,19 +2123,24 @@ function computeSignals(){
   const dir=Math.sign(score);
   const checks=[];
   if(dir){
-    checks.push({ok:Math.sign(trend)===dir, w:26, t:'מגמת EMA בכיוון'});
-    checks.push({ok:Math.sign(macdS)===dir, w:18, t:'מומנטום MACD בכיוון'});
-    checks.push({ok:dir>0? R<62 : R>38, w:14, t:'RSI לא בקיצוניות הפוכה'});
-    checks.push({ok:dir>0? bbPos<0.85 : bbPos>0.15, w:12, t:'מיקום בטווח מאפשר תנועה'});
+    checks.push({ok:Math.sign(trend)===dir, w:22, t:'מגמת EMA בכיוון'});
+    checks.push({ok:Math.sign(macdS)===dir, w:15, t:'מומנטום MACD בכיוון'});
+    checks.push({ok:dir>0? R<62 : R>38, w:12, t:'RSI לא בקיצוניות הפוכה'});
+    checks.push({ok:dir>0? bbPos<0.85 : bbPos>0.15, w:10, t:'מיקום בטווח מאפשר תנועה'});
     const nearLvl=levels.length? Math.min(...levels.map(L=>Math.abs((L.p!=null?L.p:L)-p)))/A : 9;
-    checks.push({ok:nearLvl>0.5, w:10, t:'לא צמוד לרמת התנגדות'});
-    checks.push({ok:!manip.some(m=>Math.sign(m.bias)===-dir&&m.w>=1.2), w:20, t:'אין מלכודת מזוהה בכיוון ההפוך'});
+    checks.push({ok:nearLvl>0.5, w:9, t:'לא צמוד לרמת התנגדות'});
+    checks.push({ok:!manip.some(m=>Math.sign(m.bias)===-dir&&m.w>=1.2), w:17, t:'אין מלכודת מזוהה בכיוון ההפוך'});
+    // the higher timeframes have the last word — trading a 1m signal against
+    // the hourly trend is how good entries still lose money
+    const mtf=mtfCached();
+    checks.push({ok: mtf? (mtf.dir===dir&&mtf.align>=mtf.rows.length-1) : true, w:15,
+      t:'זמנים גבוהים תומכים בכיוון'});
   }
   const conf=dir? Math.round(checks.reduce((a,c)=>a+(c.ok?c.w:0),0)) : 0;
   const confMiss=checks.filter(c=>!c.ok).map(c=>c.t);
   ind={e9raw:e9, e21raw:e21, A, levels, score, verdict,
        reasons, sug, closed:closedStock, quality:simData?'sim':'real',
-       manip, conf, confMiss, bbPos, rsiNow:R};
+       manip, conf, confMiss, bbPos, rsiNow:R, mtf:mtfCached()};
   // ---- signal ledger: every ±20 cross is RECORDED with its context, then
   // measured against reality — the system grades its own recommendations ----
   const prevSc=sigPrev[state.sym];
@@ -2916,6 +2970,9 @@ function commTick(){
       L(state.sym+' trading around '+fmtP(lp)+(vwap!=null?(lp>=vwap?', holding above VWAP — buyers in control of the session.':', stuck below VWAP — sellers own this session.'):'.'),state.sym+' נסחר סביב '+fmtP(lp)+(vwap!=null?(lp>=vwap?', מחזיק מעל ה-VWAP — הקונים שולטים בסשן.':', תקוע מתחת ל-VWAP — המוכרים בעלי הבית בסשן הזה.'):'.')),
       L('RSI at '+(R|0)+' — '+(R>60?'bulls in charge.':R<40?'bears pressing.':'balanced tape. Patience pays: the best trades come to you.'),'RSI על '+(R|0)+' — '+(R>60?'השוורים בשליטה.':R<40?'הדובים לוחצים.':'שוק מאוזן. סבלנות משתלמת: העסקאות הטובות באות אליך.')),
       L('Remember: amateurs focus on how much they can make, professionals on how much they can lose.','זכור: חובבנים מתמקדים בכמה אפשר להרוויח, מקצוענים — בכמה אפשר להפסיד.'),
+      ...((()=>{ const m=ind.mtf; if(!m) return [];
+        return [L('Timeframe check: '+m.align+' of '+m.rows.length+' timeframes point '+(m.dir>0?'up':'down')+'. '+(m.align===m.rows.length?'Full alignment — these are the trades that pay.':'Not fully aligned, so keep the size honest.'),
+                  'בדיקת זמנים: '+m.align+' מתוך '+m.rows.length+' זמנים מצביעים '+(m.dir>0?'למעלה':'למטה')+'. '+(m.align===m.rows.length?'יישור מלא — אלו העסקאות שמשלמות.':'אין יישור מלא, אז שמור על גודל פוזיציה צנוע.'))]; })()),
       ...((()=>{ const done=sigLedger.filter(x=>x.outcome!=null); if(done.length<5) return [];
         const hits=done.filter(x=>x.outcome>0).length;
         return [L('Full transparency: my measured signal accuracy so far is '+Math.round(100*hits/done.length)+' percent over '+done.length+' graded calls. Trust the tape, not the talker.','בשקיפות מלאה: דיוק האותות המדוד שלי עד כה הוא '+Math.round(100*hits/done.length)+' אחוז מתוך '+done.length+' קריאות שנמדדו. תסמוך על הנתונים, לא על הדיבורים.')]; })()),
@@ -5235,6 +5292,173 @@ function heikinAshi(cs){
   }
   return out;
 }
+// ============================================================
+//  MULTI-TIMEFRAME CONFLUENCE — no desk takes a one-minute signal without
+//  checking what the higher timeframes are doing. The loaded candles are
+//  aggregated up into 5x / 15x / 60x buckets and the same trend and momentum
+//  read is run on each, so you can see instantly whether you are trading
+//  with the bigger picture or against it.
+// ============================================================
+function aggregateCandles(cs,k){
+  if(k<=1) return cs;
+  const out=[];
+  for(let i=0;i<cs.length;i+=k){
+    const g=cs.slice(i,i+k);
+    if(g.length<Math.min(k,2)) break;
+    let h=-Infinity,l=Infinity,v=0;
+    for(const c of g){ if(c.h>h)h=c.h; if(c.l<l)l=c.l; v+=c.v||0; }
+    out.push({t:g[0].t,o:g[0].o,h,l,c:g[g.length-1].c,v});
+  }
+  return out;
+}
+function mtfRead(cs){
+  if(!cs||cs.length<26) return null;
+  const closes=cs.map(c=>c.c), n=closes.length;
+  const e9=emaArr(closes,9), e21=emaArr(closes,21);
+  const rsi=rsiArr(closes,14)[n-1];
+  const mh=macdHistArr(closes), m=mh[n-1]||0;
+  const trend=e9[n-1]-e21[n-1];
+  const dir=Math.sign(trend)||0;
+  return {dir, rsi, macd:m, bars:n,
+    txt: dir>0?'עולה':dir<0?'יורד':'שטוח'};
+}
+function mtfBoard(){
+  const cs=state.candles;
+  if(!cs||cs.length<60) return null;
+  const base=TF_SEC[state.tf]||60;
+  const steps=[[1,state.tf],[5,'×5'],[15,'×15'],[60,'×60']];
+  const rows=[];
+  for(const [k,lbl] of steps){
+    const agg=aggregateCandles(cs,k);
+    const r=mtfRead(agg);
+    if(!r) continue;
+    const mins=Math.round(base*k/60);
+    const name=k===1? lbl : (mins>=60? (mins/60)+'ש' : mins+'ד');
+    rows.push({name,...r});
+  }
+  if(!rows.length) return null;
+  const ups=rows.filter(r=>r.dir>0).length, dns=rows.filter(r=>r.dir<0).length;
+  const align=Math.max(ups,dns), dir=ups>=dns?1:-1;
+  return {rows,ups,dns,align,dir,
+    verdict: align===rows.length? (dir>0?'יישור מלא כלפי מעלה':'יישור מלא כלפי מטה')
+           : align>=rows.length-1? (dir>0?'רוב הזמנים עולים':'רוב הזמנים יורדים')
+           : 'זמנים סותרים — סיכון גבוה'};
+}
+// ============================================================
+//  BACKTEST — the same rule set, walked bar by bar over the loaded history,
+//  with entries at the next bar's open and exits at a real 1.5 ATR stop or
+//  2.5 ATR target checked against each bar's actual high and low. It is
+//  honest about what it cannot know: the historical order book and trade
+//  flow are not stored, so this tests the PRICE side of the engine only.
+// ============================================================
+function runBacktest(cs){
+  if(!cs||cs.length<80) return null;
+  const closes=cs.map(c=>c.c), n=closes.length;
+  const e9=emaArr(closes,9), e21=emaArr(closes,21);
+  const rsi=rsiArr(closes,14);
+  const mh=macdHistArr(closes);
+  const bb=bollArr(closes,20,2);
+  // rolling ATR so every bar uses only what was knowable at that bar
+  const atr=new Array(n).fill(0);
+  for(let i=14;i<n;i++) atr[i]=atrVal(cs.slice(0,i+1),14);
+  const scoreAt=i=>{
+    const A=Math.max(atr[i],closes[i]*1e-6);
+    const trend=clamp((e9[i]-e21[i])/A*22+(e21[i]-e21[Math.max(0,i-5)])/A*6,-30,30);
+    const R=rsi[i];
+    const rsiS=clamp(R<32?(32-R)*1.3:R>68?-(R-68)*1.3:(50-R)*0.18,-20,20);
+    const macdS=clamp(mh[i]/(A*0.35)*12,-14,14)+((mh[i]>(mh[i-1]||0))?4:-4);
+    const pos=clamp((closes[i]-bb.lo[i])/Math.max(1e-9,bb.up[i]-bb.lo[i]),0,1);
+    const bbS=clamp(pos<0.12?12:pos>0.88?-12:(0.5-pos)*10,-15,15);
+    return {s:Math.round(clamp(trend+rsiS+macdS+bbS,-100,100)),A};
+  };
+  const trades=[]; let open=null, prev=null;
+  for(let i=25;i<n-1;i++){
+    const {s,A}=scoreAt(i);
+    if(open){
+      const c=cs[i];
+      let exit=null;
+      if(open.side==='long'){
+        if(c.l<=open.sl) exit={p:open.sl,why:'סטופ'};
+        else if(c.h>=open.tp) exit={p:open.tp,why:'יעד'};
+      } else {
+        if(c.h>=open.sl) exit={p:open.sl,why:'סטופ'};
+        else if(c.l<=open.tp) exit={p:open.tp,why:'יעד'};
+      }
+      if(!exit && ((open.side==='long'&&s<=-20)||(open.side==='short'&&s>=20))) exit={p:c.c,why:'אות הפוך'};
+      if(exit){
+        const pct=(open.side==='long'? exit.p/open.entry-1 : 1-exit.p/open.entry)*100;
+        trades.push({side:open.side,entry:open.entry,exit:exit.p,pct,why:exit.why,
+          t:open.t,tOut:c.t,bars:i-open.i});
+        open=null;
+      }
+    }
+    if(!open && prev!=null){
+      const cross = s>=20&&prev<20 ? 'long' : s<=-20&&prev>-20 ? 'short' : null;
+      if(cross){
+        const entry=cs[i+1].o;
+        open={side:cross,entry,i:i+1,t:cs[i+1].t,
+          sl: cross==='long'? entry-1.5*A : entry+1.5*A,
+          tp: cross==='long'? entry+2.5*A : entry-2.5*A};
+      }
+    }
+    prev=s;
+  }
+  if(!trades.length) return {trades:[],n:0};
+  const wins=trades.filter(t=>t.pct>0), losses=trades.filter(t=>t.pct<=0);
+  const gp=wins.reduce((a,t)=>a+t.pct,0), gl=Math.abs(losses.reduce((a,t)=>a+t.pct,0));
+  let eq=0, peak=0, dd=0;
+  for(const t of trades){ eq+=t.pct; peak=Math.max(peak,eq); dd=Math.max(dd,peak-eq); }
+  return {trades, n:trades.length,
+    winRate: wins.length/trades.length*100,
+    pf: gl>0? gp/gl : (gp>0?99:0),
+    expectancy: trades.reduce((a,t)=>a+t.pct,0)/trades.length,
+    total: eq, maxDD: dd,
+    avgWin: wins.length? gp/wins.length : 0,
+    avgLoss: losses.length? gl/losses.length : 0,
+    avgBars: Math.round(trades.reduce((a,t)=>a+t.bars,0)/trades.length),
+    from: cs[0].t, to: cs[n-1].t};
+}
+let mtfLast='';
+function renderMtf(){
+  const el=$('cpMtf'); if(!el) return;
+  const b=mtfBoard();
+  if(!b){ el.innerHTML=''; return; }
+  const html='<span style="font-weight:700">⏱ הסכמת זמנים</span>'
+    +b.rows.map(r=>`<span class="mtf ${r.dir>0?'up':r.dir<0?'down':''}">${r.name} <b>${r.dir>0?'▲':r.dir<0?'▼':'▬'} ${r.txt}</b> · RSI ${r.rsi.toFixed(0)}</span>`).join('')
+    +`<span class="mtf-v" style="background:${b.align===b.rows.length?(b.dir>0?'rgba(0,255,166,.16)':'rgba(255,61,110,.16)'):'rgba(255,209,102,.14)'};color:${b.align===b.rows.length?(b.dir>0?'#00ffa6':'#ff3d6e'):'#ffd166'}">${b.align}/${b.rows.length} · ${b.verdict}</span>`;
+  if(html!==mtfLast){ mtfLast=html; el.innerHTML=html; }
+}
+let btResult=null;
+function renderBacktest(){
+  const el=$('cpBt'); if(!el) return;
+  if(!btResult){ el.innerHTML=''; el.style.display='none'; return; }
+  el.style.display='block';
+  if(!btResult.n){
+    el.innerHTML='<div class="bt-h">🧪 בקטסט על ההיסטוריה הטעונה</div><div class="bt-empty">לא נפתחה אף עסקה בחלון הזה — הכללים לא נתנו אות. זו תוצאה לגיטימית, לא תקלה.</div>';
+    return;
+  }
+  const b=btResult;
+  const good=b.pf>=1.5&&b.expectancy>0;
+  el.innerHTML='<div class="bt-h">🧪 בקטסט · '+fmtT(b.from)+' → '+fmtT(b.to)+' · '+b.n+' עסקאות</div>'
+    +'<div class="bt-grid">'
+    +`<span>אחוז הצלחה<b class="${b.winRate>=50?'up':'down'}">${b.winRate.toFixed(0)}%</b></span>`
+    +`<span>פקטור רווח<b class="${b.pf>=1.5?'up':b.pf>=1?'':'down'}">${b.pf.toFixed(2)}</b></span>`
+    +`<span>תוחלת לעסקה<b class="${b.expectancy>0?'up':'down'}">${b.expectancy>0?'+':''}${b.expectancy.toFixed(2)}%</b></span>`
+    +`<span>סה״כ<b class="${b.total>0?'up':'down'}">${b.total>0?'+':''}${b.total.toFixed(1)}%</b></span>`
+    +`<span>רווח ממוצע<b class="up">+${b.avgWin.toFixed(2)}%</b></span>`
+    +`<span>הפסד ממוצע<b class="down">−${b.avgLoss.toFixed(2)}%</b></span>`
+    +`<span>דראודאון מקס<b class="down">−${b.maxDD.toFixed(1)}%</b></span>`
+    +`<span>אורך עסקה<b>${b.avgBars} נרות</b></span>`
+    +'</div>'
+    +`<div class="bt-verdict ${good?'ok':'bad'}">${good?'✅ הכללים היו רווחיים על ההיסטוריה הזו — פקטור רווח מעל 1.5 ותוחלת חיובית':'⚠️ הכללים לא היו רווחיים על ההיסטוריה הזו — אל תסחור אותם עיוור'}</div>`
+    +'<div class="bt-list">'+b.trades.slice(-12).reverse().map(t=>
+      `<span class="bt-row"><i class="${t.side==='long'?'up':'down'}">${t.side==='long'?'▲ לונג':'▼ שורט'}</i>`
+      +`<span class="num">${fmtP(t.entry)} → ${fmtP(t.exit)}</span>`
+      +`<span class="bt-why">${t.why} · ${t.bars} נרות</span>`
+      +`<b class="${t.pct>0?'up':'down'}">${t.pct>0?'+':''}${t.pct.toFixed(2)}%</b></span>`).join('')
+    +'</div>'
+    +'<div class="bt-note">נבדק על מחירי הנרות בלבד — ספר ההזמנות וזרימת העסקאות ההיסטוריים אינם נשמרים, ולכן החלק הזה של המנוע לא נכלל. ביצועי עבר אינם ערובה לעתיד.</div>';
+}
 // ── HISTORY ANALYSIS — everything a trader wants to know about the exact
 // slice of tape on screen: what it did, how violent it was, the worst
 // drawdown inside it, the perfect long and short it contained, where the
@@ -5598,6 +5822,7 @@ function drawChart(){
   // trader is looking at a closed slice of the tape and every number in this
   // strip describes THAT slice, not the live market. ──
   renderWindowStats(cs,csAll,vStart,vEnd,total,atLive,dec);
+  renderMtf();
   if(!atLive){
     g.save();
     g.fillStyle='rgba(255,209,102,.16)';
@@ -6037,6 +6262,15 @@ $('ctBack').onclick=()=>chartPan(Math.max(1,Math.round((chartView.n||state.candl
 $('ctFwd').onclick=()=>chartPan(-Math.max(1,Math.round((chartView.n||state.candles.length)*0.4)));
 $('ctLive').onclick=()=>{ chartToLive(); toast('חזרה לנר החי','up'); };
 $('ctFit').onclick=()=>chartResetView();
+$('ctBt').onclick=()=>{
+  if(btResult){ btResult=null; renderBacktest(); $('ctBt').classList.remove('on'); return; }
+  toast('מריץ בקטסט על ההיסטוריה…');
+  setTimeout(()=>{
+    try{ btResult=runBacktest(state.candles); }catch(e){ btResult=null; toast('הבקטסט נכשל','down'); }
+    renderBacktest(); $('ctBt').classList.toggle('on',!!btResult);
+    if(btResult&&btResult.n) toast(`בקטסט: ${btResult.n} עסקאות · ${btResult.winRate.toFixed(0)}% הצלחה`, btResult.expectancy>0?'up':'down');
+  },30);
+};
 $('ctUndo').onclick=()=>{ const l=myDraws(); if(!l.length){ toast('אין שרטוטים לבטל'); return; } l.pop(); saveDrawings(); drawChart(); };
 $('ctClear').onclick=()=>{ drawings[state.sym]=[]; saveDrawings(); drawChart(); toast('השרטוטים ב-'+state.sym+' נמחקו'); };
 setDrawTool('none');
