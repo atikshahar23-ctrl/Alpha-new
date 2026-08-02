@@ -207,6 +207,14 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 .tgl:hover{border-color:rgba(0,240,255,.55);box-shadow:0 0 14px rgba(0,240,255,.18)}
 #mapLegend{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;margin:9px 2px 4px;font-size:10.5px;color:var(--dim)}
 #mapLegend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-inline-end:5px;vertical-align:middle}
+/* expandable trade-journal detail — the full story of each trade */
+.lg-click{cursor:pointer}
+.lg-detail{padding:8px 10px;margin:2px 0 6px;border-radius:9px;background:rgba(0,240,255,.04);
+  border:1px solid rgba(0,240,255,.14);font-size:11px;color:var(--txt)}
+.lg-dgrid{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;color:var(--dim)}
+.lg-dgrid b{color:var(--txt);font-weight:600}
+.lg-why{margin-top:7px;padding-top:7px;border-top:1px dashed rgba(0,240,255,.18);line-height:1.7;color:var(--dim)}
+.lg-why b{color:var(--gold)}
 /* live positions strip — every running trade, always on screen */
 #posStrip{position:fixed;z-index:29;bottom:88px;left:50%;transform:translateX(-50%);
   display:flex;gap:7px;flex-wrap:wrap;justify-content:center;max-width:92vw}
@@ -218,7 +226,7 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 .ps-chip.focused{border-color:rgba(255,209,102,.7)}
 .ps-chip .num{font-size:12px}
 body.cinema #posStrip{display:flex!important}
-@media (max-width:720px){ #posStrip{bottom:104px} .ps-chip{font-size:10.5px;padding:5px 9px} }
+@media (max-width:720px){ #posStrip{bottom:auto;top:202px} .ps-chip{font-size:10.5px;padding:5px 9px} }
 /* live commentator caption bar — the sports-caster line over the arena */
 #commBar{position:fixed;z-index:30;bottom:46px;left:50%;transform:translateX(-50%);
   max-width:min(680px,92vw);display:flex;align-items:center;gap:9px;
@@ -229,7 +237,12 @@ body.cinema #posStrip{display:flex!important}
   animation:commPulse 1.2s ease-in-out 2}
 @keyframes commPulse{0%,100%{transform:translateX(-50%) scale(1)}50%{transform:translateX(-50%) scale(1.03)}}
 body.cinema #commBar{display:flex!important}
-@media (max-width:720px){ #commBar{bottom:64px;font-size:12px;padding:8px 12px} }
+@media (max-width:720px){
+  /* phones: the bottom is owned by the price panel + trade ticket — the
+     caster caption and the positions strip move to the top band instead of
+     burying them (the reported overlap) */
+  #commBar{bottom:auto;top:118px;font-size:11.5px;padding:7px 11px;max-width:94vw}
+}
 /* cinema mode: pure 3D, HUD hidden (toggles stay so you can exit) */
 body.cinema #oracle,body.cinema #pricePanel,body.cinema #ticket,body.cinema #pulsePanel,
 body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important}
@@ -1155,6 +1168,32 @@ function noteRealPx(sym,px){
   clearTimeout(noteRealPx._t);
   noteRealPx._t=setTimeout(()=>{ try{ localStorage.setItem('na:lastreal',JSON.stringify(lastRealPx)); }catch(e){} },1200);
 }
+// CoinGecko anchor — CORS-open, no key. When Binance (WS+REST) is blocked
+// on the user's network, this keeps every crypto symbol pinned to the REAL
+// market price (the reported "BTC at 63K" was a stale sim anchor drifting
+// with no real source at all).
+const CG_IDS={BTC:'bitcoin',ETH:'ethereum',SOL:'solana',BNB:'binancecoin',XRP:'ripple',
+  DOGE:'dogecoin',ADA:'cardano',AVAX:'avalanche-2',LINK:'chainlink',TON:'the-open-network',
+  TRX:'tron',DOT:'polkadot'};
+async function pollCoinGecko(){
+  try{
+    const ids=[...new Set([...(worldSel.crypto||[]),state.market==='crypto'?state.sym:null]
+      .filter(Boolean).map(c=>CG_IDS[c]).filter(Boolean))];
+    if(!ids.length) return;
+    const r=await fetchT('https://api.coingecko.com/api/v3/simple/price?ids='+ids.join(',')+'&vs_currencies=usd',9000);
+    if(!r.ok) return;
+    const d=await r.json();
+    for(const [sym,id] of Object.entries(CG_IDS)){
+      const px=d[id]&&d[id].usd;
+      if(px) noteRealPx(sym,px);
+    }
+  }catch(e){}
+}
+setInterval(pollCoinGecko,45000); setTimeout(pollCoinGecko,4000);
+function fetchT(url,ms){
+  const ctl=new AbortController(); const t=setTimeout(()=>ctl.abort(),ms||9000);
+  return fetch(url,{signal:ctl.signal}).finally(()=>clearTimeout(t));
+}
 function simBridgeUrl(){ try{ return (localStorage.getItem('alpha:sim:url')||'').replace(/\/$/,''); }catch{ return ''; } }
 function simBridgeKey(){ try{ return localStorage.getItem('alpha:sim:apiKey')||''; }catch{ return ''; } }
 let simBridgeTimer=null;
@@ -1287,6 +1326,10 @@ function startSim(f){
     const shut=isStock && !usMarketOpen();
     if(shut!==wasClosed){ wasClosed=shut; f.mode=shut?'closed':'sim'; setBadge(f.mode); }
     if(shut){ onTick(cur); return; } // frozen — no walk, no fake prints
+    // real-anchor convergence: if a genuine market price exists and the sim
+    // wandered >2% away, glide back toward it (never jump — no phantom SL/TP)
+    const anch=lastRealPx[sym];
+    if(anch&&Math.abs(price/anch-1)>0.02) price+=(anch-price)*0.04;
     mu=mu*0.986+(Math.random()-0.5)*sv*0.09;
     if(Math.random()<0.006) mu+=(Math.random()<0.5?-1:1)*sv*1.6;
     let rr=mu*0.3+(Math.random()-0.5)*sv*0.22;
@@ -1723,6 +1766,13 @@ function openPos(side){
   positions[state.sym] = side==='long'
     ? {side, entry:p, sl:p-1.5*A, tp:p+2.5*A, margin, lev, notional}
     : {side, entry:p, sl:p+1.5*A, tp:p-2.5*A, margin, lev, notional};
+  // snapshot the WHY — the journal shows the full story of every trade
+  positions[state.sym].ctx={
+    openedAt:Date.now(), tf:state.tf,
+    score:ind?ind.score:null, verdict:ind?ind.verdict:'',
+    reasons:ind?ind.reasons.filter(r=>!/SIM|Yahoo/.test(r)).slice(0,3):[],
+    src:(feed&&feed.src)||'live',
+  };
   wallet.balance-=margin; saveWallet(); savePositions();
   toast(`עמדת ${side==='long'?'לונג':'שורט'} נפתחה @ ${fmtP(p)} · מרג׳ין $${margin} · x${lev}`, side==='long'?'up':'down');
   beep([[520,0.1],[660,0.12]]);
@@ -1755,7 +1805,11 @@ function closePos(sym,reason){
   session.pnl+=usd; session.trades++; if(win) session.wins++;
   session.streak = win? session.streak+1 : 0;
   if(session.streak>session.bestStreak) session.bestStreak=session.streak;
-  session.log.unshift({sym,side:P.side,entry:P.entry,exit:livePriceFor(sym)||P.entry,pct,usd,at:Date.now()});
+  const ctx=P.ctx||{};
+  session.log.unshift({sym,side:P.side,entry:P.entry,exit:livePriceFor(sym)||P.entry,pct,usd,at:Date.now(),
+    reason, tp:P.tp, sl:P.sl, margin:P.margin, lev:P.lev,
+    score:ctx.score, verdict:ctx.verdict, why:ctx.reasons||[], tf:ctx.tf,
+    durMin:ctx.openedAt?Math.max(1,Math.round((Date.now()-ctx.openedAt)/60000)):null, src:ctx.src});
   session.log=session.log.slice(0,30);
   const isRecord = pct>session.bestPct;
   if(isRecord) session.bestPct=pct;
@@ -2063,10 +2117,14 @@ $('logCsv').onclick=()=>{
 };
 $('pfClose').onclick=()=>setPortfolio(false);
 $('walletReset').onclick=()=>{
-  closeAllPositions();
+  // full clean slate: open positions vanish (no P&L logged), the session
+  // journal/stats clear, and the wallet returns to $25,000
+  Object.keys(positions).forEach(sym=>delete positions[sym]); savePositions();
+  session.pnl=0; session.trades=0; session.wins=0; session.streak=0;
+  session.bestStreak=0; session.bestPct=-Infinity; session.log=[]; saveSession();
   wallet.balance=25000; saveWallet();
-  toast('הארנק אופס ל-$25,000','up');
-  renderTicket(); renderPortfolio();
+  toast('איפוס מלא: ארנק $25,000 · אפס עסקאות · יומן נקי','up');
+  renderTicket(); renderPortfolio(); renderLog(); if(typeof renderPosStrip==='function') renderPosStrip();
 };
 
 // ============================================================
@@ -4120,13 +4178,35 @@ function renderLog(){
   $('lgBest').textContent=session.bestPct>-Infinity? fmtPct(session.bestPct):'—';
   const list=$('lgList');
   if(!session.log.length){ list.innerHTML='<div class="lg-empty">עדיין אין עסקאות סגורות</div>'; return; }
-  list.innerHTML=session.log.map(t=>{
+  list.innerHTML=session.log.map((t,i)=>{
     const win=t.usd>=0;
     const ago=Math.max(0,Math.round((Date.now()-t.at)/60000));
     const agoTxt=ago<60? `לפני ${ago} ד׳` : `לפני ${Math.round(ago/60)} ש׳`;
-    return `<div class="lg-row"><span><span class="lg-sym">${t.sym}</span> ${t.side==='long'?'▲':'▼'}<br><span class="lg-t">${agoTxt}</span></span>`
-      +`<span class="num ${win?'up':'down'}">${win?'+':'−'}$${Math.abs(t.usd).toFixed(0)} (${fmtPct(t.pct)})</span></div>`;
+    const reasonTxt=t.reason==='tp'?'🎯 יעד הושג':t.reason==='sl'?'🛑 סטופ':t.reason==='manual'?'✋ סגירה ידנית':'';
+    const hasDetail=t.why!==undefined;
+    const detail=hasDetail?`<div class="lg-detail" style="display:none">
+        <div class="lg-dgrid">
+          <span>כניסה <b class="num">${fmtP(t.entry)}</b></span>
+          <span>יציאה <b class="num">${fmtP(t.exit)}</b></span>
+          ${t.tp?`<span>יעד <b class="num">${fmtP(t.tp)}</b></span>`:''}
+          ${t.sl?`<span>סטופ <b class="num">${fmtP(t.sl)}</b></span>`:''}
+          ${t.margin?`<span>מרג׳ין <b class="num">$${t.margin}</b> · x${t.lev}</span>`:''}
+          ${t.durMin?`<span>משך <b class="num">${t.durMin<60?t.durMin+' ד׳':(t.durMin/60).toFixed(1)+' ש׳'}</b></span>`:''}
+          ${t.tf?`<span>פריים <b class="num">${t.tf}</b></span>`:''}
+          ${t.score!=null?`<span>ציון בכניסה <b class="num">${t.score>0?'+':''}${t.score}</b> · ${t.verdict||''}</span>`:''}
+          ${t.src?`<span>מקור נתונים <b>${t.src==='yahoo'?'Yahoo אמת':t.src==='sim'?'סימולציה':'Binance אמת'}</b></span>`:''}
+        </div>
+        ${t.why&&t.why.length?`<div class="lg-why"><b>למה ניתן האות:</b><br>${t.why.map(w=>'· '+w).join('<br>')}</div>`:''}
+      </div>`:'';
+    return `<div class="lg-row lg-click" data-lg="${i}"><span><span class="lg-sym">${t.sym}</span> ${t.side==='long'?'▲':'▼'}${t.lev?' x'+t.lev:''}<br><span class="lg-t">${agoTxt}${reasonTxt?' · '+reasonTxt:''}${hasDetail?' · 👆 פרטים':''}</span></span>`
+      +`<span class="num ${win?'up':'down'}">${win?'+':'−'}$${Math.abs(t.usd).toFixed(0)} (${fmtPct(t.pct)})</span></div>`+detail;
   }).join('');
+  list.querySelectorAll('.lg-click').forEach(row=>{
+    row.onclick=()=>{
+      const d=row.nextElementSibling;
+      if(d&&d.classList.contains('lg-detail')) d.style.display=d.style.display==='none'?'block':'none';
+    };
+  });
 }
 let logOpen=false;
 function setLog(on){
