@@ -265,6 +265,26 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 .lg-dgrid b{color:var(--txt);font-weight:600}
 .lg-why{margin-top:7px;padding-top:7px;border-top:1px dashed rgba(0,240,255,.18);line-height:1.7;color:var(--dim)}
 .lg-why b{color:var(--gold)}
+/* opportunity scout card — the assistant's trade offer */
+#scoutCard{position:fixed;z-index:36;top:96px;right:16px;width:min(340px,88vw);
+  padding:12px 14px;border:1px solid rgba(255,209,102,.55);
+  box-shadow:0 0 26px rgba(255,209,102,.18),inset 0 1px 0 rgba(255,255,255,.06)}
+#scoutCard.pop{animation:scoutIn .45s cubic-bezier(.2,.9,.3,1.4)}
+@keyframes scoutIn{from{opacity:0;transform:translateX(28px) scale(.94)}to{opacity:1;transform:none}}
+#scoutCard .sc-h{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--gold);margin-bottom:7px}
+#scoutCard .sc-ic{font-size:15px}
+#scoutCard .sc-score{margin-inline-start:auto;font-family:'JetBrains Mono',monospace;font-size:12px;
+  background:rgba(255,209,102,.15);border-radius:6px;padding:1px 7px}
+#scoutCard .sc-x{background:none;border:none;color:var(--dim);cursor:pointer;font-size:13px;padding:0 2px}
+#scoutCard .sc-sym{font-size:14px;margin-bottom:5px;display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+#scoutCard .sc-why{font-size:11.5px;color:var(--dim);line-height:1.6;margin-bottom:6px}
+#scoutCard .sc-lv{font-size:11px;color:var(--dim);margin-bottom:9px}
+#scoutCard .sc-acts{display:flex;gap:6px}
+#scoutCard .sc-acts button{flex:1;background:rgba(255,209,102,.16);border:1px solid rgba(255,209,102,.5);
+  color:var(--gold);border-radius:8px;padding:7px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit}
+#scoutCard .sc-acts .sc-skip{flex:0 0 84px;background:rgba(255,255,255,.04);border-color:rgba(255,255,255,.14);color:var(--dim);font-weight:500}
+body.cinema #scoutCard{display:none!important}
+@media (max-width:720px){ #scoutCard{top:auto;bottom:12px;right:8px;left:8px;width:auto} }
 /* live positions strip — every running trade, always on screen */
 #posStrip{position:fixed;z-index:29;bottom:88px;left:50%;transform:translateX(-50%);
   display:flex;gap:7px;flex-wrap:wrap;justify-content:center;max-width:92vw}
@@ -422,8 +442,12 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
    the abstract 3D metaphor always has a plain, analyzable chart one tap
    away. Deliberately plain/high-contrast: this is the "just show me the
    numbers clearly" surface, not another neon showpiece. ── */
-#chartPanel{position:fixed;z-index:33;top:50%;left:50%;transform:translate(-50%,-50%);
-  width:min(94vw,680px);padding:14px 16px 12px;text-align:center}
+/* Docked to the LEFT rather than dead-centre, and the 3D world slides
+   right while it is open (see worldShiftTarget) — so the chart never
+   sits on top of the central model any more. */
+#chartPanel{position:fixed;z-index:33;top:50%;left:136px;transform:translateY(-50%);
+  width:min(42vw,560px);padding:14px 16px 12px;text-align:center}
+@media (min-width:1500px){ #chartPanel{width:min(40vw,680px)} }
 #chartPanel .cp-h{display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap}
 #chartPanel #cpSym{font-size:15px;font-weight:700;color:var(--txt);letter-spacing:.5px}
 #chartPanel #cpTf{font-size:11px;color:var(--cyan);border:1px solid rgba(0,240,255,.3);padding:2px 8px}
@@ -765,6 +789,7 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
 
   <div id="vignette" aria-hidden="true"></div>
   <div id="banner" class="panel clip"><span id="bIcon">⚡</span><span id="bTxt"></span></div>
+  <div id="scoutCard" class="panel clip" style="display:none"></div>
   <div id="posStrip" style="display:none"></div>
   <div id="commBar" class="panel clip" style="display:none"><span id="commIc">🎙️</span><span id="commTxt"></span></div>
   <div id="toast" class="panel clip"></div>
@@ -2302,6 +2327,112 @@ setInterval(freezeOutcomes,120000);
 setTimeout(freezeOutcomes,15000); // grade overnight signals as soon as prices arrive
 
 // ============================================================
+//  OPPORTUNITY SCOUT — the commentator's assistant. It never watches the
+//  symbol you are already on; it continuously reads the price history of
+//  every OTHER market in the world and, the moment one of them lines up,
+//  puts a concrete trade offer on screen with a one-tap jump to its chart.
+// ============================================================
+let scoutSeen={}, scoutCard=null, scoutOn=true;
+function scoutScan(){
+  if(!scoutOn||scoutCard) return;
+  const cands=[];
+  for(const pod of pods){
+    if(pod.kind!=='crypto'&&pod.kind!=='stock') continue;
+    if(pod.id===state.sym) continue;               // never the focused market
+    if(!symCfg(pod.id)) continue;
+    if(pod.sim) continue;                          // real data only — this is a real offer
+    if(pod.kind==='stock'&&!usMarketOpen()) continue;
+    const h=pod.hist;
+    if(!h||h.length<40) continue;
+    const p=h[h.length-1]; if(!p) continue;
+    const win=h.slice(-40);
+    let hi=-Infinity,lo=Infinity;
+    for(const v of win){ if(v>hi)hi=v; if(v<lo)lo=v; }
+    const rng=Math.max(1e-9,hi-lo);
+    const posInRange=(p-lo)/rng;                   // 0 = at the low, 1 = at the high
+    // momentum: newest third vs oldest third of the window
+    const a=win.slice(0,13).reduce((x,y)=>x+y,0)/13;
+    const b=win.slice(-13).reduce((x,y)=>x+y,0)/13;
+    const mom=(b/a-1)*100;
+    // volatility as a share of price — the setup has to be worth the risk
+    const vol=rng/p*100;
+    if(vol<0.25) continue;                         // dead market, nothing to trade
+    let side=null, why='', score=0;
+    if(posInRange>0.9 && mom>0.35){                // breakout continuation
+      side='long'; score=55+Math.min(35,mom*22)+ (pod.chg>0?8:0);
+      why=L('breaking to the top of its range with momentum behind it','פורץ לראש הטווח שלו עם מומנטום מאחוריו');
+    } else if(posInRange<0.1 && mom<-0.35){        // breakdown continuation
+      side='short'; score=55+Math.min(35,-mom*22)+ (pod.chg<0?8:0);
+      why=L('breaking down through the base of its range','שובר את בסיס הטווח שלו כלפי מטה');
+    } else if(posInRange<0.06 && mom>0.15){        // reversal off the low
+      side='long'; score=52+Math.min(30,mom*30);
+      why=L('bouncing off the bottom of its range — reversal forming','מזנק מתחתית הטווח — היפוך מתהווה');
+    } else if(posInRange>0.94 && mom<-0.15){       // rejection at the high
+      side='short'; score=52+Math.min(30,-mom*30);
+      why=L('rejected at the top of its range','נדחה בראש הטווח שלו');
+    }
+    if(!side) continue;
+    if(Math.abs(pod.chg||0)>1.2) score+=6;         // the day is already moving
+    const last=scoutSeen[pod.id]||0;
+    if(Date.now()-last<9*60000) continue;          // never nag about the same market
+    const risk=rng*0.42;
+    cands.push({sym:pod.id, label:pod.label, side, score:Math.round(score), why,
+      price:p, chgDay:pod.chg||0,
+      sl: side==='long'? p-risk : p+risk,
+      tp: side==='long'? p+risk*1.9 : p-risk*1.9});
+  }
+  if(!cands.length) return;
+  cands.sort((a,b)=>b.score-a.score);
+  const best=cands[0];
+  if(best.score<62) return;                        // only offers worth interrupting for
+  scoutSeen[best.sym]=Date.now();
+  showScout(best);
+}
+function showScout(o){
+  scoutCard=o;
+  const el=$('scoutCard'); if(!el) return;
+  const up=o.side==='long';
+  el.innerHTML=
+    `<div class="sc-h"><span class="sc-ic">🔭</span><b>${L('Opportunity spotted','זוהתה הזדמנות')}</b>`
+    +`<span class="sc-score">${o.score}</span><button class="sc-x" id="scoutX">✕</button></div>`
+    +`<div class="sc-sym"><b>${o.label}</b> <span class="num ${up?'up':'down'}">${up?'▲ לונג':'▼ שורט'}</span>`
+    +` <span class="num">${fmtP(o.price)}</span> <span class="num ${o.chgDay>=0?'up':'down'}">${fmtPct(o.chgDay)}</span></div>`
+    +`<div class="sc-why">${o.why}</div>`
+    +`<div class="sc-lv">${L('target','יעד')} <b class="num up">${fmtP(o.tp)}</b> · ${L('stop','סטופ')} <b class="num down">${fmtP(o.sl)}</b>`
+    +` · ${L('R:R','סיכוי/סיכון')} <b class="num">1:1.9</b></div>`
+    +`<div class="sc-acts"><button id="scoutGo">${L('Open its chart →','מעבר לגרף שלה →')}</button>`
+    +`<button id="scoutSkip" class="sc-skip">${L('Not now','לא עכשיו')}</button></div>`;
+  el.style.display='block';
+  el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop');
+  if(commOn) commSay(L('Scout alert! '+o.label+' is '+o.why+'. A '+(up?'long':'short')+' setup with a one to one point nine reward. Want it?',
+    'התראת סורק! '+o.label+' '+o.why+'. סט-אפ '+(up?'לונג':'שורט')+' ביחס אחד ל-1.9. רוצה?'),true);
+  else beep([[660,0.09],[880,0.11]]);
+  $('scoutX').onclick=$('scoutSkip').onclick=()=>hideScout();
+  $('scoutGo').onclick=()=>{
+    const sym=o.sym;
+    state.market=WORLD_STOCKS[sym]?'stock':'crypto';
+    state.sym=sym; $('symLabel').textContent=symLabelText(sym);
+    state.stats=null; state.bigQ=1;
+    buildPills(); startFeed(); renderTicket(); renderPortfolio();
+    // manual levels pre-filled from the scout's plan — one tap from a trade
+    tradeSlManual=o.sl; tradeTpManual=o.tp;
+    const mm=$('rmMan'); if(mm) mm.click();
+    const msl=$('manSl'), mtp=$('manTp');
+    if(msl) msl.value=o.sl.toFixed(6).replace(/0+$/,'').replace(/\.$/,'');
+    if(mtp) mtp.value=o.tp.toFixed(6).replace(/0+$/,'').replace(/\.$/,'');
+    if(!chartOpen) setChart(true); else drawChart();
+    hideScout();
+    toast('🔭 עברנו ל-'+o.label+' · הרמות של הסורק מולאו בכרטיס','up');
+  };
+  clearTimeout(showScout._t);
+  showScout._t=setTimeout(()=>{ if(scoutCard&&scoutCard.sym===o.sym) hideScout(); },45000);
+}
+function hideScout(){ scoutCard=null; const el=$('scoutCard'); if(el){ el.style.display='none'; el.innerHTML=''; } }
+setInterval(scoutScan,16000);
+setTimeout(scoutScan,25000);
+window.__naScout={scan:scoutScan,show:showScout,hide:hideScout,seen:()=>scoutSeen};
+
+// ============================================================
 //  LIVE COMMENTATOR — a sports-caster for the chart. Watches every tick
 //  for state TRANSITIONS (verdict flips, EMA crosses, RSI zone entries,
 //  monster candles, S/R contact, position risk) and calls them out loud
@@ -2735,6 +2866,8 @@ const halo2=halo(310,0xff2fd6,0.07,1.72);
 }
 
 const world=new THREE.Group(); scene.add(world);
+// how far the arena slides sideways to stay clear of a docked panel
+let worldShiftTarget=0;
 const dummy=new THREE.Object3D();
 const C_UP=new THREE.Color(0x00ffa6), C_DN=new THREE.Color(0xff3d6e), C_CY=new THREE.Color(0x00f0ff);
 const tmpC=new THREE.Color();
@@ -2786,6 +2919,7 @@ const CENTER_MODES=[
   // data as a spatial chart you can read while standing in the arena ──
   ['wall','🕯️ קיר נרות 3D'], ['river','🌊 נהר המחיר'], ['vortex','🌀 מערבולת זמן'],
   ['depth','🏔️ הר נזילות'], ['profile','📊 פרופיל נפח'],
+  ['screen','🖥️ מסך הולוגרפי'],
 ];
 let centerRig=null;
 function disposeCenterRig(){
@@ -2954,6 +3088,95 @@ function buildCenterRig(mode){
       wire.rotation.y+=dt*0.7; inner.rotation.y-=dt*0.5;
       wire.material.color.copy(col); inner.material.color.copy(col).lerp(new THREE.Color(0xffffff),0.35);
       tip.material.color.copy(col);
+    };
+  } else if(mode==='screen'){
+    // 🖥️ HOLOGRAPHIC TERMINAL — the central object becomes a floating
+    // trading screen: a real candlestick chart with EMAs, the live price
+    // line and the current signal, drawn to an offscreen canvas and hung
+    // in the middle of the arena. Nothing else in the world reads this
+    // clearly for actual trading.
+    const cv=document.createElement('canvas'); cv.width=1024; cv.height=576;
+    const cg=cv.getContext('2d');
+    const tex=new THREE.CanvasTexture(cv);
+    const scr=new THREE.Mesh(new THREE.PlaneGeometry(30,17),
+      new THREE.MeshBasicMaterial({map:tex,transparent:true,opacity:0.96,side:THREE.DoubleSide}));
+    const frame=new THREE.Mesh(new THREE.PlaneGeometry(31.2,18.2),
+      new THREE.MeshBasicMaterial({color:0x00f0ff,transparent:true,opacity:0.16,
+        blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide}));
+    frame.position.z=-0.05;
+    const halo=centerGlowSprite(30,0x00f0ff); halo.material.opacity=0.16;
+    group.add(frame,scr,halo);
+    let lastDraw=0;
+    rig.update=(dt,t,yH,col)=>{
+      group.position.y=lerp(group.position.y||yH,yH+3,0.08);
+      // face the camera so the screen is always readable from anywhere
+      group.rotation.y=Math.atan2(camera.position.x-group.position.x,camera.position.z-group.position.z);
+      frame.material.color.copy(col);
+      halo.material.color.copy(col);
+      halo.material.opacity=0.12+0.05*Math.sin(t*1.6);
+      const now=performance.now();
+      if(now-lastDraw<420) return;
+      lastDraw=now;
+      const cs=state.candles;
+      cg.clearRect(0,0,cv.width,cv.height);
+      cg.fillStyle='rgba(2,8,16,0.88)'; cg.fillRect(0,0,cv.width,cv.height);
+      // scanlines for the hologram read
+      cg.fillStyle='rgba(0,240,255,0.035)';
+      for(let y=0;y<cv.height;y+=4) cg.fillRect(0,y,cv.width,1.5);
+      if(!cs||cs.length<3){
+        cg.fillStyle='#7dfbff'; cg.font="600 34px 'Heebo',sans-serif"; cg.textAlign='center';
+        cg.fillText('טוען נתוני שוק…',cv.width/2,cv.height/2); tex.needsUpdate=true; return;
+      }
+      const use=cs.slice(-70);
+      const PL=70,PR=190,PT=76,PB=44;
+      const W=cv.width-PL-PR, H=cv.height-PT-PB;
+      let hi=-Infinity,lo=Infinity;
+      for(const c of use){ if(c.h>hi)hi=c.h; if(c.l<lo)lo=c.l; }
+      const pad=(hi-lo)*0.08||1; hi+=pad; lo-=pad;
+      const Y=v=>PT+(1-(v-lo)/(hi-lo))*H, X=i=>PL+i*(W/use.length)+(W/use.length)/2;
+      // grid + price scale
+      cg.strokeStyle='rgba(0,240,255,0.12)'; cg.fillStyle='rgba(157,196,216,0.75)';
+      cg.font="19px 'JetBrains Mono',monospace"; cg.textAlign='left'; cg.textBaseline='middle';
+      for(let k=0;k<=4;k++){
+        const v=lo+(hi-lo)*k/4, y=Y(v);
+        cg.beginPath(); cg.moveTo(PL,y); cg.lineTo(PL+W,y); cg.stroke();
+        cg.fillText(v.toLocaleString('en-US',{maximumFractionDigits:2}),PL+W+12,y);
+      }
+      // candles
+      const cw=W/use.length;
+      use.forEach((c,i)=>{
+        const x=X(i), up=c.c>=c.o;
+        cg.strokeStyle=cg.fillStyle=up?'#00ffa6':'#ff3d6e';
+        cg.lineWidth=2;
+        cg.beginPath(); cg.moveTo(x,Y(c.h)); cg.lineTo(x,Y(c.l)); cg.stroke();
+        const yo=Y(c.o),yc=Y(c.c);
+        cg.fillRect(x-cw*0.32,Math.min(yo,yc),Math.max(2,cw*0.64),Math.max(2,Math.abs(yc-yo)));
+      });
+      // EMAs
+      const closes=use.map(c=>c.c);
+      [[emaArr(closes,9),'#5fd0ff'],[emaArr(closes,21),'#ff8ae0']].forEach(([arr,colr])=>{
+        cg.strokeStyle=colr; cg.lineWidth=2.6; cg.beginPath();
+        arr.forEach((v,i)=>{ const x=X(i),y=Y(v); i?cg.lineTo(x,y):cg.moveTo(x,y); });
+        cg.stroke();
+      });
+      // live price line + tag
+      const lp=state.lastPrice||use[use.length-1].c, ly=Y(lp);
+      cg.strokeStyle='rgba(255,209,102,0.9)'; cg.lineWidth=2; cg.setLineDash([9,7]);
+      cg.beginPath(); cg.moveTo(PL,ly); cg.lineTo(PL+W,ly); cg.stroke(); cg.setLineDash([]);
+      cg.fillStyle='#ffd166'; cg.font="700 24px 'JetBrains Mono',monospace";
+      cg.fillText(fmtP(lp),PL+W+12,ly);
+      // header: symbol + verdict — the trading read at a glance
+      cg.textAlign='left'; cg.textBaseline='alphabetic';
+      cg.fillStyle='#eaffff'; cg.font="700 34px 'Heebo',sans-serif";
+      cg.fillText(symLabelText(state.sym),PL,46);
+      if(ind){
+        const vc=ind.score>=20?'#00ffa6':ind.score<=-20?'#ff3d6e':'#ffd166';
+        cg.fillStyle=vc; cg.font="700 30px 'Heebo',sans-serif"; cg.textAlign='right';
+        cg.fillText(ind.verdict+'  '+(ind.score>0?'+':'')+ind.score,PL+W,46);
+      }
+      cg.textAlign='left'; cg.fillStyle='rgba(157,196,216,0.6)'; cg.font="18px 'JetBrains Mono',monospace";
+      cg.fillText(state.tf+' · '+use.length+' נרות',PL,cv.height-16);
+      tex.needsUpdate=true;
     };
   } else if(mode==='wall'){
     // 🕯️ CANDLE WALL — the candlestick chart itself, built as real 3D
@@ -4853,6 +5076,10 @@ function drawChart(){
 }
 function setChart(on){
   chartOpen=on;
+  // slide the whole arena out from behind the docked chart (wide screens
+  // only — on phones the panel is a full-width sheet and there is nowhere
+  // to slide to)
+  worldShiftTarget = (on && innerWidth>820) ? 34 : 0;
   $('chartPanel').style.display=on?'block':'none';
   $('btnChart').classList.toggle('on',on);
   if(chartTimer){ clearInterval(chartTimer); chartTimer=null; }
@@ -5519,6 +5746,7 @@ function loop(){
     updatePods(dt,now);
     applyCam(dt);
     updateHud(now);
+    world.position.x=lerp(world.position.x,worldShiftTarget,Math.min(1,dt*4));
     if(composer && gfxTier<2){ if(gradePass) gradePass.uniforms.uTime.value=t; composer.render(); } else renderer.render(scene,camera);
     if(window.__naSnapReq){
       window.__naSnapReq=false;
