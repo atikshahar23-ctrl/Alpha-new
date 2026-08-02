@@ -315,6 +315,25 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 .ck-gauge .fg{stroke:var(--cyan);stroke-linecap:round;stroke-dasharray:170;transition:stroke-dashoffset .3s linear}
 .ck-gauge b{position:absolute;top:26px;left:0;right:0;font-family:'JetBrains Mono',monospace;font-size:13px;color:#eaffff}
 .ck-gauge span{display:block;font-size:9.5px;color:var(--dim);margin-top:2px}
+/* MASTER CAUTION — threshold alerts. Always visible (cockpit or not),
+   click a chip to mute that rule for ten minutes. */
+#mcStack{position:fixed;z-index:31;top:56px;left:140px;right:290px;
+  display:flex;flex-wrap:wrap;gap:6px;pointer-events:none;font-family:'Heebo',sans-serif}
+.mc{pointer-events:auto;cursor:pointer;display:flex;align-items:center;gap:6px;
+  padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap;
+  background:rgba(2,10,18,.85);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+  animation:mcIn .3s ease}
+@keyframes mcIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+.mc.warn{border:1px solid rgba(255,209,102,.7);color:#ffd166}
+.mc.crit{border:1px solid rgba(255,61,110,.85);color:#ff7a9a;animation:mcIn .3s ease,mcPulse 1.4s ease-in-out infinite}
+.mc.good{border:1px solid rgba(0,255,166,.7);color:#00ffa6}
+@keyframes mcPulse{0%,100%{box-shadow:0 0 0 rgba(255,61,110,0)}50%{box-shadow:0 0 16px rgba(255,61,110,.45)}}
+body.cockpit-on #mcStack{left:296px}
+@media (max-width:900px){
+  #mcStack{top:auto;bottom:196px;left:8px;right:8px;justify-content:center}
+  body.cockpit-on #mcStack{left:8px}
+  .mc{font-size:10px;padding:3px 8px}
+}
 body.cockpit-on #hint,body.cockpit-on #banner{display:none!important}
 @media (max-width:900px){
   .ck-rail{width:112px} .ck-rail.ck-left{left:66px}
@@ -522,6 +541,11 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
 .cp-ind-legend{display:flex;flex-wrap:wrap;gap:11px;font-size:10px;color:var(--dim);margin-bottom:6px}
 .cp-ind-legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-inline-end:4px;vertical-align:middle}
 .cp-cv-wrap{position:relative}
+/* window-analysis strip — describes the slice of tape currently on screen */
+#cpWin{display:flex;flex-wrap:wrap;gap:6px 12px;margin:7px 0 2px;font-size:10.5px;color:var(--dim);
+  padding:7px 9px;border:1px solid rgba(0,240,255,.16);border-radius:8px;background:rgba(0,240,255,.035)}
+#cpWin b{color:var(--txt);font-family:'JetBrains Mono',monospace;font-weight:700}
+#cpWin b.up{color:var(--up)} #cpWin b.down{color:var(--down)}
 #chartCv{display:block;width:100%;height:min(62vh,440px);cursor:crosshair;background:rgba(2,4,10,.4);border-radius:6px}
 #cpCaption{position:absolute;inset:auto 8px 10px 8px;padding:10px 13px;background:rgba(6,10,20,.92);
   border:1px solid rgba(138,92,255,.45);border-radius:6px;font-size:12px;line-height:1.6;color:var(--txt);
@@ -877,6 +901,7 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
       <div class="ck-i"><span>סיכון בעסקה</span><b id="ckRisk" class="num">—</b></div>
     </div>
   </div>
+  <div id="mcStack"></div>
   <div id="scoutCard" class="panel clip" style="display:none"></div>
   <div id="posStrip" style="display:none"></div>
   <div id="commBar" class="panel clip" style="display:none"><span id="commIc">🎙️</span><span id="commTxt"></span></div>
@@ -928,6 +953,13 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
   </div>
   <div class="cp-styles" id="cpStyles"></div>
   <div id="cpTools">
+    <span class="ct-lbl">🔍 תצוגה</span>
+    <button class="ct" id="ctZoomIn" title="התקרבות — פחות נרות, יותר פירוט">➕ קרב</button>
+    <button class="ct" id="ctZoomOut" title="התרחקות — יותר נרות בתמונה">➖ רחק</button>
+    <button class="ct" id="ctBack" title="אחורה בהיסטוריה">⏪ אחורה</button>
+    <button class="ct" id="ctFwd" title="קדימה בזמן">⏩ קדימה</button>
+    <button class="ct" id="ctLive" title="חזרה לנר החי">🔴 חי</button>
+    <button class="ct" id="ctFit" title="להציג את כל ההיסטוריה השמורה">⤢ הכל</button>
     <span class="ct-lbl">✏️ כלי סוחר</span>
     <button class="ct" data-tool="none" title="ניווט רגיל — קרוסהייר">🖱️ ניווט</button>
     <button class="ct" data-tool="hline" title="קו מחיר אופקי — הקש על הגובה הרצוי">➖ קו מחיר</button>
@@ -952,6 +984,7 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
     <canvas id="chartCv"></canvas>
     <div id="cpCaption"></div>
   </div>
+  <div id="cpWin"></div>
   <div id="cpRating"></div>
   <div id="cpBoard"></div>
   <div class="cp-legend">
@@ -1050,7 +1083,11 @@ window.addEventListener('three-ready', function(){
    ============================================================ */
 
 // ---------- config ----------
-const N = 140;
+// N is how much history we KEEP (and download) — deep enough that a trader
+// can actually scroll back through the session on the candle chart. ARENA_N
+// is the shorter recent window the 3D price column scales itself to, so the
+// deeper history never zooms the arena out to a flat line.
+const N = 420, ARENA_N = 140;
 const Y0 = 9, YSPAN = 34;
 const SYMBOLS = {
   BTC:{base:132400, vol:0.0011, lot:2.2,    big:1.8,    dec:1, dot:'#f7931a'},
@@ -1633,7 +1670,7 @@ function startSim(f){
   },bookMs));
 
   f.timers.push(setInterval(()=>{
-    const cs2=state.candles; if(cs2.length<2) return;
+    const cs2=state.candles.slice(-ARENA_N); if(cs2.length<2) return;
     let hi=-1e18, lo=1e18, vol=0;
     for(const c of cs2){ hi=Math.max(hi,c.h); lo=Math.min(lo,c.l); vol+=c.v*c.c; }
     state.stats={chg:(cs2[cs2.length-1].c/cs2[0].o-1)*100, hi, lo, vol};
@@ -1643,6 +1680,8 @@ function startSim(f){
 // ---------- data callbacks ----------
 function onInit(cs){
   state.candles=cs.slice(-N);
+  // a fresh market/timeframe starts pinned to live and fitted
+  chartView.n=0; chartView.off=0; chartView.anchorT=0;
   retargetScale(true);
   state.lastPrice=cs[cs.length-1].c; state.priceSym=state.sym;
   state.prevPrice=state.lastPrice;
@@ -1672,7 +1711,7 @@ function digestBook(){
   indDirty=true;
 }
 function retargetScale(hard){
-  const cs=state.candles; if(!cs.length) return;
+  const cs=state.candles.slice(-ARENA_N); if(!cs.length) return;
   let lo=1e18, hi=-1e18;
   for(const c of cs){ lo=Math.min(lo,c.l); hi=Math.max(hi,c.h); }
   state.winHi=hi; state.winLo=lo;
@@ -1850,6 +1889,110 @@ function indicatorBoard(){
     : {t:'ניטרלי · המתנה',c:'#ffd166'};
   return {rows,buys,sells,neutral:rows.length-buys-sells,rating,adx};
 }
+// ============================================================
+//  MANIPULATION ENGINE — the market is not always an honest auction. Large
+//  players hunt stops, fake breakouts, absorb size without moving price and
+//  post walls they never intend to fill. Every detector below is measured
+//  from the same candles and order book the rest of the system uses, and
+//  each one carries a directional bias so the signal engine can act on it
+//  instead of walking straight into the trap.
+// ============================================================
+const wallMem={};   // per-symbol memory of the biggest book walls we've seen
+function detectManipulation(cs,A,levels){
+  const n=cs.length, out=[];
+  if(n<25||!(A>0)) return out;
+  const c=cs[n-2], prev=cs[n-3];            // the last CLOSED candle and its predecessor
+  if(!c||!prev) return out;
+  const body=Math.abs(c.c-c.o), range=Math.max(1e-9,c.h-c.l);
+  const upWick=c.h-Math.max(c.o,c.c), dnWick=Math.min(c.o,c.c)-c.l;
+  // ── 1. liquidity sweep / stop hunt: price pierces a recent swing extreme
+  // and snaps straight back inside. That wick IS someone's stop loss.
+  const look=cs.slice(Math.max(0,n-22),n-2);
+  if(look.length>8){
+    const swingLo=Math.min(...look.map(x=>x.l)), swingHi=Math.max(...look.map(x=>x.h));
+    if(c.l<swingLo-A*0.12 && c.c>swingLo){
+      out.push({id:'sweepLow',bias:1,w:Math.min(3,(swingLo-c.l)/A),
+        t:'ציד סטופים מתחת ל-'+fmtP(swingLo)+' — הפתילה טאטאה נזילות וחזרה פנימה',
+        en:'Liquidity sweep below '+fmtP(swingLo)+' — stops were run and price reclaimed the level'});
+    }
+    if(c.h>swingHi+A*0.12 && c.c<swingHi){
+      out.push({id:'sweepHigh',bias:-1,w:Math.min(3,(c.h-swingHi)/A),
+        t:'ציד סטופים מעל '+fmtP(swingHi)+' — פתילה מעל השיא ונפילה חזרה',
+        en:'Liquidity sweep above '+fmtP(swingHi)+' — buy stops taken, price rejected back down'});
+    }
+  }
+  // ── 2. false breakout: a candle closes beyond a level, the next closes
+  // back inside it. The breakout traders are now the fuel for the reversal.
+  const lv=levels||(ind&&ind.levels)||[];
+  for(const L of lv){
+    const p0=L.p!=null?L.p:L;
+    if(!(p0>0)) continue;
+    if(prev.c>p0+A*0.1 && c.c<p0-A*0.05){
+      out.push({id:'fakeUp',bias:-1,w:1.6,
+        t:'פריצה מדומה מעל '+fmtP(p0)+' — נסגר חזרה מתחת לרמה',
+        en:'False breakout above '+fmtP(p0)+' — price closed back beneath the level'});
+      break;
+    }
+    if(prev.c<p0-A*0.1 && c.c>p0+A*0.05){
+      out.push({id:'fakeDown',bias:1,w:1.6,
+        t:'שבירה מדומה מתחת '+fmtP(p0)+' — נסגר חזרה מעל הרמה',
+        en:'False breakdown below '+fmtP(p0)+' — price reclaimed the level on the close'});
+      break;
+    }
+  }
+  // ── 3. absorption: huge volume, almost no progress. Someone big is filling
+  // an order against the crowd — the direction that survives usually wins.
+  const vols=cs.slice(Math.max(0,n-22),n-2).map(x=>x.v||0).filter(v=>v>0);
+  if(vols.length>8){
+    const vAvg=vols.reduce((a,b)=>a+b,0)/vols.length, vLast=c.v||0;
+    if(vAvg>0&&vLast>vAvg*2.2&&body<range*0.28){
+      out.push({id:'absorb',bias:c.c>=c.o?1:-1,w:1.4,
+        t:`ספיגה · מחזור פי ${(vLast/vAvg).toFixed(1)} מהרגיל אבל המחיר כמעט לא זז — שחקן גדול ממלא הזמנה`,
+        en:`Absorption — ${(vLast/vAvg).toFixed(1)}x average volume with almost no price progress; size is being filled quietly`});
+    }
+    if(vAvg>0&&vLast>vAvg*3&&range>A*2.6){
+      out.push({id:'ignite',bias:c.c>=c.o?1:-1,w:1.2,
+        t:'הצתת מומנטום · נר ענק על מחזור חריג — לרוב לא רודפים אחריו',
+        en:'Momentum ignition — outsized candle on outsized volume; chasing it is usually the trap'});
+    }
+  }
+  // ── 4. wick cluster: repeated rejection from one side = distribution
+  const last5=cs.slice(Math.max(0,n-7),n-2);
+  if(last5.length>=4){
+    const upRej=last5.filter(x=>(x.h-Math.max(x.o,x.c))>Math.abs(x.c-x.o)*2).length;
+    const dnRej=last5.filter(x=>(Math.min(x.o,x.c)-x.l)>Math.abs(x.c-x.o)*2).length;
+    if(upRej>=3) out.push({id:'distUp',bias:-1,w:1.1,t:'דחייה חוזרת מלמעלה · צללים עליונים ברצף — חלוקה למוכרים',
+      en:'Repeated rejection from above — a cluster of upper wicks reads as distribution'});
+    if(dnRej>=3) out.push({id:'accDn',bias:1,w:1.1,t:'דחייה חוזרת מלמטה · צללים תחתונים ברצף — צבירה של קונים',
+      en:'Repeated rejection from below — a cluster of lower wicks reads as accumulation'});
+  }
+  // ── 5. spoof walls (crypto only — this is a REAL depth stream). A wall
+  // several times the book average that vanishes without price ever reaching
+  // it was never meant to be filled.
+  if(state.market!=='stock'){
+    const mem=wallMem[state.sym]||(wallMem[state.sym]={});
+    const p=state.lastPrice||c.c;
+    [['wallBid',1],['wallAsk',-1]].forEach(([k,dir])=>{
+      const w=state[k];
+      const side=k==='wallBid'?state.book.bids:state.book.asks;
+      if(w&&side&&side.length>3){
+        const avg=side.reduce((a,x)=>a+x[1],0)/side.length;
+        if(w.q>avg*3.5){
+          mem[k]={p:w.p,q:w.q,at:Date.now()};
+          out.push({id:k==='wallBid'?'wallBid':'wallAsk',bias:dir*0.5,w:0.9,
+            t:(k==='wallBid'?'קיר קניות ':'קיר מכירות ')+fmtP(w.p)+' · פי '+(w.q/avg).toFixed(1)+' מהעומק הרגיל',
+            en:(k==='wallBid'?'Buy wall at ':'Sell wall at ')+fmtP(w.p)+' — '+(w.q/avg).toFixed(1)+'x the average book depth'});
+        } else if(mem[k] && Date.now()-mem[k].at<25000 && Math.abs(p-mem[k].p)>A*0.4){
+          out.push({id:'spoof',bias:-dir,w:1.3,
+            t:'ספוּפינג · הקיר ב-'+fmtP(mem[k].p)+' נעלם בלי שהמחיר נגע בו — הזמנה מזויפת',
+            en:'Spoofing — the wall at '+fmtP(mem[k].p)+' vanished without price ever touching it'});
+          mem[k]=null;
+        }
+      }
+    });
+  }
+  return out.slice(0,4);
+}
 function computeSignals(){
   const cs=state.candles, n=cs.length;
   if(n<30){ ind=null; return; }
@@ -1890,7 +2033,12 @@ function computeSignals(){
     }
   }
 
-  const score=Math.round(clamp(trend+rsiS+macdS+bbS+bookS+volS,-100,100));
+  // ── manipulation layer: traps found in the tape shift the score toward
+  // the side that survives them, weighted by how blatant they were ──
+  const manip=detectManipulation(cs,A,levels);
+  const manipS=clamp(manip.reduce((a,m)=>a+m.bias*m.w*6,0),-22,22);
+
+  const score=Math.round(clamp(trend+rsiS+macdS+bbS+bookS+volS+manipS,-100,100));
   const closedStock=isStock && !usMarketOpen();
   const simData=feed && feed.src==='sim';
   const verdict=closedStock? '🔒 שוק סגור · ניתוח בלבד'
@@ -1914,18 +2062,42 @@ function computeSignals(){
   }
 
   const reasons=rs.slice(0,3).map(x=>x.t);
+  manip.forEach(m=>reasons.push('🎭 '+m.t));
   if(simData) reasons.push('⚠️ נתוני הדגמה (SIM) — האותות להמחשה בלבד');
   else if(isStock) reasons.push('✓ מחושב על נרות אמת (Yahoo Finance)');
+
+  // ── CONFLUENCE — how many independent things agree with this call. A real
+  // desk does not take a trade because one oscillator blinked; it takes it
+  // when trend, momentum, location, volatility and the tape all point the
+  // same way and nothing in the book smells like a trap. This number is what
+  // separates a signal worth firing from noise, and it gates the ledger.
+  const dir=Math.sign(score);
+  const checks=[];
+  if(dir){
+    checks.push({ok:Math.sign(trend)===dir, w:26, t:'מגמת EMA בכיוון'});
+    checks.push({ok:Math.sign(macdS)===dir, w:18, t:'מומנטום MACD בכיוון'});
+    checks.push({ok:dir>0? R<62 : R>38, w:14, t:'RSI לא בקיצוניות הפוכה'});
+    checks.push({ok:dir>0? bbPos<0.85 : bbPos>0.15, w:12, t:'מיקום בטווח מאפשר תנועה'});
+    const nearLvl=levels.length? Math.min(...levels.map(L=>Math.abs((L.p!=null?L.p:L)-p)))/A : 9;
+    checks.push({ok:nearLvl>0.5, w:10, t:'לא צמוד לרמת התנגדות'});
+    checks.push({ok:!manip.some(m=>Math.sign(m.bias)===-dir&&m.w>=1.2), w:20, t:'אין מלכודת מזוהה בכיוון ההפוך'});
+  }
+  const conf=dir? Math.round(checks.reduce((a,c)=>a+(c.ok?c.w:0),0)) : 0;
+  const confMiss=checks.filter(c=>!c.ok).map(c=>c.t);
   ind={e9raw:e9, e21raw:e21, A, levels, score, verdict,
-       reasons, sug, closed:closedStock, quality:simData?'sim':'real'};
+       reasons, sug, closed:closedStock, quality:simData?'sim':'real',
+       manip, conf, confMiss, bbPos, rsiNow:R};
   // ---- signal ledger: every ±20 cross is RECORDED with its context, then
   // measured against reality — the system grades its own recommendations ----
   const prevSc=sigPrev[state.sym];
   if(prevSc!=null && !closedStock){
     const crossed = score>=20&&prevSc<20 ? 'buy' : score<=-20&&prevSc>-20 ? 'sell' : null;
-    if(crossed){
+    // CONFLUENCE GATE — a cross alone is not a trade. Below 55 the call is
+    // one indicator shouting over the others, and those are exactly the
+    // entries that turn into losers, so they never reach the ledger.
+    if(crossed && conf>=55){
       sigLedger.unshift({sym:state.sym, side:crossed, at:Date.now(), price:p,
-        score, why:reasons.filter(r=>!/SIM|Yahoo/.test(r)).slice(0,2),
+        score, conf, why:reasons.filter(r=>!/SIM|Yahoo/.test(r)).slice(0,2),
         quality:simData?'sim':'real', outcome:null});
       sigLedger=sigLedger.slice(0,100); saveSigLedger();
     }
@@ -2645,7 +2817,10 @@ function commTick(){
     if(vwap!=null) conf.push(L(lp>=vwap?'price above VWAP':'price below VWAP',lp>=vwap?'מחיר מעל VWAP':'מחיר מתחת ל-VWAP'));
     const patEn=patternEn(candleAnalysis&&(candleAnalysis.pattern||candleAnalysis.single));
     if(patEn) conf.push(L(patEn+' on the candles',patEn+' בנרות'));
-    const confTxt=conf.length?L(' Confluence: ',' קונפלואנס: ')+conf.join(', ')+'.':'';
+    let confTxt=conf.length?L(' Confluence: ',' קונפלואנס: ')+conf.join(', ')+'.':'';
+    // the desk number: how many independent checks actually agree
+    if(ind.conf) confTxt+=L(' Confluence score '+ind.conf+' out of 100'+(ind.conf<55?' — below my threshold, I would sit this one out.':'.'),
+                            ' ציון קונפלואנס '+ind.conf+' מתוך 100'+(ind.conf<55?' — מתחת לסף שלי, הייתי מוותר על העסקה הזו.':'.'));
     if(sc>=55&&commPrev.score<55) lines.push({p:12,t:L('STRONG BUY! Every indicator is aligned to the upside. This is an A-plus setup — risk one to make one point seven.','קנייה חזקה! כל האינדיקטורים מיושרים למעלה — סט-אפ מושלם, מסכנים אחד כדי להרוויח אחד-נקודה-שבע.')+confTxt});
     else if(sc>=20&&commPrev.score<20) lines.push({p:10,t:L('Buy signal! Score just crossed to plus '+sc+'. Suggested entry '+fmtP(lp)+', stop below at one and a half ATR.','אות קנייה! הציון חצה ל-פלוס '+sc+'. כניסה מוצעת '+fmtP(lp)+', סטופ מתחת במרחק ATR וחצי.')+confTxt});
     if(sc<=-55&&commPrev.score>-55) lines.push({p:12,t:L('STRONG SELL! Heavy pressure across the board — momentum, trend and range all pointing down.','מכירה חזקה! לחץ כבד מכל הכיוונים — מומנטום, מגמה וטווח כולם מצביעים למטה.')+confTxt});
@@ -2676,6 +2851,17 @@ function commTick(){
     lines.push({p:11,t:L((P.side==='long'?'We are LONG ':'We are SHORT ')+state.sym+' from '+fmtP(P.entry)+'. Target '+fmtP(P.tp)+', stop '+fmtP(P.sl)+' — risk-reward one to '+rr+'. Plan the trade, trade the plan.',
       (P.side==='long'?'נכנסנו ללונג על ':'נכנסנו לשורט על ')+state.sym+' ב-'+fmtP(P.entry)+'. יעד '+fmtP(P.tp)+', סטופ '+fmtP(P.sl)+' — סיכוי-סיכון אחד ל-'+rr+'. תכנן את העסקה, סחור את התוכנית.')}); }
   if(commPrev.pos&&!P&&commPrev.posSym===state.sym) lines.push({p:11,t:L('Trade closed. Breathe, review, and wait for the next clean setup.','העסקה נסגרה. לנשום, לסכם, ולחכות לסט-אפ הנקי הבא.')});
+
+  // ---- manipulation desk — the caster reads the tape the way an exchange
+  // engine does: who is hunting stops, who is faking a breakout, who is
+  // absorbing size quietly, and which side that actually favours ----
+  const mIds=(ind.manip||[]).map(m=>m.id).join('|');
+  if(mIds && mIds!==commPrev.manip){
+    const m=(ind.manip||[]).slice().sort((a,b)=>b.w-a.w)[0];
+    if(m) lines.push({p:11,t:L(
+      'Manipulation watch — '+m.en+'. Once that is confirmed it favours the '+(m.bias>0?'upside':'downside')+'; never trade into the players who set the trap.',
+      'זיהוי מניפולציה — '+m.t+'. ברגע שזה מאושר היתרון '+(m.bias>0?'לכיוון מעלה':'לכיוון מטה')+'; לא נכנסים מול מי שהניח את המלכודת.')});
+  }
 
   // ---- RSI divergence — the professional reversal tell ----
   if(cs.length>=42){
@@ -2741,7 +2927,7 @@ function commTick(){
     commLastSaid=chosen.t; commLastAt=nowT;
     commSay(chosen.t,chosen.p>=10);
   }
-  commPrev={score:sc,rsiZone:zone,ema,pos:!!P,posSym:P?state.sym:'',div:commPrev.div};
+  commPrev={score:sc,rsiZone:zone,ema,pos:!!P,posSym:P?state.sym:'',div:commPrev.div,manip:mIds};
 }
 setInterval(commTick,3000);
 function setComm(on){
@@ -3121,18 +3307,26 @@ spill.rotation.x=-Math.PI/2; spill.position.y=0.14; world.add(spill);
 //  same organism, never different data. Built lazily on first use and
 //  fully disposed on switch, so inactive modes cost nothing.
 // ============================================================
+// Every mode below renders REAL market data — candles, levels, depth, volume
+// or cross-market correlation. The decorative ones (DNA helix, geyser, bolt,
+// planet, crystal, ribbon, flame, black hole, radar, obelisk, time vortex)
+// were deleted: they looked like screensavers and told a trader nothing.
+// The bar for keeping a mode is now a single question — can you make a
+// trading decision from it without looking anywhere else?
 const CENTER_MODES=[
-  ['classic','⚛️ ליבה קלאסית'], ['helix','🧬 סליל DNA'], ['geyser','🌋 גייזר חלקיקים'],
-  ['bolt','⚡ עמוד ברקים'], ['planet','🪐 כוכב טבעות'], ['crystal','🧊 קריסטל צף'],
-  ['ribbon','🌀 סליל היסטוריה'], ['flame','🔥 להבת שוק'], ['hole','🕳 חור שחור'],
-  ['radar','📡 רדאר'], ['obelisk','🗿 אובליסק'],
-  // ── real 3D CHART inventions (not decor): each renders the actual market
-  // data as a spatial chart you can read while standing in the arena ──
-  ['wall','🕯️ קיר נרות 3D'], ['river','🌊 נהר המחיר'], ['vortex','🌀 מערבולת זמן'],
-  ['depth','🏔️ הר נזילות'], ['profile','📊 פרופיל נפח'],
-  ['screen','🖥️ מסך הולוגרפי'], ['pure','🕊️ קו טהור'], ['rings','🎯 טבעות רמות'],
-  ['ladder','🪜 מגדל DOM'], ['wave','🌊 גל לחץ'],
+  ['classic','⚛️ ליבה קלאסית · מחיר חי'],
+  ['wall','🕯️ קיר נרות 3D'], ['screen','🖥️ מסך מסחר הולוגרפי'],
+  ['river','🌊 נהר המחיר'], ['depth','🏔️ הר נזילות'],
+  ['profile','📊 פרופיל נפח · POC'], ['ladder','🪜 מגדל DOM'],
+  ['rings','🎯 טבעות רמות'], ['pure','🕊️ קו טהור'], ['wave','🌊 גל לחץ קונים/מוכרים'],
+  ['galaxy','🌌 גלקסיית מתאמים'], ['clock','🕛 שעון שוק 24 שעות'],
 ];
+// someone who left the arena on a now-deleted mode must not come back to an
+// empty centre — fall back to the classic core and persist the correction
+if(!CENTER_MODES.some(([id])=>id===naSettings.centerMode)){
+  naSettings.centerMode='classic';
+  try{ localStorage.setItem('na:settings',JSON.stringify(naSettings)); }catch(e){}
+}
 let centerRig=null;
 function disposeCenterRig(){
   if(!centerRig) return;
@@ -3159,149 +3353,7 @@ function buildCenterRig(mode){
   disposeCenterRig();
   const group=new THREE.Group(); world.add(group);
   const rig={mode,group,update(){},};
-  if(mode==='helix'){
-    const cloud=centerPts(150); group.add(cloud.pts);
-    const top=centerGlowSprite(7,0x00f0ff); group.add(top);
-    rig.update=(dt,t,yH,col)=>{
-      for(let i=0;i<cloud.n;i++){
-        const f=i/cloud.n, strand=i%2, a=f*Math.PI*6+t*0.9+strand*Math.PI;
-        cloud.pos[i*3]=Math.cos(a)*3.1; cloud.pos[i*3+1]=f*yH; cloud.pos[i*3+2]=Math.sin(a)*3.1;
-      }
-      cloud.pts.geometry.attributes.position.needsUpdate=true;
-      cloud.pts.material.color.copy(col);
-      top.position.y=yH; top.material.color.copy(col);
-    };
-  } else if(mode==='geyser'){
-    const cloud=centerPts(160); group.add(cloud.pts);
-    rig.update=(dt,t,yH,col)=>{
-      for(let i=0;i<cloud.n;i++){
-        const f=(cloud.seed[i]+t*(0.14+cloud.seed[i]*0.1))%1;
-        const r=(1-f)*1.6+0.2, a=cloud.seed[i]*97+t*0.6;
-        cloud.pos[i*3]=Math.cos(a)*r; cloud.pos[i*3+1]=f*yH; cloud.pos[i*3+2]=Math.sin(a)*r;
-      }
-      cloud.pts.geometry.attributes.position.needsUpdate=true;
-      cloud.pts.material.color.copy(col);
-    };
-  } else if(mode==='bolt'){
-    const SEGS=16;
-    const geo=new THREE.BufferGeometry();
-    geo.setAttribute('position',new THREE.BufferAttribute(new Float32Array((SEGS+1)*3),3));
-    const line=new THREE.Line(geo,new THREE.LineBasicMaterial({color:0x9be8ff,transparent:true,opacity:0.9,blending:THREE.AdditiveBlending}));
-    group.add(line);
-    const top=centerGlowSprite(8,0x9be8ff); group.add(top);
-    let jT=0;
-    rig.update=(dt,t,yH,col)=>{
-      jT-=dt;
-      if(jT<=0){ jT=0.09;
-        const p=line.geometry.attributes.position.array;
-        for(let i=0;i<=SEGS;i++){
-          const f=i/SEGS, amp=(i===0||i===SEGS)?0:2.2*Math.sin(f*Math.PI);
-          p[i*3]=rnd(-amp,amp); p[i*3+1]=f*yH; p[i*3+2]=rnd(-amp,amp);
-        }
-        line.geometry.attributes.position.needsUpdate=true;
-      }
-      line.material.color.copy(col);
-      top.position.y=yH; top.material.color.copy(col);
-    };
-  } else if(mode==='planet'){
-    const body=new THREE.Mesh(new THREE.SphereGeometry(1.7,24,20),new THREE.MeshBasicMaterial({color:0x9be8ff,transparent:true,opacity:0.9}));
-    group.add(body);
-    const rings=[2.6,3.3,4.0].map((r,i)=>{
-      const m=new THREE.Mesh(new THREE.RingGeometry(r-0.09,r,60),addMat(0x00f0ff,0.5-i*0.12));
-      m.rotation.x=1.15; group.add(m); return m;
-    });
-    rig.update=(dt,t,yH,col)=>{
-      group.position.y=lerp(group.position.y||yH,yH,0.25);
-      body.material.color.copy(col).lerp(new THREE.Color(0xffffff),0.3);
-      rings.forEach((m,i)=>{ m.rotation.z+=dt*(0.5+i*0.3); m.material.color.copy(col); });
-    };
-  } else if(mode==='crystal'){
-    const wire=new THREE.Mesh(new THREE.IcosahedronGeometry(2.8,0),new THREE.MeshBasicMaterial({color:0x00f0ff,wireframe:true,transparent:true,opacity:0.75,blending:THREE.AdditiveBlending,depthWrite:false}));
-    const inner=new THREE.Mesh(new THREE.IcosahedronGeometry(1.5,0),new THREE.MeshBasicMaterial({color:0x9be8ff,transparent:true,opacity:0.85}));
-    const glow=centerGlowSprite(9,0x00f0ff);
-    group.add(wire,inner,glow);
-    rig.update=(dt,t,yH,col)=>{
-      group.position.y=lerp(group.position.y||yH, yH+Math.sin(t*1.4)*0.5, 0.25);
-      wire.rotation.y+=dt*0.9; wire.rotation.x+=dt*0.35;
-      inner.rotation.y-=dt*1.3;
-      wire.material.color.copy(col); inner.material.color.copy(col).lerp(new THREE.Color(0xffffff),0.4);
-      glow.material.color.copy(col);
-    };
-  } else if(mode==='ribbon'){
-    const NPT=110;
-    const geo=new THREE.BufferGeometry();
-    geo.setAttribute('position',new THREE.BufferAttribute(new Float32Array(NPT*3),3));
-    const line=new THREE.Line(geo,new THREE.LineBasicMaterial({color:0x00f0ff,transparent:true,opacity:0.85,blending:THREE.AdditiveBlending}));
-    group.add(line);
-    const head=centerGlowSprite(6,0x00f0ff); group.add(head);
-    rig.update=(dt,t,yH,col)=>{
-      const cs=state.candles, p=line.geometry.attributes.position.array;
-      const n=Math.min(NPT,cs.length);
-      for(let i=0;i<NPT;i++){
-        const ci=cs.length-n+Math.min(i,n-1);
-        const a=(i/NPT)*Math.PI*4+t*0.12, y=cs.length?yFor(cs[Math.max(0,ci)].c):0;
-        p[i*3]=Math.cos(a)*6.4; p[i*3+1]=y; p[i*3+2]=Math.sin(a)*6.4;
-      }
-      line.geometry.attributes.position.needsUpdate=true;
-      line.material.color.copy(col);
-      head.position.set(p[(NPT-1)*3],p[(NPT-1)*3+1],p[(NPT-1)*3+2]);
-      head.material.color.copy(col);
-    };
-  } else if(mode==='flame'){
-    const cloud=centerPts(90); cloud.pts.material.size=0.8; group.add(cloud.pts);
-    rig.update=(dt,t,yH,col)=>{
-      for(let i=0;i<cloud.n;i++){
-        const f=(cloud.seed[i]+t*(0.25+cloud.seed[i]*0.2))%1;
-        const r=(1-f)*1.4, a=cloud.seed[i]*53+t;
-        cloud.pos[i*3]=Math.cos(a)*r*Math.sin(f*9+t); cloud.pos[i*3+1]=yH-2+f*7; cloud.pos[i*3+2]=Math.sin(a)*r;
-      }
-      cloud.pts.geometry.attributes.position.needsUpdate=true;
-      cloud.pts.material.color.copy(col);
-    };
-  } else if(mode==='hole'){
-    const bh=new THREE.Mesh(new THREE.SphereGeometry(1.6,24,20),new THREE.MeshBasicMaterial({color:0x000000}));
-    const halo=centerGlowSprite(11,0x8a5cff); halo.material.opacity=0.4;
-    const disk=centerPts(170); disk.pts.material.size=0.42;
-    group.add(halo,bh,disk.pts);
-    rig.update=(dt,t,yH,col)=>{
-      group.position.y=lerp(group.position.y||yH,yH,0.25);
-      for(let i=0;i<disk.n;i++){
-        const r=2.2+disk.seed[i]*3.4;
-        const a=disk.seed[i]*997+t*(3.4-(r-2.2)*0.55); // inner orbits spin faster — accretion physics, loosely
-        disk.pos[i*3]=Math.cos(a)*r; disk.pos[i*3+1]=Math.sin(a*0.5+disk.seed[i]*9)*0.25; disk.pos[i*3+2]=Math.sin(a)*r;
-      }
-      disk.pts.geometry.attributes.position.needsUpdate=true;
-      disk.pts.material.color.copy(col);
-    };
-  } else if(mode==='radar'){
-    const rings=[3,5.2].map(r=>{
-      const m=new THREE.Mesh(new THREE.RingGeometry(r-0.07,r,64),addMat(0x00f0ff,0.4));
-      m.rotation.x=-Math.PI/2; group.add(m); return m;
-    });
-    const sweep=new THREE.Mesh(new THREE.CircleGeometry(5.2,40,0,Math.PI*0.25),addMat(0x00f0ff,0.3));
-    sweep.rotation.x=-Math.PI/2; group.add(sweep);
-    const blip=centerGlowSprite(3,0x00ffa6);
-    group.add(blip);
-    rig.update=(dt,t,yH,col)=>{
-      group.position.y=lerp(group.position.y||yH,yH,0.25);
-      sweep.rotation.z+=dt*1.8;
-      rings.forEach(m=>m.material.color.copy(col));
-      sweep.material.color.copy(col);
-      const ba=t*1.8; blip.position.set(Math.cos(-ba)*4.1,0.3,Math.sin(-ba)*4.1);
-      blip.material.opacity=0.4+0.5*Math.abs(Math.sin(t*3));
-    };
-  } else if(mode==='obelisk'){
-    const wire=new THREE.Mesh(new THREE.ConeGeometry(2.4,6.4,4),new THREE.MeshBasicMaterial({color:0x00f0ff,wireframe:true,transparent:true,opacity:0.8,blending:THREE.AdditiveBlending,depthWrite:false}));
-    const inner=new THREE.Mesh(new THREE.ConeGeometry(1.3,4.2,4),new THREE.MeshBasicMaterial({color:0x9be8ff,transparent:true,opacity:0.85}));
-    const tip=centerGlowSprite(6,0x00f0ff); tip.position.y=3.6;
-    group.add(wire,inner,tip);
-    rig.update=(dt,t,yH,col)=>{
-      group.position.y=lerp(group.position.y||yH,yH,0.25);
-      wire.rotation.y+=dt*0.7; inner.rotation.y-=dt*0.5;
-      wire.material.color.copy(col); inner.material.color.copy(col).lerp(new THREE.Color(0xffffff),0.35);
-      tip.material.color.copy(col);
-    };
-  } else if(mode==='pure'){
+  if(mode==='pure'){
     // 🕊️ PURE LINE — everything stripped away: no column, no orb, just the
     // price itself as a luminous thread through the void, coloured by the
     // direction of each step, with a bright head at the live price. The
@@ -3636,42 +3688,6 @@ function buildCenterRig(mode){
       crest.geometry.attributes.position.needsUpdate=true;
       group.rotation.y=Math.sin(t*0.1)*0.42;
     };
-  } else if(mode==='vortex'){
-    // 🌀 TIME VORTEX — candles spiral INWARD: the newest bar sits at the
-    // centre, older bars fan outward. Market structure read radially —
-    // a tightening spiral means compression, a flaring one means expansion.
-    const NV=96, dObj=new THREE.Object3D(), cc=new THREE.Color();
-    const bars=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),
-      new THREE.MeshBasicMaterial({transparent:true,opacity:0.9}),NV);
-    bars.frustumCulled=false;
-    const eye=centerGlowSprite(7,0x00f0ff);
-    group.add(bars,eye);
-    rig.update=(dt,t,yH,col)=>{
-      const cs=state.candles; if(!cs||cs.length<2) return;
-      const use=cs.slice(-NV);
-      let hi=-Infinity,lo=Infinity;
-      for(const c of use){ if(c.h>hi)hi=c.h; if(c.l<lo)lo=c.l; }
-      const span=Math.max(1e-9,hi-lo);
-      const n=use.length;
-      eye.position.y=yH; eye.material.color.copy(col);
-      for(let i=0;i<NV;i++){
-        const c=use[i];
-        if(!c){ dObj.scale.set(0,0,0); dObj.updateMatrix(); bars.setMatrixAt(i,dObj.matrix); continue; }
-        const age=(n-1-i)/Math.max(1,n-1);          // 0 = newest
-        const a=age*Math.PI*4.4+t*0.16;
-        const r=2.6+age*13;
-        const h=1+((c.h-c.l)/span)*7;                // bar height = candle range
-        const yLvl=COL_B+3+((c.c-lo)/span)*(COL_T-COL_B-8);
-        dObj.position.set(Math.cos(a)*r,yLvl,Math.sin(a)*r);
-        dObj.rotation.set(0,-a,0);
-        dObj.scale.set(0.55,h,0.55);
-        dObj.updateMatrix(); bars.setMatrixAt(i,dObj.matrix);
-        cc.set(c.c>=c.o?0x00ffa6:0xff3d6e);
-        bars.setColorAt(i,cc);
-      }
-      bars.instanceMatrix.needsUpdate=true;
-      if(bars.instanceColor) bars.instanceColor.needsUpdate=true;
-    };
   } else if(mode==='depth'){
     // 🏔️ LIQUIDITY TERRAIN — the live order book as a mountain range at its
     // TRUE price heights: bids grow left, asks grow right, bar length is
@@ -3744,6 +3760,165 @@ function buildCenterRig(mode){
       const pocPrice=lo+(poc+0.5)*bw;
       pocLbl.sp.position.set(-13,COL_B+2+((poc+0.5)/NB)*(COL_T-COL_B-6),0);
       pocLbl.draw('POC '+fmtP(pocPrice),'#ffd166',"700 26px 'Heebo', sans-serif",true);
+    };
+  } else if(mode==='galaxy'){
+    // 🌌 CORRELATION GALAXY — every live market in the world becomes a body
+    // orbiting the focused asset. The orbit radius is the honest measure:
+    // an asset whose 24h move agrees with the core falls into a tight inner
+    // orbit, one moving against it drifts out to the rim. Colour is its own
+    // direction, size is how hard it is moving, orbital speed follows the
+    // radius like a real system. One glance tells you whether the whole
+    // market agrees with the chart you are trading.
+    const core=new THREE.Mesh(new THREE.SphereGeometry(2.0,26,20),
+      new THREE.MeshBasicMaterial({color:0x9be8ff,transparent:true,opacity:0.95}));
+    const halo=centerGlowSprite(11,0x00f0ff); halo.material.opacity=0.42;
+    group.add(core,halo);
+    const orbits=new THREE.Group(); group.add(orbits);
+    let bodies=[], key='';
+    const liveSet=()=>pods.filter(p=>p.kind!=='pm'&&p.price!=null).slice(0,16);
+    function clearBodies(){
+      bodies.forEach(b=>{
+        orbits.remove(b.holder);
+        b.holder.traverse(o=>{
+          if(o.geometry) o.geometry.dispose();
+          if(o.material){ if(o.material.map&&o.material.map!==glowTex) o.material.map.dispose(); o.material.dispose(); }
+        });
+      });
+      bodies=[];
+    }
+    function rebuild(){
+      clearBodies();
+      const live=liveSet();
+      live.forEach((p,i)=>{
+        const holder=new THREE.Group();
+        const inc=((i%5)-2)*0.17;
+        holder.rotation.set(inc,0,inc*0.55);
+        const ring=new THREE.Mesh(new THREE.RingGeometry(1,1.022,80),addMat(0x00f0ff,0.14));
+        ring.rotation.x=-Math.PI/2;
+        const body=new THREE.Group();
+        const ball=new THREE.Mesh(new THREE.SphereGeometry(0.62,14,12),
+          new THREE.MeshBasicMaterial({color:0x9be8ff,transparent:true,opacity:0.95}));
+        const gl=centerGlowSprite(4.4,0x00f0ff); gl.material.opacity=0.55;
+        const lbl=textSprite(256,64,7.2,1.8); lbl.sp.position.y=2.2;
+        body.add(ball,gl,lbl.sp);
+        holder.add(ring,body);
+        orbits.add(holder);
+        bodies.push({p,holder,body,ball,gl,lbl,ring,a:Math.random()*6.283,r:11,txt:''});
+      });
+      key=live.map(p=>p.id).join(',');
+    }
+    rebuild();
+    let acc=0, chk=0;
+    rig.update=(dt,t,yH,col)=>{
+      group.position.y=lerp(group.position.y||yH,yH,0.12);
+      core.material.color.copy(col).lerp(new THREE.Color(0xffffff),0.35);
+      halo.material.color.copy(col);
+      const hs=10+Math.sin(t*1.4)*1.2; halo.scale.set(hs,hs,1);
+      chk+=dt;
+      if(chk>2.5){ chk=0; if(liveSet().map(p=>p.id).join(',')!==key) rebuild(); }
+      acc+=dt;
+      const refresh=acc>0.5; if(refresh) acc=0;
+      const focusChg=(state.stats&&isFinite(state.stats.chg))?state.stats.chg:0;
+      bodies.forEach(b=>{
+        const chg=b.p.chg||0;
+        // agreement with the focused market: 1 = moving exactly like it
+        const agree=clamp(1-Math.abs(chg-focusChg)/5,0,1);
+        b.r=lerp(b.r,11+(1-agree)*15,0.05);
+        b.a+=dt*0.55/Math.pow(b.r/8,1.5)*(chg>=0?1:-1);
+        b.body.position.set(Math.cos(b.a)*b.r,0,Math.sin(b.a)*b.r);
+        b.ring.scale.set(b.r,b.r,1);
+        if(!refresh) return;
+        const up=chg>=0, c=new THREE.Color(up?0x00ffa6:0xff3d6e);
+        b.ball.material.color.copy(c);
+        b.gl.material.color.copy(c);
+        b.ring.material.color.copy(c);
+        b.ring.material.opacity=0.09+agree*0.17;
+        const sz=0.55+Math.min(1.05,Math.abs(chg)*0.16);
+        b.ball.scale.setScalar(sz);
+        const txt=b.p.label+'  '+(up?'+':'')+chg.toFixed(1)+'%';
+        if(txt!==b.txt){ b.txt=txt; b.lbl.draw(txt,up?'#00ffa6':'#ff3d6e',"800 34px 'Heebo', sans-serif",true); }
+      });
+    };
+    rig.dispose=clearBodies;
+  } else if(mode==='clock'){
+    // 🕛 24-HOUR MARKET CLOCK — the dial of the trading day. Each hour is a
+    // bar whose height is that hour's real average candle range from the
+    // loaded history, so the hot hours (London open, NY open) physically
+    // stand up and the dead hours lie flat. A sweeping hand marks the actual
+    // current time, the live hour's bar burns gold, and the price rides the
+    // hub. It answers a question no other view here does: *when* does this
+    // market actually move?
+    const NB=24, R=13.5;
+    const bars=new THREE.InstancedMesh(new THREE.BoxGeometry(1.9,1,1.9),
+      new THREE.MeshBasicMaterial({transparent:true,opacity:0.86}),NB);
+    bars.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    const dial=new THREE.Mesh(new THREE.RingGeometry(R-0.06,R+0.06,96),addMat(0x00f0ff,0.3));
+    dial.rotation.x=-Math.PI/2;
+    const inner=new THREE.Mesh(new THREE.RingGeometry(3.4,3.46,64),addMat(0x00f0ff,0.2));
+    inner.rotation.x=-Math.PI/2;
+    // the sweeping hand — a thin bar from hub to rim at the true time of day
+    const hand=new THREE.Mesh(new THREE.BoxGeometry(R-1,0.09,0.22),addMat(0xffd166,0.85));
+    const handPivot=new THREE.Group(); hand.position.x=(R-1)/2; handPivot.add(hand);
+    const hub=new THREE.Mesh(new THREE.SphereGeometry(1.8,24,18),
+      new THREE.MeshBasicMaterial({color:0x9be8ff,transparent:true,opacity:0.95}));
+    const hubGlow=centerGlowSprite(16,0x00f0ff); hubGlow.material.opacity=0.5;
+    group.add(bars,dial,inner,handPivot,hub,hubGlow);
+    // hour labels every three hours — enough to orient without clutter
+    const marks=[];
+    for(let h=0;h<24;h+=3){
+      const s=textSprite(128,64,2.4,1.2);
+      const a=(h/24)*Math.PI*2-Math.PI/2;
+      s.sp.position.set(Math.cos(a)*(R+2.2),0.2,Math.sin(a)*(R+2.2));
+      s.draw(String(h).padStart(2,'0'),'#9dc4d8',"700 34px 'JetBrains Mono', monospace");
+      group.add(s.sp); marks.push(s);
+    }
+    const hotLbl=textSprite(512,96,13,2.4); hotLbl.sp.position.y=-4.2; group.add(hotLbl.sp);
+    const M=new THREE.Matrix4(), Q=new THREE.Quaternion(), P=new THREE.Vector3(), S=new THREE.Vector3();
+    const cc=new THREE.Color();
+    let buckets=new Array(NB).fill(0), calc=99, hotTxt='';
+    function recalc(){
+      const sum=new Array(NB).fill(0), n=new Array(NB).fill(0);
+      for(const c of state.candles){
+        if(!c||!(c.o>0)) continue;
+        const h=new Date(c.t).getHours();
+        sum[h]+=Math.abs(c.h-c.l)/c.o*100; n[h]++;
+      }
+      buckets=sum.map((v,i)=>n[i]?v/n[i]:0);
+      const mx=Math.max(...buckets);
+      if(mx>0){
+        const hot=buckets.indexOf(mx);
+        const txt='השעה החמה: '+String(hot).padStart(2,'0')+':00 · טווח ממוצע '+mx.toFixed(2)+'%';
+        if(txt!==hotTxt){ hotTxt=txt; hotLbl.draw(txt,'#ffd166',"700 34px 'Heebo', sans-serif",true); }
+      }
+    }
+    rig.update=(dt,t,yH,col)=>{
+      group.position.y=lerp(group.position.y||yH,yH,0.12);
+      calc+=dt; if(calc>2){ calc=0; recalc(); }
+      const now=new Date();
+      const hNow=now.getHours(), tod=hNow+now.getMinutes()/60+now.getSeconds()/3600;
+      handPivot.rotation.y=-((tod/24)*Math.PI*2)+Math.PI/2;
+      const mx=Math.max(0.0001,...buckets);
+      for(let i=0;i<NB;i++){
+        const v=buckets[i]/mx;                       // 0..1 of the busiest hour
+        const hgt=0.5+v*9;
+        const a=(i/NB)*Math.PI*2-Math.PI/2;
+        const live=(i===hNow);
+        P.set(Math.cos(a)*R,hgt/2,Math.sin(a)*R);
+        S.set(1,hgt,1);
+        Q.setFromAxisAngle(new THREE.Vector3(0,1,0),-a);
+        M.compose(P,Q,S); bars.setMatrixAt(i,M);
+        if(live) cc.setHex(0xffd166);
+        else if(buckets[i]<=0) cc.setRGB(0.22,0.32,0.40);
+        else cc.copy(col).lerp(new THREE.Color(0xffffff),v*0.4);
+        bars.setColorAt(i,cc);
+      }
+      bars.instanceMatrix.needsUpdate=true;
+      if(bars.instanceColor) bars.instanceColor.needsUpdate=true;
+      dial.material.color.copy(col);
+      inner.material.color.copy(col);
+      hub.material.color.copy(col).lerp(new THREE.Color(0xffffff),0.35);
+      hubGlow.material.color.copy(col);
+      const s=14+Math.sin(t*1.6)*1.2; hubGlow.scale.set(s,s,1);
     };
   }
   centerRig=rig;
@@ -4479,8 +4654,52 @@ function podHist(p){
   p.hist.push(p.price);
   if(p.hist.length>90) p.hist.shift();
 }
+// ── THE BREADTH STADIUM — the horizon itself is an instrument. A ring of
+// 72 pillars surrounds the arena; each one is a live market, its height is
+// how hard that market is moving today and its colour which way. Standing
+// anywhere in the world you can read market breadth — how much of the tape
+// agrees — off the skyline, without opening a single panel.
+const BREADTH_N=72, BREADTH_R=118;
+const breadthMesh=new THREE.InstancedMesh(
+  new THREE.BoxGeometry(4.2,1,4.2),
+  new THREE.MeshBasicMaterial({transparent:true,opacity:0.5,blending:THREE.AdditiveBlending,depthWrite:false}),
+  BREADTH_N);
+breadthMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+breadthMesh.frustumCulled=false;
+scene.add(breadthMesh);
+const breadthRing=new THREE.Mesh(new THREE.RingGeometry(BREADTH_R-1.2,BREADTH_R+1.2,180),
+  new THREE.MeshBasicMaterial({color:0x00f0ff,transparent:true,opacity:0.11,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide}));
+breadthRing.rotation.x=-Math.PI/2; breadthRing.position.y=0.2; scene.add(breadthRing);
+{
+  const M=new THREE.Matrix4(), Q=new THREE.Quaternion(), P=new THREE.Vector3(), S=new THREE.Vector3(), C=new THREE.Color();
+  const up=new THREE.Vector3(0,1,0);
+  var updateBreadth=function(t){
+    const live=pods.filter(p=>p.kind!=='pm'&&p.price!=null);
+    for(let i=0;i<BREADTH_N;i++){
+      const a=(i/BREADTH_N)*Math.PI*2;
+      const src=live.length? live[i%live.length] : null;
+      const chg=src? clamp(src.chg,-8,8) : 0;
+      const mag=Math.abs(chg)/8;
+      const h=3+mag*34+Math.sin(t*0.9+i*0.7)*(0.6+mag*1.6);
+      P.set(Math.cos(a)*BREADTH_R,h/2,Math.sin(a)*BREADTH_R);
+      S.set(1,h,1);
+      Q.setFromAxisAngle(up,-a);
+      M.compose(P,Q,S); breadthMesh.setMatrixAt(i,M);
+      if(!src) C.setRGB(0.05,0.12,0.16);
+      else if(chg>=0) C.setRGB(0.0,0.35+mag*0.65,0.42);
+      else C.setRGB(0.35+mag*0.65,0.06,0.24);
+      breadthMesh.setColorAt(i,C);
+    }
+    breadthMesh.instanceMatrix.needsUpdate=true;
+    if(breadthMesh.instanceColor) breadthMesh.instanceColor.needsUpdate=true;
+    const b=(state.bullPct||50)/100;
+    breadthRing.material.color.setRGB(1-b,b,0.55);
+    breadthRing.material.opacity=0.08+0.05*Math.sin(t*1.1);
+  };
+}
 function updatePods(dt,now){
   const t=now*0.001;
+  if(!updatePods._bT||now-updatePods._bT>120){ updatePods._bT=now; try{ updateBreadth(t); }catch(e){} }
   const stocksClosed=!usMarketOpen();
   for(const p of pods){
     // a stock pod outside real trading hours must not drift at all — even
@@ -4995,11 +5214,6 @@ const CHART_STYLES=[
   {id:'depth',   label:'🧊 תלת-מימד',   up:'#00ffa6', dn:'#ff3d6e', mode:'candle', fx:'depth'},
   {id:'glass',   label:'💎 קריסטל',     up:'rgba(0,255,166,.35)', dn:'rgba(255,61,110,.35)', mode:'candle', fx:'glass'},
   {id:'heat',    label:'🔥 מפת חום',    up:'#ffd166', dn:'#ff7a3d', mode:'candle', fx:'heat'},
-  {id:'helix',   label:'🧬 הליקס',      up:'#00ffa6', dn:'#ff2fd6', mode:'helix',  glow:8,  bg:['#020610','#0a0518']},
-  {id:'radial',  label:'🌀 ספירלה',     up:'#7dfbff', dn:'#ff3d6e', mode:'radial', glow:6,  bg:['#010409','#061018']},
-  {id:'eq',      label:'🎚️ אקולייזר',   up:'#c8ff00', dn:'#ff4040', mode:'eq',     glow:7,  bg:['#020204','#070310']},
-  {id:'orbit',   label:'✨ חלקיקים',    up:'#ffd166', dn:'#9b8cff', mode:'orbit',  glow:9,  bg:['#03040c','#0b0716']},
-  {id:'ridge',   label:'🏔️ רכסים',      up:'#34d399', dn:'#0e7d9d', mode:'ridge',  bg:['#020a0c','#03141c']},
 ];
 function chartStyleCfg(){ return CHART_STYLES.find(s=>s.id===naSettings.chartStyle)||CHART_STYLES[0]; }
 function buildChartStyles(){
@@ -5021,6 +5235,93 @@ function heikinAshi(cs){
   }
   return out;
 }
+// ── HISTORY ANALYSIS — everything a trader wants to know about the exact
+// slice of tape on screen: what it did, how violent it was, the worst
+// drawdown inside it, the perfect long and short it contained, where the
+// volume actually traded, and how our own signals did in that window. All of
+// it measured from the candles themselves — nothing here is an estimate. ──
+function windowStats(cs){
+  if(!cs||cs.length<2) return null;
+  let hi=-Infinity,lo=Infinity,vol=0,green=0,body=0,rangeSum=0;
+  let peak=cs[0].h, maxDD=0, trough=cs[0].l, maxRun=0;
+  for(const c of cs){
+    if(c.h>hi) hi=c.h; if(c.l<lo) lo=c.l;
+    vol+=(c.v||0)*c.c;
+    if(c.c>=c.o) green++;
+    body+=Math.abs(c.c-c.o)/Math.max(1e-9,c.o)*100;
+    rangeSum+=Math.abs(c.h-c.l)/Math.max(1e-9,c.o)*100;
+    if(c.h>peak){ peak=c.h; trough=c.l; }
+    else { const dd=(peak-c.l)/peak*100; if(dd>maxDD) maxDD=dd; }
+    if(c.l<trough) trough=c.l;
+    const run=(c.h-trough)/Math.max(1e-9,trough)*100; if(run>maxRun) maxRun=run;
+  }
+  const chg=(cs[cs.length-1].c/cs[0].o-1)*100;
+  // the best trade the window actually contained, in both directions
+  let bestLong=0, minSoFar=cs[0].l, bestShort=0, maxSoFar=cs[0].h;
+  for(const c of cs){
+    minSoFar=Math.min(minSoFar,c.l); maxSoFar=Math.max(maxSoFar,c.h);
+    bestLong=Math.max(bestLong,(c.h-minSoFar)/minSoFar*100);
+    bestShort=Math.max(bestShort,(maxSoFar-c.l)/maxSoFar*100);
+  }
+  return {n:cs.length,from:cs[0].t,to:cs[cs.length-1].t,hi,lo,vol,chg,
+    greenPct:green/cs.length*100, avgBody:body/cs.length, avgRange:rangeSum/cs.length,
+    maxDD, bestLong, bestShort};
+}
+function renderWindowStats(cs,csAll,vStart,vEnd,total,atLive,dec){
+  const el=$('cpWin'); if(!el) return;
+  const s=windowStats(cs); if(!s) return;
+  const num=v=>v.toLocaleString('en-US',{maximumFractionDigits:dec});
+  const pc=v=>(v>=0?'+':'')+v.toFixed(2)+'%';
+  // our own signals that fired inside this window — the honest scoreboard
+  let sigTxt='';
+  try{
+    const inWin=(sigLedger||[]).filter(l=>l.sym===state.sym&&l.at>=s.from&&l.at<=s.to+60000);
+    if(inWin.length){
+      const done=inWin.filter(l=>l.outcome!=null);
+      const won=done.filter(l=>l.outcome>0).length;
+      sigTxt=`<span>אותות המערכת בחלון <b>${inWin.length}</b>${done.length?` · צדקו <b class="${won*2>=done.length?'up':'down'}">${won}/${done.length}</b>`:''}</span>`;
+    }
+  }catch(e){}
+  el.innerHTML=
+     `<span>${atLive?'🔴 חלון חי':'⏪ היסטוריה'} · נרות <b>${s.n}</b> מתוך ${total}</span>`
+    +`<span>${fmtT(s.from)} → ${fmtT(s.to)}</span>`
+    +`<span>שינוי בחלון <b class="${s.chg>=0?'up':'down'}">${pc(s.chg)}</b></span>`
+    +`<span>גבוה <b>${num(s.hi)}</b> · נמוך <b>${num(s.lo)}</b></span>`
+    +`<span>נרות ירוקים <b>${s.greenPct.toFixed(0)}%</b></span>`
+    +`<span>טווח נר ממוצע <b>${s.avgRange.toFixed(2)}%</b></span>`
+    +`<span>דראודאון מקסימלי <b class="down">−${s.maxDD.toFixed(2)}%</b></span>`
+    +`<span>הלונג המושלם <b class="up">+${s.bestLong.toFixed(2)}%</b> · השורט <b class="down">+${s.bestShort.toFixed(2)}%</b></span>`
+    +sigTxt;
+}
+// ── CHART VIEWPORT — zoom + history scroll. `n` = candles on screen (0 =
+// fit everything), `off` = candles hidden past the right edge (0 = pinned to
+// live). While scrolled back we remember the timestamp of the right-most
+// visible candle, so incoming candles push the window instead of dragging
+// the trader's view off the bars they were studying. ──
+const chartView={n:0,off:0,anchorT:0};
+function chartZoom(f,keepRight){
+  const total=state.candles.length||1;
+  const cur=chartView.n||total;
+  const next=Math.round(clamp(cur*f,20,total));
+  if(next===cur) return;
+  chartView.n=next;
+  if(!keepRight) chartView.off=clamp(chartView.off,0,Math.max(0,total-next));
+  chartAnchor(); drawChart();
+}
+function chartPan(bars){
+  const total=state.candles.length||1;
+  const n=chartView.n||total;
+  chartView.off=Math.round(clamp(chartView.off+bars,0,Math.max(0,total-n)));
+  chartAnchor(); drawChart();
+}
+function chartAnchor(){
+  const cs=state.candles, total=cs.length;
+  if(chartView.off<=0){ chartView.anchorT=0; return; }
+  const idx=clamp(total-1-chartView.off,0,total-1);
+  chartView.anchorT=cs[idx]?cs[idx].t:0;
+}
+function chartToLive(){ chartView.off=0; chartView.anchorT=0; drawChart(); }
+function chartResetView(){ chartView.n=0; chartView.off=0; chartView.anchorT=0; drawChart(); }
 function drawChart(){
   const cv=$('chartCv'); if(!cv) return;
   const rect=cv.getBoundingClientRect();
@@ -5036,30 +5337,54 @@ function drawChart(){
     bgGrad.addColorStop(0,sty.bg[0]); bgGrad.addColorStop(1,sty.bg[1]);
     g.fillStyle=bgGrad; g.fillRect(0,0,W,H);
   }
-  const cs=state.candles;
+  const csAll=state.candles;
   $('cpSym').textContent=symLabelText(state.sym);
   $('cpTf').textContent=(TFS.find(t=>t[0]===state.tf)||[,state.tf])[1];
-  if(!cs||cs.length<2){
+  if(!csAll||csAll.length<2){
     g.fillStyle='rgba(157,196,216,.5)'; g.font="13px 'Heebo',sans-serif"; g.textAlign='center';
     g.fillText('טוען נתוני נרות…',W/2,H/2);
     return;
   }
+  // ── zoom + history window. `view.n` is how many candles are on screen and
+  // `view.off` how many are hidden off the right edge; off=0 means "pinned to
+  // live". Every downstream layer keeps working on `cs`, which is now the
+  // VISIBLE slice rather than the whole feed. ──
+  const total=csAll.length;
+  if(chartView.off>0 && chartView.anchorT){
+    // re-derive the offset from the anchored timestamp so a newly closed
+    // candle scrolls the tape, not the trader's viewport
+    let bi=total-1,bd=Infinity;
+    for(let i=0;i<total;i++){ const d2=Math.abs(csAll[i].t-chartView.anchorT); if(d2<bd){bd=d2;bi=i;} }
+    chartView.off=total-1-bi;
+  }
+  chartView.n=Math.round(clamp(chartView.n||total,20,total));
+  chartView.off=Math.round(clamp(chartView.off,0,Math.max(0,total-chartView.n)));
+  const vEnd=total-chartView.off, vStart=Math.max(0,vEnd-chartView.n);
+  const cs=csAll.slice(vStart,vEnd);
+  const atLive=chartView.off===0;
   const dec=(symCfg(state.sym)||{}).dec??2;
   const padL=8,padR=64,padT=10,padB=20, rsiH=cs.length>=15?48:0, gapZ=rsiH?8:0;
   const plotW=W-padL-padR, priceH=H-padT-padB-rsiH-gapZ;
   const priceBottom=padT+priceH, rsiTop=priceBottom+gapZ;
   let hi=-Infinity,lo=Infinity;
   for(const c of cs){ if(c.h>hi) hi=c.h; if(c.l<lo) lo=c.l; }
-  const last=state.lastPrice||cs[cs.length-1].c;
+  // the live price only belongs on the scale while the window is pinned to
+  // live — scrolled back in history it would stretch the axis to nonsense
+  const last=atLive? (state.lastPrice||cs[cs.length-1].c) : cs[cs.length-1].c;
   hi=Math.max(hi,last); lo=Math.min(lo,last);
   const span=Math.max(1e-9,hi-lo), pad=span*0.08;
   hi+=pad; lo-=pad;
   const yFor2=p=>padT+(1-(p-lo)/(hi-lo))*priceH;
   const cw=plotW/cs.length;
   const closes=cs.map(c=>c.c);
-  const e9=emaArr(closes,9), e21=emaArr(closes,21);
-  const boll=cs.length>=20?bollArr(closes,20,2):null;
-  const rsi=rsiH?rsiArr(closes,14):null;
+  // indicators run over the FULL history and are then sliced to the window —
+  // an EMA computed from the left edge of a zoomed window is a different
+  // (wrong) number than the one the market actually printed
+  const closesAll=csAll.map(c=>c.c);
+  const e9=emaArr(closesAll,9).slice(vStart,vEnd), e21=emaArr(closesAll,21).slice(vStart,vEnd);
+  let boll=null;
+  if(csAll.length>=20){ const b=bollArr(closesAll,20,2); boll={up:b.up.slice(vStart,vEnd),lo:b.lo.slice(vStart,vEnd)}; }
+  const rsi=rsiH?rsiArr(closesAll,14).slice(vStart,vEnd):null;
   const xAt=i=>padL+i*cw+cw/2;
   // gridlines + price labels — the core "read it at a glance" upgrade
   g.strokeStyle='rgba(0,240,255,.10)'; g.fillStyle='rgba(157,196,216,.7)';
@@ -5165,96 +5490,6 @@ function drawChart(){
     g.beginPath();
     cs.forEach((c,i)=>{ const x=xAt(i),y=yFor2(c.c); i?g.lineTo(x,y):g.moveTo(x,y); });
     g.strokeStyle=sty.up; g.shadowColor=sty.up; g.lineWidth=2.2; g.stroke();
-  } else if(sty.mode==='helix'){
-    // 🧬 double helix: the price line and its mirror twist around the mid
-    // axis, connected by base-pair rungs colored by the candle's direction
-    const midY=padT+priceH/2;
-    for(let k=0;k<2;k++){
-      g.beginPath();
-      cs.forEach((c,i)=>{
-        const y=yFor2(c.c), off=(y-midY)*(k?-1:1);
-        const x=xAt(i), yy=midY+off*Math.cos(i*0.35)*0.9+(k?6:-6)*Math.sin(i*0.35);
-        i?g.lineTo(x,yy):g.moveTo(x,yy);
-      });
-      g.strokeStyle=k?sty.dn:sty.up; g.shadowColor=k?sty.dn:sty.up; g.lineWidth=2; g.stroke();
-    }
-    cs.forEach((c,i)=>{
-      if(i%4) return;
-      const y=yFor2(c.c), off=y-midY, x=xAt(i), tw=Math.cos(i*0.35)*0.9;
-      const y1=midY+off*tw-6*Math.sin(i*0.35), y2=midY-off*tw+6*Math.sin(i*0.35);
-      g.strokeStyle=c.c>=c.o?sty.up:sty.dn; g.globalAlpha=0.45; g.lineWidth=1;
-      g.beginPath(); g.moveTo(x,y1); g.lineTo(x,y2); g.stroke(); g.globalAlpha=1;
-    });
-  } else if(sty.mode==='radial'){
-    // 🌀 polar spiral: time sweeps the angle, price bends the radius —
-    // the whole session read as one galaxy arm
-    const cxp=padL+plotW/2, cyp=padT+priceH/2, maxR=Math.min(plotW,priceH)/2-8;
-    g.beginPath();
-    cs.forEach((c,i)=>{
-      const fr=i/(cs.length-1);
-      const ang=fr*Math.PI*3.2-Math.PI/2;
-      const rr=maxR*(0.3+0.62*fr)*(0.82+0.36*(c.c-lo)/(hi-lo));
-      const x=cxp+Math.cos(ang)*rr, y=cyp+Math.sin(ang)*rr;
-      i?g.lineTo(x,y):g.moveTo(x,y);
-    });
-    g.strokeStyle=sty.up; g.shadowColor=sty.up; g.lineWidth=2.2; g.stroke();
-    cs.forEach((c,i)=>{
-      if(i%3) return;
-      const fr=i/(cs.length-1), ang=fr*Math.PI*3.2-Math.PI/2;
-      const rr=maxR*(0.3+0.62*fr)*(0.82+0.36*(c.c-lo)/(hi-lo));
-      g.fillStyle=c.c>=c.o?sty.up:sty.dn;
-      g.beginPath(); g.arc(cxp+Math.cos(ang)*rr,cyp+Math.sin(ang)*rr,i===cs.length-1?4:1.6,0,7); g.fill();
-    });
-  } else if(sty.mode==='eq'){
-    // 🎚️ equalizer: every candle is a meter bar rising from the floor,
-    // glowing tip at the close, colored by direction
-    cs.forEach((c,i)=>{
-      const x=xAt(i), yc=yFor2(c.c);
-      const col=c.c>=c.o?sty.up:sty.dn;
-      const bw=Math.max(1.5,cw*0.55);
-      const grd=g.createLinearGradient(0,priceBottom,0,yc);
-      grd.addColorStop(0,'rgba(255,255,255,0.02)'); grd.addColorStop(1,col);
-      g.fillStyle=grd;
-      g.fillRect(x-bw/2,yc,bw,priceBottom-yc);
-      g.fillStyle=col; g.shadowColor=col; g.shadowBlur=8;
-      g.fillRect(x-bw/2,yc-1.5,bw,3);
-      g.shadowBlur=0;
-    });
-  } else if(sty.mode==='orbit'){
-    // ✨ particle orbit: each candle is a star — size by volume, trailing
-    // motion-blur ghosts, the newest one burning brightest
-    let vMax=1; for(const c of cs) if(c.v>vMax) vMax=c.v;
-    cs.forEach((c,i)=>{
-      const x=xAt(i), y=yFor2(c.c);
-      const col=c.c>=c.o?sty.up:sty.dn;
-      const r=1.2+3.4*Math.sqrt((c.v||0)/vMax);
-      for(let k=3;k>=0;k--){
-        g.globalAlpha=k?0.10*(4-k):(i===cs.length-1?1:0.85);
-        g.fillStyle=col; g.shadowColor=col; g.shadowBlur=k?0:10;
-        g.beginPath(); g.arc(x-k*cw*0.45,y,r*(1-k*0.16),0,7); g.fill();
-      }
-      g.globalAlpha=1; g.shadowBlur=0;
-    });
-  } else if(sty.mode==='ridge'){
-    // 🏔️ ridgelines: the session split into three parallax mountain layers,
-    // nearest = most recent third — depth instead of a flat line
-    for(let layer=2;layer>=0;layer--){
-      const from=Math.floor(cs.length*layer/3), to=Math.floor(cs.length*(layer+1)/3);
-      const seg=cs.slice(from,Math.max(to,from+2));
-      const yOff=(2-layer)*10;
-      g.beginPath();
-      seg.forEach((c,i)=>{
-        const gi=from+i, x=xAt(gi), y=yFor2(c.c)+yOff;
-        i?g.lineTo(x,y):g.moveTo(x,y);
-      });
-      const lastX=xAt(Math.max(from,Math.min(cs.length-1,to-1))), firstX=xAt(from);
-      g.lineTo(lastX,priceBottom); g.lineTo(firstX,priceBottom); g.closePath();
-      g.globalAlpha=0.28+layer*0.22;
-      g.fillStyle=layer===2?sty.up:layer===1?'#1d7d6d':sty.dn;
-      g.fill(); g.globalAlpha=1;
-      g.strokeStyle=layer===2?sty.up:'rgba(125,251,255,.4)'; g.lineWidth=layer===2?2:1;
-      g.stroke();
-    }
   } else {
     const disp=sty.mode==='ha'? heikinAshi(cs) : cs;
     disp.forEach((c,i)=>{
@@ -5358,10 +5593,50 @@ function drawChart(){
     }
   }
   // geometry published for the drawing tools (pixel ⇄ price/time)
-  drawChart._geo={padL,padT,priceH,cw,hi,lo,n:cs.length,plotW};
+  drawChart._geo={padL,padT,priceH,cw,hi,lo,n:cs.length,plotW,vStart,vEnd,total,atLive};
+  // ── history mode banner + the window's own statistics. Scrolled back, the
+  // trader is looking at a closed slice of the tape and every number in this
+  // strip describes THAT slice, not the live market. ──
+  renderWindowStats(cs,csAll,vStart,vEnd,total,atLive,dec);
+  if(!atLive){
+    g.save();
+    g.fillStyle='rgba(255,209,102,.16)';
+    g.fillRect(padL,padT,plotW, 18);
+    g.strokeStyle='rgba(255,209,102,.5)'; g.lineWidth=1;
+    g.strokeRect(padL,padT,plotW,priceH);
+    g.fillStyle='rgba(255,209,102,.95)'; g.font="700 11px 'Heebo',sans-serif";
+    g.textAlign='center'; g.textBaseline='top';
+    g.fillText('⏪ מצב היסטוריה · '+fmtT(cs[cs.length-1].t)+' · הקש «חי» לחזרה',padL+plotW/2,padT+4);
+    g.restore();
+  }
   // ── user drawings: levels, trend lines and zones the trader placed ──
   {
     const tAt=ts=>{ let bi=0,bd=Infinity; cs.forEach((c,i)=>{ const d2=Math.abs(c.t-ts); if(d2<bd){bd=d2;bi=i;} }); return xAt(bi); };
+    // ── every signal this system fired inside the visible window, pinned to
+    // the candle it fired on and graded with what the market did next. This
+    // is what turns scrolling back into actual post-trade analysis. ──
+    try{
+      const t0=cs[0].t, t1=cs[cs.length-1].t;
+      const marks=(sigLedger||[]).filter(sg=>sg.sym===state.sym&&sg.at>=t0&&sg.at<=t1);
+      g.save(); g.font="9px 'JetBrains Mono',monospace"; g.textAlign='center';
+      for(const sg of marks){
+        const x=tAt(sg.at), y=yFor2(sg.price);
+        const buy=sg.side==='buy';
+        const col=buy?'#00ffa6':'#ff3d6e';
+        g.fillStyle=col; g.globalAlpha=0.92;
+        g.beginPath();
+        if(buy){ g.moveTo(x,y+9); g.lineTo(x-5,y+18); g.lineTo(x+5,y+18); }
+        else   { g.moveTo(x,y-9); g.lineTo(x-5,y-18); g.lineTo(x+5,y-18); }
+        g.closePath(); g.fill();
+        if(sg.outcome!=null){
+          g.fillStyle=sg.outcome>0?'#00ffa6':'#ff3d6e';
+          g.textBaseline=buy?'top':'bottom';
+          g.fillText((sg.outcome>0?'✓+':'✗')+sg.outcome.toFixed(1)+'%',x,buy?y+20:y-20);
+        }
+        g.globalAlpha=1;
+      }
+      g.restore();
+    }catch(e){}
     const list=drawings[state.sym]||[];
     g.save(); g.lineWidth=1.6; g.font="10px 'JetBrains Mono',monospace"; g.textBaseline='bottom';
     for(const d of list){
@@ -5506,7 +5781,9 @@ function drawChart(){
         +`<i style="width:${bd.sells/tot*100}%;background:#ff3d6e"></i></span>`
         +`<span class="rt-tally">קנייה <b style="color:var(--up)">${bd.buys}</b> · `
         +`ניטרלי <b>${bd.neutral}</b> · מכירה <b style="color:var(--down)">${bd.sells}</b></span>`
-        +(fib?`<span class="rt-tally">📐 פיבונאצ׳י ${fib.up?'עלייה':'ירידה'} · יעד הבא <b style="color:var(--up)">${fib.ext[0].p.toLocaleString('en-US',{maximumFractionDigits:dec})}</b></span>`:'');
+        +(fib?`<span class="rt-tally">📐 פיבונאצ׳י ${fib.up?'עלייה':'ירידה'} · יעד הבא <b style="color:var(--up)">${fib.ext[0].p.toLocaleString('en-US',{maximumFractionDigits:dec})}</b></span>`:'')
+        +(ind&&ind.conf?`<span class="rt-tally">🎯 קונפלואנס <b style="color:${ind.conf>=70?'#00ffa6':ind.conf>=55?'#ffd166':'#ff3d6e'}">${ind.conf}/100</b>${ind.conf<55&&ind.confMiss&&ind.confMiss.length?' · חסר: '+ind.confMiss[0]:''}</span>`:'')
+        +(ind&&ind.manip&&ind.manip.length?`<span class="rt-tally" style="width:100%;color:#ffd166">🎭 ${ind.manip.map(m=>m.t).join(' · ')}</span>`:'');
       bo.innerHTML=bd.rows.map(r=>{
         const col=r.s>0?'#00ffa6':r.s<0?'#ff3d6e':'#546a7b';
         return `<span class="ib-cell" title="${r.t}"><i class="ib-dot" style="background:${col}"></i>`
@@ -5569,7 +5846,9 @@ let chartCross=null;
     const i=clamp(Math.round((x-gm.padL-gm.cw/2)/gm.cw),0,gm.n-1);
     const price=gm.lo+(1-(y-gm.padT)/gm.priceH)*(gm.hi-gm.lo);
     const cs=state.candles;
-    return {i,t:(cs[cs.length-gm.n+i]||cs[cs.length-1]).t,price};
+    // gm.vStart is where the visible window starts in the full history — the
+    // drawing must pin to the candle actually under the finger
+    return {i,t:(cs[gm.vStart+i]||cs[cs.length-1]).t,price};
   };
   cv.addEventListener('pointerdown',e=>{
     if(drawTool==='none') return;
@@ -5597,7 +5876,58 @@ let chartCross=null;
   };
   cv.addEventListener('pointerup',finish);
   cv.addEventListener('pointercancel',finish);
+
+  // ── viewport gestures: wheel zooms, drag scrolls the tape (when no drawing
+  // tool is armed), two fingers pinch-zoom on touch. Exactly the muscle
+  // memory of a real terminal. ──
+  cv.addEventListener('wheel',e=>{
+    if(!chartOpen) return;
+    e.preventDefault();
+    chartZoom(e.deltaY>0?1.18:0.85,true);
+  },{passive:false});
+  let pan=null;
+  const pts=new Map();
+  let pinch=0;
+  cv.addEventListener('pointerdown',e=>{
+    pts.set(e.pointerId,e);
+    if(pts.size===2){ const [a,b]=[...pts.values()]; pinch=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY); pan=null; return; }
+    if(drawTool!=='none') return;
+    const gm=drawChart._geo; if(!gm) return;
+    pan={x:e.clientX,off0:chartView.off,cw:gm.cw};
+    cv.setPointerCapture(e.pointerId);
+  });
+  cv.addEventListener('pointermove',e=>{
+    if(pts.has(e.pointerId)) pts.set(e.pointerId,e);
+    if(pts.size===2 && pinch>0){
+      const [a,b]=[...pts.values()];
+      const d=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
+      if(Math.abs(d-pinch)>14){ chartZoom(d>pinch?0.88:1.14,true); pinch=d; }
+      return;
+    }
+    if(!pan) return;
+    // dragging right walks backwards in time, like pulling the tape along
+    const bars=Math.round((e.clientX-pan.x)/Math.max(1,pan.cw));
+    const total=state.candles.length, n=chartView.n||total;
+    const next=clamp(pan.off0+bars,0,Math.max(0,total-n));
+    if(next!==chartView.off){ chartView.off=next; chartAnchor(); drawChart(); }
+  });
+  const endPan=e=>{ pts.delete(e.pointerId); if(pts.size<2) pinch=0; pan=null; };
+  cv.addEventListener('pointerup',endPan);
+  cv.addEventListener('pointercancel',endPan);
+  cv.addEventListener('pointerleave',endPan);
 }
+// keyboard: arrows scroll history, +/− zoom, End jumps back to live
+addEventListener('keydown',e=>{
+  if(!chartOpen) return;
+  const tag=(e.target&&e.target.tagName)||'';
+  if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT') return;
+  const n=chartView.n||state.candles.length;
+  if(e.key==='ArrowLeft'){ chartPan(Math.max(1,Math.round(n*0.15))); e.preventDefault(); }
+  else if(e.key==='ArrowRight'){ chartPan(-Math.max(1,Math.round(n*0.15))); e.preventDefault(); }
+  else if(e.key==='+'||e.key==='='){ chartZoom(0.8,true); e.preventDefault(); }
+  else if(e.key==='-'||e.key==='_'){ chartZoom(1.25,true); e.preventDefault(); }
+  else if(e.key==='End'){ chartToLive(); e.preventDefault(); }
+});
 
 // ---- 🔊 AI voice lesson — reads the SAME data already computed for the
 // oracle/agent (ind, candleAnalysis, S/R levels) and turns it into a short
@@ -5701,6 +6031,12 @@ $('btnLog').onclick=()=>{ setLog(!logOpen); };
 $('logClose').onclick=()=>{ setLog(false); };
 $('fundClose').onclick=()=>{ $('fundPanel').style.display='none'; };
 document.querySelectorAll('#cpTools .ct[data-tool]').forEach(b=>{ b.onclick=()=>setDrawTool(b.dataset.tool); });
+$('ctZoomIn').onclick=()=>chartZoom(0.72,true);
+$('ctZoomOut').onclick=()=>chartZoom(1.4,true);
+$('ctBack').onclick=()=>chartPan(Math.max(1,Math.round((chartView.n||state.candles.length)*0.4)));
+$('ctFwd').onclick=()=>chartPan(-Math.max(1,Math.round((chartView.n||state.candles.length)*0.4)));
+$('ctLive').onclick=()=>{ chartToLive(); toast('חזרה לנר החי','up'); };
+$('ctFit').onclick=()=>chartResetView();
 $('ctUndo').onclick=()=>{ const l=myDraws(); if(!l.length){ toast('אין שרטוטים לבטל'); return; } l.pop(); saveDrawings(); drawChart(); };
 $('ctClear').onclick=()=>{ drawings[state.sym]=[]; saveDrawings(); drawChart(); toast('השרטוטים ב-'+state.sym+' נמחקו'); };
 setDrawTool('none');
@@ -6095,6 +6431,86 @@ function toast(txt,cls){
   toastTO=setTimeout(()=>e.classList.remove('show'),3400);
 }
 
+// ============================================================
+//  MASTER CAUTION — the cockpit's warning system. Every rule reads a real
+//  measurement already driving the UI; a rule fires ONCE on the rising edge
+//  (never every frame), keeps its chip on screen while the condition holds,
+//  and clears itself the moment it stops being true. Tapping a chip mutes
+//  that rule for ten minutes — an alarm you cannot silence is an alarm
+//  people learn to ignore.
+// ============================================================
+const mcActive=new Map(), mcMuted=new Map();
+let mcAtrAvg=0, mcLastRender='';
+function mcEvaluate(){
+  const out=[], now=Date.now();
+  const ids=Object.keys(positions);
+  const locked=ids.reduce((a,k)=>a+positions[k].margin,0);
+  const equity=wallet.balance+locked;
+  const use=equity>0? locked/equity*100 : 0;
+  if(use>=85) out.push({id:'marg',lvl:'crit',t:`ניצול מרג׳ין ${use.toFixed(0)}% — חשיפה קיצונית`});
+  else if(use>=60) out.push({id:'marg',lvl:'warn',t:`ניצול מרג׳ין ${use.toFixed(0)}%`});
+  // stop / target proximity across every open trade
+  for(const id of ids){
+    const P=positions[id], lp=livePriceFor(P.sym);
+    if(lp==null||!(P.entry>0)) continue;
+    const r=lp/P.entry; if(r>6||r<0.17) continue;
+    const slSpan=Math.abs(P.entry-P.sl)||1e-9, tpSpan=Math.abs(P.tp-P.entry)||1e-9;
+    const toSl=(P.side==='long'?(lp-P.sl):(P.sl-lp))/slSpan;
+    const toTp=(P.side==='long'?(P.tp-lp):(lp-P.tp))/tpSpan;
+    if(toSl<=0.18&&toSl>0) out.push({id:'sl'+id,lvl:'crit',t:`${P.sym} על שפת הסטופ`});
+    else if(toTp<=0.15&&toTp>0) out.push({id:'tp'+id,lvl:'good',t:`${P.sym} כמעט ביעד — שקול לקחת רווח`});
+  }
+  // session loss discipline
+  if(session.pnl<0 && equity>0 && Math.abs(session.pnl)>=equity*0.08)
+    out.push({id:'dd',lvl:'crit',t:`הפסד סשן ${(Math.abs(session.pnl)/equity*100).toFixed(0)}% מהתיק — עצור ובדוק`});
+  // volatility regime change, measured against a slow average of ATR
+  if(ind&&ind.A>0){
+    mcAtrAvg=mcAtrAvg? mcAtrAvg*0.985+ind.A*0.015 : ind.A;
+    if(mcAtrAvg>0&&ind.A>mcAtrAvg*1.8) out.push({id:'vol',lvl:'warn',t:`קפיצת תנודתיות ×${(ind.A/mcAtrAvg).toFixed(1)} — הרחב סטופים`});
+  }
+  const bd=window.__ckBoard;
+  if(bd&&bd.adx>=25) out.push({id:'adx',lvl:'warn',t:`מגמה חזקה · ADX ${bd.adx.toFixed(0)}`});
+  if(ind&&ind.manip&&ind.manip.length){
+    const m=ind.manip.slice().sort((a,b)=>b.w-a.w)[0];
+    out.push({id:'manip',lvl:'warn',t:'🎭 '+m.t});
+  }
+  if(feed&&feed.src==='sim') out.push({id:'sim',lvl:'warn',t:'הזנת סימולציה — לא מחירי אמת'});
+  return out.filter(a=>!(mcMuted.get(a.id)>now));
+}
+function mcTick(){
+  let list=[];
+  try{ list=mcEvaluate(); }catch(e){ return; }
+  const seen=new Set();
+  for(const a of list){
+    seen.add(a.id);
+    const prev=mcActive.get(a.id);
+    if(!prev){
+      mcActive.set(a.id,a);
+      if(a.lvl==='crit'){ beep([[880,0.09],[620,0.09],[880,0.13]]); toast('⚠ '+a.t,'down'); }
+      else if(a.lvl==='good'){ beep([[660,0.08],[990,0.12]]); toast('✓ '+a.t,'up'); }
+      else { beep([[620,0.07],[820,0.09]]); toast('⚠ '+a.t); }
+      try{ if(navigator.vibrate) navigator.vibrate(a.lvl==='crit'?[40,60,40]:25); }catch(e){}
+    } else { prev.t=a.t; prev.lvl=a.lvl; }
+  }
+  for(const id of [...mcActive.keys()]) if(!seen.has(id)) mcActive.delete(id);
+  const el=$('mcStack'); if(!el) return;
+  const order={crit:0,warn:1,good:2};
+  const rows=[...mcActive.values()].sort((a,b)=>order[a.lvl]-order[b.lvl]).slice(0,5);
+  const key=rows.map(r=>r.lvl+r.t).join('|');
+  if(key===mcLastRender) return;
+  mcLastRender=key;
+  el.innerHTML=rows.map(r=>`<span class="mc ${r.lvl}" data-mc="${r.id}" title="הקש כדי להשתיק ל-10 דקות">${r.lvl==='crit'?'⛔':r.lvl==='good'?'✅':'⚠️'} ${r.t}</span>`).join('');
+  el.querySelectorAll('.mc').forEach(n=>{
+    n.onclick=()=>{ mcMuted.set(n.dataset.mc,Date.now()+600000); mcActive.delete(n.dataset.mc); mcLastRender=''; mcTick(); toast('ההתראה הושתקה ל-10 דקות'); };
+  });
+}
+window.__naAlerts={list:()=>[...mcActive.values()],tick:mcTick};
+// test hooks — the viewport state and the live indicator snapshot
+window.__naChartView=chartView;
+window.__naInd=()=>ind?{score:ind.score,conf:ind.conf,verdict:ind.verdict,
+  manip:(ind.manip||[]).map(m=>({id:m.id,bias:m.bias,t:m.t})),confMiss:ind.confMiss}:null;
+window.__naCenterModes=CENTER_MODES.map(m=>m[0]);
+
 let lastHud=0, lastReasons='';
 function updateHud(now){
   if(now-lastHud<250) return; lastHud=now;
@@ -6141,6 +6557,7 @@ function updateHud(now){
       : 'טרם נורה אות בסשן זה';
   }
 
+  mcTick();
   // ── cockpit instruments — every readout is a real measurement, no dressing
   if(cockpitOn){
     const bd0=window.__ckBoard;
@@ -6293,7 +6710,11 @@ function loop(){
     applyCam(dt);
     updateHud(now);
     world.position.x=lerp(world.position.x,worldShiftTarget,Math.min(1,dt*4));
-    if(composer && gfxTier<2){ if(gradePass) gradePass.uniforms.uTime.value=t; composer.render(); } else renderer.render(scene,camera);
+    // uTime drives the grade pass's grain/aberration drift. It used to read a
+    // `t` that does not exist in this scope, which threw on the FIRST frame
+    // with a composer — dropping every machine with working WebGL straight
+    // into the no-bloom safe mode. The whole post stack was invisible.
+    if(composer && gfxTier<2){ if(gradePass) gradePass.uniforms.uTime.value=now*0.001; composer.render(); } else renderer.render(scene,camera);
     if(window.__naSnapReq){
       window.__naSnapReq=false;
       try{
