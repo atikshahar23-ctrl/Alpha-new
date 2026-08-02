@@ -1210,14 +1210,35 @@ function checkPriceAlerts(){
   }
 }
 function livePriceFor(sym){
-  if(sym===state.sym) return state.lastPrice||null;
+  // only trust the focused price when it actually belongs to this symbol
+  if(sym===state.sym) return (state.priceSym===sym && state.lastPrice) ? state.lastPrice : null;
   const p=pods.find(x=>(x.kind==='crypto'||x.kind==='stock')&&x.id===sym);
   return p&&p.price!=null? p.price : null;
 }
 function loadSession(){
   try{
     const raw=JSON.parse(localStorage.getItem('na:session')||'null');
-    if(raw && typeof raw==='object') return Object.assign({pnl:0,trades:0,wins:0,streak:0,bestStreak:0,bestPct:-Infinity,log:[]},raw);
+    if(raw && typeof raw==='object'){
+      const sess=Object.assign({pnl:0,trades:0,wins:0,streak:0,bestStreak:0,bestPct:-Infinity,log:[]},raw);
+      // purge rows produced by the cross-symbol pricing bug — a spot trade
+      // simply cannot print a five-figure percentage
+      const clean=(sess.log||[]).filter(l=>{
+        if(Math.abs(+l.pct||0)>=99 || Math.abs(+l.usd||0)>=1e6) return false;
+        const e=+l.entry, x=+l.exit;
+        if(e>0&&x>0){ const r=x/e; if(r>6||r<0.17) return false; } // entry and exit from different markets
+        return true;
+      });
+      if(clean.length!==(sess.log||[]).length){
+        sess.log=clean;
+        sess.pnl=clean.reduce((a,l)=>a+(+l.usd||0),0);
+        sess.trades=clean.length;
+        sess.wins=clean.filter(l=>(+l.usd||0)>=0).length;
+        sess.bestPct=clean.length? Math.max(...clean.map(l=>+l.pct||0)) : -Infinity;
+        sess.streak=0;
+        try{ localStorage.setItem('na:session',JSON.stringify(sess)); }catch{}
+      }
+      return sess;
+    }
   }catch{}
   return {pnl:0,trades:0,wins:0,streak:0,bestStreak:0,bestPct:-Infinity,log:[]};
 }
@@ -1309,7 +1330,12 @@ function startFeed(){
   stopFeed();
   const f={stopped:false,ws:null,timers:[],mode:'connecting'};
   feed=f; setBadge('connecting');
-  state.candles=[]; ind=null; lastSignal=null;
+  // The price belongs to a SYMBOL. Until the new feed delivers its first
+  // tick, the old symbol's price is still sitting in state.lastPrice —
+  // valuing every open position against the wrong market (a NEAR entry at
+  // $3 marked against BTC at $118,000 = the impossible -3,714,888% seen in
+  // the journal) and firing instant phantom stops. priceSym gates it.
+  state.candles=[]; ind=null; lastSignal=null; state.priceSym=null;
   state.buyAcc=1; state.sellAcc=1;
   sig.relClosed=0; sig.prevScore=null; sig.lastFire=0;
   tailSamples.length=0;
@@ -1618,7 +1644,7 @@ function startSim(f){
 function onInit(cs){
   state.candles=cs.slice(-N);
   retargetScale(true);
-  state.lastPrice=cs[cs.length-1].c;
+  state.lastPrice=cs[cs.length-1].c; state.priceSym=state.sym;
   state.prevPrice=state.lastPrice;
   simAnchor[state.sym]=state.lastPrice;
   computeSignals();
@@ -1632,7 +1658,7 @@ function onInit(cs){
 }
 function onTick(c){
   state.prevPrice=state.lastPrice;
-  state.lastPrice=c.c;
+  state.lastPrice=c.c; state.priceSym=state.sym;
   simAnchor[state.sym]=c.c;
   retargetScale(false);
   indDirty=true;
@@ -2163,6 +2189,13 @@ function moveToBreakeven(id){
 }
 function posPnlPct(P,sym){
   const lp=livePriceFor(sym||P.sym);
+  // a single mark can never move a spot position by more than ~99% down or
+  // a few hundred percent up; anything past that is a mismatched feed, not
+  // a trade result — report flat instead of inventing a number
+  if(lp!=null && P.entry>0){
+    const r=lp/P.entry;
+    if(r>6||r<0.17) return 0;
+  }
   if(lp==null) return 0;
   return (lp/P.entry-1)*100*(P.side==='long'?1:-1);
 }
@@ -2211,6 +2244,7 @@ function checkAllPositions(){
   Object.keys(positions).forEach(id=>{
     const P=positions[id], lp=livePriceFor(P.sym);
     if(lp==null) return;
+    if(P.entry>0){ const r=lp/P.entry; if(r>6||r<0.17) return; } // mismatched feed — never auto-close on it
     // trailing stop: the stop follows a winning trade up (or down) and
     // never gives ground back
     if(P.trail>0){
