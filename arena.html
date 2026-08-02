@@ -727,7 +727,8 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
     <button class="rc-risk" data-r="2">2%</button>
   </div>
   <div id="rcSizing"></div>
-  <div class="rc-h">🎯 ספר האותות <span class="rc-sub" id="rcHit"></span></div>
+  <div class="rc-h">🎯 ספר האותות <span class="rc-sub" id="rcHit"></span>
+    <button id="rcClear" style="float:left;background:none;border:1px solid rgba(255,61,110,.4);color:var(--down);border-radius:6px;font-size:10px;padding:2px 8px;cursor:pointer">נקה ספר</button></div>
   <div id="rcLedger"></div>
   <div class="disc" style="margin-top:10px">מדידה עצמית של אותות המערכת · אינו ייעוץ השקעות · מסחר אמיתי באחריותך בלבד</div>
 </div>
@@ -2029,6 +2030,7 @@ function setRecs(on){
 }
 $('btnRecs').onclick=()=>setRecs(!recsOpen);
 $('recsClose').onclick=()=>setRecs(false);
+$('rcClear').onclick=()=>{ sigLedger=[]; saveSigLedger(); renderRecs(); toast('ספר האותות נוקה'); };
 document.querySelectorAll('.rc-risk').forEach(b=>{
   b.onclick=()=>{ recsRisk=parseFloat(b.dataset.r);
     document.querySelectorAll('.rc-risk').forEach(x=>x.classList.toggle('on',x===b));
@@ -2036,6 +2038,7 @@ document.querySelectorAll('.rc-risk').forEach(b=>{
 });
 setInterval(()=>{ if(recsOpen) renderRecs(); },5000);
 setInterval(freezeOutcomes,120000);
+setTimeout(freezeOutcomes,15000); // grade overnight signals as soon as prices arrive
 
 // ============================================================
 //  LIVE COMMENTATOR — a sports-caster for the chart. Watches every tick
@@ -2163,6 +2166,9 @@ function commTick(){
       state.sym+' trading around '+fmtP(lp)+(vwap!=null?(lp>=vwap?', holding above VWAP — buyers in control of the session.':', stuck below VWAP — sellers own this session.'):'.'),
       'RSI at '+(R|0)+' — '+(R>60?'bulls in charge.':R<40?'bears pressing.':'balanced tape. Patience pays: the best trades come to you.'),
       'Remember: amateurs focus on how much they can make, professionals on how much they can lose.',
+      ...((()=>{ const done=sigLedger.filter(x=>x.outcome!=null); if(done.length<5) return [];
+        const hits=done.filter(x=>x.outcome>0).length;
+        return ['Full transparency: my measured signal accuracy so far is '+Math.round(100*hits/done.length)+' percent over '+done.length+' graded calls. Trust the tape, not the talker.']; })()),
     ];
     chosen={p:0,t:color[(commColorIdx++)%color.length]};
     commColorAt=nowT;
@@ -2228,8 +2234,10 @@ $('posStrip').addEventListener('click',e=>{
 });
 $('logCsv').onclick=()=>{
   if(!session.log.length){ toast('אין עסקאות ביומן עדיין','down'); return; }
-  const rows=[['symbol','side','entry','exit','pct','usd','time']].concat(
-    session.log.map(l=>[l.sym,l.side,l.entry,l.exit,(+l.pct).toFixed(2),(+l.usd).toFixed(2),new Date(l.at).toISOString()]));
+  const rows=[['symbol','side','entry','exit','pct','usd','time','close_reason','tp','sl','margin','lev','duration_min','entry_score','entry_verdict','data_src','why']].concat(
+    session.log.map(l=>[l.sym,l.side,l.entry,l.exit,(+l.pct).toFixed(2),(+l.usd).toFixed(2),new Date(l.at).toISOString(),
+      l.reason||'',l.tp||'',l.sl||'',l.margin||'',l.lev||'',l.durMin||'',l.score??'',(l.verdict||'').replace(/,/g,';'),l.src||'',
+      (l.why||[]).join(' | ').replace(/,/g,';')]));
   const a=document.createElement('a');
   a.download='nexus-trades.csv';
   a.href='data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent(rows.map(r=>r.join(',')).join('\n'));
