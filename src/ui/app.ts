@@ -189,7 +189,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="wm-hg">HEAVY GUARD OS</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v361 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="wm-hg">HEAVY GUARD OS</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v362 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip apps-chip" id="appsBtn" title="האפליקציות שלי" aria-label="האפליקציות שלי">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="12" cy="19" r="2"/><circle cx="19" cy="19" r="2"/></svg>
@@ -1002,7 +1002,7 @@ export function mountApp(root: HTMLElement) {
   try {
     orb = mountOrb($('stage'));
     buildOrbitalMenu();
-    if (!ORB_MINIMAL) startBgFx();
+    startBgFx(); // always: in minimal mode it runs flow-only (see FLOW_ONLY)
     runBootSequence();
     startParallax();
     // JARVIS focus mode: while the user grabs the 3D stage (rotating or
@@ -4437,17 +4437,31 @@ export function mountApp(root: HTMLElement) {
     resize();
     window.addEventListener('resize', resize);
     const mobile = innerWidth < 860;
+    // In the lightweight orb mode we still want the flow current (it is the
+    // platform's signature ambience) but none of the heavier constellation
+    // layers — emptying their arrays makes the existing draw loops no-ops.
+    const FLOW_ONLY = ORB_MINIMAL;
     const R = (a: number, b: number) => a + Math.random() * (b - a);
-    const stars = Array.from({ length: mobile ? 40 : 85 }, () => ({ x: Math.random(), y: Math.random(), r: R(0.4, 1.5), p: R(0, 7), s: R(0.002, 0.012) }));
-    const nodes = Array.from({ length: mobile ? 11 : 22 }, () => ({ x: Math.random(), y: Math.random(), vx: R(-0.012, 0.012), vy: R(-0.009, 0.009) }));
+    const stars = Array.from({ length: FLOW_ONLY ? 0 : (mobile ? 40 : 85) }, () => ({ x: Math.random(), y: Math.random(), r: R(0.4, 1.5), p: R(0, 7), s: R(0.002, 0.012) }));
+    const nodes = Array.from({ length: FLOW_ONLY ? 0 : (mobile ? 11 : 22) }, () => ({ x: Math.random(), y: Math.random(), vx: R(-0.012, 0.012), vy: R(-0.009, 0.009) }));
     const pulses: { a: number; b: number; t: number; v: number }[] = [];
+    // ── flow field, ported from the NeuroSomatic engine: particles ride a
+    // sin/cos vector field, drift, decay and respawn. Same maths, tuned to
+    // Alpha's gold/cyan palette so it reads as the platform's own current. ──
+    type FlowP = { x: number; y: number; vx: number; vy: number; age: number; sp: number; hue: number };
+    const FLOW_N = FLOW_ONLY ? (mobile ? 190 : 430) : (mobile ? 260 : 620);
+    const flow: FlowP[] = Array.from({ length: FLOW_N }, () => ({
+      x: Math.random(), y: Math.random(), vx: 0, vy: 0,
+      age: Math.random() * 200, sp: R(0.5, 1.5), hue: R(-18, 26),
+    }));
+    let flowT = 0;
     // Data-driven nebula: market volatility (__mktVol 0..1) scales the
     // aurora and the pulse rate; a data refresh fires __bgfxPulse → the
     // mesh visibly surges and the nodes vibrate for a moment.
     let burst = 0;
     (window as any).__bgfxPulse = () => { burst = 1; };
     let comet: { x: number; y: number; vx: number; vy: number; life: number } | null = null;
-    let nextComet = R(2, 6);
+    let nextComet = FLOW_ONLY ? Infinity : R(2, 6);
     const auroras = [0, 1, 2].map((i) => ({ cx: 0.2 + i * 0.3, cy: 0.25 + (i % 2) * 0.4, r: R(0.24, 0.4), hue: i === 1 ? '46,230,255' : '228,188,99', ph: R(0, 7) }));
     let last = performance.now();
     const tick = (now: number) => {
@@ -4457,6 +4471,23 @@ export function mountApp(root: HTMLElement) {
       if (document.hidden || !W) return;
       ctx.clearRect(0, 0, W, H);
       ctx.globalCompositeOperation = 'lighter';
+      // ── flow current (drawn first so the constellation stays on top) ──
+      flowT += 0.0042;
+      const FQ = 2.6, AMP = 5.2, INT = 0.55 + burst * 0.5;
+      for (const f of flow) {
+        const ang = (Math.sin(f.x * FQ * 6.2 + flowT) + Math.cos(f.y * FQ * 6.2 + flowT)) * Math.PI * INT * AMP;
+        f.vx += Math.cos(ang) * 0.00028;
+        f.vy += Math.sin(ang) * 0.00028;
+        f.x += f.vx * f.sp; f.y += f.vy * f.sp;
+        f.vx *= 0.94; f.vy *= 0.94;
+        f.age += 0.5;
+        if (f.x < 0 || f.x > 1 || f.y < 0 || f.y > 1 || f.age > 200) {
+          f.x = Math.random(); f.y = Math.random(); f.vx = 0; f.vy = 0; f.age = 0;
+        }
+        const a = Math.min(1, (200 - f.age) / 60) * (0.28 + burst * 0.3);
+        ctx.fillStyle = `hsla(${(42 + f.hue + Math.sin(flowT) * 14 + 360) % 360}, 82%, 62%, ${a})`;
+        ctx.fillRect(f.x * W, f.y * H, 1.4, 1.4);
+      }
       const t = now / 1000;
       const vol = Math.min(1, Number((window as any).__mktVol) || 0);
       if (burst > 0) burst = Math.max(0, burst - dt * 0.6);

@@ -995,7 +995,7 @@ const TF_SEC = {'1m':60,'5m':300,'15m':900,'1h':3600,'4h':14400,'1d':86400};
 const NA_DEFAULTS={
   qualityMode:'auto',      // אוטומטי · מקסימלית · בינונית · נמוכה
   exposure:1.0,            // renderer.toneMappingExposure (active only with bloom) — kept modest to avoid glare on real displays
-  showMotes:true, showComets:true, showStreams:true, showWeather:true, showPulse:true,
+  showMotes:true, showComets:true, showStreams:true, showWeather:true, showPulse:true, showSwarm:true,
   walkSpeed:18, lookSens:1.0, invertY:false,
   alertsEnabled:true, alertPct:3,
   chartStyle:'classic', centerMode:'classic',
@@ -2769,6 +2769,74 @@ try{
 
 const addMat=(hex,op)=>new THREE.MeshBasicMaterial({color:hex,transparent:true,opacity:op,blending:THREE.AdditiveBlending,depthWrite:false});
 
+// ═══ ENERGY SWARMS — the NeuroSomatic flow field, lifted into 3D. Three
+// clouds ride a sin/cos vector field around the arena, each orbiting the
+// world on its own slow path, tinted by the market's live momentum so the
+// ambience actually carries information instead of just looking alive. ═══
+const SWARM_CLOUDS=3, SWARM_N=260;
+const swarms=[];
+// built lazily on the first frame: the particle shaders these Points use are
+// declared further down the file, so constructing at module top-level would
+// hit their temporal dead zone and abort the whole boot
+let swarmsReady=false;
+function initSwarms(){
+  if(swarmsReady) return; swarmsReady=true;
+  for(let c=0;c<SWARM_CLOUDS;c++){
+    const pos=new Float32Array(SWARM_N*3), col=new Float32Array(SWARM_N*3), sz=new Float32Array(SWARM_N);
+    const seeds=[];
+    for(let i=0;i<SWARM_N;i++){
+      seeds.push({x:rnd(-1,1),y:rnd(0,1),z:rnd(-1,1),vx:0,vy:0,vz:0,age:rnd(0,200),sp:rnd(0.5,1.6)});
+      sz[i]=rnd(0.6,2.2);
+    }
+    const g=new THREE.BufferGeometry();
+    g.setAttribute('position',new THREE.BufferAttribute(pos,3));
+    g.setAttribute('aColor',new THREE.BufferAttribute(col,3));
+    g.setAttribute('aSize',new THREE.BufferAttribute(sz,1));
+    g.setAttribute('aAlpha',new THREE.BufferAttribute(new Float32Array(SWARM_N).fill(1),1));
+    const pts=new THREE.Points(g,new THREE.ShaderMaterial({
+      uniforms:{}, vertexShader:PARTICLE_VS, fragmentShader:PARTICLE_FS,
+      transparent:true, depthWrite:false, blending:THREE.AdditiveBlending,
+    }));
+    pts.frustumCulled=false;
+    scene.add(pts);
+    swarms.push({pts,seeds,pos,col,alpha:g.attributes.aAlpha.array,
+      orbitR:rnd(46,96), orbitA:rnd(0,6.28), orbitSp:rnd(0.035,0.075)*(c%2?-1:1),
+      height:rnd(6,26), spread:rnd(11,20), phase:rnd(0,6.28)});
+  }
+}
+function updateSwarms(dt,t,tint){
+  if(!naSettings.showSwarm){ swarms.forEach(s2=>{ s2.pts.visible=false; }); return; }
+  if(!swarmsReady){ try{ initSwarms(); }catch(e){ swarmsReady=true; return; } }
+  const FQ=0.055, AMP=4.4, INT=0.55;
+  for(const sw of swarms){
+    sw.pts.visible=true;
+    sw.orbitA+=sw.orbitSp*dt;
+    const cx=Math.cos(sw.orbitA)*sw.orbitR, cz=Math.sin(sw.orbitA)*sw.orbitR;
+    const cy=sw.height+Math.sin(t*0.35+sw.phase)*5;
+    for(let i=0;i<SWARM_N;i++){
+      const p2=sw.seeds[i];
+      // the flow field: identical shape to the NeuroSomatic engine, in 3D
+      const a1=(Math.sin(p2.x*FQ*60+t)+Math.cos(p2.z*FQ*60+t))*Math.PI*INT*AMP;
+      const a2=(Math.sin(p2.y*FQ*60+t*0.8)+Math.cos(p2.x*FQ*60+t))*Math.PI*INT*AMP;
+      p2.vx+=Math.cos(a1)*0.0016; p2.vz+=Math.sin(a1)*0.0016; p2.vy+=Math.sin(a2)*0.0011;
+      p2.x+=p2.vx*p2.sp; p2.y+=p2.vy*p2.sp; p2.z+=p2.vz*p2.sp;
+      p2.vx*=0.94; p2.vy*=0.94; p2.vz*=0.94;
+      p2.age+=0.6;
+      if(p2.age>200||Math.abs(p2.x)>1.4||Math.abs(p2.z)>1.4||p2.y<-0.4||p2.y>1.5){
+        p2.x=rnd(-1,1); p2.y=rnd(0,1); p2.z=rnd(-1,1); p2.vx=p2.vy=p2.vz=0; p2.age=0;
+      }
+      sw.pos[i*3]=cx+p2.x*sw.spread;
+      sw.pos[i*3+1]=cy+p2.y*sw.spread*0.55;
+      sw.pos[i*3+2]=cz+p2.z*sw.spread;
+      sw.col[i*3]=tint.r; sw.col[i*3+1]=tint.g; sw.col[i*3+2]=tint.b;
+      sw.alpha[i]=Math.min(1,(200-p2.age)/70)*0.72;
+    }
+    sw.pts.geometry.attributes.position.needsUpdate=true;
+    sw.pts.geometry.attributes.aColor.needsUpdate=true;
+    sw.pts.geometry.attributes.aAlpha.needsUpdate=true;
+  }
+}
+
 function radialTex(inner,outer){
   const c=document.createElement('canvas'); c.width=c.height=256;
   const g=c.getContext('2d');
@@ -3593,6 +3661,7 @@ function updateWorld(dt,now){
   state.flare*=Math.pow(0.35,dt);
   state.flareCol.lerp(C_CY,0.02);
 
+  updateSwarms(dt,t,tmpC);
   // floor light-spill follows the core's color, breathes gently, and gets
   // brighter the lower the core hangs (closer light = stronger pool)
   spill.material.color.copy(tmpC).lerp(state.flareCol,0.3);
@@ -5229,6 +5298,7 @@ const SETTINGS_SCHEMA=[
     {key:'showMotes', type:'checkbox', label:'אבק אור מרחף', desc:'חלקיקי זוהר עדינים באוויר'},
     {key:'showComets', type:'checkbox', label:'כוכבים נופלים', desc:'שביטים איטיים בשמיים'},
     {key:'showStreams', type:'checkbox', label:'זרמי נתונים', desc:'חלקיקי אור מכל פוד אל הזירה המרכזית'},
+    {key:'showSwarm', type:'checkbox', label:'נחילי אנרגיה', desc:'זרמי חלקיקים חיים שנעים בעולם — צבועים לפי כיוון השוק'},
     {key:'showWeather', type:'checkbox', label:'מזג אוויר של השוק', desc:'סופה בירידות, זוהר צפוני בעליות — לפי מצב הרוח הכללי'},
     {key:'showPulse', type:'checkbox', label:'פאנל דופק העולם', desc:'המובילים והמפסידים בפינה השמאלית'},
     {key:'centerMode', type:'select', label:'תצוגת המודל המרכזי', desc:'איך המחיר החי מוצג בלב הזירה', options:CENTER_MODES},
@@ -5719,6 +5789,7 @@ function applyVisualToggles(){
   comets.forEach(c=>{ c.sp.visible=naSettings.showComets; });
   if(typeof streamGroup!=='undefined') streamGroup.visible=naSettings.showStreams;
   if(typeof weatherPts!=='undefined' && weatherPts) weatherPts.visible=naSettings.showWeather;
+  if(typeof swarms!=='undefined') swarms.forEach(s2=>{ s2.pts.visible=!!naSettings.showSwarm; });
   const pp=document.getElementById('pulsePanel');
   if(pp) pp.style.display=naSettings.showPulse?'':'none'; // '' → the responsive CSS rules stay in charge when shown
   const tapeIn=document.getElementById('tapeIn');
