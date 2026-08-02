@@ -2521,6 +2521,10 @@ const CENTER_MODES=[
   ['bolt','⚡ עמוד ברקים'], ['planet','🪐 כוכב טבעות'], ['crystal','🧊 קריסטל צף'],
   ['ribbon','🌀 סליל היסטוריה'], ['flame','🔥 להבת שוק'], ['hole','🕳 חור שחור'],
   ['radar','📡 רדאר'], ['obelisk','🗿 אובליסק'],
+  // ── real 3D CHART inventions (not decor): each renders the actual market
+  // data as a spatial chart you can read while standing in the arena ──
+  ['wall','🕯️ קיר נרות 3D'], ['river','🌊 נהר המחיר'], ['vortex','🌀 מערבולת זמן'],
+  ['depth','🏔️ הר נזילות'], ['profile','📊 פרופיל נפח'],
 ];
 let centerRig=null;
 function disposeCenterRig(){
@@ -2689,6 +2693,193 @@ function buildCenterRig(mode){
       wire.rotation.y+=dt*0.7; inner.rotation.y-=dt*0.5;
       wire.material.color.copy(col); inner.material.color.copy(col).lerp(new THREE.Color(0xffffff),0.35);
       tip.material.color.copy(col);
+    };
+  } else if(mode==='wall'){
+    // 🕯️ CANDLE WALL — the candlestick chart itself, built as real 3D
+    // bodies and wicks standing in the arena. Price maps to the same
+    // vertical axis as the battle column, so levels line up visually.
+    const NW=64, dObj=new THREE.Object3D(), cc=new THREE.Color();
+    const bodies=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),
+      new THREE.MeshBasicMaterial({transparent:true,opacity:0.93}),NW);
+    const wicks=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),
+      new THREE.MeshBasicMaterial({transparent:true,opacity:0.5}),NW);
+    bodies.frustumCulled=wicks.frustumCulled=false;
+    group.add(bodies,wicks);
+    rig.update=(dt,t,yH,col)=>{
+      const cs=state.candles; if(!cs||cs.length<2) return;
+      const use=cs.slice(-NW);
+      let hi=-Infinity,lo=Infinity;
+      for(const c of use){ if(c.h>hi)hi=c.h; if(c.l<lo)lo=c.l; }
+      const span=Math.max(1e-9,hi-lo);
+      const yOf=p=>COL_B+2+((p-lo)/span)*(COL_T-COL_B-6);
+      const W=26, step=W/NW;
+      group.rotation.y=Math.sin(t*0.12)*0.5; // gentle sweep, never a full spin
+      for(let i=0;i<NW;i++){
+        const c=use[i];
+        if(!c){ dObj.scale.set(0,0,0); dObj.updateMatrix(); bodies.setMatrixAt(i,dObj.matrix); wicks.setMatrixAt(i,dObj.matrix); continue; }
+        const x=-W/2+i*step+step/2;
+        const yo=yOf(c.o), ycl=yOf(c.c), yh=yOf(c.h), yl=yOf(c.l);
+        const up=c.c>=c.o;
+        cc.set(up?0x00ffa6:0xff3d6e);
+        dObj.rotation.set(0,0,0);
+        dObj.position.set(x,(yo+ycl)/2,0);
+        dObj.scale.set(step*0.72,Math.max(0.08,Math.abs(ycl-yo)),step*0.72);
+        dObj.updateMatrix(); bodies.setMatrixAt(i,dObj.matrix); bodies.setColorAt(i,cc);
+        dObj.position.set(x,(yh+yl)/2,0);
+        dObj.scale.set(step*0.15,Math.max(0.08,yh-yl),step*0.15);
+        dObj.updateMatrix(); wicks.setMatrixAt(i,dObj.matrix); wicks.setColorAt(i,cc);
+      }
+      bodies.instanceMatrix.needsUpdate=wicks.instanceMatrix.needsUpdate=true;
+      if(bodies.instanceColor) bodies.instanceColor.needsUpdate=true;
+      if(wicks.instanceColor) wicks.instanceColor.needsUpdate=true;
+    };
+  } else if(mode==='river'){
+    // 🌊 PRICE RIVER — a flowing ribbon: length is time, height is price,
+    // and the ribbon's WIDTH is traded volume. Thin stretches = no
+    // conviction, wide stretches = where the real business happened.
+    const NR=90;
+    const geo=new THREE.PlaneGeometry(1,1,NR-1,1);
+    const cols=new Float32Array((NR*2)*3);
+    geo.setAttribute('color',new THREE.BufferAttribute(cols,3));
+    const mesh=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({vertexColors:true,
+      transparent:true,opacity:0.8,side:THREE.DoubleSide,blending:THREE.AdditiveBlending,depthWrite:false}));
+    const crest=new THREE.Line(new THREE.BufferGeometry().setAttribute('position',
+      new THREE.BufferAttribute(new Float32Array(NR*3),3)),
+      new THREE.LineBasicMaterial({color:0x9be8ff,transparent:true,opacity:0.9}));
+    group.add(mesh,crest);
+    rig.update=(dt,t,yH,col)=>{
+      const cs=state.candles; if(!cs||cs.length<2) return;
+      const use=cs.slice(-NR);
+      let hi=-Infinity,lo=Infinity,vMax=1e-9;
+      for(const c of use){ if(c.h>hi)hi=c.h; if(c.l<lo)lo=c.l; if((c.v||0)>vMax)vMax=c.v; }
+      const span=Math.max(1e-9,hi-lo);
+      const yOf=p=>COL_B+2+((p-lo)/span)*(COL_T-COL_B-6);
+      const W=28, step=W/NR;
+      const pos=geo.attributes.position.array, cpos=crest.geometry.attributes.position.array;
+      for(let i=0;i<NR;i++){
+        const c=use[i]||use[use.length-1];
+        const x=-W/2+i*step, y=yOf(c.c);
+        const w=1+3.4*Math.sqrt((c.v||0)/vMax); // volume → half-width
+        pos[i*3]=x;        pos[i*3+1]=y; pos[i*3+2]=w;        // top row
+        pos[(NR+i)*3]=x;   pos[(NR+i)*3+1]=y; pos[(NR+i)*3+2]=-w; // bottom row
+        cpos[i*3]=x; cpos[i*3+1]=y+0.15; cpos[i*3+2]=0;
+        const up=c.c>=c.o, r=up?0:1, g2=up?1:0.24, b=up?0.65:0.43;
+        cols[i*3]=r; cols[i*3+1]=g2; cols[i*3+2]=b;
+        cols[(NR+i)*3]=r; cols[(NR+i)*3+1]=g2; cols[(NR+i)*3+2]=b;
+      }
+      geo.attributes.position.needsUpdate=true;
+      geo.attributes.color.needsUpdate=true;
+      crest.geometry.attributes.position.needsUpdate=true;
+      group.rotation.y=Math.sin(t*0.1)*0.42;
+    };
+  } else if(mode==='vortex'){
+    // 🌀 TIME VORTEX — candles spiral INWARD: the newest bar sits at the
+    // centre, older bars fan outward. Market structure read radially —
+    // a tightening spiral means compression, a flaring one means expansion.
+    const NV=96, dObj=new THREE.Object3D(), cc=new THREE.Color();
+    const bars=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),
+      new THREE.MeshBasicMaterial({transparent:true,opacity:0.9}),NV);
+    bars.frustumCulled=false;
+    const eye=centerGlowSprite(7,0x00f0ff);
+    group.add(bars,eye);
+    rig.update=(dt,t,yH,col)=>{
+      const cs=state.candles; if(!cs||cs.length<2) return;
+      const use=cs.slice(-NV);
+      let hi=-Infinity,lo=Infinity;
+      for(const c of use){ if(c.h>hi)hi=c.h; if(c.l<lo)lo=c.l; }
+      const span=Math.max(1e-9,hi-lo);
+      const n=use.length;
+      eye.position.y=yH; eye.material.color.copy(col);
+      for(let i=0;i<NV;i++){
+        const c=use[i];
+        if(!c){ dObj.scale.set(0,0,0); dObj.updateMatrix(); bars.setMatrixAt(i,dObj.matrix); continue; }
+        const age=(n-1-i)/Math.max(1,n-1);          // 0 = newest
+        const a=age*Math.PI*4.4+t*0.16;
+        const r=2.6+age*13;
+        const h=1+((c.h-c.l)/span)*7;                // bar height = candle range
+        const yLvl=COL_B+3+((c.c-lo)/span)*(COL_T-COL_B-8);
+        dObj.position.set(Math.cos(a)*r,yLvl,Math.sin(a)*r);
+        dObj.rotation.set(0,-a,0);
+        dObj.scale.set(0.55,h,0.55);
+        dObj.updateMatrix(); bars.setMatrixAt(i,dObj.matrix);
+        cc.set(c.c>=c.o?0x00ffa6:0xff3d6e);
+        bars.setColorAt(i,cc);
+      }
+      bars.instanceMatrix.needsUpdate=true;
+      if(bars.instanceColor) bars.instanceColor.needsUpdate=true;
+    };
+  } else if(mode==='depth'){
+    // 🏔️ LIQUIDITY TERRAIN — the live order book as a mountain range at its
+    // TRUE price heights: bids grow left, asks grow right, bar length is
+    // resting size. Whale walls become visible cliffs you can aim at.
+    const ND=20, dObj=new THREE.Object3D(), cc=new THREE.Color();
+    const bidM=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),
+      new THREE.MeshBasicMaterial({color:0x00ffa6,transparent:true,opacity:0.62,blending:THREE.AdditiveBlending,depthWrite:false}),ND);
+    const askM=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),
+      new THREE.MeshBasicMaterial({color:0xff3d6e,transparent:true,opacity:0.62,blending:THREE.AdditiveBlending,depthWrite:false}),ND);
+    bidM.frustumCulled=askM.frustumCulled=false;
+    const mid=new THREE.Mesh(new THREE.BoxGeometry(30,0.08,0.6),
+      new THREE.MeshBasicMaterial({color:0xffd166,transparent:true,opacity:0.8,blending:THREE.AdditiveBlending,depthWrite:false}));
+    group.add(bidM,askM,mid);
+    rig.update=(dt,t,yH,col)=>{
+      const bk=state.book, bids=(bk&&bk.bids)||[], asks=(bk&&bk.asks)||[];
+      mid.position.y=yH;
+      let qMax=1e-9;
+      for(const b of bids) if(b[1]>qMax) qMax=b[1];
+      for(const a of asks) if(a[1]>qMax) qMax=a[1];
+      const put=(mesh,arr,dir)=>{
+        for(let i=0;i<ND;i++){
+          const lv=arr[i];
+          if(!lv){ dObj.scale.set(0,0,0); dObj.updateMatrix(); mesh.setMatrixAt(i,dObj.matrix); continue; }
+          const len=1+13*(lv[1]/qMax);
+          const y=clamp(yFor(lv[0]),COL_B+1,COL_T-1);
+          dObj.rotation.set(0,0,0);
+          dObj.position.set(dir*(len/2+1.6),y,0);
+          dObj.scale.set(len,0.42,0.42+2.2*(lv[1]/qMax));
+          dObj.updateMatrix(); mesh.setMatrixAt(i,dObj.matrix);
+        }
+        mesh.instanceMatrix.needsUpdate=true;
+      };
+      put(bidM,bids,-1); put(askM,asks,1);
+    };
+  } else if(mode==='profile'){
+    // 📊 VOLUME PROFILE — the institutional tool: traded volume bucketed by
+    // PRICE, not time. The widest shelf (Point of Control) glows gold — the
+    // price the market agreed on most, and the magnet it keeps returning to.
+    const NB=26, dObj=new THREE.Object3D(), cc=new THREE.Color();
+    const shelves=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),
+      new THREE.MeshBasicMaterial({transparent:true,opacity:0.72,blending:THREE.AdditiveBlending,depthWrite:false}),NB);
+    shelves.frustumCulled=false;
+    const pocLbl=textSprite(300,64,10,2.2);
+    group.add(shelves,pocLbl.sp);
+    rig.update=(dt,t,yH,col)=>{
+      const cs=state.candles; if(!cs||cs.length<5) return;
+      const use=cs.slice(-140);
+      let hi=-Infinity,lo=Infinity;
+      for(const c of use){ if(c.h>hi)hi=c.h; if(c.l<lo)lo=c.l; }
+      const span=Math.max(1e-9,hi-lo), bw=span/NB;
+      const buckets=new Array(NB).fill(0);
+      for(const c of use){
+        const idx=clamp(Math.floor((((c.h+c.l+c.c)/3)-lo)/bw),0,NB-1);
+        buckets[idx]+=(c.v||1);
+      }
+      let vMax=1e-9, poc=0;
+      for(let i=0;i<NB;i++) if(buckets[i]>vMax){ vMax=buckets[i]; poc=i; }
+      for(let i=0;i<NB;i++){
+        const len=0.6+15*(buckets[i]/vMax);
+        const y=COL_B+2+((i+0.5)/NB)*(COL_T-COL_B-6);
+        dObj.rotation.set(0,0,0);
+        dObj.position.set(-(len/2)-2.4,y,0);
+        dObj.scale.set(len,Math.max(0.4,(COL_T-COL_B-6)/NB*0.78),0.7);
+        dObj.updateMatrix(); shelves.setMatrixAt(i,dObj.matrix);
+        cc.set(i===poc?0xffd166:0x00f0ff);
+        shelves.setColorAt(i,cc);
+      }
+      shelves.instanceMatrix.needsUpdate=true;
+      if(shelves.instanceColor) shelves.instanceColor.needsUpdate=true;
+      const pocPrice=lo+(poc+0.5)*bw;
+      pocLbl.sp.position.set(-13,COL_B+2+((poc+0.5)/NB)*(COL_T-COL_B-6),0);
+      pocLbl.draw('POC '+fmtP(pocPrice),'#ffd166',"700 26px 'Heebo', sans-serif",true);
     };
   }
   centerRig=rig;
