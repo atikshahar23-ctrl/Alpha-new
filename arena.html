@@ -3005,7 +3005,8 @@ const CENTER_MODES=[
   // data as a spatial chart you can read while standing in the arena ──
   ['wall','🕯️ קיר נרות 3D'], ['river','🌊 נהר המחיר'], ['vortex','🌀 מערבולת זמן'],
   ['depth','🏔️ הר נזילות'], ['profile','📊 פרופיל נפח'],
-  ['screen','🖥️ מסך הולוגרפי'],
+  ['screen','🖥️ מסך הולוגרפי'], ['pure','🕊️ קו טהור'], ['rings','🎯 טבעות רמות'],
+  ['ladder','🪜 מגדל DOM'], ['wave','🌊 גל לחץ'],
 ];
 let centerRig=null;
 function disposeCenterRig(){
@@ -3174,6 +3175,174 @@ function buildCenterRig(mode){
       wire.rotation.y+=dt*0.7; inner.rotation.y-=dt*0.5;
       wire.material.color.copy(col); inner.material.color.copy(col).lerp(new THREE.Color(0xffffff),0.35);
       tip.material.color.copy(col);
+    };
+  } else if(mode==='pure'){
+    // 🕊️ PURE LINE — everything stripped away: no column, no orb, just the
+    // price itself as a luminous thread through the void, coloured by the
+    // direction of each step, with a bright head at the live price. The
+    // cleanest possible read of trend — nothing to distract from the shape.
+    const NP=120;
+    const g2=new THREE.BufferGeometry();
+    g2.setAttribute('position',new THREE.BufferAttribute(new Float32Array(NP*3),3));
+    g2.setAttribute('color',new THREE.BufferAttribute(new Float32Array(NP*3),3));
+    const line=new THREE.Line(g2,new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:0.95}));
+    const head=centerGlowSprite(9,0x00f0ff);
+    const trailG=new THREE.BufferGeometry();
+    trailG.setAttribute('position',new THREE.BufferAttribute(new Float32Array(NP*3),3));
+    trailG.setAttribute('color',new THREE.BufferAttribute(new Float32Array(NP*3),3));
+    const glowLine=new THREE.Line(trailG,new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:0.28,blending:THREE.AdditiveBlending,depthWrite:false}));
+    group.add(line,glowLine,head);
+    rig.update=(dt,t,yH,col)=>{
+      const cs=state.candles; if(!cs||cs.length<3) return;
+      const use=cs.slice(-NP);
+      let hi=-Infinity,lo=Infinity;
+      for(const c of use){ if(c.c>hi)hi=c.c; if(c.c<lo)lo=c.c; }
+      const span=Math.max(1e-9,hi-lo);
+      const W=34, step=W/NP;
+      const pos=g2.attributes.position.array, colA=g2.attributes.color.array;
+      const tp=trailG.attributes.position.array, tc=trailG.attributes.color.array;
+      for(let i=0;i<NP;i++){
+        const c=use[i]||use[use.length-1];
+        const x=-W/2+i*step;
+        const y=COL_B+4+((c.c-lo)/span)*(COL_T-COL_B-10);
+        const z=Math.sin(i*0.09+t*0.25)*1.6;
+        pos[i*3]=x; pos[i*3+1]=y; pos[i*3+2]=z;
+        tp[i*3]=x; tp[i*3+1]=y-0.35; tp[i*3+2]=z;
+        const prev=use[i-1]||c, up=c.c>=prev.c;
+        const r=up?0:1, g3=up?1:0.24, b=up?0.65:0.43;
+        colA[i*3]=r; colA[i*3+1]=g3; colA[i*3+2]=b;
+        tc[i*3]=r; tc[i*3+1]=g3; tc[i*3+2]=b;
+      }
+      g2.attributes.position.needsUpdate=g2.attributes.color.needsUpdate=true;
+      trailG.attributes.position.needsUpdate=trailG.attributes.color.needsUpdate=true;
+      const li=NP-1;
+      head.position.set(pos[li*3],pos[li*3+1],pos[li*3+2]);
+      head.material.color.copy(col);
+      const hs=8+Math.sin(t*3)*1.2+state.flare*5;
+      head.scale.set(hs,hs,1);
+      group.rotation.y=Math.sin(t*0.09)*0.34;
+    };
+  } else if(mode==='rings'){
+    // 🎯 LEVEL RINGS — the support/resistance map made physical. Every level
+    // the engine found becomes a wide glowing ring at its true price height,
+    // and the price orb floats between them. You instantly see which two
+    // rings the market is trapped between, and the nearest one pulses.
+    const RN=6, rings2=[], labels=[];
+    for(let i=0;i<RN;i++){
+      const rg=new THREE.Mesh(new THREE.TorusGeometry(13,0.13,8,64),
+        new THREE.MeshBasicMaterial({color:0xffd166,transparent:true,opacity:0.5,blending:THREE.AdditiveBlending,depthWrite:false}));
+      rg.rotation.x=Math.PI/2; rg.visible=false; group.add(rg); rings2.push(rg);
+      const lb=textSprite(300,64,10,2.2); lb.sp.visible=false; group.add(lb.sp); labels.push(lb);
+    }
+    const orb=new THREE.Mesh(new THREE.IcosahedronGeometry(2.1,1),
+      new THREE.MeshBasicMaterial({color:0x9be8ff,wireframe:true,transparent:true,opacity:0.9}));
+    const halo=centerGlowSprite(13,0x00f0ff);
+    group.add(orb,halo);
+    rig.update=(dt,t,yH,col)=>{
+      orb.position.y=lerp(orb.position.y||yH,yH,0.2);
+      orb.rotation.y+=dt*0.8; orb.rotation.x+=dt*0.35;
+      orb.material.color.copy(col).lerp(new THREE.Color(0xffffff),0.4);
+      halo.position.y=orb.position.y; halo.material.color.copy(col);
+      const lvls=(ind&&ind.levels)||[];
+      for(let i=0;i<RN;i++){
+        const lv=lvls[i];
+        rings2[i].visible=labels[i].sp.visible=!!lv;
+        if(!lv) continue;
+        const y=yFor(lv.p);
+        rings2[i].position.y=y;
+        const above=lv.p>state.lastPrice;
+        const near=Math.abs(lv.p-state.lastPrice)<(ind.A||1)*1.2;
+        rings2[i].material.color.set(above?0xff3d6e:0x00ffa6);
+        rings2[i].material.opacity=(near?0.85:0.4)+(near?0.15*Math.sin(t*4):0);
+        const sc=near?1.06+0.03*Math.sin(t*4):1;
+        rings2[i].scale.set(sc,sc,sc);
+        labels[i].sp.position.set(15.5,y,0);
+        labels[i].draw((above?'התנגדות ':'תמיכה ')+fmtP(lv.p)+distTxt(lv.p),above?'#ff3d6e':'#00ffa6',"700 24px 'Heebo',sans-serif",true);
+      }
+    };
+  } else if(mode==='ladder'){
+    // 🪜 DOM TOWER — the price ladder every scalper lives in, standing up in
+    // the arena: one row per price step, the resting bid/ask size at that
+    // price growing left/right, and the live price row lit in gold. Order
+    // flow read at a glance instead of a wall of numbers.
+    const RW=17, dObj=new THREE.Object3D(), cc=new THREE.Color();
+    const bars=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),
+      new THREE.MeshBasicMaterial({transparent:true,opacity:0.75,blending:THREE.AdditiveBlending,depthWrite:false}),RW*2);
+    bars.frustumCulled=false;
+    const spine=new THREE.Mesh(new THREE.BoxGeometry(0.5,1,0.5),addMat(0x00f0ff,0.3));
+    const nowBar=new THREE.Mesh(new THREE.BoxGeometry(26,0.32,1.1),
+      new THREE.MeshBasicMaterial({color:0xffd166,transparent:true,opacity:0.9,blending:THREE.AdditiveBlending,depthWrite:false}));
+    const nowLbl=textSprite(300,64,10,2.2);
+    group.add(bars,spine,nowBar,nowLbl.sp);
+    rig.update=(dt,t,yH,col)=>{
+      const bk=state.book, bids=(bk&&bk.bids)||[], asks=(bk&&bk.asks)||[];
+      const H2=COL_T-COL_B-8, rowH=H2/RW;
+      spine.scale.set(1,H2,1); spine.position.y=COL_B+4+H2/2;
+      nowBar.position.y=yH; nowBar.material.opacity=0.7+0.25*Math.sin(t*3);
+      nowLbl.sp.position.set(15,yH,0);
+      nowLbl.draw('עכשיו '+fmtP(state.lastPrice),'#ffd166',"700 26px 'Heebo',sans-serif",true);
+      let qMax=1e-9;
+      for(const b of bids) if(b[1]>qMax) qMax=b[1];
+      for(const a of asks) if(a[1]>qMax) qMax=a[1];
+      for(let r=0;r<RW;r++){
+        const half=Math.floor(RW/2), off=r-half;
+        const y=yH-off*rowH;
+        const src=off>0? bids[Math.min(bids.length-1,off-1)] : off<0? asks[Math.min(asks.length-1,-off-1)] : null;
+        for(let sIdx=0;sIdx<2;sIdx++){
+          const i=r*2+sIdx;
+          if(!src||(sIdx===1&&off!==0)){ dObj.scale.set(0,0,0); dObj.updateMatrix(); bars.setMatrixAt(i,dObj.matrix); continue; }
+          const q=src[1]||0, len=0.5+11*(q/qMax);
+          const dir=off>0?-1:1;
+          dObj.rotation.set(0,0,0);
+          dObj.position.set(dir*(len/2+1.4),y,0);
+          dObj.scale.set(len,rowH*0.62,0.7);
+          dObj.updateMatrix(); bars.setMatrixAt(i,dObj.matrix);
+          cc.set(off>0?0x00ffa6:0xff3d6e);
+          bars.setColorAt(i,cc);
+        }
+      }
+      bars.instanceMatrix.needsUpdate=true;
+      if(bars.instanceColor) bars.instanceColor.needsUpdate=true;
+    };
+  } else if(mode==='wave'){
+    // 🌊 PRESSURE WAVE — a living surface under the market. It bulges upward
+    // where buyers dominate and sinks where sellers do, ripples outward on
+    // every real trade, and tilts with momentum. Pure fun to watch, and it
+    // encodes the buy/sell balance you would otherwise read off a bar.
+    const SEG=42, SIZE=52;
+    const geo=new THREE.PlaneGeometry(SIZE,SIZE,SEG,SEG);
+    geo.rotateX(-Math.PI/2);
+    const cols=new Float32Array((SEG+1)*(SEG+1)*3);
+    geo.setAttribute('color',new THREE.BufferAttribute(cols,3));
+    const mesh=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({vertexColors:true,wireframe:true,
+      transparent:true,opacity:0.55,blending:THREE.AdditiveBlending,depthWrite:false}));
+    const orb2=new THREE.Mesh(new THREE.SphereGeometry(1.7,20,16),
+      new THREE.MeshBasicMaterial({color:0x9be8ff,transparent:true,opacity:0.95}));
+    const glow2=centerGlowSprite(14,0x00f0ff);
+    group.add(mesh,orb2,glow2);
+    const base=geo.attributes.position.array.slice();
+    rig.update=(dt,t,yH,col)=>{
+      const pos=geo.attributes.position.array;
+      const bull=(state.bullPct-50)/50;          // -1 all sellers … +1 all buyers
+      const flare=state.flare||0;
+      for(let i=0;i<pos.length;i+=3){
+        const x=base[i], z=base[i+2];
+        const d=Math.sqrt(x*x+z*z);
+        const ripple=Math.sin(d*0.42-t*2.4)*(1.1+flare*4)/(1+d*0.12);
+        const tilt=bull*(1-d/SIZE)*3.4;
+        pos[i+1]=ripple+tilt;
+        const k=(i/3)*3;
+        const up=(ripple+tilt)>=0;
+        cols[k]=up?0:1; cols[k+1]=up?1:0.24; cols[k+2]=up?0.65:0.43;
+      }
+      geo.attributes.position.needsUpdate=true;
+      geo.attributes.color.needsUpdate=true;
+      mesh.position.y=COL_B+2;
+      orb2.position.y=lerp(orb2.position.y||yH,yH,0.2);
+      orb2.material.color.copy(col).lerp(new THREE.Color(0xffffff),0.35);
+      glow2.position.y=orb2.position.y; glow2.material.color.copy(col);
+      const gs=13+flare*8+Math.sin(t*2)*1;
+      glow2.scale.set(gs,gs,1);
     };
   } else if(mode==='screen'){
     // 🖥️ HOLOGRAPHIC TERMINAL — the central object becomes a floating
