@@ -222,6 +222,21 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 #rcLedger .rc-row{display:flex;justify-content:space-between;align-items:center;gap:8px;
   padding:7px 4px;border-bottom:1px solid rgba(0,240,255,.08);font-size:11.5px}
 #rcLedger .rc-t{color:var(--dim);font-size:10px}
+/* expert indicator board + technical rating under the chart */
+#cpRating{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0 6px;
+  padding:8px 12px;border-radius:10px;border:1px solid rgba(0,240,255,.22);background:rgba(0,240,255,.04)}
+#cpRating .rt-big{font-size:16px;font-weight:800;letter-spacing:.5px}
+#cpRating .rt-tally{font-size:11px;color:var(--dim)}
+#cpRating .rt-tally b{font-size:13px}
+#cpRating .rt-bar{flex:1;min-width:110px;height:7px;border-radius:4px;overflow:hidden;display:flex;background:rgba(255,255,255,.06)}
+#cpRating .rt-bar i{display:block;height:100%}
+#cpBoard{display:grid;grid-template-columns:repeat(auto-fill,minmax(158px,1fr));gap:5px;margin-bottom:6px}
+.ib-cell{display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:8px;
+  background:rgba(2,10,18,.55);border:1px solid rgba(0,240,255,.1);font-size:10.5px}
+.ib-cell .ib-n{color:var(--dim);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ib-cell .ib-v{font-family:'JetBrains Mono',monospace;font-weight:700}
+.ib-dot{width:7px;height:7px;border-radius:50%;flex:none}
+@media (max-width:720px){ #cpBoard{grid-template-columns:repeat(2,1fr)} }
 /* professional risk controls in the trade ticket */
 #riskBox{margin:8px 0 4px;padding:8px 9px;border:1px solid rgba(0,240,255,.16);border-radius:9px}
 .riskHead{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
@@ -807,12 +822,15 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
     <span><i style="background:#8a5cff"></i>RSI</span>
     <span><i style="background:rgba(157,196,216,.5)"></i>נפח</span>
     <span><i style="background:#ffd166"></i>VWAP</span>
+    <span><i style="background:rgba(255,209,102,.5)"></i>פיבונאצ׳י + יעדי הרחבה</span>
     <span id="cpReadout" style="margin-inline-start:auto"></span>
   </div>
   <div class="cp-cv-wrap">
     <canvas id="chartCv"></canvas>
     <div id="cpCaption"></div>
   </div>
+  <div id="cpRating"></div>
+  <div id="cpBoard"></div>
   <div class="cp-legend">
     <span><i class="sw hi"></i>גבוה <b id="cpHi" class="num">—</b></span>
     <span><i class="sw lo"></i>נמוך <b id="cpLo" class="num">—</b></span>
@@ -1579,6 +1597,110 @@ function findLevels(cs,A){
     .sort((a,b)=>(b.n*2+b.i/n)-(a.n*2+a.i/n)).slice(0,4);
 }
 
+// Stochastic %K — where the close sits inside the recent range (0-100)
+function stochK(cs,n){
+  const m=cs.length; if(m<n) return 50;
+  let hi=-Infinity,lo=Infinity;
+  for(let i=m-n;i<m;i++){ if(cs[i].h>hi)hi=cs[i].h; if(cs[i].l<lo)lo=cs[i].l; }
+  const rng=Math.max(1e-9,hi-lo);
+  return clamp((cs[m-1].c-lo)/rng*100,0,100);
+}
+// ADX — trend STRENGTH (not direction). >25 = a real trend worth trading,
+// <20 = chop where breakout strategies get chewed up.
+function adxVal(cs,n){
+  const m=cs.length; if(m<n*2+2) return 0;
+  let tr=0,pdm=0,ndm=0;
+  for(let i=m-n;i<m;i++){
+    const c=cs[i],pv=cs[i-1];
+    tr+=Math.max(c.h-c.l,Math.abs(c.h-pv.c),Math.abs(c.l-pv.c));
+    const up=c.h-pv.h, dn=pv.l-c.l;
+    if(up>dn&&up>0) pdm+=up;
+    if(dn>up&&dn>0) ndm+=dn;
+  }
+  if(tr<=0) return 0;
+  const dxAt=(end)=>{
+    let t2=0,p2=0,n2=0;
+    for(let i=end-n;i<end;i++){
+      if(i<1) continue;
+      const c=cs[i],pv=cs[i-1];
+      t2+=Math.max(c.h-c.l,Math.abs(c.h-pv.c),Math.abs(c.l-pv.c));
+      const u=c.h-pv.h, d=pv.l-c.l;
+      if(u>d&&u>0) p2+=u;
+      if(d>u&&d>0) n2+=d;
+    }
+    if(t2<=0) return 0;
+    const pd=100*p2/t2, nd=100*n2/t2, sm=pd+nd;
+    return sm>0? 100*Math.abs(pd-nd)/sm : 0;
+  };
+  // ADX proper = the AVERAGE of DX over the period, not a single raw DX
+  // (a raw reading spikes to 90+ on any clean run and reads as noise)
+  let acc=0,cnt=0;
+  for(let k=0;k<n;k++){ const e=m-k; if(e-n<1) break; acc+=dxAt(e); cnt++; }
+  return cnt? clamp(acc/cnt,0,100) : 0;
+}
+// Fibonacci — the market-structure forecast. Finds the dominant swing in
+// the window, returns the retracement levels the market is pulling back
+// through PLUS the 127.2%/161.8% extensions, i.e. where it projects to go
+// next if the swing continues.
+function fibLevels(cs){
+  if(!cs||cs.length<12) return null;
+  const use=cs.slice(-120);
+  let hi=-Infinity,lo=Infinity,hiI=0,loI=0;
+  use.forEach((c,i)=>{ if(c.h>hi){hi=c.h;hiI=i;} if(c.l<lo){lo=c.l;loI=i;} });
+  if(!(hi>lo)) return null;
+  const up=hiI>loI;                      // the swing's direction
+  const span=hi-lo;
+  const at=r=> up? hi-span*r : lo+span*r; // retracement measured back from the extreme
+  const levels=[
+    {r:0,    p:up?hi:lo, k:'0%'},
+    {r:0.236,p:at(0.236),k:'23.6%'},
+    {r:0.382,p:at(0.382),k:'38.2%'},
+    {r:0.5,  p:at(0.5),  k:'50%'},
+    {r:0.618,p:at(0.618),k:'61.8%'},
+    {r:0.786,p:at(0.786),k:'78.6%'},
+    {r:1,    p:up?lo:hi, k:'100%'},
+  ];
+  const ext=[
+    {r:1.272,p: up? hi+span*0.272 : lo-span*0.272, k:'127.2%'},
+    {r:1.618,p: up? hi+span*0.618 : lo-span*0.618, k:'161.8%'},
+  ];
+  return {up,hi,lo,span,levels,ext,
+    pocket:[at(0.618),at(0.65)]};        // the "golden pocket" traders defend
+}
+// The expert board: every indicator a professional checks, each reduced to
+// one honest buy/sell/neutral vote, then summed into a single rating —
+// the same idea as a terminal's technical rating, computed on our candles.
+function indicatorBoard(){
+  const cs=state.candles; if(!cs||cs.length<30) return null;
+  const closes=cs.map(c=>c.c), n=closes.length, p=closes[n-1];
+  const e9=emaArr(closes,9), e21=emaArr(closes,21), e50=emaArr(closes,Math.min(50,n-1));
+  const R=rsiArr(closes,14)[n-1];
+  const hist=macdHistArr(closes), H=hist[n-1], Hp=hist[n-2]||0;
+  const bb=bollNow(closes,20,2);
+  const K=stochK(cs,14);
+  const adx=adxVal(cs,14);
+  const A=atrVal(cs,14);
+  let vwap=null; { let pv=0,vv=0; for(const c of cs){ const tp=(c.h+c.l+c.c)/3; pv+=tp*(c.v||0); vv+=c.v||0; } if(vv>0) vwap=pv/vv; }
+  const bbPos=clamp((p-bb.lo)/Math.max(1e-9,bb.up-bb.lo),0,1);
+  const V=(cond,anti)=>cond?1:anti?-1:0;
+  const rows=[
+    {n:'RSI (14)',      v:R.toFixed(0),                  s:V(R<30,R>70),      t:R<30?'מכירת יתר — לחץ קנייה':R>70?'קניית יתר — סיכון תיקון':'ניטרלי'},
+    {n:'MACD',          v:(H>=0?'+':'')+H.toFixed(2),    s:V(H>0&&H>Hp,H<0&&H<Hp), t:H>0?'מומנטום חיובי':'מומנטום שלילי'},
+    {n:'סטוכסטי %K',    v:K.toFixed(0),                  s:V(K<20,K>80),      t:K<20?'תחתית הטווח':K>80?'ראש הטווח':'אמצע הטווח'},
+    {n:'EMA 9/21',      v:e9[n-1]>=e21[n-1]?'שורי':'דובי', s:V(e9[n-1]>e21[n-1],e9[n-1]<e21[n-1]), t:e9[n-1]>=e21[n-1]?'חיתוך שורי פעיל':'חיתוך דובי פעיל'},
+    {n:'מגמה (EMA 50)', v:p>=e50[n-1]?'מעל':'מתחת',       s:V(p>e50[n-1],p<e50[n-1]), t:p>=e50[n-1]?'המחיר מעל הממוצע הארוך':'המחיר מתחת לממוצע הארוך'},
+    {n:'בולינגר',       v:(bbPos*100).toFixed(0)+'%',    s:V(bbPos<0.15,bbPos>0.85), t:bbPos<0.15?'נוגע ברצועה התחתונה':bbPos>0.85?'נוגע ברצועה העליונה':'באמצע הרצועות'},
+    {n:'VWAP',          v:vwap!=null?(p>=vwap?'מעל':'מתחת'):'—', s:vwap==null?0:V(p>vwap,p<vwap), t:vwap==null?'אין נתוני מחזור':(p>=vwap?'קונים שולטים בסשן':'מוכרים שולטים בסשן')},
+    {n:'ADX · עוצמת מגמה', v:adx.toFixed(0),            s:0, t:adx>25?'מגמה חזקה — כדאי לסחור איתה':adx<20?'שוק ללא מגמה — היזהר מפריצות שווא':'מגמה מתהווה'},
+    {n:'ATR (14)',      v:A.toFixed(A<1?4:2),            s:0, t:'תנודתיות — בסיס לגודל הסטופ'},
+  ];
+  const buys=rows.filter(r=>r.s>0).length, sells=rows.filter(r=>r.s<0).length;
+  const net=buys-sells;
+  const rating = net>=4?{t:'קנייה חזקה',c:'#00ffa6'} : net>=2?{t:'קנייה',c:'#7dfbff'}
+    : net<=-4?{t:'מכירה חזקה',c:'#ff3d6e'} : net<=-2?{t:'מכירה',c:'#ff8ae0'}
+    : {t:'ניטרלי · המתנה',c:'#ffd166'};
+  return {rows,buys,sells,neutral:rows.length-buys-sells,rating,adx};
+}
 function computeSignals(){
   const cs=state.candles, n=cs.length;
   if(n<30){ ind=null; return; }
@@ -4631,6 +4753,41 @@ function drawChart(){
         +(vNow!=null?` · VWAP <b class="num" style="color:${last>=vNow?'#00ffa6':'#ff3d6e'}">${vNow.toLocaleString('en-US',{maximumFractionDigits:dec})} · ${last>=vNow?'מעל':'מתחת'}</b>`:'');
     }
   }
+  // ── FIBONACCI — always drawn: the retracement grid the market is
+  // pulling back through, the golden pocket shaded, and the 127.2%/161.8%
+  // extension targets marked as the forward projection ──
+  const fib=fibLevels(cs);
+  if(fib){
+    g.save();
+    // golden pocket band (0.618-0.65) — the zone traders defend
+    const pa=yFor2(fib.pocket[0]), pb=yFor2(fib.pocket[1]);
+    g.fillStyle='rgba(255,209,102,.10)';
+    g.fillRect(padL,Math.min(pa,pb),plotW,Math.max(2,Math.abs(pb-pa)));
+    g.font="9.5px 'JetBrains Mono',monospace"; g.textBaseline='middle';
+    for(const lv of fib.levels){
+      const y=yFor2(lv.p);
+      if(y<padT-2||y>priceBottom+2) continue;
+      const golden=lv.r===0.618;
+      g.strokeStyle=golden?'rgba(255,209,102,.75)':'rgba(255,209,102,.28)';
+      g.setLineDash(golden?[]:[5,5]); g.lineWidth=golden?1.4:1;
+      g.beginPath(); g.moveTo(padL,y); g.lineTo(padL+plotW,y); g.stroke();
+      g.fillStyle=golden?'#ffd166':'rgba(255,209,102,.65)';
+      g.textAlign='left';
+      g.fillText('fib '+lv.k,padL+3,y-6);
+      g.textAlign='right';
+      g.fillText(lv.p.toLocaleString('en-US',{maximumFractionDigits:dec}),padL+plotW-4,y-6);
+    }
+    // extension targets = the forecast leg
+    for(const ex of fib.ext){
+      const y=yFor2(ex.p);
+      if(y<padT-2||y>priceBottom+2) continue;
+      g.strokeStyle='rgba(0,255,166,.4)'; g.setLineDash([2,4]); g.lineWidth=1;
+      g.beginPath(); g.moveTo(padL,y); g.lineTo(padL+plotW,y); g.stroke();
+      g.fillStyle='rgba(0,255,166,.8)'; g.textAlign='left';
+      g.fillText('🎯 יעד '+ex.k+' · '+ex.p.toLocaleString('en-US',{maximumFractionDigits:dec}),padL+3,y-6);
+    }
+    g.setLineDash([]); g.restore();
+  }
   // crosshair + per-candle OHLCV readout — the basic tool every trader
   // expects: point anywhere, read the exact candle
   if(chartCross && chartCross.x>=padL && chartCross.x<=padL+plotW){
@@ -4668,6 +4825,25 @@ function drawChart(){
       g.fillText(ln,bx+7,by+6+li*15);
     });
     g.restore();
+  }
+  // expert indicator board + one honest overall rating
+  {
+    const bd=indicatorBoard(), rt=$('cpRating'), bo=$('cpBoard');
+    if(bd&&rt&&bo){
+      const tot=bd.rows.length;
+      rt.innerHTML=`<span class="rt-big" style="color:${bd.rating.c}">${bd.rating.t}</span>`
+        +`<span class="rt-bar"><i style="width:${bd.buys/tot*100}%;background:#00ffa6"></i>`
+        +`<i style="width:${bd.neutral/tot*100}%;background:#546a7b"></i>`
+        +`<i style="width:${bd.sells/tot*100}%;background:#ff3d6e"></i></span>`
+        +`<span class="rt-tally">קנייה <b style="color:var(--up)">${bd.buys}</b> · `
+        +`ניטרלי <b>${bd.neutral}</b> · מכירה <b style="color:var(--down)">${bd.sells}</b></span>`
+        +(fib?`<span class="rt-tally">📐 פיבונאצ׳י ${fib.up?'עלייה':'ירידה'} · יעד הבא <b style="color:var(--up)">${fib.ext[0].p.toLocaleString('en-US',{maximumFractionDigits:dec})}</b></span>`:'');
+      bo.innerHTML=bd.rows.map(r=>{
+        const col=r.s>0?'#00ffa6':r.s<0?'#ff3d6e':'#546a7b';
+        return `<span class="ib-cell" title="${r.t}"><i class="ib-dot" style="background:${col}"></i>`
+          +`<span class="ib-n">${r.n}</span><span class="ib-v" style="color:${col}">${r.v}</span></span>`;
+      }).join('');
+    }
   }
   // legend chips
   $('cpHi').textContent=(hi-pad).toLocaleString('en-US',{maximumFractionDigits:dec});
