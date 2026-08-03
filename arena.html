@@ -221,6 +221,23 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 #pfRisk .cr-p b{font-family:'JetBrains Mono',monospace;color:var(--txt)}
 #pfRisk .cr-p.hot{border:1px solid rgba(255,61,110,.45);color:#ff9ec4}
 #pfRisk .cr-note{font-size:9.5px;color:var(--dim);margin-top:6px;line-height:1.6;opacity:.85}
+#toolsPanel{position:fixed;z-index:34;top:50%;right:16px;transform:translateY(-50%);
+  width:min(360px,94vw);padding:13px 15px;max-height:calc(100dvh - 24px);overflow-y:auto}
+#iaList,#calList{display:flex;flex-direction:column;gap:4px;margin-bottom:6px;max-height:150px;overflow-y:auto}
+.ia-row,.cal-row{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:7px;
+  background:rgba(0,240,255,.05);font-size:10.5px;color:var(--dim)}
+.ia-row .ia-s,.cal-row .cal-t{font-family:'JetBrains Mono',monospace;color:var(--txt);font-weight:700}
+.cal-row .cal-n{flex:1;color:var(--txt)}
+.cal-row .cal-in{opacity:.8}
+.cal-row.hot{border:1px solid rgba(255,209,102,.6);background:rgba(255,209,102,.08);color:#ffd166}
+.ia-new,.cal-new{display:grid;grid-template-columns:1fr auto;gap:6px;margin-bottom:8px}
+.ia-new select,.ia-new input,.cal-new input{background:rgba(2,10,18,.9);color:var(--txt);
+  border:1px solid rgba(0,240,255,.25);border-radius:6px;padding:5px 7px;font-size:11.5px;
+  font-family:inherit;min-width:0}
+.ia-new{grid-template-columns:1fr 80px auto}
+.cal-new{grid-template-columns:1fr 1fr auto}
+@media (max-width:900px){ #toolsPanel{right:8px;left:8px;width:auto;top:auto;bottom:8px;transform:none;max-height:78dvh}
+  .ia-new,.cal-new{grid-template-columns:1fr} }
 #labPanel{position:fixed;z-index:34;top:50%;right:16px;transform:translateY(-50%);
   width:min(400px,94vw);padding:13px 15px;max-height:calc(100dvh - 24px);overflow-y:auto}
 #labList{display:flex;flex-direction:column;gap:5px;margin-bottom:8px}
@@ -1038,6 +1055,9 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
     <div class="tgl" id="btnLab" title="מעבדת אסטרטגיות — הגדר, בדוק והשווה כללי מסחר">
       <span style="font-size:15px">🧬</span><span style="font-size:8px">מעבדה</span>
     </div>
+    <div class="tgl" id="btnTools" title="ארגז כלים — התראות אינדיקטור, יומן אירועים, גיבוי וייצוא">
+      <span style="font-size:15px">🧰</span><span style="font-size:8px">כלים</span>
+    </div>
   </div>
 
   <div id="vignette" aria-hidden="true"></div>
@@ -1118,7 +1138,7 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
   <div class="lg-h"><span>🧮 פונדמנטלס · <span id="fundSym"></span></span><button class="mp-close" id="fundClose" style="margin-inline-start:auto">✕</button></div>
   <div id="fundRows"></div>
   <div id="fundExp"></div>
-  <div class="disc" style="margin-top:10px">נתוני ייחוס ≈ · להמחשה ולימוד בלבד · אינם ייעוץ השקעות</div>
+  <div class="disc" style="margin-top:10px"><span id="fundSrc">נתוני ייחוס ≈</span> · אינם ייעוץ השקעות</div>
 </div>
 <div id="mapPanel" class="panel clip" style="display:none">
   <div class="mp-h">🗺️ מפת העולם — הקשה על זירה מטלפרטת</div>
@@ -1243,6 +1263,34 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
   </div>
   <div class="disc" style="margin-top:8px">ההזמנה משתמשת במרג׳ין ובמינוף שמוגדרים בכרטיס המסחר ברגע הרישום</div>
 </div>
+<div id="toolsPanel" class="panel clip" style="display:none">
+  <div class="lg-h"><span>🧰 ארגז כלים</span><button class="mp-close" id="toolsClose" style="margin-inline-start:auto">✕</button></div>
+  <div class="rc-h">🔔 התראות אינדיקטור <span class="rc-sub">· על הנכס שבמוקד</span></div>
+  <div id="iaList"></div>
+  <div class="ia-new">
+    <select id="iaKind"></select>
+    <input id="iaArg" type="number" step="any" placeholder="ערך">
+    <button class="lab-b" id="iaAdd">➕ הוסף</button>
+  </div>
+  <div class="rc-h">🗓️ יומן אירועים <span class="rc-sub">· הטייס לא פותח עסקאות בחלון שסביבם</span></div>
+  <div id="calList"></div>
+  <div class="cal-new">
+    <input id="calName" type="text" placeholder="למשל: החלטת ריבית פד">
+    <input id="calWhen" type="datetime-local">
+    <button class="lab-b" id="calAdd">➕ הוסף אירוע</button>
+  </div>
+  <div class="rc-h">💾 גיבוי וייצוא</div>
+  <div class="lab-actions">
+    <button class="lab-b" id="expCsv">📄 ייצוא יומן ל-CSV</button>
+    <button class="lab-b" id="expJson">💾 גיבוי מלא JSON</button>
+    <button class="lab-b go" id="impJson">📥 שחזור מגיבוי</button>
+    <button class="lab-b" id="loadDeep">📚 טען היסטוריה עמוקה</button>
+    <button class="lab-b go" id="impTrades" style="grid-column:1/-1">📊 ייבוא היסטוריית מסחר אמיתית (CSV מהבורסה)</button>
+  </div>
+  <input id="impFile" type="file" accept="application/json,.json" style="display:none">
+  <input id="impTradesFile" type="file" accept=".csv,text/csv" style="display:none">
+  <div class="disc" style="margin-top:10px">ייבוא עסקאות אמיתיות מקבל קובץ CSV שאתה מייצא מהבורסה. <b>בכוונה אין כאן חיבור עם מפתח API</b> — מפתח שמסוגל להזיז כסף, ששמור בדפדפן בעמוד ציבורי, הוא פרצה אחת מלרוקן חשבון. הניתוח זהה, והסיכון לא קיים.<br>שחזור אינו מחזיר פוזיציות פתוחות בכוונה — הן היו נמדדות מול מחירי היום ונסגרות מיד</div>
+</div>
 <div id="labPanel" class="panel clip" style="display:none">
   <div class="lg-h"><span>🧬 מעבדת אסטרטגיות</span><button class="mp-close" id="labClose" style="margin-inline-start:auto">✕</button></div>
   <div id="labList"></div>
@@ -1316,6 +1364,44 @@ window.addEventListener('three-ready', function(){
 // is the shorter recent window the 3D price column scales itself to, so the
 // deeper history never zooms the arena out to a flat line.
 const N = 420, ARENA_N = 140;
+// ── DEEP HISTORY. The feed keeps a rolling window; a trader scrolling back
+// eventually hits its left edge. This pages further back through the same
+// klines endpoint using endTime, prepends what it finds, and remembers when
+// it has run out — so hitting the wall repeatedly does not spam the API.
+//
+// These flags live up here, not next to the chart code: onInit resets them
+// during boot, which runs before the chart's own declarations are reached,
+// and a `let` down there is still in its temporal dead zone. That threw on
+// every load and took the loader with it.
+let deepLoading=false, deepExhausted=false;
+async function loadDeeperHistory(){
+  if(deepLoading||deepExhausted) return false;
+  if(state.market!=='crypto'){ deepExhausted=true; return false; }
+  const cs=state.candles;
+  if(!cs.length) return false;
+  deepLoading=true;
+  try{
+    const pair=state.sym+'USDT';
+    const end=cs[0].t-1;
+    const r=await fetch(`https://api.binance.com/api/v3/klines?symbol=${pair}&interval=${state.tf}&endTime=${end}&limit=500`);
+    if(!r.ok) throw 0;
+    const raw=await r.json();
+    if(!Array.isArray(raw)||!raw.length){ deepExhausted=true; return false; }
+    const older=raw.map(k=>({t:k[0],o:+k[1],h:+k[2],l:+k[3],c:+k[4],v:+k[5]}))
+                   .filter(c=>c.t<cs[0].t);
+    if(!older.length){ deepExhausted=true; return false; }
+    // the viewport counts from the RIGHT, so growing the tape leftwards
+    // leaves the trader looking at exactly the same candles
+    state.candles=older.concat(cs);
+    toast(`נטענו ${older.length} נרות היסטוריה נוספים · סה״כ ${state.candles.length}`,'up');
+    if(typeof chartOpen!=='undefined'&&chartOpen) drawChart();
+    return true;
+  }catch(e){
+    deepExhausted=true;
+    toast('לא ניתן לטעון היסטוריה עמוקה יותר כרגע','down');
+    return false;
+  } finally { deepLoading=false; }
+}
 const Y0 = 9, YSPAN = 34;
 const SYMBOLS = {
   BTC:{base:132400, vol:0.0011, lot:2.2,    big:1.8,    dec:1, dot:'#f7931a'},
@@ -1362,7 +1448,7 @@ const NA_DEFAULTS={
   walkSpeed:18, lookSens:1.0, invertY:false,
   alertsEnabled:true, alertPct:3,
   chartStyle:'classic', centerMode:'classic',
-  feesOn:true, feeTakerBps:5.5, feeMakerBps:2.0, spreadBps:2.0, slipBps:1.5, fundingBps8h:1.0,
+  calBlackoutMin:30, feesOn:true, feeTakerBps:5.5, feeMakerBps:2.0, spreadBps:2.0, slipBps:1.5, fundingBps8h:1.0,
   chartAutoOpen:false, chartDefaultTf:'1m',
   tourHoldSec:4, tapeSpeedSec:40,
   spawnWalkOnLoad:false,
@@ -1911,6 +1997,7 @@ function onInit(cs){
   state.candles=cs.slice(-N);
   // a fresh market/timeframe starts pinned to live and fitted
   try{ stopReplay(); }catch(e){}
+  deepExhausted=false; deepLoading=false;
   chartView.n=0; chartView.off=0; chartView.anchorT=0;
   retargetScale(true);
   state.lastPrice=cs[cs.length-1].c; state.priceSym=state.sym;
@@ -2934,6 +3021,263 @@ function renderPerf(){
     +block('לפי שעת כניסה',p.byHour,'מתי אתה באמת חד');
 }
 // ============================================================
+//  JOURNAL EXPORT / IMPORT — a trading record that lives only in one
+//  browser's localStorage is a record you will lose. CSV goes to a
+//  spreadsheet, JSON round-trips the whole book (journal, wallet, signals,
+//  strategies) so it can be moved to another device or restored after a
+//  cleared cache.
+// ============================================================
+function journalCSV(){
+  const rows=[['date','symbol','side','entry','exit','gross_usd','fees_usd','slippage_usd','funding_usd','net_usd','net_pct','reason','margin','leverage','minutes','score','verdict','why']];
+  for(const l of (session.log||[])){
+    rows.push([
+      new Date(l.at).toISOString(), l.sym, l.side,
+      (+l.entry||0).toFixed(6), (+l.exit||0).toFixed(6),
+      (+(l.grossUsd??l.usd)||0).toFixed(2), (+l.fees||0).toFixed(2),
+      (+l.slip||0).toFixed(2), (+l.funding||0).toFixed(4),
+      (+l.usd||0).toFixed(2), (+l.pct||0).toFixed(3),
+      l.reason||'', l.margin||'', l.lev||'', l.durMin||'',
+      l.score??'', (l.verdict||'').replace(/,/g,';'),
+      (l.why||[]).join(' | ').replace(/,/g,';'),
+    ]);
+  }
+  return rows.map(r=>r.map(v=>{
+    const t=String(v??'');
+    return /[",\n]/.test(t)? '"'+t.replace(/"/g,'""')+'"' : t;
+  }).join(',')).join('\n');
+}
+function downloadBlob(name,text,type){
+  try{
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob([text],{type:type||'text/plain'}));
+    a.download=name; a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+    return true;
+  }catch(e){ toast('הייצוא נכשל בדפדפן הזה','down'); return false; }
+}
+function exportJournalCSV(){
+  if(!(session.log||[]).length){ toast('אין עסקאות לייצוא','down'); return; }
+  const stamp=new Date().toISOString().slice(0,16).replace(/[:T]/g,'-');
+  if(downloadBlob('nexus-journal-'+stamp+'.csv','\ufeff'+journalCSV(),'text/csv;charset=utf-8'))
+    toast(`יוצאו ${session.log.length} עסקאות ל-CSV`,'up');
+}
+function exportAllJSON(){
+  const dump={ v:1, at:Date.now(),
+    session, wallet, positions, orders,
+    signals:sigLedger, strategies:{list:strategies,active:activeStrat},
+    settings:naSettings, autopilot, drawings, watchlist:[...watchlist] };
+  const stamp=new Date().toISOString().slice(0,16).replace(/[:T]/g,'-');
+  if(downloadBlob('nexus-backup-'+stamp+'.json',JSON.stringify(dump,null,1),'application/json'))
+    toast('גיבוי מלא נשמר','up');
+}
+function importAllJSON(text){
+  let d; try{ d=JSON.parse(text); }catch(e){ toast('הקובץ אינו JSON תקין','down'); return; }
+  if(!d||typeof d!=='object'){ toast('קובץ גיבוי לא מזוהה','down'); return; }
+  let n=0;
+  try{
+    if(d.session&&Array.isArray(d.session.log)){ Object.assign(session,d.session); saveSession(); n++; }
+    if(d.wallet&&isFinite(d.wallet.balance)){ wallet.balance=d.wallet.balance; saveWallet(); n++; }
+    if(d.signals&&Array.isArray(d.signals)){ sigLedger=d.signals; saveSigLedger(); n++; }
+    if(d.strategies&&Array.isArray(d.strategies.list)){ strategies=d.strategies.list; activeStrat=d.strategies.active||strategies[0].id; saveStrategies(); n++; }
+    if(d.orders&&Array.isArray(d.orders)){ orders=d.orders; saveOrders(); n++; }
+    if(d.drawings&&typeof d.drawings==='object'){ drawings=d.drawings; saveDrawings(); n++; }
+    // positions are deliberately NOT restored: they would be marked against
+    // today's prices and instantly stopped out or liquidated
+  }catch(e){}
+  renderTicket(); renderPortfolio(); renderPerf(); renderLab();
+  toast(n? `שוחזרו ${n} מקטעים מהגיבוי · פוזיציות פתוחות לא משוחזרות בכוונה`:'לא נמצא מידע לשחזור', n?'up':'down');
+}
+// ============================================================
+//  REAL-ACCOUNT IMPORT — the analytics are only as useful as the trades they
+//  see, and the trades that matter are the ones on the real exchange.
+//
+//  This imports an exported trade history (Binance "Trade History" CSV, or
+//  any CSV with recognisable columns) and merges it into the journal, tagged
+//  as real so it is never confused with demo activity.
+//
+//  Deliberately NOT built: connecting an API key. A key that can move money,
+//  stored in a browser's localStorage on a public page, is one XSS away from
+//  emptying an account — and no feature is worth that. Export from the
+//  exchange, import here; the analysis is identical and nothing can be
+//  stolen.
+// ============================================================
+function parseCSV(text){
+  const rows=[]; let row=[], cell='', q=false;
+  for(let i=0;i<text.length;i++){
+    const ch=text[i];
+    if(q){
+      if(ch==='"'&&text[i+1]==='"'){ cell+='"'; i++; }
+      else if(ch==='"') q=false;
+      else cell+=ch;
+    } else if(ch==='"') q=true;
+    else if(ch===','){ row.push(cell); cell=''; }
+    else if(ch==='\n'){ row.push(cell); rows.push(row); row=[]; cell=''; }
+    else if(ch!=='\r') cell+=ch;
+  }
+  if(cell||row.length){ row.push(cell); rows.push(row); }
+  return rows.filter(r=>r.some(c=>String(c).trim()!==''));
+}
+function importTradesCSV(text){
+  const rows=parseCSV(text);
+  if(rows.length<2){ toast('הקובץ ריק או לא CSV','down'); return; }
+  const head=rows[0].map(h=>h.toLowerCase().trim());
+  const find=(...names)=>{ for(const n of names){ const i=head.findIndex(h=>h.includes(n)); if(i>=0) return i; } return -1; };
+  const iTime=find('time','date','תאריך');
+  const iSym=find('symbol','pair','market','נכס');
+  const iSide=find('side','direction','type','כיוון');
+  const iPrice=find('price','avg','מחיר');
+  const iQty=find('qty','quantity','amount','size','כמות');
+  const iPnl=find('realized','pnl','profit','רווח');
+  const iFee=find('fee','commission','עמלה');
+  if(iSym<0||(iPnl<0&&iPrice<0)){ toast('לא זוהו עמודות מוכרות בקובץ','down'); return; }
+  const num=v=>{ const f=parseFloat(String(v??'').replace(/[^0-9.\-]/g,'')); return isFinite(f)?f:0; };
+  let added=0;
+  const imported=[];
+  for(let r=1;r<rows.length;r++){
+    const c=rows[r];
+    const sym=String(c[iSym]||'').replace(/USDT|USD|PERP|\s/gi,'').trim().toUpperCase();
+    if(!sym) continue;
+    const t=iTime>=0? (Date.parse(c[iTime])||0) : 0;
+    const side=String(c[iSide]||'').toLowerCase().includes('sell')?'short':'long';
+    const fee=iFee>=0? Math.abs(num(c[iFee])) : 0;
+    const pnl=iPnl>=0? num(c[iPnl]) : 0;
+    const price=iPrice>=0? num(c[iPrice]) : 0;
+    const qty=iQty>=0? num(c[iQty]) : 0;
+    const notional=price*qty;
+    // rows with no realised P&L are opens, not round trips — skipped, since
+    // a journal of half-trades would poison every statistic downstream
+    if(iPnl>=0 && pnl===0 && !/close/i.test(String(c[iSide]||''))) continue;
+    const net=pnl-fee;
+    imported.push({ sym, side, entry:price, exit:price,
+      usd:net, grossUsd:pnl, fees:fee, slip:0, funding:0, costs:fee,
+      pct: notional>0? net/notional*100 : 0,
+      at: t||Date.now(), reason:'real', margin:notional?notional:0, lev:1,
+      real:true, verdict:'עסקה אמיתית מיובאת', why:['יובא מהיסטוריית הבורסה'], durMin:null });
+    added++;
+  }
+  if(!added){ toast('לא נמצאו עסקאות סגורות בקובץ','down'); return; }
+  // merged, de-duplicated by timestamp+symbol, newest first
+  const seen=new Set((session.log||[]).map(l=>l.at+'|'+l.sym));
+  const fresh=imported.filter(l=>{ const k=l.at+'|'+l.sym; if(seen.has(k)) return false; seen.add(k); return true; });
+  session.log=[...fresh,...(session.log||[])].sort((a,b)=>b.at-a.at).slice(0,400);
+  session.realCount=(session.realCount||0)+fresh.length;
+  saveSession(); renderPerf(); renderTicket();
+  toast(`יובאו ${fresh.length} עסקאות אמיתיות · האנליטיקה כוללת אותן מעכשיו`,'up');
+}
+// ============================================================
+//  INDICATOR ALERTS — price alerts answer "tell me when it reaches X".
+//  These answer the questions a trader actually waits on: momentum turning,
+//  a moving-average cross, a level breaking, volatility waking up.
+// ============================================================
+const IALERT_KEY='na:ialerts';
+const IALERT_KINDS=[
+  {id:'rsiOver', label:'RSI חוצה מעל', arg:70},
+  {id:'rsiUnder', label:'RSI יורד מתחת', arg:30},
+  {id:'emaCross', label:'חיתוך EMA 9/21', arg:null},
+  {id:'levelBreak', label:'פריצת רמת התנגדות/תמיכה', arg:null},
+  {id:'volSpike', label:'קפיצת תנודתיות (ATR)', arg:1.8},
+  {id:'scoreBuy', label:'ציון חוצה לקנייה', arg:20},
+  {id:'scoreSell', label:'ציון חוצה למכירה', arg:-20},
+];
+let iAlerts=[];
+try{ const r=JSON.parse(localStorage.getItem(IALERT_KEY)||'[]'); if(Array.isArray(r)) iAlerts=r; }catch(e){}
+function saveIAlerts(){ try{ localStorage.setItem(IALERT_KEY,JSON.stringify(iAlerts.slice(0,30))); }catch(e){} }
+const iaPrev={};
+function checkIndicatorAlerts(){
+  if(!ind||!iAlerts.length) return;
+  const sym=state.sym;
+  const n=ind.e9raw.length;
+  const emaUp=ind.e9raw[n-1]>ind.e21raw[n-1];
+  const prev=iaPrev[sym]||{};
+  const now={rsi:ind.rsiNow, emaUp, score:ind.score, atr:ind.A};
+  for(const a of iAlerts){
+    if(a.sym!==sym||a.done) continue;
+    let fire=false, txt='';
+    if(a.kind==='rsiOver'&&prev.rsi!=null&&prev.rsi<=a.arg&&now.rsi>a.arg){ fire=true; txt=`RSI חצה מעל ${a.arg} (${now.rsi.toFixed(0)})`; }
+    if(a.kind==='rsiUnder'&&prev.rsi!=null&&prev.rsi>=a.arg&&now.rsi<a.arg){ fire=true; txt=`RSI ירד מתחת ${a.arg} (${now.rsi.toFixed(0)})`; }
+    if(a.kind==='emaCross'&&prev.emaUp!=null&&prev.emaUp!==emaUp){ fire=true; txt=emaUp?'חיתוך שורי · EMA9 מעל EMA21':'חיתוך דובי · EMA9 מתחת EMA21'; }
+    if(a.kind==='scoreBuy'&&prev.score!=null&&prev.score<a.arg&&now.score>=a.arg){ fire=true; txt=`ציון חצה לקנייה (${now.score})`; }
+    if(a.kind==='scoreSell'&&prev.score!=null&&prev.score>a.arg&&now.score<=a.arg){ fire=true; txt=`ציון חצה למכירה (${now.score})`; }
+    if(a.kind==='volSpike'&&mcAtrAvg>0&&now.atr>mcAtrAvg*a.arg){ fire=true; txt=`תנודתיות קפצה ×${(now.atr/mcAtrAvg).toFixed(1)}`; }
+    if(a.kind==='levelBreak'&&ind.levels&&ind.levels.length&&prev.px!=null){
+      for(const L of ind.levels){
+        const p0=L.p!=null?L.p:L;
+        if((prev.px<p0&&state.lastPrice>=p0)||(prev.px>p0&&state.lastPrice<=p0)){
+          fire=true; txt=`המחיר חצה את הרמה ${fmtP(p0)}`; break;
+        }
+      }
+    }
+    if(fire){
+      a.done=true; saveIAlerts();
+      toast(`🔔 ${sym} · ${txt}`,'up');
+      beep([[720,0.09],[960,0.12],[1200,0.1]]);
+      pushNote('התראת אינדיקטור · '+sym, txt);
+      renderIAlerts();
+    }
+  }
+  iaPrev[sym]={...now, px:state.lastPrice};
+}
+function renderIAlerts(){
+  const el=$('iaList'); if(!el) return;
+  const mine=iAlerts.filter(a=>!a.done);
+  el.innerHTML=mine.length? mine.map(a=>{
+    const k=IALERT_KINDS.find(x=>x.id===a.kind)||{label:a.kind};
+    return `<div class="ia-row"><span class="ia-s">${a.sym}</span><span>${k.label}${a.arg!=null&&k.arg!=null?' '+a.arg:''}</span>
+      <button class="ord-x" data-ia="${a.id}">✕</button></div>`;
+  }).join('') : '<div class="lg-empty">אין התראות אינדיקטור פעילות</div>';
+  el.querySelectorAll('[data-ia]').forEach(b=>{ b.onclick=()=>{
+    iAlerts=iAlerts.filter(x=>x.id!==b.dataset.ia); saveIAlerts(); renderIAlerts(); }; });
+}
+function addIAlert(kind,arg){
+  const k=IALERT_KINDS.find(x=>x.id===kind); if(!k) return;
+  iAlerts.unshift({id:'ia'+Date.now()+Math.random().toString(36).slice(2,4),
+    sym:state.sym, kind, arg: arg!=null? arg : k.arg, at:Date.now(), done:false});
+  saveIAlerts(); renderIAlerts();
+  toast(`התראה נוספה · ${k.label} על ${state.sym}`,'up');
+}
+// ============================================================
+//  ECONOMIC CALENDAR — no trader with a working instinct holds size into a
+//  rate decision. There is no free, unauthenticated calendar feed this app
+//  can reach, so the events are yours to enter (they persist), and what the
+//  app does with them is the part that matters: a blackout window around
+//  each event during which the autopilot refuses to open anything and the
+//  cockpit shows a countdown.
+// ============================================================
+const CAL_KEY='na:calendar';
+let calendar=[];
+try{ const r=JSON.parse(localStorage.getItem(CAL_KEY)||'[]'); if(Array.isArray(r)) calendar=r; }catch(e){}
+function saveCalendar(){ try{ localStorage.setItem(CAL_KEY,JSON.stringify(calendar.slice(0,40))); }catch(e){} }
+function calBlackout(){
+  const now=Date.now();
+  const mins=Math.max(0,naSettings.calBlackoutMin??30);
+  for(const e of calendar){
+    const t=+e.at;
+    if(!t) continue;
+    if(now>=t-mins*60000 && now<=t+mins*60000)
+      return {ev:e, minsTo:Math.round((t-now)/60000)};
+  }
+  return null;
+}
+function nextEvent(){
+  const now=Date.now();
+  return calendar.filter(e=>+e.at>now).sort((a,b)=>a.at-b.at)[0]||null;
+}
+function renderCalendar(){
+  const el=$('calList'); if(!el) return;
+  const now=Date.now();
+  const list=calendar.slice().sort((a,b)=>a.at-b.at).filter(e=>+e.at>now-6*3600e3);
+  el.innerHTML=list.length? list.map(e=>{
+    const mins=Math.round((e.at-now)/60000);
+    const soon=Math.abs(mins)<=(naSettings.calBlackoutMin??30);
+    return `<div class="cal-row${soon?' hot':''}"><span class="cal-t">${new Date(e.at).toLocaleString('he-IL',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</span>
+      <span class="cal-n">${(e.name||'').slice(0,42)}</span>
+      <span class="cal-in">${mins>0? 'בעוד '+(mins<60?mins+' ד׳':Math.round(mins/60)+' ש׳') : 'עבר'}</span>
+      <button class="ord-x" data-cal="${e.id}">✕</button></div>`;
+  }).join('') : '<div class="lg-empty">אין אירועים · הוסף החלטת ריבית, CPI או דוח שאתה עוקב אחריו</div>';
+  el.querySelectorAll('[data-cal]').forEach(b=>{ b.onclick=()=>{
+    calendar=calendar.filter(x=>x.id!==b.dataset.cal); saveCalendar(); renderCalendar(); }; });
+}
+// ============================================================
 //  AUTOPILOT — the engine trading its own signals on the demo wallet, under
 //  risk rules it is not allowed to break. Three things make this honest
 //  rather than a toy:
@@ -2978,16 +3322,54 @@ function apRecordClose(usd){
   }
   saveAutopilot();
 }
-let apLastAt=0, apPrevScore={};
+let apLastAt=0, apPrevScore={}, apScanAt=0;
+// ── the pilot used to see only the market on stage. This walks every live
+// pod, scores it with the same lightweight price engine the backtest uses,
+// and reports what it finds — so an opportunity three markets away is not
+// invisible just because the camera is pointed elsewhere.
+function apScanMarkets(){
+  const now=Date.now();
+  if(now-apScanAt<45000) return;
+  apScanAt=now;
+  const live=pods.filter(p=>(p.kind==='crypto'||p.kind==='stock')&&p.hist&&p.hist.length>40);
+  const found=[];
+  for(const p of live){
+    if(p.id===state.sym) continue;
+    const h=p.hist;
+    const cs=h.map((v,i)=>({t:now-(h.length-i)*2200,o:i?h[i-1]:v,h:Math.max(v,i?h[i-1]:v),l:Math.min(v,i?h[i-1]:v),c:v,v:0}));
+    if(cs.length<40) continue;
+    let P; try{ P=backtestPack(cs); }catch(e){ continue; }
+    const m=packScore(P,P.n-1), mPrev=packScore(P,P.n-2);
+    const st=activeStrategy(), thr=Math.max(1,(st.entry||{}).scoreCross||20);
+    const cross = m.s>=thr&&mPrev.s<thr ? 'long' : m.s<=-thr&&mPrev.s>-thr ? 'short' : null;
+    if(cross&&m.conf>=Math.max(autopilot.minConf,(st.entry||{}).confMin||0)) found.push({sym:p.id,side:cross,score:m.s,conf:m.conf});
+  }
+  if(found.length){
+    found.sort((a,b)=>b.conf-a.conf);
+    const f=found[0];
+    apLog('scan',`🔭 סריקה: ${f.sym} מציג אות ${f.side==='long'?'לונג':'שורט'} · ציון ${f.score} · קונפלואנס ${f.conf}. הטייס סוחר רק בזירה שבמוקד — עבור ל-${f.sym} כדי לאפשר את זה`);
+  }
+}
 function autopilotTick(){
   if(!autopilot.on||!ind) return;
   apRollDay();
   const now=Date.now();
+  try{ apScanMarkets(); }catch(e){}
   if(now-apLastAt<4000) return; apLastAt=now;
   const sym=state.sym, prev=apPrevScore[sym];
   apPrevScore[sym]=ind.score;
   if(autopilot.locked) return;
   if(ind.closed) return;
+  // no size into a scheduled event — this is the discipline nobody has at
+  // the moment it matters, which is exactly why it belongs in the machine
+  const bo=calBlackout();
+  if(bo){
+    if(!autopilotTick._boWarn||Date.now()-autopilotTick._boWarn>300000){
+      autopilotTick._boWarn=Date.now();
+      apLog('skip',`חלון שקט לפני «${bo.ev.name}» — ${bo.minsTo>0?'בעוד '+bo.minsTo+' דקות':'התרחש זה עתה'} · הטייס לא פותח עסקאות`);
+    }
+    return;
+  }
   if(prev==null) return;
   // the autopilot now trades the SELECTED strategy's rules, not a hardcoded
   // ±20 cross — the same rules the lab backtested and ranked
@@ -3087,7 +3469,7 @@ function renderAutopilot(){
     +`<div class="ap-cap"><i style="width:${used.toFixed(0)}%"></i></div>`
     +`<div class="ap-note">תקרת הפסד יומית $${capUsd.toFixed(0)} (${autopilot.dayLossPct}% מהתיק) · ${used.toFixed(0)}% נוצלו</div>`;
   $('apLog').innerHTML=autopilot.log.length? autopilot.log.map(l=>
-      `<div class="ap-l ${l.kind}"><span class="ap-t">${fmtT(l.t)}</span>${l.kind==='open'?'✅':l.kind==='lock'?'⛔':'⏸'} ${l.txt}</div>`).join('')
+      `<div class="ap-l ${l.kind}"><span class="ap-t">${fmtT(l.t)}</span>${l.kind==='open'?'✅':l.kind==='lock'?'⛔':l.kind==='scan'?'🔭':'⏸'} ${l.txt}</div>`).join('')
     : '<div class="ap-empty">אין החלטות עדיין — הטייס רושם כאן גם כל אות שהוא דחה, ולמה</div>';
 }
 // close only PART of a position — bank half, let the rest run
@@ -3419,6 +3801,52 @@ $('btnPerf').onclick=()=>setPerf(!perfOpen);
 let labOpen=false;
 function setLab(on){ labOpen=on; $('labPanel').style.display=on?'block':'none'; $('btnLab').classList.toggle('on',on); if(on) renderLab(); }
 $('btnLab').onclick=()=>setLab(!labOpen);
+let toolsOpen=false;
+function setTools(on){
+  toolsOpen=on;
+  $('toolsPanel').style.display=on?'block':'none';
+  $('btnTools').classList.toggle('on',on);
+  if(on){ renderIAlerts(); renderCalendar(); }
+}
+$('btnTools').onclick=()=>setTools(!toolsOpen);
+$('toolsClose').onclick=()=>setTools(false);
+$('iaKind').innerHTML=IALERT_KINDS.map(k=>`<option value="${k.id}">${k.label}</option>`).join('');
+$('iaKind').onchange=()=>{ const k=IALERT_KINDS.find(x=>x.id===$('iaKind').value);
+  $('iaArg').value=k&&k.arg!=null?k.arg:''; $('iaArg').disabled=!(k&&k.arg!=null); };
+$('iaKind').onchange();
+$('iaAdd').onclick=()=>{ const v=parseFloat($('iaArg').value); addIAlert($('iaKind').value, isFinite(v)?v:null); };
+$('calAdd').onclick=()=>{
+  const name=$('calName').value.trim(), when=$('calWhen').value;
+  if(!name||!when){ toast('צריך שם ותאריך','down'); return; }
+  const at=new Date(when).getTime();
+  if(!at){ toast('תאריך לא תקין','down'); return; }
+  calendar.push({id:'c'+Date.now(),name,at}); saveCalendar(); renderCalendar();
+  $('calName').value='';
+  toast('האירוע נוסף · הטייס ישתוק סביבו','up');
+};
+$('expCsv').onclick=()=>exportJournalCSV();
+$('expJson').onclick=()=>exportAllJSON();
+$('impJson').onclick=()=>$('impFile').click();
+$('impFile').onchange=(e)=>{
+  const f=e.target.files&&e.target.files[0]; if(!f) return;
+  const rd=new FileReader();
+  rd.onload=()=>importAllJSON(String(rd.result||''));
+  rd.readAsText(f);
+  e.target.value='';
+};
+$('impTrades').onclick=()=>$('impTradesFile').click();
+$('impTradesFile').onchange=(e)=>{
+  const f=e.target.files&&e.target.files[0]; if(!f) return;
+  const rd=new FileReader();
+  rd.onload=()=>{ try{ importTradesCSV(String(rd.result||'')); }catch(err){ toast('הייבוא נכשל','down'); } };
+  rd.readAsText(f);
+  e.target.value='';
+};
+$('loadDeep').onclick=async()=>{ toast('טוען היסטוריה עמוקה…'); const ok=await loadDeeperHistory();
+  if(!ok&&deepExhausted) toast('אין יותר היסטוריה זמינה למקור הזה','down'); };
+window.__naTools={ia:()=>iAlerts,cal:()=>calendar,addIA:addIAlert,importCSV:importTradesCSV,fund:(sy)=>fundFor(sy||state.sym),
+  addCal:(n,at)=>{calendar.push({id:'c'+Date.now(),name:n,at});saveCalendar();renderCalendar();},
+  blackout:()=>calBlackout(), csv:()=>journalCSV(), deep:()=>loadDeeperHistory()};
 $('labClose').onclick=()=>setLab(false);
 $('labNew').onclick=()=>newStrategy();
 $('labRunAll').onclick=()=>{ toast('מריץ את כל האסטרטגיות…'); setTimeout(()=>{ try{ compareStrategies(); }catch(e){ toast('ההשוואה נכשלה','down'); } },30); };
@@ -5002,7 +5430,8 @@ function updateWorld(dt,now){
   nowRing.position.y=yH;
   nowRing.material.color.copy(tmpC);
   nowRing.material.opacity=0.55+0.2*Math.sin(t*2.4);
-  const fnd=state.market==='stock'? FUNDAMENTALS[state.sym] : null;
+  const fnd=state.market==='stock'? fundFor(state.sym) : null;
+  if(state.market==='stock') fetchFundamentals(state.sym);
   fundSats.forEach((fs,i)=>{
     fs.lb.sp.visible=!!fnd;
     if(!fnd) return;
@@ -5281,6 +5710,48 @@ const WORLD_STOCKS = {
 // ---- fundamentals per equity (reference values, early 2026) ----
 // pe=P/E (trailing), pb=P/B, ps=P/S, eps=trailing EPS in $.
 // null = not meaningful (loss-making / negative equity).
+// ── LIVE FUNDAMENTALS. The table below is a reference snapshot; these
+// numbers move every quarter and a stale P/E is worse than no P/E. This
+// fetches the real ones from Yahoo's quoteSummary and overlays them,
+// marking clearly which asset is showing live data and which is falling
+// back to the snapshot. A blocked network keeps the old behaviour exactly.
+const FUND_LIVE={};
+const fundTried={};
+async function fetchFundamentals(sym){
+  if(fundTried[sym]&&Date.now()-fundTried[sym]<6*3600e3) return FUND_LIVE[sym]||null;
+  fundTried[sym]=Date.now();
+  try{
+    const url='https://query1.finance.yahoo.com/v10/finance/quoteSummary/'+encodeURIComponent(sym)
+      +'?modules=defaultKeyStatistics,summaryDetail,financialData';
+    const r=await fetch(url);
+    if(!r.ok) throw 0;
+    const j=await r.json();
+    const res=j?.quoteSummary?.result?.[0]; if(!res) throw 0;
+    const sd=res.summaryDetail||{}, ks=res.defaultKeyStatistics||{};
+    const num=v=>(v&&typeof v==='object')? (isFinite(v.raw)?v.raw:null) : (isFinite(v)?v:null);
+    const out={
+      pe: num(sd.trailingPE)??num(ks.forwardPE),
+      pb: num(ks.priceToBook),
+      ps: num(sd.priceToSalesTrailing12Months),
+      eps: num(ks.trailingEps),
+      live:true, at:Date.now(),
+    };
+    if(out.pe==null&&out.pb==null&&out.ps==null&&out.eps==null) throw 0;
+    FUND_LIVE[sym]=out;
+    // if the panel is open on this symbol, refresh it in place
+    try{ if(state.sym===sym && $('fundPanel').style.display==='block') openFundPanel(openFundPanel._last); }catch(e){}
+    return out;
+  }catch(e){ return null; }
+}
+// the merged view: live where we have it, snapshot where we do not
+function fundFor(sym){
+  const live=FUND_LIVE[sym], base=FUNDAMENTALS[sym];
+  if(!live&&!base) return null;
+  if(!live) return {...base, live:false};
+  return { pe: live.pe??base?.pe, pb: live.pb??base?.pb,
+           ps: live.ps??base?.ps, eps: live.eps??base?.eps,
+           live:true, at:live.at };
+}
 const FUNDAMENTALS={
   AAPL:{pe:32,pb:47,ps:8.5,eps:7.4},   NVDA:{pe:48,pb:50,ps:26,eps:2.9},
   MSFT:{pe:34,pb:11,ps:12.5,eps:12.9}, GOOGL:{pe:24,pb:7,ps:6.5,eps:8.0},
@@ -5480,13 +5951,37 @@ function fmtPodVal(p){
   return priceTxt+' '+(p.chg>=0?'+':'')+p.chg.toFixed(2)+'%'+(p.sim?' · SIM':'');
 }
 // rolling per-pod price history (feeds the holo sparkline + info plate)
+// ── pod price history is persisted: a correlation computed from ninety
+// seconds of tape is not a correlation. Reloading used to throw it all away.
+const PODH_KEY='na:podhist';
+let podHistSaved={};
+try{ podHistSaved=JSON.parse(localStorage.getItem(PODH_KEY)||'{}')||{}; }catch(e){}
+let podHistSaveAt=0;
+function savePodHist(){
+  const now=Date.now();
+  if(now-podHistSaveAt<20000) return;
+  podHistSaveAt=now;
+  try{
+    const out={};
+    for(const p of pods) if(p.hist&&p.hist.length>4) out[p.id]=p.hist.slice(-160);
+    localStorage.setItem(PODH_KEY,JSON.stringify({at:now,h:out}));
+  }catch(e){}
+}
+function restorePodHist(p){
+  try{
+    const raw=podHistSaved.h?podHistSaved:JSON.parse(localStorage.getItem(PODH_KEY)||'{}');
+    // anything older than six hours describes a different market
+    if(raw&&raw.at&&Date.now()-raw.at<6*3600e3&&raw.h&&raw.h[p.id]) p.hist=raw.h[p.id].slice(-160);
+  }catch(e){}
+}
 function podHist(p){
   const nowT=performance.now();
   if(p._histAt && nowT-p._histAt<2200) return;
   p._histAt=nowT;
-  if(!p.hist) p.hist=[];
+  if(!p.hist){ p.hist=[]; restorePodHist(p); }
   p.hist.push(p.price);
-  if(p.hist.length>90) p.hist.shift();
+  if(p.hist.length>160) p.hist.shift();
+  savePodHist();
 }
 // ── THE BREADTH STADIUM — the horizon itself is an instrument. A ring of
 // 72 pillars surrounds the arena; each one is a live market, its height is
@@ -6597,7 +7092,11 @@ function chartZoom(f,keepRight){
 function chartPan(bars){
   const total=state.candles.length||1;
   const n=chartView.n||total;
-  chartView.off=Math.round(clamp(chartView.off+bars,0,Math.max(0,total-n)));
+  const want=chartView.off+bars;
+  chartView.off=Math.round(clamp(want,0,Math.max(0,total-n)));
+  // asked to go further back than we hold? fetch more tape instead of
+  // silently stopping at the edge
+  if(want>total-n && !deepExhausted) loadDeeperHistory();
   chartAnchor(); drawChart();
 }
 function chartAnchor(){
@@ -7402,6 +7901,7 @@ const SETTINGS_SCHEMA=[
     {key:'showSwarm', type:'checkbox', label:'נחילי אנרגיה', desc:'זרמי חלקיקים חיים שנעים בעולם — צבועים לפי כיוון השוק'},
     {key:'showWeather', type:'checkbox', label:'מזג אוויר של השוק', desc:'סופה בירידות, זוהר צפוני בעליות — לפי מצב הרוח הכללי'},
     {key:'showPulse', type:'checkbox', label:'פאנל דופק העולם', desc:'המובילים והמפסידים בפינה השמאלית'},
+    {key:'calBlackoutMin', type:'range', min:0, max:120, step:5, label:'חלון שקט סביב אירוע (דקות)', desc:'הטייס האוטומטי לא פותח עסקאות בטווח הזה לפני ואחרי אירוע ביומן'},
     {key:'feesOn', type:'checkbox', label:'מודל עלויות מסחר', desc:'עמלות, ספרד, סליפג׳ ומימון — כמו בבורסה אמיתית. כיבוי הופך את הדמו לתרגיל תיאורטי'},
     {key:'feeTakerBps', type:'range', min:0, max:20, step:0.5, label:'עמלת Taker (bps)', desc:'ברירת מחדל 5.5 = 0.055%, כמו VIP0 בבינאנס פיוצ׳רס'},
     {key:'feeMakerBps', type:'range', min:0, max:20, step:0.5, label:'עמלת Maker (bps)', desc:'הזמנות לימיט שיושבות בספר משלמות פחות'},
@@ -7631,9 +8131,15 @@ function endPtr(e){
   }
 }
 function openFundPanel(kind){
-  const fnd=FUNDAMENTALS[state.sym]; if(!fnd) return;
+  const fnd=fundFor(state.sym); if(!fnd) return;
   const pnl=$('fundPanel');
   $('fundSym').textContent=symCfg(state.sym)?.name||state.sym;
+  fetchFundamentals(state.sym);
+  const src=$('fundSrc');
+  if(src) src.innerHTML=fnd.live
+    ? '✓ נתונים חיים מ-Yahoo Finance · עודכן '+fmtT(fnd.at)
+    : '≈ נתוני ייחוס מקומיים — לא הצלחנו למשוך נתונים חיים כרגע';
+  openFundPanel._last=kind;
   $('fundRows').innerHTML=FUND_KINDS.map(k=>{
     const v=fnd[k], cls=fundClass(k,v);
     const vTxt=v==null?'—':k==='eps'?('$'+v.toFixed(2)):v.toFixed(1);
@@ -7815,6 +8321,14 @@ function mcEvaluate(){
       else if(cr&&cr.conc>=72) out.push({id:'conc',lvl:'warn',t:`ריכוזיות ${cr.conc.toFixed(0)}% — הפיזור חלקי בלבד`});
     }catch(e){}
   }
+  // a scheduled event inside the blackout window is a live risk, not trivia
+  try{
+    const bo=calBlackout();
+    if(bo) out.push({id:'cal',lvl:'warn',t:`🗓️ ${bo.ev.name} ${bo.minsTo>0?'בעוד '+bo.minsTo+' דקות':'עכשיו'} — הטייס בחלון שקט`});
+    else { const ne=nextEvent();
+      if(ne){ const m=Math.round((ne.at-Date.now())/60000);
+        if(m<=90) out.push({id:'calnext',lvl:'warn',t:`🗓️ ${ne.name} בעוד ${m} דקות`}); } }
+  }catch(e){}
   const bd=window.__ckBoard;
   if(bd&&bd.adx>=25) out.push({id:'adx',lvl:'warn',t:`מגמה חזקה · ADX ${bd.adx.toFixed(0)}`});
   if(ind&&ind.manip&&ind.manip.length){
@@ -8055,6 +8569,7 @@ function loop(){
     try{ autopilotTick(); }catch(e){}
     if(now-(renderPosStrip._at||0)>900){ renderPosStrip(); renderPosStrip._at=now; }
     checkPriceAlerts();
+    try{ checkIndicatorAlerts(); }catch(e){}
     updateWorld(dt,now);
     updatePods(dt,now);
     applyCam(dt);
