@@ -171,6 +171,9 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
   display:grid;grid-template-columns:repeat(2,52px);gap:7px;
   max-height:calc(100vh - 160px);max-height:calc(100dvh - 160px);overflow-y:auto;scrollbar-width:none;padding:2px}
 #toggles::-webkit-scrollbar{display:none}
+/* the drawer handle and its dimmer exist only on phones — desktop keeps the
+   sidebar exactly as it was */
+#toolsFab,#toolsScrim{display:none}
 .tgl{width:52px;height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
   cursor:pointer;font-size:9.5px;letter-spacing:.5px;color:var(--dim);text-decoration:none;
   background:rgba(6,12,26,.66);border:1px solid rgba(0,240,255,.16);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
@@ -570,10 +573,82 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
   #ticket{width:198px;right:10px;padding:10px 12px}
   #pricePanel{min-width:0;left:10px;padding:10px 13px}
   #battle{width:56vw;bottom:calc(64px + env(safe-area-inset-bottom))}
-  #toggles{left:8px}
   #brand .name{font-size:16px}
   #hint{display:none}
   #banner{font-size:14px;padding:10px 18px;white-space:nowrap}
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   PHONE LAYOUT. Twenty-two always-visible tool buttons down the left
+   edge, an oracle card, a trade ticket and a price panel all competing
+   for a 390-pixel screen left roughly a sixth of it showing the actual
+   3D world. On a phone the tools become a drawer that is closed until
+   asked for, and the panels stop overlapping each other.
+   ══════════════════════════════════════════════════════════════════ */
+@media (max-width:760px){
+  /* the tool grid slides up from the bottom, over a dimmer, and is
+     closed by default — the world gets the screen back */
+  #toggles{
+    position:fixed; inset:auto 0 0 0; left:0; right:0; top:auto;
+    transform:translateY(105%); transition:transform .28s cubic-bezier(.2,.9,.3,1);
+    display:grid; grid-template-columns:repeat(4,1fr); gap:8px;
+    max-height:none; height:auto; padding:14px 12px calc(18px + env(safe-area-inset-bottom));
+    background:rgba(4,9,20,.97); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px);
+    border-top:1px solid rgba(0,240,255,.3); border-radius:20px 20px 0 0;
+    box-shadow:0 -12px 44px rgba(0,0,0,.6); z-index:46; overflow-y:auto;
+  }
+  body.tools-open #toggles{transform:translateY(0)}
+  #toggles .tgl{width:100%;height:58px;font-size:10px;border-radius:12px}
+  #toggles .tgl span:first-child{font-size:19px}
+  /* the drawer handle: one button instead of twenty-two */
+  #toolsFab{
+    position:fixed; z-index:47; left:12px; bottom:calc(10px + env(safe-area-inset-bottom));
+    width:52px; height:52px; border-radius:16px; display:flex; align-items:center;
+    justify-content:center; font-size:21px; cursor:pointer;
+    background:rgba(4,12,26,.92); border:1px solid rgba(0,240,255,.45); color:var(--cyan);
+    backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+    box-shadow:0 6px 20px rgba(0,0,0,.5);
+  }
+  body.tools-open #toolsFab{background:rgba(0,240,255,.2);border-color:var(--cyan)}
+  /* the side tabs show through the drawer's own backdrop — park them while
+     it is open */
+  body.tools-open #oracleTab,body.tools-open #ticketTab{opacity:0;pointer-events:none}
+  #toolsScrim{position:fixed;inset:0;z-index:45;background:rgba(2,6,14,.55);
+    opacity:0;pointer-events:none;transition:opacity .28s}
+  body.tools-open #toolsScrim{opacity:1;pointer-events:auto}
+
+  /* one card at a time: the oracle and the ticket already have tab
+     buttons, so off-screen is their resting state rather than stacked */
+  #oracle,#ticket{
+    top:auto; bottom:calc(72px + env(safe-area-inset-bottom)); right:8px; left:8px;
+    width:auto; max-height:52dvh; overflow-y:auto;
+    transform:translateY(calc(100% + 90px)); transition:transform .26s ease;
+    z-index:38;
+  }
+  #oracle.mob-open,#ticket.mob-open{transform:translateY(0)}
+  /* the price panel shrinks to a strip and never sits under a card */
+  /* the price strip sits ABOVE the drawer handle, never under it */
+  #pricePanel{left:74px;right:auto;bottom:calc(10px + env(safe-area-inset-bottom));
+    padding:7px 11px;max-width:calc(100vw - 150px)}
+  #pricePanel .big{font-size:22px}
+  #pricePanel .row{font-size:9.5px}
+  #battle{display:none}          /* the power bar duplicates the oracle */
+  #posStrip{bottom:calc(128px + env(safe-area-inset-bottom));max-width:94vw}
+  #commBar{bottom:calc(72px + env(safe-area-inset-bottom));max-width:94vw;font-size:11px}
+  #mcStack{bottom:calc(170px + env(safe-area-inset-bottom))}
+  #tape{font-size:10px}
+  /* every tool panel becomes a proper bottom sheet with room to breathe */
+  #recsPanel,#apPanel,#ordPanel,#perfPanel,#labPanel,#toolsPanel,#logPanel,
+  #portfolioPanel,#fundPanel,#settingsPanel,#chartPanel{
+    left:6px !important; right:6px !important; width:auto !important;
+    top:auto !important; bottom:calc(6px + env(safe-area-inset-bottom)) !important;
+    transform:none !important; max-height:82dvh !important; z-index:44;
+  }
+}
+/* very small phones: the tool grid goes to three columns so labels fit */
+@media (max-width:400px){
+  #toggles{grid-template-columns:repeat(3,1fr)}
+  #pricePanel{max-width:58vw}
 }
 
 /* WORLD — picker, focus plate, walk hints */
@@ -793,12 +868,12 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
   .pill{padding:6px 10px;font-size:11px;flex:none}
   /* 21 buttons now — on phones the rail must stop well above the price
      panel (it was burying it) and scroll internally instead */
-  #toggles{left:6px;top:44%;gap:5px;grid-template-columns:repeat(2,42px);max-height:52vh;overflow-y:auto;scrollbar-width:none}
-  #toggles::-webkit-scrollbar{display:none}
-  .tgl{width:42px;height:37px;gap:1px}
+  /* the sidebar is a bottom drawer on phones now — these older overrides
+     dragged it back to the left edge */
   .tgl span{font-size:12px !important}
   .tgl span:last-child{font-size:7px !important}
-  #pricePanel{left:8px;bottom:calc(34px + env(safe-area-inset-bottom));min-width:0;width:46vw;max-width:210px;padding:9px 11px}
+  #pricePanel{left:74px;bottom:calc(10px + env(safe-area-inset-bottom));min-width:0;
+    width:auto;max-width:calc(100vw - 150px);padding:9px 11px}
   #priceBig{font-size:clamp(17px,5.6vw,24px)}
   #chg{font-size:12px}
   #stats{gap:2px 8px;margin-top:6px;padding-top:5px}
@@ -833,12 +908,9 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
   #joyHint{bottom:calc(30px + env(safe-area-inset-bottom))}
 }
 @media (max-height:520px){
-  #toggles{max-height:94vh;gap:4px;grid-template-columns:repeat(2,38px)}
-  .tgl{width:38px;height:30px}
-  .tgl span:last-child{display:none}
   #top{row-gap:4px}
   #brand .name{font-size:13px}
-  #pricePanel{width:180px;padding:7px 10px;bottom:calc(30px + env(safe-area-inset-bottom))}
+  #pricePanel{padding:7px 10px;bottom:calc(10px + env(safe-area-inset-bottom))}
   #stats{display:none}
   #oracleTab{bottom:auto;top:calc(50% - 50px)}
   #ticketTab{bottom:auto;top:calc(50% + 2px)}
@@ -1094,6 +1166,8 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
       <div class="ck-i"><span>סיכון בעסקה</span><b id="ckRisk" class="num">—</b></div>
     </div>
   </div>
+  <div id="toolsScrim"></div>
+  <div id="toolsFab" title="כלים">☰</div>
   <div id="mcStack"></div>
   <div id="scoutCard" class="panel clip" style="display:none"></div>
   <div id="posStrip" style="display:none"></div>
@@ -3878,6 +3952,18 @@ function setTools(on){
   if(on){ renderIAlerts(); renderCalendar(); }
 }
 $('btnTools').onclick=()=>setTools(!toolsOpen);
+// ── phone tool drawer ──────────────────────────────────────────────
+// The drawer closes as soon as a tool is picked: on a phone the panel that
+// opens needs the whole screen, and leaving the grid up would cover it.
+function setToolsDrawer(on){
+  document.body.classList.toggle('tools-open',on);
+  const f=$('toolsFab'); if(f) f.textContent=on?'✕':'☰';
+}
+$('toolsFab').onclick=()=>setToolsDrawer(!document.body.classList.contains('tools-open'));
+$('toolsScrim').onclick=()=>setToolsDrawer(false);
+document.querySelectorAll('#toggles .tgl').forEach(b=>{
+  b.addEventListener('click',()=>{ if(innerWidth<=760) setTimeout(()=>setToolsDrawer(false),120); });
+});
 $('toolsClose').onclick=()=>setTools(false);
 $('iaKind').innerHTML=IALERT_KINDS.map(k=>`<option value="${k.id}">${k.label}</option>`).join('');
 $('iaKind').onchange=()=>{ const k=IALERT_KINDS.find(x=>x.id===$('iaKind').value);
@@ -5794,7 +5880,7 @@ function mkShield(hex){
   disc.rotation.x=-Math.PI/2; grp.add(disc);
   const rim=new THREE.Mesh(new THREE.TorusGeometry(5.8,0.09,8,50),addMat(hex,0.6));
   rim.rotation.x=Math.PI/2; grp.add(rim);
-  const lb=textSprite(256,64,9.5,2.4); lb.sp.position.set(9.2,1.1,0); grp.add(lb.sp);
+  const lb=textSprite(256,64,9.5,2.4); lb.sp.position.set(9.2,1.1,0); lb.sp.userData.baseX=9.2; grp.add(lb.sp);
   return {grp,disc,rim,lb};
 }
 const askShield=mkShield(0xff3d6e);
@@ -5808,7 +5894,7 @@ function holoRing(hex,r,tube,side){
   const lb=textSprite(256,64,9,2.25);
   // every level label lives on the same right-side "ruler" x — one aligned
   // column of plates instead of text scattered around the core
-  lb.sp.position.set(9.2,0.7,0); grp.add(lb.sp);
+  lb.sp.position.set(9.2,0.7,0); lb.sp.userData.baseX=9.2; grp.add(lb.sp);
   return {grp,ring,lb,setColor(h){ring.material.color.set(h);}};
 }
 const tpRing=holoRing(0x00ffa6,5.4,0.11,1);
@@ -5909,6 +5995,13 @@ let lastSampleT=0;
 //  per-frame world
 // ============================================================
 function updateWorld(dt,now){
+  // Phone layout flags, read by several blocks below — declared here because
+  // the price hologram uses them long before the S/R block does, and a `let`
+  // further down is still in its temporal dead zone at that point. That threw
+  // once a frame, which the loop's guard swallowed into safe mode: the world
+  // rendered but no prices ever appeared.
+  const narrow=innerWidth<=760;
+  const LBX=narrow?5.4:9.2;   // label offset that keeps text on a narrow canvas
   if(!state.candles.length) return;
   const t=now*0.001;
 
@@ -6011,7 +6104,7 @@ function updateWorld(dt,now){
     const kName={pe:'P/E',pb:'P/B',ps:'P/S',eps:'EPS'}[fs.kind];
     fs.lb.draw(kName+'  '+vTxt+' · '+cls.t, cls.c, "700 26px 'Heebo', sans-serif", true);
   });
-  priceHolo.sp.position.set(-9.8,yH+2.4,0);
+  priceHolo.sp.position.set(narrow?-5.6:-9.8, yH+2.4, 0);
   priceHolo.draw('עכשיו  '+fmtP(state.lastPrice), mom>=0?'#00ffa6':'#ff3d6e', "700 52px 'Orbitron', monospace", true);
 
   // hi / lo labels
@@ -6043,9 +6136,23 @@ function updateWorld(dt,now){
   // labels can be decluttered together right after (rings themselves always
   // stay at the true price height; only the floating text nudges apart)
   const labelItems=[];
+  // ── On a phone six support/resistance labels plus the wall labels plus the
+  // price plate is more text than a 390-pixel screen can hold, and they run
+  // off the edges. The RINGS all stay — the levels are still there to read
+  // off the column — but only the three nearest ones are labelled.
+  let labelBudget=narrow?2:99;
+  // ...and only levels close enough to the live price to sit in the middle
+  // band of the screen. A level 6% away renders near the top of the column,
+  // which on a phone is exactly where the symbol pills are.
+  const lvOrder=(showSig&&ind&&ind.levels)
+    ? ind.levels.map((lv,i)=>({i,d:Math.abs(lv.p-state.lastPrice)}))
+        .filter(x=>!narrow||x.d/Math.max(1e-9,state.lastPrice)<0.015)
+        .sort((a,b)=>a.d-b.d).slice(0,labelBudget).map(x=>x.i)
+    : [];
   for(let j=0;j<srRings.length;j++){
     const rg=srRings[j];
     const lv=showSig && ind.levels[j];
+    const labelIt=!narrow||lvOrder.indexOf(j)>=0;
     if(lv){
       rg.grp.visible=true;
       const y=yFor(lv.p);
@@ -6053,8 +6160,12 @@ function updateWorld(dt,now){
       const above=lv.p>state.lastPrice;
       rg.setColor(above?0xff3d6e:0x00ffa6);
       rg.ring.material.opacity=0.2+0.04*Math.sin(t*2+j);
-      rg.lb.draw((above?'התנגדות ':'תמיכה ')+fmtP(lv.p)+distTxt(lv.p), above?'#ff3d6e':'#00ffa6', null, true);
-      labelItems.push({lb:rg.lb, rawY:y});
+      rg.lb.sp.visible=labelIt;
+      rg.lb.sp.position.x=LBX;
+      if(labelIt){
+        rg.lb.draw((above?'התנגדות ':'תמיכה ')+fmtP(lv.p)+distTxt(lv.p), above?'#ff3d6e':'#00ffa6', null, true);
+        labelItems.push({lb:rg.lb, rawY:y});
+      }
     } else rg.grp.visible=false;
   }
 
@@ -6064,6 +6175,10 @@ function updateWorld(dt,now){
   const P=posOn(state.sym);
   const src=P || (showSig && ind.sug) || null;
   tpRing.grp.visible=slRing.grp.visible=enRing.grp.visible=!!src && state.showSig;
+  [tpRing,slRing,enRing].forEach(r=>{ if(r.lb&&r.lb.sp) r.lb.sp.position.x=LBX; });
+  // the suggested-entry plate repeats what the trade ticket already says —
+  // on a phone that is one text plate too many stacked over the core
+  if(enRing.lb&&enRing.lb.sp) enRing.lb.sp.visible=!narrow;
   chevMesh.visible=!!src && state.showSig;
   if(src && state.showSig){
     const yTp=yFor(src.tp), ySl=yFor(src.sl), yEn=yFor(src.entry);
@@ -6098,6 +6213,7 @@ function updateWorld(dt,now){
     const rel=clamp(state.wallAsk.q/(refQ*3),0.15,1);
     askShield.disc.material.opacity=0.06+rel*0.22;
     askShield.rim.material.opacity=0.3+rel*0.5;
+    askShield.lb.sp.position.x=LBX;
     askShield.lb.draw('חומת מכירה · '+fmtP(state.wallAsk.p)+distTxt(state.wallAsk.p),'#ff3d6e', null, true);
   } else askShield.grp.visible=false;
   if(shOn && state.wallBid){
@@ -6106,6 +6222,7 @@ function updateWorld(dt,now){
     const rel=clamp(state.wallBid.q/(refQ*3),0.15,1);
     bidShield.disc.material.opacity=0.06+rel*0.22;
     bidShield.rim.material.opacity=0.3+rel*0.5;
+    bidShield.lb.sp.position.x=LBX;
     bidShield.lb.draw('חומת קנייה · '+fmtP(state.wallBid.p)+distTxt(state.wallBid.p),'#00ffa6', null, true);
   } else bidShield.grp.visible=false;
   if(shOn && state.wallAsk) labelItems.push({lb:askShield.lb, rawY:askShield.grp.position.y, base:1.1});
@@ -6597,6 +6714,18 @@ breadthRing.rotation.x=-Math.PI/2; breadthRing.position.y=0.2; scene.add(breadth
 }
 function updatePods(dt,now){
   const t=now*0.001;
+  // On a phone the ring of pod labels lands on top of the symbol pills and
+  // the timeframe row. The pods themselves stay — they are the world — but
+  // their text is hidden, because unreadable text over the UI is worse than
+  // no text at all.
+  const narrowPods=innerWidth<=760;
+  if(updatePods._narrow!==narrowPods){
+    updatePods._narrow=narrowPods;
+    for(const p of pods){
+      if(p.nameS&&p.nameS.sp) p.nameS.sp.visible=!narrowPods;
+      if(p.valS&&p.valS.sp) p.valS.sp.visible=!narrowPods;
+    }
+  }
   if(!updatePods._bT||now-updatePods._bT>120){ updatePods._bT=now; try{ updateBreadth(t); }catch(e){} }
   const stocksClosed=!usMarketOpen();
   for(const p of pods){
