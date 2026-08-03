@@ -1448,7 +1448,7 @@ const NA_DEFAULTS={
   walkSpeed:18, lookSens:1.0, invertY:false,
   alertsEnabled:true, alertPct:3,
   chartStyle:'classic', centerMode:'classic',
-  calBlackoutMin:30, feesOn:true, feeTakerBps:5.5, feeMakerBps:2.0, spreadBps:2.0, slipBps:1.5, fundingBps8h:1.0,
+  commVerbosity:'lean', calBlackoutMin:30, feesOn:true, feeTakerBps:5.5, feeMakerBps:2.0, spreadBps:2.0, slipBps:1.5, fundingBps8h:1.0,
   chartAutoOpen:false, chartDefaultTf:'1m',
   tourHoldSec:4, tapeSpeedSec:40,
   spawnWalkOnLoad:false,
@@ -3913,6 +3913,10 @@ function scoutScan(){
   for(const pod of pods){
     if(pod.kind!=='crypto'&&pod.kind!=='stock') continue;
     if(pod.id===state.sym) continue;               // never the focused market
+    // …and never a market we are already holding. Offering a fresh entry on
+    // a coin with a live position invites doubling into a trade that has not
+    // been managed yet, which is exactly how a small loss becomes a big one.
+    if(posOn(pod.id)) continue;
     if(!symCfg(pod.id)) continue;
     if(pod.sim) continue;                          // real data only — this is a real offer
     if(pod.kind==='stock'&&!usMarketOpen()) continue;
@@ -4014,6 +4018,92 @@ window.__naScout={scan:scoutScan,show:showScout,hide:hideScout,seen:()=>scoutSee
 //  commentary fills the quiet stretches so the broadcast never dies.
 // ============================================================
 let commOn=false, commLastSaid='', commLastAt=0, commColorAt=0, commColorIdx=0;
+const commSaidKeys={};   // meaning-key → last time it was said
+// ============================================================
+//  THE WISDOM POOL — sixty-four lines, drawn without replacement. The old
+//  version cycled a handful of sayings in a fixed order, so anyone listening
+//  for twenty minutes heard the same sentence twice. Here every line is used
+//  once before ANY line is used again, the used-set persists across sessions,
+//  and the pool reshuffles only when it is genuinely empty.
+// ============================================================
+const WISDOM=[
+  ['Amateurs think about how much they can make. Professionals think about how much they can lose.','חובבנים חושבים כמה אפשר להרוויח. מקצוענים חושבים כמה אפשר להפסיד.'],
+  ['The market can stay irrational longer than you can stay solvent.','השוק יכול להישאר לא רציונלי יותר זמן ממה שאתה יכול להישאר סולבנטי.'],
+  ['Your first loss is your cheapest loss.','ההפסד הראשון הוא ההפסד הזול ביותר.'],
+  ['No position is also a position. Cash is a trade.','גם לא להיות בפוזיציה זו פוזיציה. מזומן זו החלטה.'],
+  ['You get paid for being right, not for being early. They are not the same.','משלמים לך על להיות צודק, לא על להיות מוקדם. זה לא אותו דבר.'],
+  ['A stop you move is not a stop. It is a wish.','סטופ שאתה מזיז הוא לא סטופ. הוא משאלה.'],
+  ['Risk comes from not knowing what you are doing, not from volatility.','הסיכון מגיע מלא לדעת מה אתה עושה, לא מהתנודתיות.'],
+  ['The trade you skip can be the best trade of the week.','העסקה שוויתרת עליה יכולה להיות הטובה בשבוע.'],
+  ['Size kills faster than direction.','גודל הפוזיציה הורג מהר יותר מהכיוון.'],
+  ['Plan the trade, trade the plan, and log what actually happened.','תכנן את העסקה, סחור את התוכנית, ותעד מה קרה באמת.'],
+  ['Averaging down turns a small mistake into a career-ending one.','מיצוע כלפי מטה הופך טעות קטנה לטעות שמסיימת קריירה.'],
+  ['If you need the trade to work, you are already too big.','אם אתה צריך שהעסקה תעבוד — אתה כבר גדול מדי.'],
+  ['Trends end. Chasing them at the end is where most money dies.','מגמות נגמרות. לרדוף אחריהן בסוף — שם רוב הכסף מת.'],
+  ['Volume tells you whether anyone believes the move.','הנפח מספר לך אם מישהו בכלל מאמין למהלך.'],
+  ['A breakout without volume is an invitation, not a signal.','פריצה בלי נפח היא הזמנה, לא אות.'],
+  ['The best setups are boring. The exciting ones cost money.','הסטאפים הכי טובים משעממים. המרגשים עולים כסף.'],
+  ['You cannot control the outcome, only the size and the exit.','אתה לא שולט בתוצאה — רק בגודל וביציאה.'],
+  ['Two green days do not make you a genius.','שני ימים ירוקים לא הופכים אותך לגאון.'],
+  ['Revenge trading is the most expensive emotion in finance.','מסחר נקמה הוא הרגש היקר ביותר בפיננסים.'],
+  ['Liquidity is a fair-weather friend. It leaves exactly when you need it.','נזילות היא חבר של ימי שמש. היא נעלמת בדיוק כשצריך אותה.'],
+  ['Every stop hunt looks like a trend reversal in real time.','כל ציד סטופים נראה כמו היפוך מגמה בזמן אמת.'],
+  ['The tape does not know you are in the trade.','לטייפ לא אכפת שאתה בפוזיציה.'],
+  ['Consistency beats brilliance over a hundred trades.','עקביות מנצחת גאונות על פני מאה עסקאות.'],
+  ['A strategy you cannot follow when losing is not your strategy.','אסטרטגיה שאתה לא מסוגל לעקוב אחריה כשמפסידים — היא לא שלך.'],
+  ['Leverage does not create edge. It multiplies whatever you already have.','מינוף לא יוצר יתרון. הוא מכפיל את מה שכבר יש לך — לשני הכיוונים.'],
+  ['Most breakouts fail. That is why the ones that work pay so well.','רוב הפריצות נכשלות. בגלל זה אלה שמצליחות משלמות כל כך טוב.'],
+  ['Watch what the market does at the level, not what it does between levels.','תסתכל על מה שהשוק עושה ברמה, לא על מה שהוא עושה בין הרמות.'],
+  ['If you cannot say where you are wrong, you have no trade.','אם אתה לא יכול להגיד איפה אתה טועה — אין לך עסקה.'],
+  ['The market pays for patience and charges for boredom.','השוק משלם על סבלנות וגובה תשלום על שעמום.'],
+  ['A win rate without an average win is a meaningless number.','אחוז הצלחה בלי רווח ממוצע הוא מספר חסר משמעות.'],
+  ['Never let a winner become a loser. That rule alone saves accounts.','לעולם אל תיתן לעסקה מנצחת להפוך למפסידה. הכלל הזה לבד מציל חשבונות.'],
+  ['Everyone has a plan until the first candle goes against them.','לכולם יש תוכנית — עד הנר הראשון שהולך נגדם.'],
+  ['Trading the news is trading against people who had it first.','לסחור על החדשות זה לסחור נגד מי שקיבל אותן קודם.'],
+  ['Slippage and fees are the silent partners in every strategy.','סליפג׳ ועמלות הם השותפים השקטים בכל אסטרטגיה.'],
+  ['Do not confuse a bull market with skill.','אל תבלבל בין שוק שורי לכישרון.'],
+  ['If the setup needs a paragraph to justify, it is not a setup.','אם צריך פסקה כדי להצדיק את הסטאפ — זה לא סטאפ.'],
+  ['The hardest trade is usually the right one.','העסקה הכי קשה לביצוע היא בדרך כלל הנכונה.'],
+  ['Position size is the only variable you fully control.','גודל הפוזיציה הוא המשתנה היחיד שבשליטתך המלאה.'],
+  ['A market that will not fall on bad news wants to go up.','שוק שלא יורד על חדשות רעות — רוצה לעלות.'],
+  ['A market that will not rise on good news wants to go down.','שוק שלא עולה על חדשות טובות — רוצה לרדת.'],
+  ['Capital preservation is not caution. It is the whole job.','שימור הון הוא לא זהירות. הוא כל העבודה.'],
+  ['Your edge is a rounding error until you repeat it a thousand times.','היתרון שלך הוא טעות עיגול עד שתחזור עליו אלף פעם.'],
+  ['Boredom makes traders invent setups that were never there.','שעמום גורם לסוחרים להמציא סטאפים שמעולם לא היו שם.'],
+  ['The chart owes you nothing.','הגרף לא חייב לך כלום.'],
+  ['Discipline is remembering what you decided when you were calm.','משמעת היא לזכור מה החלטת כשהיית רגוע.'],
+  ['Overtrading is how a good week becomes a bad month.','מסחר יתר הוא איך ששבוע טוב הופך לחודש רע.'],
+  ['If you would not enter here, you should not be holding here.','אם לא היית נכנס כאן — אתה לא אמור להחזיק כאן.'],
+  ['The exit decides the trade. The entry only starts it.','היציאה מכריעה את העסקה. הכניסה רק מתחילה אותה.'],
+  ['Markets reward preparation and punish improvisation.','השווקים מתגמלים הכנה ומענישים אלתור.'],
+  ['A crowded trade is a trapdoor with a queue in front of it.','עסקה צפופה היא דלת מלכודת עם תור מולה.'],
+  ['Never risk what you need on something you merely want.','לעולם אל תסכן את מה שאתה צריך על משהו שאתה רק רוצה.'],
+  ['A losing trade taken correctly is better than a winner taken by luck.','עסקה מפסידה שנלקחה נכון עדיפה על מנצחת שנלקחה במזל.'],
+  ['Time in the wrong trade costs more than the loss itself.','זמן בעסקה הלא נכונה עולה יותר מההפסד עצמו.'],
+  ['You are not paid to predict. You are paid to react correctly.','לא משלמים לך לחזות. משלמים לך להגיב נכון.'],
+  ['The market is a device for transferring money from the impatient to the patient.','השוק הוא מכשיר להעברת כסף מחסרי הסבלנות אל הסבלניים.'],
+  ['Cut the ones that stop making sense, not the ones that stopped moving.','חתוך את אלה שהפסיקו להיות הגיוניות, לא את אלה שהפסיקו לזוז.'],
+  ['A stop loss is the price of being allowed to be wrong.','סטופ לוס הוא המחיר של הזכות לטעות.'],
+  ['If it is obvious to you, ask who is on the other side.','אם זה ברור לך — תשאל מי בצד השני.'],
+  ['One good trade does not validate a bad process.','עסקה טובה אחת לא מכשירה תהליך גרוע.'],
+  ['The trend is your friend until it bends at the end.','המגמה היא ידידתך — עד שהיא מתעקמת בסוף.'],
+  ['Trade smaller than you think you should, especially when certain.','סחור קטן יותר ממה שנראה לך שצריך — במיוחד כשאתה בטוח.'],
+  ['Nobody was ever ruined by taking a profit too early — only by holding a loss too long.','אף אחד לא נהרס מלקיחת רווח מוקדם מדי — רק מהחזקת הפסד יותר מדי זמן.'],
+  ['Screens do not make money. Decisions do.','מסכים לא עושים כסף. החלטות כן.'],
+  ['Being flat is a legitimate strategy, and often the best one.','להיות מחוץ לשוק זו אסטרטגיה לגיטימית, ולעיתים הטובה ביותר.'],
+];
+const WIS_KEY='na:wisdom';
+let wisUsed=[];
+try{ const r=JSON.parse(localStorage.getItem(WIS_KEY)||'[]'); if(Array.isArray(r)) wisUsed=r; }catch(e){}
+function nextWisdom(){
+  if(wisUsed.length>=WISDOM.length) wisUsed=[];       // exhausted — start a fresh cycle
+  const pool=WISDOM.map((_,i)=>i).filter(i=>wisUsed.indexOf(i)<0);
+  const pick=pool[(Math.random()*pool.length)|0];
+  wisUsed.push(pick);
+  try{ localStorage.setItem(WIS_KEY,JSON.stringify(wisUsed)); }catch(e){}
+  const w=WISDOM[pick];
+  return L(w[0],w[1]);
+}
 let commPrev={score:null,rsiZone:'',ema:'',pos:false,posSym:''};
 // bilingual line helper — every caster line is authored in both languages
 // and the setting decides which one goes on air
@@ -4070,8 +4160,13 @@ function commTick(){
   // session VWAP over the loaded window — the institutional anchor
   let vwap=null; { let pv=0,vv=0; for(const c of cs){ const tp=(c.h+c.l+c.c)/3; pv+=tp*(c.v||0); vv+=c.v||0; } if(vv>0) vwap=pv/vv; }
 
+  // ── Entry calls are suppressed on a market we are already in. Being told
+  // "buy signal!" while holding that exact coin is worse than useless — it
+  // pushes a trader to double a position they have not yet managed. In a
+  // trade the caster's job changes completely: manage the one that is open.
+  const inTradeHere=!!P;
   // ---- explicit trade calls on verdict transitions (with R:R + confluence) ----
-  if(commPrev.score!=null && !ind.closed){
+  if(commPrev.score!=null && !ind.closed && !inTradeHere){
     const conf=[];
     if(vwap!=null) conf.push(L(lp>=vwap?'price above VWAP':'price below VWAP',lp>=vwap?'מחיר מעל VWAP':'מחיר מתחת ל-VWAP'));
     const patEn=patternEn(candleAnalysis&&(candleAnalysis.pattern||candleAnalysis.single));
@@ -4086,6 +4181,40 @@ function commTick(){
     else if(sc<=-20&&commPrev.score>-20) lines.push({p:10,t:L('Sell signal! Score dropped to '+sc+'. Shorts have the edge here.','אות מכירה! הציון ירד ל-'+sc+'. היתרון אצל השורטיסטים.')+confTxt});
     if(Math.abs(sc)<20&&Math.abs(commPrev.score)>=20) lines.push({p:6,t:L('Signal cooled off — back to wait mode. A genius trader knows: no trade IS a trade.','האות התקרר — חזרה להמתנה. סוחר גאון יודע: גם לא-לסחור זו עסקה.')});
   }
+
+  // ── while in a trade here: the running state of THAT trade, in the terms
+  // that decide what to do next — R multiple, distance to each side, and
+  // what would invalidate the idea ──
+  if(inTradeHere){
+    const R=Math.abs(P.entry-P.sl)||1e-9;
+    const moved=(P.side==='long'? lp-P.entry : P.entry-lp);
+    const rNow=moved/R;
+    const toTpPct=Math.abs(P.tp-lp)/lp*100, toSlPct=Math.abs(lp-P.sl)/lp*100;
+    const held=P.openedAt? Math.round((Date.now()-P.openedAt)/60000) : null;
+    if(commPrev.rBucket==null||Math.floor(rNow)!==commPrev.rBucket){
+      commPrev.rBucket=Math.floor(rNow);
+      if(rNow>=1) lines.push({p:12,t:L(
+        `Up ${rNow.toFixed(1)}R on ${state.sym}. Stop to breakeven now makes this a free trade.`,
+        `${rNow.toFixed(1)}R ברווח על ${state.sym}. סטופ לנקודת האיזון עכשיו הופך את זה לעסקה חינם.`)});
+      else if(rNow<=-0.7) lines.push({p:12,t:L(
+        `Down ${Math.abs(rNow).toFixed(1)}R on ${state.sym}, ${toSlPct.toFixed(2)} percent from the stop. Nothing to add here — the plan already said where you are wrong.`,
+        `${Math.abs(rNow).toFixed(1)}R בהפסד על ${state.sym}, ${toSlPct.toFixed(2)} אחוז מהסטופ. אין מה להוסיף כאן — התוכנית כבר אמרה איפה אתה טועה.`)});
+    }
+    // the signal flipping against an open trade is the single most useful
+    // thing the caster can say, so it outranks everything else
+    if(((P.side==='long'&&sc<=-20)||(P.side==='short'&&sc>=20)) && commPrev.flip!==true){
+      commPrev.flip=true;
+      lines.push({p:14,t:L(
+        `The signal just flipped against your ${state.sym} position. Either the thesis broke or this is noise — decide now, not at the stop.`,
+        `האות התהפך נגד הפוזיציה שלך ב-${state.sym}. או שהתזה נשברה או שזה רעש — תחליט עכשיו, לא בסטופ.`)});
+    } else if(!((P.side==='long'&&sc<=-20)||(P.side==='short'&&sc>=20))) commPrev.flip=false;
+    if(held!=null&&held>=45&&!commPrev.stale&&Math.abs(rNow)<0.4){
+      commPrev.stale=true;
+      lines.push({p:9,t:L(
+        `${held} minutes in ${state.sym} and still flat. Time in a trade that is going nowhere costs more than the loss would.`,
+        `${held} דקות ב-${state.sym} והעסקה במקום. זמן בעסקה שלא הולכת לשום מקום עולה יותר מההפסד עצמו.`)});
+    }
+  } else { commPrev.rBucket=null; commPrev.flip=false; commPrev.stale=false; }
 
   // ---- position coaching across the ENTIRE portfolio — the caster tracks
   // every running trade, not just the one on stage, and names the symbol ----
@@ -4165,7 +4294,12 @@ function commTick(){
   lines.sort((a,b)=>b.p-a.p);
   let chosen=lines[0]||null;
   const nowT=Date.now();
-  if(!chosen&&nowT-commColorAt>26000){
+  // pacing by verbosity. The default is deliberately quiet: a caster that
+  // fills every silence trains you to stop listening, and then it is not
+  // there when it finally has something worth hearing.
+  const VERB={lean:{color:95000,gap:26000,minP:6},normal:{color:55000,gap:15000,minP:4},chatty:{color:26000,gap:9000,minP:0}};
+  const vb=VERB[naSettings.commVerbosity||'lean']||VERB.lean;
+  if(!chosen&&nowT-commColorAt>vb.color){
     const allIds=Object.keys(positions);
     const allSyms=[...new Set(allIds.map(k=>positions[k].sym))];
     const netUsd=allIds.reduce((sum,k)=>{ const PP=positions[k]; return sum+netPnlUsd(PP); },0);
@@ -4174,7 +4308,7 @@ function commTick(){
       L('Order flow check: '+Math.round(state.bullPct)+' percent buyers versus '+Math.round(100-state.bullPct)+' percent sellers.','בדיקת זרימה: '+Math.round(state.bullPct)+' אחוז קונים מול '+Math.round(100-state.bullPct)+' אחוז מוכרים.'),
       L(state.sym+' trading around '+fmtP(lp)+(vwap!=null?(lp>=vwap?', holding above VWAP — buyers in control of the session.':', stuck below VWAP — sellers own this session.'):'.'),state.sym+' נסחר סביב '+fmtP(lp)+(vwap!=null?(lp>=vwap?', מחזיק מעל ה-VWAP — הקונים שולטים בסשן.':', תקוע מתחת ל-VWAP — המוכרים בעלי הבית בסשן הזה.'):'.')),
       L('RSI at '+(R|0)+' — '+(R>60?'bulls in charge.':R<40?'bears pressing.':'balanced tape. Patience pays: the best trades come to you.'),'RSI על '+(R|0)+' — '+(R>60?'השוורים בשליטה.':R<40?'הדובים לוחצים.':'שוק מאוזן. סבלנות משתלמת: העסקאות הטובות באות אליך.')),
-      L('Remember: amateurs focus on how much they can make, professionals on how much they can lose.','זכור: חובבנים מתמקדים בכמה אפשר להרוויח, מקצוענים — בכמה אפשר להפסיד.'),
+      nextWisdom(), nextWisdom(),
       ...((()=>{ const m=ind.mtf; if(!m) return [];
         return [L('Timeframe check: '+m.align+' of '+m.rows.length+' timeframes point '+(m.dir>0?'up':'down')+'. '+(m.align===m.rows.length?'Full alignment — these are the trades that pay.':'Not fully aligned, so keep the size honest.'),
                   'בדיקת זמנים: '+m.align+' מתוך '+m.rows.length+' זמנים מצביעים '+(m.dir>0?'למעלה':'למטה')+'. '+(m.align===m.rows.length?'יישור מלא — אלו העסקאות שמשלמות.':'אין יישור מלא, אז שמור על גודל פוזיציה צנוע.'))]; })()),
@@ -4185,13 +4319,32 @@ function commTick(){
     chosen={p:0,t:color[(commColorIdx++)%color.length]};
     commColorAt=nowT;
   }
-  if(chosen&&chosen.t!==commLastSaid&&(chosen.p>=10||nowT-commLastAt>9000)){
-    commLastSaid=chosen.t; commLastAt=nowT;
-    commSay(chosen.t,chosen.p>=10);
+  // low-priority chatter is dropped entirely below the verbosity floor
+  if(chosen&&chosen.p<vb.minP&&chosen.p>0) chosen=null;
+  // ── Repeat suppression by MEANING, not by exact text. "Bank the +7.11%"
+  // and "Bank the +7.13%" are the same sentence to a listener, and saying it
+  // three times in a row is precisely the rambling that makes a caster easy
+  // to tune out. Numbers are stripped to form the key, and a key cannot
+  // return for three minutes.
+  if(chosen){
+    const key=chosen.t.replace(/[\d.,%+\-]+/g,'#').slice(0,60);
+    const last=commSaidKeys[key]||0;
+    if(nowT-last<180000) chosen=null;
+    else if(chosen.t!==commLastSaid&&(chosen.p>=10||nowT-commLastAt>vb.gap)){
+      commSaidKeys[key]=nowT;
+      commLastSaid=chosen.t; commLastAt=nowT;
+      commSay(chosen.t,chosen.p>=10);
+      // keep the key map from growing without bound over a long session
+      const ks=Object.keys(commSaidKeys);
+      if(ks.length>80) ks.slice(0,40).forEach(k=>{ if(nowT-commSaidKeys[k]>600000) delete commSaidKeys[k]; });
+    }
   }
-  commPrev={score:sc,rsiZone:zone,ema,pos:!!P,posSym:P?state.sym:'',div:commPrev.div,manip:mIds};
+  commPrev={score:sc,rsiZone:zone,ema,pos:!!P,posSym:P?state.sym:'',div:commPrev.div,manip:mIds,
+    rBucket:commPrev.rBucket,flip:commPrev.flip,stale:commPrev.stale};
 }
 setInterval(commTick,3000);
+window.__naComm={tick:()=>commTick(),wisdom:()=>nextWisdom(),pool:()=>WISDOM.length,
+  sym:()=>state.sym,used:()=>wisUsed.length};
 function setComm(on){
   commOn=on;
   $('btnComm').classList.toggle('on',on);
@@ -7901,6 +8054,8 @@ const SETTINGS_SCHEMA=[
     {key:'showSwarm', type:'checkbox', label:'נחילי אנרגיה', desc:'זרמי חלקיקים חיים שנעים בעולם — צבועים לפי כיוון השוק'},
     {key:'showWeather', type:'checkbox', label:'מזג אוויר של השוק', desc:'סופה בירידות, זוהר צפוני בעליות — לפי מצב הרוח הכללי'},
     {key:'showPulse', type:'checkbox', label:'פאנל דופק העולם', desc:'המובילים והמפסידים בפינה השמאלית'},
+    {key:'commVerbosity', type:'select', label:'כמה השדרן מדבר', desc:'קמצני = רק מה שרלוונטי להחלטה. פטפטן = גם צבע ורקע',
+      options:[['lean','קמצני · רק מה שחשוב'],['normal','רגיל'],['chatty','פטפטן']]},
     {key:'calBlackoutMin', type:'range', min:0, max:120, step:5, label:'חלון שקט סביב אירוע (דקות)', desc:'הטייס האוטומטי לא פותח עסקאות בטווח הזה לפני ואחרי אירוע ביומן'},
     {key:'feesOn', type:'checkbox', label:'מודל עלויות מסחר', desc:'עמלות, ספרד, סליפג׳ ומימון — כמו בבורסה אמיתית. כיבוי הופך את הדמו לתרגיל תיאורטי'},
     {key:'feeTakerBps', type:'range', min:0, max:20, step:0.5, label:'עמלת Taker (bps)', desc:'ברירת מחדל 5.5 = 0.055%, כמו VIP0 בבינאנס פיוצ׳רס'},
