@@ -221,6 +221,46 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 #pfRisk .cr-p b{font-family:'JetBrains Mono',monospace;color:var(--txt)}
 #pfRisk .cr-p.hot{border:1px solid rgba(255,61,110,.45);color:#ff9ec4}
 #pfRisk .cr-note{font-size:9.5px;color:var(--dim);margin-top:6px;line-height:1.6;opacity:.85}
+#labPanel{position:fixed;z-index:34;top:50%;right:16px;transform:translateY(-50%);
+  width:min(400px,94vw);padding:13px 15px;max-height:calc(100dvh - 24px);overflow-y:auto}
+#labList{display:flex;flex-direction:column;gap:5px;margin-bottom:8px}
+.lab-row{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:8px;cursor:pointer;
+  background:rgba(0,240,255,.04);border:1px solid transparent;font-size:11px;color:var(--dim)}
+.lab-row.on{border-color:var(--cyan);background:rgba(0,240,255,.11)}
+.lab-row b{color:var(--txt);font-size:12px}
+.lab-row .lab-tag{font-size:9px;padding:1px 6px;border-radius:20px;background:rgba(255,255,255,.07)}
+.lab-row .lab-ed{margin-inline-start:auto;background:none;border:1px solid rgba(0,240,255,.3);
+  color:var(--cyan);border-radius:5px;font-size:10px;padding:2px 7px;cursor:pointer}
+.lab-row .lab-del{background:none;border:1px solid rgba(255,61,110,.35);color:var(--down);
+  border-radius:5px;font-size:10px;padding:2px 6px;cursor:pointer}
+.lab-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px}
+.lab-b{padding:8px;border-radius:8px;cursor:pointer;font-weight:800;font-size:11.5px;
+  background:rgba(0,240,255,.08);border:1px solid rgba(0,240,255,.35);color:var(--cyan)}
+.lab-b.go{background:rgba(138,92,255,.12);border-color:rgba(138,92,255,.5);color:#c9b3ff}
+#labCompare table{width:100%;border-collapse:collapse;font-size:10px;margin-bottom:8px}
+#labCompare th{color:var(--dim);font-weight:600;padding:4px 3px;text-align:start;font-size:9.5px}
+#labCompare td{padding:4px 3px;border-top:1px solid rgba(0,240,255,.1);font-family:'JetBrains Mono',monospace;color:var(--txt)}
+#labCompare tr.best td{background:rgba(0,255,166,.08)}
+#labCompare td.up{color:var(--up)} #labCompare td.down{color:var(--down)}
+#labCompare .lab-name{font-family:'Heebo',sans-serif;font-weight:700}
+#labEdit{border:1px solid rgba(0,240,255,.22);border-radius:9px;padding:10px;margin-top:6px}
+#labEdit .le-h{font-size:11px;font-weight:800;color:var(--cyan);margin:8px 0 5px}
+#labEdit label{display:flex;align-items:center;justify-content:space-between;gap:8px;
+  font-size:10.5px;color:var(--dim);padding:3px 0}
+#labEdit input[type=text]{width:100%;background:rgba(2,10,18,.9);color:var(--txt);
+  border:1px solid rgba(0,240,255,.25);border-radius:6px;padding:5px 7px;font-size:12px}
+#labEdit input[type=number]{width:66px;background:rgba(2,10,18,.9);color:var(--txt);
+  border:1px solid rgba(0,240,255,.25);border-radius:6px;padding:3px 6px;font-size:11px;
+  font-family:'JetBrains Mono',monospace}
+#labEdit select{background:rgba(2,10,18,.9);color:var(--txt);border:1px solid rgba(0,240,255,.25);
+  border-radius:6px;padding:3px 6px;font-size:11px}
+#btEquity{width:100%;height:120px;display:block;margin:8px 0 4px;border-radius:7px;background:rgba(0,0,0,.25)}
+.mc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:5px;margin-top:6px}
+.mc-grid span{display:flex;flex-direction:column;gap:1px;padding:5px 7px;border-radius:6px;
+  background:rgba(0,0,0,.25);color:var(--dim);font-size:9.5px}
+.mc-grid b{font-size:12.5px;color:var(--txt);font-family:'JetBrains Mono',monospace}
+.mc-grid b.up{color:var(--up)} .mc-grid b.down{color:var(--down)}
+@media (max-width:900px){ #labPanel{right:8px;left:8px;width:auto;top:auto;bottom:8px;transform:none;max-height:76dvh} }
 #ordPanel,#perfPanel{position:fixed;z-index:34;top:50%;right:16px;transform:translateY(-50%);
   width:min(340px,92vw);padding:13px 15px;max-height:calc(100dvh - 24px);overflow-y:auto}
 #ordList{display:flex;flex-direction:column;gap:4px;margin-bottom:6px;max-height:190px;overflow-y:auto}
@@ -995,6 +1035,9 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
     <div class="tgl" id="btnPerf" title="אנליטיקת ביצועים — מה באמת מרוויח לך כסף">
       <span style="font-size:15px">📊</span><span style="font-size:8px">ביצועים</span>
     </div>
+    <div class="tgl" id="btnLab" title="מעבדת אסטרטגיות — הגדר, בדוק והשווה כללי מסחר">
+      <span style="font-size:15px">🧬</span><span style="font-size:8px">מעבדה</span>
+    </div>
   </div>
 
   <div id="vignette" aria-hidden="true"></div>
@@ -1200,6 +1243,17 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
   </div>
   <div class="disc" style="margin-top:8px">ההזמנה משתמשת במרג׳ין ובמינוף שמוגדרים בכרטיס המסחר ברגע הרישום</div>
 </div>
+<div id="labPanel" class="panel clip" style="display:none">
+  <div class="lg-h"><span>🧬 מעבדת אסטרטגיות</span><button class="mp-close" id="labClose" style="margin-inline-start:auto">✕</button></div>
+  <div id="labList"></div>
+  <div class="lab-actions">
+    <button class="lab-b go" id="labRunAll">⚔️ הרץ את כולן והשווה</button>
+    <button class="lab-b" id="labNew">➕ אסטרטגיה חדשה</button>
+  </div>
+  <div id="labCompare"></div>
+  <div id="labEdit" style="display:none"></div>
+  <div class="disc" style="margin-top:10px">כל האסטרטגיות נבדקות על אותם נרות ועם אותו מודל עלויות · תנאים שדורשים ספר הזמנות חי אינם ניתנים לשחזור על היסטוריה</div>
+</div>
 <div id="perfPanel" class="panel clip" style="display:none">
   <div class="lg-h"><span>📊 אנליטיקת ביצועים</span><button class="mp-close" id="perfClose" style="margin-inline-start:auto">✕</button></div>
   <div id="perfBody"></div>
@@ -1308,6 +1362,7 @@ const NA_DEFAULTS={
   walkSpeed:18, lookSens:1.0, invertY:false,
   alertsEnabled:true, alertPct:3,
   chartStyle:'classic', centerMode:'classic',
+  feesOn:true, feeTakerBps:5.5, feeMakerBps:2.0, spreadBps:2.0, slipBps:1.5, fundingBps8h:1.0,
   chartAutoOpen:false, chartDefaultTf:'1m',
   tourHoldSec:4, tapeSpeedSec:40,
   spawnWalkOnLoad:false,
@@ -2509,12 +2564,20 @@ function openPos(side,opts){
   // manual levels win when the trader set them, otherwise ATR-based auto
   const autoSl = side==='long'? p-1.5*A : p+1.5*A;
   const autoTp = side==='long'? p+2.5*A : p-2.5*A;
+  // (levels stay anchored to the mid the trader saw — the fill difference is
+  // a cost, not a reason to move the plan)
   const validSl = tradeSlManual>0 && (side==='long'? tradeSlManual<p : tradeSlManual>p);
   const validTp = tradeTpManual>0 && (side==='long'? tradeTpManual>p : tradeTpManual<p);
   if(tradeSlManual>0 && !validSl) toast('סטופ ידני לא תקין לכיוון העסקה — הופעל סטופ אוטומטי','down');
   if(tradeTpManual>0 && !validTp) toast('יעד ידני לא תקין לכיוון העסקה — הופעל יעד אוטומטי','down');
+  // the fill is not the mid you clicked on: you cross the spread and eat
+  // slippage on the way in, and the taker fee comes off the balance now
+  const notionalPre=margin*lev;
+  const fillKind=(opts&&opts.maker)?'maker':'taker';
+  const entryPx=fillPrice(p,side,notionalPre,fillKind);
+  const entryFee=feeFor(notionalPre,fillKind);
   const id=oSym+'-'+Date.now()+'-'+Math.random().toString(36).slice(2,5);
-  positions[id]={id, sym:oSym, side, entry:p,
+  positions[id]={id, sym:oSym, side, entry:entryPx, mid:p, feePaid:entryFee, openedAt:Date.now(),
     sl: validSl? tradeSlManual : autoSl,
     tp: validTp? tradeTpManual : autoTp,
     margin, lev, notional,
@@ -2527,14 +2590,113 @@ function openPos(side,opts){
     reasons:(!opts&&ind)?ind.reasons.filter(r=>!/SIM|Yahoo/.test(r)).slice(0,3):(opts?[opts.why||'הזמנה ממתינה']:[]),
     src:(feed&&feed.src)||'live',
   };
-  wallet.balance-=margin; saveWallet(); savePositions();
+  wallet.balance-=margin+entryFee; saveWallet(); savePositions();
   const nOpen=posListOn(oSym).length;
-  toast(`${opts?oSym+' · ':''}עמדת ${side==='long'?'לונג':'שורט'} נפתחה @ ${fmtP(p)} · מרג׳ין $${margin} · x${lev}`
+  const slipTxt=costCfg().on? ` · ביצוע ${fmtP(entryPx)} (עמלה $${entryFee.toFixed(2)})` : '';
+  toast(`${opts?oSym+' · ':''}עמדת ${side==='long'?'לונג':'שורט'} נפתחה @ ${fmtP(p)}${slipTxt} · מרג׳ין $${margin} · x${lev}`
     +(nOpen>1?` · עסקה ${nOpen} על ${oSym}`:''), side==='long'?'up':'down');
   beep([[520,0.1],[660,0.12]]);
   flareBoost(1, side==='long'?'buy':'sell');
   spawnRipple(side==='long'?'buy':'sell', p, 0.8);
   renderTicket(); renderPortfolio(); renderPosStrip();
+}
+// ============================================================
+//  COST MODEL — the single biggest gap between a demo wallet and a real
+//  exchange account. Until now P&L was notional × move, which is the number
+//  a spreadsheet produces and no trader ever receives. A real fill pays:
+//
+//    ENTRY  : taker fee on the full notional + half the spread + slippage
+//    HOLD   : funding every 8h on perpetuals, charged pro-rata by the hour
+//    EXIT   : the same fee + spread + slippage again
+//
+//  Slippage is size-dependent, because a market order eats the book: an
+//  order worth a large fraction of the visible depth walks several levels.
+//  These are Binance-VIP0-style defaults and every one of them is editable
+//  in settings, because a user on a fee tier or a rebate should be able to
+//  model their own account, not mine.
+// ============================================================
+const COST_DEFAULTS={ takerBps:5.5, makerBps:2.0, spreadBps:2.0, slipBps:1.5, fundingBps8h:1.0, feesOn:true };
+function costCfg(){
+  return {
+    taker:(naSettings.feeTakerBps??COST_DEFAULTS.takerBps)/10000,
+    maker:(naSettings.feeMakerBps??COST_DEFAULTS.makerBps)/10000,
+    spread:(naSettings.spreadBps??COST_DEFAULTS.spreadBps)/10000,
+    slip:(naSettings.slipBps??COST_DEFAULTS.slipBps)/10000,
+    funding:(naSettings.fundingBps8h??COST_DEFAULTS.fundingBps8h)/10000,
+    on: naSettings.feesOn!==false,
+  };
+}
+// how far a market order of this size walks the book. With a real depth
+// stream we measure it; without one we fall back to a square-root impact
+// model, which is the standard shape and errs on the expensive side.
+function slippageFrac(notional,side){
+  const c=costCfg();
+  if(!c.on) return 0;
+  let depthUsd=0;
+  try{
+    const book=side==='long'? state.book.asks : state.book.bids;
+    if(book&&book.length) depthUsd=book.reduce((a,x)=>a+x[0]*x[1],0);
+  }catch(e){}
+  if(depthUsd>0){
+    // fraction of the visible top-of-book this order consumes
+    const eaten=clamp(notional/depthUsd,0,4);
+    return c.slip*(1+Math.sqrt(eaten)*3);
+  }
+  return c.slip*(1+Math.sqrt(Math.max(0,notional)/50000));
+}
+// the price you ACTUALLY get, versus the mid you saw on screen
+function fillPrice(mid,side,notional,kind){
+  const c=costCfg();
+  if(!c.on) return mid;
+  const half=c.spread/2;
+  const slip=(kind==='maker')? 0 : slippageFrac(notional,side);
+  // buying pays up, selling receives down — always against you
+  const adverse=(side==='long'? 1 : -1)*(half+slip);
+  return mid*(1+adverse);
+}
+function feeFor(notional,kind){
+  const c=costCfg();
+  if(!c.on) return 0;
+  return notional*(kind==='maker'? c.maker : c.taker);
+}
+// funding accrues on perpetual-style positions. Longs pay shorts when the
+// rate is positive, which is the usual state of a bull market — a position
+// held overnight is not free.
+function fundingOwed(P){
+  const c=costCfg();
+  if(!c.on||!P.openedAt) return 0;
+  const hours=(Date.now()-P.openedAt)/3600e3;
+  const periods=hours/8;
+  return P.notional*c.funding*periods*(P.side==='long'?1:-1);
+}
+// what the trade is worth right now, net of everything already owed
+function netPnlUsd(P){
+  const gross=P.notional*posPnlPct(P)/100;
+  const exitFee=feeFor(P.notional,'taker');
+  const exitSlip=P.notional*slippageFrac(P.notional,P.side==='long'?'short':'long');
+  return gross-(P.feePaid||0)-exitFee-exitSlip-fundingOwed(P);
+}
+function posNetPct(P){ return P.notional>0? netPnlUsd(P)/P.notional*100 : 0; }
+// ── LIQUIDATION. A losing position does not fall forever: once the loss
+// eats the margin (minus the exchange's maintenance buffer) the position is
+// closed by force and the margin is gone. Modelling the estimate but never
+// enforcing it, as before, taught exactly the wrong lesson about leverage.
+const MAINT_MARGIN=0.005;          // 0.5% maintenance, Binance-like for majors
+function liqPrice(P){
+  const mmUsd=P.notional*MAINT_MARGIN;
+  const room=(P.margin-mmUsd)/P.notional;      // fraction of notional we can lose
+  return P.side==='long'? P.entry*(1-room) : P.entry*(1+room);
+}
+function checkLiquidations(){
+  for(const id of Object.keys(positions)){
+    const P=positions[id];
+    const lp=livePriceFor(P.sym);
+    if(lp==null||!(P.entry>0)) continue;
+    const r=lp/P.entry; if(r>6||r<0.17) continue;
+    const liq=liqPrice(P);
+    const hit=P.side==='long'? lp<=liq : lp>=liq;
+    if(hit) closePos(id,'liq');
+  }
 }
 // ============================================================
 //  CONCENTRATION RISK — the most expensive mistake in a multi-position book
@@ -2827,25 +2989,50 @@ function autopilotTick(){
   if(autopilot.locked) return;
   if(ind.closed) return;
   if(prev==null) return;
-  const cross = ind.score>=20&&prev<20 ? 'long' : ind.score<=-20&&prev>-20 ? 'short' : null;
+  // the autopilot now trades the SELECTED strategy's rules, not a hardcoded
+  // ±20 cross — the same rules the lab backtested and ranked
+  const st=activeStrategy(), E=st.entry||{};
+  const thr=Math.max(1,E.scoreCross||20);
+  let cross = ind.score>=thr&&prev<thr ? 'long' : ind.score<=-thr&&prev>-thr ? 'short' : null;
   if(!cross) return;
-  apEvaluate(cross);
+  if(st.side&&st.side!=='both'&&st.side!==cross){
+    apLog('skip',`אות ${cross==='long'?'לונג':'שורט'} ב-${sym} נדחה — האסטרטגיה «${st.name}» מוגדרת ל${st.side==='long'?'לונג בלבד':'שורט בלבד'}`); return;
+  }
+  if(E.trendAlign&&ind.e9raw&&ind.e21raw){
+    const n2=ind.e9raw.length, up=ind.e9raw[n2-1]>ind.e21raw[n2-1];
+    if((cross==='long'&&!up)||(cross==='short'&&up)){
+      apLog('skip',`אות ${sym} נדחה — «${st.name}» דורשת יישור EMA והמגמה בכיוון ההפוך`); return; }
+  }
+  if(cross==='long'&&E.rsiMax>0&&ind.rsiNow>E.rsiMax){
+    apLog('skip',`אות לונג ב-${sym} נדחה — RSI ${ind.rsiNow.toFixed(0)} מעל התקרה ${E.rsiMax} של «${st.name}»`); return; }
+  if(cross==='short'&&E.rsiMin>0&&ind.rsiNow<E.rsiMin){
+    apLog('skip',`אות שורט ב-${sym} נדחה — RSI ${ind.rsiNow.toFixed(0)} מתחת לרצפה ${E.rsiMin} של «${st.name}»`); return; }
+  if(E.bbFilter&&ind.bbPos!=null){
+    if((cross==='long'&&ind.bbPos>0.3)||(cross==='short'&&ind.bbPos<0.7)){
+      apLog('skip',`אות ${sym} נדחה — «${st.name}» קונה רק בתחתית הטווח ומוכרת רק בתקרה`); return; }
+  }
+  apEvaluate(cross,st);
 }
 // the gate chain, split out so it can be exercised directly: every refusal
 // is a logged line, which is the only way a bot's judgement can be audited
-function apEvaluate(cross){
+function apEvaluate(cross,st){
   if(!ind) return;
+  st=st||activeStrategy();
+  const X=st.exit||{}, E=st.entry||{};
   const sym=state.sym;
   {
     // ── the gates, each one logged when it blocks ──
   if(feed&&feed.src==='sim'){ apLog('skip','אות '+sym+' נדחה — הזנת סימולציה, לא נסחר על נתונים לא אמיתיים'); return; }
-  if(ind.conf<autopilot.minConf){ apLog('skip',`אות ${cross==='long'?'לונג':'שורט'} ב-${sym} נדחה — קונפלואנס ${ind.conf} מתחת לסף ${autopilot.minConf}${ind.confMiss&&ind.confMiss.length?' · חסר: '+ind.confMiss[0]:''}`); return; }
+  // the effective floor is whichever is stricter: the pilot's or the strategy's
+  const confFloor=Math.max(autopilot.minConf, E.confMin||0);
+  if(ind.conf<confFloor){ apLog('skip',`אות ${cross==='long'?'לונג':'שורט'} ב-${sym} נדחה — קונפלואנס ${ind.conf} מתחת לסף ${confFloor}${ind.confMiss&&ind.confMiss.length?' · חסר: '+ind.confMiss[0]:''}`); return; }
   const openIds=Object.keys(positions);
   if(openIds.length>=autopilot.maxOpen){ apLog('skip',`אות ${sym} נדחה — כבר ${openIds.length} עסקאות פתוחות (מקסימום ${autopilot.maxOpen})`); return; }
   if(posOn(sym)){ apLog('skip',`אות ${sym} נדחה — כבר יש עסקה פתוחה על הנכס הזה`); return; }
   const p=state.lastPrice, A=ind.A;
   if(!(p>0)||!(A>0)) return;
-  const sl = cross==='long'? p-1.5*A : p+1.5*A;
+  const slMult=X.slAtr>0?X.slAtr:1.5;
+  const sl = cross==='long'? p-slMult*A : p+slMult*A;
   const slDist=Math.abs(p-sl)/p;
   // a stop tighter than 0.15% is inside the noise: fees and spread decide the
   // outcome, not the setup
@@ -2866,10 +3053,21 @@ function apEvaluate(cross){
   const realRisk=notional*slDist;
   const savedMargin=tradeMargin, savedSl=tradeSlManual, savedTp=tradeTpManual;
   tradeMargin=Math.round(margin); tradeSlManual=0; tradeTpManual=0;
+  tradeSlManual=sl;
+  tradeTpManual=X.tpAtr>0? (cross==='long'? p+X.tpAtr*A : p-X.tpAtr*A) : 0;
+  const savedTrail=tradeTrail; tradeTrail=X.trailAtr>0;
   openPos(cross);
+  // the strategy's trailing distance, applied to the position just opened
+  if(X.trailAtr>0){
+    const ids2=Object.keys(positions);
+    const fresh=positions[ids2[ids2.length-1]];
+    if(fresh&&fresh.sym===sym) fresh.trail=X.trailAtr*A;
+    savePositions();
+  }
+  tradeTrail=savedTrail;
   tradeMargin=savedMargin; tradeSlManual=savedSl; tradeTpManual=savedTp;
   apLog('open',`נפתחה ${cross==='long'?'לונג':'שורט'} ${sym} @ ${fmtP(p)} · קונפלואנס ${ind.conf} · ציון ${ind.score}`
-    +` · מרג׳ין $${Math.round(margin)} · סטופ ${(slDist*100).toFixed(2)}% · סיכון בפועל $${realRisk.toFixed(0)}`
+    +` · אסטרטגיה «${st.name}» · מרג׳ין $${Math.round(margin)} · סטופ ${(slDist*100).toFixed(2)}% · סיכון בפועל $${realRisk.toFixed(0)}`
     +(capped?` (הוקטן מ-$${riskUsd.toFixed(0)} — תקרת חשיפה של 20% מהתיק לעסקה)`:''));
   }
 }
@@ -2880,7 +3078,8 @@ function renderAutopilot(){
   const capUsd=equity*autopilot.dayLossPct/100;
   const used=Math.min(100,Math.max(0,(-autopilot.dayPnl/Math.max(1,capUsd))*100));
   $('apBody').innerHTML=
-     `<div class="ap-row"><span>מצב</span><b class="${autopilot.locked?'down':autopilot.on?'up':''}">${autopilot.locked?'⛔ נעול עד מחר':autopilot.on?'🟢 פעיל':'⚪ כבוי'}</b></div>`
+     `<div class="ap-row"><span>אסטרטגיה</span><b>${activeStrategy().name}</b></div>`
+    +`<div class="ap-row"><span>מצב</span><b class="${autopilot.locked?'down':autopilot.on?'up':''}">${autopilot.locked?'⛔ נעול עד מחר':autopilot.on?'🟢 פעיל':'⚪ כבוי'}</b></div>`
     +`<div class="ap-row"><span>סיכון לעסקה</span><b>${autopilot.risk}% · $${(wallet.balance*autopilot.risk/100).toFixed(0)}</b></div>`
     +`<div class="ap-row"><span>עסקאות במקביל</span><b>${Object.keys(positions).length} / ${autopilot.maxOpen}</b></div>`
     +`<div class="ap-row"><span>סף קונפלואנס</span><b>${autopilot.minConf}</b></div>`
@@ -2895,7 +3094,13 @@ function renderAutopilot(){
 function closePartial(id,frac){
   const P=positions[id]; if(!P) return;
   const pct=posPnlPct(P), cut=Math.min(0.95,Math.max(0.05,frac));
-  const usd=P.notional*cut*pct/100, back=P.margin*cut;
+  const cutNotional=P.notional*cut;
+  // the closed slice pays its own exit fee and slippage — a scale-out is a
+  // real trade, not a free adjustment
+  const fee=feeFor(cutNotional,'taker');
+  const slip=cutNotional*slippageFrac(cutNotional,P.side==='long'?'short':'long');
+  const usd=cutNotional*pct/100-fee-slip;
+  const back=P.margin*cut;
   wallet.balance+=back+usd; saveWallet();
   session.pnl+=usd; saveSession();
   P.margin-=back; P.notional-=P.notional*cut;
@@ -2937,14 +3142,25 @@ function checkAchievements(win,pct){
 function closePos(sym,reason){
   const P=positions[sym]; if(!P) return;
   const psym=P.sym;
-  const pct=posPnlPct(P), usd=P.notional*pct/100;
+  const grossPct=posPnlPct(P), grossUsd=P.notional*grossPct/100;
+  // every cost the position actually incurred, itemised
+  const exitFee=feeFor(P.notional,'taker');
+  const exitSlip=P.notional*slippageFrac(P.notional,P.side==='long'?'short':'long');
+  const fundUsd=fundingOwed(P);
+  const entryFee=P.feePaid||0;
+  const costs=entryFee+exitFee+exitSlip+fundUsd;
+  const usd=(reason==='liq')? -P.margin : grossUsd-costs;
+  const pct=P.notional>0? usd/P.notional*100 : 0;
   const win=usd>=0;
-  wallet.balance+=P.margin+usd; saveWallet();
+  // a liquidation returns nothing — the margin is the exchange's
+  wallet.balance+=(reason==='liq')? 0 : P.margin+usd;
+  saveWallet();
   session.pnl+=usd; session.trades++; if(win) session.wins++;
   session.streak = win? session.streak+1 : 0;
   if(session.streak>session.bestStreak) session.bestStreak=session.streak;
   const ctx=P.ctx||{};
   session.log.unshift({sym:psym,side:P.side,entry:P.entry,exit:livePriceFor(psym)||P.entry,pct,usd,at:Date.now(),
+    grossUsd, grossPct, fees:entryFee+exitFee, slip:exitSlip, funding:fundUsd, costs,
     reason, tp:P.tp, sl:P.sl, margin:P.margin, lev:P.lev,
     score:ctx.score, verdict:ctx.verdict, why:ctx.reasons||[], tf:ctx.tf,
     durMin:ctx.openedAt?Math.max(1,Math.round((Date.now()-ctx.openedAt)/60000)):null, src:ctx.src});
@@ -2955,7 +3171,7 @@ function closePos(sym,reason){
   try{ apRecordClose(usd); }catch(e){}   // the autopilot's daily loss cap tracks realised money
   checkAchievements(win,pct);
   delete positions[sym]; savePositions();
-  const head=reason==='tp'?'🎯 יעד הושג':reason==='sl'?'🛑 סטופ הופעל':'עמדה נסגרה';
+  const head=reason==='tp'?'🎯 יעד הושג':reason==='sl'?'🛑 סטופ הופעל':reason==='liq'?'💀 חיסול (Liquidation)':'עמדה נסגרה';
   toast(`${psym} · ${head} · ${win?'+':'−'}$${Math.abs(usd).toFixed(0)} (${fmtPct(pct)})`, win?'up':'down');
   if(reason!=='manual') pushNote(head+' · '+psym, (win?'+':'−')+'$'+Math.abs(usd).toFixed(0)+' ('+fmtPct(pct)+')');
   beep(win?[[523,0.09],[659,0.09],[784,0.14]]:[[220,0.16],[160,0.2]]);
@@ -2993,7 +3209,7 @@ function renderTicket(){
   }
   const lockedMargin=Object.keys(positions).reduce((s,k)=>s+positions[k].margin,0);
   const equity=wallet.balance+Object.keys(positions).reduce((sum,k)=>{
-    const Pi=positions[k]; return sum+Pi.margin+Pi.notional*posPnlPct(Pi)/100;
+    const Pi=positions[k]; return sum+Pi.margin+netPnlUsd(Pi);
   },0);
   $('walletBal').textContent='$'+wallet.balance.toFixed(0);
   $('walletEq').textContent='$'+equity.toFixed(0);
@@ -3010,15 +3226,18 @@ function renderPortfolio(){
   $('pfCount').textContent=ids.length;
   $('pfBalRef').textContent='$'+wallet.balance.toFixed(0);
   const equity=wallet.balance+ids.reduce((sum,k)=>{
-    const P=positions[k]; return sum+P.margin+P.notional*posPnlPct(P)/100;
+    const P=positions[k]; return sum+P.margin+netPnlUsd(P);
   },0);
   $('pfEqRef').textContent='$'+equity.toFixed(0);
   if(!ids.length){ list.innerHTML='<div class="lg-empty">אין עמדות פתוחות</div>'; return; }
   list.innerHTML=ids.map(id=>{
-    const P=positions[id], pct=posPnlPct(P), usd=P.notional*pct/100, win=usd>=0;
+    const P=positions[id], pct=posNetPct(P), usd=netPnlUsd(P), win=usd>=0;
     return `<div class="lg-row"><span><span class="lg-sym">${P.sym}</span> ${P.side==='long'?'▲':'▼'} x${P.lev}`
       +(P.trail>0?' 🪝':'')+(P.manual?' ✍️':'')+`<br>`
-      +`<span class="lg-t">כניסה ${fmtP(P.entry)} · מרג׳ין $${P.margin.toFixed(0)} · יעד ${fmtP(P.tp)} · סטופ ${fmtP(P.sl)}</span></span>`
+      +`<span class="lg-t">כניסה ${fmtP(P.entry)} · מרג׳ין $${P.margin.toFixed(0)} · יעד ${fmtP(P.tp)} · סטופ ${fmtP(P.sl)}`
+      +` · <span style="color:var(--down)">חיסול ${fmtP(liqPrice(P))}</span>`
+      +(costCfg().on? ` · עלויות $${((P.feePaid||0)+feeFor(P.notional,'taker')+P.notional*slippageFrac(P.notional,P.side==='long'?'short':'long')+fundingOwed(P)).toFixed(2)}`:'')
+      +`</span></span>`
       +`<span style="display:flex;align-items:center;gap:6px">`
       +`<span class="num ${win?'up':'down'}">${win?'+':'−'}$${Math.abs(usd).toFixed(0)} (${fmtPct(pct)})</span>`
       +`<button class="pf-h" data-half="${id}" title="סגור חצי">½</button>`
@@ -3197,6 +3416,15 @@ function setPerf(on){ perfOpen=on; $('perfPanel').style.display=on?'block':'none
 $('btnOrd').onclick=()=>setOrd(!ordOpen);
 $('ordClose').onclick=()=>setOrd(false);
 $('btnPerf').onclick=()=>setPerf(!perfOpen);
+let labOpen=false;
+function setLab(on){ labOpen=on; $('labPanel').style.display=on?'block':'none'; $('btnLab').classList.toggle('on',on); if(on) renderLab(); }
+$('btnLab').onclick=()=>setLab(!labOpen);
+$('labClose').onclick=()=>setLab(false);
+$('labNew').onclick=()=>newStrategy();
+$('labRunAll').onclick=()=>{ toast('מריץ את כל האסטרטגיות…'); setTimeout(()=>{ try{ compareStrategies(); }catch(e){ toast('ההשוואה נכשלה','down'); } },30); };
+window.__naLab={list:()=>strategies,active:()=>activeStrat,set:(id)=>{activeStrat=id;saveStrategies();},
+  run:(id)=>runBacktest(state.candles,stratById(id)), compare:()=>compareStrategies(),
+  mc:(id)=>{ const r=runBacktest(state.candles,stratById(id||activeStrat)); return r&&r.n?monteCarlo(r.trades,300):null; }};
 $('perfClose').onclick=()=>setPerf(false);
 document.querySelectorAll('.ord-b').forEach(b=>{
   b.onclick=()=>{
@@ -3206,6 +3434,9 @@ document.querySelectorAll('.ord-b').forEach(b=>{
   };
 });
 window.__naRisk=()=>concentrationRisk();
+window.__naCost=(id)=>{ const P=positions[id]; if(!P) return null;
+  return {liq:+liqPrice(P).toFixed(2), gross:+(P.notional*posPnlPct(P)/100).toFixed(2),
+    net:+netPnlUsd(P).toFixed(2), funding:+fundingOwed(P).toFixed(4), entryFee:P.feePaid}; };
 window.__naOrders={list:()=>orders,add:addOrder,check:()=>checkOrders(),perf:()=>perfBreakdown()};
 $('apClose').onclick=()=>setAp(false);
 $('apToggle').onclick=()=>{
@@ -3509,7 +3740,7 @@ function commTick(){
   if(!chosen&&nowT-commColorAt>26000){
     const allIds=Object.keys(positions);
     const allSyms=[...new Set(allIds.map(k=>positions[k].sym))];
-    const netUsd=allIds.reduce((sum,k)=>{ const PP=positions[k]; return sum+PP.notional*posPnlPct(PP)/100; },0);
+    const netUsd=allIds.reduce((sum,k)=>{ const PP=positions[k]; return sum+netPnlUsd(PP); },0);
     const color=[
       ...(allSyms.length>1?[L('Portfolio check: '+allSyms.length+' trades running ('+allSyms.join(', ')+'), net '+(netUsd>=0?'plus ':'minus ')+Math.abs(netUsd).toFixed(0)+' dollars. Diversification is protection.','בדיקת תיק: '+allSyms.length+' עסקאות רצות ('+allSyms.join(', ')+'), נטו '+(netUsd>=0?'פלוס ':'מינוס ')+Math.abs(netUsd).toFixed(0)+' דולר. פיזור זו הגנה.')]:[]),
       L('Order flow check: '+Math.round(state.bullPct)+' percent buyers versus '+Math.round(100-state.bullPct)+' percent sellers.','בדיקת זרימה: '+Math.round(state.bullPct)+' אחוז קונים מול '+Math.round(100-state.bullPct)+' אחוז מוכרים.'),
@@ -3566,7 +3797,7 @@ function renderPosStrip(){
       el.appendChild(ch);
     }
     ch.classList.toggle('focused',P.sym===state.sym);
-    const pct=posPnlPct(P), usd=P.notional*pct/100, win=usd>=0;
+    const pct=posNetPct(P), usd=netPnlUsd(P), win=usd>=0;
     ch.querySelector('.ps-h').textContent=(P.side==='long'?'▲ ':'▼ ')+P.sym+(P.trail>0?' 🪝':'');
     const b=ch.querySelector('b');
     b.className='num '+(win?'up':'down');
@@ -5897,64 +6128,156 @@ function mtfBoard(){
 //  honest about what it cannot know: the historical order book and trade
 //  flow are not stored, so this tests the PRICE side of the engine only.
 // ============================================================
-function runBacktest(cs){
-  if(!cs||cs.length<80) return null;
+// ============================================================
+//  STRATEGY ENGINE — until now there was one hardcoded rule and no way to
+//  ask "is my idea better than yours?". A strategy here is a small object of
+//  entry conditions and exit rules; strategies are saved, backtested against
+//  each other on the same candles with the same cost model, and the autopilot
+//  can be pointed at whichever one actually won.
+//
+//  Honest limit, stated in the UI too: conditions that need the live order
+//  book (spoof walls, book imbalance) or a live cross-timeframe read cannot
+//  be replayed over stored candles, so a backtest scores the PRICE half of
+//  the engine. Everything offered in the builder is computable from candles.
+// ============================================================
+const STRAT_KEY='na:strategies';
+const STRAT_DEFAULTS=[
+  {id:'sys', name:'המנוע המובנה', builtin:true,
+   entry:{scoreCross:20, trendAlign:true, rsiMax:70, rsiMin:30, macdAlign:false, bbFilter:false, confMin:0},
+   exit:{slAtr:1.5, tpAtr:2.5, opposite:true, maxBars:0, trailAtr:0}, side:'both'},
+  {id:'trend', name:'רוכב מגמה', builtin:true,
+   entry:{scoreCross:25, trendAlign:true, rsiMax:78, rsiMin:22, macdAlign:true, bbFilter:false, confMin:50},
+   exit:{slAtr:2, tpAtr:5, opposite:false, maxBars:0, trailAtr:2}, side:'both'},
+  {id:'revert', name:'חזרה לממוצע', builtin:true,
+   entry:{scoreCross:15, trendAlign:false, rsiMax:35, rsiMin:65, macdAlign:false, bbFilter:true, confMin:0},
+   exit:{slAtr:1.2, tpAtr:1.8, opposite:true, maxBars:30, trailAtr:0}, side:'both'},
+  {id:'longonly', name:'לונג בלבד · שמרני', builtin:true,
+   entry:{scoreCross:35, trendAlign:true, rsiMax:68, rsiMin:0, macdAlign:true, bbFilter:false, confMin:65},
+   exit:{slAtr:1.5, tpAtr:3, opposite:true, maxBars:0, trailAtr:1.5}, side:'long'},
+];
+let strategies=[], activeStrat='sys';
+try{
+  const raw=JSON.parse(localStorage.getItem(STRAT_KEY)||'null');
+  if(raw&&Array.isArray(raw.list)){ strategies=raw.list; activeStrat=raw.active||'sys'; }
+}catch(e){}
+if(!strategies.length) strategies=JSON.parse(JSON.stringify(STRAT_DEFAULTS));
+// built-ins are re-seeded on every load so an app update can improve them
+STRAT_DEFAULTS.forEach(d=>{ if(!strategies.some(x=>x.id===d.id)) strategies.push(JSON.parse(JSON.stringify(d))); });
+function saveStrategies(){ try{ localStorage.setItem(STRAT_KEY,JSON.stringify({list:strategies,active:activeStrat})); }catch(e){} }
+function stratById(id){ return strategies.find(s=>s.id===id)||strategies[0]; }
+function activeStrategy(){ return stratById(activeStrat); }
+
+// per-bar indicator pack, computed once and shared by every strategy run
+function backtestPack(cs){
   const closes=cs.map(c=>c.c), n=closes.length;
   const e9=emaArr(closes,9), e21=emaArr(closes,21);
-  const rsi=rsiArr(closes,14);
-  const mh=macdHistArr(closes);
-  const bb=bollArr(closes,20,2);
-  // rolling ATR so every bar uses only what was knowable at that bar
+  const rsi=rsiArr(closes,14), mh=macdHistArr(closes), bb=bollArr(closes,20,2);
   const atr=new Array(n).fill(0);
   for(let i=14;i<n;i++) atr[i]=atrVal(cs.slice(0,i+1),14);
-  const scoreAt=i=>{
-    const A=Math.max(atr[i],closes[i]*1e-6);
-    const trend=clamp((e9[i]-e21[i])/A*22+(e21[i]-e21[Math.max(0,i-5)])/A*6,-30,30);
-    const R=rsi[i];
-    const rsiS=clamp(R<32?(32-R)*1.3:R>68?-(R-68)*1.3:(50-R)*0.18,-20,20);
-    const macdS=clamp(mh[i]/(A*0.35)*12,-14,14)+((mh[i]>(mh[i-1]||0))?4:-4);
-    const pos=clamp((closes[i]-bb.lo[i])/Math.max(1e-9,bb.up[i]-bb.lo[i]),0,1);
-    const bbS=clamp(pos<0.12?12:pos>0.88?-12:(0.5-pos)*10,-15,15);
-    return {s:Math.round(clamp(trend+rsiS+macdS+bbS,-100,100)),A};
-  };
+  return {closes,n,e9,e21,rsi,mh,bb,atr};
+}
+function packScore(P,i){
+  const A=Math.max(P.atr[i],P.closes[i]*1e-6);
+  const trend=clamp((P.e9[i]-P.e21[i])/A*22+(P.e21[i]-P.e21[Math.max(0,i-5)])/A*6,-30,30);
+  const R=P.rsi[i];
+  const rsiS=clamp(R<32?(32-R)*1.3:R>68?-(R-68)*1.3:(50-R)*0.18,-20,20);
+  const macdS=clamp(P.mh[i]/(A*0.35)*12,-14,14)+((P.mh[i]>(P.mh[i-1]||0))?4:-4);
+  const pos=clamp((P.closes[i]-P.bb.lo[i])/Math.max(1e-9,P.bb.up[i]-P.bb.lo[i]),0,1);
+  const bbS=clamp(pos<0.12?12:pos>0.88?-12:(0.5-pos)*10,-15,15);
+  const s=Math.round(clamp(trend+rsiS+macdS+bbS,-100,100));
+  // the four confluence checks that CAN be replayed from candles, rescaled
+  const dir=Math.sign(s);
+  let conf=0;
+  if(dir){
+    if(Math.sign(trend)===dir) conf+=38;
+    if(Math.sign(macdS)===dir) conf+=26;
+    if(dir>0? R<62 : R>38) conf+=20;
+    if(dir>0? pos<0.85 : pos>0.15) conf+=16;
+  }
+  return {s,A,R,trend,macdS,pos,conf};
+}
+function runBacktest(cs,strat){
+  if(!cs||cs.length<80) return null;
+  strat=strat||activeStrategy();
+  const P=backtestPack(cs), n=P.n;
+  const E=strat.entry||{}, X=strat.exit||{};
+  const cc=costCfg();
+  const costPct=cc.on? ((cc.taker*2)+(cc.spread)+(cc.slip*2))*100 : 0;
+  const fundPctPerBar=cc.on? (cc.funding/8)*((TF_SEC[state.tf]||60)/3600)*100 : 0;
+  const thr=Math.max(1,E.scoreCross||20);
   const trades=[]; let open=null, prev=null;
   for(let i=25;i<n-1;i++){
-    const {s,A}=scoreAt(i);
+    const m=packScore(P,i);
     if(open){
       const c=cs[i];
       let exit=null;
+      // the trailing stop walks with the trade and never gives ground back
+      if(X.trailAtr>0){
+        const t=open.side==='long'? c.c-X.trailAtr*m.A : c.c+X.trailAtr*m.A;
+        if(open.side==='long'? t>open.sl : t<open.sl) open.sl=t;
+      }
       if(open.side==='long'){
         if(c.l<=open.sl) exit={p:open.sl,why:'סטופ'};
-        else if(c.h>=open.tp) exit={p:open.tp,why:'יעד'};
+        else if(X.tpAtr>0&&c.h>=open.tp) exit={p:open.tp,why:'יעד'};
       } else {
         if(c.h>=open.sl) exit={p:open.sl,why:'סטופ'};
-        else if(c.l<=open.tp) exit={p:open.tp,why:'יעד'};
+        else if(X.tpAtr>0&&c.l<=open.tp) exit={p:open.tp,why:'יעד'};
       }
-      if(!exit && ((open.side==='long'&&s<=-20)||(open.side==='short'&&s>=20))) exit={p:c.c,why:'אות הפוך'};
+      if(!exit && X.opposite && ((open.side==='long'&&m.s<=-thr)||(open.side==='short'&&m.s>=thr)))
+        exit={p:c.c,why:'אות הפוך'};
+      if(!exit && X.maxBars>0 && (i-open.i)>=X.maxBars) exit={p:c.c,why:'תפוגת זמן'};
       if(exit){
-        const pct=(open.side==='long'? exit.p/open.entry-1 : 1-exit.p/open.entry)*100;
-        trades.push({side:open.side,entry:open.entry,exit:exit.p,pct,why:exit.why,
+        const gross=(open.side==='long'? exit.p/open.entry-1 : 1-exit.p/open.entry)*100;
+        const pct=gross-costPct-fundPctPerBar*(i-open.i);
+        trades.push({side:open.side,entry:open.entry,exit:exit.p,pct,gross,why:exit.why,
           t:open.t,tOut:c.t,bars:i-open.i});
         open=null;
       }
     }
     if(!open && prev!=null){
-      const cross = s>=20&&prev<20 ? 'long' : s<=-20&&prev>-20 ? 'short' : null;
+      let cross = m.s>=thr&&prev<thr ? 'long' : m.s<=-thr&&prev>-thr ? 'short' : null;
+      // ── every entry filter the strategy asked for ──
+      if(cross&&strat.side&&strat.side!=='both'&&strat.side!==cross) cross=null;
+      if(cross&&E.trendAlign){
+        const up=P.e9[i]>P.e21[i];
+        if((cross==='long'&&!up)||(cross==='short'&&up)) cross=null;
+      }
+      if(cross&&E.macdAlign){
+        const pos=P.mh[i]>0;
+        if((cross==='long'&&!pos)||(cross==='short'&&pos)) cross=null;
+      }
+      if(cross==='long'&&E.rsiMax>0&&m.R>E.rsiMax) cross=null;
+      if(cross==='short'&&E.rsiMin>0&&m.R<E.rsiMin) cross=null;
+      if(cross&&E.bbFilter){
+        // mean-reversion filter: only buy the lower band, only sell the upper
+        if(cross==='long'&&m.pos>0.3) cross=null;
+        if(cross==='short'&&m.pos<0.7) cross=null;
+      }
+      if(cross&&E.confMin>0&&m.conf<E.confMin) cross=null;
       if(cross){
         const entry=cs[i+1].o;
-        open={side:cross,entry,i:i+1,t:cs[i+1].t,
-          sl: cross==='long'? entry-1.5*A : entry+1.5*A,
-          tp: cross==='long'? entry+2.5*A : entry-2.5*A};
+        const sl=X.slAtr>0? (cross==='long'? entry-X.slAtr*m.A : entry+X.slAtr*m.A)
+                          : (cross==='long'? entry*0.5 : entry*1.5);
+        open={side:cross,entry,i:i+1,t:cs[i+1].t,sl,
+          tp: X.tpAtr>0? (cross==='long'? entry+X.tpAtr*m.A : entry-X.tpAtr*m.A) : 0};
       }
     }
-    prev=s;
+    prev=m.s;
   }
-  if(!trades.length) return {trades:[],n:0};
+  const base={strat:strat.id, name:strat.name, from:cs[0].t, to:cs[n-1].t, costPct};
+  if(!trades.length) return {...base, trades:[], n:0};
   const wins=trades.filter(t=>t.pct>0), losses=trades.filter(t=>t.pct<=0);
   const gp=wins.reduce((a,t)=>a+t.pct,0), gl=Math.abs(losses.reduce((a,t)=>a+t.pct,0));
-  let eq=0, peak=0, dd=0;
-  for(const t of trades){ eq+=t.pct; peak=Math.max(peak,eq); dd=Math.max(dd,peak-eq); }
-  return {trades, n:trades.length,
+  // equity curve in percent, plus the drawdown series that goes with it
+  let eq=0, peak=0, dd=0; const curve=[0], ddCurve=[0];
+  for(const t of trades){
+    eq+=t.pct; peak=Math.max(peak,eq);
+    dd=Math.max(dd,peak-eq);
+    curve.push(eq); ddCurve.push(peak-eq);
+  }
+  const grossTotal=trades.reduce((a,t)=>a+(t.gross||t.pct),0);
+  return {...base, trades, n:trades.length, curve, ddCurve, grossTotal,
+    costDrag: grossTotal-eq,
     winRate: wins.length/trades.length*100,
     pf: gl>0? gp/gl : (gp>0?99:0),
     expectancy: trades.reduce((a,t)=>a+t.pct,0)/trades.length,
@@ -5962,7 +6285,182 @@ function runBacktest(cs){
     avgWin: wins.length? gp/wins.length : 0,
     avgLoss: losses.length? gl/losses.length : 0,
     avgBars: Math.round(trades.reduce((a,t)=>a+t.bars,0)/trades.length),
-    from: cs[0].t, to: cs[n-1].t};
+    // Sharpe-like ratio on per-trade returns — reward divided by variability
+    sharpe:(()=>{ const r=trades.map(t=>t.pct); const m=r.reduce((a,v)=>a+v,0)/r.length;
+      const sd=Math.sqrt(r.reduce((a,v)=>a+(v-m)*(v-m),0)/Math.max(1,r.length-1));
+      return sd>0? m/sd*Math.sqrt(r.length) : 0; })(),
+  };
+}
+// ── MONTE CARLO. The order your trades happened in is one sample out of
+// countless possible orders. Reshuffling it thousands of times answers the
+// question the headline numbers cannot: how bad could the SAME edge have
+// felt, and what were the odds of blowing up before it paid off.
+function monteCarlo(trades,runs){
+  if(!trades||trades.length<5) return null;
+  const r=trades.map(t=>t.pct);
+  const N=runs||600, L=r.length;
+  const finals=[], dds=[]; let ruin=0;
+  for(let k=0;k<N;k++){
+    // bootstrap: draw L trades WITH REPLACEMENT from the observed edge.
+    // Reordering alone cannot change a sum — resampling is what produces a
+    // real distribution of futures from the same edge.
+    let eq=1, peak=1, dd=0, blew=false;
+    for(let i=0;i<L;i++){
+      const v=r[(Math.random()*L)|0];
+      eq*=(1+v/100);                      // compounded, like an actual account
+      if(eq<=0.05){ blew=true; eq=0.05; break; }
+      peak=Math.max(peak,eq);
+      dd=Math.max(dd,(peak-eq)/peak*100);
+    }
+    finals.push((eq-1)*100); dds.push(dd); if(blew) ruin++;
+  }
+  finals.sort((a,b)=>a-b); dds.sort((a,b)=>a-b);
+  const q=(arr,p)=>arr[Math.min(arr.length-1,Math.floor(arr.length*p))];
+  return {runs:N, p5:q(finals,0.05), p50:q(finals,0.5), p95:q(finals,0.95),
+    ddMed:q(dds,0.5), ddP95:q(dds,0.95),
+    winOdds: finals.filter(v=>v>0).length/N*100, ruin: ruin/N*100};
+}
+// ── the lab's UI: list, editor, comparison, equity curve, Monte Carlo ──
+let labEditId=null;
+function renderLab(){
+  const list=$('labList'); if(!list) return;
+  list.innerHTML=strategies.map(st=>
+    `<div class="lab-row${st.id===activeStrat?' on':''}" data-s="${st.id}">
+      <b>${escapeH(st.name)}</b>
+      <span class="lab-tag">${st.side==='long'?'לונג':st.side==='short'?'שורט':'דו-כיווני'}</span>
+      <span class="lab-tag">סף ${st.entry.scoreCross}</span>
+      ${st.builtin?'<span class="lab-tag">מובנה</span>':''}
+      <button class="lab-ed" data-ed="${st.id}">ערוך</button>
+      ${st.builtin?'':`<button class="lab-del" data-del="${st.id}">✕</button>`}
+    </div>`).join('');
+  list.querySelectorAll('.lab-row').forEach(r=>{
+    r.onclick=(e)=>{ if(e.target.dataset.ed||e.target.dataset.del) return;
+      activeStrat=r.dataset.s; saveStrategies(); renderLab();
+      toast('האסטרטגיה הפעילה: '+stratById(activeStrat).name,'up'); };
+  });
+  list.querySelectorAll('[data-ed]').forEach(b=>{ b.onclick=(e)=>{ e.stopPropagation(); openStratEditor(b.dataset.ed); }; });
+  list.querySelectorAll('[data-del]').forEach(b=>{ b.onclick=(e)=>{ e.stopPropagation();
+    strategies=strategies.filter(x=>x.id!==b.dataset.del);
+    if(activeStrat===b.dataset.del) activeStrat=strategies[0].id;
+    saveStrategies(); renderLab(); }; });
+}
+function escapeH(t){ return String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function openStratEditor(id){
+  const st=stratById(id); if(!st) return;
+  labEditId=id;
+  const E=st.entry, X=st.exit;
+  const num=(k,path,v,min,max,step)=>`<label>${k}<input type="number" data-p="${path}" value="${v}" min="${min}" max="${max}" step="${step}"></label>`;
+  const chk=(k,path,v,hint)=>`<label title="${hint||''}">${k}<input type="checkbox" data-p="${path}" ${v?'checked':''}></label>`;
+  $('labEdit').style.display='block';
+  $('labEdit').innerHTML=
+     `<label>שם<input type="text" data-p="name" value="${escapeH(st.name)}" ${st.builtin?'disabled':''}></label>`
+    +`<label>כיוון<select data-p="side">
+        <option value="both"${st.side==='both'?' selected':''}>דו-כיווני</option>
+        <option value="long"${st.side==='long'?' selected':''}>לונג בלבד</option>
+        <option value="short"${st.side==='short'?' selected':''}>שורט בלבד</option></select></label>`
+    +`<div class="le-h">תנאי כניסה</div>`
+    +num('סף ציון לכניסה','entry.scoreCross',E.scoreCross,5,80,1)
+    +chk('חייב יישור EMA','entry.trendAlign',E.trendAlign,'לונג רק כשממוצע 9 מעל 21')
+    +chk('חייב יישור MACD','entry.macdAlign',E.macdAlign)
+    +chk('פילטר רצועות בולינגר','entry.bbFilter',E.bbFilter,'קנייה רק בתחתית הטווח, מכירה רק בתקרה')
+    +num('RSI מקסימלי ללונג','entry.rsiMax',E.rsiMax,0,100,1)
+    +num('RSI מינימלי לשורט','entry.rsiMin',E.rsiMin,0,100,1)
+    +num('קונפלואנס מינימלי','entry.confMin',E.confMin,0,100,5)
+    +`<div class="le-h">יציאה</div>`
+    +num('סטופ (×ATR)','exit.slAtr',X.slAtr,0,10,0.1)
+    +num('יעד (×ATR)','exit.tpAtr',X.tpAtr,0,20,0.1)
+    +num('סטופ נגרר (×ATR, 0=כבוי)','exit.trailAtr',X.trailAtr,0,10,0.1)
+    +num('תפוגה בנרות (0=ללא)','exit.maxBars',X.maxBars,0,500,1)
+    +chk('יציאה על אות הפוך','exit.opposite',X.opposite)
+    +`<div class="lab-actions" style="margin-top:8px">
+        <button class="lab-b go" id="labSave">💾 שמור ובדוק</button>
+        <button class="lab-b" id="labCancel">ביטול</button></div>`;
+  $('labEdit').querySelectorAll('[data-p]').forEach(inp=>{
+    inp.onchange=()=>{
+      const path=inp.dataset.p.split('.');
+      const val=inp.type==='checkbox'? inp.checked : (inp.type==='number'? parseFloat(inp.value)||0 : inp.value);
+      if(path.length===1) st[path[0]]=val; else st[path[0]][path[1]]=val;
+    };
+  });
+  $('labSave').onclick=()=>{ saveStrategies(); renderLab(); $('labEdit').style.display='none';
+    activeStrat=st.id; saveStrategies();
+    btResult=runBacktest(state.candles,st); renderBacktest();
+    toast('נשמר · הורץ בקטסט על '+st.name,'up'); };
+  $('labCancel').onclick=()=>{ $('labEdit').style.display='none'; };
+}
+function newStrategy(){
+  const id='s'+Date.now().toString(36);
+  const base=JSON.parse(JSON.stringify(stratById(activeStrat)));
+  strategies.push({...base,id,name:'אסטרטגיה '+(strategies.length+1),builtin:false});
+  activeStrat=id; saveStrategies(); renderLab(); openStratEditor(id);
+}
+// ── run every strategy on the same candles and rank them honestly ──
+function compareStrategies(){
+  const cs=state.candles;
+  const rows=strategies.map(st=>{ try{ return runBacktest(cs,st); }catch(e){ return null; } }).filter(Boolean);
+  const el=$('labCompare');
+  if(!rows.length){ el.innerHTML='<div class="lg-empty">אין מספיק היסטוריה להשוואה</div>'; return; }
+  // rank by expectancy × sqrt(trades): a great expectancy over three trades
+  // is not evidence, and this is the cheapest honest way to say so
+  // A strategy that never fired scored 0 and therefore beat every strategy
+  // with a negative expectancy — "did nothing" ranked first. Anything below
+  // the evidence threshold is now ranked last by construction.
+  const MIN_TRADES=8;
+  const scored=rows.map(r=>({r, score: r.n>=MIN_TRADES? r.expectancy*Math.sqrt(r.n) : -Infinity}));
+  scored.sort((a,b)=>b.score-a.score);
+  const eligible=scored.filter(x=>x.score>-Infinity);
+  const best=eligible.length? eligible[0] : scored[0];
+  el.innerHTML='<table><tr><th>אסטרטגיה</th><th>עסקאות</th><th>הצלחה</th><th>PF</th><th>תוחלת</th><th>סה״כ</th><th>DD</th></tr>'
+    +scored.map(({r})=>`<tr class="${r===best.r?'best':''}">
+      <td class="lab-name">${escapeH(r.name)}</td>
+      <td>${r.n}</td>
+      <td class="${r.n&&r.winRate>=50?'up':'down'}">${r.n?r.winRate.toFixed(0)+'%':'—'}</td>
+      <td class="${r.n&&r.pf>=1.5?'up':r.n&&r.pf>=1?'':'down'}">${r.n?r.pf.toFixed(2):'—'}</td>
+      <td class="${r.n&&r.expectancy>0?'up':'down'}">${r.n?(r.expectancy>0?'+':'')+r.expectancy.toFixed(2)+'%':'—'}</td>
+      <td class="${r.n&&r.total>0?'up':'down'}">${r.n?(r.total>0?'+':'')+r.total.toFixed(1)+'%':'—'}</td>
+      <td class="down">${r.n?'−'+r.maxDD.toFixed(1)+'%':'—'}</td></tr>`).join('')
+    +'</table>'
+    +(!eligible.length
+      ? '<div class="bt-verdict bad">אף אסטרטגיה לא ייצרה מספיק עסקאות בחלון הזה כדי להסיק ממנה משהו. פחות מ-8 עסקאות זה רעש, לא ראיה.</div>'
+      : best.r.expectancy>0
+        // a positive edge with enough evidence behind it — that is a winner
+        ? `<div class="bt-verdict ok">🏆 המנצחת: <b>${escapeH(best.r.name)}</b> · תוחלת +${best.r.expectancy.toFixed(2)}% על ${best.r.n} עסקאות. <button class="lab-b" id="labUseBest" style="margin-top:6px">הפוך לפעילה</button></div>`
+        // …and when nothing had an edge, saying "winner" would be a lie. The
+        // least-bad losing strategy is still a losing strategy.
+        : `<div class="bt-verdict bad">אף אסטרטגיה לא הראתה יתרון חיובי בחלון הזה. הכי פחות גרועה: <b>${escapeH(best.r.name)}</b> (תוחלת ${best.r.expectancy.toFixed(2)}% על ${best.r.n} עסקאות) — וזו עדיין אסטרטגיה מפסידה. שנה כללים או המתן לשוק אחר.${
+            rows.some(r=>r.n>0&&r.n<8&&r.expectancy>0)? ' שים לב: יש אסטרטגיה עם תוחלת חיובית אבל מתחת ל-8 עסקאות — לא מספיק ראיות כדי לסמוך עליה.' : ''}</div>`);
+  const ub=$('labUseBest');
+  if(ub) ub.onclick=()=>{ activeStrat=best.r.strat; saveStrategies(); renderLab();
+    btResult=best.r; renderBacktest(); toast('האסטרטגיה הפעילה: '+best.r.name,'up'); };
+}
+function drawEquityCurve(b){
+  const cv=$('btEquity'); if(!cv||!b||!b.curve) return;
+  const dpr=Math.min(2,window.devicePixelRatio||1);
+  const W=cv.clientWidth||320, H=120;
+  if(cv.width!==W*dpr||cv.height!==H*dpr){ cv.width=W*dpr; cv.height=H*dpr; }
+  const g=cv.getContext('2d'); g.setTransform(dpr,0,0,dpr,0,0); g.clearRect(0,0,W,H);
+  const c=b.curve, n=c.length;
+  const hi=Math.max(...c,0.001), lo=Math.min(...c,-0.001);
+  const pad=8, yFor=v=>pad+(1-(v-lo)/Math.max(1e-9,hi-lo))*(H-pad*2);
+  const xFor=i=>pad+(i/(n-1))*(W-pad*2);
+  // zero line — the only reference that matters
+  g.strokeStyle='rgba(157,196,216,.28)'; g.setLineDash([3,3]);
+  g.beginPath(); g.moveTo(pad,yFor(0)); g.lineTo(W-pad,yFor(0)); g.stroke(); g.setLineDash([]);
+  // drawdown shading under the peak
+  g.beginPath(); g.moveTo(xFor(0),yFor(0));
+  let peak=0;
+  for(let i=0;i<n;i++){ peak=Math.max(peak,c[i]); g.lineTo(xFor(i),yFor(peak)); }
+  for(let i=n-1;i>=0;i--) g.lineTo(xFor(i),yFor(c[i]));
+  g.closePath(); g.fillStyle='rgba(255,61,110,.12)'; g.fill();
+  // the curve itself
+  g.beginPath();
+  for(let i=0;i<n;i++){ const x=xFor(i),y=yFor(c[i]); i?g.lineTo(x,y):g.moveTo(x,y); }
+  g.strokeStyle=b.total>=0?'#00ffa6':'#ff3d6e'; g.lineWidth=1.8;
+  g.shadowColor=g.strokeStyle; g.shadowBlur=7; g.stroke(); g.shadowBlur=0;
+  g.fillStyle='rgba(157,196,216,.75)'; g.font="9px 'JetBrains Mono',monospace";
+  g.textAlign='left'; g.fillText((hi>=0?'+':'')+hi.toFixed(1)+'%',pad+2,12);
+  g.fillText((lo>=0?'+':'')+lo.toFixed(1)+'%',pad+2,H-4);
+  g.textAlign='right'; g.fillText(n-1+' עסקאות',W-pad-2,H-4);
 }
 let mtfLast='';
 function renderMtf(){
@@ -5995,7 +6493,23 @@ function renderBacktest(){
     +`<span>הפסד ממוצע<b class="down">−${b.avgLoss.toFixed(2)}%</b></span>`
     +`<span>דראודאון מקס<b class="down">−${b.maxDD.toFixed(1)}%</b></span>`
     +`<span>אורך עסקה<b>${b.avgBars} נרות</b></span>`
+    +`<span>עלות הלוך-חזור<b class="down">−${b.costPct.toFixed(3)}%</b></span>`
+    +`<span>סה״כ לפני עלויות<b class="${b.grossTotal>0?'up':'down'}">${b.grossTotal>0?'+':''}${b.grossTotal.toFixed(1)}%</b></span>`
     +'</div>'
+    +'<canvas id="btEquity"></canvas>'
+    +(()=>{ const mc=monteCarlo(b.trades); if(!mc) return '';
+        return '<div class="bt-h" style="margin-top:8px">🎲 מונטה-קרלו · '+mc.runs+' דגימות מחדש של אותו יתרון</div>'
+        +'<div class="mc-grid">'
+        +`<span>תרחיש גרוע (5%)<b class="${mc.p5>0?'up':'down'}">${mc.p5>0?'+':''}${mc.p5.toFixed(1)}%</b></span>`
+        +`<span>חציון<b class="${mc.p50>0?'up':'down'}">${mc.p50>0?'+':''}${mc.p50.toFixed(1)}%</b></span>`
+        +`<span>תרחיש טוב (95%)<b class="${mc.p95>0?'up':'down'}">${mc.p95>0?'+':''}${mc.p95.toFixed(1)}%</b></span>`
+        +`<span>דראודאון חציוני<b class="down">−${mc.ddMed.toFixed(1)}%</b></span>`
+        +`<span>דראודאון גרוע (95%)<b class="down">−${mc.ddP95.toFixed(1)}%</b></span>`
+        +`<span>סיכוי לסיים ברווח<b class="${mc.winOdds>=50?'up':'down'}">${mc.winOdds.toFixed(0)}%</b></span>`
+        +`<span>סיכוי לאבד את התיק<b class="${mc.ruin>0?'down':'up'}">${mc.ruin.toFixed(1)}%</b></span>`
+        +'</div>'
+        +`<div class="bt-note">אותו יתרון בדיוק, נדגם מחדש ${mc.runs} פעמים ומורכב כמו חשבון אמיתי. תכנן לפי התרחיש הגרוע (${mc.p5.toFixed(1)}%), לא לפי החציון — זה מה שהיית יכול לחוות עם בדיוק אותם כללים ורק מזל אחר.</div>`;
+      })()
     +`<div class="bt-verdict ${good?'ok':'bad'}">${good?'✅ הכללים היו רווחיים על ההיסטוריה הזו — פקטור רווח מעל 1.5 ותוחלת חיובית':'⚠️ הכללים לא היו רווחיים על ההיסטוריה הזו — אל תסחור אותם עיוור'}</div>`
     +'<div class="bt-list">'+b.trades.slice(-12).reverse().map(t=>
       `<span class="bt-row"><i class="${t.side==='long'?'up':'down'}">${t.side==='long'?'▲ לונג':'▼ שורט'}</i>`
@@ -6003,7 +6517,9 @@ function renderBacktest(){
       +`<span class="bt-why">${t.why} · ${t.bars} נרות</span>`
       +`<b class="${t.pct>0?'up':'down'}">${t.pct>0?'+':''}${t.pct.toFixed(2)}%</b></span>`).join('')
     +'</div>'
+    +(b.costDrag>0?`<div class="bt-verdict ${b.total>0?'ok':'bad'}">💸 העלויות אכלו ${b.costDrag.toFixed(1)}% מהתשואה (${b.n} עסקאות × ${b.costPct.toFixed(3)}%). ${b.grossTotal>0&&b.total<=0?'האסטרטגיה רווחית על הנייר ומפסידה בפועל — זה בדיוק ההבדל שבקטסט בלי עמלות מסתיר.':''}</div>`:'')
     +'<div class="bt-note">נבדק על מחירי הנרות בלבד — ספר ההזמנות וזרימת העסקאות ההיסטוריים אינם נשמרים, ולכן החלק הזה של המנוע לא נכלל. ביצועי עבר אינם ערובה לעתיד.</div>';
+  try{ drawEquityCurve(b); }catch(e){}
 }
 // ── HISTORY ANALYSIS — everything a trader wants to know about the exact
 // slice of tape on screen: what it did, how violent it was, the worst
@@ -6849,7 +7365,7 @@ $('ctBt').onclick=()=>{
   if(btResult){ btResult=null; renderBacktest(); $('ctBt').classList.remove('on'); return; }
   toast('מריץ בקטסט על ההיסטוריה…');
   setTimeout(()=>{
-    try{ btResult=runBacktest(state.candles); }catch(e){ btResult=null; toast('הבקטסט נכשל','down'); }
+    try{ btResult=runBacktest(state.candles,activeStrategy()); }catch(e){ btResult=null; toast('הבקטסט נכשל','down'); }
     renderBacktest(); $('ctBt').classList.toggle('on',!!btResult);
     if(btResult&&btResult.n) toast(`בקטסט: ${btResult.n} עסקאות · ${btResult.winRate.toFixed(0)}% הצלחה`, btResult.expectancy>0?'up':'down');
   },30);
@@ -6886,6 +7402,12 @@ const SETTINGS_SCHEMA=[
     {key:'showSwarm', type:'checkbox', label:'נחילי אנרגיה', desc:'זרמי חלקיקים חיים שנעים בעולם — צבועים לפי כיוון השוק'},
     {key:'showWeather', type:'checkbox', label:'מזג אוויר של השוק', desc:'סופה בירידות, זוהר צפוני בעליות — לפי מצב הרוח הכללי'},
     {key:'showPulse', type:'checkbox', label:'פאנל דופק העולם', desc:'המובילים והמפסידים בפינה השמאלית'},
+    {key:'feesOn', type:'checkbox', label:'מודל עלויות מסחר', desc:'עמלות, ספרד, סליפג׳ ומימון — כמו בבורסה אמיתית. כיבוי הופך את הדמו לתרגיל תיאורטי'},
+    {key:'feeTakerBps', type:'range', min:0, max:20, step:0.5, label:'עמלת Taker (bps)', desc:'ברירת מחדל 5.5 = 0.055%, כמו VIP0 בבינאנס פיוצ׳רס'},
+    {key:'feeMakerBps', type:'range', min:0, max:20, step:0.5, label:'עמלת Maker (bps)', desc:'הזמנות לימיט שיושבות בספר משלמות פחות'},
+    {key:'spreadBps', type:'range', min:0, max:30, step:0.5, label:'ספרד (bps)', desc:'המרחק בין המחיר שאתה רואה למחיר שאתה מקבל'},
+    {key:'slipBps', type:'range', min:0, max:30, step:0.5, label:'סליפג׳ בסיס (bps)', desc:'גדל עם גודל ההזמנה ביחס לעומק הספר'},
+    {key:'fundingBps8h', type:'range', min:0, max:20, step:0.5, label:'מימון ל-8 שעות (bps)', desc:'פוזיציה שמוחזקת לילה משלמת על זה'},
     {key:'centerMode', type:'select', label:'תצוגת המודל המרכזי', desc:'איך המחיר החי מוצג בלב הזירה', options:CENTER_MODES},
   ]},
   {sec:'🕹️ שליטה ותנועה', items:[
@@ -7449,7 +7971,7 @@ function updateHud(now){
   const openSyms=Object.keys(positions);
   if(openSyms.length){
     const equity=wallet.balance+openSyms.reduce((sum,sym)=>{
-      const P2=positions[sym]; return sum+P2.margin+P2.notional*posPnlPct(P2)/100;
+      const P2=positions[sym]; return sum+P2.margin+netPnlUsd(P2);
     },0);
     $('walletEq').textContent='$'+equity.toFixed(0);
     $('walletEq').className='num '+(equity>=wallet.balance+openSyms.reduce((s,sym)=>s+positions[sym].margin,0)?'up':'down');
@@ -7528,6 +8050,7 @@ function loop(){
     gfxGuard(dt);
     if(indDirty && now-lastInd>350){ computeSignals(); indDirty=false; lastInd=now; }
     checkAllPositions();
+    try{ checkLiquidations(); }catch(e){}
     try{ checkOrders(); }catch(e){}
     try{ autopilotTick(); }catch(e){}
     if(now-(renderPosStrip._at||0)>900){ renderPosStrip(); renderPosStrip._at=now; }
