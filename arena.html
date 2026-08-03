@@ -208,6 +208,29 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 #mapLegend{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;margin:9px 2px 4px;font-size:10.5px;color:var(--dim)}
 #mapLegend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-inline-end:5px;vertical-align:middle}
 /* recommendations center */
+#apPanel{position:fixed;z-index:34;top:50%;right:16px;transform:translateY(-50%);
+  width:min(330px,92vw);padding:13px 15px;max-height:calc(100dvh - 24px);overflow-y:auto}
+#apPanel .ap-row{display:flex;justify-content:space-between;align-items:center;gap:8px;
+  padding:5px 8px;border-radius:7px;background:rgba(0,240,255,.04);margin-bottom:4px;font-size:11px;color:var(--dim)}
+#apPanel .ap-row b{font-family:'JetBrains Mono',monospace;color:var(--txt)}
+#apPanel .ap-row b.up{color:var(--up)} #apPanel .ap-row b.down{color:var(--down)}
+#apPanel .ap-cap{height:6px;border-radius:4px;background:rgba(255,255,255,.08);overflow:hidden;margin:6px 0 3px}
+#apPanel .ap-cap i{display:block;height:100%;background:linear-gradient(90deg,#00ffa6,#ffd166,#ff3d6e)}
+#apPanel .ap-note{font-size:10px;color:var(--dim);margin-bottom:8px}
+#apPanel .ap-ctl{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px}
+#apPanel .ap-ctl label{display:flex;flex-direction:column;gap:3px;font-size:10px;color:var(--dim)}
+#apPanel .ap-ctl select{background:rgba(2,10,18,.9);color:var(--txt);border:1px solid rgba(0,240,255,.25);
+  border-radius:6px;padding:4px 6px;font-size:11px;font-family:'JetBrains Mono',monospace}
+#apPanel .ap-btn{grid-column:1/-1;padding:8px;border-radius:8px;cursor:pointer;font-weight:800;font-size:12px;
+  background:rgba(0,255,166,.12);border:1px solid rgba(0,255,166,.5);color:var(--up)}
+#apPanel .ap-btn.on{background:rgba(255,61,110,.12);border-color:rgba(255,61,110,.5);color:var(--down)}
+#apLog{display:flex;flex-direction:column;gap:3px;max-height:230px;overflow-y:auto}
+#apLog .ap-l{padding:5px 7px;border-radius:6px;background:rgba(0,0,0,.25);font-size:10px;line-height:1.55;color:var(--dim)}
+#apLog .ap-l.open{color:var(--up);background:rgba(0,255,166,.07)}
+#apLog .ap-l.lock{color:var(--down);background:rgba(255,61,110,.08)}
+#apLog .ap-t{font-family:'JetBrains Mono',monospace;opacity:.7;margin-inline-end:5px}
+#apLog .ap-empty{font-size:10.5px;color:var(--dim);padding:8px;text-align:center}
+@media (max-width:900px){ #apPanel{right:8px;left:8px;width:auto;top:auto;bottom:8px;transform:none;max-height:70dvh} }
 #recsPanel{position:fixed;z-index:34;top:50%;left:50%;transform:translate(-50%,-50%);
   width:min(520px,94vw);max-height:86vh;overflow-y:auto;padding:16px 18px}
 .rc-h{font-size:11px;letter-spacing:1.2px;color:var(--cyan);font-weight:600;margin:14px 0 8px}
@@ -906,6 +929,9 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
     <div class="tgl" id="btnRecs" title="מרכז המלצות — ספר אותות, מדד דיוק ומחשבון גודל פוזיציה">
       <span style="font-size:15px">📋</span><span style="font-size:8px">המלצות</span>
     </div>
+    <div class="tgl" id="btnAp" title="טייס אוטומטי — סוחר את האותות המאושרים בלבד, עם ניהול סיכון">
+      <span style="font-size:15px">🤖</span><span style="font-size:8px">טייס</span>
+    </div>
   </div>
 
   <div id="vignette" aria-hidden="true"></div>
@@ -959,6 +985,28 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
     <button id="rcClear" style="float:left;background:none;border:1px solid rgba(255,61,110,.4);color:var(--down);border-radius:6px;font-size:10px;padding:2px 8px;cursor:pointer">נקה ספר</button></div>
   <div id="rcLedger"></div>
   <div class="disc" style="margin-top:10px">מדידה עצמית של אותות המערכת · אינו ייעוץ השקעות · מסחר אמיתי באחריותך בלבד</div>
+</div>
+<div id="apPanel" class="panel clip" style="display:none">
+  <div class="lg-h"><span>🤖 טייס אוטומטי</span><button class="mp-close" id="apClose" style="margin-inline-start:auto">✕</button></div>
+  <div id="apBody"></div>
+  <div class="ap-ctl">
+    <button class="ap-btn" id="apToggle">הפעל</button>
+    <label>סיכון לעסקה
+      <select id="apRisk"><option value="0.5">0.5%</option><option value="1">1%</option><option value="2">2%</option><option value="3">3%</option></select>
+    </label>
+    <label>מקסימום במקביל
+      <select id="apMax"><option>1</option><option>2</option><option>3</option><option>5</option><option>8</option></select>
+    </label>
+    <label>סף קונפלואנס
+      <select id="apConf"><option>55</option><option>65</option><option>75</option><option>85</option></select>
+    </label>
+    <label>תקרת הפסד יומית
+      <select id="apCap"><option value="3">3%</option><option value="6">6%</option><option value="10">10%</option></select>
+    </label>
+  </div>
+  <div class="rc-h">📜 יומן החלטות <span class="rc-sub">· כולל כל אות שנדחה, ולמה</span></div>
+  <div id="apLog"></div>
+  <div class="disc" style="margin-top:10px">סוחר בארנק הדמו בלבד · אינו מבצע פעולות בחשבון אמיתי · אינו ייעוץ השקעות</div>
 </div>
 <div id="fundPanel" class="panel clip" style="display:none">
   <div class="lg-h"><span>🧮 פונדמנטלס · <span id="fundSym"></span></span><button class="mp-close" id="fundClose" style="margin-inline-start:auto">✕</button></div>
@@ -2394,6 +2442,126 @@ function openPos(side){
   spawnRipple(side==='long'?'buy':'sell', p, 0.8);
   renderTicket(); renderPortfolio(); renderPosStrip();
 }
+// ============================================================
+//  AUTOPILOT — the engine trading its own signals on the demo wallet, under
+//  risk rules it is not allowed to break. Three things make this honest
+//  rather than a toy:
+//
+//   1. It only takes trades that pass the SAME confluence gate the ledger
+//      uses. If the desk would not record the signal, the bot does not take
+//      it.
+//   2. Position size comes from risk, not from a fixed margin: risk% of the
+//      wallet divided by the actual stop distance. Every trade risks the
+//      same money regardless of how wide the stop is.
+//   3. Every decision is logged — including the REJECTIONS and why. A bot
+//      whose refusals are invisible is a bot you cannot audit.
+//
+//  A daily loss cap locks it out entirely, and the lock survives a reload.
+// ============================================================
+const AP_KEY='na:autopilot';
+let autopilot={on:false, risk:1, maxOpen:3, minConf:65, dayLossPct:6, log:[], day:'', dayPnl:0, locked:false};
+try{ const raw=JSON.parse(localStorage.getItem(AP_KEY)||'null'); if(raw&&typeof raw==='object') Object.assign(autopilot,raw,{on:false}); }catch(e){}
+function saveAutopilot(){ try{ localStorage.setItem(AP_KEY,JSON.stringify({...autopilot,log:autopilot.log.slice(0,60)})); }catch(e){} }
+function apToday(){ return new Date().toISOString().slice(0,10); }
+function apLog(kind,txt){
+  autopilot.log.unshift({t:Date.now(),kind,txt});
+  autopilot.log=autopilot.log.slice(0,60);
+  saveAutopilot();
+  if(apPanelOpen) renderAutopilot();
+}
+function apRollDay(){
+  const d=apToday();
+  if(autopilot.day!==d){ autopilot.day=d; autopilot.dayPnl=0; autopilot.locked=false; saveAutopilot(); }
+}
+// called by closePos so the daily cap tracks realised money, not paper P&L
+function apRecordClose(usd){
+  apRollDay();
+  autopilot.dayPnl+=usd;
+  const equity=wallet.balance+Object.keys(positions).reduce((a,k)=>a+positions[k].margin,0);
+  const capUsd=equity*autopilot.dayLossPct/100;
+  if(autopilot.dayPnl<=-capUsd && !autopilot.locked){
+    autopilot.locked=true;
+    apLog('lock',`תקרת הפסד יומית נחצתה (${autopilot.dayPnl.toFixed(0)}$ מתוך ${(-capUsd).toFixed(0)}$) — הטייס נעול עד מחר`);
+    toast('⛔ הטייס האוטומטי ננעל — תקרת הפסד יומית','down');
+    beep([[880,0.09],[620,0.09],[440,0.16]]);
+  }
+  saveAutopilot();
+}
+let apLastAt=0, apPrevScore={};
+function autopilotTick(){
+  if(!autopilot.on||!ind) return;
+  apRollDay();
+  const now=Date.now();
+  if(now-apLastAt<4000) return; apLastAt=now;
+  const sym=state.sym, prev=apPrevScore[sym];
+  apPrevScore[sym]=ind.score;
+  if(autopilot.locked) return;
+  if(ind.closed) return;
+  if(prev==null) return;
+  const cross = ind.score>=20&&prev<20 ? 'long' : ind.score<=-20&&prev>-20 ? 'short' : null;
+  if(!cross) return;
+  apEvaluate(cross);
+}
+// the gate chain, split out so it can be exercised directly: every refusal
+// is a logged line, which is the only way a bot's judgement can be audited
+function apEvaluate(cross){
+  if(!ind) return;
+  const sym=state.sym;
+  {
+    // ── the gates, each one logged when it blocks ──
+  if(feed&&feed.src==='sim'){ apLog('skip','אות '+sym+' נדחה — הזנת סימולציה, לא נסחר על נתונים לא אמיתיים'); return; }
+  if(ind.conf<autopilot.minConf){ apLog('skip',`אות ${cross==='long'?'לונג':'שורט'} ב-${sym} נדחה — קונפלואנס ${ind.conf} מתחת לסף ${autopilot.minConf}${ind.confMiss&&ind.confMiss.length?' · חסר: '+ind.confMiss[0]:''}`); return; }
+  const openIds=Object.keys(positions);
+  if(openIds.length>=autopilot.maxOpen){ apLog('skip',`אות ${sym} נדחה — כבר ${openIds.length} עסקאות פתוחות (מקסימום ${autopilot.maxOpen})`); return; }
+  if(posOn(sym)){ apLog('skip',`אות ${sym} נדחה — כבר יש עסקה פתוחה על הנכס הזה`); return; }
+  const p=state.lastPrice, A=ind.A;
+  if(!(p>0)||!(A>0)) return;
+  const sl = cross==='long'? p-1.5*A : p+1.5*A;
+  const slDist=Math.abs(p-sl)/p;
+  // a stop tighter than 0.15% is inside the noise: fees and spread decide the
+  // outcome, not the setup
+  if(!(slDist>0.0015)){ apLog('skip',`אות ${sym} נדחה — מרחק הסטופ ${(slDist*100).toFixed(3)}% צר מדי, עמלות וספרד יכריעו את העסקה`); return; }
+  // ── risk-based sizing. The intended risk is risk% of the wallet divided by
+  // the stop distance. That number can demand more exposure than the account
+  // should ever carry, so it is capped — and when it is capped the ACTUAL
+  // risk is recomputed and logged, because a bot that reports its intended
+  // risk while taking a different one is worse than no bot.
+  const riskUsd=wallet.balance*autopilot.risk/100;
+  const wantNotional=riskUsd/slDist;
+  const maxMargin=Math.min(wallet.balance*0.2, wallet.balance-50);   // never more than a fifth of the wallet locked in one trade
+  const maxNotional=maxMargin*tradeLev;
+  const capped=wantNotional>maxNotional;
+  const notional=capped? maxNotional : wantNotional;
+  const margin=Math.max(20, notional/tradeLev);
+  if(margin>wallet.balance){ apLog('skip',`אות ${sym} נדחה — אין מספיק יתרה למרג׳ין הנדרש`); return; }
+  const realRisk=notional*slDist;
+  const savedMargin=tradeMargin, savedSl=tradeSlManual, savedTp=tradeTpManual;
+  tradeMargin=Math.round(margin); tradeSlManual=0; tradeTpManual=0;
+  openPos(cross);
+  tradeMargin=savedMargin; tradeSlManual=savedSl; tradeTpManual=savedTp;
+  apLog('open',`נפתחה ${cross==='long'?'לונג':'שורט'} ${sym} @ ${fmtP(p)} · קונפלואנס ${ind.conf} · ציון ${ind.score}`
+    +` · מרג׳ין $${Math.round(margin)} · סטופ ${(slDist*100).toFixed(2)}% · סיכון בפועל $${realRisk.toFixed(0)}`
+    +(capped?` (הוקטן מ-$${riskUsd.toFixed(0)} — תקרת חשיפה של 20% מהתיק לעסקה)`:''));
+  }
+}
+let apPanelOpen=false;
+function renderAutopilot(){
+  const el=$('apPanel'); if(!el) return;
+  const equity=wallet.balance+Object.keys(positions).reduce((a,k)=>a+positions[k].margin,0);
+  const capUsd=equity*autopilot.dayLossPct/100;
+  const used=Math.min(100,Math.max(0,(-autopilot.dayPnl/Math.max(1,capUsd))*100));
+  $('apBody').innerHTML=
+     `<div class="ap-row"><span>מצב</span><b class="${autopilot.locked?'down':autopilot.on?'up':''}">${autopilot.locked?'⛔ נעול עד מחר':autopilot.on?'🟢 פעיל':'⚪ כבוי'}</b></div>`
+    +`<div class="ap-row"><span>סיכון לעסקה</span><b>${autopilot.risk}% · $${(wallet.balance*autopilot.risk/100).toFixed(0)}</b></div>`
+    +`<div class="ap-row"><span>עסקאות במקביל</span><b>${Object.keys(positions).length} / ${autopilot.maxOpen}</b></div>`
+    +`<div class="ap-row"><span>סף קונפלואנס</span><b>${autopilot.minConf}</b></div>`
+    +`<div class="ap-row"><span>רווח/הפסד היום</span><b class="${autopilot.dayPnl>=0?'up':'down'}">${autopilot.dayPnl>=0?'+':'−'}$${Math.abs(autopilot.dayPnl).toFixed(0)}</b></div>`
+    +`<div class="ap-cap"><i style="width:${used.toFixed(0)}%"></i></div>`
+    +`<div class="ap-note">תקרת הפסד יומית $${capUsd.toFixed(0)} (${autopilot.dayLossPct}% מהתיק) · ${used.toFixed(0)}% נוצלו</div>`;
+  $('apLog').innerHTML=autopilot.log.length? autopilot.log.map(l=>
+      `<div class="ap-l ${l.kind}"><span class="ap-t">${fmtT(l.t)}</span>${l.kind==='open'?'✅':l.kind==='lock'?'⛔':'⏸'} ${l.txt}</div>`).join('')
+    : '<div class="ap-empty">אין החלטות עדיין — הטייס רושם כאן גם כל אות שהוא דחה, ולמה</div>';
+}
 // close only PART of a position — bank half, let the rest run
 function closePartial(id,frac){
   const P=positions[id]; if(!P) return;
@@ -2455,6 +2623,7 @@ function closePos(sym,reason){
   const isRecord = pct>session.bestPct;
   if(isRecord) session.bestPct=pct;
   saveSession();
+  try{ apRecordClose(usd); }catch(e){}   // the autopilot's daily loss cap tracks realised money
   checkAchievements(win,pct);
   delete positions[sym]; savePositions();
   const head=reason==='tp'?'🎯 יעד הושג':reason==='sl'?'🛑 סטופ הופעל':'עמדה נסגרה';
@@ -2684,6 +2853,37 @@ $('btnCockpit').onclick=()=>setCockpit(!cockpitOn);
 // the board is recomputed at most twice a second and shared with the cockpit
 setInterval(()=>{ if(cockpitOn){ try{ window.__ckBoard=indicatorBoard(); }catch(e){} } },500);
 $('btnRecs').onclick=()=>setRecs(!recsOpen);
+// ── autopilot panel ──
+function setAp(on){
+  apPanelOpen=on;
+  $('apPanel').style.display=on?'block':'none';
+  $('btnAp').classList.toggle('on',on);
+  if(on) renderAutopilot();
+}
+$('btnAp').onclick=()=>setAp(!apPanelOpen);
+$('apClose').onclick=()=>setAp(false);
+$('apToggle').onclick=()=>{
+  if(autopilot.locked){ toast('הטייס נעול עד מחר — תקרת ההפסד היומית נחצתה','down'); return; }
+  autopilot.on=!autopilot.on; saveAutopilot();
+  $('apToggle').classList.toggle('on',autopilot.on);
+  $('apToggle').textContent=autopilot.on?'עצור':'הפעל';
+  $('btnAp').classList.toggle('running',autopilot.on);
+  apLog('lock',autopilot.on?'הטייס הופעל — ממתין לאות שעובר את כל הסננים':'הטייס נעצר ידנית');
+  toast(autopilot.on?'🤖 טייס אוטומטי פעיל — נסחר רק על אותות מאושרים':'הטייס האוטומטי נעצר', autopilot.on?'up':'');
+  renderAutopilot();
+};
+[['apRisk','risk'],['apMax','maxOpen'],['apConf','minConf'],['apCap','dayLossPct']].forEach(([id,key])=>{
+  const el=$(id); if(!el) return;
+  el.value=String(autopilot[key]);
+  el.onchange=()=>{ autopilot[key]=parseFloat(el.value); saveAutopilot(); renderAutopilot(); };
+});
+$('apToggle').textContent=autopilot.on?'עצור':'הפעל';
+window.__naAutopilot={
+  state:()=>({...autopilot,openCount:Object.keys(positions).length}),
+  set:(k,v)=>{ autopilot[k]=v; saveAutopilot(); if(apPanelOpen) renderAutopilot(); },
+  tick:()=>autopilotTick(),
+  evaluate:(side)=>apEvaluate(side||'long'),
+};
 $('recsClose').onclick=()=>setRecs(false);
 $('rcClear').onclick=()=>{ sigLedger=[]; saveSigLedger(); renderRecs(); toast('ספר האותות נוקה'); };
 document.querySelectorAll('.rc-risk').forEach(b=>{
@@ -6937,6 +7137,7 @@ function loop(){
     gfxGuard(dt);
     if(indDirty && now-lastInd>350){ computeSignals(); indDirty=false; lastInd=now; }
     checkAllPositions();
+    try{ autopilotTick(); }catch(e){}
     if(now-(renderPosStrip._at||0)>900){ renderPosStrip(); renderPosStrip._at=now; }
     checkPriceAlerts();
     updateWorld(dt,now);

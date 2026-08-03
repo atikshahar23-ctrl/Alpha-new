@@ -111,7 +111,23 @@ header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 16px
 #hotEntities .he-chip:hover{border-color:var(--gold)}
 body.compact .cluster{padding:8px 12px;margin-bottom:6px}
 body.compact .cluster h3{font-size:13px;margin:2px 0}
-body.compact .cluster .c-hint{display:none}
+body.compact .ana-intel{margin:10px 0;padding:10px 12px;border:1px solid rgba(0,240,255,.22);border-radius:10px;background:rgba(0,240,255,.04)}
+.ana-intel .ai-h{font-weight:800;font-size:12px;color:var(--cyan);margin-bottom:8px}
+.ana-intel .ai-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:5px}
+.ana-intel .ai-grid span{display:flex;flex-direction:column;gap:1px;padding:5px 7px;border-radius:6px;background:rgba(0,0,0,.25);font-size:10px;color:var(--dim)}
+.ana-intel .ai-grid b{font-size:13px;color:var(--txt);font-family:'JetBrains Mono',monospace}
+.ana-intel .ai-outlets{display:flex;flex-wrap:wrap;gap:4px;margin-top:7px}
+.ana-intel .ai-warn{margin-top:8px;padding:6px 9px;border-radius:7px;background:rgba(255,209,102,.1);color:#ffd166;font-size:11px;line-height:1.6}
+.ana-intel .ai-hot{margin-top:8px;padding:6px 9px;border-radius:7px;background:rgba(255,61,110,.1);color:#ff9ec4;font-size:11px;line-height:1.6}
+.cluster .c-sum{margin:6px 0 0;font-size:11.5px;line-height:1.65;color:var(--dim)}
+.cluster .c-cred{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0 2px;font-size:10px;color:var(--dim)}
+.cluster .cred-bar{width:74px;height:5px;border-radius:3px;background:rgba(255,255,255,.08);overflow:hidden;flex:none}
+.cluster .cred-bar i{display:block;height:100%;border-radius:3px}
+.cluster .cred-n{font-weight:800;color:var(--txt);font-family:'JetBrains Mono',monospace}
+.cluster .cred-hot{color:#ffd166;font-weight:700}
+.cluster .cred-div{color:#ff9ec4;font-weight:700}
+.cluster .c-first{margin-top:6px;font-size:10px;color:var(--dim);opacity:.85}
+.cluster .c-hint{display:none}
 body.compact .cluster .c-srcs{margin-top:2px}
 #searchRow{display:flex;gap:8px;margin:10px 0}
 #searchBox{flex:1;min-width:0;background:rgba(6,12,26,.6);color:var(--txt);border:1px solid var(--line);
@@ -802,14 +818,45 @@ const TOPICS=[
 // simple keyword-based sentiment tag — not a claim of real NLP, just a quick
 // visual cue (rises/gains/wins read positive, falls/crises/deaths read
 // negative) so a skimmed situation picture also carries a mood, not just topics
-const SENT_POS=['עולה','עליה','זינוק','שיא','ניצחון','הישג','פריצת דרך','שיפור','הסכם','רווח','גדל','חדשנות','פתרון'];
-const SENT_NEG=['נופל','ירידה','קריסה','משבר','אסון','פיגוע','מלחמה','הפסד','אזהרה','סכנה','קורבנות','נהרג','פשיטת רגל','פיטורים'];
-function sentimentOf(grp){
-  const text=grp.map(g=>g.title+' '+(g.desc||'')).join(' ').toLowerCase();
+// Tone lexicon. The old one had 13 positive and 14 negative Hebrew words,
+// which meant most headlines — and nearly every English one — scored as
+// neutral. Both lists are now weighted (a war is not the same size of
+// negative as a delay) and cover English, because half these feeds are.
+const SENT_POS=[['פריצת דרך',3],['ניצחון',3],['הישג',2],['זינוק',2],['שיא',2],['הצלחה',2],['מוצלח',2],
+  ['שיפור',2],['התאוששות',2],['הסכם',2],['פתרון',2],['חדשנות',2],['הפסקת אש',3],['שחרור',2],['רווח',1],
+  ['גדל',1],['עולה',1],['עליה',1],['עלייה',1],['צמיחה',2],['אישור',1],['התקדמות',2],['תמיכה',1],['חיובי',2],
+  ['breakthrough',3],['record high',3],['surge',2],['rally',2],['soar',2],['jump',2],['gain',1],['profit',1],
+  ['beat expectations',3],['upgrade',2],['recovery',2],['deal',1],['agreement',2],['ceasefire',3],['approved',2],
+  ['boost',2],['optimism',2],['rebound',2],['wins',2],['success',2],['growth',2]];
+const SENT_NEG=[['מלחמה',3],['פיגוע',3],['אסון',3],['קריסה',3],['משבר',3],['נהרג',3],['הרוגים',3],['קורבנות',3],
+  ['פשיטת רגל',3],['פיטורים',2],['כישלון',2],['נכשל',2],['נזק',2],['הפסד',2],['אזהרה',2],['סכנה',2],['איום',2],
+  ['ירידה',1],['נופל',1],['צניחה',2],['התרסקות',3],['שריפה',2],['פציעה',2],['חקירה',1],['שחיתות',2],['שלילי',2],
+  ['עיכוב',1],['ביטול',1],['מחאה',1],['שביתה',2],['גירעון',2],['אינפלציה',1],
+  ['war',3],['attack',3],['killed',3],['dead',3],['crash',3],['collapse',3],['crisis',3],['bankrupt',3],
+  ['layoffs',2],['plunge',2],['slump',2],['tumble',2],['loss',1],['warning',2],['risk',1],['threat',2],
+  ['downgrade',2],['recession',3],['probe',1],['fraud',2],['lawsuit',1],['strike',1],['protest',1],['fears',2]];
+// A "not" in front of a word flips it — "לא הצליח" and "failed to reach a
+// deal" are the two ways a naive keyword counter gets a story backwards.
+const NEGATORS=['לא ','אין ','ללא ','נמנע','failed to','no ','not ','without '];
+function toneScore(text){
+  const t=(text||'').toLowerCase();
   let pos=0,neg=0;
-  for(const k of SENT_POS) if(text.includes(k)) pos++;
-  for(const k of SENT_NEG) if(text.includes(k)) neg++;
-  if(pos>neg) return 'pos'; if(neg>pos) return 'neg'; return 'neu';
+  const hit=(word,w)=>{
+    let i=t.indexOf(word);
+    if(i<0) return 0;
+    const before=t.slice(Math.max(0,i-14),i);
+    return NEGATORS.some(n=>before.includes(n)) ? -w : w;
+  };
+  for(const [k,w] of SENT_POS){ const v=hit(k,w); if(v>0) pos+=v; else if(v<0) neg+=-v; }
+  for(const [k,w] of SENT_NEG){ const v=hit(k,w); if(v>0) neg+=v; else if(v<0) pos+=-v; }
+  return {pos,neg};
+}
+function sentimentOf(grp){
+  const {pos,neg}=toneScore(grp.map(g=>g.title+' '+(g.desc||'')).join(' '));
+  // a one-point edge is noise; require a real margin before taking a side
+  if(pos-neg>=2) return 'pos';
+  if(neg-pos>=2) return 'neg';
+  return 'neu';
 }
 let items=[], clusters=[], armState=new Array(ARMS.length).fill('off');
 let topicFilter=null, lastPull=0;
@@ -1030,6 +1077,87 @@ function similar(a,b){
   const [jT,cT]=SENS[octoSettings.clusterSens]||SENS.normal;
   return jac>=jT || containment>=cT;
 }
+// ============================================================
+//  STORY INTELLIGENCE — a news engine's job is not to list articles, it is
+//  to tell you which STORIES matter and how much to believe them. Every
+//  metric below is computed from the fetched articles themselves:
+//
+//    corroboration — how many INDEPENDENT outlets carry it. Independence is
+//      measured by domain, not by feed name: three RSS feeds from one
+//      publisher are one voice, not three.
+//    reach         — how many different source groups (Israel / world / wire
+//      services / finance / tech) picked it up. A story that crosses
+//      categories is a bigger story than one that stays in its lane.
+//    velocity      — how much of the coverage arrived in the last half hour.
+//      This is what separates "breaking right now" from "big yesterday".
+//    divergence    — whether the outlets disagree in tone. Contradictory
+//      coverage is a signal in itself, and it is the one thing a naive
+//      aggregator will never show you.
+//
+//  Nothing here is scraped, guessed or invented — it is all arithmetic on
+//  the articles the tentacles actually pulled.
+// ============================================================
+function outletOf(a){
+  try{
+    if(/^https?:/.test(a.link)){
+      const h=new URL(a.link).hostname.replace(/^www\./,'');
+      const parts=h.split('.');
+      // co.il / com.au style suffixes need three labels to identify the owner
+      return parts.length>2 && /^(co|com|org|net|gov|ac)$/.test(parts[parts.length-2])
+        ? parts.slice(-3).join('.') : parts.slice(-2).join('.');
+    }
+  }catch(e){}
+  return a.src;
+}
+// which thematic group each source name belongs to — the reach measure
+const SRC_GROUP={};
+ARM_GROUPS.forEach((g,gi)=>g[2].forEach(([name])=>{ SRC_GROUP[name]=gi; }));
+function storyMetrics(grp){
+  const now=Date.now();
+  const outlets=[...new Set(grp.map(outletOf))];
+  const groups=[...new Set(grp.map(a=>SRC_GROUP[a.src]).filter(v=>v!==undefined))];
+  const times=grp.map(a=>a.at).sort((a,b)=>a-b);
+  const firstAt=times[0], lastAt=times[times.length-1];
+  const first=grp.slice().sort((a,b)=>a.at-b.at)[0];
+  const recent30=grp.filter(a=>now-a.at<30*60000).length;
+  const velocity=grp.length? recent30/grp.length : 0;
+  const spanH=Math.max(0.1,(lastAt-firstAt)/3600e3);
+  const perHour=grp.length/spanH;
+  // tone spread across outlets — POS vs NEG headlines on the same story
+  let pos=0,neg=0;
+  grp.forEach(a=>{
+    const s=sentimentOf([a]);
+    if(s==='pos') pos++; else if(s==='neg') neg++;
+  });
+  const divergence=(pos>0&&neg>0)? Math.min(pos,neg)/grp.length : 0;
+  // credibility: independent outlets dominate, cross-group reach adds, and a
+  // single-outlet story is explicitly capped low no matter how loud it is
+  const indep=outlets.length;
+  let cred=Math.min(70,Math.log2(1+indep)*30)+Math.min(20,(groups.length-1)*10)+Math.min(10,grp.length*1.5);
+  if(indep===1) cred=Math.min(cred,32);
+  return {outlets,indep,groups:groups.length,firstAt,lastAt,first,recent30,velocity,perHour,
+    divergence,pos,neg,cred:Math.round(Math.min(100,cred)),
+    hot: recent30>=2 && velocity>=0.5};
+}
+// extractive summary: the sentence across the cluster that covers the most
+// of the story's own high-frequency terms. No model, no API — but it does
+// pick the sentence a human would have picked, most of the time.
+function clusterSummary(grp){
+  const freq={};
+  grp.forEach(a=>{ for(const w of tokens(a.title)) if(w.length>2) freq[w]=(freq[w]||0)+1; });
+  let best='', bestScore=0;
+  grp.forEach(a=>{
+    const text=((octoSettings.translateHe&&a.descHe)?a.descHe:a.desc)||'';
+    text.split(/(?<=[.!?׃])\s+/).forEach(sen=>{
+      const t=sen.trim();
+      if(t.length<45||t.length>240) return;
+      let sc=0; for(const w of tokens(t)) if(freq[w]) sc+=freq[w];
+      sc=sc/Math.sqrt(t.length);
+      if(sc>bestScore){ bestScore=sc; best=t; }
+    });
+  });
+  return best;
+}
 function buildClusters(){
   const list=items.map(it=>({it,tok:tokens(it.title)}));
   const used=new Array(list.length).fill(false);
@@ -1042,9 +1170,21 @@ function buildClusters(){
       if(similar(list[i].tok,list[j].tok)){ grp.push(list[j].it); used[j]=true; }
     }
     grp.sort((a,b)=>b.at-a.at);
-    clusters.push({head:grp[0],angles:grp,topic:classify(grp),sentiment:sentimentOf(grp),at:grp[0].at});
+    const m=storyMetrics(grp);
+    clusters.push({head:grp[0],angles:grp,topic:classify(grp),sentiment:sentimentOf(grp),at:grp[0].at,
+      m, summary:clusterSummary(grp)});
   }
-  clusters.sort((a,b)=>(b.angles.length-a.angles.length)||(b.at-a.at));
+  // ── ranking. Cluster size alone puts a stale six-source story above a
+  // breaking two-source one; this weighs corroboration, how fast it is
+  // moving, and how recent it is, so the top of the page is what a news
+  // desk would actually lead with. ──
+  const now=Date.now();
+  clusters.forEach(c=>{
+    const ageH=(now-c.at)/3600e3;
+    const recency=Math.exp(-ageH/6);                 // half-life about 4 hours
+    c.rank=c.m.cred*0.45 + c.m.velocity*100*0.25 + recency*100*0.22 + Math.min(10,c.m.groups*4);
+  });
+  clusters.sort((a,b)=>b.rank-a.rank);
   checkBreaking();
 }
 // a story that's crossed 3+ independent sources is treated as "breaking" the
@@ -1054,14 +1194,16 @@ function checkBreaking(){
   if(!octoSettings.breakingAlerts) return;
   clusters.forEach(c=>{
     const key=c.head.title.slice(0,70);
-    if(c.angles.length>=3 && !notifiedBreaking.has(key)){
+    // three articles from one publisher is not corroboration — only
+    // independent outlets can promote a story to "breaking"
+    if(c.m && c.m.indep>=3 && !notifiedBreaking.has(key)){
       notifiedBreaking.add(key);
       ensureAC(); beep([[880,0.1],[1108,0.12],[1318,0.16]]);
       showBreakingBanner(c);
       try{
         if(octoSettings.pushNotify&&typeof Notification!=='undefined'
           &&Notification.permission==='granted'&&document.visibilityState!=='visible'){
-          new Notification('🔥 אוקטופוס · חדשות מתפתחות',{body:dispTitle(c.head)+' ('+c.angles.length+' מקורות)',tag:'octo-breaking'});
+          new Notification('🔥 אוקטופוס · חדשות מתפתחות',{body:dispTitle(c.head)+' ('+c.m.indep+' מקורות עצמאיים)',tag:'octo-breaking'});
         }
       }catch{}
       if(window.__octoBreaking) window.__octoBreaking();
@@ -1199,7 +1341,7 @@ function renderClusters(){
   if(!list.length){ el.innerHTML='<div class="empty">אין סיפורים בסינון הזה</div>'; return; }
   if(!renderClusters._animated){ renderClusters._animated=true; el.classList.add('first-load'); setTimeout(()=>el.classList.remove('first-load'),2400); }
   list.slice(0,40).forEach((c,i)=>{
-    const key=clusterKey(c), starred=bookmarks.has(key), breaking=c.angles.length>=3;
+    const key=clusterKey(c), starred=bookmarks.has(key), breaking=c.m.indep>=3;
     const watched=watches.length&&isWatched(c);
     const d=document.createElement('article');
     d.className='cluster panel clip'+(breaking?' breaking':'')+(watched?' watched':'');
@@ -1212,7 +1354,17 @@ function renderClusters(){
       +'<span class="c-time">'+fmtAgo(c.at)+'</span>'
       +'<span class="c-star'+(starred?' on':'')+'" title="שמור למועדפים">'+(starred?'★':'☆')+'</span></div>'
       +'<h3>'+escH(dispTitle(c.head))+trMark(c.head)+'</h3>'
+      +(c.summary?'<p class="c-sum">'+escH(c.summary.slice(0,190))+(c.summary.length>190?'…':'')+'</p>':'')
+      +'<div class="c-cred">'
+        +'<span class="cred-bar"><i style="width:'+c.m.cred+'%;background:'+(c.m.cred>=70?'#00ffa6':c.m.cred>=45?'#ffd166':'#ff3d6e')+'"></i></span>'
+        +'<span class="cred-n">אמינות '+c.m.cred+'</span>'
+        +'<span class="cred-x">'+c.m.indep+' מקורות עצמאיים'+(c.m.groups>1?' · '+c.m.groups+' תחומים':'')+'</span>'
+        +(c.m.hot?'<span class="cred-hot">⚡ מתפוצץ עכשיו · '+c.m.recent30+' דיווחים בחצי שעה</span>':'')
+        +(c.m.divergence>0.15?'<span class="cred-div">⚖️ דיווחים סותרים · '+c.m.pos+' חיובי מול '+c.m.neg+' שלילי</span>':'')
+      +'</div>'
       +'<div class="c-srcs">'+[...new Set(c.angles.map(a=>a.src))].map(s=>'<span class="src">'+escH(s)+'</span>').join('')+'</div>'
+      +'<div class="c-first">🥇 פורסם ראשון · '+escH(c.m.first.src)+' · '+fmtAgo(c.m.firstAt)
+        +(c.angles.length>1?' · הסיפור רץ '+(Math.max(1,Math.round((c.m.lastAt-c.m.firstAt)/60000)))+' דקות':'')+'</div>'
       +'<div class="c-hint">👆 הקשה — ניתוח מלא והצלבת הזוויות</div>';
     d.querySelector('.c-star').onclick=(e)=>{
       e.stopPropagation();
@@ -1270,6 +1422,33 @@ async function openAnalysis(c){
     return '<div class="tl-row"><span class="tl-when num">'+fmtAgo(a.at)+'</span><span class="src">'+escH(a.src)+'</span><span class="tl-lag">'+lagTxt+'</span></div>';
   }).join('');
   $('anaEnts').innerHTML=extractEntities(c).map(e=>'<span class="a-ent">'+escH(e)+'</span>').join('');
+  // ── story intelligence block: how much of this is corroborated, by whom,
+  // how fast it is spreading, and whether the outlets actually agree ──
+  {
+    const m=c.m, el=$('anaTimeline');
+    const box=document.createElement('div');
+    box.className='ana-intel';
+    box.innerHTML='<div class="ai-h">🧭 מודיעין הסיפור</div>'
+      +'<div class="ai-grid">'
+      +'<span>אמינות<b style="color:'+(m.cred>=70?'#00ffa6':m.cred>=45?'#ffd166':'#ff3d6e')+'">'+m.cred+'/100</b></span>'
+      +'<span>מקורות עצמאיים<b>'+m.indep+'</b></span>'
+      +'<span>תחומי סיקור<b>'+m.groups+'</b></span>'
+      +'<span>קצב<b>'+m.perHour.toFixed(1)+' דיווחים/ש׳</b></span>'
+      +'<span>בחצי שעה האחרונה<b>'+m.recent30+'</b></span>'
+      +'<span>משך הסיפור<b>'+Math.max(1,Math.round((m.lastAt-m.firstAt)/60000))+' דק׳</b></span>'
+      +'</div>'
+      +'<div class="ai-outlets">'+m.outlets.slice(0,12).map(o=>'<span class="src">'+escH(o)+'</span>').join('')+'</div>'
+      +(m.divergence>0.15
+        ? '<div class="ai-warn">⚖️ הכיסוי סותר את עצמו — '+m.pos+' דיווחים בטון חיובי מול '+m.neg+' שלילי. שווה לקרוא לפחות שתי זוויות לפני שמסיקים משהו.</div>'
+        : '')
+      +(m.indep===1
+        ? '<div class="ai-warn">⚠️ מקור יחיד. אין שום הצלבה עצמאית לסיפור הזה — הציון נחסם בכוונה.</div>'
+        : '')
+      +(m.hot? '<div class="ai-hot">⚡ הסיפור מתפוצץ עכשיו — '+m.recent30+' דיווחים חדשים בחצי השעה האחרונה, '+Math.round(m.velocity*100)+'% מכלל הכיסוי.</div>':'');
+    el.parentNode.insertBefore(box, el);
+    const prev=el.parentNode.querySelector('.ana-intel:not(:last-of-type)');
+    if(prev&&prev!==box) prev.remove();
+  }
   // AI synthesis — with the platform's shared key; local fallback otherwise
   const body=$('anaAiBody'), note=$('anaNote');
   const groq=(localStorage.getItem('alpha_groq')||'').trim();

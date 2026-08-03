@@ -2,10 +2,11 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Shield, Cpu, Activity, Zap, Compass, RefreshCw, Eye, Sliders,
   Play, Square, Volume2, VolumeX, Trash2, TrendingUp,
-  History as HistoryIcon, Settings as SettingsIcon, Radio, Clock,
+  History as HistoryIcon, Settings as SettingsIcon, Radio, Clock, Headphones, Waves,
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import * as Tone from 'tone';
+import { SomaticAudioEngine, MODES, NOISE_BEDS, PROTOCOLS } from './audioEngine.js';
 
 // beatHz = the real binaural difference between the ears (the entrainment
 // frequency of the state itself); breath = the state's guided breathing
@@ -111,11 +112,28 @@ export default function NeuroSomaticInterface() {
 
   const [audioEnabled, setAudioEnabled] = useState(false);
   const [volume, setVolume] = useState(Number.isFinite(prefs.volume) ? prefs.volume : 40);
+  // ── audio engine settings: every one of these is a real signal-path
+  // parameter, not a preset name, and all of them persist ──
+  const [audioMode, setAudioMode] = useState(prefs.audioMode || 'binaural');
+  const [carrier, setCarrier] = useState(Number.isFinite(prefs.carrier) ? prefs.carrier : 0); // 0 = follow the state
+  const [beatHz, setBeatHz] = useState(Number.isFinite(prefs.beatHz) ? prefs.beatHz : 0);     // 0 = follow the state
+  const [drone, setDrone] = useState(prefs.drone !== false);
+  const [noiseBed, setNoiseBed] = useState(prefs.noiseBed || 'off');
+  const [noiseLevel, setNoiseLevel] = useState(Number.isFinite(prefs.noiseLevel) ? prefs.noiseLevel : 30);
+  const [protocol, setProtocol] = useState('none');
+  const [protoPos, setProtoPos] = useState(null);
   useEffect(() => {
-    try { localStorage.setItem(PREFS_KEY, JSON.stringify({ brainState, particleCount, flowIntensity, volume, targetMin })); } catch {}
-  }, [brainState, particleCount, flowIntensity, volume, targetMin]);
+    try { localStorage.setItem(PREFS_KEY, JSON.stringify({ brainState, particleCount, flowIntensity, volume, targetMin,
+      audioMode, carrier, beatHz, drone, noiseBed, noiseLevel })); } catch {}
+  }, [brainState, particleCount, flowIntensity, volume, targetMin, audioMode, carrier, beatHz, drone, noiseBed, noiseLevel]);
   const [audioError, setAudioError] = useState(null);
-  const synthRef = useRef(null);
+  const engineRef = useRef(null);
+  const scopeRef = useRef(null);
+  if (!engineRef.current) engineRef.current = new SomaticAudioEngine();
+  // the frequencies actually being played: the state's values unless the
+  // user has explicitly overridden them
+  const liveCarrier = carrier > 0 ? carrier : STATES[brainState].note;
+  const liveBeat = protoPos ? protoPos.hz : (beatHz > 0 ? beatHz : STATES[brainState].beatHz);
 
   const stateRef = useRef({ brainState, particleCount, flowIntensity });
   useEffect(() => {
@@ -340,83 +358,95 @@ export default function NeuroSomaticInterface() {
     setSessionActive(false);
   };
 
-  // Ambient synthetic tone, mapped loosely to the active state
+  // ── AUDIO ENGINE CONTROL ────────────────────────────────────────────
+  // The component never touches Tone directly any more: it owns a settings
+  // object and hands it to the engine, which ramps every change.
+  const engineParams = useCallback(() => ({
+    mode: audioMode,
+    carrier: liveCarrier,
+    beat: liveBeat,
+    drone,
+    noise: noiseBed,
+    noiseLevel: noiseLevel / 100,
+    volume: volume <= 0 ? 0 : Math.pow(volume / 100, 1.6) * 0.9,   // perceptual curve
+  }), [audioMode, liveCarrier, liveBeat, drone, noiseBed, noiseLevel, volume]);
+
   const toggleAudio = async () => {
     setAudioError(null);
+    const eng = engineRef.current;
     if (!audioEnabled) {
       try {
-        await Tone.start();
-        if (!synthRef.current) {
-          const filter = new Tone.Filter(900, 'lowpass').toDestination();
-          const reverb = new Tone.Reverb({ decay: 5, wet: 0.35 }).connect(filter);
-          const startDb = volume <= 0 ? -60 : Tone.gainToDb(volume / 100);
-          const vol = new Tone.Volume(startDb).connect(reverb);
-          // TRUE binaural beats: base tone in the left ear, base+state-frequency
-          // in the right — the brain perceives the difference (40/12/6/1.5Hz)
-          // as the entrainment rhythm. Needs headphones to work.
-          const panL = new Tone.Panner(-1).connect(vol);
-          const panR = new Tone.Panner(1).connect(vol);
-          const st = STATES[brainState];
-          const osc1 = new Tone.Oscillator(st.note, 'sine').connect(panL);
-          const osc2 = new Tone.Oscillator(st.note + st.beatHz, 'sine').connect(panR);
-          osc1.start();
-          osc2.start();
-          synthRef.current = { filter, reverb, vol, panL, panR, osc1, osc2 };
-        }
+        await eng.start(engineParams());
         setAudioEnabled(true);
       } catch (err) {
         setAudioError('לא ניתן להפעיל אודיו בדפדפן זה');
       }
     } else {
-      if (synthRef.current) {
-        try {
-          synthRef.current.osc1.stop();
-          synthRef.current.osc2.stop();
-          synthRef.current.osc1.dispose();
-          synthRef.current.osc2.dispose();
-          synthRef.current.panL?.dispose();
-          synthRef.current.panR?.dispose();
-          synthRef.current.vol.dispose();
-          synthRef.current.reverb.dispose();
-          synthRef.current.filter.dispose();
-        } catch (e) { /* already torn down */ }
-        synthRef.current = null;
-      }
+      try { await eng.stop(); } catch {}
+      setProtocol('none'); setProtoPos(null);
       setAudioEnabled(false);
     }
   };
 
+  // any settings change flows straight into the running graph
   useEffect(() => {
-    if (audioEnabled && synthRef.current) {
-      const st = STATES[brainState];
-      synthRef.current.osc1.frequency.rampTo(st.note, 1.2);
-      synthRef.current.osc2.frequency.rampTo(st.note + st.beatHz, 1.2);
-    }
-  }, [brainState, audioEnabled]);
+    if (audioEnabled && engineRef.current.ready) engineRef.current.apply(engineParams());
+  }, [audioEnabled, engineParams]);
 
+  // protocol driver — one tick a second is plenty for a frequency that moves
+  // over minutes, and it is also what redraws the stage indicator
   useEffect(() => {
-    if (synthRef.current) {
-      const db = volume <= 0 ? -60 : Tone.gainToDb(volume / 100);
-      synthRef.current.vol.volume.rampTo(db, 0.1);
-    }
-  }, [volume]);
+    if (!audioEnabled || protocol === 'none') { setProtoPos(null); return undefined; }
+    engineRef.current.runProtocol(protocol);
+    const id = setInterval(() => {
+      const pos = engineRef.current.advance();
+      if (pos) setProtoPos(pos);
+    }, 1000);
+    return () => { clearInterval(id); engineRef.current.stopProtocol(); };
+  }, [protocol, audioEnabled]);
 
+  // live scope — the sound made visible. Reads the analyser the engine
+  // already taps off the master bus, so it costs one canvas draw a frame.
   useEffect(() => {
-    return () => {
-      if (synthRef.current) {
-        try {
-          synthRef.current.osc1.stop();
-          synthRef.current.osc2.stop();
-          synthRef.current.osc1.dispose();
-          synthRef.current.osc2.dispose();
-          synthRef.current.panL?.dispose();
-          synthRef.current.panR?.dispose();
-          synthRef.current.vol.dispose();
-          synthRef.current.reverb.dispose();
-          synthRef.current.filter.dispose();
-        } catch (e) { /* noop */ }
+    if (!audioEnabled) return undefined;
+    let raf = 0;
+    const draw = () => {
+      raf = requestAnimationFrame(draw);
+      const cv = scopeRef.current; if (!cv) return;
+      const w = cv.width, h = cv.height;
+      const g = cv.getContext('2d');
+      g.clearRect(0, 0, w, h);
+      const wave = engineRef.current.waveform();
+      const spec = engineRef.current.spectrum();
+      const hex = STATES[brainState].hex;
+      if (spec && spec.length) {
+        const bw = w / spec.length;
+        for (let i = 0; i < spec.length; i++) {
+          const db = Math.max(-100, Math.min(0, spec[i]));
+          const v = (db + 100) / 100;
+          g.fillStyle = hex + '22';
+          g.fillRect(i * bw, h - v * h, bw - 1, v * h);
+        }
+      }
+      if (wave && wave.length) {
+        g.beginPath();
+        for (let i = 0; i < wave.length; i++) {
+          const x = (i / (wave.length - 1)) * w;
+          const y = h / 2 - wave[i] * h * 0.42;
+          i ? g.lineTo(x, y) : g.moveTo(x, y);
+        }
+        g.strokeStyle = hex; g.lineWidth = 1.6;
+        g.shadowColor = hex; g.shadowBlur = 8;
+        g.stroke(); g.shadowBlur = 0;
       }
     };
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, [audioEnabled, brainState]);
+
+  useEffect(() => {
+    const eng = engineRef.current;
+    return () => { try { eng.stop(); } catch {} };
   }, []);
 
   const resetDefaults = () => {
@@ -748,9 +778,14 @@ export default function NeuroSomaticInterface() {
               </div>
               <div className="flex items-center justify-between p-4 rounded-xl border border-slate-800 bg-slate-900/40">
                 <div>
-                  <p className="text-sm font-bold">🎧 ביניורל ביטס אמיתי</p>
+                  <p className="text-sm font-bold">🎧 מנוע סחיפה · {(MODES.find((m) => m.id === audioMode) || MODES[0]).label}</p>
                   <p className="text-[11px] text-slate-500 mt-0.5">
-                    {active.note.toFixed(0)}Hz באוזן שמאל · {(active.note + active.beatHz).toFixed(1)}Hz בימין → המוח שומע הפרש {active.beatHz}Hz ({active.label}) · חובה אוזניות
+                    {audioMode === 'binaural'
+                      ? `${liveCarrier.toFixed(0)}Hz באוזן שמאל · ${(liveCarrier + liveBeat).toFixed(1)}Hz בימין → המוח שומע הפרש ${liveBeat.toFixed(2)}Hz`
+                      : audioMode === 'monaural'
+                        ? `שני התדרים מתערבבים למרכז — פעימה פיזית של ${liveBeat.toFixed(2)}Hz`
+                        : `נשא ${liveCarrier.toFixed(0)}Hz נדלק ונכבה ${liveBeat.toFixed(2)} פעמים בשנייה`}
+                    {' · '}{(MODES.find((m) => m.id === audioMode) || MODES[0]).need}
                   </p>
                 </div>
                 <button
@@ -779,7 +814,149 @@ export default function NeuroSomaticInterface() {
                   style={{ color: active.hex, '--fill': `${volume}%` }}
                 />
               </div>
-              <p className="text-[10px] text-slate-600 font-mono-eng">SIGNAL SOURCE: SYNTHETIC — לא נתוני חיישן אמיתיים</p>
+
+              {/* live scope — the actual signal leaving the master bus */}
+              {audioEnabled && (
+                <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-2">
+                  <canvas ref={scopeRef} width={520} height={80} className="w-full h-[80px]" />
+                  <p className="text-[10px] text-slate-600 font-mono-eng text-center mt-1">
+                    {liveCarrier.toFixed(1)}Hz {audioMode === 'binaural' ? '· L' : ''} · {(liveCarrier + liveBeat).toFixed(1)}Hz {audioMode === 'binaural' ? '· R' : ''} → פעימה {liveBeat.toFixed(2)}Hz
+                  </p>
+                </div>
+              )}
+
+              {/* entrainment method — three different signal paths */}
+              <div className="space-y-2">
+                <p className="text-xs font-bold text-slate-400">שיטת הסחיפה</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {MODES.map((m) => (
+                    <button key={m.id} onClick={() => setAudioMode(m.id)}
+                      className="p-2.5 rounded-xl border text-center transition-colors focus-visible:outline-none focus-visible:ring-2"
+                      style={{
+                        borderColor: audioMode === m.id ? active.hex : 'rgb(30 41 59)',
+                        backgroundColor: audioMode === m.id ? `${active.hex}14` : 'transparent',
+                        color: audioMode === m.id ? active.hex : 'rgb(148 163 184)',
+                      }}>
+                      <span className="block text-xs font-bold">{m.label}</span>
+                      <span className="block text-[9px] text-slate-500 mt-0.5">{m.need}</span>
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  {(MODES.find((m) => m.id === audioMode) || MODES[0]).desc}
+                </p>
+                <button onClick={() => engineRef.current.channelTest()}
+                  className="flex items-center gap-1.5 text-[11px] font-bold text-slate-400 hover:text-slate-200 px-3 py-1.5 rounded-lg border border-slate-800 focus-visible:outline-none focus-visible:ring-2">
+                  <Headphones className="w-3.5 h-3.5" /> בדיקת אוזניות — צליל שמאל ואז ימין
+                </button>
+              </div>
+
+              {/* carrier + beat — the two numbers that define the whole thing */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs font-bold text-slate-400">
+                    <span>תדר נשא</span>
+                    <span className="font-mono-eng" style={{ color: active.hex }}>
+                      {carrier > 0 ? `${carrier}Hz` : `אוטומטי ${STATES[brainState].note.toFixed(0)}Hz`}
+                    </span>
+                  </div>
+                  <input type="range" min="0" max="440" step="1" value={carrier}
+                    onChange={(e) => setCarrier(Number(e.target.value))}
+                    className="w-full cursor-pointer focus-visible:outline-none"
+                    style={{ color: active.hex, '--fill': `${(carrier / 440) * 100}%` }} />
+                  <p className="text-[10px] text-slate-600">0 = לפי המצב הנבחר · נמוך יותר = רך יותר לאוזן לאורך זמן</p>
+                </div>
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs font-bold text-slate-400">
+                    <span>תדר פעימה</span>
+                    <span className="font-mono-eng" style={{ color: active.hex }}>
+                      {protoPos ? `${protoPos.hz.toFixed(2)}Hz · פרוטוקול` : beatHz > 0 ? `${beatHz}Hz` : `אוטומטי ${STATES[brainState].beatHz}Hz`}
+                    </span>
+                  </div>
+                  <input type="range" min="0" max="40" step="0.5" value={beatHz}
+                    onChange={(e) => setBeatHz(Number(e.target.value))}
+                    disabled={!!protoPos}
+                    className="w-full cursor-pointer disabled:opacity-30 focus-visible:outline-none"
+                    style={{ color: active.hex, '--fill': `${(beatHz / 40) * 100}%` }} />
+                  <p className="text-[10px] text-slate-600">0 = לפי המצב · 1-4 דלתא · 4-8 תטא · 8-13 אלפא · 30+ גמא</p>
+                </div>
+              </div>
+
+              {/* protocol — a moving target the brain can actually follow */}
+              <div className="space-y-2">
+                <p className="text-xs font-bold text-slate-400">פרוטוקול מונחה</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {PROTOCOLS.map((pr) => (
+                    <button key={pr.id} onClick={() => setProtocol(pr.id)}
+                      className="p-2 rounded-lg border text-[11px] font-bold transition-colors focus-visible:outline-none focus-visible:ring-2"
+                      style={{
+                        borderColor: protocol === pr.id ? active.hex : 'rgb(30 41 59)',
+                        backgroundColor: protocol === pr.id ? `${active.hex}14` : 'transparent',
+                        color: protocol === pr.id ? active.hex : 'rgb(148 163 184)',
+                      }}>{pr.label}</button>
+                  ))}
+                </div>
+                <p className="text-[11px] text-slate-500">{(PROTOCOLS.find((x) => x.id === protocol) || PROTOCOLS[0]).desc}</p>
+                {protoPos && (
+                  <div className="p-3 rounded-xl border border-slate-800 bg-slate-900/40 space-y-1.5">
+                    <div className="flex justify-between text-[11px] font-bold">
+                      <span className="text-slate-300">שלב {protoPos.idx + 1} מתוך {protoPos.total}</span>
+                      <span className="font-mono-eng" style={{ color: active.hex }}>
+                        {protoPos.done ? 'הפרוטוקול הושלם — התדר מוחזק' : `${protoPos.hz.toFixed(2)}Hz`}
+                      </span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                      <div className="h-full rounded-full transition-all duration-1000"
+                        style={{ width: `${Math.min(100, (protoPos.elapsedMin / protoPos.totalMin) * 100)}%`, backgroundColor: active.hex }} />
+                    </div>
+                    <p className="text-[10px] text-slate-600 font-mono-eng">
+                      {fmtTime(protoPos.elapsedMin * 60)} / {fmtTime(protoPos.totalMin * 60)}
+                    </p>
+                  </div>
+                )}
+                {!audioEnabled && protocol !== 'none' && (
+                  <p className="text-[11px] text-amber-400">הפעל את האודיו כדי שהפרוטוקול יתחיל לרוץ</p>
+                )}
+              </div>
+
+              {/* noise bed + drone */}
+              <div className="space-y-2">
+                <p className="text-xs font-bold text-slate-400">מצע רעש</p>
+                <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                  {NOISE_BEDS.map((b) => (
+                    <button key={b.id} onClick={() => setNoiseBed(b.id)}
+                      className="p-2 rounded-lg border text-[11px] font-bold transition-colors focus-visible:outline-none focus-visible:ring-2"
+                      style={{
+                        borderColor: noiseBed === b.id ? active.hex : 'rgb(30 41 59)',
+                        backgroundColor: noiseBed === b.id ? `${active.hex}14` : 'transparent',
+                        color: noiseBed === b.id ? active.hex : 'rgb(148 163 184)',
+                      }}>{b.label}</button>
+                  ))}
+                </div>
+                {noiseBed !== 'off' && (
+                  <>
+                    <p className="text-[11px] text-slate-500">{(NOISE_BEDS.find((b) => b.id === noiseBed) || {}).desc}</p>
+                    <div className="flex justify-between text-xs font-bold text-slate-400">
+                      <span>עוצמת המצע</span>
+                      <span className="font-mono-eng" style={{ color: active.hex }}>{noiseLevel}%</span>
+                    </div>
+                    <input type="range" min="0" max="100" value={noiseLevel}
+                      onChange={(e) => setNoiseLevel(Number(e.target.value))}
+                      className="w-full cursor-pointer focus-visible:outline-none"
+                      style={{ color: active.hex, '--fill': `${noiseLevel}%` }} />
+                  </>
+                )}
+                <label className="flex items-center justify-between p-3 rounded-xl border border-slate-800 bg-slate-900/40 cursor-pointer">
+                  <span className="flex items-center gap-2 text-xs font-bold text-slate-300">
+                    <Waves className="w-3.5 h-3.5" /> שכבת דרון הרמונית
+                    <span className="text-[10px] text-slate-500 font-normal">— קווינטה ואוקטבה מתחת, נעות לאט</span>
+                  </span>
+                  <input type="checkbox" checked={drone} onChange={(e) => setDrone(e.target.checked)}
+                    className="w-4 h-4 accent-current" style={{ color: active.hex }} />
+                </label>
+              </div>
+
+              <p className="text-[10px] text-slate-600 font-mono-eng">SIGNAL SOURCE: SYNTHETIC — לא נתוני חיישן אמיתיים · לימיטר על המאסטר</p>
             </section>
 
             <section className="space-y-3">
