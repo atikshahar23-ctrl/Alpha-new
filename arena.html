@@ -4766,6 +4766,47 @@ const hiLbl=textSprite(256,64,8.5,2.1); hiLbl.sp.position.set(0,COL_T+1.6,0); wo
 const loLbl=textSprite(256,64,8.5,2.1); loLbl.sp.position.set(0,COL_B-1.6,0); world.add(loLbl.sp);
 
 // ---- the CORE ----
+// ── holographic material, defined ABOVE its first use. The core builds one
+// at module scope, and a `const` shader source declared further down the
+// file is still in its temporal dead zone at that moment — the same trap
+// that killed the loader once already.
+const HOLO_VS=`
+varying vec3 vN; varying vec3 vView; varying vec3 vPos;
+void main(){
+  vN=normalize(normalMatrix*normal);
+  vec4 mv=modelViewMatrix*vec4(position,1.0);
+  vView=normalize(-mv.xyz);
+  vPos=position;
+  gl_Position=projectionMatrix*mv;
+}`;
+const HOLO_FS=`
+uniform vec3 uColor; uniform float uTime; uniform float uOpacity;
+uniform float uScan; uniform float uRim;
+varying vec3 vN; varying vec3 vView; varying vec3 vPos;
+void main(){
+  // fresnel: bright exactly where the surface turns away from the eye
+  float f=pow(1.0-clamp(dot(normalize(vN),normalize(vView)),0.0,1.0),2.2);
+  // drifting scanlines in object space so they stick to the surface
+  float scan=0.5+0.5*sin((vPos.y*3.4)-uTime*2.2);
+  scan=mix(1.0,scan,uScan);
+  vec3 c=uColor*(0.42+f*uRim)*scan;
+  float a=uOpacity*(0.30+f*0.85);
+  gl_FragColor=vec4(c,a);
+}`;
+// every holo material built for the active rig, ticked once per frame
+let holoMats=[];
+function trackHolo(m){ holoMats.push(m); return m; }
+function holoMat(hex,opts){
+  const o=opts||{};
+  return new THREE.ShaderMaterial({
+    uniforms:{ uColor:{value:new THREE.Color(hex)}, uTime:{value:0},
+      uOpacity:{value:o.opacity??0.9}, uScan:{value:o.scan??0.35}, uRim:{value:o.rim??1.5} },
+    vertexShader:HOLO_VS, fragmentShader:HOLO_FS,
+    transparent:true, depthWrite:false, blending:THREE.AdditiveBlending,
+    side:o.side||THREE.FrontSide,
+  });
+}
+
 const coreG=new THREE.Group(); world.add(coreG);
 const coreInner=new THREE.Mesh(new THREE.SphereGeometry(1.55,24,20),
   new THREE.MeshBasicMaterial({color:0x9be8ff,transparent:true,opacity:0.95}));
@@ -4775,6 +4816,36 @@ const coreShell=new THREE.Mesh(new THREE.IcosahedronGeometry(2.35,1),
 coreG.add(coreShell);
 const coreGlow=new THREE.Sprite(new THREE.SpriteMaterial({map:glowTex,color:0x00f0ff,transparent:true,opacity:0.85,blending:THREE.AdditiveBlending,depthWrite:false}));
 coreGlow.scale.set(9,9,1); coreG.add(coreGlow);
+// ── the classic core, upgraded. Two counter-rotating gyroscope rings and a
+// fresnel-lit outer shell: the difference between a glowing ball and an
+// instrument. The rings also carry information — they speed up with the
+// live buy/sell imbalance, so a market being pushed hard visibly spins up.
+const coreHolo=new THREE.Mesh(new THREE.IcosahedronGeometry(3.05,2),
+  holoMat(0x00f0ff,{opacity:0.55,scan:0.45,rim:2.1,side:THREE.DoubleSide}));
+coreG.add(coreHolo);
+const coreRings=[];
+for(let i=0;i<3;i++){
+  const r=new THREE.Mesh(new THREE.TorusGeometry(3.4+i*0.55,0.035,6,80),
+    new THREE.MeshBasicMaterial({color:0x00f0ff,transparent:true,
+      opacity:0.5-i*0.11,blending:THREE.AdditiveBlending,depthWrite:false}));
+  r.rotation.x=Math.PI/2*(i===0?1:0.55+i*0.2);
+  r.rotation.z=i*0.7;
+  coreG.add(r); coreRings.push(r);
+}
+// a slow shell of drifting motes bound to the core — reads as energy held
+// in place rather than a static mesh
+const coreDust=(()=>{
+  const n=90, pos=new Float32Array(n*3), seed=new Float32Array(n*3);
+  for(let i=0;i<n;i++){
+    seed[i*3]=Math.random()*6.28; seed[i*3+1]=Math.random()*6.28; seed[i*3+2]=2.9+Math.random()*2.2;
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  const p=new THREE.Points(g,new THREE.PointsMaterial({size:0.34,map:glowTex,color:0x9be8ff,
+    transparent:true,opacity:0.75,blending:THREE.AdditiveBlending,depthWrite:false,sizeAttenuation:true}));
+  coreG.add(p);
+  return {p,pos,seed,n,geo:g};
+})();
 // light spill — the pool of colored light the core casts on the arena floor.
 // One flat additive plane, tinted by the same momentum color as the core and
 // brightening when the core drops low or a trade flare fires: the cheap trick
@@ -4803,6 +4874,7 @@ const CENTER_MODES=[
   ['river','🌊 נהר המחיר'], ['depth','🏔️ הר נזילות'],
   ['profile','📊 פרופיל נפח · POC'], ['ladder','🪜 מגדל DOM'],
   ['rings','🎯 טבעות רמות'], ['pure','🕊️ קו טהור'], ['wave','🌊 גל לחץ קונים/מוכרים'],
+  ['volume','📊 מגדל נפח 3D'],
   ['galaxy','🌌 גלקסיית מתאמים'], ['clock','🕛 שעון שוק 24 שעות'],
 ];
 // someone who left the arena on a now-deleted mode must not come back to an
@@ -4833,8 +4905,82 @@ function centerGlowSprite(scale,hex){
   const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:glowTex,color:hex,transparent:true,opacity:0.7,blending:THREE.AdditiveBlending,depthWrite:false}));
   sp.scale.set(scale,scale,1); return sp;
 }
+// ============================================================
+//  CENTRE UPGRADE LAYER — until now every central object was flat
+//  MeshBasicMaterial: correct data, no presence. Three things change that
+//  without costing frames:
+//
+//   1. A HOLOGRAPHIC material — fresnel rim light so edges glow where the
+//      surface turns away, horizontal scanlines that drift, and a depth fade
+//      so the far side of an object recedes instead of reading as a decal.
+//   2. A PODIUM every mode stands on: a tick-marked rotating base with a
+//      contact glow, so the object is anchored in the world rather than
+//      floating in front of it.
+//   3. A GROUND MIRROR — a soft fading reflection under the object. It is a
+//      cheap trick and it is the single biggest difference between "3D
+//      model" and "object that is actually there".
+// ============================================================
+// every holo material built for the active rig, ticked once per frame
+
+// ── the podium: base ring, tick marks, contact glow, slow counter-rotation
+function buildPodium(){
+  const g=new THREE.Group();
+  const base=new THREE.Mesh(new THREE.RingGeometry(13.5,17.5,88),
+    new THREE.MeshBasicMaterial({color:0x00f0ff,transparent:true,opacity:0.13,
+      blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide}));
+  base.rotation.x=-Math.PI/2;
+  const inner=new THREE.Mesh(new THREE.RingGeometry(5.4,5.7,72),
+    new THREE.MeshBasicMaterial({color:0x00f0ff,transparent:true,opacity:0.3,
+      blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide}));
+  inner.rotation.x=-Math.PI/2;
+  // 48 tick marks — the detail that makes a ring read as an instrument
+  const TN=60, ticks=new THREE.InstancedMesh(new THREE.BoxGeometry(0.22,0.07,1.5),
+    new THREE.MeshBasicMaterial({color:0x00f0ff,transparent:true,opacity:0.5,
+      blending:THREE.AdditiveBlending,depthWrite:false}),TN);
+  const dm=new THREE.Object3D();
+  for(let i=0;i<TN;i++){
+    const a=(i/TN)*Math.PI*2, big=(i%6===0);
+    dm.position.set(Math.cos(a)*15.6,0.02,Math.sin(a)*15.6);
+    dm.rotation.set(0,-a,0);
+    dm.scale.set(1,1,big?2.1:1);
+    dm.updateMatrix(); ticks.setMatrixAt(i,dm.matrix);
+  }
+  ticks.instanceMatrix.needsUpdate=true;
+  const spin=new THREE.Group(); spin.add(ticks);
+  const glow=new THREE.Sprite(new THREE.SpriteMaterial({map:glowTex,color:0x00f0ff,
+    transparent:true,opacity:0.35,blending:THREE.AdditiveBlending,depthWrite:false}));
+  glow.scale.set(40,40,1); glow.position.y=0.1;
+  g.add(base,inner,spin,glow);
+  return {g, base, inner, spin, glow,
+    update(dt,t,col){
+      spin.rotation.y+=dt*0.12;
+      base.material.color.copy(col); inner.material.color.copy(col);
+      ticks.material.color.copy(col); glow.material.color.copy(col);
+      glow.material.opacity=0.22+0.12*Math.sin(t*1.3);
+      const s=38+Math.sin(t*0.9)*3; glow.scale.set(s,s,1);
+    }};
+}
+// ── the mirror: the object's silhouette, flipped and faded into the floor
+function buildMirror(src){
+  const m=src.clone(true);
+  m.scale.y*=-1;
+  m.traverse(o=>{
+    if(o.material){
+      const mats=Array.isArray(o.material)?o.material:[o.material];
+      o.material=mats.map(x=>{
+        const c=x.clone();
+        c.opacity=(x.opacity??1)*0.18;
+        c.transparent=true; c.depthWrite=false;
+        return c;
+      });
+      if(o.material.length===1) o.material=o.material[0];
+    }
+  });
+  return m;
+}
 function buildCenterRig(mode){
   disposeCenterRig();
+  holoMats=[];
   const group=new THREE.Group(); world.add(group);
   const rig={mode,group,update(){},};
   if(mode==='pure'){
@@ -5103,8 +5249,20 @@ function buildCenterRig(mode){
       new THREE.MeshBasicMaterial({transparent:true,opacity:0.93}),NW);
     const wicks=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),
       new THREE.MeshBasicMaterial({transparent:true,opacity:0.5}),NW);
-    bodies.frustumCulled=wicks.frustumCulled=false;
-    group.add(bodies,wicks);
+    // ── the third dimension is not decoration here: a candle's DEPTH is its
+    // volume. A tall thin body is a big move nobody participated in; a tall
+    // THICK body is a move with the whole market behind it, and those two
+    // are completely different trades. A flat chart cannot say that.
+    const volGlow=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),
+      new THREE.MeshBasicMaterial({transparent:true,opacity:0.12,
+        blending:THREE.AdditiveBlending,depthWrite:false}),NW);
+    // volume floor strip under the wall — the same data read the usual way,
+    // for anyone who wants the familiar bar row as well
+    const vbars=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),
+      new THREE.MeshBasicMaterial({transparent:true,opacity:0.55}),NW);
+    bodies.frustumCulled=wicks.frustumCulled=volGlow.frustumCulled=vbars.frustumCulled=false;
+    const volLbl=textSprite(512,96,10,1.9);
+    group.add(bodies,wicks,volGlow,vbars,volLbl.sp);
     rig.update=(dt,t,yH,col)=>{
       const cs=state.candles; if(!cs||cs.length<2) return;
       const use=cs.slice(-NW);
@@ -5112,26 +5270,56 @@ function buildCenterRig(mode){
       for(const c of use){ if(c.h>hi)hi=c.h; if(c.l<lo)lo=c.l; }
       const span=Math.max(1e-9,hi-lo);
       const yOf=p=>COL_B+2+((p-lo)/span)*(COL_T-COL_B-6);
-      const W=26, step=W/NW;
-      group.rotation.y=Math.sin(t*0.12)*0.5; // gentle sweep, never a full spin
+      const W=40, step=W/NW;
+      group.rotation.y=Math.sin(t*0.12)*0.42; // gentle sweep, never a full spin
+      const vols=use.map(c=>c.v||0);
+      const maxV=Math.max(...vols,1e-9);
+      const avgV=vols.reduce((a,v)=>a+v,0)/Math.max(1,vols.length);
+      const VB=COL_B+1.2;                      // the volume strip's floor
       for(let i=0;i<NW;i++){
         const c=use[i];
-        if(!c){ dObj.scale.set(0,0,0); dObj.updateMatrix(); bodies.setMatrixAt(i,dObj.matrix); wicks.setMatrixAt(i,dObj.matrix); continue; }
+        if(!c){ dObj.scale.set(0,0,0); dObj.updateMatrix();
+          bodies.setMatrixAt(i,dObj.matrix); wicks.setMatrixAt(i,dObj.matrix);
+          volGlow.setMatrixAt(i,dObj.matrix); vbars.setMatrixAt(i,dObj.matrix); continue; }
         const x=-W/2+i*step+step/2;
         const yo=yOf(c.o), ycl=yOf(c.c), yh=yOf(c.h), yl=yOf(c.l);
         const up=c.c>=c.o;
-        cc.set(up?0x00ffa6:0xff3d6e);
+        const v=c.v||0, rel=maxV>0? v/maxV : 0;
+        const hot=avgV>0&&v>avgV*1.8;
+        const live=(i===NW-1);
+        cc.set(live?0xffffff: hot?0xffd166 : up?0x00ffa6:0xff3d6e);
+        // depth scales with volume — thin when nobody traded, thick when
+        // everybody did
+        const depth=step*(0.3+rel*1.5);
         dObj.rotation.set(0,0,0);
         dObj.position.set(x,(yo+ycl)/2,0);
-        dObj.scale.set(step*0.72,Math.max(0.08,Math.abs(ycl-yo)),step*0.72);
+        dObj.scale.set(step*0.72,Math.max(0.08,Math.abs(ycl-yo)),depth);
         dObj.updateMatrix(); bodies.setMatrixAt(i,dObj.matrix); bodies.setColorAt(i,cc);
         dObj.position.set(x,(yh+yl)/2,0);
         dObj.scale.set(step*0.15,Math.max(0.08,yh-yl),step*0.15);
         dObj.updateMatrix(); wicks.setMatrixAt(i,dObj.matrix); wicks.setColorAt(i,cc);
+        // an abnormal bar gets a shell that makes it unmissable
+        dObj.position.set(x,(yo+ycl)/2,0);
+        const gs=hot?1.7:1.06;
+        dObj.scale.set(step*0.72*gs,Math.max(0.08,Math.abs(ycl-yo))*1.05,depth*gs);
+        dObj.updateMatrix(); volGlow.setMatrixAt(i,dObj.matrix); volGlow.setColorAt(i,cc);
+        // the classic volume row along the base
+        const vh=Math.max(0.06,rel*7.5);
+        dObj.position.set(x,VB+vh/2,0);
+        dObj.scale.set(step*0.66,vh,step*0.66);
+        dObj.updateMatrix(); vbars.setMatrixAt(i,dObj.matrix); vbars.setColorAt(i,cc);
       }
       bodies.instanceMatrix.needsUpdate=wicks.instanceMatrix.needsUpdate=true;
-      if(bodies.instanceColor) bodies.instanceColor.needsUpdate=true;
-      if(wicks.instanceColor) wicks.instanceColor.needsUpdate=true;
+      volGlow.instanceMatrix.needsUpdate=vbars.instanceMatrix.needsUpdate=true;
+      [bodies,wicks,volGlow,vbars].forEach(m=>{ if(m.instanceColor) m.instanceColor.needsUpdate=true; });
+      const lastV=use[use.length-1]?.v||0;
+      const relNow=avgV>0? lastV/avgV : 0;
+      if(Math.abs(relNow-(rig._relShown||0))>0.05){
+        rig._relShown=relNow;
+        volLbl.draw('נפח · פי '+relNow.toFixed(2)+' מהממוצע'+(relNow>=1.8?' · חריג':''),
+          relNow>=1.8?'#ffd166':'#9dc4d8',"700 30px 'Heebo', sans-serif",true);
+      }
+      volLbl.sp.position.set(0,VB+7,0);
     };
   } else if(mode==='river'){
     // 🌊 PRICE RIVER — a flowing ribbon: length is time, height is price,
@@ -5244,6 +5432,127 @@ function buildCenterRig(mode){
       const pocPrice=lo+(poc+0.5)*bw;
       pocLbl.sp.position.set(-13,COL_B+2+((poc+0.5)/NB)*(COL_T-COL_B-6),0);
       pocLbl.draw('POC '+fmtP(pocPrice),'#ffd166',"700 26px 'Heebo', sans-serif",true);
+    };
+  } else if(mode==='volume'){
+    // ============================================================
+    //  📊 VOLUME TOWER — a volume indicator that is actually three-
+    //  dimensional rather than a flat bar chart pretending. Three readings
+    //  in one object, and each answers a different question:
+    //
+    //   FRONT ROW  — per-candle volume as extruded bars. Height is size,
+    //     colour is whether that candle closed up or down, so buying and
+    //     selling volume separate visually instead of being one grey mass.
+    //   THRESHOLD PLANE — the 20-bar average volume, drawn as a translucent
+    //     sheet through the bars. Anything poking through it is a candle
+    //     that traded abnormally, which is the only volume fact that
+    //     actually changes a decision.
+    //   SIDE WALL — volume by PRICE (the profile), with the Point of
+    //     Control marked. Where the volume traded is more useful than when.
+    // ============================================================
+    const NV=60, PB=24;                               // bars, price buckets
+    const dObj=new THREE.Object3D(), cc=new THREE.Color();
+    const W=40, D=9;                                  // the centrepiece has to fill the arena
+    const bars=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),
+      new THREE.MeshBasicMaterial({transparent:true,opacity:0.92}),NV);
+    // a second, larger and dimmer instance behind each bar gives the row
+    // real depth instead of a cardboard cutout
+    const halo=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),
+      new THREE.MeshBasicMaterial({transparent:true,opacity:0.16,
+        blending:THREE.AdditiveBlending,depthWrite:false}),NV);
+    const prof=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),
+      new THREE.MeshBasicMaterial({transparent:true,opacity:0.62}),PB);
+    bars.frustumCulled=halo.frustumCulled=prof.frustumCulled=false;
+    const avgPlane=new THREE.Mesh(new THREE.PlaneGeometry(W+2,D+2),
+      new THREE.MeshBasicMaterial({color:0xffd166,transparent:true,opacity:0.13,
+        blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide}));
+    avgPlane.rotation.x=-Math.PI/2;
+    const floor=new THREE.Mesh(new THREE.PlaneGeometry(W+2,D+2),
+      new THREE.MeshBasicMaterial({color:0x00f0ff,transparent:true,opacity:0.05,
+        blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide}));
+    floor.rotation.x=-Math.PI/2;
+    const avgLbl=textSprite(512,96,10,1.9);
+    const pocLbl=textSprite(512,96,9,1.7);
+    const nowLbl=textSprite(512,96,11,2.1);
+    group.add(bars,halo,prof,avgPlane,floor,avgLbl.sp,pocLbl.sp,nowLbl.sp);
+    const BASE=COL_B+3;
+    let lastTxt='';
+    rig.update=(dt,t,yH,col)=>{
+      const cs=state.candles; if(!cs||cs.length<6) return;
+      const use=cs.slice(-NV);
+      const vols=use.map(c=>c.v||0);
+      const maxV=Math.max(...vols,1e-9);
+      const avgV=vols.reduce((a,v)=>a+v,0)/Math.max(1,vols.length);
+      const HMAX=26;
+      const step=W/NV;
+      group.rotation.y=Math.sin(t*0.1)*0.42;
+      floor.position.y=BASE-0.02;
+      // ── the bars ──
+      for(let i=0;i<NV;i++){
+        const c=use[i];
+        if(!c){ dObj.scale.set(0,0,0); dObj.updateMatrix(); bars.setMatrixAt(i,dObj.matrix); halo.setMatrixAt(i,dObj.matrix); continue; }
+        const v=c.v||0;
+        const h=Math.max(0.12,(v/maxV)*HMAX);
+        const x=-W/2+i*step+step/2;
+        const up=c.c>=c.o;
+        const hot=avgV>0&&v>avgV*1.8;
+        const live=(i===NV-1);
+        cc.set(live?0xffffff: hot?0xffd166 : up?0x00ffa6:0xff3d6e);
+        dObj.rotation.set(0,0,0);
+        dObj.position.set(x,BASE+h/2,0);
+        dObj.scale.set(step*0.66,h,D*0.55);
+        dObj.updateMatrix(); bars.setMatrixAt(i,dObj.matrix); bars.setColorAt(i,cc);
+        // the glow shell: bigger on abnormal bars, so a volume spike reads
+        // from across the arena without reading the numbers
+        const gs=hot?1.9:1.25;
+        dObj.scale.set(step*0.66*gs,h*1.03,D*0.55*gs);
+        dObj.updateMatrix(); halo.setMatrixAt(i,dObj.matrix); halo.setColorAt(i,cc);
+      }
+      bars.instanceMatrix.needsUpdate=halo.instanceMatrix.needsUpdate=true;
+      if(bars.instanceColor) bars.instanceColor.needsUpdate=true;
+      if(halo.instanceColor) halo.instanceColor.needsUpdate=true;
+      // ── the average plane ──
+      const avgH=maxV>0? (avgV/maxV)*HMAX : 0;
+      avgPlane.position.y=BASE+avgH;
+      avgLbl.sp.position.set(W/2+7,BASE+avgH,0);
+      // ── volume BY PRICE on the side wall ──
+      let hi=-Infinity,lo=Infinity;
+      for(const c of use){ if(c.h>hi)hi=c.h; if(c.l<lo)lo=c.l; }
+      const span=Math.max(1e-9,hi-lo);
+      const buckets=new Array(PB).fill(0);
+      for(const c of use){
+        const mid=(c.h+c.l)/2;
+        const b=clamp(Math.floor((mid-lo)/span*PB),0,PB-1);
+        buckets[b]+=(c.v||0);
+      }
+      const maxB=Math.max(...buckets,1e-9);
+      const poc=buckets.indexOf(maxB);
+      const PH=(COL_T-COL_B-8)/PB;
+      for(let i=0;i<PB;i++){
+        const w=Math.max(0.1,(buckets[i]/maxB)*14);
+        const y=BASE+1+i*PH+PH/2;
+        cc.set(i===poc?0xffd166:0x5fd0ff);
+        dObj.rotation.set(0,0,0);
+        dObj.position.set(-W/2-1-w/2,y,0);
+        dObj.scale.set(w,PH*0.78,2.2);
+        dObj.updateMatrix(); prof.setMatrixAt(i,dObj.matrix); prof.setColorAt(i,cc);
+      }
+      prof.instanceMatrix.needsUpdate=true;
+      if(prof.instanceColor) prof.instanceColor.needsUpdate=true;
+      // ── the readouts ──
+      const last=use[use.length-1], rel=avgV>0? (last.v||0)/avgV : 0;
+      const pocPrice=lo+((poc+0.5)/PB)*span;
+      const txt=rel.toFixed(2)+'|'+Math.round(pocPrice);
+      if(txt!==lastTxt){
+        lastTxt=txt;
+        avgLbl.draw('ממוצע 60 נרות','#ffd166',"700 30px 'Heebo', sans-serif",true);
+        pocLbl.draw('POC '+fmtP(pocPrice),'#ffd166',"800 30px 'Heebo', sans-serif",true);
+        nowLbl.draw('נפח הנר החי · פי '+rel.toFixed(2)+' מהממוצע'
+          +(rel>=1.8?' · חריג':rel<=0.6?' · דליל':''),
+          rel>=1.8?'#ffd166':rel<=0.6?'#9dc4d8':'#00ffa6',"800 32px 'Heebo', sans-serif",true);
+      }
+      pocLbl.sp.position.set(-W/2-17,BASE+1+poc*PH+PH/2,0);
+      nowLbl.sp.position.set(0,BASE+HMAX+5.5,0);
+      avgPlane.material.opacity=0.10+0.05*Math.sin(t*1.5);
     };
   } else if(mode==='galaxy'){
     // 🌌 CORRELATION GALAXY — every live market in the world becomes a body
@@ -5405,6 +5714,17 @@ function buildCenterRig(mode){
       const s=14+Math.sin(t*1.6)*1.2; hubGlow.scale.set(s,s,1);
     };
   }
+  // ── every mode gets the same stage: a podium underneath and a shared
+  // shader clock, wrapped around whatever update the mode defined ──
+  const pod=buildPodium();
+  group.add(pod.g);
+  const inner=rig.update;
+  rig.update=(dt,t,yH,col)=>{
+    pod.g.position.y=0.05;
+    pod.update(dt,t,col);
+    for(const m of holoMats){ if(m.uniforms&&m.uniforms.uTime) m.uniforms.uTime.value=t; }
+    try{ inner(dt,t,yH,col); }catch(e){}
+  };
   centerRig=rig;
 }
 
@@ -5624,6 +5944,33 @@ function updateWorld(dt,now){
   coreInner.material.color.copy(tmpC).lerp(new THREE.Color(0xffffff),0.35);
   coreShell.material.color.copy(tmpC);
   coreGlow.material.color.copy(tmpC).lerp(state.flareCol,0.4);
+  // gyroscope rings: pace tracks the live buy/sell imbalance, so a market
+  // under real pressure spins visibly faster than a quiet one
+  {
+    const push=Math.abs((state.bullPct||50)-50)/50;      // 0 balanced … 1 one-sided
+    const sp=0.25+push*1.5+state.flare*2.2;
+    coreRings.forEach((r,i)=>{
+      r.rotation.z+=dt*sp*(i%2?-1:1)*(0.6+i*0.35);
+      r.rotation.y+=dt*sp*0.35*(i%2?1:-1);
+      r.material.color.copy(tmpC);
+      r.material.opacity=(0.5-i*0.11)*(0.7+push*0.6);
+    });
+    const dp=coreDust.pos, sd=coreDust.seed;
+    for(let i=0;i<coreDust.n;i++){
+      const a=sd[i*3]+t*(0.12+push*0.3), b=sd[i*3+1]+t*0.07, r=sd[i*3+2];
+      dp[i*3]=Math.cos(a)*Math.sin(b)*r;
+      dp[i*3+1]=Math.cos(b)*r;
+      dp[i*3+2]=Math.sin(a)*Math.sin(b)*r;
+    }
+    coreDust.geo.attributes.position.needsUpdate=true;
+    coreDust.p.material.color.copy(tmpC).lerp(new THREE.Color(0xffffff),0.45);
+    if(coreHolo.material.uniforms){
+      coreHolo.material.uniforms.uTime.value=t;
+      coreHolo.material.uniforms.uColor.value.copy(tmpC);
+      coreHolo.material.uniforms.uOpacity.value=0.42+push*0.28+state.flare*0.5;
+    }
+    coreHolo.rotation.y+=dt*0.16; coreHolo.rotation.x+=dt*0.07;
+  }
   state.impactE*=Math.pow(0.05,dt);
   const sq=state.impactE;
   coreG.scale.set(1+sq*0.22, 1-sq*0.15, 1+sq*0.22);
