@@ -144,6 +144,20 @@ body.compact .ana-intel{margin:10px 0;padding:10px 12px;border:1px solid rgba(0,
 .sc-row .sc-bar i{display:block;height:100%;background:linear-gradient(90deg,#00f0ff,#00ffa6)}
 .sc-row .sc-n{font-family:'JetBrains Mono',monospace;color:var(--dim);white-space:nowrap}
 .sc-row .sc-solo{color:#ffd166}
+#followToast{position:fixed;z-index:80;left:50%;bottom:22px;transform:translateX(-50%) translateY(24px);
+  opacity:0;pointer-events:none;transition:opacity .35s,transform .35s;cursor:pointer;
+  display:flex;flex-direction:column;gap:3px;max-width:min(460px,92vw);
+  padding:11px 16px;border-radius:12px;background:rgba(6,12,26,.96);
+  border:1px solid rgba(255,209,102,.65);box-shadow:0 0 26px rgba(255,209,102,.22);
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+#followToast.show{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto}
+#followToast b{color:#ffd166;font-size:12px}
+#followToast span{color:var(--txt);font-size:11.5px;line-height:1.6}
+.cluster .c-follow{cursor:pointer;opacity:.5;margin-inline-start:4px;font-size:12px}
+.cluster .c-follow.on{opacity:1;filter:drop-shadow(0 0 6px rgba(255,209,102,.8))}
+.he-chip.surge{border-color:rgba(255,209,102,.7)!important;box-shadow:0 0 12px rgba(255,209,102,.2)}
+.he-chip .he-v{font-style:normal;font-size:9px;margin-inline-start:4px;font-family:'JetBrains Mono',monospace}
+.he-chip .he-v.up{color:#ffd166} .he-chip .he-v.dn{color:#9dc4d8} .he-chip .he-v.new{color:#00ffa6}
 .cluster .cred-run{color:#9be8ff;font-weight:700}
 .cluster .cred-since{color:#00ffa6;font-weight:700}
 .cluster .c-first{margin-top:6px;font-size:10px;color:var(--dim);opacity:.85}
@@ -1219,6 +1233,57 @@ function storySig(grp){
 function srcRec(name){
   return srcScore[name]||(srcScore[name]={first:0,solo:0,stories:0,reports:0});
 }
+// ── FOLLOWING A STORY. Bookmarks save a story; following it means the app
+// watches it for you and tells you the moment a new outlet picks it up.
+// The count at the time of following is remembered, so the alert can say
+// exactly what changed rather than just "something happened". ──
+const FOLLOW_KEY='octo:follow';
+let follows={};
+try{ follows=JSON.parse(localStorage.getItem(FOLLOW_KEY)||'{}')||{}; }catch(e){ follows={}; }
+function saveFollows(){ try{ localStorage.setItem(FOLLOW_KEY,JSON.stringify(follows)); }catch(e){} }
+function isFollowed(c){ return !!follows[storySig(c.angles)]; }
+function toggleFollow(c){
+  const sig=storySig(c.angles); if(!sig) return;
+  if(follows[sig]){ delete follows[sig]; toast&&null; }
+  else follows[sig]={at:Date.now(),title:dispTitle(c.head),seen:c.angles.length,outlets:c.m.indep};
+  saveFollows(); renderClusters();
+}
+function checkFollows(){
+  for(const c of clusters){
+    const sig=storySig(c.angles), f=follows[sig];
+    if(!f) continue;
+    if(c.m.indep>f.outlets || c.angles.length>f.seen){
+      const dOut=c.m.indep-f.outlets, dRep=c.angles.length-f.seen;
+      f.outlets=c.m.indep; f.seen=c.angles.length; saveFollows();
+      const msg=(dOut>0? dOut+' מקורות עצמאיים חדשים' : dRep+' דיווחים חדשים')+' · '+dispTitle(c.head);
+      // its own channel, not the breaking banner: a follow alert that can be
+      // wiped a second later by an unrelated breaking story is an alert the
+      // reader never actually sees
+      showFollowToast(msg);
+      ensureAC(); beep([[660,0.09],[880,0.11]]);
+      try{
+        if(octoSettings.pushNotify&&typeof Notification!=='undefined'
+          &&Notification.permission==='granted'&&document.visibilityState!=='visible'){
+          new Notification('⭐ אוקטופוס · סיפור במעקב',{body:msg,tag:'octo-follow'});
+        }
+      }catch(e){}
+    }
+  }
+}
+let followToastT=null;
+function showFollowToast(msg){
+  let el=document.getElementById('followToast');
+  if(!el){
+    el=document.createElement('div');
+    el.id='followToast';
+    document.body.appendChild(el);
+  }
+  el.innerHTML='<b>⭐ סיפור במעקב התעדכן</b><span>'+escH(msg)+'</span>';
+  el.classList.add('show');
+  clearTimeout(followToastT);
+  followToastT=setTimeout(()=>el.classList.remove('show'),9000);
+  el.onclick=()=>el.classList.remove('show');
+}
 function trackStory(c){
   const sig=storySig(c.angles);
   if(!sig) return null;
@@ -1290,6 +1355,7 @@ function buildClusters(){
   });
   clusters.forEach(c=>{ try{ trackStory(c); }catch(e){} });
   saveMemory();
+  try{ checkFollows(); }catch(e){}
   clusters.sort((a,b)=>b.rank-a.rank);
   checkBreaking();
 }
@@ -1382,6 +1448,38 @@ function renderHeadlines(){
 // hot entities — the most-mentioned meaningful words across every current
 // story, weighted extra when they appear in multi-angle (cross-referenced)
 // clusters. Clicking one drops it into the search box as a live filter.
+// ── ENTITY VELOCITY. A frequency count answers "what is being written about",
+// which is almost never the interesting question — a name that appears 40
+// times every day is background, and a name that appeared twice yesterday and
+// eleven times in the last hour is a story breaking. So every entity's count
+// is stored per hour and each chip shows its RISE against its own recent
+// baseline, not its raw volume. ──
+const ENT_KEY='octo:entity';
+let entHist={};
+try{ entHist=JSON.parse(localStorage.getItem(ENT_KEY)||'{}')||{}; }catch(e){ entHist={}; }
+function entityVelocity(freq){
+  const now=Date.now(), hour=Math.floor(now/3600e3);
+  const out={};
+  for(const w of Object.keys(freq)){
+    const h=entHist[w]||(entHist[w]={});
+    h[hour]=Math.max(h[hour]||0,freq[w]);
+    // baseline = the mean of the previous six hours this word was recorded in
+    const keys=Object.keys(h).map(Number).filter(k=>k<hour).sort((a,b)=>b-a).slice(0,6);
+    const base=keys.length? keys.reduce((a,k)=>a+h[k],0)/keys.length : 0;
+    out[w]={now:freq[w], base, rise: base>0? (freq[w]/base-1)*100 : (keys.length?0:null)};
+    // prune: only the last 24 recorded hours of each word are worth keeping
+    const all=Object.keys(h).map(Number).sort((a,b)=>b-a);
+    all.slice(24).forEach(k=>delete h[k]);
+  }
+  // forget words we have not seen in a day
+  const cut=hour-24;
+  for(const w of Object.keys(entHist)){
+    const ks=Object.keys(entHist[w]).map(Number);
+    if(!ks.length||Math.max(...ks)<cut) delete entHist[w];
+  }
+  try{ localStorage.setItem(ENT_KEY,JSON.stringify(entHist)); }catch(e){}
+  return out;
+}
 function renderHotEntities(){
   const el=$('hotEntities'); if(!el) return;
   if(!octoSettings.showEntities){ el.style.display='none'; return; }
@@ -1391,10 +1489,23 @@ function renderHotEntities(){
     const w8=1+Math.min(3,c.angles.length-1);
     for(const w of tokens(c.head.title)) if(w.length>2) freq[w]=(freq[w]||0)+w8;
   });
-  const top=Object.keys(freq).sort((a,b)=>freq[b]-freq[a]).slice(0,8);
+  const vel=entityVelocity(freq);
+  // rank by surge first, volume second — that is the difference between a
+  // trend monitor and a word counter
+  const top=Object.keys(freq)
+    .sort((a,b)=>((vel[b].rise||0)-(vel[a].rise||0))||(freq[b]-freq[a]))
+    .slice(0,8);
   if(!top.length){ el.innerHTML=''; return; }
-  el.innerHTML='<span class="he-lbl">🔥 חם עכשיו:</span>'+top.map(w=>
-    '<span class="he-chip" data-w="'+escH(w)+'">'+escH(w)+'<b>'+freq[w]+'</b></span>').join('');
+  el.innerHTML='<span class="he-lbl">🔥 חם עכשיו:</span>'+top.map(w=>{
+    const v=vel[w];
+    const surge=v.rise!=null&&v.rise>=40;
+    return '<span class="he-chip'+(surge?' surge':'')+'" data-w="'+escH(w)+'"'
+      +' title="'+(v.rise!=null? 'מוזכר '+v.now+' פעמים · ממוצע קודם '+v.base.toFixed(1)+' · שינוי '+(v.rise>=0?'+':'')+v.rise.toFixed(0)+'%' : 'מילה חדשה — אין עדיין בסיס להשוואה')+'">'
+      +escH(w)+'<b>'+freq[w]+'</b>'
+      +(v.rise!=null&&Math.abs(v.rise)>=40? '<i class="he-v '+(v.rise>0?'up':'dn')+'">'+(v.rise>0?'▲':'▼')+Math.abs(v.rise).toFixed(0)+'%</i>'
+        : v.rise==null? '<i class="he-v new">חדש</i>':'')
+      +'</span>';
+  }).join('');
   el.querySelectorAll('.he-chip').forEach(ch=>{
     ch.onclick=()=>{
       const w=ch.dataset.w;
@@ -1487,6 +1598,7 @@ function renderClusters(){
   if(!renderClusters._animated){ renderClusters._animated=true; el.classList.add('first-load'); setTimeout(()=>el.classList.remove('first-load'),2400); }
   list.slice(0,40).forEach((c,i)=>{
     const key=clusterKey(c), starred=bookmarks.has(key), breaking=c.m.indep>=3;
+    const followed=isFollowed(c);
     const watched=watches.length&&isWatched(c);
     const d=document.createElement('article');
     d.className='cluster panel clip'+(breaking?' breaking':'')+(watched?' watched':'');
@@ -1497,7 +1609,8 @@ function renderClusters(){
       +(isNewCluster(c)?'<span class="c-new">🆕 חדש</span>':'')
       +(c.angles.length>1?'<span class="c-angles">⚡ '+c.angles.length+' זוויות</span>':'')
       +'<span class="c-time">'+fmtAgo(c.at)+'</span>'
-      +'<span class="c-star'+(starred?' on':'')+'" title="שמור למועדפים">'+(starred?'★':'☆')+'</span></div>'
+      +'<span class="c-star'+(starred?' on':'')+'" title="שמור למועדפים">'+(starred?'★':'☆')+'</span>'
+      +'<span class="c-follow'+(followed?' on':'')+'" title="עקוב — התראה כשמקור נוסף מדווח">'+(followed?'🔔':'🔕')+'</span></div>'
       +'<h3>'+escH(dispTitle(c.head))+trMark(c.head)+'</h3>'
       +(c.summary?'<p class="c-sum">'+escH(c.summary.slice(0,190))+(c.summary.length>190?'…':'')+'</p>':'')
       +'<div class="c-cred">'
@@ -1513,6 +1626,7 @@ function renderClusters(){
       +'<div class="c-first">🥇 פורסם ראשון · '+escH(c.m.first.src)+' · '+fmtAgo(c.m.firstAt)
         +(c.angles.length>1?' · הסיפור רץ '+(Math.max(1,Math.round((c.m.lastAt-c.m.firstAt)/60000)))+' דקות':'')+'</div>'
       +'<div class="c-hint">👆 הקשה — ניתוח מלא והצלבת הזוויות</div>';
+    d.querySelector('.c-follow').onclick=(e)=>{ e.stopPropagation(); toggleFollow(c); };
     d.querySelector('.c-star').onclick=(e)=>{
       e.stopPropagation();
       if(bookmarks.has(key)) bookmarks.delete(key); else bookmarks.add(key);

@@ -208,6 +208,19 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 #mapLegend{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;margin:9px 2px 4px;font-size:10.5px;color:var(--dim)}
 #mapLegend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-inline-end:5px;vertical-align:middle}
 /* recommendations center */
+#pfRisk{margin:6px 0 8px;padding:9px 11px;border:1px solid rgba(138,92,255,.3);border-radius:9px;background:rgba(138,92,255,.05)}
+#pfRisk .cr-h{font-size:11px;font-weight:800;color:#c9b3ff;margin-bottom:6px}
+#pfRisk .cr-bar{height:6px;border-radius:4px;background:rgba(255,255,255,.08);overflow:hidden;margin-bottom:5px}
+#pfRisk .cr-bar i{display:block;height:100%}
+#pfRisk .cr-main{font-size:11.5px;color:var(--dim)}
+#pfRisk .cr-main b{font-family:'JetBrains Mono',monospace;font-size:14px}
+#pfRisk .cr-sub{font-size:10px;color:var(--dim);margin-top:3px}
+#pfRisk .cr-sub b{color:var(--txt);font-family:'JetBrains Mono',monospace}
+#pfRisk .cr-pairs{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+#pfRisk .cr-p{font-size:9.5px;padding:2px 7px;border-radius:20px;background:rgba(0,0,0,.28);color:var(--dim)}
+#pfRisk .cr-p b{font-family:'JetBrains Mono',monospace;color:var(--txt)}
+#pfRisk .cr-p.hot{border:1px solid rgba(255,61,110,.45);color:#ff9ec4}
+#pfRisk .cr-note{font-size:9.5px;color:var(--dim);margin-top:6px;line-height:1.6;opacity:.85}
 #ordPanel,#perfPanel{position:fixed;z-index:34;top:50%;right:16px;transform:translateY(-50%);
   width:min(340px,92vw);padding:13px 15px;max-height:calc(100dvh - 24px);overflow-y:auto}
 #ordList{display:flex;flex-direction:column;gap:4px;margin-bottom:6px;max-height:190px;overflow-y:auto}
@@ -291,6 +304,7 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 /* trader drawing toolbar on the candle chart */
 #cpTools{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin:0 0 7px;justify-content:center}
 #cpTools .ct-lbl{font-size:10.5px;color:var(--dim);margin-inline-end:3px}
+#cpTools select.ct{padding-inline-end:18px}
 #cpTools .ct{background:rgba(0,240,255,.06);border:1px solid rgba(0,240,255,.25);color:var(--dim);
   border-radius:7px;padding:4px 9px;font-size:11px;cursor:pointer;font-family:inherit}
 #cpTools .ct.on{background:rgba(0,240,255,.2);border-color:var(--cyan);color:var(--cyan);font-weight:700}
@@ -1093,6 +1107,8 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
     <button class="ct" id="ctFwd" title="קדימה בזמן">⏩ קדימה</button>
     <button class="ct" id="ctLive" title="חזרה לנר החי">🔴 חי</button>
     <button class="ct" id="ctFit" title="להציג את כל ההיסטוריה השמורה">⤢ הכל</button>
+    <button class="ct" id="ctPlay" title="ריפליי — הרץ את הנרות קדימה נר-נר מהנקודה שבה אתה נמצא">▶ ריפליי</button>
+    <select class="ct" id="ctSpeed" title="מהירות הריפליי"><option value="1">×1</option><option value="2">×2</option><option value="4">×4</option><option value="8">×8</option></select>
     <button class="ct" id="ctBt" title="להריץ את כללי המערכת על ההיסטוריה ולראות אם הם היו מרוויחים">🧪 בקטסט</button>
     <span class="ct-lbl">✏️ כלי סוחר</span>
     <button class="ct" data-tool="none" title="ניווט רגיל — קרוסהייר">🖱️ ניווט</button>
@@ -1161,6 +1177,7 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
     <div><b id="pfBalRef">$0</b><span>יתרה זמינה</span></div>
     <div><b id="pfEqRef">$0</b><span>שווי כולל</span></div>
   </div>
+  <div id="pfRisk" style="display:none"></div>
   <div id="pfList"></div>
   <div class="st-btnrow">
     <button id="walletReset" class="st-reset">↺ איפוס ארנק ($25,000)</button>
@@ -1838,6 +1855,7 @@ function startSim(f){
 function onInit(cs){
   state.candles=cs.slice(-N);
   // a fresh market/timeframe starts pinned to live and fitted
+  try{ stopReplay(); }catch(e){}
   chartView.n=0; chartView.off=0; chartView.anchorT=0;
   retargetScale(true);
   state.lastPrice=cs[cs.length-1].c; state.priceSym=state.sym;
@@ -2519,6 +2537,90 @@ function openPos(side,opts){
   renderTicket(); renderPortfolio(); renderPosStrip();
 }
 // ============================================================
+//  CONCENTRATION RISK — the most expensive mistake in a multi-position book
+//  is thinking you hold five trades when you actually hold one trade in five
+//  costumes. Long BTC, long ETH and long SOL is a single bet on crypto at
+//  triple size, and it will be revealed as such on exactly the day you
+//  cannot afford the lesson.
+//
+//  This measures it properly: the correlation of each pair's recent RETURN
+//  series (from the live pod feeds, not from assumptions), then the
+//  portfolio's effective single-bet exposure —
+//
+//      E_eff = sqrt( ΣΣ dᵢdⱼ ρᵢⱼ EᵢEⱼ )
+//
+//  which is the standard portfolio-variance form. If E_eff is close to the
+//  raw sum of exposures, diversification is an illusion.
+// ============================================================
+function retSeries(h){
+  const r=[];
+  if(!h) return r;
+  for(let i=1;i<h.length;i++){ if(h[i-1]>0) r.push(h[i]/h[i-1]-1); }
+  return r;
+}
+function pearson(a,b){
+  const n=Math.min(a.length,b.length);
+  if(n<8) return null;
+  const x=a.slice(-n), y=b.slice(-n);
+  const mx=x.reduce((s,v)=>s+v,0)/n, my=y.reduce((s,v)=>s+v,0)/n;
+  let sxy=0,sxx=0,syy=0;
+  for(let i=0;i<n;i++){ const dx=x[i]-mx, dy=y[i]-my; sxy+=dx*dy; sxx+=dx*dx; syy+=dy*dy; }
+  if(sxx<=0||syy<=0) return null;
+  return clamp(sxy/Math.sqrt(sxx*syy),-1,1);
+}
+function symReturns(sym){
+  const p=pods.find(x=>(x.kind==='crypto'||x.kind==='stock')&&x.id===sym);
+  if(p&&p.hist&&p.hist.length>10) return retSeries(p.hist);
+  if(sym===state.sym&&state.candles.length>12) return retSeries(state.candles.slice(-40).map(c=>c.c));
+  return [];
+}
+function concentrationRisk(){
+  const ids=Object.keys(positions);
+  if(ids.length<1) return null;
+  const legs=ids.map(id=>{
+    const P=positions[id];
+    return {sym:P.sym, d:P.side==='long'?1:-1, E:P.notional, r:symReturns(P.sym)};
+  });
+  const gross=legs.reduce((a,l)=>a+l.E,0);
+  let varSum=0, pairs=[], unknown=0;
+  for(let i=0;i<legs.length;i++){
+    for(let j=0;j<legs.length;j++){
+      const a=legs[i], b=legs[j];
+      let rho;
+      if(i===j) rho=1;
+      else if(a.sym===b.sym) rho=1;                 // same market twice IS the same bet
+      else {
+        rho=pearson(a.r,b.r);
+        if(rho==null){ rho=0.5; unknown++; }        // not enough tape yet — assume related, never assume independent
+        if(i<j) pairs.push({a:a.sym,b:b.sym,rho,same:a.d===b.d});
+      }
+      varSum+=a.d*b.d*rho*a.E*b.E;
+    }
+  }
+  const eff=Math.sqrt(Math.max(0,varSum));
+  const conc=gross>0? eff/gross*100 : 0;
+  pairs.sort((x,y)=>Math.abs(y.rho)-Math.abs(x.rho));
+  return {n:legs.length, gross, eff, conc, pairs:pairs.slice(0,6), unknownPairs:unknown>0,
+    verdict: conc>=88? {t:'ריכוזיות קיצונית — זו למעשה עסקה אחת',c:'down'}
+           : conc>=70? {t:'ריכוזיות גבוהה — הפיזור חלקי בלבד',c:'gold'}
+           : conc>=45? {t:'פיזור סביר',c:'gold'}
+           : {t:'פיזור אמיתי — הרגליים מקזזות זו את זו',c:'up'} };
+}
+function renderConcentration(){
+  const el=$('pfRisk'); if(!el) return;
+  const r=concentrationRisk();
+  if(!r||r.n<1){ el.innerHTML=''; el.style.display='none'; return; }
+  el.style.display='block';
+  const col=r.verdict.c==='up'?'var(--up)':r.verdict.c==='down'?'var(--down)':'var(--gold)';
+  el.innerHTML=`<div class="cr-h">🧬 ריכוזיות סיכון</div>`
+    +`<div class="cr-bar"><i style="width:${Math.min(100,r.conc).toFixed(0)}%;background:${col}"></i></div>`
+    +`<div class="cr-main"><b style="color:${col}">${r.conc.toFixed(0)}%</b> · ${r.verdict.t}</div>`
+    +`<div class="cr-sub">חשיפה ברוטו $${r.gross.toFixed(0)} · חשיפה אפקטיבית כעסקה אחת <b>$${r.eff.toFixed(0)}</b></div>`
+    +(r.pairs.length? '<div class="cr-pairs">'+r.pairs.map(p=>
+        `<span class="cr-p ${Math.abs(p.rho)>=0.7?'hot':''}">${p.a}↔${p.b} <b>${p.rho>=0?'+':''}${p.rho.toFixed(2)}</b>${p.same&&p.rho>=0.7?' ⚠️ אותו כיוון':''}</span>`).join('')+'</div>' : '')
+    +(r.unknownPairs?'<div class="cr-note">לחלק מהצמדים עדיין אין מספיק היסטוריה חיה — הונח מתאם 0.5, לא אפס. בסיכון לא מניחים עצמאות.</div>':'');
+}
+// ============================================================
 //  PENDING ORDERS — limit and stop entries. A trader who can only ever hit
 //  market is a trader who always pays the spread and always chases. These
 //  orders sit on the book (locally) and fire the moment price trades
@@ -2903,6 +3005,7 @@ function renderTicket(){
 }
 function renderPortfolio(){
   const list=$('pfList'); if(!list) return;
+  try{ renderConcentration(); }catch(e){}
   const ids=Object.keys(positions);
   $('pfCount').textContent=ids.length;
   $('pfBalRef').textContent='$'+wallet.balance.toFixed(0);
@@ -3102,6 +3205,7 @@ document.querySelectorAll('.ord-b').forEach(b=>{
     addOrder(b.dataset.k,b.dataset.s,px,ttl);
   };
 });
+window.__naRisk=()=>concentrationRisk();
 window.__naOrders={list:()=>orders,add:addOrder,check:()=>checkOrders(),perf:()=>perfBreakdown()};
 $('apClose').onclick=()=>setAp(false);
 $('apToggle').onclick=()=>{
@@ -5986,7 +6090,41 @@ function chartAnchor(){
   const idx=clamp(total-1-chartView.off,0,total-1);
   chartView.anchorT=cs[idx]?cs[idx].t:0;
 }
-function chartToLive(){ chartView.off=0; chartView.anchorT=0; drawChart(); }
+function chartToLive(){ chartView.off=0; chartView.anchorT=0; stopReplay(); drawChart(); }
+// ── REPLAY — walk the tape forward one candle at a time from wherever you
+// are scrolled to. This is how a trader actually practises reading a chart:
+// the future is hidden, you form a view, then you let the next bar print.
+// It reuses the viewport itself (off counts down to live), so replay and
+// manual scrolling are the same mechanism and can never disagree.
+let replay={on:false,speed:1,timer:null};
+function stopReplay(){
+  if(replay.timer){ clearInterval(replay.timer); replay.timer=null; }
+  replay.on=false;
+  const b=$('ctPlay'); if(b){ b.classList.remove('on'); b.textContent='▶ ריפליי'; }
+}
+function startReplay(){
+  const total=state.candles.length;
+  if(total<40){ toast('אין מספיק היסטוריה לריפליי','down'); return; }
+  if(chartView.off<=0){
+    // At the live edge there is nothing left to replay — and a window fitted
+    // to the whole history has no room either, because `n` already covers
+    // every candle. Zoom into a working window and rewind halfway, so the
+    // button always does the obvious thing.
+    chartView.n=Math.min(120,Math.max(30,Math.floor(total*0.3)));
+    chartView.off=Math.max(1,Math.min(total-chartView.n,Math.round(total*0.5)));
+    chartAnchor();
+  }
+  replay.on=true;
+  const b=$('ctPlay'); if(b){ b.classList.add('on'); b.textContent='⏸ עצור'; }
+  if(replay.timer) clearInterval(replay.timer);
+  replay.timer=setInterval(()=>{
+    if(chartView.off<=0){ stopReplay(); toast('הריפליי הגיע לנר החי','up'); drawChart(); return; }
+    chartView.off=Math.max(0,chartView.off-1);
+    chartAnchor();
+    drawChart();
+  }, Math.max(60, 900/replay.speed));
+}
+function toggleReplay(){ replay.on? stopReplay() : startReplay(); if(chartOpen) drawChart(); }
 function chartResetView(){ chartView.n=0; chartView.off=0; chartView.anchorT=0; drawChart(); }
 function drawChart(){
   const cv=$('chartCv'); if(!cv) return;
@@ -6273,7 +6411,8 @@ function drawChart(){
     g.strokeRect(padL,padT,plotW,priceH);
     g.fillStyle='rgba(255,209,102,.95)'; g.font="700 11px 'Heebo',sans-serif";
     g.textAlign='center'; g.textBaseline='top';
-    g.fillText('⏪ מצב היסטוריה · '+fmtT(cs[cs.length-1].t)+' · הקש «חי» לחזרה',padL+plotW/2,padT+4);
+    g.fillText((replay.on?'▶ ריפליי ×'+replay.speed+' · ':'⏪ מצב היסטוריה · ')+fmtT(cs[cs.length-1].t)
+      +(replay.on?' · '+chartView.off+' נרות עד ההווה':' · הקש «חי» לחזרה'),padL+plotW/2,padT+4);
     g.restore();
   }
   // ── user drawings: levels, trend lines and zones the trader placed ──
@@ -6474,7 +6613,7 @@ function setChart(on){
   $('btnChart').classList.toggle('on',on);
   if(chartTimer){ clearInterval(chartTimer); chartTimer=null; }
   if(on){ buildChartStyles(); drawChart(); chartTimer=setInterval(drawChart,500); }
-  else stopVoiceLesson();
+  else { stopVoiceLesson(); stopReplay(); }
 }
 addEventListener('resize',()=>{ if(chartOpen) drawChart(); });
 // ── TRADER DRAWINGS — horizontal levels, trend lines, zones and a measure
@@ -6704,6 +6843,8 @@ $('ctBack').onclick=()=>chartPan(Math.max(1,Math.round((chartView.n||state.candl
 $('ctFwd').onclick=()=>chartPan(-Math.max(1,Math.round((chartView.n||state.candles.length)*0.4)));
 $('ctLive').onclick=()=>{ chartToLive(); toast('חזרה לנר החי','up'); };
 $('ctFit').onclick=()=>chartResetView();
+$('ctPlay').onclick=()=>toggleReplay();
+$('ctSpeed').onchange=()=>{ replay.speed=parseFloat($('ctSpeed').value)||1; if(replay.on) startReplay(); };
 $('ctBt').onclick=()=>{
   if(btResult){ btResult=null; renderBacktest(); $('ctBt').classList.remove('on'); return; }
   toast('מריץ בקטסט על ההיסטוריה…');
@@ -7143,6 +7284,14 @@ function mcEvaluate(){
   if(ind&&ind.A>0){
     mcAtrAvg=mcAtrAvg? mcAtrAvg*0.985+ind.A*0.015 : ind.A;
     if(mcAtrAvg>0&&ind.A>mcAtrAvg*1.8) out.push({id:'vol',lvl:'warn',t:`קפיצת תנודתיות ×${(ind.A/mcAtrAvg).toFixed(1)} — הרחב סטופים`});
+  }
+  // concentration: several positions that are really one bet
+  if(ids.length>=2){
+    try{
+      const cr=concentrationRisk();
+      if(cr&&cr.conc>=88) out.push({id:'conc',lvl:'crit',t:`ריכוזיות ${cr.conc.toFixed(0)}% — ${ids.length} עסקאות שהן למעשה אחת בגודל $${cr.eff.toFixed(0)}`});
+      else if(cr&&cr.conc>=72) out.push({id:'conc',lvl:'warn',t:`ריכוזיות ${cr.conc.toFixed(0)}% — הפיזור חלקי בלבד`});
+    }catch(e){}
   }
   const bd=window.__ckBoard;
   if(bd&&bd.adx>=25) out.push({id:'adx',lvl:'warn',t:`מגמה חזקה · ADX ${bd.adx.toFixed(0)}`});
