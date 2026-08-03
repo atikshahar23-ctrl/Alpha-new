@@ -1892,7 +1892,13 @@
     document.body.classList.add('stage-mode');
     stageExitBtn.hidden = false;
     rotateBtn.classList.add('on');
-    try{ screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape'); }catch(e){}
+    // lock() returns a PROMISE — a try/catch never sees its rejection, which
+    // is why every desktop browser (where the API exists but refuses) logged
+    // an unhandled rejection here.
+    try{
+      const r = screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape');
+      if(r && typeof r.catch === 'function') r.catch(()=>{});
+    }catch(e){}
     if(typeof revealChrome === 'function') revealChrome(); // arm the auto-hide idle timer
   }
   function exitStageMode(){
