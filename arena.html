@@ -408,6 +408,11 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
   border:1px solid rgba(0,240,255,.14);font-size:11px;color:var(--txt)}
 .lg-dgrid{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;color:var(--dim)}
 .lg-dgrid b{color:var(--txt);font-weight:600}
+.lg-cost{margin-top:7px;padding-top:7px;border-top:1px dashed rgba(255,209,102,.25)}
+.lg-cost .lg-ch{font-size:10.5px;font-weight:800;color:var(--gold);margin-bottom:5px}
+.lg-eaten{margin-top:6px;padding:6px 9px;border-radius:7px;background:rgba(255,209,102,.1);
+  color:#ffd166;font-size:10.5px;line-height:1.65}
+.lg-flag{font-size:9.5px;color:#ffd166;font-family:'Heebo',sans-serif;font-weight:700}
 .lg-why{margin-top:7px;padding-top:7px;border-top:1px dashed rgba(0,240,255,.18);line-height:1.7;color:var(--dim)}
 .lg-why b{color:var(--gold)}
 /* ── COCKPIT — the trader's command deck: a canopy frame, corner
@@ -1994,6 +1999,17 @@ function startSim(f){
 
 // ---------- data callbacks ----------
 function onInit(cs){
+  // levels typed for the previous market cannot describe this one
+  if(tradeSlManual>0||tradeTpManual>0){
+    tradeSlManual=0; tradeTpManual=0;
+    try{
+      const a=$('manSl'), b=$('manTp');
+      if(a) a.value=''; if(b) b.value='';
+      $('rmAuto')?.classList.add('on'); $('rmMan')?.classList.remove('on');
+      const mr=$('manRow'); if(mr) mr.style.display='none';
+      toast('הרמות הידניות אופסו — הן היו שייכות לשוק הקודם');
+    }catch(e){}
+  }
   state.candles=cs.slice(-N);
   // a fresh market/timeframe starts pinned to live and fitted
   try{ stopReplay(); }catch(e){}
@@ -3630,8 +3646,28 @@ function renderPortfolio(){
   list.querySelectorAll('[data-half]').forEach(btn=>{ btn.onclick=()=>closePartial(btn.dataset.half,0.5); });
   list.querySelectorAll('[data-be]').forEach(btn=>{ btn.onclick=()=>moveToBreakeven(btn.dataset.be); });
 }
-$('btnLong').addEventListener('click',()=>openPos('long'));
-$('btnShort').addEventListener('click',()=>openPos('short'));
+// A trade whose target cannot clear its own costs is not a trade, and one
+// that risks more than it can make needs to be a deliberate choice rather
+// than a stray click. First click warns, second click within eight seconds
+// goes through — the trader keeps the final say, but not by accident.
+let riskAck=0;
+function guardedOpen(side){
+  let q; try{ q=tradeQuality(); }catch(e){ openPos(side); return; }
+  const bad = q.belowCost || q.rrNet<1;
+  if(bad && Date.now()-riskAck>8000){
+    riskAck=Date.now();
+    toast(q.belowCost
+      ? '⛔ היעד לא מכסה את העלויות — לחץ שוב תוך 8 שניות לאישור בכל זאת'
+      : `⚠️ יחס סיכון-סיכוי 1:${q.rrNet.toFixed(2)} — לחץ שוב תוך 8 שניות לאישור`,'down');
+    beep([[420,0.1],[300,0.14]]);
+    renderRiskCalc();
+    return;
+  }
+  riskAck=0;
+  openPos(side);
+}
+$('btnLong').addEventListener('click',()=>guardedOpen('long'));
+$('btnShort').addEventListener('click',()=>guardedOpen('short'));
 $('btnClose').addEventListener('click',()=>{ const P=posOn(state.sym); if(P) closePos(P.id,'manual'); });
 $('alertSet').addEventListener('click',()=>{
   if(priceAlerts[state.sym]){ delete priceAlerts[state.sym]; savePriceAlerts(); renderAlertRow(); toast('התראת המחיר בוטלה'); return; }
@@ -3659,26 +3695,59 @@ $('manFromChart').onclick=()=>{
 $('trailChk').addEventListener('change',e=>{ tradeTrail=e.target.checked; renderRiskCalc(); });
 // live risk math for the levels currently configured — what this trade
 // actually costs if the stop hits, and what it pays if the target does
+// ── The pre-trade risk read, now NET of costs. A gross reward-to-risk ratio
+// flatters every short-target trade: a target 0.02% away looks like a trade
+// and is actually a guaranteed loss once the round trip is paid for. This
+// shows both numbers and refuses to let the difference stay invisible.
+function tradeLevels(){
+  const p=state.lastPrice, A=(ind&&ind.A)||p*0.01;
+  return {
+    p, A,
+    sl: tradeSlManual>0?tradeSlManual:((ind&&ind.sug)?ind.sug.sl:p-1.5*A),
+    tp: tradeTpManual>0?tradeTpManual:((ind&&ind.sug)?ind.sug.tp:p+2.5*A),
+    manual: tradeSlManual>0||tradeTpManual>0,
+  };
+}
+function tradeQuality(){
+  const {p,sl,tp}=tradeLevels();
+  const notional=tradeMargin*tradeLev;
+  const cc=costCfg();
+  // the round trip: two taker fees, the whole spread, slippage both ways
+  const costFrac=cc.on? (cc.taker*2+cc.spread+slippageFrac(notional,'long')*2) : 0;
+  const costUsd=notional*costFrac;
+  const riskUsd=notional*Math.abs(p-sl)/p+costUsd;   // costs are paid on losers too
+  const rewUsd=notional*Math.abs(tp-p)/p-costUsd;
+  return {p,sl,tp,notional,costUsd,costFrac,riskUsd,rewUsd,
+    rrGross: (notional*Math.abs(p-sl)/p)>0? (notional*Math.abs(tp-p)/p)/(notional*Math.abs(p-sl)/p) : 0,
+    rrNet: riskUsd>0? rewUsd/riskUsd : 0,
+    belowCost: rewUsd<=0,
+    manual: tradeSlManual>0||tradeTpManual>0};
+}
 function renderRiskCalc(){
   const box=$('riskCalc'); if(!box) return;
   const p=state.lastPrice;
   if(!p||!ind){ box.textContent=''; return; }
-  const A=ind.A||p*0.01;
-  const sl=tradeSlManual>0?tradeSlManual:(ind.sug?ind.sug.sl:p-1.5*A);
-  const tp=tradeTpManual>0?tradeTpManual:(ind.sug?ind.sug.tp:p+2.5*A);
-  const notional=tradeMargin*tradeLev;
-  const riskUsd=notional*Math.abs(p-sl)/p, rewUsd=notional*Math.abs(tp-p)/p;
-  const rr=riskUsd>0?(rewUsd/riskUsd):0;
-  const liq=notional>0? p*(1-(tradeMargin/notional)*(0.98)) : 0;
-  box.innerHTML=`חשיפה <b>$${notional.toFixed(0)}</b> · סיכון בסטופ <b style="color:var(--down)">−$${riskUsd.toFixed(0)}</b>`
-    +` · רווח ביעד <b style="color:var(--up)">+$${rewUsd.toFixed(0)}</b> · יחס <b>1:${rr.toFixed(1)}</b>`
+  const q=tradeQuality();
+  const liq=q.notional>0? p*(1-(tradeMargin/q.notional)*(0.98)) : 0;
+  const rrCol=q.rrNet>=1.5?'var(--up)':q.rrNet>=1?'var(--gold)':'var(--down)';
+  box.innerHTML=`חשיפה <b>$${q.notional.toFixed(0)}</b> · סיכון בסטופ <b style="color:var(--down)">−$${q.riskUsd.toFixed(0)}</b>`
+    +` · רווח ביעד <b style="color:${q.rewUsd>0?'var(--up)':'var(--down)'}">${q.rewUsd>0?'+':'−'}$${Math.abs(q.rewUsd).toFixed(0)}</b>`
+    +` · יחס נטו <b style="color:${rrCol}">1:${q.rrNet.toFixed(2)}</b>`
+    +(costCfg().on?`<br><span style="color:var(--dim)">כולל עלויות הלוך-חזור $${q.costUsd.toFixed(2)} (${(q.costFrac*100).toFixed(3)}%) · ברוטו 1:${q.rrGross.toFixed(2)}</span>`:'')
+    +(q.belowCost
+      ? `<br><b style="color:var(--down)">⛔ היעד קרוב מכדי לכסות את העלויות — גם פגיעה ביעד נסגרת בהפסד. הרחק את היעד או הקטן מינוף.</b>`
+      : q.rrNet<1
+        ? `<br><b style="color:var(--gold)">⚠️ מסכן יותר ממה שאפשר להרוויח (1:${q.rrNet.toFixed(2)}). צריך ${(100/(1+q.rrNet)).toFixed(0)}% הצלחה רק כדי לא להפסיד.</b>`
+        : '')
+    +(q.manual? `<br><span style="color:var(--gold)">✍️ רמות ידניות פעילות — הן יחולו גם על העסקה הבאה עד לחזרה ל«אוטומטי»</span>`:'')
     +(tradeLev>=20?`<br>⚠️ מינוף x${tradeLev} — חיסול משוער סביב <b style="color:var(--down)">${fmtP(liq)}</b> (לונג). מינוף גבוה = סיכון גבוה.`:'')
     +(tradeTrail?'<br>🪝 סטופ נגרר פעיל — מרחק הגרירה יינעל לפי הסטופ בכניסה':'');
 }
 setInterval(()=>{ if($('sugBox')&&$('sugBox').style.display!=='none') renderRiskCalc(); },1500);
 $('btnHalf').onclick=()=>{ const P=posOn(state.sym); if(P) closePartial(P.id,0.5); else toast('אין עמדה פתוחה','down'); };
 // test/debug hooks — same pattern as __naDebug/__naFund
-window.__naTrade={closePartial,moveToBreakeven,posOn,posListOn};
+window.__naTrade={closePartial,moveToBreakeven,posOn,posListOn,quality:()=>tradeQuality(),
+  setManual:(sl,tp)=>{tradeSlManual=sl;tradeTpManual=tp;renderRiskCalc();}};
 $('btnBE').onclick=()=>{ const P=posOn(state.sym); if(P) moveToBreakeven(P.id); };
 $('levBtns').querySelectorAll('button').forEach(b=>{
   b.onclick=()=>{ tradeLev=parseInt(b.dataset.lev,10);
@@ -7968,7 +8037,16 @@ function renderLog(){
     const win=t.usd>=0;
     const ago=Math.max(0,Math.round((Date.now()-t.at)/60000));
     const agoTxt=ago<60? `לפני ${ago} ד׳` : `לפני ${Math.round(ago/60)} ש׳`;
-    const reasonTxt=t.reason==='tp'?'🎯 יעד הושג':t.reason==='sl'?'🛑 סטופ':t.reason==='manual'?'✋ סגירה ידנית':'';
+    const reasonTxt=t.reason==='tp'?'🎯 יעד הושג':t.reason==='sl'?'🛑 סטופ':t.reason==='manual'?'✋ סגירה ידנית'
+      :t.reason==='liq'?'💀 חיסול':t.reason==='real'?'📊 עסקה אמיתית':'';
+    // ── the number that explains the row. A trade can hit its target, move
+    // in your favour, and still close red once the round trip is paid for.
+    // Showing only the net figure makes that look like a bug in the app —
+    // it is not, and the row now says so out loud.
+    const priceMove=(t.entry>0&&t.exit>0)? (t.side==='long'? t.exit/t.entry-1 : 1-t.exit/t.entry)*100 : null;
+    const grossU=(t.grossUsd!=null)? t.grossUsd : null;
+    const costsU=(t.costs!=null)? t.costs : null;
+    const eaten = grossU!=null && costsU!=null && grossU>0 && t.usd<0;
     const hasDetail=t.why!==undefined;
     const detail=hasDetail?`<div class="lg-detail" style="display:none">
         <div class="lg-dgrid">
@@ -7982,10 +8060,25 @@ function renderLog(){
           ${t.score!=null?`<span>ציון בכניסה <b class="num">${t.score>0?'+':''}${t.score}</b> · ${t.verdict||''}</span>`:''}
           ${t.src?`<span>מקור נתונים <b>${t.src==='yahoo'?'Yahoo אמת':t.src==='sim'?'סימולציה':'Binance אמת'}</b></span>`:''}
         </div>
+        ${costsU!=null?`<div class="lg-cost">
+          <div class="lg-ch">💵 מאיפה הגיע המספר</div>
+          <div class="lg-dgrid">
+            ${priceMove!=null?`<span>תזוזת מחיר <b class="num" style="color:${priceMove>=0?'var(--up)':'var(--down)'}">${priceMove>=0?'+':''}${priceMove.toFixed(3)}%</b></span>`:''}
+            <span>רווח ברוטו <b class="num" style="color:${grossU>=0?'var(--up)':'var(--down)'}">${grossU>=0?'+':'−'}$${Math.abs(grossU).toFixed(2)}</b></span>
+            ${t.fees?`<span>עמלות (כניסה+יציאה) <b class="num" style="color:var(--down)">−$${t.fees.toFixed(2)}</b></span>`:''}
+            ${t.slip?`<span>ספרד וסליפג׳ <b class="num" style="color:var(--down)">−$${t.slip.toFixed(2)}</b></span>`:''}
+            ${t.funding?`<span>מימון <b class="num" style="color:var(--down)">−$${Math.abs(t.funding).toFixed(2)}</b></span>`:''}
+            <span>סה״כ עלויות <b class="num" style="color:var(--down)">−$${costsU.toFixed(2)}</b></span>
+            <span>נטו לארנק <b class="num" style="color:${t.usd>=0?'var(--up)':'var(--down)'}">${t.usd>=0?'+':'−'}$${Math.abs(t.usd).toFixed(2)}</b></span>
+          </div>
+          ${eaten?`<div class="lg-eaten">💸 העסקה זזה לטובתך ובכל זאת נסגרה באדום: הרווח היה $${grossU.toFixed(2)} והעלויות $${costsU.toFixed(2)}. היעד היה קרוב מדי מכדי לכסות את עלות הסיבוב — במינוף x${t.lev||1} צריך תזוזה של לפחות ${(costsU/((t.margin||1)*(t.lev||1))*100).toFixed(3)}% רק כדי לצאת באפס.</div>`:''}
+        </div>`:''}
         ${t.why&&t.why.length?`<div class="lg-why"><b>למה ניתן האות:</b><br>${t.why.map(w=>'· '+w).join('<br>')}</div>`:''}
       </div>`:'';
     return `<div class="lg-row lg-click" data-lg="${i}"><span><span class="lg-sym">${t.sym}</span> ${t.side==='long'?'▲':'▼'}${t.lev?' x'+t.lev:''}<br><span class="lg-t">${agoTxt}${reasonTxt?' · '+reasonTxt:''}${hasDetail?' · 👆 פרטים':''}</span></span>`
-      +`<span class="num ${win?'up':'down'}">${win?'+':'−'}$${Math.abs(t.usd).toFixed(0)} (${fmtPct(t.pct)})</span></div>`+detail;
+      +`<span class="num ${win?'up':'down'}">${win?'+':'−'}$${Math.abs(t.usd).toFixed(0)} (${fmtPct(t.pct)})`
+      +(eaten?`<br><span class="lg-flag">💸 ברוטו +$${grossU.toFixed(0)} · נאכל בעלויות</span>`:'')
+      +`</span></div>`+detail;
   }).join('');
   list.querySelectorAll('.lg-click').forEach(row=>{
     row.onclick=()=>{
