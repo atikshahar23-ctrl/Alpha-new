@@ -208,6 +208,49 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 #mapLegend{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;margin:9px 2px 4px;font-size:10.5px;color:var(--dim)}
 #mapLegend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-inline-end:5px;vertical-align:middle}
 /* recommendations center */
+#ordPanel,#perfPanel{position:fixed;z-index:34;top:50%;right:16px;transform:translateY(-50%);
+  width:min(340px,92vw);padding:13px 15px;max-height:calc(100dvh - 24px);overflow-y:auto}
+#ordList{display:flex;flex-direction:column;gap:4px;margin-bottom:6px;max-height:190px;overflow-y:auto}
+.ord-row{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:6px 8px;border-radius:7px;
+  background:rgba(0,240,255,.05);font-size:10px;color:var(--dim)}
+.ord-row .ord-k{font-weight:800}
+.ord-row .ord-k.long{color:var(--up)} .ord-row .ord-k.short{color:var(--down)}
+.ord-row .ord-s{font-weight:700;color:var(--txt)}
+.ord-row .num{font-family:'JetBrains Mono',monospace;color:var(--txt)}
+.ord-row .ord-m{width:100%;opacity:.75}
+.ord-row .ord-x{margin-inline-start:auto;background:none;border:1px solid rgba(255,61,110,.4);
+  color:var(--down);border-radius:5px;cursor:pointer;font-size:10px;padding:1px 6px}
+.ord-new{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:7px}
+.ord-new label{display:flex;flex-direction:column;gap:3px;font-size:10px;color:var(--dim)}
+.ord-new input,.ord-new select{background:rgba(2,10,18,.9);color:var(--txt);
+  border:1px solid rgba(0,240,255,.25);border-radius:6px;padding:5px 7px;font-size:12px;
+  font-family:'JetBrains Mono',monospace;width:100%}
+.ord-btns{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.ord-b{display:flex;flex-direction:column;gap:2px;padding:7px 8px;border-radius:8px;cursor:pointer;
+  font-size:11px;font-weight:800;text-align:start;background:rgba(0,0,0,.25)}
+.ord-b span{font-size:9px;font-weight:400;color:var(--dim)}
+.ord-b.up{border:1px solid rgba(0,255,166,.45);color:var(--up)}
+.ord-b.dn{border:1px solid rgba(255,61,110,.45);color:var(--down)}
+#perfBody .an-sum{font-size:12px;color:var(--dim);margin-bottom:8px}
+#perfBody .an-sum b{font-family:'JetBrains Mono',monospace;color:var(--txt)}
+#perfBody .an-sum b.up,#perfBody .an-tip b{color:var(--up)}
+#perfBody .an-sum b.down{color:var(--down)}
+#perfBody .an-tip{padding:6px 9px;border-radius:7px;margin-bottom:5px;font-size:11px;line-height:1.6;
+  background:rgba(0,240,255,.05);color:var(--dim)}
+#perfBody .an-tip.up{background:rgba(0,255,166,.08)}
+#perfBody .an-tip.down{background:rgba(255,61,110,.08)}
+#perfBody .an-tip.down b{color:var(--down)}
+#perfBody .an-h{font-size:11px;font-weight:800;color:var(--cyan);margin:10px 0 5px}
+#perfBody .an-row{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:4px 7px;border-radius:6px;
+  background:rgba(0,0,0,.22);margin-bottom:3px;font-size:10px;color:var(--dim)}
+#perfBody .an-l{min-width:64px;font-weight:700;color:var(--txt)}
+#perfBody .an-bar{flex:1;min-width:40px;height:5px;border-radius:3px;background:rgba(255,255,255,.07);overflow:hidden}
+#perfBody .an-bar i{display:block;height:100%}
+#perfBody .an-bar.up i{background:var(--up)} #perfBody .an-bar.down i{background:var(--down)}
+#perfBody .an-v{font-family:'JetBrains Mono',monospace;font-weight:700}
+#perfBody .an-v.up{color:var(--up)} #perfBody .an-v.down{color:var(--down)}
+#perfBody .an-n{width:100%;opacity:.75}
+@media (max-width:900px){ #ordPanel,#perfPanel{right:8px;left:8px;width:auto;top:auto;bottom:8px;transform:none;max-height:72dvh} }
 #apPanel{position:fixed;z-index:34;top:50%;right:16px;transform:translateY(-50%);
   width:min(330px,92vw);padding:13px 15px;max-height:calc(100dvh - 24px);overflow-y:auto}
 #apPanel .ap-row{display:flex;justify-content:space-between;align-items:center;gap:8px;
@@ -932,6 +975,12 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
     <div class="tgl" id="btnAp" title="טייס אוטומטי — סוחר את האותות המאושרים בלבד, עם ניהול סיכון">
       <span style="font-size:15px">🤖</span><span style="font-size:8px">טייס</span>
     </div>
+    <div class="tgl" id="btnOrd" title="הזמנות ממתינות — לימיט וסטופ שנכנסים לבד כשהמחיר מגיע">
+      <span style="font-size:15px">📌</span><span style="font-size:8px">הזמנות</span>
+    </div>
+    <div class="tgl" id="btnPerf" title="אנליטיקת ביצועים — מה באמת מרוויח לך כסף">
+      <span style="font-size:15px">📊</span><span style="font-size:8px">ביצועים</span>
+    </div>
   </div>
 
   <div id="vignette" aria-hidden="true"></div>
@@ -1118,6 +1167,27 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
   </div>
 </div>
 
+<div id="ordPanel" class="panel clip" style="display:none">
+  <div class="lg-h"><span>📌 הזמנות ממתינות (<span id="ordCount">0</span>)</span><button class="mp-close" id="ordClose" style="margin-inline-start:auto">✕</button></div>
+  <div id="ordList"></div>
+  <div class="rc-h">➕ הזמנה חדשה <span class="rc-sub">· נכנסת אוטומטית כשהמחיר מגיע</span></div>
+  <div class="ord-new">
+    <label>מחיר<input id="ordPrice" type="number" step="any" placeholder="מחיר הפעלה"></label>
+    <label>תפוגה<select id="ordTtl"><option value="0">ללא</option><option value="30">30 דק׳</option><option value="120">שעתיים</option><option value="1440">24 שעות</option></select></label>
+  </div>
+  <div class="ord-btns">
+    <button class="ord-b up" data-k="limit" data-s="long">לימיט קנייה<span>קנה כשהמחיר יורד לרמה</span></button>
+    <button class="ord-b up" data-k="stop" data-s="long">סטופ קנייה<span>קנה כשהמחיר פורץ מעלה</span></button>
+    <button class="ord-b dn" data-k="limit" data-s="short">לימיט מכירה<span>שורט כשהמחיר עולה לרמה</span></button>
+    <button class="ord-b dn" data-k="stop" data-s="short">סטופ מכירה<span>שורט כשהמחיר נשבר מטה</span></button>
+  </div>
+  <div class="disc" style="margin-top:8px">ההזמנה משתמשת במרג׳ין ובמינוף שמוגדרים בכרטיס המסחר ברגע הרישום</div>
+</div>
+<div id="perfPanel" class="panel clip" style="display:none">
+  <div class="lg-h"><span>📊 אנליטיקת ביצועים</span><button class="mp-close" id="perfClose" style="margin-inline-start:auto">✕</button></div>
+  <div id="perfBody"></div>
+  <div class="disc" style="margin-top:10px">מחושב מיומן העסקאות הסגורות שלך בלבד · לא סימולציה ולא ממוצע שוק</div>
+</div>
 <div id="settingsPanel" class="panel clip" style="display:none">
   <div class="wp-title">⚙️ הגדרות NEXUS·ARENA</div>
   <div id="settingsBody"></div>
@@ -2404,13 +2474,19 @@ function fireSignal(side,str,why){
 // ============================================================
 //  PAPER TRADING (demo)
 // ============================================================
-function openPos(side){
-  if(!state.candles.length) return;
+function openPos(side,opts){
+  // opts lets a pending order fire on ITS market rather than whichever one
+  // happens to be on stage — without it a limit order on ETH placed while
+  // watching BTC would open at the BTC price
+  const oSym=(opts&&opts.sym)||state.sym;
+  const oPrice=(opts&&opts.price)||state.lastPrice;
+  if(!opts && !state.candles.length) return;
+  if(!(oPrice>0)) return;
   if(Object.keys(positions).length>=12){ toast('הגעת ל-12 עסקאות פתוחות — סגור אחת קודם','down'); return; }
   if(tradeMargin>wallet.balance){ toast('אין מספיק יתרה בארנק','down'); return; }
   ensureAC();
-  const p=state.lastPrice;
-  const A=ind? ind.A : p*0.01;
+  const p=oPrice;
+  const A=(!opts && ind)? ind.A : p*0.01;
   const margin=tradeMargin, lev=tradeLev, notional=margin*lev;
   // manual levels win when the trader set them, otherwise ATR-based auto
   const autoSl = side==='long'? p-1.5*A : p+1.5*A;
@@ -2419,8 +2495,8 @@ function openPos(side){
   const validTp = tradeTpManual>0 && (side==='long'? tradeTpManual>p : tradeTpManual<p);
   if(tradeSlManual>0 && !validSl) toast('סטופ ידני לא תקין לכיוון העסקה — הופעל סטופ אוטומטי','down');
   if(tradeTpManual>0 && !validTp) toast('יעד ידני לא תקין לכיוון העסקה — הופעל יעד אוטומטי','down');
-  const id=state.sym+'-'+Date.now()+'-'+Math.random().toString(36).slice(2,5);
-  positions[id]={id, sym:state.sym, side, entry:p,
+  const id=oSym+'-'+Date.now()+'-'+Math.random().toString(36).slice(2,5);
+  positions[id]={id, sym:oSym, side, entry:p,
     sl: validSl? tradeSlManual : autoSl,
     tp: validTp? tradeTpManual : autoTp,
     margin, lev, notional,
@@ -2429,18 +2505,169 @@ function openPos(side){
   // snapshot the WHY — the journal shows the full story of every trade
   positions[id].ctx={
     openedAt:Date.now(), tf:state.tf,
-    score:ind?ind.score:null, verdict:ind?ind.verdict:'',
-    reasons:ind?ind.reasons.filter(r=>!/SIM|Yahoo/.test(r)).slice(0,3):[],
+    score:(!opts&&ind)?ind.score:null, verdict:(!opts&&ind)?ind.verdict:(opts?'הזמנה ממתינה הופעלה':''),
+    reasons:(!opts&&ind)?ind.reasons.filter(r=>!/SIM|Yahoo/.test(r)).slice(0,3):(opts?[opts.why||'הזמנה ממתינה']:[]),
     src:(feed&&feed.src)||'live',
   };
   wallet.balance-=margin; saveWallet(); savePositions();
-  const nOpen=posListOn(state.sym).length;
-  toast(`עמדת ${side==='long'?'לונג':'שורט'} נפתחה @ ${fmtP(p)} · מרג׳ין $${margin} · x${lev}`
-    +(nOpen>1?` · עסקה ${nOpen} על ${state.sym}`:''), side==='long'?'up':'down');
+  const nOpen=posListOn(oSym).length;
+  toast(`${opts?oSym+' · ':''}עמדת ${side==='long'?'לונג':'שורט'} נפתחה @ ${fmtP(p)} · מרג׳ין $${margin} · x${lev}`
+    +(nOpen>1?` · עסקה ${nOpen} על ${oSym}`:''), side==='long'?'up':'down');
   beep([[520,0.1],[660,0.12]]);
   flareBoost(1, side==='long'?'buy':'sell');
   spawnRipple(side==='long'?'buy':'sell', p, 0.8);
   renderTicket(); renderPortfolio(); renderPosStrip();
+}
+// ============================================================
+//  PENDING ORDERS — limit and stop entries. A trader who can only ever hit
+//  market is a trader who always pays the spread and always chases. These
+//  orders sit on the book (locally) and fire the moment price trades
+//  through their level, exactly like a real exchange would:
+//
+//    LIMIT BUY  — fires when price falls TO or below the level (buy the dip)
+//    STOP BUY   — fires when price rises TO or above it (buy the breakout)
+//    LIMIT SELL — fires when price rises to or above it (short the spike)
+//    STOP SELL  — fires when price falls to or below it (short the breakdown)
+//
+//  Each order carries its own stop and target, an optional expiry, and it is
+//  checked against the SAME live price the rest of the system uses — never a
+//  stale one from another market.
+// ============================================================
+const ORD_KEY='na:orders';
+let orders=[];
+try{ const raw=JSON.parse(localStorage.getItem(ORD_KEY)||'[]'); if(Array.isArray(raw)) orders=raw; }catch(e){}
+function saveOrders(){ try{ localStorage.setItem(ORD_KEY,JSON.stringify(orders.slice(0,40))); }catch(e){} }
+function addOrder(kind,side,price,ttlMin){
+  if(!(price>0)){ toast('מחיר הזמנה לא תקין','down'); return; }
+  const now=state.lastPrice;
+  if(!(now>0)) return;
+  // reject an order that would fire instantly — that is a market order
+  // wearing a costume, and it is almost always a typo
+  const wouldFireNow = side==='long'
+    ? (kind==='limit'? now<=price : now>=price)
+    : (kind==='limit'? now>=price : now<=price);
+  if(wouldFireNow){
+    toast(kind==='limit'?'מחיר הלימיט כבר עבר — זו למעשה הזמנת שוק':'מחיר הסטופ כבר עבר — זו למעשה הזמנת שוק','down');
+    return;
+  }
+  orders.unshift({id:'o'+Date.now()+Math.random().toString(36).slice(2,5),
+    sym:state.sym, kind, side, price, margin:tradeMargin, lev:tradeLev,
+    at:Date.now(), exp: ttlMin>0? Date.now()+ttlMin*60000 : 0});
+  orders=orders.slice(0,40); saveOrders();
+  toast(`הזמנה ${kind==='limit'?'לימיט':'סטופ'} ${side==='long'?'קנייה':'מכירה'} נרשמה @ ${fmtP(price)}`,'up');
+  beep([[600,0.07],[760,0.09]]);
+  renderOrders();
+}
+function cancelOrder(id){
+  const i=orders.findIndex(o=>o.id===id);
+  if(i<0) return;
+  orders.splice(i,1); saveOrders(); renderOrders();
+  toast('ההזמנה בוטלה');
+}
+function checkOrders(){
+  if(!orders.length) return;
+  const now=Date.now();
+  let dirty=false;
+  for(let i=orders.length-1;i>=0;i--){
+    const o=orders[i];
+    if(o.exp && now>o.exp){ orders.splice(i,1); dirty=true; toast(`⏱ הזמנה על ${o.sym} פגה`,'down'); continue; }
+    const lp=livePriceFor(o.sym);
+    if(lp==null) continue;
+    const hit = o.side==='long'
+      ? (o.kind==='limit'? lp<=o.price : lp>=o.price)
+      : (o.kind==='limit'? lp>=o.price : lp<=o.price);
+    if(!hit) continue;
+    orders.splice(i,1); dirty=true;
+    // the order fires on ITS symbol; open it the same way a manual entry
+    // would be opened, restoring whatever the ticket was set to afterwards
+    const savedMargin=tradeMargin, savedLev=tradeLev, savedSl=tradeSlManual, savedTp=tradeTpManual;
+    tradeMargin=o.margin; tradeLev=o.lev; tradeSlManual=0; tradeTpManual=0;
+    openPos(o.side,{sym:o.sym,price:lp,
+      why:(o.kind==='limit'?'הזמנת לימיט':'הזמנת סטופ')+' '+(o.side==='long'?'קנייה':'מכירה')+' @ '+fmtP(o.price)});
+    tradeMargin=savedMargin; tradeLev=savedLev; tradeSlManual=savedSl; tradeTpManual=savedTp;
+    toast(`⚡ הזמנה ${o.kind==='limit'?'לימיט':'סטופ'} על ${o.sym} הופעלה @ ${fmtP(lp)}`,'up');
+    beep([[720,0.09],[900,0.12]]);
+  }
+  if(dirty){ saveOrders(); renderOrders(); }
+}
+function renderOrders(){
+  const el=$('ordList'); if(!el) return;
+  const cnt=$('ordCount'); if(cnt) cnt.textContent=orders.length;
+  if(!orders.length){ el.innerHTML='<div class="lg-empty">אין הזמנות ממתינות — הגדר לימיט או סטופ למטה</div>'; return; }
+  const now=state.lastPrice||0;
+  el.innerHTML=orders.map(o=>{
+    const lp=livePriceFor(o.sym);
+    const dist=(lp!=null&&lp>0)? ((o.price/lp-1)*100) : null;
+    return `<div class="ord-row" data-id="${o.id}">
+      <span class="ord-k ${o.side}">${o.kind==='limit'?'לימיט':'סטופ'} ${o.side==='long'?'קנייה ▲':'מכירה ▼'}</span>
+      <span class="ord-s">${o.sym}</span>
+      <span class="num">${fmtP(o.price)}</span>
+      <span class="ord-d">${dist!=null? (dist>=0?'+':'')+dist.toFixed(2)+'% מהמחיר' : '—'}</span>
+      <span class="ord-m">$${o.margin} · x${o.lev}${o.exp?' · פג '+fmtT(o.exp):''}</span>
+      <button class="ord-x" data-x="${o.id}">✕</button></div>`;
+  }).join('');
+  el.querySelectorAll('.ord-x').forEach(b=>{ b.onclick=()=>cancelOrder(b.dataset.x); });
+}
+// ============================================================
+//  PERFORMANCE ANALYTICS — the journal already stores every closed trade
+//  with its context. This turns that into the answer to the only question
+//  that matters after a month of trading: what actually makes me money, and
+//  what am I doing out of habit?
+// ============================================================
+function perfBreakdown(){
+  const log=(session.log||[]).filter(l=>isFinite(l.pct));
+  if(!log.length) return null;
+  const bucket=(keyFn,labelFn)=>{
+    const m={};
+    log.forEach(l=>{
+      const k=keyFn(l); if(k==null) return;
+      const b=m[k]||(m[k]={k,label:labelFn?labelFn(l,k):String(k),n:0,win:0,pct:0,usd:0});
+      b.n++; if(l.pct>0) b.win++; b.pct+=l.pct; b.usd+=(+l.usd||0);
+    });
+    return Object.values(m).sort((a,b)=>b.usd-a.usd);
+  };
+  return {
+    n:log.length,
+    bySym: bucket(l=>l.sym),
+    bySide: bucket(l=>l.side, (l,k)=>k==='long'?'לונג ▲':'שורט ▼'),
+    byHour: bucket(l=>new Date(l.at).getHours(), (l,k)=>String(k).padStart(2,'0')+':00'),
+    byReason: bucket(l=>l.reason, (l,k)=>k==='tp'?'יעד הושג':k==='sl'?'סטופ':'סגירה ידנית'),
+    byHold: bucket(l=>{ const d=l.durMin||0; return d<5?0:d<20?1:d<60?2:3; },
+      (l,k)=>['מתחת ל-5 דק׳','5-20 דק׳','20-60 דק׳','מעל שעה'][k]),
+    total: log.reduce((a,l)=>a+(+l.usd||0),0),
+  };
+}
+function renderPerf(){
+  const el=$('perfBody'); if(!el) return;
+  const p=perfBreakdown();
+  if(!p){ el.innerHTML='<div class="lg-empty">עדיין אין עסקאות סגורות לנתח — הפילוח ייבנה מהיומן שלך</div>'; return; }
+  const block=(title,rows,hint)=>{
+    if(!rows.length) return '';
+    const max=Math.max(...rows.map(r=>Math.abs(r.usd)),1);
+    return `<div class="an-h">${title}${hint?`<span class="rc-sub"> · ${hint}</span>`:''}</div>`
+      +rows.slice(0,8).map(r=>{
+        const wr=Math.round(100*r.win/r.n);
+        const good=r.usd>=0;
+        return `<div class="an-row"><span class="an-l">${r.label}</span>
+          <span class="an-bar ${good?'up':'down'}"><i style="width:${Math.abs(r.usd)/max*100}%"></i></span>
+          <span class="an-v ${good?'up':'down'}">${good?'+':'−'}$${Math.abs(r.usd).toFixed(0)}</span>
+          <span class="an-n">${r.n} עסקאות · ${wr}% הצלחה</span></div>`;
+      }).join('');
+  };
+  // the honest headline: what to stop doing
+  const worst=[...p.bySym].sort((a,b)=>a.usd-b.usd)[0];
+  const best=[...p.bySym].sort((a,b)=>b.usd-a.usd)[0];
+  const bestHour=[...p.byHour].sort((a,b)=>b.usd-a.usd)[0];
+  el.innerHTML=
+     `<div class="an-sum">מתוך <b>${p.n}</b> עסקאות סגורות · סה״כ <b class="${p.total>=0?'up':'down'}">${p.total>=0?'+':'−'}$${Math.abs(p.total).toFixed(0)}</b></div>`
+    +(best&&best.usd>0?`<div class="an-tip up">💚 הכי רווחי: <b>${best.label}</b> (${best.n} עסקאות, ${(best.usd>=0?'+':'−')}$${Math.abs(best.usd).toFixed(0)})</div>`:'')
+    +(worst&&worst.usd<0?`<div class="an-tip down">🩸 הכי מפסיד: <b>${worst.label}</b> (${worst.n} עסקאות, −$${Math.abs(worst.usd).toFixed(0)}) — שווה לשאול אם יש לך יתרון שם בכלל</div>`:'')
+    +(bestHour&&bestHour.n>=3?`<div class="an-tip">🕐 השעה הטובה שלך: <b>${bestHour.label}</b></div>`:'')
+    +block('לפי נכס',p.bySym)
+    +block('לפי כיוון',p.bySide)
+    +block('לפי סיבת סגירה',p.byReason,'סטופ מול יעד מספר את האמת על ניהול העסקה')
+    +block('לפי משך החזקה',p.byHold)
+    +block('לפי שעת כניסה',p.byHour,'מתי אתה באמת חד');
 }
 // ============================================================
 //  AUTOPILOT — the engine trading its own signals on the demo wallet, under
@@ -2861,6 +3088,21 @@ function setAp(on){
   if(on) renderAutopilot();
 }
 $('btnAp').onclick=()=>setAp(!apPanelOpen);
+let ordOpen=false, perfOpen=false;
+function setOrd(on){ ordOpen=on; $('ordPanel').style.display=on?'block':'none'; $('btnOrd').classList.toggle('on',on); if(on) renderOrders(); }
+function setPerf(on){ perfOpen=on; $('perfPanel').style.display=on?'block':'none'; $('btnPerf').classList.toggle('on',on); if(on) renderPerf(); }
+$('btnOrd').onclick=()=>setOrd(!ordOpen);
+$('ordClose').onclick=()=>setOrd(false);
+$('btnPerf').onclick=()=>setPerf(!perfOpen);
+$('perfClose').onclick=()=>setPerf(false);
+document.querySelectorAll('.ord-b').forEach(b=>{
+  b.onclick=()=>{
+    const px=parseFloat($('ordPrice').value);
+    const ttl=parseInt($('ordTtl').value,10)||0;
+    addOrder(b.dataset.k,b.dataset.s,px,ttl);
+  };
+});
+window.__naOrders={list:()=>orders,add:addOrder,check:()=>checkOrders(),perf:()=>perfBreakdown()};
 $('apClose').onclick=()=>setAp(false);
 $('apToggle').onclick=()=>{
   if(autopilot.locked){ toast('הטייס נעול עד מחר — תקרת ההפסד היומית נחצתה','down'); return; }
@@ -7137,6 +7379,7 @@ function loop(){
     gfxGuard(dt);
     if(indDirty && now-lastInd>350){ computeSignals(); indDirty=false; lastInd=now; }
     checkAllPositions();
+    try{ checkOrders(); }catch(e){}
     try{ autopilotTick(); }catch(e){}
     if(now-(renderPosStrip._at||0)>900){ renderPosStrip(); renderPosStrip._at=now; }
     checkPriceAlerts();

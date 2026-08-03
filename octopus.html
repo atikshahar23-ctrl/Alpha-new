@@ -118,6 +118,7 @@ body.compact .ana-intel{margin:10px 0;padding:10px 12px;border:1px solid rgba(0,
 .ana-intel .ai-grid b{font-size:13px;color:var(--txt);font-family:'JetBrains Mono',monospace}
 .ana-intel .ai-outlets{display:flex;flex-wrap:wrap;gap:4px;margin-top:7px}
 .ana-intel .ai-warn{margin-top:8px;padding:6px 9px;border-radius:7px;background:rgba(255,209,102,.1);color:#ffd166;font-size:11px;line-height:1.6}
+.ana-intel .ai-run{margin-top:8px;padding:6px 9px;border-radius:7px;background:rgba(0,240,255,.08);color:#9be8ff;font-size:11px;line-height:1.6}
 .ana-intel .ai-hot{margin-top:8px;padding:6px 9px;border-radius:7px;background:rgba(255,61,110,.1);color:#ff9ec4;font-size:11px;line-height:1.6}
 .cluster .c-sum{margin:6px 0 0;font-size:11.5px;line-height:1.65;color:var(--dim)}
 .cluster .c-cred{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0 2px;font-size:10px;color:var(--dim)}
@@ -126,6 +127,25 @@ body.compact .ana-intel{margin:10px 0;padding:10px 12px;border:1px solid rgba(0,
 .cluster .cred-n{font-weight:800;color:var(--txt);font-family:'JetBrains Mono',monospace}
 .cluster .cred-hot{color:#ffd166;font-weight:700}
 .cluster .cred-div{color:#ff9ec4;font-weight:700}
+#sinceBar{margin:0 0 12px;padding:10px 14px;border-radius:12px;font-size:12px;line-height:1.7;
+  border:1px solid rgba(0,255,166,.4);background:rgba(0,255,166,.06);color:#bdfff0;
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+#sinceBar b{color:#00ffa6;font-family:'JetBrains Mono',monospace}
+#sinceBar .sb-btn{margin-inline-start:auto;cursor:pointer;padding:4px 11px;border-radius:20px;
+  border:1px solid rgba(0,255,166,.5);color:#00ffa6;font-weight:700;font-size:11px;background:transparent}
+#sinceBar .sb-btn.on{background:rgba(0,255,166,.16)}
+#scorecard{margin-bottom:12px}
+#scList{display:flex;flex-direction:column;gap:4px;max-height:280px;overflow-y:auto}
+.sc-row{display:flex;align-items:center;gap:9px;padding:6px 9px;border-radius:8px;
+  background:rgba(0,240,255,.04);font-size:11px}
+.sc-row .sc-rank{font-family:'JetBrains Mono',monospace;color:var(--dim);min-width:20px}
+.sc-row .sc-name{font-weight:700;color:var(--txt);min-width:96px}
+.sc-row .sc-bar{flex:1;height:5px;border-radius:3px;background:rgba(255,255,255,.07);overflow:hidden;min-width:50px}
+.sc-row .sc-bar i{display:block;height:100%;background:linear-gradient(90deg,#00f0ff,#00ffa6)}
+.sc-row .sc-n{font-family:'JetBrains Mono',monospace;color:var(--dim);white-space:nowrap}
+.sc-row .sc-solo{color:#ffd166}
+.cluster .cred-run{color:#9be8ff;font-weight:700}
+.cluster .cred-since{color:#00ffa6;font-weight:700}
 .cluster .c-first{margin-top:6px;font-size:10px;color:var(--dim);opacity:.85}
 .cluster .c-hint{display:none}
 body.compact .cluster .c-srcs{margin-top:2px}
@@ -339,6 +359,11 @@ body::after{content:'';position:fixed;inset:-20%;z-index:-1;pointer-events:none;
     <div id="hlList"></div>
   </section>
 
+  <div id="sinceBar" style="display:none"></div>
+  <section id="scorecard" class="panel clip" style="display:none">
+    <div class="sh">🏅 מי מביא ראשון · דירוג מקורות <span class="upd" id="scNote">נמדד לאורך זמן במכשיר שלך</span></div>
+    <div id="scList"></div>
+  </section>
   <div id="simNotice" style="display:none">⚠️ אין כרגע חיבור למקורות החדשות — מוצגות כתבות הדגמה. בדקו חיבור לרשת ולחצו 🔄 רענן.</div>
   <main id="clusters"><div class="empty">🐙 שולח זרועות…</div></main>
 </div>
@@ -1158,6 +1183,85 @@ function clusterSummary(grp){
   });
   return best;
 }
+// ============================================================
+//  STORY MEMORY — an aggregator that forgets everything on refresh cannot
+//  tell you that a story has been running for three days, that it is the
+//  fourth time this week the same subject resurfaced, or which outlet keeps
+//  breaking things first. All of that lives here, in localStorage, keyed by
+//  a signature of the story rather than by its headline (headlines change,
+//  stories do not).
+// ============================================================
+const STORY_KEY='octo:stories', SRC_KEY='octo:srcscore', VISIT_KEY='octo:lastvisit';
+let storyMem={}, srcScore={};
+try{ storyMem=JSON.parse(localStorage.getItem(STORY_KEY)||'{}')||{}; }catch(e){ storyMem={}; }
+try{ srcScore=JSON.parse(localStorage.getItem(SRC_KEY)||'{}')||{}; }catch(e){ srcScore={}; }
+let lastVisitAt=0;
+try{ lastVisitAt=+localStorage.getItem(VISIT_KEY)||0; }catch(e){}
+function saveMemory(){
+  try{
+    // keep a fortnight of stories — enough for "this keeps coming back",
+    // small enough to never bloat storage
+    const cut=Date.now()-14*864e5;
+    for(const k of Object.keys(storyMem)) if(storyMem[k].last<cut) delete storyMem[k];
+    localStorage.setItem(STORY_KEY,JSON.stringify(storyMem));
+    localStorage.setItem(SRC_KEY,JSON.stringify(srcScore));
+  }catch(e){}
+}
+// signature = the five most distinctive words of the story, alphabetised.
+// Two headlines about the same event share it; a different event does not.
+function storySig(grp){
+  const freq={};
+  grp.forEach(a=>{ for(const w of tokens(a.title)) if(w.length>3) freq[w]=(freq[w]||0)+1; });
+  return Object.keys(freq)
+    .sort((a,b)=>(freq[b]-freq[a])||(b.length-a.length))
+    .slice(0,5).sort().join('|');
+}
+function srcRec(name){
+  return srcScore[name]||(srcScore[name]={first:0,solo:0,stories:0,reports:0});
+}
+function trackStory(c){
+  const sig=storySig(c.angles);
+  if(!sig) return null;
+  const now=Date.now();
+  const rec=storyMem[sig]||(storyMem[sig]={sig,first:now,last:now,reports:0,outlets:[],title:dispTitle(c.head),
+    credited:'',days:[]});
+  rec.last=now;
+  rec.title=dispTitle(c.head);
+  rec.outlets=[...new Set(rec.outlets.concat(c.m.outlets))].slice(0,40);
+  rec.reports=Math.max(rec.reports,c.angles.length);
+  const day=new Date().toISOString().slice(0,10);
+  if(!rec.days.includes(day)) rec.days.push(day);
+  // ── source credit. Awarded once per story and never re-counted on
+  // re-render — but sources arrive progressively, so an outlet credited as
+  // "first" can be displaced minutes later by an article with an earlier
+  // timestamp. When that happens the credit MOVES rather than being handed
+  // out twice, otherwise the scorecard slowly drifts into fiction.
+  const firstSrc=c.m.first.src;
+  if(rec.credited!==firstSrc){
+    if(rec.credited){
+      const old=srcRec(rec.credited);
+      old.first=Math.max(0,old.first-1);
+      old.stories=Math.max(0,old.stories-1);
+      if(rec.wasSolo) old.solo=Math.max(0,old.solo-1);
+    }
+    rec.credited=firstSrc;
+    rec.wasSolo=c.m.indep===1;
+    const r=srcRec(firstSrc); r.first++; r.stories++;
+    if(rec.wasSolo) r.solo++;
+  }
+  // per-article report credit, counted exactly once ever — articles keep
+  // arriving for a story long after it is first seen
+  rec.counted=rec.counted||[];
+  c.angles.forEach(a=>{
+    const id=(a.link&&a.link!=='#')? a.link : a.src+'|'+a.title.slice(0,40);
+    if(rec.counted.indexOf(id)<0){ rec.counted.push(id); srcRec(a.src).reports++; }
+  });
+  rec.counted=rec.counted.slice(-60);
+  c.hist={ ageH:(now-rec.first)/3600e3, days:rec.days.length, totalReports:rec.reports,
+    totalOutlets:rec.outlets.length, returning: rec.days.length>1,
+    isNew: rec.first>lastVisitAt && lastVisitAt>0 };
+  return rec;
+}
 function buildClusters(){
   const list=items.map(it=>({it,tok:tokens(it.title)}));
   const used=new Array(list.length).fill(false);
@@ -1184,6 +1288,8 @@ function buildClusters(){
     const recency=Math.exp(-ageH/6);                 // half-life about 4 hours
     c.rank=c.m.cred*0.45 + c.m.velocity*100*0.25 + recency*100*0.22 + Math.min(10,c.m.groups*4);
   });
+  clusters.forEach(c=>{ try{ trackStory(c); }catch(e){} });
+  saveMemory();
   clusters.sort((a,b)=>b.rank-a.rank);
   checkBreaking();
 }
@@ -1299,6 +1405,44 @@ function renderHotEntities(){
     };
   });
 }
+// ── "what happened while you were away" — the one thing a returning reader
+// actually wants, computed from the story memory rather than from whatever
+// happens to be in the pool right now ──
+let sinceFilterOn=false;
+function renderSince(){
+  const bar=$('sinceBar'); if(!bar) return;
+  if(!lastVisitAt || !clusters.length){ bar.style.display='none'; return; }
+  const fresh=clusters.filter(c=>c.hist&&c.hist.isNew);
+  const breaking=fresh.filter(c=>c.m.indep>=3);
+  if(!fresh.length){ bar.style.display='none'; return; }
+  const gapH=(Date.now()-lastVisitAt)/3600e3;
+  const gapTxt=gapH<1? Math.max(1,Math.round(gapH*60))+' דקות' : gapH<24? Math.round(gapH)+' שעות' : Math.round(gapH/24)+' ימים';
+  bar.style.display='flex';
+  bar.innerHTML='<span>👋 מאז הביקור האחרון שלך לפני '+gapTxt+': <b>'+fresh.length+'</b> סיפורים חדשים'
+    +(breaking.length?' · מתוכם <b>'+breaking.length+'</b> עם הצלבה של 3 מקורות עצמאיים ומעלה':'')
+    +'</span><button class="sb-btn'+(sinceFilterOn?' on':'')+'" id="sinceBtn">'+(sinceFilterOn?'✕ הצג הכל':'הצג רק אותם')+'</button>';
+  $('sinceBtn').onclick=()=>{ sinceFilterOn=!sinceFilterOn; renderSince(); renderClusters(); };
+}
+// ── source scorecard. Which outlet actually breaks stories first, and which
+// one is constantly alone on a story nobody else confirms. Both numbers are
+// earned over time on this device — no editorial opinion involved. ──
+function renderScorecard(){
+  const el=$('scList'); if(!el) return;
+  const rows=Object.entries(srcScore)
+    .map(([name,r])=>({name,...r}))
+    .filter(r=>r.stories>0)
+    .sort((a,b)=>(b.first-a.first)||(b.reports-a.reports))
+    .slice(0,14);
+  if(!rows.length){ $('scorecard').style.display='none'; return; }
+  $('scorecard').style.display='block';
+  const max=Math.max(...rows.map(r=>r.first),1);
+  el.innerHTML=rows.map((r,i)=>
+    '<div class="sc-row"><span class="sc-rank">'+(i+1)+'</span>'
+    +'<span class="sc-name">'+escH(r.name)+'</span>'
+    +'<span class="sc-bar"><i style="width:'+(r.first/max*100).toFixed(0)+'%"></i></span>'
+    +'<span class="sc-n">ראשון ב-<b>'+r.first+'</b> סיפורים · '+r.reports+' דיווחים'
+    +(r.solo? ' · <span class="sc-solo">'+r.solo+' בלעדיים ללא הצלבה</span>':'')+'</span></div>').join('');
+}
 function renderSituation(){
   $('stStories').textContent=items.length;
   $('stClusters').textContent=clusters.length;
@@ -1328,6 +1472,7 @@ function renderClusters(){
   let list=clusters.filter(c=>!topicFilter||c.topic===topicFilter);
   if(timeFilterH) list=list.filter(c=>Date.now()-c.at<timeFilterH*3600e3);
   if(bookmarkFilterOn) list=list.filter(c=>bookmarks.has(clusterKey(c)));
+  if(sinceFilterOn) list=list.filter(c=>c.hist&&c.hist.isNew);
   if(searchQuery) list=list.filter(c=>
     c.head.title.toLowerCase().includes(searchQuery) ||
     c.angles.some(a=>a.src.toLowerCase().includes(searchQuery)));
@@ -1360,6 +1505,8 @@ function renderClusters(){
         +'<span class="cred-n">אמינות '+c.m.cred+'</span>'
         +'<span class="cred-x">'+c.m.indep+' מקורות עצמאיים'+(c.m.groups>1?' · '+c.m.groups+' תחומים':'')+'</span>'
         +(c.m.hot?'<span class="cred-hot">⚡ מתפוצץ עכשיו · '+c.m.recent30+' דיווחים בחצי שעה</span>':'')
+        +(c.hist&&c.hist.returning?'<span class="cred-run">📅 רץ '+c.hist.days+' ימים · '+c.hist.totalOutlets+' מוציאים לאור סה״כ</span>':'')
+        +(c.hist&&c.hist.isNew?'<span class="cred-since">🆕 מאז הביקור האחרון</span>':'')
         +(c.m.divergence>0.15?'<span class="cred-div">⚖️ דיווחים סותרים · '+c.m.pos+' חיובי מול '+c.m.neg+' שלילי</span>':'')
       +'</div>'
       +'<div class="c-srcs">'+[...new Set(c.angles.map(a=>a.src))].map(s=>'<span class="src">'+escH(s)+'</span>').join('')+'</div>'
@@ -1444,6 +1591,7 @@ async function openAnalysis(c){
       +(m.indep===1
         ? '<div class="ai-warn">⚠️ מקור יחיד. אין שום הצלבה עצמאית לסיפור הזה — הציון נחסם בכוונה.</div>'
         : '')
+      +(c.hist&&c.hist.returning? '<div class="ai-run">📅 הסיפור הזה חי אצלנו '+c.hist.days+' ימים ('+Math.round(c.hist.ageH)+' שעות מאז הדיווח הראשון שראינו), עם '+c.hist.totalReports+' דיווחים מ-'+c.hist.totalOutlets+' מוציאים לאור. לא ידיעה חולפת.</div>':'')
       +(m.hot? '<div class="ai-hot">⚡ הסיפור מתפוצץ עכשיו — '+m.recent30+' דיווחים חדשים בחצי השעה האחרונה, '+Math.round(m.velocity*100)+'% מכלל הכיסוי.</div>':'');
     el.parentNode.insertBefore(box, el);
     const prev=el.parentNode.querySelector('.ana-intel:not(:last-of-type)');
@@ -1510,7 +1658,7 @@ function mergeAndRender(){
     .sort((a,b)=>b.at-a.at).slice(0,octoSettings.maxStories||160);
   lastPull=Date.now();
   buildClusters();
-  renderArms(); renderSituation(); renderClusters(); renderHotEntities(); renderHeadlines();
+  renderArms(); renderSituation(); renderSince(); renderScorecard(); renderClusters(); renderHotEntities(); renderHeadlines();
   translateFeedItems();
 }
 function saveNewsPool(){
@@ -1702,6 +1850,12 @@ try{
   if(Array.isArray(savedPool)&&savedPool.length){ items=savedPool; mergeAndRender(); }
 }catch{}
 pullAll();
+// the visit stamp is written once, a moment after boot: the "since your last
+// visit" set must stay stable for this whole session, not empty itself the
+// instant the page renders
+setTimeout(()=>{ try{ localStorage.setItem(VISIT_KEY,String(Date.now())); }catch(e){} },4000);
+window.__octoMem={stories:()=>storyMem,sources:()=>srcScore,lastVisit:()=>lastVisitAt,
+  setVisit:(t)=>{ lastVisitAt=t; }};
 </script>
 </body>
 </html>
