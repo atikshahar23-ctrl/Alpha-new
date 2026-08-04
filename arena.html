@@ -1570,6 +1570,10 @@ const state = {
   lastPrice:0, prevPrice:0
 };
 let feed=null, ind=null, lastSignal=null;
+// When the last REAL tick arrived, and when we last wrote it to lastRealPx.
+// Declared up here with the rest of the feed state so the WS handler and the
+// staleness watchdog can both see them without a TDZ hazard.
+let lastTickAt=0, lastNoteAt=0;
 const sig={relClosed:0, prevScore:null, lastFire:0};
 // ---------- wallet + portfolio (demo) — one position per symbol, tracked
 // concurrently using the same live pod prices that already drive the
@@ -1777,6 +1781,7 @@ function startFeed(){
   // $3 marked against BTC at $118,000 = the impossible -3,714,888% seen in
   // the journal) and firing instant phantom stops. priceSym gates it.
   state.candles=[]; ind=null; lastSignal=null; state.priceSym=null;
+  lastTickAt=0; lastNoteAt=0;   // tick age belongs to the symbol we just left
   state.buyAcc=1; state.sellAcc=1;
   sig.relClosed=0; sig.prevScore=null; sig.lastFire=0;
   tailSamples.length=0;
@@ -1800,10 +1805,36 @@ async function tryLive(f){
   const raw=await r.json();
   if(f.stopped) return;
   onInit(raw.map(k=>({t:k[0],o:+k[1],h:+k[2],l:+k[3],c:+k[4],v:+k[5]})));
-  f.mode='live'; setBadge('live');
+  f.mode='live'; f.src='binance'; setBadge('live');
+  lastTickAt=Date.now();
   openWS(f);
   fetchStats(f);
   f.timers.push(setInterval(()=>fetchStats(f),60000));
+  // Staleness watchdog. A socket that connects and then quietly stops
+  // delivering (flaky mobile data, a proxy idling it out) left the badge
+  // reading LIVE over a frozen price with nothing to say otherwise — the
+  // worst possible failure, because a stale price looks exactly like a calm
+  // market. Poll the REST last-price when the stream goes quiet, so the
+  // number stays true even while the socket is being re-established.
+  f.timers.push(setInterval(async()=>{
+    if(f.stopped||state.market!=='crypto') return;
+    const quiet=Date.now()-lastTickAt;
+    if(quiet<12000) return;
+    if(f.mode==='live'){ f.mode='stale'; setBadge('connecting'); }
+    try{
+      const rr=await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${state.sym}USDT`);
+      if(!rr.ok||f.stopped) return;
+      const dd=await rr.json();
+      const px=parseFloat(dd&&dd.price);
+      if(!isFinite(px)||px<=0||!state.candles.length) return;
+      const cur2=state.candles[state.candles.length-1];
+      cur2.c=px; cur2.h=Math.max(cur2.h,px); cur2.l=Math.min(cur2.l,px);
+      onTick(cur2); noteRealPx(state.sym,px);
+      lastTickAt=Date.now(); f.mode='live'; setBadge('live');
+    }catch(e){}
+    // the socket itself is clearly not coming back on its own
+    if(quiet>40000){ try{ f.ws&&f.ws.close(); }catch(e){} }
+  },6000));
 }
 function openWS(f){
   const s=(state.sym+'usdt').toLowerCase();
@@ -1817,10 +1848,40 @@ function openWS(f){
     if(st.includes('kline')){
       const k=d.k, cs=state.candles, last=cs[cs.length-1];
       const cd={t:k.t,o:+k.o,h:+k.h,l:+k.l,c:+k.c,v:+k.v};
+      // The kline carries authoritative open/high/low/volume, but its close is
+      // a snapshot from when Binance built the push — which can be older than
+      // the last aggTrade we already applied. Don't walk the price backwards.
+      if(Date.now()-lastTickAt<1500 && last && last.t===cd.t && isFinite(last.c)){
+        cd.c=last.c;
+        cd.h=Math.max(cd.h,last.c); cd.l=Math.min(cd.l,last.c);
+      }
       if(last && last.t===cd.t) cs[cs.length-1]=cd;
       else { cs.push(cd); if(cs.length>N) cs.shift(); updateCandleAnalysis(); }
       onTick(cd);
     } else if(st.includes('aggTrade')){
+      // The trade price IS the live price. This branch used to read only the
+      // SIZE and the maker flag and throw d.p away, so the price on screen was
+      // driven purely by the kline stream — and Binance only pushes a kline
+      // update about once a second. Every reading was therefore up to a full
+      // second behind the exchange, which is exactly the gap you notice when
+      // you put the two windows side by side. aggTrade fires on every trade,
+      // so pricing off it puts us on the exchange's own clock.
+      const tp=+d.p;
+      if(isFinite(tp)&&tp>0){
+        const cs=state.candles, last=cs[cs.length-1];
+        if(last){
+          last.c=tp;
+          if(tp>last.h) last.h=tp;
+          if(tp<last.l) last.l=tp;
+          onTick(last);
+        }
+        lastTickAt=Date.now();
+        // Record it as a REAL price too — until now lastRealPx for crypto was
+        // fed only by the 45s CoinGecko poll, so the sim's anchor ignored the
+        // very Binance feed it was sitting next to. Throttled: BTC prints
+        // dozens of trades a second and this schedules a localStorage write.
+        if(lastTickAt-lastNoteAt>2000){ lastNoteAt=lastTickAt; noteRealPx(state.sym,tp); }
+      }
       const q=+d.q; if(q>state.bigQ) state.bigQ=q;
       const side=d.m?'sell':'buy';
       if(side==='buy') state.buyAcc+=q; else state.sellAcc+=q;
@@ -1887,7 +1948,21 @@ async function pollCoinGecko(){
     }
   }catch(e){}
 }
-setInterval(pollCoinGecko,45000); setTimeout(pollCoinGecko,4000);
+// Poll cadence follows how much we're leaning on it. When Binance is live,
+// CoinGecko is just a cross-check and 45s is plenty. When we're in simulation
+// it is the ONLY real price in the building — the thing the whole display is
+// anchored to — so check it four times as often. Hidden tabs skip entirely
+// rather than burn the free tier's rate limit on a screen nobody is watching.
+let cgLast=0;
+setInterval(()=>{
+  if(document.hidden) return;
+  const leaning = feed && feed.src==='sim' && state.market==='crypto';
+  const every = leaning? 12000 : 45000;
+  if(Date.now()-cgLast < every-500) return;
+  cgLast=Date.now();
+  pollCoinGecko();
+},5000);
+setTimeout(()=>{ cgLast=Date.now(); pollCoinGecko(); },4000);
 function fetchT(url,ms){
   const ctl=new AbortController(); const t=setTimeout(()=>ctl.abort(),ms||9000);
   return fetch(url,{signal:ctl.signal}).finally(()=>clearTimeout(t));
@@ -2026,13 +2101,31 @@ function startSim(f){
     if(shut){ onTick(cur); return; } // frozen — no walk, no fake prints
     // real-anchor convergence: if a genuine market price exists and the sim
     // wandered >2% away, glide back toward it (never jump — no phantom SL/TP)
+    // Real-anchor convergence. The old rule only corrected once the sim had
+    // wandered MORE than 2% from the real price — on BTC near $144k that is a
+    // $2,900 licence to be wrong, and because the pull switched OFF the moment
+    // it re-entered the band, the sim's resting state was "as far off as the
+    // band allows". That deadband was the gap.
+    //
+    // When a real anchor exists (CoinGecko is CORS-open even where Binance is
+    // blocked), the LEVEL should come from the anchor and the random walk
+    // should only supply texture between updates — otherwise the walk simply
+    // out-runs any pull gentle enough to look natural. So: damp the walk hard
+    // and pull hard. Without an anchor there is nothing to track and the sim
+    // free-runs as before.
     const anch=lastRealPx[sym];
-    if(anch&&Math.abs(price/anch-1)>0.02) price+=(anch-price)*0.04;
+    const anchored=anch>0 && !isStock;
     mu=mu*0.986+(Math.random()-0.5)*sv*0.09;
     if(Math.random()<0.006) mu+=(Math.random()<0.5?-1:1)*sv*1.6;
     let rr=mu*0.3+(Math.random()-0.5)*sv*0.22;
     if(Math.random()<0.004) rr+=(Math.random()<0.5?-1:1)*rnd(0.004,0.012);
+    if(anchored) rr*=0.35;
     price*=1+rr;
+    if(anch>0){
+      // glide, never jump — a jump would trip stops that the real market
+      // never came near
+      price += (anch-price)*(anchored?0.10:(Math.abs(price/anch-1)>0.02?0.05:0.015));
+    }
     cur.c=price; cur.h=Math.max(cur.h,price); cur.l=Math.min(cur.l,price);
     cur.v+=Math.pow(Math.random(),2)*cfg.lot*1.6;
     onTick(cur);
@@ -3845,6 +3938,12 @@ function renderRiskCalc(){
 setInterval(()=>{ if($('sugBox')&&$('sugBox').style.display!=='none') renderRiskCalc(); },1500);
 $('btnHalf').onclick=()=>{ const P=posOn(state.sym); if(P) closePartial(P.id,0.5); else toast('אין עמדה פתוחה','down'); };
 // test/debug hooks — same pattern as __naDebug/__naFund
+// test hook — lets a verifier read what the app believes the price is, where
+// it came from and how old it is, which is the whole subject of the feed
+// accuracy work (there was no way to assert on any of it from outside)
+window.__naFeed=()=>({price:state.lastPrice, sym:state.sym, priceSym:state.priceSym,
+  src:feed&&feed.src, mode:feed&&feed.mode, tickAge:lastTickAt?Date.now()-lastTickAt:null,
+  anchor:lastRealPx[state.sym]||null});
 window.__naTrade={closePartial,moveToBreakeven,posOn,posListOn,quality:()=>tradeQuality(),
   setManual:(sl,tp)=>{tradeSlManual=sl;tradeTpManual=tp;renderRiskCalc();}};
 $('btnBE').onclick=()=>{ const P=posOn(state.sym); if(P) moveToBreakeven(P.id); };
@@ -9192,9 +9291,19 @@ function updateHud(now){
     $('ckSpread').textContent=(bb2&&ba2)? fmtP(Math.max(0,ba2[0]-bb2[0])) : '—';
     $('ckAtr').textContent=ind? ind.A.toFixed(ind.A<1?4:2) : '—';
     $('ckAdx').textContent=bd0? bd0.adx.toFixed(0) : '—';
-    const srcTxt=(feed&&feed.src==='sim')?'⚠️ סימולציה':(feed&&feed.src==='yahoo')?'✓ Yahoo אמת':'✓ Binance אמת';
+    // Data-source honesty. "Is this the real price?" is the one question this
+    // readout has to answer, so it now also says HOW OLD the number is — a
+    // frozen feed used to look identical to a quiet market.
+    const isSim=!!(feed&&feed.src==='sim');
+    const age=lastTickAt? (Date.now()-lastTickAt)/1000 : 0;
+    let srcTxt, srcCol;
+    if(isSim){ srcTxt='⚠️ סימולציה'; srcCol='#ffd166'; }
+    else if(feed&&feed.src==='yahoo'){ srcTxt='✓ Yahoo אמת'; srcCol='#00ffa6'; }
+    else if(!lastTickAt){ srcTxt='… מתחבר'; srcCol='#ffd166'; }
+    else if(age>10){ srcTxt='⚠️ Binance · תקוע '+Math.round(age)+'ש'; srcCol='#ff6b6b'; }
+    else { srcTxt='✓ Binance אמת'+(age>2?' · '+age.toFixed(0)+'ש':''); srcCol='#00ffa6'; }
     const se=$('ckSrc'); se.textContent=srcTxt;
-    se.style.color=(feed&&feed.src==='sim')?'#ffd166':'#00ffa6';
+    se.style.color=srcCol;
     // risk block
     const ids2=Object.keys(positions);
     const locked=ids2.reduce((a,k)=>a+positions[k].margin,0);
