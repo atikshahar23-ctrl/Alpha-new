@@ -115,7 +115,14 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 #stats .v{font-size:12px;font-weight:600;direction:ltr;text-align:left;font-family:'Orbitron',monospace;color:#bfeeff}
 
 /* ticket */
-#ticket{position:fixed;bottom:calc(16px + env(safe-area-inset-bottom));right:16px;width:248px;padding:12px 15px}
+/* The ticket grows with the position: wallet, sizing, leverage, margin and
+   position mode, then a dozen live readouts once a trade is open. Pinned to
+   the bottom with no height bound it simply grew off the top of the screen
+   and overlapped the chart. Bound it and let it scroll inside itself. */
+#ticket{position:fixed;bottom:calc(16px + env(safe-area-inset-bottom));right:16px;width:248px;padding:12px 15px;
+  max-height:calc(100vh - 96px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
+#ticket::-webkit-scrollbar{width:5px}
+#ticket::-webkit-scrollbar-thumb{background:rgba(0,240,255,.25)}
 #ticket .th{font-size:11px;letter-spacing:2px;color:var(--gold);display:flex;justify-content:space-between;align-items:center;font-weight:600}
 #sessStat{font-size:10px;color:var(--dim)}
 .wallet-row{display:flex;justify-content:space-between;gap:8px;margin:8px 0;padding:7px 9px;
@@ -1010,7 +1017,22 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
         <input type="range" id="szMargin" min="100" max="5000" step="100" value="500"></div>
       <div class="sizeRow"><label><span>מינוף</span></label>
         <div class="levBtns" id="levBtns">
-          <button data-lev="1">x1</button><button data-lev="3">x3</button><button data-lev="5" class="on">x5</button><button data-lev="10">x10</button><button data-lev="20">x20</button><button data-lev="50">x50</button><button data-lev="100">x100</button>
+          <button data-lev="1">x1</button><button data-lev="3">x3</button><button data-lev="5" class="on">x5</button><button data-lev="10">x10</button><button data-lev="20">x20</button><button data-lev="50">x50</button><button data-lev="125">x125</button>
+        </div>
+      </div>
+      <!-- Binance Futures account settings. Cross vs Isolated changes the
+           liquidation price by a lot; one-way vs hedge changes whether a
+           second trade on the same symbol nets off or stands beside. -->
+      <div class="sizeRow"><label><span>מצב מרג׳ין</span></label>
+        <div class="levBtns" id="marginModeBtns">
+          <button data-mm="isolated" class="on" title="רק המרג׳ין של העסקה בסיכון">Isolated</button>
+          <button data-mm="cross" title="כל יתרת הארנק מגבה — חיסול רחוק יותר, אבל הכול בסיכון">Cross</button>
+        </div>
+      </div>
+      <div class="sizeRow"><label><span>מצב פוזיציה</span></label>
+        <div class="levBtns" id="posModeBtns">
+          <button data-pm="oneway" class="on" title="פוזיציה נטו אחת לכל מטבע">One-way</button>
+          <button data-pm="hedge" title="לונג ושורט על אותו מטבע במקביל">Hedge</button>
         </div>
       </div>
       <div id="riskBox">
@@ -1048,6 +1070,14 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
       <div class="trow"><span class="tk">אם הסטופ ייתפס</span><span class="tv num down" id="pRisk">—</span></div>
       <div class="trow"><span class="tk">מחיר חיסול</span><span class="tv num down" id="pLiq">—</span></div>
       <div class="trow"><span class="tk">רווח נוכחי ב-R</span><span class="tv num" id="pR">—</span></div>
+      <!-- futures-only readouts: ROE on the committed margin, the true
+           break-even after costs, how close the position is to being taken,
+           and your place in the auto-deleveraging queue -->
+      <div class="trow"><span class="tk">תשואה על המרג׳ין</span><span class="tv num" id="pRoe">—</span></div>
+      <div class="trow"><span class="tk">נקודת איזון אמיתית</span><span class="tv num" id="pBe">—</span></div>
+      <div class="trow"><span class="tk">יחס מרג׳ין</span><span class="tv num" id="pMr">—</span></div>
+      <div class="trow"><span class="tk">מצב מרג׳ין</span><span class="tv" id="pMode">—</span></div>
+      <div class="trow"><span class="tk">תור ADL</span><span class="tv" id="pAdl">—</span></div>
       <div class="posActs">
         <button id="btnHalf" title="סגור חצי מהעסקה ותן לשאר לרוץ">סגור ½</button>
         <button id="btnBE" title="הזז סטופ לנקודת האיזון">🛡 איזון</button>
@@ -1166,6 +1196,18 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
       <div class="ck-i"><span>תנודתיות ATR</span><b id="ckAtr" class="num">—</b></div>
       <div class="ck-i"><span>עוצמת מגמה</span><b id="ckAdx" class="num">—</b></div>
       <div class="ck-i"><span>מקור נתונים</span><b id="ckSrc">—</b></div>
+      <!-- ── BINANCE FUTURES rail. None of these exist on spot: the mark is
+           what liquidates you, the index is what the mark tracks, funding is
+           what you pay every 8h to hold, open interest is how much leverage
+           is committed, and the long/short split is which way the crowd is
+           leaning. ── -->
+      <div class="ck-i"><span>מחיר Mark</span><b id="ckMark" class="num">—</b></div>
+      <div class="ck-i"><span>מחיר Index</span><b id="ckIndex" class="num">—</b></div>
+      <div class="ck-i"><span>מימון</span><b id="ckFund" class="num">—</b></div>
+      <div class="ck-i"><span>מימון הבא בעוד</span><b id="ckFundCd" class="num">—</b></div>
+      <div class="ck-i"><span>פוזיציות פתוחות</span><b id="ckOi" class="num">—</b></div>
+      <div class="ck-i"><span>לונג / שורט</span><b id="ckLs" class="num">—</b></div>
+      <div class="ck-i"><span>חיסולים (5ד)</span><b id="ckLiqs" class="num">—</b></div>
     </div>
     <div class="ck-rail ck-right">
       <div class="ck-i"><span>ניצול מרג׳ין</span><div class="ck-bar"><i id="ckMarg"></i></div><b id="ckMargV" class="num">—</b></div>
@@ -1739,6 +1781,16 @@ function fmtUsd(v){
   if(v>=1e3) return '$'+(v/1e3).toFixed(1)+'K';
   return '$'+v.toFixed(0);
 }
+// open interest is a COIN count, not dollars — it needs the same compaction
+// without the currency sign fmtUsd bakes in
+function fmtCompact(v){
+  if(!(v>0)) return '0';
+  if(v>=1e9) return (v/1e9).toFixed(2)+'B';
+  if(v>=1e6) return (v/1e6).toFixed(2)+'M';
+  if(v>=1e3) return (v/1e3).toFixed(1)+'K';
+  return v.toFixed(v<10?2:0);
+}
+const fmtUsdShort=fmtUsd;
 function fmtT(ts){ return new Date(ts).toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'}); }
 const yFor = p => (p-state.sMin)/Math.max(1e-9,(state.sMax-state.sMin))*YSPAN + Y0;
 
@@ -1782,6 +1834,7 @@ function startFeed(){
   // the journal) and firing instant phantom stops. priceSym gates it.
   state.candles=[]; ind=null; lastSignal=null; state.priceSym=null;
   lastTickAt=0; lastNoteAt=0;   // tick age belongs to the symbol we just left
+  resetFutures();               // so does mark/funding/OI/the liquidation tape
   state.buyAcc=1; state.sellAcc=1;
   sig.relClosed=0; sig.prevScore=null; sig.lastFire=0;
   tailSamples.length=0;
@@ -1795,17 +1848,40 @@ function stopFeed(){
   if(feed.ws){ try{ feed.ws.onclose=null; feed.ws.close(); }catch(e){} }
   feed=null;
 }
+// ============================================================
+//  BINANCE FUTURES (USDⓈ-M) — the perpetual contract, not spot.
+//  Spot has no mark price, no index, no funding, no open interest and no
+//  liquidation feed; every one of those is a futures-only object and every
+//  one of them changes how a leveraged position is priced and killed. The
+//  chain is fapi → spot → sim, so a network that blocks the futures host
+//  still gets a real (if less complete) price instead of falling straight
+//  to simulation.
+// ============================================================
+const FAPI='https://fapi.binance.com';
+let futures={ mark:null, index:null, funding:null, nextFunding:0, oi:null,
+              lsRatio:null, liqs:[], src:null };
+function resetFutures(){ futures={mark:null,index:null,funding:null,nextFunding:0,oi:null,lsRatio:null,liqs:[],src:null}; }
+
 async function tryLive(f){
   const sym=state.sym+'USDT';
   const ctrl=new AbortController();
   const to=setTimeout(()=>ctrl.abort(),3500);
-  const r=await fetch(`https://api.binance.com/api/v3/klines?symbol=${sym}&interval=${state.tf}&limit=${N}`,{signal:ctrl.signal});
+  // futures klines first — this is a leveraged trading app, the perpetual is
+  // the instrument it is actually modelling
+  let r=null, usedFutures=false;
+  try{
+    r=await fetch(`${FAPI}/fapi/v1/klines?symbol=${sym}&interval=${state.tf}&limit=${N}`,{signal:ctrl.signal});
+    if(r.ok) usedFutures=true; else r=null;
+  }catch(e){ r=null; }
+  if(!r) r=await fetch(`https://api.binance.com/api/v3/klines?symbol=${sym}&interval=${state.tf}&limit=${N}`,{signal:ctrl.signal});
   clearTimeout(to);
   if(!r.ok) throw new Error('http');
   const raw=await r.json();
   if(f.stopped) return;
   onInit(raw.map(k=>({t:k[0],o:+k[1],h:+k[2],l:+k[3],c:+k[4],v:+k[5]})));
+  f.futures=usedFutures; futures.src=usedFutures?'fapi':'spot';
   f.mode='live'; f.src='binance'; setBadge('live');
+  if(usedFutures){ pollFuturesRest(f); f.timers.push(setInterval(()=>pollFuturesRest(f),30000)); }
   lastTickAt=Date.now();
   openWS(f);
   fetchStats(f);
@@ -1836,9 +1912,30 @@ async function tryLive(f){
     if(quiet>40000){ try{ f.ws&&f.ws.close(); }catch(e){} }
   },6000));
 }
+// Open interest and the crowd's long/short split. Neither exists on spot —
+// they are the two numbers that say how CROWDED a move is, which is the whole
+// reason a futures trader looks at anything beyond price.
+async function pollFuturesRest(f){
+  const sym=state.sym+'USDT';
+  try{
+    const r=await fetch(`${FAPI}/fapi/v1/openInterest?symbol=${sym}`);
+    if(r.ok&&!f.stopped){ const d=await r.json(); const v=parseFloat(d&&d.openInterest); if(isFinite(v)) futures.oi=v; }
+  }catch(e){}
+  try{
+    const r2=await fetch(`${FAPI}/futures/data/globalLongShortAccountRatio?symbol=${sym}&period=5m&limit=1`);
+    if(r2.ok&&!f.stopped){ const d2=await r2.json(); const row=d2&&d2[0];
+      if(row) futures.lsRatio={long:parseFloat(row.longAccount),short:parseFloat(row.shortAccount),ratio:parseFloat(row.longShortRatio)}; }
+  }catch(e){}
+}
+
 function openWS(f){
   const s=(state.sym+'usdt').toLowerCase();
-  const url=`wss://stream.binance.com:9443/stream?streams=${s}@kline_${state.tf}/${s}@aggTrade/${s}@depth20`;
+  // fstream carries the futures-only streams: markPrice (mark + index +
+  // the funding rate and when it is next charged) and forceOrder (the live
+  // liquidation tape — other people's positions being closed by force).
+  const url = f.futures
+    ? `wss://fstream.binance.com/stream?streams=${s}@kline_${state.tf}/${s}@aggTrade/${s}@depth20@100ms/${s}@markPrice@1s/${s}@forceOrder`
+    : `wss://stream.binance.com:9443/stream?streams=${s}@kline_${state.tf}/${s}@aggTrade/${s}@depth20`;
   const ws=new WebSocket(url); f.ws=ws;
   let burst=0, burstT=0;
   ws.onmessage=ev=>{
@@ -1889,6 +1986,26 @@ function openWS(f){
       if(now-burstT>140){ burstT=now; burst=0; }
       if(burst<3 && state.showFx){ burst++; spawnBolt(q,side); }
       else flareBoost(clamp(q/state.bigQ,0,1)*0.25, side);
+    } else if(st.includes('markPrice')){
+      // The mark price — NOT the last trade — is what Binance liquidates
+      // against. It is an index of several spot venues plus a damped basis,
+      // specifically so a single venue's wick cannot cascade liquidations.
+      // Trading against last price while being killed against mark is the
+      // single biggest gap between a toy and the real thing.
+      const mp=+d.p, ip=+d.i, fr=+d.r, nt=+d.T;
+      if(isFinite(mp)&&mp>0) futures.mark=mp;
+      if(isFinite(ip)&&ip>0) futures.index=ip;
+      if(isFinite(fr)) futures.funding=fr;
+      if(isFinite(nt)&&nt>0) futures.nextFunding=nt;
+    } else if(st.includes('forceOrder')){
+      // Somebody just got liquidated. Size and side of forced closes is the
+      // cleanest read there is on where leverage was stacked.
+      const o=d.o||{};
+      const qq=+o.q, pp=+o.ap||+o.p;
+      if(isFinite(qq)&&isFinite(pp)&&pp>0){
+        futures.liqs.unshift({side:o.S==='SELL'?'long':'short', usd:qq*pp, px:pp, at:Date.now()});
+        if(futures.liqs.length>60) futures.liqs.length=60;
+      }
     } else if(st.includes('depth')){
       state.book={ bids:(d.bids||[]).map(x=>[+x[0],+x[1]]),
                    asks:(d.asks||[]).map(x=>[+x[0],+x[1]]) };
@@ -1900,10 +2017,19 @@ function openWS(f){
 }
 async function fetchStats(f){
   try{
-    const r=await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${state.sym}USDT`);
+    // 24h stats have to come from the same venue as the price. Reading spot
+    // stats next to a futures chart quietly mixes two instruments.
+    const url=f.futures
+      ? `${FAPI}/fapi/v1/ticker/24hr?symbol=${state.sym}USDT`
+      : `https://api.binance.com/api/v3/ticker/24hr?symbol=${state.sym}USDT`;
+    const r=await fetch(url);
     if(!r.ok) return; const d=await r.json();
     if(f.stopped) return;
-    state.stats={chg:+d.priceChangePercent, hi:+d.highPrice, lo:+d.lowPrice, vol:+d.quoteVolume};
+    const s={chg:+d.priceChangePercent, hi:+d.highPrice, lo:+d.lowPrice, vol:+d.quoteVolume};
+    // a malformed/empty response used to write NaN straight into the HUD,
+    // where it rendered as "NaN%" and "$NaN" with no way to tell why
+    if(![s.chg,s.hi,s.lo,s.vol].every(v=>isFinite(v))) return;
+    state.stats=s;
   }catch(e){}
 }
 
@@ -2835,6 +2961,35 @@ function openPos(side,opts){
   const oPrice=(opts&&opts.price)||state.lastPrice;
   if(!opts && !state.candles.length) return;
   if(!(oPrice>0)) return;
+  // ── ONE-WAY MODE. Binance keeps a single NET position per symbol: buying
+  // again adds to it at a weighted-average entry, and selling against it
+  // reduces or flips it. Opening a parallel second position, as this always
+  // did, is hedge-mode behaviour — correct only when hedge mode is on.
+  if(futSettings.positionMode==='oneway'){
+    const same=posListOn(oSym);
+    if(same.length){
+      const ex=same[0];
+      if(ex.side===side){
+        // add to the position — weighted average entry, summed size
+        const addNotional=tradeMargin*tradeLev;
+        const addFee=feeFor(addNotional,(opts&&opts.maker)?'maker':'taker');
+        if(tradeMargin>wallet.balance){ toast('אין מספיק יתרה בארנק','down'); return; }
+        const qOld=ex.notional/ex.entry, qAdd=addNotional/oPrice;
+        ex.entry=(ex.notional+addNotional)/(qOld+qAdd);
+        ex.notional+=addNotional; ex.margin+=tradeMargin;
+        ex.lev=ex.notional/Math.max(1e-9,ex.margin);
+        ex.feePaid=(ex.feePaid||0)+addFee;
+        wallet.balance-=tradeMargin+addFee; saveWallet(); savePositions();
+        toast(`הוספה לפוזיציה · כניסה ממוצעת ${fmtP(ex.entry)} · חשיפה $${ex.notional.toFixed(0)}`,side==='long'?'up':'down');
+        renderTicket(); renderPortfolio(); renderPosStrip();
+        return;
+      }
+      // opposite side — this is a reduce, not a new trade
+      closePos(ex.id,'manual');
+      toast('One-way: הכיוון ההפוך סגר את הפוזיציה הקיימת','down');
+      return;
+    }
+  }
   if(Object.keys(positions).length>=12){ toast('הגעת ל-12 עסקאות פתוחות — סגור אחת קודם','down'); return; }
   if(tradeMargin>wallet.balance){ toast('אין מספיק יתרה בארנק','down'); return; }
   ensureAC();
@@ -2861,6 +3016,9 @@ function openPos(side,opts){
     sl: validSl? tradeSlManual : autoSl,
     tp: validTp? tradeTpManual : autoTp,
     margin, lev, notional,
+    // the account settings in force AT OPEN — changing them later must not
+    // re-price a trade that is already running
+    marginMode: futSettings.marginMode, positionMode: futSettings.positionMode,
     trail: tradeTrail? Math.abs(p-(validSl?tradeSlManual:autoSl)) : 0, // trail distance
     manual: validSl||validTp};
   // snapshot the WHY — the journal shows the full story of every trade
@@ -2942,12 +3100,20 @@ function feeFor(notional,kind){
 // funding accrues on perpetual-style positions. Longs pay shorts when the
 // rate is positive, which is the usual state of a bull market — a position
 // held overnight is not free.
+// The funding rate is a LIVE number on the futures feed, not a constant. It
+// swings with positioning — deeply negative when shorts are crowded, and a
+// long paying 0.15% every 8h is a completely different trade from one paying
+// the 0.01% baseline this used to assume. Use the real rate when we have it.
+function fundingRateNow(){
+  return (futures.funding!=null && isFinite(futures.funding)) ? futures.funding : costCfg().funding;
+}
 function fundingOwed(P){
   const c=costCfg();
   if(!c.on||!P.openedAt) return 0;
   const hours=(Date.now()-P.openedAt)/3600e3;
   const periods=hours/8;
-  return P.notional*c.funding*periods*(P.side==='long'?1:-1);
+  const rate=(P.sym===state.sym)? fundingRateNow() : c.funding;
+  return P.notional*rate*periods*(P.side==='long'?1:-1);
 }
 // what the trade is worth right now, net of everything already owed
 function netPnlUsd(P){
@@ -2961,16 +3127,100 @@ function posNetPct(P){ return P.notional>0? netPnlUsd(P)/P.notional*100 : 0; }
 // eats the margin (minus the exchange's maintenance buffer) the position is
 // closed by force and the margin is gone. Modelling the estimate but never
 // enforcing it, as before, taught exactly the wrong lesson about leverage.
-const MAINT_MARGIN=0.005;          // 0.5% maintenance, Binance-like for majors
+// ── MARGIN MODE (cross / isolated) and POSITION MODE (one-way / hedge).
+// Isolated risks only the margin posted to that trade; cross backs it with
+// the whole wallet, which buys a much further liquidation price and puts the
+// entire balance behind it. One-way allows a single net position per symbol;
+// hedge allows a long and a short at once. Both are per-account settings on
+// Binance and both change what the numbers below mean, so they live next to
+// the margin maths rather than in the settings panel's grab bag.
+let futSettings={ marginMode:'isolated', positionMode:'oneway', triggerBy:'mark' };
+try{ Object.assign(futSettings, JSON.parse(localStorage.getItem('na:fut')||'{}')||{}); }catch(e){}
+function saveFutSettings(){ try{ localStorage.setItem('na:fut',JSON.stringify(futSettings)); }catch(e){} }
+// A position remembers the mode it was OPENED in — changing the account
+// setting later must not silently re-price a trade that is already running.
+function marginModeFor(P){ return (P&&P.marginMode)||futSettings.marginMode; }
+
+// ── LEVERAGE BRACKETS. Maintenance margin on Binance Futures is not one
+// number — it is a step function of position SIZE, and max leverage falls as
+// the position grows. A flat 0.5% (what this used to assume) is right only in
+// the smallest tier and wrong, in the trader's favour, everywhere above it.
+// maintAmt is the cumulative correction that keeps the steps continuous, so
+// maintenance margin = notional*mmr - maintAmt has no jump at a boundary.
+const LEV_BRACKETS=(()=>{
+  const raw=[ // [notionalCap, maintenanceMarginRate, maxLeverage]
+    [50000,0.004,125],[500000,0.005,100],[8000000,0.01,50],[50000000,0.025,20],
+    [80000000,0.05,10],[100000000,0.1,5],[120000000,0.125,4],[200000000,0.15,3],
+    [300000000,0.25,2],[500000000,0.5,1]];
+  let amt=0, prevCap=0, prevMmr=0;
+  return raw.map(([cap,mmr,lev])=>{
+    amt+=prevCap*(mmr-prevMmr); prevCap=cap; prevMmr=mmr;
+    return {cap,mmr,lev,amt};
+  });
+})();
+function bracketFor(notional){
+  const n=Math.max(0,notional||0);
+  for(const b of LEV_BRACKETS) if(n<=b.cap) return b;
+  return LEV_BRACKETS[LEV_BRACKETS.length-1];
+}
+// the most leverage Binance would let you take at this size
+function maxLevFor(notional){ return bracketFor(notional).lev; }
+function maintMarginUsd(P){
+  const b=bracketFor(P.notional);
+  return Math.max(0, P.notional*b.mmr - b.amt);
+}
+// Binance liquidates against the MARK price, not the last trade — see the
+// markPrice stream handler. markFor() falls back to last price when the
+// futures feed isn't up, so every caller has one price to reason about.
+function markFor(sym){
+  if(sym===state.sym && futures.mark>0) return futures.mark;
+  return livePriceFor(sym);
+}
+// Isolated-margin liquidation, solved from Binance's own condition:
+//   margin + unrealisedPnL = notional(at mark)*mmr - maintAmt
+// The old version compared maintenance margin at ENTRY notional against a
+// fixed fraction of margin, which drifts from the real trigger the further
+// price moves — precisely when it matters.
 function liqPrice(P){
-  const mmUsd=P.notional*MAINT_MARGIN;
-  const room=(P.margin-mmUsd)/P.notional;      // fraction of notional we can lose
-  return P.side==='long'? P.entry*(1-room) : P.entry*(1+room);
+  const b=bracketFor(P.notional);
+  const qty=P.notional/P.entry;
+  if(!(qty>0)) return P.side==='long'?0:Infinity;
+  const wb=marginModeFor(P)==='cross' ? P.margin+Math.max(0,wallet.balance) : P.margin;
+  const num = P.side==='long' ? (wb + b.amt - qty*P.entry) : (wb + b.amt + qty*P.entry);
+  const den = P.side==='long' ? qty*(b.mmr-1) : qty*(b.mmr+1);
+  const p = num/den;
+  return isFinite(p)&&p>0? p : (P.side==='long'?0:Infinity);
+}
+// How close this position is to being taken. Binance shows exactly this and
+// colours it; at 100% you are liquidated.
+function marginRatio(P){
+  const mm=maintMarginUsd(P);
+  const bal=P.margin+netPnlUsd(P);
+  if(!(bal>0)) return 100;
+  return Math.min(100, mm/bal*100);
+}
+// The price that gets you out flat AFTER costs — not the entry. Traders lose
+// money exiting at "break even" because the entry price never was one.
+function breakEvenPrice(P){
+  const qty=P.notional/P.entry; if(!(qty>0)) return P.entry;
+  const costs=(P.feePaid||0)+feeFor(P.notional,'taker')+fundingOwed(P);
+  return P.side==='long'? P.entry+costs/qty : P.entry-costs/qty;
+}
+// Return on the money actually committed. A +1% move at x20 is +20% ROE, and
+// showing only the price percentage hides the whole point of leverage.
+function roePct(P){ return P.margin>0? netPnlUsd(P)/P.margin*100 : 0; }
+// ADL — when a liquidation cannot be filled, Binance closes the most
+// profitable, most leveraged positions on the other side to cover it. The
+// five lights are your place in that queue.
+function adlRank(P){
+  const r=roePct(P)/100, lev=P.lev||1;
+  const score=r>0? r*lev : r/Math.max(1,lev);
+  return Math.max(1,Math.min(5,Math.round(1+Math.max(0,Math.min(1,score/3))*4)));
 }
 function checkLiquidations(){
   for(const id of Object.keys(positions)){
     const P=positions[id];
-    const lp=livePriceFor(P.sym);
+    const lp=markFor(P.sym);           // mark price, as the exchange does
     if(lp==null||!(P.entry>0)) continue;
     const r=lp/P.entry; if(r>6||r<0.17) continue;
     const liq=liqPrice(P);
@@ -3772,8 +4022,19 @@ function checkAllPositions(){
 }
 function renderTicket(){
   const P=posOn(state.sym);
-  $('sugBox').style.display = P? 'none':'block';
+  // The order form used to VANISH the moment a position existed, which made
+  // adding to a position (one-way) and opening the other leg (hedge) both
+  // unreachable — the exchange never hides its order form. Keep it up and
+  // relabel the buttons to say what they will actually do from here.
+  $('sugBox').style.display='block';
   $('posBox').style.display = P? 'block':'none';
+  const bl=$('btnLong'), bs=$('btnShort');
+  if(P && futSettings.positionMode==='oneway'){
+    bl.textContent = P.side==='long'? 'הוסף ▲' : 'הקטן/סגור ▲';
+    bs.textContent = P.side==='short'? 'הוסף ▼' : 'הקטן/סגור ▼';
+  } else if(P){
+    bl.textContent = 'לונג נוסף ▲'; bs.textContent = 'שורט מנוגד ▼';
+  } else { bl.textContent='קנייה ▲'; bs.textContent='מכירה ▼'; }
   if(P){
     const e=$('pSide');
     e.textContent = (P.side==='long'?'לונג ▲':'שורט ▼')+' · x'+P.lev;
@@ -3788,7 +4049,28 @@ function renderTicket(){
     const slDist=Math.abs(P.entry-P.sl)/Math.max(1e-9,P.entry);
     const exitCost=feeFor(P.notional,'taker')+P.notional*slippageFrac(P.notional,P.side==='long'?'short':'long');
     $('pRisk').textContent='−$'+(P.notional*slDist+(P.feePaid||0)+exitCost).toFixed(0);
-    $('pLiq').textContent=fmtP(liqPrice(P));
+    // In cross margin a small position behind a large wallet genuinely has no
+    // reachable liquidation — the maths solves to a negative price. Printing
+    // "0.00" there reads like a broken field rather than the good news it is.
+    const lq=liqPrice(P);
+    $('pLiq').textContent = (isFinite(lq)&&lq>0)? fmtP(lq) : '—  (מחוץ לטווח)';
+    // ── futures readouts ──
+    const roe=roePct(P), roeEl=$('pRoe');
+    roeEl.textContent=(roe>=0?'+':'')+roe.toFixed(2)+'%';
+    roeEl.className='tv num '+(roe>=0?'up':'down');
+    $('pBe').textContent=fmtP(breakEvenPrice(P));
+    const mr=marginRatio(P), mrEl=$('pMr');
+    mrEl.textContent=mr.toFixed(1)+'%';
+    // Binance's own escalation: comfortable, watch it, about to be taken
+    mrEl.style.color = mr>=80? '#ff5252' : mr>=50? '#ffd166' : '#00ffa6';
+    mrEl.title='יחס מרג׳ין 100% = חיסול';
+    $('pMode').textContent=(marginModeFor(P)==='cross'?'Cross · כל הארנק מגבה':'Isolated · רק המרג׳ין הזה')
+      +' · x'+P.lev;
+    const rank=adlRank(P), ae=$('pAdl');
+    ae.textContent='●'.repeat(rank)+'○'.repeat(5-rank);
+    ae.style.color = rank>=4? '#ff8a80' : rank>=3? '#ffd166' : '#4a5b6b';
+    ae.title = rank>=4? 'רווחי וממונף — ראשון בתור לסגירה כפויה אם חיסול לא נסגר'
+                      : 'רחוק מתחילת תור ה-ADL';
     const lpNow=livePriceFor(P.sym);
     if(lpNow!=null&&slDist>0){
       const R=(P.side==='long'? lpNow-P.entry : P.entry-lpNow)/Math.abs(P.entry-P.sl);
@@ -3941,6 +4223,22 @@ $('btnHalf').onclick=()=>{ const P=posOn(state.sym); if(P) closePartial(P.id,0.5
 // test hook — lets a verifier read what the app believes the price is, where
 // it came from and how old it is, which is the whole subject of the feed
 // accuracy work (there was no way to assert on any of it from outside)
+// futures test hook — mark/index/funding/OI/liquidations plus the derived
+// margin maths, none of which can be reached from outside the closure
+window.__naFutures=()=>{
+  const P=posOn(state.sym);
+  return { mark:futures.mark, index:futures.index, funding:futures.funding,
+    nextFunding:futures.nextFunding, oi:futures.oi, ls:futures.lsRatio,
+    liqs:futures.liqs.length, src:futures.src,
+    settings:{...futSettings},
+    brackets:LEV_BRACKETS.map(b=>({cap:b.cap,mmr:b.mmr,lev:b.lev,amt:b.amt})),
+    maxLev:(n)=>maxLevFor(n),
+    pos: P? {liq:liqPrice(P), mr:marginRatio(P), be:breakEvenPrice(P),
+             roe:roePct(P), adl:adlRank(P), mm:maintMarginUsd(P),
+             mode:marginModeFor(P), lev:P.lev, notional:P.notional, margin:P.margin,
+             entry:P.entry} : null };
+};
+window.__naFutSet=(k,v)=>{ futSettings[k]=v; saveFutSettings(); renderTicket(); renderRiskCalc(); };
 window.__naFeed=()=>({price:state.lastPrice, sym:state.sym, priceSym:state.priceSym,
   src:feed&&feed.src, mode:feed&&feed.mode, tickAge:lastTickAt?Date.now()-lastTickAt:null,
   anchor:lastRealPx[state.sym]||null});
@@ -3948,10 +4246,56 @@ window.__naTrade={closePartial,moveToBreakeven,posOn,posListOn,quality:()=>trade
   setManual:(sl,tp)=>{tradeSlManual=sl;tradeTpManual=tp;renderRiskCalc();}};
 $('btnBE').onclick=()=>{ const P=posOn(state.sym); if(P) moveToBreakeven(P.id); };
 $('levBtns').querySelectorAll('button').forEach(b=>{
-  b.onclick=()=>{ tradeLev=parseInt(b.dataset.lev,10);
-    $('levBtns').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));
-    renderRiskCalc(); };
+  b.onclick=()=>{
+    const want=parseInt(b.dataset.lev,10);
+    // Binance will not GIVE you 125x on a large position — max leverage steps
+    // down as notional climbs through the brackets. Refusing here (rather
+    // than opening at a leverage the exchange would have rejected) is the
+    // difference between a simulator and a fantasy.
+    const cap=maxLevFor(tradeMargin*want);
+    if(want>cap){
+      tradeLev=cap;
+      toast(`בגודל הזה ביינאנס מאפשר עד x${cap} — המינוף הוגבל`,'down');
+    } else tradeLev=want;
+    syncLevBtns();
+    renderRiskCalc();
+  };
 });
+$('marginModeBtns').querySelectorAll('button').forEach(b=>{
+  b.onclick=()=>{
+    futSettings.marginMode=b.dataset.mm; saveFutSettings();
+    $('marginModeBtns').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));
+    toast(b.dataset.mm==='cross'
+      ? 'Cross — כל יתרת הארנק מגבה את העסקה. החיסול רחוק יותר, אבל הפסד יכול לאכול את כל הארנק'
+      : 'Isolated — רק המרג׳ין של העסקה בסיכון');
+    renderTicket(); renderRiskCalc();
+  };
+});
+$('posModeBtns').querySelectorAll('button').forEach(b=>{
+  b.onclick=()=>{
+    futSettings.positionMode=b.dataset.pm; saveFutSettings();
+    $('posModeBtns').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));
+    toast(b.dataset.pm==='hedge'? 'Hedge — אפשר לונג ושורט על אותו מטבע במקביל'
+                                : 'One-way — פוזיציה נטו אחת לכל מטבע');
+    renderTicket();
+  };
+});
+function syncFutBtns(){
+  $('marginModeBtns').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.mm===futSettings.marginMode));
+  $('posModeBtns').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.pm===futSettings.positionMode));
+}
+syncFutBtns();
+function syncLevBtns(){
+  $('levBtns').querySelectorAll('button').forEach(x=>{
+    const v=parseInt(x.dataset.lev,10);
+    x.classList.toggle('on', v===tradeLev);
+    // grey out what this size cannot carry, the way the exchange's own
+    // leverage slider does
+    const over=v>maxLevFor(tradeMargin*v);
+    x.style.opacity=over?'.35':'';
+    x.title=over?`לא זמין בגודל הזה (עד x${maxLevFor(tradeMargin*v)})`:'';
+  });
+}
 let portfolioOpen=false;
 function setPortfolio(on){
   portfolioOpen=on;
@@ -9304,6 +9648,44 @@ function updateHud(now){
     else { srcTxt='✓ Binance אמת'+(age>2?' · '+age.toFixed(0)+'ש':''); srcCol='#00ffa6'; }
     const se=$('ckSrc'); se.textContent=srcTxt;
     se.style.color=srcCol;
+
+    // ── futures rail ──
+    const fx=futures;
+    $('ckMark').textContent = fx.mark>0? fmtP(fx.mark) : '—';
+    $('ckIndex').textContent = fx.index>0? fmtP(fx.index) : '—';
+    const fe=$('ckFund');
+    if(fx.funding!=null&&isFinite(fx.funding)){
+      const pct=fx.funding*100;
+      fe.textContent=(pct>=0?'+':'')+pct.toFixed(4)+'%';
+      // positive funding = longs pay shorts. Colour it by who is paying, not
+      // by whether the number is "up".
+      fe.style.color=pct>=0?'#ff8a80':'#00ffa6';
+      fe.title=pct>=0?'לונגים משלמים לשורטים':'שורטים משלמים ללונגים';
+    } else { fe.textContent='—'; fe.style.color=''; }
+    const cd=$('ckFundCd');
+    if(fx.nextFunding>Date.now()){
+      const left=Math.floor((fx.nextFunding-Date.now())/1000);
+      cd.textContent=String(Math.floor(left/3600)).padStart(2,'0')+':'
+        +String(Math.floor(left/60)%60).padStart(2,'0')+':'+String(left%60).padStart(2,'0');
+    } else cd.textContent='—';
+    $('ckOi').textContent = fx.oi>0? fmtCompact(fx.oi)+' '+state.sym : '—';
+    const le=$('ckLs');
+    if(fx.lsRatio){
+      const lp=fx.lsRatio.long*100;
+      le.textContent=lp.toFixed(0)+'% / '+(100-lp).toFixed(0)+'%';
+      le.style.color = lp>65? '#ff8a80' : lp<35? '#00ffa6' : '';
+      le.title = lp>65? 'הקהל עמוס בלונג — דלק לסחיטת לונגים'
+               : lp<35? 'הקהל עמוס בשורט — דלק לסחיטת שורטים' : 'מאוזן';
+    } else { le.textContent='—'; le.style.color=''; }
+    const cut=Date.now()-300000;
+    const recent=fx.liqs.filter(x=>x.at>cut);
+    if(recent.length){
+      const longUsd=recent.filter(x=>x.side==='long').reduce((a,x)=>a+x.usd,0);
+      const shortUsd=recent.filter(x=>x.side==='short').reduce((a,x)=>a+x.usd,0);
+      const el=$('ckLiqs');
+      el.textContent='L '+fmtUsdShort(longUsd)+' · S '+fmtUsdShort(shortUsd);
+      el.style.color = longUsd>shortUsd*1.6? '#ff8a80' : shortUsd>longUsd*1.6? '#00ffa6' : '';
+    } else $('ckLiqs').textContent='—';
     // risk block
     const ids2=Object.keys(positions);
     const locked=ids2.reduce((a,k)=>a+positions[k].margin,0);
