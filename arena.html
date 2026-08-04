@@ -1037,10 +1037,17 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
     <div id="posBox" style="display:none">
       <div class="trow"><span class="tk">עמדה</span><span class="tv" id="pSide">—</span></div>
       <div class="trow"><span class="tk">כניסה</span><span class="tv num" id="pEntry">—</span></div>
+      <!-- how much money is actually in this trade. The card showed prices
+           and a percentage and never once said what it cost. -->
+      <div class="trow"><span class="tk">נכנסתי עם</span><span class="tv num" id="pMargin">—</span></div>
+      <div class="trow"><span class="tk">חשיפה בשוק</span><span class="tv num" id="pNotional">—</span></div>
       <div id="pnlBig" class="num up">+0.00%</div>
       <div id="pnlUsd" class="num">$0</div>
       <div class="trow"><span class="tk">יעד רווח</span><span class="tv num" id="pTp">—</span></div>
       <div class="trow"><span class="tk">סטופ הגנה</span><span class="tv num" id="pSl">—</span></div>
+      <div class="trow"><span class="tk">אם הסטופ ייתפס</span><span class="tv num down" id="pRisk">—</span></div>
+      <div class="trow"><span class="tk">מחיר חיסול</span><span class="tv num down" id="pLiq">—</span></div>
+      <div class="trow"><span class="tk">רווח נוכחי ב-R</span><span class="tv num" id="pR">—</span></div>
       <div class="posActs">
         <button id="btnHalf" title="סגור חצי מהעסקה ותן לשאר לרוץ">סגור ½</button>
         <button id="btnBE" title="הזז סטופ לנקודת האיזון">🛡 איזון</button>
@@ -3681,6 +3688,21 @@ function renderTicket(){
     $('pEntry').textContent=fmtP(P.entry);
     $('pTp').textContent=fmtP(P.tp);
     $('pSl').textContent=fmtP(P.sl);
+    $('pMargin').textContent='$'+P.margin.toFixed(0)+' · x'+P.lev;
+    $('pNotional').textContent='$'+P.notional.toFixed(0);
+    // what the stop actually costs, costs included — the number that should
+    // have been on this card from the first version
+    const slDist=Math.abs(P.entry-P.sl)/Math.max(1e-9,P.entry);
+    const exitCost=feeFor(P.notional,'taker')+P.notional*slippageFrac(P.notional,P.side==='long'?'short':'long');
+    $('pRisk').textContent='−$'+(P.notional*slDist+(P.feePaid||0)+exitCost).toFixed(0);
+    $('pLiq').textContent=fmtP(liqPrice(P));
+    const lpNow=livePriceFor(P.sym);
+    if(lpNow!=null&&slDist>0){
+      const R=(P.side==='long'? lpNow-P.entry : P.entry-lpNow)/Math.abs(P.entry-P.sl);
+      const rEl=$('pR');
+      rEl.textContent=(R>=0?'+':'')+R.toFixed(2)+'R';
+      rEl.className='tv num '+(R>=0?'up':'down');
+    }
   }
   const lockedMargin=Object.keys(positions).reduce((s,k)=>s+positions[k].margin,0);
   const equity=wallet.balance+Object.keys(positions).reduce((sum,k)=>{
