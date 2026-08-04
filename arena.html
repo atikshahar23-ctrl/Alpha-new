@@ -308,6 +308,38 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 .ord-new input,.ord-new select{background:rgba(2,10,18,.9);color:var(--txt);
   border:1px solid rgba(0,240,255,.25);border-radius:6px;padding:5px 7px;font-size:12px;
   font-family:'JetBrains Mono',monospace;width:100%}
+/* ── futures market browser ── */
+#mktPanel{position:fixed;top:70px;left:50%;transform:translateX(-50%);width:min(520px,94vw);
+  max-height:min(78vh,720px);display:flex;flex-direction:column;padding:12px 14px;z-index:26}
+.mkt-search{width:100%;box-sizing:border-box;background:rgba(2,10,18,.9);color:var(--txt);
+  border:1px solid rgba(0,240,255,.25);border-radius:8px;padding:8px 10px;font-size:13px;margin:8px 0}
+.mkt-tabs{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:7px}
+.mkt-tabs button{padding:4px 10px;border-radius:999px;font-size:11px;cursor:pointer;
+  background:rgba(6,12,26,.7);color:var(--dim);border:1px solid rgba(0,240,255,.18)}
+.mkt-tabs button.on{color:#02141a;background:linear-gradient(120deg,var(--cyan),#7dfbff);border-color:var(--cyan)}
+.mkt-head{display:grid;grid-template-columns:1.6fr .9fr 1fr .8fr;gap:6px;padding:0 4px 6px;
+  border-bottom:1px solid rgba(0,240,255,.14)}
+.mkt-sort{background:none;border:none;color:var(--dim);font-size:10px;cursor:pointer;text-align:start;
+  font-family:'Heebo',sans-serif;padding:0}
+.mkt-sort.on{color:var(--cyan);font-weight:700}
+.mkt-list{overflow-y:auto;flex:1;min-height:0;scrollbar-width:thin}
+.mkt-list::-webkit-scrollbar{width:5px}
+.mkt-list::-webkit-scrollbar-thumb{background:rgba(0,240,255,.25)}
+.mkt-row{display:grid;grid-template-columns:1.6fr .9fr 1fr .8fr;gap:6px;align-items:center;
+  padding:7px 4px;border-bottom:1px solid rgba(255,255,255,.04);cursor:pointer}
+.mkt-row:hover{background:rgba(0,240,255,.06)}
+.mkt-row.cur{background:rgba(0,240,255,.12)}
+.mkt-n{display:flex;align-items:center;gap:6px;font-weight:700;font-size:12.5px;min-width:0}
+.mkt-n b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mkt-star{cursor:pointer;font-size:12px;color:#4a5b6b;flex:none}
+.mkt-star.on{color:var(--gold)}
+.mkt-tag{font-size:8.5px;padding:1px 4px;border-radius:4px;background:rgba(0,240,255,.15);color:var(--cyan);flex:none}
+.mkt-tag.new{background:rgba(255,209,102,.18);color:var(--gold)}
+.mkt-v,.mkt-p{font-size:11.5px;font-family:'JetBrains Mono',monospace;text-align:end}
+.mkt-c{font-size:11.5px;font-family:'JetBrains Mono',monospace;text-align:end;font-weight:700}
+.ord-chk{display:flex;align-items:center;gap:7px;font-size:10.5px;color:var(--dim);
+  margin:0 0 8px;cursor:pointer;line-height:1.4}
+.ord-chk input{accent-color:var(--cyan);flex:none}
 .ord-btns{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .ord-b{display:flex;flex-direction:column;gap:2px;padding:7px 8px;border-radius:8px;cursor:pointer;
   font-size:11px;font-weight:800;text-align:start;background:rgba(0,0,0,.25)}
@@ -1163,6 +1195,9 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
     <div class="tgl" id="btnAp" title="טייס אוטומטי — סוחר את האותות המאושרים בלבד, עם ניהול סיכון">
       <span style="font-size:15px">🤖</span><span style="font-size:8px">טייס</span>
     </div>
+    <div class="tgl" id="btnMarkets" title="כל החוזים של Binance Futures — חיפוש, מיון ומועדפים">
+      <span style="font-size:15px">📈</span><span style="font-size:8px">שווקים</span>
+    </div>
     <div class="tgl" id="btnOrd" title="הזמנות ממתינות — לימיט וסטופ שנכנסים לבד כשהמחיר מגיע">
       <span style="font-size:15px">📌</span><span style="font-size:8px">הזמנות</span>
     </div>
@@ -1378,21 +1413,80 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
   </div>
 </div>
 
+<!-- ══ BINANCE FUTURES MARKET BROWSER — every listed USDⓈ-M perpetual,
+     searchable, sortable and starrable, exactly like the exchange's own
+     market list. The app previously offered twelve hardcoded majors. ══ -->
+<div id="mktPanel" class="panel clip" style="display:none">
+  <div class="lg-h"><span>📈 שוקי Binance Futures (<span id="mktCount">0</span>)</span>
+    <button class="mp-close" id="mktClose" style="margin-inline-start:auto">✕</button></div>
+  <input id="mktSearch" class="mkt-search" placeholder="חיפוש מטבע או שם…" autocomplete="off">
+  <div class="mkt-tabs" id="mktTabs">
+    <button data-f="all" class="on">הכול</button>
+    <button data-f="fav">⭐ מועדפים</button>
+    <button data-f="new">חדשים</button>
+    <button data-f="usdc">USDC</button>
+    <button data-f="gainers">עולים</button>
+    <button data-f="losers">יורדים</button>
+  </div>
+  <div class="mkt-head">
+    <button data-s="name" class="mkt-sort">שם / מחזור ⇅</button>
+    <button data-s="vol" class="mkt-sort on">מחזור ⇅</button>
+    <button data-s="price" class="mkt-sort">מחיר ⇅</button>
+    <button data-s="chg" class="mkt-sort">24ש ⇅</button>
+  </div>
+  <div id="mktList" class="mkt-list"><div class="lg-empty">טוען את רשימת החוזים…</div></div>
+</div>
+
 <div id="ordPanel" class="panel clip" style="display:none">
   <div class="lg-h"><span>📌 הזמנות ממתינות (<span id="ordCount">0</span>)</span><button class="mp-close" id="ordClose" style="margin-inline-start:auto">✕</button></div>
   <div id="ordList"></div>
   <div class="rc-h">➕ הזמנה חדשה <span class="rc-sub">· נכנסת אוטומטית כשהמחיר מגיע</span></div>
   <div class="ord-new">
+    <label>סוג<select id="ordKind">
+      <option value="limit">לימיט</option>
+      <option value="market">שוק</option>
+      <option value="stop_market">סטופ שוק</option>
+      <option value="stop_limit">סטופ לימיט</option>
+      <option value="tp_market">לקיחת רווח שוק</option>
+      <option value="tp_limit">לקיחת רווח לימיט</option>
+      <option value="trailing">סטופ נגרר</option>
+    </select></label>
     <label>מחיר<input id="ordPrice" type="number" step="any" placeholder="מחיר הפעלה"></label>
+    <label id="ordLimitWrap" style="display:none">מחיר לימיט<input id="ordLimit" type="number" step="any" placeholder="אחרי הטריגר"></label>
+    <label id="ordTrailWrap" style="display:none">מרחק גרירה %<input id="ordTrail" type="number" step="0.1" value="1"></label>
     <label>תפוגה<select id="ordTtl"><option value="0">ללא</option><option value="30">30 דק׳</option><option value="120">שעתיים</option><option value="1440">24 שעות</option></select></label>
+    <label>תוקף<select id="ordTif">
+      <option value="GTC">GTC · עד ביטול</option>
+      <option value="IOC">IOC · מיד או בטל</option>
+      <option value="FOK">FOK · הכול או כלום</option>
+      <option value="GTX">GTX · מייקר בלבד</option>
+    </select></label>
+    <label>טריגר לפי<select id="ordTrigBy">
+      <option value="mark">Mark — מתעלם מפתיל בבורסה בודדת</option>
+      <option value="last">Last — מחיר העסקה האחרונה</option>
+    </select></label>
   </div>
+  <label class="ord-chk"><input type="checkbox" id="ordReduce"> Reduce-Only — רק סוגר פוזיציה, לעולם לא פותח חדשה</label>
   <div class="ord-btns">
-    <button class="ord-b up" data-k="limit" data-s="long">לימיט קנייה<span>קנה כשהמחיר יורד לרמה</span></button>
-    <button class="ord-b up" data-k="stop" data-s="long">סטופ קנייה<span>קנה כשהמחיר פורץ מעלה</span></button>
-    <button class="ord-b dn" data-k="limit" data-s="short">לימיט מכירה<span>שורט כשהמחיר עולה לרמה</span></button>
-    <button class="ord-b dn" data-k="stop" data-s="short">סטופ מכירה<span>שורט כשהמחיר נשבר מטה</span></button>
+    <button class="ord-b up" data-s="long">▲ קנייה / לונג<span id="ordHintL">נכנס במחיר טוב יותר מהנוכחי</span></button>
+    <button class="ord-b dn" data-s="short">▼ מכירה / שורט<span id="ordHintS">נכנס במחיר טוב יותר מהנוכחי</span></button>
   </div>
   <div class="disc" style="margin-top:8px">ההזמנה משתמשת במרג׳ין ובמינוף שמוגדרים בכרטיס המסחר ברגע הרישום</div>
+
+  <!-- Binance's position calculator: answer "what does this trade actually
+       cost me and where does it die" BEFORE the money is committed -->
+  <div class="rc-h" style="margin-top:12px">🧮 מחשבון פוזיציה <span class="rc-sub">· לפני שנכנסים</span></div>
+  <div class="ord-new">
+    <label>מחיר כניסה<input id="cxEntry" type="number" step="any" placeholder="כניסה"></label>
+    <label>מחיר יציאה<input id="cxExit" type="number" step="any" placeholder="יציאה"></label>
+    <label>מרג׳ין $<input id="cxMargin" type="number" step="any" value="500"></label>
+    <label>מינוף<input id="cxLev" type="number" step="1" value="5"></label>
+  </div>
+  <div class="ord-btns" style="margin-bottom:8px">
+    <button class="ord-b up" id="cxLong">חשב לונג</button>
+    <button class="ord-b dn" id="cxShort">חשב שורט</button>
+  </div>
+  <div id="cxOut" class="disc" style="line-height:1.9"></div>
 </div>
 <div id="toolsPanel" class="panel clip" style="display:none">
   <div class="lg-h"><span>🧰 ארגז כלים</span><button class="mp-close" id="toolsClose" style="margin-inline-start:auto">✕</button></div>
@@ -1555,7 +1649,12 @@ const SYMBOLS = {
 // is actually called) share the same {base,vol,lot,big,dec,dot} shape, so
 // every generic system (sim engine, price formatter, pill builder) can stay
 // market-agnostic instead of hardcoding SYMBOLS everywhere.
-const symCfg=sym=>SYMBOLS[sym]||WORLD_STOCKS[sym];
+// Symbols discovered from Binance's own futures listing. The app shipped with
+// a dozen hardcoded majors; the exchange lists hundreds of perpetuals, and a
+// symbol the user picks from the browser has to work everywhere a hardcoded
+// one does — price formatting, the simulator, pods, the lot.
+const futSymCfg={};
+const symCfg=sym=>SYMBOLS[sym]||WORLD_STOCKS[sym]||futSymCfg[sym];
 const symLabelText=sym=>state.market==='crypto'? sym+' / USDT' : sym;
 // real-world NYSE/NASDAQ hours (09:30–16:00 America/New_York, Mon–Fri) —
 // crypto trades 24/7 so this only ever gates the stock market. Skips a full
@@ -1912,6 +2011,66 @@ async function tryLive(f){
     if(quiet>40000){ try{ f.ws&&f.ws.close(); }catch(e){} }
   },6000));
 }
+// ============================================================
+//  THE FUTURES UNIVERSE — every USDⓈ-M perpetual Binance lists, not the
+//  dozen majors that were hardcoded. exchangeInfo gives the contracts and
+//  their tick sizes; one ticker/24hr call returns last price, 24h change and
+//  quote volume for ALL of them at once, which is what makes a browsable,
+//  sortable market list cheap enough to keep fresh.
+// ============================================================
+let futUniverse=[];        // [{sym, pair, name, dec, price, chg, vol, isNew, quote}]
+let futUniverseAt=0;
+let futFavs=new Set();
+try{ futFavs=new Set(JSON.parse(localStorage.getItem('na:futfavs')||'[]')); }catch(e){}
+function saveFutFavs(){ try{ localStorage.setItem('na:futfavs',JSON.stringify([...futFavs])); }catch(e){} }
+
+// decimals implied by the exchange's own tick size — 0.00001 → 5 places.
+// Guessing this wrong makes a cheap coin render as a flat "0.00".
+function decFromTick(t){
+  const s=String(t);
+  if(s.indexOf('.')<0) return 0;
+  const d=s.replace(/0+$/,'').split('.')[1];
+  return d? d.length : 0;
+}
+async function loadFutUniverse(force){
+  if(!force && futUniverse.length && Date.now()-futUniverseAt<120000) return futUniverse;
+  const [info,tick]=await Promise.all([
+    fetch(`${FAPI}/fapi/v1/exchangeInfo`).then(r=>r.ok?r.json():null).catch(()=>null),
+    fetch(`${FAPI}/fapi/v1/ticker/24hr`).then(r=>r.ok?r.json():null).catch(()=>null),
+  ]);
+  if(!info||!info.symbols) throw new Error('no exchangeInfo');
+  const byPair={};
+  (Array.isArray(tick)?tick:[]).forEach(t=>{ byPair[t.symbol]=t; });
+  const now=Date.now();
+  const out=[];
+  for(const s of info.symbols){
+    // perpetuals that are actually trading; dated futures and delisted
+    // contracts would otherwise pad the list with things you cannot trade
+    if(s.contractType!=='PERPETUAL' || s.status!=='TRADING') continue;
+    const t=byPair[s.symbol]||{};
+    const pf=(s.filters||[]).find(f=>f.filterType==='PRICE_FILTER');
+    out.push({
+      sym:s.baseAsset, pair:s.symbol, quote:s.quoteAsset,
+      name:s.baseAsset,
+      dec: pf? decFromTick(pf.tickSize) : (s.pricePrecision??2),
+      price:+t.lastPrice||0, chg:+t.priceChangePercent||0, vol:+t.quoteVolume||0,
+      // Binance flags recent listings as "New"; onboardDate is the truth
+      isNew: s.onboardDate? (now-s.onboardDate)<30*864e5 : false,
+      maxLev: 0,
+    });
+  }
+  futUniverse=out; futUniverseAt=Date.now();
+  // register every one so symCfg/fmtP/the sim can handle a symbol the app
+  // has never seen before
+  out.forEach(r=>{
+    if(!SYMBOLS[r.sym] && !WORLD_STOCKS[r.sym]){
+      futSymCfg[r.sym]={name:r.name, dot:'#00f0ff', base:r.price||1, dec:r.dec,
+        vol:0.0016, lot:12, big:9000};
+    }
+  });
+  return futUniverse;
+}
+
 // Open interest and the crowd's long/short split. Neither exists on spot —
 // they are the two numbers that say how CROWDED a move is, which is the whole
 // reason a futures trader looks at anything beyond price.
@@ -3331,24 +3490,103 @@ const ORD_KEY='na:orders';
 let orders=[];
 try{ const raw=JSON.parse(localStorage.getItem(ORD_KEY)||'[]'); if(Array.isArray(raw)) orders=raw; }catch(e){}
 function saveOrders(){ try{ localStorage.setItem(ORD_KEY,JSON.stringify(orders.slice(0,40))); }catch(e){} }
-function addOrder(kind,side,price,ttlMin){
-  if(!(price>0)){ toast('מחיר הזמנה לא תקין','down'); return; }
+// ============================================================
+//  ORDER TYPES — the full Binance Futures set. Until now there were two
+//  (limit and stop) and both always OPENED a position. The rest of the
+//  exchange's order book is not decoration: stop-market and take-profit
+//  orders are how a position is protected without watching it, reduce-only
+//  is what stops a protective order from accidentally flipping you into a
+//  new trade in the other direction, post-only is how a maker rebate is
+//  earned, and time-in-force decides whether an unfilled order rests or
+//  dies. Each one changes what happens to real money.
+// ============================================================
+const ORDER_KINDS={
+  limit:      {label:'לימיט',        maker:true,  trigger:false, hint:'נכנס במחיר טוב יותר מהנוכחי'},
+  market:     {label:'שוק',          maker:false, trigger:false, hint:'מיידי, במחיר הנוכחי'},
+  stop_market:{label:'סטופ שוק',     maker:false, trigger:true,  hint:'נכנס בשוק כשהטריגר נפרץ'},
+  stop_limit: {label:'סטופ לימיט',   maker:true,  trigger:true,  hint:'טריגר מפעיל הזמנת לימיט'},
+  tp_market:  {label:'לקיחת רווח שוק',maker:false, trigger:true, hint:'סוגר ברווח כשהטריגר נפגע'},
+  tp_limit:   {label:'לקיחת רווח לימיט',maker:true,trigger:true, hint:'טריגר מפעיל לימיט לסגירה'},
+  trailing:   {label:'סטופ נגרר',    maker:false, trigger:true,  hint:'הטריגר עוקב אחרי המחיר'},
+};
+const TIF_LABEL={GTC:'GTC · תקף עד ביטול', IOC:'IOC · מלא מיד או בטל', FOK:'FOK · הכול או כלום', GTX:'GTX · מייקר בלבד'};
+
+// The price a trigger watches. Binance lets you choose, and the choice
+// matters: mark price ignores a single-venue wick, last price does not.
+function triggerPx(sym){
+  return futSettings.triggerBy==='last' ? livePriceFor(sym) : markFor(sym);
+}
+
+function addOrder(kind,side,price,ttlMin,opt){
+  opt=opt||{};
+  const K=ORDER_KINDS[kind];
+  if(!K){ toast('סוג הזמנה לא מוכר','down'); return; }
   const now=state.lastPrice;
   if(!(now>0)) return;
-  // reject an order that would fire instantly — that is a market order
-  // wearing a costume, and it is almost always a typo
-  const wouldFireNow = side==='long'
-    ? (kind==='limit'? now<=price : now>=price)
-    : (kind==='limit'? now>=price : now<=price);
-  if(wouldFireNow){
-    toast(kind==='limit'?'מחיר הלימיט כבר עבר — זו למעשה הזמנת שוק':'מחיר הסטופ כבר עבר — זו למעשה הזמנת שוק','down');
-    return;
+
+  // A market order has no price to wait for — it is the one kind that
+  // executes on the spot.
+  if(kind==='market'){
+    if(opt.reduceOnly && !posOn(state.sym)){ toast('Reduce-Only ללא פוזיציה פתוחה — ההזמנה נדחתה','down'); return; }
+    if(opt.reduceOnly){ const P=posOn(state.sym); if(P) closePos(P.id,'manual'); return; }
+    openPos(side); return;
   }
+
+  // A trailing stop has no trigger price to type — its trigger is a DISTANCE
+  // behind the best price seen, computed from wherever the market is now.
+  // Demanding a price here made the type impossible to place at all.
+  if(kind==='trailing'){
+    const pct=opt.trailPct>0? opt.trailPct : 1;
+    price = side==='short'? now*(1-pct/100) : now*(1+pct/100);
+  }
+  if(!(price>0)){ toast('מחיר הזמנה לא תקין','down'); return; }
+
+  // Reduce-only is only meaningful against an open position, and only in the
+  // direction that CLOSES it. Accepting it otherwise is how a "protective"
+  // order silently opens a brand new trade the wrong way round.
+  if(opt.reduceOnly){
+    const P=posOn(state.sym);
+    if(!P){ toast('Reduce-Only ללא פוזיציה פתוחה — ההזמנה נדחתה','down'); return; }
+    if(P.side===side){ toast('Reduce-Only חייב להיות בכיוון ההפוך לפוזיציה','down'); return; }
+  }
+
+  // WHICH WAY a trigger fires is decided by where the trigger price sits
+  // relative to the market, NOT by the side of the order. A take-profit that
+  // closes a long is a SELL that must fire when price RISES; tying direction
+  // to the side would arm it downwards and fire it instantly on the wrong
+  // move. Binance infers it exactly this way, so a trigger placed away from
+  // the market can never be "already true".
+  let dir=0;
+  if(K.trigger){
+    dir = price>now ? 1 : -1;
+  } else if(!K.maker){
+    dir = 0;                      // market — no waiting
+  } else {
+    // A resting limit is side-based: a buy waits below, a sell waits above.
+    const wouldFireNow = side==='long' ? now<=price : now>=price;
+    if(wouldFireNow && !opt.allowImmediate){
+      toast(`${K.label}: התנאי כבר מתקיים — זו למעשה הזמנת שוק`,'down');
+      return;
+    }
+  }
+
+  // GTX (post-only) exists to guarantee a maker fill; if it would cross the
+  // book it must be rejected rather than quietly paying the taker fee.
+  const tif=opt.tif||'GTC';
+  if(tif==='GTX' && !K.maker){ toast('GTX (Post-Only) אפשרי רק בהזמנות לימיט','down'); return; }
+
   orders.unshift({id:'o'+Date.now()+Math.random().toString(36).slice(2,5),
-    sym:state.sym, kind, side, price, margin:tradeMargin, lev:tradeLev,
+    sym:state.sym, kind, side, price, dir,
+    limitPrice: opt.limitPrice>0? opt.limitPrice : 0,   // stop-limit / tp-limit
+    trailPct: kind==='trailing'? (opt.trailPct>0?opt.trailPct:1) : 0,
+    peak: kind==='trailing'? now : 0,
+    reduceOnly: !!opt.reduceOnly, tif,
+    triggerBy: futSettings.triggerBy,
+    margin:tradeMargin, lev:tradeLev,
     at:Date.now(), exp: ttlMin>0? Date.now()+ttlMin*60000 : 0});
   orders=orders.slice(0,40); saveOrders();
-  toast(`הזמנה ${kind==='limit'?'לימיט':'סטופ'} ${side==='long'?'קנייה':'מכירה'} נרשמה @ ${fmtP(price)}`,'up');
+  toast(`${K.label} ${side==='long'?'קנייה':'מכירה'} נרשמה @ ${fmtP(price)}`
+    +(opt.reduceOnly?' · Reduce-Only':'')+(tif!=='GTC'?' · '+tif:''),'up');
   beep([[600,0.07],[760,0.09]]);
   renderOrders();
 }
@@ -3367,19 +3605,61 @@ function checkOrders(){
     if(o.exp && now>o.exp){ orders.splice(i,1); dirty=true; toast(`⏱ הזמנה על ${o.sym} פגה`,'down'); continue; }
     const lp=livePriceFor(o.sym);
     if(lp==null) continue;
-    const hit = o.side==='long'
-      ? (o.kind==='limit'? lp<=o.price : lp>=o.price)
-      : (o.kind==='limit'? lp>=o.price : lp<=o.price);
+    // triggers watch the price the ORDER chose, which may be the mark; a
+    // plain limit always fills against the tradable last price
+    const K=ORDER_KINDS[o.kind]||ORDER_KINDS.limit;
+    const tpx=(K.trigger && o.triggerBy!=='last')? (markFor(o.sym)??lp) : lp;
+
+    // A trailing stop ratchets its trigger behind the best price seen and
+    // never gives ground back — that is the whole point of it.
+    if(o.kind==='trailing'){
+      if(o.side==='short'){                       // trailing a long position
+        if(tpx>o.peak){ o.peak=tpx; dirty=true; }
+        o.price=o.peak*(1-o.trailPct/100);
+        o.dir=-1;                                 // fires on the way down
+      } else {                                    // trailing a short position
+        if(!o.peak||tpx<o.peak){ o.peak=tpx; dirty=true; }
+        o.price=o.peak*(1+o.trailPct/100);
+        o.dir=1;                                  // fires on the way up
+      }
+    }
+
+    // triggers use the direction fixed when they were placed; a resting
+    // limit stays side-based (buy waits below, sell waits above)
+    const hit = K.trigger
+      ? (o.dir>0 ? tpx>=o.price : tpx<=o.price)
+      : (o.side==='long' ? tpx<=o.price : tpx>=o.price);
     if(!hit) continue;
+
+    // Reduce-only closes; it must never open. If the position vanished
+    // (stopped out, liquidated) the order has nothing left to reduce.
+    if(o.reduceOnly){
+      const P=posOn(o.sym);
+      orders.splice(i,1); dirty=true;
+      if(P){ closePos(P.id,o.kind.startsWith('tp')?'tp':'sl');
+        toast(`⚡ ${K.label} סגרה את הפוזיציה על ${o.sym} @ ${fmtP(lp)}`,'up'); }
+      else toast(`${K.label} על ${o.sym} בוטלה — אין פוזיציה לצמצם`,'down');
+      beep([[720,0.09],[900,0.12]]);
+      continue;
+    }
+
+    // A *_limit order does not fill at the trigger — the trigger merely
+    // places a limit order, which only fills if price reaches IT.
+    if((o.kind==='stop_limit'||o.kind==='tp_limit') && o.limitPrice>0 && !o.armed){
+      o.armed=true; o.price=o.limitPrice; o.kind='limit'; dirty=true;
+      toast(`${K.label} על ${o.sym} הופעלה — לימיט ממתין @ ${fmtP(o.limitPrice)}`,'up');
+      continue;
+    }
+
+    // IOC/FOK never rest: if they did not fill the instant they were
+    // eligible they are cancelled rather than left on the book.
     orders.splice(i,1); dirty=true;
-    // the order fires on ITS symbol; open it the same way a manual entry
-    // would be opened, restoring whatever the ticket was set to afterwards
     const savedMargin=tradeMargin, savedLev=tradeLev, savedSl=tradeSlManual, savedTp=tradeTpManual;
     tradeMargin=o.margin; tradeLev=o.lev; tradeSlManual=0; tradeTpManual=0;
-    openPos(o.side,{sym:o.sym,price:lp,
-      why:(o.kind==='limit'?'הזמנת לימיט':'הזמנת סטופ')+' '+(o.side==='long'?'קנייה':'מכירה')+' @ '+fmtP(o.price)});
+    openPos(o.side,{sym:o.sym,price:lp, maker:(K.maker&&o.tif==='GTX')||undefined,
+      why:K.label+' '+(o.side==='long'?'קנייה':'מכירה')+' @ '+fmtP(o.price)});
     tradeMargin=savedMargin; tradeLev=savedLev; tradeSlManual=savedSl; tradeTpManual=savedTp;
-    toast(`⚡ הזמנה ${o.kind==='limit'?'לימיט':'סטופ'} על ${o.sym} הופעלה @ ${fmtP(lp)}`,'up');
+    toast(`⚡ ${K.label} על ${o.sym} הופעלה @ ${fmtP(lp)}`,'up');
     beep([[720,0.09],[900,0.12]]);
   }
   if(dirty){ saveOrders(); renderOrders(); }
@@ -3393,11 +3673,11 @@ function renderOrders(){
     const lp=livePriceFor(o.sym);
     const dist=(lp!=null&&lp>0)? ((o.price/lp-1)*100) : null;
     return `<div class="ord-row" data-id="${o.id}">
-      <span class="ord-k ${o.side}">${o.kind==='limit'?'לימיט':'סטופ'} ${o.side==='long'?'קנייה ▲':'מכירה ▼'}</span>
+      <span class="ord-k ${o.side}">${(ORDER_KINDS[o.kind]||{label:o.kind}).label} ${o.side==='long'?'קנייה ▲':'מכירה ▼'}</span>
       <span class="ord-s">${o.sym}</span>
-      <span class="num">${fmtP(o.price)}</span>
+      <span class="num">${fmtP(o.price)}${o.kind==='trailing'?' ⇢'+o.trailPct+'%':''}</span>
       <span class="ord-d">${dist!=null? (dist>=0?'+':'')+dist.toFixed(2)+'% מהמחיר' : '—'}</span>
-      <span class="ord-m">$${o.margin} · x${o.lev}${o.exp?' · פג '+fmtT(o.exp):''}</span>
+      <span class="ord-m">${o.reduceOnly?'🛡 Reduce-Only · ':''}${o.tif&&o.tif!=='GTC'?o.tif+' · ':''}${(ORDER_KINDS[o.kind]||{}).trigger?(o.triggerBy==='last'?'Last · ':'Mark · '):''}$${o.margin} · x${o.lev}${o.exp?' · פג '+fmtT(o.exp):''}</span>
       <button class="ord-x" data-x="${o.id}">✕</button></div>`;
   }).join('');
   el.querySelectorAll('.ord-x').forEach(b=>{ b.onclick=()=>cancelOrder(b.dataset.x); });
@@ -4406,6 +4686,8 @@ $('btnAp').onclick=()=>setAp(!apPanelOpen);
 let ordOpen=false, perfOpen=false;
 function setOrd(on){ ordOpen=on; $('ordPanel').style.display=on?'block':'none'; $('btnOrd').classList.toggle('on',on); if(on) renderOrders(); }
 function setPerf(on){ perfOpen=on; $('perfPanel').style.display=on?'block':'none'; $('btnPerf').classList.toggle('on',on); if(on) renderPerf(); }
+$('btnMarkets').onclick=()=>setMkt(!mktOpen);
+$('mktClose').onclick=()=>setMkt(false);
 $('btnOrd').onclick=()=>setOrd(!ordOpen);
 $('ordClose').onclick=()=>setOrd(false);
 $('btnPerf').onclick=()=>setPerf(!perfOpen);
@@ -4477,13 +4759,178 @@ window.__naLab={list:()=>strategies,active:()=>activeStrat,set:(id)=>{activeStra
   run:(id)=>runBacktest(state.candles,stratById(id)), compare:()=>compareStrategies(),
   mc:(id)=>{ const r=runBacktest(state.candles,stratById(id||activeStrat)); return r&&r.n?monteCarlo(r.trades,300):null; }};
 $('perfClose').onclick=()=>setPerf(false);
-document.querySelectorAll('.ord-b').forEach(b=>{
+// ── market browser ──────────────────────────────────────────────────────
+let mktFilter='all', mktSort='vol', mktSortDir=-1, mktQuery='', mktOpen=false;
+function setMkt(on){
+  // single source of truth — closing the panel from inside (after picking a
+  // coin) has to leave the toggle in sync, or the next tap on the sidebar
+  // button "closes" an already-closed panel and appears dead
+  mktOpen=!!on;
+  $('mktPanel').style.display=on?'flex':'none';
+  const b=$('btnMarkets'); if(b) b.classList.toggle('on',on);
+  if(on){
+    renderMarkets();
+    loadFutUniverse().then(renderMarkets).catch(()=>{
+      $('mktList').innerHTML='<div class="lg-empty">רשימת החוזים לא נטענה — ‏Binance Futures לא נגיש מהרשת הזו</div>';
+    });
+  }
+}
+function mktRows(){
+  let rows=futUniverse.slice();
+  if(mktQuery){
+    const q=mktQuery.toUpperCase();
+    rows=rows.filter(r=>r.sym.includes(q)||r.pair.includes(q)||(r.name||'').toUpperCase().includes(q));
+  }
+  if(mktFilter==='fav') rows=rows.filter(r=>futFavs.has(r.sym));
+  else if(mktFilter==='new') rows=rows.filter(r=>r.isNew);
+  else if(mktFilter==='usdc') rows=rows.filter(r=>r.quote==='USDC');
+  else if(mktFilter==='gainers') rows=rows.filter(r=>r.chg>0);
+  else if(mktFilter==='losers') rows=rows.filter(r=>r.chg<0);
+  const key={name:'sym',vol:'vol',price:'price',chg:'chg'}[mktSort]||'vol';
+  // mktSortDir === -1 means "biggest first", which is what you want the
+  // instant the list opens (highest volume at the top, as on the exchange)
+  rows.sort((a,b)=> key==='sym'
+    ? -mktSortDir*String(a.sym).localeCompare(String(b.sym))
+    :  mktSortDir*(((a[key])??0)-((b[key])??0)));
+  return rows;
+}
+function renderMarkets(){
+  const el=$('mktList'); if(!el) return;
+  if(!futUniverse.length){ el.innerHTML='<div class="lg-empty">טוען את רשימת החוזים…</div>'; return; }
+  const rows=mktRows();
+  $('mktCount').textContent=rows.length;
+  if(!rows.length){ el.innerHTML='<div class="lg-empty">אין חוזה שתואם את החיפוש</div>'; return; }
+  // cap the DOM — the exchange lists hundreds and rendering them all on every
+  // keystroke is what turns a search box into a stutter
+  el.innerHTML=rows.slice(0,150).map(r=>`
+    <div class="mkt-row${r.sym===state.sym?' cur':''}" data-sym="${r.sym}">
+      <span class="mkt-n">
+        <span class="mkt-star${futFavs.has(r.sym)?' on':''}" data-fav="${r.sym}">${futFavs.has(r.sym)?'★':'☆'}</span>
+        <b>${r.sym}</b><span class="mkt-tag">Perp</span>${r.isNew?'<span class="mkt-tag new">חדש</span>':''}
+      </span>
+      <span class="mkt-v">${fmtUsd(r.vol)}</span>
+      <span class="mkt-p">${r.price? r.price.toLocaleString('en-US',{minimumFractionDigits:r.dec,maximumFractionDigits:r.dec}) : '—'}</span>
+      <span class="mkt-c" style="color:${r.chg>=0?'#00ffa6':'#ff5252'}">${(r.chg>=0?'+':'')+r.chg.toFixed(2)}%</span>
+    </div>`).join('')
+    + (rows.length>150? `<div class="lg-empty">מוצגים 150 מתוך ${rows.length} — צמצם עם חיפוש</div>`:'');
+}
+$('mktSearch').oninput=e=>{ mktQuery=e.target.value.trim(); renderMarkets(); };
+$('mktTabs').querySelectorAll('button').forEach(b=>{
+  b.onclick=()=>{ mktFilter=b.dataset.f;
+    $('mktTabs').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));
+    renderMarkets(); };
+});
+document.querySelectorAll('.mkt-sort').forEach(b=>{
   b.onclick=()=>{
-    const px=parseFloat($('ordPrice').value);
-    const ttl=parseInt($('ordTtl').value,10)||0;
-    addOrder(b.dataset.k,b.dataset.s,px,ttl);
+    if(mktSort===b.dataset.s) mktSortDir*=-1; else { mktSort=b.dataset.s; mktSortDir=-1; }
+    document.querySelectorAll('.mkt-sort').forEach(x=>x.classList.toggle('on',x===b));
+    renderMarkets();
   };
 });
+$('mktList').onclick=e=>{
+  const fav=e.target.closest('[data-fav]');
+  if(fav){
+    const s=fav.dataset.fav;
+    if(futFavs.has(s)) futFavs.delete(s); else futFavs.add(s);
+    saveFutFavs(); renderMarkets(); return;
+  }
+  const row=e.target.closest('.mkt-row'); if(!row) return;
+  switchToFuturesSymbol(row.dataset.sym);
+};
+// Move the whole arena onto a contract the app has never heard of. Everything
+// downstream keys off state.sym and symCfg(), so registering the config and
+// restarting the feed is all it takes.
+function switchToFuturesSymbol(sym){
+  const r=futUniverse.find(x=>x.sym===sym); if(!r) return;
+  // Register it in the REAL crypto table, not just a side map: the pill row,
+  // the world pods and the settings tree all read SYMBOLS, so a symbol that
+  // only existed in futSymCfg would be tradable but invisible.
+  if(!SYMBOLS[sym]){
+    SYMBOLS[sym]={name:r.name, dot:'#00f0ff', base:r.price||1, dec:r.dec,
+      vol:0.0016, lot:12, big:9000};
+  }
+  if(!worldSel.crypto.includes(sym)){ worldSel.crypto.push(sym); saveWorld(); }
+  state.market='crypto';
+  state.sym=sym;
+  state.stats=null; state.bigQ=1;
+  $('symLabel').textContent=symLabelText(sym);
+  noteRealPx(sym,r.price);
+  buildPills();
+  startFeed();
+  toast(`עברת ל-${sym}/USDT · Perp`,'up');
+  setMkt(false);
+  renderTicket(); renderPortfolio();
+}
+window.__naMarkets={load:()=>loadFutUniverse(true),list:()=>futUniverse,rows:()=>mktRows(),
+  open:(on)=>setMkt(on!==false), pick:switchToFuturesSymbol,
+  favs:()=>[...futFavs], filter:(f)=>{mktFilter=f;renderMarkets();},
+  sort:(s)=>{mktSort=s;renderMarkets();}, search:(q)=>{mktQuery=q;renderMarkets();}};
+
+// the form reshapes itself around the order type — a trailing stop has no
+// trigger price to type, a stop-limit needs two prices, market needs none
+function syncOrdForm(){
+  const k=$('ordKind').value, K=ORDER_KINDS[k]||ORDER_KINDS.limit;
+  $('ordLimitWrap').style.display=(k==='stop_limit'||k==='tp_limit')?'':'none';
+  $('ordTrailWrap').style.display=(k==='trailing')?'':'none';
+  $('ordPrice').parentElement.style.display=(k==='market'||k==='trailing')?'none':'';
+  $('ordTrigBy').parentElement.style.display=K.trigger?'':'none';
+  $('ordHintL').textContent=K.hint; $('ordHintS').textContent=K.hint;
+}
+$('ordKind').onchange=syncOrdForm;
+$('ordTrigBy').onchange=()=>{ futSettings.triggerBy=$('ordTrigBy').value; saveFutSettings(); };
+$('ordTrigBy').value=futSettings.triggerBy;
+syncOrdForm();
+document.querySelectorAll('.ord-b').forEach(b=>{
+  b.onclick=()=>{
+    const kind=$('ordKind').value;
+    const px=parseFloat($('ordPrice').value);
+    const ttl=parseInt($('ordTtl').value,10)||0;
+    addOrder(kind,b.dataset.s,px,ttl,{
+      limitPrice:parseFloat($('ordLimit').value)||0,
+      trailPct:parseFloat($('ordTrail').value)||1,
+      reduceOnly:$('ordReduce').checked,
+      tif:$('ordTif').value});
+  };
+});
+// Position calculator — the same maths the live position card uses, run on
+// hypothetical numbers. Every figure here is one the trader would otherwise
+// discover only after the money was already at risk.
+function calcPosition(side){
+  const entry=parseFloat($('cxEntry').value)||state.lastPrice||0;
+  const exit=parseFloat($('cxExit').value)||0;
+  const margin=parseFloat($('cxMargin').value)||0;
+  let lev=parseInt($('cxLev').value,10)||1;
+  const out=$('cxOut');
+  if(!(entry>0)||!(margin>0)){ out.textContent='הזן מחיר כניסה ומרג׳ין'; return null; }
+  const notional=margin*lev;
+  const cap=maxLevFor(notional);
+  const capped=lev>cap;
+  if(capped) lev=cap;
+  const P={sym:state.sym, side, entry, margin, lev, notional:margin*lev,
+           feePaid:feeFor(margin*lev,'taker'), openedAt:Date.now(), sl:entry, tp:entry};
+  const qty=P.notional/entry;
+  const liq=liqPrice(P);
+  const be=breakEvenPrice(P);
+  const rows=[];
+  if(capped) rows.push(`⚠️ בגודל $${P.notional.toFixed(0)} ביינאנס מאפשרת עד x${cap} — חושב לפי זה`);
+  rows.push(`כמות: <b>${qty.toFixed(6)} ${state.sym}</b> · חשיפה <b>$${P.notional.toFixed(0)}</b>`);
+  rows.push(`עמלת כניסה: <b>$${P.feePaid.toFixed(2)}</b> · מרג׳ין תחזוקה <b>$${maintMarginUsd(P).toFixed(2)}</b>`);
+  rows.push(`נקודת איזון אמיתית: <b>${fmtP(be)}</b>`);
+  rows.push(`מחיר חיסול: <b style="color:#ff5252">${(isFinite(liq)&&liq>0)?fmtP(liq):'מחוץ לטווח'}</b>`
+    + ((isFinite(liq)&&liq>0)? ` (${((liq/entry-1)*100).toFixed(2)}% מהכניסה)`:''));
+  if(exit>0){
+    const gross=qty*(side==='long'? exit-entry : entry-exit);
+    const exitFee=feeFor(P.notional,'taker');
+    const net=gross-P.feePaid-exitFee;
+    const roe=net/margin*100;
+    rows.push(`<span style="color:${net>=0?'#00ffa6':'#ff5252'}">ביציאה ב-${fmtP(exit)}: ברוטו $${gross.toFixed(2)} · נטו <b>$${net.toFixed(2)}</b> · תשואה על המרג׳ין <b>${(roe>=0?'+':'')+roe.toFixed(2)}%</b></span>`);
+  }
+  out.innerHTML=rows.join('<br>');
+  return {qty,notional:P.notional,liq,be,lev,capped};
+}
+$('cxLong').onclick=()=>calcPosition('long');
+$('cxShort').onclick=()=>calcPosition('short');
+window.__naCalc=(side)=>calcPosition(side);
 window.__naRisk=()=>concentrationRisk();
 window.__naCost=(id)=>{ const P=positions[id]; if(!P) return null;
   return {liq:+liqPrice(P).toFixed(2), gross:+(P.notional*posPnlPct(P)/100).toFixed(2),
