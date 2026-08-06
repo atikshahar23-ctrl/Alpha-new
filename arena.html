@@ -589,8 +589,13 @@ body.cinema #commBar{display:flex!important}
 #duoBar .duoTxt{flex:1 1 auto}
 #duoBar .duoLine.speaking .duoTxt{color:#fff}
 #duoBar .duoFoot{display:flex;align-items:center;gap:8px;font-size:10.5px;opacity:.62;margin-top:2px}
-#duoMic{cursor:pointer;padding:3px 10px;border-radius:8px;border:1px solid rgba(167,139,250,.5);
-  background:rgba(167,139,250,.12);font-size:11px;font-weight:700;opacity:1}
+#duoMic,#duoLangBtn,#duoSlow,#duoFast{cursor:pointer;padding:3px 9px;border-radius:8px;
+  border:1px solid rgba(167,139,250,.5);background:rgba(167,139,250,.12);
+  font-size:11px;font-weight:700;opacity:1;user-select:none}
+#duoSlow,#duoFast{padding:3px 8px}
+#duoBar .duoRate{display:inline-flex;align-items:center;gap:4px}
+#duoRateV{min-width:38px;text-align:center;font-variant-numeric:tabular-nums;opacity:.9}
+#duoStatus{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #duoMic.live{background:rgba(255,80,80,.22);border-color:rgba(255,80,80,.7);animation:duoPulse 1s ease-in-out infinite}
 @keyframes duoPulse{0%,100%{opacity:1}50%{opacity:.5}}
 body.cinema #duoBar.on{display:flex!important}
@@ -1293,8 +1298,14 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
   <div id="duoBar" class="panel clip">
     <div id="duoLines"></div>
     <div class="duoFoot">
-      <span id="duoMic" title="דבר איתם — שאל כל שאלה על הגרף">🎤 דבר</span>
-      <span id="duoStatus">טל ועמית מנתחים…</span>
+      <span id="duoMic" title="דבר איתם — שאל כל שאלה על הגרף">🎤</span>
+      <span id="duoLangBtn" title="שפת הדיבור / speaking language">EN</span>
+      <span class="duoRate">
+        <span id="duoSlow" title="לאט יותר / slower">−</span>
+        <span id="duoRateV">1.08x</span>
+        <span id="duoFast" title="מהר יותר / faster">+</span>
+      </span>
+      <span id="duoStatus"></span>
     </div>
   </div>
   <div id="commBar" class="panel clip" style="display:none"><span id="commIc">🎙️</span><span id="commTxt"></span></div>
@@ -4728,6 +4739,37 @@ function setPerf(on){ perfOpen=on; $('perfPanel').style.display=on?'block':'none
 $('btnMarkets').onclick=()=>setMkt(!mktOpen);
 $('btnDuo').onclick=()=>setDuo(!duo.on);
 $('duoMic').onclick=(e)=>{ e.stopPropagation(); duoListen(); };
+/* Language and speed write to the SAME naSettings the voice-settings panel
+   edits, so the two never drift apart — changing it here changes it there. */
+$('duoLangBtn').onclick=(e)=>{
+  e.stopPropagation();
+  naSettings.commLang=naSettings.commLang==='he'?'en':'he';
+  naSettings.commVoice='auto';           // the old pick belongs to the old language
+  saveNaSettings(); duo.voices=null; duoSyncControls();
+  if(!duo.on) return;
+  // Switching language has to be visibly immediate. Without this the panel
+  // keeps the old language until the next scheduled exchange up to a minute
+  // later, which reads as the button doing nothing. The transcript is dropped
+  // rather than translated — feeding them their own Hebrew back inside an
+  // English prompt makes them repeat themselves in the wrong language.
+  try{ speechSynthesis.cancel(); }catch(e2){}
+  clearTimeout(duo.watchdog); duo.busy=false;
+  duo.history.length=0;
+  $('duoLines').innerHTML='';
+  duoAsk(null);
+};
+function duoNudgeRate(d){
+  const r=Math.round(Math.max(0.7,Math.min(1.6,(naSettings.commRate||1.08)+d))*100)/100;
+  naSettings.commRate=r; saveNaSettings(); duoSyncControls();
+}
+$('duoSlow').onclick=(e)=>{ e.stopPropagation(); duoNudgeRate(-0.08); };
+$('duoFast').onclick=(e)=>{ e.stopPropagation(); duoNudgeRate(0.08); };
+function duoSyncControls(){
+  const b=$('duoLangBtn'); if(b) b.textContent=naSettings.commLang==='he'?'עב':'EN';
+  const v=$('duoRateV'); if(v) v.textContent=(naSettings.commRate||1.08).toFixed(2)+'x';
+  const m=$('duoMic'); if(m) m.title=L('Talk to them — ask anything about the chart','דבר איתם — שאל כל שאלה על הגרף');
+}
+duoSyncControls();
 $('mktClose').onclick=()=>setMkt(false);
 $('btnOrd').onclick=()=>setOrd(!ordOpen);
 $('ordClose').onclick=()=>setOrd(false);
@@ -5274,25 +5316,30 @@ function commSay(txt,urgent){
 const duo={ on:false, busy:false, timer:0, watchdog:0, history:[], voices:null, rec:null, listening:false };
 const DUO_GAP_MS=60000;   // one unprompted exchange a minute — each is ~15s of speech
 
-function duoWho(sp){ return sp==='amit'?'עמית':'טל'; }
+function duoWho(sp){
+  const he=naSettings.commLang==='he';
+  return sp==='amit'?(he?'עמית':'Amit'):(he?'טל':'Tal');
+}
+function duoLang(){ return naSettings.commLang==='he'?'he':'en'; }
 
 /** Two voices that actually sound different, or the honest fallback. */
 function duoPickVoices(){
   if(duo.voices) return duo.voices;
+  const lang=duoLang();
   let pool=[];
-  try{ pool=(speechSynthesis.getVoices()||[]).filter(v=>(v.lang||'').toLowerCase().startsWith('he')); }catch(e){}
+  try{ pool=(speechSynthesis.getVoices()||[]).filter(v=>(v.lang||'').toLowerCase().startsWith(lang)); }catch(e){}
   // Prefer premium engines, same ranking the caster uses.
   const score=v=>(/(enhanced|premium|natural|neural)/i.test(v.name)?8:0)+(/google/i.test(v.name)?6:0)+(v.localService?0:1);
   pool=pool.sort((a,b)=>score(b)-score(a));
   if(pool.length>=2){
     // distinct: two different engine voices, pitch left near-neutral
-    duo.voices={ tal:{v:pool[0],pitch:1.0,rate:1.06}, amit:{v:pool[1],pitch:1.08,rate:1.04}, distinct:true };
+    duo.voices={ tal:{v:pool[0],pitch:1.0,rate:1.0}, amit:{v:pool[1],pitch:1.08,rate:0.98}, distinct:true };
   } else {
     // One Hebrew voice (or none) — separate by pitch. Past about ±0.25 the
     // synthesiser starts sounding damaged rather than like another person,
     // so this is as far apart as they can honestly be pushed.
     const v=pool[0]||null;
-    duo.voices={ tal:{v,pitch:0.82,rate:1.04}, amit:{v,pitch:1.2,rate:1.1}, distinct:false };
+    duo.voices={ tal:{v,pitch:0.82,rate:1.0}, amit:{v,pitch:1.2,rate:1.05}, distinct:false };
   }
   return duo.voices;
 }
@@ -5306,7 +5353,7 @@ function duoRender(turns,activeIdx){
     row.className='duoLine'+(i===activeIdx?' speaking':'');
     const who=document.createElement('span');
     who.className='duoWho '+(t.speaker==='you'?'you':t.speaker==='amit'?'amit':'tal');
-    who.textContent=t.speaker==='you'?'אתה':duoWho(t.speaker);
+    who.textContent=t.speaker==='you'?L('You','אתה'):duoWho(t.speaker);
     const txt=document.createElement('span');
     txt.className='duoTxt'; txt.textContent=t.text;
     row.appendChild(who); row.appendChild(txt); box.appendChild(row);
@@ -5341,8 +5388,11 @@ function duoSpeak(turns){
     if(t.speaker==='you') return;   // your own question is shown, not read back
     const u=new SpeechSynthesisUtterance(t.text);
     const cfg=V[t.speaker==='amit'?'amit':'tal'];
-    if(cfg.v){ u.voice=cfg.v; u.lang=cfg.v.lang; } else u.lang='he-IL';
-    u.pitch=cfg.pitch; u.rate=cfg.rate;
+    if(cfg.v){ u.voice=cfg.v; u.lang=cfg.v.lang; } else u.lang=duoLang()==='he'?'he-IL':'en-US';
+    u.pitch=cfg.pitch;
+    // The slider is the user's speed; each analyst keeps only a small relative
+    // offset on top of it, so changing the setting actually changes both.
+    u.rate=Math.max(0.5,Math.min(2,(naSettings.commRate||1.08)*cfg.rate));
     u.onstart=()=>duoRender(turns,i);
     u.onend=u.onerror=()=>{
       if(!speechSynthesis.speaking){
@@ -5370,7 +5420,7 @@ function duoEvidence(){
   ].filter(Boolean).join('\n');
 }
 
-const DUO_SYSTEM=`אתה מפיק שיחה בין שני אנליסטים שמלווים סוחר בזמן אמת מול גרף חי. הסוחר *שומע* אתכם — הוא לא קורא.
+const DUO_SYSTEM_HE=`אתה מפיק שיחה בין שני אנליסטים שמלווים סוחר בזמן אמת מול גרף חי. הסוחר *שומע* אתכם — הוא לא קורא.
 
 הדמויות:
 - טל (לשון זכר) — קורא מומנטום. מחפש את ההזדמנות: לאן הכסף זורם, מה נשבר, איפה הכניסה.
@@ -5392,6 +5442,30 @@ const DUO_SYSTEM=`אתה מפיק שיחה בין שני אנליסטים שמל
 {"turns":[{"speaker":"tal","text":"…"},{"speaker":"amit","text":"…"}]}
 2 עד 4 תורות.`;
 
+const DUO_SYSTEM_EN=`You are producing a conversation between two analysts sitting with a trader in front of a live chart. The trader HEARS you — they are not reading.
+
+The characters:
+- Tal — momentum reader. Looks for the opportunity: where the money is flowing, what broke, where the entry is.
+- Amit — risk manager. Looks for what can go wrong: what is faking, where the stop goes, why not to take it.
+
+They are mid-shift. No introductions, no greetings.
+
+Rules:
+- They genuinely disagree. If the data is mixed, let them argue. Never manufacture agreement — fake consensus between two voices is worse than one voice, because it sounds like corroboration.
+- If the data really is one-sided, let them agree quickly and say why. Do not stretch an argument that is not there.
+- Short: one or two sentences per turn. This is spoken aloud.
+- Never invent numbers. Use only what you are given, and round them — they are being said out loud, not read.
+- Do not repeat what was already said.
+- If the trader asked something, answer it directly, before any chatter. They may disagree in the answer too.
+- If the data does not support an answer, say so. "We don't know" is a legitimate answer.
+- This is a demo arena and not investment advice.
+
+Return JSON only, with no other text and no code fences:
+{"turns":[{"speaker":"tal","text":"…"},{"speaker":"amit","text":"…"}]}
+2 to 4 turns.`;
+
+function duoSystem(){ return naSettings.commLang==='he'?DUO_SYSTEM_HE:DUO_SYSTEM_EN; }
+
 /** Tolerant JSON extraction — models fence code blocks even when told not to. */
 function duoParse(raw){
   if(!raw) return null;
@@ -5408,18 +5482,19 @@ function duoParse(raw){
 
 async function duoAsk(userMessage){
   if(!duo.on||duo.busy) return;
-  if(!ind||!candleAnalysis){ $('duoStatus').textContent='ממתין לנתונים (נדרשים ~30 נרות)…'; return; }
+  if(!ind||!candleAnalysis){ $('duoStatus').textContent=L('Waiting for data (~30 candles needed)…','ממתין לנתונים (נדרשים ~30 נרות)…'); return; }
   const groq=(localStorage.getItem('alpha_groq')||'').trim();
   const gem=(localStorage.getItem('alpha_key')||'').trim();
-  if(!groq&&!gem){ $('duoStatus').textContent='חסר מפתח AI — הוסף אותו בהגדרות'; return; }
+  if(!groq&&!gem){ $('duoStatus').textContent=L('No AI key — add one in settings','חסר מפתח AI — הוסף אותו בהגדרות'); return; }
 
   duo.busy=true;
-  $('duoStatus').textContent=userMessage?'עונים לך…':'מנתחים…';
+  $('duoStatus').textContent=userMessage?L('Answering you…','עונים לך…'):L('Analysing…','מנתחים…');
 
-  const hist=duo.history.slice(-6).map(t=>`${t.speaker==='you'?'הסוחר':duoWho(t.speaker)}: ${t.text}`).join('\n');
-  const prompt=DUO_SYSTEM+'\n\n=== נתוני השוק עכשיו ===\n'+duoEvidence()
-    +(hist?'\n\n=== מה שכבר נאמר (אל תחזרו) ===\n'+hist:'')
-    +(userMessage?`\n\n>>> הסוחר אמר עכשיו: "${userMessage}"\n>>> ענו לו על זה. זה קודם לכל דבר אחר.`:'');
+  const hist=duo.history.slice(-6).map(t=>`${t.speaker==='you'?L('Trader','הסוחר'):duoWho(t.speaker)}: ${t.text}`).join('\n');
+  const prompt=duoSystem()+L('\n\n=== MARKET DATA NOW ===\n','\n\n=== נתוני השוק עכשיו ===\n')+duoEvidence()
+    +(hist?L('\n\n=== ALREADY SAID (do not repeat) ===\n','\n\n=== מה שכבר נאמר (אל תחזרו) ===\n')+hist:'')
+    +(userMessage?L(`\n\n>>> The trader just said: "${userMessage}"\n>>> Answer that. It comes before anything else.`,
+                    `\n\n>>> הסוחר אמר עכשיו: "${userMessage}"\n>>> ענו לו על זה. זה קודם לכל דבר אחר.`):'');
 
   let txt=null;
   try{
@@ -5440,20 +5515,20 @@ async function duoAsk(userMessage){
   }catch(e){}
 
   const turns=duoParse(txt);
-  if(!turns){ duo.busy=false; $('duoStatus').textContent='הניתוח לא הצליח כרגע (רשת/מפתח)'; return; }
+  if(!turns){ duo.busy=false; $('duoStatus').textContent=L('Analysis failed just now (network/key)','הניתוח לא הצליח כרגע (רשת/מפתח)'); return; }
 
   if(userMessage) duo.history.push({speaker:'you',text:userMessage});
   turns.forEach(t=>duo.history.push(t));
   while(duo.history.length>8) duo.history.shift();
 
-  $('duoStatus').textContent='מחירים חיים · זירת דמו · לא ייעוץ השקעות';
+  $('duoStatus').textContent=L('Live prices · demo arena · not investment advice','מחירים חיים · זירת דמו · לא ייעוץ השקעות');
   duoSpeak(userMessage?[{speaker:'you',text:userMessage}].concat(turns):turns);
 }
 
 /** Listen for one question. Never always-on: battery, and privacy. */
 function duoListen(){
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-  if(!SR){ $('duoStatus').textContent='הדפדפן הזה לא תומך בזיהוי דיבור'; return; }
+  if(!SR){ $('duoStatus').textContent=L('This browser has no speech recognition','הדפדפן הזה לא תומך בזיהוי דיבור'); return; }
   if(duo.listening){ try{ duo.rec.stop(); }catch(e){} return; }
   // Silence them first — otherwise the mic hears the speakers and transcribes
   // the analysts back to themselves as if you had said it.
@@ -5462,13 +5537,13 @@ function duoListen(){
 
   const rec=new SR();
   duo.rec=rec; duo.listening=true;
-  rec.lang='he-IL'; rec.interimResults=false; rec.maxAlternatives=1; rec.continuous=false;
-  $('duoMic').classList.add('live'); $('duoStatus').textContent='מקשיב…';
+  rec.lang=duoLang()==='he'?'he-IL':'en-US'; rec.interimResults=false; rec.maxAlternatives=1; rec.continuous=false;
+  $('duoMic').classList.add('live'); $('duoStatus').textContent=L('Listening…','מקשיב…');
   rec.onresult=(e)=>{
     const said=e.results&&e.results[0]&&e.results[0][0]&&e.results[0][0].transcript;
     if(said&&said.trim()) duoAsk(said.trim());
   };
-  rec.onerror=(e)=>{ $('duoStatus').textContent=(e&&e.error==='not-allowed')?'אין הרשאת מיקרופון':'לא שמעתי'; };
+  rec.onerror=(e)=>{ $('duoStatus').textContent=(e&&e.error==='not-allowed')?L('Microphone permission denied','אין הרשאת מיקרופון'):L("Didn't catch that",'לא שמעתי'); };
   rec.onend=()=>{ duo.listening=false; $('duoMic').classList.remove('live'); };
   try{ rec.start(); }catch(e){ duo.listening=false; $('duoMic').classList.remove('live'); }
 }
@@ -5481,8 +5556,9 @@ function setDuo(on){
   $('btnDuo').classList.toggle('on',on);
   clearInterval(duo.timer); duo.timer=0;
   if(on){
+    duoSyncControls();
     duoPickVoices();
-    $('duoStatus').textContent='מנתחים…';
+    $('duoStatus').textContent=L('Analysing…','מנתחים…');
     duoAsk(null);
     duo.timer=setInterval(()=>duoAsk(null),DUO_GAP_MS);
   } else {
