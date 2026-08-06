@@ -674,8 +674,23 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
     box-shadow:0 -12px 44px rgba(0,0,0,.6); z-index:46; overflow-y:auto;
   }
   body.tools-open #toggles{transform:translateY(0)}
-  #toggles .tgl{width:100%;height:58px;font-size:10px;border-radius:12px}
-  #toggles .tgl span:first-child{font-size:19px}
+  /* Drawer buttons are the ONLY way to reach any tool on a phone, so they are
+     sized to be read, not to be compact — a tool you cannot identify is a tool
+     you do not have. Labels get full contrast rather than the dim rail colour;
+     they are the button, not a caption on it. */
+  #toggles .tgl{width:100%;height:66px;border-radius:12px;gap:4px;padding:4px 2px;
+    color:var(--txt);border-color:rgba(0,240,255,.28);background:rgba(8,16,32,.9)}
+  /* `!important` is load-bearing here, not laziness: every button carries an
+     inline `style="font-size:8px"` from its markup, and an inline style beats
+     any selector. Without this the labels stay at 8px and the drawer looks
+     empty — which is the bug this block exists to fix. */
+  #toggles .tgl span:first-child{font-size:22px !important;line-height:1}
+  #toggles .tgl span:last-child{font-size:10.5px !important;line-height:1.15;font-weight:600;
+    letter-spacing:0;text-align:center;opacity:.95;
+    /* long Hebrew labels must wrap inside the tile instead of spilling out */
+    max-width:100%;overflow-wrap:anywhere}
+  #toggles .tgl svg{width:22px;height:22px}
+  #toggles .tgl.on{border-color:var(--cyan);background:rgba(0,240,255,.14)}
   /* the drawer handle: one button instead of twenty-two */
   #toolsFab{
     position:fixed; z-index:47; left:12px; bottom:calc(10px + env(safe-area-inset-bottom));
@@ -942,12 +957,15 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
   .pills{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;padding-bottom:2px}
   .pills::-webkit-scrollbar{display:none}
   .pill{padding:6px 10px;font-size:11px;flex:none}
-  /* 21 buttons now — on phones the rail must stop well above the price
-     panel (it was burying it) and scroll internally instead */
-  /* the sidebar is a bottom drawer on phones now — these older overrides
-     dragged it back to the left edge */
-  .tgl span{font-size:12px !important}
-  .tgl span:last-child{font-size:7px !important}
+  /* The two `.tgl span` rules that used to live here are GONE, and they must
+     not come back. They were sized for the old left-edge rail — 12px icon,
+     7px label — and carried `!important`, so they beat the bottom drawer's
+     own 19px/10px sizing further up this file. The result on a real phone:
+     every button rendered as an empty box, because a 7px label in the dim
+     colour on a near-black panel is invisible. The only two that survived
+     were the two drawing an <svg> instead of a <span>, which is exactly the
+     fingerprint that identified this. Size the drawer buttons in the drawer's
+     own media query, not here. */
   #pricePanel{left:74px;bottom:calc(10px + env(safe-area-inset-bottom));min-width:0;
     width:auto;max-width:calc(100vw - 150px);padding:9px 11px}
   #priceBig{font-size:clamp(17px,5.6vw,24px)}
