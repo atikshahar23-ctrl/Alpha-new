@@ -1,9 +1,15 @@
-import { mountOrb, setCryEnabled, type OrbHandle } from '../orb/OrbScene';
+import type { OrbHandle } from '../orb/OrbScene';
 import { mountFlowLines } from '../bg/flowLines';
 import { loadState, saveState, addEvent, addTask, scheduleTask, saveNote, loadEvents, loadTasks, removeEvent, loadHgBacklog, scheduleHgTask, loadWallet, saveWallet, loadWalletHistory, addWalletExpense, removeWalletExpense, EXPENSE_CATEGORIES, updateEventTitle, getJournalEntry, saveJournalEntry, type AppState, type TextLang, type AIProvider, type VoiceGender, type UILang, type CalEvent } from '../assistant/state';
 import { askAIStream, askOnce, askVision, runTags, lmsConfigured } from '../assistant/gemini';
 import { GEN1 } from '../data/gen1';
-import * as THREE from 'three';
+import type * as THREE from 'three';
+// Three.js is 707 KB and the dashboard's job is to render a grid of tiles.
+// Importing it for value at module scope meant the browser had to download and
+// parse all of it before ANY tile appeared — measured at 9.4s to first useful
+// paint on a throttled phone, which is the "loads very very slowly" report.
+// It is now fetched only by the features that actually draw 3D.
+let THREE_RT: typeof import('three') | null = null;
 import { tryLocalCommand } from '../assistant/local';
 import { VoiceEngine } from '../assistant/voice';
 import { AudioEngine, type AmbientPreset } from '../assistant/audio';
@@ -189,7 +195,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="wm-hg">HEAVY GUARD OS</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v384 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="wm-hg">HEAVY GUARD OS</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v385 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip apps-chip" id="appsBtn" title="האפליקציות שלי" aria-label="האפליקציות שלי">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="12" cy="19" r="2"/><circle cx="19" cy="19" r="2"/></svg>
@@ -984,6 +990,48 @@ export function mountApp(root: HTMLElement) {
 
   setPikaVolume(state.pikaVolume);
   setPikaPitch(state.pikaPitch);
+  // The orb is the other half of the Three.js cost, and it is decoration: the
+  // tiles are what the user came for. It is mounted AFTER first paint, and the
+  // 40-odd `orb.*` calls scattered through this file keep working because a
+  // proxy queues anything said before the module lands and replays it on
+  // arrival. Nothing downstream has to know the orb was late.
+  let realOrb: OrbHandle | null = null;
+  const orbQueue: Array<(o: OrbHandle) => void> = [];
+  const orb = new Proxy({} as OrbHandle, {
+    get(_t, prop: string | symbol) {
+      return (...args: unknown[]) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const call = (o: OrbHandle) => (o as any)[prop]?.(...args);
+        if (realOrb) return call(realOrb);
+        orbQueue.push(call);
+        return undefined;
+      };
+    },
+  });
+
+  // setCryEnabled is a module-level toggle, not an orb method, so it needs its
+  // own holding pen for the same reason.
+  let setCryReal: ((on: boolean) => void) | null = null;
+  let cryPending: boolean | null = null;
+  const setCryEnabled = (on: boolean): void => {
+    if (setCryReal) setCryReal(on); else cryPending = on;
+  };
+
+  // Start the DOWNLOAD immediately — it is async and blocks nothing, so there
+  // is no reason to make the network wait for an idle callback. Only the
+  // expensive part (building the scene) is deferred, which is what was
+  // actually competing with first paint.
+  const orbModule = import('../orb/OrbScene');
+  const loadOrb = (): void => {
+    void orbModule.then((m) => {
+      setCryReal = m.setCryEnabled;
+      if (cryPending !== null) m.setCryEnabled(cryPending);
+      realOrb = m.mountOrb($('stage'));
+      orbQueue.splice(0).forEach((fn) => fn(realOrb as OrbHandle));
+    }).catch(() => { /* tiles still work without the decoration */ });
+  };
+
+
   setPikaEnabled(state.pikaVoiceOn);
   setCharacterVoiceEnabled(state.pikaVoiceOn);   // gate all character cries on startup
   setCryEnabled(state.pikaVoiceOn);
@@ -998,9 +1046,11 @@ export function mountApp(root: HTMLElement) {
   // Escape hatch: localStorage alpha:orb_minimal = '0'.
   const ORB_MINIMAL = (() => { try { return localStorage.getItem('alpha:orb_minimal') !== '0'; } catch { return true; } })();
 
-  let orb: OrbHandle;
   try {
-    orb = mountOrb($('stage'));
+    // requestIdleCallback where available, so the download never competes with
+    // the first paint it exists to stay out of the way of.
+    const ric = (window as unknown as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => void }).requestIdleCallback;
+    if (ric) ric(loadOrb, { timeout: 800 }); else setTimeout(loadOrb, 120);
     buildOrbitalMenu();
     startBgFx(); // always: in minimal mode it runs flow-only (see FLOW_ONLY)
     runBootSequence();
@@ -1020,8 +1070,10 @@ export function mountApp(root: HTMLElement) {
       });
     }
   } catch {
-    orb = { setEnergy() {}, pikaEmote() {}, dispose() {}, startBodyDetection() {}, stopBodyDetection() {}, setCharacter() {}, throwPokeball(_o, d) { d && d(); }, setCharacterTransform() {}, getCharacterTransform() { return { x: 0, y: 0, z: 0, s: 1, px: 0, py: 0, pz: 0 }; }, resetCharacterTransform() {}, pinCharacterTransform() {}, hasPinnedTransform() { return false; }, attackCharacter(_c: HTMLCanvasElement) {}, setPerfMode(_o: boolean) {} };
+    // The proxy already absorbs every call when the orb never arrives, so
+    // there is nothing to substitute here — the tiles simply render undecorated.
   }
+
   // Apply the saved performance preference (Fast mode) on startup.
   try { if (localStorage.getItem('alpha_fast_mode') === '1') orb.setPerfMode(true); } catch {}
 
@@ -6138,11 +6190,13 @@ export function mountApp(root: HTMLElement) {
     let sbRenderer: THREE.WebGLRenderer | null = null;
     let sbScene: THREE.Scene | null = null, sbCamera: THREE.PerspectiveCamera | null = null;
     let sbBall: THREE.Object3D | null = null, sbRaf = 0;
-    function initSummonBall3D() {
+    async function initSummonBall3D() {
       if (sbRenderer) return;
       const canvas = document.getElementById('summonOrbCanvas') as HTMLCanvasElement | null;
       if (!canvas) return;
       try {
+        THREE_RT ??= await import('three');
+        const THREE = THREE_RT;
         sbRenderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
         sbRenderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
         sbRenderer.setSize(240, 240, false);
