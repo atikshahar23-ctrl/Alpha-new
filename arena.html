@@ -5491,7 +5491,7 @@ function commSay(txt,urgent){
   bar.style.display='flex';
   $('commTxt').textContent=txt;
   bar.classList.remove('urgent'); if(urgent) void bar.offsetWidth, bar.classList.add('urgent');
-  if('speechSynthesis' in window){
+  if('speechSynthesis' in window && !document.hidden){
     try{
       if(urgent) speechSynthesis.cancel();
       if(!speechSynthesis.speaking){
@@ -5585,7 +5585,9 @@ function duoSpeak(turns){
   const budget=Math.min(90000,Math.max(6000,(chars/14)*1000+4000));
   duo.watchdog=setTimeout(()=>{ duo.busy=false; duoRender(turns,-1); },budget);
 
-  if(!('speechSynthesis' in window)){ duo.busy=false; return; }
+  // Transcript still renders when the tab is hidden (so it is waiting for you
+  // when you come back) — but nothing is spoken into an empty room.
+  if(!('speechSynthesis' in window) || document.hidden){ duo.busy=false; return; }
   const V=duoPickVoices();
   try{ speechSynthesis.cancel(); }catch(e){}
   let queued=0;
@@ -5687,6 +5689,10 @@ function duoParse(raw){
 
 async function duoAsk(userMessage){
   if(!duo.on||duo.busy) return;
+  // Never analyse — or talk — to a page nobody is looking at. An unprompted
+  // exchange from a hidden tab is a voice from nowhere, and it also spends a
+  // real API call. A question the trader actually typed still goes through.
+  if(document.hidden && !userMessage) return;
   if(!ind||!candleAnalysis){ $('duoStatus').textContent=L('Waiting for data (~30 candles needed)…','ממתין לנתונים (נדרשים ~30 נרות)…'); return; }
   const groq=(localStorage.getItem('alpha_groq')||'').trim();
   const gem=(localStorage.getItem('alpha_key')||'').trim();
@@ -5786,6 +5792,7 @@ window.__naDuoEvidence=duoEvidence;
 function patternEn(hit){ if(!hit) return null; const m=hit.label.match(/\(([^)]+)\)/); return m?m[1]:null; }
 function commTick(){
   if(!commOn||!ind) return;
+  if(document.hidden) return;      // the caster does not call a game nobody is at
   const cs=state.candles; if(!cs||cs.length<25) return;
   const lp=state.lastPrice; if(!lp) return;
   const lines=[];
@@ -10870,6 +10877,32 @@ function safeLoopFallback(){
 }
 requestAnimationFrame(safeLoopFallback);
 document.addEventListener('visibilitychange',()=>{ running=!document.hidden; prevT=performance.now(); });
+
+// ── The voices never speak into an empty room ────────────────────────────
+// speechSynthesis is owned by the BROWSER, not by this page: an utterance
+// that has been handed over keeps speaking after the tab is backgrounded,
+// after you navigate to another app in the suite, and after the tab is
+// closed. Together with the analysts' 60s timer and the caster's 3s tick —
+// neither of which asked whether anyone was looking — that is how the
+// arena ended up talking out of a phone that was showing something else
+// entirely. The per-engine guards above stop new speech from starting;
+// these stop speech already in flight.
+function naSilenceVoices(){
+  try{ if('speechSynthesis' in window) speechSynthesis.cancel(); }catch(e){}
+  try{ if(duo.rec && duo.listening) duo.rec.stop(); }catch(e){}
+  clearTimeout(duo.watchdog);
+  duo.busy=false;                  // the watchdog would otherwise never clear
+}
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden) naSilenceVoices();
+  // Coming back is not a cue to start monologuing: the duo's own interval
+  // brings the next exchange on schedule, and the caster ticks every 3s.
+});
+// pagehide covers the back/forward cache and the tab actually closing;
+// beforeunload covers the plain navigation Safari does not fire pagehide for.
+window.addEventListener('pagehide', naSilenceVoices);
+window.addEventListener('beforeunload', naSilenceVoices);
+window.__naSilence=naSilenceVoices;
 // Actual GPU context loss (common on mobile under memory pressure or after
 // backgrounding) is distinct from a JS exception — handle it explicitly so
 // the tab doesn't just sit on a dead black canvas forever.

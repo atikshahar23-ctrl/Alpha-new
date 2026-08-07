@@ -457,15 +457,38 @@
     color:#39ff14; text-shadow:0 0 6px rgba(57,255,20,.7); pointer-events:none;
   }
   .scope-hud .amb{color:#ffb000; text-shadow:0 0 6px rgba(255,176,0,.7);}
+  .scope-key{
+    position:absolute; top:19px; left:0; right:0; text-align:center; pointer-events:none;
+    font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:.4px;
+    color:#00e5ff; text-shadow:0 0 6px rgba(0,229,255,.6);
+  }
+  .scope-key[hidden]{display:none;}
   .scope-tabs{
-    position:absolute; bottom:4px; left:0; right:0; display:flex; gap:3px;
-    justify-content:center; padding:0 6px;
+    position:absolute; bottom:4px; left:0; right:0; display:flex; gap:2px;
+    justify-content:center; flex-wrap:wrap; padding:0 5px;
   }
   .scope-tabs button{
-    flex:1; max-width:38px; padding:3px 0; font-size:11px; line-height:1.1; cursor:pointer;
+    flex:0 0 auto; min-width:21px; padding:2px 3px; font-size:10.5px; line-height:1.15; cursor:pointer;
     border-radius:5px; border:1px solid rgba(57,255,20,.2);
     background:rgba(0,0,0,.5); color:#4d7a45;
   }
+  .scope-tabs .sep{flex:0 0 100%; height:0;}
+  /* Full-stage: the figure is screen-blended over the whole stage so the
+     dancers move inside it. The 3D scene renders opaque, so a layer BEHIND
+     it would never be seen — over it, blended, is the only way this reads. */
+  .scope-box.wide{
+    inset:0; width:auto; border:none; border-radius:0; background:transparent;
+    box-shadow:none; pointer-events:none;
+  }
+  .scope-box.wide canvas{height:100%; object-fit:cover; opacity:.62; mix-blend-mode:screen;}
+  /* The scanlines multiply and the vignette is an inset shadow — over the
+     whole stage they darken the dancers instead of framing a CRT. They are
+     bezel dressing; full-stage has no bezel. */
+  .scope-box.wide .scope-vig,
+  .scope-box.wide .scope-scan{display:none;}
+  .scope-box.wide .scope-tabs,
+  .scope-box.wide .scope-hud{pointer-events:auto;}
+  .scope-box.wide .scope-hud{font-size:12px;}
   .scope-tabs button.on{border-color:#39ff14; color:#39ff14; background:rgba(57,255,20,.13);
     box-shadow:0 0 8px rgba(57,255,20,.25);}
   /* stops short of the tab strip so the mode can be picked before the mic is on */
@@ -1025,12 +1048,21 @@
       <div class="scope-scan"></div>
       <div class="scope-vig"></div>
       <div class="scope-hud"><span id="scopeNote">— —</span><span class="amb" id="scopeHz">— Hz</span></div>
+      <div class="scope-key" id="scopeKey" hidden></div>
       <div class="scope-tabs" id="scopeTabs">
-        <button data-sm="lissajous" class="on" title="ליסז׳ו — צורה מיחס התדרים">◎</button>
+        <button data-sm="lissajous" class="on" title="ליסז׳ו — הצורה נולדת מיחס התדרים">◎</button>
         <button data-sm="phase" title="מרחב פאזה — הצורה של הגל עצמו">◍</button>
+        <button data-sm="harmono" title="הרמונוגרף — שני מטוטלות על שני התדרים">✳</button>
+        <button data-sm="rose" title="ורד — עלי הכותרת הם המרווח המוזיקלי">❋</button>
+        <button data-sm="bloom" title="פריחה — ספקטרום מעגלי שנפתח בביט">✺</button>
+        <button data-sm="waterfall" title="מפל — ספקטרוגרמה נגללת">▤</button>
         <button data-sm="wave" title="צורת גל">〰</button>
         <button data-sm="spectrum" title="ספקטרום">▥</button>
-        <button data-ss="1" title="גודל">⤢</button>
+        <span class="sep"></span>
+        <button data-sx="palette" title="צבע: פוספור / לפי התו">🎨</button>
+        <button data-sx="wide" title="על כל הבמה — הרקדנים בתוך הצורה">🖼</button>
+        <button data-sx="size" title="גודל">⤢</button>
+        <button data-sx="save" title="שמור תמונה">📷</button>
       </div>
       <div class="scope-idle" id="scopeIdle">🎤 הקש להפעלת המיקרופון — הסקופ מזהה את תדרי השיר שמתנגן</div>
     </div>
@@ -4433,7 +4465,13 @@
       if(now - st.lastDet > 80){
         st.lastDet = now;
         const d = detectPitch();
-        if(d) st.det = d;                        // hold the last real note
+        if(d){
+          st.det = d;                            // hold the last real note
+          // feed the key detector, weighted by how clear the reading was —
+          // a confident note should count for more than a barely-there one
+          const pc = ((Math.round(69 + 12 * Math.log2(d.f1 / 440)) % 12) + 12) % 12;
+          pcHist[pc] += d.conf; pcCount++;
+        }
         st.detLive = !!d;
       }
       if(scope.on) analyser.getFloatTimeDomainData(st.wave);
@@ -4506,14 +4544,75 @@
   // brightens the trace, the bass envelope breathes the amplitude, the
   // treble band adds the harmonic overlay, and a bass drop throws rings.
   const scope = { on:false, mode:'lissajous', size:1, raf:0, phase:0, kick:0,
-    rings:[], amp:0.35, treb:0 };
+    rings:[], amp:0.35, treb:0, chroma:true, wide:false, hue:110, beats:0, bar:0 };
+
+  // ── the musical layer ────────────────────────────────────────────────
+  // Two frequencies are a number pair until you name what they are. The
+  // interval comes from the ratio, the key from what the song keeps landing
+  // on over time — both computed from the detections, never assumed.
+  const INTERVALS = [
+    [1,'יוניסון'], [16/15,'חצי טון'], [9/8,'טון שלם'], [6/5,'טרצה מינורית'],
+    [5/4,'טרצה מז׳ורית'], [4/3,'קווארטה'], [45/32,'טריטון'], [3/2,'קווינטה'],
+    [8/5,'סקסטה מינורית'], [5/3,'סקסטה מז׳ורית'], [16/9,'ספטימה'],
+    [15/8,'ספטימה גדולה'], [2,'אוקטבה'],
+  ];
+  function intervalName(r){
+    if(!isFinite(r) || r <= 0) return null;
+    let f = r; while(f >= 2) f /= 2; while(f < 1) f *= 2;   // fold into one octave
+    let best = null, bestC = 1e9;
+    for(const [t,name] of INTERVALS){
+      const c = Math.abs(1200 * Math.log2(f / t));
+      if(c < bestC){ bestC = c; best = name; }
+    }
+    // half a semitone off any named interval is not that interval
+    return bestC <= 40 ? best : null;
+  }
+  /** Smallest n/d that lands on the ratio — the rose's petal count. */
+  function ratioApprox(r){
+    let bn = 1, bd = 1, be = 1e9;
+    for(let d = 1; d <= 12; d++){
+      const n = Math.max(1, Math.round(r * d));
+      const e = Math.abs(n / d - r);
+      if(e < be){ be = e; bn = n; bd = d; }
+      if(be < 0.004) break;
+    }
+    return [bn, bd];
+  }
+  // Krumhansl-Schmuckler: correlate what the song actually lands on against
+  // the twelve major and twelve minor tonal profiles. It needs a while to be
+  // worth showing, which is why it is gated on a sample count.
+  const KS_MAJ = [6.35,2.23,3.48,2.33,4.38,4.09,2.52,5.19,2.39,3.66,2.29,2.88];
+  const KS_MIN = [6.33,2.68,3.52,5.38,2.60,3.53,2.54,4.75,3.98,2.69,3.34,3.17];
+  const PC_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  const pcHist = new Float64Array(12);
+  let pcCount = 0;
+  function noteKey(){
+    if(pcCount < 40) return null;
+    const mean = (a)=>{ let s=0; for(let i=0;i<12;i++) s+=a[i]; return s/12; };
+    const hm = mean(pcHist);
+    let best = null, bestR = -2;
+    for(let rot = 0; rot < 12; rot++){
+      for(const [prof, mode] of [[KS_MAJ,'מז׳ור'],[KS_MIN,'מינור']]){
+        const pm = mean(prof);
+        let num = 0, dh = 0, dp = 0;
+        for(let i = 0; i < 12; i++){
+          const a = pcHist[(i + rot) % 12] - hm, b = prof[i] - pm;
+          num += a * b; dh += a * a; dp += b * b;
+        }
+        const r = num / (Math.sqrt(dh * dp) || 1e-9);
+        if(r > bestR){ bestR = r; best = PC_NAMES[rot] + ' ' + mode; }
+      }
+    }
+    // a weak correlation is a guess, and a guessed key is worse than none
+    return bestR > 0.55 ? { key: best, r: bestR } : null;
+  }
   // Every size is capped against the viewport: the inline custom property the
   // size cycle sets beats any media query, so a plain "360px" let the box
   // overhang the stage on a phone.
   const SCOPE_SIZES = ['min(190px,46vw)', 'min(264px,62vw)', 'min(360px,80vw)'];
   const scopeBtn = $('scopeBtn'), scopeBox = $('scopeBox'), scopeIdle = $('scopeIdle');
   const scopeCv = $('scopeCanvas'), sctx = scopeCv.getContext('2d');
-  const scopeNoteEl = $('scopeNote'), scopeHzEl = $('scopeHz');
+  const scopeNoteEl = $('scopeNote'), scopeHzEl = $('scopeHz'), scopeKeyEl = $('scopeKey');
   const SW = scopeCv.width, SH = scopeCv.height;
 
   function scopeGrid(){
@@ -4528,10 +4627,117 @@
     sctx.restore();
   }
 
+  // In chroma mode the trace's COLOUR is the note: the twelve pitch classes
+  // are laid around the hue wheel, so a key change is visible before it is
+  // audible to an untrained ear. Phosphor mode keeps the classic CRT green.
+  function scopeCol(light){
+    if(!scope.chroma) return light ? '#ffb000' : '#39ff14';
+    return `hsl(${(scope.hue + (light ? 40 : 0)) % 360} 100% ${light ? 62 : 55}%)`;
+  }
   function scopeTrace(col, glow, width){
     sctx.strokeStyle = col; sctx.shadowColor = col;
     sctx.shadowBlur = glow; sctx.lineWidth = width;
     sctx.stroke();
+  }
+
+  /**
+   * Harmonograph: two decaying pendulums, one per detected frequency. A real
+   * one is a pen on a table with weights swinging under it; the decay is why
+   * the figure spirals inward instead of retracing itself forever.
+   */
+  function drawHarmono(det){
+    const r = det ? Math.max(0.25, Math.min(8, det.ratio)) : 1.5;
+    const cx = SW/2, cy = SH/2, s = Math.min(SW,SH) * 0.32 * (0.7 + scope.amp);
+    const N = 1400, T = 42;
+    sctx.beginPath();
+    for(let i = 0; i < N; i++){
+      const t = (i / N) * T;
+      const d1 = Math.exp(-t * 0.026), d2 = Math.exp(-t * 0.019);
+      const x = cx + s * (Math.sin(t * 1.0 + scope.phase) * d1 + Math.sin(t * r * 1.002) * d2 * 0.72);
+      const y = cy - s * (Math.sin(t * r + scope.phase * 0.6) * d1 + Math.sin(t * 1.004 + 1.2) * d2 * 0.72);
+      i ? sctx.lineTo(x,y) : sctx.moveTo(x,y);
+    }
+    scopeTrace(scopeCol(false), 9 + scope.kick * 14, 1.2 + scope.kick);
+  }
+
+  /**
+   * Rose curve r = cos(k·θ). k comes from the RATIO as a fraction, so the
+   * petal count is the musical interval: an octave (2/1) and a fifth (3/2)
+   * draw visibly different flowers.
+   */
+  function drawRose(det){
+    const [n, d] = ratioApprox(det ? det.ratio : 1.5);
+    const cx = SW/2, cy = SH/2, s = Math.min(SW,SH) * 0.42 * (0.6 + scope.amp * 0.8);
+    const k = n / d;
+    const turns = Math.PI * 2 * d;      // a k=n/d rose closes after d turns
+    const N = 1200;
+    sctx.beginPath();
+    for(let i = 0; i <= N; i++){
+      const th = (i / N) * turns + scope.phase * 0.3;
+      const rr = Math.cos(k * th) * s;
+      const x = cx + Math.cos(th) * rr, y = cy - Math.sin(th) * rr;
+      i ? sctx.lineTo(x,y) : sctx.moveTo(x,y);
+    }
+    scopeTrace(scopeCol(false), 10 + scope.kick * 16, 1.5 + scope.kick * 1.4);
+  }
+
+  /** Polar spectrum — the band bloom opens on the beat. */
+  function drawBloom(st){
+    const bins = st.analyser.frequencyBinCount;
+    const arr = new Uint8Array(bins);
+    st.analyser.getByteFrequencyData(arr);
+    const cx = SW/2, cy = SH/2, r0 = Math.min(SW,SH) * (0.11 + scope.kick * 0.05);
+    const bands = 96, maxL = Math.min(SW,SH) * 0.36;
+    sctx.save();
+    sctx.globalCompositeOperation = 'lighter';
+    sctx.lineCap = 'round';
+    for(let b = 0; b < bands; b++){
+      const i0 = Math.floor(Math.pow(bins, b / bands));
+      const i1 = Math.max(i0 + 1, Math.floor(Math.pow(bins, (b + 1) / bands)));
+      let v = 0; for(let i = i0; i < i1 && i < bins; i++) v = Math.max(v, arr[i]);
+      const len = (v / 255) * maxL;
+      if(len < 1) continue;
+      const a = (b / bands) * Math.PI * 2 + scope.phase * 0.5;
+      const hue = scope.chroma ? (scope.hue + b * 2.2) % 360 : (100 + b * 0.9) % 360;
+      sctx.strokeStyle = `hsl(${hue} 100% 58%)`;
+      sctx.shadowColor = sctx.strokeStyle; sctx.shadowBlur = 8;
+      sctx.lineWidth = 2.2;
+      sctx.beginPath();
+      sctx.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0);
+      sctx.lineTo(cx + Math.cos(a) * (r0 + len), cy + Math.sin(a) * (r0 + len));
+      sctx.stroke();
+    }
+    sctx.restore();
+  }
+
+  /**
+   * Spectrogram waterfall — the song's structure over time. Scrolls by
+   * blitting the canvas onto itself, so it must NOT get the persistence
+   * fade or the grid every frame; scopeFrame skips both for this mode.
+   */
+  function drawWaterfall(st){
+    const bins = st.analyser.frequencyBinCount;
+    const arr = new Uint8Array(bins);
+    st.analyser.getByteFrequencyData(arr);
+    const step = 3;
+    sctx.save();
+    sctx.globalCompositeOperation = 'copy';
+    sctx.drawImage(scopeCv, -step, 0);
+    sctx.restore();
+    sctx.clearRect(SW - step, 0, step, SH);
+    sctx.fillStyle = '#020402';
+    sctx.fillRect(SW - step, 0, step, SH);
+    const rows = 90;
+    for(let row = 0; row < rows; row++){
+      const i0 = Math.floor(Math.pow(bins, row / rows));
+      const i1 = Math.max(i0 + 1, Math.floor(Math.pow(bins, (row + 1) / rows)));
+      let v = 0; for(let i = i0; i < i1 && i < bins; i++) v = Math.max(v, arr[i]);
+      if(v < 12) continue;
+      const y = SH - (row + 1) * (SH / rows);
+      const hue = scope.chroma ? (scope.hue + row * 1.6) % 360 : 100;
+      sctx.fillStyle = `hsl(${hue} 100% ${18 + (v / 255) * 46}%)`;
+      sctx.fillRect(SW - step, y, step, SH / rows + 1);
+    }
   }
 
   function drawLissajous(det){
@@ -4549,7 +4755,7 @@
       const y = cy - Math.sin(t * r + scope.phase) * scale;
       i ? sctx.lineTo(x,y) : sctx.moveTo(x,y);
     }
-    scopeTrace('#39ff14', 10 + scope.kick * 16, 1.6 + scope.kick * 1.6);
+    scopeTrace(scopeCol(false), 10 + scope.kick * 16, 1.6 + scope.kick * 1.6);
     // Treble writes a second, faster figure over the first — busy vocal and
     // hi-hat passages visibly thicken the drawing, quiet ones leave it clean.
     if(scope.treb > 0.06){
@@ -4561,7 +4767,7 @@
         i ? sctx.lineTo(x,y) : sctx.moveTo(x,y);
       }
       sctx.globalAlpha = Math.min(0.75, scope.treb * 2.4);
-      scopeTrace('#ffb000', 8, 1.1);
+      scopeTrace(scopeCol(true), 8, 1.1);
       sctx.globalAlpha = 1;
     }
   }
@@ -4579,7 +4785,7 @@
       const y = cy - buf[i + lag] * scale;
       i ? sctx.lineTo(x,y) : sctx.moveTo(x,y);
     }
-    scopeTrace('#39ff14', 9 + scope.kick * 14, 1.4 + scope.kick * 1.2);
+    scopeTrace(scopeCol(false), 9 + scope.kick * 14, 1.4 + scope.kick * 1.2);
   }
 
   function drawWave(st){
@@ -4590,7 +4796,7 @@
       const y = SH/2 - buf[i] * SH * 0.42;
       i ? sctx.lineTo(x,y) : sctx.moveTo(x,y);
     }
-    scopeTrace('#39ff14', 9 + scope.kick * 12, 1.6);
+    scopeTrace(scopeCol(false), 9 + scope.kick * 12, 1.6);
   }
 
   function drawSpectrum(st){
@@ -4601,13 +4807,15 @@
     // 5kHz, where music has almost nothing to show
     const bands = 64, bw = SW / bands;
     sctx.save();
-    sctx.shadowColor = '#39ff14'; sctx.shadowBlur = 6;
+    const cLow = scopeCol(false), cHigh = scopeCol(true);
+    sctx.shadowColor = cLow; sctx.shadowBlur = 6;
     for(let b = 0; b < bands; b++){
       const i0 = Math.floor(Math.pow(bins, b / bands));
       const i1 = Math.max(i0 + 1, Math.floor(Math.pow(bins, (b + 1) / bands)));
       let v = 0; for(let i = i0; i < i1 && i < bins; i++) v = Math.max(v, arr[i]);
       const h = (v / 255) * SH * 0.88;
-      sctx.fillStyle = b < bands * 0.25 ? 'rgba(57,255,20,.78)' : 'rgba(255,176,0,.66)';
+      sctx.fillStyle = b < bands * 0.25 ? cLow : cHigh;
+      sctx.shadowColor = sctx.fillStyle;
       sctx.fillRect(b * bw, SH - h, bw * 0.78, h);
     }
     sctx.restore();
@@ -4628,43 +4836,65 @@
     sctx.restore();
   }
 
+  let scopeKeyAt = 0, scopeKeyTxt = '';
   function scopeFrame(now){
     scope.raf = requestAnimationFrame(scopeFrame);
-    // phosphor persistence — fade rather than clear, so the trace leaves a
-    // tail exactly as a CRT does
-    sctx.globalCompositeOperation = 'source-over';
-    sctx.shadowBlur = 0;
-    sctx.fillStyle = 'rgba(2,4,2,0.3)';
-    sctx.fillRect(0,0,SW,SH);
-    scopeGrid();
-
     const st = liveAudio;
+    const waterfall = scope.mode === 'waterfall';
+
+    if(!waterfall){
+      // phosphor persistence — fade rather than clear, so the trace leaves a
+      // tail exactly as a CRT does. The waterfall scrolls itself and would be
+      // wiped out by both of these.
+      sctx.globalCompositeOperation = 'source-over';
+      sctx.shadowBlur = 0;
+      sctx.fillStyle = 'rgba(2,4,2,0.3)';
+      sctx.fillRect(0,0,SW,SH);
+      if(!scope.wide) scopeGrid();
+    }
+
     if(st){
       scopeIdle.hidden = true;
       const det = st.det;
       scope.amp += (st.env - scope.amp) * 0.15;
+      if(det) scope.hue = ((Math.round(69 + 12 * Math.log2(det.f1 / 440)) % 12) + 12) % 12 * 30;
       // the beat kicks the phase, so the figure visibly turns ON the beat
       scope.phase += 0.006 + scope.kick * 0.05;
       scope.kick *= 0.90;
       sctx.save();
       if(scope.mode === 'lissajous') drawLissajous(det);
       else if(scope.mode === 'phase') drawPhase(st, det);
+      else if(scope.mode === 'harmono') drawHarmono(det);
+      else if(scope.mode === 'rose') drawRose(det);
+      else if(scope.mode === 'bloom') drawBloom(st);
+      else if(waterfall) drawWaterfall(st);
       else if(scope.mode === 'wave') drawWave(st);
       else drawSpectrum(st);
       sctx.restore();
-      drawRings(now);
+      if(!waterfall) drawRings(now);
       if(det){
+        const iv = intervalName(det.ratio);
         scopeNoteEl.textContent = det.note + (det.cents >= 0 ? ' +' : ' ') + det.cents + '¢'
           + (st.detLive ? '' : ' ·');
-        scopeHzEl.textContent = det.f1.toFixed(1) + ' Hz · ' + det.ratio.toFixed(2) + ':1';
+        scopeHzEl.textContent = det.f1.toFixed(1) + ' Hz · ' + (iv || det.ratio.toFixed(2) + ':1');
       } else {
         scopeNoteEl.textContent = 'מאזין…';
         scopeHzEl.textContent = '— Hz';
       }
+      // the key is a slow, accumulated conclusion — recomputing it 60 times a
+      // second would be 60 correlations for a value that moves once a song
+      if(now - scopeKeyAt > 1500){
+        scopeKeyAt = now;
+        const k = noteKey();
+        scopeKeyTxt = k ? `סולם: ${k.key}` : '';
+      }
+      scopeKeyEl.textContent = scopeKeyTxt;
+      scopeKeyEl.hidden = !scopeKeyTxt;
     } else {
       scopeIdle.hidden = false;
       scopeNoteEl.textContent = '— —';
       scopeHzEl.textContent = '— Hz';
+      scopeKeyEl.hidden = true;
     }
   }
 
@@ -4675,7 +4905,7 @@
     store.set('lt:scope_on', scope.on);
     cancelAnimationFrame(scope.raf);
     if(scope.on){
-      scopeBox.style.setProperty('--scope-w', SCOPE_SIZES[scope.size]);
+      applyScopeWide();          // owns --scope-w in both layouts
       scope.raf = requestAnimationFrame(scopeFrame);
     }
   }
@@ -4687,6 +4917,13 @@
     if(next && !liveAudio) startLiveBeat();
   });
   scopeIdle.addEventListener('click', ()=>{ if(!liveAudio) startLiveBeat(); });
+  function applyScopeWide(){
+    scopeBox.classList.toggle('wide', scope.wide);
+    scopeBox.style.setProperty('--scope-w', scope.wide ? 'auto' : SCOPE_SIZES[scope.size]);
+    $('scopeTabs').querySelector('[data-sx="wide"]').classList.toggle('on', scope.wide);
+    $('scopeTabs').querySelector('[data-sx="size"]').disabled = scope.wide;
+    sctx.fillStyle = '#020402'; sctx.fillRect(0,0,SW,SH);
+  }
   $('scopeTabs').addEventListener('click', (e)=>{
     const b = e.target.closest('button'); if(!b) return;
     if(b.dataset.sm){
@@ -4694,10 +4931,30 @@
       store.set('lt:scope_mode', scope.mode);
       $('scopeTabs').querySelectorAll('[data-sm]').forEach(x=>x.classList.toggle('on', x === b));
       sctx.fillStyle = '#020402'; sctx.fillRect(0,0,SW,SH);
-    } else {
+      return;
+    }
+    if(b.dataset.sx === 'palette'){
+      scope.chroma = !scope.chroma;
+      store.set('lt:scope_chroma', scope.chroma);
+      b.classList.toggle('on', scope.chroma);
+      showMiniToast(scope.chroma ? '🎨 הצבע הוא התו שמתנגן' : '🟢 פוספור קלאסי');
+    } else if(b.dataset.sx === 'wide'){
+      scope.wide = !scope.wide;
+      store.set('lt:scope_wide', scope.wide);
+      applyScopeWide();
+    } else if(b.dataset.sx === 'size'){
       scope.size = (scope.size + 1) % SCOPE_SIZES.length;
       store.set('lt:scope_size', scope.size);
       scopeBox.style.setProperty('--scope-w', SCOPE_SIZES[scope.size]);
+    } else if(b.dataset.sx === 'save'){
+      try{
+        const a = document.createElement('a');
+        const d = liveAudio && liveAudio.det;
+        a.download = `phosphor-${scope.mode}${d ? '-' + d.note + '-' + Math.round(d.f1) + 'Hz' : ''}.png`;
+        a.href = scopeCv.toDataURL('image/png');
+        a.click();
+        showMiniToast('📷 התמונה נשמרה');
+      }catch(err){ showMiniToast('השמירה נכשלה'); }
     }
   });
   window.addEventListener('lt-beat', ()=>{ scope.kick = 1; });
@@ -4711,12 +4968,17 @@
     if(typeof sm === 'string') scope.mode = sm;
     const ss = store.get('lt:scope_size');
     if(Number.isInteger(ss) && ss >= 0 && ss < SCOPE_SIZES.length) scope.size = ss;
+    if(store.get('lt:scope_chroma') === false) scope.chroma = false;
+    scope.wide = store.get('lt:scope_wide') === true;
     $('scopeTabs').querySelectorAll('[data-sm]').forEach(x=>x.classList.toggle('on', x.dataset.sm === scope.mode));
+    $('scopeTabs').querySelector('[data-sx="palette"]').classList.toggle('on', scope.chroma);
+    applyScopeWide();
     if(store.get('lt:scope_on') === true) setScope(true);
   }
   window.__ltScope = { state:()=>scope, det:()=>liveAudio && liveAudio.det,
     open:(on)=>setScope(on !== false), mode:(m)=>{ scope.mode = m; },
-    beat:()=>{ scope.kick = 1; }, ring:()=>scope.rings.push({t:performance.now(), r0:0}) };
+    beat:()=>{ scope.kick = 1; }, ring:()=>scope.rings.push({t:performance.now(), r0:0}),
+    interval:intervalName, ratioApprox, key:()=>noteKey(), hist:()=>({ counts:Array.from(pcHist), n:pcCount }) };
 
   // ================= KEEP SCREEN AWAKE =================
   // This app is meant to sit propped up and watched (a party display, a
