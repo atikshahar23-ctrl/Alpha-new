@@ -439,7 +439,11 @@
   /* ── 📈 PHOSPHOR — the audio scope ──────────────────────────────────
      Reads the SAME mic analyser the live-beat engine already runs, so
      turning it on costs one canvas rather than a second audio graph. */
-  .hero-btn.scope-btn{top:442px; font-size:16px;}
+  /* The single button column runs 10,58,106…442,490,538 — past 380px it is
+     outside a stage that is `height:min(50vh,380px); overflow:hidden`, so the
+     last three buttons were clipped and could not be tapped at all. A second
+     column keeps every control inside the stage on any screen. */
+  .hero-btn.scope-btn{top:10px; left:58px; font-size:16px;}
   .hero-btn.scope-btn.on{border-color:rgba(57,255,20,.75); box-shadow:0 0 18px rgba(57,255,20,.5); color:#8dff7a;}
   .scope-box{
     position:absolute; right:10px; bottom:10px; z-index:6;
@@ -476,10 +480,16 @@
   /* Full-stage: the figure is screen-blended over the whole stage so the
      dancers move inside it. The 3D scene renders opaque, so a layer BEHIND
      it would never be seen — over it, blended, is the only way this reads. */
+  /* `inset:0` alone leaves the height to resolve through a canvas that the
+     base rule sizes with height:auto — which shrink-wraps, and left the box
+     covering only the top of the stage when VJ was entered from an already
+     open corner scope. Stating both axes explicitly removes the dependency. */
   .scope-box.wide{
-    inset:0; width:auto; border:none; border-radius:0; background:transparent;
+    top:0; left:0; right:0; bottom:0; width:auto; height:100%;
+    border:none; border-radius:0; background:transparent;
     box-shadow:none; pointer-events:none;
   }
+  .scope-box.wide canvas{display:block; width:100%; height:100%;}
   .scope-box.wide canvas{height:100%; object-fit:cover; opacity:.62; mix-blend-mode:screen;}
   /* The scanlines multiply and the vignette is an inset shadow — over the
      whole stage they darken the dancers instead of framing a CRT. They are
@@ -509,9 +519,9 @@
     text-shadow:0 0 26px rgba(0,229,255,.7), 0 0 64px rgba(178,75,243,.55), 0 3px 14px rgba(0,0,0,.95);
   }
   body.vj .scope-box.wide .scope-tabs{bottom:8px;}
-  .hero-btn.vj-btn{top:490px; font-size:16px;}
+  .hero-btn.vj-btn{top:58px; left:58px; font-size:16px;}
   .hero-btn.vj-btn.on{border-color:rgba(178,75,243,.8); box-shadow:0 0 18px rgba(178,75,243,.55); color:#dcb4ff;}
-  .hero-btn.cap-btn{top:538px; font-size:15px;}
+  .hero-btn.cap-btn{top:106px; left:58px; font-size:15px;}
   .hero-btn.cap-btn.on{border-color:rgba(255,77,109,.8); box-shadow:0 0 18px rgba(255,77,109,.5); color:#ffb3c1;
     animation:liveBeatPulse 1.4s ease-in-out infinite;}
 
@@ -544,6 +554,40 @@
   .cap-dot{width:7px; height:7px; border-radius:50%; background:#ff4d6d; box-shadow:0 0 8px #ff4d6d;
     animation:liveBeatPulse 1.2s ease-in-out infinite; flex:none;}
   .cap-warn{color:#ffb000;}
+  /* ── PRECISION READOUTS ─────────────────────────────────────────────── */
+  .scope-tuner{
+    position:absolute; left:8%; right:8%; top:32px; height:16px; pointer-events:none;
+  }
+  .scope-tuner[hidden]{display:none;}
+  .st-rail{position:absolute; inset:6px 0 auto 0; height:3px; border-radius:2px;
+    background:linear-gradient(90deg,rgba(255,82,82,.5),rgba(57,255,20,.65) 45%,rgba(57,255,20,.65) 55%,rgba(255,82,82,.5));}
+  .st-mid{position:absolute; left:50%; top:2px; width:1px; height:11px; background:rgba(255,255,255,.6);}
+  .st-needle{position:absolute; top:0; width:2px; height:15px; border-radius:1px;
+    background:#ffb000; box-shadow:0 0 8px #ffb000; transition:left .09s linear;}
+  .st-needle.ok{background:#39ff14; box-shadow:0 0 10px #39ff14;}
+  .st-cents{position:absolute; right:0; top:-2px; font-family:'JetBrains Mono',monospace;
+    font-size:8.5px; color:var(--dim,#6d90a8);}
+  .scope-data{
+    position:absolute; left:6px; top:32px; z-index:3; pointer-events:none;
+    display:grid; grid-template-columns:auto auto; gap:1px 8px;
+    font-family:'JetBrains Mono',monospace; font-size:8.5px; line-height:1.45;
+    background:rgba(2,6,2,.62); padding:5px 7px; border-radius:6px;
+    border:1px solid rgba(57,255,20,.16);
+  }
+  .scope-data[hidden]{display:none;}
+  .scope-data b{color:#5f8f57; font-weight:500;}
+  .scope-data span{color:#bfffb0; text-align:end;}
+  .scope-data span.warn{color:#ff5252;}
+  .scope-ribbon{
+    position:absolute; left:0; right:0; bottom:26px; height:16px; pointer-events:none;
+    display:flex; gap:1px; padding:0 6px; align-items:flex-end;
+  }
+  .scope-ribbon[hidden]{display:none;}
+  .scope-ribbon i{flex:1 1 0; min-width:0; border-radius:1px 1px 0 0; opacity:.85;}
+  body.vj .scope-data{font-size:11px; left:12px; top:44px; gap:2px 14px;}
+  body.vj .scope-tuner{top:46px; height:22px;}
+  body.vj .st-needle{height:21px; width:3px;}
+  body.vj .scope-ribbon{height:26px; bottom:34px;}
   /* stops short of the tab strip so the mode can be picked before the mic is on */
   .scope-idle{
     position:absolute; inset:0 0 26px 0; display:flex; align-items:center; justify-content:center;
@@ -1116,6 +1160,26 @@
       <div class="scope-vig"></div>
       <div class="scope-hud"><span id="scopeNote">— —</span><span class="amb" id="scopeHz">— Hz</span></div>
       <div class="scope-key" id="scopeKey" hidden></div>
+      <div class="scope-tuner" id="scopeTuner" hidden>
+        <div class="st-rail"></div><div class="st-mid"></div>
+        <div class="st-needle" id="stNeedle" style="left:50%"></div>
+        <div class="st-cents" id="stCents">0¢</div>
+      </div>
+      <div class="scope-data" id="scopeData" hidden>
+        <b>f₁</b><span id="dF1">—</span>
+        <b>תו</b><span id="dNote">—</span>
+        <b>סטייה</b><span id="dCents">—</span>
+        <b>f₂</b><span id="dF2">—</span>
+        <b>יחס</b><span id="dRatio">—</span>
+        <b>מרווח</b><span id="dIv">—</span>
+        <b>סולם</b><span id="dKey">—</span>
+        <b>קצב</b><span id="dBpm">—</span>
+        <b>עוצמה</b><span id="dDb">—</span>
+        <b>בהירות</b><span id="dCent">—</span>
+        <b>ודאות</b><span id="dConf">—</span>
+        <b>רזולוציה</b><span id="dRes">—</span>
+      </div>
+      <div class="scope-ribbon" id="scopeRibbon" hidden></div>
       <div class="scope-tabs" id="scopeTabs">
         <button data-sm="lissajous" class="on" title="ליסז׳ו — הצורה נולדת מיחס התדרים">◎</button>
         <button data-sm="phase" title="מרחב פאזה — הצורה של הגל עצמו">◍</button>
@@ -1126,6 +1190,12 @@
         <button data-sm="wave" title="צורת גל">〰</button>
         <button data-sm="spectrum" title="ספקטרום">▥</button>
         <span class="sep"></span>
+        <button data-sx="data" title="לוח נתונים מלא — כל מספר שהמנוע מודד">📋</button>
+        <button data-sx="tuner" title="מד סטייה — כמה סנטים מהתו הנקי">🎯</button>
+        <button data-sx="ribbon" title="סרט התווים — מה התנגן בדקה האחרונה">🎹</button>
+        <button data-sx="hps" title="תיקון אוקטבה (HPS) — מונע זיהוי הרמוניה במקום היסוד">⑂</button>
+        <button data-sx="fft" title="רזולוציית ניתוח: 2048 מהיר / 8192 מדויק">⌗</button>
+        <button data-sx="a4" title="תדר ייחוס A4: 440 / 432 / 442 / 415">🎼</button>
         <button data-sx="palette" title="צבע: פוספור / לפי התו">🎨</button>
         <button data-sx="wide" title="על כל הבמה — הרקדנים בתוך הצורה">🖼</button>
         <button data-sx="size" title="גודל">⤢</button>
@@ -4455,22 +4525,51 @@
     analyser.fftSize = 2048;
     analyser.smoothingTimeConstant = 0.35;
     src.connect(analyser);
-    const data = new Uint8Array(analyser.frequencyBinCount);
+    let data = new Uint8Array(analyser.frequencyBinCount);
     const st = { ctx, stream, analyser, raf: 0, env: 0, envSlow: 0.05, lastOnset: 0, lastDrop: 0, intervals: [], lastBpmPush: 0,
       // time-domain window + the detected pitch, both consumed by the scope
-      wave: new Float32Array(analyser.fftSize), det: null, lastDet: 0 };
-    const binHz = ctx.sampleRate / analyser.fftSize;
-    // Fundamental search window: ~E2 up to ~C7. The floor is deliberately
-    // above the kick drum's 40-80Hz fundamental — in dance music the kick is
-    // routinely the loudest thing in the mix, so a lower floor makes the
-    // scope report the drum on every beat instead of the note being played.
-    const pLo = Math.max(1, Math.round(80 / binHz));
-    const pHi = Math.min(analyser.frequencyBinCount - 2, Math.round(2200 / binHz));
+      wave: new Float32Array(analyser.fftSize), det: null, lastDet: 0,
+      binHz: 0, level: 0, peakDb: -99, clip: 0, centroid: 0 };
+    let binHz = 0, pLo = 1, pHi = 2, lo = 1, hi = 2, tLo = 3, tHi = 4;
+    /**
+     * Resolution is a real trade, so it is the user's to make. A 2048-point
+     * FFT gives ~23Hz bins — a third of a semitone at A4 and a whole octave
+     * of ambiguity in the bass. 8192 gives ~5.9Hz and resolves a bass line,
+     * at four times the analysis window (~170ms), which smears fast runs.
+     * Everything derived from bin numbers has to be recomputed on the switch.
+     */
+    function reconfigure(size){
+      analyser.fftSize = size;
+      data = new Uint8Array(analyser.frequencyBinCount);
+      st.wave = new Float32Array(analyser.fftSize);
+      st.binHz = binHz = ctx.sampleRate / analyser.fftSize;
+      // Fundamental search window: ~E2 up to ~C7. The floor is deliberately
+      // above the kick drum's 40-80Hz fundamental — in dance music the kick
+      // is routinely the loudest thing in the mix, so a lower floor makes the
+      // scope report the drum on every beat instead of the note played.
+      pLo = Math.max(1, Math.round(80 / binHz));
+      pHi = Math.min(analyser.frequencyBinCount - 2, Math.round(2200 / binHz));
+      lo = Math.max(1, Math.round(40 / binHz));
+      hi = Math.max(lo + 1, Math.round(160 / binHz));
+      // Treble band (~2-8kHz — vocals, hats, synth leads): its energy drives
+      // the dancers' arm flourish intricacy, so busy vocal/synth passages get
+      // visibly faster, richer hand work while bass alone drives the feet.
+      tLo = Math.max(hi + 1, Math.round(2000 / binHz));
+      tHi = Math.min(data.length - 1, Math.round(8000 / binHz));
+      st.hist = [];
+    }
+    st.reconfigure = reconfigure;
+    reconfigure(scope.fft || 2048);
     const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
     function noteOf(f){
-      const m = 69 + 12 * Math.log2(f / 440);
+      // A4 is 440Hz by convention, not by law: baroque ensembles tune to 415,
+      // much of continental Europe to 442, and a chunk of electronic music is
+      // mastered at 432. Reading a 432-tuned track against 440 reports every
+      // note as 32 cents flat, which looks like a broken detector.
+      const m = 69 + 12 * Math.log2(f / (scope.a4 || 440));
       const r = Math.round(m);
-      return { name: NOTE_NAMES[((r % 12) + 12 + 0) % 12] + (Math.floor(r / 12) - 1), cents: Math.round((m - r) * 100) };
+      return { name: NOTE_NAMES[((r % 12) + 12) % 12] + (Math.floor(r / 12) - 1),
+        cents: Math.round((m - r) * 100), midi: r };
     }
     /**
      * The strongest tone in the room, and the strongest tone that is NOT it.
@@ -4482,6 +4581,50 @@
       let bi = -1, bv = 0, sum = 0;
       for(let i = pLo; i <= pHi; i++){ sum += data[i]; if(data[i] > bv){ bv = data[i]; bi = i; } }
       const mean = sum / (pHi - pLo + 1);
+      // ---- octave correction (harmonic product spectrum) ----------------
+      // The loudest partial is very often NOT the fundamental: on a bass
+      // synth or a male vocal the second harmonic frequently wins, and the
+      // scope then reports the note an octave high all night. HPS multiplies
+      // the spectrum by downsampled copies of itself — every harmonic lands
+      // on the fundamental's bin and reinforces it, while a harmonic's own
+      // bin gets multiplied by whatever noise sits at 1/2 and 1/3 of it.
+      if(scope.hps && bi > 1){
+        let best = bi, bestScore = -1, bestDiv = 1, ownScore = -1;
+        // only candidates at 1/2, 1/3 and 1/4 of the peak matter — the
+        // fundamental of a mistaken harmonic is always below it
+        // Divisors stop at 3. A fundamental four octaves-and-a-fifth below
+        // the loudest partial is not a thing music does, but bin/4 always
+        // lands SOMEWHERE, and noise there was enough to drag a clean 440Hz
+        // tone down to a phantom 172Hz.
+        for(const div of [1, 2, 3]){
+          const ci = Math.round(bi / div);
+          if(ci < pLo) continue;
+          let score = 0, used = 0;
+          for(let h = 1; h <= 5; h++){
+            const j = ci * h;
+            if(j > pHi) break;
+            // take the local max: an interpolated peak rarely sits dead on
+            // an integer multiple of its own bin
+            const v = Math.max(data[j - 1] || 0, data[j], data[j + 1] || 0);
+            score += Math.log(1 + v); used++;
+          }
+          if(used < 2) continue;
+          score /= used;
+          // A real fundamental is audible in its own right, not merely
+          // implied by its harmonics. Requiring it to be a substantial
+          // fraction of the loudest partial is what separates "the peak is
+          // the 2nd harmonic" from "there is noise down there".
+          if(div > 1 && data[ci] < Math.max(30, bv * 0.35)) continue;
+          if(div === 1) ownScore = score;
+          if(score > bestScore){ bestScore = score; best = ci; bestDiv = div; }
+        }
+        // A tie keeps the peak we actually measured. Only a clearly better
+        // harmonic story earns an octave jump — without this margin, ordinary
+        // spectral leakage was enough to flip the reading.
+        if(bestDiv > 1 && best !== bi && bestScore > ownScore * 1.06){
+          bi = best; bv = data[bi];
+        }
+      }
       // A peak that is not clearly above the noise floor is not a note. Room
       // tone, applause and a paused track all land here — better to hold the
       // last reading than to report a number the music never played.
@@ -4509,15 +4652,21 @@
         const sh2 = den2 ? Math.max(-1, Math.min(1, (a2 - c2) / (2 * den2))) : 0;
         f2 = (si + sh2) * binHz;
       }
-      const n = noteOf(f1);
-      return { f1, f2, ratio: f2 / f1, note: n.name, cents: n.cents,
+      // ---- median smoothing ---------------------------------------------
+      // One frame is a sample, not a reading. A three-frame median kills the
+      // single-frame flyers a transient throws without adding the lag an
+      // average would — the value shown is always one the detector actually
+      // produced, never a blend of two notes that were never played.
+      st.hist = st.hist || [];
+      st.hist.push(f1);
+      if(st.hist.length > 3) st.hist.shift();
+      const sorted = st.hist.slice().sort((x, y) => x - y);
+      const fMed = scope.smooth ? sorted[Math.floor(sorted.length / 2)] : f1;
+      const n = noteOf(fMed);
+      return { f1: fMed, fRaw: f1, f2, ratio: f2 / fMed, note: n.name, cents: n.cents,
+        midi: n.midi, binHz,
         conf: Math.max(0, Math.min(1, (bv - mean) / 120)) };
     }
-    const lo = Math.max(1, Math.round(40 / binHz)), hi = Math.max(lo + 1, Math.round(160 / binHz));
-    // Treble band (~2-8kHz — vocals, hats, synth leads): its energy drives
-    // the dancers' arm flourish intricacy, so busy vocal/synth passages get
-    // visibly faster, richer hand work while bass alone drives the feet.
-    const tLo = Math.max(hi + 1, Math.round(2000 / binHz)), tHi = Math.min(data.length - 1, Math.round(8000 / binHz));
     let lastTreblePush = 0;
     function tick(now){
       st.raf = requestAnimationFrame(tick);
@@ -4541,7 +4690,30 @@
         }
         st.detLive = !!d;
       }
-      if(scope.on) analyser.getFloatTimeDomainData(st.wave);
+      if(scope.on){
+        analyser.getFloatTimeDomainData(st.wave);
+        // ---- level, headroom and brightness ----------------------------
+        // A clipping input wrecks pitch detection long before it sounds bad,
+        // and "the detector is wrong" is indistinguishable from "the mic is
+        // pinned" unless the meter says so. RMS in dBFS, plus a peak that
+        // decays slowly so a brief overload stays visible.
+        let sq = 0, pk = 0;
+        for(let i = 0; i < st.wave.length; i++){
+          const v = st.wave[i]; sq += v * v;
+          const a = Math.abs(v); if(a > pk) pk = a;
+        }
+        const rms = Math.sqrt(sq / st.wave.length);
+        st.level = rms;
+        const db = 20 * Math.log10(Math.max(1e-6, rms));
+        st.peakDb = Math.max(db, st.peakDb - 0.35);
+        if(pk > 0.985) st.clip = now;
+        // spectral centroid = where the energy sits on average. Musicians
+        // call it brightness; it separates a bassline from a hi-hat pattern
+        // in one number.
+        let num = 0, den = 0;
+        for(let i = 1; i < data.length; i++){ const m = data[i]; num += m * i * binHz; den += m; }
+        st.centroid = den > 0 ? num / den : 0;
+      }
       if(now - lastTreblePush > 180){
         lastTreblePush = now;
         let treb = 0;
@@ -4565,6 +4737,7 @@
           const sorted = st.intervals.slice().sort((a, b) => a - b);
           const med = sorted[Math.floor(sorted.length / 2)];
           applyTempo(med);
+          scope.bpm = 60000 / med;
         }
         // bass drop: envelope far above the adaptive baseline
         if(st.env > st.envSlow * 2.2 && st.env > 0.28 && now - st.lastDrop > 2000){
@@ -4611,7 +4784,11 @@
   // brightens the trace, the bass envelope breathes the amplitude, the
   // treble band adds the harmonic overlay, and a bass drop throws rings.
   const scope = { on:false, mode:'lissajous', size:1, raf:0, phase:0, kick:0,
-    rings:[], amp:0.35, treb:0, chroma:true, wide:false, vj:false, hue:110, beats:0, bar:0 };
+    rings:[], amp:0.35, treb:0, chroma:true, wide:false, vj:false, hue:110, beats:0, bar:0,
+    // precision layer
+    data:false, tuner:false, ribbon:false, hps:true, smooth:true, fft:2048, a4:440, notes:[] };
+  const FFT_SIZES = [2048, 8192];
+  const A4_REFS = [440, 432, 442, 415];
 
   // ── the musical layer ────────────────────────────────────────────────
   // Two frequencies are a number pair until you name what they are. The
@@ -4680,6 +4857,66 @@
   const scopeBtn = $('scopeBtn'), scopeBox = $('scopeBox'), scopeIdle = $('scopeIdle');
   const scopeCv = $('scopeCanvas'), sctx = scopeCv.getContext('2d');
   const scopeNoteEl = $('scopeNote'), scopeHzEl = $('scopeHz'), scopeKeyEl = $('scopeKey');
+  const scopeTuner = $('scopeTuner'), stNeedle = $('stNeedle'), stCents = $('stCents');
+  const scopeData = $('scopeData'), scopeRibbon = $('scopeRibbon');
+  const dEl = (id)=>document.getElementById(id);
+
+  /**
+   * Every number the engine actually measured, once a frame is too often to
+   * read and once a second is too slow to trust — 8/s tracks the music
+   * without turning the panel into a flicker.
+   */
+  function scopeReadouts(st, det, now){
+    if(scope.tuner){
+      scopeTuner.hidden = false;
+      const c = det ? Math.max(-50, Math.min(50, det.cents)) : 0;
+      stNeedle.style.left = (50 + c) + '%';
+      // ±5 cents is the width a trained ear stops hearing a difference at,
+      // and the width a tuner should call "in tune"
+      stNeedle.classList.toggle('ok', !!det && Math.abs(det.cents) <= 5);
+      stCents.textContent = det ? ((det.cents >= 0 ? '+' : '') + det.cents + '¢') : '—';
+    } else scopeTuner.hidden = true;
+
+    if(scope.ribbon){
+      scopeRibbon.hidden = false;
+      if(det && (!scope.notes.length || scope.notes[scope.notes.length - 1].m !== det.midi
+                 || now - scope.notes[scope.notes.length - 1].t > 700)){
+        scope.notes.push({ m: det.midi, t: now, pc: ((det.midi % 12) + 12) % 12, conf: det.conf });
+        if(scope.notes.length > 64) scope.notes.shift();
+      }
+      if(now - (scope.ribbonAt || 0) > 220){
+        scope.ribbonAt = now;
+        // height is the octave, colour is the pitch class — the same hue
+        // wheel the chroma palette uses, so ribbon and trace agree
+        scopeRibbon.innerHTML = scope.notes.map(n=>{
+          const oct = Math.max(0, Math.min(1, (n.m - 36) / 48));
+          return `<i style="height:${(18 + oct * 82).toFixed(0)}%;background:hsl(${n.pc * 30} 100% 58%)"></i>`;
+        }).join('');
+      }
+    } else scopeRibbon.hidden = true;
+
+    if(!scope.data){ scopeData.hidden = true; return; }
+    scopeData.hidden = false;
+    if(now - (scope.dataAt || 0) < 120) return;
+    scope.dataAt = now;
+    const k = scopeKeyTxt ? scopeKeyTxt.replace('סולם: ', '') : '—';
+    dEl('dF1').textContent = det ? det.f1.toFixed(2) + ' Hz' : '—';
+    dEl('dNote').textContent = det ? det.note : '—';
+    dEl('dCents').textContent = det ? ((det.cents >= 0 ? '+' : '') + det.cents + '¢') : '—';
+    dEl('dF2').textContent = det ? det.f2.toFixed(1) + ' Hz' : '—';
+    dEl('dRatio').textContent = det ? det.ratio.toFixed(3) + ':1' : '—';
+    dEl('dIv').textContent = det ? (intervalName(det.ratio) || '—') : '—';
+    dEl('dKey').textContent = k;
+    dEl('dBpm').textContent = scope.bpm ? Math.round(scope.bpm) + ' BPM' : '—';
+    const clipped = st.clip && now - st.clip < 1500;
+    const dbEl = dEl('dDb');
+    dbEl.textContent = clipped ? 'עומס!' : (st.peakDb > -90 ? st.peakDb.toFixed(1) + ' dB' : '—');
+    dbEl.classList.toggle('warn', !!clipped);
+    dEl('dCent').textContent = st.centroid ? Math.round(st.centroid) + ' Hz' : '—';
+    dEl('dConf').textContent = det ? Math.round(det.conf * 100) + '%' : '—';
+    dEl('dRes').textContent = st.binHz ? st.binHz.toFixed(1) + ' Hz/bin · ' + analyserSizeLabel() : '—';
+  }
+  function analyserSizeLabel(){ return scope.fft === 8192 ? 'מדויק' : 'מהיר'; }
   let SW = scopeCv.width, SH = scopeCv.height;
   /**
    * The canvas backing store follows its displayed size. At 640x400 upscaled
@@ -4762,6 +4999,36 @@
       i ? sctx.lineTo(x,y) : sctx.moveTo(x,y);
     }
     scopeTrace(scopeCol(false), 10 + scope.kick * 16, 1.5 + scope.kick * 1.4);
+  }
+
+  /**
+   * Frequency ruler for the band displays. A spectrum without an axis is a
+   * decoration: you can see that something is loud, but not what it is.
+   * The labels use the inverse of the same log mapping the bands use, so a
+   * mark sits exactly over the band that holds that frequency.
+   */
+  function drawFreqAxis(st, bands){
+    const bins = st.analyser.frequencyBinCount;
+    const nyq = st.ctx.sampleRate / 2;
+    const marks = [50, 100, 250, 500, 1000, 2000, 5000, 10000];
+    sctx.save();
+    sctx.shadowBlur = 0;
+    sctx.font = `${Math.max(8, Math.round(SH * 0.03))}px 'JetBrains Mono', monospace`;
+    sctx.textAlign = 'center';
+    for(const f of marks){
+      if(f >= nyq) break;
+      const bin = f / (nyq / bins);
+      if(bin < 1) continue;
+      const bandPos = (Math.log(bin) / Math.log(bins)) * bands;
+      const x = (bandPos / bands) * SW;
+      if(x < 14 || x > SW - 14) continue;
+      sctx.strokeStyle = 'rgba(255,255,255,.13)';
+      sctx.lineWidth = 1;
+      sctx.beginPath(); sctx.moveTo(x, 0); sctx.lineTo(x, SH - 12); sctx.stroke();
+      sctx.fillStyle = 'rgba(200,230,210,.6)';
+      sctx.fillText(f >= 1000 ? (f / 1000) + 'k' : String(f), x, SH - 3);
+    }
+    sctx.restore();
   }
 
   /** Polar spectrum — the band bloom opens on the beat. */
@@ -4900,8 +5167,16 @@
       sctx.fillStyle = b < bands * 0.25 ? cLow : cHigh;
       sctx.shadowColor = sctx.fillStyle;
       sctx.fillRect(b * bw, SH - h, bw * 0.78, h);
+      // peak hold: the loudest each band has been, decaying slowly. It is the
+      // difference between "that was loud" and "was that loud?"
+      scope.peaks = scope.peaks || new Float32Array(64);
+      const ph = Math.max(h, (scope.peaks[b] || 0) - SH * 0.004);
+      scope.peaks[b] = ph;
+      sctx.fillStyle = 'rgba(255,255,255,.5)';
+      sctx.fillRect(b * bw, SH - ph - 2, bw * 0.78, 2);
     }
     sctx.restore();
+    if(scope.data) drawFreqAxis(st, bands);
   }
 
   function drawRings(now){
@@ -4920,12 +5195,17 @@
   }
 
   let scopeKeyAt = 0, scopeKeyTxt = '';
+  // A poll cannot keep up with a layout change: entering VJ mode reshapes the
+  // box in one frame, and up to 400ms of drawing into a stale backing store is
+  // long enough to see the figure squashed into a corner. ResizeObserver fires
+  // on the layout pass itself, which is the only thing that is never late.
+  const scopeRO = ('ResizeObserver' in window) ? new ResizeObserver(()=>scopeResize()) : null;
+  if(scopeRO) scopeRO.observe(scopeCv);
   let scopeSizeAt = 0;
   function scopeFrame(now){
     scope.raf = requestAnimationFrame(scopeFrame);
-    // cheap to check, expensive to get wrong — a stale backing store is the
-    // difference between a crisp trace and a blurred one
-    if(now - scopeSizeAt > 400){ scopeSizeAt = now; scopeResize(); }
+    // belt-and-braces for browsers without ResizeObserver
+    if(!scopeRO && now - scopeSizeAt > 400){ scopeSizeAt = now; scopeResize(); }
     const st = liveAudio;
     const waterfall = scope.mode === 'waterfall';
 
@@ -4977,11 +5257,13 @@
       }
       scopeKeyEl.textContent = scopeKeyTxt;
       scopeKeyEl.hidden = !scopeKeyTxt;
+      scopeReadouts(st, det, now);
     } else {
       scopeIdle.hidden = false;
       scopeNoteEl.textContent = '— —';
       scopeHzEl.textContent = '— Hz';
       scopeKeyEl.hidden = true;
+      scopeTuner.hidden = true; scopeData.hidden = true; scopeRibbon.hidden = true;
     }
   }
 
@@ -5033,6 +5315,29 @@
       scope.size = (scope.size + 1) % SCOPE_SIZES.length;
       store.set('lt:scope_size', scope.size);
       scopeBox.style.setProperty('--scope-w', SCOPE_SIZES[scope.size]);
+    } else if(b.dataset.sx === 'data' || b.dataset.sx === 'tuner' || b.dataset.sx === 'ribbon'){
+      const k = b.dataset.sx;
+      scope[k] = !scope[k];
+      store.set('lt:scope_' + k, scope[k]);
+      b.classList.toggle('on', scope[k]);
+    } else if(b.dataset.sx === 'hps'){
+      scope.hps = !scope.hps;
+      store.set('lt:scope_hps', scope.hps);
+      b.classList.toggle('on', scope.hps);
+      showMiniToast(scope.hps ? '⑂ תיקון אוקטבה פעיל' : '⑂ תיקון אוקטבה כבוי — הפיק החזק ינצח');
+    } else if(b.dataset.sx === 'fft'){
+      scope.fft = FFT_SIZES[(FFT_SIZES.indexOf(scope.fft) + 1) % FFT_SIZES.length];
+      store.set('lt:scope_fft', scope.fft);
+      b.classList.toggle('on', scope.fft === 8192);
+      if(liveAudio && liveAudio.reconfigure) liveAudio.reconfigure(scope.fft);
+      showMiniToast(scope.fft === 8192
+        ? '⌗ מדויק — ‏5.9Hz לתא, חלון ניתוח ארוך יותר'
+        : '⌗ מהיר — ‏23Hz לתא, תגובה מיידית');
+    } else if(b.dataset.sx === 'a4'){
+      scope.a4 = A4_REFS[(A4_REFS.indexOf(scope.a4) + 1) % A4_REFS.length];
+      store.set('lt:scope_a4', scope.a4);
+      b.classList.toggle('on', scope.a4 !== 440);
+      showMiniToast('🎼 ייחוס A4 = ' + scope.a4 + ' Hz');
     } else if(b.dataset.sx === 'save'){
       try{
         const a = document.createElement('a');
@@ -5056,9 +5361,17 @@
     const ss = store.get('lt:scope_size');
     if(Number.isInteger(ss) && ss >= 0 && ss < SCOPE_SIZES.length) scope.size = ss;
     if(store.get('lt:scope_chroma') === false) scope.chroma = false;
+    for(const k of ['data','tuner','ribbon']) if(store.get('lt:scope_' + k) === true) scope[k] = true;
+    if(store.get('lt:scope_hps') === false) scope.hps = false;
+    const sf = store.get('lt:scope_fft'); if(FFT_SIZES.indexOf(sf) >= 0) scope.fft = sf;
+    const sa = store.get('lt:scope_a4'); if(A4_REFS.indexOf(sa) >= 0) scope.a4 = sa;
     scope.wide = store.get('lt:scope_wide') === true;
     $('scopeTabs').querySelectorAll('[data-sm]').forEach(x=>x.classList.toggle('on', x.dataset.sm === scope.mode));
     $('scopeTabs').querySelector('[data-sx="palette"]').classList.toggle('on', scope.chroma);
+    for(const k of ['data','tuner','ribbon']) $('scopeTabs').querySelector('[data-sx="' + k + '"]').classList.toggle('on', scope[k]);
+    $('scopeTabs').querySelector('[data-sx="hps"]').classList.toggle('on', scope.hps);
+    $('scopeTabs').querySelector('[data-sx="fft"]').classList.toggle('on', scope.fft === 8192);
+    $('scopeTabs').querySelector('[data-sx="a4"]').classList.toggle('on', scope.a4 !== 440);
     applyScopeWide();
     if(store.get('lt:scope_on') === true) setScope(true);
     // VJ mode and the caption engine are restored AFTER their own code
@@ -5087,7 +5400,10 @@
     } else {
       applyScopeWide();
     }
+    // the class change and the reflow it causes land on different frames;
+    // measuring in the same tick reads the OLD box
     scopeResize();
+    requestAnimationFrame(()=>requestAnimationFrame(scopeResize));
   }
   vjBtn.addEventListener('click', ()=>setVJ(!scope.vj));
   document.addEventListener('keydown', (e)=>{
@@ -5261,7 +5577,10 @@
   window.__ltScope = { state:()=>scope, det:()=>liveAudio && liveAudio.det,
     open:(on)=>setScope(on !== false), mode:(m)=>{ scope.mode = m; },
     beat:()=>{ scope.kick = 1; }, ring:()=>scope.rings.push({t:performance.now(), r0:0}),
-    interval:intervalName, ratioApprox, key:()=>noteKey(), hist:()=>({ counts:Array.from(pcHist), n:pcCount }) };
+    interval:intervalName, ratioApprox, key:()=>noteKey(), hist:()=>({ counts:Array.from(pcHist), n:pcCount }),
+    audio:()=>liveAudio && { binHz:liveAudio.binHz, peakDb:liveAudio.peakDb, centroid:liveAudio.centroid, level:liveAudio.level },
+    set:(k,v)=>{ scope[k] = v; if(k === 'fft' && liveAudio && liveAudio.reconfigure) liveAudio.reconfigure(v); },
+    notes:()=>scope.notes.slice() };
 
   // ================= KEEP SCREEN AWAKE =================
   // This app is meant to sit propped up and watched (a party display, a
