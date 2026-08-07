@@ -491,6 +491,59 @@
   .scope-box.wide .scope-hud{font-size:12px;}
   .scope-tabs button.on{border-color:#39ff14; color:#39ff14; background:rgba(57,255,20,.13);
     box-shadow:0 0 8px rgba(57,255,20,.25);}
+  /* ── VJ MODE — the visualiser IS the stage ────────────────────────────
+     Mode 1 is the dancers, mode 2 replaces their world with the frequency
+     visuals. The 3D scene is not merely covered, it is paused (see
+     avatarScene setPaused) — a full WebGL scene rendering behind an opaque
+     canvas is pure heat. */
+  body.vj .hero-avatar{display:none;}
+  body.vj .hero-wrap{background:#020402;}
+  body.vj .scope-box.wide canvas{opacity:1; mix-blend-mode:normal;}
+  body.vj .hero-caption{display:none;}
+  /* The lyric line stays on top of the visuals — that is the whole point of
+     showing it here rather than in the corner. */
+  body.vj .hero-line{z-index:7; bottom:auto; top:50%; transform:translateY(-50%);}
+  body.vj .hero-line .hl-orig{font-size:clamp(15px,3vw,24px); opacity:.75;}
+  body.vj .hero-line .hl-trans{
+    font-size:clamp(24px,6.4vw,54px); letter-spacing:.01em;
+    text-shadow:0 0 26px rgba(0,229,255,.7), 0 0 64px rgba(178,75,243,.55), 0 3px 14px rgba(0,0,0,.95);
+  }
+  body.vj .scope-box.wide .scope-tabs{bottom:8px;}
+  .hero-btn.vj-btn{top:490px; font-size:16px;}
+  .hero-btn.vj-btn.on{border-color:rgba(178,75,243,.8); box-shadow:0 0 18px rgba(178,75,243,.55); color:#dcb4ff;}
+  .hero-btn.cap-btn{top:538px; font-size:15px;}
+  .hero-btn.cap-btn.on{border-color:rgba(255,77,109,.8); box-shadow:0 0 18px rgba(255,77,109,.5); color:#ffb3c1;
+    animation:liveBeatPulse 1.4s ease-in-out infinite;}
+
+  /* ── LIVE CAPTIONS — what the room is actually singing ─────────────── */
+  .cap-band{
+    position:absolute; left:0; right:0; bottom:0; z-index:8; pointer-events:none;
+    padding:10px 14px 12px; text-align:center;
+    background:linear-gradient(0deg, rgba(2,4,10,.92), rgba(2,4,10,.55) 60%, transparent);
+  }
+  .cap-band[hidden]{display:none;}
+  .cap-final{
+    font-family:'Rubik',sans-serif; font-weight:700; color:#fff;
+    font-size:clamp(15px,3.4vw,26px); line-height:1.35;
+    text-shadow:0 0 16px rgba(0,229,255,.5), 0 2px 10px rgba(0,0,0,.95);
+    min-height:1.2em;
+  }
+  .cap-interim{
+    font-size:clamp(12px,2.6vw,18px); color:rgba(190,215,240,.72); font-style:italic;
+    margin-top:3px; min-height:1em;
+  }
+  .cap-meta{
+    display:flex; gap:8px; justify-content:center; align-items:center; margin-top:6px;
+    font-family:'JetBrains Mono',monospace; font-size:9.5px; color:rgba(150,180,210,.75);
+    pointer-events:auto; flex-wrap:wrap;
+  }
+  .cap-meta button{
+    padding:2px 8px; border-radius:999px; cursor:pointer; font-size:10px;
+    background:rgba(10,14,26,.8); border:1px solid rgba(0,229,255,.3); color:#bfe9ff;
+  }
+  .cap-dot{width:7px; height:7px; border-radius:50%; background:#ff4d6d; box-shadow:0 0 8px #ff4d6d;
+    animation:liveBeatPulse 1.2s ease-in-out infinite; flex:none;}
+  .cap-warn{color:#ffb000;}
   /* stops short of the tab strip so the mode can be picked before the mic is on */
   .scope-idle{
     position:absolute; inset:0 0 26px 0; display:flex; align-items:center; justify-content:center;
@@ -1043,6 +1096,20 @@
     <button class="hero-btn freeze-btn" id="freezeBtn" title="פריז לתמונה — הרקדנים קופאים בפוזה (Z) ❄️">❄️</button>
     <button class="hero-btn poster-btn" id="posterBtn" title="צלם פוסטר של הבמה — הורדת PNG (P) 📸">📸</button>
     <button class="hero-btn scope-btn" id="scopeBtn" title="אוסצילוסקופ — מזהה את התדרים של השיר ובונה מהם צורות 📈">📈</button>
+    <button class="hero-btn vj-btn" id="vjBtn" title="מצב 2 — הוויז׳ואלס במקום עולם הרקדנים (V) 🌀">🌀</button>
+    <button class="hero-btn cap-btn" id="capBtn" title="כתוביות חיות — המערכת מאזינה וכותבת מה נשמע, בזמן אמת 💬">💬</button>
+    <div class="cap-band" id="capBand" hidden>
+      <div class="cap-final" id="capFinal"></div>
+      <div class="cap-interim" id="capInterim"></div>
+      <div class="cap-meta">
+        <span class="cap-dot" id="capDot"></span>
+        <span id="capStat">מאזין…</span>
+        <button id="capCopy">העתק</button>
+        <button id="capSrt">SRT</button>
+        <button id="capTxt">TXT</button>
+        <button id="capClear">נקה</button>
+      </div>
+    </div>
     <div class="scope-box" id="scopeBox" hidden>
       <canvas id="scopeCanvas" width="640" height="400"></canvas>
       <div class="scope-scan"></div>
@@ -4544,7 +4611,7 @@
   // brightens the trace, the bass envelope breathes the amplitude, the
   // treble band adds the harmonic overlay, and a bass drop throws rings.
   const scope = { on:false, mode:'lissajous', size:1, raf:0, phase:0, kick:0,
-    rings:[], amp:0.35, treb:0, chroma:true, wide:false, hue:110, beats:0, bar:0 };
+    rings:[], amp:0.35, treb:0, chroma:true, wide:false, vj:false, hue:110, beats:0, bar:0 };
 
   // ── the musical layer ────────────────────────────────────────────────
   // Two frequencies are a number pair until you name what they are. The
@@ -4613,7 +4680,23 @@
   const scopeBtn = $('scopeBtn'), scopeBox = $('scopeBox'), scopeIdle = $('scopeIdle');
   const scopeCv = $('scopeCanvas'), sctx = scopeCv.getContext('2d');
   const scopeNoteEl = $('scopeNote'), scopeHzEl = $('scopeHz'), scopeKeyEl = $('scopeKey');
-  const SW = scopeCv.width, SH = scopeCv.height;
+  let SW = scopeCv.width, SH = scopeCv.height;
+  /**
+   * The canvas backing store follows its displayed size. At 640x400 upscaled
+   * across a full stage the trace goes soft and the glow smears — which is
+   * exactly the mode meant to look its best. Capped at 2x DPR and 1600px so a
+   * retina tablet does not ask for a 4K canvas sixty times a second.
+   */
+  function scopeResize(){
+    const r = scopeCv.getBoundingClientRect();
+    if(!r.width || !r.height) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const w = Math.min(1600, Math.round(r.width * dpr));
+    const h = Math.min(1000, Math.round(r.height * dpr));
+    if(Math.abs(w - SW) < 2 && Math.abs(h - SH) < 2) return;
+    scopeCv.width = SW = w; scopeCv.height = SH = h;
+    sctx.fillStyle = '#020402'; sctx.fillRect(0,0,SW,SH);
+  }
 
   function scopeGrid(){
     sctx.save();
@@ -4837,8 +4920,12 @@
   }
 
   let scopeKeyAt = 0, scopeKeyTxt = '';
+  let scopeSizeAt = 0;
   function scopeFrame(now){
     scope.raf = requestAnimationFrame(scopeFrame);
+    // cheap to check, expensive to get wrong — a stale backing store is the
+    // difference between a crisp trace and a blurred one
+    if(now - scopeSizeAt > 400){ scopeSizeAt = now; scopeResize(); }
     const st = liveAudio;
     const waterfall = scope.mode === 'waterfall';
 
@@ -4974,7 +5061,203 @@
     $('scopeTabs').querySelector('[data-sx="palette"]').classList.toggle('on', scope.chroma);
     applyScopeWide();
     if(store.get('lt:scope_on') === true) setScope(true);
+    // VJ mode and the caption engine are restored AFTER their own code
+    // below — both reference consts declared there, and reading a const
+    // before its declaration throws (which took the whole page down once).
   }
+  window.addEventListener('resize', ()=>{ if(scope.on) scopeResize(); });
+  // ================= 🌀 MODE 2 — the visualiser IS the stage ==============
+  // Mode 1 is the dancers' world. Mode 2 replaces it with the frequency
+  // visuals at full stage, with the lyric line riding on top — the same line
+  // the dancers had, just bigger and centred, because the visuals want the
+  // middle of the frame and the words want to be read.
+  const vjBtn = $('vjBtn');
+  function setVJ(on){
+    scope.vj = !!on;
+    document.body.classList.toggle('vj', scope.vj);
+    vjBtn.classList.toggle('on', scope.vj);
+    store.set('lt:vj', scope.vj);
+    // Pausing beats hiding: a WebGL scene rendering behind an opaque canvas
+    // costs exactly as much as one you can see.
+    window.__lyricsAvatarBridge?.setPaused?.(scope.vj);
+    if(scope.vj){
+      scope.wide = true;
+      if(!scope.on) setScope(true); else applyScopeWide();
+      if(!liveAudio) startLiveBeat();
+    } else {
+      applyScopeWide();
+    }
+    scopeResize();
+  }
+  vjBtn.addEventListener('click', ()=>setVJ(!scope.vj));
+  document.addEventListener('keydown', (e)=>{
+    if(e.key === 'v' && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '')) setVJ(!scope.vj);
+  });
+
+  // ================= 💬 LIVE CAPTIONS — for the DJ booth ==================
+  // The device listens to the room and writes down what it hears, live. This
+  // is speech recognition on the microphone — the same mechanism as live
+  // captioning — so it transcribes what is ACTUALLY audible, and it is honest
+  // about the consequences: a vocal buried under a loud mix is hard for any
+  // recogniser, so lines arrive partial and get corrected as the engine
+  // firms up. Interim text is shown dimmed and italic precisely so a DJ can
+  // see the difference between "heard" and "still guessing".
+  //
+  // Chrome routes recognition through a network service; nothing is stored by
+  // this app beyond the session transcript in memory, which the export
+  // buttons write out locally.
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const capBtn = $('capBtn'), capBand = $('capBand'), capFinal = $('capFinal'),
+        capInterim = $('capInterim'), capStat = $('capStat');
+  const cap = { on:false, rec:null, lines:[], t0:0, restarts:0, lastAt:0, err:'', fatal:false };
+
+  function capLangTag(){
+    // the translation target is the audience's language; the SONG is usually
+    // whatever the source is, so the recogniser follows the app's own
+    // interface language choice rather than the translation target
+    const t = (targetLangSel && targetLangSel.value) || 'he';
+    return t === 'he' ? 'he-IL' : t === 'en' ? 'en-US' : t;
+  }
+  function capRender(interim){
+    // the last few confirmed lines, newest last — a DJ reads the bottom
+    capFinal.textContent = cap.lines.slice(-2).map(l=>l.text).join(' · ');
+    capInterim.textContent = interim || '';
+  }
+  function capStamp(ms){
+    const t = Math.max(0, ms) / 1000;
+    const h = String(Math.floor(t / 3600)).padStart(2,'0');
+    const m = String(Math.floor(t / 60) % 60).padStart(2,'0');
+    const s = String(Math.floor(t) % 60).padStart(2,'0');
+    const f = String(Math.floor((t % 1) * 1000)).padStart(3,'0');
+    return `${h}:${m}:${s},${f}`;
+  }
+  function capStartRec(){
+    const rec = new SR();
+    rec.lang = capLangTag();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.maxAlternatives = 1;
+    rec.onresult = (e)=>{
+      let interim = '';
+      for(let i = e.resultIndex; i < e.results.length; i++){
+        const r = e.results[i], txt = (r[0] && r[0].transcript || '').trim();
+        if(!txt) continue;
+        if(r.isFinal){
+          cap.lines.push({ t: Date.now() - cap.t0, text: txt, conf: r[0].confidence || 0 });
+          if(cap.lines.length > 400) cap.lines.shift();
+        } else interim += txt + ' ';
+      }
+      cap.lastAt = Date.now();
+      capStat.textContent = `${cap.lines.length} שורות`;
+      capRender(interim.trim());
+    };
+    rec.onerror = (e)=>{
+      const k = e && e.error;
+      // 'no-speech' and 'aborted' are the engine's normal punctuation, not
+      // failures — reporting them would make a working session look broken
+      if(k === 'no-speech' || k === 'aborted') return;
+      cap.err = k === 'not-allowed' ? 'אין הרשאת מיקרופון'
+        : k === 'network' ? 'אין רשת — הזיהוי דורש חיבור'
+        : k === 'audio-capture' ? 'אין מיקרופון זמין'
+        : 'שגיאת זיהוי: ' + k;
+      capStat.innerHTML = '<span class="cap-warn">' + cap.err + '</span>';
+      // These are permanent for this session. Without this the onend loop
+      // respawns the recogniser forever on a device that simply has no
+      // microphone — a spin that never produces a single caption.
+      if(k === 'not-allowed' || k === 'audio-capture' || k === 'service-not-allowed'){
+        cap.fatal = true;
+        setCap(false);
+        showMiniToast('כתוביות חיות נעצרו — ' + cap.err);
+      }
+    };
+    // The engine stops itself on silence and after ~a minute of audio. For a
+    // set that runs for hours it has to be restarted, every time, forever —
+    // this loop is the whole difference between a demo and a tool.
+    rec.onend = ()=>{
+      if(!cap.on || cap.fatal) return;
+      cap.restarts++;
+      // back off a little as restarts pile up, so a flaky network degrades
+      // into slow retries instead of hammering the service
+      const wait = Math.min(3000, 250 + cap.restarts * 40);
+      setTimeout(()=>{ if(cap.on && !cap.fatal){ try{ cap.rec = capStartRec(); }catch(e){} } }, wait);
+    };
+    rec.start();
+    return rec;
+  }
+  function setCap(on){
+    if(on && !SR){
+      showMiniToast('הדפדפן הזה לא תומך בזיהוי דיבור — נסה Chrome');
+      return;
+    }
+    cap.on = !!on;
+    capBtn.classList.toggle('on', cap.on);
+    capBand.hidden = !cap.on;
+    store.set('lt:cap_on', cap.on);
+    if(cap.on){
+      cap.fatal = false; cap.restarts = 0;
+      if(!cap.t0) cap.t0 = Date.now();
+      capStat.textContent = 'מאזין…';
+      try{ cap.rec = capStartRec(); }
+      catch(e){ capStat.textContent = 'לא הצלחתי להתחיל'; cap.on = false; capBtn.classList.remove('on'); }
+    } else {
+      try{ cap.rec && cap.rec.stop(); }catch(e){}
+      cap.rec = null;
+    }
+  }
+  capBtn.addEventListener('click', ()=>setCap(!cap.on));
+  function capText(){
+    return cap.lines.map(l=>l.text).join('\n');
+  }
+  function capDownload(name, body, type){
+    try{
+      const url = URL.createObjectURL(new Blob([body], { type }));
+      const a = document.createElement('a'); a.href = url; a.download = name; a.click();
+      setTimeout(()=>URL.revokeObjectURL(url), 4000);
+      showMiniToast('נשמר: ' + name);
+    }catch(e){ showMiniToast('השמירה נכשלה'); }
+  }
+  $('capCopy').addEventListener('click', ()=>{
+    const t = capText();
+    if(!t){ showMiniToast('אין עדיין תמליל'); return; }
+    (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject())
+      .then(()=>showMiniToast('התמליל הועתק')).catch(()=>showMiniToast('ההעתקה נכשלה'));
+  });
+  $('capTxt').addEventListener('click', ()=>{
+    if(!cap.lines.length){ showMiniToast('אין עדיין תמליל'); return; }
+    capDownload('set-transcript.txt', capText(), 'text/plain;charset=utf-8');
+  });
+  $('capSrt').addEventListener('click', ()=>{
+    if(!cap.lines.length){ showMiniToast('אין עדיין תמליל'); return; }
+    // Real SRT: each cue ends where the next begins, so the file lines up
+    // with a recording of the set instead of being a list of guesses.
+    const srt = cap.lines.map((l, i)=>{
+      const next = cap.lines[i + 1];
+      const end = next ? next.t : l.t + 3500;
+      return `${i + 1}\n${capStamp(l.t)} --> ${capStamp(Math.max(end, l.t + 600))}\n${l.text}\n`;
+    }).join('\n');
+    capDownload('set-transcript.srt', srt, 'text/plain;charset=utf-8');
+  });
+  $('capClear').addEventListener('click', ()=>{
+    cap.lines = []; cap.t0 = Date.now(); capRender(''); capStat.textContent = 'נוקה';
+  });
+  document.addEventListener('visibilitychange', ()=>{
+    // A recogniser left running on a hidden page keeps the mic hot and keeps
+    // shipping audio for a caption nobody can read.
+    if(document.hidden && cap.on){ try{ cap.rec && cap.rec.stop(); }catch(e){} }
+    else if(!document.hidden && cap.on && !cap.rec){ try{ cap.rec = capStartRec(); }catch(e){} }
+  });
+
+  window.__ltCap = { state:()=>({ on:cap.on, lines:cap.lines.length, restarts:cap.restarts, err:cap.err, fatal:cap.fatal }),
+    supported:!!SR, open:(on)=>setCap(on !== false), text:capText, lines:()=>cap.lines.slice(),
+    push:(t)=>{ cap.lines.push({ t: Date.now() - (cap.t0 || Date.now()), text:t, conf:1 }); capRender(''); },
+    stamp:capStamp, lang:capLangTag };
+  window.__ltVJ = { on:()=>scope.vj, set:setVJ };
+
+  // VJ mode is a stage layout and restores freely. Captions are deliberately
+  // NOT restored: reopening the page must never quietly reopen a microphone.
+  if(store.get('lt:vj') === true) setVJ(true);
+  if(!SR) capBtn.title = 'זיהוי דיבור לא נתמך בדפדפן הזה — נסה Chrome';
+
   window.__ltScope = { state:()=>scope, det:()=>liveAudio && liveAudio.det,
     open:(on)=>setScope(on !== false), mode:(m)=>{ scope.mode = m; },
     beat:()=>{ scope.kick = 1; }, ring:()=>scope.rings.push({t:performance.now(), r0:0}),
@@ -5084,6 +5367,7 @@
   // The classic script calls this whenever playback state changes (poll
   // result, manual-mode search) — kept optional-chained there so this
   // module loading a beat later never throws.
+  let vjPaused = false;
   window.__lyricsAvatarBridge = {
     setEnergy(playing) { lastEnergy = !!playing; if (handle) handle.setEnergy(lastEnergy); },
     setTempo(ms) { lastTempo = ms; if (handle) handle.setTempo(lastTempo); },
@@ -5097,6 +5381,7 @@
     burst() { handle?.burst?.(); },
     photoFreeze(on) { handle?.photoFreeze?.(on); },
     setTimeScale(x) { handle?.setTimeScale?.(x); },
+    setPaused(on) { vjPaused = !!on; handle?.setPaused?.(vjPaused); },
     setFormation(mode) { handle?.setFormation?.(mode); },
     setBulletTime(on) { handle?.setBulletTime?.(on); },
     doMove(idx) { lastDancePool = [idx]; handle?.doMove?.(idx); },

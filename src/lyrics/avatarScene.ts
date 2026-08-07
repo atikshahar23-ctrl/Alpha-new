@@ -124,6 +124,8 @@ export interface LyricsAvatarHandle {
   // Slow-motion — scales the whole show's time (pose springs + beat clock).
   // 1 = normal, 0.4 ≈ cinematic slow-mo, clamped to [0.2, 1].
   setTimeScale?(x: number): void;
+  /** VJ mode: stop simulating and rendering without tearing the scene down. */
+  setPaused?(on: boolean): void;
   // Crew formation — how the backup dancers arrange around the lead:
   // 0 arrowhead (default) · 1 line · 2 V-wedge · 3 circle.
   setFormation?(mode: number): void;
@@ -3102,9 +3104,14 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     stepInPattern++;
   }
 
+  let paused = false;
   function frame(now: number) {
     raf = requestAnimationFrame(frame);
     if (document.hidden) return;
+    // VJ mode hands the stage to the audio visualiser. The rAF stays alive so
+    // switching back is instant, but nothing simulates or renders — otherwise
+    // a full 3D scene keeps burning the GPU behind a canvas covering it.
+    if (paused) return;
     // rawDt for the fps watchdog, clamped dt for animation: the clamp keeps
     // a GC pause from making the scene leap, but feeding CLAMPED time into
     // the watchdog makes its clock run 10x slow at very low framerates —
@@ -3719,6 +3726,7 @@ export function mountLyricsAvatar(container: HTMLElement): LyricsAvatarHandle {
     syncLine() { syncLine(); },
     burst() { crowdWild(); },
     setTimeScale(x: number) { if (Number.isFinite(x)) timeScale = Math.max(0.2, Math.min(1, x)); },
+    setPaused(on: boolean) { paused = !!on; },
     setFormation(mode: number) { formationMode = Math.max(0, Math.min(FORMATIONS.length - 1, Math.round(mode))); applyFormation(); },
     setBulletTime(on: boolean) { bulletTime = !!on; if (bulletTime) bulletStart = performance.now(); },
     doMove(idx: number) { doMove(idx); },
