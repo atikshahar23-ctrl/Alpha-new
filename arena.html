@@ -317,26 +317,41 @@ body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);user-select:none
 .mkt-tabs button{padding:4px 10px;border-radius:999px;font-size:11px;cursor:pointer;
   background:rgba(6,12,26,.7);color:var(--dim);border:1px solid rgba(0,240,255,.18)}
 .mkt-tabs button.on{color:#02141a;background:linear-gradient(120deg,var(--cyan),#7dfbff);border-color:var(--cyan)}
-.mkt-head{display:grid;grid-template-columns:1.6fr .9fr 1fr .8fr;gap:6px;padding:0 4px 6px;
+/* five columns: name+volume · price · 24h · 5min · recommendation. Volume
+   moved under the symbol so the two new time frames fit without a sixth
+   column — 94vw on a phone cannot carry six numeric cells legibly. */
+.mkt-head{display:grid;grid-template-columns:1.5fr .95fr .66fr .66fr .72fr;gap:5px;padding:0 4px 6px;
   border-bottom:1px solid rgba(0,240,255,.14)}
 .mkt-sort{background:none;border:none;color:var(--dim);font-size:10px;cursor:pointer;text-align:start;
   font-family:'Heebo',sans-serif;padding:0}
+.mkt-sort.num{text-align:end}
 .mkt-sort.on{color:var(--cyan);font-weight:700}
+.mkt-h2{display:flex;gap:9px;align-items:center;min-width:0}
+.mkt-scan{font-size:9.5px;color:var(--gold);margin-inline-start:8px;font-family:'JetBrains Mono',monospace}
 .mkt-list{overflow-y:auto;flex:1;min-height:0;scrollbar-width:thin}
 .mkt-list::-webkit-scrollbar{width:5px}
 .mkt-list::-webkit-scrollbar-thumb{background:rgba(0,240,255,.25)}
-.mkt-row{display:grid;grid-template-columns:1.6fr .9fr 1fr .8fr;gap:6px;align-items:center;
+.mkt-row{display:grid;grid-template-columns:1.5fr .95fr .66fr .66fr .72fr;gap:5px;align-items:center;
   padding:7px 4px;border-bottom:1px solid rgba(255,255,255,.04);cursor:pointer}
 .mkt-row:hover{background:rgba(0,240,255,.06)}
 .mkt-row.cur{background:rgba(0,240,255,.12)}
-.mkt-n{display:flex;align-items:center;gap:6px;font-weight:700;font-size:12.5px;min-width:0}
-.mkt-n b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mkt-n{display:flex;align-items:center;gap:6px;min-width:0}
+.mkt-nn{display:flex;flex-direction:column;gap:1px;min-width:0}
+.mkt-n1{display:flex;align-items:center;gap:4px;min-width:0;font-weight:700;font-size:12.5px}
+.mkt-n1 b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mkt-sub{font-size:9.5px;color:var(--dim);font-family:'JetBrains Mono',monospace}
 .mkt-star{cursor:pointer;font-size:12px;color:#4a5b6b;flex:none}
 .mkt-star.on{color:var(--gold)}
 .mkt-tag{font-size:8.5px;padding:1px 4px;border-radius:4px;background:rgba(0,240,255,.15);color:var(--cyan);flex:none}
 .mkt-tag.new{background:rgba(255,209,102,.18);color:var(--gold)}
 .mkt-v,.mkt-p{font-size:11.5px;font-family:'JetBrains Mono',monospace;text-align:end}
-.mkt-c{font-size:11.5px;font-family:'JetBrains Mono',monospace;text-align:end;font-weight:700}
+.mkt-c,.mkt-m5{font-size:10.5px;font-family:'JetBrains Mono',monospace;text-align:end;font-weight:700}
+.mkt-r{text-align:end;font-size:10.5px;font-family:'JetBrains Mono',monospace}
+.mkt-r i{font-style:normal;font-weight:800;padding:2px 5px;border-radius:5px;white-space:nowrap;
+  background:rgba(255,255,255,.06);color:var(--dim)}
+.mkt-r i.long{background:rgba(0,255,166,.14);color:var(--up)}
+.mkt-r i.short{background:rgba(255,82,82,.15);color:var(--down)}
+.mkt-r i.weak{background:rgba(255,255,255,.05);color:#6b7c8c}
 .ord-chk{display:flex;align-items:center;gap:7px;font-size:10.5px;color:var(--dim);
   margin:0 0 8px;cursor:pointer;line-height:1.4}
 .ord-chk input{accent-color:var(--cyan);flex:none}
@@ -1486,10 +1501,13 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
      market list. The app previously offered twelve hardcoded majors. ══ -->
 <div id="mktPanel" class="panel clip" style="display:none">
   <div class="lg-h"><span>📈 שוקי Binance Futures (<span id="mktCount">0</span>)</span>
+    <span id="mktScan" class="mkt-scan"></span>
     <button class="mp-close" id="mktClose" style="margin-inline-start:auto">✕</button></div>
   <input id="mktSearch" class="mkt-search" placeholder="חיפוש מטבע או שם…" autocomplete="off">
   <div class="mkt-tabs" id="mktTabs">
     <button data-f="all" class="on">הכול</button>
+    <button data-f="rec">🔥 מומלצים כרגע</button>
+    <button data-f="mov5">⚡ זזים ב-5 דק׳</button>
     <button data-f="fav">⭐ מועדפים</button>
     <button data-f="new">חדשים</button>
     <button data-f="usdc">USDC</button>
@@ -1497,10 +1515,14 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
     <button data-f="losers">יורדים</button>
   </div>
   <div class="mkt-head">
-    <button data-s="name" class="mkt-sort">שם / מחזור ⇅</button>
-    <button data-s="vol" class="mkt-sort on">מחזור ⇅</button>
-    <button data-s="price" class="mkt-sort">מחיר ⇅</button>
-    <button data-s="chg" class="mkt-sort">24ש ⇅</button>
+    <span class="mkt-h2">
+      <button data-s="name" class="mkt-sort">שם ⇅</button>
+      <button data-s="vol" class="mkt-sort on">מחזור ⇅</button>
+    </span>
+    <button data-s="price" class="mkt-sort num">מחיר ⇅</button>
+    <button data-s="chg" class="mkt-sort num">24ש ⇅</button>
+    <button data-s="m5" class="mkt-sort num">5 דק׳ ⇅</button>
+    <button data-s="rec" class="mkt-sort num">מומלץ ⇅</button>
   </div>
   <div id="mktList" class="mkt-list"><div class="lg-empty">טוען את רשימת החוזים…</div></div>
 </div>
@@ -2137,6 +2159,108 @@ async function loadFutUniverse(force){
     }
   });
   return futUniverse;
+}
+
+// ============================================================
+//  LIVE SCAN — the "what is moving RIGHT NOW" layer.
+//  ticker/24hr answers "what moved today", which is the wrong question at
+//  09:14 on a Tuesday: a coin can be −4% on the day and be the strongest
+//  thing on the board over the last five minutes. Both the 5-minute move and
+//  a right-now recommendation need intrabar candles, so this pulls 1-minute
+//  klines per contract and runs the SAME indicators the analysts already
+//  argue over (EMA 9/21, Wilder RSI, MACD histogram, volume-vs-baseline).
+//  Nothing here is invented — every input is an exchange candle.
+//  Cost control: klines with limit<=100 is weight 1, so the whole sweep is
+//  ~SCAN_MAX weight against a 2400/min budget, six requests in flight.
+// ============================================================
+const futScan={};                 // sym -> {m5,m15,rsi,volX,score,dir,why,at}
+let scanState={running:false,done:0,total:0,at:0};
+const SCAN_MAX=100, SCAN_CONC=6, SCAN_TTL=90000;
+
+/**
+ * One contract's right-now read. `cs` are 1-minute candles oldest-first,
+ * `vol24` the 24h quote volume used only as a liquidity gate — a 90% score on
+ * a contract that trades $200K a day is a number you cannot act on.
+ */
+function scanScore(cs,vol24){
+  const n=cs.length; if(n<25) return null;
+  const closes=cs.map(c=>c.c), p=closes[n-1];
+  if(!(p>0)) return null;
+  const back=k=>closes[Math.max(0,n-1-k)];
+  const pct=f=> f>0? (p-f)/f*100 : 0;
+  const m5=pct(back(5)), m15=pct(back(15));
+  // rsiArr returns 0 for a window with no up-moves at all, which for a dead
+  // coin that has not printed a different price in fifteen minutes reads as a
+  // maximal SELL. No trade there — call it neutral.
+  let R=rsiArr(closes,14)[n-1];
+  const win=closes.slice(-15);
+  if(Math.max(...win)===Math.min(...win)) R=50;
+  const e9=emaArr(closes,9)[n-1], e21=emaArr(closes,21)[n-1];
+  const H=macdHistArr(closes)[n-1]||0;
+  // Volume confirmation: the last five minutes against the average five
+  // minutes of the window. A move on no extra volume is somebody's stop
+  // getting hit, not participation.
+  let recent=0; for(let i=n-5;i<n;i++) recent+=cs[i].v||0;
+  let base=0; for(let i=0;i<n-5;i++) base+=cs[i].v||0;
+  const avg5=(n-5)>0? base/(n-5)*5 : 0;
+  const volX=avg5>0? recent/avg5 : 1;
+  const gap=(e9-e21)/p*100;       // EMA separation as a % of price
+  // Signed conviction: positive = long, negative = short. The weights are the
+  // usual professional ordering — sustained move first, immediate push second,
+  // trend structure third, oscillators last as confirmation, not as a trigger.
+  let s=0;
+  s+=clamp(m15/1.5,-1.2,1.2)*22;
+  s+=clamp(m5/0.8,-1.2,1.2)*20;
+  s+=clamp(gap/0.18,-1,1)*16;
+  s+=clamp((R-50)/25,-1,1)*10;
+  s+=(H>0?1:H<0?-1:0)*6;
+  let q=clamp(0.55+volX*0.42,0.5,1.35);
+  if(R>80&&s>0) s*=0.45;          // chasing a vertical candle
+  if(R<20&&s<0) s*=0.45;
+  if(vol24&&vol24<3e6) q*=0.45;   // illiquid: the move exists, the fill does not
+  const score=Math.round(clamp(Math.abs(s)*q,0,99));
+  return {m5,m15,rsi:R,volX,score,dir:s>=0?'long':'short',
+    why:`RSI ${Math.round(R)} · מחזור ×${volX.toFixed(1)} · 15ד ${(m15>=0?'+':'')+m15.toFixed(2)}% · EMA ${e9>=e21?'שורי':'דובי'} · MACD ${H>0?'חיובי':'שלילי'}`};
+}
+
+/**
+ * Sweep the most liquid contracts (plus your favourites and whatever you are
+ * currently on — those must never fall off the edge of the cut).
+ */
+async function scanMarkets(force,onProgress){
+  if(scanState.running) return;
+  if(!force && scanState.at && Date.now()-scanState.at<SCAN_TTL) return;
+  await loadFutUniverse();
+  const pool=futUniverse.slice().sort((a,b)=>(b.vol||0)-(a.vol||0));
+  const must=new Set([...futFavs, state.sym]);
+  const list=[], seen=new Set();
+  for(const r of pool) if(must.has(r.sym)&&!seen.has(r.pair)){ list.push(r); seen.add(r.pair); }
+  for(const r of pool){ if(list.length>=SCAN_MAX) break; if(seen.has(r.pair)) continue; list.push(r); seen.add(r.pair); }
+  scanState={running:true,done:0,total:list.length,at:scanState.at};
+  let i=0;
+  const worker=async()=>{
+    while(i<list.length){
+      const r=list[i++];
+      try{
+        const res=await fetch(`${FAPI}/fapi/v1/klines?symbol=${r.pair}&interval=1m&limit=90`);
+        if(res.ok){
+          const raw=await res.json();
+          const cs=(Array.isArray(raw)?raw:[]).map(a=>({o:+a[1],h:+a[2],l:+a[3],c:+a[4],v:+a[5]}));
+          const sc=scanScore(cs,r.vol);
+          if(sc) futScan[r.sym]=Object.assign(sc,{at:Date.now()});
+        }
+      }catch(e){}
+      scanState.done++;
+      if(onProgress && scanState.done%8===0) onProgress();
+    }
+  };
+  try{
+    await Promise.all(Array.from({length:Math.min(SCAN_CONC,list.length)},worker));
+  } finally {
+    scanState.running=false; scanState.at=Date.now();
+  }
+  if(onProgress) onProgress();
+  return futScan;
 }
 
 // Open interest and the crowd's long/short split. Neither exists on spot —
@@ -4871,10 +4995,18 @@ function setMkt(on){
   const b=$('btnMarkets'); if(b) b.classList.toggle('on',on);
   if(on){
     renderMarkets();
-    loadFutUniverse().then(renderMarkets).catch(()=>{
+    loadFutUniverse().then(()=>{ renderMarkets(); kickScan(); }).catch(()=>{
       $('mktList').innerHTML='<div class="lg-empty">רשימת החוזים לא נטענה — ‏Binance Futures לא נגיש מהרשת הזו</div>';
     });
   }
+}
+// The 5-minute column and the recommendation are the only two things in this
+// panel that ticker/24hr cannot answer, so opening the list starts the sweep.
+// scanMarkets() is self-throttling (SCAN_TTL), so re-opening it costs nothing.
+function kickScan(force){
+  if(!mktOpen && !force) return;
+  scanMarkets(force,()=>{ if(mktOpen) renderMarkets(); })
+    .catch(()=>{ if(mktOpen) renderMarkets(); });
 }
 function mktRows(){
   let rows=futUniverse.slice();
@@ -4887,6 +5019,25 @@ function mktRows(){
   else if(mktFilter==='usdc') rows=rows.filter(r=>r.quote==='USDC');
   else if(mktFilter==='gainers') rows=rows.filter(r=>r.chg>0);
   else if(mktFilter==='losers') rows=rows.filter(r=>r.chg<0);
+  // "Recommended" is a conviction floor, not a direction — a strong short is
+  // as actionable as a strong long and both belong in the list.
+  else if(mktFilter==='rec') rows=rows.filter(r=>(futScan[r.sym]?.score??0)>=45);
+  else if(mktFilter==='mov5') rows=rows.filter(r=>Math.abs(futScan[r.sym]?.m5??0)>=0.35);
+  // The two scan-backed columns sort on data that arrives asynchronously and
+  // only for the contracts in the sweep. Rows with no reading yet sink to the
+  // bottom in volume order rather than pretending to be zero — a coin that has
+  // not been measured is not "flat".
+  const skey= mktSort==='m5'? 'm5' : mktSort==='rec'? 'score' : null;
+  if(skey){
+    rows.sort((a,b)=>{
+      const A=futScan[a.sym], B=futScan[b.sym];
+      if(!A&&!B) return (b.vol||0)-(a.vol||0);
+      if(!A) return 1;
+      if(!B) return -1;
+      return mktSortDir*(A[skey]-B[skey]);
+    });
+    return rows;
+  }
   const key={name:'sym',vol:'vol',price:'price',chg:'chg'}[mktSort]||'vol';
   // mktSortDir === -1 means "biggest first", which is what you want the
   // instant the list opens (highest volume at the top, as on the exchange)
@@ -4895,37 +5046,71 @@ function mktRows(){
     :  mktSortDir*(((a[key])??0)-((b[key])??0)));
   return rows;
 }
+function mktScanCell(r){
+  const s=futScan[r.sym];
+  if(!s) return scanState.running
+    ? '<span class="mkt-m5">…</span><span class="mkt-r"><i>…</i></span>'
+    : '<span class="mkt-m5" style="color:var(--dim)">—</span><span class="mkt-r"><i>—</i></span>';
+  const m5=s.m5, col=m5>=0.03?'var(--up)':m5<=-0.03?'var(--down)':'var(--dim)';
+  const cls=s.score<45? 'weak' : s.dir;
+  const mark=s.score<45? '·' : s.dir==='long'?'▲':'▼';
+  return `<span class="mkt-m5" style="color:${col}">${(m5>=0?'+':'')+m5.toFixed(2)}%</span>`
+    +`<span class="mkt-r"><i class="${cls}" title="${s.why}">${mark}${s.score}</i></span>`;
+}
 function renderMarkets(){
   const el=$('mktList'); if(!el) return;
+  const sc=$('mktScan');
+  if(sc) sc.textContent=scanState.running? `⟳ סורק ${scanState.done}/${scanState.total}` : '';
   if(!futUniverse.length){ el.innerHTML='<div class="lg-empty">טוען את רשימת החוזים…</div>'; return; }
   const rows=mktRows();
   $('mktCount').textContent=rows.length;
-  if(!rows.length){ el.innerHTML='<div class="lg-empty">אין חוזה שתואם את החיפוש</div>'; return; }
+  if(!rows.length){
+    el.innerHTML='<div class="lg-empty">'+(scanState.running?'הסריקה עוד רצה…':'אין חוזה שתואם את החיפוש')+'</div>';
+    return;
+  }
+  // the sweep re-renders as results land; without this the list would jump
+  // back to the top every few seconds while you are reading it
+  const top=el.scrollTop;
   // cap the DOM — the exchange lists hundreds and rendering them all on every
   // keystroke is what turns a search box into a stutter
   el.innerHTML=rows.slice(0,150).map(r=>`
     <div class="mkt-row${r.sym===state.sym?' cur':''}" data-sym="${r.sym}">
       <span class="mkt-n">
         <span class="mkt-star${futFavs.has(r.sym)?' on':''}" data-fav="${r.sym}">${futFavs.has(r.sym)?'★':'☆'}</span>
-        <b>${r.sym}</b><span class="mkt-tag">Perp</span>${r.isNew?'<span class="mkt-tag new">חדש</span>':''}
+        <span class="mkt-nn">
+          <span class="mkt-n1"><b>${r.sym}</b><span class="mkt-tag">Perp</span>${r.isNew?'<span class="mkt-tag new">חדש</span>':''}</span>
+          <span class="mkt-sub">${fmtUsd(r.vol)}</span>
+        </span>
       </span>
-      <span class="mkt-v">${fmtUsd(r.vol)}</span>
       <span class="mkt-p">${r.price? r.price.toLocaleString('en-US',{minimumFractionDigits:r.dec,maximumFractionDigits:r.dec}) : '—'}</span>
-      <span class="mkt-c" style="color:${r.chg>=0?'#00ffa6':'#ff5252'}">${(r.chg>=0?'+':'')+r.chg.toFixed(2)}%</span>
+      <span class="mkt-c" style="color:${r.chg>=0?'var(--up)':'var(--down)'}">${(r.chg>=0?'+':'')+r.chg.toFixed(2)}%</span>
+      ${mktScanCell(r)}
     </div>`).join('')
     + (rows.length>150? `<div class="lg-empty">מוצגים 150 מתוך ${rows.length} — צמצם עם חיפוש</div>`:'');
+  el.scrollTop=top;
 }
 $('mktSearch').oninput=e=>{ mktQuery=e.target.value.trim(); renderMarkets(); };
+function mktSortTo(key){
+  mktSort=key; mktSortDir=-1;
+  document.querySelectorAll('.mkt-sort').forEach(x=>x.classList.toggle('on',x.dataset.s===key));
+}
 $('mktTabs').querySelectorAll('button').forEach(b=>{
   b.onclick=()=>{ mktFilter=b.dataset.f;
     $('mktTabs').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));
-    renderMarkets(); };
+    // picking a scan-backed filter without the matching sort would show the
+    // right rows in the wrong order — the point of "מומלצים כרגע" is the top row
+    if(mktFilter==='rec') mktSortTo('rec');
+    if(mktFilter==='mov5') mktSortTo('m5');
+    renderMarkets();
+    if(mktFilter==='rec'||mktFilter==='mov5') kickScan();
+  };
 });
 document.querySelectorAll('.mkt-sort').forEach(b=>{
   b.onclick=()=>{
     if(mktSort===b.dataset.s) mktSortDir*=-1; else { mktSort=b.dataset.s; mktSortDir=-1; }
     document.querySelectorAll('.mkt-sort').forEach(x=>x.classList.toggle('on',x===b));
     renderMarkets();
+    if(b.dataset.s==='m5'||b.dataset.s==='rec') kickScan();
   };
 });
 $('mktList').onclick=e=>{
@@ -4965,7 +5150,9 @@ function switchToFuturesSymbol(sym){
 window.__naMarkets={load:()=>loadFutUniverse(true),list:()=>futUniverse,rows:()=>mktRows(),
   open:(on)=>setMkt(on!==false), pick:switchToFuturesSymbol,
   favs:()=>[...futFavs], filter:(f)=>{mktFilter=f;renderMarkets();},
-  sort:(s)=>{mktSort=s;renderMarkets();}, search:(q)=>{mktQuery=q;renderMarkets();}};
+  sort:(s)=>{mktSort=s;renderMarkets();}, search:(q)=>{mktQuery=q;renderMarkets();},
+  scan:(force)=>scanMarkets(force!==false,null), scanState:()=>scanState,
+  scores:()=>futScan, score:(sy)=>futScan[sy], scoreOf:(cs,v)=>scanScore(cs,v)};
 
 // the form reshapes itself around the order type — a trailing stop has no
 // trigger price to type, a stop-limit needs two prices, market needs none
