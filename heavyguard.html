@@ -14,6 +14,14 @@
   html, body { width: 100%; height: 100%; overflow: hidden; background: #080B10; }
   #root { width: 100%; height: 100%; overflow-y: auto; overflow-x: hidden; }
 </style>
+<style>
+  /* smooth crossfade on same-origin navigation (ignored where unsupported) */
+  @view-transition { navigation: auto; }
+  ::view-transition-old(root), ::view-transition-new(root) { animation-duration: .22s; }
+  @media (prefers-reduced-motion: reduce) {
+    ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+  }
+</style>
 </head>
 <body>
 <div id="root"></div>

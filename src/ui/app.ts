@@ -195,7 +195,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="wm-hg">HEAVY GUARD OS</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v395 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="wm-hg">HEAVY GUARD OS</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v396 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip apps-chip" id="appsBtn" title="האפליקציות שלי" aria-label="האפליקציות שלי">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="12" cy="19" r="2"/><circle cx="19" cy="19" r="2"/></svg>
@@ -2633,9 +2633,44 @@ export function mountApp(root: HTMLElement) {
   declutterBtn.onclick = () => {
     const on = !appEl.classList.contains('declutter');
     localStorage.setItem('alpha:declutter', on ? '1' : '0');
+    // turning it OFF by hand is a veto: auto-lite must never fight the user
+    if (!on) localStorage.setItem('alpha:auto_lite', '0');
     applyDeclutter(on);
     try { navigator.vibrate?.(state.haptics ? 15 : 0); } catch {}
   };
+
+  // ── Auto-lite: the page notices it is heavy instead of waiting to be told ──
+  // "It feels loaded" on a weak device is the aurora canvas, the flow lines
+  // and the full orb all running under 45fps. The user already has the 🌑
+  // button that fixes it — this measures the real frame rate for six seconds
+  // after boot and presses that button for them when the device clearly
+  // needs it. An explicit OFF click is a permanent veto.
+  {
+    const vetoed = localStorage.getItem('alpha:auto_lite') === '0';
+    if (!vetoed && !appEl.classList.contains('declutter')) {
+      const start = () => {
+        let frames = 0;
+        const t0 = performance.now();
+        const probe = () => {
+          if (document.hidden) { requestAnimationFrame(probe); return; } // a hidden tab throttles rAF to 0-1fps; that is not the device being slow
+          frames++;
+          const el = performance.now() - t0;
+          if (el < 6000) { requestAnimationFrame(probe); return; }
+          const fps = frames / (el / 1000);
+          if (fps < 42 && !appEl.classList.contains('declutter')) {
+            localStorage.setItem('alpha:declutter', '1');
+            localStorage.setItem('alpha:auto_lite', '1');
+            applyDeclutter(true);
+            toastInfo('🌑 מצב קליל הופעל אוטומטית', 'המכשיר התקשה עם האנימציות — אפשר להחזיר אותן בכפתור 🌑 למעלה');
+          }
+        };
+        requestAnimationFrame(probe);
+      };
+      // start after the boot veil drops, so the measurement is of the real
+      // dashboard and not of the intro animation
+      setTimeout(start, 3000);
+    }
+  }
 
   // ── Mood color themes — recolor the whole UI via a data-theme attribute ──
   // 'goat' is the GOAT Protocol (Argentina/Messi): besides the CSS palette it

@@ -1029,6 +1029,14 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
   #banner{top:4px}
 }
 </style>
+<style>
+  /* smooth crossfade on same-origin navigation (ignored where unsupported) */
+  @view-transition { navigation: auto; }
+  ::view-transition-old(root), ::view-transition-new(root) { animation-duration: .22s; }
+  @media (prefers-reduced-motion: reduce) {
+    ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+  }
+</style>
 </head>
 <body>
 

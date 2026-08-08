@@ -1100,6 +1100,14 @@
   .btn-insane{box-shadow:6px 6px 0 rgba(255,46,136,.45);}
   body.stage-mode .hero-wrap{box-shadow:none; border:none;} /* projection stays clean */
 </style>
+<style>
+  /* smooth crossfade on same-origin navigation (ignored where unsupported) */
+  @view-transition { navigation: auto; }
+  ::view-transition-old(root), ::view-transition-new(root) { animation-duration: .22s; }
+  @media (prefers-reduced-motion: reduce) {
+    ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+  }
+</style>
 </head>
 <body>
 <div class="led-frame" id="ledFrame" aria-hidden="true"></div>

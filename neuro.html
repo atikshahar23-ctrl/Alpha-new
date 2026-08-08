@@ -39,6 +39,14 @@
     backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
   #alphaHome:hover { border-color: #ffd166; }
 </style>
+<style>
+  /* smooth crossfade on same-origin navigation (ignored where unsupported) */
+  @view-transition { navigation: auto; }
+  ::view-transition-old(root), ::view-transition-new(root) { animation-duration: .22s; }
+  @media (prefers-reduced-motion: reduce) {
+    ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+  }
+</style>
 </head>
 <body>
 <a id="alphaHome" href="./" title="חזרה לאלפא">⌂ אלפא</a>

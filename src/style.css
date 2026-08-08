@@ -4265,13 +4265,14 @@ body.ac-hologram .rp-meta { font-size: 12px !important; }
 /* ── App drawer — slide-out launcher for the owner's programs ──────────── */
 .apps-chip{color:#0b0b0d;background:linear-gradient(135deg,#F7D774,#E4BC63);border:none;font-weight:800;gap:5px}
 .apps-chip:hover{filter:brightness(1.06)}
-.app-drawer-scrim{position:fixed;inset:0;background:rgba(4,4,7,.62);backdrop-filter:blur(3px);
+.app-drawer-scrim{position:fixed;inset:0;background:rgba(4,4,7,.72);
   opacity:0;visibility:hidden;transition:opacity .28s ease,visibility .28s ease;z-index:99998}
 .app.drawer-open .app-drawer-scrim{opacity:1;visibility:visible}
 .app-drawer{position:fixed;top:0;right:0;height:100%;width:min(340px,86vw);z-index:99999;
   background:linear-gradient(160deg,#141017 0%,#0d0b12 60%,#0a0a0e 100%);
   border-left:1px solid rgba(228,188,99,.22);box-shadow:-24px 0 60px rgba(0,0,0,.55);
-  transform:translateX(100%);transition:transform .3s cubic-bezier(.22,.61,.36,1);
+  transform:translateX(100%);transition:transform .34s cubic-bezier(.32,.72,.24,1);
+  will-change:transform;
   display:flex;flex-direction:column;padding:14px 12px calc(14px + env(safe-area-inset-bottom));
   overflow-y:auto;-webkit-overflow-scrolling:touch}
 .app.drawer-open .app-drawer{transform:translateX(0)}
@@ -4338,3 +4339,13 @@ body.drive-mode #driveOverlay{display:flex}
 .drv-btn{min-width:84px;min-height:64px;font-size:26px;border-radius:18px;border:1px solid #4a4433;background:#12100b;color:#ffc24d;cursor:pointer}
 .drv-btn.on{background:#2b2313;border-color:#ffc24d;box-shadow:0 0 18px rgba(255,194,77,.35)}
 .drv-btn.exit{font-size:16px;color:#c9c2b0;padding:0 20px}
+
+
+/* ── Smooth cross-page transitions ─────────────────────────────────────
+   Same-origin navigations between the suite's pages crossfade instead of
+   flashing white. Browsers without support simply ignore the rule. */
+@view-transition { navigation: auto; }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: .22s; }
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+}

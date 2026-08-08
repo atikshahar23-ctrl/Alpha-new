@@ -318,6 +318,14 @@ body::after{content:'';position:fixed;inset:-20%;z-index:-1;pointer-events:none;
   .cluster h3{font-size:14px}
 }
 </style>
+<style>
+  /* smooth crossfade on same-origin navigation (ignored where unsupported) */
+  @view-transition { navigation: auto; }
+  ::view-transition-old(root), ::view-transition-new(root) { animation-duration: .22s; }
+  @media (prefers-reduced-motion: reduce) {
+    ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+  }
+</style>
 </head>
 <body>
 <div id="breakingBanner" class="panel clip">
