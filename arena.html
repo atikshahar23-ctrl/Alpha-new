@@ -4936,6 +4936,16 @@ function setTools(on){
 }
 $('btnTools').onclick=()=>setTools(!toolsOpen);
 // ── phone tool drawer ──────────────────────────────────────────────
+// The whole HUD is ONE fixed stacking context at z-index:10, so any tool
+// panel that lives at body level (z 33-44) paints over every control inside
+// the HUD — including the ☰ button and the drawer itself, whose z 45-47
+// only count INSIDE the HUD. That is exactly the reported bug: open a tool
+// once, and from then on the menu "disappears" on reopen — it was opening
+// UNDER the panel, and taps meant for ☰ landed on the panel's canvas.
+// Reparenting these three to <body> lets their z-indexes actually apply
+// (listeners survive appendChild; desktop layering is unchanged because the
+// rail's z:20 stays below every panel's 26+ either way).
+['toolsScrim','toolsFab','toggles'].forEach(id=>{ const e=$(id); if(e) document.body.appendChild(e); });
 // The drawer closes as soon as a tool is picked: on a phone the panel that
 // opens needs the whole screen, and leaving the grid up would cover it.
 function setToolsDrawer(on){
