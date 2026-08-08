@@ -4510,8 +4510,44 @@
   // sustained bass spike triggers the avatar's bass-drop accent move.
   const liveBeatBtn = $('liveBeatBtn');
   let liveAudio = null;
+
+  /**
+   * iPadOS 13+ reports itself as a Mac, so a platform string alone misses
+   * every iPad — the touch-point count is what separates them.
+   */
+  const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && (navigator.maxTouchPoints || 0) > 1);
+
+  /**
+   * On iOS, opening a microphone puts the whole device into a record audio
+   * session, and that session STOPS audio playing from another app. This is
+   * the operating system's decision, not the page's: Safari exposes no way to
+   * ask for a mixable session (there is no web equivalent of
+   * AVAudioSessionCategoryOptionMixWithOthers), and it happens whatever the
+   * constraints are — requesting echo cancellation would let the music through
+   * only by cancelling it out of the recording, which is exactly the audio we
+   * are trying to analyse.
+   *
+   * So the honest move is to say so BEFORE taking the microphone, once, and
+   * let the trader decide. The two real answers are both about where the sound
+   * comes from, not about settings.
+   */
+  function iosMicWarning(){
+    if(!IS_IOS || store.get('lt:ios_mic_ack') === true) return true;
+    const ok = confirm(
+      'באייפד/אייפון, פתיחת מיקרופון עוצרת מוזיקה שמתנגנת מאפליקציה אחרת באותו מכשיר. ' +
+      'זו הגבלה של iOS — אין דרך לעקוף אותה מדפדפן.\n\n' +
+      'שתי דרכים שעובדות:\n' +
+      '• שהמוזיקה תתנגן ממכשיר אחר או מרמקול — האייפד רק מאזין ומציג\n' +
+      '• בלי מיקרופון: מצב 2 ימשיך לפעול לפי שעון הקצב של האפליקציה (בלי זיהוי תדרים אמיתי)\n\n' +
+      'להמשיך ולפתוח את המיקרופון?');
+    if(ok) store.set('lt:ios_mic_ack', true);
+    return ok;
+  }
+
   async function startLiveBeat(){
     if(liveAudio) return;
+    if(!iosMicWarning()) { scope.demo = true; showMiniToast('🌀 ממשיך בלי מיקרופון — לפי הקצב'); return; }
     let stream;
     try{
       stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
@@ -4749,15 +4785,20 @@
     }
     st.raf = requestAnimationFrame(tick);
     liveAudio = st;
+    scope.demo = false;                 // real audio always beats the fallback
     liveBeatBtn.classList.add('on');
     showMiniToast('🎤 ביט חי פעיל — הרקדן שומע את המוזיקה בחדר');
   }
   function stopLiveBeat(){
     if(!liveAudio) return;
     cancelAnimationFrame(liveAudio.raf);
+    // Both halves matter on iOS: stopping the tracks releases the capture, but
+    // the record audio session is only torn down when the AudioContext closes
+    // too. Leave either one alive and the other app's music stays paused.
     liveAudio.stream.getTracks().forEach(tr => tr.stop());
     liveAudio.ctx.close().catch(()=>{});
     liveAudio = null;
+    if(IS_IOS) showMiniToast('🎤 המיקרופון שוחרר — אפשר להפעיל את המוזיקה מחדש');
     liveBeatBtn.classList.remove('on');
     window.__lyricsAvatarBridge?.liveBeatOff?.();
   }
@@ -4786,7 +4827,9 @@
   const scope = { on:false, mode:'lissajous', size:1, raf:0, phase:0, kick:0,
     rings:[], amp:0.35, treb:0, chroma:true, wide:false, vj:false, hue:110, beats:0, bar:0,
     // precision layer
-    data:false, tuner:false, ribbon:false, hps:true, smooth:true, fft:2048, a4:440, notes:[] };
+    data:false, tuner:false, ribbon:false, hps:true, smooth:true, fft:2048, a4:440, notes:[],
+    // no-mic fallback: the figure keeps moving off the app's beat clock
+    demo:false, demoPhase:0 };
   const FFT_SIZES = [2048, 8192];
   const A4_REFS = [440, 432, 442, 415];
 
@@ -5258,6 +5301,28 @@
       scopeKeyEl.textContent = scopeKeyTxt;
       scopeKeyEl.hidden = !scopeKeyTxt;
       scopeReadouts(st, det, now);
+    } else if(scope.demo){
+      // ---- no microphone: beat-driven, and SAID to be beat-driven --------
+      // Nothing here is measured from sound. The shape follows the beat clock
+      // and a rotating set of musical ratios, so the stage stays alive on a
+      // device that will not lend out its microphone — but the readouts stay
+      // empty rather than inventing a note that was never detected.
+      scopeIdle.hidden = true;
+      const RATIOS = [1.5, 1.25, 2, 1.3333, 1.6667, 1.875];
+      const fake = { ratio: RATIOS[scope.demoPhase % RATIOS.length], f1: 220, f2: 330, midi: 57, conf: 0 };
+      scope.amp += (0.28 - scope.amp) * 0.03;
+      scope.phase += 0.006 + scope.kick * 0.05;
+      scope.kick *= 0.90;
+      sctx.save();
+      if(scope.mode === 'rose') drawRose(fake);
+      else if(scope.mode === 'harmono') drawHarmono(fake);
+      else drawLissajous(fake);
+      sctx.restore();
+      drawRings(now);
+      scopeNoteEl.textContent = 'ללא מיקרופון';
+      scopeHzEl.textContent = scope.bpm ? Math.round(scope.bpm) + ' BPM · לפי הקצב' : 'לפי הקצב';
+      scopeKeyEl.hidden = true;
+      scopeTuner.hidden = true; scopeData.hidden = true; scopeRibbon.hidden = true;
     } else {
       scopeIdle.hidden = false;
       scopeNoteEl.textContent = '— —';
@@ -5286,6 +5351,8 @@
     if(next && !liveAudio) startLiveBeat();
   });
   scopeIdle.addEventListener('click', ()=>{ if(!liveAudio) startLiveBeat(); });
+  // a real mic always wins over the fallback
+  const _startLive = startLiveBeat;
   function applyScopeWide(){
     scopeBox.classList.toggle('wide', scope.wide);
     scopeBox.style.setProperty('--scope-w', scope.wide ? 'auto' : SCOPE_SIZES[scope.size]);
@@ -5349,7 +5416,17 @@
       }catch(err){ showMiniToast('השמירה נכשלה'); }
     }
   });
-  window.addEventListener('lt-beat', ()=>{ scope.kick = 1; });
+  window.addEventListener('lt-beat', ()=>{
+    scope.kick = 1;
+    // With no microphone this IS the only input the visuals have: the show's
+    // beat clock (Spotify tempo, tap-tempo, or the manual BPM in settings).
+    if(!liveAudio && scope.demo){
+      scope.amp = 0.75;
+      // step the figure through musical ratios on the bar, so it changes
+      // shape the way it would if the harmony moved
+      scope.demoPhase = (scope.demoPhase + 1) % 6;
+    }
+  });
   document.addEventListener('visibilitychange', ()=>{
     if(document.hidden) cancelAnimationFrame(scope.raf);
     else if(scope.on) scope.raf = requestAnimationFrame(scopeFrame);
@@ -5396,7 +5473,12 @@
     if(scope.vj){
       scope.wide = true;
       if(!scope.on) setScope(true); else applyScopeWide();
-      if(!liveAudio) startLiveBeat();
+      // On iOS this would stop the music the moment mode 2 is entered, which
+      // is the opposite of what a visualiser is for. Fall back to the beat
+      // clock and let the 🎤 button be a deliberate, separate choice.
+      if(!liveAudio){
+        if(IS_IOS) scope.demo = true; else startLiveBeat();
+      }
     } else {
       applyScopeWide();
     }
@@ -5577,6 +5659,7 @@
   window.__ltScope = { state:()=>scope, det:()=>liveAudio && liveAudio.det,
     open:(on)=>setScope(on !== false), mode:(m)=>{ scope.mode = m; },
     beat:()=>{ scope.kick = 1; }, ring:()=>scope.rings.push({t:performance.now(), r0:0}),
+    ios:()=>IS_IOS, demo:(on)=>{ scope.demo = on !== false; },
     interval:intervalName, ratioApprox, key:()=>noteKey(), hist:()=>({ counts:Array.from(pcHist), n:pcCount }),
     audio:()=>liveAudio && { binHz:liveAudio.binHz, peakDb:liveAudio.peakDb, centroid:liveAudio.centroid, level:liveAudio.level },
     set:(k,v)=>{ scope[k] = v; if(k === 'fft' && liveAudio && liveAudio.reconfigure) liveAudio.reconfigure(v); },
