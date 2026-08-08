@@ -538,6 +538,17 @@
     text-shadow:0 0 16px rgba(0,229,255,.5), 0 2px 10px rgba(0,0,0,.95);
     min-height:1.2em;
   }
+  .cap-trans{
+    font-family:'Rubik',sans-serif; font-weight:600;
+    font-size:clamp(13px,2.9vw,21px); line-height:1.3; color:#8fe9ff;
+    text-shadow:0 0 14px rgba(0,229,255,.45), 0 2px 8px rgba(0,0,0,.95);
+    margin-top:2px;
+  }
+  .cap-trans[hidden]{display:none;}
+  .cap-meta select{
+    background:rgba(10,14,26,.85); border:1px solid rgba(0,229,255,.3);
+    color:#bfe9ff; border-radius:999px; font-size:10px; padding:2px 6px; max-width:120px;
+  }
   .cap-interim{
     font-size:clamp(12px,2.6vw,18px); color:rgba(190,215,240,.72); font-style:italic;
     margin-top:3px; min-height:1em;
@@ -1144,9 +1155,11 @@
     <button class="hero-btn cap-btn" id="capBtn" title="כתוביות חיות — המערכת מאזינה וכותבת מה נשמע, בזמן אמת 💬">💬</button>
     <div class="cap-band" id="capBand" hidden>
       <div class="cap-final" id="capFinal"></div>
+      <div class="cap-trans" id="capTrans" hidden></div>
       <div class="cap-interim" id="capInterim"></div>
       <div class="cap-meta">
         <span class="cap-dot" id="capDot"></span>
+        <select id="capLang" title="שפת השיר שהמערכת מאזינה לו"></select>
         <span id="capStat">מאזין…</span>
         <button id="capCopy">העתק</button>
         <button id="capSrt">SRT</button>
@@ -5609,20 +5622,77 @@
   // buttons write out locally.
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   const capBtn = $('capBtn'), capBand = $('capBand'), capFinal = $('capFinal'),
-        capInterim = $('capInterim'), capStat = $('capStat');
-  const cap = { on:false, rec:null, lines:[], t0:0, restarts:0, lastAt:0, err:'', fatal:false };
+        capInterim = $('capInterim'), capStat = $('capStat'),
+        capTransEl = $('capTrans'), capLangSel = $('capLang');
+  const cap = { on:false, rec:null, lines:[], t0:0, restarts:0, lastAt:0, err:'', fatal:false,
+    lang:'auto', probeIdx:0, lowConf:0, trPending:new Set() };
 
+  /**
+   * The recogniser needs to be TOLD the language — no browser speech engine
+   * detects it for you, and one told the wrong language does not degrade
+   * gracefully, it returns confident nonsense. So: an explicit list, plus an
+   * auto mode that treats persistent low confidence as evidence it is on the
+   * wrong language and moves to the next candidate.
+   */
+  const CAP_LANGS = [
+    ['auto','🌐 זיהוי אוטומטי'], ['he-IL','עברית'], ['en-US','English (US)'],
+    ['en-GB','English (UK)'], ['ar-SA','العربية'], ['es-ES','Español'],
+    ['fr-FR','Français'], ['de-DE','Deutsch'], ['it-IT','Italiano'],
+    ['pt-BR','Português'], ['ru-RU','Русский'], ['tr-TR','Türkçe'],
+    ['hi-IN','हिन्दी'], ['ja-JP','日本語'], ['ko-KR','한국어'],
+    ['zh-CN','中文'], ['nl-NL','Nederlands'], ['pl-PL','Polski'],
+    ['uk-UA','Українська'], ['ro-RO','Română'], ['el-GR','Ελληνικά'],
+    ['sv-SE','Svenska'], ['am-ET','አማርኛ'], ['fa-IR','فارسی'],
+  ];
+  // the shortlist auto mode walks — the languages a set is most likely to be in
+  const CAP_PROBE = ['he-IL','en-US','es-ES','ar-SA','fr-FR','ru-RU'];
+  CAP_LANGS.forEach(([v,l])=>{ const o=document.createElement('option'); o.value=v; o.textContent=l; capLangSel.appendChild(o); });
+  capLangSel.value = store.get('lt:cap_lang') || 'auto';
+  cap.lang = capLangSel.value;
+  capLangSel.addEventListener('change', ()=>{
+    cap.lang = capLangSel.value;
+    store.set('lt:cap_lang', cap.lang);
+    cap.probeIdx = 0; cap.lowConf = 0;
+    // a language change has to reach the engine now, not at the next restart
+    if(cap.on){ try{ cap.rec && cap.rec.stop(); }catch(e){} }
+  });
   function capLangTag(){
-    // the translation target is the audience's language; the SONG is usually
-    // whatever the source is, so the recogniser follows the app's own
-    // interface language choice rather than the translation target
-    const t = (targetLangSel && targetLangSel.value) || 'he';
-    return t === 'he' ? 'he-IL' : t === 'en' ? 'en-US' : t;
+    if(cap.lang !== 'auto') return cap.lang;
+    return CAP_PROBE[cap.probeIdx % CAP_PROBE.length];
   }
   function capRender(interim){
     // the last few confirmed lines, newest last — a DJ reads the bottom
-    capFinal.textContent = cap.lines.slice(-2).map(l=>l.text).join(' · ');
+    const last = cap.lines.slice(-2);
+    capFinal.textContent = last.map(l=>l.text).join(' · ');
+    const tr = last.map(l=>l.tr).filter(Boolean).join(' · ');
+    capTransEl.textContent = tr;
+    capTransEl.hidden = !tr;
     capInterim.textContent = interim || '';
+  }
+  /**
+   * A line that is not already in the audience's language gets a translation
+   * under it. The engine is the app's own (sl=auto, so it detects the source
+   * itself); the request is fire-and-forget so a slow translator never holds
+   * up the live caption, and the line renders the moment it returns.
+   */
+  function capTranslate(line){
+    const target = (targetLangSel && targetLangSel.value) || 'he';
+    if(!line.text || cap.trPending.size > 6) return;
+    // already in the target's script — no translation to add
+    if(typeof inTargetScript === 'function' && inTargetScript(line.text, target)) return;
+    cap.trPending.add(line);
+    googleTranslateChunk(line.text, target)
+      .then(t=>{
+        const out = (t || '').trim();
+        // a "translation" identical to the source means it was already in that
+        // language; showing it twice is noise
+        if(out && out.toLowerCase() !== line.text.toLowerCase()){
+          line.tr = out;
+          capRender(capInterim.textContent);
+        }
+      })
+      .catch(()=>{})
+      .finally(()=>cap.trPending.delete(line));
   }
   function capStamp(ms){
     const t = Math.max(0, ms) / 1000;
@@ -5637,19 +5707,40 @@
     rec.lang = capLangTag();
     rec.continuous = true;
     rec.interimResults = true;
-    rec.maxAlternatives = 1;
+    // Ask for several readings and keep the most confident. The engine's first
+    // alternative is not always its best one, and over music it often is not.
+    rec.maxAlternatives = 3;
     rec.onresult = (e)=>{
       let interim = '';
       for(let i = e.resultIndex; i < e.results.length; i++){
-        const r = e.results[i], txt = (r[0] && r[0].transcript || '').trim();
+        const r = e.results[i];
+        let best = r[0], bc = (r[0] && r[0].confidence) || 0;
+        for(let a = 1; a < r.length; a++){
+          const c = (r[a] && r[a].confidence) || 0;
+          if(c > bc){ bc = c; best = r[a]; }
+        }
+        const txt = ((best && best.transcript) || '').trim();
         if(!txt) continue;
         if(r.isFinal){
-          cap.lines.push({ t: Date.now() - cap.t0, text: txt, conf: r[0].confidence || 0 });
+          const line = { t: Date.now() - cap.t0, text: txt, conf: bc, lang: rec.lang, tr: '' };
+          cap.lines.push(line);
           if(cap.lines.length > 400) cap.lines.shift();
+          capTranslate(line);
+          // Auto language: a run of low-confidence finals is the engine telling
+          // you it is listening in the wrong language. Move to the next
+          // candidate rather than filling the screen with plausible nonsense.
+          if(cap.lang === 'auto'){
+            if(bc && bc < 0.55) cap.lowConf++; else cap.lowConf = Math.max(0, cap.lowConf - 1);
+            if(cap.lowConf >= 4){
+              cap.lowConf = 0; cap.probeIdx++;
+              showMiniToast('🌐 מנסה ' + capLangTag());
+              try{ rec.stop(); }catch(e){}
+            }
+          }
         } else interim += txt + ' ';
       }
       cap.lastAt = Date.now();
-      capStat.textContent = `${cap.lines.length} שורות`;
+      capStat.textContent = `${cap.lines.length} · ${rec.lang}`;
       capRender(interim.trim());
     };
     rec.onerror = (e)=>{
@@ -5679,7 +5770,9 @@
       cap.restarts++;
       // back off a little as restarts pile up, so a flaky network degrades
       // into slow retries instead of hammering the service
-      const wait = Math.min(3000, 250 + cap.restarts * 40);
+      // Fast on a healthy engine (this gap is dead air in the middle of a
+      // song), backing off only when restarts pile up.
+      const wait = Math.min(3000, 80 + cap.restarts * 40);
       setTimeout(()=>{ if(cap.on && !cap.fatal){ try{ cap.rec = capStartRec(); }catch(e){} } }, wait);
     };
     rec.start();
@@ -5707,7 +5800,7 @@
   }
   capBtn.addEventListener('click', ()=>setCap(!cap.on));
   function capText(){
-    return cap.lines.map(l=>l.text).join('\n');
+    return cap.lines.map(l=> l.tr ? l.text + '\n    ' + l.tr : l.text).join('\n');
   }
   function capDownload(name, body, type){
     try{
@@ -5734,7 +5827,8 @@
     const srt = cap.lines.map((l, i)=>{
       const next = cap.lines[i + 1];
       const end = next ? next.t : l.t + 3500;
-      return `${i + 1}\n${capStamp(l.t)} --> ${capStamp(Math.max(end, l.t + 600))}\n${l.text}\n`;
+      const body = l.tr ? l.text + '\n' + l.tr : l.text;
+      return `${i + 1}\n${capStamp(l.t)} --> ${capStamp(Math.max(end, l.t + 600))}\n${body}\n`;
     }).join('\n');
     capDownload('set-transcript.srt', srt, 'text/plain;charset=utf-8');
   });
@@ -5750,8 +5844,13 @@
 
   window.__ltCap = { state:()=>({ on:cap.on, lines:cap.lines.length, restarts:cap.restarts, err:cap.err, fatal:cap.fatal }),
     supported:!!SR, open:(on)=>setCap(on !== false), text:capText, lines:()=>cap.lines.slice(),
-    push:(t)=>{ cap.lines.push({ t: Date.now() - (cap.t0 || Date.now()), text:t, conf:1 }); capRender(''); },
-    stamp:capStamp, lang:capLangTag };
+    // mirrors exactly what a confirmed recognition result does, translation
+    // included — a hook that skips a step tests a path the app never takes
+    push:(t)=>{ const line = { t: Date.now() - (cap.t0 || Date.now()), text:t, conf:1, lang:capLangTag(), tr:'' };
+      cap.lines.push(line); capTranslate(line); capRender(''); },
+    stamp:capStamp, lang:capLangTag, langs:()=>CAP_LANGS.map(x=>x[0]),
+    setLang:(l)=>{ capLangSel.value = l; capLangSel.dispatchEvent(new Event('change')); },
+    translate:capTranslate, probe:()=>cap.probeIdx };
   window.__ltVJ = { on:()=>scope.vj, set:setVJ };
 
   // VJ mode is a stage layout and restores freely. Captions are deliberately
