@@ -626,6 +626,13 @@ body.cinema #duoBar.on{display:flex!important}
      burying them (the reported overlap) */
   #commBar{bottom:auto;top:118px;font-size:11.5px;padding:7px 11px;max-width:94vw}
 }
+/* ── side-by-side work mode: frozen 3D as a dim backdrop, data forward ── */
+body.work #stage canvas{opacity:.38;filter:saturate(.65) brightness(.8);transition:opacity .4s ease}
+body.work #banner,body.work #hint{display:none!important}
+/* the one number being traded, unmissable at a glance from the other pane */
+body.work #pricePanel{background:rgba(3,8,18,.96);border-color:rgba(0,240,255,.5);
+  box-shadow:0 0 24px rgba(0,240,255,.18)}
+body.work #pricePanel .big{font-size:26px;letter-spacing:.5px}
 /* cinema mode: pure 3D, HUD hidden (toggles stay so you can exit) */
 body.cinema #oracle,body.cinema #pricePanel,body.cinema #ticket,body.cinema #pulsePanel,
 body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important}
@@ -1207,6 +1214,9 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
     </a>
     <div class="tgl" id="btnSettings" title="הגדרות NEXUS·ARENA">
       <span style="font-size:15px">⚙️</span><span style="font-size:8px">הגדרות</span>
+    </div>
+    <div class="tgl" id="btnWorkSide" title="מצב עבודה לצד הבורסה — התלת-ממד קופא, המחיר והאנליסטים ממשיכים">
+      <span style="font-size:15px">🖥️</span><span style="font-size:8px">לצד בורסה</span>
     </div>
     <div class="tgl" id="btnWalk" title="מצב הליכה — סיור בעולם המסחר">
       <span style="font-size:15px">🚶</span><span style="font-size:8px">סיור</span>
@@ -4953,6 +4963,42 @@ $('btnTools').onclick=()=>setTools(!toolsOpen);
 // (listeners survive appendChild; desktop layering is unchanged because the
 // rail's z:20 stays below every panel's 26+ either way).
 ['toolsScrim','toolsFab','toggles'].forEach(id=>{ const e=$(id); if(e) document.body.appendChild(e); });
+// ── 🖥️ side-by-side work mode ─────────────────────────────────────────
+// Built for exactly one posture: NEXUS in a split screen next to the
+// exchange app. The trader works THERE; this window narrates. So the 3D
+// world FREEZES on its last frame (running=false — the frame stays as a
+// backdrop and the GPU goes quiet, which in a split screen is battery the
+// exchange app gets back), while everything that talks stays fully alive:
+// the price feed, the indicators, the caster and the analysts.
+// Auto-detects the split — a window clearly narrower than the physical
+// screen is not a fullscreen phone — but a manual toggle always wins.
+window.__naWork=false;
+function setWork(on,{manual=false}={}){
+  window.__naWork=!!on;
+  document.body.classList.toggle('work',window.__naWork);
+  const bw=$('btnWorkSide'); if(bw) bw.classList.toggle('on',window.__naWork);
+  if(manual){ try{ localStorage.setItem('na:work',window.__naWork?'1':'0'); }catch(e){} }
+  // NOTE: the render loop reads window.__naWork itself — this function runs
+  // long before `running`/`prevT` are declared (let + TDZ), so it must not
+  // touch them.
+  if(manual) toast(window.__naWork?'🖥️ מצב עבודה לצד הבורסה — התלת-ממד קפוא, הקולות והנתונים חיים':'🖥️ חזרה לעולם המלא','up');
+}
+(function(){
+  const saved=(()=>{ try{ return localStorage.getItem('na:work'); }catch(e){ return null; } })();
+  const looksSplit=()=>{ try{ return innerWidth < (screen.width*0.7); }catch(e){ return false; } };
+  if(saved==='1') setWork(true);
+  else if(saved==null && looksSplit()) setWork(true);
+  let rt=0;
+  addEventListener('resize',()=>{
+    clearTimeout(rt);
+    rt=setTimeout(()=>{
+      // auto only while the user has not chosen: their explicit toggle wins
+      try{ if(localStorage.getItem('na:work')!=null) return; }catch(e){}
+      const want=looksSplit();
+      if(want!==window.__naWork) setWork(want);
+    },400);
+  });
+})();
 // The drawer closes as soon as a tool is picked: on a phone the panel that
 // opens needs the whole screen, and leaving the grid up would cover it.
 function setToolsDrawer(on){
@@ -4960,6 +5006,7 @@ function setToolsDrawer(on){
   const f=$('toolsFab'); if(f) f.textContent=on?'✕':'☰';
 }
 $('toolsFab').onclick=()=>setToolsDrawer(!document.body.classList.contains('tools-open'));
+$('btnWorkSide').onclick=()=>setWork(!window.__naWork,{manual:true});
 $('toolsScrim').onclick=()=>setToolsDrawer(false);
 document.querySelectorAll('#toggles .tgl').forEach(b=>{
   b.addEventListener('click',()=>{ if(innerWidth<=760) setTimeout(()=>setToolsDrawer(false),120); });
@@ -10843,7 +10890,7 @@ function applyVisualToggles(){
 // risk) instead of repeating the same failure 60 times a second.
 function loop(){
   requestAnimationFrame(loop);
-  if(!running||window.__gfx.loopHardFail) return;
+  if(!running||window.__naWork||window.__gfx.loopHardFail) return;
   const now=performance.now();
   const dt=Math.min(0.05,(now-prevT)/1000); prevT=now;
   try{
@@ -10903,7 +10950,7 @@ function safeLoopFallback(){
   try{ renderer.render(scene,camera); }catch(e){}
 }
 requestAnimationFrame(safeLoopFallback);
-document.addEventListener('visibilitychange',()=>{ running=!document.hidden; prevT=performance.now(); });
+document.addEventListener('visibilitychange',()=>{ running=!document.hidden&&!window.__naWork; prevT=performance.now(); });
 
 // ── The voices never speak into an empty room ────────────────────────────
 // speechSynthesis is owned by the BROWSER, not by this page: an utterance
@@ -10938,7 +10985,7 @@ renderer.domElement.addEventListener('webglcontextlost',e=>{
   try{ toast('⚠️ החיבור הגרפי אבד — ממתין לשחזור...'); }catch(err){}
 });
 renderer.domElement.addEventListener('webglcontextrestored',()=>{
-  running=true; prevT=performance.now(); window.__gfx.loopFailN=0; window.__gfx.loopHardFail=false;
+  running=!window.__naWork; prevT=performance.now(); window.__gfx.loopFailN=0; window.__gfx.loopHardFail=false;
   try{ toast('✅ התצוגה התאוששה'); }catch(err){}
 });
 addEventListener('resize',()=>{
