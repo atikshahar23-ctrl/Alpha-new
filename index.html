@@ -110,6 +110,17 @@
       // double-load, never an intentional revisit. A deliberate reload later
       // still shows the intro.
       if(window.__alphaIntro){ return; } window.__alphaIntro=true;
+      // ── INSTANT BOOT (owner request) ───────────────────────────────────────
+      // The anthem cinematic and its sound are OFF: every open goes straight
+      // to the live dashboard. This also removes the ~2MB video download from
+      // the boot path entirely — on cellular that fetch was competing with the
+      // app bundle for bandwidth even before its 10 seconds of screen time.
+      // The whole sequence below is kept intact behind this gate so it can be
+      // re-enabled by removing one flag, but the default is: open NOW.
+      try{ sessionStorage.setItem('alpha_session_booted','1'); }catch(e){}
+      ov.parentNode && ov.parentNode.removeChild(ov);
+      revealApp();
+      if(true) return;
       // ── Per-session boot gate ──────────────────────────────────────────────
       // The boot animation + startup chime play ONLY on the first open of the
       // app session. Opening a sub-app (Heavy Guard / agents) and coming back
