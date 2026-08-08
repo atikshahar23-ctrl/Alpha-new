@@ -739,8 +739,15 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
   #pricePanel .big{font-size:22px}
   #pricePanel .row{font-size:9.5px}
   #battle{display:none}          /* the power bar duplicates the oracle */
-  #posStrip{bottom:calc(128px + env(safe-area-inset-bottom));max-width:94vw}
-  #commBar{bottom:calc(72px + env(safe-area-inset-bottom));max-width:94vw;font-size:11px}
+  /* same top/bottom-conflict trap as #commBar (see there): the 720px block
+     owns phone placement with top:202, so bottom must stay auto here or the
+     strip stretches into a column the moment a position is open */
+  #posStrip{bottom:auto;top:202px;max-width:94vw}
+  /* top placement, matching the 720px block. Setting `bottom` here while
+     that block sets `top` left BOTH set on a phone — and a fixed element
+     with top AND bottom stretches to fill the gap: the caster caption
+     became a 650px empty column over the middle of the arena. */
+  #commBar{bottom:auto;top:118px;max-width:94vw;font-size:11px}
   #mcStack{bottom:calc(170px + env(safe-area-inset-bottom))}
   #tape{font-size:10px}
   /* every tool panel becomes a proper bottom sheet with room to breathe */
