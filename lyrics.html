@@ -1178,6 +1178,7 @@
         <b>בהירות</b><span id="dCent">—</span>
         <b>ודאות</b><span id="dConf">—</span>
         <b>רזולוציה</b><span id="dRes">—</span>
+        <b>ביצועים</b><span id="dFps">—</span>
       </div>
       <div class="scope-ribbon" id="scopeRibbon" hidden></div>
       <div class="scope-tabs" id="scopeTabs">
@@ -1196,6 +1197,7 @@
         <button data-sx="hps" title="תיקון אוקטבה (HPS) — מונע זיהוי הרמוניה במקום היסוד">⑂</button>
         <button data-sx="fft" title="רזולוציית ניתוח: 2048 מהיר / 8192 מדויק">⌗</button>
         <button data-sx="a4" title="תדר ייחוס A4: 440 / 432 / 442 / 415">🎼</button>
+        <button data-sx="auto" title="החלפת צורה אוטומטית — כל 4 תיבות">🔀</button>
         <button data-sx="palette" title="צבע: פוספור / לפי התו">🎨</button>
         <button data-sx="wide" title="על כל הבמה — הרקדנים בתוך הצורה">🖼</button>
         <button data-sx="size" title="גודל">⤢</button>
@@ -4726,7 +4728,13 @@
         }
         st.detLive = !!d;
       }
-      if(scope.on){
+      // The waveform copy and the RMS loop below exist only to feed the scope,
+      // and they run per frame over 2048-8192 floats. The scope draws at most
+      // 30 times a second in corner mode, so capturing faster than it draws is
+      // pure waste — and this is the work that turned "dancers" into
+      // "dancers + scope" costing measurably more.
+      if(scope.on && now - (st.waveAt || 0) >= (scope.vj ? 15 : 32)){
+        st.waveAt = now;
         analyser.getFloatTimeDomainData(st.wave);
         // ---- level, headroom and brightness ----------------------------
         // A clipping input wrecks pitch detection long before it sounds bad,
@@ -4743,12 +4751,16 @@
         const db = 20 * Math.log10(Math.max(1e-6, rms));
         st.peakDb = Math.max(db, st.peakDb - 0.35);
         if(pk > 0.985) st.clip = now;
-        // spectral centroid = where the energy sits on average. Musicians
-        // call it brightness; it separates a bassline from a hi-hat pattern
-        // in one number.
-        let num = 0, den = 0;
-        for(let i = 1; i < data.length; i++){ const m = data[i]; num += m * i * binHz; den += m; }
-        st.centroid = den > 0 ? num / den : 0;
+        // Spectral centroid = where the energy sits on average. Musicians
+        // call it brightness. It is a loop over every bin — up to 4096 of them
+        // at the precise FFT size — and it is a readout, not an animation, so
+        // ten times a second is plenty.
+        if(now - (st.centAt || 0) > 100){
+          st.centAt = now;
+          let num = 0, den = 0;
+          for(let i = 1; i < data.length; i++){ const m = data[i]; num += m * i * binHz; den += m; }
+          st.centroid = den > 0 ? num / den : 0;
+        }
       }
       if(now - lastTreblePush > 180){
         lastTreblePush = now;
@@ -4829,7 +4841,10 @@
     // precision layer
     data:false, tuner:false, ribbon:false, hps:true, smooth:true, fft:2048, a4:440, notes:[],
     // no-mic fallback: the figure keeps moving off the app's beat clock
-    demo:false, demoPhase:0 };
+    demo:false, demoPhase:0,
+    // adaptive quality (1 = full) + measured frame time, and the eased ratio
+    // the figure is actually drawn with
+    q:1, dtEma:16, fps:60, ratioShown:1.5, auto:false, beatCount:0, lastDet:0 };
   const FFT_SIZES = [2048, 8192];
   const A4_REFS = [440, 432, 442, 415];
 
@@ -4958,6 +4973,7 @@
     dEl('dCent').textContent = st.centroid ? Math.round(st.centroid) + ' Hz' : '—';
     dEl('dConf').textContent = det ? Math.round(det.conf * 100) + '%' : '—';
     dEl('dRes').textContent = st.binHz ? st.binHz.toFixed(1) + ' Hz/bin · ' + analyserSizeLabel() : '—';
+    dEl('dFps').textContent = Math.round(scope.fps) + ' fps · איכות ' + Math.round(scope.q * 100) + '%';
   }
   function analyserSizeLabel(){ return scope.fft === 8192 ? 'מדויק' : 'מהיר'; }
   let SW = scopeCv.width, SH = scopeCv.height;
@@ -4970,7 +4986,9 @@
   function scopeResize(){
     const r = scopeCv.getBoundingClientRect();
     if(!r.width || !r.height) return;
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    // Resolution is part of the quality budget: on a device that cannot keep
+    // up, fewer pixels buys more frames than fewer points does.
+    const dpr = Math.min(2, window.devicePixelRatio || 1) * (scope.q < 0.7 ? 0.7 : 1);
     const w = Math.min(1600, Math.round(r.width * dpr));
     const h = Math.min(1000, Math.round(r.height * dpr));
     if(Math.abs(w - SW) < 2 && Math.abs(h - SH) < 2) return;
@@ -4997,10 +5015,27 @@
     if(!scope.chroma) return light ? '#ffb000' : '#39ff14';
     return `hsl(${(scope.hue + (light ? 40 : 0)) % 360} 100% ${light ? 62 : 55}%)`;
   }
+  /**
+   * Glow, cheaply. Canvas shadowBlur rasterises a real blur for every stroke,
+   * and at full stage that was the single biggest cost in the whole renderer
+   * — the polar bloom issues ~96 strokes a frame and was running at 2.3fps
+   * because of it. Two passes over the SAME path (a wide translucent one under
+   * a thin bright one, added with 'lighter') read as a glow to the eye and
+   * cost two strokes instead of ninety-six blurs.
+   */
   function scopeTrace(col, glow, width){
-    sctx.strokeStyle = col; sctx.shadowColor = col;
-    sctx.shadowBlur = glow; sctx.lineWidth = width;
+    sctx.shadowBlur = 0;
+    const prev = sctx.globalCompositeOperation;
+    sctx.globalCompositeOperation = 'lighter';
+    sctx.strokeStyle = col;
+    sctx.globalAlpha = 0.17;
+    sctx.lineWidth = width + glow * 0.4 * scope.q;
     sctx.stroke();
+    sctx.globalAlpha = 0.92;
+    sctx.lineWidth = width;
+    sctx.stroke();
+    sctx.globalAlpha = 1;
+    sctx.globalCompositeOperation = prev;
   }
 
   /**
@@ -5009,9 +5044,9 @@
    * the figure spirals inward instead of retracing itself forever.
    */
   function drawHarmono(det){
-    const r = det ? Math.max(0.25, Math.min(8, det.ratio)) : 1.5;
+    const r = Math.max(0.25, Math.min(8, scope.ratioShown || 1.5));
     const cx = SW/2, cy = SH/2, s = Math.min(SW,SH) * 0.32 * (0.7 + scope.amp);
-    const N = 1400, T = 42;
+    const N = Math.round(1400 * scope.q), T = 42;
     sctx.beginPath();
     for(let i = 0; i < N; i++){
       const t = (i / N) * T;
@@ -5029,11 +5064,11 @@
    * draw visibly different flowers.
    */
   function drawRose(det){
-    const [n, d] = ratioApprox(det ? det.ratio : 1.5);
+    const [n, d] = ratioApprox(scope.ratioShown || 1.5);
     const cx = SW/2, cy = SH/2, s = Math.min(SW,SH) * 0.42 * (0.6 + scope.amp * 0.8);
     const k = n / d;
     const turns = Math.PI * 2 * d;      // a k=n/d rose closes after d turns
-    const N = 1200;
+    const N = Math.round(1200 * scope.q);
     sctx.beginPath();
     for(let i = 0; i <= N; i++){
       const th = (i / N) * turns + scope.phase * 0.3;
@@ -5075,15 +5110,25 @@
   }
 
   /** Polar spectrum — the band bloom opens on the beat. */
+  // One buffer, reused. A fresh Uint8Array per frame is 1-4KB of garbage
+  // sixty times a second, and the collector eventually charges for it.
+  let specBuf = null;
+  function specData(st){
+    const bins = st.analyser.frequencyBinCount;
+    if(!specBuf || specBuf.length !== bins) specBuf = new Uint8Array(bins);
+    st.analyser.getByteFrequencyData(specBuf);
+    return specBuf;
+  }
   function drawBloom(st){
     const bins = st.analyser.frequencyBinCount;
-    const arr = new Uint8Array(bins);
-    st.analyser.getByteFrequencyData(arr);
+    const arr = specData(st);
     const cx = SW/2, cy = SH/2, r0 = Math.min(SW,SH) * (0.11 + scope.kick * 0.05);
     const bands = 96, maxL = Math.min(SW,SH) * 0.36;
-    sctx.save();
-    sctx.globalCompositeOperation = 'lighter';
-    sctx.lineCap = 'round';
+    // One path per colour bucket instead of one stroke per band: the eye
+    // cannot tell 96 hues from 8 on a spinning wheel, and the GPU very much can.
+    const BUCKETS = 8;
+    const paths = [];
+    for(let k = 0; k < BUCKETS; k++) paths.push(new Path2D());
     for(let b = 0; b < bands; b++){
       const i0 = Math.floor(Math.pow(bins, b / bands));
       const i1 = Math.max(i0 + 1, Math.floor(Math.pow(bins, (b + 1) / bands)));
@@ -5091,15 +5136,21 @@
       const len = (v / 255) * maxL;
       if(len < 1) continue;
       const a = (b / bands) * Math.PI * 2 + scope.phase * 0.5;
-      const hue = scope.chroma ? (scope.hue + b * 2.2) % 360 : (100 + b * 0.9) % 360;
-      sctx.strokeStyle = `hsl(${hue} 100% 58%)`;
-      sctx.shadowColor = sctx.strokeStyle; sctx.shadowBlur = 8;
-      sctx.lineWidth = 2.2;
-      sctx.beginPath();
-      sctx.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0);
-      sctx.lineTo(cx + Math.cos(a) * (r0 + len), cy + Math.sin(a) * (r0 + len));
-      sctx.stroke();
+      const pth = paths[(b * BUCKETS / bands) | 0];
+      pth.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0);
+      pth.lineTo(cx + Math.cos(a) * (r0 + len), cy + Math.sin(a) * (r0 + len));
     }
+    sctx.save();
+    sctx.shadowBlur = 0;
+    sctx.globalCompositeOperation = 'lighter';
+    sctx.lineCap = 'round';
+    for(let k = 0; k < BUCKETS; k++){
+      const hue = scope.chroma ? (scope.hue + k * 26) % 360 : (100 + k * 10) % 360;
+      sctx.strokeStyle = `hsl(${hue} 100% 58%)`;
+      sctx.globalAlpha = 0.22; sctx.lineWidth = 6;  sctx.stroke(paths[k]);
+      sctx.globalAlpha = 0.95; sctx.lineWidth = 2.2; sctx.stroke(paths[k]);
+    }
+    sctx.globalAlpha = 1;
     sctx.restore();
   }
 
@@ -5110,8 +5161,7 @@
    */
   function drawWaterfall(st){
     const bins = st.analyser.frequencyBinCount;
-    const arr = new Uint8Array(bins);
-    st.analyser.getByteFrequencyData(arr);
+    const arr = specData(st);
     const step = 3;
     sctx.save();
     sctx.globalCompositeOperation = 'copy';
@@ -5137,10 +5187,10 @@
     const cx = SW/2, cy = SH/2, scale = Math.min(SW,SH) * 0.4 * (0.55 + scope.amp * 0.75);
     // The ratio is the figure. Held to a musical span: a 40:1 reading is a
     // detection artefact, and drawing it just fills the screen with hash.
-    let r = det ? det.ratio : 1.5;
+    let r = scope.ratioShown;
     if(!isFinite(r) || r <= 0) r = 1.5;
     r = Math.max(0.25, Math.min(8, r));
-    const N = 900, turns = Math.PI * 2 * 6;
+    const N = Math.round(900 * scope.q), turns = Math.PI * 2 * 6;
     sctx.beginPath();
     for(let i = 0; i < N; i++){
       const t = (i / N) * turns;
@@ -5151,7 +5201,7 @@
     scopeTrace(scopeCol(false), 10 + scope.kick * 16, 1.6 + scope.kick * 1.6);
     // Treble writes a second, faster figure over the first — busy vocal and
     // hi-hat passages visibly thicken the drawing, quiet ones leave it clean.
-    if(scope.treb > 0.06){
+    if(scope.treb > 0.06 && scope.q > 0.6){
       sctx.beginPath();
       for(let i = 0; i < N; i++){
         const t = (i / N) * turns;
@@ -5173,7 +5223,8 @@
     const lag = Math.max(2, Math.min(n >> 2, Math.round(st.ctx.sampleRate / (4 * f))));
     const cx = SW/2, cy = SH/2, scale = Math.min(SW,SH) * 1.5;
     sctx.beginPath();
-    for(let i = 0; i < n - lag; i += 2){
+    const step = scope.q > 0.75 ? 2 : scope.q > 0.55 ? 3 : 4;
+    for(let i = 0; i < n - lag; i += step){
       const x = cx + buf[i] * scale;
       const y = cy - buf[i + lag] * scale;
       i ? sctx.lineTo(x,y) : sctx.moveTo(x,y);
@@ -5194,8 +5245,7 @@
 
   function drawSpectrum(st){
     const bins = st.analyser.frequencyBinCount;
-    const arr = new Uint8Array(bins);
-    st.analyser.getByteFrequencyData(arr);
+    const arr = specData(st);
     // logarithmic bands: linear FFT bins put nine tenths of the screen above
     // 5kHz, where music has almost nothing to show
     const bands = 64, bw = SW / bands;
@@ -5208,7 +5258,6 @@
       let v = 0; for(let i = i0; i < i1 && i < bins; i++) v = Math.max(v, arr[i]);
       const h = (v / 255) * SH * 0.88;
       sctx.fillStyle = b < bands * 0.25 ? cLow : cHigh;
-      sctx.shadowColor = sctx.fillStyle;
       sctx.fillRect(b * bw, SH - h, bw * 0.78, h);
       // peak hold: the loudest each band has been, decaying slowly. It is the
       // difference between "that was loud" and "was that loud?"
@@ -5249,6 +5298,30 @@
     scope.raf = requestAnimationFrame(scopeFrame);
     // belt-and-braces for browsers without ResizeObserver
     if(!scopeRO && now - scopeSizeAt > 400){ scopeSizeAt = now; scopeResize(); }
+    // ---- frame budget ----------------------------------------------------
+    // In corner mode the dancers are still rendering a full 3D scene behind
+    // this canvas, and the two were splitting one budget: measured at 4x CPU
+    // throttle, dancers alone ran 9.5fps, the scope in VJ mode (3D paused)
+    // 12.1fps — but the two together only 6.6fps. A 264px box does not need
+    // sixty frames a second, so in corner mode the scope takes 30 and gives
+    // the rest back to the dancers. In VJ mode it owns the stage and runs free.
+    const budget = scope.vj ? 0 : 33;
+    if(budget && now - (scope.drewAt || 0) < budget) return;
+    scope.drewAt = now;
+
+    // ---- adaptive quality ------------------------------------------------
+    // The renderer should fit the device, not the other way round. Frame time
+    // is measured, smoothed, and the point counts follow it: a slow tablet
+    // gets a simpler figure at a smooth rate rather than a detailed one at
+    // twelve frames a second.
+    const dt = now - (scope.lastFrameAt || now);
+    scope.lastFrameAt = now;
+    if(dt > 0 && dt < 500){
+      scope.dtEma += (dt - scope.dtEma) * 0.08;
+      scope.fps = 1000 / scope.dtEma;
+      if(scope.dtEma > 24 && scope.q > 0.4) scope.q = Math.max(0.4, scope.q - 0.02);
+      else if(scope.dtEma < 15 && scope.q < 1) scope.q = Math.min(1, scope.q + 0.008);
+    }
     const st = liveAudio;
     const waterfall = scope.mode === 'waterfall';
 
@@ -5267,10 +5340,24 @@
       scopeIdle.hidden = true;
       const det = st.det;
       scope.amp += (st.env - scope.amp) * 0.15;
-      if(det) scope.hue = ((Math.round(69 + 12 * Math.log2(det.f1 / 440)) % 12) + 12) % 12 * 30;
-      // the beat kicks the phase, so the figure visibly turns ON the beat
-      scope.phase += 0.006 + scope.kick * 0.05;
+      if(det) scope.hue = ((Math.round(69 + 12 * Math.log2(det.f1 / (scope.a4 || 440))) % 12) + 12) % 12 * 30;
+      // ---- why the figure used to freeze ---------------------------------
+      // The last good reading is HELD when detection fails, and on a dense mix
+      // it can fail for seconds at a time. A held ratio plus a phase creeping
+      // at 0.006/frame is a still picture. Three fixes, all here:
+      //   1. the phase speed follows the music — loud and bright moves faster
+      //   2. the drawn ratio EASES toward the detected one, so a harmony
+      //      change is seen as the figure morphing rather than snapping
+      //   3. a reading older than 1.5s is stale, and a stale figure breathes
+      //      on a slow cycle instead of standing perfectly still
+      scope.phase += 0.011 + scope.amp * 0.05 + scope.treb * 0.05 + scope.kick * 0.09;
       scope.kick *= 0.90;
+      const fresh = det && st.detLive;
+      if(fresh) scope.lastDet = now;
+      const stale = now - scope.lastDet > 1500;
+      let target = det ? Math.max(0.25, Math.min(8, det.ratio)) : 1.5;
+      if(stale) target *= 1 + 0.16 * Math.sin(now / 2400);
+      scope.ratioShown += (target - scope.ratioShown) * 0.05;
       sctx.save();
       if(scope.mode === 'lissajous') drawLissajous(det);
       else if(scope.mode === 'phase') drawPhase(st, det);
@@ -5369,7 +5456,12 @@
       sctx.fillStyle = '#020402'; sctx.fillRect(0,0,SW,SH);
       return;
     }
-    if(b.dataset.sx === 'palette'){
+    if(b.dataset.sx === 'auto'){
+      scope.auto = !scope.auto;
+      store.set('lt:scope_auto', scope.auto);
+      b.classList.toggle('on', scope.auto);
+      showMiniToast(scope.auto ? '🔀 הצורה תתחלף כל 4 תיבות' : '🔀 צורה קבועה');
+    } else if(b.dataset.sx === 'palette'){
       scope.chroma = !scope.chroma;
       store.set('lt:scope_chroma', scope.chroma);
       b.classList.toggle('on', scope.chroma);
@@ -5416,8 +5508,17 @@
       }catch(err){ showMiniToast('השמירה נכשלה'); }
     }
   });
+  const MORPH_ORDER = ['lissajous','rose','harmono','phase','bloom'];
   window.addEventListener('lt-beat', ()=>{
     scope.kick = 1;
+    // Auto-morph: four bars on a shape, then the next one. A visualiser that
+    // shows the same figure for an entire set is wallpaper.
+    if(scope.auto && ++scope.beatCount % 16 === 0){
+      const i = MORPH_ORDER.indexOf(scope.mode);
+      scope.mode = MORPH_ORDER[(i + 1) % MORPH_ORDER.length];
+      document.querySelectorAll('#scopeTabs [data-sm]').forEach(x=>x.classList.toggle('on', x.dataset.sm === scope.mode));
+      sctx.fillStyle = '#020402'; sctx.fillRect(0,0,SW,SH);
+    }
     // With no microphone this IS the only input the visuals have: the show's
     // beat clock (Spotify tempo, tap-tempo, or the manual BPM in settings).
     if(!liveAudio && scope.demo){
@@ -5440,6 +5541,7 @@
     if(store.get('lt:scope_chroma') === false) scope.chroma = false;
     for(const k of ['data','tuner','ribbon']) if(store.get('lt:scope_' + k) === true) scope[k] = true;
     if(store.get('lt:scope_hps') === false) scope.hps = false;
+    if(store.get('lt:scope_auto') === true) scope.auto = true;
     const sf = store.get('lt:scope_fft'); if(FFT_SIZES.indexOf(sf) >= 0) scope.fft = sf;
     const sa = store.get('lt:scope_a4'); if(A4_REFS.indexOf(sa) >= 0) scope.a4 = sa;
     scope.wide = store.get('lt:scope_wide') === true;
@@ -5447,6 +5549,7 @@
     $('scopeTabs').querySelector('[data-sx="palette"]').classList.toggle('on', scope.chroma);
     for(const k of ['data','tuner','ribbon']) $('scopeTabs').querySelector('[data-sx="' + k + '"]').classList.toggle('on', scope[k]);
     $('scopeTabs').querySelector('[data-sx="hps"]').classList.toggle('on', scope.hps);
+    $('scopeTabs').querySelector('[data-sx="auto"]').classList.toggle('on', scope.auto);
     $('scopeTabs').querySelector('[data-sx="fft"]').classList.toggle('on', scope.fft === 8192);
     $('scopeTabs').querySelector('[data-sx="a4"]').classList.toggle('on', scope.a4 !== 440);
     applyScopeWide();
