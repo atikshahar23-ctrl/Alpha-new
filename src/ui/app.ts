@@ -195,7 +195,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="wm-hg">HEAVY GUARD OS</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v394 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="wm-hg">HEAVY GUARD OS</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v395 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip apps-chip" id="appsBtn" title="האפליקציות שלי" aria-label="האפליקציות שלי">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="12" cy="19" r="2"/><circle cx="19" cy="19" r="2"/></svg>
@@ -225,55 +225,57 @@ export function mountApp(root: HTMLElement) {
       <div class="app-drawer-scrim" id="appDrawerScrim"></div>
       <aside class="app-drawer" id="appDrawer" aria-hidden="true" aria-label="האפליקציות שלי">
         <div class="ad-head">
-          <span>🚀 האפליקציות שלי</span>
+          <span>🚀 האפליקציות שלי <em class="ad-count" id="adCount"></em></span>
           <button class="ad-close" id="appDrawerClose" aria-label="סגור">✕</button>
         </div>
-        <div class="ad-grid">
-          <a class="ad-item" href="https://heavt-guard-simulator-1.onrender.com/" target="_blank" rel="noopener">
+        <input class="ad-search" id="adSearch" type="search" placeholder="חיפוש אפליקציה…" autocomplete="off" aria-label="חיפוש אפליקציה">
+        <div class="ad-recent" id="adRecent" hidden></div>
+        <div class="ad-grid" id="adGrid">
+          <a class="ad-item" data-cat="trade" href="https://heavt-guard-simulator-1.onrender.com/" target="_blank" rel="noopener">
             <span class="ad-ic" style="--c:#F7C948"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg></span>
             <b>מערכת מסחר</b><em>Trading · חי</em>
           </a>
-          <a class="ad-item" href="${import.meta.env.BASE_URL}heavyguard.html">
+          <a class="ad-item" data-cat="biz" href="${import.meta.env.BASE_URL}heavyguard.html">
             <span class="ad-ic" style="--c:#4FD1C5"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></span>
             <b>Heavy Guard</b><em>CRM · ניהול צי</em>
           </a>
-          <a class="ad-item" href="${import.meta.env.BASE_URL}agents.html">
+          <a class="ad-item" data-cat="biz" href="${import.meta.env.BASE_URL}agents.html">
             <span class="ad-ic" style="--c:#B794F4"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3.2"/><circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="5" cy="18" r="2"/><circle cx="19" cy="18" r="2"/><path d="M9.5 10.5 6.5 7.5M14.5 10.5l3-3M9.5 13.5l-3 3M14.5 13.5l3 3"/></svg></span>
             <b>מרכז הסוכנים</b><em>Agents · המשרד החי</em>
           </a>
-          <a class="ad-item" href="${import.meta.env.BASE_URL}heavyguard.html#marketing">
+          <a class="ad-item" data-cat="biz" href="${import.meta.env.BASE_URL}heavyguard.html#marketing">
             <span class="ad-ic" style="--c:#F687B3"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 11l19-9-9 19-2-8-8-2z"/></svg></span>
             <b>שיווק</b><em>TikTok · Facebook</em>
           </a>
-          <a class="ad-item" href="${import.meta.env.BASE_URL}gps.html">
+          <a class="ad-item" data-cat="biz" href="${import.meta.env.BASE_URL}gps.html">
             <span class="ad-ic" style="--c:#63B3ED"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 10c0 6-9 12-9 12s-9-6-9-12a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg></span>
             <b>GPS Tracker</b><em>מעקב נסיעות</em>
           </a>
-          <a class="ad-item" href="${import.meta.env.BASE_URL}agent.html">
+          <a class="ad-item" data-cat="biz" href="${import.meta.env.BASE_URL}agent.html">
             <span class="ad-ic" style="--c:#68D391"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg></span>
             <b>עוזר CRM</b><em>הצעות מחיר · לקוחות</em>
           </a>
-          <a class="ad-item" href="${import.meta.env.BASE_URL}lyrics.html">
+          <a class="ad-item" data-cat="media" href="${import.meta.env.BASE_URL}lyrics.html">
             <span class="ad-ic" style="--c:#00E5FF"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></span>
             <b>מילים בתרגום חי</b><em>Spotify · Lyrics Translator</em>
           </a>
-          <a class="ad-item" href="${import.meta.env.BASE_URL}arena.html">
+          <a class="ad-item" data-cat="trade" href="${import.meta.env.BASE_URL}arena.html">
             <span class="ad-ic" style="--c:#FF2FD6"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 2l3 5 5.5.8-4 3.9.9 5.6L12 14.8 6.6 17.3l.9-5.6-4-3.9L9 7z"/></svg></span>
             <b>NEXUS·ARENA</b><em>עולם מסחר תלת-ממדי · קריפטו חי</em>
           </a>
-          <a class="ad-item" href="${import.meta.env.BASE_URL}octopus.html">
+          <a class="ad-item" data-cat="media" href="${import.meta.env.BASE_URL}octopus.html">
             <span class="ad-ic" style="--c:#B794F4"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="9" r="5"/><path d="M7 13c-2 2-3 5-2 8M17 13c2 2 3 5 2 8M9.5 14.5C8 17 8 20 9 22M14.5 14.5C16 17 16 20 15 22"/><circle cx="10" cy="8.5" r=".8" fill="currentColor"/><circle cx="14" cy="8.5" r=".8" fill="currentColor"/></svg></span>
             <b>OCTOPUS</b><em>מנוע חדשות · הצלבת מקורות · ניתוח AI</em>
           </a>
-          <a class="ad-item" href="${import.meta.env.BASE_URL}doggy.html">
+          <a class="ad-item" data-cat="media" href="${import.meta.env.BASE_URL}doggy.html">
             <span class="ad-ic" style="--c:#D98E32"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="4" r="2"/><circle cx="18" cy="8" r="2"/><circle cx="4" cy="8" r="2"/><path d="M11 22c-3.9 0-6-2.4-6-5 0-3 2.7-4.5 6-4.5s6 1.5 6 4.5c0 2.6-2.1 5-6 5z"/></svg></span>
             <b>DoggyLife</b><em>ניהול חיות מחמד · טיפולים · אילוף · קהילה</em>
           </a>
-          <a class="ad-item" href="${import.meta.env.BASE_URL}neuro.html">
+          <a class="ad-item" data-cat="media" href="${import.meta.env.BASE_URL}neuro.html">
             <span class="ad-ic" style="--c:#22d3ee"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9.5 2a3.5 3.5 0 0 0-3.4 4.3A3.5 3.5 0 0 0 4 9.5c0 .8.3 1.6.8 2.2A3.5 3.5 0 0 0 4 14a3.5 3.5 0 0 0 3.5 3.5h.1A3.5 3.5 0 0 0 11 21V5.5A3.5 3.5 0 0 0 9.5 2z"/><path d="M14.5 2a3.5 3.5 0 0 1 3.4 4.3A3.5 3.5 0 0 1 20 9.5c0 .8-.3 1.6-.8 2.2.5.6.8 1.4.8 2.3a3.5 3.5 0 0 1-3.5 3.5h-.1A3.5 3.5 0 0 1 13 21V5.5A3.5 3.5 0 0 1 14.5 2z"/></svg></span>
             <b>מנוע סומטי</b><em>שדה חלקיקים נוירו-סומטי · מפגשי מיקוד · אמביינט</em>
           </a>
-          <a class="ad-item" href="#" id="sportsHubBtn">
+          <a class="ad-item" data-cat="media" href="#" id="sportsHubBtn">
             <span class="ad-ic" style="--c:#43A1D5"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="10"/><path d="M12 7l4.2 3-1.6 5h-5.2L7.8 10z"/><path d="M12 2v5M20.5 8.5 16.2 10M19 19.5 14.6 15M9.4 15 5 19.5M3.5 8.5 7.8 10"/></svg></span>
             <b>Sports Hub</b><em>חפש כל קבוצה בעולם · לוח משחקים חי</em>
           </a>
@@ -2495,21 +2497,122 @@ export function mountApp(root: HTMLElement) {
   {
     const drawer = $('appDrawer');
     const scrim = $('appDrawerScrim');
+    const grid = $('adGrid');
+    const search = $('adSearch') as HTMLInputElement;
+    const recentRow = $('adRecent');
+    const items = Array.from(drawer.querySelectorAll<HTMLAnchorElement>('.ad-item'));
+
+    // Everything below ENHANCES the static markup instead of re-rendering it:
+    // sportsHubBtn (and the close-on-pick wiring) carry listeners attached
+    // elsewhere by id, and a re-render would silently orphan them.
+    const CAT_LABELS: Record<string, string> = { fav: '⭐ מועדפים', trade: '📈 מסחר וכספים', biz: '🧭 ניהול ועסקים', media: '🎧 מדיה וחוויה' };
+    const CAT_BASE: Record<string, number> = { fav: 0, trade: 100, biz: 200, media: 300 };
+    const keyOf = (a: HTMLAnchorElement) => (a.id || a.getAttribute('href') || '').replace(/^.*\//, '') || 'app';
+    let favs = new Set<string>();
+    try { favs = new Set(JSON.parse(localStorage.getItem('alpha_apps_favs') || '[]')); } catch {}
+    const saveFavs = () => { try { localStorage.setItem('alpha_apps_favs', JSON.stringify([...favs])); } catch {} };
+    let recents: Array<{ k: string; name: string; href: string }> = [];
+    try { recents = JSON.parse(localStorage.getItem('alpha_apps_recent') || '[]') || []; } catch {}
+    const saveRecents = () => { try { localStorage.setItem('alpha_apps_recent', JSON.stringify(recents.slice(0, 4))); } catch {} };
+
+    // one section header per category, positioned among the items by flex order
+    const headers: Record<string, HTMLDivElement> = {};
+    for (const cat of ['fav', 'trade', 'biz', 'media']) {
+      const h = document.createElement('div');
+      h.className = 'ad-cat';
+      h.textContent = CAT_LABELS[cat];
+      h.style.order = String(CAT_BASE[cat]);
+      grid.appendChild(h);
+      headers[cat] = h;
+    }
+    // a star on every item; stopPropagation so starring never navigates
+    for (const a of items) {
+      const star = document.createElement('button');
+      star.className = 'ad-star';
+      star.type = 'button';
+      star.setAttribute('aria-label', 'הוסף למועדפים');
+      star.addEventListener('click', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        const k = keyOf(a);
+        if (favs.has(k)) favs.delete(k); else favs.add(k);
+        saveFavs(); layout();
+      });
+      a.appendChild(star);
+    }
+
+    function layout() {
+      const q = search.value.trim().toLowerCase();
+      const seen: Record<string, number> = { fav: 0, trade: 0, biz: 0, media: 0 };
+      for (const a of items) {
+        const k = keyOf(a);
+        const fav = favs.has(k);
+        const cat = fav ? 'fav' : (a.dataset.cat || 'media');
+        const text = (a.textContent || '').toLowerCase();
+        const hit = !q || text.includes(q);
+        a.style.display = hit ? '' : 'none';
+        // ties keep source order within a group, which is all we need
+        a.style.order = String(CAT_BASE[cat] + 1);
+        a.classList.toggle('faved', fav);
+        const star = a.querySelector('.ad-star');
+        if (star) { star.textContent = fav ? '★' : '☆'; star.classList.toggle('on', fav); }
+        if (hit) seen[cat]++;
+      }
+      // headers vanish with their group (and entirely during a search — a
+      // filtered list reads better flat)
+      for (const cat of Object.keys(headers)) headers[cat].style.display = (!q && seen[cat] > 0) ? '' : 'none';
+      $('adCount').textContent = String(items.filter((a) => a.style.display !== 'none').length);
+      renderRecents();
+    }
+    function renderRecents() {
+      if (!recents.length || search.value.trim()) { recentRow.hidden = true; return; }
+      recentRow.hidden = false;
+      recentRow.innerHTML = '🕘 ' + recents.slice(0, 4).map((r) =>
+        `<a class="ad-rchip" href="${r.href}">${r.name}</a>`).join('');
+    }
     const openDrawer = () => {
       appEl.classList.add('drawer-open');
       drawer.setAttribute('aria-hidden', 'false');
+      layout();
+      // focus the search only where a keyboard is already attached — on touch
+      // it would pop the on-screen keyboard over the list you came to read
+      if (!('ontouchstart' in window)) setTimeout(() => search.focus(), 180);
       try { navigator.vibrate?.(state.haptics ? 12 : 0); } catch {}
     };
     const closeDrawer = () => {
       appEl.classList.remove('drawer-open');
       drawer.setAttribute('aria-hidden', 'true');
+      search.value = '';
     };
     $('appsBtn').onclick = openDrawer;
     $('appDrawerClose').onclick = closeDrawer;
     scrim.onclick = closeDrawer;
-    // Close after picking an app, and on Escape.
-    drawer.querySelectorAll('.ad-item').forEach((a) => a.addEventListener('click', () => setTimeout(closeDrawer, 120)));
+    search.addEventListener('input', layout);
+    search.addEventListener('keydown', (e) => {
+      // Enter launches the first visible result — type, Enter, gone
+      if (e.key === 'Enter') {
+        const first = items.find((a) => a.style.display !== 'none');
+        if (first) first.click();
+      }
+    });
+    // Close after picking an app, remember it as recent, and Escape closes.
+    drawer.querySelectorAll<HTMLAnchorElement>('.ad-item').forEach((a) => a.addEventListener('click', () => {
+      const href = a.getAttribute('href') || '';
+      if (href && href !== '#') {
+        const name = a.querySelector('b')?.textContent || 'אפליקציה';
+        recents = [{ k: keyOf(a), name, href }, ...recents.filter((r) => r.k !== keyOf(a))].slice(0, 4);
+        saveRecents();
+      }
+      setTimeout(closeDrawer, 120);
+    }));
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
+    // swipe right (toward the edge it lives on) closes — the gesture a phone
+    // user tries first, before hunting for the ✕
+    let tx0 = 0;
+    drawer.addEventListener('touchstart', (e) => { tx0 = e.touches[0].clientX; }, { passive: true });
+    drawer.addEventListener('touchend', (e) => {
+      if ((e.changedTouches[0].clientX - tx0) > 70) closeDrawer();
+    }, { passive: true });
+    layout();
   }
 
   // "מסך נקי" — one click removes the central orb/character animation and

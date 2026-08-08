@@ -10561,7 +10561,9 @@ function mcTick(){
       if(a.lvl==='crit'){ beep([[880,0.09],[620,0.09],[880,0.13]]); toast('⚠ '+a.t,'down'); }
       else if(a.lvl==='good'){ beep([[660,0.08],[990,0.12]]); toast('✓ '+a.t,'up'); }
       else { beep([[620,0.07],[820,0.09]]); toast('⚠ '+a.t); }
-      try{ if(navigator.vibrate) navigator.vibrate(a.lvl==='crit'?[40,60,40]:25); }catch(e){}
+      // vibrate before the first user gesture is blocked by the browser AND
+      // logs a console error on every alert — gate it on interaction
+      try{ if(navigator.vibrate && navigator.userActivation?.hasBeenActive) navigator.vibrate(a.lvl==='crit'?[40,60,40]:25); }catch(e){}
     } else { prev.t=a.t; prev.lvl=a.lvl; }
   }
   for(const id of [...mcActive.keys()]) if(!seen.has(id)) mcActive.delete(id);
