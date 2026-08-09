@@ -691,7 +691,12 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
     transform:translateY(105%); transition:transform .28s cubic-bezier(.2,.9,.3,1);
     display:grid; grid-template-columns:repeat(4,1fr); gap:8px;
     max-height:none; height:auto; padding:14px 12px calc(18px + env(safe-area-inset-bottom));
-    background:rgba(4,9,20,.97); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px);
+    /* NO backdrop-filter here: behind a ~98%-opaque fill a blur is invisible,
+       but it still re-samples the live 3D (plus any open panel's own blur)
+       on every frame of the slide — measured 10fps on a first open dropping
+       to 4fps the moment a tool panel existed underneath. will-change lets
+       the slide run purely on the compositor instead. */
+    background:rgba(4,9,20,.985); will-change:transform;
     border-top:1px solid rgba(0,240,255,.3); border-radius:20px 20px 0 0;
     box-shadow:0 -12px 44px rgba(0,0,0,.6); z-index:46; overflow-y:auto;
   }
@@ -5003,6 +5008,13 @@ function setWork(on,{manual=false}={}){
 // opens needs the whole screen, and leaving the grid up would cover it.
 function setToolsDrawer(on){
   document.body.classList.toggle('tools-open',on);
+  // The open drawer covers ~the whole phone screen; rendering the world
+  // behind it just competes with the drawer's own slide for the same GPU.
+  // Freezing it makes the slide composite over a static frame. Desktop
+  // never opens this drawer, so the flag only ever engages on phones.
+  window.__naDrawerPause = !!on && innerWidth<=760;
+  // the chart skipped its repaints while covered — bring it current now
+  if(!on && typeof chartOpen!=='undefined' && chartOpen){ try{ drawChart(); }catch(e){} }
   const f=$('toolsFab'); if(f) f.textContent=on?'✕':'☰';
 }
 $('toolsFab').onclick=()=>setToolsDrawer(!document.body.classList.contains('tools-open'));
@@ -9400,6 +9412,12 @@ function toggleReplay(){ replay.on? stopReplay() : startReplay(); if(chartOpen) 
 function chartResetView(){ chartView.n=0; chartView.off=0; chartView.anchorT=0; drawChart(); }
 function drawChart(){
   const cv=$('chartCv'); if(!cv) return;
+  // The full candle repaint runs on every data tick — and it kept running
+  // behind the opened tool drawer, stealing the exact CPU the drawer's
+  // slide animation needed (measured: the second open ran at 4fps purely
+  // because of this). Covered chart = no repaint; setToolsDrawer refreshes
+  // it once on close so it never shows stale candles.
+  if(document.body.classList.contains('tools-open')) return;
   const rect=cv.getBoundingClientRect();
   const dpr=Math.min(2,window.devicePixelRatio||1);
   const W=Math.max(280,Math.round(rect.width)), H=Math.max(160,Math.round(rect.height));
@@ -10890,7 +10908,7 @@ function applyVisualToggles(){
 // risk) instead of repeating the same failure 60 times a second.
 function loop(){
   requestAnimationFrame(loop);
-  if(!running||window.__naWork||window.__gfx.loopHardFail) return;
+  if(!running||window.__naWork||window.__naDrawerPause||window.__gfx.loopHardFail) return;
   const now=performance.now();
   const dt=Math.min(0.05,(now-prevT)/1000); prevT=now;
   try{
@@ -10945,8 +10963,13 @@ function loop(){
 function safeLoopFallback(){
   // Entered only if loop() itself hard-failed repeatedly; keeps the canvas
   // alive with a bare render loop with none of the heavier per-frame logic.
+  // It must respect the SAME pause gates as the main loop — otherwise, once
+  // a device has ever tripped into safe mode, the drawer/work-mode pauses
+  // silently stop working and every slide animation fights a render loop
+  // that nothing can switch off.
   requestAnimationFrame(safeLoopFallback);
   if(!window.__gfx.loopHardFail) return;
+  if(document.hidden||window.__naWork||window.__naDrawerPause) return;
   try{ renderer.render(scene,camera); }catch(e){}
 }
 requestAnimationFrame(safeLoopFallback);
