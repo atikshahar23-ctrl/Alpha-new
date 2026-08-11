@@ -85,6 +85,28 @@ main{max-width:900px;margin:0 auto;padding:10px 10px calc(20px + env(safe-area-i
 .det .lv{display:flex;gap:14px;flex-wrap:wrap;font-family:'JetBrains Mono',monospace;font-size:11.5px;margin-top:4px}
 .det .lv b{font-weight:600;color:var(--dim);font-size:10px;display:block}
 .empty{padding:26px 10px;text-align:center;color:var(--dim);font-size:13px}
+.acct{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:8px;
+  background:var(--panel);border:1px solid rgba(0,240,255,.16);border-radius:10px;padding:8px 12px}
+.acct label{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--dim)}
+.acct input{width:86px;background:rgba(2,10,18,.9);color:var(--txt);border:1px solid rgba(0,240,255,.25);
+  border-radius:7px;padding:5px 8px;font-size:12.5px;font-family:'JetBrains Mono',monospace}
+.acct-hint{font-size:10.5px;color:var(--dim)}
+.acct-hint b{color:var(--gold);font-family:'JetBrains Mono',monospace}
+.verdict{font-weight:800;font-size:13px;margin-bottom:4px}
+.checks{display:flex;gap:5px;flex-wrap:wrap;margin:6px 0}
+.checks i{font-style:normal;font-size:10px;padding:2px 7px;border-radius:999px;
+  background:rgba(255,255,255,.05);color:var(--dim);border:1px solid rgba(255,255,255,.1)}
+.checks i.ok{background:rgba(0,255,166,.1);color:var(--up);border-color:rgba(0,255,166,.3)}
+.plan{background:rgba(0,0,0,.28);border:1px solid rgba(0,240,255,.2);border-radius:9px;
+  padding:8px 10px;margin-top:7px}
+.plan .pr{display:flex;gap:14px;flex-wrap:wrap;font-family:'JetBrains Mono',monospace;font-size:11.5px}
+.plan .pr b{display:block;font-weight:600;color:var(--dim);font-size:9.5px}
+.copy{margin-top:8px;background:rgba(0,240,255,.12);border:1px solid var(--line);color:var(--cyan);
+  border-radius:8px;padding:6px 14px;font-size:12px;cursor:pointer;font-family:inherit}
+.vdot{font-size:12px}
+#toastEl{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:99;
+  background:rgba(6,14,28,.95);border:1px solid var(--line);color:var(--txt);
+  padding:8px 18px;border-radius:999px;font-size:12.5px;opacity:0;transition:opacity .25s;pointer-events:none}
 footer{max-width:900px;margin:0 auto;padding:8px 14px 22px;color:var(--dim);font-size:10.5px;line-height:1.6}
 @media (max-width:620px){
   /* phone: hide RSI + volume-surge columns; they live in the expanded row */
@@ -104,6 +126,11 @@ footer{max-width:900px;margin:0 auto;padding:8px 14px 22px;color:var(--dim);font
   <a class="hbtn" href="./">⌂ אלפא</a>
 </header>
 <main>
+  <div class="acct">
+    <label>💰 גודל חשבון $<input id="acctSize" type="number" min="10" step="50" inputmode="decimal"></label>
+    <label>🎯 סיכון לעסקה %<input id="riskPct" type="number" min="0.1" max="10" step="0.25" inputmode="decimal"></label>
+    <span class="acct-hint">הסכום שמסוכן בכל עסקה: <b id="riskAmt">—</b></span>
+  </div>
   <input class="search" id="q" placeholder="חיפוש מטבע או שם…" autocomplete="off">
   <div class="tabs" id="tabs">
     <button data-f="all" class="on">הכול</button>
@@ -244,6 +271,51 @@ function horizonOf(s,chg24){
   if(structure) return {k:'intra', t:'🕐 שעות'};
   return {k:'short', t:'⏱ עד שעה'};
 }
+/**
+ * The one-line answer a trader actually wants. Rules, not vibes:
+ *   strong score + supporting volume + RSI with room  -> enter
+ *   strong score but RSI already stretched            -> wait for a pullback
+ *   medium score                                      -> watch
+ *   anything else                                     -> no trade
+ */
+function verdictOf(s){
+  if(!s) return {k:'none', dot:'⚪', t:'⚪ אין עסקה', cls:''};
+  const rsiRoom = s.dir==='long' ? s.rsi<72 : s.rsi>28;
+  if(s.score>=60 && s.volX>=1.3 && rsiRoom) return {k:'go',   dot:'🟢', t:'🟢 כניסה — האיתות חם ונתמך במחזור', cls:'up'};
+  if(s.score>=60 && !rsiRoom)               return {k:'wait', dot:'🟡', t:'🟡 חכה לפולבאק — RSI מתוח, כניסה עכשיו רודפת', cls:'gold'};
+  if(s.score>=45)                            return {k:'watch',dot:'👁', t:'👁 מעקב — איתות בינוני, עוד לא עסקה', cls:''};
+  return {k:'none', dot:'⚪', t:'⚪ אין עסקה — הציון חלש מדי', cls:''};
+}
+/** Which of the six conditions the score is built from are actually met. */
+function checksOf(s,vol24){
+  const d=s.dir==='long'?1:-1;
+  return [
+    {t:'מגמת 15ד בכיוון', ok:Math.sign(s.m15)===d && Math.abs(s.m15)>=0.15},
+    {t:'דחיפת 5ד', ok:Math.sign(s.m5)===d && Math.abs(s.m5)>=0.2},
+    {t:'מבנה EMA', ok:Math.sign(s.gap)===d && Math.abs(s.gap)>=0.12},
+    {t:'RSI עם מקום', ok:s.dir==='long'? s.rsi<72 : s.rsi>28},
+    {t:'מחזור תומך ×1.3+', ok:s.volX>=1.3},
+    {t:'נזילות $10M+', ok:(vol24||0)>=1e7},
+  ];
+}
+// account + risk, persisted — the two inputs that turn a signal into a size
+let acct=+(localStorage.getItem('na:radar:acct')||1000);
+let riskPct=+(localStorage.getItem('na:radar:risk')||1);
+function planOf(s,r){
+  const entry=s.price;
+  const stop = s.dir==='long'? entry-s.atr*3 : entry+s.atr*3;
+  const t1   = s.dir==='long'? entry+s.atr*4.5 : entry-s.atr*4.5;
+  const t2   = s.dir==='long'? entry+s.atr*7.5 : entry-s.atr*7.5;
+  const dist=Math.abs(entry-stop);
+  const riskAmt=acct*riskPct/100;
+  const qty=dist>0? riskAmt/dist : 0;
+  const notional=qty*entry;
+  // leverage that keeps the used margin around 20% of the account — the
+  // stop always triggers long before liquidation at these numbers
+  const lev=Math.max(1,Math.min(20,Math.ceil(notional/(acct*0.2))));
+  return {entry,stop,t1,t2,qty,notional,lev,riskAmt,
+    rr1:+(Math.abs(t1-entry)/dist).toFixed(1), rr2:+(Math.abs(t2-entry)/dist).toFixed(1)};
+}
 async function runScan(force,onProgress){
   if(scanState.running) return;
   if(!force && scanState.at && Date.now()-scanState.at<SCAN_TTL) return;
@@ -319,25 +391,38 @@ function render(){
     const s=scan[r.sym];
     const hor=s? horizonOf(s,r.chg) : null;
     const recCell = s
-      ? `<i class="${s.score<45?'':s.dir}" title="${s.why}">${s.dir==='long'?'▲':'▼'}${s.score}</i>`
+      ? `<span class="vdot">${verdictOf(s).dot}</span> <i class="${s.score<45?'':s.dir}" title="${s.why}">${s.dir==='long'?'▲':'▼'}${s.score}</i>`
       : (scanState.running?'<i>…</i>':'<i>—</i>');
     const open = expanded===r.sym;
     let det='';
     if(open && s){
       const dirW = s.dir==='long'? 'לונג ▲' : 'שורט ▼';
-      const stop = s.dir==='long'? s.price-s.atr*3 : s.price+s.atr*3;
-      const tgt  = s.dir==='long'? s.price+s.atr*4.5 : s.price-s.atr*4.5;
-      const fx=(v)=>v.toLocaleString('en-US',{minimumFractionDigits:r.dec,maximumFractionDigits:r.dec});
+      const v=verdictOf(s);
+      const pl=planOf(s,r);
+      const fx=(x)=>x.toLocaleString('en-US',{minimumFractionDigits:r.dec,maximumFractionDigits:r.dec});
+      const fq=(x)=> x>=100? Math.round(x).toLocaleString() : x.toFixed(x>=1?2:4);
+      const chips=checksOf(s,r.vol).map(c=>`<i class="${c.ok?'ok':''}">${c.ok?'✓':'✗'} ${c.t}</i>`).join('');
       det=`<div class="det">
-        <div><b>${r.sym}/USDT</b> · כיוון: ${dirW} · ציון ${s.score} · אופק ${hor.t}</div>
+        <div class="verdict" style="color:${v.k==='go'?'var(--up)':v.k==='wait'?'var(--gold)':'var(--dim)'}">${v.t}</div>
+        <div><b>${r.sym}/USDT</b> · ${dirW} · ציון ${s.score} · אופק ${hor.t}</div>
+        <div class="checks">${chips}</div>
         <div class="why">${s.why}</div>
-        <div class="lv">
-          <span><b>מחיר עכשיו</b>${fx(s.price)}</span>
-          <span><b>סטופ (ATR×3)</b>${fx(stop)}</span>
-          <span><b>יעד (ATR×4.5)</b>${fx(tgt)}</span>
-          <span><b>ATR דקה</b>${fx(s.atr)}</span>
+        <div class="plan">
+          <div class="pr">
+            <span><b>כניסה</b>${fx(pl.entry)}</span>
+            <span><b>סטופ</b>${fx(pl.stop)}</span>
+            <span><b>יעד 1 (R:R ${pl.rr1})</b>${fx(pl.t1)}</span>
+            <span><b>יעד 2 (R:R ${pl.rr2})</b>${fx(pl.t2)}</span>
+          </div>
+          <div class="pr" style="margin-top:6px">
+            <span><b>כמות (${r.sym})</b>${fq(pl.qty)}</span>
+            <span><b>שווי פוזיציה</b>$${Math.round(pl.notional).toLocaleString()}</span>
+            <span><b>מינוף מוצע</b>×${pl.lev}</span>
+            <span><b>בסיכון</b>$${pl.riskAmt.toFixed(0)}</span>
+          </div>
+          <button class="copy" data-copy="${r.sym}">📋 העתק תוכנית</button>
         </div>
-        <div class="why" style="margin-top:4px">האופק נגזר מהאותות שמניעים את הציון: פרץ 5-דק׳ בלי מבנה = דקות · מבנה EMA = שעות · מבנה + מגמת 24ש = ימים.</div>
+        <div class="why" style="margin-top:5px">הכמות מחושבת כך שאם הסטופ נפגע — מפסידים בדיוק את סכום הסיכון שהוגדר למעלה. המינוף המוצע שומר מרג׳ין ~20% מהחשבון, והסטופ נפגע הרבה לפני חיסול. האופק: פרץ 5-דק׳ בלי מבנה = דקות · מבנה EMA = שעות · מבנה + מגמת 24ש = ימים.</div>
       </div>`;
     }
     return `<div class="mrow" data-sym="${r.sym}">
@@ -385,6 +470,34 @@ $('list').onclick=e=>{
   render();
 };
 $('refreshBtn').onclick=()=>{ boot(true); };
+function toast(t){ let e=$('toastEl'); if(!e){ e=document.createElement('div'); e.id='toastEl'; document.body.appendChild(e); }
+  e.textContent=t; e.style.opacity='1'; clearTimeout(toast._t); toast._t=setTimeout(()=>{ e.style.opacity='0'; },1800); }
+function syncAcct(){
+  $('acctSize').value=acct; $('riskPct').value=riskPct;
+  $('riskAmt').textContent='$'+(acct*riskPct/100).toFixed(0);
+}
+$('acctSize').oninput=e=>{ const v=+e.target.value; if(v>0){ acct=v;
+  try{ localStorage.setItem('na:radar:acct',String(v)); }catch(err){} $('riskAmt').textContent='$'+(acct*riskPct/100).toFixed(0); if(expanded) render(); } };
+$('riskPct').oninput=e=>{ const v=+e.target.value; if(v>0&&v<=10){ riskPct=v;
+  try{ localStorage.setItem('na:radar:risk',String(v)); }catch(err){} $('riskAmt').textContent='$'+(acct*riskPct/100).toFixed(0); if(expanded) render(); } };
+syncAcct();
+document.addEventListener('click',e=>{
+  const c=e.target.closest('[data-copy]'); if(!c) return;
+  e.stopPropagation();
+  const sym=c.dataset.copy; const r=universe.find(x=>x.sym===sym); const s=scan[sym];
+  if(!r||!s) return;
+  const pl=planOf(s,r); const v=verdictOf(s);
+  const fx=(x)=>x.toLocaleString('en-US',{minimumFractionDigits:r.dec,maximumFractionDigits:r.dec});
+  const txt=`${sym}USDT Perp · ${s.dir==='long'?'LONG':'SHORT'} · ציון ${s.score}
+${v.t}
+כניסה: ${fx(pl.entry)}
+סטופ: ${fx(pl.stop)}
+יעד 1: ${fx(pl.t1)} (R:R ${pl.rr1}) · יעד 2: ${fx(pl.t2)} (R:R ${pl.rr2})
+כמות: ${pl.qty>=100?Math.round(pl.qty):pl.qty.toFixed(4)} ${sym} · שווי $${Math.round(pl.notional)} · מינוף ×${pl.lev} · בסיכון $${pl.riskAmt.toFixed(0)}`;
+  (navigator.clipboard? navigator.clipboard.writeText(txt) : Promise.reject())
+    .then(()=>toast('📋 התוכנית הועתקה — הדבק בבורסה'))
+    .catch(()=>toast('ההעתקה נכשלה'));
+},true);
 function kick(force){ runScan(force,render).then(render).catch(()=>render()); }
 async function boot(force){
   try{
@@ -399,7 +512,8 @@ boot(false);
 // stay fresh, but never spin in a hidden tab
 setInterval(()=>{ if(!document.hidden){ loadUniverse(false).then(render).catch(()=>{}); kick(false); } }, 45000);
 // test hooks — the same style every app in the suite exposes
-window.__mkt={ rows, scan:()=>scan, state:()=>({filter,sortKey,sortDir,query,expanded}),
+window.__mkt={ rows, scan:()=>scan, state:()=>({filter,sortKey,sortDir,query,expanded,acct,riskPct}),
+  verdictOf, checksOf, planOf, setAcct:(a,r)=>{acct=a;riskPct=r;syncAcct();},
   universe:()=>universe, scoreOf:scanScore, horizonOf, run:(f)=>runScan(f!==false,render),
   scanState:()=>scanState, setUniverse:(u)=>{universe=u;universeAt=Date.now();render();} };
 </script>
