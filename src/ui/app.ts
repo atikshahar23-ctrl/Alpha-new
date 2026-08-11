@@ -195,7 +195,7 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
       <div class="char-ambient" id="charAmbient"></div>
-      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="wm-hg">HEAVY GUARD OS</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v401 ⚡</div></div></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="wm-hg">HEAVY GUARD OS</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v402 ⚡</div></div></div>
       <div class="chrome topR">
         <button class="chip apps-chip" id="appsBtn" title="האפליקציות שלי" aria-label="האפליקציות שלי">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="12" cy="19" r="2"/><circle cx="19" cy="19" r="2"/></svg>
@@ -258,6 +258,10 @@ export function mountApp(root: HTMLElement) {
           <a class="ad-item" data-cat="media" href="${import.meta.env.BASE_URL}lyrics.html">
             <span class="ad-ic" style="--c:#00E5FF"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></span>
             <b>מילים בתרגום חי</b><em>Spotify · Lyrics Translator</em>
+          </a>
+          <a class="ad-item" data-cat="trade" href="${import.meta.env.BASE_URL}markets.html">
+            <span class="ad-ic" style="--c:#00E5A0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 12L18 6"/><circle cx="12" cy="12" r="4.5" opacity=".5"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/></svg></span>
+            <b>ראדאר שווקים</b><em>Binance Futures · מומלצים · אופק זמן</em>
           </a>
           <a class="ad-item" data-cat="trade" href="${import.meta.env.BASE_URL}arena.html">
             <span class="ad-ic" style="--c:#FF2FD6"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 2l3 5 5.5.8-4 3.9.9 5.6L12 14.8 6.6 17.3l.9-5.6-4-3.9L9 7z"/></svg></span>
