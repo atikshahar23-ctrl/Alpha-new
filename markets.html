@@ -104,6 +104,19 @@ main{max-width:900px;margin:0 auto;padding:10px 10px calc(20px + env(safe-area-i
 .copy{margin-top:8px;background:rgba(0,240,255,.12);border:1px solid var(--line);color:var(--cyan);
   border-radius:8px;padding:6px 14px;font-size:12px;cursor:pointer;font-family:inherit}
 .vdot{font-size:12px}
+#alertBtn.on{background:rgba(0,255,166,.14);border-color:rgba(0,255,166,.5);color:var(--up)}
+#goStrip{display:flex;gap:7px;overflow-x:auto;padding:2px 2px 8px;scrollbar-width:none}
+#goStrip::-webkit-scrollbar{display:none}
+#goStrip .go{flex:none;display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;
+  cursor:pointer;font-size:12px;font-weight:800;font-family:'JetBrains Mono',monospace;
+  border:1px solid rgba(0,255,166,.45);background:rgba(0,255,166,.1);color:var(--up)}
+#goStrip .go.sh{border-color:rgba(255,61,110,.45);background:rgba(255,61,110,.1);color:var(--down)}
+@keyframes goPulse{0%,100%{box-shadow:0 0 0 rgba(0,255,166,0)}50%{box-shadow:0 0 14px rgba(0,255,166,.5)}}
+#goStrip .go.fresh{animation:goPulse 1.2s ease-in-out 3}
+.mrow.goFlash{animation:rowGo 1.4s ease-out 2}
+@keyframes rowGo{0%{background:rgba(0,255,166,.22)}100%{background:transparent}}
+.num.pf-up{color:var(--up)!important;text-shadow:0 0 8px rgba(0,255,166,.4)}
+.num.pf-down{color:var(--down)!important;text-shadow:0 0 8px rgba(255,61,110,.4)}
 #toastEl{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:99;
   background:rgba(6,14,28,.95);border:1px solid var(--line);color:var(--txt);
   padding:8px 18px;border-radius:999px;font-size:12.5px;opacity:0;transition:opacity .25s;pointer-events:none}
@@ -122,6 +135,7 @@ footer{max-width:900px;margin:0 auto;padding:8px 14px 22px;color:var(--dim);font
   <span class="hcount" id="count">—</span>
   <span id="scanStat"></span>
   <span class="hspace"></span>
+  <button class="hbtn" id="alertBtn" title="התראה + צליל כשאיתות נהיה 🟢">🔔</button>
   <button class="hbtn" id="refreshBtn">↻ רענן</button>
   <a class="hbtn" href="./">⌂ אלפא</a>
 </header>
@@ -131,6 +145,7 @@ footer{max-width:900px;margin:0 auto;padding:8px 14px 22px;color:var(--dim);font
     <label>🎯 סיכון לעסקה %<input id="riskPct" type="number" min="0.1" max="10" step="0.25" inputmode="decimal"></label>
     <span class="acct-hint">הסכום שמסוכן בכל עסקה: <b id="riskAmt">—</b></span>
   </div>
+  <div id="goStrip" hidden></div>
   <input class="search" id="q" placeholder="חיפוש מטבע או שם…" autocomplete="off">
   <div class="tabs" id="tabs">
     <button data-f="all" class="on">הכול</button>
@@ -348,6 +363,107 @@ async function runScan(force,onProgress){
   if(onProgress) onProgress();
 }
 
+// ── LIVE PRICES — one WebSocket, every contract ─────────────────────────
+// The REST universe refreshes every two minutes; a trader hunting fast
+// entries needs the tape moving. Binance's !miniTicker@arr stream pushes
+// every changed contract about once a second over a single socket — price
+// and 24h% update in place, with a green/red pulse on the cell that moved.
+// If the socket cannot connect (blocked network), REST keeps working and
+// nothing breaks.
+const priceFlash={};              // sym -> 'up'|'down', cleared on render
+let ws=null, wsRetry=0, wsRenderT=0;
+function applyTick(sym,price,chg){
+  const r=universe.find(x=>x.sym===sym);
+  if(!r) return;
+  if(price>0 && r.price>0 && price!==r.price) priceFlash[sym]=price>r.price?'up':'down';
+  if(price>0) r.price=price;
+  if(chg!=null && isFinite(chg)) r.chg=chg;
+}
+function openWS(){
+  if(ws || document.hidden) return;
+  try{ ws=new WebSocket('wss://fstream.binance.com/ws/!miniTicker@arr'); }catch(e){ ws=null; return; }
+  ws.onmessage=ev=>{
+    let arr; try{ arr=JSON.parse(ev.data); }catch(e){ return; }
+    if(!Array.isArray(arr)) return;
+    for(const t of arr){
+      if(!t.s || !t.s.endsWith('USDT')) continue;
+      const o=+t.o, c=+t.c;
+      applyTick(t.s.slice(0,-4), c, o>0? (c/o-1)*100 : null);
+    }
+    // ~1 render/s: the socket ticks faster than eyes read
+    const now=Date.now();
+    if(now-wsRenderT>1100){ wsRenderT=now; render(); }
+  };
+  ws.onopen=()=>{ wsRetry=0; };
+  ws.onclose=()=>{ ws=null; setTimeout(openWS, Math.min(30000, 1500*Math.pow(2,wsRetry++))); };
+  ws.onerror=()=>{ try{ ws && ws.close(); }catch(e){} };
+}
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){ try{ ws && ws.close(); }catch(e){} ws=null; }
+  else openWS();
+});
+openWS();
+
+// ── 🔔 ALERTS — the radar watches so the trader does not have to ────────
+// When a contract's verdict turns 🟢 (score, volume and RSI all in), the
+// page beeps, toasts, flashes the row, and — if the user granted it — fires
+// a system notification. 10-minute cooldown per symbol so a signal that
+// hovers around the line does not nag.
+let alertsOn=false;
+try{ alertsOn=localStorage.getItem('na:radar:alerts')==='1'; }catch(e){}
+const goAlerted={};               // sym -> last alert ts
+let audioCtx=null;
+function beep(){
+  try{
+    audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)();
+    const o=audioCtx.createOscillator(), g=audioCtx.createGain();
+    o.type='sine'; o.frequency.value=880;
+    g.gain.setValueAtTime(0.001,audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.18,audioCtx.currentTime+0.02);
+    g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+0.35);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime+0.4);
+    const o2=audioCtx.createOscillator(), g2=audioCtx.createGain();
+    o2.type='sine'; o2.frequency.value=1318;
+    g2.gain.setValueAtTime(0.001,audioCtx.currentTime+0.12);
+    g2.gain.exponentialRampToValueAtTime(0.14,audioCtx.currentTime+0.15);
+    g2.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+0.5);
+    o2.connect(g2); g2.connect(audioCtx.destination);
+    o2.start(audioCtx.currentTime+0.12); o2.stop(audioCtx.currentTime+0.55);
+  }catch(e){}
+}
+function checkAlerts(){
+  if(!alertsOn) return;
+  const now=Date.now();
+  for(const r of universe){
+    const s=scan[r.sym]; if(!s) continue;
+    const v=verdictOf(s);
+    if(v.k!=='go') continue;
+    if(goAlerted[r.sym] && now-goAlerted[r.sym]<600000) continue;
+    goAlerted[r.sym]=now;
+    const msg=`${r.sym} ${s.dir==='long'?'לונג ▲':'שורט ▼'} · ציון ${s.score} · ${horizonOf(s,r.chg).t}`;
+    toast('🟢 '+msg);
+    beep();
+    try{
+      if('Notification' in window && Notification.permission==='granted')
+        new Notification('📡 ראדאר: איתות חם', {body:msg, tag:'radar-'+r.sym});
+    }catch(e){}
+    const row=document.querySelector(`.mrow[data-sym="${r.sym}"]`);
+    if(row){ row.classList.remove('goFlash'); void row.offsetWidth; row.classList.add('goFlash'); }
+  }
+}
+function setAlerts(on){
+  alertsOn=!!on;
+  try{ localStorage.setItem('na:radar:alerts',alertsOn?'1':'0'); }catch(e){}
+  $('alertBtn').classList.toggle('on',alertsOn);
+  if(alertsOn){
+    toast('🔔 התראות פעילות — צליל + הודעה כשאיתות נהיה 🟢');
+    beep();
+    try{ if('Notification' in window && Notification.permission==='default') Notification.requestPermission(); }catch(e){}
+    checkAlerts();
+  } else toast('🔕 התראות כבויות');
+}
+
 // ── table state + render ────────────────────────────────────────────────
 let filter='all', sortKey='rec', sortDir=-1, query='', expanded=null;
 function rows(){
@@ -379,8 +495,21 @@ function pctCell(v,cls){
   const col=v>=0.03?'var(--up)':v<=-0.03?'var(--down)':'var(--dim)';
   return `<span class="num ${cls||''}" style="color:${col}">${(v>=0?'+':'')+v.toFixed(2)}%</span>`;
 }
+function renderGoStrip(){
+  const el=$('goStrip'); if(!el) return;
+  const gos=universe
+    .map(r=>({r,s:scan[r.sym]}))
+    .filter(x=>x.s && verdictOf(x.s).k==='go')
+    .sort((a,b)=>b.s.score-a.s.score)
+    .slice(0,12);
+  if(!gos.length){ el.hidden=true; return; }
+  el.hidden=false;
+  el.innerHTML='<span style="flex:none;align-self:center;font-size:11px;color:var(--dim)">🟢 עכשיו:</span>'+
+    gos.map(({r,s})=>`<span class="go ${s.dir==='short'?'sh':''} ${Date.now()-(goAlerted[r.sym]||0)<8000?'fresh':''}" data-go="${r.sym}">${s.dir==='long'?'▲':'▼'} ${r.sym} · ${s.score}</span>`).join('');
+}
 function render(){
   const el=$('list');
+  renderGoStrip();
   $('scanStat').textContent=scanState.running? `⟳ ${scanState.done}/${scanState.total}` : '';
   if(!universe.length) return;
   const rs=rows();
@@ -433,7 +562,7 @@ function render(){
           <span class="sub">${fmtUsd(r.vol)}</span>
         </span>
       </span>
-      <span class="num">${r.price? r.price.toLocaleString('en-US',{minimumFractionDigits:r.dec,maximumFractionDigits:r.dec}) : '—'}</span>
+      <span class="num ${priceFlash[r.sym]?'pf-'+priceFlash[r.sym]:''}">${r.price? r.price.toLocaleString('en-US',{minimumFractionDigits:r.dec,maximumFractionDigits:r.dec}) : '—'}</span>
       ${pctCell(r.chg)}
       ${pctCell(s?s.m15:null)}
       ${pctCell(s?s.m5:null)}
@@ -444,6 +573,8 @@ function render(){
     </div>`;
   }).join('') + (rs.length>200? `<div class="empty">מוצגים 200 מתוך ${rs.length} — צמצם עם חיפוש</div>`:'');
   el.scrollTop=top;
+  // a flash is one render long — the next tick decides again
+  for(const k in priceFlash) delete priceFlash[k];
 }
 
 // ── wiring ──────────────────────────────────────────────────────────────
@@ -470,6 +601,16 @@ $('list').onclick=e=>{
   render();
 };
 $('refreshBtn').onclick=()=>{ boot(true); };
+$('alertBtn').onclick=()=>setAlerts(!alertsOn);
+if(alertsOn) $('alertBtn').classList.add('on');
+$('goStrip').addEventListener('click',e=>{
+  const c=e.target.closest('[data-go]'); if(!c) return;
+  expanded=c.dataset.go; filter='all'; query=''; $('q').value='';
+  $('tabs').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.f==='all'));
+  render();
+  const row=document.querySelector(`.mrow[data-sym="${c.dataset.go}"]`);
+  if(row) row.scrollIntoView({behavior:'smooth',block:'center'});
+});
 function toast(t){ let e=$('toastEl'); if(!e){ e=document.createElement('div'); e.id='toastEl'; document.body.appendChild(e); }
   e.textContent=t; e.style.opacity='1'; clearTimeout(toast._t); toast._t=setTimeout(()=>{ e.style.opacity='0'; },1800); }
 function syncAcct(){
@@ -498,7 +639,7 @@ ${v.t}
     .then(()=>toast('📋 התוכנית הועתקה — הדבק בבורסה'))
     .catch(()=>toast('ההעתקה נכשלה'));
 },true);
-function kick(force){ runScan(force,render).then(render).catch(()=>render()); }
+function kick(force){ runScan(force,render).then(()=>{ render(); checkAlerts(); }).catch(()=>render()); }
 async function boot(force){
   try{
     await loadUniverse(force);
@@ -514,6 +655,8 @@ setInterval(()=>{ if(!document.hidden){ loadUniverse(false).then(render).catch((
 // test hooks — the same style every app in the suite exposes
 window.__mkt={ rows, scan:()=>scan, state:()=>({filter,sortKey,sortDir,query,expanded,acct,riskPct}),
   verdictOf, checksOf, planOf, setAcct:(a,r)=>{acct=a;riskPct=r;syncAcct();},
+  tick:applyTick, alerts:(on)=>setAlerts(on!==false), alerted:()=>({...goAlerted}),
+  check:checkAlerts, ws:()=>!!ws,
   universe:()=>universe, scoreOf:scanScore, horizonOf, run:(f)=>runScan(f!==false,render),
   scanState:()=>scanState, setUniverse:(u)=>{universe=u;universeAt=Date.now();render();} };
 </script>
