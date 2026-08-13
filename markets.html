@@ -172,6 +172,13 @@ main{max-width:900px;margin:0 auto;padding:10px 10px calc(20px + env(safe-area-i
   background:rgba(255,71,111,.05);border:1px solid rgba(255,71,111,.2);border-radius:9px;
   padding:6px 10px;font-size:11px;color:var(--down)}
 .traps .cl{color:var(--dim)}
+.depth{display:flex;flex-direction:column;gap:4px;margin-top:6px;
+  background:rgba(0,255,166,.04);border:1px solid rgba(0,255,166,.16);border-radius:9px;
+  padding:6px 10px;font-size:11px}
+.depth .mt{font-weight:800;color:var(--up);font-size:11px}
+.dbar{height:8px;border-radius:5px;background:rgba(255,71,111,.35);overflow:hidden}
+.dbar i{display:block;height:100%;background:rgba(0,255,166,.6);width:50%;transition:width .25s}
+.dwalls{display:flex;flex-direction:column;gap:2px;font-family:'JetBrains Mono',monospace;font-size:10px}
 #nextScan{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--dim)}
 #liveStat{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--up)}
 #alertBtn.on{background:rgba(0,255,166,.14);border-color:rgba(0,255,166,.5);color:var(--up)}
@@ -571,14 +578,16 @@ function liveSet(){
   const add=(sym)=>{ if(seen.has(sym)) return; const r=universe.find(x=>x.sym===sym);
     if(r){ out.push(r.pair.toLowerCase()+'@kline_1m'); seen.add(sym); } };
   if(expanded){ add(expanded);
-    // the open row also gets tick-level trades + best bid/ask — maximum precision
+    // the open row also gets trades + best bid/ask + live 20-level depth
     const r=universe.find(x=>x.sym===expanded);
-    if(r){ out.push(r.pair.toLowerCase()+'@aggTrade'); out.push(r.pair.toLowerCase()+'@bookTicker'); }
+    if(r){ out.push(r.pair.toLowerCase()+'@aggTrade'); out.push(r.pair.toLowerCase()+'@bookTicker');
+      out.push(r.pair.toLowerCase()+'@depth20@100ms'); }
   }
   if(typeof chart!=='undefined' && chart.mode==='coin' && chart.sym){
     add(chart.sym);
     const rc=universe.find(x=>x.sym===chart.sym);
-    if(rc){ out.push(rc.pair.toLowerCase()+'@aggTrade'); out.push(rc.pair.toLowerCase()+'@bookTicker'); }
+    if(rc){ out.push(rc.pair.toLowerCase()+'@aggTrade'); out.push(rc.pair.toLowerCase()+'@bookTicker');
+      out.push(rc.pair.toLowerCase()+'@depth20@100ms'); }
   }
   for(const f of favs) add(f);
   for(const r of universe){ const s=scan[r.sym]; if(s && verdictOf(s).k==='go') add(r.sym); }
@@ -641,6 +650,7 @@ function openWSK(){
     if(d.e==='kline') onKline(d);
     else if(d.e==='aggTrade') onTrade(d);
     else if(d.e==='bookTicker') onBook(d);
+    else if(d.e==='depthUpdate') onDepth(d);
   };
   wsK.onopen=()=>{ wsKRetry=0; };
   wsK.onclose=()=>{ wsK=null; klineSubs=new Set();
@@ -672,7 +682,8 @@ function syncKlineSubs(){
 // The ETA becomes a RANGE from two independent pace windows (60s + 5min):
 // when they disagree, showing both bounds is more precise than pretending
 // one number is certain.
-const micro={sym:null, trades:[], bid:0, ask:0, lastT:0};
+const micro={sym:null, trades:[], bid:0, ask:0, lastT:0,
+  bids:[], asks:[], depthAt:0, wallMem:[], spoofAt:0};
 let microT=0;
 function microStats(){
   const now=Date.now(), tr=micro.trades;
@@ -735,6 +746,52 @@ function onBook(d){
   micro.bid=+d.b||0; micro.ask=+d.a||0;
   microTouch();
 }
+// ── 🧱 LIVE MARKET DEPTH — the real book, walls and all ─────────────────
+// @depth20@100ms pushes the top 20 levels of both sides ten times a
+// second. From it: the buyer/seller imbalance in actual dollars, and
+// WALLS — levels holding 4x the median level size. A wall is a statement,
+// not a commitment: one that appears and vanishes within a minute is the
+// classic spoof, and that is detected and reported as a trap.
+function onDepth(d){
+  const sym=(d.s||'').replace(/USDT$/,'');
+  if(sym!==microTarget()) return;
+  if(micro.sym!==sym){ micro.sym=sym; micro.trades=[]; micro.bid=0; micro.ask=0;
+    micro.bids=[]; micro.asks=[]; micro.wallMem=[]; micro.spoofAt=0; }
+  micro.bids=(d.b||[]).map(x=>[+x[0],+x[1]]).filter(x=>x[0]>0&&x[1]>0).slice(0,20);
+  micro.asks=(d.a||[]).map(x=>[+x[0],+x[1]]).filter(x=>x[0]>0&&x[1]>0).slice(0,20);
+  micro.depthAt=Date.now();
+  const ds=depthStats();
+  if(ds){
+    const now=Date.now();
+    for(const w of micro.wallMem){
+      if(w.gone) continue;
+      const side=w.side==='buy'? micro.bids : micro.asks;
+      const still=side.some(([p,q])=> Math.abs(p-w.p)/w.p<0.001 && p*q>=w.usd*0.5);
+      if(!still){ w.gone=now; if(now-w.seen<45000) micro.spoofAt=now; }
+    }
+    for(const w of ds.walls){
+      if(!micro.wallMem.some(m=>!m.gone && m.side===w.side && Math.abs(m.p-w.p)/w.p<0.001))
+        micro.wallMem.push({side:w.side, p:w.p, usd:w.usd, seen:now});
+    }
+    if(micro.wallMem.length>30) micro.wallMem=micro.wallMem.slice(-30);
+  }
+  microTouch();
+}
+function depthStats(){
+  const bs=micro.bids, as=micro.asks;
+  if(!bs.length || !as.length || Date.now()-micro.depthAt>8000) return null;
+  const mid=(bs[0][0]+as[0][0])/2;
+  let bidUsd=0, askUsd=0; const lv=[];
+  for(const [p,q] of bs){ const u=p*q; bidUsd+=u; lv.push(u); }
+  for(const [p,q] of as){ const u=p*q; askUsd+=u; lv.push(u); }
+  const med=lv.slice().sort((a,b)=>a-b)[Math.floor(lv.length/2)]||0;
+  const wallMin=Math.max(med*4, 5000);
+  const walls=[];
+  for(const [p,q] of bs){ const u=p*q; if(u>=wallMin) walls.push({side:'buy', p, usd:u, dist:(mid-p)/mid*100}); }
+  for(const [p,q] of as){ const u=p*q; if(u>=wallMin) walls.push({side:'sell', p, usd:u, dist:(p-mid)/mid*100}); }
+  walls.sort((a,b)=>b.usd-a.usd);
+  return {mid, bidUsd, askUsd, imb:bidUsd/(bidUsd+askUsd)*100, walls:walls.slice(0,4)};
+}
 // in-place refresh of the micro chips, ≤4×/s
 function microTouch(force){
   const now=Date.now();
@@ -763,6 +820,20 @@ function microTouch(force){
   }
   if((e=q('tps')) && micro.trades.length) e.textContent=ms.tps.toFixed(1);
   if((e=q('note')) && micro.trades.length) e.textContent='';
+  const ds=depthStats();
+  if(ds){
+    if((e=det.querySelector('[data-dv="imb"]'))){
+      e.textContent='קונים '+Math.round(ds.imb)+'% ('+fmtUsd(ds.bidUsd)+') · מוכרים '+Math.round(100-ds.imb)+'% ('+fmtUsd(ds.askUsd)+')';
+      e.style.color= ds.imb>=58?'var(--up)': ds.imb<=42?'var(--down)':'var(--dim)';
+    }
+    if((e=det.querySelector('[data-dv="bid"]'))) e.style.width=Math.round(ds.imb)+'%';
+    if((e=det.querySelector('[data-dv="walls"]')))
+      e.innerHTML= ds.walls.length? ds.walls.map(w=>
+        `<span style="color:${w.side==='buy'?'var(--up)':'var(--down)'}">${w.side==='buy'?'🟩 קיר קנייה':'🟥 קיר מכירה'} @ ${w.p.toLocaleString('en-US',{maximumFractionDigits:r.dec})} · ${fmtUsd(w.usd)} · ${w.dist.toFixed(2)}% מהמחיר</span>`).join('')
+      : '<span style="color:var(--dim)">אין קירות בולטים ב-20 הרמות הקרובות</span>';
+    if((e=det.querySelector('[data-dv="dnote"]')))
+      e.textContent='קיר = פי 4+ מרמה חציונית · קיר שנעלם תוך דקה = ספוף (מדווח למעלה)';
+  }
   if(s){ const ee=det.querySelector('[data-lv="eta"]'); if(ee) renderEta(ee,s); }
 }
 
@@ -804,6 +875,8 @@ function trapsOf(sym){
     if(atr>0 && Math.abs(last.c-prev.c)>atr*3)
       out.push({k:'pump',t:'🚨 תנועת דקה חריגה פי 3 מהתנודתיות — סיכון פמפ/דמפ מתואם'});
   }
+  if(micro.sym===sym && micro.spoofAt && Date.now()-micro.spoofAt<60000)
+    out.push({k:'spoof',t:'🧊 קיר גדול הופיע בספר ונעלם תוך פחות מדקה — דפוס ספוף קלאסי'});
   if(micro.sym===sym && micro.trades.length>20){
     const ms=microStats();
     if(ms.pace60!=null && ms.cvd!=null){
@@ -950,6 +1023,16 @@ function chDrawCoin(){
     const pl=planOf(s,r);
     lines=[{p:pl.entry,c:'#00f0ff',t:'כניסה'},{p:pl.stop,c:'#ff476f',t:'סטופ'},{p:pl.t1,c:'#00ffa6',t:'יעד 1'}];
   }
+  // live depth walls drawn straight on the chart (only near the price,
+  // so a far wall does not squash the scale)
+  if(micro.sym===sym){
+    const ds=depthStats();
+    if(ds){ const near=Math.max((s?s.atr:r.price*0.01)*6, r.price*0.02);
+      for(const w of ds.walls.slice(0,3))
+        if(Math.abs(w.p-r.price)<near)
+          lines.push({p:w.p, c:w.side==='buy'?'#00d68f':'#ff8fa8', t:(w.side==='buy'?'🧱 קיר קנייה ':'🧱 קיר מכירה ')+fmtUsd(w.usd)});
+    }
+  }
   let cs = chart.tf==='1s'? secCandles() : chart.tf==='1m'? candles[sym] : chart.cs;
   if(chart.tf==='1s' && (!cs || cs.length<3)){
     drawCandles($('chCv'), null, {empty:'ממתין לזרם העסקאות החי… (נפתח אוטומטית לגרף הזה)'});
@@ -978,7 +1061,9 @@ function chDrawCoin(){
       : '<span>אין עדיין קריאת סריקה למטבע הזה</span>')+
     (traps.length
       ? traps.map(t=>`<span style="color:var(--down)">${t.t}</span>`).join('')
-      : '<span style="color:var(--dim)">🕵️ אין תרגילים מזוהים כרגע</span>');
+      : '<span style="color:var(--dim)">🕵️ אין תרגילים מזוהים כרגע</span>')+
+    (()=>{ const ds=micro.sym===sym? depthStats():null;
+      return ds? `<span style="color:${ds.imb>=58?'var(--up)':ds.imb<=42?'var(--down)':'var(--dim)'}">🧱 עומק: קונים ${Math.round(ds.imb)}% · ${ds.walls.length} קירות</span>` : ''; })();
 }
 function openCoinChart(sym){
   chClose();
@@ -1471,6 +1556,13 @@ function render(){
           <span>סגירת נר<b data-mv="cndl">—</b></span>
           <span class="mnote" data-mv="note">מחכה לזרם עסקאות…</span>
         </div>
+        <div class="depth">
+          <span class="mt">🧱 עומק שוק חי — 20 רמות, 10 עדכונים בשנייה</span>
+          <div class="dbar"><i data-dv="bid"></i></div>
+          <span data-dv="imb">—</span>
+          <div class="dwalls" data-dv="walls"></div>
+          <span class="mnote" data-dv="dnote">מחכה לזרם העומק…</span>
+        </div>
         <div class="plan">
           <div class="pr">
             <span><b>כניסה</b>${fx(pl.entry)}</span>
@@ -1703,6 +1795,7 @@ window.__mkt={ rows, scan:()=>scan, state:()=>({filter,sortKey,sortDir,query,exp
   openChart:openCoinChart, openSig:openSigChart, closeChart:chClose,
   openHist, closeHist, insights:buildInsights, quality:qualityTxt, csv:csvText, qStats,
   traps:trapsOf, secs:secCandles, trend:trendOf, strict:setStrict, qualityNum,
+  depth:onDepth, depthStats,
   chart:()=>({mode:chart.mode,sym:chart.sym,sigI:chart.sigI,tf:chart.tf,cs:chart.cs?chart.cs.length:0}),
   live:()=>({subs:[...klineSubs], lat:liveStat.lat, lastE:liveStat.lastE, open:!!(wsK&&wsK.readyState===1)}),
   check:checkAlerts, ws:()=>!!ws,
