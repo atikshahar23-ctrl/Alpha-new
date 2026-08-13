@@ -114,6 +114,15 @@ main{max-width:900px;margin:0 auto;padding:10px 10px calc(20px + env(safe-area-i
   font-family:'JetBrains Mono',monospace;font-size:10px}
 .mtape i{font-style:normal;padding:2px 5px;border-radius:5px;background:rgba(255,255,255,.04)}
 .mtape em{font-style:normal;color:var(--dim);font-size:9.5px;margin-inline-start:4px}
+.perf{margin:0 0 8px;padding:8px 12px;border-radius:10px;font-size:12px;
+  background:rgba(255,255,255,.03);border:1px solid var(--line);color:var(--dim);cursor:pointer}
+.perf b{font-family:'JetBrains Mono',monospace}
+.perf.good{border-color:rgba(0,255,166,.35);color:var(--txt)}
+.perf.bad{border-color:rgba(255,71,111,.45);color:var(--txt)}
+.perf .warn{margin-top:6px;font-weight:800;color:var(--down)}
+.perf .siglist{margin-top:7px;display:flex;flex-direction:column;gap:3px;
+  font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--dim)}
+.perf .siglist i{font-style:normal}
 .micro{display:flex;gap:6px 14px;flex-wrap:wrap;align-items:center;margin-top:6px;
   background:rgba(80,160,255,.05);border:1px solid rgba(120,200,255,.18);border-radius:9px;
   padding:6px 10px;font-size:11px}
@@ -166,6 +175,7 @@ footer{max-width:900px;margin:0 auto;padding:8px 14px 22px;color:var(--dim);font
     <label>🎯 סיכון לעסקה %<input id="riskPct" type="number" min="0.1" max="10" step="0.25" inputmode="decimal"></label>
     <span class="acct-hint">הסכום שמסוכן בכל עסקה: <b id="riskAmt">—</b></span>
   </div>
+  <div id="perf" class="perf"></div>
   <div id="goStrip" hidden></div>
   <input class="search" id="q" placeholder="חיפוש מטבע או שם…" autocomplete="off">
   <div class="tabs" id="tabs">
@@ -292,7 +302,9 @@ function scanScore(cs,vol24){
     const prev=closes[i-1];
     mins.push(prev>0? (closes[i]-prev)/prev*100 : 0);
   }
-  return { m5,m15,rsi:R,volX,gap,score,atr,price:p,mins,
+  // how many ATRs the price already ran from its own mean — the chase meter
+  const ext=atr>0? (p-e21)/atr : 0;
+  return { m5,m15,rsi:R,volX,gap,score,atr,price:p,mins,ext,
     dir:s>=0?'long':'short', macdUp:H>0,
     why:`RSI ${Math.round(R)} · מחזור ×${volX.toFixed(1)} · 15ד ${(m15>=0?'+':'')+m15.toFixed(2)}% · EMA ${e9>=e21?'שורי':'דובי'} · MACD ${H>0?'חיובי':'שלילי'}` };
 }
@@ -324,6 +336,11 @@ function horizonOf(s,chg24){
 function verdictOf(s){
   if(!s) return {k:'none', dot:'⚪', t:'⚪ אין עסקה', cls:''};
   const rsiRoom = s.dir==='long' ? s.rsi<72 : s.rsi>28;
+  // anti-chase: a price that already ran >2.2 ATR from its own mean gives a
+  // late entry a structurally bad stop-to-target — that is not a 🟢
+  const chased = Math.abs(s.ext||0)>2.2;
+  if(s.score>=60 && s.volX>=1.3 && rsiRoom && chased)
+    return {k:'late', dot:'🟠', t:'🟠 מאוחר — המחיר כבר רץ '+Math.abs(s.ext).toFixed(1)+' ATR מהממוצע, כניסה עכשיו רודפת', cls:'gold'};
   if(s.score>=60 && s.volX>=1.3 && rsiRoom) return {k:'go',   dot:'🟢', t:'🟢 כניסה — האיתות חם ונתמך במחזור', cls:'up'};
   if(s.score>=60 && !rsiRoom)               return {k:'wait', dot:'🟡', t:'🟡 חכה לפולבאק — RSI מתוח, כניסה עכשיו רודפת', cls:'gold'};
   if(s.score>=45)                            return {k:'watch',dot:'👁', t:'👁 מעקב — איתות בינוני, עוד לא עסקה', cls:''};
@@ -339,6 +356,7 @@ function checksOf(s,vol24){
     {t:'RSI עם מקום', ok:s.dir==='long'? s.rsi<72 : s.rsi>28},
     {t:'מחזור תומך ×1.3+', ok:s.volX>=1.3},
     {t:'נזילות $10M+', ok:(vol24||0)>=1e7},
+    {t:'לא רדוף (עד 2.2 ATR)', ok:Math.abs(s.ext||0)<=2.2},
   ];
 }
 // account + risk, persisted — the two inputs that turn a signal into a size
@@ -665,6 +683,111 @@ function microTouch(force){
   if(s){ const ee=det.querySelector('[data-lv="eta"]'); if(ee) renderEta(ee,s); }
 }
 
+// ── 🎯 SIGNAL LEDGER — the radar grades its own calls, in public ────────
+// Every 🟢 is recorded the moment it fires, with the exact entry/stop/
+// target the plan showed. Outcomes are then measured against what the
+// market actually did: stop touched first = -1R, target-1 first = +1.5R,
+// nothing within 6h = closed at the 6h price. While the page is open the
+// live tape grades signals; history that happened while the page was
+// closed is backfilled from 1m candle highs/lows (a candle that touches
+// both counts as a stop — the conservative read). The screen shows the
+// real hit-rate and net R, and says so out loud when the strategy is
+// losing. No cherry-picking: the ledger keeps the last 200 signals.
+let sigs=[];
+try{ sigs=JSON.parse(localStorage.getItem('na:radar:sigs')||'[]'); }catch(e){}
+if(!Array.isArray(sigs)) sigs=[];
+function saveSigs(){ sigs=sigs.slice(-200); try{ localStorage.setItem('na:radar:sigs',JSON.stringify(sigs)); }catch(e){} }
+function recordSig(r,s){
+  const pl=planOf(s,r);
+  if(!(pl.entry>0) || !(Math.abs(pl.entry-pl.stop)>0)) return;
+  sigs.push({sym:r.sym, dir:s.dir, t:Date.now(), entry:pl.entry, stop:pl.stop,
+    t1:pl.t1, score:s.score, out:null, r:null});
+  saveSigs(); renderPerf();
+}
+const SIG_TTL=6*3600e3;
+function sigR(g,px){
+  const dist=Math.abs(g.entry-g.stop); if(!(dist>0)||!(px>0)) return 0;
+  const raw=(g.dir==='long'? px-g.entry : g.entry-px)/dist;
+  return Math.max(-1,Math.min(1.5,+raw.toFixed(2)));
+}
+// live grading — last price only; intraminute wicks that happen while the
+// page is open are caught within a second, history is caught by backfill
+function gradeSigs(){
+  const now=Date.now(); let dirty=false;
+  for(const g of sigs){
+    if(g.out) continue;
+    const r=universe.find(x=>x.sym===g.sym);
+    const p=r&&r.price>0? r.price : 0;
+    if(p>0){
+      const hitStop = g.dir==='long'? p<=g.stop : p>=g.stop;
+      const hitT1   = g.dir==='long'? p>=g.t1  : p<=g.t1;
+      if(hitStop){ g.out='stop'; g.r=-1; dirty=true; continue; }
+      if(hitT1){ g.out='t1'; g.r=1.5; dirty=true; continue; }
+    }
+    if(now-g.t>SIG_TTL && p>0){ g.out='exp'; g.r=sigR(g,p); dirty=true; }
+  }
+  if(dirty){ saveSigs(); renderPerf(); }
+}
+// backfill: what did the market do while the page was closed?
+async function backfillSigs(){
+  let dirty=false;
+  for(const g of sigs){
+    if(g.out || Date.now()-g.t<120000) continue;
+    const r=universe.find(x=>x.sym===g.sym); if(!r) continue;
+    try{
+      const res=await fetch(`${FAPI}/fapi/v1/klines?symbol=${r.pair}&interval=1m&startTime=${g.t}&limit=${Math.min(999,Math.ceil((Date.now()-g.t)/60000)+1)}`);
+      if(!res.ok) continue;
+      const raw=await res.json(); if(!Array.isArray(raw)) continue;
+      let lastC=0;
+      for(const a of raw){
+        const h=+a[2], l=+a[3]; lastC=+a[4];
+        const sHit=g.dir==='long'? l<=g.stop : h>=g.stop;
+        const tHit=g.dir==='long'? h>=g.t1  : l<=g.t1;
+        if(sHit){ g.out='stop'; g.r=-1; dirty=true; break; }   // both in one candle → conservative
+        if(tHit){ g.out='t1'; g.r=1.5; dirty=true; break; }
+      }
+      if(!g.out && Date.now()-g.t>SIG_TTL && lastC>0){ g.out='exp'; g.r=sigR(g,lastC); dirty=true; }
+    }catch(e){}
+  }
+  if(dirty) saveSigs();
+  renderPerf();
+}
+function sigStats(){
+  const done=sigs.filter(g=>g.out);
+  return { n:sigs.length, open:sigs.length-done.length, done:done.length,
+    wins:done.filter(g=>g.out==='t1').length,
+    net:+done.reduce((a,g)=>a+(g.r||0),0).toFixed(1) };
+}
+let perfOpen=false;
+function renderPerf(){
+  const el=$('perf'); if(!el) return;
+  const st=sigStats();
+  if(!st.done){
+    el.className='perf';
+    el.innerHTML= st.open
+      ? `🎯 ${st.open} איתותים במעקב — התוצאות יופיעו כאן, כולל ההפסדים`
+      : '🎯 מכאן והלאה הראדאר מודד את עצמו: כל 🟢 נרשם ונשפט מול מה שקרה באמת';
+    return;
+  }
+  const wr=Math.round(st.wins/st.done*100);
+  const neg=st.net<0;
+  el.className='perf '+(neg?'bad':'good');
+  let h=`🎯 ביצועי האיתותים באמת: <b>${st.wins}/${st.done}</b> פגעו ביעד (${wr}%) · נטו <b>${st.net>=0?'+':''}${st.net}R</b>`+
+    (st.open?` · ${st.open} פתוחים`:'')+` <span style="opacity:.6">${perfOpen?'▴':'▾'}</span>`;
+  if(neg && st.done>=10)
+    h+=`<div class="warn">⚠️ האסטרטגיה הזו מפסידה בתקופה הנמדדת — אל תסחר עליה בכסף אמיתי</div>`;
+  if(perfOpen){
+    h+=`<div class="siglist">`+sigs.slice(-12).reverse().map(g=>{
+      const o=g.out==='t1'?'<i style="color:var(--up)">✓ יעד +1.5R</i>'
+        : g.out==='stop'?'<i style="color:var(--down)">✗ סטופ -1R</i>'
+        : g.out==='exp'?`<i style="color:var(--dim)">⌛ פג ${g.r>=0?'+':''}${g.r}R</i>`
+        : '<i style="color:var(--gold)">● פתוח</i>';
+      return `<span>${new Date(g.t).toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'})} · ${g.sym} ${g.dir==='long'?'▲':'▼'} ציון ${g.score} — ${o}</span>`;
+    }).join('')+`</div>`;
+  }
+  el.innerHTML=h;
+}
+
 // ── 🔔 ALERTS — the radar watches so the trader does not have to ────────
 // When a contract's verdict turns 🟢 (score, volume and RSI all in), the
 // page beeps, toasts, flashes the row, and — if the user granted it — fires
@@ -694,7 +817,6 @@ function beep(){
   }catch(e){}
 }
 function checkAlerts(){
-  if(!alertsOn) return;
   const now=Date.now();
   for(const r of universe){
     const s=scan[r.sym]; if(!s) continue;
@@ -702,6 +824,8 @@ function checkAlerts(){
     if(v.k!=='go') continue;
     if(goAlerted[r.sym] && now-goAlerted[r.sym]<600000) continue;
     goAlerted[r.sym]=now;
+    recordSig(r,s);              // the ledger grades every 🟢, sound on or off
+    if(!alertsOn) continue;
     const msg=`${r.sym} ${s.dir==='long'?'לונג ▲':'שורט ▼'} · ציון ${s.score} · ${horizonOf(s,r.chg).t}`;
     toast('🟢 '+msg);
     beep();
@@ -794,7 +918,7 @@ function render(){
       const fq=(x)=> x>=100? Math.round(x).toLocaleString() : x.toFixed(x>=1?2:4);
       const chips=checksOf(s,r.vol).map(c=>`<i class="${c.ok?'ok':''}">${c.ok?'✓':'✗'} ${c.t}</i>`).join('');
       det=`<div class="det">
-        <div class="verdict" style="color:${v.k==='go'?'var(--up)':v.k==='wait'?'var(--gold)':'var(--dim)'}">${v.t}</div>
+        <div class="verdict" style="color:${v.k==='go'?'var(--up)':(v.k==='wait'||v.k==='late')?'var(--gold)':'var(--dim)'}">${v.t}</div>
         <div><b>${r.sym}/USDT</b> · ${dirW} · ציון ${s.score} · אופק ${hor.t}</div>
         <div class="checks">${chips}</div>
         <div class="why">${s.why}</div>
@@ -891,6 +1015,7 @@ $('list').onclick=e=>{
   syncKlineSubs();      // the open row joins the live streams immediately
 };
 $('refreshBtn').onclick=()=>{ boot(true); };
+$('perf').onclick=()=>{ perfOpen=!perfOpen; renderPerf(); };
 $('alertBtn').onclick=()=>setAlerts(!alertsOn);
 if(alertsOn) $('alertBtn').classList.add('on');
 $('goStrip').addEventListener('click',e=>{
@@ -935,7 +1060,9 @@ async function boot(force){
   try{
     await loadUniverse(force);
     render();
+    renderPerf();
     kick(force);
+    backfillSigs();          // grade whatever fired while the page was closed
   }catch(e){
     $('list').innerHTML='<div class="empty">רשימת החוזים לא נטענה — ‏Binance Futures לא נגיש מהרשת הזו</div>';
   }
@@ -948,6 +1075,8 @@ boot(false);
 setInterval(()=>{ if(!document.hidden){ loadUniverse(false).then(render).catch(()=>{}); kick(false); } }, 45000);
 setInterval(()=>{ if(!document.hidden && !scanState.running){
   runScan(true,render,true).then(()=>{ render(); checkAlerts(); }).catch(()=>{}); } }, 30000);
+// grade open signals against the live tape every 5s
+setInterval(()=>{ if(!document.hidden) gradeSigs(); }, 5000);
 // once a second: the "measured Xs ago" counters and the next-sweep countdown
 // update in place — no full re-render for a ticking clock
 setInterval(()=>{
@@ -982,6 +1111,8 @@ window.__mkt={ rows, scan:()=>scan, state:()=>({filter,sortKey,sortDir,query,exp
   timingOf, hot:()=>runScan(true,render,true),
   kline:onKline, candles:()=>candles, liveSet:()=>[...liveSet()],
   trade:onTrade, book:onBook, micro:microStats, etaRange,
+  sigs:()=>sigs, setSigs:(a)=>{sigs=a;saveSigs();renderPerf();}, grade:gradeSigs,
+  stats:sigStats, backfill:backfillSigs,
   live:()=>({subs:[...klineSubs], lat:liveStat.lat, lastE:liveStat.lastE, open:!!(wsK&&wsK.readyState===1)}),
   check:checkAlerts, ws:()=>!!ws,
   universe:()=>universe, scoreOf:scanScore, horizonOf, run:(f)=>runScan(f!==false,render),
