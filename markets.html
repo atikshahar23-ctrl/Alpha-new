@@ -168,9 +168,14 @@ main{max-width:900px;margin:0 auto;padding:10px 10px calc(20px + env(safe-area-i
 .micro span b{font-family:'JetBrains Mono',monospace;font-weight:600;margin-inline-start:4px}
 .micro span i{font-style:normal;color:var(--dim);font-size:9.5px}
 .micro .mnote{color:var(--dim);font-size:10px}
+.traps{display:flex;flex-direction:column;gap:3px;margin-top:6px;
+  background:rgba(255,71,111,.05);border:1px solid rgba(255,71,111,.2);border-radius:9px;
+  padding:6px 10px;font-size:11px;color:var(--down)}
+.traps .cl{color:var(--dim)}
 #nextScan{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--dim)}
 #liveStat{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--up)}
 #alertBtn.on{background:rgba(0,255,166,.14);border-color:rgba(0,255,166,.5);color:var(--up)}
+#strictBtn.on{background:rgba(255,209,102,.14);border-color:rgba(255,209,102,.55);color:var(--gold)}
 #goStrip{display:flex;gap:7px;overflow-x:auto;padding:2px 2px 8px;scrollbar-width:none}
 #goStrip::-webkit-scrollbar{display:none}
 #goStrip .go{flex:none;display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;
@@ -204,6 +209,7 @@ footer{max-width:900px;margin:0 auto;padding:8px 14px 22px;color:var(--dim);font
   <span id="nextScan"></span>
   <span class="hspace"></span>
   <button class="hbtn" id="alertBtn" title="התראה + צליל כשאיתות נהיה 🟢">🔔</button>
+  <button class="hbtn" id="strictBtn" title="מצב סלקטיבי: התראה רק כשאין תרגילים מזוהים והפרופיל ההיסטורי שלך מעל 50%">🎯</button>
   <button class="hbtn" id="refreshBtn">↻ רענן</button>
   <a class="hbtn" href="./">⌂ אלפא</a>
 </header>
@@ -244,6 +250,7 @@ footer{max-width:900px;margin:0 auto;padding:8px 14px 22px;color:var(--dim);font
       <button data-tf="1d">1י׳</button><button data-tf="4h">4ש׳</button>
       <button data-tf="1h">1ש׳</button><button data-tf="15m">15ד׳</button>
       <button data-tf="5m">5ד׳</button><button data-tf="1m" class="on">1ד׳</button>
+      <button data-tf="1s">1שנ׳</button>
     </div>
     <canvas id="chCv"></canvas>
     <div class="chInfo" id="chInfo"></div>
@@ -568,7 +575,11 @@ function liveSet(){
     const r=universe.find(x=>x.sym===expanded);
     if(r){ out.push(r.pair.toLowerCase()+'@aggTrade'); out.push(r.pair.toLowerCase()+'@bookTicker'); }
   }
-  if(typeof chart!=='undefined' && chart.mode==='coin' && chart.sym) add(chart.sym);
+  if(typeof chart!=='undefined' && chart.mode==='coin' && chart.sym){
+    add(chart.sym);
+    const rc=universe.find(x=>x.sym===chart.sym);
+    if(rc){ out.push(rc.pair.toLowerCase()+'@aggTrade'); out.push(rc.pair.toLowerCase()+'@bookTicker'); }
+  }
   for(const f of favs) add(f);
   for(const r of universe){ const s=scan[r.sym]; if(s && verdictOf(s).k==='go') add(r.sym); }
   return new Set(out.slice(0,27));   // well under Binance's per-socket cap
@@ -699,9 +710,14 @@ function renderEta(el,s){
       ? `בקצב הנוכחי — היעד בעוד <b style="color:var(--gold)">~${er.lo} דק׳</b>`
       : `היעד בעוד <b style="color:var(--gold)">~${er.lo}–${er.hi} דק׳</b> <i style="color:var(--dim);font-style:normal;font-size:10px">(שני חלונות קצב: 60ש׳ + 5ד׳)</i>`;
 }
+// the tick target: the charted coin when a live chart is open, else the open row
+function microTarget(){
+  try{ if(chart.mode==='coin' && chart.sym) return chart.sym; }catch(e){}
+  return expanded;
+}
 function onTrade(d){
   const sym=(d.s||'').replace(/USDT$/,'');
-  if(sym!==expanded) return;
+  if(sym!==microTarget()) return;
   if(micro.sym!==sym){ micro.sym=sym; micro.trades=[]; micro.bid=0; micro.ask=0; }
   micro.trades.push({t:+d.T||Date.now(), p:+d.p, q:+d.q, m:!!d.m});
   const cut=Date.now()-95000;
@@ -714,7 +730,7 @@ function onTrade(d){
 }
 function onBook(d){
   const sym=(d.s||'').replace(/USDT$/,'');
-  if(sym!==expanded) return;
+  if(sym!==microTarget()) return;
   if(micro.sym!==sym){ micro.sym=sym; micro.trades=[]; }
   micro.bid=+d.b||0; micro.ask=+d.a||0;
   microTouch();
@@ -750,6 +766,70 @@ function microTouch(force){
   if(s){ const ee=det.querySelector('[data-lv="eta"]'); if(ee) renderEta(ee,s); }
 }
 
+// ── 🕵️ TRICKS & TRAPS DETECTOR — the desk-level read of the tape ────────
+// Mechanical detections professionals actually watch for, computed from
+// real candles, real trades and the real book — each one a PATTERN with
+// its trigger stated, never an accusation with certainty:
+//   🎣 stop-hunt wick   — swept beyond the recent extreme, closed back
+//   🪤 failed breakout  — closed beyond the 20-bar extreme, swallowed back
+//   ⛽ exhaustion       — three pushes on shrinking volume
+//   🚨 velocity anomaly — a 1m move 3x the ATR (coordinated pump/dump risk)
+//   🎭 hidden flow      — price and aggressive order-flow disagree (CVD)
+function trapsOf(sym){
+  const out=[];
+  const cs=candles[sym];
+  if(cs && cs.length>=24){
+    const n=cs.length, last=cs[n-1], prev=cs[n-2];
+    const atr=atrVal(cs,14)||0;
+    const lo10=Math.min(...cs.slice(-13,-1).map(x=>x.l));
+    const hi10=Math.max(...cs.slice(-13,-1).map(x=>x.h));
+    for(const c of [last,prev]){
+      const body=Math.abs(c.c-c.o), lw=Math.min(c.o,c.c)-c.l, uw=c.h-Math.max(c.o,c.c);
+      if(lw>Math.max(body*2,atr*0.8) && c.l<lo10 && c.c>lo10){
+        out.push({k:'huntD',t:'🎣 ציד סטופים למטה — פתיל ארוך מתחת לשפל וסגירה חזרה מעליו'}); break; }
+      if(uw>Math.max(body*2,atr*0.8) && c.h>hi10 && c.c<hi10){
+        out.push({k:'huntU',t:'🎣 ציד סטופים למעלה — פתיל מעל השיא וסגירה חזרה מתחתיו'}); break; }
+    }
+    const hi20=Math.max(...cs.slice(-22,-2).map(x=>x.h));
+    const lo20=Math.min(...cs.slice(-22,-2).map(x=>x.l));
+    if(prev.c>hi20 && last.c<hi20) out.push({k:'trapL',t:'🪤 פריצה כושלת — נסגר מעל השיא ונבלע חזרה (מלכודת לונגים)'});
+    if(prev.c<lo20 && last.c>lo20) out.push({k:'trapS',t:'🪤 שבירה כושלת — נסגר מתחת לשפל וחזר (מלכודת שורטים)'});
+    if(n>=4){
+      const a=cs[n-3], b=cs[n-2], c3=cs[n-1];
+      if(a.c<b.c&&b.c<c3.c && a.v>b.v&&b.v>c3.v && (c3.c-a.c)>atr)
+        out.push({k:'exhU',t:'⛽ עלייה על מחזור דועך — תנועה שנגמר לה הדלק'});
+      if(a.c>b.c&&b.c>c3.c && a.v>b.v&&b.v>c3.v && (a.c-c3.c)>atr)
+        out.push({k:'exhD',t:'⛽ ירידה על מחזור דועך — הלחץ נחלש'});
+    }
+    if(atr>0 && Math.abs(last.c-prev.c)>atr*3)
+      out.push({k:'pump',t:'🚨 תנועת דקה חריגה פי 3 מהתנודתיות — סיכון פמפ/דמפ מתואם'});
+  }
+  if(micro.sym===sym && micro.trades.length>20){
+    const ms=microStats();
+    if(ms.pace60!=null && ms.cvd!=null){
+      if(ms.pace60>0.05 && ms.cvd<0)
+        out.push({k:'divD',t:'🎭 המחיר עולה אבל המוכרים האגרסיביים שולטים בזרימה — חלוקה סמויה אפשרית'});
+      if(ms.pace60<-0.05 && ms.cvd>0)
+        out.push({k:'divU',t:'🎭 המחיר יורד אבל הקונים האגרסיביים שולטים — איסוף סמוי אפשרי'});
+    }
+  }
+  return out;
+}
+// 1-SECOND candles, aggregated live from the trade stream — no REST, no
+// delay: each executed trade lands in its second's candle immediately
+function secCandles(){
+  const tr=micro.trades; if(!tr.length) return null;
+  const out=[]; let cur=null;
+  for(const x of tr){
+    const sec=Math.floor(x.t/1000)*1000;
+    if(!cur || cur.t!==sec){ if(cur) out.push(cur);
+      cur={t:sec,o:x.p,h:x.p,l:x.p,c:x.p,v:x.q}; }
+    else { cur.h=Math.max(cur.h,x.p); cur.l=Math.min(cur.l,x.p); cur.c=x.p; cur.v+=x.q; }
+  }
+  out.push(cur);
+  return out;
+}
+
 // ── 📈 CHART MODAL — every trade and every coin, drawn from real candles ─
 // One canvas renderer, two views:
 //   coin view   — live 1m candles (fed by the same @kline_1m stream the
@@ -759,17 +839,20 @@ function microTouch(force){
 //                 lines, the fire moment marked, and the R state live
 const chart={mode:null, sym:null, sigI:-1, cs:null, timer:null,
   tf:'1m', loadSeq:0, loading:false, loadedAt:0};
-const TFS={'1m':60000,'5m':300000,'15m':900000,'1h':3600000,'4h':14400000,'1d':86400000};
-const TF_LABEL={'1m':'דקה','5m':'5 דקות','15m':'15 דקות','1h':'שעה','4h':'4 שעות','1d':'יום'};
+const TFS={'1s':1000,'1m':60000,'5m':300000,'15m':900000,'1h':3600000,'4h':14400000,'1d':86400000};
+const TF_LABEL={'1s':'שנייה','1m':'דקה','5m':'5 דקות','15m':'15 דקות','1h':'שעה','4h':'4 שעות','1d':'יום'};
 function chTfSync(){
   document.querySelectorAll('#chTf button').forEach(b=>b.classList.toggle('on',b.dataset.tf===chart.tf));
   $('chSub').textContent = chart.mode==='sig'
     ? 'ניתוח העסקה · נרות '+TF_LABEL[chart.tf]
+    : chart.tf==='1s'? 'נרות שנייה — נבנים חיים מכל עסקה, אפס דיליי'
     : 'נרות '+TF_LABEL[chart.tf]+(chart.tf==='1m'?' · מתעדכן לייב':' · מחיר אחרון לייב, נרות כל ~25ש׳');
 }
 // higher timeframes come from REST; 1m in coin view rides the live stream
 async function chLoadTf(){
   if(!chart.mode) return;
+  if(chart.tf==='1s'){ chart.cs=null; chart.loadedAt=Date.now();
+    if(chart.mode==='sig') chDrawSig(); else chDrawCoin(); return; }   // ticks are local, no REST
   if(chart.mode==='coin' && chart.tf==='1m'){ chart.cs=null; chDrawCoin(); return; }
   const r=universe.find(x=>x.sym===chart.sym); if(!r) return;
   const ms=TFS[chart.tf], seq=++chart.loadSeq;
@@ -792,6 +875,7 @@ async function chLoadTf(){
 }
 function chMaybeRefresh(){
   if(!chart.mode || chart.loading) return;
+  if(chart.tf==='1s') return;                        // fed by the tick stream
   if(chart.mode==='coin' && chart.tf==='1m') return;
   if(Date.now()-chart.loadedAt>25000) chLoadTf();
 }
@@ -866,16 +950,21 @@ function chDrawCoin(){
     const pl=planOf(s,r);
     lines=[{p:pl.entry,c:'#00f0ff',t:'כניסה'},{p:pl.stop,c:'#ff476f',t:'סטופ'},{p:pl.t1,c:'#00ffa6',t:'יעד 1'}];
   }
-  let cs = chart.tf==='1m'? candles[sym] : chart.cs;
-  if(chart.tf!=='1m' && cs && cs.length && r.price>0){
+  let cs = chart.tf==='1s'? secCandles() : chart.tf==='1m'? candles[sym] : chart.cs;
+  if(chart.tf==='1s' && (!cs || cs.length<3)){
+    drawCandles($('chCv'), null, {empty:'ממתין לזרם העסקאות החי… (נפתח אוטומטית לגרף הזה)'});
+    return;
+  }
+  if(chart.tf!=='1m' && chart.tf!=='1s' && cs && cs.length && r.price>0){
     // between refetches the forming candle tracks the live price
     cs=cs.slice(); const L=Object.assign({},cs[cs.length-1]);
     L.c=r.price; L.h=Math.max(L.h,r.price); L.l=Math.min(L.l,r.price);
     cs[cs.length-1]=L;
   }
-  drawCandles($('chCv'), cs, {ema:true, lines, dec:r.dec});
+  drawCandles($('chCv'), cs, {ema:chart.tf!=='1s', lines, dec:r.dec});
   const v=s?verdictOf(s):null, tm=s?timingOf(s):null;
   const age=s? Math.round((Date.now()-s.at)/1000) : null;
+  const traps=trapsOf(sym);
   $('chInfo').innerHTML=
     `<span>מחיר<b>${r.price? r.price.toLocaleString('en-US',{minimumFractionDigits:r.dec,maximumFractionDigits:r.dec}):'—'}</b></span>`+
     `<span>24ש<b style="color:${r.chg>=0?'var(--up)':'var(--down)'}">${(r.chg>=0?'+':'')+r.chg.toFixed(2)}%</b></span>`+
@@ -886,7 +975,10 @@ function chDrawCoin(){
         `<span>קצב<b>${tm.paceTxt}</b></span>`+
         `<span>${v.t}</span>`+
         `<span style="color:var(--dim)">${s.live&&age<=4?'⚡ לייב':'נמדד לפני '+age+' שנ׳'}</span>`
-      : '<span>אין עדיין קריאת סריקה למטבע הזה</span>');
+      : '<span>אין עדיין קריאת סריקה למטבע הזה</span>')+
+    (traps.length
+      ? traps.map(t=>`<span style="color:var(--down)">${t.t}</span>`).join('')
+      : '<span style="color:var(--dim)">🕵️ אין תרגילים מזוהים כרגע</span>');
 }
 function openCoinChart(sym){
   chClose();
@@ -906,6 +998,7 @@ function chDrawSig(){
   const r=universe.find(x=>x.sym===g.sym);
   const dec=r?r.dec:4;
   drawCandles($('chCv'), chart.cs, {dec, markT:g.t,
+    empty: chart.tf==='1s'? 'אין היסטוריית טיקים לעסקה — נרות שנייה זמינים רק בגרף לייב' : undefined,
     lines:[{p:g.entry,c:'#00f0ff',t:'כניסה'},{p:g.stop,c:'#ff476f',t:'סטופ'},{p:g.t1,c:'#00ffa6',t:'יעד 1'}]});
   const px=r&&r.price>0? r.price:0;
   const curR= g.out!=null? g.r : (px? sigR(g,px) : null);
@@ -1034,6 +1127,10 @@ function renderPerf(){
     `<button class="hbtn2" id="histBtn">🗂 היסטוריה + מאמן</button>`;
   if(neg && st.done>=10)
     h+=`<div class="warn">⚠️ האסטרטגיה הזו מפסידה בתקופה הנמדדת — אל תסחר עליה בכסף אמיתי</div>`;
+  const tr=trendOf();
+  if(tr) h+=`<div style="margin-top:4px;font-size:11px;color:${tr.dir>0?'var(--up)':tr.dir<0?'var(--down)':'var(--dim)'}">`+
+    `מגמת הצלחה: ${tr.dir>0?'▲ משתפרת':tr.dir<0?'▼ נחלשת':'→ יציבה'} — ${Math.round(tr.cur*100)}% ב-${tr.n} האחרונות`+
+    `${tr.prev!=null?` (מול ${Math.round(tr.prev*100)}% ב-${tr.pn} שלפניהן)`:''}</div>`;
   }
   if(perfOpen && sigs.length){
     const start=Math.max(0,sigs.length-12);
@@ -1105,9 +1202,9 @@ function buildInsights(){
     `<span class="nl">מבוסס על ${done} עסקאות שנמדדו אצלך · קורלציה, לא הבטחה — דפוס יכול להשתנות</span>`;
 }
 // one live line inside an open row: how did SIMILAR signals do historically?
-function qualityTxt(s){
+function qualityNum(s){
   const done=sigs.filter(g=>g.out);
-  if(done.length<15) return `מאמן האיכות: ${done.length}/15 עסקאות נמדדו — משם אדרג פרופילים דומים`;
+  if(done.length<15) return {ready:false, done:done.length};
   const fake={score:s.score, volX:s.volX, rsi:Math.round(s.rsi), ext:s.ext, dir:s.dir, t:Date.now()};
   let n=0,w=0,r=0,used=0;
   for(const d of QDIMS){
@@ -1116,8 +1213,25 @@ function qualityTxt(s){
     for(const g of done){ if(bucketOf(d,g)===lb){ e.n++; if(g.out==='t1')e.w++; e.r+=g.r||0; } }
     if(e.n>=QMIN){ n+=e.n; w+=e.w; r+=e.r; used++; }
   }
-  if(!used) return 'אין עדיין מדגם מספיק לאיתותים עם הפרופיל הזה';
-  return `לפי ${done.length} עסקאות שנמדדו: פרופיל דומה פגע ${Math.round(w/n*100)}% · ממוצע ${(r/n>=0?'+':'')+(r/n).toFixed(2)}R (${used} מאפיינים תואמים)`;
+  if(!used) return {ready:false, done:done.length, noMatch:true};
+  return {ready:true, done:done.length, pct:Math.round(w/n*100), avgR:r/n, used};
+}
+function qualityTxt(s){
+  const q=qualityNum(s);
+  if(!q.ready) return q.noMatch? 'אין עדיין מדגם מספיק לאיתותים עם הפרופיל הזה'
+    : `מאמן האיכות: ${q.done}/15 עסקאות נמדדו — משם אדרג פרופילים דומים`;
+  return `לפי ${q.done} עסקאות שנמדדו: פרופיל דומה פגע ${q.pct}% · ממוצע ${(q.avgR>=0?'+':'')+q.avgR.toFixed(2)}R (${q.used} מאפיינים תואמים)`;
+}
+// success TREND: the last 10 graded trades against the 10 before them
+function trendOf(){
+  const done=sigs.filter(g=>g.out);
+  if(done.length<6) return null;
+  const wr=a=>a.length? a.filter(g=>g.out==='t1').length/a.length : 0;
+  const last=done.slice(-10), prev=done.slice(-20,-10);
+  const cur=wr(last);
+  if(!prev.length) return {cur, dir:0, n:last.length, prev:null};
+  const d=cur-wr(prev);
+  return {cur, dir: d>0.05?1:d<-0.05?-1:0, n:last.length, prev:wr(prev), pn:prev.length};
 }
 let hFilter='all';
 function drawEq(cv){
@@ -1186,8 +1300,16 @@ function csvText(){
 // page beeps, toasts, flashes the row, and — if the user granted it — fires
 // a system notification. 10-minute cooldown per symbol so a signal that
 // hovers around the line does not nag.
-let alertsOn=false;
-try{ alertsOn=localStorage.getItem('na:radar:alerts')==='1'; }catch(e){}
+let alertsOn=false, strictOn=false;
+try{ alertsOn=localStorage.getItem('na:radar:alerts')==='1';
+  strictOn=localStorage.getItem('na:radar:strict')==='1'; }catch(e){}
+function setStrict(on){
+  strictOn=!!on;
+  try{ localStorage.setItem('na:radar:strict',strictOn?'1':'0'); }catch(e){}
+  const b=$('strictBtn'); if(b) b.classList.toggle('on',strictOn);
+  toast(strictOn? '🎯 מצב סלקטיבי: התראות רק על הכי נקי — בלי תרגילים, פרופיל 50%+'
+    : 'מצב סלקטיבי כבוי — התראה על כל 🟢');
+}
 const goAlerted={};               // sym -> last alert ts
 let audioCtx=null;
 function beep(){
@@ -1219,6 +1341,13 @@ function checkAlerts(){
     goAlerted[r.sym]=now;
     recordSig(r,s);              // the ledger grades every 🟢, sound on or off
     if(!alertsOn) continue;
+    if(strictOn){
+      // selective mode: nag only for the cleanest setups — no detected
+      // tricks on the tape, and (once there is data) a similar-profile
+      // history at 50%+ — everything is still recorded and measured
+      const q=qualityNum(s);
+      if(trapsOf(r.sym).length || (q.ready && q.pct<50)) continue;
+    }
     const msg=`${r.sym} ${s.dir==='long'?'לונג ▲':'שורט ▼'} · ציון ${s.score} · ${horizonOf(s,r.chg).t}`;
     toast('🟢 '+msg);
     beep();
@@ -1328,6 +1457,9 @@ function render(){
           const c=m>=0.02?'var(--up)':m<=-0.02?'var(--down)':'var(--dim)';
           return `<i style="color:${c}" title="דקה">${(m>=0?'+':'')+m.toFixed(2)}</i>`;
         }).join('')}<em>← 10 הדקות האחרונות, דקה-דקה</em></div>
+        <div class="traps">${(()=>{ const tp=trapsOf(r.sym);
+          return tp.length? tp.map(t=>`<span>${t.t}</span>`).join('')
+            : '<span class="cl">🕵️ סריקת תרגילים — נקי: אין ציד סטופים, פריצות שווא או סטיות זרימה בנרות האחרונים</span>'; })()}</div>
         <div class="micro">
           <span class="mt">🔬 מיקרו — טיק אחר טיק</span>
           <span>מחיר<b data-mv="px">—</b></span>
@@ -1454,6 +1586,8 @@ document.addEventListener('keydown',e=>{
   else if(!$('histModal').hidden) closeHist();
 });
 $('alertBtn').onclick=()=>setAlerts(!alertsOn);
+$('strictBtn').onclick=()=>setStrict(!strictOn);
+if(strictOn) $('strictBtn').classList.add('on');
 if(alertsOn) $('alertBtn').classList.add('on');
 $('goStrip').addEventListener('click',e=>{
   const c=e.target.closest('[data-go]'); if(!c) return;
@@ -1568,6 +1702,7 @@ window.__mkt={ rows, scan:()=>scan, state:()=>({filter,sortKey,sortDir,query,exp
   stats:sigStats, backfill:backfillSigs,
   openChart:openCoinChart, openSig:openSigChart, closeChart:chClose,
   openHist, closeHist, insights:buildInsights, quality:qualityTxt, csv:csvText, qStats,
+  traps:trapsOf, secs:secCandles, trend:trendOf, strict:setStrict, qualityNum,
   chart:()=>({mode:chart.mode,sym:chart.sym,sigI:chart.sigI,tf:chart.tf,cs:chart.cs?chart.cs.length:0}),
   live:()=>({subs:[...klineSubs], lat:liveStat.lat, lastE:liveStat.lastE, open:!!(wsK&&wsK.readyState===1)}),
   check:checkAlerts, ws:()=>!!ws,
