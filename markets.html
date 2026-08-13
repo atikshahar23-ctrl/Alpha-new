@@ -120,6 +120,21 @@ main{max-width:900px;margin:0 auto;padding:10px 10px calc(20px + env(safe-area-i
 /* author display:flex beats the UA [hidden] rule — restore it explicitly,
    otherwise the modal is stuck on screen from page load */
 #chModal[hidden]{display:none!important}
+#chModal{z-index:62}   /* trade forensics opens ABOVE the history screen */
+#histModal{position:fixed;inset:0;z-index:60;background:rgba(2,8,18,.86);
+  display:flex;align-items:center;justify-content:center;padding:10px;
+  backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+#histModal[hidden]{display:none!important}
+.hstats{display:flex;gap:5px 14px;flex-wrap:wrap;font-size:11.5px;color:var(--dim);margin-bottom:7px}
+.hstats b{font-family:'JetBrains Mono',monospace;color:var(--txt);margin-inline-start:4px}
+#eqCv{width:100%;height:110px;display:block;border-radius:10px;background:rgba(0,0,0,.25);margin-bottom:7px}
+#hInsights{display:flex;flex-direction:column;gap:3px;font-size:11.5px;margin:4px 0 7px}
+#hInsights .gl{color:var(--up)} #hInsights .bl{color:var(--down)} #hInsights .nl{color:var(--dim);font-size:10.5px}
+#hList{max-height:30vh;overflow:auto;font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--dim)}
+#hList span{display:block;padding:4px 2px;border-bottom:1px solid rgba(255,255,255,.05);cursor:pointer}
+#hList i{font-style:normal}
+.hbtn2{background:rgba(0,240,255,.1);border:1px solid var(--line);color:var(--cyan);
+  border-radius:7px;padding:3px 10px;font-size:11px;cursor:pointer;font-family:inherit;margin-inline-start:8px}
 .chBox{width:min(96vw,900px);max-height:94vh;overflow:auto;background:#071120;
   border:1px solid rgba(0,240,255,.28);border-radius:14px;padding:10px 12px;
   box-shadow:0 18px 60px rgba(0,0,0,.6)}
@@ -231,6 +246,21 @@ footer{max-width:900px;margin:0 auto;padding:8px 14px 22px;color:var(--dim);font
     </div>
     <canvas id="chCv"></canvas>
     <div class="chInfo" id="chInfo"></div>
+  </div>
+</div>
+<div id="histModal" hidden>
+  <div class="chBox">
+    <div class="chHead"><button id="histClose">✕</button><span>כל איתות שנרשם — והאמת עליו</span><b>🗂 היסטוריית איתותים</b></div>
+    <div class="hstats" id="hStats"></div>
+    <canvas id="eqCv"></canvas>
+    <div class="chTf" id="hFilter">
+      <button data-hf="open">● פתוחים</button><button data-hf="exp">⌛ פג</button>
+      <button data-hf="stop">✗ סטופ</button><button data-hf="t1">✓ יעד</button>
+      <button data-hf="all" class="on">הכל</button>
+    </div>
+    <div id="hInsights"></div>
+    <div id="hList"></div>
+    <button class="copy" id="hCsv">⬇ ייצוא CSV</button>
   </div>
 </div>
 <footer>
@@ -923,8 +953,10 @@ function saveSigs(){ sigs=sigs.slice(-200); try{ localStorage.setItem('na:radar:
 function recordSig(r,s){
   const pl=planOf(s,r);
   if(!(pl.entry>0) || !(Math.abs(pl.entry-pl.stop)>0)) return;
+  // full context snapshot — the raw material the quality trainer learns from
   sigs.push({sym:r.sym, dir:s.dir, t:Date.now(), entry:pl.entry, stop:pl.stop,
-    t1:pl.t1, score:s.score, out:null, r:null});
+    t1:pl.t1, score:s.score, rsi:Math.round(s.rsi), volX:+s.volX.toFixed(2),
+    ext:+(s.ext||0).toFixed(2), m15:+s.m15.toFixed(2), out:null, r:null});
   saveSigs(); renderPerf();
 }
 const SIG_TTL=6*3600e3;
@@ -989,14 +1021,16 @@ function renderPerf(){
   if(!st.done){
     el.className='perf';
     h= st.open
-      ? `🎯 ${st.open} איתותים במעקב — התוצאות יופיעו כאן, כולל ההפסדים <span style="opacity:.6">${perfOpen?'▴':'▾'}</span>`
+      ? `🎯 ${st.open} איתותים במעקב — התוצאות יופיעו כאן, כולל ההפסדים <span style="opacity:.6">${perfOpen?'▴':'▾'}</span>`+
+        `<button class="hbtn2" id="histBtn">🗂 היסטוריה + מאמן</button>`
       : '🎯 מכאן והלאה הראדאר מודד את עצמו: כל 🟢 נרשם ונשפט מול מה שקרה באמת';
   } else {
   const wr=Math.round(st.wins/st.done*100);
   const neg=st.net<0;
   el.className='perf '+(neg?'bad':'good');
   h=`🎯 ביצועי האיתותים באמת: <b>${st.wins}/${st.done}</b> פגעו ביעד (${wr}%) · נטו <b>${st.net>=0?'+':''}${st.net}R</b>`+
-    (st.open?` · ${st.open} פתוחים`:'')+` <span style="opacity:.6">${perfOpen?'▴':'▾'}</span>`;
+    (st.open?` · ${st.open} פתוחים`:'')+` <span style="opacity:.6">${perfOpen?'▴':'▾'}</span>`+
+    `<button class="hbtn2" id="histBtn">🗂 היסטוריה + מאמן</button>`;
   if(neg && st.done>=10)
     h+=`<div class="warn">⚠️ האסטרטגיה הזו מפסידה בתקופה הנמדדת — אל תסחר עליה בכסף אמיתי</div>`;
   }
@@ -1016,6 +1050,134 @@ function renderPerf(){
     }).join('')+`</div>`;
   }
   el.innerHTML=h;
+}
+
+// ── 🧠 QUALITY TRAINER + 🗂 FULL HISTORY ────────────────────────────────
+// The trainer never invents: it splits the trader's own MEASURED outcomes
+// along the dimensions that were snapshotted at fire time (score, volume,
+// RSI, chase distance, direction, hour) and reports hit-rate and average
+// R per bucket — with the sample size, and only calling a pattern real
+// from 8 graded trades per bucket. Every newly graded signal sharpens the
+// analysis automatically: that is the "always training" loop, done
+// honestly — correlation on your history, never a promise.
+const QDIMS=[
+  {t:'ציון',   get:g=>g.score, buckets:[[60,70,'ציון 60-69'],[70,80,'ציון 70-79'],[80,101,'ציון 80+']]},
+  {t:'מחזור',  get:g=>g.volX,  buckets:[[0,1.6,'מחזור עד ×1.6'],[1.6,2.5,'מחזור ×1.6-2.5'],[2.5,999,'מחזור ×2.5+']]},
+  {t:'RSI',    get:g=>g.rsi,   buckets:[[0,45,'RSI מתחת 45'],[45,60,'RSI 45-60'],[60,101,'RSI מעל 60']]},
+  {t:'מרחק מהממוצע', get:g=>g.ext!=null?Math.abs(g.ext):null, buckets:[[0,1,'עד 1 ATR מהממוצע'],[1,2.21,'1-2.2 ATR מהממוצע']]},
+  {t:'כיוון',  get:g=>g.dir,   cats:[['long','לונג'],['short','שורט']]},
+  {t:'שעה',    get:g=>new Date(g.t).getHours(), buckets:[[0,8,'לילה (0-8)'],[8,16,'יום (8-16)'],[16,24,'ערב (16-24)']]},
+];
+function bucketOf(d,g){
+  const v=d.get(g); if(v==null||Number.isNaN(v)) return null;
+  if(d.cats){ const c=d.cats.find(c=>c[0]===v); return c?c[1]:null; }
+  const b=d.buckets.find(b=>v>=b[0]&&v<b[1]); return b?b[2]:null;
+}
+function qStats(){
+  const perDim=QDIMS.map(d=>({t:d.t, buckets:{}}));
+  for(const g of sigs){
+    if(!g.out) continue;
+    QDIMS.forEach((d,i)=>{
+      const lb=bucketOf(d,g); if(!lb) return;
+      const e=perDim[i].buckets[lb]||(perDim[i].buckets[lb]={n:0,w:0,r:0});
+      e.n++; if(g.out==='t1') e.w++; e.r+=g.r||0;
+    });
+  }
+  return perDim;
+}
+const QMIN=8;                       // graded trades per bucket before a pattern counts
+function buildInsights(){
+  const done=sigs.filter(g=>g.out).length;
+  if(done<QMIN) return `<span class="nl">🧠 מאמן האיכות: ${done} עסקאות נמדדו — מ-${QMIN} בכל קטגוריה אצביע על דפוסים</span>`;
+  const lines=[];
+  for(const d of qStats()){
+    const es=Object.entries(d.buckets).filter(([,v])=>v.n>=QMIN);
+    if(es.length<2){ continue; }
+    es.sort((a,b)=> b[1].r/b[1].n - a[1].r/a[1].n);
+    const [bl,bv]=es[0], [wl,wv]=es[es.length-1];
+    const f=([l,v],cls,tag)=>`<span class="${cls}">${tag} ${l}: ${Math.round(v.w/v.n*100)}% פגיעה · ממוצע ${(v.r/v.n>=0?'+':'')+(v.r/v.n).toFixed(2)}R (מדגם ${v.n})</span>`;
+    lines.push(f([bl,bv],'gl','▲ הכי חזק —'));
+    if(wv.r/wv.n < bv.r/bv.n - 0.2) lines.push(f([wl,wv],'bl','▼ הכי חלש —'));
+  }
+  if(!lines.length) return `<span class="nl">🧠 ${done} עסקאות נמדדו — עדיין אין קטגוריה עם ${QMIN}+ בכל צד להשוואה</span>`;
+  return `<span><b>🧠 מאמן האיכות — מה ההיסטוריה שלך מלמדת:</b></span>`+lines.join('')+
+    `<span class="nl">מבוסס על ${done} עסקאות שנמדדו אצלך · קורלציה, לא הבטחה — דפוס יכול להשתנות</span>`;
+}
+// one live line inside an open row: how did SIMILAR signals do historically?
+function qualityTxt(s){
+  const done=sigs.filter(g=>g.out);
+  if(done.length<15) return `מאמן האיכות: ${done.length}/15 עסקאות נמדדו — משם אדרג פרופילים דומים`;
+  const fake={score:s.score, volX:s.volX, rsi:Math.round(s.rsi), ext:s.ext, dir:s.dir, t:Date.now()};
+  let n=0,w=0,r=0,used=0;
+  for(const d of QDIMS){
+    const lb=bucketOf(d,fake); if(!lb) continue;
+    let e={n:0,w:0,r:0};
+    for(const g of done){ if(bucketOf(d,g)===lb){ e.n++; if(g.out==='t1')e.w++; e.r+=g.r||0; } }
+    if(e.n>=QMIN){ n+=e.n; w+=e.w; r+=e.r; used++; }
+  }
+  if(!used) return 'אין עדיין מדגם מספיק לאיתותים עם הפרופיל הזה';
+  return `לפי ${done.length} עסקאות שנמדדו: פרופיל דומה פגע ${Math.round(w/n*100)}% · ממוצע ${(r/n>=0?'+':'')+(r/n).toFixed(2)}R (${used} מאפיינים תואמים)`;
+}
+let hFilter='all';
+function drawEq(cv){
+  const dpr=window.devicePixelRatio||1, cssW=cv.clientWidth||300, cssH=cv.clientHeight||110;
+  if(cv.width!==Math.round(cssW*dpr)) cv.width=Math.round(cssW*dpr);
+  if(cv.height!==Math.round(cssH*dpr)) cv.height=Math.round(cssH*dpr);
+  const x=cv.getContext('2d'); x.setTransform(dpr,0,0,dpr,0,0);
+  x.clearRect(0,0,cssW,cssH);
+  const done=sigs.filter(g=>g.out).sort((a,b)=>a.t-b.t);
+  x.font='10px "JetBrains Mono",monospace';
+  if(done.length<2){ x.fillStyle='#6b7c93'; x.textAlign='center';
+    x.fillText('עקומת ה-R המצטבר תצטייר כאן מ-2 תוצאות ומעלה', cssW/2, cssH/2); return; }
+  let cum=0; const pts=[0].concat(done.map(g=>cum+=(g.r||0)));
+  const lo=Math.min(0,...pts), hi=Math.max(0.5,...pts);
+  const px=(i)=> 8+i/(pts.length-1)*(cssW-52);
+  const py=(v)=> 8+(hi-v)/(hi-lo)*(cssH-24);
+  x.strokeStyle='rgba(120,150,190,.25)'; x.setLineDash([4,4]);
+  x.beginPath(); x.moveTo(8,py(0)); x.lineTo(cssW-44,py(0)); x.stroke(); x.setLineDash([]);
+  x.strokeStyle= cum>=0? '#00ffa6':'#ff476f'; x.lineWidth=1.6; x.beginPath();
+  pts.forEach((v,i)=> i? x.lineTo(px(i),py(v)) : x.moveTo(px(i),py(v)));
+  x.stroke();
+  x.fillStyle= cum>=0? '#00ffa6':'#ff476f'; x.textAlign='left';
+  x.fillText((cum>=0?'+':'')+cum.toFixed(1)+'R', cssW-40, py(cum)+3);
+  x.fillStyle='#6b7c93'; x.fillText('R מצטבר, עסקה-עסקה', 8, cssH-3);
+}
+function renderHist(){
+  const st=sigStats();
+  const stops=sigs.filter(g=>g.out==='stop').length, exps=sigs.filter(g=>g.out==='exp').length;
+  const avg= st.done? (sigs.filter(g=>g.out).reduce((a,g)=>a+(g.r||0),0)/st.done) : 0;
+  $('hStats').innerHTML=
+    `<span>סה״כ<b>${st.n}</b></span><span>✓ יעד<b style="color:var(--up)">${st.wins}</b></span>`+
+    `<span>✗ סטופ<b style="color:var(--down)">${stops}</b></span><span>⌛ פג<b>${exps}</b></span>`+
+    `<span>● פתוחים<b style="color:var(--gold)">${st.open}</b></span>`+
+    (st.done?`<span>פגיעה<b>${Math.round(st.wins/st.done*100)}%</b></span>`+
+      `<span>נטו<b style="color:${st.net>=0?'var(--up)':'var(--down)'}">${st.net>=0?'+':''}${st.net}R</b></span>`+
+      `<span>ממוצע<b>${(avg>=0?'+':'')+avg.toFixed(2)}R</b></span>`:'');
+  drawEq($('eqCv'));
+  $('hInsights').innerHTML=buildInsights();
+  const rows=sigs.map((g,idx)=>({g,idx})).reverse().filter(({g})=>{
+    if(hFilter==='all') return true;
+    if(hFilter==='open') return !g.out;
+    return g.out===hFilter;
+  });
+  $('hList').innerHTML= rows.length? rows.map(({g,idx})=>{
+    const o= g.out==='t1'? '<i style="color:var(--up)">✓ +1.5R</i>'
+      : g.out==='stop'? '<i style="color:var(--down)">✗ -1R</i>'
+      : g.out==='exp'? `<i>⌛ ${g.r>=0?'+':''}${g.r}R</i>`
+      : (()=>{ const r=universe.find(x=>x.sym===g.sym);
+          const cur=r&&r.price>0? sigR(g,r.price):null;
+          return `<i style="color:var(--gold)">● ${cur!=null?(cur>=0?'+':'')+cur+'R':'פתוח'}</i>`; })();
+    const d=new Date(g.t);
+    const when=d.toLocaleDateString('he-IL',{day:'2-digit',month:'2-digit'})+' '+d.toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'});
+    return `<span data-sig="${idx}">${when} · ${g.sym} ${g.dir==='long'?'▲':'▼'} ציון ${g.score}${g.volX!=null?' · ×'+g.volX:''}${g.rsi!=null?' · RSI '+g.rsi:''} — ${o} 📈</span>`;
+  }).join('') : '<span style="cursor:default">אין איתותים בסינון הזה</span>';
+}
+function openHist(){ $('histModal').hidden=false; renderHist(); }
+function closeHist(){ $('histModal').hidden=true; }
+function csvText(){
+  const head='time,symbol,dir,score,rsi,volX,ext,entry,stop,target1,outcome,R';
+  return head+'\n'+sigs.map(g=>[new Date(g.t).toISOString(),g.sym,g.dir,g.score,
+    g.rsi??'',g.volX??'',g.ext??'',g.entry,g.stop,g.t1,g.out||'open',g.r??''].join(',')).join('\n');
 }
 
 // ── 🔔 ALERTS — the radar watches so the trader does not have to ────────
@@ -1152,6 +1314,7 @@ function render(){
         <div><b>${r.sym}/USDT</b> · ${dirW} · ציון ${s.score} · אופק ${hor.t}</div>
         <div class="checks">${chips}</div>
         <div class="why">${s.why}</div>
+        <div class="why" style="color:var(--cyan)">🧠 ${qualityTxt(s)}</div>
         <div class="mins">
           <span class="mt">⏱ ניתוח בדקות</span>
           <span class="mage" data-age="${s.at}"${s.live?' data-live="1"':''}>נמדד לפני —</span>
@@ -1249,9 +1412,31 @@ $('list').onclick=e=>{
 };
 $('refreshBtn').onclick=()=>{ boot(true); };
 $('perf').onclick=e=>{
+  if(e.target.closest('#histBtn')){ openHist(); return; }
   const sig=e.target.closest('[data-sig]');
   if(sig){ openSigChart(+sig.dataset.sig); return; }
   perfOpen=!perfOpen; renderPerf();
+};
+$('histClose').onclick=closeHist;
+$('histModal').onclick=e=>{ if(e.target.id==='histModal') closeHist(); };
+$('hFilter').onclick=e=>{
+  const b=e.target.closest('button[data-hf]'); if(!b) return;
+  hFilter=b.dataset.hf;
+  document.querySelectorAll('#hFilter button').forEach(x=>x.classList.toggle('on',x===b));
+  renderHist();
+};
+$('hList').onclick=e=>{
+  const sig=e.target.closest('[data-sig]');
+  if(sig) openSigChart(+sig.dataset.sig);   // opens above the history screen
+};
+$('hCsv').onclick=()=>{
+  try{
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob(['﻿'+csvText()],{type:'text/csv'}));
+    a.download='radar-signals.csv'; a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+    toast('⬇ הקובץ ירד — כל האיתותים בפנים');
+  }catch(e){ toast('הייצוא נכשל'); }
 };
 $('chClose').onclick=chClose;
 $('chTf').onclick=e=>{
@@ -1262,7 +1447,11 @@ $('chTf').onclick=e=>{
   chLoadTf();
 };
 $('chModal').onclick=e=>{ if(e.target.id==='chModal') chClose(); };
-document.addEventListener('keydown',e=>{ if(e.key==='Escape' && chart.mode) chClose(); });
+document.addEventListener('keydown',e=>{
+  if(e.key!=='Escape') return;
+  if(chart.mode) chClose();
+  else if(!$('histModal').hidden) closeHist();
+});
 $('alertBtn').onclick=()=>setAlerts(!alertsOn);
 if(alertsOn) $('alertBtn').classList.add('on');
 $('goStrip').addEventListener('click',e=>{
@@ -1362,6 +1551,7 @@ window.__mkt={ rows, scan:()=>scan, state:()=>({filter,sortKey,sortDir,query,exp
   sigs:()=>sigs, setSigs:(a)=>{sigs=a;saveSigs();renderPerf();}, grade:gradeSigs,
   stats:sigStats, backfill:backfillSigs,
   openChart:openCoinChart, openSig:openSigChart, closeChart:chClose,
+  openHist, closeHist, insights:buildInsights, quality:qualityTxt, csv:csvText, qStats,
   chart:()=>({mode:chart.mode,sym:chart.sym,sigI:chart.sigI,tf:chart.tf,cs:chart.cs?chart.cs.length:0}),
   live:()=>({subs:[...klineSubs], lat:liveStat.lat, lastE:liveStat.lastE, open:!!(wsK&&wsK.readyState===1)}),
   check:checkAlerts, ws:()=>!!ws,
