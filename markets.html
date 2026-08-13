@@ -210,8 +210,9 @@ footer{max-width:900px;margin:0 auto;padding:8px 14px 22px;color:var(--dim);font
 <main>
   <div class="acct">
     <label>💰 גודל חשבון $<input id="acctSize" type="number" min="10" step="50" inputmode="decimal"></label>
-    <label>🎯 סיכון לעסקה %<input id="riskPct" type="number" min="0.1" max="10" step="0.25" inputmode="decimal"></label>
-    <span class="acct-hint">הסכום שמסוכן בכל עסקה: <b id="riskAmt">—</b></span>
+    <label>🎯 סיכון לעסקה %<input id="riskPct" type="number" min="0.1" max="100" step="0.25" inputmode="decimal"></label>
+    <label>💵 סכום בסיכון $<input id="riskAmt" type="number" min="0.1" step="0.5" inputmode="decimal"></label>
+    <span class="acct-hint" id="riskWarn"></span>
   </div>
   <div id="perf" class="perf"></div>
   <div id="goStrip" hidden></div>
@@ -1349,7 +1350,7 @@ function render(){
             <span><b>כמות (${r.sym})</b>${fq(pl.qty)}</span>
             <span><b>שווי פוזיציה</b>$${Math.round(pl.notional).toLocaleString()}</span>
             <span><b>מינוף מוצע</b>×${pl.lev}</span>
-            <span><b>בסיכון</b>$${pl.riskAmt.toFixed(0)}</span>
+            <span><b>בסיכון</b>$${pl.riskAmt<10? pl.riskAmt.toFixed(2) : pl.riskAmt.toFixed(0)}</span>
           </div>
           <button class="copy" data-copy="${r.sym}">📋 העתק תוכנית</button>
           <button class="copy" data-chart="${r.sym}">📈 גרף לייב</button>
@@ -1464,14 +1465,29 @@ $('goStrip').addEventListener('click',e=>{
 });
 function toast(t){ let e=$('toastEl'); if(!e){ e=document.createElement('div'); e.id='toastEl'; document.body.appendChild(e); }
   e.textContent=t; e.style.opacity='1'; clearTimeout(toast._t); toast._t=setTimeout(()=>{ e.style.opacity='0'; },1800); }
-function syncAcct(){
-  $('acctSize').value=acct; $('riskPct').value=riskPct;
-  $('riskAmt').textContent='$'+(acct*riskPct/100).toFixed(0);
+// the two risk fields are the SAME number in two currencies — % of the
+// account and hard dollars. Editing either recomputes the other; both
+// persist through the % value. Above 5% the bar says so, loudly.
+function riskWarnSync(){
+  const w=$('riskWarn');
+  if(riskPct>5){ w.textContent='⚠️ מעל 5% מהחשבון לעסקה — אגרסיבי מאוד, הפסד אחד מוחק '+riskPct.toFixed(0)+'%';
+    w.style.color='var(--down)'; }
+  else { w.textContent='הסטופ מחושב כך שהפסד = בדיוק הסכום הזה'; w.style.color=''; }
 }
-$('acctSize').oninput=e=>{ const v=+e.target.value; if(v>0){ acct=v;
-  try{ localStorage.setItem('na:radar:acct',String(v)); }catch(err){} $('riskAmt').textContent='$'+(acct*riskPct/100).toFixed(0); if(expanded) render(); } };
-$('riskPct').oninput=e=>{ const v=+e.target.value; if(v>0&&v<=10){ riskPct=v;
-  try{ localStorage.setItem('na:radar:risk',String(v)); }catch(err){} $('riskAmt').textContent='$'+(acct*riskPct/100).toFixed(0); if(expanded) render(); } };
+function syncAcct(){
+  $('acctSize').value=acct; $('riskPct').value=+riskPct.toFixed(2);
+  $('riskAmt').value=+(acct*riskPct/100).toFixed(2);
+  riskWarnSync();
+}
+function saveRisk(){ try{ localStorage.setItem('na:radar:acct',String(acct));
+  localStorage.setItem('na:radar:risk',String(riskPct)); }catch(err){} }
+$('acctSize').oninput=e=>{ const v=+e.target.value; if(v>0){ acct=v; saveRisk();
+  $('riskAmt').value=+(acct*riskPct/100).toFixed(2); riskWarnSync(); if(expanded) render(); } };
+$('riskPct').oninput=e=>{ const v=+e.target.value; if(v>0&&v<=100){ riskPct=v; saveRisk();
+  $('riskAmt').value=+(acct*riskPct/100).toFixed(2); riskWarnSync(); if(expanded) render(); } };
+$('riskAmt').oninput=e=>{ const v=+e.target.value;
+  if(v>0 && acct>0){ riskPct=Math.min(100, v/acct*100); saveRisk();
+    $('riskPct').value=+riskPct.toFixed(2); riskWarnSync(); if(expanded) render(); } };
 syncAcct();
 document.addEventListener('click',e=>{
   const c=e.target.closest('[data-copy]'); if(!c) return;
@@ -1485,7 +1501,7 @@ ${v.t}
 כניסה: ${fx(pl.entry)}
 סטופ: ${fx(pl.stop)}
 יעד 1: ${fx(pl.t1)} (R:R ${pl.rr1}) · יעד 2: ${fx(pl.t2)} (R:R ${pl.rr2})
-כמות: ${pl.qty>=100?Math.round(pl.qty):pl.qty.toFixed(4)} ${sym} · שווי $${Math.round(pl.notional)} · מינוף ×${pl.lev} · בסיכון $${pl.riskAmt.toFixed(0)}
+כמות: ${pl.qty>=100?Math.round(pl.qty):pl.qty.toFixed(4)} ${sym} · שווי $${Math.round(pl.notional)} · מינוף ×${pl.lev} · בסיכון $${pl.riskAmt<10? pl.riskAmt.toFixed(2) : pl.riskAmt.toFixed(0)}
 קצב: ${timingOf(s).paceTxt}${timingOf(s).etaMin!=null?' · יעד בעוד ~'+timingOf(s).etaMin+' דק׳ בקצב הנוכחי':''}`;
   (navigator.clipboard? navigator.clipboard.writeText(txt) : Promise.reject())
     .then(()=>toast('📋 התוכנית הועתקה — הדבק בבורסה'))
