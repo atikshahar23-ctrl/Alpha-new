@@ -129,6 +129,10 @@ main{max-width:900px;margin:0 auto;padding:10px 10px calc(20px + env(safe-area-i
 #chClose{margin-inline-end:auto;background:rgba(255,255,255,.06);border:1px solid var(--line);
   color:var(--txt);border-radius:8px;padding:4px 12px;font-size:14px;cursor:pointer}
 #chCv{width:100%;height:44vh;display:block;border-radius:10px;background:rgba(0,0,0,.25)}
+.chTf{display:flex;gap:5px;justify-content:flex-end;margin:0 0 7px}
+.chTf button{background:rgba(255,255,255,.05);border:1px solid var(--line);color:var(--dim);
+  border-radius:7px;padding:3px 10px;font-size:11px;cursor:pointer;font-family:'JetBrains Mono',monospace}
+.chTf button.on{background:rgba(0,240,255,.14);border-color:rgba(0,240,255,.5);color:var(--cyan)}
 .chInfo{display:flex;gap:6px 16px;flex-wrap:wrap;align-items:center;margin-top:8px;font-size:11.5px;color:var(--dim)}
 .chInfo b{font-family:'JetBrains Mono',monospace;color:var(--txt);margin-inline-start:4px}
 .perf .siglist span{cursor:pointer}
@@ -220,6 +224,11 @@ footer{max-width:900px;margin:0 auto;padding:8px 14px 22px;color:var(--dim);font
 <div id="chModal" hidden>
   <div class="chBox">
     <div class="chHead"><button id="chClose">✕</button><span id="chSub"></span><b id="chTitle"></b></div>
+    <div class="chTf" id="chTf">
+      <button data-tf="1d">1י׳</button><button data-tf="4h">4ש׳</button>
+      <button data-tf="1h">1ש׳</button><button data-tf="15m">15ד׳</button>
+      <button data-tf="5m">5ד׳</button><button data-tf="1m" class="on">1ד׳</button>
+    </div>
     <canvas id="chCv"></canvas>
     <div class="chInfo" id="chInfo"></div>
   </div>
@@ -717,7 +726,44 @@ function microTouch(force){
 //   signal view — the forensics of one ledger trade: candles from 30min
 //                 before the signal fired until now, entry/stop/target
 //                 lines, the fire moment marked, and the R state live
-const chart={mode:null, sym:null, sigI:-1, cs:null, timer:null};
+const chart={mode:null, sym:null, sigI:-1, cs:null, timer:null,
+  tf:'1m', loadSeq:0, loading:false, loadedAt:0};
+const TFS={'1m':60000,'5m':300000,'15m':900000,'1h':3600000,'4h':14400000,'1d':86400000};
+const TF_LABEL={'1m':'דקה','5m':'5 דקות','15m':'15 דקות','1h':'שעה','4h':'4 שעות','1d':'יום'};
+function chTfSync(){
+  document.querySelectorAll('#chTf button').forEach(b=>b.classList.toggle('on',b.dataset.tf===chart.tf));
+  $('chSub').textContent = chart.mode==='sig'
+    ? 'ניתוח העסקה · נרות '+TF_LABEL[chart.tf]
+    : 'נרות '+TF_LABEL[chart.tf]+(chart.tf==='1m'?' · מתעדכן לייב':' · מחיר אחרון לייב, נרות כל ~25ש׳');
+}
+// higher timeframes come from REST; 1m in coin view rides the live stream
+async function chLoadTf(){
+  if(!chart.mode) return;
+  if(chart.mode==='coin' && chart.tf==='1m'){ chart.cs=null; chDrawCoin(); return; }
+  const r=universe.find(x=>x.sym===chart.sym); if(!r) return;
+  const ms=TFS[chart.tf], seq=++chart.loadSeq;
+  chart.loading=true;
+  let url=`${FAPI}/fapi/v1/klines?symbol=${r.pair}&interval=${chart.tf}&limit=140`;
+  if(chart.mode==='sig'){
+    const g=sigs[chart.sigI];
+    if(g) url=`${FAPI}/fapi/v1/klines?symbol=${r.pair}&interval=${chart.tf}&startTime=${g.t-40*ms}&limit=999`;
+  }
+  try{
+    const res=await fetch(url);
+    if(res.ok){
+      const raw=await res.json();
+      if(seq===chart.loadSeq && Array.isArray(raw))
+        chart.cs=raw.map(a=>({t:+a[0],o:+a[1],h:+a[2],l:+a[3],c:+a[4],v:+a[5]}));
+    }
+  }catch(e){}
+  chart.loading=false; chart.loadedAt=Date.now();
+  if(chart.mode==='sig') chDrawSig(); else chDrawCoin();
+}
+function chMaybeRefresh(){
+  if(!chart.mode || chart.loading) return;
+  if(chart.mode==='coin' && chart.tf==='1m') return;
+  if(Date.now()-chart.loadedAt>25000) chLoadTf();
+}
 function drawCandles(cv,cs,opt){
   opt=opt||{};
   const dpr=window.devicePixelRatio||1;
@@ -763,7 +809,8 @@ function drawCandles(cv,cs,opt){
     x.beginPath(); x.moveTo(padL,y); x.lineTo(W-padR,y); x.stroke(); x.setLineDash([]);
     x.fillStyle=L.c; x.fillText(L.t+' '+fmtP(L.p), W-padR-4, y-3); }
   if(opt.markT){
-    let mi=cs.findIndex(c=>c.t>=opt.markT); if(mi<0) mi=n-1;
+    let mi=cs.findIndex(c=>c.t>opt.markT);           // the candle CONTAINING the mark
+    mi = mi<0? n-1 : Math.max(0,mi-1);
     const mx=padL+mi*cw+cw/2;
     x.strokeStyle='rgba(255,209,102,.85)'; x.setLineDash([3,3]);
     x.beginPath(); x.moveTo(mx,padT); x.lineTo(mx,H-padB); x.stroke(); x.setLineDash([]);
@@ -788,7 +835,14 @@ function chDrawCoin(){
     const pl=planOf(s,r);
     lines=[{p:pl.entry,c:'#00f0ff',t:'כניסה'},{p:pl.stop,c:'#ff476f',t:'סטופ'},{p:pl.t1,c:'#00ffa6',t:'יעד 1'}];
   }
-  drawCandles($('chCv'), candles[sym], {ema:true, lines, dec:r.dec});
+  let cs = chart.tf==='1m'? candles[sym] : chart.cs;
+  if(chart.tf!=='1m' && cs && cs.length && r.price>0){
+    // between refetches the forming candle tracks the live price
+    cs=cs.slice(); const L=Object.assign({},cs[cs.length-1]);
+    L.c=r.price; L.h=Math.max(L.h,r.price); L.l=Math.min(L.l,r.price);
+    cs[cs.length-1]=L;
+  }
+  drawCandles($('chCv'), cs, {ema:true, lines, dec:r.dec});
   const v=s?verdictOf(s):null, tm=s?timingOf(s):null;
   const age=s? Math.round((Date.now()-s.at)/1000) : null;
   $('chInfo').innerHTML=
@@ -805,14 +859,14 @@ function chDrawCoin(){
 }
 function openCoinChart(sym){
   chClose();
-  chart.mode='coin'; chart.sym=sym;
+  chart.mode='coin'; chart.sym=sym; chart.tf='1m'; chart.loadedAt=0;
   $('chModal').hidden=false;
   $('chTitle').textContent='📈 '+sym+'/USDT';
-  $('chSub').textContent='נרות דקה · מתעדכן לייב';
+  chTfSync();
   const r=universe.find(x=>x.sym===sym);
   if(!candles[sym] && r) seedCandles(sym,r).then(chDrawCoin);
   chDrawCoin();
-  chart.timer=setInterval(chDrawCoin,600);
+  chart.timer=setInterval(()=>{ chDrawCoin(); chMaybeRefresh(); },600);
   syncKlineSubs();          // the charted coin joins the live stream
 }
 function chDrawSig(){
@@ -843,22 +897,13 @@ function chDrawSig(){
 async function openSigChart(i){
   const g=sigs[i]; if(!g) return;
   chClose();
-  chart.mode='sig'; chart.sigI=i; chart.sym=g.sym;
+  chart.mode='sig'; chart.sigI=i; chart.sym=g.sym; chart.tf='1m'; chart.loadedAt=0;
   $('chModal').hidden=false;
   $('chTitle').textContent='🎯 '+g.sym+'/USDT';
-  $('chSub').textContent='ניתוח העסקה — נרות אמיתיים סביב האיתות';
+  chTfSync();
   chDrawSig();
-  const r=universe.find(x=>x.sym===g.sym);
-  if(r){
-    try{
-      const st=g.t-30*60000;
-      const res=await fetch(`${FAPI}/fapi/v1/klines?symbol=${r.pair}&interval=1m&startTime=${st}&limit=${Math.min(999,Math.ceil((Date.now()-st)/60000)+2)}`);
-      if(res.ok){ const raw=await res.json();
-        if(Array.isArray(raw)) chart.cs=raw.map(a=>({t:+a[0],o:+a[1],h:+a[2],l:+a[3],c:+a[4],v:+a[5]})); }
-    }catch(e){}
-  }
-  chDrawSig();
-  chart.timer=setInterval(chDrawSig,1000);   // R state + clock stay live
+  await chLoadTf();
+  chart.timer=setInterval(()=>{ chDrawSig(); chMaybeRefresh(); },1000);   // R + clock live
 }
 
 // ── 🎯 SIGNAL LEDGER — the radar grades its own calls, in public ────────
@@ -940,21 +985,22 @@ let perfOpen=false;
 function renderPerf(){
   const el=$('perf'); if(!el) return;
   const st=sigStats();
+  let h;
   if(!st.done){
     el.className='perf';
-    el.innerHTML= st.open
-      ? `🎯 ${st.open} איתותים במעקב — התוצאות יופיעו כאן, כולל ההפסדים`
+    h= st.open
+      ? `🎯 ${st.open} איתותים במעקב — התוצאות יופיעו כאן, כולל ההפסדים <span style="opacity:.6">${perfOpen?'▴':'▾'}</span>`
       : '🎯 מכאן והלאה הראדאר מודד את עצמו: כל 🟢 נרשם ונשפט מול מה שקרה באמת';
-    return;
-  }
+  } else {
   const wr=Math.round(st.wins/st.done*100);
   const neg=st.net<0;
   el.className='perf '+(neg?'bad':'good');
-  let h=`🎯 ביצועי האיתותים באמת: <b>${st.wins}/${st.done}</b> פגעו ביעד (${wr}%) · נטו <b>${st.net>=0?'+':''}${st.net}R</b>`+
+  h=`🎯 ביצועי האיתותים באמת: <b>${st.wins}/${st.done}</b> פגעו ביעד (${wr}%) · נטו <b>${st.net>=0?'+':''}${st.net}R</b>`+
     (st.open?` · ${st.open} פתוחים`:'')+` <span style="opacity:.6">${perfOpen?'▴':'▾'}</span>`;
   if(neg && st.done>=10)
     h+=`<div class="warn">⚠️ האסטרטגיה הזו מפסידה בתקופה הנמדדת — אל תסחר עליה בכסף אמיתי</div>`;
-  if(perfOpen){
+  }
+  if(perfOpen && sigs.length){
     const start=Math.max(0,sigs.length-12);
     h+=`<div class="siglist">`+sigs.slice(start).map((g,j)=>({g,idx:start+j})).reverse().map(({g,idx})=>{
       let o;
@@ -1208,6 +1254,13 @@ $('perf').onclick=e=>{
   perfOpen=!perfOpen; renderPerf();
 };
 $('chClose').onclick=chClose;
+$('chTf').onclick=e=>{
+  const b=e.target.closest('button[data-tf]'); if(!b || !chart.mode) return;
+  chart.tf=b.dataset.tf; chart.cs=null; chart.loadedAt=0;
+  chTfSync();
+  if(chart.mode==='coin') chDrawCoin(); else chDrawSig();
+  chLoadTf();
+};
 $('chModal').onclick=e=>{ if(e.target.id==='chModal') chClose(); };
 document.addEventListener('keydown',e=>{ if(e.key==='Escape' && chart.mode) chClose(); });
 $('alertBtn').onclick=()=>setAlerts(!alertsOn);
@@ -1309,7 +1362,7 @@ window.__mkt={ rows, scan:()=>scan, state:()=>({filter,sortKey,sortDir,query,exp
   sigs:()=>sigs, setSigs:(a)=>{sigs=a;saveSigs();renderPerf();}, grade:gradeSigs,
   stats:sigStats, backfill:backfillSigs,
   openChart:openCoinChart, openSig:openSigChart, closeChart:chClose,
-  chart:()=>({mode:chart.mode,sym:chart.sym,sigI:chart.sigI,cs:chart.cs?chart.cs.length:0}),
+  chart:()=>({mode:chart.mode,sym:chart.sym,sigI:chart.sigI,tf:chart.tf,cs:chart.cs?chart.cs.length:0}),
   live:()=>({subs:[...klineSubs], lat:liveStat.lat, lastE:liveStat.lastE, open:!!(wsK&&wsK.readyState===1)}),
   check:checkAlerts, ws:()=>!!ws,
   universe:()=>universe, scoreOf:scanScore, horizonOf, run:(f)=>runScan(f!==false,render),
