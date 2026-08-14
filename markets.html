@@ -182,6 +182,17 @@ main{max-width:900px;margin:0 auto;padding:10px 10px calc(20px + env(safe-area-i
   background:rgba(0,255,166,.04);border:1px solid rgba(0,255,166,.16);border-radius:9px;
   padding:6px 10px;font-size:11px}
 .depth .mt{font-weight:800;color:var(--up);font-size:11px}
+.deep{display:flex;flex-direction:column;gap:5px;margin-top:6px;
+  background:rgba(160,120,255,.06);border:1px solid rgba(160,120,255,.28);border-radius:9px;
+  padding:7px 10px;font-size:11px}
+.deep .dg{font-weight:800;font-size:12px}
+.deep .dg b{font-family:'JetBrains Mono',monospace;font-size:14px}
+.deep .df{display:flex;flex-direction:column;gap:2px}
+.deep .df span{color:var(--dim)} .deep .df span.ok{color:var(--up)} .deep .df span.no{color:var(--down)}
+.deep .df b{font-family:'JetBrains Mono',monospace;margin-inline-start:4px}
+.deep .dl{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--txt)}
+.deep .dt{color:var(--txt)}
+.deep .dn{color:var(--dim);font-size:9.5px}
 .dbar{height:8px;border-radius:5px;background:rgba(255,71,111,.35);overflow:hidden}
 .dbar i{display:block;height:100%;background:rgba(0,255,166,.6);width:50%;transition:width .25s}
 .dwalls{display:flex;flex-direction:column;gap:2px;font-family:'JetBrains Mono',monospace;font-size:10px}
@@ -1134,6 +1145,109 @@ async function openSigChart(i){
   chart.timer=setInterval(()=>{ chDrawSig(); chMaybeRefresh(); },1000);   // R + clock live
 }
 
+// ── 🧠 DEEP ANALYSIS — everything the radar knows, fused into one read ──
+// The way a senior desk analyst works: momentum, structure on THREE
+// timeframes (1m/15m/1h), real swing support/resistance from hourly
+// candles, live order-flow and book imbalance when streaming, trap scan,
+// and the trader's own measured history — each factor listed with its
+// actual value, fused into a letter grade and a written thesis WITH an
+// invalidation level. Computed on demand, every number derived, zero
+// guesses — and graded honestly: a conflicted tape gets a C, not a story.
+const deepCache={};
+async function deepAnalyze(sym){
+  const r=universe.find(x=>x.sym===sym); if(!r) return null;
+  const s=scan[sym];
+  const get=async(iv,lim)=>{
+    try{
+      const res=await fetch(`${FAPI}/fapi/v1/klines?symbol=${r.pair}&interval=${iv}&limit=${lim}`);
+      if(!res.ok) return null;
+      const raw=await res.json();
+      return (Array.isArray(raw)?raw:[]).map(a=>({t:+a[0],o:+a[1],h:+a[2],l:+a[3],c:+a[4],v:+a[5]}));
+    }catch(e){ return null; }
+  };
+  const [c15,c1h]=await Promise.all([get('15m',100),get('1h',120)]);
+  if(!c15 || !c1h || c15.length<30 || c1h.length<30) return null;
+  const tfRead=(cs)=>{
+    const closes=cs.map(c=>c.c), n=closes.length, p=closes[n-1];
+    const e9=emaArr(closes,9)[n-1], e21=emaArr(closes,21)[n-1];
+    return {bull:e9>e21, gap:(e9-e21)/p*100, rsi:rsiArr(closes,14)[n-1], macd:(macdHistLast(closes)||0)>0};
+  };
+  const t15=tfRead(c15), t1h=tfRead(c1h);
+  // swing S/R from hourly candles, clustered within 0.4%
+  const piv=[];
+  for(let i=2;i<c1h.length-2;i++){
+    const c=c1h[i];
+    // strict on the left, >= on the right: adjacent candles can tie exactly
+    // at a swing point (peak close = next open) and must still count once
+    if(c.h>c1h[i-1].h && c.h>c1h[i-2].h && c.h>=c1h[i+1].h && c.h>=c1h[i+2].h) piv.push(c.h);
+    if(c.l<c1h[i-1].l && c.l<c1h[i-2].l && c.l<=c1h[i+1].l && c.l<=c1h[i+2].l) piv.push(c.l);
+  }
+  piv.sort((a,b)=>a-b);
+  const lvls=[];
+  for(const p2 of piv){
+    const L=lvls[lvls.length-1];
+    if(L && Math.abs(p2-L.p)/L.p<0.004){ L.p=(L.p*L.n+p2)/(L.n+1); L.n++; }
+    else lvls.push({p:p2,n:1});
+  }
+  const px=r.price;
+  const res=lvls.filter(l=>l.p>px).sort((a,b)=>a.p-b.p)[0]||null;
+  const sup=lvls.filter(l=>l.p<px).sort((a,b)=>b.p-a.p)[0]||null;
+  const dir=s? s.dir : (t1h.bull?'long':'short');
+  const dSign=dir==='long'?1:-1;
+  const ms=(micro.sym===sym && micro.trades.length>20)? microStats():null;
+  const ds=(micro.sym===sym)? depthStats():null;
+  const traps=trapsOf(sym);
+  const q=s? qualityNum(s):{ready:false};
+  const F=[];
+  if(s) F.push({t:'מומנטום 5ד+15ד בכיוון', ok:Math.sign(s.m5)===dSign&&Math.sign(s.m15)===dSign,
+    val:`${(s.m5>=0?'+':'')+s.m5.toFixed(2)}% / ${(s.m15>=0?'+':'')+s.m15.toFixed(2)}%`});
+  if(s) F.push({t:'מבנה EMA בדקות', ok:Math.sign(s.gap)===dSign, val:(s.gap>=0?'+':'')+s.gap.toFixed(3)+'%'});
+  F.push({t:'מבנה EMA ב-15 דקות', ok:(t15.bull?1:-1)===dSign, val:(t15.gap>=0?'+':'')+t15.gap.toFixed(2)+'%'});
+  F.push({t:'מבנה EMA בשעתי', ok:(t1h.bull?1:-1)===dSign, val:(t1h.gap>=0?'+':'')+t1h.gap.toFixed(2)+'%'});
+  F.push({t:'RSI שעתי עם מקום', ok:dir==='long'? t1h.rsi<70 : t1h.rsi>30, val:String(Math.round(t1h.rsi))});
+  F.push({t:'MACD שעתי בכיוון', ok:(t1h.macd?1:-1)===dSign, val:t1h.macd?'חיובי':'שלילי'});
+  if(s) F.push({t:'מחזור תומך ×1.3+', ok:s.volX>=1.3, val:'×'+s.volX.toFixed(1)});
+  if(ms && ms.buyPct!=null) F.push({t:'זרימת עסקאות חיה (30ש׳)', ok:dir==='long'? ms.buyPct>=52 : ms.buyPct<=48, val:Math.round(ms.buyPct)+'% קונים'});
+  if(ds) F.push({t:'מאזן עומק הספר', ok:dir==='long'? ds.imb>=52 : ds.imb<=48, val:Math.round(ds.imb)+'% קונים'});
+  F.push({t:'תעודה נקייה מתרגילים', ok:!traps.length, val:traps.length? traps.length+' דפוסים':'נקי'});
+  if(q.ready) F.push({t:'הפרופיל ההיסטורי שלך', ok:q.pct>=50, val:q.pct+'% על '+q.done+' עסקאות'});
+  if(s && dir==='long' && res) F.push({t:'דרך פנויה להתנגדות', ok:(res.p-px)>=s.atr*geom.t1K,
+    val:'+'+((res.p-px)/px*100).toFixed(2)+'% עד '+res.p.toLocaleString('en-US',{maximumFractionDigits:r.dec})});
+  if(s && dir==='short' && sup) F.push({t:'דרך פנויה לתמיכה', ok:(px-sup.p)>=s.atr*geom.t1K,
+    val:'-'+((px-sup.p)/px*100).toFixed(2)+'% עד '+sup.p.toLocaleString('en-US',{maximumFractionDigits:r.dec})});
+  const okN=F.filter(f=>f.ok).length, pct=okN/F.length;
+  const grade= pct>=0.85?'A+': pct>=0.7?'A': pct>=0.55?'B': pct>=0.4?'C':'D';
+  const inval= dir==='long'? sup : res;
+  return {dir, grade, pct, okN, F, t1h, t15, sup, res, inval, traps:traps.length, px, dec:r.dec, at:Date.now()};
+}
+function deepHtml(sym,d){
+  const fp=p=>p.toLocaleString('en-US',{maximumFractionDigits:d.dec});
+  const gc= d.grade[0]==='A'?'var(--up)': d.grade==='B'?'var(--gold)':'var(--down)';
+  const pros=d.F.filter(f=>f.ok).slice(0,3).map(f=>f.t).join(', ');
+  const cons=d.F.filter(f=>!f.ok).map(f=>f.t);
+  const thesis= d.grade[0]==='A'
+    ? `תזה: ${d.dir==='long'?'לונג':'שורט'} עם התלכדות רחבה — ${pros}.`
+    : d.grade==='B'
+    ? `תזה: נטייה ל${d.dir==='long'?'לונג':'שורט'}, אבל לא נקייה — ${cons.length? 'נגד: '+cons.slice(0,2).join(', ') : ''}.`
+    : `אין תזה חזקה: הטווחים חלוקים (${cons.slice(0,3).join(', ')}). ישיבה על הידיים היא עמדה לגיטימית.`;
+  return `<div class="deep">
+    <div class="dg" style="color:${gc}">🧠 ניתוח-על · ציון <b>${d.grade}</b> — ${d.okN}/${d.F.length} גורמים בעד ${d.dir==='long'?'לונג ▲':'שורט ▼'}</div>
+    <div class="df">${d.F.map(f=>`<span class="${f.ok?'ok':'no'}">${f.ok?'✓':'✗'} ${f.t} <b>${f.val}</b></span>`).join('')}</div>
+    <div class="dl">${d.sup?`🟢 תמיכה שעתית ${fp(d.sup.p)} (${((d.px-d.sup.p)/d.px*100).toFixed(2)}%-)`:''}
+      ${d.res?` · 🔴 התנגדות שעתית ${fp(d.res.p)} (+${((d.res.p-d.px)/d.px*100).toFixed(2)}%)`:''}</div>
+    <div class="dt">${thesis}</div>
+    ${d.inval?`<div class="dt">רמת פסילה: סגירה שעתית ${d.dir==='long'?'מתחת':'מעל'} <b>${fp(d.inval.p)}</b> שוברת את התזה — שם מפסיקים להתווכח עם השוק.</div>`:''}
+    <div class="dn">נכון ל-${new Date(d.at).toLocaleTimeString('he-IL')} · כל גורם מחושב מנתונים אמיתיים · לא ייעוץ השקעות</div>
+  </div>`;
+}
+function deepBlock(sym){
+  const c=deepCache[sym];
+  if(!c) return '';
+  if(c.loading) return '<div class="deep"><span class="dn">🧠 מנתח לעומק — מושך 15ד + שעתי, רמות, זרימה…</span></div>';
+  if(!c.d) return '<div class="deep"><span class="dn">הניתוח נכשל (רשת) — נסה שוב</span></div>';
+  return deepHtml(sym,c.d);
+}
+
 // ── 🎯 SIGNAL LEDGER — the radar grades its own calls, in public ────────
 // Every 🟢 is recorded the moment it fires, with the exact entry/stop/
 // target the plan showed. Outcomes are then measured against what the
@@ -1640,6 +1754,7 @@ function render(){
           const c=m>=0.02?'var(--up)':m<=-0.02?'var(--down)':'var(--dim)';
           return `<i style="color:${c}" title="דקה">${(m>=0?'+':'')+m.toFixed(2)}</i>`;
         }).join('')}<em>← 10 הדקות האחרונות, דקה-דקה</em></div>
+        ${deepBlock(r.sym)}
         <div class="traps">${(()=>{ const tp=trapsOf(r.sym);
           return tp.length? tp.map(t=>`<span>${t.t}</span>`).join('')
             : '<span class="cl">🕵️ סריקת תרגילים — נקי: אין ציד סטופים, פריצות שווא או סטיות זרימה בנרות האחרונים</span>'; })()}</div>
@@ -1676,6 +1791,7 @@ function render(){
           </div>
           <button class="copy" data-copy="${r.sym}">📋 העתק תוכנית</button>
           <button class="copy" data-chart="${r.sym}">📈 גרף לייב</button>
+          <button class="copy" data-deep="${r.sym}">🧠 ניתוח-על</button>
         </div>
         <div class="why" style="margin-top:5px">הכמות מחושבת כך שאם הסטופ נפגע — מפסידים בדיוק את סכום הסיכון שהוגדר למעלה. המינוף המוצע שומר מרג׳ין ~20% מהחשבון, והסטופ נפגע הרבה לפני חיסול. האופק: פרץ 5-דק׳ בלי מבנה = דקות · מבנה EMA = שעות · מבנה + מגמת 24ש = ימים.</div>
       </div>`;
@@ -1723,6 +1839,12 @@ document.querySelectorAll('.mhead button').forEach(b=>{
 $('list').onclick=e=>{
   const ch=e.target.closest('[data-chart]');
   if(ch){ openCoinChart(ch.dataset.chart); return; }
+  const dp=e.target.closest('[data-deep]');
+  if(dp){ const sym=dp.dataset.deep;
+    deepCache[sym]={loading:true}; render();
+    deepAnalyze(sym).then(d=>{ deepCache[sym]={d, at:Date.now()}; render(); })
+      .catch(()=>{ deepCache[sym]={d:null}; render(); });
+    return; }
   const fav=e.target.closest('[data-fav]');
   if(fav){ const s=fav.dataset.fav;
     if(favs.has(s)) favs.delete(s); else favs.add(s);
@@ -1910,6 +2032,7 @@ window.__mkt={ rows, scan:()=>scan, state:()=>({filter,sortKey,sortDir,query,exp
   traps:trapsOf, secs:secCandles, trend:trendOf, strict:setStrict, qualityNum,
   depth:onDepth, depthStats,
   geoLab, setGeom:(s,t)=>{setGeom(s,t);}, geom:()=>({...geom}),
+  deep:deepAnalyze, deepCache:()=>deepCache,
   chart:()=>({mode:chart.mode,sym:chart.sym,sigI:chart.sigI,tf:chart.tf,cs:chart.cs?chart.cs.length:0}),
   live:()=>({subs:[...klineSubs], lat:liveStat.lat, lastE:liveStat.lastE, open:!!(wsK&&wsK.readyState===1)}),
   check:checkAlerts, ws:()=>!!ws,
