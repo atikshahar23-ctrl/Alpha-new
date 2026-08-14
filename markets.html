@@ -135,6 +135,12 @@ main{max-width:900px;margin:0 auto;padding:10px 10px calc(20px + env(safe-area-i
 #hList i{font-style:normal}
 .hbtn2{background:rgba(0,240,255,.1);border:1px solid var(--line);color:var(--cyan);
   border-radius:7px;padding:3px 10px;font-size:11px;cursor:pointer;font-family:inherit;margin-inline-start:8px}
+#geoLab{margin:6px 0}
+.geoRow{display:flex;flex-direction:column;gap:2px;padding:6px 8px;margin-top:4px;
+  border:1px solid var(--line);border-radius:8px;font-size:11px;color:var(--dim)}
+.geoRow b{font-family:'JetBrains Mono',monospace;color:var(--txt)}
+.geoRow.best{border-color:rgba(0,255,166,.45);background:rgba(0,255,166,.05)}
+.geoRow .onTag{font-style:normal;color:var(--up);font-weight:800;margin-inline-start:8px}
 .chBox{width:min(96vw,900px);max-height:94vh;overflow:auto;background:#071120;
   border:1px solid rgba(0,240,255,.28);border-radius:14px;padding:10px 12px;
   box-shadow:0 18px 60px rgba(0,0,0,.6)}
@@ -274,6 +280,10 @@ footer{max-width:900px;margin:0 auto;padding:8px 14px 22px;color:var(--dim);font
       <button data-hf="all" class="on">הכל</button>
     </div>
     <div id="hInsights"></div>
+    <div id="geoLab">
+      <button class="copy" id="geoRun">🎛 מעבדת גיאומטריה — בדוק יעד/סטופ אחרים על ההיסטוריה שלי</button>
+      <div id="geoOut"></div>
+    </div>
     <div id="hList"></div>
     <button class="copy" id="hCsv">⬇ ייצוא CSV</button>
   </div>
@@ -442,11 +452,20 @@ function checksOf(s,vol24){
 // account + risk, persisted — the two inputs that turn a signal into a size
 let acct=+(localStorage.getItem('na:radar:acct')||1000);
 let riskPct=+(localStorage.getItem('na:radar:risk')||1);
+// trade geometry in ATR units — configurable since v416: the geometry
+// lab replays the trader's own ledger and lets them apply the winner
+let geom={stopK:3, t1K:4.5};
+try{ const g=JSON.parse(localStorage.getItem('na:radar:geom')||'null');
+  if(g && g.stopK>0 && g.t1K>0) geom=g; }catch(e){}
+function setGeom(stopK,t1K){
+  geom={stopK:+stopK, t1K:+t1K};
+  try{ localStorage.setItem('na:radar:geom',JSON.stringify(geom)); }catch(e){}
+}
 function planOf(s,r){
   const entry=s.price;
-  const stop = s.dir==='long'? entry-s.atr*3 : entry+s.atr*3;
-  const t1   = s.dir==='long'? entry+s.atr*4.5 : entry-s.atr*4.5;
-  const t2   = s.dir==='long'? entry+s.atr*7.5 : entry-s.atr*7.5;
+  const stop = s.dir==='long'? entry-s.atr*geom.stopK : entry+s.atr*geom.stopK;
+  const t1   = s.dir==='long'? entry+s.atr*geom.t1K : entry-s.atr*geom.t1K;
+  const t2   = s.dir==='long'? entry+s.atr*geom.t1K*5/3 : entry-s.atr*geom.t1K*5/3;
   const dist=Math.abs(entry-stop);
   const riskAmt=acct*riskPct/100;
   const qty=dist>0? riskAmt/dist : 0;
@@ -1087,7 +1106,7 @@ function chDrawSig(){
     lines:[{p:g.entry,c:'#00f0ff',t:'כניסה'},{p:g.stop,c:'#ff476f',t:'סטופ'},{p:g.t1,c:'#00ffa6',t:'יעד 1'}]});
   const px=r&&r.price>0? r.price:0;
   const curR= g.out!=null? g.r : (px? sigR(g,px) : null);
-  const st= g.out==='t1'? '<b style="color:var(--up)">✓ פגע ביעד +1.5R</b>'
+  const st= g.out==='t1'? `<b style="color:var(--up)">✓ פגע ביעד +${sigWinR(g)}R</b>`
     : g.out==='stop'? '<b style="color:var(--down)">✗ נעצר בסטופ -1R</b>'
     : g.out==='exp'? `<b style="color:var(--dim)">⌛ פג · ${g.r>=0?'+':''}${g.r}R</b>`
     : `<b style="color:var(--gold)">● פתוח · כרגע ${curR!=null?(curR>=0?'+':'')+curR+'R':'—'}</b>`;
@@ -1134,15 +1153,17 @@ function recordSig(r,s){
   if(!(pl.entry>0) || !(Math.abs(pl.entry-pl.stop)>0)) return;
   // full context snapshot — the raw material the quality trainer learns from
   sigs.push({sym:r.sym, dir:s.dir, t:Date.now(), entry:pl.entry, stop:pl.stop,
-    t1:pl.t1, score:s.score, rsi:Math.round(s.rsi), volX:+s.volX.toFixed(2),
+    t1:pl.t1, atr:s.atr, rr:+(geom.t1K/geom.stopK).toFixed(2),
+    score:s.score, rsi:Math.round(s.rsi), volX:+s.volX.toFixed(2),
     ext:+(s.ext||0).toFixed(2), m15:+s.m15.toFixed(2), out:null, r:null});
   saveSigs(); renderPerf();
 }
 const SIG_TTL=6*3600e3;
+function sigWinR(g){ return g.rr||1.5; }
 function sigR(g,px){
   const dist=Math.abs(g.entry-g.stop); if(!(dist>0)||!(px>0)) return 0;
   const raw=(g.dir==='long'? px-g.entry : g.entry-px)/dist;
-  return Math.max(-1,Math.min(1.5,+raw.toFixed(2)));
+  return Math.max(-1,Math.min(sigWinR(g),+raw.toFixed(2)));
 }
 // live grading — last price only; intraminute wicks that happen while the
 // page is open are caught within a second, history is caught by backfill
@@ -1156,7 +1177,7 @@ function gradeSigs(){
       const hitStop = g.dir==='long'? p<=g.stop : p>=g.stop;
       const hitT1   = g.dir==='long'? p>=g.t1  : p<=g.t1;
       if(hitStop){ g.out='stop'; g.r=-1; dirty=true; continue; }
-      if(hitT1){ g.out='t1'; g.r=1.5; dirty=true; continue; }
+      if(hitT1){ g.out='t1'; g.r=sigWinR(g); dirty=true; continue; }
     }
     if(now-g.t>SIG_TTL && p>0){ g.out='exp'; g.r=sigR(g,p); dirty=true; }
   }
@@ -1178,7 +1199,7 @@ async function backfillSigs(){
         const sHit=g.dir==='long'? l<=g.stop : h>=g.stop;
         const tHit=g.dir==='long'? h>=g.t1  : l<=g.t1;
         if(sHit){ g.out='stop'; g.r=-1; dirty=true; break; }   // both in one candle → conservative
-        if(tHit){ g.out='t1'; g.r=1.5; dirty=true; break; }
+        if(tHit){ g.out='t1'; g.r=sigWinR(g); dirty=true; break; }
       }
       if(!g.out && Date.now()-g.t>SIG_TTL && lastC>0){ g.out='exp'; g.r=sigR(g,lastC); dirty=true; }
     }catch(e){}
@@ -1221,7 +1242,7 @@ function renderPerf(){
     const start=Math.max(0,sigs.length-12);
     h+=`<div class="siglist">`+sigs.slice(start).map((g,j)=>({g,idx:start+j})).reverse().map(({g,idx})=>{
       let o;
-      if(g.out==='t1') o='<i style="color:var(--up)">✓ יעד +1.5R</i>';
+      if(g.out==='t1') o=`<i style="color:var(--up)">✓ יעד +${sigWinR(g)}R</i>`;
       else if(g.out==='stop') o='<i style="color:var(--down)">✗ סטופ -1R</i>';
       else if(g.out==='exp') o=`<i style="color:var(--dim)">⌛ פג ${g.r>=0?'+':''}${g.r}R</i>`;
       else{
@@ -1361,7 +1382,7 @@ function renderHist(){
     return g.out===hFilter;
   });
   $('hList').innerHTML= rows.length? rows.map(({g,idx})=>{
-    const o= g.out==='t1'? '<i style="color:var(--up)">✓ +1.5R</i>'
+    const o= g.out==='t1'? `<i style="color:var(--up)">✓ +${sigWinR(g)}R</i>`
       : g.out==='stop'? '<i style="color:var(--down)">✗ -1R</i>'
       : g.out==='exp'? `<i>⌛ ${g.r>=0?'+':''}${g.r}R</i>`
       : (()=>{ const r=universe.find(x=>x.sym===g.sym);
@@ -1372,6 +1393,83 @@ function renderHist(){
     return `<span data-sig="${idx}">${when} · ${g.sym} ${g.dir==='long'?'▲':'▼'} ציון ${g.score}${g.volX!=null?' · ×'+g.volX:''}${g.rsi!=null?' · RSI '+g.rsi:''} — ${o} 📈</span>`;
   }).join('') : '<span style="cursor:default">אין איתותים בסינון הזה</span>';
 }
+// ── 🎛 GEOMETRY LAB — replay the trader's own ledger under other rules ──
+// Hit-rate is not skill, it is GEOMETRY: a short target with a wide stop
+// hits almost always and can still lose money. The lab replays every
+// graded signal against the real candles that followed it, under several
+// stop/target geometries at once, and reports hit-rate, average R and
+// net R for each — so "90% hit" is shown next to its true price tag.
+// Conservative rule everywhere: a candle touching both = stop.
+const GEO_CONFIGS=[
+  {t1K:1.5, stopK:4.5, tag:'פגיעה מקסימלית — יעד קצר, סטופ רחוק'},
+  {t1K:2,   stopK:3},
+  {t1K:3,   stopK:3},
+  {t1K:4.5, stopK:3,  tag:'ברירת המחדל'},
+  {t1K:6,   stopK:3},
+  {t1K:4.5, stopK:2,  tag:'סטופ צמוד'},
+];
+const btCache={};
+async function geoLab(onProgress){
+  const done=sigs.filter(g=>g.out);
+  const rows=GEO_CONFIGS.map(c=>({t1K:c.t1K, stopK:c.stopK, tag:c.tag, n:0, w:0, net:0}));
+  let i=0;
+  for(const g of done){
+    i++;
+    const r=universe.find(x=>x.sym===g.sym); if(!r) continue;
+    const key=g.sym+':'+g.t;
+    let cs=btCache[key];
+    if(!cs){
+      try{
+        const res=await fetch(`${FAPI}/fapi/v1/klines?symbol=${r.pair}&interval=1m&startTime=${g.t}&limit=360`);
+        if(res.ok){ const raw=await res.json();
+          if(Array.isArray(raw)) cs=btCache[key]=raw.map(a=>({h:+a[2],l:+a[3],c:+a[4]})); }
+      }catch(e){}
+    }
+    if(!cs || !cs.length) continue;
+    const atr=g.atr || Math.abs(g.entry-g.stop)/3;
+    for(const cfg of rows){
+      const stop=g.dir==='long'? g.entry-atr*cfg.stopK : g.entry+atr*cfg.stopK;
+      const t1 = g.dir==='long'? g.entry+atr*cfg.t1K  : g.entry-atr*cfg.t1K;
+      const rr=cfg.t1K/cfg.stopK;
+      let out=null, lastC=0;
+      for(const c of cs){
+        lastC=c.c;
+        const sHit=g.dir==='long'? c.l<=stop : c.h>=stop;
+        const tHit=g.dir==='long'? c.h>=t1  : c.l<=t1;
+        if(sHit){ out='stop'; break; }
+        if(tHit){ out='t1'; break; }
+      }
+      cfg.n++;
+      if(out==='t1'){ cfg.w++; cfg.net+=rr; }
+      else if(out==='stop') cfg.net-=1;
+      else if(lastC>0){
+        const dist=Math.abs(g.entry-stop);
+        if(dist>0) cfg.net+=Math.max(-1,Math.min(rr,(g.dir==='long'? lastC-g.entry : g.entry-lastC)/dist));
+      }
+    }
+    if(onProgress && i%5===0) onProgress(i,done.length);
+  }
+  return rows;
+}
+function renderGeoRows(rows){
+  if(!rows[0] || !rows[0].n){
+    $('geoOut').innerHTML='<div class="nl" style="color:var(--dim)">אין עדיין עסקאות מדורגות להריץ עליהן</div>'; return;
+  }
+  const best=rows.slice().sort((a,b)=>b.net-a.net)[0];
+  const cur=geom.t1K+'/'+geom.stopK;
+  $('geoOut').innerHTML=
+    `<div class="nl" style="color:var(--dim);font-size:10.5px;margin:4px 0">נבדק על ${rows[0].n} עסקאות אמיתיות מהלדג׳ר · נר שנוגע בסטופ וביעד = סטופ (הקריאה המחמירה)</div>`+
+    rows.map(c=>{
+      const hit=Math.round(c.w/c.n*100), avg=c.net/c.n, active=(c.t1K+'/'+c.stopK)===cur;
+      return `<div class="geoRow${c===best?' best':''}">
+        <span><b>יעד ${c.t1K} · סטופ ${c.stopK}</b> ATR (R:R ${(c.t1K/c.stopK).toFixed(2)})${c.tag?` · ${c.tag}`:''}${c===best?' · ★ התוחלת הכי טובה':''}</span>
+        <span>פגיעה <b>${hit}%</b> · ממוצע <b style="color:${avg>=0?'var(--up)':'var(--down)'}">${(avg>=0?'+':'')+avg.toFixed(2)}R</b> · נטו <b>${(c.net>=0?'+':'')+c.net.toFixed(1)}R</b>
+        ${active?'<i class="onTag">✔ פעיל</i>':`<button class="hbtn2" data-geo="${c.t1K},${c.stopK}">החל מעכשיו</button>`}</span>
+      </div>`;
+    }).join('')+
+    `<div class="nl" style="color:var(--gold);font-size:10.5px;margin-top:4px">האמת על "90%": אחוז פגיעה קונים ביעד קצר — הכסף נמצא בעמודת הממוצע (התוחלת). עבר ≠ עתיד.</div>`;
+}
+let geoRows=null;
 function openHist(){ $('histModal').hidden=false; renderHist(); }
 function closeHist(){ $('histModal').hidden=true; }
 function csvText(){
@@ -1654,6 +1752,21 @@ $('hList').onclick=e=>{
   const sig=e.target.closest('[data-sig]');
   if(sig) openSigChart(+sig.dataset.sig);   // opens above the history screen
 };
+$('geoRun').onclick=async()=>{
+  $('geoOut').innerHTML='<div class="nl" style="color:var(--dim)">⏳ מריץ על ההיסטוריה…</div>';
+  try{
+    geoRows=await geoLab((i,n)=>{ $('geoOut').innerHTML=`<div class="nl" style="color:var(--dim)">⏳ ${i}/${n} עסקאות…</div>`; });
+    renderGeoRows(geoRows);
+  }catch(e){ $('geoOut').innerHTML='<div class="nl" style="color:var(--down)">הסימולציה נכשלה — נסה שוב</div>'; }
+};
+$('geoOut').onclick=e=>{
+  const b=e.target.closest('[data-geo]'); if(!b) return;
+  const [t1K,stopK]=b.dataset.geo.split(',').map(Number);
+  setGeom(stopK,t1K);
+  toast(`🎛 גיאומטריה חדשה: יעד ${t1K} ATR · סטופ ${stopK} ATR — חלה על איתותים חדשים בלבד`);
+  if(geoRows) renderGeoRows(geoRows);
+  if(expanded) render();
+};
 $('hCsv').onclick=()=>{
   try{
     const a=document.createElement('a');
@@ -1796,6 +1909,7 @@ window.__mkt={ rows, scan:()=>scan, state:()=>({filter,sortKey,sortDir,query,exp
   openHist, closeHist, insights:buildInsights, quality:qualityTxt, csv:csvText, qStats,
   traps:trapsOf, secs:secCandles, trend:trendOf, strict:setStrict, qualityNum,
   depth:onDepth, depthStats,
+  geoLab, setGeom:(s,t)=>{setGeom(s,t);}, geom:()=>({...geom}),
   chart:()=>({mode:chart.mode,sym:chart.sym,sigI:chart.sigI,tf:chart.tf,cs:chart.cs?chart.cs.length:0}),
   live:()=>({subs:[...klineSubs], lat:liveStat.lat, lastE:liveStat.lastE, open:!!(wsK&&wsK.readyState===1)}),
   check:checkAlerts, ws:()=>!!ws,
