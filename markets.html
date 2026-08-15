@@ -262,6 +262,10 @@ footer{max-width:900px;margin:0 auto;padding:8px 14px 22px;color:var(--dim);font
   <div id="mktDir" class="mdir" hidden></div>
   <div id="perf" class="perf"></div>
   <div id="goStrip" hidden></div>
+  <div class="tabs" id="mktMode">
+    <button data-m="stock">📈 מניות</button>
+    <button data-m="crypto" class="on">₿ קריפטו</button>
+  </div>
   <input class="search" id="q" placeholder="חיפוש מטבע או שם…" autocomplete="off">
   <div class="tabs" id="tabs">
     <button data-f="all" class="on">הכול</button>
@@ -316,7 +320,7 @@ footer{max-width:900px;margin:0 auto;padding:8px 14px 22px;color:var(--dim);font
   </div>
 </div>
 <footer>
-  ⚠️ הציון וההמלצות מחושבים אוטומטית מנרות אמת של Binance (‏EMA‏, RSI‏, MACD‏, מחזור) —
+  ⚠️ הציון וההמלצות מחושבים אוטומטית מנרות אמת (‏Binance לקריפטו · Yahoo Finance למניות · ‏EMA‏, RSI‏, MACD‏, מחזור) —
   אין בכך ייעוץ השקעות. "אופק" הוא הערכת טווח הרלוונטיות של האיתות לפי אילו אותות מניעים אותו,
   לא הבטחה. רמות הכניסה/סטופ בהרחבת שורה נגזרות מ-ATR של נרות דקה.
 </footer>
@@ -358,8 +362,73 @@ try{ favs=new Set(JSON.parse(localStorage.getItem('na:futfavs')||'[]')); }catch(
 const saveFavs=()=>{ try{ localStorage.setItem('na:futfavs',JSON.stringify([...favs])); }catch(e){} };
 function decFromTick(t){ const s=String(t); if(s.indexOf('.')<0) return 0;
   const d=s.replace(/0+$/,'').split('.')[1]; return d? d.length : 0; }
+// ── 📈 STOCK MARKET — same engine, Yahoo Finance data ───────────────────
+// The proven path the arena uses: Yahoo's v8 chart endpoint returns 1m
+// candles + the official quote in one call, no key needed. Stocks have
+// no tick/depth streams here, and the UI says so instead of pretending.
+const STOCKS=['AAPL','MSFT','NVDA','GOOGL','AMZN','META','TSLA','AVGO','AMD','INTC',
+  'QCOM','MU','SMCI','PLTR','NFLX','DIS','BA','JPM','GS','V','MA','PYPL','COIN','MSTR',
+  'HOOD','SHOP','UBER','ABNB','SNOW','CRM','ORCL','ADBE','CSCO','IBM','XOM','CVX','PFE',
+  'JNJ','UNH','LLY','WMT','COST','KO','PEP','MCD','NKE','SBUX','GME','AMC','RIVN','LCID',
+  'NIO','BABA','SPY','QQQ','DIA','IWM','TLT','GLD','TEVA','NICE','CHKP','WIX','MNDY','CYBR'];
+let mkt='crypto';
+try{ mkt=localStorage.getItem('na:radar:mkt')==='stock'?'stock':'crypto'; }catch(e){}
+const uniCache={crypto:null, stock:null};
+const scanCache={crypto:{}, stock:{}};
+const YQ='https://query1.finance.yahoo.com/v8/finance/chart/';
+function parseYahoo(j){
+  const R=j && j.chart && j.chart.result && j.chart.result[0];
+  if(!R) return null;
+  const q=(R.indicators && R.indicators.quote && R.indicators.quote[0])||{};
+  const ts=R.timestamp||[], cs=[];
+  for(let i=0;i<ts.length;i++){
+    const c=q.close && q.close[i];
+    if(c==null || !(c>0)) continue;
+    cs.push({t:ts[i]*1000, o:+(q.open&&q.open[i]!=null?q.open[i]:c),
+      h:+(q.high&&q.high[i]!=null?q.high[i]:c), l:+(q.low&&q.low[i]!=null?q.low[i]:c),
+      c:+c, v:+(q.volume&&q.volume[i]||0)});
+  }
+  return {cs, meta:R.meta||{}};
+}
+// one candle fetcher for BOTH markets — every engine goes through here
+async function fetchKl(r,interval,opts){
+  opts=opts||{};
+  if(r.market==='stock'){
+    const map={'1m':['1m','1d'],'5m':['5m','5d'],'15m':['15m','5d'],'1h':['60m','1mo'],'4h':['60m','3mo'],'1d':['1d','1y']};
+    const [iv,rg]=map[interval]||['1d','1y'];
+    const url= opts.startTime
+      ? `${YQ}${encodeURIComponent(r.pair)}?interval=${iv}&period1=${Math.floor(opts.startTime/1000)}&period2=${Math.floor(Date.now()/1000)}`
+      : `${YQ}${encodeURIComponent(r.pair)}?interval=${iv}&range=${rg}`;
+    const res=await fetch(url); if(!res.ok) return null;
+    const p=parseYahoo(await res.json()); if(!p) return null;
+    if(interval==='1m' && !opts.startTime){
+      // the quote rides along — update the row honestly
+      if(p.meta.regularMarketPrice>0) r.price=+p.meta.regularMarketPrice;
+      const pc=+p.meta.chartPreviousClose||+p.meta.previousClose||0;
+      if(pc>0 && r.price>0) r.chg=(r.price/pc-1)*100;
+      r.vol=p.cs.reduce((a,c)=>a+c.v*c.c,0);
+      r.stale=p.cs.length? (Date.now()-p.cs[p.cs.length-1].t>20*60000) : true;
+    }
+    return opts.limit? p.cs.slice(-opts.limit) : p.cs;
+  }
+  let url=`${FAPI}/fapi/v1/klines?symbol=${r.pair}&interval=${interval}`;
+  url+= opts.startTime? `&startTime=${opts.startTime}&limit=${opts.limit||999}` : `&limit=${opts.limit||140}`;
+  const res=await fetch(url); if(!res.ok) return null;
+  const raw=await res.json(); if(!Array.isArray(raw)) return null;
+  return raw.map(a=>({t:+a[0],o:+a[1],h:+a[2],l:+a[3],c:+a[4],v:+a[5]}));
+}
 async function loadUniverse(force){
-  if(!force && universe.length && Date.now()-universeAt<120000) return universe;
+  if(mkt==='stock'){
+    if(uniCache.stock && (universe===uniCache.stock)) return universe;
+    if(!uniCache.stock)
+      uniCache.stock=STOCKS.map(t=>({sym:t, pair:t, quote:'USD', market:'stock',
+        dec:2, price:0, chg:0, vol:0, stale:false}));
+    universe=uniCache.stock; universeAt=Date.now();
+    return universe;
+  }
+  if(!force && uniCache.crypto && uniCache.crypto.length && Date.now()-universeAt<120000){
+    universe=uniCache.crypto; return universe;
+  }
   const [info,tick]=await Promise.all([
     fetch(`${FAPI}/fapi/v1/exchangeInfo`).then(r=>r.ok?r.json():null).catch(()=>null),
     fetch(`${FAPI}/fapi/v1/ticker/24hr`).then(r=>r.ok?r.json():null).catch(()=>null),
@@ -375,12 +444,21 @@ async function loadUniverse(force){
       dec: pf? decFromTick(pf.tickSize) : (s.pricePrecision??2),
       price:+t.lastPrice||0, chg:+t.priceChangePercent||0, vol:+t.quoteVolume||0 });
   }
-  universe=out; universeAt=Date.now();
+  uniCache.crypto=out; universe=out; universeAt=Date.now();
   return out;
+}
+function setMkt(m){
+  if(m!==mkt){ mkt=m; try{ localStorage.setItem('na:radar:mkt',m); }catch(e){}
+    scan=scanCache[m]; expanded=null; universe=uniCache[m]||[]; universeAt=0;
+    document.querySelectorAll('#mktMode button').forEach(b=>b.classList.toggle('on',b.dataset.m===m));
+    render();
+    boot(true);
+    syncKlineSubs();     // crypto streams drop everything in stock mode
+  }
 }
 
 // ── the scan: 1-minute candles through the arena's indicators ───────────
-const scan={};                     // sym -> reading
+let scan=scanCache[mkt];           // sym -> reading (per-market cache)
 const candles={};                  // sym -> rolling 1m candle series (the live stream edits this in place)
 let scanState={running:false,done:0,total:0,at:0};
 const SCAN_MAX=120, SCAN_CONC=6, SCAN_TTL=90000;
@@ -548,10 +626,8 @@ async function runScan(force,onProgress,hotOnly){
     while(i<list.length){
       const r=list[i++];
       try{
-        const res=await fetch(`${FAPI}/fapi/v1/klines?symbol=${r.pair}&interval=1m&limit=90`);
-        if(res.ok){
-          const raw=await res.json();
-          const cs=(Array.isArray(raw)?raw:[]).map(a=>({t:+a[0],o:+a[1],h:+a[2],l:+a[3],c:+a[4],v:+a[5]}));
+        const cs=await fetchKl(r,'1m',{limit:90});
+        if(cs && cs.length){
           const sc=scanScore(cs,r.vol);
           if(sc){ scan[r.sym]=Object.assign(sc,{at:Date.now()}); candles[r.sym]=cs; }
         }
@@ -620,6 +696,7 @@ let wsK=null, wsKRetry=0, klineSubs=new Set(), liveDomT=0;
 const liveStat={lat:0,lastE:0};
 const seeding=new Set();
 function liveSet(){
+  if(mkt!=='crypto') return new Set();   // Binance streams are crypto-only
   const out=[], seen=new Set();
   const add=(sym)=>{ if(seen.has(sym)) return; const r=universe.find(x=>x.sym===sym);
     if(r){ out.push(r.pair.toLowerCase()+'@kline_1m'); seen.add(sym); } };
@@ -642,10 +719,8 @@ function liveSet(){
 async function seedCandles(sym,r){
   if(seeding.has(sym)) return; seeding.add(sym);
   try{
-    const res=await fetch(`${FAPI}/fapi/v1/klines?symbol=${r.pair}&interval=1m&limit=90`);
-    if(res.ok){ const raw=await res.json();
-      candles[sym]=(Array.isArray(raw)?raw:[]).map(a=>({t:+a[0],o:+a[1],h:+a[2],l:+a[3],c:+a[4],v:+a[5]}));
-    }
+    const cs=await fetchKl(r,'1m',{limit:90});
+    if(cs) candles[sym]=cs;
   }catch(e){}
   seeding.delete(sym);
 }
@@ -976,18 +1051,14 @@ async function chLoadTf(){
   const r=universe.find(x=>x.sym===chart.sym); if(!r) return;
   const ms=TFS[chart.tf], seq=++chart.loadSeq;
   chart.loading=true;
-  let url=`${FAPI}/fapi/v1/klines?symbol=${r.pair}&interval=${chart.tf}&limit=140`;
+  const opts={limit:140};
   if(chart.mode==='sig'){
     const g=sigs[chart.sigI];
-    if(g) url=`${FAPI}/fapi/v1/klines?symbol=${r.pair}&interval=${chart.tf}&startTime=${g.t-40*ms}&limit=999`;
+    if(g){ opts.startTime=g.t-40*ms; opts.limit=999; }
   }
   try{
-    const res=await fetch(url);
-    if(res.ok){
-      const raw=await res.json();
-      if(seq===chart.loadSeq && Array.isArray(raw))
-        chart.cs=raw.map(a=>({t:+a[0],o:+a[1],h:+a[2],l:+a[3],c:+a[4],v:+a[5]}));
-    }
+    const cs=await fetchKl(r,chart.tf,opts);
+    if(seq===chart.loadSeq && cs) chart.cs=cs;
   }catch(e){}
   chart.loading=false; chart.loadedAt=Date.now();
   if(chart.mode==='sig') chDrawSig(); else chDrawCoin();
@@ -1115,7 +1186,7 @@ function openCoinChart(sym){
   chClose();
   chart.mode='coin'; chart.sym=sym; chart.tf='1m'; chart.loadedAt=0;
   $('chModal').hidden=false;
-  $('chTitle').textContent='📈 '+sym+'/USDT';
+  { const rt=universe.find(x=>x.sym===sym); $('chTitle').textContent='📈 '+sym+(rt&&rt.market==='stock'?'':'/USDT'); }
   chTfSync();
   const r=universe.find(x=>x.sym===sym);
   if(!candles[sym] && r) seedCandles(sym,r).then(chDrawCoin);
@@ -1205,14 +1276,7 @@ const deepCache={};
 async function deepAnalyze(sym){
   const r=universe.find(x=>x.sym===sym); if(!r) return null;
   const s=scan[sym];
-  const get=async(iv,lim)=>{
-    try{
-      const res=await fetch(`${FAPI}/fapi/v1/klines?symbol=${r.pair}&interval=${iv}&limit=${lim}`);
-      if(!res.ok) return null;
-      const raw=await res.json();
-      return (Array.isArray(raw)?raw:[]).map(a=>({t:+a[0],o:+a[1],h:+a[2],l:+a[3],c:+a[4],v:+a[5]}));
-    }catch(e){ return null; }
-  };
+  const get=(iv,lim)=>fetchKl(r,iv,{limit:lim}).catch(()=>null);
   const [c15,c1h]=await Promise.all([get('15m',100),get('1h',120)]);
   if(!c15 || !c1h || c15.length<30 || c1h.length<30) return null;
   const tfRead=(cs)=>{
@@ -1352,12 +1416,11 @@ async function backfillSigs(){
     if(g.out || Date.now()-g.t<120000) continue;
     const r=universe.find(x=>x.sym===g.sym); if(!r) continue;
     try{
-      const res=await fetch(`${FAPI}/fapi/v1/klines?symbol=${r.pair}&interval=1m&startTime=${g.t}&limit=${Math.min(999,Math.ceil((Date.now()-g.t)/60000)+1)}`);
-      if(!res.ok) continue;
-      const raw=await res.json(); if(!Array.isArray(raw)) continue;
+      const cs=await fetchKl(r,'1m',{startTime:g.t, limit:Math.min(999,Math.ceil((Date.now()-g.t)/60000)+1)});
+      if(!cs) continue;
       let lastC=0;
-      for(const a of raw){
-        const h=+a[2], l=+a[3]; lastC=+a[4];
+      for(const a0 of cs){
+        const h=a0.h, l=a0.l; lastC=a0.c;
         const sHit=g.dir==='long'? l<=g.stop : h>=g.stop;
         const tHit=g.dir==='long'? h>=g.t1  : l<=g.t1;
         if(sHit){ g.out='stop'; g.r=-1; dirty=true; break; }   // both in one candle → conservative
@@ -1582,9 +1645,8 @@ async function geoLab(onProgress){
     let cs=btCache[key];
     if(!cs){
       try{
-        const res=await fetch(`${FAPI}/fapi/v1/klines?symbol=${r.pair}&interval=1m&startTime=${g.t}&limit=360`);
-        if(res.ok){ const raw=await res.json();
-          if(Array.isArray(raw)) cs=btCache[key]=raw.map(a=>({h:+a[2],l:+a[3],c:+a[4]})); }
+        const raw=await fetchKl(r,'1m',{startTime:g.t, limit:360});
+        if(raw) cs=btCache[key]=raw.map(a=>({h:a.h,l:a.l,c:a.c}));
       }catch(e){}
     }
     if(!cs || !cs.length) continue;
@@ -1682,6 +1744,7 @@ function checkAlerts(){
     const s=scan[r.sym]; if(!s) continue;
     const v=verdictOf(s);
     if(v.k!=='go') continue;
+    if(r.stale) continue;              // closed stock market — no fresh signal
     if(goAlerted[r.sym] && now-goAlerted[r.sym]<600000) continue;
     goAlerted[r.sym]=now;
     recordSig(r,s);              // the ledger grades every 🟢, sound on or off
@@ -1801,7 +1864,7 @@ function render(){
       const timeStop= hor.k==='scalp'?'15 דק׳': hor.k==='short'?'שעה': hor.k==='intra'?'4 שעות':'יממה';
       const q0=qualityNum(s);
       const card=`<div class="scard ${decCls}">
-        <div class="sc1">${dec}</div>
+        <div class="sc1">${dec}${r.stale?' <span style="font-size:12px;color:var(--dim)">🌙 השוק סגור — נתונים מהסגירה</span>':''}</div>
         <div class="sc2">${why2}</div>
         <div class="scr">
           <span>🚪 כניסה<b>${fx(pl.entry)}</b></span>
@@ -1814,7 +1877,7 @@ function render(){
       </div>`;
       const adv= simpleOn? '' : `
         <div class="verdict" style="color:${v.k==='go'?'var(--up)':(v.k==='wait'||v.k==='late')?'var(--gold)':'var(--dim)'}">${v.t}</div>
-        <div><b>${r.sym}/USDT</b> · ${dirW} · ציון ${s.score} · אופק ${hor.t}</div>
+        <div><b>${r.sym}${r.market==='stock'?'':'/USDT'}</b> · ${dirW} · ציון ${s.score} · אופק ${hor.t}</div>
         <div class="checks">${chips}</div>
         <div class="why">${s.why}</div>
         <div class="why" style="color:var(--cyan)">🧠 ${qualityTxt(s)}</div>
@@ -1834,7 +1897,7 @@ function render(){
         <div class="traps">${(()=>{ const tp=trapsOf(r.sym);
           return tp.length? tp.map(t=>`<span>${t.t}</span>`).join('')
             : '<span class="cl">🕵️ סריקת תרגילים — נקי: אין ציד סטופים, פריצות שווא או סטיות זרימה בנרות האחרונים</span>'; })()}</div>
-        <div class="micro">
+        ${r.market==='stock'? `<div class="mnote" style="color:var(--dim);padding:4px 2px">🔬 טיקים חיים, עומק ספר ונרות-שנייה זמינים בקריפטו בלבד — יאהו לא משדר אותם. הנתונים כאן מתרעננים עם כל סריקה.</div>` : `<div class="micro">
           <span class="mt">🔬 מיקרו — טיק אחר טיק</span>
           <span>מחיר<b data-mv="px">—</b></span>
           <span>ספרד<b data-mv="sp">—</b></span>
@@ -1851,7 +1914,7 @@ function render(){
           <span data-dv="imb">—</span>
           <div class="dwalls" data-dv="walls"></div>
           <span class="mnote" data-dv="dnote">מחכה לזרם העומק…</span>
-        </div>`;
+        </div>`}`;
       det=`<div class="det">
         ${card}${adv}
         <div class="plan">
@@ -1878,7 +1941,7 @@ function render(){
       <span class="mname">
         <span class="star${favs.has(r.sym)?' on':''}" data-fav="${r.sym}">${favs.has(r.sym)?'★':'☆'}</span>
         <span class="nn">
-          <span class="n1"><b>${r.sym}</b><span class="tag">Perp</span></span>
+          <span class="n1"><b>${r.sym}</b><span class="tag">${r.market==='stock'?'מניה':'Perp'}</span></span>
           <span class="sub">${fmtUsd(r.vol)}</span>
         </span>
       </span>
@@ -1938,6 +2001,8 @@ $('list').onclick=e=>{
   syncKlineSubs();      // the open row joins the live streams immediately
 };
 $('refreshBtn').onclick=()=>{ boot(true); };
+$('mktMode').onclick=e=>{ const b=e.target.closest('button[data-m]'); if(b) setMkt(b.dataset.m); };
+document.querySelectorAll('#mktMode button').forEach(b=>b.classList.toggle('on',b.dataset.m===mkt));
 $('perf').onclick=e=>{
   if(e.target.closest('#histBtn')){ openHist(); return; }
   const sig=e.target.closest('[data-sig]');
@@ -1983,6 +2048,11 @@ $('hCsv').onclick=()=>{
 $('chClose').onclick=chClose;
 $('chTf').onclick=e=>{
   const b=e.target.closest('button[data-tf]'); if(!b || !chart.mode) return;
+  const rr=universe.find(x=>x.sym===chart.sym);
+  if(rr && rr.market==='stock' && (b.dataset.tf==='1s'||b.dataset.tf==='4h')){
+    toast(b.dataset.tf==='1s'? 'נרות שנייה — קריפטו בלבד (אין זרם טיקים ממניות)'
+      : 'ליאהו אין נרות 4 שעות — השתמש ב-1ש׳ או 1י׳'); return;
+  }
   chart.tf=b.dataset.tf; chart.cs=null; chart.loadedAt=0;
   chTfSync();
   if(chart.mode==='coin') chDrawCoin(); else chDrawSig();
@@ -2068,7 +2138,7 @@ boot(false);
 // favourites + current 🟢 + top-20 liquidity — every 30 seconds, so the
 // minute-timing numbers are never more than half a minute old.
 setInterval(()=>{ if(!document.hidden){ loadUniverse(false).then(render).catch(()=>{}); kick(false); } }, 45000);
-setInterval(()=>{ if(!document.hidden && !scanState.running){
+setInterval(()=>{ if(!document.hidden && !scanState.running && mkt==='crypto'){
   runScan(true,render,true).then(()=>{ render(); checkAlerts(); }).catch(()=>{}); } }, 30000);
 // grade open signals against the live tape every 5s; when the trade list
 // is open, its "currently ±R" figures refresh too
@@ -2115,6 +2185,7 @@ window.__mkt={ rows, scan:()=>scan, state:()=>({filter,sortKey,sortDir,query,exp
   depth:onDepth, depthStats,
   geoLab, setGeom:(s,t)=>{setGeom(s,t);}, geom:()=>({...geom}),
   deep:deepAnalyze, deepCache:()=>deepCache,
+  setMkt, mkt:()=>mkt, fetchKl,
   breadth, simple:(on)=>{ simpleOn=on!==false;
     try{ localStorage.setItem('na:radar:simple',simpleOn?'1':'0'); }catch(e){} render(); },
   chart:()=>({mode:chart.mode,sym:chart.sym,sigI:chart.sigI,tf:chart.tf,cs:chart.cs?chart.cs.length:0}),
