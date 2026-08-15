@@ -158,6 +158,21 @@ main{max-width:900px;margin:0 auto;padding:10px 10px calc(20px + env(safe-area-i
 .chInfo b{font-family:'JetBrains Mono',monospace;color:var(--txt);margin-inline-start:4px}
 .perf .siglist span{cursor:pointer}
 .perf .siglist span:active{opacity:.6}
+.mdir{margin:0 0 8px;padding:7px 12px;border-radius:10px;font-size:12px;font-weight:700;
+  border:1px solid var(--line);color:var(--dim);background:rgba(255,255,255,.03)}
+.mdir b{font-family:'JetBrains Mono',monospace}
+.mdir.up{border-color:rgba(0,255,166,.4);color:var(--up)}
+.mdir.down{border-color:rgba(255,71,111,.45);color:var(--down)}
+.mdir.mixed{border-color:rgba(255,209,102,.35);color:var(--gold)}
+.scard{display:flex;flex-direction:column;gap:5px;margin-bottom:8px;padding:10px 12px;
+  border-radius:11px;border:1.5px solid var(--line);background:rgba(255,255,255,.03)}
+.scard.up{border-color:rgba(0,255,166,.55);background:rgba(0,255,166,.06)}
+.scard.gold{border-color:rgba(255,209,102,.5);background:rgba(255,209,102,.05)}
+.scard .sc1{font-size:17px;font-weight:900}
+.scard .sc2{font-size:12px;color:var(--txt)}
+.scard .scr{display:flex;gap:8px 16px;flex-wrap:wrap;font-size:12px}
+.scard .scr b{font-family:'JetBrains Mono',monospace;display:block;font-size:13px}
+.scard .sc3{font-size:11px;color:var(--dim)}
 .perf{margin:0 0 8px;padding:8px 12px;border-radius:10px;font-size:12px;
   background:rgba(255,255,255,.03);border:1px solid var(--line);color:var(--dim);cursor:pointer}
 .perf b{font-family:'JetBrains Mono',monospace}
@@ -244,6 +259,7 @@ footer{max-width:900px;margin:0 auto;padding:8px 14px 22px;color:var(--dim);font
     <label>💵 סכום בסיכון $<input id="riskAmt" type="number" min="0.1" step="0.5" inputmode="decimal"></label>
     <span class="acct-hint" id="riskWarn"></span>
   </div>
+  <div id="mktDir" class="mdir" hidden></div>
   <div id="perf" class="perf"></div>
   <div id="goStrip" hidden></div>
   <input class="search" id="q" placeholder="חיפוש מטבע או שם…" autocomplete="off">
@@ -1145,6 +1161,38 @@ async function openSigChart(i){
   chart.timer=setInterval(()=>{ chDrawSig(); chMaybeRefresh(); },1000);   // R + clock live
 }
 
+// ── 🌍 MARKET BREADTH — which way is the WHOLE market moving ────────────
+// Counted, not guessed: the share of contracts green on the 15-minute
+// window (scan data), the 24h share, and the volume-weighted average 24h
+// move. 60%+ green = rising market, 40%- = falling, between = mixed.
+function breadth(){
+  let n=0, up24=0, wsum=0, wtot=0, n15=0, up15=0;
+  for(const r of universe){
+    if(!(r.price>0)) continue;
+    n++; if(r.chg>0) up24++;
+    wsum+=r.chg*(r.vol||0); wtot+=r.vol||0;
+    const s=scan[r.sym];
+    if(s){ n15++; if(s.m15>0) up15++; }
+  }
+  if(!n) return null;
+  const p24=up24/n*100, p15=n15>=10? up15/n15*100 : null, wavg=wtot? wsum/wtot : 0;
+  const key=p15!=null? p15 : p24;
+  return {p24, p15, wavg, n, n15, k: key>=60?'up': key<=40?'down':'mixed'};
+}
+function renderMktDir(){
+  const el=$('mktDir'); if(!el) return;
+  const bd=breadth();
+  if(!bd){ el.hidden=true; return; }
+  el.hidden=false; el.className='mdir '+bd.k;
+  const word= bd.k==='up'?'עולה 📈': bd.k==='down'?'יורד 📉':'מעורב ↔️';
+  el.innerHTML=`🌍 השוק עכשיו: <b>${word}</b> · `+
+    (bd.p15!=null? `<b>${Math.round(bd.p15)}%</b> מהחוזים ירוקים ב-15ד · `:'')+
+    `<b>${Math.round(bd.p24)}%</b> ירוקים ב-24ש · ממוצע משוקלל <b>${(bd.wavg>=0?'+':'')+bd.wavg.toFixed(2)}%</b>`;
+}
+// simple vs advanced open-row view — persisted
+let simpleOn=true;
+try{ simpleOn=localStorage.getItem('na:radar:simple')!=='0'; }catch(e){}
+
 // ── 🧠 DEEP ANALYSIS — everything the radar knows, fused into one read ──
 // The way a senior desk analyst works: momentum, structure on THREE
 // timeframes (1m/15m/1h), real swing support/resistance from hourly
@@ -1714,6 +1762,7 @@ function renderGoStrip(){
 function render(){
   const el=$('list');
   renderGoStrip();
+  renderMktDir();
   $('scanStat').textContent=scanState.running? `⟳ ${scanState.done}/${scanState.total}` : '';
   if(!universe.length) return;
   const rs=rows();
@@ -1736,7 +1785,34 @@ function render(){
       const fx=(x)=>x.toLocaleString('en-US',{minimumFractionDigits:r.dec,maximumFractionDigits:r.dec});
       const fq=(x)=> x>=100? Math.round(x).toLocaleString() : x.toFixed(x>=1?2:4);
       const chips=checksOf(s,r.vol).map(c=>`<i class="${c.ok?'ok':''}">${c.ok?'✓':'✗'} ${c.t}</i>`).join('');
-      det=`<div class="det">
+      // ── the SIMPLE decision card: enter? exit when? — one glance ──
+      const bd=breadth();
+      const tp=trapsOf(r.sym);
+      const mktAgainst= bd? (s.dir==='long'? bd.k==='down' : bd.k==='up') : false;
+      let dec,decCls,why2;
+      if(v.k==='go' && !tp.length && !mktAgainst){ dec='🟢 אפשר להיכנס עכשיו'; decCls='up';
+        why2='איתות חם, טייפ נקי מתרגילים, והשוק הכללי לא נגד הכיוון'; }
+      else if(v.k==='go'){ dec='🟡 חכה רגע'; decCls='gold';
+        why2= tp.length? 'האיתות חם אבל זוהו '+tp.length+' תרגילים על הטייפ — תן להם להתנקות'
+          : 'האיתות חם אבל השוק הכללי נע נגד הכיוון — סיכון מוגבר'; }
+      else if(v.k==='wait'||v.k==='late'){ dec='🟡 חכה רגע'; decCls='gold'; why2=v.t.replace(/^\S+\s/,''); }
+      else if(v.k==='watch'){ dec='⚪ עוד לא'; decCls=''; why2='איתות בינוני — מעקב בלבד, בלי כניסה'; }
+      else { dec='🔴 לא להיכנס'; decCls=''; why2='אין איתות חזק מספיק'; }
+      const timeStop= hor.k==='scalp'?'15 דק׳': hor.k==='short'?'שעה': hor.k==='intra'?'4 שעות':'יממה';
+      const q0=qualityNum(s);
+      const card=`<div class="scard ${decCls}">
+        <div class="sc1">${dec}</div>
+        <div class="sc2">${why2}</div>
+        <div class="scr">
+          <span>🚪 כניסה<b>${fx(pl.entry)}</b></span>
+          <span>✅ צא ברווח ב-<b>${fx(pl.t1)}</b></span>
+          <span>🛑 צא בהפסד ב-<b>${fx(pl.stop)}</b></span>
+          <span>⏱ כלום לא זז תוך<b>${timeStop}? צא</b></span>
+        </div>
+        <div class="sc3">היעד או הסטופ — מה שנוגע קודם קובע · מפסידים מקסימום $${pl.riskAmt<10?pl.riskAmt.toFixed(2):pl.riskAmt.toFixed(0)}${bd?` · 🌍 השוק ${bd.k==='up'?'עולה':bd.k==='down'?'יורד':'מעורב'}${mktAgainst?' — נגדך':''}`:''}${q0.ready?` · 🧠 פרופיל דומה: ${q0.pct}% אצלך`:''}</div>
+        <div><button class="copy" data-simple="1">${simpleOn?'🔬 הצג הכל (מתקדם)':'✨ חזרה למצב פשוט'}</button></div>
+      </div>`;
+      const adv= simpleOn? '' : `
         <div class="verdict" style="color:${v.k==='go'?'var(--up)':(v.k==='wait'||v.k==='late')?'var(--gold)':'var(--dim)'}">${v.t}</div>
         <div><b>${r.sym}/USDT</b> · ${dirW} · ציון ${s.score} · אופק ${hor.t}</div>
         <div class="checks">${chips}</div>
@@ -1775,7 +1851,9 @@ function render(){
           <span data-dv="imb">—</span>
           <div class="dwalls" data-dv="walls"></div>
           <span class="mnote" data-dv="dnote">מחכה לזרם העומק…</span>
-        </div>
+        </div>`;
+      det=`<div class="det">
+        ${card}${adv}
         <div class="plan">
           <div class="pr">
             <span><b>כניסה</b>${fx(pl.entry)}</span>
@@ -1839,6 +1917,10 @@ document.querySelectorAll('.mhead button').forEach(b=>{
 $('list').onclick=e=>{
   const ch=e.target.closest('[data-chart]');
   if(ch){ openCoinChart(ch.dataset.chart); return; }
+  const sm=e.target.closest('[data-simple]');
+  if(sm){ simpleOn=!simpleOn;
+    try{ localStorage.setItem('na:radar:simple',simpleOn?'1':'0'); }catch(err){}
+    render(); return; }
   const dp=e.target.closest('[data-deep]');
   if(dp){ const sym=dp.dataset.deep;
     deepCache[sym]={loading:true}; render();
@@ -2033,6 +2115,8 @@ window.__mkt={ rows, scan:()=>scan, state:()=>({filter,sortKey,sortDir,query,exp
   depth:onDepth, depthStats,
   geoLab, setGeom:(s,t)=>{setGeom(s,t);}, geom:()=>({...geom}),
   deep:deepAnalyze, deepCache:()=>deepCache,
+  breadth, simple:(on)=>{ simpleOn=on!==false;
+    try{ localStorage.setItem('na:radar:simple',simpleOn?'1':'0'); }catch(e){} render(); },
   chart:()=>({mode:chart.mode,sym:chart.sym,sigI:chart.sigI,tf:chart.tf,cs:chart.cs?chart.cs.length:0}),
   live:()=>({subs:[...klineSubs], lat:liveStat.lat, lastE:liveStat.lastE, open:!!(wsK&&wsK.readyState===1)}),
   check:checkAlerts, ws:()=>!!ws,
