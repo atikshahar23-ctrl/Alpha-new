@@ -16,48 +16,74 @@
 </style>
 <style>
 :root{
-  --bg:#04060d; --cyan:#00f0ff; --up:#00ffa6; --down:#ff3d6e; --gold:#ffd166;
-  --txt:#d9f4ff; --dim:#6d90a8; --line:rgba(0,240,255,.28);
-  --panel:rgba(7,14,28,.92);
+  --bg:#05040f; --cyan:#22d3ee; --up:#34f5b1; --down:#fb5c7e; --gold:#fbbf5d;
+  --vio:#a78bfa; --txt:#e8f2ff; --dim:#7d93b8;
+  --line:rgba(167,139,250,.25);
+  --panel:linear-gradient(165deg, rgba(30,27,75,.55), rgba(8,12,32,.85));
+  --glass:rgba(17,17,40,.6);
 }
 *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0;background:var(--bg);color:var(--txt);
   font-family:'Heebo',sans-serif;min-height:100dvh}
 body{background:
-  radial-gradient(ellipse 90% 55% at 50% -10%, rgba(0,240,255,.08), transparent 60%),
-  radial-gradient(ellipse 70% 45% at 85% 110%, rgba(255,47,214,.06), transparent 55%),
-  var(--bg)}
+  radial-gradient(ellipse 100% 60% at 15% -10%, rgba(124,58,237,.22), transparent 55%),
+  radial-gradient(ellipse 80% 50% at 100% 8%, rgba(34,211,238,.13), transparent 55%),
+  radial-gradient(ellipse 90% 55% at 50% 115%, rgba(251,92,126,.10), transparent 60%),
+  linear-gradient(180deg,#0b0721 0%, #05040f 45%, #060312 100%);
+  background-attachment:fixed}
 header{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px;
   padding:calc(10px + env(safe-area-inset-top)) 14px 10px;
-  background:rgba(4,6,13,.94);border-bottom:1px solid rgba(0,240,255,.16)}
-header h1{margin:0;font-size:17px;font-weight:800;letter-spacing:.4px}
-header h1 b{color:var(--cyan)}
+  background:rgba(9,7,25,.75);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  border-bottom:1px solid transparent;
+  border-image:linear-gradient(90deg,transparent, rgba(167,139,250,.5), rgba(34,211,238,.5), transparent) 1}
+header h1{margin:0;font-size:18px;font-weight:800;letter-spacing:.4px}
+header h1 b{background:linear-gradient(120deg,var(--cyan),var(--vio));
+  -webkit-background-clip:text;background-clip:text;color:transparent}
 .hcount{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--dim)}
 .hspace{flex:1}
-.hbtn{background:rgba(6,12,26,.8);border:1px solid var(--line);color:var(--cyan);
-  border-radius:10px;padding:6px 11px;font-size:12px;cursor:pointer;font-family:inherit}
-a.hbtn{text-decoration:none;color:var(--gold);border-color:rgba(255,209,102,.4)}
+.hbtn{background:rgba(30,27,75,.5);border:1px solid var(--line);color:var(--cyan);
+  border-radius:12px;padding:6px 11px;font-size:12px;cursor:pointer;font-family:inherit;
+  transition:transform .12s, box-shadow .12s}
+.hbtn:active{transform:scale(.94)}
+a.hbtn{text-decoration:none;color:var(--gold);border-color:rgba(251,191,93,.4)}
 #scanStat{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--gold)}
 main{max-width:900px;margin:0 auto;padding:10px 10px calc(20px + env(safe-area-inset-bottom))}
-.search{width:100%;background:rgba(2,10,18,.9);color:var(--txt);
-  border:1px solid rgba(0,240,255,.25);border-radius:10px;padding:10px 12px;
-  font-size:14px;font-family:inherit;margin-bottom:8px}
+.search{width:100%;background:rgba(17,17,40,.65);color:var(--txt);
+  border:1px solid var(--line);border-radius:14px;padding:11px 14px;
+  font-size:14px;font-family:inherit;margin-bottom:8px;
+  transition:border-color .15s, box-shadow .15s}
+.search:focus{outline:none;border-color:var(--vio);box-shadow:0 0 0 3px rgba(167,139,250,.15)}
 .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
-.tabs button{padding:6px 12px;border-radius:999px;font-size:12px;cursor:pointer;
-  background:rgba(6,12,26,.7);color:var(--dim);border:1px solid rgba(0,240,255,.18);font-family:inherit}
-.tabs button.on{color:#02141a;background:linear-gradient(120deg,var(--cyan),#7dfbff);
-  border-color:var(--cyan);font-weight:700}
+.tabs button{padding:7px 13px;border-radius:999px;font-size:12px;cursor:pointer;
+  background:rgba(30,27,75,.4);color:var(--dim);border:1px solid rgba(167,139,250,.22);
+  font-family:inherit;transition:transform .12s}
+.tabs button:active{transform:scale(.93)}
+.tabs button.on{color:#0b0721;background:linear-gradient(120deg,var(--cyan),var(--vio));
+  border-color:transparent;font-weight:800;box-shadow:0 3px 14px rgba(124,58,237,.35)}
 /* seven data columns fit a desktop; on the phone the grid collapses per-cell */
 .mhead,.mrow{display:grid;gap:6px;align-items:center;
   grid-template-columns:1.5fr .85fr .62fr .62fr .62fr .55fr .6fr .95fr}
-.mhead{padding:4px 6px 8px;border-bottom:1px solid rgba(0,240,255,.14);position:sticky;top:56px;
-  background:rgba(4,6,13,.96);z-index:4}
+.mhead{padding:4px 10px 8px;position:sticky;top:56px;z-index:4;
+  background:rgba(9,7,25,.85);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  border-bottom:1px solid rgba(167,139,250,.18)}
 .mhead button{background:none;border:none;color:var(--dim);font-size:10.5px;cursor:pointer;
   text-align:end;font-family:'Heebo',sans-serif;padding:0}
 .mhead button:first-child{text-align:start}
 .mhead button.on{color:var(--cyan);font-weight:700}
-.mrow{padding:9px 6px;border-bottom:1px solid rgba(255,255,255,.05);cursor:pointer}
-.mrow:hover{background:rgba(0,240,255,.05)}
+.mrow{padding:11px 10px;cursor:pointer;margin:7px 0;border-radius:14px;
+  background:linear-gradient(160deg, rgba(30,27,75,.35), rgba(10,10,28,.55));
+  border:1px solid rgba(167,139,250,.14);
+  border-inline-start:3px solid rgba(167,139,250,.18);
+  box-shadow:0 2px 10px rgba(2,2,12,.35);
+  content-visibility:auto;contain-intrinsic-size:auto 58px;
+  transition:transform .12s, border-color .15s}
+.mrow:hover{border-color:rgba(34,211,238,.35);transform:translateY(-1px)}
+.mrow:active{transform:scale(.995)}
+.mrow.v-go{border-inline-start-color:var(--up)}
+.mrow.v-wait,.mrow.v-late{border-inline-start-color:var(--gold)}
+.mrow.v-watch{border-inline-start-color:var(--cyan)}
+.tag.turfH{background:rgba(52,245,177,.16);color:var(--up)}
+.tag.turfC{background:rgba(251,92,126,.16);color:var(--down)}
 .mname{display:flex;align-items:center;gap:7px;min-width:0}
 .star{cursor:pointer;font-size:13px;color:#4a5b6b;flex:none}
 .star.on{color:var(--gold)}
@@ -79,14 +105,17 @@ main{max-width:900px;margin:0 auto;padding:10px 10px calc(20px + env(safe-area-i
 .hor .intra{background:rgba(0,240,255,.16);color:#7dfbff}
 .hor .swing{background:rgba(183,148,244,.18);color:#c9a8ff}
 /* expanded detail row */
-.det{grid-column:1/-1;background:rgba(0,240,255,.05);border:1px solid rgba(0,240,255,.16);
-  border-radius:10px;padding:10px 12px;font-size:12px;line-height:1.7;margin-top:6px}
+.det{grid-column:1/-1;background:linear-gradient(170deg, rgba(30,27,75,.4), rgba(8,10,26,.6));
+  border:1px solid rgba(167,139,250,.22);
+  border-radius:14px;padding:11px 13px;font-size:12px;line-height:1.7;margin-top:8px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.04), 0 6px 22px rgba(2,2,12,.4)}
 .det .why{color:var(--dim);font-family:'JetBrains Mono',monospace;font-size:10.5px}
 .det .lv{display:flex;gap:14px;flex-wrap:wrap;font-family:'JetBrains Mono',monospace;font-size:11.5px;margin-top:4px}
 .det .lv b{font-weight:600;color:var(--dim);font-size:10px;display:block}
 .empty{padding:26px 10px;text-align:center;color:var(--dim);font-size:13px}
 .acct{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:8px;
-  background:var(--panel);border:1px solid rgba(0,240,255,.16);border-radius:10px;padding:8px 12px}
+  background:var(--panel);border:1px solid rgba(167,139,250,.2);border-radius:14px;padding:9px 13px;
+  box-shadow:0 4px 18px rgba(2,2,12,.35)}
 .acct label{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--dim)}
 .acct input{width:86px;background:rgba(2,10,18,.9);color:var(--txt);border:1px solid rgba(0,240,255,.25);
   border-radius:7px;padding:5px 8px;font-size:12.5px;font-family:'JetBrains Mono',monospace}
@@ -271,6 +300,7 @@ footer{max-width:900px;margin:0 auto;padding:8px 14px 22px;color:var(--dim);font
     <button data-f="all" class="on">הכול</button>
     <button data-f="rec">🔥 מומלצים כרגע</button>
     <button data-f="mov5">⚡ זזים ב-5 דק׳</button>
+    <button data-f="my">🏠 שלי</button>
     <button data-f="fav">⭐ מועדפים</button>
     <button data-f="gainers">עולים</button>
     <button data-f="losers">יורדים</button>
@@ -1751,10 +1781,10 @@ function checkAlerts(){
     if(!alertsOn) continue;
     if(strictOn){
       // selective mode: nag only for the cleanest setups — no detected
-      // tricks on the tape, and (once there is data) a similar-profile
-      // history at 50%+ — everything is still recorded and measured
+      // tricks on the tape, (once there is data) a similar-profile
+      // history at 50%+, and never on a symbol that keeps losing for YOU
       const q=qualityNum(s);
-      if(trapsOf(r.sym).length || (q.ready && q.pct<50)) continue;
+      if(trapsOf(r.sym).length || (q.ready && q.pct<50) || turfOf(r.sym).k==='cold') continue;
     }
     const msg=`${r.sym} ${s.dir==='long'?'לונג ▲':'שורט ▼'} · ציון ${s.score} · ${horizonOf(s,r.chg).t}`;
     toast('🟢 '+msg);
@@ -1781,11 +1811,34 @@ function setAlerts(on){
 
 // ── table state + render ────────────────────────────────────────────────
 let filter='all', sortKey='rec', sortDir=-1, query='', expanded=null;
+// ── 🏠 HOME TURF — prefer the symbols the trader PROVABLY controls ──────
+// Measured from the ledger, never from feeling: 3+ graded trades on a
+// symbol with positive net R = home turf (boosted and badged); 3+ trades
+// at -1R or worse = a cold symbol (badged, downgraded, never alerted in
+// selective mode). The feeling of control gets tested against the record.
+function symStats(){
+  const m={};
+  for(const g of sigs){
+    if(!g.out) continue;
+    const e=m[g.sym]||(m[g.sym]={n:0,w:0,net:0});
+    e.n++; if(g.out==='t1') e.w++; e.net+=g.r||0;
+  }
+  return m;
+}
+function turfOf(sym,T){
+  const e=(T||symStats())[sym];
+  if(!e || e.n<3) return {k:'none', e};
+  if(e.net>0) return {k:'home', e};
+  if(e.net<=-1) return {k:'cold', e};
+  return {k:'none', e};
+}
 function rows(){
   let out=universe.slice();
+  const T=symStats();
   if(query){ const q=query.toUpperCase();
     out=out.filter(r=>r.sym.includes(q)||r.pair.includes(q)); }
   if(filter==='fav') out=out.filter(r=>favs.has(r.sym));
+  else if(filter==='my') out=out.filter(r=>turfOf(r.sym,T).k==='home');
   else if(filter==='gainers') out=out.filter(r=>r.chg>0);
   else if(filter==='losers') out=out.filter(r=>r.chg<0);
   else if(filter==='rec') out=out.filter(r=>(scan[r.sym]?.score??0)>=45);
@@ -1793,10 +1846,13 @@ function rows(){
   const sKeys={m5:'m5',m15:'m15',rsi:'rsi',volx:'volX',rec:'score'};
   if(sKeys[sortKey]){
     const k=sKeys[sortKey];
+    // the recommendation sort prefers proven ground: home turf climbs,
+    // cold symbols sink — the row badge says why
+    const bump=(r)=> sortKey==='rec'? (turfOf(r.sym,T).k==='home'?8: turfOf(r.sym,T).k==='cold'?-8:0) : 0;
     out.sort((a,b)=>{ const A=scan[a.sym], B=scan[b.sym];
       if(!A&&!B) return (b.vol||0)-(a.vol||0);
       if(!A) return 1; if(!B) return -1;
-      return sortDir*(A[k]-B[k]); });
+      return sortDir*((A[k]+bump(a))-(B[k]+bump(b))); });
     return out;
   }
   const key={name:'sym',price:'price',chg:'chg'}[sortKey]||'sym';
@@ -1829,7 +1885,8 @@ function render(){
   $('scanStat').textContent=scanState.running? `⟳ ${scanState.done}/${scanState.total}` : '';
   if(!universe.length) return;
   const rs=rows();
-  $('count').textContent=rs.length+' חוזים';
+  const TURF=symStats();
+  $('count').textContent=rs.length+(mkt==='stock'?' ניירות':' חוזים');
   if(!rs.length){ el.innerHTML='<div class="empty">אין חוזה שתואם</div>'; return; }
   const top=el.scrollTop;
   el.innerHTML=rs.slice(0,200).map(r=>{
@@ -1861,6 +1918,9 @@ function render(){
       else if(v.k==='wait'||v.k==='late'){ dec='🟡 חכה רגע'; decCls='gold'; why2=v.t.replace(/^\S+\s/,''); }
       else if(v.k==='watch'){ dec='⚪ עוד לא'; decCls=''; why2='איתות בינוני — מעקב בלבד, בלי כניסה'; }
       else { dec='🔴 לא להיכנס'; decCls=''; why2='אין איתות חזק מספיק'; }
+      const trf=turfOf(r.sym);
+      if(trf.k==='cold' && decCls==='up'){ dec='🟡 חכה רגע'; decCls='gold';
+        why2=`התנאים טובים, אבל המטבע הזה הפסיד לך ${trf.e.net.toFixed(1)}R ב-${trf.e.n} עסקאות — עדיף מגרש ביתי`; }
       const timeStop= hor.k==='scalp'?'15 דק׳': hor.k==='short'?'שעה': hor.k==='intra'?'4 שעות':'יממה';
       const q0=qualityNum(s);
       const card=`<div class="scard ${decCls}">
@@ -1872,7 +1932,7 @@ function render(){
           <span>🛑 צא בהפסד ב-<b>${fx(pl.stop)}</b></span>
           <span>⏱ כלום לא זז תוך<b>${timeStop}? צא</b></span>
         </div>
-        <div class="sc3">היעד או הסטופ — מה שנוגע קודם קובע · מפסידים מקסימום $${pl.riskAmt<10?pl.riskAmt.toFixed(2):pl.riskAmt.toFixed(0)}${bd?` · 🌍 השוק ${bd.k==='up'?'עולה':bd.k==='down'?'יורד':'מעורב'}${mktAgainst?' — נגדך':''}`:''}${q0.ready?` · 🧠 פרופיל דומה: ${q0.pct}% אצלך`:''}</div>
+        <div class="sc3">היעד או הסטופ — מה שנוגע קודם קובע · מפסידים מקסימום $${pl.riskAmt<10?pl.riskAmt.toFixed(2):pl.riskAmt.toFixed(0)}${bd?` · 🌍 השוק ${bd.k==='up'?'עולה':bd.k==='down'?'יורד':'מעורב'}${mktAgainst?' — נגדך':''}`:''}${q0.ready?` · 🧠 פרופיל דומה: ${q0.pct}% אצלך`:''}${trf.k==='home'?` · 🏠 מגרש ביתי: ${trf.e.w}/${trf.e.n} · ${trf.e.net>=0?'+':''}${trf.e.net.toFixed(1)}R אצלך`:''}</div>
         <div><button class="copy" data-simple="1">${simpleOn?'🔬 הצג הכל (מתקדם)':'✨ חזרה למצב פשוט'}</button></div>
       </div>`;
       const adv= simpleOn? '' : `
@@ -1937,11 +1997,13 @@ function render(){
         <div class="why" style="margin-top:5px">הכמות מחושבת כך שאם הסטופ נפגע — מפסידים בדיוק את סכום הסיכון שהוגדר למעלה. המינוף המוצע שומר מרג׳ין ~20% מהחשבון, והסטופ נפגע הרבה לפני חיסול. האופק: פרץ 5-דק׳ בלי מבנה = דקות · מבנה EMA = שעות · מבנה + מגמת 24ש = ימים.</div>
       </div>`;
     }
-    return `<div class="mrow" data-sym="${r.sym}">
+    return `<div class="mrow v-${s? verdictOf(s).k:'none'}" data-sym="${r.sym}">
       <span class="mname">
         <span class="star${favs.has(r.sym)?' on':''}" data-fav="${r.sym}">${favs.has(r.sym)?'★':'☆'}</span>
         <span class="nn">
-          <span class="n1"><b>${r.sym}</b><span class="tag">${r.market==='stock'?'מניה':'Perp'}</span></span>
+          <span class="n1"><b>${r.sym}</b><span class="tag">${r.market==='stock'?'מניה':'Perp'}</span>${(()=>{const t=turfOf(r.sym,TURF);
+            return t.k==='home'?'<span class="tag turfH" title="מגרש ביתי — רווחי אצלך">🏠</span>'
+              : t.k==='cold'?'<span class="tag turfC" title="מטבע קר — מפסיד אצלך">⚠️</span>':'';})()}</span>
           <span class="sub">${fmtUsd(r.vol)}</span>
         </span>
       </span>
@@ -2185,7 +2247,7 @@ window.__mkt={ rows, scan:()=>scan, state:()=>({filter,sortKey,sortDir,query,exp
   depth:onDepth, depthStats,
   geoLab, setGeom:(s,t)=>{setGeom(s,t);}, geom:()=>({...geom}),
   deep:deepAnalyze, deepCache:()=>deepCache,
-  setMkt, mkt:()=>mkt, fetchKl,
+  setMkt, mkt:()=>mkt, fetchKl, symStats, turfOf,
   breadth, simple:(on)=>{ simpleOn=on!==false;
     try{ localStorage.setItem('na:radar:simple',simpleOn?'1':'0'); }catch(e){} render(); },
   chart:()=>({mode:chart.mode,sym:chart.sym,sigI:chart.sigI,tf:chart.tf,cs:chart.cs?chart.cs.length:0}),
