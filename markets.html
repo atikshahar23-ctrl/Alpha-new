@@ -1646,8 +1646,9 @@ function dailyR(){
   const today=dayKey();
   let sum=0, n=0;
   for(const g of sigs){
-    if(!g.out) continue;
-    if(new Date(g.gAt||g.t).toISOString().slice(0,10)!==today) continue;
+    if(!g || !g.out) continue;
+    const ts=+(g.gAt||g.t);
+    if(!Number.isFinite(ts) || new Date(ts).toISOString().slice(0,10)!==today) continue;
     sum+=g.r||0; n++;
   }
   return {r:+sum.toFixed(2), n};
@@ -1794,7 +1795,13 @@ function speakBrief(){
 let sigs=[];
 try{ sigs=JSON.parse(localStorage.getItem('na:radar:sigs')||'[]'); }catch(e){}
 if(!Array.isArray(sigs)) sigs=[];
-function saveSigs(){ sigs=sigs.slice(-200); try{ localStorage.setItem('na:radar:sigs',JSON.stringify(sigs)); }catch(e){} }
+// a single corrupt entry (an interrupted save, a null) must never take the
+// whole page down — sanitize on load and on every save
+function sigOk(g){ return g && typeof g==='object' && Number.isFinite(+g.t) && +g.t>0
+  && Number.isFinite(+g.entry) && +g.entry>0 && Number.isFinite(+g.stop) && +g.stop>0; }
+sigs=sigs.filter(sigOk).map(g=>Object.assign(g,{t:+g.t}));
+function saveSigs(){ sigs=sigs.filter(sigOk).slice(-200);
+  try{ localStorage.setItem('na:radar:sigs',JSON.stringify(sigs)); }catch(e){} }
 function recordSig(r,s){
   const pl=planOf(s,r);
   if(!(pl.entry>0) || !(Math.abs(pl.entry-pl.stop)>0)) return;
@@ -1860,7 +1867,9 @@ function sigStats(){
     net:+done.reduce((a,g)=>a+(g.r||0),0).toFixed(1) };
 }
 let perfOpen=false;
-function renderPerf(){
+function renderPerf(){ try{ renderPerfInner(); }catch(e){
+  const el=$('perf'); if(el){ el.className='perf'; el.textContent='🎯 מד הביצועים בשגיאה — נקה עם רענון'; } } }
+function renderPerfInner(){
   const el=$('perf'); if(!el) return;
   const st=sigStats();
   let h;
@@ -2277,10 +2286,12 @@ function renderGoStrip(){
 }
 function render(){
   const el=$('list');
-  renderGoStrip();
-  renderMktDir();
-  renderTape();
-  renderTilt();
+  // no auxiliary widget is ever allowed to kill the main list — the exact
+  // failure mode a corrupt ledger caused once (page opened, nothing rendered)
+  try{ renderGoStrip(); }catch(e){}
+  try{ renderMktDir(); }catch(e){}
+  try{ renderTape(); }catch(e){}
+  try{ renderTilt(); }catch(e){}
   $('scanStat').textContent=scanState.running? `⟳ ${scanState.done}/${scanState.total}` : '';
   if(!universe.length) return;
   const rs=rows();
@@ -2294,7 +2305,7 @@ function render(){
     ? `<div class="empty" style="border:1px solid rgba(255,82,82,.4);border-radius:10px;margin:6px 0">📡 נתוני המניות לא נגישים כרגע — גם ישירות מיאהו וגם דרך ${Y_VIAS.length-1} גשרים. זו חסימת רשת, לא תקלה באפליקציה. נסה רשת אחרת (WiFi/סלולר) או רענן בעוד דקה.</div>`
     : '';
   const top=el.scrollTop;
-  el.innerHTML=deadNote+rs.slice(0,200).map(r=>{
+  el.innerHTML=deadNote+rs.slice(0,200).map(r=>{ try{
     const s=scan[r.sym];
     const hor=s? horizonOf(s,r.chg) : null;
     const recCell = s
@@ -2433,7 +2444,7 @@ function render(){
       <span class="rec">${recCell} ${hor?`<span class="hor"><i class="${hor.k}">${hor.t}</i></span>`:''}</span>
       ${det}
     </div>`;
-  }).join('') + (rs.length>200? `<div class="empty">מוצגים 200 מתוך ${rs.length} — צמצם עם חיפוש</div>`:'');
+  }catch(e){ return ''; } }).join('') + (rs.length>200? `<div class="empty">מוצגים 200 מתוך ${rs.length} — צמצם עם חיפוש</div>`:'');
   el.scrollTop=top;
   // a flash is one render long — the next tick decides again
   for(const k in priceFlash) delete priceFlash[k];
