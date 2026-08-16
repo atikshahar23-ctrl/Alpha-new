@@ -168,6 +168,15 @@ main{max-width:900px;margin:0 auto;padding:10px 10px calc(20px + env(safe-area-i
   background:#0f0f14;border:1px solid #24242c;border-radius:9px;padding:6px 10px;font-size:11px}
 .smx .mt{font-weight:800;color:var(--gold);font-size:11px}
 .smx b{font-family:'JetBrains Mono',monospace;margin-inline-start:4px}
+.g20{display:flex;align-items:center;gap:3px;flex-wrap:wrap;margin-top:2px}
+.g20 i{width:9px;height:9px;border-radius:2px;background:#3a2026;border:1px solid #57303a}
+.g20 i.k{background:rgba(0,230,118,.55);border-color:rgba(0,230,118,.8)}
+.g20 span{font-size:10px;color:var(--dim);font-family:'JetBrains Mono',monospace;margin-inline-start:5px}
+.glist{display:flex;flex-direction:column;gap:2px;margin:6px 0;background:#0f0f14;
+  border:1px solid #24242c;border-radius:9px;padding:6px 10px;font-size:10.5px}
+.glist span{color:var(--dim)} .glist span.ok{color:var(--up)} .glist span.no{color:var(--down)}
+.glist b{font-family:'JetBrains Mono',monospace;margin-inline-start:4px}
+.glist i{font-style:normal}
 /* ── PHONE LAYOUT — two-line cards, thumb bar ─────────────────────────── */
 @media (max-width:640px){
   .mhead{display:none}
@@ -1358,6 +1367,55 @@ function renderTape(){
   el.innerHTML=`<div class="tapein">${seg}<span class="sep">◆</span>${seg}</div>`;
 }
 
+// ── 🛡 THE GAUNTLET — 20 checks before any entry recommendation ─────────
+// "Check yourself 20 times before recommending", implemented literally.
+// Five HARD data-integrity gates (a recommendation computed from stale,
+// gapped, or inconsistent data is a preventable mistake — those are
+// blocked outright), ten signal gates, five context gates. Every gate is
+// shown with its measured value. A 🟢 on the decision card now means
+// 20/20 — anything less says exactly which checks failed. What no gate
+// can do is predict the future, and the card never claims otherwise.
+function gauntlet(s,r){
+  const g=[]; const add=(t,ok,val,hard)=>g.push({t, ok:!!ok, val:String(val??''), hard:!!hard});
+  // — data integrity (hard: fail ⇒ no recommendation at all) —
+  add('מחיר חי תקין', r.price>0 && isFinite(r.price), r.price, true);
+  const age=(Date.now()-(s.at||0))/1000;
+  add('קריאה טרייה', age<150 && !r.stale, Math.round(age)+'ש׳', true);
+  const cs=candles[r.sym]||[];
+  const gapMin=cs.length? (Date.now()-cs[cs.length-1].t)/60000 : 999;
+  add('רצף נרות שלם', cs.length>=60 && gapMin<4, cs.length+' נרות', true);
+  add('תנודתיות שפויה', s.atr>0 && s.atr/s.price<0.1, (s.atr/s.price*100).toFixed(2)+'% ATR', true);
+  add('עקביות מקורות', s.price>0 && Math.abs(r.price-s.price)/s.price<0.02,
+    ((r.price/s.price-1)*100).toFixed(2)+'% פער', true);
+  // — signal —
+  const d=s.dir==='long'?1:-1;
+  add('ציון 60+', s.score>=60, s.score);
+  add('מגמת 15ד בכיוון', Math.sign(s.m15)===d && Math.abs(s.m15)>=0.15, s.m15.toFixed(2)+'%');
+  add('דחיפת 5ד בכיוון', Math.sign(s.m5)===d && Math.abs(s.m5)>=0.2, s.m5.toFixed(2)+'%');
+  add('מבנה EMA בכיוון', Math.sign(s.gap)===d && Math.abs(s.gap)>=0.12, s.gap.toFixed(3)+'%');
+  add('RSI עם מקום', s.dir==='long'? s.rsi<72 : s.rsi>28, Math.round(s.rsi));
+  add('מחזור תומך ×1.3+', s.volX>=1.3, '×'+s.volX.toFixed(1));
+  add('נזילות $10M+', (r.vol||0)>=1e7, fmtUsd(r.vol||0));
+  add('לא רדוף (עד 2.2 ATR)', Math.abs(s.ext||0)<=2.2, Math.abs(s.ext||0).toFixed(1)+' ATR');
+  add('MACD בכיוון', (s.macdUp?1:-1)===d, s.macdUp?'חיובי':'שלילי');
+  add('הסכמת מומנטום 5ד/15ד', Math.sign(s.m5)===Math.sign(s.m15), 'מיושר');
+  // — context —
+  const tp=trapsOf(r.sym);
+  add('אפס תרגילים על הטייפ', !tp.length, tp.length? tp.length+' דפוסים':'נקי');
+  const bd=breadth();
+  add('השוק הכללי לא נגד', !bd || (s.dir==='long'? bd.k!=='down' : bd.k!=='up'),
+    bd? (bd.k==='up'?'עולה':bd.k==='down'?'יורד':'מעורב'):'—');
+  const trf=turfOf(r.sym);
+  add('לא מגרש קר אצלך', trf.k!=='cold', trf.k==='home'?'ביתי 🏠':trf.k==='cold'?'קר':'ניטרלי');
+  const q=qualityNum(s);
+  add('פרופיל היסטורי 50%+', !q.ready || q.pct>=50, q.ready? q.pct+'%':'אין מדגם עדיין');
+  const tm=timingOf(s);
+  add('קצב לא נגד היעד', tm.paceOk || Math.abs(tm.pace)<0.02, tm.paceTxt);
+  const hardFail=g.filter(x=>x.hard && !x.ok).length;
+  const pass=g.filter(x=>x.ok).length;
+  return {g, pass, total:g.length, hardFail, full: pass===g.length};
+}
+
 // ── 🌍 MARKET BREADTH — which way is the WHOLE market moving ────────────
 // Counted, not guessed: the share of contracts green on the 15-minute
 // window (scan data), the 24h share, and the volume-weighted average 24h
@@ -1876,11 +1934,9 @@ function checkAlerts(){
     recordSig(r,s);              // the ledger grades every 🟢, sound on or off
     if(!alertsOn) continue;
     if(strictOn){
-      // selective mode: nag only for the cleanest setups — no detected
-      // tricks on the tape, (once there is data) a similar-profile
-      // history at 50%+, and never on a symbol that keeps losing for YOU
-      const q=qualityNum(s);
-      if(trapsOf(r.sym).length || (q.ready && q.pct<50) || turfOf(r.sym).k==='cold') continue;
+      // selective mode: only 20/20 setups ring — the full gauntlet
+      // (data integrity, signal, market context, personal history)
+      if(!gauntlet(s,r).full) continue;
     }
     const msg=`${r.sym} ${s.dir==='long'?'לונג ▲':'שורט ▼'} · ציון ${s.score} · ${horizonOf(s,r.chg).t}`;
     toast('🟢 '+msg);
@@ -2006,23 +2062,25 @@ function render(){
       const bd=breadth();
       const tp=trapsOf(r.sym);
       const mktAgainst= bd? (s.dir==='long'? bd.k==='down' : bd.k==='up') : false;
+      const gt=gauntlet(s,r);
       let dec,decCls,why2;
-      if(v.k==='go' && !tp.length && !mktAgainst){ dec='🟢 אפשר להיכנס עכשיו'; decCls='up';
-        why2='איתות חם, טייפ נקי מתרגילים, והשוק הכללי לא נגד הכיוון'; }
+      if(gt.hardFail){ dec='⛔ אין המלצה'; decCls='';
+        why2='בדיקת אמינות נתונים נכשלה ('+gt.g.filter(x=>x.hard&&!x.ok).map(x=>x.t).join(', ')+') — לא ממליצים על סמך נתונים חשודים'; }
+      else if(v.k==='go' && gt.full){ dec='🟢 אפשר להיכנס עכשיו'; decCls='up';
+        why2='עבר את כל 20 הבדיקות — אמינות נתונים, איתות, הקשר שוק והיסטוריה אישית'; }
       else if(v.k==='go'){ dec='🟡 חכה רגע'; decCls='gold';
-        why2= tp.length? 'האיתות חם אבל זוהו '+tp.length+' תרגילים על הטייפ — תן להם להתנקות'
-          : 'האיתות חם אבל השוק הכללי נע נגד הכיוון — סיכון מוגבר'; }
+        const miss=gt.g.filter(x=>!x.ok).map(x=>x.t);
+        why2=`עבר ${gt.pass}/20 בדיקות — נפלו: ${miss.slice(0,3).join(' · ')}${miss.length>3?' ועוד':''}`; }
       else if(v.k==='wait'||v.k==='late'){ dec='🟡 חכה רגע'; decCls='gold'; why2=v.t.replace(/^\S+\s/,''); }
       else if(v.k==='watch'){ dec='⚪ עוד לא'; decCls=''; why2='איתות בינוני — מעקב בלבד, בלי כניסה'; }
       else { dec='🔴 לא להיכנס'; decCls=''; why2='אין איתות חזק מספיק'; }
       const trf=turfOf(r.sym);
-      if(trf.k==='cold' && decCls==='up'){ dec='🟡 חכה רגע'; decCls='gold';
-        why2=`התנאים טובים, אבל המטבע הזה הפסיד לך ${trf.e.net.toFixed(1)}R ב-${trf.e.n} עסקאות — עדיף מגרש ביתי`; }
       const timeStop= hor.k==='scalp'?'15 דק׳': hor.k==='short'?'שעה': hor.k==='intra'?'4 שעות':'יממה';
       const q0=qualityNum(s);
       const card=`<div class="scard ${decCls}">
         <div class="sc1">${dec}${r.stale?' <span style="font-size:12px;color:var(--dim)">🌙 השוק סגור — נתונים מהסגירה</span>':''}</div>
         <div class="sc2">${why2}</div>
+        <div class="g20">${gt.g.map(x=>`<i class="${x.ok?'k':'f'}" title="${x.t}: ${x.val}"></i>`).join('')}<span>${gt.pass}/20 בדיקות ${gt.full?'✓':''}</span></div>
         <div class="scr">
           <span>🚪 כניסה<b>${fx(pl.entry)}</b></span>
           <span>✅ צא ברווח ב-<b>${fx(pl.t1)}</b></span>
@@ -2038,6 +2096,8 @@ function render(){
         <div class="checks">${chips}</div>
         <div class="why">${s.why}</div>
         <div class="why" style="color:var(--cyan)">🧠 ${qualityTxt(s)}</div>
+        <div class="glist"><b style="font-size:11px;color:var(--gold)">🛡 20 הבדיקות, אחת-אחת:</b>
+          ${gt.g.map(x=>`<span class="${x.ok?'ok':'no'}">${x.ok?'✓':'✗'} ${x.t} <b>${x.val}</b>${x.hard?' <i title="בדיקת אמינות קשיחה">🛡</i>':''}</span>`).join('')}</div>
         <div class="mins">
           <span class="mt">⏱ ניתוח בדקות</span>
           <span class="mage" data-age="${s.at}"${s.live?' data-live="1"':''}>נמדד לפני —</span>
@@ -2366,7 +2426,7 @@ window.__mkt={ rows, scan:()=>scan, state:()=>({filter,sortKey,sortDir,query,exp
   geoLab, setGeom:(s,t)=>{setGeom(s,t);}, geom:()=>({...geom}),
   deep:deepAnalyze, deepCache:()=>deepCache,
   setMkt, mkt:()=>mkt, fetchKl, symStats, turfOf,
-  superMetrics, tape:renderTape,
+  superMetrics, tape:renderTape, gauntlet,
   breadth, simple:(on)=>{ simpleOn=on!==false;
     try{ localStorage.setItem('na:radar:simple',simpleOn?'1':'0'); }catch(e){} render(); },
   chart:()=>({mode:chart.mode,sym:chart.sym,sigI:chart.sigI,tf:chart.tf,cs:chart.cs?chart.cs.length:0}),
