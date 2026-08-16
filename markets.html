@@ -486,6 +486,39 @@ try{ mkt=localStorage.getItem('na:radar:mkt')==='stock'?'stock':'crypto'; }catch
 const uniCache={crypto:null, stock:null};
 const scanCache={crypto:{}, stock:{}};
 const YQ='https://query1.finance.yahoo.com/v8/finance/chart/';
+// Yahoo blocks browser CORS on most networks — the reason stock mode
+// showed no data. Real fix, no fake data: try direct, then public CORS
+// bridges in order, remember whichever worked, and SAY so on screen.
+// If everything is blocked, stock mode says that too instead of dashes.
+const Y_VIAS=[
+  {n:'ישיר',            f:u=>u},
+  {n:'גשר corsproxy',   f:u=>'https://corsproxy.io/?url='+encodeURIComponent(u)},
+  {n:'גשר allorigins',  f:u=>'https://api.allorigins.win/raw?url='+encodeURIComponent(u)},
+  {n:'גשר codetabs',    f:u=>'https://api.codetabs.com/v1/proxy?quest='+encodeURIComponent(u)},
+];
+let yVia=0, yViaNoted=false;
+async function yFetch(url){
+  for(let k=0;k<Y_VIAS.length;k++){
+    const i=(yVia+k)%Y_VIAS.length;
+    try{
+      const ctrl=new AbortController();
+      const to=setTimeout(()=>ctrl.abort(),9000);
+      const res=await fetch(Y_VIAS[i].f(url),{signal:ctrl.signal});
+      clearTimeout(to);
+      if(!res.ok) continue;
+      const j=await res.json();
+      if(j && j.chart){
+        if(i!==yVia || (!yViaNoted && i>0)){
+          yViaNoted=true;
+          if(i>0) toast('📊 נתוני יאהו אמיתיים דרך '+Y_VIAS[i].n+' (הגישה הישירה חסומה ברשת הזו)');
+        }
+        yVia=i;
+        return j;
+      }
+    }catch(e){}
+  }
+  return null;
+}
 function parseYahoo(j){
   const R=j && j.chart && j.chart.result && j.chart.result[0];
   if(!R) return null;
@@ -509,8 +542,8 @@ async function fetchKl(r,interval,opts){
     const url= opts.startTime
       ? `${YQ}${encodeURIComponent(r.pair)}?interval=${iv}&period1=${Math.floor(opts.startTime/1000)}&period2=${Math.floor(Date.now()/1000)}`
       : `${YQ}${encodeURIComponent(r.pair)}?interval=${iv}&range=${rg}`;
-    const res=await fetch(url); if(!res.ok) return null;
-    const p=parseYahoo(await res.json()); if(!p) return null;
+    const j=await yFetch(url); if(!j) return null;
+    const p=parseYahoo(j); if(!p) return null;
     if(interval==='1m' && !opts.startTime){
       // the quote rides along — update the row honestly
       if(p.meta.regularMarketPrice>0) r.price=+p.meta.regularMarketPrice;
@@ -2254,8 +2287,14 @@ function render(){
   const TURF=symStats();
   $('count').textContent=rs.length+(mkt==='stock'?' ניירות':' חוזים');
   if(!rs.length){ el.innerHTML='<div class="empty">אין חוזה שתואם</div>'; return; }
+  // stock mode with a finished sweep and not one real price = every path
+  // to Yahoo is blocked — say it, never show a wall of silent dashes
+  const stockDead= mkt==='stock' && scanState.at>0 && !scanState.running && !universe.some(x=>x.price>0);
+  const deadNote= stockDead
+    ? `<div class="empty" style="border:1px solid rgba(255,82,82,.4);border-radius:10px;margin:6px 0">📡 נתוני המניות לא נגישים כרגע — גם ישירות מיאהו וגם דרך ${Y_VIAS.length-1} גשרים. זו חסימת רשת, לא תקלה באפליקציה. נסה רשת אחרת (WiFi/סלולר) או רענן בעוד דקה.</div>`
+    : '';
   const top=el.scrollTop;
-  el.innerHTML=rs.slice(0,200).map(r=>{
+  el.innerHTML=deadNote+rs.slice(0,200).map(r=>{
     const s=scan[r.sym];
     const hor=s? horizonOf(s,r.chg) : null;
     const recCell = s
