@@ -237,6 +237,14 @@ main{max-width:900px;margin:0 auto;padding:10px 10px calc(20px + env(safe-area-i
 .chInfo b{font-family:'JetBrains Mono',monospace;color:var(--txt);margin-inline-start:4px}
 .perf .siglist span{cursor:pointer}
 .perf .siglist span:active{opacity:.6}
+.tiltbar{margin:0 0 8px;padding:9px 12px;border-radius:10px;font-size:12.5px;
+  background:rgba(255,82,82,.1);border:1.5px solid rgba(255,82,82,.55);color:var(--txt)}
+.tiltbar b{font-family:'JetBrains Mono',monospace;color:var(--down)}
+.jchips{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px;
+  padding:7px 10px;background:#0f0f14;border:1px solid #24242c;border-radius:9px;font-size:11px}
+.jchips button{background:#141419;border:1px solid #2a2a33;color:var(--dim);border-radius:999px;
+  padding:4px 11px;font-size:11px;cursor:pointer;font-family:inherit}
+.jchips button.on{color:var(--gold);border-color:var(--gold);background:#1a1710}
 .mdir{margin:0 0 8px;padding:7px 12px;border-radius:10px;font-size:12px;font-weight:700;
   border:1px solid var(--line);color:var(--dim);background:rgba(255,255,255,.03)}
 .mdir b{font-family:'JetBrains Mono',monospace}
@@ -346,6 +354,7 @@ footer{max-width:900px;margin:0 auto;padding:8px 14px 22px;color:var(--dim);font
     <label>💵 סכום בסיכון $<input id="riskAmt" type="number" min="0.1" step="0.5" inputmode="decimal"></label>
     <span class="acct-hint" id="riskWarn"></span>
   </div>
+  <div id="tilt" class="tiltbar" hidden></div>
   <div id="mktDir" class="mdir" hidden></div>
   <div id="perf" class="perf"></div>
   <div id="goStrip" hidden></div>
@@ -398,6 +407,7 @@ footer{max-width:900px;margin:0 auto;padding:8px 14px 22px;color:var(--dim);font
       </div>
     </div>
     <div class="chInfo" id="chInfo"></div>
+    <div class="jchips" id="sigJournal" hidden></div>
   </div>
 </div>
 <div id="histModal" hidden>
@@ -1301,6 +1311,7 @@ function openCoinChart(sym){
   chTfSync();
   const r=universe.find(x=>x.sym===sym);
   if(!candles[sym] && r) seedCandles(sym,r).then(chDrawCoin);
+  renderJournal();                       // coin view has no trade to tag — hides itself
   chDrawCoin();
   chart.timer=setInterval(()=>{ chDrawCoin(); chMaybeRefresh(); },600);
   syncKlineSubs();          // the charted coin joins the live stream
@@ -1339,9 +1350,29 @@ async function openSigChart(i){
   $('chTitle').textContent='🎯 '+g.sym+'/USDT';
   chTfSync();
   chDrawSig();
+  renderJournal();
   await chLoadTf();
   chart.timer=setInterval(()=>{ chDrawSig(); chMaybeRefresh(); },1000);   // R + clock live
 }
+// 📓 emotion journal — one tag per trade; the quality trainer treats the
+// tag as a dimension, so "how do my FOMO trades really do?" gets a
+// measured answer once there are 8 tagged outcomes per emotion
+const EMOS=[['plan','📋 לפי תוכנית'],['fomo','😰 FOMO'],['revenge','😤 נקמה'],['sure','😎 ביטחון יתר']];
+function renderJournal(){
+  const el=$('sigJournal'); if(!el) return;
+  const g=sigs[chart.sigI];
+  if(chart.mode!=='sig' || !g){ el.hidden=true; return; }
+  el.hidden=false;
+  el.innerHTML=`<span style="color:var(--dim)">📓 מה הרגשת בכניסה?</span>`+
+    EMOS.map(([k,t])=>`<button data-emo="${k}" class="${g.emo===k?'on':''}">${t}</button>`).join('')+
+    `<span style="color:var(--dim);font-size:9.5px">המאמן ילמד: מ-8 עסקאות מתויגות לרגש — תראה את האמת עליו</span>`;
+}
+$('sigJournal').onclick=e=>{
+  const b=e.target.closest('[data-emo]'); if(!b) return;
+  const g=sigs[chart.sigI]; if(!g) return;
+  g.emo= g.emo===b.dataset.emo? null : b.dataset.emo;
+  saveSigs(); renderJournal();
+};
 
 // ── 🎓 SUPER METRICS — the pro desk's session read, from real candles ───
 // VWAP (volume-weighted average price of the session window — where the
@@ -1568,6 +1599,42 @@ function deepBlock(sym){
   return deepHtml(sym,c.d);
 }
 
+// ── 🛑 TILT GUARD — the discipline layer every prop desk enforces ───────
+// Decision quality collapses after a losing streak; pros get cut off by
+// their risk desk. Here: when the day's graded trades reach -3R the radar
+// says STOP for today, out loud, and mutes GO alerts until midnight.
+// Everything is still recorded and measured — only the nagging stops.
+// The trader can override, and the override itself is a conscious act.
+const TILT_R=3;
+let tiltOverride='';
+try{ tiltOverride=localStorage.getItem('na:radar:tiltok')||''; }catch(e){}
+const dayKey=()=>new Date().toISOString().slice(0,10);
+function dailyR(){
+  const today=dayKey();
+  let sum=0, n=0;
+  for(const g of sigs){
+    if(!g.out) continue;
+    if(new Date(g.gAt||g.t).toISOString().slice(0,10)!==today) continue;
+    sum+=g.r||0; n++;
+  }
+  return {r:+sum.toFixed(2), n};
+}
+function tiltActive(){
+  const d=dailyR();
+  return d.r<=-TILT_R && tiltOverride!==dayKey();
+}
+function renderTilt(){
+  const el=$('tilt'); if(!el) return;
+  const d=dailyR();
+  if(d.r<=-TILT_R){
+    el.hidden=false;
+    el.innerHTML=`🛑 <b>מגן טילט:</b> ${d.n} עסקאות היום, נטו <b>${d.r}R</b> — יום אדום. `+
+      (tiltOverride===dayKey()
+        ? 'בחרת להמשיך בכל זאת — ההתראות פעילות. <button class="hbtn2" data-tilt="on">החזר את המגן</button>'
+        : 'ההתראות מושתקות עד חצות. הסטטיסטיקה ברורה: אחרי רצף הפסדים איכות ההחלטות צונחת. <button class="hbtn2" data-tilt="off">אני ממשיך בכל זאת</button>');
+  } else el.hidden=true;
+}
+
 // ── 🎬 TIME-MACHINE TRAINER — deliberate practice on real history ───────
 // The chart rewinds to a random point in the symbol's real past with the
 // FUTURE HIDDEN, and the trader trades it candle by candle: enter long or
@@ -1723,10 +1790,10 @@ function gradeSigs(){
     if(p>0){
       const hitStop = g.dir==='long'? p<=g.stop : p>=g.stop;
       const hitT1   = g.dir==='long'? p>=g.t1  : p<=g.t1;
-      if(hitStop){ g.out='stop'; g.r=-1; dirty=true; continue; }
-      if(hitT1){ g.out='t1'; g.r=sigWinR(g); dirty=true; continue; }
+      if(hitStop){ g.out='stop'; g.r=-1; g.gAt=Date.now(); dirty=true; continue; }
+      if(hitT1){ g.out='t1'; g.r=sigWinR(g); g.gAt=Date.now(); dirty=true; continue; }
     }
-    if(now-g.t>SIG_TTL && p>0){ g.out='exp'; g.r=sigR(g,p); dirty=true; }
+    if(now-g.t>SIG_TTL && p>0){ g.out='exp'; g.r=sigR(g,p); g.gAt=Date.now(); dirty=true; }
   }
   if(dirty){ saveSigs(); renderPerf(); }
 }
@@ -1744,10 +1811,10 @@ async function backfillSigs(){
         const h=a0.h, l=a0.l; lastC=a0.c;
         const sHit=g.dir==='long'? l<=g.stop : h>=g.stop;
         const tHit=g.dir==='long'? h>=g.t1  : l<=g.t1;
-        if(sHit){ g.out='stop'; g.r=-1; dirty=true; break; }   // both in one candle → conservative
-        if(tHit){ g.out='t1'; g.r=sigWinR(g); dirty=true; break; }
+        if(sHit){ g.out='stop'; g.r=-1; g.gAt=Date.now(); dirty=true; break; }   // both in one candle → conservative
+        if(tHit){ g.out='t1'; g.r=sigWinR(g); g.gAt=Date.now(); dirty=true; break; }
       }
-      if(!g.out && Date.now()-g.t>SIG_TTL && lastC>0){ g.out='exp'; g.r=sigR(g,lastC); dirty=true; }
+      if(!g.out && Date.now()-g.t>SIG_TTL && lastC>0){ g.out='exp'; g.r=sigR(g,lastC); g.gAt=Date.now(); dirty=true; }
     }catch(e){}
   }
   if(dirty) saveSigs();
@@ -1817,6 +1884,8 @@ const QDIMS=[
   {t:'מרחק מהממוצע', get:g=>g.ext!=null?Math.abs(g.ext):null, buckets:[[0,1,'עד 1 ATR מהממוצע'],[1,2.21,'1-2.2 ATR מהממוצע']]},
   {t:'כיוון',  get:g=>g.dir,   cats:[['long','לונג'],['short','שורט']]},
   {t:'שעה',    get:g=>new Date(g.t).getHours(), buckets:[[0,8,'לילה (0-8)'],[8,16,'יום (8-16)'],[16,24,'ערב (16-24)']]},
+  {t:'רגש',    get:g=>g.emo||null,
+    cats:[['plan','📋 לפי תוכנית'],['fomo','😰 FOMO'],['revenge','😤 נקמה'],['sure','😎 ביטחון יתר']]},
 ];
 function bucketOf(d,g){
   const v=d.get(g); if(v==null||Number.isNaN(v)) return null;
@@ -1919,7 +1988,12 @@ function renderHist(){
     `<span>● פתוחים<b style="color:var(--gold)">${st.open}</b></span>`+
     (st.done?`<span>פגיעה<b>${Math.round(st.wins/st.done*100)}%</b></span>`+
       `<span>נטו<b style="color:${st.net>=0?'var(--up)':'var(--down)'}">${st.net>=0?'+':''}${st.net}R</b></span>`+
-      `<span>ממוצע<b>${(avg>=0?'+':'')+avg.toFixed(2)}R</b></span>`:'');
+      `<span>ממוצע<b>${(avg>=0?'+':'')+avg.toFixed(2)}R</b></span>`:'')+
+    (practice.n>=5 && st.done? (()=>{
+      const pw=Math.round(practice.w/practice.n*100), rw=Math.round(st.wins/st.done*100);
+      const gap=pw-rw;
+      return `<span>🎬 אימון<b>${pw}% (${practice.n})</b></span>`+
+        `<span title="הפער בין אימון לאמת ≈ מחיר הרגש">פער אימון-אמת<b style="color:${Math.abs(gap)>=15?'var(--gold)':'var(--dim)'}">${gap>0?'+':''}${gap}%</b></span>`; })() : '');
   drawEq($('eqCv'));
   $('hInsights').innerHTML=buildInsights();
   const rows=sigs.map((g,idx)=>({g,idx})).reverse().filter(({g})=>{
@@ -2070,6 +2144,7 @@ function checkAlerts(){
     goAlerted[r.sym]=now;
     recordSig(r,s);              // the ledger grades every 🟢, sound on or off
     if(!alertsOn) continue;
+    if(tiltActive()) continue;         // red day — the guard mutes the nagging
     if(strictOn){
       // selective mode: only 20/20 setups ring — the full gauntlet
       // (data integrity, signal, market context, personal history)
@@ -2172,6 +2247,7 @@ function render(){
   renderGoStrip();
   renderMktDir();
   renderTape();
+  renderTilt();
   $('scanStat').textContent=scanState.running? `⟳ ${scanState.done}/${scanState.total}` : '';
   if(!universe.length) return;
   const rs=rows();
@@ -2380,6 +2456,16 @@ try{
   const pm=new URLSearchParams(location.search).get('mkt');
   if(pm==='stock' && mkt!=='stock') setMkt('stock');
 }catch(e){}
+$('tilt').onclick=e=>{
+  const b=e.target.closest('[data-tilt]'); if(!b) return;
+  if(b.dataset.tilt==='off'){ tiltOverride=dayKey();
+    try{ localStorage.setItem('na:radar:tiltok',tiltOverride); }catch(err){}
+    toast('המגן כובה להיום — זו הייתה החלטה מודעת'); }
+  else { tiltOverride='';
+    try{ localStorage.setItem('na:radar:tiltok',''); }catch(err){}
+    toast('🛡 המגן חזר — התראות מושתקות עד חצות'); }
+  renderTilt();
+};
 $('perf').onclick=e=>{
   if(e.target.closest('#histBtn')){ openHist(); return; }
   const sig=e.target.closest('[data-sig]');
@@ -2576,7 +2662,7 @@ window.__mkt={ rows, scan:()=>scan, state:()=>({filter,sortKey,sortDir,query,exp
   trainExit:()=>{ trSettle('manual'); trDraw(); }, trainQuit:trQuit,
   trainState:()=>({on:train.on, idx:train.idx, total:train.cs?train.cs.length:0,
     pos:train.pos?{...train.pos}:null, practice:{...practice}}),
-  brief:speakBrief,
+  brief:speakBrief, dailyR, tiltActive, journal:renderJournal,
   breadth, simple:(on)=>{ simpleOn=on!==false;
     try{ localStorage.setItem('na:radar:simple',simpleOn?'1':'0'); }catch(e){} render(); },
   chart:()=>({mode:chart.mode,sym:chart.sym,sigI:chart.sigI,tf:chart.tf,cs:chart.cs?chart.cs.length:0}),
