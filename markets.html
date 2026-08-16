@@ -177,6 +177,16 @@ main{max-width:900px;margin:0 auto;padding:10px 10px calc(20px + env(safe-area-i
 .glist span{color:var(--dim)} .glist span.ok{color:var(--up)} .glist span.no{color:var(--down)}
 .glist b{font-family:'JetBrains Mono',monospace;margin-inline-start:4px}
 .glist i{font-style:normal}
+#trainBar{display:flex;flex-direction:column;gap:6px;margin-top:7px;
+  background:#12100a;border:1px solid rgba(255,179,0,.35);border-radius:9px;padding:8px 10px}
+#trainBar[hidden]{display:none}
+.trStat{font-size:11px;color:var(--gold)}
+.trStat b{font-family:'JetBrains Mono',monospace}
+.trBtns{display:flex;gap:6px;flex-wrap:wrap}
+.trBtns button{background:#1a1710;border:1px solid rgba(255,179,0,.3);color:var(--txt);
+  border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;font-family:inherit}
+.trBtns #trLongB{color:var(--up);border-color:rgba(0,230,118,.4)}
+.trBtns #trShortB{color:var(--down);border-color:rgba(255,82,82,.4)}
 /* ── PHONE LAYOUT — two-line cards, thumb bar ─────────────────────────── */
 @media (max-width:640px){
   .mhead{display:none}
@@ -317,7 +327,8 @@ footer{max-width:900px;margin:0 auto;padding:8px 14px 22px;color:var(--dim);font
   <span id="nextScan"></span>
   <span class="hspace"></span>
   <button class="hbtn" id="alertBtn" title="התראה + צליל כשאיתות נהיה 🟢">🔔</button>
-  <button class="hbtn" id="strictBtn" title="מצב סלקטיבי: התראה רק כשאין תרגילים מזוהים והפרופיל ההיסטורי שלך מעל 50%">🎯</button>
+  <button class="hbtn" id="strictBtn" title="מצב סלקטיבי: התראה רק על 20/20 בדיקות">🎯</button>
+  <button class="hbtn" id="voiceBtn" title="תקציר קולי: מצב השוק, האיתותים החמים והביצועים">🔊</button>
   <button class="hbtn" id="refreshBtn">↻ רענן</button>
   <a class="hbtn" href="./">⌂ אלפא</a>
 </header>
@@ -372,8 +383,20 @@ footer{max-width:900px;margin:0 auto;padding:8px 14px 22px;color:var(--dim);font
       <button data-tf="1h">1ש׳</button><button data-tf="15m">15ד׳</button>
       <button data-tf="5m">5ד׳</button><button data-tf="1m" class="on">1ד׳</button>
       <button data-tf="1s">1שנ׳</button>
+      <button id="trGo" style="color:var(--gold)">🎬 אימון</button>
     </div>
     <canvas id="chCv"></canvas>
+    <div id="trainBar" hidden>
+      <div class="trStat" id="trStat"></div>
+      <div class="trBtns">
+        <button id="trNextB">▶ נר הבא</button>
+        <button id="trFast">⏩ 5 נרות</button>
+        <button id="trLongB">🟢 לונג</button>
+        <button id="trShortB">🔴 שורט</button>
+        <button id="trExitB" hidden>✋ סגור עסקה</button>
+        <button id="trQuitB">✕ סיום אימון</button>
+      </div>
+    </div>
     <div class="chInfo" id="chInfo"></div>
   </div>
 </div>
@@ -1214,6 +1237,7 @@ function drawCandles(cv,cs,opt){
 }
 function chClose(){
   if(chart.timer){ clearInterval(chart.timer); chart.timer=null; }
+  try{ train.on=false; train.pos=null; $('trainBar').hidden=true; }catch(e){}
   chart.mode=null; chart.sym=null; chart.sigI=-1; chart.cs=null;
   $('chModal').hidden=true;
   syncKlineSubs();
@@ -1542,6 +1566,119 @@ function deepBlock(sym){
   if(c.loading) return '<div class="deep"><span class="dn">🧠 מנתח לעומק — מושך 15ד + שעתי, רמות, זרימה…</span></div>';
   if(!c.d) return '<div class="deep"><span class="dn">הניתוח נכשל (רשת) — נסה שוב</span></div>';
   return deepHtml(sym,c.d);
+}
+
+// ── 🎬 TIME-MACHINE TRAINER — deliberate practice on real history ───────
+// The chart rewinds to a random point in the symbol's real past with the
+// FUTURE HIDDEN, and the trader trades it candle by candle: enter long or
+// short (stop/target from the active geometry), advance, get graded by
+// the same conservative rules as the ledger. A flight simulator for
+// entries and exits — real tape, zero money, and a separate practice
+// scoreboard that persists. Nothing here touches the live signal ledger.
+const train={on:false, cs:null, idx:0, pos:null};
+let practice={n:0,w:0,net:0};
+try{ const pr=JSON.parse(localStorage.getItem('na:radar:practice')||'null');
+  if(pr && typeof pr.n==='number') practice=pr; }catch(e){}
+function savePractice(){ try{ localStorage.setItem('na:radar:practice',JSON.stringify(practice)); }catch(e){} }
+function trPosR(pos,px){
+  const dist=Math.abs(pos.entry-pos.stop);
+  return dist>0? Math.max(-1,Math.min(pos.rr,(pos.dir==='long'? px-pos.entry : pos.entry-px)/dist)) : 0;
+}
+async function trStart(atIdx){
+  const sym=chart.sym; if(!sym) return;
+  const r=universe.find(x=>x.sym===sym); if(!r) return;
+  let cs=null;
+  try{ cs=await fetchKl(r,'1m',{limit:500}); }catch(e){}
+  if(!cs || cs.length<120){ toast('אין מספיק היסטוריה לאימון על הנייר הזה'); return; }
+  train.on=true; train.cs=cs; train.pos=null;
+  train.idx= (atIdx && atIdx>=60 && atIdx<cs.length)? atIdx
+    : 60+Math.floor(Math.random()*(cs.length-100));
+  $('trainBar').hidden=false;
+  if(chart.timer){ clearInterval(chart.timer); chart.timer=null; }   // freeze the live feed
+  $('chSub').textContent='🎬 מכונת זמן — עבר אמיתי, העתיד מוסתר';
+  trDraw();
+}
+function trDraw(){
+  const r=universe.find(x=>x.sym===chart.sym); if(!r || !train.on) return;
+  const view=train.cs.slice(Math.max(0,train.idx-90), train.idx);
+  const lines=[];
+  if(train.pos) lines.push(
+    {p:train.pos.entry,c:'#00f0ff',t:'כניסה'},
+    {p:train.pos.stop,c:'#ff476f',t:'סטופ'},
+    {p:train.pos.t1,c:'#00ffa6',t:'יעד'});
+  drawCandles($('chCv'), view, {lines, dec:r.dec});
+  const px=view[view.length-1].c;
+  const curR=train.pos? trPosR(train.pos,px) : null;
+  $('trStat').innerHTML=
+    `נר <b>${train.idx}/${train.cs.length}</b>`+
+    (train.pos? ` · פוזיציה ${train.pos.dir==='long'?'לונג ▲':'שורט ▼'} · כרגע <b style="color:${curR>=0?'var(--up)':'var(--down)'}">${(curR>=0?'+':'')+curR.toFixed(2)}R</b>`
+      : ' · אין פוזיציה — בחר כיוון או התקדם')+
+    ` · 🏋️ סה״כ אימון: <b>${practice.n}</b> עסקאות${practice.n?` · ${Math.round(practice.w/practice.n*100)}% · <b style="color:${practice.net>=0?'var(--up)':'var(--down)'}">${(practice.net>=0?'+':'')+practice.net.toFixed(1)}R</b>`:''}`;
+  $('trExitB').hidden=!train.pos;
+  $('trLongB').hidden=!!train.pos;
+  $('trShortB').hidden=!!train.pos;
+}
+function trSettle(res){
+  const pos=train.pos; if(!pos) return;
+  practice.n++;
+  if(res==='t1'){ practice.w++; practice.net+=pos.rr; toast(`🎯 יעד! +${pos.rr}R (אימון)`); }
+  else if(res==='stop'){ practice.net-=1; toast('🛑 סטופ. -1R (אימון)'); }
+  else { const rM=trPosR(pos, train.cs[train.idx-1].c);
+    if(rM>0) practice.w+= rM>=pos.rr?1:0;
+    practice.net+=rM; toast(`✋ נסגר ידנית: ${(rM>=0?'+':'')+rM.toFixed(2)}R (אימון)`); }
+  practice.net=+practice.net.toFixed(2);
+  savePractice();
+  train.pos=null;
+}
+function trNext(n){
+  if(!train.on) return;
+  for(let k=0;k<(n||1);k++){
+    if(train.idx>=train.cs.length){ toast('נגמרה ההיסטוריה — מגריל נקודה חדשה'); trStart(); return; }
+    const c=train.cs[train.idx++];
+    if(train.pos){
+      const p=train.pos;
+      const sHit=p.dir==='long'? c.l<=p.stop : c.h>=p.stop;
+      const tHit=p.dir==='long'? c.h>=p.t1  : c.l<=p.t1;
+      if(sHit){ trSettle('stop'); break; }      // conservative: stop first
+      if(tHit){ trSettle('t1'); break; }
+    }
+  }
+  trDraw();
+}
+function trEnter(dir){
+  if(!train.on || train.pos) return;
+  const view=train.cs.slice(0,train.idx);
+  const atr=atrVal(view.slice(-30),14) || view[view.length-1].c*0.002;
+  const entry=view[view.length-1].c;
+  train.pos={dir, entry,
+    stop: dir==='long'? entry-atr*geom.stopK : entry+atr*geom.stopK,
+    t1:   dir==='long'? entry+atr*geom.t1K  : entry-atr*geom.t1K,
+    rr:+(geom.t1K/geom.stopK).toFixed(2)};
+  trDraw();
+}
+function trQuit(){
+  train.on=false; train.pos=null; $('trainBar').hidden=true;
+  if(chart.mode==='coin'){ chTfSync(); chDrawCoin();
+    chart.timer=setInterval(()=>{ chDrawCoin(); chMaybeRefresh(); },600); }
+}
+
+// ── 🔊 VOICE BRIEF — the radar reads the room out loud ──────────────────
+function speakBrief(){
+  try{
+    if(window.speechSynthesis.speaking){ window.speechSynthesis.cancel(); return; }
+    const bd=breadth(), st=sigStats();
+    const gos=universe.filter(r=>scan[r.sym] && verdictOf(scan[r.sym]).k==='go').slice(0,3);
+    let t='תקציר ראדאר. ';
+    if(bd) t+='השוק '+(bd.k==='up'?'עולה':bd.k==='down'?'יורד':'מעורב')+', '+Math.round(bd.p15!=null?bd.p15:bd.p24)+' אחוז מהחוזים ירוקים. ';
+    t+= gos.length
+      ? 'איתותים חמים: '+gos.map(r=>r.sym+', ציון '+scan[r.sym].score).join('. ')+'. '
+      : 'אין איתותים חמים כרגע. ';
+    if(st.done) t+='הביצועים שלך: '+st.wins+' מתוך '+st.done+' פגעו ביעד, נטו '+(st.net>=0?'פלוס ':'מינוס ')+Math.abs(st.net)+' אר. ';
+    t+='לא ייעוץ השקעות.';
+    const u=new SpeechSynthesisUtterance(t);
+    u.lang='he-IL'; u.rate=1.05;
+    window.speechSynthesis.speak(u);
+  }catch(e){ toast('הדפדפן לא תומך בהקראה'); }
 }
 
 // ── 🎯 SIGNAL LEDGER — the radar grades its own calls, in public ────────
@@ -2286,6 +2423,14 @@ $('hCsv').onclick=()=>{
   }catch(e){ toast('הייצוא נכשל'); }
 };
 $('chClose').onclick=chClose;
+$('trGo').onclick=()=>{ if(chart.mode==='coin') trStart(); else toast('אימון זמין מגרף לייב של מטבע'); };
+$('trNextB').onclick=()=>trNext(1);
+$('trFast').onclick=()=>trNext(5);
+$('trLongB').onclick=()=>trEnter('long');
+$('trShortB').onclick=()=>trEnter('short');
+$('trExitB').onclick=()=>{ trSettle('manual'); trDraw(); };
+$('trQuitB').onclick=trQuit;
+$('voiceBtn').onclick=speakBrief;
 $('chTf').onclick=e=>{
   const b=e.target.closest('button[data-tf]'); if(!b || !chart.mode) return;
   const rr=universe.find(x=>x.sym===chart.sym);
@@ -2427,6 +2572,11 @@ window.__mkt={ rows, scan:()=>scan, state:()=>({filter,sortKey,sortDir,query,exp
   deep:deepAnalyze, deepCache:()=>deepCache,
   setMkt, mkt:()=>mkt, fetchKl, symStats, turfOf,
   superMetrics, tape:renderTape, gauntlet,
+  trainStart:trStart, trainNext:trNext, trainEnter:trEnter,
+  trainExit:()=>{ trSettle('manual'); trDraw(); }, trainQuit:trQuit,
+  trainState:()=>({on:train.on, idx:train.idx, total:train.cs?train.cs.length:0,
+    pos:train.pos?{...train.pos}:null, practice:{...practice}}),
+  brief:speakBrief,
   breadth, simple:(on)=>{ simpleOn=on!==false;
     try{ localStorage.setItem('na:radar:simple',simpleOn?'1':'0'); }catch(e){} render(); },
   chart:()=>({mode:chart.mode,sym:chart.sym,sigI:chart.sigI,tf:chart.tf,cs:chart.cs?chart.cs.length:0}),
