@@ -154,6 +154,16 @@ main{max-width:900px;margin:0 auto;padding:10px 10px calc(20px + env(safe-area-i
   display:flex;align-items:center;justify-content:center;padding:10px;
   backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
 #histModal[hidden]{display:none!important}
+#galModal{position:fixed;inset:0;z-index:61;background:rgba(2,8,18,.9);
+  display:flex;align-items:center;justify-content:center;padding:10px}
+#galModal[hidden]{display:none!important}
+#galCv{width:100%;height:64vh;display:block;border-radius:10px;background:#08080b;cursor:pointer}
+.palert{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:7px;font-size:11px}
+.palert input{width:110px;background:#0e0e12;color:var(--txt);border:1px solid #2a2a33;
+  border-radius:7px;padding:5px 8px;font-family:'JetBrains Mono',monospace;font-size:11.5px}
+.pchip{font-style:normal;font-family:'JetBrains Mono',monospace;font-size:10.5px;cursor:pointer;
+  background:rgba(255,179,0,.1);border:1px solid rgba(255,179,0,.4);color:var(--gold);
+  border-radius:999px;padding:3px 9px}
 .hstats{display:flex;gap:5px 14px;flex-wrap:wrap;font-size:11.5px;color:var(--dim);margin-bottom:7px}
 .hstats b{font-family:'JetBrains Mono',monospace;color:var(--txt);margin-inline-start:4px}
 #eqCv{width:100%;height:110px;display:block;border-radius:10px;background:rgba(0,0,0,.25);margin-bottom:7px}
@@ -337,6 +347,7 @@ footer{max-width:900px;margin:0 auto;padding:8px 14px 22px;color:var(--dim);font
   <button class="hbtn" id="alertBtn" title="התראה + צליל כשאיתות נהיה 🟢">🔔</button>
   <button class="hbtn" id="strictBtn" title="מצב סלקטיבי: התראה רק על 20/20 בדיקות">🎯</button>
   <button class="hbtn" id="voiceBtn" title="תקציר קולי: מצב השוק, האיתותים החמים והביצועים">🔊</button>
+  <button class="hbtn" id="galBtn" title="גלקסיית השוק — מפת חום חיה של כל היקום">🌌</button>
   <button class="hbtn" id="refreshBtn">↻ רענן</button>
   <a class="hbtn" href="./">⌂ אלפא</a>
 </header>
@@ -408,6 +419,12 @@ footer{max-width:900px;margin:0 auto;padding:8px 14px 22px;color:var(--dim);font
     </div>
     <div class="chInfo" id="chInfo"></div>
     <div class="jchips" id="sigJournal" hidden></div>
+  </div>
+</div>
+<div id="galModal" hidden>
+  <div class="chBox">
+    <div class="chHead"><button id="galClose">✕</button><span>גודל = מחזור · צבע = תנועת 15ד · טבעת = איתות 🟢 · לחיצה פותחת</span><b>🌌 גלקסיית השוק</b></div>
+    <canvas id="galCv"></canvas>
   </div>
 </div>
 <div id="histModal" hidden>
@@ -773,6 +790,7 @@ async function runScan(force,onProgress,hotOnly){
         if(cs && cs.length){
           const sc=scanScore(cs,r.vol);
           if(sc){ scan[r.sym]=Object.assign(sc,{at:Date.now()}); candles[r.sym]=cs; }
+          try{ checkPalerts(r.sym,r.price); }catch(e){}   // stock path has no tick stream
         }
       }catch(e){}
       scanState.done++;
@@ -799,6 +817,7 @@ function applyTick(sym,price,chg){
   if(price>0 && r.price>0 && price!==r.price) priceFlash[sym]=price>r.price?'up':'down';
   if(price>0) r.price=price;
   if(chg!=null && isFinite(chg)) r.chg=chg;
+  try{ checkPalerts(sym,price); }catch(e){}
 }
 function openWS(){
   if(ws || document.hidden) return;
@@ -1632,6 +1651,94 @@ function deepBlock(sym){
   return deepHtml(sym,c.d);
 }
 
+// ── 🌌 MARKET GALAXY — the whole universe in one glance ─────────────────
+// A live heat-map: every contract is a tile sized by real volume and
+// colored by its 15-minute move; 🟢 signals get a pulsing ring, home turf
+// gets its 🏠. Three size tiers (6 giants, 12 mids, 24 smalls) so the eye
+// reads liquidity instantly. Tapping a tile jumps to that row.
+let galOn=false, galTimer=null, galRects=[];
+function galDraw(){
+  const cv=$('galCv'); if(!cv || !galOn) return;
+  const dpr=window.devicePixelRatio||1, W=cv.clientWidth||320, H=cv.clientHeight||420;
+  if(cv.width!==Math.round(W*dpr)) cv.width=Math.round(W*dpr);
+  if(cv.height!==Math.round(H*dpr)) cv.height=Math.round(H*dpr);
+  const x=cv.getContext('2d'); x.setTransform(dpr,0,0,dpr,0,0);
+  x.clearRect(0,0,W,H);
+  const items=universe.filter(r=>r.price>0).sort((a,b)=>(b.vol||0)-(a.vol||0)).slice(0,42);
+  galRects=[];
+  if(!items.length){ x.fillStyle='#8b8b98'; x.font='12px Heebo'; x.textAlign='center';
+    x.fillText('אין עדיין נתונים לציור המפה', W/2, H/2); return; }
+  const tiers=[[items.slice(0,6),3,0,H*0.44],[items.slice(6,18),6,H*0.44,H*0.30],[items.slice(18,42),8,H*0.74,H*0.26]];
+  const pulse=(Math.sin(Date.now()/300)+1)/2;
+  for(const [list,cols,y0,th] of tiers){
+    if(!list.length) continue;
+    const rowsN=Math.ceil(list.length/cols), tw=W/cols, rh=th/rowsN;
+    list.forEach((r,i)=>{
+      const cx=(i%cols)*tw, cy=y0+Math.floor(i/cols)*rh;
+      const s=scan[r.sym], m=s? s.m15 : null;
+      const mag=m==null? 0 : clamp(Math.abs(m)/1.5,0,1);
+      x.fillStyle= m==null? '#17171d'
+        : m>=0? `rgba(0,${120+Math.round(110*mag)},${70+Math.round(48*mag)},${0.25+0.55*mag})`
+        : `rgba(${150+Math.round(105*mag)},40,${60+Math.round(30*mag)},${0.25+0.55*mag})`;
+      x.fillRect(cx+1.5,cy+1.5,tw-3,rh-3);
+      x.strokeStyle='#26262e'; x.strokeRect(cx+1.5,cy+1.5,tw-3,rh-3);
+      if(s && verdictOf(s).k==='go'){
+        x.strokeStyle=`rgba(0,230,118,${0.5+0.5*pulse})`; x.lineWidth=2;
+        x.strokeRect(cx+3,cy+3,tw-6,rh-6); x.lineWidth=1;
+      }
+      const big=rh>46;
+      x.fillStyle='#e6e6ea'; x.textAlign='center';
+      x.font=(big?'bold 13px':'bold 10px')+" 'JetBrains Mono',monospace";
+      x.fillText((turfOf(r.sym).k==='home'?'🏠':'')+r.sym, cx+tw/2, cy+rh/2-(big?4:-3));
+      if(big || rh>34){
+        x.font=(big?'11px':'9px')+" 'JetBrains Mono',monospace";
+        x.fillStyle= m==null? '#8b8b98' : m>=0? '#7dffc4' : '#ffb3c2';
+        x.fillText(m==null?'—':(m>=0?'+':'')+m.toFixed(2)+'%', cx+tw/2, cy+rh/2+(big?13:12));
+      }
+      galRects.push({sym:r.sym, x:cx, y:cy, w:tw, h:rh});
+    });
+  }
+}
+function openGal(){ $('galModal').hidden=false; galOn=true; galDraw();
+  galTimer=setInterval(galDraw,1500); }
+function closeGal(){ galOn=false; $('galModal').hidden=true;
+  if(galTimer){ clearInterval(galTimer); galTimer=null; } }
+
+// ── ⏰ PRICE ALERTS — "wake me exactly at this price" ───────────────────
+// Set any price on any symbol; the radar watches the live tape (crypto:
+// every tick, stocks: every sweep) and fires ONCE when the level is
+// crossed in the direction it was armed — then the alert removes itself.
+let palerts=[];
+try{ palerts=JSON.parse(localStorage.getItem('na:radar:palerts')||'[]'); }catch(e){}
+if(!Array.isArray(palerts)) palerts=[];
+palerts=palerts.filter(a=>a && a.sym && a.p>0);
+function savePalerts(){ try{ localStorage.setItem('na:radar:palerts',JSON.stringify(palerts.slice(-50))); }catch(e){} }
+function addPalert(sym,p){
+  const r=universe.find(x=>x.sym===sym);
+  if(!r || !(p>0) || !(r.price>0)) return false;
+  if(Math.abs(p-r.price)/r.price<0.0005){ toast('המחיר כבר שם — בחר רמה רחוקה יותר'); return false; }
+  palerts.push({sym, p:+(+p).toPrecision(8), dir: p>r.price?'above':'below', at:Date.now()});
+  savePalerts();
+  toast(`⏰ נקבעה התראה: ${sym} ${p>r.price?'מעל':'מתחת'} ${p}`);
+  return true;
+}
+function checkPalerts(sym,price){
+  if(!palerts.length || !(price>0)) return;
+  for(let i=palerts.length-1;i>=0;i--){
+    const a=palerts[i];
+    if(a.sym!==sym) continue;
+    if((a.dir==='above' && price>=a.p) || (a.dir==='below' && price<=a.p)){
+      palerts.splice(i,1); savePalerts();
+      toast(`⏰ ${sym} חצה את ${a.p} — עכשיו ${price}`);
+      try{ beep(); }catch(e){}
+      try{
+        if('Notification' in window && Notification.permission==='granted')
+          new Notification('⏰ התראת מחיר', {body:`${sym} הגיע ל-${price} (הרמה: ${a.p})`, tag:'pa-'+sym});
+      }catch(e){}
+    }
+  }
+}
+
 // ── 🛑 TILT GUARD — the discipline layer every prop desk enforces ───────
 // Decision quality collapses after a losing streak; pros get cut off by
 // their risk desk. Here: when the day's graded trades reach -3R the radar
@@ -2286,6 +2393,8 @@ function renderGoStrip(){
 }
 function render(){
   const el=$('list');
+  // typing a price alert? the live re-render must not eat the keystrokes
+  if(document.activeElement && document.activeElement.dataset && document.activeElement.dataset.paIn) return;
   // no auxiliary widget is ever allowed to kill the main list — the exact
   // failure mode a corrupt ledger caused once (page opened, nothing rendered)
   try{ renderGoStrip(); }catch(e){}
@@ -2421,6 +2530,13 @@ function render(){
           <button class="copy" data-copy="${r.sym}">📋 העתק תוכנית</button>
           <button class="copy" data-chart="${r.sym}">📈 גרף לייב</button>
           <button class="copy" data-deep="${r.sym}">🧠 ניתוח-על</button>
+          <div class="palert">
+            <span>⏰ העירו אותי במחיר:</span>
+            <input type="number" step="any" inputmode="decimal" data-pa-in="${r.sym}" placeholder="${fx(r.price)}">
+            <button class="hbtn2" data-pa-add="${r.sym}">קבע</button>
+            ${palerts.filter(a=>a.sym===r.sym).map(a=>
+              `<i class="pchip" data-pa-del="${a.sym}|${a.p}" title="הסר">${a.dir==='above'?'↑':'↓'} ${a.p} ✕</i>`).join('')}
+          </div>
         </div>
         <div class="why" style="margin-top:5px">הכמות מחושבת כך שאם הסטופ נפגע — מפסידים בדיוק את סכום הסיכון שהוגדר למעלה. המינוף המוצע שומר מרג׳ין ~20% מהחשבון, והסטופ נפגע הרבה לפני חיסול. האופק: פרץ 5-דק׳ בלי מבנה = דקות · מבנה EMA = שעות · מבנה + מגמת 24ש = ימים.</div>
       </div>`;
@@ -2431,7 +2547,7 @@ function render(){
         <span class="nn">
           <span class="n1"><b>${r.sym}</b><span class="tag">${r.market==='stock'?'מניה':'Perp'}</span>${(()=>{const t=turfOf(r.sym,TURF);
             return t.k==='home'?'<span class="tag turfH" title="מגרש ביתי — רווחי אצלך">🏠</span>'
-              : t.k==='cold'?'<span class="tag turfC" title="מטבע קר — מפסיד אצלך">⚠️</span>':'';})()}</span>
+              : t.k==='cold'?'<span class="tag turfC" title="מטבע קר — מפסיד אצלך">⚠️</span>':'';})()}${palerts.some(a=>a.sym===r.sym)?'<span class="tag" style="color:var(--gold)" title="התראת מחיר פעילה">⏰</span>':''}</span>
           <span class="sub">${fmtUsd(r.vol)}</span>
         </span>
       </span>
@@ -2468,6 +2584,17 @@ document.querySelectorAll('.mhead button').forEach(b=>{
     syncSort(); render(); kick(); };
 });
 $('list').onclick=e=>{
+  const paA=e.target.closest('[data-pa-add]');
+  if(paA){ const sym=paA.dataset.paAdd;
+    const inp=document.querySelector(`[data-pa-in="${sym}"]`);
+    const v=+(inp&&inp.value);
+    if(addPalert(sym,v)) render();
+    return; }
+  const paD=e.target.closest('[data-pa-del]');
+  if(paD){ const [sym,pp]=paD.dataset.paDel.split('|');
+    palerts=palerts.filter(a=>!(a.sym===sym && String(a.p)===pp));
+    savePalerts(); render(); return; }
+  if(e.target.closest('[data-pa-in]')) return;   // focusing the input must not toggle the row
   const ch=e.target.closest('[data-chart]');
   if(ch){ openCoinChart(ch.dataset.chart); return; }
   const sm=e.target.closest('[data-simple]');
@@ -2567,6 +2694,20 @@ $('trShortB').onclick=()=>trEnter('short');
 $('trExitB').onclick=()=>{ trSettle('manual'); trDraw(); };
 $('trQuitB').onclick=trQuit;
 $('voiceBtn').onclick=speakBrief;
+$('galBtn').onclick=openGal;
+$('galClose').onclick=closeGal;
+$('galModal').onclick=e=>{ if(e.target.id==='galModal') closeGal(); };
+$('galCv').onclick=e=>{
+  const rect=e.target.getBoundingClientRect();
+  const px=e.clientX-rect.left, py=e.clientY-rect.top;
+  const hit=galRects.find(t=>px>=t.x && px<t.x+t.w && py>=t.y && py<t.y+t.h);
+  if(!hit) return;
+  closeGal();
+  filter='all'; query=''; $('q').value='';
+  expanded=hit.sym; micro.sym=expanded; micro.trades=[];
+  render(); syncKlineSubs();
+  document.querySelector(`.mrow[data-sym="${hit.sym}"]`)?.scrollIntoView({block:'center',behavior:'smooth'});
+};
 $('chTf').onclick=e=>{
   const b=e.target.closest('button[data-tf]'); if(!b || !chart.mode) return;
   const rr=universe.find(x=>x.sym===chart.sym);
@@ -2583,6 +2724,7 @@ $('chModal').onclick=e=>{ if(e.target.id==='chModal') chClose(); };
 document.addEventListener('keydown',e=>{
   if(e.key!=='Escape') return;
   if(chart.mode) chClose();
+  else if(!$('galModal').hidden) closeGal();
   else if(!$('histModal').hidden) closeHist();
 });
 $('alertBtn').onclick=()=>setAlerts(!alertsOn);
@@ -2713,6 +2855,8 @@ window.__mkt={ rows, scan:()=>scan, state:()=>({filter,sortKey,sortDir,query,exp
   trainState:()=>({on:train.on, idx:train.idx, total:train.cs?train.cs.length:0,
     pos:train.pos?{...train.pos}:null, practice:{...practice}}),
   brief:speakBrief, dailyR, tiltActive, journal:renderJournal,
+  galaxy:openGal, closeGalaxy:closeGal, galRects:()=>galRects.slice(),
+  palerts:()=>palerts.slice(), addAlert:addPalert, checkPa:checkPalerts,
   breadth, simple:(on)=>{ simpleOn=on!==false;
     try{ localStorage.setItem('na:radar:simple',simpleOn?'1':'0'); }catch(e){} render(); },
   chart:()=>({mode:chart.mode,sym:chart.sym,sigI:chart.sigI,tf:chart.tf,cs:chart.cs?chart.cs.length:0}),
