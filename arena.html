@@ -1532,7 +1532,13 @@ body.cinema #symRow,body.cinema #hint,body.cinema #banner{display:none!important
 <div id="mktPanel" class="panel clip" style="display:none">
   <div class="lg-h"><span>📈 שוקי Binance Futures (<span id="mktCount">0</span>)</span>
     <span id="mktScan" class="mkt-scan"></span>
-    <button class="mp-close" id="mktClose" style="margin-inline-start:auto">✕</button></div>
+    <a href="markets.html?mkt=stock" style="margin-inline-start:auto;font-size:11px;color:#ffb300;
+      text-decoration:none;border:1px solid rgba(255,179,0,.4);border-radius:8px;padding:3px 9px;white-space:nowrap"
+      title="עולם המניות — דרך ראדאר השווקים, אותו מנוע איתותים">📊 מניות</a>
+    <a href="markets.html" style="font-size:11px;color:#00f0ff;text-decoration:none;
+      border:1px solid rgba(0,240,255,.35);border-radius:8px;padding:3px 9px;white-space:nowrap"
+      title="ראדאר השווקים המלא">📡 ראדאר</a>
+    <button class="mp-close" id="mktClose">✕</button></div>
   <input id="mktSearch" class="mkt-search" placeholder="חיפוש מטבע או שם…" autocomplete="off">
   <div class="mkt-tabs" id="mktTabs">
     <button data-f="all" class="on">הכול</button>
