@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>⚡ סקאלפ 3 נרות — ארנק נפרד</title>
+<style>
+:root{--bg:#070709;--card:#0d0d13;--line:#1d1d24;--gold:#ffb300;--up:#00e676;--down:#ff5252;
+  --txt:#e8e8ee;--dim:#8a8a95}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{max-width:100vw;overflow-x:hidden}
+body{background:var(--bg);color:var(--txt);font-family:system-ui,-apple-system,'Segoe UI',sans-serif;
+  font-size:14px;padding:10px 10px 90px;max-width:760px;margin:0 auto}
+a{color:var(--gold);text-decoration:none}
+header{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+header h1{font-size:17px;color:var(--gold);font-family:'JetBrains Mono',monospace}
+header .ver{font-size:10px;color:var(--dim);border:1px solid var(--line);border-radius:6px;padding:2px 6px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px}
+.card h2{font-size:12.5px;color:var(--dim);font-weight:700;margin-bottom:8px;letter-spacing:.4px}
+#balRow{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+#bal{font-size:30px;font-weight:800;font-family:'JetBrains Mono',monospace;color:var(--gold)}
+#balPnl{font-size:13px;font-family:'JetBrains Mono',monospace}
+.wset{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.wset label{flex:1;min-width:90px;font-size:11px;color:var(--dim);display:flex;flex-direction:column;gap:3px}
+.wset input{background:#101016;border:1px solid #26262e;color:var(--txt);border-radius:8px;
+  padding:7px;font-size:13px;font-family:'JetBrains Mono',monospace;width:100%}
+button{font-family:inherit;cursor:pointer}
+.ghost{background:#141419;border:1px solid #2a2a33;color:var(--txt);border-radius:8px;padding:7px 12px;font-size:12px}
+.rules{display:flex;gap:8px;flex-wrap:wrap}
+.rules span{background:rgba(255,179,0,.07);border:1px solid rgba(255,179,0,.35);color:var(--gold);
+  border-radius:999px;padding:5px 11px;font-size:11.5px}
+#uniWrap{display:flex;gap:6px;flex-wrap:wrap;max-height:132px;overflow-y:auto}
+.coin{background:#101016;border:1px solid #26262e;color:var(--txt);border-radius:9px;
+  padding:6px 10px;font-size:12px;font-family:'JetBrains Mono',monospace}
+.coin.on{border-color:var(--gold);color:var(--gold);background:rgba(255,179,0,.08)}
+#search{width:100%;background:#101016;border:1px solid #26262e;color:var(--txt);border-radius:9px;
+  padding:8px 12px;font-size:13px;margin-bottom:8px}
+#chartHead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px;
+  font-family:'JetBrains Mono',monospace}
+#selSym{font-size:16px;font-weight:800;color:var(--gold)}
+#selPx{font-size:16px;font-weight:700}
+#cndl{font-size:11px;color:var(--dim)}
+#cv{width:100%;height:190px;display:block;border:1px solid var(--line);border-radius:10px;background:#08080c}
+.entbtns{display:flex;gap:8px;margin-top:10px}
+.entbtns button{flex:1;border:none;border-radius:10px;padding:13px;font-size:15px;font-weight:800}
+#goLong{background:rgba(0,230,118,.15);color:var(--up);border:1.5px solid rgba(0,230,118,.6)}
+#goShort{background:rgba(255,82,82,.12);color:var(--down);border:1.5px solid rgba(255,82,82,.6)}
+.entbtns button:disabled{opacity:.35}
+#posCard{border-color:rgba(255,179,0,.5)}
+#posPnl{font-size:26px;font-weight:800;font-family:'JetBrains Mono',monospace}
+.dots{font-size:20px;letter-spacing:4px}
+#posMeta{font-size:12px;color:var(--dim);font-family:'JetBrains Mono',monospace;line-height:1.7}
+#stats{display:flex;gap:12px;flex-wrap:wrap;font-family:'JetBrains Mono',monospace;font-size:12.5px}
+#stats b{color:var(--gold)}
+#eqCv{width:100%;height:60px;display:block;margin-top:8px}
+.hrow{display:flex;gap:8px 12px;flex-wrap:wrap;align-items:center;padding:7px 0;
+  border-top:1px solid #16161d;font-size:12px;font-family:'JetBrains Mono',monospace}
+.hrow .why{color:var(--dim);font-size:11px}
+.empty{color:var(--dim);text-align:center;padding:14px;font-size:12.5px}
+#toastEl{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);background:#15150f;
+  border:1px solid rgba(255,179,0,.6);color:var(--txt);border-radius:10px;padding:10px 16px;
+  font-size:13px;z-index:99;max-width:92vw;text-align:center;transition:opacity .3s;opacity:0;pointer-events:none}
+</style>
+</head>
+<body>
+<header>
+  <a href="markets.html">→ ראדאר</a>
+  <h1>⚡ סקאלפ 3 נרות</h1>
+  <span class="ver">ארנק נפרד · נייר · נתוני Binance אמיתיים</span>
+</header>
+
+<div class="card">
+  <h2>💰 הארנק (נפרד לגמרי מהראדאר)</h2>
+  <div id="balRow"><span id="bal">—</span><span id="balPnl"></span>
+    <button class="ghost" id="resetW" style="margin-right:auto">איפוס ל-$1000</button></div>
+  <div class="wset">
+    <label>גודל עסקה $<input id="wSize" type="number" min="1" step="10" inputmode="decimal"></label>
+    <label>מינוף ×<input id="wLev" type="number" min="1" max="50" step="1" inputmode="numeric"></label>
+    <label>סטופ חירום %<input id="wStop" type="number" min="0.2" max="10" step="0.1" inputmode="decimal"></label>
+  </div>
+</div>
+
+<div class="card">
+  <h2>📜 השיטה — ממוכנת, בלי רגש</h2>
+  <div class="rules">
+    <span>1️⃣ נר נסגר ברווח → סוגרים מיד</span>
+    <span>2️⃣ אחרי 3 נרות → סוגרים בכל מקרה</span>
+    <span>🛑 סטופ חירום תוך-נר</span>
+  </div>
+</div>
+
+<div class="card">
+  <h2>🪙 בחר מטבע (טופ 30 לפי מחזור)</h2>
+  <input id="search" placeholder="חיפוש…" autocomplete="off">
+  <div id="uniWrap"><div class="empty">טוען את היקום…</div></div>
+</div>
+
+<div class="card">
+  <div id="chartHead"><span id="selSym">—</span><span id="selPx"></span><span id="cndl"></span></div>
+  <canvas id="cv"></canvas>
+  <div class="entbtns">
+    <button id="goLong">▲ לונג</button>
+    <button id="goShort">▼ שורט</button>
+  </div>
+</div>
+
+<div class="card" id="posCard" hidden>
+  <h2>🔥 העסקה הפעילה</h2>
+  <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+    <span id="posPnl">$0.00</span>
+    <span class="dots" id="posDots">○○○</span>
+    <button class="ghost" id="posClose" style="margin-right:auto">✋ סגור ידנית</button>
+  </div>
+  <div id="posMeta"></div>
+</div>
+
+<div class="card">
+  <h2>📊 ביצועי השיטה</h2>
+  <div id="stats"><span class="empty">עוד אין עסקאות</span></div>
+  <canvas id="eqCv" hidden></canvas>
+  <div id="hist"></div>
+</div>
+<div id="toastEl"></div>
+
+<script>
+const $=id=>document.getElementById(id);
+const FAPI='https://fapi.binance.com';
+let toastT=0;
+function toast(m){ const el=$('toastEl'); el.textContent=m; el.style.opacity='1';
+  clearTimeout(toastT); toastT=setTimeout(()=>{ el.style.opacity='0'; },3200); }
+
+// ── the separate wallet — its own keys, no sharing with the radar ──────
+const W_DEF={bal:1000,size:100,lev:5,stop:1.5};
+let W={};
+try{ W=Object.assign({},W_DEF,JSON.parse(localStorage.getItem('na:scalp:w')||'{}')); }
+catch(e){ W=Object.assign({},W_DEF); }
+function saveW(){ try{ localStorage.setItem('na:scalp:w',JSON.stringify(W)); }catch(e){} }
+let hist=[];
+try{ hist=JSON.parse(localStorage.getItem('na:scalp:hist')||'[]'); }catch(e){}
+if(!Array.isArray(hist)) hist=[];
+function saveH(){ hist=hist.slice(-200);
+  try{ localStorage.setItem('na:scalp:hist',JSON.stringify(hist)); }catch(e){} }
+let pos=null;
+try{ pos=JSON.parse(localStorage.getItem('na:scalp:open')||'null'); }catch(e){}
+if(pos && !(pos.entry>0 && pos.sym)) pos=null;
+function saveP(){ try{ localStorage.setItem('na:scalp:open',JSON.stringify(pos)); }catch(e){} }
+
+// ── live data: universe by volume + 1m candles for the chosen coin ─────
+let uni=[], sel=null, candles=[], pollT=0;
+async function loadUni(){
+  try{
+    const [info,tick]=await Promise.all([
+      fetch(FAPI+'/fapi/v1/exchangeInfo').then(r=>r.ok?r.json():null),
+      fetch(FAPI+'/fapi/v1/ticker/24hr').then(r=>r.ok?r.json():null),
+    ]);
+    if(!info||!info.symbols||!Array.isArray(tick)) throw 0;
+    const by={}; tick.forEach(t=>by[t.symbol]=t);
+    const best={};
+    for(const s of info.symbols){
+      if(s.contractType!=='PERPETUAL'||s.status!=='TRADING'||s.quoteAsset!=='USDT') continue;
+      const t=by[s.symbol]||{};
+      const row={sym:s.baseAsset,pair:s.symbol,price:+t.lastPrice||0,vol:+t.quoteVolume||0,chg:+t.priceChangePercent||0};
+      const prev=best[row.sym];
+      if(!prev){ best[row.sym]=row; } else if(row.vol>prev.vol) best[row.sym]=row;
+    }
+    uni=Object.values(best).sort((a,b)=>b.vol-a.vol).slice(0,30);
+    drawUni();
+    if(!sel && uni.length) setSel(pos? pos.sym : uni[0].sym);
+    if(pos && !uni.find(u=>u.sym===pos.sym)){
+      // position's coin fell out of top-30 — still track it
+      uni.push({sym:pos.sym,pair:pos.sym+'USDT',price:0,vol:0,chg:0}); drawUni();
+      setSel(pos.sym);
+    }
+  }catch(e){
+    $('uniWrap').innerHTML='<div class="empty">Binance לא נגיש מהרשת הזו — נסה רשת אחרת</div>';
+  }
+}
+function drawUni(){
+  const q=($('search').value||'').toUpperCase();
+  $('uniWrap').innerHTML=uni
+    .filter(u=>!q||u.sym.includes(q))
+    .map(u=>`<button class="coin${u.sym===sel?' on':''}" data-c="${u.sym}">${u.sym}${u.chg? ` <span style="color:${u.chg>=0?'var(--up)':'var(--down)'}">${u.chg>0?'+':''}${(+u.chg).toFixed(1)}%</span>`:''}</button>`)
+    .join('')||'<div class="empty">אין תוצאה</div>';
+}
+async function pollK(){
+  if(!sel) return;
+  try{
+    const r=await fetch(`${FAPI}/fapi/v1/klines?symbol=${sel}USDT&interval=1m&limit=60`);
+    if(!r.ok) return;
+    const raw=await r.json();
+    if(!Array.isArray(raw)||!raw.length) return;
+    candles=raw.map(a=>({t:+a[0],o:+a[1],h:+a[2],l:+a[3],c:+a[4]}));
+    const px=candles[candles.length-1].c;
+    const u=uni.find(x=>x.sym===sel); if(u) u.price=px;
+    applyRules(px);
+    drawAll();
+  }catch(e){}
+}
+function setSel(s){
+  if(pos && s!==pos.sym){ toast('יש עסקה פתוחה על '+pos.sym+' — סגור אותה קודם'); return; }
+  sel=s; candles=[]; drawUni(); drawAll(); pollK();
+}
+
+// ── the 3-candle engine ────────────────────────────────────────────────
+function pnlAt(px){
+  if(!pos||!(px>0)) return 0;
+  const mv= pos.dir==='long'? px/pos.entry-1 : 1-px/pos.entry;
+  return mv*pos.size*pos.lev;
+}
+function enter(dir){
+  if(pos){ toast('כבר יש עסקה פתוחה — השיטה היא עסקה אחת בכל רגע'); return; }
+  const u=uni.find(x=>x.sym===sel);
+  const px=u&&u.price>0? u.price : (candles.length? candles[candles.length-1].c : 0);
+  if(!(px>0)){ toast('אין מחיר חי'); return; }
+  if(W.size>W.bal){ toast('גודל העסקה גדול מהיתרה'); return; }
+  const curT=candles.length? candles[candles.length-1].t : Math.floor(Date.now()/60000)*60000;
+  pos={sym:sel,dir,entry:px,t:Date.now(),fromT:curT,doneT:0,candles:0,
+    size:W.size,lev:W.lev,stop:W.stop};
+  saveP(); drawAll();
+  toast((dir==='long'?'▲ לונג':'▼ שורט')+' על '+sel+' @ '+px+' — היד על ההדק: 3 נרות מקסימום');
+}
+function closePos(reason,px){
+  if(!pos) return;
+  const pnl=+pnlAt(px).toFixed(2);
+  W.bal=+(W.bal+pnl).toFixed(2); saveW();
+  hist.push({sym:pos.sym,dir:pos.dir,entry:pos.entry,exit:px,pnl,reason,
+    ct:pos.candles,t:pos.t,xt:Date.now()});
+  saveH();
+  toast((pnl>=0?'🎯 +$':'🛑 -$')+Math.abs(pnl).toFixed(2)+' · '+reason);
+  pos=null; saveP(); drawAll();
+}
+// candle-close rules: run over every candle that CLOSED after entry
+function applyRules(livePx){
+  if(!pos) return;
+  // intrabar emergency stop — "fast" applies to losses too
+  const mv= pos.dir==='long'? livePx/pos.entry-1 : 1-livePx/pos.entry;
+  if(mv*100 <= -pos.stop){ closePos('סטופ חירום ('+(-pos.stop)+'%)', livePx); return; }
+  // closed candles = everything except the still-forming last one
+  for(let i=0;i<candles.length-1;i++){
+    const c=candles[i];
+    if(c.t<pos.fromT || c.t<=pos.doneT) continue;
+    pos.candles++; pos.doneT=c.t; saveP();
+    const pnl=pnlAt(c.c);
+    if(pnl>0){ closePos('רווח מהיר — נר '+pos.candles, c.c); return; }
+    if(pos.candles>=3){ closePos('3 נרות — יציאה', c.c); return; }
+  }
+}
+
+// ── painting ───────────────────────────────────────────────────────────
+function money(v){ return (v>=0?'+$':'-$')+Math.abs(v).toFixed(2); }
+function drawWallet(){
+  $('bal').textContent='$'+W.bal.toFixed(2);
+  const net=hist.reduce((a,h)=>a+h.pnl,0);
+  $('balPnl').textContent= hist.length? money(net)+' מצטבר' : '';
+  $('balPnl').style.color= net>=0?'var(--up)':'var(--down)';
+  $('wSize').value=W.size; $('wLev').value=W.lev; $('wStop').value=W.stop;
+}
+function drawChart(){
+  const cv=$('cv'), x=cv.getContext('2d');
+  const dpr=Math.min(2,devicePixelRatio||1);
+  const w=cv.clientWidth||340, h=190;
+  cv.width=w*dpr; cv.height=h*dpr; x.setTransform(dpr,0,0,dpr,0,0);
+  x.clearRect(0,0,w,h);
+  if(!candles.length){ x.fillStyle='#8a8a95'; x.font='12px system-ui';
+    x.textAlign='center'; x.fillText('טוען נרות…', w/2, h/2); return; }
+  const cs=candles.slice(-40);
+  let lo=Math.min(...cs.map(c=>c.l)), hi=Math.max(...cs.map(c=>c.h));
+  if(pos){ lo=Math.min(lo,pos.entry); hi=Math.max(hi,pos.entry); }
+  const pad=(hi-lo)*0.08||1; lo-=pad; hi+=pad;
+  const Y=v=>h-(v-lo)/(hi-lo)*h;
+  const cw=w/cs.length;
+  cs.forEach((c,i)=>{
+    const up=c.c>=c.o, X=i*cw+cw/2;
+    x.strokeStyle=x.fillStyle= up?'#00e676':'#ff5252';
+    x.beginPath(); x.moveTo(X,Y(c.h)); x.lineTo(X,Y(c.l)); x.stroke();
+    x.fillRect(i*cw+1, Math.min(Y(c.o),Y(c.c)), Math.max(1,cw-2), Math.max(1,Math.abs(Y(c.o)-Y(c.c))));
+  });
+  if(pos){
+    const y=Y(pos.entry);
+    x.strokeStyle='rgba(255,179,0,.85)'; x.setLineDash([5,4]);
+    x.beginPath(); x.moveTo(0,y); x.lineTo(w,y); x.stroke(); x.setLineDash([]);
+    x.fillStyle='#ffb300'; x.font='700 10px JetBrains Mono,monospace';
+    x.textAlign='left'; x.fillText((pos.dir==='long'?'▲':'▼')+' '+pos.entry, 4, y-4);
+  }
+}
+function drawPos(){
+  const card=$('posCard');
+  if(!pos){ card.hidden=true;
+    $('goLong').disabled=$('goShort').disabled=false; return; }
+  card.hidden=false;
+  $('goLong').disabled=$('goShort').disabled=true;
+  const u=uni.find(x=>x.sym===pos.sym);
+  const px=u&&u.price>0? u.price : (candles.length? candles[candles.length-1].c : pos.entry);
+  const pnl=pnlAt(px);
+  $('posPnl').textContent=money(pnl);
+  $('posPnl').style.color= pnl>=0?'var(--up)':'var(--down)';
+  $('posDots').textContent='●'.repeat(Math.min(3,pos.candles))+'○'.repeat(Math.max(0,3-pos.candles));
+  $('posDots').style.color= pos.candles>=2? 'var(--gold)':'var(--dim)';
+  const secs=60-Math.floor(Date.now()/1000)%60;
+  $('posMeta').innerHTML=
+    `${pos.sym} ${pos.dir==='long'?'▲ לונג':'▼ שורט'} · כניסה ${pos.entry} · עכשיו ${px}`+
+    `<br>נר ${Math.min(3,pos.candles+1)}/3 · הנר נסגר בעוד ${secs}ש׳ · חשיפה $${(pos.size*pos.lev).toFixed(0)} (×${pos.lev})`+
+    `<br>ברווח בסגירת נר → סוגר לבד · סטופ חירום ${pos.stop}%-`;
+}
+function drawStats(){
+  if(!hist.length){ $('stats').innerHTML='<span class="empty">עוד אין עסקאות</span>';
+    $('eqCv').hidden=true; $('hist').innerHTML=''; return; }
+  const wins=hist.filter(h=>h.pnl>0).length;
+  const net=hist.reduce((a,h)=>a+h.pnl,0);
+  const fast=hist.filter(h=>h.reason.includes('רווח מהיר')).length;
+  $('stats').innerHTML=
+    `<span>עסקאות <b>${hist.length}</b></span>`+
+    `<span>פגיעה <b>${Math.round(wins/hist.length*100)}%</b></span>`+
+    `<span>נטו <b style="color:${net>=0?'var(--up)':'var(--down)'}">${money(net)}</b></span>`+
+    `<span>יציאות רווח-מהיר <b>${fast}</b></span>`;
+  const cv=$('eqCv'); cv.hidden=false;
+  const x=cv.getContext('2d'); const dpr=Math.min(2,devicePixelRatio||1);
+  const w=cv.clientWidth||340, h=60; cv.width=w*dpr; cv.height=h*dpr; x.setTransform(dpr,0,0,dpr,0,0);
+  x.clearRect(0,0,w,h);
+  let eq=0; const pts=hist.map(hh=>eq+=hh.pnl);
+  const lo=Math.min(0,...pts), hi=Math.max(0,...pts), sp=(hi-lo)||1;
+  x.strokeStyle=eq>=0?'#00e676':'#ff5252'; x.lineWidth=1.6; x.beginPath();
+  pts.forEach((v,i)=>{ const X=i/(Math.max(1,pts.length-1))*w, Y=h-4-(v-lo)/sp*(h-8);
+    i? x.lineTo(X,Y): x.moveTo(X,Y); });
+  x.stroke();
+  $('hist').innerHTML=hist.slice(-25).reverse().map(h=>
+    `<div class="hrow"><b>${h.sym}</b> ${h.dir==='long'?'▲':'▼'}
+     <span style="color:${h.pnl>=0?'var(--up)':'var(--down)'}">${money(h.pnl)}</span>
+     <span>${h.ct} נר׳</span><span class="why">${h.reason}</span>
+     <span class="why" style="margin-right:auto">${new Date(h.xt).toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'})}</span></div>`).join('');
+}
+function drawAll(){
+  drawWallet(); drawChart(); drawPos(); drawStats();
+  const u=uni.find(x=>x.sym===sel);
+  $('selSym').textContent=sel||'—';
+  const px=u&&u.price>0? u.price : (candles.length? candles[candles.length-1].c : 0);
+  $('selPx').textContent= px? String(px) : '';
+  if(candles.length>1){
+    const prev=candles[candles.length-2].c;
+    $('selPx').style.color= px>=prev? 'var(--up)':'var(--down)';
+  }
+}
+
+// ── reconstruct honestly after the page was closed mid-trade ───────────
+async function backfill(){
+  if(!pos) return;
+  try{
+    const r=await fetch(`${FAPI}/fapi/v1/klines?symbol=${pos.sym}USDT&interval=1m&startTime=${pos.fromT}&limit=10`);
+    if(!r.ok) return;
+    const raw=await r.json(); if(!Array.isArray(raw)) return;
+    const cs=raw.map(a=>({t:+a[0],o:+a[1],h:+a[2],l:+a[3],c:+a[4]}));
+    for(let i=0;i<cs.length-1;i++){          // last = possibly still forming
+      const c=cs[i];
+      if(c.t<pos.fromT || c.t<=pos.doneT) continue;
+      pos.candles++; pos.doneT=c.t; saveP();
+      const pnl=pnlAt(c.c);
+      if(pnl>0){ closePos('רווח מהיר — נר '+pos.candles+' (בזמן שהיית בחוץ)', c.c); return; }
+      if(pos.candles>=3){ closePos('3 נרות — יציאה (בזמן שהיית בחוץ)', c.c); return; }
+    }
+  }catch(e){}
+}
+
+// ── wiring ─────────────────────────────────────────────────────────────
+$('uniWrap').onclick=e=>{ const b=e.target.closest('[data-c]'); if(b) setSel(b.dataset.c); };
+$('search').oninput=drawUni;
+$('goLong').onclick=()=>enter('long');
+$('goShort').onclick=()=>enter('short');
+$('posClose').onclick=()=>{
+  const u=uni.find(x=>x.sym===pos?.sym);
+  const px=u&&u.price>0? u.price : (candles.length? candles[candles.length-1].c : 0);
+  if(px>0) closePos('סגירה ידנית', px); else toast('אין מחיר חי לסגירה');
+};
+$('resetW').onclick=()=>{ if(confirm('לאפס את הארנק ל-$1000? (ההיסטוריה נשארת)')){
+  W.bal=1000; saveW(); drawWallet(); toast('הארנק אופס'); } };
+['wSize','wLev','wStop'].forEach(id=>{
+  $(id).onchange=()=>{ const v=+$(id).value;
+    if(!(v>0)) return;
+    if(id==='wSize') W.size=v; if(id==='wLev') W.lev=Math.min(50,Math.max(1,Math.round(v)));
+    if(id==='wStop') W.stop=v;
+    saveW(); drawPos(); };
+});
+window.addEventListener('resize',drawAll);
+
+drawAll();
+loadUni().then(backfill);
+setInterval(()=>{ if(!document.hidden) pollK(); },4000);
+setInterval(()=>{ if(!document.hidden) loadUni(); },60000);
+setInterval(()=>{ if(!document.hidden && pos) drawPos(); },1000);
+
+// test hooks
+window.__scalp={
+  w:()=>Object.assign({},W), pos:()=>pos&&Object.assign({},pos), hist:()=>hist.slice(),
+  uni:()=>uni.slice(), sel:()=>sel, setSel, enter, close:closePos,
+  tick:(px)=>{ const u=uni.find(x=>x.sym===sel); if(u) u.price=px; applyRules(px); drawAll(); },
+  candle:(c)=>{ candles.push(c);
+    candles.push({t:c.t+60000,o:c.c,h:c.c,l:c.c,c:c.c});   // next forming candle, so c counts as CLOSED
+    applyRules(c.c); drawAll(); },
+  setCandles:(a)=>{ candles=a; },
+  rules:applyRules, backfill, pnlAt,
+};
+</script>
+</body>
+</html>

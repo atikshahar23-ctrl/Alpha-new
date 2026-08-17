@@ -2089,6 +2089,7 @@ const RAD_ITEMS=[
   {e:'🔊',t:'תקציר קולי',f:()=>speakBrief()},
   {e:'🔁',t:'החלף שוק',f:()=>setMkt(mkt==='stock'?'crypto':'stock')},
   {e:'🧬',t:'עדשה הבאה',f:()=>setLens(lens==='cards'?'dna':lens==='dna'?'river':'cards')},
+  {e:'⚡',t:'סקאלפ 3 נרות',f:()=>{ location.href='scalp.html'; }},
 ];
 function openRad(){
   const rad=$('radial'); rad.hidden=false;
@@ -2107,9 +2108,12 @@ function openRad(){
   }
   const o=$('orbBtn').getBoundingClientRect();
   const cx=o.left+o.width/2, cy=o.top+o.height/2;
-  [...rad.children].forEach((b,i)=>{
-    const ring= i<4? 92 : 158;
-    const ang=(-6 + (i%4)*(104/3))*Math.PI/180;      // quarter-fan: right → up
+  const kids=[...rad.children], R1=4, n2=kids.length-R1;
+  kids.forEach((b,i)=>{
+    const first=i<R1;
+    const ring= first? 92 : 158;
+    const k= first? i : i-R1, cnt= first? R1 : n2;
+    const ang=(-6 + k*(104/Math.max(1,cnt-1)))*Math.PI/180;   // quarter-fan: right → up
     b.style.left=(cx+Math.cos(ang)*ring-29)+'px';
     b.style.top =(cy-Math.sin(ang)*ring-29)+'px';
     b.style.transitionDelay=(i*22)+'ms';
