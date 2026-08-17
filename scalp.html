@@ -108,7 +108,7 @@ button{font-family:inherit;cursor:pointer}
   <a href="markets.html">→ ראדאר</a>
   <h1>⚡ סקאלפ 3 נרות</h1>
   <span class="ver">ארנק נפרד · נייר · נתוני Binance אמיתיים</span>
-  <span class="ver" id="pageVer">v443</span>
+  <span class="ver" id="pageVer">v444</span>
   <button class="ghost" id="coreBtn" style="margin-right:auto">💠 הליבה</button>
 </header>
 <div id="coreModal" hidden>
@@ -147,8 +147,9 @@ button{font-family:inherit;cursor:pointer}
 </div>
 
 <div class="card" id="scoutCard">
-  <h2 style="display:flex;align-items:center;gap:8px">🎯 הצלף — סורק את כל המטבעות ברקע
-    <button class="ghost" id="scoutTgl" style="margin-right:auto">כבוי</button></h2>
+  <h2 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">🎯 הצלף — סורק את כל המטבעות ברקע
+    <button class="ghost" id="autoTgl" style="margin-right:auto">🤖 טייס: כבוי</button>
+    <button class="ghost" id="scoutTgl">כבוי</button></h2>
   <div id="scoutBody" class="empty" style="text-align:right;padding:6px 0">
     כשמטבע מתיישר עם הזרם (4/5+ עם דחיפת מומנטום) — צלצול והזדמנות בלחיצה.
     כל התראה נסחרת אוטומטית ביומן־צל לפי שיטת 3 הנרות, גם אם לא נכנסת —
@@ -495,10 +496,10 @@ function stepClosedCandle(c,suffix){
   if(pos.candles>=3){ closePos('3 נרות — יציאה'+(suffix||''), c.c); return true; }
   return false;
 }
-function enter(dir){
-  if(pos){ toast('כבר יש עסקה פתוחה — השיטה היא עסקה אחת בכל רגע'); return; }
+function enter(dir,pxO,isAuto){
+  if(pos){ if(!isAuto) toast('כבר יש עסקה פתוחה — השיטה היא עסקה אחת בכל רגע'); return; }
   const u=uni.find(x=>x.sym===sel);
-  const px=u&&u.price>0? u.price : (candles.length? candles[candles.length-1].c : 0);
+  const px= pxO>0? pxO : (u&&u.price>0? u.price : (candles.length? candles[candles.length-1].c : 0));
   if(!(px>0)){ toast('אין מחיר חי'); return; }
   if(W.size>W.bal){ toast('גודל העסקה גדול מהיתרה'); return; }
   const curT=candles.length? candles[candles.length-1].t : Math.floor(Date.now()/60000)*60000;
@@ -507,7 +508,8 @@ function enter(dir){
     size:W.size,lev:W.lev,stop:W.stop,fee:W.fee,
     fac: bn? {ls:bn.ls,ss:bn.ss,rsi:bn.rsi,m15:bn.m15,volX:bn.volX,atr:bn.atr} : null,
     withFlow: bn? (dir==='long'? bn.ls>=4 : bn.ss>=4) : null,
-    crowd: crowd&&crowd.sym===sel? {fund:crowd.fund,ls:crowd.ls,taker:crowd.taker,oiChg:crowd.oiChg} : null};
+    crowd: crowd&&crowd.sym===sel? {fund:crowd.fund,ls:crowd.ls,taker:crowd.taker,oiChg:crowd.oiChg} : null,
+    auto: !!isAuto};
   saveP(); drawAll(); wakeSync(); drawTitle();
   toast((dir==='long'?'▲ לונג':'▼ שורט')+' על '+sel+' @ '+px+' — היד על ההדק: 3 נרות מקסימום');
 }
@@ -518,7 +520,7 @@ function closePos(reason,px){
   W.bal=+(W.bal+pnl).toFixed(2); saveW();
   hist.push({sym:pos.sym,dir:pos.dir,entry:pos.entry,exit:px,pnl,fees,reason,
     ct:pos.candles,t:pos.t,xt:Date.now(),withFlow:pos.withFlow,fac:pos.fac,crowd:pos.crowd||null,
-    peak:+Math.max(pos.peak!=null?pos.peak:pnl, pnl).toFixed(2)});
+    auto:!!pos.auto, peak:+Math.max(pos.peak!=null?pos.peak:pnl, pnl).toFixed(2)});
   saveH();
   toast((pnl>=0?'🎯 +$':'🛑 -$')+Math.abs(pnl).toFixed(2)+' · '+reason);
   beep(pnl>=0?'win':'loss');
@@ -730,6 +732,15 @@ function drawStats(){
       `<span style="color:${gnet>=0?'var(--up)':'var(--down)'}">${money(gnet)}</span>`+
       `<span class="why">ממוצע ${avgC} נר׳</span></div>`;
   }).join('')
+  // autopilot on trial: do its entries earn vs your manual ones? MEASURED.
+  +[[true,'🤖 כניסות הטייס'],[false,'✋ כניסות ידניות']].map(([flag,label])=>{
+    const g=hist.filter(h=>!!h.auto===flag);
+    if(!g.length || !hist.some(h=>h.auto)) return '';
+    const gnet=g.reduce((a,h)=>a+h.pnl,0), gw=g.filter(h=>h.pnl>0).length;
+    return `<div class="hrow"><b>${label}</b><span>${g.length} עסק׳</span>`+
+      `<span>${Math.round(gw/g.length*100)}% פגיעה</span>`+
+      `<span style="color:${gnet>=0?'var(--up)':'var(--down)'}">${money(gnet)}</span></div>`;
+  }).join('')
   // the brain on trial: do flow-aligned entries actually earn more? MEASURED.
   +[[true,'🌊 נכנסת עם הזרם'],[false,'⚠️ נגד הזרם / רעש']].map(([flag,label])=>{
     const g=hist.filter(h=>h.withFlow===flag);
@@ -776,7 +787,7 @@ function drawStats(){
   const fl= hFilt==='win'? (h=>h.pnl>0) : hFilt==='loss'? (h=>h.pnl<=0)
     : hFilt==='flow'? (h=>h.withFlow===true) : (()=>true);
   $('hist').innerHTML=hist.filter(fl).slice(-25).reverse().map(h=>
-    `<div class="hrow"><b>${h.sym}</b> ${h.dir==='long'?'▲':'▼'}
+    `<div class="hrow"><b>${h.auto?'🤖 ':''}${h.sym}</b> ${h.dir==='long'?'▲':'▼'}
      <span style="color:${h.pnl>=0?'var(--up)':'var(--down)'}">${money(h.pnl)}</span>
      <span>${h.ct} נר׳</span><span class="why">${h.reason}</span>
      <span class="why" style="margin-right:auto">${new Date(h.xt).toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'})}</span>
@@ -808,6 +819,18 @@ function drawAll(){
 // measured record, never with promises.
 let scoutOn=false, scoutLast={}, shadows=[];
 try{ scoutOn=localStorage.getItem('na:scalp:scouton')==='1'; }catch(e){}
+// v444: autopilot — the sniper enters PAPER trades on its own alerts.
+// Guards: one trade at a time (the method), stops itself after 3
+// straight losses (the coffee rule, enforced), off by default.
+let autoS=false;
+try{ autoS=localStorage.getItem('na:scalp:auto')==='1'; }catch(e){}
+function setAutoS(on,why){
+  autoS=!!on;
+  try{ localStorage.setItem('na:scalp:auto',autoS?'1':'0'); }catch(e){}
+  toast(autoS? '🤖 הטייס האוטומטי פעיל — הצלף נכנס לבד לעסקאות נייר'
+             : (why||'הטייס האוטומטי כובה'));
+  renderScout();
+}
 try{ shadows=JSON.parse(localStorage.getItem('na:scalp:shadow')||'[]'); }catch(e){}
 if(!Array.isArray(shadows)) shadows=[];
 shadows=shadows.filter(s=>s && s.sym && s.entry>0);
@@ -842,6 +865,17 @@ async function scoutTick(){
             if('Notification' in window && Notification.permission==='granted')
               new Notification('🎯 הצלף מצא יישור', {body:u.sym+' '+(dir==='long'?'לונג':'שורט')+' — פתח את הסקאלפ', tag:'scout-'+u.sym});
           }catch(e){}
+          // v444: autopilot takes the trade itself (paper, method rules)
+          if(autoS){
+            const sk=streakOf();
+            if(sk.n>=3 && !sk.win){
+              setAutoS(false,'🤖☕ הטייס עצר את עצמו אחרי 3 הפסדים רצופים — הפעל מחדש כשאתה מוכן');
+            } else {
+              setSel(u.sym);
+              enter(dir, last.c, true);
+              if(pos) toast('🤖 הטייס נכנס (נייר): '+u.sym+' '+(dir==='long'?'▲':'▼')+' @ '+last.c);
+            }
+          }
         }
         renderScout();
       }catch(e){}
@@ -880,6 +914,9 @@ function renderScout(){
   const tg=$('scoutTgl'); if(!tg) return;
   tg.textContent= scoutOn? '🟢 פעיל' : 'כבוי';
   tg.classList.toggle('on',scoutOn);
+  const at=$('autoTgl');
+  if(at){ at.textContent= autoS? '🤖 טייס: פעיל (נייר)' : '🤖 טייס: כבוי';
+    at.classList.toggle('on',autoS); }
   const graded=shadows.filter(s=>s.out);
   const statLine= graded.length?
     (()=>{ const w=graded.filter(s=>s.pnl>0).length, net=graded.reduce((a,s)=>a+s.pnl,0);
@@ -905,6 +942,10 @@ $('scoutTgl').onclick=()=>{
     try{ if('Notification' in window && Notification.permission==='default') Notification.requestPermission(); }catch(e){}
     scoutTick(); }
   renderScout();
+};
+$('autoTgl').onclick=()=>{
+  if(!autoS && !scoutOn){ toast('קודם הפעל את הצלף — הטייס נכנס על ההתראות שלו'); return; }
+  setAutoS(!autoS);
 };
 $('scoutLog').onclick=e=>{
   const b=e.target.closest('[data-sc-go]'); if(!b) return;
@@ -1458,6 +1499,7 @@ window.__scalp={
     stats:()=>({n:coreN, gold:coreGold}) },
   alpha:{ ask:alphaAsk, ctx:alphaCtx, last:()=>alphaLast,
     ready:()=>!!(alphaKey()||groqKey()) },
+  auto:(on,why)=>{ if(on!==undefined) setAutoS(on,why); return autoS; },
 };
 </script>
 </body>

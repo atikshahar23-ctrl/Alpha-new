@@ -417,6 +417,7 @@ footer{max-width:900px;margin:0 auto;padding:8px 14px 22px;color:var(--dim);font
   <span class="hspace"></span>
   <button class="hbtn" id="alertBtn" title="התראה + צליל כשאיתות נהיה 🟢">🔔</button>
   <button class="hbtn" id="strictBtn" title="מצב סלקטיבי: התראה רק על 20/20 בדיקות">🎯</button>
+  <button class="hbtn" id="autoBtn" title="טייס אוטומטי: כניסת נייר אוטומטית על כל איתות GO — קריפטו ומניות">🤖</button>
   <button class="hbtn" id="voiceBtn" title="תקציר קולי: מצב השוק, האיתותים החמים והביצועים">🔊</button>
   <button class="hbtn" id="galBtn" title="גלקסיית השוק — מפת חום חיה של כל היקום">🌌</button>
   <button class="hbtn" id="refreshBtn">↻ רענן</button>
@@ -2876,6 +2877,12 @@ function checkAlerts(){
     if(goAlerted[r.sym] && now-goAlerted[r.sym]<600000) continue;
     goAlerted[r.sym]=now;
     recordSig(r,s);              // the ledger grades every 🟢, sound on or off
+    // v444: autopilot — automatic PAPER entry on every fresh GO, any market
+    // (stocks included: same engine). Guards: tilt day, 3-position cap,
+    // one position per symbol. The radar never touches a real exchange.
+    if(autoOn && !tiltActive() && poss.length<3 && !poss.some(p=>p.sym===r.sym)){
+      try{ if(enterPos(r.sym)) toast('🤖 הטייס נכנס (נייר): '+r.sym); }catch(e){}
+    }
     if(!alertsOn) continue;
     if(tiltActive()) continue;         // red day — the guard mutes the nagging
     if(strictOn){
@@ -2893,6 +2900,17 @@ function checkAlerts(){
     const row=document.querySelector(`.mrow[data-sym="${r.sym}"]`);
     if(row){ row.classList.remove('goFlash'); void row.offsetWidth; row.classList.add('goFlash'); }
   }
+}
+// v444: radar autopilot — paper entries, never a real exchange order
+let autoOn=false;
+try{ autoOn=localStorage.getItem('na:radar:auto')==='1'; }catch(e){}
+function setAuto(on){
+  autoOn=!!on;
+  try{ localStorage.setItem('na:radar:auto',autoOn?'1':'0'); }catch(e){}
+  const b=$('autoBtn'); if(b) b.classList.toggle('on',autoOn);
+  toast(autoOn
+    ? '🤖 טייס אוטומטי פעיל — כניסת נייר על כל GO (קריפטו ומניות). המערכת לא שולחת פקודות לבורסה.'
+    : 'הטייס האוטומטי כובה');
 }
 function setAlerts(on){
   alertsOn=!!on;
@@ -3328,6 +3346,8 @@ document.addEventListener('keydown',e=>{
 $('alertBtn').onclick=()=>setAlerts(!alertsOn);
 $('strictBtn').onclick=()=>setStrict(!strictOn);
 if(strictOn) $('strictBtn').classList.add('on');
+$('autoBtn').onclick=()=>setAuto(!autoOn);
+if(autoOn) $('autoBtn').classList.add('on');
 if(alertsOn) $('alertBtn').classList.add('on');
 $('goStrip').addEventListener('click',e=>{
   const c=e.target.closest('[data-go]'); if(!c) return;
@@ -3441,6 +3461,7 @@ setInterval(()=>{
 // test hooks — the same style every app in the suite exposes
 window.__mkt={ rows, scan:()=>scan, state:()=>({filter,sortKey,sortDir,query,expanded,acct,riskPct}),
   yState:()=>({via:yVia,bad:yBad.slice(),deadAt:yAllDeadAt,n:Y_VIAS.length}),
+  auto:(on)=>{ if(on!==undefined) setAuto(on); return autoOn; },
   tv:tvScan, tvInfo:()=>({state:tvState,sweep:Object.assign({},stockSweep),via:tvVia}),
   lens:setLens, lensName:()=>lens, lensRects:()=>lensRects.slice(),
   radOpen:openRad, radClose:closeRad,
