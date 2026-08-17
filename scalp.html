@@ -90,7 +90,7 @@ button{font-family:inherit;cursor:pointer}
   <a href="markets.html">→ ראדאר</a>
   <h1>⚡ סקאלפ 3 נרות</h1>
   <span class="ver">ארנק נפרד · נייר · נתוני Binance אמיתיים</span>
-  <span class="ver" id="pageVer">v440</span>
+  <span class="ver" id="pageVer">v441</span>
 </header>
 
 <div class="card">
@@ -150,6 +150,12 @@ button{font-family:inherit;cursor:pointer}
 
 <div class="card" id="coolBar" hidden style="border-color:rgba(255,82,82,.55);background:rgba(255,82,82,.07)">
   ☕ <b>3 הפסדים רצופים.</b> השיטה אומרת: הפסקה של 10 דקות. השוק לא בורח — הראש כן.
+</div>
+
+<div class="card" id="crowdCard">
+  <h2>🧠 מודיעין ההמון — מה הכסף של כולם עושה עכשיו</h2>
+  <div id="crowdChips" style="display:flex;gap:6px;flex-wrap:wrap;font-family:'JetBrains Mono',monospace;font-size:11.5px"></div>
+  <div id="crowdRead" style="font-size:12px;margin-top:7px;line-height:1.7;color:var(--txt)"></div>
 </div>
 
 <div class="card" id="posCard" hidden>
@@ -358,8 +364,9 @@ async function pollK(){
 }
 function setSel(s){
   if(pos && s!==pos.sym){ toast('יש עסקה פתוחה על '+pos.sym+' — סגור אותה קודם'); return; }
-  sel=s; candles=[]; lead=null; btRes=null; drawUni(); drawAll(); pollK(); wsSync();
+  sel=s; candles=[]; lead=null; btRes=null; crowd=null; drawUni(); drawAll(); pollK(); wsSync();
   try{ leadCalc(); }catch(e){}
+  try{ crowdFetch(); }catch(e){}
   const bo=$('btOut'); if(bo) bo.innerHTML='';
 }
 
@@ -463,7 +470,8 @@ function enter(dir){
   pos={sym:sel,dir,entry:px,t:Date.now(),fromT:curT,doneT:0,candles:0,
     size:W.size,lev:W.lev,stop:W.stop,fee:W.fee,
     fac: bn? {ls:bn.ls,ss:bn.ss,rsi:bn.rsi,m15:bn.m15,volX:bn.volX,atr:bn.atr} : null,
-    withFlow: bn? (dir==='long'? bn.ls>=4 : bn.ss>=4) : null};
+    withFlow: bn? (dir==='long'? bn.ls>=4 : bn.ss>=4) : null,
+    crowd: crowd&&crowd.sym===sel? {fund:crowd.fund,ls:crowd.ls,taker:crowd.taker,oiChg:crowd.oiChg} : null};
   saveP(); drawAll(); wakeSync(); drawTitle();
   toast((dir==='long'?'▲ לונג':'▼ שורט')+' על '+sel+' @ '+px+' — היד על ההדק: 3 נרות מקסימום');
 }
@@ -473,7 +481,7 @@ function closePos(reason,px){
   const pnl=+(pnlAt(px)-fees).toFixed(2);          // NET — what the wallet really gets
   W.bal=+(W.bal+pnl).toFixed(2); saveW();
   hist.push({sym:pos.sym,dir:pos.dir,entry:pos.entry,exit:px,pnl,fees,reason,
-    ct:pos.candles,t:pos.t,xt:Date.now(),withFlow:pos.withFlow,fac:pos.fac,
+    ct:pos.candles,t:pos.t,xt:Date.now(),withFlow:pos.withFlow,fac:pos.fac,crowd:pos.crowd||null,
     peak:+Math.max(pos.peak!=null?pos.peak:pnl, pnl).toFixed(2)});
   saveH();
   toast((pnl>=0?'🎯 +$':'🛑 -$')+Math.abs(pnl).toFixed(2)+' · '+reason);
@@ -869,6 +877,72 @@ $('scoutLog').onclick=e=>{
   $('cv').scrollIntoView({behavior:'smooth',block:'center'});
 };
 
+// ── 🧠 CROWD INTEL (v441) — four Binance data feeds nobody here used ───
+// Funding rate (who PAYS to hold), long/short account ratio (how the
+// crowd is positioned), taker buy/sell ratio (who hits market orders
+// right now) and open-interest drift (positions building or unwinding).
+// A rule-based Hebrew synthesis — descriptive reads, never predictions.
+let crowd=null;
+async function crowdFetch(){
+  if(!sel) return;
+  const pair=sel+'USDT', mySel=sel;
+  try{
+    const g=async(u)=>{ const r=await fetch(u); return r.ok? r.json() : null; };
+    const [pi,ls,tk,oi]=await Promise.all([
+      g(`${FAPI}/fapi/v1/premiumIndex?symbol=${pair}`),
+      g(`${FAPI}/futures/data/globalLongShortAccountRatio?symbol=${pair}&period=5m&limit=1`),
+      g(`${FAPI}/futures/data/takerlongshortRatio?symbol=${pair}&period=5m&limit=1`),
+      g(`${FAPI}/futures/data/openInterestHist?symbol=${pair}&period=5m&limit=7`),
+    ]);
+    if(mySel!==sel) return;                      // coin switched mid-flight
+    const fund= pi&&isFinite(+pi.lastFundingRate)? +pi.lastFundingRate*100 : null;
+    const nextF= pi&&+pi.nextFundingTime>0? +pi.nextFundingTime : null;
+    const lsr= Array.isArray(ls)&&ls[0]&&isFinite(+ls[0].longShortRatio)? +ls[0].longShortRatio : null;
+    const tkr= Array.isArray(tk)&&tk[0]&&isFinite(+tk[0].buySellRatio)? +tk[0].buySellRatio : null;
+    let oiChg=null;
+    if(Array.isArray(oi)&&oi.length>=2){
+      const a=+oi[0].sumOpenInterest, b2=+oi[oi.length-1].sumOpenInterest;
+      if(a>0 && isFinite(b2)) oiChg=(b2/a-1)*100;
+    }
+    crowd= (fund==null&&lsr==null&&tkr==null&&oiChg==null)? null
+      : {sym:mySel, fund, nextF, ls:lsr, taker:tkr, oiChg:oiChg!=null?+oiChg.toFixed(2):null, at:Date.now()};
+  }catch(e){ crowd=null; }
+  renderCrowd();
+}
+function crowdRead(c){
+  const out=[];
+  if(c.fund!=null && c.ls!=null){
+    if(c.fund>0.03 && c.ls>1.5) out.push('🔥 לונג צפוף: ההמון לונג כבד ('+c.ls.toFixed(2)+') וגם משלם פאנדינג כדי להישאר — עסקאות צפופות נוטות להיסחט. זהירות מרדיפת לונג.');
+    else if(c.fund<-0.03 && c.ls<0.7) out.push('🧊 שורט צפוף: ההמון שורט כבד ומשלם על זה — קרקע קלאסית לשורט-סקוויז. זהירות מרדיפת שורט.');
+  }
+  if(c.taker!=null){
+    if(c.taker>=1.2) out.push('⚔️ הקונים מכים בשוק עכשיו (יחס טייקרים '+c.taker.toFixed(2)+') — זרימה אגרסיבית פנימה.');
+    else if(c.taker<=0.8) out.push('⚔️ המוכרים מכים בשוק עכשיו ('+c.taker.toFixed(2)+') — זרימה אגרסיבית החוצה.');
+  }
+  if(c.oiChg!=null){
+    if(c.oiChg>=2) out.push('📊 פוזיציות נבנות (OI +'+c.oiChg+'% בחצי שעה) — מהלך עם כסף חדש מאחוריו.');
+    else if(c.oiChg<=-2) out.push('📊 פוזיציות נסגרות (OI '+c.oiChg+'%) — המהלך הנוכחי הוא כיסוי, לא אמונה.');
+  }
+  return out.length? out.join('<br>') : '⚪ ההמון מאוזן כרגע — אין קיצון שמספר סיפור.';
+}
+function renderCrowd(){
+  const chips=$('crowdChips'), read=$('crowdRead');
+  if(!chips) return;
+  if(!crowd){
+    chips.innerHTML='<span class="bch">נתוני ההמון לא נגישים כרגע</span>';
+    read.textContent='';
+    return;
+  }
+  const c=crowd;
+  const fMins= c.nextF? Math.max(0,Math.round((c.nextF-Date.now())/60000)) : null;
+  chips.innerHTML=
+    (c.fund!=null? `<span class="bch onf" style="color:${c.fund>0?'var(--up)':'var(--down)'}">💰 פאנדינג ${c.fund>=0?'+':''}${c.fund.toFixed(4)}%${fMins!=null?' · עוד '+Math.floor(fMins/60)+':'+String(fMins%60).padStart(2,'0')+'ש׳':''}</span>`:'')+
+    (c.ls!=null? `<span class="bch onf">⚖️ לונג/שורט ${c.ls.toFixed(2)}</span>`:'')+
+    (c.taker!=null? `<span class="bch onf">⚔️ טייקרים ${c.taker.toFixed(2)}</span>`:'')+
+    (c.oiChg!=null? `<span class="bch onf" style="color:${c.oiChg>=0?'var(--up)':'var(--down)'}">📊 OI ${c.oiChg>=0?'+':''}${c.oiChg}% / 30ד</span>`:'');
+  read.innerHTML=crowdRead(c);
+}
+
 // ── 🧭 BTC LEAD-LAG COMPASS (v440) — who is dragging your coin? ────────
 // Measures the Pearson correlation between the selected coin's 1m
 // returns and BTC's, at lags 0-3 candles, over the last ~70 minutes.
@@ -1076,6 +1150,7 @@ setInterval(()=>{ if(!document.hidden) wsSync(); },20000);   // WS auto-reconnec
 setInterval(()=>{ if(!document.hidden) scoutTick(); },30000);
 setInterval(()=>{ if(!document.hidden) gradeShadows(); },60000);
 setInterval(()=>{ if(!document.hidden) leadCalc(); },60000);
+setInterval(()=>{ if(!document.hidden) crowdFetch(); },60000);
 safe(renderScout);
 if(scoutOn) setTimeout(()=>{ scoutTick(); gradeShadows(); },2500);
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden){ wsSync(); wakeSync(); } });
@@ -1098,6 +1173,7 @@ window.__scalp={
     add:(s)=>{ shadows.push(s); saveShadows(); renderScout(); } },
   lead:()=>lead&&Object.assign({},lead), leadCalc, backtest, bt:()=>btRes&&Object.assign({},btRes),
   card:shareTrade, lastCard:()=>lastCardData,
+  crowd:()=>crowd&&Object.assign({},crowd), crowdFetch, crowdRead,
 };
 </script>
 </body>
