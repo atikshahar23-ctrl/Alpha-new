@@ -80,7 +80,7 @@ button{font-family:inherit;cursor:pointer}
   <a href="markets.html">→ ראדאר</a>
   <h1>⚡ סקאלפ 3 נרות</h1>
   <span class="ver">ארנק נפרד · נייר · נתוני Binance אמיתיים</span>
-  <span class="ver" id="pageVer">v437</span>
+  <span class="ver" id="pageVer">v438</span>
 </header>
 
 <div class="card">
@@ -108,6 +108,16 @@ button{font-family:inherit;cursor:pointer}
     <span>2️⃣ אחרי 3 נרות → סוגרים בכל מקרה</span>
     <span>🛑 סטופ חירום תוך-נר</span>
   </div>
+</div>
+
+<div class="card" id="scoutCard">
+  <h2 style="display:flex;align-items:center;gap:8px">🎯 הצלף — סורק את כל המטבעות ברקע
+    <button class="ghost" id="scoutTgl" style="margin-right:auto">כבוי</button></h2>
+  <div id="scoutBody" class="empty" style="text-align:right;padding:6px 0">
+    כשמטבע מתיישר עם הזרם (4/5+ עם דחיפת מומנטום) — צלצול והזדמנות בלחיצה.
+    כל התראה נסחרת אוטומטית ביומן־צל לפי שיטת 3 הנרות, גם אם לא נכנסת —
+    כדי שתראה במספרים כמה ההתראות באמת שוות. מדוד, לא מובטח.</div>
+  <div id="scoutLog"></div>
 </div>
 
 <div class="card">
@@ -342,9 +352,11 @@ function atrPctOf(cs){
   return p>0? (a/14)/p*100 : 0;
 }
 let brainNow=null;
-function brainOf(){
-  if(candles.length<25) return null;
-  const cs=candles, closes=cs.map(c=>c.c), n=closes.length, p=closes[n-1];
+// brainCore reads ANY candle series — the chart's coin and the sniper's
+// background scans go through the exact same math
+function brainCore(cs){
+  if(!cs || cs.length<25) return null;
+  const closes=cs.map(c=>c.c), n=closes.length, p=closes[n-1];
   if(!(p>0)) return null;
   const gap=(emaLast(closes,9)-emaLast(closes,21))/p*100;
   const rsi=rsi14(closes);
@@ -360,6 +372,7 @@ function brainOf(){
   return {p,gap:+gap.toFixed(3),rsi:Math.round(rsi),m5:+m5.toFixed(2),m15:+m15.toFixed(2),
     volX:+volX.toFixed(2),atr:+atr.toFixed(3),ls,ss};
 }
+function brainOf(){ return brainCore(candles); }
 const flowLab=s=> s>=4? ['עם הזרם 🌊','var(--up)'] : s<=1? ['נגד הזרם ⚠️','var(--down)'] : ['רעש · אין יתרון','var(--dim)'];
 function drawBrain(){
   brainNow=brainOf();
@@ -668,6 +681,120 @@ function drawAll(){
   }
 }
 
+// ── 🎯 THE SNIPER (v438) — background scout + shadow ledger ────────────
+// Scans the whole universe on a 30s cadence through brainCore (the same
+// math as the chart's brain). A coin aligned 4/5+ with a real momentum
+// push rings once (10-min cooldown per coin). EVERY alert is also traded
+// in a shadow ledger by the 3-candle method — entry, stop, fees, all of
+// it — even when the trader ignores it. The sniper earns trust with a
+// measured record, never with promises.
+let scoutOn=false, scoutLast={}, shadows=[];
+try{ scoutOn=localStorage.getItem('na:scalp:scouton')==='1'; }catch(e){}
+try{ shadows=JSON.parse(localStorage.getItem('na:scalp:shadow')||'[]'); }catch(e){}
+if(!Array.isArray(shadows)) shadows=[];
+shadows=shadows.filter(s=>s && s.sym && s.entry>0);
+function saveShadows(){ shadows=shadows.slice(-100);
+  try{ localStorage.setItem('na:scalp:shadow',JSON.stringify(shadows)); }catch(e){} }
+let scoutBusy=false;
+async function scoutTick(){
+  if(!scoutOn || scoutBusy || !uni.length) return;
+  scoutBusy=true;
+  try{
+    const targets=uni.slice(0,12);
+    for(const u of targets){
+      if(Date.now()-(scoutLast[u.sym]||0)<10*60000) continue;
+      try{
+        const r=await fetch(`${FAPI}/fapi/v1/klines?symbol=${u.pair}&interval=1m&limit=30`);
+        if(!r.ok) continue;
+        const raw=await r.json(); if(!Array.isArray(raw)||raw.length<25) continue;
+        const cs=raw.map(a=>({t:+a[0],o:+a[1],h:+a[2],l:+a[3],c:+a[4],v:+a[5]||0}));
+        const bn=brainCore(cs); if(!bn) continue;
+        const dir= (bn.ls>=4 && bn.m15>=0.25)? 'long' : (bn.ss>=4 && bn.m15<=-0.25)? 'short' : null;
+        if(!dir) continue;
+        scoutLast[u.sym]=Date.now();
+        const last=cs[cs.length-1];
+        shadows.push({sym:u.sym, dir, entry:last.c, t:Date.now(), fromT:last.t, doneT:0,
+          candles:0, size:W.size, lev:W.lev, stop:W.stop, fee:W.fee,
+          score:dir==='long'?bn.ls:bn.ss, out:null, pnl:null});
+        saveShadows();
+        if(!pos){                             // a live trade mutes new rings, not the ledger
+          toast('🎯 הצלף: '+u.sym+' '+(dir==='long'?'▲ לונג':'▼ שורט')+' '+(dir==='long'?bn.ls:bn.ss)+'/5');
+          beep('win');
+          try{
+            if('Notification' in window && Notification.permission==='granted')
+              new Notification('🎯 הצלף מצא יישור', {body:u.sym+' '+(dir==='long'?'לונג':'שורט')+' — פתח את הסקאלפ', tag:'scout-'+u.sym});
+          }catch(e){}
+        }
+        renderScout();
+      }catch(e){}
+    }
+  } finally{ scoutBusy=false; }
+}
+// grade open shadows against what the market ACTUALLY did — conservative
+// (a stop wick inside the candle counts before the close, like the radar)
+async function gradeShadows(){
+  let dirty=false;
+  for(const s of shadows){
+    if(s.out || Date.now()-s.t<70000) continue;
+    try{
+      const r=await fetch(`${FAPI}/fapi/v1/klines?symbol=${s.sym}USDT&interval=1m&startTime=${s.fromT}&limit=8`);
+      if(!r.ok) continue;
+      const raw=await r.json(); if(!Array.isArray(raw)) continue;
+      const cs=raw.map(a=>({t:+a[0],o:+a[1],h:+a[2],l:+a[3],c:+a[4]}));
+      const exp=s.size*s.lev, fees=exp*((s.fee||0))/100*2;
+      const stopLv= s.dir==='long'? s.entry*(1-s.stop/100) : s.entry*(1+s.stop/100);
+      for(let i=0;i<cs.length-1;i++){
+        const c=cs[i];
+        if(c.t<s.fromT || c.t<=(s.doneT||0)) continue;
+        const hitStop= s.dir==='long'? c.l<=stopLv : c.h>=stopLv;
+        if(hitStop){ s.out='stop'; s.pnl=+(-exp*s.stop/100-fees).toFixed(2); dirty=true; break; }
+        s.candles=(s.candles||0)+1; s.doneT=c.t;
+        const mv= s.dir==='long'? c.c/s.entry-1 : 1-c.c/s.entry;
+        const net=+(mv*exp-fees).toFixed(2);
+        if(net>0){ s.out='win'; s.pnl=net; dirty=true; break; }
+        if(s.candles>=3){ s.out='3'; s.pnl=net; dirty=true; break; }
+      }
+    }catch(e){}
+  }
+  if(dirty){ saveShadows(); renderScout(); }
+}
+function renderScout(){
+  const tg=$('scoutTgl'); if(!tg) return;
+  tg.textContent= scoutOn? '🟢 פעיל' : 'כבוי';
+  tg.classList.toggle('on',scoutOn);
+  const graded=shadows.filter(s=>s.out);
+  const statLine= graded.length?
+    (()=>{ const w=graded.filter(s=>s.pnl>0).length, net=graded.reduce((a,s)=>a+s.pnl,0);
+      return `<div class="hrow"><b>📒 יומן הצל (מדוד)</b><span>${graded.length} התראות</span>`+
+        `<span>${Math.round(w/graded.length*100)}% פגיעה</span>`+
+        `<span style="color:${net>=0?'var(--up)':'var(--down)'}">${money(net)}</span>`+
+        `<span class="why">תוחלת ${money(net/graded.length)}/התראה</span></div>`; })() : '';
+  const rows=shadows.slice(-3).reverse().map(s=>{
+    const age=Math.max(0,Math.round((Date.now()-s.t)/60000));
+    const st= s.out==null? '<span class="why">⏳ ביומן הצל…</span>'
+      : `<span style="color:${s.pnl>0?'var(--up)':'var(--down)'}">${s.out==='win'?'🎯':s.out==='stop'?'🛑':'⏱'} ${money(s.pnl)}</span>`;
+    return `<div class="hrow"><b>🎯 ${s.sym}</b> ${s.dir==='long'?'▲':'▼'} <span>${s.score}/5</span>`+
+      `<span class="why">לפני ${age<60?age+' דק׳':Math.floor(age/60)+' שע׳'}</span>${st}`+
+      `<button class="ghost" data-sc-go="${s.sym}" style="margin-right:auto;padding:3px 10px;font-size:11px">⚡ קפוץ</button></div>`;
+  }).join('');
+  $('scoutLog').innerHTML=statLine+rows;
+  $('scoutBody').style.display= scoutOn && shadows.length? 'none':'';
+}
+$('scoutTgl').onclick=()=>{
+  scoutOn=!scoutOn;
+  try{ localStorage.setItem('na:scalp:scouton',scoutOn?'1':'0'); }catch(e){}
+  if(scoutOn){ toast('🎯 הצלף פעיל — סורק כל 30 שניות');
+    try{ if('Notification' in window && Notification.permission==='default') Notification.requestPermission(); }catch(e){}
+    scoutTick(); }
+  renderScout();
+};
+$('scoutLog').onclick=e=>{
+  const b=e.target.closest('[data-sc-go]'); if(!b) return;
+  if(pos && b.dataset.scGo!==pos.sym){ toast('יש עסקה פתוחה — סגור אותה קודם'); return; }
+  setSel(b.dataset.scGo);
+  $('cv').scrollIntoView({behavior:'smooth',block:'center'});
+};
+
 // ── reconstruct honestly after the page was closed mid-trade ───────────
 async function backfill(){
   if(!pos) return;
@@ -731,6 +858,10 @@ setInterval(()=>{ if(!document.hidden){
   safe(drawChart);                       // pulsing dot + fresh candles
 } },1000);
 setInterval(()=>{ if(!document.hidden) wsSync(); },20000);   // WS auto-reconnect
+setInterval(()=>{ if(!document.hidden) scoutTick(); },30000);
+setInterval(()=>{ if(!document.hidden) gradeShadows(); },60000);
+safe(renderScout);
+if(scoutOn) setTimeout(()=>{ scoutTick(); gradeShadows(); },2500);
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden){ wsSync(); wakeSync(); } });
 
 // test hooks
@@ -746,6 +877,9 @@ window.__scalp={
   beepLast:()=>lastBeep, csv:csvText, streak:streakOf, wsOk:()=>swsOk,
   brain:()=>brainNow||brainOf(), netAt, drawBrain,
   chartMeta:()=>chartMeta,
+  scout:{ tick:scoutTick, grade:gradeShadows, on:()=>scoutOn,
+    shadows:()=>shadows.map(s=>Object.assign({},s)),
+    add:(s)=>{ shadows.push(s); saveShadows(); renderScout(); } },
 };
 </script>
 </body>
