@@ -90,7 +90,7 @@ button{font-family:inherit;cursor:pointer}
   <a href="markets.html">→ ראדאר</a>
   <h1>⚡ סקאלפ 3 נרות</h1>
   <span class="ver">ארנק נפרד · נייר · נתוני Binance אמיתיים</span>
-  <span class="ver" id="pageVer">v439</span>
+  <span class="ver" id="pageVer">v440</span>
 </header>
 
 <div class="card">
@@ -137,7 +137,7 @@ button{font-family:inherit;cursor:pointer}
 </div>
 
 <div class="card">
-  <div id="chartHead"><span id="selSym">—</span><span id="selPx"></span><span id="cndl"></span><span id="liveB"></span></div>
+  <div id="chartHead"><span id="selSym">—</span><span id="selPx"></span><span id="cndl"></span><span id="liveB"></span><span id="leadB"></span></div>
   <canvas id="cv"></canvas>
   <div id="brain"></div>
   <div class="entbtns">
@@ -145,6 +145,7 @@ button{font-family:inherit;cursor:pointer}
     <button id="goShort">▼ שורט</button>
   </div>
   <div id="plan" style="font-size:11.5px;color:var(--dim);margin-top:8px;font-family:'JetBrains Mono',monospace;line-height:1.7"></div>
+  <div id="btOut" style="font-size:11.5px;margin-top:6px;font-family:'JetBrains Mono',monospace;line-height:1.7"></div>
 </div>
 
 <div class="card" id="coolBar" hidden style="border-color:rgba(255,82,82,.55);background:rgba(255,82,82,.07)">
@@ -357,7 +358,9 @@ async function pollK(){
 }
 function setSel(s){
   if(pos && s!==pos.sym){ toast('יש עסקה פתוחה על '+pos.sym+' — סגור אותה קודם'); return; }
-  sel=s; candles=[]; drawUni(); drawAll(); pollK(); wsSync();
+  sel=s; candles=[]; lead=null; btRes=null; drawUni(); drawAll(); pollK(); wsSync();
+  try{ leadCalc(); }catch(e){}
+  const bo=$('btOut'); if(bo) bo.innerHTML='';
 }
 
 // ── 🧠 ENTRY BRAIN (v436) — read the current, honestly ─────────────────
@@ -523,7 +526,8 @@ function drawPlan(){
   el.innerHTML=`🧮 תוכנית: חשיפה $${exp.toFixed(0)} (${W.size}$×${W.lev}) · כל 0.1% תנועה = $${(exp*0.001).toFixed(2)}`+
     `<br>🛑 סטופ חירום ${W.stop}%- = -$${(exp*W.stop/100+fees).toFixed(2)} כולל עמלות · יציאה אוטומטית עד 3 נרות`+
     `<br>💸 עמלות הלוך-חזור $${fees.toFixed(2)} — "רווח" נספר רק אחרי שהן שולמו `+
-    `<button class="ghost" id="atrStop" style="padding:3px 9px;font-size:10.5px">🎯 סטופ לפי ATR</button>`;
+    `<button class="ghost" id="atrStop" style="padding:3px 9px;font-size:10.5px">🎯 סטופ לפי ATR</button> `+
+    `<button class="ghost" id="btBtn" style="padding:3px 9px;font-size:10.5px">🕰 בחן שיטה 16ש׳</button>`;
   const ab=$('atrStop');
   if(ab) ab.onclick=()=>{
     const b=brainNow||brainOf();
@@ -532,6 +536,8 @@ function drawPlan(){
     saveW(); drawWallet(); drawPlan();
     toast('🎯 הסטופ כוון לרעש של המטבע: '+W.stop+'% (1.5×ATR)');
   };
+  const bb=$('btBtn');
+  if(bb) bb.onclick=()=>backtest();
 }
 // v437: pro chart — EMA9/21 overlays (the brain's own eyes), volume bars,
 // price axis, stop + fee-breakeven guide lines while a trade runs, and a
@@ -729,7 +735,8 @@ function drawStats(){
     `<div class="hrow"><b>${h.sym}</b> ${h.dir==='long'?'▲':'▼'}
      <span style="color:${h.pnl>=0?'var(--up)':'var(--down)'}">${money(h.pnl)}</span>
      <span>${h.ct} נר׳</span><span class="why">${h.reason}</span>
-     <span class="why" style="margin-right:auto">${new Date(h.xt).toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'})}</span></div>`).join('')
+     <span class="why" style="margin-right:auto">${new Date(h.xt).toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'})}</span>
+     <button class="ghost" data-share="${hist.indexOf(h)}" style="padding:2px 8px;font-size:10.5px" title="שתף כרטיס עסקה">📤</button></div>`).join('')
     ||'<div class="empty">אין עסקאות בסינון הזה</div>';
 }
 // v437: armored — one bad draw never kills the page (v426's lesson)
@@ -862,6 +869,147 @@ $('scoutLog').onclick=e=>{
   $('cv').scrollIntoView({behavior:'smooth',block:'center'});
 };
 
+// ── 🧭 BTC LEAD-LAG COMPASS (v440) — who is dragging your coin? ────────
+// Measures the Pearson correlation between the selected coin's 1m
+// returns and BTC's, at lags 0-3 candles, over the last ~70 minutes.
+// High correlation at lag N means BTC moves first and your coin follows
+// N candles later — the classic laggard read, measured live.
+let lead=null;
+function pearson(a,b){
+  const n=Math.min(a.length,b.length); if(n<10) return 0;
+  let sa=0,sb=0; for(let i=0;i<n;i++){ sa+=a[i]; sb+=b[i]; }
+  const ma=sa/n, mb=sb/n; let num=0,da=0,db=0;
+  for(let i=0;i<n;i++){ const xa=a[i]-ma, xb=b[i]-mb; num+=xa*xb; da+=xa*xa; db+=xb*xb; }
+  const den=Math.sqrt(da*db); return den>0? num/den : 0;
+}
+const rets=p=>{ const out=[]; for(let i=1;i<p.length;i++) out.push(p[i-1]>0?(p[i]-p[i-1])/p[i-1]:0); return out; };
+async function leadCalc(){
+  if(!sel){ lead=null; renderLead(); return; }
+  if(sel==='BTC'){ lead={self:true}; renderLead(); return; }
+  try{
+    const [rs,rb]=await Promise.all([
+      fetch(`${FAPI}/fapi/v1/klines?symbol=${sel}USDT&interval=1m&limit=70`),
+      fetch(`${FAPI}/fapi/v1/klines?symbol=BTCUSDT&interval=1m&limit=70`)]);
+    if(!rs.ok||!rb.ok) return;
+    const a=rets((await rs.json()).map(x=>+x[4])), bb=rets((await rb.json()).map(x=>+x[4]));
+    let best={corr:0,lag:0};
+    for(let lag=0;lag<=3;lag++){
+      const xa=[], xb=[];
+      for(let i=lag;i<a.length && i-lag<bb.length && i<bb.length+lag;i++){ xa.push(a[i]); xb.push(bb[i-lag]); }
+      const c=pearson(xa,xb);
+      if(Math.abs(c)>Math.abs(best.corr)) best={corr:c,lag};
+    }
+    lead={corr:+best.corr.toFixed(2), lag:best.lag, at:Date.now()};
+    renderLead();
+  }catch(e){}
+}
+function renderLead(){
+  const el=$('leadB'); if(!el) return;
+  el.style.fontSize='11px';
+  if(!lead){ el.textContent=''; return; }
+  if(lead.self){ el.textContent='🧭 BTC — המצפן עצמו'; el.style.color='var(--dim)'; return; }
+  const pc=Math.round(Math.abs(lead.corr)*100);
+  if(pc<30){ el.textContent='🧭 עצמאי מ־BTC ('+pc+'%)'; el.style.color='var(--dim)'; }
+  else { el.textContent='🧭 BTC מוביל ב־'+lead.lag+' נר׳ · '+pc+'%';
+    el.style.color= lead.lag>0? 'var(--gold)' : 'var(--dim)'; }
+}
+
+// ── 🕰 TIME MACHINE (v440) — backtest THE method on real history ───────
+// Runs the exact sniper entry condition (brainCore 4/5+ with momentum)
+// and the exact 3-candle exit walk, fees included, over ~16h of real
+// 1m candles. Labeled for what it is: a measurement of the past.
+let btRes=null;
+async function backtest(){
+  if(!sel) return null;
+  try{
+    toast('🕰 בוחן את השיטה על ההיסטוריה של '+sel+'…');
+    const r=await fetch(`${FAPI}/fapi/v1/klines?symbol=${sel}USDT&interval=1m&limit=999`);
+    if(!r.ok) return null;
+    const cs=(await r.json()).map(a=>({t:+a[0],o:+a[1],h:+a[2],l:+a[3],c:+a[4],v:+a[5]||0}));
+    const exp=W.size*W.lev, fees=exp*(W.fee||0)/100*2;
+    const trades=[];
+    let i=30;
+    while(i<cs.length-4){
+      const bn=brainCore(cs.slice(i-30,i+1));
+      const dir= bn&&bn.ls>=4&&bn.m15>=0.25? 'long' : bn&&bn.ss>=4&&bn.m15<=-0.25? 'short' : null;
+      if(!dir){ i++; continue; }
+      const entry=cs[i].c;
+      const stopLv= dir==='long'? entry*(1-W.stop/100) : entry*(1+W.stop/100);
+      let out=null, pnl=0, used=0;
+      for(let k=1;k<=3 && i+k<cs.length;k++){
+        const c=cs[i+k]; used=k;
+        const hitStop= dir==='long'? c.l<=stopLv : c.h>=stopLv;
+        if(hitStop){ out='stop'; pnl=-exp*W.stop/100-fees; break; }
+        const mv= dir==='long'? c.c/entry-1 : 1-c.c/entry;
+        const net=mv*exp-fees;
+        if(net>0){ out='win'; pnl=net; break; }
+        if(k===3){ out='3'; pnl=net; }
+      }
+      if(out){ trades.push({dir,out,pnl:+pnl.toFixed(2)}); i+=used+3; } else i++;
+    }
+    const w=trades.filter(t=>t.pnl>0).length;
+    btRes={sym:sel, n:trades.length, w,
+      net:+trades.reduce((a,t)=>a+t.pnl,0).toFixed(2),
+      hours:+((cs.length)/60).toFixed(1), at:Date.now()};
+    renderBt();
+    return btRes;
+  }catch(e){ return null; }
+}
+function renderBt(){
+  const el=$('btOut'); if(!el||!btRes) return;
+  el.innerHTML= btRes.n?
+    `🕰 <b>${btRes.sym}</b> · ${btRes.hours} שע׳ אחורה · ${btRes.n} כניסות לפי המוח · `+
+    `פגיעה ${Math.round(btRes.w/btRes.n*100)}% · נטו <b style="color:${btRes.net>=0?'var(--up)':'var(--down)'}">${money(btRes.net)}</b> `+
+    `<span style="color:var(--dim)">(עבר ≠ עתיד — מדידה, לא הבטחה)</span>`
+    : `🕰 <b>${btRes.sym}</b> · ${btRes.hours} שע׳ אחורה · אפס כניסות לפי תנאי המוח — השיטה בררנית, וזה בסדר.`;
+}
+
+// ── 📤 TRADE CARD (v440) — a shareable snapshot of a closed trade ──────
+let lastCardData='';
+function tradeCard(h){
+  const cv=document.createElement('canvas'); cv.width=600; cv.height=340;
+  const x=cv.getContext('2d');
+  x.fillStyle='#0a0a10'; x.fillRect(0,0,600,340);
+  for(let i=0;i<40;i++){ x.fillStyle='rgba(255,179,0,'+(0.03+Math.random()*0.08).toFixed(2)+')';
+    x.beginPath(); x.arc(Math.random()*600,Math.random()*340,0.8+Math.random()*1.6,0,6.283); x.fill(); }
+  const g=x.createLinearGradient(0,0,600,0); g.addColorStop(0,'#ffb300'); g.addColorStop(1,'#7fa0ff');
+  x.strokeStyle=g; x.lineWidth=3; x.strokeRect(8,8,584,324);
+  x.fillStyle='#ffb300'; x.font='700 26px monospace'; x.textAlign='right';
+  x.fillText('⚡ סקאלפ 3 נרות', 570, 52);
+  x.fillStyle='#8a8a95'; x.font='15px monospace';
+  x.fillText(new Date(h.xt).toLocaleString('he-IL'), 570, 78);
+  x.textAlign='center';
+  x.fillStyle= h.pnl>=0? '#00e676':'#ff5252'; x.font='800 62px monospace';
+  x.fillText((h.pnl>=0?'+$':'-$')+Math.abs(h.pnl).toFixed(2), 300, 182);
+  x.fillStyle='#e8e8ee'; x.font='700 24px monospace';
+  x.fillText(h.sym+' '+(h.dir==='long'?'▲ LONG':'▼ SHORT'), 300, 228);
+  x.fillStyle='#8a8a95'; x.font='15px monospace';
+  x.fillText(h.reason+' · '+h.ct+' נרות'+(h.peak!=null?' · שיא '+(h.peak>=0?'+$':'-$')+Math.abs(h.peak).toFixed(2):''), 300, 260);
+  x.fillStyle='#55555f'; x.font='13px monospace';
+  x.fillText('ארנק נייר · נתוני Binance אמיתיים · Alpha Heavy Guard', 300, 304);
+  return cv;
+}
+function shareTrade(idx){
+  const h=hist[idx]; if(!h) return;
+  const cv=tradeCard(h);
+  lastCardData=cv.toDataURL('image/png');
+  cv.toBlob(async bl=>{
+    try{
+      const f=new File([bl],h.sym+'-trade.png',{type:'image/png'});
+      if(navigator.canShare && navigator.canShare({files:[f]})){
+        await navigator.share({files:[f], title:'⚡ סקאלפ 3 נרות'}); return; }
+    }catch(e){}
+    try{
+      const a=document.createElement('a'); a.href=lastCardData; a.download=h.sym+'-trade.png';
+      document.body.appendChild(a); a.click(); a.remove();
+      toast('🖼 כרטיס העסקה ירד כתמונה');
+    }catch(e){}
+  });
+}
+$('hist').addEventListener('click',e=>{
+  const b=e.target.closest('[data-share]'); if(b) shareTrade(+b.dataset.share);
+});
+
 // ── reconstruct honestly after the page was closed mid-trade ───────────
 async function backfill(){
   if(!pos) return;
@@ -927,6 +1075,7 @@ setInterval(()=>{ if(!document.hidden){
 setInterval(()=>{ if(!document.hidden) wsSync(); },20000);   // WS auto-reconnect
 setInterval(()=>{ if(!document.hidden) scoutTick(); },30000);
 setInterval(()=>{ if(!document.hidden) gradeShadows(); },60000);
+setInterval(()=>{ if(!document.hidden) leadCalc(); },60000);
 safe(renderScout);
 if(scoutOn) setTimeout(()=>{ scoutTick(); gradeShadows(); },2500);
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden){ wsSync(); wakeSync(); } });
@@ -947,6 +1096,8 @@ window.__scalp={
   scout:{ tick:scoutTick, grade:gradeShadows, on:()=>scoutOn,
     shadows:()=>shadows.map(s=>Object.assign({},s)),
     add:(s)=>{ shadows.push(s); saveShadows(); renderScout(); } },
+  lead:()=>lead&&Object.assign({},lead), leadCalc, backtest, bt:()=>btRes&&Object.assign({},btRes),
+  card:shareTrade, lastCard:()=>lastCardData,
 };
 </script>
 </body>
