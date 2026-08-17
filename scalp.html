@@ -14,15 +14,25 @@ body{background:radial-gradient(1100px 380px at 50% -120px, rgba(255,179,0,.07),
   font-size:14px;padding:10px 10px 90px;max-width:760px;margin:0 auto}
 a{color:var(--gold);text-decoration:none}
 header{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
-header h1{font-size:17px;color:var(--gold);font-family:'JetBrains Mono',monospace;
-  letter-spacing:1px;text-shadow:0 0 14px rgba(255,179,0,.45)}
+header h1{font-size:17px;font-family:'JetBrains Mono',monospace;letter-spacing:1px;
+  background:linear-gradient(90deg,#ffb300,#ffe9b0,#ffb300);background-size:200% 100%;
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  animation:sheen 5s linear infinite;filter:drop-shadow(0 0 10px rgba(255,179,0,.35))}
+@keyframes sheen{to{background-position:200% 0}}
 #posCard.live{animation:glowPulse 2.4s ease-in-out infinite}
 @keyframes glowPulse{0%,100%{box-shadow:0 0 8px rgba(255,179,0,.18)}50%{box-shadow:0 0 22px rgba(255,179,0,.5)}}
 .entbtns button:active{transform:scale(.97)}
 .ghost.on{color:var(--gold);border-color:rgba(255,179,0,.55);background:rgba(255,179,0,.08)}
 .card{transition:border-color .3s}
 header .ver{font-size:10px;color:var(--dim);border:1px solid var(--line);border-radius:6px;padding:2px 6px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px}
+.card{background:rgba(13,13,19,.82);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  border:1px solid rgba(255,179,0,.14);border-radius:14px;padding:12px;margin-bottom:10px;position:relative}
+.card::before{content:'';position:absolute;top:-1px;left:-1px;width:16px;height:16px;
+  border-top:2px solid rgba(255,179,0,.55);border-left:2px solid rgba(255,179,0,.55);
+  border-radius:14px 0 0 0;pointer-events:none}
+.card::after{content:'';position:absolute;bottom:-1px;right:-1px;width:16px;height:16px;
+  border-bottom:2px solid rgba(255,179,0,.3);border-right:2px solid rgba(255,179,0,.3);
+  border-radius:0 0 14px 0;pointer-events:none}
 .card h2{font-size:12.5px;color:var(--dim);font-weight:700;margin-bottom:8px;letter-spacing:.4px}
 #balRow{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
 #bal{font-size:30px;font-weight:800;font-family:'JetBrains Mono',monospace;color:var(--gold)}
@@ -80,7 +90,7 @@ button{font-family:inherit;cursor:pointer}
   <a href="markets.html">→ ראדאר</a>
   <h1>⚡ סקאלפ 3 נרות</h1>
   <span class="ver">ארנק נפרד · נייר · נתוני Binance אמיתיים</span>
-  <span class="ver" id="pageVer">v438</span>
+  <span class="ver" id="pageVer">v439</span>
 </header>
 
 <div class="card">
@@ -171,6 +181,29 @@ button{font-family:inherit;cursor:pointer}
 <script>
 const $=id=>document.getElementById(id);
 const FAPI='https://fapi.binance.com';
+// ── v439: gold-dust command-deck backdrop — 46 particles, rAF gated ────
+(function(){
+  const cv=document.createElement('canvas'); cv.id='bgFx';
+  cv.style.cssText='position:fixed;inset:0;z-index:-1;pointer-events:none';
+  document.body.appendChild(cv);
+  let stars=[],W=0,H=0;
+  const size=()=>{ W=cv.width=innerWidth; H=cv.height=innerHeight;
+    stars=Array.from({length:46},()=>({x:Math.random()*W,y:Math.random()*H,
+      z:.3+Math.random()*.7,r:.6+Math.random()*1.5})); };
+  size(); addEventListener('resize',size);
+  const x=cv.getContext('2d');
+  (function loop(){
+    if(!document.hidden && W){
+      x.clearRect(0,0,W,H);
+      for(const s of stars){
+        s.y+=s.z*.3; if(s.y>H+2){ s.y=-2; s.x=Math.random()*W; }
+        x.fillStyle='rgba(255,179,0,'+(.04+s.z*.11).toFixed(2)+')';
+        x.beginPath(); x.arc(s.x,s.y,s.r,0,6.283); x.fill();
+      }
+    }
+    requestAnimationFrame(loop);
+  })();
+})();
 let toastT=0;
 function toast(m){ const el=$('toastEl'); el.textContent=m; el.style.opacity='1';
   clearTimeout(toastT); toastT=setTimeout(()=>{ el.style.opacity='0'; },3200); }
@@ -408,6 +441,9 @@ function netAt(px){ return pnlAt(px)-roundFees(); }
 function stepClosedCandle(c,suffix){
   if(!pos) return true;
   if(c.t<pos.fromT || c.t<=pos.doneT) return false;
+  // v439: peak tracking — the candle's favorable wick counts
+  const best=netAt(pos.dir==='long'? c.h : c.l);
+  if(pos.peak==null || best>pos.peak) pos.peak=+best.toFixed(2);
   pos.candles++; pos.doneT=c.t; saveP();
   if(netAt(c.c)>0){ closePos('רווח מהיר — נר '+pos.candles+(suffix||''), c.c); return true; }
   if(pos.candles>=3){ closePos('3 נרות — יציאה'+(suffix||''), c.c); return true; }
@@ -434,7 +470,8 @@ function closePos(reason,px){
   const pnl=+(pnlAt(px)-fees).toFixed(2);          // NET — what the wallet really gets
   W.bal=+(W.bal+pnl).toFixed(2); saveW();
   hist.push({sym:pos.sym,dir:pos.dir,entry:pos.entry,exit:px,pnl,fees,reason,
-    ct:pos.candles,t:pos.t,xt:Date.now(),withFlow:pos.withFlow,fac:pos.fac});
+    ct:pos.candles,t:pos.t,xt:Date.now(),withFlow:pos.withFlow,fac:pos.fac,
+    peak:+Math.max(pos.peak!=null?pos.peak:pnl, pnl).toFixed(2)});
   saveH();
   toast((pnl>=0?'🎯 +$':'🛑 -$')+Math.abs(pnl).toFixed(2)+' · '+reason);
   beep(pnl>=0?'win':'loss');
@@ -443,6 +480,8 @@ function closePos(reason,px){
 // candle-close rules: run over every candle that CLOSED after entry
 function applyRules(livePx){
   if(!pos) return;
+  const nNow=netAt(livePx);
+  if(pos.peak==null || nNow>pos.peak) pos.peak=+nNow.toFixed(2);
   // intrabar emergency stop — "fast" applies to losses too
   const mv= pos.dir==='long'? livePx/pos.entry-1 : 1-livePx/pos.entry;
   if(mv*100 <= -pos.stop){ closePos('סטופ חירום ('+(-pos.stop)+'%)', livePx); return; }
@@ -452,8 +491,22 @@ function applyRules(livePx){
 
 // ── painting ───────────────────────────────────────────────────────────
 function money(v){ return (v>=0?'+$':'-$')+Math.abs(v).toFixed(2); }
+// v439: the balance rolls to its new value instead of jumping
+let balShown=null, balAnim=0;
+function rollBal(){
+  const target=W.bal;
+  if(balShown===null){ balShown=target; $('bal').textContent='$'+target.toFixed(2); return; }
+  cancelAnimationFrame(balAnim);
+  const step=()=>{
+    balShown+=(target-balShown)*.22;
+    if(Math.abs(balShown-target)<.01) balShown=target;
+    $('bal').textContent='$'+balShown.toFixed(2);
+    if(balShown!==target) balAnim=requestAnimationFrame(step);
+  };
+  step();
+}
 function drawWallet(){
-  $('bal').textContent='$'+W.bal.toFixed(2);
+  rollBal();
   const net=hist.reduce((a,h)=>a+h.pnl,0);
   $('balPnl').textContent= hist.length? money(net)+' מצטבר' : '';
   $('balPnl').style.color= net>=0?'var(--up)':'var(--down)';
@@ -536,10 +589,18 @@ function drawChart(){
     return out.slice(-cs.length); };
   [[9,'rgba(255,179,0,.8)'],[21,'rgba(120,160,255,.7)']].forEach(([n,col])=>{
     const e=emaSeries(n);
-    x.strokeStyle=col; x.lineWidth=1.2; x.beginPath();
+    x.strokeStyle=col; x.lineWidth=1.2;
+    x.shadowColor=col; x.shadowBlur=6;                 // neon glow
+    x.beginPath();
     e.forEach((v,i)=>{ const X=i*cw+cw/2; i? x.lineTo(X,Y(v)) : x.moveTo(X,Y(v)); });
-    x.stroke(); x.lineWidth=1;
+    x.stroke(); x.lineWidth=1; x.shadowBlur=0;
   });
+  // HUD scan line sweeping the chart
+  const sx=(Date.now()/28)%(w+60)-30;
+  const sg=x.createLinearGradient(sx-22,0,sx+22,0);
+  sg.addColorStop(0,'rgba(255,179,0,0)'); sg.addColorStop(.5,'rgba(255,179,0,.07)');
+  sg.addColorStop(1,'rgba(255,179,0,0)');
+  x.fillStyle=sg; x.fillRect(sx-22,0,44,ph);
   // trade guide lines
   const line=(v,col,lab)=>{ const y=Y(v);
     x.strokeStyle=col; x.setLineDash([5,4]);
@@ -576,6 +637,7 @@ function drawPos(){
   $('ring').style.background='conic-gradient(var(--gold) '+(((60-secs)/60)*100).toFixed(1)+'%, #1d1d24 0)';
   $('posMeta').innerHTML=
     `${pos.sym} ${pos.dir==='long'?'▲ לונג':'▼ שורט'} · כניסה ${pos.entry} · עכשיו ${px}`+
+    (pos.peak!=null? ` · שיא שנגע: <b style="color:var(--gold)">${money(pos.peak)}</b>`:'')+
     `<br>נר ${Math.min(3,pos.candles+1)}/3 · הנר נסגר בעוד ${secs}ש׳ · חשיפה $${(pos.size*pos.lev).toFixed(0)} (×${pos.lev})`+
     `<br>ברווח בסגירת נר → סוגר לבד · סטופ חירום ${pos.stop}%-`;
 }
@@ -601,7 +663,12 @@ function drawStats(){
     (wArr.length? `<span>רווח ממוצע <b>${money(gW/wArr.length)}</b></span>`:'')+
     (lArr.length? `<span>הפסד ממוצע <b>-$${(gL/lArr.length).toFixed(2)}</b></span>`:'')+
     `<span>Profit Factor <b>${pf}</b></span>`+
-    (feesPaid? `<span>עמלות ששולמו <b>$${feesPaid.toFixed(2)}</b></span>`:'');
+    (feesPaid? `<span>עמלות ששולמו <b>$${feesPaid.toFixed(2)}</b></span>`:'')+
+    (()=>{ // v439: money left on the table — peak vs final, measured
+      const withPeak=hist.filter(h=>h.peak!=null && h.peak>h.pnl);
+      if(!withPeak.length) return '';
+      const avg=withPeak.reduce((a,h)=>a+(h.peak-h.pnl),0)/withPeak.length;
+      return `<span>על השולחן <b style="color:var(--gold)">$${avg.toFixed(2)} ממוצע</b></span>`; })();
   // which RULE earns? breakdown per exit reason
   const cats=[['רווח מהיר','⚡ רווח מהיר'],['3 נרות','⏱ 3 נרות'],['סטופ','🛑 סטופ'],['ידני','✋ ידני']];
   $('reasonBrk').innerHTML=cats.map(([k,label])=>{
