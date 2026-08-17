@@ -2265,7 +2265,11 @@ function renderPos(){
   for(let i=sigs.length-1;i>=0 && openSigs.length<6;i--){
     const g=sigs[i]; if(g && !g.out) openSigs.push({g,i});
   }
-  if(!poss.length && !openSigs.length){ el.hidden=true; return; }
+  // v435: the 3-candle scalp wallet (separate page, same device) shows here too
+  let sc3=null;
+  try{ const o=JSON.parse(localStorage.getItem('na:scalp:open')||'null');
+    if(o && o.entry>0 && o.sym) sc3=o; }catch(e){}
+  if(!poss.length && !openSigs.length && !sc3){ el.hidden=true; return; }
   el.hidden=false;
   const today=new Date().toISOString().slice(0,10);
   const dayPnl=myTrades.filter(t=>new Date(t.closedAt).toISOString().slice(0,10)===today)
@@ -2305,7 +2309,10 @@ function renderPos(){
   }).join('');
   const posHd= poss.length? `<div class="shd">💼 הפוזיציות שלי (${poss.length}) · כרגע <b style="color:${tot>=0?'var(--up)':'var(--down)'}">${(tot>=0?'+':'-')}$${Math.abs(tot).toFixed(2)}</b>${myTrades.length?` · סגור היום: <b style="color:${dayPnl>=0?'var(--up)':'var(--down)'}">${(dayPnl>=0?'+':'-')}$${Math.abs(dayPnl).toFixed(2)}</b>`:''}</div>` : '';
   const sigHd= sigRows? `<div class="shd">📡 איתותים במעקב חי (${sigStats().open})</div>` : '';
-  el.innerHTML=`<div class="ph">🔥 עסקאות פעילות (${poss.length+sigStats().open})</div>${posHd}${rows}${sigHd}${sigRows}`;
+  const sc3Row= sc3? `<div class="srow" onclick="location.href='scalp.html'" title="פתח את דף הסקאלפ">`+
+    `<b>⚡ סקאלפ</b> ${sc3.dir==='long'?'▲':'▼'} <span>${sc3.sym} @ ${sc3.entry}</span>`+
+    `<span style="color:var(--dim)">נר ${Math.min(3,(sc3.candles||0)+1)}/3</span><span>↗</span></div>` : '';
+  el.innerHTML=`<div class="ph">🔥 עסקאות פעילות (${poss.length+sigStats().open+(sc3?1:0)})</div>${posHd}${rows}${sigHd}${sigRows}${sc3Row}`;
 }
 
 // ── 🛑 TILT GUARD — the discipline layer every prop desk enforces ───────

@@ -78,6 +78,12 @@ button{font-family:inherit;cursor:pointer}
     <label>מינוף ×<input id="wLev" type="number" min="1" max="50" step="1" inputmode="numeric"></label>
     <label>סטופ חירום %<input id="wStop" type="number" min="0.2" max="10" step="0.1" inputmode="decimal"></label>
   </div>
+  <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap" id="qsRow">
+    <button class="ghost" data-qs="25">$25</button><button class="ghost" data-qs="50">$50</button>
+    <button class="ghost" data-qs="100">$100</button><button class="ghost" data-qs="250">$250</button>
+    <button class="ghost" data-qs="max">💰 מקס</button>
+  </div>
+  <div id="riskWarn" style="margin-top:6px;font-size:11.5px"></div>
 </div>
 
 <div class="card">
@@ -96,18 +102,24 @@ button{font-family:inherit;cursor:pointer}
 </div>
 
 <div class="card">
-  <div id="chartHead"><span id="selSym">—</span><span id="selPx"></span><span id="cndl"></span></div>
+  <div id="chartHead"><span id="selSym">—</span><span id="selPx"></span><span id="cndl"></span><span id="liveB"></span></div>
   <canvas id="cv"></canvas>
   <div class="entbtns">
     <button id="goLong">▲ לונג</button>
     <button id="goShort">▼ שורט</button>
   </div>
+  <div id="plan" style="font-size:11.5px;color:var(--dim);margin-top:8px;font-family:'JetBrains Mono',monospace;line-height:1.7"></div>
+</div>
+
+<div class="card" id="coolBar" hidden style="border-color:rgba(255,82,82,.55);background:rgba(255,82,82,.07)">
+  ☕ <b>3 הפסדים רצופים.</b> השיטה אומרת: הפסקה של 10 דקות. השוק לא בורח — הראש כן.
 </div>
 
 <div class="card" id="posCard" hidden>
   <h2>🔥 העסקה הפעילה</h2>
   <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
     <span id="posPnl">$0.00</span>
+    <span id="ring" style="width:26px;height:26px;border-radius:50%;display:inline-block;background:conic-gradient(var(--gold) 0%,#1d1d24 0)"></span>
     <span class="dots" id="posDots">○○○</span>
     <button class="ghost" id="posClose" style="margin-right:auto">✋ סגור ידנית</button>
   </div>
@@ -115,8 +127,10 @@ button{font-family:inherit;cursor:pointer}
 </div>
 
 <div class="card">
-  <h2>📊 ביצועי השיטה</h2>
+  <h2 style="display:flex;align-items:center;gap:8px">📊 ביצועי השיטה
+    <button class="ghost" id="csvBtn" style="margin-right:auto;padding:4px 10px;font-size:11px">📋 CSV</button></h2>
   <div id="stats"><span class="empty">עוד אין עסקאות</span></div>
+  <div id="reasonBrk" style="margin-top:6px"></div>
   <canvas id="eqCv" hidden></canvas>
   <div id="hist"></div>
 </div>
@@ -144,6 +158,82 @@ let pos=null;
 try{ pos=JSON.parse(localStorage.getItem('na:scalp:open')||'null'); }catch(e){}
 if(pos && !(pos.entry>0 && pos.sym)) pos=null;
 function saveP(){ try{ localStorage.setItem('na:scalp:open',JSON.stringify(pos)); }catch(e){} }
+
+// ── v435: sound, vibration, wake-lock, live title ──────────────────────
+let AC=null, lastBeep='';
+function beep(kind){
+  lastBeep=kind;
+  try{
+    AC=AC||new (window.AudioContext||window.webkitAudioContext)();
+    const o=AC.createOscillator(), g=AC.createGain();
+    o.frequency.value= kind==='win'? 880 : 220;
+    g.gain.value=.12; o.connect(g); g.connect(AC.destination); o.start();
+    o.frequency.exponentialRampToValueAtTime(kind==='win'? 1320 : 150, AC.currentTime+.25);
+    g.gain.exponentialRampToValueAtTime(.001, AC.currentTime+.35);
+    o.stop(AC.currentTime+.4);
+  }catch(e){}
+  try{ navigator.vibrate && navigator.vibrate(kind==='win'? [60,40,60] : [200]); }catch(e){}
+}
+let wake=null;
+async function wakeSync(){
+  try{
+    if(pos && 'wakeLock' in navigator && !wake){
+      wake=await navigator.wakeLock.request('screen');
+      wake.addEventListener('release',()=>{ wake=null; });
+    } else if(!pos && wake){ await wake.release(); wake=null; }
+  }catch(e){ wake=null; }
+}
+function drawTitle(){
+  if(pos){
+    const u=uni.find(x=>x.sym===pos.sym);
+    const px=u&&u.price>0? u.price : pos.entry;
+    const pnl=pnlAt(px);
+    document.title=(pnl>=0?'+$':'-$')+Math.abs(pnl).toFixed(2)+' · '+pos.sym+' ⚡';
+  } else document.title='⚡ סקאלפ 3 נרות — ארנק נפרד';
+}
+// ── v435: sub-second live feed — WS first, the 4s poll stays as backup ──
+let sws=null, swsOk=false, swsSym=null;
+function wsSync(){
+  if(!sel || (sws && swsSym===sel && sws.readyState<=1)) return;
+  try{ if(sws) sws.close(); }catch(e){}
+  sws=null; swsOk=false; swsSym=sel;
+  try{
+    sws=new WebSocket('wss://fstream.binance.com/ws/'+(sel+'usdt').toLowerCase()+'@miniTicker');
+    sws.onopen=()=>{ swsOk=true; drawLiveB(); };
+    sws.onmessage=ev=>{ try{
+      const d=JSON.parse(ev.data), px=+d.c;
+      if(px>0 && swsSym===sel){
+        const u=uni.find(x=>x.sym===sel); if(u) u.price=px;
+        applyRules(px); drawPos(); drawTitle();
+        const el=$('selPx'); if(el){ el.textContent=String(px); }
+      } }catch(e){} };
+    sws.onclose=()=>{ swsOk=false; drawLiveB(); };
+    sws.onerror=()=>{ try{ sws.close(); }catch(e){} };
+  }catch(e){}
+}
+function drawLiveB(){
+  const el=$('liveB'); if(!el) return;
+  el.textContent= swsOk? '⚡ לייב' : 'REST 4ש׳';
+  el.style.color= swsOk? 'var(--up)' : 'var(--dim)';
+  el.style.fontSize='11px';
+}
+// ── v435: streak + trade-plan math + CSV ───────────────────────────────
+function streakOf(){
+  let n=0, win=null;
+  for(let i=hist.length-1;i>=0;i--){
+    const w=hist[i].pnl>0;
+    if(win===null){ win=w; n=1; }
+    else if(w===win) n++;
+    else break;
+  }
+  return {n, win};
+}
+function csvText(){
+  const rows=[['symbol','dir','entry','exit','pnl$','candles','reason','opened','closed']];
+  hist.forEach(h=>rows.push([h.sym,h.dir,h.entry,h.exit,h.pnl,h.ct,h.reason,
+    new Date(h.t).toISOString(),new Date(h.xt).toISOString()]));
+  return rows.map(r=>r.map(v=>String(v).replace(/,/g,';')).join(',')).join('\n');
+}
 
 // ── live data: universe by volume + 1m candles for the chosen coin ─────
 let uni=[], sel=null, candles=[], pollT=0;
@@ -198,7 +288,7 @@ async function pollK(){
 }
 function setSel(s){
   if(pos && s!==pos.sym){ toast('יש עסקה פתוחה על '+pos.sym+' — סגור אותה קודם'); return; }
-  sel=s; candles=[]; drawUni(); drawAll(); pollK();
+  sel=s; candles=[]; drawUni(); drawAll(); pollK(); wsSync();
 }
 
 // ── the 3-candle engine ────────────────────────────────────────────────
@@ -216,7 +306,7 @@ function enter(dir){
   const curT=candles.length? candles[candles.length-1].t : Math.floor(Date.now()/60000)*60000;
   pos={sym:sel,dir,entry:px,t:Date.now(),fromT:curT,doneT:0,candles:0,
     size:W.size,lev:W.lev,stop:W.stop};
-  saveP(); drawAll();
+  saveP(); drawAll(); wakeSync(); drawTitle();
   toast((dir==='long'?'▲ לונג':'▼ שורט')+' על '+sel+' @ '+px+' — היד על ההדק: 3 נרות מקסימום');
 }
 function closePos(reason,px){
@@ -227,7 +317,8 @@ function closePos(reason,px){
     ct:pos.candles,t:pos.t,xt:Date.now()});
   saveH();
   toast((pnl>=0?'🎯 +$':'🛑 -$')+Math.abs(pnl).toFixed(2)+' · '+reason);
-  pos=null; saveP(); drawAll();
+  beep(pnl>=0?'win':'loss');
+  pos=null; saveP(); drawAll(); wakeSync(); drawTitle();
 }
 // candle-close rules: run over every candle that CLOSED after entry
 function applyRules(livePx){
@@ -254,6 +345,17 @@ function drawWallet(){
   $('balPnl').textContent= hist.length? money(net)+' מצטבר' : '';
   $('balPnl').style.color= net>=0?'var(--up)':'var(--down)';
   $('wSize').value=W.size; $('wLev').value=W.lev; $('wStop').value=W.stop;
+  // risk guard: exposure vs wallet, stated in dollars before any entry
+  const exp=W.size*W.lev, warn=$('riskWarn');
+  if(W.size>W.bal){ warn.innerHTML='<span style="color:var(--down)">⛔ גודל העסקה גדול מהיתרה — כניסה חסומה</span>'; }
+  else if(exp>W.bal*0.5){ warn.innerHTML='<span style="color:var(--gold)">⚠️ חשיפה $'+exp.toFixed(0)+' = '+Math.round(exp/W.bal*100)+'% מהארנק — סטופ אחד ('+W.stop+'%) יעלה $'+(exp*W.stop/100).toFixed(2)+'</span>'; }
+  else warn.textContent='';
+}
+function drawPlan(){
+  const el=$('plan'); if(!el) return;
+  const exp=W.size*W.lev;
+  el.innerHTML=`🧮 תוכנית: חשיפה $${exp.toFixed(0)} (${W.size}$×${W.lev}) · כל 0.1% תנועה = $${(exp*0.001).toFixed(2)}`+
+    `<br>🛑 סטופ חירום ${W.stop}%- = -$${(exp*W.stop/100).toFixed(2)} · יציאה אוטומטית עד 3 נרות`;
 }
 function drawChart(){
   const cv=$('cv'), x=cv.getContext('2d');
@@ -297,6 +399,7 @@ function drawPos(){
   $('posDots').textContent='●'.repeat(Math.min(3,pos.candles))+'○'.repeat(Math.max(0,3-pos.candles));
   $('posDots').style.color= pos.candles>=2? 'var(--gold)':'var(--dim)';
   const secs=60-Math.floor(Date.now()/1000)%60;
+  $('ring').style.background='conic-gradient(var(--gold) '+(((60-secs)/60)*100).toFixed(1)+'%, #1d1d24 0)';
   $('posMeta').innerHTML=
     `${pos.sym} ${pos.dir==='long'?'▲ לונג':'▼ שורט'} · כניסה ${pos.entry} · עכשיו ${px}`+
     `<br>נר ${Math.min(3,pos.candles+1)}/3 · הנר נסגר בעוד ${secs}ש׳ · חשיפה $${(pos.size*pos.lev).toFixed(0)} (×${pos.lev})`+
@@ -304,15 +407,29 @@ function drawPos(){
 }
 function drawStats(){
   if(!hist.length){ $('stats').innerHTML='<span class="empty">עוד אין עסקאות</span>';
-    $('eqCv').hidden=true; $('hist').innerHTML=''; return; }
+    $('eqCv').hidden=true; $('hist').innerHTML=''; $('reasonBrk').innerHTML='';
+    $('coolBar').hidden=true; return; }
   const wins=hist.filter(h=>h.pnl>0).length;
   const net=hist.reduce((a,h)=>a+h.pnl,0);
-  const fast=hist.filter(h=>h.reason.includes('רווח מהיר')).length;
+  const sk=streakOf();
   $('stats').innerHTML=
     `<span>עסקאות <b>${hist.length}</b></span>`+
     `<span>פגיעה <b>${Math.round(wins/hist.length*100)}%</b></span>`+
     `<span>נטו <b style="color:${net>=0?'var(--up)':'var(--down)'}">${money(net)}</b></span>`+
-    `<span>יציאות רווח-מהיר <b>${fast}</b></span>`;
+    (sk.n? `<span>רצף <b style="color:${sk.win?'var(--up)':'var(--down)'}">${sk.win?'🔥':'❄️'} ${sk.n} ${sk.win?'נצחונות':'הפסדים'}</b></span>` : '');
+  // which RULE earns? breakdown per exit reason
+  const cats=[['רווח מהיר','⚡ רווח מהיר'],['3 נרות','⏱ 3 נרות'],['סטופ','🛑 סטופ'],['ידני','✋ ידני']];
+  $('reasonBrk').innerHTML=cats.map(([k,label])=>{
+    const g=hist.filter(h=>h.reason.includes(k));
+    if(!g.length) return '';
+    const gnet=g.reduce((a,h)=>a+h.pnl,0);
+    const avgC=(g.reduce((a,h)=>a+(h.ct||0),0)/g.length).toFixed(1);
+    return `<div class="hrow"><b>${label}</b><span>${g.length} עסק׳</span>`+
+      `<span style="color:${gnet>=0?'var(--up)':'var(--down)'}">${money(gnet)}</span>`+
+      `<span class="why">ממוצע ${avgC} נר׳</span></div>`;
+  }).join('');
+  // discipline: 3 straight losses -> the method says coffee
+  $('coolBar').hidden=!(sk.n>=3 && !sk.win);
   const cv=$('eqCv'); cv.hidden=false;
   const x=cv.getContext('2d'); const dpr=Math.min(2,devicePixelRatio||1);
   const w=cv.clientWidth||340, h=60; cv.width=w*dpr; cv.height=h*dpr; x.setTransform(dpr,0,0,dpr,0,0);
@@ -330,7 +447,7 @@ function drawStats(){
      <span class="why" style="margin-right:auto">${new Date(h.xt).toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'})}</span></div>`).join('');
 }
 function drawAll(){
-  drawWallet(); drawChart(); drawPos(); drawStats();
+  drawWallet(); drawPlan(); drawChart(); drawPos(); drawStats(); drawLiveB();
   const u=uni.find(x=>x.sym===sel);
   $('selSym').textContent=sel||'—';
   const px=u&&u.price>0? u.price : (candles.length? candles[candles.length-1].c : 0);
@@ -377,15 +494,29 @@ $('resetW').onclick=()=>{ if(confirm('לאפס את הארנק ל-$1000? (ההי
     if(!(v>0)) return;
     if(id==='wSize') W.size=v; if(id==='wLev') W.lev=Math.min(50,Math.max(1,Math.round(v)));
     if(id==='wStop') W.stop=v;
-    saveW(); drawPos(); };
+    saveW(); drawWallet(); drawPlan(); drawPos(); };
 });
+$('qsRow').onclick=e=>{
+  const b=e.target.closest('[data-qs]'); if(!b) return;
+  W.size= b.dataset.qs==='max'? Math.floor(W.bal) : +b.dataset.qs;
+  saveW(); drawWallet(); drawPlan();
+  toast('גודל עסקה: $'+W.size);
+};
+$('csvBtn').onclick=()=>{
+  if(!hist.length){ toast('אין עסקאות לייצוא'); return; }
+  (navigator.clipboard? navigator.clipboard.writeText(csvText()) : Promise.reject())
+    .then(()=>toast('📋 CSV הועתק — הדבק בגיליון'))
+    .catch(()=>toast('ההעתקה נכשלה'));
+};
 window.addEventListener('resize',drawAll);
 
 drawAll();
 loadUni().then(backfill);
 setInterval(()=>{ if(!document.hidden) pollK(); },4000);
 setInterval(()=>{ if(!document.hidden) loadUni(); },60000);
-setInterval(()=>{ if(!document.hidden && pos) drawPos(); },1000);
+setInterval(()=>{ if(!document.hidden && pos){ drawPos(); drawTitle(); } },1000);
+setInterval(()=>{ if(!document.hidden) wsSync(); },20000);   // WS auto-reconnect
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden){ wsSync(); wakeSync(); } });
 
 // test hooks
 window.__scalp={
@@ -397,6 +528,7 @@ window.__scalp={
     applyRules(c.c); drawAll(); },
   setCandles:(a)=>{ candles=a; },
   rules:applyRules, backfill, pnlAt,
+  beepLast:()=>lastBeep, csv:csvText, streak:streakOf, wsOk:()=>swsOk,
 };
 </script>
 </body>
