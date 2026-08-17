@@ -100,6 +100,28 @@ button{font-family:inherit;cursor:pointer}
   margin-top:6px;font-size:12.5px;line-height:1.7}
 .gate{display:flex;gap:8px;align-items:center;padding:6px 0;border-top:1px solid #16161d;
   font-size:12.5px;font-family:'JetBrains Mono',monospace}
+/* v446: war-room special animations */
+#warModal .card{animation:warIn .55s cubic-bezier(.2,.9,.3,1) backwards}
+@keyframes warIn{from{opacity:0;transform:translateY(22px) scale(.97)}}
+#warPulse{width:100%;height:64px;display:block;margin-bottom:8px}
+.troph{display:inline-flex;flex-direction:column;align-items:center;gap:2px;width:86px;
+  background:#101016;border:1px solid #26262e;border-radius:11px;padding:9px 4px;margin:0 0 6px 6px;
+  font-size:10.5px;text-align:center;line-height:1.4}
+.troph b{font-size:22px}
+.troph.lock{filter:grayscale(1);opacity:.4}
+.troph.pop{animation:tPop .6s cubic-bezier(.2,1.7,.4,1)}
+.troph:not(.lock){border-color:rgba(255,179,0,.5);box-shadow:0 0 10px rgba(255,179,0,.15)}
+@keyframes tPop{from{transform:scale(.2) rotate(-12deg);opacity:0}}
+.duelWrap{display:flex;height:22px;border-radius:11px;overflow:hidden;border:1px solid #26262e;margin-top:6px}
+.duelWrap div{transition:width 1.1s cubic-bezier(.2,.9,.3,1);display:flex;align-items:center;
+  justify-content:center;font-family:'JetBrains Mono',monospace;font-size:10.5px;white-space:nowrap;overflow:hidden}
+.tl{position:relative;padding-right:16px}
+.tl::before{content:'';position:absolute;right:4px;top:4px;bottom:4px;width:2px;
+  background:linear-gradient(180deg,var(--gold),rgba(255,179,0,.05))}
+.tlRow{position:relative;padding:4px 8px 4px 0;font-family:'JetBrains Mono',monospace;font-size:11.5px}
+.tlRow::before{content:'';position:absolute;right:-15px;top:11px;width:7px;height:7px;border-radius:50%;
+  background:var(--gold);box-shadow:0 0 7px var(--gold);animation:tlp 2.2s infinite}
+@keyframes tlp{50%{box-shadow:0 0 15px var(--gold)}}
 /* ── 💠 v442: crystal core — full-screen living brain ── */
 #coreModal{position:fixed;inset:0;z-index:90;background:radial-gradient(900px 500px at 50% 30%,#0b0b18,#05050a)}
 #coreModal[hidden]{display:none!important}
@@ -128,13 +150,22 @@ button{font-family:inherit;cursor:pointer}
   <a href="markets.html">→ ראדאר</a>
   <h1>⚡ סקאלפ 3 נרות</h1>
   <span class="ver">ארנק נפרד · נייר · נתוני Binance אמיתיים</span>
-  <span class="ver" id="pageVer">v445</span>
+  <span class="ver" id="pageVer">v446</span>
   <button class="ghost" id="warBtn" style="margin-right:auto">🏛 מבצעים</button>
   <button class="ghost" id="coreBtn">💠 הליבה</button>
 </header>
 <div id="warModal" hidden>
   <div id="warTop"><b>🏛 חדר המבצעים</b><span>ניתוח מלא · שיעורים בכתב · הכל נמדד</span>
     <button id="warX">✕</button></div>
+  <canvas id="warPulse"></canvas>
+  <div class="card"><h2>🛡 מדד המשמעת · ⚔️ הדו-קרב</h2>
+    <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+      <canvas id="warGauge" style="width:130px;height:80px"></canvas>
+      <div id="warDiscTxt" style="font-size:12.5px;line-height:1.8;flex:1;min-width:150px"></div>
+    </div>
+    <div id="warDuel" style="margin-top:10px"></div></div>
+  <div class="card"><h2>🏆 חדר הגביעים — נפתחים רק בהישגים אמיתיים</h2><div id="warTroph"></div></div>
+  <div class="card"><h2>📖 סיפור היום — העסקאות כמסע</h2><div id="warStory"></div></div>
   <div class="card"><h2>🧾 מה נלמד — שיעורים כתובים מהעסקאות שלך</h2>
     <div id="warLessons"></div>
     <button class="ghost" id="warAlpha" style="margin-top:8px">🤖 בקש מאלפא סיכום מעמיק בכתב</button>
@@ -565,6 +596,7 @@ function closePos(reason,px){
   toast((pnl>=0?'🎯 +$':'🛑 -$')+Math.abs(pnl).toFixed(2)+' · '+reason);
   beep(pnl>=0?'win':'loss');
   pos=null; saveP(); drawAll(); wakeSync(); drawTitle();
+  try{ alphaFeed(); alphaMoment(); }catch(e){}   // keep Alpha fed + call him when it matters
 }
 // candle-close rules: run over every candle that CLOSED after entry
 function applyRules(livePx){
@@ -1070,13 +1102,38 @@ function coreVerdict(c){
   return { label: sc>=4? 'עם הזרם' : sc<=1? 'נגד הזרם' : 'רעש',
     cls: sc>=4? 'gold' : sc<=1? 'down' : 'dim', score:sc, dir };
 }
-function drawShard(x,cx2,cy2,ang,len,col,glow){
-  x.save(); x.translate(cx2,cy2); x.rotate(ang);
-  x.shadowColor=col; x.shadowBlur=glow;
-  x.fillStyle=col;
-  x.beginPath(); x.moveTo(0,-len); x.lineTo(len*0.28,0); x.lineTo(0,len*0.42); x.lineTo(-len*0.28,0);
-  x.closePath(); x.fill();
-  x.restore(); x.shadowBlur=0;
+// v446: TRUE smooth 3D gems — a rotating bipyramid with per-face shading
+// (painter-sorted faces, perspective projection, top-left key light)
+function drawGem(x, cx2, cy2, size, spin, rgb, glow, depthScale){
+  const r=size*0.62, hTop=size*1.15, hBot=size*0.8;
+  const L=[-0.45,-0.6,0.62];                       // key light direction
+  const V=[[0,-hTop,0],[0,hBot,0]];
+  for(let i=0;i<5;i++){ const a=spin+i*(Math.PI*2/5);
+    V.push([Math.cos(a)*r, 0, Math.sin(a)*r]); }
+  const P=V.map(v=>{ const persp=1/(1+v[2]*0.006/(size/22));
+    return [cx2+v[0]*persp*depthScale, cy2+v[1]*persp*depthScale, v[2]]; });
+  const faces=[];
+  for(let i=0;i<5;i++){ const a=2+i, b2=2+((i+1)%5);
+    faces.push([0,a,b2]); faces.push([1,b2,a]); }
+  faces.sort((f,g)=>((V[f[0]][2]+V[f[1]][2]+V[f[2]][2])-(V[g[0]][2]+V[g[1]][2]+V[g[2]][2])));
+  x.save();
+  x.shadowColor='rgb('+rgb+')'; x.shadowBlur=glow;
+  for(const f of faces){
+    const [a,b2,c2]=f;
+    const u=[V[b2][0]-V[a][0],V[b2][1]-V[a][1],V[b2][2]-V[a][2]];
+    const w2=[V[c2][0]-V[a][0],V[c2][1]-V[a][1],V[c2][2]-V[a][2]];
+    const n=[u[1]*w2[2]-u[2]*w2[1], u[2]*w2[0]-u[0]*w2[2], u[0]*w2[1]-u[1]*w2[0]];
+    const nl=Math.hypot(n[0],n[1],n[2])||1;
+    const lum=0.3+0.7*Math.max(0,(n[0]*L[0]+n[1]*L[1]+n[2]*L[2])/nl);
+    x.fillStyle='rgba('+rgb+','+(0.28+lum*0.6).toFixed(2)+')';
+    x.strokeStyle='rgba(255,255,255,'+(lum*0.35).toFixed(2)+')';
+    x.beginPath(); x.moveTo(P[a][0],P[a][1]); x.lineTo(P[b2][0],P[b2][1]);
+    x.lineTo(P[c2][0],P[c2][1]); x.closePath(); x.fill(); x.stroke();
+  }
+  // specular glint on the crown
+  x.fillStyle='rgba(255,255,255,'+(0.35+0.3*Math.sin(spin*3)).toFixed(2)+')';
+  x.beginPath(); x.arc(P[0][0],P[0][1],1.6,0,6.283); x.fill();
+  x.restore();
 }
 function coreLoop(){
   if(!coreOn) return;
@@ -1089,7 +1146,7 @@ function coreLoop(){
   x.setTransform(dpr,0,0,dpr,0,0);
   x.fillStyle='rgba(5,5,10,.30)'; x.fillRect(0,0,W,H);       // motion trails
   const t=performance.now()/1000;
-  const cx=W/2, cy=H*0.40, R=Math.min(W,H)*0.30;
+  const cx=W/2, cy=H*0.42, R=Math.min(W*0.40, H*0.26);
   // nucleus
   x.strokeStyle='rgba(255,179,0,'+(0.25+0.15*Math.sin(t*2)).toFixed(2)+')';
   x.lineWidth=1.5;
@@ -1123,30 +1180,41 @@ function coreLoop(){
       if(c.x<-70) coreCoin=null;
     }
   } else coreSpawn();
-  // five crystals
+  // five crystals on a slowly-turning 3D carousel: back = far & dim,
+  // front = near & bright. Painter-sorted so depth reads instantly.
+  const ringA=t*0.14;
+  const ring=[];
   for(let k=0;k<5;k++){
-    const a=-Math.PI/2+k*(Math.PI*2/5);
-    const kx=cx+Math.cos(a)*R, ky=cy+Math.sin(a)*R*0.85;
-    let col='rgba(120,160,255,.5)', glow=6;
-    if(scanIdx>=k && fct) { col= fct[k]? 'rgba(0,230,118,.85)' : 'rgba(255,82,82,.8)'; glow=16; }
-    else if(scanIdx>=k && c && c.bn===null){ col='rgba(120,120,130,.5)'; glow=4; }
-    for(let s=0;s<5;s++)
-      drawShard(x, kx, ky, t*0.25+(s*1.2566)+k, 15+((k*7+s*11)%12)+3*Math.sin(t*1.4+s+k), col, glow);
-    // orbit motes
-    for(let m=0;m<4;m++){ const oa=t*(0.6+m*0.13)+m*1.57+k;
-      x.fillStyle='rgba(255,255,255,.35)';
-      x.beginPath(); x.arc(kx+Math.cos(oa)*34, ky+Math.sin(oa)*30, 1.3, 0, 6.283); x.fill(); }
-    // beam to the coin while its check runs
+    const a=ringA+k*(Math.PI*2/5);
+    const Z=Math.sin(a);                              // -1 back … +1 front
+    ring.push({k, kx:cx+Math.cos(a)*R, ky:cy+Z*R*0.30, z:Z,
+      s:0.72+0.38*((Z+1)/2)});                        // depth scale
+  }
+  ring.sort((p1,p2)=>p1.z-p2.z);
+  for(const g of ring){
+    const k=g.k;
+    let rgb='120,160,255', glow=5+7*((g.z+1)/2);
+    if(scanIdx>=k && fct){ rgb= fct[k]? '0,230,118' : '255,82,82'; glow=18; }
+    else if(scanIdx>=k && c && c.bn===null){ rgb='120,120,130'; glow=4; }
+    // soft ground shadow anchors the gem in space
+    x.fillStyle='rgba(0,0,0,'+(0.25*g.s).toFixed(2)+')';
+    x.beginPath(); x.ellipse(g.kx, g.ky+30*g.s, 20*g.s, 5*g.s, 0, 0, 6.283); x.fill();
+    drawGem(x, g.kx, g.ky, 21*g.s, t*(0.7+k*0.09)+k, rgb, glow, g.s);
+    // orbit motes ride the same depth
+    for(let m=0;m<3;m++){ const oa=t*(0.6+m*0.13)+m*2.09+k;
+      x.fillStyle='rgba(255,255,255,'+(0.18+0.2*g.s).toFixed(2)+')';
+      x.beginPath(); x.arc(g.kx+Math.cos(oa)*30*g.s, g.ky+Math.sin(oa)*24*g.s, 1.2*g.s, 0, 6.283); x.fill(); }
     if(scanIdx===k && c && c.phase==='scan'){
-      x.strokeStyle=col; x.lineWidth=2;
-      x.shadowColor=col; x.shadowBlur=10;
-      x.beginPath(); x.moveTo(kx,ky); x.lineTo(c.x,cy); x.stroke();
+      const col='rgba('+rgb+',.85)';
+      x.strokeStyle=col; x.lineWidth=2.2*g.s;
+      x.shadowColor=col; x.shadowBlur=12;
+      x.beginPath(); x.moveTo(g.kx,g.ky); x.lineTo(c.x,cy); x.stroke();
       x.shadowBlur=0; x.lineWidth=1;
     }
-    x.fillStyle= scanIdx>=k && fct? col : 'rgba(138,138,149,.9)';
-    x.font='700 10.5px JetBrains Mono,monospace'; x.textAlign='center';
-    x.fillText(CORE_FCT[k], kx, ky+46);
-    if(scanIdx>=k && fct){ x.fillText(fct[k]?'✓':'✗', kx, ky-40); }
+    x.fillStyle= scanIdx>=k && fct? 'rgba('+rgb+',1)' : 'rgba(138,138,149,'+(0.4+0.55*g.s).toFixed(2)+')';
+    x.font='700 '+(8+3.5*g.s).toFixed(1)+'px JetBrains Mono,monospace'; x.textAlign='center';
+    x.fillText(CORE_FCT[k], g.kx, g.ky+44*g.s);
+    if(scanIdx>=k && fct) x.fillText(fct[k]?'✓':'✗', g.kx, g.ky-38*g.s);
   }
   // the coin itself
   if(c && c.x!=null){
@@ -1492,6 +1560,168 @@ function readyOf(){
     {t:'הטייס נמדד (5+ עסקאות אוטומטיות)', ok:auN>=5, v:auN+'/5'},
   ];
 }
+// ── v446: discipline gauge, trophies, duel, day story, confetti ────────
+function disciplineOf(){
+  if(!hist.length) return {score:0,rulePct:0,coffee:1,flowPct:0,grade:'— אין עסקאות עדיין'};
+  const ruleExits=hist.filter(h=>!(h.reason||'').includes('ידני')).length;
+  const rulePct=ruleExits/hist.length;
+  let run=0, maxRun=0;
+  for(const h of hist){ if(h.pnl<=0){ run++; maxRun=Math.max(maxRun,run); } else run=0; }
+  const coffee= maxRun<=3? 1 : 0;              // a 4th straight loss = the rule was broken
+  const known=hist.filter(h=>h.withFlow===true||h.withFlow===false);
+  const flowPct= known.length? known.filter(h=>h.withFlow===true).length/known.length : 0;
+  const score=Math.round(rulePct*60 + coffee*20 + flowPct*20);
+  return {score, rulePct:Math.round(rulePct*100), coffee, flowPct:Math.round(flowPct*100),
+    grade: score>=85?'יהלום 💎':score>=65?'זהב 🥇':score>=45?'כסף 🥈':'ברזל 🔩'};
+}
+const TROPHIES=[
+  {id:'w1',   e:'🥇', t:'ניצחון ראשון',            f:()=>hist.some(h=>h.pnl>0)},
+  {id:'s3',   e:'🔥', t:'רצף 3 נצחונות',           f:()=>{ let r=0; for(const h of hist){ r=h.pnl>0?r+1:0; if(r>=3) return true; } return false; }},
+  {id:'t20',  e:'📏', t:'20 עסקאות מדודות',        f:()=>hist.length>=20},
+  {id:'king', e:'👑', t:'מטבע מוכתר',              f:()=>masteryOf().some(m=>m.lvl===3)},
+  {id:'auto1',e:'🤖', t:'ניצחון ראשון לטייס',      f:()=>hist.some(h=>h.auto&&h.pnl>0)},
+  {id:'snip', e:'🎯', t:'צלף קולע (יומן הצל)',     f:()=>shadows.some(s=>s.out&&s.pnl>0)},
+  {id:'n50',  e:'💰', t:'‎+$50 נטו מצטבר',          f:()=>hist.reduce((a,h)=>a+h.pnl,0)>=50},
+  {id:'coffee',e:'☕', t:'קפה בזמן (עצירה אחרי 3)', f:()=>{
+    for(let i=2;i<hist.length;i++){
+      if(hist[i].pnl<=0 && hist[i-1].pnl<=0 && hist[i-2].pnl<=0){
+        const nxt=hist[i+1];
+        if(nxt && nxt.t-hist[i].xt>=30*60000) return true;
+      } }
+    return false; }},
+];
+let trophies={};
+try{ trophies=JSON.parse(localStorage.getItem('na:scalp:troph')||'{}')||{}; }catch(e){}
+let confettiN=0;
+function confetti(){
+  confettiN++;
+  const cv=document.createElement('canvas');
+  cv.style.cssText='position:fixed;inset:0;z-index:99;pointer-events:none';
+  cv.width=innerWidth; cv.height=innerHeight; document.body.appendChild(cv);
+  const x=cv.getContext('2d');
+  const ps=Array.from({length:70},()=>({x:Math.random()*cv.width, y:-30-Math.random()*90,
+    vy:2.2+Math.random()*3.5, vx:(Math.random()-.5)*2.2, r:2+Math.random()*3,
+    c:['#ffb300','#00e676','#7fa0ff','#ff5252','#ffffff'][Math.floor(Math.random()*5)], a:Math.random()*6}));
+  const s0=performance.now();
+  (function f(){
+    x.clearRect(0,0,cv.width,cv.height);
+    ps.forEach(q=>{ q.y+=q.vy; q.x+=q.vx; q.a+=.12;
+      x.save(); x.translate(q.x,q.y); x.rotate(q.a); x.fillStyle=q.c;
+      x.fillRect(-q.r,-q.r/2,q.r*2,q.r); x.restore(); });
+    if(performance.now()-s0<1800) requestAnimationFrame(f); else cv.remove();
+  })();
+}
+function duelOf(){
+  return {auto:grp(hist.filter(h=>h.auto)), man:grp(hist.filter(h=>!h.auto))};
+}
+function storyOf(){
+  const today=new Date().toDateString();
+  let rows=hist.filter(h=>new Date(h.xt).toDateString()===today);
+  if(!rows.length) rows=hist.slice(-8);
+  return rows;
+}
+let warT0=0, warAnim2=0;
+function warLoop(){
+  if(!warOn) return;
+  warAnim2=requestAnimationFrame(warLoop);
+  const t=performance.now(), prog=Math.min(1,(t-warT0)/1300);
+  // 💗 equity heartbeat — draws itself in, then keeps a live pulse
+  const pcv=$('warPulse');
+  if(pcv){
+    const dpr=Math.min(2,devicePixelRatio||1);
+    const w=pcv.clientWidth||340, h=64;
+    if(pcv.width!==Math.round(w*dpr)){ pcv.width=Math.round(w*dpr); pcv.height=h*dpr; }
+    const x=pcv.getContext('2d'); x.setTransform(dpr,0,0,dpr,0,0);
+    x.clearRect(0,0,w,h);
+    let eq=0; const pts=[0].concat(hist.map(hh=>eq+=hh.pnl));
+    const lo=Math.min(0,...pts), hi=Math.max(1,...pts), sp=(hi-lo)||1;
+    const Y=v=>h-8-(v-lo)/sp*(h-16);
+    const upto=Math.max(2,Math.ceil(pts.length*prog));
+    const col= eq>=0? '0,230,118' : '255,82,82';
+    x.strokeStyle='rgba(255,255,255,.08)';
+    x.beginPath(); x.moveTo(0,Y(0)); x.lineTo(w,Y(0)); x.stroke();
+    x.strokeStyle='rgb('+col+')'; x.lineWidth=1.8;
+    x.shadowColor='rgb('+col+')'; x.shadowBlur=8;
+    x.beginPath();
+    for(let i=0;i<upto;i++){ const X=i/(Math.max(1,pts.length-1))*w;
+      i? x.lineTo(X,Y(pts[i])) : x.moveTo(X,Y(pts[i])); }
+    x.stroke(); x.shadowBlur=0; x.lineWidth=1;
+    if(prog>=1 && pts.length>1){
+      const lx=w, ly=Y(pts[pts.length-1]);
+      x.fillStyle='rgba('+col+','+(0.5+0.5*Math.sin(t/220)).toFixed(2)+')';
+      x.beginPath(); x.arc(lx-3,ly,4,0,6.283); x.fill();
+    }
+    x.fillStyle='#8a8a95'; x.font='400 9.5px JetBrains Mono,monospace'; x.textAlign='right';
+    x.fillText(hist.length? '💗 דופק ההון · '+money(eq) : '💗 ממתין לדופק הראשון', w-4, 12);
+  }
+  // 🛡 gauge needle sweeps to the measured score
+  const gcv=$('warGauge');
+  if(gcv){
+    const d=disciplineOf(), val=d.score*prog;
+    const dpr=Math.min(2,devicePixelRatio||1);
+    const w=130,h=80;
+    if(gcv.width!==w*dpr){ gcv.width=w*dpr; gcv.height=h*dpr; }
+    const x=gcv.getContext('2d'); x.setTransform(dpr,0,0,dpr,0,0);
+    x.clearRect(0,0,w,h);
+    const cx2=w/2, cy2=h-8, R=52;
+    x.lineWidth=9; x.lineCap='round';
+    x.strokeStyle='#1d1d24';
+    x.beginPath(); x.arc(cx2,cy2,R,Math.PI,2*Math.PI); x.stroke();
+    const grad=x.createLinearGradient(0,0,w,0);
+    grad.addColorStop(0,'#ff5252'); grad.addColorStop(.55,'#ffb300'); grad.addColorStop(1,'#00e676');
+    x.strokeStyle=grad;
+    x.beginPath(); x.arc(cx2,cy2,R,Math.PI,Math.PI+(val/100)*Math.PI); x.stroke();
+    const ang=Math.PI+(val/100)*Math.PI;
+    x.strokeStyle='#fff'; x.lineWidth=2;
+    x.beginPath(); x.moveTo(cx2,cy2);
+    x.lineTo(cx2+Math.cos(ang)*(R-14), cy2+Math.sin(ang)*(R-14)); x.stroke();
+    x.fillStyle='#e8e8ee'; x.font='700 15px JetBrains Mono,monospace'; x.textAlign='center';
+    x.fillText(Math.round(val), cx2, cy2-10);
+  }
+}
+function renderTrophies(){
+  let newly=false;
+  TROPHIES.forEach(tr=>{
+    let earned=false; try{ earned=tr.f(); }catch(e){}
+    if(earned && !trophies[tr.id]){ trophies[tr.id]=Date.now(); tr._new=true; newly=true; }
+  });
+  if(newly){ try{ localStorage.setItem('na:scalp:troph',JSON.stringify(trophies)); }catch(e){}
+    confetti(); toast('🏆 גביע חדש נפתח!'); }
+  $('warTroph').innerHTML=TROPHIES.map(tr=>{
+    const un=!!trophies[tr.id];
+    return `<span class="troph${un?'':' lock'}${tr._new?' pop':''}"><b>${tr.e}</b>${tr.t}`+
+      (un? `<span style="color:var(--gold)">${new Date(trophies[tr.id]).toLocaleDateString('he-IL')}</span>`
+         : '<span style="color:var(--dim)">נעול</span>')+`</span>`;
+  }).join('');
+  TROPHIES.forEach(tr=>delete tr._new);
+}
+function renderDuel(){
+  const d=duelOf();
+  if(!d.auto.n || !d.man.n){ $('warDuel').innerHTML=
+    '<span class="empty">הדו-קרב ייפתח כשיהיו גם עסקאות טייס וגם ידניות</span>'; return; }
+  const tot=Math.abs(d.auto.net)+Math.abs(d.man.net)||1;
+  const aw=Math.max(12,Math.round(Math.abs(d.auto.net)/tot*100));
+  const winner= d.auto.net>d.man.net? 'auto' : 'man';
+  $('warDuel').innerHTML=
+    `<div style="display:flex;justify-content:space-between;font-size:12px">`+
+    `<span>🤖 הטייס ${winner==='auto'?'👑':''} · ${d.auto.n} עסק׳ · ${money(d.auto.net)}</span>`+
+    `<span>${winner==='man'?'👑 ':''}אתה ✋ · ${d.man.n} עסק׳ · ${money(d.man.net)}</span></div>`+
+    `<div class="duelWrap">`+
+    `<div style="width:${aw}%;background:rgba(120,160,255,.35)">🤖</div>`+
+    `<div style="width:${100-aw}%;background:rgba(255,179,0,.35)">✋</div></div>`;
+}
+function renderStory(){
+  const rows=storyOf();
+  if(!rows.length){ $('warStory').innerHTML='<span class="empty">היום עוד לא נכתב — העסקה הראשונה פותחת את הסיפור</span>'; return; }
+  const net=+rows.reduce((a,h)=>a+h.pnl,0).toFixed(2);
+  $('warStory').innerHTML='<div class="tl">'+rows.slice(-12).map(h=>
+    `<div class="tlRow">${new Date(h.xt).toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'})}`+
+    ` · ${h.auto?'🤖':'✋'} <b>${h.sym}</b> ${h.dir==='long'?'▲':'▼'}`+
+    ` <span style="color:${h.pnl>=0?'var(--up)':'var(--down)'}">${money(h.pnl)}</span>`+
+    ` <span style="color:var(--dim)">${h.reason}</span></div>`).join('')+'</div>'+
+    `<div style="margin-top:8px;font-size:12.5px">סיכום: ${rows.length} עסקאות · נטו `+
+    `<b style="color:${net>=0?'var(--up)':'var(--down)'}">${money(net)}</b></div>`;
+}
 let corrWeb=null;
 async function webCalc(){
   try{
@@ -1519,6 +1749,11 @@ async function webCalc(){
 let warOn=false;
 function renderWar(recalc){
   if(!warOn) return;
+  safe(renderTrophies); safe(renderDuel); safe(renderStory);
+  const d=disciplineOf();
+  $('warDiscTxt').innerHTML=`דרגה: <b style="color:var(--gold)">${d.grade}</b><br>`+
+    `יציאות לפי חוקים: <b>${d.rulePct}%</b> · כניסות עם הזרם: <b>${d.flowPct}%</b><br>`+
+    `חוק הקפה: <b>${d.coffee? 'נשמר ☕':'נשבר פעם 🔴'}</b> — משמעת היא היתרון היחיד שכולו בידיים שלך`;
   $('warLessons').innerHTML=lessonsOf().map(l=>`<div class="lesson">${l}</div>`).join('');
   const ms=masteryOf();
   const kings=ms.filter(m=>m.lvl===3).length, spec=ms.filter(m=>m.lvl===2).length;
@@ -1544,8 +1779,13 @@ function renderWar(recalc){
   }
   if(recalc) webCalc();
 }
-function warOpen(){ $('warModal').hidden=false; warOn=true; renderWar(true); }
-function warClose(){ warOn=false; $('warModal').hidden=true; }
+function warOpen(){
+  $('warModal').hidden=false; warOn=true; warT0=performance.now();
+  document.querySelectorAll('#warModal .card').forEach((c,i)=>c.style.animationDelay=(i*85)+'ms');
+  renderWar(true);
+  cancelAnimationFrame(warAnim2); warLoop();
+}
+function warClose(){ warOn=false; cancelAnimationFrame(warAnim2); $('warModal').hidden=true; }
 $('warBtn').onclick=warOpen;
 $('warX').onclick=warClose;
 $('warMastery').onclick=e=>{
@@ -1642,6 +1882,29 @@ async function alphaAsk(q){
 }
 $('alphaGo').onclick=()=>alphaAsk($('alphaQ').value);
 $('alphaQ').addEventListener('keydown',e=>{ if(e.key==='Enter') alphaAsk($('alphaQ').value); });
+// ── v446: Alpha is FED continuously and CALLED when it matters ─────────
+// A rolling context snapshot is written every minute (and on every trade
+// close) to a shared slot the whole platform can read — Alpha on the
+// main dashboard sees the scalp desk's live state. And at critical
+// moments (3 straight losses) Alpha is consulted automatically, at most
+// once per 10 minutes, only when a key is configured.
+function alphaFeed(){
+  try{ localStorage.setItem('alpha:scalp:ctx',
+    JSON.stringify({t:Date.now(), sym:sel, txt:alphaCtx()})); }catch(e){}
+}
+let alphaAutoT=0;
+function alphaMoment(){
+  if(!(alphaKey()||groqKey())) return;
+  if(Date.now()-alphaAutoT<10*60000) return;
+  const sk=streakOf();
+  if(sk.n>=3 && !sk.win){
+    alphaAutoT=Date.now();
+    toast('🤖 אלפא הוזעק לנתח את רצף ההפסדים…');
+    alphaAsk('הפסדתי '+sk.n+' עסקאות ברצף. נתח בקצרה מה המשותף להן לפי הנתונים, ומה לשנות לפני העסקה הבאה.');
+  }
+}
+setInterval(()=>{ if(!document.hidden) alphaFeed(); },60000);
+setTimeout(alphaFeed,3000);
 
 // ── reconstruct honestly after the page was closed mid-trade ───────────
 async function backfill(){
@@ -1741,8 +2004,11 @@ window.__scalp={
   auto:(on,why)=>{ if(on!==undefined) setAutoS(on,why); return autoS; },
   war:{ open:warOpen, close:warClose, on:()=>warOn, lessons:lessonsOf,
     mastery:masteryOf, players:()=>playersOf(crowd), ready:readyOf,
-    web:()=>corrWeb&&corrWeb.slice() },
+    web:()=>corrWeb&&corrWeb.slice(),
+    discipline:disciplineOf, duel:duelOf, story:()=>storyOf().length,
+    trophies:()=>Object.assign({},trophies), confettiN:()=>confettiN },
   marks:()=>JSON.parse(JSON.stringify(marks)),
+  feed:()=>{ alphaFeed(); try{ return JSON.parse(localStorage.getItem('alpha:scalp:ctx')); }catch(e){ return null; } },
 };
 </script>
 </body>
