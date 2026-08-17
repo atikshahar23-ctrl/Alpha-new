@@ -9,11 +9,18 @@
   --txt:#e8e8ee;--dim:#8a8a95}
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{max-width:100vw;overflow-x:hidden}
-body{background:var(--bg);color:var(--txt);font-family:system-ui,-apple-system,'Segoe UI',sans-serif;
+body{background:radial-gradient(1100px 380px at 50% -120px, rgba(255,179,0,.07), transparent 70%), var(--bg);
+  color:var(--txt);font-family:system-ui,-apple-system,'Segoe UI',sans-serif;
   font-size:14px;padding:10px 10px 90px;max-width:760px;margin:0 auto}
 a{color:var(--gold);text-decoration:none}
 header{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
-header h1{font-size:17px;color:var(--gold);font-family:'JetBrains Mono',monospace}
+header h1{font-size:17px;color:var(--gold);font-family:'JetBrains Mono',monospace;
+  letter-spacing:1px;text-shadow:0 0 14px rgba(255,179,0,.45)}
+#posCard.live{animation:glowPulse 2.4s ease-in-out infinite}
+@keyframes glowPulse{0%,100%{box-shadow:0 0 8px rgba(255,179,0,.18)}50%{box-shadow:0 0 22px rgba(255,179,0,.5)}}
+.entbtns button:active{transform:scale(.97)}
+.ghost.on{color:var(--gold);border-color:rgba(255,179,0,.55);background:rgba(255,179,0,.08)}
+.card{transition:border-color .3s}
 header .ver{font-size:10px;color:var(--dim);border:1px solid var(--line);border-radius:6px;padding:2px 6px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px}
 .card h2{font-size:12.5px;color:var(--dim);font-weight:700;margin-bottom:8px;letter-spacing:.4px}
@@ -73,6 +80,7 @@ button{font-family:inherit;cursor:pointer}
   <a href="markets.html">→ ראדאר</a>
   <h1>⚡ סקאלפ 3 נרות</h1>
   <span class="ver">ארנק נפרד · נייר · נתוני Binance אמיתיים</span>
+  <span class="ver" id="pageVer">v437</span>
 </header>
 
 <div class="card">
@@ -139,6 +147,12 @@ button{font-family:inherit;cursor:pointer}
     <button class="ghost" id="csvBtn" style="margin-right:auto;padding:4px 10px;font-size:11px">📋 CSV</button></h2>
   <div id="stats"><span class="empty">עוד אין עסקאות</span></div>
   <div id="reasonBrk" style="margin-top:6px"></div>
+  <div id="hFilt" style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+    <button class="ghost on" data-hf="all">הכל</button>
+    <button class="ghost" data-hf="win">🎯 רווחים</button>
+    <button class="ghost" data-hf="loss">🛑 הפסדים</button>
+    <button class="ghost" data-hf="flow">🌊 עם הזרם</button>
+  </div>
   <canvas id="eqCv" hidden></canvas>
   <div id="hist"></div>
 </div>
@@ -160,6 +174,10 @@ function saveW(){ try{ localStorage.setItem('na:scalp:w',JSON.stringify(W)); }ca
 let hist=[];
 try{ hist=JSON.parse(localStorage.getItem('na:scalp:hist')||'[]'); }catch(e){}
 if(!Array.isArray(hist)) hist=[];
+// v437: sanitize — one poisoned entry must never white-screen the page
+// (the radar learned this the hard way in v426)
+hist=hist.filter(h=>h && typeof h==='object' && h.sym && Number.isFinite(+h.pnl))
+  .map(h=>Object.assign(h,{pnl:+h.pnl}));
 function saveH(){ hist=hist.slice(-200);
   try{ localStorage.setItem('na:scalp:hist',JSON.stringify(hist)); }catch(e){} }
 let pos=null;
@@ -449,45 +467,96 @@ function drawPlan(){
     toast('🎯 הסטופ כוון לרעש של המטבע: '+W.stop+'% (1.5×ATR)');
   };
 }
+// v437: pro chart — EMA9/21 overlays (the brain's own eyes), volume bars,
+// price axis, stop + fee-breakeven guide lines while a trade runs, and a
+// pulsing last-price dot. chartMeta is exposed so tests can verify what
+// was actually drawn instead of guessing from pixels.
+let chartMeta=null;
 function drawChart(){
   const cv=$('cv'), x=cv.getContext('2d');
   const dpr=Math.min(2,devicePixelRatio||1);
   const w=cv.clientWidth||340, h=190;
   cv.width=w*dpr; cv.height=h*dpr; x.setTransform(dpr,0,0,dpr,0,0);
   x.clearRect(0,0,w,h);
+  chartMeta=null;
   if(!candles.length){ x.fillStyle='#8a8a95'; x.font='12px system-ui';
     x.textAlign='center'; x.fillText('טוען נרות…', w/2, h/2); return; }
   const cs=candles.slice(-40);
+  const closesAll=candles.map(c=>c.c);
+  // guide levels while a trade runs
+  const stopLv= pos? (pos.dir==='long'? pos.entry*(1-pos.stop/100) : pos.entry*(1+pos.stop/100)) : null;
+  const feeMv= pos? ((pos.fee!=null?pos.fee:W.fee)||0)*2/100 : 0;
+  const beLv=  pos? (pos.dir==='long'? pos.entry*(1+feeMv) : pos.entry*(1-feeMv)) : null;
   let lo=Math.min(...cs.map(c=>c.l)), hi=Math.max(...cs.map(c=>c.h));
-  if(pos){ lo=Math.min(lo,pos.entry); hi=Math.max(hi,pos.entry); }
+  if(pos){ lo=Math.min(lo,pos.entry,stopLv); hi=Math.max(hi,pos.entry,beLv); }
   const pad=(hi-lo)*0.08||1; lo-=pad; hi+=pad;
-  const Y=v=>h-(v-lo)/(hi-lo)*h;
+  const volH=Math.round(h*0.16), ph=h-volH-2;
+  const Y=v=>ph-(v-lo)/(hi-lo)*ph;
   const cw=w/cs.length;
+  // price axis: 3 hairlines + labels
+  x.font='400 9px JetBrains Mono,monospace'; x.textAlign='left';
+  const axis=[];
+  for(let k=0;k<3;k++){
+    const v=lo+(hi-lo)*(0.15+0.35*k), y=Y(v);
+    axis.push(+v.toFixed(v<10?4:2));
+    x.strokeStyle='rgba(255,255,255,.05)';
+    x.beginPath(); x.moveTo(0,y); x.lineTo(w,y); x.stroke();
+    x.fillStyle='#55555f'; x.fillText(String(axis[k]), 3, y-2);
+  }
+  // volume bars
+  const maxV=Math.max(1,...cs.map(c=>c.v||0));
+  cs.forEach((c,i)=>{
+    x.fillStyle= c.c>=c.o? 'rgba(0,230,118,.25)':'rgba(255,82,82,.25)';
+    const vh=(c.v||0)/maxV*volH;
+    x.fillRect(i*cw+1, h-vh, Math.max(1,cw-2), vh);
+  });
+  // candles
   cs.forEach((c,i)=>{
     const up=c.c>=c.o, X=i*cw+cw/2;
     x.strokeStyle=x.fillStyle= up?'#00e676':'#ff5252';
     x.beginPath(); x.moveTo(X,Y(c.h)); x.lineTo(X,Y(c.l)); x.stroke();
     x.fillRect(i*cw+1, Math.min(Y(c.o),Y(c.c)), Math.max(1,cw-2), Math.max(1,Math.abs(Y(c.o)-Y(c.c))));
   });
-  if(pos){
-    const y=Y(pos.entry);
-    x.strokeStyle='rgba(255,179,0,.85)'; x.setLineDash([5,4]);
+  // EMA overlays — the exact lines the brain reads
+  const emaSeries=(n)=>{ const k=2/(n+1); const out=[]; let e=closesAll[0];
+    for(let i=1;i<closesAll.length;i++){ e=closesAll[i]*k+e*(1-k); out.push(e); }
+    return out.slice(-cs.length); };
+  [[9,'rgba(255,179,0,.8)'],[21,'rgba(120,160,255,.7)']].forEach(([n,col])=>{
+    const e=emaSeries(n);
+    x.strokeStyle=col; x.lineWidth=1.2; x.beginPath();
+    e.forEach((v,i)=>{ const X=i*cw+cw/2; i? x.lineTo(X,Y(v)) : x.moveTo(X,Y(v)); });
+    x.stroke(); x.lineWidth=1;
+  });
+  // trade guide lines
+  const line=(v,col,lab)=>{ const y=Y(v);
+    x.strokeStyle=col; x.setLineDash([5,4]);
     x.beginPath(); x.moveTo(0,y); x.lineTo(w,y); x.stroke(); x.setLineDash([]);
-    x.fillStyle='#ffb300'; x.font='700 10px JetBrains Mono,monospace';
-    x.textAlign='left'; x.fillText((pos.dir==='long'?'▲':'▼')+' '+pos.entry, 4, y-4);
+    x.fillStyle=col; x.font='700 9.5px JetBrains Mono,monospace';
+    x.textAlign='right'; x.fillText(lab, w-4, y-3); };
+  if(pos){
+    line(pos.entry,'rgba(255,179,0,.9)',(pos.dir==='long'?'▲':'▼')+' כניסה '+pos.entry);
+    line(stopLv,'rgba(255,82,82,.8)','סטופ');
+    line(beLv,'rgba(120,160,255,.8)','איזון עמלות');
   }
+  // pulsing last-price dot
+  const last=cs[cs.length-1], lx=(cs.length-1)*cw+cw/2, ly=Y(last.c);
+  x.fillStyle='rgba(255,255,255,'+(0.55+0.35*Math.sin(Date.now()/280)).toFixed(2)+')';
+  x.beginPath(); x.arc(lx,ly,3.2,0,6.283); x.fill();
+  chartMeta={ema:[9,21], volBars:cs.filter(c=>c.v>0).length, axis,
+    stop: stopLv&&+stopLv.toFixed(4), be: beLv&&+beLv.toFixed(4)};
 }
 function drawPos(){
   const card=$('posCard');
-  if(!pos){ card.hidden=true;
+  if(!pos){ card.hidden=true; card.classList.remove('live');
     $('goLong').disabled=$('goShort').disabled=false; return; }
-  card.hidden=false;
+  card.hidden=false; card.classList.add('live');
   $('goLong').disabled=$('goShort').disabled=true;
   const u=uni.find(x=>x.sym===pos.sym);
   const px=u&&u.price>0? u.price : (candles.length? candles[candles.length-1].c : pos.entry);
   const pnl=pnlAt(px);
   $('posPnl').textContent=money(pnl);
   $('posPnl').style.color= pnl>=0?'var(--up)':'var(--down)';
+  $('posPnl').style.textShadow= pnl>=0? '0 0 12px rgba(0,230,118,.5)' : '0 0 12px rgba(255,82,82,.5)';
   $('posDots').textContent='●'.repeat(Math.min(3,pos.candles))+'○'.repeat(Math.max(0,3-pos.candles));
   $('posDots').style.color= pos.candles>=2? 'var(--gold)':'var(--dim)';
   const secs=60-Math.floor(Date.now()/1000)%60;
@@ -548,18 +617,47 @@ function drawStats(){
   x.clearRect(0,0,w,h);
   let eq=0; const pts=hist.map(hh=>eq+=hh.pnl);
   const lo=Math.min(0,...pts), hi=Math.max(0,...pts), sp=(hi-lo)||1;
-  x.strokeStyle=eq>=0?'#00e676':'#ff5252'; x.lineWidth=1.6; x.beginPath();
-  pts.forEach((v,i)=>{ const X=i/(Math.max(1,pts.length-1))*w, Y=h-4-(v-lo)/sp*(h-8);
-    i? x.lineTo(X,Y): x.moveTo(X,Y); });
+  const YE=v=>h-4-(v-lo)/sp*(h-8);
+  // zero line + area fill under the curve
+  x.strokeStyle='rgba(255,255,255,.12)'; x.setLineDash([3,4]);
+  x.beginPath(); x.moveTo(0,YE(0)); x.lineTo(w,YE(0)); x.stroke(); x.setLineDash([]);
+  const col= eq>=0? '0,230,118' : '255,82,82';
+  const grad=x.createLinearGradient(0,0,0,h);
+  grad.addColorStop(0,'rgba('+col+',.25)'); grad.addColorStop(1,'rgba('+col+',.02)');
+  x.fillStyle=grad; x.beginPath(); x.moveTo(0,YE(0));
+  pts.forEach((v,i)=>x.lineTo(i/(Math.max(1,pts.length-1))*w, YE(v)));
+  x.lineTo(w,YE(0)); x.closePath(); x.fill();
+  x.strokeStyle='rgb('+col+')'; x.lineWidth=1.6; x.beginPath();
+  pts.forEach((v,i)=>{ const X=i/(Math.max(1,pts.length-1))*w;
+    i? x.lineTo(X,YE(v)): x.moveTo(X,YE(v)); });
   x.stroke();
-  $('hist').innerHTML=hist.slice(-25).reverse().map(h=>
+  x.fillStyle='rgb('+col+')'; x.font='700 10px JetBrains Mono,monospace';
+  x.textAlign='left'; x.fillText(money(eq), 4, YE(pts[pts.length-1])-5<10?12:YE(pts[pts.length-1])-5);
+  // best / worst coin — measured per symbol
+  const bySym={};
+  hist.forEach(h=>{ bySym[h.sym]=(bySym[h.sym]||0)+h.pnl; });
+  const symEntries=Object.entries(bySym);
+  if(hist.length>=3 && symEntries.length>=2){
+    const best=symEntries.reduce((a,c)=>c[1]>a[1]?c:a), worst=symEntries.reduce((a,c)=>c[1]<a[1]?c:a);
+    $('stats').innerHTML+=`<span style="flex-basis:100%"></span>`+
+      `<span>החזק שלך <b style="color:var(--up)">${best[0]} ${money(best[1])}</b></span>`+
+      `<span>החלש <b style="color:var(--down)">${worst[0]} ${money(worst[1])}</b></span>`;
+  }
+  const fl= hFilt==='win'? (h=>h.pnl>0) : hFilt==='loss'? (h=>h.pnl<=0)
+    : hFilt==='flow'? (h=>h.withFlow===true) : (()=>true);
+  $('hist').innerHTML=hist.filter(fl).slice(-25).reverse().map(h=>
     `<div class="hrow"><b>${h.sym}</b> ${h.dir==='long'?'▲':'▼'}
      <span style="color:${h.pnl>=0?'var(--up)':'var(--down)'}">${money(h.pnl)}</span>
      <span>${h.ct} נר׳</span><span class="why">${h.reason}</span>
-     <span class="why" style="margin-right:auto">${new Date(h.xt).toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'})}</span></div>`).join('');
+     <span class="why" style="margin-right:auto">${new Date(h.xt).toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'})}</span></div>`).join('')
+    ||'<div class="empty">אין עסקאות בסינון הזה</div>';
 }
+// v437: armored — one bad draw never kills the page (v426's lesson)
+let hFilt='all';
+const safe=f=>{ try{ f(); }catch(e){} };
 function drawAll(){
-  drawWallet(); drawPlan(); drawChart(); drawBrain(); drawPos(); drawStats(); drawLiveB();
+  safe(drawWallet); safe(drawPlan); safe(drawChart); safe(drawBrain);
+  safe(drawPos); safe(drawStats); safe(drawLiveB);
   const u=uni.find(x=>x.sym===sel);
   $('selSym').textContent=sel||'—';
   const px=u&&u.price>0? u.price : (candles.length? candles[candles.length-1].c : 0);
@@ -604,6 +702,12 @@ $('resetW').onclick=()=>{ if(confirm('לאפס את הארנק ל-$1000? (ההי
 });
 $('wFee').onchange=()=>{ const v=+$('wFee').value;
   if(v>=0 && v<=1){ W.fee=v; saveW(); drawPlan(); } };
+$('hFilt').onclick=e=>{
+  const b=e.target.closest('[data-hf]'); if(!b) return;
+  hFilt=b.dataset.hf;
+  document.querySelectorAll('#hFilt button').forEach(x=>x.classList.toggle('on',x.dataset.hf===hFilt));
+  drawStats();
+};
 $('qsRow').onclick=e=>{
   const b=e.target.closest('[data-qs]'); if(!b) return;
   W.size= b.dataset.qs==='max'? Math.floor(W.bal) : +b.dataset.qs;
@@ -622,7 +726,10 @@ drawAll();
 loadUni().then(backfill);
 setInterval(()=>{ if(!document.hidden) pollK(); },4000);
 setInterval(()=>{ if(!document.hidden) loadUni(); },60000);
-setInterval(()=>{ if(!document.hidden && pos){ drawPos(); drawTitle(); } },1000);
+setInterval(()=>{ if(!document.hidden){
+  if(pos){ safe(drawPos); safe(drawTitle); }
+  safe(drawChart);                       // pulsing dot + fresh candles
+} },1000);
 setInterval(()=>{ if(!document.hidden) wsSync(); },20000);   // WS auto-reconnect
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden){ wsSync(); wakeSync(); } });
 
@@ -638,6 +745,7 @@ window.__scalp={
   rules:applyRules, backfill, pnlAt,
   beepLast:()=>lastBeep, csv:csvText, streak:streakOf, wsOk:()=>swsOk,
   brain:()=>brainNow||brainOf(), netAt, drawBrain,
+  chartMeta:()=>chartMeta,
 };
 </script>
 </body>
