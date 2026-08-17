@@ -24,7 +24,8 @@
 }
 *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0;background:var(--bg);color:var(--txt);
-  font-family:'Heebo',sans-serif;min-height:100dvh}
+  font-family:'Heebo',sans-serif;min-height:100dvh;
+  max-width:100vw;overflow-x:hidden}
 body{background:
   linear-gradient(180deg,#0a0a0d 0%, #070709 30%, #070709 100%)}
 header{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px;
@@ -223,6 +224,17 @@ main{max-width:900px;margin:0 auto;padding:10px 10px calc(20px + env(safe-area-i
     cursor:pointer;padding:2px 12px;border-radius:9px}
   #bnav button span{font-size:9.5px}
   #bnav button.on{color:var(--gold);background:#17171d}
+  /* modals become full-screen sheets on the phone — nothing can overflow */
+  #chModal,#histModal,#galModal{padding:0;align-items:stretch}
+  #chModal .chBox,#histModal .chBox,#galModal .chBox{
+    width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;border-radius:0;
+    padding-top:calc(10px + env(safe-area-inset-top));
+    padding-bottom:calc(10px + env(safe-area-inset-bottom))}
+  #galCv{height:calc(100dvh - 130px)}
+  #chCv{height:40vh}
+  header{flex-wrap:wrap;row-gap:4px;gap:6px}
+  .hbtn{padding:5px 9px;font-size:11px}
+  header h1{font-size:14px}
 }
 #geoLab{margin:6px 0}
 .geoRow{display:flex;flex-direction:column;gap:2px;padding:6px 8px;margin-top:4px;
@@ -606,14 +618,19 @@ async function loadUniverse(force){
   ]);
   if(!info||!info.symbols) throw new Error('no exchangeInfo');
   const byPair={}; (Array.isArray(tick)?tick:[]).forEach(t=>{ byPair[t.symbol]=t; });
-  const out=[];
+  const out=[], best={};
   for(const s of info.symbols){
     if(s.contractType!=='PERPETUAL' || s.status!=='TRADING') continue;
+    if(s.quoteAsset!=='USDT') continue;              // USDC twins made BTC/ETH appear twice
     const t=byPair[s.symbol]||{};
     const pf=(s.filters||[]).find(f=>f.filterType==='PRICE_FILTER');
-    out.push({ sym:s.baseAsset, pair:s.symbol, quote:s.quoteAsset,
+    const row={ sym:s.baseAsset, pair:s.symbol, quote:s.quoteAsset,
       dec: pf? decFromTick(pf.tickSize) : (s.pricePrecision??2),
-      price:+t.lastPrice||0, chg:+t.priceChangePercent||0, vol:+t.quoteVolume||0 });
+      price:+t.lastPrice||0, chg:+t.priceChangePercent||0, vol:+t.quoteVolume||0 };
+    // one row per coin — keep the most liquid pair
+    const prev=best[row.sym];
+    if(!prev){ best[row.sym]=row; out.push(row); }
+    else if(row.vol>prev.vol) Object.assign(prev,row);
   }
   uniCache.crypto=out; universe=out; universeAt=Date.now();
   return out;
