@@ -279,6 +279,47 @@ main{max-width:900px;margin:0 auto;padding:10px 10px calc(20px + env(safe-area-i
   box-shadow:0 0 6px #fff;border-radius:1px}
 .tiltbar{margin:0 0 8px;padding:9px 12px;border-radius:10px;font-size:12.5px;
   background:rgba(255,82,82,.1);border:1.5px solid rgba(255,82,82,.55);color:var(--txt)}
+/* ── v433: display lenses, radial command orb, network console ───────── */
+#lensBar{display:flex;gap:6px;margin:2px 0 6px}
+#lensBar button{flex:0 0 auto;background:#101016;border:1px solid #26262e;color:var(--dim);
+  border-radius:8px;padding:5px 12px;font-size:11.5px;cursor:pointer;font-family:inherit}
+#lensBar button.on{color:var(--gold);border-color:rgba(255,179,0,.55);background:rgba(255,179,0,.08)}
+#lensCv{width:100%;border:1px solid #1d1d24;border-radius:12px;background:#08080c;
+  touch-action:manipulation;display:block}
+#lensCv[hidden]{display:none!important}
+#orbBtn{position:fixed;z-index:70;left:14px;bottom:74px;width:52px;height:52px;border-radius:50%;
+  background:radial-gradient(circle at 35% 30%,#2b2410,#0c0a04 70%);
+  border:1.5px solid rgba(255,179,0,.7);color:var(--gold);font-size:22px;cursor:pointer;
+  box-shadow:0 0 18px rgba(255,179,0,.35);transition:transform .25s}
+#orbBtn.open{transform:rotate(45deg)}
+@media(min-width:641px){ #orbBtn{bottom:18px} }
+#radial{position:fixed;inset:0;z-index:69;background:rgba(2,4,10,.55);backdrop-filter:blur(2px)}
+#radial[hidden]{display:none!important}
+.radItem{position:fixed;z-index:71;width:58px;height:58px;border-radius:50%;display:flex;
+  flex-direction:column;align-items:center;justify-content:center;gap:1px;
+  background:#0d0d13;border:1px solid rgba(255,179,0,.4);color:var(--txt);cursor:pointer;
+  font-size:16px;box-shadow:0 0 14px rgba(0,0,0,.6);font-family:inherit;
+  transition:transform .28s cubic-bezier(.2,1.6,.4,1),opacity .2s;
+  transform:scale(.3);opacity:0}
+#radial.open .radItem{opacity:1}
+.radItem span{font-size:8.5px;color:var(--dim)}
+#diagModal{position:fixed;inset:0;z-index:62;background:rgba(2,8,18,.9);
+  display:flex;align-items:center;justify-content:center;padding:14px}
+#diagModal[hidden]{display:none!important}
+.diagBox{width:min(560px,100%);max-height:92dvh;overflow:auto;background:#0a0a10;
+  border:1px solid rgba(255,179,0,.35);border-radius:14px;padding:12px}
+.diagBox h3{margin:0 0 2px;color:var(--gold);font-size:15px}
+.diagBox .dsub{color:var(--dim);font-size:11px;margin-bottom:8px}
+.drow{display:flex;gap:8px;align-items:center;padding:7px 2px;border-top:1px solid #16161d;
+  font-size:12px;font-family:'JetBrains Mono',monospace}
+.drow b{flex:1;font-weight:600}
+.drow .dst{min-width:110px;text-align:left;white-space:nowrap}
+.dok{color:var(--up)} .dbad{color:var(--down)} .dwait{color:var(--dim)} .dna{color:#777}
+.diagBox .dbtns{display:flex;gap:8px;margin-top:10px}
+.diagBox .dbtns button{flex:1;background:#141419;border:1px solid #2a2a33;color:var(--txt);
+  border-radius:8px;padding:8px;font-size:12px;cursor:pointer;font-family:inherit}
+@media(max-width:640px){ #diagModal{padding:0;align-items:stretch}
+  .diagBox{width:100vw;max-height:100dvh;border-radius:0} }
 .tiltbar b{font-family:'JetBrains Mono',monospace;color:var(--down)}
 .jchips{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px;
   padding:7px 10px;background:#0f0f14;border:1px solid #24242c;border-radius:9px;font-size:11px}
@@ -388,6 +429,19 @@ footer{max-width:900px;margin:0 auto;padding:8px 14px 22px;color:var(--dim);font
   <button data-bn="my">🏠<span>שלי</span></button>
   <button data-bn="hist">🗂<span>עסקאות</span></button>
 </nav>
+<button id="orbBtn" title="תפריט פקודות">✦</button>
+<div id="radial" hidden></div>
+<div id="diagModal" hidden>
+  <div class="diagBox">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <h3>📡 קונסולת רשת חיה</h3>
+      <button id="diagClose" style="background:none;border:none;color:var(--dim);font-size:18px;cursor:pointer">✕</button>
+    </div>
+    <div class="dsub">בודק כל נתיב נתונים מהמכשיר הזה ממש עכשיו — ירוק חי, אדום חסום. צלם מסך של התוצאה ושלח, וזה בדיוק מה שצריך כדי לתקן את המניות.</div>
+    <div id="diagList"><div class="dwait">⏳ מריץ בדיקות…</div></div>
+    <div class="dbtns"><button id="diagRun">🔄 בדוק שוב</button><button id="diagCopy">📋 העתק דוח</button></div>
+  </div>
+</div>
 <main>
   <div class="acct">
     <label>💰 גודל חשבון $<input id="acctSize" type="number" min="10" step="50" inputmode="decimal"></label>
@@ -414,6 +468,12 @@ footer{max-width:900px;margin:0 auto;padding:8px 14px 22px;color:var(--dim);font
     <button data-f="gainers">עולים</button>
     <button data-f="losers">יורדים</button>
   </div>
+  <div id="lensBar">
+    <button data-lens="cards" class="on">🃏 כרטיסים</button>
+    <button data-lens="dna">🧬 ספקטרום</button>
+    <button data-lens="river">🌊 נהר</button>
+  </div>
+  <canvas id="lensCv" hidden></canvas>
   <div class="mhead">
     <button data-s="name">שם / מחזור ⇅</button>
     <button data-s="price">מחיר ⇅</button>
@@ -637,36 +697,46 @@ function parseYahoo(j){
 // "simple" (no CORS preflight to get blocked).
 let tvState=0, tvNoted=false;            // 0 unknown · 1 carried data · -1 failed
 let stockSweep={candles:-1,tv:0,at:0};   // what the last full stock sweep achieved
+const TV_URL='https://scanner.tradingview.com/america/scan';
+// v433: the scanner itself can be blocked on some carriers — a POST-capable
+// bridge is the fallback; whichever answered last goes first next time
+const TV_VIAS=[u=>u, u=>'https://corsproxy.io/?url='+encodeURIComponent(u)];
+let tvVia=0;
 async function tvScan(){
-  try{
-    const ctrl=new AbortController(); const to=setTimeout(()=>ctrl.abort(),10000);
-    const res=await fetch('https://scanner.tradingview.com/america/scan',{
-      method:'POST', signal:ctrl.signal,
-      body:JSON.stringify({symbols:{query:{types:[]},tickers:[]},
-        filter:[{left:'name',operation:'in_range',right:STOCKS}],
-        columns:['name','close','change','volume'], range:[0,120]})});
-    clearTimeout(to);
-    if(!res.ok){ tvState=-1; return 0; }
-    const j=await res.json();
-    let n=0; const seen=new Set();
-    for(const row of (j&&j.data)||[]){
-      const d=row.d||[]; const name=d[0], close=+d[1], chg=+d[2], vol=+d[3];
-      if(!name || seen.has(name) || !(close>0)) continue;
-      const r=universe.find(x=>x.market==='stock' && x.sym===name);
-      if(!r) continue;
-      seen.add(name);
-      // a fresh Yahoo reading (candles + official quote) outranks a screener
-      // quote — TV only fills symbols Yahoo hasn't reached this cycle
-      const sc=scan[r.sym];
-      if(sc && Date.now()-sc.at<SCAN_TTL) continue;
-      r.price=close; if(isFinite(chg)) r.chg=chg;
-      if(vol>0) r.vol=vol*close;           // share volume → USD notional
-      r.stale=false; n++;
-      try{ checkPalerts(r.sym,r.price); }catch(e){}
-    }
-    if(n>0) tvState=1;
-    return n;
-  }catch(e){ tvState=-1; return 0; }
+  const body=JSON.stringify({symbols:{query:{types:[]},tickers:[]},
+    filter:[{left:'name',operation:'in_range',right:STOCKS}],
+    columns:['name','close','change','volume'], range:[0,120]});
+  for(let k=0;k<TV_VIAS.length;k++){
+    const vi=(tvVia+k)%TV_VIAS.length;
+    try{
+      const ctrl=new AbortController(); const to=setTimeout(()=>ctrl.abort(),10000);
+      const res=await fetch(TV_VIAS[vi](TV_URL),{method:'POST', signal:ctrl.signal, body});
+      clearTimeout(to);
+      if(!res.ok) continue;
+      const j=await res.json();
+      if(!j || !Array.isArray(j.data)) continue;
+      tvVia=vi;
+      let n=0; const seen=new Set();
+      for(const row of j.data){
+        const d=row.d||[]; const name=d[0], close=+d[1], chg=+d[2], vol=+d[3];
+        if(!name || seen.has(name) || !(close>0)) continue;
+        const r=universe.find(x=>x.market==='stock' && x.sym===name);
+        if(!r) continue;
+        seen.add(name);
+        // a fresh Yahoo reading (candles + official quote) outranks a screener
+        // quote — TV only fills symbols Yahoo hasn't reached this cycle
+        const sc=scan[r.sym];
+        if(sc && Date.now()-sc.at<SCAN_TTL) continue;
+        r.price=close; if(isFinite(chg)) r.chg=chg;
+        if(vol>0) r.vol=vol*close;           // share volume → USD notional
+        r.stale=false; n++;
+        try{ checkPalerts(r.sym,r.price); }catch(e){}
+      }
+      if(n>0) tvState=1;
+      return n;
+    }catch(e){}
+  }
+  tvState=-1; return 0;
 }
 // one candle fetcher for BOTH markets — every engine goes through here
 async function fetchKl(r,interval,opts){
@@ -1878,6 +1948,254 @@ function checkPalerts(sym,price){
   }
 }
 
+// ── 🧬🌊 DISPLAY LENSES (v433) — three ways to see the same live data ────
+// Same rows(), same scan readings, zero duplicated state: the lens only
+// changes the projection. cards = the classic list; dna = a spectral
+// barcode where every band is one of the 7 checks; river = a flowing
+// momentum current where speed IS 15-minute momentum. Canvas taps map
+// back to the real row and open its full card.
+let lens='cards', lensRects=[], lensAnim=0; const riverB={};
+try{ const l0=localStorage.getItem('na:radar:lens'); if(l0==='dna'||l0==='river') lens=l0; }catch(e){}
+function setLens(l){
+  lens=l; try{ localStorage.setItem('na:radar:lens',l); }catch(e){}
+  document.querySelectorAll('#lensBar button').forEach(b=>b.classList.toggle('on',b.dataset.lens===l));
+  const cv=$('lensCv');
+  cancelAnimationFrame(lensAnim);
+  if(l==='cards'){ cv.hidden=true; $('list').style.display=''; }
+  else { cv.hidden=false; $('list').style.display='none'; lensSize(); lensTick(); }
+}
+function lensSize(){
+  const cv=$('lensCv'); const w=cv.parentElement.clientWidth||360;
+  const n=Math.min(rows().length,26);
+  const h= lens==='dna'? Math.max(220, 34*n+40) : Math.min(560, Math.max(380, innerHeight-280));
+  const dpr=Math.min(2,devicePixelRatio||1);
+  cv.style.height=h+'px'; cv.width=Math.round(w*dpr); cv.height=Math.round(h*dpr);
+}
+function lensTick(){
+  if(lens==='cards' || document.hidden) return;
+  try{ lens==='dna'? drawDna() : drawRiver(); }catch(e){}
+  lensAnim=requestAnimationFrame(lensTick);
+}
+function drawDna(){
+  const cv=$('lensCv'), x=cv.getContext('2d');
+  const dpr=Math.min(2,devicePixelRatio||1);
+  x.setTransform(dpr,0,0,dpr,0,0);
+  const W=cv.width/dpr, H=cv.height/dpr;
+  x.clearRect(0,0,W,H);
+  const rs=rows().slice(0,26);
+  lensRects=[];
+  x.textBaseline='middle';
+  x.textAlign='right'; x.fillStyle='#8a8a95'; x.font='400 10px system-ui';
+  x.fillText('🧬 כל פס = בדיקה (ירוק עבר) · קו תחתון = מומנטום 15ד · זהב = GO', W-8, 14);
+  const y0=26, rh=34;
+  const symZone=88, bw=17, gap=3, bandsW=7*(bw+gap)-gap;
+  const bandsRight=W-symZone, bandsLeft=bandsRight-bandsW;
+  rs.forEach((r,i)=>{
+    const y=y0+i*rh, s=scan[r.sym];
+    x.strokeStyle='rgba(255,255,255,.05)';
+    x.beginPath(); x.moveTo(6,y+rh-3); x.lineTo(W-6,y+rh-3); x.stroke();
+    const go=s && verdictOf(s).k==='go';
+    x.textAlign='right'; x.font='700 11.5px JetBrains Mono,monospace';
+    x.fillStyle= go? '#ffb300' : '#e8e8ee';
+    x.fillText(r.sym, W-8, y+10);
+    x.font='400 9.5px JetBrains Mono,monospace'; x.fillStyle='#8a8a95';
+    x.fillText(r.price>0? String(+r.price.toFixed(r.price<10?4:2)) : '—', W-8, y+23);
+    if(s){
+      checksOf(s,r.vol).forEach((c,k)=>{
+        x.fillStyle= c.ok? 'rgba(0,230,118,.78)' : 'rgba(255,82,82,.5)';
+        x.fillRect(bandsRight-(k+1)*(bw+gap)+gap, y+6, bw, 11);
+      });
+      const m=Math.max(-3,Math.min(3,s.m15)), mw=Math.abs(m)/3*bandsW;
+      x.fillStyle= m>=0? 'rgba(0,230,118,.9)' : 'rgba(255,82,82,.9)';
+      x.fillRect(m>=0? bandsRight-mw : bandsLeft, y+21, mw, 4);
+      x.textAlign='left'; x.font='700 12px JetBrains Mono,monospace';
+      x.fillStyle='#ffb300'; x.fillText(String(s.score), 10, y+14);
+      x.fillStyle= s.dir==='long'? '#00e676':'#ff5252';
+      x.fillText(s.dir==='long'?'▲':'▼', 42, y+14);
+      if(go){ x.fillStyle='rgba(255,179,0,.9)'; x.font='700 10px JetBrains Mono,monospace';
+        x.fillText('GO', 58, y+14); }
+    } else {
+      x.textAlign='left'; x.fillStyle='#55555f'; x.font='700 12px JetBrains Mono,monospace';
+      x.fillText('—', 10, y+14);
+    }
+    lensRects.push({x:0,y,w:W,h:rh,sym:r.sym});
+  });
+  if(!rs.length){ x.textAlign='center'; x.fillStyle='#8a8a95';
+    x.font='400 12px system-ui'; x.fillText('אין נתונים עדיין…', W/2, 60); }
+}
+function drawRiver(){
+  const cv=$('lensCv'), x=cv.getContext('2d');
+  const dpr=Math.min(2,devicePixelRatio||1);
+  x.setTransform(dpr,0,0,dpr,0,0);
+  const W=cv.width/dpr, H=cv.height/dpr;
+  x.fillStyle='rgba(8,8,12,.28)'; x.fillRect(0,0,W,H);   // motion trails
+  const rs=rows().slice(0,34);
+  const maxV=Math.max(1,...rs.map(r=>r.vol||0));
+  lensRects=[];
+  const now=Date.now();
+  rs.forEach(r=>{
+    const s=scan[r.sym], m=s? s.m15 : 0;
+    let b=riverB[r.sym];
+    if(!b) b=riverB[r.sym]={x:Math.random()*W, y:(0.1+0.72*Math.random())*H, ph:Math.random()*6.28};
+    const rad=9+Math.sqrt((r.vol||0)/maxV)*20;
+    b.x-=0.35+Math.min(3,Math.abs(m))*1.1;               // speed IS momentum
+    b.ph+=0.02;
+    const y=b.y+Math.sin(b.ph)*9;
+    if(b.x<-rad*2){ b.x=W+rad+Math.random()*80; b.y=(0.1+0.72*Math.random())*H; }
+    const col= m>=0? '0,230,118' : '255,82,82';
+    const g=x.createRadialGradient(b.x,y,1,b.x,y,rad);
+    g.addColorStop(0,'rgba('+col+',.85)'); g.addColorStop(1,'rgba('+col+',.05)');
+    x.fillStyle=g; x.beginPath(); x.arc(b.x,y,rad,0,6.283); x.fill();
+    if(s && verdictOf(s).k==='go'){
+      x.strokeStyle='rgba(255,179,0,'+(0.5+0.4*Math.sin(now/300)).toFixed(2)+')';
+      x.lineWidth=2; x.beginPath(); x.arc(b.x,y,rad+3,0,6.283); x.stroke();
+    }
+    x.textAlign='center'; x.textBaseline='middle';
+    x.fillStyle='#fff'; x.font='700 '+Math.max(9,Math.min(13,rad*0.6)).toFixed(0)+'px JetBrains Mono,monospace';
+    x.fillText(r.sym, b.x, y-3);
+    x.fillStyle='rgba(255,255,255,.75)'; x.font='400 8.5px JetBrains Mono,monospace';
+    x.fillText(r.price>0? (r.price<10? r.price.toFixed(3) : r.price.toFixed(1)) : '—', b.x, y+9);
+    lensRects.push({x:b.x-rad,y:y-rad,w:rad*2,h:rad*2,sym:r.sym});
+  });
+  x.textAlign='right'; x.fillStyle='#8a8a95'; x.font='400 10px system-ui';
+  x.fillText('🌊 מהירות = מומנטום 15ד · גודל = מחזור · טבעת זהב = GO · הקש לפתיחה', W-8, H-10);
+}
+$('lensBar').onclick=e=>{ const b=e.target.closest('[data-lens]'); if(b) setLens(b.dataset.lens); };
+$('lensCv').onclick=e=>{
+  const rc=$('lensCv').getBoundingClientRect();
+  const px=e.clientX-rc.left, py=e.clientY-rc.top;
+  for(let i=lensRects.length-1;i>=0;i--){ const it=lensRects[i];
+    if(px>=it.x&&px<=it.x+it.w&&py>=it.y&&py<=it.y+it.h){
+      expanded=it.sym; setLens('cards'); render();
+      const el=document.querySelector(`.mrow[data-sym="${it.sym}"]`);
+      if(el) el.scrollIntoView({block:'center'});
+      return;
+    } }
+};
+window.addEventListener('resize',()=>{ if(lens!=='cards') lensSize(); });
+document.addEventListener('visibilitychange',()=>{
+  if(!document.hidden && lens!=='cards'){ cancelAnimationFrame(lensAnim); lensTick(); } });
+// restore the saved lens only after the whole script parsed (rows()/render
+// state live further down the file)
+setTimeout(()=>{ if(lens!=='cards') setLens(lens); },0);
+
+// ── ✦ RADIAL COMMAND ORB (v433) — every power one thumb away ───────────
+const RAD_ITEMS=[
+  {e:'📡',t:'בדיקת רשת',f:()=>openDiag()},
+  {e:'🌌',t:'גלקסיה',f:()=>openGal()},
+  {e:'🗂',t:'עסקאות',f:()=>openHist()},
+  {e:'🔄',t:'סרוק עכשיו',f:()=>{ toast('🔄 סורק את השוק…'); kick(true); }},
+  {e:'🎯',t:'מצב קפדני',f:()=>setStrict(!strictOn)},
+  {e:'🔊',t:'תקציר קולי',f:()=>speakBrief()},
+  {e:'🔁',t:'החלף שוק',f:()=>setMkt(mkt==='stock'?'crypto':'stock')},
+  {e:'🧬',t:'עדשה הבאה',f:()=>setLens(lens==='cards'?'dna':lens==='dna'?'river':'cards')},
+];
+function openRad(){
+  const rad=$('radial'); rad.hidden=false;
+  if(!rad.childElementCount){
+    RAD_ITEMS.forEach((it,i)=>{
+      const b=document.createElement('button');
+      b.className='radItem'; b.dataset.ri=i;
+      b.innerHTML=it.e+'<span>'+it.t+'</span>';
+      rad.appendChild(b);
+    });
+    rad.onclick=e=>{
+      const b=e.target.closest('.radItem');
+      if(b){ closeRad(); RAD_ITEMS[+b.dataset.ri].f(); }
+      else closeRad();
+    };
+  }
+  const o=$('orbBtn').getBoundingClientRect();
+  const cx=o.left+o.width/2, cy=o.top+o.height/2;
+  [...rad.children].forEach((b,i)=>{
+    const ring= i<4? 92 : 158;
+    const ang=(-6 + (i%4)*(104/3))*Math.PI/180;      // quarter-fan: right → up
+    b.style.left=(cx+Math.cos(ang)*ring-29)+'px';
+    b.style.top =(cy-Math.sin(ang)*ring-29)+'px';
+    b.style.transitionDelay=(i*22)+'ms';
+  });
+  requestAnimationFrame(()=>{
+    rad.classList.add('open'); $('orbBtn').classList.add('open');
+    [...rad.children].forEach(b=>{ b.style.transform='scale(1)'; });
+  });
+}
+function closeRad(){
+  const rad=$('radial');
+  rad.classList.remove('open'); $('orbBtn').classList.remove('open');
+  [...rad.children].forEach(b=>{ b.style.transform='scale(.3)'; });
+  setTimeout(()=>{ rad.hidden=true; },220);
+}
+$('orbBtn').onclick=()=>{ $('radial').hidden? openRad() : closeRad(); };
+
+// ── 📡 LIVE NETWORK CONSOLE (v433) — see exactly which route is blocked ─
+// The stock outage debugging kept guessing what the user's carrier blocks.
+// No more guessing: probe EVERY data route from THIS device, live, with
+// latency and the failure kind, and let the user screenshot/copy it.
+let diagRes=[];
+function diagRoutes(){
+  const test=YQ+'AAPL?interval=1d&range=1d';
+  const tvBody=JSON.stringify({symbols:{query:{types:[]},tickers:[]},
+    filter:[{left:'name',operation:'in_range',right:['AAPL']}],
+    columns:['name','close'], range:[0,2]});
+  const list=[];
+  Y_VIAS.forEach(v=>{
+    if(v.hg && !simBase()){ list.push({n:'שרת Heavy Guard', skip:'לא מוגדר'}); return; }
+    list.push({n:(v.d?'יאהו — ':'')+v.n, u:v.f(test), o:{headers:v.h? v.h(): undefined}});
+  });
+  list.push({n:'TradingView ישיר', u:TV_URL, o:{method:'POST',body:tvBody}});
+  list.push({n:'TradingView דרך גשר', u:TV_VIAS[1](TV_URL), o:{method:'POST',body:tvBody}});
+  list.push({n:'Binance REST', u:`${FAPI}/fapi/v1/time`});
+  return list;
+}
+async function diagProbe(u,o){
+  const t0=performance.now();
+  try{
+    const ctrl=new AbortController(); const to=setTimeout(()=>ctrl.abort(),8000);
+    const res=await fetch(u,Object.assign({signal:ctrl.signal},o||{}));
+    clearTimeout(to);
+    if(!res.ok) return {ok:false, ms:Math.round(performance.now()-t0), why:'HTTP '+res.status};
+    await res.text();
+    return {ok:true, ms:Math.round(performance.now()-t0)};
+  }catch(e){
+    return {ok:false, ms:Math.round(performance.now()-t0),
+      why: e && e.name==='AbortError'? 'טיימאאוט' : 'רשת/CORS'};
+  }
+}
+function drawDiag(){
+  const wsOk= ws && ws.readyState===1;
+  $('diagList').innerHTML = diagRes.map(d=>{
+    const st= d.skip? `<span class="dna">⚪ ${d.skip}</span>`
+      : d.r===undefined? '<span class="dwait">⏳ בודק…</span>'
+      : d.r.ok? `<span class="dok">✅ חי · ${d.r.ms}ms</span>`
+      : `<span class="dbad">⛔ ${d.r.why}</span>`;
+    return `<div class="drow"><b>${d.n}</b><span class="dst">${st}</span></div>`;
+  }).join('')
+  + `<div class="drow"><b>Binance WebSocket</b><span class="dst">${
+      wsOk? '<span class="dok">✅ מחובר</span>' : '<span class="dbad">⛔ מנותק</span>'}</span></div>`;
+}
+async function runDiag(){
+  diagRes=diagRoutes(); drawDiag();
+  await Promise.all(diagRes.map(async d=>{
+    if(d.skip) return;
+    d.r=await diagProbe(d.u,d.o);
+    drawDiag();
+  }));
+  return diagRes;
+}
+function openDiag(){ $('diagModal').hidden=false; runDiag(); }
+function closeDiag(){ $('diagModal').hidden=true; }
+$('diagClose').onclick=closeDiag;
+$('diagModal').onclick=e=>{ if(e.target.id==='diagModal') closeDiag(); };
+$('diagRun').onclick=runDiag;
+$('diagCopy').onclick=()=>{
+  const txt='📡 דוח רשת '+new Date().toLocaleString('he-IL')+'\n'+
+    diagRes.map(d=>d.n+': '+(d.skip || (d.r? (d.r.ok? 'OK '+d.r.ms+'ms' : d.r.why) : '?'))).join('\n');
+  (navigator.clipboard? navigator.clipboard.writeText(txt) : Promise.reject())
+    .then(()=>toast('📋 הדוח הועתק — הדבק בצ׳אט'))
+    .catch(()=>toast('ההעתקה נכשלה'));
+};
+document.addEventListener('click',e=>{ if(e.target.closest('[data-diag]')) openDiag(); });
+
 // ── 💼 REAL POSITIONS — "I actually entered" tracking ───────────────────
 // The missing loop: one tap on a recommendation records that the trader
 // ACTUALLY entered (at the live price, with the plan's stop/target/qty).
@@ -2667,9 +2985,9 @@ function render(){
   const stockDead= mkt==='stock' && scanState.at>0 && !scanState.running && !universe.some(x=>x.price>0);
   const tvOnly= mkt==='stock' && !stockDead && stockSweep.at>0 && stockSweep.candles===0 && stockSweep.tv>0;
   const deadNote= stockDead
-    ? `<div class="empty" style="border:1px solid rgba(255,82,82,.4);border-radius:10px;margin:6px 0">📡 נתוני המניות לא נגישים כרגע — ניסיתי ${Y_VIAS.filter(v=>v.d).length} כתובות ישירות של יאהו, ${Y_VIAS.filter(v=>v.b).length} גשרים ציבוריים${simBase()?', את שרת ה־Heavy Guard':''} וגם את TradingView. זו חסימת רשת, לא תקלה באפליקציה. אני מנסה שוב אוטומטית כל 45 שניות — אפשר גם לעבור רשת (WiFi/סלולר).</div>`
+    ? `<div class="empty" style="border:1px solid rgba(255,82,82,.4);border-radius:10px;margin:6px 0">📡 נתוני המניות לא נגישים כרגע — ניסיתי ${Y_VIAS.filter(v=>v.d).length} כתובות ישירות של יאהו, ${Y_VIAS.filter(v=>v.b).length} גשרים ציבוריים${simBase()?', את שרת ה־Heavy Guard':''} וגם את TradingView. זו חסימת רשת, לא תקלה באפליקציה. אני מנסה שוב אוטומטית כל 45 שניות — אפשר גם לעבור רשת (WiFi/סלולר).<br><button data-diag style="margin-top:8px;background:#141419;border:1px solid rgba(255,179,0,.5);color:var(--gold);border-radius:8px;padding:7px 14px;cursor:pointer;font-family:inherit">📡 בדיקת רשת חיה — צלם ושלח</button></div>`
     : tvOnly
-    ? `<div class="empty" style="border:1px solid rgba(255,179,0,.4);border-radius:10px;margin:6px 0;color:var(--gold)">📊 מחירים חיים דרך TradingView. ניתוח הנרות (יאהו) חסום ברשת הזו — בלי נרות אין המלצות ואין איתותים, רק מחירים אמיתיים והתראות מחיר. מנסה את יאהו שוב כל 45 שניות.</div>`
+    ? `<div class="empty" style="border:1px solid rgba(255,179,0,.4);border-radius:10px;margin:6px 0;color:var(--gold)">📊 מחירים חיים דרך TradingView. ניתוח הנרות (יאהו) חסום ברשת הזו — בלי נרות אין המלצות ואין איתותים, רק מחירים אמיתיים והתראות מחיר. מנסה את יאהו שוב כל 45 שניות.<br><button data-diag style="margin-top:8px;background:#141419;border:1px solid rgba(255,179,0,.5);color:var(--gold);border-radius:8px;padding:7px 14px;cursor:pointer;font-family:inherit">📡 בדיקת רשת חיה</button></div>`
     : '';
   const top=el.scrollTop;
   el.innerHTML=deadNote+rs.slice(0,200).map(r=>{ try{
@@ -3112,7 +3430,10 @@ setInterval(()=>{
 // test hooks — the same style every app in the suite exposes
 window.__mkt={ rows, scan:()=>scan, state:()=>({filter,sortKey,sortDir,query,expanded,acct,riskPct}),
   yState:()=>({via:yVia,bad:yBad.slice(),deadAt:yAllDeadAt,n:Y_VIAS.length}),
-  tv:tvScan, tvInfo:()=>({state:tvState,sweep:Object.assign({},stockSweep)}),
+  tv:tvScan, tvInfo:()=>({state:tvState,sweep:Object.assign({},stockSweep),via:tvVia}),
+  lens:setLens, lensName:()=>lens, lensRects:()=>lensRects.slice(),
+  radOpen:openRad, radClose:closeRad,
+  diag:runDiag, diagRes:()=>diagRes.map(d=>({n:d.n,skip:d.skip,r:d.r})), openDiag, closeDiag,
   verdictOf, checksOf, planOf, setAcct:(a,r)=>{acct=a;riskPct=r;syncAcct();},
   tick:applyTick, alerts:(on)=>setAlerts(on!==false), alerted:()=>({...goAlerted}),
   timingOf, hot:()=>runScan(true,render,true),
