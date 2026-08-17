@@ -269,6 +269,14 @@ main{max-width:900px;margin:0 auto;padding:10px 10px calc(20px + env(safe-area-i
 .prow .hitb{font-weight:800;padding:1px 8px;border-radius:6px;font-size:10.5px}
 .prow button{background:#141419;border:1px solid #2a2a33;color:var(--txt);border-radius:7px;
   padding:4px 10px;font-size:11px;cursor:pointer;font-family:inherit}
+.possbar .shd{font-weight:800;color:var(--dim);font-size:10.5px;margin-top:6px;letter-spacing:.4px}
+.possbar .srow{display:flex;gap:8px 12px;flex-wrap:wrap;align-items:center;padding:5px 0;cursor:pointer;
+  border-top:1px dashed rgba(255,255,255,.08);font-family:'JetBrains Mono',monospace;font-size:11.5px}
+.possbar .srow:active{opacity:.6}
+.possbar .sbar{flex:1;min-width:64px;max-width:180px;height:6px;border-radius:3px;position:relative;
+  background:linear-gradient(90deg,rgba(255,82,82,.75),rgba(120,120,130,.5) 38%,rgba(0,230,118,.75))}
+.possbar .sbar i{position:absolute;top:-3px;width:2.5px;height:12px;background:#fff;
+  box-shadow:0 0 6px #fff;border-radius:1px}
 .tiltbar{margin:0 0 8px;padding:9px 12px;border-radius:10px;font-size:12.5px;
   background:rgba(255,82,82,.1);border:1.5px solid rgba(255,82,82,.55);color:var(--txt)}
 .tiltbar b{font-family:'JetBrains Mono',monospace;color:var(--down)}
@@ -539,9 +547,19 @@ const YQ='https://query1.finance.yahoo.com/v8/finance/chart/';
 // cheap single-probe mode for 30s so a dead scan finishes fast instead of
 // burning 7 timeouts per symbol. Still zero fake data — if nothing
 // answers, the banner says so and the 45s kick keeps retrying.
+// v431: the platform's own bots backend — heavy-guard-simulator, the same
+// alpha:sim:url/apiKey the arena and assistant already read — joins as the
+// FIRST route: a server fetching Yahoo has no browser-CORS problem at all.
+// Contract: GET {base}/api/yahoo?url=<encoded yahoo url> returns the raw
+// Yahoo JSON (Bearer auth if a key is set). Until the backend implements
+// the endpoint the route fails fast and the chain moves on — never blocks.
+const simBase=()=>{ try{ return (localStorage.getItem('alpha:sim:url')||'').replace(/\/$/,''); }catch(e){ return ''; } };
+const simKey =()=>{ try{ return localStorage.getItem('alpha:sim:apiKey')||''; }catch(e){ return ''; } };
 const Y_VIAS=[
-  {n:'ישיר',             t:6000,        f:u=>u},
-  {n:'ישיר 2',           t:6000,        f:u=>u.replace('query1.','query2.')},
+  {n:'שרת Heavy Guard',  t:8000,  hg:1, f:u=>simBase()+'/api/yahoo?url='+encodeURIComponent(u),
+     h:()=>simKey()? {Authorization:'Bearer '+simKey()} : {}},
+  {n:'ישיר',             t:6000,  d:1,  f:u=>u},
+  {n:'ישיר 2',           t:6000,  d:1,  f:u=>u.replace('query1.','query2.')},
   {n:'גשר allorigins',   t:12000, b:1,  f:u=>'https://api.allorigins.win/raw?url='+encodeURIComponent(u)},
   {n:'גשר allorigins‑j', t:12000, b:1, w:1, f:u=>'https://api.allorigins.win/get?url='+encodeURIComponent(u)},
   {n:'גשר corsproxy',    t:12000, b:1,  f:u=>'https://corsproxy.io/?url='+encodeURIComponent(u)},
@@ -555,10 +573,11 @@ const yBad=new Array(Y_VIAS.length).fill(0);   // route -> last failure time
 const Y_BAD_MS=60000;
 async function yTry(i,url){
   const v=Y_VIAS[i];
+  if(v.hg && !simBase()) return null;      // bots backend not configured — free skip
   try{
     const ctrl=new AbortController();
     const to=setTimeout(()=>ctrl.abort(),v.t||9000);
-    const res=await fetch(v.f(url),{signal:ctrl.signal});
+    const res=await fetch(v.f(url),{signal:ctrl.signal, headers: v.h? v.h() : undefined});
     clearTimeout(to);
     if(!res.ok) return null;
     let j=await res.json();
@@ -568,9 +587,10 @@ async function yTry(i,url){
 }
 function yWon(i){
   yBad[i]=0;
-  if(i!==yVia || (!yViaNoted && i>1)){
+  if(i!==yVia || (!yViaNoted && !Y_VIAS[i].d)){
     yViaNoted=true;
-    if(i>1) toast('📊 נתוני יאהו אמיתיים דרך '+Y_VIAS[i].n+' (הגישה הישירה חסומה ברשת הזו)');
+    if(Y_VIAS[i].hg) toast('🤖 נתוני מניות אמיתיים דרך שרת ה־Heavy Guard שלך');
+    else if(!Y_VIAS[i].d) toast('📊 נתוני יאהו אמיתיים דרך '+Y_VIAS[i].n+' (הגישה הישירה חסומה ברשת הזו)');
   }
   yVia=i; try{ localStorage.setItem('na:radar:yvia',String(i)); }catch(e){}
 }
@@ -1859,9 +1879,19 @@ function watchPos(){
       toast('🎯 '+p.sym+': היעד נגע! — קח רווח בבורסה'); }
   }
 }
+// v431: the pinned bar is now the ACTIVE TRADES ZONE — personal positions
+// (real "I entered" records, dollars + R) AND every open radar signal
+// still being tracked live, each with a stop→target progress bar. One
+// glance answers "what is running right now and where does each one
+// stand" — tap a signal row for its full forensics chart.
 function renderPos(){
   const el=$('poss'); if(!el) return;
-  if(!poss.length){ el.hidden=true; return; }
+  // open signals, newest first, current market only, capped for the bar
+  const openSigs=[];
+  for(let i=sigs.length-1;i>=0 && openSigs.length<6;i--){
+    const g=sigs[i]; if(g && !g.out) openSigs.push({g,i});
+  }
+  if(!poss.length && !openSigs.length){ el.hidden=true; return; }
   el.hidden=false;
   const today=new Date().toISOString().slice(0,10);
   const dayPnl=myTrades.filter(t=>new Date(t.closedAt).toISOString().slice(0,10)===today)
@@ -1883,7 +1913,25 @@ function renderPos(){
       <button data-pc="${i}" title="נרשם בטעות">✕</button>
     </div>`;
   }).join('');
-  el.innerHTML=`<div class="ph">💼 הפוזיציות שלי (${poss.length}) · כרגע <b style="color:${tot>=0?'var(--up)':'var(--down)'}">${(tot>=0?'+':'-')}$${Math.abs(tot).toFixed(2)}</b>${myTrades.length?` · סגור היום: <b style="color:${dayPnl>=0?'var(--up)':'var(--down)'}">${(dayPnl>=0?'+':'-')}$${Math.abs(dayPnl).toFixed(2)}</b>`:''}</div>${rows}`;
+  const sigRows=openSigs.map(({g,i})=>{
+    const r=universe.find(x=>x.sym===g.sym);
+    const px=r && r.price>0? r.price : 0;
+    const rr=px? sigR(g,px) : 0;
+    const win=sigWinR(g);
+    const pos=Math.max(0,Math.min(1,(rr+1)/(win+1)));       // -1R..+winR → 0..1
+    const age=Math.max(0,Math.round((Date.now()-g.t)/60000));
+    return `<div class="srow" data-osig="${i}" title="פתח גרף מעקב">
+      <b>${g.sym}</b> ${g.dir==='long'?'▲':'▼'}
+      <span>כניסה ${g.entry}</span>
+      <span style="color:${rr>=0?'var(--up)':'var(--down)'}">${px? (rr>=0?'+':'')+rr.toFixed(2)+'R' : '—'}</span>
+      <span class="sbar"><i style="left:${(pos*100).toFixed(1)}%"></i></span>
+      <span style="color:var(--dim)">${age<60? age+' דק׳' : Math.floor(age/60)+':'+String(age%60).padStart(2,'0')+' שע׳'}</span>
+      <span>👁</span>
+    </div>`;
+  }).join('');
+  const posHd= poss.length? `<div class="shd">💼 הפוזיציות שלי (${poss.length}) · כרגע <b style="color:${tot>=0?'var(--up)':'var(--down)'}">${(tot>=0?'+':'-')}$${Math.abs(tot).toFixed(2)}</b>${myTrades.length?` · סגור היום: <b style="color:${dayPnl>=0?'var(--up)':'var(--down)'}">${(dayPnl>=0?'+':'-')}$${Math.abs(dayPnl).toFixed(2)}</b>`:''}</div>` : '';
+  const sigHd= sigRows? `<div class="shd">📡 איתותים במעקב חי (${sigStats().open})</div>` : '';
+  el.innerHTML=`<div class="ph">🔥 עסקאות פעילות (${poss.length+sigStats().open})</div>${posHd}${rows}${sigHd}${sigRows}`;
 }
 
 // ── 🛑 TILT GUARD — the discipline layer every prop desk enforces ───────
@@ -2064,7 +2112,7 @@ function recordSig(r,s){
     t1:pl.t1, atr:s.atr, rr:+(geom.t1K/geom.stopK).toFixed(2),
     score:s.score, rsi:Math.round(s.rsi), volX:+s.volX.toFixed(2),
     ext:+(s.ext||0).toFixed(2), m15:+s.m15.toFixed(2), out:null, r:null});
-  saveSigs(); renderPerf();
+  saveSigs(); renderPerf(); renderPos();
 }
 const SIG_TTL=6*3600e3;
 function sigWinR(g){ return g.rr||1.5; }
@@ -2089,7 +2137,7 @@ function gradeSigs(){
     }
     if(now-g.t>SIG_TTL && p>0){ g.out='exp'; g.r=sigR(g,p); g.gAt=Date.now(); dirty=true; }
   }
-  if(dirty){ saveSigs(); renderPerf(); }
+  if(dirty){ saveSigs(); renderPerf(); renderPos(); }
 }
 // backfill: what did the market do while the page was closed?
 async function backfillSigs(){
@@ -2566,7 +2614,7 @@ function render(){
   // to Yahoo is blocked — say it, never show a wall of silent dashes
   const stockDead= mkt==='stock' && scanState.at>0 && !scanState.running && !universe.some(x=>x.price>0);
   const deadNote= stockDead
-    ? `<div class="empty" style="border:1px solid rgba(255,82,82,.4);border-radius:10px;margin:6px 0">📡 נתוני המניות לא נגישים כרגע — ניסיתי ${Y_VIAS.filter(v=>!v.b).length} כתובות ישירות של יאהו ו‑${Y_VIAS.filter(v=>v.b).length} גשרים ציבוריים. זו חסימת רשת, לא תקלה באפליקציה. אני מנסה שוב אוטומטית כל 45 שניות — אפשר גם לעבור רשת (WiFi/סלולר).</div>`
+    ? `<div class="empty" style="border:1px solid rgba(255,82,82,.4);border-radius:10px;margin:6px 0">📡 נתוני המניות לא נגישים כרגע — ניסיתי ${Y_VIAS.filter(v=>v.d).length} כתובות ישירות של יאהו, ${Y_VIAS.filter(v=>v.b).length} גשרים ציבוריים${simBase()?' וגם את שרת ה־Heavy Guard':''}. זו חסימת רשת, לא תקלה באפליקציה. אני מנסה שוב אוטומטית כל 45 שניות — אפשר גם לעבור רשת (WiFi/סלולר).</div>`
     : '';
   const top=el.scrollTop;
   el.innerHTML=deadNote+rs.slice(0,200).map(r=>{ try{
@@ -2795,7 +2843,9 @@ $('poss').onclick=e=>{
   const x=e.target.closest('[data-px]');
   if(x){ exitPos(+x.dataset.px,'manual'); return; }
   const c=e.target.closest('[data-pc]');
-  if(c) exitPos(+c.dataset.pc,'cancel');
+  if(c){ exitPos(+c.dataset.pc,'cancel'); return; }
+  const s=e.target.closest('[data-osig]');
+  if(s) openSigChart(+s.dataset.osig);
 };
 $('tilt').onclick=e=>{
   const b=e.target.closest('[data-tilt]'); if(!b) return;
