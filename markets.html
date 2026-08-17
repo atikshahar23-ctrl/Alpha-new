@@ -530,33 +530,67 @@ const YQ='https://query1.finance.yahoo.com/v8/finance/chart/';
 // showed no data. Real fix, no fake data: try direct, then public CORS
 // bridges in order, remember whichever worked, and SAY so on screen.
 // If everything is blocked, stock mode says that too instead of dashes.
+// v430: a real phone showed the whole v425 chain (direct + 3 bridges) can
+// die at once. The chain is longer now — two direct Yahoo hosts + five
+// public bridges — each route remembers a recent failure so healthy routes
+// are tried first, the route that last carried data is saved across visits
+// (na:radar:yvia), bridges get a longer timeout than direct (cold starts
+// are slow; CORS blocks fail instantly), and a full blackout switches to a
+// cheap single-probe mode for 30s so a dead scan finishes fast instead of
+// burning 7 timeouts per symbol. Still zero fake data — if nothing
+// answers, the banner says so and the 45s kick keeps retrying.
 const Y_VIAS=[
-  {n:'ישיר',            f:u=>u},
-  {n:'גשר corsproxy',   f:u=>'https://corsproxy.io/?url='+encodeURIComponent(u)},
-  {n:'גשר allorigins',  f:u=>'https://api.allorigins.win/raw?url='+encodeURIComponent(u)},
-  {n:'גשר codetabs',    f:u=>'https://api.codetabs.com/v1/proxy?quest='+encodeURIComponent(u)},
+  {n:'ישיר',             t:6000,        f:u=>u},
+  {n:'ישיר 2',           t:6000,        f:u=>u.replace('query1.','query2.')},
+  {n:'גשר allorigins',   t:12000, b:1,  f:u=>'https://api.allorigins.win/raw?url='+encodeURIComponent(u)},
+  {n:'גשר allorigins‑j', t:12000, b:1, w:1, f:u=>'https://api.allorigins.win/get?url='+encodeURIComponent(u)},
+  {n:'גשר corsproxy',    t:12000, b:1,  f:u=>'https://corsproxy.io/?url='+encodeURIComponent(u)},
+  {n:'גשר cors.lol',     t:12000, b:1,  f:u=>'https://api.cors.lol/?url='+encodeURIComponent(u)},
+  {n:'גשר codetabs',     t:12000, b:1,  f:u=>'https://api.codetabs.com/v1/proxy?quest='+encodeURIComponent(u)},
 ];
-let yVia=0, yViaNoted=false;
-async function yFetch(url){
-  for(let k=0;k<Y_VIAS.length;k++){
-    const i=(yVia+k)%Y_VIAS.length;
-    try{
-      const ctrl=new AbortController();
-      const to=setTimeout(()=>ctrl.abort(),9000);
-      const res=await fetch(Y_VIAS[i].f(url),{signal:ctrl.signal});
-      clearTimeout(to);
-      if(!res.ok) continue;
-      const j=await res.json();
-      if(j && j.chart){
-        if(i!==yVia || (!yViaNoted && i>0)){
-          yViaNoted=true;
-          if(i>0) toast('📊 נתוני יאהו אמיתיים דרך '+Y_VIAS[i].n+' (הגישה הישירה חסומה ברשת הזו)');
-        }
-        yVia=i;
-        return j;
-      }
-    }catch(e){}
+let yVia=0, yViaNoted=false, yAllDeadAt=0;
+try{ const v=+localStorage.getItem('na:radar:yvia');
+  if(Number.isInteger(v)&&v>=0&&v<Y_VIAS.length) yVia=v; }catch(e){}
+const yBad=new Array(Y_VIAS.length).fill(0);   // route -> last failure time
+const Y_BAD_MS=60000;
+async function yTry(i,url){
+  const v=Y_VIAS[i];
+  try{
+    const ctrl=new AbortController();
+    const to=setTimeout(()=>ctrl.abort(),v.t||9000);
+    const res=await fetch(v.f(url),{signal:ctrl.signal});
+    clearTimeout(to);
+    if(!res.ok) return null;
+    let j=await res.json();
+    if(v.w && j && typeof j.contents==='string') j=JSON.parse(j.contents);  // allorigins /get wraps the body
+    return (j && j.chart)? j : null;
+  }catch(e){ return null; }
+}
+function yWon(i){
+  yBad[i]=0;
+  if(i!==yVia || (!yViaNoted && i>1)){
+    yViaNoted=true;
+    if(i>1) toast('📊 נתוני יאהו אמיתיים דרך '+Y_VIAS[i].n+' (הגישה הישירה חסומה ברשת הזו)');
   }
+  yVia=i; try{ localStorage.setItem('na:radar:yvia',String(i)); }catch(e){}
+}
+async function yFetch(url){
+  if(Date.now()-yAllDeadAt<30000){
+    // recent total blackout: one cheap probe on the remembered route only;
+    // a success re-opens the full chain immediately
+    const j=await yTry(yVia,url);
+    if(!j) return null;
+    yAllDeadAt=0; yWon(yVia); return j;
+  }
+  const healthy=[], parked=[];
+  for(let k=0;k<Y_VIAS.length;k++){ const i=(yVia+k)%Y_VIAS.length;
+    (Date.now()-yBad[i]<Y_BAD_MS? parked : healthy).push(i); }
+  for(const i of healthy.concat(parked)){
+    const j=await yTry(i,url);
+    if(j){ yWon(i); return j; }
+    yBad[i]=Date.now();
+  }
+  yAllDeadAt=Date.now();
   return null;
 }
 function parseYahoo(j){
@@ -820,12 +854,17 @@ async function runScan(force,onProgress,hotOnly){
           if(sc){ scan[r.sym]=Object.assign(sc,{at:Date.now()}); candles[r.sym]=cs; }
           try{ checkPalerts(r.sym,r.price); }catch(e){}   // stock path has no tick stream
         }
+        // public CORS bridges rate-limit (codetabs ~5 req/s) — pace stock
+        // requests instead of slamming them and getting the whole IP parked
+        if(r.market==='stock') await new Promise(s=>setTimeout(s,150));
       }catch(e){}
       scanState.done++;
       if(onProgress && scanState.done%8===0) onProgress();
     }
   };
-  try{ await Promise.all(Array.from({length:Math.min(SCAN_CONC,list.length)},worker)); }
+  // stocks go through shared bridges: 3 lanes, not 6
+  const conc=Math.min(mkt==='stock'?3:SCAN_CONC, list.length);
+  try{ await Promise.all(Array.from({length:conc},worker)); }
   finally{ scanState.running=false; if(!hotOnly) scanState.at=Date.now(); scanState.hotAt=Date.now(); }
   if(onProgress) onProgress();
 }
@@ -2527,7 +2566,7 @@ function render(){
   // to Yahoo is blocked — say it, never show a wall of silent dashes
   const stockDead= mkt==='stock' && scanState.at>0 && !scanState.running && !universe.some(x=>x.price>0);
   const deadNote= stockDead
-    ? `<div class="empty" style="border:1px solid rgba(255,82,82,.4);border-radius:10px;margin:6px 0">📡 נתוני המניות לא נגישים כרגע — גם ישירות מיאהו וגם דרך ${Y_VIAS.length-1} גשרים. זו חסימת רשת, לא תקלה באפליקציה. נסה רשת אחרת (WiFi/סלולר) או רענן בעוד דקה.</div>`
+    ? `<div class="empty" style="border:1px solid rgba(255,82,82,.4);border-radius:10px;margin:6px 0">📡 נתוני המניות לא נגישים כרגע — ניסיתי ${Y_VIAS.filter(v=>!v.b).length} כתובות ישירות של יאהו ו‑${Y_VIAS.filter(v=>v.b).length} גשרים ציבוריים. זו חסימת רשת, לא תקלה באפליקציה. אני מנסה שוב אוטומטית כל 45 שניות — אפשר גם לעבור רשת (WiFi/סלולר).</div>`
     : '';
   const top=el.scrollTop;
   el.innerHTML=deadNote+rs.slice(0,200).map(r=>{ try{
@@ -2925,7 +2964,11 @@ boot(false);
 // two tiers: the full 120-contract sweep on its 90s TTL, and a HOT tier —
 // favourites + current 🟢 + top-20 liquidity — every 30 seconds, so the
 // minute-timing numbers are never more than half a minute old.
-setInterval(()=>{ if(!document.hidden){ loadUniverse(false).then(render).catch(()=>{}); kick(false); } }, 45000);
+setInterval(()=>{ if(!document.hidden){ loadUniverse(false).then(render).catch(()=>{});
+  // stock mode with zero real prices = every Yahoo path was blocked last
+  // sweep — force a fresh attempt instead of sitting on the 90s TTL
+  const dead = mkt==='stock' && universe.length>0 && !universe.some(r=>r.price>0);
+  kick(dead); } }, 45000);
 setInterval(()=>{ if(!document.hidden && !scanState.running && mkt==='crypto'){
   runScan(true,render,true).then(()=>{ render(); checkAlerts(); }).catch(()=>{}); } }, 30000);
 // grade open signals against the live tape every 5s; when the trade list
@@ -2961,6 +3004,7 @@ setInterval(()=>{
 },1000);
 // test hooks — the same style every app in the suite exposes
 window.__mkt={ rows, scan:()=>scan, state:()=>({filter,sortKey,sortDir,query,expanded,acct,riskPct}),
+  yState:()=>({via:yVia,bad:yBad.slice(),deadAt:yAllDeadAt,n:Y_VIAS.length}),
   verdictOf, checksOf, planOf, setAcct:(a,r)=>{acct=a;riskPct=r;syncAcct();},
   tick:applyTick, alerts:(on)=>setAlerts(on!==false), alerted:()=>({...goAlerted}),
   timingOf, hot:()=>runScan(true,render,true),
