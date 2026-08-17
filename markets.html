@@ -247,6 +247,16 @@ main{max-width:900px;margin:0 auto;padding:10px 10px calc(20px + env(safe-area-i
 .chInfo b{font-family:'JetBrains Mono',monospace;color:var(--txt);margin-inline-start:4px}
 .perf .siglist span{cursor:pointer}
 .perf .siglist span:active{opacity:.6}
+.possbar{margin:0 0 8px;padding:8px 12px;border-radius:10px;font-size:12px;
+  background:#0d1210;border:1.5px solid rgba(0,230,118,.4)}
+.possbar .ph{font-weight:800;color:var(--up);font-size:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.possbar .ph b{font-family:'JetBrains Mono',monospace}
+.prow{display:flex;gap:8px 14px;flex-wrap:wrap;align-items:center;padding:6px 0;
+  border-top:1px solid #1b241f;font-family:'JetBrains Mono',monospace;font-size:11.5px}
+.prow b{font-size:12.5px}
+.prow .hitb{font-weight:800;padding:1px 8px;border-radius:6px;font-size:10.5px}
+.prow button{background:#141419;border:1px solid #2a2a33;color:var(--txt);border-radius:7px;
+  padding:4px 10px;font-size:11px;cursor:pointer;font-family:inherit}
 .tiltbar{margin:0 0 8px;padding:9px 12px;border-radius:10px;font-size:12.5px;
   background:rgba(255,82,82,.1);border:1.5px solid rgba(255,82,82,.55);color:var(--txt)}
 .tiltbar b{font-family:'JetBrains Mono',monospace;color:var(--down)}
@@ -365,6 +375,7 @@ footer{max-width:900px;margin:0 auto;padding:8px 14px 22px;color:var(--dim);font
     <label>💵 סכום בסיכון $<input id="riskAmt" type="number" min="0.1" step="0.5" inputmode="decimal"></label>
     <span class="acct-hint" id="riskWarn"></span>
   </div>
+  <div id="poss" class="possbar" hidden></div>
   <div id="tilt" class="tiltbar" hidden></div>
   <div id="mktDir" class="mdir" hidden></div>
   <div id="perf" class="perf"></div>
@@ -1739,6 +1750,86 @@ function checkPalerts(sym,price){
   }
 }
 
+// ── 💼 REAL POSITIONS — "I actually entered" tracking ───────────────────
+// The missing loop: one tap on a recommendation records that the trader
+// ACTUALLY entered (at the live price, with the plan's stop/target/qty).
+// A pinned panel then tracks every open position tick by tick — R and
+// dollars — beeps once when the stop or target is TOUCHED (the radar
+// never trades for anyone; it yells "close it on the exchange"), and
+// closing logs the trade to a personal ledger with real P&L.
+let poss=[];
+try{ poss=JSON.parse(localStorage.getItem('na:radar:pos')||'[]'); }catch(e){}
+poss=Array.isArray(poss)? poss.filter(p=>p && p.sym && p.entry>0 && p.qty>0) : [];
+let myTrades=[];
+try{ myTrades=JSON.parse(localStorage.getItem('na:radar:mytr')||'[]'); }catch(e){}
+if(!Array.isArray(myTrades)) myTrades=[];
+function savePos(){ try{ localStorage.setItem('na:radar:pos',JSON.stringify(poss.slice(-12))); }catch(e){} }
+function saveMyTr(){ myTrades=myTrades.slice(-200);
+  try{ localStorage.setItem('na:radar:mytr',JSON.stringify(myTrades)); }catch(e){} }
+function posR(p,px){ const d=Math.abs(p.entry-p.stop);
+  return d>0? (p.dir==='long'? px-p.entry : p.entry-px)/d : 0; }
+function posPnl(p,px){ return (p.dir==='long'? px-p.entry : p.entry-px)*p.qty; }
+function enterPos(sym){
+  const r=universe.find(x=>x.sym===sym), s=scan[sym];
+  if(!r || !s || !(r.price>0)){ toast('אין מחיר חי — אי אפשר לרשום כניסה'); return false; }
+  const pl=planOf(s,r);
+  poss.push({sym, dir:s.dir, entry:r.price, stop:pl.stop, t1:pl.t1,
+    qty:pl.qty, riskAmt:pl.riskAmt, t:Date.now(), m:mkt, hit:null});
+  savePos(); renderPos();
+  toast('✅ נרשמה כניסה ב-'+sym+' — מעקב חי בראש המסך');
+  return true;
+}
+function exitPos(i,why){
+  const p=poss[i]; if(!p) return;
+  if(why==='cancel'){ poss.splice(i,1); savePos(); renderPos(); toast('הכניסה בוטלה — לא נרשמה'); return; }
+  const r=universe.find(x=>x.sym===p.sym);
+  const px=r && r.price>0? r.price : 0;
+  if(!(px>0)){ toast('אין מחיר חי לסגירה'); return; }
+  const pnl=+posPnl(p,px).toFixed(2), rr=+posR(p,px).toFixed(2);
+  myTrades.push(Object.assign({},p,{exit:px, pnl, r:rr, closedAt:Date.now()}));
+  poss.splice(i,1); savePos(); saveMyTr(); renderPos();
+  toast((pnl>=0?'🎯 נסגר ברווח +$':'🛑 נסגר בהפסד -$')+Math.abs(pnl).toFixed(2)+' ('+(rr>=0?'+':'')+rr+'R)');
+}
+function watchPos(){
+  for(const p of poss){
+    if(p.hit) continue;
+    const r=universe.find(x=>x.sym===p.sym);
+    const px=r && r.price>0? r.price : 0; if(!px) continue;
+    const sHit=p.dir==='long'? px<=p.stop : px>=p.stop;
+    const tHit=p.dir==='long'? px>=p.t1  : px<=p.t1;
+    if(sHit){ p.hit='stop'; savePos(); try{ beep(); }catch(e){}
+      toast('🛑 '+p.sym+': הסטופ נגע — סגור בבורסה עכשיו'); }
+    else if(tHit){ p.hit='t1'; savePos(); try{ beep(); }catch(e){}
+      toast('🎯 '+p.sym+': היעד נגע! — קח רווח בבורסה'); }
+  }
+}
+function renderPos(){
+  const el=$('poss'); if(!el) return;
+  if(!poss.length){ el.hidden=true; return; }
+  el.hidden=false;
+  const today=new Date().toISOString().slice(0,10);
+  const dayPnl=myTrades.filter(t=>new Date(t.closedAt).toISOString().slice(0,10)===today)
+    .reduce((a,t)=>a+t.pnl,0);
+  let tot=0;
+  const rows=poss.map((p,i)=>{
+    const r=universe.find(x=>x.sym===p.sym);
+    const px=r && r.price>0? r.price : 0;
+    const rr=px? posR(p,px):0, pnl=px? posPnl(p,px):0; tot+=pnl;
+    const hb= p.hit==='t1'? '<span class="hitb" style="background:rgba(0,230,118,.2);color:var(--up)">🎯 היעד נגע — סגור!</span>'
+      : p.hit==='stop'? '<span class="hitb" style="background:rgba(255,82,82,.2);color:var(--down)">🛑 הסטופ נגע — סגור!</span>' : '';
+    return `<div class="prow">
+      <b>${p.sym}</b> ${p.dir==='long'?'▲':'▼'}
+      <span>כניסה ${p.entry}</span>
+      <span style="color:${rr>=0?'var(--up)':'var(--down)'}">${(rr>=0?'+':'')+rr.toFixed(2)}R</span>
+      <span style="color:${pnl>=0?'var(--up)':'var(--down)'}">${(pnl>=0?'+':'-')}$${Math.abs(pnl).toFixed(2)}</span>
+      ${hb}
+      <button data-px="${i}">💰 סגרתי</button>
+      <button data-pc="${i}" title="נרשם בטעות">✕</button>
+    </div>`;
+  }).join('');
+  el.innerHTML=`<div class="ph">💼 הפוזיציות שלי (${poss.length}) · כרגע <b style="color:${tot>=0?'var(--up)':'var(--down)'}">${(tot>=0?'+':'-')}$${Math.abs(tot).toFixed(2)}</b>${myTrades.length?` · סגור היום: <b style="color:${dayPnl>=0?'var(--up)':'var(--down)'}">${(dayPnl>=0?'+':'-')}$${Math.abs(dayPnl).toFixed(2)}</b>`:''}</div>${rows}`;
+}
+
 // ── 🛑 TILT GUARD — the discipline layer every prop desk enforces ───────
 // Decision quality collapses after a losing streak; pros get cut off by
 // their risk desk. Here: when the day's graded trades reach -3R the radar
@@ -2144,7 +2235,15 @@ function renderHist(){
       return `<span>🎬 אימון<b>${pw}% (${practice.n})</b></span>`+
         `<span title="הפער בין אימון לאמת ≈ מחיר הרגש">פער אימון-אמת<b style="color:${Math.abs(gap)>=15?'var(--gold)':'var(--dim)'}">${gap>0?'+':''}${gap}%</b></span>`; })() : '');
   drawEq($('eqCv'));
-  $('hInsights').innerHTML=buildInsights();
+  // 💼 the personal ledger — what the trader ACTUALLY did, in dollars
+  if(myTrades.length){
+    const w=myTrades.filter(t=>t.pnl>0).length;
+    const sum=myTrades.reduce((a,t)=>a+t.pnl,0);
+    $('hInsights').innerHTML=`<span><b style="color:var(--up)">💼 העסקאות שלי באמת (${myTrades.length}):</b> `+
+      `${w} ברווח (${Math.round(w/myTrades.length*100)}%) · סה״כ <b style="color:${sum>=0?'var(--up)':'var(--down)'};font-family:'JetBrains Mono',monospace">${(sum>=0?'+':'-')}$${Math.abs(sum).toFixed(2)}</b></span>`+
+      myTrades.slice(-8).reverse().map(t=>`<span class="nl">${new Date(t.closedAt).toLocaleDateString('he-IL',{day:'2-digit',month:'2-digit'})} · ${t.sym} ${t.dir==='long'?'▲':'▼'} — <i style="font-style:normal;color:${t.pnl>=0?'var(--up)':'var(--down)'}">${(t.pnl>=0?'+':'-')}$${Math.abs(t.pnl).toFixed(2)} (${(t.r>=0?'+':'')+t.r}R)</i></span>`).join('')+
+      buildInsights();
+  } else $('hInsights').innerHTML=buildInsights();
   const rows=sigs.map((g,idx)=>({g,idx})).reverse().filter(({g})=>{
     if(hFilter==='all') return true;
     if(hFilter==='open') return !g.out;
@@ -2460,7 +2559,8 @@ function render(){
           <span>⏱ כלום לא זז תוך<b>${timeStop}? צא</b></span>
         </div>
         <div class="sc3">היעד או הסטופ — מה שנוגע קודם קובע · מפסידים מקסימום $${pl.riskAmt<10?pl.riskAmt.toFixed(2):pl.riskAmt.toFixed(0)}${bd?` · 🌍 השוק ${bd.k==='up'?'עולה':bd.k==='down'?'יורד':'מעורב'}${mktAgainst?' — נגדך':''}`:''}${q0.ready?` · 🧠 פרופיל דומה: ${q0.pct}% אצלך`:''}${trf.k==='home'?` · 🏠 מגרש ביתי: ${trf.e.w}/${trf.e.n} · ${trf.e.net>=0?'+':''}${trf.e.net.toFixed(1)}R אצלך`:''}</div>
-        <div><button class="copy" data-simple="1">${simpleOn?'🔬 הצג הכל (מתקדם)':'✨ חזרה למצב פשוט'}</button></div>
+        <div><button class="copy" data-enter="${r.sym}">✅ נכנסתי — עקוב אחריי</button>
+          <button class="copy" data-simple="1">${simpleOn?'🔬 הצג הכל (מתקדם)':'✨ חזרה למצב פשוט'}</button></div>
       </div>`;
       const adv= simpleOn? '' : `
         <div class="verdict" style="color:${v.k==='go'?'var(--up)':(v.k==='wait'||v.k==='late')?'var(--gold)':'var(--dim)'}">${v.t}</div>
@@ -2597,6 +2697,8 @@ $('list').onclick=e=>{
   if(e.target.closest('[data-pa-in]')) return;   // focusing the input must not toggle the row
   const ch=e.target.closest('[data-chart]');
   if(ch){ openCoinChart(ch.dataset.chart); return; }
+  const en=e.target.closest('[data-enter]');
+  if(en){ enterPos(en.dataset.enter); return; }
   const sm=e.target.closest('[data-simple]');
   if(sm){ simpleOn=!simpleOn;
     try{ localStorage.setItem('na:radar:simple',simpleOn?'1':'0'); }catch(err){}
@@ -2633,6 +2735,12 @@ try{
   const pm=new URLSearchParams(location.search).get('mkt');
   if(pm==='stock' && mkt!=='stock') setMkt('stock');
 }catch(e){}
+$('poss').onclick=e=>{
+  const x=e.target.closest('[data-px]');
+  if(x){ exitPos(+x.dataset.px,'manual'); return; }
+  const c=e.target.closest('[data-pc]');
+  if(c) exitPos(+c.dataset.pc,'cancel');
+};
 $('tilt').onclick=e=>{
   const b=e.target.closest('[data-tilt]'); if(!b) return;
   if(b.dataset.tilt==='off'){ tiltOverride=dayKey();
@@ -2829,6 +2937,7 @@ setInterval(()=>{
   const hotAt=scanState.hotAt||scanState.at||0;
   if(hotAt){ const left=Math.max(0,30-Math.round((now-hotAt)/1000));
     $('nextScan').textContent='⟳ בעוד '+left+'ש'; }
+  try{ watchPos(); renderPos(); }catch(e){}
   $('liveStat').textContent = (wsK && wsK.readyState===1 && klineSubs.size)
     ? '⚡ '+klineSubs.size+' לייב'+(now-liveStat.lastE<5000? ' · '+liveStat.lat+'ms':'') : '';
   syncKlineSubs();
@@ -2856,6 +2965,7 @@ window.__mkt={ rows, scan:()=>scan, state:()=>({filter,sortKey,sortDir,query,exp
     pos:train.pos?{...train.pos}:null, practice:{...practice}}),
   brief:speakBrief, dailyR, tiltActive, journal:renderJournal,
   galaxy:openGal, closeGalaxy:closeGal, galRects:()=>galRects.slice(),
+  enterPos, exitPos, poss:()=>poss.slice(), myTrades:()=>myTrades.slice(), watchPos,
   palerts:()=>palerts.slice(), addAlert:addPalert, checkPa:checkPalerts,
   breadth, simple:(on)=>{ simpleOn=on!==false;
     try{ localStorage.setItem('na:radar:simple',simpleOn?'1':'0'); }catch(e){} render(); },
