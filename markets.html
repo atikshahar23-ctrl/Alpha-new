@@ -627,6 +627,47 @@ function parseYahoo(j){
   }
   return {cs, meta:R.meta||{}};
 }
+// ── 📊 TradingView quote layer (v432) ───────────────────────────────────
+// TradingView's public screener endpoint answers browser fetches directly
+// (CORS-open, no key) and returns REAL close/change/volume for the whole
+// stock list in ONE POST. It has no minute candles, so it can't feed the
+// signal engine — but it means live prices, tape, galaxy and price alerts
+// keep working even when every Yahoo path is blocked. The body is sent
+// without a JSON content-type on purpose: that keeps the request
+// "simple" (no CORS preflight to get blocked).
+let tvState=0, tvNoted=false;            // 0 unknown · 1 carried data · -1 failed
+let stockSweep={candles:-1,tv:0,at:0};   // what the last full stock sweep achieved
+async function tvScan(){
+  try{
+    const ctrl=new AbortController(); const to=setTimeout(()=>ctrl.abort(),10000);
+    const res=await fetch('https://scanner.tradingview.com/america/scan',{
+      method:'POST', signal:ctrl.signal,
+      body:JSON.stringify({symbols:{query:{types:[]},tickers:[]},
+        filter:[{left:'name',operation:'in_range',right:STOCKS}],
+        columns:['name','close','change','volume'], range:[0,120]})});
+    clearTimeout(to);
+    if(!res.ok){ tvState=-1; return 0; }
+    const j=await res.json();
+    let n=0; const seen=new Set();
+    for(const row of (j&&j.data)||[]){
+      const d=row.d||[]; const name=d[0], close=+d[1], chg=+d[2], vol=+d[3];
+      if(!name || seen.has(name) || !(close>0)) continue;
+      const r=universe.find(x=>x.market==='stock' && x.sym===name);
+      if(!r) continue;
+      seen.add(name);
+      // a fresh Yahoo reading (candles + official quote) outranks a screener
+      // quote — TV only fills symbols Yahoo hasn't reached this cycle
+      const sc=scan[r.sym];
+      if(sc && Date.now()-sc.at<SCAN_TTL) continue;
+      r.price=close; if(isFinite(chg)) r.chg=chg;
+      if(vol>0) r.vol=vol*close;           // share volume → USD notional
+      r.stale=false; n++;
+      try{ checkPalerts(r.sym,r.price); }catch(e){}
+    }
+    if(n>0) tvState=1;
+    return n;
+  }catch(e){ tvState=-1; return 0; }
+}
 // one candle fetcher for BOTH markets — every engine goes through here
 async function fetchKl(r,interval,opts){
   opts=opts||{};
@@ -863,6 +904,10 @@ async function runScan(force,onProgress,hotOnly){
   } else
   for(const r of pool){ if(list.length>=SCAN_MAX) break; if(seen.has(r.pair)) continue; list.push(r); seen.add(r.pair); }
   scanState={running:true,done:0,total:list.length,at:scanState.at};
+  // stock sweep: fire the one-POST TradingView quote pass in parallel —
+  // real prices paint in ~a second while the candle crawl works
+  const tvP = mkt==='stock' ? tvScan().then(n=>{ if(n && onProgress) onProgress(); return n; }) : null;
+  let okC=0;
   let i=0;
   const worker=async()=>{
     while(i<list.length){
@@ -872,6 +917,7 @@ async function runScan(force,onProgress,hotOnly){
         if(cs && cs.length){
           const sc=scanScore(cs,r.vol);
           if(sc){ scan[r.sym]=Object.assign(sc,{at:Date.now()}); candles[r.sym]=cs; }
+          if(r.market==='stock') okC++;
           try{ checkPalerts(r.sym,r.price); }catch(e){}   // stock path has no tick stream
         }
         // public CORS bridges rate-limit (codetabs ~5 req/s) — pace stock
@@ -886,6 +932,12 @@ async function runScan(force,onProgress,hotOnly){
   const conc=Math.min(mkt==='stock'?3:SCAN_CONC, list.length);
   try{ await Promise.all(Array.from({length:conc},worker)); }
   finally{ scanState.running=false; if(!hotOnly) scanState.at=Date.now(); scanState.hotAt=Date.now(); }
+  if(tvP!==null){
+    const tvN=await tvP.catch(()=>0);
+    if(!hotOnly) stockSweep={candles:okC, tv:tvN, at:Date.now()};
+    if(okC===0 && tvN>0 && !tvNoted){ tvNoted=true;
+      toast('📊 מחירים אמיתיים דרך TradingView — ניתוח הנרות (יאהו) עדיין חסום ברשת הזו'); }
+  }
   if(onProgress) onProgress();
 }
 
@@ -2613,8 +2665,11 @@ function render(){
   // stock mode with a finished sweep and not one real price = every path
   // to Yahoo is blocked — say it, never show a wall of silent dashes
   const stockDead= mkt==='stock' && scanState.at>0 && !scanState.running && !universe.some(x=>x.price>0);
+  const tvOnly= mkt==='stock' && !stockDead && stockSweep.at>0 && stockSweep.candles===0 && stockSweep.tv>0;
   const deadNote= stockDead
-    ? `<div class="empty" style="border:1px solid rgba(255,82,82,.4);border-radius:10px;margin:6px 0">📡 נתוני המניות לא נגישים כרגע — ניסיתי ${Y_VIAS.filter(v=>v.d).length} כתובות ישירות של יאהו, ${Y_VIAS.filter(v=>v.b).length} גשרים ציבוריים${simBase()?' וגם את שרת ה־Heavy Guard':''}. זו חסימת רשת, לא תקלה באפליקציה. אני מנסה שוב אוטומטית כל 45 שניות — אפשר גם לעבור רשת (WiFi/סלולר).</div>`
+    ? `<div class="empty" style="border:1px solid rgba(255,82,82,.4);border-radius:10px;margin:6px 0">📡 נתוני המניות לא נגישים כרגע — ניסיתי ${Y_VIAS.filter(v=>v.d).length} כתובות ישירות של יאהו, ${Y_VIAS.filter(v=>v.b).length} גשרים ציבוריים${simBase()?', את שרת ה־Heavy Guard':''} וגם את TradingView. זו חסימת רשת, לא תקלה באפליקציה. אני מנסה שוב אוטומטית כל 45 שניות — אפשר גם לעבור רשת (WiFi/סלולר).</div>`
+    : tvOnly
+    ? `<div class="empty" style="border:1px solid rgba(255,179,0,.4);border-radius:10px;margin:6px 0;color:var(--gold)">📊 מחירים חיים דרך TradingView. ניתוח הנרות (יאהו) חסום ברשת הזו — בלי נרות אין המלצות ואין איתותים, רק מחירים אמיתיים והתראות מחיר. מנסה את יאהו שוב כל 45 שניות.</div>`
     : '';
   const top=el.scrollTop;
   el.innerHTML=deadNote+rs.slice(0,200).map(r=>{ try{
@@ -3015,9 +3070,11 @@ boot(false);
 // favourites + current 🟢 + top-20 liquidity — every 30 seconds, so the
 // minute-timing numbers are never more than half a minute old.
 setInterval(()=>{ if(!document.hidden){ loadUniverse(false).then(render).catch(()=>{});
-  // stock mode with zero real prices = every Yahoo path was blocked last
-  // sweep — force a fresh attempt instead of sitting on the 90s TTL
-  const dead = mkt==='stock' && universe.length>0 && !universe.some(r=>r.price>0);
+  // stock mode with zero real prices (or TV-only prices with zero Yahoo
+  // candles) = the candle path was blocked last sweep — force a fresh
+  // attempt instead of sitting on the 90s TTL
+  const dead = mkt==='stock' && universe.length>0 &&
+    (!universe.some(r=>r.price>0) || (stockSweep.at>0 && stockSweep.candles===0));
   kick(dead); } }, 45000);
 setInterval(()=>{ if(!document.hidden && !scanState.running && mkt==='crypto'){
   runScan(true,render,true).then(()=>{ render(); checkAlerts(); }).catch(()=>{}); } }, 30000);
@@ -3055,6 +3112,7 @@ setInterval(()=>{
 // test hooks — the same style every app in the suite exposes
 window.__mkt={ rows, scan:()=>scan, state:()=>({filter,sortKey,sortDir,query,expanded,acct,riskPct}),
   yState:()=>({via:yVia,bad:yBad.slice(),deadAt:yAllDeadAt,n:Y_VIAS.length}),
+  tv:tvScan, tvInfo:()=>({state:tvState,sweep:Object.assign({},stockSweep)}),
   verdictOf, checksOf, planOf, setAcct:(a,r)=>{acct=a;riskPct=r;syncAcct();},
   tick:applyTick, alerts:(on)=>setAlerts(on!==false), alerted:()=>({...goAlerted}),
   timingOf, hot:()=>runScan(true,render,true),
