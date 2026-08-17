@@ -80,6 +80,24 @@ button{font-family:inherit;cursor:pointer}
   border-top:1px solid #16161d;font-size:12px;font-family:'JetBrains Mono',monospace}
 .hrow .why{color:var(--dim);font-size:11px}
 .empty{color:var(--dim);text-align:center;padding:14px;font-size:12.5px}
+/* ── 💠 v442: crystal core — full-screen living brain ── */
+#coreModal{position:fixed;inset:0;z-index:90;background:radial-gradient(900px 500px at 50% 30%,#0b0b18,#05050a)}
+#coreModal[hidden]{display:none!important}
+#coreCv{position:absolute;inset:0;width:100%;height:100%}
+#coreTop{position:absolute;top:0;left:0;right:0;padding:12px 14px;display:flex;gap:10px;align-items:center;z-index:2}
+#coreTop b{font-family:'JetBrains Mono',monospace;color:var(--gold);font-size:15px;
+  filter:drop-shadow(0 0 10px rgba(255,179,0,.4))}
+#coreTop span{color:var(--dim);font-size:11px}
+#coreX{margin-right:auto;background:none;border:1px solid #2a2a33;color:var(--txt);
+  border-radius:8px;padding:6px 12px;font-size:14px;cursor:pointer}
+#coreStats{position:absolute;bottom:calc(env(safe-area-inset-bottom,0px) + 8px);left:12px;
+  color:var(--dim);font-family:'JetBrains Mono',monospace;font-size:11px;z-index:2}
+#coreFeedEl{position:absolute;bottom:calc(env(safe-area-inset-bottom,0px) + 28px);right:10px;left:10px;
+  display:flex;flex-direction:column-reverse;gap:4px;z-index:2;max-height:32vh;overflow:hidden}
+#coreFeedEl div{background:rgba(13,13,19,.85);border:1px solid #1d1d24;border-radius:9px;
+  padding:6px 12px;font-family:'JetBrains Mono',monospace;font-size:12px;cursor:pointer;
+  display:flex;gap:10px;align-items:center;backdrop-filter:blur(4px)}
+#coreFeedEl div.gold{border-color:rgba(255,179,0,.6);box-shadow:0 0 12px rgba(255,179,0,.25)}
 #toastEl{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);background:#15150f;
   border:1px solid rgba(255,179,0,.6);color:var(--txt);border-radius:10px;padding:10px 16px;
   font-size:13px;z-index:99;max-width:92vw;text-align:center;transition:opacity .3s;opacity:0;pointer-events:none}
@@ -90,8 +108,16 @@ button{font-family:inherit;cursor:pointer}
   <a href="markets.html">→ ראדאר</a>
   <h1>⚡ סקאלפ 3 נרות</h1>
   <span class="ver">ארנק נפרד · נייר · נתוני Binance אמיתיים</span>
-  <span class="ver" id="pageVer">v441</span>
+  <span class="ver" id="pageVer">v442</span>
+  <button class="ghost" id="coreBtn" style="margin-right:auto">💠 הליבה</button>
 </header>
+<div id="coreModal" hidden>
+  <div id="coreTop"><b>💠 ליבת הקריסטל</b><span>כל קריסטל = בדיקה אמיתית · אותם נתונים, אותו מוח, אפס קסם</span>
+    <button id="coreX">✕</button></div>
+  <canvas id="coreCv"></canvas>
+  <div id="coreFeedEl"></div>
+  <div id="coreStats"></div>
+</div>
 
 <div class="card">
   <h2>💰 הארנק (נפרד לגמרי מהראדאר)</h2>
@@ -877,6 +903,172 @@ $('scoutLog').onclick=e=>{
   $('cv').scrollIntoView({behavior:'smooth',block:'center'});
 };
 
+// ── 💠 CRYSTAL CORE (v442) — the analyzing brain, made visible ─────────
+// Full-screen scene: five crystal clusters, one per brain check (15m
+// trend, 5m push, EMA structure, RSI, volume). Coins stream through the
+// core; each crystal fires a green/red beam by the REAL result of ITS
+// check on the coin's REAL candles (brainCore — the same math as
+// everywhere else). 4/5+ leaves with a golden halo. No theater without
+// data: a coin whose candles can't be fetched exits gray, labeled so.
+let coreOn=false, coreAnim=0, coreCoin=null, coreQ=[], coreRes=[], coreN=0, coreGold=0;
+const coreCache={};
+const CORE_FCT=['מגמה 15ד','דחיפה 5ד','EMA','RSI','מחזור'];
+async function coreCandles(sym){
+  const c=coreCache[sym];
+  if(c && Date.now()-c.at<60000) return c.cs;
+  try{
+    const r=await fetch(`${FAPI}/fapi/v1/klines?symbol=${sym}USDT&interval=1m&limit=30`);
+    if(!r.ok) return null;
+    const raw=await r.json(); if(!Array.isArray(raw)) return null;
+    const cs=raw.map(a=>({t:+a[0],o:+a[1],h:+a[2],l:+a[3],c:+a[4],v:+a[5]||0}));
+    coreCache[sym]={cs,at:Date.now()};
+    return cs;
+  }catch(e){ return null; }
+}
+function coreFactors(bn,dir){
+  return dir==='long'
+    ? [bn.m15>0.1, bn.m5>0.05, bn.gap>0, bn.rsi>=45&&bn.rsi<=70, bn.volX>=1.2]
+    : [bn.m15<-0.1, bn.m5<-0.05, bn.gap<0, bn.rsi>=30&&bn.rsi<=55, bn.volX>=1.2];
+}
+function coreSpawn(){
+  if(coreCoin) return;
+  if(coreQ.length<2) uni.slice(0,20).forEach(u=>coreQ.push(u.sym));
+  const sym=coreQ.shift(); if(!sym) return;
+  coreCoin={sym, x:null, phase:'in', t0:0, bn:undefined, sparks:[]};
+  coreCandles(sym).then(cs=>{
+    if(coreCoin && coreCoin.sym===sym) coreCoin.bn= cs? (brainCore(cs)||null) : null;
+  });
+}
+function coreVerdict(c){
+  if(!c.bn) return {label:'אין נתונים', cls:'dim', score:0, dir:null};
+  const dir= c.bn.ls>=c.bn.ss? 'long':'short';
+  const sc= dir==='long'? c.bn.ls : c.bn.ss;
+  return { label: sc>=4? 'עם הזרם' : sc<=1? 'נגד הזרם' : 'רעש',
+    cls: sc>=4? 'gold' : sc<=1? 'down' : 'dim', score:sc, dir };
+}
+function drawShard(x,cx2,cy2,ang,len,col,glow){
+  x.save(); x.translate(cx2,cy2); x.rotate(ang);
+  x.shadowColor=col; x.shadowBlur=glow;
+  x.fillStyle=col;
+  x.beginPath(); x.moveTo(0,-len); x.lineTo(len*0.28,0); x.lineTo(0,len*0.42); x.lineTo(-len*0.28,0);
+  x.closePath(); x.fill();
+  x.restore(); x.shadowBlur=0;
+}
+function coreLoop(){
+  if(!coreOn) return;
+  coreAnim=requestAnimationFrame(coreLoop);
+  if(document.hidden) return;
+  const cv=$('coreCv'), x=cv.getContext('2d');
+  const dpr=Math.min(2,devicePixelRatio||1);
+  const W=innerWidth, H=innerHeight;
+  if(cv.width!==Math.round(W*dpr)){ cv.width=Math.round(W*dpr); cv.height=Math.round(H*dpr); }
+  x.setTransform(dpr,0,0,dpr,0,0);
+  x.fillStyle='rgba(5,5,10,.30)'; x.fillRect(0,0,W,H);       // motion trails
+  const t=performance.now()/1000;
+  const cx=W/2, cy=H*0.40, R=Math.min(W,H)*0.30;
+  // nucleus
+  x.strokeStyle='rgba(255,179,0,'+(0.25+0.15*Math.sin(t*2)).toFixed(2)+')';
+  x.lineWidth=1.5;
+  x.beginPath();
+  for(let k=0;k<6;k++){ const a=t*0.4+k*Math.PI/3;
+    const px2=cx+Math.cos(a)*16, py=cy+Math.sin(a)*16;
+    k? x.lineTo(px2,py) : x.moveTo(px2,py); }
+  x.closePath(); x.stroke();
+  // coin state machine
+  const c=coreCoin;
+  let scanIdx=-1, fct=null, verdict=null;
+  if(c){
+    if(c.x==null) c.x=W+50;
+    if(c.phase==='in'){
+      c.x-=Math.max(4,(c.x-cx)*0.07);
+      if(c.x-cx<2 && c.bn!==undefined){ c.phase='scan'; c.t0=performance.now(); }
+    } else if(c.phase==='scan'){
+      const prog=(performance.now()-c.t0)/1900;
+      scanIdx=Math.min(4,Math.floor(prog*5));
+      if(c.bn){ const d=c.bn.ls>=c.bn.ss?'long':'short'; fct=coreFactors(c.bn,d); }
+      if(prog>=1){
+        verdict=coreVerdict(c); c.v=verdict;
+        coreN++; if(verdict.cls==='gold') coreGold++;
+        coreRes.unshift({sym:c.sym, ...verdict}); coreRes=coreRes.slice(0,6);
+        for(let i=0;i<16;i++) c.sparks.push({x:c.x,y:cy,vx:(Math.random()-.5)*5,vy:(Math.random()-.5)*5,l:1});
+        renderCoreFeed();
+        c.phase='out';
+      }
+    } else if(c.phase==='out'){
+      c.x-=8;
+      if(c.x<-70) coreCoin=null;
+    }
+  } else coreSpawn();
+  // five crystals
+  for(let k=0;k<5;k++){
+    const a=-Math.PI/2+k*(Math.PI*2/5);
+    const kx=cx+Math.cos(a)*R, ky=cy+Math.sin(a)*R*0.85;
+    let col='rgba(120,160,255,.5)', glow=6;
+    if(scanIdx>=k && fct) { col= fct[k]? 'rgba(0,230,118,.85)' : 'rgba(255,82,82,.8)'; glow=16; }
+    else if(scanIdx>=k && c && c.bn===null){ col='rgba(120,120,130,.5)'; glow=4; }
+    for(let s=0;s<5;s++)
+      drawShard(x, kx, ky, t*0.25+(s*1.2566)+k, 15+((k*7+s*11)%12)+3*Math.sin(t*1.4+s+k), col, glow);
+    // orbit motes
+    for(let m=0;m<4;m++){ const oa=t*(0.6+m*0.13)+m*1.57+k;
+      x.fillStyle='rgba(255,255,255,.35)';
+      x.beginPath(); x.arc(kx+Math.cos(oa)*34, ky+Math.sin(oa)*30, 1.3, 0, 6.283); x.fill(); }
+    // beam to the coin while its check runs
+    if(scanIdx===k && c && c.phase==='scan'){
+      x.strokeStyle=col; x.lineWidth=2;
+      x.shadowColor=col; x.shadowBlur=10;
+      x.beginPath(); x.moveTo(kx,ky); x.lineTo(c.x,cy); x.stroke();
+      x.shadowBlur=0; x.lineWidth=1;
+    }
+    x.fillStyle= scanIdx>=k && fct? col : 'rgba(138,138,149,.9)';
+    x.font='700 10.5px JetBrains Mono,monospace'; x.textAlign='center';
+    x.fillText(CORE_FCT[k], kx, ky+46);
+    if(scanIdx>=k && fct){ x.fillText(fct[k]?'✓':'✗', kx, ky-40); }
+  }
+  // the coin itself
+  if(c && c.x!=null){
+    const vc= c.v? (c.v.cls==='gold'? '255,179,0' : c.v.cls==='down'? '255,82,82' : '120,120,130') : '232,232,238';
+    if(c.v && c.v.cls==='gold'){
+      x.strokeStyle='rgba(255,179,0,'+(0.6+0.3*Math.sin(t*6)).toFixed(2)+')';
+      x.lineWidth=2.5; x.shadowColor='#ffb300'; x.shadowBlur=18;
+      x.beginPath(); x.arc(c.x,cy,26,0,6.283); x.stroke(); x.shadowBlur=0;
+    }
+    x.fillStyle='#101016'; x.strokeStyle='rgba('+vc+',.9)'; x.lineWidth=1.5;
+    x.beginPath(); x.arc(c.x,cy,19,0,6.283); x.fill(); x.stroke();
+    x.fillStyle='rgba('+vc+',1)'; x.font='700 10px JetBrains Mono,monospace'; x.textAlign='center';
+    x.fillText(c.sym.slice(0,6), c.x, cy+3);
+    for(const s of c.sparks){ s.x+=s.vx; s.y+=s.vy; s.l-=0.03;
+      if(s.l>0){ x.fillStyle='rgba(255,179,0,'+s.l.toFixed(2)+')';
+        x.beginPath(); x.arc(s.x,s.y,1.6,0,6.283); x.fill(); } }
+    c.sparks=c.sparks.filter(s=>s.l>0);
+  }
+  $('coreStats').textContent='נסרקו '+coreN+' · עם הזרם '+coreGold+' · הנתונים: Binance 1m אמיתי';
+}
+function renderCoreFeed(){
+  $('coreFeedEl').innerHTML=coreRes.map(r=>
+    `<div class="${r.cls==='gold'?'gold':''}" data-cf="${r.sym}">💠 <b>${r.sym}</b>`+
+    ` <span style="color:${r.cls==='gold'?'var(--gold)':r.cls==='down'?'var(--down)':'var(--dim)'}">`+
+    `${r.dir? (r.dir==='long'?'▲':'▼')+' '+r.score+'/5 · ':''}${r.label}</span>`+
+    `<span style="margin-right:auto;color:var(--dim);font-size:10.5px">הקש לגרף ←</span></div>`).join('');
+}
+function coreOpen(){
+  $('coreModal').hidden=false; coreOn=true;
+  coreQ=uni.slice(0,20).map(u=>u.sym); coreCoin=null;
+  cancelAnimationFrame(coreAnim); coreLoop();
+}
+function coreClose(){
+  coreOn=false; cancelAnimationFrame(coreAnim);
+  $('coreModal').hidden=true;
+}
+$('coreBtn').onclick=coreOpen;
+$('coreX').onclick=coreClose;
+document.addEventListener('keydown',e=>{ if(e.key==='Escape' && coreOn) coreClose(); });
+$('coreFeedEl').onclick=e=>{
+  const d=e.target.closest('[data-cf]'); if(!d) return;
+  if(pos && d.dataset.cf!==pos.sym){ toast('יש עסקה פתוחה — סגור אותה קודם'); return; }
+  coreClose(); setSel(d.dataset.cf);
+  $('cv').scrollIntoView({behavior:'smooth',block:'center'});
+};
+
 // ── 🧠 CROWD INTEL (v441) — four Binance data feeds nobody here used ───
 // Funding rate (who PAYS to hold), long/short account ratio (how the
 // crowd is positioned), taker buy/sell ratio (who hits market orders
@@ -1174,6 +1366,9 @@ window.__scalp={
   lead:()=>lead&&Object.assign({},lead), leadCalc, backtest, bt:()=>btRes&&Object.assign({},btRes),
   card:shareTrade, lastCard:()=>lastCardData,
   crowd:()=>crowd&&Object.assign({},crowd), crowdFetch, crowdRead,
+  core:{ open:coreOpen, close:coreClose, on:()=>coreOn,
+    results:()=>coreRes.slice(), inject:(s)=>{ coreQ.unshift(s); },
+    stats:()=>({n:coreN, gold:coreGold}) },
 };
 </script>
 </body>
