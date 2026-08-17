@@ -108,7 +108,7 @@ button{font-family:inherit;cursor:pointer}
   <a href="markets.html">→ ראדאר</a>
   <h1>⚡ סקאלפ 3 נרות</h1>
   <span class="ver">ארנק נפרד · נייר · נתוני Binance אמיתיים</span>
-  <span class="ver" id="pageVer">v442</span>
+  <span class="ver" id="pageVer">v443</span>
   <button class="ghost" id="coreBtn" style="margin-right:auto">💠 הליבה</button>
 </header>
 <div id="coreModal" hidden>
@@ -182,6 +182,16 @@ button{font-family:inherit;cursor:pointer}
   <h2>🧠 מודיעין ההמון — מה הכסף של כולם עושה עכשיו</h2>
   <div id="crowdChips" style="display:flex;gap:6px;flex-wrap:wrap;font-family:'JetBrains Mono',monospace;font-size:11.5px"></div>
   <div id="crowdRead" style="font-size:12px;margin-top:7px;line-height:1.7;color:var(--txt)"></div>
+</div>
+
+<div class="card" id="alphaCard">
+  <h2>🤖 אלפא — האנליסט האישי (מחובר לעוזר של הפלטפורמה)</h2>
+  <div style="display:flex;gap:8px">
+    <input id="alphaQ" placeholder="שאלה חופשית (לא חובה)…" autocomplete="off"
+      style="flex:1;min-width:0;background:#101016;border:1px solid #26262e;color:var(--txt);border-radius:9px;padding:8px 12px;font-size:13px">
+    <button class="ghost" id="alphaGo">✨ נתח</button>
+  </div>
+  <div id="alphaOut" style="font-size:13px;line-height:1.8;margin-top:8px"></div>
 </div>
 
 <div class="card" id="posCard" hidden>
@@ -1276,6 +1286,83 @@ $('hist').addEventListener('click',e=>{
   const b=e.target.closest('[data-share]'); if(b) shareTrade(+b.dataset.share);
 });
 
+// ── 🤖 ALPHA ANALYST (v443) — the platform's assistant, wired in ───────
+// Same origin, same keys: reads alpha_key (Gemini) / alpha_groq (Groq)
+// that the main dashboard's assistant already stores — configure once,
+// works everywhere. Alpha receives ONLY the live on-screen data (brain,
+// crowd, compass, backtest, the trader's own ledger) and is instructed
+// to analyze just that: no invented numbers, no promises, name the risk.
+const alphaKey=()=>{ try{ return (localStorage.getItem('alpha_key')||'').trim(); }catch(e){ return ''; } };
+const groqKey =()=>{ try{ return (localStorage.getItem('alpha_groq')||'').trim(); }catch(e){ return ''; } };
+let alphaLast='', alphaBusy=false;
+function alphaCtx(){
+  const r=uni.find(x=>x.sym===sel);
+  const bn=brainNow||brainOf();
+  const L=[];
+  L.push('מטבע נבחר: '+(sel||'—')+' · מחיר חי: '+(r&&r.price>0? r.price : '—'));
+  if(bn) L.push(`המוח (1m): לונג ${bn.ls}/5, שורט ${bn.ss}/5 · מומנטום 15ד ${bn.m15}% · 5ד ${bn.m5}% · RSI ${bn.rsi} · מחזור ×${bn.volX} · ATR ${bn.atr}%`);
+  if(crowd) L.push(`ההמון: פאנדינג ${crowd.fund!=null? crowd.fund.toFixed(4)+'%':'—'} · לונג/שורט ${crowd.ls!=null?crowd.ls:'—'} · טייקרים ${crowd.taker!=null?crowd.taker:'—'} · OI ${crowd.oiChg!=null?crowd.oiChg+'%':'—'}/30ד`);
+  if(lead && !lead.self) L.push(`מצפן BTC: קורלציה ${lead.corr} בפיגור ${lead.lag} נרות`);
+  if(btRes && btRes.sym===sel) L.push(`בקטסט ${btRes.hours}ש׳: ${btRes.n} כניסות · ${btRes.n? Math.round(btRes.w/btRes.n*100):0}% פגיעה · נטו $${btRes.net}`);
+  if(pos){ const px=r&&r.price>0? r.price : pos.entry;
+    L.push(`עסקה פתוחה: ${pos.dir==='long'?'לונג':'שורט'} ${pos.sym} מ-${pos.entry} · נר ${Math.min(3,pos.candles+1)}/3 · P&L $${pnlAt(px).toFixed(2)} · שיא $${pos.peak!=null?pos.peak:0}`); }
+  if(hist.length){ const wins=hist.filter(h=>h.pnl>0).length, net=hist.reduce((a,h)=>a+h.pnl,0);
+    L.push(`היומן שלי: ${hist.length} עסקאות · ${Math.round(wins/hist.length*100)}% פגיעה · נטו $${net.toFixed(2)}`); }
+  const gr=shadows.filter(s=>s.out);
+  if(gr.length) L.push(`יומן הצלף: ${gr.length} התראות שנשפטו · נטו $${gr.reduce((a,s)=>a+s.pnl,0).toFixed(2)}`);
+  L.push(`השיטה: כניסה ידנית, יציאה אוטומטית (נר ברווח נטו סוגר, מקס 3 נרות), סטופ ${W.stop}%, עמלה ${W.fee}%/צד, גודל $${W.size}×${W.lev}.`);
+  return L.join('\n');
+}
+const ALPHA_SYS='אתה אלפא, האנליסט של מערכת הסקאלפ "3 נרות". ענה בעברית, עד 120 מילים, ישיר ולעניין. נתח אך ורק את הנתונים שסופקו לך — אל תמציא מספרים, אל תבטיח רווחים ואל תציג ודאות. חובה לציין את הסיכון המרכזי שאתה רואה. סיים בשורה שמתחילה ב"מה הייתי בודק עכשיו:". אתה לא יועץ השקעות ותגיד זאת אם נשאל על כסף אמיתי.';
+async function alphaAsk(q){
+  if(alphaBusy) return;
+  const out=$('alphaOut');
+  const gk=alphaKey(), qk=groqKey();
+  if(!gk && !qk){
+    out.innerHTML='🔌 אלפא עוד לא מחובר בדפדפן הזה — פתח את <a href="index.html">המסך הראשי</a>, הזן מפתח בהגדרות העוזר, וחזור לכאן. המפתח נשמר במכשיר שלך בלבד.';
+    return;
+  }
+  alphaBusy=true;
+  out.innerHTML='<span style="color:var(--dim)">🤖 אלפא קורא את הנתונים החיים…</span>';
+  const prompt='הנתונים החיים כרגע:\n'+alphaCtx()+'\n\nהבקשה: '+((q&&q.trim())? q.trim() : 'נתח את המצב ותן קריאה קצרה וכנה.');
+  let txt=null;
+  if(gk){
+    for(const m of ['gemini-2.0-flash','gemini-1.5-flash','gemini-1.5-flash-8b']){
+      try{
+        const res=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+m+':generateContent',{
+          method:'POST', headers:{'Content-Type':'application/json','x-goog-api-key':gk},
+          body:JSON.stringify({system_instruction:{parts:[{text:ALPHA_SYS}]},
+            contents:[{role:'user',parts:[{text:prompt}]}],
+            generationConfig:{temperature:0.4,maxOutputTokens:400}})});
+        if(!res.ok) continue;
+        const j=await res.json();
+        const parts=j&&j.candidates&&j.candidates[0]&&j.candidates[0].content&&j.candidates[0].content.parts;
+        txt= parts? parts.map(p=>p.text||'').join('').trim() : null;
+        if(txt) break;
+      }catch(e){}
+    }
+  }
+  if(!txt && qk){
+    try{
+      const res=await fetch('https://api.groq.com/openai/v1/chat/completions',{
+        method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+qk},
+        body:JSON.stringify({model:'llama-3.3-70b-versatile',
+          messages:[{role:'system',content:ALPHA_SYS},{role:'user',content:prompt}],
+          temperature:0.4, max_tokens:400})});
+      if(res.ok){ const j=await res.json();
+        txt= j&&j.choices&&j.choices[0]&&j.choices[0].message? (j.choices[0].message.content||'').trim() : null; }
+    }catch(e){}
+  }
+  alphaBusy=false;
+  if(!txt){ alphaLast='';
+    out.innerHTML='⚠️ אלפא לא הצליח לענות כרגע (מכסה או רשת) — נסה שוב עוד רגע.'; return; }
+  alphaLast=txt;
+  out.innerHTML='<div style="white-space:pre-wrap">'+txt.replace(/</g,'&lt;')+'</div>'+
+    '<div style="color:var(--dim);font-size:10.5px;margin-top:6px">🤖 ניתוח AI על הנתונים שבמסך בלבד · לא ייעוץ השקעות</div>';
+}
+$('alphaGo').onclick=()=>alphaAsk($('alphaQ').value);
+$('alphaQ').addEventListener('keydown',e=>{ if(e.key==='Enter') alphaAsk($('alphaQ').value); });
+
 // ── reconstruct honestly after the page was closed mid-trade ───────────
 async function backfill(){
   if(!pos) return;
@@ -1369,6 +1456,8 @@ window.__scalp={
   core:{ open:coreOpen, close:coreClose, on:()=>coreOn,
     results:()=>coreRes.slice(), inject:(s)=>{ coreQ.unshift(s); },
     stats:()=>({n:coreN, gold:coreGold}) },
+  alpha:{ ask:alphaAsk, ctx:alphaCtx, last:()=>alphaLast,
+    ready:()=>!!(alphaKey()||groqKey()) },
 };
 </script>
 </body>
