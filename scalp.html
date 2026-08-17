@@ -48,6 +48,12 @@ button{font-family:inherit;cursor:pointer}
 .entbtns button:disabled{opacity:.35}
 #posCard{border-color:rgba(255,179,0,.5)}
 #posPnl{font-size:26px;font-weight:800;font-family:'JetBrains Mono',monospace}
+#brain{margin-top:8px;font-size:11.5px;font-family:'JetBrains Mono',monospace;line-height:1.8}
+#brain .bch{display:inline-block;background:#101016;border:1px solid #26262e;border-radius:7px;
+  padding:2px 8px;margin:0 0 3px 4px;color:var(--dim)}
+#brain .bch.onf{color:var(--txt);border-color:#3a3a44}
+.entbtns button.hot-up{box-shadow:0 0 16px rgba(0,230,118,.45)}
+.entbtns button.hot-down{box-shadow:0 0 16px rgba(255,82,82,.45)}
 .dots{font-size:20px;letter-spacing:4px}
 #posMeta{font-size:12px;color:var(--dim);font-family:'JetBrains Mono',monospace;line-height:1.7}
 #stats{display:flex;gap:12px;flex-wrap:wrap;font-family:'JetBrains Mono',monospace;font-size:12.5px}
@@ -77,6 +83,7 @@ button{font-family:inherit;cursor:pointer}
     <label>גודל עסקה $<input id="wSize" type="number" min="1" step="10" inputmode="decimal"></label>
     <label>מינוף ×<input id="wLev" type="number" min="1" max="50" step="1" inputmode="numeric"></label>
     <label>סטופ חירום %<input id="wStop" type="number" min="0.2" max="10" step="0.1" inputmode="decimal"></label>
+    <label>עמלה %/צד<input id="wFee" type="number" min="0" max="1" step="0.01" inputmode="decimal"></label>
   </div>
   <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap" id="qsRow">
     <button class="ghost" data-qs="25">$25</button><button class="ghost" data-qs="50">$50</button>
@@ -104,6 +111,7 @@ button{font-family:inherit;cursor:pointer}
 <div class="card">
   <div id="chartHead"><span id="selSym">—</span><span id="selPx"></span><span id="cndl"></span><span id="liveB"></span></div>
   <canvas id="cv"></canvas>
+  <div id="brain"></div>
   <div class="entbtns">
     <button id="goLong">▲ לונג</button>
     <button id="goShort">▼ שורט</button>
@@ -144,7 +152,7 @@ function toast(m){ const el=$('toastEl'); el.textContent=m; el.style.opacity='1'
   clearTimeout(toastT); toastT=setTimeout(()=>{ el.style.opacity='0'; },3200); }
 
 // ── the separate wallet — its own keys, no sharing with the radar ──────
-const W_DEF={bal:1000,size:100,lev:5,stop:1.5};
+const W_DEF={bal:1000,size:100,lev:5,stop:1.5,fee:0.05};   // fee = taker %/side, Binance futures default
 let W={};
 try{ W=Object.assign({},W_DEF,JSON.parse(localStorage.getItem('na:scalp:w')||'{}')); }
 catch(e){ W=Object.assign({},W_DEF); }
@@ -279,7 +287,7 @@ async function pollK(){
     if(!r.ok) return;
     const raw=await r.json();
     if(!Array.isArray(raw)||!raw.length) return;
-    candles=raw.map(a=>({t:+a[0],o:+a[1],h:+a[2],l:+a[3],c:+a[4]}));
+    candles=raw.map(a=>({t:+a[0],o:+a[1],h:+a[2],l:+a[3],c:+a[4],v:+a[5]||0}));
     const px=candles[candles.length-1].c;
     const u=uni.find(x=>x.sym===sel); if(u) u.price=px;
     applyRules(px);
@@ -291,11 +299,88 @@ function setSel(s){
   sel=s; candles=[]; drawUni(); drawAll(); pollK(); wsSync();
 }
 
-// ── the 3-candle engine ────────────────────────────────────────────────
+// ── 🧠 ENTRY BRAIN (v436) — read the current, honestly ─────────────────
+// Pure indicator math over the live 1m candles. It labels how aligned
+// each direction is with the flow RIGHT NOW (0-5 factors). It promises
+// nothing — the stats block below MEASURES whether flow-aligned entries
+// actually earn more, on this trader's own history.
+function emaLast(a,n){ const k=2/(n+1); let e=a[0];
+  for(let i=1;i<a.length;i++) e=a[i]*k+e*(1-k); return e; }
+function rsi14(closes){
+  const n=closes.length; if(n<16) return 50;
+  let g=0,l=0;
+  for(let i=n-14;i<n;i++){ const d=closes[i]-closes[i-1]; if(d>=0) g+=d; else l-=d; }
+  if(g+l===0) return 50;
+  if(l===0) return 100;
+  return 100-100/(1+(g/14)/(l/14));
+}
+function atrPctOf(cs){
+  const n=cs.length; if(n<15) return 0;
+  let a=0;
+  for(let i=n-14;i<n;i++){
+    a+=Math.max(cs[i].h-cs[i].l, Math.abs(cs[i].h-cs[i-1].c), Math.abs(cs[i].l-cs[i-1].c));
+  }
+  const p=cs[n-1].c;
+  return p>0? (a/14)/p*100 : 0;
+}
+let brainNow=null;
+function brainOf(){
+  if(candles.length<25) return null;
+  const cs=candles, closes=cs.map(c=>c.c), n=closes.length, p=closes[n-1];
+  if(!(p>0)) return null;
+  const gap=(emaLast(closes,9)-emaLast(closes,21))/p*100;
+  const rsi=rsi14(closes);
+  const b5=closes[Math.max(0,n-6)], b15=closes[Math.max(0,n-16)];
+  const m5=b5>0?(p-b5)/b5*100:0, m15=b15>0?(p-b15)/b15*100:0;
+  const vols=cs.map(c=>c.v||0);
+  const histV=vols.slice(-31,-1).slice().sort((x,y)=>x-y);
+  const med=histV[Math.floor(histV.length/2)]||0;
+  const volX= med>0? vols[n-1]/med : 1;
+  const atr=atrPctOf(cs);
+  const ls=[m15>0.1, m5>0.05, gap>0, rsi>=45&&rsi<=70, volX>=1.2].filter(Boolean).length;
+  const ss=[m15<-0.1, m5<-0.05, gap<0, rsi>=30&&rsi<=55, volX>=1.2].filter(Boolean).length;
+  return {p,gap:+gap.toFixed(3),rsi:Math.round(rsi),m5:+m5.toFixed(2),m15:+m15.toFixed(2),
+    volX:+volX.toFixed(2),atr:+atr.toFixed(3),ls,ss};
+}
+const flowLab=s=> s>=4? ['עם הזרם 🌊','var(--up)'] : s<=1? ['נגד הזרם ⚠️','var(--down)'] : ['רעש · אין יתרון','var(--dim)'];
+function drawBrain(){
+  brainNow=brainOf();
+  const el=$('brain'); if(!el) return;
+  if(!brainNow){ el.innerHTML=''; $('goLong').className=''; $('goShort').className=''; return; }
+  const b=brainNow;
+  const [ll,lc]=flowLab(b.ls), [sl,sc2]=flowLab(b.ss);
+  el.innerHTML=
+    `<span class="bch${Math.abs(b.m15)>0.1?' onf':''}">15ד ${b.m15>0?'+':''}${b.m15}%</span>`+
+    `<span class="bch${Math.abs(b.m5)>0.05?' onf':''}">5ד ${b.m5>0?'+':''}${b.m5}%</span>`+
+    `<span class="bch${Math.abs(b.gap)>0?' onf':''}">EMA ${b.gap>0?'↑':'↓'}</span>`+
+    `<span class="bch onf">RSI ${b.rsi}</span>`+
+    `<span class="bch${b.volX>=1.2?' onf':''}">מחזור ×${b.volX}</span>`+
+    `<span class="bch onf">ATR ${b.atr}%</span>`+
+    `<br><span style="color:${lc}">▲ לונג: ${ll} (${b.ls}/5)</span> · `+
+    `<span style="color:${sc2}">▼ שורט: ${sl} (${b.ss}/5)</span>`;
+  $('goLong').className= b.ls>=4? 'hot-up' : '';
+  $('goShort').className= b.ss>=4? 'hot-down' : '';
+}
+
+// ── the 3-candle engine — fees included, one candle-walker for live+backfill ──
 function pnlAt(px){
   if(!pos||!(px>0)) return 0;
   const mv= pos.dir==='long'? px/pos.entry-1 : 1-px/pos.entry;
   return mv*pos.size*pos.lev;
+}
+function roundFees(){
+  return pos? pos.size*pos.lev*((pos.fee!=null?pos.fee:W.fee)||0)/100*2 : 0;
+}
+// net = what actually lands in the wallet; "in profit" means NET of fees
+function netAt(px){ return pnlAt(px)-roundFees(); }
+// one CLOSED candle through the rules; returns true when the trade ended
+function stepClosedCandle(c,suffix){
+  if(!pos) return true;
+  if(c.t<pos.fromT || c.t<=pos.doneT) return false;
+  pos.candles++; pos.doneT=c.t; saveP();
+  if(netAt(c.c)>0){ closePos('רווח מהיר — נר '+pos.candles+(suffix||''), c.c); return true; }
+  if(pos.candles>=3){ closePos('3 נרות — יציאה'+(suffix||''), c.c); return true; }
+  return false;
 }
 function enter(dir){
   if(pos){ toast('כבר יש עסקה פתוחה — השיטה היא עסקה אחת בכל רגע'); return; }
@@ -304,17 +389,21 @@ function enter(dir){
   if(!(px>0)){ toast('אין מחיר חי'); return; }
   if(W.size>W.bal){ toast('גודל העסקה גדול מהיתרה'); return; }
   const curT=candles.length? candles[candles.length-1].t : Math.floor(Date.now()/60000)*60000;
+  const bn=brainNow||brainOf();
   pos={sym:sel,dir,entry:px,t:Date.now(),fromT:curT,doneT:0,candles:0,
-    size:W.size,lev:W.lev,stop:W.stop};
+    size:W.size,lev:W.lev,stop:W.stop,fee:W.fee,
+    fac: bn? {ls:bn.ls,ss:bn.ss,rsi:bn.rsi,m15:bn.m15,volX:bn.volX,atr:bn.atr} : null,
+    withFlow: bn? (dir==='long'? bn.ls>=4 : bn.ss>=4) : null};
   saveP(); drawAll(); wakeSync(); drawTitle();
   toast((dir==='long'?'▲ לונג':'▼ שורט')+' על '+sel+' @ '+px+' — היד על ההדק: 3 נרות מקסימום');
 }
 function closePos(reason,px){
   if(!pos) return;
-  const pnl=+pnlAt(px).toFixed(2);
+  const fees=+roundFees().toFixed(2);
+  const pnl=+(pnlAt(px)-fees).toFixed(2);          // NET — what the wallet really gets
   W.bal=+(W.bal+pnl).toFixed(2); saveW();
-  hist.push({sym:pos.sym,dir:pos.dir,entry:pos.entry,exit:px,pnl,reason,
-    ct:pos.candles,t:pos.t,xt:Date.now()});
+  hist.push({sym:pos.sym,dir:pos.dir,entry:pos.entry,exit:px,pnl,fees,reason,
+    ct:pos.candles,t:pos.t,xt:Date.now(),withFlow:pos.withFlow,fac:pos.fac});
   saveH();
   toast((pnl>=0?'🎯 +$':'🛑 -$')+Math.abs(pnl).toFixed(2)+' · '+reason);
   beep(pnl>=0?'win':'loss');
@@ -327,14 +416,7 @@ function applyRules(livePx){
   const mv= pos.dir==='long'? livePx/pos.entry-1 : 1-livePx/pos.entry;
   if(mv*100 <= -pos.stop){ closePos('סטופ חירום ('+(-pos.stop)+'%)', livePx); return; }
   // closed candles = everything except the still-forming last one
-  for(let i=0;i<candles.length-1;i++){
-    const c=candles[i];
-    if(c.t<pos.fromT || c.t<=pos.doneT) continue;
-    pos.candles++; pos.doneT=c.t; saveP();
-    const pnl=pnlAt(c.c);
-    if(pnl>0){ closePos('רווח מהיר — נר '+pos.candles, c.c); return; }
-    if(pos.candles>=3){ closePos('3 נרות — יציאה', c.c); return; }
-  }
+  for(let i=0;i<candles.length-1;i++) if(stepClosedCandle(candles[i])) return;
 }
 
 // ── painting ───────────────────────────────────────────────────────────
@@ -344,7 +426,7 @@ function drawWallet(){
   const net=hist.reduce((a,h)=>a+h.pnl,0);
   $('balPnl').textContent= hist.length? money(net)+' מצטבר' : '';
   $('balPnl').style.color= net>=0?'var(--up)':'var(--down)';
-  $('wSize').value=W.size; $('wLev').value=W.lev; $('wStop').value=W.stop;
+  $('wSize').value=W.size; $('wLev').value=W.lev; $('wStop').value=W.stop; $('wFee').value=W.fee;
   // risk guard: exposure vs wallet, stated in dollars before any entry
   const exp=W.size*W.lev, warn=$('riskWarn');
   if(W.size>W.bal){ warn.innerHTML='<span style="color:var(--down)">⛔ גודל העסקה גדול מהיתרה — כניסה חסומה</span>'; }
@@ -353,9 +435,19 @@ function drawWallet(){
 }
 function drawPlan(){
   const el=$('plan'); if(!el) return;
-  const exp=W.size*W.lev;
+  const exp=W.size*W.lev, fees=exp*(W.fee||0)/100*2;
   el.innerHTML=`🧮 תוכנית: חשיפה $${exp.toFixed(0)} (${W.size}$×${W.lev}) · כל 0.1% תנועה = $${(exp*0.001).toFixed(2)}`+
-    `<br>🛑 סטופ חירום ${W.stop}%- = -$${(exp*W.stop/100).toFixed(2)} · יציאה אוטומטית עד 3 נרות`;
+    `<br>🛑 סטופ חירום ${W.stop}%- = -$${(exp*W.stop/100+fees).toFixed(2)} כולל עמלות · יציאה אוטומטית עד 3 נרות`+
+    `<br>💸 עמלות הלוך-חזור $${fees.toFixed(2)} — "רווח" נספר רק אחרי שהן שולמו `+
+    `<button class="ghost" id="atrStop" style="padding:3px 9px;font-size:10.5px">🎯 סטופ לפי ATR</button>`;
+  const ab=$('atrStop');
+  if(ab) ab.onclick=()=>{
+    const b=brainNow||brainOf();
+    if(!b || !(b.atr>0)){ toast('אין עדיין מספיק נרות למדידת ATR'); return; }
+    W.stop=Math.min(5,Math.max(0.3,+(b.atr*1.5).toFixed(1)));
+    saveW(); drawWallet(); drawPlan();
+    toast('🎯 הסטופ כוון לרעש של המטבע: '+W.stop+'% (1.5×ATR)');
+  };
 }
 function drawChart(){
   const cv=$('cv'), x=cv.getContext('2d');
@@ -412,11 +504,22 @@ function drawStats(){
   const wins=hist.filter(h=>h.pnl>0).length;
   const net=hist.reduce((a,h)=>a+h.pnl,0);
   const sk=streakOf();
+  // pro metrics — measured, never promised
+  const wArr=hist.filter(h=>h.pnl>0), lArr=hist.filter(h=>h.pnl<=0);
+  const gW=wArr.reduce((a,h)=>a+h.pnl,0), gL=Math.abs(lArr.reduce((a,h)=>a+h.pnl,0));
+  const pf= gL>0? (gW/gL).toFixed(2) : (gW>0?'∞':'—');
+  const feesPaid=hist.reduce((a,h)=>a+(h.fees||0),0);
   $('stats').innerHTML=
     `<span>עסקאות <b>${hist.length}</b></span>`+
     `<span>פגיעה <b>${Math.round(wins/hist.length*100)}%</b></span>`+
     `<span>נטו <b style="color:${net>=0?'var(--up)':'var(--down)'}">${money(net)}</b></span>`+
-    (sk.n? `<span>רצף <b style="color:${sk.win?'var(--up)':'var(--down)'}">${sk.win?'🔥':'❄️'} ${sk.n} ${sk.win?'נצחונות':'הפסדים'}</b></span>` : '');
+    (sk.n? `<span>רצף <b style="color:${sk.win?'var(--up)':'var(--down)'}">${sk.win?'🔥':'❄️'} ${sk.n} ${sk.win?'נצחונות':'הפסדים'}</b></span>` : '')+
+    `<span style="flex-basis:100%"></span>`+
+    `<span>תוחלת <b style="color:${net>=0?'var(--up)':'var(--down)'}">${money(net/hist.length)}/עסקה</b></span>`+
+    (wArr.length? `<span>רווח ממוצע <b>${money(gW/wArr.length)}</b></span>`:'')+
+    (lArr.length? `<span>הפסד ממוצע <b>-$${(gL/lArr.length).toFixed(2)}</b></span>`:'')+
+    `<span>Profit Factor <b>${pf}</b></span>`+
+    (feesPaid? `<span>עמלות ששולמו <b>$${feesPaid.toFixed(2)}</b></span>`:'');
   // which RULE earns? breakdown per exit reason
   const cats=[['רווח מהיר','⚡ רווח מהיר'],['3 נרות','⏱ 3 נרות'],['סטופ','🛑 סטופ'],['ידני','✋ ידני']];
   $('reasonBrk').innerHTML=cats.map(([k,label])=>{
@@ -427,6 +530,15 @@ function drawStats(){
     return `<div class="hrow"><b>${label}</b><span>${g.length} עסק׳</span>`+
       `<span style="color:${gnet>=0?'var(--up)':'var(--down)'}">${money(gnet)}</span>`+
       `<span class="why">ממוצע ${avgC} נר׳</span></div>`;
+  }).join('')
+  // the brain on trial: do flow-aligned entries actually earn more? MEASURED.
+  +[[true,'🌊 נכנסת עם הזרם'],[false,'⚠️ נגד הזרם / רעש']].map(([flag,label])=>{
+    const g=hist.filter(h=>h.withFlow===flag);
+    if(!g.length) return '';
+    const gnet=g.reduce((a,h)=>a+h.pnl,0), gw=g.filter(h=>h.pnl>0).length;
+    return `<div class="hrow"><b>${label}</b><span>${g.length} עסק׳</span>`+
+      `<span>${Math.round(gw/g.length*100)}% פגיעה</span>`+
+      `<span style="color:${gnet>=0?'var(--up)':'var(--down)'}">${money(gnet)}</span></div>`;
   }).join('');
   // discipline: 3 straight losses -> the method says coffee
   $('coolBar').hidden=!(sk.n>=3 && !sk.win);
@@ -447,7 +559,7 @@ function drawStats(){
      <span class="why" style="margin-right:auto">${new Date(h.xt).toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'})}</span></div>`).join('');
 }
 function drawAll(){
-  drawWallet(); drawPlan(); drawChart(); drawPos(); drawStats(); drawLiveB();
+  drawWallet(); drawPlan(); drawChart(); drawBrain(); drawPos(); drawStats(); drawLiveB();
   const u=uni.find(x=>x.sym===sel);
   $('selSym').textContent=sel||'—';
   const px=u&&u.price>0? u.price : (candles.length? candles[candles.length-1].c : 0);
@@ -465,15 +577,9 @@ async function backfill(){
     const r=await fetch(`${FAPI}/fapi/v1/klines?symbol=${pos.sym}USDT&interval=1m&startTime=${pos.fromT}&limit=10`);
     if(!r.ok) return;
     const raw=await r.json(); if(!Array.isArray(raw)) return;
-    const cs=raw.map(a=>({t:+a[0],o:+a[1],h:+a[2],l:+a[3],c:+a[4]}));
-    for(let i=0;i<cs.length-1;i++){          // last = possibly still forming
-      const c=cs[i];
-      if(c.t<pos.fromT || c.t<=pos.doneT) continue;
-      pos.candles++; pos.doneT=c.t; saveP();
-      const pnl=pnlAt(c.c);
-      if(pnl>0){ closePos('רווח מהיר — נר '+pos.candles+' (בזמן שהיית בחוץ)', c.c); return; }
-      if(pos.candles>=3){ closePos('3 נרות — יציאה (בזמן שהיית בחוץ)', c.c); return; }
-    }
+    const cs=raw.map(a=>({t:+a[0],o:+a[1],h:+a[2],l:+a[3],c:+a[4],v:+a[5]||0}));
+    for(let i=0;i<cs.length-1;i++)           // last = possibly still forming
+      if(stepClosedCandle(cs[i],' (בזמן שהיית בחוץ)')) return;
   }catch(e){}
 }
 
@@ -496,6 +602,8 @@ $('resetW').onclick=()=>{ if(confirm('לאפס את הארנק ל-$1000? (ההי
     if(id==='wStop') W.stop=v;
     saveW(); drawWallet(); drawPlan(); drawPos(); };
 });
+$('wFee').onchange=()=>{ const v=+$('wFee').value;
+  if(v>=0 && v<=1){ W.fee=v; saveW(); drawPlan(); } };
 $('qsRow').onclick=e=>{
   const b=e.target.closest('[data-qs]'); if(!b) return;
   W.size= b.dataset.qs==='max'? Math.floor(W.bal) : +b.dataset.qs;
@@ -529,6 +637,7 @@ window.__scalp={
   setCandles:(a)=>{ candles=a; },
   rules:applyRules, backfill, pnlAt,
   beepLast:()=>lastBeep, csv:csvText, streak:streakOf, wsOk:()=>swsOk,
+  brain:()=>brainNow||brainOf(), netAt, drawBrain,
 };
 </script>
 </body>
