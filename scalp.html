@@ -150,7 +150,7 @@ button{font-family:inherit;cursor:pointer}
   <a href="markets.html">→ ראדאר</a>
   <h1>⚡ סקאלפ 3 נרות</h1>
   <span class="ver">ארנק נפרד · נייר · נתוני Binance אמיתיים</span>
-  <span class="ver" id="pageVer">v446</span>
+  <span class="ver" id="pageVer">v447</span>
   <button class="ghost" id="warBtn" style="margin-right:auto">🏛 מבצעים</button>
   <button class="ghost" id="coreBtn">💠 הליבה</button>
 </header>
@@ -200,6 +200,10 @@ button{font-family:inherit;cursor:pointer}
     <label>סטופ חירום %<input id="wStop" type="number" min="0.2" max="10" step="0.1" inputmode="decimal"></label>
     <label>עמלה %/צד<input id="wFee" type="number" min="0" max="1" step="0.01" inputmode="decimal"></label>
   </div>
+  <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap" id="qsRow2">
+    <button class="ghost" id="bakBtn">💾 גיבוי מלא</button>
+    <button class="ghost" id="resBtn">♻️ שחזור מגיבוי</button>
+  </div>
   <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap" id="qsRow">
     <button class="ghost" data-qs="25">$25</button><button class="ghost" data-qs="50">$50</button>
     <button class="ghost" data-qs="100">$100</button><button class="ghost" data-qs="250">$250</button>
@@ -216,6 +220,8 @@ button{font-family:inherit;cursor:pointer}
     <span>🛑 סטופ חירום תוך-נר</span>
   </div>
 </div>
+
+<div id="heat" style="display:flex;gap:2px;margin-bottom:10px;border-radius:8px;overflow:hidden"></div>
 
 <div class="card" id="scoutCard">
   <h2 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">🎯 הצלף — סורק את כל המטבעות ברקע
@@ -235,7 +241,14 @@ button{font-family:inherit;cursor:pointer}
 </div>
 
 <div class="card">
-  <div id="chartHead"><span id="selSym">—</span><span id="selPx"></span><span id="cndl"></span><span id="liveB"></span><span id="leadB"></span></div>
+  <div id="chartHead"><span id="selSym">—</span><span id="selPx"></span>
+    <button class="ghost" id="favBtn" style="padding:2px 9px;font-size:13px" title="מועדף">☆</button>
+    <span id="cndl"></span><span id="liveB"></span><span id="leadB"></span></div>
+  <div style="display:flex;gap:6px;margin:6px 0;align-items:center;flex-wrap:wrap" id="tfRow">
+    <button class="ghost on" data-tf="1m">1ד</button><button class="ghost" data-tf="5m">5ד</button>
+    <button class="ghost" data-tf="15m">15ד</button><button class="ghost" data-tf="1h">1ש</button>
+    <span id="tfNote" style="font-size:10.5px;color:var(--dim)"></span>
+  </div>
   <canvas id="cv"></canvas>
   <div id="brain"></div>
   <div class="entbtns">
@@ -451,10 +464,12 @@ async function loadUni(){
 }
 function drawUni(){
   const q=($('search').value||'').toUpperCase();
-  $('uniWrap').innerHTML=uni
+  const list=uni.slice().sort((a,b2)=>(sfavs.has(b2.sym)?1:0)-(sfavs.has(a.sym)?1:0));  // ⭐ first
+  $('uniWrap').innerHTML=list
     .filter(u=>!q||u.sym.includes(q))
-    .map(u=>`<button class="coin${u.sym===sel?' on':''}" data-c="${u.sym}">${u.sym}${u.chg? ` <span style="color:${u.chg>=0?'var(--up)':'var(--down)'}">${u.chg>0?'+':''}${(+u.chg).toFixed(1)}%</span>`:''}</button>`)
+    .map(u=>`<button class="coin${u.sym===sel?' on':''}" data-c="${u.sym}">${sfavs.has(u.sym)?'⭐ ':''}${u.sym}${u.chg? ` <span style="color:${u.chg>=0?'var(--up)':'var(--down)'}">${u.chg>0?'+':''}${(+u.chg).toFixed(1)}%</span>`:''}</button>`)
     .join('')||'<div class="empty">אין תוצאה</div>';
+  safe(renderHeat); safe(drawFavBtn);
 }
 async function pollK(){
   if(!sel) return;
@@ -472,7 +487,8 @@ async function pollK(){
 }
 function setSel(s){
   if(pos && s!==pos.sym){ toast('יש עסקה פתוחה על '+pos.sym+' — סגור אותה קודם'); return; }
-  sel=s; candles=[]; lead=null; btRes=null; crowd=null; drawUni(); drawAll(); pollK(); wsSync();
+  sel=s; candles=[]; lead=null; btRes=null; crowd=null; dispCandles=null;
+  drawUni(); drawAll(); pollK(); wsSync(); try{ pollD(); }catch(e){}
   try{ leadCalc(); }catch(e){}
   try{ crowdFetch(); }catch(e){}
   const bo=$('btOut'); if(bo) bo.innerHTML='';
@@ -673,10 +689,13 @@ function drawChart(){
   cv.width=w*dpr; cv.height=h*dpr; x.setTransform(dpr,0,0,dpr,0,0);
   x.clearRect(0,0,w,h);
   chartMeta=null;
-  if(!candles.length){ x.fillStyle='#8a8a95'; x.font='12px system-ui';
+  // v447: display timeframe — the METHOD always runs on 1m; higher TFs
+  // are a viewing lens only, fetched separately
+  const DATA= dispTf==='1m'? candles : (dispCandles||[]);
+  if(!DATA.length){ x.fillStyle='#8a8a95'; x.font='12px system-ui';
     x.textAlign='center'; x.fillText('טוען נרות…', w/2, h/2); return; }
-  const cs=candles.slice(-40);
-  const closesAll=candles.map(c=>c.c);
+  const cs=DATA.slice(-40);
+  const closesAll=DATA.map(c=>c.c);
   // guide levels while a trade runs
   const stopLv= pos? (pos.dir==='long'? pos.entry*(1-pos.stop/100) : pos.entry*(1+pos.stop/100)) : null;
   const feeMv= pos? ((pos.fee!=null?pos.fee:W.fee)||0)*2/100 : 0;
@@ -741,7 +760,7 @@ function drawChart(){
     line(beLv,'rgba(120,160,255,.8)','איזון עמלות');
   }
   // v445: auto S/R from pivot highs/lows (3-candle fractals, deduped)
-  const src=candles.slice(-90), srL=[];
+  const src=DATA.slice(-90), srL=[];
   for(let i=src.length-4;i>=3 && srL.length<4;i--){
     const win=src.slice(i-3,i+4);
     if(src[i].h===Math.max(...win.map(k=>k.h)) && src[i].h>lo && src[i].h<hi
@@ -757,11 +776,97 @@ function drawChart(){
   const last=cs[cs.length-1], lx=(cs.length-1)*cw+cw/2, ly=Y(last.c);
   x.fillStyle='rgba(255,255,255,'+(0.55+0.35*Math.sin(Date.now()/280)).toFixed(2)+')';
   x.beginPath(); x.arc(lx,ly,3.2,0,6.283); x.fill();
-  chartMeta={ema:[9,21], volBars:cs.filter(c=>c.v>0).length, axis,
+  chartMeta={ema:[9,21], volBars:cs.filter(c=>c.v>0).length, axis, tf:dispTf,
     stop: stopLv&&+stopLv.toFixed(4), be: beLv&&+beLv.toFixed(4),
     sr:srL.map(v=>+v.toFixed(4)), marks:(marks[sel]||[]).slice(),
     scale:{lo,hi,ph}};
 }
+// v447: display-TF plumbing + favorites + heat strip + swipe + backup
+let dispTf='1m', dispCandles=null;
+async function pollD(){
+  if(dispTf==='1m' || !sel){ dispCandles=null; return; }
+  try{
+    const r=await fetch(`${FAPI}/fapi/v1/klines?symbol=${sel}USDT&interval=${dispTf}&limit=60`);
+    if(!r.ok) return;
+    const raw=await r.json(); if(!Array.isArray(raw)) return;
+    dispCandles=raw.map(a=>({t:+a[0],o:+a[1],h:+a[2],l:+a[3],c:+a[4],v:+a[5]||0}));
+    drawChart();
+  }catch(e){}
+}
+function setTf(tf){
+  dispTf=tf; dispCandles=null;
+  document.querySelectorAll('#tfRow [data-tf]').forEach(b2=>b2.classList.toggle('on',b2.dataset.tf===tf));
+  $('tfNote').textContent= tf==='1m'? '' : 'תצוגה בלבד — השיטה והחוקים רצים תמיד על נרות 1ד';
+  drawChart(); pollD();
+}
+$('tfRow').onclick=e=>{ const b2=e.target.closest('[data-tf]'); if(b2) setTf(b2.dataset.tf); };
+setInterval(()=>{ if(!document.hidden) pollD(); },10000);
+let sfavs=new Set();
+try{ sfavs=new Set(JSON.parse(localStorage.getItem('na:scalp:favs')||'[]')); }catch(e){}
+function saveSFavs(){ try{ localStorage.setItem('na:scalp:favs',JSON.stringify([...sfavs])); }catch(e){} }
+function drawFavBtn(){ const b2=$('favBtn'); if(!b2) return;
+  b2.textContent= sfavs.has(sel)? '⭐' : '☆';
+  b2.classList.toggle('on', sfavs.has(sel)); }
+$('favBtn').onclick=()=>{
+  if(!sel) return;
+  if(sfavs.has(sel)) sfavs.delete(sel); else sfavs.add(sel);
+  saveSFavs(); drawFavBtn(); drawUni();
+  toast(sfavs.has(sel)? '⭐ '+sel+' במועדפים — תמיד ראשון' : sel+' הוסר מהמועדפים');
+};
+function renderHeat(){
+  const el=$('heat'); if(!el || !uni.length) return;
+  el.innerHTML=uni.slice(0,20).map(u=>{
+    const a=Math.min(0.85, 0.12+Math.abs(u.chg||0)/8);
+    const col= (u.chg||0)>=0? '0,230,118' : '255,82,82';
+    return `<div data-h="${u.sym}" style="flex:1;min-width:0;height:26px;cursor:pointer;`+
+      `background:rgba(${col},${a.toFixed(2)});display:flex;align-items:center;justify-content:center;`+
+      `font-size:7.5px;font-family:'JetBrains Mono',monospace;color:#fff;overflow:hidden`+
+      `${u.sym===sel?';outline:1.5px solid var(--gold);outline-offset:-1.5px':''}">${u.sym.slice(0,4)}</div>`;
+  }).join('');
+}
+$('heat').onclick=e=>{
+  const c2=e.target.closest('[data-h]'); if(!c2) return;
+  if(pos && c2.dataset.h!==pos.sym){ toast('יש עסקה פתוחה — סגור אותה קודם'); return; }
+  setSel(c2.dataset.h);
+};
+// swipe the chart = previous/next coin
+let swX=null;
+$('cv').addEventListener('touchstart',e=>{ swX=e.touches[0].clientX; },{passive:true});
+$('cv').addEventListener('touchend',e=>{
+  if(swX==null) return;
+  const dx=e.changedTouches[0].clientX-swX; swX=null;
+  if(Math.abs(dx)<55) return;
+  if(pos){ toast('יש עסקה פתוחה — סגור אותה קודם'); return; }
+  const order=uni.map(u=>u.sym);
+  const i=order.indexOf(sel); if(i<0) return;
+  const j=(i+(dx<0?1:order.length-1))%order.length;
+  setSel(order[j]);
+},{passive:true});
+// full backup / restore of the whole desk (wallet, ledger, shadows, marks, trophies)
+const BAK_KEYS=['na:scalp:w','na:scalp:hist','na:scalp:open','na:scalp:shadow',
+  'na:scalp:marks','na:scalp:troph','na:scalp:favs','na:scalp:scouton','na:scalp:auto'];
+function backupStr(){
+  const o={_v:'scalp-backup-1', t:Date.now()};
+  BAK_KEYS.forEach(k=>{ try{ const v=localStorage.getItem(k); if(v!=null) o[k]=v; }catch(e){} });
+  return JSON.stringify(o);
+}
+function restoreStr(s){
+  let o=null; try{ o=JSON.parse(s); }catch(e){ return false; }
+  if(!o || o._v!=='scalp-backup-1') return false;
+  BAK_KEYS.forEach(k=>{ if(typeof o[k]==='string'){ try{ localStorage.setItem(k,o[k]); }catch(e){} } });
+  return true;
+}
+$('bakBtn').onclick=()=>{
+  (navigator.clipboard? navigator.clipboard.writeText(backupStr()) : Promise.reject())
+    .then(()=>toast('💾 הגיבוי המלא הועתק — שמור אותו בהודעה לעצמך'))
+    .catch(()=>toast('ההעתקה נכשלה'));
+};
+$('resBtn').onclick=()=>{
+  const s=prompt('הדבק כאן את הגיבוי:');
+  if(!s) return;
+  if(restoreStr(s)){ toast('♻️ שוחזר — טוען מחדש…'); setTimeout(()=>location.reload(),700); }
+  else toast('זה לא נראה כמו גיבוי של הדסק הזה');
+};
 // tap the chart = mark / unmark a price level (persisted per coin)
 $('cv').addEventListener('click',e=>{
   if(!chartMeta || !chartMeta.scale || !sel) return;
@@ -2009,6 +2114,8 @@ window.__scalp={
     trophies:()=>Object.assign({},trophies), confettiN:()=>confettiN },
   marks:()=>JSON.parse(JSON.stringify(marks)),
   feed:()=>{ alphaFeed(); try{ return JSON.parse(localStorage.getItem('alpha:scalp:ctx')); }catch(e){ return null; } },
+  tf:(v)=>{ if(v) setTf(v); return dispTf; },
+  favs:()=>[...sfavs], backup:backupStr, restore:restoreStr,
 };
 </script>
 </body>
