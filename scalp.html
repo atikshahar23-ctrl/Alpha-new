@@ -150,7 +150,7 @@ button{font-family:inherit;cursor:pointer}
   <a href="markets.html">→ ראדאר</a>
   <h1>⚡ סקאלפ 3 נרות</h1>
   <span class="ver">ארנק נפרד · נייר · נתוני Binance אמיתיים</span>
-  <span class="ver" id="pageVer">v448</span>
+  <span class="ver" id="pageVer">v449</span>
   <button class="ghost" id="warBtn" style="margin-right:auto">🏛 מבצעים</button>
   <button class="ghost" id="voxBtn" title="כריזה קולית על סגירות">🔈</button>
   <button class="ghost" id="coreBtn">💠 הליבה</button>
@@ -231,17 +231,28 @@ button{font-family:inherit;cursor:pointer}
   </div>
 </div>
 
+<div class="card" id="awayBar" style="display:none;border-color:rgba(255,179,0,.5)"></div>
+
 <div id="heat" style="display:flex;gap:2px;margin-bottom:10px;border-radius:8px;overflow:hidden"></div>
 
 <div class="card" id="scoutCard">
   <h2 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">🎯 הצלף — סורק את כל המטבעות ברקע
     <button class="ghost" id="autoTgl" style="margin-right:auto">🤖 טייס: כבוי</button>
+    <button class="ghost" id="shiftTgl">🌙 משמרת: כבויה</button>
     <button class="ghost" id="scoutTgl">כבוי</button></h2>
   <div id="scoutBody" class="empty" style="text-align:right;padding:6px 0">
     כשמטבע מתיישר עם הזרם (4/5+ עם דחיפת מומנטום) — צלצול והזדמנות בלחיצה.
     כל התראה נסחרת אוטומטית ביומן־צל לפי שיטת 3 הנרות, גם אם לא נכנסת —
     כדי שתראה במספרים כמה ההתראות באמת שוות. מדוד, לא מובטח.</div>
   <div id="scoutLog"></div>
+  <div class="why" id="awayNote" style="margin-top:8px;line-height:1.6">
+    💡 למה אין עסקאות כשאתה לא כאן? הדסק הזה רץ בדפדפן — כשהדף סגור או
+    שהטלפון נעול, שום קוד לא רץ ולכן אין כניסות חדשות. 🌙 מצב משמרת משאיר
+    את המסך ער כדי שהצלף והטייס ימשיכו לעבוד; טאב ברקע ממשיך לסרוק, אבל
+    מערכת ההפעלה עלולה להקפיא אותו אחרי כמה דקות. עסקה שנשארה פתוחה
+    משוחזרת ביושר לפי מה שהשוק באמת עשה. מסחר אמיתי 24/7 דורש שרת
+    (Heavy Guard) — בכוונה לא בדפדפן, כדי שמפתחות מסחר לעולם לא יישמרו כאן.
+  </div>
 </div>
 
 <div class="card">
@@ -383,13 +394,31 @@ function beep(kind){
   try{ navigator.vibrate && navigator.vibrate(kind==='win'? [60,40,60] : [200]); }catch(e){}
 }
 let wake=null;
+// v449: shift mode — holds the screen awake even without an open trade,
+// so leaving the phone on the desk keeps the sniper + autopilot working.
+// A browser page cannot trade while closed; this is the honest middle.
+let shiftOn=false;
+try{ shiftOn=localStorage.getItem('na:scalp:shift')==='1'; }catch(e){}
 async function wakeSync(){
   try{
-    if(pos && 'wakeLock' in navigator && !wake){
+    const need=!!pos || shiftOn;
+    if(need && 'wakeLock' in navigator && !wake){
       wake=await navigator.wakeLock.request('screen');
       wake.addEventListener('release',()=>{ wake=null; });
-    } else if(!pos && wake){ await wake.release(); wake=null; }
+    } else if(!need && wake){ await wake.release(); wake=null; }
   }catch(e){ wake=null; }
+}
+function drawShift(){
+  const b=$('shiftTgl'); if(!b) return;
+  b.textContent= shiftOn? '🌙 משמרת: פעילה' : '🌙 משמרת: כבויה';
+  b.classList.toggle('on',shiftOn);
+}
+function setShift(on){
+  shiftOn=!!on;
+  try{ localStorage.setItem('na:scalp:shift',shiftOn?'1':'0'); }catch(e){}
+  drawShift(); wakeSync();
+  toast(shiftOn? '🌙 מצב משמרת — המסך יישאר ער והדסק ימשיך לסחור כל עוד הדף פתוח'
+    : 'מצב משמרת כובה — המסך יינעל כרגיל, והדסק ייעצר כשהדף ייסגר');
 }
 function drawTitle(){
   if(pos){
@@ -493,7 +522,7 @@ async function pollK(){
     const px=candles[candles.length-1].c;
     const u=uni.find(x=>x.sym===sel); if(u) u.price=px;
     applyRules(px);
-    drawAll();
+    if(!document.hidden) drawAll();        // v449: rules always, pixels only when seen
   }catch(e){}
 }
 function setSel(s){
@@ -2094,6 +2123,36 @@ function alphaMoment(){
 setInterval(()=>{ if(!document.hidden) alphaFeed(); },60000);
 setTimeout(alphaFeed,3000);
 
+// ── v449: "while you were away" — snapshot on leave, report on return ──
+function saveSeen(){
+  try{ localStorage.setItem('na:scalp:seen', JSON.stringify({t:Date.now(), bal:W.bal,
+    histN:hist.length, shadowN:shadows.length,
+    gradedN:shadows.filter(s=>s.out).length})); }catch(e){}
+}
+function awayReport(){
+  let s=null; try{ s=JSON.parse(localStorage.getItem('na:scalp:seen')||'null'); }catch(e){}
+  if(!s || !s.t) return;
+  try{ localStorage.removeItem('na:scalp:seen'); }catch(e){}
+  const mins=Math.round((Date.now()-s.t)/60000);
+  if(mins<3) return;                       // a short glance away isn't "away"
+  const closed=Math.max(0, hist.length-(s.histN||0));
+  const dBal=+(W.bal-(s.bal??W.bal)).toFixed(2);
+  const newAl=Math.max(0, shadows.length-(s.shadowN||0));
+  const graded=Math.max(0, shadows.filter(x=>x.out).length-(s.gradedN||0));
+  const dur= mins<60? mins+' דק׳' : (mins/60).toFixed(1)+' שע׳';
+  const bits=[];
+  if(closed) bits.push(closed+' עסקאות נסגרו ('+(dBal>=0?'+$':'-$')+Math.abs(dBal).toFixed(2)+')');
+  if(newAl) bits.push(newAl+' התראות צלף חדשות');
+  if(graded) bits.push(graded+' צללים נשפטו מול השוק');
+  const el=$('awayBar'); if(!el) return;
+  el.style.display='';
+  el.innerHTML='⏰ <b>בזמן שלא היית ('+dur+'):</b> '+
+    (bits.length? bits.join(' · ')
+      : 'לא בוצעו כניסות — הדף היה סגור/קפוא, ודף סגור לא סוחר. עסקה פתוחה שוחזרה לפי השוק האמיתי.')+
+    ' <button class="ghost" id="awayX" style="padding:2px 10px;font-size:11px;margin-right:8px">סגור</button>';
+  const x=$('awayX'); if(x) x.onclick=()=>{ el.style.display='none'; };
+}
+
 // ── reconstruct honestly after the page was closed mid-trade ───────────
 async function backfill(){
   if(!pos) return;
@@ -2160,21 +2219,31 @@ $('csvBtn').onclick=()=>{
 window.addEventListener('resize',drawAll);
 
 drawAll();
-loadUni().then(backfill);
-setInterval(()=>{ if(!document.hidden) pollK(); },4000);
-setInterval(()=>{ if(!document.hidden) loadUni(); },60000);
-setInterval(()=>{ if(!document.hidden){
+safe(drawShift);
+loadUni().then(backfill).then(gradeShadows).then(()=>safe(awayReport));
+// v449: the ENGINE timers (rules, sniper, shadow judge, universe) run even
+// when the tab is hidden — a backgrounded-but-alive tab keeps trading.
+// The OS may still throttle or freeze a hidden tab; that part is out of
+// our hands, and the away-report + backfill reconstruct honestly after.
+setInterval(pollK,4000);
+setInterval(loadUni,60000);
+setInterval(()=>{ if(!document.hidden){                      // pixels only
   if(pos){ safe(drawPos); safe(drawTitle); }
   safe(drawChart);                       // pulsing dot + fresh candles
 } },1000);
 setInterval(()=>{ if(!document.hidden) wsSync(); },20000);   // WS auto-reconnect
-setInterval(()=>{ if(!document.hidden) scoutTick(); },30000);
-setInterval(()=>{ if(!document.hidden) gradeShadows(); },60000);
+setInterval(scoutTick,30000);
+setInterval(gradeShadows,60000);
 setInterval(()=>{ if(!document.hidden) leadCalc(); },60000);
 setInterval(()=>{ if(!document.hidden) crowdFetch(); },60000);
 safe(renderScout);
 if(scoutOn) setTimeout(()=>{ scoutTick(); gradeShadows(); },2500);
-document.addEventListener('visibilitychange',()=>{ if(!document.hidden){ wsSync(); wakeSync(); } });
+$('shiftTgl').onclick=()=>setShift(!shiftOn);
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){ saveSeen(); }
+  else { wsSync(); wakeSync(); safe(drawAll); setTimeout(()=>safe(awayReport),2500); }
+});
+window.addEventListener('pagehide',saveSeen);
 
 // test hooks
 window.__scalp={
@@ -2211,6 +2280,8 @@ window.__scalp={
   tf:(v)=>{ if(v) setTf(v); return dispTf; },
   favs:()=>[...sfavs], backup:backupStr, restore:restoreStr,
   effSize, sessions:sessionsOf, vox:()=>voxOn, lastSpoke:()=>lastSpoke,
+  shift:(on)=>{ if(on!==undefined) setShift(on); return shiftOn; },
+  seen:{ save:saveSeen, report:awayReport },
 };
 </script>
 </body>
