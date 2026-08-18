@@ -1,6 +1,8 @@
 name: scalp-shift
 # The server-side shift of the 3-candle paper desk — trades while no
 # phone is open. Paper only; no exchange keys exist anywhere in this job.
+# NOTE: no marketplace actions here (repo policy blocks them — same
+# reason deploy.yml clones manually); the runner's system Node is used.
 on:
   schedule:
     - cron: '*/5 * * * *'   # GitHub batches these — real cadence is ~5-15 min
@@ -23,9 +25,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - name: trading cycle
-        run: node server/scalp-shift.mjs "${{ github.event.inputs.command || 'run' }}"
+      - name: Checkout repository
+        run: |
+          git clone --depth 1 --branch main \
+            "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" .
+
+      - name: Trading cycle
+        run: |
+          node --version
+          node server/scalp-shift.mjs "${{ github.event.inputs.command || 'run' }}"
