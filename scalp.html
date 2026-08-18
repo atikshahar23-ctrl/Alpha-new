@@ -150,7 +150,7 @@ button{font-family:inherit;cursor:pointer}
   <a href="markets.html">→ ראדאר</a>
   <h1>⚡ סקאלפ 3 נרות</h1>
   <span class="ver">ארנק נפרד · נייר · נתוני Binance אמיתיים</span>
-  <span class="ver" id="pageVer">v449</span>
+  <span class="ver" id="pageVer">v450</span>
   <button class="ghost" id="warBtn" style="margin-right:auto">🏛 מבצעים</button>
   <button class="ghost" id="voxBtn" title="כריזה קולית על סגירות">🔈</button>
   <button class="ghost" id="coreBtn">💠 הליבה</button>
@@ -250,8 +250,23 @@ button{font-family:inherit;cursor:pointer}
     שהטלפון נעול, שום קוד לא רץ ולכן אין כניסות חדשות. 🌙 מצב משמרת משאיר
     את המסך ער כדי שהצלף והטייס ימשיכו לעבוד; טאב ברקע ממשיך לסרוק, אבל
     מערכת ההפעלה עלולה להקפיא אותו אחרי כמה דקות. עסקה שנשארה פתוחה
-    משוחזרת ביושר לפי מה שהשוק באמת עשה. מסחר אמיתי 24/7 דורש שרת
-    (Heavy Guard) — בכוונה לא בדפדפן, כדי שמפתחות מסחר לעולם לא יישמרו כאן.
+    משוחזרת ביושר לפי מה שהשוק באמת עשה. 🌐 ובשביל 24/7 אמיתי — המשמרת
+    בשרת (בכרטיס למטה) סוחרת נייר על השרתים של GitHub גם כשהכל סגור.
+    מפתחות מסחר לא נשמרים לא בדפדפן ולא שם — נייר בלבד.
+  </div>
+</div>
+
+<div class="card" id="srvCard">
+  <h2 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">🌐 המשמרת בשרת — סוחרת גם כשהטלפון סגור
+    <a class="ghost" id="srvLink" style="margin-right:auto;padding:4px 10px;font-size:11px;text-decoration:none" target="_blank" rel="noopener"
+       href="https://github.com/atikshahar23-ctrl/Alpha-new/actions/workflows/scalp-shift.yml">⚙️ שליטה</a></h2>
+  <div id="srvBody" class="empty">טוען את מצב השרת…</div>
+  <div class="why" style="margin-top:6px;line-height:1.6">
+    עותק מדויק של שיטת 3 הנרות שרץ על השרתים של GitHub כל ~5 דק׳
+    (הלוח שלהם לא מדויק — לפעמים 15). ארנק נייר נפרד מהארנק שבטלפון —
+    בכוונה לא ממוזגים, כדי שאף דולר לא ייספר פעמיים. סטופ נבדק לפי פתילי
+    נרות (שמרני). אין שום מפתח מסחר בשרת — נייר בלבד. הפעלה/כיבוי:
+    ⚙️ שליטה ← Run workflow ← on / off.
   </div>
 </div>
 
@@ -2166,6 +2181,54 @@ async function backfill(){
   }catch(e){}
 }
 
+// ── v450: server shift — the desk's 24/7 arm on GitHub's servers ───────
+// Reads the state the scheduled Action writes to the shift-data branch.
+// Read-only here: the page never holds any token — control is done from
+// the GitHub Actions screen (⚙️ link), so no key ever touches the phone.
+const SRV_RAW='https://raw.githubusercontent.com/atikshahar23-ctrl/Alpha-new/shift-data/shift.json';
+let srvState=null, srvErr=null;
+async function srvFetch(){
+  try{
+    const r=await fetch(SRV_RAW+'?x='+Date.now(),{cache:'no-store'});
+    if(!r.ok){ srvErr=r.status; srvState=null; }
+    else { srvState=await r.json(); srvErr=null; }
+  }catch(e){ srvErr='net'; }
+  safe(renderSrv);
+}
+function renderSrv(){
+  const el=$('srvBody'); if(!el) return;
+  if(!srvState){
+    el.className='empty';
+    el.innerHTML= srvErr===404? 'המשמרת בשרת עדיין לא רצה אף פעם — היא מתחילה לבד תוך ~5 דקות מהפריסה.'
+      : srvErr? 'מצב השרת לא נגיש מהרשת הזו כרגע — הוא ממשיך להיכתב בשרת, נסה שוב עוד דקה.'
+      : 'טוען…';
+    return;
+  }
+  const s=srvState, hist2=Array.isArray(s.hist)?s.hist:[];
+  const age=Math.max(0,Math.round((Date.now()-(s.lastRun||0))/60000));
+  const net=hist2.reduce((a,h)=>a+(+h.pnl||0),0);
+  const paused=(s.pauseUntil||0)>Date.now();
+  const rows=[];
+  rows.push(`<div class="hrow"><b>${s.on?'🟢 פעילה':'⚪ כבויה'}${paused?' · ☕ הפסקה עד '+new Date(s.pauseUntil).toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'}):''}</b>`+
+    `<span>ארנק שרת: <b>$${(+(s.w&&s.w.bal)||0).toFixed(2)}</b></span>`+
+    `<span style="color:${net>=0?'var(--up)':'var(--down)'}">${money(net)} מצטבר · ${hist2.length} עסקאות</span></div>`);
+  rows.push(`<div class="hrow"><span class="why">ריצה אחרונה: לפני ${age<60?age+' דק׳':Math.floor(age/60)+' שע׳'}</span>`+
+    (age>20? `<span style="color:var(--down)">⚠️ מתעכבת — GitHub מעכב את הלוח או שהיא כבויה</span>`:``)+
+    `<span class="why">${s.src==='spot'?'מחירי ספוט אמיתיים (החוזים חסומים מהשרת)':s.src==='fapi'?'נתוני חוזים':''}</span></div>`);
+  if(s.err) rows.push(`<div class="hrow"><span style="color:var(--down)">⚠️ ${s.err}</span></div>`);
+  if(s.pos) rows.push(`<div class="hrow"><b>🌐 ${s.pos.sym}</b> ${s.pos.dir==='long'?'▲ לונג':'▼ שורט'} @ ${s.pos.entry}`+
+    `<span>נר ${s.pos.candles||0}/3</span><span class="why">ציון ${s.pos.score}/5</span></div>`);
+  hist2.slice(-3).reverse().forEach(h=>{
+    rows.push(`<div class="hrow"><b>${h.sym}</b> ${h.dir==='long'?'▲':'▼'}`+
+      `<span style="color:${h.pnl>=0?'var(--up)':'var(--down)'}">${money(h.pnl)}</span>`+
+      `<span class="why">${h.reason||''}</span></div>`);
+  });
+  el.className='';
+  el.innerHTML=rows.join('');
+}
+setInterval(()=>{ if(!document.hidden) srvFetch(); },60000);
+setTimeout(srvFetch,1500);
+
 // ── wiring ─────────────────────────────────────────────────────────────
 $('uniWrap').onclick=e=>{ const b=e.target.closest('[data-c]'); if(b) setSel(b.dataset.c); };
 $('search').oninput=drawUni;
@@ -2282,6 +2345,8 @@ window.__scalp={
   effSize, sessions:sessionsOf, vox:()=>voxOn, lastSpoke:()=>lastSpoke,
   shift:(on)=>{ if(on!==undefined) setShift(on); return shiftOn; },
   seen:{ save:saveSeen, report:awayReport },
+  srv:{ fetch:srvFetch, state:()=>srvState&&JSON.parse(JSON.stringify(srvState)),
+    set:(s)=>{ srvState=s; srvErr=null; renderSrv(); }, render:renderSrv },
 };
 </script>
 </body>
