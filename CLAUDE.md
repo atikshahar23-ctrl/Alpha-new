@@ -12,6 +12,26 @@ feature branch, then fast-forward-merge and push the same commits to
 `main` too, so GitHub Pages picks them up without a separate PR/merge step.
 Always `npx tsc --noEmit -p .` and `npm run build` clean before committing.
 
+**GitHub Actions policy blocks marketplace actions** (`actions/checkout@v4`
+etc. → the run dies with `startup_failure` before any job starts, with no
+logs). Every workflow here must clone manually with the
+`x-access-token:${{ secrets.GITHUB_TOKEN }}` URL and use the runner's
+system Node — see `deploy.yml` and `scalp-shift.yml` for the pattern.
+
+`scalp-shift.yml` + `server/scalp-shift.mjs` are the scalp page's 24/7
+paper trader ("המשמרת בשרת"): a ~5-min cron replays the exact 3-candle
+method and force-pushes a single-commit state file to the orphan
+`shift-data` branch (`shift.json`), which scalp.html reads via
+raw.githubusercontent.com. Server wallet is deliberately separate from the
+phone wallet — never merge them. Binance futures is geo-blocked from
+GitHub runners, so the engine falls back to real spot data
+(`data-api.binance.vision`) and labels it `src:'spot'`; a dead market
+writes an honest `err`, never invented candles. Engine changes must be
+mirrored from scalp.html's brainCore/walker math, tested locally with
+`SHIFT_STATE_FILE` + `SHIFT_FAPI` env overrides against a mock HTTP server
+(run the mock in a SEPARATE process — `execFileSync` blocks the event loop
+and deadlocks an in-process mock).
+
 ## Office3D.jsx twin-stick control scheme
 
 **Right stick / right touch joystick = movement (`joyVec`). Left stick /
