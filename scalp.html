@@ -150,8 +150,9 @@ button{font-family:inherit;cursor:pointer}
   <a href="markets.html">→ ראדאר</a>
   <h1>⚡ סקאלפ 3 נרות</h1>
   <span class="ver">ארנק נפרד · נייר · נתוני Binance אמיתיים</span>
-  <span class="ver" id="pageVer">v447</span>
+  <span class="ver" id="pageVer">v448</span>
   <button class="ghost" id="warBtn" style="margin-right:auto">🏛 מבצעים</button>
+  <button class="ghost" id="voxBtn" title="כריזה קולית על סגירות">🔈</button>
   <button class="ghost" id="coreBtn">💠 הליבה</button>
 </header>
 <div id="warModal" hidden>
@@ -199,6 +200,15 @@ button{font-family:inherit;cursor:pointer}
     <label>מינוף ×<input id="wLev" type="number" min="1" max="50" step="1" inputmode="numeric"></label>
     <label>סטופ חירום %<input id="wStop" type="number" min="0.2" max="10" step="0.1" inputmode="decimal"></label>
     <label>עמלה %/צד<input id="wFee" type="number" min="0" max="1" step="0.01" inputmode="decimal"></label>
+  </div>
+  <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap" id="szModeRow">
+    <button class="ghost on" data-sm="fix">גודל קבוע $</button>
+    <button class="ghost" data-sm="pct">% מהיתרה</button>
+    <button class="ghost" data-sm="risk">סיכון קבוע $</button>
+  </div>
+  <div class="wset" id="szXtra" style="margin-top:6px">
+    <label id="pctWrap" style="display:none">% מהיתרה (ריבית דריבית)<input id="wPct" type="number" min="1" max="100" step="1" inputmode="numeric"></label>
+    <label id="riskWrap" style="display:none">סיכון $ לעסקה (לפי הסטופ)<input id="wRisk" type="number" min="0.5" step="0.5" inputmode="decimal"></label>
   </div>
   <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap" id="qsRow2">
     <button class="ghost" id="bakBtn">💾 גיבוי מלא</button>
@@ -337,7 +347,8 @@ function toast(m){ const el=$('toastEl'); el.textContent=m; el.style.opacity='1'
   clearTimeout(toastT); toastT=setTimeout(()=>{ el.style.opacity='0'; },3200); }
 
 // ── the separate wallet — its own keys, no sharing with the radar ──────
-const W_DEF={bal:1000,size:100,lev:5,stop:1.5,fee:0.05};   // fee = taker %/side, Binance futures default
+const W_DEF={bal:1000,size:100,lev:5,stop:1.5,fee:0.05,   // fee = taker %/side, Binance futures default
+  sizeMode:'fix', sizePct:10, riskAmt:5};                 // v448: pro sizing modes
 let W={};
 try{ W=Object.assign({},W_DEF,JSON.parse(localStorage.getItem('na:scalp:w')||'{}')); }
 catch(e){ W=Object.assign({},W_DEF); }
@@ -560,6 +571,57 @@ function drawBrain(){
   $('goShort').className= b.ss>=4? 'hot-down' : '';
 }
 
+// ── v448: pro sizing — fixed $, % of balance (compounding), fixed-$ risk ──
+function effSize(){
+  if(W.sizeMode==='pct') return Math.max(1, Math.floor(W.bal*W.sizePct/100));
+  if(W.sizeMode==='risk'){
+    const expo=W.riskAmt/(W.stop/100);           // exposure so the stop costs exactly riskAmt
+    return Math.max(1, Math.min(Math.floor(W.bal), +(expo/W.lev).toFixed(2)));
+  }
+  return W.size;
+}
+// ── v448: your hours, measured — when are YOU actually good? ───────────
+const SESS=[['🌙 לילה',0,6],['🌅 בוקר',6,12],['☀️ צהריים',12,18],['🌆 ערב',18,24]];
+function sessOf(ts){ const h2=new Date(ts).getHours();
+  return (SESS.find(s=>h2>=s[1]&&h2<s[2])||SESS[0])[0]; }
+function sessionsOf(){
+  const m={}; SESS.forEach(s=>m[s[0]]=[]);
+  hist.forEach(h=>{ (m[sessOf(h.t)]||m[SESS[0][0]]).push(h); });
+  return SESS.map(s=>Object.assign({name:s[0]}, grp(m[s[0]])));
+}
+// ── v448: voice announcements (off by default) ─────────────────────────
+let voxOn=false, lastSpoke='';
+try{ voxOn=localStorage.getItem('na:scalp:vox')==='1'; }catch(e){}
+function spk(txt){
+  lastSpoke=txt;
+  try{ const u=new SpeechSynthesisUtterance(txt); u.lang='he-IL'; u.rate=1.05;
+    speechSynthesis.cancel(); speechSynthesis.speak(u); }catch(e){}
+}
+function drawVox(){ const b2=$('voxBtn'); if(b2){ b2.textContent= voxOn?'🔊':'🔈';
+  b2.classList.toggle('on',voxOn); } }
+$('voxBtn').onclick=()=>{ voxOn=!voxOn;
+  try{ localStorage.setItem('na:scalp:vox',voxOn?'1':'0'); }catch(e){}
+  drawVox(); toast(voxOn?'🔊 כריזה קולית פעילה — אכריז על כל סגירה':'🔈 כריזה כבויה');
+  if(voxOn) spk('הכריזה פעילה'); };
+drawVox();
+// ── v448: marked levels are LIVE alerts — crossing one rings once ──────
+let lastPxFor={};
+function checkMarksHit(px){
+  if(!sel || !(px>0)) return;
+  const prev=lastPxFor[sel]; lastPxFor[sel]=px;
+  const arr=marks[sel]; if(!prev || !arr || !arr.length) return;
+  for(let i=arr.length-1;i>=0;i--){
+    const v=arr[i];
+    if((prev<v && px>=v) || (prev>v && px<=v)){
+      arr.splice(i,1); saveMarks(); safe(drawChart);
+      toast('🔖⏰ '+sel+' חצה את הרמה שסימנת: '+v);
+      beep(px>=v?'win':'loss');
+      try{ if('Notification' in window && Notification.permission==='granted')
+        new Notification('🔖 רמה מסומנת נחצתה', {body:sel+' @ '+px, tag:'mark-'+sel}); }catch(e){}
+      if(voxOn) spk(sel+' חצה את הרמה שסימנת');
+    }
+  }
+}
 // ── the 3-candle engine — fees included, one candle-walker for live+backfill ──
 function pnlAt(px){
   if(!pos||!(px>0)) return 0;
@@ -588,11 +650,12 @@ function enter(dir,pxO,isAuto){
   const u=uni.find(x=>x.sym===sel);
   const px= pxO>0? pxO : (u&&u.price>0? u.price : (candles.length? candles[candles.length-1].c : 0));
   if(!(px>0)){ toast('אין מחיר חי'); return; }
-  if(W.size>W.bal){ toast('גודל העסקה גדול מהיתרה'); return; }
+  const sz=effSize();
+  if(sz>W.bal){ toast('גודל העסקה גדול מהיתרה'); return; }
   const curT=candles.length? candles[candles.length-1].t : Math.floor(Date.now()/60000)*60000;
   const bn=brainNow||brainOf();
   pos={sym:sel,dir,entry:px,t:Date.now(),fromT:curT,doneT:0,candles:0,
-    size:W.size,lev:W.lev,stop:W.stop,fee:W.fee,
+    size:sz,lev:W.lev,stop:W.stop,fee:W.fee,
     fac: bn? {ls:bn.ls,ss:bn.ss,rsi:bn.rsi,m15:bn.m15,volX:bn.volX,atr:bn.atr} : null,
     withFlow: bn? (dir==='long'? bn.ls>=4 : bn.ss>=4) : null,
     crowd: crowd&&crowd.sym===sel? {fund:crowd.fund,ls:crowd.ls,taker:crowd.taker,oiChg:crowd.oiChg} : null,
@@ -611,11 +674,13 @@ function closePos(reason,px){
   saveH();
   toast((pnl>=0?'🎯 +$':'🛑 -$')+Math.abs(pnl).toFixed(2)+' · '+reason);
   beep(pnl>=0?'win':'loss');
+  if(voxOn) spk((pnl>=0?'רווח של ':'הפסד של ')+Math.abs(pnl).toFixed(2)+' דולר על '+pos.sym);
   pos=null; saveP(); drawAll(); wakeSync(); drawTitle();
   try{ alphaFeed(); alphaMoment(); }catch(e){}   // keep Alpha fed + call him when it matters
 }
 // candle-close rules: run over every candle that CLOSED after entry
 function applyRules(livePx){
+  try{ checkMarksHit(livePx); }catch(e){}       // marked levels ring with or without a trade
   if(!pos) return;
   const nNow=netAt(livePx);
   if(pos.peak==null || nNow>pos.peak) pos.peak=+nNow.toFixed(2);
@@ -648,16 +713,27 @@ function drawWallet(){
   $('balPnl').textContent= hist.length? money(net)+' מצטבר' : '';
   $('balPnl').style.color= net>=0?'var(--up)':'var(--down)';
   $('wSize').value=W.size; $('wLev').value=W.lev; $('wStop').value=W.stop; $('wFee').value=W.fee;
-  // risk guard: exposure vs wallet, stated in dollars before any entry
-  const exp=W.size*W.lev, warn=$('riskWarn');
-  if(W.size>W.bal){ warn.innerHTML='<span style="color:var(--down)">⛔ גודל העסקה גדול מהיתרה — כניסה חסומה</span>'; }
-  else if(exp>W.bal*0.5){ warn.innerHTML='<span style="color:var(--gold)">⚠️ חשיפה $'+exp.toFixed(0)+' = '+Math.round(exp/W.bal*100)+'% מהארנק — סטופ אחד ('+W.stop+'%) יעלה $'+(exp*W.stop/100).toFixed(2)+'</span>'; }
+  // v448: sizing-mode UI
+  document.querySelectorAll('#szModeRow [data-sm]').forEach(b2=>b2.classList.toggle('on',b2.dataset.sm===W.sizeMode));
+  $('pctWrap').style.display= W.sizeMode==='pct'? '':'none';
+  $('riskWrap').style.display= W.sizeMode==='risk'? '':'none';
+  $('wPct').value=W.sizePct; $('wRisk').value=W.riskAmt;
+  // risk guard: EFFECTIVE exposure vs wallet, stated in dollars
+  const sz2=effSize(), exp=sz2*W.lev, warn=$('riskWarn');
+  if(sz2>W.bal){ warn.innerHTML='<span style="color:var(--down)">⛔ גודל העסקה גדול מהיתרה — כניסה חסומה</span>'; }
+  else if(exp>W.bal*0.5 && W.sizeMode!=='risk'){ warn.innerHTML='<span style="color:var(--gold)">⚠️ חשיפה $'+exp.toFixed(0)+' = '+Math.round(exp/W.bal*100)+'% מהארנק — סטופ אחד ('+W.stop+'%) יעלה $'+(exp*W.stop/100).toFixed(2)+'</span>'; }
   else warn.textContent='';
 }
 function drawPlan(){
   const el=$('plan'); if(!el) return;
-  const exp=W.size*W.lev, fees=exp*(W.fee||0)/100*2;
-  el.innerHTML=`🧮 תוכנית: חשיפה $${exp.toFixed(0)} (${W.size}$×${W.lev}) · כל 0.1% תנועה = $${(exp*0.001).toFixed(2)}`+
+  const sz=effSize(), exp=sz*W.lev, fees=exp*(W.fee||0)/100*2;
+  const modeTxt= W.sizeMode==='pct'? ` · ${W.sizePct}% מהיתרה (ריבית דריבית)`
+    : W.sizeMode==='risk'? ` · סיכון קבוע $${W.riskAmt} לסטופ` : '';
+  // your measured record for THIS hour of the day
+  const cur=sessOf(Date.now()), cs3=sessionsOf().find(s=>s.name===cur);
+  const sessTxt= (cs3&&cs3.n>=3)?
+    `<br>⏰ עכשיו ${cur} — הרקורד שלך בשעות האלו: <b style="color:${cs3.net>=0?'var(--up)':'var(--down)'}">${cs3.wr}% · ${money(cs3.net)}</b> (${cs3.n} עסק׳)` : '';
+  el.innerHTML=`🧮 תוכנית: חשיפה $${exp.toFixed(0)} (${sz}$×${W.lev})${modeTxt} · כל 0.1% תנועה = $${(exp*0.001).toFixed(2)}`+sessTxt+
     `<br>🛑 סטופ חירום ${W.stop}%- = -$${(exp*W.stop/100+fees).toFixed(2)} כולל עמלות · יציאה אוטומטית עד 3 נרות`+
     `<br>💸 עמלות הלוך-חזור $${fees.toFixed(2)} — "רווח" נספר רק אחרי שהן שולמו `+
     `<button class="ghost" id="atrStop" style="padding:3px 9px;font-size:10.5px">🎯 סטופ לפי ATR</button> `+
@@ -1614,6 +1690,13 @@ function lessonsOf(){
     if(b0[1].net>0 && w0[1].net<0)
       L.push(`👑 ${b0[0]} הוא המגרש הביתי שלך (${money(b0[1].net)} על ${b0[1].n} עסקאות) בעוד ${w0[0]} מקזז (${money(w0[1].net)}) — התמחות אמיתית = יותר ${b0[0]}, פחות ${w0[0]}.`);
   }
+  const ss2=sessionsOf().filter(s=>s.n>=2);
+  if(ss2.length>=2){
+    ss2.sort((a,b2)=>b2.net-a.net);
+    const hi2=ss2[0], lo2=ss2[ss2.length-1];
+    if(hi2.net>0 && lo2.net<lo2.n*0)
+      L.push(`⏰ השעון שלך: ${hi2.name} הן השעות החזקות (${hi2.wr}% · ${money(hi2.net)}) בעוד ${lo2.name} מקזזות (${lo2.wr}% · ${money(lo2.net)}) — הלקח: סחור כשאתה חד, לא כשמשועמם.`);
+  }
   if(L.length<=1) L.push('⚪ הדפוסים עדיין לא חדים — המשך לסחור לפי החוקים והשיעורים יכתבו את עצמם.');
   return L;
 }
@@ -2045,6 +2128,17 @@ $('resetW').onclick=()=>{ if(confirm('לאפס את הארנק ל-$1000? (ההי
 });
 $('wFee').onchange=()=>{ const v=+$('wFee').value;
   if(v>=0 && v<=1){ W.fee=v; saveW(); drawPlan(); } };
+$('szModeRow').onclick=e=>{
+  const b2=e.target.closest('[data-sm]'); if(!b2) return;
+  W.sizeMode=b2.dataset.sm; saveW(); drawWallet(); drawPlan();
+  toast(W.sizeMode==='pct'? '% מהיתרה — הגודל גדל וקטן עם הארנק (ריבית דריבית)'
+    : W.sizeMode==='risk'? 'סיכון קבוע — הגודל מחושב כך שהסטופ יעלה בדיוק $'+W.riskAmt
+    : 'גודל קבוע בדולרים');
+};
+$('wPct').onchange=()=>{ const v=+$('wPct').value;
+  if(v>=1&&v<=100){ W.sizePct=v; saveW(); drawWallet(); drawPlan(); } };
+$('wRisk').onchange=()=>{ const v=+$('wRisk').value;
+  if(v>0){ W.riskAmt=v; saveW(); drawWallet(); drawPlan(); } };
 $('hFilt').onclick=e=>{
   const b=e.target.closest('[data-hf]'); if(!b) return;
   hFilt=b.dataset.hf;
@@ -2116,6 +2210,7 @@ window.__scalp={
   feed:()=>{ alphaFeed(); try{ return JSON.parse(localStorage.getItem('alpha:scalp:ctx')); }catch(e){ return null; } },
   tf:(v)=>{ if(v) setTf(v); return dispTf; },
   favs:()=>[...sfavs], backup:backupStr, restore:restoreStr,
+  effSize, sessions:sessionsOf, vox:()=>voxOn, lastSpoke:()=>lastSpoke,
 };
 </script>
 </body>
