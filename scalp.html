@@ -150,7 +150,7 @@ button{font-family:inherit;cursor:pointer}
   <a href="markets.html">→ ראדאר</a>
   <h1>⚡ סקאלפ 3 נרות</h1>
   <span class="ver">ארנק נפרד · נייר · נתוני Binance אמיתיים</span>
-  <span class="ver" id="pageVer">v456</span>
+  <span class="ver" id="pageVer">v457</span>
   <button class="ghost" id="warBtn" style="margin-right:auto">🏛 מבצעים</button>
   <button class="ghost" id="voxBtn" title="כריזה קולית על סגירות">🔈</button>
   <button class="ghost" id="coreBtn">💠 הליבה</button>
@@ -303,8 +303,9 @@ button{font-family:inherit;cursor:pointer}
     עותק מדויק של שיטת 3 הנרות שרץ על השרתים של GitHub כל ~5 דק׳
     (הלוח שלהם לא מדויק — לפעמים 15). ארנק נייר נפרד מהארנק שבטלפון —
     בכוונה לא ממוזגים, כדי שאף דולר לא ייספר פעמיים. סטופ נבדק לפי פתילי
-    נרות (שמרני). אין שום מפתח מסחר בשרת — נייר בלבד. הפעלה/כיבוי:
-    ⚙️ שליטה ← Run workflow ← on / off.
+    נרות (שמרני). אין שום מפתח מסחר בשרת — נייר בלבד. שליטה מלאה דרך ⚙️:
+    Run workflow ← on / off / reset, או שינוי שיטה:
+    <code dir="ltr">cfg stop=1 ct=2 floor=0.5 score=5</code> — חל מהכניסה הבאה.
   </div>
 </div>
 
@@ -2689,6 +2690,11 @@ function renderSrv(){
   rows.push(`<div class="hrow"><span class="why">ריצה אחרונה: לפני ${age<60?age+' דק׳':Math.floor(age/60)+' שע׳'}</span>`+
     (age>20? `<span style="color:var(--down)">⚠️ מתעכבת — GitHub מעכב את הלוח או שהיא כבויה</span>`:``)+
     `<span class="why">${s.src==='spot'?'מחירי ספוט אמיתיים (החוזים חסומים מהשרת)':s.src==='fapi'?'נתוני חוזים':''}</span></div>`);
+  // v457: the server's method config, visible — changeable via ⚙️ cfg commands
+  if(s.w) rows.push(`<div class="hrow"><span class="why">שיטת השרת:</span>`+
+    `<span>${s.w.maxCt||3} נרות</span><span>סטופ ${s.w.stop}%</span>`+
+    `<span>רף $${s.w.floor||0}</span><span>סף ${s.w.score===5?5:4}/5</span>`+
+    `<span>$${s.w.size}×${s.w.lev}</span></div>`);
   const today=hist2.filter(h=>new Date(h.xt).toDateString()===new Date().toDateString());
   if(today.length){ const tn=today.reduce((a,h)=>a+(+h.pnl||0),0);
     rows.push(`<div class="hrow"><span class="why">היום בשרת:</span><span>${today.length} עסקאות</span>`+

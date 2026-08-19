@@ -137,6 +137,7 @@ function walkPosition(s, cs) {
   const p = s.pos;
   const stopLv = p.dir === 'long' ? p.entry * (1 - p.stop / 100) : p.entry * (1 + p.stop / 100);
   const exp = p.size * p.lev, fees = exp * (p.fee || 0) / 100 * 2;
+  const maxCt = p.maxCt || 3, floor = p.floor || 0;     // v457: frozen at entry, like the phone
   for (let i = 0; i < cs.length - 1; i++) {            // last candle may still be forming
     const c = cs[i];
     if (c.t < p.fromT || c.t <= (p.doneT || 0)) continue;
@@ -146,8 +147,8 @@ function walkPosition(s, cs) {
     p.candles++; p.doneT = c.t;
     const mv = p.dir === 'long' ? c.c / p.entry - 1 : 1 - c.c / p.entry;
     const net = mv * exp - fees;
-    if (net > 0) { closeTrade(s, c.c, 'רווח מהיר — נר ' + p.candles, p.candles); return; }
-    if (p.candles >= 3) { closeTrade(s, c.c, '3 נרות — יציאה', p.candles); return; }
+    if (net > floor) { closeTrade(s, c.c, 'רווח מהיר — נר ' + p.candles, p.candles); return; }
+    if (p.candles >= maxCt) { closeTrade(s, c.c, maxCt + ' נרות — יציאה', p.candles); return; }
   }
 }
 function coffeePaused(s) {
@@ -182,8 +183,9 @@ async function cycle(s) {
       try { cs = await klines(s, u.pair, 'limit=30'); } catch { continue; }
       if (cs.length < 25) continue;
       const bn = brainCore(cs); if (!bn) continue;
-      const dir = (bn.ls >= 4 && bn.m15 >= 0.25) ? 'long'
-                : (bn.ss >= 4 && bn.m15 <= -0.25) ? 'short' : null;
+      const ms = s.w.score === 5 ? 5 : 4;               // v457: configurable threshold
+      const dir = (bn.ls >= ms && bn.m15 >= 0.25) ? 'long'
+                : (bn.ss >= ms && bn.m15 <= -0.25) ? 'short' : null;
       if (!dir) continue;
       s.cooldown[u.sym] = Date.now();
       const last = cs[cs.length - 1];                   // newest CLOSED candle by fromT below
@@ -191,6 +193,7 @@ async function cycle(s) {
       s.pos = { sym: u.sym, dir, entry: last.c, t: Date.now(),
         fromT: last.t + 60000, doneT: 0, candles: 0,
         size: s.w.size, lev: s.w.lev, stop: s.w.stop, fee: s.w.fee,
+        maxCt: s.w.maxCt || 3, floor: s.w.floor || 0,
         score: dir === 'long' ? bn.ls : bn.ss, m15: bn.m15 };
       break;                                            // one trade at a time — the method
     }
@@ -202,6 +205,22 @@ const s = loadState();
 if (CMD === 'on') { s.on = true; s.pauseUntil = 0; s.note = 'המשמרת הופעלה'; }
 else if (CMD === 'off') { s.on = false; s.note = 'המשמרת כובתה — פוזיציה פתוחה עדיין תנוהל עד סגירה'; }
 else if (CMD === 'reset') { s.w.bal = 1000; s.note = 'הארנק אופס ל-$1000'; }
+else if (CMD.startsWith('cfg')) {
+  // v457: full method parity from GitHub mobile — e.g.
+  //   cfg stop=1 ct=2 floor=0.5 score=5 size=50 lev=10
+  // (also accepts cfg:stop=1,ct=2). Applies from the NEXT entry; an open
+  // position keeps the rules it entered with, like the phone.
+  const kv = {};
+  CMD.replace(/(stop|ct|floor|score|size|lev|fee)\s*=\s*([\d.]+)/g, (m, k, v) => { kv[k] = +v; return m; });
+  if (kv.stop > 0 && kv.stop <= 5) s.w.stop = kv.stop;
+  if (kv.ct >= 1 && kv.ct <= 6) s.w.maxCt = Math.round(kv.ct);
+  if (kv.floor >= 0 && kv.floor <= 10) s.w.floor = kv.floor;
+  if (kv.score === 4 || kv.score === 5) s.w.score = kv.score;
+  if (kv.size >= 1) s.w.size = kv.size;
+  if (kv.lev >= 1 && kv.lev <= 50) s.w.lev = Math.round(kv.lev);
+  if (kv.fee >= 0 && kv.fee <= 1) s.w.fee = kv.fee;
+  s.note = 'קונפיג עודכן: ' + Object.entries(kv).map(([k, v]) => k + '=' + v).join(' ');
+}
 else { await cycle(s); }
 s.lastRun = Date.now(); s.runs = (s.runs || 0) + 1;
 saveState(s);

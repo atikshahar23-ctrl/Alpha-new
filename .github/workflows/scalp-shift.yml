@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       command:
-        description: 'run / on / off / reset'
+        description: 'run / on / off / reset / cfg stop=1 ct=3 floor=0.5 score=4 size=100 lev=5'
         required: false
         default: 'run'
 
