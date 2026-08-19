@@ -150,7 +150,7 @@ button{font-family:inherit;cursor:pointer}
   <a href="markets.html">→ ראדאר</a>
   <h1>⚡ סקאלפ 3 נרות</h1>
   <span class="ver">ארנק נפרד · נייר · נתוני Binance אמיתיים</span>
-  <span class="ver" id="pageVer">v452</span>
+  <span class="ver" id="pageVer">v453</span>
   <button class="ghost" id="warBtn" style="margin-right:auto">🏛 מבצעים</button>
   <button class="ghost" id="voxBtn" title="כריזה קולית על סגירות">🔈</button>
   <button class="ghost" id="coreBtn">💠 הליבה</button>
@@ -241,11 +241,13 @@ button{font-family:inherit;cursor:pointer}
 
 <div class="card" id="whyCard">
   <h2 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">🔬 למה ההפסדים — נתיחה מהיומן שלך
-    <button class="ghost" id="matBtn" style="margin-right:auto;padding:3px 10px;font-size:11px">🗺 מפת סטופ×נרות</button>
+    <button class="ghost" id="allBtn" style="margin-right:auto;padding:3px 10px;font-size:11px">🌍 כלל-שוקי</button>
+    <button class="ghost" id="matBtn" style="padding:3px 10px;font-size:11px">🗺 סטופ×נרות</button>
     <button class="ghost" id="labBtn" style="padding:3px 10px;font-size:11px">🧪 נרות 1–6</button></h2>
   <div id="whyOut" class="empty">צריך לפחות 5 עסקאות ביומן כדי לנתח בכנות.</div>
   <div id="labOut" style="font-size:11.5px;margin-top:6px;font-family:'JetBrains Mono',monospace;line-height:1.8"></div>
   <div id="matOut" style="margin-top:6px"></div>
+  <div id="allOut" style="margin-top:6px"></div>
 </div>
 
 <div class="card" id="awayBar" style="display:none;border-color:rgba(255,179,0,.5)"></div>
@@ -1747,6 +1749,61 @@ async function btLabMat(){
     return labMat;
   }catch(e){ return null; }
 }
+// v453: the WHOLE-market map — the same 30 variants aggregated over the
+// top-8 coins, so a "good" cell has to work across the market, not on one
+// lucky chart. Cells report on how many coins they were net-positive.
+let labAll=null;
+async function btLabAll(){
+  if(!uni.length) return null;
+  try{
+    const targets=uni.slice(0,8);
+    toast('🌍 מפה כלל-שוקית: '+targets.length+' מטבעות × 30 וריאציות על אותם אותות…');
+    const per=[];
+    for(const u of targets){
+      try{
+        const r=await fetch(`${FAPI}/fapi/v1/klines?symbol=${u.pair}&interval=1m&limit=999`);
+        if(!r.ok) continue;
+        const raw=await r.json(); if(!Array.isArray(raw)||raw.length<40) continue;
+        const cs=raw.map(a=>({t:+a[0],o:+a[1],h:+a[2],l:+a[3],c:+a[4],v:+a[5]||0}));
+        const sig=btSignals(cs);
+        per.push({sym:u.sym, cells:MAT_STOPS.map(st=>[1,2,3,4,5,6].map(n=>btSim(cs,n,st,sig)))});
+      }catch(e){}
+    }
+    if(!per.length){ toast('אין נתונים למפה'); return null; }
+    labAll={coins:per.length, syms:per.map(p2=>p2.sym), at:Date.now(), stops:MAT_STOPS,
+      cells:MAT_STOPS.map((st,ri)=>[0,1,2,3,4,5].map(ci=>{
+        const agg={st, ct:ci+1, n:0, w:0, net:0, pos:0};
+        per.forEach(p2=>{ const c=p2.cells[ri][ci];
+          agg.n+=c.n; agg.w+=c.w; agg.net+=c.net; if(c.net>0) agg.pos++; });
+        agg.net=+agg.net.toFixed(2); return agg;
+      }))};
+    renderLabAll();
+    return labAll;
+  }catch(e){ return null; }
+}
+function renderLabAll(){
+  const el=$('allOut'); if(!el||!labAll) return;
+  const flat=labAll.cells.flat();
+  const best=flat.reduce((a,c)=>c.net>a.net?c:a);
+  const rows=labAll.cells.map((row,ri)=>
+    `<tr><th style="padding:3px 6px;color:var(--dim);font-weight:400">${labAll.stops[ri]}%</th>`+
+    row.map(c=>{
+      const isBest= c===best && c.n>0;
+      const cur= c.st===W.stop && c.ct===(W.maxCt||3);
+      return `<td style="padding:1px"><button data-st="${c.st}" data-mct="${c.ct}" class="ghost" `+
+        `style="width:100%;padding:4px 2px;font-size:10px;line-height:1.3;`+
+        `color:${c.net>0?'var(--up)':c.net<0?'var(--down)':'var(--dim)'};`+
+        `${isBest?'border-color:var(--gold);':''}${cur?'background:rgba(255,179,0,.15);':''}">`+
+        `${isBest?'👑<br>':''}${c.n? money(c.net) : '·'}<br><span style="color:var(--dim)">${c.pos}/${labAll.coins}✓</span></button></td>`;
+    }).join('')+'</tr>').join('');
+  el.innerHTML=
+    `<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;text-align:center;direction:ltr">`+
+    `<tr><th style="font-size:10px;color:var(--dim)">סטופ↓ נרות→</th>`+
+    [1,2,3,4,5,6].map(n=>`<th style="font-size:11px;padding:3px">${n}</th>`).join('')+'</tr>'+rows+
+    `</table></div>`+
+    `<div style="font-size:10.5px;color:var(--dim);margin-top:4px">🌍 ${labAll.syms.join(' ')} · `+
+    `X/${labAll.coins}✓ = בכמה מטבעות התא היה חיובי · לחיצה מאמצת · עבר ≠ עתיד</div>`;
+}
 function renderLabMat(){
   const el=$('matOut'); if(!el||!labMat) return;
   const flat=labMat.cells.flat();
@@ -1820,12 +1877,38 @@ function lossWhy(){
     avgL:+avgL.toFixed(2), needHit:+needHit.toFixed(0), stopL, ctL, wickTease,
     fees:+fees.toFixed(2), net:+net.toFixed(2), verdicts};
 }
+// v453: 2000 simulated futures from the MEASURED ledger numbers — memoized,
+// so the 1s draw loop never re-rolls the dice for the same inputs
+let ruinLast=null, ruinKey='';
+function ruinSim(){
+  const wy=lossWhy(); if(!wy || !wy.wins || wy.n-wy.wins<1) return null;
+  const key=wy.n+':'+wy.wins+':'+wy.avgW+':'+wy.avgL+':'+W.bal;
+  if(ruinLast && ruinKey===key) return ruinLast;
+  const pWin=wy.wins/wy.n, RUNS=2000, T=100, start=W.bal;
+  let r30=0, r50=0, endSum=0;
+  for(let r=0;r<RUNS;r++){
+    let bal=start, worst=start;
+    for(let t=0;t<T;t++){
+      bal+= Math.random()<pWin? wy.avgW : -wy.avgL;
+      if(bal<worst) worst=bal;
+    }
+    if(worst<=start*0.7) r30++;
+    if(worst<=start*0.5) r50++;
+    endSum+=bal;
+  }
+  ruinKey=key;
+  ruinLast={pWin:Math.round(pWin*100), runs:RUNS, T,
+    ruin30:+(r30/RUNS*100).toFixed(1), ruin50:+(r50/RUNS*100).toFixed(1),
+    endAvg:+(endSum/RUNS).toFixed(2)};
+  return ruinLast;
+}
 function renderWhy(){
   const el=$('whyOut'); if(!el) return;
   const w2=lossWhy();
   if(!w2){ el.className='empty';
     el.textContent='צריך לפחות 5 עסקאות ביומן כדי לנתח בכנות.'; return; }
   el.className='';
+  const rn=ruinSim();
   el.innerHTML=
     `<div class="hrow"><b>${w2.n} עסקאות</b><span>${w2.hit}% פגיעה</span>`+
     `<span>ממוצע <b style="color:var(--up)">+$${w2.avgW.toFixed(2)}</b> / <b style="color:var(--down)">-$${w2.avgL.toFixed(2)}</b></span>`+
@@ -1833,7 +1916,12 @@ function renderWhy(){
     `<div class="hrow"><span>נדרש לאיזון: <b>${w2.needHit}%</b> פגיעה</span>`+
     `<span>הפסדי סטופ: <b>${w2.stopL}</b></span><span>הפסדי גמר-נרות: <b>${w2.ctL}</b></span>`+
     `<span>עמלות: <b>$${w2.fees.toFixed(2)}</b></span></div>`+
-    w2.verdicts.map(v=>`<div style="font-size:11.5px;line-height:1.7;margin-top:5px">${v}</div>`).join('');
+    w2.verdicts.map(v=>`<div style="font-size:11.5px;line-height:1.7;margin-top:5px">${v}</div>`).join('')+
+    (rn? `<div style="font-size:11.5px;line-height:1.7;margin-top:7px;border-top:1px solid rgba(255,255,255,.08);padding-top:6px">`+
+      `🎲 <b>${rn.runs} עתידים מדומים</b> מהמספרים המדודים שלך (${rn.T} עסקאות קדימה, ${rn.pWin}% פגיעה, `+
+      `+$${w2.avgW.toFixed(2)}/-$${w2.avgL.toFixed(2)}): סיכוי <b style="color:var(--down)">${rn.ruin30}%</b> לצלול 30%- מהארנק, `+
+      `<b style="color:var(--down)">${rn.ruin50}%</b> ל-50%- · ממוצע סיום $${rn.endAvg}. `+
+      `הנחות: עסקאות בלתי-תלויות והעתיד דומה לעבר — וזו ההנחה שנשברת הכי הרבה.</div>` : '');
 }
 function renderBt(){
   const el=$('btOut'); if(!el||!btRes) return;
@@ -2254,12 +2342,21 @@ function alphaCtx(){
   if(lead && !lead.self) L.push(`מצפן BTC: קורלציה ${lead.corr} בפיגור ${lead.lag} נרות`);
   if(btRes && btRes.sym===sel) L.push(`בקטסט ${btRes.hours}ש׳: ${btRes.n} כניסות · ${btRes.n? Math.round(btRes.w/btRes.n*100):0}% פגיעה · נטו $${btRes.net}`);
   if(pos){ const px=r&&r.price>0? r.price : pos.entry;
-    L.push(`עסקה פתוחה: ${pos.dir==='long'?'לונג':'שורט'} ${pos.sym} מ-${pos.entry} · נר ${Math.min(3,pos.candles+1)}/3 · P&L $${pnlAt(px).toFixed(2)} · שיא $${pos.peak!=null?pos.peak:0}`); }
+    L.push(`עסקה פתוחה: ${pos.dir==='long'?'לונג':'שורט'} ${pos.sym} מ-${pos.entry} · נר ${Math.min(pos.maxCt||3,pos.candles+1)}/${pos.maxCt||3} · P&L $${pnlAt(px).toFixed(2)} · שיא $${pos.peak!=null?pos.peak:0}`); }
   if(hist.length){ const wins=hist.filter(h=>h.pnl>0).length, net=hist.reduce((a,h)=>a+h.pnl,0);
     L.push(`היומן שלי: ${hist.length} עסקאות · ${Math.round(wins/hist.length*100)}% פגיעה · נטו $${net.toFixed(2)}`); }
+  // v453: the analyst sees the autopsy + the simulated futures too
+  try{
+    const wy=lossWhy();
+    if(wy){
+      L.push(`נתיחת הפסדים: רווח ממוצע $${wy.avgW} מול הפסד ממוצע $${wy.avgL} · נדרש ${wy.needHit}% לאיזון מול ${wy.hit}% בפועל · הפסדי סטופ ${wy.stopL} · גמר-נרות ${wy.ctL} · עמלות $${wy.fees}`);
+      const rn=ruinSim();
+      if(rn) L.push(`סימולציית ${rn.runs} עתידים (${rn.T} עסקאות קדימה): ${rn.ruin30}% סיכוי לצלילת 30%, ${rn.ruin50}% ל-50% · ממוצע סיום $${rn.endAvg}`);
+    }
+  }catch(e){}
   const gr=shadows.filter(s=>s.out);
   if(gr.length) L.push(`יומן הצלף: ${gr.length} התראות שנשפטו · נטו $${gr.reduce((a,s)=>a+s.pnl,0).toFixed(2)}`);
-  L.push(`השיטה: כניסה ידנית, יציאה אוטומטית (נר ברווח נטו סוגר, מקס 3 נרות), סטופ ${W.stop}%, עמלה ${W.fee}%/צד, גודל $${W.size}×${W.lev}.`);
+  L.push(`השיטה: כניסה ידנית, יציאה אוטומטית (נר ברווח נטו סוגר, מקס ${W.maxCt||3} נרות), סטופ ${W.stop}%, עמלה ${W.fee}%/צד, גודל $${W.size}×${W.lev}, סף צלף ${W.minScore||4}/5.`);
   return L.join('\n');
 }
 const ALPHA_SYS='אתה אלפא, האנליסט של מערכת הסקאלפ "3 נרות". ענה בעברית, עד 120 מילים, ישיר ולעניין. נתח אך ורק את הנתונים שסופקו לך — אל תמציא מספרים, אל תבטיח רווחים ואל תציג ודאות. חובה לציין את הסיכון המרכזי שאתה רואה. סיים בשורה שמתחילה ב"מה הייתי בודק עכשיו:". אתה לא יועץ השקעות ותגיד זאת אם נשאל על כסף אמיתי.';
@@ -2421,7 +2518,23 @@ function renderSrv(){
       `<span class="why">${h.reason||''}</span></div>`);
   });
   el.className='';
-  el.innerHTML=rows.join('');
+  el.innerHTML=rows.join('')+
+    (hist2.length>=2? '<canvas id="srvEq" style="width:100%;height:36px;margin-top:4px"></canvas>' : '');
+  // v453: the server's own equity line — its whole ledger at a glance
+  const cv2=$('srvEq');
+  if(cv2){ try{
+    const x=cv2.getContext('2d'); const dpr=Math.min(2,devicePixelRatio||1);
+    const w3=cv2.clientWidth||300, h3=36; cv2.width=w3*dpr; cv2.height=h3*dpr; x.setTransform(dpr,0,0,dpr,0,0);
+    let eq=0; const pts=hist2.map(h=>eq+=(+h.pnl||0));
+    const lo=Math.min(0,...pts), hi=Math.max(0,...pts), sp=(hi-lo)||1;
+    const Y=v=>h3-3-(v-lo)/sp*(h3-6);
+    const col= eq>=0? '0,230,118' : '255,82,82';
+    x.strokeStyle='rgba(255,255,255,.12)'; x.setLineDash([3,4]);
+    x.beginPath(); x.moveTo(0,Y(0)); x.lineTo(w3,Y(0)); x.stroke(); x.setLineDash([]);
+    x.strokeStyle='rgb('+col+')'; x.lineWidth=1.5; x.beginPath();
+    pts.forEach((v,i)=>{ const X=i/Math.max(1,pts.length-1)*w3; i? x.lineTo(X,Y(v)) : x.moveTo(X,Y(v)); });
+    x.stroke();
+  }catch(e){} }
 }
 setInterval(()=>{ if(!document.hidden) srvFetch(); },60000);
 setTimeout(srvFetch,1500);
@@ -2473,10 +2586,12 @@ $('ctRow').onclick=e=>{
 };
 $('labBtn').onclick=()=>btLab();
 $('matBtn').onclick=()=>btLabMat();
-$('matOut').onclick=e=>{
+$('allBtn').onclick=()=>btLabAll();
+$('whyCard').onclick=e=>{                 // one adopt handler for both maps
   const b=e.target.closest('[data-st]'); if(!b) return;
   W.stop=+b.dataset.st; W.maxCt=Math.min(6,Math.max(1,+b.dataset.mct||3));
-  saveW(); drawCtRow(); drawWallet(); drawPlan(); renderLabMat();
+  saveW(); drawCtRow(); drawWallet(); drawPlan();
+  safe(renderLabMat); safe(renderLabAll);
   toast('🗺 אומץ: סטופ '+W.stop+'% + '+W.maxCt+' נרות — חל מהעסקה הבאה. זכור: המפה מדדה עבר, לא עתיד.');
 };
 $('saneBtn').onclick=()=>{
@@ -2580,6 +2695,8 @@ window.__scalp={
   mat:btLabMat, matRes:()=>labMat&&JSON.parse(JSON.stringify(labMat)),
   minScore:(v)=>{ if(v!==undefined){ W.minScore= +v===5?5:4; saveW(); renderScout(); }
     return W.minScore; },
+  matAll:btLabAll, allRes:()=>labAll&&JSON.parse(JSON.stringify(labAll)),
+  ruin:ruinSim,
 };
 </script>
 </body>
