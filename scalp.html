@@ -150,7 +150,7 @@ button{font-family:inherit;cursor:pointer}
   <a href="markets.html">→ ראדאר</a>
   <h1>⚡ סקאלפ 3 נרות</h1>
   <span class="ver">ארנק נפרד · נייר · נתוני Binance אמיתיים</span>
-  <span class="ver" id="pageVer">v455</span>
+  <span class="ver" id="pageVer">v456</span>
   <button class="ghost" id="warBtn" style="margin-right:auto">🏛 מבצעים</button>
   <button class="ghost" id="voxBtn" title="כריזה קולית על סגירות">🔈</button>
   <button class="ghost" id="coreBtn">💠 הליבה</button>
@@ -247,10 +247,12 @@ button{font-family:inherit;cursor:pointer}
 
 <div class="card" id="whyCard">
   <h2 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">🔬 למה ההפסדים — נתיחה מהיומן שלך
-    <button class="ghost" id="allBtn" style="margin-right:auto;padding:3px 10px;font-size:11px">🌍 כלל-שוקי</button>
+    <button class="ghost" id="tuneBtn" style="margin-right:auto;padding:3px 10px;font-size:11px;border-color:var(--gold)">🎯 כוונון מדוד</button>
+    <button class="ghost" id="allBtn" style="padding:3px 10px;font-size:11px">🌍 כלל-שוקי</button>
     <button class="ghost" id="matBtn" style="padding:3px 10px;font-size:11px">🗺 סטופ×נרות</button>
     <button class="ghost" id="gainBtn" style="padding:3px 10px;font-size:11px">💰 רף רווח</button>
     <button class="ghost" id="labBtn" style="padding:3px 10px;font-size:11px">🧪 נרות 1–6</button></h2>
+  <div id="tuneOut" style="font-size:12px;line-height:1.8"></div>
   <div id="whyOut" class="empty">צריך לפחות 5 עסקאות ביומן כדי לנתח בכנות.</div>
   <div id="labOut" style="font-size:11.5px;margin-top:6px;font-family:'JetBrains Mono',monospace;line-height:1.8"></div>
   <div id="gainOut" style="font-size:11.5px;margin-top:6px;font-family:'JetBrains Mono',monospace;line-height:1.8"></div>
@@ -1887,6 +1889,73 @@ function renderLabAll(){
         `📈 עקביות (${log.length} ריצות): ${top[0]} ניצח ${top[1]}/${log.length}`+
         (strong? ' — זה מתחיל להיראות כמו דפוס, לא מזל' : ' — עדיין רועש, תריץ שוב מחר')+`</div>`; })();
 }
+// v456: MEASURED TUNE-UP — one button that runs the whole-market map, the
+// profit-floor lab and the sniper score split, and turns them into ONE
+// recommendation with the evidence attached. Adopt is a choice, never
+// automatic, and the past≠future caveat is part of the output.
+let tuneRes=null;
+async function tuneUp(){
+  try{
+    toast('🎯 כוונון מדוד — מפה כלל-שוקית + רף רווח + ציוני צלף…');
+    const all=await btLabAll();
+    if(!all){ toast('אין נתונים לכוונון'); return null; }
+    const flat=all.cells.flat().filter(c=>c.n>0);
+    if(!flat.length){
+      tuneRes={none:true, ev:['אף וריאציה לא נכנסה לעסקה ב-16 השעות שנבדקו — אין על מה להמליץ, וזה בסדר.']};
+      renderTune(); return tuneRes;
+    }
+    // the cell must WORK ACROSS THE MARKET (positive on 60%+ of coins) if
+    // any such cell exists; otherwise best net, labeled as weaker evidence
+    const solid=flat.filter(c=>c.pos/all.coins>=0.6);
+    const pick=(solid.length?solid:flat).reduce((a,c)=>c.net>a.net?c:a);
+    const ev=[];
+    ev.push(`🌍 סטופ ${pick.st}% + ${pick.ct} נרות: ${money(pick.net)} על ${all.coins} מטבעות, חיובי ב-${pick.pos}/${all.coins}`+
+      (solid.length? '' : ' ⚠️ אף תא לא היה חיובי ברוב המטבעות — ראיה חלשה'));
+    // profit floor: replay the current coin with the picked pair and 4 floors
+    let floor=null;
+    try{
+      const cs=await btKlines();
+      if(cs){ const sig=btSignals(cs);
+        const fr=[0,0.5,1,2].map(mg=>Object.assign({mg}, btSim(cs,pick.ct,pick.st,sig,mg)));
+        const bestF=fr.reduce((a,r)=>r.net>a.net?r:a);
+        floor=fr.filter(r=>Math.abs(r.net-bestF.net)<0.01).sort((a,b2)=>a.mg-b2.mg)[0].mg;
+        ev.push(`💰 רף רווח $${floor}: הנטו הטוב ביותר על ${sel} (${fr.map(r=>'$'+r.mg+'→'+money(r.net)).join(' · ')})`); }
+    }catch(e){}
+    // sniper threshold: only if BOTH score groups have real measurements
+    let score=null;
+    const gr=shadows.filter(s2=>s2.out);
+    const g5=gr.filter(s2=>s2.score>=5), g4=gr.filter(s2=>s2.score===4);
+    if(g5.length>=3 && g4.length>=3){
+      const e5=g5.reduce((a,s2)=>a+s2.pnl,0)/g5.length, e4=g4.reduce((a,s2)=>a+s2.pnl,0)/g4.length;
+      score= e5>e4? 5 : 4;
+      ev.push(`🎯 סף ${score}/5: תוחלת ${money(e5)}/התראה ב-5/5 מול ${money(e4)}/התראה ב-4/5 (${g5.length}+${g4.length} נשפטו)`);
+    } else ev.push(`🎯 סף כניסה: אין עדיין מספיק מדידות משני הציונים ביומן הצל (צריך 3+3) — לא ממליץ בניחוש`);
+    tuneRes={stop:pick.st, ct:pick.ct, floor, score, ev, at:Date.now()};
+    renderTune();
+    return tuneRes;
+  }catch(e){ return null; }
+}
+function renderTune(){
+  const el=$('tuneOut'); if(!el||!tuneRes) return;
+  if(tuneRes.none){ el.innerHTML='<div class="hrow">'+tuneRes.ev[0]+'</div>'; return; }
+  const t=tuneRes;
+  el.innerHTML=
+    `<div class="hrow" style="border-color:var(--gold)"><b>🎯 ההמלצה המדודה:</b>`+
+    `<span>סטופ <b>${t.stop}%</b></span><span><b>${t.ct}</b> נרות</span>`+
+    (t.floor!=null? `<span>רף <b>$${t.floor}</b></span>`:'')+
+    (t.score? `<span>סף <b>${t.score}/5</b></span>`:'')+
+    `<button class="ghost" id="tuneAdopt" style="margin-right:auto;padding:4px 12px;border-color:var(--gold)">✅ אמץ הכל</button></div>`+
+    t.ev.map(v=>`<div style="font-size:11px;color:var(--dim);margin-top:3px">${v}</div>`).join('')+
+    `<div style="font-size:10.5px;color:var(--dim);margin-top:3px">עבר ≠ עתיד — זו המדידה הטובה ביותר שיש, לא הבטחה. חל מהעסקה הבאה.</div>`;
+  const btn=$('tuneAdopt');
+  if(btn) btn.onclick=()=>{
+    W.stop=t.stop; W.maxCt=t.ct;
+    if(t.floor!=null) W.minGain=t.floor;
+    if(t.score) W.minScore=t.score;
+    saveW(); drawCtRow(); drawWallet(); drawPlan(); renderScout();
+    toast('✅ אומץ: סטופ '+t.stop+'% · '+t.ct+' נרות'+(t.floor!=null?' · רף $'+t.floor:'')+(t.score?' · סף '+t.score+'/5':'')+' — חל מהעסקה הבאה');
+  };
+}
 function renderLabMat(){
   const el=$('matOut'); if(!el||!labMat) return;
   const flat=labMat.cells.flat();
@@ -2721,6 +2790,7 @@ $('labBtn').onclick=()=>btLab();
 $('matBtn').onclick=()=>btLabMat();
 $('allBtn').onclick=()=>btLabAll();
 $('gainBtn').onclick=()=>gainLab();
+$('tuneBtn').onclick=()=>tuneUp();
 $('askWhyBtn').onclick=()=>{
   // the analyst already has the autopsy + simulation in his context feed
   alphaAsk('נתח את ההפסדים שלי: לפי שורות "נתיחת הפסדים" ו"סימולציית עתידים" שבהקשר — מה המנוף המרכזי היחיד שהיית מתקן קודם, ולמה דווקא הוא?');
@@ -2843,6 +2913,7 @@ window.__scalp={
   clock:(v)=>{ if(v!==undefined){ W.clockGate=!!v; saveW(); renderScout(); } return W.clockGate; },
   mapLog:()=>{ try{ return JSON.parse(localStorage.getItem('na:scalp:maplog')||'[]'); }catch(e){ return []; } },
   days:renderDays,
+  tune:tuneUp, tuneRes:()=>tuneRes&&JSON.parse(JSON.stringify(tuneRes)),
 };
 </script>
 </body>
