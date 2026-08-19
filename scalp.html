@@ -150,11 +150,38 @@ button{font-family:inherit;cursor:pointer}
   <a href="markets.html">→ ראדאר</a>
   <h1>⚡ סקאלפ 3 נרות</h1>
   <span class="ver">ארנק נפרד · נייר · נתוני Binance אמיתיים</span>
-  <span class="ver" id="pageVer">v457</span>
+  <span class="ver" id="pageVer">v458</span>
   <button class="ghost" id="warBtn" style="margin-right:auto">🏛 מבצעים</button>
   <button class="ghost" id="voxBtn" title="כריזה קולית על סגירות">🔈</button>
   <button class="ghost" id="coreBtn">💠 הליבה</button>
 </header>
+<style>
+/* v458: trader terminal — tape, sticky nav, dense data */
+#tape{overflow:hidden;background:rgba(255,255,255,.03);border-bottom:1px solid rgba(255,179,0,.15);direction:ltr}
+#tapeIn{display:inline-block;white-space:nowrap;padding:4px 0;font:11px 'JetBrains Mono',monospace;animation:tapeMove 45s linear infinite}
+@keyframes tapeMove{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+#navChips{position:sticky;top:0;z-index:40;display:flex;gap:6px;overflow-x:auto;padding:6px 8px;margin:0 -2px 10px;background:rgba(10,10,16,.92);backdrop-filter:blur(8px);border-bottom:1px solid rgba(255,179,0,.12);scrollbar-width:none}
+#navChips button{flex:0 0 auto}
+.tlab{font-size:11px;color:var(--dim);margin:8px 0 3px}
+#tMkt table{width:100%;border-collapse:collapse;font:11.5px 'JetBrains Mono',monospace;direction:ltr;text-align:right}
+#tMkt th{position:sticky;top:0;background:#14141c;cursor:pointer;padding:5px 6px;color:var(--gold);font-weight:600;font-size:11px}
+#tMkt td{padding:4px 6px;border-top:1px solid rgba(255,255,255,.05)}
+#tMkt tr[data-sym]{cursor:pointer}
+#termGrid{display:flex;flex-wrap:wrap;gap:6px}
+#termGrid .tile{flex:1;min-width:96px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:10px;padding:7px 9px}
+#termGrid .tile b{display:block;font-size:14px;margin:1px 0}
+#termGrid .tile span{font-size:10px;color:var(--dim);display:block}
+</style>
+<div id="tape"><div id="tapeIn"></div></div>
+<div id="navChips">
+  <button class="ghost" data-go="walletCard">🏦 ארנק</button>
+  <button class="ghost" data-go="chartCard">📈 גרף</button>
+  <button class="ghost" data-go="scoutCard">🎯 צלף</button>
+  <button class="ghost" data-go="srvCard">🌐 שרת</button>
+  <button class="ghost" data-go="whyCard">🔬 נתיחה</button>
+  <button class="ghost" data-go="termCard">📊 טרמינל</button>
+  <button class="ghost" data-go="histCard">📒 יומן</button>
+</div>
 <div id="warModal" hidden>
   <div id="warTop"><b>🏛 חדר המבצעים</b><span>ניתוח מלא · שיעורים בכתב · הכל נמדד</span>
     <button id="warX">✕</button></div>
@@ -191,7 +218,7 @@ button{font-family:inherit;cursor:pointer}
   <div id="coreStats"></div>
 </div>
 
-<div class="card">
+<div class="card" id="walletCard">
   <h2>💰 הארנק (נפרד לגמרי מהראדאר)</h2>
   <div id="balRow"><span id="bal">—</span><span id="balPnl"></span>
     <button class="ghost" id="resetW" style="margin-right:auto">איפוס ל-$1000</button></div>
@@ -315,7 +342,7 @@ button{font-family:inherit;cursor:pointer}
   <div id="uniWrap"><div class="empty">טוען את היקום…</div></div>
 </div>
 
-<div class="card">
+<div class="card" id="chartCard">
   <div id="chartHead"><span id="selSym">—</span><span id="selPx"></span>
     <button class="ghost" id="favBtn" style="padding:2px 9px;font-size:13px" title="מועדף">☆</button>
     <span id="cndl"></span><span id="liveB"></span><span id="leadB"></span></div>
@@ -365,7 +392,29 @@ button{font-family:inherit;cursor:pointer}
   <div id="posMeta"></div>
 </div>
 
-<div class="card">
+<div class="card" id="termCard">
+  <h2>📊 טרמינל הסוחר — צפוף, מדוד, מהיומן האמיתי</h2>
+  <div id="termGrid"></div>
+  <div id="termEmpty" class="empty" style="display:none">עוד אין עסקאות — הטרמינל מתמלא מהיומן האמיתי בלבד, לא ממספרים מומצאים.</div>
+  <div class="tlab" data-tw>📈 עקומת הון + קו השיא (המרווח ביניהם = הדרודאון)</div>
+  <canvas id="tEq" style="width:100%;height:110px"></canvas>
+  <div class="tlab" data-tw>🧱 40 העסקאות האחרונות — עמודה לעסקה</div>
+  <canvas id="tBars" style="width:100%;height:80px"></canvas>
+  <div style="display:flex;gap:10px;flex-wrap:wrap">
+    <div style="flex:1;min-width:150px"><div class="tlab" data-tw>🔔 התפלגות תוצאות</div>
+      <canvas id="tDist" style="width:100%;height:80px"></canvas></div>
+    <div style="flex:1;min-width:150px"><div class="tlab" data-tw>💸 נטו מצטבר מול עמלות מצטברות</div>
+      <canvas id="tFee" style="width:100%;height:80px"></canvas></div>
+  </div>
+  <div class="tlab" data-tw>🪙 נטו לפי מטבע (הטופ לפי השפעה)</div>
+  <canvas id="tCoin" style="width:100%;height:110px"></canvas>
+  <div class="tlab" data-tw>🕐 נטו לפי שעת יממה — מתי הכסף באמת נעשה</div>
+  <canvas id="tHour" style="width:100%;height:52px"></canvas>
+  <div class="tlab">🌍 טבלת השוק החיה — לחיצה על כותרת ממיינת, על שורה בוחרת מטבע</div>
+  <div id="tMkt" style="max-height:280px;overflow:auto;border:1px solid rgba(255,255,255,.07);border-radius:10px"></div>
+</div>
+
+<div class="card" id="histCard">
   <h2 style="display:flex;align-items:center;gap:8px">📊 ביצועי השיטה
     <button class="ghost" id="csvBtn" style="margin-right:auto;padding:4px 10px;font-size:11px">📋 CSV</button></h2>
   <div id="stats"><span class="empty">עוד אין עסקאות</span></div>
@@ -571,7 +620,7 @@ function drawUni(){
     .filter(u=>!q||u.sym.includes(q))
     .map(u=>`<button class="coin${u.sym===sel?' on':''}" data-c="${u.sym}">${sfavs.has(u.sym)?'⭐ ':''}${u.sym}${u.chg? ` <span style="color:${u.chg>=0?'var(--up)':'var(--down)'}">${u.chg>0?'+':''}${(+u.chg).toFixed(1)}%</span>`:''}</button>`)
     .join('')||'<div class="empty">אין תוצאה</div>';
-  safe(renderHeat); safe(drawFavBtn);
+  safe(renderHeat); safe(drawFavBtn); safe(tapeDraw); safe(renderMkt);
 }
 async function pollK(){
   if(!sel) return;
@@ -1184,7 +1233,7 @@ let hFilt='all';
 const safe=f=>{ try{ f(); }catch(e){} };
 function drawAll(){
   safe(drawWallet); safe(drawPlan); safe(drawChart); safe(drawBrain);
-  safe(drawPos); safe(drawStats); safe(drawLiveB); safe(renderWhy);
+  safe(drawPos); safe(drawStats); safe(drawLiveB); safe(renderWhy); safe(renderTerm);
   const u=uni.find(x=>x.sym===sel);
   $('selSym').textContent=sel||'—';
   const px=u&&u.price>0? u.price : (candles.length? candles[candles.length-1].c : 0);
@@ -2738,6 +2787,186 @@ function renderSrv(){
 setInterval(()=>{ if(!document.hidden) srvFetch(); },60000);
 setTimeout(srvFetch,1500);
 
+// ── v458: TRADER TERMINAL — dense, scrollable, everything measured ─────
+function tapeDraw(){
+  const el=$('tapeIn'); if(!el||!uni.length) return;
+  const one=uni.map(u=>`<span style="margin:0 12px"><b style="color:var(--gold)">${u.sym}</b> ${u.price>0?u.price:'—'} `+
+    `<span style="color:${u.chg>=0?'var(--up)':'var(--down)'}">${u.chg>0?'+':''}${(+u.chg).toFixed(1)}%</span></span>`).join('');
+  el.innerHTML=one+one;                    // doubled for a seamless loop
+}
+$('navChips').onclick=e=>{
+  const b=e.target.closest('[data-go]'); if(!b) return;
+  const t=$(b.dataset.go); if(t) t.scrollIntoView({behavior:'smooth',block:'start'});
+};
+function cvCtx(id,h){
+  const cv=$(id); if(!cv||cv.style.display==='none') return null;
+  const dpr=Math.min(2,devicePixelRatio||1); const w=cv.clientWidth||340;
+  cv.width=w*dpr; cv.height=h*dpr;
+  const x=cv.getContext('2d'); x.setTransform(dpr,0,0,dpr,0,0); x.clearRect(0,0,w,h);
+  return {x,w,h};
+}
+function drawTEq(){
+  const c=cvCtx('tEq',110); if(!c) return; const {x,w,h}=c;
+  let eq=0; const pts=hist.map(hh=>+(eq+=hh.pnl).toFixed(2));
+  let pk=-1e9; const peaks=pts.map(v=>pk=Math.max(pk,v));
+  const lo=Math.min(0,...pts), hi=Math.max(0,...peaks), sp=(hi-lo)||1;
+  const Y=v=>h-14-(v-lo)/sp*(h-24), X=i=>8+i/Math.max(1,pts.length-1)*(w-16);
+  x.strokeStyle='rgba(255,255,255,.12)'; x.setLineDash([3,4]);
+  x.beginPath(); x.moveTo(0,Y(0)); x.lineTo(w,Y(0)); x.stroke();
+  x.strokeStyle='rgba(255,179,0,.45)';
+  x.beginPath(); peaks.forEach((v,i)=>{ i? x.lineTo(X(i),Y(v)) : x.moveTo(X(i),Y(v)); }); x.stroke();
+  x.setLineDash([]);
+  const col= eq>=0? '0,230,118' : '255,82,82';
+  const g=x.createLinearGradient(0,0,0,h);
+  g.addColorStop(0,'rgba('+col+',.22)'); g.addColorStop(1,'rgba('+col+',.02)');
+  x.fillStyle=g; x.beginPath(); x.moveTo(X(0),Y(0));
+  pts.forEach((v,i)=>x.lineTo(X(i),Y(v))); x.lineTo(X(pts.length-1),Y(0)); x.closePath(); x.fill();
+  x.strokeStyle='rgb('+col+')'; x.lineWidth=1.8;
+  x.beginPath(); pts.forEach((v,i)=>{ i? x.lineTo(X(i),Y(v)) : x.moveTo(X(i),Y(v)); }); x.stroke();
+  x.fillStyle='rgba(255,255,255,.55)'; x.font='10px JetBrains Mono,monospace'; x.textAlign='left';
+  x.fillText('$'+hi.toFixed(0),4,12); x.fillText('$'+lo.toFixed(0),4,h-3);
+  x.fillStyle='rgb('+col+')'; x.textAlign='right'; x.fillText(money(eq),w-4,12);
+}
+function drawTBars(){
+  const c=cvCtx('tBars',80); if(!c) return; const {x,w,h}=c;
+  const arr=hist.slice(-40);
+  const mx=Math.max(...arr.map(hh=>Math.abs(hh.pnl)),0.01);
+  const bw=Math.max(3,(w-8)/arr.length-2), Y0=h/2;
+  x.strokeStyle='rgba(255,255,255,.15)'; x.beginPath(); x.moveTo(0,Y0); x.lineTo(w,Y0); x.stroke();
+  arr.forEach((hh,i)=>{
+    const bh=Math.max(1,Math.abs(hh.pnl)/mx*(h/2-4));
+    x.fillStyle= hh.pnl>0? 'rgba(0,230,118,.8)' : 'rgba(255,82,82,.8)';
+    x.fillRect(4+i*(bw+2), hh.pnl>0? Y0-bh : Y0, bw, bh);
+  });
+}
+function drawTDist(){
+  const c=cvCtx('tDist',80); if(!c) return; const {x,w,h}=c;
+  const pnls=hist.map(hh=>hh.pnl);
+  const lo=Math.min(...pnls), hi=Math.max(...pnls), sp=(hi-lo)||1, NB=9;
+  const buckets=new Array(NB).fill(0);
+  pnls.forEach(v=>buckets[Math.min(NB-1,Math.floor((v-lo)/sp*NB))]++);
+  const mx=Math.max(...buckets,1), bw=(w-8)/NB-3;
+  buckets.forEach((n,i)=>{
+    const mid=lo+(i+0.5)/NB*sp;
+    x.fillStyle= mid>0? 'rgba(0,230,118,.75)' : 'rgba(255,82,82,.75)';
+    const bh=Math.max(2,n/mx*(h-16));
+    x.fillRect(4+i*(bw+3), h-12-bh, bw, bh);
+  });
+  x.fillStyle='rgba(255,255,255,.5)'; x.font='9px JetBrains Mono,monospace';
+  x.textAlign='left'; x.fillText(money(lo),2,h-2); x.textAlign='right'; x.fillText(money(hi),w-2,h-2);
+}
+function drawTFee(){
+  const c=cvCtx('tFee',80); if(!c) return; const {x,w,h}=c;
+  let e2=0,f2=0;
+  const net=hist.map(hh=>+(e2+=hh.pnl).toFixed(2));
+  const fee=hist.map(hh=>+(f2+=(+hh.fees||0)).toFixed(2));
+  const lo=Math.min(0,...net), hi=Math.max(0,...net,...fee), sp=(hi-lo)||1;
+  const Y=v=>h-12-(v-lo)/sp*(h-20), X=i=>6+i/Math.max(1,net.length-1)*(w-12);
+  x.strokeStyle='rgba(255,255,255,.12)'; x.setLineDash([3,4]);
+  x.beginPath(); x.moveTo(0,Y(0)); x.lineTo(w,Y(0)); x.stroke(); x.setLineDash([]);
+  x.strokeStyle= e2>=0? 'rgb(0,230,118)':'rgb(255,82,82)'; x.lineWidth=1.6;
+  x.beginPath(); net.forEach((v,i)=>{ i? x.lineTo(X(i),Y(v)) : x.moveTo(X(i),Y(v)); }); x.stroke();
+  x.strokeStyle='rgba(255,179,0,.9)';
+  x.beginPath(); fee.forEach((v,i)=>{ i? x.lineTo(X(i),Y(v)) : x.moveTo(X(i),Y(v)); }); x.stroke();
+  x.font='10px JetBrains Mono,monospace'; x.textAlign='right';
+  x.fillStyle='rgba(255,179,0,.9)'; x.fillText('עמלות $'+f2.toFixed(2),w-4,12);
+  x.fillStyle= e2>=0? 'rgb(0,230,118)':'rgb(255,82,82)'; x.fillText('נטו '+money(e2),w-4,24);
+}
+function drawTCoin(){
+  const c=cvCtx('tCoin',110); if(!c) return; const {x,w,h}=c;
+  const by={}; hist.forEach(hh=>{ by[hh.sym]=(by[hh.sym]||0)+hh.pnl; });
+  const rows=Object.entries(by).sort((a,b2)=>Math.abs(b2[1])-Math.abs(a[1])).slice(0,8);
+  if(!rows.length) return;
+  const mx=Math.max(...rows.map(r=>Math.abs(r[1])),0.01);
+  const rh=Math.min(13,(h-4)/rows.length), mid=w/2;
+  rows.forEach(([sym,v],i)=>{
+    const y=4+i*rh, bw2=Math.max(2,Math.abs(v)/mx*(w/2-52));
+    x.fillStyle= v>=0? 'rgba(0,230,118,.75)':'rgba(255,82,82,.75)';
+    if(v>=0) x.fillRect(mid+2,y,bw2,rh-3); else x.fillRect(mid-2-bw2,y,bw2,rh-3);
+    x.fillStyle='rgba(255,255,255,.75)'; x.font='9.5px JetBrains Mono,monospace';
+    x.textAlign='right'; x.fillText(sym,mid-6-( v>=0?0:bw2 ) - (v>=0?0:4), y+rh-5);
+    x.textAlign= v>=0? 'left':'right';
+    x.fillStyle= v>=0? 'rgb(0,230,118)':'rgb(255,82,82)';
+    x.fillText(money(v), v>=0? mid+6+bw2 : mid-6-bw2-38, y+rh-5);
+  });
+  x.strokeStyle='rgba(255,255,255,.15)'; x.beginPath(); x.moveTo(mid,0); x.lineTo(mid,h); x.stroke();
+}
+function drawTHour(){
+  const c=cvCtx('tHour',52); if(!c) return; const {x,w,h}=c;
+  const by=new Array(24).fill(0), n2=new Array(24).fill(0);
+  hist.forEach(hh=>{ const hr=new Date(hh.xt).getHours(); by[hr]+=hh.pnl; n2[hr]++; });
+  const mx=Math.max(...by.map(Math.abs),0.01), cw=(w-4)/24;
+  for(let i=0;i<24;i++){
+    const a=Math.min(1,Math.abs(by[i])/mx);
+    x.fillStyle= n2[i]===0? 'rgba(255,255,255,.05)'
+      : by[i]>=0? 'rgba(0,230,118,'+(0.15+a*0.7)+')' : 'rgba(255,82,82,'+(0.15+a*0.7)+')';
+    x.fillRect(2+i*cw,4,cw-2,h-22);
+    if(i%6===0){ x.fillStyle='rgba(255,255,255,.45)'; x.font='9px JetBrains Mono,monospace';
+      x.textAlign='left'; x.fillText(String(i).padStart(2,'0'),2+i*cw,h-4); }
+  }
+}
+let termSort={col:'vol',dir:-1};
+function renderMkt(){
+  const el=$('tMkt'); if(!el||!uni.length) return;
+  const cols=[['sym','מטבע'],['price','מחיר'],['chg','24ש%'],['vol','מחזור']];
+  const rows=uni.slice().sort((a,b2)=>{
+    const va=a[termSort.col], vb=b2[termSort.col];
+    return (typeof va==='string'? va.localeCompare(vb) : va-vb)*termSort.dir;
+  });
+  el.innerHTML='<table><tr>'+cols.map(([k,l])=>
+    `<th data-tc="${k}">${l}${termSort.col===k? (termSort.dir<0?' ↓':' ↑'):''}</th>`).join('')+'</tr>'+
+    rows.map(u=>`<tr data-sym="${u.sym}"${u.sym===sel?' style="background:rgba(255,179,0,.08)"':''}>`+
+      `<td><b>${sfavs.has(u.sym)?'⭐ ':''}${u.sym}</b></td><td>${u.price>0?u.price:'—'}</td>`+
+      `<td style="color:${u.chg>=0?'var(--up)':'var(--down)'}">${u.chg>0?'+':''}${(+u.chg).toFixed(2)}%</td>`+
+      `<td>${(u.vol/1e6).toFixed(0)}M</td></tr>`).join('')+'</table>';
+}
+$('tMkt').onclick=e=>{
+  const th=e.target.closest('[data-tc]');
+  if(th){ const k=th.dataset.tc;
+    if(termSort.col===k) termSort.dir*=-1; else termSort={col:k, dir: k==='sym'?1:-1};
+    renderMkt(); return; }
+  const tr=e.target.closest('[data-sym]');
+  if(tr){ setSel(tr.dataset.sym); renderMkt();
+    $('cv').scrollIntoView({behavior:'smooth',block:'center'}); }
+};
+let termKey='';
+function renderTerm(){
+  const empty=!hist.length;
+  $('termEmpty').style.display= empty? '' : 'none';
+  ['tEq','tBars','tDist','tFee','tCoin','tHour'].forEach(id=>{
+    const c2=$(id); if(c2) c2.style.display= empty? 'none':''; });
+  document.querySelectorAll('#termCard [data-tw]').forEach(d=>d.style.display= empty? 'none':'');
+  if(empty){ $('termGrid').innerHTML=''; termKey=''; return; }
+  const key=hist.length+':'+hist[hist.length-1].xt+':'+(innerWidth||0);
+  if(key===termKey) return;                // heavy DOM/canvas work only when the ledger moved
+  termKey=key;
+  const pnls=hist.map(hh=>hh.pnl);
+  const mean=pnls.reduce((a,v)=>a+v,0)/pnls.length;
+  const sorted=[...pnls].sort((a,b2)=>a-b2);
+  const med=sorted[Math.floor(sorted.length/2)];
+  const sd=Math.sqrt(pnls.reduce((a,v)=>a+(v-mean)**2,0)/pnls.length);
+  let ws=0,ls2=0,cw2=0,cl=0;
+  hist.forEach(hh=>{ if(hh.pnl>0){cw2++;cl=0;}else{cl++;cw2=0;} ws=Math.max(ws,cw2); ls2=Math.max(ls2,cl); });
+  const holds=hist.filter(hh=>hh.xt>hh.t).map(hh=>(hh.xt-hh.t)/60000);
+  const avgHold=holds.length? holds.reduce((a,v)=>a+v,0)/holds.length : 0;
+  const avgCt=hist.reduce((a,hh)=>a+(hh.ct||0),0)/hist.length;
+  const tiles=[
+    ['תוחלת/עסקה',money(mean),''],
+    ['חציון',money(med),'העסקה האמצעית'],
+    ['סטיית תקן','$'+sd.toFixed(2),'פיזור התוצאות'],
+    ['עקביות', sd>0? (mean/sd).toFixed(2) : '—','תוחלת ÷ סטייה'],
+    ['רצף רווחים',String(ws),'הארוך ביותר'],
+    ['רצף הפסדים',String(ls2),'הארוך ביותר'],
+    ['החזקה ממוצעת', avgHold<60? avgHold.toFixed(1)+' דק׳' : (avgHold/60).toFixed(1)+' שע׳', avgCt.toFixed(1)+' נרות'],
+    ['הטובה ביותר',money(Math.max(...pnls)),''],
+    ['הגרועה ביותר',money(Math.min(...pnls)),''],
+  ];
+  $('termGrid').innerHTML=tiles.map(([l,v,s2])=>
+    `<div class="tile"><span>${l}</span><b style="color:${String(v).startsWith('-')?'var(--down)':'inherit'}">${v}</b>${s2?`<span>${s2}</span>`:''}</div>`).join('');
+  safe(drawTEq); safe(drawTBars); safe(drawTDist); safe(drawTFee); safe(drawTCoin); safe(drawTHour);
+}
+window.addEventListener('resize',()=>{ termKey=''; });
+
 // ── wiring ─────────────────────────────────────────────────────────────
 $('uniWrap').onclick=e=>{ const b=e.target.closest('[data-c]'); if(b) setSel(b.dataset.c); };
 $('search').oninput=drawUni;
@@ -2920,6 +3149,8 @@ window.__scalp={
   mapLog:()=>{ try{ return JSON.parse(localStorage.getItem('na:scalp:maplog')||'[]'); }catch(e){ return []; } },
   days:renderDays,
   tune:tuneUp, tuneRes:()=>tuneRes&&JSON.parse(JSON.stringify(tuneRes)),
+  term:{ render:()=>{ termKey=''; renderTerm(); }, mkt:renderMkt, tape:tapeDraw,
+    sort:()=>Object.assign({},termSort) },
 };
 </script>
 </body>
