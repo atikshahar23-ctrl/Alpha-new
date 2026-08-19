@@ -130,7 +130,7 @@ function closeTrade(s, px, reason, ct) {
   const pnl = +(mv * exp - fees).toFixed(2);            // NET, like the browser
   s.w.bal = +(s.w.bal + pnl).toFixed(2);
   s.hist.push({ sym: p.sym, dir: p.dir, entry: p.entry, exit: px, pnl, fees,
-    reason, ct, t: p.t, xt: Date.now(), srv: true });
+    reason, ct, t: p.t, xt: Date.now(), srv: true, score: p.score });
   s.pos = null;
 }
 function walkPosition(s, cs) {

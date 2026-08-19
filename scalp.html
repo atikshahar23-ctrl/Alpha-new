@@ -150,7 +150,7 @@ button{font-family:inherit;cursor:pointer}
   <a href="markets.html">→ ראדאר</a>
   <h1>⚡ סקאלפ 3 נרות</h1>
   <span class="ver">ארנק נפרד · נייר · נתוני Binance אמיתיים</span>
-  <span class="ver" id="pageVer">v453</span>
+  <span class="ver" id="pageVer">v454</span>
   <button class="ghost" id="warBtn" style="margin-right:auto">🏛 מבצעים</button>
   <button class="ghost" id="voxBtn" title="כריזה קולית על סגירות">🔈</button>
   <button class="ghost" id="coreBtn">💠 הליבה</button>
@@ -237,15 +237,23 @@ button{font-family:inherit;cursor:pointer}
     <button class="ghost" data-ct="5">5</button><button class="ghost" data-ct="6">6</button>
     <span class="why">חל מהעסקה הבאה · מדוד קודם ב-🧪</span>
   </div>
+  <div style="display:flex;gap:6px;margin-top:8px;align-items:center;flex-wrap:wrap" id="mgRow">
+    <span style="font-size:11.5px;color:var(--dim)">יעד רווח מינימלי:</span>
+    <button class="ghost" data-mg="0">$0</button><button class="ghost" data-mg="0.5">$0.5</button>
+    <button class="ghost" data-mg="1">$1</button><button class="ghost" data-mg="2">$2</button>
+    <span class="why">"ברווח" חייב לעבור את הרף — נגד רווחי סנט מול עמלות</span>
+  </div>
 </div>
 
 <div class="card" id="whyCard">
   <h2 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">🔬 למה ההפסדים — נתיחה מהיומן שלך
     <button class="ghost" id="allBtn" style="margin-right:auto;padding:3px 10px;font-size:11px">🌍 כלל-שוקי</button>
     <button class="ghost" id="matBtn" style="padding:3px 10px;font-size:11px">🗺 סטופ×נרות</button>
+    <button class="ghost" id="gainBtn" style="padding:3px 10px;font-size:11px">💰 רף רווח</button>
     <button class="ghost" id="labBtn" style="padding:3px 10px;font-size:11px">🧪 נרות 1–6</button></h2>
   <div id="whyOut" class="empty">צריך לפחות 5 עסקאות ביומן כדי לנתח בכנות.</div>
   <div id="labOut" style="font-size:11.5px;margin-top:6px;font-family:'JetBrains Mono',monospace;line-height:1.8"></div>
+  <div id="gainOut" style="font-size:11.5px;margin-top:6px;font-family:'JetBrains Mono',monospace;line-height:1.8"></div>
   <div id="matOut" style="margin-top:6px"></div>
   <div id="allOut" style="margin-top:6px"></div>
 </div>
@@ -263,6 +271,7 @@ button{font-family:inherit;cursor:pointer}
     <span style="font-size:11.5px;color:var(--dim)">סף כניסה:</span>
     <button class="ghost" data-ms="4">4/5</button>
     <button class="ghost" data-ms="5">5/5 בלבד</button>
+    <button class="ghost" id="clockTgl">⏰ שעון: כבוי</button>
     <span class="why" id="msWhy"></span>
   </div>
   <div id="scoutBody" class="empty" style="text-align:right;padding:6px 0">
@@ -401,12 +410,16 @@ function toast(m){ const el=$('toastEl'); el.textContent=m; el.style.opacity='1'
 const W_DEF={bal:1000,size:100,lev:5,stop:1.5,fee:0.05,   // fee = taker %/side, Binance futures default
   sizeMode:'fix', sizePct:10, riskAmt:5,
   maxCt:3,                                                // v451: max candles is now a measured choice
-  minScore:4};                                            // v452: sniper entry threshold (4/5 or 5/5)
+  minScore:4,                                             // v452: sniper entry threshold (4/5 or 5/5)
+  minGain:0,                                              // v454: profit floor — "in profit" must clear this many $
+  clockGate:false};                                       // v454: autopilot skips your measured-bad hours
 let W={};
 try{ W=Object.assign({},W_DEF,JSON.parse(localStorage.getItem('na:scalp:w')||'{}')); }
 catch(e){ W=Object.assign({},W_DEF); }
 W.maxCt=Math.min(6,Math.max(1,Math.round(+W.maxCt||3)));
 W.minScore= +W.minScore===5? 5 : 4;
+W.minGain=Math.min(10,Math.max(0,+W.minGain||0));
+W.clockGate=!!W.clockGate;
 function saveW(){ try{ localStorage.setItem('na:scalp:w',JSON.stringify(W)); }catch(e){} }
 let hist=[];
 try{ hist=JSON.parse(localStorage.getItem('na:scalp:hist')||'[]'); }catch(e){}
@@ -714,7 +727,7 @@ function stepClosedCandle(c,suffix){
   const best=netAt(pos.dir==='long'? c.h : c.l);
   if(pos.peak==null || best>pos.peak) pos.peak=+best.toFixed(2);
   pos.candles++; pos.doneT=c.t; saveP();
-  if(netAt(c.c)>0){ closePos('רווח מהיר — נר '+pos.candles+(suffix||''), c.c); return true; }
+  if(netAt(c.c)>(pos.minGain||0)){ closePos('רווח מהיר — נר '+pos.candles+(suffix||''), c.c); return true; }
   const mc=pos.maxCt||3;
   if(pos.candles>=mc){ closePos(mc+' נרות — יציאה'+(suffix||''), c.c); return true; }
   return false;
@@ -729,7 +742,7 @@ function enter(dir,pxO,isAuto){
   const curT=candles.length? candles[candles.length-1].t : Math.floor(Date.now()/60000)*60000;
   const bn=brainNow||brainOf();
   pos={sym:sel,dir,entry:px,t:Date.now(),fromT:curT,doneT:0,candles:0,
-    size:sz,lev:W.lev,stop:W.stop,fee:W.fee,maxCt:W.maxCt||3,
+    size:sz,lev:W.lev,stop:W.stop,fee:W.fee,maxCt:W.maxCt||3,minGain:W.minGain||0,
     fac: bn? {ls:bn.ls,ss:bn.ss,rsi:bn.rsi,m15:bn.m15,volX:bn.volX,atr:bn.atr} : null,
     withFlow: bn? (dir==='long'? bn.ls>=4 : bn.ss>=4) : null,
     crowd: crowd&&crowd.sym===sel? {fund:crowd.fund,ls:crowd.ls,taker:crowd.taker,oiChg:crowd.oiChg} : null,
@@ -809,6 +822,7 @@ function drawPlan(){
     `<br>⏰ עכשיו ${cur} — הרקורד שלך בשעות האלו: <b style="color:${cs3.net>=0?'var(--up)':'var(--down)'}">${cs3.wr}% · ${money(cs3.net)}</b> (${cs3.n} עסק׳)` : '';
   el.innerHTML=`🧮 תוכנית: חשיפה $${exp.toFixed(0)} (${sz}$×${W.lev})${modeTxt} · כל 0.1% תנועה = $${(exp*0.001).toFixed(2)}`+sessTxt+
     `<br>🛑 סטופ חירום ${W.stop}%- = -$${(exp*W.stop/100+fees).toFixed(2)} כולל עמלות · יציאה אוטומטית עד ${W.maxCt||3} נרות`+
+    (W.minGain>0? `<br>💰 יעד רווח: סגירת "רווח מהיר" רק מעל +$${W.minGain} נטו` : '')+
     `<br>💸 עמלות הלוך-חזור $${fees.toFixed(2)} — "רווח" נספר רק אחרי שהן שולמו `+
     `<button class="ghost" id="atrStop" style="padding:3px 9px;font-size:10.5px">🎯 סטופ לפי ATR</button> `+
     `<button class="ghost" id="btBtn" style="padding:3px 9px;font-size:10.5px">🕰 בחן שיטה 16ש׳</button>`;
@@ -1155,6 +1169,7 @@ function drawStats(){
      <span style="color:${h.pnl>=0?'var(--up)':'var(--down)'}">${money(h.pnl)}</span>
      <span>${h.ct} נר׳</span><span class="why">${h.reason}</span>
      <span class="why" style="margin-right:auto">${new Date(h.xt).toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'})}</span>
+     <button class="ghost" data-note="${hist.indexOf(h)}" style="padding:2px 8px;font-size:10.5px;${h.note?'border-color:var(--gold)':''}" title="${h.note? h.note.replace(/"/g,'&quot;') : 'כתוב לקח על העסקה'}">📝</button>
      <button class="ghost" data-share="${hist.indexOf(h)}" style="padding:2px 8px;font-size:10.5px" title="שתף כרטיס עסקה">📤</button></div>`).join('')
     ||'<div class="empty">אין עסקאות בסינון הזה</div>';
 }
@@ -1186,7 +1201,7 @@ try{ scoutOn=localStorage.getItem('na:scalp:scouton')==='1'; }catch(e){}
 // v444: autopilot — the sniper enters PAPER trades on its own alerts.
 // Guards: one trade at a time (the method), stops itself after 3
 // straight losses (the coffee rule, enforced), off by default.
-let autoS=false;
+let autoS=false, clockGateT=0;
 try{ autoS=localStorage.getItem('na:scalp:auto')==='1'; }catch(e){}
 function setAutoS(on,why){
   autoS=!!on;
@@ -1220,7 +1235,7 @@ async function scoutTick(){
         scoutLast[u.sym]=Date.now();
         const last=cs[cs.length-1];
         shadows.push({sym:u.sym, dir, entry:last.c, t:Date.now(), fromT:last.t, doneT:0,
-          candles:0, size:W.size, lev:W.lev, stop:W.stop, fee:W.fee, maxCt:W.maxCt||3,
+          candles:0, size:W.size, lev:W.lev, stop:W.stop, fee:W.fee, maxCt:W.maxCt||3, minGain:W.minGain||0,
           score:dir==='long'?bn.ls:bn.ss, out:null, pnl:null});
         saveShadows();
         if(!pos){                             // a live trade mutes new rings, not the ledger
@@ -1233,8 +1248,16 @@ async function scoutTick(){
           // v444: autopilot takes the trade itself (paper, method rules)
           if(autoS){
             const sk=streakOf();
+            const badHour=(()=>{ if(!W.clockGate) return null;
+              try{ const cur=sessOf(Date.now()); const s3=sessionsOf().find(x=>x.name===cur);
+                return (s3&&s3.n>=5&&s3.net<0)? s3 : null; }catch(e){ return null; } })();
             if(sk.n>=3 && !sk.win){
               setAutoS(false,'🤖☕ הטייס עצר את עצמו אחרי 3 הפסדים רצופים — הפעל מחדש כשאתה מוכן');
+            } else if(badHour){
+              // v454: the clock gate — your own measured record vetoes the hour
+              if(Date.now()-clockGateT>10*60000){ clockGateT=Date.now();
+                toast('⏰ הטייס דילג על '+u.sym+' — '+badHour.name+' הן שעות מדודות-חלשות שלך ('+
+                  badHour.n+' עסק׳ · '+money(badHour.net)+'). ההתראה נרשמה ביומן הצל.'); }
             } else {
               setSel(u.sym);
               enter(dir, last.c, true);
@@ -1268,7 +1291,7 @@ async function gradeShadows(){
         s.candles=(s.candles||0)+1; s.doneT=c.t;
         const mv= s.dir==='long'? c.c/s.entry-1 : 1-c.c/s.entry;
         const net=+(mv*exp-fees).toFixed(2);
-        if(net>0){ s.out='win'; s.pnl=net; dirty=true; break; }
+        if(net>(s.minGain||0)){ s.out='win'; s.pnl=net; dirty=true; break; }
         if(s.candles>=(s.maxCt||3)){ s.out='3'; s.pnl=net; dirty=true; break; }
       }
     }catch(e){}
@@ -1310,6 +1333,9 @@ function renderScout(){
   $('scoutLog').innerHTML=statLine+scoreLine+rows;
   document.querySelectorAll('#msRow [data-ms]').forEach(b=>
     b.classList.toggle('on', +b.dataset.ms===(W.minScore||4)));
+  const ck=$('clockTgl');
+  if(ck){ ck.textContent= W.clockGate? '⏰ שעון: פעיל' : '⏰ שעון: כבוי';
+    ck.classList.toggle('on',!!W.clockGate); }
   $('scoutBody').style.display= scoutOn && shadows.length? 'none':'';
 }
 $('scoutTgl').onclick=()=>{
@@ -1325,6 +1351,12 @@ $('autoTgl').onclick=()=>{
   setAutoS(!autoS);
 };
 $('msRow').onclick=e=>{
+  if(e.target.closest('#clockTgl')){
+    W.clockGate=!W.clockGate; saveW(); renderScout();
+    toast(W.clockGate? '⏰ שער השעון פעיל — הטייס ידלג על שעות שהיומן שלך מדד בהן הפסד (5+ עסקאות). ההתראות עדיין נרשמות ביומן הצל.'
+      : 'שער השעון כבוי — הטייס נכנס בכל שעה');
+    return;
+  }
   const b=e.target.closest('[data-ms]'); if(!b) return;
   W.minScore= +b.dataset.ms===5? 5 : 4;
   saveW(); renderScout();
@@ -1669,9 +1701,10 @@ function btSignals(cs){
 }
 // v451: the simulation core is shared by the backtest and the candle LAB —
 // same brain gate, same wick-stop, same net-of-fees math, N candles max
-function btSim(cs,maxCt,stopPct,sig){
+function btSim(cs,maxCt,stopPct,sig,minGain){
   const exp=W.size*W.lev, fees=exp*(W.fee||0)/100*2;
   const stop= stopPct!=null? stopPct : W.stop;
+  const mg= minGain!=null? minGain : (W.minGain||0);
   sig=sig||btSignals(cs);
   const trades=[];
   let i=30;
@@ -1687,7 +1720,7 @@ function btSim(cs,maxCt,stopPct,sig){
       if(hitStop){ out='stop'; pnl=-exp*stop/100-fees; break; }
       const mv= dir==='long'? c.c/entry-1 : 1-c.c/entry;
       const net=mv*exp-fees;
-      if(net>0){ out='win'; pnl=net; break; }
+      if(net>mg){ out='win'; pnl=net; break; }
       if(k===maxCt){ out='ct'; pnl=net; }
     }
     if(out){ trades.push({dir,out,pnl:+pnl.toFixed(2)}); i+=used+3; } else i++;
@@ -1698,7 +1731,36 @@ function btSim(cs,maxCt,stopPct,sig){
     net:+trades.reduce((a,t)=>a+t.pnl,0).toFixed(2),
     avgW: wArr.length? +(wArr.reduce((a,t)=>a+t.pnl,0)/wArr.length).toFixed(2) : 0,
     avgL: lArr.length? +(-lArr.reduce((a,t)=>a+t.pnl,0)/lArr.length).toFixed(2) : 0,
-    stops: trades.filter(t=>t.out==='stop').length };
+    stops: trades.filter(t=>t.out==='stop').length,
+    quick: trades.filter(t=>t.out==='win').length };
+}
+// v454: profit-floor lab — same signals, same stop/candles, different floors
+let gainRes=null;
+async function gainLab(){
+  if(!sel) return null;
+  try{
+    toast('💰 מריץ את אותם נתונים עם רפי רווח שונים…');
+    const cs=await btKlines(); if(!cs){ toast('אין נתונים להרצה'); return null; }
+    const sig=btSignals(cs);
+    gainRes={sym:sel, hours:+((cs.length)/60).toFixed(1), at:Date.now(),
+      rows:[0,0.5,1,2,3].map(mg=>Object.assign({mg}, btSim(cs,W.maxCt||3,null,sig,mg)))};
+    renderGain();
+    return gainRes;
+  }catch(e){ return null; }
+}
+function renderGain(){
+  const el=$('gainOut'); if(!el||!gainRes) return;
+  const best=gainRes.rows.reduce((a,r)=>r.net>a.net?r:a);
+  el.innerHTML=
+    `<b>💰 ${gainRes.sym}</b> · רף רווח על אותם אותות (${W.maxCt||3} נרות, סטופ ${W.stop}%):<br>`+
+    gainRes.rows.map(r=>{
+      const cur= r.mg===(W.minGain||0);
+      const crown= r===best && r.n? ' 👑':'';
+      return `<span style="${cur?'color:var(--gold);font-weight:700':''}">+$${r.mg}${cur?' (עכשיו)':''}:</span> `+
+        (r.n? `${r.quick} רווח-מהיר · ${r.n-r.quick} נגררו · `+
+          `<b style="color:${r.net>=0?'var(--up)':'var(--down)'}">${money(r.net)}</b>${crown}` : 'אפס כניסות');
+    }).join('<br>')+
+    `<br><span style="color:var(--dim)">רף גבוה = פחות רווחי סנט אבל יותר עסקאות שנגררות לגמר-נרות/סטופ · עבר ≠ עתיד</span>`;
 }
 async function btKlines(){
   const r=await fetch(`${FAPI}/fapi/v1/klines?symbol=${sel}USDT&interval=1m&limit=999`);
@@ -1975,7 +2037,15 @@ function shareTrade(idx){
   });
 }
 $('hist').addEventListener('click',e=>{
-  const b=e.target.closest('[data-share]'); if(b) shareTrade(+b.dataset.share);
+  const b=e.target.closest('[data-share]'); if(b){ shareTrade(+b.dataset.share); return; }
+  // v454: personal lesson on a trade — written by the trader, kept in the ledger
+  const nb=e.target.closest('[data-note]');
+  if(nb){
+    const i=+nb.dataset.note, h=hist[i]; if(!h) return;
+    const t=prompt('📝 מה הלקח מהעסקה הזו על '+h.sym+'? (נשמר ביומן ומופיע בחדר המבצעים)', h.note||'');
+    if(t!==null){ h.note=t.trim(); saveH(); safe(drawStats);
+      toast(h.note? '📝 הלקח נשמר — תראה אותו גם בחדר המבצעים' : 'הלקח נמחק'); }
+  }
 });
 
 // ── 🏛 WAR ROOM (v445) — full trade analysis with WRITTEN lessons ──────
@@ -2026,6 +2096,9 @@ function lessonsOf(){
     if(hi2.net>0 && lo2.net<lo2.n*0)
       L.push(`⏰ השעון שלך: ${hi2.name} הן השעות החזקות (${hi2.wr}% · ${money(hi2.net)}) בעוד ${lo2.name} מקזזות (${lo2.wr}% · ${money(lo2.net)}) — הלקח: סחור כשאתה חד, לא כשמשועמם.`);
   }
+  // v454: the trader's own written lessons join the room
+  hist.filter(h=>h.note).slice(-5).forEach(h=>
+    L.push(`📝 שלך על ${h.sym} (${money(h.pnl)}): "${h.note}"`));
   if(L.length<=1) L.push('⚪ הדפוסים עדיין לא חדים — המשך לסחור לפי החוקים והשיעורים יכתבו את עצמם.');
   return L;
 }
@@ -2509,6 +2582,10 @@ function renderSrv(){
   rows.push(`<div class="hrow"><span class="why">ריצה אחרונה: לפני ${age<60?age+' דק׳':Math.floor(age/60)+' שע׳'}</span>`+
     (age>20? `<span style="color:var(--down)">⚠️ מתעכבת — GitHub מעכב את הלוח או שהיא כבויה</span>`:``)+
     `<span class="why">${s.src==='spot'?'מחירי ספוט אמיתיים (החוזים חסומים מהשרת)':s.src==='fapi'?'נתוני חוזים':''}</span></div>`);
+  const today=hist2.filter(h=>new Date(h.xt).toDateString()===new Date().toDateString());
+  if(today.length){ const tn=today.reduce((a,h)=>a+(+h.pnl||0),0);
+    rows.push(`<div class="hrow"><span class="why">היום בשרת:</span><span>${today.length} עסקאות</span>`+
+      `<span style="color:${tn>=0?'var(--up)':'var(--down)'}">${money(tn)}</span></div>`); }
   if(s.err) rows.push(`<div class="hrow"><span style="color:var(--down)">⚠️ ${s.err}</span></div>`);
   if(s.pos) rows.push(`<div class="hrow"><b>🌐 ${s.pos.sym}</b> ${s.pos.dir==='long'?'▲ לונג':'▼ שורט'} @ ${s.pos.entry}`+
     `<span>נר ${s.pos.candles||0}/3</span><span class="why">ציון ${s.pos.score}/5</span></div>`);
@@ -2575,9 +2652,18 @@ $('wRisk').onchange=()=>{ const v=+$('wRisk').value;
 function drawCtRow(){
   document.querySelectorAll('#ctRow [data-ct]').forEach(b=>
     b.classList.toggle('on', +b.dataset.ct===(W.maxCt||3)));
+  document.querySelectorAll('#mgRow [data-mg]').forEach(b=>
+    b.classList.toggle('on', +b.dataset.mg===(W.minGain||0)));
   const rc=$('ruleCt');
   if(rc) rc.textContent='2️⃣ אחרי '+(W.maxCt||3)+' נרות → סוגרים בכל מקרה';
 }
+$('mgRow').onclick=e=>{
+  const b=e.target.closest('[data-mg]'); if(!b) return;
+  W.minGain=Math.min(10,Math.max(0,+b.dataset.mg||0));
+  saveW(); drawCtRow(); drawPlan();
+  toast(W.minGain>0? '💰 "ברווח" = מעל +$'+W.minGain+' נטו — פחות רווחי סנט, אבל יותר עסקאות יגיעו לגמר-נרות. מדוד ב-💰 מעבדה.'
+    : '"ברווח" = כל נטו חיובי (ההתנהגות המקורית)');
+};
 $('ctRow').onclick=e=>{
   const b=e.target.closest('[data-ct]'); if(!b) return;
   W.maxCt=Math.min(6,Math.max(1,+b.dataset.ct||3));
@@ -2587,6 +2673,7 @@ $('ctRow').onclick=e=>{
 $('labBtn').onclick=()=>btLab();
 $('matBtn').onclick=()=>btLabMat();
 $('allBtn').onclick=()=>btLabAll();
+$('gainBtn').onclick=()=>gainLab();
 $('whyCard').onclick=e=>{                 // one adopt handler for both maps
   const b=e.target.closest('[data-st]'); if(!b) return;
   W.stop=+b.dataset.st; W.maxCt=Math.min(6,Math.max(1,+b.dataset.mct||3));
@@ -2665,7 +2752,8 @@ window.__scalp={
   chartMeta:()=>chartMeta,
   scout:{ tick:scoutTick, grade:gradeShadows, on:()=>scoutOn,
     shadows:()=>shadows.map(s=>Object.assign({},s)),
-    add:(s)=>{ shadows.push(s); saveShadows(); renderScout(); } },
+    add:(s)=>{ shadows.push(s); saveShadows(); renderScout(); },
+    reset:()=>{ scoutLast={}; } },
   lead:()=>lead&&Object.assign({},lead), leadCalc, backtest, bt:()=>btRes&&Object.assign({},btRes),
   card:shareTrade, lastCard:()=>lastCardData,
   crowd:()=>crowd&&Object.assign({},crowd), crowdFetch, crowdRead,
@@ -2697,6 +2785,10 @@ window.__scalp={
     return W.minScore; },
   matAll:btLabAll, allRes:()=>labAll&&JSON.parse(JSON.stringify(labAll)),
   ruin:ruinSim,
+  minGain:(v)=>{ if(v!==undefined){ W.minGain=Math.min(10,Math.max(0,+v||0)); saveW(); drawCtRow(); }
+    return W.minGain; },
+  gain:gainLab, gainRes:()=>gainRes&&JSON.parse(JSON.stringify(gainRes)),
+  clock:(v)=>{ if(v!==undefined){ W.clockGate=!!v; saveW(); renderScout(); } return W.clockGate; },
 };
 </script>
 </body>
