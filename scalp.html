@@ -150,7 +150,7 @@ button{font-family:inherit;cursor:pointer}
   <a href="markets.html">→ ראדאר</a>
   <h1>⚡ סקאלפ 3 נרות</h1>
   <span class="ver">ארנק נפרד · נייר · נתוני Binance אמיתיים</span>
-  <span class="ver" id="pageVer">v454</span>
+  <span class="ver" id="pageVer">v455</span>
   <button class="ghost" id="warBtn" style="margin-right:auto">🏛 מבצעים</button>
   <button class="ghost" id="voxBtn" title="כריזה קולית על סגירות">🔈</button>
   <button class="ghost" id="coreBtn">💠 הליבה</button>
@@ -256,6 +256,8 @@ button{font-family:inherit;cursor:pointer}
   <div id="gainOut" style="font-size:11.5px;margin-top:6px;font-family:'JetBrains Mono',monospace;line-height:1.8"></div>
   <div id="matOut" style="margin-top:6px"></div>
   <div id="allOut" style="margin-top:6px"></div>
+  <div id="daysOut" style="margin-top:6px"></div>
+  <button class="ghost" id="askWhyBtn" style="margin-top:8px;padding:5px 12px;font-size:12px">🧠 שאל את אלפא על ההפסדים</button>
 </div>
 
 <div class="card" id="awayBar" style="display:none;border-color:rgba(255,179,0,.5)"></div>
@@ -1008,7 +1010,8 @@ $('cv').addEventListener('touchend',e=>{
 },{passive:true});
 // full backup / restore of the whole desk (wallet, ledger, shadows, marks, trophies)
 const BAK_KEYS=['na:scalp:w','na:scalp:hist','na:scalp:open','na:scalp:shadow',
-  'na:scalp:marks','na:scalp:troph','na:scalp:favs','na:scalp:scouton','na:scalp:auto'];
+  'na:scalp:marks','na:scalp:troph','na:scalp:favs','na:scalp:scouton','na:scalp:auto',
+  'na:scalp:maplog','na:scalp:shift'];
 function backupStr(){
   const o={_v:'scalp-backup-1', t:Date.now()};
   BAK_KEYS.forEach(k=>{ try{ const v=localStorage.getItem(k); if(v!=null) o[k]=v; }catch(e){} });
@@ -1839,6 +1842,14 @@ async function btLabAll(){
           agg.n+=c.n; agg.w+=c.w; agg.net+=c.net; if(c.net>0) agg.pos++; });
         agg.net=+agg.net.toFixed(2); return agg;
       }))};
+    // v455: log every run's winning cell — one lucky run is noise, the same
+    // cell winning run after run is a pattern. Judged below, from the log.
+    try{
+      const log=JSON.parse(localStorage.getItem('na:scalp:maplog')||'[]');
+      const bestC=labAll.cells.flat().reduce((a,c)=>c.net>a.net?c:a);
+      if(bestC.n>0) log.push({t:Date.now(), st:bestC.st, ct:bestC.ct, net:bestC.net, coins:labAll.coins});
+      localStorage.setItem('na:scalp:maplog', JSON.stringify(log.slice(-30)));
+    }catch(e){}
     renderLabAll();
     return labAll;
   }catch(e){ return null; }
@@ -1864,7 +1875,17 @@ function renderLabAll(){
     [1,2,3,4,5,6].map(n=>`<th style="font-size:11px;padding:3px">${n}</th>`).join('')+'</tr>'+rows+
     `</table></div>`+
     `<div style="font-size:10.5px;color:var(--dim);margin-top:4px">🌍 ${labAll.syms.join(' ')} · `+
-    `X/${labAll.coins}✓ = בכמה מטבעות התא היה חיובי · לחיצה מאמצת · עבר ≠ עתיד</div>`;
+    `X/${labAll.coins}✓ = בכמה מטבעות התא היה חיובי · לחיצה מאמצת · עבר ≠ עתיד</div>`+
+    (()=>{ // consistency across runs — pattern or luck, measured
+      let log=[]; try{ log=JSON.parse(localStorage.getItem('na:scalp:maplog')||'[]'); }catch(e){}
+      if(log.length<2) return '';
+      const freq={};
+      log.forEach(l=>{ const k=l.st+'% · '+l.ct+' נר׳'; freq[k]=(freq[k]||0)+1; });
+      const top=Object.entries(freq).sort((a,b2)=>b2[1]-a[1])[0];
+      const strong=top[1]/log.length>=0.6;
+      return `<div style="font-size:10.5px;margin-top:3px;color:${strong?'var(--gold)':'var(--dim)'}">`+
+        `📈 עקביות (${log.length} ריצות): ${top[0]} ניצח ${top[1]}/${log.length}`+
+        (strong? ' — זה מתחיל להיראות כמו דפוס, לא מזל' : ' — עדיין רועש, תריץ שוב מחר')+`</div>`; })();
 }
 function renderLabMat(){
   const el=$('matOut'); if(!el||!labMat) return;
@@ -1984,6 +2005,23 @@ function renderWhy(){
       `+$${w2.avgW.toFixed(2)}/-$${w2.avgL.toFixed(2)}): סיכוי <b style="color:var(--down)">${rn.ruin30}%</b> לצלול 30%- מהארנק, `+
       `<b style="color:var(--down)">${rn.ruin50}%</b> ל-50%- · ממוצע סיום $${rn.endAvg}. `+
       `הנחות: עסקאות בלתי-תלויות והעתיד דומה לעבר — וזו ההנחה שנשברת הכי הרבה.</div>` : '');
+  safe(renderDays);
+}
+// v455: the last 7 trading days, one honest row each
+function renderDays(){
+  const el=$('daysOut'); if(!el) return;
+  const by={};
+  hist.forEach(h=>{ const k=new Date(h.xt).toDateString(); (by[k]=by[k]||[]).push(h); });
+  const days=Object.entries(by).sort((a,b2)=>new Date(a[0])-new Date(b2[0])).slice(-7);
+  if(days.length<2){ el.innerHTML=''; return; }
+  el.innerHTML='<div style="font-size:11px;color:var(--dim);margin-bottom:3px">📅 7 הימים האחרונים:</div>'+
+    days.map(([d,arr])=>{
+      const n2=arr.reduce((a,h)=>a+h.pnl,0), w3=arr.filter(h=>h.pnl>0).length;
+      const dt=new Date(d);
+      return `<div class="hrow"><b>${dt.toLocaleDateString('he-IL',{day:'2-digit',month:'2-digit'})}</b>`+
+        `<span>${arr.length} עסק׳</span><span>${Math.round(w3/arr.length*100)}%</span>`+
+        `<span style="color:${n2>=0?'var(--up)':'var(--down)'}">${money(n2)}</span></div>`;
+    }).join('');
 }
 function renderBt(){
   const el=$('btOut'); if(!el||!btRes) return;
@@ -2586,6 +2624,15 @@ function renderSrv(){
   if(today.length){ const tn=today.reduce((a,h)=>a+(+h.pnl||0),0);
     rows.push(`<div class="hrow"><span class="why">היום בשרת:</span><span>${today.length} עסקאות</span>`+
       `<span style="color:${tn>=0?'var(--up)':'var(--down)'}">${money(tn)}</span></div>`); }
+  // v455: the two desks, side by side — same method, separate wallets, never merged
+  if(hist.length && hist2.length){
+    const myNet=+hist.reduce((a,h)=>a+h.pnl,0).toFixed(2);
+    const svNet=+hist2.reduce((a,h)=>a+(+h.pnl||0),0).toFixed(2);
+    const lead= myNet>svNet? '📱 הטלפון מוביל' : svNet>myNet? '🌐 השרת מוביל' : '🤝 תיקו';
+    rows.push(`<div class="hrow"><b>⚔️ ${lead}</b>`+
+      `<span>📱 ${hist.length} עסק׳ · <span style="color:${myNet>=0?'var(--up)':'var(--down)'}">${money(myNet)}</span></span>`+
+      `<span>🌐 ${hist2.length} עסק׳ · <span style="color:${svNet>=0?'var(--up)':'var(--down)'}">${money(svNet)}</span></span></div>`);
+  }
   if(s.err) rows.push(`<div class="hrow"><span style="color:var(--down)">⚠️ ${s.err}</span></div>`);
   if(s.pos) rows.push(`<div class="hrow"><b>🌐 ${s.pos.sym}</b> ${s.pos.dir==='long'?'▲ לונג':'▼ שורט'} @ ${s.pos.entry}`+
     `<span>נר ${s.pos.candles||0}/3</span><span class="why">ציון ${s.pos.score}/5</span></div>`);
@@ -2674,6 +2721,11 @@ $('labBtn').onclick=()=>btLab();
 $('matBtn').onclick=()=>btLabMat();
 $('allBtn').onclick=()=>btLabAll();
 $('gainBtn').onclick=()=>gainLab();
+$('askWhyBtn').onclick=()=>{
+  // the analyst already has the autopsy + simulation in his context feed
+  alphaAsk('נתח את ההפסדים שלי: לפי שורות "נתיחת הפסדים" ו"סימולציית עתידים" שבהקשר — מה המנוף המרכזי היחיד שהיית מתקן קודם, ולמה דווקא הוא?');
+  const ac=$('alphaCard'); if(ac) ac.scrollIntoView({behavior:'smooth',block:'center'});
+};
 $('whyCard').onclick=e=>{                 // one adopt handler for both maps
   const b=e.target.closest('[data-st]'); if(!b) return;
   W.stop=+b.dataset.st; W.maxCt=Math.min(6,Math.max(1,+b.dataset.mct||3));
@@ -2789,6 +2841,8 @@ window.__scalp={
     return W.minGain; },
   gain:gainLab, gainRes:()=>gainRes&&JSON.parse(JSON.stringify(gainRes)),
   clock:(v)=>{ if(v!==undefined){ W.clockGate=!!v; saveW(); renderScout(); } return W.clockGate; },
+  mapLog:()=>{ try{ return JSON.parse(localStorage.getItem('na:scalp:maplog')||'[]'); }catch(e){ return []; } },
+  days:renderDays,
 };
 </script>
 </body>
