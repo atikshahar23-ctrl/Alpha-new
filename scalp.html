@@ -150,7 +150,7 @@ button{font-family:inherit;cursor:pointer}
   <a href="markets.html">→ ראדאר</a>
   <h1>⚡ סקאלפ 3 נרות</h1>
   <span class="ver">ארנק נפרד · נייר · נתוני Binance אמיתיים</span>
-  <span class="ver" id="pageVer">v458</span>
+  <span class="ver" id="pageVer">v459</span>
   <button class="ghost" id="warBtn" style="margin-right:auto">🏛 מבצעים</button>
   <button class="ghost" id="voxBtn" title="כריזה קולית על סגירות">🔈</button>
   <button class="ghost" id="coreBtn">💠 הליבה</button>
@@ -178,6 +178,7 @@ button{font-family:inherit;cursor:pointer}
   <button class="ghost" data-go="chartCard">📈 גרף</button>
   <button class="ghost" data-go="scoutCard">🎯 צלף</button>
   <button class="ghost" data-go="srvCard">🌐 שרת</button>
+  <button class="ghost" data-go="flowCard">🌊 עומק</button>
   <button class="ghost" data-go="whyCard">🔬 נתיחה</button>
   <button class="ghost" data-go="termCard">📊 טרמינל</button>
   <button class="ghost" data-go="histCard">📒 יומן</button>
@@ -359,6 +360,17 @@ button{font-family:inherit;cursor:pointer}
   </div>
   <div id="plan" style="font-size:11.5px;color:var(--dim);margin-top:8px;font-family:'JetBrains Mono',monospace;line-height:1.7"></div>
   <div id="btOut" style="font-size:11.5px;margin-top:6px;font-family:'JetBrains Mono',monospace;line-height:1.7"></div>
+</div>
+
+<div class="card" id="flowCard">
+  <h2>🌊 עומק ותזרים — <span id="flowSym" style="color:var(--gold)">—</span></h2>
+  <canvas id="depthCv" style="width:100%;height:90px"></canvas>
+  <div id="flowStats" style="font-size:11.5px;font-family:'JetBrains Mono',monospace;line-height:1.8"></div>
+  <div class="tlab">🐋 ההדפסות הגדולות — 60 עסקאות השוק האחרונות</div>
+  <div id="printsList"></div>
+  <div id="regimeLine" style="font-size:11.5px;margin-top:6px;line-height:1.7"></div>
+  <div class="why" style="margin-top:4px">נתוני עומק וטייפ ציבוריים מ-Binance, מתעדכנים כל כמה שניות ·
+    חוסר איזון בעומק אינו ניבוי — ספרים מזויפים (spoofing) קיימים, וזה נאמר כאן בכוונה.</div>
 </div>
 
 <div class="card" id="coolBar" hidden style="border-color:rgba(255,82,82,.55);background:rgba(255,82,82,.07)">
@@ -639,7 +651,9 @@ async function pollK(){
 function setSel(s){
   if(pos && s!==pos.sym){ toast('יש עסקה פתוחה על '+pos.sym+' — סגור אותה קודם'); return; }
   sel=s; candles=[]; lead=null; btRes=null; crowd=null; dispCandles=null;
+  depthD=null; printsD=null;
   drawUni(); drawAll(); pollK(); wsSync(); try{ pollD(); }catch(e){}
+  try{ depthFetch(); printsFetch(); regimeFetch(); }catch(e){}
   try{ leadCalc(); }catch(e){}
   try{ crowdFetch(); }catch(e){}
   const bo=$('btOut'); if(bo) bo.innerHTML='';
@@ -2787,6 +2801,122 @@ function renderSrv(){
 setInterval(()=>{ if(!document.hidden) srvFetch(); },60000);
 setTimeout(srvFetch,1500);
 
+// ── v459: MARKET MICROSTRUCTURE — depth, big prints, volatility regime ──
+// Public Binance data only; the imbalance caveat (spoofing exists) is
+// printed on the card itself. Nothing here predicts — it shows.
+const k$=v=> v>=1e6? (v/1e6).toFixed(2)+'M' : v>=1e3? (v/1e3).toFixed(1)+'K' : (+v).toFixed(0);
+let depthD=null, printsD=null, regimeD=null, regimeAt=0, regimeSym=null;
+async function depthFetch(){
+  if(!sel) return;
+  try{
+    const r=await fetch(`${FAPI}/fapi/v1/depth?symbol=${sel}USDT&limit=100`);
+    if(!r.ok) return;
+    const d=await r.json();
+    if(!d || !Array.isArray(d.bids) || !d.bids.length || !Array.isArray(d.asks) || !d.asks.length) return;
+    const bids=d.bids.map(a=>[+a[0],+a[1]]), asks=d.asks.map(a=>[+a[0],+a[1]]);
+    const bSum=bids.reduce((a,x)=>a+x[0]*x[1],0), aSum=asks.reduce((a,x)=>a+x[0]*x[1],0);
+    depthD={sym:sel, bids, asks, bSum, aSum,
+      spread:asks[0][0]-bids[0][0], mid:(asks[0][0]+bids[0][0])/2,
+      imb: bSum+aSum>0? bSum/(bSum+aSum)*100 : 50, at:Date.now()};
+  }catch(e){}
+  safe(renderFlow);
+}
+async function printsFetch(){
+  if(!sel) return;
+  try{
+    const r=await fetch(`${FAPI}/fapi/v1/aggTrades?symbol=${sel}USDT&limit=60`);
+    if(!r.ok) return;
+    const raw=await r.json(); if(!Array.isArray(raw)||!raw.length) return;
+    const tr=raw.map(t=>({p:+t.p, q:+t.q, m:!!t.m, t:+t.T, usd:+t.p*+t.q}));
+    printsD={sym:sel, n:tr.length,
+      top: tr.slice().sort((a,b2)=>b2.usd-a.usd).slice(0,5),
+      buy: tr.filter(t=>!t.m).reduce((a,t)=>a+t.usd,0),
+      sell: tr.filter(t=>t.m).reduce((a,t)=>a+t.usd,0),
+      span: tr.length>1? (tr[tr.length-1].t-tr[0].t)/1000 : 0, at:Date.now()};
+  }catch(e){}
+  safe(renderFlow);
+}
+async function regimeFetch(){
+  if(!sel) return;
+  if(regimeSym===sel && Date.now()-regimeAt<5*60000) return;
+  try{
+    const r=await fetch(`${FAPI}/fapi/v1/klines?symbol=${sel}USDT&interval=1m&limit=500`);
+    if(!r.ok) return;
+    const raw=await r.json(); if(!Array.isArray(raw)||raw.length<40) return;
+    const cs=raw.map(a=>({h:+a[2],l:+a[3],c:+a[4]}));
+    const trs=[];
+    for(let i=1;i<cs.length;i++)
+      trs.push(Math.max(cs[i].h-cs[i].l, Math.abs(cs[i].h-cs[i-1].c), Math.abs(cs[i].l-cs[i-1].c))/cs[i].c*100);
+    const cur=trs.slice(-14).reduce((a,v)=>a+v,0)/14;      // ATR14 now, in %
+    const wins=[];
+    for(let i=14;i<=trs.length;i++) wins.push(trs.slice(i-14,i).reduce((a,v)=>a+v,0)/14);
+    const pct=Math.round(wins.filter(v=>v<=cur).length/wins.length*100);
+    regimeD={sym:sel, atr:+cur.toFixed(3), pct,
+      lab: pct>=70? ['סוער 🌊','var(--gold)'] : pct<=30? ['רדום 😴','var(--dim)'] : ['רגיל','inherit']};
+    regimeSym=sel; regimeAt=Date.now();
+  }catch(e){}
+  safe(renderFlow);
+}
+function drawDepth(){
+  const c=cvCtx('depthCv',90); if(!c||!depthD) return; const {x,w,h}=c;
+  const mid=w/2;
+  let s2=0; const cumB=depthD.bids.map(b2=>s2+=b2[0]*b2[1]);
+  s2=0; const cumA=depthD.asks.map(a=>s2+=a[0]*a[1]);
+  const mx=Math.max(cumB[cumB.length-1]||1, cumA[cumA.length-1]||1);
+  const Y=v=>h-14-(v/mx)*(h-24);
+  const side=(cum,dir,col)=>{
+    x.fillStyle='rgba('+col+',.2)'; x.strokeStyle='rgb('+col+')'; x.lineWidth=1.5;
+    x.beginPath(); x.moveTo(mid,h-14);
+    cum.forEach((v,i)=>x.lineTo(mid+dir*((i+1)/cum.length)*(mid-8), Y(v)));
+    x.lineTo(mid+dir*(mid-8),h-14); x.closePath(); x.fill();
+    x.beginPath(); x.moveTo(mid,h-14);
+    cum.forEach((v,i)=>x.lineTo(mid+dir*((i+1)/cum.length)*(mid-8), Y(v)));
+    x.stroke();
+  };
+  side(cumB,-1,'0,230,118'); side(cumA,1,'255,82,82');
+  x.strokeStyle='rgba(255,179,0,.6)'; x.setLineDash([3,3]);
+  x.beginPath(); x.moveTo(mid,4); x.lineTo(mid,h-12); x.stroke(); x.setLineDash([]);
+  x.fillStyle='rgba(255,255,255,.65)'; x.font='10px JetBrains Mono,monospace'; x.textAlign='center';
+  x.fillText(String(depthD.mid.toFixed(depthD.mid<1?6:2)), mid, h-2);
+  x.textAlign='left'; x.fillStyle='rgb(0,230,118)'; x.fillText('ביקוש $'+k$(depthD.bSum),4,12);
+  x.textAlign='right'; x.fillStyle='rgb(255,82,82)'; x.fillText('היצע $'+k$(depthD.aSum),w-4,12);
+}
+function renderFlow(){
+  const fs=$('flowSym'); if(fs) fs.textContent=sel||'—';
+  const el=$('flowStats'), pl=$('printsList'), rl=$('regimeLine');
+  if(!el) return;
+  if(depthD && depthD.sym===sel){
+    const d=depthD;
+    el.innerHTML=`<div class="hrow"><span>ספרד <b>${(d.spread/d.mid*100).toFixed(3)}%</b></span>`+
+      `<span style="color:${d.imb>=55?'var(--up)':d.imb<=45?'var(--down)':'var(--dim)'}">איזון עומק: <b>${d.imb.toFixed(0)}%</b> לקונים</span>`+
+      `<span class="why">100 רמות לכל צד</span></div>`;
+    safe(drawDepth);
+  } else el.innerHTML='<span class="empty">טוען עומק…</span>';
+  if(pl){
+    if(printsD && printsD.sym===sel){
+      const tot=printsD.buy+printsD.sell;
+      pl.innerHTML=(tot>0? `<div class="hrow"><span>טייפ: קונים תוקפניים <b style="color:var(--up)">${Math.round(printsD.buy/tot*100)}%</b></span>`+
+        `<span>מוכרים <b style="color:var(--down)">${Math.round(printsD.sell/tot*100)}%</b></span>`+
+        `<span class="why">${printsD.n} עסקאות · ${Math.round(printsD.span)} שנ׳</span></div>`:'')+
+        printsD.top.map(t=>`<div class="hrow"><b style="color:${t.m?'var(--down)':'var(--up)'}">${t.m?'▼ מוכר':'▲ קונה'}</b>`+
+          `<span><b>$${k$(t.usd)}</b></span><span class="why">@${t.p}</span>`+
+          `<span class="why" style="margin-right:auto">${new Date(t.t).toLocaleTimeString('he-IL')}</span></div>`).join('');
+    } else pl.innerHTML='<span class="empty">טוען את הטייפ…</span>';
+  }
+  if(rl){
+    if(regimeD && regimeD.sym===sel){
+      const ratio= regimeD.atr>0? W.stop/regimeD.atr : 99;
+      const warn= ratio<2? ` · ⚠️ הסטופ ${W.stop}% הוא רק פי ${ratio.toFixed(1)} מה-ATR — רעש רגיל יכול לדרוס אותו` : '';
+      rl.innerHTML=`🌡 משטר תנודתיות: <b style="color:${regimeD.lab[1]}">${regimeD.lab[0]}</b> · `+
+        `ATR ${regimeD.atr}% · אחוזון ${regimeD.pct}% מול ~8 השעות האחרונות${warn}`;
+    } else rl.innerHTML='';
+  }
+}
+setInterval(()=>{ if(!document.hidden) depthFetch(); },6000);
+setInterval(()=>{ if(!document.hidden) printsFetch(); },12000);
+setInterval(()=>{ if(!document.hidden) regimeFetch(); },60000);
+setTimeout(()=>{ depthFetch(); printsFetch(); regimeFetch(); },2000);
+
 // ── v458: TRADER TERMINAL — dense, scrollable, everything measured ─────
 function tapeDraw(){
   const el=$('tapeIn'); if(!el||!uni.length) return;
@@ -3151,6 +3281,10 @@ window.__scalp={
   tune:tuneUp, tuneRes:()=>tuneRes&&JSON.parse(JSON.stringify(tuneRes)),
   term:{ render:()=>{ termKey=''; renderTerm(); }, mkt:renderMkt, tape:tapeDraw,
     sort:()=>Object.assign({},termSort) },
+  flow:{ depth:depthFetch, prints:printsFetch, regime:regimeFetch, render:renderFlow,
+    d:()=>depthD&&JSON.parse(JSON.stringify(depthD)),
+    p:()=>printsD&&JSON.parse(JSON.stringify(printsD)),
+    r:()=>regimeD&&JSON.parse(JSON.stringify(regimeD)) },
 };
 </script>
 </body>

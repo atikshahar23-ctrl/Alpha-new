@@ -449,6 +449,9 @@ footer{max-width:900px;margin:0 auto;padding:8px 14px 22px;color:var(--dim);font
     <label>🎯 סיכון לעסקה %<input id="riskPct" type="number" min="0.1" max="100" step="0.25" inputmode="decimal"></label>
     <label>💵 סכום בסיכון $<input id="riskAmt" type="number" min="0.1" step="0.5" inputmode="decimal"></label>
     <span class="acct-hint" id="riskWarn"></span>
+    <div id="rwalRow" style="flex-basis:100%;display:flex;gap:10px;align-items:center;flex-wrap:wrap;
+      margin-top:6px;padding:8px 10px;border:1px solid rgba(255,179,0,.3);border-radius:10px;
+      background:rgba(255,179,0,.05)"></div>
   </div>
   <div id="poss" class="possbar" hidden></div>
   <div id="tilt" class="tiltbar" hidden></div>
@@ -2220,6 +2223,33 @@ function saveMyTr(){ myTrades=myTrades.slice(-200);
 function posR(p,px){ const d=Math.abs(p.entry-p.stop);
   return d>0? (p.dir==='long'? px-p.entry : p.entry-px)/d : 0; }
 function posPnl(p,px){ return (p.dir==='long'? px-p.entry : p.entry-px)*p.qty; }
+// ── v459: THE WALLET you actually trade through — visible, moving, honest ──
+// "גודל חשבון" is just the sizing input; this is the live paper balance.
+// Bootstrapped once from the account size PLUS the already-recorded trade
+// ledger (reconstructed, not invented), then moves with every close.
+let rwal=null;
+try{ rwal=JSON.parse(localStorage.getItem('na:radar:wallet')||'null'); }catch(e){}
+if(!rwal || !(rwal.bal>-1e9)){
+  const led=myTrades.reduce((a,t)=>a+(+t.pnl||0),0);
+  rwal={ start:acct||1000, bal:+((acct||1000)+led).toFixed(2) };
+}
+function saveRwal(){ try{ localStorage.setItem('na:radar:wallet',JSON.stringify(rwal)); }catch(e){} }
+saveRwal();
+function drawRwal(){
+  const el=document.getElementById('rwalRow'); if(!el) return;
+  const net=+(rwal.bal-rwal.start).toFixed(2);
+  const openPnl=poss.reduce((a,p)=>{ const r=universe.find(x=>x.sym===p.sym);
+    return a+(r&&r.price>0? posPnl(p,r.price):0); },0);
+  el.innerHTML=
+    `<b style="font-size:15px">🏦 הארנק (נייר): <span style="color:var(--gold)">$${rwal.bal.toFixed(2)}</span></b>`+
+    `<span style="color:${net>=0?'var(--up)':'var(--down)'}">${net>=0?'+':'-'}$${Math.abs(net).toFixed(2)} מצטבר</span>`+
+    `<span style="font-size:11.5px;color:var(--dim)">${myTrades.length} עסקאות סגורות</span>`+
+    (poss.length? `<span style="font-size:11.5px;color:${openPnl>=0?'var(--up)':'var(--down)'}">פתוח כרגע: ${openPnl>=0?'+':'-'}$${Math.abs(openPnl).toFixed(2)}</span>`:'')+
+    `<button class="ghost" id="rwalReset" style="margin-right:auto;padding:3px 10px;font-size:11px">איפוס לגודל החשבון</button>`;
+  const rb=document.getElementById('rwalReset');
+  if(rb) rb.onclick=()=>{ if(confirm('לאפס את הארנק ל-$'+acct+'? (יומן העסקאות נשאר)')){
+    rwal={start:acct, bal:acct}; saveRwal(); drawRwal(); toast('🏦 הארנק אופס ל-$'+acct); } };
+}
 function enterPos(sym){
   const r=universe.find(x=>x.sym===sym), s=scan[sym];
   if(!r || !s || !(r.price>0)){ toast('אין מחיר חי — אי אפשר לרשום כניסה'); return false; }
@@ -2238,8 +2268,9 @@ function exitPos(i,why){
   if(!(px>0)){ toast('אין מחיר חי לסגירה'); return; }
   const pnl=+posPnl(p,px).toFixed(2), rr=+posR(p,px).toFixed(2);
   myTrades.push(Object.assign({},p,{exit:px, pnl, r:rr, closedAt:Date.now()}));
-  poss.splice(i,1); savePos(); saveMyTr(); renderPos();
-  toast((pnl>=0?'🎯 נסגר ברווח +$':'🛑 נסגר בהפסד -$')+Math.abs(pnl).toFixed(2)+' ('+(rr>=0?'+':'')+rr+'R)');
+  rwal.bal=+(rwal.bal+pnl).toFixed(2); saveRwal();        // v459: the wallet moves
+  poss.splice(i,1); savePos(); saveMyTr(); renderPos(); drawRwal();
+  toast((pnl>=0?'🎯 נסגר ברווח +$':'🛑 נסגר בהפסד -$')+Math.abs(pnl).toFixed(2)+' ('+(rr>=0?'+':'')+rr+'R) · ארנק $'+rwal.bal.toFixed(2));
 }
 function watchPos(){
   for(const p of poss){
@@ -2270,7 +2301,7 @@ function renderPos(){
   let sc3=null;
   try{ const o=JSON.parse(localStorage.getItem('na:scalp:open')||'null');
     if(o && o.entry>0 && o.sym) sc3=o; }catch(e){}
-  if(!poss.length && !openSigs.length && !sc3){ el.hidden=true; return; }
+  if(!poss.length && !openSigs.length && !sc3){ el.hidden=true; try{ drawRwal(); }catch(e){} return; }
   el.hidden=false;
   const today=new Date().toISOString().slice(0,10);
   const dayPnl=myTrades.filter(t=>new Date(t.closedAt).toISOString().slice(0,10)===today)
@@ -2314,6 +2345,7 @@ function renderPos(){
     `<b>⚡ סקאלפ</b> ${sc3.dir==='long'?'▲':'▼'} <span>${sc3.sym} @ ${sc3.entry}</span>`+
     `<span style="color:var(--dim)">נר ${Math.min(3,(sc3.candles||0)+1)}/3</span><span>↗</span></div>` : '';
   el.innerHTML=`<div class="ph">🔥 עסקאות פעילות (${poss.length+sigStats().open+(sc3?1:0)})</div>${posHd}${rows}${sigHd}${sigRows}${sc3Row}`;
+  try{ drawRwal(); }catch(e){}
 }
 
 // ── 🛑 TILT GUARD — the discipline layer every prop desk enforces ───────
@@ -3467,6 +3499,7 @@ window.__mkt={ rows, scan:()=>scan, state:()=>({filter,sortKey,sortDir,query,exp
   radOpen:openRad, radClose:closeRad,
   diag:runDiag, diagRes:()=>diagRes.map(d=>({n:d.n,skip:d.skip,r:d.r})), openDiag, closeDiag,
   verdictOf, checksOf, planOf, setAcct:(a,r)=>{acct=a;riskPct=r;syncAcct();},
+  rwal:()=>Object.assign({},rwal), rwalDraw:drawRwal,
   tick:applyTick, alerts:(on)=>setAlerts(on!==false), alerted:()=>({...goAlerted}),
   timingOf, hot:()=>runScan(true,render,true),
   kline:onKline, candles:()=>candles, liveSet:()=>[...liveSet()],
