@@ -31,6 +31,12 @@ jobs:
             "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" .
 
       - name: Trading cycle
+        env:
+          # optional Binance Futures TESTNET keys (demo money only) — add
+          # them under Settings → Secrets → Actions to mirror paper trades
+          # as real testnet orders; absent secrets = paper-only, unchanged
+          BINANCE_TESTNET_KEY: ${{ secrets.BINANCE_TESTNET_KEY }}
+          BINANCE_TESTNET_SECRET: ${{ secrets.BINANCE_TESTNET_SECRET }}
         run: |
           node --version
           node server/scalp-shift.mjs "${{ github.event.inputs.command || 'run' }}"

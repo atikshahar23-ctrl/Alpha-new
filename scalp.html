@@ -150,7 +150,7 @@ button{font-family:inherit;cursor:pointer}
   <a href="markets.html">→ ראדאר</a>
   <h1>⚡ סקאלפ 3 נרות</h1>
   <span class="ver">ארנק נפרד · נייר · נתוני Binance אמיתיים</span>
-  <span class="ver" id="pageVer">v459</span>
+  <span class="ver" id="pageVer">v460</span>
   <button class="ghost" id="warBtn" style="margin-right:auto">🏛 מבצעים</button>
   <button class="ghost" id="voxBtn" title="כריזה קולית על סגירות">🔈</button>
   <button class="ghost" id="coreBtn">💠 הליבה</button>
@@ -2758,6 +2758,18 @@ function renderSrv(){
     `<span>${s.w.maxCt||3} נרות</span><span>סטופ ${s.w.stop}%</span>`+
     `<span>רף $${s.w.floor||0}</span><span>סף ${s.w.score===5?5:4}/5</span>`+
     `<span>$${s.w.size}×${s.w.lev}</span></div>`);
+  // v460: Binance TESTNET mirror status — demo money, keys only in Secrets
+  if(s.tn && s.tn.enabled){
+    rows.push(`<div class="hrow"><b>🧪 טסטנט בייננס: מחובר</b>`+
+      (s.tn.bal!=null? `<span>יתרת דמו: <b>$${(+s.tn.bal).toFixed(2)}</b></span>`:'')+
+      (s.tn.lastAct? `<span class="why">${s.tn.lastAct}</span>`:'')+
+      (s.tn.err? `<span style="color:var(--down)">⚠️ ${s.tn.err}</span>`:'')+`</div>`);
+  } else {
+    rows.push(`<div class="hrow"><span class="why">🧪 טסטנט בייננס: לא מחובר — צור חשבון דמו ב-`+
+      `testnet.binancefuture.com, הפק API Key, והוסף BINANCE_TESTNET_KEY + BINANCE_TESTNET_SECRET `+
+      `ב-GitHub ← Settings ← Secrets ← Actions. המשמרת תשקף כל עסקת נייר כפקודה אמיתית בכסף דמו. `+
+      `המפתחות נשארים ב-Secrets בלבד — לא בדפדפן ולא בקוד.</span></div>`);
+  }
   const today=hist2.filter(h=>new Date(h.xt).toDateString()===new Date().toDateString());
   if(today.length){ const tn=today.reduce((a,h)=>a+(+h.pnl||0),0);
     rows.push(`<div class="hrow"><span class="why">היום בשרת:</span><span>${today.length} עסקאות</span>`+

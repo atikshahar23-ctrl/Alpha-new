@@ -4,7 +4,12 @@
 // Runs on GitHub Actions (schedule ~every 5 min) so the paper desk keeps
 // trading when no phone is open. Same method as scalp.html, same honesty
 // rules:
-//   • paper only — no exchange keys exist here, ever
+//   • paper first — the paper ledger is always the source of truth
+//   • OPTIONAL Binance Futures TESTNET mirror (v460): when the repo has
+//     BINANCE_TESTNET_KEY/SECRET secrets, every paper entry/exit is
+//     mirrored as a REAL order on testnet.binancefuture.com — demo money
+//     by design, and the keys live ONLY in GitHub Secrets, never in the
+//     browser and never in this repo's files
 //   • every number from real market data; unreachable market = honest
 //     error in the state, not invented candles
 //   • stop is graded from candle WICKS before the close (conservative,
@@ -18,15 +23,21 @@
 //   run (default) — one trading cycle
 //   on / off      — arm / disarm the shift
 //   reset         — fresh $1000 wallet (ledger kept)
+//   cfg ...       — method settings (stop/ct/floor/score/size/lev/fee)
 //
 // Local testing: SHIFT_STATE_FILE=<path> switches state to a local file,
-// SHIFT_FAPI / SHIFT_SPOT override the market bases (mock servers).
+// SHIFT_FAPI / SHIFT_SPOT / SHIFT_TN_BASE override bases (mock servers).
 
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
+import { createHmac } from 'node:crypto';
 
 const FAPI = process.env.SHIFT_FAPI || 'https://fapi.binance.com';
 const SPOT = process.env.SHIFT_SPOT || 'https://data-api.binance.vision';
+const TN_BASE = process.env.SHIFT_TN_BASE || 'https://testnet.binancefuture.com';
+const TN_KEY = process.env.BINANCE_TESTNET_KEY || '';
+const TN_SEC = process.env.BINANCE_TESTNET_SECRET || '';
+const TN_ON = !!(TN_KEY && TN_SEC);
 const STATE_FILE = process.env.SHIFT_STATE_FILE || null;
 const BRANCH = 'shift-data';
 const CMD = (process.argv[2] || 'run').toLowerCase();
@@ -34,7 +45,8 @@ const CMD = (process.argv[2] || 'run').toLowerCase();
 const DEF = () => ({ v: 1, on: true, paper: true,
   w: { bal: 1000, size: 100, lev: 5, stop: 1.5, fee: 0.05 },
   pos: null, hist: [], cooldown: {}, pauseUntil: 0,
-  lastRun: 0, runs: 0, src: null, err: null, note: '' });
+  lastRun: 0, runs: 0, src: null, err: null, note: '',
+  tn: null, tnPending: null, tnSteps: null });
 
 // ── state I/O ──────────────────────────────────────────────────────────
 function git(args, opts = {}) {
@@ -122,6 +134,67 @@ function brainCore(cs) {
   return { p, m15: +m15.toFixed(2), ls, ss };
 }
 
+// ── Binance Futures TESTNET mirror (v460) — demo money, keys in Secrets ──
+async function tnCall(method, path, params) {
+  const q = new URLSearchParams({ ...params, timestamp: Date.now(), recvWindow: 10000 }).toString();
+  const sig = createHmac('sha256', TN_SEC).update(q).digest('hex');
+  const r = await fetch(`${TN_BASE}${path}?${q}&signature=${sig}`,
+    { method, headers: { 'X-MBX-APIKEY': TN_KEY }, signal: AbortSignal.timeout(10000) });
+  const j = await r.json().catch(() => null);
+  if (!r.ok) throw new Error((j && (j.msg || j.code)) || ('HTTP ' + r.status));
+  return j;
+}
+async function tnEnsureSteps(s, sym) {
+  if (s.tnSteps && s.tnSteps[sym]) return;
+  const info = await jget(TN_BASE + '/fapi/v1/exchangeInfo');
+  const map = {};
+  for (const x of info.symbols || []) {
+    const f = (x.filters || []).find(f2 => f2.filterType === 'LOT_SIZE');
+    if (f) map[x.baseAsset] = +f.stepSize;
+  }
+  s.tnSteps = map;
+}
+function tnQty(s, sym, raw) {
+  const step = (s.tnSteps && s.tnSteps[sym]) || 0.001;
+  const q = Math.floor(raw / step) * step;
+  const dec = Math.max(0, (String(step).split('.')[1] || '').length);
+  return +q.toFixed(dec);
+}
+async function tnMirrorEntry(s, pair, sym, dir, px) {
+  if (!TN_ON) return;
+  try {
+    await tnEnsureSteps(s, sym);
+    try { await tnCall('POST', '/fapi/v1/leverage', { symbol: pair, leverage: s.w.lev }); } catch (e) {}
+    const qty = tnQty(s, sym, s.w.size * s.w.lev / px);
+    if (!(qty > 0)) { s.tn = { ...(s.tn || {}), enabled: true, err: 'כמות קטנה מדי לטסטנט (' + sym + ')' }; return; }
+    const o = await tnCall('POST', '/fapi/v1/order',
+      { symbol: pair, side: dir === 'long' ? 'BUY' : 'SELL', type: 'MARKET', quantity: qty });
+    s.pos.tnQty = qty; s.pos.tnOrderId = o.orderId;
+    s.tn = { ...(s.tn || {}), enabled: true, lastAct: 'כניסה ' + sym + ' ×' + qty, err: null, at: Date.now() };
+  } catch (e) { s.tn = { ...(s.tn || {}), enabled: true, err: 'כניסת טסטנט נכשלה: ' + (e.message || e), at: Date.now() }; }
+}
+async function tnFlushPending(s) {
+  if (!TN_ON || !s.tnPending) return;
+  try {
+    const pd = s.tnPending;
+    const o = await tnCall('POST', '/fapi/v1/order',
+      { symbol: pd.symbol, side: pd.side, type: 'MARKET', quantity: pd.qty, reduceOnly: 'true' });
+    s.tn = { ...(s.tn || {}), enabled: true, lastAct: 'סגירה ' + pd.symbol + ' ×' + pd.qty, err: null, at: Date.now() };
+    s.tnPending = null; void o;
+  } catch (e) {
+    // kept pending — retried honestly on the next run
+    s.tn = { ...(s.tn || {}), enabled: true, err: 'סגירת טסטנט נכשלה (ינוסה שוב): ' + (e.message || e), at: Date.now() };
+  }
+}
+async function tnBalance(s) {
+  if (!TN_ON) { if (s.tn) s.tn.enabled = false; return; }
+  try {
+    const bal = await tnCall('GET', '/fapi/v2/balance', {});
+    const usdt = (bal || []).find(b2 => b2.asset === 'USDT');
+    s.tn = { ...(s.tn || {}), enabled: true, bal: usdt ? +(+usdt.balance).toFixed(2) : null, at: Date.now() };
+  } catch (e) { s.tn = { ...(s.tn || {}), enabled: true, err: 'יתרת טסטנט לא נקראה: ' + (e.message || e), at: Date.now() }; }
+}
+
 // ── the 3-candle method, replayed over closed candles ──────────────────
 function closeTrade(s, px, reason, ct) {
   const p = s.pos, exp = p.size * p.lev;
@@ -131,6 +204,9 @@ function closeTrade(s, px, reason, ct) {
   s.w.bal = +(s.w.bal + pnl).toFixed(2);
   s.hist.push({ sym: p.sym, dir: p.dir, entry: p.entry, exit: px, pnl, fees,
     reason, ct, t: p.t, xt: Date.now(), srv: true, score: p.score });
+  // v460: queue the testnet close — sent (and retried if needed) by cycle()
+  if (TN_ON && p.tnQty > 0)
+    s.tnPending = { symbol: p.sym + 'USDT', side: p.dir === 'long' ? 'SELL' : 'BUY', qty: p.tnQty };
   s.pos = null;
 }
 function walkPosition(s, cs) {
@@ -195,9 +271,13 @@ async function cycle(s) {
         size: s.w.size, lev: s.w.lev, stop: s.w.stop, fee: s.w.fee,
         maxCt: s.w.maxCt || 3, floor: s.w.floor || 0,
         score: dir === 'long' ? bn.ls : bn.ss, m15: bn.m15 };
+      await tnMirrorEntry(s, u.pair, u.sym, dir, last.c);   // v460: demo-money echo
       break;                                            // one trade at a time — the method
     }
   }
+  // 3) testnet housekeeping: flush a pending close, read the demo balance
+  await tnFlushPending(s);
+  await tnBalance(s);
 }
 
 // ── main ───────────────────────────────────────────────────────────────
