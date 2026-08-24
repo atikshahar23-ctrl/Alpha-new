@@ -30,6 +30,12 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Build AuraShield Pro sub-app
+        run: |
+          cd apps/aurashield-pro
+          npm ci
+          npx vite build --base=./ --outDir ../../dist/aurashield --emptyOutDir
+
       - name: Deploy to gh-pages
         run: |
           cd dist
