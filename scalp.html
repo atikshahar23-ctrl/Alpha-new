@@ -150,7 +150,7 @@ button{font-family:inherit;cursor:pointer}
   <a href="markets.html">→ ראדאר</a>
   <h1>⚡ סקאלפ 3 נרות</h1>
   <span class="ver">ארנק נפרד · נייר · נתוני Binance אמיתיים</span>
-  <span class="ver" id="pageVer">v461</span>
+  <span class="ver" id="pageVer">v462</span>
   <button class="ghost" id="warBtn" style="margin-right:auto">🏛 מבצעים</button>
   <button class="ghost" id="voxBtn" title="כריזה קולית על סגירות">🔈</button>
   <button class="ghost" id="coreBtn">💠 הליבה</button>
@@ -249,6 +249,13 @@ button{font-family:inherit;cursor:pointer}
     <button class="ghost" id="saneBtn" style="border-color:rgba(0,230,118,.4)">🛡 גודל שפוי</button>
   </div>
   <div id="riskWarn" style="margin-top:6px;font-size:11.5px"></div>
+</div>
+
+<div class="card" id="allDesksCard">
+  <h2>🏛 כל הדסקים — מבט אחד</h2>
+  <div id="desksOut"></div>
+  <div class="why" style="margin-top:4px">הארנקים נפרדים בכוונה ואף פעם לא ממוזגים —
+    שורת הסה"כ היא פרספקטיבה בלבד. הטסטנט מוצג בנפרד (יתרת פתיחה שלו גדולה ומלאכותית).</div>
 </div>
 
 <div class="card">
@@ -424,6 +431,11 @@ button{font-family:inherit;cursor:pointer}
   <canvas id="tHour" style="width:100%;height:52px"></canvas>
   <div class="tlab">🌍 טבלת השוק החיה — לחיצה על כותרת ממיינת, על שורה בוחרת מטבע</div>
   <div id="tMkt" style="max-height:280px;overflow:auto;border:1px solid rgba(255,255,255,.07);border-radius:10px"></div>
+</div>
+
+<div class="card" id="journalCard">
+  <h2>📓 היומן הכתוב — הדסק מסכם כל יום במילים</h2>
+  <div id="journalOut" class="empty">היומן נכתב אוטומטית בסוף כל יום מסחר — מהעסקאות האמיתיות בלבד.</div>
 </div>
 
 <div class="card" id="histCard">
@@ -1077,7 +1089,7 @@ $('cv').addEventListener('touchend',e=>{
 // full backup / restore of the whole desk (wallet, ledger, shadows, marks, trophies)
 const BAK_KEYS=['na:scalp:w','na:scalp:hist','na:scalp:open','na:scalp:shadow',
   'na:scalp:marks','na:scalp:troph','na:scalp:favs','na:scalp:scouton','na:scalp:auto',
-  'na:scalp:maplog','na:scalp:shift'];
+  'na:scalp:maplog','na:scalp:shift','na:scalp:journal'];
 function backupStr(){
   const o={_v:'scalp-backup-1', t:Date.now()};
   BAK_KEYS.forEach(k=>{ try{ const v=localStorage.getItem(k); if(v!=null) o[k]=v; }catch(e){} });
@@ -1248,6 +1260,7 @@ const safe=f=>{ try{ f(); }catch(e){} };
 function drawAll(){
   safe(drawWallet); safe(drawPlan); safe(drawChart); safe(drawBrain);
   safe(drawPos); safe(drawStats); safe(drawLiveB); safe(renderWhy); safe(renderTerm);
+  safe(renderDesks); safe(renderJournal);
   const u=uni.find(x=>x.sym===sel);
   $('selSym').textContent=sel||'—';
   const px=u&&u.price>0? u.price : (candles.length? candles[candles.length-1].c : 0);
@@ -2794,6 +2807,7 @@ function renderSrv(){
   el.className='';
   el.innerHTML=rows.join('')+
     (hist2.length>=2? '<canvas id="srvEq" style="width:100%;height:36px;margin-top:4px"></canvas>' : '');
+  safe(renderDesks);                     // v462: the all-desks board follows the server
   // v453: the server's own equity line — its whole ledger at a glance
   const cv2=$('srvEq');
   if(cv2){ try{
@@ -2928,6 +2942,116 @@ setInterval(()=>{ if(!document.hidden) depthFetch(); },6000);
 setInterval(()=>{ if(!document.hidden) printsFetch(); },12000);
 setInterval(()=>{ if(!document.hidden) regimeFetch(); },60000);
 setTimeout(()=>{ depthFetch(); printsFetch(); regimeFetch(); },2000);
+
+// ── v462: ALL DESKS BOARD — every paper wallet on one card, never merged ──
+function renderDesks(){
+  const el=$('desksOut'); if(!el) return;
+  const rows=[]; let total=0, nDesks=0;
+  // 📱 this scalp desk
+  const myNet=hist.reduce((a,h)=>a+h.pnl,0);
+  rows.push(`<div class="hrow"><b>📱 סקאלפ (הדף הזה)</b><span><b>$${W.bal.toFixed(2)}</b></span>`+
+    `<span style="color:${myNet>=0?'var(--up)':'var(--down)'}">${money(myNet)}</span>`+
+    `<span class="why">${hist.length} עסקאות</span></div>`);
+  total+=W.bal; nDesks++;
+  // 🎯 the radar wallet (same device, separate keys)
+  try{
+    const rw=JSON.parse(localStorage.getItem('na:radar:wallet')||'null');
+    if(rw && rw.bal>-1e9){
+      let rn=0, rc=0;
+      try{ const mt=JSON.parse(localStorage.getItem('na:radar:mytr')||'[]');
+        rc=mt.length; rn=mt.reduce((a,t)=>a+(+t.pnl||0),0); }catch(e){}
+      rows.push(`<div class="hrow"><b>🎯 ראדאר</b><span><b>$${(+rw.bal).toFixed(2)}</b></span>`+
+        `<span style="color:${rn>=0?'var(--up)':'var(--down)'}">${money(rn)}</span>`+
+        `<span class="why">${rc} עסקאות · <a href="markets.html" style="color:var(--gold)">פתח ↗</a></span></div>`);
+      total+=+rw.bal; nDesks++;
+    } else rows.push(`<div class="hrow"><b>🎯 ראדאר</b><span class="why">הארנק עוד לא הופעל — פתח את הראדאר פעם אחת</span></div>`);
+  }catch(e){}
+  // 🌐 the server shift
+  if(srvState && srvState.w){
+    const sn=(srvState.hist||[]).reduce((a,h)=>a+(+h.pnl||0),0);
+    rows.push(`<div class="hrow"><b>🌐 המשמרת בשרת</b><span><b>$${(+srvState.w.bal).toFixed(2)}</b></span>`+
+      `<span style="color:${sn>=0?'var(--up)':'var(--down)'}">${money(sn)}</span>`+
+      `<span class="why">${(srvState.hist||[]).length} עסקאות${srvState.pos?' · פוזיציה פתוחה: '+srvState.pos.sym:''}</span></div>`);
+    total+=+srvState.w.bal; nDesks++;
+  } else rows.push(`<div class="hrow"><b>🌐 המשמרת בשרת</b><span class="why">מצב השרת עוד לא נטען</span></div>`);
+  // 🧪 testnet — shown apart, never in the total (its seed balance is artificial)
+  if(srvState && srvState.tn && srvState.tn.enabled && srvState.tn.bal!=null)
+    rows.push(`<div class="hrow"><b>🧪 טסטנט בייננס</b><span><b>$${(+srvState.tn.bal).toFixed(2)}</b></span>`+
+      `<span class="why">כסף דמו · מחוץ לסה"כ</span></div>`);
+  rows.push(`<div class="hrow" style="border-color:var(--gold)"><b>Σ סה"כ נייר</b>`+
+    `<span><b style="color:var(--gold)">$${total.toFixed(2)}</b></span><span class="why">${nDesks} דסקים · פרספקטיבה, לא מיזוג</span></div>`);
+  el.innerHTML=rows.join('');
+}
+
+// ── v462: THE WRITTEN JOURNAL — the desk sums up every day in words ────
+function dayKey(t){ return new Date(t).toISOString().slice(0,10); }
+let journal={};
+try{ journal=JSON.parse(localStorage.getItem('na:scalp:journal')||'{}'); }catch(e){}
+if(!journal || typeof journal!=='object') journal={};
+function saveJournal(){
+  const keys=Object.keys(journal).sort().slice(-30);
+  const trimmed={}; keys.forEach(k=>trimmed[k]=journal[k]);
+  journal=trimmed;
+  try{ localStorage.setItem('na:scalp:journal',JSON.stringify(journal)); }catch(e){}
+}
+function journalCompose(dk){
+  const arr=hist.filter(h=>dayKey(h.xt)===dk);
+  if(!arr.length) return null;
+  const net=+arr.reduce((a,h)=>a+h.pnl,0).toFixed(2);
+  const w2=arr.filter(h=>h.pnl>0).length;
+  const best=arr.reduce((a,h)=>h.pnl>a.pnl?h:a);
+  const worst=arr.reduce((a,h)=>h.pnl<a.pnl?h:a);
+  const stops=arr.filter(h=>(h.reason||'').includes('סטופ')).length;
+  const auto=arr.filter(h=>h.auto).length;
+  const fees=+arr.reduce((a,h)=>a+(+h.fees||0),0).toFixed(2);
+  const lesson=
+    stops>arr.length/2? 'רוב היום נגמר בסטופים — הכניסות רדפו במקום לחכות ליישור.' :
+    net>0 && arr.length>=3 && w2>arr.length/2? 'יום ירוק מעקביות — הרבה עסקאות נכונות, לא מזל אחד.' :
+    net>0? 'יום ירוק על מדגם קטן — עסקה בודדת או שתיים; זהירות מהסקת מסקנות.' :
+    fees>Math.abs(net)? 'ההפסד נטו קטן מהעמלות ששולמו — הדימום היה במחיר הכניסות, לא בשוק.' :
+    'יום אדום — החוקים החזיקו את הנזק בגבולות הסטופ.';
+  return {d:dk, n:arr.length, w:w2, net, stops, auto, fees,
+    best:{sym:best.sym,pnl:best.pnl}, worst:{sym:worst.sym,pnl:worst.pnl}, lesson};
+}
+function journalSync(){
+  const days=[...new Set(hist.map(h=>dayKey(h.xt)))];
+  let changed=false;
+  days.forEach(dk=>{
+    const e2=journalCompose(dk); if(!e2) return;
+    const old=journal[dk]||{};
+    e2.note=old.note||'';
+    if(JSON.stringify(old)!==JSON.stringify(e2)){ journal[dk]=e2; changed=true; }
+  });
+  if(changed) saveJournal();
+}
+function renderJournal(){
+  const el=$('journalOut'); if(!el) return;
+  journalSync();
+  const entries=Object.values(journal).sort((a,b2)=>b2.d.localeCompare(a.d)).slice(0,7);
+  if(!entries.length){ el.className='empty';
+    el.textContent='היומן נכתב אוטומטית בסוף כל יום מסחר — מהעסקאות האמיתיות בלבד.'; return; }
+  el.className='';
+  el.innerHTML=entries.map(e2=>{
+    const dt=new Date(e2.d);
+    return `<div style="border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:8px 10px;margin-bottom:6px">`+
+      `<div class="hrow" style="border:none;padding:0"><b>📅 ${dt.toLocaleDateString('he-IL',{weekday:'short',day:'2-digit',month:'2-digit'})}</b>`+
+      `<span>${e2.n} עסק׳ · ${Math.round(e2.w/e2.n*100)}%</span>`+
+      `<span style="color:${e2.net>=0?'var(--up)':'var(--down)'}"><b>${money(e2.net)}</b></span>`+
+      `<button class="ghost" data-jnote="${e2.d}" style="margin-right:auto;padding:2px 8px;font-size:10.5px;${e2.note?'border-color:var(--gold)':''}">📝</button></div>`+
+      `<div style="font-size:11px;color:var(--dim);margin-top:3px">`+
+      `הטובה: ${e2.best.sym} ${money(e2.best.pnl)} · הגרועה: ${e2.worst.sym} ${money(e2.worst.pnl)}`+
+      `${e2.stops?` · ${e2.stops} סטופים`:''}${e2.auto?` · ${e2.auto} של הטייס`:''} · עמלות $${e2.fees.toFixed(2)}</div>`+
+      `<div style="font-size:11.5px;margin-top:4px;line-height:1.6">🖋 ${e2.lesson}</div>`+
+      (e2.note? `<div style="font-size:11.5px;margin-top:3px;color:var(--gold)">📝 שלך: "${e2.note}"</div>`:'');
+  }).join('');
+}
+$('journalOut').onclick=e=>{
+  const b2=e.target.closest('[data-jnote]'); if(!b2) return;
+  const dk=b2.dataset.jnote, e2=journal[dk]; if(!e2) return;
+  const t=prompt('📝 המילה שלך על יום '+dk+':', e2.note||'');
+  if(t!==null){ e2.note=t.trim(); saveJournal(); renderJournal();
+    toast(e2.note?'📓 נשמר ביומן':'ההערה נמחקה'); }
+};
 
 // ── v458: TRADER TERMINAL — dense, scrollable, everything measured ─────
 function tapeDraw(){
@@ -3293,6 +3417,9 @@ window.__scalp={
   tune:tuneUp, tuneRes:()=>tuneRes&&JSON.parse(JSON.stringify(tuneRes)),
   term:{ render:()=>{ termKey=''; renderTerm(); }, mkt:renderMkt, tape:tapeDraw,
     sort:()=>Object.assign({},termSort) },
+  desks:renderDesks,
+  journal:{ sync:journalSync, render:renderJournal,
+    get:()=>JSON.parse(JSON.stringify(journal)) },
   flow:{ depth:depthFetch, prints:printsFetch, regime:regimeFetch, render:renderFlow,
     d:()=>depthD&&JSON.parse(JSON.stringify(depthD)),
     p:()=>printsD&&JSON.parse(JSON.stringify(printsD)),

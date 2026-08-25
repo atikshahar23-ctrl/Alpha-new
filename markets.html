@@ -2245,11 +2245,45 @@ function drawRwal(){
     `<span style="color:${net>=0?'var(--up)':'var(--down)'}">${net>=0?'+':'-'}$${Math.abs(net).toFixed(2)} מצטבר</span>`+
     `<span style="font-size:11.5px;color:var(--dim)">${myTrades.length} עסקאות סגורות</span>`+
     (poss.length? `<span style="font-size:11.5px;color:${openPnl>=0?'var(--up)':'var(--down)'}">פתוח כרגע: ${openPnl>=0?'+':'-'}$${Math.abs(openPnl).toFixed(2)}</span>`:'')+
-    `<button class="ghost" id="rwalReset" style="margin-right:auto;padding:3px 10px;font-size:11px">איפוס לגודל החשבון</button>`;
+    `<button class="ghost" id="rwalReset" style="margin-right:auto;padding:3px 10px;font-size:11px">איפוס לגודל החשבון</button>`+
+    // v462: the wallet's own measured record — equity line + honest stats
+    (myTrades.length>=2? (()=>{
+      const w2=myTrades.filter(t=>t.pnl>0).length;
+      const gW=myTrades.filter(t=>t.pnl>0).reduce((a,t)=>a+t.pnl,0);
+      const gL=Math.abs(myTrades.filter(t=>t.pnl<=0).reduce((a,t)=>a+t.pnl,0));
+      const pf= gL>0? (gW/gL).toFixed(2) : '∞';
+      const lnet=myTrades.reduce((a,t)=>a+(+t.pnl||0),0);
+      return `<span id="rwalStats" style="flex-basis:100%;font-size:11px;color:var(--dim)">`+
+        `פגיעה ${Math.round(w2/myTrades.length*100)}% · תוחלת ${(lnet/myTrades.length>=0?'+':'-')}$${Math.abs(lnet/myTrades.length).toFixed(2)}/עסקה · Profit Factor ${pf}</span>`+
+        `<canvas id="rwalEq" style="flex-basis:100%;width:100%;height:44px"></canvas>`; })() : '');
+  const cv2=document.getElementById('rwalEq');
+  if(cv2){ try{
+    const x=cv2.getContext('2d'); const dpr=Math.min(2,devicePixelRatio||1);
+    const w3=cv2.clientWidth||300, h3=44; cv2.width=w3*dpr; cv2.height=h3*dpr; x.setTransform(dpr,0,0,dpr,0,0);
+    let eq=0; const pts=myTrades.map(t=>eq+=t.pnl);
+    const lo=Math.min(0,...pts), hi=Math.max(0,...pts), sp=(hi-lo)||1;
+    const Y=v=>h3-4-(v-lo)/sp*(h3-8);
+    x.strokeStyle='rgba(255,255,255,.12)'; x.setLineDash([3,4]);
+    x.beginPath(); x.moveTo(0,Y(0)); x.lineTo(w3,Y(0)); x.stroke(); x.setLineDash([]);
+    const col= eq>=0? '0,230,118' : '255,82,82';
+    x.strokeStyle='rgb('+col+')'; x.lineWidth=1.6; x.beginPath();
+    pts.forEach((v,i)=>{ const X=i/Math.max(1,pts.length-1)*w3; i? x.lineTo(X,Y(v)) : x.moveTo(X,Y(v)); });
+    x.stroke();
+  }catch(e){} }
   const rb=document.getElementById('rwalReset');
   if(rb) rb.onclick=()=>{ if(confirm('לאפס את הארנק ל-$'+acct+'? (יומן העסקאות נשאר)')){
     rwal={start:acct, bal:acct}; saveRwal(); drawRwal(); toast('🏦 הארנק אופס ל-$'+acct); } };
 }
+// v462: the radar also watches the server shift (read-only, via shift-data)
+let srvSh=null;
+async function srvShFetch(){
+  try{
+    const r=await fetch('https://raw.githubusercontent.com/atikshahar23-ctrl/Alpha-new/shift-data/shift.json?x='+Date.now(),{cache:'no-store'});
+    if(r.ok){ srvSh=await r.json(); try{ renderPos(); }catch(e){} }
+  }catch(e){}
+}
+setInterval(()=>{ if(!document.hidden) srvShFetch(); },60000);
+setTimeout(srvShFetch,3000);
 function enterPos(sym){
   const r=universe.find(x=>x.sym===sym), s=scan[sym];
   if(!r || !s || !(r.price>0)){ toast('אין מחיר חי — אי אפשר לרשום כניסה'); return false; }
@@ -2301,7 +2335,8 @@ function renderPos(){
   let sc3=null;
   try{ const o=JSON.parse(localStorage.getItem('na:scalp:open')||'null');
     if(o && o.entry>0 && o.sym) sc3=o; }catch(e){}
-  if(!poss.length && !openSigs.length && !sc3){ el.hidden=true; try{ drawRwal(); }catch(e){} return; }
+  const srvPos= (srvSh && srvSh.pos && srvSh.pos.entry>0)? srvSh.pos : null;   // v462
+  if(!poss.length && !openSigs.length && !sc3 && !srvPos){ el.hidden=true; try{ drawRwal(); }catch(e){} return; }
   el.hidden=false;
   const today=new Date().toISOString().slice(0,10);
   const dayPnl=myTrades.filter(t=>new Date(t.closedAt).toISOString().slice(0,10)===today)
@@ -2344,7 +2379,11 @@ function renderPos(){
   const sc3Row= sc3? `<div class="srow" onclick="location.href='scalp.html'" title="פתח את דף הסקאלפ">`+
     `<b>⚡ סקאלפ</b> ${sc3.dir==='long'?'▲':'▼'} <span>${sc3.sym} @ ${sc3.entry}</span>`+
     `<span style="color:var(--dim)">נר ${Math.min(3,(sc3.candles||0)+1)}/3</span><span>↗</span></div>` : '';
-  el.innerHTML=`<div class="ph">🔥 עסקאות פעילות (${poss.length+sigStats().open+(sc3?1:0)})</div>${posHd}${rows}${sigHd}${sigRows}${sc3Row}`;
+  // v462: the 24/7 server shift shows its open position here too
+  const srvRow= srvPos? `<div class="srow" onclick="location.href='scalp.html'" title="המשמרת בשרת — פרטים בדף הסקאלפ">`+
+    `<b>🌐 שרת</b> ${srvPos.dir==='long'?'▲':'▼'} <span>${srvPos.sym} @ ${srvPos.entry}</span>`+
+    `<span style="color:var(--dim)">נר ${Math.min(srvPos.maxCt||3,(srvPos.candles||0)+1)}/${srvPos.maxCt||3} · 24/7</span><span>↗</span></div>` : '';
+  el.innerHTML=`<div class="ph">🔥 עסקאות פעילות (${poss.length+sigStats().open+(sc3?1:0)+(srvPos?1:0)})</div>${posHd}${rows}${sigHd}${sigRows}${sc3Row}${srvRow}`;
   try{ drawRwal(); }catch(e){}
 }
 
@@ -3500,6 +3539,7 @@ window.__mkt={ rows, scan:()=>scan, state:()=>({filter,sortKey,sortDir,query,exp
   diag:runDiag, diagRes:()=>diagRes.map(d=>({n:d.n,skip:d.skip,r:d.r})), openDiag, closeDiag,
   verdictOf, checksOf, planOf, setAcct:(a,r)=>{acct=a;riskPct=r;syncAcct();},
   rwal:()=>Object.assign({},rwal), rwalDraw:drawRwal,
+  srvSh:(s)=>{ if(s!==undefined){ srvSh=s; try{ renderPos(); }catch(e){} } return srvSh; },
   tick:applyTick, alerts:(on)=>setAlerts(on!==false), alerted:()=>({...goAlerted}),
   timingOf, hot:()=>runScan(true,render,true),
   kline:onKline, candles:()=>candles, liveSet:()=>[...liveSet()],
